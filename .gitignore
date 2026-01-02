@@ -10,6 +10,10 @@
 
 # Cache directory (large data files)
 data-raw/cache/
+data/
+
+# Claude Code (local settings)
+.claude/
 
 # IDE
 .vscode/
@@ -20,3 +24,8 @@ data-raw/cache/
 Thumbs.db
 .httr-oauth
 .quarto
+
+# Credentials/secrets
+.env
+*.pem
+credentials.json
