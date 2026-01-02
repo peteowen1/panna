@@ -1,0 +1,39 @@
+Package: panna
+Title: Player Rating System for Football Using RAPM and SPM Methods
+Version: 0.0.0.9000
+Authors@R:
+    person("Pete", "Owen", , "pete.owen1@hotmail.co.uk", role = c("aut", "cre"))
+Description: Implements the panna player rating methodology for football
+    (soccer) players. Combines Regularized Adjusted Plus-Minus (RAPM) with
+    Statistical Plus-Minus (SPM) as a Bayesian prior to produce stable player
+    impact ratings. Includes data collection from FBref via worldfootballR,
+    splint-based analysis (time segments between substitutions/goals), and
+    offensive/defensive rating separation.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.3
+Imports:
+    data.table (>= 1.14.0),
+    doParallel,
+    dplyr (>= 1.0.0),
+    glmnet (>= 4.0),
+    httr (>= 1.4.0),
+    janitor,
+    lubridate,
+    magrittr,
+    Matrix,
+    parallel,
+    purrr,
+    rlang,
+    rvest (>= 1.0.0),
+    tidyr,
+    worldfootballR (>= 0.6.0)
+Suggests:
+    ggplot2,
+    ggrepel,
+    knitr,
+    piggyback,
+    rmarkdown,
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3

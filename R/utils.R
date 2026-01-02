@@ -1,0 +1,326 @@
+# Utility functions for panna package
+
+#' Clean column names to snake_case
+#'
+#' Applies janitor::clean_names() to standardize all column names.
+#'
+#' @param data Data frame
+#'
+#' @return Data frame with snake_case column names
+#' @export
+clean_column_names <- function(data) {
+  if (is.null(data) || !is.data.frame(data)) {
+    return(data)
+  }
+  janitor::clean_names(data)
+}
+
+
+#' Safe division handling division by zero
+#'
+#' @param x Numerator
+#' @param y Denominator
+#' @param default Value to return when denominator is zero (default: 0)
+#'
+#' @return x / y, or default if y is zero
+#' @export
+#'
+#' @examples
+#' safe_divide(10, 2)
+#' safe_divide(10, 0)
+#' safe_divide(10, 0, default = NA)
+safe_divide <- function(x, y, default = 0) {
+  result <- x / y
+  result[is.infinite(result) | is.nan(result)] <- default
+  result
+}
+
+
+#' Validate season input
+#'
+#' Checks that seasons are valid for Premier League FBref data.
+#' FBref has detailed data starting from 2017-18 season.
+#'
+#' @param seasons Character vector of seasons in format "YYYY-YYYY" (e.g., "2023-2024")
+#'
+#' @return TRUE if valid, otherwise throws an error
+#' @export
+#'
+#' @examples
+#' validate_seasons("2023-2024")
+#' validate_seasons(c("2022-2023", "2023-2024"))
+validate_seasons <- function(seasons) {
+  # Check format
+if (!all(grepl("^\\d{4}-\\d{4}$", seasons))) {
+    stop("Seasons must be in format 'YYYY-YYYY' (e.g., '2023-2024')")
+  }
+
+  # Extract start years
+  start_years <- as.numeric(substr(seasons, 1, 4))
+
+  # Check minimum year (FBref detailed data starts 2017-18)
+  if (any(start_years < 2017)) {
+    stop("FBref detailed data is only available from 2017-18 season onwards")
+  }
+
+  # Check end year is start + 1
+  end_years <- as.numeric(substr(seasons, 6, 9))
+  if (!all(end_years == start_years + 1)) {
+    stop("Season end year must be start year + 1 (e.g., '2023-2024')")
+  }
+
+  TRUE
+}
+
+
+#' Standardize player names
+#'
+#' Cleans and standardizes player names for consistent matching across datasets.
+#'
+#' @param names Character vector of player names
+#'
+#' @return Character vector of standardized names
+#' @export
+#'
+#' @examples
+#' standardize_player_names(c("Mohamed Salah", "M. Salah", "SALAH"))
+standardize_player_names <- function(names) {
+  names <- trimws(names)
+  # Convert to title case
+  names <- tools::toTitleCase(tolower(names))
+  # Remove extra whitespace
+  names <- gsub("\\s+", " ", names)
+  # Remove common suffixes
+  names <- gsub("\\s+(Jr\\.|Sr\\.|II|III|IV)$", "", names)
+  names
+}
+
+
+#' Standardize team names
+#'
+#' Cleans and standardizes team names for consistent matching.
+#'
+#' @param names Character vector of team names
+#'
+#' @return Character vector of standardized names
+#' @export
+#'
+#' @examples
+#' standardize_team_names(c("Manchester Utd", "Man United", "Manchester United"))
+standardize_team_names <- function(names) {
+  names <- trimws(names)
+
+  # Common Premier League team name standardizations
+  standardizations <- c(
+    "Manchester Utd" = "Manchester United",
+    "Man Utd" = "Manchester United",
+    "Man United" = "Manchester United",
+    "Manchester City" = "Manchester City",
+    "Man City" = "Manchester City",
+    "Tottenham" = "Tottenham Hotspur",
+    "Spurs" = "Tottenham Hotspur",
+    "Wolves" = "Wolverhampton Wanderers",
+    "Wolverhampton" = "Wolverhampton Wanderers",
+    "Brighton" = "Brighton & Hove Albion",
+    "Brighton and Hove Albion" = "Brighton & Hove Albion",
+    "West Ham" = "West Ham United",
+    "Newcastle" = "Newcastle United",
+    "Nott'ham Forest" = "Nottingham Forest",
+    "Nottingham" = "Nottingham Forest",
+    "Sheffield Utd" = "Sheffield United",
+    "Leeds" = "Leeds United",
+    "Leicester" = "Leicester City"
+  )
+
+  for (old in names(standardizations)) {
+    names[names == old] <- standardizations[old]
+  }
+
+  names
+}
+
+
+#' Create unique match ID
+#'
+#' Generates a unique identifier for a match based on season, date, and teams.
+#'
+#' @param season Season string (e.g., "2023-2024")
+#' @param date Date of match
+#' @param home_team Home team name
+#' @param away_team Away team name
+#'
+#' @return Character vector of match IDs
+#' @export
+create_match_id <- function(season, date, home_team, away_team) {
+  paste(season, format(as.Date(date), "%Y%m%d"), home_team, away_team, sep = "_")
+}
+
+
+#' Create unique player ID
+#'
+#' Generates a unique identifier for a player based on name and team.
+#' Note: This is a simple implementation; FBref player URLs are more reliable.
+#'
+#' @param player_name Player name
+#' @param fbref_id Optional FBref player ID (preferred if available
+#'
+#' @return Character vector of player IDs
+#' @export
+create_player_id <- function(player_name, fbref_id = NULL) {
+  if (!is.null(fbref_id) && all(!is.na(fbref_id))) {
+    return(fbref_id)
+  }
+  # Fallback: clean name
+  id <- tolower(player_name)
+  id <- gsub("[^a-z0-9]", "_", id)
+  id <- gsub("_+", "_", id)
+  id <- gsub("^_|_$", "", id)
+  id
+}
+
+
+#' Check and report data completeness
+#'
+#' Validates data quality and reports missing values.
+#'
+#' @param data Data frame to validate
+#' @param required_cols Character vector of required column names
+#' @param warn Logical, whether to print warnings for missing data
+#'
+#' @return List with validation results
+#' @export
+validate_data_completeness <- function(data, required_cols = NULL, warn = TRUE) {
+  result <- list(
+    n_rows = nrow(data),
+    n_cols = ncol(data),
+    missing_cols = character(0),
+    na_summary = list()
+  )
+
+  # Check required columns
+  if (!is.null(required_cols)) {
+    missing <- setdiff(required_cols, names(data))
+    if (length(missing) > 0) {
+      result$missing_cols <- missing
+      if (warn) {
+        warning("Missing required columns: ", paste(missing, collapse = ", "))
+      }
+    }
+  }
+
+  # Check NA values
+  na_counts <- sapply(data, function(x) sum(is.na(x)))
+  na_pcts <- round(na_counts / nrow(data) * 100, 1)
+  result$na_summary <- data.frame(
+    column = names(na_counts),
+    na_count = na_counts,
+    na_pct = na_pcts,
+    row.names = NULL
+  )
+
+  if (warn && any(na_pcts > 20)) {
+    high_na <- names(na_pcts)[na_pcts > 20]
+    warning("Columns with >20% missing: ", paste(high_na, collapse = ", "))
+  }
+
+  result
+}
+
+
+#' Calculate minutes per 90
+#'
+#' @param stat Statistic value (counting stat)
+#' @param minutes Minutes played
+#'
+#' @return Statistic per 90 minutes
+#' @export
+per_90 <- function(stat, minutes) {
+  safe_divide(stat * 90, minutes)
+}
+
+
+#' Print progress message
+#'
+#' @param message Message to print
+#' @param verbose Whether to print
+#'
+#' @return NULL (invisibly)
+#' @keywords internal
+progress_msg <- function(message, verbose = TRUE) {
+  if (verbose) {
+    message(paste0("[", format(Sys.time(), "%H:%M:%S"), "] ", message))
+  }
+  invisible(NULL)
+}
+
+
+#' Find first matching column from candidates
+#'
+#' Returns the first column name that exists in the data frame.
+#'
+#' @param data Data frame to search
+#' @param candidates Character vector of column names to try (in priority order)
+#'
+#' @return First matching column name, or NULL if none found
+#' @keywords internal
+find_column <- function(data, candidates) {
+  matches <- intersect(candidates, names(data))
+  if (length(matches) == 0) NULL else matches[1]
+}
+
+
+#' Count events before each boundary
+#'
+#' Counts home/away events occurring before each splint boundary.
+#' Used for tracking cumulative goals, red cards, etc.
+#'
+#' @param events Data frame with 'minute' and 'is_home' columns
+#' @param boundaries Numeric vector of splint boundary minutes
+#'
+#' @return List with 'home' and 'away' counts (vectors same length as boundaries minus 1)
+#' @keywords internal
+count_events_before <- function(events, boundaries) {
+
+  n_splints <- length(boundaries) - 1
+  home_count <- rep(0, n_splints)
+  away_count <- rep(0, n_splints)
+
+  if (!is.null(events) && nrow(events) > 0) {
+    for (i in seq_len(n_splints)) {
+      before <- events$minute < boundaries[i]
+      if (any(before)) {
+        home_count[i] <- sum(events$is_home[before], na.rm = TRUE)
+        away_count[i] <- sum(!events$is_home[before], na.rm = TRUE)
+      }
+    }
+  }
+
+  list(home = home_count, away = away_count)
+}
+
+
+#' Ensure column exists with default
+#'
+#' Creates a column if it doesn't exist, optionally deriving from another column.
+#'
+#' @param data Data frame
+#' @param col_name Name of column to ensure
+#' @param default Default value or function to derive value
+#' @param source_col Optional source column for pattern matching
+#' @param pattern Regex pattern to match in source column
+#'
+#' @return Data frame with column ensured
+#' @keywords internal
+ensure_column <- function(data, col_name, default = FALSE, source_col = NULL, pattern = NULL) {
+  if (col_name %in% names(data)) {
+    return(data)
+  }
+
+  if (!is.null(source_col) && !is.null(pattern) && source_col %in% names(data)) {
+    data[[col_name]] <- grepl(pattern, data[[source_col]], ignore.case = TRUE)
+  } else {
+    data[[col_name]] <- default
+  }
+
+  data
+}
