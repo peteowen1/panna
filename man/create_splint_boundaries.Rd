@@ -7,7 +7,7 @@
 create_splint_boundaries(events, include_goals = TRUE, include_halftime = TRUE)
 }
 \arguments{
-\item{events}{Data frame of match events}
+\item{events}{Data frame of match events (with minute and optionally added_time columns)}
 
 \item{include_goals}{Logical, whether to create new splints at goals (default TRUE)}
 
@@ -25,9 +25,16 @@ Splints are created at:
 \item Each substitution
 \item Each red card
 \item Half time (minute 45)
-\item End of match (minute 90)
+\item End of match (dynamically calculated from stoppage time)
 }
 }
 \details{
+Uses continuous time where second-half events are offset by first-half stoppage.
+Example with 3 mins first-half stoppage and 11 mins second-half stoppage:
+\itemize{
+\item First half: 0 to 48 (45 + 3)
+\item Second half: 48 to 104 (offset by 3, plus 90+11)
+}
+
 Also tracks game state (cumulative goals, red cards, player counts) at each splint boundary.
 }

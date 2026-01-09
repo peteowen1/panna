@@ -7,7 +7,7 @@
 process_match_results(results)
 }
 \arguments{
-\item{results}{Data frame from scrape_pl_match_results}
+\item{results}{Data frame of match results}
 }
 \value{
 Cleaned data frame with standardized columns

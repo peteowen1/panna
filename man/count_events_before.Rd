@@ -7,7 +7,7 @@
 count_events_before(events, boundaries)
 }
 \arguments{
-\item{events}{Data frame with 'minute' and 'is_home' columns}
+\item{events}{Data frame with 'minute' (or 'effective_minute') and 'is_home' columns}
 
 \item{boundaries}{Numeric vector of splint boundary minutes}
 }

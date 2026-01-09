@@ -7,7 +7,7 @@
 process_advanced_stats(stats, results, stat_type = "summary")
 }
 \arguments{
-\item{stats}{Data frame from scrape_pl_advanced_match_stats}
+\item{stats}{Data frame of advanced match stats}
 
 \item{results}{Processed match results for match IDs}
 
@@ -18,4 +18,5 @@ Cleaned data frame with advanced stats
 }
 \description{
 Cleans advanced player stats data.
+Uses data.table for speed with large datasets.
 }

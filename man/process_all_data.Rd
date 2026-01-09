@@ -4,14 +4,28 @@
 \alias{process_all_data}
 \title{Process all raw data}
 \usage{
-process_all_data(raw_data)
+process_all_data(
+  raw_data,
+  show_progress = TRUE,
+  cache_dir = NULL,
+  raw_data_mtime = NULL
+)
 }
 \arguments{
-\item{raw_data}{List of raw data from scrape_pl_comprehensive}
+\item{raw_data}{List of raw data from pannadata}
+
+\item{show_progress}{Logical, whether to show progress bar (default TRUE)}
+
+\item{cache_dir}{Optional directory for per-component caching. If provided,
+each component is cached separately and only reprocessed if raw data changed.}
+
+\item{raw_data_mtime}{Optional modification time of raw data file for cache invalidation.
+If not provided and cache_dir is set, all components will be reprocessed.}
 }
 \value{
 List of processed data frames
 }
 \description{
 Master function to process all collected data.
+Supports per-component caching to avoid reprocessing on crashes.
 }

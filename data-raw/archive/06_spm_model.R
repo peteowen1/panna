@@ -16,7 +16,7 @@ cache_dir <- file.path("data-raw", "cache")
 # Load data ----
 cat("\n=== Loading Data ===\n")
 processed_data <- readRDS(file.path(cache_dir, "02_processed_data.rds"))
-rapm_results <- readRDS(file.path(cache_dir, "05_rapm.rds"))
+rapm_results <- readRDS(file.path(cache_dir, "04_rapm.rds"))
 
 rapm_data <- rapm_results$rapm_data
 rapm_ratings_no_prior <- rapm_results$ratings

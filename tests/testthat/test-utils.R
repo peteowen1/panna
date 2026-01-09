@@ -44,3 +44,47 @@ test_that("per_90 calculates correctly", {
   expect_equal(per_90(10, 45), 20)
   expect_equal(per_90(0, 90), 0)
 })
+
+test_that("clean_player_name normalizes case and whitespace", {
+  # Basic normalization
+  expect_equal(clean_player_name("Kylian Mbappé"), "kylianmbappé")
+  expect_equal(clean_player_name("kylian mbappé"), "kylianmbappé")
+  expect_equal(clean_player_name("KYLIAN MBAPPÉ"), "kylianmbappé")
+
+  # Multiple spaces
+  expect_equal(clean_player_name("Mohamed  Salah"), "mohamedsalah")
+
+  # Leading/trailing whitespace
+  expect_equal(clean_player_name("  Kylian Mbappé"), "kylianmbappé")
+  expect_equal(clean_player_name("Kylian Mbappé  "), "kylianmbappé")
+  expect_equal(clean_player_name("   kylian Mbappé   "), "kylianmbappé")
+
+  # Non-breaking spaces (U+00A0) - common from HTML scraping
+  expect_equal(clean_player_name("\u00A0\u00A0\u00A0lionel Messi"), "lionelmessi")
+  expect_equal(clean_player_name("Lionel\u00A0Messi"), "lionelmessi")
+
+  # Handles vectors
+  result <- clean_player_name(c("Lionel Messi", "lionel messi"))
+  expect_equal(result[1], result[2])
+})
+
+test_that("extract_fbref_player_id extracts 8-char hex ID", {
+  # Valid FBref hrefs
+  expect_equal(
+    extract_fbref_player_id("/players/d080ed5e/Kylian-Mbappe"),
+    "d080ed5e"
+  )
+  expect_equal(
+    extract_fbref_player_id("/players/abc12345/Some-Player"),
+    "abc12345"
+  )
+
+  # Invalid hrefs return NA
+  expect_true(is.na(extract_fbref_player_id("/some/other/path")))
+  expect_true(is.na(extract_fbref_player_id("not-a-url")))
+
+  # Handles vectors
+  hrefs <- c("/players/d080ed5e/Player1", "/players/abc12345/Player2")
+  result <- extract_fbref_player_id(hrefs)
+  expect_equal(result, c("d080ed5e", "abc12345"))
+})

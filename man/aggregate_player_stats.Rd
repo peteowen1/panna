@@ -9,6 +9,9 @@ aggregate_player_stats(
   stats_passing = NULL,
   stats_defense = NULL,
   stats_possession = NULL,
+  stats_misc = NULL,
+  stats_passing_types = NULL,
+  stats_keeper = NULL,
   min_minutes = 450
 )
 }
@@ -21,6 +24,12 @@ aggregate_player_stats(
 
 \item{stats_possession}{Possession stats data frame (optional)}
 
+\item{stats_misc}{Miscellaneous stats data frame (optional) - fouls, aerials, recoveries}
+
+\item{stats_passing_types}{Passing types data frame (optional) - through balls, switches}
+
+\item{stats_keeper}{Goalkeeper stats data frame (optional) - saves, post-shot xG}
+
 \item{min_minutes}{Minimum total minutes for inclusion}
 }
 \value{
@@ -28,6 +37,6 @@ Data frame with per-90 rates for each player
 }
 \description{
 Combines match-level statistics into per-90-minute rates for each player.
-Handles varying column availability across different data sources.
-Note: worldfootballR uses column names with suffixes like _expected, _sca, etc.
+Extracts comprehensive features from all available stat tables for SPM modeling.
+Includes derived features like success rates and ratios.
 }

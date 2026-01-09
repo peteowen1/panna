@@ -6,14 +6,17 @@
 # - Target: xgf90 (xG FOR per 90)
 # - Covariates: gd, gf, ga, avg_min, is_home
 # - Player columns: playerX_off, playerX_def
-# - Final rating: panna = offense - defense
+# - Final rating: rapm = offense - defense
+
+# 1. Setup ----
 
 library(dplyr)
 devtools::load_all()
 
 cache_dir <- file.path("data-raw", "cache")
 
-# Load splint data (from step 03)
+# 2. Load Splint Data ----
+
 cat("\n=== Loading Splint Data ===\n")
 splint_data <- readRDS(file.path(cache_dir, "03_splints.rds"))
 
@@ -28,7 +31,8 @@ cat("\nAfter filtering:\n")
 cat("  Splints:", nrow(splint_data$splints), "\n")
 cat("  Players:", nrow(splint_data$players), "\n")
 
-# Create design matrix
+# 3. Create RAPM Design Matrix ----
+
 cat("\n=== Creating RAPM Design Matrix ===\n")
 
 rapm_data <- prepare_rapm_data(
@@ -59,7 +63,8 @@ if (!is.null(rapm_data$seasons)) {
   cat("Seasons:", paste(rapm_data$seasons, collapse = ", "), "\n")
 }
 
-# Fit RAPM model
+# 4. Fit RAPM Model ----
+
 cat("\n=== Fitting RAPM Model ===\n")
 
 model <- fit_rapm(
@@ -70,25 +75,28 @@ model <- fit_rapm(
   penalize_covariates = FALSE
 )
 
-# Covariate effects
+# 5. Covariate Effects ----
+
 cat("\n=== Covariate Effects ===\n")
 cov_effects <- get_covariate_effects(model)
 for (name in names(cov_effects)) {
   cat(sprintf("  %s: %.4f\n", name, cov_effects[name]))
 }
 
-# Extract ratings
+# 6. Extract Player Ratings ----
+
 cat("\n=== Player Ratings ===\n")
-ratings <- extract_panna_ratings(model)
+ratings <- extract_rapm_ratings(model)
 
 cat("\nTop 20 players:\n")
 print(
   ratings %>%
     head(20) %>%
-    select(player_name, panna, offense, defense, total_minutes)
+    select(player_name, rapm, offense, defense, total_minutes)
 )
 
-# Save results
+# 7. Save Results ----
+
 cat("\n=== Saving Results ===\n")
 
 rapm_results <- list(

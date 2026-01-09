@@ -16,6 +16,6 @@ Named list with min_season, max_season, and n_seasons
 }
 \description{
 Extracts min/max season_end_year from a data frame.
-All data from scrape_pl_comprehensive will have this column.
+All data from pannadata will have this column.
 }
 \keyword{internal}

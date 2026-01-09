@@ -171,7 +171,8 @@ if (!grepl("fbref\\.com/en/matches/", match_url)) {
 
 #' Extract match metadata from FBref page
 #'
-#' Parses scorebox to get teams, score, date, and other match info.
+#' Parses scorebox to get teams, score, date, manager, captain, venue,
+#' attendance, officials, and formations.
 #'
 #' @param page Parsed HTML document
 #' @param match_url Original match URL for ID extraction
@@ -204,6 +205,7 @@ extract_match_metadata <- function(page, match_url) {
 
   # Extract team IDs from table names (e.g., "stats_18bb7c10_summary")
   team_id_matches <- regmatches(table_ids, regexpr("stats_([a-f0-9]{8})_", table_ids))
+
   team_ids <- unique(gsub("stats_|_", "", team_id_matches))
 
   # Extract date from URL (format: Month-Day-Year in URL)
@@ -219,6 +221,144 @@ extract_match_metadata <- function(page, match_url) {
     )
   }
 
+  # ============================================================================
+  # Extended metadata extraction
+  # ============================================================================
+
+  # Helper to extract text after "Label:" from datapoint divs
+  extract_datapoint <- function(team_node, label) {
+    if (is.na(team_node)) return(NA_character_)
+    datapoints <- rvest::html_nodes(team_node, ".datapoint")
+    for (dp in datapoints) {
+      text <- rvest::html_text(dp)
+      if (grepl(paste0("^", label, ":"), text, ignore.case = TRUE)) {
+        # Extract text after the label
+        value <- sub(paste0("^", label, ":\\s*"), "", text, ignore.case = TRUE)
+        return(trimws(value))
+      }
+    }
+    NA_character_
+  }
+
+  # Helper to extract player ID from captain link
+  extract_captain_id <- function(team_node) {
+    if (is.na(team_node)) return(NA_character_)
+    datapoints <- rvest::html_nodes(team_node, ".datapoint")
+    for (dp in datapoints) {
+      text <- rvest::html_text(dp)
+      if (grepl("^Captain:", text, ignore.case = TRUE)) {
+        link <- rvest::html_node(dp, "a")
+        if (!is.na(link)) {
+          href <- rvest::html_attr(link, "href")
+          # Extract player ID from href (e.g., "/en/players/d5f2f82b/Marquinhos")
+          id_match <- regmatches(href, regexpr("[a-f0-9]{8}", href))
+          if (length(id_match) > 0) return(id_match)
+        }
+      }
+    }
+    NA_character_
+  }
+
+  # Extract manager and captain for each team
+  home_team_node <- rvest::html_node(page, "#sb_team_0")
+  away_team_node <- rvest::html_node(page, "#sb_team_1")
+
+  home_manager <- extract_datapoint(home_team_node, "Manager")
+  away_manager <- extract_datapoint(away_team_node, "Manager")
+  home_captain <- extract_datapoint(home_team_node, "Captain")
+  away_captain <- extract_datapoint(away_team_node, "Captain")
+  home_captain_id <- extract_captain_id(home_team_node)
+  away_captain_id <- extract_captain_id(away_team_node)
+
+  # Extract venue, attendance, officials from scorebox_meta
+  scorebox_meta <- rvest::html_node(page, ".scorebox_meta")
+  venue <- NA_character_
+  attendance <- NA_integer_
+  referee <- NA_character_
+  ar1 <- NA_character_
+  ar2 <- NA_character_
+  fourth_official <- NA_character_
+  var_official <- NA_character_
+  kickoff_time <- NA_character_
+  kickoff_epoch <- NA_integer_
+
+  if (!is.na(scorebox_meta)) {
+    meta_divs <- rvest::html_nodes(scorebox_meta, "div")
+    for (div in meta_divs) {
+      text <- rvest::html_text(div)
+
+      # Venue
+      if (grepl("Venue:", text, ignore.case = TRUE)) {
+        venue <- sub(".*Venue:\\s*", "", text, ignore.case = TRUE)
+        venue <- trimws(venue)
+      }
+
+      # Attendance
+      if (grepl("Attendance:", text, ignore.case = TRUE)) {
+        att_match <- regmatches(text, regexpr("[0-9,]+", text))
+        if (length(att_match) > 0) {
+          attendance <- as.integer(gsub(",", "", att_match))
+        }
+      }
+
+      # Officials
+      if (grepl("Officials:", text, ignore.case = TRUE)) {
+        officials_text <- sub(".*Officials:\\s*", "", text, ignore.case = TRUE)
+        # Split by middot (Unicode U+00B7) or comma
+        officials_list <- strsplit(officials_text, "\\s*[\u00b7,]\\s*")[[1]]
+        officials_list <- trimws(officials_list)
+
+        for (official in officials_list) {
+          if (grepl("\\(Referee\\)", official, ignore.case = TRUE)) {
+            referee <- sub("\\s*\\(Referee\\).*", "", official, ignore.case = TRUE)
+          } else if (grepl("\\(AR1\\)", official, ignore.case = TRUE)) {
+            ar1 <- sub("\\s*\\(AR1\\).*", "", official, ignore.case = TRUE)
+          } else if (grepl("\\(AR2\\)", official, ignore.case = TRUE)) {
+            ar2 <- sub("\\s*\\(AR2\\).*", "", official, ignore.case = TRUE)
+          } else if (grepl("\\(4th\\)", official, ignore.case = TRUE)) {
+            fourth_official <- sub("\\s*\\(4th\\).*", "", official, ignore.case = TRUE)
+          } else if (grepl("\\(VAR\\)", official, ignore.case = TRUE)) {
+            var_official <- sub("\\s*\\(VAR\\).*", "", official, ignore.case = TRUE)
+          }
+        }
+      }
+    }
+
+    # Extract kickoff time from venuetime span
+    venuetime <- rvest::html_node(scorebox_meta, ".venuetime")
+    if (!is.na(venuetime)) {
+      kickoff_time <- rvest::html_attr(venuetime, "data-venue-time")
+      epoch_str <- rvest::html_attr(venuetime, "data-venue-epoch")
+      if (!is.na(epoch_str)) {
+        kickoff_epoch <- as.integer(epoch_str)
+      }
+    }
+  }
+
+  # Extract formations from lineup divs
+  home_formation <- NA_character_
+  away_formation <- NA_character_
+
+  home_lineup <- rvest::html_node(page, ".lineup#a")
+  away_lineup <- rvest::html_node(page, ".lineup#b")
+
+  extract_formation <- function(lineup_node) {
+    if (is.na(lineup_node)) return(NA_character_)
+    header <- rvest::html_node(lineup_node, "th")
+    if (is.na(header)) return(NA_character_)
+    text <- rvest::html_text(header)
+    # Extract formation pattern like (4-3-3) or (4-1-4-1)
+    formation_match <- regmatches(text, regexpr("\\([0-9]+-[0-9]+-[0-9]+(-[0-9]+)?\\)", text))
+    if (length(formation_match) > 0) {
+      # Remove parentheses
+      return(gsub("[()]", "", formation_match))
+    }
+    NA_character_
+  }
+
+  home_formation <- extract_formation(home_lineup)
+  away_formation <- extract_formation(away_lineup)
+
   data.frame(
     fbref_id = if (length(fbref_id) > 0) fbref_id else NA_character_,
     match_url = match_url,
@@ -229,8 +369,218 @@ extract_match_metadata <- function(page, match_url) {
     away_score = if (length(scores) >= 2) scores[2] else NA_integer_,
     home_team_id = if (length(team_ids) >= 1) team_ids[1] else NA_character_,
     away_team_id = if (length(team_ids) >= 2) team_ids[2] else NA_character_,
+    home_manager = home_manager,
+    away_manager = away_manager,
+    home_captain = home_captain,
+    away_captain = away_captain,
+    home_captain_id = home_captain_id,
+    away_captain_id = away_captain_id,
+    venue = venue,
+    attendance = attendance,
+    kickoff_time = kickoff_time,
+    kickoff_epoch = kickoff_epoch,
+    referee = referee,
+    ar1 = ar1,
+    ar2 = ar2,
+    fourth_official = fourth_official,
+    var_official = var_official,
+    home_formation = home_formation,
+    away_formation = away_formation,
     stringsAsFactors = FALSE
   )
+}
+
+
+#' Scrape match events timeline from FBref page
+#'
+#' Parses the events wrap section to extract goals, cards, and substitutions
+#' with precise minute information.
+#'
+#' @param page Parsed HTML document
+#' @param match_url Original match URL for ID extraction
+#'
+#' @return Data frame with event timeline, or NULL if no events found
+#' @keywords internal
+scrape_match_events <- function(page, match_url) {
+  # Extract match ID from URL
+  fbref_id <- regmatches(match_url, regexpr("[a-f0-9]{8}", match_url))
+  if (length(fbref_id) == 0) fbref_id <- NA_character_
+
+  # Find events container
+  events_wrap <- rvest::html_node(page, "#events_wrap")
+  if (is.na(events_wrap)) {
+    return(NULL)
+  }
+
+  # Get all event divs (class "event a" for home, "event b" for away)
+  event_nodes <- rvest::html_nodes(events_wrap, ".event")
+
+  if (length(event_nodes) == 0) {
+    return(NULL)
+  }
+
+  # Parse each event
+  events_list <- lapply(event_nodes, function(event_node) {
+    # Determine team from class (a = home, b = away)
+    event_class <- rvest::html_attr(event_node, "class")
+    is_home <- grepl("\\ba\\b", event_class)
+
+    # Get event icon class to determine event type
+    icon_node <- rvest::html_node(event_node, ".event_icon")
+    event_type <- NA_character_
+    if (!is.na(icon_node)) {
+      icon_class <- rvest::html_attr(icon_node, "class")
+      # Map icon classes to event types
+      if (grepl("penalty_goal", icon_class)) {
+        event_type <- "penalty_goal"
+      } else if (grepl("own_goal", icon_class)) {
+        event_type <- "own_goal"
+      } else if (grepl("\\bgoal\\b", icon_class)) {
+        event_type <- "goal"
+      } else if (grepl("yellow_red_card", icon_class)) {
+        event_type <- "yellow_red_card"
+      } else if (grepl("red_card", icon_class)) {
+        event_type <- "red_card"
+      } else if (grepl("yellow_card", icon_class)) {
+        event_type <- "yellow_card"
+      } else if (grepl("substitute_in", icon_class)) {
+        event_type <- "sub_on"
+      }
+    }
+
+    # Skip if no recognizable event type
+    if (is.na(event_type)) {
+      return(NULL)
+    }
+
+    # Extract minute from first div text (e.g., "19'" or "45+1'")
+    first_div <- rvest::html_node(event_node, "div")
+    minute_text <- if (!is.na(first_div)) rvest::html_text(first_div) else ""
+
+    # Parse minute and added time
+    minute <- NA_integer_
+    added_time <- NA_integer_
+
+    # Match patterns like "19'" or "45+1'" or "90+7'"
+    # FBref uses &rsquor; HTML entity (or actual quote chars) after the minute
+    # Match: digits, optional +digits, then any quote-like char or &rsquor;
+    minute_match <- regmatches(minute_text, regexpr("([0-9]+)\\+?([0-9]*)(&rsquor;|['\\u2019])", minute_text))
+    if (length(minute_match) > 0) {
+      # Extract base minute
+      base_min <- regmatches(minute_match, regexpr("^[0-9]+", minute_match))
+      if (length(base_min) > 0) {
+        minute <- as.integer(base_min)
+      }
+      # Extract added time if present (after +)
+      if (grepl("\\+", minute_match)) {
+        added_match <- regmatches(minute_match, regexpr("\\+([0-9]+)", minute_match))
+        if (length(added_match) > 0) {
+          added_time <- as.integer(gsub("\\+", "", added_match))
+        }
+      }
+    }
+
+    # Extract score at time of event (from small span, e.g., "1:0")
+    score_span <- rvest::html_node(first_div, "small span")
+    score_home <- NA_integer_
+    score_away <- NA_integer_
+    if (!is.na(score_span)) {
+      score_text <- rvest::html_text(score_span)
+      score_parts <- strsplit(score_text, "[:-]")[[1]]
+      if (length(score_parts) == 2) {
+        score_home <- suppressWarnings(as.integer(trimws(score_parts[1])))
+        score_away <- suppressWarnings(as.integer(trimws(score_parts[2])))
+      }
+    }
+
+    # Extract primary player (first link in event)
+    player_links <- rvest::html_nodes(event_node, "a")
+    player <- NA_character_
+    player_id <- NA_character_
+    if (length(player_links) > 0) {
+      player <- rvest::html_text(player_links[[1]])
+      href <- rvest::html_attr(player_links[[1]], "href")
+      if (!is.na(href)) {
+        id_match <- regmatches(href, regexpr("[a-f0-9]{8}", href))
+        if (length(id_match) > 0) {
+          player_id <- id_match
+        }
+      }
+    }
+
+    # Extract secondary player (assist for goals, sub off for subs)
+    secondary_player <- NA_character_
+    secondary_player_id <- NA_character_
+
+    # Look for assist or substitution info in small tags
+    small_nodes <- rvest::html_nodes(event_node, "small")
+    for (small_node in small_nodes) {
+      small_text <- rvest::html_text(small_node)
+
+      # Assist pattern: "Assist: PlayerName"
+      if (grepl("Assist:", small_text, ignore.case = TRUE)) {
+        assist_link <- rvest::html_node(small_node, "a")
+        if (!is.na(assist_link)) {
+          secondary_player <- rvest::html_text(assist_link)
+          href <- rvest::html_attr(assist_link, "href")
+          if (!is.na(href)) {
+            id_match <- regmatches(href, regexpr("[a-f0-9]{8}", href))
+            if (length(id_match) > 0) {
+              secondary_player_id <- id_match
+            }
+          }
+        }
+        break
+      }
+
+      # Substitution pattern: "for PlayerName"
+      if (grepl("^\\s*for\\s+", small_text, ignore.case = TRUE)) {
+        sub_link <- rvest::html_node(small_node, "a")
+        if (!is.na(sub_link)) {
+          secondary_player <- rvest::html_text(sub_link)
+          href <- rvest::html_attr(sub_link, "href")
+          if (!is.na(href)) {
+            id_match <- regmatches(href, regexpr("[a-f0-9]{8}", href))
+            if (length(id_match) > 0) {
+              secondary_player_id <- id_match
+            }
+          }
+        }
+        break
+      }
+    }
+
+    data.frame(
+      fbref_id = fbref_id,
+      minute = minute,
+      added_time = added_time,
+      event_type = event_type,
+      is_home = is_home,
+      player = player,
+      player_id = player_id,
+      secondary_player = secondary_player,
+      secondary_player_id = secondary_player_id,
+      score_home = score_home,
+      score_away = score_away,
+      stringsAsFactors = FALSE
+    )
+  })
+
+  # Remove NULL entries and combine
+  events_list <- events_list[!sapply(events_list, is.null)]
+
+  if (length(events_list) == 0) {
+    return(NULL)
+  }
+
+  result <- do.call(rbind, events_list)
+
+  # Sort by minute, then added_time (treat NA as 0 so 90' comes before 90+1')
+  sort_added_time <- ifelse(is.na(result$added_time), 0L, result$added_time)
+  result <- result[order(result$minute, sort_added_time, na.last = TRUE), ]
+  rownames(result) <- NULL
+
+  result
 }
 
 
@@ -411,6 +761,13 @@ parse_match_page <- function(page, match_url) {
   if (!is.null(shots_df) && nrow(shots_df) > 0) {
     shots_df$match_url <- match_url
     result$shots <- shots_df
+  }
+
+  # Events timeline (goals, cards, substitutions)
+  events_df <- scrape_match_events(page, match_url)
+  if (!is.null(events_df) && nrow(events_df) > 0) {
+    events_df$match_url <- match_url
+    result$events <- events_df
   }
 
   result
@@ -635,9 +992,9 @@ is_match_cached <- function(league, season, fbref_id, table_types = "metadata") 
 #' @return Character vector of cached fbref_ids
 #' @export
 get_cached_match_ids <- function(league, season) {
-  # All 9 table types for a complete match
+  # All 10 table types for a complete match (events added)
   all_table_types <- c("metadata", "summary", "passing", "passing_types",
-                       "defense", "possession", "misc", "keeper", "shots")
+                       "defense", "possession", "misc", "keeper", "shots", "events")
 
   # Check metadata dir exists (hierarchical: metadata/league/season/)
   cache_dir <- get_fbref_match_cache_dir("metadata", league, season, create = FALSE)
@@ -811,112 +1168,9 @@ list_cached_matches <- function(table_type = "metadata", league = NULL,
 # ============================================================================
 # Fixtures/Schedule Scraping
 # ============================================================================
-
-#' Get FBref league configuration
-#'
-#' Returns league codes, competition IDs, and URL names for supported competitions.
-#' Includes Big 5 leagues, domestic cups, and UEFA club competitions.
-#'
-#' @return Data frame with league configurations
-#' @export
-get_fbref_league_config <- function() {
-  data.frame(
-    league = c(
-      # Big 5 Leagues
-      "ENG", "ESP", "GER", "ITA", "FRA",
-      # Domestic Cups
-      "FA_CUP", "COPA_DEL_REY", "DFB_POKAL", "COPPA_ITALIA", "COUPE_DE_FRANCE",
-      # UEFA Club Competitions
-      "UCL", "UEL"
-    ),
-    comp_id = c(
-      # Big 5 Leagues
-      9, 12, 20, 11, 13,
-      # Domestic Cups (FA Cup, Copa del Rey, DFB-Pokal, Coppa Italia, Coupe de France)
-      514, 569, 521, 529, 518,
-      # UEFA Club Competitions
-      8, 19
-    ),
-    league_name = c(
-      # Big 5 Leagues
-      "Premier-League", "La-Liga", "Bundesliga", "Serie-A", "Ligue-1",
-      # Domestic Cups
-      "FA-Cup", "Copa-del-Rey", "DFB-Pokal", "Coppa-Italia", "Coupe-de-France",
-      # UEFA Club Competitions
-      "Champions-League", "Europa-League"
-    ),
-    full_name = c(
-      # Big 5 Leagues
-      "Premier League", "La Liga", "Bundesliga", "Serie A", "Ligue 1",
-      # Domestic Cups
-      "FA Cup", "Copa del Rey", "DFB-Pokal", "Coppa Italia", "Coupe de France",
-      # UEFA Club Competitions
-      "Champions League", "Europa League"
-    ),
-    stringsAsFactors = FALSE
-  )
-}
-
-
-#' Get Big 5 league codes
-#' @return Character vector of league codes
-#' @export
-get_big5_codes <- function() {
-  c("ENG", "ESP", "GER", "ITA", "FRA")
-}
-
-
-#' Get domestic cup codes
-#' @return Character vector of cup codes
-#' @export
-get_domestic_cup_codes <- function() {
-  c("FA_CUP", "COPA_DEL_REY", "DFB_POKAL", "COPPA_ITALIA", "COUPE_DE_FRANCE")
-}
-
-
-#' Get UEFA club competition codes
-#' @return Character vector of UEFA competition codes
-#' @export
-get_uefa_cup_codes <- function() {
-  c("UCL", "UEL")
-}
-
-
-#' Get all supported competition codes
-#' @return Character vector of all competition codes
-#' @export
-get_all_competition_codes <- function() {
-  c(get_big5_codes(), get_domestic_cup_codes(), get_uefa_cup_codes())
-}
-
-
-#' Build FBref fixtures URL
-#'
-#' Constructs the URL for a league's fixtures/schedule page.
-#'
-#' @param league League code (e.g., "ENG", "ESP")
-#' @param season Season string (e.g., "2024-2025")
-#'
-#' @return URL string
-#' @export
-build_fixtures_url <- function(league, season) {
- config <- get_fbref_league_config()
-  league_info <- config[config$league == league, ]
-
-  if (nrow(league_info) == 0) {
-    stop("Unknown league: ", league,
-         ". Valid options: ", paste(config$league, collapse = ", "))
-  }
-
-  sprintf(
-    "https://fbref.com/en/comps/%s/%s/schedule/%s-%s-Scores-and-Fixtures",
-    league_info$comp_id,
-    season,
-    season,
-    league_info$league_name
-  )
-}
-
+# Competition metadata is in fbref_competitions.R (single source of truth)
+# Use: fbref_competitions, list_competitions(), get_fbref_comp_id(),
+#      get_fbref_schedule_url(), get_seasons_since(), get_tournament_years()
 
 #' Scrape match URLs from fixtures page
 #'
@@ -929,7 +1183,7 @@ build_fixtures_url <- function(league, season) {
 #' @return Data frame with match_url, home_team, away_team, date columns
 #' @export
 scrape_fixtures <- function(league, season, completed_only = TRUE) {
-  url <- build_fixtures_url(league, season)
+  url <- get_fbref_schedule_url(league, season)
 
   progress_msg(sprintf("Fetching fixtures: %s %s", league, season))
 
@@ -1042,26 +1296,6 @@ scrape_fixtures <- function(league, season, completed_only = TRUE) {
 }
 
 
-#' Get all seasons since 2017-2018
-#'
-#' Returns a vector of season strings from 2017-2018 to current season.
-#'
-#' @param start_year First season start year (default 2017)
-#'
-#' @return Character vector of season strings
-#' @export
-get_seasons_since <- function(start_year = 2017) {
-  current_year <- as.numeric(format(Sys.Date(), "%Y"))
-  current_month <- as.numeric(format(Sys.Date(), "%m"))
-
-  # If we're past July, include current season
-  end_year <- if (current_month >= 7) current_year else current_year - 1
-
-  years <- start_year:end_year
-  paste0(years, "-", years + 1)
-}
-
-
 # ============================================================================
 # Main Scraping Function
 # ============================================================================
@@ -1084,12 +1318,13 @@ get_seasons_since <- function(start_year = 2017) {
 #' @param verbose Print progress messages (default TRUE)
 #'
 #' @return List containing data frames for each table type:
-#'   \item{metadata}{Match metadata (teams, scores, IDs)}
+#'   \item{metadata}{Match metadata (teams, scores, IDs, manager, captain, venue, etc.)}
 #'   \item{summary}{Player summary stats}
 #'   \item{passing}{Passing stats}
 #'   \item{defense}{Defensive stats}
 #'   \item{possession}{Possession stats}
 #'   \item{shots}{Shot data}
+#'   \item{events}{Match events timeline (goals, cards, substitutions)}
 #'
 #' @export
 #'
@@ -1101,13 +1336,14 @@ get_seasons_since <- function(start_year = 2017) {
 #' data <- scrape_fbref_matches(urls, league = "ESP", season = "2025-2026")
 #' data$summary  # Player stats
 #' data$shots    # Shot-level data
+#' data$events   # Match timeline
 #' }
 scrape_fbref_matches <- function(
     match_urls,
     league,
     season,
     table_types = c("summary", "passing", "passing_types", "defense",
-                    "possession", "misc", "keeper", "shots", "metadata"),
+                    "possession", "misc", "keeper", "shots", "events", "metadata"),
     delay = 5,
     use_cache = TRUE,
     verbose = TRUE
@@ -1239,6 +1475,8 @@ scrape_fbref_matches <- function(
         data <- parsed$metadata
       } else if (tt == "shots") {
         data <- parsed$shots
+      } else if (tt == "events") {
+        data <- parsed$events
       } else if (tt == "keeper") {
         data <- combine_team_tables(parsed, "keeper")
       } else {
@@ -1395,7 +1633,7 @@ migrate_metadata_tables_available <- function(league = NULL, season = NULL,
                                                verbose = TRUE) {
   # All possible table types (excluding metadata itself)
   all_table_types <- c("summary", "passing", "passing_types", "defense",
-                       "possession", "misc", "keeper", "shots")
+                       "possession", "misc", "keeper", "shots", "events")
 
   # List all metadata files
   meta_cached <- list_cached_matches("metadata", league, season)

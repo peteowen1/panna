@@ -7,7 +7,7 @@
 report_season_ranges(data)
 }
 \arguments{
-\item{data}{List of data frames from scrape_pl_comprehensive}
+\item{data}{List of data frames from pannadata}
 }
 \value{
 Invisible data frame with season range info

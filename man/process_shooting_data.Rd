@@ -7,7 +7,7 @@
 process_shooting_data(shooting, results)
 }
 \arguments{
-\item{shooting}{Data frame from scrape_pl_match_shooting}
+\item{shooting}{Data frame of shot data}
 
 \item{results}{Processed match results for match IDs}
 }

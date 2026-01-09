@@ -3,23 +3,58 @@
 #
 # A "splint" is a time segment where the lineup remains constant.
 # This is the unit of analysis for RAPM models.
+#
+# Supports incremental processing - skips if processed data hasn't changed.
+# Use force = TRUE to force reprocessing.
+
+# 1. Setup ----
 
 library(dplyr)
 devtools::load_all()
 
+# 2. Configuration ----
+
 cache_dir <- file.path("data-raw", "cache")
+force <- exists("force") && isTRUE(force)  # Set force=TRUE before sourcing to force reprocess
 
-# Load processed data
-processed_data <- readRDS(file.path(cache_dir, "02_processed_data.rds"))
+processed_data_path <- file.path(cache_dir, "02_processed_data.rds")
+splint_data_path <- file.path(cache_dir, "03_splints.rds")
 
-# Create splints for all matches
-splint_data <- create_all_splints(
-  processed_data,
-  include_goals = TRUE,  # Create new splint at each goal (MBAPPE approach)
-  verbose = TRUE
-)
+# 3. Create Splints ----
 
-# Summary statistics
+if (!force && file.exists(splint_data_path)) {
+  processed_mtime <- file.mtime(processed_data_path)
+  splint_mtime <- file.mtime(splint_data_path)
+
+  if (splint_mtime > processed_mtime) {
+    message("=== Skipping splint creation (cache is up to date) ===")
+    message(sprintf("  Processed data: %s", processed_mtime))
+    message(sprintf("  Splint data:    %s", splint_mtime))
+    message("  Use force=TRUE before sourcing to force reprocessing")
+    splint_data <- readRDS(splint_data_path)
+  } else {
+    message("=== Processed data is newer - recreating splints ===")
+    processed_data <- readRDS(processed_data_path)
+    splint_data <- create_all_splints(
+      processed_data,
+      include_goals = TRUE,
+      verbose = TRUE
+    )
+    saveRDS(splint_data, splint_data_path)
+  }
+} else {
+  message("=== Creating splints ===")
+  processed_data <- readRDS(processed_data_path)
+  splint_data <- create_all_splints(
+    processed_data,
+    include_goals = TRUE,
+    verbose = TRUE
+  )
+  saveRDS(splint_data, splint_data_path)
+}
+
+# 4. Summary Statistics ----
+
 cat("\n=== Splint Summary ===\n")
 cat(paste("Total splints:", nrow(splint_data$splints), "\n"))
 cat(paste("Average splints per match:",
@@ -44,12 +79,14 @@ if ("season_end_year" %in% names(splint_data$splints)) {
   }
 }
 
-# Distribution of splint durations
+# 5. Splint Duration Distribution ----
+
 cat("\n=== Splint Duration Distribution ===\n")
 duration_summary <- summary(splint_data$splints$duration)
 print(duration_summary)
 
-# CRITICAL: Check player assignments per splint
+# 6. Player Assignment Validation ----
+
 cat("\n=== Player Assignment Validation ===\n")
 players_per_splint <- splint_data$players %>%
   group_by(splint_id) %>%
@@ -69,7 +106,8 @@ cat(sprintf("\nSplints with exactly 22 players: %d / %d (%.1f%%)\n",
             correct_22, nrow(splint_data$splints),
             100 * correct_22 / nrow(splint_data$splints)))
 
-# Check if players change between splints in a match
+# 7. Player Turnover Check ----
+
 cat("\n=== Player Turnover Check (sample match) ===\n")
 sample_match <- unique(splint_data$splints$match_id)[1]
 match_splints <- splint_data$splints %>% filter(match_id == sample_match)
@@ -92,18 +130,17 @@ for (i in 2:min(nrow(match_splints), 5)) {
   }
 }
 
-# Check for data issues
+# 8. Data Quality Checks ----
+
 n_zero_duration <- sum(splint_data$splints$duration <= 0, na.rm = TRUE)
 if (n_zero_duration > 0) {
   warning(paste(n_zero_duration, "splints have zero or negative duration"))
 }
 
-# npxGD distribution
+# 9. npxGD Distribution ----
+
 cat("\n=== npxGD Distribution ===\n")
 cat("npxgd_per_90 summary:\n")
 print(summary(splint_data$splints$npxgd_per_90))
-
-# Save splint data
-saveRDS(splint_data, file.path(cache_dir, "03_splints.rds"))
 
 message("\nSplint creation complete! Run 04_rapm.R next.")

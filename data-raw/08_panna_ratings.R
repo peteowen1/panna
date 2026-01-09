@@ -1,4 +1,4 @@
-# 07_panna_ratings.R
+# 08_panna_ratings.R
 # Final Panna ratings combining all components
 #
 # This script creates the final player ratings by:
@@ -7,15 +7,16 @@
 # 3. Validating against team performance
 # 4. Exporting final results
 
+# 1. Setup ----
+
 library(dplyr)
 devtools::load_all()
 
 cache_dir <- file.path("data-raw", "cache")
 
-# =============================================================================
-# 1. Load All Results
-# =============================================================================
-cat("\n=== 1. Loading Results ===\n")
+# 2. Load All Results ----
+
+cat("\n=== Loading Results ===\n")
 
 processed_data <- readRDS(file.path(cache_dir, "02_processed_data.rds"))
 rapm_results <- readRDS(file.path(cache_dir, "04_rapm.rds"))
@@ -26,10 +27,9 @@ cat("Base RAPM players:", nrow(rapm_results$ratings), "\n")
 cat("SPM players:", nrow(spm_results$spm_ratings), "\n")
 cat("xRAPM players:", nrow(xrapm_results$ratings), "\n")
 
-# =============================================================================
-# 2. Create Unified Ratings Table
-# =============================================================================
-cat("\n=== 2. Creating Unified Ratings ===\n")
+# 3. Create Unified Ratings Table ----
+
+cat("\n=== Creating Unified Ratings ===\n")
 
 # Start with xRAPM as the primary rating (uses SPM prior)
 panna_ratings <- xrapm_results$ratings %>%
@@ -51,7 +51,7 @@ panna_ratings <- xrapm_results$ratings %>%
 
 # Add base RAPM for comparison
 base_rapm <- rapm_results$ratings %>%
-  select(player_name, base_panna = panna, base_offense = offense, base_defense = defense)
+  select(player_name, base_rapm = rapm, base_offense = offense, base_defense = defense)
 
 panna_ratings <- panna_ratings %>%
   left_join(base_rapm, by = "player_name")
@@ -73,10 +73,9 @@ panna_ratings <- panna_ratings %>%
 
 cat("Final ratings for", nrow(panna_ratings), "players\n")
 
-# =============================================================================
-# 3. Summary Statistics
-# =============================================================================
-cat("\n=== 3. Rating Distributions ===\n")
+# 4. Summary Statistics ----
+
+cat("\n=== Rating Distributions ===\n")
 
 cat("\nPanna rating distribution:\n")
 print(summary(panna_ratings$panna))
@@ -89,14 +88,13 @@ print(summary(panna_ratings$defense))
 
 # Correlation between components
 cat("\nCorrelations:\n")
-cat("  Panna vs Base RAPM:", round(cor(panna_ratings$panna, panna_ratings$base_panna, use = "complete"), 3), "\n")
+cat("  Panna vs Base RAPM:", round(cor(panna_ratings$panna, panna_ratings$base_rapm, use = "complete"), 3), "\n")
 cat("  Panna vs SPM:", round(cor(panna_ratings$panna, panna_ratings$spm_overall, use = "complete"), 3), "\n")
 cat("  Offense vs Defense:", round(cor(panna_ratings$offense, panna_ratings$defense, use = "complete"), 3), "\n")
 
-# =============================================================================
-# 4. Top and Bottom Players
-# =============================================================================
-cat("\n=== 4. Player Rankings ===\n")
+# 5. Player Rankings ----
+
+cat("\n=== Player Rankings ===\n")
 
 cat("\nTop 25 by Panna:\n")
 print(
@@ -155,10 +153,9 @@ print(
     mutate(across(where(is.numeric) & !matches("minutes"), ~round(.x, 3)))
 )
 
-# =============================================================================
-# 5. Team-Level Validation
-# =============================================================================
-cat("\n=== 5. Team-Level Validation ===\n")
+# 6. Team-Level Validation ----
+
+cat("\n=== Team-Level Validation ===\n")
 
 if (!is.null(processed_data$lineups)) {
   # Get primary team for each player
@@ -236,10 +233,9 @@ if (!is.null(processed_data$lineups)) {
   }
 }
 
-# =============================================================================
-# 6. Save Final Results
-# =============================================================================
-cat("\n=== 6. Saving Final Results ===\n")
+# 7. Save Final Results ----
+
+cat("\n=== Saving Final Results ===\n")
 
 final_results <- list(
   panna_ratings = panna_ratings,
@@ -253,7 +249,7 @@ final_results <- list(
   )
 )
 
-saveRDS(final_results, file.path(cache_dir, "07_panna.rds"))
+saveRDS(final_results, file.path(cache_dir, "08_panna.rds"))
 
 # Export to CSV for easy viewing
 panna_export <- panna_ratings %>%
@@ -272,15 +268,16 @@ panna_export <- panna_ratings %>%
 write.csv(panna_export, file.path(cache_dir, "panna_ratings.csv"), row.names = FALSE)
 
 cat("Saved:\n")
-cat("  -", file.path(cache_dir, "07_panna.rds"), "\n")
+cat("  -", file.path(cache_dir, "08_panna.rds"), "\n")
 cat("  -", file.path(cache_dir, "panna_ratings.csv"), "\n")
 
 cat("\n=== COMPLETE ===\n")
 cat("\nPipeline Summary:\n")
-cat("  01_data_collection.R -> Raw data from FBref\n")
-cat("  02_data_processing.R -> Cleaned/processed data\n")
-cat("  03_splint_creation.R -> Time segments for RAPM\n")
-cat("  04_rapm.R           -> Base RAPM (no prior)\n")
-cat("  05_spm.R            -> SPM model (box score predictions)\n")
-cat("  06_xrapm.R          -> xRAPM (RAPM with SPM prior)\n")
-cat("  07_panna_ratings.R  -> Final unified ratings\n")
+cat("  01_load_pannadata.R    -> Raw data from pannadata\n")
+cat("  02_data_processing.R   -> Cleaned/processed data\n")
+cat("  03_splint_creation.R   -> Time segments for RAPM\n")
+cat("  04_rapm.R              -> Base RAPM (no prior)\n")
+cat("  05_spm.R               -> SPM model (box score predictions)\n")
+cat("  06_xrapm.R             -> xRAPM (RAPM with SPM prior)\n")
+cat("  07_seasonal_ratings.R  -> Per-season SPM, RAPM, xRAPM ratings\n")
+cat("  08_panna_ratings.R     -> Final unified ratings\n")

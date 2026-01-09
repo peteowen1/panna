@@ -14,7 +14,7 @@ devtools::load_all()
 cache_dir <- file.path("data-raw", "cache")
 
 # Load RAPM results
-rapm_results <- readRDS(file.path(cache_dir, "05_rapm.rds"))
+rapm_results <- readRDS(file.path(cache_dir, "04_rapm.rds"))
 rapm_data <- rapm_results$rapm_data
 rapm_ratings <- rapm_results$ratings
 

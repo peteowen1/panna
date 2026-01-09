@@ -15,6 +15,7 @@ extract_match_metadata(page, match_url)
 Data frame with match metadata (single row)
 }
 \description{
-Parses scorebox to get teams, score, date, and other match info.
+Parses scorebox to get teams, score, date, manager, captain, venue,
+attendance, officials, and formations.
 }
 \keyword{internal}

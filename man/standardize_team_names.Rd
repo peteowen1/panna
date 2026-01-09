@@ -14,6 +14,7 @@ Character vector of standardized names
 }
 \description{
 Cleans and standardizes team names for consistent matching.
+Uses vectorized lookup for speed on large datasets.
 }
 \examples{
 standardize_team_names(c("Manchester Utd", "Man United", "Manchester United"))

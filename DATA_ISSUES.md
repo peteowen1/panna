@@ -6,77 +6,73 @@ Tracking known data quality issues and their status.
 
 ## Active Issues
 
-### 1. La Liga - No xG/Shooting Data
-**Status:** BLOCKING
-**Severity:** Critical
-**Discovered:** 2024-12-30
+### 1. 2025-2026 Season - Incomplete Data
+**Status:** EXPECTED
+**Severity:** Low
+**Updated:** 2026-01-03
 
 **Problem:**
-La Liga has 0% shooting/xG data across all seasons (2019-2025). The `load_fb_match_shooting()` function from worldfootballR returns no La Liga data in the pre-scraped dataset. Direct scraping via `fb_match_shooting()` returns HTTP 403 Forbidden.
+2025-2026 season is currently in progress. Partial data available:
+
+| League | Matches Available | Expected |
+|--------|-------------------|----------|
+| Premier League | 180 | 380 |
+| La Liga | 171 | 380 |
+| Serie A | ~170 | 380 |
+| Bundesliga | ~150 | 306 |
+| Ligue 1 | ~150 | 306 |
 
 **Impact:**
-- 2,660 matches affected (100% of La Liga)
-- All La Liga splints have `npxg_home = 0` and `npxg_away = 0`
-- RAPM model gave La Liga coefficient of -0.66 (massive artifact)
+- Partial season data may skew player ratings if included
+- Current season players have fewer observations
 
-**Root Cause:**
-FBref likely doesn't have xG data for La Liga due to Opta licensing restrictions.
-
-**Potential Solutions:**
-1. Exclude La Liga from analysis (recommended for now)
-2. Source La Liga xG from Understat (different scraping required)
-3. Use goals instead of xG for La Liga only (inconsistent methodology)
+**Recommendation:**
+Exclude `season == "2025-2026"` from RAPM analysis until season completes.
 
 ---
 
-### 2. 2025 Season - Incomplete Data
-**Status:** BLOCKING
-**Severity:** High
-**Discovered:** 2024-12-30
-
-**Problem:**
-2025 season has 25-42% zero xG splints across all leagues due to incomplete/ongoing season.
-
-| League | % Zero xG |
-|--------|-----------|
-| Bundesliga | 41.6% |
-| Ligue 1 | 41.6% |
-| Premier League | 25.2% |
-| Serie A | 40.3% |
-
-**Impact:**
-- Season 2025 coefficient was -0.44 in RAPM (artifact of missing data)
-- Partial season data skews player ratings
-
-**Potential Solutions:**
-1. Exclude 2025 season from analysis (recommended)
-2. Wait until season completes and re-scrape
-3. Use partial data with appropriate weighting
-
----
-
-### 3. Ligue 1 2020 - COVID Season Gap
+### 2. Ligue 1 2020 - COVID Season Gap
 **Status:** Minor
 **Severity:** Low
 **Discovered:** 2024-12-30
 
 **Problem:**
-Ligue 1 2019-20 season (season_end_year = 2020) has 26.6% zero xG splints. This was the COVID-shortened season where the league was cancelled early.
+Ligue 1 2019-20 season has only 279 matches (vs 380 expected). This was the COVID-shortened season where the league was cancelled after matchday 28.
 
 **Impact:**
-- 202 of 760 splints have zero xG
-- May slightly skew Ligue 1 2020 data
+- ~100 fewer matches than normal season
+- May slightly underweight Ligue 1 2020 players
 
-**Potential Solutions:**
-1. Keep as-is (ridge regression handles some noise)
-2. Exclude Ligue 1 2020 specifically
-3. Down-weight 2020 season observations
+**Recommendation:**
+Keep as-is. Ridge regression handles the reduced sample size appropriately.
 
 ---
 
 ## Resolved Issues
 
-*None yet*
+### La Liga - No xG/Shooting Data
+**Status:** RESOLVED
+**Resolved:** 2026-01-03
+**Original Issue:** La Liga had 0% shooting/xG data across all seasons.
+
+**Resolution:**
+pannadata now contains complete La Liga shooting data from 2017-2018 onwards.
+All seasons 2017-2025 have full match coverage (380 matches per season).
+
+---
+
+### 2024-2025 Season - Incomplete Data
+**Status:** RESOLVED
+**Resolved:** 2026-01-03
+**Original Issue:** Season was incomplete with 25-42% missing xG data.
+
+**Resolution:**
+2024-2025 season is now complete with full data for all leagues:
+- Premier League: 380 matches
+- La Liga: 380 matches
+- Serie A: 380 matches
+- Bundesliga: 306 matches
+- Ligue 1: 306 matches
 
 ---
 
@@ -84,23 +80,19 @@ Ligue 1 2019-20 season (season_end_year = 2020) has 26.6% zero xG splints. This 
 
 | League | Seasons | Shooting Data | Status |
 |--------|---------|---------------|--------|
-| Bundesliga | 2019-2024 | Complete | OK |
-| Bundesliga | 2025 | 41.6% missing | Exclude |
-| La Liga | 2019-2025 | 0% available | Exclude All |
-| Ligue 1 | 2019, 2021-2024 | Complete | OK |
-| Ligue 1 | 2020 | 26.6% missing | Minor issue |
-| Ligue 1 | 2025 | 41.6% missing | Exclude |
-| Premier League | 2019-2024 | Complete | OK |
-| Premier League | 2025 | 25.2% missing | Exclude |
-| Serie A | 2019-2024 | Complete | OK |
-| Serie A | 2025 | 40.3% missing | Exclude |
+| Premier League | 2017-2025 | Complete | OK |
+| La Liga | 2017-2025 | Complete | OK |
+| Serie A | 2017-2025 | Complete | OK |
+| Bundesliga | 2017-2025 | Complete | OK |
+| Ligue 1 | 2017-2019, 2021-2025 | Complete | OK |
+| Ligue 1 | 2020 | 279/380 matches | Minor (COVID) |
+| All leagues | 2025-2026 | Partial | Exclude (ongoing) |
 
 ---
 
 ## Recommended Data Filter
 
 For RAPM analysis, exclude:
-- `league == "La Liga"` (no xG data)
-- `season_end_year == 2025` (incomplete season)
+- `season == "2025-2026"` (incomplete current season)
 
-This leaves 4 leagues x 6 seasons = 24 league-seasons of clean data.
+This leaves 5 leagues x 8 seasons = 40 league-seasons of clean data (with minor Ligue 1 2020 caveat).

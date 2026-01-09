@@ -7,7 +7,7 @@
 process_match_events(events, results)
 }
 \arguments{
-\item{events}{Data frame from scrape_pl_match_summary}
+\item{events}{Data frame of match events}
 
 \item{results}{Processed match results for match IDs}
 }

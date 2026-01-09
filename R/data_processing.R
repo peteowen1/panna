@@ -4,7 +4,7 @@
 #'
 #' Cleans match results data and adds derived columns.
 #'
-#' @param results Data frame from scrape_pl_match_results
+#' @param results Data frame of match results
 #'
 #' @return Cleaned data frame with standardized columns
 #' @export
@@ -15,14 +15,20 @@ process_match_results <- function(results) {
   has_country <- "country" %in% names(results)
   has_season_year <- "season_end_year" %in% names(results)
 
+  # Handle both home_xg and home_x_g column naming
+  if ("home_x_g" %in% names(results) && !"home_xg" %in% names(results)) {
+    results <- results %>%
+      dplyr::rename(home_xg = home_x_g, away_xg = away_x_g)
+  }
+
   results <- results %>%
     dplyr::mutate(
       home_team = standardize_team_names(.data$home),
       away_team = standardize_team_names(.data$away),
       home_goals = as.numeric(.data$home_goals),
       away_goals = as.numeric(.data$away_goals),
-      home_xg = as.numeric(.data$home_x_g),
-      away_xg = as.numeric(.data$away_x_g),
+      home_xg = as.numeric(.data$home_xg),
+      away_xg = as.numeric(.data$away_xg),
       date = as.Date(.data$date),
       season = .data$season_end_year
     ) %>%
@@ -61,7 +67,7 @@ process_match_results <- function(results) {
 #' Cleans lineup data and extracts player information.
 #' Uses data.table for speed with large datasets.
 #'
-#' @param lineups Data frame from scrape_pl_match_lineups
+#' @param lineups Data frame of match lineups
 #' @param results Processed match results for match IDs
 #'
 #' @return Cleaned data frame with player lineup info
@@ -86,10 +92,65 @@ process_match_lineups <- function(lineups, results) {
   # Merge
   dt_lineups <- merge(dt_lineups, dt_results, by = "match_url", all.x = TRUE)
 
+  # Standardize column names before processing
+  # team: could be 'team' or 'squad'
+  if (!"team" %in% names(dt_lineups) && "squad" %in% names(dt_lineups)) {
+    data.table::setnames(dt_lineups, "squad", "team")
+  }
+
+  # player_name: could be 'player_name' or 'player'
+  if (!"player_name" %in% names(dt_lineups) && "player" %in% names(dt_lineups)) {
+    data.table::setnames(dt_lineups, "player", "player_name")
+  }
+
+  # is_home: could be 'is_home', 'home_away' (convert "Home"/"Away" to TRUE/FALSE)
+  if (!"is_home" %in% names(dt_lineups)) {
+    if ("home_away" %in% names(dt_lineups)) {
+      dt_lineups[, is_home := tolower(home_away) == "home"]
+    } else {
+      # Default to NA if we can't determine
+      dt_lineups[, is_home := NA]
+    }
+  }
+
+  # minutes: could be 'minutes' or 'min'
+  if (!"minutes" %in% names(dt_lineups) && "min" %in% names(dt_lineups)) {
+    data.table::setnames(dt_lineups, "min", "minutes")
+  }
+
   # Process columns (vectorized) - use set() for speed
   data.table::set(dt_lineups, j = "player_name", value = standardize_player_names(dt_lineups$player_name))
   data.table::set(dt_lineups, j = "team", value = standardize_team_names(dt_lineups$team))
   data.table::set(dt_lineups, j = "minutes", value = as.numeric(dt_lineups$minutes))
+
+  # Handle column name variations
+  # Position: could be 'pos' or 'position'
+  pos_col <- if ("pos" %in% names(dt_lineups)) dt_lineups$pos else dt_lineups$position
+
+  # Player ID: prefer FBref ID from href, fall back to cleaned player name
+  player_id_col <- if ("player_href" %in% names(dt_lineups)) {
+    # Extract FBref player ID from href (e.g., /players/d080ed5e/Name -> d080ed5e)
+    ids <- extract_fbref_player_id(dt_lineups$player_href)
+    # Fall back to clean name where extraction failed
+    ids[is.na(ids)] <- clean_player_name(dt_lineups$player_name[is.na(ids)])
+    ids
+  } else if ("player_url" %in% names(dt_lineups)) {
+    ids <- extract_fbref_player_id(dt_lineups$player_url)
+    ids[is.na(ids)] <- clean_player_name(dt_lineups$player_name[is.na(ids)])
+    ids
+  } else if ("player_id" %in% names(dt_lineups)) {
+    dt_lineups$player_id
+  } else {
+    # Use cleaned player_name as ID - lowercase, no whitespace for consistent matching
+    clean_player_name(dt_lineups$player_name)
+  }
+
+  # is_starter: may not exist
+  is_starter_col <- if ("is_starter" %in% names(dt_lineups)) {
+    dt_lineups$is_starter
+  } else {
+    rep(TRUE, nrow(dt_lineups))
+  }
 
   # Select and rename columns
   result <- data.frame(
@@ -97,9 +158,9 @@ process_match_lineups <- function(lineups, results) {
     team = dt_lineups$team,
     is_home = dt_lineups$is_home,
     player_name = dt_lineups$player_name,
-    player_id = dt_lineups$player_href,
-    is_starter = dt_lineups$is_starter,
-    position = dt_lineups$pos,
+    player_id = player_id_col,
+    is_starter = is_starter_col,
+    position = pos_col,
     minutes = dt_lineups$minutes,
     stringsAsFactors = FALSE
   )
@@ -112,7 +173,7 @@ process_match_lineups <- function(lineups, results) {
 #'
 #' Cleans event data (goals, substitutions) with timing.
 #'
-#' @param events Data frame from scrape_pl_match_summary
+#' @param events Data frame of match events
 #' @param results Processed match results for match IDs
 #'
 #' @return Cleaned data frame with match events
@@ -244,7 +305,7 @@ parse_event_minute <- function(time_str) {
 #'
 #' Cleans shot-level data with xG values.
 #'
-#' @param shooting Data frame from scrape_pl_match_shooting
+#' @param shooting Data frame of shot data
 #' @param results Processed match results for match IDs
 #'
 #' @return Cleaned data frame with shot data
@@ -298,8 +359,9 @@ process_shooting_data <- function(shooting, results) {
 #' Process advanced match stats
 #'
 #' Cleans advanced player stats data.
+#' Uses data.table for speed with large datasets.
 #'
-#' @param stats Data frame from scrape_pl_advanced_match_stats
+#' @param stats Data frame of advanced match stats
 #' @param results Processed match results for match IDs
 #' @param stat_type The type of stats being processed
 #'
@@ -311,97 +373,124 @@ process_advanced_stats <- function(stats, results, stat_type = "summary") {
     return(NULL)
   }
 
-  # Create match_id lookup
-  match_lookup <- results %>%
-    dplyr::select(match_url, match_id) %>%
-    dplyr::distinct()
+  # Require data.table for speed with large datasets
+  if (!requireNamespace("data.table", quietly = TRUE)) {
+    stop("data.table package required for processing large datasets. Install with: install.packages('data.table')")
+  }
 
-  # Column names are already snake_case from clean_column_names()
-  stats <- stats %>%
-    dplyr::left_join(match_lookup, by = "match_url") %>%
-    dplyr::mutate(
-      player_name = standardize_player_names(.data$player),
-      team = standardize_team_names(.data$team),
-      is_home = .data$home_away == "Home"
-    )
+  # Row count shown for debugging if needed
+  # progress_msg(sprintf("  [data.table] Processing %s: %d rows...", stat_type, nrow(stats)))
+
+  # Convert to data.table
+
+  dt_stats <- data.table::as.data.table(stats)
+  dt_results <- data.table::as.data.table(results)
+  dt_results <- unique(dt_results[, c("match_url", "match_id"), with = FALSE])
+
+  # Merge to get match_id
+  dt_stats <- merge(dt_stats, dt_results, by = "match_url", all.x = TRUE)
+
+  # Handle column name variations
+  # player: could be 'player' or 'player_name'
+  if (!"player_name" %in% names(dt_stats) && "player" %in% names(dt_stats)) {
+    data.table::setnames(dt_stats, "player", "player_name")
+  }
+
+  # team: could be 'team' or 'squad'
+  if (!"team" %in% names(dt_stats) && "squad" %in% names(dt_stats)) {
+    data.table::setnames(dt_stats, "squad", "team")
+  }
+
+  # Handle is_home: could be boolean 'is_home' or string 'home_away'
+  if ("is_home" %in% names(dt_stats)) {
+    data.table::set(dt_stats, j = "is_home", value = as.logical(dt_stats$is_home))
+  } else if ("home_away" %in% names(dt_stats)) {
+    data.table::set(dt_stats, j = "is_home", value = (dt_stats$home_away == "Home"))
+  } else {
+    data.table::set(dt_stats, j = "is_home", value = NA)
+  }
+
+  # Standardize names (vectorized)
+  data.table::set(dt_stats, j = "player_name", value = standardize_player_names(dt_stats$player_name))
+  data.table::set(dt_stats, j = "team", value = standardize_team_names(dt_stats$team))
 
   # Select relevant columns based on stat_type
   base_cols <- c("match_id", "team", "is_home", "player_name")
   stat_cols <- get_stat_columns(stat_type)
+  keep_cols <- intersect(c(base_cols, stat_cols), names(dt_stats))
 
-  stats <- stats %>%
-    dplyr::select(dplyr::any_of(c(base_cols, stat_cols)))
+  dt_stats <- dt_stats[, keep_cols, with = FALSE]
 
   # Convert stat columns to numeric (they come in as character)
-  numeric_cols <- intersect(stat_cols, names(stats))
+  numeric_cols <- intersect(stat_cols, names(dt_stats))
   for (col in numeric_cols) {
-    stats[[col]] <- as.numeric(stats[[col]])
+    data.table::set(dt_stats, j = col, value = as.numeric(dt_stats[[col]]))
   }
 
-  stats
+  # Return as data.frame for consistency
+  as.data.frame(dt_stats)
 }
 
 
 #' Get column names for stat type
 #'
-#' Returns expected column names from worldfootballR data.
-#' Note: worldfootballR uses suffixes like _expected, _tackles, _touches, etc.
+#' Returns expected column names from pannadata/FBref data.
 #'
 #' @param stat_type Type of statistics
 #'
 #' @return Character vector of column names
 #' @keywords internal
 get_stat_columns <- function(stat_type) {
- # Column names match worldfootballR output (after janitor::clean_names())
- # Many columns have category suffixes like _expected, _tackles, _touches, _carries
+ # Column names from pannadata (FBref data with janitor::clean_names())
  switch(stat_type,
    "summary" = c(
      # Basic stats
      "min", "gls", "ast", "pk", "p_katt", "sh", "so_t", "crd_y", "crd_r",
      "touches", "tkl", "int", "blocks",
-     # Expected stats (have _expected suffix)
-     "x_g_expected", "npx_g_expected", "x_ag_expected",
-     # Shot-creating actions (have _sca suffix)
-     "sca_sca", "gca_sca",
-     # Passing totals (have _passes suffix)
-     "cmp_passes", "att_passes", "cmp_percent_passes", "prg_p_passes",
-     # Carries (have _carries suffix)
-     "carries_carries", "prg_c_carries",
-     # Take-ons (have _take_ons suffix)
-     "att_take_ons", "succ_take_ons"
+     # Expected stats
+     "x_g", "npx_g", "x_ag",
+     # Shot-creating actions
+     "sca", "gca",
+     # Passing
+     "cmp", "att", "cmp_percent", "prg_p",
+     # Carries
+     "carries", "prg_c",
+     # Take-ons (att_2 is take-on attempts, succ is successful)
+     "att_2", "succ",
+     # Position
+     "pos"
    ),
    "passing" = c(
-     # Totals (have _total suffix)
-     "cmp_total", "att_total", "cmp_percent_total", "tot_dist_total", "prg_dist_total",
-     # By distance
-     "cmp_short", "att_short", "cmp_percent_short",
-     "cmp_medium", "att_medium", "cmp_percent_medium",
-     "cmp_long", "att_long", "cmp_percent_long",
+     # Totals
+     "cmp", "att", "cmp_percent", "tot_dist", "prg_dist",
+     # Short passes
+     "cmp_2", "att_2", "cmp_percent_2",
+     # Medium passes
+     "cmp_3", "att_3", "cmp_percent_3",
+     # Long passes
+     "cmp_4", "att_4", "cmp_percent_4",
      # Assists and key passes
-     "ast", "x_ag", "x_a", "kp", "final_third", "ppa", "crs_pa", "prg_p"
+     "ast", "x_ag", "x_a", "kp", "x1_3", "ppa", "crs_pa", "prg_p"
    ),
    "defense" = c(
-     # Tackles (have _tackles suffix)
-     "tkl_tackles", "tkl_w_tackles", "def_3rd_tackles", "mid_3rd_tackles", "att_3rd_tackles",
-     # Challenges (have _challenges suffix)
-     "tkl_challenges", "att_challenges", "tkl_percent_challenges", "lost_challenges",
-     # Blocks (have _blocks suffix)
-     "blocks_blocks", "sh_blocks", "pass_blocks",
+     # Tackles
+     "tkl", "tkl_w", "def_3rd", "mid_3rd", "att_3rd",
+     # Challenges (tkl_2 is dribblers tackled, att is challenges)
+     "tkl_2", "att", "tkl_percent", "lost",
+     # Blocks
+     "blocks", "sh", "pass",
      # Other
      "int", "tkl_int", "clr", "err"
    ),
    "possession" = c(
-     # Touches (have _touches suffix)
-     "touches_touches", "def_pen_touches", "def_3rd_touches", "mid_3rd_touches",
-     "att_3rd_touches", "att_pen_touches", "live_touches",
-     # Take-ons (have _take_ons suffix)
-     "att_take_ons", "succ_take_ons", "succ_percent_take_ons",
-     "tkld_take_ons", "tkld_percent_take_ons",
-     # Carries (have _carries suffix)
-     "carries_carries", "tot_dist_carries", "prg_dist_carries", "prg_c_carries",
-     "final_third_carries", "cpa_carries", "mis_carries", "dis_carries",
-     # Receiving (have _receiving suffix)
-     "rec_receiving", "prg_r_receiving"
+     # Touches
+     "touches", "def_pen", "def_3rd", "mid_3rd", "att_3rd", "att_pen", "live",
+     # Take-ons
+     "att", "succ", "succ_percent", "tkld", "tkld_percent",
+     # Carries
+     "carries", "tot_dist", "prg_dist", "prg_c", "x1_3", "cpa", "mis", "dis",
+     # Receiving
+     "rec", "prg_r"
    ),
    character(0)
  )
@@ -451,29 +540,126 @@ merge_processed_data <- function(processed_data) {
 #' Process all raw data
 #'
 #' Master function to process all collected data.
+#' Supports per-component caching to avoid reprocessing on crashes.
 #'
-#' @param raw_data List of raw data from scrape_pl_comprehensive
+#' @param raw_data List of raw data from pannadata
+#' @param show_progress Logical, whether to show progress bar (default TRUE)
+#' @param cache_dir Optional directory for per-component caching. If provided,
+#'   each component is cached separately and only reprocessed if raw data changed.
+#' @param raw_data_mtime Optional modification time of raw data file for cache invalidation.
+#'   If not provided and cache_dir is set, all components will be reprocessed.
 #'
 #' @return List of processed data frames
 #' @export
-process_all_data <- function(raw_data) {
-  progress_msg("Processing match results...")
-  results <- process_match_results(raw_data$results)
+process_all_data <- function(raw_data, show_progress = TRUE, cache_dir = NULL, raw_data_mtime = NULL) {
+  # Define processing steps and their cache keys
+  components <- c(
+    "results", "lineups", "events", "shooting",
+    "stats_summary", "stats_passing", "stats_defense", "stats_possession",
+    "stats_misc", "stats_passing_types", "stats_keeper"
+  )
+  step_names <- c(
+    "Match results", "Lineups", "Events", "Shooting",
+    "Stats: summary", "Stats: passing", "Stats: defense", "Stats: possession",
+    "Stats: misc", "Stats: passing_types", "Stats: keeper"
+  )
+  n_steps <- length(components)
 
-  progress_msg("Processing lineups...")
-  lineups <- process_match_lineups(raw_data$lineups, results)
+  # Helper to check if cache is valid for a component
+  cache_valid <- function(component) {
+    if (is.null(cache_dir)) return(FALSE)
+    cache_file <- file.path(cache_dir, paste0("02_", component, ".rds"))
+    if (!file.exists(cache_file)) return(FALSE)
+    if (is.null(raw_data_mtime)) return(FALSE)
+    file.mtime(cache_file) > raw_data_mtime
+  }
 
-  progress_msg("Processing events...")
-  events <- process_match_events(raw_data$events, results)
+  # Helper to load from cache
+  load_cache <- function(component) {
+    cache_file <- file.path(cache_dir, paste0("02_", component, ".rds"))
+    readRDS(cache_file)
+  }
 
-  progress_msg("Processing shooting data...")
-  shooting <- process_shooting_data(raw_data$shooting, results)
+  # Helper to save to cache
+  save_cache <- function(component, data) {
+    if (!is.null(cache_dir)) {
+      cache_file <- file.path(cache_dir, paste0("02_", component, ".rds"))
+      saveRDS(data, cache_file)
+    }
+  }
 
-  progress_msg("Processing advanced stats...")
-  stats_summary <- process_advanced_stats(raw_data$stats_summary, results, "summary")
-  stats_passing <- process_advanced_stats(raw_data$stats_passing, results, "passing")
-  stats_defense <- process_advanced_stats(raw_data$stats_defense, results, "defense")
-  stats_possession <- process_advanced_stats(raw_data$stats_possession, results, "possession")
+  # Progress tracking (simple message-based to avoid cli environment issues)
+  update_progress <- function(step_num, step_name, cached = FALSE) {
+    status <- if (cached) " (cached)" else ""
+    if (show_progress) {
+      message(sprintf("[%d/%d] %s%s", step_num, n_steps, step_name, status))
+    }
+  }
+
+  # Step 1: Results (required for all other steps)
+  if (cache_valid("results")) {
+    update_progress(1, "Match results", cached = TRUE)
+    results <- load_cache("results")
+  } else {
+    update_progress(1, "Match results")
+    results <- process_match_results(raw_data$results)
+    save_cache("results", results)
+  }
+
+  # Step 2: Lineups
+  if (cache_valid("lineups")) {
+    update_progress(2, "Lineups", cached = TRUE)
+    lineups <- load_cache("lineups")
+  } else {
+    update_progress(2, "Lineups")
+    lineups <- process_match_lineups(raw_data$lineups, results)
+    save_cache("lineups", lineups)
+  }
+
+  # Step 3: Events
+  if (cache_valid("events")) {
+    update_progress(3, "Events", cached = TRUE)
+    events <- load_cache("events")
+  } else {
+    update_progress(3, "Events")
+    events <- process_match_events(raw_data$events, results)
+    save_cache("events", events)
+  }
+
+  # Step 4: Shooting
+  if (cache_valid("shooting")) {
+    update_progress(4, "Shooting", cached = TRUE)
+    shooting <- load_cache("shooting")
+  } else {
+    update_progress(4, "Shooting")
+    shooting <- process_shooting_data(raw_data$shooting, results)
+    save_cache("shooting", shooting)
+  }
+
+  # Steps 5-11: Advanced stats
+  process_or_cache_stats <- function(step_num, component, stat_type, step_name) {
+    if (cache_valid(component)) {
+      update_progress(step_num, step_name, cached = TRUE)
+      load_cache(component)
+    } else {
+      update_progress(step_num, step_name)
+      data <- process_advanced_stats(raw_data[[component]], results, stat_type)
+      save_cache(component, data)
+      data
+    }
+  }
+
+  stats_summary <- process_or_cache_stats(5, "stats_summary", "summary", "Stats: summary")
+  stats_passing <- process_or_cache_stats(6, "stats_passing", "passing", "Stats: passing")
+  stats_defense <- process_or_cache_stats(7, "stats_defense", "defense", "Stats: defense")
+  stats_possession <- process_or_cache_stats(8, "stats_possession", "possession", "Stats: possession")
+  stats_misc <- process_or_cache_stats(9, "stats_misc", "misc", "Stats: misc")
+  stats_passing_types <- process_or_cache_stats(10, "stats_passing_types", "passing_types", "Stats: passing_types")
+  stats_keeper <- process_or_cache_stats(11, "stats_keeper", "keeper", "Stats: keeper")
+
+  if (show_progress) {
+    message("Data processing complete!")
+  }
 
   list(
     results = results,
@@ -483,7 +669,10 @@ process_all_data <- function(raw_data) {
     stats_summary = stats_summary,
     stats_passing = stats_passing,
     stats_defense = stats_defense,
-    stats_possession = stats_possession
+    stats_possession = stats_possession,
+    stats_misc = stats_misc,
+    stats_passing_types = stats_passing_types,
+    stats_keeper = stats_keeper
   )
 }
 

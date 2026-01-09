@@ -18,4 +18,5 @@ List with combined splint data
 }
 \description{
 Generates splint data for an entire dataset.
+Uses data.table for fast pre-splitting by match_id.
 }
