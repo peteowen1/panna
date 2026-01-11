@@ -1,19 +1,20 @@
 # piggyback.R
 #
 # Functions for syncing data with GitHub Releases using the piggyback package.
-# This allows sharing large data files that can't be stored in git.
+# Data is stored as a single zip file (pannadata.zip) to preserve directory structure.
 
 #' Download data from GitHub Releases
 #'
-#' Downloads all data files from a GitHub Release to the local pannadata directory.
+#' Downloads the pannadata.zip file from a GitHub Release and extracts it
+#' to the local pannadata directory.
 #'
-#' @param repo GitHub repository in "owner/repo" format (default: "peteowen/pannadata")
-#' @param tag Release tag to download from (default: "data")
+#' @param repo GitHub repository in "owner/repo" format (default: "peteowen1/pannadata")
+#' @param tag Release tag to download from (default: "latest")
 #' @param dest Destination directory (default: pannadata_dir())
-#' @param overwrite Overwrite existing files (default: FALSE)
+#' @param overwrite Overwrite existing files (default: TRUE)
 #' @param show_progress Show download progress (default: TRUE)
 #'
-#' @return Invisible vector of downloaded file paths
+#' @return Invisible path to destination directory
 #' @export
 #'
 #' @examples
@@ -24,10 +25,10 @@
 #' # Download to custom location
 #' pb_download_data(dest = "my/data/path")
 #' }
-pb_download_data <- function(repo = "peteowen/pannadata",
-                              tag = "data",
+pb_download_data <- function(repo = "peteowen1/pannadata",
+                              tag = "latest",
                               dest = NULL,
-                              overwrite = FALSE,
+                              overwrite = TRUE,
                               show_progress = TRUE) {
   if (!requireNamespace("piggyback", quietly = TRUE)) {
     stop("Package 'piggyback' is required. Install with: install.packages('piggyback')")
@@ -37,71 +38,79 @@ pb_download_data <- function(repo = "peteowen/pannadata",
     dest <- pannadata_dir()
   }
 
+  progress_msg(sprintf("Downloading data from %s (tag: %s)...", repo, tag))
+
+  # Create temp directory for download
+  temp_dir <- tempdir()
+  zip_file <- file.path(temp_dir, "pannadata.zip")
+
+  # Download the zip file
+  tryCatch({
+    piggyback::pb_download(
+      file = "pannadata.zip",
+      repo = repo,
+      tag = tag,
+      dest = temp_dir,
+      overwrite = TRUE,
+      show_progress = show_progress
+    )
+  }, error = function(e) {
+    stop("Failed to download from ", repo, ": ", e$message,
+         "\nMake sure the 'latest' release exists with pannadata.zip")
+  })
+
+  if (!file.exists(zip_file)) {
+    stop("Download failed - pannadata.zip not found in release")
+  }
+
+  zip_size <- file.size(zip_file) / (1024 * 1024)
+  progress_msg(sprintf("Downloaded pannadata.zip (%.1f MB)", zip_size))
+
+  # Extract to destination
+  progress_msg(sprintf("Extracting to %s...", dest))
+
   if (!dir.exists(dest)) {
     dir.create(dest, recursive = TRUE)
   }
 
-  progress_msg(sprintf("Downloading data from %s (tag: %s)...", repo, tag))
+  # Extract - the zip contains a 'data' folder
+  unzip(zip_file, exdir = dest, overwrite = overwrite)
 
-  # List available files
-  files <- tryCatch({
-    piggyback::pb_list(repo = repo, tag = tag)
-  }, error = function(e) {
-    stop("Failed to list files from ", repo, ": ", e$message)
-  })
+  # Cleanup
+  file.remove(zip_file)
 
-  if (nrow(files) == 0) {
-    message("No files found in release")
-    return(invisible(character(0)))
+  # Count extracted files
+  data_dir <- file.path(dest, "data")
+  if (dir.exists(data_dir)) {
+    n_files <- length(list.files(data_dir, recursive = TRUE, pattern = "\\.rds$"))
+    progress_msg(sprintf("Extracted %d RDS files", n_files))
   }
 
-  progress_msg(sprintf("Found %d files to download", nrow(files)))
-
-  # Download files
-  downloaded <- piggyback::pb_download(
-    repo = repo,
-    tag = tag,
-    dest = dest,
-    overwrite = overwrite,
-    show_progress = show_progress
-  )
-
   progress_msg("Download complete")
-  invisible(downloaded)
+  invisible(dest)
 }
 
 
 #' Upload data to GitHub Releases
 #'
-#' Uploads local data files to a GitHub Release. Creates the release if it
-#' doesn't exist. Files are organized by table type.
+#' Zips the local data directory and uploads it to a GitHub Release.
+#' Creates the release if it doesn't exist.
 #'
-#' @param repo GitHub repository in "owner/repo" format (default: "peteowen/pannadata")
-#' @param tag Release tag to upload to (default: "data")
-#' @param source Source directory (default: pannadata_dir())
-#' @param table_types Which table types to upload (default: all)
-#' @param league Optional league filter
-#' @param season Optional season filter
-#' @param overwrite Overwrite existing files in release (default: TRUE)
+#' @param repo GitHub repository in "owner/repo" format (default: "peteowen1/pannadata")
+#' @param tag Release tag to upload to (default: "latest")
+#' @param source Source directory containing 'data' folder (default: pannadata_dir())
 #'
-#' @return Invisible vector of uploaded file paths
+#' @return Invisible path to uploaded zip file
 #' @export
 #'
 #' @examples
 #' \dontrun{
 #' # Upload all data
 #' pb_upload_data()
-#'
-#' # Upload only ENG 2024-2025
-#' pb_upload_data(league = "ENG", season = "2024-2025")
 #' }
-pb_upload_data <- function(repo = "peteowen/pannadata",
-                            tag = "data",
-                            source = NULL,
-                            table_types = NULL,
-                            league = NULL,
-                            season = NULL,
-                            overwrite = TRUE) {
+pb_upload_data <- function(repo = "peteowen1/pannadata",
+                            tag = "latest",
+                            source = NULL) {
   if (!requireNamespace("piggyback", quietly = TRUE)) {
     stop("Package 'piggyback' is required. Install with: install.packages('piggyback')")
   }
@@ -110,94 +119,63 @@ pb_upload_data <- function(repo = "peteowen/pannadata",
     source <- pannadata_dir()
   }
 
-  if (!dir.exists(source)) {
-    stop("Source directory does not exist: ", source)
-  }
-
-  # Default table types
-  if (is.null(table_types)) {
-    table_types <- c("metadata", "summary", "passing", "passing_types",
-                     "defense", "possession", "misc", "keeper", "shots", "fixtures")
+  data_dir <- file.path(source, "data")
+  if (!dir.exists(data_dir)) {
+    stop("Data directory does not exist: ", data_dir)
   }
 
   progress_msg(sprintf("Preparing to upload data to %s (tag: %s)...", repo, tag))
 
   # Ensure release exists
   tryCatch({
-    releases <- piggyback::pb_list(repo = repo, tag = tag)
+    piggyback::pb_list(repo = repo, tag = tag)
+    progress_msg("Release exists")
   }, error = function(e) {
     progress_msg("Creating new release...")
     piggyback::pb_new_release(repo = repo, tag = tag)
   })
 
-  # Collect files to upload
-  files_to_upload <- character(0)
+  # Create zip file
+  temp_dir <- tempdir()
+  zip_file <- file.path(temp_dir, "pannadata.zip")
 
-  for (tt in table_types) {
-    tt_dir <- file.path(source, tt)
-    if (!dir.exists(tt_dir)) next
+  progress_msg("Zipping data directory...")
 
-    # Build pattern based on filters
-    if (!is.null(league) && !is.null(season)) {
-      # Specific league/season
-      search_dir <- file.path(tt_dir, league, season)
-      if (dir.exists(search_dir)) {
-        files <- list.files(search_dir, pattern = "\\.rds$", full.names = TRUE)
-        files_to_upload <- c(files_to_upload, files)
-      }
-    } else if (!is.null(league)) {
-      # All seasons for a league
-      league_dir <- file.path(tt_dir, league)
-      if (dir.exists(league_dir)) {
-        files <- list.files(league_dir, pattern = "\\.rds$",
-                            full.names = TRUE, recursive = TRUE)
-        files_to_upload <- c(files_to_upload, files)
-      }
-    } else {
-      # All files for this table type
-      files <- list.files(tt_dir, pattern = "\\.rds$",
-                          full.names = TRUE, recursive = TRUE)
-      files_to_upload <- c(files_to_upload, files)
-    }
-  }
+  # Zip from within source directory to preserve structure
 
-  if (length(files_to_upload) == 0) {
-    message("No files found to upload")
-    return(invisible(character(0)))
-  }
+  old_wd <- getwd()
+  on.exit(setwd(old_wd), add = TRUE)
+  setwd(source)
 
-  progress_msg(sprintf("Uploading %d files...", length(files_to_upload)))
+  # Remove old zip if exists
+  if (file.exists(zip_file)) file.remove(zip_file)
 
-  # Upload in batches to avoid timeout
-  batch_size <- 100
-  n_batches <- ceiling(length(files_to_upload) / batch_size)
+  # Create zip with directory structure
+  zip(zip_file, files = "data", extras = "-r")
 
-  for (i in seq_len(n_batches)) {
-    start_idx <- (i - 1) * batch_size + 1
-    end_idx <- min(i * batch_size, length(files_to_upload))
-    batch <- files_to_upload[start_idx:end_idx]
+  zip_size <- file.size(zip_file) / (1024 * 1024)
+  progress_msg(sprintf("Created pannadata.zip (%.1f MB)", zip_size))
 
-    progress_msg(sprintf("  Batch %d/%d (%d files)", i, n_batches, length(batch)))
-
-    piggyback::pb_upload(
-      file = batch,
-      repo = repo,
-      tag = tag,
-      overwrite = overwrite
-    )
-  }
+  # Upload
+  progress_msg("Uploading to GitHub Releases...")
+  piggyback::pb_upload(
+    file = zip_file,
+    repo = repo,
+    tag = tag,
+    overwrite = TRUE
+  )
 
   progress_msg("Upload complete")
-  invisible(files_to_upload)
+  invisible(zip_file)
 }
 
 
 #' List files in GitHub Release
 #'
-#' Shows what data files are available in a GitHub Release.
+#' Shows what files are available in a GitHub Release.
 #'
 #' @param repo GitHub repository in "owner/repo" format
-#' @param tag Release tag (default: "data")
+#' @param tag Release tag (default: "latest")
 #'
 #' @return Data frame with file information
 #' @export
@@ -206,7 +184,7 @@ pb_upload_data <- function(repo = "peteowen/pannadata",
 #' \dontrun{
 #' pb_list_data()
 #' }
-pb_list_data <- function(repo = "peteowen/pannadata", tag = "data") {
+pb_list_data <- function(repo = "peteowen1/pannadata", tag = "latest") {
   if (!requireNamespace("piggyback", quietly = TRUE)) {
     stop("Package 'piggyback' is required. Install with: install.packages('piggyback')")
   }
@@ -217,20 +195,35 @@ pb_list_data <- function(repo = "peteowen/pannadata", tag = "data") {
 
 #' Sync local data with GitHub Releases
 #'
-#' Uploads any local files that aren't in the release yet.
-#' This is a more targeted upload than pb_upload_data.
+#' Convenience function that uploads local data to GitHub Releases.
+#' This replaces the existing data in the release.
 #'
 #' @param repo GitHub repository in "owner/repo" format
-#' @param tag Release tag (default: "data")
+#' @param tag Release tag (default: "latest")
 #' @param source Source directory (default: pannadata_dir())
-#' @param table_types Which table types to sync (default: all)
 #'
-#' @return Number of new files uploaded
+#' @return Invisible NULL
 #' @export
-pb_sync_data <- function(repo = "peteowen/pannadata",
-                          tag = "data",
-                          source = NULL,
-                          table_types = NULL) {
+pb_sync_data <- function(repo = "peteowen1/pannadata",
+                          tag = "latest",
+                          source = NULL) {
+  pb_upload_data(repo = repo, tag = tag, source = source)
+}
+
+
+#' Check if local data is in sync with GitHub Releases
+#'
+#' Compares local data count with what's in the release.
+#'
+#' @param repo GitHub repository in "owner/repo" format
+#' @param tag Release tag (default: "latest")
+#' @param source Source directory (default: pannadata_dir())
+#'
+#' @return List with sync status information
+#' @export
+pb_status <- function(repo = "peteowen1/pannadata",
+                       tag = "latest",
+                       source = NULL) {
   if (!requireNamespace("piggyback", quietly = TRUE)) {
     stop("Package 'piggyback' is required. Install with: install.packages('piggyback')")
   }
@@ -239,53 +232,37 @@ pb_sync_data <- function(repo = "peteowen/pannadata",
     source <- pannadata_dir()
   }
 
-  if (is.null(table_types)) {
-    table_types <- c("metadata", "summary", "passing", "passing_types",
-                     "defense", "possession", "misc", "keeper", "shots", "fixtures")
-  }
-
-  progress_msg("Checking for new files to sync...")
-
-  # Get remote files
-  remote_files <- tryCatch({
-    piggyback::pb_list(repo = repo, tag = tag)
+  # Check remote
+  remote_info <- tryCatch({
+    files <- piggyback::pb_list(repo = repo, tag = tag)
+    if ("pannadata.zip" %in% files$file_name) {
+      row <- files[files$file_name == "pannadata.zip", ]
+      list(
+        exists = TRUE,
+        size_mb = row$size / (1024 * 1024),
+        uploaded = row$timestamp
+      )
+    } else {
+      list(exists = FALSE, size_mb = 0, uploaded = NA)
+    }
   }, error = function(e) {
-    progress_msg("Creating new release...")
-    piggyback::pb_new_release(repo = repo, tag = tag)
-    data.frame(file_name = character(0))
+    list(exists = FALSE, size_mb = 0, uploaded = NA, error = e$message)
   })
 
-  remote_names <- if (nrow(remote_files) > 0) remote_files$file_name else character(0)
-
-  # Get local files
-  local_files <- character(0)
-  for (tt in table_types) {
-    tt_dir <- file.path(source, tt)
-    if (dir.exists(tt_dir)) {
-      files <- list.files(tt_dir, pattern = "\\.rds$",
-                          full.names = TRUE, recursive = TRUE)
-      local_files <- c(local_files, files)
-    }
+  # Check local
+  data_dir <- file.path(source, "data")
+  local_files <- if (dir.exists(data_dir)) {
+    list.files(data_dir, recursive = TRUE, pattern = "\\.rds$")
+  } else {
+    character(0)
   }
 
-  local_names <- basename(local_files)
-
-  # Find new files
-  new_files <- local_files[!local_names %in% remote_names]
-
-  if (length(new_files) == 0) {
-    progress_msg("All files already synced")
-    return(invisible(0))
-  }
-
-  progress_msg(sprintf("Uploading %d new files...", length(new_files)))
-
-  piggyback::pb_upload(
-    file = new_files,
-    repo = repo,
-    tag = tag
+  list(
+    remote = remote_info,
+    local = list(
+      exists = length(local_files) > 0,
+      n_files = length(local_files),
+      data_dir = data_dir
+    )
   )
-
-  progress_msg("Sync complete")
-  invisible(length(new_files))
 }
