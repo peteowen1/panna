@@ -332,17 +332,25 @@ pb_upload_parquet <- function(repo = "peteowen1/pannadata",
   rel_files <- gsub(paste0("^", normalizePath(source, winslash = "/"), "/?"), "",
                     normalizePath(parquet_files, winslash = "/"))
 
-  # Use PowerShell on Windows for quiet operation
-  if (.Platform$OS.type == "windows") {
-    ps_cmd <- sprintf(
-      'Compress-Archive -Path %s -DestinationPath "%s" -Force',
-      paste(sprintf('"%s"', rel_files), collapse = ","),
-      zip_file
-    )
-    system2("powershell", args = c("-Command", ps_cmd),
-            stdout = FALSE, stderr = FALSE)
-  } else {
+  # Use R's zip function (works on all platforms, handles long file lists)
+  result <- tryCatch({
     zip(zip_file, files = rel_files, flags = "-rq")
+    TRUE
+  }, error = function(e) {
+    warning("zip() failed: ", e$message)
+    FALSE
+  }, warning = function(w) {
+    # zip() may warn but still succeed
+    TRUE
+  })
+
+  if (!result || !file.exists(zip_file)) {
+    # Fallback: try without -q flag
+    tryCatch({
+      zip(zip_file, files = rel_files, flags = "-r")
+    }, error = function(e) {
+      stop("Failed to create zip: ", e$message)
+    })
   }
 
   if (!file.exists(zip_file)) {
