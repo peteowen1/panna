@@ -4,12 +4,19 @@
 \alias{create_rapm_design_matrix}
 \title{Create RAPM design matrix (new structure)}
 \usage{
-create_rapm_design_matrix(splint_data, min_minutes = 90)
+create_rapm_design_matrix(
+  splint_data,
+  min_minutes = 90,
+  target_type = c("xg", "goals")
+)
 }
 \arguments{
 \item{splint_data}{Combined splint data from create_all_splints}
 
 \item{min_minutes}{Minimum total minutes for player inclusion}
+
+\item{target_type}{Type of target variable: "xg" for non-penalty xG (default),
+"goals" for actual goals scored}
 }
 \value{
 List with design matrix components
@@ -17,7 +24,7 @@ List with design matrix components
 \description{
 Creates the design matrix with 2 rows per splint (one per team perspective):
 \itemize{
-\item Target: xgf90 (xG FOR per 90 from each team's perspective)
+\item Target: xgf90 or gf90 (xG or goals FOR per 90 from each team's perspective)
 \item Covariates: gd, gf, ga, avg_min, home_away
 \item Player columns: playerX_off (attacking), playerX_def (defending)
 \item Replacement columns: replacement_off, replacement_def for low-minute players

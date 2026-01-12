@@ -2,20 +2,23 @@
 % Please edit documentation in R/splint_creation.R
 \name{calculate_first_half_end}
 \alias{calculate_first_half_end}
-\title{Calculate first-half end minute from events}
+\title{Calculate first-half end minute from events and/or shots}
 \usage{
-calculate_first_half_end(events, default_end = 46)
+calculate_first_half_end(events, shots = NULL, default_end = 46)
 }
 \arguments{
 \item{events}{Data frame with minute and optionally added_time columns}
 
-\item{default_end}{Default first-half end if no stoppage events (default 46)}
+\item{shots}{Data frame with minute column (character, e.g., "45+3")}
+
+\item{default_end}{Default first-half end if no stoppage data (default 46)}
 }
 \value{
 Numeric first-half end minute
 }
 \description{
-Determines when first half actually ended based on stoppage time events.
+Determines when first half actually ended based on stoppage time events or shots.
 Uses full minutes: 45+3 -> first half ends at 48.5
+Falls back to events only if shots is NULL.
 }
 \keyword{internal}

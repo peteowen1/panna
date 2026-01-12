@@ -6,6 +6,7 @@
 \usage{
 create_splint_boundaries_fast(
   events,
+  shots = NULL,
   include_goals = TRUE,
   include_halftime = TRUE,
   goal_times = NULL,
@@ -17,6 +18,8 @@ create_splint_boundaries_fast(
 }
 \arguments{
 \item{events}{Event data (may be NULL)}
+
+\item{shots}{Shots data with minute column (may be NULL)}
 
 \item{include_goals}{Whether to include goal boundaries}
 

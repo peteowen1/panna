@@ -12,7 +12,8 @@ scrape_fbref_matches(
     "keeper", "shots", "events", "metadata"),
   delay = 5,
   use_cache = TRUE,
-  verbose = TRUE
+  verbose = TRUE,
+  max_matches = Inf
 )
 }
 \arguments{
@@ -32,6 +33,8 @@ Default: all of the above}
 \item{use_cache}{Whether to use/update cache (default TRUE)}
 
 \item{verbose}{Print progress messages (default TRUE)}
+
+\item{max_matches}{Maximum number of matches to scrape (default Inf for all)}
 }
 \value{
 List containing data frames for each table type:

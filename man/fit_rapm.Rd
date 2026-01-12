@@ -38,8 +38,11 @@ Fitted model with metadata
 \description{
 Fits ridge regression on the design matrix with:
 \itemize{
-\item Target: xgf90 (xG FOR per 90)
+\item Target: xgf90 (xG FOR per 90) or gf90 (goals FOR per 90)
 \item Player columns: playerX_off, playerX_def
 \item Covariates: gd, gf, ga, avg_min, is_home
 }
+}
+\details{
+The target type is determined by the rapm_data (set in prepare_rapm_data).
 }

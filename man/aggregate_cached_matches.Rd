@@ -2,9 +2,14 @@
 % Please edit documentation in R/scrape_fbref_direct.R
 \name{aggregate_cached_matches}
 \alias{aggregate_cached_matches}
-\title{Aggregate cached match tables}
+\title{Aggregate cached match data}
 \usage{
-aggregate_cached_matches(table_type, league = NULL, season = NULL)
+aggregate_cached_matches(
+  table_type,
+  league = NULL,
+  season = NULL,
+  prefer_parquet = TRUE
+)
 }
 \arguments{
 \item{table_type}{Type of table to aggregate (e.g., "summary", "shots")}
@@ -12,21 +17,28 @@ aggregate_cached_matches(table_type, league = NULL, season = NULL)
 \item{league}{Optional league filter (e.g., "ENG")}
 
 \item{season}{Optional season filter (e.g., "2024-2025")}
+
+\item{prefer_parquet}{If TRUE (default), use parquet when available}
 }
 \value{
 Combined data frame, or NULL if no cached data
 }
 \description{
-Combines all cached files for a table type into single data frame.
-Useful for loading previously scraped data for analysis.
+Combines all cached data for a table type into a single data frame.
+Uses parquet files if available (fast), falls back to RDS files (slower).
 }
 \examples{
 \dontrun{
-# Load all cached summary stats
+# Load all cached summary stats (uses parquet if available)
 all_summary <- aggregate_cached_matches("summary")
 
 # Load only Premier League 2024-2025
 pl_summary <- aggregate_cached_matches("summary", league = "ENG",
                                         season = "2024-2025")
+
+# Force RDS loading (skip parquet)
+pl_summary <- aggregate_cached_matches("summary", league = "ENG",
+                                        season = "2024-2025",
+                                        prefer_parquet = FALSE)
 }
 }

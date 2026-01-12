@@ -4,10 +4,17 @@
 \alias{create_splint_boundaries}
 \title{Create splint boundaries}
 \usage{
-create_splint_boundaries(events, include_goals = TRUE, include_halftime = TRUE)
+create_splint_boundaries(
+  events,
+  shots = NULL,
+  include_goals = TRUE,
+  include_halftime = TRUE
+)
 }
 \arguments{
 \item{events}{Data frame of match events (with minute and optionally added_time columns)}
+
+\item{shots}{Data frame of shots (optional, with minute column for stoppage time)}
 
 \item{include_goals}{Logical, whether to create new splints at goals (default TRUE)}
 
@@ -17,7 +24,7 @@ create_splint_boundaries(events, include_goals = TRUE, include_halftime = TRUE)
 Data frame of splint boundaries with game state
 }
 \description{
-Defines start and end times for each splint based on events.
+Defines start and end times for each splint based on events and optionally shots.
 Splints are created at:
 \itemize{
 \item Start of match (minute 0)
@@ -25,7 +32,7 @@ Splints are created at:
 \item Each substitution
 \item Each red card
 \item Half time (minute 45)
-\item End of match (dynamically calculated from stoppage time)
+\item End of match (dynamically calculated from stoppage time in events/shots)
 }
 }
 \details{

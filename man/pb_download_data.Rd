@@ -5,29 +5,30 @@
 \title{Download data from GitHub Releases}
 \usage{
 pb_download_data(
-  repo = "peteowen/pannadata",
-  tag = "data",
+  repo = "peteowen1/pannadata",
+  tag = "latest",
   dest = NULL,
-  overwrite = FALSE,
+  overwrite = TRUE,
   show_progress = TRUE
 )
 }
 \arguments{
-\item{repo}{GitHub repository in "owner/repo" format (default: "peteowen/pannadata")}
+\item{repo}{GitHub repository in "owner/repo" format (default: "peteowen1/pannadata")}
 
-\item{tag}{Release tag to download from (default: "data")}
+\item{tag}{Release tag to download from (default: "latest")}
 
 \item{dest}{Destination directory (default: pannadata_dir())}
 
-\item{overwrite}{Overwrite existing files (default: FALSE)}
+\item{overwrite}{Overwrite existing files (default: TRUE)}
 
 \item{show_progress}{Show download progress (default: TRUE)}
 }
 \value{
-Invisible vector of downloaded file paths
+Invisible path to destination directory
 }
 \description{
-Downloads all data files from a GitHub Release to the local pannadata directory.
+Downloads the pannadata.zip file from a GitHub Release and extracts it
+to the local pannadata directory.
 }
 \examples{
 \dontrun{
