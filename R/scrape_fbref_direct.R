@@ -783,12 +783,26 @@ parse_match_page <- function(page, match_url) {
 
 #' Get or set pannadata directory
 #'
-#' Gets or sets the base directory for data storage. By default uses
-#' the pannadata directory in the pannaverse folder structure.
+#' Gets or sets the base directory for parquet/RDS data storage.
+#'
+#' Resolution order (first match wins):
+#' \enumerate{
+#'   \item Explicitly set via \code{pannadata_dir("path")}
+#'   \item \code{PANNADATA_DIR} environment variable
+#'   \item \code{../pannadata/data} if it exists (pannaverse developers)
+#'   \item R's standard user data directory via \code{tools::R_user_dir("panna", "data")}
+#' }
+#'
+#' The default (\code{R_user_dir}) gives OS-appropriate persistent storage:
+#' \itemize{
+#'   \item Windows: \code{C:/Users/you/AppData/Local/R/panna/data}
+#'   \item Mac: \code{~/Library/Application Support/org.R-project.R/panna/data}
+#'   \item Linux: \code{~/.local/share/R/panna/data}
+#' }
 #'
 #' @param path Optional new path to set. If NULL, returns current path.
 #'
-#' @return Current pannadata directory path
+#' @return Current pannadata directory path (invisibly when setting)
 #' @export
 #'
 #' @examples
@@ -796,34 +810,38 @@ parse_match_page <- function(page, match_url) {
 #' pannadata_dir()
 #'
 #' # Set custom path
-#' pannadata_dir("C:/my/custom/path")
+#' pannadata_dir("~/my/football/data")
 pannadata_dir <- function(path = NULL) {
+
   if (!is.null(path)) {
-    .panna_env$pannadata_dir <- path
-    return(invisible(path))
+    .panna_env$pannadata_dir <- normalizePath(path, mustWork = FALSE)
+    return(invisible(.panna_env$pannadata_dir))
   }
 
-  # Return cached value if set
- if (exists("pannadata_dir", envir = .panna_env)) {
+  # 1. Return cached value if explicitly set
+  if (exists("pannadata_dir", envir = .panna_env)) {
     return(.panna_env$pannadata_dir)
   }
 
-  # Check environment variable
+  # 2. Check environment variable
   env_path <- Sys.getenv("PANNADATA_DIR", "")
   if (env_path != "") {
     return(env_path)
   }
 
-  # Default: pannadata sibling directory
-  # Try to find pannaverse/pannadata relative to current panna location
-  default_path <- file.path(dirname(getwd()), "pannadata", "data")
-
-  # If that doesn't exist, fall back to local data folder
-  if (!dir.exists(dirname(default_path))) {
-    default_path <- file.path("data", "fbref_matches")
+  # 3. Check for pannaverse structure (for developers)
+  # Look for ../pannadata/data relative to working directory
+  pannaverse_path <- file.path(dirname(getwd()), "pannadata", "data")
+  if (dir.exists(pannaverse_path)) {
+    return(normalizePath(pannaverse_path))
   }
 
-  default_path
+  # 4. Default: R's standard user data directory (works across sessions)
+  # This gives OS-appropriate paths:
+  #   Windows: C:/Users/you/AppData/Local/R/panna/data
+  #   Mac: ~/Library/Application Support/org.R-project.R/panna/data
+  #   Linux: ~/.local/share/R/panna/data
+  tools::R_user_dir("panna", "data")
 }
 
 
