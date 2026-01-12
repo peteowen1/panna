@@ -1652,10 +1652,94 @@ scrape_fbref_matches <- function(
 #'                                         season = "2024-2025",
 #'                                         prefer_parquet = FALSE)
 #' }
-aggregate_cached_matches <- function(table_type, league = NULL, season = NULL,
-                                     prefer_parquet = TRUE) {
+# Session cache for remote parquet data
+.remote_parquet_cache <- new.env(parent = emptyenv())
 
-  base_dir <- pannadata_dir()
+#' Get remote parquet cache directory
+#'
+#' Downloads and extracts parquet zip from GitHub releases to a temp directory.
+#' Cached for the R session - subsequent calls return the cached path.
+#'
+#' @param repo GitHub repo (default: "peteowen1/pannadata")
+#' @param tag Release tag (default: "latest")
+#' @param force Re-download even if cached
+#'
+#' @return Path to extracted parquet directory
+#' @keywords internal
+get_remote_parquet_cache <- function(repo = "peteowen1/pannadata",
+                                     tag = "latest",
+                                     force = FALSE) {
+  cache_key <- paste0(repo, "@", tag)
+
+
+  # Return cached path if available
+
+if (!force && exists(cache_key, envir = .remote_parquet_cache)) {
+    cached_path <- get(cache_key, envir = .remote_parquet_cache)
+    if (dir.exists(cached_path)) {
+      return(cached_path)
+    }
+  }
+
+  # Download and extract
+  message("Downloading parquet data from GitHub releases...")
+
+  temp_dir <- file.path(tempdir(), paste0("pannadata_remote_", tag))
+  zip_file <- file.path(tempdir(), "pannadata-parquet.zip")
+
+  # Clean up old temp dir if exists
+  if (dir.exists(temp_dir)) unlink(temp_dir, recursive = TRUE)
+  dir.create(temp_dir, recursive = TRUE)
+
+  # Clean up old zip if exists
+ if (file.exists(zip_file)) file.remove(zip_file)
+
+  # Download using piggyback
+  if (!requireNamespace("piggyback", quietly = TRUE)) {
+    stop("Package 'piggyback' required for remote loading. Install with: install.packages('piggyback')")
+  }
+
+  tryCatch({
+    piggyback::pb_download(
+      file = "pannadata-parquet.zip",
+      repo = repo,
+      tag = tag,
+      dest = tempdir(),
+      overwrite = TRUE
+    )
+  }, error = function(e) {
+    stop("Failed to download from GitHub releases: ", e$message)
+  })
+
+  if (!file.exists(zip_file)) {
+    stop("Download failed - pannadata-parquet.zip not found in ", tempdir())
+  }
+
+  # Extract
+  unzip(zip_file, exdir = temp_dir, overwrite = TRUE)
+  file.remove(zip_file)
+
+  n_files <- length(list.files(temp_dir, pattern = "\\.parquet$", recursive = TRUE))
+  message(sprintf("Cached %d parquet files for this session", n_files))
+
+  # Cache the path
+  assign(cache_key, temp_dir, envir = .remote_parquet_cache)
+
+  temp_dir
+}
+
+aggregate_cached_matches <- function(table_type, league = NULL, season = NULL,
+                                     prefer_parquet = TRUE,
+                                     source = c("local", "remote")) {
+  source <- match.arg(source)
+
+  # Determine base directory
+  if (source == "remote") {
+    base_dir <- get_remote_parquet_cache()
+  } else {
+    base_dir <- pannadata_dir()
+  }
+
   tt_dir <- file.path(base_dir, table_type)
 
   # Parquet fast paths
@@ -1978,77 +2062,86 @@ build_all_parquet <- function(table_types = NULL, leagues = NULL,
 #'
 #' @param league League code (e.g., "ENG"). NULL for all leagues.
 #' @param season Season string (e.g., "2023-2024"). NULL for all seasons.
+#' @param source "local" (default) reads from pannadata_dir(),
+#'   "remote" downloads from GitHub releases (cached for session).
 #' @return Data frame of player summary stats or NULL
 #' @examples
 #' \dontrun{
-#' load_summary("ENG", "2024-2025")  # One league, one season
-#' load_summary("ENG")               # All seasons for ENG
-#' load_summary(season = "2024-2025") # All leagues for 2024-2025
-#' load_summary()                    # Everything
+#' load_summary("ENG", "2024-2025")
+#' load_summary("ENG")
+#' load_summary(season = "2024-2025")
+#' load_summary()
+#' load_summary("ENG", "2024-2025", source = "remote")
 #' }
 #' @export
-load_summary <- function(league = NULL, season = NULL) {
-  aggregate_cached_matches("summary", league = league, season = season)
+load_summary <- function(league = NULL, season = NULL, source = "local") {
+  aggregate_cached_matches("summary", league = league, season = season, source = source)
 }
 
 #' Load events data from pannadata
 #'
 #' @param league League code (e.g., "ENG"). NULL for all leagues.
 #' @param season Season string (e.g., "2023-2024"). NULL for all seasons.
+#' @param source "local" or "remote" (downloads from GitHub releases).
 #' @return Data frame of match events or NULL
 #' @export
-load_events <- function(league = NULL, season = NULL) {
-  aggregate_cached_matches("events", league = league, season = season)
+load_events <- function(league = NULL, season = NULL, source = "local") {
+  aggregate_cached_matches("events", league = league, season = season, source = source)
 }
 
 #' Load shooting data from pannadata
 #'
 #' @param league League code (e.g., "ENG"). NULL for all leagues.
 #' @param season Season string (e.g., "2023-2024"). NULL for all seasons.
+#' @param source "local" or "remote" (downloads from GitHub releases).
 #' @return Data frame of shots or NULL
 #' @export
-load_shots <- function(league = NULL, season = NULL) {
-  aggregate_cached_matches("shots", league = league, season = season)
+load_shots <- function(league = NULL, season = NULL, source = "local") {
+  aggregate_cached_matches("shots", league = league, season = season, source = source)
 }
 
 #' Load metadata from pannadata
 #'
 #' @param league League code (e.g., "ENG"). NULL for all leagues.
 #' @param season Season string (e.g., "2023-2024"). NULL for all seasons.
+#' @param source "local" or "remote" (downloads from GitHub releases).
 #' @return Data frame of match metadata or NULL
 #' @export
-load_metadata <- function(league = NULL, season = NULL) {
-  aggregate_cached_matches("metadata", league = league, season = season)
+load_metadata <- function(league = NULL, season = NULL, source = "local") {
+  aggregate_cached_matches("metadata", league = league, season = season, source = source)
 }
 
 #' Load passing data from pannadata
 #'
 #' @param league League code (e.g., "ENG"). NULL for all leagues.
 #' @param season Season string (e.g., "2023-2024"). NULL for all seasons.
+#' @param source "local" or "remote" (downloads from GitHub releases).
 #' @return Data frame of passing stats or NULL
 #' @export
-load_passing <- function(league = NULL, season = NULL) {
-  aggregate_cached_matches("passing", league = league, season = season)
+load_passing <- function(league = NULL, season = NULL, source = "local") {
+  aggregate_cached_matches("passing", league = league, season = season, source = source)
 }
 
 #' Load defense data from pannadata
 #'
 #' @param league League code (e.g., "ENG"). NULL for all leagues.
 #' @param season Season string (e.g., "2023-2024"). NULL for all seasons.
+#' @param source "local" or "remote" (downloads from GitHub releases).
 #' @return Data frame of defensive stats or NULL
 #' @export
-load_defense <- function(league = NULL, season = NULL) {
-  aggregate_cached_matches("defense", league = league, season = season)
+load_defense <- function(league = NULL, season = NULL, source = "local") {
+  aggregate_cached_matches("defense", league = league, season = season, source = source)
 }
 
 #' Load possession data from pannadata
 #'
 #' @param league League code (e.g., "ENG"). NULL for all leagues.
 #' @param season Season string (e.g., "2023-2024"). NULL for all seasons.
+#' @param source "local" or "remote" (downloads from GitHub releases).
 #' @return Data frame of possession stats or NULL
 #' @export
-load_possession <- function(league = NULL, season = NULL) {
-  aggregate_cached_matches("possession", league = league, season = season)
+load_possession <- function(league = NULL, season = NULL, source = "local") {
+  aggregate_cached_matches("possession", league = league, season = season, source = source)
 }
 
 
