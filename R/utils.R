@@ -385,6 +385,43 @@ count_events_before <- function(events, boundaries) {
 }
 
 
+#' Count events within each splint
+#'
+#' Counts events that occur IN each splint (between start and end boundaries).
+#' Unlike count_events_before which gives cumulative counts, this gives per-splint counts.
+#'
+#' @param events Data frame with 'minute' (or 'effective_minute') and 'is_home' columns
+#' @param boundaries Numeric vector of splint boundary minutes
+#'
+#' @return List with 'home' and 'away' counts (vectors of length n_splints)
+#' @keywords internal
+count_events_in_splint <- function(events, boundaries) {
+  n_splints <- length(boundaries) - 1
+  home_count <- rep(0, n_splints)
+  away_count <- rep(0, n_splints)
+
+  if (!is.null(events) && nrow(events) > 0) {
+    # Use effective_minute if available, otherwise fall back to minute
+    event_mins <- if ("effective_minute" %in% names(events)) {
+      events$effective_minute
+    } else {
+      events$minute
+    }
+
+    for (i in seq_len(n_splints)) {
+      # Events >= start of splint AND < end of splint
+      in_splint <- event_mins >= boundaries[i] & event_mins < boundaries[i + 1]
+      if (any(in_splint)) {
+        home_count[i] <- sum(events$is_home[in_splint], na.rm = TRUE)
+        away_count[i] <- sum(!events$is_home[in_splint], na.rm = TRUE)
+      }
+    }
+  }
+
+  list(home = home_count, away = away_count)
+}
+
+
 #' Extract season from match_id
 #'
 #' Extracts the season string from a match_id.

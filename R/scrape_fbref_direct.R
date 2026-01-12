@@ -1643,35 +1643,9 @@ scrape_fbref_matches <- function(
 }
 
 
-#' Aggregate cached match data
-#'
-#' Combines all cached data for a table type into a single data frame.
-#' Uses parquet files if available (fast), falls back to RDS files (slower).
-#'
-#' @param table_type Type of table to aggregate (e.g., "summary", "shots")
-#' @param league Optional league filter (e.g., "ENG")
-#' @param season Optional season filter (e.g., "2024-2025")
-#' @param prefer_parquet If TRUE (default), use parquet when available
-#'
-#' @return Combined data frame, or NULL if no cached data
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' # Load all cached summary stats (uses parquet if available)
-#' all_summary <- aggregate_cached_matches("summary")
-#'
-#' # Load only Premier League 2024-2025
-#' pl_summary <- aggregate_cached_matches("summary", league = "ENG",
-#'                                         season = "2024-2025")
-#'
-#' # Force RDS loading (skip parquet)
-#' pl_summary <- aggregate_cached_matches("summary", league = "ENG",
-#'                                         season = "2024-2025",
-#'                                         prefer_parquet = FALSE)
-#' }
-# Session cache for remote parquet data
+# Session cache for remote parquet data (internal, not exported)
 .remote_parquet_cache <- new.env(parent = emptyenv())
+
 
 #' Get remote parquet cache directory
 #'
@@ -1746,6 +1720,30 @@ if (!force && exists(cache_key, envir = .remote_parquet_cache)) {
   temp_dir
 }
 
+
+#' Aggregate cached match data
+#'
+#' Combines all cached data for a table type into a single data frame.
+#' Uses parquet files if available (fast), falls back to RDS files (slower).
+#'
+#' @param table_type Type of table to aggregate (e.g., "summary", "shots")
+#' @param league Optional league filter (e.g., "ENG")
+#' @param season Optional season filter (e.g., "2024-2025")
+#' @param prefer_parquet If TRUE (default), use parquet when available
+#' @param source "local" (default) or "remote" to download from GitHub releases
+#'
+#' @return Combined data frame, or NULL if no cached data
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' # Load all cached summary stats (uses parquet if available)
+#' all_summary <- aggregate_cached_matches("summary")
+#'
+#' # Load only Premier League 2024-2025
+#' pl_summary <- aggregate_cached_matches("summary", league = "ENG",
+#'                                         season = "2024-2025")
+#' }
 aggregate_cached_matches <- function(table_type, league = NULL, season = NULL,
                                      prefer_parquet = TRUE,
                                      source = c("local", "remote")) {

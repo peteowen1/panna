@@ -152,6 +152,19 @@ process_match_lineups <- function(lineups, results) {
     rep(TRUE, nrow(dt_lineups))
   }
 
+  # on_minute and off_minute: used for substitution timing
+  on_minute_col <- if ("on_minute" %in% names(dt_lineups)) {
+    as.numeric(dt_lineups$on_minute)
+  } else {
+    rep(NA_real_, nrow(dt_lineups))
+  }
+
+  off_minute_col <- if ("off_minute" %in% names(dt_lineups)) {
+    as.numeric(dt_lineups$off_minute)
+  } else {
+    rep(NA_real_, nrow(dt_lineups))
+  }
+
   # Select and rename columns
   result <- data.frame(
     match_id = dt_lineups$match_id,
@@ -162,6 +175,8 @@ process_match_lineups <- function(lineups, results) {
     is_starter = is_starter_col,
     position = pos_col,
     minutes = dt_lineups$minutes,
+    on_minute = on_minute_col,
+    off_minute = off_minute_col,
     stringsAsFactors = FALSE
   )
 
@@ -333,7 +348,13 @@ process_shooting_data <- function(shooting, results) {
   # Process columns (vectorized) - use set() for speed
   data.table::set(dt_shooting, j = "player_name", value = standardize_player_names(dt_shooting$player))
   data.table::set(dt_shooting, j = "team", value = standardize_team_names(dt_shooting$squad))
-  data.table::set(dt_shooting, j = "minute", value = as.numeric(dt_shooting$minute))
+
+  # Parse minute - handles stoppage time like "90+4"
+  parsed_minutes <- parse_shot_minute(dt_shooting$minute)
+  # Combine base minute + added time for effective minute
+  data.table::set(dt_shooting, j = "minute", value = parsed_minutes$minute)
+  data.table::set(dt_shooting, j = "added_time", value = parsed_minutes$added_time)
+
   data.table::set(dt_shooting, j = "xg", value = as.numeric(dt_shooting$x_g))
   data.table::set(dt_shooting, j = "is_goal", value = (dt_shooting$outcome == "Goal"))
   data.table::set(dt_shooting, j = "is_penalty", value = grepl("Penalty", dt_shooting$notes, ignore.case = TRUE))
@@ -344,6 +365,7 @@ process_shooting_data <- function(shooting, results) {
     team = dt_shooting$team,
     player_name = dt_shooting$player_name,
     minute = dt_shooting$minute,
+    added_time = dt_shooting$added_time,
     xg = dt_shooting$xg,
     is_goal = dt_shooting$is_goal,
     is_penalty = dt_shooting$is_penalty,

@@ -4,12 +4,15 @@
 \alias{load_summary}
 \title{Load summary data from pannadata}
 \usage{
-load_summary(league = NULL, season = NULL)
+load_summary(league = NULL, season = NULL, source = "local")
 }
 \arguments{
 \item{league}{League code (e.g., "ENG"). NULL for all leagues.}
 
 \item{season}{Season string (e.g., "2023-2024"). NULL for all seasons.}
+
+\item{source}{"local" (default) reads from pannadata_dir(),
+"remote" downloads from GitHub releases (cached for session).}
 }
 \value{
 Data frame of player summary stats or NULL
@@ -19,9 +22,10 @@ Load summary data from pannadata
 }
 \examples{
 \dontrun{
-load_summary("ENG", "2024-2025")  # One league, one season
-load_summary("ENG")               # All seasons for ENG
-load_summary(season = "2024-2025") # All leagues for 2024-2025
-load_summary()                    # Everything
+load_summary("ENG", "2024-2025")
+load_summary("ENG")
+load_summary(season = "2024-2025")
+load_summary()
+load_summary("ENG", "2024-2025", source = "remote")
 }
 }

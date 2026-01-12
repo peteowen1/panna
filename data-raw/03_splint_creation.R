@@ -6,6 +6,10 @@
 #
 # Supports incremental processing - skips if processed data hasn't changed.
 # Use force = TRUE to force reprocessing.
+#
+# Configuration (set before sourcing):
+#   force = TRUE           # Force reprocessing even if cache is up to date
+#   leagues = c("ENG")     # Filter to specific leagues (NULL = all leagues)
 
 # 1. Setup ----
 
@@ -15,14 +19,33 @@ devtools::load_all()
 # 2. Configuration ----
 
 cache_dir <- file.path("data-raw", "cache")
-force <- exists("force") && isTRUE(force)  # Set force=TRUE before sourcing to force reprocess
+force <- if (exists("force")) force else FALSE
+leagues <- if (exists("leagues")) leagues else NULL  # NULL = all leagues
 
 processed_data_path <- file.path(cache_dir, "02_processed_data.rds")
 splint_data_path <- file.path(cache_dir, "03_splints.rds")
 
 # 3. Create Splints ----
 
-if (!force && file.exists(splint_data_path)) {
+# Helper to filter processed data by league
+filter_by_league <- function(data, leagues) {
+  if (is.null(leagues)) return(data)
+
+  message(sprintf("Filtering to leagues: %s", paste(leagues, collapse = ", ")))
+
+  # Filter each component that has a league column
+  for (name in names(data)) {
+    if (!is.null(data[[name]]) && "league" %in% names(data[[name]])) {
+      before <- nrow(data[[name]])
+      data[[name]] <- data[[name]][data[[name]]$league %in% leagues, ]
+      after <- nrow(data[[name]])
+      message(sprintf("  %s: %d -> %d rows", name, before, after))
+    }
+  }
+  data
+}
+
+if (!force && is.null(leagues) && file.exists(splint_data_path)) {
   processed_mtime <- file.mtime(processed_data_path)
   splint_mtime <- file.mtime(splint_data_path)
 
@@ -43,14 +66,27 @@ if (!force && file.exists(splint_data_path)) {
     saveRDS(splint_data, splint_data_path)
   }
 } else {
-  message("=== Creating splints ===")
+  if (!is.null(leagues)) {
+    message(sprintf("=== Creating splints (leagues: %s) ===", paste(leagues, collapse = ", ")))
+  } else {
+    message("=== Creating splints ===")
+  }
   processed_data <- readRDS(processed_data_path)
+  processed_data <- filter_by_league(processed_data, leagues)
   splint_data <- create_all_splints(
     processed_data,
     include_goals = TRUE,
     verbose = TRUE
   )
-  saveRDS(splint_data, splint_data_path)
+  # Only save to main cache if processing all leagues
+  if (is.null(leagues)) {
+    saveRDS(splint_data, splint_data_path)
+  } else {
+    # Save to league-specific cache
+    league_cache_path <- file.path(cache_dir, paste0("03_splints_", paste(leagues, collapse = "_"), ".rds"))
+    saveRDS(splint_data, league_cache_path)
+    message(sprintf("Saved to %s", league_cache_path))
+  }
 }
 
 # 4. Summary Statistics ----

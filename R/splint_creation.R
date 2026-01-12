@@ -4,6 +4,95 @@
 # This is the unit of analysis for RAPM models, as the lineup remains
 # constant within each splint.
 
+
+#' Parse shot minute strings
+#'
+#' Converts shot minute strings like "90+4" into minute and added_time components.
+#'
+#' @param minute_str Character vector of minute strings (e.g., "45", "90+4", "45+1")
+#'
+#' @return Data frame with columns: minute (numeric), added_time (numeric)
+#' @keywords internal
+parse_shot_minute <- function(minute_str) {
+  if (is.null(minute_str) || length(minute_str) == 0) {
+    return(data.frame(minute = numeric(0), added_time = numeric(0)))
+  }
+
+  # Handle already numeric input
+  if (is.numeric(minute_str)) {
+    return(data.frame(minute = minute_str, added_time = rep(0, length(minute_str))))
+  }
+
+  # Vectorized parsing of strings like "90+4" into minute=90, added_time=4
+  has_plus <- grepl("\\+", minute_str) & !is.na(minute_str)
+
+  # Extract base minute (everything before +)
+  base_minute <- sub("\\+.*", "", minute_str)
+  minute <- as.numeric(base_minute)
+
+ # Extract added time (everything after +), default to 0
+  added_str <- ifelse(has_plus, sub(".*\\+", "", minute_str), "0")
+  added_time <- as.numeric(added_str)
+  added_time[is.na(added_time)] <- 0
+
+  data.frame(minute = minute, added_time = added_time)
+}
+
+
+#' Get first-half stoppage from shots data
+#'
+#' Parses shot minute strings to find max added_time at minute 45.
+#'
+#' @param shots Data frame with minute column (character, e.g., "45+3")
+#'
+#' @return Integer, first-half stoppage in minutes (0 if none)
+#' @keywords internal
+get_first_half_stoppage_from_shots <- function(shots) {
+  if (is.null(shots) || nrow(shots) == 0 || !"minute" %in% names(shots)) {
+    return(0L)
+  }
+
+  parsed <- parse_shot_minute(shots$minute)
+
+  # Find first-half stoppage (minute = 45 with added_time > 0)
+  is_first_half_stoppage <- !is.na(parsed$minute) & parsed$minute == 45 &
+    !is.na(parsed$added_time) & parsed$added_time > 0
+
+  if (any(is_first_half_stoppage)) {
+    return(as.integer(max(parsed$added_time[is_first_half_stoppage], na.rm = TRUE)))
+  }
+
+  0L
+}
+
+
+#' Get match end from shots data
+#'
+#' Uses the last shot to determine match end time.
+#'
+#' @param shots Data frame with minute column (character, e.g., "90+4")
+#' @param first_half_stoppage First half stoppage to offset second half
+#'
+#' @return Numeric match end minute (effective time)
+#' @keywords internal
+get_match_end_from_shots <- function(shots, first_half_stoppage = 0L) {
+  if (is.null(shots) || nrow(shots) == 0 || !"minute" %in% names(shots)) {
+    return(NA_real_)
+  }
+
+  parsed <- parse_shot_minute(shots$minute)
+
+  # Calculate effective minutes
+  effective <- calculate_effective_minute(parsed$minute, parsed$added_time, first_half_stoppage)
+
+  if (all(is.na(effective))) {
+    return(NA_real_)
+  }
+
+  max(effective, na.rm = TRUE) + 0.5
+}
+
+
 #' Calculate effective minute including stoppage time
 #'
 #' Converts minute + added_time into a single continuous time value.
@@ -67,61 +156,73 @@ get_first_half_stoppage <- function(events) {
 }
 
 
-#' Calculate match end minute from events
+#' Calculate match end minute from events and/or shots
 #'
-#' Determines the actual match end time based on the latest event observed.
+#' Determines the actual match end time based on the latest event or shot observed.
 #' Uses continuous time (second half offset by first-half stoppage).
+#' When both events and shots are provided, uses the maximum of both.
 #'
 #' @param events Data frame with minute and optionally added_time columns
-#' @param default_end Default match end if no events (default 91)
+#' @param shots Data frame with minute column (character, e.g., "90+4")
+#' @param default_end Default match end if no data (default 91)
 #'
 #' @return Numeric match end minute
 #' @keywords internal
-calculate_match_end <- function(events, default_end = 91) {
-  if (is.null(events) || nrow(events) == 0) {
+calculate_match_end <- function(events, shots = NULL, default_end = 91) {
+  # Get first-half stoppage from both sources, use max
+  events_stoppage <- get_first_half_stoppage(events)
+  shots_stoppage <- get_first_half_stoppage_from_shots(shots)
+  first_half_stoppage <- max(events_stoppage, shots_stoppage)
+
+  # Calculate match end from events
+  events_end <- NA_real_
+  if (!is.null(events) && nrow(events) > 0) {
+    added_time <- if ("added_time" %in% names(events)) events$added_time else rep(0L, nrow(events))
+    effective_mins <- calculate_effective_minute(events$minute, added_time, first_half_stoppage)
+    if (!all(is.na(effective_mins))) {
+      events_end <- max(effective_mins, na.rm = TRUE) + 0.5
+    }
+  }
+
+  # Calculate match end from shots
+  shots_end <- get_match_end_from_shots(shots, first_half_stoppage)
+
+  # Use max of events and shots, or default
+  min_end <- 91 + first_half_stoppage
+  candidates <- c(events_end, shots_end)
+  candidates <- candidates[!is.na(candidates)]
+
+  if (length(candidates) == 0) {
     return(default_end)
   }
 
-  # Get added_time if available, otherwise assume 0
-  added_time <- if ("added_time" %in% names(events)) events$added_time else rep(0L, nrow(events))
-
-  # Get first-half stoppage to offset second half
-  first_half_stoppage <- get_first_half_stoppage(events)
-
-  # Calculate effective minutes with offset
-  effective_mins <- calculate_effective_minute(events$minute, added_time, first_half_stoppage)
-
-  # Match end is max effective minute + small buffer, minimum 91 + first_half_stoppage
-  min_end <- 91 + first_half_stoppage
-  max(min_end, max(effective_mins, na.rm = TRUE) + 0.5)
+  max(min_end, max(candidates))
 }
 
 
-#' Calculate first-half end minute from events
+#' Calculate first-half end minute from events and/or shots
 #'
-#' Determines when first half actually ended based on stoppage time events.
+#' Determines when first half actually ended based on stoppage time events or shots.
 #' Uses full minutes: 45+3 -> first half ends at 48.5
+#' Falls back to events only if shots is NULL.
 #'
 #' @param events Data frame with minute and optionally added_time columns
-#' @param default_end Default first-half end if no stoppage events (default 46)
+#' @param shots Data frame with minute column (character, e.g., "45+3")
+#' @param default_end Default first-half end if no stoppage data (default 46)
 #'
 #' @return Numeric first-half end minute
 #' @keywords internal
-calculate_first_half_end <- function(events, default_end = 46) {
-  if (is.null(events) || nrow(events) == 0) {
-    return(default_end)
-  }
+calculate_first_half_end <- function(events, shots = NULL, default_end = 46) {
+  # Get first-half stoppage from both sources
+  events_stoppage <- get_first_half_stoppage(events)
+  shots_stoppage <- get_first_half_stoppage_from_shots(shots)
 
-  # Get added_time if available
-  added_time <- if ("added_time" %in% names(events)) events$added_time else rep(0L, nrow(events))
+  # Use max of both (handles NULL/0 gracefully)
+  max_stoppage <- max(events_stoppage, shots_stoppage, na.rm = TRUE)
 
-  # Find first-half stoppage events (minute = 45 with added_time > 0)
-  first_half_stoppage <- events$minute == 45 & !is.na(added_time) & added_time > 0
-
-  if (any(first_half_stoppage)) {
-    max_added <- max(added_time[first_half_stoppage], na.rm = TRUE)
-    # Return 45 + added + small buffer (so 45+3 ends at 48.5)
-    return(45 + max_added + 0.5)
+  if (max_stoppage > 0) {
+    # Return 45 + stoppage + small buffer (so 45+3 ends at 48.5)
+    return(45 + max_stoppage + 0.5)
   }
 
   default_end
@@ -155,9 +256,11 @@ extract_match_events <- function(events, match_id) {
     dplyr::filter(.data$match_id == !!match_id) %>%
     dplyr::arrange(.data$minute) %>%
     dplyr::mutate(
-      is_goal = .data$event_type == "goal",
-      is_sub = .data$event_type == "substitution",
-      is_red_card = if ("is_red_card" %in% names(.)) .data$is_red_card else .data$event_type == "red_card"
+      # Handle multiple event type formats (FBref scraper uses lowercase with underscores)
+      is_goal = .data$event_type %in% c("goal", "Goal", "penalty_goal", "own_goal"),
+      is_sub = .data$event_type %in% c("sub_on", "substitution", "Substitution"),
+      is_red_card = if ("is_red_card" %in% names(.)) .data$is_red_card else
+        .data$event_type %in% c("red_card", "Red Card", "yellow_red_card")
     )
 
   match_events
@@ -208,14 +311,14 @@ extract_sub_events <- function(lineups) {
 
 #' Create splint boundaries
 #'
-#' Defines start and end times for each splint based on events.
+#' Defines start and end times for each splint based on events and optionally shots.
 #' Splints are created at:
 #' - Start of match (minute 0)
 #' - Each goal
 #' - Each substitution
 #' - Each red card
 #' - Half time (minute 45)
-#' - End of match (dynamically calculated from stoppage time)
+#' - End of match (dynamically calculated from stoppage time in events/shots)
 #'
 #' Uses continuous time where second-half events are offset by first-half stoppage.
 #' Example with 3 mins first-half stoppage and 11 mins second-half stoppage:
@@ -225,18 +328,21 @@ extract_sub_events <- function(lineups) {
 #' Also tracks game state (cumulative goals, red cards, player counts) at each splint boundary.
 #'
 #' @param events Data frame of match events (with minute and optionally added_time columns)
+#' @param shots Data frame of shots (optional, with minute column for stoppage time)
 #' @param include_goals Logical, whether to create new splints at goals (default TRUE)
 #' @param include_halftime Logical, whether to create splint at halftime (default TRUE)
 #'
 #' @return Data frame of splint boundaries with game state
 #' @export
-create_splint_boundaries <- function(events, include_goals = TRUE, include_halftime = TRUE) {
-  # Get first-half stoppage to offset second-half events
-  first_half_stoppage <- get_first_half_stoppage(events)
+create_splint_boundaries <- function(events, shots = NULL, include_goals = TRUE, include_halftime = TRUE) {
+  # Get first-half stoppage from both events and shots
+  events_stoppage <- get_first_half_stoppage(events)
+  shots_stoppage <- get_first_half_stoppage_from_shots(shots)
+  first_half_stoppage <- max(events_stoppage, shots_stoppage, na.rm = TRUE)
 
-  # Calculate dynamic match boundaries based on stoppage time
-  match_end <- calculate_match_end(events, default_end = 91)
-  first_half_end <- calculate_first_half_end(events, default_end = 46)
+  # Calculate dynamic match boundaries using both events and shots
+  match_end <- calculate_match_end(events, shots = shots, default_end = 91)
+  first_half_end <- calculate_first_half_end(events, shots = shots, default_end = 46)
 
   # Start with match boundaries
   boundaries <- c(0, match_end)
@@ -304,6 +410,8 @@ create_splint_boundaries <- function(events, include_goals = TRUE, include_halft
       avg_min = match_end / 2,
       gf_home = 0,
       ga_home = 0,
+      goals_home = 0,
+      goals_away = 0,
       red_home = 0,
       red_away = 0,
       n_players_home = 11,
@@ -320,6 +428,11 @@ create_splint_boundaries <- function(events, include_goals = TRUE, include_halft
   red_home <- red_counts$home
   red_away <- red_counts$away
 
+  # Calculate per-splint goals (goals scored IN each splint)
+  goals_in_splint <- count_events_in_splint(goal_events, boundaries)
+  goals_home <- goals_in_splint$home
+  goals_away <- goals_in_splint$away
+
   # Calculate player counts (11 minus red cards)
   n_players_home <- 11 - red_home
   n_players_away <- 11 - red_away
@@ -332,6 +445,8 @@ create_splint_boundaries <- function(events, include_goals = TRUE, include_halft
     avg_min = (boundaries[-length(boundaries)] + boundaries[-1]) / 2,
     gf_home = gf_home,
     ga_home = ga_home,
+    goals_home = goals_home,
+    goals_away = goals_away,
     red_home = red_home,
     red_away = red_away,
     n_players_home = n_players_home,
@@ -644,8 +759,15 @@ create_all_splints <- function(processed_data, include_goals = TRUE, verbose = T
   stats_by_match <- NULL
   if (!is.null(processed_data$stats_summary) && nrow(processed_data$stats_summary) > 0) {
     dt_stats <- data.table::as.data.table(processed_data$stats_summary)
+
+    # Add match_id if not present (join via match_url)
+    if (!"match_id" %in% names(dt_stats) && "match_url" %in% names(dt_stats)) {
+      match_id_lookup <- unique(dt_results[, c("match_url", "match_id"), with = FALSE])
+      dt_stats <- merge(dt_stats, match_id_lookup, by = "match_url", all.x = TRUE)
+    }
+
     # Only keep rows with red cards to save memory
-    if ("crd_r" %in% names(dt_stats)) {
+    if ("crd_r" %in% names(dt_stats) && "match_id" %in% names(dt_stats)) {
       # Use explicit column reference and convert to numeric (may be character from FBref)
       crd_r_vals <- as.numeric(dt_stats[["crd_r"]])
       red_card_rows <- which(!is.na(crd_r_vals) & crd_r_vals > 0)
@@ -846,8 +968,10 @@ create_match_splints_fast <- function(match_id, events, lineups, shooting, resul
   }
 
   # Create splint boundaries with derived goal/sub/red card times
+  # Pass shooting data for more accurate match end timing
   boundaries <- create_splint_boundaries_fast(
     events = events,
+    shots = shooting,
     include_goals = include_goals,
     goal_times = goal_times,
     goal_is_home = goal_is_home,
@@ -886,6 +1010,7 @@ create_match_splints_fast <- function(match_id, events, lineups, shooting, resul
 #' Create splint boundaries (fast version)
 #'
 #' @param events Event data (may be NULL)
+#' @param shots Shots data with minute column (may be NULL)
 #' @param include_goals Whether to include goal boundaries
 #' @param include_halftime Whether to include halftime boundary
 #' @param goal_times Numeric vector of goal minutes (derived from shooting)
@@ -894,27 +1019,33 @@ create_match_splints_fast <- function(match_id, events, lineups, shooting, resul
 #' @param red_card_times Numeric vector of red card minutes (derived from stats)
 #' @param red_card_is_home Logical vector indicating if each red card was for home team
 #' @keywords internal
-create_splint_boundaries_fast <- function(events, include_goals = TRUE, include_halftime = TRUE,
+create_splint_boundaries_fast <- function(events, shots = NULL, include_goals = TRUE, include_halftime = TRUE,
                                            goal_times = NULL, goal_is_home = NULL, sub_times = NULL,
                                            red_card_times = NULL, red_card_is_home = NULL) {
-  boundaries <- c(0, 90)
-  if (include_halftime) boundaries <- c(boundaries, 45)
+  # Calculate match end using both events and shots (falls back gracefully)
+  match_end <- calculate_match_end(events, shots = shots, default_end = 91)
+  first_half_end <- calculate_first_half_end(events, shots = shots, default_end = 46)
+
+  boundaries <- c(0, match_end)
+  if (include_halftime) boundaries <- c(boundaries, first_half_end)
 
   goal_events <- NULL
   red_card_events <- NULL
 
   # First try to get events from the events data frame
   if (!is.null(events) && nrow(events) > 0) {
-    # Substitutions from events
+    # Substitutions from events (handle multiple event type formats)
     if ("is_sub" %in% names(events) || "event_type" %in% names(events)) {
-      is_sub <- if ("is_sub" %in% names(events)) events$is_sub else events$event_type == "substitution"
+      is_sub <- if ("is_sub" %in% names(events)) events$is_sub else
+        events$event_type %in% c("sub_on", "substitution", "Substitution")
       event_sub_times <- events$minute[is_sub & !is.na(is_sub)]
       boundaries <- c(boundaries, event_sub_times)
     }
 
-    # Goals from events
+    # Goals from events (handle multiple event type formats)
     if (include_goals) {
-      is_goal <- if ("is_goal" %in% names(events)) events$is_goal else events$event_type == "goal"
+      is_goal <- if ("is_goal" %in% names(events)) events$is_goal else
+        events$event_type %in% c("goal", "Goal", "penalty_goal", "own_goal")
       goal_mask <- is_goal & !is.na(is_goal)
       if (any(goal_mask)) {
         goal_events <- events[goal_mask, c("minute", "is_home"), drop = FALSE]
@@ -922,9 +1053,11 @@ create_splint_boundaries_fast <- function(events, include_goals = TRUE, include_
       }
     }
 
-    # Red cards from events
+    # Red cards from events (handle multiple event type formats)
     is_red <- if ("is_red_card" %in% names(events)) events$is_red_card else
-              if ("event_type" %in% names(events)) events$event_type == "red_card" else rep(FALSE, nrow(events))
+      if ("event_type" %in% names(events))
+        events$event_type %in% c("red_card", "Red Card", "yellow_red_card") else
+        rep(FALSE, nrow(events))
     red_mask <- is_red & !is.na(is_red)
     if (any(red_mask)) {
       red_card_events <- events[red_mask, c("minute", "is_home"), drop = FALSE]
@@ -963,13 +1096,16 @@ create_splint_boundaries_fast <- function(events, include_goals = TRUE, include_
   if (n_splints < 1) {
     return(data.frame(
       splint_num = 1, start_minute = 0, end_minute = 90, duration = 90, avg_min = 45,
-      gf_home = 0, ga_home = 0, red_home = 0, red_away = 0,
-      n_players_home = 11, n_players_away = 11
+      gf_home = 0, ga_home = 0, goals_home = 0, goals_away = 0,
+      red_home = 0, red_away = 0, n_players_home = 11, n_players_away = 11
     ))
   }
 
   goal_counts <- count_events_before(goal_events, boundaries)
   red_counts <- count_events_before(red_card_events, boundaries)
+
+  # Calculate per-splint goals (goals scored IN each splint)
+  goals_in_splint <- count_events_in_splint(goal_events, boundaries)
 
   data.frame(
     splint_num = seq_len(n_splints),
@@ -979,6 +1115,8 @@ create_splint_boundaries_fast <- function(events, include_goals = TRUE, include_
     avg_min = (boundaries[-length(boundaries)] + boundaries[-1]) / 2,
     gf_home = goal_counts$home,
     ga_home = goal_counts$away,
+    goals_home = goals_in_splint$home,
+    goals_away = goals_in_splint$away,
     red_home = red_counts$home,
     red_away = red_counts$away,
     n_players_home = 11 - red_counts$home,

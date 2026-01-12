@@ -62,12 +62,12 @@ save_cached_data <- function(data, data_type) {
 }
 
 
-#' Get already-scraped match URLs from cache
+#' Get already-scraped match URLs from legacy cache
 #'
 #' @param data_type Type of data to check
 #' @return Character vector of match URLs already in cache
 #' @keywords internal
-get_cached_match_urls <- function(data_type) {
+get_cached_match_urls_legacy <- function(data_type) {
   cached <- load_cached_data(data_type)
   if (!is.null(cached) && "MatchURL" %in% names(cached)) {
     unique(cached$MatchURL)

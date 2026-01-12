@@ -6,17 +6,21 @@
 #' Create RAPM design matrix (new structure)
 #'
 #' Creates the design matrix with 2 rows per splint (one per team perspective):
-#' - Target: xgf90 (xG FOR per 90 from each team's perspective)
+#' - Target: xgf90 or gf90 (xG or goals FOR per 90 from each team's perspective)
 #' - Covariates: gd, gf, ga, avg_min, home_away
 #' - Player columns: playerX_off (attacking), playerX_def (defending)
 #' - Replacement columns: replacement_off, replacement_def for low-minute players
 #'
 #' @param splint_data Combined splint data from create_all_splints
 #' @param min_minutes Minimum total minutes for player inclusion
+#' @param target_type Type of target variable: "xg" for non-penalty xG (default),
+#'   "goals" for actual goals scored
 #'
 #' @return List with design matrix components
 #' @export
-create_rapm_design_matrix <- function(splint_data, min_minutes = 90) {
+create_rapm_design_matrix <- function(splint_data, min_minutes = 90,
+                                       target_type = c("xg", "goals")) {
+  target_type <- match.arg(target_type)
   splints <- splint_data$splints
   players <- splint_data$players
   match_info <- splint_data$match_info
@@ -111,9 +115,22 @@ create_rapm_design_matrix <- function(splint_data, min_minutes = 90) {
     rep(11, n_splints)
   }
 
-  npxg_home <- ifelse(is.na(valid_splints$npxg_home), 0, valid_splints$npxg_home)
-  npxg_away <- ifelse(is.na(valid_splints$npxg_away), 0, valid_splints$npxg_away)
   duration <- valid_splints$duration
+
+  # Calculate target based on target_type
+  if (target_type == "xg") {
+    # Use non-penalty xG
+    target_home <- ifelse(is.na(valid_splints$npxg_home), 0, valid_splints$npxg_home)
+    target_away <- ifelse(is.na(valid_splints$npxg_away), 0, valid_splints$npxg_away)
+    target_name <- "xgf"
+    target_per90_name <- "xgf90"
+  } else {
+    # Use actual goals scored in this splint
+    target_home <- ifelse(is.na(valid_splints$goals_home), 0, valid_splints$goals_home)
+    target_away <- ifelse(is.na(valid_splints$goals_away), 0, valid_splints$goals_away)
+    target_name <- "gf"
+    target_per90_name <- "gf90"
+  }
 
   # Row data: 2 rows per splint (home attacking, away attacking)
   n_rows <- n_splints * 2
@@ -122,11 +139,11 @@ create_rapm_design_matrix <- function(splint_data, min_minutes = 90) {
     row_id = seq_len(n_rows),
     splint_id = rep(valid_splints$splint_id, each = 2),
     match_id = rep(valid_splints$match_id, each = 2),
-    xgf = as.vector(rbind(npxg_home, npxg_away)),
+    target = as.vector(rbind(target_home, target_away)),
     minutes = rep(duration, each = 2),
-    xgf90 = as.vector(rbind(
-      ifelse(duration > 0, npxg_home * 90 / duration, 0),
-      ifelse(duration > 0, npxg_away * 90 / duration, 0)
+    target_per_90 = as.vector(rbind(
+      ifelse(duration > 0, target_home * 90 / duration, 0),
+      ifelse(duration > 0, target_away * 90 / duration, 0)
     )),
     gd = as.vector(rbind(gf_home - ga_home, ga_home - gf_home)),
     gf = as.vector(rbind(gf_home, ga_home)),
@@ -301,13 +318,15 @@ create_rapm_design_matrix <- function(splint_data, min_minutes = 90) {
   list(
     X_players = X_players,
     row_data = row_data,
-    y = row_data$xgf90,
+    y = row_data$target_per_90,
     weights = weights,
     player_mapping = player_mapping_with_replacement,
     player_ids = player_ids_with_replacement,
     n_players = n_players,  # Count of regular players (excludes replacement)
     n_players_total = n_players + 1,  # Including replacement
     n_rows = n_rows,
+    target_type = target_type,
+    target_name = target_per90_name,
     replacement_player_ids = replacement_player_ids,
     replacement_stats = list(
       n_players = length(replacement_player_ids),
@@ -326,6 +345,8 @@ create_rapm_design_matrix <- function(splint_data, min_minutes = 90) {
 #'
 #' @param splint_data Combined splint data from create_all_splints
 #' @param min_minutes Minimum minutes for player inclusion
+#' @param target_type Type of target variable: "xg" for non-penalty xG (default),
+#'   "goals" for actual goals scored. Use "goals" when shots data unavailable.
 #' @param include_covariates Whether to include game state covariates
 #' @param include_league Whether to include league dummies (for multi-league)
 #' @param include_season Whether to include season dummies
@@ -333,11 +354,23 @@ create_rapm_design_matrix <- function(splint_data, min_minutes = 90) {
 #' @return List with all model inputs
 #' @export
 prepare_rapm_data <- function(splint_data, min_minutes = 90,
+                               target_type = c("xg", "goals"),
                                include_covariates = TRUE,
                                include_league = NULL,
                                include_season = NULL) {
+  target_type <- match.arg(target_type)
+
+  # Validate required columns exist for target type
+  if (target_type == "goals") {
+    splint_cols <- names(splint_data$splints)
+    if (!all(c("goals_home", "goals_away") %in% splint_cols)) {
+      warning("target_type='goals' requires 'goals_home' and 'goals_away' columns in splints. ",
+              "Splints may need to be regenerated with updated create_all_splints().")
+    }
+  }
+
   # Create base design matrix
-  rapm_data <- create_rapm_design_matrix(splint_data, min_minutes)
+  rapm_data <- create_rapm_design_matrix(splint_data, min_minutes, target_type)
 
   covariate_list <- list()
 
@@ -461,11 +494,13 @@ prepare_rapm_data <- function(splint_data, min_minutes = 90,
     n_player_cols = rapm_data$n_players * 2,
     n_covariates = length(rapm_data$covariate_names),
     total_matrix_cols = ncol(rapm_data$X_full),
+    target_type = rapm_data$target_type,
     response_range = range(rapm_data$y, na.rm = TRUE)
   )
 
-  progress_msg(sprintf("RAPM data ready: %d observations, %d players (%d columns), %d covariates",
-                       rapm_data$n_rows, rapm_data$n_players,
+  target_desc <- if (rapm_data$target_type == "xg") "xG-based" else "Goals-based"
+  progress_msg(sprintf("RAPM data ready (%s): %d observations, %d players (%d columns), %d covariates",
+                       target_desc, rapm_data$n_rows, rapm_data$n_players,
                        rapm_data$n_players * 2, length(rapm_data$covariate_names)))
 
   rapm_data

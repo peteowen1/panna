@@ -4,12 +4,14 @@
 \alias{load_shots}
 \title{Load shooting data from pannadata}
 \usage{
-load_shots(league = NULL, season = NULL)
+load_shots(league = NULL, season = NULL, source = "local")
 }
 \arguments{
 \item{league}{League code (e.g., "ENG"). NULL for all leagues.}
 
 \item{season}{Season string (e.g., "2023-2024"). NULL for all seasons.}
+
+\item{source}{"local" or "remote" (downloads from GitHub releases).}
 }
 \value{
 Data frame of shots or NULL

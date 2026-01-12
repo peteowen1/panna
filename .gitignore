@@ -10,6 +10,8 @@
 
 # Cache directory (large data files)
 data-raw/cache/
+data-raw/debug/
+data-raw/archive/
 data/
 
 # Claude Code (local settings)
@@ -30,3 +32,6 @@ Thumbs.db
 .env
 *.pem
 credentials.json
+
+# Claude Code temp files
+tmpclaude-*

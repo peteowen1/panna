@@ -6,19 +6,18 @@
 # setwd("C:/Users/peteo/OneDrive/Documents/pannaverse/panna")
 devtools::load_all()
 
-# ============================================================================
-# Configuration
-# ============================================================================
+# Configuration ----
 
 # Set to TRUE to rescrape everything (ignores cache)
 # Set to FALSE to only scrape new/missing matches (uses cache)
-FORCE_RESCRAPE <- TRUE
+FORCE_RESCRAPE <-  TRUE
 
 # Delay between requests (minimum 3 seconds, 5 recommended)
-DELAY <- 5
+DELAY <- 4
 
-# Batch control: set to Inf for all matches, or a number to limit per session
-MAX_MATCHES_PER_SESSION <- Inf
+# Batch control: set to Inf for unlimited
+MAX_MATCHES_PER_SEASON <- Inf    # Limit per competition-season (e.g., 10 means 10 from ENG 2017-2018, 10 from ENG 2018-2019, etc.)
+MAX_MATCHES_TOTAL <- Inf          # Limit for entire session (stops script after this many total matches)
 
 # Table types to scrape
 TABLE_TYPES <- c("summary", "passing", "passing_types", "defense",
@@ -37,108 +36,7 @@ NATIONAL_COMPS <- list_competitions("national_team")  # WC, EURO, etc.
 SEASONS <- get_seasons_since(2017)
 
 
-# ============================================================================
-# Helper Functions
-# ============================================================================
-
-#' Get match URLs from cached metadata
-get_cached_match_urls <- function(league, season) {
-  cache_dir <- file.path(
-    "C:/Users/peteo/OneDrive/Documents/pannaverse/pannadata/data/metadata",
-    league, season
-  )
-
-  if (!dir.exists(cache_dir)) return(character(0))
-
-  files <- list.files(cache_dir, pattern = "\\.rds$", full.names = TRUE)
-  if (length(files) == 0) return(character(0))
-
-  urls <- vapply(files, function(f) {
-    meta <- tryCatch(readRDS(f), error = function(e) NULL)
-    if (!is.null(meta) && "match_url" %in% names(meta)) {
-      return(meta$match_url)
-    }
-    NA_character_
-  }, character(1), USE.NAMES = FALSE)
-
-  urls[!is.na(urls)]
-}
-
-
-#' Scrape a competition-season (fetches fixtures if not cached)
-scrape_comp_season <- function(comp, season, table_types, delay, force_rescrape) {
-
-  cat(sprintf("\n%s %s\n", comp, season))
-  cat(strrep("-", 40), "\n")
-
-  # Check cache first
-  cached_urls <- get_cached_match_urls(comp, season)
-
-  if (length(cached_urls) > 0 && !force_rescrape) {
-    # Check if all table types are cached for these matches
-    # For simplicity, just check if metadata exists (assume others do too)
-    cat(sprintf("  Cache: %d matches found\n", length(cached_urls)))
-
-    # Still call scrape_fbref_matches - it will skip cached tables
-    tryCatch({
-      scrape_fbref_matches(
-        match_urls = cached_urls,
-        league = comp,
-        season = season,
-        table_types = table_types,
-        delay = delay,
-        use_cache = TRUE,
-        verbose = TRUE
-      )
-    }, error = function(e) {
-      cat("  ERROR:", conditionMessage(e), "\n")
-    })
-
-    return(invisible(NULL))
-  }
-
-  # No cache - fetch fixtures from FBref
-  cat("  Fetching fixtures from FBref...\n")
-  Sys.sleep(delay)
-
-  fixtures <- tryCatch(
-    scrape_fixtures(comp, season, completed_only = TRUE),
-    error = function(e) {
-      cat("  ERROR fetching fixtures:", conditionMessage(e), "\n")
-      NULL
-    }
-  )
-
-  if (is.null(fixtures) || nrow(fixtures) == 0) {
-    cat("  No fixtures found\n")
-    return(invisible(NULL))
-  }
-
-  urls <- fixtures$match_url
-  cat(sprintf("  Found %d matches\n", length(urls)))
-
-  # Scrape matches
-  tryCatch({
-    scrape_fbref_matches(
-      match_urls = urls,
-      league = comp,
-      season = season,
-      table_types = table_types,
-      delay = delay,
-      use_cache = !force_rescrape,
-      verbose = TRUE
-    )
-  }, error = function(e) {
-    cat("  ERROR:", conditionMessage(e), "\n")
-  })
-
-  invisible(NULL)
-}
-
-
-# ============================================================================
-# Main Script
-# ============================================================================
+# Main Script ----
 
 cat("\n", strrep("=", 60), "\n")
 cat("PANNA SCRAPE ALL\n")
@@ -146,67 +44,95 @@ cat(strrep("=", 60), "\n\n")
 
 cat("Mode:", ifelse(FORCE_RESCRAPE, "FORCE RESCRAPE (ignoring cache)", "INCREMENTAL (using cache)"), "\n")
 cat("Delay:", DELAY, "seconds\n")
+cat("Max per season:", if (is.infinite(MAX_MATCHES_PER_SEASON)) "Unlimited" else MAX_MATCHES_PER_SEASON, "\n")
+cat("Max total:", if (is.infinite(MAX_MATCHES_TOTAL)) "Unlimited" else MAX_MATCHES_TOTAL, "\n")
 cat("Club competitions:", paste(CLUB_COMPS, collapse = ", "), "\n")
 cat("National competitions:", paste(NATIONAL_COMPS, collapse = ", "), "\n")
 cat("Seasons:", paste(range(SEASONS), collapse = " to "), "\n\n")
 
 total_scraped <- 0
+session_limit_reached <- FALSE
 
 
-# ============================================================
-# PART 1: Club competitions (leagues + cups)
-# ============================================================
+# Club Competitions ----
 cat("*** CLUB COMPETITIONS ***\n")
 
 for (comp in CLUB_COMPS) {
+  if (session_limit_reached) break
+
   cat("\n", strrep("=", 50), "\n")
   cat(comp, "\n")
   cat(strrep("=", 50), "\n")
 
   for (season in SEASONS) {
-    scrape_comp_season(comp, season, TABLE_TYPES, DELAY, FORCE_RESCRAPE)
+    if (session_limit_reached) break
+
+    # Calculate how many matches we can still scrape
+    remaining <- MAX_MATCHES_TOTAL - total_scraped
+    max_this_call <- min(MAX_MATCHES_PER_SEASON, remaining)
+
+    n <- scrape_comp_season(comp, season, TABLE_TYPES, DELAY, FORCE_RESCRAPE, max_this_call)
+    total_scraped <- total_scraped + n
+
+    if (total_scraped >= MAX_MATCHES_TOTAL) {
+      cat("\n*** SESSION LIMIT REACHED:", total_scraped, "matches ***\n")
+      session_limit_reached <- TRUE
+    }
   }
 }
 
 
-# ============================================================
-# PART 2: National team competitions
-# ============================================================
-cat("\n\n*** NATIONAL TEAM COMPETITIONS ***\n")
+# National Team Competitions ----
+if (!session_limit_reached) {
+  cat("\n\n*** NATIONAL TEAM COMPETITIONS ***\n")
 
-for (comp in NATIONAL_COMPS) {
-  cat("\n", strrep("=", 50), "\n")
-  cat(comp, "\n")
-  cat(strrep("=", 50), "\n")
+  for (comp in NATIONAL_COMPS) {
+    if (session_limit_reached) break
 
-  # Get appropriate seasons for this competition
-  if (is_tournament_competition(comp) && comp != "NATIONS_LEAGUE") {
-    comp_seasons <- tryCatch(
-      get_tournament_years(comp),
-      error = function(e) character(0)
-    )
-  } else {
-    # Nations League uses regular season format
-    comp_seasons <- get_seasons_since(2018)
-  }
+    cat("\n", strrep("=", 50), "\n")
+    cat(comp, "\n")
+    cat(strrep("=", 50), "\n")
 
-  if (length(comp_seasons) == 0) {
-    cat("  No seasons configured\n")
-    next
-  }
+    # Get appropriate seasons for this competition
+    if (is_tournament_competition(comp) && comp != "NATIONS_LEAGUE") {
+      comp_seasons <- tryCatch(
+        get_tournament_years(comp),
+        error = function(e) character(0)
+      )
+    } else {
+      # Nations League uses regular season format
+      comp_seasons <- get_seasons_since(2018)
+    }
 
-  for (season in comp_seasons) {
-    scrape_comp_season(comp, season, TABLE_TYPES, DELAY, FORCE_RESCRAPE)
+    if (length(comp_seasons) == 0) {
+      cat("  No seasons configured\n")
+      next
+    }
+
+    for (season in comp_seasons) {
+      if (session_limit_reached) break
+
+      # Calculate how many matches we can still scrape
+      remaining <- MAX_MATCHES_TOTAL - total_scraped
+      max_this_call <- min(MAX_MATCHES_PER_SEASON, remaining)
+
+      n <- scrape_comp_season(comp, season, TABLE_TYPES, DELAY, FORCE_RESCRAPE, max_this_call)
+      total_scraped <- total_scraped + n
+
+      if (total_scraped >= MAX_MATCHES_TOTAL) {
+        cat("\n*** SESSION LIMIT REACHED:", total_scraped, "matches ***\n")
+        session_limit_reached <- TRUE
+      }
+    }
   }
 }
 
 
-# ============================================================
-# Summary
-# ============================================================
+# Summary ----
 cat("\n\n", strrep("=", 60), "\n")
 cat("SCRAPING COMPLETE\n")
 cat(strrep("=", 60), "\n")
+cat("\nSession total:", total_scraped, "matches scraped\n")
 
 # Show cache status
 cat("\nCache status:\n")

@@ -5,9 +5,11 @@
 #' Fit RAPM model
 #'
 #' Fits ridge regression on the design matrix with:
-#' - Target: xgf90 (xG FOR per 90)
+#' - Target: xgf90 (xG FOR per 90) or gf90 (goals FOR per 90)
 #' - Player columns: playerX_off, playerX_def
 #' - Covariates: gd, gf, ga, avg_min, is_home
+#'
+#' The target type is determined by the rapm_data (set in prepare_rapm_data).
 #'
 #' @param rapm_data List from prepare_rapm_data
 #' @param alpha Elastic net mixing parameter (0 = ridge, 1 = lasso)
@@ -77,8 +79,10 @@ fit_rapm <- function(rapm_data, alpha = 0, nfolds = 10,
   )
 
   # Add metadata
+  target_type <- if (!is.null(rapm_data$target_type)) rapm_data$target_type else "xg"
   cv_fit$panna_metadata <- list(
     type = "rapm",
+    target_type = target_type,
     alpha = alpha,
     n_observations = length(y),
     n_player_cols = rapm_data$n_players * 2,
@@ -90,8 +94,9 @@ fit_rapm <- function(rapm_data, alpha = 0, nfolds = 10,
     covariate_names = rapm_data$covariate_names
   )
 
-  progress_msg(sprintf("RAPM fit complete. Lambda.min: %.4f, R^2: %.3f",
-                       cv_fit$lambda.min,
+  target_desc <- if (target_type == "xg") "xG-based" else "Goals-based"
+  progress_msg(sprintf("RAPM fit complete (%s). Lambda.min: %.4f, R^2: %.3f",
+                       target_desc, cv_fit$lambda.min,
                        1 - cv_fit$cvm[cv_fit$lambda == cv_fit$lambda.min] /
                          var(y)))
 

@@ -8,7 +8,8 @@ aggregate_cached_matches(
   table_type,
   league = NULL,
   season = NULL,
-  prefer_parquet = TRUE
+  prefer_parquet = TRUE,
+  source = c("local", "remote")
 )
 }
 \arguments{
@@ -19,6 +20,8 @@ aggregate_cached_matches(
 \item{season}{Optional season filter (e.g., "2024-2025")}
 
 \item{prefer_parquet}{If TRUE (default), use parquet when available}
+
+\item{source}{"local" (default) or "remote" to download from GitHub releases}
 }
 \value{
 Combined data frame, or NULL if no cached data
@@ -35,10 +38,5 @@ all_summary <- aggregate_cached_matches("summary")
 # Load only Premier League 2024-2025
 pl_summary <- aggregate_cached_matches("summary", league = "ENG",
                                         season = "2024-2025")
-
-# Force RDS loading (skip parquet)
-pl_summary <- aggregate_cached_matches("summary", league = "ENG",
-                                        season = "2024-2025",
-                                        prefer_parquet = FALSE)
 }
 }

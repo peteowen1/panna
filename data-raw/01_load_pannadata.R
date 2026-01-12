@@ -14,11 +14,23 @@ devtools::load_all()
 # Point to pannadata location (relative to panna directory)
 pannadata_dir("../pannadata/data")
 
+load_summary()
+
 # LEAGUE SELECTION
-# Available: ENG, ESP, GER, ITA, FRA (Big 5)
-#            UCL, UEL (European)
-#            FA_CUP, COPA_DEL_REY, DFB_POKAL, COPPA_ITALIA, COUPE_DE_FRANCE (Cups)
-leagues <- c("ENG", "ESP", "GER", "ITA", "FRA")  # Big 5
+# Big 5 European Leagues
+big5 <- c("ENG", "ESP", "GER", "ITA", "FRA")
+
+# European Club Competitions
+european_clubs <- c("UCL", "UEL")
+
+# Domestic Cups
+domestic_cups <- c("FA_CUP", "EFL_CUP", "COPA_DEL_REY", "DFB_POKAL", "COPPA_ITALIA", "COUPE_DE_FRANCE")
+
+# International Competitions
+international <- c("EURO", "WC", "NATIONS_LEAGUE", "COPA_AMERICA", "GOLD_CUP", "AFCON", "ASIAN_CUP")
+
+# Load ALL available competitions
+leagues <- c(big5, european_clubs, domestic_cups, international)
 
 # SEASONS (NULL = all available)
 seasons <- NULL  # Load all seasons
@@ -77,6 +89,7 @@ misc_stats      <- load_and_filter_stats("misc", leagues, seasons, "misc stats")
 passing_types_stats <- load_and_filter_stats("passing_types", leagues, seasons, "passing types stats")
 keeper_stats    <- load_and_filter_stats("keeper", leagues, seasons, "keeper stats")
 shots           <- load_and_filter_stats("shots", leagues, seasons, "shots")
+events          <- load_and_filter_stats("events", leagues, seasons, "events")
 
 # 5. Format Data for Pipeline ----
 
@@ -195,7 +208,7 @@ raw_data <- list(
   results = results,
   lineups = lineups,
   shooting = shooting,
-  events = NULL,  # Events not available in pannadata structure
+  events = events,
   stats_summary = summary_stats,
   stats_passing = passing_stats,
   stats_defense = defense_stats,
