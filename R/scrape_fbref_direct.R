@@ -1755,17 +1755,22 @@ build_parquet <- function(table_type, league, season, verbose = TRUE) {
 
   parquet_path <- get_parquet_path(table_type, league, season, create = TRUE)
 
-  # Load existing parquet data if it exists
+  # Load existing parquet data if it exists AND has fbref_id column
+  # (parquet without fbref_id is invalid and will be rebuilt from RDS)
   existing_data <- NULL
   existing_ids <- character(0)
   if (file.exists(parquet_path)) {
-    existing_data <- tryCatch({
+    temp_data <- tryCatch({
       arrow::read_parquet(parquet_path)
     }, error = function(e) NULL)
 
-    if (!is.null(existing_data) && "fbref_id" %in% names(existing_data)) {
+    if (!is.null(temp_data) && "fbref_id" %in% names(temp_data)) {
+      existing_data <- temp_data
       existing_ids <- unique(existing_data$fbref_id)
       if (verbose) message(sprintf("    Existing parquet: %d matches", length(existing_ids)))
+    } else if (!is.null(temp_data)) {
+      # Parquet exists but lacks fbref_id - will be rebuilt
+      if (verbose) message("    Existing parquet missing fbref_id, rebuilding...")
     }
   }
 
@@ -1782,8 +1787,13 @@ build_parquet <- function(table_type, league, season, verbose = TRUE) {
 
       new_cached <- cached[cached$fbref_id %in% new_ids, ]
       new_data_list <- lapply(seq_len(nrow(new_cached)), function(i) {
-        load_match_table(new_cached$league[i], new_cached$season[i],
-                         new_cached$fbref_id[i], table_type)
+        df <- load_match_table(new_cached$league[i], new_cached$season[i],
+                               new_cached$fbref_id[i], table_type)
+        # Add fbref_id from filename if not already present
+        if (!is.null(df) && !"fbref_id" %in% names(df)) {
+          df$fbref_id <- new_cached$fbref_id[i]
+        }
+        df
       })
       new_data_list <- new_data_list[!sapply(new_data_list, is.null)]
 
