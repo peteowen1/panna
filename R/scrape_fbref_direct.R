@@ -1655,21 +1655,49 @@ scrape_fbref_matches <- function(
 aggregate_cached_matches <- function(table_type, league = NULL, season = NULL,
                                      prefer_parquet = TRUE) {
 
-  # Fast path: if league AND season specified, try parquet first
-  if (prefer_parquet && !is.null(league) && !is.null(season)) {
-    parquet_path <- get_parquet_path(table_type, league, season)
+  base_dir <- pannadata_dir()
+  tt_dir <- file.path(base_dir, table_type)
 
-    if (file.exists(parquet_path)) {
-      return(arrow::read_parquet(parquet_path))
+  # Parquet fast paths
+  if (prefer_parquet && dir.exists(tt_dir)) {
+
+    # Case 1: league AND season specified -> read one parquet
+    if (!is.null(league) && !is.null(season)) {
+      parquet_path <- get_parquet_path(table_type, league, season)
+      if (file.exists(parquet_path)) {
+        return(arrow::read_parquet(parquet_path))
+      }
     }
-  }
 
-  # Fast path: if only league specified, combine all parquet files for that league
-  if (prefer_parquet && !is.null(league) && is.null(season)) {
-    parquet_dir <- file.path(pannadata_dir(), table_type, league)
-    if (dir.exists(parquet_dir)) {
-      parquet_files <- list.files(parquet_dir, pattern = "\\.parquet$",
-                                  full.names = TRUE)
+    # Case 2: league only -> read all seasons for that league
+    if (!is.null(league) && is.null(season)) {
+      league_dir <- file.path(tt_dir, league)
+      if (dir.exists(league_dir)) {
+        parquet_files <- list.files(league_dir, pattern = "\\.parquet$",
+                                    full.names = TRUE)
+        if (length(parquet_files) > 0) {
+          all_data <- lapply(parquet_files, arrow::read_parquet)
+          return(dplyr::bind_rows(all_data))
+        }
+      }
+    }
+
+    # Case 3: season only -> read all leagues for that season
+    if (is.null(league) && !is.null(season)) {
+      parquet_file <- paste0(season, ".parquet")
+      leagues <- list.dirs(tt_dir, recursive = FALSE, full.names = FALSE)
+      parquet_files <- file.path(tt_dir, leagues, parquet_file)
+      parquet_files <- parquet_files[file.exists(parquet_files)]
+      if (length(parquet_files) > 0) {
+        all_data <- lapply(parquet_files, arrow::read_parquet)
+        return(dplyr::bind_rows(all_data))
+      }
+    }
+
+    # Case 4: no filters -> read all parquet files
+    if (is.null(league) && is.null(season)) {
+      parquet_files <- list.files(tt_dir, pattern = "\\.parquet$",
+                                  recursive = TRUE, full.names = TRUE)
       if (length(parquet_files) > 0) {
         all_data <- lapply(parquet_files, arrow::read_parquet)
         return(dplyr::bind_rows(all_data))
@@ -1948,71 +1976,78 @@ build_all_parquet <- function(table_types = NULL, leagues = NULL,
 
 #' Load summary data from pannadata
 #'
-#' @param league League code (e.g., "ENG")
-#' @param season Season string (e.g., "2023-2024")
+#' @param league League code (e.g., "ENG"). NULL for all leagues.
+#' @param season Season string (e.g., "2023-2024"). NULL for all seasons.
 #' @return Data frame of player summary stats or NULL
+#' @examples
+#' \dontrun{
+#' load_summary("ENG", "2024-2025")  # One league, one season
+#' load_summary("ENG")               # All seasons for ENG
+#' load_summary(season = "2024-2025") # All leagues for 2024-2025
+#' load_summary()                    # Everything
+#' }
 #' @export
-load_summary <- function(league, season) {
+load_summary <- function(league = NULL, season = NULL) {
   aggregate_cached_matches("summary", league = league, season = season)
 }
 
 #' Load events data from pannadata
 #'
-#' @param league League code (e.g., "ENG")
-#' @param season Season string (e.g., "2023-2024")
+#' @param league League code (e.g., "ENG"). NULL for all leagues.
+#' @param season Season string (e.g., "2023-2024"). NULL for all seasons.
 #' @return Data frame of match events or NULL
 #' @export
-load_events <- function(league, season) {
+load_events <- function(league = NULL, season = NULL) {
   aggregate_cached_matches("events", league = league, season = season)
 }
 
 #' Load shooting data from pannadata
 #'
-#' @param league League code (e.g., "ENG")
-#' @param season Season string (e.g., "2023-2024")
+#' @param league League code (e.g., "ENG"). NULL for all leagues.
+#' @param season Season string (e.g., "2023-2024"). NULL for all seasons.
 #' @return Data frame of shots or NULL
 #' @export
-load_shots <- function(league, season) {
+load_shots <- function(league = NULL, season = NULL) {
   aggregate_cached_matches("shots", league = league, season = season)
 }
 
 #' Load metadata from pannadata
 #'
-#' @param league League code (e.g., "ENG")
-#' @param season Season string (e.g., "2023-2024")
+#' @param league League code (e.g., "ENG"). NULL for all leagues.
+#' @param season Season string (e.g., "2023-2024"). NULL for all seasons.
 #' @return Data frame of match metadata or NULL
 #' @export
-load_metadata <- function(league, season) {
+load_metadata <- function(league = NULL, season = NULL) {
   aggregate_cached_matches("metadata", league = league, season = season)
 }
 
 #' Load passing data from pannadata
 #'
-#' @param league League code (e.g., "ENG")
-#' @param season Season string (e.g., "2023-2024")
+#' @param league League code (e.g., "ENG"). NULL for all leagues.
+#' @param season Season string (e.g., "2023-2024"). NULL for all seasons.
 #' @return Data frame of passing stats or NULL
 #' @export
-load_passing <- function(league, season) {
+load_passing <- function(league = NULL, season = NULL) {
   aggregate_cached_matches("passing", league = league, season = season)
 }
 
 #' Load defense data from pannadata
 #'
-#' @param league League code (e.g., "ENG")
-#' @param season Season string (e.g., "2023-2024")
+#' @param league League code (e.g., "ENG"). NULL for all leagues.
+#' @param season Season string (e.g., "2023-2024"). NULL for all seasons.
 #' @return Data frame of defensive stats or NULL
 #' @export
-load_defense <- function(league, season) {
+load_defense <- function(league = NULL, season = NULL) {
   aggregate_cached_matches("defense", league = league, season = season)
 }
 
 #' Load possession data from pannadata
 #'
-#' @param league League code (e.g., "ENG")
-#' @param season Season string (e.g., "2023-2024")
+#' @param league League code (e.g., "ENG"). NULL for all leagues.
+#' @param season Season string (e.g., "2023-2024"). NULL for all seasons.
 #' @return Data frame of possession stats or NULL
 #' @export
-load_possession <- function(league, season) {
+load_possession <- function(league = NULL, season = NULL) {
   aggregate_cached_matches("possession", league = league, season = season)
 }
 
