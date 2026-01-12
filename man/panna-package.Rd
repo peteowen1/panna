@@ -6,7 +6,15 @@
 \alias{panna-package}
 \title{panna: Player Rating System for Football Using RAPM and SPM Methods}
 \description{
-Implements the panna player rating methodology for football (soccer) players. Combines Regularized Adjusted Plus-Minus (RAPM) with Statistical Plus-Minus (SPM) as a Bayesian prior to produce stable player impact ratings. Includes data collection from FBref via worldfootballR, splint-based analysis (time segments between substitutions/goals), and offensive/defensive rating separation.
+Implements the panna player rating methodology for football (soccer) players. Combines Regularized Adjusted Plus-Minus (RAPM) with Statistical Plus-Minus (SPM) as a Bayesian prior to produce stable player impact ratings. Uses cached FBref data from pannadata repository, splint-based analysis (time segments between substitutions/goals), and offensive/defensive rating separation.
+}
+\seealso{
+Useful links:
+\itemize{
+  \item \url{https://github.com/peteowen1/panna}
+  \item Report bugs at \url{https://github.com/peteowen1/panna/issues}
+}
+
 }
 \author{
 \strong{Maintainer}: Pete Owen \email{pete.owen1@hotmail.co.uk}

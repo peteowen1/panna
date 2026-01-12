@@ -18,7 +18,7 @@ This document describes all data structures used in the panna pipeline.
 
 ## 01_raw_data.rds
 
-Raw data from worldfootballR. All columns are snake_case after `clean_column_names()`.
+Raw data from pannadata repository. All columns are snake_case after `clean_column_names()`.
 
 ### results
 | Column | Type | Description |
@@ -76,7 +76,7 @@ Raw data from worldfootballR. All columns are snake_case after `clean_column_nam
 | notes | character | Shot details |
 
 ### stats_summary, stats_passing, stats_defense, stats_possession
-Advanced player stats per match. See worldfootballR documentation for full column list.
+Advanced player stats per match. See `pannadata/DATA_DICTIONARY.md` for full column definitions.
 
 ---
 

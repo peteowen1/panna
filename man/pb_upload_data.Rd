@@ -4,44 +4,25 @@
 \alias{pb_upload_data}
 \title{Upload data to GitHub Releases}
 \usage{
-pb_upload_data(
-  repo = "peteowen/pannadata",
-  tag = "data",
-  source = NULL,
-  table_types = NULL,
-  league = NULL,
-  season = NULL,
-  overwrite = TRUE
-)
+pb_upload_data(repo = "peteowen1/pannadata", tag = "latest", source = NULL)
 }
 \arguments{
-\item{repo}{GitHub repository in "owner/repo" format (default: "peteowen/pannadata")}
+\item{repo}{GitHub repository in "owner/repo" format (default: "peteowen1/pannadata")}
 
-\item{tag}{Release tag to upload to (default: "data")}
+\item{tag}{Release tag to upload to (default: "latest")}
 
-\item{source}{Source directory (default: pannadata_dir())}
-
-\item{table_types}{Which table types to upload (default: all)}
-
-\item{league}{Optional league filter}
-
-\item{season}{Optional season filter}
-
-\item{overwrite}{Overwrite existing files in release (default: TRUE)}
+\item{source}{Source directory containing 'data' folder (default: pannadata_dir())}
 }
 \value{
-Invisible vector of uploaded file paths
+Invisible path to uploaded zip file
 }
 \description{
-Uploads local data files to a GitHub Release. Creates the release if it
-doesn't exist. Files are organized by table type.
+Zips the local data directory and uploads it to a GitHub Release.
+Creates the release if it doesn't exist.
 }
 \examples{
 \dontrun{
 # Upload all data
 pb_upload_data()
-
-# Upload only ENG 2024-2025
-pb_upload_data(league = "ENG", season = "2024-2025")
 }
 }

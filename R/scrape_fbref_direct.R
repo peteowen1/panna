@@ -171,7 +171,8 @@ if (!grepl("fbref\\.com/en/matches/", match_url)) {
 
 #' Extract match metadata from FBref page
 #'
-#' Parses scorebox to get teams, score, date, and other match info.
+#' Parses scorebox to get teams, score, date, manager, captain, venue,
+#' attendance, officials, and formations.
 #'
 #' @param page Parsed HTML document
 #' @param match_url Original match URL for ID extraction
@@ -204,6 +205,7 @@ extract_match_metadata <- function(page, match_url) {
 
   # Extract team IDs from table names (e.g., "stats_18bb7c10_summary")
   team_id_matches <- regmatches(table_ids, regexpr("stats_([a-f0-9]{8})_", table_ids))
+
   team_ids <- unique(gsub("stats_|_", "", team_id_matches))
 
   # Extract date from URL (format: Month-Day-Year in URL)
@@ -219,6 +221,144 @@ extract_match_metadata <- function(page, match_url) {
     )
   }
 
+  # ============================================================================
+  # Extended metadata extraction
+  # ============================================================================
+
+  # Helper to extract text after "Label:" from datapoint divs
+  extract_datapoint <- function(team_node, label) {
+    if (is.na(team_node)) return(NA_character_)
+    datapoints <- rvest::html_nodes(team_node, ".datapoint")
+    for (dp in datapoints) {
+      text <- rvest::html_text(dp)
+      if (grepl(paste0("^", label, ":"), text, ignore.case = TRUE)) {
+        # Extract text after the label
+        value <- sub(paste0("^", label, ":\\s*"), "", text, ignore.case = TRUE)
+        return(trimws(value))
+      }
+    }
+    NA_character_
+  }
+
+  # Helper to extract player ID from captain link
+  extract_captain_id <- function(team_node) {
+    if (is.na(team_node)) return(NA_character_)
+    datapoints <- rvest::html_nodes(team_node, ".datapoint")
+    for (dp in datapoints) {
+      text <- rvest::html_text(dp)
+      if (grepl("^Captain:", text, ignore.case = TRUE)) {
+        link <- rvest::html_node(dp, "a")
+        if (!is.na(link)) {
+          href <- rvest::html_attr(link, "href")
+          # Extract player ID from href (e.g., "/en/players/d5f2f82b/Marquinhos")
+          id_match <- regmatches(href, regexpr("[a-f0-9]{8}", href))
+          if (length(id_match) > 0) return(id_match)
+        }
+      }
+    }
+    NA_character_
+  }
+
+  # Extract manager and captain for each team
+  home_team_node <- rvest::html_node(page, "#sb_team_0")
+  away_team_node <- rvest::html_node(page, "#sb_team_1")
+
+  home_manager <- extract_datapoint(home_team_node, "Manager")
+  away_manager <- extract_datapoint(away_team_node, "Manager")
+  home_captain <- extract_datapoint(home_team_node, "Captain")
+  away_captain <- extract_datapoint(away_team_node, "Captain")
+  home_captain_id <- extract_captain_id(home_team_node)
+  away_captain_id <- extract_captain_id(away_team_node)
+
+  # Extract venue, attendance, officials from scorebox_meta
+  scorebox_meta <- rvest::html_node(page, ".scorebox_meta")
+  venue <- NA_character_
+  attendance <- NA_integer_
+  referee <- NA_character_
+  ar1 <- NA_character_
+  ar2 <- NA_character_
+  fourth_official <- NA_character_
+  var_official <- NA_character_
+  kickoff_time <- NA_character_
+  kickoff_epoch <- NA_integer_
+
+  if (!is.na(scorebox_meta)) {
+    meta_divs <- rvest::html_nodes(scorebox_meta, "div")
+    for (div in meta_divs) {
+      text <- rvest::html_text(div)
+
+      # Venue
+      if (grepl("Venue:", text, ignore.case = TRUE)) {
+        venue <- sub(".*Venue:\\s*", "", text, ignore.case = TRUE)
+        venue <- trimws(venue)
+      }
+
+      # Attendance
+      if (grepl("Attendance:", text, ignore.case = TRUE)) {
+        att_match <- regmatches(text, regexpr("[0-9,]+", text))
+        if (length(att_match) > 0) {
+          attendance <- as.integer(gsub(",", "", att_match))
+        }
+      }
+
+      # Officials
+      if (grepl("Officials:", text, ignore.case = TRUE)) {
+        officials_text <- sub(".*Officials:\\s*", "", text, ignore.case = TRUE)
+        # Split by middot (Unicode U+00B7) or comma
+        officials_list <- strsplit(officials_text, "\\s*[\u00b7,]\\s*")[[1]]
+        officials_list <- trimws(officials_list)
+
+        for (official in officials_list) {
+          if (grepl("\\(Referee\\)", official, ignore.case = TRUE)) {
+            referee <- sub("\\s*\\(Referee\\).*", "", official, ignore.case = TRUE)
+          } else if (grepl("\\(AR1\\)", official, ignore.case = TRUE)) {
+            ar1 <- sub("\\s*\\(AR1\\).*", "", official, ignore.case = TRUE)
+          } else if (grepl("\\(AR2\\)", official, ignore.case = TRUE)) {
+            ar2 <- sub("\\s*\\(AR2\\).*", "", official, ignore.case = TRUE)
+          } else if (grepl("\\(4th\\)", official, ignore.case = TRUE)) {
+            fourth_official <- sub("\\s*\\(4th\\).*", "", official, ignore.case = TRUE)
+          } else if (grepl("\\(VAR\\)", official, ignore.case = TRUE)) {
+            var_official <- sub("\\s*\\(VAR\\).*", "", official, ignore.case = TRUE)
+          }
+        }
+      }
+    }
+
+    # Extract kickoff time from venuetime span
+    venuetime <- rvest::html_node(scorebox_meta, ".venuetime")
+    if (!is.na(venuetime)) {
+      kickoff_time <- rvest::html_attr(venuetime, "data-venue-time")
+      epoch_str <- rvest::html_attr(venuetime, "data-venue-epoch")
+      if (!is.na(epoch_str)) {
+        kickoff_epoch <- as.integer(epoch_str)
+      }
+    }
+  }
+
+  # Extract formations from lineup divs
+  home_formation <- NA_character_
+  away_formation <- NA_character_
+
+  home_lineup <- rvest::html_node(page, ".lineup#a")
+  away_lineup <- rvest::html_node(page, ".lineup#b")
+
+  extract_formation <- function(lineup_node) {
+    if (is.na(lineup_node)) return(NA_character_)
+    header <- rvest::html_node(lineup_node, "th")
+    if (is.na(header)) return(NA_character_)
+    text <- rvest::html_text(header)
+    # Extract formation pattern like (4-3-3) or (4-1-4-1)
+    formation_match <- regmatches(text, regexpr("\\([0-9]+-[0-9]+-[0-9]+(-[0-9]+)?\\)", text))
+    if (length(formation_match) > 0) {
+      # Remove parentheses
+      return(gsub("[()]", "", formation_match))
+    }
+    NA_character_
+  }
+
+  home_formation <- extract_formation(home_lineup)
+  away_formation <- extract_formation(away_lineup)
+
   data.frame(
     fbref_id = if (length(fbref_id) > 0) fbref_id else NA_character_,
     match_url = match_url,
@@ -229,8 +369,218 @@ extract_match_metadata <- function(page, match_url) {
     away_score = if (length(scores) >= 2) scores[2] else NA_integer_,
     home_team_id = if (length(team_ids) >= 1) team_ids[1] else NA_character_,
     away_team_id = if (length(team_ids) >= 2) team_ids[2] else NA_character_,
+    home_manager = home_manager,
+    away_manager = away_manager,
+    home_captain = home_captain,
+    away_captain = away_captain,
+    home_captain_id = home_captain_id,
+    away_captain_id = away_captain_id,
+    venue = venue,
+    attendance = attendance,
+    kickoff_time = kickoff_time,
+    kickoff_epoch = kickoff_epoch,
+    referee = referee,
+    ar1 = ar1,
+    ar2 = ar2,
+    fourth_official = fourth_official,
+    var_official = var_official,
+    home_formation = home_formation,
+    away_formation = away_formation,
     stringsAsFactors = FALSE
   )
+}
+
+
+#' Scrape match events timeline from FBref page
+#'
+#' Parses the events wrap section to extract goals, cards, and substitutions
+#' with precise minute information.
+#'
+#' @param page Parsed HTML document
+#' @param match_url Original match URL for ID extraction
+#'
+#' @return Data frame with event timeline, or NULL if no events found
+#' @keywords internal
+scrape_match_events <- function(page, match_url) {
+  # Extract match ID from URL
+  fbref_id <- regmatches(match_url, regexpr("[a-f0-9]{8}", match_url))
+  if (length(fbref_id) == 0) fbref_id <- NA_character_
+
+  # Find events container
+  events_wrap <- rvest::html_node(page, "#events_wrap")
+  if (is.na(events_wrap)) {
+    return(NULL)
+  }
+
+  # Get all event divs (class "event a" for home, "event b" for away)
+  event_nodes <- rvest::html_nodes(events_wrap, ".event")
+
+  if (length(event_nodes) == 0) {
+    return(NULL)
+  }
+
+  # Parse each event
+  events_list <- lapply(event_nodes, function(event_node) {
+    # Determine team from class (a = home, b = away)
+    event_class <- rvest::html_attr(event_node, "class")
+    is_home <- grepl("\\ba\\b", event_class)
+
+    # Get event icon class to determine event type
+    icon_node <- rvest::html_node(event_node, ".event_icon")
+    event_type <- NA_character_
+    if (!is.na(icon_node)) {
+      icon_class <- rvest::html_attr(icon_node, "class")
+      # Map icon classes to event types
+      if (grepl("penalty_goal", icon_class)) {
+        event_type <- "penalty_goal"
+      } else if (grepl("own_goal", icon_class)) {
+        event_type <- "own_goal"
+      } else if (grepl("\\bgoal\\b", icon_class)) {
+        event_type <- "goal"
+      } else if (grepl("yellow_red_card", icon_class)) {
+        event_type <- "yellow_red_card"
+      } else if (grepl("red_card", icon_class)) {
+        event_type <- "red_card"
+      } else if (grepl("yellow_card", icon_class)) {
+        event_type <- "yellow_card"
+      } else if (grepl("substitute_in", icon_class)) {
+        event_type <- "sub_on"
+      }
+    }
+
+    # Skip if no recognizable event type
+    if (is.na(event_type)) {
+      return(NULL)
+    }
+
+    # Extract minute from first div text (e.g., "19'" or "45+1'")
+    first_div <- rvest::html_node(event_node, "div")
+    minute_text <- if (!is.na(first_div)) rvest::html_text(first_div) else ""
+
+    # Parse minute and added time
+    minute <- NA_integer_
+    added_time <- NA_integer_
+
+    # Match patterns like "19'" or "45+1'" or "90+7'"
+    # FBref uses &rsquor; HTML entity (or actual quote chars) after the minute
+    # Match: digits, optional +digits, then any quote-like char or &rsquor;
+    minute_match <- regmatches(minute_text, regexpr("([0-9]+)\\+?([0-9]*)(&rsquor;|['\\u2019])", minute_text))
+    if (length(minute_match) > 0) {
+      # Extract base minute
+      base_min <- regmatches(minute_match, regexpr("^[0-9]+", minute_match))
+      if (length(base_min) > 0) {
+        minute <- as.integer(base_min)
+      }
+      # Extract added time if present (after +)
+      if (grepl("\\+", minute_match)) {
+        added_match <- regmatches(minute_match, regexpr("\\+([0-9]+)", minute_match))
+        if (length(added_match) > 0) {
+          added_time <- as.integer(gsub("\\+", "", added_match))
+        }
+      }
+    }
+
+    # Extract score at time of event (from small span, e.g., "1:0")
+    score_span <- rvest::html_node(first_div, "small span")
+    score_home <- NA_integer_
+    score_away <- NA_integer_
+    if (!is.na(score_span)) {
+      score_text <- rvest::html_text(score_span)
+      score_parts <- strsplit(score_text, "[:-]")[[1]]
+      if (length(score_parts) == 2) {
+        score_home <- suppressWarnings(as.integer(trimws(score_parts[1])))
+        score_away <- suppressWarnings(as.integer(trimws(score_parts[2])))
+      }
+    }
+
+    # Extract primary player (first link in event)
+    player_links <- rvest::html_nodes(event_node, "a")
+    player <- NA_character_
+    player_id <- NA_character_
+    if (length(player_links) > 0) {
+      player <- rvest::html_text(player_links[[1]])
+      href <- rvest::html_attr(player_links[[1]], "href")
+      if (!is.na(href)) {
+        id_match <- regmatches(href, regexpr("[a-f0-9]{8}", href))
+        if (length(id_match) > 0) {
+          player_id <- id_match
+        }
+      }
+    }
+
+    # Extract secondary player (assist for goals, sub off for subs)
+    secondary_player <- NA_character_
+    secondary_player_id <- NA_character_
+
+    # Look for assist or substitution info in small tags
+    small_nodes <- rvest::html_nodes(event_node, "small")
+    for (small_node in small_nodes) {
+      small_text <- rvest::html_text(small_node)
+
+      # Assist pattern: "Assist: PlayerName"
+      if (grepl("Assist:", small_text, ignore.case = TRUE)) {
+        assist_link <- rvest::html_node(small_node, "a")
+        if (!is.na(assist_link)) {
+          secondary_player <- rvest::html_text(assist_link)
+          href <- rvest::html_attr(assist_link, "href")
+          if (!is.na(href)) {
+            id_match <- regmatches(href, regexpr("[a-f0-9]{8}", href))
+            if (length(id_match) > 0) {
+              secondary_player_id <- id_match
+            }
+          }
+        }
+        break
+      }
+
+      # Substitution pattern: "for PlayerName"
+      if (grepl("^\\s*for\\s+", small_text, ignore.case = TRUE)) {
+        sub_link <- rvest::html_node(small_node, "a")
+        if (!is.na(sub_link)) {
+          secondary_player <- rvest::html_text(sub_link)
+          href <- rvest::html_attr(sub_link, "href")
+          if (!is.na(href)) {
+            id_match <- regmatches(href, regexpr("[a-f0-9]{8}", href))
+            if (length(id_match) > 0) {
+              secondary_player_id <- id_match
+            }
+          }
+        }
+        break
+      }
+    }
+
+    data.frame(
+      fbref_id = fbref_id,
+      minute = minute,
+      added_time = added_time,
+      event_type = event_type,
+      is_home = is_home,
+      player = player,
+      player_id = player_id,
+      secondary_player = secondary_player,
+      secondary_player_id = secondary_player_id,
+      score_home = score_home,
+      score_away = score_away,
+      stringsAsFactors = FALSE
+    )
+  })
+
+  # Remove NULL entries and combine
+  events_list <- events_list[!sapply(events_list, is.null)]
+
+  if (length(events_list) == 0) {
+    return(NULL)
+  }
+
+  result <- do.call(rbind, events_list)
+
+  # Sort by minute, then added_time (treat NA as 0 so 90' comes before 90+1')
+  sort_added_time <- ifelse(is.na(result$added_time), 0L, result$added_time)
+  result <- result[order(result$minute, sort_added_time, na.last = TRUE), ]
+  rownames(result) <- NULL
+
+  result
 }
 
 
@@ -413,6 +763,13 @@ parse_match_page <- function(page, match_url) {
     result$shots <- shots_df
   }
 
+  # Events timeline (goals, cards, substitutions)
+  events_df <- scrape_match_events(page, match_url)
+  if (!is.null(events_df) && nrow(events_df) > 0) {
+    events_df$match_url <- match_url
+    result$events <- events_df
+  }
+
   result
 }
 
@@ -426,12 +783,26 @@ parse_match_page <- function(page, match_url) {
 
 #' Get or set pannadata directory
 #'
-#' Gets or sets the base directory for data storage. By default uses
-#' the pannadata directory in the pannaverse folder structure.
+#' Gets or sets the base directory for parquet/RDS data storage.
+#'
+#' Resolution order (first match wins):
+#' \enumerate{
+#'   \item Explicitly set via \code{pannadata_dir("path")}
+#'   \item \code{PANNADATA_DIR} environment variable
+#'   \item \code{../pannadata/data} if it exists (pannaverse developers)
+#'   \item R's standard user data directory via \code{tools::R_user_dir("panna", "data")}
+#' }
+#'
+#' The default (\code{R_user_dir}) gives OS-appropriate persistent storage:
+#' \itemize{
+#'   \item Windows: \code{C:/Users/you/AppData/Local/R/panna/data}
+#'   \item Mac: \code{~/Library/Application Support/org.R-project.R/panna/data}
+#'   \item Linux: \code{~/.local/share/R/panna/data}
+#' }
 #'
 #' @param path Optional new path to set. If NULL, returns current path.
 #'
-#' @return Current pannadata directory path
+#' @return Current pannadata directory path (invisibly when setting)
 #' @export
 #'
 #' @examples
@@ -439,34 +810,38 @@ parse_match_page <- function(page, match_url) {
 #' pannadata_dir()
 #'
 #' # Set custom path
-#' pannadata_dir("C:/my/custom/path")
+#' pannadata_dir("~/my/football/data")
 pannadata_dir <- function(path = NULL) {
+
   if (!is.null(path)) {
-    .panna_env$pannadata_dir <- path
-    return(invisible(path))
+    .panna_env$pannadata_dir <- normalizePath(path, mustWork = FALSE)
+    return(invisible(.panna_env$pannadata_dir))
   }
 
-  # Return cached value if set
- if (exists("pannadata_dir", envir = .panna_env)) {
+  # 1. Return cached value if explicitly set
+  if (exists("pannadata_dir", envir = .panna_env)) {
     return(.panna_env$pannadata_dir)
   }
 
-  # Check environment variable
+  # 2. Check environment variable
   env_path <- Sys.getenv("PANNADATA_DIR", "")
   if (env_path != "") {
     return(env_path)
   }
 
-  # Default: pannadata sibling directory
-  # Try to find pannaverse/pannadata relative to current panna location
-  default_path <- file.path(dirname(getwd()), "pannadata", "data")
-
-  # If that doesn't exist, fall back to local data folder
-  if (!dir.exists(dirname(default_path))) {
-    default_path <- file.path("data", "fbref_matches")
+  # 3. Check for pannaverse structure (for developers)
+  # Look for ../pannadata/data relative to working directory
+  pannaverse_path <- file.path(dirname(getwd()), "pannadata", "data")
+  if (dir.exists(pannaverse_path)) {
+    return(normalizePath(pannaverse_path))
   }
 
-  default_path
+  # 4. Default: R's standard user data directory (works across sessions)
+  # This gives OS-appropriate paths:
+  #   Windows: C:/Users/you/AppData/Local/R/panna/data
+  #   Mac: ~/Library/Application Support/org.R-project.R/panna/data
+  #   Linux: ~/.local/share/R/panna/data
+  tools::R_user_dir("panna", "data")
 }
 
 
@@ -576,11 +951,55 @@ load_match_table <- function(league, season, fbref_id, table_type) {
 }
 
 
+#' Get match IDs from parquet file
+#'
+#' Reads a parquet file and extracts unique match IDs. Results are cached
+#' in memory for the session to avoid repeated file reads.
+#'
+#' @param table_type Table type (e.g., "metadata")
+#' @param league League code
+#' @param season Season string
+#'
+#' @return Character vector of match IDs, or NULL if no parquet
+#' @keywords internal
+get_parquet_fbref_ids <- function(table_type, league, season) {
+  # Check cache first
+
+  cache_key <- paste(table_type, league, season, sep = "_")
+  if (exists("parquet_id_cache", envir = .panna_env)) {
+    cache <- get("parquet_id_cache", envir = .panna_env)
+    if (cache_key %in% names(cache)) {
+      return(cache[[cache_key]])
+    }
+  } else {
+    assign("parquet_id_cache", list(), envir = .panna_env)
+  }
+
+  # Read parquet and extract IDs
+  parquet_path <- get_parquet_path(table_type, league, season)
+  if (!file.exists(parquet_path)) {
+    return(NULL)
+  }
+
+  ids <- tryCatch({
+    df <- arrow::read_parquet(parquet_path, col_select = "fbref_id")
+    unique(df$fbref_id)
+  }, error = function(e) NULL)
+
+  # Cache result
+  cache <- get("parquet_id_cache", envir = .panna_env)
+  cache[[cache_key]] <- ids
+  assign("parquet_id_cache", cache, envir = .panna_env)
+
+  ids
+}
+
+
 #' Check if match is cached
 #'
-#' Checks if a match has been fully scraped. Uses the metadata's
-#' `tables_available` field to know which tables exist for this match.
-#' Uses hierarchical path: \code{\{table_type\}/\{league\}/\{season\}/\{id\}.rds}
+#' Checks if a match has been fully scraped. First checks RDS files,
+#' then falls back to checking parquet files (for CI/CD environments
+#' where only parquet is available).
 #'
 #' @param league League code
 #' @param season Season string
@@ -590,32 +1009,43 @@ load_match_table <- function(league, season, fbref_id, table_type) {
 #' @return Logical - TRUE if match has been fully scraped
 #' @keywords internal
 is_match_cached <- function(league, season, fbref_id, table_types = "metadata") {
-  # Quick check: metadata file must exist (hierarchical path)
+  # Quick check: metadata RDS file must exist (hierarchical path)
   cache_dir <- get_fbref_match_cache_dir("metadata", league, season, create = FALSE)
-  if (!dir.exists(cache_dir)) return(FALSE)
   filename <- make_match_filename(fbref_id)
-  metadata_path <- file.path(cache_dir, filename)
-  if (!file.exists(metadata_path)) return(FALSE)
 
-  # Read metadata to check tables_available
-  metadata <- tryCatch(readRDS(metadata_path), error = function(e) NULL)
-  if (is.null(metadata)) return(FALSE)
-
-  # If tables_available field exists, verify all those tables are cached
-  if ("tables_available" %in% names(metadata) && !is.na(metadata$tables_available[1])) {
-    available_tables <- strsplit(metadata$tables_available[1], ",")[[1]]
-    if (length(available_tables) == 0) return(FALSE)
-
-    # Check each available table exists (hierarchical path)
-    for (tt in available_tables) {
-      tt_dir <- get_fbref_match_cache_dir(tt, league, season, create = FALSE)
-      if (!dir.exists(tt_dir)) return(FALSE)
-      if (!file.exists(file.path(tt_dir, filename))) return(FALSE)
+  if (dir.exists(cache_dir)) {
+    metadata_path <- file.path(cache_dir, filename)
+    if (file.exists(metadata_path)) {
+      # Read metadata to check tables_available
+      metadata <- tryCatch(readRDS(metadata_path), error = function(e) NULL)
+      if (!is.null(metadata)) {
+        # If tables_available field exists, verify all those tables are cached
+        if ("tables_available" %in% names(metadata) && !is.na(metadata$tables_available[1])) {
+          available_tables <- strsplit(metadata$tables_available[1], ",")[[1]]
+          if (length(available_tables) > 0) {
+            # Check each available table exists (hierarchical path)
+            all_exist <- TRUE
+            for (tt in available_tables) {
+              tt_dir <- get_fbref_match_cache_dir(tt, league, season, create = FALSE)
+              if (!dir.exists(tt_dir) || !file.exists(file.path(tt_dir, filename))) {
+                all_exist <- FALSE
+                break
+              }
+            }
+            if (all_exist) return(TRUE)
+          }
+        }
+      }
     }
+  }
+
+  # Fallback: check if match exists in parquet files (for CI/CD)
+  # Only need to check metadata parquet - if match is there, it was fully scraped
+  parquet_ids <- get_parquet_fbref_ids("metadata", league, season)
+  if (!is.null(parquet_ids) && fbref_id %in% parquet_ids) {
     return(TRUE)
   }
 
-  # No tables_available field = old format or failed scrape, needs re-scrape
   FALSE
 }
 
@@ -634,10 +1064,10 @@ is_match_cached <- function(league, season, fbref_id, table_types = "metadata") 
 #'
 #' @return Character vector of cached fbref_ids
 #' @export
-get_cached_match_ids <- function(league, season) {
-  # All 9 table types for a complete match
+get_cached_fbref_ids <- function(league, season) {
+  # All 10 table types for a complete match (events added)
   all_table_types <- c("metadata", "summary", "passing", "passing_types",
-                       "defense", "possession", "misc", "keeper", "shots")
+                       "defense", "possession", "misc", "keeper", "shots", "events")
 
   # Check metadata dir exists (hierarchical: metadata/league/season/)
   cache_dir <- get_fbref_match_cache_dir("metadata", league, season, create = FALSE)
@@ -811,112 +1241,9 @@ list_cached_matches <- function(table_type = "metadata", league = NULL,
 # ============================================================================
 # Fixtures/Schedule Scraping
 # ============================================================================
-
-#' Get FBref league configuration
-#'
-#' Returns league codes, competition IDs, and URL names for supported competitions.
-#' Includes Big 5 leagues, domestic cups, and UEFA club competitions.
-#'
-#' @return Data frame with league configurations
-#' @export
-get_fbref_league_config <- function() {
-  data.frame(
-    league = c(
-      # Big 5 Leagues
-      "ENG", "ESP", "GER", "ITA", "FRA",
-      # Domestic Cups
-      "FA_CUP", "COPA_DEL_REY", "DFB_POKAL", "COPPA_ITALIA", "COUPE_DE_FRANCE",
-      # UEFA Club Competitions
-      "UCL", "UEL"
-    ),
-    comp_id = c(
-      # Big 5 Leagues
-      9, 12, 20, 11, 13,
-      # Domestic Cups (FA Cup, Copa del Rey, DFB-Pokal, Coppa Italia, Coupe de France)
-      514, 569, 521, 529, 518,
-      # UEFA Club Competitions
-      8, 19
-    ),
-    league_name = c(
-      # Big 5 Leagues
-      "Premier-League", "La-Liga", "Bundesliga", "Serie-A", "Ligue-1",
-      # Domestic Cups
-      "FA-Cup", "Copa-del-Rey", "DFB-Pokal", "Coppa-Italia", "Coupe-de-France",
-      # UEFA Club Competitions
-      "Champions-League", "Europa-League"
-    ),
-    full_name = c(
-      # Big 5 Leagues
-      "Premier League", "La Liga", "Bundesliga", "Serie A", "Ligue 1",
-      # Domestic Cups
-      "FA Cup", "Copa del Rey", "DFB-Pokal", "Coppa Italia", "Coupe de France",
-      # UEFA Club Competitions
-      "Champions League", "Europa League"
-    ),
-    stringsAsFactors = FALSE
-  )
-}
-
-
-#' Get Big 5 league codes
-#' @return Character vector of league codes
-#' @export
-get_big5_codes <- function() {
-  c("ENG", "ESP", "GER", "ITA", "FRA")
-}
-
-
-#' Get domestic cup codes
-#' @return Character vector of cup codes
-#' @export
-get_domestic_cup_codes <- function() {
-  c("FA_CUP", "COPA_DEL_REY", "DFB_POKAL", "COPPA_ITALIA", "COUPE_DE_FRANCE")
-}
-
-
-#' Get UEFA club competition codes
-#' @return Character vector of UEFA competition codes
-#' @export
-get_uefa_cup_codes <- function() {
-  c("UCL", "UEL")
-}
-
-
-#' Get all supported competition codes
-#' @return Character vector of all competition codes
-#' @export
-get_all_competition_codes <- function() {
-  c(get_big5_codes(), get_domestic_cup_codes(), get_uefa_cup_codes())
-}
-
-
-#' Build FBref fixtures URL
-#'
-#' Constructs the URL for a league's fixtures/schedule page.
-#'
-#' @param league League code (e.g., "ENG", "ESP")
-#' @param season Season string (e.g., "2024-2025")
-#'
-#' @return URL string
-#' @export
-build_fixtures_url <- function(league, season) {
- config <- get_fbref_league_config()
-  league_info <- config[config$league == league, ]
-
-  if (nrow(league_info) == 0) {
-    stop("Unknown league: ", league,
-         ". Valid options: ", paste(config$league, collapse = ", "))
-  }
-
-  sprintf(
-    "https://fbref.com/en/comps/%s/%s/schedule/%s-%s-Scores-and-Fixtures",
-    league_info$comp_id,
-    season,
-    season,
-    league_info$league_name
-  )
-}
-
+# Competition metadata is in fbref_competitions.R (single source of truth)
+# Use: fbref_competitions, list_competitions(), get_fbref_comp_id(),
+#      get_fbref_schedule_url(), get_seasons_since(), get_tournament_years()
 
 #' Scrape match URLs from fixtures page
 #'
@@ -929,7 +1256,7 @@ build_fixtures_url <- function(league, season) {
 #' @return Data frame with match_url, home_team, away_team, date columns
 #' @export
 scrape_fixtures <- function(league, season, completed_only = TRUE) {
-  url <- build_fixtures_url(league, season)
+  url <- get_fbref_schedule_url(league, season)
 
   progress_msg(sprintf("Fetching fixtures: %s %s", league, season))
 
@@ -1042,26 +1369,6 @@ scrape_fixtures <- function(league, season, completed_only = TRUE) {
 }
 
 
-#' Get all seasons since 2017-2018
-#'
-#' Returns a vector of season strings from 2017-2018 to current season.
-#'
-#' @param start_year First season start year (default 2017)
-#'
-#' @return Character vector of season strings
-#' @export
-get_seasons_since <- function(start_year = 2017) {
-  current_year <- as.numeric(format(Sys.Date(), "%Y"))
-  current_month <- as.numeric(format(Sys.Date(), "%m"))
-
-  # If we're past July, include current season
-  end_year <- if (current_month >= 7) current_year else current_year - 1
-
-  years <- start_year:end_year
-  paste0(years, "-", years + 1)
-}
-
-
 # ============================================================================
 # Main Scraping Function
 # ============================================================================
@@ -1082,14 +1389,16 @@ get_seasons_since <- function(start_year = 2017) {
 #' @param delay Seconds between requests (default 5, minimum 3)
 #' @param use_cache Whether to use/update cache (default TRUE)
 #' @param verbose Print progress messages (default TRUE)
+#' @param max_matches Maximum number of matches to scrape (default Inf for all)
 #'
 #' @return List containing data frames for each table type:
-#'   \item{metadata}{Match metadata (teams, scores, IDs)}
+#'   \item{metadata}{Match metadata (teams, scores, IDs, manager, captain, venue, etc.)}
 #'   \item{summary}{Player summary stats}
 #'   \item{passing}{Passing stats}
 #'   \item{defense}{Defensive stats}
 #'   \item{possession}{Possession stats}
 #'   \item{shots}{Shot data}
+#'   \item{events}{Match events timeline (goals, cards, substitutions)}
 #'
 #' @export
 #'
@@ -1101,16 +1410,18 @@ get_seasons_since <- function(start_year = 2017) {
 #' data <- scrape_fbref_matches(urls, league = "ESP", season = "2025-2026")
 #' data$summary  # Player stats
 #' data$shots    # Shot-level data
+#' data$events   # Match timeline
 #' }
 scrape_fbref_matches <- function(
     match_urls,
     league,
     season,
     table_types = c("summary", "passing", "passing_types", "defense",
-                    "possession", "misc", "keeper", "shots", "metadata"),
+                    "possession", "misc", "keeper", "shots", "events", "metadata"),
     delay = 5,
     use_cache = TRUE,
-    verbose = TRUE
+    verbose = TRUE,
+    max_matches = Inf
 ) {
   # Validate inputs
   if (length(match_urls) == 0) {
@@ -1124,11 +1435,21 @@ scrape_fbref_matches <- function(
   # Enforce minimum delay for polite scraping
   delay <- max(delay, 3)
 
+  # Limit matches if max_matches is set
+  if (is.finite(max_matches) && max_matches < length(match_urls)) {
+    if (verbose) {
+      progress_msg(sprintf("Limiting to first %d of %d matches", max_matches, length(match_urls)))
+    }
+    match_urls <- match_urls[1:max_matches]
+  }
+
   if (verbose) {
+    save_dir <- pannadata_dir()
     progress_msg(sprintf(
       "Scraping %d matches (%s %s) with %ds delay",
       length(match_urls), league, season, delay
     ))
+    progress_msg(sprintf("Saving to: %s", save_dir))
   }
 
   # Initialize result containers
@@ -1239,6 +1560,8 @@ scrape_fbref_matches <- function(
         data <- parsed$metadata
       } else if (tt == "shots") {
         data <- parsed$shots
+      } else if (tt == "events") {
+        data <- parsed$events
       } else if (tt == "keeper") {
         data <- combine_team_tables(parsed, "keeper")
       } else {
@@ -1252,8 +1575,10 @@ scrape_fbref_matches <- function(
 
         results[[tt]][[fbref_id]] <- data
 
-        if (use_cache) {
-          save_match_table(data, league, season, fbref_id, tt)
+        # Always save scraped data (use_cache only controls whether we skip cached matches)
+        save_match_table(data, league, season, fbref_id, tt)
+        if (verbose) {
+          progress_msg(sprintf("      [%s] %d rows", tt, nrow(data)))
         }
         tables_saved <- tables_saved + 1
       } else {
@@ -1265,7 +1590,7 @@ scrape_fbref_matches <- function(
     tables_found <- setdiff(table_types, tables_missing)
     if ("metadata" %in% names(results) && fbref_id %in% names(results[["metadata"]])) {
       results[["metadata"]][[fbref_id]]$tables_available <- paste(tables_found, collapse = ",")
-      if (use_cache && length(tables_found) > 0) {
+      if (length(tables_found) > 0) {
         # Re-save metadata with tables_available field
         save_match_table(results[["metadata"]][[fbref_id]], league, season, fbref_id, "metadata")
       }
@@ -1309,32 +1634,178 @@ scrape_fbref_matches <- function(
     }
   }
 
+  # Add scrape stats as attributes for tracking
+  attr(final, "n_scraped") <- n_scraped
+  attr(final, "n_cached") <- n_cached
+  attr(final, "n_failed") <- n_failed
+
   final
 }
 
 
-#' Aggregate cached match tables
+# Session cache for remote parquet data (internal, not exported)
+.remote_parquet_cache <- new.env(parent = emptyenv())
+
+
+#' Get remote parquet cache directory
 #'
-#' Combines all cached files for a table type into single data frame.
-#' Useful for loading previously scraped data for analysis.
+#' Downloads and extracts parquet zip from GitHub releases to a temp directory.
+#' Cached for the R session - subsequent calls return the cached path.
+#'
+#' @param repo GitHub repo (default: "peteowen1/pannadata")
+#' @param tag Release tag (default: "latest")
+#' @param force Re-download even if cached
+#'
+#' @return Path to extracted parquet directory
+#' @keywords internal
+get_remote_parquet_cache <- function(repo = "peteowen1/pannadata",
+                                     tag = "latest",
+                                     force = FALSE) {
+  cache_key <- paste0(repo, "@", tag)
+
+
+  # Return cached path if available
+
+if (!force && exists(cache_key, envir = .remote_parquet_cache)) {
+    cached_path <- get(cache_key, envir = .remote_parquet_cache)
+    if (dir.exists(cached_path)) {
+      return(cached_path)
+    }
+  }
+
+  # Download and extract
+  message("Downloading parquet data from GitHub releases...")
+
+  temp_dir <- file.path(tempdir(), paste0("pannadata_remote_", tag))
+  zip_file <- file.path(tempdir(), "pannadata-parquet.zip")
+
+  # Clean up old temp dir if exists
+  if (dir.exists(temp_dir)) unlink(temp_dir, recursive = TRUE)
+  dir.create(temp_dir, recursive = TRUE)
+
+  # Clean up old zip if exists
+ if (file.exists(zip_file)) file.remove(zip_file)
+
+  # Download using piggyback
+  if (!requireNamespace("piggyback", quietly = TRUE)) {
+    stop("Package 'piggyback' required for remote loading. Install with: install.packages('piggyback')")
+  }
+
+  tryCatch({
+    piggyback::pb_download(
+      file = "pannadata-parquet.zip",
+      repo = repo,
+      tag = tag,
+      dest = tempdir(),
+      overwrite = TRUE
+    )
+  }, error = function(e) {
+    stop("Failed to download from GitHub releases: ", e$message)
+  })
+
+  if (!file.exists(zip_file)) {
+    stop("Download failed - pannadata-parquet.zip not found in ", tempdir())
+  }
+
+  # Extract
+  unzip(zip_file, exdir = temp_dir, overwrite = TRUE)
+  file.remove(zip_file)
+
+  n_files <- length(list.files(temp_dir, pattern = "\\.parquet$", recursive = TRUE))
+  message(sprintf("Cached %d parquet files for this session", n_files))
+
+  # Cache the path
+  assign(cache_key, temp_dir, envir = .remote_parquet_cache)
+
+  temp_dir
+}
+
+
+#' Aggregate cached match data
+#'
+#' Combines all cached data for a table type into a single data frame.
+#' Uses parquet files if available (fast), falls back to RDS files (slower).
 #'
 #' @param table_type Type of table to aggregate (e.g., "summary", "shots")
 #' @param league Optional league filter (e.g., "ENG")
 #' @param season Optional season filter (e.g., "2024-2025")
+#' @param prefer_parquet If TRUE (default), use parquet when available
+#' @param source "local" (default) or "remote" to download from GitHub releases
 #'
 #' @return Combined data frame, or NULL if no cached data
 #' @export
 #'
 #' @examples
 #' \dontrun{
-#' # Load all cached summary stats
+#' # Load all cached summary stats (uses parquet if available)
 #' all_summary <- aggregate_cached_matches("summary")
 #'
 #' # Load only Premier League 2024-2025
 #' pl_summary <- aggregate_cached_matches("summary", league = "ENG",
 #'                                         season = "2024-2025")
 #' }
-aggregate_cached_matches <- function(table_type, league = NULL, season = NULL) {
+aggregate_cached_matches <- function(table_type, league = NULL, season = NULL,
+                                     prefer_parquet = TRUE,
+                                     source = c("local", "remote")) {
+  source <- match.arg(source)
+
+  # Determine base directory
+  if (source == "remote") {
+    base_dir <- get_remote_parquet_cache()
+  } else {
+    base_dir <- pannadata_dir()
+  }
+
+  tt_dir <- file.path(base_dir, table_type)
+
+  # Parquet fast paths
+  if (prefer_parquet && dir.exists(tt_dir)) {
+
+    # Case 1: league AND season specified -> read one parquet
+    if (!is.null(league) && !is.null(season)) {
+      parquet_path <- get_parquet_path(table_type, league, season)
+      if (file.exists(parquet_path)) {
+        return(arrow::read_parquet(parquet_path))
+      }
+    }
+
+    # Case 2: league only -> read all seasons for that league
+    if (!is.null(league) && is.null(season)) {
+      league_dir <- file.path(tt_dir, league)
+      if (dir.exists(league_dir)) {
+        parquet_files <- list.files(league_dir, pattern = "\\.parquet$",
+                                    full.names = TRUE)
+        if (length(parquet_files) > 0) {
+          all_data <- lapply(parquet_files, arrow::read_parquet)
+          return(dplyr::bind_rows(all_data))
+        }
+      }
+    }
+
+    # Case 3: season only -> read all leagues for that season
+    if (is.null(league) && !is.null(season)) {
+      parquet_file <- paste0(season, ".parquet")
+      leagues <- list.dirs(tt_dir, recursive = FALSE, full.names = FALSE)
+      parquet_files <- file.path(tt_dir, leagues, parquet_file)
+      parquet_files <- parquet_files[file.exists(parquet_files)]
+      if (length(parquet_files) > 0) {
+        all_data <- lapply(parquet_files, arrow::read_parquet)
+        return(dplyr::bind_rows(all_data))
+      }
+    }
+
+    # Case 4: no filters -> read all parquet files
+    if (is.null(league) && is.null(season)) {
+      parquet_files <- list.files(tt_dir, pattern = "\\.parquet$",
+                                  recursive = TRUE, full.names = TRUE)
+      if (length(parquet_files) > 0) {
+        all_data <- lapply(parquet_files, arrow::read_parquet)
+        return(dplyr::bind_rows(all_data))
+      }
+    }
+  }
+
+  # Fallback: read from RDS files (original behavior)
   cache_dir <- get_fbref_match_cache_dir(table_type, create = FALSE)
 
   if (!dir.exists(cache_dir)) {
@@ -1368,6 +1839,328 @@ aggregate_cached_matches <- function(table_type, league = NULL, season = NULL) {
 }
 
 
+# Parquet functions ----
+
+#' Get parquet file path for a league-season
+#'
+#' Returns the path where parquet files are stored:
+#' \code{{pannadata_dir}/{table_type}/{league}/{season}.parquet}
+#'
+#' @param table_type Table type (e.g., "summary", "events")
+#' @param league League code (e.g., "ENG")
+#' @param season Season string (e.g., "2024-2025")
+#' @param create If TRUE, create parent directory if missing
+#'
+#' @return Path to parquet file
+#' @keywords internal
+get_parquet_path <- function(table_type, league, season, create = FALSE) {
+  base_dir <- pannadata_dir()
+  parquet_dir <- file.path(base_dir, table_type, league)
+
+  if (create && !dir.exists(parquet_dir)) {
+    dir.create(parquet_dir, recursive = TRUE)
+  }
+
+  file.path(parquet_dir, paste0(season, ".parquet"))
+}
+
+
+#' Build parquet file from RDS files for a league-season
+#'
+#' Reads all RDS files for a table_type/league/season and combines them
+#' into a single parquet file. If a parquet file already exists, new RDS
+#' data is merged with existing parquet data (for incremental updates).
+#'
+#' @param table_type Table type (e.g., "summary", "events")
+#' @param league League code (e.g., "ENG")
+#' @param season Season string (e.g., "2024-2025")
+#' @param verbose Print progress messages
+#'
+#' @return Path to created parquet file, or NULL if no data
+#' @export
+build_parquet <- function(table_type, league, season, verbose = TRUE) {
+  if (verbose) message(sprintf("  %s/%s:", league, season))
+
+  parquet_path <- get_parquet_path(table_type, league, season, create = TRUE)
+
+  # Load existing parquet data if it exists AND has fbref_id column
+  # (parquet without fbref_id is invalid and will be rebuilt from RDS)
+  existing_data <- NULL
+  existing_ids <- character(0)
+  if (file.exists(parquet_path)) {
+    temp_data <- tryCatch({
+      arrow::read_parquet(parquet_path)
+    }, error = function(e) NULL)
+
+    if (!is.null(temp_data) && "fbref_id" %in% names(temp_data)) {
+      existing_data <- temp_data
+      existing_ids <- unique(existing_data$fbref_id)
+      if (verbose) message(sprintf("    Existing parquet: %d matches", length(existing_ids)))
+    } else if (!is.null(temp_data)) {
+      # Parquet exists but lacks fbref_id - will be rebuilt
+      if (verbose) message("    Existing parquet missing fbref_id, rebuilding...")
+    }
+  }
+
+  # Get all RDS files for this combination
+  cached <- list_cached_matches(table_type, league, season)
+
+  # Load new RDS data (only files not already in parquet)
+  new_data <- NULL
+  if (nrow(cached) > 0) {
+    new_ids <- setdiff(cached$fbref_id, existing_ids)
+
+    if (length(new_ids) > 0) {
+      if (verbose) message(sprintf("    Loading %d new from RDS", length(new_ids)))
+
+      new_cached <- cached[cached$fbref_id %in% new_ids, ]
+      new_data_list <- lapply(seq_len(nrow(new_cached)), function(i) {
+        df <- load_match_table(new_cached$league[i], new_cached$season[i],
+                               new_cached$fbref_id[i], table_type)
+        # Add fbref_id from filename if not already present
+        if (!is.null(df) && !"fbref_id" %in% names(df)) {
+          df$fbref_id <- new_cached$fbref_id[i]
+        }
+        df
+      })
+      new_data_list <- new_data_list[!sapply(new_data_list, is.null)]
+
+      if (length(new_data_list) > 0) {
+        new_data <- dplyr::bind_rows(new_data_list)
+      }
+    }
+  }
+
+  # Combine existing and new data
+  if (is.null(existing_data) && is.null(new_data)) {
+    if (verbose) message(sprintf("No data for %s/%s/%s", table_type, league, season))
+    return(NULL)
+  }
+
+  combined <- dplyr::bind_rows(existing_data, new_data)
+
+  if (nrow(combined) == 0) {
+    if (verbose) message("No valid data found")
+    return(NULL)
+  }
+
+  # Write parquet
+  arrow::write_parquet(combined, parquet_path)
+
+  if (verbose) {
+    size_mb <- file.size(parquet_path) / (1024 * 1024)
+    n_matches <- length(unique(combined$fbref_id))
+    message(sprintf("    -> %d matches, %.2f MB", n_matches, size_mb))
+  }
+
+  invisible(parquet_path)
+}
+
+
+#' Build all parquet files
+#'
+#' Iterates through all table_type/league/season combinations and creates
+#' parquet files. Discovers combinations from both existing RDS files and
+#' existing parquet files (for incremental updates on CI).
+#'
+#' @param table_types Character vector of table types to process.
+#'   Default: all standard table types.
+#' @param leagues Optional character vector of leagues to process.
+#'   If NULL, processes all leagues found.
+#' @param seasons Optional character vector of seasons to process.
+#'   If NULL, processes all seasons found.
+#' @param verbose Print progress messages
+#'
+#' @return Data frame with table_type, league, season, n_matches, size_mb columns
+#' @export
+build_all_parquet <- function(table_types = NULL, leagues = NULL,
+                              seasons = NULL, verbose = TRUE) {
+  # Default table types
+  if (is.null(table_types)) {
+    table_types <- c("summary", "passing", "passing_types", "defense",
+                     "possession", "misc", "keeper", "shots", "events", "metadata")
+  }
+
+  results <- list()
+  base_dir <- pannadata_dir()
+
+  for (tt in table_types) {
+    if (verbose) message(sprintf("\nProcessing table type: %s", tt))
+
+    tt_dir <- file.path(base_dir, tt)
+    if (!dir.exists(tt_dir)) next
+
+    # Get leagues from both RDS subdirs and parquet files
+    available_leagues <- if (!is.null(leagues)) {
+      leagues
+    } else {
+      unique(list.dirs(tt_dir, recursive = FALSE, full.names = FALSE))
+    }
+
+    for (lg in available_leagues) {
+      league_dir <- file.path(tt_dir, lg)
+      if (!dir.exists(league_dir)) next
+
+      # Get seasons from both RDS subdirs and parquet files
+      rds_seasons <- list.dirs(league_dir, recursive = FALSE, full.names = FALSE)
+      parquet_files <- list.files(league_dir, pattern = "\\.parquet$")
+      parquet_seasons <- gsub("\\.parquet$", "", parquet_files)
+
+      available_seasons <- if (!is.null(seasons)) {
+        seasons
+      } else {
+        unique(c(rds_seasons, parquet_seasons))
+      }
+
+      for (sn in available_seasons) {
+        # Check if this season has RDS files OR existing parquet
+        season_dir <- file.path(league_dir, sn)
+        has_rds <- dir.exists(season_dir) &&
+                   length(list.files(season_dir, pattern = "\\.rds$")) > 0
+        has_parquet <- file.exists(get_parquet_path(tt, lg, sn))
+
+        if (!has_rds && !has_parquet) next
+
+        parquet_path <- tryCatch({
+          build_parquet(tt, lg, sn, verbose = verbose)
+        }, error = function(e) {
+          if (verbose) warning(sprintf("Error building %s/%s/%s: %s",
+                                       tt, lg, sn, e$message))
+          NULL
+        })
+
+        if (!is.null(parquet_path) && file.exists(parquet_path)) {
+          # Count matches from parquet
+          n_matches <- tryCatch({
+            df <- arrow::read_parquet(parquet_path, col_select = "fbref_id")
+            length(unique(df$fbref_id))
+          }, error = function(e) 0)
+
+          results[[length(results) + 1]] <- data.frame(
+            table_type = tt,
+            league = lg,
+            season = sn,
+            n_matches = n_matches,
+            size_mb = round(file.size(parquet_path) / (1024 * 1024), 2),
+            stringsAsFactors = FALSE
+          )
+        }
+      }
+    }
+  }
+
+  if (length(results) == 0) {
+    return(data.frame(
+      table_type = character(0),
+      league = character(0),
+      season = character(0),
+      n_matches = integer(0),
+      size_mb = numeric(0),
+      stringsAsFactors = FALSE
+    ))
+  }
+
+  result_df <- do.call(rbind, results)
+
+  if (verbose) {
+    total_mb <- sum(result_df$size_mb)
+    message(sprintf("\nBuilt %d parquet files (%.1f MB total)",
+                    nrow(result_df), total_mb))
+  }
+
+  result_df
+}
+
+
+# Convenience loaders ----
+
+#' Load summary data from pannadata
+#'
+#' @param league League code (e.g., "ENG"). NULL for all leagues.
+#' @param season Season string (e.g., "2023-2024"). NULL for all seasons.
+#' @param source "local" (default) reads from pannadata_dir(),
+#'   "remote" downloads from GitHub releases (cached for session).
+#' @return Data frame of player summary stats or NULL
+#' @examples
+#' \dontrun{
+#' load_summary("ENG", "2024-2025")
+#' load_summary("ENG")
+#' load_summary(season = "2024-2025")
+#' load_summary()
+#' load_summary("ENG", "2024-2025", source = "remote")
+#' }
+#' @export
+load_summary <- function(league = NULL, season = NULL, source = "local") {
+  aggregate_cached_matches("summary", league = league, season = season, source = source)
+}
+
+#' Load events data from pannadata
+#'
+#' @param league League code (e.g., "ENG"). NULL for all leagues.
+#' @param season Season string (e.g., "2023-2024"). NULL for all seasons.
+#' @param source "local" or "remote" (downloads from GitHub releases).
+#' @return Data frame of match events or NULL
+#' @export
+load_events <- function(league = NULL, season = NULL, source = "local") {
+  aggregate_cached_matches("events", league = league, season = season, source = source)
+}
+
+#' Load shooting data from pannadata
+#'
+#' @param league League code (e.g., "ENG"). NULL for all leagues.
+#' @param season Season string (e.g., "2023-2024"). NULL for all seasons.
+#' @param source "local" or "remote" (downloads from GitHub releases).
+#' @return Data frame of shots or NULL
+#' @export
+load_shots <- function(league = NULL, season = NULL, source = "local") {
+  aggregate_cached_matches("shots", league = league, season = season, source = source)
+}
+
+#' Load metadata from pannadata
+#'
+#' @param league League code (e.g., "ENG"). NULL for all leagues.
+#' @param season Season string (e.g., "2023-2024"). NULL for all seasons.
+#' @param source "local" or "remote" (downloads from GitHub releases).
+#' @return Data frame of match metadata or NULL
+#' @export
+load_metadata <- function(league = NULL, season = NULL, source = "local") {
+  aggregate_cached_matches("metadata", league = league, season = season, source = source)
+}
+
+#' Load passing data from pannadata
+#'
+#' @param league League code (e.g., "ENG"). NULL for all leagues.
+#' @param season Season string (e.g., "2023-2024"). NULL for all seasons.
+#' @param source "local" or "remote" (downloads from GitHub releases).
+#' @return Data frame of passing stats or NULL
+#' @export
+load_passing <- function(league = NULL, season = NULL, source = "local") {
+  aggregate_cached_matches("passing", league = league, season = season, source = source)
+}
+
+#' Load defense data from pannadata
+#'
+#' @param league League code (e.g., "ENG"). NULL for all leagues.
+#' @param season Season string (e.g., "2023-2024"). NULL for all seasons.
+#' @param source "local" or "remote" (downloads from GitHub releases).
+#' @return Data frame of defensive stats or NULL
+#' @export
+load_defense <- function(league = NULL, season = NULL, source = "local") {
+  aggregate_cached_matches("defense", league = league, season = season, source = source)
+}
+
+#' Load possession data from pannadata
+#'
+#' @param league League code (e.g., "ENG"). NULL for all leagues.
+#' @param season Season string (e.g., "2023-2024"). NULL for all seasons.
+#' @param source "local" or "remote" (downloads from GitHub releases).
+#' @return Data frame of possession stats or NULL
+#' @export
+load_possession <- function(league = NULL, season = NULL, source = "local") {
+  aggregate_cached_matches("possession", league = league, season = season, source = source)
+}
+
+
 #' Migrate old metadata files to include tables_available field
 #'
 #' Updates metadata files that were created before the tables_available
@@ -1395,7 +2188,7 @@ migrate_metadata_tables_available <- function(league = NULL, season = NULL,
                                                verbose = TRUE) {
   # All possible table types (excluding metadata itself)
   all_table_types <- c("summary", "passing", "passing_types", "defense",
-                       "possession", "misc", "keeper", "shots")
+                       "possession", "misc", "keeper", "shots", "events")
 
   # List all metadata files
   meta_cached <- list_cached_matches("metadata", league, season)
@@ -1454,4 +2247,143 @@ migrate_metadata_tables_available <- function(league = NULL, season = NULL,
   }
 
   n_updated
+}
+
+
+# Batch Scraping Helpers ----
+
+#' Get cached match URLs from metadata
+#'
+#' Reads all cached metadata files for a league-season and extracts
+#' the match URLs. Useful for re-scraping or updating cached matches.
+#'
+#' @param league League code (e.g., "ENG", "ESP")
+#' @param season Season string (e.g., "2023-2024")
+#'
+#' @return Character vector of match URLs
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' urls <- get_cached_match_urls("ENG", "2023-2024")
+#' length(urls)  # Number of cached matches
+#' }
+get_cached_match_urls <- function(league, season) {
+  cache_dir <- get_fbref_match_cache_dir("metadata", league, season, create = FALSE)
+
+  if (!dir.exists(cache_dir)) return(character(0))
+
+  files <- list.files(cache_dir, pattern = "\\.rds$", full.names = TRUE)
+  if (length(files) == 0) return(character(0))
+
+  urls <- vapply(files, function(f) {
+    meta <- tryCatch(readRDS(f), error = function(e) NULL)
+    if (!is.null(meta) && "match_url" %in% names(meta)) {
+      return(meta$match_url)
+    }
+    NA_character_
+  }, character(1), USE.NAMES = FALSE)
+
+  urls[!is.na(urls)]
+}
+
+
+#' Scrape a competition-season
+#'
+#' Scrapes all matches for a competition-season, either from cache or FBref.
+#' Handles fixture fetching, caching logic, and progress reporting.
+#'
+#' @param comp Competition code (e.g., "ENG", "UCL")
+#' @param season Season string (e.g., "2023-2024")
+#' @param table_types Character vector of table types to scrape
+#' @param delay Seconds between requests
+#' @param force_rescrape If TRUE, ignore cache and rescrape all
+
+#' @param max_matches Maximum matches to scrape (default Inf)
+#'
+#' @return Number of matches scraped (for tracking session totals)
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' n <- scrape_comp_season("ENG", "2023-2024",
+#'                         table_types = c("summary", "events"),
+#'                         delay = 5, force_rescrape = FALSE)
+#' }
+scrape_comp_season <- function(comp, season, table_types, delay,
+                                force_rescrape, max_matches = Inf) {
+
+  cat(sprintf("\n%s %s\n", comp, season))
+  cat(strrep("-", 40), "\n")
+
+  if (max_matches <= 0) {
+    cat("  Skipping (session limit reached)\n")
+    return(0)
+
+  }
+
+  # Check cache first
+  cached_urls <- get_cached_match_urls(comp, season)
+
+  if (length(cached_urls) > 0 && !force_rescrape) {
+    cat(sprintf("  Cache: %d matches found\n", length(cached_urls)))
+
+    result <- tryCatch({
+      scrape_fbref_matches(
+        match_urls = cached_urls,
+        league = comp,
+        season = season,
+        table_types = table_types,
+        delay = delay,
+        use_cache = TRUE,
+        verbose = TRUE,
+        max_matches = max_matches
+      )
+    }, error = function(e) {
+      cat("  ERROR:", conditionMessage(e), "\n")
+      NULL
+    })
+
+    n_scraped <- if (!is.null(result)) attr(result, "n_scraped") else 0
+    return(if (is.null(n_scraped)) 0 else n_scraped)
+  }
+
+  # No cache - fetch fixtures from FBref
+  cat("  Fetching fixtures from FBref...\n")
+  Sys.sleep(delay)
+
+  fixtures <- tryCatch(
+    scrape_fixtures(comp, season, completed_only = TRUE),
+    error = function(e) {
+      cat("  ERROR fetching fixtures:", conditionMessage(e), "\n")
+      NULL
+    }
+  )
+
+  if (is.null(fixtures) || nrow(fixtures) == 0) {
+    cat("  No fixtures found\n")
+    return(0)
+  }
+
+  urls <- fixtures$match_url
+  cat(sprintf("  Found %d matches\n", length(urls)))
+
+  result <- tryCatch({
+    scrape_fbref_matches(
+      match_urls = urls,
+      league = comp,
+      season = season,
+      table_types = table_types,
+      delay = delay,
+      use_cache = !force_rescrape,
+      verbose = TRUE,
+      max_matches = max_matches
+    )
+  }, error = function(e) {
+    cat("  ERROR:", conditionMessage(e), "\n")
+    NULL
+  })
+
+  n_scraped <- if (!is.null(result)) attr(result, "n_scraped") else 0
+  if (is.null(n_scraped)) 0 else n_scraped
 }

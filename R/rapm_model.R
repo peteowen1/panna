@@ -5,9 +5,11 @@
 #' Fit RAPM model
 #'
 #' Fits ridge regression on the design matrix with:
-#' - Target: xgf90 (xG FOR per 90)
+#' - Target: xgf90 (xG FOR per 90) or gf90 (goals FOR per 90)
 #' - Player columns: playerX_off, playerX_def
 #' - Covariates: gd, gf, ga, avg_min, is_home
+#'
+#' The target type is determined by the rapm_data (set in prepare_rapm_data).
 #'
 #' @param rapm_data List from prepare_rapm_data
 #' @param alpha Elastic net mixing parameter (0 = ridge, 1 = lasso)
@@ -24,7 +26,8 @@ fit_rapm <- function(rapm_data, alpha = 0, nfolds = 10,
                          use_weights = TRUE, standardize = FALSE,
                          penalize_covariates = FALSE,
                          parallel = TRUE, n_cores = NULL) {
-  X <- rapm_data$X_full
+  # Support both X_full (production) and X (tests)
+  X <- if (!is.null(rapm_data$X_full)) rapm_data$X_full else rapm_data$X
   y <- rapm_data$y
   weights <- if (use_weights) rapm_data$weights else NULL
 
@@ -41,6 +44,11 @@ fit_rapm <- function(rapm_data, alpha = 0, nfolds = 10,
   if (parallel) {
     if (is.null(n_cores)) {
       n_cores <- max(1, floor(parallel::detectCores() / 2))
+    }
+    # Respect R CMD check limits (typically 2 cores max)
+    check_limit <- Sys.getenv("_R_CHECK_LIMIT_CORES_", "")
+    if (nzchar(check_limit) && check_limit == "TRUE") {
+      n_cores <- min(n_cores, 2L)
     }
     progress_msg(sprintf("Using %d cores for parallel CV", n_cores))
     doParallel::registerDoParallel(cores = n_cores)
@@ -71,8 +79,10 @@ fit_rapm <- function(rapm_data, alpha = 0, nfolds = 10,
   )
 
   # Add metadata
+  target_type <- if (!is.null(rapm_data$target_type)) rapm_data$target_type else "xg"
   cv_fit$panna_metadata <- list(
     type = "rapm",
+    target_type = target_type,
     alpha = alpha,
     n_observations = length(y),
     n_player_cols = rapm_data$n_players * 2,
@@ -84,8 +94,9 @@ fit_rapm <- function(rapm_data, alpha = 0, nfolds = 10,
     covariate_names = rapm_data$covariate_names
   )
 
-  progress_msg(sprintf("RAPM fit complete. Lambda.min: %.4f, R^2: %.3f",
-                       cv_fit$lambda.min,
+  target_desc <- if (target_type == "xg") "xG-based" else "Goals-based"
+  progress_msg(sprintf("RAPM fit complete (%s). Lambda.min: %.4f, R^2: %.3f",
+                       target_desc, cv_fit$lambda.min,
                        1 - cv_fit$cvm[cv_fit$lambda == cv_fit$lambda.min] /
                          var(y)))
 
@@ -93,9 +104,9 @@ fit_rapm <- function(rapm_data, alpha = 0, nfolds = 10,
 }
 
 
-#' Extract Panna ratings from fitted model
+#' Extract RAPM ratings from fitted model
 #'
-#' Calculates final player ratings as offense_coef - defense_coef.
+#' Calculates player ratings as offense_coef - defense_coef.
 #' Positive = good, negative = bad.
 #'
 #' @param model Fitted RAPM model from fit_rapm
@@ -103,7 +114,7 @@ fit_rapm <- function(rapm_data, alpha = 0, nfolds = 10,
 #'
 #' @return Data frame with player ratings
 #' @export
-extract_panna_ratings <- function(model, lambda = "min") {
+extract_rapm_ratings <- function(model, lambda = "min") {
   # Get lambda value
   lambda_val <- if (lambda == "min") {
     model$lambda.min
@@ -129,15 +140,15 @@ extract_panna_ratings <- function(model, lambda = "min") {
   off_coefs <- all_coefs[off_cols]
   def_coefs <- all_coefs[def_cols]
 
-  # Panna rating = offense - defense
+  # RAPM rating = offense - defense
   # Positive offense = creates more xG (good)
   # Positive defense = allows more xG (bad), so we subtract
-  panna <- off_coefs - def_coefs
+  rapm <- off_coefs - def_coefs
 
   # Create results data frame
   ratings <- data.frame(
     player_id = player_ids,
-    panna = as.numeric(panna),
+    rapm = as.numeric(rapm),
     offense = as.numeric(off_coefs),
     defense = as.numeric(def_coefs),
     stringsAsFactors = FALSE
@@ -160,7 +171,7 @@ extract_panna_ratings <- function(model, lambda = "min") {
   }
 
   ratings <- ratings %>%
-    dplyr::arrange(dplyr::desc(.data$panna))
+    dplyr::arrange(dplyr::desc(.data$rapm))
 
   ratings
 }
@@ -216,7 +227,8 @@ fit_rapm_with_prior <- function(rapm_data, offense_prior, defense_prior,
                                  alpha = 0, nfolds = 10,
                                  use_weights = TRUE,
                                  penalize_covariates = FALSE) {
-  X <- rapm_data$X_full
+  # Support both X_full (production) and X (tests)
+  X <- if (!is.null(rapm_data$X_full)) rapm_data$X_full else rapm_data$X
   y <- rapm_data$y
   weights <- if (use_weights) rapm_data$weights else NULL
 
@@ -229,7 +241,12 @@ fit_rapm_with_prior <- function(rapm_data, offense_prior, defense_prior,
   # Get column names
   col_names <- colnames(X)
   player_ids <- rapm_data$player_ids
-  covariate_names <- rapm_data$covariate_names
+  # Support both covariate_names (production) and covariate_cols (tests)
+  covariate_names <- if (!is.null(rapm_data$covariate_names)) {
+    rapm_data$covariate_names
+  } else {
+    rapm_data$covariate_cols
+  }
 
   # Build full prior vector (including covariates = 0)
   n_cols <- ncol(X)

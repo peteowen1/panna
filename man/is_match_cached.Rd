@@ -19,8 +19,8 @@ is_match_cached(league, season, fbref_id, table_types = "metadata")
 Logical - TRUE if match has been fully scraped
 }
 \description{
-Checks if a match has been fully scraped. Uses the metadata's
-\code{tables_available} field to know which tables exist for this match.
-Uses hierarchical path: \code{\{table_type\}/\{league\}/\{season\}/\{id\}.rds}
+Checks if a match has been fully scraped. First checks RDS files,
+then falls back to checking parquet files (for CI/CD environments
+where only parquet is available).
 }
 \keyword{internal}

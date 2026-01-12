@@ -13,7 +13,6 @@ get_stat_columns(stat_type)
 Character vector of column names
 }
 \description{
-Returns expected column names from worldfootballR data.
-Note: worldfootballR uses suffixes like _expected, _tackles, _touches, etc.
+Returns expected column names from pannadata/FBref data.
 }
 \keyword{internal}

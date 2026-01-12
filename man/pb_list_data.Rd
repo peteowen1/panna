@@ -4,18 +4,18 @@
 \alias{pb_list_data}
 \title{List files in GitHub Release}
 \usage{
-pb_list_data(repo = "peteowen/pannadata", tag = "data")
+pb_list_data(repo = "peteowen1/pannadata", tag = "latest")
 }
 \arguments{
 \item{repo}{GitHub repository in "owner/repo" format}
 
-\item{tag}{Release tag (default: "data")}
+\item{tag}{Release tag (default: "latest")}
 }
 \value{
 Data frame with file information
 }
 \description{
-Shows what data files are available in a GitHub Release.
+Shows what files are available in a GitHub Release.
 }
 \examples{
 \dontrun{

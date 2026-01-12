@@ -4,16 +4,26 @@
 # xRAPM uses SPM predictions as a Bayesian prior for RAPM fitting.
 # This helps separate players who always appear together (teammate confounding)
 # by leveraging box score statistics.
+#
+# The SPM priors are 50/50 blends of Elastic Net and XGBoost predictions
+# (see 05_spm.R for model comparison).
+
+# 1. Setup ----
 
 library(dplyr)
 devtools::load_all()
 
 cache_dir <- file.path("data-raw", "cache")
 
-# =============================================================================
-# 1. Load Data
-# =============================================================================
-cat("\n=== 1. Loading Data ===\n")
+# Lambda for xRAPM: "min" (default), "1se", or numeric value
+# Higher values = more shrinkage toward SPM prior
+xrapm_lambda <- "min"
+
+cat(sprintf("Using lambda = %s for xRAPM\n", xrapm_lambda))
+
+# 2. Load Data ----
+
+cat("\n=== Loading Data ===\n")
 
 splint_data <- readRDS(file.path(cache_dir, "03_splints.rds"))
 rapm_results <- readRDS(file.path(cache_dir, "04_rapm.rds"))
@@ -23,47 +33,26 @@ cat("Splints:", nrow(splint_data$splints), "\n")
 cat("Players with RAPM:", nrow(rapm_results$ratings), "\n")
 cat("Players with SPM:", nrow(spm_results$spm_ratings), "\n")
 
-# =============================================================================
-# 2. Create SPM Priors
-# =============================================================================
-cat("\n=== 2. Creating SPM Priors ===\n")
+# 3. Create SPM Priors (from blended models) ----
+
+cat("\n=== Creating SPM Priors ===\n")
+cat("Using 50/50 Elastic Net + XGBoost blend\n")
 
 # Get player mapping from RAPM data
 player_mapping <- rapm_results$rapm_data$player_mapping
 
-# Create offense prior (keyed by player_id)
-offense_spm <- spm_results$offense_spm_ratings
-
-# Match player names to player IDs
-name_to_id <- setNames(
-  player_mapping$player_id,
-  player_mapping$player_name
+# Build priors using helper function (replaces manual for-loops)
+offense_prior <- build_prior_vector(
+  spm_data = spm_results$offense_spm_ratings,
+  spm_col = "offense_spm",
+  player_mapping = player_mapping
 )
 
-# Build offense prior vector
-offense_prior <- rep(0, length(unique(player_mapping$player_id)))
-names(offense_prior) <- unique(player_mapping$player_id)
-
-for (i in seq_len(nrow(offense_spm))) {
-  pname <- offense_spm$player_name[i]
-  if (pname %in% names(name_to_id)) {
-    pid <- name_to_id[pname]
-    offense_prior[pid] <- offense_spm$offense_spm[i]
-  }
-}
-
-# Build defense prior vector
-defense_spm <- spm_results$defense_spm_ratings
-defense_prior <- rep(0, length(unique(player_mapping$player_id)))
-names(defense_prior) <- unique(player_mapping$player_id)
-
-for (i in seq_len(nrow(defense_spm))) {
-  pname <- defense_spm$player_name[i]
-  if (pname %in% names(name_to_id)) {
-    pid <- name_to_id[pname]
-    defense_prior[pid] <- defense_spm$defense_spm[i]
-  }
-}
+defense_prior <- build_prior_vector(
+  spm_data = spm_results$defense_spm_ratings,
+  spm_col = "defense_spm",
+  player_mapping = player_mapping
+)
 
 cat("Offense priors set:", sum(offense_prior != 0), "\n")
 cat("Defense priors set:", sum(defense_prior != 0), "\n")
@@ -74,10 +63,9 @@ print(summary(offense_prior[offense_prior != 0]))
 cat("\nDefense prior summary:\n")
 print(summary(defense_prior[defense_prior != 0]))
 
-# =============================================================================
-# 3. Fit xRAPM Model
-# =============================================================================
-cat("\n=== 3. Fitting xRAPM Model ===\n")
+# 4. Fit xRAPM Model ----
+
+cat("\n=== Fitting xRAPM Model ===\n")
 
 # Use the same RAPM data (design matrix)
 rapm_data <- rapm_results$rapm_data
@@ -93,12 +81,11 @@ xrapm_model <- fit_rapm_with_prior(
   penalize_covariates = FALSE
 )
 
-# =============================================================================
-# 4. Extract xRAPM Ratings
-# =============================================================================
-cat("\n=== 4. xRAPM Ratings ===\n")
+# 5. Extract xRAPM Ratings ----
 
-xrapm_ratings <- extract_xrapm_ratings(xrapm_model)
+cat("\n=== xRAPM Ratings ===\n")
+
+xrapm_ratings <- extract_xrapm_ratings(xrapm_model, lambda = xrapm_lambda)
 
 cat("\nTop 25 by xRAPM:\n")
 print(
@@ -114,25 +101,24 @@ print(
     select(player_name, xrapm, offense, defense, off_deviation, def_deviation, total_minutes)
 )
 
-# =============================================================================
-# 5. Compare xRAPM vs Base RAPM
-# =============================================================================
-cat("\n=== 5. xRAPM vs Base RAPM ===\n")
+# 6. Compare xRAPM vs Base RAPM ----
+
+cat("\n=== xRAPM vs Base RAPM ===\n")
 
 base_ratings <- rapm_results$ratings %>%
-  select(player_name, base_panna = panna, base_off = offense, base_def = defense)
+  select(player_name, base_rapm = rapm, base_off = offense, base_def = defense)
 
 comparison <- xrapm_ratings %>%
   select(player_name, xrapm, xrapm_off = offense, xrapm_def = defense,
          off_deviation, def_deviation, off_prior, def_prior, total_minutes) %>%
   inner_join(base_ratings, by = "player_name") %>%
   mutate(
-    rating_diff = xrapm - base_panna,
+    rating_diff = xrapm - base_rapm,
     off_diff = xrapm_off - base_off,
     def_diff = xrapm_def - base_def
   )
 
-cat("\nCorrelation: xRAPM vs Base RAPM:", round(cor(comparison$xrapm, comparison$base_panna), 3), "\n")
+cat("\nCorrelation: xRAPM vs Base RAPM:", round(cor(comparison$xrapm, comparison$base_rapm), 3), "\n")
 cat("Correlation: xRAPM Offense vs Base Offense:", round(cor(comparison$xrapm_off, comparison$base_off), 3), "\n")
 cat("Correlation: xRAPM Defense vs Base Defense:", round(cor(comparison$xrapm_def, comparison$base_def), 3), "\n")
 
@@ -142,7 +128,7 @@ print(
   comparison %>%
     arrange(desc(rating_diff)) %>%
     head(15) %>%
-    select(player_name, xrapm, base_panna, rating_diff, off_deviation, def_deviation)
+    select(player_name, xrapm, base_rapm, rating_diff, off_deviation, def_deviation)
 )
 
 cat("\nPlayers most penalized by xRAPM (moved down from prior):\n")
@@ -150,13 +136,12 @@ print(
   comparison %>%
     arrange(rating_diff) %>%
     head(15) %>%
-    select(player_name, xrapm, base_panna, rating_diff, off_deviation, def_deviation)
+    select(player_name, xrapm, base_rapm, rating_diff, off_deviation, def_deviation)
 )
 
-# =============================================================================
-# 6. Team-Level Validation
-# =============================================================================
-cat("\n=== 6. Team-Level Validation ===\n")
+# 7. Team-Level Validation ----
+
+cat("\n=== Team-Level Validation ===\n")
 
 processed_data <- readRDS(file.path(cache_dir, "02_processed_data.rds"))
 
@@ -189,8 +174,8 @@ if (!is.null(processed_data$lineups)) {
     filter(!is.na(primary_team)) %>%
     group_by(primary_team) %>%
     summarise(
-      sum_panna = sum(panna),
-      mean_panna = mean(panna),
+      sum_rapm = sum(rapm),
+      mean_rapm = mean(rapm),
       .groups = "drop"
     )
 
@@ -215,11 +200,11 @@ if (!is.null(processed_data$lineups)) {
 
     team_comparison <- team_npxgd %>%
       inner_join(team_xrapm %>% select(primary_team, sum_xrapm), by = c("team" = "primary_team")) %>%
-      inner_join(team_rapm %>% select(primary_team, sum_panna), by = c("team" = "primary_team"))
+      inner_join(team_rapm %>% select(primary_team, sum_rapm), by = c("team" = "primary_team"))
 
     cat("\nTeam correlations:\n")
     cat("  npxGD vs Sum xRAPM:", round(cor(team_comparison$total_npxgd, team_comparison$sum_xrapm), 3), "\n")
-    cat("  npxGD vs Sum RAPM:", round(cor(team_comparison$total_npxgd, team_comparison$sum_panna), 3), "\n")
+    cat("  npxGD vs Sum RAPM:", round(cor(team_comparison$total_npxgd, team_comparison$sum_rapm), 3), "\n")
 
     cat("\nTeam rankings:\n")
     print(
@@ -227,18 +212,17 @@ if (!is.null(processed_data$lineups)) {
         mutate(
           npxgd_rank = rank(-total_npxgd),
           xrapm_rank = rank(-sum_xrapm),
-          rapm_rank = rank(-sum_panna)
+          rapm_rank = rank(-sum_rapm)
         ) %>%
         arrange(npxgd_rank) %>%
-        select(team, total_npxgd, sum_xrapm, sum_panna, npxgd_rank, xrapm_rank, rapm_rank)
+        select(team, total_npxgd, sum_xrapm, sum_rapm, npxgd_rank, xrapm_rank, rapm_rank)
     )
   }
 }
 
-# =============================================================================
-# 7. Save Results
-# =============================================================================
-cat("\n=== 7. Saving Results ===\n")
+# 8. Save Results ----
+
+cat("\n=== Saving Results ===\n")
 
 xrapm_results <- list(
   model = xrapm_model,

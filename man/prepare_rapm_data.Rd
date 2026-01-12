@@ -7,6 +7,7 @@
 prepare_rapm_data(
   splint_data,
   min_minutes = 90,
+  target_type = c("xg", "goals"),
   include_covariates = TRUE,
   include_league = NULL,
   include_season = NULL
@@ -16,6 +17,9 @@ prepare_rapm_data(
 \item{splint_data}{Combined splint data from create_all_splints}
 
 \item{min_minutes}{Minimum minutes for player inclusion}
+
+\item{target_type}{Type of target variable: "xg" for non-penalty xG (default),
+"goals" for actual goals scored. Use "goals" when shots data unavailable.}
 
 \item{include_covariates}{Whether to include game state covariates}
 

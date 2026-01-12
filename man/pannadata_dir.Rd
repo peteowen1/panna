@@ -10,16 +10,31 @@ pannadata_dir(path = NULL)
 \item{path}{Optional new path to set. If NULL, returns current path.}
 }
 \value{
-Current pannadata directory path
+Current pannadata directory path (invisibly when setting)
 }
 \description{
-Gets or sets the base directory for data storage. By default uses
-the pannadata directory in the pannaverse folder structure.
+Gets or sets the base directory for parquet/RDS data storage.
+}
+\details{
+Resolution order (first match wins):
+\enumerate{
+\item Explicitly set via \code{pannadata_dir("path")}
+\item \code{PANNADATA_DIR} environment variable
+\item \code{../pannadata/data} if it exists (pannaverse developers)
+\item R's standard user data directory via \code{tools::R_user_dir("panna", "data")}
+}
+
+The default (\code{R_user_dir}) gives OS-appropriate persistent storage:
+\itemize{
+\item Windows: \code{C:/Users/you/AppData/Local/R/panna/data}
+\item Mac: \code{~/Library/Application Support/org.R-project.R/panna/data}
+\item Linux: \code{~/.local/share/R/panna/data}
+}
 }
 \examples{
 # Get current path
 pannadata_dir()
 
 # Set custom path
-pannadata_dir("C:/my/custom/path")
+pannadata_dir("~/my/football/data")
 }

@@ -5,6 +5,9 @@
 #' @export
 magrittr::`%>%`
 
+#' @importFrom stats setNames
+NULL
+
 # Suppress R CMD check notes for data.frame column names used in dplyr/tidyr
 # Add column names as they are used in package functions
 
@@ -27,6 +30,8 @@ utils::globalVariables(c(
   "away_score",
   "home_xg",
   "away_xg",
+  "home_x_g",
+  "away_x_g",
   "fbref_id",
   "home_team_id",
   "away_team_id",

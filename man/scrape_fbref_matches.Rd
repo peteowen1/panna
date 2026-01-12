@@ -9,10 +9,11 @@ scrape_fbref_matches(
   league,
   season,
   table_types = c("summary", "passing", "passing_types", "defense", "possession", "misc",
-    "keeper", "shots", "metadata"),
+    "keeper", "shots", "events", "metadata"),
   delay = 5,
   use_cache = TRUE,
-  verbose = TRUE
+  verbose = TRUE,
+  max_matches = Inf
 )
 }
 \arguments{
@@ -32,15 +33,18 @@ Default: all of the above}
 \item{use_cache}{Whether to use/update cache (default TRUE)}
 
 \item{verbose}{Print progress messages (default TRUE)}
+
+\item{max_matches}{Maximum number of matches to scrape (default Inf for all)}
 }
 \value{
 List containing data frames for each table type:
-\item{metadata}{Match metadata (teams, scores, IDs)}
+\item{metadata}{Match metadata (teams, scores, IDs, manager, captain, venue, etc.)}
 \item{summary}{Player summary stats}
 \item{passing}{Passing stats}
 \item{defense}{Defensive stats}
 \item{possession}{Possession stats}
 \item{shots}{Shot data}
+\item{events}{Match events timeline (goals, cards, substitutions)}
 }
 \description{
 Master function for scraping match-level data from FBref.
@@ -55,5 +59,6 @@ urls <- c(
 data <- scrape_fbref_matches(urls, league = "ESP", season = "2025-2026")
 data$summary  # Player stats
 data$shots    # Shot-level data
+data$events   # Match timeline
 }
 }

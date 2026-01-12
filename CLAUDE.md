@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **SPM** (Statistical Plus-Minus) - box score prediction of RAPM
 - **Panna Rating** - combines RAPM with SPM as Bayesian prior for stability
 
-The package works with FBref data via `worldfootballR` and supports Big 5 European leagues.
+The package works with FBref data via the `pannadata` repository (cached match data) and supports Big 5 European leagues.
 
 ## Development Commands
 
@@ -34,18 +34,20 @@ devtools::check()       # Full package check
 - Cache expensive data to `data-raw/cache/`
 - Analysis scripts run in RStudio - avoid excessive `cat()` calls, keep them simple
 
-### worldfootballR Integration
-- Prefer `load_*` functions (pre-scraped data) over scraping when available
-- Pre-scraped data only has recent seasons (check `Season_End_Year`)
-- Historical data requires direct scraping (respect rate limits)
+### pannadata Integration
+- Use `panna::load_summary()`, `load_passing()`, etc. to load cached match data
+- Data stored in `pannadata/data/{table_type}/{league}/{season}/{match_id}.rds`
+- Column names are snake_case (via `janitor::clean_names()`)
+- See `pannadata/DATA_DICTIONARY.md` for column definitions
+- **DO NOT use worldfootballR** - pannadata has its own FBref scraping system
 
 ## Architecture
 
 ### Core Data Flow
 ```
-worldfootballR/FBref
+pannadata (cached FBref match data)
        ↓
-01_raw_data.rds (matches, lineups, events, shooting, stats)
+01_load_pannadata.R (loads summary, passing, defense, possession, shots, metadata)
        ↓
 02_processed_data.rds (cleaned, standardized, match_id added)
        ↓
@@ -78,8 +80,7 @@ worldfootballR/FBref
 
 | Module | Purpose |
 |--------|---------|
-| `scrape_fbref_data.R` | Data collection via worldfootballR |
-| `scrape_fbref_direct.R` | Direct FBref HTTP scraping with caching |
+| `pannadata_loader.R` | Load cached data from pannadata repository |
 | `data_processing.R` | Cleaning, standardization, merging |
 | `splint_creation.R` | Time segment creation for RAPM |
 | `rapm_matrix.R` | Design matrix construction |
@@ -93,9 +94,13 @@ worldfootballR/FBref
 
 ## Key Functions
 
-### Data Collection
-- `scrape_multi_league()` - Collect data across Big 5 leagues
-- `scrape_pl_comprehensive()` - Single-league detailed collection
+### Data Loading (from pannadata)
+- `load_summary()` - Load player summary stats for league/season
+- `load_passing()` - Load detailed passing stats
+- `load_defense()` - Load defensive action stats
+- `load_possession()` - Load possession/carrying stats
+- `load_shots()` - Load shot-level data
+- `load_metadata()` - Load match metadata
 
 ### Splint Creation
 - `create_all_splints()` - Master function for all matches
@@ -117,4 +122,5 @@ worldfootballR/FBref
 
 ## Data Documentation
 
-See `DATA_DICTIONARY.md` for complete column definitions at each pipeline stage.
+See `pannadata/DATA_DICTIONARY.md` for complete column definitions for raw data.
+See `panna/DATA_DICTIONARY.md` for processed data column definitions at each pipeline stage.

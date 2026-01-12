@@ -4,26 +4,19 @@
 \alias{pb_sync_data}
 \title{Sync local data with GitHub Releases}
 \usage{
-pb_sync_data(
-  repo = "peteowen/pannadata",
-  tag = "data",
-  source = NULL,
-  table_types = NULL
-)
+pb_sync_data(repo = "peteowen1/pannadata", tag = "latest", source = NULL)
 }
 \arguments{
 \item{repo}{GitHub repository in "owner/repo" format}
 
-\item{tag}{Release tag (default: "data")}
+\item{tag}{Release tag (default: "latest")}
 
 \item{source}{Source directory (default: pannadata_dir())}
-
-\item{table_types}{Which table types to sync (default: all)}
 }
 \value{
-Number of new files uploaded
+Invisible NULL
 }
 \description{
-Uploads any local files that aren't in the release yet.
-This is a more targeted upload than pb_upload_data.
+Convenience function that uploads local data to GitHub Releases.
+This replaces the existing data in the release.
 }

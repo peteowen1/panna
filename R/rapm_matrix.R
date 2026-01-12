@@ -6,17 +6,21 @@
 #' Create RAPM design matrix (new structure)
 #'
 #' Creates the design matrix with 2 rows per splint (one per team perspective):
-#' - Target: xgf90 (xG FOR per 90 from each team's perspective)
+#' - Target: xgf90 or gf90 (xG or goals FOR per 90 from each team's perspective)
 #' - Covariates: gd, gf, ga, avg_min, home_away
 #' - Player columns: playerX_off (attacking), playerX_def (defending)
 #' - Replacement columns: replacement_off, replacement_def for low-minute players
 #'
 #' @param splint_data Combined splint data from create_all_splints
 #' @param min_minutes Minimum total minutes for player inclusion
+#' @param target_type Type of target variable: "xg" for non-penalty xG (default),
+#'   "goals" for actual goals scored
 #'
 #' @return List with design matrix components
 #' @export
-create_rapm_design_matrix <- function(splint_data, min_minutes = 90) {
+create_rapm_design_matrix <- function(splint_data, min_minutes = 90,
+                                       target_type = c("xg", "goals")) {
+  target_type <- match.arg(target_type)
   splints <- splint_data$splints
   players <- splint_data$players
   match_info <- splint_data$match_info
@@ -34,13 +38,30 @@ create_rapm_design_matrix <- function(splint_data, min_minutes = 90) {
     all.x = TRUE
   )
 
+  # Aggregate minutes by player_id only (not player_name to avoid case duplicates)
   all_player_minutes <- stats::aggregate(
-    duration ~ player_id + player_name,
+    duration ~ player_id,
     data = players_with_duration,
     FUN = sum,
     na.rm = TRUE
   )
-  names(all_player_minutes)[3] <- "total_minutes"
+  names(all_player_minutes)[2] <- "total_minutes"
+
+ # Create canonical player_name lookup (most frequent name per player_id, with title case)
+  canonical_names <- stats::aggregate(
+    player_name ~ player_id,
+    data = players_with_duration,
+    FUN = function(x) {
+      tbl <- table(x)
+      best_name <- names(tbl)[which.max(tbl)]
+      # Apply title case for consistent capitalization
+      tools::toTitleCase(tolower(best_name))
+    }
+  )
+  names(canonical_names)[2] <- "player_name"
+
+  # Join minutes with canonical names
+  all_player_minutes <- merge(all_player_minutes, canonical_names, by = "player_id")
 
   # Separate players meeting threshold vs replacement-level
   player_minutes <- all_player_minutes[all_player_minutes$total_minutes >= min_minutes, ]
@@ -94,9 +115,22 @@ create_rapm_design_matrix <- function(splint_data, min_minutes = 90) {
     rep(11, n_splints)
   }
 
-  npxg_home <- ifelse(is.na(valid_splints$npxg_home), 0, valid_splints$npxg_home)
-  npxg_away <- ifelse(is.na(valid_splints$npxg_away), 0, valid_splints$npxg_away)
   duration <- valid_splints$duration
+
+  # Calculate target based on target_type
+  if (target_type == "xg") {
+    # Use non-penalty xG
+    target_home <- ifelse(is.na(valid_splints$npxg_home), 0, valid_splints$npxg_home)
+    target_away <- ifelse(is.na(valid_splints$npxg_away), 0, valid_splints$npxg_away)
+    target_name <- "xgf"
+    target_per90_name <- "xgf90"
+  } else {
+    # Use actual goals scored in this splint
+    target_home <- ifelse(is.na(valid_splints$goals_home), 0, valid_splints$goals_home)
+    target_away <- ifelse(is.na(valid_splints$goals_away), 0, valid_splints$goals_away)
+    target_name <- "gf"
+    target_per90_name <- "gf90"
+  }
 
   # Row data: 2 rows per splint (home attacking, away attacking)
   n_rows <- n_splints * 2
@@ -105,11 +139,11 @@ create_rapm_design_matrix <- function(splint_data, min_minutes = 90) {
     row_id = seq_len(n_rows),
     splint_id = rep(valid_splints$splint_id, each = 2),
     match_id = rep(valid_splints$match_id, each = 2),
-    xgf = as.vector(rbind(npxg_home, npxg_away)),
+    target = as.vector(rbind(target_home, target_away)),
     minutes = rep(duration, each = 2),
-    xgf90 = as.vector(rbind(
-      ifelse(duration > 0, npxg_home * 90 / duration, 0),
-      ifelse(duration > 0, npxg_away * 90 / duration, 0)
+    target_per_90 = as.vector(rbind(
+      ifelse(duration > 0, target_home * 90 / duration, 0),
+      ifelse(duration > 0, target_away * 90 / duration, 0)
     )),
     gd = as.vector(rbind(gf_home - ga_home, ga_home - gf_home)),
     gf = as.vector(rbind(gf_home, ga_home)),
@@ -284,13 +318,15 @@ create_rapm_design_matrix <- function(splint_data, min_minutes = 90) {
   list(
     X_players = X_players,
     row_data = row_data,
-    y = row_data$xgf90,
+    y = row_data$target_per_90,
     weights = weights,
     player_mapping = player_mapping_with_replacement,
     player_ids = player_ids_with_replacement,
     n_players = n_players,  # Count of regular players (excludes replacement)
     n_players_total = n_players + 1,  # Including replacement
     n_rows = n_rows,
+    target_type = target_type,
+    target_name = target_per90_name,
     replacement_player_ids = replacement_player_ids,
     replacement_stats = list(
       n_players = length(replacement_player_ids),
@@ -309,6 +345,8 @@ create_rapm_design_matrix <- function(splint_data, min_minutes = 90) {
 #'
 #' @param splint_data Combined splint data from create_all_splints
 #' @param min_minutes Minimum minutes for player inclusion
+#' @param target_type Type of target variable: "xg" for non-penalty xG (default),
+#'   "goals" for actual goals scored. Use "goals" when shots data unavailable.
 #' @param include_covariates Whether to include game state covariates
 #' @param include_league Whether to include league dummies (for multi-league)
 #' @param include_season Whether to include season dummies
@@ -316,11 +354,23 @@ create_rapm_design_matrix <- function(splint_data, min_minutes = 90) {
 #' @return List with all model inputs
 #' @export
 prepare_rapm_data <- function(splint_data, min_minutes = 90,
+                               target_type = c("xg", "goals"),
                                include_covariates = TRUE,
                                include_league = NULL,
                                include_season = NULL) {
+  target_type <- match.arg(target_type)
+
+  # Validate required columns exist for target type
+  if (target_type == "goals") {
+    splint_cols <- names(splint_data$splints)
+    if (!all(c("goals_home", "goals_away") %in% splint_cols)) {
+      warning("target_type='goals' requires 'goals_home' and 'goals_away' columns in splints. ",
+              "Splints may need to be regenerated with updated create_all_splints().")
+    }
+  }
+
   # Create base design matrix
-  rapm_data <- create_rapm_design_matrix(splint_data, min_minutes)
+  rapm_data <- create_rapm_design_matrix(splint_data, min_minutes, target_type)
 
   covariate_list <- list()
 
@@ -333,32 +383,44 @@ prepare_rapm_data <- function(splint_data, min_minutes = 90,
     covariate_list$avg_min <- rapm_data$row_data$avg_min
     covariate_list$is_home <- as.numeric(rapm_data$row_data$home_away == "home")
 
-    # Player count covariate for red card situations
-    # Note: only include net_players (not n_offense/n_defense separately)
-    # since those are almost always 11 and cause numerical issues
-    if ("net_players" %in% names(rapm_data$row_data)) {
-      covariate_list$net_players <- rapm_data$row_data$net_players
+    # Player count covariates for red card situations
+    # net_players: asymmetric advantage (playing up/down a man)
+    # abs_reds: total red cards (captures "open game" effect when fewer players overall)
+    if ("n_offense" %in% names(rapm_data$row_data) &&
+        "n_defense" %in% names(rapm_data$row_data)) {
+      covariate_list$net_players <- rapm_data$row_data$n_offense -
+                                    rapm_data$row_data$n_defense
+      covariate_list$abs_reds <- 22 - rapm_data$row_data$n_offense -
+                                 rapm_data$row_data$n_defense
     }
   }
 
-  # Auto-detect league if not specified
+  # Auto-detect league and season availability
+
   has_league <- "league" %in% names(splint_data$splints)
   if (is.null(include_league)) {
     include_league <- has_league
   }
 
-  if (include_league && has_league) {
-    # Get league from splints (need to map to rows)
+  has_season <- "season_end_year" %in% names(splint_data$splints)
+  if (is.null(include_season)) {
+    include_season <- has_season
+  }
+
+  # Determine if we should use cell means (both league and season available)
+  use_cell_means <- include_league && has_league && include_season && has_season
+
+  # Only create league-only dummies when season is not available
+  if (include_league && has_league && !use_cell_means) {
     splint_leagues <- splint_data$splints$league[
       match(rapm_data$row_data$splint_id, splint_data$splints$splint_id)
     ]
 
-    # Create league dummies (one-hot encoding, dropping first as reference)
     unique_leagues <- sort(unique(splint_leagues[!is.na(splint_leagues)]))
     if (length(unique_leagues) > 1) {
       progress_msg(sprintf("Adding %d league dummies (ref: %s)",
                            length(unique_leagues) - 1, unique_leagues[1]))
-      for (lg in unique_leagues[-1]) {  # Skip first as reference
+      for (lg in unique_leagues[-1]) {
         col_name <- paste0("league_", gsub(" ", "_", lg))
         covariate_list[[col_name]] <- as.numeric(splint_leagues == lg)
       }
@@ -366,24 +428,17 @@ prepare_rapm_data <- function(splint_data, min_minutes = 90,
     }
   }
 
-  # Auto-detect season if not specified
-  has_season <- "season_end_year" %in% names(splint_data$splints)
-  if (is.null(include_season)) {
-    include_season <- has_season
-  }
-
-  if (include_season && has_season) {
-    # Get season from splints
+  # Only create season-only dummies when league is not available
+  if (include_season && has_season && !use_cell_means) {
     splint_seasons <- splint_data$splints$season_end_year[
       match(rapm_data$row_data$splint_id, splint_data$splints$splint_id)
     ]
 
-    # Create season dummies (one-hot encoding, dropping first as reference)
     unique_seasons <- sort(unique(splint_seasons[!is.na(splint_seasons)]))
     if (length(unique_seasons) > 1) {
       progress_msg(sprintf("Adding %d season dummies (ref: %s)",
                            length(unique_seasons) - 1, unique_seasons[1]))
-      for (sn in unique_seasons[-1]) {  # Skip first as reference
+      for (sn in unique_seasons[-1]) {
         col_name <- paste0("season_", sn)
         covariate_list[[col_name]] <- as.numeric(splint_seasons == sn)
       }
@@ -391,34 +446,32 @@ prepare_rapm_data <- function(splint_data, min_minutes = 90,
     }
   }
 
-  # League-season interactions (normalizes xG by league-season)
-  if (include_league && include_season && has_league && has_season) {
-    # Get league/season vectors if not already computed
-    if (!exists("splint_leagues")) {
-      splint_leagues <- splint_data$splints$league[
-        match(rapm_data$row_data$splint_id, splint_data$splints$splint_id)
-      ]
-    }
-    if (!exists("splint_seasons")) {
-      splint_seasons <- splint_data$splints$season_end_year[
-        match(rapm_data$row_data$splint_id, splint_data$splints$splint_id)
-      ]
-    }
+  # League-season cell means (when both available)
+  # Each coefficient directly represents xG/90 level for that league-season
+  if (use_cell_means) {
+    splint_leagues <- splint_data$splints$league[
+      match(rapm_data$row_data$splint_id, splint_data$splints$splint_id)
+    ]
+    splint_seasons <- splint_data$splints$season_end_year[
+      match(rapm_data$row_data$splint_id, splint_data$splints$splint_id)
+    ]
+
+    # Create combined league_season factor
+    league_season <- paste0(splint_leagues, "_", splint_seasons)
+    unique_ls <- sort(unique(league_season[!is.na(league_season)]))
 
     unique_leagues <- sort(unique(splint_leagues[!is.na(splint_leagues)]))
     unique_seasons <- sort(unique(splint_seasons[!is.na(splint_seasons)]))
+    rapm_data$leagues <- unique_leagues
+    rapm_data$seasons <- unique_seasons
 
-    # Create league x season interactions (skip reference league and season)
-    n_interactions <- 0
-    for (lg in unique_leagues[-1]) {
-      for (sn in unique_seasons[-1]) {
-        col_name <- paste0("lg_sn_", gsub(" ", "_", lg), "_", sn)
-        covariate_list[[col_name]] <- as.numeric(splint_leagues == lg & splint_seasons == sn)
-        n_interactions <- n_interactions + 1
+    if (length(unique_ls) > 1) {
+      progress_msg(sprintf("Adding %d league-season dummies (ref: %s)",
+                           length(unique_ls) - 1, unique_ls[1]))
+      for (ls in unique_ls[-1]) {  # Skip first as reference
+        col_name <- paste0("ls_", gsub(" ", "_", ls))
+        covariate_list[[col_name]] <- as.numeric(league_season == ls)
       }
-    }
-    if (n_interactions > 0) {
-      progress_msg(sprintf("Adding %d league-season interactions", n_interactions))
     }
   }
 
@@ -441,11 +494,13 @@ prepare_rapm_data <- function(splint_data, min_minutes = 90,
     n_player_cols = rapm_data$n_players * 2,
     n_covariates = length(rapm_data$covariate_names),
     total_matrix_cols = ncol(rapm_data$X_full),
+    target_type = rapm_data$target_type,
     response_range = range(rapm_data$y, na.rm = TRUE)
   )
 
-  progress_msg(sprintf("RAPM data ready: %d observations, %d players (%d columns), %d covariates",
-                       rapm_data$n_rows, rapm_data$n_players,
+  target_desc <- if (rapm_data$target_type == "xg") "xG-based" else "Goals-based"
+  progress_msg(sprintf("RAPM data ready (%s): %d observations, %d players (%d columns), %d covariates",
+                       target_desc, rapm_data$n_rows, rapm_data$n_players,
                        rapm_data$n_players * 2, length(rapm_data$covariate_names)))
 
   rapm_data

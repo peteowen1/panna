@@ -7,9 +7,8 @@
 derive_lineups_from_stats(stats_data)
 }
 \arguments{
-\item{stats_data}{Stats data from load_fb_advanced_match_stats (already snake_case).
-Can be any stat type - passing/defense/possession have better historical coverage
-than summary in the worldfootballR cache.}
+\item{stats_data}{Stats data from pannadata (already snake_case).
+Can be any stat type - passing/defense/possession have better historical coverage.}
 }
 \value{
 Data frame of match lineups derived from stats

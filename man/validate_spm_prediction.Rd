@@ -4,16 +4,27 @@
 \alias{validate_spm_prediction}
 \title{Validate SPM prediction accuracy}
 \usage{
-validate_spm_prediction(spm_ratings, rapm_ratings)
+validate_spm_prediction(
+  spm_ratings,
+  rapm_ratings,
+  weight_by_minutes = TRUE,
+  weight_transform = "sqrt"
+)
 }
 \arguments{
-\item{spm_ratings}{Data frame with SPM predictions}
+\item{spm_ratings}{Data frame with SPM predictions (must include total_minutes for weighting)}
 
 \item{rapm_ratings}{Data frame with actual RAPM}
+
+\item{weight_by_minutes}{Whether to weight metrics by minutes (default TRUE)}
+
+\item{weight_transform}{Transform for weights: "sqrt" (default), "linear", "log"}
 }
 \value{
-List with validation metrics
+List with validation metrics (both weighted and unweighted)
 }
 \description{
-Assesses how well SPM predicts RAPM.
+Assesses how well SPM predicts RAPM. Supports weighted metrics to match
+weighted model fitting - we care more about accuracy for high-minute players
+whose RAPM estimates are more reliable.
 }

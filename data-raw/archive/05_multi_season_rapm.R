@@ -56,6 +56,6 @@ rapm_results <- list(
   rapm_data = rapm_data
 )
 
-saveRDS(rapm_results, file.path(cache_dir, "05_rapm.rds"))
+saveRDS(rapm_results, file.path(cache_dir, "04_rapm.rds"))
 
 message("Multi-season RAPM complete!")

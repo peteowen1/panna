@@ -76,6 +76,7 @@ if (!all(grepl("^\\d{4}-\\d{4}$", seasons))) {
 #' Standardize player names
 #'
 #' Cleans and standardizes player names for consistent matching across datasets.
+#' Uses memoization to cache unique names for O(1) lookup on repeated values.
 #'
 #' @param names Character vector of player names
 #'
@@ -85,20 +86,90 @@ if (!all(grepl("^\\d{4}-\\d{4}$", seasons))) {
 #' @examples
 #' standardize_player_names(c("Mohamed Salah", "M. Salah", "SALAH"))
 standardize_player_names <- function(names) {
-  names <- trimws(names)
-  # Convert to title case
-  names <- tools::toTitleCase(tolower(names))
-  # Remove extra whitespace
-  names <- gsub("\\s+", " ", names)
+  # Memoization: process unique names once, then lookup
+  unique_names <- unique(names)
+
+  # Fast vectorized implementation (avoids slow tools::toTitleCase)
+  cleaned <- trimws(unique_names)
+  # Remove extra whitespace first
+  cleaned <- gsub("\\s+", " ", cleaned)
   # Remove common suffixes
-  names <- gsub("\\s+(Jr\\.|Sr\\.|II|III|IV)$", "", names)
-  names
+  cleaned <- gsub("\\s+(Jr\\.|Sr\\.|II|III|IV)$", "", cleaned)
+  # Fast title case: lowercase then capitalize first letter of each word
+  cleaned <- tolower(cleaned)
+  # Use gsub with perl regex for fast word boundary capitalization
+  cleaned <- gsub("(?<=^|\\s)([a-z])", "\\U\\1", cleaned, perl = TRUE)
+
+  # Build lookup and return via O(1) match
+  lookup <- setNames(cleaned, unique_names)
+  unname(lookup[names])
+}
+
+
+#' Clean player name for matching
+#'
+#' Creates a minimal normalized version of player name for fuzzy matching.
+#' Unlike standardize_player_names() which preserves readable format,
+#' this creates a key: lowercase with all whitespace removed.
+#' Uses memoization to cache unique names for O(1) lookup on repeated values.
+#'
+#' @param names Character vector of player names
+#'
+#' @return Character vector of cleaned names (lowercase, no whitespace)
+#' @export
+#'
+#' @examples
+#' clean_player_name(c("Kylian Mbappé", "kylian mbappé", "KYLIAN MBAPPÉ"))
+#' # All return "kylianmbappé"
+clean_player_name <- function(names) {
+  # Memoization: process unique names once, then lookup
+  unique_names <- unique(names)
+
+  # First replace non-breaking spaces (U+00A0) with regular spaces
+  # These come from HTML scraping and trimws() doesn't handle them
+  cleaned <- gsub("\u00A0", " ", unique_names)
+  # Trim leading/trailing whitespace
+  cleaned <- trimws(cleaned)
+  # Convert to lowercase
+  cleaned <- tolower(cleaned)
+  # Remove all internal whitespace (spaces, tabs, etc.)
+  cleaned <- gsub("\\s+", "", cleaned)
+
+  # Build lookup and return via O(1) match
+  lookup <- setNames(cleaned, unique_names)
+  unname(lookup[names])
+}
+
+
+#' Extract FBref player ID from href
+#'
+#' Extracts the 8-character hex ID from an FBref player URL.
+#' Example: "/players/d080ed5e/Kylian-Mbappe" -> "d080ed5e"
+#'
+#' Note: This function is ready for use when player_href is available
+#' in scraped data. Currently player_href is not extracted during scraping.
+#'
+#' @param hrefs Character vector of FBref player hrefs
+#'
+#' @return Character vector of 8-char hex IDs (NA if not found)
+#' @export
+#'
+#' @examples
+#' extract_fbref_player_id("/players/d080ed5e/Kylian-Mbappe")
+#' # Returns "d080ed5e"
+extract_fbref_player_id <- function(hrefs) {
+  # Extract 8-char hex ID from /players/xxxxxxxx/... pattern
+  ids <- gsub(".*/players/([a-f0-9]{8})/.*", "\\1", hrefs)
+  # Return NA for hrefs that don't match the pattern
+  ids[!grepl("^[a-f0-9]{8}$", ids)] <- NA_character_
+  ids
 }
 
 
 #' Standardize team names
 #'
 #' Cleans and standardizes team names for consistent matching.
+#' Uses vectorized lookup for speed on large datasets.
 #'
 #' @param names Character vector of team names
 #'
@@ -108,35 +179,43 @@ standardize_player_names <- function(names) {
 #' @examples
 #' standardize_team_names(c("Manchester Utd", "Man United", "Manchester United"))
 standardize_team_names <- function(names) {
-  names <- trimws(names)
+ names <- trimws(names)
 
-  # Common Premier League team name standardizations
-  standardizations <- c(
-    "Manchester Utd" = "Manchester United",
-    "Man Utd" = "Manchester United",
-    "Man United" = "Manchester United",
-    "Manchester City" = "Manchester City",
-    "Man City" = "Manchester City",
-    "Tottenham" = "Tottenham Hotspur",
-    "Spurs" = "Tottenham Hotspur",
-    "Wolves" = "Wolverhampton Wanderers",
-    "Wolverhampton" = "Wolverhampton Wanderers",
-    "Brighton" = "Brighton & Hove Albion",
-    "Brighton and Hove Albion" = "Brighton & Hove Albion",
-    "West Ham" = "West Ham United",
-    "Newcastle" = "Newcastle United",
-    "Nott'ham Forest" = "Nottingham Forest",
-    "Nottingham" = "Nottingham Forest",
-    "Sheffield Utd" = "Sheffield United",
-    "Leeds" = "Leeds United",
-    "Leicester" = "Leicester City"
-  )
+ # Common team name standardizations (lookup table)
+ # Keys are variants, values are canonical names
+ lookup_from <- c(
+   "Manchester Utd", "Man Utd", "Man United",
+   "Man City",
+   "Tottenham", "Spurs",
+   "Wolves", "Wolverhampton",
+   "Brighton", "Brighton and Hove Albion",
+   "West Ham",
+   "Newcastle",
+   "Nott'ham Forest", "Nottingham",
+   "Sheffield Utd",
+   "Leeds",
+   "Leicester"
+ )
+ lookup_to <- c(
+   "Manchester United", "Manchester United", "Manchester United",
+   "Manchester City",
+   "Tottenham Hotspur", "Tottenham Hotspur",
+   "Wolverhampton Wanderers", "Wolverhampton Wanderers",
+   "Brighton & Hove Albion", "Brighton & Hove Albion",
+   "West Ham United",
+   "Newcastle United",
+   "Nottingham Forest", "Nottingham Forest",
+   "Sheffield United",
+   "Leeds United",
+   "Leicester City"
+ )
 
-  for (old in names(standardizations)) {
-    names[names == old] <- standardizations[old]
-  }
+ # Vectorized lookup using match() - O(n) instead of O(n*m)
+ idx <- match(names, lookup_from)
+ needs_replace <- !is.na(idx)
+ names[needs_replace] <- lookup_to[idx[needs_replace]]
 
-  names
+ names
 }
 
 
@@ -274,7 +353,7 @@ find_column <- function(data, candidates) {
 #' Counts home/away events occurring before each splint boundary.
 #' Used for tracking cumulative goals, red cards, etc.
 #'
-#' @param events Data frame with 'minute' and 'is_home' columns
+#' @param events Data frame with 'minute' (or 'effective_minute') and 'is_home' columns
 #' @param boundaries Numeric vector of splint boundary minutes
 #'
 #' @return List with 'home' and 'away' counts (vectors same length as boundaries minus 1)
@@ -286,8 +365,15 @@ count_events_before <- function(events, boundaries) {
   away_count <- rep(0, n_splints)
 
   if (!is.null(events) && nrow(events) > 0) {
+    # Use effective_minute if available, otherwise fall back to minute
+    event_mins <- if ("effective_minute" %in% names(events)) {
+      events$effective_minute
+    } else {
+      events$minute
+    }
+
     for (i in seq_len(n_splints)) {
-      before <- events$minute < boundaries[i]
+      before <- event_mins < boundaries[i]
       if (any(before)) {
         home_count[i] <- sum(events$is_home[before], na.rm = TRUE)
         away_count[i] <- sum(!events$is_home[before], na.rm = TRUE)
@@ -296,6 +382,80 @@ count_events_before <- function(events, boundaries) {
   }
 
   list(home = home_count, away = away_count)
+}
+
+
+#' Count events within each splint
+#'
+#' Counts events that occur IN each splint (between start and end boundaries).
+#' Unlike count_events_before which gives cumulative counts, this gives per-splint counts.
+#'
+#' @param events Data frame with 'minute' (or 'effective_minute') and 'is_home' columns
+#' @param boundaries Numeric vector of splint boundary minutes
+#'
+#' @return List with 'home' and 'away' counts (vectors of length n_splints)
+#' @keywords internal
+count_events_in_splint <- function(events, boundaries) {
+  n_splints <- length(boundaries) - 1
+  home_count <- rep(0, n_splints)
+  away_count <- rep(0, n_splints)
+
+  if (!is.null(events) && nrow(events) > 0) {
+    # Use effective_minute if available, otherwise fall back to minute
+    event_mins <- if ("effective_minute" %in% names(events)) {
+      events$effective_minute
+    } else {
+      events$minute
+    }
+
+    for (i in seq_len(n_splints)) {
+      # Events >= start of splint AND < end of splint
+      in_splint <- event_mins >= boundaries[i] & event_mins < boundaries[i + 1]
+      if (any(in_splint)) {
+        home_count[i] <- sum(events$is_home[in_splint], na.rm = TRUE)
+        away_count[i] <- sum(!events$is_home[in_splint], na.rm = TRUE)
+      }
+    }
+  }
+
+  list(home = home_count, away = away_count)
+}
+
+
+#' Extract season from match_id
+#'
+#' Extracts the season string from a match_id.
+#' Match IDs have format "2017-2018_20170915_TeamA_TeamB".
+#'
+#' @param match_id Character vector of match IDs
+#'
+#' @return Character vector of season strings (e.g., "2017-2018")
+#' @export
+#'
+#' @examples
+#' extract_season_from_match_id("2017-2018_20170915_Bournemouth_Brighton")
+#' # Returns "2017-2018"
+extract_season_from_match_id <- function(match_id) {
+  sub("^([0-9]{4}-[0-9]{4})_.*", "\\1", match_id)
+}
+
+
+#' Extract season end year from match_id
+#'
+#' Extracts the season end year as a numeric value from a match_id.
+#' Match IDs have format "2017-2018_20170915_TeamA_TeamB".
+#'
+#' @param match_id Character vector of match IDs
+#'
+#' @return Numeric vector of season end years (e.g., 2018)
+#' @export
+#'
+#' @examples
+#' extract_season_end_year_from_match_id("2017-2018_20170915_Bournemouth_Brighton")
+#' # Returns 2018
+extract_season_end_year_from_match_id <- function(match_id) {
+  season <- extract_season_from_match_id(match_id)
+  as.numeric(substr(season, 6, 9))
 }
 
 

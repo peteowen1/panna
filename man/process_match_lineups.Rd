@@ -7,7 +7,7 @@
 process_match_lineups(lineups, results)
 }
 \arguments{
-\item{lineups}{Data frame from scrape_pl_match_lineups}
+\item{lineups}{Data frame of match lineups}
 
 \item{results}{Processed match results for match IDs}
 }
