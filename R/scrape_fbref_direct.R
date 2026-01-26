@@ -1756,14 +1756,14 @@ aggregate_cached_matches <- function(table_type, league = NULL, season = NULL,
     base_dir <- pannadata_dir()
   }
 
-  tt_dir <- file.path(base_dir, table_type)
+  tt_dir <- file.path(base_dir, "fbref", table_type)
 
   # Parquet fast paths
   if (prefer_parquet && dir.exists(tt_dir)) {
 
     # Case 1: league AND season specified -> read one parquet
     if (!is.null(league) && !is.null(season)) {
-      parquet_path <- get_parquet_path(table_type, league, season)
+      parquet_path <- file.path(tt_dir, league, paste0(season, ".parquet"))
       if (file.exists(parquet_path)) {
         return(arrow::read_parquet(parquet_path))
       }
@@ -1855,7 +1855,7 @@ aggregate_cached_matches <- function(table_type, league = NULL, season = NULL,
 #' @keywords internal
 get_parquet_path <- function(table_type, league, season, create = FALSE) {
   base_dir <- pannadata_dir()
-  parquet_dir <- file.path(base_dir, table_type, league)
+  parquet_dir <- file.path(base_dir, "fbref", table_type, league)
 
   if (create && !dir.exists(parquet_dir)) {
     dir.create(parquet_dir, recursive = TRUE)
@@ -1999,11 +1999,16 @@ build_all_parquet <- function(table_types = NULL, leagues = NULL,
 
     for (lg in available_leagues) {
       league_dir <- file.path(tt_dir, lg)
-      if (!dir.exists(league_dir)) next
+      parquet_league_dir <- file.path(base_dir, "fbref", tt, lg)
+      if (!dir.exists(league_dir) && !dir.exists(parquet_league_dir)) next
 
-      # Get seasons from both RDS subdirs and parquet files
-      rds_seasons <- list.dirs(league_dir, recursive = FALSE, full.names = FALSE)
-      parquet_files <- list.files(league_dir, pattern = "\\.parquet$")
+      # Get seasons from both RDS subdirs and parquet files (parquet now in fbref/)
+      rds_seasons <- if (dir.exists(league_dir)) {
+        list.dirs(league_dir, recursive = FALSE, full.names = FALSE)
+      } else character(0)
+      parquet_files <- if (dir.exists(parquet_league_dir)) {
+        list.files(parquet_league_dir, pattern = "\\.parquet$")
+      } else character(0)
       parquet_seasons <- gsub("\\.parquet$", "", parquet_files)
 
       available_seasons <- if (!is.null(seasons)) {
@@ -2072,92 +2077,344 @@ build_all_parquet <- function(table_types = NULL, leagues = NULL,
 }
 
 
+#' Build Consolidated Parquet Files for Remote Queries
+#'
+#' Creates a single parquet file per table type containing ALL leagues and seasons.
+#' These consolidated files are uploaded to GitHub releases for fast remote querying
+#' (like bouncer's approach). Users can then filter by league/season in SQL.
+#'
+#' @param table_types Character vector of table types to consolidate.
+#'   Defaults to all FBref table types.
+#' @param output_dir Directory to write consolidated parquet files.
+#'   Defaults to pannadata_dir()/consolidated.
+#' @param verbose Print progress messages.
+#'
+#' @return Data frame with table_type, n_rows, size_mb columns.
+#'
+#' @details
+#' This function reads all the individual league/season parquet files for each
+
+#' table type and combines them into a single file. The resulting files can be
+#' uploaded directly to GitHub releases as individual assets, enabling fast
+#' remote queries via \code{query_remote_parquet()}.
+#'
+#' Output files are named \code{{table_type}.parquet} (e.g., \code{summary.parquet}).
+#'
+#' @export
+#' @examples
+#' \dontrun{
+#' # Build all consolidated parquets
+#' build_consolidated_parquet()
+#'
+#' # Build only summary and events
+#' build_consolidated_parquet(table_types = c("summary", "events"))
+#' }
+build_consolidated_parquet <- function(table_types = NULL, output_dir = NULL,
+                                        verbose = TRUE) {
+  if (!requireNamespace("arrow", quietly = TRUE)) {
+    stop("Package 'arrow' is required. Install with: install.packages('arrow')")
+  }
+
+  # Default table types
+  if (is.null(table_types)) {
+    table_types <- c("summary", "passing", "passing_types", "defense",
+                     "possession", "misc", "keeper", "shots", "events", "metadata")
+  }
+
+
+  # Output directory
+  if (is.null(output_dir)) {
+    output_dir <- file.path(pannadata_dir(), "consolidated")
+  }
+
+  if (!dir.exists(output_dir)) {
+    dir.create(output_dir, recursive = TRUE)
+  }
+
+  base_dir <- pannadata_dir()
+  results <- list()
+
+  for (tt in table_types) {
+    if (verbose) message(sprintf("\nConsolidating %s...", tt))
+
+    # Find all parquet files for this table type
+    tt_dir <- file.path(base_dir, "fbref", tt)
+    if (!dir.exists(tt_dir)) {
+      if (verbose) message(sprintf("  Skipping %s - directory not found", tt))
+      next
+    }
+
+    parquet_files <- list.files(tt_dir, pattern = "\\.parquet$",
+                                 recursive = TRUE, full.names = TRUE)
+
+    if (length(parquet_files) == 0) {
+      if (verbose) message(sprintf("  Skipping %s - no parquet files found", tt))
+      next
+    }
+
+    if (verbose) message(sprintf("  Found %d parquet files", length(parquet_files)))
+
+    # Read and combine all parquet files
+    all_data <- tryCatch({
+      dfs <- lapply(parquet_files, function(f) {
+        tryCatch({
+          arrow::read_parquet(f)
+        }, error = function(e) {
+          if (verbose) warning(sprintf("  Error reading %s: %s", basename(f), e$message))
+          NULL
+        })
+      })
+      dfs <- Filter(Negate(is.null), dfs)
+      if (length(dfs) == 0) return(NULL)
+      do.call(rbind, dfs)
+    }, error = function(e) {
+      if (verbose) warning(sprintf("  Error combining %s: %s", tt, e$message))
+      NULL
+    })
+
+    if (is.null(all_data) || nrow(all_data) == 0) {
+      if (verbose) message(sprintf("  Skipping %s - no data after combining", tt))
+      next
+    }
+
+    # Write consolidated parquet
+    output_path <- file.path(output_dir, paste0(tt, ".parquet"))
+    arrow::write_parquet(all_data, output_path)
+
+    size_mb <- round(file.size(output_path) / (1024 * 1024), 2)
+    if (verbose) {
+      message(sprintf("  Wrote %s: %s rows, %.1f MB",
+                      basename(output_path),
+                      format(nrow(all_data), big.mark = ","),
+                      size_mb))
+    }
+
+    results[[length(results) + 1]] <- data.frame(
+      table_type = tt,
+      n_rows = nrow(all_data),
+      size_mb = size_mb,
+      stringsAsFactors = FALSE
+    )
+  }
+
+  if (length(results) == 0) {
+    return(data.frame(
+      table_type = character(0),
+      n_rows = integer(0),
+      size_mb = numeric(0),
+      stringsAsFactors = FALSE
+    ))
+  }
+
+  result_df <- do.call(rbind, results)
+
+  if (verbose) {
+    total_mb <- sum(result_df$size_mb)
+    message(sprintf("\nCreated %d consolidated parquet files (%.1f MB total)",
+                    nrow(result_df), total_mb))
+    message(sprintf("Output directory: %s", output_dir))
+  }
+
+  result_df
+}
+
+
+#' Upload Consolidated Parquet Files to GitHub Releases
+#'
+#' Uploads individual consolidated parquet files to a GitHub release.
+#' This enables fast remote queries via \code{query_remote_parquet()}.
+#'
+#' @param source_dir Directory containing consolidated parquet files.
+#'   Defaults to pannadata_dir()/consolidated.
+#' @param repo GitHub repository in "owner/repo" format.
+#' @param tag Release tag to upload to.
+#' @param verbose Print progress messages.
+#'
+#' @return Invisible data frame with upload results.
+#'
+#' @export
+#' @examples
+#' \dontrun{
+#' # Build and upload consolidated parquets
+#' build_consolidated_parquet()
+#' pb_upload_consolidated()
+#' }
+pb_upload_consolidated <- function(source_dir = NULL,
+                                    repo = "peteowen1/pannadata",
+                                    tag = "fbref-latest",
+                                    verbose = TRUE) {
+  if (!requireNamespace("piggyback", quietly = TRUE)) {
+    stop("Package 'piggyback' is required. Install with: install.packages('piggyback')")
+  }
+
+  if (is.null(source_dir)) {
+    source_dir <- file.path(pannadata_dir(), "consolidated")
+  }
+
+  if (!dir.exists(source_dir)) {
+    stop("Consolidated directory not found: ", source_dir,
+         "\nRun build_consolidated_parquet() first.")
+  }
+
+  parquet_files <- list.files(source_dir, pattern = "\\.parquet$", full.names = TRUE)
+
+  if (length(parquet_files) == 0) {
+    stop("No parquet files found in ", source_dir)
+  }
+
+  if (verbose) {
+    total_size <- sum(file.size(parquet_files)) / (1024 * 1024)
+    message(sprintf("Found %d consolidated parquet files (%.1f MB total)",
+                    length(parquet_files), total_size))
+  }
+
+  # Ensure release exists
+  tryCatch({
+    piggyback::pb_list(repo = repo, tag = tag)
+    if (verbose) message("Release exists: ", tag)
+  }, error = function(e) {
+    if (verbose) message("Creating new release: ", tag)
+    piggyback::pb_new_release(repo = repo, tag = tag)
+    Sys.sleep(3)
+  })
+
+  # Upload each parquet file individually
+  results <- list()
+  for (pf in parquet_files) {
+    fname <- basename(pf)
+    if (verbose) message(sprintf("Uploading %s...", fname))
+
+    tryCatch({
+      piggyback::pb_upload(
+        file = pf,
+        repo = repo,
+        tag = tag,
+        name = fname,
+        overwrite = TRUE
+      )
+      results[[length(results) + 1]] <- data.frame(
+        file = fname,
+        size_mb = round(file.size(pf) / (1024 * 1024), 2),
+        status = "success",
+        stringsAsFactors = FALSE
+      )
+    }, error = function(e) {
+      if (verbose) warning(sprintf("Failed to upload %s: %s", fname, e$message))
+      results[[length(results) + 1]] <- data.frame(
+        file = fname,
+        size_mb = round(file.size(pf) / (1024 * 1024), 2),
+        status = paste("error:", e$message),
+        stringsAsFactors = FALSE
+      )
+    })
+  }
+
+  result_df <- do.call(rbind, results)
+  if (verbose) {
+    n_success <- sum(result_df$status == "success")
+    message(sprintf("\nUploaded %d/%d files successfully", n_success, nrow(result_df)))
+  }
+
+  invisible(result_df)
+}
+
+
 # Convenience loaders ----
 
 #' Load summary data from pannadata
 #'
 #' @param league League code (e.g., "ENG"). NULL for all leagues.
 #' @param season Season string (e.g., "2023-2024"). NULL for all seasons.
-#' @param source "local" (default) reads from pannadata_dir(),
-#'   "remote" downloads from GitHub releases (cached for session).
+#' @param source "remote" (default) downloads from GitHub releases using DuckDB,
+#'   "local" reads from local pannadata_dir().
 #' @return Data frame of player summary stats or NULL
 #' @examples
 #' \dontrun{
+#' # Load from GitHub releases (default, efficient with SQL filtering)
 #' load_summary("ENG", "2024-2025")
 #' load_summary("ENG")
 #' load_summary(season = "2024-2025")
 #' load_summary()
-#' load_summary("ENG", "2024-2025", source = "remote")
+#'
+#' # Load from local files
+#' load_summary("ENG", "2024-2025", source = "local")
 #' }
 #' @export
-load_summary <- function(league = NULL, season = NULL, source = "local") {
-  aggregate_cached_matches("summary", league = league, season = season, source = source)
+load_summary <- function(league = NULL, season = NULL, source = c("remote", "local")) {
+  source <- match.arg(source)
+  load_table_data("summary", league, season, source)
 }
 
 #' Load events data from pannadata
 #'
 #' @param league League code (e.g., "ENG"). NULL for all leagues.
 #' @param season Season string (e.g., "2023-2024"). NULL for all seasons.
-#' @param source "local" or "remote" (downloads from GitHub releases).
+#' @param source "remote" (default) or "local".
 #' @return Data frame of match events or NULL
 #' @export
-load_events <- function(league = NULL, season = NULL, source = "local") {
-  aggregate_cached_matches("events", league = league, season = season, source = source)
+load_events <- function(league = NULL, season = NULL, source = c("remote", "local")) {
+  source <- match.arg(source)
+  load_table_data("events", league, season, source)
 }
 
 #' Load shooting data from pannadata
 #'
 #' @param league League code (e.g., "ENG"). NULL for all leagues.
 #' @param season Season string (e.g., "2023-2024"). NULL for all seasons.
-#' @param source "local" or "remote" (downloads from GitHub releases).
+#' @param source "remote" (default) or "local".
 #' @return Data frame of shots or NULL
 #' @export
-load_shots <- function(league = NULL, season = NULL, source = "local") {
-  aggregate_cached_matches("shots", league = league, season = season, source = source)
+load_shots <- function(league = NULL, season = NULL, source = c("remote", "local")) {
+  source <- match.arg(source)
+  load_table_data("shots", league, season, source)
 }
 
 #' Load metadata from pannadata
 #'
 #' @param league League code (e.g., "ENG"). NULL for all leagues.
 #' @param season Season string (e.g., "2023-2024"). NULL for all seasons.
-#' @param source "local" or "remote" (downloads from GitHub releases).
+#' @param source "remote" (default) or "local".
 #' @return Data frame of match metadata or NULL
 #' @export
-load_metadata <- function(league = NULL, season = NULL, source = "local") {
-  aggregate_cached_matches("metadata", league = league, season = season, source = source)
+load_metadata <- function(league = NULL, season = NULL, source = c("remote", "local")) {
+  source <- match.arg(source)
+  load_table_data("metadata", league, season, source)
 }
 
 #' Load passing data from pannadata
 #'
 #' @param league League code (e.g., "ENG"). NULL for all leagues.
 #' @param season Season string (e.g., "2023-2024"). NULL for all seasons.
-#' @param source "local" or "remote" (downloads from GitHub releases).
+#' @param source "remote" (default) or "local".
 #' @return Data frame of passing stats or NULL
 #' @export
-load_passing <- function(league = NULL, season = NULL, source = "local") {
-  aggregate_cached_matches("passing", league = league, season = season, source = source)
+load_passing <- function(league = NULL, season = NULL, source = c("remote", "local")) {
+  source <- match.arg(source)
+  load_table_data("passing", league, season, source)
 }
 
 #' Load defense data from pannadata
 #'
 #' @param league League code (e.g., "ENG"). NULL for all leagues.
 #' @param season Season string (e.g., "2023-2024"). NULL for all seasons.
-#' @param source "local" or "remote" (downloads from GitHub releases).
+#' @param source "remote" (default) or "local".
 #' @return Data frame of defensive stats or NULL
 #' @export
-load_defense <- function(league = NULL, season = NULL, source = "local") {
-  aggregate_cached_matches("defense", league = league, season = season, source = source)
+load_defense <- function(league = NULL, season = NULL, source = c("remote", "local")) {
+  source <- match.arg(source)
+  load_table_data("defense", league, season, source)
 }
 
 #' Load possession data from pannadata
 #'
 #' @param league League code (e.g., "ENG"). NULL for all leagues.
 #' @param season Season string (e.g., "2023-2024"). NULL for all seasons.
-#' @param source "local" or "remote" (downloads from GitHub releases).
+#' @param source "remote" (default) or "local".
 #' @return Data frame of possession stats or NULL
 #' @export
-load_possession <- function(league = NULL, season = NULL, source = "local") {
-  aggregate_cached_matches("possession", league = league, season = season, source = source)
+load_possession <- function(league = NULL, season = NULL, source = c("remote", "local")) {
+  source <- match.arg(source)
+  load_table_data("possession", league, season, source)
 }
 
 
