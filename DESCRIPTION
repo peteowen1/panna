@@ -15,12 +15,16 @@ Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
 Imports:
     arrow (>= 10.0.0),
+    cli,
     data.table (>= 1.14.0),
+    DBI,
     doParallel,
     dplyr (>= 1.0.0),
+    duckdb (>= 0.9.0),
     glmnet (>= 4.0),
-    httr (>= 1.4.0),
+    httr2,
     janitor,
+    jsonlite,
     lubridate,
     magrittr,
     Matrix,
@@ -28,12 +32,15 @@ Imports:
     purrr,
     rlang,
     rvest (>= 1.0.0),
-    tidyr
+    stringi,
+    tidyr,
+    tools
 Suggests:
     future,
     future.apply,
     ggplot2,
     ggrepel,
+    httr (>= 1.4.0),
     knitr,
     piggyback,
     rmarkdown,
