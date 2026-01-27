@@ -245,37 +245,55 @@ load_opta_table <- function(table_type, league, season, columns,
     return(query_remote_opta_parquet(table_type, opta_league, season, columns))
   }
 
-  # Local source
-  # Path structure: pannadata/data/opta/{table_type}/{league}/{season}.parquet
+  # Local source - check for consolidated file first
   base_dir <- opta_data_dir()
+  consolidated_file <- file.path(base_dir, paste0("opta_", table_type, ".parquet"))
 
-  # Build file pattern
-  if (!is.null(season)) {
-    # Specific season: opta/{table_type}/{league}/{season}.parquet
-    parquet_path <- file.path(base_dir, table_type, opta_league, paste0(season, ".parquet"))
-    if (!file.exists(parquet_path)) {
-      cli::cli_abort("Parquet file not found: {parquet_path}")
+  if (file.exists(consolidated_file)) {
+    # Use consolidated file with WHERE clause
+    parquet_path <- normalizePath(consolidated_file, winslash = "/", mustWork = TRUE)
+
+    # Build column selection
+    col_sql <- if (!is.null(columns)) {
+      paste(columns, collapse = ", ")
+    } else {
+      "*"
     }
-    parquet_pattern <- normalizePath(parquet_path, winslash = "/", mustWork = TRUE)
-    parquet_pattern <- sprintf("'%s'", parquet_pattern)
-  } else {
-    # All seasons for league: opta/{table_type}/{league}/*.parquet
-    league_dir <- file.path(base_dir, table_type, opta_league)
-    if (!dir.exists(league_dir)) {
-      cli::cli_abort("League directory not found: {league_dir}")
+
+    # Build WHERE clause
+    where_parts <- sprintf("competition = '%s'", opta_league)
+    if (!is.null(season)) {
+      # Extract season from match_date (e.g., 2024-08 to 2025-05 = "2024-2025")
+      where_parts <- c(where_parts, sprintf("season = '%s'", season))
     }
-    parquet_pattern <- normalizePath(league_dir, winslash = "/", mustWork = TRUE)
-    parquet_pattern <- sprintf("'%s/*.parquet'", parquet_pattern)
-  }
+    where_sql <- paste(where_parts, collapse = " AND ")
 
-  # Build column selection
-  col_sql <- if (!is.null(columns)) {
-    paste(columns, collapse = ", ")
+    sql <- sprintf("SELECT %s FROM '%s' WHERE %s", col_sql, parquet_path, where_sql)
   } else {
-    "*"
-  }
+    # Fall back to hierarchical structure
+    if (!is.null(season)) {
+      parquet_path <- file.path(base_dir, table_type, opta_league, paste0(season, ".parquet"))
+      if (!file.exists(parquet_path)) {
+        cli::cli_abort(c(
+          "Opta data not found.",
+          "i" = "Run {.code pb_download_opta()} to download the latest data."
+        ))
+      }
+      parquet_pattern <- sprintf("'%s'", normalizePath(parquet_path, winslash = "/", mustWork = TRUE))
+    } else {
+      league_dir <- file.path(base_dir, table_type, opta_league)
+      if (!dir.exists(league_dir)) {
+        cli::cli_abort(c(
+          "Opta data not found.",
+          "i" = "Run {.code pb_download_opta()} to download the latest data."
+        ))
+      }
+      parquet_pattern <- sprintf("'%s/*.parquet'", normalizePath(league_dir, winslash = "/", mustWork = TRUE))
+    }
 
-  sql <- sprintf("SELECT %s FROM %s", col_sql, parquet_pattern)
+    col_sql <- if (!is.null(columns)) paste(columns, collapse = ", ") else "*"
+    sql <- sprintf("SELECT %s FROM %s", col_sql, parquet_pattern)
+  }
 
   # Execute query with DuckDB
   conn <- DBI::dbConnect(duckdb::duckdb())
@@ -520,14 +538,14 @@ clear_remote_opta_cache <- function() {
 
 #' Download Opta Data to Local Directory
 #'
-#' Downloads Opta data from GitHub releases and installs it to the local
-#' pannadata/data/opta/ directory. This syncs your local data with the
-#' latest release, which is updated daily.
+#' Downloads consolidated Opta parquet files from GitHub releases to the local
+#' pannadata/data/opta/ directory. Downloads two files:
+#' - opta_player_stats.parquet (~50MB, 1M+ rows)
+#' - opta_shots.parquet (~4MB, 270K rows)
 #'
 #' @param repo GitHub repository in "owner/repo" format.
 #' @param tag Release tag (default: "opta-latest").
 #' @param dest Destination directory. If NULL, uses pannadata_dir()/opta.
-#' @param overwrite If TRUE, removes existing opta/ directory before extracting.
 #'
 #' @return Invisibly returns the path to the installed data.
 #'
@@ -537,17 +555,15 @@ clear_remote_opta_cache <- function() {
 #' # Download latest Opta data to pannadata/data/opta/
 #' pb_download_opta()
 #'
-#' # Force overwrite existing data
-#' pb_download_opta(overwrite = TRUE)
+#' # Then load with:
+#' load_opta_stats("ENG", season = "2024-2025")
 #' }
 pb_download_opta <- function(repo = "peteowen1/pannadata",
                               tag = "opta-latest",
-                              dest = NULL,
-                              overwrite = FALSE) {
+                              dest = NULL) {
   if (!requireNamespace("piggyback", quietly = TRUE)) {
     cli::cli_abort("Package 'piggyback' is required. Install with: install.packages('piggyback')")
   }
-
 
   # Determine destination
   if (is.null(dest)) {
@@ -562,63 +578,43 @@ pb_download_opta <- function(repo = "peteowen1/pannadata",
   }
 
   opta_dir <- file.path(dest, "opta")
-
-  # Check for existing data
-  if (dir.exists(opta_dir)) {
-    n_existing <- length(list.files(opta_dir, pattern = "\\.parquet$", recursive = TRUE))
-    if (n_existing > 0 && !overwrite) {
-      cli::cli_alert_warning("Found {n_existing} existing parquet files in {opta_dir}")
-      cli::cli_alert_info("Use overwrite = TRUE to replace, or data will be merged")
-    }
-    if (overwrite) {
-      cli::cli_alert_info("Removing existing opta directory...")
-      unlink(opta_dir, recursive = TRUE)
-    }
-  }
+  dir.create(opta_dir, showWarnings = FALSE, recursive = TRUE)
 
   cli::cli_alert_info("Downloading Opta data from {repo} ({tag})...")
 
-  # Download archive to temp location
-  temp_dir <- tempdir()
-  archive_file <- file.path(temp_dir, "opta-parquet.tar.gz")
+  # Download consolidated parquet files
+ files_to_download <- c("opta_player_stats.parquet", "opta_shots.parquet")
 
-  tryCatch({
-    piggyback::pb_download(
-      file = "opta-parquet.tar.gz",
-      repo = repo,
-      tag = tag,
-      dest = temp_dir,
-      overwrite = TRUE
-    )
-  }, error = function(e) {
-    cli::cli_abort(c(
-      "Failed to download Opta data from {repo} ({tag})",
-      "x" = e$message
-    ))
-  })
-
-  if (!file.exists(archive_file)) {
-    cli::cli_abort("Download failed - archive not found")
+  for (f in files_to_download) {
+    cli::cli_alert_info("Downloading {f}...")
+    tryCatch({
+      piggyback::pb_download(
+        file = f,
+        repo = repo,
+        tag = tag,
+        dest = opta_dir,
+        overwrite = TRUE
+      )
+    }, error = function(e) {
+      cli::cli_abort(c(
+        "Failed to download {f} from {repo} ({tag})",
+        "x" = e$message
+      ))
+    })
   }
 
-  # Get file size
-  size_mb <- round(file.info(archive_file)$size / (1024 * 1024), 1)
-  cli::cli_alert_success("Downloaded {size_mb} MB")
-
-  # Extract to destination
-  cli::cli_alert_info("Extracting to {dest}...")
-  utils::untar(archive_file, exdir = dest)
-
-  # Count installed files
-  n_parquet <- length(list.files(opta_dir, pattern = "\\.parquet$", recursive = TRUE))
-
-  # Cleanup
-  file.remove(archive_file)
-
-  cli::cli_alert_success("Installed {n_parquet} parquet files to {opta_dir}")
+  # Report sizes
+  for (f in files_to_download) {
+    fpath <- file.path(opta_dir, f)
+    if (file.exists(fpath)) {
+      size_mb <- round(file.info(fpath)$size / (1024 * 1024), 1)
+      cli::cli_alert_success("{f}: {size_mb} MB")
+    }
+  }
 
   # Update cached path
   .opta_env$opta_dir <- normalizePath(opta_dir)
 
+  cli::cli_alert_success("Opta data installed to {opta_dir}")
   invisible(opta_dir)
 }
