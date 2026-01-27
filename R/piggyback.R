@@ -498,20 +498,20 @@ get_source_tag <- function(source_type) {
 }
 
 
-#' Get zip filename for data source
+#' Get archive filename for data source
 #'
-#' Maps source type to zip filename.
+#' Maps source type to tar.gz archive filename.
 #'
 #' @param source_type One of "fbref", "understat", "opta", or "all"
 #'
-#' @return Character zip filename
+#' @return Character archive filename (tar.gz)
 #' @keywords internal
-get_source_zipname <- function(source_type) {
+get_source_archive_name <- function(source_type) {
   switch(source_type,
-    fbref = "fbref-parquet.zip",
-    understat = "understat-parquet.zip",
-    opta = "opta-parquet.zip",
-    all = "pannadata-parquet.zip",
+    fbref = "fbref-parquet.tar.gz",
+    understat = "understat-parquet.tar.gz",
+    opta = "opta-parquet.tar.gz",
+    all = "pannadata-parquet.tar.gz",
     stop("Unknown source_type: ", source_type)
   )
 }
@@ -549,7 +549,6 @@ get_source_pattern <- function(source_type) {
 #'
 #' @return Invisible data frame with uploaded file info
 #' @export
-#' @importFrom utils zip
 #'
 #' @examples
 #' \dontrun{
@@ -577,7 +576,7 @@ pb_upload_source <- function(source_type = c("fbref", "understat", "opta", "all"
   }
 
   tag <- get_source_tag(source_type)
-  zip_name <- get_source_zipname(source_type)
+  archive_name <- get_source_archive_name(source_type)
 
   # Find parquet files matching the source type
   # New structure: data/{source_type}/{table_type}/{league}/{season}.parquet
@@ -615,15 +614,15 @@ pb_upload_source <- function(source_type = c("fbref", "understat", "opta", "all"
                     length(parquet_files), source_type, total_size))
   }
 
-  # Create zip
+  # Create tar.gz archive
   temp_dir <- tempdir()
-  zip_file <- file.path(temp_dir, zip_name)
+  archive_file <- file.path(temp_dir, archive_name)
 
-  if (file.exists(zip_file)) file.remove(zip_file)
+  if (file.exists(archive_file)) file.remove(archive_file)
 
-  if (verbose) message("Zipping parquet files...")
+  if (verbose) message("Creating tar.gz archive...")
 
-  # Create relative paths for zip
+  # Create relative paths for tar
   old_wd <- getwd()
   on.exit(setwd(old_wd), add = TRUE)
   setwd(source)
@@ -631,31 +630,21 @@ pb_upload_source <- function(source_type = c("fbref", "understat", "opta", "all"
   rel_files <- gsub(paste0("^", normalizePath(source, winslash = "/"), "/?"), "",
                     normalizePath(parquet_files, winslash = "/"))
 
-  # Use R's zip function
+  # Use R's tar function with gzip compression
   result <- tryCatch({
-    zip(zip_file, files = rel_files, flags = "-rq")
+    tar(archive_file, files = rel_files, compression = "gzip")
     TRUE
   }, error = function(e) {
-    warning("zip() failed: ", e$message)
+    warning("tar() failed: ", e$message)
     FALSE
-  }, warning = function(w) {
-    TRUE
   })
 
-  if (!result || !file.exists(zip_file)) {
-    tryCatch({
-      zip(zip_file, files = rel_files, flags = "-r")
-    }, error = function(e) {
-      stop("Failed to create zip: ", e$message)
-    })
+  if (!result || !file.exists(archive_file)) {
+    stop("Failed to create tar.gz archive")
   }
 
-  if (!file.exists(zip_file)) {
-    stop("Failed to create zip file")
-  }
-
-  zip_size <- file.size(zip_file) / (1024 * 1024)
-  if (verbose) message(sprintf("Created %s (%.1f MB)", zip_name, zip_size))
+  archive_size <- file.size(archive_file) / (1024 * 1024)
+  if (verbose) message(sprintf("Created %s (%.1f MB)", archive_name, archive_size))
 
   # Ensure release exists
   tryCatch({
@@ -670,10 +659,10 @@ pb_upload_source <- function(source_type = c("fbref", "understat", "opta", "all"
   # Upload
   if (verbose) message(sprintf("Uploading to %s...", tag))
   piggyback::pb_upload(
-    file = zip_file,
+    file = archive_file,
     repo = repo,
     tag = tag,
-    name = zip_name,
+    name = archive_name,
     overwrite = TRUE
   )
 
@@ -682,8 +671,8 @@ pb_upload_source <- function(source_type = c("fbref", "understat", "opta", "all"
   invisible(data.frame(
     source_type = source_type,
     tag = tag,
-    file = zip_name,
-    size_mb = zip_size,
+    file = archive_name,
+    size_mb = archive_size,
     n_parquet = length(parquet_files)
   ))
 }
@@ -700,7 +689,6 @@ pb_upload_source <- function(source_type = c("fbref", "understat", "opta", "all"
 #'
 #' @return Invisible path to destination directory
 #' @export
-#' @importFrom utils unzip
 #'
 #' @examples
 #' \dontrun{
@@ -725,17 +713,17 @@ pb_download_source <- function(source_type = c("fbref", "understat", "opta", "al
   }
 
   tag <- get_source_tag(source_type)
-  zip_name <- get_source_zipname(source_type)
+  archive_name <- get_source_archive_name(source_type)
 
   if (verbose) message(sprintf("Downloading %s from %s (tag: %s)...",
                                source_type, repo, tag))
 
   temp_dir <- tempdir()
-  zip_file <- file.path(temp_dir, zip_name)
+  archive_file <- file.path(temp_dir, archive_name)
 
   tryCatch({
     piggyback::pb_download(
-      file = zip_name,
+      file = archive_name,
       repo = repo,
       tag = tag,
       dest = temp_dir,
@@ -743,27 +731,27 @@ pb_download_source <- function(source_type = c("fbref", "understat", "opta", "al
     )
   }, error = function(e) {
     stop("Failed to download ", source_type, " parquet data: ", e$message,
-         "\nMake sure ", zip_name, " exists in the '", tag, "' release.")
+         "\nMake sure ", archive_name, " exists in the '", tag, "' release.")
   })
 
-  if (!file.exists(zip_file)) {
-    stop("Download failed - ", zip_name, " not found in release")
+  if (!file.exists(archive_file)) {
+    stop("Download failed - ", archive_name, " not found in release")
   }
 
   if (verbose) {
-    zip_size <- file.size(zip_file) / (1024 * 1024)
-    message(sprintf("Downloaded (%.1f MB)", zip_size))
+    archive_size <- file.size(archive_file) / (1024 * 1024)
+    message(sprintf("Downloaded (%.1f MB)", archive_size))
   }
 
-  # Extract
+  # Extract tar.gz
   if (verbose) message(sprintf("Extracting to %s...", dest))
 
   if (!dir.exists(dest)) {
     dir.create(dest, recursive = TRUE)
   }
 
-  unzip(zip_file, exdir = dest, overwrite = TRUE)
-  file.remove(zip_file)
+  untar(archive_file, exdir = dest)
+  file.remove(archive_file)
 
   # Count extracted files
   # New structure: data/{source_type}/{table_type}/{league}/{season}.parquet
@@ -802,16 +790,16 @@ pb_list_sources <- function(repo = "peteowen1/pannadata") {
 
   for (src in sources) {
     tag <- get_source_tag(src)
-    zip_name <- get_source_zipname(src)
+    archive_name <- get_source_archive_name(src)
 
     info <- tryCatch({
       files <- piggyback::pb_list(repo = repo, tag = tag)
-      if (zip_name %in% files$file_name) {
-        row <- files[files$file_name == zip_name, ]
+      if (archive_name %in% files$file_name) {
+        row <- files[files$file_name == archive_name, ]
         data.frame(
           source = src,
           tag = tag,
-          file = zip_name,
+          file = archive_name,
           size_mb = round(row$size / (1024 * 1024), 1),
           uploaded = row$timestamp,
           stringsAsFactors = FALSE
