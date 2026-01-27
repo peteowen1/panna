@@ -2166,7 +2166,8 @@ build_consolidated_parquet <- function(table_types = NULL, output_dir = NULL,
       })
       dfs <- Filter(Negate(is.null), dfs)
       if (length(dfs) == 0) return(NULL)
-      do.call(rbind, dfs)
+      # Use rbindlist with fill=TRUE to handle different column schemas
+      as.data.frame(data.table::rbindlist(dfs, fill = TRUE))
     }, error = function(e) {
       if (verbose) warning(sprintf("  Error combining %s: %s", tt, e$message))
       NULL
