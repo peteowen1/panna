@@ -564,19 +564,13 @@ pb_download_opta <- function(repo = "peteowen1/pannadata",
   opta_dir <- file.path(dest, "opta")
 
   # Check for existing data
-
   if (dir.exists(opta_dir)) {
     n_existing <- length(list.files(opta_dir, pattern = "\\.parquet$", recursive = TRUE))
     if (n_existing > 0 && !overwrite) {
       cli::cli_alert_warning("Found {n_existing} existing parquet files in {opta_dir}")
-      cli::cli_alert_info("Use overwrite = TRUE to replace existing data")
-      response <- readline("Continue and overwrite? (y/N): ")
-      if (!tolower(response) %in% c("y", "yes")) {
-        cli::cli_alert_info("Aborted.")
-        return(invisible(NULL))
-      }
+      cli::cli_alert_info("Use overwrite = TRUE to replace, or data will be merged")
     }
-    if (overwrite || n_existing == 0 || tolower(response) %in% c("y", "yes")) {
+    if (overwrite) {
       cli::cli_alert_info("Removing existing opta directory...")
       unlink(opta_dir, recursive = TRUE)
     }
