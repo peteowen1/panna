@@ -146,7 +146,7 @@ list_opta_seasons <- function(league) {
 #' # Load all EPL data from local files
 #' epl <- load_opta_stats("ENG")
 #'
-#' # Load from GitHub releases (downloads opta-parquet.zip)
+#' # Load from GitHub releases (downloads opta-parquet.tar.gz)
 #' epl_remote <- load_opta_stats("ENG", season = "2021-2022", source = "remote")
 #'
 #' # Load specific columns only
@@ -345,7 +345,7 @@ get_opta_columns <- function(table_type = c("player_stats", "shots")) {
 
 #' Download Opta data from GitHub Releases
 #'
-#' Downloads opta-parquet.zip from the opta-latest release and extracts
+#' Downloads opta-parquet.tar.gz from the opta-latest release and extracts
 #' to a temporary directory. Caches the extracted path for the session.
 #'
 #' @param repo GitHub repository in "owner/repo" format
@@ -374,11 +374,11 @@ download_remote_opta <- function(repo = "peteowen1/pannadata",
 
   # Download to temp directory
   temp_dir <- tempdir()
-  zip_file <- file.path(temp_dir, "opta-parquet.zip")
+  archive_file <- file.path(temp_dir, "opta-parquet.tar.gz")
 
   tryCatch({
     piggyback::pb_download(
-      file = "opta-parquet.zip",
+      file = "opta-parquet.tar.gz",
       repo = repo,
       tag = tag,
       dest = temp_dir,
@@ -387,13 +387,13 @@ download_remote_opta <- function(repo = "peteowen1/pannadata",
   }, error = function(e) {
     cli::cli_abort(c(
       "Failed to download Opta data from {repo} ({tag})",
-      "i" = "Make sure opta-parquet.zip exists in the release.",
+      "i" = "Make sure opta-parquet.tar.gz exists in the release.",
       "x" = e$message
     ))
   })
 
-  if (!file.exists(zip_file)) {
-    cli::cli_abort("Download failed - opta-parquet.zip not found")
+  if (!file.exists(archive_file)) {
+    cli::cli_abort("Download failed - opta-parquet.tar.gz not found")
   }
 
   # Extract to session-specific temp directory
@@ -404,10 +404,10 @@ download_remote_opta <- function(repo = "peteowen1/pannadata",
   dir.create(extract_dir, recursive = TRUE)
 
   cli::cli_alert_info("Extracting Opta data...")
-  utils::unzip(zip_file, exdir = extract_dir, overwrite = TRUE)
+  utils::untar(archive_file, exdir = extract_dir)
 
-  # The zip contains processed/{league}/{season}/ structure
-  data_dir <- file.path(extract_dir, "processed")
+  # The tar.gz contains opta/{table_type}/{league}/{season}.parquet structure
+  data_dir <- file.path(extract_dir, "opta")
   if (!dir.exists(data_dir)) {
     # Maybe it's directly in extract_dir
     data_dir <- extract_dir
@@ -420,8 +420,8 @@ download_remote_opta <- function(repo = "peteowen1/pannadata",
   # Cache the path
   assign(cache_key, data_dir, envir = .opta_remote_env)
 
-  # Cleanup zip
-  file.remove(zip_file)
+  # Cleanup archive
+  file.remove(archive_file)
 
   data_dir
 }
