@@ -108,7 +108,10 @@ pannadata (cached match data from FBref/Opta/Understat)
 
 | Module | Purpose |
 |--------|---------|
-| `pannadata_loader.R` | Load cached data from pannadata repository |
+| `data_loaders.R` | DuckDB-based loading from local/remote parquet (FBref, Understat) |
+| `opta_loaders.R` | Opta data loading with league code conversion |
+| `player_stats.R` | User-facing aggregated stats functions (player_fbref_*, player_opta_*, player_understat_*) |
+| `piggyback.R` | GitHub Releases upload/download (pb_upload_*, pb_download_*) |
 | `data_processing.R` | Cleaning, standardization, merging |
 | `splint_creation.R` | Time segment creation for RAPM |
 | `rapm_matrix.R` | Design matrix construction |
@@ -117,18 +120,30 @@ pannadata (cached match data from FBref/Opta/Understat)
 | `panna_rating.R` | Final rating calculation |
 | `offensive_defensive.R` | O/D rating decomposition |
 | `feature_engineering.R` | Advanced feature creation (per-100 sequences) |
-| `utils.R` | Helpers: clean_column_names, safe_divide, validate_seasons, etc. |
+| `utils.R` | Helpers: clean_column_names, safe_divide, per_90, validate_seasons |
 | `globals.R` | NSE variable declarations for R CMD check |
 
 ## Key Functions
 
-### Data Loading (from pannadata)
-- `load_summary()` - Load player summary stats for league/season
-- `load_passing()` - Load detailed passing stats
-- `load_defense()` - Load defensive action stats
-- `load_possession()` - Load possession/carrying stats
-- `load_shots()` - Load shot-level data
-- `load_metadata()` - Load match metadata
+### Data Loading (FBref via pannadata)
+- `load_summary()`, `load_passing()`, `load_defense()`, `load_possession()`, `load_shots()`, `load_metadata()`
+- Use `source = "remote"` (default) or `source = "local"`
+
+### Data Loading (Opta)
+- `load_opta_stats()` - Player match stats (271 columns)
+- `load_opta_shots()` - Shot data
+- `load_opta_big5()` - All Big 5 leagues at once
+- `pb_download_opta()` - Download Opta data from GitHub releases
+
+### Data Loading (Understat)
+- `load_understat_roster()` - Player stats with xGChain, xGBuildup
+- `load_understat_shots()` - Shot-level data with xG
+- `load_understat_metadata()` - Match metadata
+
+### Player Statistics (User-Facing Aggregations)
+- `player_fbref_summary()`, `player_fbref_passing()`, `player_fbref_defense()`, `player_fbref_keeper()`
+- `player_opta_summary()`, `player_opta_passing()`, `player_opta_defense()`, `player_opta_possession()`, `player_opta_keeper()`, `player_opta_shots()`, `player_opta_setpiece()`
+- `player_understat_summary()`
 
 ### Splint Creation
 - `create_all_splints()` - Master function for all matches
@@ -147,6 +162,23 @@ pannadata (cached match data from FBref/Opta/Understat)
 ### Panna
 - `fit_panna_model()` - End-to-end pipeline combining RAPM + SPM
 - `fit_rapm_with_prior()` - RAPM shrinking toward SPM (xRAPM)
+
+## Data Distribution (GitHub Releases)
+
+Data is stored in GitHub Releases using tar.gz archives, organized by source:
+
+| Release Tag | Archive | Contents |
+|-------------|---------|----------|
+| fbref-latest | fbref-parquet.tar.gz | FBref parquet files |
+| understat-latest | understat-parquet.tar.gz | Understat parquet files |
+| opta-latest | opta_player_stats.parquet, opta_shots.parquet | Consolidated Opta files |
+
+### Download Functions
+```r
+pb_download_source("fbref")     # Download FBref data
+pb_download_source("understat") # Download Understat data
+pb_download_opta()              # Download Opta data (consolidated files)
+```
 
 ## Data Documentation
 
