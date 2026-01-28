@@ -977,7 +977,11 @@ player_opta_possession <- function(player = NULL,
 #'
 #' @inheritParams player_opta_summary
 #'
-#' @return Data frame with goalkeeper statistics.
+#' @return Data frame with columns: player, team, matches, minutes,
+#'   saves, saves_ibox, saves_obox, goals_conceded, goals_conceded_ibox,
+#'   shots_conceded_ibox, shots_conceded_obox, clean_sheets, diving_saves,
+#'   high_claims, punches, big_chance_saves, shots_conceded,
+#'   save_pct, goals_against_per90, shots_conceded_per90, clean_sheet_pct
 #'
 #' @export
 player_opta_keeper <- function(player = NULL,
@@ -1020,6 +1024,8 @@ player_opta_keeper <- function(player = NULL,
         saves_obox = get_col(data, "savedObox"),
         goals_conceded = get_col(data, "goalsConceded"),
         goals_conceded_ibox = get_col(data, "goalsConcededIbox"),
+        shots_conceded_ibox = get_col(data, "attemptsConcededIbox"),
+        shots_conceded_obox = get_col(data, "attemptsConcededObox"),
         clean_sheets = get_col(data, "cleanSheet"),
         diving_saves = get_col(data, "divingSave"),
         high_claims = get_col(data, "goodHighClaim"),
@@ -1041,6 +1047,8 @@ player_opta_keeper <- function(player = NULL,
         saves_obox = get_col(data, "savedObox"),
         goals_conceded = get_col(data, "goalsConceded"),
         goals_conceded_ibox = get_col(data, "goalsConcededIbox"),
+        shots_conceded_ibox = get_col(data, "attemptsConcededIbox"),
+        shots_conceded_obox = get_col(data, "attemptsConcededObox"),
         clean_sheets = get_col(data, "cleanSheet"),
         diving_saves = get_col(data, "divingSave"),
         high_claims = get_col(data, "goodHighClaim"),
@@ -1059,10 +1067,12 @@ player_opta_keeper <- function(player = NULL,
     result <- merge(result, team_mode, by = "player", all.x = TRUE)
   }
 
-  # Calculate rates
-  shots_faced <- result$saves + result$goals_conceded
-  result$save_pct <- round(safe_divide(result$saves * 100, shots_faced), 1)
+  # Calculate derived stats
+  result$shots_conceded <- result$shots_conceded_ibox + result$shots_conceded_obox
+  shots_on_target_against <- result$saves + result$goals_conceded
+  result$save_pct <- round(safe_divide(result$saves * 100, shots_on_target_against), 1)
   result$goals_against_per90 <- round(per_90(result$goals_conceded, result$minutes), 2)
+  result$shots_conceded_per90 <- round(per_90(result$shots_conceded, result$minutes), 2)
   result$clean_sheet_pct <- round(safe_divide(result$clean_sheets * 100, result$matches), 1)
 
   if (is.null(player)) {

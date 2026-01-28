@@ -222,7 +222,7 @@ load_opta_big5 <- function(season = NULL, columns = NULL) {
     })
   })
 
-  do.call(rbind, Filter(Negate(is.null), results))
+  dplyr::bind_rows(Filter(Negate(is.null), results))
 }
 
 
@@ -292,7 +292,7 @@ load_opta_table <- function(table_type, league, season, columns,
     }
 
     col_sql <- if (!is.null(columns)) paste(columns, collapse = ", ") else "*"
-    sql <- sprintf("SELECT %s FROM %s", col_sql, parquet_pattern)
+    sql <- sprintf("SELECT %s FROM read_parquet(%s, union_by_name=true)", col_sql, parquet_pattern)
   }
 
   # Execute query with DuckDB
@@ -500,7 +500,7 @@ query_remote_opta_parquet <- function(table_type, opta_league, season = NULL,
     "*"
   }
 
-  sql <- sprintf("SELECT %s FROM %s", col_sql, parquet_pattern)
+  sql <- sprintf("SELECT %s FROM read_parquet(%s, union_by_name=true)", col_sql, parquet_pattern)
 
   # Execute query with DuckDB
   conn <- DBI::dbConnect(duckdb::duckdb())

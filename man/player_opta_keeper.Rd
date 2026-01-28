@@ -27,7 +27,11 @@ player_opta_keeper(
 \item{source}{Character. "local" (default) or "remote".}
 }
 \value{
-Data frame with goalkeeper statistics.
+Data frame with columns: player, team, matches, minutes,
+saves, saves_ibox, saves_obox, goals_conceded, goals_conceded_ibox,
+shots_conceded_ibox, shots_conceded_obox, clean_sheets, diving_saves,
+high_claims, punches, big_chance_saves, shots_conceded,
+save_pct, goals_against_per90, shots_conceded_per90, clean_sheet_pct
 }
 \description{
 Aggregate goalkeeper statistics from Opta data.
