@@ -17,6 +17,8 @@ query_remote_parquet(
 \item{sql_template}{Character. SQL query template with \code{\{table\}} placeholder.}
 
 \item{release}{Optional. Release info from \code{get_latest_release()}.}
+
+\item{tag}{Character. GitHub release tag to download from. Defaults to "fbref-latest".}
 }
 \value{
 Data frame with query results.

@@ -1,0 +1,321 @@
+---
+title: "Data Sources Guide"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Data Sources Guide}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  eval = FALSE
+)
+```
+
+This vignette compares the three data sources available in panna and helps you choose the right one for your analysis.
+
+## Overview
+
+| Feature | FBref | Opta | Understat |
+|---------|-------|------|-----------|
+| xG Model | StatsBomb | None | Understat |
+| Leagues | Big 5 + cups + international | Big 5 | Big 5 + Russia |
+| History | 2017+ | 2010+ | 2014+ |
+| Columns | ~70 per table | 271 total | ~30 |
+| Update Frequency | Daily | Varies | Daily |
+| Primary Use | RAPM pipeline, passing | Historical, progressive stats | xGChain analysis |
+
+## FBref (Primary Source)
+
+FBref is the primary data source for the panna rating system.
+
+### Strengths
+
+- **StatsBomb xG**: Industry-leading expected goals model
+- **Comprehensive passing**: Short/medium/long breakdowns, progressive distance
+- **Multiple tables**: Summary, passing, defense, possession, keeper, misc, shots
+- **Competition coverage**: Big 5 leagues, European cups, domestic cups, international
+
+### League Codes
+
+```{r fbref-leagues}
+# Big 5 leagues
+"ENG"  # Premier League
+"ESP"  # La Liga
+"GER"  # Bundesliga
+"ITA"  # Serie A
+"FRA"  # Ligue 1
+
+# European competitions
+"UCL"  # Champions League
+"UEL"  # Europa League
+
+# Domestic cups
+"FA_CUP", "EFL_CUP"      # England
+"COPA_DEL_REY"           # Spain
+"DFB_POKAL"              # Germany
+"COPPA_ITALIA"           # Italy
+"COUPE_DE_FRANCE"        # France
+
+# International
+"WC", "EURO", "COPA_AMERICA", "AFCON", "NATIONS_LEAGUE"
+```
+
+### Loading FBref Data
+
+```{r fbref-load}
+library(panna)
+
+# Download (first time)
+pb_download_source("fbref")
+
+# Load by table type
+summary <- load_summary("ENG", "2024-2025")
+passing <- load_passing("ENG", "2024-2025")
+defense <- load_defense("ENG", "2024-2025")
+possession <- load_possession("ENG", "2024-2025")
+keeper <- load_keeper("ENG", "2024-2025")
+misc <- load_misc("ENG", "2024-2025")
+shots <- load_shots()  # All leagues/seasons
+
+# Aggregated player stats
+players <- player_fbref_summary(
+  leagues = "ENG",
+  seasons = "2024-2025",
+  min_minutes = 900
+)
+```
+
+### When to Use FBref
+
+- Building RAPM/Panna ratings (primary pipeline)
+- Analyzing passing patterns
+- Comparing across competitions (league + cup)
+- Working with StatsBomb xG
+
+## Opta
+
+Opta provides the richest per-match statistics with 271 columns per player.
+
+### Strengths
+
+- **Deep history**: Data back to 2010
+- **271 columns**: Most detailed per-match stats
+- **Progressive metrics**: Carries, passes, receptions
+- **Set pieces**: Detailed breakdown of set piece involvement
+
+### Unique Statistics
+
+Opta includes metrics not available in FBref:
+
+- Progressive carries into penalty area
+- Set piece pass breakdowns
+- Detailed aerial duel locations
+- More granular defensive actions
+
+### League Codes
+
+```{r opta-leagues}
+# Opta uses different codes
+"EPL"        # Premier League
+"La_Liga"    # La Liga
+"Bundesliga" # Bundesliga
+"Serie_A"    # Serie A
+"Ligue_1"    # Ligue 1
+```
+
+### Loading Opta Data
+
+```{r opta-load}
+# Download
+pb_download_source("opta")
+
+# Load player stats
+stats <- load_opta_stats("EPL", "2024-2025")
+
+# Load shots
+shots <- load_opta_shots("EPL", "2024-2025")
+
+# Load all Big 5 at once
+big5 <- load_opta_big5("2024-2025")
+
+# Aggregated stats
+players <- player_opta_summary(
+  leagues = "EPL",
+  seasons = "2024-2025",
+  min_minutes = 900
+)
+```
+
+### When to Use Opta
+
+- Historical analysis (pre-2017)
+- Research requiring progressive carries
+- Set piece analysis
+- When you need 271 columns of granularity
+
+## Understat
+
+Understat provides unique metrics like xGChain and xGBuildup.
+
+### Strengths
+
+- **xGChain**: xG attributed to all players involved in attacking sequence
+- **xGBuildup**: xG for buildup players (excluding shooter and assister)
+- **Free and accessible**: No scraping restrictions
+- **Russian Premier League**: Only source covering Russia
+
+### Unique Statistics
+
+```
+xGChain   = Sum of xG for all sequences a player was involved in
+xGBuildup = xGChain minus xG and xA (contribution beyond final actions)
+```
+
+These metrics help identify players who contribute to attacks without always getting the final touch.
+
+### League Codes
+
+```{r understat-leagues}
+# Understat leagues
+"EPL"         # Premier League
+"La_Liga"     # La Liga
+"Bundesliga"  # Bundesliga
+"Serie_A"     # Serie A
+"Ligue_1"     # Ligue 1
+"RFPL"        # Russian Premier League
+```
+
+### Season Format
+
+Understat uses single-year seasons:
+
+```{r understat-seasons}
+# Understat: "2024" means 2024-25 season
+roster <- load_understat_roster("EPL", "2024")
+
+# vs FBref/Opta: "2024-2025"
+summary <- load_summary("ENG", "2024-2025")
+```
+
+### Loading Understat Data
+
+```{r understat-load}
+# Download
+pb_download_source("understat")
+
+# Load player roster with xGChain, xGBuildup
+roster <- load_understat_roster("EPL", "2024")
+
+# Load shot-level data
+shots <- load_understat_shots("EPL", "2024")
+
+# Match metadata
+metadata <- load_understat_metadata("EPL", "2024")
+
+# Aggregated stats
+players <- player_understat_summary(
+  leagues = "EPL",
+  seasons = "2024",
+  min_minutes = 900
+)
+```
+
+### When to Use Understat
+
+- Analyzing buildup contribution (xGChain, xGBuildup)
+- Russian Premier League coverage
+- When StatsBomb xG isn't required
+
+## Comparison Table
+
+### Available Statistics
+
+| Statistic | FBref | Opta | Understat |
+|-----------|:-----:|:----:|:---------:|
+| Goals, Assists | Y | Y | Y |
+| xG, xA | Y (StatsBomb) | N | Y (Understat) |
+| npxG | Y | N | Y |
+| xGChain | N | N | Y |
+| xGBuildup | N | N | Y |
+| Shots | Y | Y | Y |
+| Passing (basic) | Y | Y | N |
+| Passing (distance) | Y | Y | N |
+| Progressive passes | Y | Y | N |
+| Progressive carries | Y | Y | N |
+| Tackles | Y | Y | N |
+| Interceptions | Y | Y | N |
+| Blocks | Y | Y | N |
+| Aerial duels | Y | Y | N |
+| Goalkeeper stats | Y | Y | N |
+| Set piece detail | Limited | Y | N |
+
+### Coverage
+
+| League | FBref | Opta | Understat |
+|--------|:-----:|:----:|:---------:|
+| Premier League | 2017+ | 2010+ | 2014+ |
+| La Liga | 2017+ | 2010+ | 2014+ |
+| Bundesliga | 2017+ | 2010+ | 2014+ |
+| Serie A | 2017+ | 2010+ | 2014+ |
+| Ligue 1 | 2017+ | 2010+ | 2014+ |
+| Russian PL | N | N | 2014+ |
+| Champions League | Y | N | N |
+| Europa League | Y | N | N |
+| Domestic Cups | Y | N | N |
+| International | Y | N | N |
+
+## Choosing a Data Source
+
+### Use FBref when:
+
+- Running the RAPM/Panna pipeline
+- You need StatsBomb xG
+- Analyzing cup or international matches
+- Comprehensive passing analysis
+
+### Use Opta when:
+
+- Historical analysis (2010-2016)
+- You need 271 columns of detail
+- Progressive carry analysis
+- Set piece research
+
+### Use Understat when:
+
+- Analyzing buildup contribution
+- You want xGChain/xGBuildup
+- Covering Russian league
+- Quick analysis without xG model preference
+
+## Combining Sources
+
+You can use multiple sources in the same analysis:
+
+```{r combine}
+# Get FBref for RAPM
+fbref_summary <- player_fbref_summary("ENG", "2024-2025")
+
+# Get Understat for xGChain
+understat_summary <- player_understat_summary("EPL", "2024")
+
+# Merge by player name (careful with name matching)
+combined <- merge(
+  fbref_summary,
+  understat_summary[, c("player_name", "xg_chain", "xg_buildup")],
+  by.x = "player",
+  by.y = "player_name",
+  all.x = TRUE
+)
+```
+
+Note: Player name matching across sources requires care due to different naming conventions.
+
+## Next Steps
+
+- [Getting Started](getting-started.html) - Installation and basic usage
+- [Player Ratings](player-ratings.html) - RAPM and SPM methodology
+- [Data Dictionary](../DATA_DICTIONARY.md) - Complete column definitions

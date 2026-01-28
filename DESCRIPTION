@@ -1,6 +1,6 @@
 Package: panna
 Title: Player Rating System for Football Using RAPM and SPM Methods
-Version: 0.0.0.9000
+Version: 0.1.0
 Authors@R:
     person("Pete", "Owen", , "pete.owen1@hotmail.co.uk", role = c("aut", "cre"))
 Description: Implements the panna player rating methodology for football
@@ -47,5 +47,6 @@ Suggests:
     testthat (>= 3.0.0),
     xgboost
 Config/testthat/edition: 3
+VignetteBuilder: knitr
 URL: https://github.com/peteowen1/panna
 BugReports: https://github.com/peteowen1/panna/issues

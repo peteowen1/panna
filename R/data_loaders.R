@@ -33,6 +33,7 @@ NULL
 #' @param table_name Character. Name of the parquet file (without .parquet).
 #' @param sql_template Character. SQL query template with \code{\{table\}} placeholder.
 #' @param release Optional. Release info from \code{get_latest_release()}.
+#' @param tag Character. GitHub release tag to download from. Defaults to "fbref-latest".
 #'
 #' @return Data frame with query results.
 #'

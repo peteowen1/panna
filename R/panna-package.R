@@ -10,7 +10,7 @@
 #' @importFrom purrr map map_dfr map_chr map_dbl map2 possibly
 #' @importFrom rlang .data := sym
 #' @importFrom stats coef lm predict residuals sd var cor quantile
-#' @importFrom utils head tail
+#' @importFrom utils head tail tar untar
 #' @importFrom lubridate ymd
 ## usethis namespace: end
 NULL
