@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **SPM** (Statistical Plus-Minus) - box score prediction of RAPM
 - **Panna Rating** - combines RAPM with SPM as Bayesian prior for stability
 
-The package works with FBref data via the `pannadata` repository (cached match data) and supports Big 5 European leagues.
+The package works with data from three sources via the `pannadata` repository and supports Big 5 European leagues.
 
 ## Development Commands
 
@@ -20,6 +20,32 @@ devtools::test()        # Run all tests
 testthat::test_file("tests/testthat/test-utils.R")  # Run single test file
 devtools::check()       # Full package check
 ```
+
+## Data Sources
+
+The package supports three football data sources with different strengths:
+
+| Source | Coverage | xG Model | Unique Stats |
+|--------|----------|----------|--------------|
+| FBref | Big 5 leagues + more | StatsBomb | Most comprehensive passing |
+| Opta | Big 5 leagues (2010-present) | None | 271 columns, progressive carries, set pieces |
+| Understat | Big 5 + Russia | Understat model | xGChain, xGBuildup |
+
+### League Codes
+- **Panna codes**: ENG, ESP, GER, ITA, FRA
+- **Opta codes**: EPL, La_Liga, Bundesliga, Serie_A, Ligue_1
+- Season format: FBref uses "2024-2025", Understat uses "2024"
+
+## Debugging
+
+When debugging R code, write a script to the `debug/` folder and run it from there rather than using inline Rscript commands. This avoids issues with escaping and segfaults from complex inline commands.
+
+```r
+# Write debug script to debug/test.R then run:
+Rscript debug/test.R
+```
+
+The `debug/` folder is gitignored.
 
 ## Coding Standards
 
@@ -45,19 +71,21 @@ devtools::check()       # Full package check
 
 ### Core Data Flow
 ```
-pannadata (cached FBref match data)
+pannadata (cached match data from FBref/Opta/Understat)
        ↓
 01_load_pannadata.R (loads summary, passing, defense, possession, shots, metadata)
        ↓
-02_processed_data.rds (cleaned, standardized, match_id added)
+02_data_processing.R → processed_data.rds (cleaned, standardized)
        ↓
-03_splints.rds (time segments with constant lineups)
+03_splint_creation.R → splints.rds (time segments with constant lineups)
        ↓
-04_rapm.rds (base RAPM) ──→ 05_spm.rds (SPM model)
-       ↓                            ↓
-06_xrapm.rds (RAPM with SPM prior) ←┘
+04_rapm.R → rapm.rds (base RAPM) ──→ 05_spm.R → spm.rds (SPM model)
+       ↓                                    ↓
+06_xrapm.R → xrapm.rds (RAPM with SPM prior) ←┘
        ↓
-07_panna.rds / panna_ratings.csv (final ratings)
+07_seasonal_ratings.R → seasonal ratings
+       ↓
+08_panna_ratings.R → panna_ratings.csv (final ratings)
 ```
 
 ### Key Concepts

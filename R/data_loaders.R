@@ -366,6 +366,21 @@ load_possession <- function(league = NULL, season = NULL, source = c("remote", "
 }
 
 
+#' Load Keeper Data
+#'
+#' Loads goalkeeper statistics from pannadata.
+#'
+#' @inheritParams load_summary
+#'
+#' @return Data frame of goalkeeper statistics.
+#'
+#' @export
+load_keeper <- function(league = NULL, season = NULL, source = c("remote", "local")) {
+  source <- match.arg(source)
+  load_table_data("keeper", league, season, source)
+}
+
+
 #' Internal function to load table data
 #'
 #' Common implementation for all load_* functions.

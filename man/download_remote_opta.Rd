@@ -21,7 +21,7 @@ download_remote_opta(
 Path to extracted Opta data directory
 }
 \description{
-Downloads opta-parquet.zip from the opta-latest release and extracts
+Downloads opta-parquet.tar.gz from the opta-latest release and extracts
 to a temporary directory. Caches the extracted path for the session.
 }
 \keyword{internal}

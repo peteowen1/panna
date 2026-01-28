@@ -5,7 +5,7 @@
 #' @export
 magrittr::`%>%`
 
-#' @importFrom stats setNames
+#' @importFrom stats setNames na.pass
 NULL
 
 # Suppress R CMD check notes for data.frame column names used in dplyr/tidyr
@@ -132,5 +132,18 @@ utils::globalVariables(c(
 
   # Player timing columns
   "on_minute",
-  "off_minute"
+  "off_minute",
+
+  # Player stats function columns
+  "x1_3",
+  "kp",
+  "ppa",
+  "crs_pa",
+  "tkl_w",
+  "clr",
+  "err",
+  "so_ta",
+  "ga",
+  "saves",
+  "clean_sheet"
 ))
