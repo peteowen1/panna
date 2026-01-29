@@ -28,7 +28,7 @@ The package supports three football data sources with different strengths:
 | Source | Coverage | xG Model | Unique Stats |
 |--------|----------|----------|--------------|
 | FBref | Big 5 leagues + more | StatsBomb | Most comprehensive passing |
-| Opta | Big 5 leagues (2010-present) | None | 271 columns, progressive carries, set pieces |
+| Opta | Big 5 leagues (2010-present) | None | 263 columns, progressive carries, set pieces |
 | Understat | Big 5 + Russia | Understat model | xGChain, xGBuildup |
 
 ### League Codes
@@ -113,10 +113,10 @@ pannadata (cached match data from FBref/Opta/Understat)
 | `player_stats.R` | User-facing aggregated stats functions (player_fbref_*, player_opta_*, player_understat_*) |
 | `piggyback.R` | GitHub Releases upload/download (pb_upload_*, pb_download_*) |
 | `data_processing.R` | Cleaning, standardization, merging |
-| `splint_creation.R` | Time segment creation for RAPM |
+| `splint_creation.R` | Time segment creation for RAPM + Opta adapters |
 | `rapm_matrix.R` | Design matrix construction |
 | `rapm_model.R` | Ridge regression model fitting |
-| `spm_model.R` | Box score prediction model |
+| `spm_model.R` | Box score prediction model (FBref + Opta SPM) |
 | `panna_rating.R` | Final rating calculation |
 | `offensive_defensive.R` | O/D rating decomposition |
 | `feature_engineering.R` | Advanced feature creation (per-100 sequences) |
@@ -130,7 +130,7 @@ pannadata (cached match data from FBref/Opta/Understat)
 - Use `source = "remote"` (default) or `source = "local"`
 
 ### Data Loading (Opta)
-- `load_opta_stats()` - Player match stats (271 columns)
+- `load_opta_stats()` - Player match stats (263 columns)
 - `load_opta_shots()` - Shot data
 - `load_opta_big5()` - All Big 5 leagues at once
 - `pb_download_opta()` - Download Opta data from GitHub releases
@@ -149,15 +149,27 @@ pannadata (cached match data from FBref/Opta/Understat)
 - `create_all_splints()` - Master function for all matches
 - `create_splint_boundaries()` - Define splint boundaries at events
 
+### Opta Adapters (for splint creation)
+- `prepare_opta_events_for_splints()` - Convert Opta events to FBref-like format
+- `prepare_opta_lineups_for_splints()` - Convert Opta lineups to FBref-like format
+- `prepare_opta_shots_for_splints()` - Convert Opta shots to FBref-like format
+- `create_opta_processed_data()` - Master function creating processed data from Opta sources
+- `extract_season_from_date()` - Helper to extract season string from match date
+
 ### RAPM
 - `create_rapm_design_matrix()` - Build X matrix with player/covariate columns
 - `fit_rapm()` - Fit cross-validated ridge regression
 - `extract_panna_ratings()` - Extract player coefficients
 
 ### SPM
-- `aggregate_player_stats()` - Convert match stats to per-90 rates
+- `aggregate_player_stats()` - Convert FBref match stats to per-90 rates
 - `fit_spm_model()` - Elastic net predicting RAPM from box scores
 - `calculate_spm_ratings()` - Generate SPM for all players
+
+### Opta SPM
+- `aggregate_opta_stats()` - Aggregate Opta 263 columns to per-90 rates with derived features
+- `fit_spm_opta()` - Elastic net on Opta features predicting RAPM
+- `compare_spm_features()` - Compare feature importance between FBref and Opta SPM models
 
 ### Panna
 - `fit_panna_model()` - End-to-end pipeline combining RAPM + SPM

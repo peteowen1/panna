@@ -190,6 +190,126 @@ load_opta_shots <- function(league, season = NULL, columns = NULL,
 }
 
 
+#' Load Opta Shot Events (Individual Shots with Coordinates)
+#'
+#' Loads individual shot events with x/y coordinates from Opta/TheAnalyst data.
+#' Each row is a single shot with location, outcome, body part, and situation.
+#' Useful for xG modeling as it includes shot coordinates.
+#'
+#' @inheritParams load_opta_stats
+#'
+#' @return Data frame of shot events with columns:
+#'   \itemize{
+#'     \item match_id: Match identifier
+#'     \item event_id: Unique event identifier
+#'     \item player_id, player_name: Shooter info
+#'     \item team_id: Team that took the shot
+#'     \item minute, second: Time of shot
+#'     \item x, y: Shot coordinates (0-100 scale)
+#'     \item outcome: 1=on target, 0=off target
+#'     \item is_goal: Whether shot resulted in goal
+#'     \item type_id: 13=saved, 14=post, 15=miss, 16=goal
+#'     \item body_part: Head, LeftFoot, RightFoot
+#'     \item situation: OpenPlay, SetPiece, Corner, Penalty
+#'     \item big_chance: TRUE if big chance
+#'   }
+#'
+#' @export
+#' @examples
+#' \dontrun{
+#' # Load EPL shot events with coordinates
+#' epl_shots <- load_opta_shot_events("ENG", season = "2024-2025")
+#'
+#' # Analyze shots by location
+#' library(ggplot2)
+#' ggplot(epl_shots, aes(x = x, y = y, color = is_goal)) +
+#'   geom_point(alpha = 0.5)
+#' }
+load_opta_shot_events <- function(league, season = NULL, columns = NULL,
+                                   source = c("local", "remote")) {
+  source <- match.arg(source)
+  load_opta_table("shot_events", league, season, columns, source)
+}
+
+
+#' Load Opta Match Events (Goals, Cards, Substitutions)
+#'
+#' Loads match events including goals, cards, and substitutions with timing.
+#' Useful for creating splint boundaries in RAPM calculations.
+#'
+#' @inheritParams load_opta_stats
+#'
+#' @return Data frame of match events with columns:
+#'   \itemize{
+#'     \item match_id: Match identifier
+#'     \item event_type: goal, yellow_card, red_card, second_yellow, substitution
+#'     \item minute, second: Time of event
+#'     \item team_id: Team involved
+#'     \item player_id, player_name: Player involved
+#'     \item player_on_id, player_on_name: Substitute coming on (for substitutions)
+#'     \item player_off_id, player_off_name: Player leaving (for substitutions)
+#'     \item assist_player_id, assist_player_name: Assister (for goals)
+#'   }
+#'
+#' @export
+#' @examples
+#' \dontrun{
+#' # Load EPL match events
+#' epl_events <- load_opta_events("ENG", season = "2024-2025")
+#'
+#' # Filter to just red cards
+#' red_cards <- epl_events |>
+#'   dplyr::filter(event_type == "red_card")
+#' }
+load_opta_events <- function(league, season = NULL, columns = NULL,
+                              source = c("local", "remote")) {
+  source <- match.arg(source)
+  load_opta_table("events", league, season, columns, source)
+}
+
+
+#' Load Opta Lineup Data
+#'
+#' Loads lineup information including starting XI, positions, and minutes played.
+#' Useful for assigning players to time periods in RAPM calculations.
+#'
+#' @inheritParams load_opta_stats
+#'
+#' @return Data frame of lineup data with columns:
+#'   \itemize{
+#'     \item match_id, match_date: Match identifiers
+#'     \item player_id, player_name: Player info
+#'     \item team_id, team_name: Team info
+#'     \item team_position: home or away
+#'     \item position: Goalkeeper, Defender, Midfielder, etc.
+#'     \item position_side: Left, Right, Centre
+#'     \item formation_place: 1-11 for starters
+#'     \item shirt_number: Jersey number
+#'     \item is_starter: TRUE if player started
+#'     \item minutes_played: Total minutes played
+#'     \item sub_on_minute: Minute substituted on (0 if started)
+#'     \item sub_off_minute: Minute substituted off (0 if played full match)
+#'   }
+#'
+#' @export
+#' @examples
+#' \dontrun{
+#' # Load EPL lineups
+#' epl_lineups <- load_opta_lineups("ENG", season = "2024-2025")
+#'
+#' # Find starters with most minutes
+#' starters <- epl_lineups |>
+#'   dplyr::filter(is_starter) |>
+#'   dplyr::group_by(player_name, team_name) |>
+#'   dplyr::summarise(total_mins = sum(minutes_played))
+#' }
+load_opta_lineups <- function(league, season = NULL, columns = NULL,
+                               source = c("local", "remote")) {
+  source <- match.arg(source)
+  load_opta_table("lineups", league, season, columns, source)
+}
+
+
 #' Load All Opta Data for Big 5 Leagues
 #'
 #' Convenience function to load Opta stats for all Big 5 European leagues.
@@ -316,7 +436,7 @@ load_opta_table <- function(table_type, league, season, columns,
 #'
 #' Returns column names available in Opta data without loading the full dataset.
 #'
-#' @param table_type "player_stats" or "shots".
+#' @param table_type One of "player_stats", "shots", "shot_events", "events", or "lineups".
 #'
 #' @return Character vector of column names.
 #'
@@ -326,10 +446,16 @@ load_opta_table <- function(table_type, league, season, columns,
 #' # See all player stats columns
 #' get_opta_columns("player_stats")
 #'
-#' # See shot columns
-#' get_opta_columns("shots")
+#' # See shot event columns (individual shots with x/y)
+#' get_opta_columns("shot_events")
+#'
+#' # See event columns (goals, cards, subs)
+#' get_opta_columns("events")
+#'
+#' # See lineup columns
+#' get_opta_columns("lineups")
 #' }
-get_opta_columns <- function(table_type = c("player_stats", "shots")) {
+get_opta_columns <- function(table_type = c("player_stats", "shots", "shot_events", "events", "lineups")) {
   table_type <- match.arg(table_type)
 
   base_dir <- opta_data_dir()

@@ -4,10 +4,12 @@
 \alias{get_opta_columns}
 \title{Get Opta Column Names}
 \usage{
-get_opta_columns(table_type = c("player_stats", "shots"))
+get_opta_columns(
+  table_type = c("player_stats", "shots", "shot_events", "events", "lineups")
+)
 }
 \arguments{
-\item{table_type}{"player_stats" or "shots".}
+\item{table_type}{One of "player_stats", "shots", "shot_events", "events", or "lineups".}
 }
 \value{
 Character vector of column names.
@@ -20,7 +22,13 @@ Returns column names available in Opta data without loading the full dataset.
 # See all player stats columns
 get_opta_columns("player_stats")
 
-# See shot columns
-get_opta_columns("shots")
+# See shot event columns (individual shots with x/y)
+get_opta_columns("shot_events")
+
+# See event columns (goals, cards, subs)
+get_opta_columns("events")
+
+# See lineup columns
+get_opta_columns("lineups")
 }
 }
