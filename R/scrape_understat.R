@@ -89,26 +89,24 @@ fetch_understat_page <- function(url, timeout = 30) {
     stop("Invalid Understat URL: ", url)
   }
 
-  # Make request with session cookies
-  response <- httr::GET(
+  # Make request with session cookies and retry logic
+  response <- fetch_with_retry(
     url,
     httr::add_headers(.headers = get_understat_headers()),
     httr::timeout(timeout),
     handle = get_understat_session()
   )
 
-  status <- httr::status_code(response)
-
-  if (status == 429) {
-    warning("Rate limited by Understat (429). Stopping.")
-    result <- NULL
-    attr(result, "rate_limited") <- TRUE
-    return(result)
-  }
-
-  if (status != 200) {
-    warning("Failed to fetch ", url, " - Status: ", status)
-    return(NULL)
+  # Check for errors returned by fetch_with_retry
+  if (is.null(response)) {
+    if (isTRUE(attr(response, "rate_limited"))) {
+      warning("Rate limited by Understat (429). Stopping.")
+    } else if (isTRUE(attr(response, "connection_error"))) {
+      warning("Connection error: ", attr(response, "error_message"))
+    } else {
+      warning("Failed to fetch ", url)
+    }
+    return(response)
   }
 
   # Parse HTML
@@ -268,7 +266,7 @@ extract_understat_metadata <- function(page, understat_id) {
 fetch_understat_match_api <- function(understat_id) {
   url <- sprintf("https://understat.com/getMatchData/%s", understat_id)
 
-  response <- httr::GET(
+  response <- fetch_with_retry(
     url,
     httr::add_headers(.headers = c(
       get_understat_headers(),
@@ -279,7 +277,7 @@ fetch_understat_match_api <- function(understat_id) {
     handle = get_understat_session()
   )
 
-  if (httr::status_code(response) != 200) {
+  if (is.null(response)) {
     return(NULL)
   }
 

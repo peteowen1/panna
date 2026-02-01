@@ -30,38 +30,27 @@ create_rapm_design_matrix <- function(splint_data, min_minutes = 90,
   n_splints <- nrow(valid_splints)
   progress_msg(sprintf("Processing %d splints...", n_splints))
 
-  # Get ALL players with their minutes (vectorized)
-  players_with_duration <- merge(
-    players,
-    splints[, c("splint_id", "duration")],
-    by = "splint_id",
-    all.x = TRUE
-  )
+  # Use data.table for efficient join and aggregation
+  players_dt <- data.table::as.data.table(players)
+  splints_dt <- data.table::as.data.table(splints[, c("splint_id", "duration")])
 
-  # Aggregate minutes by player_id only (not player_name to avoid case duplicates)
-  all_player_minutes <- stats::aggregate(
-    duration ~ player_id,
-    data = players_with_duration,
-    FUN = sum,
-    na.rm = TRUE
-  )
-  names(all_player_minutes)[2] <- "total_minutes"
+  # Set keys for fast join
+  data.table::setkey(players_dt, splint_id)
+  data.table::setkey(splints_dt, splint_id)
 
- # Create canonical player_name lookup (most frequent name per player_id, with title case)
-  canonical_names <- stats::aggregate(
-    player_name ~ player_id,
-    data = players_with_duration,
-    FUN = function(x) {
-      tbl <- table(x)
-      best_name <- names(tbl)[which.max(tbl)]
-      # Apply title case for consistent capitalization
-      tools::toTitleCase(tolower(best_name))
+  # Join and aggregate in one pass
+  players_with_duration <- splints_dt[players_dt, on = "splint_id"]
+
+  # Aggregate minutes and get canonical name in single pass
+  all_player_minutes <- players_with_duration[, .(
+    total_minutes = sum(duration, na.rm = TRUE),
+    player_name = {
+      tbl <- table(player_name)
+      tools::toTitleCase(tolower(names(tbl)[which.max(tbl)]))
     }
-  )
-  names(canonical_names)[2] <- "player_name"
+  ), by = player_id]
 
-  # Join minutes with canonical names
-  all_player_minutes <- merge(all_player_minutes, canonical_names, by = "player_id")
+  all_player_minutes <- as.data.frame(all_player_minutes)
 
   # Separate players meeting threshold vs replacement-level
   player_minutes <- all_player_minutes[all_player_minutes$total_minutes >= min_minutes, ]

@@ -484,3 +484,211 @@ ensure_column <- function(data, col_name, default = FALSE, source_col = NULL, pa
 
   data
 }
+
+
+#' Rename columns using a mapping
+#'
+#' Renames columns in a data frame based on a named vector mapping.
+#' The mapping format is: c(new_name1 = "old_name1", new_name2 = "old_name2")
+#'
+#' @param data Data frame
+#' @param mapping Named character vector where names are new column names
+#'   and values are existing column names to rename
+#'
+#' @return Data frame with renamed columns
+#' @export
+#'
+#' @examples
+#' df <- data.frame(a = 1, b = 2)
+#' rename_columns(df, c(x = "a", y = "b"))
+rename_columns <- function(data, mapping) {
+  for (new_name in names(mapping)) {
+    old_name <- mapping[new_name]
+    if (old_name %in% names(data)) {
+      names(data)[names(data) == old_name] <- new_name
+    }
+  }
+  data
+}
+
+
+#' Aggregate player statistics with optional team grouping
+#'
+#' Common aggregation pattern for player stats functions. Aggregates columns
+#' by player (and optionally team), adding most frequent team when not grouping by team.
+#'
+#' @param data Data frame with player-level data
+#' @param agg_cols Named list where names are output column names and values are
+#'   expressions to aggregate (as strings or column names)
+#' @param by_team Logical. If TRUE, group by player and team. If FALSE, group by
+#'   player only and add most frequent team.
+#' @param player_col Name of player column (default "player")
+#' @param team_col Name of team column (default "team")
+#'
+#' @return Aggregated data frame with player, team, and aggregated columns
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' # Aggregate goals and assists
+#' aggregate_player_data(
+#'   data = match_data,
+#'   agg_cols = list(matches = "1", goals = "gls", assists = "ast"),
+#'   by_team = FALSE
+#' )
+#' }
+aggregate_player_data <- function(data, agg_cols, by_team = FALSE,
+                                   player_col = "player", team_col = "team") {
+  if (is.null(data) || nrow(data) == 0) {
+    return(data.frame())
+  }
+
+  # Build formula for aggregate
+  agg_formula <- if (by_team) {
+    stats::as.formula(paste(". ~", player_col, "+", team_col))
+  } else {
+    stats::as.formula(paste(". ~", player_col))
+  }
+
+  # Build data frame of columns to aggregate
+  agg_data <- data.frame(row.names = seq_len(nrow(data)))
+  for (col_name in names(agg_cols)) {
+    col_expr <- agg_cols[[col_name]]
+    if (col_expr == "1") {
+      # Count rows
+      agg_data[[col_name]] <- 1
+    } else if (col_expr %in% names(data)) {
+      agg_data[[col_name]] <- as.numeric(data[[col_expr]])
+    } else {
+      # Try to evaluate as expression
+      agg_data[[col_name]] <- tryCatch(
+        as.numeric(eval(parse(text = col_expr), envir = data)),
+        error = function(e) rep(0, nrow(data))
+      )
+    }
+  }
+
+  # Add grouping columns
+  agg_data[[player_col]] <- data[[player_col]]
+  if (by_team && team_col %in% names(data)) {
+    agg_data[[team_col]] <- data[[team_col]]
+  }
+
+  # Aggregate
+  result <- stats::aggregate(
+    agg_formula,
+    data = agg_data,
+    FUN = function(x) sum(x, na.rm = TRUE),
+    na.action = stats::na.pass
+  )
+
+  # Add most frequent team if not grouping by team
+  if (!by_team && team_col %in% names(data)) {
+    team_mode <- stats::aggregate(
+      stats::as.formula(paste(team_col, "~", player_col)),
+      data = data,
+      FUN = function(x) names(which.max(table(x)))
+    )
+    result <- merge(result, team_mode, by = player_col, all.x = TRUE)
+  }
+
+  result
+}
+
+
+#' HTTP GET with exponential backoff retry
+#'
+#' Wraps httr::GET with automatic retry on transient failures (5xx errors,
+#' connection timeouts). Does NOT retry on rate limiting (429) or blocking (403)
+#' as those require different handling.
+#'
+#' @param url URL to fetch
+#' @param max_retries Maximum number of retry attempts (default 3)
+#' @param base_delay Initial delay in seconds before first retry (default 1)
+#' @param max_delay Maximum delay between retries in seconds (default 30)
+#' @param ... Additional arguments passed to httr::GET (headers, timeout, handle)
+#'
+#' @return httr response object, or NULL with attributes on permanent failure
+#' @keywords internal
+fetch_with_retry <- function(url, max_retries = 3, base_delay = 1, max_delay = 30, ...) {
+  attempt <- 0
+
+  while (attempt <= max_retries) {
+    # Try the request
+    response <- tryCatch(
+      httr::GET(url, ...),
+      error = function(e) {
+        list(error = TRUE, message = conditionMessage(e))
+      }
+    )
+
+    # Handle connection errors
+    if (is.list(response) && isTRUE(response$error)) {
+      attempt <- attempt + 1
+      if (attempt <= max_retries) {
+        delay <- min(base_delay * (2^(attempt - 1)), max_delay)
+        cli::cli_alert_warning(
+          "Connection error: {response$message}. Retrying in {delay}s ({attempt}/{max_retries})"
+        )
+        Sys.sleep(delay)
+        next
+      } else {
+        cli::cli_alert_danger("Connection failed after {max_retries} retries")
+        result <- NULL
+        attr(result, "connection_error") <- TRUE
+        attr(result, "error_message") <- response$message
+        return(result)
+      }
+    }
+
+    status <- httr::status_code(response)
+
+    # Permanent failures - don't retry
+    if (status == 429) {
+      result <- NULL
+      attr(result, "rate_limited") <- TRUE
+      return(result)
+    }
+
+    if (status == 403) {
+      result <- NULL
+      attr(result, "blocked") <- TRUE
+      return(result)
+    }
+
+    if (status == 404) {
+      result <- NULL
+      attr(result, "not_found") <- TRUE
+      return(result)
+    }
+
+    # Success
+    if (status >= 200 && status < 300) {
+      return(response)
+    }
+
+    # Transient failures (5xx) - retry with backoff
+    if (status >= 500 && status < 600) {
+      attempt <- attempt + 1
+      if (attempt <= max_retries) {
+        delay <- min(base_delay * (2^(attempt - 1)), max_delay)
+        cli::cli_alert_warning(
+          "Server error {status}. Retrying in {delay}s ({attempt}/{max_retries})"
+        )
+        Sys.sleep(delay)
+        next
+      }
+    }
+
+    # Other errors - don't retry
+    result <- NULL
+    attr(result, "http_error") <- TRUE
+    attr(result, "status_code") <- status
+    return(result)
+  }
+
+  # Should not reach here, but handle anyway
+  result <- NULL
+  attr(result, "max_retries_exceeded") <- TRUE
+  result
+}

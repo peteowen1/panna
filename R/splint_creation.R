@@ -296,12 +296,24 @@ extract_sub_events <- function(lineups) {
     return(sub_times)
   }
 
-  # Fallback: old method (90 - minutes)
+
+  # Fallback: estimate sub time from minutes played (90 - minutes)
+
+  # This assumes regulation time only - may be inaccurate for extra time
   if ("is_starter" %in% names(lineups) && "minutes" %in% names(lineups)) {
     subs <- lineups[lineups$is_starter == FALSE & lineups$minutes > 0, , drop = FALSE]
     if (nrow(subs) > 0) {
-      sub_times <- pmax(0, 90 - as.numeric(subs$minutes))
-      return(unique(sub_times[!is.na(sub_times)]))
+      minutes_played <- as.numeric(subs$minutes)
+      # Validate: minutes played should be <= 90 for regulation time
+      if (any(minutes_played > 90, na.rm = TRUE)) {
+        warning("Sub minutes > 90 detected; sub times may be inaccurate for extra time matches")
+      }
+      # Estimate on-time as (90 - minutes played), clamped to [0, 90]
+      sub_times <- pmax(0, pmin(90, 90 - minutes_played))
+      sub_times <- unique(sub_times[!is.na(sub_times) & sub_times > 0])
+      if (length(sub_times) > 0) {
+        return(sub_times)
+      }
     }
   }
 

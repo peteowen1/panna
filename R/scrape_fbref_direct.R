@@ -127,36 +127,27 @@ if (!grepl("fbref\\.com/en/matches/", match_url)) {
     stop("Invalid FBref match URL: ", match_url)
   }
 
-  # Make request with session cookies
-  response <- httr::GET(
+  # Make request with session cookies and retry logic
+
+  response <- fetch_with_retry(
     match_url,
     httr::add_headers(.headers = get_fbref_headers()),
     httr::timeout(timeout),
     handle = get_fbref_session()
   )
 
-  status <- httr::status_code(response)
-
-  # Check for rate limiting
-  if (status == 429) {
-    warning("Rate limited by FBref (429). Stopping.")
-    result <- NULL
-    attr(result, "rate_limited") <- TRUE
-    return(result)
-  }
-
-  # Check for Cloudflare block
-  if (status == 403) {
-    warning("Blocked by Cloudflare (403). Stopping.")
-    result <- NULL
-    attr(result, "blocked") <- TRUE
-    return(result)
-  }
-
-  # Check other errors
-  if (status != 200) {
-    warning("Failed to fetch ", match_url, " - Status: ", status)
-    return(NULL)
+  # Check for errors returned by fetch_with_retry
+  if (is.null(response)) {
+    if (isTRUE(attr(response, "rate_limited"))) {
+      warning("Rate limited by FBref (429). Stopping.")
+    } else if (isTRUE(attr(response, "blocked"))) {
+      warning("Blocked by Cloudflare (403). Stopping.")
+    } else if (isTRUE(attr(response, "connection_error"))) {
+      warning("Connection error: ", attr(response, "error_message"))
+    } else {
+      warning("Failed to fetch ", match_url)
+    }
+    return(response)
   }
 
   # Parse HTML
@@ -1260,21 +1251,20 @@ scrape_fixtures <- function(league, season, completed_only = TRUE) {
 
   progress_msg(sprintf("Fetching fixtures: %s %s", league, season))
 
-  # Fetch page with session cookies
-  response <- httr::GET(
+  # Fetch page with session cookies and retry logic
+  response <- fetch_with_retry(
     url,
     httr::add_headers(.headers = get_fbref_headers()),
     httr::timeout(30),
     handle = get_fbref_session()
   )
 
-  status <- httr::status_code(response)
-  if (status == 429 || status == 403) {
-    stop(sprintf("Rate limited or blocked (HTTP %d). Stopping scraper.", status))
-  }
-  if (status != 200) {
-    warning("Failed to fetch fixtures for ", league, " ", season,
-            " - Status: ", status)
+  # Check for errors
+  if (is.null(response)) {
+    if (isTRUE(attr(response, "rate_limited")) || isTRUE(attr(response, "blocked"))) {
+      stop("Rate limited or blocked. Stopping scraper.")
+    }
+    warning("Failed to fetch fixtures for ", league, " ", season)
     return(NULL)
   }
 

@@ -93,46 +93,34 @@ aggregate_player_stats <- function(stats_summary,
 
   existing_summary <- summary_cols[summary_cols %in% names(stats_summary)]
 
-  player_stats <- stats::aggregate(
-    stats_summary[, existing_summary, drop = FALSE],
-    by = list(player_id = stats_summary$player_id),
-    FUN = function(x) sum(as.numeric(x), na.rm = TRUE)
-  )
+  # Single data.table pass for aggregation, match count, and position mode
+  dt <- data.table::as.data.table(stats_summary)
 
-  # Count matches
-  match_counts <- stats::aggregate(
-    stats_summary$player_id,
-    by = list(player_id = stats_summary$player_id),
-    FUN = length
-  )
-  names(match_counts)[2] <- "n_matches"
-  player_stats <- merge(player_stats, match_counts, by = "player_id")
+  # Build aggregation expressions
+  agg_exprs <- lapply(existing_summary, function(col) {
+    bquote(sum(as.numeric(.(as.name(col))), na.rm = TRUE))
+  })
+  names(agg_exprs) <- existing_summary
+  agg_exprs$n_matches <- quote(.N)
 
-  # Get primary position (most common)
-  if ("pos" %in% names(stats_summary)) {
-    pos_mode <- stats::aggregate(
-      stats_summary$pos,
-      by = list(player_id = stats_summary$player_id),
-      FUN = function(x) {
-        tbl <- table(x[!is.na(x) & x != ""])
-        if (length(tbl) == 0) return(NA_character_)
-        names(tbl)[which.max(tbl)]
-      }
-    )
-    names(pos_mode)[2] <- "primary_position"
-    player_stats <- merge(player_stats, pos_mode, by = "player_id", all.x = TRUE)
+  # Add position mode if available
+  has_pos <- "pos" %in% names(stats_summary)
+  if (has_pos) {
+    agg_exprs$primary_position <- quote({
+      valid_pos <- pos[!is.na(pos) & pos != ""]
+      if (length(valid_pos) == 0) NA_character_
+      else names(which.max(table(valid_pos)))
+    })
   }
+
+  player_stats <- dt[, eval(as.call(c(quote(list), agg_exprs))), by = player_id]
+  player_stats <- as.data.frame(player_stats)
 
   # Add canonical player_name from lookup
   player_stats <- merge(player_stats, player_name_lookup, by = "player_id", all.x = TRUE)
 
-  # Rename columns
-  for (new_name in names(existing_summary)) {
-    old_name <- existing_summary[new_name]
-    if (old_name %in% names(player_stats)) {
-      names(player_stats)[names(player_stats) == old_name] <- new_name
-    }
-  }
+  # Rename columns using helper
+  player_stats <- rename_columns(player_stats, existing_summary)
 
 
   # Filter by min minutes
@@ -178,12 +166,7 @@ aggregate_player_stats <- function(stats_summary,
         FUN = function(x) sum(as.numeric(x), na.rm = TRUE)
       )
 
-      for (new_name in names(existing_pass)) {
-        old_name <- existing_pass[new_name]
-        if (old_name %in% names(pass_agg)) {
-          names(pass_agg)[names(pass_agg) == old_name] <- new_name
-        }
-      }
+      pass_agg <- rename_columns(pass_agg, existing_pass)
 
       player_stats <- merge(player_stats, pass_agg, by = "player_id", all.x = TRUE)
     }
@@ -220,12 +203,7 @@ aggregate_player_stats <- function(stats_summary,
         FUN = function(x) sum(as.numeric(x), na.rm = TRUE)
       )
 
-      for (new_name in names(existing_def)) {
-        old_name <- existing_def[new_name]
-        if (old_name %in% names(def_agg)) {
-          names(def_agg)[names(def_agg) == old_name] <- new_name
-        }
-      }
+      def_agg <- rename_columns(def_agg, existing_def)
 
       player_stats <- merge(player_stats, def_agg, by = "player_id", all.x = TRUE)
     }
@@ -266,12 +244,7 @@ aggregate_player_stats <- function(stats_summary,
         FUN = function(x) sum(as.numeric(x), na.rm = TRUE)
       )
 
-      for (new_name in names(existing_poss)) {
-        old_name <- existing_poss[new_name]
-        if (old_name %in% names(poss_agg)) {
-          names(poss_agg)[names(poss_agg) == old_name] <- new_name
-        }
-      }
+      poss_agg <- rename_columns(poss_agg, existing_poss)
 
       player_stats <- merge(player_stats, poss_agg, by = "player_id", all.x = TRUE)
     }
@@ -312,13 +285,7 @@ aggregate_player_stats <- function(stats_summary,
         FUN = function(x) sum(as.numeric(x), na.rm = TRUE)
       )
 
-      for (new_name in names(existing_misc)) {
-        old_name <- existing_misc[new_name]
-        if (old_name %in% names(misc_agg)) {
-          names(misc_agg)[names(misc_agg) == old_name] <- new_name
-        }
-      }
-
+      misc_agg <- rename_columns(misc_agg, existing_misc)
       player_stats <- merge(player_stats, misc_agg, by = "player_id", all.x = TRUE)
     }
   }
@@ -358,13 +325,7 @@ aggregate_player_stats <- function(stats_summary,
         FUN = function(x) sum(as.numeric(x), na.rm = TRUE)
       )
 
-      for (new_name in names(existing_pt)) {
-        old_name <- existing_pt[new_name]
-        if (old_name %in% names(pt_agg)) {
-          names(pt_agg)[names(pt_agg) == old_name] <- new_name
-        }
-      }
-
+      pt_agg <- rename_columns(pt_agg, existing_pt)
       player_stats <- merge(player_stats, pt_agg, by = "player_id", all.x = TRUE)
     }
   }
@@ -404,13 +365,7 @@ aggregate_player_stats <- function(stats_summary,
         FUN = function(x) sum(as.numeric(x), na.rm = TRUE)
       )
 
-      for (new_name in names(existing_keeper)) {
-        old_name <- existing_keeper[new_name]
-        if (old_name %in% names(keeper_agg)) {
-          names(keeper_agg)[names(keeper_agg) == old_name] <- new_name
-        }
-      }
-
+      keeper_agg <- rename_columns(keeper_agg, existing_keeper)
       player_stats <- merge(player_stats, keeper_agg, by = "player_id", all.x = TRUE)
     }
   }
@@ -1446,12 +1401,7 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
   )
 
   # Rename columns
-  for (new_name in names(existing_cols)) {
-    old_name <- existing_cols[new_name]
-    if (old_name %in% names(player_stats)) {
-      names(player_stats)[names(player_stats) == old_name] <- new_name
-    }
-  }
+  player_stats <- rename_columns(player_stats, existing_cols)
 
   # Count matches
   match_counts <- stats::aggregate(

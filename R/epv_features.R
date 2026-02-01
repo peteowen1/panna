@@ -7,6 +7,34 @@
 #' @importFrom data.table data.table setDT setorder shift .SD .N :=
 NULL
 
+# =============================================================================
+# Shared Feature Constants (Single source of truth)
+# =============================================================================
+
+# Base location features
+EPV_LOCATION_FEATURES <- c(
+  "x", "y", "distance_to_goal", "angle_to_goal", "zone_id",
+  "in_penalty_area", "in_final_third", "in_own_third", "in_mid_third",
+  "y_left", "y_center", "y_right"
+)
+
+# Movement features
+EPV_MOVEMENT_FEATURES <- c("dx", "dy", "move_distance", "dist_delta")
+
+# Action type base features
+EPV_ACTION_BASE_FEATURES <- c("result_success", "is_foot", "is_head")
+
+# Action types for one-hot encoding
+EPV_ACTION_TYPES <- c("pass", "shot", "take_on", "tackle", "interception",
+                      "clearance", "aerial", "foul", "ball_recovery")
+
+# Action types included in sequence features
+EPV_SEQUENCE_ACTION_TYPES <- c("pass", "shot", "take_on", "tackle", "interception")
+
+# Chain/context features
+EPV_CHAIN_FEATURES <- c("seconds_since_chain_start", "action_in_chain")
+EPV_CONTEXT_FEATURES <- c("time_normalized", "period_id")
+
 
 #' Create Game State Features for EPV
 #'
@@ -112,8 +140,8 @@ create_epv_features <- function(spadl_actions, n_prev = 3) {
     dt[, (paste0("same_team", suffix)) := as.integer(team_id == get(paste0("team_id_prev", lag)))]
     dt[, (paste0("team_id_prev", lag)) := NULL]
 
-    # One-hot encode previous action types
-    for (atype in c("pass", "shot", "take_on", "tackle", "interception")) {
+    # One-hot encode previous action types (using shared constant)
+    for (atype in EPV_SEQUENCE_ACTION_TYPES) {
       type_num <- action_type_map[atype]
       dt[, (paste0("is_", atype, suffix)) := as.integer(get(paste0("action_type_num", suffix)) == type_num)]
     }
@@ -190,6 +218,7 @@ create_location_features <- function(x, y) {
 #' Get EPV Model Feature Columns
 #'
 #' Returns the list of feature columns used for EPV model training.
+#' Uses shared constants to ensure consistency with create_epv_features().
 #'
 #' @param include_sequence Whether to include sequence features (default TRUE)
 #' @param n_prev Number of previous actions for sequence features (default 3)
@@ -197,39 +226,25 @@ create_location_features <- function(x, y) {
 #' @return Character vector of feature column names
 #' @export
 get_epv_feature_cols <- function(include_sequence = TRUE, n_prev = 3) {
-  # Base location features
+  # Build from shared constants (single source of truth)
   cols <- c(
-    "x", "y", "distance_to_goal", "angle_to_goal", "zone_id",
-    "in_penalty_area", "in_final_third", "in_own_third", "in_mid_third",
-    "y_left", "y_center", "y_right"
+    EPV_LOCATION_FEATURES,
+    EPV_MOVEMENT_FEATURES,
+    EPV_ACTION_BASE_FEATURES,
+    paste0("is_", EPV_ACTION_TYPES),
+    EPV_CHAIN_FEATURES,
+    EPV_CONTEXT_FEATURES
   )
-
-  # Movement features
-  cols <- c(cols, "dx", "dy", "move_distance", "dist_delta")
-
-  # Action type features
-  cols <- c(cols, "result_success", "is_foot", "is_head")
-  action_types <- c("pass", "shot", "take_on", "tackle", "interception",
-                    "clearance", "aerial", "foul", "ball_recovery")
-  cols <- c(cols, paste0("is_", action_types))
-
-  # Chain features
-  cols <- c(cols, "seconds_since_chain_start", "action_in_chain")
-
-  # Context features
-  cols <- c(cols, "time_normalized", "period_id")
 
   # Sequence features
   if (include_sequence) {
-    action_types_seq <- c("pass", "shot", "take_on", "tackle", "interception")
-
     for (lag in 1:n_prev) {
       suffix <- paste0("_prev", lag)
       cols <- c(cols, paste0("result", suffix))
       cols <- c(cols, paste0("dx", suffix))
       cols <- c(cols, paste0("dy", suffix))
       cols <- c(cols, paste0("same_team", suffix))
-      cols <- c(cols, paste0("is_", action_types_seq, suffix))
+      cols <- c(cols, paste0("is_", EPV_SEQUENCE_ACTION_TYPES, suffix))
     }
   }
 
