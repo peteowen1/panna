@@ -554,7 +554,8 @@ aggregate_player_stats <- function(stats_summary,
   player_stats$turnovers_p90 <- turnovers / mins_per_90
   total_carries <- safe_col("carries_poss")
   total_carries <- ifelse(total_carries == 0, safe_col("carries"), total_carries)
-  player_stats$carry_retention <- 1 - safe_div(turnovers, total_carries)
+  # Use NA for carry_retention when no carries (not perfect retention)
+  player_stats$carry_retention <- ifelse(total_carries > 0, 1 - turnovers / total_carries, NA_real_)
 
   # Progressive actions per touch
   prg_actions <- safe_col("progressive_carries") + safe_col("progressive_passes")

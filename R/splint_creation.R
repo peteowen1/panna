@@ -1158,35 +1158,46 @@ assign_players_to_splints_fast <- function(boundaries, lineups, match_id) {
     off_minute <- pmin(90, on_minute + lineups$minutes)
   }
 
-  # Vectorized assignment: for each player, find which splints they were on for
-  n_splints <- nrow(boundaries)
-  n_players <- nrow(lineups)
+  # Vectorized assignment using data.table non-equi join
+  # Player is on pitch for a splint if: on_minute <= splint_start AND off_minute > splint_start
 
-  # Create result list
-  result_list <- vector("list", n_splints)
+  # Create data.tables for efficient join
+  dt_players <- data.table::data.table(
+    player_idx = seq_len(nrow(lineups)),
+    team = lineups$team,
+    is_home = lineups$is_home,
+    player_name = lineups$player_name,
+    player_id = lineups$player_id,
+    on_minute = on_minute,
+    off_minute = off_minute
+  )
 
-  for (s in seq_len(n_splints)) {
-    start_min <- boundaries$start_minute[s]
 
-    # Player is on pitch if: on_minute <= start_min AND off_minute > start_min
-    on_pitch <- (on_minute <= start_min) & (off_minute > start_min)
+  dt_splints <- data.table::data.table(
+    splint_num = seq_len(nrow(boundaries)),
+    start_minute = boundaries$start_minute,
+    end_minute = boundaries$end_minute
+  )
 
-    if (any(on_pitch)) {
-      result_list[[s]] <- data.frame(
-        match_id = match_id,
-        team = lineups$team[on_pitch],
-        is_home = lineups$is_home[on_pitch],
-        player_name = lineups$player_name[on_pitch],
-        player_id = lineups$player_id[on_pitch],
-        splint_num = s,
-        start_minute = start_min,
-        end_minute = boundaries$end_minute[s],
-        stringsAsFactors = FALSE
-      )
-    }
-  }
+  # Non-equi join: find all player-splint combinations where player is on pitch
+  # Condition: on_minute <= start_minute AND off_minute > start_minute
+  result <- dt_players[dt_splints,
+    on = .(on_minute <= start_minute, off_minute > start_minute),
+    nomatch = NULL,
+    allow.cartesian = TRUE,
+    .(match_id = match_id,
+      team = x.team,
+      is_home = x.is_home,
+      player_name = x.player_name,
+      player_id = x.player_id,
+      splint_num = i.splint_num,
+      start_minute = i.start_minute,
+      end_minute = i.end_minute)
+  ]
 
-  do.call(rbind, result_list[!sapply(result_list, is.null)])
+  if (nrow(result) == 0) return(NULL)
+
+  as.data.frame(result)
 }
 
 
@@ -1221,23 +1232,34 @@ calculate_splint_npxgd_fast <- function(boundaries, shooting, home_team, away_te
   # Vectorized splint assignment using findInterval
   shot_minutes <- np_shots$minute
   # findInterval returns which interval (splint) each shot falls into
+  # Returns 0 for shots before first boundary, n_splints+1 for shots after last
   shot_splint <- findInterval(shot_minutes, boundaries$start_minute)
-  # Adjust for shots exactly at end_minute (should go to that splint, not next)
-  shot_splint[shot_splint > n_splints] <- n_splints
+  # Clamp to valid range [1, n_splints] to handle edge cases
+  shot_splint <- pmax(1L, pmin(n_splints, shot_splint))
 
   # Identify home/away shots
   is_home_shot <- np_shots$team == home_team
 
-  # Aggregate xG by splint and team
+  # Aggregate xG by splint using data.table (vectorized, no loop)
+  dt_shots <- data.table::data.table(
+    splint_num = shot_splint,
+    xg = np_shots$xg,
+    is_home = is_home_shot
+  )
+
+  xg_agg <- dt_shots[, .(
+    npxg_home = sum(xg[is_home], na.rm = TRUE),
+    npxg_away = sum(xg[!is_home], na.rm = TRUE)
+  ), by = splint_num]
+
+  # Initialize result vectors (all zeros)
   npxg_home <- numeric(n_splints)
   npxg_away <- numeric(n_splints)
 
-  for (s in seq_len(n_splints)) {
-    in_splint <- shot_splint == s
-    if (any(in_splint)) {
-      npxg_home[s] <- sum(np_shots$xg[in_splint & is_home_shot], na.rm = TRUE)
-      npxg_away[s] <- sum(np_shots$xg[in_splint & !is_home_shot], na.rm = TRUE)
-    }
+  # Fill in aggregated values
+  if (nrow(xg_agg) > 0) {
+    npxg_home[xg_agg$splint_num] <- xg_agg$npxg_home
+    npxg_away[xg_agg$splint_num] <- xg_agg$npxg_away
   }
 
   npxgd <- npxg_home - npxg_away

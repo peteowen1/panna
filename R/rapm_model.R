@@ -253,25 +253,23 @@ fit_rapm_with_prior <- function(rapm_data, offense_prior, defense_prior,
   prior_vec <- rep(0, n_cols)
   names(prior_vec) <- col_names
 
-  # Fill in offense priors
-  off_matched <- 0
-  for (pid in player_ids) {
-    off_col <- paste0(pid, "_off")
-    if (off_col %in% col_names && pid %in% names(offense_prior)) {
-      prior_vec[off_col] <- offense_prior[pid]
-      off_matched <- off_matched + 1
-    }
+  # Fill in offense priors (vectorized O(n) instead of O(n²) loop)
+  off_cols <- paste0(player_ids, "_off")
+  off_match_idx <- match(player_ids, names(offense_prior))
+  off_valid <- !is.na(off_match_idx) & off_cols %in% col_names
+  if (any(off_valid)) {
+    prior_vec[off_cols[off_valid]] <- offense_prior[player_ids[off_valid]]
   }
+  off_matched <- sum(off_valid)
 
-  # Fill in defense priors
-  def_matched <- 0
-  for (pid in player_ids) {
-    def_col <- paste0(pid, "_def")
-    if (def_col %in% col_names && pid %in% names(defense_prior)) {
-      prior_vec[def_col] <- defense_prior[pid]
-      def_matched <- def_matched + 1
-    }
+  # Fill in defense priors (vectorized O(n) instead of O(n²) loop)
+  def_cols <- paste0(player_ids, "_def")
+  def_match_idx <- match(player_ids, names(defense_prior))
+  def_valid <- !is.na(def_match_idx) & def_cols %in% col_names
+  if (any(def_valid)) {
+    prior_vec[def_cols[def_valid]] <- defense_prior[player_ids[def_valid]]
   }
+  def_matched <- sum(def_valid)
 
   progress_msg(sprintf("xRAPM: matched %d offense priors, %d defense priors",
                        off_matched, def_matched))

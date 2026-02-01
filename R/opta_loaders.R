@@ -11,6 +11,29 @@
 #' @importFrom cli cli_alert_info cli_alert_success cli_abort cli_warn
 NULL
 
+
+#' Validate SQL column names
+#'
+#' Checks that column names contain only safe characters to prevent SQL injection.
+#'
+#' @param columns Character vector of column names
+#'
+#' @return The validated column names (unchanged if valid)
+#' @keywords internal
+validate_sql_columns <- function(columns) {
+  if (is.null(columns)) return(NULL)
+  invalid_cols <- columns[!grepl("^[a-zA-Z_][a-zA-Z0-9_]*$", columns)]
+  if (length(invalid_cols) > 0) {
+    cli::cli_abort(c(
+      "Invalid column names detected.",
+      "i" = "Column names must contain only letters, numbers, and underscores.",
+      "x" = "Invalid: {paste(invalid_cols, collapse = ', ')}"
+    ))
+  }
+  columns
+}
+
+
 # Opta league code mapping
 OPTA_LEAGUES <- c(
   ENG = "EPL",
@@ -268,6 +291,55 @@ load_opta_events <- function(league, season = NULL, columns = NULL,
 }
 
 
+#' Load Opta All Match Events (All Events with X/Y Coordinates)
+#'
+#' Loads ALL match events with x/y coordinates from Opta/TheAnalyst data.
+#' Each match typically has ~2000 events including passes, tackles, aerials,
+#' dribbles, shots, and more. This is the most comprehensive event data available.
+#'
+#' @inheritParams load_opta_stats
+#'
+#' @return Data frame of all match events with columns:
+#'   \itemize{
+#'     \item match_id: Match identifier
+#'     \item event_id: Unique event identifier
+#'     \item type_id: Opta event type (1=pass, 3=dribble, 7=tackle, 13-16=shots, 44=aerial, etc.)
+#'     \item player_id, player_name: Player involved
+#'     \item team_id: Team that performed the action
+#'     \item minute, second: Time of event
+#'     \item x, y: Start coordinates (0-100 scale)
+#'     \item end_x, end_y: End coordinates for passes/carries (0-100 scale)
+#'     \item outcome: 1=successful, 0=unsuccessful
+#'     \item period_id: 1=first half, 2=second half
+#'     \item qualifier_json: Full qualifiers as JSON string for advanced analysis
+#'   }
+#'
+#' @export
+#' @examples
+#' \dontrun{
+#' # Load all EPL match events
+#' epl_events <- load_opta_match_events("ENG", season = "2024-2025")
+#'
+#' # Filter to just passes (type_id = 1)
+#' passes <- epl_events |>
+#'   dplyr::filter(type_id == 1)
+#'
+#' # Build passing networks
+#' pass_counts <- passes |>
+#'   dplyr::filter(outcome == 1) |>
+#'   dplyr::count(match_id, player_id)
+#'
+#' # Filter to tackles (type_id = 7)
+#' tackles <- epl_events |>
+#'   dplyr::filter(type_id == 7)
+#' }
+load_opta_match_events <- function(league, season = NULL, columns = NULL,
+                                    source = c("local", "remote")) {
+  source <- match.arg(source)
+  load_opta_table("match_events", league, season, columns, source)
+}
+
+
 #' Load Opta Lineup Data
 #'
 #' Loads lineup information including starting XI, positions, and minutes played.
@@ -373,9 +445,9 @@ load_opta_table <- function(table_type, league, season, columns,
     # Use consolidated file with WHERE clause
     parquet_path <- normalizePath(consolidated_file, winslash = "/", mustWork = TRUE)
 
-    # Build column selection
+    # Build column selection (validate to prevent SQL injection)
     col_sql <- if (!is.null(columns)) {
-      paste(columns, collapse = ", ")
+      paste(validate_sql_columns(columns), collapse = ", ")
     } else {
       "*"
     }
@@ -411,7 +483,12 @@ load_opta_table <- function(table_type, league, season, columns,
       parquet_pattern <- sprintf("'%s/*.parquet'", normalizePath(league_dir, winslash = "/", mustWork = TRUE))
     }
 
-    col_sql <- if (!is.null(columns)) paste(columns, collapse = ", ") else "*"
+    # Build column selection (validate to prevent SQL injection)
+    col_sql <- if (!is.null(columns)) {
+      paste(validate_sql_columns(columns), collapse = ", ")
+    } else {
+      "*"
+    }
     sql <- sprintf("SELECT %s FROM read_parquet(%s, union_by_name=true)", col_sql, parquet_pattern)
   }
 
@@ -449,13 +526,16 @@ load_opta_table <- function(table_type, league, season, columns,
 #' # See shot event columns (individual shots with x/y)
 #' get_opta_columns("shot_events")
 #'
+#' # See match event columns (ALL events with x/y)
+#' get_opta_columns("match_events")
+#'
 #' # See event columns (goals, cards, subs)
 #' get_opta_columns("events")
 #'
 #' # See lineup columns
 #' get_opta_columns("lineups")
 #' }
-get_opta_columns <- function(table_type = c("player_stats", "shots", "shot_events", "events", "lineups")) {
+get_opta_columns <- function(table_type = c("player_stats", "shots", "shot_events", "match_events", "events", "lineups")) {
   table_type <- match.arg(table_type)
 
   base_dir <- opta_data_dir()
@@ -619,9 +699,9 @@ query_remote_opta_parquet <- function(table_type, opta_league, season = NULL,
     parquet_pattern <- sprintf("'%s/*.parquet'", parquet_pattern)
   }
 
-  # Build column selection
+  # Build column selection (validate to prevent SQL injection)
   col_sql <- if (!is.null(columns)) {
-    paste(columns, collapse = ", ")
+    paste(validate_sql_columns(columns), collapse = ", ")
   } else {
     "*"
   }
@@ -709,7 +789,14 @@ pb_download_opta <- function(repo = "peteowen1/pannadata",
   cli::cli_alert_info("Downloading Opta data from {repo} ({tag})...")
 
   # Download consolidated parquet files
- files_to_download <- c("opta_player_stats.parquet", "opta_shots.parquet")
+  files_to_download <- c(
+    "opta_player_stats.parquet",
+    "opta_shots.parquet",
+    "opta_shot_events.parquet",
+    "opta_match_events.parquet",
+    "opta_events.parquet",
+    "opta_lineups.parquet"
+  )
 
   for (f in files_to_download) {
     cli::cli_alert_info("Downloading {f}...")

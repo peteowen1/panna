@@ -178,8 +178,18 @@ create_rapm_design_matrix <- function(splint_data, min_minutes = 90,
   players_valid$is_regular <- players_valid$player_id %in% player_ids
   players_valid$is_replacement <- players_valid$player_id %in% replacement_player_ids
 
-  # Get column indices for regular players
+  # Get column indices for regular players (NA for non-regular players)
   players_valid$player_col <- player_idx[players_valid$player_id]
+
+  # Validate: regular players must have valid column indices
+  regular_with_na <- players_valid$is_regular & is.na(players_valid$player_col)
+  if (any(regular_with_na)) {
+    bad_ids <- unique(players_valid$player_id[regular_with_na])
+    warning(sprintf("Found %d regular players with NA column indices: %s",
+                    length(bad_ids), paste(head(bad_ids, 5), collapse = ", ")))
+    # Mark these as not regular to avoid matrix errors
+    players_valid$is_regular[regular_with_na] <- FALSE
+  }
 
   # Split by home/away and regular/replacement
   home_regular <- players_valid[players_valid$is_home & players_valid$is_regular, ]
@@ -292,8 +302,8 @@ create_rapm_design_matrix <- function(splint_data, min_minutes = 90,
     dimnames = list(NULL, col_names)
   )
 
-  # Weights based on duration
-  weights <- row_data$minutes / 90
+  # Weights based on duration (minimum weight of 0.01 to avoid division by zero)
+  weights <- pmax(row_data$minutes / 90, 0.01)
 
   progress_msg(sprintf("Design matrix: %d rows, %d player columns (+2 replacement), %d covariates",
                        n_rows, n_players * 2, 5))
