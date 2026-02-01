@@ -43,6 +43,7 @@ Suggests:
     httr (>= 1.4.0),
     knitr,
     piggyback,
+    pROC,
     rmarkdown,
     testthat (>= 3.0.0),
     xgboost

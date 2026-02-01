@@ -375,43 +375,43 @@ step_results[[1]] <- run_step("load_data", 1, function() {
 # 7. Step 2: Data Processing ----
 
 step_results[[2]] <- run_step("data_processing", 2, function() {
-  source("data-raw/02_data_processing.R", local = TRUE)
+  source("data-raw/player-ratings/02_data_processing.R", local = TRUE)
 })
 
 # 8. Step 3: Splint Creation ----
 
 step_results[[3]] <- run_step("splint_creation", 3, function() {
-  source("data-raw/03_splint_creation.R", local = TRUE)
+  source("data-raw/player-ratings/03_splint_creation.R", local = TRUE)
 })
 
 # 9. Step 4: RAPM ----
 
 step_results[[4]] <- run_step("rapm", 4, function() {
-  source("data-raw/04_rapm.R", local = TRUE)
+  source("data-raw/player-ratings/04_rapm.R", local = TRUE)
 })
 
 # 10. Step 5: SPM ----
 
 step_results[[5]] <- run_step("spm", 5, function() {
-  source("data-raw/05_spm.R", local = TRUE)
+  source("data-raw/player-ratings/05_spm.R", local = TRUE)
 })
 
 # 11. Step 6: xRAPM ----
 
 step_results[[6]] <- run_step("xrapm", 6, function() {
-  source("data-raw/06_xrapm.R", local = TRUE)
+  source("data-raw/player-ratings/06_xrapm.R", local = TRUE)
 })
 
 # 12. Step 7: Seasonal Ratings (SPM, RAPM, xRAPM) ----
 
 step_results[[7]] <- run_step("seasonal_ratings", 7, function() {
-  source("data-raw/07_seasonal_ratings.R", local = TRUE)
+  source("data-raw/player-ratings/07_seasonal_ratings.R", local = TRUE)
 })
 
 # 13. Step 8: Final Ratings ----
 
 step_results[[8]] <- run_step("panna_ratings", 8, function() {
-  source("data-raw/08_panna_ratings.R", local = TRUE)
+  source("data-raw/player-ratings/08_panna_ratings.R", local = TRUE)
 })
 
 # 14. Summary ----

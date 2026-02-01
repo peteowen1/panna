@@ -8,7 +8,8 @@
 #' @importFrom dplyr row_number lead lag
 #' @importFrom tidyr pivot_longer pivot_wider unnest nest
 #' @importFrom purrr map map_dfr map_chr map_dbl map2 possibly
-#' @importFrom rlang .data := sym
+#' @importFrom rlang .data sym
+#' @importFrom data.table := .SD .N .I .BY .GRP .NGRP .EACHI data.table setDT setkey setkeyv setnames setorder setorderv shift fifelse fcase
 #' @importFrom stats coef lm predict residuals sd var cor quantile
 #' @importFrom utils head tail tar untar
 #' @importFrom lubridate ymd

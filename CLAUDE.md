@@ -8,6 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **RAPM** (Regularized Adjusted Plus-Minus) - lineup-based impact from splint-level data
 - **SPM** (Statistical Plus-Minus) - box score prediction of RAPM
 - **Panna Rating** - combines RAPM with SPM as Bayesian prior for stability
+- **EPV** (Expected Possession Value) - action-level player valuation from Opta event data
 
 The package works with data from three sources via the `pannadata` repository and supports Big 5 European leagues.
 
@@ -56,7 +57,11 @@ The `debug/` folder is gitignored.
 
 ### Data Pipeline
 - Package functions in `R/` - reusable, documented with roxygen2
-- Analysis scripts in `data-raw/` - sequential workflow (01_, 02_, etc.)
+- Analysis scripts in `data-raw/` - organized by pipeline:
+  - `data-raw/player-ratings/` - RAPM/SPM/Panna rating pipeline (01-08 scripts)
+  - `data-raw/epv/` - EPV model training and player valuation
+  - `data-raw/scraping/` - Data collection scripts
+  - `data-raw/analysis/` - Comparison and analysis scripts
 - Cache expensive data to `data-raw/cache/`
 - Analysis scripts run in RStudio - avoid excessive `cat()` calls, keep them simple
 
@@ -70,6 +75,8 @@ The `debug/` folder is gitignored.
 ## Architecture
 
 ### Core Data Flow
+
+**Player Ratings Pipeline** (`data-raw/player-ratings/`):
 ```
 pannadata (cached match data from FBref/Opta/Understat)
        ↓
@@ -88,6 +95,15 @@ pannadata (cached match data from FBref/Opta/Understat)
 08_panna_ratings.R → panna_ratings.csv (final ratings)
 ```
 
+**EPV Pipeline** (`data-raw/epv/`):
+```
+Opta match events (load_opta_match_events)
+       ↓
+01_train_epv_models.R → xg_model.rds, xpass_model.rds, epv_model.rds
+       ↓
+02_calculate_player_epv.R → player_epv_{league}_{season}.rds
+```
+
 ### Key Concepts
 
 **Splints**: Time segments where the lineup is constant. Boundaries created at goals, substitutions, red cards, and halftime. Each splint has ~22 players (11 per team) and calculates npxGD (non-penalty xG differential).
@@ -103,6 +119,13 @@ pannadata (cached match data from FBref/Opta/Understat)
 - Offense coefficient: positive = helps create xG (good)
 - Defense coefficient: positive = allows xG (bad), negative = prevents xG (good)
 - Final: `panna = offense - defense` (higher = better)
+
+**EPV (Expected Possession Value)**:
+- Action-level valuation using Opta event data with x/y coordinates
+- Based on VAEP/Goals Added methodology
+- EPV = ΔP(scoring) - ΔP(conceding) for each action
+- Pass credit split: passer gets (1-xPass) share, receiver gets xPass share
+- Trains 4 XGBoost models: xG, xPass, P(scoring), P(conceding)
 
 ### Module Responsibilities
 
@@ -122,6 +145,12 @@ pannadata (cached match data from FBref/Opta/Understat)
 | `feature_engineering.R` | Advanced feature creation (per-100 sequences) |
 | `utils.R` | Helpers: clean_column_names, safe_divide, per_90, validate_seasons |
 | `globals.R` | NSE variable declarations for R CMD check |
+| `spadl_conversion.R` | Opta events → SPADL format for EPV |
+| `possession_chains.R` | Group actions into possession sequences |
+| `xg_model.R` | XGBoost xG model (Opta has no xG) |
+| `xpass_model.R` | Pass completion probability for credit split |
+| `epv_features.R` | EPV game state features |
+| `epv_model.R` | Main EPV training/prediction/aggregation |
 
 ## Key Functions
 
@@ -175,6 +204,29 @@ pannadata (cached match data from FBref/Opta/Understat)
 - `fit_panna_model()` - End-to-end pipeline combining RAPM + SPM
 - `fit_rapm_with_prior()` - RAPM shrinking toward SPM (xRAPM)
 
+### EPV (Expected Possession Value)
+**Data Preparation:**
+- `convert_opta_to_spadl()` - Convert Opta match events to SPADL format
+- `create_possession_chains()` - Group actions into possession sequences
+- `classify_chain_outcomes()` - Label chains with goal/shot/turnover outcomes
+- `label_actions_with_outcomes()` - Add chain labels to each action
+
+**Model Components:**
+- `fit_xg_model()` - Train XGBoost xG model on Opta shots
+- `fit_xpass_model()` - Train pass completion probability model
+- `fit_epv_scoring_model()` - P(scoring) during possession
+- `fit_epv_conceding_model()` - P(conceding) on opponent's next possession
+
+**Value Calculation:**
+- `create_epv_features()` - Build game state features
+- `calculate_action_epv()` - Compute EPV for each action
+- `assign_pass_credit()` - Split pass value between passer/receiver
+- `aggregate_player_epv()` - Summarize EPV by player (total, per-90, by action type)
+
+**Model Storage:**
+- `save_epv_models()` / `load_epv_models()` - Local model persistence
+- `pb_download_epv_models()` - Download pre-trained models from GitHub releases
+
 ## Data Distribution (GitHub Releases)
 
 Data is stored in GitHub Releases using tar.gz archives, organized by source:
@@ -184,6 +236,7 @@ Data is stored in GitHub Releases using tar.gz archives, organized by source:
 | fbref-latest | fbref-parquet.tar.gz | FBref parquet files |
 | understat-latest | understat-parquet.tar.gz | Understat parquet files |
 | opta-latest | opta_player_stats.parquet, opta_shots.parquet | Consolidated Opta files |
+| epv-models | xg_model.rds, xpass_model.rds, epv_*.rds | Pre-trained EPV models |
 
 ### Download Functions
 ```r
@@ -196,3 +249,4 @@ pb_download_opta()              # Download Opta data (consolidated files)
 
 See `pannadata/DATA_DICTIONARY.md` for complete column definitions for raw data.
 See `panna/DATA_DICTIONARY.md` for processed data column definitions at each pipeline stage.
+See `panna/OPTA_REFERENCE.md` for Opta event type_ids and qualifier_ids used in EPV pipeline.
