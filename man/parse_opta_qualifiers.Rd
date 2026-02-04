@@ -4,17 +4,20 @@
 \alias{parse_opta_qualifiers}
 \title{Parse Opta Qualifiers JSON}
 \usage{
-parse_opta_qualifiers(events)
+parse_opta_qualifiers(dt)
 }
 \arguments{
-\item{events}{Data frame with qualifier_json column}
+\item{dt}{Data.table with qualifier_json column (modified in place)}
 }
 \value{
-Data frame with parsed qualifier columns added
+Data.table with parsed qualifier columns added
 }
 \description{
 Extracts qualifier information from the qualifier_json column.
 Opta JSON format is a dictionary where keys are qualifier IDs:
 \code{{"108":null,"55":"145","28":null,...}}
+}
+\details{
+Uses fast regex-based extraction instead of JSON parsing.
 }
 \keyword{internal}

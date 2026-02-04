@@ -43,8 +43,11 @@ OPTA_ACTION_MAP <- list(
   # Keeper events
   keeper_pick_up = 52L,
   keeper_save = 10L,
-  keeper_claim = 53L,
-  keeper_punch = 41L
+  keeper_claim = 11L,     # Claim (GK catches cross)
+  keeper_punch = 41L,
+  # 1v1 challenges and skill moves
+  one_on_one = 83L,       # Att One on One
+  good_skill = 42L        # Good Skill (skillful play)
 )
 
 # Qualifier IDs for pass subtypes
@@ -66,16 +69,116 @@ OPTA_BODYPART_QUALIFIERS <- list(
   left_foot = 36L
 )
 
+# Opta type_id to human-readable name mapping
+# Used to add opta_type_name column for debugging/analysis
+OPTA_TYPE_NAMES <- c(
+  "1" = "Pass",
+  "2" = "Offside Pass",
+  "3" = "Take On",
+  "4" = "Foul",
+  "5" = "Ball Out",
+  "6" = "Corner Awarded",
+  "7" = "Tackle",
+  "8" = "Interception",
+  "9" = "Turnover",
+  "10" = "Save",
+  "11" = "Claim",
+  "12" = "Clearance",
+  "13" = "Miss",
+  "14" = "Post",
+  "15" = "Attempt Saved",
+  "16" = "Goal",
+  "17" = "Card",
+  "18" = "Player Off",
+  "19" = "Player On",
+  "27" = "Start",
+  "28" = "End",
+  "30" = "End 1H",
+  "32" = "Start 2H",
+  "34" = "Team Set Up",
+  "35" = "Position Change",
+  "36" = "Jersey Change",
+  "37" = "Collection End",
+  "40" = "Formation Change",
+  "41" = "Punch",
+  "42" = "Good Skill",
+  "43" = "Deleted Event",
+  "44" = "Aerial",
+  "45" = "Challenge",
+  "49" = "Ball Recovery",
+  "50" = "Blocked Pass",
+  "51" = "Delay of Play",
+  "52" = "Keeper Pick-up",
+  "53" = "Chance Missed",
+  "54" = "Ball Touch",
+
+  "55" = "Temp Goal",
+  "56" = "Resume Play",
+  "57" = "Contentious Decision",
+  "61" = "Ball Touch",
+  "67" = "Offside",
+  "68" = "Offside Provoked",
+  "70" = "Shield Ball",
+  "74" = "Injury Clearance",
+  "77" = "Keeper Sweeper",
+  "80" = "Chance Missed",
+  "83" = "Att One on One",
+  "84" = "Unknown"
+)
+
+# Non-gameplay event type_ids to filter out
+# These don't contribute to EPV and shouldn't be in SPADL
+OPTA_NON_GAMEPLAY_TYPES <- c(
+  2L,   # Offside Pass - play is dead
+  5L,   # Ball Out - ball is dead
+  6L,   # Corner Awarded - just the award, not the kick
+  17L,  # Card - booking/sending off
+  18L,  # Player Off - substitution
+  19L,  # Player On - substitution
+  27L,  # Start - period start
+  28L,  # End - period end
+  30L,  # End 1H - first half end
+  32L,  # Start 2H - second half start
+  34L,  # Team Set Up - lineup info
+  35L,  # Position Change - tactical
+  36L,  # Jersey Change - admin
+  37L,  # Collection End - data marker
+  40L,  # Formation Change - tactical
+  43L,  # Deleted Event - removed from feed!
+  45L,  # Challenge - 50/50 contest, no clear possession
+  51L,  # Delay of Play - time wasting
+  55L,  # Temp Goal - temporary marker
+  56L,  # Resume Play - marker
+  57L,  # Contentious Decision - ref decision
+  67L,  # Offside - play is dead
+  68L,  # Offside Provoked - defensive trap
+  74L,  # Injury Clearance - stoppage
+  80L,  # Chance Missed - redundant with shot data
+  53L,  # Chance Missed (alternate) - redundant with shot data
+  # Unknown/rare types with no clear gameplay contribution
+  20L,  # Unknown
+  58L,  # Unknown
+  59L,  # Unknown
+  60L,  # Unknown
+  65L,  # Unknown
+  84L   # Unknown
+)
+
 
 #' Convert Opta Match Events to SPADL Format
 #'
 #' Transforms Opta event data into a standardized SPADL-like format suitable
-#' for EPV modeling. Normalizes coordinates so teams always attack left-to-right
-#' and standardizes action types across different event categories.
+#' for EPV modeling. Coordinates are preserved in Opta's native team-relative
+#' format where each team's actions are from their own perspective (x=0 is own
+#' goal, x=100 is opponent's goal). This is the correct format for EPV models
+#' where each action is evaluated from the ball-carrier's perspective.
 #'
 #' @param opta_events Data frame from load_opta_match_events()
-#' @param normalize_direction Whether to flip coordinates so attacking team
-#'   always goes left-to-right (default TRUE)
+#' @param normalize_direction Whether to attempt coordinate normalization. Set
+#'   to FALSE (default) to preserve Opta's team-relative coordinates, which is
+#'   correct for EPV. Set to TRUE only for visualizations requiring unified
+#'   pitch coordinates (note: the normalization heuristic may not work well
+#'   with team-relative data).
 #'
 #' @return Data frame in SPADL format with columns:
 #'   \itemize{
@@ -90,6 +193,7 @@ OPTA_BODYPART_QUALIFIERS <- list(
 #'     \item end_x, end_y: Ending coordinates (0-100)
 #'     \item action_type: Standardized action type
 #'     \item action_type_id: Numeric action type code
+#'     \item opta_type_id: Original Opta type_id (e.g., 13=saved, 15=missed, 16=goal)
 #'     \item result: "success" or "fail"
 #'     \item bodypart: "foot", "head", or "other"
 #'     \item receiver_player_id: Player who receives/intercepts (from next action)
@@ -104,7 +208,7 @@ OPTA_BODYPART_QUALIFIERS <- list(
 #' events <- load_opta_match_events("ENG", "2024-2025")
 #' spadl <- convert_opta_to_spadl(events)
 #' }
-convert_opta_to_spadl <- function(opta_events, normalize_direction = TRUE) {
+convert_opta_to_spadl <- function(opta_events, normalize_direction = FALSE) {
   if (is.null(opta_events) || nrow(opta_events) == 0) {
     cli::cli_abort("No events provided for SPADL conversion")
   }
@@ -119,16 +223,15 @@ convert_opta_to_spadl <- function(opta_events, normalize_direction = TRUE) {
     cli::cli_abort("Missing required columns: {paste(missing_cols, collapse=', ')}")
   }
 
-  # Parse qualifiers if present
-  if ("qualifier_json" %in% names(opta_events)) {
-    opta_events <- parse_opta_qualifiers(opta_events)
-  }
-
-  # Convert to data.table for efficient processing
+  # Convert to data.table once at the start - all operations in place
   dt <- data.table::as.data.table(opta_events)
 
+  # Parse qualifiers if present (modifies dt in place)
+  if ("qualifier_json" %in% names(dt)) {
+    dt <- parse_opta_qualifiers(dt)
+  }
+
   # Filter out non-player events (match start, period start, etc.)
-  # These have empty player_name and are administrative events
   n_before <- nrow(dt)
   dt <- dt[!is.na(player_name) & player_name != ""]
   n_filtered <- n_before - nrow(dt)
@@ -136,83 +239,168 @@ convert_opta_to_spadl <- function(opta_events, normalize_direction = TRUE) {
     cli::cli_alert_info("Filtered {n_filtered} non-player events (match/period markers)")
   }
 
-  # Create SPADL columns (vectorized)
+  # Check for end_x/end_y columns once
+  has_end_x <- "end_x" %in% names(dt)
+  has_end_y <- "end_y" %in% names(dt)
+  has_event_id <- "event_id" %in% names(dt)
+
+  # Create SPADL columns (vectorized, in place)
+  if (has_event_id) {
+    dt[, original_event_id := event_id]
+  } else {
+    dt[, original_event_id := .I]
+  }
+
   dt[, `:=`(
-    original_event_id = if ("event_id" %in% names(dt)) event_id else .I,
-    time_seconds = minute * 60 + second,
+    time_seconds = minute * 60L + second,
     start_x = x,
     start_y = y,
-    end_x = if ("end_x" %in% names(dt)) end_x else x,
-    end_y = if ("end_y" %in% names(dt)) end_y else y,
-    opta_type_id = type_id
+    opta_type_id = type_id,
+    opta_type_name = OPTA_TYPE_NAMES[as.character(type_id)]
   )]
+
+  # Filter out non-gameplay events (ball out, deleted, cards, subs, etc.)
+  n_before_filter <- nrow(dt)
+  dt <- dt[!opta_type_id %in% OPTA_NON_GAMEPLAY_TYPES]
+  n_non_gameplay <- n_before_filter - nrow(dt)
+  if (n_non_gameplay > 0) {
+    cli::cli_alert_info("Filtered {format(n_non_gameplay, big.mark=',')} non-gameplay events (ball out, deleted, cards, subs, etc.)")
+  }
+
+  if (has_end_x) {
+    dt[, end_x_new := end_x]
+  } else {
+    dt[, end_x_new := x]
+  }
+  if (has_end_y) {
+    dt[, end_y_new := end_y]
+  } else {
+    dt[, end_y_new := y]
+  }
+  # Rename to avoid conflicts
+  if (has_end_x) dt[, end_x := NULL]
+  if (has_end_y) dt[, end_y := NULL]
+  data.table::setnames(dt, c("end_x_new", "end_y_new"), c("end_x", "end_y"))
 
   # Map Opta type_id to SPADL action types (vectorized)
-  dt[, action_type := map_opta_action_type(
-    type_id = opta_type_id,
-    qualifiers = if ("qualifiers_parsed" %in% names(dt)) qualifiers_parsed else NULL
-  )]
+  dt[, action_type := map_opta_action_type(opta_type_id, NULL)]
+
+  # ===========================================================================
+  # Handle Opta end_x/end_y data issues
+  # ===========================================================================
+  #
+  # ANALYSIS FINDINGS (see debug/analyze_spadl_continuity.R):
+  # - Only passes (type_id=1) and clearances (type_id=12) have proper end_x/end_y
+  # - All other action types have end_x=0, end_y=0 in Opta data
+  # - This breaks EPV chain continuity where end should match next action's start
+  #
+  # SOLUTION:
+  # For actions with end_x=0, set end = start (ball stays with player)
+  # This includes duels (aerials, tackles) - winner keeps ball at their position
+  # Passes and clearances already have correct coordinates - keep as-is
+  # ===========================================================================
+
+  # Actions where ball stays with the player (end = start when end_x is 0)
+  # Includes duels: aerial winner and tackle winner keep the ball at their position
+  # Note: clearance usually has end coords, but rare Opta data quality issues exist
+  stationary_actions <- c(
+    "tackle",        # Won tackle - ball stays with tackler
+    "interception",  # Intercepted - ball stays with interceptor
+    "ball_recovery", # Recovered - ball stays with recoverer
+    "ball_touch",    # Simple touch - ball doesn't travel
+    "take_on",       # Successful dribble - ball stays with dribbler
+    "foul",          # Play stops at foul location
+    "dispossessed",  # Lost possession at that spot
+    "keeper_save",   # Save at keeper position
+    "keeper_pick_up",# Pick up at keeper position
+    "keeper_claim",  # Claim at keeper position
+    "keeper_punch",  # Punch from keeper position
+    "aerial",        # Aerial winner - ball stays near winner's position
+    "clearance"      # Fallback for rare Opta data quality issues (usually has end coords)
+  )
+
+  # Only fix where end_x is 0 (Opta's missing value indicator)
+  fix_idx <- which(dt$action_type %in% stationary_actions & dt$end_x == 0)
+  if (length(fix_idx) > 0) {
+    dt[fix_idx, `:=`(end_x = start_x, end_y = start_y)]
+    cli::cli_alert_info("Fixed {length(fix_idx)} actions with end_x=0 (set end = start)")
+  }
+
+  # Note on remaining "other" type actions:
+  # Actions not explicitly mapped (e.g., corners awarded, ball out) remain as "other"
+  # and are filtered naturally downstream since they don't contribute to EPV
 
   # Map result (success/fail) - vectorized
-  # For shots: success = goal (type_id = 16), fail = saved/missed/post (type_id = 13-15)
-  # For other actions: use Opta outcome (1 = success)
   dt[, result := fifelse(
     opta_type_id %in% c(13L, 14L, 15L, 16L),
     fifelse(opta_type_id == 16L, "success", "fail"),
-    fifelse(outcome == 1, "success", "fail")
+    fifelse(outcome == 1L, "success", "fail")
   )]
 
   # Determine body part (vectorized)
-  dt[, bodypart := map_opta_bodypart(
-    type_id = opta_type_id,
-    qualifiers = if ("qualifiers_parsed" %in% names(dt)) qualifiers_parsed else NULL
-  )]
+  dt[, bodypart := map_opta_bodypart(opta_type_id, NULL)]
 
   # Sort and create sequential action_id per match
   data.table::setorder(dt, match_id, period_id, time_seconds)
   dt[, action_id := seq_len(.N), by = match_id]
 
-  # Normalize coordinates if requested
+  # Normalize coordinates if requested (modifies dt in place)
   if (normalize_direction) {
-    dt <- data.table::as.data.table(normalize_spadl_coordinates(as.data.frame(dt)))
+    dt <- normalize_spadl_coordinates(dt)
+  }
+
+
+  # Fix ALL shot end coordinates to goal center AFTER normalization
+  # Opta sometimes has (100, 100) for shots going wide - we normalize to (100, 50)
+  # For EPV, shots are terminal actions so precise end position doesn't matter
+  shot_idx <- which(dt$action_type == "shot")
+  if (length(shot_idx) > 0) {
+    dt[shot_idx, `:=`(end_x = 100, end_y = 50)]
+    cli::cli_alert_info("Set {length(shot_idx)} shots to end at goal center (100, 50)")
   }
 
   # Create numeric action type ID
   dt[, action_type_id := as.integer(factor(action_type))]
 
-  # Add receiver information from next action
-  # The player who does the next action is effectively the "receiver" of this action
+  cli::cli_alert_success("Converted to {format(nrow(dt), big.mark=',')} SPADL actions")
+
+  # Merge duplicate duel rows BEFORE calculating receiver info
+  # (so receiver points to correct next action, not deleted duel loser)
+  dt <- merge_duel_rows(dt)
+
+  # Re-sequence action_id after duel merging
+  data.table::setorder(dt, match_id, period_id, time_seconds)
+  dt[, action_id := seq_len(.N), by = match_id]
+
+  # Add receiver information from next action (AFTER duel merge)
   dt[, `:=`(
-    receiver_player_id = data.table::shift(player_id, 1, type = "lead"),
-    receiver_player_name = data.table::shift(player_name, 1, type = "lead"),
-    receiver_team_id = data.table::shift(team_id, 1, type = "lead")
+    receiver_player_id = shift(player_id, 1, type = "lead"),
+    receiver_player_name = shift(player_name, 1, type = "lead"),
+    receiver_team_id = shift(team_id, 1, type = "lead")
   ), by = match_id]
 
   # Detect possession change (next action by different team)
   dt[, possession_change := !is.na(receiver_team_id) & receiver_team_id != team_id]
 
   # Select final columns
+  # Keep opta_type_id and opta_type_name for downstream use and debugging
+  # Include opponent_player_id/name for duel credit assignment
   base_cols <- c("match_id", "action_id", "period_id", "time_seconds",
                   "team_id", "player_id", "player_name",
                   "start_x", "start_y", "end_x", "end_y",
-                  "action_type", "action_type_id", "result", "bodypart",
+                  "action_type", "action_type_id", "opta_type_id", "opta_type_name",
+                  "result", "bodypart",
                   "receiver_player_id", "receiver_player_name",
-                  "receiver_team_id", "possession_change")
+                  "receiver_team_id", "possession_change",
+                  "opponent_player_id", "opponent_player_name")
 
-  # Include is_own_goal if qualifiers were parsed
-  if ("is_own_goal" %in% names(dt)) {
-    result_cols <- c(base_cols, "is_own_goal")
-  } else {
-    result_cols <- base_cols
-  }
-  result <- dt[, ..result_cols]
+  # Include qualifier-derived columns if available
+  optional_cols <- c("is_own_goal", "is_big_chance")
+  available_optional <- optional_cols[optional_cols %in% names(dt)]
+  result_cols <- c(base_cols, available_optional)
+  dt <- dt[, ..result_cols]
 
-  cli::cli_alert_success("Converted to {format(nrow(result), big.mark=',')} SPADL actions")
-
-  # Merge duplicate duel rows (aerial, tackle) into single rows with opponent info
-  result <- merge_duel_rows(result)
-
-  as.data.frame(result)
+  as.data.frame(dt)
 }
 
 
@@ -222,72 +410,46 @@ convert_opta_to_spadl <- function(opta_events, normalize_direction = TRUE) {
 #' Opta JSON format is a dictionary where keys are qualifier IDs:
 #' \code{{"108":null,"55":"145","28":null,...}}
 #'
-#' @param events Data frame with qualifier_json column
+#' Uses fast regex-based extraction instead of JSON parsing.
 #'
-#' @return Data frame with parsed qualifier columns added
+#' @param dt Data.table with qualifier_json column (modified in place)
+#'
+#' @return Data.table with parsed qualifier columns added
 #' @keywords internal
-parse_opta_qualifiers <- function(events) {
-  if (!"qualifier_json" %in% names(events)) {
-    return(events)
+parse_opta_qualifiers <- function(dt) {
+  if (!"qualifier_json" %in% names(dt)) {
+    return(dt)
   }
 
-  dt <- data.table::as.data.table(events)
-  n <- nrow(dt)
+  # Use regex to check for qualifier IDs - much faster than JSON parsing
 
-  # Initialize qualifier columns (vectorized)
+  # Opta format: {"2":null,"15":"value",...} - keys are qualifier IDs
+  qjson <- dt$qualifier_json
+
+  # Pre-compute valid mask once
+
+  valid <- !is.na(qjson) & nchar(qjson) > 2
+
+  # Vectorized regex checks - pattern matches "qualId": at start or after comma
+  # Using fixed patterns for speed
   dt[, `:=`(
-    is_cross = FALSE,
-    is_through_ball = FALSE,
-    is_long_ball = FALSE,
-    is_corner = FALSE,
-    is_freekick = FALSE,
-    is_throw_in = FALSE,
-    is_goal_kick = FALSE,
-    is_headed = FALSE,
-    is_right_foot = FALSE,
-    is_left_foot = FALSE,
-    is_big_chance = FALSE,
-    is_own_goal = FALSE
+    is_cross = valid & grepl('"2":', qjson, fixed = TRUE),
+    is_through_ball = valid & grepl('"4":', qjson, fixed = TRUE),
+    is_long_ball = valid & grepl('"1":', qjson, fixed = TRUE),
+    is_corner = valid & grepl('"6":', qjson, fixed = TRUE),
+    is_freekick = valid & grepl('"5":', qjson, fixed = TRUE),
+    is_throw_in = valid & grepl('"107":', qjson, fixed = TRUE),
+    is_goal_kick = valid & grepl('"124":', qjson, fixed = TRUE),
+    is_headed = valid & grepl('"15":', qjson, fixed = TRUE),
+    is_right_foot = valid & grepl('"72":', qjson, fixed = TRUE),
+    is_left_foot = valid & grepl('"36":', qjson, fixed = TRUE),
+    is_big_chance = valid & grepl('"214":', qjson, fixed = TRUE),
+    is_own_goal = valid & grepl('"28":', qjson, fixed = TRUE)
   )]
-
-  # Get indices of rows with valid JSON
-  valid_idx <- which(!is.na(dt$qualifier_json) &
-                      dt$qualifier_json != "" &
-                      dt$qualifier_json != "[]" &
-                      dt$qualifier_json != "{}")
-
-  if (length(valid_idx) > 0) {
-    # Parse JSON in batch - Opta format is {"qualId": value, ...}
-    # Keys are qualifier IDs as strings
-    qual_ids_list <- lapply(dt$qualifier_json[valid_idx], function(qjson) {
-      tryCatch({
-        parsed <- jsonlite::fromJSON(qjson, simplifyVector = FALSE)
-        if (is.list(parsed)) {
-          as.integer(names(parsed))
-        } else {
-          integer(0)
-        }
-      }, error = function(e) integer(0))
-    })
-
-    # Vectorized qualifier checks using sapply
-    dt$is_cross[valid_idx] <- sapply(qual_ids_list, function(q) OPTA_PASS_QUALIFIERS$cross %in% q)
-    dt$is_through_ball[valid_idx] <- sapply(qual_ids_list, function(q) OPTA_PASS_QUALIFIERS$through_ball %in% q)
-    dt$is_long_ball[valid_idx] <- sapply(qual_ids_list, function(q) OPTA_PASS_QUALIFIERS$long_ball %in% q)
-    dt$is_corner[valid_idx] <- sapply(qual_ids_list, function(q) OPTA_PASS_QUALIFIERS$corner %in% q)
-    dt$is_freekick[valid_idx] <- sapply(qual_ids_list, function(q) OPTA_PASS_QUALIFIERS$freekick %in% q)
-    dt$is_throw_in[valid_idx] <- sapply(qual_ids_list, function(q) OPTA_PASS_QUALIFIERS$throw_in %in% q)
-    dt$is_goal_kick[valid_idx] <- sapply(qual_ids_list, function(q) OPTA_PASS_QUALIFIERS$goal_kick %in% q)
-    dt$is_headed[valid_idx] <- sapply(qual_ids_list, function(q) OPTA_BODYPART_QUALIFIERS$head %in% q)
-    dt$is_right_foot[valid_idx] <- sapply(qual_ids_list, function(q) OPTA_BODYPART_QUALIFIERS$right_foot %in% q)
-    dt$is_left_foot[valid_idx] <- sapply(qual_ids_list, function(q) OPTA_BODYPART_QUALIFIERS$left_foot %in% q)
-    dt$is_big_chance[valid_idx] <- sapply(qual_ids_list, function(q) 214L %in% q)
-    dt$is_own_goal[valid_idx] <- sapply(qual_ids_list, function(q) 28L %in% q)  # Qualifier 28 = own goal
-  }
 
   dt[, qualifiers_parsed := TRUE]
 
-  as.data.frame(dt)
+  dt
 }
 
 
@@ -320,9 +482,17 @@ map_opta_action_type <- function(type_id, qualifiers = NULL) {
 
   # Keeper actions
   action_type[type_id == 10L] <- "keeper_save"
+  action_type[type_id == 11L] <- "keeper_claim"  # Claim (GK catches cross)
   action_type[type_id == 41L] <- "keeper_punch"
   action_type[type_id == 52L] <- "keeper_pick_up"
-  action_type[type_id == 53L] <- "keeper_claim"
+  # Note: Type 53 is "Chance Missed" not keeper_claim - don't map it
+
+  # 1v1 situations and skill moves (similar to take_on)
+  action_type[type_id == 42L] <- "take_on"       # Good Skill
+  action_type[type_id == 83L] <- "take_on"       # Att One on One
+
+  # Additional ball touch type
+  action_type[type_id == 54L] <- "ball_touch"    # Ball Touch (alternate)
 
   # Refine pass subtypes using qualifiers if available
   if (!is.null(qualifiers) && is.list(qualifiers)) {
@@ -356,42 +526,53 @@ map_opta_bodypart <- function(type_id, qualifiers = NULL) {
 
 #' Normalize SPADL Coordinates
 #'
-#' Flips coordinates so the attacking team always attacks left-to-right
-#' (toward x = 100). Uses period and team position to determine direction.
-#' Optimized with data.table.
+#' WARNING: This function uses a heuristic that doesn't work well with Opta's
+#' team-relative coordinate system. For EPV modeling, use normalize_direction=FALSE
+#' (the default) to preserve Opta's native coordinates where each team's actions
+#' are from their own perspective.
 #'
-#' @param spadl Data frame in SPADL format
+#' Attempts to flip coordinates so all teams attack toward x=100. Uses mean
+#' position per team/period as a heuristic, but this fails when both teams have
+#' similar mean positions or when coordinates are team-relative.
 #'
-#' @return SPADL data frame with normalized coordinates
+#' @param dt Data.table in SPADL format (modified in place)
+#'
+#' @return Data.table with normalized coordinates (same object, modified)
 #' @keywords internal
-normalize_spadl_coordinates <- function(spadl) {
-  # Opta coordinates are already 0-100 with teams attacking opposite directions
-  # We need to flip for one team per period
-
-  dt <- data.table::as.data.table(spadl)
+normalize_spadl_coordinates <- function(dt) {
+ # WARNING: Opta uses team-relative coordinates where x=0 is each team's own goal
+ # and x=100 is their attacking goal. This means the mean_x heuristic below
+ # doesn't reliably identify which direction each team is attacking.
 
   # Determine which team attacks which direction per match/period
-  # Heuristic: team with more events in x > 50 is attacking right
-  team_direction <- dt[, .(attacks_right = mean(start_x, na.rm = TRUE) > 50),
+  # Heuristic: team with mean x > 50 is attacking right
+  team_direction <- dt[, .(mean_x = mean(start_x, na.rm = TRUE)),
                         by = .(match_id, period_id, team_id)]
+  team_direction[, attacks_right := mean_x > 50]
 
-  # Merge direction info
-  dt <- merge(dt, team_direction, by = c("match_id", "period_id", "team_id"),
-               all.x = TRUE, sort = FALSE)
+  # Use keyed join for speed
+  data.table::setkeyv(team_direction, c("match_id", "period_id", "team_id"))
+  data.table::setkeyv(dt, c("match_id", "period_id", "team_id"))
 
-  # Flip coordinates for teams attacking left (vectorized)
-  dt[attacks_right == FALSE & !is.na(attacks_right), `:=`(
-    start_x = 100 - start_x,
-    end_x = 100 - end_x,
-    start_y = 100 - start_y,
-    end_y = 100 - end_y
-  )]
+  # Add attacks_right column via join
+ dt[team_direction, attacks_right := i.attacks_right]
+
+  # Flip coordinates for teams attacking left (vectorized, in place)
+  flip_idx <- which(dt$attacks_right == FALSE & !is.na(dt$attacks_right))
+  if (length(flip_idx) > 0) {
+    dt[flip_idx, `:=`(
+      start_x = 100 - start_x,
+      end_x = 100 - end_x,
+      start_y = 100 - start_y,
+      end_y = 100 - end_y
+    )]
+  }
 
   # Remove helper column and restore order
   dt[, attacks_right := NULL]
   data.table::setorder(dt, match_id, action_id)
 
-  as.data.frame(dt)
+  dt
 }
 
 
@@ -501,6 +682,7 @@ is_in_penalty_area <- function(x, y, attacking = TRUE) {
 #' @return Logical indicating if in final third
 #' @export
 is_in_final_third <- function(x, attacking = TRUE) {
+
   if (attacking) {
     x > 67
   } else {
@@ -509,13 +691,102 @@ is_in_final_third <- function(x, attacking = TRUE) {
 }
 
 
+#' Calculate Physical Discontinuity
+#'
+#' Calculates spatial discontinuity between consecutive actions using a unified
+#' pitch coordinate frame. This converts team-relative Opta coordinates to a
+#' common physical frame, allowing measurement of actual ball movement rather
+#' than perspective changes.
+#'
+#' Opta uses team-relative coordinates where each team sees x=100 as their
+#' attacking goal. When possession changes, coordinates appear to "jump" due to
+#' perspective change, not ball movement. This function removes that artifact
+#' by converting all coordinates to a single reference frame.
+#'
+#' @param spadl_dt Data.table or data.frame in SPADL format from
+#'   \code{convert_opta_to_spadl()}. Must have columns: match_id, team_id,
+#'   start_x, start_y, end_x, end_y.
+#'
+#' @return Data.table with additional columns:
+#'   \itemize{
+#'     \item phys_disc: Physical discontinuity (Euclidean distance between
+#'       action end and next action start in unified frame)
+#'     \item phys_end_x, phys_end_y: End coordinates in physical frame
+#'     \item phys_next_x, phys_next_y: Next action start in physical frame
+#'   }
+#'
+#' @details
+#' For validation purposes, physical discontinuity should be low for most
+
+#' action types (median < 10-15 units). High values indicate data quality
+#' issues or unusual game situations (e.g., set pieces).
+#'
+#' Expected median physical discontinuity by action type:
+#' \itemize{
+#'   \item pass: ~3 (pass lands where receiver starts)
+#'   \item aerial: ~3 (winner catches at their position)
+#'   \item tackle: ~6 (tackler wins ball nearby)
+#'   \item shot: ~10 (shot to goal, next action at keeper/goal)
+#' }
+#'
+#' @export
+#' @examples
+#' \dontrun{
+#' events <- load_opta_match_events("ENG", "2024-2025")
+#' spadl <- convert_opta_to_spadl(events)
+#' spadl_with_disc <- calculate_physical_discontinuity(spadl)
+#'
+#' # Check median discontinuity by action type
+#' spadl_with_disc[, .(median_disc = median(phys_disc, na.rm = TRUE)),
+#'                 by = action_type]
+#' }
+calculate_physical_discontinuity <- function(spadl_dt) {
+  # Convert to data.table if needed
+
+  dt <- data.table::as.data.table(spadl_dt)
+
+ # Pick first team in each match as the reference frame
+  teams_per_match <- dt[, .(ref_team = team_id[1]), by = match_id]
+  dt <- merge(dt, teams_per_match, by = "match_id", all.x = TRUE)
+
+  # Convert end coordinates to physical frame
+  # Reference team: keep as-is; other team: flip (100 - coord)
+  dt[, `:=`(
+    phys_end_x = data.table::fifelse(team_id == ref_team, end_x, 100 - end_x),
+    phys_end_y = data.table::fifelse(team_id == ref_team, end_y, 100 - end_y)
+  )]
+
+  # Get next action info
+  dt[, `:=`(
+    next_team = shift(team_id, 1, type = "lead"),
+    next_start_x = shift(start_x, 1, type = "lead"),
+    next_start_y = shift(start_y, 1, type = "lead")
+  ), by = match_id]
+
+  # Convert next action start to physical frame
+  dt[, `:=`(
+    phys_next_x = data.table::fifelse(next_team == ref_team, next_start_x, 100 - next_start_x),
+    phys_next_y = data.table::fifelse(next_team == ref_team, next_start_y, 100 - next_start_y)
+  )]
+
+  # Calculate physical discontinuity
+  dt[, phys_disc := sqrt((phys_end_x - phys_next_x)^2 + (phys_end_y - phys_next_y)^2)]
+
+  # Clean up helper columns
+  dt[, c("ref_team", "next_team", "next_start_x", "next_start_y") := NULL]
+
+  dt
+}
+
+
 #' Merge Duplicate Duel Rows
 #'
 #' Opta records both participants of a duel as separate rows (winner and loser
 #' perspectives). This function merges these into single rows, keeping the
 #' winner's row and adding opponent information from the loser's row.
+#' Fully vectorized with data.table for speed.
 #'
-#' @param spadl_dt Data.table in SPADL format with duel actions
+#' @param dt Data.table in SPADL format with duel actions (modified in place)
 #'
 #' @return Data.table with merged duel rows and new columns:
 #'   \itemize{
@@ -524,94 +795,145 @@ is_in_final_third <- function(x, attacking = TRUE) {
 #'   }
 #'
 #' @keywords internal
-merge_duel_rows <- function(spadl_dt) {
-  dt <- data.table::as.data.table(spadl_dt)
-
+merge_duel_rows <- function(dt) {
   # Initialize opponent columns
   dt[, `:=`(
     opponent_player_id = NA_character_,
     opponent_player_name = NA_character_
   )]
 
-  # Identify duel actions (aerial and tackle)
-  duel_types <- c("aerial", "tackle")
+  # Get next row info for duel detection (vectorized)
+  dt[, `:=`(
+    next_match_id = shift(match_id, 1, type = "lead"),
+    next_period_id = shift(period_id, 1, type = "lead"),
+    next_time = shift(time_seconds, 1, type = "lead"),
+    next_action_type = shift(action_type, 1, type = "lead"),
+    next_team_id_duel = shift(team_id, 1, type = "lead"),
+    next_result = shift(result, 1, type = "lead"),
+    next_player_id = shift(player_id, 1, type = "lead"),
+    next_player_name = shift(player_name, 1, type = "lead"),
+    next_start_x = shift(start_x, 1, type = "lead")
+  )]
 
-  # Get indices of duel actions
-  duel_idx <- which(dt$action_type %in% duel_types)
+  # Calculate x_sum for location-based duel detection
+  dt[, x_sum := start_x + next_start_x]
 
-  if (length(duel_idx) < 2) {
-    return(as.data.frame(dt))
+  # ===========================================================================
+  # DUEL DETECTION: Same event recorded from both team perspectives
+  #
+  # Type 1: Same action type (Aerial vs Aerial)
+  # Type 2: Cross-type duels where x_sum ≈ 100:
+  #   - Take On (fail) + Tackle (success) = defender won dribble duel
+  #   - Dispossessed + Tackle = defender won possession duel
+  #   - Foul + Foul = same foul from both perspectives
+  # ===========================================================================
+
+  # Same-type duels (Aerial vs Aerial, Tackle vs Tackle)
+  same_type_duels <- c("aerial", "tackle")
+  dt[, is_same_type_duel := action_type %in% same_type_duels &
+       action_type == next_action_type &
+       match_id == next_match_id &
+       period_id == next_period_id &
+       time_seconds == next_time &
+       team_id != next_team_id_duel]
+
+  # Cross-type duels (detected by x_sum ≈ 100, same time ±1sec, different teams)
+  # Take On/Dispossessed + Tackle
+  # Allow 1 second time tolerance because Opta sometimes records them at slightly different times
+  dt[, is_cross_type_duel :=
+       match_id == next_match_id &
+       period_id == next_period_id &
+       abs(time_seconds - next_time) <= 1 &  # Same time ±1 second
+       team_id != next_team_id_duel &
+       abs(x_sum - 100) < 2 &  # Same location (opposite perspectives)
+       ((action_type %in% c("take_on", "dispossessed") & next_action_type == "tackle") |
+        (action_type == "foul" & next_action_type == "foul"))]
+
+  # Combined duel detection
+  dt[, is_duel_pair := is_same_type_duel | is_cross_type_duel]
+
+  # Mark which row in pair is winner vs loser
+  # Winner: result == "success", Loser: result == "fail"
+  # For cross-type duels (Take On + Tackle): Tackle winner is always the "success" side
+  dt[, `:=`(
+    is_winner = is_duel_pair & (result == "success" | next_result != "success"),
+    is_loser = FALSE  # Will mark losers separately
+  )]
+
+  # Mark loser rows (next row after a winner)
+  loser_idx <- which(dt$is_duel_pair & dt$is_winner) + 1
+  loser_idx <- loser_idx[loser_idx <= nrow(dt)]  # Bounds check
+  if (length(loser_idx) > 0) {
+    dt$is_loser[loser_idx] <- TRUE
   }
 
-  # Track rows to remove (loser's duplicate rows)
-  rows_to_remove <- integer(0)
-
-  # Process consecutive duel pairs
-  i <- 1
-  while (i < length(duel_idx)) {
-    idx1 <- duel_idx[i]
-    idx2 <- duel_idx[i + 1]
-
-    # Check if these are a matching duel pair:
-    # - Consecutive rows (idx2 == idx1 + 1)
-    # - Same match, same period, same time
-    # - Same action type
-    # - Different teams
-    if (idx2 == idx1 + 1 &&
-        dt$match_id[idx1] == dt$match_id[idx2] &&
-        dt$period_id[idx1] == dt$period_id[idx2] &&
-        dt$time_seconds[idx1] == dt$time_seconds[idx2] &&
-        dt$action_type[idx1] == dt$action_type[idx2] &&
-        dt$team_id[idx1] != dt$team_id[idx2]) {
-
-      # Determine winner (success) vs loser (fail)
-      result1 <- dt$result[idx1]
-      result2 <- dt$result[idx2]
-
-      if (result1 == "success" && result2 == "fail") {
-        # Row 1 is winner, row 2 is loser
-        winner_idx <- idx1
-        loser_idx <- idx2
-      } else if (result1 == "fail" && result2 == "success") {
-        # Row 2 is winner, row 1 is loser
-        winner_idx <- idx2
-        loser_idx <- idx1
-      } else {
-        # Edge case: both success or both fail - keep first, log warning
-        if (result1 == result2) {
-          cli::cli_warn(paste0(
-            "Duel at match ", dt$match_id[idx1], " time ", dt$time_seconds[idx1],
-            "s has same result for both players (", result1, "). Keeping first row."
-          ))
-        }
-        winner_idx <- idx1
-        loser_idx <- idx2
-      }
-
-      # Add opponent info to winner's row
-      dt$opponent_player_id[winner_idx] <- dt$player_id[loser_idx]
-      dt$opponent_player_name[winner_idx] <- dt$player_name[loser_idx]
-
-      # Mark loser's row for removal
-      rows_to_remove <- c(rows_to_remove, loser_idx)
-
-      # Skip the paired row in next iteration
-      i <- i + 2
-    } else {
-      # Not a matching pair, move to next
-      i <- i + 1
+  # Handle case where first row is loser (result == "fail" & next is "success")
+  first_is_loser <- which(dt$is_duel_pair & dt$result == "fail" & dt$next_result == "success")
+  if (length(first_is_loser) > 0) {
+    # Swap: mark first as loser, second as winner
+    dt$is_loser[first_is_loser] <- TRUE
+    dt$is_winner[first_is_loser] <- FALSE
+    winner_after <- first_is_loser + 1
+    winner_after <- winner_after[winner_after <= nrow(dt)]
+    if (length(winner_after) > 0) {
+      dt$is_winner[winner_after] <- TRUE
+      dt$is_loser[winner_after] <- FALSE
     }
   }
 
-  # Remove loser's duplicate rows
-  if (length(rows_to_remove) > 0) {
-    dt <- dt[-rows_to_remove]
-    cli::cli_alert_info("Merged {length(rows_to_remove)} duplicate duel rows")
+  # For cross-type duels where both might have same outcome, prefer tackle
+  # (Take On fail + Tackle fail → keep Tackle as it's the defensive action)
+  cross_same_outcome <- which(dt$is_cross_type_duel &
+                               dt$action_type %in% c("take_on", "dispossessed") &
+                               dt$next_action_type == "tackle" &
+                               dt$result == dt$next_result)
+  if (length(cross_same_outcome) > 0) {
+    dt$is_loser[cross_same_outcome] <- TRUE
+    dt$is_winner[cross_same_outcome] <- FALSE
+    tackle_rows <- cross_same_outcome + 1
+    tackle_rows <- tackle_rows[tackle_rows <= nrow(dt)]
+    if (length(tackle_rows) > 0) {
+      dt$is_winner[tackle_rows] <- TRUE
+      dt$is_loser[tackle_rows] <- FALSE
+    }
+  }
+
+  # Add opponent info to winners from losers
+  # For winners where next row is the loser
+  winner_with_loser_next <- which(dt$is_winner & c(dt$is_loser[-1], FALSE))
+  if (length(winner_with_loser_next) > 0) {
+    dt$opponent_player_id[winner_with_loser_next] <- dt$player_id[winner_with_loser_next + 1]
+    dt$opponent_player_name[winner_with_loser_next] <- dt$player_name[winner_with_loser_next + 1]
+  }
+
+  # For winners where prev row is the loser (when first row was loser)
+  winner_with_loser_prev <- which(dt$is_winner & c(FALSE, dt$is_loser[-nrow(dt)]))
+  if (length(winner_with_loser_prev) > 0) {
+    dt$opponent_player_id[winner_with_loser_prev] <- dt$player_id[winner_with_loser_prev - 1]
+    dt$opponent_player_name[winner_with_loser_prev] <- dt$player_name[winner_with_loser_prev - 1]
+  }
+
+  # Count removals before filtering
+  n_remove <- sum(dt$is_loser, na.rm = TRUE)
+
+  # Remove loser rows
+  dt <- dt[is_loser == FALSE | is.na(is_loser)]
+
+  # Cleanup helper columns
+  helper_cols <- c("next_match_id", "next_period_id", "next_time",
+                   "next_action_type", "next_team_id_duel", "next_result",
+                   "next_player_id", "next_player_name", "next_start_x",
+                   "x_sum", "is_same_type_duel", "is_cross_type_duel",
+                   "is_duel_pair", "is_winner", "is_loser")
+  dt[, (helper_cols) := NULL]
+
+  if (n_remove > 0) {
+    cli::cli_alert_info("Merged {n_remove} duplicate duel rows")
 
     # Re-sequence action_id after deletions
     data.table::setorder(dt, match_id, period_id, time_seconds)
     dt[, action_id := seq_len(.N), by = match_id]
   }
 
-  as.data.frame(dt)
+  dt
 }

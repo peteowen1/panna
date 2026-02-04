@@ -58,6 +58,9 @@ create_epv_features <- function(spadl_actions, n_prev = 3) {
   # Convert to data.table for performance
   dt <- data.table::as.data.table(spadl_actions)
 
+  # Note: Aerial actions are filtered out in convert_opta_to_spadl() due to
+  # data structure issues (end_x=0). See ENHANCEMENTS.md for future improvements.
+
   # Sort by match, period, time, action_id
   data.table::setorder(dt, match_id, period_id, time_seconds, action_id)
 
@@ -113,38 +116,57 @@ create_epv_features <- function(spadl_actions, n_prev = 3) {
   )]
 
   # =========================================================================
-  # SEQUENCE FEATURES (optimized with data.table shift)
+  # SEQUENCE FEATURES (optimized with data.table shift - batch operations)
   # =========================================================================
   cli::cli_alert_info("Adding sequence features (n_prev={n_prev})...")
 
   # Action type to numeric for lagging
   action_type_map <- c(
-    "pass" = 1, "shot" = 2, "take_on" = 3, "tackle" = 4,
-    "interception" = 5, "clearance" = 6, "aerial" = 7,
-    "foul" = 8, "ball_recovery" = 9, "other" = 0
+    "pass" = 1L, "shot" = 2L, "take_on" = 3L, "tackle" = 4L,
+    "interception" = 5L, "clearance" = 6L, "aerial" = 7L,
+    "foul" = 8L, "ball_recovery" = 9L, "other" = 0L
   )
   dt[, action_type_num := action_type_map[action_type]]
-  dt[is.na(action_type_num), action_type_num := 0]
+  dt[is.na(action_type_num), action_type_num := 0L]
 
-  # Create lagged features within each match using data.table shift
+  # Pre-compute all lagged team_ids at once for same_team calculation
+  for (lag in 1:n_prev) {
+    dt[, (paste0("team_id_prev", lag)) := shift(team_id, lag, type = "lag"), by = match_id]
+  }
+
+  # Create all lagged features in one grouped operation per match
+  # This is much faster than multiple separate shift calls
+  lag_cols_base <- c("result_success", "dx", "dy", "action_type_num")
+
   for (lag in 1:n_prev) {
     suffix <- paste0("_prev", lag)
+    new_cols <- paste0(lag_cols_base, suffix)
 
-    dt[, (paste0("result", suffix)) := shift(result_success, lag, type = "lag"), by = match_id]
-    dt[, (paste0("dx", suffix)) := shift(dx, lag, type = "lag"), by = match_id]
-    dt[, (paste0("dy", suffix)) := shift(dy, lag, type = "lag"), by = match_id]
-    dt[, (paste0("action_type_num", suffix)) := shift(action_type_num, lag, type = "lag"), by = match_id]
+    # Single shift operation for all base columns at this lag
+    dt[, (new_cols) := lapply(.SD, function(x) shift(x, lag, type = "lag")),
+       by = match_id, .SDcols = lag_cols_base]
 
-    # Same team indicator
-    dt[, (paste0("team_id_prev", lag)) := shift(team_id, lag, type = "lag"), by = match_id]
-    dt[, (paste0("same_team", suffix)) := as.integer(team_id == get(paste0("team_id_prev", lag)))]
-    dt[, (paste0("team_id_prev", lag)) := NULL]
+    # Same team indicator (vectorized)
+    prev_team_col <- paste0("team_id_prev", lag)
+    dt[, (paste0("same_team", suffix)) := as.integer(team_id == get(prev_team_col))]
+  }
 
-    # One-hot encode previous action types (using shared constant)
-    for (atype in EPV_SEQUENCE_ACTION_TYPES) {
-      type_num <- action_type_map[atype]
-      dt[, (paste0("is_", atype, suffix)) := as.integer(get(paste0("action_type_num", suffix)) == type_num)]
+  # One-hot encode previous action types (vectorized for all lags and types)
+  atype_nums <- action_type_map[EPV_SEQUENCE_ACTION_TYPES]
+  for (lag in 1:n_prev) {
+    suffix <- paste0("_prev", lag)
+    action_num_col <- paste0("action_type_num", suffix)
+    action_nums <- dt[[action_num_col]]
+
+    for (i in seq_along(EPV_SEQUENCE_ACTION_TYPES)) {
+      atype <- EPV_SEQUENCE_ACTION_TYPES[i]
+      dt[, (paste0("is_", atype, suffix)) := as.integer(action_nums == atype_nums[i])]
     }
+  }
+
+  # Cleanup temp team_id columns
+  for (lag in 1:n_prev) {
+    dt[, (paste0("team_id_prev", lag)) := NULL]
   }
 
   # =========================================================================
@@ -167,15 +189,13 @@ create_epv_features <- function(spadl_actions, n_prev = 3) {
   # CLEANUP
   # =========================================================================
   # Remove temporary columns
-  dt[, action_type_num := NULL]
-  for (lag in 1:n_prev) {
-    dt[, (paste0("action_type_num_prev", lag)) := NULL]
-  }
+  temp_cols <- c("action_type_num", paste0("action_type_num_prev", 1:n_prev))
+  dt[, (temp_cols) := NULL]
 
-  # Replace NAs with 0 for numeric columns
-  numeric_cols <- names(dt)[sapply(dt, is.numeric)]
-  for (col in numeric_cols) {
-    data.table::set(dt, which(is.na(dt[[col]])), col, 0)
+  # Replace NAs with 0 for numeric columns using setnafill (much faster)
+  numeric_cols <- names(dt)[vapply(dt, is.numeric, logical(1))]
+  if (length(numeric_cols) > 0) {
+    data.table::setnafill(dt, fill = 0, cols = numeric_cols)
   }
 
   cli::cli_alert_success("Created {ncol(dt)} features for {nrow(dt)} actions")

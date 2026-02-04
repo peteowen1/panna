@@ -2,7 +2,7 @@
 % Please edit documentation in R/epv_model.R
 \name{create_epv_labels_legacy}
 \alias{create_epv_labels_legacy}
-\title{Create EPV Labels (Legacy)}
+\title{Deprecated: Create EPV Labels (Legacy Format)}
 \usage{
 create_epv_labels_legacy(spadl_actions)
 }
@@ -13,6 +13,12 @@ create_epv_labels_legacy(spadl_actions)
 Data frame with scores_this_possession and concedes_next_possession
 }
 \description{
+\ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#deprecated}{\figure{lifecycle-deprecated.svg}{options: alt='[Deprecated]'}}}{\strong{[Deprecated]}}
+
 Creates labels in the old format for backward compatibility.
+Use \code{\link[=create_next_goal_labels]{create_next_goal_labels()}} for the current approach.
+}
+\seealso{
+\code{\link[=create_next_goal_labels]{create_next_goal_labels()}}
 }
 \keyword{internal}

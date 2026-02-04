@@ -4,10 +4,10 @@
 \alias{merge_duel_rows}
 \title{Merge Duplicate Duel Rows}
 \usage{
-merge_duel_rows(spadl_dt)
+merge_duel_rows(dt)
 }
 \arguments{
-\item{spadl_dt}{Data.table in SPADL format with duel actions}
+\item{dt}{Data.table in SPADL format with duel actions (modified in place)}
 }
 \value{
 Data.table with merged duel rows and new columns:
@@ -20,5 +20,6 @@ Data.table with merged duel rows and new columns:
 Opta records both participants of a duel as separate rows (winner and loser
 perspectives). This function merges these into single rows, keeping the
 winner's row and adding opponent information from the loser's row.
+Fully vectorized with data.table for speed.
 }
 \keyword{internal}

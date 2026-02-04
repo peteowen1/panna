@@ -16,10 +16,13 @@ SPADL actions with credit columns added:
 \itemize{
 \item player_credit: EPV credit to acting player
 \item receiver_credit: EPV credit to receiver (for turnovers, this is positive)
+\item opponent_credit: EPV credit to duel loser (negative, via opponent_player_id)
 \item xpass: Pass completion probability (for passes)
 }
 }
 \description{
 Assigns EPV credit/blame to players. For turnovers (possession changes),
 splits the value between the player who lost the ball and who gained it.
+For merged duels (Aerials, Take On vs Tackle), assigns zero-sum credit
+where winner gain = loser loss.
 }

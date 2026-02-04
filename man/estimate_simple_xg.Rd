@@ -17,5 +17,11 @@ Estimated xG values
 \description{
 Simple xG estimation based on distance and angle to goal.
 Used as fallback when no xG model is available.
+Calibrated to produce ~11\% mean xG (matching real shot distributions):
+\itemize{
+\item 6 yard box (dist ~6): xG ~ 0.35-0.40
+\item Penalty spot (dist ~12): xG ~ 0.15-0.20
+\item Edge of box (dist ~18): xG ~ 0.06-0.10
+\item Long range (dist ~30): xG ~ 0.02-0.03
 }
-\keyword{internal}
+}

@@ -4,13 +4,16 @@
 \alias{convert_opta_to_spadl}
 \title{Convert Opta Match Events to SPADL Format}
 \usage{
-convert_opta_to_spadl(opta_events, normalize_direction = TRUE)
+convert_opta_to_spadl(opta_events, normalize_direction = FALSE)
 }
 \arguments{
 \item{opta_events}{Data frame from load_opta_match_events()}
 
-\item{normalize_direction}{Whether to flip coordinates so attacking team
-always goes left-to-right (default TRUE)}
+\item{normalize_direction}{Whether to attempt coordinate normalization. Set
+to FALSE (default) to preserve Opta's team-relative coordinates, which is
+correct for EPV. Set to TRUE only for visualizations requiring unified
+pitch coordinates (note: the normalization heuristic may not work well
+with team-relative data).}
 }
 \value{
 Data frame in SPADL format with columns:
@@ -26,6 +29,7 @@ Data frame in SPADL format with columns:
 \item end_x, end_y: Ending coordinates (0-100)
 \item action_type: Standardized action type
 \item action_type_id: Numeric action type code
+\item opta_type_id: Original Opta type_id (e.g., 13=saved, 15=missed, 16=goal)
 \item result: "success" or "fail"
 \item bodypart: "foot", "head", or "other"
 \item receiver_player_id: Player who receives/intercepts (from next action)
@@ -36,8 +40,10 @@ Data frame in SPADL format with columns:
 }
 \description{
 Transforms Opta event data into a standardized SPADL-like format suitable
-for EPV modeling. Normalizes coordinates so teams always attack left-to-right
-and standardizes action types across different event categories.
+for EPV modeling. Coordinates are preserved in Opta's native team-relative
+format where each team's actions are from their own perspective (x=0 is own
+goal, x=100 is opponent's goal). This is the correct format for EPV models
+where each action is evaluated from the ball-carrier's perspective.
 }
 \examples{
 \dontrun{

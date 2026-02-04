@@ -2,8 +2,6 @@
 % Please edit documentation in R/epv_model.R
 \name{fit_epv_model}
 \alias{fit_epv_model}
-\alias{fit_epv_scoring_model}
-\alias{fit_epv_conceding_model}
 \title{Fit EPV Model}
 \usage{
 fit_epv_model(
@@ -12,17 +10,13 @@ fit_epv_model(
   method = c("goal", "xg"),
   nfolds = 5,
   max_depth = 6,
-  eta = 0.05,
+  eta = 0.1,
   subsample = 0.8,
   colsample_bytree = 0.8,
   nrounds = 1000,
   early_stopping_rounds = 50,
   verbose = 1
 )
-
-fit_epv_scoring_model(...)
-
-fit_epv_conceding_model(...)
 }
 \arguments{
 \item{features}{Data frame from create_epv_features()}
@@ -46,8 +40,6 @@ fit_epv_conceding_model(...)
 \item{early_stopping_rounds}{Early stopping patience (default 50)}
 
 \item{verbose}{Print progress (default 1)}
-
-\item{...}{Arguments passed to deprecated wrappers (for internal use)}
 }
 \value{
 Fitted EPV model with metadata

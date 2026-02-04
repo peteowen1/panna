@@ -4,17 +4,23 @@
 \alias{normalize_spadl_coordinates}
 \title{Normalize SPADL Coordinates}
 \usage{
-normalize_spadl_coordinates(spadl)
+normalize_spadl_coordinates(dt)
 }
 \arguments{
-\item{spadl}{Data frame in SPADL format}
+\item{dt}{Data.table in SPADL format (modified in place)}
 }
 \value{
-SPADL data frame with normalized coordinates
+Data.table with normalized coordinates (same object, modified)
 }
 \description{
-Flips coordinates so the attacking team always attacks left-to-right
-(toward x = 100). Uses period and team position to determine direction.
-Optimized with data.table.
+WARNING: This function uses a heuristic that doesn't work well with Opta's
+team-relative coordinate system. For EPV modeling, use normalize_direction=FALSE
+(the default) to preserve Opta's native coordinates where each team's actions
+are from their own perspective.
+}
+\details{
+Attempts to flip coordinates so all teams attack toward x=100. Uses mean
+position per team/period as a heuristic, but this fails when both teams have
+similar mean positions or when coordinates are team-relative.
 }
 \keyword{internal}

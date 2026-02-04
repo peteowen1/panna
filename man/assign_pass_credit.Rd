@@ -2,7 +2,7 @@
 % Please edit documentation in R/epv_model.R
 \name{assign_pass_credit}
 \alias{assign_pass_credit}
-\title{Assign Pass Credit (Legacy)}
+\title{Deprecated: Assign Pass Credit}
 \usage{
 assign_pass_credit(spadl_with_epv, xpass_model)
 }
@@ -15,5 +15,11 @@ assign_pass_credit(spadl_with_epv, xpass_model)
 SPADL with credit columns
 }
 \description{
-Legacy function for backward compatibility. Use assign_epv_credit() instead.
+\ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#deprecated}{\figure{lifecycle-deprecated.svg}{options: alt='[Deprecated]'}}}{\strong{[Deprecated]}}
+
+Legacy function for backward compatibility.
+Use \code{\link[=assign_epv_credit]{assign_epv_credit()}} instead for proper EPV credit assignment.
+}
+\seealso{
+\code{\link[=assign_epv_credit]{assign_epv_credit()}}
 }
