@@ -19,3 +19,4 @@ This avoids rate limiting issues by using pre-scraped data.
 Can use any stat type (summary, passing, defense, possession) - all contain
 the core player/match info needed for lineups.
 }
+\keyword{internal}

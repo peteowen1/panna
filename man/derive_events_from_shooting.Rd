@@ -17,3 +17,4 @@ When match summary data isn't available in the pre-scraped cache,
 we can derive goal events from the shooting data (which IS available).
 This gives us goal timing for splint creation, though not substitution timing.
 }
+\keyword{internal}

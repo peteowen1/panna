@@ -36,3 +36,4 @@ spadl <- convert_opta_to_spadl(events)
 pass_features <- prepare_passes_for_xpass(spadl)
 }
 }
+\keyword{internal}

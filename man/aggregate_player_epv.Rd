@@ -22,6 +22,7 @@ Data frame with player EPV statistics:
 \item epv_p90: EPV per 90 minutes
 \item epv_as_actor: EPV from own actions (player_credit)
 \item epv_as_receiver: EPV from receiving (successful passes + turnovers won)
+\item epv_duel_blame: EPV from losing duels (negative, summed from opponent_credit)
 \item epv_passing, epv_shooting, epv_dribbling, epv_defending
 }
 }

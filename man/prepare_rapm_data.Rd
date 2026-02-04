@@ -34,3 +34,4 @@ List with all model inputs
 Creates design matrix with covariates for ridge regression.
 This is the primary RAPM data preparation function.
 }
+\keyword{internal}

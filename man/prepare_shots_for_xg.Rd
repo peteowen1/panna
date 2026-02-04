@@ -32,3 +32,4 @@ shots <- load_opta_shot_events("ENG", "2024-2025")
 shot_features <- prepare_shots_for_xg(shots)
 }
 }
+\keyword{internal}

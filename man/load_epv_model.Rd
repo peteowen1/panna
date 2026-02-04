@@ -7,7 +7,7 @@
 load_epv_model(path = NULL)
 }
 \arguments{
-\item{path}{Directory containing model. If NULL, uses pannadata/models/}
+\item{path}{Directory containing model. If NULL, uses pannadata/models/opta/}
 }
 \value{
 EPV model

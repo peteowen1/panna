@@ -17,3 +17,4 @@ Cleaned data frame with match events
 \description{
 Cleans event data (goals, substitutions) with timing.
 }
+\keyword{internal}
