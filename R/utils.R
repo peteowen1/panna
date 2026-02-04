@@ -51,8 +51,13 @@ safe_divide <- function(x, y, default = 0) {
 #' validate_seasons(c("2022-2023", "2023-2024"))
 validate_seasons <- function(seasons) {
   # Check format
-if (!all(grepl("^\\d{4}-\\d{4}$", seasons))) {
-    stop("Seasons must be in format 'YYYY-YYYY' (e.g., '2023-2024')")
+  if (!all(grepl("^\\d{4}-\\d{4}$", seasons))) {
+    bad_seasons <- seasons[!grepl("^\\d{4}-\\d{4}$", seasons)]
+    cli::cli_abort(c(
+      "Seasons must be in format 'YYYY-YYYY'.",
+      "x" = "Invalid: {.val {head(bad_seasons, 3)}}",
+      "i" = "Example: {.val 2023-2024}"
+    ))
   }
 
   # Extract start years
@@ -60,13 +65,22 @@ if (!all(grepl("^\\d{4}-\\d{4}$", seasons))) {
 
   # Check minimum year (FBref detailed data starts 2017-18)
   if (any(start_years < 2017)) {
-    stop("FBref detailed data is only available from 2017-18 season onwards")
+    bad_seasons <- seasons[start_years < 2017]
+    cli::cli_abort(c(
+      "FBref detailed data is only available from 2017-18 season onwards.",
+      "x" = "Invalid: {.val {head(bad_seasons, 3)}}"
+    ))
   }
 
   # Check end year is start + 1
   end_years <- as.numeric(substr(seasons, 6, 9))
   if (!all(end_years == start_years + 1)) {
-    stop("Season end year must be start year + 1 (e.g., '2023-2024')")
+    bad_seasons <- seasons[end_years != start_years + 1]
+    cli::cli_abort(c(
+      "Season end year must be start year + 1.",
+      "x" = "Invalid: {.val {head(bad_seasons, 3)}}",
+      "i" = "Example: {.val 2023-2024}"
+    ))
   }
 
   TRUE
@@ -81,10 +95,7 @@ if (!all(grepl("^\\d{4}-\\d{4}$", seasons))) {
 #' @param names Character vector of player names
 #'
 #' @return Character vector of standardized names
-#' @export
-#'
-#' @examples
-#' standardize_player_names(c("Mohamed Salah", "M. Salah", "SALAH"))
+#' @keywords internal
 standardize_player_names <- function(names) {
   # Memoization: process unique names once, then lookup
   unique_names <- unique(names)
@@ -174,10 +185,7 @@ extract_fbref_player_id <- function(hrefs) {
 #' @param names Character vector of team names
 #'
 #' @return Character vector of standardized names
-#' @export
-#'
-#' @examples
-#' standardize_team_names(c("Manchester Utd", "Man United", "Manchester United"))
+#' @keywords internal
 standardize_team_names <- function(names) {
  names <- trimws(names)
 
@@ -255,6 +263,71 @@ create_player_id <- function(player_name, fbref_id = NULL) {
   id <- gsub("_+", "_", id)
   id <- gsub("^_|_$", "", id)
   id
+}
+
+
+#' Validate data frame input
+#'
+#' Validates that input is a non-empty data frame with required columns.
+#' Throws informative errors using cli package when validation fails.
+#'
+#' @param data Data frame to validate
+#' @param required_cols Character vector of required column names
+#' @param arg_name Name of the argument (for error messages)
+#' @param min_rows Minimum number of rows required (default 1)
+#'
+#' @return TRUE invisibly if valid, otherwise throws an error
+#' @export
+#'
+#' @examples
+#' df <- data.frame(player_name = "Messi", minutes = 90)
+#' validate_dataframe(df, c("player_name", "minutes"))
+#' # Returns TRUE
+#'
+#' \dontrun{
+#' # These will throw errors:
+#' validate_dataframe(NULL, c("player_name"))
+#' validate_dataframe(data.frame(), c("player_name"))
+#' validate_dataframe(df, c("nonexistent_col"))
+#' }
+validate_dataframe <- function(data, required_cols = NULL, arg_name = "data", min_rows = 1) {
+  # Check NULL
+	if (is.null(data)) {
+    cli::cli_abort(c(
+      "{.arg {arg_name}} cannot be NULL.",
+      "i" = "Please provide a valid data frame."
+    ))
+  }
+
+  # Check is data frame
+  if (!is.data.frame(data)) {
+    cli::cli_abort(c(
+      "{.arg {arg_name}} must be a data frame.",
+      "x" = "Got {.cls {class(data)}} instead."
+    ))
+  }
+
+  # Check minimum rows
+  if (nrow(data) < min_rows) {
+    cli::cli_abort(c(
+      "{.arg {arg_name}} must have at least {min_rows} row{?s}.",
+      "x" = "Got {nrow(data)} row{?s}."
+    ))
+  }
+
+  # Check required columns
+  if (!is.null(required_cols) && length(required_cols) > 0) {
+    missing <- setdiff(required_cols, names(data))
+    if (length(missing) > 0) {
+      cli::cli_abort(c(
+        "{.arg {arg_name}} is missing required column{?s}.",
+        "x" = "Missing: {.field {missing}}",
+        "i" = "Available: {.field {head(names(data), 10)}}{if(ncol(data) > 10) '...' else ''}"
+      ))
+    }
+  }
+
+  invisible(TRUE)
 }
 
 
@@ -691,4 +764,136 @@ fetch_with_retry <- function(url, max_retries = 3, base_delay = 1, max_delay = 3
   result <- NULL
   attr(result, "max_retries_exceeded") <- TRUE
   result
+}
+
+
+#' Build SQL WHERE clause from filters
+#'
+#' Constructs a SQL WHERE clause from a named list of filter conditions.
+#' Values are properly quoted for SQL safety. NULL values are skipped.
+#'
+#' @param filters Named list where names are column names and values are
+#'   filter values. Values can be character (quoted), numeric (unquoted),
+#'   or NULL (skipped).
+#' @param prefix Whether to include "WHERE " prefix. If FALSE, returns just
+#'   the conditions joined by AND.
+#'
+#' @return Character string with SQL WHERE clause, or empty string if no filters.
+#' @export
+#'
+#' @examples
+#' build_where_clause(list(league = "ENG", season = "2023-2024"))
+#' # Returns: "WHERE league = 'ENG' AND season = '2023-2024'"
+#'
+#' build_where_clause(list(league = "ENG", min_goals = 5))
+#' # Returns: "WHERE league = 'ENG' AND min_goals = 5"
+#'
+#' build_where_clause(list(league = NULL, season = "2023-2024"))
+#' # Returns: "WHERE season = '2023-2024'"
+#'
+#' build_where_clause(list())
+#' # Returns: ""
+build_where_clause <- function(filters, prefix = TRUE) {
+  if (is.null(filters) || length(filters) == 0) {
+    return("")
+  }
+
+  # Remove NULL values
+  filters <- Filter(Negate(is.null), filters)
+
+  if (length(filters) == 0) {
+    return("")
+  }
+
+  # Build conditions
+  conditions <- vapply(names(filters), function(col_name) {
+    value <- filters[[col_name]]
+    if (is.character(value)) {
+      # Quote strings
+      sprintf("%s = '%s'", col_name, value)
+    } else if (is.numeric(value)) {
+      # Don't quote numbers
+      sprintf("%s = %s", col_name, value)
+    } else {
+      # Convert to string and quote
+      sprintf("%s = '%s'", col_name, as.character(value))
+    }
+  }, character(1))
+
+  where_sql <- paste(conditions, collapse = " AND ")
+
+  if (prefix && nzchar(where_sql)) {
+    paste("WHERE", where_sql)
+  } else {
+    where_sql
+  }
+}
+
+
+#' Standardize data frame column names using a mapping
+#'
+#' Renames columns in a data frame or data.table if alternative names exist.
+#' This handles common variations in column naming across different data sources.
+#' For data.table objects, uses setnames() for efficient in-place renaming.
+#'
+#' @param data Data frame or data.table to standardize
+#' @param col_map Named list where names are canonical column names and
+#'   values are character vectors of alternative names to look for.
+#'
+#' @return Data frame/data.table with standardized column names
+#' @keywords internal
+standardize_data_columns <- function(data, col_map) {
+  if (is.null(data) || !is.data.frame(data)) {
+    return(data)
+  }
+
+  is_dt <- inherits(data, "data.table")
+  current_names <- names(data)
+
+  for (canonical_name in names(col_map)) {
+    # Skip if canonical name already exists
+    if (canonical_name %in% current_names) {
+      next
+    }
+
+    # Look for alternatives
+    alternatives <- col_map[[canonical_name]]
+    for (alt_name in alternatives) {
+      if (alt_name %in% current_names) {
+        # Found an alternative, rename it
+        if (is_dt) {
+          data.table::setnames(data, alt_name, canonical_name)
+        } else {
+          names(data)[names(data) == alt_name] <- canonical_name
+        }
+        current_names <- names(data)  # Update for next iteration
+        break
+      }
+    }
+  }
+
+  data
+}
+
+
+#' Default column mapping for FBref/Opta data
+#'
+#' Standard column name variations encountered across different data sources.
+#'
+#' @return Named list of canonical column names to alternatives
+#' @export
+#'
+#' @examples
+#' col_map <- default_column_map()
+#' names(col_map)
+default_column_map <- function() {
+  list(
+    team = c("squad", "team_name"),
+    player_name = c("player"),
+    minutes = c("min", "mins_played", "minsPlayed"),
+    position = c("pos"),
+    player_id = c("playerId"),
+    team_id = c("teamId"),
+    match_id = c("matchId")
+  )
 }

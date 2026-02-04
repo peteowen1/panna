@@ -3,376 +3,187 @@
 # SPM predicts RAPM ratings from box score statistics.
 # This serves as the Bayesian prior for RAPM estimation, helping to
 # separate players who always appear together (teammate confounding).
+#
+# For Opta-specific SPM functions, see spm_opta.R
 
 
-#' Aggregate player statistics to per-90 rates
+# =============================================================================
+# Internal Helper Functions for aggregate_player_stats()
+# =============================================================================
+
+#' Aggregate a single stat table by player_id
 #'
-#' Combines match-level statistics into per-90-minute rates for each player.
-#' Extracts comprehensive features from all available stat tables for SPM modeling.
-#' Includes derived features like success rates and ratios.
+#' Internal helper to aggregate match-level stats to player totals.
 #'
-#' @param stats_summary Summary stats data frame from process_all_data
-#' @param stats_passing Passing stats data frame (optional)
-#' @param stats_defense Defense stats data frame (optional)
-#' @param stats_possession Possession stats data frame (optional)
-#' @param stats_misc Miscellaneous stats data frame (optional) - fouls, aerials, recoveries
-#' @param stats_passing_types Passing types data frame (optional) - through balls, switches
-#' @param stats_keeper Goalkeeper stats data frame (optional) - saves, post-shot xG
-#' @param min_minutes Minimum total minutes for inclusion
+#' @param stats_df Data frame with player stats
+#' @param col_mapping Named vector mapping output col names to input col names
 #'
-#' @return Data frame with per-90 rates for each player
-#' @export
-aggregate_player_stats <- function(stats_summary,
-                                    stats_passing = NULL,
-                                    stats_defense = NULL,
-                                    stats_possession = NULL,
-                                    stats_misc = NULL,
-                                    stats_passing_types = NULL,
-                                    stats_keeper = NULL,
-                                    min_minutes = 450) {
-  if (is.null(stats_summary) || nrow(stats_summary) == 0) {
-    warning("No summary stats provided")
+#' @return Data frame aggregated by player_id with renamed columns
+#' @keywords internal
+.aggregate_stat_table <- function(stats_df, col_mapping) {
+  if (is.null(stats_df) || nrow(stats_df) == 0) {
     return(NULL)
   }
 
-  progress_msg(sprintf("Aggregating %d player-match rows...", nrow(stats_summary)))
+  existing_cols <- col_mapping[col_mapping %in% names(stats_df)]
+  if (length(existing_cols) == 0) {
+    return(NULL)
+  }
 
-  # ==========================================================================
-  # CREATE PLAYER_ID FOR CONSISTENT MATCHING
-  # ==========================================================================
-  # ALWAYS use clean_player_name() to normalize case/whitespace variations
-  # This ensures "kylian Mbappé" and "Kylian Mbappé" map to same player
-  # We recalculate from player_name even if player_id exists, to ensure
+  # Create player_id for consistent matching
+  stats_df$player_id <- clean_player_name(stats_df$player_name)
 
-  # consistent normalization (cached data may have old player_id values)
-  stats_summary$player_id <- clean_player_name(stats_summary$player_name)
-
-  # Create lookup for canonical player_name (most common spelling per player_id)
-  # First clean all player names (remove non-breaking spaces, trim whitespace)
-  cleaned_names <- gsub("\u00A0", " ", stats_summary$player_name)
-  cleaned_names <- trimws(cleaned_names)
-
-  player_name_lookup <- stats::aggregate(
-    cleaned_names,
-    by = list(player_id = stats_summary$player_id),
-    FUN = function(x) {
-      # Return most frequent cleaned name variant, with proper title case
-      tbl <- table(x)
-      best_name <- names(tbl)[which.max(tbl)]
-      # Apply title case for consistent capitalization
-      tools::toTitleCase(tolower(best_name))
-    }
+  agg <- stats::aggregate(
+    stats_df[, existing_cols, drop = FALSE],
+    by = list(player_id = stats_df$player_id),
+    FUN = function(x) sum(as.numeric(x), na.rm = TRUE)
   )
-  names(player_name_lookup)[2] <- "player_name"
 
-  # ==========================================================================
-  # SUMMARY STATS - pannadata column mapping
-  # ==========================================================================
-  summary_cols <- c(
-    # Minutes and basic
+  rename_columns(agg, existing_cols)
+}
+
+
+#' Get summary stats column mapping
+#' @keywords internal
+.get_summary_col_mapping <- function() {
+  c(
     total_minutes = "min",
-    # Goals and shots
     goals = "gls", assists = "ast", pens = "pk", pen_att = "p_katt",
     shots = "sh", shots_on_target = "so_t",
-    # Cards
     yellow_cards = "crd_y", red_cards = "crd_r",
-    # Basic actions
     touches = "touches", tackles = "tkl", interceptions = "int", blocks = "blocks",
-    # Expected stats
     xg = "x_g", npxg = "npx_g", xa = "x_ag",
-    # Shot-creating actions
     sca = "sca", gca = "gca",
-    # Passing
     passes_completed = "cmp", passes_attempted = "att",
     pass_completion_pct = "cmp_percent", progressive_passes = "prg_p",
-    # Carries
     carries = "carries", progressive_carries = "prg_c",
-    # Take-ons (att_2 is take-on attempts in pannadata)
     take_ons_att = "att_2", take_ons_succ = "succ"
   )
-
-  existing_summary <- summary_cols[summary_cols %in% names(stats_summary)]
-
-  # Single data.table pass for aggregation, match count, and position mode
-  dt <- data.table::as.data.table(stats_summary)
-
-  # Build aggregation expressions
-  agg_exprs <- lapply(existing_summary, function(col) {
-    bquote(sum(as.numeric(.(as.name(col))), na.rm = TRUE))
-  })
-  names(agg_exprs) <- existing_summary
-  agg_exprs$n_matches <- quote(.N)
-
-  # Add position mode if available
-  has_pos <- "pos" %in% names(stats_summary)
-  if (has_pos) {
-    agg_exprs$primary_position <- quote({
-      valid_pos <- pos[!is.na(pos) & pos != ""]
-      if (length(valid_pos) == 0) NA_character_
-      else names(which.max(table(valid_pos)))
-    })
-  }
-
-  player_stats <- dt[, eval(as.call(c(quote(list), agg_exprs))), by = player_id]
-  player_stats <- as.data.frame(player_stats)
-
-  # Add canonical player_name from lookup
-  player_stats <- merge(player_stats, player_name_lookup, by = "player_id", all.x = TRUE)
-
-  # Rename columns using helper
-  player_stats <- rename_columns(player_stats, existing_summary)
+}
 
 
-  # Filter by min minutes
-  player_stats <- player_stats[player_stats$total_minutes >= min_minutes, ]
-  if (nrow(player_stats) == 0) {
-    warning("No players meet minimum minutes threshold")
-    return(NULL)
-  }
+#' Get passing stats column mapping
+#' @keywords internal
+.get_passing_col_mapping <- function() {
+  c(
+    pass_cmp = "cmp", pass_att = "att", pass_pct = "cmp_percent",
+    pass_tot_dist = "tot_dist", pass_prg_dist = "prg_dist",
+    pass_short_cmp = "cmp_2", pass_short_att = "att_2", pass_short_pct = "cmp_percent_2",
+    pass_med_cmp = "cmp_3", pass_med_att = "att_3", pass_med_pct = "cmp_percent_3",
+    pass_long_cmp = "cmp_4", pass_long_att = "att_4", pass_long_pct = "cmp_percent_4",
+    key_passes = "kp", final_third_passes = "x1_3",
+    passes_into_box = "ppa", crosses_into_box = "crs_pa",
+    pass_xa = "x_ag", pass_xa2 = "x_a",
+    progressive_passes_p = "prg_p"
+  )
+}
 
-  mins_per_90 <- player_stats$total_minutes / 90
-  player_stats$mins_per_90 <- mins_per_90
 
-  # ==========================================================================
-  # PASSING STATS - pannadata columns
-  # ==========================================================================
-  if (!is.null(stats_passing) && nrow(stats_passing) > 0) {
-    passing_cols <- c(
-      # Totals
-      pass_cmp = "cmp", pass_att = "att", pass_pct = "cmp_percent",
-      pass_tot_dist = "tot_dist", pass_prg_dist = "prg_dist",
-      # Short passes
-      pass_short_cmp = "cmp_2", pass_short_att = "att_2", pass_short_pct = "cmp_percent_2",
-      # Medium passes
-      pass_med_cmp = "cmp_3", pass_med_att = "att_3", pass_med_pct = "cmp_percent_3",
-      # Long passes
-      pass_long_cmp = "cmp_4", pass_long_att = "att_4", pass_long_pct = "cmp_percent_4",
-      # Key passes and assists
-      key_passes = "kp", final_third_passes = "x1_3",
-      passes_into_box = "ppa", crosses_into_box = "crs_pa",
-      pass_xa = "x_ag", pass_xa2 = "x_a",
-      progressive_passes_p = "prg_p"
-    )
+#' Get defense stats column mapping
+#' @keywords internal
+.get_defense_col_mapping <- function() {
+  c(
+    tackles_def = "tkl", tackles_won = "tkl_w",
+    tackles_def_3rd = "def_3rd", tackles_mid_3rd = "mid_3rd",
+    tackles_att_3rd = "att_3rd",
+    challenges_tkl = "tkl_2", challenges_att = "att",
+    challenges_pct = "tkl_percent", challenges_lost = "lost",
+    blocks_def = "blocks", blocks_shots = "sh", blocks_pass = "pass",
+    interceptions_def = "int", tkl_plus_int = "tkl_int",
+    clearances = "clr", errors = "err"
+  )
+}
 
-    existing_pass <- passing_cols[passing_cols %in% names(stats_passing)]
 
-    if (length(existing_pass) > 0) {
-      # Create player_id for passing stats
-      stats_passing$player_id <- clean_player_name(stats_passing$player_name)
+#' Get possession stats column mapping
+#' @keywords internal
+.get_possession_col_mapping <- function() {
+  c(
+    touches_poss = "touches",
+    touches_def_pen = "def_pen", touches_def_3rd = "def_3rd",
+    touches_mid_3rd = "mid_3rd", touches_att_3rd = "att_3rd",
+    touches_att_pen = "att_pen", touches_live = "live",
+    take_ons_att_poss = "att", take_ons_succ_poss = "succ",
+    take_ons_pct = "succ_percent", take_ons_tkld = "tkld",
+    carries_poss = "carries",
+    carry_dist_total = "tot_dist", carry_dist_prg = "prg_dist",
+    carries_prg = "prg_c",
+    carries_final_3rd = "x1_3", carries_into_box = "cpa",
+    miscontrols = "mis", dispossessed = "dis",
+    passes_received = "rec", prg_passes_received = "prg_r"
+  )
+}
 
-      pass_agg <- stats::aggregate(
-        stats_passing[, existing_pass, drop = FALSE],
-        by = list(player_id = stats_passing$player_id),
-        FUN = function(x) sum(as.numeric(x), na.rm = TRUE)
-      )
 
-      pass_agg <- rename_columns(pass_agg, existing_pass)
+#' Get misc stats column mapping
+#' @keywords internal
+.get_misc_col_mapping <- function() {
+  c(
+    yellow_cards_misc = "crd_y", red_cards_misc = "crd_r",
+    second_yellows = "x2crd_y",
+    fouls_committed = "fls", fouls_drawn = "fld",
+    offsides = "off", crosses_misc = "crs",
+    tackles_won_misc = "tklw",
+    penalties_won = "pkwon", penalties_conceded = "pkcon",
+    own_goals = "og",
+    recoveries = "recov",
+    aerials_won = "won_aerial", aerials_lost = "lost_aerial",
+    aerials_pct = "won_percent_aerial"
+  )
+}
 
-      player_stats <- merge(player_stats, pass_agg, by = "player_id", all.x = TRUE)
-    }
-  }
 
-  # ==========================================================================
-  # DEFENSE STATS - pannadata columns
-  # ==========================================================================
-  if (!is.null(stats_defense) && nrow(stats_defense) > 0) {
-    defense_cols <- c(
-      # Tackles
-      tackles_def = "tkl", tackles_won = "tkl_w",
-      tackles_def_3rd = "def_3rd", tackles_mid_3rd = "mid_3rd",
-      tackles_att_3rd = "att_3rd",
-      # Challenges (tkl_2 = dribblers tackled, att = challenges attempted)
-      challenges_tkl = "tkl_2", challenges_att = "att",
-      challenges_pct = "tkl_percent", challenges_lost = "lost",
-      # Blocks
-      blocks_def = "blocks", blocks_shots = "sh", blocks_pass = "pass",
-      # Other
-      interceptions_def = "int", tkl_plus_int = "tkl_int",
-      clearances = "clr", errors = "err"
-    )
+#' Get passing types column mapping
+#' @keywords internal
+.get_passing_types_col_mapping <- function() {
+  c(
+    passes_live = "live_pass_types",
+    passes_dead = "dead_pass_types",
+    passes_fk = "fk_pass_types",
+    through_balls = "tb_pass_types",
+    switches = "sw_pass_types",
+    crosses_pt = "crs_pass_types",
+    throw_ins = "ti_pass_types",
+    corner_kicks = "ck_pass_types",
+    corners_inswing = "in_corner_kicks",
+    corners_outswing = "out_corner_kicks",
+    corners_straight = "str_corner_kicks",
+    passes_offside = "off_outcomes",
+    passes_blocked = "blocks_outcomes"
+  )
+}
 
-    existing_def <- defense_cols[defense_cols %in% names(stats_defense)]
 
-    if (length(existing_def) > 0) {
-      # Create player_id for defense stats
-      stats_defense$player_id <- clean_player_name(stats_defense$player_name)
+#' Get keeper stats column mapping
+#' @keywords internal
+.get_keeper_col_mapping <- function() {
+  c(
+    shots_on_target_against = "so_ta",
+    goals_against = "ga",
+    saves = "saves",
+    save_pct = "save_percent",
+    psxg = "ps_xg",
+    gk_launch_pct = "launch_percent_launched",
+    gk_launch_avg_len = "avg_len_launched",
+    gk_opp_passes = "opp_opp",
+    gk_passes_stopped = "stp_opp",
+    gk_stop_pct = "stp_percent_opp",
+    gk_sweeper_actions = "att_sweeper",
+    gk_sweeper_dist = "avg_dist_sweeper"
+  )
+}
 
-      def_agg <- stats::aggregate(
-        stats_defense[, existing_def, drop = FALSE],
-        by = list(player_id = stats_defense$player_id),
-        FUN = function(x) sum(as.numeric(x), na.rm = TRUE)
-      )
 
-      def_agg <- rename_columns(def_agg, existing_def)
-
-      player_stats <- merge(player_stats, def_agg, by = "player_id", all.x = TRUE)
-    }
-  }
-
-  # ==========================================================================
-  # POSSESSION STATS - pannadata columns
-  # ==========================================================================
-  if (!is.null(stats_possession) && nrow(stats_possession) > 0) {
-    possession_cols <- c(
-      # Touches by location
-      touches_poss = "touches",
-      touches_def_pen = "def_pen", touches_def_3rd = "def_3rd",
-      touches_mid_3rd = "mid_3rd", touches_att_3rd = "att_3rd",
-      touches_att_pen = "att_pen", touches_live = "live",
-      # Take-ons
-      take_ons_att_poss = "att", take_ons_succ_poss = "succ",
-      take_ons_pct = "succ_percent", take_ons_tkld = "tkld",
-      # Carries
-      carries_poss = "carries",
-      carry_dist_total = "tot_dist", carry_dist_prg = "prg_dist",
-      carries_prg = "prg_c",
-      carries_final_3rd = "x1_3", carries_into_box = "cpa",
-      miscontrols = "mis", dispossessed = "dis",
-      # Receiving
-      passes_received = "rec", prg_passes_received = "prg_r"
-    )
-
-    existing_poss <- possession_cols[possession_cols %in% names(stats_possession)]
-
-    if (length(existing_poss) > 0) {
-      # Create player_id for possession stats
-      stats_possession$player_id <- clean_player_name(stats_possession$player_name)
-
-      poss_agg <- stats::aggregate(
-        stats_possession[, existing_poss, drop = FALSE],
-        by = list(player_id = stats_possession$player_id),
-        FUN = function(x) sum(as.numeric(x), na.rm = TRUE)
-      )
-
-      poss_agg <- rename_columns(poss_agg, existing_poss)
-
-      player_stats <- merge(player_stats, poss_agg, by = "player_id", all.x = TRUE)
-    }
-  }
-
-  # ==========================================================================
-  # MISC STATS - pannadata columns (fouls, aerials, recoveries)
-  # ==========================================================================
-  if (!is.null(stats_misc) && nrow(stats_misc) > 0) {
-    misc_cols <- c(
-      # Cards (may duplicate summary but more detailed)
-      yellow_cards_misc = "crd_y", red_cards_misc = "crd_r",
-      second_yellows = "x2crd_y",
-      # Fouls
-      fouls_committed = "fls", fouls_drawn = "fld",
-      # Other
-      offsides = "off", crosses_misc = "crs",
-      tackles_won_misc = "tklw",
-      # Penalties
-      penalties_won = "pkwon", penalties_conceded = "pkcon",
-      own_goals = "og",
-      # Ball recovery
-      recoveries = "recov",
-      # Aerials
-      aerials_won = "won_aerial", aerials_lost = "lost_aerial",
-      aerials_pct = "won_percent_aerial"
-    )
-
-    existing_misc <- misc_cols[misc_cols %in% names(stats_misc)]
-
-    if (length(existing_misc) > 0) {
-      # Create player_id for misc stats
-      stats_misc$player_id <- clean_player_name(stats_misc$player_name)
-
-      misc_agg <- stats::aggregate(
-        stats_misc[, existing_misc, drop = FALSE],
-        by = list(player_id = stats_misc$player_id),
-        FUN = function(x) sum(as.numeric(x), na.rm = TRUE)
-      )
-
-      misc_agg <- rename_columns(misc_agg, existing_misc)
-      player_stats <- merge(player_stats, misc_agg, by = "player_id", all.x = TRUE)
-    }
-  }
-
-  # ==========================================================================
-  # PASSING TYPES - pannadata columns (through balls, switches, set pieces)
-  # ==========================================================================
-  if (!is.null(stats_passing_types) && nrow(stats_passing_types) > 0) {
-    pass_type_cols <- c(
-      # Pass types
-      passes_live = "live_pass_types",
-      passes_dead = "dead_pass_types",
-      passes_fk = "fk_pass_types",
-      through_balls = "tb_pass_types",
-      switches = "sw_pass_types",
-      crosses_pt = "crs_pass_types",
-      throw_ins = "ti_pass_types",
-      corner_kicks = "ck_pass_types",
-      # Corner kick types
-      corners_inswing = "in_corner_kicks",
-      corners_outswing = "out_corner_kicks",
-      corners_straight = "str_corner_kicks",
-      # Outcomes
-      passes_offside = "off_outcomes",
-      passes_blocked = "blocks_outcomes"
-    )
-
-    existing_pt <- pass_type_cols[pass_type_cols %in% names(stats_passing_types)]
-
-    if (length(existing_pt) > 0) {
-      # Create player_id for passing types stats
-      stats_passing_types$player_id <- clean_player_name(stats_passing_types$player_name)
-
-      pt_agg <- stats::aggregate(
-        stats_passing_types[, existing_pt, drop = FALSE],
-        by = list(player_id = stats_passing_types$player_id),
-        FUN = function(x) sum(as.numeric(x), na.rm = TRUE)
-      )
-
-      pt_agg <- rename_columns(pt_agg, existing_pt)
-      player_stats <- merge(player_stats, pt_agg, by = "player_id", all.x = TRUE)
-    }
-  }
-
-  # ==========================================================================
-  # KEEPER STATS - pannadata columns (GK-specific)
-  # ==========================================================================
-  if (!is.null(stats_keeper) && nrow(stats_keeper) > 0) {
-    keeper_cols <- c(
-      # Shot stopping
-      shots_on_target_against = "so_ta",
-      goals_against = "ga",
-      saves = "saves",
-      save_pct = "save_percent",
-      # Post-shot xG (quality of saves)
-      psxg = "ps_xg",
-      # Distribution
-      gk_launch_pct = "launch_percent_launched",
-      gk_launch_avg_len = "avg_len_launched",
-      # Sweeper actions
-      gk_opp_passes = "opp_opp",
-      gk_passes_stopped = "stp_opp",
-      gk_stop_pct = "stp_percent_opp",
-      gk_sweeper_actions = "att_sweeper",
-      gk_sweeper_dist = "avg_dist_sweeper"
-    )
-
-    existing_keeper <- keeper_cols[keeper_cols %in% names(stats_keeper)]
-
-    if (length(existing_keeper) > 0) {
-      # Create player_id for keeper stats
-      stats_keeper$player_id <- clean_player_name(stats_keeper$player_name)
-
-      keeper_agg <- stats::aggregate(
-        stats_keeper[, existing_keeper, drop = FALSE],
-        by = list(player_id = stats_keeper$player_id),
-        FUN = function(x) sum(as.numeric(x), na.rm = TRUE)
-      )
-
-      keeper_agg <- rename_columns(keeper_agg, existing_keeper)
-      player_stats <- merge(player_stats, keeper_agg, by = "player_id", all.x = TRUE)
-    }
-  }
-
-  # ==========================================================================
-  # CALCULATE PER-90 RATES
-  # ==========================================================================
+#' Calculate per-90 rates for player stats
+#'
+#' Internal helper to add per-90 stats to player data frame.
+#'
+#' @param player_stats Data frame with aggregated player stats
+#' @param mins_per_90 Numeric vector of minutes/90 for each player
+#'
+#' @return player_stats with per-90 columns added
+#' @keywords internal
+.calculate_per90_rates <- function(player_stats, mins_per_90) {
   n_players <- nrow(player_stats)
 
   # Helper to safely get column or return zeros
@@ -466,9 +277,32 @@ aggregate_player_stats <- function(stats_summary,
   player_stats$goals_against_p90 <- safe_p90("goals_against")
   player_stats$gk_sweeper_actions_p90 <- safe_p90("gk_sweeper_actions")
 
-  # ==========================================================================
-  # DERIVED FEATURES (ratios and success rates)
-  # ==========================================================================
+  player_stats
+}
+
+
+#' Calculate derived features (ratios and success rates)
+#'
+#' Internal helper to add derived features to player data frame.
+#'
+#' @param player_stats Data frame with aggregated player stats
+#' @param mins_per_90 Numeric vector of minutes/90 for each player
+#'
+#' @return player_stats with derived feature columns added
+#' @keywords internal
+.calculate_derived_features <- function(player_stats, mins_per_90) {
+  n_players <- nrow(player_stats)
+
+  # Helper to safely get column or return zeros
+  safe_col <- function(col_name) {
+    if (col_name %in% names(player_stats)) {
+      x <- as.numeric(player_stats[[col_name]])
+      ifelse(is.na(x), 0, x)
+    } else {
+      rep(0, n_players)
+    }
+  }
+
   safe_div <- function(num, denom) {
     num <- as.numeric(num)
     denom <- as.numeric(denom)
@@ -509,7 +343,6 @@ aggregate_player_stats <- function(stats_summary,
   player_stats$turnovers_p90 <- turnovers / mins_per_90
   total_carries <- safe_col("carries_poss")
   total_carries <- ifelse(total_carries == 0, safe_col("carries"), total_carries)
-  # Use NA for carry_retention when no carries (not perfect retention)
   player_stats$carry_retention <- ifelse(total_carries > 0, 1 - turnovers / total_carries, NA_real_)
 
   # Progressive actions per touch
@@ -526,24 +359,152 @@ aggregate_player_stats <- function(stats_summary,
 
   # Goalkeeper metrics
   player_stats$gk_save_pct <- safe_div(safe_col("saves"), safe_col("shots_on_target_against"))
-  # Goals prevented = PSxG - Goals Against (higher = better shot stopping)
   player_stats$gk_goals_prevented <- safe_col("psxg") - safe_col("goals_against")
   player_stats$gk_goals_prevented_p90 <- player_stats$gk_goals_prevented / mins_per_90
 
-  # ==========================================================================
-  # POSITION DUMMIES
-  # ==========================================================================
-  if ("primary_position" %in% names(player_stats)) {
-    pos <- player_stats$primary_position
-    # Extract first position if multiple (e.g., "MF,FW" -> "MF")
-    pos <- sapply(strsplit(as.character(pos), ","), `[`, 1)
-    player_stats$is_gk <- as.integer(grepl("GK", pos, ignore.case = TRUE))
-    player_stats$is_df <- as.integer(grepl("DF|CB|LB|RB|WB", pos, ignore.case = TRUE))
-    player_stats$is_mf <- as.integer(grepl("MF|CM|DM|AM", pos, ignore.case = TRUE))
-    player_stats$is_fw <- as.integer(grepl("FW|ST|CF|LW|RW", pos, ignore.case = TRUE))
+  player_stats
+}
+
+
+#' Add position dummy variables
+#'
+#' Internal helper to add position indicator columns.
+#'
+#' @param player_stats Data frame with primary_position column
+#'
+#' @return player_stats with position dummy columns added
+#' @keywords internal
+.add_position_dummies <- function(player_stats) {
+  if (!"primary_position" %in% names(player_stats)) {
+    return(player_stats)
   }
 
-  # Replace any remaining NAs with 0 for numeric columns
+  pos <- player_stats$primary_position
+  # Extract first position if multiple (e.g., "MF,FW" -> "MF")
+  pos <- sapply(strsplit(as.character(pos), ","), `[`, 1)
+  player_stats$is_gk <- as.integer(grepl("GK", pos, ignore.case = TRUE))
+  player_stats$is_df <- as.integer(grepl("DF|CB|LB|RB|WB", pos, ignore.case = TRUE))
+  player_stats$is_mf <- as.integer(grepl("MF|CM|DM|AM", pos, ignore.case = TRUE))
+  player_stats$is_fw <- as.integer(grepl("FW|ST|CF|LW|RW", pos, ignore.case = TRUE))
+
+  player_stats
+}
+
+
+# =============================================================================
+# Main aggregate_player_stats() Function
+# =============================================================================
+
+#' Aggregate player statistics to per-90 rates
+#'
+#' Combines match-level statistics into per-90-minute rates for each player.
+#' Extracts comprehensive features from all available stat tables for SPM modeling.
+#' Includes derived features like success rates and ratios.
+#'
+#' @param stats_summary Summary stats data frame from process_all_data
+#' @param stats_passing Passing stats data frame (optional)
+#' @param stats_defense Defense stats data frame (optional)
+#' @param stats_possession Possession stats data frame (optional)
+#' @param stats_misc Miscellaneous stats data frame (optional) - fouls, aerials, recoveries
+#' @param stats_passing_types Passing types data frame (optional) - through balls, switches
+#' @param stats_keeper Goalkeeper stats data frame (optional) - saves, post-shot xG
+#' @param min_minutes Minimum total minutes for inclusion
+#'
+#' @return Data frame with per-90 rates for each player
+#' @export
+aggregate_player_stats <- function(stats_summary,
+                                    stats_passing = NULL,
+                                    stats_defense = NULL,
+                                    stats_possession = NULL,
+                                    stats_misc = NULL,
+                                    stats_passing_types = NULL,
+                                    stats_keeper = NULL,
+                                    min_minutes = 450) {
+  # Validate inputs
+  validate_dataframe(stats_summary, required_cols = "player_name", arg_name = "stats_summary")
+
+  progress_msg(sprintf("Aggregating %d player-match rows...", nrow(stats_summary)))
+
+  # Create player_id for consistent matching
+  stats_summary$player_id <- clean_player_name(stats_summary$player_name)
+
+  # Create lookup for canonical player_name
+  cleaned_names <- gsub("\u00A0", " ", stats_summary$player_name)
+  cleaned_names <- trimws(cleaned_names)
+
+  player_name_lookup <- stats::aggregate(
+    cleaned_names,
+    by = list(player_id = stats_summary$player_id),
+    FUN = function(x) {
+      tbl <- table(x)
+      best_name <- names(tbl)[which.max(tbl)]
+      tools::toTitleCase(tolower(best_name))
+    }
+  )
+  names(player_name_lookup)[2] <- "player_name"
+
+  # Aggregate summary stats using data.table for performance
+  summary_cols <- .get_summary_col_mapping()
+  existing_summary <- summary_cols[summary_cols %in% names(stats_summary)]
+
+  dt <- data.table::as.data.table(stats_summary)
+  agg_exprs <- lapply(existing_summary, function(col) {
+    bquote(sum(as.numeric(.(as.name(col))), na.rm = TRUE))
+  })
+  names(agg_exprs) <- existing_summary
+  agg_exprs$n_matches <- quote(.N)
+
+  # Add position mode if available
+  if ("pos" %in% names(stats_summary)) {
+    agg_exprs$primary_position <- quote({
+      valid_pos <- pos[!is.na(pos) & pos != ""]
+      if (length(valid_pos) == 0) NA_character_
+      else names(which.max(table(valid_pos)))
+    })
+  }
+
+  player_stats <- dt[, eval(as.call(c(quote(list), agg_exprs))), by = player_id]
+  player_stats <- as.data.frame(player_stats)
+  player_stats <- merge(player_stats, player_name_lookup, by = "player_id", all.x = TRUE)
+  player_stats <- rename_columns(player_stats, existing_summary)
+
+  # Filter by min minutes
+  player_stats <- player_stats[player_stats$total_minutes >= min_minutes, ]
+  if (nrow(player_stats) == 0) {
+    cli::cli_warn("No players meet minimum minutes threshold")
+    return(NULL)
+  }
+
+  mins_per_90 <- player_stats$total_minutes / 90
+  player_stats$mins_per_90 <- mins_per_90
+
+  # Aggregate additional stat tables and merge
+  stat_tables <- list(
+    passing = list(data = stats_passing, cols = .get_passing_col_mapping()),
+    defense = list(data = stats_defense, cols = .get_defense_col_mapping()),
+    possession = list(data = stats_possession, cols = .get_possession_col_mapping()),
+    misc = list(data = stats_misc, cols = .get_misc_col_mapping()),
+    passing_types = list(data = stats_passing_types, cols = .get_passing_types_col_mapping()),
+    keeper = list(data = stats_keeper, cols = .get_keeper_col_mapping())
+  )
+
+  for (table_info in stat_tables) {
+    agg_result <- .aggregate_stat_table(table_info$data, table_info$cols)
+    if (!is.null(agg_result)) {
+      player_stats <- merge(player_stats, agg_result, by = "player_id", all.x = TRUE)
+    }
+  }
+
+  # Calculate per-90 rates
+  player_stats <- .calculate_per90_rates(player_stats, mins_per_90)
+
+  # Calculate derived features
+  player_stats <- .calculate_derived_features(player_stats, mins_per_90)
+
+  # Add position dummies
+  player_stats <- .add_position_dummies(player_stats)
+
+  # Replace remaining NAs with 0 for numeric columns
   numeric_cols <- sapply(player_stats, is.numeric)
   player_stats[numeric_cols] <- lapply(player_stats[numeric_cols], function(x) {
     ifelse(is.na(x), 0, x)
@@ -572,7 +533,10 @@ create_spm_prior <- function(spm_predictions, player_mapping, default_prior = 0)
     if ("spm" %in% names(spm_predictions) && "player_name" %in% names(spm_predictions)) {
       spm_predictions <- stats::setNames(spm_predictions$spm, spm_predictions$player_name)
     } else {
-      stop("spm_predictions data frame must have 'spm' and 'player_name' columns")
+      cli::cli_abort(c(
+        "{.arg spm_predictions} data frame must have {.field spm} and {.field player_name} columns.",
+        "i" = "Use {.fn calculate_spm_ratings} to generate SPM predictions."
+      ))
     }
   }
 
@@ -663,7 +627,7 @@ build_prior_vector <- function(spm_data, spm_col, player_mapping, default = 0) {
 #' @param rapm_ratings Data frame from extract_rapm_coefficients
 #'
 #' @return Data frame ready for SPM regression
-#' @export
+#' @keywords internal
 prepare_spm_regression_data <- function(player_features, rapm_ratings) {
   # Match on player name or ID
   if ("player_id" %in% names(player_features) && "player_id" %in% names(rapm_ratings)) {
@@ -679,7 +643,10 @@ prepare_spm_regression_data <- function(player_features, rapm_ratings) {
         by = "player_name"
       )
   } else {
-    stop("Cannot match player_features and rapm_ratings: no common ID column")
+    cli::cli_abort(c(
+      "Cannot match {.arg player_features} and {.arg rapm_ratings}.",
+      "x" = "No common ID column found (expected {.field player_id} or {.field player_name})."
+    ))
   }
 
   data
@@ -709,6 +676,9 @@ prepare_spm_regression_data <- function(player_features, rapm_ratings) {
 #' @export
 fit_spm_model <- function(data, predictor_cols = NULL, alpha = 0.5, nfolds = 10,
                           weight_by_minutes = TRUE, weight_transform = "sqrt") {
+  # Validate input
+  validate_dataframe(data, required_cols = "rapm", arg_name = "data")
+
   # Default predictors: per-90 stats that predict impact
   if (is.null(predictor_cols)) {
     # Try _p90 columns first, then _p100 for backward compatibility
@@ -720,7 +690,11 @@ fit_spm_model <- function(data, predictor_cols = NULL, alpha = 0.5, nfolds = 10,
 
   available_cols <- intersect(predictor_cols, names(data))
   if (length(available_cols) == 0) {
-    stop("No valid predictor columns found")
+    cli::cli_abort(c(
+      "No valid predictor columns found in {.arg data}.",
+      "i" = "Columns should end with '_p90' or '_p100'.",
+      "i" = "Use {.fn aggregate_player_stats} to generate predictor columns."
+    ))
   }
 
   # Prepare data
@@ -830,11 +804,11 @@ fit_spm_xgb <- function(data, predictor_cols = NULL, nfolds = 10,
                          weight_by_minutes = TRUE, weight_transform = "sqrt",
                          verbose = 1) {
   if (!requireNamespace("xgboost", quietly = TRUE)) {
-    stop("xgboost package required. Install with: install.packages('xgboost')")
+    cli::cli_abort("Package {.pkg xgboost} is required. Install with: {.code install.packages('xgboost')}")
   }
 
   # Default predictors: per-90 stats
- if (is.null(predictor_cols)) {
+  if (is.null(predictor_cols)) {
     predictor_cols <- names(data)[grepl("_p90$", names(data))]
     if (length(predictor_cols) == 0) {
       predictor_cols <- names(data)[grepl("_p100$", names(data))]
@@ -843,7 +817,11 @@ fit_spm_xgb <- function(data, predictor_cols = NULL, nfolds = 10,
 
   available_cols <- intersect(predictor_cols, names(data))
   if (length(available_cols) == 0) {
-    stop("No valid predictor columns found")
+    cli::cli_abort(c(
+      "No valid predictor columns found in {.arg data}.",
+      "i" = "Columns should end with '_p90' or '_p100'.",
+      "i" = "Use {.fn aggregate_player_stats} to generate predictor columns."
+    ))
   }
 
   # Prepare data
@@ -1145,7 +1123,10 @@ validate_spm_prediction <- function(spm_ratings, rapm_ratings,
   join_cols <- intersect(intersect(names(spm_ratings), names(rapm_ratings)), possible_keys)
 
   if (length(join_cols) == 0) {
-    warning("No common join columns (player_id or player_name) found")
+    cli::cli_warn(c(
+      "No common join columns found.",
+      "i" = "Expected {.field player_id} or {.field player_name} in both data frames."
+    ))
     return(NULL)
   }
 
@@ -1157,7 +1138,7 @@ validate_spm_prediction <- function(spm_ratings, rapm_ratings,
     )
 
   if (nrow(comparison) == 0) {
-    warning("No matching players between SPM and RAPM ratings")
+    cli::cli_warn("No matching players between SPM and RAPM ratings.")
     return(NULL)
   }
 
@@ -1178,26 +1159,35 @@ validate_spm_prediction <- function(spm_ratings, rapm_ratings,
   residuals <- comparison$rapm - comparison$spm
   ss_res <- sum(residuals^2, na.rm = TRUE)
   ss_tot <- sum((comparison$rapm - mean(comparison$rapm, na.rm = TRUE))^2, na.rm = TRUE)
-
-  r_squared_unweighted <- 1 - ss_res / ss_tot
   rmse_unweighted <- sqrt(mean(residuals^2, na.rm = TRUE))
   mae_unweighted <- mean(abs(residuals), na.rm = TRUE)
 
- # Weighted metrics
+  # Weighted metrics
   weighted_mean_rapm <- sum(weights * comparison$rapm, na.rm = TRUE) / sum(weights, na.rm = TRUE)
   ss_res_w <- sum(weights * residuals^2, na.rm = TRUE)
   ss_tot_w <- sum(weights * (comparison$rapm - weighted_mean_rapm)^2, na.rm = TRUE)
-
-  r_squared_weighted <- 1 - ss_res_w / ss_tot_w
   rmse_weighted <- sqrt(sum(weights * residuals^2, na.rm = TRUE) / sum(weights, na.rm = TRUE))
   mae_weighted <- sum(weights * abs(residuals), na.rm = TRUE) / sum(weights, na.rm = TRUE)
 
-  # Weighted correlation
+  # Weighted correlation (handle zero variance edge case)
   cov_w <- sum(weights * (comparison$spm - mean(comparison$spm)) *
                (comparison$rapm - weighted_mean_rapm), na.rm = TRUE) / sum(weights, na.rm = TRUE)
   sd_spm_w <- sqrt(sum(weights * (comparison$spm - mean(comparison$spm))^2, na.rm = TRUE) / sum(weights, na.rm = TRUE))
   sd_rapm_w <- sqrt(sum(weights * (comparison$rapm - weighted_mean_rapm)^2, na.rm = TRUE) / sum(weights, na.rm = TRUE))
-  cor_weighted <- cov_w / (sd_spm_w * sd_rapm_w)
+  cor_weighted <- if (sd_spm_w > 0 && sd_rapm_w > 0) cov_w / (sd_spm_w * sd_rapm_w) else NA_real_
+
+  # Unweighted correlation (handle zero variance edge case)
+  sd_spm <- stats::sd(comparison$spm, na.rm = TRUE)
+  sd_rapm <- stats::sd(comparison$rapm, na.rm = TRUE)
+  cor_unweighted <- if (sd_spm > 0 && sd_rapm > 0) {
+    stats::cor(comparison$spm, comparison$rapm, use = "complete.obs")
+  } else {
+    NA_real_
+  }
+
+  # Handle edge case where R-squared calculation has zero total variance
+  r_squared_unweighted <- if (ss_tot > 0) 1 - ss_res / ss_tot else NA_real_
+  r_squared_weighted <- if (ss_tot_w > 0) 1 - ss_res_w / ss_tot_w else NA_real_
 
   metrics <- list(
     n_players = nrow(comparison),
@@ -1205,7 +1195,7 @@ validate_spm_prediction <- function(spm_ratings, rapm_ratings,
     r_squared = r_squared_unweighted,
     rmse = rmse_unweighted,
     mae = mae_unweighted,
-    correlation = stats::cor(comparison$spm, comparison$rapm, use = "complete.obs"),
+    correlation = cor_unweighted,
     # Weighted
     r_squared_weighted = r_squared_weighted,
     rmse_weighted = rmse_weighted,
@@ -1250,450 +1240,4 @@ get_spm_feature_importance <- function(model, n = 10, lambda = "min") {
     utils::head(n)
 
   importance
-}
-
-
-# Opta SPM Functions ----
-# Functions for building SPM models from Opta/TheAnalyst data.
-# Opta data has 263 columns with different naming conventions than FBref.
-
-#' Aggregate Opta player statistics to per-90 rates
-#'
-#' Combines match-level Opta statistics into per-90-minute rates for each player.
-#' Creates comprehensive features for SPM modeling from Opta's 263 columns.
-#'
-#' @param opta_stats Data frame from load_opta_stats()
-#' @param min_minutes Minimum total minutes for inclusion (default 450)
-#'
-#' @return Data frame with per-90 rates for each player
-#' @export
-#' @examples
-#' \dontrun{
-#' opta_stats <- load_opta_stats("ENG", "2024-2025")
-#' player_features <- aggregate_opta_stats(opta_stats, min_minutes = 450)
-#' }
-aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
-  if (is.null(opta_stats) || nrow(opta_stats) == 0) {
-    warning("No Opta stats provided")
-    return(NULL)
-  }
-
-  progress_msg(sprintf("Aggregating %d Opta player-match rows...", nrow(opta_stats)))
-
-  # Create player_id from player_name for consistent matching
-  opta_stats$player_id <- clean_player_name(opta_stats$player_name)
-
-  # Define column mappings: new_name = opta_column_name
-  # These are the raw counting stats we'll sum across matches
-  opta_cols <- c(
-    # Minutes
-    total_minutes = "minsPlayed",
-    # Goals and shots
-    goals = "goals",
-    goals_openplay = "goalsOpenplay",
-    shots = "totalScoringAtt",
-    shots_ibox = "attemptsIbox",
-    shots_obox = "attemptsObox",
-    shots_on_target = "ontargetScoringAtt",
-    shot_off_target = "shotOffTarget",
-    shots_blocked = "blockedScoringAtt",
-    big_chance_created = "bigChanceCreated",
-    big_chance_scored = "bigChanceScored",
-    big_chance_missed = "bigChanceMissed",
-    # Assists and creativity
-    assists = "goalAssist",
-    assists_openplay = "goalAssistOpenplay",
-    assists_setplay = "goalAssistSetplay",
-    second_assists = "secondGoalAssist",
-    total_att_assist = "totalAttAssist",
-    on_target_att_assist = "ontargetAttAssist",
-    # Passing
-    passes = "totalPass",
-    passes_accurate = "accuratePass",
-    final_third_passes = "totalFinalThirdPasses",
-    final_third_passes_acc = "successfulFinalThirdPasses",
-    long_balls = "totalLongBalls",
-    long_balls_acc = "accurateLongBalls",
-    through_balls = "totalThroughBall",
-    through_balls_acc = "accurateThroughBall",
-    crosses = "totalCross",
-    crosses_acc = "accurateCross",
-    key_passes = "putThrough",
-    key_passes_success = "successfulPutThrough",
-    backward_pass = "backwardPass",
-    forward_pass = "fwdPass",
-    layoffs = "totalLayoffs",
-    layoffs_acc = "accurateLayoffs",
-    # Defending
-    tackles = "totalTackle",
-    tackles_won = "wonTackle",
-    interceptions = "interception",
-    interceptions_won = "interceptionWon",
-    interceptions_ibox = "interceptionsInBox",
-    clearances = "totalClearance",
-    clearances_effective = "effectiveClearance",
-    head_clearances = "headClearance",
-    head_clearances_effective = "effectiveHeadClearance",
-    blocks = "outfielderBlock",
-    blocked_passes = "blockedPass",
-    blocked_crosses = "blockedCross",
-    # Duels
-    duel_won = "duelWon",
-    duel_lost = "duelLost",
-    aerial_won = "aerialWon",
-    aerial_lost = "aerialLost",
-    contest_won = "wonContest",
-    contest_total = "totalContest",
-    challenge_lost = "challengeLost",
-    # Possession
-    touches = "touches",
-    touches_opp_box = "touchesInOppBox",
-    poss_won_def3rd = "possWonDef3rd",
-    poss_won_mid3rd = "possWonMid3rd",
-    poss_won_att3rd = "possWonAtt3rd",
-    ball_recovery = "ballRecovery",
-    dispossessed = "dispossessed",
-    turnover = "turnover",
-    poss_lost_all = "possLostAll",
-    times_tackled = "timesTackled",
-    # Fouls and cards
-    fouls = "fouls",
-    was_fouled = "wasFouled",
-    fouled_final_third = "fouledFinalThird",
-    yellow_cards = "yellowCard",
-    red_cards = "redCard",
-    second_yellows = "secondYellow",
-    # Set pieces
-    corners_taken = "cornerTaken",
-    corners_won = "wonCorners",
-    corners_lost = "lostCorners",
-    corners_intobox = "totalCornersIntobox",
-    corners_intobox_acc = "accurateCornersIntobox",
-    freekick_crosses = "freekickCross",
-    # Goalkeeper stats
-    saves = "saves",
-    saves_ibox = "savedIbox",
-    saves_obox = "savedObox",
-    goals_conceded = "goalsConceded",
-    goals_conceded_ibox = "goalsConcededIbox",
-    high_claim = "totalHighClaim",
-    good_high_claim = "goodHighClaim",
-    punches = "punches",
-    keeper_throws = "keeperThrows",
-    keeper_throws_acc = "accurateKeeperThrows",
-    # Other
-    offsides = "totalOffside",
-    offside_provoked = "offsideProvoked",
-    pen_area_entries = "penAreaEntries",
-    final_third_entries = "finalThirdEntries",
-    pull_backs = "totalPullBack",
-    pull_backs_acc = "accuratePullBack"
-  )
-
-  # Filter to columns that exist
-  existing_cols <- opta_cols[opta_cols %in% names(opta_stats)]
-
-  # Aggregate by player_id
-  player_stats <- stats::aggregate(
-    opta_stats[, existing_cols, drop = FALSE],
-    by = list(player_id = opta_stats$player_id),
-    FUN = function(x) sum(as.numeric(x), na.rm = TRUE)
-  )
-
-  # Rename columns
-  player_stats <- rename_columns(player_stats, existing_cols)
-
-  # Count matches
-  match_counts <- stats::aggregate(
-    opta_stats$match_id,
-    by = list(player_id = opta_stats$player_id),
-    FUN = function(x) length(unique(x))
-  )
-  names(match_counts)[2] <- "n_matches"
-  player_stats <- merge(player_stats, match_counts, by = "player_id")
-
-  # Get canonical player_name
-  cleaned_names <- gsub("\u00A0", " ", opta_stats$player_name)
-  cleaned_names <- trimws(cleaned_names)
-
-  player_name_lookup <- stats::aggregate(
-    cleaned_names,
-    by = list(player_id = opta_stats$player_id),
-    FUN = function(x) {
-      tbl <- table(x)
-      names(tbl)[which.max(tbl)]
-    }
-  )
-  names(player_name_lookup)[2] <- "player_name"
-  player_stats <- merge(player_stats, player_name_lookup, by = "player_id", all.x = TRUE)
-
-  # Get primary position
-  if ("position" %in% names(opta_stats)) {
-    pos_mode <- stats::aggregate(
-      opta_stats$position,
-      by = list(player_id = opta_stats$player_id),
-      FUN = function(x) {
-        tbl <- table(x[!is.na(x) & x != ""])
-        if (length(tbl) == 0) return(NA_character_)
-        names(tbl)[which.max(tbl)]
-      }
-    )
-    names(pos_mode)[2] <- "primary_position"
-    player_stats <- merge(player_stats, pos_mode, by = "player_id", all.x = TRUE)
-  }
-
-  # Filter by minimum minutes
-  player_stats <- player_stats[player_stats$total_minutes >= min_minutes, ]
-  if (nrow(player_stats) == 0) {
-    warning("No players meet minimum minutes threshold")
-    return(NULL)
-  }
-
-  # Calculate per-90 rates
-  mins_per_90 <- player_stats$total_minutes / 90
-  player_stats$mins_per_90 <- mins_per_90
-  n_players <- nrow(player_stats)
-
-  # Helper functions
-  safe_col <- function(col_name) {
-    if (col_name %in% names(player_stats)) {
-      x <- as.numeric(player_stats[[col_name]])
-      ifelse(is.na(x), 0, x)
-    } else {
-      rep(0, n_players)
-    }
-  }
-
-  safe_p90 <- function(col_name) {
-    safe_col(col_name) / mins_per_90
-  }
-
-  safe_div <- function(num, denom) {
-    num <- as.numeric(num)
-    denom <- as.numeric(denom)
-    ifelse(is.na(denom) | denom == 0, 0, num / denom)
-  }
-
-  # ===== PER-90 RATES =====
-
-  # Shooting per-90
-  player_stats$goals_p90 <- safe_p90("goals")
-  player_stats$shots_p90 <- safe_p90("shots")
-  player_stats$shots_on_target_p90 <- safe_p90("shots_on_target")
-  player_stats$shots_ibox_p90 <- safe_p90("shots_ibox")
-  player_stats$shots_obox_p90 <- safe_p90("shots_obox")
-  player_stats$big_chance_scored_p90 <- safe_p90("big_chance_scored")
-  player_stats$big_chance_missed_p90 <- safe_p90("big_chance_missed")
-
-  # Creativity per-90
-  player_stats$assists_p90 <- safe_p90("assists")
-  player_stats$big_chance_created_p90 <- safe_p90("big_chance_created")
-  player_stats$total_att_assist_p90 <- safe_p90("total_att_assist")
-  player_stats$key_passes_p90 <- safe_p90("key_passes")
-  player_stats$through_balls_p90 <- safe_p90("through_balls")
-
-  # Passing per-90
-  player_stats$passes_p90 <- safe_p90("passes")
-  player_stats$passes_accurate_p90 <- safe_p90("passes_accurate")
-  player_stats$final_third_passes_p90 <- safe_p90("final_third_passes")
-  player_stats$long_balls_p90 <- safe_p90("long_balls")
-  player_stats$crosses_p90 <- safe_p90("crosses")
-  player_stats$forward_pass_p90 <- safe_p90("forward_pass")
-
-  # Defensive per-90
-  player_stats$tackles_p90 <- safe_p90("tackles")
-  player_stats$tackles_won_p90 <- safe_p90("tackles_won")
-  player_stats$interceptions_p90 <- safe_p90("interceptions")
-  player_stats$interceptions_won_p90 <- safe_p90("interceptions_won")
-  player_stats$clearances_p90 <- safe_p90("clearances")
-  player_stats$clearances_effective_p90 <- safe_p90("clearances_effective")
-  player_stats$blocks_p90 <- safe_p90("blocks")
-  player_stats$blocked_passes_p90 <- safe_p90("blocked_passes")
-
-  # Duels per-90
-  player_stats$duel_won_p90 <- safe_p90("duel_won")
-  player_stats$duel_lost_p90 <- safe_p90("duel_lost")
-  player_stats$aerial_won_p90 <- safe_p90("aerial_won")
-  player_stats$aerial_lost_p90 <- safe_p90("aerial_lost")
-
-  # Possession per-90
-  player_stats$touches_p90 <- safe_p90("touches")
-  player_stats$touches_opp_box_p90 <- safe_p90("touches_opp_box")
-  player_stats$poss_won_def3rd_p90 <- safe_p90("poss_won_def3rd")
-  player_stats$poss_won_mid3rd_p90 <- safe_p90("poss_won_mid3rd")
-  player_stats$poss_won_att3rd_p90 <- safe_p90("poss_won_att3rd")
-  player_stats$ball_recovery_p90 <- safe_p90("ball_recovery")
-  player_stats$dispossessed_p90 <- safe_p90("dispossessed")
-  player_stats$turnover_p90 <- safe_p90("turnover")
-  player_stats$times_tackled_p90 <- safe_p90("times_tackled")
-
-  # Set pieces per-90
-  player_stats$corners_taken_p90 <- safe_p90("corners_taken")
-  player_stats$corners_won_p90 <- safe_p90("corners_won")
-  player_stats$pen_area_entries_p90 <- safe_p90("pen_area_entries")
-  player_stats$final_third_entries_p90 <- safe_p90("final_third_entries")
-
-  # Fouls per-90
-  player_stats$fouls_p90 <- safe_p90("fouls")
-  player_stats$was_fouled_p90 <- safe_p90("was_fouled")
-
-  # Goalkeeper per-90
-  player_stats$saves_p90 <- safe_p90("saves")
-  player_stats$goals_conceded_p90 <- safe_p90("goals_conceded")
-
-  # ===== DERIVED FEATURES (success rates and ratios) =====
-
-  # Shooting efficiency
-  player_stats$shot_accuracy <- safe_div(safe_col("shots_on_target"), safe_col("shots"))
-  player_stats$goals_per_shot <- safe_div(safe_col("goals"), safe_col("shots"))
-  player_stats$ibox_shot_ratio <- safe_div(safe_col("shots_ibox"), safe_col("shots"))
-  player_stats$big_chance_conversion <- safe_div(
-    safe_col("big_chance_scored"),
-    safe_col("big_chance_scored") + safe_col("big_chance_missed")
-  )
-
-  # Passing efficiency
-  player_stats$pass_accuracy <- safe_div(safe_col("passes_accurate"), safe_col("passes"))
-  player_stats$final_third_pass_acc <- safe_div(
-    safe_col("final_third_passes_acc"), safe_col("final_third_passes")
-  )
-  player_stats$long_ball_accuracy <- safe_div(safe_col("long_balls_acc"), safe_col("long_balls"))
-  player_stats$through_ball_accuracy <- safe_div(
-    safe_col("through_balls_acc"), safe_col("through_balls")
-  )
-  player_stats$cross_accuracy <- safe_div(safe_col("crosses_acc"), safe_col("crosses"))
-
-  # Defensive success rates
-  player_stats$tackle_success <- safe_div(safe_col("tackles_won"), safe_col("tackles"))
-  player_stats$interception_success <- safe_div(
-    safe_col("interceptions_won"), safe_col("interceptions")
-  )
-  player_stats$clearance_effectiveness <- safe_div(
-    safe_col("clearances_effective"), safe_col("clearances")
-  )
-
-  # Duel success rates
-  player_stats$duel_success <- safe_div(
-    safe_col("duel_won"), safe_col("duel_won") + safe_col("duel_lost")
-  )
-  player_stats$aerial_success <- safe_div(
-    safe_col("aerial_won"), safe_col("aerial_won") + safe_col("aerial_lost")
-  )
-
-  # Possession balance
-  total_poss_won <- safe_col("poss_won_def3rd") + safe_col("poss_won_mid3rd") +
-    safe_col("poss_won_att3rd")
-  player_stats$poss_won_total_p90 <- total_poss_won / mins_per_90
-  player_stats$poss_won_att_ratio <- safe_div(safe_col("poss_won_att3rd"), total_poss_won)
-
-  # Ball retention
-  player_stats$turnovers_p90 <- (safe_col("dispossessed") + safe_col("turnover")) / mins_per_90
-  player_stats$foul_differential_p90 <- player_stats$was_fouled_p90 - player_stats$fouls_p90
-
-  # Goalkeeper metrics
-  shots_faced <- safe_col("saves") + safe_col("goals_conceded")
-  player_stats$save_percentage <- safe_div(safe_col("saves"), shots_faced)
-
-  # Position dummies
-  if ("primary_position" %in% names(player_stats)) {
-    pos <- player_stats$primary_position
-    player_stats$is_gk <- as.integer(grepl("Goalkeeper", pos, ignore.case = TRUE))
-    player_stats$is_df <- as.integer(grepl("Defender", pos, ignore.case = TRUE))
-    player_stats$is_mf <- as.integer(grepl("Midfielder", pos, ignore.case = TRUE))
-    player_stats$is_fw <- as.integer(grepl("Forward|Striker", pos, ignore.case = TRUE))
-  }
-
-  # Replace NAs with 0
-  numeric_cols <- sapply(player_stats, is.numeric)
-  player_stats[numeric_cols] <- lapply(player_stats[numeric_cols], function(x) {
-    ifelse(is.na(x), 0, x)
-  })
-
-  progress_msg(sprintf("Aggregated Opta stats for %d players with %d features",
-                       nrow(player_stats), ncol(player_stats)))
-
-  player_stats
-}
-
-
-#' Fit SPM model using Opta features
-#'
-#' Fits an elastic net model predicting RAPM from Opta box score statistics.
-#' Uses Opta-specific per-90 features for prediction.
-#'
-#' @param data Data frame from aggregate_opta_stats joined with RAPM ratings
-#' @param alpha Elastic net mixing (0=ridge, 1=lasso, default 0.5)
-#' @param nfolds Number of CV folds (default 10)
-#' @param weight_by_minutes Whether to weight by minutes (default TRUE)
-#' @param weight_transform Transform for weighting: "sqrt", "linear", "log"
-#'
-#' @return Fitted glmnet model with metadata
-#' @export
-#' @examples
-#' \dontrun{
-#' # Aggregate Opta stats
-#' opta_features <- aggregate_opta_stats(opta_stats)
-#'
-#' # Join with RAPM
-#' spm_data <- opta_features %>%
-#'   inner_join(rapm_ratings %>% select(player_id, rapm), by = "player_id")
-#'
-#' # Fit Opta SPM
-#' opta_spm <- fit_spm_opta(spm_data)
-#' }
-fit_spm_opta <- function(data, alpha = 0.5, nfolds = 10,
-                          weight_by_minutes = TRUE, weight_transform = "sqrt") {
-  # Use all _p90 columns as predictors
-  predictor_cols <- names(data)[grepl("_p90$", names(data))]
-
-  # Add success rate columns
-  success_cols <- c("shot_accuracy", "goals_per_shot", "pass_accuracy",
-                    "tackle_success", "duel_success", "aerial_success",
-                    "big_chance_conversion", "final_third_pass_acc",
-                    "long_ball_accuracy", "cross_accuracy")
-  success_cols <- intersect(success_cols, names(data))
-  predictor_cols <- c(predictor_cols, success_cols)
-
-  # Add position dummies if available
-  pos_cols <- c("is_gk", "is_df", "is_mf", "is_fw")
-  pos_cols <- intersect(pos_cols, names(data))
-  predictor_cols <- c(predictor_cols, pos_cols)
-
-  progress_msg(sprintf("Fitting Opta SPM with %d features", length(predictor_cols)))
-
-  fit_spm_model(
-    data = data,
-    predictor_cols = predictor_cols,
-    alpha = alpha,
-    nfolds = nfolds,
-    weight_by_minutes = weight_by_minutes,
-    weight_transform = weight_transform
-  )
-}
-
-
-#' Compare FBref and Opta SPM feature importance
-#'
-#' Compares which features are most important in FBref vs Opta SPM models.
-#' Useful for understanding which data source captures different aspects of play.
-#'
-#' @param fbref_model Fitted SPM model from FBref data
-#' @param opta_model Fitted SPM model from Opta data
-#' @param n Number of top features to compare (default 20)
-#'
-#' @return Data frame comparing feature importance
-#' @export
-compare_spm_features <- function(fbref_model, opta_model, n = 20) {
-  fbref_imp <- get_spm_feature_importance(fbref_model, n = n)
-  fbref_imp$source <- "FBref"
-
-  opta_imp <- get_spm_feature_importance(opta_model, n = n)
-  opta_imp$source <- "Opta"
-
-  # Combine
-  comparison <- dplyr::bind_rows(fbref_imp, opta_imp) %>%
-    dplyr::select(source, feature, coefficient, abs_coef) %>%
-    dplyr::arrange(dplyr::desc(abs_coef))
-
-  comparison
 }

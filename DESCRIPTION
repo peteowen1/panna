@@ -22,6 +22,7 @@ Imports:
     dplyr (>= 1.0.0),
     duckdb (>= 0.9.0),
     glmnet (>= 4.0),
+    httr (>= 1.4.0),
     httr2,
     janitor,
     jsonlite,
@@ -36,12 +37,10 @@ Imports:
     tidyr,
     tools
 Suggests:
-    future,
-    future.apply,
     ggplot2,
     ggrepel,
-    httr (>= 1.4.0),
     knitr,
+    lifecycle,
     piggyback,
     pROC,
     rmarkdown,
