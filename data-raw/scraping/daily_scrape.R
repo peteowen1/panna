@@ -1,18 +1,15 @@
 # daily_scrape.R
 # Incremental daily scrape for GitHub Actions
 #
-# This script:
 # - Runs incrementally (only fetches new/missing matches)
 # - Covers all competitions (leagues, cups, national teams)
 # - Designed for automated daily runs via GitHub Actions
 #
-# Usage:
-#   Rscript data-raw/daily_scrape.R
-#
-# setwd("C:/Users/peteo/OneDrive/Documents/pannaverse/panna")
+# Run from panna directory: Rscript data-raw/scraping/daily_scrape.R
+
 devtools::load_all()
 
-# Configuration ----
+# 1. Configuration ----
 
 # Incremental mode - only fetch matches not in cache
 FORCE_RESCRAPE <- FALSE
@@ -27,7 +24,7 @@ TABLE_TYPES <- c("summary", "passing", "passing_types", "defense",
 # Current season (most matches happen here)
 CURRENT_SEASON <- "2025-2026"
 
-# Competitions ----
+# 2. Competitions ----
 
 # Club competitions: Big 5 leagues + European cups + domestic cups
 CLUB_COMPS <- c(
@@ -52,7 +49,7 @@ get_current_national_season <- function() {
   }
 }
 
-# Main Script ----
+# 3. Main Script ----
 
 cat("\n", strrep("=", 60), "\n")
 cat("PANNA DAILY SCRAPE\n")
@@ -67,7 +64,7 @@ cat("Started:", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n\n")
 
 total_scraped <- 0
 
-# Club Competitions ----
+# 4. Club Competitions ----
 cat("*** CLUB COMPETITIONS ***\n")
 
 for (comp in CLUB_COMPS) {
@@ -87,7 +84,7 @@ for (comp in CLUB_COMPS) {
   total_scraped <- total_scraped + n
 }
 
-# National Team Competitions ----
+# 5. National Team Competitions ----
 cat("\n\n*** NATIONAL TEAM COMPETITIONS ***\n")
 
 for (comp in NATIONAL_COMPS) {
@@ -130,7 +127,7 @@ for (comp in NATIONAL_COMPS) {
   }
 }
 
-# Summary ----
+# 6. Summary ----
 cat("\n\n", strrep("=", 60), "\n")
 cat("DAILY SCRAPE COMPLETE\n")
 cat(strrep("=", 60), "\n")

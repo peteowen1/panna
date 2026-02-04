@@ -65,6 +65,40 @@ The `debug/` folder is gitignored.
 - Cache expensive data to `data-raw/cache/`
 - Analysis scripts run in RStudio - avoid excessive `cat()` calls, keep them simple
 
+### RStudio Document Outline
+All `data-raw/` scripts must use RStudio document outline formatting for navigation:
+
+```r
+# script_name.R
+# Brief description of what this script does
+#
+# Additional details if needed
+
+# 1. Setup ----
+
+library(dplyr)
+devtools::load_all()
+
+# 2. Configuration ----
+
+# Configuration code here...
+
+# 3. Main Processing ----
+
+# Main code here...
+
+# 4. Summary ----
+
+# Summary/output code here...
+```
+
+**Rules:**
+- Use `# Section Name ----` format (4+ trailing dashes, equals, or pound signs)
+- Number sections sequentially (`# 1. Setup ----`, `# 2. Configuration ----`, etc.)
+- Keep section names concise and descriptive
+- First lines should be script name and description as comments
+- Do NOT use banner-style comments (`# ===...===`) as section headers - they don't appear in RStudio's outline
+
 ### pannadata Integration
 - Use `panna::load_summary()`, `load_passing()`, etc. to load cached match data
 - Data stored in `pannadata/data/{table_type}/{league}/{season}/{match_id}.rds`
@@ -126,6 +160,7 @@ Opta match events (load_opta_match_events)
 - EPV = ΔP(scoring) - ΔP(conceding) for each action
 - Pass credit split: passer gets (1-xPass) share, receiver gets xPass share
 - Trains 4 XGBoost models: xG, xPass, P(scoring), P(conceding)
+- **Aerials are filtered out** at SPADL conversion due to `end_x=0` data issue (see ENHANCEMENTS.md)
 
 ### Module Responsibilities
 

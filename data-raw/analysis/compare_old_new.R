@@ -1,11 +1,19 @@
+# compare_old_new.R
 # Compare old cached data vs new scraped data
+#
+# Useful for debugging cache issues and verifying scraping improvements.
+
 devtools::load_all()
+
+# 1. Configuration ----
 
 # Set to real pannadata
 pannadata_dir(file.path(dirname(getwd()), "pannadata", "data"))
 
-# First test match ID
+# Test match ID
 test_id <- "cc5b4244"
+
+# 2. Compare Metadata ----
 
 cat("=== COMPARING OLD vs NEW DATA ===\n\n")
 
@@ -29,7 +37,8 @@ if (is.null(old_meta)) {
   }
 }
 
-# Check events table
+# 3. Check Events Table ----
+
 cat("\n--- EVENTS TABLE ---\n")
 old_events <- load_match_table("ENG", "2024-2025", test_id, "events")
 if (is.null(old_events)) {
@@ -39,7 +48,8 @@ if (is.null(old_events)) {
   cat("Columns:", paste(names(old_events), collapse = ", "), "\n")
 }
 
-# New columns that would be added
+# 4. Check New Columns ----
+
 cat("\n--- NEW COLUMNS (not in old data) ---\n")
 new_cols <- c("home_manager", "away_manager", "home_captain", "away_captain",
               "home_captain_id", "away_captain_id", "venue", "attendance",
@@ -55,7 +65,8 @@ if (!is.null(old_meta)) {
   }
 }
 
-# Check a few more matches for events
+# 5. Events Status for Test Matches ----
+
 cat("\n--- EVENTS STATUS FOR TEST MATCHES ---\n")
 test_ids <- c("cc5b4244", "34557647", "71618ace", "4efc72e4", "c0e3342a")
 for (id in test_ids) {

@@ -1,12 +1,13 @@
-# Full scrape script for panna
+# rescrape_all.R
+# Full scrape of ALL competitions (clubs, cups, national teams) from FBref
 #
-# Scrapes ALL competitions (clubs, cups, national teams) from FBref.
 # Uses cache to skip matches already scraped (unless FORCE_RESCRAPE = TRUE).
 #
-# setwd("C:/Users/peteo/OneDrive/Documents/pannaverse/panna")
+# Run from panna directory: Rscript data-raw/scraping/rescrape_all.R
+
 devtools::load_all()
 
-# Configuration ----
+# 1. Configuration ----
 
 # Set to TRUE to rescrape everything (ignores cache)
 # Set to FALSE to only scrape new/missing matches (uses cache)
@@ -36,7 +37,7 @@ NATIONAL_COMPS <- list_competitions("national_team")  # WC, EURO, etc.
 SEASONS <- get_seasons_since(2017)
 
 
-# Main Script ----
+# 2. Main Script ----
 
 cat("\n", strrep("=", 60), "\n")
 cat("PANNA SCRAPE ALL\n")
@@ -54,7 +55,7 @@ total_scraped <- 0
 session_limit_reached <- FALSE
 
 
-# Club Competitions ----
+# 3. Club Competitions ----
 cat("*** CLUB COMPETITIONS ***\n")
 
 for (comp in CLUB_COMPS) {
@@ -82,7 +83,7 @@ for (comp in CLUB_COMPS) {
 }
 
 
-# National Team Competitions ----
+# 4. National Team Competitions ----
 if (!session_limit_reached) {
   cat("\n\n*** NATIONAL TEAM COMPETITIONS ***\n")
 
@@ -128,7 +129,7 @@ if (!session_limit_reached) {
 }
 
 
-# Summary ----
+# 5. Summary ----
 cat("\n\n", strrep("=", 60), "\n")
 cat("SCRAPING COMPLETE\n")
 cat(strrep("=", 60), "\n")

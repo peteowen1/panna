@@ -1,7 +1,5 @@
-# =============================================================================
-# Calculate Player EPV Values
-# =============================================================================
-# Uses trained EPV models to calculate player-level EPV metrics
+# 02_calculate_player_epv.R
+# Calculate player-level EPV metrics using trained models
 #
 # Run from panna directory: Rscript data-raw/epv/02_calculate_player_epv.R
 #
@@ -12,14 +10,11 @@
 #
 # Outputs:
 #   - data-raw/cache/epv/player_epv_{league}_{season}.rds
-# =============================================================================
 
 library(cli)
 devtools::load_all()
 
-# =============================================================================
-# Configuration
-# =============================================================================
+# 1. Configuration ----
 
 # Leagues and seasons to process
 LEAGUES <- c("ENG", "ESP", "GER", "ITA", "FRA")
@@ -35,9 +30,8 @@ dir.create(OUTPUT_DIR, recursive = TRUE, showWarnings = FALSE)
 
 cli_h1("Calculate Player EPV Values")
 
-# =============================================================================
-# 1. Load Models
-# =============================================================================
+# 2. Load Models ----
+
 cli_h2("Step 1: Load Trained Models")
 
 xg_model <- readRDS(file.path(MODEL_DIR, "xg_model.rds"))
@@ -46,9 +40,8 @@ epv_model <- readRDS(file.path(MODEL_DIR, "epv_model.rds"))
 
 cli_alert_success("Models loaded (method: {epv_model$method})")
 
-# =============================================================================
-# 2. Process Each League-Season
-# =============================================================================
+# 3. Calculate Player EPV ----
+
 cli_h2("Step 2: Calculate Player EPV")
 
 all_player_epv <- list()
@@ -101,9 +94,8 @@ for (league in LEAGUES) {
   }
 }
 
-# =============================================================================
-# 3. Combine and Save All
-# =============================================================================
+# 4. Combine Results ----
+
 cli_h2("Step 3: Combine Results")
 
 combined <- do.call(rbind, all_player_epv)
@@ -111,9 +103,8 @@ saveRDS(combined, file.path(OUTPUT_DIR, "player_epv_all.rds"))
 
 cli_alert_success("Combined: {nrow(combined)} player-seasons")
 
-# =============================================================================
-# 4. Summary
-# =============================================================================
+# 5. Summary ----
+
 cli_h1("Complete!")
 
 cat("\nTop 20 Players by EPV per 90:\n")

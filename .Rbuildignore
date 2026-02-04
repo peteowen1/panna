@@ -10,4 +10,7 @@
 ^CLAUDE\.md$
 ^DATA_DICTIONARY\.md$
 ^DATA_ISSUES\.md$
+^ENHANCEMENTS\.md$
+^OPTA_REFERENCE\.md$
 ^debug$
+^_ul
