@@ -396,21 +396,8 @@ load_keeper <- function(league = NULL, season = NULL, source = c("remote", "loca
 #' @return Data frame
 #' @keywords internal
 load_table_data <- function(table_type, league, season, source) {
-  # Build SQL WHERE clause
-  where_clauses <- character()
-
-  if (!is.null(league)) {
-    where_clauses <- c(where_clauses, sprintf("league = '%s'", league))
-  }
-  if (!is.null(season)) {
-    where_clauses <- c(where_clauses, sprintf("season = '%s'", season))
-  }
-
-  where_sql <- if (length(where_clauses) > 0) {
-    paste("WHERE", paste(where_clauses, collapse = " AND "))
-  } else {
-    ""
-  }
+  # Build SQL WHERE clause using helper
+  where_sql <- build_where_clause(list(league = league, season = season))
 
   sql_template <- sprintf("SELECT * FROM {table} %s", where_sql)
 
@@ -555,23 +542,10 @@ load_understat_table_data <- function(table_type, league, season, source) {
     season <- substr(season, 1, 4)
   }
 
-  # Build SQL WHERE clause
+  # Build SQL WHERE clause using helper
   # Use league_code and season_input columns (our input values)
   # not league/season (Understat's values like EPL/2025)
-  where_clauses <- character()
-
-  if (!is.null(league)) {
-    where_clauses <- c(where_clauses, sprintf("league_code = '%s'", league))
-  }
-  if (!is.null(season)) {
-    where_clauses <- c(where_clauses, sprintf("season_input = '%s'", season))
-  }
-
-  where_sql <- if (length(where_clauses) > 0) {
-    paste("WHERE", paste(where_clauses, collapse = " AND "))
-  } else {
-    ""
-  }
+  where_sql <- build_where_clause(list(league_code = league, season_input = season))
 
   sql_template <- sprintf("SELECT * FROM {table} %s", where_sql)
 

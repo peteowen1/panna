@@ -21,9 +21,32 @@
 create_rapm_design_matrix <- function(splint_data, min_minutes = 90,
                                        target_type = c("xg", "goals")) {
   target_type <- match.arg(target_type)
+
+  # Validate splint_data structure
+  if (!is.list(splint_data)) {
+    cli::cli_abort(c(
+      "{.arg splint_data} must be a list.",
+      "x" = "Got {.cls {class(splint_data)}} instead."
+    ))
+  }
+
+  required_elements <- c("splints", "players")
+  missing_elements <- setdiff(required_elements, names(splint_data))
+  if (length(missing_elements) > 0) {
+    cli::cli_abort(c(
+      "{.arg splint_data} is missing required element{?s}.",
+      "x" = "Missing: {.field {missing_elements}}",
+      "i" = "Use {.fn create_all_splints} to generate valid splint data."
+    ))
+  }
+
   splints <- splint_data$splints
   players <- splint_data$players
   match_info <- splint_data$match_info
+
+  # Validate splints and players data frames
+  validate_dataframe(splints, required_cols = c("splint_id", "duration"), arg_name = "splint_data$splints")
+  validate_dataframe(players, required_cols = c("splint_id", "player_id", "player_name"), arg_name = "splint_data$players")
 
   # Filter to valid splints (non-zero duration, has xG data)
   valid_splints <- splints[splints$duration > 0, ]
@@ -60,7 +83,11 @@ create_rapm_design_matrix <- function(splint_data, min_minutes = 90,
   n_players <- length(player_ids)
 
  if (n_players == 0) {
-    stop("No players meet minimum minutes requirement")
+    cli::cli_abort(c(
+      "No players meet minimum minutes requirement.",
+      "i" = "Current threshold: {min_minutes} minutes",
+      "i" = "Try lowering {.arg min_minutes} or adding more match data."
+    ))
   }
 
   progress_msg(sprintf("Including %d players (>= %d minutes)", n_players, min_minutes))
@@ -351,7 +378,7 @@ create_rapm_design_matrix <- function(splint_data, min_minutes = 90,
 #' @param include_season Whether to include season dummies
 #'
 #' @return List with all model inputs
-#' @export
+#' @keywords internal
 prepare_rapm_data <- function(splint_data, min_minutes = 90,
                                target_type = c("xg", "goals"),
                                include_covariates = TRUE,

@@ -452,13 +452,11 @@ load_opta_table <- function(table_type, league, season, columns,
       "*"
     }
 
-    # Build WHERE clause
-    where_parts <- sprintf("competition = '%s'", opta_league)
-    if (!is.null(season)) {
-      # Extract season from match_date (e.g., 2024-08 to 2025-05 = "2024-2025")
-      where_parts <- c(where_parts, sprintf("season = '%s'", season))
-    }
-    where_sql <- paste(where_parts, collapse = " AND ")
+    # Build WHERE clause using helper
+    where_sql <- build_where_clause(
+      list(competition = opta_league, season = season),
+      prefix = FALSE
+    )
 
     sql <- sprintf("SELECT %s FROM '%s' WHERE %s", col_sql, parquet_path, where_sql)
   } else {

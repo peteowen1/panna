@@ -26,7 +26,7 @@ NULL
 #'     \item is_goal: Target variable (1 = goal)
 #'   }
 #'
-#' @export
+#' @keywords internal
 #' @examples
 #' \dontrun{
 #' shots <- load_opta_shot_events("ENG", "2024-2025")
@@ -395,6 +395,13 @@ add_xg_to_spadl <- function(spadl_actions, xg_model) {
   # Prepare shot features
   shots <- spadl_actions[shot_idx, ]
 
+  # Use is_big_chance from SPADL if available (from Opta qualifier 214)
+  is_big_chance <- if ("is_big_chance" %in% names(shots)) {
+    as.integer(shots$is_big_chance)
+  } else {
+    0L
+  }
+
   shot_features <- data.frame(
     x = shots$start_x,
     y = shots$start_y,
@@ -409,7 +416,7 @@ add_xg_to_spadl <- function(spadl_actions, xg_model) {
     is_set_piece = 0L,
     is_corner = 0L,
     is_direct_freekick = 0L,
-    is_big_chance = 0L,
+    is_big_chance = is_big_chance,
     stringsAsFactors = FALSE
   )
 
@@ -440,8 +447,8 @@ load_xg_model <- function(path = NULL) {
     return(model)
   }
 
-  # Try default location in pannadata
-  default_path <- file.path(pannadata_dir(), "models", "xg_model.rds")
+  # Try default location in pannadata (Opta-specific models)
+  default_path <- file.path(pannadata_dir(), "models", "opta", "xg_model.rds")
   if (file.exists(default_path)) {
     model <- readRDS(default_path)
     cli::cli_alert_success("Loaded xG model from {default_path}")
@@ -466,7 +473,7 @@ load_xg_model <- function(path = NULL) {
 #' @export
 save_xg_model <- function(xg_model, path = NULL) {
   if (is.null(path)) {
-    model_dir <- file.path(pannadata_dir(), "models")
+    model_dir <- file.path(pannadata_dir(), "models", "opta")
     dir.create(model_dir, showWarnings = FALSE, recursive = TRUE)
     path <- file.path(model_dir, "xg_model.rds")
   }

@@ -737,7 +737,10 @@ create_match_splints <- function(match_id, events, lineups, shooting, results,
 #' @export
 create_all_splints <- function(processed_data, include_goals = TRUE, verbose = TRUE) {
   if (!requireNamespace("data.table", quietly = TRUE)) {
-    stop("data.table package required. Install with: install.packages('data.table')")
+    cli::cli_abort(c(
+      "Package {.pkg data.table} is required.",
+      "i" = "Install with: {.code install.packages('data.table')}"
+    ))
   }
 
   match_ids <- unique(processed_data$results$match_id)

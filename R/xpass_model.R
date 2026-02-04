@@ -93,7 +93,7 @@ create_pass_features <- function(dt) {
 #'     \item completed: Target variable (1 = successful pass)
 #'   }
 #'
-#' @export
+#' @keywords internal
 #' @examples
 #' \dontrun{
 #' spadl <- convert_opta_to_spadl(events)
@@ -437,7 +437,7 @@ load_xpass_model <- function(path = NULL) {
     return(model)
   }
 
-  default_path <- file.path(pannadata_dir(), "models", "xpass_model.rds")
+  default_path <- file.path(pannadata_dir(), "models", "opta", "xpass_model.rds")
   if (file.exists(default_path)) {
     model <- readRDS(default_path)
     cli::cli_alert_success("Loaded xPass model from {default_path}")
@@ -456,13 +456,13 @@ load_xpass_model <- function(path = NULL) {
 #' Saves trained xPass model to RDS file.
 #'
 #' @param xpass_model Fitted xPass model
-#' @param path Path to save. If NULL, saves to pannadata/models/
+#' @param path Path to save. If NULL, saves to pannadata/models/opta/
 #'
 #' @return Invisibly returns the path
 #' @export
 save_xpass_model <- function(xpass_model, path = NULL) {
   if (is.null(path)) {
-    model_dir <- file.path(pannadata_dir(), "models")
+    model_dir <- file.path(pannadata_dir(), "models", "opta")
     dir.create(model_dir, showWarnings = FALSE, recursive = TRUE)
     path <- file.path(model_dir, "xpass_model.rds")
   }

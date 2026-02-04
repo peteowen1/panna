@@ -7,7 +7,7 @@
 #' @param results Data frame of match results
 #'
 #' @return Cleaned data frame with standardized columns
-#' @export
+#' @keywords internal
 process_match_results <- function(results) {
   # Column names are already snake_case from clean_column_names()
   # Preserve league columns if present (for multi-league data)
@@ -71,7 +71,7 @@ process_match_results <- function(results) {
 #' @param results Processed match results for match IDs
 #'
 #' @return Cleaned data frame with player lineup info
-#' @export
+#' @keywords internal
 process_match_lineups <- function(lineups, results) {
   if (is.null(lineups) || nrow(lineups) == 0) {
     warning("No lineup data to process")
@@ -80,7 +80,10 @@ process_match_lineups <- function(lineups, results) {
 
   # Require data.table for speed with large datasets
   if (!requireNamespace("data.table", quietly = TRUE)) {
-    stop("data.table package required for processing large datasets. Install with: install.packages('data.table')")
+    cli::cli_abort(c(
+      "Package {.pkg data.table} is required for processing large datasets.",
+      "i" = "Install with: {.code install.packages('data.table')}"
+    ))
   }
 
   progress_msg(sprintf("  [data.table] Processing %d lineup rows...", nrow(lineups)))
@@ -92,16 +95,12 @@ process_match_lineups <- function(lineups, results) {
   # Merge
   dt_lineups <- merge(dt_lineups, dt_results, by = "match_url", all.x = TRUE)
 
-  # Standardize column names before processing
-  # team: could be 'team' or 'squad'
-  if (!"team" %in% names(dt_lineups) && "squad" %in% names(dt_lineups)) {
-    data.table::setnames(dt_lineups, "squad", "team")
-  }
-
-  # player_name: could be 'player_name' or 'player'
-  if (!"player_name" %in% names(dt_lineups) && "player" %in% names(dt_lineups)) {
-    data.table::setnames(dt_lineups, "player", "player_name")
-  }
+  # Standardize column names before processing using helper
+  standardize_data_columns(dt_lineups, list(
+    team = c("squad", "team_name"),
+    player_name = c("player"),
+    minutes = c("min", "mins_played")
+  ))
 
   # is_home: could be 'is_home', 'home_away' (convert "Home"/"Away" to TRUE/FALSE)
   if (!"is_home" %in% names(dt_lineups)) {
@@ -111,11 +110,6 @@ process_match_lineups <- function(lineups, results) {
       # Default to NA if we can't determine
       dt_lineups[, is_home := NA]
     }
-  }
-
-  # minutes: could be 'minutes' or 'min'
-  if (!"minutes" %in% names(dt_lineups) && "min" %in% names(dt_lineups)) {
-    data.table::setnames(dt_lineups, "min", "minutes")
   }
 
   # Process columns (vectorized) - use set() for speed
@@ -192,7 +186,7 @@ process_match_lineups <- function(lineups, results) {
 #' @param results Processed match results for match IDs
 #'
 #' @return Cleaned data frame with match events
-#' @export
+#' @keywords internal
 process_match_events <- function(events, results) {
   if (is.null(events) || nrow(events) == 0) {
     warning("No event data to process")
@@ -324,7 +318,7 @@ parse_event_minute <- function(time_str) {
 #' @param results Processed match results for match IDs
 #'
 #' @return Cleaned data frame with shot data
-#' @export
+#' @keywords internal
 process_shooting_data <- function(shooting, results) {
   if (is.null(shooting) || nrow(shooting) == 0) {
     warning("No shooting data to process")
@@ -333,7 +327,10 @@ process_shooting_data <- function(shooting, results) {
 
   # Require data.table for speed with large datasets
   if (!requireNamespace("data.table", quietly = TRUE)) {
-    stop("data.table package required for processing large datasets. Install with: install.packages('data.table')")
+    cli::cli_abort(c(
+      "Package {.pkg data.table} is required for processing large datasets.",
+      "i" = "Install with: {.code install.packages('data.table')}"
+    ))
   }
 
   progress_msg(sprintf("  [data.table] Processing %d shot rows...", nrow(shooting)))
@@ -388,7 +385,7 @@ process_shooting_data <- function(shooting, results) {
 #' @param stat_type The type of stats being processed
 #'
 #' @return Cleaned data frame with advanced stats
-#' @export
+#' @keywords internal
 process_advanced_stats <- function(stats, results, stat_type = "summary") {
   if (is.null(stats) || nrow(stats) == 0) {
     warning(paste("No", stat_type, "data to process"))
@@ -397,7 +394,10 @@ process_advanced_stats <- function(stats, results, stat_type = "summary") {
 
   # Require data.table for speed with large datasets
   if (!requireNamespace("data.table", quietly = TRUE)) {
-    stop("data.table package required for processing large datasets. Install with: install.packages('data.table')")
+    cli::cli_abort(c(
+      "Package {.pkg data.table} is required for processing large datasets.",
+      "i" = "Install with: {.code install.packages('data.table')}"
+    ))
   }
 
   # Row count shown for debugging if needed
@@ -412,16 +412,11 @@ process_advanced_stats <- function(stats, results, stat_type = "summary") {
   # Merge to get match_id
   dt_stats <- merge(dt_stats, dt_results, by = "match_url", all.x = TRUE)
 
-  # Handle column name variations
-  # player: could be 'player' or 'player_name'
-  if (!"player_name" %in% names(dt_stats) && "player" %in% names(dt_stats)) {
-    data.table::setnames(dt_stats, "player", "player_name")
-  }
-
-  # team: could be 'team' or 'squad'
-  if (!"team" %in% names(dt_stats) && "squad" %in% names(dt_stats)) {
-    data.table::setnames(dt_stats, "squad", "team")
-  }
+  # Standardize column names using helper
+  standardize_data_columns(dt_stats, list(
+    player_name = c("player"),
+    team = c("squad", "team_name")
+  ))
 
   # Handle is_home: could be boolean 'is_home' or string 'home_away'
   if ("is_home" %in% names(dt_stats)) {
@@ -572,7 +567,7 @@ merge_processed_data <- function(processed_data) {
 #'   If not provided and cache_dir is set, all components will be reprocessed.
 #'
 #' @return List of processed data frames
-#' @export
+#' @keywords internal
 process_all_data <- function(raw_data, show_progress = TRUE, cache_dir = NULL, raw_data_mtime = NULL) {
   # Define processing steps and their cache keys
   components <- c(

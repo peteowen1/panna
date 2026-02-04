@@ -26,6 +26,31 @@ fit_rapm <- function(rapm_data, alpha = 0, nfolds = 10,
                          use_weights = TRUE, standardize = FALSE,
                          penalize_covariates = FALSE,
                          parallel = TRUE, n_cores = NULL) {
+  # Validate input structure
+  if (!is.list(rapm_data)) {
+    cli::cli_abort(c(
+      "{.arg rapm_data} must be a list.",
+      "x" = "Got {.cls {class(rapm_data)}} instead.",
+      "i" = "Use {.fn create_rapm_design_matrix} to generate valid rapm_data."
+    ))
+  }
+
+  required_elements <- c("y")
+  has_X <- "X" %in% names(rapm_data) || "X_full" %in% names(rapm_data)
+  if (!has_X) {
+    cli::cli_abort(c(
+      "{.arg rapm_data} must contain 'X' or 'X_full' matrix.",
+      "i" = "Use {.fn create_rapm_design_matrix} to generate valid rapm_data."
+    ))
+  }
+
+  if (!"y" %in% names(rapm_data)) {
+    cli::cli_abort(c(
+      "{.arg rapm_data} must contain 'y' vector.",
+      "i" = "Use {.fn create_rapm_design_matrix} to generate valid rapm_data."
+    ))
+  }
+
   # Support both X_full (production) and X (tests)
   X <- if (!is.null(rapm_data$X_full)) rapm_data$X_full else rapm_data$X
   y <- rapm_data$y
@@ -36,6 +61,13 @@ fit_rapm <- function(rapm_data, alpha = 0, nfolds = 10,
   X <- X[valid_idx, , drop = FALSE]
   y <- y[valid_idx]
   if (!is.null(weights)) weights <- weights[valid_idx]
+
+  if (length(y) == 0) {
+    cli::cli_abort(c(
+      "No valid observations after removing NA values.",
+      "i" = "Check that {.arg rapm_data$y} contains non-NA values."
+    ))
+  }
 
   progress_msg(sprintf("Fitting RAPM: %d observations, %d columns",
                        length(y), ncol(X)))
@@ -444,7 +476,10 @@ extract_rapm_coefficients <- function(model, lambda = "min") {
       } else if (lambda == "1se") {
         model$lambda.1se
       } else {
-        stop("lambda must be 'min', '1se', or numeric")
+        cli::cli_abort(c(
+          "{.arg lambda} must be {.val min}, {.val 1se}, or numeric.",
+          "x" = "Got {.val {lambda}} instead."
+        ))
       }
     } else {
       lambda_val <- lambda
@@ -585,7 +620,7 @@ calculate_rapm_stability <- function(rapm_data, n_bootstrap = 100, alpha = 0) {
       coefs <- as.vector(stats::coef(fit, s = "lambda.min"))[-1]
       boot_estimates[b, ] <- coefs
     }, error = function(e) {
-      warning(paste("Bootstrap sample", b, "failed"))
+      cli::cli_warn("Bootstrap sample {b} failed: {e$message}")
     })
   }
 
@@ -614,7 +649,7 @@ calculate_rapm_stability <- function(rapm_data, n_bootstrap = 100, alpha = 0) {
 #' @export
 aggregate_rapm_by_team <- function(ratings, player_data) {
   if (!"team" %in% names(player_data)) {
-    warning("No team column in player_data")
+    cli::cli_warn("No {.field team} column in {.arg player_data}.")
     return(NULL)
   }
 

@@ -88,7 +88,7 @@ get_cached_match_urls_legacy <- function(data_type) {
 #' @param shooting_data Shooting data from load_fb_match_shooting (already snake_case)
 #'
 #' @return Data frame of goal events with timing
-#' @export
+#' @keywords internal
 derive_events_from_shooting <- function(shooting_data) {
   if (is.null(shooting_data) || nrow(shooting_data) == 0) {
     return(NULL)
@@ -135,7 +135,7 @@ derive_events_from_shooting <- function(shooting_data) {
 #'   Can be any stat type - passing/defense/possession have better historical coverage.
 #'
 #' @return Data frame of match lineups derived from stats
-#' @export
+#' @keywords internal
 derive_lineups_from_stats <- function(stats_data) {
   if (is.null(stats_data) || nrow(stats_data) == 0) {
     warning("No stats data to derive lineups from")
