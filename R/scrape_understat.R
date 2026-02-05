@@ -90,23 +90,31 @@ fetch_understat_page <- function(url, timeout = 30) {
   }
 
   # Make request with session cookies and retry logic
+  # Note: must use httr::config() to combine configs, or name args explicitly
+  # to avoid positional matching to max_retries/base_delay/max_delay
   response <- fetch_with_retry(
-    url,
+    url = url,
+    max_retries = 3,
+    base_delay = 1,
+    max_delay = 30,
     httr::add_headers(.headers = get_understat_headers()),
     httr::timeout(timeout),
     handle = get_understat_session()
   )
 
   # Check for errors returned by fetch_with_retry
-  if (is.null(response)) {
+  # Errors are returned as list with class "fetch_error"
+  if (inherits(response, "fetch_error") || is.null(response)) {
     if (isTRUE(attr(response, "rate_limited"))) {
       warning("Rate limited by Understat (429). Stopping.")
     } else if (isTRUE(attr(response, "connection_error"))) {
       warning("Connection error: ", attr(response, "error_message"))
+    } else if (isTRUE(attr(response, "not_found"))) {
+      # 404 - silently return NULL (invalid match ID)
     } else {
       warning("Failed to fetch ", url)
     }
-    return(response)
+    return(NULL)
   }
 
   # Parse HTML
@@ -267,7 +275,10 @@ fetch_understat_match_api <- function(understat_id) {
   url <- sprintf("https://understat.com/getMatchData/%s", understat_id)
 
   response <- fetch_with_retry(
-    url,
+    url = url,
+    max_retries = 3,
+    base_delay = 1,
+    max_delay = 30,
     httr::add_headers(.headers = c(
       get_understat_headers(),
       "Accept" = "application/json, text/javascript, */*; q=0.01",
@@ -277,7 +288,7 @@ fetch_understat_match_api <- function(understat_id) {
     handle = get_understat_session()
   )
 
-  if (is.null(response)) {
+  if (inherits(response, "fetch_error") || is.null(response)) {
     return(NULL)
   }
 
@@ -1582,6 +1593,491 @@ build_consolidated_understat_parquet <- function(table_types = NULL, output_dir 
   }
 
   result_df
+}
+
+
+# ============================================================================
+# Manifest-Based Scraping System
+# ============================================================================
+
+#' Default league ID starting points for 2025/2026 season
+#'
+#' Understat match IDs are interleaved across leagues. Each league occupies
+#' a distinct ID band (~200-300 IDs apart). These defaults are verified via
+#' live scraping on 2026-02-05.
+#'
+#' @keywords internal
+DEFAULT_LEAGUE_STARTS <- list(
+  RUS = 28600,   # RFPL - lowest IDs
+  ENG = 28850,   # EPL
+  ESP = 29150,   # La Liga
+  FRA = 29550,   # Ligue 1
+  ITA = 29850,   # Serie A
+  GER = 30250    # Bundesliga - highest IDs
+)
+
+
+#' Load Understat manifest from parquet file
+#'
+#' The manifest tracks all scraped match IDs with their league and season.
+#'
+#' @param path Path to manifest parquet file
+#'
+#' @return Data frame with columns: match_id, league, season, scraped_at
+#' @export
+load_understat_manifest <- function(path) {
+  if (!file.exists(path)) {
+    # Return empty manifest structure
+    return(data.frame(
+      match_id = integer(0),
+      league = character(0),
+      season = character(0),
+      scraped_at = as.POSIXct(character(0)),
+      stringsAsFactors = FALSE
+    ))
+  }
+
+  tryCatch({
+    as.data.frame(arrow::read_parquet(path))
+  }, error = function(e) {
+    warning("Error reading manifest: ", e$message)
+    data.frame(
+      match_id = integer(0),
+      league = character(0),
+      season = character(0),
+      scraped_at = as.POSIXct(character(0)),
+      stringsAsFactors = FALSE
+    )
+  })
+}
+
+
+#' Save Understat manifest to parquet file
+#'
+#' @param manifest Data frame with manifest data
+#' @param path Path to save manifest parquet file
+#'
+#' @return Invisible path to saved file
+#' @export
+save_understat_manifest <- function(manifest, path) {
+  # Ensure directory exists
+  dir_path <- dirname(path)
+  if (!dir.exists(dir_path)) {
+    dir.create(dir_path, recursive = TRUE)
+  }
+
+  # Write with temp file pattern to avoid corruption
+  temp_path <- paste0(path, ".tmp")
+  arrow::write_parquet(manifest, temp_path)
+
+  if (file.exists(path)) {
+    file.remove(path)
+  }
+  file.rename(temp_path, path)
+
+  invisible(path)
+}
+
+
+#' Get maximum cached ID for each league from manifest
+#'
+#' @param manifest Data frame from load_understat_manifest
+#'
+#' @return Named list with max ID per league (NA if no data for league)
+#' @export
+get_league_max_ids <- function(manifest) {
+  leagues <- c("ENG", "ESP", "GER", "ITA", "FRA", "RUS")
+
+  result <- setNames(
+    rep(NA_integer_, length(leagues)),
+    leagues
+  )
+
+  if (nrow(manifest) == 0) {
+    return(as.list(result))
+  }
+
+  for (league in leagues) {
+    league_ids <- manifest$match_id[manifest$league == league]
+    if (length(league_ids) > 0) {
+      result[league] <- max(league_ids, na.rm = TRUE)
+    }
+  }
+
+  as.list(result)
+}
+
+
+#' Build manifest from existing cached Understat data
+#'
+#' Scans existing parquet files and builds a manifest. Use this to bootstrap
+#' the manifest when migrating from the old system.
+#'
+#' @param data_dir Base data directory (defaults to pannadata_dir())
+#'
+#' @return Data frame with manifest structure
+#' @export
+build_understat_manifest_from_cache <- function(data_dir = NULL) {
+  if (is.null(data_dir)) {
+    data_dir <- pannadata_dir()
+  }
+
+  metadata_dir <- file.path(data_dir, "understat", "metadata")
+
+  if (!dir.exists(metadata_dir)) {
+    message("No cached Understat metadata found at: ", metadata_dir)
+    return(data.frame(
+      match_id = integer(0),
+      league = character(0),
+      season = character(0),
+      scraped_at = as.POSIXct(character(0)),
+      stringsAsFactors = FALSE
+    ))
+  }
+
+  # Find all metadata parquet files
+  parquet_files <- list.files(
+    metadata_dir,
+    pattern = "\\.parquet$",
+    recursive = TRUE,
+    full.names = TRUE
+  )
+
+  if (length(parquet_files) == 0) {
+    message("No parquet files found in: ", metadata_dir)
+    return(data.frame(
+      match_id = integer(0),
+      league = character(0),
+      season = character(0),
+      scraped_at = as.POSIXct(character(0)),
+      stringsAsFactors = FALSE
+    ))
+  }
+
+  message(sprintf("Building manifest from %d parquet files...", length(parquet_files)))
+
+  all_records <- list()
+
+  for (f in parquet_files) {
+    tryCatch({
+      df <- arrow::read_parquet(f)
+
+      if (nrow(df) > 0 && "understat_id" %in% names(df)) {
+        # Extract league and season from path or data
+        league_code <- if ("league_code" %in% names(df)) {
+          df$league_code[1]
+        } else {
+          # Try to extract from file path
+          path_parts <- strsplit(f, "/|\\\\")[[1]]
+          league_idx <- which(path_parts == "metadata") + 1
+          if (league_idx <= length(path_parts)) path_parts[league_idx] else NA_character_
+        }
+
+        season <- if ("season_input" %in% names(df)) {
+          df$season_input[1]
+        } else if ("season" %in% names(df)) {
+          df$season[1]
+        } else {
+          # Try to extract from file name
+          gsub("\\.parquet$", "", basename(f))
+        }
+
+        record <- data.frame(
+          match_id = as.integer(unique(df$understat_id)),
+          league = as.character(league_code),
+          season = as.character(season),
+          scraped_at = Sys.time(),
+          stringsAsFactors = FALSE
+        )
+
+        all_records[[length(all_records) + 1]] <- record
+      }
+    }, error = function(e) {
+      warning("Error reading ", f, ": ", e$message)
+    })
+  }
+
+  if (length(all_records) == 0) {
+    return(data.frame(
+      match_id = integer(0),
+      league = character(0),
+      season = character(0),
+      scraped_at = as.POSIXct(character(0)),
+      stringsAsFactors = FALSE
+    ))
+  }
+
+  manifest <- dplyr::bind_rows(all_records)
+
+  # Remove duplicates (keep first occurrence)
+  manifest <- manifest[!duplicated(manifest$match_id), ]
+
+  message(sprintf("Built manifest with %d matches across %d leagues",
+                  nrow(manifest), length(unique(manifest$league))))
+
+  manifest
+}
+
+
+#' Smart scrape Understat with per-league tracking
+#'
+#' Scrapes Understat matches using per-league max ID tracking. Each league
+#' is scanned independently from its own max ID, which handles the interleaved
+#' nature of Understat match IDs across leagues.
+#'
+#' @param manifest_path Path to manifest parquet file
+#' @param leagues Character vector of leagues to scrape (default: all 6)
+#' @param lookback Number of IDs to look back from max (handles gaps)
+#' @param max_misses Stop scanning a league after this many consecutive misses
+#' @param delay Seconds between requests
+#' @param verbose Print progress messages
+#'
+#' @return Data frame with scraping results (match_id, league, status)
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' # Run smart scraper
+#' results <- smart_scrape_understat(
+#'   manifest_path = "data/understat-manifest.parquet",
+#'   lookback = 20,
+#'   max_misses = 50,
+#'   delay = 3
+#' )
+#'
+#' # Check results
+#' table(results$league, results$status)
+#' }
+smart_scrape_understat <- function(manifest_path,
+                                    leagues = c("RUS", "ENG", "ESP", "FRA", "ITA", "GER"),
+                                    lookback = 20,
+                                    max_misses = 50,
+                                    delay = 3,
+                                    verbose = TRUE) {
+
+  # Load manifest
+  manifest <- load_understat_manifest(manifest_path)
+  if (verbose) {
+    message(sprintf("Loaded manifest with %d existing matches", nrow(manifest)))
+  }
+
+  # Get max ID per league
+  league_max_ids <- get_league_max_ids(manifest)
+
+  results <- list()
+  total_new <- 0
+
+  # Process each league in order (RUS has lowest IDs, GER has highest)
+  for (league in leagues) {
+    if (verbose) {
+      cat(sprintf("\n=== Scanning %s ===\n", league))
+    }
+
+    # Get max ID for this league, or use default
+    max_id <- league_max_ids[[league]]
+    if (is.na(max_id)) {
+      max_id <- DEFAULT_LEAGUE_STARTS[[league]]
+      if (verbose) {
+        cat(sprintf("No cached data for %s, starting from default: %d\n", league, max_id))
+      }
+    } else if (verbose) {
+      cat(sprintf("Max cached ID for %s: %d\n", league, max_id))
+    }
+
+    # Start scanning from (max - lookback) to handle gaps
+    start_id <- max(1, max_id - lookback)
+    current_id <- start_id
+    consecutive_misses <- 0
+    new_matches <- 0
+    league_results <- list()
+
+    while (consecutive_misses < max_misses) {
+      # Rate limiting (skip on first iteration)
+      if (current_id > start_id) {
+        jitter <- delay * 0.3
+        actual_delay <- delay + stats::runif(1, -jitter, jitter)
+        Sys.sleep(actual_delay)
+      }
+
+      # Try to scrape match metadata first to check league
+      url <- get_understat_match_url(current_id)
+
+      page <- tryCatch({
+        fetch_understat_page(url)
+      }, error = function(e) NULL)
+
+      if (is.null(page)) {
+        # Invalid ID - count as miss
+        consecutive_misses <- consecutive_misses + 1
+        league_results[[length(league_results) + 1]] <- data.frame(
+          match_id = current_id,
+          league = NA_character_,
+          season = NA_character_,
+          status = "invalid",
+          stringsAsFactors = FALSE
+        )
+        current_id <- current_id + 1
+        next
+      }
+
+      # Extract metadata to check league
+      metadata <- tryCatch({
+        extract_understat_metadata(page, current_id)
+      }, error = function(e) NULL)
+
+      if (is.null(metadata)) {
+        consecutive_misses <- consecutive_misses + 1
+        league_results[[length(league_results) + 1]] <- data.frame(
+          match_id = current_id,
+          league = NA_character_,
+          season = NA_character_,
+          status = "no_metadata",
+          stringsAsFactors = FALSE
+        )
+        current_id <- current_id + 1
+        next
+      }
+
+      # Map Understat league name to our code
+      match_league <- understat_league_to_code(metadata$league)
+      match_season <- metadata$season
+
+      if (is.na(match_league)) {
+        consecutive_misses <- consecutive_misses + 1
+        league_results[[length(league_results) + 1]] <- data.frame(
+          match_id = current_id,
+          league = metadata$league,
+          season = match_season,
+          status = "unknown_league",
+          stringsAsFactors = FALSE
+        )
+        current_id <- current_id + 1
+        next
+      }
+
+      # Check if this match is for our target league
+      if (match_league != league) {
+        # Valid match but different league - count as miss for THIS league
+        # This prevents us from scanning through 1000+ IDs of other leagues
+        consecutive_misses <- consecutive_misses + 1
+        league_results[[length(league_results) + 1]] <- data.frame(
+          match_id = current_id,
+          league = match_league,
+          season = match_season,
+          status = "different_league",
+          stringsAsFactors = FALSE
+        )
+        current_id <- current_id + 1
+        next
+      }
+
+      # Found a match for this league! Reset miss counter
+      consecutive_misses <- 0
+
+      # Check if already in manifest
+      if (current_id %in% manifest$match_id) {
+        league_results[[length(league_results) + 1]] <- data.frame(
+          match_id = current_id,
+          league = match_league,
+          season = match_season,
+          status = "cached",
+          stringsAsFactors = FALSE
+        )
+        if (verbose) {
+          cat(sprintf("  [%d] Cached: %s vs %s\n",
+                      current_id, metadata$home_team, metadata$away_team))
+        }
+        current_id <- current_id + 1
+        next
+      }
+
+      # Scrape full match data
+      events <- tryCatch({
+        extract_understat_events(page, current_id)
+      }, error = function(e) NULL)
+
+      api_data <- tryCatch({
+        fetch_understat_match_api(current_id)
+      }, error = function(e) NULL)
+
+      roster <- tryCatch({
+        extract_understat_roster(api_data, current_id)
+      }, error = function(e) NULL)
+
+      shots <- tryCatch({
+        extract_understat_shots(api_data, current_id)
+      }, error = function(e) NULL)
+
+      # Add league/season context
+      metadata$league_code <- match_league
+      metadata$season_input <- as.character(match_season)
+
+      if (!is.null(events)) {
+        events$league_code <- match_league
+        events$season_input <- as.character(match_season)
+      }
+      if (!is.null(roster)) {
+        roster$league_code <- match_league
+        roster$season_input <- as.character(match_season)
+      }
+      if (!is.null(shots)) {
+        shots$league_code <- match_league
+        shots$season_input <- as.character(match_season)
+      }
+
+      # Save to cache
+      save_understat_table(metadata, match_league, match_season, "metadata")
+      if (!is.null(events)) save_understat_table(events, match_league, match_season, "events")
+      if (!is.null(roster)) save_understat_table(roster, match_league, match_season, "roster")
+      if (!is.null(shots)) save_understat_table(shots, match_league, match_season, "shots")
+
+      # Add to manifest
+      manifest <- rbind(manifest, data.frame(
+        match_id = as.integer(current_id),
+        league = match_league,
+        season = as.character(match_season),
+        scraped_at = Sys.time(),
+        stringsAsFactors = FALSE
+      ))
+
+      new_matches <- new_matches + 1
+      total_new <- total_new + 1
+
+      league_results[[length(league_results) + 1]] <- data.frame(
+        match_id = current_id,
+        league = match_league,
+        season = match_season,
+        status = "success",
+        stringsAsFactors = FALSE
+      )
+
+      if (verbose) {
+        cat(sprintf("  [%d] NEW: %s vs %s (%s %s)\n",
+                    current_id, metadata$home_team, metadata$away_team,
+                    match_league, match_season))
+      }
+
+      current_id <- current_id + 1
+    }
+
+    # League scan complete
+    scanned_count <- current_id - start_id
+    if (verbose) {
+      cat(sprintf("\n%s: scraped %d new matches (scanned %d IDs, stopped after %d consecutive misses)\n",
+                  league, new_matches, scanned_count, max_misses))
+    }
+
+    results[[league]] <- dplyr::bind_rows(league_results)
+  }
+
+  # Save updated manifest
+  save_understat_manifest(manifest, manifest_path)
+  if (verbose) {
+    message(sprintf("\nSaved manifest with %d total matches", nrow(manifest)))
+    message(sprintf("Total new matches scraped: %d", total_new))
+  }
+
+  dplyr::bind_rows(results)
 }
 
 

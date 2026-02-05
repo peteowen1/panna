@@ -707,32 +707,25 @@ fetch_with_retry <- function(url, max_retries = 3, base_delay = 1, max_delay = 3
         next
       } else {
         cli::cli_alert_danger("Connection failed after {max_retries} retries")
-        result <- NULL
-        attr(result, "connection_error") <- TRUE
-        attr(result, "error_message") <- response$message
-        return(result)
+        return(structure(list(), class = "fetch_error",
+                         connection_error = TRUE, error_message = response$message))
       }
     }
 
     status <- httr::status_code(response)
 
     # Permanent failures - don't retry
+    # Use structure() to create NULL with attributes (attr() on NULL fails)
     if (status == 429) {
-      result <- NULL
-      attr(result, "rate_limited") <- TRUE
-      return(result)
+      return(structure(list(), class = "fetch_error", rate_limited = TRUE))
     }
 
     if (status == 403) {
-      result <- NULL
-      attr(result, "blocked") <- TRUE
-      return(result)
+      return(structure(list(), class = "fetch_error", blocked = TRUE))
     }
 
     if (status == 404) {
-      result <- NULL
-      attr(result, "not_found") <- TRUE
-      return(result)
+      return(structure(list(), class = "fetch_error", not_found = TRUE))
     }
 
     # Success
@@ -754,15 +747,11 @@ fetch_with_retry <- function(url, max_retries = 3, base_delay = 1, max_delay = 3
     }
 
     # Other errors - don't retry
-    result <- NULL
-    attr(result, "http_error") <- TRUE
-    attr(result, "status_code") <- status
-    return(result)
+    return(structure(list(), class = "fetch_error", http_error = TRUE, status_code = status))
   }
 
   # Should not reach here, but handle anyway
-  result <- NULL
-  attr(result, "max_retries_exceeded") <- TRUE
+  return(structure(list(), class = "fetch_error", max_retries_exceeded = TRUE))
   result
 }
 
