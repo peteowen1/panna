@@ -21,47 +21,59 @@
 create_rapm_design_matrix <- function(splint_data, min_minutes = 90,
                                        target_type = c("xg", "goals")) {
   target_type <- match.arg(target_type)
+
+  # Validate splint_data structure
+  if (!is.list(splint_data)) {
+    cli::cli_abort(c(
+      "{.arg splint_data} must be a list.",
+      "x" = "Got {.cls {class(splint_data)}} instead."
+    ))
+  }
+
+  required_elements <- c("splints", "players")
+  missing_elements <- setdiff(required_elements, names(splint_data))
+  if (length(missing_elements) > 0) {
+    cli::cli_abort(c(
+      "{.arg splint_data} is missing required element{?s}.",
+      "x" = "Missing: {.field {missing_elements}}",
+      "i" = "Use {.fn create_all_splints} to generate valid splint data."
+    ))
+  }
+
   splints <- splint_data$splints
   players <- splint_data$players
   match_info <- splint_data$match_info
+
+  # Validate splints and players data frames
+  validate_dataframe(splints, required_cols = c("splint_id", "duration"), arg_name = "splint_data$splints")
+  validate_dataframe(players, required_cols = c("splint_id", "player_id", "player_name"), arg_name = "splint_data$players")
 
   # Filter to valid splints (non-zero duration, has xG data)
   valid_splints <- splints[splints$duration > 0, ]
   n_splints <- nrow(valid_splints)
   progress_msg(sprintf("Processing %d splints...", n_splints))
 
-  # Get ALL players with their minutes (vectorized)
-  players_with_duration <- merge(
-    players,
-    splints[, c("splint_id", "duration")],
-    by = "splint_id",
-    all.x = TRUE
-  )
+  # Use data.table for efficient join and aggregation
+  players_dt <- data.table::as.data.table(players)
+  splints_dt <- data.table::as.data.table(splints[, c("splint_id", "duration")])
 
-  # Aggregate minutes by player_id only (not player_name to avoid case duplicates)
-  all_player_minutes <- stats::aggregate(
-    duration ~ player_id,
-    data = players_with_duration,
-    FUN = sum,
-    na.rm = TRUE
-  )
-  names(all_player_minutes)[2] <- "total_minutes"
+  # Set keys for fast join
+  data.table::setkey(players_dt, splint_id)
+  data.table::setkey(splints_dt, splint_id)
 
- # Create canonical player_name lookup (most frequent name per player_id, with title case)
-  canonical_names <- stats::aggregate(
-    player_name ~ player_id,
-    data = players_with_duration,
-    FUN = function(x) {
-      tbl <- table(x)
-      best_name <- names(tbl)[which.max(tbl)]
-      # Apply title case for consistent capitalization
-      tools::toTitleCase(tolower(best_name))
+  # Join and aggregate in one pass
+  players_with_duration <- splints_dt[players_dt, on = "splint_id"]
+
+  # Aggregate minutes and get canonical name in single pass
+  all_player_minutes <- players_with_duration[, .(
+    total_minutes = sum(duration, na.rm = TRUE),
+    player_name = {
+      tbl <- table(player_name)
+      tools::toTitleCase(tolower(names(tbl)[which.max(tbl)]))
     }
-  )
-  names(canonical_names)[2] <- "player_name"
+  ), by = player_id]
 
-  # Join minutes with canonical names
-  all_player_minutes <- merge(all_player_minutes, canonical_names, by = "player_id")
+  all_player_minutes <- as.data.frame(all_player_minutes)
 
   # Separate players meeting threshold vs replacement-level
   player_minutes <- all_player_minutes[all_player_minutes$total_minutes >= min_minutes, ]
@@ -71,7 +83,11 @@ create_rapm_design_matrix <- function(splint_data, min_minutes = 90,
   n_players <- length(player_ids)
 
  if (n_players == 0) {
-    stop("No players meet minimum minutes requirement")
+    cli::cli_abort(c(
+      "No players meet minimum minutes requirement.",
+      "i" = "Current threshold: {min_minutes} minutes",
+      "i" = "Try lowering {.arg min_minutes} or adding more match data."
+    ))
   }
 
   progress_msg(sprintf("Including %d players (>= %d minutes)", n_players, min_minutes))
@@ -178,8 +194,18 @@ create_rapm_design_matrix <- function(splint_data, min_minutes = 90,
   players_valid$is_regular <- players_valid$player_id %in% player_ids
   players_valid$is_replacement <- players_valid$player_id %in% replacement_player_ids
 
-  # Get column indices for regular players
+  # Get column indices for regular players (NA for non-regular players)
   players_valid$player_col <- player_idx[players_valid$player_id]
+
+  # Validate: regular players must have valid column indices
+  regular_with_na <- players_valid$is_regular & is.na(players_valid$player_col)
+  if (any(regular_with_na)) {
+    bad_ids <- unique(players_valid$player_id[regular_with_na])
+    warning(sprintf("Found %d regular players with NA column indices: %s",
+                    length(bad_ids), paste(head(bad_ids, 5), collapse = ", ")))
+    # Mark these as not regular to avoid matrix errors
+    players_valid$is_regular[regular_with_na] <- FALSE
+  }
 
   # Split by home/away and regular/replacement
   home_regular <- players_valid[players_valid$is_home & players_valid$is_regular, ]
@@ -292,8 +318,8 @@ create_rapm_design_matrix <- function(splint_data, min_minutes = 90,
     dimnames = list(NULL, col_names)
   )
 
-  # Weights based on duration
-  weights <- row_data$minutes / 90
+  # Weights based on duration (minimum weight of 0.01 to avoid division by zero)
+  weights <- pmax(row_data$minutes / 90, 0.01)
 
   progress_msg(sprintf("Design matrix: %d rows, %d player columns (+2 replacement), %d covariates",
                        n_rows, n_players * 2, 5))
@@ -352,7 +378,7 @@ create_rapm_design_matrix <- function(splint_data, min_minutes = 90,
 #' @param include_season Whether to include season dummies
 #'
 #' @return List with all model inputs
-#' @export
+#' @keywords internal
 prepare_rapm_data <- function(splint_data, min_minutes = 90,
                                target_type = c("xg", "goals"),
                                include_covariates = TRUE,

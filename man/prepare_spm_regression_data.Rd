@@ -17,3 +17,4 @@ Data frame ready for SPM regression
 \description{
 Joins player features with RAPM ratings for SPM model fitting.
 }
+\keyword{internal}

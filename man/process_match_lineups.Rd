@@ -18,3 +18,4 @@ Cleaned data frame with player lineup info
 Cleans lineup data and extracts player information.
 Uses data.table for speed with large datasets.
 }
+\keyword{internal}

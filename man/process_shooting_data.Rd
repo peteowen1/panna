@@ -17,3 +17,4 @@ Cleaned data frame with shot data
 \description{
 Cleans shot-level data with xG values.
 }
+\keyword{internal}

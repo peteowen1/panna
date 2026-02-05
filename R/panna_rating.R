@@ -32,26 +32,20 @@ calculate_panna_rating <- function(rapm_data, spm_ratings, lambda_prior = 1, alp
   spm_prior <- rep(0, n_players)
   names(spm_prior) <- player_ids
 
-  # Match SPM ratings to player IDs
+  # Match SPM ratings to player IDs (vectorized O(n) instead of O(n²) loop)
   if ("player_id" %in% names(spm_ratings)) {
-    for (i in seq_along(player_ids)) {
-      pid <- player_ids[i]
-      if (pid %in% spm_ratings$player_id) {
-        spm_prior[i] <- spm_ratings$spm[spm_ratings$player_id == pid]
-      }
-    }
+    match_idx <- match(player_ids, spm_ratings$player_id)
+    matched <- !is.na(match_idx)
+    spm_prior[matched] <- spm_ratings$spm[match_idx[matched]]
   } else if ("player_name" %in% names(spm_ratings) &&
              !is.null(rapm_data$player_mapping)) {
-    # Match via player mapping
-    for (i in seq_along(player_ids)) {
-      pid <- player_ids[i]
-      pname <- rapm_data$player_mapping$player_name[
-        rapm_data$player_mapping$player_id == pid
-      ]
-      if (length(pname) > 0 && pname %in% spm_ratings$player_name) {
-        spm_prior[i] <- spm_ratings$spm[spm_ratings$player_name == pname]
-      }
-    }
+    # Match via player mapping (vectorized)
+    mapping_idx <- match(player_ids, rapm_data$player_mapping$player_id)
+    player_names <- ifelse(is.na(mapping_idx), NA_character_,
+                           rapm_data$player_mapping$player_name[mapping_idx])
+    spm_idx <- match(player_names, spm_ratings$player_name)
+    matched <- !is.na(spm_idx)
+    spm_prior[matched] <- spm_ratings$spm[spm_idx[matched]]
   }
 
   # Transform regression to center on SPM prior
@@ -59,6 +53,7 @@ calculate_panna_rating <- function(rapm_data, spm_ratings, lambda_prior = 1, alp
   y_adjusted <- as.vector(y - X %*% spm_prior)
 
   # Fit ridge regression on adjusted response
+  # lambda_prior controls shrinkage toward SPM: higher = more shrinkage to SPM
   progress_msg("Fitting panna model with SPM prior...")
 
   fit <- glmnet::glmnet(
@@ -69,8 +64,9 @@ calculate_panna_rating <- function(rapm_data, spm_ratings, lambda_prior = 1, alp
     standardize = FALSE
   )
 
-  # Extract deviation from prior
-  gamma <- as.vector(stats::coef(fit, s = lambda_prior))[-1]
+  # Extract deviation from prior (gamma = beta - spm_prior)
+  # When fitting with single lambda, coef() returns that lambda's coefficients
+  gamma <- as.vector(stats::coef(fit))[-1]
 
   # Final panna rating: deviation + prior
   panna_coef <- gamma + spm_prior

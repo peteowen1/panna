@@ -2,11 +2,31 @@
 #
 # Functions for syncing data with GitHub Releases using the piggyback package.
 # Data is stored as a single zip file (pannadata.zip) to preserve directory structure.
+#
+# NOTE: For LOADING data, prefer the new DuckDB-based functions in data_loaders.R:
+#   - load_summary(), load_events(), load_shots(), etc.
+#   - query_remote_parquet() for custom SQL queries
+#
+# These functions download individual parquet files and run SQL queries on them,
+# which is much more efficient than downloading the entire ZIP archive.
+#
+# The piggyback functions below are still useful for:
+#   - UPLOADING data to GitHub releases (pb_upload_parquet)
+#   - Downloading the entire dataset for local development (pb_download_parquet)
 
 #' Download data from GitHub Releases
 #'
 #' Downloads the pannadata.zip file from a GitHub Release and extracts it
 #' to the local pannadata directory.
+#'
+#' @section Deprecation Notice:
+#' For loading data, prefer the new DuckDB-based functions which are more efficient:
+#' \itemize{
+#'   \item \code{load_summary()}, \code{load_events()}, \code{load_shots()}, etc.
+#'   \item These download only what's needed and filter via SQL
+#' }
+#'
+#' This function is still useful for downloading the complete dataset for local development.
 #'
 #' @param repo GitHub repository in "owner/repo" format (default: "peteowen1/pannadata")
 #' @param tag Release tag to download from (default: "latest")
@@ -454,4 +474,359 @@ pb_download_parquet <- function(repo = "peteowen1/pannadata",
   if (verbose) message(sprintf("Extracted %d parquet files", n_parquet))
 
   invisible(dest)
+}
+
+
+# Source-specific upload/download ----
+
+#' Get release tag for data source
+#'
+#' Maps source type to GitHub release tag name.
+#'
+#' @param source_type One of "fbref", "understat", "opta", or "all"
+#'
+#' @return Character release tag name
+#' @keywords internal
+get_source_tag <- function(source_type) {
+  switch(source_type,
+    fbref = "fbref-latest",
+    understat = "understat-latest",
+    opta = "opta-latest",
+    all = "latest",
+    stop("Unknown source_type: ", source_type)
+  )
+}
+
+
+#' Get archive filename for data source
+#'
+#' Maps source type to tar.gz archive filename.
+#'
+#' @param source_type One of "fbref", "understat", "opta", or "all"
+#'
+#' @return Character archive filename (tar.gz)
+#' @keywords internal
+get_source_archive_name <- function(source_type) {
+  switch(source_type,
+    fbref = "fbref-parquet.tar.gz",
+    understat = "understat-parquet.tar.gz",
+    opta = "opta-parquet.tar.gz",
+    all = "pannadata-parquet.tar.gz",
+    stop("Unknown source_type: ", source_type)
+  )
+}
+
+
+#' Get parquet file pattern for data source
+#'
+#' Returns regex pattern to match parquet files for a source.
+#'
+#' @param source_type One of "fbref", "understat", or "all"
+#'
+#' @return Character regex pattern
+#' @keywords internal
+get_source_pattern <- function(source_type) {
+  switch(source_type,
+    fbref = "^(?!understat_).*\\.parquet$",
+    understat = "^understat_.*\\.parquet$|/understat_",
+    all = "\\.parquet$",
+    stop("Unknown source_type: ", source_type)
+  )
+}
+
+
+#' Upload parquet files by source type
+#'
+#' Uploads parquet files to source-specific GitHub releases.
+#' - "fbref": FBref data to fbref-latest tag
+#' - "understat": Understat data to understat-latest tag
+#' - "all": All data to latest tag (legacy behavior)
+#'
+#' @param source_type Data source: "fbref", "understat", or "all"
+#' @param repo GitHub repository in "owner/repo" format
+#' @param source Source directory containing data folder (default: pannadata_dir())
+#' @param verbose Print progress messages
+#'
+#' @return Invisible data frame with uploaded file info
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' # Upload FBref data only
+#' pb_upload_source("fbref")
+#'
+#' # Upload Understat data only
+#' pb_upload_source("understat")
+#'
+#' # Upload all data (legacy)
+#' pb_upload_source("all")
+#' }
+pb_upload_source <- function(source_type = c("fbref", "understat", "opta", "all"),
+                              repo = "peteowen1/pannadata",
+                              source = NULL,
+                              verbose = TRUE) {
+  source_type <- match.arg(source_type)
+
+  if (!requireNamespace("piggyback", quietly = TRUE)) {
+    stop("Package 'piggyback' is required. Install with: install.packages('piggyback')")
+  }
+
+  if (is.null(source)) {
+    source <- pannadata_dir()
+  }
+
+  tag <- get_source_tag(source_type)
+  archive_name <- get_source_archive_name(source_type)
+
+  # Find parquet files matching the source type
+  # New structure: data/{source_type}/{table_type}/{league}/{season}.parquet
+  if (source_type == "all") {
+    # All data - search entire source directory
+    all_parquet <- list.files(
+      source,
+      pattern = "\\.parquet$",
+      recursive = TRUE,
+      full.names = TRUE
+    )
+    parquet_files <- all_parquet
+  } else {
+    # Specific source type - only look in that directory
+    source_dir <- file.path(source, source_type)
+    if (!dir.exists(source_dir)) {
+      stop("Source directory not found: ", source_dir)
+    }
+    parquet_files <- list.files(
+      source_dir,
+      pattern = "\\.parquet$",
+      recursive = TRUE,
+      full.names = TRUE
+    )
+  }
+
+  if (length(parquet_files) == 0) {
+    stop("No ", source_type, " parquet files found in ", source,
+         "\nRun build_all_parquet() first to create parquet files from RDS.")
+  }
+
+  if (verbose) {
+    total_size <- sum(file.size(parquet_files)) / (1024 * 1024)
+    message(sprintf("Found %d %s parquet files (%.1f MB total)",
+                    length(parquet_files), source_type, total_size))
+  }
+
+  # Create tar.gz archive
+  temp_dir <- tempdir()
+  archive_file <- file.path(temp_dir, archive_name)
+
+  if (file.exists(archive_file)) file.remove(archive_file)
+
+  if (verbose) message("Creating tar.gz archive...")
+
+  # Create relative paths for tar
+  old_wd <- getwd()
+  on.exit(setwd(old_wd), add = TRUE)
+  setwd(source)
+
+  rel_files <- gsub(paste0("^", normalizePath(source, winslash = "/"), "/?"), "",
+                    normalizePath(parquet_files, winslash = "/"))
+
+  # Use R's tar function with gzip compression
+  result <- tryCatch({
+    tar(archive_file, files = rel_files, compression = "gzip")
+    TRUE
+  }, error = function(e) {
+    warning("tar() failed: ", e$message)
+    FALSE
+  })
+
+  if (!result || !file.exists(archive_file)) {
+    stop("Failed to create tar.gz archive")
+  }
+
+  archive_size <- file.size(archive_file) / (1024 * 1024)
+  if (verbose) message(sprintf("Created %s (%.1f MB)", archive_name, archive_size))
+
+  # Ensure release exists
+  tryCatch({
+    piggyback::pb_list(repo = repo, tag = tag)
+  }, error = function(e) {
+    if (verbose) message("Creating new release: ", tag)
+    piggyback::pb_new_release(repo = repo, tag = tag)
+    # Wait for GitHub to propagate the new release
+    Sys.sleep(3)
+  })
+
+  # Upload
+  if (verbose) message(sprintf("Uploading to %s...", tag))
+  piggyback::pb_upload(
+    file = archive_file,
+    repo = repo,
+    tag = tag,
+    name = archive_name,
+    overwrite = TRUE
+  )
+
+  if (verbose) message("Upload complete")
+
+  invisible(data.frame(
+    source_type = source_type,
+    tag = tag,
+    file = archive_name,
+    size_mb = archive_size,
+    n_parquet = length(parquet_files)
+  ))
+}
+
+
+#' Download parquet files by source type
+#'
+#' Downloads parquet files from source-specific GitHub releases.
+#'
+#' @param source_type Data source: "fbref", "understat", or "all"
+#' @param repo GitHub repository in "owner/repo" format
+#' @param dest Destination directory (default: pannadata_dir())
+#' @param verbose Print progress messages
+#'
+#' @return Invisible path to destination directory
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' # Download FBref data only
+#' pb_download_source("fbref")
+#'
+#' # Download Understat data only
+#' pb_download_source("understat")
+#' }
+pb_download_source <- function(source_type = c("fbref", "understat", "opta", "all"),
+                                repo = "peteowen1/pannadata",
+                                dest = NULL,
+                                verbose = TRUE) {
+  source_type <- match.arg(source_type)
+
+  if (!requireNamespace("piggyback", quietly = TRUE)) {
+    stop("Package 'piggyback' is required. Install with: install.packages('piggyback')")
+  }
+
+  if (is.null(dest)) {
+    dest <- pannadata_dir()
+  }
+
+  tag <- get_source_tag(source_type)
+  archive_name <- get_source_archive_name(source_type)
+
+  if (verbose) message(sprintf("Downloading %s from %s (tag: %s)...",
+                               source_type, repo, tag))
+
+  temp_dir <- tempdir()
+  archive_file <- file.path(temp_dir, archive_name)
+
+  tryCatch({
+    piggyback::pb_download(
+      file = archive_name,
+      repo = repo,
+      tag = tag,
+      dest = temp_dir,
+      overwrite = TRUE
+    )
+  }, error = function(e) {
+    stop("Failed to download ", source_type, " parquet data: ", e$message,
+         "\nMake sure ", archive_name, " exists in the '", tag, "' release.")
+  })
+
+  if (!file.exists(archive_file)) {
+    stop("Download failed - ", archive_name, " not found in release")
+  }
+
+  if (verbose) {
+    archive_size <- file.size(archive_file) / (1024 * 1024)
+    message(sprintf("Downloaded (%.1f MB)", archive_size))
+  }
+
+  # Extract tar.gz
+  if (verbose) message(sprintf("Extracting to %s...", dest))
+
+  if (!dir.exists(dest)) {
+    dir.create(dest, recursive = TRUE)
+  }
+
+  untar(archive_file, exdir = dest)
+  file.remove(archive_file)
+
+  # Count extracted files
+  # New structure: data/{source_type}/{table_type}/{league}/{season}.parquet
+  if (source_type == "all") {
+    n_parquet <- length(list.files(dest, pattern = "\\.parquet$", recursive = TRUE))
+  } else {
+    source_dir <- file.path(dest, source_type)
+    if (dir.exists(source_dir)) {
+      n_parquet <- length(list.files(source_dir, pattern = "\\.parquet$", recursive = TRUE))
+    } else {
+      n_parquet <- 0
+    }
+  }
+
+  if (verbose) message(sprintf("Extracted %d parquet files", n_parquet))
+
+  invisible(dest)
+}
+
+
+#' List releases by source type
+#'
+#' Shows available releases for different data sources.
+#'
+#' @param repo GitHub repository in "owner/repo" format
+#'
+#' @return Data frame with release information by source
+#' @export
+pb_list_sources <- function(repo = "peteowen1/pannadata") {
+  if (!requireNamespace("piggyback", quietly = TRUE)) {
+    stop("Package 'piggyback' is required. Install with: install.packages('piggyback')")
+  }
+
+  sources <- c("fbref", "understat", "opta", "all")
+  results <- list()
+
+  for (src in sources) {
+    tag <- get_source_tag(src)
+    archive_name <- get_source_archive_name(src)
+
+    info <- tryCatch({
+      files <- piggyback::pb_list(repo = repo, tag = tag)
+      if (archive_name %in% files$file_name) {
+        row <- files[files$file_name == archive_name, ]
+        data.frame(
+          source = src,
+          tag = tag,
+          file = archive_name,
+          size_mb = round(row$size / (1024 * 1024), 1),
+          uploaded = row$timestamp,
+          stringsAsFactors = FALSE
+        )
+      } else {
+        data.frame(
+          source = src,
+          tag = tag,
+          file = NA_character_,
+          size_mb = NA_real_,
+          uploaded = NA_character_,
+          stringsAsFactors = FALSE
+        )
+      }
+    }, error = function(e) {
+      data.frame(
+        source = src,
+        tag = tag,
+        file = NA_character_,
+        size_mb = NA_real_,
+        uploaded = NA_character_,
+        stringsAsFactors = FALSE
+      )
+    })
+
+    results[[src]] <- info
+  }
+
+  do.call(rbind, results)
 }

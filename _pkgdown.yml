@@ -1,0 +1,288 @@
+url: https://peteowen1.github.io/panna/
+
+template:
+  bootstrap: 5
+
+navbar:
+  structure:
+    left: [intro, reference, articles]
+    right: [search, github]
+  components:
+    articles:
+      text: Articles
+      menu:
+      - text: Getting Started
+        href: articles/getting-started.html
+      - text: Player Ratings Methodology
+        href: articles/player-ratings.html
+      - text: Data Sources Guide
+        href: articles/data-sources.html
+
+articles:
+- title: Getting Started
+  navbar: ~
+  contents:
+  - getting-started
+  - player-ratings
+  - data-sources
+
+reference:
+- title: Data Loading - FBref
+  desc: Load FBref match data from pannadata (StatsBomb xG)
+  contents:
+  - load_summary
+  - load_passing
+  - load_defense
+  - load_possession
+  - load_keeper
+  - load_shots
+  - load_metadata
+  - load_events
+
+- title: Data Loading - Opta
+  desc: Load Opta player statistics (271 columns)
+  contents:
+  - load_opta_stats
+  - load_opta_shots
+  - load_opta_big5
+
+- title: Data Loading - Understat
+  desc: Load Understat data (xGChain, xGBuildup)
+  contents:
+  - load_understat_roster
+  - load_understat_shots
+  - load_understat_metadata
+
+- title: Player Statistics
+  desc: Aggregated player statistics by source
+  contents:
+  - player_fbref_summary
+  - player_fbref_passing
+  - player_fbref_defense
+  - player_fbref_keeper
+  - player_opta_summary
+  - player_opta_passing
+  - player_opta_defense
+  - player_opta_possession
+  - player_opta_keeper
+  - player_opta_shots
+  - player_opta_setpiece
+  - player_understat_summary
+
+- title: RAPM Pipeline
+  desc: Regularized Adjusted Plus-Minus model
+  contents:
+  - create_all_splints
+  - create_match_splints
+  - create_splint_boundaries
+  - assign_players_to_splints
+  - calculate_splint_npxgd
+  - create_rapm_design_matrix
+  - fit_rapm
+  - fit_rapm_with_prior
+  - extract_rapm_coefficients
+  - extract_rapm_ratings
+
+- title: SPM Pipeline
+  desc: Statistical Plus-Minus model
+  contents:
+  - aggregate_player_stats
+  - aggregate_player_season_stats
+  - fit_spm_model
+  - fit_spm_xgb
+  - calculate_spm_ratings
+  - calculate_spm_ratings_xgb
+  - create_spm_prior
+  - build_prior_vector
+  - extract_spm_coefficients
+  - get_spm_feature_importance
+  - prepare_spm_regression_data
+
+- title: Panna Ratings
+  desc: Combined RAPM + SPM ratings
+  contents:
+  - fit_panna_model
+  - calculate_panna_rating
+  - get_panna_ratings
+  - extract_xrapm_ratings
+  - rank_players_panna
+  - validate_panna_ratings
+
+- title: Offensive/Defensive Analysis
+  desc: Rating decomposition and analysis
+  contents:
+  - split_od_contributions
+  - calculate_od_panna
+  - extract_od_rapm_coefficients
+  - calculate_offensive_spm
+  - calculate_defensive_spm
+  - calculate_spm_blend
+  - categorize_player_profile
+  - get_top_offensive
+  - get_top_defensive
+  - prepare_od_scatter_data
+  - visualize_od_scatter
+
+- title: Data Processing
+  desc: Raw data processing and cleaning
+  contents:
+  - process_all_data
+  - process_match_results
+  - process_match_lineups
+  - process_match_events
+  - process_shooting_data
+  - process_advanced_stats
+  - merge_processed_data
+  - derive_events_from_shooting
+  - derive_lineups_from_stats
+  - filter_bad_xg_data
+
+- title: Feature Engineering
+  desc: Advanced feature creation
+  contents:
+  - create_player_feature_matrix
+  - create_offensive_features
+  - create_defensive_features
+  - calculate_per_100_sequences
+  - calculate_team_sequences
+  - calculate_finishing_modifier
+
+- title: Data Distribution
+  desc: GitHub Releases upload/download
+  contents:
+  - pb_download_source
+  - pb_download_data
+  - pb_download_parquet
+  - pb_download_opta
+  - pb_upload_source
+  - pb_upload_data
+  - pb_upload_parquet
+  - pb_upload_consolidated
+  - pb_sync_data
+  - pb_list_data
+  - pb_list_sources
+  - pb_status
+  - get_latest_release
+
+- title: Scraping - FBref
+  desc: FBref data scraping functions
+  contents:
+  - scrape_fbref_matches
+  - scrape_comp_season
+  - scrape_fixtures
+  - fetch_match_page
+  - parse_match_page
+  - extract_match_events
+  - fbref_competitions
+  - list_competitions
+  - get_fbref_comp_id
+  - get_fbref_schedule_url
+  - get_fbref_session
+  - reset_fbref_session
+
+- title: Scraping - Understat
+  desc: Understat data scraping functions
+  contents:
+  - scrape_understat_season
+  - scrape_understat_matches
+  - scrape_understat_match
+  - scrape_understat_match_range
+  - scrape_understat_fixtures
+  - fetch_understat_page
+  - aggregate_understat_data
+  - bulk_scrape_understat
+  - understat_competitions
+  - list_understat_competitions
+  - get_understat_league_url
+  - get_understat_match_url
+  - get_understat_seasons
+  - get_understat_slug
+  - get_understat_session
+  - reset_understat_session
+  - is_understat_league
+  - understat_league_to_code
+
+- title: Cache Management
+  desc: Local and remote cache operations
+  contents:
+  - pannadata_dir
+  - opta_data_dir
+  - load_cached_data
+  - save_cached_data
+  - list_cached_matches
+  - get_cached_match_urls
+  - get_cached_fbref_ids
+  - get_cached_understat_ids
+  - aggregate_cached_matches
+  - clear_remote_cache
+  - clear_remote_opta_cache
+
+- title: Parquet Operations
+  desc: Building and querying parquet files
+  contents:
+  - build_parquet
+  - build_all_parquet
+  - build_consolidated_parquet
+  - build_consolidated_understat_parquet
+  - query_local_parquet
+  - query_remote_parquet
+  - get_remote_tables
+
+- title: Utilities
+  desc: Helper functions
+  contents:
+  - clean_column_names
+  - clean_player_name
+  - standardize_player_names
+  - standardize_team_names
+  - create_match_id
+  - create_player_id
+  - extract_fbref_player_id
+  - extract_season_from_match_id
+  - extract_season_end_year_from_match_id
+  - safe_divide
+  - per_90
+  - calculate_npxg
+  - validate_seasons
+  - get_seasons_since
+  - get_big5_leagues
+
+- title: Season Conversion
+  desc: Season format conversion between sources
+  contents:
+  - fbref_to_understat_season
+  - understat_to_fbref_season
+
+- title: Validation
+  desc: Model and data validation
+  contents:
+  - validate_data_completeness
+  - validate_predictive_power
+  - validate_spm_prediction
+  - calculate_rapm_stability
+
+- title: Analysis & Reporting
+  desc: Analysis helpers and reporting
+  contents:
+  - compare_panna_rapm_spm
+  - generate_panna_report
+  - get_covariate_effects
+  - aggregate_rapm_by_team
+  - filter_rapm_by_season
+  - report_season_ranges
+
+- title: Competition Metadata
+  desc: League and competition information
+  contents:
+  - get_tournament_years
+  - is_tournament_competition
+  - list_opta_seasons
+  - get_opta_columns
+
+- title: Internal
+  desc: Internal functions (advanced users)
+  contents:
+  - prepare_rapm_data
+  - get_splint_players
+  - apply_bayesian_padding
+  - migrate_metadata_tables_available

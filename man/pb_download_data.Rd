@@ -30,6 +30,17 @@ Invisible path to destination directory
 Downloads the pannadata.zip file from a GitHub Release and extracts it
 to the local pannadata directory.
 }
+\section{Deprecation Notice}{
+
+For loading data, prefer the new DuckDB-based functions which are more efficient:
+\itemize{
+\item \code{load_summary()}, \code{load_events()}, \code{load_shots()}, etc.
+\item These download only what's needed and filter via SQL
+}
+
+This function is still useful for downloading the complete dataset for local development.
+}
+
 \examples{
 \dontrun{
 # Download all data

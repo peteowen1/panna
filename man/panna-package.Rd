@@ -6,6 +6,8 @@
 \alias{panna-package}
 \title{panna: Player Rating System for Football Using RAPM and SPM Methods}
 \description{
+\if{html}{\figure{logo.png}{options: style='float: right' alt='logo' width='120'}}
+
 Implements the panna player rating methodology for football (soccer) players. Combines Regularized Adjusted Plus-Minus (RAPM) with Statistical Plus-Minus (SPM) as a Bayesian prior to produce stable player impact ratings. Uses cached FBref data from pannadata repository, splint-based analysis (time segments between substitutions/goals), and offensive/defensive rating separation.
 }
 \seealso{

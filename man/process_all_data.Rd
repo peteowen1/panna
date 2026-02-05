@@ -29,3 +29,4 @@ List of processed data frames
 Master function to process all collected data.
 Supports per-component caching to avoid reprocessing on crashes.
 }
+\keyword{internal}

@@ -16,6 +16,4 @@ Character vector of standardized names
 Cleans and standardizes player names for consistent matching across datasets.
 Uses memoization to cache unique names for O(1) lookup on repeated values.
 }
-\examples{
-standardize_player_names(c("Mohamed Salah", "M. Salah", "SALAH"))
-}
+\keyword{internal}

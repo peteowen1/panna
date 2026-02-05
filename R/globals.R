@@ -5,7 +5,7 @@
 #' @export
 magrittr::`%>%`
 
-#' @importFrom stats setNames
+#' @importFrom stats setNames na.pass
 NULL
 
 # Suppress R CMD check notes for data.frame column names used in dplyr/tidyr
@@ -132,5 +132,234 @@ utils::globalVariables(c(
 
   # Player timing columns
   "on_minute",
-  "off_minute"
+  "off_minute",
+
+  # Player stats function columns
+  "x1_3",
+  "kp",
+  "ppa",
+  "crs_pa",
+  "tkl_w",
+  "clr",
+  "err",
+  "so_ta",
+  "ga",
+  "saves",
+  "clean_sheet",
+
+  # EPV model columns
+  "chain_id",
+  "chain_start_time",
+  "chain_team_id",
+  "chain_end_time",
+  "chain_outcome",
+  "chain_ends_in_goal",
+  "chain_ends_in_shot",
+  "chain_xg",
+  "opponent_scores_next",
+  "ends_in_goal",
+  "next_opponent_chain_goal",
+  "shots_in_chain",
+  "action_in_chain",
+  "action_type",
+  "action_type_id",
+  "action_id",
+  "result",
+  "bodypart",
+  "start_x",
+  "start_y",
+  "end_x",
+  "end_y",
+  "time_seconds",
+  "period_id",
+  "type_id",
+  "outcome",
+  "opta_type_id",
+  "opta_type_name",
+  "original_event_id",
+  "attacks_right",
+  "qualifier_json",
+  "qualifiers_parsed",
+
+  # EPV feature columns
+  "distance_to_goal",
+  "angle_to_goal",
+  "zone_id",
+  "in_penalty_area",
+  "in_final_third",
+  "pass_distance",
+  "pass_angle",
+  "is_forward",
+  "is_progressive",
+  "xpass",
+  "xg",
+  "epv",
+  "p_score",
+  "p_concede",
+  "p_score_delta",
+  "p_concede_delta",
+  "passer_credit",
+  "receiver_credit",
+  "scores_this_possession",
+  "concedes_next_possession",
+
+  # Additional columns
+  "completed",
+  "second",
+  "big_chance",
+  "situation",
+  "body_part",
+  "x",
+  "y",
+
+  # Duel opponent columns (from merge_duel_rows)
+  "opponent_player_id",
+  "opponent_player_name",
+
+  # merge_duel_rows helper columns
+  "is_duel",
+  "next_match_id",
+  "next_period_id",
+  "next_time",
+  "next_action_type",
+  "next_team_id_duel",
+  "next_result",
+  "next_player_id",
+  "next_player_name",
+  "next_is_duel",
+  "is_duel_pair",
+  "is_winner",
+  "is_loser",
+
+  # normalize_spadl_coordinates helper columns
+  "attacks_right",
+  "mean_x",
+  "i.attacks_right",
+
+  # calculate_physical_discontinuity columns
+  "phys_end_x",
+  "phys_end_y",
+  "phys_next_x",
+  "phys_next_y",
+  "phys_disc",
+  "ref_team",
+  "next_team",
+  "next_start_x",
+  "next_start_y",
+
+  # convert_opta_to_spadl helper columns
+  "end_x_new",
+  "end_y_new",
+  "original_event_id",
+  "opta_type_id",
+  "qualifiers_parsed",
+
+  # EPV delta calculation columns (lead-based: next action values)
+  "next_epv",
+  "next_team_id",
+
+  # Own goal indicator (Opta qualifier 28)
+  "is_own_goal",
+
+  # Pass credit assignment temp columns
+  "passer_share",
+  "passer_blame",
+  "position_scale",
+
+  # data.table special symbols
+  "..available_cols",
+  "..feature_cols",
+  "..outcome_cols",
+  "..result_cols",
+
+  # Duel merge helper columns
+  "x_sum",
+  "is_same_type_duel",
+  "is_cross_type_duel",
+
+  # EPV credit assignment helper columns
+  "is_period_boundary",
+  "next_epv_fixed",
+  "next_team_fixed",
+  "next_action",
+
+  # Possession chain helper columns
+  "prev_team_id",
+
+  # Additional EPV/RAPM columns from R CMD check
+  "abs_coef",
+  "action_time",
+  "action_type_num",
+  "added_time",
+  "chain_break",
+  "chain_duration",
+  "dist_after",
+  "dist_before",
+  "dx",
+  "dy",
+  "epv_as_actor",
+  "epv_as_receiver",
+  "epv_delta",
+  "epv_duel_blame",
+  "epv_model",
+  "epv_total",
+  "opponent_credit",
+  "event_id",
+  "expected_xg",
+  "feature",
+  "goal_time",
+  "has_shot",
+  "is_headed_pass",
+  "is_red_card",
+  "last_action_result",
+  "last_action_type",
+  "mins_per_90",
+  "minutes_played",
+  "n_actions",
+  "next_ends_in_goal",
+  "next_goal_label",
+  "next_goal_team",
+  "next_shot_team",
+  "next_shot_xg",
+  "next_xg_label",
+  "p_opponent_scores",
+  "p_team_scores",
+  "player_credit",
+  "possession_change",
+  "possession_velocity",
+  "prev_action_type",
+  "prev_period_id",
+  "prev_result",
+  "prev_time",
+  "receiver_player_id",
+  "receiver_player_name",
+  "receiver_team_id",
+  "result_success",
+  "seconds_since_chain_start",
+  "shot_time",
+  "shot_xg",
+  "team_id",
+  "time_first",
+  "time_last",
+  "x_first",
+  "x_last",
+  "x_progression",
+
+  # data.table join prefix columns (i. prefix)
+  "i.action_id",
+  "i.end_minute",
+  "i.match_id",
+  "i.period_id",
+  "i.splint_num",
+  "i.start_minute",
+  "i.team_id",
+
+  # data.table join prefix columns (x. prefix)
+  "x.goal_team",
+  "x.is_home",
+  "x.player_id",
+  "x.player_name",
+  "x.shot_team",
+  "x.shot_xg",
+  "x.team"
 ))

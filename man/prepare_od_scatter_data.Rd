@@ -15,3 +15,4 @@ Data frame ready for ggplot2
 \description{
 Prepares data for visualizing offensive vs defensive ratings.
 }
+\keyword{internal}

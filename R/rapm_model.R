@@ -26,6 +26,31 @@ fit_rapm <- function(rapm_data, alpha = 0, nfolds = 10,
                          use_weights = TRUE, standardize = FALSE,
                          penalize_covariates = FALSE,
                          parallel = TRUE, n_cores = NULL) {
+  # Validate input structure
+  if (!is.list(rapm_data)) {
+    cli::cli_abort(c(
+      "{.arg rapm_data} must be a list.",
+      "x" = "Got {.cls {class(rapm_data)}} instead.",
+      "i" = "Use {.fn create_rapm_design_matrix} to generate valid rapm_data."
+    ))
+  }
+
+  required_elements <- c("y")
+  has_X <- "X" %in% names(rapm_data) || "X_full" %in% names(rapm_data)
+  if (!has_X) {
+    cli::cli_abort(c(
+      "{.arg rapm_data} must contain 'X' or 'X_full' matrix.",
+      "i" = "Use {.fn create_rapm_design_matrix} to generate valid rapm_data."
+    ))
+  }
+
+  if (!"y" %in% names(rapm_data)) {
+    cli::cli_abort(c(
+      "{.arg rapm_data} must contain 'y' vector.",
+      "i" = "Use {.fn create_rapm_design_matrix} to generate valid rapm_data."
+    ))
+  }
+
   # Support both X_full (production) and X (tests)
   X <- if (!is.null(rapm_data$X_full)) rapm_data$X_full else rapm_data$X
   y <- rapm_data$y
@@ -36,6 +61,13 @@ fit_rapm <- function(rapm_data, alpha = 0, nfolds = 10,
   X <- X[valid_idx, , drop = FALSE]
   y <- y[valid_idx]
   if (!is.null(weights)) weights <- weights[valid_idx]
+
+  if (length(y) == 0) {
+    cli::cli_abort(c(
+      "No valid observations after removing NA values.",
+      "i" = "Check that {.arg rapm_data$y} contains non-NA values."
+    ))
+  }
 
   progress_msg(sprintf("Fitting RAPM: %d observations, %d columns",
                        length(y), ncol(X)))
@@ -253,25 +285,23 @@ fit_rapm_with_prior <- function(rapm_data, offense_prior, defense_prior,
   prior_vec <- rep(0, n_cols)
   names(prior_vec) <- col_names
 
-  # Fill in offense priors
-  off_matched <- 0
-  for (pid in player_ids) {
-    off_col <- paste0(pid, "_off")
-    if (off_col %in% col_names && pid %in% names(offense_prior)) {
-      prior_vec[off_col] <- offense_prior[pid]
-      off_matched <- off_matched + 1
-    }
+  # Fill in offense priors (vectorized O(n) instead of O(n²) loop)
+  off_cols <- paste0(player_ids, "_off")
+  off_match_idx <- match(player_ids, names(offense_prior))
+  off_valid <- !is.na(off_match_idx) & off_cols %in% col_names
+  if (any(off_valid)) {
+    prior_vec[off_cols[off_valid]] <- offense_prior[player_ids[off_valid]]
   }
+  off_matched <- sum(off_valid)
 
-  # Fill in defense priors
-  def_matched <- 0
-  for (pid in player_ids) {
-    def_col <- paste0(pid, "_def")
-    if (def_col %in% col_names && pid %in% names(defense_prior)) {
-      prior_vec[def_col] <- defense_prior[pid]
-      def_matched <- def_matched + 1
-    }
+  # Fill in defense priors (vectorized O(n) instead of O(n²) loop)
+  def_cols <- paste0(player_ids, "_def")
+  def_match_idx <- match(player_ids, names(defense_prior))
+  def_valid <- !is.na(def_match_idx) & def_cols %in% col_names
+  if (any(def_valid)) {
+    prior_vec[def_cols[def_valid]] <- defense_prior[player_ids[def_valid]]
   }
+  def_matched <- sum(def_valid)
 
   progress_msg(sprintf("xRAPM: matched %d offense priors, %d defense priors",
                        off_matched, def_matched))
@@ -446,7 +476,10 @@ extract_rapm_coefficients <- function(model, lambda = "min") {
       } else if (lambda == "1se") {
         model$lambda.1se
       } else {
-        stop("lambda must be 'min', '1se', or numeric")
+        cli::cli_abort(c(
+          "{.arg lambda} must be {.val min}, {.val 1se}, or numeric.",
+          "x" = "Got {.val {lambda}} instead."
+        ))
       }
     } else {
       lambda_val <- lambda
@@ -587,7 +620,7 @@ calculate_rapm_stability <- function(rapm_data, n_bootstrap = 100, alpha = 0) {
       coefs <- as.vector(stats::coef(fit, s = "lambda.min"))[-1]
       boot_estimates[b, ] <- coefs
     }, error = function(e) {
-      warning(paste("Bootstrap sample", b, "failed"))
+      cli::cli_warn("Bootstrap sample {b} failed: {e$message}")
     })
   }
 
@@ -616,7 +649,7 @@ calculate_rapm_stability <- function(rapm_data, n_bootstrap = 100, alpha = 0) {
 #' @export
 aggregate_rapm_by_team <- function(ratings, player_data) {
   if (!"team" %in% names(player_data)) {
-    warning("No team column in player_data")
+    cli::cli_warn("No {.field team} column in {.arg player_data}.")
     return(NULL)
   }
 

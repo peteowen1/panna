@@ -1,0 +1,178 @@
+---
+title: "Getting Started with panna"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Getting Started with panna}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  eval = FALSE
+)
+```
+
+This vignette covers installation, data download, and basic usage of the panna package.
+
+## Installation
+
+Install panna from GitHub:
+
+```{r install}
+# Install devtools if needed
+install.packages("devtools")
+
+# Install panna
+devtools::install_github("peteowen1/panna")
+```
+
+## Downloading Data
+
+Data is stored in GitHub Releases and must be downloaded before use. The package supports three data sources:
+
+```{r download}
+library(panna)
+
+# Download FBref data (primary source, recommended)
+pb_download_source("fbref")
+
+# Download Understat data
+pb_download_source("understat")
+
+# Download Opta data
+pb_download_source("opta")
+
+# Or download everything
+pb_download_source("all")
+```
+
+Data is cached locally after download, so you only need to do this once (or when updating to get new matches).
+
+## Loading Data
+
+### FBref Data
+
+FBref provides the most comprehensive statistics with StatsBomb xG values.
+
+```{r load-fbref}
+# Load summary stats for a league/season
+summary <- load_summary("ENG", "2024-2025")
+
+# Other table types
+passing <- load_passing("ENG", "2024-2025")
+defense <- load_defense("ENG", "2024-2025")
+possession <- load_possession("ENG", "2024-2025")
+shots <- load_shots()  # All leagues/seasons
+metadata <- load_metadata("ENG", "2024-2025")
+```
+
+### Opta Data
+
+Opta provides 271 columns per player including progressive carries and set piece statistics.
+
+```{r load-opta}
+# Load Opta player stats
+opta_stats <- load_opta_stats("EPL", "2024-2025")
+
+# Load Opta shots
+opta_shots <- load_opta_shots("EPL", "2024-2025")
+
+# Load all Big 5 leagues at once
+big5 <- load_opta_big5("2024-2025")
+```
+
+Note: Opta uses different league codes (EPL, La_Liga, Bundesliga, Serie_A, Ligue_1).
+
+### Understat Data
+
+Understat includes xGChain and xGBuildup metrics not available elsewhere.
+
+```{r load-understat}
+# Load player roster with xGChain, xGBuildup
+roster <- load_understat_roster("EPL", "2024")
+
+# Load shot-level data
+shots <- load_understat_shots("EPL", "2024")
+```
+
+Note: Understat uses single-year seasons (e.g., "2024" for 2024-25).
+
+## League and Season Codes
+
+### League Codes
+
+| League | Panna/FBref | Opta | Understat |
+|--------|-------------|------|-----------|
+| Premier League | ENG | EPL | EPL |
+| La Liga | ESP | La_Liga | La_Liga |
+| Bundesliga | GER | Bundesliga | Bundesliga |
+| Serie A | ITA | Serie_A | Serie_A |
+| Ligue 1 | FRA | Ligue_1 | Ligue_1 |
+
+### Season Formats
+
+| Source | Format | Example |
+|--------|--------|---------|
+| FBref/Opta | YYYY-YYYY | "2024-2025" |
+| Understat | YYYY | "2024" |
+
+## Aggregated Player Statistics
+
+The package provides convenience functions for aggregated player statistics:
+
+```{r player-stats}
+# FBref aggregated stats
+players_summary <- player_fbref_summary(
+  leagues = "ENG",
+  seasons = "2024-2025",
+  min_minutes = 900  # Filter for players with 900+ minutes
+)
+
+players_passing <- player_fbref_passing(
+  leagues = c("ENG", "ESP"),  # Multiple leagues
+seasons = c("2023-2024", "2024-2025"),  # Multiple seasons
+  min_minutes = 1800
+)
+
+# Opta aggregated stats
+opta_players <- player_opta_summary(
+  leagues = "EPL",
+  seasons = "2024-2025",
+  min_minutes = 900
+)
+
+# Understat aggregated stats
+understat_players <- player_understat_summary(
+  leagues = "EPL",
+  seasons = "2024",
+  min_minutes = 900
+)
+```
+
+## Working with Multiple Leagues
+
+Many functions accept vectors of leagues and seasons:
+
+```{r multi-league}
+# Load Big 5 leagues
+big5_summary <- load_summary(
+  leagues = c("ENG", "ESP", "GER", "ITA", "FRA"),
+  seasons = "2024-2025"
+)
+
+# Aggregate player stats across leagues
+big5_players <- player_fbref_summary(
+  leagues = c("ENG", "ESP", "GER", "ITA", "FRA"),
+  seasons = "2024-2025",
+  min_minutes = 900
+)
+```
+
+## Next Steps
+
+- [Player Ratings](player-ratings.html) - Learn about RAPM and SPM methodology
+- [Data Sources](data-sources.html) - Detailed comparison of FBref, Opta, and Understat
+- [Data Dictionary](../DATA_DICTIONARY.md) - Column definitions

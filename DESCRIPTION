@@ -1,6 +1,6 @@
 Package: panna
 Title: Player Rating System for Football Using RAPM and SPM Methods
-Version: 0.0.0.9000
+Version: 0.1.0
 Authors@R:
     person("Pete", "Owen", , "pete.owen1@hotmail.co.uk", role = c("aut", "cre"))
 Description: Implements the panna player rating methodology for football
@@ -15,12 +15,17 @@ Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
 Imports:
     arrow (>= 10.0.0),
+    cli,
     data.table (>= 1.14.0),
+    DBI,
     doParallel,
     dplyr (>= 1.0.0),
+    duckdb (>= 0.9.0),
     glmnet (>= 4.0),
     httr (>= 1.4.0),
+    httr2,
     janitor,
+    jsonlite,
     lubridate,
     magrittr,
     Matrix,
@@ -28,17 +33,20 @@ Imports:
     purrr,
     rlang,
     rvest (>= 1.0.0),
-    tidyr
+    stringi,
+    tidyr,
+    tools
 Suggests:
-    future,
-    future.apply,
     ggplot2,
     ggrepel,
     knitr,
+    lifecycle,
     piggyback,
+    pROC,
     rmarkdown,
     testthat (>= 3.0.0),
     xgboost
 Config/testthat/edition: 3
+VignetteBuilder: knitr
 URL: https://github.com/peteowen1/panna
 BugReports: https://github.com/peteowen1/panna/issues

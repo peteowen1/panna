@@ -15,7 +15,10 @@
 #' @export
 calculate_od_panna <- function(rapm_data, spm_ratings, lambda_prior = 1) {
   if (is.null(rapm_data$X_od)) {
-    stop("RAPM data must be prepared with separate_od = TRUE")
+    cli::cli_abort(c(
+      "{.arg rapm_data} must be prepared with {.code separate_od = TRUE}.",
+      "i" = "Use {.fn create_rapm_design_matrix} with {.code separate_od = TRUE}."
+    ))
   }
 
   X <- rapm_data$X_od
@@ -125,7 +128,10 @@ split_od_contributions <- function(panna_ratings, player_features) {
   def_cols <- names(player_features)[grepl("(Tkl|Int|Block|Clr)", names(player_features))]
 
   if (length(off_cols) == 0 || length(def_cols) == 0) {
-    warning("Cannot split O/D: missing feature columns")
+    cli::cli_warn(c(
+      "Cannot split O/D contributions: missing feature columns.",
+      "i" = "Returning original ratings without O/D split."
+    ))
     return(panna_ratings)
   }
 
@@ -197,7 +203,10 @@ categorize_player_profile <- function(o_rating, d_rating) {
 #' @export
 get_top_offensive <- function(ratings, n = 10) {
   if (!"o_panna" %in% names(ratings)) {
-    stop("Ratings must include o_panna column")
+    cli::cli_abort(c(
+      "{.arg ratings} must include {.field o_panna} column.",
+      "i" = "Use {.fn calculate_od_panna} to generate offensive ratings."
+    ))
   }
 
   ratings %>%
@@ -217,7 +226,10 @@ get_top_offensive <- function(ratings, n = 10) {
 #' @export
 get_top_defensive <- function(ratings, n = 10) {
   if (!"d_panna" %in% names(ratings)) {
-    stop("Ratings must include d_panna column")
+    cli::cli_abort(c(
+      "{.arg ratings} must include {.field d_panna} column.",
+      "i" = "Use {.fn calculate_od_panna} to generate defensive ratings."
+    ))
   }
 
   ratings %>%
@@ -233,10 +245,13 @@ get_top_defensive <- function(ratings, n = 10) {
 #' @param ratings O/D ratings data frame
 #'
 #' @return Data frame ready for ggplot2
-#' @export
+#' @keywords internal
 prepare_od_scatter_data <- function(ratings) {
   if (!all(c("o_panna", "d_panna") %in% names(ratings))) {
-    stop("Ratings must include o_panna and d_panna columns")
+    cli::cli_abort(c(
+      "{.arg ratings} must include {.field o_panna} and {.field d_panna} columns.",
+      "i" = "Use {.fn calculate_od_panna} to generate O/D ratings."
+    ))
   }
 
   ratings %>%
@@ -259,7 +274,7 @@ prepare_od_scatter_data <- function(ratings) {
 #' @export
 visualize_od_scatter <- function(ratings, highlight_top = 10) {
   if (!requireNamespace("ggplot2", quietly = TRUE)) {
-    stop("ggplot2 is required for visualization")
+    cli::cli_abort("Package {.pkg ggplot2} is required for visualization.")
   }
 
   plot_data <- prepare_od_scatter_data(ratings)

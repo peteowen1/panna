@@ -318,6 +318,143 @@ Final unified ratings.
 
 ---
 
+---
+
+## Opta Data Schemas
+
+Alternative data source from TheAnalyst/Opta API. Use `load_opta_*()` functions.
+
+### Opta Player Stats (`load_opta_stats()`)
+
+263 columns per player per match. Key columns:
+
+| Column | Type | Description |
+|--------|------|-------------|
+| match_id | character | Opta match ID |
+| match_date | Date | Match date |
+| player_id | character | Opta player ID |
+| player_name | character | Player name |
+| team_id | character | Team ID |
+| team_name | character | Team name |
+| team_position | character | "home" or "away" |
+| minsPlayed | numeric | Minutes played |
+| position | character | Position (Goalkeeper, Defender, etc.) |
+| goals | numeric | Goals scored |
+| totalScoringAtt | numeric | Total shots |
+| ontargetScoringAtt | numeric | Shots on target |
+| bigChanceScored | numeric | Big chances scored |
+| bigChanceMissed | numeric | Big chances missed |
+| goalAssist | numeric | Assists |
+| accuratePass | numeric | Accurate passes |
+| totalPass | numeric | Total passes |
+| successfulFinalThirdPasses | numeric | Final third passes completed |
+| wonTackle | numeric | Tackles won |
+| totalTackle | numeric | Total tackles attempted |
+| interceptionWon | numeric | Interceptions won |
+| aerialWon | numeric | Aerial duels won |
+| aerialLost | numeric | Aerial duels lost |
+| duelWon | numeric | Total duels won |
+| duelLost | numeric | Total duels lost |
+| touches | numeric | Ball touches |
+| touchesInOppBox | numeric | Touches in opponent's box |
+| possWonDef3rd | numeric | Possession won in defensive third |
+| possWonMid3rd | numeric | Possession won in middle third |
+| possWonAtt3rd | numeric | Possession won in attacking third |
+| dispossessed | numeric | Times dispossessed |
+| turnover | numeric | Turnovers |
+| fouls | numeric | Fouls committed |
+| wasFouled | numeric | Fouls won |
+| saves | numeric | Goalkeeper saves |
+| goalsConceded | numeric | Goals conceded (GK) |
+
+### Opta Events (`load_opta_events()`)
+
+Match events with timing for splint boundaries.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| match_id | character | Opta match ID |
+| event_type | character | goal, substitution, red_card, yellow_card, second_yellow |
+| minute | numeric | Event minute |
+| second | numeric | Event second |
+| team_id | character | Team involved |
+| player_id | character | Player involved |
+| player_name | character | Player name |
+| player_on_id | character | Sub coming on (for substitutions) |
+| player_on_name | character | Name of sub coming on |
+| player_off_id | character | Player leaving (for substitutions) |
+| player_off_name | character | Name of player leaving |
+| assist_player_id | character | Assister (for goals) |
+| assist_player_name | character | Assister name |
+
+### Opta Shot Events (`load_opta_shot_events()`)
+
+Individual shots with x/y coordinates.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| match_id | character | Opta match ID |
+| event_id | integer | Unique shot event ID |
+| player_id | character | Shooter ID |
+| player_name | character | Shooter name |
+| team_id | character | Team ID |
+| minute | numeric | Shot minute |
+| second | numeric | Shot second |
+| x | numeric | X coordinate (0-100, goal at 100) |
+| y | numeric | Y coordinate (0-100, center at 50) |
+| outcome | integer | 1=on target, 0=off target |
+| is_goal | logical | Shot resulted in goal |
+| type_id | integer | 13=saved, 14=post, 15=miss, 16=goal |
+| body_part | character | Head, LeftFoot, RightFoot |
+| situation | character | OpenPlay, SetPiece, Corner, Penalty |
+| big_chance | logical | Big chance indicator |
+
+Note: Opta API does not include xG values. Use `prepare_opta_shots_for_splints(use_goals_as_xg = TRUE)` for a basic proxy, or calculate xG from x/y coordinates with an external model.
+
+### Opta Lineups (`load_opta_lineups()`)
+
+Player lineup data with timing.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| match_id | character | Opta match ID |
+| match_date | Date | Match date |
+| player_id | character | Player ID |
+| player_name | character | Player name |
+| team_id | character | Team ID |
+| team_name | character | Team name |
+| team_position | character | "home" or "away" |
+| position | character | Position (Goalkeeper, Defender, etc.) |
+| position_side | character | Left, Right, Centre |
+| formation_place | integer | 1-11 for starters |
+| shirt_number | integer | Jersey number |
+| is_starter | logical | Started the match |
+| minutes_played | numeric | Total minutes played |
+| sub_on_minute | numeric | Minute substituted on (0 if starter) |
+| sub_off_minute | numeric | Minute substituted off (0 if full match) |
+
+### Using Opta Data for Splints
+
+```r
+# Load Opta data
+lineups <- load_opta_lineups("ENG", "2024-2025")
+events <- load_opta_events("ENG", "2024-2025")
+shots <- load_opta_shot_events("ENG", "2024-2025")
+
+# Create processed data structure
+processed <- create_opta_processed_data(
+  opta_lineups = lineups,
+  opta_events = events,
+  opta_shot_events = shots,
+  use_goals_as_xg = TRUE  # Use goals as xG proxy
+)
+
+# Create splints
+splints <- create_all_splints(processed)
+```
+
+---
+
 ## Rating Interpretation
 
 ### Offense Coefficient
