@@ -17,7 +17,8 @@
 #' @return List with panna ratings and model details
 #' @export
 calculate_panna_rating <- function(rapm_data, spm_ratings, lambda_prior = 1, alpha = 0) {
-  X <- rapm_data$X
+  # Support both X_full (production) and X (tests)
+  X <- if (!is.null(rapm_data$X_full)) rapm_data$X_full else rapm_data$X
   y <- rapm_data$y
 
   # Remove NA responses

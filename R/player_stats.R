@@ -1131,6 +1131,9 @@ player_understat_summary <- function(player = NULL,
     if (col %in% names(df)) as.numeric(df[[col]]) else rep(0, nrow(df))
   }
 
+  # Determine team column (Understat data has team_id, not team)
+  team_col <- if ("team" %in% names(data)) "team" else "team_id"
+
   if (by_team) {
     result <- stats::aggregate(
       cbind(
@@ -1140,15 +1143,16 @@ player_understat_summary <- function(player = NULL,
         assists = get_col(data, "assists"),
         shots = get_col(data, "shots"),
         key_passes = get_col(data, "key_passes"),
-        xg = get_col(data, "xG"),
-        xa = get_col(data, "xA"),
-        xg_chain = get_col(data, "xGChain"),
-        xg_buildup = get_col(data, "xGBuildup")
-      ) ~ player + team,
+        xg = get_col(data, "x_g"),
+        xa = get_col(data, "x_a"),
+        xg_chain = get_col(data, "x_g_chain"),
+        xg_buildup = get_col(data, "x_g_buildup")
+      ) ~ player + data[[team_col]],
       data = data,
       FUN = function(x) sum(x, na.rm = TRUE),
       na.action = na.pass
     )
+    names(result)[2] <- "team"
   } else {
     result <- stats::aggregate(
       cbind(
@@ -1158,18 +1162,21 @@ player_understat_summary <- function(player = NULL,
         assists = get_col(data, "assists"),
         shots = get_col(data, "shots"),
         key_passes = get_col(data, "key_passes"),
-        xg = get_col(data, "xG"),
-        xa = get_col(data, "xA"),
-        xg_chain = get_col(data, "xGChain"),
-        xg_buildup = get_col(data, "xGBuildup")
+        xg = get_col(data, "x_g"),
+        xa = get_col(data, "x_a"),
+        xg_chain = get_col(data, "x_g_chain"),
+        xg_buildup = get_col(data, "x_g_buildup")
       ) ~ player,
       data = data,
       FUN = function(x) sum(x, na.rm = TRUE),
       na.action = na.pass
     )
 
-    team_mode <- stats::aggregate(team ~ player, data = data,
-                                   FUN = function(x) names(which.max(table(x))))
+    team_mode <- stats::aggregate(
+      data[[team_col]] ~ player, data = data,
+      FUN = function(x) names(which.max(table(x)))
+    )
+    names(team_mode)[2] <- "team"
     result <- merge(result, team_mode, by = "player", all.x = TRUE)
   }
 
@@ -1312,6 +1319,254 @@ player_opta_shots <- function(player = NULL,
 
 
 # =============================================================================
+# Opta xG/xA Stats (from trained models)
+# =============================================================================
+
+# Internal helper to load Opta xmetrics data
+.load_opta_xmetrics_data <- function(league, season, source) {
+  data <- if (is.null(league)) {
+    # Load all Big 5 leagues
+    results <- lapply(names(OPTA_LEAGUES), function(lg) {
+      tryCatch({
+        df <- load_opta_xmetrics(lg, season)
+        df$league <- lg
+        df
+      }, error = function(e) NULL)
+    })
+    dplyr::bind_rows(Filter(Negate(is.null), results))
+  } else {
+    load_opta_xmetrics(league = league, season = season)
+  }
+  as.data.frame(data)
+}
+
+
+#' Opta Player xG and xA Statistics
+#'
+#' Aggregate shooting and assisting statistics with xG/xA from our trained
+#' Opta xG model. Requires pre-computed xmetrics parquet files.
+#'
+#' @param player Character. Player name to filter (case-insensitive partial match).
+#' @param league Character. League code (ENG, ESP, GER, ITA, FRA).
+#' @param season Character. Season (e.g., "2024-2025").
+#' @param min_minutes Integer. Minimum minutes for inclusion (default 450).
+#' @param by_team Logical. If TRUE, aggregate by player and team separately.
+#' @param source Character. "local" (default) or "remote".
+#'
+#' @return Data frame with xG/xA statistics per player.
+#'
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' # Top xG in EPL
+#' player_opta_xg(league = "ENG", season = "2024-2025")
+#'
+#' # Specific player
+#' player_opta_xg("B. Saka", league = "ENG")
+#' }
+player_opta_xg <- function(player = NULL,
+                            league = NULL,
+                            season = NULL,
+                            min_minutes = 450,
+                            by_team = FALSE,
+                            source = c("local", "remote")) {
+  source <- match.arg(source)
+
+  data <- .load_opta_xmetrics_data(league, season, source)
+
+  if (is.null(data) || nrow(data) == 0) {
+    cli::cli_warn("No Opta xmetrics data found. Run 03_calculate_player_xmetrics.R first.")
+    return(data.frame())
+  }
+
+  if (!is.null(player)) {
+    data <- data[grepl(player, data$player_name, ignore.case = TRUE), ]
+    if (nrow(data) == 0) {
+      cli::cli_warn("No data found for player: {player}")
+      return(data.frame())
+    }
+  }
+
+  get_col <- function(df, col) {
+    if (col %in% names(df)) as.numeric(df[[col]]) else rep(0, nrow(df))
+  }
+
+  if (by_team) {
+    result <- stats::aggregate(
+      cbind(
+        minutes = get_col(data, "minutes"),
+        shots = get_col(data, "shots"),
+        shots_on_target = get_col(data, "shots_on_target"),
+        goals = get_col(data, "goals"),
+        npgoals = get_col(data, "npgoals"),
+        xg = get_col(data, "xg"),
+        npxg = get_col(data, "npxg"),
+        key_passes = get_col(data, "key_passes"),
+        assists = get_col(data, "assists"),
+        xa = get_col(data, "xa")
+      ) ~ player_name + team_name,
+      data = data,
+      FUN = function(x) sum(x, na.rm = TRUE),
+      na.action = na.pass
+    )
+    names(result)[1:2] <- c("player", "team")
+  } else {
+    result <- stats::aggregate(
+      cbind(
+        minutes = get_col(data, "minutes"),
+        shots = get_col(data, "shots"),
+        shots_on_target = get_col(data, "shots_on_target"),
+        goals = get_col(data, "goals"),
+        npgoals = get_col(data, "npgoals"),
+        xg = get_col(data, "xg"),
+        npxg = get_col(data, "npxg"),
+        key_passes = get_col(data, "key_passes"),
+        assists = get_col(data, "assists"),
+        xa = get_col(data, "xa")
+      ) ~ player_name,
+      data = data,
+      FUN = function(x) sum(x, na.rm = TRUE),
+      na.action = na.pass
+    )
+    names(result)[1] <- "player"
+
+    team_mode <- stats::aggregate(
+      team_name ~ player_name, data = data,
+      FUN = function(x) names(which.max(table(x)))
+    )
+    names(team_mode) <- c("player", "team")
+    result <- merge(result, team_mode, by = "player", all.x = TRUE)
+  }
+
+  # Derived stats
+  result$goals_minus_xg <- round(result$goals - result$xg, 2)
+  result$xg_per90 <- round(per_90(result$xg, result$minutes), 2)
+  result$npxg_per90 <- round(per_90(result$npxg, result$minutes), 2)
+  result$xa_per90 <- round(per_90(result$xa, result$minutes), 2)
+
+  if (is.null(player)) {
+    result <- result[result$minutes >= min_minutes, ]
+  }
+
+  result <- result[order(-result$xg), ]
+  col_order <- c("player", "team", "minutes",
+                 "shots", "shots_on_target", "goals", "npgoals",
+                 "xg", "npxg", "goals_minus_xg",
+                 "xg_per90", "npxg_per90",
+                 "key_passes", "assists", "xa", "xa_per90")
+  result <- result[, col_order]
+  rownames(result) <- NULL
+
+  as.data.frame(result)
+}
+
+
+#' Opta Player xPass Statistics
+#'
+#' Aggregate passing statistics with xPass (expected pass completion) from
+#' our trained model. Shows passing volume, accuracy, and overperformance.
+#'
+#' @inheritParams player_opta_xg
+#'
+#' @return Data frame with xPass statistics per player.
+#'
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' # Top xPass overperformers
+#' player_opta_xpass(league = "ENG", season = "2024-2025")
+#'
+#' # Specific player
+#' player_opta_xpass("B. Saka", league = "ENG")
+#' }
+player_opta_xpass <- function(player = NULL,
+                               league = NULL,
+                               season = NULL,
+                               min_minutes = 450,
+                               by_team = FALSE,
+                               source = c("local", "remote")) {
+  source <- match.arg(source)
+
+  data <- .load_opta_xmetrics_data(league, season, source)
+
+  if (is.null(data) || nrow(data) == 0) {
+    cli::cli_warn("No Opta xmetrics data found. Run 03_calculate_player_xmetrics.R first.")
+    return(data.frame())
+  }
+
+  if (!is.null(player)) {
+    data <- data[grepl(player, data$player_name, ignore.case = TRUE), ]
+    if (nrow(data) == 0) {
+      cli::cli_warn("No data found for player: {player}")
+      return(data.frame())
+    }
+  }
+
+  get_col <- function(df, col) {
+    if (col %in% names(df)) as.numeric(df[[col]]) else rep(0, nrow(df))
+  }
+
+  if (by_team) {
+    result <- stats::aggregate(
+      cbind(
+        minutes = get_col(data, "minutes"),
+        passes_attempted = get_col(data, "passes_attempted"),
+        passes_completed = get_col(data, "passes_completed"),
+        sum_xpass = get_col(data, "sum_xpass"),
+        xpass_overperformance = get_col(data, "xpass_overperformance")
+      ) ~ player_name + team_name,
+      data = data,
+      FUN = function(x) sum(x, na.rm = TRUE),
+      na.action = na.pass
+    )
+    names(result)[1:2] <- c("player", "team")
+  } else {
+    result <- stats::aggregate(
+      cbind(
+        minutes = get_col(data, "minutes"),
+        passes_attempted = get_col(data, "passes_attempted"),
+        passes_completed = get_col(data, "passes_completed"),
+        sum_xpass = get_col(data, "sum_xpass"),
+        xpass_overperformance = get_col(data, "xpass_overperformance")
+      ) ~ player_name,
+      data = data,
+      FUN = function(x) sum(x, na.rm = TRUE),
+      na.action = na.pass
+    )
+    names(result)[1] <- "player"
+
+    team_mode <- stats::aggregate(
+      team_name ~ player_name, data = data,
+      FUN = function(x) names(which.max(table(x)))
+    )
+    names(team_mode) <- c("player", "team")
+    result <- merge(result, team_mode, by = "player", all.x = TRUE)
+  }
+
+  # Derived stats
+  result$pass_pct <- round(safe_divide(result$passes_completed * 100, result$passes_attempted), 1)
+  result$xpass_overperformance_per90 <- round(per_90(result$xpass_overperformance, result$minutes), 2)
+  result$xpass_avg <- round(safe_divide(result$sum_xpass, result$passes_attempted), 3)
+
+  if (is.null(player)) {
+    result <- result[result$minutes >= min_minutes, ]
+  }
+
+  result <- result[order(-result$xpass_overperformance), ]
+  col_order <- c("player", "team", "minutes",
+                 "passes_attempted", "passes_completed", "pass_pct",
+                 "sum_xpass", "xpass_overperformance", "xpass_overperformance_per90",
+                 "xpass_avg")
+  result <- result[, col_order]
+  rownames(result) <- NULL
+
+  as.data.frame(result)
+}
+
+
+# =============================================================================
 # Opta Set Piece Stats
 # =============================================================================
 
@@ -1428,4 +1683,161 @@ player_opta_setpiece <- function(player = NULL,
   result <- result[order(-result$corners_taken, -result$freekicks_taken), ]
   rownames(result) <- NULL
   as.data.frame(result)
+}
+
+
+# ==============================================================================
+# Player Profile (Combined Multi-Source View)
+# ==============================================================================
+
+#' Player Profile - Combined Statistics Across Sources
+#'
+#' Combines key statistics from FBref, Opta, and Understat into a single
+#' consolidated data frame with one row per player-season-league. Merges
+#' the most useful columns from each source.
+#'
+#' @param player Character. Player name to filter (case-insensitive partial match).
+#'   Required.
+#' @param league Character. Filter by league code (ENG, ESP, GER, ITA, FRA).
+#'   NULL returns all leagues.
+#' @param season Character. Filter by FBref season format (e.g., "2024-2025").
+#'   NULL returns all seasons.
+#' @param min_minutes Integer. Minimum minutes for inclusion (default 450).
+#' @param source Character. "remote" (default) or "local".
+#'
+#' @return Data frame with one row per player-season-league containing:
+#'   \itemize{
+#'     \item \strong{Identity}: player, team, league, season, minutes
+#'     \item \strong{FBref}: goals, assists, xg, npxg, xag, sca, gca,
+#'       passes_completed, pass_pct, progressive_passes, key_passes
+#'     \item \strong{Opta}: progressive_carries, final_third_entries,
+#'       pen_area_entries, big_chances_created (when available)
+#'     \item \strong{Understat}: xg_chain, xg_buildup (when available)
+#'   }
+#'
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' # Full profile for a player
+#' player_profile("Saka", league = "ENG")
+#'
+#' # Specific season
+#' player_profile("Salah", league = "ENG", season = "2024-2025")
+#'
+#' # All Big 5 leagues
+#' player_profile("Mbappe")
+#' }
+player_profile <- function(player,
+                           league = NULL,
+                           season = NULL,
+                           min_minutes = 450,
+                           source = c("remote", "local")) {
+  source <- match.arg(source)
+
+  if (is.null(player) || !nzchar(player)) {
+    cli::cli_abort("{.arg player} is required for {.fn player_profile}.")
+  }
+
+  # -- FBref Summary --
+  fbref_sum <- tryCatch(
+    player_fbref_summary(
+      player = player, league = league, season = season,
+      min_minutes = 0, source = source
+    ),
+    error = function(e) data.frame()
+  )
+
+  if (is.null(fbref_sum) || nrow(fbref_sum) == 0) {
+    cli::cli_warn("No FBref data found for player: {player}")
+    return(data.frame())
+  }
+
+  # Start with FBref summary as the base
+  profile <- fbref_sum[, c("player", "team", "matches", "minutes",
+                            "goals", "assists", "xg", "npxg", "xag",
+                            "sca", "gca", "goals_per90", "xg_per90",
+                            "npxg_per90", "xag_per90"), drop = FALSE]
+
+  # -- FBref Passing --
+  fbref_pass <- tryCatch(
+    player_fbref_passing(
+      player = player, league = league, season = season,
+      min_minutes = 0, source = source
+    ),
+    error = function(e) data.frame()
+  )
+
+  if (!is.null(fbref_pass) && nrow(fbref_pass) > 0) {
+    pass_cols <- fbref_pass[, c("player", "passes_completed", "pass_pct",
+                                "progressive_passes", "key_passes",
+                                "passes_into_final_third",
+                                "passes_into_penalty_area",
+                                "progressive_passes_per90",
+                                "key_passes_per90"), drop = FALSE]
+    profile <- merge(profile, pass_cols, by = "player", all.x = TRUE)
+  }
+
+  # -- Opta: derive initial-format name ("Bukayo Saka" -> "B. Saka") --
+  opta_player <- player
+  name_parts <- strsplit(trimws(player), "\\s+")[[1]]
+  if (length(name_parts) >= 2) {
+    opta_player <- paste0(substr(name_parts[1], 1, 1), ". ",
+                          paste(name_parts[-1], collapse = " "))
+  }
+
+  # -- Opta Possession (if available) --
+  opta_poss <- tryCatch({
+    player_opta_possession(
+      player = opta_player, league = league, season = season,
+      min_minutes = 0, source = "local"
+    )
+  }, error = function(e) data.frame())
+
+  if (!is.null(opta_poss) && nrow(opta_poss) > 0) {
+    opta_cols <- opta_poss[, c("progressive_carries",
+                                "final_third_entries", "pen_area_entries",
+                                "progressive_carries_per90"), drop = FALSE]
+    profile <- cbind(profile, opta_cols)
+  }
+
+  # -- Opta Summary (big chances) --
+  opta_sum <- tryCatch(
+    player_opta_summary(
+      player = opta_player, league = league, season = season,
+      min_minutes = 0, source = "local"
+    ),
+    error = function(e) data.frame()
+  )
+
+  if (!is.null(opta_sum) && nrow(opta_sum) > 0) {
+    opta_sum_cols <- opta_sum[, c("big_chances_created",
+                                   "big_chances_scored"), drop = FALSE]
+    profile <- cbind(profile, opta_sum_cols)
+  }
+
+  # -- Understat (xGChain, xGBuildup) --
+  understat <- tryCatch({
+    # Convert FBref season to Understat format: "2024-2025" -> "2024"
+    us_season <- if (!is.null(season)) substr(season, 1, 4) else NULL
+    us_league <- league  # Same codes for Big 5
+    player_understat_summary(
+      player = player, league = us_league, season = us_season,
+      min_minutes = 0, source = source
+    )
+  }, error = function(e) data.frame())
+
+  if (!is.null(understat) && nrow(understat) > 0) {
+    us_cols <- understat[, c("player", "xg_chain", "xg_buildup"), drop = FALSE]
+    profile <- merge(profile, us_cols, by = "player", all.x = TRUE)
+  }
+
+  # Apply min_minutes filter
+  profile <- profile[profile$minutes >= min_minutes, , drop = FALSE]
+
+  # Sort by minutes descending
+  profile <- profile[order(-profile$minutes), ]
+  rownames(profile) <- NULL
+
+  as.data.frame(profile)
 }

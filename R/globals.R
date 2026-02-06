@@ -361,5 +361,24 @@ utils::globalVariables(c(
   "x.player_name",
   "x.shot_team",
   "x.shot_xg",
-  "x.team"
+  "x.team",
+
+  # xmetrics (derive_xa / aggregate_player_xmetrics) columns
+  "xa",
+  "is_key_pass",
+  "is_assist",
+  "prev_action_id",
+  "shots_on_target",
+  "penalty_goals",
+  "npgoals",
+  "goals_minus_xg",
+  "xg_per90",
+  "xa_per90",
+  "xpass_overperformance",
+  "xpass_overperformance_per90",
+  "xpass_avg",
+  "sum_xpass",
+  "passes_attempted",
+  "passes_completed",
+  "fifelse"
 ))
