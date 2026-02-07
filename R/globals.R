@@ -380,5 +380,16 @@ utils::globalVariables(c(
   "sum_xpass",
   "passes_attempted",
   "passes_completed",
-  "fifelse"
+  "fifelse",
+
+  # Opta pipeline columns (player-ratings-opta)
+  "team_name",
+  "team_position",
+  "sub_on_minute",
+  "sub_off_minute",
+  "appearances",
+  "primary_team",
+  "npxg_per90",
+  "xa_per90_xmetrics",
+  "xpass_overperformance_per90_xmetrics"
 ))

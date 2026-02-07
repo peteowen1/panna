@@ -20,7 +20,19 @@ devtools::load_all()
 
 # 1. Configuration ----
 
-LEAGUES <- c("ENG", "ESP", "GER", "ITA", "FRA")
+LEAGUES <- c(
+  # Big 5
+  "ENG", "ESP", "GER", "ITA", "FRA",
+  # Extended domestic
+  "NED", "POR", "TUR", "ENG2", "SCO",
+  # European comps
+  "UCL", "UEL", "UECL",
+  # International
+  "WC", "EURO"
+)
+
+# Only process seasons from 2013-2014 onwards (2014+ data)
+START_SEASON <- "2013-2014"
 
 # Penalty xG (model trained without penalties)
 PENALTY_XG <- 0.76
@@ -52,8 +64,14 @@ for (league in LEAGUES) {
   opta_league <- to_opta_league(league)
   seasons <- tryCatch(list_opta_seasons(league), error = function(e) character(0))
   if (length(seasons) > 0) {
-    league_seasons[[league]] <- seasons
-    cli_alert_info("{league} ({opta_league}): {length(seasons)} seasons ({min(seasons)} to {max(seasons)})")
+    # Filter to START_SEASON onwards (works for both "2024-2025" and "2018 Russia" formats)
+    if (exists("START_SEASON") && !is.null(START_SEASON)) {
+      seasons <- seasons[seasons >= START_SEASON]
+    }
+    if (length(seasons) > 0) {
+      league_seasons[[league]] <- seasons
+      cli_alert_info("{league} ({opta_league}): {length(seasons)} seasons ({min(seasons)} to {max(seasons)})")
+    }
   }
 }
 

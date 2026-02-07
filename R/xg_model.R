@@ -742,3 +742,87 @@ aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0) {
 
   as.data.frame(result)
 }
+
+
+#' Extract Shots from xG-Scored SPADL for Splint Pipeline
+#'
+#' Extracts shot rows from SPADL data that has been scored with xG predictions,
+#' and formats them for the splint creation pipeline. This bridges the xMetrics
+#' infrastructure (SPADL + xG model) with the RAPM/splint pipeline.
+#'
+#' @param spadl SPADL actions data frame with \code{xg} and \code{is_penalty} columns
+#'   (from \code{add_xg_to_spadl()} and penalty detection).
+#' @param lineups Lineup data from \code{load_opta_lineups()} for team_name mapping.
+#'
+#' @return Data frame with one row per shot containing:
+#'   \itemize{
+#'     \item match_id, minute, team, player_id, player_name
+#'     \item xg: Model-predicted xG (penalties overridden to 0.76)
+#'     \item is_goal: Whether the shot resulted in a goal
+#'     \item is_penalty: Whether the shot was a penalty
+#'   }
+#'
+#' @export
+extract_shots_from_spadl <- function(spadl, lineups) {
+  if (is.null(spadl) || nrow(spadl) == 0) {
+    cli::cli_warn("No SPADL actions provided")
+    return(data.frame(
+      match_id = character(0), minute = numeric(0), team = character(0),
+      player_id = character(0), player_name = character(0),
+      xg = numeric(0), is_goal = logical(0), is_penalty = logical(0)
+    ))
+  }
+
+  # Filter to shots only
+
+  shots <- spadl[spadl$action_type == "shot", ]
+
+  if (nrow(shots) == 0) {
+    cli::cli_warn("No shots found in SPADL data")
+    return(data.frame(
+      match_id = character(0), minute = numeric(0), team = character(0),
+      player_id = character(0), player_name = character(0),
+      xg = numeric(0), is_goal = logical(0), is_penalty = logical(0)
+    ))
+  }
+
+  # Build team_id -> team_name lookup from lineups
+  if (!is.null(lineups) && "team_name" %in% names(lineups) && "team_id" %in% names(lineups)) {
+    team_lookup <- unique(lineups[, c("team_id", "team_name")])
+    team_lookup <- stats::setNames(team_lookup$team_name, as.character(team_lookup$team_id))
+  } else {
+    team_lookup <- NULL
+  }
+
+  # Map team_id to team_name
+  team_names <- if (!is.null(team_lookup)) {
+    unname(team_lookup[as.character(shots$team_id)])
+  } else {
+    as.character(shots$team_id)
+  }
+
+  # Handle is_penalty column
+  is_pen <- if ("is_penalty" %in% names(shots)) {
+    as.logical(shots$is_penalty)
+  } else {
+    rep(FALSE, nrow(shots))
+  }
+
+  result <- data.frame(
+    match_id = shots$match_id,
+    minute = floor(shots$time_seconds / 60),
+    team = team_names,
+    player_id = shots$player_id,
+    player_name = shots$player_name,
+    xg = shots$xg,
+    is_goal = shots$result == "success",
+    is_penalty = is_pen,
+    stringsAsFactors = FALSE
+  )
+
+  cli::cli_alert_success(
+    "Extracted {nrow(result)} shots from SPADL (mean xG: {round(mean(result$xg, na.rm = TRUE), 3)})"
+  )
+
+  result
+}

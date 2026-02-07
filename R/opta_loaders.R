@@ -3,7 +3,9 @@
 # Functions for loading Opta (TheAnalyst) data from local parquet files.
 # Data is scraped from TheAnalyst API and stored in pannadata/data/opta/.
 #
-# League codes: EPL, La_Liga, Bundesliga, Serie_A, Ligue_1
+# League codes: EPL, La_Liga, Bundesliga, Serie_A, Ligue_1, Eredivisie,
+#   Primeira_Liga, Super_Lig, Championship, Scottish_Premiership,
+#   UCL, UEL, Conference_League, World_Cup, UEFA_Euros
 # Seasons: 2010-2011 to 2025-2026
 
 #' @importFrom DBI dbConnect dbDisconnect dbGetQuery
@@ -36,11 +38,25 @@ validate_sql_columns <- function(columns) {
 
 # Opta league code mapping
 OPTA_LEAGUES <- c(
+  # Big 5
   ENG = "EPL",
   ESP = "La_Liga",
   GER = "Bundesliga",
   ITA = "Serie_A",
-  FRA = "Ligue_1"
+  FRA = "Ligue_1",
+  # Extended domestic
+  NED = "Eredivisie",
+  POR = "Primeira_Liga",
+  TUR = "Super_Lig",
+  ENG2 = "Championship",
+  SCO = "Scottish_Premiership",
+  # European comps
+  UCL = "UCL",
+  UEL = "UEL",
+  UECL = "Conference_League",
+  # International
+  WC = "World_Cup",
+  EURO = "UEFA_Euros"
 )
 
 # Environment to store opta data path
