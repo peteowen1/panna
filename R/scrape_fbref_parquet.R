@@ -56,7 +56,7 @@ if (!force && exists(cache_key, envir = .remote_parquet_cache)) {
 
   # Download using piggyback
   if (!requireNamespace("piggyback", quietly = TRUE)) {
-    stop("Package 'piggyback' required for remote loading. Install with: install.packages('piggyback')")
+    cli::cli_abort("Package 'piggyback' required for remote loading. Install with: install.packages('piggyback')")
   }
 
   tryCatch({
@@ -68,11 +68,11 @@ if (!force && exists(cache_key, envir = .remote_parquet_cache)) {
       overwrite = TRUE
     )
   }, error = function(e) {
-    stop("Failed to download from GitHub releases: ", e$message)
+    cli::cli_abort("Failed to download from GitHub releases: {conditionMessage(e)}")
   })
 
   if (!file.exists(zip_file)) {
-    stop("Download failed - pannadata-parquet.zip not found in ", tempdir())
+    cli::cli_abort("Download failed - pannadata-parquet.zip not found in {tempdir()}")
   }
 
   # Extract
@@ -403,8 +403,7 @@ build_all_parquet <- function(table_types = NULL, leagues = NULL,
         parquet_path <- tryCatch({
           build_parquet(tt, lg, sn, verbose = verbose)
         }, error = function(e) {
-          if (verbose) warning(sprintf("Error building %s/%s/%s: %s",
-                                       tt, lg, sn, e$message))
+          if (verbose) cli::cli_warn("Error building {tt}/{lg}/{sn}: {conditionMessage(e)}")
           NULL
         })
 
@@ -485,7 +484,7 @@ build_all_parquet <- function(table_types = NULL, leagues = NULL,
 build_consolidated_parquet <- function(table_types = NULL, output_dir = NULL,
                                         verbose = TRUE) {
   if (!requireNamespace("arrow", quietly = TRUE)) {
-    stop("Package 'arrow' is required. Install with: install.packages('arrow')")
+    cli::cli_abort("Package 'arrow' is required. Install with: install.packages('arrow')")
   }
 
   # Default table types
@@ -533,7 +532,7 @@ build_consolidated_parquet <- function(table_types = NULL, output_dir = NULL,
         tryCatch({
           arrow::read_parquet(f)
         }, error = function(e) {
-          if (verbose) warning(sprintf("  Error reading %s: %s", basename(f), e$message))
+          if (verbose) cli::cli_warn("Error reading {basename(f)}: {conditionMessage(e)}")
           NULL
         })
       })
@@ -542,7 +541,7 @@ build_consolidated_parquet <- function(table_types = NULL, output_dir = NULL,
       # Use rbindlist with fill=TRUE to handle different column schemas
       as.data.frame(data.table::rbindlist(dfs, fill = TRUE))
     }, error = function(e) {
-      if (verbose) warning(sprintf("  Error combining %s: %s", tt, e$message))
+      if (verbose) cli::cli_warn("Error combining {tt}: {conditionMessage(e)}")
       NULL
     })
 
@@ -618,7 +617,7 @@ pb_upload_consolidated <- function(source_dir = NULL,
                                     tag = "fbref-latest",
                                     verbose = TRUE) {
   if (!requireNamespace("piggyback", quietly = TRUE)) {
-    stop("Package 'piggyback' is required. Install with: install.packages('piggyback')")
+    cli::cli_abort("Package 'piggyback' is required. Install with: install.packages('piggyback')")
   }
 
   if (is.null(source_dir)) {
@@ -626,14 +625,16 @@ pb_upload_consolidated <- function(source_dir = NULL,
   }
 
   if (!dir.exists(source_dir)) {
-    stop("Consolidated directory not found: ", source_dir,
-         "\nRun build_consolidated_parquet() first.")
+    cli::cli_abort(c(
+      "Consolidated directory not found: {.path {source_dir}}",
+      "i" = "Run {.code build_consolidated_parquet()} first."
+    ))
   }
 
   parquet_files <- list.files(source_dir, pattern = "\\.parquet$", full.names = TRUE)
 
   if (length(parquet_files) == 0) {
-    stop("No parquet files found in ", source_dir)
+    cli::cli_abort("No parquet files found in {.val {source_dir}}")
   }
 
   if (verbose) {
@@ -673,7 +674,7 @@ pb_upload_consolidated <- function(source_dir = NULL,
         stringsAsFactors = FALSE
       )
     }, error = function(e) {
-      if (verbose) warning(sprintf("Failed to upload %s: %s", fname, e$message))
+      if (verbose) cli::cli_warn("Failed to upload {fname}: {conditionMessage(e)}")
       results[[length(results) + 1]] <- data.frame(
         file = fname,
         size_mb = round(file.size(pf) / (1024 * 1024), 2),

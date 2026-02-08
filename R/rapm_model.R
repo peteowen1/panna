@@ -188,9 +188,9 @@ extract_rapm_ratings <- function(model, lambda = "min") {
 
   # Join with player mapping
   if (!is.null(model$panna_metadata$player_mapping)) {
-    ratings <- ratings %>%
+    ratings <- ratings |>
       dplyr::left_join(
-        model$panna_metadata$player_mapping %>%
+        model$panna_metadata$player_mapping |>
           dplyr::select(player_id, player_name, total_minutes),
         by = "player_id"
       )
@@ -202,7 +202,7 @@ extract_rapm_ratings <- function(model, lambda = "min") {
     attr(ratings, "covariate_effects") <- cov_coefs
   }
 
-  ratings <- ratings %>%
+  ratings <- ratings |>
     dplyr::arrange(dplyr::desc(.data$rapm))
 
   ratings
@@ -422,15 +422,15 @@ extract_xrapm_ratings <- function(model, lambda = "min") {
 
   # Join with player mapping
   if (!is.null(model$panna_metadata$player_mapping)) {
-    ratings <- ratings %>%
+    ratings <- ratings |>
       dplyr::left_join(
-        model$panna_metadata$player_mapping %>%
+        model$panna_metadata$player_mapping |>
           dplyr::select(player_id, player_name, total_minutes),
         by = "player_id"
       )
   }
 
-  ratings <- ratings %>%
+  ratings <- ratings |>
     dplyr::arrange(dplyr::desc(.data$xrapm))
 
   ratings
@@ -502,15 +502,15 @@ extract_rapm_coefficients <- function(model, lambda = "min") {
 
   # Join with player mapping if available
   if (!is.null(model$panna_metadata$player_mapping)) {
-    ratings <- ratings %>%
+    ratings <- ratings |>
       dplyr::left_join(
-        model$panna_metadata$player_mapping %>%
+        model$panna_metadata$player_mapping |>
           dplyr::select(player_id, player_name),
         by = "player_id"
       )
   }
 
-  ratings <- ratings %>%
+  ratings <- ratings |>
     dplyr::arrange(dplyr::desc(.data$rapm))
 
   ratings
@@ -534,33 +534,33 @@ extract_od_rapm_coefficients <- function(model, lambda = "min") {
   off_mask <- grepl("_off$", all_coefs$player_id)
   def_mask <- grepl("_def$", all_coefs$player_id)
 
-  off_ratings <- all_coefs[off_mask, ] %>%
+  off_ratings <- all_coefs[off_mask, ] |>
     dplyr::mutate(
       player_id = gsub("_off$", "", .data$player_id),
       o_rapm = .data$rapm
-    ) %>%
+    ) |>
     dplyr::select(player_id, o_rapm)
 
-  def_ratings <- all_coefs[def_mask, ] %>%
+  def_ratings <- all_coefs[def_mask, ] |>
     dplyr::mutate(
       player_id = gsub("_def$", "", .data$player_id),
       d_rapm = .data$rapm
-    ) %>%
+    ) |>
     dplyr::select(player_id, d_rapm)
 
   # Combine
-  ratings <- off_ratings %>%
-    dplyr::left_join(def_ratings, by = "player_id") %>%
+  ratings <- off_ratings |>
+    dplyr::left_join(def_ratings, by = "player_id") |>
     dplyr::mutate(
       rapm = .data$o_rapm + .data$d_rapm
-    ) %>%
+    ) |>
     dplyr::arrange(dplyr::desc(.data$rapm))
 
   # Join with player mapping if available
   if (!is.null(model$panna_metadata$player_mapping)) {
-    ratings <- ratings %>%
+    ratings <- ratings |>
       dplyr::left_join(
-        model$panna_metadata$player_mapping %>%
+        model$panna_metadata$player_mapping |>
           dplyr::select(player_id, player_name),
         by = "player_id"
       )
@@ -653,18 +653,18 @@ aggregate_rapm_by_team <- function(ratings, player_data) {
     return(NULL)
   }
 
-  ratings %>%
+  ratings |>
     dplyr::left_join(
-      player_data %>% dplyr::select(player_id, team),
+      player_data |> dplyr::select(player_id, team),
       by = "player_id"
-    ) %>%
-    dplyr::group_by(.data$team) %>%
+    ) |>
+    dplyr::group_by(.data$team) |>
     dplyr::summarise(
       n_players = dplyr::n(),
       mean_rapm = mean(.data$rapm, na.rm = TRUE),
       total_rapm = sum(.data$rapm, na.rm = TRUE),
       top_player_rapm = max(.data$rapm, na.rm = TRUE),
       .groups = "drop"
-    ) %>%
+    ) |>
     dplyr::arrange(dplyr::desc(.data$mean_rapm))
 }

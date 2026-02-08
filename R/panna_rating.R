@@ -83,15 +83,15 @@ calculate_panna_rating <- function(rapm_data, spm_ratings, lambda_prior = 1, alp
 
   # Join with player names if available
   if (!is.null(rapm_data$player_mapping)) {
-    ratings <- ratings %>%
+    ratings <- ratings |>
       dplyr::left_join(
-        rapm_data$player_mapping %>%
+        rapm_data$player_mapping |>
           dplyr::select(player_id, player_name),
         by = "player_id"
       )
   }
 
-  ratings <- ratings %>%
+  ratings <- ratings |>
     dplyr::arrange(dplyr::desc(.data$panna))
 
   result <- list(
@@ -198,12 +198,12 @@ get_panna_ratings <- function(panna_model) {
 #' @return Data frame of ranked players
 #' @export
 rank_players_panna <- function(ratings, top_n = NULL, position = NULL) {
-  result <- ratings %>%
-    dplyr::arrange(dplyr::desc(.data$panna)) %>%
+  result <- ratings |>
+    dplyr::arrange(dplyr::desc(.data$panna)) |>
     dplyr::mutate(rank = dplyr::row_number())
 
   if (!is.null(position) && "position" %in% names(result)) {
-    result <- result %>%
+    result <- result |>
       dplyr::filter(grepl(position, .data$position, ignore.case = TRUE))
   }
 
@@ -229,16 +229,16 @@ compare_panna_rapm_spm <- function(panna_ratings, rapm_ratings, spm_ratings) {
   # Join all ratings
   id_col <- if ("player_id" %in% names(panna_ratings)) "player_id" else "player_name"
 
-  comparison <- panna_ratings %>%
-    dplyr::select(dplyr::any_of(c(id_col, "player_name", "panna"))) %>%
+  comparison <- panna_ratings |>
+    dplyr::select(dplyr::any_of(c(id_col, "player_name", "panna"))) |>
     dplyr::left_join(
-      rapm_ratings %>% dplyr::select(dplyr::any_of(c(id_col, "rapm"))),
+      rapm_ratings |> dplyr::select(dplyr::any_of(c(id_col, "rapm"))),
       by = id_col
-    ) %>%
+    ) |>
     dplyr::left_join(
-      spm_ratings %>% dplyr::select(dplyr::any_of(c(id_col, "spm"))),
+      spm_ratings |> dplyr::select(dplyr::any_of(c(id_col, "spm"))),
       by = id_col
-    ) %>%
+    ) |>
     dplyr::mutate(
       panna_vs_rapm = .data$panna - .data$rapm,
       panna_vs_spm = .data$panna - .data$spm,
@@ -348,16 +348,16 @@ validate_predictive_power <- function(panna_ratings, next_season_rapm) {
   id_col <- intersect(names(panna_ratings), names(next_season_rapm))
   id_col <- id_col[id_col %in% c("player_id", "player_name")][1]
 
-  joined <- panna_ratings %>%
+  joined <- panna_ratings |>
     dplyr::inner_join(
-      next_season_rapm %>%
-        dplyr::select(dplyr::any_of(c(id_col, "rapm"))) %>%
+      next_season_rapm |>
+        dplyr::select(dplyr::any_of(c(id_col, "rapm"))) |>
         dplyr::rename(next_rapm = .data$rapm),
       by = id_col
     )
 
   if (nrow(joined) < 10) {
-    warning("Too few players matched for reliable validation")
+    cli::cli_warn("Too few players matched for reliable validation")
     return(NULL)
   }
 

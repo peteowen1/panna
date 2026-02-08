@@ -377,7 +377,7 @@ validate_data_completeness <- function(data, required_cols = NULL, warn = TRUE) 
     if (length(missing) > 0) {
       result$missing_cols <- missing
       if (warn) {
-        warning("Missing required columns: ", paste(missing, collapse = ", "))
+        cli::cli_warn("Missing required columns: {paste(missing, collapse = ', ')}")
       }
     }
   }
@@ -394,7 +394,7 @@ validate_data_completeness <- function(data, required_cols = NULL, warn = TRUE) 
 
   if (warn && any(na_pcts > 20)) {
     high_na <- names(na_pcts)[na_pcts > 20]
-    warning("Columns with >20% missing: ", paste(high_na, collapse = ", "))
+    cli::cli_warn("Columns with >20% missing: {paste(high_na, collapse = ', ')}")
   }
 
   result

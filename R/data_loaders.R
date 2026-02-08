@@ -609,7 +609,7 @@ query_remote_understat_parquet <- function(table_name, sql_template) {
       httr2::req_perform()
     httr2::resp_body_json(resp)
   }, error = function(e) {
-    stop("Failed to get Understat release info: ", e$message)
+    cli::cli_abort(c("Failed to get Understat release info.", "x" = conditionMessage(e)))
   })
 
   # Build URL

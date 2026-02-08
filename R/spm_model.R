@@ -631,15 +631,15 @@ build_prior_vector <- function(spm_data, spm_col, player_mapping, default = 0) {
 prepare_spm_regression_data <- function(player_features, rapm_ratings) {
   # Match on player name or ID
   if ("player_id" %in% names(player_features) && "player_id" %in% names(rapm_ratings)) {
-    data <- player_features %>%
+    data <- player_features |>
       dplyr::inner_join(
-        rapm_ratings %>% dplyr::select(player_id, rapm),
+        rapm_ratings |> dplyr::select(player_id, rapm),
         by = "player_id"
       )
   } else if ("player_name" %in% names(player_features) && "player_name" %in% names(rapm_ratings)) {
-    data <- player_features %>%
+    data <- player_features |>
       dplyr::inner_join(
-        rapm_ratings %>% dplyr::select(player_name, rapm),
+        rapm_ratings |> dplyr::select(player_name, rapm),
         by = "player_name"
       )
   } else {
@@ -962,9 +962,9 @@ calculate_spm_ratings_xgb <- function(player_features, spm_xgb_model) {
   spm_pred <- stats::predict(spm_xgb_model$model, X)
 
   # Create output
-  result <- player_features %>%
-    dplyr::select(dplyr::any_of(c("player_id", "player_name", "n_matches", "total_minutes"))) %>%
-    dplyr::mutate(spm = spm_pred) %>%
+  result <- player_features |>
+    dplyr::select(dplyr::any_of(c("player_id", "player_name", "n_matches", "total_minutes"))) |>
+    dplyr::mutate(spm = spm_pred) |>
     dplyr::arrange(dplyr::desc(.data$spm))
 
   result
@@ -991,15 +991,15 @@ calculate_spm_blend <- function(player_features, model_glmnet, model_xgb,
   spm_xgb <- calculate_spm_ratings_xgb(player_features, model_xgb)
 
   # Blend predictions
-  result <- spm_glmnet %>%
-    dplyr::rename(spm_glmnet = spm) %>%
+  result <- spm_glmnet |>
+    dplyr::rename(spm_glmnet = spm) |>
     dplyr::inner_join(
-      spm_xgb %>% dplyr::select(player_id, spm_xgb = spm),
+      spm_xgb |> dplyr::select(player_id, spm_xgb = spm),
       by = "player_id"
-    ) %>%
+    ) |>
     dplyr::mutate(
       spm = weight_glmnet * spm_glmnet + (1 - weight_glmnet) * spm_xgb
-    ) %>%
+    ) |>
     dplyr::arrange(dplyr::desc(.data$spm))
 
   result
@@ -1051,9 +1051,9 @@ calculate_spm_ratings <- function(player_features, spm_model, lambda = "min") {
   spm_pred <- as.vector(stats::predict(spm_model, newx = X, s = lambda_val))
 
   # Create output data frame
-  result <- player_features %>%
-    dplyr::select(dplyr::any_of(c("player_id", "player_name", "n_games", "total_minutes"))) %>%
-    dplyr::mutate(spm = spm_pred) %>%
+  result <- player_features |>
+    dplyr::select(dplyr::any_of(c("player_id", "player_name", "n_games", "total_minutes"))) |>
+    dplyr::mutate(spm = spm_pred) |>
     dplyr::arrange(dplyr::desc(.data$spm))
 
   result
@@ -1130,9 +1130,9 @@ validate_spm_prediction <- function(spm_ratings, rapm_ratings,
     return(NULL)
   }
 
-  comparison <- spm_ratings %>%
+  comparison <- spm_ratings |>
     dplyr::inner_join(
-      rapm_ratings %>%
+      rapm_ratings |>
         dplyr::select(dplyr::all_of(join_cols), rapm),
       by = join_cols
     )
@@ -1234,9 +1234,9 @@ get_spm_feature_importance <- function(model, n = 10, lambda = "min") {
     coefficient = as.vector(coefs),
     abs_coef = abs(as.vector(coefs)),
     stringsAsFactors = FALSE
-  ) %>%
-    dplyr::filter(.data$coefficient != 0) %>%
-    dplyr::arrange(dplyr::desc(.data$abs_coef)) %>%
+  ) |>
+    dplyr::filter(.data$coefficient != 0) |>
+    dplyr::arrange(dplyr::desc(.data$abs_coef)) |>
     utils::head(n)
 
   importance

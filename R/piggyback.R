@@ -52,7 +52,7 @@ pb_download_data <- function(repo = "peteowen1/pannadata",
                               overwrite = TRUE,
                               show_progress = TRUE) {
   if (!requireNamespace("piggyback", quietly = TRUE)) {
-    stop("Package 'piggyback' is required. Install with: install.packages('piggyback')")
+    cli::cli_abort("Package 'piggyback' is required. Install with: install.packages('piggyback')")
   }
 
   if (is.null(dest)) {
@@ -76,12 +76,15 @@ pb_download_data <- function(repo = "peteowen1/pannadata",
       show_progress = show_progress
     )
   }, error = function(e) {
-    stop("Failed to download from ", repo, ": ", e$message,
-         "\nMake sure the 'latest' release exists with pannadata.zip")
+    cli::cli_abort(c(
+      "Failed to download from {repo}.",
+      "x" = conditionMessage(e),
+      "i" = "Make sure the 'latest' release exists with pannadata.zip."
+    ))
   })
 
   if (!file.exists(zip_file)) {
-    stop("Download failed - pannadata.zip not found in release")
+    cli::cli_abort("Download failed - pannadata.zip not found in release")
   }
 
   zip_size <- file.size(zip_file) / (1024 * 1024)
@@ -134,7 +137,7 @@ pb_upload_data <- function(repo = "peteowen1/pannadata",
                             tag = "latest",
                             source = NULL) {
   if (!requireNamespace("piggyback", quietly = TRUE)) {
-    stop("Package 'piggyback' is required. Install with: install.packages('piggyback')")
+    cli::cli_abort("Package 'piggyback' is required. Install with: install.packages('piggyback')")
   }
 
   if (is.null(source)) {
@@ -143,7 +146,7 @@ pb_upload_data <- function(repo = "peteowen1/pannadata",
 
   data_dir <- file.path(source, "data")
   if (!dir.exists(data_dir)) {
-    stop("Data directory does not exist: ", data_dir)
+    cli::cli_abort("Data directory does not exist: {.val {data_dir}}")
   }
 
   progress_msg(sprintf("Preparing to upload data to %s (tag: %s)...", repo, tag))
@@ -208,7 +211,7 @@ pb_upload_data <- function(repo = "peteowen1/pannadata",
 #' }
 pb_list_data <- function(repo = "peteowen1/pannadata", tag = "latest") {
   if (!requireNamespace("piggyback", quietly = TRUE)) {
-    stop("Package 'piggyback' is required. Install with: install.packages('piggyback')")
+    cli::cli_abort("Package 'piggyback' is required. Install with: install.packages('piggyback')")
   }
 
   piggyback::pb_list(repo = repo, tag = tag)
@@ -247,7 +250,7 @@ pb_status <- function(repo = "peteowen1/pannadata",
                        tag = "latest",
                        source = NULL) {
   if (!requireNamespace("piggyback", quietly = TRUE)) {
-    stop("Package 'piggyback' is required. Install with: install.packages('piggyback')")
+    cli::cli_abort("Package 'piggyback' is required. Install with: install.packages('piggyback')")
   }
 
   if (is.null(source)) {
@@ -310,7 +313,7 @@ pb_upload_parquet <- function(repo = "peteowen1/pannadata",
                               source = NULL,
                               verbose = TRUE) {
   if (!requireNamespace("piggyback", quietly = TRUE)) {
-    stop("Package 'piggyback' is required. Install with: install.packages('piggyback')")
+    cli::cli_abort("Package 'piggyback' is required. Install with: install.packages('piggyback')")
   }
 
   if (is.null(source)) {
@@ -326,8 +329,10 @@ pb_upload_parquet <- function(repo = "peteowen1/pannadata",
   )
 
   if (length(parquet_files) == 0) {
-    stop("No parquet files found in ", source,
-         "\nRun build_all_parquet() first to create parquet files from RDS.")
+    cli::cli_abort(c(
+      "No parquet files found in {source}.",
+      "i" = "Run {.code build_all_parquet()} first to create parquet files from RDS."
+    ))
   }
 
   if (verbose) {
@@ -357,7 +362,7 @@ pb_upload_parquet <- function(repo = "peteowen1/pannadata",
     zip(zip_file, files = rel_files, flags = "-rq")
     TRUE
   }, error = function(e) {
-    warning("zip() failed: ", e$message)
+    cli::cli_warn("zip() failed: {conditionMessage(e)}")
     FALSE
   }, warning = function(w) {
     # zip() may warn but still succeed
@@ -369,12 +374,12 @@ pb_upload_parquet <- function(repo = "peteowen1/pannadata",
     tryCatch({
       zip(zip_file, files = rel_files, flags = "-r")
     }, error = function(e) {
-      stop("Failed to create zip: ", e$message)
+      cli::cli_abort("Failed to create zip: {conditionMessage(e)}")
     })
   }
 
   if (!file.exists(zip_file)) {
-    stop("Failed to create zip file")
+    cli::cli_abort("Failed to create zip file")
   }
 
   zip_size <- file.size(zip_file) / (1024 * 1024)
@@ -425,7 +430,7 @@ pb_download_parquet <- function(repo = "peteowen1/pannadata",
                                 dest = NULL,
                                 verbose = TRUE) {
   if (!requireNamespace("piggyback", quietly = TRUE)) {
-    stop("Package 'piggyback' is required. Install with: install.packages('piggyback')")
+    cli::cli_abort("Package 'piggyback' is required. Install with: install.packages('piggyback')")
   }
 
   if (is.null(dest)) {
@@ -446,12 +451,15 @@ pb_download_parquet <- function(repo = "peteowen1/pannadata",
       overwrite = TRUE
     )
   }, error = function(e) {
-    stop("Failed to download parquet data: ", e$message,
-         "\nMake sure pannadata-parquet.zip exists in the release.")
+    cli::cli_abort(c(
+      "Failed to download parquet data.",
+      "x" = conditionMessage(e),
+      "i" = "Make sure pannadata-parquet.zip exists in the release."
+    ))
   })
 
   if (!file.exists(zip_file)) {
-    stop("Download failed - pannadata-parquet.zip not found in release")
+    cli::cli_abort("Download failed - pannadata-parquet.zip not found in release")
   }
 
   if (verbose) {
@@ -493,7 +501,7 @@ get_source_tag <- function(source_type) {
     understat = "understat-latest",
     opta = "opta-latest",
     all = "latest",
-    stop("Unknown source_type: ", source_type)
+    cli::cli_abort("Unknown source_type: {.val {source_type}}")
   )
 }
 
@@ -512,7 +520,7 @@ get_source_archive_name <- function(source_type) {
     understat = "understat-parquet.tar.gz",
     opta = "opta-parquet.tar.gz",
     all = "pannadata-parquet.tar.gz",
-    stop("Unknown source_type: ", source_type)
+    cli::cli_abort("Unknown source_type: {.val {source_type}}")
   )
 }
 
@@ -530,7 +538,7 @@ get_source_pattern <- function(source_type) {
     fbref = "^(?!understat_).*\\.parquet$",
     understat = "^understat_.*\\.parquet$|/understat_",
     all = "\\.parquet$",
-    stop("Unknown source_type: ", source_type)
+    cli::cli_abort("Unknown source_type: {.val {source_type}}")
   )
 }
 
@@ -568,7 +576,7 @@ pb_upload_source <- function(source_type = c("fbref", "understat", "opta", "all"
   source_type <- match.arg(source_type)
 
   if (!requireNamespace("piggyback", quietly = TRUE)) {
-    stop("Package 'piggyback' is required. Install with: install.packages('piggyback')")
+    cli::cli_abort("Package 'piggyback' is required. Install with: install.packages('piggyback')")
   }
 
   if (is.null(source)) {
@@ -593,7 +601,7 @@ pb_upload_source <- function(source_type = c("fbref", "understat", "opta", "all"
     # Specific source type - only look in that directory
     source_dir <- file.path(source, source_type)
     if (!dir.exists(source_dir)) {
-      stop("Source directory not found: ", source_dir)
+      cli::cli_abort("Source directory not found: {.val {source_dir}}")
     }
     parquet_files <- list.files(
       source_dir,
@@ -604,8 +612,10 @@ pb_upload_source <- function(source_type = c("fbref", "understat", "opta", "all"
   }
 
   if (length(parquet_files) == 0) {
-    stop("No ", source_type, " parquet files found in ", source,
-         "\nRun build_all_parquet() first to create parquet files from RDS.")
+    cli::cli_abort(c(
+      "No {source_type} parquet files found in {source}.",
+      "i" = "Run {.code build_all_parquet()} first to create parquet files from RDS."
+    ))
   }
 
   if (verbose) {
@@ -635,12 +645,12 @@ pb_upload_source <- function(source_type = c("fbref", "understat", "opta", "all"
     tar(archive_file, files = rel_files, compression = "gzip")
     TRUE
   }, error = function(e) {
-    warning("tar() failed: ", e$message)
+    cli::cli_warn("tar() failed: {conditionMessage(e)}")
     FALSE
   })
 
   if (!result || !file.exists(archive_file)) {
-    stop("Failed to create tar.gz archive")
+    cli::cli_abort("Failed to create tar.gz archive")
   }
 
   archive_size <- file.size(archive_file) / (1024 * 1024)
@@ -705,7 +715,7 @@ pb_download_source <- function(source_type = c("fbref", "understat", "opta", "al
   source_type <- match.arg(source_type)
 
   if (!requireNamespace("piggyback", quietly = TRUE)) {
-    stop("Package 'piggyback' is required. Install with: install.packages('piggyback')")
+    cli::cli_abort("Package 'piggyback' is required. Install with: install.packages('piggyback')")
   }
 
   if (is.null(dest)) {
@@ -730,12 +740,15 @@ pb_download_source <- function(source_type = c("fbref", "understat", "opta", "al
       overwrite = TRUE
     )
   }, error = function(e) {
-    stop("Failed to download ", source_type, " parquet data: ", e$message,
-         "\nMake sure ", archive_name, " exists in the '", tag, "' release.")
+    cli::cli_abort(c(
+      "Failed to download {source_type} parquet data.",
+      "x" = conditionMessage(e),
+      "i" = "Make sure {archive_name} exists in the '{tag}' release."
+    ))
   })
 
   if (!file.exists(archive_file)) {
-    stop("Download failed - ", archive_name, " not found in release")
+    cli::cli_abort("Download failed - {archive_name} not found in release.")
   }
 
   if (verbose) {
@@ -782,7 +795,7 @@ pb_download_source <- function(source_type = c("fbref", "understat", "opta", "al
 #' @export
 pb_list_sources <- function(repo = "peteowen1/pannadata") {
   if (!requireNamespace("piggyback", quietly = TRUE)) {
-    stop("Package 'piggyback' is required. Install with: install.packages('piggyback')")
+    cli::cli_abort("Package 'piggyback' is required. Install with: install.packages('piggyback')")
   }
 
   sources <- c("fbref", "understat", "opta", "all")

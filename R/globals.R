@@ -1,10 +1,6 @@
 # Global variable declarations to avoid R CMD check NOTEs
 # These are column names used in NSE (non-standard evaluation) operations
 
-#' @importFrom magrittr %>%
-#' @export
-magrittr::`%>%`
-
 #' @importFrom stats setNames na.pass
 NULL
 

@@ -45,6 +45,6 @@ epl_basic <- load_opta_stats("ENG", columns = c(
 ))
 
 # Load all Big 5 leagues
-big5 <- purrr::map_dfr(c("ENG", "ESP", "GER", "ITA", "FRA"), load_opta_stats)
+big5 <- data.table::rbindlist(lapply(c("ENG", "ESP", "GER", "ITA", "FRA"), load_opta_stats))
 }
 }

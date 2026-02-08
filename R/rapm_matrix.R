@@ -201,8 +201,7 @@ create_rapm_design_matrix <- function(splint_data, min_minutes = 90,
   regular_with_na <- players_valid$is_regular & is.na(players_valid$player_col)
   if (any(regular_with_na)) {
     bad_ids <- unique(players_valid$player_id[regular_with_na])
-    warning(sprintf("Found %d regular players with NA column indices: %s",
-                    length(bad_ids), paste(head(bad_ids, 5), collapse = ", ")))
+    cli::cli_warn("Found {sum(is.na(regular_col_idx))} regular players with NA column indices: {paste(head(bad_ids, 5), collapse = ', ')}")
     # Mark these as not regular to avoid matrix errors
     players_valid$is_regular[regular_with_na] <- FALSE
   }
@@ -390,8 +389,10 @@ prepare_rapm_data <- function(splint_data, min_minutes = 90,
   if (target_type == "goals") {
     splint_cols <- names(splint_data$splints)
     if (!all(c("goals_home", "goals_away") %in% splint_cols)) {
-      warning("target_type='goals' requires 'goals_home' and 'goals_away' columns in splints. ",
-              "Splints may need to be regenerated with updated create_all_splints().")
+      cli::cli_warn(c(
+        "target_type='goals' requires 'goals_home' and 'goals_away' columns in splints.",
+        "i" = "Falling back to xG-based target. Splints may need to be regenerated with {.fn create_all_splints}."
+      ))
     }
   }
 
@@ -545,13 +546,13 @@ prepare_rapm_data <- function(splint_data, min_minutes = 90,
 #' @keywords internal
 filter_rapm_by_season <- function(rapm_data, seasons, match_info) {
   # Get match_ids for specified seasons
-  valid_matches <- match_info %>%
-    dplyr::filter(.data$season %in% seasons) %>%
+  valid_matches <- match_info |>
+    dplyr::filter(.data$season %in% seasons) |>
     dplyr::pull(.data$match_id)
 
   # Get splint indices
-  valid_splints <- rapm_data$splint_info %>%
-    dplyr::mutate(row_num = dplyr::row_number()) %>%
+  valid_splints <- rapm_data$splint_info |>
+    dplyr::mutate(row_num = dplyr::row_number()) |>
     dplyr::filter(.data$match_id %in% valid_matches)
 
   idx <- valid_splints$row_num

@@ -138,23 +138,23 @@ derive_events_from_shooting <- function(shooting_data) {
 #' @keywords internal
 derive_lineups_from_stats <- function(stats_data) {
   if (is.null(stats_data) || nrow(stats_data) == 0) {
-    warning("No stats data to derive lineups from")
+    cli::cli_warn("No stats data to derive lineups from")
     return(NULL)
   }
 
   # Players who appear in stats played in the match
   # min column tells us how many minutes they played
   # Column names are already snake_case from clean_column_names()
-  lineups <- stats_data %>%
+  lineups <- stats_data |>
     dplyr::select(dplyr::any_of(c(
       "match_url", "team", "player", "player_href", "nation", "pos", "age", "min",
       "home_away", "season_end_year"
-    ))) %>%
+    ))) |>
     dplyr::mutate(
       is_starter = as.numeric(.data$min) >= 45,  # Approximate: 45+ min = likely starter
       minutes = as.numeric(.data$min),
       is_home = .data$home_away == "Home"
-    ) %>%
+    ) |>
     dplyr::rename(
       player_name = .data$player
     )

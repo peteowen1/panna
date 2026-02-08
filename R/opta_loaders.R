@@ -195,7 +195,7 @@ list_opta_seasons <- function(league) {
 #' ))
 #'
 #' # Load all Big 5 leagues
-#' big5 <- purrr::map_dfr(c("ENG", "ESP", "GER", "ITA", "FRA"), load_opta_stats)
+#' big5 <- data.table::rbindlist(lapply(c("ENG", "ESP", "GER", "ITA", "FRA"), load_opta_stats))
 #' }
 load_opta_stats <- function(league, season = NULL, columns = NULL,
                             source = c("local", "remote")) {

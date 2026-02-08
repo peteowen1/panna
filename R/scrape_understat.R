@@ -86,7 +86,7 @@ reset_understat_session <- function() {
 fetch_understat_page <- function(url, timeout = 30) {
   # Validate URL
   if (!grepl("understat\\.com", url)) {
-    stop("Invalid Understat URL: ", url)
+    cli::cli_abort("Invalid Understat URL: {.val {url}}")
   }
 
   # Make request with session cookies and retry logic
@@ -106,13 +106,13 @@ fetch_understat_page <- function(url, timeout = 30) {
   # Errors are returned as list with class "fetch_error"
   if (inherits(response, "fetch_error") || is.null(response)) {
     if (isTRUE(attr(response, "rate_limited"))) {
-      warning("Rate limited by Understat (429). Stopping.")
+      cli::cli_warn("Rate limited by Understat (429). Stopping.")
     } else if (isTRUE(attr(response, "connection_error"))) {
-      warning("Connection error: ", attr(response, "error_message"))
+      cli::cli_warn("Connection error: {attr(response, 'error_message')}")
     } else if (isTRUE(attr(response, "not_found"))) {
       # 404 - silently return NULL (invalid match ID)
     } else {
-      warning("Failed to fetch ", url)
+      cli::cli_warn("Failed to fetch {url}")
     }
     return(NULL)
   }
@@ -169,7 +169,7 @@ extract_json_element <- function(scripts, var_name) {
       tryCatch({
         return(jsonlite::fromJSON(json_str, simplifyVector = TRUE))
       }, error = function(e) {
-        warning("Failed to parse ", var_name, " JSON: ", e$message)
+        cli::cli_warn("Failed to parse {var_name} JSON: {conditionMessage(e)}")
         return(NULL)
       })
     }
@@ -224,7 +224,7 @@ extract_understat_metadata <- function(page, understat_id) {
   match_info <- extract_json_element(scripts, "match_info")
 
   if (is.null(match_info)) {
-    warning("Could not extract match_info for match ", understat_id)
+    cli::cli_warn("Could not extract match_info for match {understat_id}")
     return(NULL)
   }
 
@@ -298,7 +298,7 @@ fetch_understat_match_api <- function(understat_id) {
   tryCatch({
     jsonlite::fromJSON(content, simplifyVector = FALSE)
   }, error = function(e) {
-    warning("Failed to parse match API response: ", e$message)
+    cli::cli_warn("Failed to parse match API response: {conditionMessage(e)}")
     NULL
   })
 }
@@ -663,7 +663,7 @@ scrape_understat_fixtures <- function(league, season, completed_only = TRUE) {
   page <- fetch_understat_page(url)
 
   if (is.null(page)) {
-    warning("Failed to fetch Understat league page")
+    cli::cli_warn("Failed to fetch Understat league page")
     return(NULL)
   }
 
@@ -673,9 +673,11 @@ scrape_understat_fixtures <- function(league, season, completed_only = TRUE) {
   dates_data <- extract_json_element(scripts, "datesData")
 
   if (is.null(dates_data)) {
-    warning("Could not extract datesData from league page. ",
-            "Understat loads fixtures via JavaScript. ",
-            "Use scrape_understat_match_range() as an alternative.")
+    cli::cli_warn(c(
+      "Could not extract datesData from league page.",
+      "i" = "Understat loads fixtures via JavaScript.",
+      "i" = "Use {.fn scrape_understat_match_range} as an alternative."
+    ))
     return(NULL)
   }
 
@@ -695,7 +697,7 @@ scrape_understat_fixtures <- function(league, season, completed_only = TRUE) {
   }
 
   if (is.null(fixtures) || nrow(fixtures) == 0) {
-    warning("No fixtures found")
+    cli::cli_warn("No fixtures found")
     return(NULL)
   }
 
@@ -749,7 +751,7 @@ scrape_understat_match_range <- function(start_id, end_id, league, season,
   end_id <- as.integer(end_id)
 
   if (start_id > end_id) {
-    stop("start_id must be <= end_id")
+    cli::cli_abort("start_id must be <= end_id")
   }
 
   results <- list()
@@ -770,7 +772,7 @@ scrape_understat_match_range <- function(start_id, end_id, league, season,
       scrape_understat_match(match_id, league, season, save_cache = TRUE)
     }, error = function(e) {
       if (!skip_invalid) {
-        warning("Match ", match_id, ": ", e$message)
+        cli::cli_warn("Match {match_id}: {conditionMessage(e)}")
       }
       NULL
     })
@@ -1119,7 +1121,7 @@ scrape_understat_matches <- function(understat_ids,
     result <- tryCatch({
       scrape_understat_match(id, league, season)
     }, error = function(e) {
-      warning("Error scraping match ", id, ": ", e$message)
+      cli::cli_warn("Error scraping match {id}: {conditionMessage(e)}")
       NULL
     })
 
@@ -1179,22 +1181,24 @@ scrape_understat_season <- function(league,
                                      max_matches = NULL) {
   # Validate league
   if (!is_understat_league(league)) {
-    stop("League '", league, "' is not available on Understat. ",
-         "Valid leagues: ", paste(list_understat_competitions(), collapse = ", "))
+    cli::cli_abort(c(
+      "League {.val {league}} is not available on Understat.",
+      "i" = "Valid leagues: {paste(list_understat_competitions(), collapse = ', ')}"
+    ))
   }
 
   # Get fixtures
   fixtures <- scrape_understat_fixtures(league, season)
 
   if (is.null(fixtures) || nrow(fixtures) == 0) {
-    warning("No fixtures found for ", league, " ", season)
+    cli::cli_warn("No fixtures found for {league} {season}.")
     return(invisible(list(scraped = 0, cached = 0, failed = 0)))
   }
 
   # Extract match IDs
   id_col <- if ("id" %in% names(fixtures)) "id" else "match_id"
   if (!id_col %in% names(fixtures)) {
-    warning("Could not find match ID column in fixtures")
+    cli::cli_warn("Could not find match ID column in fixtures")
     return(invisible(list(scraped = 0, cached = 0, failed = 0)))
   }
 
@@ -1300,7 +1304,7 @@ bulk_scrape_understat <- function(start_id, end_id, delay = 3,
   end_id <- as.integer(end_id)
 
   if (start_id > end_id) {
-    stop("start_id must be <= end_id")
+    cli::cli_abort("start_id must be <= end_id")
   }
 
   n_total <- end_id - start_id + 1
@@ -1492,7 +1496,7 @@ bulk_scrape_understat <- function(start_id, end_id, delay = 3,
 build_consolidated_understat_parquet <- function(table_types = NULL, output_dir = NULL,
                                                   verbose = TRUE) {
   if (!requireNamespace("arrow", quietly = TRUE)) {
-    stop("Package 'arrow' is required. Install with: install.packages('arrow')")
+    cli::cli_abort("Package 'arrow' is required. Install with: install.packages('arrow')")
   }
 
   # Default table types for Understat
@@ -1538,7 +1542,7 @@ build_consolidated_understat_parquet <- function(table_types = NULL, output_dir 
         tryCatch({
           arrow::read_parquet(f)
         }, error = function(e) {
-          if (verbose) warning(sprintf("  Error reading %s: %s", basename(f), e$message))
+          if (verbose) cli::cli_warn("Error reading {basename(f)}: {conditionMessage(e)}")
           NULL
         })
       })
@@ -1546,7 +1550,7 @@ build_consolidated_understat_parquet <- function(table_types = NULL, output_dir 
       if (length(dfs) == 0) return(NULL)
       do.call(rbind, dfs)
     }, error = function(e) {
-      if (verbose) warning(sprintf("  Error combining %s: %s", tt, e$message))
+      if (verbose) cli::cli_warn("Error combining {tt}: {conditionMessage(e)}")
       NULL
     })
 
@@ -1640,7 +1644,7 @@ load_understat_manifest <- function(path) {
   tryCatch({
     as.data.frame(arrow::read_parquet(path))
   }, error = function(e) {
-    warning("Error reading manifest: ", e$message)
+    cli::cli_warn("Error reading manifest: {conditionMessage(e)}")
     data.frame(
       match_id = integer(0),
       league = character(0),
@@ -1793,7 +1797,7 @@ build_understat_manifest_from_cache <- function(data_dir = NULL) {
         all_records[[length(all_records) + 1]] <- record
       }
     }, error = function(e) {
-      warning("Error reading ", f, ": ", e$message)
+      cli::cli_warn("Error reading {f}: {conditionMessage(e)}")
     })
   }
 

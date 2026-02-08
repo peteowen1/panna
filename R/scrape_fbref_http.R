@@ -125,7 +125,7 @@ reset_fbref_session <- function() {
 fetch_match_page <- function(match_url, timeout = 30) {
   # Validate URL
 if (!grepl("fbref\\.com/en/matches/", match_url)) {
-    stop("Invalid FBref match URL: ", match_url)
+    cli::cli_abort("Invalid FBref match URL: {.val {match_url}}")
   }
 
   # Make request with session cookies and retry logic
@@ -140,13 +140,13 @@ if (!grepl("fbref\\.com/en/matches/", match_url)) {
   # Check for errors returned by fetch_with_retry
   if (is.null(response)) {
     if (isTRUE(attr(response, "rate_limited"))) {
-      warning("Rate limited by FBref (429). Stopping.")
+      cli::cli_warn("Rate limited by FBref (429). Stopping.")
     } else if (isTRUE(attr(response, "blocked"))) {
-      warning("Blocked by Cloudflare (403). Stopping.")
+      cli::cli_warn("Blocked by Cloudflare (403). Stopping.")
     } else if (isTRUE(attr(response, "connection_error"))) {
-      warning("Connection error: ", attr(response, "error_message"))
+      cli::cli_warn("Connection error: {attr(response, 'error_message')}")
     } else {
-      warning("Failed to fetch ", match_url)
+      cli::cli_warn("Failed to fetch {match_url}")
     }
     return(response)
   }

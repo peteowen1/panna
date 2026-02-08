@@ -61,8 +61,10 @@ code = c(
 get_understat_slug <- function(code) {
   idx <- match(code, understat_competitions$code)
   if (is.na(idx)) {
-    stop("Unknown Understat competition code: ", code,
-         "\nValid codes: ", paste(understat_competitions$code, collapse = ", "))
+    cli::cli_abort(c(
+      "Unknown Understat competition code: {.val {code}}",
+      "i" = "Valid codes: {paste(understat_competitions$code, collapse = ', ')}"
+    ))
   }
   understat_competitions$understat_slug[idx]
 }
@@ -240,7 +242,7 @@ understat_league_to_code <- function(understat_league) {
 
   code <- mapping[understat_league]
   if (is.na(code)) {
-    warning("Unknown Understat league: ", understat_league)
+    cli::cli_warn("Unknown Understat league: {understat_league}")
   }
   unname(code)
 }

@@ -106,7 +106,7 @@ fbref_competitions <- data.frame(
 get_fbref_comp_id <- function(code) {
   idx <- match(code, fbref_competitions$code)
   if (is.na(idx)) {
-    stop("Unknown competition code: ", code)
+    cli::cli_abort("Unknown competition code: {.val {code}}")
   }
   fbref_competitions$fbref_id[idx]
 }
@@ -129,7 +129,7 @@ get_fbref_comp_id <- function(code) {
 get_fbref_schedule_url <- function(code, season) {
   idx <- match(code, fbref_competitions$code)
   if (is.na(idx)) {
-    stop("Unknown competition code: ", code)
+    cli::cli_abort("Unknown competition code: {.val {code}}")
   }
 
   comp_id <- fbref_competitions$fbref_id[idx]
@@ -161,7 +161,7 @@ get_fbref_schedule_url <- function(code, season) {
 is_tournament_competition <- function(code) {
   idx <- match(code, fbref_competitions$code)
   if (is.na(idx)) {
-    stop("Unknown competition code: ", code)
+    cli::cli_abort("Unknown competition code: {.val {code}}")
   }
   fbref_competitions$season_format[idx] == "YYYY"
 }
@@ -217,9 +217,11 @@ get_tournament_years <- function(code) {
   )
 
   if (!code %in% names(tournaments)) {
-    stop("Unknown tournament: ", code,
-         ". Valid options: ", paste(names(tournaments), collapse = ", "),
-         "\nNote: Nations League uses season format, use get_seasons_since()")
+    cli::cli_abort(c(
+      "Unknown tournament: {.val {code}}",
+      "i" = "Valid options: {paste(names(tournaments), collapse = ', ')}",
+      "i" = "Nations League uses season format, use {.fn get_seasons_since}"
+    ))
   }
 
   tournaments[[code]]

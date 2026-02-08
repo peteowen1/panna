@@ -625,8 +625,8 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
 #' opta_features <- aggregate_opta_stats(opta_stats)
 #'
 #' # Join with RAPM
-#' spm_data <- opta_features %>%
-#'   inner_join(rapm_ratings %>% select(player_id, rapm), by = "player_id")
+#' spm_data <- opta_features |>
+#'   inner_join(rapm_ratings |> select(player_id, rapm), by = "player_id")
 #'
 #' # Fit Opta SPM
 #' opta_spm <- fit_spm_opta(spm_data)
@@ -690,8 +690,8 @@ compare_spm_features <- function(fbref_model, opta_model, n = 20) {
   opta_imp$source <- "Opta"
 
   # Combine
-  comparison <- dplyr::bind_rows(fbref_imp, opta_imp) %>%
-    dplyr::select(source, feature, coefficient, abs_coef) %>%
+  comparison <- dplyr::bind_rows(fbref_imp, opta_imp) |>
+    dplyr::select(source, feature, coefficient, abs_coef) |>
     dplyr::arrange(dplyr::desc(abs_coef))
 
   comparison
