@@ -189,18 +189,37 @@ offense_cols <- c(
   # Goals and shooting
   "goals_p90", "shots_p90", "shots_on_target_p90", "shots_ibox_p90",
   "big_chance_scored_p90", "big_chance_created_p90",
+  # Shot types
+  "att_openplay_p90", "att_headed_p90", "att_one_on_one_p90",
   # Assists and creativity
   "assists_p90", "key_passes_p90", "through_balls_p90",
   "total_att_assist_p90",
   # Possession and progression
   "touches_opp_box_p90", "pen_area_entries_p90", "final_third_entries_p90",
   "final_third_passes_p90",
+  # Progressive passing
+  "fwd_zone_pass_p90", "open_play_pass_p90",
+  # Counter-attacks
+  "att_fastbreak_p90", "shot_fastbreak_p90",
   # Crossing and set pieces
-  "crosses_p90", "forward_pass_p90",
-  # Fouls drawn
-  "was_fouled_p90",
+  "crosses_p90", "crosses_open_play_p90", "forward_pass_p90",
+  # Fouls drawn and penalties
+  "was_fouled_p90", "penalty_won_p90",
+  # Touch quality
+  "unsuccessful_touch_p90", "overrun_p90",
   # Efficiency
-  "shot_accuracy", "goals_per_shot", "big_chance_conversion"
+  "shot_accuracy", "goals_per_shot", "big_chance_conversion",
+  "fwd_zone_pass_accuracy", "open_play_pass_accuracy",
+  "crosses_open_play_accuracy",
+  # Round 2: shot location and penalties
+  "att_ibox_goal_p90", "att_obox_goal_p90",
+  "att_ibox_target_p90", "att_obox_target_p90",
+  "hit_woodwork_p90", "att_pen_goal_p90",
+  "ibox_goal_rate", "penalty_conversion",
+  # Round 2: passing detail
+  "chipped_pass_p90", "chipped_pass_accuracy",
+  # Round 2: foot preference
+  "att_rf_total_p90", "att_lf_total_p90"
 )
 
 # Add xMetrics offense features if available
@@ -245,14 +264,29 @@ defense_cols <- c(
   "interceptions_p90", "interceptions_won_p90",
   "clearances_p90", "clearances_effective_p90",
   "blocks_p90", "blocked_passes_p90",
+  # Last-ditch defending
+  "last_man_tackle_p90", "six_yard_block_p90", "clearance_off_line_p90",
   # Aerials
   "aerial_won_p90", "aerial_lost_p90",
   # Ball recovery
   "ball_recovery_p90", "poss_won_def3rd_p90", "poss_won_mid3rd_p90",
   # Negative actions
-  "fouls_p90",
+  "fouls_p90", "penalty_conceded_p90",
+  # Errors
+  "error_lead_to_shot_p90", "error_lead_to_goal_p90", "errors_total_p90",
+  # Touch quality
+  "unsuccessful_touch_p90",
   # Efficiency
-  "tackle_success", "aerial_success"
+  "tackle_success", "aerial_success",
+  # Round 2: possession control and duels
+  "poss_lost_ctrl_p90", "poss_lost_ctrl_per_touch",
+  "fifty_fifty_p90", "fifty_fifty_won_p90", "fifty_fifty_success",
+  # Round 2: penalty conceded
+  "pen_goals_conceded_p90",
+  # Round 2: backward passing
+  "back_zone_pass_p90", "back_zone_pass_accuracy",
+  # Round 2: long pass own-to-opp
+  "long_pass_own_to_opp_p90", "long_pass_own_to_opp_accuracy"
 )
 
 defense_cols <- intersect(defense_cols, names(spm_train_data))

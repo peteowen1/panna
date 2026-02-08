@@ -129,13 +129,86 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
     punches = "punches",
     keeper_throws = "keeperThrows",
     keeper_throws_acc = "accurateKeeperThrows",
+    # Progressive passing
+    fwd_zone_pass = "totalFwdZonePass",
+    fwd_zone_pass_acc = "accurateFwdZonePass",
+    open_play_pass = "openPlayPass",
+    open_play_pass_acc = "successfulOpenPlayPass",
+    # Errors
+    error_lead_to_shot = "errorLeadToShot",
+    error_lead_to_goal = "errorLeadToGoal",
+    # Counter-attacks
+    att_fastbreak = "attFastbreak",
+    shot_fastbreak = "shotFastbreak",
+    # Shot types
+    att_openplay = "attOpenplay",
+    att_setpiece = "attSetpiece",
+    att_headed = "attHdTotal",
+    att_headed_goal = "attHdGoal",
+    att_one_on_one = "attOneOnOne",
+    # Open-play crosses
+    crosses_open_play = "totalCrossNocorner",
+    crosses_open_play_acc = "accurateCrossNocorner",
+    # Penalties
+    penalty_won = "penaltyWon",
+    penalty_conceded = "penaltyConceded",
+    # Assist quality
+    offtarget_att_assist = "offtargetAttAssist",
+    # Defensive
+    last_man_tackle = "lastManTackle",
+    six_yard_block = "sixYardBlock",
+    clearance_off_line = "clearanceOffLine",
+    # GK advanced
+    keeper_sweeper = "totalKeeperSweeper",
+    keeper_sweeper_acc = "accurateKeeperSweeper",
+    attempts_conceded_ibox = "attemptsConcededIbox",
+    attempts_conceded_obox = "attemptsConcededObox",
+    gk_smother = "gkSmother",
+    # Touch quality
+    unsuccessful_touch = "unsuccessfulTouch",
+    overrun = "overrun",
+    # Flick-ons
+    flick_on = "totalFlickOn",
+    flick_on_acc = "accurateFlickOn",
     # Other
     offsides = "totalOffside",
     offside_provoked = "offsideProvoked",
     pen_area_entries = "penAreaEntries",
     final_third_entries = "finalThirdEntries",
     pull_backs = "totalPullBack",
-    pull_backs_acc = "accuratePullBack"
+    pull_backs_acc = "accuratePullBack",
+    # === Round 2 additions ===
+    # Backward passing
+    back_zone_pass = "totalBackZonePass",
+    back_zone_pass_acc = "accurateBackZonePass",
+    # Chipped passes
+    chipped_pass = "totalChippedPass",
+    chipped_pass_acc = "accurateChippedPass",
+    # Foot preference
+    att_rf_total = "attRfTotal",
+    att_lf_total = "attLfTotal",
+    # Shot location goals
+    att_ibox_goal = "attIboxGoal",
+    att_obox_goal = "attOboxGoal",
+    # Shot zone targets
+    att_ibox_target = "attIboxTarget",
+    att_obox_target = "attOboxTarget",
+    # Shooting
+    hit_woodwork = "hitWoodwork",
+    # Penalties
+    att_pen_goal = "attPenGoal",
+    att_pen_miss = "attPenMiss",
+    pen_goals_conceded = "penGoalsConceded",
+    # GK
+    keeper_pickup = "keeperPickUp",
+    # Possession control
+    poss_lost_ctrl = "possLostCtrl",
+    # Long pass own-to-opp
+    long_pass_own_to_opp = "longPassOwnToOpp",
+    long_pass_own_to_opp_acc = "longPassOwnToOppSuccess",
+    # Fifty-fifty duels
+    fifty_fifty = "fiftyFifty",
+    fifty_fifty_won = "successfulFiftyFifty"
   )
 
   # Filter to columns that exist
@@ -292,6 +365,91 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
   player_stats$saves_p90 <- safe_p90("saves")
   player_stats$goals_conceded_p90 <- safe_p90("goals_conceded")
 
+  # Progressive passing per-90
+  player_stats$fwd_zone_pass_p90 <- safe_p90("fwd_zone_pass")
+  player_stats$open_play_pass_p90 <- safe_p90("open_play_pass")
+
+  # Errors per-90
+  player_stats$error_lead_to_shot_p90 <- safe_p90("error_lead_to_shot")
+  player_stats$error_lead_to_goal_p90 <- safe_p90("error_lead_to_goal")
+
+  # Counter-attacks per-90
+  player_stats$att_fastbreak_p90 <- safe_p90("att_fastbreak")
+  player_stats$shot_fastbreak_p90 <- safe_p90("shot_fastbreak")
+
+  # Shot types per-90
+  player_stats$att_openplay_p90 <- safe_p90("att_openplay")
+  player_stats$att_setpiece_p90 <- safe_p90("att_setpiece")
+  player_stats$att_headed_p90 <- safe_p90("att_headed")
+  player_stats$att_one_on_one_p90 <- safe_p90("att_one_on_one")
+
+  # Open-play crosses per-90
+  player_stats$crosses_open_play_p90 <- safe_p90("crosses_open_play")
+
+  # Penalties per-90
+  player_stats$penalty_won_p90 <- safe_p90("penalty_won")
+  player_stats$penalty_conceded_p90 <- safe_p90("penalty_conceded")
+
+  # Assist quality per-90
+  player_stats$offtarget_att_assist_p90 <- safe_p90("offtarget_att_assist")
+
+  # Defensive per-90 (new)
+  player_stats$last_man_tackle_p90 <- safe_p90("last_man_tackle")
+  player_stats$six_yard_block_p90 <- safe_p90("six_yard_block")
+  player_stats$clearance_off_line_p90 <- safe_p90("clearance_off_line")
+
+  # GK advanced per-90
+  player_stats$keeper_sweeper_p90 <- safe_p90("keeper_sweeper")
+  player_stats$attempts_conceded_ibox_p90 <- safe_p90("attempts_conceded_ibox")
+  player_stats$attempts_conceded_obox_p90 <- safe_p90("attempts_conceded_obox")
+  player_stats$gk_smother_p90 <- safe_p90("gk_smother")
+
+  # Touch quality per-90
+  player_stats$unsuccessful_touch_p90 <- safe_p90("unsuccessful_touch")
+  player_stats$overrun_p90 <- safe_p90("overrun")
+
+  # Flick-ons per-90
+  player_stats$flick_on_p90 <- safe_p90("flick_on")
+
+  # === Round 2 per-90 rates ===
+
+  # Backward passing per-90
+  player_stats$back_zone_pass_p90 <- safe_p90("back_zone_pass")
+
+  # Chipped passes per-90
+  player_stats$chipped_pass_p90 <- safe_p90("chipped_pass")
+
+  # Foot preference per-90
+  player_stats$att_rf_total_p90 <- safe_p90("att_rf_total")
+  player_stats$att_lf_total_p90 <- safe_p90("att_lf_total")
+
+  # Shot location per-90
+  player_stats$att_ibox_goal_p90 <- safe_p90("att_ibox_goal")
+  player_stats$att_obox_goal_p90 <- safe_p90("att_obox_goal")
+  player_stats$att_ibox_target_p90 <- safe_p90("att_ibox_target")
+  player_stats$att_obox_target_p90 <- safe_p90("att_obox_target")
+
+  # Shooting misc per-90
+  player_stats$hit_woodwork_p90 <- safe_p90("hit_woodwork")
+
+  # Penalties per-90
+  player_stats$att_pen_goal_p90 <- safe_p90("att_pen_goal")
+  player_stats$att_pen_miss_p90 <- safe_p90("att_pen_miss")
+  player_stats$pen_goals_conceded_p90 <- safe_p90("pen_goals_conceded")
+
+  # GK per-90
+  player_stats$keeper_pickup_p90 <- safe_p90("keeper_pickup")
+
+  # Possession control per-90
+  player_stats$poss_lost_ctrl_p90 <- safe_p90("poss_lost_ctrl")
+
+  # Long pass own-to-opp per-90
+  player_stats$long_pass_own_to_opp_p90 <- safe_p90("long_pass_own_to_opp")
+
+  # Fifty-fifty duels per-90
+  player_stats$fifty_fifty_p90 <- safe_p90("fifty_fifty")
+  player_stats$fifty_fifty_won_p90 <- safe_p90("fifty_fifty_won")
+
   # ===== DERIVED FEATURES (success rates and ratios) =====
 
   # Shooting efficiency
@@ -340,6 +498,87 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
   # Ball retention
   player_stats$turnovers_p90 <- (safe_col("dispossessed") + safe_col("turnover")) / mins_per_90
   player_stats$foul_differential_p90 <- player_stats$was_fouled_p90 - player_stats$fouls_p90
+
+  # Progressive passing accuracy
+  player_stats$fwd_zone_pass_accuracy <- safe_div(
+    safe_col("fwd_zone_pass_acc"), safe_col("fwd_zone_pass")
+  )
+  player_stats$open_play_pass_accuracy <- safe_div(
+    safe_col("open_play_pass_acc"), safe_col("open_play_pass")
+  )
+
+  # Open-play cross accuracy
+  player_stats$crosses_open_play_accuracy <- safe_div(
+    safe_col("crosses_open_play_acc"), safe_col("crosses_open_play")
+  )
+
+  # Touch quality rate
+  player_stats$bad_touch_rate <- safe_div(
+    safe_col("unsuccessful_touch") + safe_col("overrun"),
+    safe_col("touches")
+  )
+
+  # Error total per-90
+  player_stats$errors_total_p90 <- (safe_col("error_lead_to_shot") +
+    safe_col("error_lead_to_goal")) / mins_per_90
+
+  # Headed goal rate
+  player_stats$headed_goal_rate <- safe_div(
+    safe_col("att_headed_goal"), safe_col("att_headed")
+  )
+
+  # Flick-on accuracy
+  player_stats$flick_on_accuracy <- safe_div(
+    safe_col("flick_on_acc"), safe_col("flick_on")
+  )
+
+  # GK sweeper accuracy
+  player_stats$keeper_sweeper_accuracy <- safe_div(
+    safe_col("keeper_sweeper_acc"), safe_col("keeper_sweeper")
+  )
+
+  # === Round 2 derived features ===
+
+  # Backward pass accuracy
+  player_stats$back_zone_pass_accuracy <- safe_div(
+    safe_col("back_zone_pass_acc"), safe_col("back_zone_pass")
+  )
+
+  # Chipped pass accuracy
+  player_stats$chipped_pass_accuracy <- safe_div(
+    safe_col("chipped_pass_acc"), safe_col("chipped_pass")
+  )
+
+  # In-box goal rate (goals per ibox shot)
+  player_stats$ibox_goal_rate <- safe_div(
+    safe_col("att_ibox_goal"), safe_col("shots_ibox")
+  )
+
+  # Out-of-box goal rate (goals per obox shot)
+  player_stats$obox_goal_rate <- safe_div(
+    safe_col("att_obox_goal"), safe_col("shots_obox")
+  )
+
+  # Penalty conversion
+  player_stats$penalty_conversion <- safe_div(
+    safe_col("att_pen_goal"),
+    safe_col("att_pen_goal") + safe_col("att_pen_miss")
+  )
+
+  # Long pass own-to-opp accuracy
+  player_stats$long_pass_own_to_opp_accuracy <- safe_div(
+    safe_col("long_pass_own_to_opp_acc"), safe_col("long_pass_own_to_opp")
+  )
+
+  # Fifty-fifty success rate
+  player_stats$fifty_fifty_success <- safe_div(
+    safe_col("fifty_fifty_won"), safe_col("fifty_fifty")
+  )
+
+  # Possession lost control per touch
+  player_stats$poss_lost_ctrl_per_touch <- safe_div(
+    safe_col("poss_lost_ctrl"), safe_col("touches")
+  )
 
   # Goalkeeper metrics
   shots_faced <- safe_col("saves") + safe_col("goals_conceded")
@@ -401,7 +640,16 @@ fit_spm_opta <- function(data, alpha = 0.5, nfolds = 10,
   success_cols <- c("shot_accuracy", "goals_per_shot", "pass_accuracy",
                     "tackle_success", "duel_success", "aerial_success",
                     "big_chance_conversion", "final_third_pass_acc",
-                    "long_ball_accuracy", "cross_accuracy")
+                    "long_ball_accuracy", "cross_accuracy",
+                    "fwd_zone_pass_accuracy", "open_play_pass_accuracy",
+                    "crosses_open_play_accuracy", "bad_touch_rate",
+                    "keeper_sweeper_accuracy", "errors_total_p90",
+                    "headed_goal_rate", "flick_on_accuracy",
+                    # Round 2
+                    "back_zone_pass_accuracy", "chipped_pass_accuracy",
+                    "ibox_goal_rate", "obox_goal_rate",
+                    "penalty_conversion", "long_pass_own_to_opp_accuracy",
+                    "fifty_fifty_success", "poss_lost_ctrl_per_touch")
   success_cols <- intersect(success_cols, names(data))
   predictor_cols <- c(predictor_cols, success_cols)
 
