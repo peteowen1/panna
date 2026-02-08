@@ -45,3 +45,4 @@ processed <- create_opta_processed_data(lineups, events, shots)
 splints <- create_all_splints(processed)
 }
 }
+\keyword{internal}

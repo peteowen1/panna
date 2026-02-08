@@ -587,10 +587,11 @@ normalize_spadl_coordinates <- function(dt) {
 #' @param goal_y Y coordinate of goal center (default 50)
 #'
 #' @return Distance to goal in coordinate units
-#' @export
+#' @keywords internal
 #' @examples
-#' calculate_distance_to_goal(85, 50)  # Close, central
+#' \dontrun{
 #' calculate_distance_to_goal(50, 50)  # Halfway line
+#' }
 calculate_distance_to_goal <- function(x, y, goal_x = 100, goal_y = 50) {
   sqrt((goal_x - x)^2 + (goal_y - y)^2)
 }
@@ -607,11 +608,12 @@ calculate_distance_to_goal <- function(x, y, goal_x = 100, goal_y = 50) {
 #' @param goal_width Goal width in coordinate units (default ~12 for standard goal)
 #'
 #' @return Angle to goal in radians (always positive)
-#' @export
+#' @keywords internal
 #' @examples
-#' calculate_angle_to_goal(90, 50)  # Central, close - large angle
+#' \dontrun{
 #' calculate_angle_to_goal(90, 80)  # Wide position - smaller angle
 #' calculate_angle_to_goal(50, 50)  # Halfway line - small angle
+#' }
 calculate_angle_to_goal <- function(x, y, goal_width = 12) {
   # Goal posts at y = 50 +/- goal_width/2 on x = 100
   goal_y_left <- 50 - goal_width / 2   # y = 44 with default width
@@ -640,10 +642,11 @@ calculate_angle_to_goal <- function(x, y, goal_width = 12) {
 #' @param y Y coordinate (0-100)
 #'
 #' @return Integer zone ID (1-18)
-#' @export
+#' @keywords internal
 #' @examples
-#' get_pitch_zone(10, 50)   # Defensive third, center
+#' \dontrun{
 #' get_pitch_zone(90, 20)   # Attacking third, left
+#' }
 get_pitch_zone <- function(x, y) {
   # X zones: 0-33 (def), 33-67 (mid), 67-100 (att)
   x_zone <- cut(x, breaks = c(-Inf, 33, 67, Inf), labels = FALSE)
@@ -663,7 +666,7 @@ get_pitch_zone <- function(x, y) {
 #' @param attacking If TRUE, checks attacking penalty area (x > 83)
 #'
 #' @return Logical indicating if in penalty area
-#' @export
+#' @keywords internal
 is_in_penalty_area <- function(x, y, attacking = TRUE) {
   # Penalty area: roughly x > 83, y between 21 and 79 (18-yard box)
   if (attacking) {
@@ -680,7 +683,7 @@ is_in_penalty_area <- function(x, y, attacking = TRUE) {
 #' @param attacking If TRUE, checks attacking final third (x > 67)
 #'
 #' @return Logical indicating if in final third
-#' @export
+#' @keywords internal
 is_in_final_third <- function(x, attacking = TRUE) {
 
   if (attacking) {
@@ -729,7 +732,7 @@ is_in_final_third <- function(x, attacking = TRUE) {
 #'   \item shot: ~10 (shot to goal, next action at keeper/goal)
 #' }
 #'
-#' @export
+#' @keywords internal
 #' @examples
 #' \dontrun{
 #' events <- load_opta_match_events("ENG", "2024-2025")

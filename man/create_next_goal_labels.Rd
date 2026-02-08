@@ -16,3 +16,4 @@ Data frame with next_goal_label column added
 Determines who scores the next goal in each half for each action.
 Labels: 0 = possession team scores next, 1 = opponent scores next, 2 = nobody scores
 }
+\keyword{internal}

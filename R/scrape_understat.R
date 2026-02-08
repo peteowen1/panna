@@ -54,7 +54,7 @@ get_understat_headers <- function(referer = "https://understat.com/") {
 #' @param reset If TRUE, creates a new session (default FALSE)
 #'
 #' @return httr handle object
-#' @export
+#' @keywords internal
 get_understat_session <- function(reset = FALSE) {
   if (!exists("session", envir = .understat_env) || reset) {
     .understat_env$session <- httr::handle("https://understat.com")
@@ -67,7 +67,7 @@ get_understat_session <- function(reset = FALSE) {
 #'
 #' Clears cookies and creates fresh session.
 #'
-#' @export
+#' @keywords internal
 reset_understat_session <- function() {
   .understat_env$session <- httr::handle("https://understat.com")
   message("Understat session reset - cookies cleared")
@@ -82,7 +82,7 @@ reset_understat_session <- function() {
 #' @param timeout Request timeout in seconds (default 30)
 #'
 #' @return Parsed HTML document (rvest xml_document) or NULL on failure
-#' @export
+#' @keywords internal
 fetch_understat_page <- function(url, timeout = 30) {
   # Validate URL
   if (!grepl("understat\\.com", url)) {
@@ -962,7 +962,7 @@ is_understat_cached <- function(league, season, understat_id) {
 #' @param season Season string
 #'
 #' @return Character vector of cached understat_ids
-#' @export
+#' @keywords internal
 get_cached_understat_ids <- function(league, season) {
   parquet_path <- get_understat_parquet_path("metadata", league, season, create = FALSE)
 
@@ -1228,7 +1228,7 @@ scrape_understat_season <- function(league,
 #' @param season Optional season filter
 #'
 #' @return Combined data frame
-#' @export
+#' @keywords internal
 aggregate_understat_data <- function(table_type, league = NULL, season = NULL) {
   base_dir <- file.path(pannadata_dir(), "understat", table_type)
 
@@ -1684,7 +1684,7 @@ save_understat_manifest <- function(manifest, path) {
 #' @param manifest Data frame from load_understat_manifest
 #'
 #' @return Named list with max ID per league (NA if no data for league)
-#' @export
+#' @keywords internal
 get_league_max_ids <- function(manifest) {
   leagues <- c("ENG", "ESP", "GER", "ITA", "FRA", "RUS")
 
@@ -1716,7 +1716,7 @@ get_league_max_ids <- function(manifest) {
 #' @param data_dir Base data directory (defaults to pannadata_dir())
 #'
 #' @return Data frame with manifest structure
-#' @export
+#' @keywords internal
 build_understat_manifest_from_cache <- function(data_dir = NULL) {
   if (is.null(data_dir)) {
     data_dir <- pannadata_dir()

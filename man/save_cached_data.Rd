@@ -14,3 +14,4 @@ save_cached_data(data, data_type)
 \description{
 Save data to cache
 }
+\keyword{internal}

@@ -421,7 +421,7 @@ scrape_fbref_matches <- function(
 #' @param season Season string (e.g., "2023-2024")
 #'
 #' @return Character vector of match URLs
-#' @export
+#' @keywords internal
 #'
 #' @examples
 #' \dontrun{

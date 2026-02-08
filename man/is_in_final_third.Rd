@@ -17,3 +17,4 @@ Logical indicating if in final third
 \description{
 Check if Coordinates are in Final Third
 }
+\keyword{internal}

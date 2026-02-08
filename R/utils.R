@@ -145,11 +145,13 @@ standardize_player_names <- function(names) {
 #' @param names Character vector of player names
 #'
 #' @return Character vector of cleaned names (lowercase, no whitespace)
-#' @export
+#' @keywords internal
 #'
 #' @examples
+#' \dontrun{
 #' clean_player_name(c("Kylian Mbappé", "kylian mbappé", "KYLIAN MBAPPÉ"))
 #' # All return "kylianmbappé"
+#' }
 clean_player_name <- function(names) {
   # Memoization: process unique names once, then lookup
   unique_names <- unique(names)
@@ -181,11 +183,13 @@ clean_player_name <- function(names) {
 #' @param hrefs Character vector of FBref player hrefs
 #'
 #' @return Character vector of 8-char hex IDs (NA if not found)
-#' @export
+#' @keywords internal
 #'
 #' @examples
+#' \dontrun{
 #' extract_fbref_player_id("/players/d080ed5e/Kylian-Mbappe")
 #' # Returns "d080ed5e"
+#' }
 extract_fbref_player_id <- function(hrefs) {
   # Extract 8-char hex ID from /players/xxxxxxxx/... pattern
   ids <- gsub(".*/players/([a-f0-9]{8})/.*", "\\1", hrefs)
@@ -255,7 +259,7 @@ standardize_team_names <- function(names) {
 #' @param away_team Away team name
 #'
 #' @return Character vector of match IDs
-#' @export
+#' @keywords internal
 create_match_id <- function(season, date, home_team, away_team) {
   paste(season, format(as.Date(date), "%Y%m%d"), home_team, away_team, sep = "_")
 }
@@ -270,7 +274,7 @@ create_match_id <- function(season, date, home_team, away_team) {
 #' @param fbref_id Optional FBref player ID (preferred if available
 #'
 #' @return Character vector of player IDs
-#' @export
+#' @keywords internal
 create_player_id <- function(player_name, fbref_id = NULL) {
   if (!is.null(fbref_id) && all(!is.na(fbref_id))) {
     return(fbref_id)
@@ -358,7 +362,7 @@ validate_dataframe <- function(data, required_cols = NULL, arg_name = "data", mi
 #' @param warn Logical, whether to print warnings for missing data
 #'
 #' @return List with validation results
-#' @export
+#' @keywords internal
 validate_data_completeness <- function(data, required_cols = NULL, warn = TRUE) {
   result <- list(
     n_rows = nrow(data),
@@ -516,11 +520,13 @@ count_events_in_splint <- function(events, boundaries) {
 #' @param match_id Character vector of match IDs
 #'
 #' @return Character vector of season strings (e.g., "2017-2018")
-#' @export
+#' @keywords internal
 #'
 #' @examples
+#' \dontrun{
 #' extract_season_from_match_id("2017-2018_20170915_Bournemouth_Brighton")
 #' # Returns "2017-2018"
+#' }
 extract_season_from_match_id <- function(match_id) {
   sub("^([0-9]{4}-[0-9]{4})_.*", "\\1", match_id)
 }
@@ -534,11 +540,13 @@ extract_season_from_match_id <- function(match_id) {
 #' @param match_id Character vector of match IDs
 #'
 #' @return Numeric vector of season end years (e.g., 2018)
-#' @export
+#' @keywords internal
 #'
 #' @examples
+#' \dontrun{
 #' extract_season_end_year_from_match_id("2017-2018_20170915_Bournemouth_Brighton")
 #' # Returns 2018
+#' }
 extract_season_end_year_from_match_id <- function(match_id) {
   season <- extract_season_from_match_id(match_id)
   as.numeric(substr(season, 6, 9))
@@ -582,11 +590,13 @@ ensure_column <- function(data, col_name, default = FALSE, source_col = NULL, pa
 #'   and values are existing column names to rename
 #'
 #' @return Data frame with renamed columns
-#' @export
+#' @keywords internal
 #'
 #' @examples
+#' \dontrun{
 #' df <- data.frame(a = 1, b = 2)
 #' rename_columns(df, c(x = "a", y = "b"))
+#' }
 rename_columns <- function(data, mapping) {
   for (new_name in names(mapping)) {
     old_name <- mapping[new_name]
@@ -612,7 +622,7 @@ rename_columns <- function(data, mapping) {
 #' @param team_col Name of team column (default "team")
 #'
 #' @return Aggregated data frame with player, team, and aggregated columns
-#' @export
+#' @keywords internal
 #'
 #' @examples
 #' \dontrun{
@@ -780,9 +790,10 @@ fetch_with_retry <- function(url, max_retries = 3, base_delay = 1, max_delay = 3
 #'   the conditions joined by AND.
 #'
 #' @return Character string with SQL WHERE clause, or empty string if no filters.
-#' @export
+#' @keywords internal
 #'
 #' @examples
+#' \dontrun{
 #' build_where_clause(list(league = "ENG", season = "2023-2024"))
 #' # Returns: "WHERE league = 'ENG' AND season = '2023-2024'"
 #'
@@ -794,6 +805,7 @@ fetch_with_retry <- function(url, max_retries = 3, base_delay = 1, max_delay = 3
 #'
 #' build_where_clause(list())
 #' # Returns: ""
+#' }
 build_where_clause <- function(filters, prefix = TRUE) {
   if (is.null(filters) || length(filters) == 0) {
     return("")
@@ -882,11 +894,13 @@ standardize_data_columns <- function(data, col_map) {
 #' Standard column name variations encountered across different data sources.
 #'
 #' @return Named list of canonical column names to alternatives
-#' @export
+#' @keywords internal
 #'
 #' @examples
+#' \dontrun{
 #' col_map <- default_column_map()
 #' names(col_map)
+#' }
 default_column_map <- function() {
   list(
     team = c("squad", "team_name"),

@@ -32,3 +32,4 @@ List with splint data for the match
 \description{
 Master function to create all splint data for one match.
 }
+\keyword{internal}

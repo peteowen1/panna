@@ -17,3 +17,4 @@ SPADL actions with xg column added for shots
 \description{
 Adds xG predictions to shot actions in SPADL data.
 }
+\keyword{internal}

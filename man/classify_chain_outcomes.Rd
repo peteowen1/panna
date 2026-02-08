@@ -16,3 +16,4 @@ Data frame of chain-level statistics
 Determines the outcome of each possession chain (goal, shot, turnover, etc.)
 Optimized with data.table.
 }
+\keyword{internal}

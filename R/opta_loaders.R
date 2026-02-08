@@ -815,7 +815,7 @@ load_opta_xmetrics <- function(league, season = NULL, columns = NULL,
 #'
 #' Removes cached remote Opta data, forcing a fresh download on next access.
 #'
-#' @export
+#' @keywords internal
 #' @examples
 #' \dontrun{
 #' clear_remote_opta_cache()

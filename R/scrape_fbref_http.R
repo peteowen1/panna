@@ -94,7 +94,7 @@ add_delay_jitter <- function(base_delay, jitter_pct = 0.3) {
 #' @param reset If TRUE, creates a new session (default FALSE)
 #'
 #' @return httr handle object
-#' @export
+#' @keywords internal
 get_fbref_session <- function(reset = FALSE) {
   if (!exists("session", envir = .fbref_env) || reset) {
     .fbref_env$session <- httr::handle("https://fbref.com")
@@ -106,7 +106,7 @@ get_fbref_session <- function(reset = FALSE) {
 #'
 #' Clears cookies and creates fresh session. Use after changing VPN/IP.
 #'
-#' @export
+#' @keywords internal
 reset_fbref_session <- function() {
   .fbref_env$session <- httr::handle("https://fbref.com")
   message("FBref session reset - cookies cleared")
@@ -121,7 +121,7 @@ reset_fbref_session <- function() {
 #' @param timeout Request timeout in seconds (default 30)
 #'
 #' @return Parsed HTML document (rvest xml_document) or NULL on failure
-#' @export
+#' @keywords internal
 fetch_match_page <- function(match_url, timeout = 30) {
   # Validate URL
 if (!grepl("fbref\\.com/en/matches/", match_url)) {

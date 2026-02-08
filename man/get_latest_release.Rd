@@ -28,3 +28,4 @@ print(release$tag_name)
 release <- get_latest_release()
 }
 }
+\keyword{internal}

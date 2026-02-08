@@ -27,7 +27,7 @@ NULL
 #'
 #' @return Data frame with next_goal_label column added
 #'
-#' @export
+#' @keywords internal
 create_next_goal_labels <- function(spadl_actions) {
   cli::cli_alert_info("Creating next goal labels...")
 
@@ -101,7 +101,7 @@ create_next_goal_labels <- function(spadl_actions) {
 #'
 #' @return Data frame with next_xg_label column added
 #'
-#' @export
+#' @keywords internal
 create_next_xg_labels <- function(spadl_actions, xg_values = NULL) {
   cli::cli_alert_info("Creating next xG labels...")
 
@@ -208,7 +208,7 @@ create_next_xg_labels <- function(spadl_actions, xg_values = NULL) {
 #' @param y Y coordinate (0-100 scale)
 #'
 #' @return Estimated xG values
-#' @export
+#' @keywords internal
 estimate_simple_xg <- function(x, y) {
   # Distance to center of goal
   dist_to_goal <- sqrt((100 - x)^2 + (50 - y)^2)

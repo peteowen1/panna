@@ -322,7 +322,7 @@ predict_xpass <- function(xpass_model, pass_features) {
 #' @param xpass_model Fitted xPass model
 #'
 #' @return SPADL actions with xpass column added for passes
-#' @export
+#' @keywords internal
 add_xpass_to_spadl <- function(spadl_actions, xpass_model) {
   # Initialize xPass column
   spadl_actions$xpass <- NA_real_

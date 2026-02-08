@@ -387,7 +387,7 @@ predict_xg <- function(xg_model, shot_features) {
 #' @param xg_model Fitted xG model
 #'
 #' @return SPADL actions with xg column added for shots
-#' @export
+#' @keywords internal
 add_xg_to_spadl <- function(spadl_actions, xg_model) {
   # Initialize xG column
   spadl_actions$xg <- 0
@@ -562,7 +562,7 @@ validate_xg_model <- function(xg_model, test_shots) {
 #'     \item is_assist: Whether this pass led to a goal
 #'   }
 #'
-#' @export
+#' @keywords internal
 derive_xa <- function(spadl_actions) {
   dt <- data.table::as.data.table(spadl_actions)
 
@@ -772,7 +772,7 @@ aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0) {
 #'     \item is_penalty: Whether the shot was a penalty
 #'   }
 #'
-#' @export
+#' @keywords internal
 extract_shots_from_spadl <- function(spadl, lineups) {
   if (is.null(spadl) || nrow(spadl) == 0) {
     cli::cli_warn("No SPADL actions provided")

@@ -18,3 +18,4 @@ Character vector of player IDs
 Generates a unique identifier for a player based on name and team.
 Note: This is a simple implementation; FBref player URLs are more reliable.
 }
+\keyword{internal}

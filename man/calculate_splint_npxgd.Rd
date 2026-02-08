@@ -29,3 +29,4 @@ Data frame with npxGD for each splint
 \description{
 Calculates the non-penalty xG differential for each splint.
 }
+\keyword{internal}

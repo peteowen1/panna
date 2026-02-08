@@ -30,3 +30,4 @@ sql <- "SELECT * FROM {table} WHERE league = 'ENG'"
 eng_data <- query_local_parquet("summary", sql, league = "ENG")
 }
 }
+\keyword{internal}

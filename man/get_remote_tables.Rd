@@ -20,3 +20,4 @@ tables <- get_remote_tables()
 print(tables)
 }
 }
+\keyword{internal}

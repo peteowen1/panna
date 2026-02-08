@@ -9,3 +9,4 @@ reset_understat_session()
 \description{
 Clears cookies and creates fresh session.
 }
+\keyword{internal}

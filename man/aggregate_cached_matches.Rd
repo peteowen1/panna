@@ -40,3 +40,4 @@ pl_summary <- aggregate_cached_matches("summary", league = "ENG",
                                         season = "2024-2025")
 }
 }
+\keyword{internal}

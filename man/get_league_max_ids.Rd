@@ -15,3 +15,4 @@ Named list with max ID per league (NA if no data for league)
 \description{
 Get maximum cached ID for each league from manifest
 }
+\keyword{internal}

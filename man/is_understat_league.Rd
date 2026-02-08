@@ -16,6 +16,8 @@ Logical, TRUE if league is available on Understat
 Check if league is available on Understat
 }
 \examples{
-is_understat_league("ENG")  # TRUE
+\dontrun{
 is_understat_league("POR")
 }
+}
+\keyword{internal}

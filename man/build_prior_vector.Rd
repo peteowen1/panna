@@ -32,3 +32,4 @@ offense_prior <- build_prior_vector(
 )
 }
 }
+\keyword{internal}

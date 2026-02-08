@@ -18,6 +18,8 @@ Character, the full Understat league URL
 Constructs the Understat league page URL for a competition and season.
 }
 \examples{
-get_understat_league_url("ENG", 2024)
+\dontrun{
 get_understat_league_url("ESP", "2023")
 }
+}
+\keyword{internal}

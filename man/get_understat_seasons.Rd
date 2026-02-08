@@ -17,6 +17,8 @@ Returns a vector of available seasons for Understat data.
 Understat has data from 2014 onwards.
 }
 \examples{
-get_understat_seasons()
+\dontrun{
 get_understat_seasons(2020)
 }
+}
+\keyword{internal}

@@ -16,6 +16,8 @@ Logical, TRUE if competition uses year-only seasons
 Check if competition uses tournament (year-only) format
 }
 \examples{
-is_tournament_competition("WC")    # TRUE
+\dontrun{
 is_tournament_competition("ENG")   # FALSE
 }
+}
+\keyword{internal}

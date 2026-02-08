@@ -15,3 +15,4 @@ httr handle object
 \description{
 Returns a persistent httr session handle that maintains cookies.
 }
+\keyword{internal}

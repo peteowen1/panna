@@ -27,3 +27,4 @@ Data frame with Bayesian-padded statistics
 Regresses statistics toward population mean for players with few games.
 This prevents extreme ratings from small sample sizes.
 }
+\keyword{internal}

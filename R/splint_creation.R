@@ -237,7 +237,7 @@ calculate_first_half_end <- function(events, shots = NULL, default_end = 46) {
 #' @param match_id Match identifier to filter for
 #'
 #' @return Data frame of events sorted by minute
-#' @export
+#' @keywords internal
 extract_match_events <- function(events, match_id) {
   # Handle NULL or empty events
  if (is.null(events) || nrow(events) == 0) {
@@ -345,7 +345,7 @@ extract_sub_events <- function(lineups) {
 #' @param include_halftime Logical, whether to create splint at halftime (default TRUE)
 #'
 #' @return Data frame of splint boundaries with game state
-#' @export
+#' @keywords internal
 create_splint_boundaries <- function(events, shots = NULL, include_goals = TRUE, include_halftime = TRUE) {
   # Get first-half stoppage from both events and shots
   events_stoppage <- get_first_half_stoppage(events)
@@ -479,7 +479,7 @@ create_splint_boundaries <- function(events, shots = NULL, include_goals = TRUE,
 #' @param match_id Match identifier
 #'
 #' @return Data frame with player assignments per splint
-#' @export
+#' @keywords internal
 assign_players_to_splints <- function(boundaries, lineups, events, match_id) {
   # Handle NULL or empty lineups
   if (is.null(lineups) || nrow(lineups) == 0) {
@@ -567,7 +567,7 @@ assign_players_to_splints <- function(boundaries, lineups, events, match_id) {
 #' @param away_team Name of the away team
 #'
 #' @return Data frame with npxGD for each splint
-#' @export
+#' @keywords internal
 calculate_splint_npxgd <- function(boundaries, shooting, match_id,
                                     home_team = NULL, away_team = NULL) {
   # Handle NULL or empty shooting data
@@ -662,7 +662,7 @@ calculate_splint_npxgd <- function(boundaries, shooting, match_id,
 #' @param include_goals Whether to create splints at goal times
 #'
 #' @return List with splint data for the match
-#' @export
+#' @keywords internal
 create_match_splints <- function(match_id, events, lineups, shooting, results,
                                   include_goals = TRUE) {
   # Store match_id as local variable to avoid scoping issues
@@ -1299,7 +1299,7 @@ calculate_splint_npxgd_fast <- function(boundaries, shooting, home_team, away_te
 #' @param splint_id Splint identifier
 #'
 #' @return List with home_players and away_players character vectors
-#' @export
+#' @keywords internal
 get_splint_players <- function(splint_data, splint_id) {
   players <- splint_data$players %>%
     dplyr::filter(.data$splint_id == !!splint_id)
@@ -1517,7 +1517,7 @@ prepare_opta_shots_for_splints <- function(opta_shot_events, use_goals_as_xg = F
 #'
 #' @return List with components: lineups, events, shooting, results, stats_summary
 #'
-#' @export
+#' @keywords internal
 #' @examples
 #' \dontrun{
 #' # Load Opta data

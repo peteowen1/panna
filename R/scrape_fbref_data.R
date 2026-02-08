@@ -39,7 +39,7 @@ get_cache_dir <- function(create = TRUE) {
 #'
 #' @param data_type Type of data (e.g., "lineups", "events", "shooting")
 #' @return Data frame of cached data, or NULL if none exists
-#' @export
+#' @keywords internal
 load_cached_data <- function(data_type) {
   cache_file <- file.path(get_cache_dir(), paste0("cached_", data_type, ".rds"))
   if (file.exists(cache_file)) {
@@ -54,7 +54,7 @@ load_cached_data <- function(data_type) {
 #'
 #' @param data Data frame to cache
 #' @param data_type Type of data
-#' @export
+#' @keywords internal
 save_cached_data <- function(data, data_type) {
   cache_file <- file.path(get_cache_dir(), paste0("cached_", data_type, ".rds"))
   saveRDS(data, cache_file)

@@ -526,7 +526,7 @@ aggregate_player_stats <- function(stats_summary,
 #' @param default_prior Value for players without SPM prediction
 #'
 #' @return Named vector of priors (keyed by player_id)
-#' @export
+#' @keywords internal
 create_spm_prior <- function(spm_predictions, player_mapping, default_prior = 0) {
   # Handle data frame input
   if (is.data.frame(spm_predictions)) {
@@ -580,7 +580,7 @@ create_spm_prior <- function(spm_predictions, player_mapping, default_prior = 0)
 #' @param default Value for players without SPM prediction (default 0)
 #'
 #' @return Named vector of priors keyed by player_id
-#' @export
+#' @keywords internal
 #'
 #' @examples
 #' \dontrun{
@@ -983,7 +983,7 @@ calculate_spm_ratings_xgb <- function(player_features, spm_xgb_model) {
 #' @param weight_glmnet Weight for Elastic Net predictions (default 0.5)
 #'
 #' @return Data frame with blended SPM ratings plus individual model predictions
-#' @export
+#' @keywords internal
 calculate_spm_blend <- function(player_features, model_glmnet, model_xgb,
                                 weight_glmnet = 0.5) {
   # Get predictions from each model
@@ -1014,7 +1014,7 @@ calculate_spm_blend <- function(player_features, model_glmnet, model_xgb,
 #' @param lambda Which lambda to use ("min" or "1se")
 #'
 #' @return Named vector of coefficients
-#' @export
+#' @keywords internal
 extract_spm_coefficients <- function(model, lambda = "min") {
   lambda_val <- if (lambda == "min") model$lambda.min else model$lambda.1se
 
@@ -1069,7 +1069,7 @@ calculate_spm_ratings <- function(player_features, spm_model, lambda = "min") {
 #' @param alpha Elastic net mixing
 #'
 #' @return Fitted model for offensive SPM
-#' @export
+#' @keywords internal
 calculate_offensive_spm <- function(data, offensive_cols = NULL, alpha = 0.5) {
   if (is.null(offensive_cols)) {
     offensive_cols <- c("npxG_p100", "xG_p100", "Sh_p100", "SoT_p100",
@@ -1090,7 +1090,7 @@ calculate_offensive_spm <- function(data, offensive_cols = NULL, alpha = 0.5) {
 #' @param alpha Elastic net mixing
 #'
 #' @return Fitted model for defensive SPM
-#' @export
+#' @keywords internal
 calculate_defensive_spm <- function(data, defensive_cols = NULL, alpha = 0.5) {
   if (is.null(defensive_cols)) {
     defensive_cols <- c("Tkl_p100", "Int_p100", "Blocks_p100",

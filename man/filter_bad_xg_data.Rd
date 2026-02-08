@@ -20,3 +20,4 @@ List with filtered splint_data and filtering report
 Identifies league-seasons with high rates of missing/zero xG data
 and filters them out. Reports what was filtered.
 }
+\keyword{internal}

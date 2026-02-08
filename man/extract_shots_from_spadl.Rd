@@ -26,3 +26,4 @@ Extracts shot rows from SPADL data that has been scored with xG predictions,
 and formats them for the splint creation pipeline. This bridges the xMetrics
 infrastructure (SPADL + xG model) with the RAPM/splint pipeline.
 }
+\keyword{internal}

@@ -17,3 +17,4 @@ Named vector of coefficients
 \description{
 Gets feature weights from fitted SPM model.
 }
+\keyword{internal}

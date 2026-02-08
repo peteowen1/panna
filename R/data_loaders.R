@@ -37,7 +37,7 @@ NULL
 #'
 #' @return Data frame with query results.
 #'
-#' @export
+#' @keywords internal
 #' @examples
 #' \dontrun{
 #' # Load all summary data
@@ -109,7 +109,7 @@ query_remote_parquet <- function(table_name, sql_template, release = NULL,
 #'
 #' @return Data frame with query results.
 #'
-#' @export
+#' @keywords internal
 #' @examples
 #' \dontrun{
 #' # Query summary data for England
@@ -171,7 +171,7 @@ query_local_parquet <- function(table_type, sql_template, league = NULL, season 
 #'
 #' @return List with release information (tag_name, assets, etc.).
 #'
-#' @export
+#' @keywords internal
 #' @examples
 #' \dontrun{
 #' # Get FBref release
@@ -205,7 +205,7 @@ get_latest_release <- function(repo = "peteowen1/pannadata", tag = NULL) {
 #'
 #' @return Character vector of table names (without .parquet extension).
 #'
-#' @export
+#' @keywords internal
 #' @examples
 #' \dontrun{
 #' # See what tables are available remotely

@@ -521,7 +521,7 @@ get_stat_columns <- function(stat_type) {
 #' @param shooting Processed shooting data
 #'
 #' @return Data frame with npxG by player and match
-#' @export
+#' @keywords internal
 calculate_npxg <- function(shooting) {
   shooting %>%
     dplyr::filter(!.data$is_penalty) %>%
@@ -542,7 +542,7 @@ calculate_npxg <- function(shooting) {
 #' @param processed_data List of processed data frames
 #'
 #' @return List with merged data frames
-#' @export
+#' @keywords internal
 merge_processed_data <- function(processed_data) {
   list(
     matches = processed_data$results,
@@ -704,7 +704,7 @@ process_all_data <- function(raw_data, show_progress = TRUE, cache_dir = NULL, r
 #' @param verbose Whether to print filtering report
 #'
 #' @return List with filtered splint_data and filtering report
-#' @export
+#' @keywords internal
 filter_bad_xg_data <- function(splint_data, zero_xg_threshold = 20, verbose = TRUE) {
   splints <- splint_data$splints
 

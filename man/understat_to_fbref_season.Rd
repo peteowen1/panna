@@ -16,6 +16,8 @@ Character, season in FBref format (e.g., "2023-2024")
 Converts Understat's YYYY format to FBref's YYYY-YYYY format.
 }
 \examples{
-understat_to_fbref_season(2023)    # "2023-2024"
+\dontrun{
 understat_to_fbref_season("2024")  # "2024-2025"
 }
+}
+\keyword{internal}

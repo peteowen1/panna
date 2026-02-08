@@ -17,3 +17,4 @@ Parsed HTML document (rvest xml_document) or NULL on failure
 \description{
 Makes HTTP request with browser headers to avoid Cloudflare blocking.
 }
+\keyword{internal}

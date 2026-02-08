@@ -33,3 +33,4 @@ migrate_metadata_tables_available()
 migrate_metadata_tables_available(league = "ENG", season = "2017-2018")
 }
 }
+\keyword{internal}

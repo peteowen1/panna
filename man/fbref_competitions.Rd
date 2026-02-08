@@ -25,6 +25,5 @@ supported competitions.
 \examples{
 fbref_competitions
 fbref_competitions[fbref_competitions$type == "national_team", ]
-get_fbref_comp_id("WC")
 }
 \keyword{datasets}

@@ -293,7 +293,7 @@ is_match_cached <- function(league, season, fbref_id, table_types = "metadata") 
 #' @param season Season string
 #'
 #' @return Character vector of cached fbref_ids
-#' @export
+#' @keywords internal
 get_cached_fbref_ids <- function(league, season) {
   # All 10 table types for a complete match (events added)
   all_table_types <- c("metadata", "summary", "passing", "passing_types",
@@ -367,7 +367,7 @@ get_cached_fbref_ids <- function(league, season) {
 #' @param season Optional season filter
 #'
 #' @return Data frame with league, season, fbref_id columns
-#' @export
+#' @keywords internal
 list_cached_matches <- function(table_type = "metadata", league = NULL,
                                  season = NULL) {
   base_dir <- get_fbref_match_cache_dir(table_type, create = FALSE)

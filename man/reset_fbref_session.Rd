@@ -9,3 +9,4 @@ reset_fbref_session()
 \description{
 Clears cookies and creates fresh session. Use after changing VPN/IP.
 }
+\keyword{internal}

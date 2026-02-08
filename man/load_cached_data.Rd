@@ -15,3 +15,4 @@ Data frame of cached data, or NULL if none exists
 \description{
 Load cached data for a specific type
 }
+\keyword{internal}

@@ -217,7 +217,7 @@ extract_rapm_ratings <- function(model, lambda = "min") {
 #' @param lambda Which lambda to use
 #'
 #' @return Named vector of covariate coefficients
-#' @export
+#' @keywords internal
 get_covariate_effects <- function(model, lambda = "min") {
   lambda_val <- if (lambda == "min") model$lambda.min else model$lambda.1se
 
@@ -445,7 +445,7 @@ extract_xrapm_ratings <- function(model, lambda = "min") {
 #' @param lambda Which lambda to use ("min" or "1se" or numeric)
 #'
 #' @return Data frame with player ratings
-#' @export
+#' @keywords internal
 extract_rapm_coefficients <- function(model, lambda = "min") {
   # Check if model used a prior and has final coefficients stored
   if (!is.null(model$panna_metadata$used_prior) &&
@@ -525,7 +525,7 @@ extract_rapm_coefficients <- function(model, lambda = "min") {
 #' @param lambda Which lambda to use
 #'
 #' @return Data frame with offensive and defensive ratings
-#' @export
+#' @keywords internal
 extract_od_rapm_coefficients <- function(model, lambda = "min") {
   # Get all coefficients
   all_coefs <- extract_rapm_coefficients(model, lambda)
@@ -579,7 +579,7 @@ extract_od_rapm_coefficients <- function(model, lambda = "min") {
 #' @param alpha Elastic net parameter
 #'
 #' @return Data frame with rating estimates and confidence intervals
-#' @export
+#' @keywords internal
 calculate_rapm_stability <- function(rapm_data, n_bootstrap = 100, alpha = 0) {
   X <- rapm_data$X
   y <- rapm_data$y
@@ -646,7 +646,7 @@ calculate_rapm_stability <- function(rapm_data, n_bootstrap = 100, alpha = 0) {
 #' @param player_data Data frame linking players to teams
 #'
 #' @return Data frame with team-level summaries
-#' @export
+#' @keywords internal
 aggregate_rapm_by_team <- function(ratings, player_data) {
   if (!"team" %in% names(player_data)) {
     cli::cli_warn("No {.field team} column in {.arg player_data}.")

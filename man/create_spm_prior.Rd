@@ -19,3 +19,4 @@ Named vector of priors (keyed by player_id)
 \description{
 Creates a prior vector aligned with RAPM player IDs.
 }
+\keyword{internal}

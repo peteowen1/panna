@@ -102,7 +102,7 @@ create_possession_chains <- function(spadl_actions) {
 #'
 #' @return Data frame of chain-level statistics
 #'
-#' @export
+#' @keywords internal
 classify_chain_outcomes <- function(spadl_with_chains) {
   if (!"chain_id" %in% names(spadl_with_chains)) {
     cli::cli_abort("Input must have chain_id column. Run create_possession_chains() first.")
@@ -168,7 +168,7 @@ classify_chain_outcomes <- function(spadl_with_chains) {
 #' @param chain_outcomes Data frame from classify_chain_outcomes()
 #'
 #' @return Chain outcomes with next_chain_goal column added
-#' @export
+#' @keywords internal
 add_next_chain_outcome <- function(chain_outcomes) {
   cli::cli_alert_info("Adding opponent next chain outcomes...")
 
@@ -206,7 +206,7 @@ add_next_chain_outcome <- function(chain_outcomes) {
 #'
 #' @return SPADL actions with outcome labels
 #'
-#' @export
+#' @keywords internal
 label_actions_with_outcomes <- function(spadl_with_chains, chain_outcomes) {
   cli::cli_alert_info("Labeling actions with chain outcomes...")
 
@@ -252,7 +252,7 @@ label_actions_with_outcomes <- function(spadl_with_chains, chain_outcomes) {
 #' @param chain_outcomes Data frame from classify_chain_outcomes()
 #'
 #' @return List with chain statistics
-#' @export
+#' @keywords internal
 calculate_chain_stats <- function(chain_outcomes) {
   dt <- data.table::as.data.table(chain_outcomes)
 

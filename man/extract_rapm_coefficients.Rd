@@ -17,3 +17,4 @@ Data frame with player ratings
 \description{
 Gets player ratings from a fitted RAPM model.
 }
+\keyword{internal}

@@ -543,7 +543,7 @@ combine_team_tables <- function(parsed_data, table_type) {
 #' @param match_url Original match URL
 #'
 #' @return List containing metadata and all parsed tables
-#' @export
+#' @keywords internal
 parse_match_page <- function(page, match_url) {
   # Extract metadata first
   metadata <- extract_match_metadata(page, match_url)

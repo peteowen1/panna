@@ -23,6 +23,8 @@ Calculates Euclidean distance from coordinates to center of goal.
 Assumes goal is at x=100, y=50.
 }
 \examples{
-calculate_distance_to_goal(85, 50)  # Close, central
+\dontrun{
 calculate_distance_to_goal(50, 50)  # Halfway line
 }
+}
+\keyword{internal}

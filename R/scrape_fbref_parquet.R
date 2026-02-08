@@ -105,7 +105,7 @@ if (!force && exists(cache_key, envir = .remote_parquet_cache)) {
 #' @param source "local" (default) or "remote" to download from GitHub releases
 #'
 #' @return Combined data frame, or NULL if no cached data
-#' @export
+#' @keywords internal
 #'
 #' @examples
 #' \dontrun{
@@ -811,7 +811,7 @@ load_possession <- function(league = NULL, season = NULL, source = c("remote", "
 #' @param verbose Print progress (default TRUE)
 #'
 #' @return Number of metadata files updated
-#' @export
+#' @keywords internal
 #'
 #' @examples
 #' \dontrun{

@@ -20,3 +20,4 @@ Data frame with rate statistics
 Normalizes counting statistics to a per-100-sequences basis,
 similar to basketball's per-100-possessions.
 }
+\keyword{internal}

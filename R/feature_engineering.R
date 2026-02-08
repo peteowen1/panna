@@ -11,7 +11,7 @@
 #' @param stats Processed summary stats with touches and passes
 #'
 #' @return Data frame with team sequences per match
-#' @export
+#' @keywords internal
 calculate_team_sequences <- function(stats) {
   # Estimate sequences from team-level possession indicators
 
@@ -44,7 +44,7 @@ calculate_team_sequences <- function(stats) {
 #' @param stat_cols Character vector of columns to convert
 #'
 #' @return Data frame with rate statistics
-#' @export
+#' @keywords internal
 calculate_per_100_sequences <- function(player_stats, team_sequences, stat_cols = NULL) {
   # Join team sequences
   data <- player_stats %>%
@@ -83,7 +83,7 @@ calculate_per_100_sequences <- function(player_stats, team_sequences, stat_cols 
 #' @param min_shots Minimum shots required (default 20)
 #'
 #' @return Data frame with finishing modifier per player
-#' @export
+#' @keywords internal
 calculate_finishing_modifier <- function(shooting, min_shots = 20) {
   player_shooting <- shooting %>%
     dplyr::filter(!.data$is_penalty) %>%
@@ -114,7 +114,7 @@ calculate_finishing_modifier <- function(shooting, min_shots = 20) {
 #' @param stats Processed player stats with rate columns
 #'
 #' @return Data frame with offensive features
-#' @export
+#' @keywords internal
 create_offensive_features <- function(stats) {
   # Ensure we have the necessary columns (snake_case)
   offensive_cols <- c(
@@ -148,7 +148,7 @@ create_offensive_features <- function(stats) {
 #' @param stats Processed player stats with rate columns
 #'
 #' @return Data frame with defensive features
-#' @export
+#' @keywords internal
 create_defensive_features <- function(stats) {
   # Defensive columns (snake_case)
   defensive_cols <- c(
@@ -182,7 +182,7 @@ create_defensive_features <- function(stats) {
 #' @param weight_col Column containing games/minutes played
 #'
 #' @return Data frame with Bayesian-padded statistics
-#' @export
+#' @keywords internal
 apply_bayesian_padding <- function(player_stats, stat_cols, min_games = 10,
                                     weight_col = "n_games") {
   if (!weight_col %in% names(player_stats)) {
@@ -223,7 +223,7 @@ apply_bayesian_padding <- function(player_stats, stat_cols, min_games = 10,
 #' @param count_cols Columns with counting statistics
 #'
 #' @return Data frame with season-level player stats
-#' @export
+#' @keywords internal
 aggregate_player_season_stats <- function(match_stats, rate_cols = NULL, count_cols = NULL) {
   # Get season from match_id or join with match data
   season_stats <- match_stats %>%

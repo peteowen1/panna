@@ -25,3 +25,4 @@ considered cached if:
 \details{
 Uses hierarchical path: \code{\{table_type\}/\{league\}/\{season\}/\{id\}.rds}
 }
+\keyword{internal}

@@ -21,6 +21,9 @@ Note: This function is ready for use when player_href is available
 in scraped data. Currently player_href is not extracted during scraping.
 }
 \examples{
+\dontrun{
 extract_fbref_player_id("/players/d080ed5e/Kylian-Mbappe")
 # Returns "d080ed5e"
 }
+}
+\keyword{internal}

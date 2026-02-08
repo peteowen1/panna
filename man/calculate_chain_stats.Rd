@@ -15,3 +15,4 @@ List with chain statistics
 \description{
 Computes summary statistics about possession chains in the dataset.
 }
+\keyword{internal}

@@ -542,7 +542,7 @@ prepare_rapm_data <- function(splint_data, min_minutes = 90,
 #' @param match_info Match info data frame with season column
 #'
 #' @return Filtered rapm_data
-#' @export
+#' @keywords internal
 filter_rapm_by_season <- function(rapm_data, seasons, match_info) {
   # Get match_ids for specified seasons
   valid_matches <- match_info %>%

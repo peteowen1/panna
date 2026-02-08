@@ -13,6 +13,9 @@ Named list of canonical column names to alternatives
 Standard column name variations encountered across different data sources.
 }
 \examples{
+\dontrun{
 col_map <- default_column_map()
 names(col_map)
 }
+}
+\keyword{internal}

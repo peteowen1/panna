@@ -17,3 +17,4 @@ Character vector of cached understat_ids
 \description{
 Get cached Understat match IDs
 }
+\keyword{internal}

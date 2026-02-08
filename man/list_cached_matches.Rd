@@ -20,3 +20,4 @@ Data frame with league, season, fbref_id columns
 Scans the hierarchical directory structure:
 \code{\{table_type\}/\{league\}/\{season\}/\{id\}.rds}
 }
+\keyword{internal}

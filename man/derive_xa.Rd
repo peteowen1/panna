@@ -23,3 +23,4 @@ The same SPADL data frame with additional columns:
 For each shot in SPADL data, checks if the preceding action was a completed
 pass by a teammate. If so, credits the passer with the shot's xG as xA.
 }
+\keyword{internal}

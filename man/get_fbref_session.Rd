@@ -16,3 +16,4 @@ httr handle object
 Returns a persistent httr session handle that maintains cookies
 across requests, like a real browser session.
 }
+\keyword{internal}

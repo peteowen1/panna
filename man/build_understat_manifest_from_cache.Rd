@@ -16,3 +16,4 @@ Data frame with manifest structure
 Scans existing parquet files and builds a manifest. Use this to bootstrap
 the manifest when migrating from the old system.
 }
+\keyword{internal}

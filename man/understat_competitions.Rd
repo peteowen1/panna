@@ -23,6 +23,5 @@ supported competitions. Understat covers Big 5 European leagues plus Russia.
 \examples{
 understat_competitions
 understat_competitions[understat_competitions$code == "ENG", ]
-get_understat_slug("ENG")
 }
 \keyword{datasets}

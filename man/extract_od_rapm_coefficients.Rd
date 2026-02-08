@@ -17,3 +17,4 @@ Data frame with offensive and defensive ratings
 \description{
 Gets separate O-RAPM and D-RAPM from a model fit on O/D matrix.
 }
+\keyword{internal}
