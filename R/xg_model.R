@@ -46,6 +46,12 @@ prepare_shots_for_xg <- function(shot_events) {
     cli::cli_abort("Missing required columns: {paste(missing, collapse=', ')}")
   }
 
+  # Validate coordinate range
+  if (any(shot_events$x < 0 | shot_events$x > 100, na.rm = TRUE) ||
+      any(shot_events$y < 0 | shot_events$y > 100, na.rm = TRUE)) {
+    cli::cli_warn("Some x/y coordinates are outside the expected [0, 100] range.")
+  }
+
   # Create features
   features <- data.frame(
     match_id = shot_events$match_id,
@@ -63,7 +69,9 @@ prepare_shots_for_xg <- function(shot_events) {
 
   # Location features
   features$in_penalty_area <- as.integer(is_in_penalty_area(features$x, features$y))
-  features$in_six_yard_box <- as.integer(features$x > 94 & features$y > 37 & features$y < 63)
+  features$in_six_yard_box <- as.integer(
+    features$x > SIX_YARD_X_MIN & features$y > SIX_YARD_Y_MIN & features$y < SIX_YARD_Y_MAX
+  )
 
   # Body part (if available)
   if ("body_part" %in% names(shot_events)) {
@@ -408,7 +416,9 @@ add_xg_to_spadl <- function(spadl_actions, xg_model) {
     distance_to_goal = calculate_distance_to_goal(shots$start_x, shots$start_y),
     angle_to_goal = calculate_angle_to_goal(shots$start_x, shots$start_y),
     in_penalty_area = as.integer(is_in_penalty_area(shots$start_x, shots$start_y)),
-    in_six_yard_box = as.integer(shots$start_x > 94 & shots$start_y > 37 & shots$start_y < 63),
+    in_six_yard_box = as.integer(
+      shots$start_x > SIX_YARD_X_MIN & shots$start_y > SIX_YARD_Y_MIN & shots$start_y < SIX_YARD_Y_MAX
+    ),
     is_header = as.integer(shots$bodypart == "head"),
     is_right_foot = 0L,
     is_left_foot = 0L,

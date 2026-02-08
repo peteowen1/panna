@@ -46,6 +46,7 @@ player_fbref_summary <- function(player = NULL,
                                   by_team = FALSE,
                                   source = c("remote", "local")) {
   source <- match.arg(source)
+  validate_min_minutes(min_minutes)
 
   # Load data
   data <- load_summary(league = league, season = season, source = source)
@@ -164,6 +165,7 @@ player_fbref_passing <- function(player = NULL,
                                   by_team = FALSE,
                                   source = c("remote", "local")) {
   source <- match.arg(source)
+  validate_min_minutes(min_minutes)
 
   # Load data
   data <- load_passing(league = league, season = season, source = source)
@@ -296,6 +298,7 @@ player_fbref_defense <- function(player = NULL,
                                   by_team = FALSE,
                                   source = c("remote", "local")) {
   source <- match.arg(source)
+  validate_min_minutes(min_minutes)
 
   # Load data
   data <- load_defense(league = league, season = season, source = source)
@@ -425,6 +428,7 @@ player_fbref_keeper <- function(player = NULL,
                                  by_team = FALSE,
                                  source = c("remote", "local")) {
   source <- match.arg(source)
+  validate_min_minutes(min_minutes)
 
   # Load keeper data
   data <- load_keeper(league = league, season = season, source = source)
@@ -573,6 +577,7 @@ player_opta_summary <- function(player = NULL,
                                  by_team = FALSE,
                                  source = c("local", "remote")) {
   source <- match.arg(source)
+  validate_min_minutes(min_minutes)
 
   # Load data
   data <- .load_opta_data(league, season, source)
@@ -1110,6 +1115,7 @@ player_understat_summary <- function(player = NULL,
                                       by_team = FALSE,
                                       source = c("remote", "local")) {
   source <- match.arg(source)
+  validate_min_minutes(min_minutes)
 
   # Load Understat roster data
   data <- load_understat_roster(league = league, season = season, source = source)

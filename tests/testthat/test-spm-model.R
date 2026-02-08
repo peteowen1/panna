@@ -2,6 +2,7 @@
 
 # Helper to create minimal player stats for SPM testing
 create_test_player_stats <- function(n_players = 30) {
+  set.seed(42)
   player_ids <- paste0("player_", seq_len(n_players))
 
   data.frame(

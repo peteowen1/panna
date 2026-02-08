@@ -64,7 +64,7 @@ create_possession_chains <- function(spadl_actions) {
     (!is.na(prev_period_id) & period_id != prev_period_id) | # Period change
     (prev_action_type == "shot" & prev_result == "success") | # After goal
     (prev_action_type == "foul") |                           # After foul
-    (!is.na(prev_time) & (time_seconds - prev_time) > 30)    # Time gap
+    (!is.na(prev_time) & (time_seconds - prev_time) > CHAIN_TIME_GAP_SECONDS) # Time gap
   )]
 
   # Handle NA values in logical expression (set to TRUE if NA, meaning chain break)

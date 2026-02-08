@@ -739,16 +739,6 @@ query_remote_opta_parquet <- function(table_type, opta_league, season = NULL,
 }
 
 
-#' Clear remote Opta data cache
-#'
-#' Removes cached remote Opta data, forcing a fresh download on next access.
-#'
-#' @export
-#' @examples
-#' \dontrun{
-#' # Force fresh download on next remote load
-#' clear_remote_opta_cache()
-#' }
 #' Load Opta xG/xA/xPass Player Metrics
 #'
 #' Loads pre-computed player-level xG, xA, and xPass metrics from parquet files.
@@ -821,8 +811,16 @@ load_opta_xmetrics <- function(league, season = NULL, columns = NULL,
 }
 
 
+#' Clear remote Opta data cache
+#'
+#' Removes cached remote Opta data, forcing a fresh download on next access.
+#'
+#' @export
+#' @examples
+#' \dontrun{
+#' clear_remote_opta_cache()
+#' }
 clear_remote_opta_cache <- function() {
-
   rm(list = ls(envir = .opta_remote_env), envir = .opta_remote_env)
   cli::cli_alert_success("Remote Opta cache cleared")
 }

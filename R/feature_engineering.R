@@ -29,7 +29,7 @@ calculate_team_sequences <- function(stats) {
   team_stats %>%
     dplyr::mutate(
       # Approximate: 1 sequence per ~5 touches
-      estimated_sequences = pmax(20, .data$total_touches / 5)
+      estimated_sequences = pmax(MIN_SEQUENCES_PER_MATCH, .data$total_touches / TOUCHES_PER_SEQUENCE)
     )
 }
 

@@ -192,7 +192,6 @@ utils::globalVariables(c(
   "is_forward",
   "is_progressive",
   "xpass",
-  "xg",
   "epv",
   "p_score",
   "p_concede",
@@ -232,7 +231,6 @@ utils::globalVariables(c(
   "is_loser",
 
   # normalize_spadl_coordinates helper columns
-  "attacks_right",
   "mean_x",
   "i.attacks_right",
 
@@ -250,16 +248,10 @@ utils::globalVariables(c(
   # convert_opta_to_spadl helper columns
   "end_x_new",
   "end_y_new",
-  "original_event_id",
-  "opta_type_id",
-  "qualifiers_parsed",
 
   # EPV delta calculation columns (lead-based: next action values)
   "next_epv",
   "next_team_id",
-
-  # Own goal indicator (Opta qualifier 28)
-  "is_own_goal",
 
   # Pass credit assignment temp columns
   "passer_share",
@@ -365,9 +357,12 @@ utils::globalVariables(c(
 
   # xmetrics (derive_xa / aggregate_player_xmetrics) columns
   "xa",
+  "goals",
   "is_key_pass",
   "is_assist",
   "prev_action_id",
+  "prev_player_id",
+  "prev_player_name",
   "shots_on_target",
   "penalty_goals",
   "npgoals",
@@ -380,7 +375,6 @@ utils::globalVariables(c(
   "sum_xpass",
   "passes_attempted",
   "passes_completed",
-  "fifelse",
 
   # Opta pipeline columns (player-ratings-opta)
   "team_name",

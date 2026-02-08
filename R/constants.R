@@ -198,3 +198,67 @@ XG_MIN <- 0.01
 #' @examples
 #' XG_MAX
 XG_MAX <- 0.75
+
+
+# =============================================================================
+# Possession Chain Constants
+# =============================================================================
+
+#' Time gap threshold for chain breaks (seconds)
+#'
+#' Maximum gap in seconds between consecutive actions before
+#' a new possession chain is started.
+#'
+#' @format Integer value: 30
+#' @export
+#' @examples
+#' CHAIN_TIME_GAP_SECONDS
+CHAIN_TIME_GAP_SECONDS <- 30L
+
+
+# =============================================================================
+# Pitch Coordinate Constants (0-100 scale)
+# =============================================================================
+# Boundaries for pitch zones on a normalised 0-100 coordinate system
+
+#' Six-yard box x threshold (attacking end)
+#'
+#' Minimum x coordinate for the attacking six-yard box on a 0-100 pitch.
+#'
+#' @format Numeric value: 94
+#' @export
+#' @examples
+#' SIX_YARD_X_MIN
+SIX_YARD_X_MIN <- 94
+
+#' Six-yard box y lower bound
+#'
+#' Lower y boundary of the six-yard box on a 0-100 pitch.
+#'
+#' @format Numeric value: 37
+#' @export
+#' @examples
+#' SIX_YARD_Y_MIN
+SIX_YARD_Y_MIN <- 37
+
+#' Six-yard box y upper bound
+#'
+#' Upper y boundary of the six-yard box on a 0-100 pitch.
+#'
+#' @format Numeric value: 63
+#' @export
+#' @examples
+#' SIX_YARD_Y_MAX
+SIX_YARD_Y_MAX <- 63
+
+#' Default penalty kick xG value
+#'
+#' xG override for penalty kicks. Based on historical penalty
+#' conversion rates (~76%). Used when xG model is trained without
+#' penalties.
+#'
+#' @format Numeric value: 0.76
+#' @export
+#' @examples
+#' PENALTY_XG
+PENALTY_XG <- 0.76

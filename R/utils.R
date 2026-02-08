@@ -87,6 +87,24 @@ validate_seasons <- function(seasons) {
 }
 
 
+#' Validate min_minutes parameter
+#'
+#' Checks that min_minutes is a single non-negative number.
+#'
+#' @param min_minutes Value to validate
+#' @keywords internal
+validate_min_minutes <- function(min_minutes) {
+  if (!is.numeric(min_minutes) || length(min_minutes) != 1 ||
+      is.na(min_minutes) || min_minutes < 0) {
+    cli::cli_abort(c(
+      "{.arg min_minutes} must be a single non-negative number.",
+      "x" = "Got {.val {min_minutes}}."
+    ))
+  }
+  invisible(TRUE)
+}
+
+
 #' Standardize player names
 #'
 #' Cleans and standardizes player names for consistent matching across datasets.
@@ -421,6 +439,46 @@ find_column <- function(data, candidates) {
 }
 
 
+#' Count events by splint boundary
+#'
+#' Core logic for counting home/away events relative to splint boundaries.
+#'
+#' @param events Data frame with 'minute' (or 'effective_minute') and 'is_home' columns
+#' @param boundaries Numeric vector of splint boundary minutes
+#' @param type Either "before" (cumulative before each boundary start) or
+#'   "within" (events within each splint interval)
+#'
+#' @return List with 'home' and 'away' counts (vectors of length n_splints)
+#' @keywords internal
+.count_events <- function(events, boundaries, type = c("before", "within")) {
+  type <- match.arg(type)
+  n_splints <- length(boundaries) - 1
+  home_count <- rep(0, n_splints)
+  away_count <- rep(0, n_splints)
+
+  if (!is.null(events) && nrow(events) > 0) {
+    event_mins <- if ("effective_minute" %in% names(events)) {
+      events$effective_minute
+    } else {
+      events$minute
+    }
+
+    for (i in seq_len(n_splints)) {
+      mask <- if (type == "before") {
+        event_mins < boundaries[i]
+      } else {
+        event_mins >= boundaries[i] & event_mins < boundaries[i + 1]
+      }
+      if (any(mask)) {
+        home_count[i] <- sum(events$is_home[mask], na.rm = TRUE)
+        away_count[i] <- sum(!events$is_home[mask], na.rm = TRUE)
+      }
+    }
+  }
+
+  list(home = home_count, away = away_count)
+}
+
 #' Count events before each boundary
 #'
 #' Counts home/away events occurring before each splint boundary.
@@ -432,31 +490,8 @@ find_column <- function(data, candidates) {
 #' @return List with 'home' and 'away' counts (vectors same length as boundaries minus 1)
 #' @keywords internal
 count_events_before <- function(events, boundaries) {
-
-  n_splints <- length(boundaries) - 1
-  home_count <- rep(0, n_splints)
-  away_count <- rep(0, n_splints)
-
-  if (!is.null(events) && nrow(events) > 0) {
-    # Use effective_minute if available, otherwise fall back to minute
-    event_mins <- if ("effective_minute" %in% names(events)) {
-      events$effective_minute
-    } else {
-      events$minute
-    }
-
-    for (i in seq_len(n_splints)) {
-      before <- event_mins < boundaries[i]
-      if (any(before)) {
-        home_count[i] <- sum(events$is_home[before], na.rm = TRUE)
-        away_count[i] <- sum(!events$is_home[before], na.rm = TRUE)
-      }
-    }
-  }
-
-  list(home = home_count, away = away_count)
+  .count_events(events, boundaries, type = "before")
 }
-
 
 #' Count events within each splint
 #'
@@ -469,29 +504,7 @@ count_events_before <- function(events, boundaries) {
 #' @return List with 'home' and 'away' counts (vectors of length n_splints)
 #' @keywords internal
 count_events_in_splint <- function(events, boundaries) {
-  n_splints <- length(boundaries) - 1
-  home_count <- rep(0, n_splints)
-  away_count <- rep(0, n_splints)
-
-  if (!is.null(events) && nrow(events) > 0) {
-    # Use effective_minute if available, otherwise fall back to minute
-    event_mins <- if ("effective_minute" %in% names(events)) {
-      events$effective_minute
-    } else {
-      events$minute
-    }
-
-    for (i in seq_len(n_splints)) {
-      # Events >= start of splint AND < end of splint
-      in_splint <- event_mins >= boundaries[i] & event_mins < boundaries[i + 1]
-      if (any(in_splint)) {
-        home_count[i] <- sum(events$is_home[in_splint], na.rm = TRUE)
-        away_count[i] <- sum(!events$is_home[in_splint], na.rm = TRUE)
-      }
-    }
-  }
-
-  list(home = home_count, away = away_count)
+  .count_events(events, boundaries, type = "within")
 }
 
 
@@ -752,7 +765,6 @@ fetch_with_retry <- function(url, max_retries = 3, base_delay = 1, max_delay = 3
 
   # Should not reach here, but handle anyway
   return(structure(list(), class = "fetch_error", max_retries_exceeded = TRUE))
-  result
 }
 
 

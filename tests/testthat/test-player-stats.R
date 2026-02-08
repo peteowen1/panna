@@ -9,6 +9,7 @@
 
 # Helper to create mock FBref summary data
 create_mock_fbref_summary <- function(n_rows = 50) {
+  set.seed(42)
   players <- c("Mohamed Salah", "Erling Haaland", "Kevin De Bruyne",
                "Bukayo Saka", "Bruno Fernandes")
   teams <- c("Liverpool", "Manchester City", "Arsenal", "Manchester United")
@@ -32,6 +33,7 @@ create_mock_fbref_summary <- function(n_rows = 50) {
 
 # Helper to create mock FBref passing data
 create_mock_fbref_passing <- function(n_rows = 50) {
+  set.seed(42)
   players <- c("Mohamed Salah", "Erling Haaland", "Kevin De Bruyne",
                "Bukayo Saka", "Bruno Fernandes")
   teams <- c("Liverpool", "Manchester City", "Arsenal", "Manchester United")
@@ -52,6 +54,7 @@ create_mock_fbref_passing <- function(n_rows = 50) {
 
 # Helper to create mock FBref defense data
 create_mock_fbref_defense <- function(n_rows = 50) {
+  set.seed(42)
   players <- c("Virgil van Dijk", "Ruben Dias", "William Saliba",
                "Lisandro Martinez", "Gabriel")
   teams <- c("Liverpool", "Manchester City", "Arsenal", "Manchester United")
@@ -71,6 +74,7 @@ create_mock_fbref_defense <- function(n_rows = 50) {
 
 # Helper to create mock FBref keeper data
 create_mock_fbref_keeper <- function(n_rows = 20) {
+  set.seed(42)
   keepers <- c("Alisson", "Ederson", "David Raya", "Andre Onana")
   teams <- c("Liverpool", "Manchester City", "Arsenal", "Manchester United")
 
@@ -86,6 +90,7 @@ create_mock_fbref_keeper <- function(n_rows = 20) {
 
 # Helper to create mock Opta data
 create_mock_opta_data <- function(n_rows = 50) {
+  set.seed(42)
   players <- c("Mohamed Salah", "Erling Haaland", "Kevin De Bruyne",
                "Bukayo Saka", "Bruno Fernandes")
   teams <- c("Liverpool", "Manchester City", "Arsenal", "Manchester United")
@@ -167,6 +172,7 @@ create_mock_opta_data <- function(n_rows = 50) {
 
 # Helper to create mock Opta keeper data
 create_mock_opta_keeper <- function(n_rows = 20) {
+  set.seed(42)
   keepers <- c("Alisson", "Ederson", "David Raya", "Andre Onana")
   teams <- c("Liverpool", "Manchester City", "Arsenal", "Manchester United")
 
@@ -193,6 +199,7 @@ create_mock_opta_keeper <- function(n_rows = 20) {
 
 # Helper to create mock Understat roster data
 create_mock_understat_roster <- function(n_rows = 50) {
+  set.seed(42)
   players <- c("Mohamed Salah", "Erling Haaland", "Kevin De Bruyne",
                "Bukayo Saka", "Bruno Fernandes")
   teams <- c("Liverpool", "Manchester City", "Arsenal", "Manchester United")
@@ -952,10 +959,10 @@ test_that("player_understat_summary calculates xG metrics correctly", {
     assists = c(0, 1, 0),
     shots = c(4, 3, 3),
     key_passes = c(1, 2, 1),
-    xG = c(1.0, 0.8, 0.7),    # 2.5 xG
-    xA = c(0.1, 0.2, 0.1),
-    xGChain = c(1.5, 1.2, 1.0),
-    xGBuildup = c(0.5, 0.4, 0.3),
+    x_g = c(1.0, 0.8, 0.7),    # 2.5 xG
+    x_a = c(0.1, 0.2, 0.1),
+    x_g_chain = c(1.5, 1.2, 1.0),
+    x_g_buildup = c(0.5, 0.4, 0.3),
     stringsAsFactors = FALSE
   )
 
