@@ -92,8 +92,9 @@ calculate_od_panna <- function(rapm_data, spm_ratings, lambda_prior = 1) {
 
   # Add player names
   if (!is.null(rapm_data$player_mapping)) {
-    mapping <- rapm_data$player_mapping[, c("player_id", "player_name")]
-    ratings <- merge(ratings, mapping, by = "player_id", all.x = TRUE)
+    mapping <- data.table::as.data.table(rapm_data$player_mapping[, c("player_id", "player_name")])
+    ratings <- mapping[data.table::as.data.table(ratings), on = "player_id"]
+    data.table::setDF(ratings)
   }
 
   ratings <- ratings[order(-ratings$panna), ]
@@ -147,8 +148,8 @@ split_od_contributions <- function(panna_ratings, player_features) {
   id_col <- id_col[id_col %in% c("player_id", "player_name")][1]
 
   weight_cols <- intersect(c(id_col, "off_weight", "def_weight"), names(features))
-  result <- merge(panna_ratings, features[, weight_cols, drop = FALSE],
-                  by = id_col, all.x = TRUE)
+  result <- data.table::as.data.table(features[, weight_cols, drop = FALSE])[data.table::as.data.table(panna_ratings), on = id_col]
+  data.table::setDF(result)
   result$off_weight <- ifelse(is.na(result$off_weight), 0.5, result$off_weight)
   result$def_weight <- ifelse(is.na(result$def_weight), 0.5, result$def_weight)
   result$o_panna <- result$panna * result$off_weight

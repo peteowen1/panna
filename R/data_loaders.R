@@ -50,6 +50,7 @@ NULL
 #' }
 query_remote_parquet <- function(table_name, sql_template, release = NULL,
                                   tag = "fbref-latest") {
+  .check_suggests("httr2", "Remote data loading requires httr2.")
   # Get release info (use cache, keyed by tag)
   cache_key <- paste0("release_", tag)
 
@@ -613,6 +614,7 @@ load_understat_table_data <- function(table_type, league, season, source) {
 #' @return Data frame with query results
 #' @keywords internal
 query_remote_understat_parquet <- function(table_name, sql_template) {
+  .check_suggests("httr2", "Remote data loading requires httr2.")
   # Get release info for Understat tag
   release <- tryCatch({
     url <- "https://api.github.com/repos/peteowen1/pannadata/releases/tags/understat-latest"

@@ -83,8 +83,9 @@ calculate_panna_rating <- function(rapm_data, spm_ratings, lambda_prior = 1, alp
 
   # Join with player names if available
   if (!is.null(rapm_data$player_mapping)) {
-    mapping <- rapm_data$player_mapping[, c("player_id", "player_name")]
-    ratings <- merge(ratings, mapping, by = "player_id", all.x = TRUE)
+    mapping <- data.table::as.data.table(rapm_data$player_mapping[, c("player_id", "player_name")])
+    ratings <- mapping[data.table::as.data.table(ratings), on = "player_id"]
+    data.table::setDF(ratings)
   }
 
   ratings <- ratings[order(-ratings$panna), ]
@@ -225,11 +226,11 @@ compare_panna_rapm_spm <- function(panna_ratings, rapm_ratings, spm_ratings) {
   panna_cols <- intersect(c(id_col, "player_name", "panna"), names(panna_ratings))
   comparison <- panna_ratings[, panna_cols, drop = FALSE]
   rapm_cols <- intersect(c(id_col, "rapm"), names(rapm_ratings))
-  comparison <- merge(comparison, rapm_ratings[, rapm_cols, drop = FALSE],
-                      by = id_col, all.x = TRUE)
+  comparison <- data.table::as.data.table(rapm_ratings[, rapm_cols, drop = FALSE])[data.table::as.data.table(comparison), on = id_col]
+  data.table::setDF(comparison)
   spm_cols <- intersect(c(id_col, "spm"), names(spm_ratings))
-  comparison <- merge(comparison, spm_ratings[, spm_cols, drop = FALSE],
-                      by = id_col, all.x = TRUE)
+  comparison <- data.table::as.data.table(spm_ratings[, spm_cols, drop = FALSE])[data.table::as.data.table(comparison), on = id_col]
+  data.table::setDF(comparison)
   comparison$panna_vs_rapm <- comparison$panna - comparison$rapm
   comparison$panna_vs_spm <- comparison$panna - comparison$spm
   comparison$rapm_vs_spm <- comparison$rapm - comparison$spm
@@ -340,7 +341,8 @@ validate_predictive_power <- function(panna_ratings, next_season_rapm) {
   rapm_cols <- intersect(c(id_col, "rapm"), names(next_season_rapm))
   next_df <- next_season_rapm[, rapm_cols, drop = FALSE]
   names(next_df)[names(next_df) == "rapm"] <- "next_rapm"
-  joined <- merge(panna_ratings, next_df, by = id_col)
+  joined <- data.table::as.data.table(panna_ratings)[data.table::as.data.table(next_df), on = id_col, nomatch = NULL]
+  data.table::setDF(joined)
 
   if (nrow(joined) < 10) {
     cli::cli_warn("Too few players matched for reliable validation")

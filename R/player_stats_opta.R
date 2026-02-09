@@ -132,7 +132,8 @@ player_opta_summary <- function(player = NULL,
       FUN = function(x) names(which.max(table(x)))
     )
     names(team_mode) <- c("player", "team")
-    result <- merge(result, team_mode, by = "player", all.x = TRUE)
+    result <- data.table::as.data.table(team_mode)[data.table::as.data.table(result), on = "player"]
+    data.table::setDF(result)
   }
 
   # Calculate per-90 rates
@@ -240,7 +241,8 @@ player_opta_passing <- function(player = NULL,
     team_mode <- stats::aggregate(team_name ~ player_name, data = data,
                                    FUN = function(x) names(which.max(table(x))))
     names(team_mode) <- c("player", "team")
-    result <- merge(result, team_mode, by = "player", all.x = TRUE)
+    result <- data.table::as.data.table(team_mode)[data.table::as.data.table(result), on = "player"]
+    data.table::setDF(result)
   }
 
   # Calculate rates
@@ -344,7 +346,8 @@ player_opta_defense <- function(player = NULL,
     team_mode <- stats::aggregate(team_name ~ player_name, data = data,
                                    FUN = function(x) names(which.max(table(x))))
     names(team_mode) <- c("player", "team")
-    result <- merge(result, team_mode, by = "player", all.x = TRUE)
+    result <- data.table::as.data.table(team_mode)[data.table::as.data.table(result), on = "player"]
+    data.table::setDF(result)
   }
 
   # Calculate rates
@@ -445,7 +448,8 @@ player_opta_possession <- function(player = NULL,
     team_mode <- stats::aggregate(team_name ~ player_name, data = data,
                                    FUN = function(x) names(which.max(table(x))))
     names(team_mode) <- c("player", "team")
-    result <- merge(result, team_mode, by = "player", all.x = TRUE)
+    result <- data.table::as.data.table(team_mode)[data.table::as.data.table(result), on = "player"]
+    data.table::setDF(result)
   }
 
   # Calculate rates
@@ -555,7 +559,8 @@ player_opta_keeper <- function(player = NULL,
     team_mode <- stats::aggregate(team_name ~ player_name, data = data,
                                    FUN = function(x) names(which.max(table(x))))
     names(team_mode) <- c("player", "team")
-    result <- merge(result, team_mode, by = "player", all.x = TRUE)
+    result <- data.table::as.data.table(team_mode)[data.table::as.data.table(result), on = "player"]
+    data.table::setDF(result)
   }
 
   # Calculate derived stats
@@ -674,7 +679,8 @@ player_opta_shots <- function(player = NULL,
     team_mode <- stats::aggregate(team_name ~ player_name, data = data,
                                    FUN = function(x) names(which.max(table(x))))
     names(team_mode) <- c("player", "team")
-    result <- merge(result, team_mode, by = "player", all.x = TRUE)
+    result <- data.table::as.data.table(team_mode)[data.table::as.data.table(result), on = "player"]
+    data.table::setDF(result)
   }
 
   # Calculate derived stats
@@ -789,7 +795,8 @@ player_opta_xg <- function(player = NULL,
       FUN = function(x) names(which.max(table(x)))
     )
     names(team_mode) <- c("player", "team")
-    result <- merge(result, team_mode, by = "player", all.x = TRUE)
+    result <- data.table::as.data.table(team_mode)[data.table::as.data.table(result), on = "player"]
+    data.table::setDF(result)
   }
 
   # Derived stats
@@ -895,7 +902,8 @@ player_opta_xpass <- function(player = NULL,
       FUN = function(x) names(which.max(table(x)))
     )
     names(team_mode) <- c("player", "team")
-    result <- merge(result, team_mode, by = "player", all.x = TRUE)
+    result <- data.table::as.data.table(team_mode)[data.table::as.data.table(result), on = "player"]
+    data.table::setDF(result)
   }
 
   # Derived stats
@@ -1017,7 +1025,8 @@ player_opta_setpiece <- function(player = NULL,
     team_mode <- stats::aggregate(team_name ~ player_name, data = data,
                                    FUN = function(x) names(which.max(table(x))))
     names(team_mode) <- c("player", "team")
-    result <- merge(result, team_mode, by = "player", all.x = TRUE)
+    result <- data.table::as.data.table(team_mode)[data.table::as.data.table(result), on = "player"]
+    data.table::setDF(result)
   }
 
   # Calculate derived stats

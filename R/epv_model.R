@@ -63,8 +63,7 @@ create_next_goal_labels <- function(spadl_actions) {
   ]
 
   # Merge back to main data
-  dt <- merge(dt, result[, .(match_id, action_id, next_goal_team)],
-              by = c("match_id", "action_id"), all.x = TRUE)
+  dt <- result[, .(match_id, action_id, next_goal_team)][dt, on = c("match_id", "action_id")]
 
   # Create label based on who scores next
   # 0 = possession team scores, 1 = opponent scores, 2 = nobody scores
@@ -113,8 +112,7 @@ create_next_xg_labels <- function(spadl_actions, xg_values = NULL) {
     if (is.data.frame(xg_values)) {
       xg_df <- data.table::as.data.table(xg_values)
       if (all(c("match_id", "action_id", "xg") %in% names(xg_df))) {
-        dt <- merge(dt, xg_df[, .(match_id, action_id, shot_xg = xg)],
-                     by = c("match_id", "action_id"), all.x = TRUE)
+        dt <- xg_df[, .(match_id, action_id, shot_xg = xg)][dt, on = c("match_id", "action_id")]
       }
     }
   } else if ("chain_xg" %in% names(dt)) {
@@ -159,8 +157,7 @@ create_next_xg_labels <- function(spadl_actions, xg_values = NULL) {
   ]
 
   # Merge back to main data
-  dt <- merge(dt, result[, .(match_id, action_id, next_shot_team, next_shot_xg)],
-              by = c("match_id", "action_id"), all.x = TRUE)
+  dt <- result[, .(match_id, action_id, next_shot_team, next_shot_xg)][dt, on = c("match_id", "action_id")]
 
   # Create label: positive xG for team's shot, negative for opponent's, 0 for none
   dt[, next_xg_label := fifelse(
@@ -1142,9 +1139,12 @@ aggregate_player_epv <- function(spadl_with_epv, lineups = NULL, min_minutes = 4
     )
   }
 
-  # Merge actor and receiver credit
-  player_epv <- merge(actor_credit, receiver_credit,
-                       by = c("player_id", "player_name"), all = TRUE)
+  # Full outer join: actor + receiver credit
+  player_epv <- receiver_credit[actor_credit, on = c("player_id", "player_name")]
+  unmatched_receivers <- receiver_credit[!actor_credit, on = c("player_id", "player_name")]
+  if (nrow(unmatched_receivers) > 0) {
+    player_epv <- data.table::rbindlist(list(player_epv, unmatched_receivers), fill = TRUE)
+  }
   player_epv[is.na(epv_as_actor), epv_as_actor := 0]
   player_epv[is.na(epv_as_receiver), epv_as_receiver := 0]
   player_epv[is.na(n_actions), n_actions := 0L]
@@ -1163,8 +1163,12 @@ aggregate_player_epv <- function(spadl_with_epv, lineups = NULL, min_minutes = 4
                             c("opponent_player_id", "opponent_player_name"),
                             c("player_id", "player_name"))
 
-      player_epv <- merge(player_epv, opponent_blame,
-                           by = c("player_id", "player_name"), all = TRUE)
+      # Full outer join: player_epv + opponent_blame
+      unmatched_opponents <- opponent_blame[!player_epv, on = c("player_id", "player_name")]
+      player_epv <- opponent_blame[player_epv, on = c("player_id", "player_name")]
+      if (nrow(unmatched_opponents) > 0) {
+        player_epv <- data.table::rbindlist(list(player_epv, unmatched_opponents), fill = TRUE)
+      }
       # Fill NAs for opponent-only players (they have no actor/receiver credit)
       player_epv[is.na(epv_as_actor), epv_as_actor := 0]
       player_epv[is.na(epv_as_receiver), epv_as_receiver := 0]
@@ -1184,7 +1188,7 @@ aggregate_player_epv <- function(spadl_with_epv, lineups = NULL, min_minutes = 4
 
   # EPV by action type
   action_epv <- calculate_action_type_epv(spadl_with_epv)
-  player_epv <- merge(player_epv, action_epv, by = c("player_id", "player_name"), all.x = TRUE)
+  player_epv <- data.table::as.data.table(action_epv)[player_epv, on = c("player_id", "player_name")]
 
   # Add minutes if lineups provided
   if (!is.null(lineups) && "minutes_played" %in% names(lineups)) {
@@ -1192,8 +1196,7 @@ aggregate_player_epv <- function(spadl_with_epv, lineups = NULL, min_minutes = 4
     minutes_by_player <- dt_lineups[, .(total_minutes = sum(minutes_played, na.rm = TRUE)),
                                       by = .(player_id, player_name)]
 
-    player_epv <- merge(player_epv, minutes_by_player,
-                         by = c("player_id", "player_name"), all.x = TRUE)
+    player_epv <- minutes_by_player[player_epv, on = c("player_id", "player_name")]
 
     # Calculate per-90
     player_epv[, mins_per_90 := total_minutes / 90]
@@ -1259,11 +1262,17 @@ calculate_action_type_epv <- function(spadl_with_epv) {
                        .(epv_defending = sum(get(credit_col), na.rm = TRUE)),
                        by = .(player_id, player_name)]
 
-  # Merge all together
-  result <- passing_epv
-  result <- merge(result, shooting_epv, by = c("player_id", "player_name"), all = TRUE)
-  result <- merge(result, dribbling_epv, by = c("player_id", "player_name"), all = TRUE)
-  result <- merge(result, defending_epv, by = c("player_id", "player_name"), all = TRUE)
+  # Full outer join all action type EPVs
+  all_players <- unique(data.table::rbindlist(list(
+    passing_epv[, .(player_id, player_name)],
+    shooting_epv[, .(player_id, player_name)],
+    dribbling_epv[, .(player_id, player_name)],
+    defending_epv[, .(player_id, player_name)]
+  )))
+  result <- passing_epv[all_players, on = c("player_id", "player_name")]
+  result <- shooting_epv[result, on = c("player_id", "player_name")]
+  result <- dribbling_epv[result, on = c("player_id", "player_name")]
+  result <- defending_epv[result, on = c("player_id", "player_name")]
 
   as.data.frame(result)
 }

@@ -361,7 +361,8 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
     FUN = function(x) length(unique(x))
   )
   names(match_counts)[2] <- "n_matches"
-  player_stats <- merge(player_stats, match_counts, by = "player_id")
+  player_stats <- data.table::as.data.table(player_stats)[data.table::as.data.table(match_counts), on = "player_id", nomatch = NULL]
+  data.table::setDF(player_stats)
 
   # Get canonical player_name
   cleaned_names <- gsub("\u00A0", " ", opta_stats$player_name)
@@ -376,7 +377,8 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
     }
   )
   names(player_name_lookup)[2] <- "player_name"
-  player_stats <- merge(player_stats, player_name_lookup, by = "player_id", all.x = TRUE)
+  player_stats <- data.table::as.data.table(player_name_lookup)[data.table::as.data.table(player_stats), on = "player_id"]
+  data.table::setDF(player_stats)
 
   # Get primary position
   if ("position" %in% names(opta_stats)) {
@@ -390,7 +392,8 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
       }
     )
     names(pos_mode)[2] <- "primary_position"
-    player_stats <- merge(player_stats, pos_mode, by = "player_id", all.x = TRUE)
+    player_stats <- data.table::as.data.table(pos_mode)[data.table::as.data.table(player_stats), on = "player_id"]
+    data.table::setDF(player_stats)
   }
 
   # Filter by minimum minutes

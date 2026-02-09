@@ -342,8 +342,7 @@ add_possession_velocity <- function(spadl_with_chains) {
   )]
 
   # Merge back
-  dt <- merge(dt, chain_stats[, .(match_id, chain_id, possession_velocity, x_progression, chain_duration)],
-              by = c("match_id", "chain_id"), all.x = TRUE, sort = FALSE)
+  dt <- chain_stats[, .(match_id, chain_id, possession_velocity, x_progression, chain_duration)][dt, on = c("match_id", "chain_id")]
 
   # Restore original order
   data.table::setorder(dt, match_id, action_id)

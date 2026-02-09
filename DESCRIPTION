@@ -16,32 +16,33 @@ Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
 Imports:
-    arrow (>= 10.0.0),
     cli,
     data.table (>= 1.14.0),
     DBI,
-    doParallel,
     duckdb (>= 0.9.0),
     glmnet (>= 4.0),
+    Matrix,
+    rlang,
+    tools
+Suggests:
+    arrow (>= 10.0.0),
+    doParallel,
+    ggplot2,
+    ggrepel,
     httr (>= 1.4.0),
     httr2,
     janitor,
     jsonlite,
-    Matrix,
-    parallel,
-    rlang,
-    rvest (>= 1.0.0),
-    stringi,
-    tools
-Suggests:
-    ggplot2,
-    ggrepel,
     knitr,
     lifecycle,
+    parallel,
     piggyback,
     pROC,
     rmarkdown,
+    rvest (>= 1.0.0),
+    stringi,
     testthat (>= 3.0.0),
+    withr,
     xgboost
 Config/testthat/edition: 3
 VignetteBuilder: knitr

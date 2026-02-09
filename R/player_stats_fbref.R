@@ -107,7 +107,8 @@ player_fbref_summary <- function(player = NULL,
       data = data,
       FUN = function(x) names(which.max(table(x)))
     )
-    result <- merge(result, team_mode, by = "player", all.x = TRUE)
+    result <- data.table::as.data.table(team_mode)[data.table::as.data.table(result), on = "player"]
+    data.table::setDF(result)
   }
 
   # Calculate derived stats
@@ -208,7 +209,8 @@ player_fbref_passing <- function(player = NULL,
       na.action = na.pass
     )
 
-    result <- merge(result, minutes_df, by = c("player", "team"), all.x = TRUE)
+    result <- data.table::as.data.table(minutes_df)[data.table::as.data.table(result), on = c("player", "team")]
+    data.table::setDF(result)
   } else {
     minutes_df <- stats::aggregate(
       as.numeric(min) ~ player,
@@ -234,7 +236,8 @@ player_fbref_passing <- function(player = NULL,
       na.action = na.pass
     )
 
-    result <- merge(result, minutes_df, by = "player", all.x = TRUE)
+    result <- data.table::as.data.table(minutes_df)[data.table::as.data.table(result), on = "player"]
+    data.table::setDF(result)
 
     # Get most frequent team per player
     team_mode <- stats::aggregate(
@@ -242,7 +245,8 @@ player_fbref_passing <- function(player = NULL,
       data = data,
       FUN = function(x) names(which.max(table(x)))
     )
-    result <- merge(result, team_mode, by = "player", all.x = TRUE)
+    result <- data.table::as.data.table(team_mode)[data.table::as.data.table(result), on = "player"]
+    data.table::setDF(result)
   }
 
   # Calculate derived stats
@@ -340,7 +344,8 @@ player_fbref_defense <- function(player = NULL,
       na.action = na.pass
     )
 
-    result <- merge(result, minutes_df, by = c("player", "team"), all.x = TRUE)
+    result <- data.table::as.data.table(minutes_df)[data.table::as.data.table(result), on = c("player", "team")]
+    data.table::setDF(result)
   } else {
     minutes_df <- stats::aggregate(
       as.numeric(min) ~ player,
@@ -365,7 +370,8 @@ player_fbref_defense <- function(player = NULL,
       na.action = na.pass
     )
 
-    result <- merge(result, minutes_df, by = "player", all.x = TRUE)
+    result <- data.table::as.data.table(minutes_df)[data.table::as.data.table(result), on = "player"]
+    data.table::setDF(result)
 
     # Get most frequent team per player
     team_mode <- stats::aggregate(
@@ -373,7 +379,8 @@ player_fbref_defense <- function(player = NULL,
       data = data,
       FUN = function(x) names(which.max(table(x)))
     )
-    result <- merge(result, team_mode, by = "player", all.x = TRUE)
+    result <- data.table::as.data.table(team_mode)[data.table::as.data.table(result), on = "player"]
+    data.table::setDF(result)
   }
 
   # Calculate derived stats
@@ -472,7 +479,8 @@ player_fbref_keeper <- function(player = NULL,
       na.action = na.pass
     )
 
-    result <- merge(result, minutes_df, by = c("player", "team"), all.x = TRUE)
+    result <- data.table::as.data.table(minutes_df)[data.table::as.data.table(result), on = c("player", "team")]
+    data.table::setDF(result)
   } else {
     minutes_df <- stats::aggregate(
       as.numeric(min) ~ player,
@@ -495,7 +503,8 @@ player_fbref_keeper <- function(player = NULL,
       na.action = na.pass
     )
 
-    result <- merge(result, minutes_df, by = "player", all.x = TRUE)
+    result <- data.table::as.data.table(minutes_df)[data.table::as.data.table(result), on = "player"]
+    data.table::setDF(result)
 
     # Get most frequent team per player
     team_mode <- stats::aggregate(
@@ -503,7 +512,8 @@ player_fbref_keeper <- function(player = NULL,
       data = data,
       FUN = function(x) names(which.max(table(x)))
     )
-    result <- merge(result, team_mode, by = "player", all.x = TRUE)
+    result <- data.table::as.data.table(team_mode)[data.table::as.data.table(result), on = "player"]
+    data.table::setDF(result)
   }
 
   # Calculate derived stats

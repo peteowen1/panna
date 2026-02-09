@@ -1,5 +1,30 @@
 # Utility functions for panna package
 
+
+#' Check that a suggested package is installed
+#'
+#' Throws an informative error if a package listed in Suggests is missing.
+#'
+#' @param pkg Package name (character)
+#' @param reason Brief reason why the package is needed
+#'
+#' @return TRUE invisibly if package is available
+#' @keywords internal
+.check_suggests <- function(pkg, reason = NULL) {
+  if (!requireNamespace(pkg, quietly = TRUE)) {
+    msg <- sprintf("Package '%s' is required but not installed.", pkg)
+    if (!is.null(reason)) {
+      msg <- paste(msg, reason)
+    }
+    cli::cli_abort(c(
+      msg,
+      "i" = 'Install it with: install.packages("{pkg}")'
+    ))
+  }
+  invisible(TRUE)
+}
+
+
 #' Clean column names to snake_case
 #'
 #' Applies janitor::clean_names() to standardize all column names.
@@ -12,6 +37,7 @@ clean_column_names <- function(data) {
   if (is.null(data) || !is.data.frame(data)) {
     return(data)
   }
+  .check_suggests("janitor", "clean_column_names() requires janitor.")
   janitor::clean_names(data)
 }
 
@@ -685,7 +711,8 @@ aggregate_player_data <- function(data, agg_cols, by_team = FALSE,
       data = data,
       FUN = function(x) names(which.max(table(x)))
     )
-    result <- merge(result, team_mode, by = player_col, all.x = TRUE)
+    result <- data.table::as.data.table(team_mode)[data.table::as.data.table(result), on = player_col]
+    data.table::setDF(result)
   }
 
   result
@@ -707,6 +734,7 @@ aggregate_player_data <- function(data, agg_cols, by_team = FALSE,
 #' @return httr response object, or NULL with attributes on permanent failure
 #' @keywords internal
 fetch_with_retry <- function(url, max_retries = 3, base_delay = 1, max_delay = 30, ...) {
+  .check_suggests("httr", "HTTP requests require httr.")
   attempt <- 0
 
   while (attempt <= max_retries) {

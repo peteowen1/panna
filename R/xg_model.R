@@ -707,12 +707,9 @@ aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0) {
   ), by = .(player_id, player_name, team_id)]
 
   # --- Merge all ---
-  result <- merge(minutes_df, shooting,
-                  by = c("player_id", "player_name", "team_id"), all.x = TRUE)
-  result <- merge(result, assisting,
-                  by = c("player_id", "player_name", "team_id"), all.x = TRUE)
-  result <- merge(result, passing,
-                  by = c("player_id", "player_name", "team_id"), all.x = TRUE)
+  result <- shooting[minutes_df, on = c("player_id", "player_name", "team_id")]
+  result <- assisting[result, on = c("player_id", "player_name", "team_id")]
+  result <- passing[result, on = c("player_id", "player_name", "team_id")]
 
   # Fill NAs with 0
   num_cols <- c("shots", "shots_on_target", "goals", "penalty_goals", "npgoals",

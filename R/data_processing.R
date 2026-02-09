@@ -86,8 +86,8 @@ process_match_lineups <- function(lineups, results) {
   dt_results <- data.table::as.data.table(results)
   dt_results <- unique(dt_results[, c("match_url", "match_id"), with = FALSE])
 
-  # Merge
-  dt_lineups <- merge(dt_lineups, dt_results, by = "match_url", all.x = TRUE)
+  # Join
+  dt_lineups <- dt_results[dt_lineups, on = "match_url"]
 
   # Standardize column names before processing using helper
   standardize_data_columns(dt_lineups, list(
@@ -215,7 +215,8 @@ process_match_events <- function(events, results) {
   }
 
   # Join with match lookup to get match_id and home/away teams
-  events <- merge(events, match_lookup, by = "match_url", all.x = TRUE)
+  events <- data.table::as.data.table(match_lookup)[data.table::as.data.table(events), on = "match_url"]
+  data.table::setDF(events)
 
   # Handle case where join failed (missing match_url matches)
   if (!"home_team" %in% names(events) || all(is.na(events$home_team))) {
@@ -335,8 +336,8 @@ process_shooting_data <- function(shooting, results) {
   dt_results <- data.table::as.data.table(results)
   dt_results <- unique(dt_results[, c("match_url", "match_id"), with = FALSE])
 
-  # Merge
-  dt_shooting <- merge(dt_shooting, dt_results, by = "match_url", all.x = TRUE)
+  # Join
+  dt_shooting <- dt_results[dt_shooting, on = "match_url"]
 
   # Process columns (vectorized) - use set() for speed
   data.table::set(dt_shooting, j = "player_name", value = standardize_player_names(dt_shooting$player))
@@ -405,8 +406,8 @@ process_advanced_stats <- function(stats, results, stat_type = "summary") {
   dt_results <- data.table::as.data.table(results)
   dt_results <- unique(dt_results[, c("match_url", "match_id"), with = FALSE])
 
-  # Merge to get match_id
-  dt_stats <- merge(dt_stats, dt_results, by = "match_url", all.x = TRUE)
+  # Join to get match_id
+  dt_stats <- dt_results[dt_stats, on = "match_url"]
 
   # Standardize column names using helper
   standardize_data_columns(dt_stats, list(

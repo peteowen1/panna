@@ -697,8 +697,8 @@ create_match_splints <- function(match_id, events, lineups, shooting, results,
                                      home_team = home_team, away_team = away_team)
 
   # Combine - match_id is already in boundaries
-  xg_cols <- xg_data[, c("splint_num", "npxg_home", "npxg_away", "npxgd", "npxgd_per_90"), drop = FALSE]
-  splints <- merge(boundaries, xg_cols, by = "splint_num", all.x = TRUE)
+  xg_cols <- xg_data[, c("splint_num", "npxg_home", "npxg_away", "npxgd", "npxgd_per_90"), with = FALSE]
+  splints <- xg_cols[boundaries, on = "splint_num"]
 
   list(
     match_id = current_match_id,
@@ -763,7 +763,7 @@ create_all_splints <- function(processed_data, include_goals = TRUE, verbose = T
     # Add match_id if not present (join via match_url)
     if (!"match_id" %in% names(dt_stats) && "match_url" %in% names(dt_stats)) {
       match_id_lookup <- unique(dt_results[, c("match_url", "match_id"), with = FALSE])
-      dt_stats <- merge(dt_stats, match_id_lookup, by = "match_url", all.x = TRUE)
+      dt_stats <- match_id_lookup[dt_stats, on = "match_url"]
     }
 
     # Only keep rows with red cards to save memory
@@ -995,8 +995,8 @@ create_match_splints_fast <- function(match_id, events, lineups, shooting, resul
   xg_data <- calculate_splint_npxgd_fast(boundaries, shooting, home_team, away_team)
 
   # Combine
-  splints <- merge(boundaries, xg_data[, c("splint_num", "npxg_home", "npxg_away", "npxgd", "npxgd_per_90")],
-                   by = "splint_num", all.x = TRUE)
+  splints <- data.table::as.data.table(xg_data[, c("splint_num", "npxg_home", "npxg_away", "npxgd", "npxgd_per_90")])[boundaries, on = "splint_num"]
+  data.table::setDF(splints)
 
   list(
     match_id = current_match_id,
@@ -1342,8 +1342,9 @@ prepare_opta_events_for_splints <- function(opta_events, match_results = NULL) {
     events$is_home <- tolower(events$team_position) == "home"
   } else if (!is.null(match_results) && "home_team_id" %in% names(match_results)) {
     # Join with match_results to get home/away
-    mr_cols <- match_results[, c("match_id", "home_team_id"), drop = FALSE]
-    events <- merge(events, mr_cols, by = "match_id", all.x = TRUE)
+    mr_cols <- data.table::as.data.table(match_results[, c("match_id", "home_team_id"), drop = FALSE])
+    events <- mr_cols[data.table::as.data.table(events), on = "match_id"]
+    data.table::setDF(events)
     events$is_home <- events$team_id == events$home_team_id
     events$home_team_id <- NULL
   } else {

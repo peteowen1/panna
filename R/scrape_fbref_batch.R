@@ -22,6 +22,8 @@
 #' @return Data frame with match_url, home_team, away_team, date columns
 #' @export
 scrape_fixtures <- function(league, season, completed_only = TRUE) {
+  .check_suggests("httr", "Scraping FBref requires httr.")
+  .check_suggests("rvest", "Scraping FBref requires rvest.")
   url <- get_fbref_schedule_url(league, season)
 
   progress_msg(sprintf("Fetching fixtures: %s %s", league, season))
@@ -188,6 +190,8 @@ scrape_fbref_matches <- function(
     verbose = TRUE,
     max_matches = Inf
 ) {
+  .check_suggests("httr", "Scraping FBref requires httr.")
+  .check_suggests("rvest", "Scraping FBref requires rvest.")
   # Validate inputs
   if (length(match_urls) == 0) {
     cli::cli_abort("No match URLs provided")
@@ -471,6 +475,8 @@ get_cached_match_urls <- function(league, season) {
 #' }
 scrape_comp_season <- function(comp, season, table_types, delay,
                                 force_rescrape, max_matches = Inf) {
+  .check_suggests("httr", "Scraping FBref requires httr.")
+  .check_suggests("rvest", "Scraping FBref requires rvest.")
 
   cat(sprintf("\n%s %s\n", comp, season))
   cat(strrep("-", 40), "\n")

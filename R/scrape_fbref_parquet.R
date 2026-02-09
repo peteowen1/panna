@@ -4,7 +4,6 @@
 # GitHub releases upload, and convenience data loading functions.
 # Depends on scrape_fbref_cache.R for cache operations.
 
-#' @importFrom arrow read_parquet write_parquet
 
 
 # ============================================================================
@@ -253,6 +252,7 @@ get_parquet_path <- function(table_type, league, season, create = FALSE) {
 #' @return Path to created parquet file, or NULL if no data
 #' @export
 build_parquet <- function(table_type, league, season, verbose = TRUE) {
+  .check_suggests("arrow", "Building parquet files requires arrow.")
   if (verbose) message(sprintf("  %s/%s:", league, season))
 
   parquet_path <- get_parquet_path(table_type, league, season, create = TRUE)
@@ -349,6 +349,7 @@ build_parquet <- function(table_type, league, season, verbose = TRUE) {
 #' @export
 build_all_parquet <- function(table_types = NULL, leagues = NULL,
                               seasons = NULL, verbose = TRUE) {
+  .check_suggests("arrow", "Building parquet files requires arrow.")
   # Default table types
   if (is.null(table_types)) {
     table_types <- c("summary", "passing", "passing_types", "defense",
@@ -483,9 +484,7 @@ build_all_parquet <- function(table_types = NULL, leagues = NULL,
 #' }
 build_consolidated_parquet <- function(table_types = NULL, output_dir = NULL,
                                         verbose = TRUE) {
-  if (!requireNamespace("arrow", quietly = TRUE)) {
-    cli::cli_abort("Package 'arrow' is required. Install with: install.packages('arrow')")
-  }
+  .check_suggests("arrow", "Building parquet files requires arrow.")
 
   # Default table types
   if (is.null(table_types)) {

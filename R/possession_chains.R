@@ -136,7 +136,7 @@ classify_chain_outcomes <- function(spadl_with_chains) {
 
   # Count shots in chain
   shots_per_chain <- dt[action_type == "shot", .(shots_in_chain = .N), by = .(match_id, chain_id)]
-  chain_summary <- merge(chain_summary, shots_per_chain, by = c("match_id", "chain_id"), all.x = TRUE)
+  chain_summary <- shots_per_chain[chain_summary, on = c("match_id", "chain_id")]
   chain_summary[is.na(shots_in_chain), shots_in_chain := 0L]
 
   # Binary goal indicator
@@ -145,7 +145,7 @@ classify_chain_outcomes <- function(spadl_with_chains) {
   # Add xG if available in source data
   if ("xg" %in% names(dt)) {
     chain_xg <- dt[, .(chain_xg = sum(xg, na.rm = TRUE)), by = .(match_id, chain_id)]
-    chain_summary <- merge(chain_summary, chain_xg, by = c("match_id", "chain_id"), all.x = TRUE)
+    chain_summary <- chain_xg[chain_summary, on = c("match_id", "chain_id")]
   } else {
     chain_summary[, chain_xg := NA_real_]
   }
@@ -219,8 +219,7 @@ label_actions_with_outcomes <- function(spadl_with_chains, chain_outcomes) {
   outcome_cols <- intersect(outcome_cols, names(dt_outcomes))
 
   # Merge outcomes to actions
-  result <- merge(dt_actions, dt_outcomes[, ..outcome_cols],
-                   by = c("match_id", "chain_id"), all.x = TRUE, sort = FALSE)
+  result <- dt_outcomes[, ..outcome_cols][dt_actions, on = c("match_id", "chain_id")]
 
   # Rename for clarity
   if ("ends_in_goal" %in% names(result)) {

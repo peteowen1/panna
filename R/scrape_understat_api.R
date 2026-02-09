@@ -3,8 +3,6 @@
 # HTTP requests, JSON extraction, session management, and single-match
 # data extraction. Used by scrape_understat.R for batch operations.
 
-#' @importFrom jsonlite fromJSON
-#' @importFrom stringi stri_unescape_unicode
 #' @importFrom rlang %||%
 NULL
 

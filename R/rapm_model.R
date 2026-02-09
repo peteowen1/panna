@@ -74,6 +74,8 @@ fit_rapm <- function(rapm_data, alpha = 0, nfolds = 10,
 
   # Set up parallel processing
   if (parallel) {
+    .check_suggests("parallel", "Parallel RAPM fitting requires parallel.")
+    .check_suggests("doParallel", "Parallel RAPM fitting requires doParallel.")
     if (is.null(n_cores)) {
       n_cores <- max(1, floor(parallel::detectCores() / 2))
     }
@@ -188,8 +190,9 @@ extract_rapm_ratings <- function(model, lambda = "min") {
 
   # Join with player mapping
   if (!is.null(model$panna_metadata$player_mapping)) {
-    mapping <- model$panna_metadata$player_mapping[, c("player_id", "player_name", "total_minutes")]
-    ratings <- merge(ratings, mapping, by = "player_id", all.x = TRUE)
+    mapping <- data.table::as.data.table(model$panna_metadata$player_mapping[, c("player_id", "player_name", "total_minutes")])
+    ratings <- mapping[data.table::as.data.table(ratings), on = "player_id"]
+    data.table::setDF(ratings)
   }
 
   # Add covariate effects if available
@@ -417,8 +420,9 @@ extract_xrapm_ratings <- function(model, lambda = "min") {
 
   # Join with player mapping
   if (!is.null(model$panna_metadata$player_mapping)) {
-    mapping <- model$panna_metadata$player_mapping[, c("player_id", "player_name", "total_minutes")]
-    ratings <- merge(ratings, mapping, by = "player_id", all.x = TRUE)
+    mapping <- data.table::as.data.table(model$panna_metadata$player_mapping[, c("player_id", "player_name", "total_minutes")])
+    ratings <- mapping[data.table::as.data.table(ratings), on = "player_id"]
+    data.table::setDF(ratings)
   }
 
   ratings <- ratings[order(-ratings$xrapm), ]
@@ -492,8 +496,9 @@ extract_rapm_coefficients <- function(model, lambda = "min") {
 
   # Join with player mapping if available
   if (!is.null(model$panna_metadata$player_mapping)) {
-    mapping <- model$panna_metadata$player_mapping[, c("player_id", "player_name")]
-    ratings <- merge(ratings, mapping, by = "player_id", all.x = TRUE)
+    mapping <- data.table::as.data.table(model$panna_metadata$player_mapping[, c("player_id", "player_name")])
+    ratings <- mapping[data.table::as.data.table(ratings), on = "player_id"]
+    data.table::setDF(ratings)
   }
 
   ratings <- ratings[order(-ratings$rapm), ]
@@ -530,14 +535,16 @@ extract_od_rapm_coefficients <- function(model, lambda = "min") {
   def_ratings <- def_ratings[, c("player_id", "d_rapm"), drop = FALSE]
 
   # Combine
-  ratings <- merge(off_ratings, def_ratings, by = "player_id", all.x = TRUE)
+  ratings <- data.table::as.data.table(def_ratings)[data.table::as.data.table(off_ratings), on = "player_id"]
+  data.table::setDF(ratings)
   ratings$rapm <- ratings$o_rapm + ratings$d_rapm
   ratings <- ratings[order(-ratings$rapm), ]
 
   # Join with player mapping if available
   if (!is.null(model$panna_metadata$player_mapping)) {
-    mapping <- model$panna_metadata$player_mapping[, c("player_id", "player_name")]
-    ratings <- merge(ratings, mapping, by = "player_id", all.x = TRUE)
+    mapping <- data.table::as.data.table(model$panna_metadata$player_mapping[, c("player_id", "player_name")])
+    ratings <- mapping[data.table::as.data.table(ratings), on = "player_id"]
+    data.table::setDF(ratings)
   }
 
   ratings
@@ -627,10 +634,8 @@ aggregate_rapm_by_team <- function(ratings, player_data) {
     return(NULL)
   }
 
-  merged <- merge(ratings, player_data[, c("player_id", "team"), drop = FALSE],
-                  by = "player_id", all.x = TRUE)
-  dt <- data.table::as.data.table(merged)
-  result <- dt[, .(
+  merged <- data.table::as.data.table(player_data[, c("player_id", "team"), drop = FALSE])[data.table::as.data.table(ratings), on = "player_id"]
+  result <- merged[, .(
     n_players = .N,
     mean_rapm = mean(rapm, na.rm = TRUE),
     total_rapm = sum(rapm, na.rm = TRUE),

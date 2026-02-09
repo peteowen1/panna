@@ -465,7 +465,8 @@ aggregate_player_stats <- function(stats_summary,
 
   player_stats <- dt[, eval(as.call(c(quote(list), agg_exprs))), by = player_id]
   player_stats <- as.data.frame(player_stats)
-  player_stats <- merge(player_stats, player_name_lookup, by = "player_id", all.x = TRUE)
+  player_stats <- data.table::as.data.table(player_name_lookup)[data.table::as.data.table(player_stats), on = "player_id"]
+  data.table::setDF(player_stats)
   player_stats <- rename_columns(player_stats, existing_summary)
 
   # Filter by min minutes
@@ -491,7 +492,8 @@ aggregate_player_stats <- function(stats_summary,
   for (table_info in stat_tables) {
     agg_result <- .aggregate_stat_table(table_info$data, table_info$cols)
     if (!is.null(agg_result)) {
-      player_stats <- merge(player_stats, agg_result, by = "player_id", all.x = TRUE)
+      player_stats <- data.table::as.data.table(agg_result)[data.table::as.data.table(player_stats), on = "player_id"]
+      data.table::setDF(player_stats)
     }
   }
 
@@ -631,11 +633,13 @@ build_prior_vector <- function(spm_data, spm_col, player_mapping, default = 0) {
 prepare_spm_regression_data <- function(player_features, rapm_ratings) {
   # Match on player name or ID
   if ("player_id" %in% names(player_features) && "player_id" %in% names(rapm_ratings)) {
-    data <- merge(player_features, rapm_ratings[, c("player_id", "rapm"), drop = FALSE],
-                  by = "player_id")
+    rapm_dt <- data.table::as.data.table(rapm_ratings[, c("player_id", "rapm"), drop = FALSE])
+    data <- data.table::as.data.table(player_features)[rapm_dt, on = "player_id", nomatch = NULL]
+    data.table::setDF(data)
   } else if ("player_name" %in% names(player_features) && "player_name" %in% names(rapm_ratings)) {
-    data <- merge(player_features, rapm_ratings[, c("player_name", "rapm"), drop = FALSE],
-                  by = "player_name")
+    rapm_dt <- data.table::as.data.table(rapm_ratings[, c("player_name", "rapm"), drop = FALSE])
+    data <- data.table::as.data.table(player_features)[rapm_dt, on = "player_name", nomatch = NULL]
+    data.table::setDF(data)
   } else {
     cli::cli_abort(c(
       "Cannot match {.arg player_features} and {.arg rapm_ratings}.",
@@ -989,7 +993,8 @@ calculate_spm_blend <- function(player_features, model_glmnet, model_xgb,
   names(spm_glmnet)[names(spm_glmnet) == "spm"] <- "spm_glmnet"
   xgb_df <- spm_xgb[, c("player_id", "spm"), drop = FALSE]
   names(xgb_df)[names(xgb_df) == "spm"] <- "spm_xgb"
-  result <- merge(spm_glmnet, xgb_df, by = "player_id")
+  result <- data.table::as.data.table(spm_glmnet)[data.table::as.data.table(xgb_df), on = "player_id", nomatch = NULL]
+  data.table::setDF(result)
   result$spm <- weight_glmnet * result$spm_glmnet + (1 - weight_glmnet) * result$spm_xgb
   result <- result[order(-result$spm), ]
 
@@ -1123,8 +1128,9 @@ validate_spm_prediction <- function(spm_ratings, rapm_ratings,
   }
 
   rapm_keep <- c(join_cols, "rapm")
-  comparison <- merge(spm_ratings, rapm_ratings[, rapm_keep, drop = FALSE],
-                      by = join_cols)
+  rapm_dt <- data.table::as.data.table(rapm_ratings[, rapm_keep, drop = FALSE])
+  comparison <- data.table::as.data.table(spm_ratings)[rapm_dt, on = join_cols, nomatch = NULL]
+  data.table::setDF(comparison)
 
   if (nrow(comparison) == 0) {
     cli::cli_warn("No matching players between SPM and RAPM ratings.")

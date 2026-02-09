@@ -93,7 +93,8 @@ player_understat_summary <- function(player = NULL,
       FUN = function(x) names(which.max(table(x)))
     )
     names(team_mode)[2] <- "team"
-    result <- merge(result, team_mode, by = "player", all.x = TRUE)
+    result <- data.table::as.data.table(team_mode)[data.table::as.data.table(result), on = "player"]
+    data.table::setDF(result)
   }
 
   # Calculate derived stats
@@ -197,7 +198,8 @@ player_profile <- function(player,
                                 "passes_into_penalty_area",
                                 "progressive_passes_per90",
                                 "key_passes_per90"), drop = FALSE]
-    profile <- merge(profile, pass_cols, by = "player", all.x = TRUE)
+    profile <- data.table::as.data.table(pass_cols)[data.table::as.data.table(profile), on = "player"]
+    data.table::setDF(profile)
   }
 
   # -- Opta: derive initial-format name ("Bukayo Saka" -> "B. Saka") --
@@ -251,7 +253,8 @@ player_profile <- function(player,
 
   if (!is.null(understat) && nrow(understat) > 0) {
     us_cols <- understat[, c("player", "xg_chain", "xg_buildup"), drop = FALSE]
-    profile <- merge(profile, us_cols, by = "player", all.x = TRUE)
+    profile <- data.table::as.data.table(us_cols)[data.table::as.data.table(profile), on = "player"]
+    data.table::setDF(profile)
   }
 
   # Apply min_minutes filter

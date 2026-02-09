@@ -750,7 +750,7 @@ calculate_physical_discontinuity <- function(spadl_dt) {
 
  # Pick first team in each match as the reference frame
   teams_per_match <- dt[, .(ref_team = team_id[1]), by = match_id]
-  dt <- merge(dt, teams_per_match, by = "match_id", all.x = TRUE)
+  dt <- teams_per_match[dt, on = "match_id"]
 
   # Convert end coordinates to physical frame
   # Reference team: keep as-is; other team: flip (100 - coord)

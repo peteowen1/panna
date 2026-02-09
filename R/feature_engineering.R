@@ -44,8 +44,9 @@ calculate_team_sequences <- function(stats) {
 calculate_per_100_sequences <- function(player_stats, team_sequences, stat_cols = NULL) {
   # Join team sequences
   seq_cols <- intersect(c("match_id", "team", "estimated_sequences"), names(team_sequences))
-  data <- merge(player_stats, team_sequences[, seq_cols, drop = FALSE],
-                by = c("match_id", "team"), all.x = TRUE)
+  ts_dt <- data.table::as.data.table(team_sequences[, seq_cols, drop = FALSE])
+  data <- ts_dt[data.table::as.data.table(player_stats), on = c("match_id", "team")]
+  data.table::setDF(data)
 
   if (is.null(stat_cols)) {
     # Default stat columns to convert (snake_case from janitor::clean_names())

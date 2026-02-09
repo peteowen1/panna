@@ -1,0 +1,287 @@
+---
+title: "Pipeline Walkthrough"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Pipeline Walkthrough}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+This vignette walks through the full panna rating pipeline using synthetic data.
+No external data downloads are required -- everything runs self-contained.
+
+## Setup
+
+```{r setup}
+library(panna)
+set.seed(42)
+```
+
+## Step 1: Create Synthetic Match Data
+
+In production, you would load data with `load_summary()`, `load_metadata()`, etc.
+Here we generate synthetic match data that mirrors the structure of processed FBref data.
+
+```{r synthetic-data}
+n_matches <- 12
+home_teams <- paste0("Team_", LETTERS[1:6])
+away_teams <- paste0("Team_", LETTERS[7:12])
+match_ids <- paste0("match_", seq_len(n_matches))
+
+# Match results with xG
+results <- data.frame(
+  match_id = match_ids,
+  home_team = rep(home_teams, length.out = n_matches),
+  away_team = rep(away_teams, length.out = n_matches),
+  home_score = sample(0:3, n_matches, replace = TRUE),
+  away_score = sample(0:3, n_matches, replace = TRUE),
+  home_xg = runif(n_matches, 0.5, 3),
+  away_xg = runif(n_matches, 0.5, 3),
+  stringsAsFactors = FALSE
+)
+
+# Player pool: 50 players split across teams
+all_player_ids <- paste0("player_", 1:50)
+all_player_names <- paste("Player", 1:50)
+
+# Generate lineups (11 starters per team per match)
+lineup_rows <- list()
+for (i in seq_len(n_matches)) {
+  home_idx <- sample(1:25, 11)
+  away_idx <- sample(26:50, 11)
+
+  for (j in seq_along(home_idx)) {
+    lineup_rows[[length(lineup_rows) + 1]] <- data.frame(
+      match_id = match_ids[i], player_id = all_player_ids[home_idx[j]],
+      player_name = all_player_names[home_idx[j]],
+      team = results$home_team[i], is_home = TRUE, is_starter = TRUE,
+      on_minute = 0, off_minute = 90, minutes = 90, stringsAsFactors = FALSE
+    )
+  }
+  for (j in seq_along(away_idx)) {
+    lineup_rows[[length(lineup_rows) + 1]] <- data.frame(
+      match_id = match_ids[i], player_id = all_player_ids[away_idx[j]],
+      player_name = all_player_names[away_idx[j]],
+      team = results$away_team[i], is_home = FALSE, is_starter = TRUE,
+      on_minute = 0, off_minute = 90, minutes = 90, stringsAsFactors = FALSE
+    )
+  }
+}
+lineups <- do.call(rbind, lineup_rows)
+
+# Generate shots with xG
+shot_rows <- list()
+for (i in seq_len(n_matches)) {
+  n_shots <- sample(15:25, 1)
+  match_lineups <- lineups[lineups$match_id == match_ids[i], ]
+  shot_players <- match_lineups[sample(nrow(match_lineups), n_shots, replace = TRUE), ]
+  shot_rows[[i]] <- data.frame(
+    match_id = rep(match_ids[i], n_shots),
+    minute = sort(sample(1:90, n_shots, replace = TRUE)),
+    player_id = shot_players$player_id,
+    player_name = shot_players$player_name,
+    team = shot_players$team, is_home = shot_players$is_home,
+    xg = pmin(runif(n_shots, 0.02, 0.5), 0.95),
+    is_goal = rbinom(n_shots, 1, 0.1) == 1,
+    is_penalty = FALSE, is_own_goal = FALSE, stringsAsFactors = FALSE
+  )
+}
+shooting <- do.call(rbind, shot_rows)
+
+# Generate events (goals + substitutions)
+event_rows <- list()
+for (i in seq_len(n_matches)) {
+  goals <- shooting[shooting$match_id == match_ids[i] & shooting$is_goal, ]
+  if (nrow(goals) > 0) {
+    event_rows[[length(event_rows) + 1]] <- data.frame(
+      match_id = rep(match_ids[i], nrow(goals)),
+      team = goals$team, is_home = goals$is_home, event_type = "goal",
+      minute = goals$minute, player_name = goals$player_name,
+      is_penalty = FALSE, is_own_goal = FALSE, is_red_card = FALSE,
+      stringsAsFactors = FALSE
+    )
+  }
+  # 2 substitutions per match
+  starters <- lineups[lineups$match_id == match_ids[i] & lineups$is_starter, ]
+  subs <- starters[sample(nrow(starters), 2), ]
+  event_rows[[length(event_rows) + 1]] <- data.frame(
+    match_id = rep(match_ids[i], 2),
+    team = subs$team, is_home = subs$is_home, event_type = "substitution",
+    minute = sample(50:75, 2), player_name = subs$player_name,
+    is_penalty = FALSE, is_own_goal = FALSE, is_red_card = FALSE,
+    stringsAsFactors = FALSE
+  )
+}
+events <- do.call(rbind, event_rows)
+
+processed_data <- list(
+  results = results, lineups = lineups, shooting = shooting,
+  events = events, stats_summary = NULL
+)
+
+cat(sprintf("Created %d matches with %d players\n", n_matches, length(all_player_ids)))
+```
+
+## Step 2: Create Splints
+
+Splints are time segments where the lineup is constant. Boundaries occur at goals,
+substitutions, red cards, and halftime. Each splint records the non-penalty xG
+differential (npxGD) that occurred during that segment.
+
+```{r splints}
+splint_data <- create_all_splints(processed_data, verbose = FALSE)
+
+cat(sprintf("Splints: %d across %d matches\n",
+            nrow(splint_data$splints),
+            length(unique(splint_data$splints$match_id))))
+cat(sprintf("Player-splint assignments: %d\n", nrow(splint_data$players)))
+
+# Example: first match's splints
+first_match <- splint_data$splints[splint_data$splints$match_id == "match_1", ]
+first_match[, c("splint_num", "start_minute", "end_minute", "duration")]
+```
+
+## Step 3: Build RAPM Design Matrix
+
+The design matrix encodes which players were on the field during each splint.
+Each splint generates two rows: one from the home team's attacking perspective,
+one from the away team's. Player columns are split into offense and defense indicators.
+
+```{r rapm-matrix}
+rapm_data <- create_rapm_design_matrix(splint_data, min_minutes = 45)
+
+# Add covariates to the player matrix for model fitting
+covariates <- cbind(
+  gd = rapm_data$row_data$gd,
+  is_home = as.numeric(rapm_data$row_data$home_away == "home"),
+  avg_min = rapm_data$row_data$avg_min
+)
+rapm_data$X <- cbind(rapm_data$X_players, covariates)
+rapm_data$covariate_names <- colnames(covariates)
+
+cat(sprintf("Design matrix: %d rows x %d columns\n",
+            nrow(rapm_data$X), ncol(rapm_data$X)))
+cat(sprintf("Players included: %d (min 45 minutes)\n", rapm_data$n_players))
+cat(sprintf("Target: %s\n", rapm_data$target_name))
+```
+
+## Step 4: Fit Base RAPM
+
+RAPM uses ridge regression (L2 penalty) to estimate each player's offensive and
+defensive impact. Cross-validation selects the regularization strength.
+
+```{r rapm-fit}
+rapm_model <- fit_rapm(rapm_data, parallel = FALSE, nfolds = 3)
+rapm_ratings <- extract_rapm_ratings(rapm_model)
+
+cat(sprintf("RAPM ratings for %d players\n", nrow(rapm_ratings)))
+head(rapm_ratings[, c("player_name", "rapm", "offense", "defense", "total_minutes")])
+```
+
+The `rapm` column equals `offense - defense`. Positive offense means the player
+helps create xG; negative defense means the player prevents xG.
+
+```{r rapm-decomposition}
+# Verify: rapm = offense - defense
+all.equal(rapm_ratings$rapm, rapm_ratings$offense - rapm_ratings$defense)
+```
+
+## Step 5: Fit SPM Model
+
+SPM (Statistical Plus-Minus) predicts RAPM from box score statistics. It captures
+the relationship between traditional stats and on-field impact, providing a prior
+for players with limited RAPM sample size.
+
+```{r spm-fit}
+# Create synthetic per-90 statistics
+n_players <- nrow(rapm_ratings)
+player_features <- data.frame(
+  player_id = rapm_ratings$player_id,
+  player_name = rapm_ratings$player_name,
+  total_minutes = rapm_ratings$total_minutes,
+  n_matches = pmax(1, round(rapm_ratings$total_minutes / 90)),
+  goals_p90 = runif(n_players, 0, 0.6),
+  npxg_p90 = runif(n_players, 0, 0.5),
+  xa_p90 = runif(n_players, 0, 0.4),
+  tackles_p90 = runif(n_players, 0.5, 3.5),
+  interceptions_p90 = runif(n_players, 0.3, 2),
+  progressive_passes_p90 = runif(n_players, 1, 7),
+  rapm = rapm_ratings$rapm,
+  stringsAsFactors = FALSE
+)
+
+spm_model <- fit_spm_model(player_features, nfolds = 3)
+spm_ratings <- calculate_spm_ratings(player_features, spm_model)
+
+cat(sprintf("SPM predictions for %d players\n", nrow(spm_ratings)))
+head(spm_ratings[, c("player_name", "spm", "total_minutes")])
+```
+
+## Step 6: Calculate Panna Rating
+
+The final Panna rating combines RAPM with SPM as a Bayesian prior. This shrinks
+noisy RAPM estimates toward SPM predictions, providing more stable ratings.
+
+The formula: `panna = spm_prior + deviation`
+
+Where `deviation` is how much RAPM departs from the SPM prediction after
+regularization.
+
+```{r panna-rating}
+panna_result <- calculate_panna_rating(rapm_data, spm_ratings, lambda_prior = 1)
+panna_ratings <- panna_result$ratings
+
+cat(sprintf("Panna ratings for %d players\n", nrow(panna_ratings)))
+head(panna_ratings[, c("player_name", "panna", "spm_prior", "deviation")])
+```
+
+```{r panna-decomposition}
+# Verify: panna = spm_prior + deviation
+all.equal(panna_ratings$panna, panna_ratings$spm_prior + panna_ratings$deviation)
+```
+
+## Step 7: Offensive/Defensive Decomposition
+
+Each player's overall rating can be decomposed into offensive and defensive
+contributions, useful for understanding player profiles.
+
+```{r rating-summary}
+# Final rating summary
+summary_df <- data.frame(
+  player = panna_ratings$player_name,
+  panna = round(panna_ratings$panna, 3),
+  spm_prior = round(panna_ratings$spm_prior, 3),
+  deviation = round(panna_ratings$deviation, 3)
+)
+
+# Top 5 and bottom 5
+cat("Top 5 players:\n")
+print(head(summary_df[order(-summary_df$panna), ], 5), row.names = FALSE)
+
+cat("\nBottom 5 players:\n")
+print(tail(summary_df[order(-summary_df$panna), ], 5), row.names = FALSE)
+```
+
+## Pipeline Summary
+
+The full pipeline:
+
+1. **Data** -- Load match results, lineups, shooting, and events
+2. **Splints** -- Divide matches into constant-lineup segments
+3. **Design Matrix** -- Encode player presence as sparse indicators
+4. **RAPM** -- Ridge regression to isolate player impact from lineup context
+5. **SPM** -- Predict RAPM from box score stats (elastic net)
+6. **Panna** -- Combine RAPM + SPM with Bayesian shrinkage
+
+Key properties:
+- `rapm = offense - defense` (exact decomposition)
+- `panna = spm_prior + deviation` (exact decomposition)
+- Ratings are in units of xG per 90 minutes above/below average
+- Stronger regularization (`lambda_prior`) pulls panna closer to SPM
