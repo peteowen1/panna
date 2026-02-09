@@ -430,7 +430,7 @@ load_opta_big5 <- function(season = NULL, columns = NULL) {
     })
   })
 
-  dplyr::bind_rows(Filter(Negate(is.null), results))
+  rbindlist(Filter(Negate(is.null), results), use.names = TRUE, fill = TRUE)
 }
 
 

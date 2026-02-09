@@ -531,7 +531,7 @@ combine_team_tables <- function(parsed_data, table_type) {
     return(NULL)
   }
 
-  dplyr::bind_rows(home_df, away_df)
+  rbindlist(list(home_df, away_df), use.names = TRUE, fill = TRUE)
 }
 
 

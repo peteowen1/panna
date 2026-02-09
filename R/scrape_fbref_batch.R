@@ -280,7 +280,7 @@ scrape_fbref_matches <- function(
       # Return partial results
       return(lapply(results, function(x) {
         if (length(x) == 0) return(NULL)
-        dplyr::bind_rows(x)
+        rbindlist(x, use.names = TRUE, fill = TRUE)
       }))
     }
 
@@ -393,7 +393,7 @@ scrape_fbref_matches <- function(
   final <- list()
   for (tt in table_types) {
     if (length(results[[tt]]) > 0) {
-      final[[tt]] <- dplyr::bind_rows(results[[tt]])
+      final[[tt]] <- rbindlist(results[[tt]], use.names = TRUE, fill = TRUE)
     } else {
       final[[tt]] <- NULL
     }

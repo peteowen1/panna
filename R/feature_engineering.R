@@ -17,20 +17,16 @@ calculate_team_sequences <- function(stats) {
 
   # Approximation: sequences ~ (total_touches + turnovers) / avg_touches_per_sequence
 
-  team_stats <- stats |>
-    dplyr::group_by(.data$match_id, .data$team, .data$is_home) |>
-    dplyr::summarise(
-      total_touches = sum(.data$touches, na.rm = TRUE),
-      .groups = "drop"
-    )
+  dt <- data.table::as.data.table(stats)
+  team_stats <- dt[, .(total_touches = sum(touches, na.rm = TRUE)),
+                   by = .(match_id, team, is_home)]
 
   # Estimate sequences: rough approximation
   # Typical match has ~100-150 sequences per team
-  team_stats |>
-    dplyr::mutate(
-      # Approximate: 1 sequence per ~5 touches
-      estimated_sequences = pmax(MIN_SEQUENCES_PER_MATCH, .data$total_touches / TOUCHES_PER_SEQUENCE)
-    )
+  # Approximate: 1 sequence per ~5 touches
+  team_stats[, estimated_sequences := pmax(MIN_SEQUENCES_PER_MATCH,
+                                           total_touches / TOUCHES_PER_SEQUENCE)]
+  as.data.frame(team_stats)
 }
 
 
@@ -47,12 +43,9 @@ calculate_team_sequences <- function(stats) {
 #' @keywords internal
 calculate_per_100_sequences <- function(player_stats, team_sequences, stat_cols = NULL) {
   # Join team sequences
-  data <- player_stats |>
-    dplyr::left_join(
-      team_sequences |>
-        dplyr::select(match_id, team, estimated_sequences),
-      by = c("match_id", "team")
-    )
+  seq_cols <- intersect(c("match_id", "team", "estimated_sequences"), names(team_sequences))
+  data <- merge(player_stats, team_sequences[, seq_cols, drop = FALSE],
+                by = c("match_id", "team"), all.x = TRUE)
 
   if (is.null(stat_cols)) {
     # Default stat columns to convert (snake_case from janitor::clean_names())
@@ -85,25 +78,21 @@ calculate_per_100_sequences <- function(player_stats, team_sequences, stat_cols 
 #' @return Data frame with finishing modifier per player
 #' @keywords internal
 calculate_finishing_modifier <- function(shooting, min_shots = 20) {
-  player_shooting <- shooting |>
-    dplyr::filter(!.data$is_penalty) |>
-    dplyr::group_by(.data$player_name) |>
-    dplyr::summarise(
-      total_shots = dplyr::n(),
-      total_goals = sum(.data$is_goal, na.rm = TRUE),
-      total_xg = sum(.data$xg, na.rm = TRUE),
-      .groups = "drop"
-    ) |>
-    dplyr::filter(.data$total_shots >= min_shots) |>
-    dplyr::mutate(
-      # Goals over/under xG
-      goals_minus_xg = .data$total_goals - .data$total_xg,
-      # Finishing ratio (with Bayesian shrinkage toward 1.0)
-      # Use beta prior: success rate with prior toward league average
-      finishing_modifier = (.data$total_goals + 5) / (.data$total_xg + 5)
-    )
+  dt <- data.table::as.data.table(shooting)
+  dt <- dt[is_penalty == FALSE]
+  player_shooting <- dt[, .(
+    total_shots = .N,
+    total_goals = sum(is_goal, na.rm = TRUE),
+    total_xg = sum(xg, na.rm = TRUE)
+  ), by = player_name]
+  player_shooting <- player_shooting[total_shots >= min_shots]
+  # Goals over/under xG
+  player_shooting[, goals_minus_xg := total_goals - total_xg]
+  # Finishing ratio (with Bayesian shrinkage toward 1.0)
+  # Use beta prior: success rate with prior toward league average
+  player_shooting[, finishing_modifier := (total_goals + 5) / (total_xg + 5)]
 
-  player_shooting
+  as.data.frame(player_shooting)
 }
 
 
@@ -133,11 +122,8 @@ create_offensive_features <- function(stats) {
     return(stats)
   }
 
-  stats |>
-    dplyr::select(
-      .data$match_id, .data$team, .data$player_name,
-      dplyr::any_of(available_cols)
-    )
+  keep_cols <- intersect(c("match_id", "team", "player_name", available_cols), names(stats))
+  stats[, keep_cols, drop = FALSE]
 }
 
 
@@ -163,11 +149,8 @@ create_defensive_features <- function(stats) {
     return(stats)
   }
 
-  stats |>
-    dplyr::select(
-      .data$match_id, .data$team, .data$player_name,
-      dplyr::any_of(available_cols)
-    )
+  keep_cols <- intersect(c("match_id", "team", "player_name", available_cols), names(stats))
+  stats[, keep_cols, drop = FALSE]
 }
 
 
@@ -225,34 +208,28 @@ apply_bayesian_padding <- function(player_stats, stat_cols, min_games = 10,
 #' @return Data frame with season-level player stats
 #' @keywords internal
 aggregate_player_season_stats <- function(match_stats, rate_cols = NULL, count_cols = NULL) {
-  # Get season from match_id or join with match data
-  season_stats <- match_stats |>
-    dplyr::group_by(.data$player_name, .data$team)
+  dt <- data.table::as.data.table(match_stats)
 
-  # Sum counting stats
+  # Sum counting stats per group
   if (!is.null(count_cols) && length(count_cols) > 0) {
-    count_cols <- intersect(count_cols, names(match_stats))
+    count_cols <- intersect(count_cols, names(dt))
     for (col in count_cols) {
-      season_stats <- season_stats |>
-        dplyr::mutate(!!paste0(col, "_total") := sum(.data[[col]], na.rm = TRUE))
+      new_col <- paste0(col, "_total")
+      dt[, (new_col) := sum(get(col), na.rm = TRUE), by = .(player_name, team)]
     }
   }
 
   # Weight-average rate stats (by minutes or appearances)
   if (!is.null(rate_cols) && length(rate_cols) > 0) {
-    rate_cols <- intersect(rate_cols, names(match_stats))
+    rate_cols <- intersect(rate_cols, names(dt))
     for (col in rate_cols) {
-      season_stats <- season_stats |>
-        dplyr::mutate(!!paste0(col, "_avg") := mean(.data[[col]], na.rm = TRUE))
+      new_col <- paste0(col, "_avg")
+      dt[, (new_col) := mean(get(col), na.rm = TRUE), by = .(player_name, team)]
     }
   }
 
   # Add game counts
-  season_stats |>
-    dplyr::summarise(
-      n_games = dplyr::n(),
-      .groups = "drop"
-    )
+  as.data.frame(dt[, .(n_games = .N), by = .(player_name, team)])
 }
 
 
@@ -281,15 +258,17 @@ create_player_feature_matrix <- function(processed_data, min_minutes = 180) {
   rate_stats <- calculate_per_100_sequences(stats, team_seq)
 
   # Aggregate to player level
-  player_stats <- rate_stats |>
-    dplyr::group_by(.data$player_name) |>
-    dplyr::summarise(
-      n_games = dplyr::n(),
-      total_minutes = sum(.data$min, na.rm = TRUE),
-      dplyr::across(dplyr::ends_with("_p100"), ~ mean(.x, na.rm = TRUE)),
-      .groups = "drop"
-    ) |>
-    dplyr::filter(.data$total_minutes >= min_minutes)
+  dt <- data.table::as.data.table(rate_stats)
+  p100_cols <- names(dt)[grepl("_p100$", names(dt))]
+  agg_exprs <- c(
+    list(n_games = quote(.N), total_minutes = quote(sum(min, na.rm = TRUE))),
+    lapply(stats::setNames(p100_cols, p100_cols), function(col) {
+      bquote(mean(.(as.name(col)), na.rm = TRUE))
+    })
+  )
+  player_stats <- dt[, eval(as.call(c(quote(list), agg_exprs))), by = player_name]
+  player_stats <- player_stats[total_minutes >= min_minutes]
+  player_stats <- as.data.frame(player_stats)
 
   # Apply Bayesian padding
   rate_cols <- names(player_stats)[grepl("_p100$", names(player_stats))]

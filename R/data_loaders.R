@@ -281,7 +281,9 @@ load_summary <- function(league = NULL, season = NULL, source = c("remote", "loc
 #'
 #' Loads match event data (goals, substitutions, cards, etc.) from pannadata.
 #'
-#' @inheritParams load_summary
+#' @param league Optional league filter (e.g., "ENG", "ESP", "GER").
+#' @param season Optional season filter (e.g., "2023-2024").
+#' @param source Data source: "remote" (default) or "local".
 #'
 #' @return Data frame of match events.
 #'
@@ -296,7 +298,9 @@ load_events <- function(league = NULL, season = NULL, source = c("remote", "loca
 #'
 #' Loads shot-level data with expected goals (xG) from pannadata.
 #'
-#' @inheritParams load_summary
+#' @param league Optional league filter (e.g., "ENG", "ESP", "GER").
+#' @param season Optional season filter (e.g., "2023-2024").
+#' @param source Data source: "remote" (default) or "local".
 #'
 #' @return Data frame of shot data.
 #'
@@ -311,7 +315,9 @@ load_shots <- function(league = NULL, season = NULL, source = c("remote", "local
 #'
 #' Loads match metadata from pannadata.
 #'
-#' @inheritParams load_summary
+#' @param league Optional league filter (e.g., "ENG", "ESP", "GER").
+#' @param season Optional season filter (e.g., "2023-2024").
+#' @param source Data source: "remote" (default) or "local".
 #'
 #' @return Data frame of match metadata.
 #'
@@ -326,7 +332,9 @@ load_metadata <- function(league = NULL, season = NULL, source = c("remote", "lo
 #'
 #' Loads passing statistics from pannadata.
 #'
-#' @inheritParams load_summary
+#' @param league Optional league filter (e.g., "ENG", "ESP", "GER").
+#' @param season Optional season filter (e.g., "2023-2024").
+#' @param source Data source: "remote" (default) or "local".
 #'
 #' @return Data frame of passing statistics.
 #'
@@ -341,7 +349,9 @@ load_passing <- function(league = NULL, season = NULL, source = c("remote", "loc
 #'
 #' Loads defensive statistics from pannadata.
 #'
-#' @inheritParams load_summary
+#' @param league Optional league filter (e.g., "ENG", "ESP", "GER").
+#' @param season Optional season filter (e.g., "2023-2024").
+#' @param source Data source: "remote" (default) or "local".
 #'
 #' @return Data frame of defensive statistics.
 #'
@@ -356,7 +366,9 @@ load_defense <- function(league = NULL, season = NULL, source = c("remote", "loc
 #'
 #' Loads possession statistics from pannadata.
 #'
-#' @inheritParams load_summary
+#' @param league Optional league filter (e.g., "ENG", "ESP", "GER").
+#' @param season Optional season filter (e.g., "2023-2024").
+#' @param source Data source: "remote" (default) or "local".
 #'
 #' @return Data frame of possession statistics.
 #'
@@ -371,7 +383,9 @@ load_possession <- function(league = NULL, season = NULL, source = c("remote", "
 #'
 #' Loads goalkeeper statistics from pannadata.
 #'
-#' @inheritParams load_summary
+#' @param league Optional league filter (e.g., "ENG", "ESP", "GER").
+#' @param season Optional season filter (e.g., "2023-2024").
+#' @param source Data source: "remote" (default) or "local".
 #'
 #' @return Data frame of goalkeeper statistics.
 #'

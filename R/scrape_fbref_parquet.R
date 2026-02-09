@@ -149,7 +149,7 @@ aggregate_cached_matches <- function(table_type, league = NULL, season = NULL,
                                     full.names = TRUE)
         if (length(parquet_files) > 0) {
           all_data <- lapply(parquet_files, arrow::read_parquet)
-          return(dplyr::bind_rows(all_data))
+          return(rbindlist(all_data, use.names = TRUE, fill = TRUE))
         }
       }
     }
@@ -162,7 +162,7 @@ aggregate_cached_matches <- function(table_type, league = NULL, season = NULL,
       parquet_files <- parquet_files[file.exists(parquet_files)]
       if (length(parquet_files) > 0) {
         all_data <- lapply(parquet_files, arrow::read_parquet)
-        return(dplyr::bind_rows(all_data))
+        return(rbindlist(all_data, use.names = TRUE, fill = TRUE))
       }
     }
 
@@ -172,7 +172,7 @@ aggregate_cached_matches <- function(table_type, league = NULL, season = NULL,
                                   recursive = TRUE, full.names = TRUE)
       if (length(parquet_files) > 0) {
         all_data <- lapply(parquet_files, arrow::read_parquet)
-        return(dplyr::bind_rows(all_data))
+        return(rbindlist(all_data, use.names = TRUE, fill = TRUE))
       }
     }
   }
@@ -207,7 +207,7 @@ aggregate_cached_matches <- function(table_type, league = NULL, season = NULL,
     return(NULL)
   }
 
-  dplyr::bind_rows(all_data)
+  rbindlist(all_data, use.names = TRUE, fill = TRUE)
 }
 
 
@@ -300,7 +300,7 @@ build_parquet <- function(table_type, league, season, verbose = TRUE) {
       new_data_list <- new_data_list[!sapply(new_data_list, is.null)]
 
       if (length(new_data_list) > 0) {
-        new_data <- dplyr::bind_rows(new_data_list)
+        new_data <- rbindlist(new_data_list, use.names = TRUE, fill = TRUE)
       }
     }
   }
@@ -311,7 +311,7 @@ build_parquet <- function(table_type, league, season, verbose = TRUE) {
     return(NULL)
   }
 
-  combined <- dplyr::bind_rows(existing_data, new_data)
+  combined <- rbindlist(list(existing_data, new_data), use.names = TRUE, fill = TRUE)
 
   if (nrow(combined) == 0) {
     if (verbose) message("No valid data found")

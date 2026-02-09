@@ -631,17 +631,11 @@ build_prior_vector <- function(spm_data, spm_col, player_mapping, default = 0) {
 prepare_spm_regression_data <- function(player_features, rapm_ratings) {
   # Match on player name or ID
   if ("player_id" %in% names(player_features) && "player_id" %in% names(rapm_ratings)) {
-    data <- player_features |>
-      dplyr::inner_join(
-        rapm_ratings |> dplyr::select(player_id, rapm),
-        by = "player_id"
-      )
+    data <- merge(player_features, rapm_ratings[, c("player_id", "rapm"), drop = FALSE],
+                  by = "player_id")
   } else if ("player_name" %in% names(player_features) && "player_name" %in% names(rapm_ratings)) {
-    data <- player_features |>
-      dplyr::inner_join(
-        rapm_ratings |> dplyr::select(player_name, rapm),
-        by = "player_name"
-      )
+    data <- merge(player_features, rapm_ratings[, c("player_name", "rapm"), drop = FALSE],
+                  by = "player_name")
   } else {
     cli::cli_abort(c(
       "Cannot match {.arg player_features} and {.arg rapm_ratings}.",
@@ -962,10 +956,11 @@ calculate_spm_ratings_xgb <- function(player_features, spm_xgb_model) {
   spm_pred <- stats::predict(spm_xgb_model$model, X)
 
   # Create output
-  result <- player_features |>
-    dplyr::select(dplyr::any_of(c("player_id", "player_name", "n_matches", "total_minutes"))) |>
-    dplyr::mutate(spm = spm_pred) |>
-    dplyr::arrange(dplyr::desc(.data$spm))
+  keep_cols <- intersect(c("player_id", "player_name", "n_matches", "total_minutes"),
+                         names(player_features))
+  result <- player_features[, keep_cols, drop = FALSE]
+  result$spm <- spm_pred
+  result <- result[order(-result$spm), ]
 
   result
 }
@@ -991,16 +986,12 @@ calculate_spm_blend <- function(player_features, model_glmnet, model_xgb,
   spm_xgb <- calculate_spm_ratings_xgb(player_features, model_xgb)
 
   # Blend predictions
-  result <- spm_glmnet |>
-    dplyr::rename(spm_glmnet = spm) |>
-    dplyr::inner_join(
-      spm_xgb |> dplyr::select(player_id, spm_xgb = spm),
-      by = "player_id"
-    ) |>
-    dplyr::mutate(
-      spm = weight_glmnet * spm_glmnet + (1 - weight_glmnet) * spm_xgb
-    ) |>
-    dplyr::arrange(dplyr::desc(.data$spm))
+  names(spm_glmnet)[names(spm_glmnet) == "spm"] <- "spm_glmnet"
+  xgb_df <- spm_xgb[, c("player_id", "spm"), drop = FALSE]
+  names(xgb_df)[names(xgb_df) == "spm"] <- "spm_xgb"
+  result <- merge(spm_glmnet, xgb_df, by = "player_id")
+  result$spm <- weight_glmnet * result$spm_glmnet + (1 - weight_glmnet) * result$spm_xgb
+  result <- result[order(-result$spm), ]
 
   result
 }
@@ -1051,10 +1042,11 @@ calculate_spm_ratings <- function(player_features, spm_model, lambda = "min") {
   spm_pred <- as.vector(stats::predict(spm_model, newx = X, s = lambda_val))
 
   # Create output data frame
-  result <- player_features |>
-    dplyr::select(dplyr::any_of(c("player_id", "player_name", "n_games", "total_minutes"))) |>
-    dplyr::mutate(spm = spm_pred) |>
-    dplyr::arrange(dplyr::desc(.data$spm))
+  keep_cols <- intersect(c("player_id", "player_name", "n_games", "total_minutes"),
+                         names(player_features))
+  result <- player_features[, keep_cols, drop = FALSE]
+  result$spm <- spm_pred
+  result <- result[order(-result$spm), ]
 
   result
 }
@@ -1130,12 +1122,9 @@ validate_spm_prediction <- function(spm_ratings, rapm_ratings,
     return(NULL)
   }
 
-  comparison <- spm_ratings |>
-    dplyr::inner_join(
-      rapm_ratings |>
-        dplyr::select(dplyr::all_of(join_cols), rapm),
-      by = join_cols
-    )
+  rapm_keep <- c(join_cols, "rapm")
+  comparison <- merge(spm_ratings, rapm_ratings[, rapm_keep, drop = FALSE],
+                      by = join_cols)
 
   if (nrow(comparison) == 0) {
     cli::cli_warn("No matching players between SPM and RAPM ratings.")
@@ -1234,10 +1223,10 @@ get_spm_feature_importance <- function(model, n = 10, lambda = "min") {
     coefficient = as.vector(coefs),
     abs_coef = abs(as.vector(coefs)),
     stringsAsFactors = FALSE
-  ) |>
-    dplyr::filter(.data$coefficient != 0) |>
-    dplyr::arrange(dplyr::desc(.data$abs_coef)) |>
-    utils::head(n)
+  )
+  importance <- importance[importance$coefficient != 0, ]
+  importance <- importance[order(-importance$abs_coef), ]
+  importance <- head(importance, n)
 
   importance
 }

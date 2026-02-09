@@ -92,16 +92,11 @@ calculate_od_panna <- function(rapm_data, spm_ratings, lambda_prior = 1) {
 
   # Add player names
   if (!is.null(rapm_data$player_mapping)) {
-    ratings <- ratings |>
-      dplyr::left_join(
-        rapm_data$player_mapping |>
-          dplyr::select(player_id, player_name),
-        by = "player_id"
-      )
+    mapping <- rapm_data$player_mapping[, c("player_id", "player_name")]
+    ratings <- merge(ratings, mapping, by = "player_id", all.x = TRUE)
   }
 
-  ratings <- ratings |>
-    dplyr::arrange(dplyr::desc(.data$panna))
+  ratings <- ratings[order(-ratings$panna), ]
 
   list(
     ratings = ratings,
@@ -136,34 +131,30 @@ split_od_contributions <- function(panna_ratings, player_features) {
   }
 
   # Calculate offensive and defensive z-scores
-  features <- player_features |>
-    dplyr::mutate(
-      off_zscore = rowMeans(dplyr::across(dplyr::any_of(off_cols), scale), na.rm = TRUE),
-      def_zscore = rowMeans(dplyr::across(dplyr::any_of(def_cols), scale), na.rm = TRUE)
-    ) |>
-    dplyr::mutate(
-      # Normalize to get proportion
-      total_zscore = abs(.data$off_zscore) + abs(.data$def_zscore),
-      off_weight = safe_divide(abs(.data$off_zscore), .data$total_zscore),
-      def_weight = safe_divide(abs(.data$def_zscore), .data$total_zscore)
-    )
+  features <- player_features
+  off_present <- intersect(off_cols, names(features))
+  def_present <- intersect(def_cols, names(features))
+  off_scaled <- scale(as.matrix(features[, off_present, drop = FALSE]))
+  def_scaled <- scale(as.matrix(features[, def_present, drop = FALSE]))
+  features$off_zscore <- rowMeans(off_scaled, na.rm = TRUE)
+  features$def_zscore <- rowMeans(def_scaled, na.rm = TRUE)
+  features$total_zscore <- abs(features$off_zscore) + abs(features$def_zscore)
+  features$off_weight <- safe_divide(abs(features$off_zscore), features$total_zscore)
+  features$def_weight <- safe_divide(abs(features$def_zscore), features$total_zscore)
 
   # Join with ratings and split
   id_col <- intersect(names(panna_ratings), names(features))
   id_col <- id_col[id_col %in% c("player_id", "player_name")][1]
 
-  result <- panna_ratings |>
-    dplyr::left_join(
-      features |> dplyr::select(dplyr::any_of(c(id_col, "off_weight", "def_weight"))),
-      by = id_col
-    ) |>
-    dplyr::mutate(
-      off_weight = dplyr::if_else(is.na(.data$off_weight), 0.5, .data$off_weight),
-      def_weight = dplyr::if_else(is.na(.data$def_weight), 0.5, .data$def_weight),
-      o_panna = .data$panna * .data$off_weight,
-      d_panna = .data$panna * .data$def_weight
-    ) |>
-    dplyr::select(-c(.data$off_weight, .data$def_weight))
+  weight_cols <- intersect(c(id_col, "off_weight", "def_weight"), names(features))
+  result <- merge(panna_ratings, features[, weight_cols, drop = FALSE],
+                  by = id_col, all.x = TRUE)
+  result$off_weight <- ifelse(is.na(result$off_weight), 0.5, result$off_weight)
+  result$def_weight <- ifelse(is.na(result$def_weight), 0.5, result$def_weight)
+  result$o_panna <- result$panna * result$off_weight
+  result$d_panna <- result$panna * result$def_weight
+  result$off_weight <- NULL
+  result$def_weight <- NULL
 
   result
 }
@@ -182,12 +173,12 @@ categorize_player_profile <- function(o_rating, d_rating) {
   total <- o_rating + d_rating
   o_pct <- safe_divide(o_rating, total + 0.001)  # Avoid division by zero
 
-  dplyr::case_when(
-    o_pct > 0.7 ~ "Offensive",
-    o_pct > 0.55 ~ "Balanced-Offensive",
-    o_pct > 0.45 ~ "Balanced",
-    o_pct > 0.3 ~ "Balanced-Defensive",
-    TRUE ~ "Defensive"
+  data.table::fcase(
+    o_pct > 0.7, "Offensive",
+    o_pct > 0.55, "Balanced-Offensive",
+    o_pct > 0.45, "Balanced",
+    o_pct > 0.3, "Balanced-Defensive",
+    default = "Defensive"
   )
 }
 
@@ -209,9 +200,7 @@ get_top_offensive <- function(ratings, n = 10) {
     ))
   }
 
-  ratings |>
-    dplyr::arrange(dplyr::desc(.data$o_panna)) |>
-    head(n)
+  head(ratings[order(-ratings$o_panna), ], n)
 }
 
 
@@ -232,9 +221,7 @@ get_top_defensive <- function(ratings, n = 10) {
     ))
   }
 
-  ratings |>
-    dplyr::arrange(dplyr::desc(.data$d_panna)) |>
-    head(n)
+  head(ratings[order(-ratings$d_panna), ], n)
 }
 
 
@@ -255,11 +242,9 @@ prepare_od_scatter_data <- function(ratings) {
   }
 
   has_player_name <- "player_name" %in% names(ratings)
-  ratings |>
-    dplyr::mutate(
-      profile = categorize_player_profile(.data$o_panna, .data$d_panna),
-      label = if (has_player_name) .data$player_name else .data$player_id
-    )
+  ratings$profile <- categorize_player_profile(ratings$o_panna, ratings$d_panna)
+  ratings$label <- if (has_player_name) ratings$player_name else ratings$player_id
+  ratings
 }
 
 
@@ -281,7 +266,7 @@ visualize_od_scatter <- function(ratings, highlight_top = 10) {
   plot_data <- prepare_od_scatter_data(ratings)
 
   # Identify top players to label
-  top_overall <- head(plot_data |> dplyr::arrange(dplyr::desc(.data$panna)), highlight_top)
+  top_overall <- head(plot_data[order(-plot_data$panna), ], highlight_top)
 
   p <- ggplot2::ggplot(plot_data, ggplot2::aes(x = .data$o_panna, y = .data$d_panna)) +
     ggplot2::geom_point(ggplot2::aes(color = .data$profile), alpha = 0.7) +

@@ -561,3 +561,218 @@ test_that("splint npxG sums approximate match-level xG", {
   expect_true(all(merged$npxg_home < 10))
   expect_true(all(merged$npxg_away < 10))
 })
+
+
+# =============================================================================
+# Integration Test 8: filter_bad_xg_data (data.table migration)
+# =============================================================================
+
+test_that("filter_bad_xg_data correctly identifies and removes bad xG data", {
+  set.seed(42)
+
+  # Create splints with some zero-xG entries
+  splints_df <- data.frame(
+    match_id = rep(paste0("m_", 1:10), each = 3),
+    league = rep(c("ENG", "ESP"), each = 15),
+    npxg_home = c(rep(0, 12), runif(3, 0, 0.01), runif(15, 0.1, 1.5)),
+    npxg_away = c(rep(0, 12), runif(3, 0, 0.01), runif(15, 0.1, 1.5)),
+    stringsAsFactors = FALSE
+  )
+
+  # Wrap in list as expected by the function
+  splint_data <- list(splints = splints_df, players = data.frame())
+
+  result <- filter_bad_xg_data(splint_data, zero_xg_threshold = 50, verbose = FALSE)
+
+  expect_true(is.list(result))
+  expect_true("splint_data" %in% names(result))
+
+  filtered_splints <- result$splint_data$splints
+  # ENG has 12/15 = 80% zero-xG splints, should be removed
+  expect_false("ENG" %in% filtered_splints$league)
+  # ESP has 0/15 zero-xG, should be kept
+  expect_true("ESP" %in% filtered_splints$league)
+})
+
+
+# =============================================================================
+# Integration Test 9: calculate_finishing_modifier (data.table migration)
+# =============================================================================
+
+test_that("calculate_finishing_modifier returns correct structure", {
+  set.seed(42)
+
+  shooting <- data.frame(
+    player_name = rep(c("Alice", "Bob", "Charlie"), each = 25),
+    is_penalty = FALSE,
+    is_goal = c(
+      rbinom(25, 1, 0.3),   # Alice: ~30% conversion
+      rbinom(25, 1, 0.1),   # Bob: ~10% conversion
+      rbinom(25, 1, 0.2)    # Charlie: ~20% conversion
+    ),
+    xg = runif(75, 0.05, 0.4),
+    stringsAsFactors = FALSE
+  )
+
+  result <- calculate_finishing_modifier(shooting, min_shots = 20)
+
+  expect_true(is.data.frame(result))
+  expect_true(all(c("player_name", "total_shots", "total_goals",
+                     "total_xg", "finishing_modifier") %in% names(result)))
+
+  # All 3 players have 25 shots >= min_shots threshold of 20
+
+  expect_equal(nrow(result), 3)
+  expect_true(all(result$total_shots == 25))
+
+  # Finishing modifier uses Bayesian shrinkage: (goals + 5) / (xg + 5)
+  expect_true(all(result$finishing_modifier > 0))
+  expect_true(all(is.finite(result$finishing_modifier)))
+
+  # Penalties should be excluded
+  shooting_with_pens <- rbind(shooting,
+    data.frame(player_name = "Alice", is_penalty = TRUE,
+               is_goal = TRUE, xg = 0.76, stringsAsFactors = FALSE))
+  result2 <- calculate_finishing_modifier(shooting_with_pens, min_shots = 20)
+  alice1 <- result[result$player_name == "Alice", "total_shots"]
+  alice2 <- result2[result2$player_name == "Alice", "total_shots"]
+  expect_equal(alice1, alice2)  # Penalty shot excluded
+})
+
+
+# =============================================================================
+# Integration Test 10: calculate_team_sequences (data.table migration)
+# =============================================================================
+
+test_that("calculate_team_sequences produces valid estimates", {
+  stats <- data.frame(
+    match_id = rep(c("m1", "m2"), each = 4),
+    team = rep(c("TeamA", "TeamB"), 4),
+    is_home = rep(c(TRUE, FALSE), 4),
+    touches = c(500, 450, 520, 480, 500, 450, 520, 480),
+    stringsAsFactors = FALSE
+  )
+
+  result <- calculate_team_sequences(stats)
+
+  expect_true(is.data.frame(result))
+  expect_true(all(c("match_id", "team", "estimated_sequences") %in% names(result)))
+  expect_true(all(result$estimated_sequences > 0))
+  # Sequences = total_touches / TOUCHES_PER_SEQUENCE
+  expect_true(nrow(result) > 0)
+})
+
+
+# =============================================================================
+# Integration Test 11: aggregate_rapm_by_team (data.table migration)
+# =============================================================================
+
+test_that("aggregate_rapm_by_team groups correctly", {
+  skip_if_not_installed("glmnet")
+
+  processed <- create_synthetic_processed_data(n_matches = 10)
+  splints <- create_all_splints(processed, verbose = FALSE)
+  rapm_data <- prepare_rapm_data(splints, min_minutes = 30)
+  rapm_model <- fit_rapm(rapm_data, alpha = 0, nfolds = 3)
+  ratings <- extract_rapm_ratings(rapm_model)
+
+  # Create player-team mapping from lineups
+  player_data <- unique(processed$lineups[, c("player_id", "team")])
+
+  result <- aggregate_rapm_by_team(ratings, player_data)
+
+  expect_true(is.data.frame(result))
+  expect_true(all(c("team", "n_players", "mean_rapm", "total_rapm") %in% names(result)))
+  expect_true(nrow(result) > 0)
+  # Should be sorted by descending mean_rapm
+  if (nrow(result) > 1) {
+    expect_true(all(diff(result$mean_rapm) <= 0))
+  }
+})
+
+
+# =============================================================================
+# Integration Test 12: create_opta_processed_data (data.table migration)
+# =============================================================================
+
+test_that("create_opta_processed_data builds valid results from lineups", {
+  set.seed(42)
+
+  # Create realistic Opta-style lineups
+  match_ids <- paste0("opta_", 1:3)
+  lineup_rows <- list()
+  for (i in seq_along(match_ids)) {
+    for (side in c("home", "away")) {
+      tid <- if (side == "home") "100" else "200"
+      for (j in 1:11) {
+        lineup_rows[[length(lineup_rows) + 1]] <- data.frame(
+          match_id = match_ids[i],
+          player_id = paste0("p_", tid, "_", j),
+          player_name = paste("Player", tid, j),
+          team_id = tid,
+          team_name = paste0("Team_", tid),
+          team_position = side,
+          is_starter = TRUE,
+          minutes_played = 90,
+          sub_on_minute = 0,
+          sub_off_minute = 0,
+          match_date = as.Date("2024-09-01") + (i - 1) * 7,
+          stringsAsFactors = FALSE
+        )
+      }
+    }
+  }
+  opta_lineups <- do.call(rbind, lineup_rows)
+
+  result <- create_opta_processed_data(opta_lineups)
+
+  expect_true(is.list(result))
+  expect_true(all(c("results", "lineups") %in% names(result)))
+
+  # Results should have one row per match
+  expect_equal(nrow(result$results), 3)
+  expect_true(all(c("match_id", "home_team", "away_team", "season") %in%
+                    names(result$results)))
+
+  # Home/away teams correctly identified
+  expect_true(all(result$results$home_team == "Team_100"))
+  expect_true(all(result$results$away_team == "Team_200"))
+
+  # Lineups properly transformed
+  expect_true(nrow(result$lineups) == nrow(opta_lineups))
+  expect_true(all(c("on_minute", "off_minute", "is_home") %in% names(result$lineups)))
+})
+
+
+# =============================================================================
+# Integration Test 13: extract_match_events (data.table migration)
+# =============================================================================
+
+test_that("extract_match_events filters and classifies correctly", {
+  events <- data.frame(
+    match_id = c(rep("m1", 5), rep("m2", 3)),
+    minute = c(10, 45, 55, 70, 85, 20, 60, 80),
+    event_type = c("goal", "substitution", "Goal", "red_card",
+                   "penalty_goal", "own_goal", "sub_on", "yellow_red_card"),
+    is_home = c(TRUE, TRUE, FALSE, FALSE, TRUE, TRUE, FALSE, FALSE),
+    stringsAsFactors = FALSE
+  )
+
+  # Extract only m1 events
+  result <- extract_match_events(events, "m1")
+
+  expect_true(is.data.frame(result))
+  expect_equal(nrow(result), 5)
+
+  # Should be sorted by minute
+  expect_true(all(diff(result$minute) >= 0))
+
+  # Classify events correctly
+  expect_equal(result$is_goal, c(TRUE, FALSE, TRUE, FALSE, TRUE))
+  expect_equal(result$is_sub, c(FALSE, TRUE, FALSE, FALSE, FALSE))
+  expect_equal(result$is_red_card, c(FALSE, FALSE, FALSE, TRUE, FALSE))
+
+  # Empty match returns empty data frame
+  empty <- extract_match_events(events, "nonexistent")
+  expect_equal(nrow(empty), 0)
+})
