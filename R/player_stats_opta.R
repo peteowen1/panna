@@ -1,538 +1,9 @@
-# Player Statistics Functions
+# Opta Player Statistics Functions
 #
-# User-facing functions for aggregating player statistics across matches.
-# Organized by data source: FBref, Understat, Opta
-# Each function focuses on a specific stat category with ~15 metrics max.
+# User-facing functions for aggregating Opta player statistics across matches.
+# Includes summary, passing, defense, possession, keeper, shots, set pieces,
+# and xG/xPass from trained models.
 
-# ==============================================================================
-# FBref Player Stats
-# ==============================================================================
-
-#' FBref Player Summary Statistics
-#'
-#' Aggregate offensive statistics from FBref data. Returns totals and per-90 rates.
-#' Includes xG metrics from StatsBomb.
-#'
-#' @param player Character. Player name to filter (case-insensitive partial match).
-#'   NULL returns all players.
-#' @param league Character. Filter by league code (ENG, ESP, GER, ITA, FRA).
-#' @param season Character. Filter by season (e.g., "2024-2025").
-#' @param min_minutes Integer. Minimum minutes for inclusion (default 450).
-#' @param by_team Logical. If TRUE, aggregate by player and team separately.
-#'   If FALSE (default), aggregate across all teams and show most common team.
-#' @param source Character. "remote" (default) or "local".
-#'
-#' @return Data frame with columns: player, team, matches, minutes,
-#'   goals, assists, shots, shots_on_target, xg, npxg, xag, sca, gca,
-#'   goals_minus_xg, goals_per90, xg_per90, npxg_per90, xag_per90
-#'
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' # Get all players with 450+ minutes
-#' player_fbref_summary(league = "ENG", season = "2024-2025")
-#'
-#' # Get specific player
-#' player_fbref_summary(player = "Salah", league = "ENG")
-#'
-#' # Group by team (useful for players who transferred)
-#' player_fbref_summary(league = "ENG", season = "2024-2025", by_team = TRUE)
-#' }
-player_fbref_summary <- function(player = NULL,
-                                  league = NULL,
-                                  season = NULL,
-                                  min_minutes = 450,
-                                  by_team = FALSE,
-                                  source = c("remote", "local")) {
-  source <- match.arg(source)
-
-  # Load data
-  data <- load_summary(league = league, season = season, source = source)
-
-  if (is.null(data) || nrow(data) == 0) {
-    cli::cli_warn("No data found for specified filters")
-    return(data.frame())
-  }
-
-  # Filter by player if specified (case-insensitive partial match)
-  if (!is.null(player)) {
-    data <- data[grepl(player, data$player, ignore.case = TRUE), ]
-    if (nrow(data) == 0) {
-      cli::cli_warn("No data found for player: {player}")
-      return(data.frame())
-    }
-  }
-
-  # Aggregate by player (and optionally team)
-  if (by_team) {
-    result <- stats::aggregate(
-      cbind(
-        matches = 1,
-        minutes = as.numeric(min),
-        goals = as.numeric(gls),
-        assists = as.numeric(ast),
-        shots = as.numeric(sh),
-        shots_on_target = as.numeric(so_t),
-        xg = as.numeric(x_g),
-        npxg = as.numeric(npx_g),
-        xag = as.numeric(x_ag),
-        sca = as.numeric(sca),
-        gca = as.numeric(gca)
-      ) ~ player + team,
-      data = data,
-      FUN = function(x) sum(x, na.rm = TRUE),
-      na.action = na.pass
-    )
-  } else {
-    result <- stats::aggregate(
-      cbind(
-        matches = 1,
-        minutes = as.numeric(min),
-        goals = as.numeric(gls),
-        assists = as.numeric(ast),
-        shots = as.numeric(sh),
-        shots_on_target = as.numeric(so_t),
-        xg = as.numeric(x_g),
-        npxg = as.numeric(npx_g),
-        xag = as.numeric(x_ag),
-        sca = as.numeric(sca),
-        gca = as.numeric(gca)
-      ) ~ player,
-      data = data,
-      FUN = function(x) sum(x, na.rm = TRUE),
-      na.action = na.pass
-    )
-
-    # Get most frequent team per player
-    team_mode <- stats::aggregate(
-      team ~ player,
-      data = data,
-      FUN = function(x) names(which.max(table(x)))
-    )
-    result <- merge(result, team_mode, by = "player", all.x = TRUE)
-  }
-
-  # Calculate derived stats
-  result$goals_minus_xg <- round(result$goals - result$xg, 2)
-  result$goals_per90 <- round(per_90(result$goals, result$minutes), 2)
-  result$xg_per90 <- round(per_90(result$xg, result$minutes), 2)
-  result$npxg_per90 <- round(per_90(result$npxg, result$minutes), 2)
-  result$xag_per90 <- round(per_90(result$xag, result$minutes), 2)
-
-  # Apply min_minutes filter (unless specific player)
-  if (is.null(player)) {
-    result <- result[result$minutes >= min_minutes, ]
-  }
-
-  # Sort by minutes and reorder columns
-  result <- result[order(-result$minutes), ]
-  col_order <- c(
-    "player", "team", "matches", "minutes",
-    "goals", "assists", "shots", "shots_on_target",
-    "xg", "npxg", "xag", "sca", "gca",
-    "goals_minus_xg", "goals_per90", "xg_per90", "npxg_per90", "xag_per90"
-  )
-  result <- result[, col_order]
-  rownames(result) <- NULL
-
-  as.data.frame(result)
-}
-
-
-#' FBref Player Passing Statistics
-#'
-#' Aggregate passing statistics from FBref data. Returns totals and per-90 rates.
-#'
-#' @inheritParams player_fbref_summary
-#'
-#' @return Data frame with columns: player, team, matches, minutes,
-#'   passes_completed, passes_attempted, pass_pct, progressive_passes,
-#'   key_passes, passes_into_final_third, passes_into_penalty_area, crosses,
-#'   passes_per90, progressive_passes_per90, key_passes_per90
-#'
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' player_fbref_passing(league = "ENG", season = "2024-2025")
-#' }
-player_fbref_passing <- function(player = NULL,
-                                  league = NULL,
-                                  season = NULL,
-                                  min_minutes = 450,
-                                  by_team = FALSE,
-                                  source = c("remote", "local")) {
-  source <- match.arg(source)
-
-  # Load data
-  data <- load_passing(league = league, season = season, source = source)
-
-  if (is.null(data) || nrow(data) == 0) {
-    cli::cli_warn("No data found for specified filters")
-    return(data.frame())
-  }
-
-  # Filter by player if specified
-  if (!is.null(player)) {
-    data <- data[grepl(player, data$player, ignore.case = TRUE), ]
-    if (nrow(data) == 0) {
-      cli::cli_warn("No data found for player: {player}")
-      return(data.frame())
-    }
-  }
-
-  # Need minutes - load summary to get it
-  summary_data <- load_summary(league = league, season = season, source = source)
-
-  if (by_team) {
-    minutes_df <- stats::aggregate(
-      as.numeric(min) ~ player + team,
-      data = summary_data,
-      FUN = function(x) sum(x, na.rm = TRUE),
-      na.action = na.pass
-    )
-    names(minutes_df)[3] <- "minutes"
-
-    result <- stats::aggregate(
-      cbind(
-        matches = 1,
-        passes_completed = as.numeric(cmp),
-        passes_attempted = as.numeric(att),
-        progressive_passes = as.numeric(prg_p),
-        key_passes = as.numeric(kp),
-        passes_into_final_third = as.numeric(x1_3),
-        passes_into_penalty_area = as.numeric(ppa),
-        crosses = as.numeric(crs_pa)
-      ) ~ player + team,
-      data = data,
-      FUN = function(x) sum(x, na.rm = TRUE),
-      na.action = na.pass
-    )
-
-    result <- merge(result, minutes_df, by = c("player", "team"), all.x = TRUE)
-  } else {
-    minutes_df <- stats::aggregate(
-      as.numeric(min) ~ player,
-      data = summary_data,
-      FUN = function(x) sum(x, na.rm = TRUE),
-      na.action = na.pass
-    )
-    names(minutes_df)[2] <- "minutes"
-
-    result <- stats::aggregate(
-      cbind(
-        matches = 1,
-        passes_completed = as.numeric(cmp),
-        passes_attempted = as.numeric(att),
-        progressive_passes = as.numeric(prg_p),
-        key_passes = as.numeric(kp),
-        passes_into_final_third = as.numeric(x1_3),
-        passes_into_penalty_area = as.numeric(ppa),
-        crosses = as.numeric(crs_pa)
-      ) ~ player,
-      data = data,
-      FUN = function(x) sum(x, na.rm = TRUE),
-      na.action = na.pass
-    )
-
-    result <- merge(result, minutes_df, by = "player", all.x = TRUE)
-
-    # Get most frequent team per player
-    team_mode <- stats::aggregate(
-      team ~ player,
-      data = data,
-      FUN = function(x) names(which.max(table(x)))
-    )
-    result <- merge(result, team_mode, by = "player", all.x = TRUE)
-  }
-
-  # Calculate derived stats
-  result$pass_pct <- round(safe_divide(result$passes_completed * 100, result$passes_attempted), 1)
-  result$passes_per90 <- round(per_90(result$passes_completed, result$minutes), 1)
-  result$progressive_passes_per90 <- round(per_90(result$progressive_passes, result$minutes), 2)
-  result$key_passes_per90 <- round(per_90(result$key_passes, result$minutes), 2)
-
-  # Apply min_minutes filter (unless specific player)
-  if (is.null(player)) {
-    result <- result[result$minutes >= min_minutes, ]
-  }
-
-  # Sort by minutes and reorder columns
-  result <- result[order(-result$minutes), ]
-  col_order <- c(
-    "player", "team", "matches", "minutes",
-    "passes_completed", "passes_attempted", "pass_pct", "progressive_passes",
-    "key_passes", "passes_into_final_third", "passes_into_penalty_area", "crosses",
-    "passes_per90", "progressive_passes_per90", "key_passes_per90"
-  )
-  result <- result[, col_order]
-  rownames(result) <- NULL
-
-  as.data.frame(result)
-}
-
-
-#' FBref Player Defense Statistics
-#'
-#' Aggregate defensive statistics from FBref data. Returns totals and per-90 rates.
-#'
-#' @inheritParams player_fbref_summary
-#'
-#' @return Data frame with columns: player, team, matches, minutes,
-#'   tackles, tackles_won, interceptions, blocks, clearances, errors,
-#'   tackles_per90, interceptions_per90, blocks_per90, tackle_win_pct
-#'
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' player_fbref_defense(league = "ENG", season = "2024-2025")
-#' }
-player_fbref_defense <- function(player = NULL,
-                                  league = NULL,
-                                  season = NULL,
-                                  min_minutes = 450,
-                                  by_team = FALSE,
-                                  source = c("remote", "local")) {
-  source <- match.arg(source)
-
-  # Load data
-  data <- load_defense(league = league, season = season, source = source)
-
-  if (is.null(data) || nrow(data) == 0) {
-    cli::cli_warn("No data found for specified filters")
-    return(data.frame())
-  }
-
-  # Filter by player if specified
-  if (!is.null(player)) {
-    data <- data[grepl(player, data$player, ignore.case = TRUE), ]
-    if (nrow(data) == 0) {
-      cli::cli_warn("No data found for player: {player}")
-      return(data.frame())
-    }
-  }
-
-  # Need minutes - load summary to get it
-  summary_data <- load_summary(league = league, season = season, source = source)
-
-  if (by_team) {
-    minutes_df <- stats::aggregate(
-      as.numeric(min) ~ player + team,
-      data = summary_data,
-      FUN = function(x) sum(x, na.rm = TRUE),
-      na.action = na.pass
-    )
-    names(minutes_df)[3] <- "minutes"
-
-    result <- stats::aggregate(
-      cbind(
-        matches = 1,
-        tackles = as.numeric(tkl),
-        tackles_won = as.numeric(tkl_w),
-        interceptions = as.numeric(int),
-        blocks = as.numeric(blocks),
-        clearances = as.numeric(clr),
-        errors = as.numeric(err)
-      ) ~ player + team,
-      data = data,
-      FUN = function(x) sum(x, na.rm = TRUE),
-      na.action = na.pass
-    )
-
-    result <- merge(result, minutes_df, by = c("player", "team"), all.x = TRUE)
-  } else {
-    minutes_df <- stats::aggregate(
-      as.numeric(min) ~ player,
-      data = summary_data,
-      FUN = function(x) sum(x, na.rm = TRUE),
-      na.action = na.pass
-    )
-    names(minutes_df)[2] <- "minutes"
-
-    result <- stats::aggregate(
-      cbind(
-        matches = 1,
-        tackles = as.numeric(tkl),
-        tackles_won = as.numeric(tkl_w),
-        interceptions = as.numeric(int),
-        blocks = as.numeric(blocks),
-        clearances = as.numeric(clr),
-        errors = as.numeric(err)
-      ) ~ player,
-      data = data,
-      FUN = function(x) sum(x, na.rm = TRUE),
-      na.action = na.pass
-    )
-
-    result <- merge(result, minutes_df, by = "player", all.x = TRUE)
-
-    # Get most frequent team per player
-    team_mode <- stats::aggregate(
-      team ~ player,
-      data = data,
-      FUN = function(x) names(which.max(table(x)))
-    )
-    result <- merge(result, team_mode, by = "player", all.x = TRUE)
-  }
-
-  # Calculate derived stats
-  result$tackles_per90 <- round(per_90(result$tackles, result$minutes), 2)
-  result$interceptions_per90 <- round(per_90(result$interceptions, result$minutes), 2)
-  result$blocks_per90 <- round(per_90(result$blocks, result$minutes), 2)
-  result$tackle_win_pct <- round(safe_divide(result$tackles_won * 100, result$tackles), 1)
-
-  # Apply min_minutes filter (unless specific player)
-  if (is.null(player)) {
-    result <- result[result$minutes >= min_minutes, ]
-  }
-
-  # Sort by minutes and reorder columns
-  result <- result[order(-result$minutes), ]
-  col_order <- c(
-    "player", "team", "matches", "minutes",
-    "tackles", "tackles_won", "interceptions", "blocks", "clearances", "errors",
-    "tackles_per90", "interceptions_per90", "blocks_per90", "tackle_win_pct"
-  )
-  result <- result[, col_order]
-  rownames(result) <- NULL
-
-  as.data.frame(result)
-}
-
-
-#' FBref Player Keeper Statistics
-#'
-#' Aggregate goalkeeper statistics from FBref data. Returns totals and rates.
-#'
-#' @inheritParams player_fbref_summary
-#'
-#' @return Data frame with columns: player, team, matches, minutes,
-#'   shots_on_target_against, saves, goals_against, clean_sheets,
-#'   save_pct, goals_against_per90, clean_sheet_pct
-#'
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' player_fbref_keeper(league = "ENG", season = "2024-2025")
-#' }
-player_fbref_keeper <- function(player = NULL,
-                                 league = NULL,
-                                 season = NULL,
-                                 min_minutes = 450,
-                                 by_team = FALSE,
-                                 source = c("remote", "local")) {
-  source <- match.arg(source)
-
-  # Load keeper data
-  data <- load_keeper(league = league, season = season, source = source)
-
-  if (is.null(data) || nrow(data) == 0) {
-    cli::cli_warn("No keeper data found for specified filters")
-    return(data.frame())
-  }
-
-  # Filter by player if specified
-  if (!is.null(player)) {
-    data <- data[grepl(player, data$player, ignore.case = TRUE), ]
-    if (nrow(data) == 0) {
-      cli::cli_warn("No data found for player: {player}")
-      return(data.frame())
-    }
-  }
-
-  # Need minutes - load summary to get it (filter for GK position)
-  summary_data <- load_summary(league = league, season = season, source = source)
-  summary_data <- summary_data[grepl("GK", summary_data$pos, ignore.case = TRUE), ]
-
-  # Calculate clean sheets from the data (goals_against == 0)
-  data$clean_sheet <- as.numeric(data$ga) == 0
-
-  if (by_team) {
-    minutes_df <- stats::aggregate(
-      as.numeric(min) ~ player + team,
-      data = summary_data,
-      FUN = function(x) sum(x, na.rm = TRUE),
-      na.action = na.pass
-    )
-    names(minutes_df)[3] <- "minutes"
-
-    result <- stats::aggregate(
-      cbind(
-        matches = 1,
-        shots_on_target_against = as.numeric(so_ta),
-        saves = as.numeric(saves),
-        goals_against = as.numeric(ga),
-        clean_sheets = as.numeric(clean_sheet)
-      ) ~ player + team,
-      data = data,
-      FUN = function(x) sum(x, na.rm = TRUE),
-      na.action = na.pass
-    )
-
-    result <- merge(result, minutes_df, by = c("player", "team"), all.x = TRUE)
-  } else {
-    minutes_df <- stats::aggregate(
-      as.numeric(min) ~ player,
-      data = summary_data,
-      FUN = function(x) sum(x, na.rm = TRUE),
-      na.action = na.pass
-    )
-    names(minutes_df)[2] <- "minutes"
-
-    result <- stats::aggregate(
-      cbind(
-        matches = 1,
-        shots_on_target_against = as.numeric(so_ta),
-        saves = as.numeric(saves),
-        goals_against = as.numeric(ga),
-        clean_sheets = as.numeric(clean_sheet)
-      ) ~ player,
-      data = data,
-      FUN = function(x) sum(x, na.rm = TRUE),
-      na.action = na.pass
-    )
-
-    result <- merge(result, minutes_df, by = "player", all.x = TRUE)
-
-    # Get most frequent team per player
-    team_mode <- stats::aggregate(
-      team ~ player,
-      data = data,
-      FUN = function(x) names(which.max(table(x)))
-    )
-    result <- merge(result, team_mode, by = "player", all.x = TRUE)
-  }
-
-  # Calculate derived stats
-  result$save_pct <- round(safe_divide(result$saves * 100, result$shots_on_target_against), 1)
-  result$goals_against_per90 <- round(per_90(result$goals_against, result$minutes), 2)
-  result$clean_sheet_pct <- round(safe_divide(result$clean_sheets * 100, result$matches), 1)
-
-  # Apply min_minutes filter (unless specific player)
-  if (is.null(player)) {
-    result <- result[result$minutes >= min_minutes, ]
-  }
-
-  # Sort by minutes and reorder columns
-  result <- result[order(-result$minutes), ]
-  col_order <- c(
-    "player", "team", "matches", "minutes",
-    "shots_on_target_against", "saves", "goals_against", "clean_sheets",
-    "save_pct", "goals_against_per90", "clean_sheet_pct"
-  )
-  result <- result[, col_order]
-  rownames(result) <- NULL
-
-  as.data.frame(result)
-}
-
-
-# ==============================================================================
-# Opta Player Stats
-# ==============================================================================
 
 # Internal helper to load Opta data, handling NULL league
 .load_opta_data <- function(league, season, source) {
@@ -545,6 +16,25 @@ player_fbref_keeper <- function(player = NULL,
   # Convert to base data.frame for stats::aggregate compatibility
   as.data.frame(data)
 }
+
+# Internal helper to load Opta xmetrics data
+.load_opta_xmetrics_data <- function(league, season, source) {
+  data <- if (is.null(league)) {
+    # Load all Big 5 leagues
+    results <- lapply(names(OPTA_LEAGUES), function(lg) {
+      tryCatch({
+        df <- load_opta_xmetrics(lg, season)
+        df$league <- lg
+        df
+      }, error = function(e) NULL)
+    })
+    rbindlist(Filter(Negate(is.null), results), use.names = TRUE, fill = TRUE)
+  } else {
+    load_opta_xmetrics(league = league, season = season)
+  }
+  as.data.frame(data)
+}
+
 
 #' Opta Player Summary Statistics
 #'
@@ -573,6 +63,7 @@ player_opta_summary <- function(player = NULL,
                                  by_team = FALSE,
                                  source = c("local", "remote")) {
   source <- match.arg(source)
+  validate_min_minutes(min_minutes)
 
   # Load data
   data <- .load_opta_data(league, season, source)
@@ -641,7 +132,8 @@ player_opta_summary <- function(player = NULL,
       FUN = function(x) names(which.max(table(x)))
     )
     names(team_mode) <- c("player", "team")
-    result <- merge(result, team_mode, by = "player", all.x = TRUE)
+    result <- data.table::as.data.table(team_mode)[data.table::as.data.table(result), on = "player"]
+    data.table::setDF(result)
   }
 
   # Calculate per-90 rates
@@ -749,7 +241,8 @@ player_opta_passing <- function(player = NULL,
     team_mode <- stats::aggregate(team_name ~ player_name, data = data,
                                    FUN = function(x) names(which.max(table(x))))
     names(team_mode) <- c("player", "team")
-    result <- merge(result, team_mode, by = "player", all.x = TRUE)
+    result <- data.table::as.data.table(team_mode)[data.table::as.data.table(result), on = "player"]
+    data.table::setDF(result)
   }
 
   # Calculate rates
@@ -853,7 +346,8 @@ player_opta_defense <- function(player = NULL,
     team_mode <- stats::aggregate(team_name ~ player_name, data = data,
                                    FUN = function(x) names(which.max(table(x))))
     names(team_mode) <- c("player", "team")
-    result <- merge(result, team_mode, by = "player", all.x = TRUE)
+    result <- data.table::as.data.table(team_mode)[data.table::as.data.table(result), on = "player"]
+    data.table::setDF(result)
   }
 
   # Calculate rates
@@ -954,7 +448,8 @@ player_opta_possession <- function(player = NULL,
     team_mode <- stats::aggregate(team_name ~ player_name, data = data,
                                    FUN = function(x) names(which.max(table(x))))
     names(team_mode) <- c("player", "team")
-    result <- merge(result, team_mode, by = "player", all.x = TRUE)
+    result <- data.table::as.data.table(team_mode)[data.table::as.data.table(result), on = "player"]
+    data.table::setDF(result)
   }
 
   # Calculate rates
@@ -1064,7 +559,8 @@ player_opta_keeper <- function(player = NULL,
     team_mode <- stats::aggregate(team_name ~ player_name, data = data,
                                    FUN = function(x) names(which.max(table(x))))
     names(team_mode) <- c("player", "team")
-    result <- merge(result, team_mode, by = "player", all.x = TRUE)
+    result <- data.table::as.data.table(team_mode)[data.table::as.data.table(result), on = "player"]
+    data.table::setDF(result)
   }
 
   # Calculate derived stats
@@ -1084,114 +580,6 @@ player_opta_keeper <- function(player = NULL,
   as.data.frame(result)
 }
 
-
-# ==============================================================================
-# Understat Player Stats (placeholder - to be implemented)
-# ==============================================================================
-
-#' Understat Player Summary Statistics
-#'
-#' Aggregate statistics from Understat data. Includes Understat's xG model.
-#'
-#' @param player Character. Player name to filter.
-#' @param league Character. League code (ENG, ESP, GER, ITA, FRA, RUS).
-#' @param season Character. Season in Understat format (e.g., "2024").
-#' @param min_minutes Integer. Minimum minutes for inclusion.
-#' @param by_team Logical. If TRUE, aggregate by player and team.
-#' @param source Character. "remote" (default) or "local".
-#'
-#' @return Data frame with player statistics including xG, xA, xGChain, xGBuildup.
-#'
-#' @export
-player_understat_summary <- function(player = NULL,
-                                      league = NULL,
-                                      season = NULL,
-                                      min_minutes = 450,
-                                      by_team = FALSE,
-                                      source = c("remote", "local")) {
-  source <- match.arg(source)
-
-  # Load Understat roster data
-  data <- load_understat_roster(league = league, season = season, source = source)
-
-  if (is.null(data) || nrow(data) == 0) {
-    cli::cli_warn("No Understat data found")
-    return(data.frame())
-  }
-
-  if (!is.null(player)) {
-    data <- data[grepl(player, data$player, ignore.case = TRUE), ]
-    if (nrow(data) == 0) {
-      cli::cli_warn("No data found for player: {player}")
-      return(data.frame())
-    }
-  }
-
-  get_col <- function(df, col) {
-    if (col %in% names(df)) as.numeric(df[[col]]) else rep(0, nrow(df))
-  }
-
-  if (by_team) {
-    result <- stats::aggregate(
-      cbind(
-        matches = 1,
-        minutes = get_col(data, "time"),
-        goals = get_col(data, "goals"),
-        assists = get_col(data, "assists"),
-        shots = get_col(data, "shots"),
-        key_passes = get_col(data, "key_passes"),
-        xg = get_col(data, "xG"),
-        xa = get_col(data, "xA"),
-        xg_chain = get_col(data, "xGChain"),
-        xg_buildup = get_col(data, "xGBuildup")
-      ) ~ player + team,
-      data = data,
-      FUN = function(x) sum(x, na.rm = TRUE),
-      na.action = na.pass
-    )
-  } else {
-    result <- stats::aggregate(
-      cbind(
-        matches = 1,
-        minutes = get_col(data, "time"),
-        goals = get_col(data, "goals"),
-        assists = get_col(data, "assists"),
-        shots = get_col(data, "shots"),
-        key_passes = get_col(data, "key_passes"),
-        xg = get_col(data, "xG"),
-        xa = get_col(data, "xA"),
-        xg_chain = get_col(data, "xGChain"),
-        xg_buildup = get_col(data, "xGBuildup")
-      ) ~ player,
-      data = data,
-      FUN = function(x) sum(x, na.rm = TRUE),
-      na.action = na.pass
-    )
-
-    team_mode <- stats::aggregate(team ~ player, data = data,
-                                   FUN = function(x) names(which.max(table(x))))
-    result <- merge(result, team_mode, by = "player", all.x = TRUE)
-  }
-
-  # Calculate derived stats
-  result$goals_minus_xg <- round(result$goals - result$xg, 2)
-  result$goals_per90 <- round(per_90(result$goals, result$minutes), 2)
-  result$xg_per90 <- round(per_90(result$xg, result$minutes), 2)
-  result$xa_per90 <- round(per_90(result$xa, result$minutes), 2)
-
-  if (is.null(player)) {
-    result <- result[result$minutes >= min_minutes, ]
-  }
-
-  result <- result[order(-result$minutes), ]
-  rownames(result) <- NULL
-  as.data.frame(result)
-}
-
-
-# =============================================================================
-# Opta Shots Stats
-# =============================================================================
 
 #' Opta Player Shooting Statistics
 #'
@@ -1291,7 +679,8 @@ player_opta_shots <- function(player = NULL,
     team_mode <- stats::aggregate(team_name ~ player_name, data = data,
                                    FUN = function(x) names(which.max(table(x))))
     names(team_mode) <- c("player", "team")
-    result <- merge(result, team_mode, by = "player", all.x = TRUE)
+    result <- data.table::as.data.table(team_mode)[data.table::as.data.table(result), on = "player"]
+    data.table::setDF(result)
   }
 
   # Calculate derived stats
@@ -1311,9 +700,232 @@ player_opta_shots <- function(player = NULL,
 }
 
 
-# =============================================================================
-# Opta Set Piece Stats
-# =============================================================================
+#' Opta Player xG and xA Statistics
+#'
+#' Aggregate shooting and assisting statistics with xG/xA from our trained
+#' Opta xG model. Requires pre-computed xmetrics parquet files.
+#'
+#' @param player Character. Player name to filter (case-insensitive partial match).
+#' @param league Character. League code (ENG, ESP, GER, ITA, FRA).
+#' @param season Character. Season (e.g., "2024-2025").
+#' @param min_minutes Integer. Minimum minutes for inclusion (default 450).
+#' @param by_team Logical. If TRUE, aggregate by player and team separately.
+#' @param source Character. "local" (default) or "remote".
+#'
+#' @return Data frame with xG/xA statistics per player.
+#'
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' # Top xG in EPL
+#' player_opta_xg(league = "ENG", season = "2024-2025")
+#'
+#' # Specific player
+#' player_opta_xg("B. Saka", league = "ENG")
+#' }
+player_opta_xg <- function(player = NULL,
+                            league = NULL,
+                            season = NULL,
+                            min_minutes = 450,
+                            by_team = FALSE,
+                            source = c("local", "remote")) {
+  source <- match.arg(source)
+
+  data <- .load_opta_xmetrics_data(league, season, source)
+
+  if (is.null(data) || nrow(data) == 0) {
+    cli::cli_warn("No Opta xmetrics data found. Run 03_calculate_player_xmetrics.R first.")
+    return(data.frame())
+  }
+
+  if (!is.null(player)) {
+    data <- data[grepl(player, data$player_name, ignore.case = TRUE), ]
+    if (nrow(data) == 0) {
+      cli::cli_warn("No data found for player: {player}")
+      return(data.frame())
+    }
+  }
+
+  get_col <- function(df, col) {
+    if (col %in% names(df)) as.numeric(df[[col]]) else rep(0, nrow(df))
+  }
+
+  if (by_team) {
+    result <- stats::aggregate(
+      cbind(
+        minutes = get_col(data, "minutes"),
+        shots = get_col(data, "shots"),
+        shots_on_target = get_col(data, "shots_on_target"),
+        goals = get_col(data, "goals"),
+        npgoals = get_col(data, "npgoals"),
+        xg = get_col(data, "xg"),
+        npxg = get_col(data, "npxg"),
+        key_passes = get_col(data, "key_passes"),
+        assists = get_col(data, "assists"),
+        xa = get_col(data, "xa")
+      ) ~ player_name + team_name,
+      data = data,
+      FUN = function(x) sum(x, na.rm = TRUE),
+      na.action = na.pass
+    )
+    names(result)[1:2] <- c("player", "team")
+  } else {
+    result <- stats::aggregate(
+      cbind(
+        minutes = get_col(data, "minutes"),
+        shots = get_col(data, "shots"),
+        shots_on_target = get_col(data, "shots_on_target"),
+        goals = get_col(data, "goals"),
+        npgoals = get_col(data, "npgoals"),
+        xg = get_col(data, "xg"),
+        npxg = get_col(data, "npxg"),
+        key_passes = get_col(data, "key_passes"),
+        assists = get_col(data, "assists"),
+        xa = get_col(data, "xa")
+      ) ~ player_name,
+      data = data,
+      FUN = function(x) sum(x, na.rm = TRUE),
+      na.action = na.pass
+    )
+    names(result)[1] <- "player"
+
+    team_mode <- stats::aggregate(
+      team_name ~ player_name, data = data,
+      FUN = function(x) names(which.max(table(x)))
+    )
+    names(team_mode) <- c("player", "team")
+    result <- data.table::as.data.table(team_mode)[data.table::as.data.table(result), on = "player"]
+    data.table::setDF(result)
+  }
+
+  # Derived stats
+  result$goals_minus_xg <- round(result$goals - result$xg, 2)
+  result$xg_per90 <- round(per_90(result$xg, result$minutes), 2)
+  result$npxg_per90 <- round(per_90(result$npxg, result$minutes), 2)
+  result$xa_per90 <- round(per_90(result$xa, result$minutes), 2)
+
+  if (is.null(player)) {
+    result <- result[result$minutes >= min_minutes, ]
+  }
+
+  result <- result[order(-result$xg), ]
+  col_order <- c("player", "team", "minutes",
+                 "shots", "shots_on_target", "goals", "npgoals",
+                 "xg", "npxg", "goals_minus_xg",
+                 "xg_per90", "npxg_per90",
+                 "key_passes", "assists", "xa", "xa_per90")
+  result <- result[, col_order]
+  rownames(result) <- NULL
+
+  as.data.frame(result)
+}
+
+
+#' Opta Player xPass Statistics
+#'
+#' Aggregate passing statistics with xPass (expected pass completion) from
+#' our trained model. Shows passing volume, accuracy, and overperformance.
+#'
+#' @inheritParams player_opta_xg
+#'
+#' @return Data frame with xPass statistics per player.
+#'
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' # Top xPass overperformers
+#' player_opta_xpass(league = "ENG", season = "2024-2025")
+#'
+#' # Specific player
+#' player_opta_xpass("B. Saka", league = "ENG")
+#' }
+player_opta_xpass <- function(player = NULL,
+                               league = NULL,
+                               season = NULL,
+                               min_minutes = 450,
+                               by_team = FALSE,
+                               source = c("local", "remote")) {
+  source <- match.arg(source)
+
+  data <- .load_opta_xmetrics_data(league, season, source)
+
+  if (is.null(data) || nrow(data) == 0) {
+    cli::cli_warn("No Opta xmetrics data found. Run 03_calculate_player_xmetrics.R first.")
+    return(data.frame())
+  }
+
+  if (!is.null(player)) {
+    data <- data[grepl(player, data$player_name, ignore.case = TRUE), ]
+    if (nrow(data) == 0) {
+      cli::cli_warn("No data found for player: {player}")
+      return(data.frame())
+    }
+  }
+
+  get_col <- function(df, col) {
+    if (col %in% names(df)) as.numeric(df[[col]]) else rep(0, nrow(df))
+  }
+
+  if (by_team) {
+    result <- stats::aggregate(
+      cbind(
+        minutes = get_col(data, "minutes"),
+        passes_attempted = get_col(data, "passes_attempted"),
+        passes_completed = get_col(data, "passes_completed"),
+        sum_xpass = get_col(data, "sum_xpass"),
+        xpass_overperformance = get_col(data, "xpass_overperformance")
+      ) ~ player_name + team_name,
+      data = data,
+      FUN = function(x) sum(x, na.rm = TRUE),
+      na.action = na.pass
+    )
+    names(result)[1:2] <- c("player", "team")
+  } else {
+    result <- stats::aggregate(
+      cbind(
+        minutes = get_col(data, "minutes"),
+        passes_attempted = get_col(data, "passes_attempted"),
+        passes_completed = get_col(data, "passes_completed"),
+        sum_xpass = get_col(data, "sum_xpass"),
+        xpass_overperformance = get_col(data, "xpass_overperformance")
+      ) ~ player_name,
+      data = data,
+      FUN = function(x) sum(x, na.rm = TRUE),
+      na.action = na.pass
+    )
+    names(result)[1] <- "player"
+
+    team_mode <- stats::aggregate(
+      team_name ~ player_name, data = data,
+      FUN = function(x) names(which.max(table(x)))
+    )
+    names(team_mode) <- c("player", "team")
+    result <- data.table::as.data.table(team_mode)[data.table::as.data.table(result), on = "player"]
+    data.table::setDF(result)
+  }
+
+  # Derived stats
+  result$pass_pct <- round(safe_divide(result$passes_completed * 100, result$passes_attempted), 1)
+  result$xpass_overperformance_per90 <- round(per_90(result$xpass_overperformance, result$minutes), 2)
+  result$xpass_avg <- round(safe_divide(result$sum_xpass, result$passes_attempted), 3)
+
+  if (is.null(player)) {
+    result <- result[result$minutes >= min_minutes, ]
+  }
+
+  result <- result[order(-result$xpass_overperformance), ]
+  col_order <- c("player", "team", "minutes",
+                 "passes_attempted", "passes_completed", "pass_pct",
+                 "sum_xpass", "xpass_overperformance", "xpass_overperformance_per90",
+                 "xpass_avg")
+  result <- result[, col_order]
+  rownames(result) <- NULL
+
+  as.data.frame(result)
+}
+
 
 #' Opta Player Set Piece Statistics
 #'
@@ -1413,7 +1025,8 @@ player_opta_setpiece <- function(player = NULL,
     team_mode <- stats::aggregate(team_name ~ player_name, data = data,
                                    FUN = function(x) names(which.max(table(x))))
     names(team_mode) <- c("player", "team")
-    result <- merge(result, team_mode, by = "player", all.x = TRUE)
+    result <- data.table::as.data.table(team_mode)[data.table::as.data.table(result), on = "player"]
+    data.table::setDF(result)
   }
 
   # Calculate derived stats

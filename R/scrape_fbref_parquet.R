@@ -4,7 +4,6 @@
 # GitHub releases upload, and convenience data loading functions.
 # Depends on scrape_fbref_cache.R for cache operations.
 
-#' @importFrom arrow read_parquet write_parquet
 
 
 # ============================================================================
@@ -56,7 +55,7 @@ if (!force && exists(cache_key, envir = .remote_parquet_cache)) {
 
   # Download using piggyback
   if (!requireNamespace("piggyback", quietly = TRUE)) {
-    stop("Package 'piggyback' required for remote loading. Install with: install.packages('piggyback')")
+    cli::cli_abort("Package 'piggyback' required for remote loading. Install with: install.packages('piggyback')")
   }
 
   tryCatch({
@@ -68,11 +67,11 @@ if (!force && exists(cache_key, envir = .remote_parquet_cache)) {
       overwrite = TRUE
     )
   }, error = function(e) {
-    stop("Failed to download from GitHub releases: ", e$message)
+    cli::cli_abort("Failed to download from GitHub releases: {conditionMessage(e)}")
   })
 
   if (!file.exists(zip_file)) {
-    stop("Download failed - pannadata-parquet.zip not found in ", tempdir())
+    cli::cli_abort("Download failed - pannadata-parquet.zip not found in {tempdir()}")
   }
 
   # Extract
@@ -105,7 +104,7 @@ if (!force && exists(cache_key, envir = .remote_parquet_cache)) {
 #' @param source "local" (default) or "remote" to download from GitHub releases
 #'
 #' @return Combined data frame, or NULL if no cached data
-#' @export
+#' @keywords internal
 #'
 #' @examples
 #' \dontrun{
@@ -149,7 +148,7 @@ aggregate_cached_matches <- function(table_type, league = NULL, season = NULL,
                                     full.names = TRUE)
         if (length(parquet_files) > 0) {
           all_data <- lapply(parquet_files, arrow::read_parquet)
-          return(dplyr::bind_rows(all_data))
+          return(rbindlist(all_data, use.names = TRUE, fill = TRUE))
         }
       }
     }
@@ -162,7 +161,7 @@ aggregate_cached_matches <- function(table_type, league = NULL, season = NULL,
       parquet_files <- parquet_files[file.exists(parquet_files)]
       if (length(parquet_files) > 0) {
         all_data <- lapply(parquet_files, arrow::read_parquet)
-        return(dplyr::bind_rows(all_data))
+        return(rbindlist(all_data, use.names = TRUE, fill = TRUE))
       }
     }
 
@@ -172,7 +171,7 @@ aggregate_cached_matches <- function(table_type, league = NULL, season = NULL,
                                   recursive = TRUE, full.names = TRUE)
       if (length(parquet_files) > 0) {
         all_data <- lapply(parquet_files, arrow::read_parquet)
-        return(dplyr::bind_rows(all_data))
+        return(rbindlist(all_data, use.names = TRUE, fill = TRUE))
       }
     }
   }
@@ -207,7 +206,7 @@ aggregate_cached_matches <- function(table_type, league = NULL, season = NULL,
     return(NULL)
   }
 
-  dplyr::bind_rows(all_data)
+  rbindlist(all_data, use.names = TRUE, fill = TRUE)
 }
 
 
@@ -253,6 +252,7 @@ get_parquet_path <- function(table_type, league, season, create = FALSE) {
 #' @return Path to created parquet file, or NULL if no data
 #' @export
 build_parquet <- function(table_type, league, season, verbose = TRUE) {
+  .check_suggests("arrow", "Building parquet files requires arrow.")
   if (verbose) message(sprintf("  %s/%s:", league, season))
 
   parquet_path <- get_parquet_path(table_type, league, season, create = TRUE)
@@ -300,7 +300,7 @@ build_parquet <- function(table_type, league, season, verbose = TRUE) {
       new_data_list <- new_data_list[!sapply(new_data_list, is.null)]
 
       if (length(new_data_list) > 0) {
-        new_data <- dplyr::bind_rows(new_data_list)
+        new_data <- rbindlist(new_data_list, use.names = TRUE, fill = TRUE)
       }
     }
   }
@@ -311,7 +311,7 @@ build_parquet <- function(table_type, league, season, verbose = TRUE) {
     return(NULL)
   }
 
-  combined <- dplyr::bind_rows(existing_data, new_data)
+  combined <- rbindlist(list(existing_data, new_data), use.names = TRUE, fill = TRUE)
 
   if (nrow(combined) == 0) {
     if (verbose) message("No valid data found")
@@ -349,6 +349,7 @@ build_parquet <- function(table_type, league, season, verbose = TRUE) {
 #' @export
 build_all_parquet <- function(table_types = NULL, leagues = NULL,
                               seasons = NULL, verbose = TRUE) {
+  .check_suggests("arrow", "Building parquet files requires arrow.")
   # Default table types
   if (is.null(table_types)) {
     table_types <- c("summary", "passing", "passing_types", "defense",
@@ -403,8 +404,7 @@ build_all_parquet <- function(table_types = NULL, leagues = NULL,
         parquet_path <- tryCatch({
           build_parquet(tt, lg, sn, verbose = verbose)
         }, error = function(e) {
-          if (verbose) warning(sprintf("Error building %s/%s/%s: %s",
-                                       tt, lg, sn, e$message))
+          if (verbose) cli::cli_warn("Error building {tt}/{lg}/{sn}: {conditionMessage(e)}")
           NULL
         })
 
@@ -484,9 +484,7 @@ build_all_parquet <- function(table_types = NULL, leagues = NULL,
 #' }
 build_consolidated_parquet <- function(table_types = NULL, output_dir = NULL,
                                         verbose = TRUE) {
-  if (!requireNamespace("arrow", quietly = TRUE)) {
-    stop("Package 'arrow' is required. Install with: install.packages('arrow')")
-  }
+  .check_suggests("arrow", "Building parquet files requires arrow.")
 
   # Default table types
   if (is.null(table_types)) {
@@ -533,7 +531,7 @@ build_consolidated_parquet <- function(table_types = NULL, output_dir = NULL,
         tryCatch({
           arrow::read_parquet(f)
         }, error = function(e) {
-          if (verbose) warning(sprintf("  Error reading %s: %s", basename(f), e$message))
+          if (verbose) cli::cli_warn("Error reading {basename(f)}: {conditionMessage(e)}")
           NULL
         })
       })
@@ -542,7 +540,7 @@ build_consolidated_parquet <- function(table_types = NULL, output_dir = NULL,
       # Use rbindlist with fill=TRUE to handle different column schemas
       as.data.frame(data.table::rbindlist(dfs, fill = TRUE))
     }, error = function(e) {
-      if (verbose) warning(sprintf("  Error combining %s: %s", tt, e$message))
+      if (verbose) cli::cli_warn("Error combining {tt}: {conditionMessage(e)}")
       NULL
     })
 
@@ -618,7 +616,7 @@ pb_upload_consolidated <- function(source_dir = NULL,
                                     tag = "fbref-latest",
                                     verbose = TRUE) {
   if (!requireNamespace("piggyback", quietly = TRUE)) {
-    stop("Package 'piggyback' is required. Install with: install.packages('piggyback')")
+    cli::cli_abort("Package 'piggyback' is required. Install with: install.packages('piggyback')")
   }
 
   if (is.null(source_dir)) {
@@ -626,14 +624,16 @@ pb_upload_consolidated <- function(source_dir = NULL,
   }
 
   if (!dir.exists(source_dir)) {
-    stop("Consolidated directory not found: ", source_dir,
-         "\nRun build_consolidated_parquet() first.")
+    cli::cli_abort(c(
+      "Consolidated directory not found: {.path {source_dir}}",
+      "i" = "Run {.code build_consolidated_parquet()} first."
+    ))
   }
 
   parquet_files <- list.files(source_dir, pattern = "\\.parquet$", full.names = TRUE)
 
   if (length(parquet_files) == 0) {
-    stop("No parquet files found in ", source_dir)
+    cli::cli_abort("No parquet files found in {.val {source_dir}}")
   }
 
   if (verbose) {
@@ -673,7 +673,7 @@ pb_upload_consolidated <- function(source_dir = NULL,
         stringsAsFactors = FALSE
       )
     }, error = function(e) {
-      if (verbose) warning(sprintf("Failed to upload %s: %s", fname, e$message))
+      if (verbose) cli::cli_warn("Failed to upload {fname}: {conditionMessage(e)}")
       results[[length(results) + 1]] <- data.frame(
         file = fname,
         size_mb = round(file.size(pf) / (1024 * 1024), 2),
@@ -811,7 +811,7 @@ load_possession <- function(league = NULL, season = NULL, source = c("remote", "
 #' @param verbose Print progress (default TRUE)
 #'
 #' @return Number of metadata files updated
-#' @export
+#' @keywords internal
 #'
 #' @examples
 #' \dontrun{

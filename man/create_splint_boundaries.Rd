@@ -45,3 +45,4 @@ Example with 3 mins first-half stoppage and 11 mins second-half stoppage:
 
 Also tracks game state (cumulative goals, red cards, player counts) at each splint boundary.
 }
+\keyword{internal}

@@ -21,7 +21,6 @@
 #' @examples
 #' understat_competitions
 #' understat_competitions[understat_competitions$code == "ENG", ]
-#' get_understat_slug("ENG")
 understat_competitions <- data.frame(
 code = c(
     # Big 5 leagues
@@ -53,16 +52,19 @@ code = c(
 #' @param code Character, the league code (e.g., "ENG", "RUS")
 #'
 #' @return Character, the Understat URL slug
-#' @export
+#' @keywords internal
 #'
 #' @examples
-#' get_understat_slug("ENG")  # "EPL"
+#' \dontrun{
 #' get_understat_slug("RUS")  # "RFPL"
+#' }
 get_understat_slug <- function(code) {
   idx <- match(code, understat_competitions$code)
   if (is.na(idx)) {
-    stop("Unknown Understat competition code: ", code,
-         "\nValid codes: ", paste(understat_competitions$code, collapse = ", "))
+    cli::cli_abort(c(
+      "Unknown Understat competition code: {.val {code}}",
+      "i" = "Valid codes: {paste(understat_competitions$code, collapse = ', ')}"
+    ))
   }
   understat_competitions$understat_slug[idx]
 }
@@ -76,11 +78,12 @@ get_understat_slug <- function(code) {
 #' @param season Character or numeric, the season year (e.g., "2024" or 2024)
 #'
 #' @return Character, the full Understat league URL
-#' @export
+#' @keywords internal
 #'
 #' @examples
-#' get_understat_league_url("ENG", 2024)
+#' \dontrun{
 #' get_understat_league_url("ESP", "2023")
+#' }
 get_understat_league_url <- function(code, season) {
   slug <- get_understat_slug(code)
 
@@ -102,10 +105,12 @@ season_year <- if (grepl("-", as.character(season))) {
 #' @param understat_id Numeric or character, the Understat match ID
 #'
 #' @return Character, the full Understat match URL
-#' @export
+#' @keywords internal
 #'
 #' @examples
+#' \dontrun{
 #' get_understat_match_url(28988)
+#' }
 get_understat_match_url <- function(understat_id) {
   sprintf("https://understat.com/match/%s", understat_id)
 }
@@ -119,11 +124,12 @@ get_understat_match_url <- function(understat_id) {
 #' @param fbref_season Character, season in FBref format (e.g., "2023-2024")
 #'
 #' @return Character, season in Understat format (e.g., "2023")
-#' @export
+#' @keywords internal
 #'
 #' @examples
-#' fbref_to_understat_season("2023-2024")  # "2023"
+#' \dontrun{
 #' fbref_to_understat_season("2024")       # "2024" (already correct)
+#' }
 fbref_to_understat_season <- function(fbref_season) {
   if (grepl("-", fbref_season)) {
     substr(fbref_season, 1, 4)
@@ -140,11 +146,12 @@ fbref_to_understat_season <- function(fbref_season) {
 #' @param understat_season Character or numeric, season in Understat format (e.g., "2023" or 2023)
 #'
 #' @return Character, season in FBref format (e.g., "2023-2024")
-#' @export
+#' @keywords internal
 #'
 #' @examples
-#' understat_to_fbref_season(2023)    # "2023-2024"
+#' \dontrun{
 #' understat_to_fbref_season("2024")  # "2024-2025"
+#' }
 understat_to_fbref_season <- function(understat_season) {
   year <- as.integer(understat_season)
   paste0(year, "-", year + 1)
@@ -159,11 +166,12 @@ understat_to_fbref_season <- function(understat_season) {
 #' @param start_year First season year (default 2014)
 #'
 #' @return Character vector of season years
-#' @export
+#' @keywords internal
 #'
 #' @examples
-#' get_understat_seasons()
+#' \dontrun{
 #' get_understat_seasons(2020)
+#' }
 get_understat_seasons <- function(start_year = 2014) {
   current_year <- as.numeric(format(Sys.Date(), "%Y"))
   current_month <- as.numeric(format(Sys.Date(), "%m"))
@@ -194,11 +202,12 @@ list_understat_competitions <- function() {
 #' @param code Character, the league code
 #'
 #' @return Logical, TRUE if league is available on Understat
-#' @export
+#' @keywords internal
 #'
 #' @examples
-#' is_understat_league("ENG")  # TRUE
+#' \dontrun{
 #' is_understat_league("POR")
+#' }
 is_understat_league <- function(code) {
   code %in% understat_competitions$code
 }
@@ -212,12 +221,13 @@ is_understat_league <- function(code) {
 #' @param understat_league Character, the league name from Understat metadata
 #'
 #' @return Character, our league code, or NA if not found
-#' @export
+#' @keywords internal
 #'
 #' @examples
-#' understat_league_to_code("EPL")      # "ENG"
+#' \dontrun{
 #' understat_league_to_code("La liga")  # "ESP"
 #' understat_league_to_code("Serie A")  # "ITA"
+#' }
 understat_league_to_code <- function(understat_league) {
   # Understat uses these names in their metadata
   # Need to map to our codes
@@ -232,7 +242,7 @@ understat_league_to_code <- function(understat_league) {
 
   code <- mapping[understat_league]
   if (is.na(code)) {
-    warning("Unknown Understat league: ", understat_league)
+    cli::cli_warn("Unknown Understat league: {understat_league}")
   }
   unname(code)
 }

@@ -23,3 +23,4 @@ Determines which players were on the pitch for each splint.
 Uses lineup minutes and substitution events to track when players
 were actually on the pitch.
 }
+\keyword{internal}

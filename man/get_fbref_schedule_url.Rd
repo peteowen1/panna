@@ -18,6 +18,8 @@ Character, the full FBref schedule URL
 Constructs the FBref fixtures/schedule URL for a competition and season.
 }
 \examples{
-get_fbref_schedule_url("ENG", "2023-2024")
+\dontrun{
 get_fbref_schedule_url("WC", "2022")
 }
+}
+\keyword{internal}

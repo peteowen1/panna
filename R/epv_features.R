@@ -46,7 +46,7 @@ EPV_CONTEXT_FEATURES <- c("time_normalized", "period_id")
 #'
 #' @return Data frame with EPV features
 #'
-#' @export
+#' @keywords internal
 create_epv_features <- function(spadl_actions, n_prev = 3) {
 
   if (is.null(spadl_actions) || nrow(spadl_actions) == 0) {
@@ -213,7 +213,7 @@ create_epv_features <- function(spadl_actions, n_prev = 3) {
 #' @param y Y coordinates
 #'
 #' @return Data frame with location features
-#' @export
+#' @keywords internal
 create_location_features <- function(x, y) {
   data.frame(
     x = x,
@@ -244,7 +244,7 @@ create_location_features <- function(x, y) {
 #' @param n_prev Number of previous actions for sequence features (default 3)
 #'
 #' @return Character vector of feature column names
-#' @export
+#' @keywords internal
 get_epv_feature_cols <- function(include_sequence = TRUE, n_prev = 3) {
   # Build from shared constants (single source of truth)
   cols <- c(
@@ -280,7 +280,7 @@ get_epv_feature_cols <- function(include_sequence = TRUE, n_prev = 3) {
 #'
 #' @return Data frame with action_id and target columns
 #'
-#' @export
+#' @keywords internal
 create_epv_labels <- function(spadl_with_outcomes) {
   labels <- data.frame(
     match_id = spadl_with_outcomes$match_id,
@@ -313,7 +313,7 @@ create_epv_labels <- function(spadl_with_outcomes) {
 #' @param spadl_with_chains SPADL actions with chain information
 #'
 #' @return SPADL actions with velocity features added
-#' @export
+#' @keywords internal
 add_possession_velocity <- function(spadl_with_chains) {
   if (!"chain_id" %in% names(spadl_with_chains)) {
     cli::cli_warn("No chain_id found, skipping velocity calculation")
@@ -342,8 +342,7 @@ add_possession_velocity <- function(spadl_with_chains) {
   )]
 
   # Merge back
-  dt <- merge(dt, chain_stats[, .(match_id, chain_id, possession_velocity, x_progression, chain_duration)],
-              by = c("match_id", "chain_id"), all.x = TRUE, sort = FALSE)
+  dt <- chain_stats[, .(match_id, chain_id, possession_velocity, x_progression, chain_duration)][dt, on = c("match_id", "chain_id")]
 
   # Restore original order
   data.table::setorder(dt, match_id, action_id)
@@ -362,7 +361,7 @@ add_possession_velocity <- function(spadl_with_chains) {
 #' @param sds Optional pre-computed standard deviations
 #'
 #' @return List with normalized features, means, and sds
-#' @export
+#' @keywords internal
 normalize_epv_features <- function(features, feature_cols = NULL, means = NULL, sds = NULL) {
   if (is.null(feature_cols)) {
     feature_cols <- names(features)[sapply(features, is.numeric)]

@@ -16,6 +16,8 @@ Character vector of season strings (e.g., "2017-2018", "2018-2019", ...)
 Returns a vector of season strings from start_year to current season.
 }
 \examples{
-get_seasons_since(2020)
+\dontrun{
 get_seasons_since()  # From 2017
 }
+}
+\keyword{internal}

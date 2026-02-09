@@ -10,41 +10,39 @@ Description: Implements the panna player rating methodology for football
     splint-based analysis (time segments between substitutions/goals), and
     offensive/defensive rating separation.
 License: MIT + file LICENSE
+Depends:
+    R (>= 4.1.0)
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
 Imports:
-    arrow (>= 10.0.0),
     cli,
     data.table (>= 1.14.0),
     DBI,
-    doParallel,
-    dplyr (>= 1.0.0),
     duckdb (>= 0.9.0),
     glmnet (>= 4.0),
+    Matrix,
+    rlang,
+    tools
+Suggests:
+    arrow (>= 10.0.0),
+    doParallel,
+    ggplot2,
+    ggrepel,
     httr (>= 1.4.0),
     httr2,
     janitor,
     jsonlite,
-    lubridate,
-    magrittr,
-    Matrix,
-    parallel,
-    purrr,
-    rlang,
-    rvest (>= 1.0.0),
-    stringi,
-    tidyr,
-    tools
-Suggests:
-    ggplot2,
-    ggrepel,
     knitr,
     lifecycle,
+    parallel,
     piggyback,
     pROC,
     rmarkdown,
+    rvest (>= 1.0.0),
+    stringi,
     testthat (>= 3.0.0),
+    withr,
     xgboost
 Config/testthat/edition: 3
 VignetteBuilder: knitr

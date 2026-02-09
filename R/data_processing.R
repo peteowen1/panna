@@ -17,31 +17,26 @@ process_match_results <- function(results) {
 
   # Handle both home_xg and home_x_g column naming
   if ("home_x_g" %in% names(results) && !"home_xg" %in% names(results)) {
-    results <- results %>%
-      dplyr::rename(home_xg = home_x_g, away_xg = away_x_g)
+    names(results)[names(results) == "home_x_g"] <- "home_xg"
+    names(results)[names(results) == "away_x_g"] <- "away_xg"
   }
 
-  results <- results %>%
-    dplyr::mutate(
-      home_team = standardize_team_names(.data$home),
-      away_team = standardize_team_names(.data$away),
-      home_goals = as.numeric(.data$home_goals),
-      away_goals = as.numeric(.data$away_goals),
-      home_xg = as.numeric(.data$home_xg),
-      away_xg = as.numeric(.data$away_xg),
-      date = as.Date(.data$date),
-      season = .data$season_end_year
-    ) %>%
-    dplyr::mutate(
-      match_id = create_match_id(
-        paste0(as.numeric(.data$season) - 1, "-", .data$season),
-        .data$date,
-        .data$home_team,
-        .data$away_team
-      ),
-      goal_diff = .data$home_goals - .data$away_goals,
-      xg_diff = .data$home_xg - .data$away_xg
-    )
+  results$home_team <- standardize_team_names(results$home)
+  results$away_team <- standardize_team_names(results$away)
+  results$home_goals <- as.numeric(results$home_goals)
+  results$away_goals <- as.numeric(results$away_goals)
+  results$home_xg <- as.numeric(results$home_xg)
+  results$away_xg <- as.numeric(results$away_xg)
+  results$date <- as.Date(results$date)
+  results$season <- results$season_end_year
+  results$match_id <- create_match_id(
+    paste0(as.numeric(results$season) - 1, "-", results$season),
+    results$date,
+    results$home_team,
+    results$away_team
+  )
+  results$goal_diff <- results$home_goals - results$away_goals
+  results$xg_diff <- results$home_xg - results$away_xg
 
   # Select core columns plus optional league columns
   core_cols <- c(
@@ -55,8 +50,7 @@ process_match_results <- function(results) {
   if (has_country) optional_cols <- c(optional_cols, "country")
   if (has_season_year) optional_cols <- c(optional_cols, "season_end_year")
 
-  results <- results %>%
-    dplyr::select(dplyr::all_of(c(core_cols, optional_cols)))
+  results <- results[, c(core_cols, optional_cols), drop = FALSE]
 
   results
 }
@@ -74,7 +68,7 @@ process_match_results <- function(results) {
 #' @keywords internal
 process_match_lineups <- function(lineups, results) {
   if (is.null(lineups) || nrow(lineups) == 0) {
-    warning("No lineup data to process")
+    cli::cli_warn("No lineup data to process")
     return(NULL)
   }
 
@@ -92,8 +86,8 @@ process_match_lineups <- function(lineups, results) {
   dt_results <- data.table::as.data.table(results)
   dt_results <- unique(dt_results[, c("match_url", "match_id"), with = FALSE])
 
-  # Merge
-  dt_lineups <- merge(dt_lineups, dt_results, by = "match_url", all.x = TRUE)
+  # Join
+  dt_lineups <- dt_results[dt_lineups, on = "match_url"]
 
   # Standardize column names before processing using helper
   standardize_data_columns(dt_lineups, list(
@@ -189,14 +183,13 @@ process_match_lineups <- function(lineups, results) {
 #' @keywords internal
 process_match_events <- function(events, results) {
   if (is.null(events) || nrow(events) == 0) {
-    warning("No event data to process")
+    cli::cli_warn("No event data to process")
     return(NULL)
   }
 
   # Create match_id lookup with home team for is_home determination
-  match_lookup <- results %>%
-    dplyr::select(match_url, match_id, home_team, away_team) %>%
-    dplyr::distinct()
+  match_lookup <- unique(results[, c("match_url", "match_id", "home_team", "away_team"),
+                                 drop = FALSE])
 
   # Find the team and player columns
 
@@ -222,11 +215,12 @@ process_match_events <- function(events, results) {
   }
 
   # Join with match lookup to get match_id and home/away teams
-  events <- dplyr::left_join(events, match_lookup, by = "match_url")
+  events <- data.table::as.data.table(match_lookup)[data.table::as.data.table(events), on = "match_url"]
+  data.table::setDF(events)
 
   # Handle case where join failed (missing match_url matches)
   if (!"home_team" %in% names(events) || all(is.na(events$home_team))) {
-    warning("Could not match events to results. Events may be missing match_url.")
+    cli::cli_warn("Could not match events to results. Events may be missing match_url.")
     # Try to determine is_home from existing data if available
     if ("is_home" %in% names(events)) {
       # Already has is_home
@@ -236,50 +230,53 @@ process_match_events <- function(events, results) {
   }
 
   # Filter to rows that successfully joined
- events <- events %>%
-    dplyr::filter(!is.na(.data$match_id))
+  events <- events[!is.na(events$match_id), ]
 
   if (nrow(events) == 0) {
-    warning("No events matched to results after join")
+    cli::cli_warn("No events matched to results after join")
     return(NULL)
   }
 
   # Process events
-  events <- events %>%
-    dplyr::mutate(
-      team_std = if ("team" %in% names(.)) standardize_team_names(.data$team) else NA_character_,
-      # Determine is_home by comparing team to home_team (if both available)
-      is_home = if ("home_team" %in% names(.) && "team_std" %in% names(.)) {
-        .data$team_std == .data$home_team
-      } else if ("is_home" %in% names(.)) {
-        .data$is_home
-      } else {
-        NA
-      },
-      # Normalize event_type based on existing flags
-      event_type = dplyr::case_when(
-        .data$is_goal ~ "goal",
-        .data$is_sub ~ "substitution",
-        .data$is_red_card ~ "red_card",
-        TRUE ~ "other"
-      ),
-      minute = as.numeric(.data$minute)
-    ) %>%
-    dplyr::filter(.data$event_type %in% c("goal", "substitution", "red_card"))
+  evt_cols <- names(events)
+  has_team <- "team" %in% evt_cols
+  has_home_team <- "home_team" %in% evt_cols
+  has_is_home <- "is_home" %in% evt_cols
+
+  events$team_std <- if (has_team) standardize_team_names(events$team) else NA_character_
+  events$is_home <- if (has_home_team && has_team) {
+    events$team_std == events$home_team
+  } else if (has_is_home) {
+    events$is_home
+  } else {
+    NA
+  }
+  events$event_type <- data.table::fcase(
+    events$is_goal, "goal",
+    events$is_sub, "substitution",
+    events$is_red_card, "red_card",
+    default = "other"
+  )
+  events$minute <- as.numeric(events$minute)
+  events <- events[events$event_type %in% c("goal", "substitution", "red_card"), ]
 
   # Select final columns (handling missing columns gracefully)
-  result <- events %>%
-    dplyr::transmute(
-      match_id = .data$match_id,
-      team = if ("team_std" %in% names(.)) .data$team_std else .data$team,
-      is_home = .data$is_home,
-      event_type = .data$event_type,
-      minute = .data$minute,
-      player_name = if ("player" %in% names(.)) .data$player else NA_character_,
-      is_penalty = .data$is_penalty,
-      is_own_goal = .data$is_own_goal,
-      is_red_card = .data$is_red_card
-    )
+  evt_cols2 <- names(events)
+  has_team_std <- "team_std" %in% evt_cols2
+  has_player <- "player" %in% evt_cols2
+
+  result <- data.frame(
+    match_id = events$match_id,
+    team = if (has_team_std) events$team_std else events$team,
+    is_home = events$is_home,
+    event_type = events$event_type,
+    minute = events$minute,
+    player_name = if (has_player) events$player else NA_character_,
+    is_penalty = events$is_penalty,
+    is_own_goal = events$is_own_goal,
+    is_red_card = events$is_red_card,
+    stringsAsFactors = FALSE
+  )
 
   result
 }
@@ -321,7 +318,7 @@ parse_event_minute <- function(time_str) {
 #' @keywords internal
 process_shooting_data <- function(shooting, results) {
   if (is.null(shooting) || nrow(shooting) == 0) {
-    warning("No shooting data to process")
+    cli::cli_warn("No shooting data to process")
     return(NULL)
   }
 
@@ -339,8 +336,8 @@ process_shooting_data <- function(shooting, results) {
   dt_results <- data.table::as.data.table(results)
   dt_results <- unique(dt_results[, c("match_url", "match_id"), with = FALSE])
 
-  # Merge
-  dt_shooting <- merge(dt_shooting, dt_results, by = "match_url", all.x = TRUE)
+  # Join
+  dt_shooting <- dt_results[dt_shooting, on = "match_url"]
 
   # Process columns (vectorized) - use set() for speed
   data.table::set(dt_shooting, j = "player_name", value = standardize_player_names(dt_shooting$player))
@@ -388,7 +385,7 @@ process_shooting_data <- function(shooting, results) {
 #' @keywords internal
 process_advanced_stats <- function(stats, results, stat_type = "summary") {
   if (is.null(stats) || nrow(stats) == 0) {
-    warning(paste("No", stat_type, "data to process"))
+    cli::cli_warn("No {stat_type} data to process")
     return(NULL)
   }
 
@@ -409,8 +406,8 @@ process_advanced_stats <- function(stats, results, stat_type = "summary") {
   dt_results <- data.table::as.data.table(results)
   dt_results <- unique(dt_results[, c("match_url", "match_id"), with = FALSE])
 
-  # Merge to get match_id
-  dt_stats <- merge(dt_stats, dt_results, by = "match_url", all.x = TRUE)
+  # Join to get match_id
+  dt_stats <- dt_results[dt_stats, on = "match_url"]
 
   # Standardize column names using helper
   standardize_data_columns(dt_stats, list(
@@ -521,17 +518,16 @@ get_stat_columns <- function(stat_type) {
 #' @param shooting Processed shooting data
 #'
 #' @return Data frame with npxG by player and match
-#' @export
+#' @keywords internal
 calculate_npxg <- function(shooting) {
-  shooting %>%
-    dplyr::filter(!.data$is_penalty) %>%
-    dplyr::group_by(.data$match_id, .data$team, .data$player_name) %>%
-    dplyr::summarise(
-      npxg = sum(.data$xg, na.rm = TRUE),
-      npg = sum(.data$is_goal, na.rm = TRUE),
-      np_shots = dplyr::n(),
-      .groups = "drop"
-    )
+  dt <- data.table::as.data.table(shooting)
+  dt <- dt[is_penalty == FALSE]
+  result <- dt[, .(
+    npxg = sum(xg, na.rm = TRUE),
+    npg = sum(is_goal, na.rm = TRUE),
+    np_shots = .N
+  ), by = .(match_id, team, player_name)]
+  as.data.frame(result)
 }
 
 
@@ -542,7 +538,7 @@ calculate_npxg <- function(shooting) {
 #' @param processed_data List of processed data frames
 #'
 #' @return List with merged data frames
-#' @export
+#' @keywords internal
 merge_processed_data <- function(processed_data) {
   list(
     matches = processed_data$results,
@@ -704,7 +700,7 @@ process_all_data <- function(raw_data, show_progress = TRUE, cache_dir = NULL, r
 #' @param verbose Whether to print filtering report
 #'
 #' @return List with filtered splint_data and filtering report
-#' @export
+#' @keywords internal
 filter_bad_xg_data <- function(splint_data, zero_xg_threshold = 20, verbose = TRUE) {
   splints <- splint_data$splints
 
@@ -726,26 +722,21 @@ filter_bad_xg_data <- function(splint_data, zero_xg_threshold = 20, verbose = TR
   if (has_league) group_cols <- c(group_cols, "league")
   if (has_season) group_cols <- c(group_cols, "season_end_year")
 
-  xg_quality <- splints %>%
-    dplyr::group_by(dplyr::across(dplyr::all_of(group_cols))) %>%
-    dplyr::summarise(
-      n_splints = dplyr::n(),
-      n_matches = dplyr::n_distinct(.data$match_id),
-      zero_xg_count = sum(.data$npxg_home == 0 & .data$npxg_away == 0, na.rm = TRUE),
-      zero_xg_pct = .data$zero_xg_count / .data$n_splints * 100,
-      avg_npxg = mean(.data$npxg_home + .data$npxg_away, na.rm = TRUE),
-      .groups = "drop"
-    ) %>%
-    dplyr::mutate(
-      is_bad = .data$zero_xg_pct >= zero_xg_threshold
-    )
+  dt <- data.table::as.data.table(splints)
+  xg_quality <- dt[, .(
+    n_splints = .N,
+    n_matches = data.table::uniqueN(match_id),
+    zero_xg_count = sum(npxg_home == 0 & npxg_away == 0, na.rm = TRUE),
+    avg_npxg = mean(npxg_home + npxg_away, na.rm = TRUE)
+  ), by = group_cols]
+  xg_quality[, zero_xg_pct := zero_xg_count / n_splints * 100]
+  xg_quality[, is_bad := zero_xg_pct >= zero_xg_threshold]
+  xg_quality <- as.data.frame(xg_quality)
 
   # Identify bad groups
-  bad_groups <- xg_quality %>%
-    dplyr::filter(.data$is_bad)
+  bad_groups <- xg_quality[xg_quality$is_bad, ]
 
-  good_groups <- xg_quality %>%
-    dplyr::filter(!.data$is_bad)
+  good_groups <- xg_quality[!xg_quality$is_bad, ]
 
   if (verbose) {
     cat("\n=== xG Data Quality Check ===\n")
@@ -800,10 +791,8 @@ filter_bad_xg_data <- function(splint_data, zero_xg_threshold = 20, verbose = TR
     valid_splint_ids <- valid_splints$splint_id
 
     splint_data$splints <- valid_splints
-    splint_data$players <- splint_data$players %>%
-      dplyr::filter(.data$splint_id %in% valid_splint_ids)
-    splint_data$match_info <- splint_data$match_info %>%
-      dplyr::filter(.data$match_id %in% unique(valid_splints$match_id))
+    splint_data$players <- splint_data$players[splint_data$players$splint_id %in% valid_splint_ids, ]
+    splint_data$match_info <- splint_data$match_info[splint_data$match_info$match_id %in% unique(valid_splints$match_id), ]
 
     if (verbose) {
       cat(sprintf("\nFiltered: %d -> %d splints (removed %d)\n",

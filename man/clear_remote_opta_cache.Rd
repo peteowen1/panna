@@ -11,7 +11,7 @@ Removes cached remote Opta data, forcing a fresh download on next access.
 }
 \examples{
 \dontrun{
-# Force fresh download on next remote load
 clear_remote_opta_cache()
 }
 }
+\keyword{internal}

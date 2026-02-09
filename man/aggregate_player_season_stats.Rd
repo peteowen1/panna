@@ -19,3 +19,4 @@ Data frame with season-level player stats
 \description{
 Combines match-level stats into season aggregates.
 }
+\keyword{internal}

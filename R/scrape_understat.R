@@ -1,1062 +1,8 @@
-# Understat scraping functions
+# Understat scraping orchestration
 #
-# These functions scrape match data from Understat, which embeds JSON data
-# in <script> tags. Understat covers Big 5 leagues + Russia with detailed
-# xG data at the shot level.
-
-#' @importFrom jsonlite fromJSON
-#' @importFrom stringi stri_unescape_unicode
-NULL
-
-# ============================================================================
-# HTTP Layer
-# ============================================================================
-
-#' Get browser headers for Understat requests
-#'
-#' Returns headers that mimic a real browser.
-#'
-#' @param referer Optional referer URL (default: Understat home)
-#'
-#' @return Named character vector of HTTP headers
-#' @keywords internal
-get_understat_headers <- function(referer = "https://understat.com/") {
-  # Pool of realistic User-Agent strings
-  user_agents <- c(
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:133.0) Gecko/20100101 Firefox/133.0"
-  )
-
-  ua <- sample(user_agents, 1)
-
-  c(
-    "User-Agent" = ua,
-    "Accept" = "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-    "Accept-Language" = "en-US,en;q=0.9",
-    "Accept-Encoding" = "gzip, deflate, br",
-    "Connection" = "keep-alive",
-    "Upgrade-Insecure-Requests" = "1",
-    "Referer" = referer,
-    "DNT" = "1"
-  )
-}
-
-
-# Environment for Understat session storage
-.understat_env <- new.env(parent = emptyenv())
-
-#' Get or create Understat session
-#'
-#' Returns a persistent httr session handle that maintains cookies.
-#'
-#' @param reset If TRUE, creates a new session (default FALSE)
-#'
-#' @return httr handle object
-#' @export
-get_understat_session <- function(reset = FALSE) {
-  if (!exists("session", envir = .understat_env) || reset) {
-    .understat_env$session <- httr::handle("https://understat.com")
-  }
-  .understat_env$session
-}
-
-
-#' Reset Understat session
-#'
-#' Clears cookies and creates fresh session.
-#'
-#' @export
-reset_understat_session <- function() {
-  .understat_env$session <- httr::handle("https://understat.com")
-  message("Understat session reset - cookies cleared")
-}
-
-
-#' Fetch Understat page HTML
-#'
-#' Makes HTTP request with browser headers.
-#'
-#' @param url Understat URL
-#' @param timeout Request timeout in seconds (default 30)
-#'
-#' @return Parsed HTML document (rvest xml_document) or NULL on failure
-#' @export
-fetch_understat_page <- function(url, timeout = 30) {
-  # Validate URL
-  if (!grepl("understat\\.com", url)) {
-    stop("Invalid Understat URL: ", url)
-  }
-
-  # Make request with session cookies and retry logic
-  response <- fetch_with_retry(
-    url,
-    httr::add_headers(.headers = get_understat_headers()),
-    httr::timeout(timeout),
-    handle = get_understat_session()
-  )
-
-  # Check for errors returned by fetch_with_retry
-  if (is.null(response)) {
-    if (isTRUE(attr(response, "rate_limited"))) {
-      warning("Rate limited by Understat (429). Stopping.")
-    } else if (isTRUE(attr(response, "connection_error"))) {
-      warning("Connection error: ", attr(response, "error_message"))
-    } else {
-      warning("Failed to fetch ", url)
-    }
-    return(response)
-  }
-
-  # Parse HTML
-  html_content <- httr::content(response, "text", encoding = "UTF-8")
-  rvest::read_html(html_content)
-}
-
-
-# ============================================================================
-# JSON Extraction Layer
-# ============================================================================
-
-#' Get all script tags from Understat page
-#'
-#' Extracts the text content of all script tags.
-#'
-#' @param page Parsed HTML document
-#'
-#' @return Character vector of script contents
-#' @keywords internal
-get_understat_scripts <- function(page) {
-  scripts <- rvest::html_nodes(page, "script")
-  rvest::html_text(scripts)
-}
-
-
-#' Extract JSON data from Understat script
-#'
-#' Understat embeds data as JSON in script tags with pattern:
-#' \code{varName = JSON.parse('...')}
-#'
-#' @param scripts Character vector of script contents
-#' @param var_name Variable name to extract (e.g., "rostersData", "shotsData")
-#'
-#' @return Parsed JSON as R list, or NULL if not found
-#' @keywords internal
-extract_json_element <- function(scripts, var_name) {
-  # Pattern: varName = JSON.parse('...')
-  pattern <- paste0(var_name, "\\s*=\\s*JSON\\.parse\\('(.+?)'\\)")
-
-  for (script in scripts) {
-    match <- regmatches(script, regexpr(pattern, script, perl = TRUE))
-    if (length(match) > 0 && nchar(match) > 0) {
-      # Extract the JSON string
-      json_str <- sub(paste0(var_name, "\\s*=\\s*JSON\\.parse\\('"), "", match)
-      json_str <- sub("'\\)$", "", json_str)
-
-      # Unescape unicode and special characters
-      json_str <- parse_understat_json(json_str)
-
-      # Parse JSON
-      tryCatch({
-        return(jsonlite::fromJSON(json_str, simplifyVector = TRUE))
-      }, error = function(e) {
-        warning("Failed to parse ", var_name, " JSON: ", e$message)
-        return(NULL)
-      })
-    }
-  }
-
-  NULL
-}
-
-
-#' Parse and clean Understat JSON string
-#'
-#' Unescapes hex and unicode characters and fixes JSON formatting issues.
-#' Understat uses \\xNN hex escapes which need to be converted to unicode.
-#'
-#' @param json_str Raw JSON string from Understat
-#'
-#' @return Cleaned JSON string
-#' @keywords internal
-parse_understat_json <- function(json_str) {
-  # Convert hex escapes (\\xNN) to unicode escapes (\\u00NN)
-  # Understat uses hex format: \x7B for { instead of unicode \u007B
-  json_str <- gsub("\\\\x([0-9A-Fa-f]{2})", "\\\\u00\\1", json_str)
-
-  # Unescape unicode sequences
-  json_str <- stringi::stri_unescape_unicode(json_str)
-
-  # Fix escaped quotes
-  json_str <- gsub("\\\\'", "'", json_str)
-
-  json_str
-}
-
-
-# ============================================================================
-# Match Data Extraction
-# ============================================================================
-
-#' Extract match metadata from Understat page
-#'
-#' Parses match info including teams, scores, and xG values.
-#' Note: Understat uses a flat JSON structure for match_info.
-#'
-#' @param page Parsed HTML document
-#' @param understat_id Understat match ID
-#'
-#' @return Data frame with match metadata (single row)
-#' @keywords internal
-extract_understat_metadata <- function(page, understat_id) {
-  scripts <- get_understat_scripts(page)
-
-  # Extract match_info
-  match_info <- extract_json_element(scripts, "match_info")
-
-  if (is.null(match_info)) {
-    warning("Could not extract match_info for match ", understat_id)
-    return(NULL)
-  }
-
-  # Understat uses flat structure:
-  # team_h, team_a for names
-  # h, a for team IDs
-  # h_goals, a_goals for scores
-  # h_xg, a_xg for expected goals
-
-  # Build metadata data frame
-  data.frame(
-    understat_id = as.character(match_info$id %||% understat_id),
-    match_url = get_understat_match_url(understat_id),
-    home_team = as.character(match_info$team_h %||% NA_character_),
-    away_team = as.character(match_info$team_a %||% NA_character_),
-    home_team_id = as.character(match_info$h %||% NA_character_),
-    away_team_id = as.character(match_info$a %||% NA_character_),
-    home_score = as.integer(match_info$h_goals %||% NA_integer_),
-    away_score = as.integer(match_info$a_goals %||% NA_integer_),
-    home_xg = as.numeric(match_info$h_xg %||% NA_real_),
-    away_xg = as.numeric(match_info$a_xg %||% NA_real_),
-    match_date = as.character(match_info$date %||% NA_character_),
-    league = as.character(match_info$league %||% NA_character_),
-    season = as.character(match_info$season %||% NA_character_),
-    home_shots = as.integer(match_info$h_shot %||% NA_integer_),
-    away_shots = as.integer(match_info$a_shot %||% NA_integer_),
-    home_shots_on_target = as.integer(match_info$h_shotOnTarget %||% NA_integer_),
-    away_shots_on_target = as.integer(match_info$a_shotOnTarget %||% NA_integer_),
-    home_deep = as.integer(match_info$h_deep %||% NA_integer_),
-    away_deep = as.integer(match_info$a_deep %||% NA_integer_),
-    home_ppda = as.numeric(match_info$h_ppda %||% NA_real_),
-    away_ppda = as.numeric(match_info$a_ppda %||% NA_real_),
-    stringsAsFactors = FALSE
-  )
-}
-
-
-#' Fetch match data from Understat API
-#'
-#' Calls the undocumented API endpoint that returns full match data.
-#' This endpoint provides rosters and shots data that isn't in the main HTML.
-#'
-#' @param understat_id Understat match ID
-#'
-#' @return List with rosters and shots data, or NULL on failure
-#' @keywords internal
-fetch_understat_match_api <- function(understat_id) {
-  url <- sprintf("https://understat.com/getMatchData/%s", understat_id)
-
-  response <- fetch_with_retry(
-    url,
-    httr::add_headers(.headers = c(
-      get_understat_headers(),
-      "Accept" = "application/json, text/javascript, */*; q=0.01",
-      "X-Requested-With" = "XMLHttpRequest"
-    )),
-    httr::timeout(30),
-    handle = get_understat_session()
-  )
-
-  if (is.null(response)) {
-    return(NULL)
-  }
-
-  content <- httr::content(response, "text", encoding = "UTF-8")
-
-  # Parse JSON
-  tryCatch({
-    jsonlite::fromJSON(content, simplifyVector = FALSE)
-  }, error = function(e) {
-    warning("Failed to parse match API response: ", e$message)
-    NULL
-  })
-}
-
-
-#' Extract roster data from Understat API response
-#'
-#' Parses player statistics from the API rosters data.
-#'
-#' @param api_data List returned from fetch_understat_match_api
-#' @param understat_id Understat match ID
-#'
-#' @return Data frame with player stats, or NULL if not found
-#' @keywords internal
-extract_understat_roster <- function(api_data, understat_id) {
-  if (is.null(api_data) || is.null(api_data$rosters)) {
-    return(NULL)
-  }
-
-  rosters <- api_data$rosters
-
-  if (is.null(rosters)) {
-    return(NULL)
-  }
-
-  # Process home and away rosters
-  process_team_roster <- function(team_data, is_home) {
-    if (is.null(team_data) || length(team_data) == 0) {
-      return(NULL)
-    }
-
-    # Handle both list and data frame formats
-    if (is.data.frame(team_data)) {
-      df <- team_data
-    } else if (is.list(team_data)) {
-      df <- tryCatch({
-        dplyr::bind_rows(lapply(team_data, as.data.frame, stringsAsFactors = FALSE))
-      }, error = function(e) {
-        do.call(rbind, lapply(team_data, function(x) {
-          as.data.frame(x, stringsAsFactors = FALSE)
-        }))
-      })
-    } else {
-      return(NULL)
-    }
-
-    if (nrow(df) == 0) return(NULL)
-
-    df$is_home <- is_home
-    df$understat_id <- as.character(understat_id)
-    df
-  }
-
-  home_roster <- process_team_roster(rosters$h, TRUE)
-  away_roster <- process_team_roster(rosters$a, FALSE)
-
-  # Combine
-  result <- dplyr::bind_rows(home_roster, away_roster)
-
-  if (is.null(result) || nrow(result) == 0) {
-    return(NULL)
-  }
-
-  # Clean column names
-  result <- clean_column_names(result)
-
-  # Ensure required columns exist
-  result$understat_id <- as.character(understat_id)
-
-  result
-}
-
-
-#' Extract shots data from Understat API response
-#'
-#' Parses shot-level xG data from the API shots data.
-#'
-#' @param api_data List returned from fetch_understat_match_api
-#' @param understat_id Understat match ID
-#'
-#' @return Data frame with shot data, or NULL if not found
-#' @keywords internal
-extract_understat_shots <- function(api_data, understat_id) {
-  if (is.null(api_data) || is.null(api_data$shots)) {
-    return(NULL)
-  }
-
-  shots <- api_data$shots
-
-  if (is.null(shots)) {
-    return(NULL)
-  }
-
-  # Process home and away shots
-  process_team_shots <- function(team_shots, is_home) {
-    if (is.null(team_shots) || length(team_shots) == 0) {
-      return(NULL)
-    }
-
-    # Convert list of shots to data frame
-    # Need to handle NULL/missing fields (e.g., player_assisted is often missing)
-    if (is.data.frame(team_shots)) {
-      df <- team_shots
-    } else if (is.list(team_shots)) {
-      # Normalize each shot: replace NULL with NA, convert to list
-      normalized <- lapply(team_shots, function(shot) {
-        # Convert each field, replacing NULL/empty with NA
-        lapply(shot, function(val) {
-          if (is.null(val) || length(val) == 0) {
-            NA_character_
-          } else {
-            as.character(val)
-          }
-        })
-      })
-
-      df <- tryCatch({
-        dplyr::bind_rows(lapply(normalized, as.data.frame, stringsAsFactors = FALSE))
-      }, error = function(e) {
-        # Fallback: manually create data frame
-        all_cols <- unique(unlist(lapply(normalized, names)))
-        rows <- lapply(normalized, function(shot) {
-          row <- setNames(rep(NA_character_, length(all_cols)), all_cols)
-          for (col in names(shot)) {
-            row[col] <- shot[[col]]
-          }
-          as.data.frame(as.list(row), stringsAsFactors = FALSE)
-        })
-        do.call(rbind, rows)
-      })
-    } else {
-      return(NULL)
-    }
-
-    if (is.null(df) || nrow(df) == 0) return(NULL)
-
-    df$is_home <- is_home
-    df
-  }
-
-  home_shots <- process_team_shots(shots$h, TRUE)
-  away_shots <- process_team_shots(shots$a, FALSE)
-
-  # Combine
-  result <- dplyr::bind_rows(home_shots, away_shots)
-
-  if (is.null(result) || nrow(result) == 0) {
-    return(NULL)
-  }
-
-  # Clean column names
-  result <- clean_column_names(result)
-
-  # Add match ID
-  result$understat_id <- as.character(understat_id)
-
-  result
-}
-
-
-#' Extract timeline events from Understat match page
-#'
-#' Parses the HTML timeline to extract goals, substitutions, and cards.
-#' This data IS available in the initial HTML (unlike roster/shots).
-#'
-#' @param page Parsed HTML document
-#' @param understat_id Understat match ID
-#'
-#' @return Data frame with events (goals, subs, cards), or NULL if not found
-#' @keywords internal
-extract_understat_events <- function(page, understat_id) {
-  # Find all timeline items
-  timeline_items <- rvest::html_nodes(page, ".timeline-item")
-
-  if (length(timeline_items) == 0) {
-    return(NULL)
-  }
-
-  events <- lapply(timeline_items, function(item) {
-    # Get minute
-    minute_node <- rvest::html_node(item, ".timeline-time span")
-    minute <- if (!is.na(minute_node)) {
-      gsub("'", "", rvest::html_text(minute_node, trim = TRUE))
-    } else {
-      NA_character_
-    }
-
-    # Determine team (home = no -right class, away = has -right class)
-    item_class <- rvest::html_attr(item, "class")
-    is_away <- grepl("timeline-item-right", item_class)
-    team_side <- if (is_away) "away" else "home"
-
-    # Check for different event types
-    content <- rvest::html_node(item, ".timeline-content")
-
-    # Goal
-    goal_icon <- rvest::html_node(content, ".fa-futbol")
-    if (!is.na(goal_icon)) {
-      player_node <- rvest::html_node(content, ".timeline-player-name")
-      player_name <- if (!is.na(player_node)) rvest::html_text(player_node, trim = TRUE) else NA_character_
-      player_url <- if (!is.na(player_node)) rvest::html_attr(player_node, "href") else NA_character_
-      player_id <- if (!is.na(player_url)) gsub(".*/player/", "", player_url) else NA_character_
-
-      score_node <- rvest::html_node(content, ".timeline-match-score")
-      score <- if (!is.na(score_node)) rvest::html_text(score_node, trim = TRUE) else NA_character_
-
-      return(data.frame(
-        minute = minute,
-        event_type = "goal",
-        team_side = team_side,
-        player = player_name,
-        player_id = player_id,
-        player_off = NA_character_,
-        player_off_id = NA_character_,
-        card_type = NA_character_,
-        score = score,
-        stringsAsFactors = FALSE
-      ))
-    }
-
-    # Yellow card
-    yellow_card <- rvest::html_node(content, ".yellow-card")
-    if (!is.na(yellow_card)) {
-      player_node <- rvest::html_node(content, ".timeline-player-name")
-      player_name <- if (!is.na(player_node)) rvest::html_text(player_node, trim = TRUE) else NA_character_
-      player_url <- if (!is.na(player_node)) rvest::html_attr(player_node, "href") else NA_character_
-      player_id <- if (!is.na(player_url)) gsub(".*/player/", "", player_url) else NA_character_
-
-      return(data.frame(
-        minute = minute,
-        event_type = "card",
-        team_side = team_side,
-        player = player_name,
-        player_id = player_id,
-        player_off = NA_character_,
-        player_off_id = NA_character_,
-        card_type = "yellow",
-        score = NA_character_,
-        stringsAsFactors = FALSE
-      ))
-    }
-
-    # Red card
-    red_card <- rvest::html_node(content, ".red-card")
-    if (!is.na(red_card)) {
-      player_node <- rvest::html_node(content, ".timeline-player-name")
-      player_name <- if (!is.na(player_node)) rvest::html_text(player_node, trim = TRUE) else NA_character_
-      player_url <- if (!is.na(player_node)) rvest::html_attr(player_node, "href") else NA_character_
-      player_id <- if (!is.na(player_url)) gsub(".*/player/", "", player_url) else NA_character_
-
-      return(data.frame(
-        minute = minute,
-        event_type = "card",
-        team_side = team_side,
-        player = player_name,
-        player_id = player_id,
-        player_off = NA_character_,
-        player_off_id = NA_character_,
-        card_type = "red",
-        score = NA_character_,
-        stringsAsFactors = FALSE
-      ))
-    }
-
-    # Substitution (has both arrow-down and arrow-up icons)
-    sub_off <- rvest::html_node(content, ".fa-long-arrow-alt-down")
-    if (!is.na(sub_off)) {
-      # Find all timeline-row elements (there can be multiple subs at same minute)
-      rows <- rvest::html_nodes(content, ".timeline-row")
-
-      sub_events <- lapply(rows, function(row) {
-        # Player going off (before the down arrow)
-        off_group <- rvest::html_node(row, "[title='Substituted off']")
-        if (is.na(off_group)) off_group <- row
-
-        player_off_node <- rvest::html_node(off_group, ".timeline-player-name")
-        player_off <- if (!is.na(player_off_node)) rvest::html_text(player_off_node, trim = TRUE) else NA_character_
-        player_off_url <- if (!is.na(player_off_node)) rvest::html_attr(player_off_node, "href") else NA_character_
-        player_off_id <- if (!is.na(player_off_url)) gsub(".*/player/", "", player_off_url) else NA_character_
-
-        # Player coming on
-        on_group <- rvest::html_node(row, "[title='Substituted on']")
-        player_on_node <- if (!is.na(on_group)) rvest::html_node(on_group, ".timeline-player-name") else NA
-        player_on <- if (!is.na(player_on_node)) rvest::html_text(player_on_node, trim = TRUE) else NA_character_
-        player_on_url <- if (!is.na(player_on_node)) rvest::html_attr(player_on_node, "href") else NA_character_
-        player_on_id <- if (!is.na(player_on_url)) gsub(".*/player/", "", player_on_url) else NA_character_
-
-        data.frame(
-          minute = minute,
-          event_type = "substitution",
-          team_side = team_side,
-          player = player_on,
-          player_id = player_on_id,
-          player_off = player_off,
-          player_off_id = player_off_id,
-          card_type = NA_character_,
-          score = NA_character_,
-          stringsAsFactors = FALSE
-        )
-      })
-
-      return(dplyr::bind_rows(sub_events))
-    }
-
-    # No recognized event
-    NULL
-  })
-
-  # Combine all events
-  result <- dplyr::bind_rows(events)
-
-  if (is.null(result) || nrow(result) == 0) {
-    return(NULL)
-  }
-
-  # Add match ID
-  result$understat_id <- as.character(understat_id)
-
-  # Clean column names
-  result <- clean_column_names(result)
-
-  result
-}
-
-
-# ============================================================================
-# Fixtures Scraping
-# ============================================================================
-
-#' Scrape fixtures from Understat league page
-#'
-#' Gets list of matches with Understat IDs for a league and season.
-#'
-#' @note As of 2024, Understat loads fixture data via JavaScript. This function
-#'   will return NULL because the data is not in the initial HTML response.
-#'   Use \code{scrape_understat_match_range()} as an alternative to scrape
-#'   matches by ID range, or use RSelenium/chromote for JS-rendered content.
-#'
-#' @param league League code (e.g., "ENG", "ESP")
-#' @param season Season year (e.g., 2024 or "2024")
-#' @param completed_only If TRUE, only return completed matches (default TRUE)
-#'
-#' @return Data frame with match info including understat_id, or NULL if
-#'   data cannot be extracted (expected for current Understat site structure)
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' # This will likely return NULL due to JS-loaded content
-#' fixtures <- scrape_understat_fixtures("ENG", 2024)
-#'
-#' # Alternative: use match ID range
-#' results <- scrape_understat_match_range(28900, 28910, "ENG", 2024)
-#' }
-scrape_understat_fixtures <- function(league, season, completed_only = TRUE) {
-  # Get league URL
-  url <- get_understat_league_url(league, season)
-
-  progress_msg(sprintf("Fetching Understat fixtures: %s %s", league, season))
-
-  # Fetch page
-  page <- fetch_understat_page(url)
-
-  if (is.null(page)) {
-    warning("Failed to fetch Understat league page")
-    return(NULL)
-  }
-
-  # Extract datesData which contains all fixtures
-  # NOTE: This data is loaded via JavaScript and may not be present
-  scripts <- get_understat_scripts(page)
-  dates_data <- extract_json_element(scripts, "datesData")
-
-  if (is.null(dates_data)) {
-    warning("Could not extract datesData from league page. ",
-            "Understat loads fixtures via JavaScript. ",
-            "Use scrape_understat_match_range() as an alternative.")
-    return(NULL)
-  }
-
-  # Convert to data frame
-  if (is.list(dates_data) && !is.data.frame(dates_data)) {
-    fixtures <- tryCatch({
-      dplyr::bind_rows(lapply(dates_data, function(x) {
-        as.data.frame(x, stringsAsFactors = FALSE)
-      }))
-    }, error = function(e) {
-      do.call(rbind, lapply(dates_data, function(x) {
-        as.data.frame(x, stringsAsFactors = FALSE)
-      }))
-    })
-  } else {
-    fixtures <- as.data.frame(dates_data, stringsAsFactors = FALSE)
-  }
-
-  if (is.null(fixtures) || nrow(fixtures) == 0) {
-    warning("No fixtures found")
-    return(NULL)
-  }
-
-  # Clean column names
-  fixtures <- clean_column_names(fixtures)
-
-  # Filter to completed matches if requested
-  if (completed_only && "is_result" %in% names(fixtures)) {
-    fixtures <- fixtures[fixtures$is_result == TRUE, ]
-  }
-
-  # Add league and season context
-  fixtures$league <- league
-  fixtures$season <- as.character(season)
-
-  progress_msg(sprintf("  Found %d matches", nrow(fixtures)))
-
-  fixtures
-}
-
-
-#' Scrape matches by Understat ID range
-#'
-#' Iteratively scrapes matches within a given ID range. This is useful when
-#' fixture lists cannot be obtained directly (since Understat loads them via JS).
-#'
-#' Understat match IDs are sequential integers. Recent seasons tend to have
-#' higher IDs. For example, 2024-25 Premier League matches are in the ~28000 range.
-#'
-#' @param start_id Starting match ID
-#' @param end_id Ending match ID (inclusive)
-#' @param league League code for caching (e.g., "ENG")
-#' @param season Season for caching (e.g., 2024)
-#' @param delay Seconds between requests (default 3)
-#' @param skip_invalid If TRUE (default), silently skip invalid match IDs
-#'
-#' @return List of match results (metadata only, roster/shots require JS)
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' # Scrape 10 matches starting from ID 28900
-#' results <- scrape_understat_match_range(28900, 28909, "ENG", 2024)
-#'
-#' # Extract just the metadata
-#' metadata <- dplyr::bind_rows(lapply(results, function(x) x$metadata))
-#' }
-scrape_understat_match_range <- function(start_id, end_id, league, season,
-                                          delay = 3, skip_invalid = TRUE) {
-  start_id <- as.integer(start_id)
-  end_id <- as.integer(end_id)
-
-  if (start_id > end_id) {
-    stop("start_id must be <= end_id")
-  }
-
-  results <- list()
-  n_total <- end_id - start_id + 1
-  n_success <- 0
-  n_failed <- 0
-
-  progress_msg(sprintf("Scraping Understat matches %d to %d (%d total)",
-                       start_id, end_id, n_total))
-
-  for (match_id in start_id:end_id) {
-    # Rate limiting
-    if (match_id > start_id) {
-      Sys.sleep(delay)
-    }
-
-    result <- tryCatch({
-      scrape_understat_match(match_id, league, season, save_cache = TRUE)
-    }, error = function(e) {
-      if (!skip_invalid) {
-        warning("Match ", match_id, ": ", e$message)
-      }
-      NULL
-    })
-
-    if (!is.null(result) && !is.null(result$metadata)) {
-      n_success <- n_success + 1
-      results[[as.character(match_id)]] <- result
-      progress_msg(sprintf("  [%d/%d] Match %d: %s vs %s",
-                           match_id - start_id + 1, n_total, match_id,
-                           result$metadata$home_team, result$metadata$away_team))
-    } else {
-      n_failed <- n_failed + 1
-      if (!skip_invalid) {
-        progress_msg(sprintf("  [%d/%d] Match %d: invalid or no data",
-                             match_id - start_id + 1, n_total, match_id))
-      }
-    }
-  }
-
-  progress_msg(sprintf("Completed: %d successful, %d failed/invalid",
-                       n_success, n_failed))
-
-  results
-}
-
-
-# ============================================================================
-# Cache Management (Parquet-based)
-# ============================================================================
-
-#' Get Understat parquet file path
-#'
-#' Returns path using hierarchical structure:
-#' \code{\{pannadata_dir\}/understat/\{table_type\}/\{league\}/\{season\}.parquet}
-#'
-#' @param table_type Table type (metadata, roster, shots, events)
-#' @param league League code
-#' @param season Season string
-#' @param create Whether to create parent directory if missing (default TRUE)
-#'
-#' @return Path to parquet file
-#' @keywords internal
-get_understat_parquet_path <- function(table_type, league, season, create = TRUE) {
-  base_dir <- pannadata_dir()
-
-  # Use understat/{table_type} structure
-  cache_dir <- file.path(base_dir, "understat", table_type, league)
-
-  if (create && !dir.exists(cache_dir)) {
-    dir.create(cache_dir, recursive = TRUE)
-  }
-
-  file.path(cache_dir, paste0(as.character(season), ".parquet"))
-}
-
-
-#' Save Understat match table to parquet cache
-#'
-#' Appends match data to existing parquet file or creates new one.
-#' Matches are identified by understat_id to avoid duplicates.
-#' Uses temp file + rename to avoid Windows file locking issues.
-#'
-#' @param data Data frame to save (single match)
-#' @param league League code
-#' @param season Season string
-#' @param table_type Type of table (metadata, roster, shots)
-#'
-#' @return Invisible path to saved file
-#' @keywords internal
-save_understat_table <- function(data, league, season, table_type) {
-  if (is.null(data) || nrow(data) == 0) {
-    return(invisible(NULL))
-  }
-
-  parquet_path <- get_understat_parquet_path(table_type, league, season)
-
-  # Read existing data if parquet exists
-  existing_data <- NULL
-  if (file.exists(parquet_path)) {
-    existing_data <- tryCatch({
-      # Read into memory and immediately release file handle
-      df <- as.data.frame(arrow::read_parquet(parquet_path))
-      gc()  # Help release file handles
-      df
-    }, error = function(e) NULL)
-  }
-
-  # Combine: remove old version of this match if exists, then append new
-  if (!is.null(existing_data) && nrow(existing_data) > 0) {
-    # Get the understat_id from new data
-    new_id <- data$understat_id[1]
-    # Filter out old version of this match
-    existing_data <- existing_data[existing_data$understat_id != new_id, ]
-    # Combine
-    combined <- dplyr::bind_rows(existing_data, data)
-  } else {
-    combined <- data
-  }
-
-  # Write to temp file first, then rename (avoids Windows file locking)
-  temp_path <- paste0(parquet_path, ".tmp")
-  arrow::write_parquet(combined, temp_path)
-
-  # Remove old file and rename temp
-  if (file.exists(parquet_path)) {
-    tryCatch({
-      file.remove(parquet_path)
-    }, error = function(e) {
-      # If can't remove, wait a bit and try again
-      Sys.sleep(0.5)
-      gc()
-      file.remove(parquet_path)
-    })
-  }
-  file.rename(temp_path, parquet_path)
-
-  invisible(parquet_path)
-}
-
-
-#' Load Understat data from parquet cache
-#'
-#' @param league League code
-#' @param season Season string
-#' @param understat_id Optional specific match ID to load
-#' @param table_type Type of table
-#'
-#' @return Data frame or NULL if not cached
-#' @keywords internal
-load_understat_table <- function(league, season, understat_id = NULL, table_type) {
-  parquet_path <- get_understat_parquet_path(table_type, league, season, create = FALSE)
-
-  if (!file.exists(parquet_path)) {
-    return(NULL)
-  }
-
-  data <- tryCatch({
-    arrow::read_parquet(parquet_path)
-  }, error = function(e) NULL)
-
-  if (is.null(data)) {
-    return(NULL)
-  }
-
-  # Filter to specific match if requested
-
-  if (!is.null(understat_id)) {
-    data <- data[data$understat_id == as.character(understat_id), ]
-    if (nrow(data) == 0) {
-      return(NULL)
-    }
-  }
-
-  data
-}
-
-
-#' Check if Understat match is cached
-#'
-#' @param league League code
-#' @param season Season string
-#' @param understat_id Understat match ID
-#'
-#' @return Logical - TRUE if match has been scraped
-#' @keywords internal
-is_understat_cached <- function(league, season, understat_id) {
-  parquet_path <- get_understat_parquet_path("metadata", league, season, create = FALSE)
-
-  if (!file.exists(parquet_path)) {
-    return(FALSE)
-  }
-
-  # Check if this specific match ID is in the parquet
-  data <- tryCatch({
-    arrow::read_parquet(parquet_path)
-  }, error = function(e) NULL)
-
-  if (is.null(data)) {
-    return(FALSE)
-  }
-
-  as.character(understat_id) %in% as.character(data$understat_id)
-}
-
-
-#' Get cached Understat match IDs
-#'
-#' @param league League code
-#' @param season Season string
-#'
-#' @return Character vector of cached understat_ids
-#' @export
-get_cached_understat_ids <- function(league, season) {
-  parquet_path <- get_understat_parquet_path("metadata", league, season, create = FALSE)
-
-  if (!file.exists(parquet_path)) {
-    return(character(0))
-  }
-
-  data <- tryCatch({
-    arrow::read_parquet(parquet_path)
-  }, error = function(e) NULL)
-
-  if (is.null(data) || !"understat_id" %in% names(data)) {
-    return(character(0))
-  }
-
-  as.character(unique(data$understat_id))
-}
-
-
-# ============================================================================
-# Main Scraping Functions
-# ============================================================================
-
-#' Scrape single Understat match
-#'
-#' Fetches and parses match data from Understat. Uses HTML page for metadata
-#' and events, and the API endpoint for roster and shots data.
-#'
-#' @param understat_id Understat match ID
-#' @param league League code (for caching)
-#' @param season Season (for caching)
-#' @param save_cache Whether to save to cache (default TRUE)
-#'
-#' @return List with metadata, events, roster, and shots data frames
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' match_data <- scrape_understat_match(28988, "ENG", 2024)
-#' print(match_data$metadata)   # Match info, xG totals
-#' print(match_data$events)     # Goals, subs, cards timeline
-#' print(match_data$roster)     # Player stats (xG, xA, etc.)
-#' print(match_data$shots)      # Shot-level xG
-#' }
-scrape_understat_match <- function(understat_id, league, season, save_cache = TRUE) {
-  url <- get_understat_match_url(understat_id)
-
-  # Fetch HTML page for metadata and events
-  page <- fetch_understat_page(url)
-
-  if (is.null(page)) {
-    return(NULL)
-  }
-
-  # Extract metadata and events from HTML (always available)
-  metadata <- extract_understat_metadata(page, understat_id)
-  events <- extract_understat_events(page, understat_id)
-
-  # Fetch API endpoint for roster and shots data
-  api_data <- fetch_understat_match_api(understat_id)
-
-  # Extract roster and shots from API response
-  roster <- extract_understat_roster(api_data, understat_id)
-  shots <- extract_understat_shots(api_data, understat_id)
-
-  # Add league/season context to all data frames
-  if (!is.null(metadata)) {
-    metadata$league_code <- league
-    metadata$season_input <- as.character(season)
-  }
-  if (!is.null(events)) {
-    events$league_code <- league
-    events$season_input <- as.character(season)
-  }
-  if (!is.null(roster)) {
-    roster$league_code <- league
-    roster$season_input <- as.character(season)
-  }
-  if (!is.null(shots)) {
-    shots$league_code <- league
-    shots$season_input <- as.character(season)
-  }
-
-  # Save to cache (parquet format)
-  if (save_cache && !is.null(metadata)) {
-    save_understat_table(metadata, league, season, "metadata")
-
-    if (!is.null(events)) {
-      save_understat_table(events, league, season, "events")
-    }
-    if (!is.null(roster)) {
-      save_understat_table(roster, league, season, "roster")
-    }
-    if (!is.null(shots)) {
-      save_understat_table(shots, league, season, "shots")
-    }
-  }
-
-  list(
-    metadata = metadata,
-    events = events,
-    roster = roster,
-    shots = shots
-  )
-}
+# Batch scraping, manifest system, and smart scraping.
+# Single-match scraping and cache management are in scrape_understat_match.R.
+# HTTP layer and data extraction functions are in scrape_understat_api.R.
 
 
 #' Scrape multiple Understat matches
@@ -1108,7 +54,7 @@ scrape_understat_matches <- function(understat_ids,
     result <- tryCatch({
       scrape_understat_match(id, league, season)
     }, error = function(e) {
-      warning("Error scraping match ", id, ": ", e$message)
+      cli::cli_warn("Error scraping match {id}: {conditionMessage(e)}")
       NULL
     })
 
@@ -1168,22 +114,24 @@ scrape_understat_season <- function(league,
                                      max_matches = NULL) {
   # Validate league
   if (!is_understat_league(league)) {
-    stop("League '", league, "' is not available on Understat. ",
-         "Valid leagues: ", paste(list_understat_competitions(), collapse = ", "))
+    cli::cli_abort(c(
+      "League {.val {league}} is not available on Understat.",
+      "i" = "Valid leagues: {paste(list_understat_competitions(), collapse = ', ')}"
+    ))
   }
 
   # Get fixtures
   fixtures <- scrape_understat_fixtures(league, season)
 
   if (is.null(fixtures) || nrow(fixtures) == 0) {
-    warning("No fixtures found for ", league, " ", season)
+    cli::cli_warn("No fixtures found for {league} {season}.")
     return(invisible(list(scraped = 0, cached = 0, failed = 0)))
   }
 
   # Extract match IDs
   id_col <- if ("id" %in% names(fixtures)) "id" else "match_id"
   if (!id_col %in% names(fixtures)) {
-    warning("Could not find match ID column in fixtures")
+    cli::cli_warn("Could not find match ID column in fixtures")
     return(invisible(list(scraped = 0, cached = 0, failed = 0)))
   }
 
@@ -1217,7 +165,7 @@ scrape_understat_season <- function(league,
 #' @param season Optional season filter
 #'
 #' @return Combined data frame
-#' @export
+#' @keywords internal
 aggregate_understat_data <- function(table_type, league = NULL, season = NULL) {
   base_dir <- file.path(pannadata_dir(), "understat", table_type)
 
@@ -1256,7 +204,7 @@ aggregate_understat_data <- function(table_type, league = NULL, season = NULL) {
     return(data.frame())
   }
 
-  dplyr::bind_rows(all_data)
+  rbindlist(all_data, use.names = TRUE, fill = TRUE)
 }
 
 
@@ -1289,7 +237,7 @@ bulk_scrape_understat <- function(start_id, end_id, delay = 3,
   end_id <- as.integer(end_id)
 
   if (start_id > end_id) {
-    stop("start_id must be <= end_id")
+    cli::cli_abort("start_id must be <= end_id")
   }
 
   n_total <- end_id - start_id + 1
@@ -1455,7 +403,7 @@ bulk_scrape_understat <- function(start_id, end_id, delay = 3,
                          n_success, n_skipped, n_failed))
   }
 
-  dplyr::bind_rows(results)
+  rbindlist(results, use.names = TRUE, fill = TRUE)
 }
 
 
@@ -1480,9 +428,7 @@ bulk_scrape_understat <- function(start_id, end_id, delay = 3,
 #' }
 build_consolidated_understat_parquet <- function(table_types = NULL, output_dir = NULL,
                                                   verbose = TRUE) {
-  if (!requireNamespace("arrow", quietly = TRUE)) {
-    stop("Package 'arrow' is required. Install with: install.packages('arrow')")
-  }
+  .check_suggests("arrow", "Building parquet files requires arrow.")
 
   # Default table types for Understat
   if (is.null(table_types)) {
@@ -1527,7 +473,7 @@ build_consolidated_understat_parquet <- function(table_types = NULL, output_dir 
         tryCatch({
           arrow::read_parquet(f)
         }, error = function(e) {
-          if (verbose) warning(sprintf("  Error reading %s: %s", basename(f), e$message))
+          if (verbose) cli::cli_warn("Error reading {basename(f)}: {conditionMessage(e)}")
           NULL
         })
       })
@@ -1535,7 +481,7 @@ build_consolidated_understat_parquet <- function(table_types = NULL, output_dir 
       if (length(dfs) == 0) return(NULL)
       do.call(rbind, dfs)
     }, error = function(e) {
-      if (verbose) warning(sprintf("  Error combining %s: %s", tt, e$message))
+      if (verbose) cli::cli_warn("Error combining {tt}: {conditionMessage(e)}")
       NULL
     })
 
@@ -1582,6 +528,491 @@ build_consolidated_understat_parquet <- function(table_types = NULL, output_dir 
   }
 
   result_df
+}
+
+
+# ============================================================================
+# Manifest-Based Scraping System
+# ============================================================================
+
+#' Default league ID starting points for 2025/2026 season
+#'
+#' Understat match IDs are interleaved across leagues. Each league occupies
+#' a distinct ID band (~200-300 IDs apart). These defaults are verified via
+#' live scraping on 2026-02-05.
+#'
+#' @keywords internal
+DEFAULT_LEAGUE_STARTS <- list(
+  RUS = 28600,   # RFPL - lowest IDs
+  ENG = 28850,   # EPL
+  ESP = 29150,   # La Liga
+  FRA = 29550,   # Ligue 1
+  ITA = 29850,   # Serie A
+  GER = 30250    # Bundesliga - highest IDs
+)
+
+
+#' Load Understat manifest from parquet file
+#'
+#' The manifest tracks all scraped match IDs with their league and season.
+#'
+#' @param path Path to manifest parquet file
+#'
+#' @return Data frame with columns: match_id, league, season, scraped_at
+#' @export
+load_understat_manifest <- function(path) {
+  if (!file.exists(path)) {
+    # Return empty manifest structure
+    return(data.frame(
+      match_id = integer(0),
+      league = character(0),
+      season = character(0),
+      scraped_at = as.POSIXct(character(0)),
+      stringsAsFactors = FALSE
+    ))
+  }
+
+  tryCatch({
+    as.data.frame(arrow::read_parquet(path))
+  }, error = function(e) {
+    cli::cli_warn("Error reading manifest: {conditionMessage(e)}")
+    data.frame(
+      match_id = integer(0),
+      league = character(0),
+      season = character(0),
+      scraped_at = as.POSIXct(character(0)),
+      stringsAsFactors = FALSE
+    )
+  })
+}
+
+
+#' Save Understat manifest to parquet file
+#'
+#' @param manifest Data frame with manifest data
+#' @param path Path to save manifest parquet file
+#'
+#' @return Invisible path to saved file
+#' @export
+save_understat_manifest <- function(manifest, path) {
+  # Ensure directory exists
+  dir_path <- dirname(path)
+  if (!dir.exists(dir_path)) {
+    dir.create(dir_path, recursive = TRUE)
+  }
+
+  # Write with temp file pattern to avoid corruption
+  temp_path <- paste0(path, ".tmp")
+  arrow::write_parquet(manifest, temp_path)
+
+  if (file.exists(path)) {
+    file.remove(path)
+  }
+  file.rename(temp_path, path)
+
+  invisible(path)
+}
+
+
+#' Get maximum cached ID for each league from manifest
+#'
+#' @param manifest Data frame from load_understat_manifest
+#'
+#' @return Named list with max ID per league (NA if no data for league)
+#' @keywords internal
+get_league_max_ids <- function(manifest) {
+  leagues <- c("ENG", "ESP", "GER", "ITA", "FRA", "RUS")
+
+  result <- setNames(
+    rep(NA_integer_, length(leagues)),
+    leagues
+  )
+
+  if (nrow(manifest) == 0) {
+    return(as.list(result))
+  }
+
+  for (league in leagues) {
+    league_ids <- manifest$match_id[manifest$league == league]
+    if (length(league_ids) > 0) {
+      result[league] <- max(league_ids, na.rm = TRUE)
+    }
+  }
+
+  as.list(result)
+}
+
+
+#' Build manifest from existing cached Understat data
+#'
+#' Scans existing parquet files and builds a manifest. Use this to bootstrap
+#' the manifest when migrating from the old system.
+#'
+#' @param data_dir Base data directory (defaults to pannadata_dir())
+#'
+#' @return Data frame with manifest structure
+#' @keywords internal
+build_understat_manifest_from_cache <- function(data_dir = NULL) {
+  if (is.null(data_dir)) {
+    data_dir <- pannadata_dir()
+  }
+
+  metadata_dir <- file.path(data_dir, "understat", "metadata")
+
+  if (!dir.exists(metadata_dir)) {
+    message("No cached Understat metadata found at: ", metadata_dir)
+    return(data.frame(
+      match_id = integer(0),
+      league = character(0),
+      season = character(0),
+      scraped_at = as.POSIXct(character(0)),
+      stringsAsFactors = FALSE
+    ))
+  }
+
+  # Find all metadata parquet files
+  parquet_files <- list.files(
+    metadata_dir,
+    pattern = "\\.parquet$",
+    recursive = TRUE,
+    full.names = TRUE
+  )
+
+  if (length(parquet_files) == 0) {
+    message("No parquet files found in: ", metadata_dir)
+    return(data.frame(
+      match_id = integer(0),
+      league = character(0),
+      season = character(0),
+      scraped_at = as.POSIXct(character(0)),
+      stringsAsFactors = FALSE
+    ))
+  }
+
+  message(sprintf("Building manifest from %d parquet files...", length(parquet_files)))
+
+  all_records <- list()
+
+  for (f in parquet_files) {
+    tryCatch({
+      df <- arrow::read_parquet(f)
+
+      if (nrow(df) > 0 && "understat_id" %in% names(df)) {
+        # Extract league and season from path or data
+        league_code <- if ("league_code" %in% names(df)) {
+          df$league_code[1]
+        } else {
+          # Try to extract from file path
+          path_parts <- strsplit(f, "/|\\\\")[[1]]
+          league_idx <- which(path_parts == "metadata") + 1
+          if (league_idx <= length(path_parts)) path_parts[league_idx] else NA_character_
+        }
+
+        season <- if ("season_input" %in% names(df)) {
+          df$season_input[1]
+        } else if ("season" %in% names(df)) {
+          df$season[1]
+        } else {
+          # Try to extract from file name
+          gsub("\\.parquet$", "", basename(f))
+        }
+
+        record <- data.frame(
+          match_id = as.integer(unique(df$understat_id)),
+          league = as.character(league_code),
+          season = as.character(season),
+          scraped_at = Sys.time(),
+          stringsAsFactors = FALSE
+        )
+
+        all_records[[length(all_records) + 1]] <- record
+      }
+    }, error = function(e) {
+      cli::cli_warn("Error reading {f}: {conditionMessage(e)}")
+    })
+  }
+
+  if (length(all_records) == 0) {
+    return(data.frame(
+      match_id = integer(0),
+      league = character(0),
+      season = character(0),
+      scraped_at = as.POSIXct(character(0)),
+      stringsAsFactors = FALSE
+    ))
+  }
+
+  manifest <- rbindlist(all_records, use.names = TRUE, fill = TRUE)
+
+  # Remove duplicates (keep first occurrence)
+  manifest <- manifest[!duplicated(manifest$match_id), ]
+
+  message(sprintf("Built manifest with %d matches across %d leagues",
+                  nrow(manifest), length(unique(manifest$league))))
+
+  manifest
+}
+
+
+#' Smart scrape Understat with per-league tracking
+#'
+#' Scrapes Understat matches using per-league max ID tracking. Each league
+#' is scanned independently from its own max ID, which handles the interleaved
+#' nature of Understat match IDs across leagues.
+#'
+#' @param manifest_path Path to manifest parquet file
+#' @param leagues Character vector of leagues to scrape (default: all 6)
+#' @param lookback Number of IDs to look back from max (handles gaps)
+#' @param max_misses Stop scanning a league after this many consecutive misses
+#' @param delay Seconds between requests
+#' @param verbose Print progress messages
+#'
+#' @return Data frame with scraping results (match_id, league, status)
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' # Run smart scraper
+#' results <- smart_scrape_understat(
+#'   manifest_path = "data/understat-manifest.parquet",
+#'   lookback = 20,
+#'   max_misses = 50,
+#'   delay = 3
+#' )
+#'
+#' # Check results
+#' table(results$league, results$status)
+#' }
+smart_scrape_understat <- function(manifest_path,
+                                    leagues = c("RUS", "ENG", "ESP", "FRA", "ITA", "GER"),
+                                    lookback = 20,
+                                    max_misses = 50,
+                                    delay = 3,
+                                    verbose = TRUE) {
+
+  # Load manifest
+  manifest <- load_understat_manifest(manifest_path)
+  if (verbose) {
+    message(sprintf("Loaded manifest with %d existing matches", nrow(manifest)))
+  }
+
+  # Get max ID per league
+  league_max_ids <- get_league_max_ids(manifest)
+
+  results <- list()
+  total_new <- 0
+
+  # Process each league in order (RUS has lowest IDs, GER has highest)
+  for (league in leagues) {
+    if (verbose) {
+      cat(sprintf("\n=== Scanning %s ===\n", league))
+    }
+
+    # Get max ID for this league, or use default
+    max_id <- league_max_ids[[league]]
+    if (is.na(max_id)) {
+      max_id <- DEFAULT_LEAGUE_STARTS[[league]]
+      if (verbose) {
+        cat(sprintf("No cached data for %s, starting from default: %d\n", league, max_id))
+      }
+    } else if (verbose) {
+      cat(sprintf("Max cached ID for %s: %d\n", league, max_id))
+    }
+
+    # Start scanning from (max - lookback) to handle gaps
+    start_id <- max(1, max_id - lookback)
+    current_id <- start_id
+    consecutive_misses <- 0
+    new_matches <- 0
+    league_results <- list()
+
+    while (consecutive_misses < max_misses) {
+      # Rate limiting (skip on first iteration)
+      if (current_id > start_id) {
+        jitter <- delay * 0.3
+        actual_delay <- delay + stats::runif(1, -jitter, jitter)
+        Sys.sleep(actual_delay)
+      }
+
+      # Try to scrape match metadata first to check league
+      url <- get_understat_match_url(current_id)
+
+      page <- tryCatch({
+        fetch_understat_page(url)
+      }, error = function(e) NULL)
+
+      if (is.null(page)) {
+        # Invalid ID - count as miss
+        consecutive_misses <- consecutive_misses + 1
+        league_results[[length(league_results) + 1]] <- data.frame(
+          match_id = current_id,
+          league = NA_character_,
+          season = NA_character_,
+          status = "invalid",
+          stringsAsFactors = FALSE
+        )
+        current_id <- current_id + 1
+        next
+      }
+
+      # Extract metadata to check league
+      metadata <- tryCatch({
+        extract_understat_metadata(page, current_id)
+      }, error = function(e) NULL)
+
+      if (is.null(metadata)) {
+        consecutive_misses <- consecutive_misses + 1
+        league_results[[length(league_results) + 1]] <- data.frame(
+          match_id = current_id,
+          league = NA_character_,
+          season = NA_character_,
+          status = "no_metadata",
+          stringsAsFactors = FALSE
+        )
+        current_id <- current_id + 1
+        next
+      }
+
+      # Map Understat league name to our code
+      match_league <- understat_league_to_code(metadata$league)
+      match_season <- metadata$season
+
+      if (is.na(match_league)) {
+        consecutive_misses <- consecutive_misses + 1
+        league_results[[length(league_results) + 1]] <- data.frame(
+          match_id = current_id,
+          league = metadata$league,
+          season = match_season,
+          status = "unknown_league",
+          stringsAsFactors = FALSE
+        )
+        current_id <- current_id + 1
+        next
+      }
+
+      # Check if this match is for our target league
+      if (match_league != league) {
+        # Valid match but different league - count as miss for THIS league
+        # This prevents us from scanning through 1000+ IDs of other leagues
+        consecutive_misses <- consecutive_misses + 1
+        league_results[[length(league_results) + 1]] <- data.frame(
+          match_id = current_id,
+          league = match_league,
+          season = match_season,
+          status = "different_league",
+          stringsAsFactors = FALSE
+        )
+        current_id <- current_id + 1
+        next
+      }
+
+      # Found a match for this league! Reset miss counter
+      consecutive_misses <- 0
+
+      # Check if already in manifest
+      if (current_id %in% manifest$match_id) {
+        league_results[[length(league_results) + 1]] <- data.frame(
+          match_id = current_id,
+          league = match_league,
+          season = match_season,
+          status = "cached",
+          stringsAsFactors = FALSE
+        )
+        if (verbose) {
+          cat(sprintf("  [%d] Cached: %s vs %s\n",
+                      current_id, metadata$home_team, metadata$away_team))
+        }
+        current_id <- current_id + 1
+        next
+      }
+
+      # Scrape full match data
+      events <- tryCatch({
+        extract_understat_events(page, current_id)
+      }, error = function(e) NULL)
+
+      api_data <- tryCatch({
+        fetch_understat_match_api(current_id)
+      }, error = function(e) NULL)
+
+      roster <- tryCatch({
+        extract_understat_roster(api_data, current_id)
+      }, error = function(e) NULL)
+
+      shots <- tryCatch({
+        extract_understat_shots(api_data, current_id)
+      }, error = function(e) NULL)
+
+      # Add league/season context
+      metadata$league_code <- match_league
+      metadata$season_input <- as.character(match_season)
+
+      if (!is.null(events)) {
+        events$league_code <- match_league
+        events$season_input <- as.character(match_season)
+      }
+      if (!is.null(roster)) {
+        roster$league_code <- match_league
+        roster$season_input <- as.character(match_season)
+      }
+      if (!is.null(shots)) {
+        shots$league_code <- match_league
+        shots$season_input <- as.character(match_season)
+      }
+
+      # Save to cache
+      save_understat_table(metadata, match_league, match_season, "metadata")
+      if (!is.null(events)) save_understat_table(events, match_league, match_season, "events")
+      if (!is.null(roster)) save_understat_table(roster, match_league, match_season, "roster")
+      if (!is.null(shots)) save_understat_table(shots, match_league, match_season, "shots")
+
+      # Add to manifest
+      manifest <- rbind(manifest, data.frame(
+        match_id = as.integer(current_id),
+        league = match_league,
+        season = as.character(match_season),
+        scraped_at = Sys.time(),
+        stringsAsFactors = FALSE
+      ))
+
+      new_matches <- new_matches + 1
+      total_new <- total_new + 1
+
+      league_results[[length(league_results) + 1]] <- data.frame(
+        match_id = current_id,
+        league = match_league,
+        season = match_season,
+        status = "success",
+        stringsAsFactors = FALSE
+      )
+
+      if (verbose) {
+        cat(sprintf("  [%d] NEW: %s vs %s (%s %s)\n",
+                    current_id, metadata$home_team, metadata$away_team,
+                    match_league, match_season))
+      }
+
+      current_id <- current_id + 1
+    }
+
+    # League scan complete
+    scanned_count <- current_id - start_id
+    if (verbose) {
+      cat(sprintf("\n%s: scraped %d new matches (scanned %d IDs, stopped after %d consecutive misses)\n",
+                  league, new_matches, scanned_count, max_misses))
+    }
+
+    results[[league]] <- rbindlist(league_results, use.names = TRUE, fill = TRUE)
+  }
+
+  # Save updated manifest
+  save_understat_manifest(manifest, manifest_path)
+  if (verbose) {
+    message(sprintf("\nSaved manifest with %d total matches", nrow(manifest)))
+    message(sprintf("Total new matches scraped: %d", total_new))
+  }
+
+  rbindlist(results, use.names = TRUE, fill = TRUE)
 }
 
 

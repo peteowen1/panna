@@ -18,3 +18,4 @@ SPADL actions with outcome labels
 Adds chain outcome labels to each action for EPV model training.
 Optimized with data.table merge.
 }
+\keyword{internal}

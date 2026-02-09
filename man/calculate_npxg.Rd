@@ -15,3 +15,4 @@ Data frame with npxG by player and match
 \description{
 Calculates non-penalty expected goals from shot data.
 }
+\keyword{internal}

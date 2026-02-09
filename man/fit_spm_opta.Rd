@@ -36,8 +36,8 @@ Uses Opta-specific per-90 features for prediction.
 opta_features <- aggregate_opta_stats(opta_stats)
 
 # Join with RAPM
-spm_data <- opta_features \%>\%
-  inner_join(rapm_ratings \%>\% select(player_id, rapm), by = "player_id")
+spm_data <- opta_features |>
+  inner_join(rapm_ratings |> select(player_id, rapm), by = "player_id")
 
 # Fit Opta SPM
 opta_spm <- fit_spm_opta(spm_data)

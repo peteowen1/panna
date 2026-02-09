@@ -465,7 +465,8 @@ aggregate_player_stats <- function(stats_summary,
 
   player_stats <- dt[, eval(as.call(c(quote(list), agg_exprs))), by = player_id]
   player_stats <- as.data.frame(player_stats)
-  player_stats <- merge(player_stats, player_name_lookup, by = "player_id", all.x = TRUE)
+  player_stats <- data.table::as.data.table(player_name_lookup)[data.table::as.data.table(player_stats), on = "player_id"]
+  data.table::setDF(player_stats)
   player_stats <- rename_columns(player_stats, existing_summary)
 
   # Filter by min minutes
@@ -491,7 +492,8 @@ aggregate_player_stats <- function(stats_summary,
   for (table_info in stat_tables) {
     agg_result <- .aggregate_stat_table(table_info$data, table_info$cols)
     if (!is.null(agg_result)) {
-      player_stats <- merge(player_stats, agg_result, by = "player_id", all.x = TRUE)
+      player_stats <- data.table::as.data.table(agg_result)[data.table::as.data.table(player_stats), on = "player_id"]
+      data.table::setDF(player_stats)
     }
   }
 
@@ -526,7 +528,7 @@ aggregate_player_stats <- function(stats_summary,
 #' @param default_prior Value for players without SPM prediction
 #'
 #' @return Named vector of priors (keyed by player_id)
-#' @export
+#' @keywords internal
 create_spm_prior <- function(spm_predictions, player_mapping, default_prior = 0) {
   # Handle data frame input
   if (is.data.frame(spm_predictions)) {
@@ -580,7 +582,7 @@ create_spm_prior <- function(spm_predictions, player_mapping, default_prior = 0)
 #' @param default Value for players without SPM prediction (default 0)
 #'
 #' @return Named vector of priors keyed by player_id
-#' @export
+#' @keywords internal
 #'
 #' @examples
 #' \dontrun{
@@ -631,17 +633,13 @@ build_prior_vector <- function(spm_data, spm_col, player_mapping, default = 0) {
 prepare_spm_regression_data <- function(player_features, rapm_ratings) {
   # Match on player name or ID
   if ("player_id" %in% names(player_features) && "player_id" %in% names(rapm_ratings)) {
-    data <- player_features %>%
-      dplyr::inner_join(
-        rapm_ratings %>% dplyr::select(player_id, rapm),
-        by = "player_id"
-      )
+    rapm_dt <- data.table::as.data.table(rapm_ratings[, c("player_id", "rapm"), drop = FALSE])
+    data <- data.table::as.data.table(player_features)[rapm_dt, on = "player_id", nomatch = NULL]
+    data.table::setDF(data)
   } else if ("player_name" %in% names(player_features) && "player_name" %in% names(rapm_ratings)) {
-    data <- player_features %>%
-      dplyr::inner_join(
-        rapm_ratings %>% dplyr::select(player_name, rapm),
-        by = "player_name"
-      )
+    rapm_dt <- data.table::as.data.table(rapm_ratings[, c("player_name", "rapm"), drop = FALSE])
+    data <- data.table::as.data.table(player_features)[rapm_dt, on = "player_name", nomatch = NULL]
+    data.table::setDF(data)
   } else {
     cli::cli_abort(c(
       "Cannot match {.arg player_features} and {.arg rapm_ratings}.",
@@ -962,10 +960,11 @@ calculate_spm_ratings_xgb <- function(player_features, spm_xgb_model) {
   spm_pred <- stats::predict(spm_xgb_model$model, X)
 
   # Create output
-  result <- player_features %>%
-    dplyr::select(dplyr::any_of(c("player_id", "player_name", "n_matches", "total_minutes"))) %>%
-    dplyr::mutate(spm = spm_pred) %>%
-    dplyr::arrange(dplyr::desc(.data$spm))
+  keep_cols <- intersect(c("player_id", "player_name", "n_matches", "total_minutes"),
+                         names(player_features))
+  result <- player_features[, keep_cols, drop = FALSE]
+  result$spm <- spm_pred
+  result <- result[order(-result$spm), ]
 
   result
 }
@@ -983,7 +982,7 @@ calculate_spm_ratings_xgb <- function(player_features, spm_xgb_model) {
 #' @param weight_glmnet Weight for Elastic Net predictions (default 0.5)
 #'
 #' @return Data frame with blended SPM ratings plus individual model predictions
-#' @export
+#' @keywords internal
 calculate_spm_blend <- function(player_features, model_glmnet, model_xgb,
                                 weight_glmnet = 0.5) {
   # Get predictions from each model
@@ -991,16 +990,13 @@ calculate_spm_blend <- function(player_features, model_glmnet, model_xgb,
   spm_xgb <- calculate_spm_ratings_xgb(player_features, model_xgb)
 
   # Blend predictions
-  result <- spm_glmnet %>%
-    dplyr::rename(spm_glmnet = spm) %>%
-    dplyr::inner_join(
-      spm_xgb %>% dplyr::select(player_id, spm_xgb = spm),
-      by = "player_id"
-    ) %>%
-    dplyr::mutate(
-      spm = weight_glmnet * spm_glmnet + (1 - weight_glmnet) * spm_xgb
-    ) %>%
-    dplyr::arrange(dplyr::desc(.data$spm))
+  names(spm_glmnet)[names(spm_glmnet) == "spm"] <- "spm_glmnet"
+  xgb_df <- spm_xgb[, c("player_id", "spm"), drop = FALSE]
+  names(xgb_df)[names(xgb_df) == "spm"] <- "spm_xgb"
+  result <- data.table::as.data.table(spm_glmnet)[data.table::as.data.table(xgb_df), on = "player_id", nomatch = NULL]
+  data.table::setDF(result)
+  result$spm <- weight_glmnet * result$spm_glmnet + (1 - weight_glmnet) * result$spm_xgb
+  result <- result[order(-result$spm), ]
 
   result
 }
@@ -1014,7 +1010,7 @@ calculate_spm_blend <- function(player_features, model_glmnet, model_xgb,
 #' @param lambda Which lambda to use ("min" or "1se")
 #'
 #' @return Named vector of coefficients
-#' @export
+#' @keywords internal
 extract_spm_coefficients <- function(model, lambda = "min") {
   lambda_val <- if (lambda == "min") model$lambda.min else model$lambda.1se
 
@@ -1051,10 +1047,11 @@ calculate_spm_ratings <- function(player_features, spm_model, lambda = "min") {
   spm_pred <- as.vector(stats::predict(spm_model, newx = X, s = lambda_val))
 
   # Create output data frame
-  result <- player_features %>%
-    dplyr::select(dplyr::any_of(c("player_id", "player_name", "n_games", "total_minutes"))) %>%
-    dplyr::mutate(spm = spm_pred) %>%
-    dplyr::arrange(dplyr::desc(.data$spm))
+  keep_cols <- intersect(c("player_id", "player_name", "n_games", "total_minutes"),
+                         names(player_features))
+  result <- player_features[, keep_cols, drop = FALSE]
+  result$spm <- spm_pred
+  result <- result[order(-result$spm), ]
 
   result
 }
@@ -1069,7 +1066,7 @@ calculate_spm_ratings <- function(player_features, spm_model, lambda = "min") {
 #' @param alpha Elastic net mixing
 #'
 #' @return Fitted model for offensive SPM
-#' @export
+#' @keywords internal
 calculate_offensive_spm <- function(data, offensive_cols = NULL, alpha = 0.5) {
   if (is.null(offensive_cols)) {
     offensive_cols <- c("npxG_p100", "xG_p100", "Sh_p100", "SoT_p100",
@@ -1090,7 +1087,7 @@ calculate_offensive_spm <- function(data, offensive_cols = NULL, alpha = 0.5) {
 #' @param alpha Elastic net mixing
 #'
 #' @return Fitted model for defensive SPM
-#' @export
+#' @keywords internal
 calculate_defensive_spm <- function(data, defensive_cols = NULL, alpha = 0.5) {
   if (is.null(defensive_cols)) {
     defensive_cols <- c("Tkl_p100", "Int_p100", "Blocks_p100",
@@ -1130,12 +1127,10 @@ validate_spm_prediction <- function(spm_ratings, rapm_ratings,
     return(NULL)
   }
 
-  comparison <- spm_ratings %>%
-    dplyr::inner_join(
-      rapm_ratings %>%
-        dplyr::select(dplyr::all_of(join_cols), rapm),
-      by = join_cols
-    )
+  rapm_keep <- c(join_cols, "rapm")
+  rapm_dt <- data.table::as.data.table(rapm_ratings[, rapm_keep, drop = FALSE])
+  comparison <- data.table::as.data.table(spm_ratings)[rapm_dt, on = join_cols, nomatch = NULL]
+  data.table::setDF(comparison)
 
   if (nrow(comparison) == 0) {
     cli::cli_warn("No matching players between SPM and RAPM ratings.")
@@ -1234,10 +1229,10 @@ get_spm_feature_importance <- function(model, n = 10, lambda = "min") {
     coefficient = as.vector(coefs),
     abs_coef = abs(as.vector(coefs)),
     stringsAsFactors = FALSE
-  ) %>%
-    dplyr::filter(.data$coefficient != 0) %>%
-    dplyr::arrange(dplyr::desc(.data$abs_coef)) %>%
-    utils::head(n)
+  )
+  importance <- importance[importance$coefficient != 0, ]
+  importance <- importance[order(-importance$abs_coef), ]
+  importance <- head(importance, n)
 
   importance
 }

@@ -19,3 +19,4 @@ List with validation results
 \description{
 Validates data quality and reports missing values.
 }
+\keyword{internal}

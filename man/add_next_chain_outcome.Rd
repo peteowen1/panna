@@ -16,3 +16,4 @@ Chain outcomes with next_chain_goal column added
 For EPV conceding model, we need to know if the opponent scores on their
 next possession after we lose the ball. Optimized with data.table.
 }
+\keyword{internal}

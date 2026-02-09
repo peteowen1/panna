@@ -64,7 +64,7 @@ create_possession_chains <- function(spadl_actions) {
     (!is.na(prev_period_id) & period_id != prev_period_id) | # Period change
     (prev_action_type == "shot" & prev_result == "success") | # After goal
     (prev_action_type == "foul") |                           # After foul
-    (!is.na(prev_time) & (time_seconds - prev_time) > 30)    # Time gap
+    (!is.na(prev_time) & (time_seconds - prev_time) > CHAIN_TIME_GAP_SECONDS) # Time gap
   )]
 
   # Handle NA values in logical expression (set to TRUE if NA, meaning chain break)
@@ -102,7 +102,7 @@ create_possession_chains <- function(spadl_actions) {
 #'
 #' @return Data frame of chain-level statistics
 #'
-#' @export
+#' @keywords internal
 classify_chain_outcomes <- function(spadl_with_chains) {
   if (!"chain_id" %in% names(spadl_with_chains)) {
     cli::cli_abort("Input must have chain_id column. Run create_possession_chains() first.")
@@ -136,7 +136,7 @@ classify_chain_outcomes <- function(spadl_with_chains) {
 
   # Count shots in chain
   shots_per_chain <- dt[action_type == "shot", .(shots_in_chain = .N), by = .(match_id, chain_id)]
-  chain_summary <- merge(chain_summary, shots_per_chain, by = c("match_id", "chain_id"), all.x = TRUE)
+  chain_summary <- shots_per_chain[chain_summary, on = c("match_id", "chain_id")]
   chain_summary[is.na(shots_in_chain), shots_in_chain := 0L]
 
   # Binary goal indicator
@@ -145,7 +145,7 @@ classify_chain_outcomes <- function(spadl_with_chains) {
   # Add xG if available in source data
   if ("xg" %in% names(dt)) {
     chain_xg <- dt[, .(chain_xg = sum(xg, na.rm = TRUE)), by = .(match_id, chain_id)]
-    chain_summary <- merge(chain_summary, chain_xg, by = c("match_id", "chain_id"), all.x = TRUE)
+    chain_summary <- chain_xg[chain_summary, on = c("match_id", "chain_id")]
   } else {
     chain_summary[, chain_xg := NA_real_]
   }
@@ -168,7 +168,7 @@ classify_chain_outcomes <- function(spadl_with_chains) {
 #' @param chain_outcomes Data frame from classify_chain_outcomes()
 #'
 #' @return Chain outcomes with next_chain_goal column added
-#' @export
+#' @keywords internal
 add_next_chain_outcome <- function(chain_outcomes) {
   cli::cli_alert_info("Adding opponent next chain outcomes...")
 
@@ -206,7 +206,7 @@ add_next_chain_outcome <- function(chain_outcomes) {
 #'
 #' @return SPADL actions with outcome labels
 #'
-#' @export
+#' @keywords internal
 label_actions_with_outcomes <- function(spadl_with_chains, chain_outcomes) {
   cli::cli_alert_info("Labeling actions with chain outcomes...")
 
@@ -219,8 +219,7 @@ label_actions_with_outcomes <- function(spadl_with_chains, chain_outcomes) {
   outcome_cols <- intersect(outcome_cols, names(dt_outcomes))
 
   # Merge outcomes to actions
-  result <- merge(dt_actions, dt_outcomes[, ..outcome_cols],
-                   by = c("match_id", "chain_id"), all.x = TRUE, sort = FALSE)
+  result <- dt_outcomes[, ..outcome_cols][dt_actions, on = c("match_id", "chain_id")]
 
   # Rename for clarity
   if ("ends_in_goal" %in% names(result)) {
@@ -252,7 +251,7 @@ label_actions_with_outcomes <- function(spadl_with_chains, chain_outcomes) {
 #' @param chain_outcomes Data frame from classify_chain_outcomes()
 #'
 #' @return List with chain statistics
-#' @export
+#' @keywords internal
 calculate_chain_stats <- function(chain_outcomes) {
   dt <- data.table::as.data.table(chain_outcomes)
 

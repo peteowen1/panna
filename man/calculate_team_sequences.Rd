@@ -16,3 +16,4 @@ Data frame with team sequences per match
 Estimates the number of possession sequences per match for each team.
 A sequence is defined as a period of continuous possession.
 }
+\keyword{internal}

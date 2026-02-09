@@ -22,6 +22,8 @@
 #' @return Data frame with match_url, home_team, away_team, date columns
 #' @export
 scrape_fixtures <- function(league, season, completed_only = TRUE) {
+  .check_suggests("httr", "Scraping FBref requires httr.")
+  .check_suggests("rvest", "Scraping FBref requires rvest.")
   url <- get_fbref_schedule_url(league, season)
 
   progress_msg(sprintf("Fetching fixtures: %s %s", league, season))
@@ -37,9 +39,9 @@ scrape_fixtures <- function(league, season, completed_only = TRUE) {
   # Check for errors
   if (is.null(response)) {
     if (isTRUE(attr(response, "rate_limited")) || isTRUE(attr(response, "blocked"))) {
-      stop("Rate limited or blocked. Stopping scraper.")
+      cli::cli_abort("Rate limited or blocked. Stopping scraper.")
     }
-    warning("Failed to fetch fixtures for ", league, " ", season)
+    cli::cli_warn("Failed to fetch fixtures for {league} {season}.")
     return(NULL)
   }
 
@@ -50,7 +52,7 @@ scrape_fixtures <- function(league, season, completed_only = TRUE) {
   fixtures_table <- rvest::html_node(page, "table.stats_table")
 
   if (is.na(fixtures_table)) {
-    warning("Could not find fixtures table for ", league, " ", season)
+    cli::cli_warn("Could not find fixtures table for {league} {season}.")
     return(NULL)
   }
 
@@ -58,7 +60,7 @@ scrape_fixtures <- function(league, season, completed_only = TRUE) {
   df <- tryCatch({
     rvest::html_table(fixtures_table, fill = TRUE)
   }, error = function(e) {
-    warning("Error parsing fixtures table: ", e$message)
+    cli::cli_warn("Error parsing fixtures table: {conditionMessage(e)}")
     return(NULL)
   })
 
@@ -188,13 +190,15 @@ scrape_fbref_matches <- function(
     verbose = TRUE,
     max_matches = Inf
 ) {
+  .check_suggests("httr", "Scraping FBref requires httr.")
+  .check_suggests("rvest", "Scraping FBref requires rvest.")
   # Validate inputs
   if (length(match_urls) == 0) {
-    stop("No match URLs provided")
+    cli::cli_abort("No match URLs provided")
   }
 
   if (missing(league) || missing(season)) {
-    stop("league and season are required for file naming")
+    cli::cli_abort("league and season are required for file naming")
   }
 
   # Enforce minimum delay for polite scraping
@@ -235,7 +239,7 @@ scrape_fbref_matches <- function(
     fbref_id <- regmatches(url, regexpr("[a-f0-9]{8}", url))
 
     if (length(fbref_id) == 0) {
-      warning("Could not extract match ID from URL: ", url)
+      cli::cli_warn("Could not extract match ID from URL: {url}")
       n_failed <- n_failed + 1
       next
     }
@@ -267,7 +271,7 @@ scrape_fbref_matches <- function(
     page <- tryCatch({
       fetch_match_page(url)
     }, error = function(e) {
-      warning("Error fetching ", url, ": ", e$message)
+      cli::cli_warn("Error fetching {url}: {conditionMessage(e)}")
       NULL
     })
 
@@ -280,7 +284,7 @@ scrape_fbref_matches <- function(
       # Return partial results
       return(lapply(results, function(x) {
         if (length(x) == 0) return(NULL)
-        dplyr::bind_rows(x)
+        rbindlist(x, use.names = TRUE, fill = TRUE)
       }))
     }
 
@@ -393,7 +397,7 @@ scrape_fbref_matches <- function(
   final <- list()
   for (tt in table_types) {
     if (length(results[[tt]]) > 0) {
-      final[[tt]] <- dplyr::bind_rows(results[[tt]])
+      final[[tt]] <- rbindlist(results[[tt]], use.names = TRUE, fill = TRUE)
     } else {
       final[[tt]] <- NULL
     }
@@ -421,7 +425,7 @@ scrape_fbref_matches <- function(
 #' @param season Season string (e.g., "2023-2024")
 #'
 #' @return Character vector of match URLs
-#' @export
+#' @keywords internal
 #'
 #' @examples
 #' \dontrun{
@@ -471,6 +475,8 @@ get_cached_match_urls <- function(league, season) {
 #' }
 scrape_comp_season <- function(comp, season, table_types, delay,
                                 force_rescrape, max_matches = Inf) {
+  .check_suggests("httr", "Scraping FBref requires httr.")
+  .check_suggests("rvest", "Scraping FBref requires rvest.")
 
   cat(sprintf("\n%s %s\n", comp, season))
   cat(strrep("-", 40), "\n")

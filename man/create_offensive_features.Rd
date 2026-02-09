@@ -15,3 +15,4 @@ Data frame with offensive features
 \description{
 Builds attacking-related rate statistics for SPM model.
 }
+\keyword{internal}

@@ -19,3 +19,4 @@ Combined data frame
 \description{
 Loads and combines all cached parquet files for a table type.
 }
+\keyword{internal}

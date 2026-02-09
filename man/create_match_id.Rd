@@ -21,3 +21,4 @@ Character vector of match IDs
 \description{
 Generates a unique identifier for a match based on season, date, and teams.
 }
+\keyword{internal}

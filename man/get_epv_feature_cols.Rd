@@ -18,3 +18,4 @@ Character vector of feature column names
 Returns the list of feature columns used for EPV model training.
 Uses shared constants to ensure consistency with create_epv_features().
 }
+\keyword{internal}

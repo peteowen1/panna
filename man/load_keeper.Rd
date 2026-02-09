@@ -7,12 +7,11 @@
 load_keeper(league = NULL, season = NULL, source = c("remote", "local"))
 }
 \arguments{
-\item{league}{League code (e.g., "ENG"). NULL for all leagues.}
+\item{league}{Optional league filter (e.g., "ENG", "ESP", "GER").}
 
-\item{season}{Season string (e.g., "2023-2024"). NULL for all seasons.}
+\item{season}{Optional season filter (e.g., "2023-2024").}
 
-\item{source}{"remote" (default) downloads from GitHub releases using DuckDB,
-"local" reads from local pannadata_dir().}
+\item{source}{Data source: "remote" (default) or "local".}
 }
 \value{
 Data frame of goalkeeper statistics.

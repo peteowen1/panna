@@ -18,3 +18,4 @@ Data frame with finishing modifier per player
 Calculates a player's finishing ability relative to xG.
 Used to adjust xG predictions in splint analysis.
 }
+\keyword{internal}

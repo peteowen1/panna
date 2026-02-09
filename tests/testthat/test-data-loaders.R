@@ -177,7 +177,7 @@ test_that("OPTA_LEAGUES constant has correct mappings", {
 
 test_that("OPTA_LEAGUES includes all Big 5 leagues", {
   expect_true(all(c("ENG", "ESP", "GER", "ITA", "FRA") %in% names(OPTA_LEAGUES)))
-  expect_equal(length(OPTA_LEAGUES), 5)
+  expect_gte(length(OPTA_LEAGUES), 5)
 })
 
 

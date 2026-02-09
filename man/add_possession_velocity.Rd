@@ -16,3 +16,4 @@ SPADL actions with velocity features added
 Computes the speed of ball progression in a possession chain.
 Optimized with data.table.
 }
+\keyword{internal}

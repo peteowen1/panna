@@ -19,3 +19,4 @@ Fitted model for defensive SPM
 \description{
 Fits SPM model for defensive contribution only.
 }
+\keyword{internal}

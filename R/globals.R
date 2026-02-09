@@ -1,14 +1,10 @@
 # Global variable declarations to avoid R CMD check NOTEs
 # These are column names used in NSE (non-standard evaluation) operations
 
-#' @importFrom magrittr %>%
-#' @export
-magrittr::`%>%`
-
 #' @importFrom stats setNames na.pass
 NULL
 
-# Suppress R CMD check notes for data.frame column names used in dplyr/tidyr
+# Suppress R CMD check notes for data.frame column names used in data.table NSE
 # Add column names as they are used in package functions
 
 utils::globalVariables(c(
@@ -77,29 +73,15 @@ utils::globalVariables(c(
   "sh",
   "so_t",
   "xg",
-  "xg_expected",
   "npxg",
-  "npxg_expected",
   "xag",
-  "xag_expected",
   "pk",
-  "pkatt",
   "crd_y",
   "crd_r",
   "touches",
   "tkl",
   "int",
   "blocks",
-  "sca_sca",
-  "gca_sca",
-  "cmp_passes",
-  "att_passes",
-  "cmp_percent_passes",
-  "prg_p_passes",
-  "carries_carries",
-  "prg_c_carries",
-  "att_take_ons",
-  "succ_take_ons",
 
   # Rate stat columns
   "per_100_seq",
@@ -192,12 +174,7 @@ utils::globalVariables(c(
   "is_forward",
   "is_progressive",
   "xpass",
-  "xg",
   "epv",
-  "p_score",
-  "p_concede",
-  "p_score_delta",
-  "p_concede_delta",
   "passer_credit",
   "receiver_credit",
   "scores_this_possession",
@@ -226,13 +203,11 @@ utils::globalVariables(c(
   "next_result",
   "next_player_id",
   "next_player_name",
-  "next_is_duel",
   "is_duel_pair",
   "is_winner",
   "is_loser",
 
   # normalize_spadl_coordinates helper columns
-  "attacks_right",
   "mean_x",
   "i.attacks_right",
 
@@ -250,16 +225,10 @@ utils::globalVariables(c(
   # convert_opta_to_spadl helper columns
   "end_x_new",
   "end_y_new",
-  "original_event_id",
-  "opta_type_id",
-  "qualifiers_parsed",
 
   # EPV delta calculation columns (lead-based: next action values)
   "next_epv",
   "next_team_id",
-
-  # Own goal indicator (Opta qualifier 28)
-  "is_own_goal",
 
   # Pass credit assignment temp columns
   "passer_share",
@@ -361,5 +330,66 @@ utils::globalVariables(c(
   "x.player_name",
   "x.shot_team",
   "x.shot_xg",
-  "x.team"
+  "x.team",
+
+  # xmetrics (derive_xa / aggregate_player_xmetrics) columns
+  "xa",
+  "goals",
+  "is_key_pass",
+  "is_assist",
+  "prev_action_id",
+  "prev_player_id",
+  "prev_player_name",
+  "shots_on_target",
+  "penalty_goals",
+  "npgoals",
+  "goals_minus_xg",
+  "xg_per90",
+  "xa_per90",
+  "xpass_overperformance",
+  "xpass_overperformance_per90",
+  "xpass_avg",
+  "sum_xpass",
+  "passes_attempted",
+  "passes_completed",
+
+  # Opta pipeline columns (player-ratings-opta)
+  "team_name",
+  "team_position",
+  "sub_on_minute",
+  "sub_off_minute",
+  "appearances",
+  "npxg_per90",
+
+  # Opta SPM expanded feature columns
+  "flick_on_p90",
+  "fwd_zone_pass_accuracy",
+  "open_play_pass_accuracy",
+  "crosses_open_play_accuracy",
+  "bad_touch_rate",
+  "errors_total_p90",
+  "headed_goal_rate",
+  "flick_on_accuracy",
+
+  # data.table NSE columns from base R migration
+  "mean_rapm",
+  "total_shots",
+  "total_goals",
+  "total_xg",
+  "finishing_modifier",
+  "total_touches",
+  "zero_xg_pct",
+  "zero_xg_count",
+  "n_splints",
+  "is_bad",
+
+  # Opta SPM Round 2 feature columns
+  "back_zone_pass_accuracy",
+  "chipped_pass_accuracy",
+  "ibox_goal_rate",
+  "obox_goal_rate",
+  "penalty_conversion",
+  "long_pass_own_to_opp_accuracy",
+  "fifty_fifty_success",
+  "poss_lost_ctrl_per_touch"
 ))

@@ -20,3 +20,4 @@ Determines the xG of the next shot in each half for each action.
 Positive xG = team's shot, Negative xG = opponent's shot, 0 = no more shots.
 This provides more signal than binary goal outcomes.
 }
+\keyword{internal}

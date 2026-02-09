@@ -22,7 +22,9 @@ The angle represents how much of the goal is visible from the player's position.
 Useful for shot xG models.
 }
 \examples{
-calculate_angle_to_goal(90, 50)  # Central, close - large angle
+\dontrun{
 calculate_angle_to_goal(90, 80)  # Wide position - smaller angle
 calculate_angle_to_goal(50, 50)  # Halfway line - small angle
 }
+}
+\keyword{internal}

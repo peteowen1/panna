@@ -19,3 +19,4 @@ Fitted model for offensive SPM
 \description{
 Fits SPM model for offensive contribution only.
 }
+\keyword{internal}

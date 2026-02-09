@@ -17,3 +17,4 @@ Named vector of covariate coefficients
 \description{
 Extracts the coefficients for game state covariates.
 }
+\keyword{internal}

@@ -3,6 +3,292 @@
 # Builds the design matrix for Regularized Adjusted Plus-Minus models.
 # Each row represents one team's perspective during a splint.
 
+
+# ============================================================================
+# Internal helpers for create_rapm_design_matrix
+# ============================================================================
+
+#' Aggregate player minutes and split into regular/replacement pools
+#'
+#' @param players Data frame of player appearances per splint
+#' @param splints Data frame of splints with duration
+#' @param min_minutes Minimum total minutes for inclusion as regular player
+#'
+#' @return List with player_minutes, replacement_player_ids, player_ids,
+#'   n_players, all_player_minutes
+#' @keywords internal
+.aggregate_player_minutes <- function(players, splints, min_minutes) {
+  players_dt <- data.table::as.data.table(players)
+  splints_dt <- data.table::as.data.table(splints[, c("splint_id", "duration")])
+
+  data.table::setkey(players_dt, splint_id)
+  data.table::setkey(splints_dt, splint_id)
+
+  players_with_duration <- splints_dt[players_dt, on = "splint_id"]
+
+  all_player_minutes <- players_with_duration[, .(
+    total_minutes = sum(duration, na.rm = TRUE),
+    player_name = {
+      tbl <- table(player_name)
+      tools::toTitleCase(tolower(names(tbl)[which.max(tbl)]))
+    }
+  ), by = player_id]
+
+  all_player_minutes <- as.data.frame(all_player_minutes)
+
+  player_minutes <- all_player_minutes[all_player_minutes$total_minutes >= min_minutes, ]
+  replacement_player_ids <- all_player_minutes$player_id[all_player_minutes$total_minutes < min_minutes]
+
+  player_ids <- player_minutes$player_id
+  n_players <- length(player_ids)
+
+  if (n_players == 0) {
+    cli::cli_abort(c(
+      "No players meet minimum minutes requirement.",
+      "i" = "Current threshold: {min_minutes} minutes",
+      "i" = "Try lowering {.arg min_minutes} or adding more match data."
+    ))
+  }
+
+  progress_msg(sprintf("Including %d players (>= %d minutes)", n_players, min_minutes))
+  progress_msg(sprintf("Replacement pool: %d players (< %d minutes)",
+                       length(replacement_player_ids), min_minutes))
+
+  list(
+    player_minutes = player_minutes,
+    replacement_player_ids = replacement_player_ids,
+    player_ids = player_ids,
+    n_players = n_players,
+    all_player_minutes = all_player_minutes
+  )
+}
+
+
+#' Build RAPM row data from valid splints
+#'
+#' Creates 2 rows per splint (home attacking, away attacking) with game state
+#' covariates and target variable.
+#'
+#' @param valid_splints Data frame of splints with duration > 0
+#' @param target_type "xg" or "goals"
+#'
+#' @return List with row_data data.frame and target_per90_name string
+#' @keywords internal
+.build_rapm_row_data <- function(valid_splints, target_type) {
+  n_splints <- nrow(valid_splints)
+
+  # Pre-compute game state columns with defaults
+  gf_home <- if ("gf_home" %in% names(valid_splints)) valid_splints$gf_home else rep(0, n_splints)
+  ga_home <- if ("ga_home" %in% names(valid_splints)) valid_splints$ga_home else rep(0, n_splints)
+  avg_min_val <- if ("avg_min" %in% names(valid_splints)) {
+    valid_splints$avg_min
+  } else {
+    (valid_splints$start_minute + valid_splints$end_minute) / 2
+  }
+
+  n_players_home <- if ("n_players_home" %in% names(valid_splints)) {
+    valid_splints$n_players_home
+  } else {
+    rep(11, n_splints)
+  }
+  n_players_away <- if ("n_players_away" %in% names(valid_splints)) {
+    valid_splints$n_players_away
+  } else {
+    rep(11, n_splints)
+  }
+
+  duration <- valid_splints$duration
+
+  if (target_type == "xg") {
+    target_home <- ifelse(is.na(valid_splints$npxg_home), 0, valid_splints$npxg_home)
+    target_away <- ifelse(is.na(valid_splints$npxg_away), 0, valid_splints$npxg_away)
+    target_per90_name <- "xgf90"
+  } else {
+    target_home <- ifelse(is.na(valid_splints$goals_home), 0, valid_splints$goals_home)
+    target_away <- ifelse(is.na(valid_splints$goals_away), 0, valid_splints$goals_away)
+    target_per90_name <- "gf90"
+  }
+
+  n_rows <- n_splints * 2
+
+  row_data <- data.frame(
+    row_id = seq_len(n_rows),
+    splint_id = rep(valid_splints$splint_id, each = 2),
+    match_id = rep(valid_splints$match_id, each = 2),
+    target = as.vector(rbind(target_home, target_away)),
+    minutes = rep(duration, each = 2),
+    target_per_90 = as.vector(rbind(
+      ifelse(duration > 0, target_home * 90 / duration, 0),
+      ifelse(duration > 0, target_away * 90 / duration, 0)
+    )),
+    gd = as.vector(rbind(gf_home - ga_home, ga_home - gf_home)),
+    gf = as.vector(rbind(gf_home, ga_home)),
+    ga = as.vector(rbind(ga_home, gf_home)),
+    avg_min = rep(avg_min_val, each = 2),
+    home_away = rep(c("home", "away"), n_splints),
+    n_offense = as.vector(rbind(n_players_home, n_players_away)),
+    n_defense = as.vector(rbind(n_players_away, n_players_home)),
+    stringsAsFactors = FALSE
+  )
+
+  row_data$net_players <- row_data$n_offense - row_data$n_defense
+
+  list(row_data = row_data, target_per90_name = target_per90_name)
+}
+
+
+#' Build sparse player matrix from triplets
+#'
+#' Constructs the sparse matrix encoding which players are on offense/defense
+#' in each row, including replacement-level columns.
+#'
+#' @param players Data frame of player appearances
+#' @param valid_splints Data frame of valid splints
+#' @param player_ids Character vector of regular player IDs
+#' @param replacement_player_ids Character vector of replacement player IDs
+#' @param n_rows Total rows in design matrix
+#'
+#' @return List with X_players (sparse matrix), col_names, n_player_cols,
+#'   replacement_off_appearances, replacement_def_appearances
+#' @keywords internal
+.build_rapm_sparse_matrix <- function(players, valid_splints, player_ids,
+                                       replacement_player_ids, n_rows) {
+  n_players <- length(player_ids)
+  player_idx <- stats::setNames(seq_along(player_ids), player_ids)
+
+  replacement_off_col <- n_players + 1
+  n_player_cols <- (n_players + 1) * 2
+  replacement_def_col <- n_player_cols
+
+  col_names <- c(paste0(player_ids, "_off"), "replacement_off",
+                 paste0(player_ids, "_def"), "replacement_def")
+
+  valid_splint_ids <- valid_splints$splint_id
+  splint_to_idx <- stats::setNames(seq_along(valid_splint_ids), valid_splint_ids)
+
+  players_valid <- players[players$splint_id %in% valid_splint_ids, ]
+  players_valid$splint_idx <- splint_to_idx[players_valid$splint_id]
+
+  players_valid$is_regular <- players_valid$player_id %in% player_ids
+  players_valid$is_replacement <- players_valid$player_id %in% replacement_player_ids
+  players_valid$player_col <- player_idx[players_valid$player_id]
+
+  # Validate: regular players must have valid column indices
+  regular_with_na <- players_valid$is_regular & is.na(players_valid$player_col)
+  if (any(regular_with_na)) {
+    bad_ids <- unique(players_valid$player_id[regular_with_na])
+    cli::cli_warn("Found regular players with NA column indices: {paste(head(bad_ids, 5), collapse = ', ')}")
+    players_valid$is_regular[regular_with_na] <- FALSE
+  }
+
+  home_regular <- players_valid[players_valid$is_home & players_valid$is_regular, ]
+  away_regular <- players_valid[!players_valid$is_home & players_valid$is_regular, ]
+  home_replacement <- players_valid[players_valid$is_home & players_valid$is_replacement, ]
+  away_replacement <- players_valid[!players_valid$is_home & players_valid$is_replacement, ]
+
+  triplets <- list()
+
+  # Home players on offense (home attacking)
+  if (nrow(home_regular) > 0) {
+    triplets$home_off <- data.frame(
+      i = 2 * home_regular$splint_idx - 1,
+      j = home_regular$player_col,
+      x = 1
+    )
+  }
+
+  # Home players on defense (away attacking)
+  if (nrow(home_regular) > 0) {
+    triplets$home_def <- data.frame(
+      i = 2 * home_regular$splint_idx,
+      j = home_regular$player_col + n_players + 1,
+      x = 1
+    )
+  }
+
+  # Away players on offense (away attacking)
+  if (nrow(away_regular) > 0) {
+    triplets$away_off <- data.frame(
+      i = 2 * away_regular$splint_idx,
+      j = away_regular$player_col,
+      x = 1
+    )
+  }
+
+  # Away players on defense (home attacking)
+  if (nrow(away_regular) > 0) {
+    triplets$away_def <- data.frame(
+      i = 2 * away_regular$splint_idx - 1,
+      j = away_regular$player_col + n_players + 1,
+      x = 1
+    )
+  }
+
+  # Replacement on offense (home attacking with home replacement)
+  if (nrow(home_replacement) > 0) {
+    home_repl_splints <- unique(home_replacement$splint_idx)
+    triplets$home_repl_off <- data.frame(
+      i = 2 * home_repl_splints - 1, j = replacement_off_col, x = 1
+    )
+  }
+
+  # Replacement on offense (away attacking with away replacement)
+  if (nrow(away_replacement) > 0) {
+    away_repl_splints <- unique(away_replacement$splint_idx)
+    triplets$away_repl_off <- data.frame(
+      i = 2 * away_repl_splints, j = replacement_off_col, x = 1
+    )
+  }
+
+  # Replacement on defense (home attacking with away replacement)
+  if (nrow(away_replacement) > 0) {
+    away_repl_splints <- unique(away_replacement$splint_idx)
+    triplets$away_repl_def <- data.frame(
+      i = 2 * away_repl_splints - 1, j = replacement_def_col, x = 1
+    )
+  }
+
+  # Replacement on defense (away attacking with home replacement)
+  if (nrow(home_replacement) > 0) {
+    home_repl_splints <- unique(home_replacement$splint_idx)
+    triplets$home_repl_def <- data.frame(
+      i = 2 * home_repl_splints, j = replacement_def_col, x = 1
+    )
+  }
+
+  all_triplets <- do.call(rbind, triplets)
+
+  replacement_off_appearances <- sum(
+    if (nrow(home_replacement) > 0) length(unique(home_replacement$splint_idx)) else 0,
+    if (nrow(away_replacement) > 0) length(unique(away_replacement$splint_idx)) else 0
+  )
+  replacement_def_appearances <- replacement_off_appearances
+
+  progress_msg(sprintf("Replacement appearances: %d offense, %d defense",
+                       replacement_off_appearances, replacement_def_appearances))
+
+  X_players <- Matrix::sparseMatrix(
+    i = all_triplets$i,
+    j = all_triplets$j,
+    x = all_triplets$x,
+    dims = c(n_rows, n_player_cols),
+    dimnames = list(NULL, col_names)
+  )
+
+  list(
+    X_players = X_players,
+    col_names = col_names,
+    n_player_cols = n_player_cols,
+    replacement_off_appearances = replacement_off_appearances,
+    replacement_def_appearances = replacement_def_appearances
+  )
+}
+
+
+# ============================================================================
+# Main RAPM design matrix function
+# ============================================================================
+
 #' Create RAPM design matrix (new structure)
 #'
 #' Creates the design matrix with 2 rows per splint (one per team perspective):
@@ -42,295 +328,43 @@ create_rapm_design_matrix <- function(splint_data, min_minutes = 90,
 
   splints <- splint_data$splints
   players <- splint_data$players
-  match_info <- splint_data$match_info
 
-  # Validate splints and players data frames
   validate_dataframe(splints, required_cols = c("splint_id", "duration"), arg_name = "splint_data$splints")
   validate_dataframe(players, required_cols = c("splint_id", "player_id", "player_name"), arg_name = "splint_data$players")
 
-  # Filter to valid splints (non-zero duration, has xG data)
+  # Filter to valid splints
   valid_splints <- splints[splints$duration > 0, ]
   n_splints <- nrow(valid_splints)
   progress_msg(sprintf("Processing %d splints...", n_splints))
 
-  # Use data.table for efficient join and aggregation
-  players_dt <- data.table::as.data.table(players)
-  splints_dt <- data.table::as.data.table(splints[, c("splint_id", "duration")])
+  # Step 1: Aggregate player minutes and split into regular/replacement
+  pm <- .aggregate_player_minutes(players, splints, min_minutes)
 
-  # Set keys for fast join
-  data.table::setkey(players_dt, splint_id)
-  data.table::setkey(splints_dt, splint_id)
-
-  # Join and aggregate in one pass
-  players_with_duration <- splints_dt[players_dt, on = "splint_id"]
-
-  # Aggregate minutes and get canonical name in single pass
-  all_player_minutes <- players_with_duration[, .(
-    total_minutes = sum(duration, na.rm = TRUE),
-    player_name = {
-      tbl <- table(player_name)
-      tools::toTitleCase(tolower(names(tbl)[which.max(tbl)]))
-    }
-  ), by = player_id]
-
-  all_player_minutes <- as.data.frame(all_player_minutes)
-
-  # Separate players meeting threshold vs replacement-level
-  player_minutes <- all_player_minutes[all_player_minutes$total_minutes >= min_minutes, ]
-  replacement_player_ids <- all_player_minutes$player_id[all_player_minutes$total_minutes < min_minutes]
-
-  player_ids <- player_minutes$player_id
-  n_players <- length(player_ids)
-
- if (n_players == 0) {
-    cli::cli_abort(c(
-      "No players meet minimum minutes requirement.",
-      "i" = "Current threshold: {min_minutes} minutes",
-      "i" = "Try lowering {.arg min_minutes} or adding more match data."
-    ))
-  }
-
-  progress_msg(sprintf("Including %d players (>= %d minutes)", n_players, min_minutes))
-  progress_msg(sprintf("Replacement pool: %d players (< %d minutes)",
-                       length(replacement_player_ids), min_minutes))
-
-  # Create player ID to column index mapping
-  player_idx <- stats::setNames(seq_along(player_ids), player_ids)
-
-  # Column indices for replacement
-  replacement_off_col <- n_players + 1
-  n_player_cols <- (n_players + 1) * 2
-  replacement_def_col <- n_player_cols
-
-  col_names <- c(paste0(player_ids, "_off"), "replacement_off",
-                 paste0(player_ids, "_def"), "replacement_def")
-
-  # =========================================================================
-  # VECTORIZED row_data construction
-  # =========================================================================
+  # Step 2: Build row data (2 rows per splint with game state)
   progress_msg("Building row data (vectorized)...")
+  rd <- .build_rapm_row_data(valid_splints, target_type)
+  row_data <- rd$row_data
+  n_rows <- nrow(row_data)
 
-  # Pre-compute game state columns with defaults
-  gf_home <- if ("gf_home" %in% names(valid_splints)) valid_splints$gf_home else rep(0, n_splints)
-  ga_home <- if ("ga_home" %in% names(valid_splints)) valid_splints$ga_home else rep(0, n_splints)
-  avg_min_val <- if ("avg_min" %in% names(valid_splints)) {
-    valid_splints$avg_min
-  } else {
-    (valid_splints$start_minute + valid_splints$end_minute) / 2
-  }
-
-  # Player counts (11 minus red cards, default to 11 if not available)
-  n_players_home <- if ("n_players_home" %in% names(valid_splints)) {
-    valid_splints$n_players_home
-  } else {
-    rep(11, n_splints)
-  }
-  n_players_away <- if ("n_players_away" %in% names(valid_splints)) {
-    valid_splints$n_players_away
-  } else {
-    rep(11, n_splints)
-  }
-
-  duration <- valid_splints$duration
-
-  # Calculate target based on target_type
-  if (target_type == "xg") {
-    # Use non-penalty xG
-    target_home <- ifelse(is.na(valid_splints$npxg_home), 0, valid_splints$npxg_home)
-    target_away <- ifelse(is.na(valid_splints$npxg_away), 0, valid_splints$npxg_away)
-    target_name <- "xgf"
-    target_per90_name <- "xgf90"
-  } else {
-    # Use actual goals scored in this splint
-    target_home <- ifelse(is.na(valid_splints$goals_home), 0, valid_splints$goals_home)
-    target_away <- ifelse(is.na(valid_splints$goals_away), 0, valid_splints$goals_away)
-    target_name <- "gf"
-    target_per90_name <- "gf90"
-  }
-
-  # Row data: 2 rows per splint (home attacking, away attacking)
-  n_rows <- n_splints * 2
-
-  row_data <- data.frame(
-    row_id = seq_len(n_rows),
-    splint_id = rep(valid_splints$splint_id, each = 2),
-    match_id = rep(valid_splints$match_id, each = 2),
-    target = as.vector(rbind(target_home, target_away)),
-    minutes = rep(duration, each = 2),
-    target_per_90 = as.vector(rbind(
-      ifelse(duration > 0, target_home * 90 / duration, 0),
-      ifelse(duration > 0, target_away * 90 / duration, 0)
-    )),
-    gd = as.vector(rbind(gf_home - ga_home, ga_home - gf_home)),
-    gf = as.vector(rbind(gf_home, ga_home)),
-    ga = as.vector(rbind(ga_home, gf_home)),
-    avg_min = rep(avg_min_val, each = 2),
-    home_away = rep(c("home", "away"), n_splints),
-    # Player counts from perspective of attacking team
-    # Row 1 (home attacking): n_offense = home players, n_defense = away players
-    # Row 2 (away attacking): n_offense = away players, n_defense = home players
-    n_offense = as.vector(rbind(n_players_home, n_players_away)),
-    n_defense = as.vector(rbind(n_players_away, n_players_home)),
-    stringsAsFactors = FALSE
-  )
-
-  # Add net players (offense - defense, positive = man advantage for attacking team)
-  row_data$net_players <- row_data$n_offense - row_data$n_defense
-
-  # =========================================================================
-  # VECTORIZED sparse matrix construction
-  # =========================================================================
+  # Step 3: Build sparse player matrix
   progress_msg("Building sparse matrix (vectorized)...")
-
-  # Create splint index for each player appearance
-  valid_splint_ids <- valid_splints$splint_id
-  splint_to_idx <- stats::setNames(seq_along(valid_splint_ids), valid_splint_ids)
-
-  # Filter players to only those in valid splints
-  players_valid <- players[players$splint_id %in% valid_splint_ids, ]
-  players_valid$splint_idx <- splint_to_idx[players_valid$splint_id]
-
-  # Classify each player appearance
-  players_valid$is_regular <- players_valid$player_id %in% player_ids
-  players_valid$is_replacement <- players_valid$player_id %in% replacement_player_ids
-
-  # Get column indices for regular players (NA for non-regular players)
-  players_valid$player_col <- player_idx[players_valid$player_id]
-
-  # Validate: regular players must have valid column indices
-  regular_with_na <- players_valid$is_regular & is.na(players_valid$player_col)
-  if (any(regular_with_na)) {
-    bad_ids <- unique(players_valid$player_id[regular_with_na])
-    warning(sprintf("Found %d regular players with NA column indices: %s",
-                    length(bad_ids), paste(head(bad_ids, 5), collapse = ", ")))
-    # Mark these as not regular to avoid matrix errors
-    players_valid$is_regular[regular_with_na] <- FALSE
-  }
-
-  # Split by home/away and regular/replacement
-  home_regular <- players_valid[players_valid$is_home & players_valid$is_regular, ]
-  away_regular <- players_valid[!players_valid$is_home & players_valid$is_regular, ]
-  home_replacement <- players_valid[players_valid$is_home & players_valid$is_replacement, ]
-  away_replacement <- players_valid[!players_valid$is_home & players_valid$is_replacement, ]
-
-  # Build triplets vectorized
-  # Row indices: home attacking = 2*splint_idx - 1, away attacking = 2*splint_idx
-  # For home team attacking: home players -> offense, away players -> defense
-  # For away team attacking: away players -> offense, home players -> defense
-
-  triplets <- list()
-
-  # 1. Home players on offense (when home is attacking)
-  if (nrow(home_regular) > 0) {
-    triplets$home_off <- data.frame(
-      i = 2 * home_regular$splint_idx - 1,
-      j = home_regular$player_col,
-      x = 1
-    )
-  }
-
-  # 2. Home players on defense (when away is attacking)
-  if (nrow(home_regular) > 0) {
-    triplets$home_def <- data.frame(
-      i = 2 * home_regular$splint_idx,
-      j = home_regular$player_col + n_players + 1,
-      x = 1
-    )
-  }
-
-  # 3. Away players on offense (when away is attacking)
-  if (nrow(away_regular) > 0) {
-    triplets$away_off <- data.frame(
-      i = 2 * away_regular$splint_idx,
-      j = away_regular$player_col,
-      x = 1
-    )
-  }
-
-  # 4. Away players on defense (when home is attacking)
-  if (nrow(away_regular) > 0) {
-    triplets$away_def <- data.frame(
-      i = 2 * away_regular$splint_idx - 1,
-      j = away_regular$player_col + n_players + 1,
-      x = 1
-    )
-  }
-
-  # 5. Replacement on offense (home attacking with home replacement)
-  if (nrow(home_replacement) > 0) {
-    # One entry per splint that has a home replacement player
-    home_repl_splints <- unique(home_replacement$splint_idx)
-    triplets$home_repl_off <- data.frame(
-      i = 2 * home_repl_splints - 1,
-      j = replacement_off_col,
-      x = 1
-    )
-  }
-
-  # 6. Replacement on offense (away attacking with away replacement)
-  if (nrow(away_replacement) > 0) {
-    away_repl_splints <- unique(away_replacement$splint_idx)
-    triplets$away_repl_off <- data.frame(
-      i = 2 * away_repl_splints,
-      j = replacement_off_col,
-      x = 1
-    )
-  }
-
-  # 7. Replacement on defense (home attacking with away replacement)
-  if (nrow(away_replacement) > 0) {
-    away_repl_splints <- unique(away_replacement$splint_idx)
-    triplets$away_repl_def <- data.frame(
-      i = 2 * away_repl_splints - 1,
-      j = replacement_def_col,
-      x = 1
-    )
-  }
-
-  # 8. Replacement on defense (away attacking with home replacement)
-  if (nrow(home_replacement) > 0) {
-    home_repl_splints <- unique(home_replacement$splint_idx)
-    triplets$home_repl_def <- data.frame(
-      i = 2 * home_repl_splints,
-      j = replacement_def_col,
-      x = 1
-    )
-  }
-
-  # Combine all triplets
-  all_triplets <- do.call(rbind, triplets)
-
-  replacement_off_appearances <- sum(
-    if (nrow(home_replacement) > 0) length(unique(home_replacement$splint_idx)) else 0,
-    if (nrow(away_replacement) > 0) length(unique(away_replacement$splint_idx)) else 0
-  )
-  replacement_def_appearances <- replacement_off_appearances  # Symmetric
-
-  progress_msg(sprintf("Replacement appearances: %d offense, %d defense",
-                       replacement_off_appearances, replacement_def_appearances))
-
-  # Create sparse matrix
-  X_players <- Matrix::sparseMatrix(
-    i = all_triplets$i,
-    j = all_triplets$j,
-    x = all_triplets$x,
-    dims = c(n_rows, n_player_cols),
-    dimnames = list(NULL, col_names)
+  sm <- .build_rapm_sparse_matrix(
+    players, valid_splints, pm$player_ids, pm$replacement_player_ids, n_rows
   )
 
-  # Weights based on duration (minimum weight of 0.01 to avoid division by zero)
+  # Weights based on duration
   weights <- pmax(row_data$minutes / 90, 0.01)
 
   progress_msg(sprintf("Design matrix: %d rows, %d player columns (+2 replacement), %d covariates",
-                       n_rows, n_players * 2, 5))
+                       n_rows, pm$n_players * 2, 5))
 
-  # Add replacement to player mapping and IDs
-  replacement_minutes <- sum(all_player_minutes$total_minutes[
-    all_player_minutes$player_id %in% replacement_player_ids
+  # Build player mapping with replacement row
+  replacement_minutes <- sum(pm$all_player_minutes$total_minutes[
+    pm$all_player_minutes$player_id %in% pm$replacement_player_ids
   ])
 
-  player_mapping_with_replacement <- dplyr::bind_rows(
-    player_minutes,
+  player_mapping <- rbind(
+    pm$player_minutes,
     data.frame(
       player_id = "replacement",
       player_name = "Replacement Level",
@@ -339,26 +373,24 @@ create_rapm_design_matrix <- function(splint_data, min_minutes = 90,
     )
   )
 
-  player_ids_with_replacement <- c(player_ids, "replacement")
-
   list(
-    X_players = X_players,
+    X_players = sm$X_players,
     row_data = row_data,
     y = row_data$target_per_90,
     weights = weights,
-    player_mapping = player_mapping_with_replacement,
-    player_ids = player_ids_with_replacement,
-    n_players = n_players,  # Count of regular players (excludes replacement)
-    n_players_total = n_players + 1,  # Including replacement
+    player_mapping = player_mapping,
+    player_ids = c(pm$player_ids, "replacement"),
+    n_players = pm$n_players,
+    n_players_total = pm$n_players + 1,
     n_rows = n_rows,
     target_type = target_type,
-    target_name = target_per90_name,
-    replacement_player_ids = replacement_player_ids,
+    target_name = rd$target_per90_name,
+    replacement_player_ids = pm$replacement_player_ids,
     replacement_stats = list(
-      n_players = length(replacement_player_ids),
+      n_players = length(pm$replacement_player_ids),
       total_minutes = replacement_minutes,
-      off_appearances = replacement_off_appearances,
-      def_appearances = replacement_def_appearances
+      off_appearances = sm$replacement_off_appearances,
+      def_appearances = sm$replacement_def_appearances
     )
   )
 }
@@ -390,8 +422,10 @@ prepare_rapm_data <- function(splint_data, min_minutes = 90,
   if (target_type == "goals") {
     splint_cols <- names(splint_data$splints)
     if (!all(c("goals_home", "goals_away") %in% splint_cols)) {
-      warning("target_type='goals' requires 'goals_home' and 'goals_away' columns in splints. ",
-              "Splints may need to be regenerated with updated create_all_splints().")
+      cli::cli_warn(c(
+        "target_type='goals' requires 'goals_home' and 'goals_away' columns in splints.",
+        "i" = "Falling back to xG-based target. Splints may need to be regenerated with {.fn create_all_splints}."
+      ))
     }
   }
 
@@ -401,17 +435,11 @@ prepare_rapm_data <- function(splint_data, min_minutes = 90,
   covariate_list <- list()
 
   if (include_covariates) {
-    # Game state covariates
-    # gd: goal difference (positive = winning)
-    # abs_goals: total goals scored (captures game "openness", not collinear with gd)
     covariate_list$gd <- rapm_data$row_data$gd
     covariate_list$abs_goals <- rapm_data$row_data$gf + rapm_data$row_data$ga
     covariate_list$avg_min <- rapm_data$row_data$avg_min
     covariate_list$is_home <- as.numeric(rapm_data$row_data$home_away == "home")
 
-    # Player count covariates for red card situations
-    # net_players: asymmetric advantage (playing up/down a man)
-    # abs_reds: total red cards (captures "open game" effect when fewer players overall)
     if ("n_offense" %in% names(rapm_data$row_data) &&
         "n_defense" %in% names(rapm_data$row_data)) {
       covariate_list$net_players <- rapm_data$row_data$n_offense -
@@ -473,7 +501,6 @@ prepare_rapm_data <- function(splint_data, min_minutes = 90,
   }
 
   # League-season cell means (when both available)
-  # Each coefficient directly represents xG/90 level for that league-season
   if (use_cell_means) {
     splint_leagues <- splint_data$splints$league[
       match(rapm_data$row_data$splint_id, splint_data$splints$splint_id)
@@ -482,7 +509,6 @@ prepare_rapm_data <- function(splint_data, min_minutes = 90,
       match(rapm_data$row_data$splint_id, splint_data$splints$splint_id)
     ]
 
-    # Create combined league_season factor
     league_season <- paste0(splint_leagues, "_", splint_seasons)
     unique_ls <- sort(unique(league_season[!is.na(league_season)]))
 
@@ -494,7 +520,7 @@ prepare_rapm_data <- function(splint_data, min_minutes = 90,
     if (length(unique_ls) > 1) {
       progress_msg(sprintf("Adding %d league-season dummies (ref: %s)",
                            length(unique_ls) - 1, unique_ls[1]))
-      for (ls in unique_ls[-1]) {  # Skip first as reference
+      for (ls in unique_ls[-1]) {
         col_name <- paste0("ls_", gsub(" ", "_", ls))
         covariate_list[[col_name]] <- as.numeric(league_season == ls)
       }
@@ -542,19 +568,15 @@ prepare_rapm_data <- function(splint_data, min_minutes = 90,
 #' @param match_info Match info data frame with season column
 #'
 #' @return Filtered rapm_data
-#' @export
+#' @keywords internal
 filter_rapm_by_season <- function(rapm_data, seasons, match_info) {
   # Get match_ids for specified seasons
-  valid_matches <- match_info %>%
-    dplyr::filter(.data$season %in% seasons) %>%
-    dplyr::pull(.data$match_id)
+  valid_matches <- match_info$match_id[match_info$season %in% seasons]
 
   # Get splint indices
-  valid_splints <- rapm_data$splint_info %>%
-    dplyr::mutate(row_num = dplyr::row_number()) %>%
-    dplyr::filter(.data$match_id %in% valid_matches)
-
-  idx <- valid_splints$row_num
+  splint_info <- rapm_data$splint_info
+  splint_info$row_num <- seq_len(nrow(splint_info))
+  idx <- splint_info$row_num[splint_info$match_id %in% valid_matches]
 
   # Subset all components
   rapm_data$X <- rapm_data$X[idx, , drop = FALSE]

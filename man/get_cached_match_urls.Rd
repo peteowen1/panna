@@ -24,3 +24,4 @@ urls <- get_cached_match_urls("ENG", "2023-2024")
 length(urls)  # Number of cached matches
 }
 }
+\keyword{internal}

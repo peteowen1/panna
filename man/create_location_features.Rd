@@ -17,3 +17,4 @@ Data frame with location features
 \description{
 Creates a minimal feature set based only on location.
 }
+\keyword{internal}

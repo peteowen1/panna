@@ -25,3 +25,4 @@ Calibrated to produce ~11\% mean xG (matching real shot distributions):
 \item Long range (dist ~30): xG ~ 0.02-0.03
 }
 }
+\keyword{internal}

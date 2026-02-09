@@ -17,3 +17,4 @@ Data frame of events sorted by minute
 \description{
 Parses goals, substitutions, and red cards from event data with their minutes.
 }
+\keyword{internal}

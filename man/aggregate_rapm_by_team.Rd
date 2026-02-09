@@ -17,3 +17,4 @@ Data frame with team-level summaries
 \description{
 Summarizes player ratings at team level.
 }
+\keyword{internal}

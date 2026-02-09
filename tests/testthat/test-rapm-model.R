@@ -2,6 +2,7 @@
 
 # Helper to create minimal RAPM data structure for testing
 create_test_rapm_data <- function(n_splints = 50, n_players = 20) {
+  set.seed(42)
   # Create player IDs
   player_ids <- paste0("player_", seq_len(n_players))
 

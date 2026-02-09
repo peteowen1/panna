@@ -37,7 +37,7 @@ NULL
 #'
 #' @return Data frame with query results.
 #'
-#' @export
+#' @keywords internal
 #' @examples
 #' \dontrun{
 #' # Load all summary data
@@ -50,6 +50,7 @@ NULL
 #' }
 query_remote_parquet <- function(table_name, sql_template, release = NULL,
                                   tag = "fbref-latest") {
+  .check_suggests("httr2", "Remote data loading requires httr2.")
   # Get release info (use cache, keyed by tag)
   cache_key <- paste0("release_", tag)
 
@@ -109,7 +110,7 @@ query_remote_parquet <- function(table_name, sql_template, release = NULL,
 #'
 #' @return Data frame with query results.
 #'
-#' @export
+#' @keywords internal
 #' @examples
 #' \dontrun{
 #' # Query summary data for England
@@ -171,7 +172,7 @@ query_local_parquet <- function(table_type, sql_template, league = NULL, season 
 #'
 #' @return List with release information (tag_name, assets, etc.).
 #'
-#' @export
+#' @keywords internal
 #' @examples
 #' \dontrun{
 #' # Get FBref release
@@ -205,7 +206,7 @@ get_latest_release <- function(repo = "peteowen1/pannadata", tag = NULL) {
 #'
 #' @return Character vector of table names (without .parquet extension).
 #'
-#' @export
+#' @keywords internal
 #' @examples
 #' \dontrun{
 #' # See what tables are available remotely
@@ -281,7 +282,9 @@ load_summary <- function(league = NULL, season = NULL, source = c("remote", "loc
 #'
 #' Loads match event data (goals, substitutions, cards, etc.) from pannadata.
 #'
-#' @inheritParams load_summary
+#' @param league Optional league filter (e.g., "ENG", "ESP", "GER").
+#' @param season Optional season filter (e.g., "2023-2024").
+#' @param source Data source: "remote" (default) or "local".
 #'
 #' @return Data frame of match events.
 #'
@@ -296,7 +299,9 @@ load_events <- function(league = NULL, season = NULL, source = c("remote", "loca
 #'
 #' Loads shot-level data with expected goals (xG) from pannadata.
 #'
-#' @inheritParams load_summary
+#' @param league Optional league filter (e.g., "ENG", "ESP", "GER").
+#' @param season Optional season filter (e.g., "2023-2024").
+#' @param source Data source: "remote" (default) or "local".
 #'
 #' @return Data frame of shot data.
 #'
@@ -311,7 +316,9 @@ load_shots <- function(league = NULL, season = NULL, source = c("remote", "local
 #'
 #' Loads match metadata from pannadata.
 #'
-#' @inheritParams load_summary
+#' @param league Optional league filter (e.g., "ENG", "ESP", "GER").
+#' @param season Optional season filter (e.g., "2023-2024").
+#' @param source Data source: "remote" (default) or "local".
 #'
 #' @return Data frame of match metadata.
 #'
@@ -326,7 +333,9 @@ load_metadata <- function(league = NULL, season = NULL, source = c("remote", "lo
 #'
 #' Loads passing statistics from pannadata.
 #'
-#' @inheritParams load_summary
+#' @param league Optional league filter (e.g., "ENG", "ESP", "GER").
+#' @param season Optional season filter (e.g., "2023-2024").
+#' @param source Data source: "remote" (default) or "local".
 #'
 #' @return Data frame of passing statistics.
 #'
@@ -341,7 +350,9 @@ load_passing <- function(league = NULL, season = NULL, source = c("remote", "loc
 #'
 #' Loads defensive statistics from pannadata.
 #'
-#' @inheritParams load_summary
+#' @param league Optional league filter (e.g., "ENG", "ESP", "GER").
+#' @param season Optional season filter (e.g., "2023-2024").
+#' @param source Data source: "remote" (default) or "local".
 #'
 #' @return Data frame of defensive statistics.
 #'
@@ -356,7 +367,9 @@ load_defense <- function(league = NULL, season = NULL, source = c("remote", "loc
 #'
 #' Loads possession statistics from pannadata.
 #'
-#' @inheritParams load_summary
+#' @param league Optional league filter (e.g., "ENG", "ESP", "GER").
+#' @param season Optional season filter (e.g., "2023-2024").
+#' @param source Data source: "remote" (default) or "local".
 #'
 #' @return Data frame of possession statistics.
 #'
@@ -371,7 +384,9 @@ load_possession <- function(league = NULL, season = NULL, source = c("remote", "
 #'
 #' Loads goalkeeper statistics from pannadata.
 #'
-#' @inheritParams load_summary
+#' @param league Optional league filter (e.g., "ENG", "ESP", "GER").
+#' @param season Optional season filter (e.g., "2023-2024").
+#' @param source Data source: "remote" (default) or "local".
 #'
 #' @return Data frame of goalkeeper statistics.
 #'
@@ -599,6 +614,7 @@ load_understat_table_data <- function(table_type, league, season, source) {
 #' @return Data frame with query results
 #' @keywords internal
 query_remote_understat_parquet <- function(table_name, sql_template) {
+  .check_suggests("httr2", "Remote data loading requires httr2.")
   # Get release info for Understat tag
   release <- tryCatch({
     url <- "https://api.github.com/repos/peteowen1/pannadata/releases/tags/understat-latest"
@@ -609,7 +625,7 @@ query_remote_understat_parquet <- function(table_name, sql_template) {
       httr2::req_perform()
     httr2::resp_body_json(resp)
   }, error = function(e) {
-    stop("Failed to get Understat release info: ", e$message)
+    cli::cli_abort(c("Failed to get Understat release info.", "x" = conditionMessage(e)))
   })
 
   # Build URL

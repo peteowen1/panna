@@ -17,3 +17,4 @@ List with home_players and away_players character vectors
 \description{
 Returns the player IDs for home and away teams in a splint.
 }
+\keyword{internal}

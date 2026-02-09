@@ -15,3 +15,4 @@ Data frame with action_id and target columns
 \description{
 Creates target labels for EPV model training from chain outcomes.
 }
+\keyword{internal}

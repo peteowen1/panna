@@ -19,3 +19,4 @@ Logical indicating if in penalty area
 \description{
 Check if Coordinates are in Penalty Area
 }
+\keyword{internal}

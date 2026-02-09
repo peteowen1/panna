@@ -17,3 +17,4 @@ List containing metadata and all parsed tables
 \description{
 Extracts all available stat tables from a match page.
 }
+\keyword{internal}

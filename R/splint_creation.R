@@ -237,7 +237,7 @@ calculate_first_half_end <- function(events, shots = NULL, default_end = 46) {
 #' @param match_id Match identifier to filter for
 #'
 #' @return Data frame of events sorted by minute
-#' @export
+#' @keywords internal
 extract_match_events <- function(events, match_id) {
   # Handle NULL or empty events
  if (is.null(events) || nrow(events) == 0) {
@@ -252,16 +252,15 @@ extract_match_events <- function(events, match_id) {
     ))
   }
 
-  match_events <- events %>%
-    dplyr::filter(.data$match_id == !!match_id) %>%
-    dplyr::arrange(.data$minute) %>%
-    dplyr::mutate(
-      # Handle multiple event type formats (FBref scraper uses lowercase with underscores)
-      is_goal = .data$event_type %in% c("goal", "Goal", "penalty_goal", "own_goal"),
-      is_sub = .data$event_type %in% c("sub_on", "substitution", "Substitution"),
-      is_red_card = if ("is_red_card" %in% names(.)) .data$is_red_card else
-        .data$event_type %in% c("red_card", "Red Card", "yellow_red_card")
-    )
+  match_events <- events[events$match_id == match_id, , drop = FALSE]
+  match_events <- match_events[order(match_events$minute), , drop = FALSE]
+
+  has_red_card_col <- "is_red_card" %in% names(match_events)
+  # Handle multiple event type formats (FBref scraper uses lowercase with underscores)
+  match_events$is_goal <- match_events$event_type %in% c("goal", "Goal", "penalty_goal", "own_goal")
+  match_events$is_sub <- match_events$event_type %in% c("sub_on", "substitution", "Substitution")
+  match_events$is_red_card <- if (has_red_card_col) match_events$is_red_card else
+    match_events$event_type %in% c("red_card", "Red Card", "yellow_red_card")
 
   match_events
 }
@@ -306,7 +305,7 @@ extract_sub_events <- function(lineups) {
       minutes_played <- as.numeric(subs$minutes)
       # Validate: minutes played should be <= 90 for regulation time
       if (any(minutes_played > 90, na.rm = TRUE)) {
-        warning("Sub minutes > 90 detected; sub times may be inaccurate for extra time matches")
+        cli::cli_warn("Sub minutes > 90 detected; sub times may be inaccurate for extra time matches")
       }
       # Estimate on-time as (90 - minutes played), clamped to [0, 90]
       sub_times <- pmax(0, pmin(90, 90 - minutes_played))
@@ -345,7 +344,7 @@ extract_sub_events <- function(lineups) {
 #' @param include_halftime Logical, whether to create splint at halftime (default TRUE)
 #'
 #' @return Data frame of splint boundaries with game state
-#' @export
+#' @keywords internal
 create_splint_boundaries <- function(events, shots = NULL, include_goals = TRUE, include_halftime = TRUE) {
   # Get first-half stoppage from both events and shots
   events_stoppage <- get_first_half_stoppage(events)
@@ -479,7 +478,7 @@ create_splint_boundaries <- function(events, shots = NULL, include_goals = TRUE,
 #' @param match_id Match identifier
 #'
 #' @return Data frame with player assignments per splint
-#' @export
+#' @keywords internal
 assign_players_to_splints <- function(boundaries, lineups, events, match_id) {
   # Handle NULL or empty lineups
   if (is.null(lineups) || nrow(lineups) == 0) {
@@ -496,8 +495,7 @@ assign_players_to_splints <- function(boundaries, lineups, events, match_id) {
   }
 
   # Get match lineups - only players who actually played
-  match_lineups <- lineups %>%
-    dplyr::filter(.data$match_id == !!match_id, .data$minutes > 0)
+  match_lineups <- lineups[lineups$match_id == match_id & lineups$minutes > 0, , drop = FALSE]
 
   if (nrow(match_lineups) == 0) {
     return(data.frame(
@@ -516,30 +514,25 @@ assign_players_to_splints <- function(boundaries, lineups, events, match_id) {
   # Starters: on at minute 0
   # Subs: on at (90 - minutes) approximately
   # This is an approximation since we don't have exact sub timing
-  player_timing <- match_lineups %>%
-    dplyr::mutate(
-      # Starters come on at minute 0, subs come on at (90 - minutes_played)
-      on_minute = dplyr::if_else(.data$is_starter, 0, pmax(0, 90 - .data$minutes)),
-      # Everyone who isn't subbed off stays until 90
-      # Players who are subbed off: their off_minute = on_minute + minutes
-      off_minute = pmin(90, .data$on_minute + .data$minutes)
-    ) %>%
-    dplyr::select(match_id, team, is_home, player_name, player_id, on_minute, off_minute)
+  player_timing <- match_lineups
+  # Starters come on at minute 0, subs come on at (90 - minutes_played)
+  player_timing$on_minute <- ifelse(player_timing$is_starter, 0, pmax(0, 90 - player_timing$minutes))
+  # Everyone who isn't subbed off stays until 90
+  # Players who are subbed off: their off_minute = on_minute + minutes
+  player_timing$off_minute <- pmin(90, player_timing$on_minute + player_timing$minutes)
+  player_timing <- player_timing[, c("match_id", "team", "is_home", "player_name", "player_id", "on_minute", "off_minute"), drop = FALSE]
 
   # For each splint, determine players on pitch
-  splint_players <- purrr::map_dfr(seq_len(nrow(boundaries)), function(i) {
+  splint_players <- data.table::rbindlist(lapply(seq_len(nrow(boundaries)), function(i) {
     start_min <- boundaries$start_minute[i]
     end_min <- boundaries$end_minute[i]
 
     # A player is on pitch if they:
     # - Came on before or at the splint start (on_minute <= start_min)
     # - Left after the splint start (off_minute > start_min)
-    on_pitch <- player_timing %>%
-      dplyr::filter(
-        .data$on_minute <= start_min,
-        .data$off_minute > start_min
-      ) %>%
-      dplyr::select(match_id, team, is_home, player_name, player_id)
+    on_pitch <- player_timing[player_timing$on_minute <= start_min &
+                                player_timing$off_minute > start_min, , drop = FALSE]
+    on_pitch <- on_pitch[, c("match_id", "team", "is_home", "player_name", "player_id"), drop = FALSE]
 
     if (nrow(on_pitch) == 0) {
       return(NULL)
@@ -550,7 +543,7 @@ assign_players_to_splints <- function(boundaries, lineups, events, match_id) {
     on_pitch$end_minute <- end_min
 
     on_pitch
-  })
+  }), fill = TRUE)
 
   splint_players
 }
@@ -567,7 +560,7 @@ assign_players_to_splints <- function(boundaries, lineups, events, match_id) {
 #' @param away_team Name of the away team
 #'
 #' @return Data frame with npxGD for each splint
-#' @export
+#' @keywords internal
 calculate_splint_npxgd <- function(boundaries, shooting, match_id,
                                     home_team = NULL, away_team = NULL) {
   # Handle NULL or empty shooting data
@@ -584,9 +577,7 @@ calculate_splint_npxgd <- function(boundaries, shooting, match_id,
     ))
   }
 
-  match_shots <- shooting %>%
-    dplyr::filter(.data$match_id == !!match_id,
-                  !.data$is_penalty)
+  match_shots <- shooting[shooting$match_id == match_id & !shooting$is_penalty, , drop = FALSE]
 
   # Handle case with no shots
   if (nrow(match_shots) == 0) {
@@ -603,22 +594,20 @@ calculate_splint_npxgd <- function(boundaries, shooting, match_id,
   }
 
   # Assign shots to splints based on minute
-  splint_xg <- purrr::map_dfr(seq_len(nrow(boundaries)), function(i) {
+  splint_xg <- data.table::rbindlist(lapply(seq_len(nrow(boundaries)), function(i) {
     start_min <- boundaries$start_minute[i]
     end_min <- boundaries$end_minute[i]
 
-    splint_shots <- match_shots %>%
-      dplyr::filter(.data$minute >= start_min,
-                    .data$minute < end_min)
+    splint_shots <- match_shots[match_shots$minute >= start_min &
+                                  match_shots$minute < end_min, , drop = FALSE]
 
     # Calculate xG by team - properly identify home vs away
     if (nrow(splint_shots) == 0) {
       npxg_home <- 0
       npxg_away <- 0
     } else {
-      team_xg <- splint_shots %>%
-        dplyr::group_by(.data$team) %>%
-        dplyr::summarise(xg = sum(.data$xg, na.rm = TRUE), .groups = "drop")
+      dt_shots <- data.table::as.data.table(splint_shots)
+      team_xg <- as.data.frame(dt_shots[, .(xg = sum(xg, na.rm = TRUE)), by = team])
 
       # Match by team name if provided, otherwise use first/second as fallback
       if (!is.null(home_team)) {
@@ -640,13 +629,11 @@ calculate_splint_npxgd <- function(boundaries, shooting, match_id,
       npxg_away = npxg_away,
       stringsAsFactors = FALSE
     )
-  })
+  }), fill = TRUE)
 
-  splint_xg %>%
-    dplyr::mutate(
-      npxgd = .data$npxg_home - .data$npxg_away,
-      npxgd_per_90 = safe_divide(.data$npxgd * 90, .data$duration)
-    )
+  splint_xg$npxgd <- splint_xg$npxg_home - splint_xg$npxg_away
+  splint_xg$npxgd_per_90 <- safe_divide(splint_xg$npxgd * 90, splint_xg$duration)
+  splint_xg
 }
 
 
@@ -662,7 +649,7 @@ calculate_splint_npxgd <- function(boundaries, shooting, match_id,
 #' @param include_goals Whether to create splints at goal times
 #'
 #' @return List with splint data for the match
-#' @export
+#' @keywords internal
 create_match_splints <- function(match_id, events, lineups, shooting, results,
                                   include_goals = TRUE) {
   # Store match_id as local variable to avoid scoping issues
@@ -675,9 +662,9 @@ create_match_splints <- function(match_id, events, lineups, shooting, results,
   if ("season_end_year" %in% names(results)) info_cols <- c(info_cols, "season_end_year")
   if ("country" %in% names(results)) info_cols <- c(info_cols, "country")
 
-  match_info <- results %>%
-    dplyr::filter(.data$match_id == !!current_match_id) %>%
-    dplyr::select(dplyr::any_of(info_cols))
+  match_info <- results[results$match_id == current_match_id, , drop = FALSE]
+  available_info_cols <- intersect(info_cols, names(match_info))
+  match_info <- match_info[, available_info_cols, drop = FALSE]
 
   home_team <- if (nrow(match_info) > 0) match_info$home_team[1] else NULL
   away_team <- if (nrow(match_info) > 0) match_info$away_team[1] else NULL
@@ -710,10 +697,8 @@ create_match_splints <- function(match_id, events, lineups, shooting, results,
                                      home_team = home_team, away_team = away_team)
 
   # Combine - match_id is already in boundaries
-  splints <- boundaries %>%
-    dplyr::left_join(xg_data %>%
-                       dplyr::select(splint_num, npxg_home, npxg_away, npxgd, npxgd_per_90),
-                     by = "splint_num")
+  xg_cols <- xg_data[, c("splint_num", "npxg_home", "npxg_away", "npxgd", "npxgd_per_90"), with = FALSE]
+  splints <- xg_cols[boundaries, on = "splint_num"]
 
   list(
     match_id = current_match_id,
@@ -778,7 +763,7 @@ create_all_splints <- function(processed_data, include_goals = TRUE, verbose = T
     # Add match_id if not present (join via match_url)
     if (!"match_id" %in% names(dt_stats) && "match_url" %in% names(dt_stats)) {
       match_id_lookup <- unique(dt_results[, c("match_url", "match_id"), with = FALSE])
-      dt_stats <- merge(dt_stats, match_id_lookup, by = "match_url", all.x = TRUE)
+      dt_stats <- match_id_lookup[dt_stats, on = "match_url"]
     }
 
     # Only keep rows with red cards to save memory
@@ -848,7 +833,7 @@ create_all_splints <- function(processed_data, include_goals = TRUE, verbose = T
       all_match_info[[i]] <- result$match_info
 
     }, error = function(e) {
-      warning(paste("Failed to create splints for match:", mid, "-", e$message))
+      cli::cli_warn("Failed to create splints for match: {mid} - {conditionMessage(e)}")
     })
   }
 
@@ -1010,8 +995,8 @@ create_match_splints_fast <- function(match_id, events, lineups, shooting, resul
   xg_data <- calculate_splint_npxgd_fast(boundaries, shooting, home_team, away_team)
 
   # Combine
-  splints <- merge(boundaries, xg_data[, c("splint_num", "npxg_home", "npxg_away", "npxgd", "npxgd_per_90")],
-                   by = "splint_num", all.x = TRUE)
+  splints <- data.table::as.data.table(xg_data[, c("splint_num", "npxg_home", "npxg_away", "npxgd", "npxgd_per_90")])[boundaries, on = "splint_num"]
+  data.table::setDF(splints)
 
   list(
     match_id = current_match_id,
@@ -1299,10 +1284,9 @@ calculate_splint_npxgd_fast <- function(boundaries, shooting, home_team, away_te
 #' @param splint_id Splint identifier
 #'
 #' @return List with home_players and away_players character vectors
-#' @export
+#' @keywords internal
 get_splint_players <- function(splint_data, splint_id) {
-  players <- splint_data$players %>%
-    dplyr::filter(.data$splint_id == !!splint_id)
+  players <- splint_data$players[splint_data$players$splint_id == splint_id, , drop = FALSE]
 
   list(
     home_players = players$player_id[players$is_home],
@@ -1345,39 +1329,34 @@ prepare_opta_events_for_splints <- function(opta_events, match_results = NULL) {
   }
 
   # Convert event_type to boolean flags
-  events <- opta_events %>%
-    dplyr::mutate(
-      minute = as.numeric(.data$minute),
-      added_time = if ("second" %in% names(.)) as.numeric(.data$second) / 60 else 0,
-      is_goal = .data$event_type %in% c("goal"),
-      is_sub = .data$event_type %in% c("substitution"),
-      is_red_card = .data$event_type %in% c("red_card", "second_yellow")
-    )
+  has_second <- "second" %in% names(opta_events)
+  events <- opta_events
+  events$minute <- as.numeric(events$minute)
+  events$added_time <- if (has_second) as.numeric(events$second) / 60 else 0
+  events$is_goal <- events$event_type %in% c("goal")
+  events$is_sub <- events$event_type %in% c("substitution")
+  events$is_red_card <- events$event_type %in% c("red_card", "second_yellow")
 
   # Determine is_home based on team_position if available, else use match_results
   if ("team_position" %in% names(events)) {
     events$is_home <- tolower(events$team_position) == "home"
   } else if (!is.null(match_results) && "home_team_id" %in% names(match_results)) {
     # Join with match_results to get home/away
-    events <- events %>%
-      dplyr::left_join(
-        match_results %>% dplyr::select(match_id, home_team_id),
-        by = "match_id"
-      ) %>%
-      dplyr::mutate(is_home = .data$team_id == .data$home_team_id) %>%
-      dplyr::select(-home_team_id)
+    mr_cols <- data.table::as.data.table(match_results[, c("match_id", "home_team_id"), drop = FALSE])
+    events <- mr_cols[data.table::as.data.table(events), on = "match_id"]
+    data.table::setDF(events)
+    events$is_home <- events$team_id == events$home_team_id
+    events$home_team_id <- NULL
   } else {
     # Fallback: set is_home to NA (will be inferred later)
     events$is_home <- NA
   }
 
-  # Select and rename columns for compatibility
-  events %>%
-    dplyr::select(
-      match_id, minute, added_time, event_type,
-      is_goal, is_sub, is_red_card, is_home,
-      player_id, player_name
-    )
+  # Select columns for compatibility
+  out_cols <- c("match_id", "minute", "added_time", "event_type",
+                "is_goal", "is_sub", "is_red_card", "is_home",
+                "player_id", "player_name")
+  events[, out_cols, drop = FALSE]
 }
 
 
@@ -1407,40 +1386,39 @@ prepare_opta_lineups_for_splints <- function(opta_lineups) {
     ))
   }
 
-  lineups <- opta_lineups %>%
-    dplyr::mutate(
-      # Map Opta column names to expected names
-      team = if ("team_name" %in% names(.)) .data$team_name else .data$team_id,
-      minutes = as.numeric(if ("minutes_played" %in% names(.)) .data$minutes_played else 0),
-      # Opta provides explicit on/off times
-      on_minute = if ("sub_on_minute" %in% names(.)) {
-        dplyr::if_else(.data$is_starter, 0, as.numeric(.data$sub_on_minute))
-      } else {
-        dplyr::if_else(.data$is_starter, 0, NA_real_)
-      },
-      off_minute = if ("sub_off_minute" %in% names(.)) {
-        # If sub_off_minute is 0 or NA, player played to end (90+ min)
-        sub_off <- as.numeric(.data$sub_off_minute)
-        dplyr::if_else(is.na(sub_off) | sub_off == 0, 90, sub_off)
-      } else {
-        90  # Default to full match
-      },
-      # Determine is_home from team_position
-      is_home = if ("team_position" %in% names(.)) {
-        tolower(.data$team_position) == "home"
-      } else {
-        NA
-      }
-    )
+  col_names <- names(opta_lineups)
+  has_team_name <- "team_name" %in% col_names
+  has_minutes_played <- "minutes_played" %in% col_names
+  has_sub_on <- "sub_on_minute" %in% col_names
+  has_sub_off <- "sub_off_minute" %in% col_names
+  has_team_pos <- "team_position" %in% col_names
+
+  lineups <- opta_lineups
+  lineups$team <- if (has_team_name) lineups$team_name else lineups$team_id
+  lineups$minutes <- as.numeric(if (has_minutes_played) lineups$minutes_played else 0)
+  lineups$on_minute <- if (has_sub_on) {
+    ifelse(lineups$is_starter, 0, as.numeric(lineups$sub_on_minute))
+  } else {
+    ifelse(lineups$is_starter, 0, NA_real_)
+  }
+  if (has_sub_off) {
+    sub_off <- as.numeric(lineups$sub_off_minute)
+    lineups$off_minute <- ifelse(is.na(sub_off) | sub_off == 0, 90, sub_off)
+  } else {
+    lineups$off_minute <- 90
+  }
+  lineups$is_home <- if (has_team_pos) {
+    tolower(lineups$team_position) == "home"
+  } else {
+    NA
+  }
 
   # Ensure off_minute is at least on_minute + minutes
   lineups$off_minute <- pmax(lineups$off_minute, lineups$on_minute + lineups$minutes)
 
-  lineups %>%
-    dplyr::select(
-      match_id, player_id, player_name, team, is_home,
-      is_starter, minutes, on_minute, off_minute
-    )
+  out_cols <- c("match_id", "player_id", "player_name", "team", "is_home",
+                "is_starter", "minutes", "on_minute", "off_minute")
+  lineups[, out_cols, drop = FALSE]
 }
 
 
@@ -1474,32 +1452,30 @@ prepare_opta_shots_for_splints <- function(opta_shot_events, use_goals_as_xg = F
     ))
   }
 
-  shots <- opta_shot_events %>%
-    dplyr::mutate(
-      minute = as.numeric(.data$minute),
-      # Determine team name from team_id
-      team = if ("team_name" %in% names(.)) .data$team_name else .data$team_id,
-      # xG handling - Opta API doesn't provide xG, need to calculate or use goals
-      xg = if ("xg" %in% names(.)) {
-        as.numeric(.data$xg)
-      } else if (use_goals_as_xg) {
-        dplyr::if_else(.data$is_goal, 1, 0)
-      } else {
-        NA_real_  # Will need xG model to fill this
-      },
-      # Penalty detection from situation field
-      is_penalty = if ("situation" %in% names(.)) {
-        tolower(.data$situation) == "penalty"
-      } else {
-        FALSE
-      }
-    )
+  shot_cols <- names(opta_shot_events)
+  has_team_name <- "team_name" %in% shot_cols
+  has_xg <- "xg" %in% shot_cols
+  has_situation <- "situation" %in% shot_cols
 
-  shots %>%
-    dplyr::select(
-      match_id, minute, team, player_id, player_name,
-      xg, is_goal, is_penalty
-    )
+  shots <- opta_shot_events
+  shots$minute <- as.numeric(shots$minute)
+  shots$team <- if (has_team_name) shots$team_name else shots$team_id
+  shots$xg <- if (has_xg) {
+    as.numeric(shots$xg)
+  } else if (use_goals_as_xg) {
+    ifelse(shots$is_goal, 1, 0)
+  } else {
+    NA_real_
+  }
+  shots$is_penalty <- if (has_situation) {
+    tolower(shots$situation) == "penalty"
+  } else {
+    FALSE
+  }
+
+  out_cols <- c("match_id", "minute", "team", "player_id", "player_name",
+                "xg", "is_goal", "is_penalty")
+  shots[, out_cols, drop = FALSE]
 }
 
 
@@ -1517,7 +1493,7 @@ prepare_opta_shots_for_splints <- function(opta_shot_events, use_goals_as_xg = F
 #'
 #' @return List with components: lineups, events, shooting, results, stats_summary
 #'
-#' @export
+#' @keywords internal
 #' @examples
 #' \dontrun{
 #' # Load Opta data
@@ -1537,20 +1513,16 @@ create_opta_processed_data <- function(opta_lineups, opta_events = NULL,
   # Create match results from lineups (get unique matches with home/away teams)
   results <- NULL
   if (!is.null(opta_lineups) && nrow(opta_lineups) > 0) {
-    results <- opta_lineups %>%
-      dplyr::filter(.data$is_starter) %>%
-      dplyr::group_by(.data$match_id) %>%
-      dplyr::summarise(
-        home_team = dplyr::first(.data$team_name[tolower(.data$team_position) == "home"]),
-        away_team = dplyr::first(.data$team_name[tolower(.data$team_position) == "away"]),
-        home_team_id = dplyr::first(.data$team_id[tolower(.data$team_position) == "home"]),
-        away_team_id = dplyr::first(.data$team_id[tolower(.data$team_position) == "away"]),
-        match_date = dplyr::first(.data$match_date),
-        .groups = "drop"
-      ) %>%
-      dplyr::mutate(
-        season = extract_season_from_date(.data$match_date)
-      )
+    starters <- opta_lineups[opta_lineups$is_starter, , drop = FALSE]
+    dt_starters <- data.table::as.data.table(starters)
+    results <- as.data.frame(dt_starters[, .(
+      home_team = team_name[tolower(team_position) == "home"][1],
+      away_team = team_name[tolower(team_position) == "away"][1],
+      home_team_id = team_id[tolower(team_position) == "home"][1],
+      away_team_id = team_id[tolower(team_position) == "away"][1],
+      match_date = match_date[1]
+    ), by = match_id])
+    results$season <- extract_season_from_date(results$match_date)
   }
 
   # Prepare lineups

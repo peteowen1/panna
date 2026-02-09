@@ -19,6 +19,9 @@ this creates a key: lowercase with all whitespace removed.
 Uses memoization to cache unique names for O(1) lookup on repeated values.
 }
 \examples{
+\dontrun{
 clean_player_name(c("Kylian Mbappé", "kylian mbappé", "KYLIAN MBAPPÉ"))
 # All return "kylianmbappé"
 }
+}
+\keyword{internal}

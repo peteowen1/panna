@@ -16,6 +16,8 @@ Character, the Understat URL slug
 Looks up the Understat URL slug for a given league code.
 }
 \examples{
-get_understat_slug("ENG")  # "EPL"
+\dontrun{
 get_understat_slug("RUS")  # "RFPL"
 }
+}
+\keyword{internal}

@@ -74,6 +74,8 @@ fit_rapm <- function(rapm_data, alpha = 0, nfolds = 10,
 
   # Set up parallel processing
   if (parallel) {
+    .check_suggests("parallel", "Parallel RAPM fitting requires parallel.")
+    .check_suggests("doParallel", "Parallel RAPM fitting requires doParallel.")
     if (is.null(n_cores)) {
       n_cores <- max(1, floor(parallel::detectCores() / 2))
     }
@@ -188,12 +190,9 @@ extract_rapm_ratings <- function(model, lambda = "min") {
 
   # Join with player mapping
   if (!is.null(model$panna_metadata$player_mapping)) {
-    ratings <- ratings %>%
-      dplyr::left_join(
-        model$panna_metadata$player_mapping %>%
-          dplyr::select(player_id, player_name, total_minutes),
-        by = "player_id"
-      )
+    mapping <- data.table::as.data.table(model$panna_metadata$player_mapping[, c("player_id", "player_name", "total_minutes")])
+    ratings <- mapping[data.table::as.data.table(ratings), on = "player_id"]
+    data.table::setDF(ratings)
   }
 
   # Add covariate effects if available
@@ -202,8 +201,7 @@ extract_rapm_ratings <- function(model, lambda = "min") {
     attr(ratings, "covariate_effects") <- cov_coefs
   }
 
-  ratings <- ratings %>%
-    dplyr::arrange(dplyr::desc(.data$rapm))
+  ratings <- ratings[order(-ratings$rapm), ]
 
   ratings
 }
@@ -217,7 +215,7 @@ extract_rapm_ratings <- function(model, lambda = "min") {
 #' @param lambda Which lambda to use
 #'
 #' @return Named vector of covariate coefficients
-#' @export
+#' @keywords internal
 get_covariate_effects <- function(model, lambda = "min") {
   lambda_val <- if (lambda == "min") model$lambda.min else model$lambda.1se
 
@@ -422,16 +420,12 @@ extract_xrapm_ratings <- function(model, lambda = "min") {
 
   # Join with player mapping
   if (!is.null(model$panna_metadata$player_mapping)) {
-    ratings <- ratings %>%
-      dplyr::left_join(
-        model$panna_metadata$player_mapping %>%
-          dplyr::select(player_id, player_name, total_minutes),
-        by = "player_id"
-      )
+    mapping <- data.table::as.data.table(model$panna_metadata$player_mapping[, c("player_id", "player_name", "total_minutes")])
+    ratings <- mapping[data.table::as.data.table(ratings), on = "player_id"]
+    data.table::setDF(ratings)
   }
 
-  ratings <- ratings %>%
-    dplyr::arrange(dplyr::desc(.data$xrapm))
+  ratings <- ratings[order(-ratings$xrapm), ]
 
   ratings
 }
@@ -445,7 +439,7 @@ extract_xrapm_ratings <- function(model, lambda = "min") {
 #' @param lambda Which lambda to use ("min" or "1se" or numeric)
 #'
 #' @return Data frame with player ratings
-#' @export
+#' @keywords internal
 extract_rapm_coefficients <- function(model, lambda = "min") {
   # Check if model used a prior and has final coefficients stored
   if (!is.null(model$panna_metadata$used_prior) &&
@@ -502,16 +496,12 @@ extract_rapm_coefficients <- function(model, lambda = "min") {
 
   # Join with player mapping if available
   if (!is.null(model$panna_metadata$player_mapping)) {
-    ratings <- ratings %>%
-      dplyr::left_join(
-        model$panna_metadata$player_mapping %>%
-          dplyr::select(player_id, player_name),
-        by = "player_id"
-      )
+    mapping <- data.table::as.data.table(model$panna_metadata$player_mapping[, c("player_id", "player_name")])
+    ratings <- mapping[data.table::as.data.table(ratings), on = "player_id"]
+    data.table::setDF(ratings)
   }
 
-  ratings <- ratings %>%
-    dplyr::arrange(dplyr::desc(.data$rapm))
+  ratings <- ratings[order(-ratings$rapm), ]
 
   ratings
 }
@@ -525,7 +515,7 @@ extract_rapm_coefficients <- function(model, lambda = "min") {
 #' @param lambda Which lambda to use
 #'
 #' @return Data frame with offensive and defensive ratings
-#' @export
+#' @keywords internal
 extract_od_rapm_coefficients <- function(model, lambda = "min") {
   # Get all coefficients
   all_coefs <- extract_rapm_coefficients(model, lambda)
@@ -534,36 +524,27 @@ extract_od_rapm_coefficients <- function(model, lambda = "min") {
   off_mask <- grepl("_off$", all_coefs$player_id)
   def_mask <- grepl("_def$", all_coefs$player_id)
 
-  off_ratings <- all_coefs[off_mask, ] %>%
-    dplyr::mutate(
-      player_id = gsub("_off$", "", .data$player_id),
-      o_rapm = .data$rapm
-    ) %>%
-    dplyr::select(player_id, o_rapm)
+  off_ratings <- all_coefs[off_mask, ]
+  off_ratings$player_id <- gsub("_off$", "", off_ratings$player_id)
+  off_ratings$o_rapm <- off_ratings$rapm
+  off_ratings <- off_ratings[, c("player_id", "o_rapm"), drop = FALSE]
 
-  def_ratings <- all_coefs[def_mask, ] %>%
-    dplyr::mutate(
-      player_id = gsub("_def$", "", .data$player_id),
-      d_rapm = .data$rapm
-    ) %>%
-    dplyr::select(player_id, d_rapm)
+  def_ratings <- all_coefs[def_mask, ]
+  def_ratings$player_id <- gsub("_def$", "", def_ratings$player_id)
+  def_ratings$d_rapm <- def_ratings$rapm
+  def_ratings <- def_ratings[, c("player_id", "d_rapm"), drop = FALSE]
 
   # Combine
-  ratings <- off_ratings %>%
-    dplyr::left_join(def_ratings, by = "player_id") %>%
-    dplyr::mutate(
-      rapm = .data$o_rapm + .data$d_rapm
-    ) %>%
-    dplyr::arrange(dplyr::desc(.data$rapm))
+  ratings <- data.table::as.data.table(def_ratings)[data.table::as.data.table(off_ratings), on = "player_id"]
+  data.table::setDF(ratings)
+  ratings$rapm <- ratings$o_rapm + ratings$d_rapm
+  ratings <- ratings[order(-ratings$rapm), ]
 
   # Join with player mapping if available
   if (!is.null(model$panna_metadata$player_mapping)) {
-    ratings <- ratings %>%
-      dplyr::left_join(
-        model$panna_metadata$player_mapping %>%
-          dplyr::select(player_id, player_name),
-        by = "player_id"
-      )
+    mapping <- data.table::as.data.table(model$panna_metadata$player_mapping[, c("player_id", "player_name")])
+    ratings <- mapping[data.table::as.data.table(ratings), on = "player_id"]
+    data.table::setDF(ratings)
   }
 
   ratings
@@ -579,7 +560,7 @@ extract_od_rapm_coefficients <- function(model, lambda = "min") {
 #' @param alpha Elastic net parameter
 #'
 #' @return Data frame with rating estimates and confidence intervals
-#' @export
+#' @keywords internal
 calculate_rapm_stability <- function(rapm_data, n_bootstrap = 100, alpha = 0) {
   X <- rapm_data$X
   y <- rapm_data$y
@@ -646,25 +627,20 @@ calculate_rapm_stability <- function(rapm_data, n_bootstrap = 100, alpha = 0) {
 #' @param player_data Data frame linking players to teams
 #'
 #' @return Data frame with team-level summaries
-#' @export
+#' @keywords internal
 aggregate_rapm_by_team <- function(ratings, player_data) {
   if (!"team" %in% names(player_data)) {
     cli::cli_warn("No {.field team} column in {.arg player_data}.")
     return(NULL)
   }
 
-  ratings %>%
-    dplyr::left_join(
-      player_data %>% dplyr::select(player_id, team),
-      by = "player_id"
-    ) %>%
-    dplyr::group_by(.data$team) %>%
-    dplyr::summarise(
-      n_players = dplyr::n(),
-      mean_rapm = mean(.data$rapm, na.rm = TRUE),
-      total_rapm = sum(.data$rapm, na.rm = TRUE),
-      top_player_rapm = max(.data$rapm, na.rm = TRUE),
-      .groups = "drop"
-    ) %>%
-    dplyr::arrange(dplyr::desc(.data$mean_rapm))
+  merged <- data.table::as.data.table(player_data[, c("player_id", "team"), drop = FALSE])[data.table::as.data.table(ratings), on = "player_id"]
+  result <- merged[, .(
+    n_players = .N,
+    mean_rapm = mean(rapm, na.rm = TRUE),
+    total_rapm = sum(rapm, na.rm = TRUE),
+    top_player_rapm = max(rapm, na.rm = TRUE)
+  ), by = team]
+  setorder(result, -mean_rapm)
+  as.data.frame(result)
 }

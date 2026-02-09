@@ -44,3 +44,4 @@ sql <- "SELECT * FROM {table} WHERE league = 'ENG' AND season = '2023-2024'"
 eng_2023 <- query_remote_parquet("summary", sql)
 }
 }
+\keyword{internal}

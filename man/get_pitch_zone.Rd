@@ -18,6 +18,8 @@ Integer zone ID (1-18)
 Assigns a zone ID based on pitch location. Uses a 3x6 grid (18 zones).
 }
 \examples{
-get_pitch_zone(10, 50)   # Defensive third, center
+\dontrun{
 get_pitch_zone(90, 20)   # Attacking third, left
 }
+}
+\keyword{internal}

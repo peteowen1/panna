@@ -17,7 +17,9 @@ Converts Understat's league name (e.g., "EPL", "La liga") to our
 standardized code (e.g., "ENG", "ESP").
 }
 \examples{
-understat_league_to_code("EPL")      # "ENG"
+\dontrun{
 understat_league_to_code("La liga")  # "ESP"
 understat_league_to_code("Serie A")  # "ITA"
 }
+}
+\keyword{internal}

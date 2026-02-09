@@ -16,6 +16,8 @@ Integer, the FBref competition ID
 Looks up the FBref competition ID for a given league code.
 }
 \examples{
-get_fbref_comp_id("ENG")  # 9
+\dontrun{
 get_fbref_comp_id("WC")   # 1
 }
+}
+\keyword{internal}

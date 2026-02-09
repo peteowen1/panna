@@ -1,5 +1,30 @@
 # Utility functions for panna package
 
+
+#' Check that a suggested package is installed
+#'
+#' Throws an informative error if a package listed in Suggests is missing.
+#'
+#' @param pkg Package name (character)
+#' @param reason Brief reason why the package is needed
+#'
+#' @return TRUE invisibly if package is available
+#' @keywords internal
+.check_suggests <- function(pkg, reason = NULL) {
+  if (!requireNamespace(pkg, quietly = TRUE)) {
+    msg <- sprintf("Package '%s' is required but not installed.", pkg)
+    if (!is.null(reason)) {
+      msg <- paste(msg, reason)
+    }
+    cli::cli_abort(c(
+      msg,
+      "i" = 'Install it with: install.packages("{pkg}")'
+    ))
+  }
+  invisible(TRUE)
+}
+
+
 #' Clean column names to snake_case
 #'
 #' Applies janitor::clean_names() to standardize all column names.
@@ -12,6 +37,7 @@ clean_column_names <- function(data) {
   if (is.null(data) || !is.data.frame(data)) {
     return(data)
   }
+  .check_suggests("janitor", "clean_column_names() requires janitor.")
   janitor::clean_names(data)
 }
 
@@ -87,6 +113,24 @@ validate_seasons <- function(seasons) {
 }
 
 
+#' Validate min_minutes parameter
+#'
+#' Checks that min_minutes is a single non-negative number.
+#'
+#' @param min_minutes Value to validate
+#' @keywords internal
+validate_min_minutes <- function(min_minutes) {
+  if (!is.numeric(min_minutes) || length(min_minutes) != 1 ||
+      is.na(min_minutes) || min_minutes < 0) {
+    cli::cli_abort(c(
+      "{.arg min_minutes} must be a single non-negative number.",
+      "x" = "Got {.val {min_minutes}}."
+    ))
+  }
+  invisible(TRUE)
+}
+
+
 #' Standardize player names
 #'
 #' Cleans and standardizes player names for consistent matching across datasets.
@@ -127,11 +171,13 @@ standardize_player_names <- function(names) {
 #' @param names Character vector of player names
 #'
 #' @return Character vector of cleaned names (lowercase, no whitespace)
-#' @export
+#' @keywords internal
 #'
 #' @examples
+#' \dontrun{
 #' clean_player_name(c("Kylian Mbappé", "kylian mbappé", "KYLIAN MBAPPÉ"))
 #' # All return "kylianmbappé"
+#' }
 clean_player_name <- function(names) {
   # Memoization: process unique names once, then lookup
   unique_names <- unique(names)
@@ -163,11 +209,13 @@ clean_player_name <- function(names) {
 #' @param hrefs Character vector of FBref player hrefs
 #'
 #' @return Character vector of 8-char hex IDs (NA if not found)
-#' @export
+#' @keywords internal
 #'
 #' @examples
+#' \dontrun{
 #' extract_fbref_player_id("/players/d080ed5e/Kylian-Mbappe")
 #' # Returns "d080ed5e"
+#' }
 extract_fbref_player_id <- function(hrefs) {
   # Extract 8-char hex ID from /players/xxxxxxxx/... pattern
   ids <- gsub(".*/players/([a-f0-9]{8})/.*", "\\1", hrefs)
@@ -237,7 +285,7 @@ standardize_team_names <- function(names) {
 #' @param away_team Away team name
 #'
 #' @return Character vector of match IDs
-#' @export
+#' @keywords internal
 create_match_id <- function(season, date, home_team, away_team) {
   paste(season, format(as.Date(date), "%Y%m%d"), home_team, away_team, sep = "_")
 }
@@ -252,7 +300,7 @@ create_match_id <- function(season, date, home_team, away_team) {
 #' @param fbref_id Optional FBref player ID (preferred if available
 #'
 #' @return Character vector of player IDs
-#' @export
+#' @keywords internal
 create_player_id <- function(player_name, fbref_id = NULL) {
   if (!is.null(fbref_id) && all(!is.na(fbref_id))) {
     return(fbref_id)
@@ -340,7 +388,7 @@ validate_dataframe <- function(data, required_cols = NULL, arg_name = "data", mi
 #' @param warn Logical, whether to print warnings for missing data
 #'
 #' @return List with validation results
-#' @export
+#' @keywords internal
 validate_data_completeness <- function(data, required_cols = NULL, warn = TRUE) {
   result <- list(
     n_rows = nrow(data),
@@ -355,7 +403,7 @@ validate_data_completeness <- function(data, required_cols = NULL, warn = TRUE) 
     if (length(missing) > 0) {
       result$missing_cols <- missing
       if (warn) {
-        warning("Missing required columns: ", paste(missing, collapse = ", "))
+        cli::cli_warn("Missing required columns: {paste(missing, collapse = ', ')}")
       }
     }
   }
@@ -372,7 +420,7 @@ validate_data_completeness <- function(data, required_cols = NULL, warn = TRUE) 
 
   if (warn && any(na_pcts > 20)) {
     high_na <- names(na_pcts)[na_pcts > 20]
-    warning("Columns with >20% missing: ", paste(high_na, collapse = ", "))
+    cli::cli_warn("Columns with >20% missing: {paste(high_na, collapse = ', ')}")
   }
 
   result
@@ -421,6 +469,46 @@ find_column <- function(data, candidates) {
 }
 
 
+#' Count events by splint boundary
+#'
+#' Core logic for counting home/away events relative to splint boundaries.
+#'
+#' @param events Data frame with 'minute' (or 'effective_minute') and 'is_home' columns
+#' @param boundaries Numeric vector of splint boundary minutes
+#' @param type Either "before" (cumulative before each boundary start) or
+#'   "within" (events within each splint interval)
+#'
+#' @return List with 'home' and 'away' counts (vectors of length n_splints)
+#' @keywords internal
+.count_events <- function(events, boundaries, type = c("before", "within")) {
+  type <- match.arg(type)
+  n_splints <- length(boundaries) - 1
+  home_count <- rep(0, n_splints)
+  away_count <- rep(0, n_splints)
+
+  if (!is.null(events) && nrow(events) > 0) {
+    event_mins <- if ("effective_minute" %in% names(events)) {
+      events$effective_minute
+    } else {
+      events$minute
+    }
+
+    for (i in seq_len(n_splints)) {
+      mask <- if (type == "before") {
+        event_mins < boundaries[i]
+      } else {
+        event_mins >= boundaries[i] & event_mins < boundaries[i + 1]
+      }
+      if (any(mask)) {
+        home_count[i] <- sum(events$is_home[mask], na.rm = TRUE)
+        away_count[i] <- sum(!events$is_home[mask], na.rm = TRUE)
+      }
+    }
+  }
+
+  list(home = home_count, away = away_count)
+}
+
 #' Count events before each boundary
 #'
 #' Counts home/away events occurring before each splint boundary.
@@ -432,31 +520,8 @@ find_column <- function(data, candidates) {
 #' @return List with 'home' and 'away' counts (vectors same length as boundaries minus 1)
 #' @keywords internal
 count_events_before <- function(events, boundaries) {
-
-  n_splints <- length(boundaries) - 1
-  home_count <- rep(0, n_splints)
-  away_count <- rep(0, n_splints)
-
-  if (!is.null(events) && nrow(events) > 0) {
-    # Use effective_minute if available, otherwise fall back to minute
-    event_mins <- if ("effective_minute" %in% names(events)) {
-      events$effective_minute
-    } else {
-      events$minute
-    }
-
-    for (i in seq_len(n_splints)) {
-      before <- event_mins < boundaries[i]
-      if (any(before)) {
-        home_count[i] <- sum(events$is_home[before], na.rm = TRUE)
-        away_count[i] <- sum(!events$is_home[before], na.rm = TRUE)
-      }
-    }
-  }
-
-  list(home = home_count, away = away_count)
+  .count_events(events, boundaries, type = "before")
 }
-
 
 #' Count events within each splint
 #'
@@ -469,29 +534,7 @@ count_events_before <- function(events, boundaries) {
 #' @return List with 'home' and 'away' counts (vectors of length n_splints)
 #' @keywords internal
 count_events_in_splint <- function(events, boundaries) {
-  n_splints <- length(boundaries) - 1
-  home_count <- rep(0, n_splints)
-  away_count <- rep(0, n_splints)
-
-  if (!is.null(events) && nrow(events) > 0) {
-    # Use effective_minute if available, otherwise fall back to minute
-    event_mins <- if ("effective_minute" %in% names(events)) {
-      events$effective_minute
-    } else {
-      events$minute
-    }
-
-    for (i in seq_len(n_splints)) {
-      # Events >= start of splint AND < end of splint
-      in_splint <- event_mins >= boundaries[i] & event_mins < boundaries[i + 1]
-      if (any(in_splint)) {
-        home_count[i] <- sum(events$is_home[in_splint], na.rm = TRUE)
-        away_count[i] <- sum(!events$is_home[in_splint], na.rm = TRUE)
-      }
-    }
-  }
-
-  list(home = home_count, away = away_count)
+  .count_events(events, boundaries, type = "within")
 }
 
 
@@ -503,11 +546,13 @@ count_events_in_splint <- function(events, boundaries) {
 #' @param match_id Character vector of match IDs
 #'
 #' @return Character vector of season strings (e.g., "2017-2018")
-#' @export
+#' @keywords internal
 #'
 #' @examples
+#' \dontrun{
 #' extract_season_from_match_id("2017-2018_20170915_Bournemouth_Brighton")
 #' # Returns "2017-2018"
+#' }
 extract_season_from_match_id <- function(match_id) {
   sub("^([0-9]{4}-[0-9]{4})_.*", "\\1", match_id)
 }
@@ -521,11 +566,13 @@ extract_season_from_match_id <- function(match_id) {
 #' @param match_id Character vector of match IDs
 #'
 #' @return Numeric vector of season end years (e.g., 2018)
-#' @export
+#' @keywords internal
 #'
 #' @examples
+#' \dontrun{
 #' extract_season_end_year_from_match_id("2017-2018_20170915_Bournemouth_Brighton")
 #' # Returns 2018
+#' }
 extract_season_end_year_from_match_id <- function(match_id) {
   season <- extract_season_from_match_id(match_id)
   as.numeric(substr(season, 6, 9))
@@ -569,11 +616,13 @@ ensure_column <- function(data, col_name, default = FALSE, source_col = NULL, pa
 #'   and values are existing column names to rename
 #'
 #' @return Data frame with renamed columns
-#' @export
+#' @keywords internal
 #'
 #' @examples
+#' \dontrun{
 #' df <- data.frame(a = 1, b = 2)
 #' rename_columns(df, c(x = "a", y = "b"))
+#' }
 rename_columns <- function(data, mapping) {
   for (new_name in names(mapping)) {
     old_name <- mapping[new_name]
@@ -599,7 +648,7 @@ rename_columns <- function(data, mapping) {
 #' @param team_col Name of team column (default "team")
 #'
 #' @return Aggregated data frame with player, team, and aggregated columns
-#' @export
+#' @keywords internal
 #'
 #' @examples
 #' \dontrun{
@@ -662,7 +711,8 @@ aggregate_player_data <- function(data, agg_cols, by_team = FALSE,
       data = data,
       FUN = function(x) names(which.max(table(x)))
     )
-    result <- merge(result, team_mode, by = player_col, all.x = TRUE)
+    result <- data.table::as.data.table(team_mode)[data.table::as.data.table(result), on = player_col]
+    data.table::setDF(result)
   }
 
   result
@@ -684,6 +734,7 @@ aggregate_player_data <- function(data, agg_cols, by_team = FALSE,
 #' @return httr response object, or NULL with attributes on permanent failure
 #' @keywords internal
 fetch_with_retry <- function(url, max_retries = 3, base_delay = 1, max_delay = 30, ...) {
+  .check_suggests("httr", "HTTP requests require httr.")
   attempt <- 0
 
   while (attempt <= max_retries) {
@@ -707,32 +758,25 @@ fetch_with_retry <- function(url, max_retries = 3, base_delay = 1, max_delay = 3
         next
       } else {
         cli::cli_alert_danger("Connection failed after {max_retries} retries")
-        result <- NULL
-        attr(result, "connection_error") <- TRUE
-        attr(result, "error_message") <- response$message
-        return(result)
+        return(structure(list(), class = "fetch_error",
+                         connection_error = TRUE, error_message = response$message))
       }
     }
 
     status <- httr::status_code(response)
 
     # Permanent failures - don't retry
+    # Use structure() to create NULL with attributes (attr() on NULL fails)
     if (status == 429) {
-      result <- NULL
-      attr(result, "rate_limited") <- TRUE
-      return(result)
+      return(structure(list(), class = "fetch_error", rate_limited = TRUE))
     }
 
     if (status == 403) {
-      result <- NULL
-      attr(result, "blocked") <- TRUE
-      return(result)
+      return(structure(list(), class = "fetch_error", blocked = TRUE))
     }
 
     if (status == 404) {
-      result <- NULL
-      attr(result, "not_found") <- TRUE
-      return(result)
+      return(structure(list(), class = "fetch_error", not_found = TRUE))
     }
 
     # Success
@@ -754,16 +798,11 @@ fetch_with_retry <- function(url, max_retries = 3, base_delay = 1, max_delay = 3
     }
 
     # Other errors - don't retry
-    result <- NULL
-    attr(result, "http_error") <- TRUE
-    attr(result, "status_code") <- status
-    return(result)
+    return(structure(list(), class = "fetch_error", http_error = TRUE, status_code = status))
   }
 
   # Should not reach here, but handle anyway
-  result <- NULL
-  attr(result, "max_retries_exceeded") <- TRUE
-  result
+  return(structure(list(), class = "fetch_error", max_retries_exceeded = TRUE))
 }
 
 
@@ -779,9 +818,10 @@ fetch_with_retry <- function(url, max_retries = 3, base_delay = 1, max_delay = 3
 #'   the conditions joined by AND.
 #'
 #' @return Character string with SQL WHERE clause, or empty string if no filters.
-#' @export
+#' @keywords internal
 #'
 #' @examples
+#' \dontrun{
 #' build_where_clause(list(league = "ENG", season = "2023-2024"))
 #' # Returns: "WHERE league = 'ENG' AND season = '2023-2024'"
 #'
@@ -793,6 +833,7 @@ fetch_with_retry <- function(url, max_retries = 3, base_delay = 1, max_delay = 3
 #'
 #' build_where_clause(list())
 #' # Returns: ""
+#' }
 build_where_clause <- function(filters, prefix = TRUE) {
   if (is.null(filters) || length(filters) == 0) {
     return("")
@@ -881,11 +922,13 @@ standardize_data_columns <- function(data, col_map) {
 #' Standard column name variations encountered across different data sources.
 #'
 #' @return Named list of canonical column names to alternatives
-#' @export
+#' @keywords internal
 #'
 #' @examples
+#' \dontrun{
 #' col_map <- default_column_map()
 #' names(col_map)
+#' }
 default_column_map <- function() {
   list(
     team = c("squad", "team_name"),

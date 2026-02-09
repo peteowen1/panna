@@ -15,3 +15,4 @@ Data frame with defensive features
 \description{
 Builds defensive-related rate statistics for SPM model.
 }
+\keyword{internal}

@@ -7,6 +7,7 @@
 
 #' Create mock Opta events for testing
 create_mock_opta_events <- function(n_events = 20) {
+  set.seed(42)
   # Opta type_id reference:
   # 1 = pass, 3 = take on, 4 = foul, 10 = save, 13 = shot on target, 14 = shot off target
   # 15 = clearance, 16 = blocked pass
@@ -33,6 +34,7 @@ create_mock_opta_events <- function(n_events = 20) {
 
 #' Create mock SPADL actions for testing
 create_mock_spadl_actions <- function(n_actions = 30, n_matches = 2) {
+  set.seed(42)
   actions_per_match <- n_actions %/% n_matches
 
   action_types <- c("pass", "dribble", "shot", "cross", "clearance", "tackle", "interception")

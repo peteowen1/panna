@@ -16,6 +16,8 @@ Character vector of years
 Returns years when tournaments were held (with FBref data available).
 }
 \examples{
-get_tournament_years("WC")
+\dontrun{
 get_tournament_years("EURO")
 }
+}
+\keyword{internal}

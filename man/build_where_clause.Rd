@@ -22,6 +22,7 @@ Constructs a SQL WHERE clause from a named list of filter conditions.
 Values are properly quoted for SQL safety. NULL values are skipped.
 }
 \examples{
+\dontrun{
 build_where_clause(list(league = "ENG", season = "2023-2024"))
 # Returns: "WHERE league = 'ENG' AND season = '2023-2024'"
 
@@ -34,3 +35,5 @@ build_where_clause(list(league = NULL, season = "2023-2024"))
 build_where_clause(list())
 # Returns: ""
 }
+}
+\keyword{internal}

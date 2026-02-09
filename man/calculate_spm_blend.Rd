@@ -28,3 +28,4 @@ Combines predictions from both model types with configurable weighting.
 The blend can improve robustness by capturing both linear (Elastic Net)
 and non-linear (XGBoost) relationships between box scores and RAPM.
 }
+\keyword{internal}

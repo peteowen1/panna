@@ -19,3 +19,4 @@ Data frame with rating estimates and confidence intervals
 \description{
 Estimates confidence intervals for RAPM ratings using bootstrap.
 }
+\keyword{internal}

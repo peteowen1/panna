@@ -16,5 +16,8 @@ Character, the full Understat match URL
 Constructs the Understat match page URL for a given match ID.
 }
 \examples{
+\dontrun{
 get_understat_match_url(28988)
 }
+}
+\keyword{internal}
