@@ -430,21 +430,21 @@ parse_opta_qualifiers <- function(dt) {
 
   valid <- !is.na(qjson) & nchar(qjson) > 2
 
-  # Vectorized regex checks - pattern matches "qualId": at start or after comma
-  # Using fixed patterns for speed
+  # Vectorized regex checks - pattern matches exact qualifier key in JSON
+  # Anchor with [{,] to prevent "1": matching "10": or "15":
   dt[, `:=`(
-    is_cross = valid & grepl('"2":', qjson, fixed = TRUE),
-    is_through_ball = valid & grepl('"4":', qjson, fixed = TRUE),
-    is_long_ball = valid & grepl('"1":', qjson, fixed = TRUE),
-    is_corner = valid & grepl('"6":', qjson, fixed = TRUE),
-    is_freekick = valid & grepl('"5":', qjson, fixed = TRUE),
-    is_throw_in = valid & grepl('"107":', qjson, fixed = TRUE),
-    is_goal_kick = valid & grepl('"124":', qjson, fixed = TRUE),
-    is_headed = valid & grepl('"15":', qjson, fixed = TRUE),
-    is_right_foot = valid & grepl('"72":', qjson, fixed = TRUE),
-    is_left_foot = valid & grepl('"36":', qjson, fixed = TRUE),
-    is_big_chance = valid & grepl('"214":', qjson, fixed = TRUE),
-    is_own_goal = valid & grepl('"28":', qjson, fixed = TRUE)
+    is_cross = valid & grepl('[{,]"2":', qjson),
+    is_through_ball = valid & grepl('[{,]"4":', qjson),
+    is_long_ball = valid & grepl('[{,]"1":', qjson),
+    is_corner = valid & grepl('[{,]"6":', qjson),
+    is_freekick = valid & grepl('[{,]"5":', qjson),
+    is_throw_in = valid & grepl('[{,]"107":', qjson),
+    is_goal_kick = valid & grepl('[{,]"124":', qjson),
+    is_headed = valid & grepl('[{,]"15":', qjson),
+    is_right_foot = valid & grepl('[{,]"72":', qjson),
+    is_left_foot = valid & grepl('[{,]"36":', qjson),
+    is_big_chance = valid & grepl('[{,]"214":', qjson),
+    is_own_goal = valid & grepl('[{,]"28":', qjson)
   )]
 
   dt[, qualifiers_parsed := TRUE]

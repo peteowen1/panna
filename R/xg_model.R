@@ -590,23 +590,20 @@ derive_xa <- function(spadl_actions) {
   # Credit the passer with the shot's xG as xA
   # We need to mark the PASS row, not the shot row
   if (sum(key_pass_mask) > 0) {
-    key_pass_ids <- dt$prev_action_id[key_pass_mask]
-    key_pass_xg <- dt$xg[key_pass_mask]
-    shot_is_goal <- dt$result[key_pass_mask] == "success"
+    # Build lookup of key pass credits (vectorized, O(k) instead of O(n*k))
+    key_passes <- data.table::data.table(
+      match_id = dt$match_id[key_pass_mask],
+      action_id = dt$prev_action_id[key_pass_mask],
+      kp_xa = dt$xg[key_pass_mask],
+      kp_is_goal = dt$result[key_pass_mask] == "success"
+    )
 
-    # Match by action_id and match_id for safety
-    key_pass_match_ids <- dt$match_id[key_pass_mask]
-
-    for (i in seq_along(key_pass_ids)) {
-      row_idx <- which(dt$action_id == key_pass_ids[i] & dt$match_id == key_pass_match_ids[i])
-      if (length(row_idx) == 1) {
-        data.table::set(dt, row_idx, "xa", key_pass_xg[i])
-        data.table::set(dt, row_idx, "is_key_pass", 1L)
-        if (shot_is_goal[i]) {
-          data.table::set(dt, row_idx, "is_assist", 1L)
-        }
-      }
-    }
+    # Join back to main table on (match_id, action_id)
+    dt[key_passes, on = .(match_id, action_id), `:=`(
+      xa = i.kp_xa,
+      is_key_pass = 1L,
+      is_assist = fifelse(i.kp_is_goal, 1L, is_assist)
+    )]
   }
 
   # Clean up temp columns

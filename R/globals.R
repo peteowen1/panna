@@ -317,6 +317,8 @@ utils::globalVariables(c(
   # data.table join prefix columns (i. prefix)
   "i.action_id",
   "i.end_minute",
+  "i.kp_is_goal",
+  "i.kp_xa",
   "i.match_id",
   "i.period_id",
   "i.splint_num",

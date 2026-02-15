@@ -57,7 +57,7 @@ clean_column_names <- function(data) {
 #' safe_divide(10, 0, default = NA)
 safe_divide <- function(x, y, default = 0) {
   result <- x / y
-  result[is.infinite(result) | is.nan(result)] <- default
+  result[is.na(result) | is.infinite(result) | is.nan(result)] <- default
   result
 }
 
@@ -302,14 +302,17 @@ create_match_id <- function(season, date, home_team, away_team) {
 #' @return Character vector of player IDs
 #' @keywords internal
 create_player_id <- function(player_name, fbref_id = NULL) {
-  if (!is.null(fbref_id) && all(!is.na(fbref_id))) {
-    return(fbref_id)
-  }
   # Fallback: clean name
   id <- tolower(player_name)
   id <- gsub("[^a-z0-9]", "_", id)
   id <- gsub("_+", "_", id)
   id <- gsub("^_|_$", "", id)
+
+  # Use fbref_id where available (element-wise)
+  if (!is.null(fbref_id)) {
+    has_id <- !is.na(fbref_id) & nzchar(fbref_id)
+    id[has_id] <- fbref_id[has_id]
+  }
   id
 }
 
@@ -682,11 +685,12 @@ aggregate_player_data <- function(data, agg_cols, by_team = FALSE,
     } else if (col_expr %in% names(data)) {
       agg_data[[col_name]] <- as.numeric(data[[col_expr]])
     } else {
-      # Try to evaluate as expression
-      agg_data[[col_name]] <- tryCatch(
-        as.numeric(eval(parse(text = col_expr), envir = data)),
-        error = function(e) rep(0, nrow(data))
-      )
+      # Unknown column - warn and fill with zeros
+      cli::cli_warn(c(
+        "Column {.val {col_expr}} not found in data.",
+        "i" = "Pre-compute derived columns before passing to {.fn aggregate_player_data}."
+      ))
+      agg_data[[col_name]] <- rep(0, nrow(data))
     }
   }
 
@@ -845,6 +849,9 @@ build_where_clause <- function(filters, prefix = TRUE) {
   if (length(filters) == 0) {
     return("")
   }
+
+  # Validate column names to prevent SQL injection
+  validate_sql_columns(names(filters))
 
   # Build conditions
   conditions <- vapply(names(filters), function(col_name) {

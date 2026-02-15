@@ -771,13 +771,13 @@ assign_epv_credit <- function(spadl_with_epv, xpass_model = NULL) {
     dt[turnover_idx, `:=`(
       player_credit = fifelse(
         epv_delta < 0,
-        epv_delta * 0.5,    # Negative: share blame
-        epv_delta           # Positive: actor gets full credit
+        epv_delta * EPV_TURNOVER_BLAME_SHARE,    # Negative: share blame
+        epv_delta                                  # Positive: actor gets full credit
       ),
       receiver_credit = fifelse(
         epv_delta < 0,
-        -epv_delta * 0.5,   # Negative: receiver gets credit for gaining
-        0                    # Positive: receiver not blamed
+        -epv_delta * EPV_TURNOVER_BLAME_SHARE,   # Negative: receiver gets credit for gaining
+        0                                          # Positive: receiver not blamed
       )
     )]
   }
@@ -802,8 +802,8 @@ assign_epv_credit <- function(spadl_with_epv, xpass_model = NULL) {
       # Defender/GK gets positive credit for preventing the goal
       # Use 50/50 split like turnovers
       dt[saved_shot_idx, `:=`(
-        player_credit = epv_delta * 0.5,      # Shooter blame
-        receiver_credit = -epv_delta * 0.5    # Defender credit
+        player_credit = epv_delta * EPV_TURNOVER_BLAME_SHARE,      # Shooter blame
+        receiver_credit = -epv_delta * EPV_TURNOVER_BLAME_SHARE    # Defender credit
       )]
     }
 
@@ -858,28 +858,22 @@ assign_epv_credit <- function(spadl_with_epv, xpass_model = NULL) {
       # a midfielder's creative through ball just because EPV delta is higher.
       #
       # Coordinate system: x=100 is own goal, x=0 is attacking goal
-      # Scale factor: 0.3 at x=100 (own goal), ramping to 1.0 at x=60 and beyond
+      # Scale factor: EPV_POSITION_SCALE_MIN at x=100 (own goal), ramping to 1.0 at x=(100 - EPV_POSITION_RAMP_X)
       # This reduces credit for routine GK/defender distribution while maintaining
       # full credit for passes in advanced positions.
       #
-      # passer_share = base_passer + adjustment * (1 - xpass)
-      # With base_passer=0.5 and adjustment=0.3:
-      #   Easy pass (xpass=0.9): passer gets 53%, receiver 47%
-      #   Hard pass (xpass=0.5): passer gets 65%, receiver 35%
+      # passer_share = EPV_BASE_PASSER_SHARE + EPV_PASS_DIFFICULTY_ADJUSTMENT * (1 - xpass)
       success_pass_idx <- which(dt$action_type == "pass" &
                                   dt$result == "success" &
                                   dt$possession_change == FALSE)
 
       if (length(success_pass_idx) > 0) {
-        base_passer_share <- 0.5
-        difficulty_adjustment <- 0.3
-
         # Position-based scaling: reduce credit for routine deep passes
-        # x=100 (own goal): scale=0.3, x=60 and below: scale=1.0
-        # Formula: (100 - start_x) / 40 maps x=100->0, x=60->1
+        # x=100 (own goal): scale=EPV_POSITION_SCALE_MIN, x=(100-EPV_POSITION_RAMP_X): scale=1.0
         dt[success_pass_idx, `:=`(
-          position_scale = pmin(1.0, 0.3 + 0.7 * ((100 - start_x) / 40)),
-          passer_share = base_passer_share + difficulty_adjustment * (1 - xpass)
+          position_scale = pmin(1.0, EPV_POSITION_SCALE_MIN +
+            (1 - EPV_POSITION_SCALE_MIN) * ((100 - start_x) / EPV_POSITION_RAMP_X)),
+          passer_share = EPV_BASE_PASSER_SHARE + EPV_PASS_DIFFICULTY_ADJUSTMENT * (1 - xpass)
         )]
 
         # For positive delta (progressive passes): split credit between passer and receiver
@@ -916,23 +910,20 @@ assign_epv_credit <- function(spadl_with_epv, xpass_model = NULL) {
       # Scale: 0.6 at x=100 (own goal), 1.0 at x=60 and beyond
       #
       # passer_blame_share: how much of the negative delta the passer takes
-      # With base=0.5 and adjustment=0.3:
-      #   Easy pass missed (xpass=0.9): passer takes 77% blame
-      #   Hard pass missed (xpass=0.5): passer takes 65% blame
+      # passer_blame = EPV_BASE_PASSER_SHARE + EPV_PASS_DIFFICULTY_ADJUSTMENT * xpass
       # Exclude period boundaries - receiver in next half not involved in this play
       failed_pass_idx <- which(dt$action_type == "pass" &
                                  (dt$result == "fail" | dt$possession_change == TRUE) &
                                  dt$is_period_boundary == FALSE)
 
       if (length(failed_pass_idx) > 0) {
-        base_blame_share <- 0.5
-        xpass_adjustment <- 0.3
-
         # Less aggressive scaling for failed passes (mistakes from deep are still costly)
-        # x=100 (own goal): scale=0.6, x=60 and below: scale=1.0
+        # x=100 (own goal): scale=0.6, x=(100-EPV_POSITION_RAMP_X): scale=1.0
+        failed_scale_min <- 0.6
         dt[failed_pass_idx, `:=`(
-          position_scale = pmin(1.0, 0.6 + 0.4 * ((100 - start_x) / 40)),
-          passer_blame = base_blame_share + xpass_adjustment * xpass
+          position_scale = pmin(1.0, failed_scale_min +
+            (1 - failed_scale_min) * ((100 - start_x) / EPV_POSITION_RAMP_X)),
+          passer_blame = EPV_BASE_PASSER_SHARE + EPV_PASS_DIFFICULTY_ADJUSTMENT * xpass
         )]
 
         # Only split for negative delta (actual loss of value)
@@ -980,7 +971,7 @@ assign_epv_credit <- function(spadl_with_epv, xpass_model = NULL) {
   #                                  ball_recovery, aerial, foul
   #
   # Coordinate system: x=100 is own goal, x=0 is attacking goal
-  # Scale: 0.3 at x=100, ramping to 1.0 at x=60 and beyond
+  # Scale: EPV_POSITION_SCALE_MIN at x=100, ramping to 1.0 at x=(100 - EPV_POSITION_RAMP_X)
   # This matches the pass position scaling for consistency.
   #
   offensive_action_types <- c("keeper_pick_up", "keeper_punch", "other",
@@ -994,8 +985,8 @@ assign_epv_credit <- function(spadl_with_epv, xpass_model = NULL) {
 
   if (length(offensive_deep_idx) > 0) {
     # Apply same position scaling formula as passes
-    # x=100 (own goal): scale=0.3, x=60: scale=1.0
-    dt[offensive_deep_idx, position_scale := pmin(1.0, 0.3 + 0.7 * ((100 - start_x) / 40))]
+    dt[offensive_deep_idx, position_scale := pmin(1.0, EPV_POSITION_SCALE_MIN +
+      (1 - EPV_POSITION_SCALE_MIN) * ((100 - start_x) / EPV_POSITION_RAMP_X))]
     dt[offensive_deep_idx, player_credit := player_credit * position_scale]
     dt[, position_scale := NULL]
 
@@ -1015,14 +1006,13 @@ assign_epv_credit <- function(spadl_with_epv, xpass_model = NULL) {
   #
   # Note: aerials are filtered at SPADL conversion, so not included here
   defensive_action_types <- c("clearance", "interception", "tackle", "ball_recovery")
-  defensive_boost <- 1.5  # 50% boost to defensive actions
 
   defensive_idx <- which(dt$action_type %in% defensive_action_types &
                           !is.na(dt$player_credit))
 
   if (length(defensive_idx) > 0) {
-    dt[defensive_idx, player_credit := player_credit * defensive_boost]
-    cli::cli_alert_info("Boosted {length(defensive_idx)} defensive actions by {defensive_boost}x")
+    dt[defensive_idx, player_credit := player_credit * EPV_DEFENSIVE_BOOST]
+    cli::cli_alert_info("Boosted {length(defensive_idx)} defensive actions by {EPV_DEFENSIVE_BOOST}x")
   }
 
 
@@ -1041,8 +1031,8 @@ assign_epv_credit <- function(spadl_with_epv, xpass_model = NULL) {
       # Winner: half the value change (already has player_credit set)
       # Loser: opposite (zero-sum)
       dt[duel_idx, `:=`(
-        player_credit = epv_delta * 0.5,
-        opponent_credit = -epv_delta * 0.5
+        player_credit = epv_delta * EPV_TURNOVER_BLAME_SHARE,
+        opponent_credit = -epv_delta * EPV_TURNOVER_BLAME_SHARE
       )]
       cli::cli_alert_info("Applied zero-sum duel credit to {length(duel_idx)} merged duels")
     }

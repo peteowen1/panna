@@ -108,7 +108,7 @@ fit_rapm <- function(rapm_data, alpha = 0, nfolds = 10,
     nfolds = nfolds,
     type.measure = "mse",
     penalty.factor = penalty_factor,
-    trace.it = 1, # if (parallel) 0 else 1,  # Progress bar doesn't work well with parallel
+    trace.it = if (interactive()) 1 else 0,
     parallel = parallel
   )
 
