@@ -33,3 +33,12 @@ Data frame with shooting statistics.
 Aggregate shooting statistics from Opta data. Includes shot volume,
 shot locations, finishing by body part, and big chances.
 }
+\examples{
+\dontrun{
+# All EPL shooters
+player_opta_shots(league = "ENG", season = "2024-2025")
+
+# Specific player
+player_opta_shots("M. Salah", league = "ENG", season = "2024-2025")
+}
+}

@@ -15,3 +15,12 @@ Fitted xPass model
 \description{
 Loads xPass model from saved RDS file.
 }
+\examples{
+\dontrun{
+# Load from default pannadata location
+xpass_model <- load_xpass_model()
+
+# Load from a specific path
+xpass_model <- load_xpass_model("path/to/xpass_model.rds")
+}
+}

@@ -251,6 +251,11 @@ get_parquet_path <- function(table_type, league, season, create = FALSE) {
 #'
 #' @return Path to created parquet file, or NULL if no data
 #' @export
+#'
+#' @examples
+#' \dontrun{
+#' build_parquet("summary", "ENG", "2024-2025")
+#' }
 build_parquet <- function(table_type, league, season, verbose = TRUE) {
   .check_suggests("arrow", "Building parquet files requires arrow.")
   if (verbose) message(sprintf("  %s/%s:", league, season))
@@ -347,6 +352,15 @@ build_parquet <- function(table_type, league, season, verbose = TRUE) {
 #'
 #' @return Data frame with table_type, league, season, n_matches, size_mb columns
 #' @export
+#'
+#' @examples
+#' \dontrun{
+#' # Build all parquet files
+#' build_all_parquet()
+#'
+#' # Build only summary for England
+#' build_all_parquet(table_types = "summary", leagues = "ENG")
+#' }
 build_all_parquet <- function(table_types = NULL, leagues = NULL,
                               seasons = NULL, verbose = TRUE) {
   .check_suggests("arrow", "Building parquet files requires arrow.")

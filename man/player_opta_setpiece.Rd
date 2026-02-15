@@ -33,3 +33,12 @@ Data frame with set piece statistics.
 Aggregate set piece statistics from Opta data. Includes corners,
 free kicks, penalties, and set piece involvement.
 }
+\examples{
+\dontrun{
+# All EPL set piece takers
+player_opta_setpiece(league = "ENG", season = "2024-2025")
+
+# Specific player
+player_opta_setpiece("T. Alexander-Arnold", league = "ENG", season = "2024-2025")
+}
+}

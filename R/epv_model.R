@@ -248,6 +248,13 @@ estimate_simple_xg <- function(x, y) {
 #'
 #' @return Fitted EPV model with metadata
 #'
+#' @examples
+#' \dontrun{
+#' features <- create_epv_features(spadl_actions)
+#' labels <- create_next_goal_labels(spadl_actions)
+#' epv_model <- fit_epv_model(features, labels, method = "goal")
+#' }
+#'
 #' @export
 fit_epv_model <- function(features,
                            labels,
@@ -514,6 +521,13 @@ predict_epv_probs <- function(model, features) {
 #'     \item For "xg" method: expected_xg
 #'   }
 #'
+#' @examples
+#' \dontrun{
+#' epv_model <- load_epv_model()
+#' features <- create_epv_features(spadl_actions)
+#' spadl_with_epv <- calculate_action_epv(spadl_actions, features, epv_model)
+#' }
+#'
 #' @export
 calculate_action_epv <- function(spadl_actions, features, epv_model, xg_model = NULL) {
   cli::cli_alert_info("Calculating EPV for {nrow(spadl_actions)} actions...")
@@ -711,6 +725,12 @@ calculate_action_epv <- function(spadl_actions, features, epv_model, xg_model = 
 #'     \item opponent_credit: EPV credit to duel loser (negative, via opponent_player_id)
 #'     \item xpass: Pass completion probability (for passes)
 #'   }
+#'
+#' @examples
+#' \dontrun{
+#' xpass_model <- load_xpass_model()
+#' spadl_credited <- assign_epv_credit(spadl_with_epv, xpass_model)
+#' }
 #'
 #' @export
 assign_epv_credit <- function(spadl_with_epv, xpass_model = NULL) {
@@ -1099,6 +1119,12 @@ split_pass_credit <- function(pass_value, xpass) {
 #'     \item epv_passing, epv_shooting, epv_dribbling, epv_defending
 #'   }
 #'
+#' @examples
+#' \dontrun{
+#' player_epv <- aggregate_player_epv(spadl_with_epv, lineups, min_minutes = 450)
+#' head(player_epv[order(-player_epv$epv_total), ])
+#' }
+#'
 #' @export
 aggregate_player_epv <- function(spadl_with_epv, lineups = NULL, min_minutes = 450) {
   cli::cli_alert_info("Aggregating player EPV metrics...")
@@ -1295,6 +1321,13 @@ calculate_action_type_epv <- function(spadl_with_epv) {
 #' @param path Directory to save model. If NULL, uses pannadata/models/opta/
 #'
 #' @return Invisibly returns path
+#'
+#' @examples
+#' \dontrun{
+#' save_epv_model(epv_model)
+#' save_epv_model(epv_model, path = "models/custom_dir")
+#' }
+#'
 #' @export
 save_epv_model <- function(epv_model, path = NULL) {
   if (is.null(path)) {
@@ -1318,6 +1351,13 @@ save_epv_model <- function(epv_model, path = NULL) {
 #' @param path Directory containing model. If NULL, uses pannadata/models/opta/
 #'
 #' @return EPV model
+#'
+#' @examples
+#' \dontrun{
+#' epv_model <- load_epv_model()
+#' epv_model <- load_epv_model(path = "models/custom_dir")
+#' }
+#'
 #' @export
 load_epv_model <- function(path = NULL) {
   if (is.null(path)) {
@@ -1351,6 +1391,13 @@ load_epv_model <- function(path = NULL) {
 #' @param dest Destination directory. If NULL, uses pannadata/models/opta/
 #'
 #' @return Invisibly returns path to models
+#'
+#' @examples
+#' \dontrun{
+#' pb_download_epv_models()
+#' pb_download_epv_models(tag = "epv-models-v2")
+#' }
+#'
 #' @export
 pb_download_epv_models <- function(repo = "peteowen1/pannadata",
                                     tag = "epv-models",
@@ -1404,6 +1451,14 @@ pb_download_epv_models <- function(repo = "peteowen1/pannadata",
 #' @param spadl_with_epv SPADL actions with EPV values
 #'
 #' @return List with validation statistics
+#'
+#' @examples
+#' \dontrun{
+#' validation <- validate_epv_model(spadl_with_epv)
+#' validation$epv_bounded
+#' validation$mean_epv_delta
+#' }
+#'
 #' @export
 validate_epv_model <- function(spadl_with_epv) {
   cli::cli_alert_info("Validating EPV model...")
@@ -1462,6 +1517,12 @@ validate_epv_model <- function(spadl_with_epv) {
 #' @param ... Arguments passed to [fit_epv_model()]
 #'
 #' @return An EPV model object
+#' @examples
+#' \dontrun{
+#' # Deprecated: use fit_epv_model() instead
+#' model <- fit_epv_scoring_model(features, labels)
+#' }
+#'
 #' @seealso [fit_epv_model()]
 #' @export
 fit_epv_scoring_model <- function(...) {
@@ -1485,6 +1546,12 @@ fit_epv_scoring_model <- function(...) {
 #' @param ... Arguments passed to [fit_epv_model()]
 #'
 #' @return An EPV model object
+#' @examples
+#' \dontrun{
+#' # Deprecated: use fit_epv_model() instead
+#' model <- fit_epv_conceding_model(features, labels)
+#' }
+#'
 #' @seealso [fit_epv_model()]
 #' @export
 fit_epv_conceding_model <- function(...) {
@@ -1542,6 +1609,12 @@ create_epv_labels_legacy <- function(spadl_actions) {
 #' @param xpass_model xPass model
 #'
 #' @return SPADL with credit columns
+#' @examples
+#' \dontrun{
+#' # Deprecated: use assign_epv_credit() instead
+#' result <- assign_pass_credit(spadl_with_epv, xpass_model)
+#' }
+#'
 #' @seealso [assign_epv_credit()]
 #' @export
 assign_pass_credit <- function(spadl_with_epv, xpass_model) {

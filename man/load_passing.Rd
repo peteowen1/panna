@@ -19,3 +19,12 @@ Data frame of passing statistics.
 \description{
 Loads passing statistics from pannadata.
 }
+\examples{
+\dontrun{
+# Load all passing data
+all_passing <- load_passing()
+
+# Load Italy 2024-2025 passing
+ita_passing <- load_passing(league = "ITA", season = "2024-2025")
+}
+}

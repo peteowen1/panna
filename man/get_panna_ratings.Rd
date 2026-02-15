@@ -15,3 +15,11 @@ Data frame with player panna ratings
 \description{
 Gets the final panna ratings from a fitted panna model.
 }
+\examples{
+\dontrun{
+panna_model <- fit_panna_model(splint_data, player_features)
+ratings <- get_panna_ratings(panna_model)
+head(ratings)
+}
+
+}

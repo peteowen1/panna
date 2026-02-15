@@ -40,3 +40,10 @@ Fits an elastic net model predicting RAPM from box score statistics.
 Weights observations by minutes played (sqrt transform) by default to reduce
 influence of noisy low-minute players whose RAPM and per-90 stats are unreliable.
 }
+\examples{
+\dontrun{
+spm_data <- prepare_spm_regression_data(player_features, rapm_ratings)
+spm_model <- fit_spm_model(spm_data, alpha = 0.5, nfolds = 10)
+}
+
+}

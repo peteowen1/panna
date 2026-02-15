@@ -19,3 +19,11 @@ Data frame with SPM ratings
 \description{
 Applies SPM model to predict RAPM for all players with features.
 }
+\examples{
+\dontrun{
+spm_model <- fit_spm_model(spm_data)
+ratings <- calculate_spm_ratings(player_features, spm_model)
+head(ratings)
+}
+
+}

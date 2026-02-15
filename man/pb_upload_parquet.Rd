@@ -27,3 +27,8 @@ Invisible data frame with uploaded file info
 Uploads only parquet files (not RDS) to a GitHub Release.
 This is the preferred upload method for efficient storage.
 }
+\examples{
+\dontrun{
+pb_upload_parquet()
+}
+}

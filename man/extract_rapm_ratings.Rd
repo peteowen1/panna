@@ -18,3 +18,11 @@ Data frame with player ratings
 Calculates player ratings as offense_coef - defense_coef.
 Positive = good, negative = bad.
 }
+\examples{
+\dontrun{
+rapm_model <- fit_rapm(rapm_data)
+ratings <- extract_rapm_ratings(rapm_model, lambda = "min")
+head(ratings)
+}
+
+}

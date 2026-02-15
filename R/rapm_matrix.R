@@ -303,6 +303,14 @@
 #'   "goals" for actual goals scored
 #'
 #' @return List with design matrix components
+#'
+#' @examples
+#' \dontrun{
+#' splint_data <- create_all_splints(processed_data)
+#' rapm_matrix <- create_rapm_design_matrix(splint_data, min_minutes = 90)
+#' dim(rapm_matrix$X_players)
+#' }
+#'
 #' @export
 create_rapm_design_matrix <- function(splint_data, min_minutes = 90,
                                        target_type = c("xg", "goals")) {

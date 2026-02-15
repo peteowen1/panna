@@ -19,3 +19,11 @@ Data frame of ranked players
 \description{
 Returns ranked list of players.
 }
+\examples{
+\dontrun{
+ratings <- get_panna_ratings(panna_model)
+top_20 <- rank_players_panna(ratings, top_n = 20)
+forwards <- rank_players_panna(ratings, top_n = 10, position = "FW")
+}
+
+}

@@ -411,6 +411,17 @@
 #' @param min_minutes Minimum total minutes for inclusion
 #'
 #' @return Data frame with per-90 rates for each player
+#'
+#' @examples
+#' \dontrun{
+#' stats_summary <- load_summary("ENG", "2024-2025")
+#' stats_passing <- load_passing("ENG", "2024-2025")
+#' stats_defense <- load_defense("ENG", "2024-2025")
+#' player_features <- aggregate_player_stats(
+#'   stats_summary, stats_passing, stats_defense, min_minutes = 450
+#' )
+#' }
+#'
 #' @export
 aggregate_player_stats <- function(stats_summary,
                                     stats_passing = NULL,
@@ -671,6 +682,13 @@ prepare_spm_regression_data <- function(player_features, rapm_ratings) {
 #'   "none" - equal weights
 #'
 #' @return Fitted glmnet model with metadata
+#'
+#' @examples
+#' \dontrun{
+#' spm_data <- prepare_spm_regression_data(player_features, rapm_ratings)
+#' spm_model <- fit_spm_model(spm_data, alpha = 0.5, nfolds = 10)
+#' }
+#'
 #' @export
 fit_spm_model <- function(data, predictor_cols = NULL, alpha = 0.5, nfolds = 10,
                           weight_by_minutes = TRUE, weight_transform = "sqrt") {
@@ -794,6 +812,14 @@ fit_spm_model <- function(data, predictor_cols = NULL, alpha = 0.5, nfolds = 10,
 #' @param verbose Print progress (0=silent, 1=performance, 2=details)
 #'
 #' @return List with xgb model, cv results, and metadata
+#'
+#' @examples
+#' \dontrun{
+#' spm_data <- prepare_spm_regression_data(player_features, rapm_ratings)
+#' spm_xgb <- fit_spm_xgb(spm_data, max_depth = 4, eta = 0.1)
+#' spm_xgb$r_squared
+#' }
+#'
 #' @export
 fit_spm_xgb <- function(data, predictor_cols = NULL, nfolds = 10,
                          max_depth = 4, eta = 0.1,
@@ -948,6 +974,14 @@ fit_spm_xgb <- function(data, predictor_cols = NULL, nfolds = 10,
 #' @param spm_xgb_model Fitted XGBoost SPM model from fit_spm_xgb
 #'
 #' @return Data frame with SPM ratings
+#'
+#' @examples
+#' \dontrun{
+#' spm_xgb <- fit_spm_xgb(spm_data)
+#' ratings <- calculate_spm_ratings_xgb(player_features, spm_xgb)
+#' head(ratings)
+#' }
+#'
 #' @export
 calculate_spm_ratings_xgb <- function(player_features, spm_xgb_model) {
   predictor_cols <- spm_xgb_model$panna_metadata$predictor_cols
@@ -1032,6 +1066,14 @@ extract_spm_coefficients <- function(model, lambda = "min") {
 #' @param lambda Which lambda to use
 #'
 #' @return Data frame with SPM ratings
+#'
+#' @examples
+#' \dontrun{
+#' spm_model <- fit_spm_model(spm_data)
+#' ratings <- calculate_spm_ratings(player_features, spm_model)
+#' head(ratings)
+#' }
+#'
 #' @export
 calculate_spm_ratings <- function(player_features, spm_model, lambda = "min") {
   predictor_cols <- spm_model$panna_metadata$predictor_cols
@@ -1110,6 +1152,14 @@ calculate_defensive_spm <- function(data, defensive_cols = NULL, alpha = 0.5) {
 #' @param weight_transform Transform for weights: "sqrt" (default), "linear", "log"
 #'
 #' @return List with validation metrics (both weighted and unweighted)
+#'
+#' @examples
+#' \dontrun{
+#' validation <- validate_spm_prediction(spm_ratings, rapm_ratings)
+#' validation$r_squared
+#' validation$correlation
+#' }
+#'
 #' @export
 validate_spm_prediction <- function(spm_ratings, rapm_ratings,
                                      weight_by_minutes = TRUE,
@@ -1217,6 +1267,14 @@ validate_spm_prediction <- function(spm_ratings, rapm_ratings,
 #' @param lambda Which lambda to use
 #'
 #' @return Data frame of top features by absolute coefficient
+#'
+#' @examples
+#' \dontrun{
+#' spm_model <- fit_spm_model(spm_data)
+#' top_features <- get_spm_feature_importance(spm_model, n = 15)
+#' top_features
+#' }
+#'
 #' @export
 get_spm_feature_importance <- function(model, n = 10, lambda = "min") {
   coefs <- extract_spm_coefficients(model, lambda)

@@ -15,3 +15,12 @@ Invisible data frame with season range info
 \description{
 Prints a summary table showing min/max seasons for each data component.
 }
+\examples{
+\dontrun{
+data <- list(
+  results = load_summary("ENG", "2023-2024"),
+  stats_summary = load_summary("ENG", "2023-2024")
+)
+report_season_ranges(data)
+}
+}

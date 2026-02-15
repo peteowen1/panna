@@ -21,6 +21,12 @@
 #'
 #' @return Data frame with match_url, home_team, away_team, date columns
 #' @export
+#'
+#' @examples
+#' \dontrun{
+#' fixtures <- scrape_fixtures("ENG", "2024-2025")
+#' head(fixtures)
+#' }
 scrape_fixtures <- function(league, season, completed_only = TRUE) {
   .check_suggests("httr", "Scraping FBref requires httr.")
   .check_suggests("rvest", "Scraping FBref requires rvest.")

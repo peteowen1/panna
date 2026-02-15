@@ -17,3 +17,11 @@ Character string report
 \description{
 Creates a formatted summary of panna ratings.
 }
+\examples{
+\dontrun{
+panna_model <- fit_panna_model(splint_data, player_features)
+report <- generate_panna_report(panna_model, top_n = 15)
+cat(report)
+}
+
+}

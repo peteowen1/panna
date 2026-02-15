@@ -36,3 +36,12 @@ save_pct, goals_against_per90, shots_conceded_per90, clean_sheet_pct
 \description{
 Aggregate goalkeeper statistics from Opta data.
 }
+\examples{
+\dontrun{
+# All EPL goalkeepers
+player_opta_keeper(league = "ENG", season = "2024-2025")
+
+# Specific keeper
+player_opta_keeper("D. Raya", league = "ENG", season = "2024-2025")
+}
+}

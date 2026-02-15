@@ -19,3 +19,12 @@ Data frame of defensive statistics.
 \description{
 Loads defensive statistics from pannadata.
 }
+\examples{
+\dontrun{
+# Load all defensive data
+all_defense <- load_defense()
+
+# Load France 2024-2025 defense stats
+fra_defense <- load_defense(league = "FRA", season = "2024-2025")
+}
+}

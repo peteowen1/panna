@@ -15,6 +15,15 @@
 #' @param alpha Elastic net mixing (default 0 for ridge)
 #'
 #' @return List with panna ratings and model details
+#'
+#' @examples
+#' \dontrun{
+#' rapm_data <- prepare_rapm_data(splint_data)
+#' spm_ratings <- calculate_spm_ratings(player_features, spm_model)
+#' panna <- calculate_panna_rating(rapm_data, spm_ratings, lambda_prior = 1)
+#' head(panna$ratings)
+#' }
+#'
 #' @export
 calculate_panna_rating <- function(rapm_data, spm_ratings, lambda_prior = 1, alpha = 0) {
   # Support both X_full (production) and X (tests)
@@ -118,6 +127,13 @@ calculate_panna_rating <- function(rapm_data, spm_ratings, lambda_prior = 1, alp
 #' @param validate Whether to run validation
 #'
 #' @return List with panna model and all intermediate results
+#'
+#' @examples
+#' \dontrun{
+#' panna_model <- fit_panna_model(splint_data, player_features, min_minutes = 180)
+#' head(get_panna_ratings(panna_model))
+#' }
+#'
 #' @export
 fit_panna_model <- function(splint_data, player_features, min_minutes = 180,
                              lambda_prior = 1, validate = TRUE) {
@@ -177,6 +193,14 @@ fit_panna_model <- function(splint_data, player_features, min_minutes = 180,
 #' @param panna_model Fitted panna model from fit_panna_model
 #'
 #' @return Data frame with player panna ratings
+#'
+#' @examples
+#' \dontrun{
+#' panna_model <- fit_panna_model(splint_data, player_features)
+#' ratings <- get_panna_ratings(panna_model)
+#' head(ratings)
+#' }
+#'
 #' @export
 get_panna_ratings <- function(panna_model) {
   panna_model$ratings
@@ -192,6 +216,14 @@ get_panna_ratings <- function(panna_model) {
 #' @param position Optional position filter
 #'
 #' @return Data frame of ranked players
+#'
+#' @examples
+#' \dontrun{
+#' ratings <- get_panna_ratings(panna_model)
+#' top_20 <- rank_players_panna(ratings, top_n = 20)
+#' forwards <- rank_players_panna(ratings, top_n = 10, position = "FW")
+#' }
+#'
 #' @export
 rank_players_panna <- function(ratings, top_n = NULL, position = NULL) {
   result <- ratings[order(-ratings$panna), ]
@@ -218,6 +250,13 @@ rank_players_panna <- function(ratings, top_n = NULL, position = NULL) {
 #' @param spm_ratings Data frame of SPM ratings
 #'
 #' @return Data frame comparing all rating types
+#'
+#' @examples
+#' \dontrun{
+#' comparison <- compare_panna_rapm_spm(panna_ratings, rapm_ratings, spm_ratings)
+#' head(comparison)
+#' }
+#'
 #' @export
 compare_panna_rapm_spm <- function(panna_ratings, rapm_ratings, spm_ratings) {
   # Join all ratings
@@ -248,6 +287,14 @@ compare_panna_rapm_spm <- function(panna_ratings, rapm_ratings, spm_ratings) {
 #' @param spm_ratings SPM ratings
 #'
 #' @return List of validation metrics
+#'
+#' @examples
+#' \dontrun{
+#' validation <- validate_panna_ratings(panna_ratings, rapm_ratings, spm_ratings)
+#' validation$panna_rapm_cor
+#' validation$panna_spm_cor
+#' }
+#'
 #' @export
 validate_panna_ratings <- function(panna_ratings, rapm_ratings, spm_ratings) {
   comparison <- compare_panna_rapm_spm(panna_ratings, rapm_ratings, spm_ratings)
@@ -281,6 +328,14 @@ validate_panna_ratings <- function(panna_ratings, rapm_ratings, spm_ratings) {
 #' @param top_n Number of top/bottom players to show
 #'
 #' @return Character string report
+#'
+#' @examples
+#' \dontrun{
+#' panna_model <- fit_panna_model(splint_data, player_features)
+#' report <- generate_panna_report(panna_model, top_n = 15)
+#' cat(report)
+#' }
+#'
 #' @export
 generate_panna_report <- function(panna_model, top_n = 10) {
   ratings <- panna_model$ratings
@@ -332,6 +387,14 @@ generate_panna_report <- function(panna_model, top_n = 10) {
 #' @param next_season_rapm RAPM from season N+1
 #'
 #' @return Validation metrics
+#'
+#' @examples
+#' \dontrun{
+#' metrics <- validate_predictive_power(panna_ratings_2023, rapm_ratings_2024)
+#' metrics$correlation
+#' metrics$rmse
+#' }
+#'
 #' @export
 validate_predictive_power <- function(panna_ratings, next_season_rapm) {
   # Match players

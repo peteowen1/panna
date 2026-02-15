@@ -17,3 +17,12 @@ Invisible path to saved file
 \description{
 Save Understat manifest to parquet file
 }
+\examples{
+\dontrun{
+manifest <- data.frame(
+  match_id = 22001L, league = "ENG",
+  season = "2024", scraped_at = Sys.time()
+)
+save_understat_manifest(manifest, "data/understat-manifest.parquet")
+}
+}

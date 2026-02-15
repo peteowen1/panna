@@ -17,3 +17,11 @@ Validation metrics
 \description{
 Tests panna ratings against next season performance.
 }
+\examples{
+\dontrun{
+metrics <- validate_predictive_power(panna_ratings_2023, rapm_ratings_2024)
+metrics$correlation
+metrics$rmse
+}
+
+}

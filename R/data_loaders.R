@@ -289,6 +289,14 @@ load_summary <- function(league = NULL, season = NULL, source = c("remote", "loc
 #' @return Data frame of match events.
 #'
 #' @export
+#' @examples
+#' \dontrun{
+#' # Load all events from remote
+#' all_events <- load_events()
+#'
+#' # Load England 2024-2025 events
+#' eng_events <- load_events(league = "ENG", season = "2024-2025")
+#' }
 load_events <- function(league = NULL, season = NULL, source = c("remote", "local")) {
   source <- match.arg(source)
   load_table_data("events", league, season, source)
@@ -306,6 +314,14 @@ load_events <- function(league = NULL, season = NULL, source = c("remote", "loca
 #' @return Data frame of shot data.
 #'
 #' @export
+#' @examples
+#' \dontrun{
+#' # Load all shots from remote
+#' all_shots <- load_shots()
+#'
+#' # Load Spain 2023-2024 shots
+#' esp_shots <- load_shots(league = "ESP", season = "2023-2024")
+#' }
 load_shots <- function(league = NULL, season = NULL, source = c("remote", "local")) {
   source <- match.arg(source)
   load_table_data("shots", league, season, source)
@@ -323,6 +339,14 @@ load_shots <- function(league = NULL, season = NULL, source = c("remote", "local
 #' @return Data frame of match metadata.
 #'
 #' @export
+#' @examples
+#' \dontrun{
+#' # Load all match metadata
+#' all_meta <- load_metadata()
+#'
+#' # Load Germany 2024-2025 metadata
+#' ger_meta <- load_metadata(league = "GER", season = "2024-2025")
+#' }
 load_metadata <- function(league = NULL, season = NULL, source = c("remote", "local")) {
   source <- match.arg(source)
   load_table_data("metadata", league, season, source)
@@ -340,6 +364,14 @@ load_metadata <- function(league = NULL, season = NULL, source = c("remote", "lo
 #' @return Data frame of passing statistics.
 #'
 #' @export
+#' @examples
+#' \dontrun{
+#' # Load all passing data
+#' all_passing <- load_passing()
+#'
+#' # Load Italy 2024-2025 passing
+#' ita_passing <- load_passing(league = "ITA", season = "2024-2025")
+#' }
 load_passing <- function(league = NULL, season = NULL, source = c("remote", "local")) {
   source <- match.arg(source)
   load_table_data("passing", league, season, source)
@@ -357,6 +389,14 @@ load_passing <- function(league = NULL, season = NULL, source = c("remote", "loc
 #' @return Data frame of defensive statistics.
 #'
 #' @export
+#' @examples
+#' \dontrun{
+#' # Load all defensive data
+#' all_defense <- load_defense()
+#'
+#' # Load France 2024-2025 defense stats
+#' fra_defense <- load_defense(league = "FRA", season = "2024-2025")
+#' }
 load_defense <- function(league = NULL, season = NULL, source = c("remote", "local")) {
   source <- match.arg(source)
   load_table_data("defense", league, season, source)
@@ -374,6 +414,14 @@ load_defense <- function(league = NULL, season = NULL, source = c("remote", "loc
 #' @return Data frame of possession statistics.
 #'
 #' @export
+#' @examples
+#' \dontrun{
+#' # Load all possession data
+#' all_possession <- load_possession()
+#'
+#' # Load England 2024-2025 possession stats
+#' eng_poss <- load_possession(league = "ENG", season = "2024-2025")
+#' }
 load_possession <- function(league = NULL, season = NULL, source = c("remote", "local")) {
   source <- match.arg(source)
   load_table_data("possession", league, season, source)
@@ -391,6 +439,14 @@ load_possession <- function(league = NULL, season = NULL, source = c("remote", "
 #' @return Data frame of goalkeeper statistics.
 #'
 #' @export
+#' @examples
+#' \dontrun{
+#' # Load all goalkeeper data
+#' all_keepers <- load_keeper()
+#'
+#' # Load Spain 2024-2025 keeper stats
+#' esp_keepers <- load_keeper(league = "ESP", season = "2024-2025")
+#' }
 load_keeper <- function(league = NULL, season = NULL, source = c("remote", "local")) {
   source <- match.arg(source)
   load_table_data("keeper", league, season, source)

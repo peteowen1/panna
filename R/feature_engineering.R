@@ -243,6 +243,12 @@ aggregate_player_season_stats <- function(match_stats, rate_cols = NULL, count_c
 #'
 #' @return Data frame with all player features
 #' @export
+#' @examples
+#' \dontrun{
+#' processed_data <- process_all_data("ENG", "2024-2025")
+#' features <- create_player_feature_matrix(processed_data, min_minutes = 180)
+#' head(features)
+#' }
 create_player_feature_matrix <- function(processed_data, min_minutes = 180) {
   # Get summary stats
   stats <- processed_data$stats_summary

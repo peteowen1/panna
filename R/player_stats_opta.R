@@ -168,6 +168,14 @@ player_opta_summary <- function(player = NULL,
 #' @return Data frame with player passing statistics.
 #'
 #' @export
+#' @examples
+#' \dontrun{
+#' # All EPL passers
+#' player_opta_passing(league = "ENG", season = "2024-2025")
+#'
+#' # Specific player
+#' player_opta_passing("B. Saka", league = "ENG", season = "2024-2025")
+#' }
 player_opta_passing <- function(player = NULL,
                                  league = NULL,
                                  season = NULL,
@@ -269,6 +277,14 @@ player_opta_passing <- function(player = NULL,
 #' @return Data frame with player defensive statistics.
 #'
 #' @export
+#' @examples
+#' \dontrun{
+#' # All EPL defenders
+#' player_opta_defense(league = "ENG", season = "2024-2025")
+#'
+#' # Specific player
+#' player_opta_defense("V. van Dijk", league = "ENG", season = "2024-2025")
+#' }
 player_opta_defense <- function(player = NULL,
                                  league = NULL,
                                  season = NULL,
@@ -375,6 +391,14 @@ player_opta_defense <- function(player = NULL,
 #' @return Data frame with player possession statistics.
 #'
 #' @export
+#' @examples
+#' \dontrun{
+#' # All EPL possession stats
+#' player_opta_possession(league = "ENG", season = "2024-2025")
+#'
+#' # Specific player
+#' player_opta_possession("B. Saka", league = "ENG", season = "2024-2025")
+#' }
 player_opta_possession <- function(player = NULL,
                                     league = NULL,
                                     season = NULL,
@@ -479,6 +503,14 @@ player_opta_possession <- function(player = NULL,
 #'   save_pct, goals_against_per90, shots_conceded_per90, clean_sheet_pct
 #'
 #' @export
+#' @examples
+#' \dontrun{
+#' # All EPL goalkeepers
+#' player_opta_keeper(league = "ENG", season = "2024-2025")
+#'
+#' # Specific keeper
+#' player_opta_keeper("D. Raya", league = "ENG", season = "2024-2025")
+#' }
 player_opta_keeper <- function(player = NULL,
                                 league = NULL,
                                 season = NULL,
@@ -596,6 +628,14 @@ player_opta_keeper <- function(player = NULL,
 #' @return Data frame with shooting statistics.
 #'
 #' @export
+#' @examples
+#' \dontrun{
+#' # All EPL shooters
+#' player_opta_shots(league = "ENG", season = "2024-2025")
+#'
+#' # Specific player
+#' player_opta_shots("M. Salah", league = "ENG", season = "2024-2025")
+#' }
 player_opta_shots <- function(player = NULL,
                                league = NULL,
                                season = NULL,
@@ -942,6 +982,14 @@ player_opta_xpass <- function(player = NULL,
 #' @return Data frame with set piece statistics.
 #'
 #' @export
+#' @examples
+#' \dontrun{
+#' # All EPL set piece takers
+#' player_opta_setpiece(league = "ENG", season = "2024-2025")
+#'
+#' # Specific player
+#' player_opta_setpiece("T. Alexander-Arnold", league = "ENG", season = "2024-2025")
+#' }
 player_opta_setpiece <- function(player = NULL,
                                   league = NULL,
                                   season = NULL,

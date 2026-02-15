@@ -19,3 +19,12 @@ Data frame of match events.
 \description{
 Loads match event data (goals, substitutions, cards, etc.) from pannadata.
 }
+\examples{
+\dontrun{
+# Load all events from remote
+all_events <- load_events()
+
+# Load England 2024-2025 events
+eng_events <- load_events(league = "ENG", season = "2024-2025")
+}
+}

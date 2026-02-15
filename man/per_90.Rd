@@ -17,3 +17,7 @@ Statistic per 90 minutes
 \description{
 Calculate minutes per 90
 }
+\examples{
+per_90(5, 450)
+per_90(c(3, 7), c(270, 810))
+}

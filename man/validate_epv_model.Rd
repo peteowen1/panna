@@ -15,3 +15,11 @@ List with validation statistics
 \description{
 Checks model calibration and that EPV values are bounded.
 }
+\examples{
+\dontrun{
+validation <- validate_epv_model(spadl_with_epv)
+validation$epv_bounded
+validation$mean_epv_delta
+}
+
+}

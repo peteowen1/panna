@@ -294,6 +294,12 @@ fit_xpass_model <- function(pass_features,
 #' @return Vector of xPass predictions (probabilities)
 #'
 #' @export
+#' @examples
+#' \dontrun{
+#' xpass_model <- load_xpass_model()
+#' pass_features <- prepare_passes_for_xpass(spadl_actions)
+#' xpass_pred <- predict_xpass(xpass_model, pass_features)
+#' }
 predict_xpass <- function(xpass_model, pass_features) {
   feature_cols <- xpass_model$panna_metadata$feature_cols
 
@@ -430,6 +436,14 @@ split_pass_credit <- function(pass_value, xpass) {
 #'
 #' @return Fitted xPass model
 #' @export
+#' @examples
+#' \dontrun{
+#' # Load from default pannadata location
+#' xpass_model <- load_xpass_model()
+#'
+#' # Load from a specific path
+#' xpass_model <- load_xpass_model("path/to/xpass_model.rds")
+#' }
 load_xpass_model <- function(path = NULL) {
   if (!is.null(path) && file.exists(path)) {
     model <- readRDS(path)
@@ -460,6 +474,12 @@ load_xpass_model <- function(path = NULL) {
 #'
 #' @return Invisibly returns the path
 #' @export
+#' @examples
+#' \dontrun{
+#' xpass_model <- fit_xpass_model(pass_features)
+#' save_xpass_model(xpass_model)
+#' save_xpass_model(xpass_model, path = "models/my_xpass_model.rds")
+#' }
 save_xpass_model <- function(xpass_model, path = NULL) {
   if (is.null(path)) {
     model_dir <- file.path(pannadata_dir(), "models", "opta")

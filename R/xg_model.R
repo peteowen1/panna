@@ -450,6 +450,14 @@ add_xg_to_spadl <- function(spadl_actions, xg_model) {
 #'
 #' @return Fitted xG model
 #' @export
+#' @examples
+#' \dontrun{
+#' # Load from default pannadata location
+#' xg_model <- load_xg_model()
+#'
+#' # Load from a specific path
+#' xg_model <- load_xg_model("path/to/xg_model.rds")
+#' }
 load_xg_model <- function(path = NULL) {
   if (!is.null(path) && file.exists(path)) {
     model <- readRDS(path)
@@ -481,6 +489,12 @@ load_xg_model <- function(path = NULL) {
 #'
 #' @return Invisibly returns the path
 #' @export
+#' @examples
+#' \dontrun{
+#' xg_model <- fit_xg_model(shot_features)
+#' save_xg_model(xg_model)
+#' save_xg_model(xg_model, path = "models/my_xg_model.rds")
+#' }
 save_xg_model <- function(xg_model, path = NULL) {
   if (is.null(path)) {
     model_dir <- file.path(pannadata_dir(), "models", "opta")
@@ -504,6 +518,13 @@ save_xg_model <- function(xg_model, path = NULL) {
 #'
 #' @return List with validation metrics
 #' @export
+#' @examples
+#' \dontrun{
+#' xg_model <- load_xg_model()
+#' test_shots <- prepare_shots_for_xg(test_shot_events)
+#' metrics <- validate_xg_model(xg_model, test_shots)
+#' print(metrics$logloss)
+#' }
 validate_xg_model <- function(xg_model, test_shots) {
   # Predict
   xg_pred <- predict_xg(xg_model, test_shots)
@@ -640,6 +661,15 @@ derive_xa <- function(spadl_actions) {
 #'   }
 #'
 #' @export
+#' @examples
+#' \dontrun{
+#' lineups <- load_opta_lineups("EPL", "2024-2025")
+#' spadl <- convert_opta_to_spadl(match_events)
+#' spadl <- add_xg_to_spadl(spadl, xg_model)
+#' spadl <- add_xpass_to_spadl(spadl, xpass_model)
+#' spadl <- derive_xa(spadl)
+#' xmetrics <- aggregate_player_xmetrics(spadl, lineups, min_minutes = 450)
+#' }
 aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0) {
   dt <- data.table::as.data.table(spadl)
 

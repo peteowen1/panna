@@ -19,3 +19,10 @@ List with sync status information
 \description{
 Compares local data count with what's in the release.
 }
+\examples{
+\dontrun{
+status <- pb_status()
+status$remote$exists
+status$local$n_files
+}
+}

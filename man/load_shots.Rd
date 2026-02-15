@@ -19,3 +19,12 @@ Data frame of shot data.
 \description{
 Loads shot-level data with expected goals (xG) from pannadata.
 }
+\examples{
+\dontrun{
+# Load all shots from remote
+all_shots <- load_shots()
+
+# Load Spain 2023-2024 shots
+esp_shots <- load_shots(league = "ESP", season = "2023-2024")
+}
+}

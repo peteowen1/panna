@@ -26,6 +26,12 @@ NULL
 #' @return Data frame with chain assignments added
 #'
 #' @export
+#' @examples
+#' \dontrun{
+#' spadl <- convert_opta_to_spadl(opta_events)
+#' chains <- create_possession_chains(spadl)
+#' head(chains[, c("match_id", "chain_id", "action_type", "team_id")])
+#' }
 create_possession_chains <- function(spadl_actions) {
   if (is.null(spadl_actions) || nrow(spadl_actions) == 0) {
     cli::cli_abort("No SPADL actions provided for chain creation")

@@ -722,6 +722,12 @@ create_match_splints <- function(match_id, events, lineups, shooting, results,
 #'
 #' @return List with combined splint data
 #' @export
+#' @examples
+#' \dontrun{
+#' processed_data <- process_all_data("ENG", "2024-2025")
+#' splints <- create_all_splints(processed_data)
+#' splints <- create_all_splints(processed_data, include_goals = FALSE, verbose = FALSE)
+#' }
 create_all_splints <- function(processed_data, include_goals = TRUE, verbose = TRUE) {
   if (!requireNamespace("data.table", quietly = TRUE)) {
     cli::cli_abort(c(

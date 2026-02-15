@@ -33,6 +33,10 @@
 #'
 #' @return Data frame with snake_case column names
 #' @export
+#'
+#' @examples
+#' df <- data.frame(GoalsScored = 1:3, AssistsMade = 4:6)
+#' clean_column_names(df)
 clean_column_names <- function(data) {
   if (is.null(data) || !is.data.frame(data)) {
     return(data)
@@ -434,6 +438,10 @@ validate_data_completeness <- function(data, required_cols = NULL, warn = TRUE) 
 #'
 #' @return Statistic per 90 minutes
 #' @export
+#'
+#' @examples
+#' per_90(5, 450)
+#' per_90(c(3, 7), c(270, 810))
 per_90 <- function(stat, minutes) {
   safe_divide(stat * 90, minutes)
 }

@@ -52,3 +52,11 @@ Supports two methods:
 \item "xg": Regression on signed xG of next shot (+team, -opponent, 0 if none)
 }
 }
+\examples{
+\dontrun{
+features <- create_epv_features(spadl_actions)
+labels <- create_next_goal_labels(spadl_actions)
+epv_model <- fit_epv_model(features, labels, method = "goal")
+}
+
+}

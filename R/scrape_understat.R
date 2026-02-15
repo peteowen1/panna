@@ -18,6 +18,11 @@
 #'
 #' @return List with counts of scraped, cached, and failed matches
 #' @export
+#'
+#' @examples
+#' \dontrun{
+#' scrape_understat_matches(c("22001", "22002"), league = "ENG", season = "2024")
+#' }
 scrape_understat_matches <- function(understat_ids,
                                       league,
                                       season,
@@ -560,6 +565,12 @@ DEFAULT_LEAGUE_STARTS <- list(
 #'
 #' @return Data frame with columns: match_id, league, season, scraped_at
 #' @export
+#'
+#' @examples
+#' \dontrun{
+#' manifest <- load_understat_manifest("data/understat-manifest.parquet")
+#' nrow(manifest)
+#' }
 load_understat_manifest <- function(path) {
   if (!file.exists(path)) {
     # Return empty manifest structure
@@ -594,6 +605,15 @@ load_understat_manifest <- function(path) {
 #'
 #' @return Invisible path to saved file
 #' @export
+#'
+#' @examples
+#' \dontrun{
+#' manifest <- data.frame(
+#'   match_id = 22001L, league = "ENG",
+#'   season = "2024", scraped_at = Sys.time()
+#' )
+#' save_understat_manifest(manifest, "data/understat-manifest.parquet")
+#' }
 save_understat_manifest <- function(manifest, path) {
   # Ensure directory exists
   dir_path <- dirname(path)

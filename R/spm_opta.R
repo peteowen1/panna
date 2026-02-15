@@ -500,6 +500,13 @@ fit_spm_opta <- function(data, alpha = 0.5, nfolds = 10,
 #' @param n Number of top features to compare (default 20)
 #'
 #' @return Data frame comparing feature importance
+#'
+#' @examples
+#' \dontrun{
+#' comparison <- compare_spm_features(fbref_spm_model, opta_spm_model, n = 20)
+#' head(comparison)
+#' }
+#'
 #' @export
 compare_spm_features <- function(fbref_model, opta_model, n = 20) {
   fbref_imp <- get_spm_feature_importance(fbref_model, n = n)

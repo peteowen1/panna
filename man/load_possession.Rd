@@ -19,3 +19,12 @@ Data frame of possession statistics.
 \description{
 Loads possession statistics from pannadata.
 }
+\examples{
+\dontrun{
+# Load all possession data
+all_possession <- load_possession()
+
+# Load England 2024-2025 possession stats
+eng_poss <- load_possession(league = "ENG", season = "2024-2025")
+}
+}

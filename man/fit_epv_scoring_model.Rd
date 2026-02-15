@@ -19,6 +19,13 @@ This function is deprecated. Please use \code{\link[=fit_epv_model]{fit_epv_mode
 The unified EPV model now handles both scoring and conceding predictions
 using a multinomial approach.
 }
+\examples{
+\dontrun{
+# Deprecated: use fit_epv_model() instead
+model <- fit_epv_scoring_model(features, labels)
+}
+
+}
 \seealso{
 \code{\link[=fit_epv_model]{fit_epv_model()}}
 }

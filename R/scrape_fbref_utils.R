@@ -632,6 +632,9 @@ list_cached_matches <- function(table_type = "metadata", league = NULL,
 #'
 #' @return Data frame with league info
 #' @export
+#'
+#' @examples
+#' get_big5_leagues()
 get_big5_leagues <- function() {
   data.frame(
     country = c("ENG", "ESP", "GER", "ITA", "FRA"),
@@ -873,6 +876,15 @@ extract_season_range <- function(data, data_name = "data") {
 #'
 #' @return Invisible data frame with season range info
 #' @export
+#'
+#' @examples
+#' \dontrun{
+#' data <- list(
+#'   results = load_summary("ENG", "2023-2024"),
+#'   stats_summary = load_summary("ENG", "2023-2024")
+#' )
+#' report_season_ranges(data)
+#' }
 report_season_ranges <- function(data) {
   # Define data components and their display names
   components <- list(

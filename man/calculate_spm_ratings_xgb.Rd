@@ -17,3 +17,11 @@ Data frame with SPM ratings
 \description{
 Calculate SPM ratings using XGBoost model
 }
+\examples{
+\dontrun{
+spm_xgb <- fit_spm_xgb(spm_data)
+ratings <- calculate_spm_ratings_xgb(player_features, spm_xgb)
+head(ratings)
+}
+
+}

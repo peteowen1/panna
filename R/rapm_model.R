@@ -21,6 +21,13 @@
 #' @param n_cores Number of cores (default: half of available)
 #'
 #' @return Fitted model with metadata
+#'
+#' @examples
+#' \dontrun{
+#' rapm_data <- prepare_rapm_data(splint_data, min_minutes = 90)
+#' rapm_model <- fit_rapm(rapm_data, alpha = 0, nfolds = 10)
+#' }
+#'
 #' @export
 fit_rapm <- function(rapm_data, alpha = 0, nfolds = 10,
                          use_weights = TRUE, standardize = FALSE,
@@ -146,6 +153,14 @@ fit_rapm <- function(rapm_data, alpha = 0, nfolds = 10,
 #' @param lambda Which lambda to use ("min" or "1se")
 #'
 #' @return Data frame with player ratings
+#'
+#' @examples
+#' \dontrun{
+#' rapm_model <- fit_rapm(rapm_data)
+#' ratings <- extract_rapm_ratings(rapm_model, lambda = "min")
+#' head(ratings)
+#' }
+#'
 #' @export
 extract_rapm_ratings <- function(model, lambda = "min") {
   # Get lambda value
@@ -251,6 +266,14 @@ get_covariate_effects <- function(model, lambda = "min") {
 #' @param penalize_covariates Whether to penalize covariate coefficients
 #'
 #' @return Fitted model with prior adjustment metadata
+#'
+#' @examples
+#' \dontrun{
+#' offense_prior <- build_prior_vector(spm_data, "offense_spm", rapm_data$player_mapping)
+#' defense_prior <- build_prior_vector(spm_data, "defense_spm", rapm_data$player_mapping)
+#' xrapm_model <- fit_rapm_with_prior(rapm_data, offense_prior, defense_prior)
+#' }
+#'
 #' @export
 fit_rapm_with_prior <- function(rapm_data, offense_prior, defense_prior,
                                  alpha = 0, nfolds = 10,
@@ -367,6 +390,14 @@ fit_rapm_with_prior <- function(rapm_data, offense_prior, defense_prior,
 #' @param lambda Which lambda to use ("min" or "1se")
 #'
 #' @return Data frame with player ratings including deviation from prior
+#'
+#' @examples
+#' \dontrun{
+#' xrapm_model <- fit_rapm_with_prior(rapm_data, offense_prior, defense_prior)
+#' ratings <- extract_xrapm_ratings(xrapm_model, lambda = "min")
+#' head(ratings)
+#' }
+#'
 #' @export
 extract_xrapm_ratings <- function(model, lambda = "min") {
   # Get lambda value

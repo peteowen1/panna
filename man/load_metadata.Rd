@@ -19,3 +19,12 @@ Data frame of match metadata.
 \description{
 Loads match metadata from pannadata.
 }
+\examples{
+\dontrun{
+# Load all match metadata
+all_meta <- load_metadata()
+
+# Load Germany 2024-2025 metadata
+ger_meta <- load_metadata(league = "GER", season = "2024-2025")
+}
+}

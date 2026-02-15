@@ -31,3 +31,12 @@ Iterates through all table_type/league/season combinations and creates
 parquet files. Discovers combinations from both existing RDS files and
 existing parquet files (for incremental updates on CI).
 }
+\examples{
+\dontrun{
+# Build all parquet files
+build_all_parquet()
+
+# Build only summary for England
+build_all_parquet(table_types = "summary", leagues = "ENG")
+}
+}

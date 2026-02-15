@@ -19,3 +19,10 @@ List with separated offensive and defensive ratings
 \description{
 Separates panna rating into offensive and defensive components.
 }
+\examples{
+\dontrun{
+rapm_data <- create_rapm_design_matrix(splints, separate_od = TRUE)
+od_result <- calculate_od_panna(rapm_data, spm_ratings, lambda_prior = 1)
+head(od_result$ratings[, c("player_name", "o_panna", "d_panna", "panna")])
+}
+}

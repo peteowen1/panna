@@ -17,3 +17,9 @@ Character vector of player types
 \description{
 Classifies players based on their O/D rating balance.
 }
+\examples{
+\dontrun{
+categorize_player_profile(0.8, 0.2)
+categorize_player_profile(c(0.6, 0.3, 0.5), c(0.4, 0.7, 0.5))
+}
+}
