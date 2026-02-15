@@ -131,14 +131,17 @@ if (!grepl("fbref\\.com/en/matches/", match_url)) {
   # Make request with session cookies and retry logic
 
   response <- fetch_with_retry(
-    match_url,
+    url = match_url,
+    max_retries = 3,
+    base_delay = 1,
+    max_delay = 30,
     httr::add_headers(.headers = get_fbref_headers()),
     httr::timeout(timeout),
     handle = get_fbref_session()
   )
 
   # Check for errors returned by fetch_with_retry
-  if (is.null(response)) {
+  if (inherits(response, "fetch_error") || is.null(response)) {
     if (isTRUE(attr(response, "rate_limited"))) {
       cli::cli_warn("Rate limited by FBref (429). Stopping.")
     } else if (isTRUE(attr(response, "blocked"))) {

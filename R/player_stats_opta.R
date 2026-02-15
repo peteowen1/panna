@@ -21,14 +21,14 @@
 .load_opta_xmetrics_data <- function(league, season, source) {
   data <- if (is.null(league)) {
     # Load all Big 5 leagues
-    results <- lapply(names(OPTA_LEAGUES), function(lg) {
+    results <- lapply(c("ENG", "ESP", "GER", "ITA", "FRA"), function(lg) {
       tryCatch({
         df <- load_opta_xmetrics(lg, season)
         df$league <- lg
         df
       }, error = function(e) NULL)
     })
-    rbindlist(Filter(Negate(is.null), results), use.names = TRUE, fill = TRUE)
+    data.table::rbindlist(Filter(Negate(is.null), results), use.names = TRUE, fill = TRUE)
   } else {
     load_opta_xmetrics(league = league, season = season)
   }
@@ -601,7 +601,7 @@ player_opta_shots <- function(player = NULL,
                                season = NULL,
                                min_minutes = 450,
                                by_team = FALSE,
-                               source = c("remote", "local")) {
+                               source = c("local", "remote")) {
   source <- match.arg(source)
 
   data <- .load_opta_data(league, season, source)
@@ -947,7 +947,7 @@ player_opta_setpiece <- function(player = NULL,
                                   season = NULL,
                                   min_minutes = 450,
                                   by_team = FALSE,
-                                  source = c("remote", "local")) {
+                                  source = c("local", "remote")) {
   source <- match.arg(source)
 
   data <- .load_opta_data(league, season, source)

@@ -91,9 +91,7 @@ fit_rapm <- function(rapm_data, alpha = 0, nfolds = 10,
 
   # Penalty factor: don't penalize covariates if requested
   if (!penalize_covariates && length(rapm_data$covariate_names) > 0) {
-    n_cols <- ncol(X)
-    n_cov <- length(rapm_data$covariate_names)
-    penalty_factor <- c(rep(1, n_cols - n_cov), rep(0, n_cov))
+    penalty_factor <- ifelse(colnames(X) %in% rapm_data$covariate_names, 0, 1)
   } else {
     penalty_factor <- rep(1, ncol(X))
   }
@@ -114,12 +112,13 @@ fit_rapm <- function(rapm_data, alpha = 0, nfolds = 10,
 
   # Add metadata
   target_type <- if (!is.null(rapm_data$target_type)) rapm_data$target_type else "xg"
+  n_player_total <- if (!is.null(rapm_data$n_players_total)) rapm_data$n_players_total else rapm_data$n_players
   cv_fit$panna_metadata <- list(
     type = "rapm",
     target_type = target_type,
     alpha = alpha,
     n_observations = length(y),
-    n_player_cols = rapm_data$n_players * 2,
+    n_player_cols = n_player_total * 2,
     n_covariates = length(rapm_data$covariate_names),
     lambda_min = cv_fit$lambda.min,
     lambda_1se = cv_fit$lambda.1se,
@@ -315,8 +314,7 @@ fit_rapm_with_prior <- function(rapm_data, offense_prior, defense_prior,
 
   # Penalty factor: don't penalize covariates if requested
   if (!penalize_covariates && length(covariate_names) > 0) {
-    penalty_factor <- c(rep(1, n_cols - length(covariate_names)),
-                        rep(0, length(covariate_names)))
+    penalty_factor <- ifelse(colnames(X) %in% covariate_names, 0, 1)
   } else {
     penalty_factor <- rep(1, n_cols)
   }
@@ -335,11 +333,12 @@ fit_rapm_with_prior <- function(rapm_data, offense_prior, defense_prior,
   )
 
   # Store metadata including prior information
+  n_player_total <- if (!is.null(rapm_data$n_players_total)) rapm_data$n_players_total else rapm_data$n_players
   cv_fit$panna_metadata <- list(
     type = "xrapm",
     alpha = alpha,
     n_observations = length(y_adjusted),
-    n_player_cols = rapm_data$n_players * 2,
+    n_player_cols = n_player_total * 2,
     n_covariates = length(covariate_names),
     lambda_min = cv_fit$lambda.min,
     lambda_1se = cv_fit$lambda.1se,
@@ -537,7 +536,7 @@ extract_od_rapm_coefficients <- function(model, lambda = "min") {
   # Combine
   ratings <- data.table::as.data.table(def_ratings)[data.table::as.data.table(off_ratings), on = "player_id"]
   data.table::setDF(ratings)
-  ratings$rapm <- ratings$o_rapm + ratings$d_rapm
+  ratings$rapm <- ratings$o_rapm - ratings$d_rapm
   ratings <- ratings[order(-ratings$rapm), ]
 
   # Join with player mapping if available
@@ -562,7 +561,7 @@ extract_od_rapm_coefficients <- function(model, lambda = "min") {
 #' @return Data frame with rating estimates and confidence intervals
 #' @keywords internal
 calculate_rapm_stability <- function(rapm_data, n_bootstrap = 100, alpha = 0) {
-  X <- rapm_data$X
+  X <- if (!is.null(rapm_data$X_full)) rapm_data$X_full else rapm_data$X
   y <- rapm_data$y
   valid_idx <- !is.na(y)
   X <- X[valid_idx, , drop = FALSE]

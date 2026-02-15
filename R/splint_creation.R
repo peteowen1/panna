@@ -577,7 +577,7 @@ calculate_splint_npxgd <- function(boundaries, shooting, match_id,
     ))
   }
 
-  match_shots <- shooting[shooting$match_id == match_id & !shooting$is_penalty, , drop = FALSE]
+  match_shots <- shooting[shooting$match_id == match_id & shooting$is_penalty %in% FALSE, , drop = FALSE]
 
   # Handle case with no shots
   if (nrow(match_shots) == 0) {
@@ -697,8 +697,10 @@ create_match_splints <- function(match_id, events, lineups, shooting, results,
                                      home_team = home_team, away_team = away_team)
 
   # Combine - match_id is already in boundaries
-  xg_cols <- xg_data[, c("splint_num", "npxg_home", "npxg_away", "npxgd", "npxgd_per_90"), with = FALSE]
-  splints <- xg_cols[boundaries, on = "splint_num"]
+  xg_dt <- data.table::as.data.table(xg_data)
+  xg_cols <- xg_dt[, c("splint_num", "npxg_home", "npxg_away", "npxgd", "npxgd_per_90"), with = FALSE]
+  splints <- xg_cols[data.table::as.data.table(boundaries), on = "splint_num"]
+  data.table::setDF(splints)
 
   list(
     match_id = current_match_id,
@@ -940,17 +942,18 @@ create_match_splints_fast <- function(match_id, events, lineups, shooting, resul
       red_cards <- lineups[red_card_idx, , drop = FALSE]
       # Use off_minute if available (accurate for subs), else fall back to minutes
       if ("off_minute" %in% names(red_cards)) {
-        red_card_times <- red_cards$off_minute
+        raw_times <- red_cards$off_minute
       } else if ("minutes" %in% names(red_cards)) {
-        red_card_times <- as.numeric(red_cards$minutes)
+        raw_times <- as.numeric(red_cards$minutes)
+      } else {
+        raw_times <- rep(NA_real_, nrow(red_cards))
       }
-      red_card_times <- red_card_times[!is.na(red_card_times) & red_card_times > 0]
+      # Apply same mask to both times and is_home to keep vectors aligned
+      valid_mask <- !is.na(raw_times) & raw_times > 0
+      red_card_times <- raw_times[valid_mask]
       # Determine if home team got red card
       if (!is.null(home_team) && "team" %in% names(red_cards) && length(red_card_times) > 0) {
-        red_card_is_home <- red_cards$team == home_team
-        if ("off_minute" %in% names(red_cards)) {
-          red_card_is_home <- red_card_is_home[!is.na(red_cards$off_minute) & red_cards$off_minute > 0]
-        }
+        red_card_is_home <- (red_cards$team == home_team)[valid_mask]
       }
     }
   } else if (!is.null(stats) && nrow(stats) > 0 && "crd_r" %in% names(stats)) {
@@ -1076,7 +1079,9 @@ create_splint_boundaries_fast <- function(events, shots = NULL, include_goals = 
   }
 
   # Use derived sub times if events didn't provide them
-  if (!is.null(sub_times) && length(sub_times) > 0) {
+  event_subs_found <- !is.null(events) && nrow(events) > 0 &&
+    ("is_sub" %in% names(events) || "event_type" %in% names(events))
+  if (!event_subs_found && !is.null(sub_times) && length(sub_times) > 0) {
     boundaries <- c(boundaries, sub_times)
   }
 
@@ -1095,7 +1100,8 @@ create_splint_boundaries_fast <- function(events, shots = NULL, include_goals = 
 
   if (n_splints < 1) {
     return(data.frame(
-      splint_num = 1, start_minute = 0, end_minute = 90, duration = 90, avg_min = 45,
+      splint_num = 1, start_minute = 0, end_minute = match_end,
+      duration = match_end, avg_min = match_end / 2,
       gf_home = 0, ga_home = 0, goals_home = 0, goals_away = 0,
       red_home = 0, red_away = 0, n_players_home = 11, n_players_away = 11
     ))
@@ -1217,7 +1223,7 @@ calculate_splint_npxgd_fast <- function(boundaries, shooting, home_team, away_te
   }
 
   # Filter non-penalty shots once
-  np_shots <- shooting[!shooting$is_penalty, , drop = FALSE]
+  np_shots <- shooting[shooting$is_penalty %in% FALSE, , drop = FALSE]
 
   if (nrow(np_shots) == 0) {
     return(data.frame(

@@ -72,14 +72,6 @@ process_match_lineups <- function(lineups, results) {
     return(NULL)
   }
 
-  # Require data.table for speed with large datasets
-  if (!requireNamespace("data.table", quietly = TRUE)) {
-    cli::cli_abort(c(
-      "Package {.pkg data.table} is required for processing large datasets.",
-      "i" = "Install with: {.code install.packages('data.table')}"
-    ))
-  }
-
   progress_msg(sprintf("  [data.table] Processing %d lineup rows...", nrow(lineups)))
 
   dt_lineups <- data.table::as.data.table(lineups)
@@ -322,14 +314,6 @@ process_shooting_data <- function(shooting, results) {
     return(NULL)
   }
 
-  # Require data.table for speed with large datasets
-  if (!requireNamespace("data.table", quietly = TRUE)) {
-    cli::cli_abort(c(
-      "Package {.pkg data.table} is required for processing large datasets.",
-      "i" = "Install with: {.code install.packages('data.table')}"
-    ))
-  }
-
   progress_msg(sprintf("  [data.table] Processing %d shot rows...", nrow(shooting)))
 
   dt_shooting <- data.table::as.data.table(shooting)
@@ -387,14 +371,6 @@ process_advanced_stats <- function(stats, results, stat_type = "summary") {
   if (is.null(stats) || nrow(stats) == 0) {
     cli::cli_warn("No {stat_type} data to process")
     return(NULL)
-  }
-
-  # Require data.table for speed with large datasets
-  if (!requireNamespace("data.table", quietly = TRUE)) {
-    cli::cli_abort(c(
-      "Package {.pkg data.table} is required for processing large datasets.",
-      "i" = "Install with: {.code install.packages('data.table')}"
-    ))
   }
 
   # Row count shown for debugging if needed

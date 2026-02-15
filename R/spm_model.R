@@ -1047,7 +1047,7 @@ calculate_spm_ratings <- function(player_features, spm_model, lambda = "min") {
   spm_pred <- as.vector(stats::predict(spm_model, newx = X, s = lambda_val))
 
   # Create output data frame
-  keep_cols <- intersect(c("player_id", "player_name", "n_games", "total_minutes"),
+  keep_cols <- intersect(c("player_id", "player_name", "n_matches", "total_minutes"),
                          names(player_features))
   result <- player_features[, keep_cols, drop = FALSE]
   result$spm <- spm_pred
@@ -1069,9 +1069,9 @@ calculate_spm_ratings <- function(player_features, spm_model, lambda = "min") {
 #' @keywords internal
 calculate_offensive_spm <- function(data, offensive_cols = NULL, alpha = 0.5) {
   if (is.null(offensive_cols)) {
-    offensive_cols <- c("npxG_p100", "xG_p100", "Sh_p100", "SoT_p100",
-                        "Ast_p100", "xAG_p100", "SCA_p100", "GCA_p100",
-                        "PrgP_p100", "PrgC_p100", "Carries_p100")
+    offensive_cols <- c("npxg_p90", "xg_p90", "shots_p90", "shots_on_target_p90",
+                        "assists_p90", "xa_p90", "sca_p90", "gca_p90",
+                        "progressive_passes_p90", "progressive_carries_p90", "carries_p90")
   }
 
   fit_spm_model(data, predictor_cols = offensive_cols, alpha = alpha)
@@ -1090,8 +1090,8 @@ calculate_offensive_spm <- function(data, offensive_cols = NULL, alpha = 0.5) {
 #' @keywords internal
 calculate_defensive_spm <- function(data, defensive_cols = NULL, alpha = 0.5) {
   if (is.null(defensive_cols)) {
-    defensive_cols <- c("Tkl_p100", "Int_p100", "Blocks_p100",
-                        "TklWon_p100", "Clr_p100")
+    defensive_cols <- c("tackles_p90", "interceptions_p90", "blocks_p90",
+                        "tackles_won_p90", "clearances_p90")
   }
 
   fit_spm_model(data, predictor_cols = defensive_cols, alpha = alpha)
@@ -1165,9 +1165,10 @@ validate_spm_prediction <- function(spm_ratings, rapm_ratings,
   mae_weighted <- sum(weights * abs(residuals), na.rm = TRUE) / sum(weights, na.rm = TRUE)
 
   # Weighted correlation (handle zero variance edge case)
-  cov_w <- sum(weights * (comparison$spm - mean(comparison$spm)) *
+  weighted_mean_spm <- sum(weights * comparison$spm, na.rm = TRUE) / sum(weights, na.rm = TRUE)
+  cov_w <- sum(weights * (comparison$spm - weighted_mean_spm) *
                (comparison$rapm - weighted_mean_rapm), na.rm = TRUE) / sum(weights, na.rm = TRUE)
-  sd_spm_w <- sqrt(sum(weights * (comparison$spm - mean(comparison$spm))^2, na.rm = TRUE) / sum(weights, na.rm = TRUE))
+  sd_spm_w <- sqrt(sum(weights * (comparison$spm - weighted_mean_spm)^2, na.rm = TRUE) / sum(weights, na.rm = TRUE))
   sd_rapm_w <- sqrt(sum(weights * (comparison$rapm - weighted_mean_rapm)^2, na.rm = TRUE) / sum(weights, na.rm = TRUE))
   cor_weighted <- if (sd_spm_w > 0 && sd_rapm_w > 0) cov_w / (sd_spm_w * sd_rapm_w) else NA_real_
 

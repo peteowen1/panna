@@ -260,7 +260,7 @@ get_epv_feature_cols <- function(include_sequence = TRUE, n_prev = 3) {
   if (include_sequence) {
     for (lag in 1:n_prev) {
       suffix <- paste0("_prev", lag)
-      cols <- c(cols, paste0("result", suffix))
+      cols <- c(cols, paste0("result_success", suffix))
       cols <- c(cols, paste0("dx", suffix))
       cols <- c(cols, paste0("dy", suffix))
       cols <- c(cols, paste0("same_team", suffix))

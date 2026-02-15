@@ -30,14 +30,17 @@ scrape_fixtures <- function(league, season, completed_only = TRUE) {
 
   # Fetch page with session cookies and retry logic
   response <- fetch_with_retry(
-    url,
+    url = url,
+    max_retries = 3,
+    base_delay = 1,
+    max_delay = 30,
     httr::add_headers(.headers = get_fbref_headers()),
     httr::timeout(30),
     handle = get_fbref_session()
   )
 
   # Check for errors
-  if (is.null(response)) {
+  if (inherits(response, "fetch_error") || is.null(response)) {
     if (isTRUE(attr(response, "rate_limited")) || isTRUE(attr(response, "blocked"))) {
       cli::cli_abort("Rate limited or blocked. Stopping scraper.")
     }

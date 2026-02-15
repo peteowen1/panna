@@ -417,7 +417,7 @@ load_opta_lineups <- function(league, season = NULL, columns = NULL,
 #' big5_2122 <- load_opta_big5(season = "2021-2022")
 #' }
 load_opta_big5 <- function(season = NULL, columns = NULL) {
-  leagues <- names(OPTA_LEAGUES)
+  leagues <- c("ENG", "ESP", "GER", "ITA", "FRA")
 
   results <- lapply(leagues, function(lg) {
     tryCatch({
@@ -430,7 +430,7 @@ load_opta_big5 <- function(season = NULL, columns = NULL) {
     })
   })
 
-  rbindlist(Filter(Negate(is.null), results), use.names = TRUE, fill = TRUE)
+  data.table::rbindlist(Filter(Negate(is.null), results), use.names = TRUE, fill = TRUE)
 }
 
 

@@ -10,7 +10,7 @@ player_opta_shots(
   season = NULL,
   min_minutes = 450,
   by_team = FALSE,
-  source = c("remote", "local")
+  source = c("local", "remote")
 )
 }
 \arguments{

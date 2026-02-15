@@ -164,7 +164,9 @@
     } else {
       x <- rep(0, nrow(player_stats))
     }
-    player_stats[[paste0(col, "_p90")]] <- x / mins_per_90
+    result <- x / mins_per_90
+    result[!is.finite(result)] <- 0
+    player_stats[[paste0(col, "_p90")]] <- result
   }
 
   player_stats
@@ -507,9 +509,9 @@ compare_spm_features <- function(fbref_model, opta_model, n = 20) {
   opta_imp$source <- "Opta"
 
   # Combine
-  comparison <- rbindlist(list(fbref_imp, opta_imp), use.names = TRUE, fill = TRUE)
+  comparison <- data.table::rbindlist(list(fbref_imp, opta_imp), use.names = TRUE, fill = TRUE)
   comparison <- comparison[, .(source, feature, coefficient, abs_coef)]
-  setorder(comparison, -abs_coef)
+  data.table::setorder(comparison, -abs_coef)
 
   as.data.frame(comparison)
 }
