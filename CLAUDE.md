@@ -29,7 +29,7 @@ The package supports three football data sources with different strengths:
 | Source | Coverage | xG Model | Unique Stats |
 |--------|----------|----------|--------------|
 | FBref | Big 5 leagues + more | StatsBomb | Most comprehensive passing |
-| Opta | Big 5 leagues (2010-present) | None | 263 columns, progressive carries, set pieces |
+| Opta | 15 leagues (Big 5 + NED/POR/TUR/ENG2/SCO + UCL/UEL/UECL + WC/EURO), 2013+ | None (xG from SPADL + XGBoost) | 263 columns, progressive carries, set pieces |
 | Understat | Big 5 + Russia | Understat model | xGChain, xGBuildup |
 
 ### League Codes
@@ -58,8 +58,9 @@ The `debug/` folder is gitignored.
 ### Data Pipeline
 - Package functions in `R/` - reusable, documented with roxygen2
 - Analysis scripts in `data-raw/` - organized by pipeline:
-  - `data-raw/player-ratings/` - RAPM/SPM/Panna rating pipeline (01-08 scripts)
-  - `data-raw/epv/` - EPV model training and player valuation
+  - `data-raw/player-ratings/` - FBref RAPM/SPM/Panna rating pipeline (01-08 scripts)
+  - `data-raw/player-ratings-opta/` - Opta RAPM/SPM/Panna rating pipeline (01-08 scripts)
+  - `data-raw/epv/` - EPV model training, player valuation, and xMetrics calculation
   - `data-raw/scraping/` - Data collection scripts
   - `data-raw/analysis/` - Comparison and analysis scripts
 - Cache expensive data to `data-raw/cache/`
@@ -136,6 +137,27 @@ Opta match events (load_opta_match_events)
 01_train_epv_models.R → xg_model.rds, xpass_model.rds, epv_model.rds
        ↓
 02_calculate_player_epv.R → player_epv_{league}_{season}.rds
+       ↓
+03_calculate_player_xmetrics.R → pannadata/data/opta/xmetrics/{league}/{season}.parquet
+```
+
+**Opta RAPM/SPM Pipeline** (`data-raw/player-ratings-opta/`):
+```
+Opta player_stats + lineups + match_events + xmetrics
+       ↓
+01_load_opta_data.R → loads all Opta sources
+       ↓
+02_data_processing.R → processed_data (cleaned, standardized)
+       ↓
+03_splint_creation.R → splints (lineup-constant segments)
+       ↓
+04_rapm.R → rapm ──→ 05_spm.R → spm (Opta 80+ features)
+       ↓                    ↓
+06_xrapm.R → xrapm ←───────┘
+       ↓
+07_seasonal_ratings.R → seasonal ratings
+       ↓
+08_panna_ratings.R → panna_ratings_opta.csv
 ```
 
 ### Key Concepts
@@ -168,7 +190,9 @@ Opta match events (load_opta_match_events)
 |--------|---------|
 | `data_loaders.R` | DuckDB-based loading from local/remote parquet (FBref, Understat) |
 | `opta_loaders.R` | Opta data loading with league code conversion |
-| `player_stats.R` | User-facing aggregated stats functions (player_fbref_*, player_opta_*, player_understat_*) |
+| `player_stats_fbref.R` | User-facing FBref aggregated stats (player_fbref_summary, _passing, _defense, _keeper) |
+| `player_stats_opta.R` | User-facing Opta aggregated stats (player_opta_summary, _passing, _defense, etc.) |
+| `player_stats_understat.R` | User-facing Understat aggregated stats (player_understat_summary) |
 | `piggyback.R` | GitHub Releases upload/download (pb_upload_*, pb_download_*) |
 | `data_processing.R` | Cleaning, standardization, merging |
 | `splint_creation.R` | Time segment creation for RAPM + Opta adapters |
@@ -186,6 +210,17 @@ Opta match events (load_opta_match_events)
 | `xpass_model.R` | Pass completion probability for credit split |
 | `epv_features.R` | EPV game state features |
 | `epv_model.R` | Main EPV training/prediction/aggregation |
+| `spm_opta.R` | Opta-specific SPM model (aggregate_opta_stats, fit_spm_opta) |
+| `constants.R` | Shared constants (league codes, season formats) |
+| `fbref_competitions.R` | FBref league/competition definitions |
+| `understat_competitions.R` | Understat league/competition definitions |
+| `scrape_fbref_parse.R` | FBref HTML parsing into structured data |
+| `scrape_fbref_batch.R` | Batch FBref scraping orchestration |
+| `scrape_fbref_parquet.R` | FBref parquet file building from scraped RDS |
+| `scrape_fbref_utils.R` | FBref scraping helpers (URLs, delays, retries) |
+| `scrape_understat.R` | Understat scraping orchestration |
+| `scrape_understat_api.R` | Understat API client |
+| `scrape_understat_match.R` | Understat match-level data scraping |
 
 ## Key Functions
 
