@@ -184,8 +184,7 @@ extract_rapm_ratings <- function(model, lambda = "min") {
     player_id = player_ids,
     rapm = as.numeric(rapm),
     offense = as.numeric(off_coefs),
-    defense = as.numeric(def_coefs),
-    stringsAsFactors = FALSE
+    defense = as.numeric(def_coefs)
   )
 
   # Join with player mapping
@@ -331,7 +330,7 @@ fit_rapm_with_prior <- function(rapm_data, offense_prior, defense_prior,
     nfolds = nfolds,
     type.measure = "mse",
     penalty.factor = penalty_factor,
-    trace.it = 1  # Show progress bar
+    trace.it = if (interactive()) 1 else 0
   )
 
   # Store metadata including prior information
@@ -414,8 +413,7 @@ extract_xrapm_ratings <- function(model, lambda = "min") {
     off_deviation = as.numeric(off_gamma),
     def_deviation = as.numeric(def_gamma),
     off_prior = as.numeric(off_prior),
-    def_prior = as.numeric(def_prior),
-    stringsAsFactors = FALSE
+    def_prior = as.numeric(def_prior)
   )
 
   # Join with player mapping
@@ -453,8 +451,7 @@ extract_rapm_coefficients <- function(model, lambda = "min") {
     ratings <- data.frame(
       player_id = player_ids,
       rapm = as.numeric(player_coefs),
-      deviation_from_prior = as.numeric(model$panna_metadata$deviation_from_prior),
-      stringsAsFactors = FALSE
+      deviation_from_prior = as.numeric(model$panna_metadata$deviation_from_prior)
     )
 
     # Add prior values for reference
@@ -489,8 +486,7 @@ extract_rapm_coefficients <- function(model, lambda = "min") {
     # Create results data frame
     ratings <- data.frame(
       player_id = player_ids,
-      rapm = player_coefs,
-      stringsAsFactors = FALSE
+      rapm = player_coefs
     )
   }
 
@@ -548,74 +544,6 @@ extract_od_rapm_coefficients <- function(model, lambda = "min") {
   }
 
   ratings
-}
-
-
-#' Calculate RAPM stability via bootstrap
-#'
-#' Estimates confidence intervals for RAPM ratings using bootstrap.
-#'
-#' @param rapm_data List from prepare_rapm_data
-#' @param n_bootstrap Number of bootstrap samples
-#' @param alpha Elastic net parameter
-#'
-#' @return Data frame with rating estimates and confidence intervals
-#' @keywords internal
-calculate_rapm_stability <- function(rapm_data, n_bootstrap = 100, alpha = 0) {
-  X <- rapm_data$X
-  y <- rapm_data$y
-  valid_idx <- !is.na(y)
-  X <- X[valid_idx, , drop = FALSE]
-  y <- y[valid_idx]
-
-  n <- length(y)
-  player_ids <- colnames(X)
-  n_players <- length(player_ids)
-
-  # Store bootstrap estimates
-  boot_estimates <- matrix(NA, nrow = n_bootstrap, ncol = n_players)
-  colnames(boot_estimates) <- player_ids
-
-  progress_msg(paste("Running", n_bootstrap, "bootstrap samples..."))
-
-  for (b in seq_len(n_bootstrap)) {
-    if (b %% 20 == 0) {
-      progress_msg(paste("  Bootstrap sample", b, "of", n_bootstrap))
-    }
-
-    # Sample with replacement
-    idx <- sample(n, n, replace = TRUE)
-    X_boot <- X[idx, , drop = FALSE]
-    y_boot <- y[idx]
-
-    # Fit model
-    tryCatch({
-      fit <- glmnet::cv.glmnet(
-        x = X_boot,
-        y = y_boot,
-        alpha = alpha,
-        standardize = FALSE,
-        nfolds = 5  # Fewer folds for speed
-      )
-
-      coefs <- as.vector(stats::coef(fit, s = "lambda.min"))[-1]
-      boot_estimates[b, ] <- coefs
-    }, error = function(e) {
-      cli::cli_warn("Bootstrap sample {b} failed: {e$message}")
-    })
-  }
-
-  # Calculate summary statistics
-  results <- data.frame(
-    player_id = player_ids,
-    rapm_mean = colMeans(boot_estimates, na.rm = TRUE),
-    rapm_sd = apply(boot_estimates, 2, sd, na.rm = TRUE),
-    rapm_lower = apply(boot_estimates, 2, quantile, 0.025, na.rm = TRUE),
-    rapm_upper = apply(boot_estimates, 2, quantile, 0.975, na.rm = TRUE),
-    stringsAsFactors = FALSE
-  )
-
-  results
 }
 
 

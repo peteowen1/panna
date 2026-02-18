@@ -814,8 +814,7 @@ pb_list_sources <- function(repo = "peteowen1/pannadata") {
           tag = tag,
           file = archive_name,
           size_mb = round(row$size / (1024 * 1024), 1),
-          uploaded = row$timestamp,
-          stringsAsFactors = FALSE
+          uploaded = row$timestamp
         )
       } else {
         data.frame(
@@ -823,8 +822,7 @@ pb_list_sources <- function(repo = "peteowen1/pannadata") {
           tag = tag,
           file = NA_character_,
           size_mb = NA_real_,
-          uploaded = NA_character_,
-          stringsAsFactors = FALSE
+          uploaded = NA_character_
         )
       }
     }, error = function(e) {
@@ -833,8 +831,7 @@ pb_list_sources <- function(repo = "peteowen1/pannadata") {
         tag = tag,
         file = NA_character_,
         size_mb = NA_real_,
-        uploaded = NA_character_,
-        stringsAsFactors = FALSE
+        uploaded = NA_character_
       )
     })
 

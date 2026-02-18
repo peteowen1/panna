@@ -86,8 +86,7 @@ calculate_od_panna <- function(rapm_data, spm_ratings, lambda_prior = 1) {
     player_id = player_ids,
     o_panna = o_panna,
     d_panna = d_panna,
-    panna = o_panna + d_panna,
-    stringsAsFactors = FALSE
+    panna = o_panna + d_panna
   )
 
   # Add player names

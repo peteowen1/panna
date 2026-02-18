@@ -59,8 +59,7 @@ prepare_shots_for_xg <- function(shot_events) {
     player_id = shot_events$player_id,
     player_name = shot_events$player_name,
     x = shot_events$x,
-    y = shot_events$y,
-    stringsAsFactors = FALSE
+    y = shot_events$y
   )
 
   # Distance and angle to goal
@@ -426,8 +425,7 @@ add_xg_to_spadl <- function(spadl_actions, xg_model) {
     is_set_piece = 0L,
     is_corner = 0L,
     is_direct_freekick = 0L,
-    is_big_chance = is_big_chance,
-    stringsAsFactors = FALSE
+    is_big_chance = is_big_chance
   )
 
   # Predict xG
@@ -820,8 +818,7 @@ extract_shots_from_spadl <- function(spadl, lineups) {
     player_name = shots$player_name,
     xg = shots$xg,
     is_goal = shots$result == "success",
-    is_penalty = is_pen,
-    stringsAsFactors = FALSE
+    is_penalty = is_pen
   )
 
   cli::cli_alert_success(

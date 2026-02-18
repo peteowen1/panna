@@ -70,15 +70,15 @@ scrape_understat_fixtures <- function(league, season, completed_only = TRUE) {
   if (is.list(dates_data) && !is.data.frame(dates_data)) {
     fixtures <- tryCatch({
       rbindlist(lapply(dates_data, function(x) {
-        as.data.frame(x, stringsAsFactors = FALSE)
+        as.data.frame(x)
       }), use.names = TRUE, fill = TRUE)
     }, error = function(e) {
       do.call(rbind, lapply(dates_data, function(x) {
-        as.data.frame(x, stringsAsFactors = FALSE)
+        as.data.frame(x)
       }))
     })
   } else {
-    fixtures <- as.data.frame(dates_data, stringsAsFactors = FALSE)
+    fixtures <- as.data.frame(dates_data)
   }
 
   if (is.null(fixtures) || nrow(fixtures) == 0) {

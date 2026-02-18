@@ -529,8 +529,7 @@ list_cached_matches <- function(table_type = "metadata", league = NULL,
     return(data.frame(
       league = character(0),
       season = character(0),
-      fbref_id = character(0),
-      stringsAsFactors = FALSE
+      fbref_id = character(0)
     ))
   }
 
@@ -541,8 +540,7 @@ list_cached_matches <- function(table_type = "metadata", league = NULL,
       return(data.frame(
         league = character(0),
         season = character(0),
-        fbref_id = character(0),
-        stringsAsFactors = FALSE
+        fbref_id = character(0)
       ))
     }
     files <- list.files(cache_dir, pattern = "^[a-f0-9]{8}\\.rds$")
@@ -550,15 +548,13 @@ list_cached_matches <- function(table_type = "metadata", league = NULL,
       return(data.frame(
         league = character(0),
         season = character(0),
-        fbref_id = character(0),
-        stringsAsFactors = FALSE
+        fbref_id = character(0)
       ))
     }
     return(data.frame(
       league = rep(league, length(files)),
       season = rep(season, length(files)),
-      fbref_id = gsub("\\.rds$", "", files),
-      stringsAsFactors = FALSE
+      fbref_id = gsub("\\.rds$", "", files)
     ))
   }
 
@@ -573,8 +569,7 @@ list_cached_matches <- function(table_type = "metadata", league = NULL,
     return(data.frame(
       league = character(0),
       season = character(0),
-      fbref_id = character(0),
-      stringsAsFactors = FALSE
+      fbref_id = character(0)
     ))
   }
 
@@ -601,8 +596,7 @@ list_cached_matches <- function(table_type = "metadata", league = NULL,
         all_results[[length(all_results) + 1]] <- data.frame(
           league = rep(lg, length(files)),
           season = rep(sn, length(files)),
-          fbref_id = gsub("\\.rds$", "", files),
-          stringsAsFactors = FALSE
+          fbref_id = gsub("\\.rds$", "", files)
         )
       }
     }
@@ -612,8 +606,7 @@ list_cached_matches <- function(table_type = "metadata", league = NULL,
     return(data.frame(
       league = character(0),
       season = character(0),
-      fbref_id = character(0),
-      stringsAsFactors = FALSE
+      fbref_id = character(0)
     ))
   }
 
@@ -633,8 +626,7 @@ get_big5_leagues <- function() {
   data.frame(
     country = c("ENG", "ESP", "GER", "ITA", "FRA"),
     league = c("Premier League", "La Liga", "Bundesliga", "Serie A", "Ligue 1"),
-    tier = rep("1st", 5),
-    stringsAsFactors = FALSE
+    tier = rep("1st", 5)
   )
 }
 
@@ -732,8 +724,7 @@ derive_events_from_shooting <- function(shooting_data) {
     is_goal = TRUE,
     is_sub = FALSE,
     is_penalty = grepl("Penalty", goals$notes, ignore.case = TRUE),
-    is_own_goal = grepl("Own Goal", goals$notes, ignore.case = TRUE),
-    stringsAsFactors = FALSE
+    is_own_goal = grepl("Own Goal", goals$notes, ignore.case = TRUE)
   )
 
   # Sort by match and minute
@@ -893,8 +884,7 @@ report_season_ranges <- function(data) {
       rows = if (!is.null(df)) nrow(df) else 0,
       min_season = as.character(range_info$min_season),
       max_season = as.character(range_info$max_season),
-      n_seasons = range_info$n_seasons,
-      stringsAsFactors = FALSE
+      n_seasons = range_info$n_seasons
     )
   })
 

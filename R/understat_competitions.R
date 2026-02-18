@@ -40,8 +40,7 @@ code = c(
     # Russia
     "RFPL"
   ),
-  season_format = rep("YYYY", 6),
-  stringsAsFactors = FALSE
+  season_format = rep("YYYY", 6)
 )
 
 

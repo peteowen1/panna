@@ -262,7 +262,6 @@ reference:
   - validate_data_completeness
   - validate_predictive_power
   - validate_spm_prediction
-  - calculate_rapm_stability
 
 - title: Analysis & Reporting
   desc: Analysis helpers and reporting

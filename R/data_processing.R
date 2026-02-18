@@ -164,8 +164,7 @@ process_match_lineups <- function(lineups, results) {
     position = pos_col,
     minutes = dt_lineups$minutes,
     on_minute = on_minute_col,
-    off_minute = off_minute_col,
-    stringsAsFactors = FALSE
+    off_minute = off_minute_col
   )
 
   result
@@ -274,8 +273,7 @@ process_match_events <- function(events, results) {
     player_name = if (has_player) events$player else NA_character_,
     is_penalty = events$is_penalty,
     is_own_goal = events$is_own_goal,
-    is_red_card = events$is_red_card,
-    stringsAsFactors = FALSE
+    is_red_card = events$is_red_card
   )
 
   result
@@ -364,8 +362,7 @@ process_shooting_data <- function(shooting, results) {
     is_goal = dt_shooting$is_goal,
     is_penalty = dt_shooting$is_penalty,
     body_part = dt_shooting$body_part,
-    shot_type = dt_shooting$notes,
-    stringsAsFactors = FALSE
+    shot_type = dt_shooting$notes
   )
 
   result

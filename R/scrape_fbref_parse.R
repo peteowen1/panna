@@ -221,8 +221,7 @@ extract_match_metadata <- function(page, match_url) {
     fourth_official = fourth_official,
     var_official = var_official,
     home_formation = home_formation,
-    away_formation = away_formation,
-    stringsAsFactors = FALSE
+    away_formation = away_formation
   )
 }
 
@@ -397,8 +396,7 @@ scrape_match_events <- function(page, match_url) {
       secondary_player = secondary_player,
       secondary_player_id = secondary_player_id,
       score_home = score_home,
-      score_away = score_away,
-      stringsAsFactors = FALSE
+      score_away = score_away
     )
   })
 
@@ -501,8 +499,7 @@ parse_stats_table <- function(page, table_id) {
 
   # Build data frame
   df <- as.data.frame(
-    do.call(rbind, row_data),
-    stringsAsFactors = FALSE
+    do.call(rbind, row_data)
   )
   names(df) <- col_names
 

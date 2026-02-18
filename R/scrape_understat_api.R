@@ -254,8 +254,7 @@ extract_understat_metadata <- function(page, understat_id) {
     home_deep = as.integer(match_info$h_deep %||% NA_integer_),
     away_deep = as.integer(match_info$a_deep %||% NA_integer_),
     home_ppda = as.numeric(match_info$h_ppda %||% NA_real_),
-    away_ppda = as.numeric(match_info$a_ppda %||% NA_real_),
-    stringsAsFactors = FALSE
+    away_ppda = as.numeric(match_info$a_ppda %||% NA_real_)
   )
 }
 
@@ -333,10 +332,10 @@ extract_understat_roster <- function(api_data, understat_id) {
       df <- team_data
     } else if (is.list(team_data)) {
       df <- tryCatch({
-        rbindlist(lapply(team_data, as.data.frame, stringsAsFactors = FALSE))
+        rbindlist(lapply(team_data, as.data.frame))
       }, error = function(e) {
         do.call(rbind, lapply(team_data, function(x) {
-          as.data.frame(x, stringsAsFactors = FALSE)
+          as.data.frame(x)
         }))
       })
     } else {
@@ -414,7 +413,7 @@ extract_understat_shots <- function(api_data, understat_id) {
       })
 
       df <- tryCatch({
-        rbindlist(lapply(normalized, as.data.frame, stringsAsFactors = FALSE))
+        rbindlist(lapply(normalized, as.data.frame))
       }, error = function(e) {
         # Fallback: manually create data frame
         all_cols <- unique(unlist(lapply(normalized, names)))
@@ -423,7 +422,7 @@ extract_understat_shots <- function(api_data, understat_id) {
           for (col in names(shot)) {
             row[col] <- shot[[col]]
           }
-          as.data.frame(as.list(row), stringsAsFactors = FALSE)
+          as.data.frame(as.list(row))
         })
         do.call(rbind, rows)
       })
@@ -512,8 +511,7 @@ extract_understat_events <- function(page, understat_id) {
         player_off = NA_character_,
         player_off_id = NA_character_,
         card_type = NA_character_,
-        score = score,
-        stringsAsFactors = FALSE
+        score = score
       ))
     }
 
@@ -534,8 +532,7 @@ extract_understat_events <- function(page, understat_id) {
         player_off = NA_character_,
         player_off_id = NA_character_,
         card_type = "yellow",
-        score = NA_character_,
-        stringsAsFactors = FALSE
+        score = NA_character_
       ))
     }
 
@@ -556,8 +553,7 @@ extract_understat_events <- function(page, understat_id) {
         player_off = NA_character_,
         player_off_id = NA_character_,
         card_type = "red",
-        score = NA_character_,
-        stringsAsFactors = FALSE
+        score = NA_character_
       ))
     }
 
@@ -593,8 +589,7 @@ extract_understat_events <- function(page, understat_id) {
           player_off = player_off,
           player_off_id = player_off_id,
           card_type = NA_character_,
-          score = NA_character_,
-          stringsAsFactors = FALSE
+          score = NA_character_
         )
       })
 

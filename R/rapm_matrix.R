@@ -127,8 +127,7 @@
     avg_min = rep(avg_min_val, each = 2),
     home_away = rep(c("home", "away"), n_splints),
     n_offense = as.vector(rbind(n_players_home, n_players_away)),
-    n_defense = as.vector(rbind(n_players_away, n_players_home)),
-    stringsAsFactors = FALSE
+    n_defense = as.vector(rbind(n_players_away, n_players_home))
   )
 
   row_data$net_players <- row_data$n_offense - row_data$n_defense
@@ -368,8 +367,7 @@ create_rapm_design_matrix <- function(splint_data, min_minutes = 90,
     data.frame(
       player_id = "replacement",
       player_name = "Replacement Level",
-      total_minutes = replacement_minutes,
-      stringsAsFactors = FALSE
+      total_minutes = replacement_minutes
     )
   )
 

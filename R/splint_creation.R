@@ -626,8 +626,7 @@ calculate_splint_npxgd <- function(boundaries, shooting, match_id,
       end_minute = end_min,
       duration = end_min - start_min,
       npxg_home = npxg_home,
-      npxg_away = npxg_away,
-      stringsAsFactors = FALSE
+      npxg_away = npxg_away
     )
   }), fill = TRUE)
 
@@ -852,6 +851,18 @@ create_all_splints <- function(processed_data, include_goals = TRUE, verbose = T
   combined$splints <- as.data.frame(combined$splints)
   combined$players <- as.data.frame(combined$players)
   combined$match_info <- as.data.frame(combined$match_info)
+
+  # Validate splint durations are positive
+  if (nrow(combined$splints) > 0 && "duration" %in% names(combined$splints)) {
+    bad_splints <- which(combined$splints$duration <= 0)
+    if (length(bad_splints) > 0) {
+      cli::cli_warn(c(
+        "Found {length(bad_splints)} splint{?s} with non-positive duration.",
+        "i" = "Removing invalid splints. Check event data for negative minutes."
+      ))
+      combined$splints <- combined$splints[-bad_splints, , drop = FALSE]
+    }
+  }
 
   # Add splint_id (vectorized)
   if (nrow(combined$splints) > 0) {

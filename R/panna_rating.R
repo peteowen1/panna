@@ -77,8 +77,7 @@ calculate_panna_rating <- function(rapm_data, spm_ratings, lambda_prior = 1, alp
     player_id = player_ids,
     panna = panna_coef,
     spm_prior = spm_prior,
-    deviation = gamma,
-    stringsAsFactors = FALSE
+    deviation = gamma
   )
 
   # Join with player names if available

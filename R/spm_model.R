@@ -303,40 +303,34 @@
     }
   }
 
-  safe_div <- function(num, denom) {
-    num <- as.numeric(num)
-    denom <- as.numeric(denom)
-    ifelse(is.na(denom) | denom == 0, 0, num / denom)
-  }
-
   # Shooting efficiency
-  player_stats$shot_accuracy <- safe_div(safe_col("shots_on_target"), safe_col("shots"))
-  player_stats$goals_per_shot <- safe_div(safe_col("goals"), safe_col("shots"))
-  player_stats$xg_per_shot <- safe_div(safe_col("xg"), safe_col("shots"))
+  player_stats$shot_accuracy <- safe_divide(safe_col("shots_on_target"), safe_col("shots"))
+  player_stats$goals_per_shot <- safe_divide(safe_col("goals"), safe_col("shots"))
+  player_stats$xg_per_shot <- safe_divide(safe_col("xg"), safe_col("shots"))
   player_stats$goals_minus_xg <- player_stats$goals_p90 - player_stats$xg_p90
   player_stats$npxg_plus_xa_p90 <- player_stats$npxg_p90 + player_stats$xa_p90
 
   # Passing efficiency
-  player_stats$pass_completion <- safe_div(safe_col("passes_completed"), safe_col("passes_attempted"))
-  player_stats$pass_short_success <- safe_div(safe_col("pass_short_cmp"), safe_col("pass_short_att"))
-  player_stats$pass_med_success <- safe_div(safe_col("pass_med_cmp"), safe_col("pass_med_att"))
-  player_stats$pass_long_success <- safe_div(safe_col("pass_long_cmp"), safe_col("pass_long_att"))
-  player_stats$long_pass_ratio <- safe_div(safe_col("pass_long_att"), safe_col("pass_att"))
+  player_stats$pass_completion <- safe_divide(safe_col("passes_completed"), safe_col("passes_attempted"))
+  player_stats$pass_short_success <- safe_divide(safe_col("pass_short_cmp"), safe_col("pass_short_att"))
+  player_stats$pass_med_success <- safe_divide(safe_col("pass_med_cmp"), safe_col("pass_med_att"))
+  player_stats$pass_long_success <- safe_divide(safe_col("pass_long_cmp"), safe_col("pass_long_att"))
+  player_stats$long_pass_ratio <- safe_divide(safe_col("pass_long_att"), safe_col("pass_att"))
 
   # Take-on success
-  player_stats$take_on_success <- safe_div(safe_col("take_ons_succ"), safe_col("take_ons_att"))
+  player_stats$take_on_success <- safe_divide(safe_col("take_ons_succ"), safe_col("take_ons_att"))
 
   # Tackle success
-  player_stats$tackle_success <- safe_div(safe_col("tackles_won"), safe_col("tackles"))
-  player_stats$challenge_success <- safe_div(safe_col("challenges_tkl"), safe_col("challenges_att"))
+  player_stats$tackle_success <- safe_divide(safe_col("tackles_won"), safe_col("tackles"))
+  player_stats$challenge_success <- safe_divide(safe_col("challenges_tkl"), safe_col("challenges_att"))
 
   # Touch location ratios (indicates where player operates on pitch)
   total_touches <- safe_col("touches_poss")
   total_touches <- ifelse(total_touches == 0, safe_col("touches"), total_touches)
-  player_stats$touch_def_3rd_pct <- safe_div(safe_col("touches_def_3rd"), total_touches)
-  player_stats$touch_mid_3rd_pct <- safe_div(safe_col("touches_mid_3rd"), total_touches)
-  player_stats$touch_att_3rd_pct <- safe_div(safe_col("touches_att_3rd"), total_touches)
-  player_stats$touch_att_pen_pct <- safe_div(safe_col("touches_att_pen"), total_touches)
+  player_stats$touch_def_3rd_pct <- safe_divide(safe_col("touches_def_3rd"), total_touches)
+  player_stats$touch_mid_3rd_pct <- safe_divide(safe_col("touches_mid_3rd"), total_touches)
+  player_stats$touch_att_3rd_pct <- safe_divide(safe_col("touches_att_3rd"), total_touches)
+  player_stats$touch_att_pen_pct <- safe_divide(safe_col("touches_att_pen"), total_touches)
 
   # Ball retention
   turnovers <- safe_col("miscontrols") + safe_col("dispossessed")
@@ -347,18 +341,18 @@
 
   # Progressive actions per touch
   prg_actions <- safe_col("progressive_carries") + safe_col("progressive_passes")
-  player_stats$prg_actions_per_touch <- safe_div(prg_actions, total_touches)
+  player_stats$prg_actions_per_touch <- safe_divide(prg_actions, total_touches)
 
   # Aerial duel success
   total_aerials <- safe_col("aerials_won") + safe_col("aerials_lost")
-  player_stats$aerial_success <- safe_div(safe_col("aerials_won"), total_aerials)
+  player_stats$aerial_success <- safe_divide(safe_col("aerials_won"), total_aerials)
   player_stats$aerials_total_p90 <- total_aerials / mins_per_90
 
   # Foul differential (fouls drawn - committed, higher = better)
   player_stats$foul_differential_p90 <- player_stats$fouls_drawn_p90 - player_stats$fouls_committed_p90
 
   # Goalkeeper metrics
-  player_stats$gk_save_pct <- safe_div(safe_col("saves"), safe_col("shots_on_target_against"))
+  player_stats$gk_save_pct <- safe_divide(safe_col("saves"), safe_col("shots_on_target_against"))
   player_stats$gk_goals_prevented <- safe_col("psxg") - safe_col("goals_against")
   player_stats$gk_goals_prevented_p90 <- player_stats$gk_goals_prevented / mins_per_90
 
@@ -552,17 +546,14 @@ create_spm_prior <- function(spm_predictions, player_mapping, default_prior = 0)
   all_player_ids <- unique(player_mapping$player_id)
   prior <- stats::setNames(rep(default_prior, length(all_player_ids)), all_player_ids)
 
-  # Fill in SPM predictions where available
-  matched <- 0
-  for (player_name in names(spm_predictions)) {
-    if (player_name %in% names(name_to_id)) {
-      player_id <- name_to_id[player_name]
-      if (player_id %in% names(prior)) {
-        prior[player_id] <- spm_predictions[player_name]
-        matched <- matched + 1
-      }
-    }
+  # Fill in SPM predictions where available (vectorized)
+  common_names <- intersect(names(spm_predictions), names(name_to_id))
+  matched_ids <- name_to_id[common_names]
+  valid <- matched_ids %in% names(prior)
+  if (any(valid)) {
+    prior[matched_ids[valid]] <- spm_predictions[common_names[valid]]
   }
+  matched <- sum(valid)
 
   progress_msg(sprintf("SPM prior: matched %d of %d players", matched, length(spm_predictions)))
 
@@ -605,12 +596,12 @@ build_prior_vector <- function(spm_data, spm_col, player_mapping, default = 0) {
 
   # Vectorized matching: find SPM data rows that match player names in mapping
   matched_names <- intersect(spm_data$player_name, names(name_to_id))
-
-  for (pname in matched_names) {
-    pid <- name_to_id[pname]
-    spm_idx <- which(spm_data$player_name == pname)[1]
-    if (!is.na(spm_idx) && pid %in% names(prior)) {
-      prior[pid] <- spm_data[[spm_col]][spm_idx]
+  if (length(matched_names) > 0) {
+    matched_ids <- name_to_id[matched_names]
+    spm_idx <- match(matched_names, spm_data$player_name)
+    valid <- !is.na(spm_idx) & matched_ids %in% names(prior)
+    if (any(valid)) {
+      prior[matched_ids[valid]] <- spm_data[[spm_col]][spm_idx[valid]]
     }
   }
 
@@ -1069,9 +1060,11 @@ calculate_spm_ratings <- function(player_features, spm_model, lambda = "min") {
 #' @keywords internal
 calculate_offensive_spm <- function(data, offensive_cols = NULL, alpha = 0.5) {
   if (is.null(offensive_cols)) {
-    offensive_cols <- c("npxG_p100", "xG_p100", "Sh_p100", "SoT_p100",
-                        "Ast_p100", "xAG_p100", "SCA_p100", "GCA_p100",
-                        "PrgP_p100", "PrgC_p100", "Carries_p100")
+    # Use _p90 naming (current), fall back to _p100 for backward compatibility
+    suffix <- if (any(grepl("_p90$", names(data)))) "_p90" else "_p100"
+    offensive_cols <- paste0(c("npxg", "xg", "shots", "shots_on_target",
+                               "assists", "xa", "sca", "gca",
+                               "progressive_passes", "progressive_carries", "carries"), suffix)
   }
 
   fit_spm_model(data, predictor_cols = offensive_cols, alpha = alpha)
@@ -1090,8 +1083,9 @@ calculate_offensive_spm <- function(data, offensive_cols = NULL, alpha = 0.5) {
 #' @keywords internal
 calculate_defensive_spm <- function(data, defensive_cols = NULL, alpha = 0.5) {
   if (is.null(defensive_cols)) {
-    defensive_cols <- c("Tkl_p100", "Int_p100", "Blocks_p100",
-                        "TklWon_p100", "Clr_p100")
+    suffix <- if (any(grepl("_p90$", names(data)))) "_p90" else "_p100"
+    defensive_cols <- paste0(c("tackles", "interceptions", "blocks",
+                               "tackles_won", "clearances"), suffix)
   }
 
   fit_spm_model(data, predictor_cols = defensive_cols, alpha = alpha)
@@ -1227,8 +1221,7 @@ get_spm_feature_importance <- function(model, n = 10, lambda = "min") {
   importance <- data.frame(
     feature = names(coefs),
     coefficient = as.vector(coefs),
-    abs_coef = abs(as.vector(coefs)),
-    stringsAsFactors = FALSE
+    abs_coef = abs(as.vector(coefs))
   )
   importance <- importance[importance$coefficient != 0, ]
   importance <- importance[order(-importance$abs_coef), ]

@@ -275,8 +275,7 @@ bulk_scrape_understat <- function(start_id, end_id, delay = 3,
         match_id = match_id,
         league = NA_character_,
         season = NA_character_,
-        status = "failed_fetch",
-        stringsAsFactors = FALSE
+        status = "failed_fetch"
       )
       if (verbose) {
         progress_msg(sprintf("  [%d/%d] %d: failed to fetch", i, n_total, match_id))
@@ -295,8 +294,7 @@ bulk_scrape_understat <- function(start_id, end_id, delay = 3,
         match_id = match_id,
         league = NA_character_,
         season = NA_character_,
-        status = "failed_metadata",
-        stringsAsFactors = FALSE
+        status = "failed_metadata"
       )
       if (verbose) {
         progress_msg(sprintf("  [%d/%d] %d: no metadata", i, n_total, match_id))
@@ -314,8 +312,7 @@ bulk_scrape_understat <- function(start_id, end_id, delay = 3,
         match_id = match_id,
         league = metadata$league,
         season = season,
-        status = "unknown_league",
-        stringsAsFactors = FALSE
+        status = "unknown_league"
       )
       if (verbose) {
         progress_msg(sprintf("  [%d/%d] %d: unknown league '%s'",
@@ -331,8 +328,7 @@ bulk_scrape_understat <- function(start_id, end_id, delay = 3,
         match_id = match_id,
         league = league_code,
         season = season,
-        status = "cached",
-        stringsAsFactors = FALSE
+        status = "cached"
       )
       if (verbose) {
         progress_msg(sprintf("  [%d/%d] %d: cached (%s %s)",
@@ -386,8 +382,7 @@ bulk_scrape_understat <- function(start_id, end_id, delay = 3,
       match_id = match_id,
       league = league_code,
       season = season,
-      status = "success",
-      stringsAsFactors = FALSE
+      status = "success"
     )
 
     if (verbose) {
@@ -505,8 +500,7 @@ build_consolidated_understat_parquet <- function(table_types = NULL, output_dir 
     results[[length(results) + 1]] <- data.frame(
       table_type = paste0("understat_", tt),
       n_rows = nrow(all_data),
-      size_mb = size_mb,
-      stringsAsFactors = FALSE
+      size_mb = size_mb
     )
   }
 
@@ -514,8 +508,7 @@ build_consolidated_understat_parquet <- function(table_types = NULL, output_dir 
     return(data.frame(
       table_type = character(0),
       n_rows = integer(0),
-      size_mb = numeric(0),
-      stringsAsFactors = FALSE
+      size_mb = numeric(0)
     ))
   }
 
@@ -567,8 +560,7 @@ load_understat_manifest <- function(path) {
       match_id = integer(0),
       league = character(0),
       season = character(0),
-      scraped_at = as.POSIXct(character(0)),
-      stringsAsFactors = FALSE
+      scraped_at = as.POSIXct(character(0))
     ))
   }
 
@@ -580,8 +572,7 @@ load_understat_manifest <- function(path) {
       match_id = integer(0),
       league = character(0),
       season = character(0),
-      scraped_at = as.POSIXct(character(0)),
-      stringsAsFactors = FALSE
+      scraped_at = as.POSIXct(character(0))
     )
   })
 }
@@ -665,8 +656,7 @@ build_understat_manifest_from_cache <- function(data_dir = NULL) {
       match_id = integer(0),
       league = character(0),
       season = character(0),
-      scraped_at = as.POSIXct(character(0)),
-      stringsAsFactors = FALSE
+      scraped_at = as.POSIXct(character(0))
     ))
   }
 
@@ -684,8 +674,7 @@ build_understat_manifest_from_cache <- function(data_dir = NULL) {
       match_id = integer(0),
       league = character(0),
       season = character(0),
-      scraped_at = as.POSIXct(character(0)),
-      stringsAsFactors = FALSE
+      scraped_at = as.POSIXct(character(0))
     ))
   }
 
@@ -721,8 +710,7 @@ build_understat_manifest_from_cache <- function(data_dir = NULL) {
           match_id = as.integer(unique(df$understat_id)),
           league = as.character(league_code),
           season = as.character(season),
-          scraped_at = Sys.time(),
-          stringsAsFactors = FALSE
+          scraped_at = Sys.time()
         )
 
         all_records[[length(all_records) + 1]] <- record
@@ -737,8 +725,7 @@ build_understat_manifest_from_cache <- function(data_dir = NULL) {
       match_id = integer(0),
       league = character(0),
       season = character(0),
-      scraped_at = as.POSIXct(character(0)),
-      stringsAsFactors = FALSE
+      scraped_at = as.POSIXct(character(0))
     ))
   }
 
@@ -848,8 +835,7 @@ smart_scrape_understat <- function(manifest_path,
           match_id = current_id,
           league = NA_character_,
           season = NA_character_,
-          status = "invalid",
-          stringsAsFactors = FALSE
+          status = "invalid"
         )
         current_id <- current_id + 1
         next
@@ -866,8 +852,7 @@ smart_scrape_understat <- function(manifest_path,
           match_id = current_id,
           league = NA_character_,
           season = NA_character_,
-          status = "no_metadata",
-          stringsAsFactors = FALSE
+          status = "no_metadata"
         )
         current_id <- current_id + 1
         next
@@ -883,8 +868,7 @@ smart_scrape_understat <- function(manifest_path,
           match_id = current_id,
           league = metadata$league,
           season = match_season,
-          status = "unknown_league",
-          stringsAsFactors = FALSE
+          status = "unknown_league"
         )
         current_id <- current_id + 1
         next
@@ -899,8 +883,7 @@ smart_scrape_understat <- function(manifest_path,
           match_id = current_id,
           league = match_league,
           season = match_season,
-          status = "different_league",
-          stringsAsFactors = FALSE
+          status = "different_league"
         )
         current_id <- current_id + 1
         next
@@ -915,8 +898,7 @@ smart_scrape_understat <- function(manifest_path,
           match_id = current_id,
           league = match_league,
           season = match_season,
-          status = "cached",
-          stringsAsFactors = FALSE
+          status = "cached"
         )
         if (verbose) {
           cat(sprintf("  [%d] Cached: %s vs %s\n",
@@ -971,8 +953,7 @@ smart_scrape_understat <- function(manifest_path,
         match_id = as.integer(current_id),
         league = match_league,
         season = as.character(match_season),
-        scraped_at = Sys.time(),
-        stringsAsFactors = FALSE
+        scraped_at = Sys.time()
       ))
 
       new_matches <- new_matches + 1
@@ -982,8 +963,7 @@ smart_scrape_understat <- function(manifest_path,
         match_id = current_id,
         league = match_league,
         season = match_season,
-        status = "success",
-        stringsAsFactors = FALSE
+        status = "success"
       )
 
       if (verbose) {
