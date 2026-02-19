@@ -303,40 +303,34 @@
     }
   }
 
-  safe_div <- function(num, denom) {
-    num <- as.numeric(num)
-    denom <- as.numeric(denom)
-    ifelse(is.na(denom) | denom == 0, 0, num / denom)
-  }
-
   # Shooting efficiency
-  player_stats$shot_accuracy <- safe_div(safe_col("shots_on_target"), safe_col("shots"))
-  player_stats$goals_per_shot <- safe_div(safe_col("goals"), safe_col("shots"))
-  player_stats$xg_per_shot <- safe_div(safe_col("xg"), safe_col("shots"))
+  player_stats$shot_accuracy <- safe_divide(safe_col("shots_on_target"), safe_col("shots"))
+  player_stats$goals_per_shot <- safe_divide(safe_col("goals"), safe_col("shots"))
+  player_stats$xg_per_shot <- safe_divide(safe_col("xg"), safe_col("shots"))
   player_stats$goals_minus_xg <- player_stats$goals_p90 - player_stats$xg_p90
   player_stats$npxg_plus_xa_p90 <- player_stats$npxg_p90 + player_stats$xa_p90
 
   # Passing efficiency
-  player_stats$pass_completion <- safe_div(safe_col("passes_completed"), safe_col("passes_attempted"))
-  player_stats$pass_short_success <- safe_div(safe_col("pass_short_cmp"), safe_col("pass_short_att"))
-  player_stats$pass_med_success <- safe_div(safe_col("pass_med_cmp"), safe_col("pass_med_att"))
-  player_stats$pass_long_success <- safe_div(safe_col("pass_long_cmp"), safe_col("pass_long_att"))
-  player_stats$long_pass_ratio <- safe_div(safe_col("pass_long_att"), safe_col("pass_att"))
+  player_stats$pass_completion <- safe_divide(safe_col("passes_completed"), safe_col("passes_attempted"))
+  player_stats$pass_short_success <- safe_divide(safe_col("pass_short_cmp"), safe_col("pass_short_att"))
+  player_stats$pass_med_success <- safe_divide(safe_col("pass_med_cmp"), safe_col("pass_med_att"))
+  player_stats$pass_long_success <- safe_divide(safe_col("pass_long_cmp"), safe_col("pass_long_att"))
+  player_stats$long_pass_ratio <- safe_divide(safe_col("pass_long_att"), safe_col("pass_att"))
 
   # Take-on success
-  player_stats$take_on_success <- safe_div(safe_col("take_ons_succ"), safe_col("take_ons_att"))
+  player_stats$take_on_success <- safe_divide(safe_col("take_ons_succ"), safe_col("take_ons_att"))
 
   # Tackle success
-  player_stats$tackle_success <- safe_div(safe_col("tackles_won"), safe_col("tackles"))
-  player_stats$challenge_success <- safe_div(safe_col("challenges_tkl"), safe_col("challenges_att"))
+  player_stats$tackle_success <- safe_divide(safe_col("tackles_won"), safe_col("tackles"))
+  player_stats$challenge_success <- safe_divide(safe_col("challenges_tkl"), safe_col("challenges_att"))
 
   # Touch location ratios (indicates where player operates on pitch)
   total_touches <- safe_col("touches_poss")
   total_touches <- ifelse(total_touches == 0, safe_col("touches"), total_touches)
-  player_stats$touch_def_3rd_pct <- safe_div(safe_col("touches_def_3rd"), total_touches)
-  player_stats$touch_mid_3rd_pct <- safe_div(safe_col("touches_mid_3rd"), total_touches)
-  player_stats$touch_att_3rd_pct <- safe_div(safe_col("touches_att_3rd"), total_touches)
-  player_stats$touch_att_pen_pct <- safe_div(safe_col("touches_att_pen"), total_touches)
+  player_stats$touch_def_3rd_pct <- safe_divide(safe_col("touches_def_3rd"), total_touches)
+  player_stats$touch_mid_3rd_pct <- safe_divide(safe_col("touches_mid_3rd"), total_touches)
+  player_stats$touch_att_3rd_pct <- safe_divide(safe_col("touches_att_3rd"), total_touches)
+  player_stats$touch_att_pen_pct <- safe_divide(safe_col("touches_att_pen"), total_touches)
 
   # Ball retention
   turnovers <- safe_col("miscontrols") + safe_col("dispossessed")
@@ -347,18 +341,18 @@
 
   # Progressive actions per touch
   prg_actions <- safe_col("progressive_carries") + safe_col("progressive_passes")
-  player_stats$prg_actions_per_touch <- safe_div(prg_actions, total_touches)
+  player_stats$prg_actions_per_touch <- safe_divide(prg_actions, total_touches)
 
   # Aerial duel success
   total_aerials <- safe_col("aerials_won") + safe_col("aerials_lost")
-  player_stats$aerial_success <- safe_div(safe_col("aerials_won"), total_aerials)
+  player_stats$aerial_success <- safe_divide(safe_col("aerials_won"), total_aerials)
   player_stats$aerials_total_p90 <- total_aerials / mins_per_90
 
   # Foul differential (fouls drawn - committed, higher = better)
   player_stats$foul_differential_p90 <- player_stats$fouls_drawn_p90 - player_stats$fouls_committed_p90
 
   # Goalkeeper metrics
-  player_stats$gk_save_pct <- safe_div(safe_col("saves"), safe_col("shots_on_target_against"))
+  player_stats$gk_save_pct <- safe_divide(safe_col("saves"), safe_col("shots_on_target_against"))
   player_stats$gk_goals_prevented <- safe_col("psxg") - safe_col("goals_against")
   player_stats$gk_goals_prevented_p90 <- player_stats$gk_goals_prevented / mins_per_90
 
@@ -411,17 +405,6 @@
 #' @param min_minutes Minimum total minutes for inclusion
 #'
 #' @return Data frame with per-90 rates for each player
-#'
-#' @examples
-#' \dontrun{
-#' stats_summary <- load_summary("ENG", "2024-2025")
-#' stats_passing <- load_passing("ENG", "2024-2025")
-#' stats_defense <- load_defense("ENG", "2024-2025")
-#' player_features <- aggregate_player_stats(
-#'   stats_summary, stats_passing, stats_defense, min_minutes = 450
-#' )
-#' }
-#'
 #' @export
 aggregate_player_stats <- function(stats_summary,
                                     stats_passing = NULL,
@@ -563,17 +546,14 @@ create_spm_prior <- function(spm_predictions, player_mapping, default_prior = 0)
   all_player_ids <- unique(player_mapping$player_id)
   prior <- stats::setNames(rep(default_prior, length(all_player_ids)), all_player_ids)
 
-  # Fill in SPM predictions where available
-  matched <- 0
-  for (player_name in names(spm_predictions)) {
-    if (player_name %in% names(name_to_id)) {
-      player_id <- name_to_id[player_name]
-      if (player_id %in% names(prior)) {
-        prior[player_id] <- spm_predictions[player_name]
-        matched <- matched + 1
-      }
-    }
+  # Fill in SPM predictions where available (vectorized)
+  common_names <- intersect(names(spm_predictions), names(name_to_id))
+  matched_ids <- name_to_id[common_names]
+  valid <- matched_ids %in% names(prior)
+  if (any(valid)) {
+    prior[matched_ids[valid]] <- spm_predictions[common_names[valid]]
   }
+  matched <- sum(valid)
 
   progress_msg(sprintf("SPM prior: matched %d of %d players", matched, length(spm_predictions)))
 
@@ -616,12 +596,12 @@ build_prior_vector <- function(spm_data, spm_col, player_mapping, default = 0) {
 
   # Vectorized matching: find SPM data rows that match player names in mapping
   matched_names <- intersect(spm_data$player_name, names(name_to_id))
-
-  for (pname in matched_names) {
-    pid <- name_to_id[pname]
-    spm_idx <- which(spm_data$player_name == pname)[1]
-    if (!is.na(spm_idx) && pid %in% names(prior)) {
-      prior[pid] <- spm_data[[spm_col]][spm_idx]
+  if (length(matched_names) > 0) {
+    matched_ids <- name_to_id[matched_names]
+    spm_idx <- match(matched_names, spm_data$player_name)
+    valid <- !is.na(spm_idx) & matched_ids %in% names(prior)
+    if (any(valid)) {
+      prior[matched_ids[valid]] <- spm_data[[spm_col]][spm_idx[valid]]
     }
   }
 
@@ -682,13 +662,6 @@ prepare_spm_regression_data <- function(player_features, rapm_ratings) {
 #'   "none" - equal weights
 #'
 #' @return Fitted glmnet model with metadata
-#'
-#' @examples
-#' \dontrun{
-#' spm_data <- prepare_spm_regression_data(player_features, rapm_ratings)
-#' spm_model <- fit_spm_model(spm_data, alpha = 0.5, nfolds = 10)
-#' }
-#'
 #' @export
 fit_spm_model <- function(data, predictor_cols = NULL, alpha = 0.5, nfolds = 10,
                           weight_by_minutes = TRUE, weight_transform = "sqrt") {
@@ -812,14 +785,6 @@ fit_spm_model <- function(data, predictor_cols = NULL, alpha = 0.5, nfolds = 10,
 #' @param verbose Print progress (0=silent, 1=performance, 2=details)
 #'
 #' @return List with xgb model, cv results, and metadata
-#'
-#' @examples
-#' \dontrun{
-#' spm_data <- prepare_spm_regression_data(player_features, rapm_ratings)
-#' spm_xgb <- fit_spm_xgb(spm_data, max_depth = 4, eta = 0.1)
-#' spm_xgb$r_squared
-#' }
-#'
 #' @export
 fit_spm_xgb <- function(data, predictor_cols = NULL, nfolds = 10,
                          max_depth = 4, eta = 0.1,
@@ -974,14 +939,6 @@ fit_spm_xgb <- function(data, predictor_cols = NULL, nfolds = 10,
 #' @param spm_xgb_model Fitted XGBoost SPM model from fit_spm_xgb
 #'
 #' @return Data frame with SPM ratings
-#'
-#' @examples
-#' \dontrun{
-#' spm_xgb <- fit_spm_xgb(spm_data)
-#' ratings <- calculate_spm_ratings_xgb(player_features, spm_xgb)
-#' head(ratings)
-#' }
-#'
 #' @export
 calculate_spm_ratings_xgb <- function(player_features, spm_xgb_model) {
   predictor_cols <- spm_xgb_model$panna_metadata$predictor_cols
@@ -1066,14 +1023,6 @@ extract_spm_coefficients <- function(model, lambda = "min") {
 #' @param lambda Which lambda to use
 #'
 #' @return Data frame with SPM ratings
-#'
-#' @examples
-#' \dontrun{
-#' spm_model <- fit_spm_model(spm_data)
-#' ratings <- calculate_spm_ratings(player_features, spm_model)
-#' head(ratings)
-#' }
-#'
 #' @export
 calculate_spm_ratings <- function(player_features, spm_model, lambda = "min") {
   predictor_cols <- spm_model$panna_metadata$predictor_cols
@@ -1089,7 +1038,7 @@ calculate_spm_ratings <- function(player_features, spm_model, lambda = "min") {
   spm_pred <- as.vector(stats::predict(spm_model, newx = X, s = lambda_val))
 
   # Create output data frame
-  keep_cols <- intersect(c("player_id", "player_name", "n_matches", "total_minutes"),
+  keep_cols <- intersect(c("player_id", "player_name", "n_games", "total_minutes"),
                          names(player_features))
   result <- player_features[, keep_cols, drop = FALSE]
   result$spm <- spm_pred
@@ -1111,9 +1060,11 @@ calculate_spm_ratings <- function(player_features, spm_model, lambda = "min") {
 #' @keywords internal
 calculate_offensive_spm <- function(data, offensive_cols = NULL, alpha = 0.5) {
   if (is.null(offensive_cols)) {
-    offensive_cols <- c("npxg_p90", "xg_p90", "shots_p90", "shots_on_target_p90",
-                        "assists_p90", "xa_p90", "sca_p90", "gca_p90",
-                        "progressive_passes_p90", "progressive_carries_p90", "carries_p90")
+    # Use _p90 naming (current), fall back to _p100 for backward compatibility
+    suffix <- if (any(grepl("_p90$", names(data)))) "_p90" else "_p100"
+    offensive_cols <- paste0(c("npxg", "xg", "shots", "shots_on_target",
+                               "assists", "xa", "sca", "gca",
+                               "progressive_passes", "progressive_carries", "carries"), suffix)
   }
 
   fit_spm_model(data, predictor_cols = offensive_cols, alpha = alpha)
@@ -1132,8 +1083,9 @@ calculate_offensive_spm <- function(data, offensive_cols = NULL, alpha = 0.5) {
 #' @keywords internal
 calculate_defensive_spm <- function(data, defensive_cols = NULL, alpha = 0.5) {
   if (is.null(defensive_cols)) {
-    defensive_cols <- c("tackles_p90", "interceptions_p90", "blocks_p90",
-                        "tackles_won_p90", "clearances_p90")
+    suffix <- if (any(grepl("_p90$", names(data)))) "_p90" else "_p100"
+    defensive_cols <- paste0(c("tackles", "interceptions", "blocks",
+                               "tackles_won", "clearances"), suffix)
   }
 
   fit_spm_model(data, predictor_cols = defensive_cols, alpha = alpha)
@@ -1152,14 +1104,6 @@ calculate_defensive_spm <- function(data, defensive_cols = NULL, alpha = 0.5) {
 #' @param weight_transform Transform for weights: "sqrt" (default), "linear", "log"
 #'
 #' @return List with validation metrics (both weighted and unweighted)
-#'
-#' @examples
-#' \dontrun{
-#' validation <- validate_spm_prediction(spm_ratings, rapm_ratings)
-#' validation$r_squared
-#' validation$correlation
-#' }
-#'
 #' @export
 validate_spm_prediction <- function(spm_ratings, rapm_ratings,
                                      weight_by_minutes = TRUE,
@@ -1215,10 +1159,9 @@ validate_spm_prediction <- function(spm_ratings, rapm_ratings,
   mae_weighted <- sum(weights * abs(residuals), na.rm = TRUE) / sum(weights, na.rm = TRUE)
 
   # Weighted correlation (handle zero variance edge case)
-  weighted_mean_spm <- sum(weights * comparison$spm, na.rm = TRUE) / sum(weights, na.rm = TRUE)
-  cov_w <- sum(weights * (comparison$spm - weighted_mean_spm) *
+  cov_w <- sum(weights * (comparison$spm - mean(comparison$spm)) *
                (comparison$rapm - weighted_mean_rapm), na.rm = TRUE) / sum(weights, na.rm = TRUE)
-  sd_spm_w <- sqrt(sum(weights * (comparison$spm - weighted_mean_spm)^2, na.rm = TRUE) / sum(weights, na.rm = TRUE))
+  sd_spm_w <- sqrt(sum(weights * (comparison$spm - mean(comparison$spm))^2, na.rm = TRUE) / sum(weights, na.rm = TRUE))
   sd_rapm_w <- sqrt(sum(weights * (comparison$rapm - weighted_mean_rapm)^2, na.rm = TRUE) / sum(weights, na.rm = TRUE))
   cor_weighted <- if (sd_spm_w > 0 && sd_rapm_w > 0) cov_w / (sd_spm_w * sd_rapm_w) else NA_real_
 
@@ -1267,14 +1210,6 @@ validate_spm_prediction <- function(spm_ratings, rapm_ratings,
 #' @param lambda Which lambda to use
 #'
 #' @return Data frame of top features by absolute coefficient
-#'
-#' @examples
-#' \dontrun{
-#' spm_model <- fit_spm_model(spm_data)
-#' top_features <- get_spm_feature_importance(spm_model, n = 15)
-#' top_features
-#' }
-#'
 #' @export
 get_spm_feature_importance <- function(model, n = 10, lambda = "min") {
   coefs <- extract_spm_coefficients(model, lambda)
@@ -1286,8 +1221,7 @@ get_spm_feature_importance <- function(model, n = 10, lambda = "min") {
   importance <- data.frame(
     feature = names(coefs),
     coefficient = as.vector(coefs),
-    abs_coef = abs(as.vector(coefs)),
-    stringsAsFactors = FALSE
+    abs_coef = abs(as.vector(coefs))
   )
   importance <- importance[importance$coefficient != 0, ]
   importance <- importance[order(-importance$abs_coef), ]

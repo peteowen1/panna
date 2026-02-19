@@ -229,8 +229,7 @@ create_location_features <- function(x, y) {
     in_mid_third = as.integer(x >= 33 & x < 67),
     y_left = as.integer(y < 33),
     y_center = as.integer(y >= 33 & y < 67),
-    y_right = as.integer(y >= 67),
-    stringsAsFactors = FALSE
+    y_right = as.integer(y >= 67)
   )
 }
 
@@ -284,8 +283,7 @@ get_epv_feature_cols <- function(include_sequence = TRUE, n_prev = 3) {
 create_epv_labels <- function(spadl_with_outcomes) {
   labels <- data.frame(
     match_id = spadl_with_outcomes$match_id,
-    action_id = spadl_with_outcomes$action_id,
-    stringsAsFactors = FALSE
+    action_id = spadl_with_outcomes$action_id
   )
 
   if ("chain_ends_in_goal" %in% names(spadl_with_outcomes)) {

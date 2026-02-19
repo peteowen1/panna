@@ -59,8 +59,7 @@ prepare_shots_for_xg <- function(shot_events) {
     player_id = shot_events$player_id,
     player_name = shot_events$player_name,
     x = shot_events$x,
-    y = shot_events$y,
-    stringsAsFactors = FALSE
+    y = shot_events$y
   )
 
   # Distance and angle to goal
@@ -426,8 +425,7 @@ add_xg_to_spadl <- function(spadl_actions, xg_model) {
     is_set_piece = 0L,
     is_corner = 0L,
     is_direct_freekick = 0L,
-    is_big_chance = is_big_chance,
-    stringsAsFactors = FALSE
+    is_big_chance = is_big_chance
   )
 
   # Predict xG
@@ -450,14 +448,6 @@ add_xg_to_spadl <- function(spadl_actions, xg_model) {
 #'
 #' @return Fitted xG model
 #' @export
-#' @examples
-#' \dontrun{
-#' # Load from default pannadata location
-#' xg_model <- load_xg_model()
-#'
-#' # Load from a specific path
-#' xg_model <- load_xg_model("path/to/xg_model.rds")
-#' }
 load_xg_model <- function(path = NULL) {
   if (!is.null(path) && file.exists(path)) {
     model <- readRDS(path)
@@ -489,12 +479,6 @@ load_xg_model <- function(path = NULL) {
 #'
 #' @return Invisibly returns the path
 #' @export
-#' @examples
-#' \dontrun{
-#' xg_model <- fit_xg_model(shot_features)
-#' save_xg_model(xg_model)
-#' save_xg_model(xg_model, path = "models/my_xg_model.rds")
-#' }
 save_xg_model <- function(xg_model, path = NULL) {
   if (is.null(path)) {
     model_dir <- file.path(pannadata_dir(), "models", "opta")
@@ -518,13 +502,6 @@ save_xg_model <- function(xg_model, path = NULL) {
 #'
 #' @return List with validation metrics
 #' @export
-#' @examples
-#' \dontrun{
-#' xg_model <- load_xg_model()
-#' test_shots <- prepare_shots_for_xg(test_shot_events)
-#' metrics <- validate_xg_model(xg_model, test_shots)
-#' print(metrics$logloss)
-#' }
 validate_xg_model <- function(xg_model, test_shots) {
   # Predict
   xg_pred <- predict_xg(xg_model, test_shots)
@@ -611,23 +588,20 @@ derive_xa <- function(spadl_actions) {
   # Credit the passer with the shot's xG as xA
   # We need to mark the PASS row, not the shot row
   if (sum(key_pass_mask) > 0) {
-    key_pass_ids <- dt$prev_action_id[key_pass_mask]
-    key_pass_xg <- dt$xg[key_pass_mask]
-    shot_is_goal <- dt$result[key_pass_mask] == "success"
+    # Build lookup of key pass credits (vectorized, O(k) instead of O(n*k))
+    key_passes <- data.table::data.table(
+      match_id = dt$match_id[key_pass_mask],
+      action_id = dt$prev_action_id[key_pass_mask],
+      kp_xa = dt$xg[key_pass_mask],
+      kp_is_goal = dt$result[key_pass_mask] == "success"
+    )
 
-    # Match by action_id and match_id for safety
-    key_pass_match_ids <- dt$match_id[key_pass_mask]
-
-    for (i in seq_along(key_pass_ids)) {
-      row_idx <- which(dt$action_id == key_pass_ids[i] & dt$match_id == key_pass_match_ids[i])
-      if (length(row_idx) == 1) {
-        data.table::set(dt, row_idx, "xa", key_pass_xg[i])
-        data.table::set(dt, row_idx, "is_key_pass", 1L)
-        if (shot_is_goal[i]) {
-          data.table::set(dt, row_idx, "is_assist", 1L)
-        }
-      }
-    }
+    # Join back to main table on (match_id, action_id)
+    dt[key_passes, on = .(match_id, action_id), `:=`(
+      xa = i.kp_xa,
+      is_key_pass = 1L,
+      is_assist = fifelse(i.kp_is_goal, 1L, is_assist)
+    )]
   }
 
   # Clean up temp columns
@@ -661,15 +635,6 @@ derive_xa <- function(spadl_actions) {
 #'   }
 #'
 #' @export
-#' @examples
-#' \dontrun{
-#' lineups <- load_opta_lineups("EPL", "2024-2025")
-#' spadl <- convert_opta_to_spadl(match_events)
-#' spadl <- add_xg_to_spadl(spadl, xg_model)
-#' spadl <- add_xpass_to_spadl(spadl, xpass_model)
-#' spadl <- derive_xa(spadl)
-#' xmetrics <- aggregate_player_xmetrics(spadl, lineups, min_minutes = 450)
-#' }
 aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0) {
   dt <- data.table::as.data.table(spadl)
 
@@ -853,8 +818,7 @@ extract_shots_from_spadl <- function(spadl, lineups) {
     player_name = shots$player_name,
     xg = shots$xg,
     is_goal = shots$result == "success",
-    is_penalty = is_pen,
-    stringsAsFactors = FALSE
+    is_penalty = is_pen
   )
 
   cli::cli_alert_success(

@@ -398,6 +398,50 @@ load_opta_lineups <- function(league, season = NULL, columns = NULL,
 }
 
 
+#' Load Opta Fixture Data
+#'
+#' Loads fixture data including both played and upcoming matches from Opta.
+#' Fixtures are saved by the scraper alongside match data and include match
+#' status (Played, Fixture, Postponed).
+#'
+#' @inheritParams load_opta_stats
+#' @param status Optional match status filter (e.g., "Fixture", "Played", "Postponed").
+#'   If NULL (default), returns all statuses.
+#'
+#' @return Data frame of fixtures with columns:
+#'   \itemize{
+#'     \item match_id: Match identifier
+#'     \item match_date: Scheduled/played date
+#'     \item match_status: Fixture, Played, or Postponed
+#'     \item home_team, away_team: Team names
+#'     \item home_team_id, away_team_id: Team IDs
+#'     \item competition: Opta league code
+#'     \item season: Season identifier
+#'   }
+#'
+#' @export
+#' @examples
+#' \dontrun{
+#' # Load all EPL fixtures
+#' epl_fix <- load_opta_fixtures("ENG", season = "2024-2025")
+#'
+#' # Load only upcoming matches
+#' upcoming <- load_opta_fixtures("ENG", season = "2024-2025", status = "Fixture")
+#' }
+load_opta_fixtures <- function(league, season = NULL, columns = NULL,
+                                status = NULL,
+                                source = c("local", "remote")) {
+  source <- match.arg(source)
+  result <- load_opta_table("fixtures", league, season, columns, source)
+
+  if (!is.null(status) && "match_status" %in% names(result)) {
+    result <- result[result$match_status %in% status, , drop = FALSE]
+  }
+
+  result
+}
+
+
 #' Load All Opta Data for Big 5 Leagues
 #'
 #' Convenience function to load Opta stats for all Big 5 European leagues.
@@ -417,7 +461,7 @@ load_opta_lineups <- function(league, season = NULL, columns = NULL,
 #' big5_2122 <- load_opta_big5(season = "2021-2022")
 #' }
 load_opta_big5 <- function(season = NULL, columns = NULL) {
-  leagues <- c("ENG", "ESP", "GER", "ITA", "FRA")
+  leagues <- names(OPTA_LEAGUES)
 
   results <- lapply(leagues, function(lg) {
     tryCatch({
@@ -430,7 +474,7 @@ load_opta_big5 <- function(season = NULL, columns = NULL) {
     })
   })
 
-  data.table::rbindlist(Filter(Negate(is.null), results), use.names = TRUE, fill = TRUE)
+  rbindlist(Filter(Negate(is.null), results), use.names = TRUE, fill = TRUE)
 }
 
 
@@ -879,7 +923,8 @@ pb_download_opta <- function(repo = "peteowen1/pannadata",
     "opta_shot_events.parquet",
     "opta_match_events.parquet",
     "opta_events.parquet",
-    "opta_lineups.parquet"
+    "opta_lineups.parquet",
+    "opta_fixtures.parquet"
   )
 
   for (f in files_to_download) {

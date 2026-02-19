@@ -4,19 +4,25 @@
 \alias{validate_seasons}
 \title{Validate season input}
 \usage{
-validate_seasons(seasons)
+validate_seasons(seasons, min_year = 2017, source_name = "FBref")
 }
 \arguments{
 \item{seasons}{Character vector of seasons in format "YYYY-YYYY" (e.g., "2023-2024")}
+
+\item{min_year}{Minimum start year allowed (default 2017 for FBref)}
+
+\item{source_name}{Name of the data source for error messages (default "FBref")}
 }
 \value{
 TRUE if valid, otherwise throws an error
 }
 \description{
-Checks that seasons are valid for Premier League FBref data.
-FBref has detailed data starting from 2017-18 season.
+Checks that seasons are in valid "YYYY-YYYY" format and within the
+available data range. The minimum year depends on the data source:
+FBref starts at 2017, Opta at 2013.
 }
 \examples{
 validate_seasons("2023-2024")
 validate_seasons(c("2022-2023", "2023-2024"))
+validate_seasons("2013-2014", min_year = 2013, source_name = "Opta")
 }

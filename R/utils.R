@@ -33,10 +33,6 @@
 #'
 #' @return Data frame with snake_case column names
 #' @export
-#'
-#' @examples
-#' df <- data.frame(GoalsScored = 1:3, AssistsMade = 4:6)
-#' clean_column_names(df)
 clean_column_names <- function(data) {
   if (is.null(data) || !is.data.frame(data)) {
     return(data)
@@ -61,17 +57,20 @@ clean_column_names <- function(data) {
 #' safe_divide(10, 0, default = NA)
 safe_divide <- function(x, y, default = 0) {
   result <- x / y
-  result[is.infinite(result) | is.nan(result)] <- default
+  result[is.na(result) | is.infinite(result) | is.nan(result)] <- default
   result
 }
 
 
 #' Validate season input
 #'
-#' Checks that seasons are valid for Premier League FBref data.
-#' FBref has detailed data starting from 2017-18 season.
+#' Checks that seasons are in valid "YYYY-YYYY" format and within the
+#' available data range. The minimum year depends on the data source:
+#' FBref starts at 2017, Opta at 2013.
 #'
 #' @param seasons Character vector of seasons in format "YYYY-YYYY" (e.g., "2023-2024")
+#' @param min_year Minimum start year allowed (default 2017 for FBref)
+#' @param source_name Name of the data source for error messages (default "FBref")
 #'
 #' @return TRUE if valid, otherwise throws an error
 #' @export
@@ -79,7 +78,8 @@ safe_divide <- function(x, y, default = 0) {
 #' @examples
 #' validate_seasons("2023-2024")
 #' validate_seasons(c("2022-2023", "2023-2024"))
-validate_seasons <- function(seasons) {
+#' validate_seasons("2013-2014", min_year = 2013, source_name = "Opta")
+validate_seasons <- function(seasons, min_year = 2017, source_name = "FBref") {
   # Check format
   if (!all(grepl("^\\d{4}-\\d{4}$", seasons))) {
     bad_seasons <- seasons[!grepl("^\\d{4}-\\d{4}$", seasons)]
@@ -93,11 +93,12 @@ validate_seasons <- function(seasons) {
   # Extract start years
   start_years <- as.numeric(substr(seasons, 1, 4))
 
-  # Check minimum year (FBref detailed data starts 2017-18)
-  if (any(start_years < 2017)) {
-    bad_seasons <- seasons[start_years < 2017]
+  # Check minimum year
+  if (any(start_years < min_year)) {
+    bad_seasons <- seasons[start_years < min_year]
+    min_season <- paste0(min_year, "-", min_year + 1L)
     cli::cli_abort(c(
-      "FBref detailed data is only available from 2017-18 season onwards.",
+      "{source_name} data is only available from {min_season} season onwards.",
       "x" = "Invalid: {.val {head(bad_seasons, 3)}}"
     ))
   }
@@ -306,14 +307,17 @@ create_match_id <- function(season, date, home_team, away_team) {
 #' @return Character vector of player IDs
 #' @keywords internal
 create_player_id <- function(player_name, fbref_id = NULL) {
-  if (!is.null(fbref_id) && all(!is.na(fbref_id))) {
-    return(fbref_id)
-  }
   # Fallback: clean name
   id <- tolower(player_name)
   id <- gsub("[^a-z0-9]", "_", id)
   id <- gsub("_+", "_", id)
   id <- gsub("^_|_$", "", id)
+
+  # Use fbref_id where available (element-wise)
+  if (!is.null(fbref_id)) {
+    has_id <- !is.na(fbref_id) & nzchar(fbref_id)
+    id[has_id] <- fbref_id[has_id]
+  }
   id
 }
 
@@ -438,10 +442,6 @@ validate_data_completeness <- function(data, required_cols = NULL, warn = TRUE) 
 #'
 #' @return Statistic per 90 minutes
 #' @export
-#'
-#' @examples
-#' per_90(5, 450)
-#' per_90(c(3, 7), c(270, 810))
 per_90 <- function(stat, minutes) {
   safe_divide(stat * 90, minutes)
 }
@@ -491,8 +491,8 @@ find_column <- function(data, candidates) {
 .count_events <- function(events, boundaries, type = c("before", "within")) {
   type <- match.arg(type)
   n_splints <- length(boundaries) - 1
-  home_count <- rep(0, n_splints)
-  away_count <- rep(0, n_splints)
+  home_count <- rep(0L, n_splints)
+  away_count <- rep(0L, n_splints)
 
   if (!is.null(events) && nrow(events) > 0) {
     event_mins <- if ("effective_minute" %in% names(events)) {
@@ -500,21 +500,31 @@ find_column <- function(data, candidates) {
     } else {
       events$minute
     }
+    is_home <- events$is_home
 
-    for (i in seq_len(n_splints)) {
-      mask <- if (type == "before") {
-        event_mins < boundaries[i]
-      } else {
-        event_mins >= boundaries[i] & event_mins < boundaries[i + 1]
+    if (type == "within") {
+      # findInterval: bin each event into its splint (1-based)
+      bins <- findInterval(event_mins, boundaries, rightmost.closed = FALSE, left.open = FALSE)
+      # Clamp to valid range (events outside boundaries get 0 or n_splints+1)
+      valid <- bins >= 1 & bins <= n_splints
+      if (any(valid)) {
+        home_count <- tabulate(bins[valid & is_home], nbins = n_splints)
+        away_count <- tabulate(bins[valid & !is_home], nbins = n_splints)
       }
-      if (any(mask)) {
-        home_count[i] <- sum(events$is_home[mask], na.rm = TRUE)
-        away_count[i] <- sum(!events$is_home[mask], na.rm = TRUE)
-      }
+    } else {
+      # "before": count events before each splint's start boundary
+      # For splint i, count events with minute < boundaries[i]
+      # Use cumulative counts on sorted events
+      home_mins <- sort(event_mins[is_home])
+      away_mins <- sort(event_mins[!is_home])
+      home_count <- findInterval(boundaries[seq_len(n_splints)] - .Machine$double.eps,
+                                 home_mins)
+      away_count <- findInterval(boundaries[seq_len(n_splints)] - .Machine$double.eps,
+                                 away_mins)
     }
   }
 
-  list(home = home_count, away = away_count)
+  list(home = as.integer(home_count), away = as.integer(away_count))
 }
 
 #' Count events before each boundary
@@ -632,11 +642,13 @@ ensure_column <- function(data, col_name, default = FALSE, source_col = NULL, pa
 #' rename_columns(df, c(x = "a", y = "b"))
 #' }
 rename_columns <- function(data, mapping) {
-  for (new_name in names(mapping)) {
-    old_name <- mapping[new_name]
-    if (old_name %in% names(data)) {
-      names(data)[names(data) == old_name] <- new_name
-    }
+  old_names <- unname(mapping)
+  new_names <- names(mapping)
+  # Only rename columns that exist in data
+  present <- old_names %in% names(data)
+  if (any(present)) {
+    idx <- match(old_names[present], names(data))
+    names(data)[idx] <- new_names[present]
   }
   data
 }
@@ -690,11 +702,12 @@ aggregate_player_data <- function(data, agg_cols, by_team = FALSE,
     } else if (col_expr %in% names(data)) {
       agg_data[[col_name]] <- as.numeric(data[[col_expr]])
     } else {
-      # Try to evaluate as expression
-      agg_data[[col_name]] <- tryCatch(
-        as.numeric(eval(parse(text = col_expr), envir = data)),
-        error = function(e) rep(0, nrow(data))
-      )
+      # Unknown column - warn and fill with zeros
+      cli::cli_warn(c(
+        "Column {.val {col_expr}} not found in data.",
+        "i" = "Pre-compute derived columns before passing to {.fn aggregate_player_data}."
+      ))
+      agg_data[[col_name]] <- rep(0, nrow(data))
     }
   }
 
@@ -853,6 +866,9 @@ build_where_clause <- function(filters, prefix = TRUE) {
   if (length(filters) == 0) {
     return("")
   }
+
+  # Validate column names to prevent SQL injection
+  validate_sql_columns(names(filters))
 
   # Build conditions
   conditions <- vapply(names(filters), function(col_name) {

@@ -27,13 +27,3 @@ xpass_overperformance, xpass_avg
 Aggregates SPADL-level predictions to player-season totals.
 Produces shooting, assisting, and passing metrics per player.
 }
-\examples{
-\dontrun{
-lineups <- load_opta_lineups("EPL", "2024-2025")
-spadl <- convert_opta_to_spadl(match_events)
-spadl <- add_xg_to_spadl(spadl, xg_model)
-spadl <- add_xpass_to_spadl(spadl, xpass_model)
-spadl <- derive_xa(spadl)
-xmetrics <- aggregate_player_xmetrics(spadl, lineups, min_minutes = 450)
-}
-}

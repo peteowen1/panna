@@ -85,8 +85,7 @@ fbref_competitions <- data.frame(
     rep("YYYY-YYYY", 6),
     # National team competitions - YYYY (except Nations League)
     "YYYY", "YYYY", "YYYY", "YYYY", "YYYY-YYYY", "YYYY", "YYYY"
-  ),
-  stringsAsFactors = FALSE
+  )
 )
 
 

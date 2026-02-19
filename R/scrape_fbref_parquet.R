@@ -434,8 +434,7 @@ build_all_parquet <- function(table_types = NULL, leagues = NULL,
             league = lg,
             season = sn,
             n_matches = n_matches,
-            size_mb = round(file.size(parquet_path) / (1024 * 1024), 2),
-            stringsAsFactors = FALSE
+            size_mb = round(file.size(parquet_path) / (1024 * 1024), 2)
           )
         }
       }
@@ -448,8 +447,7 @@ build_all_parquet <- function(table_types = NULL, leagues = NULL,
       league = character(0),
       season = character(0),
       n_matches = integer(0),
-      size_mb = numeric(0),
-      stringsAsFactors = FALSE
+      size_mb = numeric(0)
     ))
   }
 
@@ -578,8 +576,7 @@ build_consolidated_parquet <- function(table_types = NULL, output_dir = NULL,
     results[[length(results) + 1]] <- data.frame(
       table_type = tt,
       n_rows = nrow(all_data),
-      size_mb = size_mb,
-      stringsAsFactors = FALSE
+      size_mb = size_mb
     )
   }
 
@@ -587,8 +584,7 @@ build_consolidated_parquet <- function(table_types = NULL, output_dir = NULL,
     return(data.frame(
       table_type = character(0),
       n_rows = integer(0),
-      size_mb = numeric(0),
-      stringsAsFactors = FALSE
+      size_mb = numeric(0)
     ))
   }
 
@@ -683,16 +679,14 @@ pb_upload_consolidated <- function(source_dir = NULL,
       results[[length(results) + 1]] <- data.frame(
         file = fname,
         size_mb = round(file.size(pf) / (1024 * 1024), 2),
-        status = "success",
-        stringsAsFactors = FALSE
+        status = "success"
       )
     }, error = function(e) {
       if (verbose) cli::cli_warn("Failed to upload {fname}: {conditionMessage(e)}")
       results[[length(results) + 1]] <- data.frame(
         file = fname,
         size_mb = round(file.size(pf) / (1024 * 1024), 2),
-        status = paste("error:", e$message),
-        stringsAsFactors = FALSE
+        status = paste("error:", e$message)
       )
     })
   }

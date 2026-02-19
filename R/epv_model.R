@@ -239,7 +239,7 @@ estimate_simple_xg <- function(x, y) {
 #' @param method Either "goal" (multinomial) or "xg" (regression). Default "goal".
 #' @param nfolds Number of CV folds (default 5)
 #' @param max_depth Maximum tree depth (default 6)
-#' @param eta Learning rate (default 0.1)
+#' @param eta Learning rate (default 0.05)
 #' @param subsample Row subsampling (default 0.8)
 #' @param colsample_bytree Column subsampling (default 0.8)
 #' @param nrounds Maximum boosting rounds (default 1000)
@@ -247,13 +247,6 @@ estimate_simple_xg <- function(x, y) {
 #' @param verbose Print progress (default 1)
 #'
 #' @return Fitted EPV model with metadata
-#'
-#' @examples
-#' \dontrun{
-#' features <- create_epv_features(spadl_actions)
-#' labels <- create_next_goal_labels(spadl_actions)
-#' epv_model <- fit_epv_model(features, labels, method = "goal")
-#' }
 #'
 #' @export
 fit_epv_model <- function(features,
@@ -521,13 +514,6 @@ predict_epv_probs <- function(model, features) {
 #'     \item For "xg" method: expected_xg
 #'   }
 #'
-#' @examples
-#' \dontrun{
-#' epv_model <- load_epv_model()
-#' features <- create_epv_features(spadl_actions)
-#' spadl_with_epv <- calculate_action_epv(spadl_actions, features, epv_model)
-#' }
-#'
 #' @export
 calculate_action_epv <- function(spadl_actions, features, epv_model, xg_model = NULL) {
   cli::cli_alert_info("Calculating EPV for {nrow(spadl_actions)} actions...")
@@ -726,12 +712,6 @@ calculate_action_epv <- function(spadl_actions, features, epv_model, xg_model = 
 #'     \item xpass: Pass completion probability (for passes)
 #'   }
 #'
-#' @examples
-#' \dontrun{
-#' xpass_model <- load_xpass_model()
-#' spadl_credited <- assign_epv_credit(spadl_with_epv, xpass_model)
-#' }
-#'
 #' @export
 assign_epv_credit <- function(spadl_with_epv, xpass_model = NULL) {
   cli::cli_alert_info("Assigning EPV credit...")
@@ -791,13 +771,13 @@ assign_epv_credit <- function(spadl_with_epv, xpass_model = NULL) {
     dt[turnover_idx, `:=`(
       player_credit = fifelse(
         epv_delta < 0,
-        epv_delta * 0.5,    # Negative: share blame
-        epv_delta           # Positive: actor gets full credit
+        epv_delta * EPV_TURNOVER_BLAME_SHARE,    # Negative: share blame
+        epv_delta                                  # Positive: actor gets full credit
       ),
       receiver_credit = fifelse(
         epv_delta < 0,
-        -epv_delta * 0.5,   # Negative: receiver gets credit for gaining
-        0                    # Positive: receiver not blamed
+        -epv_delta * EPV_TURNOVER_BLAME_SHARE,   # Negative: receiver gets credit for gaining
+        0                                          # Positive: receiver not blamed
       )
     )]
   }
@@ -822,8 +802,8 @@ assign_epv_credit <- function(spadl_with_epv, xpass_model = NULL) {
       # Defender/GK gets positive credit for preventing the goal
       # Use 50/50 split like turnovers
       dt[saved_shot_idx, `:=`(
-        player_credit = epv_delta * 0.5,      # Shooter blame
-        receiver_credit = -epv_delta * 0.5    # Defender credit
+        player_credit = epv_delta * EPV_TURNOVER_BLAME_SHARE,      # Shooter blame
+        receiver_credit = -epv_delta * EPV_TURNOVER_BLAME_SHARE    # Defender credit
       )]
     }
 
@@ -872,34 +852,28 @@ assign_epv_credit <- function(spadl_with_epv, xpass_model = NULL) {
       # shouldn't be blamed for receiving a backpass (e.g., keeper receiving
       # backpasses shouldn't accumulate negative EPV).
       #
-      # POSITION SCALING: Passes from deep positions (x near 0 = own goal) get
+      # POSITION SCALING: Passes from deep positions (x near 100 = own goal) get
       # scaled down because EPV improvement from own box is "expected" for routine
       # passes. A keeper's short pass to a defender shouldn't get more credit than
       # a midfielder's creative through ball just because EPV delta is higher.
       #
-      # Coordinate system: x=0 is own goal, x=100 is attacking goal (SPADL convention)
-      # Scale factor: 0.3 at x=0 (own goal), ramping to 1.0 at x=40 and beyond
+      # Coordinate system: x=100 is own goal, x=0 is attacking goal
+      # Scale factor: EPV_POSITION_SCALE_MIN at x=100 (own goal), ramping to 1.0 at x=(100 - EPV_POSITION_RAMP_X)
       # This reduces credit for routine GK/defender distribution while maintaining
       # full credit for passes in advanced positions.
       #
-      # passer_share = base_passer + adjustment * (1 - xpass)
-      # With base_passer=0.5 and adjustment=0.3:
-      #   Easy pass (xpass=0.9): passer gets 53%, receiver 47%
-      #   Hard pass (xpass=0.5): passer gets 65%, receiver 35%
+      # passer_share = EPV_BASE_PASSER_SHARE + EPV_PASS_DIFFICULTY_ADJUSTMENT * (1 - xpass)
       success_pass_idx <- which(dt$action_type == "pass" &
                                   dt$result == "success" &
                                   dt$possession_change == FALSE)
 
       if (length(success_pass_idx) > 0) {
-        base_passer_share <- 0.5
-        difficulty_adjustment <- 0.3
-
         # Position-based scaling: reduce credit for routine deep passes
-        # x=0 (own goal): scale=0.3, x=40 and above: scale=1.0
-        # Formula: start_x / 40 maps x=0->0, x=40->1
+        # x=100 (own goal): scale=EPV_POSITION_SCALE_MIN, x=(100-EPV_POSITION_RAMP_X): scale=1.0
         dt[success_pass_idx, `:=`(
-          position_scale = pmin(1.0, 0.3 + 0.7 * (start_x / 40)),
-          passer_share = base_passer_share + difficulty_adjustment * (1 - xpass)
+          position_scale = pmin(1.0, EPV_POSITION_SCALE_MIN +
+            (1 - EPV_POSITION_SCALE_MIN) * ((100 - start_x) / EPV_POSITION_RAMP_X)),
+          passer_share = EPV_BASE_PASSER_SHARE + EPV_PASS_DIFFICULTY_ADJUSTMENT * (1 - xpass)
         )]
 
         # For positive delta (progressive passes): split credit between passer and receiver
@@ -930,39 +904,36 @@ assign_epv_credit <- function(spadl_with_epv, xpass_model = NULL) {
       #
       # For positive delta (rare: failed pass still benefited team), passer gets full credit
       #
-      # Position scaling: failed passes from deep positions (x near 0) get LESS
+      # Position scaling: failed passes from deep positions (x near 100) get LESS
       # scaling reduction since mistakes from deep ARE costly and should be penalized.
-      # Coordinate system: x=0 is own goal, x=100 is attacking goal (SPADL convention)
-      # Scale: 0.6 at x=0 (own goal), 1.0 at x=40 and beyond
+      # Coordinate system: x=100 is own goal, x=0 is attacking goal
+      # Scale: 0.6 at x=100 (own goal), 1.0 at x=60 and beyond
       #
       # passer_blame_share: how much of the negative delta the passer takes
-      # With base=0.5 and adjustment=0.3:
-      #   Easy pass missed (xpass=0.9): passer takes 77% blame
-      #   Hard pass missed (xpass=0.5): passer takes 65% blame
+      # passer_blame = EPV_BASE_PASSER_SHARE + EPV_PASS_DIFFICULTY_ADJUSTMENT * xpass
       # Exclude period boundaries - receiver in next half not involved in this play
       failed_pass_idx <- which(dt$action_type == "pass" &
                                  (dt$result == "fail" | dt$possession_change == TRUE) &
                                  dt$is_period_boundary == FALSE)
 
       if (length(failed_pass_idx) > 0) {
-        base_blame_share <- 0.5
-        xpass_adjustment <- 0.3
-
         # Less aggressive scaling for failed passes (mistakes from deep are still costly)
-        # x=0 (own goal): scale=0.6, x=40 and above: scale=1.0
+        # x=100 (own goal): scale=0.6, x=(100-EPV_POSITION_RAMP_X): scale=1.0
+        failed_scale_min <- 0.6
         dt[failed_pass_idx, `:=`(
-          position_scale = pmin(1.0, 0.6 + 0.4 * (start_x / 40)),
-          passer_blame = base_blame_share + xpass_adjustment * xpass
+          position_scale = pmin(1.0, failed_scale_min +
+            (1 - failed_scale_min) * ((100 - start_x) / EPV_POSITION_RAMP_X)),
+          passer_blame = EPV_BASE_PASSER_SHARE + EPV_PASS_DIFFICULTY_ADJUSTMENT * xpass
         )]
 
         # Only split for negative delta (actual loss of value)
         # For positive delta (rare), passer gets full credit, receiver gets 0
-        # For deep positions (x < 20), reduce penalty further (routine distribution)
+        # For deep positions (x > 80), reduce penalty further (routine distribution)
         dt[failed_pass_idx, `:=`(
           player_credit = fifelse(
             epv_delta < 0,
             fifelse(
-              start_x < 20,
+              start_x > 80,
               epv_delta * passer_blame * position_scale * 0.5,  # Deep: halve the penalty
               epv_delta * passer_blame * position_scale          # Advanced: full penalty
             ),
@@ -971,7 +942,7 @@ assign_epv_credit <- function(spadl_with_epv, xpass_model = NULL) {
           receiver_credit = fifelse(
             epv_delta < 0,
             fifelse(
-              start_x < 20,
+              start_x > 80,
               -epv_delta * (1 - passer_blame) * position_scale * 0.5,  # Deep: halve
               -epv_delta * (1 - passer_blame) * position_scale          # Advanced: full
             ),
@@ -990,6 +961,7 @@ assign_epv_credit <- function(spadl_with_epv, xpass_model = NULL) {
   # POSITION SCALING FOR OFFENSIVE ACTIONS FROM DEEP
   #
   # Apply position scaling to reduce credit for "routine" offensive actions
+
   # performed from deep positions (near own goal). The EPV model correctly
   # identifies that game state improves when ball moves upfield, but we don't
   # want to over-credit routine actions like keeper pick-ups or punts.
@@ -998,23 +970,23 @@ assign_epv_credit <- function(spadl_with_epv, xpass_model = NULL) {
   # Defensive actions (NOT scaled): keeper_save, tackle, interception, clearance,
   #                                  ball_recovery, aerial, foul
   #
-  # Coordinate system: x=0 is own goal, x=100 is attacking goal (SPADL convention)
-  # Scale: 0.3 at x=0, ramping to 1.0 at x=40 and beyond
+  # Coordinate system: x=100 is own goal, x=0 is attacking goal
+  # Scale: EPV_POSITION_SCALE_MIN at x=100, ramping to 1.0 at x=(100 - EPV_POSITION_RAMP_X)
   # This matches the pass position scaling for consistency.
   #
   offensive_action_types <- c("keeper_pick_up", "keeper_punch", "other",
                               "ball_touch", "take_on")
 
-  # Only scale actions from deep positions (x < 40) that are offensive
+  # Only scale actions from deep positions (x > 60) that are offensive
   # and haven't already been handled (passes are already scaled above)
   offensive_deep_idx <- which(dt$action_type %in% offensive_action_types &
-                               dt$start_x < 40 &
+                               dt$start_x > 60 &
                                !is.na(dt$player_credit))
 
   if (length(offensive_deep_idx) > 0) {
     # Apply same position scaling formula as passes
-    # x=0 (own goal): scale=0.3, x=40: scale=1.0
-    dt[offensive_deep_idx, position_scale := pmin(1.0, 0.3 + 0.7 * (start_x / 40))]
+    dt[offensive_deep_idx, position_scale := pmin(1.0, EPV_POSITION_SCALE_MIN +
+      (1 - EPV_POSITION_SCALE_MIN) * ((100 - start_x) / EPV_POSITION_RAMP_X))]
     dt[offensive_deep_idx, player_credit := player_credit * position_scale]
     dt[, position_scale := NULL]
 
@@ -1034,14 +1006,13 @@ assign_epv_credit <- function(spadl_with_epv, xpass_model = NULL) {
   #
   # Note: aerials are filtered at SPADL conversion, so not included here
   defensive_action_types <- c("clearance", "interception", "tackle", "ball_recovery")
-  defensive_boost <- 1.5  # 50% boost to defensive actions
 
   defensive_idx <- which(dt$action_type %in% defensive_action_types &
                           !is.na(dt$player_credit))
 
   if (length(defensive_idx) > 0) {
-    dt[defensive_idx, player_credit := player_credit * defensive_boost]
-    cli::cli_alert_info("Boosted {length(defensive_idx)} defensive actions by {defensive_boost}x")
+    dt[defensive_idx, player_credit := player_credit * EPV_DEFENSIVE_BOOST]
+    cli::cli_alert_info("Boosted {length(defensive_idx)} defensive actions by {EPV_DEFENSIVE_BOOST}x")
   }
 
 
@@ -1060,8 +1031,8 @@ assign_epv_credit <- function(spadl_with_epv, xpass_model = NULL) {
       # Winner: half the value change (already has player_credit set)
       # Loser: opposite (zero-sum)
       dt[duel_idx, `:=`(
-        player_credit = epv_delta * 0.5,
-        opponent_credit = -epv_delta * 0.5
+        player_credit = epv_delta * EPV_TURNOVER_BLAME_SHARE,
+        opponent_credit = -epv_delta * EPV_TURNOVER_BLAME_SHARE
       )]
       cli::cli_alert_info("Applied zero-sum duel credit to {length(duel_idx)} merged duels")
     }
@@ -1119,12 +1090,6 @@ split_pass_credit <- function(pass_value, xpass) {
 #'     \item epv_passing, epv_shooting, epv_dribbling, epv_defending
 #'   }
 #'
-#' @examples
-#' \dontrun{
-#' player_epv <- aggregate_player_epv(spadl_with_epv, lineups, min_minutes = 450)
-#' head(player_epv[order(-player_epv$epv_total), ])
-#' }
-#'
 #' @export
 aggregate_player_epv <- function(spadl_with_epv, lineups = NULL, min_minutes = 450) {
   cli::cli_alert_info("Aggregating player EPV metrics...")
@@ -1142,18 +1107,13 @@ aggregate_player_epv <- function(spadl_with_epv, lineups = NULL, min_minutes = 4
     receiver_dt <- dt[!is.na(receiver_player_id) & !is.na(receiver_credit)]
 
     if (nrow(receiver_dt) > 0) {
-      # Include team_id to avoid duplicating credit for multi-team players
-      group_cols <- c("receiver_player_id", "receiver_player_name")
-      rename_cols <- c("player_id", "player_name")
-      if ("receiver_team_id" %in% names(receiver_dt)) {
-        group_cols <- c(group_cols, "receiver_team_id")
-        rename_cols <- c(rename_cols, "team_id")
-      }
       receiver_credit <- receiver_dt[, .(
         epv_as_receiver = sum(receiver_credit, na.rm = TRUE)
-      ), by = group_cols]
+      ), by = .(receiver_player_id, receiver_player_name)]
 
-      data.table::setnames(receiver_credit, group_cols, rename_cols)
+      data.table::setnames(receiver_credit,
+                            c("receiver_player_id", "receiver_player_name"),
+                            c("player_id", "player_name"))
     } else {
       receiver_credit <- data.table::data.table(
         player_id = character(0),
@@ -1170,9 +1130,8 @@ aggregate_player_epv <- function(spadl_with_epv, lineups = NULL, min_minutes = 4
   }
 
   # Full outer join: actor + receiver credit
-  join_cols <- intersect(names(receiver_credit), c("player_id", "player_name", "team_id"))
-  player_epv <- receiver_credit[actor_credit, on = join_cols]
-  unmatched_receivers <- receiver_credit[!actor_credit, on = join_cols]
+  player_epv <- receiver_credit[actor_credit, on = c("player_id", "player_name")]
+  unmatched_receivers <- receiver_credit[!actor_credit, on = c("player_id", "player_name")]
   if (nrow(unmatched_receivers) > 0) {
     player_epv <- data.table::rbindlist(list(player_epv, unmatched_receivers), fill = TRUE)
   }
@@ -1321,13 +1280,6 @@ calculate_action_type_epv <- function(spadl_with_epv) {
 #' @param path Directory to save model. If NULL, uses pannadata/models/opta/
 #'
 #' @return Invisibly returns path
-#'
-#' @examples
-#' \dontrun{
-#' save_epv_model(epv_model)
-#' save_epv_model(epv_model, path = "models/custom_dir")
-#' }
-#'
 #' @export
 save_epv_model <- function(epv_model, path = NULL) {
   if (is.null(path)) {
@@ -1351,13 +1303,6 @@ save_epv_model <- function(epv_model, path = NULL) {
 #' @param path Directory containing model. If NULL, uses pannadata/models/opta/
 #'
 #' @return EPV model
-#'
-#' @examples
-#' \dontrun{
-#' epv_model <- load_epv_model()
-#' epv_model <- load_epv_model(path = "models/custom_dir")
-#' }
-#'
 #' @export
 load_epv_model <- function(path = NULL) {
   if (is.null(path)) {
@@ -1391,13 +1336,6 @@ load_epv_model <- function(path = NULL) {
 #' @param dest Destination directory. If NULL, uses pannadata/models/opta/
 #'
 #' @return Invisibly returns path to models
-#'
-#' @examples
-#' \dontrun{
-#' pb_download_epv_models()
-#' pb_download_epv_models(tag = "epv-models-v2")
-#' }
-#'
 #' @export
 pb_download_epv_models <- function(repo = "peteowen1/pannadata",
                                     tag = "epv-models",
@@ -1451,14 +1389,6 @@ pb_download_epv_models <- function(repo = "peteowen1/pannadata",
 #' @param spadl_with_epv SPADL actions with EPV values
 #'
 #' @return List with validation statistics
-#'
-#' @examples
-#' \dontrun{
-#' validation <- validate_epv_model(spadl_with_epv)
-#' validation$epv_bounded
-#' validation$mean_epv_delta
-#' }
-#'
 #' @export
 validate_epv_model <- function(spadl_with_epv) {
   cli::cli_alert_info("Validating EPV model...")
@@ -1517,12 +1447,6 @@ validate_epv_model <- function(spadl_with_epv) {
 #' @param ... Arguments passed to [fit_epv_model()]
 #'
 #' @return An EPV model object
-#' @examples
-#' \dontrun{
-#' # Deprecated: use fit_epv_model() instead
-#' model <- fit_epv_scoring_model(features, labels)
-#' }
-#'
 #' @seealso [fit_epv_model()]
 #' @export
 fit_epv_scoring_model <- function(...) {
@@ -1546,12 +1470,6 @@ fit_epv_scoring_model <- function(...) {
 #' @param ... Arguments passed to [fit_epv_model()]
 #'
 #' @return An EPV model object
-#' @examples
-#' \dontrun{
-#' # Deprecated: use fit_epv_model() instead
-#' model <- fit_epv_conceding_model(features, labels)
-#' }
-#'
 #' @seealso [fit_epv_model()]
 #' @export
 fit_epv_conceding_model <- function(...) {
@@ -1609,12 +1527,6 @@ create_epv_labels_legacy <- function(spadl_actions) {
 #' @param xpass_model xPass model
 #'
 #' @return SPADL with credit columns
-#' @examples
-#' \dontrun{
-#' # Deprecated: use assign_epv_credit() instead
-#' result <- assign_pass_credit(spadl_with_epv, xpass_model)
-#' }
-#'
 #' @seealso [assign_epv_credit()]
 #' @export
 assign_pass_credit <- function(spadl_with_epv, xpass_model) {

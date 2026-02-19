@@ -15,9 +15,3 @@ Data frame with columns: match_id, league, season, scraped_at
 \description{
 The manifest tracks all scraped match IDs with their league and season.
 }
-\examples{
-\dontrun{
-manifest <- load_understat_manifest("data/understat-manifest.parquet")
-nrow(manifest)
-}
-}

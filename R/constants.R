@@ -251,6 +251,68 @@ SIX_YARD_Y_MIN <- 37
 #' SIX_YARD_Y_MAX
 SIX_YARD_Y_MAX <- 63
 
+# =============================================================================
+# EPV Credit Assignment Parameters
+# =============================================================================
+# Tuning parameters for how EPV deltas are split between actors.
+# Used in assign_epv_credit().
+
+#' Base share for passer in successful pass credit split
+#'
+#' When a pass gains EPV, this is the passer's base share.
+#' Adjusted upward by difficulty: passer_share = base + adjustment * (1 - xpass).
+#'
+#' @format Numeric value: 0.5
+#' @keywords internal
+EPV_BASE_PASSER_SHARE <- 0.5
+
+#' Difficulty adjustment for pass credit/blame
+#'
+#' Scales passer credit/blame by pass difficulty (1 - xpass for credit,
+#' xpass for blame). Higher values give more credit for hard passes.
+#'
+#' @format Numeric value: 0.3
+#' @keywords internal
+EPV_PASS_DIFFICULTY_ADJUSTMENT <- 0.3
+
+#' Blame share for turnovers, saved shots, and duels
+#'
+#' When a turnover or duel results in negative EPV delta, this fraction
+#' of blame goes to the actor (the rest to the receiver who gains).
+#'
+#' @format Numeric value: 0.5
+#' @keywords internal
+EPV_TURNOVER_BLAME_SHARE <- 0.5
+
+#' Defensive action credit boost multiplier
+#'
+#' Multiplier applied to defensive actions (clearance, interception,
+#' tackle, ball_recovery) to better capture their value. EPV deltas
+#' underestimate defensive contributions.
+#'
+#' @format Numeric value: 1.5
+#' @keywords internal
+EPV_DEFENSIVE_BOOST <- 1.5
+
+#' Minimum position scale for successful passes
+#'
+#' At x=0 (own goal), successful pass credit is scaled by this factor.
+#' Ramps linearly to 1.0 at EPV_POSITION_RAMP_X.
+#'
+#' @format Numeric value: 0.3
+#' @keywords internal
+EPV_POSITION_SCALE_MIN <- 0.3
+
+#' X-coordinate where position scaling reaches 1.0
+#'
+#' Passes from beyond this x-coordinate get full credit.
+#' Below this, credit is scaled down toward EPV_POSITION_SCALE_MIN.
+#'
+#' @format Numeric value: 40
+#' @keywords internal
+EPV_POSITION_RAMP_X <- 40
+
+
 #' Default penalty kick xG value
 #'
 #' xG override for penalty kicks. Based on historical penalty

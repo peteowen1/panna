@@ -131,17 +131,14 @@ if (!grepl("fbref\\.com/en/matches/", match_url)) {
   # Make request with session cookies and retry logic
 
   response <- fetch_with_retry(
-    url = match_url,
-    max_retries = 3,
-    base_delay = 1,
-    max_delay = 30,
+    match_url,
     httr::add_headers(.headers = get_fbref_headers()),
     httr::timeout(timeout),
     handle = get_fbref_session()
   )
 
   # Check for errors returned by fetch_with_retry
-  if (inherits(response, "fetch_error") || is.null(response)) {
+  if (is.null(response)) {
     if (isTRUE(attr(response, "rate_limited"))) {
       cli::cli_warn("Rate limited by FBref (429). Stopping.")
     } else if (isTRUE(attr(response, "blocked"))) {
@@ -532,8 +529,7 @@ list_cached_matches <- function(table_type = "metadata", league = NULL,
     return(data.frame(
       league = character(0),
       season = character(0),
-      fbref_id = character(0),
-      stringsAsFactors = FALSE
+      fbref_id = character(0)
     ))
   }
 
@@ -544,8 +540,7 @@ list_cached_matches <- function(table_type = "metadata", league = NULL,
       return(data.frame(
         league = character(0),
         season = character(0),
-        fbref_id = character(0),
-        stringsAsFactors = FALSE
+        fbref_id = character(0)
       ))
     }
     files <- list.files(cache_dir, pattern = "^[a-f0-9]{8}\\.rds$")
@@ -553,15 +548,13 @@ list_cached_matches <- function(table_type = "metadata", league = NULL,
       return(data.frame(
         league = character(0),
         season = character(0),
-        fbref_id = character(0),
-        stringsAsFactors = FALSE
+        fbref_id = character(0)
       ))
     }
     return(data.frame(
       league = rep(league, length(files)),
       season = rep(season, length(files)),
-      fbref_id = gsub("\\.rds$", "", files),
-      stringsAsFactors = FALSE
+      fbref_id = gsub("\\.rds$", "", files)
     ))
   }
 
@@ -576,8 +569,7 @@ list_cached_matches <- function(table_type = "metadata", league = NULL,
     return(data.frame(
       league = character(0),
       season = character(0),
-      fbref_id = character(0),
-      stringsAsFactors = FALSE
+      fbref_id = character(0)
     ))
   }
 
@@ -604,8 +596,7 @@ list_cached_matches <- function(table_type = "metadata", league = NULL,
         all_results[[length(all_results) + 1]] <- data.frame(
           league = rep(lg, length(files)),
           season = rep(sn, length(files)),
-          fbref_id = gsub("\\.rds$", "", files),
-          stringsAsFactors = FALSE
+          fbref_id = gsub("\\.rds$", "", files)
         )
       }
     }
@@ -615,8 +606,7 @@ list_cached_matches <- function(table_type = "metadata", league = NULL,
     return(data.frame(
       league = character(0),
       season = character(0),
-      fbref_id = character(0),
-      stringsAsFactors = FALSE
+      fbref_id = character(0)
     ))
   }
 
@@ -632,15 +622,11 @@ list_cached_matches <- function(table_type = "metadata", league = NULL,
 #'
 #' @return Data frame with league info
 #' @export
-#'
-#' @examples
-#' get_big5_leagues()
 get_big5_leagues <- function() {
   data.frame(
     country = c("ENG", "ESP", "GER", "ITA", "FRA"),
     league = c("Premier League", "La Liga", "Bundesliga", "Serie A", "Ligue 1"),
-    tier = rep("1st", 5),
-    stringsAsFactors = FALSE
+    tier = rep("1st", 5)
   )
 }
 
@@ -738,8 +724,7 @@ derive_events_from_shooting <- function(shooting_data) {
     is_goal = TRUE,
     is_sub = FALSE,
     is_penalty = grepl("Penalty", goals$notes, ignore.case = TRUE),
-    is_own_goal = grepl("Own Goal", goals$notes, ignore.case = TRUE),
-    stringsAsFactors = FALSE
+    is_own_goal = grepl("Own Goal", goals$notes, ignore.case = TRUE)
   )
 
   # Sort by match and minute
@@ -876,15 +861,6 @@ extract_season_range <- function(data, data_name = "data") {
 #'
 #' @return Invisible data frame with season range info
 #' @export
-#'
-#' @examples
-#' \dontrun{
-#' data <- list(
-#'   results = load_summary("ENG", "2023-2024"),
-#'   stats_summary = load_summary("ENG", "2023-2024")
-#' )
-#' report_season_ranges(data)
-#' }
 report_season_ranges <- function(data) {
   # Define data components and their display names
   components <- list(
@@ -908,8 +884,7 @@ report_season_ranges <- function(data) {
       rows = if (!is.null(df)) nrow(df) else 0,
       min_season = as.character(range_info$min_season),
       max_season = as.character(range_info$max_season),
-      n_seasons = range_info$n_seasons,
-      stringsAsFactors = FALSE
+      n_seasons = range_info$n_seasons
     )
   })
 

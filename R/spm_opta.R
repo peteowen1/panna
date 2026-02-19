@@ -164,9 +164,7 @@
     } else {
       x <- rep(0, nrow(player_stats))
     }
-    result <- x / mins_per_90
-    result[!is.finite(result)] <- 0
-    player_stats[[paste0(col, "_p90")]] <- result
+    player_stats[[paste0(col, "_p90")]] <- x / mins_per_90
   }
 
   player_stats
@@ -500,13 +498,6 @@ fit_spm_opta <- function(data, alpha = 0.5, nfolds = 10,
 #' @param n Number of top features to compare (default 20)
 #'
 #' @return Data frame comparing feature importance
-#'
-#' @examples
-#' \dontrun{
-#' comparison <- compare_spm_features(fbref_spm_model, opta_spm_model, n = 20)
-#' head(comparison)
-#' }
-#'
 #' @export
 compare_spm_features <- function(fbref_model, opta_model, n = 20) {
   fbref_imp <- get_spm_feature_importance(fbref_model, n = n)
@@ -516,9 +507,9 @@ compare_spm_features <- function(fbref_model, opta_model, n = 20) {
   opta_imp$source <- "Opta"
 
   # Combine
-  comparison <- data.table::rbindlist(list(fbref_imp, opta_imp), use.names = TRUE, fill = TRUE)
+  comparison <- rbindlist(list(fbref_imp, opta_imp), use.names = TRUE, fill = TRUE)
   comparison <- comparison[, .(source, feature, coefficient, abs_coef)]
-  data.table::setorder(comparison, -abs_coef)
+  setorder(comparison, -abs_coef)
 
   as.data.frame(comparison)
 }

@@ -128,8 +128,7 @@ scrape_fixtures <- function(league, season, completed_only = TRUE) {
 
   # Select and rename key columns
   result <- data.frame(
-    match_url = df$match_url,
-    stringsAsFactors = FALSE
+    match_url = df$match_url
   )
 
   # Add optional columns if available

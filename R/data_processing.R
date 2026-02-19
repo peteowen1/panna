@@ -72,6 +72,14 @@ process_match_lineups <- function(lineups, results) {
     return(NULL)
   }
 
+  # Require data.table for speed with large datasets
+  if (!requireNamespace("data.table", quietly = TRUE)) {
+    cli::cli_abort(c(
+      "Package {.pkg data.table} is required for processing large datasets.",
+      "i" = "Install with: {.code install.packages('data.table')}"
+    ))
+  }
+
   progress_msg(sprintf("  [data.table] Processing %d lineup rows...", nrow(lineups)))
 
   dt_lineups <- data.table::as.data.table(lineups)
@@ -156,8 +164,7 @@ process_match_lineups <- function(lineups, results) {
     position = pos_col,
     minutes = dt_lineups$minutes,
     on_minute = on_minute_col,
-    off_minute = off_minute_col,
-    stringsAsFactors = FALSE
+    off_minute = off_minute_col
   )
 
   result
@@ -266,8 +273,7 @@ process_match_events <- function(events, results) {
     player_name = if (has_player) events$player else NA_character_,
     is_penalty = events$is_penalty,
     is_own_goal = events$is_own_goal,
-    is_red_card = events$is_red_card,
-    stringsAsFactors = FALSE
+    is_red_card = events$is_red_card
   )
 
   result
@@ -314,6 +320,14 @@ process_shooting_data <- function(shooting, results) {
     return(NULL)
   }
 
+  # Require data.table for speed with large datasets
+  if (!requireNamespace("data.table", quietly = TRUE)) {
+    cli::cli_abort(c(
+      "Package {.pkg data.table} is required for processing large datasets.",
+      "i" = "Install with: {.code install.packages('data.table')}"
+    ))
+  }
+
   progress_msg(sprintf("  [data.table] Processing %d shot rows...", nrow(shooting)))
 
   dt_shooting <- data.table::as.data.table(shooting)
@@ -348,8 +362,7 @@ process_shooting_data <- function(shooting, results) {
     is_goal = dt_shooting$is_goal,
     is_penalty = dt_shooting$is_penalty,
     body_part = dt_shooting$body_part,
-    shot_type = dt_shooting$notes,
-    stringsAsFactors = FALSE
+    shot_type = dt_shooting$notes
   )
 
   result
@@ -371,6 +384,14 @@ process_advanced_stats <- function(stats, results, stat_type = "summary") {
   if (is.null(stats) || nrow(stats) == 0) {
     cli::cli_warn("No {stat_type} data to process")
     return(NULL)
+  }
+
+  # Require data.table for speed with large datasets
+  if (!requireNamespace("data.table", quietly = TRUE)) {
+    cli::cli_abort(c(
+      "Package {.pkg data.table} is required for processing large datasets.",
+      "i" = "Install with: {.code install.packages('data.table')}"
+    ))
   }
 
   # Row count shown for debugging if needed

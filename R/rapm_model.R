@@ -21,13 +21,6 @@
 #' @param n_cores Number of cores (default: half of available)
 #'
 #' @return Fitted model with metadata
-#'
-#' @examples
-#' \dontrun{
-#' rapm_data <- prepare_rapm_data(splint_data, min_minutes = 90)
-#' rapm_model <- fit_rapm(rapm_data, alpha = 0, nfolds = 10)
-#' }
-#'
 #' @export
 fit_rapm <- function(rapm_data, alpha = 0, nfolds = 10,
                          use_weights = TRUE, standardize = FALSE,
@@ -97,8 +90,11 @@ fit_rapm <- function(rapm_data, alpha = 0, nfolds = 10,
   }
 
   # Penalty factor: don't penalize covariates if requested
+  # Covariates are always the last columns (cbind(X_players, X_covariates) in prepare_rapm_data)
   if (!penalize_covariates && length(rapm_data$covariate_names) > 0) {
-    penalty_factor <- ifelse(colnames(X) %in% rapm_data$covariate_names, 0, 1)
+    n_cols <- ncol(X)
+    n_cov <- length(rapm_data$covariate_names)
+    penalty_factor <- c(rep(1, n_cols - n_cov), rep(0, n_cov))
   } else {
     penalty_factor <- rep(1, ncol(X))
   }
@@ -113,19 +109,18 @@ fit_rapm <- function(rapm_data, alpha = 0, nfolds = 10,
     nfolds = nfolds,
     type.measure = "mse",
     penalty.factor = penalty_factor,
-    trace.it = 1, # if (parallel) 0 else 1,  # Progress bar doesn't work well with parallel
+    trace.it = if (interactive()) 1 else 0,
     parallel = parallel
   )
 
   # Add metadata
   target_type <- if (!is.null(rapm_data$target_type)) rapm_data$target_type else "xg"
-  n_player_total <- if (!is.null(rapm_data$n_players_total)) rapm_data$n_players_total else rapm_data$n_players
   cv_fit$panna_metadata <- list(
     type = "rapm",
     target_type = target_type,
     alpha = alpha,
     n_observations = length(y),
-    n_player_cols = n_player_total * 2,
+    n_player_cols = rapm_data$n_players * 2,
     n_covariates = length(rapm_data$covariate_names),
     lambda_min = cv_fit$lambda.min,
     lambda_1se = cv_fit$lambda.1se,
@@ -153,14 +148,6 @@ fit_rapm <- function(rapm_data, alpha = 0, nfolds = 10,
 #' @param lambda Which lambda to use ("min" or "1se")
 #'
 #' @return Data frame with player ratings
-#'
-#' @examples
-#' \dontrun{
-#' rapm_model <- fit_rapm(rapm_data)
-#' ratings <- extract_rapm_ratings(rapm_model, lambda = "min")
-#' head(ratings)
-#' }
-#'
 #' @export
 extract_rapm_ratings <- function(model, lambda = "min") {
   # Get lambda value
@@ -198,8 +185,7 @@ extract_rapm_ratings <- function(model, lambda = "min") {
     player_id = player_ids,
     rapm = as.numeric(rapm),
     offense = as.numeric(off_coefs),
-    defense = as.numeric(def_coefs),
-    stringsAsFactors = FALSE
+    defense = as.numeric(def_coefs)
   )
 
   # Join with player mapping
@@ -266,14 +252,6 @@ get_covariate_effects <- function(model, lambda = "min") {
 #' @param penalize_covariates Whether to penalize covariate coefficients
 #'
 #' @return Fitted model with prior adjustment metadata
-#'
-#' @examples
-#' \dontrun{
-#' offense_prior <- build_prior_vector(spm_data, "offense_spm", rapm_data$player_mapping)
-#' defense_prior <- build_prior_vector(spm_data, "defense_spm", rapm_data$player_mapping)
-#' xrapm_model <- fit_rapm_with_prior(rapm_data, offense_prior, defense_prior)
-#' }
-#'
 #' @export
 fit_rapm_with_prior <- function(rapm_data, offense_prior, defense_prior,
                                  alpha = 0, nfolds = 10,
@@ -336,8 +314,10 @@ fit_rapm_with_prior <- function(rapm_data, offense_prior, defense_prior,
                        length(y_adjusted), ncol(X)))
 
   # Penalty factor: don't penalize covariates if requested
+  # Covariates are always the last columns (cbind(X_players, X_covariates) in prepare_rapm_data)
   if (!penalize_covariates && length(covariate_names) > 0) {
-    penalty_factor <- ifelse(colnames(X) %in% covariate_names, 0, 1)
+    penalty_factor <- c(rep(1, n_cols - length(covariate_names)),
+                        rep(0, length(covariate_names)))
   } else {
     penalty_factor <- rep(1, n_cols)
   }
@@ -352,16 +332,15 @@ fit_rapm_with_prior <- function(rapm_data, offense_prior, defense_prior,
     nfolds = nfolds,
     type.measure = "mse",
     penalty.factor = penalty_factor,
-    trace.it = 1  # Show progress bar
+    trace.it = if (interactive()) 1 else 0
   )
 
   # Store metadata including prior information
-  n_player_total <- if (!is.null(rapm_data$n_players_total)) rapm_data$n_players_total else rapm_data$n_players
   cv_fit$panna_metadata <- list(
     type = "xrapm",
     alpha = alpha,
     n_observations = length(y_adjusted),
-    n_player_cols = n_player_total * 2,
+    n_player_cols = rapm_data$n_players * 2,
     n_covariates = length(covariate_names),
     lambda_min = cv_fit$lambda.min,
     lambda_1se = cv_fit$lambda.1se,
@@ -390,14 +369,6 @@ fit_rapm_with_prior <- function(rapm_data, offense_prior, defense_prior,
 #' @param lambda Which lambda to use ("min" or "1se")
 #'
 #' @return Data frame with player ratings including deviation from prior
-#'
-#' @examples
-#' \dontrun{
-#' xrapm_model <- fit_rapm_with_prior(rapm_data, offense_prior, defense_prior)
-#' ratings <- extract_xrapm_ratings(xrapm_model, lambda = "min")
-#' head(ratings)
-#' }
-#'
 #' @export
 extract_xrapm_ratings <- function(model, lambda = "min") {
   # Get lambda value
@@ -444,8 +415,7 @@ extract_xrapm_ratings <- function(model, lambda = "min") {
     off_deviation = as.numeric(off_gamma),
     def_deviation = as.numeric(def_gamma),
     off_prior = as.numeric(off_prior),
-    def_prior = as.numeric(def_prior),
-    stringsAsFactors = FALSE
+    def_prior = as.numeric(def_prior)
   )
 
   # Join with player mapping
@@ -483,8 +453,7 @@ extract_rapm_coefficients <- function(model, lambda = "min") {
     ratings <- data.frame(
       player_id = player_ids,
       rapm = as.numeric(player_coefs),
-      deviation_from_prior = as.numeric(model$panna_metadata$deviation_from_prior),
-      stringsAsFactors = FALSE
+      deviation_from_prior = as.numeric(model$panna_metadata$deviation_from_prior)
     )
 
     # Add prior values for reference
@@ -519,8 +488,7 @@ extract_rapm_coefficients <- function(model, lambda = "min") {
     # Create results data frame
     ratings <- data.frame(
       player_id = player_ids,
-      rapm = player_coefs,
-      stringsAsFactors = FALSE
+      rapm = player_coefs
     )
   }
 
@@ -578,74 +546,6 @@ extract_od_rapm_coefficients <- function(model, lambda = "min") {
   }
 
   ratings
-}
-
-
-#' Calculate RAPM stability via bootstrap
-#'
-#' Estimates confidence intervals for RAPM ratings using bootstrap.
-#'
-#' @param rapm_data List from prepare_rapm_data
-#' @param n_bootstrap Number of bootstrap samples
-#' @param alpha Elastic net parameter
-#'
-#' @return Data frame with rating estimates and confidence intervals
-#' @keywords internal
-calculate_rapm_stability <- function(rapm_data, n_bootstrap = 100, alpha = 0) {
-  X <- if (!is.null(rapm_data$X_full)) rapm_data$X_full else rapm_data$X
-  y <- rapm_data$y
-  valid_idx <- !is.na(y)
-  X <- X[valid_idx, , drop = FALSE]
-  y <- y[valid_idx]
-
-  n <- length(y)
-  player_ids <- colnames(X)
-  n_players <- length(player_ids)
-
-  # Store bootstrap estimates
-  boot_estimates <- matrix(NA, nrow = n_bootstrap, ncol = n_players)
-  colnames(boot_estimates) <- player_ids
-
-  progress_msg(paste("Running", n_bootstrap, "bootstrap samples..."))
-
-  for (b in seq_len(n_bootstrap)) {
-    if (b %% 20 == 0) {
-      progress_msg(paste("  Bootstrap sample", b, "of", n_bootstrap))
-    }
-
-    # Sample with replacement
-    idx <- sample(n, n, replace = TRUE)
-    X_boot <- X[idx, , drop = FALSE]
-    y_boot <- y[idx]
-
-    # Fit model
-    tryCatch({
-      fit <- glmnet::cv.glmnet(
-        x = X_boot,
-        y = y_boot,
-        alpha = alpha,
-        standardize = FALSE,
-        nfolds = 5  # Fewer folds for speed
-      )
-
-      coefs <- as.vector(stats::coef(fit, s = "lambda.min"))[-1]
-      boot_estimates[b, ] <- coefs
-    }, error = function(e) {
-      cli::cli_warn("Bootstrap sample {b} failed: {e$message}")
-    })
-  }
-
-  # Calculate summary statistics
-  results <- data.frame(
-    player_id = player_ids,
-    rapm_mean = colMeans(boot_estimates, na.rm = TRUE),
-    rapm_sd = apply(boot_estimates, 2, sd, na.rm = TRUE),
-    rapm_lower = apply(boot_estimates, 2, quantile, 0.025, na.rm = TRUE),
-    rapm_upper = apply(boot_estimates, 2, quantile, 0.975, na.rm = TRUE),
-    stringsAsFactors = FALSE
-  )
-
-  results
 }
 
 
