@@ -55,9 +55,11 @@ fold_ids <- sample(rep(seq_len(nfolds_oof), length.out = nrow(train_data)))
 oof_home <- numeric(nrow(train_data))
 oof_away <- numeric(nrow(train_data))
 
+# Match the params from fit_goals_xgb defaults so OOF predictions
+# represent the final model's behavior
 home_params <- list(objective = "count:poisson", eval_metric = "poisson-nloglik",
-                    max_depth = 4L, eta = 0.05, subsample = 0.8,
-                    colsample_bytree = 0.8, min_child_weight = 5)
+                    max_depth = 5L, eta = 0.05, subsample = 0.8,
+                    colsample_bytree = 0.8, min_child_weight = 10)
 away_params <- home_params
 
 for (fold in seq_len(nfolds_oof)) {
@@ -142,8 +144,10 @@ val_pred_class <- apply(val_probs, 1, which.max) - 1L
 val_accuracy <- mean(val_pred_class == y_val)
 message(sprintf("  Validation accuracy: %.1f%%", 100 * val_accuracy))
 
-# Brier score
-val_brier <- mean(rowSums((val_probs - model.matrix(~ factor(y_val, levels = 0:2) - 1))^2))
+# Brier score (manual one-hot to handle missing classes safely)
+val_onehot <- matrix(0, nrow = length(y_val), ncol = 3)
+for (i in seq_along(y_val)) val_onehot[i, y_val[i] + 1L] <- 1
+val_brier <- mean(rowSums((val_probs - val_onehot)^2))
 message(sprintf("  Validation Brier score: %.4f", val_brier))
 
 # Baseline: naive class proportions

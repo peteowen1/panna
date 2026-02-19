@@ -55,9 +55,19 @@ message(sprintf("  Elo range: %.0f to %.0f", min(elo_features$home_elo), max(elo
 
 message("  Computing rolling team features...")
 
-# Fill missing xG with league average goals as proxy
-played$home_xg[is.na(played$home_xg)] <- played$home_goals[is.na(played$home_xg)]
-played$away_xg[is.na(played$away_xg)] <- played$away_goals[is.na(played$away_xg)]
+# Fill missing xG with per-league average xG (less noisy than actual goals)
+for (lg in unique(played$league)) {
+  lg_idx <- played$league == lg
+  lg_home_mean <- mean(played$home_xg[lg_idx], na.rm = TRUE)
+  lg_away_mean <- mean(played$away_xg[lg_idx], na.rm = TRUE)
+  # If entire league has no xG, fall back to global mean
+  if (is.na(lg_home_mean)) lg_home_mean <- mean(played$home_xg, na.rm = TRUE)
+  if (is.na(lg_away_mean)) lg_away_mean <- mean(played$away_xg, na.rm = TRUE)
+  na_home <- lg_idx & is.na(played$home_xg)
+  na_away <- lg_idx & is.na(played$away_xg)
+  played$home_xg[na_home] <- lg_home_mean
+  played$away_xg[na_away] <- lg_away_mean
+}
 
 rolling_team <- compute_team_rolling_features(played, windows = ROLLING_WINDOWS)
 
