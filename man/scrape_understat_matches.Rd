@@ -32,3 +32,8 @@ List with counts of scraped, cached, and failed matches
 \description{
 Scrapes multiple matches with rate limiting and caching.
 }
+\examples{
+\dontrun{
+scrape_understat_matches(c("22001", "22002"), league = "ENG", season = "2024")
+}
+}

@@ -19,3 +19,11 @@ List of validation metrics
 \description{
 Calculates validation metrics for panna ratings.
 }
+\examples{
+\dontrun{
+validation <- validate_panna_ratings(panna_ratings, rapm_ratings, spm_ratings)
+validation$panna_rapm_cor
+validation$panna_spm_cor
+}
+
+}

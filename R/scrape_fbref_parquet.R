@@ -251,6 +251,11 @@ get_parquet_path <- function(table_type, league, season, create = FALSE) {
 #'
 #' @return Path to created parquet file, or NULL if no data
 #' @export
+#'
+#' @examples
+#' \dontrun{
+#' build_parquet("summary", "ENG", "2024-2025")
+#' }
 build_parquet <- function(table_type, league, season, verbose = TRUE) {
   .check_suggests("arrow", "Building parquet files requires arrow.")
   if (verbose) message(sprintf("  %s/%s:", league, season))
@@ -347,6 +352,15 @@ build_parquet <- function(table_type, league, season, verbose = TRUE) {
 #'
 #' @return Data frame with table_type, league, season, n_matches, size_mb columns
 #' @export
+#'
+#' @examples
+#' \dontrun{
+#' # Build all parquet files
+#' build_all_parquet()
+#'
+#' # Build only summary for England
+#' build_all_parquet(table_types = "summary", leagues = "ENG")
+#' }
 build_all_parquet <- function(table_types = NULL, leagues = NULL,
                               seasons = NULL, verbose = TRUE) {
   .check_suggests("arrow", "Building parquet files requires arrow.")
@@ -684,107 +698,6 @@ pb_upload_consolidated <- function(source_dir = NULL,
   }
 
   invisible(result_df)
-}
-
-
-# ============================================================================
-# Convenience Loaders
-# ============================================================================
-
-#' Load summary data from pannadata
-#'
-#' @param league League code (e.g., "ENG"). NULL for all leagues.
-#' @param season Season string (e.g., "2023-2024"). NULL for all seasons.
-#' @param source "remote" (default) downloads from GitHub releases using DuckDB,
-#'   "local" reads from local pannadata_dir().
-#' @return Data frame of player summary stats or NULL
-#' @examples
-#' \dontrun{
-#' # Load from GitHub releases (default, efficient with SQL filtering)
-#' load_summary("ENG", "2024-2025")
-#' load_summary("ENG")
-#' load_summary(season = "2024-2025")
-#' load_summary()
-#'
-#' # Load from local files
-#' load_summary("ENG", "2024-2025", source = "local")
-#' }
-#' @export
-load_summary <- function(league = NULL, season = NULL, source = c("remote", "local")) {
-  source <- match.arg(source)
-  load_table_data("summary", league, season, source)
-}
-
-#' Load events data from pannadata
-#'
-#' @param league League code (e.g., "ENG"). NULL for all leagues.
-#' @param season Season string (e.g., "2023-2024"). NULL for all seasons.
-#' @param source "remote" (default) or "local".
-#' @return Data frame of match events or NULL
-#' @export
-load_events <- function(league = NULL, season = NULL, source = c("remote", "local")) {
-  source <- match.arg(source)
-  load_table_data("events", league, season, source)
-}
-
-#' Load shooting data from pannadata
-#'
-#' @param league League code (e.g., "ENG"). NULL for all leagues.
-#' @param season Season string (e.g., "2023-2024"). NULL for all seasons.
-#' @param source "remote" (default) or "local".
-#' @return Data frame of shots or NULL
-#' @export
-load_shots <- function(league = NULL, season = NULL, source = c("remote", "local")) {
-  source <- match.arg(source)
-  load_table_data("shots", league, season, source)
-}
-
-#' Load metadata from pannadata
-#'
-#' @param league League code (e.g., "ENG"). NULL for all leagues.
-#' @param season Season string (e.g., "2023-2024"). NULL for all seasons.
-#' @param source "remote" (default) or "local".
-#' @return Data frame of match metadata or NULL
-#' @export
-load_metadata <- function(league = NULL, season = NULL, source = c("remote", "local")) {
-  source <- match.arg(source)
-  load_table_data("metadata", league, season, source)
-}
-
-#' Load passing data from pannadata
-#'
-#' @param league League code (e.g., "ENG"). NULL for all leagues.
-#' @param season Season string (e.g., "2023-2024"). NULL for all seasons.
-#' @param source "remote" (default) or "local".
-#' @return Data frame of passing stats or NULL
-#' @export
-load_passing <- function(league = NULL, season = NULL, source = c("remote", "local")) {
-  source <- match.arg(source)
-  load_table_data("passing", league, season, source)
-}
-
-#' Load defense data from pannadata
-#'
-#' @param league League code (e.g., "ENG"). NULL for all leagues.
-#' @param season Season string (e.g., "2023-2024"). NULL for all seasons.
-#' @param source "remote" (default) or "local".
-#' @return Data frame of defensive stats or NULL
-#' @export
-load_defense <- function(league = NULL, season = NULL, source = c("remote", "local")) {
-  source <- match.arg(source)
-  load_table_data("defense", league, season, source)
-}
-
-#' Load possession data from pannadata
-#'
-#' @param league League code (e.g., "ENG"). NULL for all leagues.
-#' @param season Season string (e.g., "2023-2024"). NULL for all seasons.
-#' @param source "remote" (default) or "local".
-#' @return Data frame of possession stats or NULL
-#' @export
-load_possession <- function(league = NULL, season = NULL, source = c("remote", "local")) {
-  source <- match.arg(source)
-  load_table_data("possession", league, season, source)
 }
 
 

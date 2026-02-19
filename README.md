@@ -22,7 +22,10 @@ Ratings are split into offensive and defensive components:
 ## Installation
 
 ```r
-# Install from GitHub
+# Install from CRAN
+install.packages("panna")
+
+# Or install the development version from GitHub
 devtools::install_github("peteowen1/panna")
 ```
 

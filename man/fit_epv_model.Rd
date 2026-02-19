@@ -29,7 +29,7 @@ fit_epv_model(
 
 \item{max_depth}{Maximum tree depth (default 6)}
 
-\item{eta}{Learning rate (default 0.05)}
+\item{eta}{Learning rate (default 0.1)}
 
 \item{subsample}{Row subsampling (default 0.8)}
 
@@ -51,4 +51,12 @@ Supports two methods:
 \item "goal": Multinomial classification (who scores next: team/opponent/nobody)
 \item "xg": Regression on signed xG of next shot (+team, -opponent, 0 if none)
 }
+}
+\examples{
+\dontrun{
+features <- create_epv_features(spadl_actions)
+labels <- create_next_goal_labels(spadl_actions)
+epv_model <- fit_epv_model(features, labels, method = "goal")
+}
+
 }

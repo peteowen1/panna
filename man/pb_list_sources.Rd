@@ -15,3 +15,8 @@ Data frame with release information by source
 \description{
 Shows available releases for different data sources.
 }
+\examples{
+\dontrun{
+pb_list_sources()
+}
+}

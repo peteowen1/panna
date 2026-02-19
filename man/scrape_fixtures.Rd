@@ -19,3 +19,9 @@ Data frame with match_url, home_team, away_team, date columns
 \description{
 Fetches a league's fixtures page and extracts all match URLs.
 }
+\examples{
+\dontrun{
+fixtures <- scrape_fixtures("ENG", "2024-2025")
+head(fixtures)
+}
+}

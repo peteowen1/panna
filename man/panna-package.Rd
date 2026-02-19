@@ -8,7 +8,7 @@
 \description{
 \if{html}{\figure{logo.png}{options: style='float: right' alt='logo' width='120'}}
 
-Implements the panna player rating methodology for football (soccer) players. Combines Regularized Adjusted Plus-Minus (RAPM) with Statistical Plus-Minus (SPM) as a Bayesian prior to produce stable player impact ratings. Uses cached FBref data from pannadata repository, splint-based analysis (time segments between substitutions/goals), and offensive/defensive rating separation.
+Implements player ratings for football (soccer) using Regularized Adjusted Plus-Minus ('RAPM') combined with Statistical Plus-Minus ('SPM') as a Bayesian prior. Analyses time segments with constant lineups ('splints') to estimate each player's contribution to expected goals ('xG') differential. Provides offensive and defensive rating decomposition across multiple data sources including 'FBref', 'Opta', and 'Understat'.
 }
 \seealso{
 Useful links:
@@ -19,7 +19,7 @@ Useful links:
 
 }
 \author{
-\strong{Maintainer}: Pete Owen \email{pete.owen1@hotmail.co.uk}
+\strong{Maintainer}: Pete Owen \email{pete.owen1@hotmail.co.uk} [copyright holder]
 
 }
 \keyword{internal}

@@ -10,7 +10,7 @@ player_opta_shots(
   season = NULL,
   min_minutes = 450,
   by_team = FALSE,
-  source = c("remote", "local")
+  source = c("local", "remote")
 )
 }
 \arguments{
@@ -32,4 +32,13 @@ Data frame with shooting statistics.
 \description{
 Aggregate shooting statistics from Opta data. Includes shot volume,
 shot locations, finishing by body part, and big chances.
+}
+\examples{
+\dontrun{
+# All EPL shooters
+player_opta_shots(league = "ENG", season = "2024-2025")
+
+# Specific player
+player_opta_shots("M. Salah", league = "ENG", season = "2024-2025")
+}
 }

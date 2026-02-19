@@ -20,3 +20,8 @@ Invisible NULL
 Convenience function that uploads local data to GitHub Releases.
 This replaces the existing data in the release.
 }
+\examples{
+\dontrun{
+pb_sync_data()
+}
+}

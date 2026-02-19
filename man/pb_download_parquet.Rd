@@ -26,3 +26,9 @@ Invisible path to destination directory
 \description{
 Downloads the parquet zip file from a GitHub Release and extracts it.
 }
+\examples{
+\dontrun{
+pb_download_parquet()
+pb_download_parquet(dest = "~/football-data")
+}
+}

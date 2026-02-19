@@ -17,3 +17,10 @@ Vector of xPass predictions (probabilities)
 \description{
 Applies trained xPass model to predict completion probability for passes.
 }
+\examples{
+\dontrun{
+xpass_model <- load_xpass_model()
+pass_features <- prepare_passes_for_xpass(spadl_actions)
+xpass_pred <- predict_xpass(xpass_model, pass_features)
+}
+}

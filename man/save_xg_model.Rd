@@ -17,3 +17,10 @@ Invisibly returns the path
 \description{
 Saves trained xG model to RDS file.
 }
+\examples{
+\dontrun{
+xg_model <- fit_xg_model(shot_features)
+save_xg_model(xg_model)
+save_xg_model(xg_model, path = "models/my_xg_model.rds")
+}
+}

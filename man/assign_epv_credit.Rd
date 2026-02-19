@@ -26,3 +26,10 @@ splits the value between the player who lost the ball and who gained it.
 For merged duels (Aerials, Take On vs Tackle), assigns zero-sum credit
 where winner gain = loser loss.
 }
+\examples{
+\dontrun{
+xpass_model <- load_xpass_model()
+spadl_credited <- assign_epv_credit(spadl_with_epv, xpass_model)
+}
+
+}

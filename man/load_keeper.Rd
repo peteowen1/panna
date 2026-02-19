@@ -19,3 +19,12 @@ Data frame of goalkeeper statistics.
 \description{
 Loads goalkeeper statistics from pannadata.
 }
+\examples{
+\dontrun{
+# Load all goalkeeper data
+all_keepers <- load_keeper()
+
+# Load Spain 2024-2025 keeper stats
+esp_keepers <- load_keeper(league = "ESP", season = "2024-2025")
+}
+}

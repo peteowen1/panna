@@ -13,6 +13,12 @@
 #'
 #' @return List with separated offensive and defensive ratings
 #' @export
+#' @examples
+#' \dontrun{
+#' rapm_data <- create_rapm_design_matrix(splints, separate_od = TRUE)
+#' od_result <- calculate_od_panna(rapm_data, spm_ratings, lambda_prior = 1)
+#' head(od_result$ratings[, c("player_name", "o_panna", "d_panna", "panna")])
+#' }
 calculate_od_panna <- function(rapm_data, spm_ratings, lambda_prior = 1) {
   if (is.null(rapm_data$X_od)) {
     cli::cli_abort(c(
@@ -117,6 +123,12 @@ calculate_od_panna <- function(rapm_data, spm_ratings, lambda_prior = 1) {
 #'
 #' @return Data frame with estimated O-panna and D-panna
 #' @export
+#' @examples
+#' \dontrun{
+#' features <- create_player_feature_matrix(processed_data)
+#' od_ratings <- split_od_contributions(panna_ratings, features)
+#' head(od_ratings[, c("player_name", "panna", "o_panna", "d_panna")])
+#' }
 split_od_contributions <- function(panna_ratings, player_features) {
   # Calculate offensive/defensive feature indices
   off_cols <- names(player_features)[grepl("(xG|Sh|Ast|SCA|GCA|PrgP|PrgC)", names(player_features))]
@@ -169,6 +181,11 @@ split_od_contributions <- function(panna_ratings, player_features) {
 #'
 #' @return Character vector of player types
 #' @export
+#' @examples
+#' \dontrun{
+#' categorize_player_profile(0.8, 0.2)
+#' categorize_player_profile(c(0.6, 0.3, 0.5), c(0.4, 0.7, 0.5))
+#' }
 categorize_player_profile <- function(o_rating, d_rating) {
   total <- o_rating + d_rating
   o_pct <- safe_divide(o_rating, total + 0.001)  # Avoid division by zero
@@ -192,6 +209,11 @@ categorize_player_profile <- function(o_rating, d_rating) {
 #'
 #' @return Data frame of top offensive players
 #' @export
+#' @examples
+#' \dontrun{
+#' od_result <- calculate_od_panna(rapm_data, spm_ratings)
+#' top_attackers <- get_top_offensive(od_result$ratings, n = 20)
+#' }
 get_top_offensive <- function(ratings, n = 10) {
   if (!"o_panna" %in% names(ratings)) {
     cli::cli_abort(c(
@@ -213,6 +235,11 @@ get_top_offensive <- function(ratings, n = 10) {
 #'
 #' @return Data frame of top defensive players
 #' @export
+#' @examples
+#' \dontrun{
+#' od_result <- calculate_od_panna(rapm_data, spm_ratings)
+#' top_defenders <- get_top_defensive(od_result$ratings, n = 20)
+#' }
 get_top_defensive <- function(ratings, n = 10) {
   if (!"d_panna" %in% names(ratings)) {
     cli::cli_abort(c(
@@ -258,6 +285,11 @@ prepare_od_scatter_data <- function(ratings) {
 #'
 #' @return ggplot object
 #' @export
+#' @examples
+#' \dontrun{
+#' od_result <- calculate_od_panna(rapm_data, spm_ratings)
+#' visualize_od_scatter(od_result$ratings, highlight_top = 15)
+#' }
 visualize_od_scatter <- function(ratings, highlight_top = 10) {
   if (!requireNamespace("ggplot2", quietly = TRUE)) {
     cli::cli_abort("Package {.pkg ggplot2} is required for visualization.")

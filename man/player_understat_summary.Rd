@@ -32,3 +32,12 @@ Data frame with player statistics including xG, xA, xGChain, xGBuildup.
 \description{
 Aggregate statistics from Understat data. Includes Understat's xG model.
 }
+\examples{
+\dontrun{
+# All EPL players from Understat
+player_understat_summary(league = "ENG", season = "2024")
+
+# Specific player
+player_understat_summary("Salah", league = "ENG", season = "2024")
+}
+}

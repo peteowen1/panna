@@ -26,3 +26,10 @@ A chain ends when:
 \item Large time gap (>30 seconds)
 }
 }
+\examples{
+\dontrun{
+spadl <- convert_opta_to_spadl(opta_events)
+chains <- create_possession_chains(spadl)
+head(chains[, c("match_id", "chain_id", "action_type", "team_id")])
+}
+}

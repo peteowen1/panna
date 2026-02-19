@@ -29,3 +29,10 @@ List with panna model and all intermediate results
 \description{
 Complete pipeline from splint data to panna ratings.
 }
+\examples{
+\dontrun{
+panna_model <- fit_panna_model(splint_data, player_features, min_minutes = 180)
+head(get_panna_ratings(panna_model))
+}
+
+}

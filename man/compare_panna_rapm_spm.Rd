@@ -19,3 +19,10 @@ Data frame comparing all rating types
 \description{
 Analyzes differences between the three rating types.
 }
+\examples{
+\dontrun{
+comparison <- compare_panna_rapm_spm(panna_ratings, rapm_ratings, spm_ratings)
+head(comparison)
+}
+
+}

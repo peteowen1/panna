@@ -20,6 +20,13 @@ SPADL with credit columns
 Legacy function for backward compatibility.
 Use \code{\link[=assign_epv_credit]{assign_epv_credit()}} instead for proper EPV credit assignment.
 }
+\examples{
+\dontrun{
+# Deprecated: use assign_epv_credit() instead
+result <- assign_pass_credit(spadl_with_epv, xpass_model)
+}
+
+}
 \seealso{
 \code{\link[=assign_epv_credit]{assign_epv_credit()}}
 }

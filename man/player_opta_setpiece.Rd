@@ -10,7 +10,7 @@ player_opta_setpiece(
   season = NULL,
   min_minutes = 450,
   by_team = FALSE,
-  source = c("remote", "local")
+  source = c("local", "remote")
 )
 }
 \arguments{
@@ -32,4 +32,13 @@ Data frame with set piece statistics.
 \description{
 Aggregate set piece statistics from Opta data. Includes corners,
 free kicks, penalties, and set piece involvement.
+}
+\examples{
+\dontrun{
+# All EPL set piece takers
+player_opta_setpiece(league = "ENG", season = "2024-2025")
+
+# Specific player
+player_opta_setpiece("T. Alexander-Arnold", league = "ENG", season = "2024-2025")
+}
 }

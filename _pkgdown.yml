@@ -270,7 +270,6 @@ reference:
   - generate_panna_report
   - get_covariate_effects
   - aggregate_rapm_by_team
-  - filter_rapm_by_season
   - report_season_ranges
 
 - title: Competition Metadata

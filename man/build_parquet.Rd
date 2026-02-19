@@ -23,3 +23,8 @@ Reads all RDS files for a table_type/league/season and combines them
 into a single parquet file. If a parquet file already exists, new RDS
 data is merged with existing parquet data (for incremental updates).
 }
+\examples{
+\dontrun{
+build_parquet("summary", "ENG", "2024-2025")
+}
+}

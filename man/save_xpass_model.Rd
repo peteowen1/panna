@@ -17,3 +17,10 @@ Invisibly returns the path
 \description{
 Saves trained xPass model to RDS file.
 }
+\examples{
+\dontrun{
+xpass_model <- fit_xpass_model(pass_features)
+save_xpass_model(xpass_model)
+save_xpass_model(xpass_model, path = "models/my_xpass_model.rds")
+}
+}

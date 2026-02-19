@@ -229,6 +229,11 @@ pb_list_data <- function(repo = "peteowen1/pannadata", tag = "latest") {
 #'
 #' @return Invisible NULL
 #' @export
+#'
+#' @examples
+#' \dontrun{
+#' pb_sync_data()
+#' }
 pb_sync_data <- function(repo = "peteowen1/pannadata",
                           tag = "latest",
                           source = NULL) {
@@ -246,6 +251,13 @@ pb_sync_data <- function(repo = "peteowen1/pannadata",
 #'
 #' @return List with sync status information
 #' @export
+#'
+#' @examples
+#' \dontrun{
+#' status <- pb_status()
+#' status$remote$exists
+#' status$local$n_files
+#' }
 pb_status <- function(repo = "peteowen1/pannadata",
                        tag = "latest",
                        source = NULL) {
@@ -308,6 +320,11 @@ pb_status <- function(repo = "peteowen1/pannadata",
 #' @return Invisible data frame with uploaded file info
 #' @export
 #' @importFrom utils zip
+#'
+#' @examples
+#' \dontrun{
+#' pb_upload_parquet()
+#' }
 pb_upload_parquet <- function(repo = "peteowen1/pannadata",
                               tag = "latest",
                               source = NULL,
@@ -425,6 +442,12 @@ pb_upload_parquet <- function(repo = "peteowen1/pannadata",
 #' @return Invisible path to destination directory
 #' @export
 #' @importFrom utils unzip
+#'
+#' @examples
+#' \dontrun{
+#' pb_download_parquet()
+#' pb_download_parquet(dest = "~/football-data")
+#' }
 pb_download_parquet <- function(repo = "peteowen1/pannadata",
                                 tag = "latest",
                                 dest = NULL,
@@ -793,6 +816,11 @@ pb_download_source <- function(source_type = c("fbref", "understat", "opta", "al
 #'
 #' @return Data frame with release information by source
 #' @export
+#'
+#' @examples
+#' \dontrun{
+#' pb_list_sources()
+#' }
 pb_list_sources <- function(repo = "peteowen1/pannadata") {
   if (!requireNamespace("piggyback", quietly = TRUE)) {
     cli::cli_abort("Package 'piggyback' is required. Install with: install.packages('piggyback')")

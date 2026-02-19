@@ -28,3 +28,11 @@ Assesses how well SPM predicts RAPM. Supports weighted metrics to match
 weighted model fitting - we care more about accuracy for high-minute players
 whose RAPM estimates are more reliable.
 }
+\examples{
+\dontrun{
+validation <- validate_spm_prediction(spm_ratings, rapm_ratings)
+validation$r_squared
+validation$correlation
+}
+
+}
