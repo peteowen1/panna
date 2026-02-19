@@ -874,14 +874,16 @@ build_where_clause <- function(filters, prefix = TRUE) {
   conditions <- vapply(names(filters), function(col_name) {
     value <- filters[[col_name]]
     if (is.character(value)) {
-      # Quote strings
-      sprintf("%s = '%s'", col_name, value)
+      # Quote strings (escape single quotes to prevent SQL injection)
+      escaped <- gsub("'", "''", value)
+      sprintf("%s = '%s'", col_name, escaped)
     } else if (is.numeric(value)) {
       # Don't quote numbers
       sprintf("%s = %s", col_name, value)
     } else {
-      # Convert to string and quote
-      sprintf("%s = '%s'", col_name, as.character(value))
+      # Convert to string and quote (escape single quotes)
+      escaped <- gsub("'", "''", as.character(value))
+      sprintf("%s = '%s'", col_name, escaped)
     }
   }, character(1))
 

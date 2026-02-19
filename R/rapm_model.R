@@ -90,6 +90,7 @@ fit_rapm <- function(rapm_data, alpha = 0, nfolds = 10,
   }
 
   # Penalty factor: don't penalize covariates if requested
+  # Covariates are always the last columns (cbind(X_players, X_covariates) in prepare_rapm_data)
   if (!penalize_covariates && length(rapm_data$covariate_names) > 0) {
     n_cols <- ncol(X)
     n_cov <- length(rapm_data$covariate_names)
@@ -313,6 +314,7 @@ fit_rapm_with_prior <- function(rapm_data, offense_prior, defense_prior,
                        length(y_adjusted), ncol(X)))
 
   # Penalty factor: don't penalize covariates if requested
+  # Covariates are always the last columns (cbind(X_players, X_covariates) in prepare_rapm_data)
   if (!penalize_covariates && length(covariate_names) > 0) {
     penalty_factor <- c(rep(1, n_cols - length(covariate_names)),
                         rep(0, length(covariate_names)))
@@ -533,7 +535,7 @@ extract_od_rapm_coefficients <- function(model, lambda = "min") {
   # Combine
   ratings <- data.table::as.data.table(def_ratings)[data.table::as.data.table(off_ratings), on = "player_id"]
   data.table::setDF(ratings)
-  ratings$rapm <- ratings$o_rapm + ratings$d_rapm
+  ratings$rapm <- ratings$o_rapm - ratings$d_rapm
   ratings <- ratings[order(-ratings$rapm), ]
 
   # Join with player mapping if available
