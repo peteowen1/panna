@@ -923,7 +923,8 @@ pb_download_opta <- function(repo = "peteowen1/pannadata",
     "opta_shot_events.parquet",
     "opta_match_events.parquet",
     "opta_events.parquet",
-    "opta_lineups.parquet"
+    "opta_lineups.parquet",
+    "opta_fixtures.parquet"
   )
 
   for (f in files_to_download) {

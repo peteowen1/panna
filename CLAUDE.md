@@ -60,6 +60,7 @@ The `debug/` folder is gitignored.
 - Analysis scripts in `data-raw/` - organized by pipeline:
   - `data-raw/player-ratings/` - FBref RAPM/SPM/Panna rating pipeline (01-08 scripts)
   - `data-raw/player-ratings-opta/` - Opta RAPM/SPM/Panna rating pipeline (01-08 scripts)
+  - `data-raw/match-predictions-opta/` - Match outcome prediction pipeline (01-08 scripts)
   - `data-raw/epv/` - EPV model training, player valuation, and xMetrics calculation
   - `data-raw/scraping/` - Data collection scripts
   - `data-raw/analysis/` - Comparison and analysis scripts
@@ -160,6 +161,27 @@ Opta player_stats + lineups + match_events + xmetrics
 08_panna_ratings.R → panna_ratings_opta.csv
 ```
 
+**Match Prediction Pipeline** (`data-raw/match-predictions-opta/`):
+```
+cache-opta/07_seasonal_ratings.rds (prerequisite from Opta RAPM pipeline)
+       ↓
+01_build_fixture_results.R → historical match results with scores
+       ↓
+02_player_ratings_to_team.R → team-level rating aggregations from lineups
+       ↓
+03_team_rolling_features.R → rolling form + Elo ratings
+       ↓
+04_build_match_dataset.R → combined feature matrix
+       ↓
+05_fit_goals_model.R → XGBoost Poisson models (home/away goals)
+       ↓
+06_fit_outcome_model.R → XGBoost multinomial model (W/D/L)
+       ↓
+07_predict_fixtures.R → predictions for upcoming matches
+       ↓
+08_evaluate_model.R → calibration and logloss evaluation
+```
+
 ### Key Concepts
 
 **Splints**: Time segments where the lineup is constant. Boundaries created at goals, substitutions, red cards, and halftime. Each splint has ~22 players (11 per team) and calculates npxGD (non-penalty xG differential).
@@ -211,6 +233,7 @@ Opta player_stats + lineups + match_events + xmetrics
 | `epv_features.R` | EPV game state features |
 | `epv_model.R` | Main EPV training/prediction/aggregation |
 | `spm_opta.R` | Opta-specific SPM model (aggregate_opta_stats, fit_spm_opta) |
+| `match_prediction.R` | Match outcome prediction (Elo, rolling features, XGBoost Poisson/multinomial) |
 | `constants.R` | Shared constants (league codes, season formats) |
 | `fbref_competitions.R` | FBref league/competition definitions |
 | `understat_competitions.R` | Understat league/competition definitions |
@@ -296,6 +319,15 @@ Opta player_stats + lineups + match_events + xmetrics
 **Model Storage:**
 - `save_epv_models()` / `load_epv_models()` - Local model persistence
 - `pb_download_epv_models()` - Download pre-trained models from GitHub releases
+
+### Match Prediction
+- `aggregate_lineup_ratings()` - Convert starting XI player ratings to team-level features
+- `init_team_elos()`, `update_elo()`, `compute_match_elos()` - Elo rating system
+- `compute_team_rolling_features()` - Rolling form stats (windows of 5/10/20 matches)
+- `fit_goals_xgb()` - XGBoost Poisson model for home/away goal counts
+- `fit_outcome_xgb()` - XGBoost multinomial model for W/D/L probabilities
+- `predict_match()` - Generate predictions for a fixture
+- `compute_multiclass_logloss()`, `calibration_table()` - Model evaluation
 
 ## Data Distribution (GitHub Releases)
 
