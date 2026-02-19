@@ -79,9 +79,8 @@ home_model <- fit_goals_xgb(
 # Evaluate on validation set
 home_pred_val <- stats::predict(home_model$model,
                                  xgboost::xgb.DMatrix(data = X_val))
-home_mae <- mean(abs(val_data$home_goals - home_pred_val))
 home_rmse <- sqrt(mean((val_data$home_goals - home_pred_val)^2))
-message(sprintf("  Val MAE: %.3f, RMSE: %.3f", home_mae, home_rmse))
+message(sprintf("  Val RMSE: %.3f", home_rmse))
 
 # 8. Fit Away Goals Model ----
 
@@ -99,19 +98,18 @@ away_model <- fit_goals_xgb(
 # Evaluate on validation set
 away_pred_val <- stats::predict(away_model$model,
                                  xgboost::xgb.DMatrix(data = X_val))
-away_mae <- mean(abs(val_data$away_goals - away_pred_val))
 away_rmse <- sqrt(mean((val_data$away_goals - away_pred_val)^2))
-message(sprintf("  Val MAE: %.3f, RMSE: %.3f", away_mae, away_rmse))
+message(sprintf("  Val RMSE: %.3f", away_rmse))
 
 # 9. Baseline Comparison ----
 
 message("\n--- Baseline (League Average) ---")
 avg_home <- mean(train_data$home_goals)
 avg_away <- mean(train_data$away_goals)
-base_home_mae <- mean(abs(val_data$home_goals - avg_home))
-base_away_mae <- mean(abs(val_data$away_goals - avg_away))
+base_home_rmse <- sqrt(mean((val_data$home_goals - avg_home)^2))
+base_away_rmse <- sqrt(mean((val_data$away_goals - avg_away)^2))
 message(sprintf("  Avg home goals: %.2f, Avg away goals: %.2f", avg_home, avg_away))
-message(sprintf("  Baseline Home MAE: %.3f, Away MAE: %.3f", base_home_mae, base_away_mae))
+message(sprintf("  Baseline Home RMSE: %.3f, Away RMSE: %.3f", base_home_rmse, base_away_rmse))
 
 # 10. Save ----
 
@@ -120,10 +118,10 @@ goals_models <- list(
   away = away_model,
   feature_cols = feature_cols,
   val_metrics = list(
-    home_mae = home_mae, home_rmse = home_rmse,
-    away_mae = away_mae, away_rmse = away_rmse,
-    baseline_home_mae = base_home_mae,
-    baseline_away_mae = base_away_mae
+    home_rmse = home_rmse,
+    away_rmse = away_rmse,
+    baseline_home_rmse = base_home_rmse,
+    baseline_away_rmse = base_away_rmse
   )
 )
 
@@ -134,10 +132,10 @@ saveRDS(goals_models, output_path)
 message("\n========================================")
 message("Goals models complete!")
 message("========================================")
-message(sprintf("Home model: %d rounds, Val MAE=%.3f (baseline %.3f)",
-                home_model$best_nrounds, home_mae, base_home_mae))
-message(sprintf("Away model: %d rounds, Val MAE=%.3f (baseline %.3f)",
-                away_model$best_nrounds, away_mae, base_away_mae))
+message(sprintf("Home model: %d rounds, Val RMSE=%.3f (baseline %.3f)",
+                home_model$best_nrounds, home_rmse, base_home_rmse))
+message(sprintf("Away model: %d rounds, Val RMSE=%.3f (baseline %.3f)",
+                away_model$best_nrounds, away_rmse, base_away_rmse))
 message(sprintf("\nTop 5 features (home goals):"))
 if (nrow(home_model$importance) > 0) {
   top5 <- head(home_model$importance, 5)

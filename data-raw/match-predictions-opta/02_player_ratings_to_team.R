@@ -40,36 +40,37 @@ if (!file.exists(ratings_path)) {
 }
 seasonal_data <- readRDS(ratings_path)
 
-# Extract the ratings table
-# The seasonal ratings RDS contains a list with combined ratings
+# Extract and combine rating tables
+# The RDS contains separate tables: seasonal_xrapm, seasonal_spm, seasonal_rapm
 if (is.data.frame(seasonal_data)) {
   ratings <- seasonal_data
+} else if ("seasonal_xrapm" %in% names(seasonal_data)) {
+  # Standard structure from Opta RAPM pipeline
+  xrapm <- seasonal_data$seasonal_xrapm[, c("player_name", "season_end_year",
+                                             "xrapm", "offense", "defense",
+                                             "total_minutes")]
+  names(xrapm)[names(xrapm) == "xrapm"] <- "panna"
+
+  spm <- seasonal_data$seasonal_spm[, c("player_name", "season_end_year", "spm")]
+  spm <- spm[!duplicated(spm[, c("player_name", "season_end_year")]), ]
+
+  ratings <- merge(xrapm, spm,
+                   by = c("player_name", "season_end_year"),
+                   all.x = TRUE)
+  ratings$spm[is.na(ratings$spm)] <- 0
 } else if ("combined" %in% names(seasonal_data)) {
   ratings <- seasonal_data$combined
-} else if ("ratings" %in% names(seasonal_data)) {
-  ratings <- seasonal_data$ratings
 } else {
-  # Try first data frame element
   ratings <- seasonal_data[[1]]
 }
 
 message(sprintf("  Ratings: %d player-seasons", nrow(ratings)))
 
-# Ensure required columns exist in ratings
+# Validate required columns
 required_rating_cols <- c("player_name", "season_end_year", "panna", "offense", "defense", "spm")
 missing <- setdiff(required_rating_cols, names(ratings))
 if (length(missing) > 0) {
-  # Try to find alternative column names
-  if ("o_panna" %in% names(ratings) && !"offense" %in% names(ratings)) {
-    ratings$offense <- ratings$o_panna
-  }
-  if ("d_panna" %in% names(ratings) && !"defense" %in% names(ratings)) {
-    ratings$defense <- ratings$d_panna
-  }
-  missing <- setdiff(required_rating_cols, names(ratings))
-  if (length(missing) > 0) {
-    stop("Missing required columns in ratings: ", paste(missing, collapse = ", "))
-  }
+  stop("Missing required columns in ratings: ", paste(missing, collapse = ", "))
 }
 
 # 5. Load Lineups ----

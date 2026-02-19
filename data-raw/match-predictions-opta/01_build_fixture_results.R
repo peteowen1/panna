@@ -56,7 +56,10 @@ if (use_rapm_cache) {
   message("Loading results from RAPM pipeline cache...")
   raw_data <- readRDS(rapm_cache)
   results <- raw_data$results
-  message(sprintf("  %d matches from RAPM cache", nrow(results)))
+  # Filter to requested leagues
+  results <- results[results$league %in% leagues, ]
+  message(sprintf("  %d matches from RAPM cache (filtered to %s)",
+                  nrow(results), paste(leagues, collapse = ", ")))
 } else {
   message("No RAPM cache found - loading from Opta data directly...")
   results <- NULL

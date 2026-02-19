@@ -49,27 +49,25 @@ d_test <- xgboost::xgb.DMatrix(data = X_test)
 pred_home <- stats::predict(goals_models$home$model, d_test)
 pred_away <- stats::predict(goals_models$away$model, d_test)
 
-# MAE and RMSE
-home_mae <- mean(abs(test_data$home_goals - pred_home))
+# RMSE
 home_rmse <- sqrt(mean((test_data$home_goals - pred_home)^2))
-away_mae <- mean(abs(test_data$away_goals - pred_away))
 away_rmse <- sqrt(mean((test_data$away_goals - pred_away)^2))
 
-message(sprintf("  Home goals - MAE: %.3f, RMSE: %.3f", home_mae, home_rmse))
-message(sprintf("  Away goals - MAE: %.3f, RMSE: %.3f", away_mae, away_rmse))
+message(sprintf("  Home goals RMSE: %.3f", home_rmse))
+message(sprintf("  Away goals RMSE: %.3f", away_rmse))
 
 # Baseline: training set average
 train_data <- match_dataset[match_dataset$split == "train" &
                             !is.na(match_dataset$home_goals), ]
 avg_home <- mean(train_data$home_goals)
 avg_away <- mean(train_data$away_goals)
-base_home_mae <- mean(abs(test_data$home_goals - avg_home))
-base_away_mae <- mean(abs(test_data$away_goals - avg_away))
+base_home_rmse <- sqrt(mean((test_data$home_goals - avg_home)^2))
+base_away_rmse <- sqrt(mean((test_data$away_goals - avg_away)^2))
 
-message(sprintf("  Baseline Home MAE: %.3f, Away MAE: %.3f", base_home_mae, base_away_mae))
+message(sprintf("  Baseline Home RMSE: %.3f, Away RMSE: %.3f", base_home_rmse, base_away_rmse))
 message(sprintf("  Improvement: Home %.1f%%, Away %.1f%%",
-                100 * (1 - home_mae / base_home_mae),
-                100 * (1 - away_mae / base_away_mae)))
+                100 * (1 - home_rmse / base_home_rmse),
+                100 * (1 - away_rmse / base_away_rmse)))
 
 # 6. Outcome Model Evaluation ----
 
@@ -86,7 +84,7 @@ X_test_aug[is.na(X_test_aug)] <- 0
 
 d_test_aug <- xgboost::xgb.DMatrix(data = X_test_aug)
 test_probs_raw <- stats::predict(outcome_result$model$model, d_test_aug)
-test_probs <- matrix(test_probs_raw, ncol = 3, byrow = TRUE)
+test_probs <- matrix(test_probs_raw, ncol = 3, byrow = FALSE)
 
 y_test <- test_data$outcome_label
 
@@ -174,9 +172,8 @@ for (lg in sort(unique(test_data$league))) {
 
 evaluation <- list(
   goals = list(
-    home_mae = home_mae, home_rmse = home_rmse,
-    away_mae = away_mae, away_rmse = away_rmse,
-    baseline_home_mae = base_home_mae, baseline_away_mae = base_away_mae
+    home_rmse = home_rmse, away_rmse = away_rmse,
+    baseline_home_rmse = base_home_rmse, baseline_away_rmse = base_away_rmse
   ),
   outcome = list(
     test_logloss = test_logloss, test_accuracy = test_accuracy,
@@ -198,8 +195,8 @@ message("\n========================================")
 message("Evaluation complete!")
 message("========================================")
 message(sprintf("Test set: %d matches", nrow(test_data)))
-message(sprintf("Goals: Home MAE=%.3f (baseline %.3f), Away MAE=%.3f (baseline %.3f)",
-                home_mae, base_home_mae, away_mae, base_away_mae))
+message(sprintf("Goals: Home RMSE=%.3f (baseline %.3f), Away RMSE=%.3f (baseline %.3f)",
+                home_rmse, base_home_rmse, away_rmse, base_away_rmse))
 message(sprintf("Outcome: LogLoss=%.4f (naive %.4f, Elo %.4f)",
                 test_logloss, naive_logloss, elo_logloss))
 message(sprintf("Accuracy: %.1f%% (baseline %.1f%%)",

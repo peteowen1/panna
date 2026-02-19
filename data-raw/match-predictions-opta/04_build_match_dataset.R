@@ -59,10 +59,15 @@ message("  Adding structural features...")
 # Month of match
 dataset$match_month <- as.integer(format(as.Date(dataset$match_date), "%m"))
 
-# League dummies
-league_dummies <- model.matrix(~ league - 1, data = dataset)
-colnames(league_dummies) <- gsub("league", "league_", colnames(league_dummies))
-dataset <- cbind(dataset, league_dummies)
+# League dummies (only if multiple leagues)
+if (length(unique(dataset$league)) >= 2) {
+  league_dummies <- model.matrix(~ league - 1, data = dataset)
+  colnames(league_dummies) <- gsub("league", "league_", colnames(league_dummies))
+  dataset <- cbind(dataset, league_dummies)
+} else {
+  # Single league - add a constant column
+  dataset[[paste0("league_", unique(dataset$league))]] <- 1L
+}
 
 # 7. Fill Early-Season NAs ----
 

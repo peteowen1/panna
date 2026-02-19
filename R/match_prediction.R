@@ -29,6 +29,10 @@ aggregate_lineup_ratings <- function(lineups, ratings, season_end_year,
   dt_lineups <- data.table::as.data.table(lineups)
   dt_ratings <- data.table::as.data.table(ratings)
 
+  # Local copies to avoid data.table .. scoping issues
+  sey_curr <- season_end_year
+  sey_prev <- season_end_year - 1L
+
   # Filter to starters only
   starters <- dt_lineups[is_starter == TRUE]
 
@@ -36,13 +40,13 @@ aggregate_lineup_ratings <- function(lineups, ratings, season_end_year,
   starters[, clean_name := clean_player_name(player_name)]
 
   # Current season ratings
-  curr <- dt_ratings[season_end_year == ..season_end_year,
+  curr <- dt_ratings[season_end_year == sey_curr,
                      .(clean_name = clean_player_name(player_name),
                        panna, offense, defense, spm)]
   curr <- curr[!duplicated(clean_name)]
 
   # Previous season ratings (fallback with decay)
-  prev <- dt_ratings[season_end_year == (..season_end_year - 1L),
+  prev <- dt_ratings[season_end_year == sey_prev,
                      .(clean_name = clean_player_name(player_name),
                        panna_prev = panna * prev_season_decay,
                        offense_prev = offense * prev_season_decay,
@@ -534,7 +538,7 @@ predict_match <- function(goals_home_model, goals_away_model, outcome_model,
   # Predict outcome probabilities
   d_outcome <- xgboost::xgb.DMatrix(data = X_full)
   probs <- stats::predict(outcome_model$model, d_outcome)
-  prob_matrix <- matrix(probs, ncol = 3, byrow = TRUE)
+  prob_matrix <- matrix(probs, ncol = 3, byrow = FALSE)
 
   data.frame(
     pred_home_goals = pred_home_goals,

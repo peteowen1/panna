@@ -34,30 +34,72 @@ feature_cols <- goals_models$feature_cols
 
 # 5. Generate Predicted Goals ----
 
-message("  Generating predicted goals from Step 5 models...")
-
 played <- match_dataset[match_dataset$match_status == "Played" &
                         !is.na(match_dataset$outcome_label), ]
-X_all <- as.matrix(played[, feature_cols, drop = FALSE])
-X_all[is.na(X_all)] <- 0
 
-d_all <- xgboost::xgb.DMatrix(data = X_all)
-pred_home_goals <- stats::predict(goals_models$home$model, d_all)
-pred_away_goals <- stats::predict(goals_models$away$model, d_all)
+train_data <- played[played$split == "train", ]
+val_data <- played[played$split == "val", ]
 
-# Augment features with goal predictions
-played$pred_home_goals <- pred_home_goals
-played$pred_away_goals <- pred_away_goals
-played$pred_goal_diff <- pred_home_goals - pred_away_goals
-played$pred_total_goals <- pred_home_goals + pred_away_goals
+# Out-of-fold predictions for training data to avoid leakage.
+# In-sample goal predictions are too accurate, causing the outcome model
+# to be overconfident. OOF predictions add realistic noise.
+message("  Generating out-of-fold goal predictions for training data...")
+
+nfolds_oof <- 5L
+X_train_raw <- as.matrix(train_data[, feature_cols, drop = FALSE])
+X_train_raw[is.na(X_train_raw)] <- 0
+
+set.seed(42)
+fold_ids <- sample(rep(seq_len(nfolds_oof), length.out = nrow(train_data)))
+
+oof_home <- numeric(nrow(train_data))
+oof_away <- numeric(nrow(train_data))
+
+home_params <- list(objective = "count:poisson", eval_metric = "poisson-nloglik",
+                    max_depth = 4L, eta = 0.05, subsample = 0.8,
+                    colsample_bytree = 0.8, min_child_weight = 5)
+away_params <- home_params
+
+for (fold in seq_len(nfolds_oof)) {
+  idx_val <- fold_ids == fold
+  idx_trn <- !idx_val
+
+  d_trn <- xgboost::xgb.DMatrix(data = X_train_raw[idx_trn, , drop = FALSE],
+                                  label = train_data$home_goals[idx_trn])
+  d_val_fold <- xgboost::xgb.DMatrix(data = X_train_raw[idx_val, , drop = FALSE])
+
+  m_home <- xgboost::xgb.train(params = home_params, data = d_trn,
+                                 nrounds = goals_models$home$best_nrounds, verbose = 0L)
+  oof_home[idx_val] <- stats::predict(m_home, d_val_fold)
+
+  d_trn_a <- xgboost::xgb.DMatrix(data = X_train_raw[idx_trn, , drop = FALSE],
+                                    label = train_data$away_goals[idx_trn])
+  m_away <- xgboost::xgb.train(params = away_params, data = d_trn_a,
+                                 nrounds = goals_models$away$best_nrounds, verbose = 0L)
+  oof_away[idx_val] <- stats::predict(m_away, d_val_fold)
+
+  message(sprintf("    Fold %d: %d train, %d val", fold, sum(idx_trn), sum(idx_val)))
+}
+
+train_data$pred_home_goals <- oof_home
+train_data$pred_away_goals <- oof_away
+train_data$pred_goal_diff <- oof_home - oof_away
+train_data$pred_total_goals <- oof_home + oof_away
+
+# Val/test: use the full goals model (out-of-sample by design)
+message("  Generating goal predictions for val data...")
+X_val_raw <- as.matrix(val_data[, feature_cols, drop = FALSE])
+X_val_raw[is.na(X_val_raw)] <- 0
+d_val <- xgboost::xgb.DMatrix(data = X_val_raw)
+val_data$pred_home_goals <- stats::predict(goals_models$home$model, d_val)
+val_data$pred_away_goals <- stats::predict(goals_models$away$model, d_val)
+val_data$pred_goal_diff <- val_data$pred_home_goals - val_data$pred_away_goals
+val_data$pred_total_goals <- val_data$pred_home_goals + val_data$pred_away_goals
 
 augmented_features <- c(feature_cols, "pred_home_goals", "pred_away_goals",
                         "pred_goal_diff", "pred_total_goals")
 
-# 6. Split Data ----
-
-train_data <- played[played$split == "train", ]
-val_data <- played[played$split == "val", ]
+# 6. Prepare Matrices ----
 
 X_train <- as.matrix(train_data[, augmented_features, drop = FALSE])
 X_val <- as.matrix(val_data[, augmented_features, drop = FALSE])
@@ -89,7 +131,7 @@ message("\n--- Validation Metrics ---")
 
 val_probs_raw <- stats::predict(outcome_model$model,
                                  xgboost::xgb.DMatrix(data = X_val))
-val_probs <- matrix(val_probs_raw, ncol = 3, byrow = TRUE)
+val_probs <- matrix(val_probs_raw, ncol = 3, byrow = FALSE)
 
 # Multi-class log loss
 val_logloss <- compute_multiclass_logloss(y_val, val_probs)
