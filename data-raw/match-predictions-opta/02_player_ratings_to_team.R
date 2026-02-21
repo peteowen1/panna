@@ -111,7 +111,10 @@ if (file.exists(rapm_cache)) {
           lu$season <- season
           all_lineups[[paste(league, season)]] <- lu
         }
-      }, error = function(e) NULL)
+      }, error = function(e) {
+        message(sprintf("  Warning: failed to load lineups for %s %s: %s", league, season, e$message))
+        NULL
+      })
     }
   }
   lineups <- bind_rows(all_lineups)
@@ -205,11 +208,7 @@ if (nrow(upcoming) > 0) {
       )
 
       if (!is.null(live_skills) && nrow(live_skills) > 0) {
-        # Align schema with aggregate_skills_for_spm() output (what SPM models expect)
-        # estimate_player_skills() returns "position"; SPM models use "primary_position"
-        if ("position" %in% names(live_skills) && !"primary_position" %in% names(live_skills)) {
-          data.table::setnames(live_skills, "position", "primary_position")
-        }
+        # estimate_player_skills() now outputs "primary_position" directly
 
         # Add position dummies (SPM models use these as predictors)
         if ("primary_position" %in% names(live_skills)) {

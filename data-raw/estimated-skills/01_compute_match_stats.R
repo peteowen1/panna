@@ -52,6 +52,8 @@ if (file.exists(cache_path) && file.exists(config_path)) {
 message("\n=== Loading Opta Data and Computing Match-Level Stats ===\n")
 
 all_stats <- list()
+n_attempted <- 0L
+n_failed <- 0L
 
 for (league in leagues) {
   available_seasons <- tryCatch(list_opta_seasons(league), error = function(e) character(0))
@@ -68,6 +70,8 @@ for (league in leagues) {
 
   for (season in available_seasons) {
     label <- paste(league, season)
+
+    n_attempted <- n_attempted + 1L
 
     tryCatch({
       stats <- load_opta_stats(league, season = season)
@@ -89,6 +93,7 @@ for (league in leagues) {
       }
 
     }, error = function(e) {
+      n_failed <<- n_failed + 1L
       message(sprintf("  ERROR in %s: %s", label, e$message))
     })
   }
@@ -100,6 +105,17 @@ message("\n=== Combining All Match Stats ===\n")
 
 if (length(all_stats) == 0) {
   stop("No match stats were loaded. All league-seasons failed. Check error messages above.")
+}
+
+if (n_failed > 0 && n_attempted > 0) {
+  pct_failed <- round(100 * n_failed / n_attempted, 1)
+  message(sprintf("  %d/%d league-seasons failed (%.1f%%)", n_failed, n_attempted, pct_failed))
+  if (pct_failed > 50) {
+    stop(sprintf(
+      "%d/%d (%.1f%%) league-seasons failed. This suggests a systematic issue. Aborting.",
+      n_failed, n_attempted, pct_failed
+    ))
+  }
 }
 
 match_stats <- data.table::rbindlist(all_stats, fill = TRUE, use.names = TRUE)

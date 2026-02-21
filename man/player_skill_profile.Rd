@@ -6,26 +6,34 @@
 \usage{
 player_skill_profile(
   player_name,
-  match_stats,
+  match_stats = NULL,
   decay_params = NULL,
   date = Sys.Date(),
-  min_weighted_90s = 5
+  min_weighted_90s = 5,
+  skills = NULL
 )
 }
 \arguments{
-\item{player_name}{Character string of the player name to profile.}
+\item{player_name}{Character string of the player name to profile.
+Supports exact names ("H. Kane"), abbreviations ("H.Kane"),
+surnames ("Kane"), and accent-insensitive input ("Mbappe").}
 
-\item{match_stats}{A data.table from \code{compute_match_level_opta_stats()}.}
+\item{match_stats}{A data.table from \code{compute_match_level_opta_stats()}.
+Can be omitted if \code{skills} is provided.}
 
 \item{decay_params}{Decay parameters list.}
 
 \item{date}{Date to estimate skills at (default today).}
 
 \item{min_weighted_90s}{Regression threshold.}
+
+\item{skills}{Pre-computed skills data.table from
+\code{estimate_player_skills()}. If provided, skips the expensive
+skill estimation step (~7s) and uses these directly.}
 }
 \value{
 A data.table with columns: category, stat, skill, league_avg,
-percentile, weighted_90s, confidence.
+league_pct, pos_avg, pos_pct, weighted_90s, confidence.
 }
 \description{
 Returns a clean summary of a player's current estimated skills: per-stat

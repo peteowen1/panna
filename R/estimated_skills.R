@@ -116,8 +116,7 @@ get_default_decay_params <- function() {
       }
     }
     if (!found_any) {
-      cli::cli_warn("No denominator columns found for {.val {denom_spec}}. Using 1 as fallback.")
-      return(rep(1, nrow(dt_sub)))
+      cli::cli_abort("No denominator columns found for {.val {denom_spec}}. Cannot compute efficiency stat.")
     }
     return(result)
   }
@@ -126,8 +125,7 @@ get_default_decay_params <- function() {
     v[is.na(v)] <- 0
     return(v)
   }
-  cli::cli_warn("Denominator column {.val {denom_spec}} not found. Using 1 as fallback.")
-  rep(1, nrow(dt_sub))
+  cli::cli_abort("Denominator column {.val {denom_spec}} not found. Cannot compute efficiency stat.")
 }
 
 
@@ -491,7 +489,7 @@ estimate_player_skills <- function(match_stats, decay_params = NULL,
   result <- data.table::copy(player_meta)
   result[, date := ref_date]
   result[w90_agg, weighted_90s := i.weighted_90s, on = "player_id"]
-  data.table::setnames(result, "pos_group", "position")
+  data.table::setnames(result, "pos_group", "primary_position")
 
   for (sc in stat_cols) {
     sr <- skill_results[[sc]]
@@ -750,13 +748,19 @@ aggregate_skills_for_spm <- function(match_stats, decay_params = NULL,
     season_start <- as.Date(paste0(s - 1, "-07-01"))
     season_dt <- dt[match_date >= season_start & match_date < target_date]
 
-    if (nrow(season_dt) == 0) next
+    if (nrow(season_dt) == 0) {
+      cli::cli_alert_warning("Season {s}: no matches found, skipping.")
+      next
+    }
 
     season_minutes <- season_dt[, .(season_minutes = sum(total_minutes, na.rm = TRUE)),
                                  by = player_id]
     eligible_players <- season_minutes[season_minutes >= min_minutes]$player_id
 
-    if (length(eligible_players) == 0) next
+    if (length(eligible_players) == 0) {
+      cli::cli_alert_warning("Season {s}: no players with >= {min_minutes} minutes, skipping.")
+      next
+    }
 
     # Estimate skills using ALL history up to target_date (not just this season)
     skills <- estimate_player_skills(
@@ -780,10 +784,7 @@ aggregate_skills_for_spm <- function(match_stats, decay_params = NULL,
     skills <- season_info[skills, on = "player_id", nomatch = NULL]
     skills[, season_end_year := s]
 
-    # Add primary_position for position dummies
-    if ("position" %in% names(skills)) {
-      data.table::setnames(skills, "position", "primary_position", skip_absent = TRUE)
-    }
+    # primary_position already set by estimate_player_skills()
 
     results_list[[idx]] <- skills
   }
@@ -1112,13 +1113,14 @@ backtest_skill_predictions <- function(match_stats, decay_params = NULL,
       avg_ll <- sum(w * ll(actual, avg_predicted))
       last_ll <- sum(w * ll(actual, last_predicted))
       tw <- sum(w)
+      safe_pct <- function(x, ref) if (ref > 0) round((1 - x / ref) * 100, 1) else 0
       list(
         metric = "logloss",
-        value = bayes_ll / tw,
-        avg_value = avg_ll / tw,
-        last_value = last_ll / tw,
-        pct_vs_avg = round((1 - bayes_ll / avg_ll) * 100, 1),
-        pct_vs_last = round((1 - bayes_ll / last_ll) * 100, 1),
+        value = if (tw > 0) bayes_ll / tw else NA_real_,
+        avg_value = if (tw > 0) avg_ll / tw else NA_real_,
+        last_value = if (tw > 0) last_ll / tw else NA_real_,
+        pct_vs_avg = safe_pct(bayes_ll, avg_ll),
+        pct_vs_last = safe_pct(bayes_ll, last_ll),
         n_predictions = .N
       )
     } else {
@@ -1128,13 +1130,14 @@ backtest_skill_predictions <- function(match_stats, decay_params = NULL,
       avg_se <- sum(w * (avg_predicted - actual)^2)
       last_se <- sum(w * (last_predicted - actual)^2)
       tw <- sum(w)
+      safe_pct <- function(x, ref) if (ref > 0) round((1 - x / ref) * 100, 1) else 0
       list(
         metric = "rmse",
-        value = sqrt(bayes_se / tw),
-        avg_value = sqrt(avg_se / tw),
-        last_value = sqrt(last_se / tw),
-        pct_vs_avg = round((1 - bayes_se / avg_se) * 100, 1),
-        pct_vs_last = round((1 - bayes_se / last_se) * 100, 1),
+        value = if (tw > 0) sqrt(bayes_se / tw) else NA_real_,
+        avg_value = if (tw > 0) sqrt(avg_se / tw) else NA_real_,
+        last_value = if (tw > 0) sqrt(last_se / tw) else NA_real_,
+        pct_vs_avg = safe_pct(bayes_se, avg_se),
+        pct_vs_last = safe_pct(bayes_se, last_se),
         n_predictions = .N
       )
     }
@@ -1259,7 +1262,7 @@ adjust_match_stats_for_context <- function(match_stats, elo_ratings = NULL,
       big5_means <- dt[competition %in% big5_in_data,
                         lapply(.SD, mean, na.rm = TRUE), .SDcols = stat_cols]
 
-      for (lg in leagues_in_data) {
+      for (lg in setdiff(leagues_in_data, big5_in_data)) {
         lg_means <- dt[competition == lg, lapply(.SD, mean, na.rm = TRUE), .SDcols = stat_cols]
         lg_factors <- as.numeric(big5_means) / pmax(as.numeric(lg_means), 1e-6)
         lg_factors <- pmax(pmin(lg_factors, 1.5), 0.67)
@@ -1320,6 +1323,7 @@ player_skill_profile <- function(player_name, match_stats = NULL,
     if (file.exists(opt_path)) {
       decay_params <- readRDS(opt_path)
     } else {
+      cli::cli_alert_info("No optimized decay params found at {.path {opt_path}}. Using defaults.")
       decay_params <- get_default_decay_params()
     }
   }
@@ -1397,7 +1401,7 @@ player_skill_profile <- function(player_name, match_stats = NULL,
   }
 
   matched_name <- player_row$player_name
-  matched_pos <- player_row$position
+  matched_pos <- player_row$primary_position
   name_str <- if (matched_name != target_player) {
     sprintf("Matched '%s' -> %s", target_player, matched_name)
   } else {
@@ -1405,7 +1409,7 @@ player_skill_profile <- function(player_name, match_stats = NULL,
   }
 
   # Identify stat columns
-  meta_cols <- c("player_id", "player_name", "position", "date",
+  meta_cols <- c("player_id", "player_name", "primary_position", "date",
                   "weighted_90s", "clean_name")
   stat_cols <- setdiff(names(all_skills), meta_cols)
   stat_cols <- stat_cols[vapply(all_skills, is.numeric, logical(1))[stat_cols]]
@@ -1437,8 +1441,8 @@ player_skill_profile <- function(player_name, match_stats = NULL,
   }
 
   # Get player's position group and same-position peers
-  player_pos <- player_row$position
-  pos_peers <- all_skills[position == player_pos]
+  player_pos <- player_row$primary_position
+  pos_peers <- all_skills[primary_position == player_pos]
 
   # Compute raw career stats and per-stat weighted 90s from match_stats
   player_id_val <- player_row$player_id

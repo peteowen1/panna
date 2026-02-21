@@ -523,5 +523,11 @@ utils::globalVariables(c(
   "pos_pct",
   "raw_avg",
   "league_avg",
-  "pos_avg"
+  "pos_avg",
+  "prior_strength",
+  "decay_successes",
+  "decay_attempts",
+  "decay_events",
+  "decay_exposure",
+  "save_percentage"
 ))

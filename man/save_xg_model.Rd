@@ -9,7 +9,7 @@ save_xg_model(xg_model, path = NULL)
 \arguments{
 \item{xg_model}{Fitted xG model from fit_xg_model()}
 
-\item{path}{Path to save model. If NULL, saves to pannadata/models/}
+\item{path}{Path to save model. If NULL, saves to pannadata/opta/models/}
 }
 \value{
 Invisibly returns the path

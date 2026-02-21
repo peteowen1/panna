@@ -456,7 +456,7 @@ load_xg_model <- function(path = NULL) {
   }
 
   # Try default location in pannadata (Opta-specific models)
-  default_path <- file.path(pannadata_dir(), "models", "opta", "xg_model.rds")
+  default_path <- file.path(opta_data_dir(), "models", "xg_model.rds")
   if (file.exists(default_path)) {
     model <- readRDS(default_path)
     cli::cli_alert_success("Loaded xG model from {default_path}")
@@ -475,13 +475,13 @@ load_xg_model <- function(path = NULL) {
 #' Saves trained xG model to RDS file.
 #'
 #' @param xg_model Fitted xG model from fit_xg_model()
-#' @param path Path to save model. If NULL, saves to pannadata/models/
+#' @param path Path to save model. If NULL, saves to pannadata/opta/models/
 #'
 #' @return Invisibly returns the path
 #' @export
 save_xg_model <- function(xg_model, path = NULL) {
   if (is.null(path)) {
-    model_dir <- file.path(pannadata_dir(), "models", "opta")
+    model_dir <- file.path(opta_data_dir(), "models")
     dir.create(model_dir, showWarnings = FALSE, recursive = TRUE)
     path <- file.path(model_dir, "xg_model.rds")
   }

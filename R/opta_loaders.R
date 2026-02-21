@@ -185,7 +185,7 @@ list_opta_seasons <- function(league) {
 #' # Load all EPL data from local files
 #' epl <- load_opta_stats("ENG")
 #'
-#' # Load from GitHub releases (downloads opta-parquet.tar.gz)
+#' # Load from GitHub releases (downloads opta_player_stats.parquet)
 #' epl_remote <- load_opta_stats("ENG", season = "2021-2022", source = "remote")
 #'
 #' # Load specific columns only
@@ -622,99 +622,16 @@ get_opta_columns <- function(table_type = c("player_stats", "shots", "shot_event
 
 # Remote Opta Data Loading ----
 
-# Environment to cache remote Opta data path
+# Environment to cache remote Opta data paths
 .opta_remote_env <- new.env(parent = emptyenv())
-
-#' Download Opta data from GitHub Releases
-#'
-#' Downloads opta-parquet.tar.gz from the opta-latest release and extracts
-#' to a temporary directory. Caches the extracted path for the session.
-#'
-#' @param repo GitHub repository in "owner/repo" format
-#' @param tag Release tag (default: "opta-latest")
-#' @param force Force re-download even if cached (default: FALSE)
-#'
-#' @return Path to extracted Opta data directory
-#' @keywords internal
-download_remote_opta <- function(repo = "peteowen1/pannadata",
-                                  tag = "opta-latest",
-                                  force = FALSE) {
-  if (!requireNamespace("piggyback", quietly = TRUE)) {
-    cli::cli_abort("Package 'piggyback' is required for remote Opta loading.")
-  }
-
-  # Check if we have a valid cached path
-  cache_key <- paste0(repo, "_", tag)
-  if (!force && exists(cache_key, envir = .opta_remote_env)) {
-    cached_path <- get(cache_key, envir = .opta_remote_env)
-    if (dir.exists(cached_path)) {
-      return(cached_path)
-    }
-  }
-
-  cli::cli_alert_info("Downloading Opta data from {repo} ({tag})...")
-
-  # Download to temp directory
-  temp_dir <- tempdir()
-  archive_file <- file.path(temp_dir, "opta-parquet.tar.gz")
-
-  tryCatch({
-    piggyback::pb_download(
-      file = "opta-parquet.tar.gz",
-      repo = repo,
-      tag = tag,
-      dest = temp_dir,
-      overwrite = TRUE
-    )
-  }, error = function(e) {
-    cli::cli_abort(c(
-      "Failed to download Opta data from {repo} ({tag})",
-      "i" = "Make sure opta-parquet.tar.gz exists in the release.",
-      "x" = e$message
-    ))
-  })
-
-  if (!file.exists(archive_file)) {
-    cli::cli_abort("Download failed - opta-parquet.tar.gz not found")
-  }
-
-  # Extract to session-specific temp directory
-  extract_dir <- file.path(temp_dir, paste0("opta_", tag))
-  if (dir.exists(extract_dir)) {
-    unlink(extract_dir, recursive = TRUE)
-  }
-  dir.create(extract_dir, recursive = TRUE)
-
-  cli::cli_alert_info("Extracting Opta data...")
-  utils::untar(archive_file, exdir = extract_dir)
-
-  # The tar.gz contains opta/{table_type}/{league}/{season}.parquet structure
-  data_dir <- file.path(extract_dir, "opta")
-  if (!dir.exists(data_dir)) {
-    # Maybe it's directly in extract_dir
-    data_dir <- extract_dir
-  }
-
-  # Count files
-  n_parquet <- length(list.files(data_dir, pattern = "\\.parquet$", recursive = TRUE))
-  cli::cli_alert_success("Extracted {n_parquet} parquet files")
-
-  # Cache the path
-  assign(cache_key, data_dir, envir = .opta_remote_env)
-
-  # Cleanup archive
-  file.remove(archive_file)
-
-  data_dir
-}
-
 
 #' Query remote Opta parquet data
 #'
-#' Downloads Opta data from GitHub releases and queries using DuckDB.
-#' Data is cached for the session to avoid repeated downloads.
+#' Downloads individual consolidated Opta files from GitHub releases and
+#' queries using DuckDB. Each table type is a single consolidated file
+#' (e.g., opta_player_stats.parquet) that is cached for the session.
 #'
-#' @param table_type "player_stats" or "shots"
+#' @param table_type Table type (player_stats, shots, shot_events, events, lineups, fixtures)
 #' @param opta_league League code in Opta format (EPL, La_Liga, etc.)
 #' @param season Optional season filter (e.g., "2021-2022")
 #' @param columns Optional columns to select
@@ -727,34 +644,59 @@ query_remote_opta_parquet <- function(table_type, opta_league, season = NULL,
                                        columns = NULL,
                                        repo = "peteowen1/pannadata",
                                        tag = "opta-latest") {
-  # Download/get cached data
-  base_dir <- download_remote_opta(repo = repo, tag = tag)
 
-  # Build file pattern
-  # Path structure: {base_dir}/{table_type}/{league}/{season}.parquet
-  if (!is.null(season)) {
-    # Specific season: {table_type}/{league}/{season}.parquet
-    parquet_path <- file.path(base_dir, table_type, opta_league, paste0(season, ".parquet"))
+  # match_events are stored as per-league files (too large for single consolidated file)
+  if (table_type == "match_events") {
+    return(query_remote_opta_match_events(opta_league, season, columns,
+                                           repo = repo, tag = tag))
+  }
+
+  if (!requireNamespace("piggyback", quietly = TRUE)) {
+    cli::cli_abort("Package 'piggyback' is required for remote Opta loading.")
+  }
+
+  # Download consolidated file for this table type (cached per session)
+  file_name <- paste0("opta_", table_type, ".parquet")
+  cache_key <- paste0(table_type, "_", repo, "_", tag)
+
+  # Check cache
+  parquet_path <- NULL
+  if (exists(cache_key, envir = .opta_remote_env)) {
+    cached_path <- get(cache_key, envir = .opta_remote_env)
+    if (file.exists(cached_path)) {
+      parquet_path <- cached_path
+    }
+  }
+
+  # Download if not cached
+  if (is.null(parquet_path)) {
+    temp_dir <- file.path(tempdir(), "opta_consolidated")
+    dir.create(temp_dir, showWarnings = FALSE, recursive = TRUE)
+
+    cli::cli_alert_info("Downloading {file_name} from {repo} ({tag})...")
+
+    tryCatch({
+      piggyback::pb_download(
+        file = file_name,
+        repo = repo,
+        tag = tag,
+        dest = temp_dir,
+        overwrite = TRUE
+      )
+    }, error = function(e) {
+      cli::cli_abort(c(
+        "Failed to download {file_name} from {repo} ({tag})",
+        "i" = "Run {.code pb_download_opta()} to download all Opta data.",
+        "x" = e$message
+      ))
+    })
+
+    parquet_path <- file.path(temp_dir, file_name)
     if (!file.exists(parquet_path)) {
-      cli::cli_abort(c(
-        "Remote parquet file not found",
-        "i" = "Looking for: {table_type}/{opta_league}/{season}.parquet",
-        "i" = "Available table types: {paste(list.dirs(base_dir, recursive = FALSE, full.names = FALSE), collapse = ', ')}"
-      ))
+      cli::cli_abort("Download failed - {file_name} not found after download")
     }
-    parquet_pattern <- normalizePath(parquet_path, winslash = "/", mustWork = TRUE)
-    parquet_pattern <- sprintf("'%s'", parquet_pattern)
-  } else {
-    # All seasons for league: {table_type}/{league}/*.parquet
-    league_dir <- file.path(base_dir, table_type, opta_league)
-    if (!dir.exists(league_dir)) {
-      cli::cli_abort(c(
-        "Remote league directory not found: {table_type}/{opta_league}",
-        "i" = "Available table types: {paste(list.dirs(base_dir, recursive = FALSE, full.names = FALSE), collapse = ', ')}"
-      ))
-    }
-    parquet_pattern <- normalizePath(league_dir, winslash = "/", mustWork = TRUE)
-    parquet_pattern <- sprintf("'%s/*.parquet'", parquet_pattern)
+
+    assign(cache_key, parquet_path, envir = .opta_remote_env)
   }
 
   # Build column selection (validate to prevent SQL injection)
@@ -764,13 +706,122 @@ query_remote_opta_parquet <- function(table_type, opta_league, season = NULL,
     "*"
   }
 
-  sql <- sprintf("SELECT %s FROM read_parquet(%s, union_by_name=true)", col_sql, parquet_pattern)
+  # Build WHERE clause
+  parquet_norm <- normalizePath(parquet_path, winslash = "/", mustWork = TRUE)
+  where_sql <- build_where_clause(
+    list(competition = opta_league, season = season),
+    prefix = FALSE
+  )
+  sql <- if (nchar(where_sql) > 0) {
+    sprintf("SELECT %s FROM '%s' WHERE %s", col_sql, parquet_norm, where_sql)
+  } else {
+    sprintf("SELECT %s FROM '%s'", col_sql, parquet_norm)
+  }
 
   # Execute query with DuckDB
   conn <- DBI::dbConnect(duckdb::duckdb())
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 
   cli::cli_alert_info("Querying remote Opta {table_type} for {opta_league}...")
+
+  result <- tryCatch({
+    DBI::dbGetQuery(conn, sql)
+  }, error = function(e) {
+    cli::cli_abort("DuckDB query failed: {e$message}")
+  })
+
+  cli::cli_alert_success("Loaded {format(nrow(result), big.mark=',')} rows ({ncol(result)} columns)")
+  result
+}
+
+
+#' Download and query remote Opta match events (per-league files)
+#'
+#' Match events are too large for a single consolidated file, so they are stored
+#' as per-league files (events_{league}.parquet) in the release. This function
+#' downloads the per-league file and queries it with DuckDB.
+#'
+#' @param opta_league League code in Opta format (EPL, La_Liga, etc.)
+#' @param season Optional season filter (e.g., "2021-2022")
+#' @param columns Optional columns to select
+#' @param repo GitHub repository
+#' @param tag Release tag
+#'
+#' @return Data frame with query results
+#' @keywords internal
+query_remote_opta_match_events <- function(opta_league, season = NULL,
+                                            columns = NULL,
+                                            repo = "peteowen1/pannadata",
+                                            tag = "opta-latest") {
+  # Cache key for this league's events file
+  cache_key <- paste0("match_events_", opta_league, "_", repo, "_", tag)
+
+  # Check cache first
+  if (exists(cache_key, envir = .opta_remote_env)) {
+    cached_path <- get(cache_key, envir = .opta_remote_env)
+    if (file.exists(cached_path)) {
+      parquet_path <- cached_path
+    } else {
+      parquet_path <- NULL
+    }
+  } else {
+    parquet_path <- NULL
+  }
+
+  # Download if not cached
+  if (is.null(parquet_path)) {
+    file_name <- paste0("events_", opta_league, ".parquet")
+    temp_dir <- file.path(tempdir(), "opta_match_events")
+    dir.create(temp_dir, showWarnings = FALSE, recursive = TRUE)
+
+    cli::cli_alert_info("Downloading {file_name} from {repo} ({tag})...")
+
+    tryCatch({
+      piggyback::pb_download(
+        file = file_name,
+        repo = repo,
+        tag = tag,
+        dest = temp_dir,
+        overwrite = TRUE
+      )
+    }, error = function(e) {
+      cli::cli_abort(c(
+        "Failed to download match events for {opta_league}",
+        "i" = "Expected file: {file_name} in release {tag}",
+        "x" = e$message
+      ))
+    })
+
+    parquet_path <- file.path(temp_dir, file_name)
+    if (!file.exists(parquet_path)) {
+      cli::cli_abort("Download failed - {file_name} not found after download")
+    }
+
+    # Cache the path
+    assign(cache_key, parquet_path, envir = .opta_remote_env)
+  }
+
+  # Build column selection
+  col_sql <- if (!is.null(columns)) {
+    paste(validate_sql_columns(columns), collapse = ", ")
+  } else {
+    "*"
+  }
+
+  # Build WHERE clause for season filter (using build_where_clause to prevent SQL injection)
+  parquet_norm <- normalizePath(parquet_path, winslash = "/", mustWork = TRUE)
+  where_sql <- build_where_clause(list(season = season), prefix = FALSE)
+  if (nchar(where_sql) > 0) {
+    sql <- sprintf("SELECT %s FROM '%s' WHERE %s", col_sql, parquet_norm, where_sql)
+  } else {
+    sql <- sprintf("SELECT %s FROM '%s'", col_sql, parquet_norm)
+  }
+
+  # Execute query with DuckDB
+  conn <- DBI::dbConnect(duckdb::duckdb())
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+
+  cli::cli_alert_info("Querying match events for {opta_league}...")
 
   result <- tryCatch({
     DBI::dbGetQuery(conn, sql)
@@ -873,9 +924,9 @@ clear_remote_opta_cache <- function() {
 #' Download Opta Data to Local Directory
 #'
 #' Downloads consolidated Opta parquet files from GitHub releases to the local
-#' pannadata/data/opta/ directory. Downloads two files:
-#' - opta_player_stats.parquet (~50MB, 1M+ rows)
-#' - opta_shots.parquet (~4MB, 270K rows)
+#' pannadata/data/opta/ directory. Match events are excluded (too large for a
+#' single file) - use `load_opta_match_events(source = "remote")` to load them
+#' on-demand from per-league release files.
 #'
 #' @param repo GitHub repository in "owner/repo" format.
 #' @param tag Release tag (default: "opta-latest").
@@ -917,11 +968,11 @@ pb_download_opta <- function(repo = "peteowen1/pannadata",
   cli::cli_alert_info("Downloading Opta data from {repo} ({tag})...")
 
   # Download consolidated parquet files
+  # Note: match_events are per-league (too large for single file), downloaded separately
   files_to_download <- c(
     "opta_player_stats.parquet",
     "opta_shots.parquet",
     "opta_shot_events.parquet",
-    "opta_match_events.parquet",
     "opta_events.parquet",
     "opta_lineups.parquet",
     "opta_fixtures.parquet"
@@ -938,11 +989,21 @@ pb_download_opta <- function(repo = "peteowen1/pannadata",
         overwrite = TRUE
       )
     }, error = function(e) {
-      cli::cli_abort(c(
+      cli::cli_warn(c(
         "Failed to download {f} from {repo} ({tag})",
         "x" = e$message
       ))
     })
+  }
+
+  # Check for failed downloads
+  downloaded <- files_to_download[file.exists(file.path(opta_dir, files_to_download))]
+  failed <- setdiff(files_to_download, downloaded)
+  if (length(failed) > 0) {
+    cli::cli_abort(c(
+      "Failed to download {length(failed)} Opta file(s)",
+      "x" = paste(failed, collapse = ", ")
+    ))
   }
 
   # Report sizes

@@ -22,11 +22,9 @@ Invisibly returns the path to the installed data.
 }
 \description{
 Downloads consolidated Opta parquet files from GitHub releases to the local
-pannadata/data/opta/ directory. Downloads two files:
-\itemize{
-\item opta_player_stats.parquet (~50MB, 1M+ rows)
-\item opta_shots.parquet (~4MB, 270K rows)
-}
+pannadata/data/opta/ directory. Match events are excluded (too large for a
+single file) - use \code{load_opta_match_events(source = "remote")} to load them
+on-demand from per-league release files.
 }
 \examples{
 \dontrun{
