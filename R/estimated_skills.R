@@ -1395,7 +1395,7 @@ player_skill_profile <- function(player_name, match_stats = NULL,
   }
 
   matched_name <- player_row$player_name
-  matched_pos <- player_row$position
+  matched_pos <- player_row$primary_position
   name_str <- if (matched_name != target_player) {
     sprintf("Matched '%s' -> %s", target_player, matched_name)
   } else {
@@ -1403,7 +1403,7 @@ player_skill_profile <- function(player_name, match_stats = NULL,
   }
 
   # Identify stat columns
-  meta_cols <- c("player_id", "player_name", "position", "date",
+  meta_cols <- c("player_id", "player_name", "primary_position", "date",
                   "weighted_90s", "clean_name")
   stat_cols <- setdiff(names(all_skills), meta_cols)
   stat_cols <- stat_cols[vapply(all_skills, is.numeric, logical(1))[stat_cols]]
@@ -1435,8 +1435,8 @@ player_skill_profile <- function(player_name, match_stats = NULL,
   }
 
   # Get player's position group and same-position peers
-  player_pos <- player_row$position
-  pos_peers <- all_skills[position == player_pos]
+  player_pos <- player_row$primary_position
+  pos_peers <- all_skills[primary_position == player_pos]
 
   # Compute raw career stats and per-stat weighted 90s from match_stats
   player_id_val <- player_row$player_id

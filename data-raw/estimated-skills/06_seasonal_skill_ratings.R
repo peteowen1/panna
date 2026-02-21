@@ -249,10 +249,26 @@ seasonal_ratings_list <- lapply(seasons, function(season) {
   })
 })
 
+n_total <- length(seasons)
+n_failed <- sum(vapply(seasonal_ratings_list, is.null, logical(1)))
 seasonal_ratings_list <- Filter(Negate(is.null), seasonal_ratings_list)
 
 if (length(seasonal_ratings_list) == 0) {
   stop("All seasons failed to process. Cannot generate seasonal skill ratings.")
+}
+
+if (n_failed > 0) {
+  pct_failed <- round(100 * n_failed / n_total, 1)
+  warning(sprintf(
+    "%d/%d (%.1f%%) seasons failed to process. Results may be incomplete.",
+    n_failed, n_total, pct_failed
+  ), call. = FALSE)
+  if (pct_failed > 50) {
+    stop(sprintf(
+      "%d/%d (%.1f%%) seasons failed. This suggests a systematic issue. Aborting.",
+      n_failed, n_total, pct_failed
+    ))
+  }
 }
 
 seasonal_spm <- bind_rows(lapply(seasonal_ratings_list, `[[`, "spm"))

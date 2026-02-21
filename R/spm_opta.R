@@ -356,7 +356,7 @@ compute_match_level_opta_stats <- function(opta_stats, min_minutes = 10) {
   progress_msg(sprintf("Computing match-level stats for %d player-match rows...",
                         nrow(opta_stats)))
 
-  dt <- data.table::as.data.table(opta_stats)
+  dt <- data.table::copy(data.table::as.data.table(opta_stats))
 
   # Clean player ID
 
