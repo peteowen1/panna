@@ -32,12 +32,3 @@ Data frame with player passing statistics.
 \description{
 Aggregate passing statistics from Opta data.
 }
-\examples{
-\dontrun{
-# All EPL passers
-player_opta_passing(league = "ENG", season = "2024-2025")
-
-# Specific player
-player_opta_passing("B. Saka", league = "ENG", season = "2024-2025")
-}
-}

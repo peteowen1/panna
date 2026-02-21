@@ -20,10 +20,3 @@ List with combined splint data
 Generates splint data for an entire dataset.
 Uses data.table for fast pre-splitting by match_id.
 }
-\examples{
-\dontrun{
-processed_data <- process_all_data("ENG", "2024-2025")
-splints <- create_all_splints(processed_data)
-splints <- create_all_splints(processed_data, include_goals = FALSE, verbose = FALSE)
-}
-}

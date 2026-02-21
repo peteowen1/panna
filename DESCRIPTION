@@ -27,6 +27,7 @@ Imports:
     tools
 Suggests:
     arrow (>= 10.0.0),
+    DEoptim,
     doParallel,
     ggplot2,
     ggrepel,

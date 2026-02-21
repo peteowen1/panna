@@ -40,15 +40,30 @@ fixture_results <- readRDS(file.path(cache_dir, "01_fixture_results.rds"))
 team_ratings <- readRDS(file.path(cache_dir, "02_team_ratings.rds"))
 rolling_features <- readRDS(file.path(cache_dir, "03_rolling_features.rds"))
 
+# Load team skill features (optional, from 02b)
+skill_features_path <- file.path(cache_dir, "02b_team_skill_features.rds")
+team_skill_features <- if (file.exists(skill_features_path)) readRDS(skill_features_path) else NULL
+
 message(sprintf("  Fixture results: %d rows", nrow(fixture_results)))
 message(sprintf("  Team ratings: %d rows", nrow(team_ratings)))
 message(sprintf("  Rolling features: %d rows", nrow(rolling_features)))
+if (!is.null(team_skill_features)) {
+  message(sprintf("  Team skill features: %d rows", nrow(team_skill_features)))
+}
 
 # 5. Join All Features ----
 
 dataset <- fixture_results %>%
   left_join(team_ratings, by = "match_id") %>%
   left_join(rolling_features, by = "match_id")
+
+# Merge team skill features if available
+if (!is.null(team_skill_features) && nrow(team_skill_features) > 0) {
+  dataset <- dataset %>%
+    left_join(team_skill_features, by = "match_id")
+  message(sprintf("  Merged team skill features (%d new columns)",
+                  ncol(team_skill_features) - 1))
+}
 
 message(sprintf("  After joins: %d rows, %d columns", nrow(dataset), ncol(dataset)))
 

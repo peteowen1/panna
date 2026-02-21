@@ -46,10 +46,3 @@ Fits ridge regression on the design matrix with:
 \details{
 The target type is determined by the rapm_data (set in prepare_rapm_data).
 }
-\examples{
-\dontrun{
-rapm_data <- prepare_rapm_data(splint_data, min_minutes = 90)
-rapm_model <- fit_rapm(rapm_data, alpha = 0, nfolds = 10)
-}
-
-}

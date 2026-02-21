@@ -23,10 +23,3 @@ Invisibly returns path to models
 \description{
 Downloads pre-trained EPV models from GitHub releases.
 }
-\examples{
-\dontrun{
-pb_download_epv_models()
-pb_download_epv_models(tag = "epv-models-v2")
-}
-
-}

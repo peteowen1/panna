@@ -15,7 +15,3 @@ Data frame with snake_case column names
 \description{
 Applies janitor::clean_names() to standardize all column names.
 }
-\examples{
-df <- data.frame(GoalsScored = 1:3, AssistsMade = 4:6)
-clean_column_names(df)
-}

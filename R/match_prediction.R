@@ -137,6 +137,111 @@ aggregate_lineup_ratings <- function(lineups, ratings, season_end_year,
 
 
 # =============================================================================
+# Team-Level Skill Feature Aggregation
+# =============================================================================
+
+#' Aggregate Player Skills to Team-Level Features
+#'
+#' For each match, takes the starting XI and their skill estimates, then
+#' aggregates key skills to team level. Produces granular skill features
+#' (e.g., team average shooting skill, team average tackling skill) that
+#' give the XGBoost model richer signal beyond a single panna rating.
+#'
+#' @param lineups Data frame of match lineups with player_name, team_name,
+#'   team_position (home/away), position, is_starter columns
+#' @param skill_estimates Data frame from \code{estimate_player_skills()} with
+#'   player_name and per-stat skill columns (e.g., goals_p90, tackles_won_p90)
+#' @param attacking_stats Character vector of attacking skill columns to aggregate
+#' @param defensive_stats Character vector of defensive skill columns to aggregate
+#'
+#' @return Data frame with one row per match, team-level skill features
+#' @export
+aggregate_lineup_skills <- function(lineups, skill_estimates,
+                                     attacking_stats = NULL,
+                                     defensive_stats = NULL) {
+  dt_lineups <- data.table::as.data.table(lineups)
+  dt_skills <- data.table::as.data.table(skill_estimates)
+
+  # Default stat groups
+  if (is.null(attacking_stats)) {
+    attacking_stats <- c("goals_p90", "shots_p90", "shots_on_target_p90",
+                          "key_passes_p90", "assists_p90", "big_chance_created_p90",
+                          "touches_opp_box_p90", "crosses_p90")
+    attacking_stats <- intersect(attacking_stats, names(dt_skills))
+  }
+  if (is.null(defensive_stats)) {
+    defensive_stats <- c("tackles_won_p90", "interceptions_p90", "clearances_p90",
+                          "blocks_p90", "aerial_won_p90", "ball_recovery_p90")
+    defensive_stats <- intersect(defensive_stats, names(dt_skills))
+  }
+
+  all_stats <- c(attacking_stats, defensive_stats)
+  if (length(all_stats) == 0) {
+    cli::cli_warn("No skill stat columns found in skill_estimates.")
+    return(NULL)
+  }
+
+  # Filter to starters
+  starters <- dt_lineups[is_starter == TRUE]
+  starters[, clean_name := clean_player_name(player_name)]
+
+  # Join skills
+  dt_skills[, clean_name := clean_player_name(player_name)]
+  skill_lookup <- dt_skills[!duplicated(clean_name), c("clean_name", all_stats), with = FALSE]
+  starters <- skill_lookup[starters, on = "clean_name"]
+
+  # Aggregate by match + side
+  team_skills <- starters[, {
+    result <- list()
+    for (stat in all_stats) {
+      vals <- get(stat)
+      vals[is.na(vals)] <- 0
+      prefix <- if (stat %in% attacking_stats) "sk_att" else "sk_def"
+      col_name <- paste0(prefix, "_", sub("_p90$", "", stat))
+      result[[col_name]] <- mean(vals)
+    }
+    # Composites
+    if (length(attacking_stats) > 0) {
+      att_vals <- unlist(lapply(attacking_stats, function(s) {
+        v <- get(s); v[is.na(v)] <- 0; v
+      }))
+      result[["sk_att_composite"]] <- mean(att_vals)
+    }
+    if (length(defensive_stats) > 0) {
+      def_vals <- unlist(lapply(defensive_stats, function(s) {
+        v <- get(s); v[is.na(v)] <- 0; v
+      }))
+      result[["sk_def_composite"]] <- mean(def_vals)
+    }
+    result
+  }, by = .(match_id, team_name, team_position)]
+
+  # Pivot to wide (home_ / away_ prefix)
+  home <- team_skills[tolower(team_position) == "home"]
+  away <- team_skills[tolower(team_position) == "away"]
+
+  skill_cols <- setdiff(names(team_skills), c("match_id", "team_name", "team_position"))
+  data.table::setnames(home, skill_cols, paste0("home_", skill_cols))
+  data.table::setnames(away, skill_cols, paste0("away_", skill_cols))
+
+  result <- home[away, on = "match_id", nomatch = NULL]
+
+  # Add differentials
+  if ("home_sk_att_composite" %in% names(result)) {
+    result[, sk_att_diff := home_sk_att_composite - away_sk_att_composite]
+    result[, sk_def_diff := home_sk_def_composite - away_sk_def_composite]
+  }
+
+  # Clean up
+  cols_to_drop <- grep("team_position|team_name", names(result), value = TRUE)
+  result[, (cols_to_drop) := NULL]
+
+  data.table::setDF(result)
+  result
+}
+
+
+# =============================================================================
 # Elo Rating System
 # =============================================================================
 

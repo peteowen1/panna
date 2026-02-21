@@ -15,10 +15,3 @@ EPV model
 \description{
 Loads pre-trained EPV model from disk.
 }
-\examples{
-\dontrun{
-epv_model <- load_epv_model()
-epv_model <- load_epv_model(path = "models/custom_dir")
-}
-
-}

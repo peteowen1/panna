@@ -17,10 +17,3 @@ Invisibly returns path
 \description{
 Saves trained EPV model to disk.
 }
-\examples{
-\dontrun{
-save_epv_model(epv_model)
-save_epv_model(epv_model, path = "models/custom_dir")
-}
-
-}

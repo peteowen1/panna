@@ -30,10 +30,3 @@ Data frame with player EPV statistics:
 Summarizes EPV by player, calculating total and per-90 metrics.
 Properly attributes receiver credit to the actual receivers.
 }
-\examples{
-\dontrun{
-player_epv <- aggregate_player_epv(spadl_with_epv, lineups, min_minutes = 450)
-head(player_epv[order(-player_epv$epv_total), ])
-}
-
-}

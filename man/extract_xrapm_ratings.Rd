@@ -18,11 +18,3 @@ Data frame with player ratings including deviation from prior
 Extracts player ratings from a model fit with SPM prior.
 The final coefficient is gamma + prior, where gamma is the deviation.
 }
-\examples{
-\dontrun{
-xrapm_model <- fit_rapm_with_prior(rapm_data, offense_prior, defense_prior)
-ratings <- extract_xrapm_ratings(xrapm_model, lambda = "min")
-head(ratings)
-}
-
-}

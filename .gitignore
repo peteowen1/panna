@@ -11,6 +11,7 @@
 # Cache directory (large data files)
 data-raw/cache/
 data-raw/cache-opta/
+data-raw/cache-skills/
 data-raw/cache-predictions-opta/
 data-raw/debug/
 data-raw/archive/

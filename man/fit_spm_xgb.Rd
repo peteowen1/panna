@@ -52,11 +52,3 @@ List with xgb model, cv results, and metadata
 Fits an XGBoost model predicting RAPM from box score statistics.
 Uses xgb.cv to find optimal number of boosting rounds via early stopping.
 }
-\examples{
-\dontrun{
-spm_data <- prepare_spm_regression_data(player_features, rapm_ratings)
-spm_xgb <- fit_spm_xgb(spm_data, max_depth = 4, eta = 0.1)
-spm_xgb$r_squared
-}
-
-}

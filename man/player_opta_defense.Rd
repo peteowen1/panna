@@ -32,12 +32,3 @@ Data frame with player defensive statistics.
 \description{
 Aggregate defensive statistics from Opta data.
 }
-\examples{
-\dontrun{
-# All EPL defenders
-player_opta_defense(league = "ENG", season = "2024-2025")
-
-# Specific player
-player_opta_defense("V. van Dijk", league = "ENG", season = "2024-2025")
-}
-}

@@ -19,11 +19,3 @@ Data frame of top features by absolute coefficient
 \description{
 Identifies the most important features in the SPM model.
 }
-\examples{
-\dontrun{
-spm_model <- fit_spm_model(spm_data)
-top_features <- get_spm_feature_importance(spm_model, n = 15)
-top_features
-}
-
-}

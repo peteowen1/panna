@@ -30,11 +30,3 @@ Creates the design matrix with 2 rows per splint (one per team perspective):
 \item Replacement columns: replacement_off, replacement_def for low-minute players
 }
 }
-\examples{
-\dontrun{
-splint_data <- create_all_splints(processed_data)
-rapm_matrix <- create_rapm_design_matrix(splint_data, min_minutes = 90)
-dim(rapm_matrix$X_players)
-}
-
-}

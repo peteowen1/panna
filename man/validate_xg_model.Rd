@@ -17,11 +17,3 @@ List with validation metrics
 \description{
 Evaluates xG model on held-out test data.
 }
-\examples{
-\dontrun{
-xg_model <- load_xg_model()
-test_shots <- prepare_shots_for_xg(test_shot_events)
-metrics <- validate_xg_model(xg_model, test_shots)
-print(metrics$logloss)
-}
-}

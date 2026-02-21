@@ -32,12 +32,3 @@ Data frame with player possession statistics.
 \description{
 Aggregate possession and carrying statistics from Opta data.
 }
-\examples{
-\dontrun{
-# All EPL possession stats
-player_opta_possession(league = "ENG", season = "2024-2025")
-
-# Specific player
-player_opta_possession("B. Saka", league = "ENG", season = "2024-2025")
-}
-}

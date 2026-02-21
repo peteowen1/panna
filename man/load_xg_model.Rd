@@ -15,12 +15,3 @@ Fitted xG model
 \description{
 Loads xG model from saved RDS file or downloads from GitHub releases.
 }
-\examples{
-\dontrun{
-# Load from default pannadata location
-xg_model <- load_xg_model()
-
-# Load from a specific path
-xg_model <- load_xg_model("path/to/xg_model.rds")
-}
-}
