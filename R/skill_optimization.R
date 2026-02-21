@@ -192,6 +192,10 @@ optimize_stat_prior <- function(match_stats = NULL, stat_name,
     quantile_bounds <- c(0.05, 0.95)
   }
 
+  if (is.null(precomputed) && is.null(match_stats)) {
+    cli::cli_abort("Either {.arg match_stats} or {.arg precomputed} must be provided.")
+  }
+
   # Use precomputed data if available, otherwise compute from scratch
   if (!is.null(precomputed)) {
     player_splits <- precomputed$player_splits
@@ -650,7 +654,10 @@ optimize_all_priors <- function(match_stats, decay_params = NULL,
       parallel::clusterEvalQ(cl, {
         tryCatch(
           devtools::load_all(pkg_path, quiet = TRUE),
-          error = function(e) library(panna)
+          error = function(e) {
+            message("devtools::load_all() failed on worker, falling back to library(panna)")
+            library(panna)
+          }
         )
         library(data.table)
       })

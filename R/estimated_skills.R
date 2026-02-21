@@ -491,7 +491,7 @@ estimate_player_skills <- function(match_stats, decay_params = NULL,
   result <- data.table::copy(player_meta)
   result[, date := ref_date]
   result[w90_agg, weighted_90s := i.weighted_90s, on = "player_id"]
-  data.table::setnames(result, "pos_group", "position")
+  data.table::setnames(result, "pos_group", "primary_position")
 
   for (sc in stat_cols) {
     sr <- skill_results[[sc]]
@@ -780,10 +780,7 @@ aggregate_skills_for_spm <- function(match_stats, decay_params = NULL,
     skills <- season_info[skills, on = "player_id", nomatch = NULL]
     skills[, season_end_year := s]
 
-    # Add primary_position for position dummies
-    if ("position" %in% names(skills)) {
-      data.table::setnames(skills, "position", "primary_position", skip_absent = TRUE)
-    }
+    # primary_position already set by estimate_player_skills()
 
     results_list[[idx]] <- skills
   }
@@ -1259,7 +1256,7 @@ adjust_match_stats_for_context <- function(match_stats, elo_ratings = NULL,
       big5_means <- dt[competition %in% big5_in_data,
                         lapply(.SD, mean, na.rm = TRUE), .SDcols = stat_cols]
 
-      for (lg in leagues_in_data) {
+      for (lg in setdiff(leagues_in_data, big5_in_data)) {
         lg_means <- dt[competition == lg, lapply(.SD, mean, na.rm = TRUE), .SDcols = stat_cols]
         lg_factors <- as.numeric(big5_means) / pmax(as.numeric(lg_means), 1e-6)
         lg_factors <- pmax(pmin(lg_factors, 1.5), 0.67)
@@ -1320,6 +1317,7 @@ player_skill_profile <- function(player_name, match_stats = NULL,
     if (file.exists(opt_path)) {
       decay_params <- readRDS(opt_path)
     } else {
+      cli::cli_alert_info("No optimized decay params found at {.path {opt_path}}. Using defaults.")
       decay_params <- get_default_decay_params()
     }
   }

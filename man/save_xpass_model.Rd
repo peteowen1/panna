@@ -9,7 +9,7 @@ save_xpass_model(xpass_model, path = NULL)
 \arguments{
 \item{xpass_model}{Fitted xPass model}
 
-\item{path}{Path to save. If NULL, saves to pannadata/models/opta/}
+\item{path}{Path to save. If NULL, saves to pannadata/opta/models/}
 }
 \value{
 Invisibly returns the path

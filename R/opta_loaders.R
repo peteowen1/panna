@@ -804,10 +804,11 @@ query_remote_opta_match_events <- function(opta_league, season = NULL,
     "*"
   }
 
-  # Build WHERE clause for season filter
+  # Build WHERE clause for season filter (using build_where_clause to prevent SQL injection)
   parquet_norm <- normalizePath(parquet_path, winslash = "/", mustWork = TRUE)
-  if (!is.null(season)) {
-    sql <- sprintf("SELECT %s FROM '%s' WHERE season = '%s'", col_sql, parquet_norm, season)
+  where_sql <- build_where_clause(list(season = season), prefix = FALSE)
+  if (nchar(where_sql) > 0) {
+    sql <- sprintf("SELECT %s FROM '%s' WHERE %s", col_sql, parquet_norm, where_sql)
   } else {
     sql <- sprintf("SELECT %s FROM '%s'", col_sql, parquet_norm)
   }
@@ -989,6 +990,16 @@ pb_download_opta <- function(repo = "peteowen1/pannadata",
         "x" = e$message
       ))
     })
+  }
+
+  # Check for failed downloads
+  downloaded <- files_to_download[file.exists(file.path(opta_dir, files_to_download))]
+  failed <- setdiff(files_to_download, downloaded)
+  if (length(failed) > 0) {
+    cli::cli_abort(c(
+      "Failed to download {length(failed)} Opta file(s)",
+      "x" = paste(failed, collapse = ", ")
+    ))
   }
 
   # Report sizes

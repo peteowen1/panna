@@ -15,7 +15,7 @@ pb_download_epv_models(
 
 \item{tag}{Release tag (default: epv-models)}
 
-\item{dest}{Destination directory. If NULL, uses pannadata/models/opta/}
+\item{dest}{Destination directory. If NULL, uses pannadata/opta/models/}
 }
 \value{
 Invisibly returns path to models

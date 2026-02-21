@@ -112,12 +112,15 @@ if (!is.null(force_rebuild_from)) {
     "6" = c("06_seasonal_ratings.rds", "seasonal_skill_xrapm.csv")
   )
 
-  steps_to_clear <- names(cache_files)
-  # Keep only steps >= force_rebuild_from
-  if (is.numeric(force_rebuild_from)) {
-    # Compare numerically where possible
-    numeric_steps <- suppressWarnings(as.numeric(steps_to_clear))
-    steps_to_clear <- steps_to_clear[!is.na(numeric_steps) & numeric_steps >= force_rebuild_from]
+  # Build list of steps to clear: numeric steps >= force_rebuild_from + fractional steps
+  steps_to_clear <- as.character(force_rebuild_from:6)
+  # Include fractional steps (e.g., "2b") when their parent step is being rebuilt
+  fractional_steps <- setdiff(names(cache_files), as.character(1:6))
+  for (fs in fractional_steps) {
+    parent <- as.numeric(sub("[a-z]+$", "", fs))
+    if (!is.na(parent) && parent >= force_rebuild_from) {
+      steps_to_clear <- c(steps_to_clear, fs)
+    }
   }
 
   files_to_delete <- unlist(cache_files[steps_to_clear])

@@ -44,41 +44,11 @@ if (file.exists(decay_params_path)) {
 # 5. Enrich with xMetrics ----
 
 if (use_xmetrics_features) {
-  cat("\n=== Enriching with xMetrics ===\n")
-
-  # Check if xMetrics columns already exist from the match-level computation
   xm_cols <- c("xg_per90", "npxg_per90", "xa_per90_xmetrics",
                 "xpass_overperformance_per90_xmetrics")
   existing_xm <- intersect(xm_cols, names(match_stats))
-
-  if (length(existing_xm) == 0) {
-    cat("No xMetrics columns in match stats. Loading separately...\n")
-
-    # Load xMetrics data and merge
-    leagues <- if (exists("leagues")) leagues else unique(match_stats$competition)
-    all_xmetrics <- list()
-
-    for (league in leagues) {
-      available_seasons <- tryCatch(list_opta_seasons(league), error = function(e) character(0))
-      for (season in available_seasons) {
-        xm <- tryCatch(load_opta_xmetrics(league, season = season), error = function(e) NULL)
-        if (!is.null(xm) && nrow(xm) > 0) {
-          xm$league <- league
-          xm$season <- season
-          all_xmetrics[[paste(league, season)]] <- xm
-        }
-      }
-    }
-
-    if (length(all_xmetrics) > 0) {
-      xmetrics_dt <- data.table::rbindlist(all_xmetrics, fill = TRUE)
-      cat(sprintf("  Loaded %d xMetrics rows\n", nrow(xmetrics_dt)))
-      # Would need to merge by match_id + player - skip for now,
-      # will be handled in the match-level computation
-    }
-  } else {
-    cat(sprintf("  xMetrics columns already present: %s\n", paste(existing_xm, collapse = ", ")))
-  }
+  cat(sprintf("  xMetrics columns present: %s\n",
+              if (length(existing_xm) > 0) paste(existing_xm, collapse = ", ") else "none (should come from step 01)"))
 }
 
 # 6. Estimate Skills ----

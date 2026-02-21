@@ -160,7 +160,7 @@ aggregate_lineup_skills <- function(lineups, skill_estimates,
                                      attacking_stats = NULL,
                                      defensive_stats = NULL) {
   dt_lineups <- data.table::as.data.table(lineups)
-  dt_skills <- data.table::as.data.table(skill_estimates)
+  dt_skills <- data.table::copy(data.table::as.data.table(skill_estimates))
 
   # Default stat groups
   if (is.null(attacking_stats)) {
@@ -190,28 +190,34 @@ aggregate_lineup_skills <- function(lineups, skill_estimates,
   skill_lookup <- dt_skills[!duplicated(clean_name), c("clean_name", all_stats), with = FALSE]
   starters <- skill_lookup[starters, on = "clean_name"]
 
+  # Warn about unmatched players
+  n_unmatched <- sum(is.na(starters[[all_stats[1]]]))
+  if (n_unmatched > 0) {
+    n_total <- nrow(starters)
+    cli::cli_warn("{n_unmatched}/{n_total} starters had no matching skill estimates (filled with 0).")
+  }
+
   # Aggregate by match + side
   team_skills <- starters[, {
     result <- list()
-    for (stat in all_stats) {
+    stat_means <- numeric(length(all_stats))
+    for (j in seq_along(all_stats)) {
+      stat <- all_stats[j]
       vals <- get(stat)
       vals[is.na(vals)] <- 0
       prefix <- if (stat %in% attacking_stats) "sk_att" else "sk_def"
       col_name <- paste0(prefix, "_", sub("_p90$", "", stat))
-      result[[col_name]] <- mean(vals)
+      stat_means[j] <- mean(vals)
+      result[[col_name]] <- stat_means[j]
     }
-    # Composites
-    if (length(attacking_stats) > 0) {
-      att_vals <- unlist(lapply(attacking_stats, function(s) {
-        v <- get(s); v[is.na(v)] <- 0; v
-      }))
-      result[["sk_att_composite"]] <- mean(att_vals)
+    # Composites: mean-of-means (equal stat weighting, not pooled across all player-stat values)
+    att_idx <- which(all_stats %in% attacking_stats)
+    def_idx <- which(all_stats %in% defensive_stats)
+    if (length(att_idx) > 0) {
+      result[["sk_att_composite"]] <- mean(stat_means[att_idx])
     }
-    if (length(defensive_stats) > 0) {
-      def_vals <- unlist(lapply(defensive_stats, function(s) {
-        v <- get(s); v[is.na(v)] <- 0; v
-      }))
-      result[["sk_def_composite"]] <- mean(def_vals)
+    if (length(def_idx) > 0) {
+      result[["sk_def_composite"]] <- mean(stat_means[def_idx])
     }
     result
   }, by = .(match_id, team_name, team_position)]
@@ -229,6 +235,8 @@ aggregate_lineup_skills <- function(lineups, skill_estimates,
   # Add differentials
   if ("home_sk_att_composite" %in% names(result)) {
     result[, sk_att_diff := home_sk_att_composite - away_sk_att_composite]
+  }
+  if ("home_sk_def_composite" %in% names(result)) {
     result[, sk_def_diff := home_sk_def_composite - away_sk_def_composite]
   }
 
