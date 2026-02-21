@@ -141,8 +141,8 @@ saveRDS(epv_model, file.path(CACHE_DIR, "epv_model.rds"))
 
 cli_h2("Step 8: Save Models to Pannadata")
 
-# Save models to pannadata/models/opta/ for package use
-pannadata_models <- file.path(pannadata_dir(), "models", "opta")
+# Save models to pannadata/opta/models/ for package use
+pannadata_models <- file.path(opta_data_dir(), "models")
 if (!dir.exists(pannadata_models)) dir.create(pannadata_models, recursive = TRUE)
 
 saveRDS(xg_model, file.path(pannadata_models, "xg_model.rds"))

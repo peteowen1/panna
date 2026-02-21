@@ -7,8 +7,8 @@
 # Run from panna directory: Rscript data-raw/epv/03_calculate_player_xmetrics.R
 #
 # Requires:
-#   - pannadata/models/opta/xg_model.rds
-#   - pannadata/models/opta/xpass_model.rds
+#   - pannadata/opta/models/xg_model.rds
+#   - pannadata/opta/models/xpass_model.rds
 #   - Opta match_events and lineups parquet files
 #
 # Outputs:

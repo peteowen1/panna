@@ -85,12 +85,42 @@ create_test_rapm_data <- function(n_splints = 50, n_players = 20) {
 }
 
 
+# =============================================================================
+# Shared fixtures: fit once, reuse across tests
+# =============================================================================
+
+# Base RAPM model (shared by tests 1-3)
+rapm_data_basic <- create_test_rapm_data(n_splints = 30, n_players = 15)
+rapm_model_basic <- if (requireNamespace("glmnet", quietly = TRUE)) {
+  fit_rapm(rapm_data_basic, alpha = 0, nfolds = 3, parallel = FALSE)
+}
+
+# xRAPM model (shared by tests 4-5)
+xrapm_fixture <- if (requireNamespace("glmnet", quietly = TRUE)) {
+  set.seed(42)
+  offense_prior <- stats::setNames(
+    rnorm(15, 0, 0.5),
+    rapm_data_basic$player_ids
+  )
+  defense_prior <- stats::setNames(
+    rnorm(15, 0, 0.3),
+    rapm_data_basic$player_ids
+  )
+  model <- fit_rapm_with_prior(
+    rapm_data_basic,
+    offense_prior = offense_prior,
+    defense_prior = defense_prior,
+    alpha = 0,
+    nfolds = 3
+  )
+  list(model = model, offense_prior = offense_prior, defense_prior = defense_prior)
+}
+
+
 test_that("fit_rapm returns valid model structure", {
   skip_if_not_installed("glmnet")
 
-  rapm_data <- create_test_rapm_data(n_splints = 30, n_players = 15)
-
-  model <- fit_rapm(rapm_data, alpha = 0, nfolds = 3)
+  model <- rapm_model_basic
 
   # Check model structure
   expect_true(inherits(model, "cv.glmnet"))
@@ -107,10 +137,7 @@ test_that("fit_rapm returns valid model structure", {
 test_that("extract_rapm_ratings returns player ratings", {
   skip_if_not_installed("glmnet")
 
-  rapm_data <- create_test_rapm_data(n_splints = 30, n_players = 15)
-  model <- fit_rapm(rapm_data, alpha = 0, nfolds = 3)
-
-  ratings <- extract_rapm_ratings(model)
+  ratings <- extract_rapm_ratings(rapm_model_basic)
 
   # Check output structure
   expect_true(is.data.frame(ratings))
@@ -133,10 +160,7 @@ test_that("extract_rapm_ratings returns player ratings", {
 test_that("get_covariate_effects extracts covariate effects", {
   skip_if_not_installed("glmnet")
 
-  rapm_data <- create_test_rapm_data(n_splints = 30, n_players = 15)
-  model <- fit_rapm(rapm_data, alpha = 0, nfolds = 3)
-
-  covariates <- get_covariate_effects(model)
+  covariates <- get_covariate_effects(rapm_model_basic)
 
   # Check structure - returns named vector
 
@@ -152,25 +176,7 @@ test_that("get_covariate_effects extracts covariate effects", {
 test_that("fit_rapm_with_prior accepts and uses prior", {
   skip_if_not_installed("glmnet")
 
-  rapm_data <- create_test_rapm_data(n_splints = 30, n_players = 15)
-
-  # Create prior vectors
-  offense_prior <- stats::setNames(
-    rnorm(15, 0, 0.5),
-    rapm_data$player_ids
-  )
-  defense_prior <- stats::setNames(
-    rnorm(15, 0, 0.3),
-    rapm_data$player_ids
-  )
-
-  model <- fit_rapm_with_prior(
-    rapm_data,
-    offense_prior = offense_prior,
-    defense_prior = defense_prior,
-    alpha = 0,
-    nfolds = 3
-  )
+  model <- xrapm_fixture$model
 
   # Check model structure
   expect_true(inherits(model, "cv.glmnet"))
@@ -187,26 +193,7 @@ test_that("fit_rapm_with_prior accepts and uses prior", {
 test_that("extract_xrapm_ratings includes deviation from prior", {
   skip_if_not_installed("glmnet")
 
-  rapm_data <- create_test_rapm_data(n_splints = 30, n_players = 15)
-
-  offense_prior <- stats::setNames(
-    rnorm(15, 0, 0.5),
-    rapm_data$player_ids
-  )
-  defense_prior <- stats::setNames(
-    rnorm(15, 0, 0.3),
-    rapm_data$player_ids
-  )
-
-  model <- fit_rapm_with_prior(
-    rapm_data,
-    offense_prior = offense_prior,
-    defense_prior = defense_prior,
-    alpha = 0,
-    nfolds = 3
-  )
-
-  ratings <- extract_xrapm_ratings(model)
+  ratings <- extract_xrapm_ratings(xrapm_fixture$model)
 
   # Check output structure
   expect_true(is.data.frame(ratings))
@@ -225,7 +212,7 @@ test_that("RAPM ratings sum to approximately zero", {
   skip_if_not_installed("glmnet")
 
   rapm_data <- create_test_rapm_data(n_splints = 50, n_players = 20)
-  model <- fit_rapm(rapm_data, alpha = 0, nfolds = 3)
+  model <- fit_rapm(rapm_data, alpha = 0, nfolds = 3, parallel = FALSE)
   ratings <- extract_rapm_ratings(model)
 
   # Ridge regularization should center ratings near zero
@@ -240,10 +227,12 @@ test_that("fit_rapm handles use_weights parameter", {
   rapm_data <- create_test_rapm_data(n_splints = 30, n_players = 15)
 
   # With weights
-  model_weighted <- fit_rapm(rapm_data, alpha = 0, nfolds = 3, use_weights = TRUE)
+  model_weighted <- fit_rapm(rapm_data, alpha = 0, nfolds = 3,
+                             use_weights = TRUE, parallel = FALSE)
 
   # Without weights
-  model_unweighted <- fit_rapm(rapm_data, alpha = 0, nfolds = 3, use_weights = FALSE)
+  model_unweighted <- fit_rapm(rapm_data, alpha = 0, nfolds = 3,
+                               use_weights = FALSE, parallel = FALSE)
 
   # Both should produce valid models
   expect_true(inherits(model_weighted, "cv.glmnet"))

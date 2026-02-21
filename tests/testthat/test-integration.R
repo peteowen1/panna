@@ -223,7 +223,7 @@ test_that("full pipeline: processed_data -> splints -> RAPM -> SPM -> Panna", {
   expect_equal(nrow(X) %% 2, 0)
 
   # Step 4: Fit RAPM
-  rapm_model <- fit_rapm(rapm_data, alpha = 0, nfolds = 3)
+  rapm_model <- fit_rapm(rapm_data, alpha = 0, nfolds = 3, parallel = FALSE)
   expect_true(inherits(rapm_model, "cv.glmnet"))
 
   rapm_ratings <- extract_rapm_ratings(rapm_model)
@@ -235,6 +235,14 @@ test_that("full pipeline: processed_data -> splints -> RAPM -> SPM -> Panna", {
   expect_true(all(is.finite(rapm_ratings$rapm)))
   expect_true(all(is.finite(rapm_ratings$offense)))
   expect_true(all(is.finite(rapm_ratings$defense)))
+
+  # O/D decomposition: RAPM = offense - defense
+  expect_equal(rapm_ratings$rapm, rapm_ratings$offense - rapm_ratings$defense, tolerance = 1e-10)
+  expect_equal(nrow(rapm_ratings), length(rapm_data$player_ids))
+  expect_true("player_name" %in% names(rapm_ratings))
+  expect_true(all(!is.na(rapm_ratings$player_name)))
+  expect_true("total_minutes" %in% names(rapm_ratings))
+  expect_true(sum(rapm_ratings$total_minutes >= 30, na.rm = TRUE) > 0)
 
   # Step 5: Create player features and fit SPM
   player_features <- create_synthetic_player_features(
@@ -274,38 +282,7 @@ test_that("full pipeline: processed_data -> splints -> RAPM -> SPM -> Panna", {
 
 
 # =============================================================================
-# Integration Test 2: O/D decomposition from full pipeline
-# =============================================================================
-
-test_that("offensive/defensive decomposition from RAPM is consistent", {
-  skip_if_not_installed("glmnet")
-
-  processed <- create_synthetic_processed_data(n_matches = 15)
-  splints <- create_all_splints(processed, verbose = FALSE)
-  rapm_data <- prepare_rapm_data(splints, min_minutes = 30)
-  rapm_model <- fit_rapm(rapm_data, alpha = 0, nfolds = 3)
-  ratings <- extract_rapm_ratings(rapm_model)
-
-  # RAPM = offense - defense
-  expect_equal(ratings$rapm, ratings$offense - ratings$defense, tolerance = 1e-10)
-
-  # All players from the model are present
-  expect_equal(nrow(ratings), length(rapm_data$player_ids))
-
-  # Player names joined correctly
-
-  expect_true("player_name" %in% names(ratings))
-  expect_true(all(!is.na(ratings$player_name)))
-
-  # Total minutes joined correctly
-  expect_true("total_minutes" %in% names(ratings))
-  # Most players should meet min_minutes threshold (some may be replacement pool)
-  expect_true(sum(ratings$total_minutes >= 30, na.rm = TRUE) > 0)
-})
-
-
-# =============================================================================
-# Integration Test 3: xRAPM (RAPM with SPM prior)
+# Integration Test 2: xRAPM (RAPM with SPM prior)
 # =============================================================================
 
 test_that("xRAPM pipeline: RAPM -> SPM -> fit_rapm_with_prior", {
@@ -316,7 +293,7 @@ test_that("xRAPM pipeline: RAPM -> SPM -> fit_rapm_with_prior", {
   rapm_data <- prepare_rapm_data(splints, min_minutes = 30)
 
   # Fit base RAPM
-  rapm_model <- fit_rapm(rapm_data, alpha = 0, nfolds = 3)
+  rapm_model <- fit_rapm(rapm_data, alpha = 0, nfolds = 3, parallel = FALSE)
   rapm_ratings <- extract_rapm_ratings(rapm_model)
 
   # Fit SPM
@@ -451,7 +428,7 @@ test_that("pipeline handles partial player overlap between RAPM and SPM", {
   splints <- create_all_splints(processed, verbose = FALSE)
   rapm_data <- prepare_rapm_data(splints, min_minutes = 30)
 
-  rapm_model <- fit_rapm(rapm_data, alpha = 0, nfolds = 3)
+  rapm_model <- fit_rapm(rapm_data, alpha = 0, nfolds = 3, parallel = FALSE)
   rapm_ratings <- extract_rapm_ratings(rapm_model)
 
   # Create features for only HALF the players (simulates missing data)
@@ -673,7 +650,7 @@ test_that("aggregate_rapm_by_team groups correctly", {
   processed <- create_synthetic_processed_data(n_matches = 10)
   splints <- create_all_splints(processed, verbose = FALSE)
   rapm_data <- prepare_rapm_data(splints, min_minutes = 30)
-  rapm_model <- fit_rapm(rapm_data, alpha = 0, nfolds = 3)
+  rapm_model <- fit_rapm(rapm_data, alpha = 0, nfolds = 3, parallel = FALSE)
   ratings <- extract_rapm_ratings(rapm_model)
 
   # Create player-team mapping from lineups

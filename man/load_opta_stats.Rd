@@ -35,7 +35,7 @@ possWonDef3rd, touchesInOppBox, bigChanceCreated, etc.
 # Load all EPL data from local files
 epl <- load_opta_stats("ENG")
 
-# Load from GitHub releases (downloads opta-parquet.tar.gz)
+# Load from GitHub releases (downloads opta_player_stats.parquet)
 epl_remote <- load_opta_stats("ENG", season = "2021-2022", source = "remote")
 
 # Load specific columns only

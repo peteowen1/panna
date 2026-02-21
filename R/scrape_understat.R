@@ -432,7 +432,7 @@ build_consolidated_understat_parquet <- function(table_types = NULL, output_dir 
 
   # Output directory
   if (is.null(output_dir)) {
-    output_dir <- file.path(pannadata_dir(), "consolidated")
+    output_dir <- file.path(pannadata_dir(), "understat")
   }
 
   if (!dir.exists(output_dir)) {

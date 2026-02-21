@@ -14,7 +14,7 @@ query_remote_opta_parquet(
 )
 }
 \arguments{
-\item{table_type}{"player_stats" or "shots"}
+\item{table_type}{Table type (player_stats, shots, shot_events, events, lineups, fixtures)}
 
 \item{opta_league}{League code in Opta format (EPL, La_Liga, etc.)}
 
@@ -30,7 +30,8 @@ query_remote_opta_parquet(
 Data frame with query results
 }
 \description{
-Downloads Opta data from GitHub releases and queries using DuckDB.
-Data is cached for the session to avoid repeated downloads.
+Downloads individual consolidated Opta files from GitHub releases and
+queries using DuckDB. Each table type is a single consolidated file
+(e.g., opta_player_stats.parquet) that is cached for the session.
 }
 \keyword{internal}
