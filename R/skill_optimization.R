@@ -145,10 +145,23 @@ get_stat_tiers <- function() {
 #' @param is_efficiency If TRUE, uses Beta-Binomial with attempt-weighting.
 #' @param denom_col Denominator column for efficiency stats.
 #' @param prior_bounds Numeric vector of length 2: search range for prior
-#'   strength. Default c(0.1, 30) for rate stats, c(5, 200) for efficiency.
+#'   strength. Default c(0.1, 100) for rate stats, c(0.1, 500) for efficiency.
+#' @param lambda_bounds Numeric vector of length 2: search range for decay lambda.
+#'   Default c(0, 0.02). Only used when \code{optimize_lambda = TRUE}.
+#' @param quantile_bounds Numeric vector of length 2: search range for prior
+#'   center quantile. Default c(0.3, 0.7). Only used when
+#'   \code{optimize_quantile = TRUE}.
+#' @param optimize_lambda If TRUE, jointly optimizes the decay rate lambda
+#'   alongside prior strength using L-BFGS-B.
+#' @param optimize_quantile If TRUE, jointly optimizes the prior center quantile
+#'   alongside prior strength.
+#' @param pos_multipliers Named list of position multipliers from
+#'   \code{compute_position_multipliers()}.
 #' @param min_history Minimum prior matches for a prediction to count.
 #' @param sample_n Max number of players to sample (for speed).
 #' @param seed Random seed for player sampling.
+#' @param precomputed Precomputed player splits from
+#'   \code{optimize_all_priors()}, or NULL to compute from scratch.
 #'
 #' @return A list with \code{stat}, \code{optimal_prior}, \code{mse}, and
 #'   \code{n_predictions}.
@@ -540,7 +553,12 @@ optimize_stat_prior <- function(match_stats = NULL, stat_name,
 #' @param match_stats A data.table from \code{compute_match_level_opta_stats()}.
 #' @param decay_params Base decay parameters (provides lambda values).
 #' @param stat_tiers Output of \code{get_stat_tiers()}, or NULL for defaults.
+#' @param optimize_lambda If TRUE, jointly optimizes per-stat decay lambda.
+#' @param optimize_quantile If TRUE, jointly optimizes per-stat prior center
+#'   quantile.
 #' @param sample_n Max players to sample per stat (default 500).
+#' @param n_cores Number of cores for parallel optimization. Default 1
+#'   (sequential).
 #' @param verbose Print progress.
 #'
 #' @return Updated decay_params with \code{stat_priors} element: a named
@@ -625,7 +643,7 @@ optimize_all_priors <- function(match_stats, decay_params = NULL,
   # Set up parallel cluster if requested
   cl <- NULL
   if (n_cores > 1) {
-    pkg_path <- tryCatch(pkgload::pkg_path(), error = function(e) getwd())
+    pkg_path <- getwd()
     cl <- tryCatch({
       cl <- parallel::makeCluster(n_cores)
       parallel::clusterExport(cl, "pkg_path", envir = environment())

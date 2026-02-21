@@ -22,7 +22,15 @@ optimize_all_priors(
 
 \item{stat_tiers}{Output of \code{get_stat_tiers()}, or NULL for defaults.}
 
+\item{optimize_lambda}{If TRUE, jointly optimizes per-stat decay lambda.}
+
+\item{optimize_quantile}{If TRUE, jointly optimizes per-stat prior center
+quantile.}
+
 \item{sample_n}{Max players to sample per stat (default 500).}
+
+\item{n_cores}{Number of cores for parallel optimization. Default 1
+(sequential).}
 
 \item{verbose}{Print progress.}
 }
