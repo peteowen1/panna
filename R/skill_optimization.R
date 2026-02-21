@@ -494,6 +494,9 @@ optimize_stat_prior <- function(match_stats = NULL, stat_name,
       par = par_init, fn = objective, method = "L-BFGS-B",
       lower = par_lower, upper = par_upper
     )
+    if (result$convergence != 0) {
+      cli::cli_warn("L-BFGS-B failed to converge for stat {.val {stat_name}} (code {result$convergence}).")
+    }
     idx <- 0
     out <- list(stat = stat_name, loss = result$value)
 

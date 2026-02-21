@@ -190,28 +190,6 @@ aggregate_lineup_skills <- function(lineups, skill_estimates,
   skill_lookup <- dt_skills[!duplicated(clean_name), c("clean_name", all_stats), with = FALSE]
   starters <- skill_lookup[starters, on = "clean_name"]
 
-  # Aggregate per match-side: mean of each skill stat
-  agg_exprs <- list()
-  for (stat in all_stats) {
-    prefix <- if (stat %in% attacking_stats) "sk_att" else "sk_def"
-    col_name <- paste0(prefix, "_", sub("_p90$", "", stat))
-    agg_exprs[[col_name]] <- bquote(mean(get(.(stat)), na.rm = TRUE))
-  }
-
-  # Add composite attacking/defensive skill sums
-  if (length(attacking_stats) > 0) {
-    agg_exprs[["sk_att_composite"]] <- bquote({
-      vals <- unlist(mget(.(attacking_stats)))
-      mean(vals, na.rm = TRUE)
-    })
-  }
-  if (length(defensive_stats) > 0) {
-    agg_exprs[["sk_def_composite"]] <- bquote({
-      vals <- unlist(mget(.(defensive_stats)))
-      mean(vals, na.rm = TRUE)
-    })
-  }
-
   # Aggregate by match + side
   team_skills <- starters[, {
     result <- list()

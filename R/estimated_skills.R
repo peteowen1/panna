@@ -139,7 +139,7 @@ get_default_decay_params <- function() {
 #'
 #' @export
 compute_position_multipliers <- function(match_stats, stat_cols = NULL) {
-  dt <- data.table::as.data.table(match_stats)
+  dt <- data.table::copy(data.table::as.data.table(match_stats))
   dt <- .resolve_positions(dt)
 
   if (is.null(stat_cols)) {
@@ -281,7 +281,7 @@ estimate_player_skills <- function(match_stats, decay_params = NULL,
                                     stat_cols = NULL) {
   if (is.null(decay_params)) decay_params <- get_default_decay_params()
 
-  dt <- data.table::as.data.table(match_stats)
+  dt <- data.table::copy(data.table::as.data.table(match_stats))
 
   # Ensure match_date is Date
 
@@ -518,7 +518,7 @@ estimate_player_skills <- function(match_stats, decay_params = NULL,
 inspect_skill <- function(stat_name, match_stats, decay_params = NULL,
                            target_date = Sys.Date()) {
   if (is.null(decay_params)) decay_params <- get_default_decay_params()
-  dt <- data.table::as.data.table(match_stats)
+  dt <- data.table::copy(data.table::as.data.table(match_stats))
   if (!inherits(dt$match_date, "Date")) dt[, match_date := as.Date(match_date)]
 
   target_date <- as.Date(target_date)
@@ -702,7 +702,7 @@ aggregate_skills_for_spm <- function(match_stats, decay_params = NULL,
                                       min_weighted_90s = 5) {
   if (is.null(decay_params)) decay_params <- get_default_decay_params()
 
-  dt <- data.table::as.data.table(match_stats)
+  dt <- data.table::copy(data.table::as.data.table(match_stats))
   if (!inherits(dt$match_date, "Date")) {
     dt[, match_date := as.Date(match_date)]
   }
@@ -791,10 +791,10 @@ aggregate_skills_for_spm <- function(match_stats, decay_params = NULL,
   # Compute position dummies if primary_position exists
   if ("primary_position" %in% names(result)) {
     pos <- result$primary_position
-    result[, is_gk := as.integer(grepl("Goalkeeper", pos, ignore.case = TRUE))]
-    result[, is_df := as.integer(grepl("Defender", pos, ignore.case = TRUE))]
-    result[, is_mf := as.integer(grepl("Midfielder", pos, ignore.case = TRUE))]
-    result[, is_fw := as.integer(grepl("Forward|Striker", pos, ignore.case = TRUE))]
+    result[, is_gk := as.integer(grepl("GK|Goalkeeper", pos, ignore.case = TRUE))]
+    result[, is_df := as.integer(grepl("DEF|Defender", pos, ignore.case = TRUE))]
+    result[, is_mf := as.integer(grepl("MID|Midfielder", pos, ignore.case = TRUE))]
+    result[, is_fw := as.integer(grepl("FWD|Forward|Striker", pos, ignore.case = TRUE))]
   }
 
   # Replace NAs with 0 in numeric columns
@@ -883,7 +883,7 @@ backtest_skill_predictions <- function(match_stats, decay_params = NULL,
                                         sample_n = NULL, seed = 42) {
   if (is.null(decay_params)) decay_params <- get_default_decay_params()
 
-  dt <- data.table::as.data.table(match_stats)
+  dt <- data.table::copy(data.table::as.data.table(match_stats))
   if (!inherits(dt$match_date, "Date")) dt[, match_date := as.Date(match_date)]
   data.table::setorder(dt, player_id, match_date)
 
@@ -1180,7 +1180,7 @@ adjust_match_stats_for_context <- function(match_stats, elo_ratings = NULL,
                                             big5_leagues = c("EPL", "La_Liga", "Bundesliga",
                                                               "Serie_A", "Ligue_1",
                                                               "ENG", "ESP", "GER", "ITA", "FRA")) {
-  dt <- data.table::as.data.table(match_stats)
+  dt <- data.table::copy(data.table::as.data.table(match_stats))
 
   # Identify stat columns to adjust (per-90 rates and efficiency stats)
   p90_cols <- grep("_p90$", names(dt), value = TRUE)
