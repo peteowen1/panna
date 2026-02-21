@@ -410,6 +410,7 @@ utils::globalVariables(c(
   "match_status",
   "clean_name",
   "pos_group",
+  "modal_pos",
   "is_home",
   "goals_scored",
   "goals_conceded",
@@ -449,5 +450,37 @@ utils::globalVariables(c(
   "spm_prev",
   "days_since_last",
   "home_days_since_last",
-  "away_days_since_last"
+  "away_days_since_last",
+
+  # Estimated skills columns
+  "days_since",
+  "weighted_90s",
+  "primary_position",
+  "opponent_team",
+  "i.team_name",
+  "season_minutes",
+  "n_matches",
+  "minsPlayed",
+  "is_gk",
+  "is_df",
+  "is_mf",
+  "is_fw",
+
+  # Context adjustment columns
+  "opp_elo",
+  "opp_factor",
+  "competition",
+
+  # Team skill feature columns
+  "sk_att_composite",
+  "sk_def_composite",
+  "home_sk_att_composite",
+  "away_sk_att_composite",
+  "home_sk_def_composite",
+  "away_sk_def_composite",
+  "sk_att_diff",
+  "sk_def_diff",
+
+  # Player skill profile columns
+  "confidence"
 ))

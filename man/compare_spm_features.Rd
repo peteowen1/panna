@@ -20,10 +20,3 @@ Data frame comparing feature importance
 Compares which features are most important in FBref vs Opta SPM models.
 Useful for understanding which data source captures different aspects of play.
 }
-\examples{
-\dontrun{
-comparison <- compare_spm_features(fbref_spm_model, opta_spm_model, n = 20)
-head(comparison)
-}
-
-}

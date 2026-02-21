@@ -314,6 +314,127 @@
 
 
 # ============================================================================
+# Match-level Opta stats (for estimated skills pipeline)
+# ============================================================================
+
+#' Compute match-level Opta statistics with per-90 rates
+#'
+#' Like \code{aggregate_opta_stats()} but preserves individual player-match rows
+#' instead of aggregating across matches. Each row gets per-90 rates and derived
+#' features computed from that single match's data. Used as input for the
+#' estimated skills pipeline where decay-weighted averaging replaces aggregation.
+#'
+#' @param opta_stats Data frame from \code{load_opta_stats()}, one row per
+#'   player-match. Must contain \code{match_id}, \code{match_date},
+#'   \code{player_name}, \code{team_name}, \code{team_position}, and
+#'   \code{minsPlayed}.
+#' @param min_minutes Minimum minutes in a single match for inclusion (default 10).
+#'   Filters out very short cameos where per-90 rates are unreliable.
+#'
+#' @return A data.table with one row per player-match containing:
+#'   \itemize{
+#'     \item Identity columns: match_id, match_date, player_id, player_name,
+#'       team_name, position, competition, season
+#'     \item Context columns: opponent_team, is_home
+#'     \item Minutes: total_minutes
+#'     \item Per-90 rate columns (same names as aggregate_opta_stats output)
+#'     \item Derived efficiency columns (same names as aggregate_opta_stats output)
+#'   }
+#'
+#' @export
+#' @examples
+#' \dontrun{
+#' opta_stats <- load_opta_stats("ENG", "2024-2025")
+#' match_stats <- compute_match_level_opta_stats(opta_stats)
+#' }
+compute_match_level_opta_stats <- function(opta_stats, min_minutes = 10) {
+  if (is.null(opta_stats) || nrow(opta_stats) == 0) {
+    cli::cli_warn("No Opta stats provided.")
+    return(NULL)
+  }
+
+  progress_msg(sprintf("Computing match-level stats for %d player-match rows...",
+                        nrow(opta_stats)))
+
+  dt <- data.table::as.data.table(opta_stats)
+
+  # Clean player ID
+
+  dt[, player_id := clean_player_name(player_name)]
+
+  # Get column mapping and rename
+  opta_cols <- .get_opta_col_mapping()
+  existing_cols <- opta_cols[opta_cols %in% names(dt)]
+
+  # Rename Opta columns to panna names (only the ones that exist)
+  for (i in seq_along(existing_cols)) {
+    panna_name <- names(existing_cols)[i]
+    opta_name <- existing_cols[i]
+    if (panna_name != opta_name && opta_name %in% names(dt)) {
+      data.table::setnames(dt, opta_name, panna_name, skip_absent = TRUE)
+    }
+  }
+
+  # Ensure total_minutes exists
+  if (!"total_minutes" %in% names(dt) && "minsPlayed" %in% names(dt)) {
+    dt[, total_minutes := as.numeric(minsPlayed)]
+  }
+
+  # Filter by minimum minutes
+  dt <- dt[!is.na(total_minutes) & total_minutes >= min_minutes]
+  if (nrow(dt) == 0) {
+    cli::cli_warn("No rows remaining after filtering by min_minutes = {min_minutes}.")
+    return(NULL)
+  }
+
+  # Derive context columns
+  if ("team_position" %in% names(dt)) {
+    dt[, is_home := as.integer(tolower(team_position) == "home")]
+  }
+
+  # Derive opponent_team from lineups within same match
+  if ("match_id" %in% names(dt) && "team_name" %in% names(dt)) {
+    # Build match-team lookup
+    match_teams <- unique(dt[, .(match_id, team_name)])
+    # For each match, find the other team
+    opponent_lookup <- match_teams[match_teams, on = .(match_id),
+                                   allow.cartesian = TRUE][team_name != i.team_name]
+    data.table::setnames(opponent_lookup, c("team_name", "i.team_name"),
+                         c("opponent_team", "team_name"))
+    # Some matches may have > 2 teams (shouldn't happen); take first
+    opponent_lookup <- opponent_lookup[, .SD[1], by = .(match_id, team_name)]
+    dt <- opponent_lookup[, .(match_id, team_name, opponent_team)][dt, on = .(match_id, team_name)]
+  }
+
+  # Add competition/league if available
+  if (!"competition" %in% names(dt) && "league" %in% names(dt)) {
+    data.table::setnames(dt, "league", "competition", skip_absent = TRUE)
+  }
+
+  # Convert to data.frame for the helper functions (they use $ and [[ ]])
+  df <- data.table::setDF(data.table::copy(dt))
+
+  # Compute per-90 rates
+  df <- .calculate_opta_per90(df)
+
+  # Compute derived features
+  df <- .calculate_opta_derived_features(df)
+
+  # Replace NAs with 0 in numeric columns
+  numeric_cols <- vapply(df, is.numeric, logical(1))
+  df[numeric_cols] <- lapply(df[numeric_cols], function(x) {
+    ifelse(is.na(x) | is.infinite(x), 0, x)
+  })
+
+  result <- data.table::as.data.table(df)
+
+  progress_msg(sprintf("Computed match-level stats: %d rows, %d features",
+                        nrow(result), ncol(result)))
+  result
+}
+
+
+# ============================================================================
 # Main Opta stats aggregation
 # ============================================================================
 

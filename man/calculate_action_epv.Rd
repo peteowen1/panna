@@ -41,11 +41,3 @@ Handles possession changes by flipping perspective:
 \item Team change: delta = (-EPV_after) - EPV_before
 }
 }
-\examples{
-\dontrun{
-epv_model <- load_epv_model()
-features <- create_epv_features(spadl_actions)
-spadl_with_epv <- calculate_action_epv(spadl_actions, features, epv_model)
-}
-
-}

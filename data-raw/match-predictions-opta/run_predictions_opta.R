@@ -31,17 +31,21 @@ if (!exists("seasons")) seasons <- NULL
 # MINIMUM SEASON (skip data before this season)
 if (!exists("min_season")) min_season <- "2013-2014"
 
+# USE SKILL-BASED RATINGS (from estimated skills pipeline)
+if (!exists("use_skill_ratings")) use_skill_ratings <- TRUE
+
 # WHICH STEPS TO RUN
 if (!exists("run_steps")) {
   run_steps <- list(
-    step_01_build_fixture_results   = TRUE,
-    step_02_player_ratings_to_team  = TRUE,
-    step_03_team_rolling_features   = TRUE,
-    step_04_build_match_dataset     = TRUE,
-    step_05_fit_goals_model         = TRUE,
-    step_06_fit_outcome_model       = TRUE,
-    step_07_predict_fixtures        = TRUE,
-    step_08_evaluate_model          = TRUE
+    step_01_build_fixture_results    = TRUE,
+    step_02_player_ratings_to_team   = TRUE,
+    step_02b_team_skill_features     = TRUE,   # Team-level skill aggregations
+    step_03_team_rolling_features    = TRUE,
+    step_04_build_match_dataset      = TRUE,
+    step_05_fit_goals_model          = TRUE,
+    step_06_fit_outcome_model        = TRUE,
+    step_07_predict_fixtures         = TRUE,
+    step_08_evaluate_model           = TRUE
   )
 }
 
@@ -53,16 +57,22 @@ if (!exists("force_rebuild_from")) force_rebuild_from <- NULL
 # 3. Helper Functions ----
 
 run_step <- function(step_name, step_num, code_block) {
-  step_key <- sprintf("step_%02d_%s", step_num, step_name)
+  # Support both numeric (2) and string ("2b") step numbers
+  step_label <- as.character(step_num)
+  if (is.numeric(step_num)) {
+    step_key <- sprintf("step_%02d_%s", step_num, step_name)
+  } else {
+    step_key <- sprintf("step_%s_%s", step_num, step_name)
+  }
   if (!isTRUE(run_steps[[step_key]])) {
-    message(sprintf("\n[%s] Step %d: %s - SKIPPED",
-                    format(Sys.time(), "%H:%M:%S"), step_num, step_name))
+    message(sprintf("\n[%s] Step %s: %s - SKIPPED",
+                    format(Sys.time(), "%H:%M:%S"), step_label, step_name))
     return(NULL)
   }
 
   message(sprintf("\n%s", paste(rep("=", 70), collapse = "")))
-  message(sprintf("[%s] Step %d: %s",
-                  format(Sys.time(), "%H:%M:%S"), step_num, step_name))
+  message(sprintf("[%s] Step %s: %s",
+                  format(Sys.time(), "%H:%M:%S"), step_label, step_name))
   message(sprintf("%s\n", paste(rep("=", 70), collapse = "")))
 
   start_time <- Sys.time()
@@ -108,6 +118,7 @@ if (!is.null(force_rebuild_from) && force_rebuild_from >= 1 && force_rebuild_fro
   cache_files <- list(
     "1" = "01_fixture_results.rds",
     "2" = "02_team_ratings.rds",
+    "2b" = "02b_team_skill_features.rds",
     "3" = "03_rolling_features.rds",
     "4" = "04_match_dataset.rds",
     "5" = "05_goals_model.rds",
@@ -116,7 +127,17 @@ if (!is.null(force_rebuild_from) && force_rebuild_from >= 1 && force_rebuild_fro
     "8" = "08_evaluation.rds"
   )
 
-  files_to_delete <- unlist(cache_files[as.character(force_rebuild_from:8)])
+  # Build list of steps to clear: numeric steps >= force_rebuild_from + fractional steps
+  steps_to_clear <- as.character(force_rebuild_from:8)
+  # Include fractional steps (e.g., "2b") when their parent step is being rebuilt
+  fractional_steps <- setdiff(names(cache_files), as.character(1:8))
+  for (fs in fractional_steps) {
+    parent <- as.numeric(sub("[a-z]+$", "", fs))
+    if (!is.na(parent) && parent >= force_rebuild_from) {
+      steps_to_clear <- c(steps_to_clear, fs)
+    }
+  }
+  files_to_delete <- unlist(cache_files[steps_to_clear])
   deleted <- 0
   for (f in files_to_delete) {
     fpath <- file.path(cache_dir, f)
@@ -156,6 +177,12 @@ step_results[[1]] <- run_step("build_fixture_results", 1, function() {
 
 step_results[[2]] <- run_step("player_ratings_to_team", 2, function() {
   source("data-raw/match-predictions-opta/02_player_ratings_to_team.R", local = TRUE)
+})
+
+# 6b. Step 2b: Team Skill Features ----
+
+step_results[["2b"]] <- run_step("team_skill_features", "2b", function() {
+  source("data-raw/match-predictions-opta/02b_team_skill_features.R", local = TRUE)
 })
 
 # 7. Step 3: Team Rolling Features ----

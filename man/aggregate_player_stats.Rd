@@ -40,14 +40,3 @@ Combines match-level statistics into per-90-minute rates for each player.
 Extracts comprehensive features from all available stat tables for SPM modeling.
 Includes derived features like success rates and ratios.
 }
-\examples{
-\dontrun{
-stats_summary <- load_summary("ENG", "2024-2025")
-stats_passing <- load_passing("ENG", "2024-2025")
-stats_defense <- load_defense("ENG", "2024-2025")
-player_features <- aggregate_player_stats(
-  stats_summary, stats_passing, stats_defense, min_minutes = 450
-)
-}
-
-}

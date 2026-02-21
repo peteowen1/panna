@@ -12,6 +12,3 @@ Data frame with league info
 \description{
 Big 5 European league configurations
 }
-\examples{
-get_big5_leagues()
-}

@@ -44,11 +44,3 @@ For the O/D design matrix:
 \item defense_prior: SPM-predicted defensive contribution
 }
 }
-\examples{
-\dontrun{
-offense_prior <- build_prior_vector(spm_data, "offense_spm", rapm_data$player_mapping)
-defense_prior <- build_prior_vector(spm_data, "defense_spm", rapm_data$player_mapping)
-xrapm_model <- fit_rapm_with_prior(rapm_data, offense_prior, defense_prior)
-}
-
-}
