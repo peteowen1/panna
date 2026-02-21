@@ -38,13 +38,32 @@ computed as minutes-weighted mean from the data.}
 \item{denom_col}{Denominator column for efficiency stats.}
 
 \item{prior_bounds}{Numeric vector of length 2: search range for prior
-strength. Default c(0.1, 30) for rate stats, c(5, 200) for efficiency.}
+strength. Default c(0.1, 100) for rate stats, c(0.1, 500) for efficiency.}
+
+\item{lambda_bounds}{Numeric vector of length 2: search range for decay lambda.
+Default c(0, 0.02). Only used when \code{optimize_lambda = TRUE}.}
+
+\item{quantile_bounds}{Numeric vector of length 2: search range for prior
+center quantile. Default c(0.3, 0.7). Only used when
+\code{optimize_quantile = TRUE}.}
+
+\item{optimize_lambda}{If TRUE, jointly optimizes the decay rate lambda
+alongside prior strength using L-BFGS-B.}
+
+\item{optimize_quantile}{If TRUE, jointly optimizes the prior center quantile
+alongside prior strength.}
+
+\item{pos_multipliers}{Named list of position multipliers from
+\code{compute_position_multipliers()}.}
 
 \item{min_history}{Minimum prior matches for a prediction to count.}
 
 \item{sample_n}{Max number of players to sample (for speed).}
 
 \item{seed}{Random seed for player sampling.}
+
+\item{precomputed}{Precomputed player splits from
+\code{optimize_all_priors()}, or NULL to compute from scratch.}
 }
 \value{
 A list with \code{stat}, \code{optimal_prior}, \code{mse}, and
