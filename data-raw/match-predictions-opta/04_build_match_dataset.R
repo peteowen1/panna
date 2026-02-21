@@ -86,15 +86,26 @@ if (length(unique(dataset$league)) >= 2) {
 
 # 7. Fill Early-Season NAs ----
 
-# For rolling features, fill NAs with column means within each league
+# Flag early-season matches (those with rolling feature NAs) BEFORE imputation
+# so the model can distinguish "new team with no form" from "average team"
 numeric_cols <- names(dataset)[sapply(dataset, is.numeric)]
 rolling_cols <- grep("_last_\\d+$|days_since_last", numeric_cols, value = TRUE)
 
 if (length(rolling_cols) > 0) {
+  # Create is_early_season flag: TRUE if ANY rolling feature is NA
+  dataset$is_early_season <- as.integer(
+    rowSums(is.na(dataset[, rolling_cols, drop = FALSE])) > 0
+  )
+  early_count <- sum(dataset$is_early_season)
+  if (early_count > 0) {
+    message(sprintf("  Flagged %d early-season matches (%.1f%%) with NA rolling features",
+                    early_count, 100 * early_count / nrow(dataset)))
+  }
+
+  # Fill NAs with league-specific means for rolling features
   for (col in rolling_cols) {
     na_idx <- is.na(dataset[[col]])
     if (any(na_idx)) {
-      # Fill with league-specific mean, or global mean
       for (lg in unique(dataset$league)) {
         lg_idx <- dataset$league == lg & na_idx
         lg_mean <- mean(dataset[[col]][dataset$league == lg & !na_idx], na.rm = TRUE)
@@ -109,6 +120,8 @@ if (length(rolling_cols) > 0) {
       }
     }
   }
+} else {
+  dataset$is_early_season <- 0L
 }
 
 # Fill remaining numeric NAs with 0
@@ -131,19 +144,45 @@ if (n_sey >= 3) {
   test_sey <- sey_values[n_sey]
   val_sey <- sey_values[n_sey - 1]
   train_sey <- sey_values[seq_len(n_sey - 2)]
-} else if (n_sey == 2) {
-  test_sey <- sey_values[2]
-  val_sey <- sey_values[1]
-  train_sey <- sey_values[1]
-} else {
-  test_sey <- sey_values[1]
-  val_sey <- sey_values[1]
-  train_sey <- sey_values[1]
-}
 
-played$split <- "train"
-played$split[played$season_end_year == val_sey] <- "val"
-played$split[played$season_end_year == test_sey] <- "test"
+  played$split <- "train"
+  played$split[played$season_end_year == val_sey] <- "val"
+  played$split[played$season_end_year == test_sey] <- "test"
+
+} else if (n_sey == 2) {
+  # 2 seasons: use first for train, second split temporally into val/test
+  warning("Only 2 seasons available. Using temporal split within the latest season ",
+          "for val/test to avoid data leakage.", call. = FALSE)
+  train_sey <- sey_values[1]
+  test_sey <- sey_values[2]
+  val_sey <- sey_values[2]
+
+  played$split <- "train"
+  # Split the latest season temporally: first half = val, second half = test
+  latest <- played[played$season_end_year == sey_values[2], ]
+  latest <- latest[order(latest$match_date), ]
+  midpoint <- ceiling(nrow(latest) / 2)
+  val_ids <- latest$match_id[seq_len(midpoint)]
+  test_ids <- latest$match_id[seq(midpoint + 1, nrow(latest))]
+  played$split[played$match_id %in% val_ids] <- "val"
+  played$split[played$match_id %in% test_ids] <- "test"
+
+} else {
+  # 1 season: temporal thirds (train/val/test)
+  warning("Only 1 season available. Using temporal thirds within the season. ",
+          "Model evaluation may be unreliable with this little data.", call. = FALSE)
+  train_sey <- sey_values[1]
+  val_sey <- sey_values[1]
+  test_sey <- sey_values[1]
+
+  played <- played[order(played$match_date), ]
+  n_played <- nrow(played)
+  train_end <- floor(n_played * 0.6)
+  val_end <- floor(n_played * 0.8)
+  played$split <- "test"
+  played$split[seq_len(train_end)] <- "train"
+  played$split[seq(train_end + 1, val_end)] <- "val"
+}
 
 fixtures$split <- "fixture"
 
