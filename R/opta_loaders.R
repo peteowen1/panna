@@ -712,7 +712,11 @@ query_remote_opta_parquet <- function(table_type, opta_league, season = NULL,
     list(competition = opta_league, season = season),
     prefix = FALSE
   )
-  sql <- sprintf("SELECT %s FROM '%s' WHERE %s", col_sql, parquet_norm, where_sql)
+  sql <- if (nchar(where_sql) > 0) {
+    sprintf("SELECT %s FROM '%s' WHERE %s", col_sql, parquet_norm, where_sql)
+  } else {
+    sprintf("SELECT %s FROM '%s'", col_sql, parquet_norm)
+  }
 
   # Execute query with DuckDB
   conn <- DBI::dbConnect(duckdb::duckdb())

@@ -230,6 +230,7 @@ cat("\n=== Processing All Seasons ===\n")
 cat(sprintf("Processing %d seasons: %s\n",
             length(seasons), paste(seasons, collapse = ", ")))
 
+error_messages <- character(0)
 seasonal_ratings_list <- lapply(seasons, function(season) {
   tryCatch({
     fit_season_skill_ratings(
@@ -244,6 +245,7 @@ seasonal_ratings_list <- lapply(seasons, function(season) {
       min_minutes_rapm = 200
     )
   }, error = function(e) {
+    error_messages[as.character(season)] <<- e$message
     warning(sprintf("Failed to process season %d: %s", season, e$message))
     NULL
   })
@@ -254,15 +256,27 @@ n_failed <- sum(vapply(seasonal_ratings_list, is.null, logical(1)))
 seasonal_ratings_list <- Filter(Negate(is.null), seasonal_ratings_list)
 
 if (length(seasonal_ratings_list) == 0) {
+  unique_errors <- unique(error_messages)
+  if (length(unique_errors) == 1) {
+    stop(sprintf("All %d seasons failed with the same error: %s", n_total, unique_errors))
+  }
   stop("All seasons failed to process. Cannot generate seasonal skill ratings.")
 }
 
 if (n_failed > 0) {
   pct_failed <- round(100 * n_failed / n_total, 1)
-  warning(sprintf(
-    "%d/%d (%.1f%%) seasons failed to process. Results may be incomplete.",
-    n_failed, n_total, pct_failed
-  ), call. = FALSE)
+  unique_errors <- unique(error_messages)
+  if (length(unique_errors) == 1) {
+    warning(sprintf(
+      "%d/%d (%.1f%%) seasons failed with same error: %s",
+      n_failed, n_total, pct_failed, unique_errors
+    ), call. = FALSE)
+  } else {
+    warning(sprintf(
+      "%d/%d (%.1f%%) seasons failed to process. Results may be incomplete.",
+      n_failed, n_total, pct_failed
+    ), call. = FALSE)
+  }
   if (pct_failed > 50) {
     stop(sprintf(
       "%d/%d (%.1f%%) seasons failed. This suggests a systematic issue. Aborting.",

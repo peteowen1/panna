@@ -62,6 +62,10 @@ skill_features <- aggregate_skills_for_spm(
   min_weighted_90s = min_weighted_90s
 )
 
+if (is.null(skill_features) || nrow(skill_features) == 0) {
+  stop("aggregate_skills_for_spm() returned no results. Check min_minutes threshold and data availability.")
+}
+
 cat(sprintf("Skill-based features: %d player-seasons\n", nrow(skill_features)))
 cat(sprintf("Unique players: %d\n", data.table::uniqueN(skill_features$player_id)))
 cat(sprintf("Seasons: %s\n", paste(sort(unique(skill_features$season_end_year)), collapse = ", ")))

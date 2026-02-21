@@ -1,8 +1,8 @@
 # Skill Optimization
 #
 # Optimization of decay rates and Bayesian prior strengths for estimated skills.
-# Uses DEoptim for multi-dimensional decay optimization and Brent's method for
-# per-stat prior strength optimization. Objective: minimize weighted MSE of
+# Uses L-BFGS-B for multi-dimensional decay optimization and Brent's method for
+# 1D per-stat prior strength optimization. Objective: minimize weighted MSE of
 # next-match prediction across all player-matches.
 
 
@@ -787,6 +787,12 @@ optimize_all_priors <- function(match_stats, decay_params = NULL,
     decay_params$prior_centers <- prior_centers
   }
   attr(decay_params, "prior_optimization_results") <- all_results
+
+  # Report skipped stats
+  skipped <- setdiff(all_stats, names(stat_priors))
+  if (length(skipped) > 0) {
+    cli::cli_warn("Optimization skipped for {length(skipped)} stat{?s}: {.val {skipped}}")
+  }
 
   if (verbose) {
     rate_priors <- stat_priors[all_rate_stats[all_rate_stats %in% names(stat_priors)]]
