@@ -251,6 +251,10 @@ seasonal_ratings_list <- lapply(seasons, function(season) {
 
 seasonal_ratings_list <- Filter(Negate(is.null), seasonal_ratings_list)
 
+if (length(seasonal_ratings_list) == 0) {
+  stop("All seasons failed to process. Cannot generate seasonal skill ratings.")
+}
+
 seasonal_spm <- bind_rows(lapply(seasonal_ratings_list, `[[`, "spm"))
 seasonal_rapm <- bind_rows(lapply(seasonal_ratings_list, `[[`, "rapm"))
 seasonal_xrapm <- bind_rows(lapply(seasonal_ratings_list, `[[`, "xrapm"))

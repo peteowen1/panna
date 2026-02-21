@@ -106,12 +106,18 @@ get_default_decay_params <- function() {
   if (grepl("\\+", denom_spec)) {
     parts <- strsplit(denom_spec, "\\+")[[1]]
     result <- rep(0, nrow(dt_sub))
+    found_any <- FALSE
     for (p in parts) {
       if (p %in% names(dt_sub)) {
         v <- as.numeric(dt_sub[[p]])
         v[is.na(v)] <- 0
         result <- result + v
+        found_any <- TRUE
       }
+    }
+    if (!found_any) {
+      cli::cli_warn("No denominator columns found for {.val {denom_spec}}. Using 1 as fallback.")
+      return(rep(1, nrow(dt_sub)))
     }
     return(result)
   }
@@ -120,6 +126,7 @@ get_default_decay_params <- function() {
     v[is.na(v)] <- 0
     return(v)
   }
+  cli::cli_warn("Denominator column {.val {denom_spec}} not found. Using 1 as fallback.")
   rep(1, nrow(dt_sub))
 }
 

@@ -62,11 +62,18 @@ run_step <- function(step_name, step_num, code_block) {
   message(sprintf("%s\n", paste(rep("=", 70), collapse = "")))
 
   start_time <- Sys.time()
+  if (pipeline_failed) {
+    message("  SKIPPED (previous step failed)")
+    return(list(step = step_num, name = step_name, status = "SKIPPED",
+                duration_secs = 0, duration_formatted = "0.0 seconds"))
+  }
+
   result <- tryCatch({
     code_block()
     "SUCCESS"
   }, error = function(e) {
     message(sprintf("ERROR: %s", e$message))
+    pipeline_failed <<- TRUE
     "FAILED"
   })
   end_time <- Sys.time()
@@ -139,6 +146,7 @@ if (length(missing) > 0) {
 
 pipeline_start <- Sys.time()
 step_results <- list()
+pipeline_failed <- FALSE
 
 message("\n")
 message(paste(rep("#", 70), collapse = ""))

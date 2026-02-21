@@ -37,7 +37,6 @@ if (!file.exists(match_stats_path)) {
   message("  Skill match stats not found - skipping team skill features")
   message("  Run the estimated skills pipeline first")
   team_skill_features <- NULL
-  saveRDS(team_skill_features, output_path)
   return(invisible(NULL))
 }
 

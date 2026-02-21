@@ -98,7 +98,16 @@ for (league in leagues) {
 
 message("\n=== Combining All Match Stats ===\n")
 
+if (length(all_stats) == 0) {
+  stop("No match stats were loaded. All league-seasons failed. Check error messages above.")
+}
+
 match_stats <- data.table::rbindlist(all_stats, fill = TRUE, use.names = TRUE)
+
+if (nrow(match_stats) < 1000) {
+  warning(sprintf("Only %d match stats loaded (expected 300k+). Data may be incomplete.",
+                  nrow(match_stats)), call. = FALSE)
+}
 
 message(sprintf("Total player-match rows: %d", nrow(match_stats)))
 message(sprintf("Unique players: %d", data.table::uniqueN(match_stats$player_id)))

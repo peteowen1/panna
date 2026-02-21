@@ -44,7 +44,9 @@ if (isTRUE(use_skill_ratings) && file.exists(skill_ratings_path)) {
   seasonal_data <- readRDS(skill_ratings_path)
 } else if (file.exists(raw_ratings_path)) {
   if (isTRUE(use_skill_ratings)) {
-    message("  Skill ratings not found, falling back to raw-stat seasonal ratings")
+    warning("Skill ratings not found at ", skill_ratings_path,
+            ". Falling back to raw-stat ratings. Run the skills pipeline first.",
+            call. = FALSE)
   } else {
     message("  Using raw-stat seasonal ratings (use_skill_ratings = FALSE)")
   }

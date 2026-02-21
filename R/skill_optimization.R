@@ -185,6 +185,7 @@ optimize_stat_prior <- function(match_stats = NULL, stat_name,
     player_pos_map <- precomputed$player_pos_map
 
     if (!stat_name %in% names(player_splits[[1]])) {
+      cli::cli_warn("Stat {.val {stat_name}} not found in precomputed data. Skipping optimization.")
       return(NULL)
     }
 
@@ -268,6 +269,7 @@ optimize_stat_prior <- function(match_stats = NULL, stat_name,
     }
 
     if (!stat_name %in% names(dt)) {
+      cli::cli_warn("Stat {.val {stat_name}} not found in match data. Skipping optimization.")
       return(NULL)
     }
 
@@ -360,7 +362,11 @@ optimize_stat_prior <- function(match_stats = NULL, stat_name,
     player_data <- Filter(Negate(is.null), player_data)
   }
 
-  if (length(player_data) == 0) return(NULL)
+
+  if (length(player_data) == 0) {
+    cli::cli_warn("No players with sufficient history for stat {.val {stat_name}}. Skipping optimization.")
+    return(NULL)
+  }
 
   # Determine which parameters are free vs fixed
   # prior_bounds[1] == prior_bounds[2] means prior is fixed
@@ -403,9 +409,9 @@ optimize_stat_prior <- function(match_stats = NULL, stat_name,
       player_mu0 <- mu0_raw * pd$pos_mult
       j_idx <- (min_history + 1):pd$n
 
-      # Vectorized decay weights via cumsum
-      exp_pos <- exp(lam * pd$d_rel)
-      exp_neg <- exp(-lam * pd$d_rel)
+      # Vectorized decay weights via cumsum (cap exponent to avoid overflow)
+      exp_pos <- exp(pmin(lam * pd$d_rel, 500))
+      exp_neg <- exp(pmax(-lam * pd$d_rel, -500))
 
       if (is_efficiency) {
         cum_succ <- cumsum(exp_pos * pd$successes)
@@ -445,7 +451,8 @@ optimize_stat_prior <- function(match_stats = NULL, stat_name,
       }
     }
 
-    if (n_preds > 0) total_loss / n_preds else 1e6
+    result <- if (n_preds > 0) total_loss / n_preds else 1e6
+    if (is.nan(result) || is.infinite(result)) 1e6 else result
   }
 
   # Build parameter bounds based on what we're optimizing
