@@ -1020,7 +1020,7 @@ query_remote_opta_parquet <- function(table_type, opta_league, season = NULL,
 #' Download and query remote Opta match events (per-league files)
 #'
 #' Match events are too large for a single consolidated file, so they are stored
-#' as per-league files (events_{league}.parquet) in the release. This function
+#' as per-league files (\code{events_\{league\}.parquet}) in the release. This function
 #' downloads the per-league file and queries it with DuckDB.
 #'
 #' @param opta_league League code in Opta format (EPL, La_Liga, etc.)
