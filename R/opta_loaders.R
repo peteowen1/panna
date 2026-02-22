@@ -119,18 +119,40 @@ opta_data_dir <- function(path = NULL) {
 #' Convert League Code to Opta Format
 #'
 #' Converts panna league codes (ENG, ESP, etc.) to Opta format (EPL, La_Liga, etc.).
+#' Falls back to catalog lookup, then pass-through for valid-looking codes.
 #'
 #' @param league Panna league code or Opta league code.
 #' @return Opta league code.
 #' @keywords internal
 to_opta_league <- function(league) {
+  # 1. Direct Opta code (e.g., "EPL", "La_Liga")
   if (league %in% OPTA_LEAGUES) {
     return(league)
   }
+  # 2. Panna alias (e.g., "ENG" -> "EPL")
   if (league %in% names(OPTA_LEAGUES)) {
     return(OPTA_LEAGUES[[league]])
   }
-  cli::cli_abort("Unknown league: {league}. Use one of: {paste(names(OPTA_LEAGUES), collapse=', ')} or {paste(OPTA_LEAGUES, collapse=', ')}")
+  # 3. Catalog lookup (session-cached)
+  catalog <- tryCatch(download_opta_catalog(), error = function(e) NULL)
+  if (!is.null(catalog)) {
+    if (league %in% names(catalog$competitions)) {
+      return(league)
+    }
+    aliases <- catalog$panna_aliases
+    if (league %in% names(aliases)) {
+      return(aliases[[league]])
+    }
+  }
+  # 4. Pass-through with warning for valid-looking codes
+  if (grepl("^[A-Za-z][A-Za-z0-9_]+$", league)) {
+    cli::cli_warn(c(
+      "League {.val {league}} not in hardcoded mappings.",
+      "i" = "Passing through as-is. Use {.fn list_opta_leagues} to see available competitions."
+    ))
+    return(league)
+  }
+  cli::cli_abort("Invalid league code: {.val {league}}. Use {.fn list_opta_leagues} to see available competitions.")
 }
 
 
@@ -139,6 +161,9 @@ to_opta_league <- function(league) {
 #' Returns available seasons for a given league in the Opta data.
 #'
 #' @param league League code (e.g., "ENG", "EPL", "ESP", "La_Liga").
+#' @param source Data source: "local" (default) scans filesystem,
+#'   "catalog" reads from downloaded catalog. Falls back to catalog if
+#'   local directory doesn't exist.
 #'
 #' @return Character vector of available seasons.
 #'
@@ -146,21 +171,31 @@ to_opta_league <- function(league) {
 #' @examples
 #' \dontrun{
 #' list_opta_seasons("ENG")
-#' list_opta_seasons("EPL")
+#' list_opta_seasons("MLS", source = "catalog")
 #' }
-list_opta_seasons <- function(league) {
+list_opta_seasons <- function(league, source = c("local", "catalog")) {
+  source <- match.arg(source)
   opta_league <- to_opta_league(league)
-  # Look in opta/player_stats/{league}/ for season files
-  league_dir <- file.path(opta_data_dir(), "player_stats", opta_league)
 
-  if (!dir.exists(league_dir)) {
-    cli::cli_abort("No data found for league: {league}")
+  if (source == "local") {
+    league_dir <- file.path(opta_data_dir(), "player_stats", opta_league)
+    if (dir.exists(league_dir)) {
+      files <- list.files(league_dir, pattern = "\\.parquet$", full.names = FALSE)
+      seasons <- tools::file_path_sans_ext(files)
+      return(sort(seasons, decreasing = TRUE))
+    }
+    # Fall through to catalog if local dir doesn't exist
+    cli::cli_alert_info("No local data for {opta_league}, checking catalog...")
   }
 
-  # List parquet files and extract season names
-  files <- list.files(league_dir, pattern = "\\.parquet$", full.names = FALSE)
-  seasons <- tools::file_path_sans_ext(files)
-  sort(seasons, decreasing = TRUE)
+  # Catalog source
+  catalog <- tryCatch(download_opta_catalog(), error = function(e) NULL)
+  if (!is.null(catalog) && opta_league %in% names(catalog$competitions)) {
+    seasons <- catalog$competitions[[opta_league]]$seasons
+    return(sort(unlist(seasons), decreasing = TRUE))
+  }
+
+  cli::cli_abort("No data found for league: {.val {league}}")
 }
 
 
@@ -625,6 +660,163 @@ get_opta_columns <- function(table_type = c("player_stats", "shots", "shot_event
 # Environment to cache remote Opta data paths
 .opta_remote_env <- new.env(parent = emptyenv())
 
+
+#' Download and Cache Opta Data Catalog
+#'
+#' Loads the opta-catalog.json file, checking session cache first,
+#' then local file, then downloading from GitHub releases.
+#'
+#' @param repo GitHub repository (default: "peteowen1/pannadata").
+#' @param tag Release tag (default: "opta-latest").
+#'
+#' @return List with catalog data (competitions, panna_aliases).
+#' @keywords internal
+download_opta_catalog <- function(repo = "peteowen1/pannadata",
+                                   tag = "opta-latest") {
+  # 1. Session cache
+  if (exists("opta_catalog", envir = .opta_remote_env)) {
+    return(get("opta_catalog", envir = .opta_remote_env))
+  }
+
+  # 2. Local file
+  local_path <- tryCatch(
+    file.path(opta_data_dir(), "opta-catalog.json"),
+    error = function(e) NULL
+  )
+  if (!is.null(local_path) && file.exists(local_path)) {
+    catalog <- jsonlite::fromJSON(local_path, simplifyVector = FALSE)
+    assign("opta_catalog", catalog, envir = .opta_remote_env)
+    return(catalog)
+  }
+
+  # 3. Download from release
+  if (!requireNamespace("piggyback", quietly = TRUE)) {
+    cli::cli_abort("Package {.pkg piggyback} is required to download the catalog.")
+  }
+
+  temp_dir <- file.path(tempdir(), "opta_catalog")
+  dir.create(temp_dir, showWarnings = FALSE, recursive = TRUE)
+
+  tryCatch({
+    piggyback::pb_download(
+      file = "opta-catalog.json",
+      repo = repo,
+      tag = tag,
+      dest = temp_dir,
+      overwrite = TRUE
+    )
+  }, error = function(e) {
+    cli::cli_abort(c(
+      "Failed to download opta-catalog.json from {repo} ({tag})",
+      "x" = e$message
+    ))
+  })
+
+  catalog_path <- file.path(temp_dir, "opta-catalog.json")
+  if (!file.exists(catalog_path)) {
+    cli::cli_abort("Download failed - opta-catalog.json not found")
+  }
+
+  catalog <- jsonlite::fromJSON(catalog_path, simplifyVector = FALSE)
+  assign("opta_catalog", catalog, envir = .opta_remote_env)
+  catalog
+}
+
+
+#' List Available Opta Leagues
+#'
+#' Returns a data frame of all competitions available in the Opta data,
+#' with metadata including name, country, type, and tier.
+#'
+#' @param type Optional filter: "league", "cup", "domestic_cup", "international".
+#' @param tier Optional numeric filter for competition tier (1 = top tier).
+#' @param source Data source: "catalog" (default) downloads the catalog,
+#'   "local" scans the local filesystem.
+#'
+#' @return Data frame with columns: code, name, country, type, tier,
+#'   n_seasons, n_matches, panna_alias.
+#'
+#' @export
+#' @examples
+#' \dontrun{
+#' # All competitions
+#' list_opta_leagues()
+#'
+#' # Top-tier leagues only
+#' list_opta_leagues(tier = 1)
+#'
+#' # Just cups
+#' list_opta_leagues(type = "cup")
+#'
+#' # Scan local filesystem (no download)
+#' list_opta_leagues(source = "local")
+#' }
+list_opta_leagues <- function(type = NULL, tier = NULL,
+                               source = c("catalog", "local")) {
+  source <- match.arg(source)
+
+  if (source == "catalog") {
+    catalog <- download_opta_catalog()
+    comps <- catalog$competitions
+    aliases <- catalog$panna_aliases
+
+    # Build reverse alias lookup (Opta code -> panna code)
+    reverse_aliases <- stats::setNames(names(aliases), unlist(aliases))
+
+    rows <- lapply(names(comps), function(code) {
+      c <- comps[[code]]
+      data.frame(
+        code = code,
+        name = c$name %||% code,
+        country = c$country %||% "Unknown",
+        type = c$type %||% "unknown",
+        tier = as.integer(c$tier %||% 99L),
+        n_seasons = length(c$seasons),
+        n_matches = as.integer(c$n_matches %||% 0L),
+        panna_alias = if (code %in% names(reverse_aliases)) reverse_aliases[[code]] else NA_character_,
+        stringsAsFactors = FALSE
+      )
+    })
+    result <- do.call(rbind, rows)
+  } else {
+    # Local filesystem scan
+    base_dir <- opta_data_dir()
+    ps_dir <- file.path(base_dir, "player_stats")
+    if (!dir.exists(ps_dir)) {
+      cli::cli_abort("No local Opta data found at {.path {ps_dir}}")
+    }
+    leagues <- list.dirs(ps_dir, full.names = FALSE, recursive = FALSE)
+    reverse_opta <- stats::setNames(names(OPTA_LEAGUES), OPTA_LEAGUES)
+
+    rows <- lapply(leagues, function(lg) {
+      season_files <- list.files(file.path(ps_dir, lg), pattern = "\\.parquet$")
+      data.frame(
+        code = lg,
+        name = lg,
+        country = NA_character_,
+        type = NA_character_,
+        tier = NA_integer_,
+        n_seasons = length(season_files),
+        n_matches = NA_integer_,
+        panna_alias = if (lg %in% names(reverse_opta)) reverse_opta[[lg]] else NA_character_,
+        stringsAsFactors = FALSE
+      )
+    })
+    result <- do.call(rbind, rows)
+  }
+
+  # Apply filters
+  if (!is.null(type)) {
+    result <- result[result$type %in% type, , drop = FALSE]
+  }
+  if (!is.null(tier)) {
+    result <- result[!is.na(result$tier) & result$tier <= tier, , drop = FALSE]
+  }
+
+  result[order(result$tier, result$name), , drop = FALSE]
+}
+
+
 #' Query remote Opta parquet data
 #'
 #' Downloads individual consolidated Opta files from GitHub releases and
@@ -975,7 +1167,8 @@ pb_download_opta <- function(repo = "peteowen1/pannadata",
     "opta_shot_events.parquet",
     "opta_events.parquet",
     "opta_lineups.parquet",
-    "opta_fixtures.parquet"
+    "opta_fixtures.parquet",
+    "opta-catalog.json"
   )
 
   for (f in files_to_download) {
