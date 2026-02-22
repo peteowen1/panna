@@ -7,7 +7,8 @@
 load_opta_table(table_type, league, season, columns, source = "local")
 }
 \arguments{
-\item{table_type}{"player_stats" or "shots"}
+\item{table_type}{Table type: "player_stats", "shots", "shot_events",
+"events", "match_events", "lineups", or "fixtures".}
 
 \item{league}{League code}
 

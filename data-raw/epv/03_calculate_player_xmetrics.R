@@ -34,8 +34,7 @@ LEAGUES <- c(
 # Only process seasons from 2013-2014 onwards (2014+ data)
 START_SEASON <- "2013-2014"
 
-# Penalty xG (model trained without penalties)
-PENALTY_XG <- 0.76
+# PENALTY_XG is exported from panna::constants.R (loaded via devtools::load_all())
 
 # Minimum minutes for output (0 = keep all)
 MIN_MINUTES <- 0

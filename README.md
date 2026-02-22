@@ -35,14 +35,14 @@ devtools::install_github("peteowen1/panna")
 library(panna)
 
 # Download data from GitHub releases (first time only)
-pb_download_source("fbref")
+pb_download_source("opta")
 
-# Load player statistics for a league/season
-summary_data <- load_summary("ENG", "2024-2025")
+# Load Opta player statistics for a league/season
+opta_stats <- load_opta_stats("EPL", "2024-2025")
 
 # Get aggregated player stats
-player_stats <- player_fbref_summary(
- leagues = "ENG",
+player_stats <- player_opta_summary(
+ leagues = "EPL",
  seasons = "2024-2025",
  min_minutes = 900
 )
@@ -54,48 +54,85 @@ The package supports three football data providers:
 
 | Source | Coverage | xG Model | Unique Features |
 |--------|----------|----------|-----------------|
-| FBref | Big 5 leagues + cups | StatsBomb | Most comprehensive passing stats |
-| Opta | Big 5 leagues (2010+) | None | 271 columns, progressive carries |
+| Opta | 15 leagues (2013+) | SPADL + XGBoost | 263 columns, progressive carries, event-level data |
 | Understat | Big 5 + Russia | Understat | xGChain, xGBuildup |
+| FBref | Big 5 leagues + cups | StatsBomb | Comprehensive passing stats |
 
 ### League Codes
 
-| League | Panna Code | Opta Code | Season Format |
-|--------|------------|-----------|---------------|
-| Premier League | ENG | EPL | 2024-2025 |
-| La Liga | ESP | La_Liga | 2024-2025 |
-| Bundesliga | GER | Bundesliga | 2024-2025 |
-| Serie A | ITA | Serie_A | 2024-2025 |
-| Ligue 1 | FRA | Ligue_1 | 2024-2025 |
+#### Opta Leagues (15)
+
+| League | Opta Code | Season Format |
+|--------|-----------|---------------|
+| Premier League | EPL | 2024-2025 |
+| La Liga | La_Liga | 2024-2025 |
+| Bundesliga | Bundesliga | 2024-2025 |
+| Serie A | Serie_A | 2024-2025 |
+| Ligue 1 | Ligue_1 | 2024-2025 |
+| Eredivisie | NED | 2024-2025 |
+| Primeira Liga | POR | 2024-2025 |
+| Super Lig | TUR | 2024-2025 |
+| Championship | ENG2 | 2024-2025 |
+| Scottish Premiership | SCO | 2024-2025 |
+| Champions League | UCL | 2024-2025 |
+| Europa League | UEL | 2024-2025 |
+| Conference League | UECL | 2024-2025 |
+| World Cup | WC | 2018 Russia |
+| Euros | EURO | 2024 Germany |
+
+#### FBref Leagues
+
+| League | Panna Code | Season Format |
+|--------|------------|---------------|
+| Premier League | ENG | 2024-2025 |
+| La Liga | ESP | 2024-2025 |
+| Bundesliga | GER | 2024-2025 |
+| Serie A | ITA | 2024-2025 |
+| Ligue 1 | FRA | 2024-2025 |
 
 ## Key Functions
 
 ### Data Loading
 
 ```r
+# Opta data (15 leagues, 263 columns per player)
+load_opta_stats(league, season)        # Player match stats
+load_opta_shots(league, season)        # Shot data
+load_opta_match_events(league, season) # All events with x/y coordinates
+load_opta_lineups(league, season)      # Lineup data
+load_opta_fixtures(league, season)     # Fixture/results data
+load_opta_xmetrics(league, season)     # Pre-computed xG/xA/xPass metrics
+load_opta_shot_events(league, season)  # Individual shots with coordinates
+load_opta_events(league, season)       # Goals, cards, substitutions
+load_opta_big5(season)                 # All Big 5 leagues at once
+
+# Understat data
+load_understat_roster(league, season)
+load_understat_shots(league, season)
+
 # FBref data (via pannadata)
 load_summary(league, season)
 load_passing(league, season)
 load_defense(league, season)
 load_shots()
-
-# Opta data
-load_opta_stats(league, season)
-load_opta_shots(league, season)
-
-# Understat data
-load_understat_roster(league, season)
-load_understat_shots(league, season)
 ```
 
 ### Player Statistics
 
 ```r
-# Aggregated stats with filters
+# Opta aggregated stats
+player_opta_summary(leagues, seasons, min_minutes)
+player_opta_passing(leagues, seasons, min_minutes)
+player_opta_defense(leagues, seasons, min_minutes)
+player_opta_possession(leagues, seasons, min_minutes)
+player_opta_keeper(leagues, seasons, min_minutes)
+player_opta_shots(leagues, seasons, min_minutes)
+player_opta_setpiece(leagues, seasons, min_minutes)
+
+# Understat/FBref aggregated stats
+player_understat_summary(leagues, seasons, min_minutes)
 player_fbref_summary(leagues, seasons, min_minutes)
 player_fbref_passing(leagues, seasons, min_minutes)
-player_opta_summary(leagues, seasons, min_minutes)
-player_understat_summary(leagues, seasons, min_minutes)
 ```
 
 ### Rating Pipeline
@@ -112,6 +149,59 @@ rapm_results <- fit_rapm(rapm_data)
 
 # Extract ratings
 ratings <- extract_panna_ratings(rapm_results)
+```
+
+### Advanced Features
+
+#### EPV (Expected Possession Value)
+
+Action-level player valuation from Opta event data with x/y coordinates:
+
+```r
+# Convert Opta events to SPADL format
+spadl <- convert_opta_to_spadl(match_events)
+
+# Train/load models
+xg_model <- load_xg_model()
+epv_model <- load_epv_model()
+
+# Calculate action-level EPV
+epv_values <- calculate_action_epv(spadl, xg_model, epv_model)
+player_epv <- aggregate_player_epv(epv_values)
+```
+
+#### Estimated Skills
+
+Bayesian decay-weighted skill estimation with position-specific priors:
+
+```r
+# Estimate player skills from historical match data
+skills <- estimate_player_skills(player_stats, decay_params)
+
+# Get a player's skill profile with percentiles
+profile <- player_skill_profile(skills, "Bukayo Saka")
+
+# Estimate skills at a specific date (for predictions)
+date_skills <- estimate_player_skills_at_date(player_stats, "2025-01-15")
+```
+
+#### Match Predictions
+
+XGBoost Poisson/multinomial models for match outcome prediction:
+
+```r
+# Compute team Elo ratings
+elos <- compute_match_elos(match_results)
+
+# Compute rolling form features
+rolling <- compute_team_rolling_features(match_results)
+
+# Fit prediction models
+goals_model <- fit_goals_xgb(training_data)
+outcome_model <- fit_outcome_xgb(training_data)
+
+# Predict a fixture
+prediction <- predict_match(fixture, goals_model, outcome_model)
 ```
 
 ## Documentation

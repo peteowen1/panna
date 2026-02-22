@@ -14,5 +14,6 @@ Opta league code.
 }
 \description{
 Converts panna league codes (ENG, ESP, etc.) to Opta format (EPL, La_Liga, etc.).
+Falls back to catalog lookup, then pass-through for valid-looking codes.
 }
 \keyword{internal}

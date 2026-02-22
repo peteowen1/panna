@@ -28,7 +28,7 @@
 #'     \item{efficiency}{Lambda for efficiency/accuracy stats (~1 year half-life)}
 #'     \item{xmetrics}{Lambda for xG/xA/xPass metrics (~8 month half-life)}
 #'     \item{prior_90s}{Gamma prior strength for rate stats, in equivalent 90s.
-#'       Higher = more shrinkage toward position mean. Default 10.}
+#'       Higher = more shrinkage toward position mean. Default 2.}
 #'     \item{prior_attempts}{Beta prior strength for efficiency stats, in
 #'       equivalent attempts. Higher = more shrinkage. Default 50.}
 #'   }
@@ -1113,7 +1113,7 @@ backtest_skill_predictions <- function(match_stats, decay_params = NULL,
       avg_ll <- sum(w * ll(actual, avg_predicted))
       last_ll <- sum(w * ll(actual, last_predicted))
       tw <- sum(w)
-      safe_pct <- function(x, ref) if (ref > 0) round((1 - x / ref) * 100, 1) else 0
+      safe_pct <- function(x, ref) if (ref > 0) round((1 - x / ref) * 100, 1) else NA_real_
       list(
         metric = "logloss",
         value = if (tw > 0) bayes_ll / tw else NA_real_,
@@ -1130,7 +1130,7 @@ backtest_skill_predictions <- function(match_stats, decay_params = NULL,
       avg_se <- sum(w * (avg_predicted - actual)^2)
       last_se <- sum(w * (last_predicted - actual)^2)
       tw <- sum(w)
-      safe_pct <- function(x, ref) if (ref > 0) round((1 - x / ref) * 100, 1) else 0
+      safe_pct <- function(x, ref) if (ref > 0) round((1 - x / ref) * 100, 1) else NA_real_
       list(
         metric = "rmse",
         value = if (tw > 0) sqrt(bayes_se / tw) else NA_real_,

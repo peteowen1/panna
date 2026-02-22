@@ -238,3 +238,54 @@ test_that("aggregate_lineup_skills does not mutate input", {
   # Verify no clean_name column was added to the original
   expect_false("clean_name" %in% names(skills_orig))
 })
+
+
+test_that("aggregate_lineup_skills computes defensive composite and differentials", {
+  lineups <- data.frame(
+    match_id = rep("m1", 22),
+    player_name = paste0("Player_", 1:22),
+    team_name = rep(c("Home FC", "Away FC"), each = 11),
+    team_position = rep(c("home", "away"), each = 11),
+    is_starter = TRUE
+  )
+
+  skills <- data.frame(
+    player_name = paste0("Player_", 1:22),
+    goals_p90 = c(rep(2.0, 11), rep(1.0, 11)),
+    tackles_won_p90 = c(rep(3.0, 11), rep(1.0, 11))
+  )
+
+  result <- aggregate_lineup_skills(lineups, skills,
+                                     attacking_stats = "goals_p90",
+                                     defensive_stats = "tackles_won_p90")
+
+  expect_true("home_sk_def_tackles_won" %in% names(result))
+  expect_true("away_sk_def_tackles_won" %in% names(result))
+  expect_true("sk_att_diff" %in% names(result))
+  expect_true("sk_def_diff" %in% names(result))
+  expect_equal(result$sk_att_diff, 2.0 - 1.0, tolerance = 1e-10)
+  expect_equal(result$sk_def_diff, 3.0 - 1.0, tolerance = 1e-10)
+})
+
+
+test_that("aggregate_lineup_skills errors with no matching stat columns", {
+  lineups <- data.frame(
+    match_id = rep("m1", 22),
+    player_name = paste0("Player_", 1:22),
+    team_name = rep(c("Home FC", "Away FC"), each = 11),
+    team_position = rep(c("home", "away"), each = 11),
+    is_starter = TRUE
+  )
+
+  skills <- data.frame(
+    player_name = paste0("Player_", 1:22),
+    unrelated_col = runif(22)
+  )
+
+  expect_error(
+    aggregate_lineup_skills(lineups, skills,
+                             attacking_stats = "nonexistent_p90",
+                             defensive_stats = character(0)),
+    "No skill stat columns found"
+  )
+})

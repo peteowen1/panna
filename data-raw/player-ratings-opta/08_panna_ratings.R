@@ -43,21 +43,31 @@ panna_ratings <- xrapm_results$ratings %>%
   )
 
 # Add base RAPM for comparison (deduplicate by player_name to avoid many-to-many)
+rapm_before_dedup <- nrow(rapm_results$ratings)
 base_rapm <- rapm_results$ratings %>%
   group_by(player_name) %>%
   slice_max(total_minutes, n = 1, with_ties = FALSE) %>%
   ungroup() %>%
   select(player_name, base_rapm = rapm, base_offense = offense, base_defense = defense)
+rapm_deduped <- rapm_before_dedup - nrow(base_rapm)
+if (rapm_deduped > 0) {
+  cat(sprintf("  Deduplicated %d RAPM entries (keeping max-minutes per player_name)\n", rapm_deduped))
+}
 
 panna_ratings <- panna_ratings %>%
   left_join(base_rapm, by = "player_name")
 
 # Add overall SPM prediction (deduplicate similarly)
+spm_before_dedup <- nrow(spm_results$spm_ratings)
 spm_overall <- spm_results$spm_ratings %>%
   group_by(player_name) %>%
   slice_max(total_minutes, n = 1, with_ties = FALSE) %>%
   ungroup() %>%
   select(player_name, spm_overall = spm)
+spm_deduped <- spm_before_dedup - nrow(spm_overall)
+if (spm_deduped > 0) {
+  cat(sprintf("  Deduplicated %d SPM entries (keeping max-minutes per player_name)\n", spm_deduped))
+}
 
 panna_ratings <- panna_ratings %>%
   left_join(spm_overall, by = "player_name")

@@ -209,3 +209,20 @@ test_that("efficiency stat uses Beta-Binomial posterior", {
   # posterior should be close to 0.90
   expect_equal(result$pass_accuracy, 0.90, tolerance = 0.02)
 })
+
+
+test_that(".compute_denominator errors on missing column", {
+  dt <- data.frame(goals_p90 = c(0.5, 0.3), tackles = c(10, 8))
+  expect_error(
+    .compute_denominator(dt, "passes"),
+    "not found"
+  )
+})
+
+test_that(".compute_denominator errors on all missing compound columns", {
+  dt <- data.frame(goals_p90 = c(0.5, 0.3))
+  expect_error(
+    .compute_denominator(dt, "passes+crosses"),
+    "No denominator columns found"
+  )
+})
