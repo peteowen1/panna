@@ -1,6 +1,7 @@
 # Opta Data Loader Functions
 #
-# Functions for loading Opta (TheAnalyst) data from local parquet files.
+# Functions for loading Opta (TheAnalyst) data from local and remote parquet
+# files, with catalog-based discovery of available leagues and seasons.
 # Data is scraped from TheAnalyst API and stored in pannadata/data/opta/.
 #
 # League codes: EPL, La_Liga, Bundesliga, Serie_A, Ligue_1, Eredivisie,
@@ -134,7 +135,10 @@ to_opta_league <- function(league) {
     return(OPTA_LEAGUES[[league]])
   }
   # 3. Catalog lookup (session-cached)
-  catalog <- tryCatch(download_opta_catalog(), error = function(e) NULL)
+  catalog <- tryCatch(download_opta_catalog(), error = function(e) {
+    cli::cli_alert_warning("Could not load Opta catalog: {e$message}")
+    NULL
+  })
   if (!is.null(catalog)) {
     if (league %in% names(catalog$competitions)) {
       return(league)
@@ -202,7 +206,7 @@ list_opta_seasons <- function(league, source = c("local", "catalog")) {
 #' Load Opta Player Stats
 #'
 #' Loads player-level match statistics from Opta/TheAnalyst data.
-#' Contains 271 columns including Opta-exclusive stats like progressiveCarries,
+#' Contains 200+ columns including Opta-exclusive stats like progressiveCarries,
 #' possWonDef3rd, touchesInOppBox, bigChanceCreated, etc.
 #'
 #' @param league League code. Accepts panna format (ENG, ESP, GER, ITA, FRA)
@@ -561,19 +565,26 @@ suggest_opta_seasons <- function(league, table_type = "match_events",
         conn <- DBI::dbConnect(duckdb::duckdb())
         on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
         pq <- normalizePath(consolidated, winslash = "/", mustWork = TRUE)
+        where_sql <- build_where_clause(list(competition = opta_league), prefix = FALSE)
         sql <- sprintf(
-          "SELECT DISTINCT season FROM '%s' WHERE competition = '%s' ORDER BY season DESC",
-          pq, opta_league
+          "SELECT DISTINCT season FROM '%s' WHERE %s ORDER BY season DESC",
+          pq, where_sql
         )
         res <- DBI::dbGetQuery(conn, sql)
         seasons <- res$season
-      }, error = function(e) NULL)
+      }, error = function(e) {
+        cli::cli_alert_warning("Could not query consolidated parquet: {e$message}")
+        NULL
+      })
     }
   }
 
   # Fall back to catalog
   if (length(seasons) == 0) {
-    catalog <- tryCatch(download_opta_catalog(), error = function(e) NULL)
+    catalog <- tryCatch(download_opta_catalog(), error = function(e) {
+      cli::cli_alert_warning("Could not load Opta catalog: {e$message}")
+      NULL
+    })
     if (!is.null(catalog) && opta_league %in% names(catalog$competitions)) {
       seasons <- sort(unlist(catalog$competitions[[opta_league]]$seasons),
                       decreasing = TRUE)
@@ -586,7 +597,8 @@ suggest_opta_seasons <- function(league, table_type = "match_events",
 
 #' Internal function to load Opta table data
 #'
-#' @param table_type "player_stats" or "shots"
+#' @param table_type Table type: "player_stats", "shots", "shot_events",
+#'   "events", "match_events", "lineups", or "fixtures".
 #' @param league League code
 #' @param season Optional season filter
 #' @param columns Optional columns to select
@@ -867,7 +879,12 @@ list_opta_leagues <- function(type = NULL, tier = NULL,
         stringsAsFactors = FALSE
       )
     })
-    result <- do.call(rbind, rows)
+    result <- if (length(rows) > 0) do.call(rbind, rows) else {
+      data.frame(code = character(0), name = character(0), country = character(0),
+                 type = character(0), tier = integer(0), n_seasons = integer(0),
+                 n_matches = integer(0), panna_alias = character(0),
+                 stringsAsFactors = FALSE)
+    }
   } else {
     # Local filesystem scan
     base_dir <- opta_data_dir()

@@ -159,6 +159,7 @@ for (league in leagues) {
             raw_second <- if ("second" %in% names(raw_events)) {
               raw_events$second[pen_mask]
             } else {
+              message(sprintf("    Note: raw events missing 'second' column for %s %s. Penalty matching may be incomplete.", league, season))
               rep(0L, sum(pen_mask))
             }
             pen_keys <- paste(

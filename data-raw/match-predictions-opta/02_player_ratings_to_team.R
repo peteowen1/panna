@@ -125,6 +125,9 @@ if (file.exists(rapm_cache)) {
 }
 
 message(sprintf("  Lineups: %d rows", nrow(lineups)))
+if (nrow(lineups) == 0) {
+  stop("No lineups loaded. Cannot compute team-level ratings. Check data availability and error messages above.")
+}
 
 # 6. Aggregate Ratings to Team Level ----
 
