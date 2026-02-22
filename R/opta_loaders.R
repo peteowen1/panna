@@ -513,6 +513,77 @@ load_opta_big5 <- function(season = NULL, columns = NULL) {
 }
 
 
+#' Suggest Available Seasons for an Opta League
+#'
+#' Returns available seasons for a league, checking local data then catalog.
+#' Useful for discovering what season format a competition uses (e.g.,
+#' "2024-2025" for leagues vs "2018 Russia" for World Cup).
+#'
+#' @param league League code (e.g., "World_Cup", "EPL", "AFCON").
+#'   Accepts both panna aliases (e.g., "ENG") and Opta codes.
+#' @param table_type Table type to check (default: "match_events").
+#' @param base_dir Opta data directory. If NULL, auto-detected.
+#'
+#' @return Character vector of available seasons (most recent first), or empty.
+#'
+#' @export
+#' @examples
+#' \dontrun{
+#' suggest_opta_seasons("World_Cup")
+#' # [1] "2018 Russia" "2014 Brazil" "2010 South Africa" ...
+#'
+#' suggest_opta_seasons("EPL")
+#' # [1] "2025-2026" "2024-2025" "2023-2024" ...
+#' }
+suggest_opta_seasons <- function(league, table_type = "match_events",
+                                  base_dir = NULL) {
+  opta_league <- to_opta_league(league)
+  if (is.null(base_dir)) {
+    base_dir <- tryCatch(opta_data_dir(), error = function(e) NULL)
+  }
+
+  seasons <- character(0)
+
+  # Try local filesystem (hierarchical)
+  if (!is.null(base_dir)) {
+    league_dir <- file.path(base_dir, table_type, opta_league)
+    if (dir.exists(league_dir)) {
+      files <- list.files(league_dir, pattern = "\\.parquet$", full.names = FALSE)
+      seasons <- sort(tools::file_path_sans_ext(files), decreasing = TRUE)
+    }
+  }
+
+  # Try consolidated parquet (distinct seasons via DuckDB)
+  if (length(seasons) == 0 && !is.null(base_dir)) {
+    consolidated <- file.path(base_dir, paste0("opta_", table_type, ".parquet"))
+    if (file.exists(consolidated)) {
+      tryCatch({
+        conn <- DBI::dbConnect(duckdb::duckdb())
+        on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+        pq <- normalizePath(consolidated, winslash = "/", mustWork = TRUE)
+        sql <- sprintf(
+          "SELECT DISTINCT season FROM '%s' WHERE competition = '%s' ORDER BY season DESC",
+          pq, opta_league
+        )
+        res <- DBI::dbGetQuery(conn, sql)
+        seasons <- res$season
+      }, error = function(e) NULL)
+    }
+  }
+
+  # Fall back to catalog
+  if (length(seasons) == 0) {
+    catalog <- tryCatch(download_opta_catalog(), error = function(e) NULL)
+    if (!is.null(catalog) && opta_league %in% names(catalog$competitions)) {
+      seasons <- sort(unlist(catalog$competitions[[opta_league]]$seasons),
+                      decreasing = TRUE)
+    }
+  }
+
+  seasons
+}
+
+
 #' Internal function to load Opta table data
 #'
 #' @param table_type "player_stats" or "shots"
@@ -559,10 +630,19 @@ load_opta_table <- function(table_type, league, season, columns,
     if (!is.null(season)) {
       parquet_path <- file.path(base_dir, table_type, opta_league, paste0(season, ".parquet"))
       if (!file.exists(parquet_path)) {
-        cli::cli_abort(c(
-          "Opta data not found.",
-          "i" = "Run {.code pb_download_opta()} to download the latest data."
-        ))
+        avail <- suggest_opta_seasons(opta_league, table_type, base_dir)
+        if (length(avail) > 0) {
+          cli::cli_abort(c(
+            "No data found for {opta_league} season {.val {season}}.",
+            "i" = "Available seasons: {paste(avail, collapse = ', ')}",
+            "i" = "Note: leagues use {.val 2024-2025} format, tournaments use {.val {c('2024', '2024 Germany')}} format."
+          ))
+        } else {
+          cli::cli_abort(c(
+            "Opta data not found for {opta_league}.",
+            "i" = "Run {.code pb_download_opta()} to download the latest data."
+          ))
+        }
       }
       parquet_pattern <- sprintf("'%s'", normalizePath(parquet_path, winslash = "/", mustWork = TRUE))
     } else {
@@ -596,6 +676,16 @@ load_opta_table <- function(table_type, league, season, columns,
   }, error = function(e) {
     cli::cli_abort("DuckDB query failed: {e$message}")
   })
+
+  # If season was requested but got 0 rows, show available seasons
+  if (nrow(result) == 0 && !is.null(season)) {
+    avail <- suggest_opta_seasons(opta_league, table_type, base_dir)
+    cli::cli_abort(c(
+      "No data found for {opta_league} season {.val {season}}.",
+      "i" = "Available seasons: {paste(avail, collapse = ', ')}",
+      "i" = "Note: leagues use {.val 2024-2025} format, tournaments use {.val {c('2024', '2024 Germany')}} format."
+    ))
+  }
 
   cli::cli_alert_success("Loaded {format(nrow(result), big.mark=',')} rows ({ncol(result)} columns)")
   result
