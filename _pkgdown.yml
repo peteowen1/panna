@@ -30,6 +30,26 @@ articles:
   - data-sources
 
 reference:
+- title: Data Loading - Opta
+  desc: Load Opta player statistics (263 columns, 15 leagues)
+  contents:
+  - load_opta_stats
+  - load_opta_shots
+  - load_opta_match_events
+  - load_opta_lineups
+  - load_opta_fixtures
+  - load_opta_xmetrics
+  - load_opta_shot_events
+  - load_opta_events
+  - load_opta_big5
+
+- title: Data Loading - Understat
+  desc: Load Understat data (xGChain, xGBuildup)
+  contents:
+  - load_understat_roster
+  - load_understat_shots
+  - load_understat_metadata
+
 - title: Data Loading - FBref
   desc: Load FBref match data from pannadata (StatsBomb xG)
   contents:
@@ -42,27 +62,9 @@ reference:
   - load_metadata
   - load_events
 
-- title: Data Loading - Opta
-  desc: Load Opta player statistics (271 columns)
-  contents:
-  - load_opta_stats
-  - load_opta_shots
-  - load_opta_big5
-
-- title: Data Loading - Understat
-  desc: Load Understat data (xGChain, xGBuildup)
-  contents:
-  - load_understat_roster
-  - load_understat_shots
-  - load_understat_metadata
-
 - title: Player Statistics
   desc: Aggregated player statistics by source
   contents:
-  - player_fbref_summary
-  - player_fbref_passing
-  - player_fbref_defense
-  - player_fbref_keeper
   - player_opta_summary
   - player_opta_passing
   - player_opta_defense
@@ -71,6 +73,10 @@ reference:
   - player_opta_shots
   - player_opta_setpiece
   - player_understat_summary
+  - player_fbref_summary
+  - player_fbref_passing
+  - player_fbref_defense
+  - player_fbref_keeper
 
 - title: RAPM Pipeline
   desc: Regularized Adjusted Plus-Minus model
@@ -125,6 +131,65 @@ reference:
   - get_top_defensive
   - prepare_od_scatter_data
   - visualize_od_scatter
+
+- title: EPV (Expected Possession Value)
+  desc: Action-level player valuation from Opta event data
+  contents:
+  - convert_opta_to_spadl
+  - create_possession_chains
+  - classify_chain_outcomes
+  - label_actions_with_outcomes
+  - create_epv_features
+  - fit_epv_model
+  - calculate_action_epv
+  - assign_epv_credit
+  - aggregate_player_epv
+  - save_epv_model
+  - load_epv_model
+  - pb_download_epv_models
+  - validate_epv_model
+  - fit_xg_model
+  - predict_xg
+  - save_xg_model
+  - load_xg_model
+  - validate_xg_model
+  - aggregate_player_xmetrics
+  - fit_xpass_model
+  - predict_xpass
+  - save_xpass_model
+  - load_xpass_model
+  - split_pass_credit
+
+- title: Estimated Skills
+  desc: Bayesian decay-weighted skill estimation with position-specific priors
+  contents:
+  - estimate_player_skills
+  - estimate_player_skills_at_date
+  - player_skill_profile
+  - inspect_skill
+  - aggregate_skills_for_spm
+  - backtest_skill_predictions
+  - adjust_match_stats_for_context
+  - get_default_decay_params
+  - compute_position_multipliers
+  - optimize_all_priors
+  - optimize_stat_prior
+  - get_stat_tiers
+
+- title: Match Prediction
+  desc: XGBoost Poisson/multinomial match outcome prediction
+  contents:
+  - aggregate_lineup_ratings
+  - aggregate_lineup_skills
+  - init_team_elos
+  - update_elo
+  - compute_match_elos
+  - compute_team_rolling_features
+  - fit_goals_xgb
+  - fit_outcome_xgb
+  - predict_match
+  - compute_multiclass_logloss
+  - calibration_table
 
 - title: Data Processing
   desc: Raw data processing and cleaning
@@ -256,6 +321,16 @@ reference:
   - fbref_to_understat_season
   - understat_to_fbref_season
 
+- title: Competition Metadata
+  desc: League and competition information
+  contents:
+  - get_tournament_years
+  - is_tournament_competition
+  - list_opta_seasons
+  - list_opta_leagues
+  - suggest_opta_seasons
+  - get_opta_columns
+
 - title: Validation
   desc: Model and data validation
   contents:
@@ -271,14 +346,6 @@ reference:
   - get_covariate_effects
   - aggregate_rapm_by_team
   - report_season_ranges
-
-- title: Competition Metadata
-  desc: League and competition information
-  contents:
-  - get_tournament_years
-  - is_tournament_competition
-  - list_opta_seasons
-  - get_opta_columns
 
 - title: Internal
   desc: Internal functions (advanced users)
