@@ -8,7 +8,7 @@ load_opta_shots(
   league,
   season = NULL,
   columns = NULL,
-  source = c("local", "remote")
+  source = c("remote", "local")
 )
 }
 \arguments{
@@ -19,8 +19,8 @@ or Opta format (EPL, La_Liga, Bundesliga, Serie_A, Ligue_1).}
 
 \item{columns}{Optional character vector of columns to select. If NULL, selects all.}
 
-\item{source}{Data source: "local" (default) to load from local files,
-"remote" to download from GitHub releases.}
+\item{source}{Data source: "remote" (default) downloads from GitHub releases,
+"local" loads from local files (requires prior \code{pb_download_opta()}).}
 }
 \value{
 Data frame of shot statistics.

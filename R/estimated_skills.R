@@ -1296,17 +1296,23 @@ adjust_match_stats_for_context <- function(match_stats, elo_ratings = NULL,
 #' skill estimates, league averages, percentile ranks, and confidence levels.
 #' Groups stats by category for easy interpretation.
 #'
+#' When called without \code{match_stats} or \code{skills}, automatically loads
+#' Opta match stats for the Big 5 leagues (ENG, ESP, GER, ITA, FRA) using
+#' \code{load_opta_stats()}.
+#'
 #' @param player_name Character string of the player name to profile.
 #'   Supports exact names ("H. Kane"), abbreviations ("H.Kane"),
 #'   surnames ("Kane"), and accent-insensitive input ("Mbappe").
 #' @param match_stats A data.table from \code{compute_match_level_opta_stats()}.
-#'   Can be omitted if \code{skills} is provided.
+#'   Can be omitted if \code{skills} is provided, or to auto-load Big 5 data.
 #' @param decay_params Decay parameters list.
 #' @param date Date to estimate skills at (default today).
 #' @param min_weighted_90s Regression threshold.
 #' @param skills Pre-computed skills data.table from
 #'   \code{estimate_player_skills()}. If provided, skips the expensive
 #'   skill estimation step (~7s) and uses these directly.
+#' @param source Data source for auto-loading: "remote" (default) or "local".
+#'   Only used when both \code{match_stats} and \code{skills} are NULL.
 #'
 #' @return A data.table with columns: category, stat, skill, league_avg,
 #'   league_pct, pos_avg, pos_pct, weighted_90s, confidence.
@@ -1314,7 +1320,10 @@ adjust_match_stats_for_context <- function(match_stats, elo_ratings = NULL,
 #' @export
 player_skill_profile <- function(player_name, match_stats = NULL,
                                   decay_params = NULL, date = Sys.Date(),
-                                  min_weighted_90s = 5, skills = NULL) {
+                                  min_weighted_90s = 5, skills = NULL,
+                                  source = c("remote", "local")) {
+  source <- match.arg(source)
+
   # Capture search target before entering data.table scope (avoid NSE shadowing)
   target_player <- player_name
   if (is.null(decay_params)) {
@@ -1323,7 +1332,6 @@ player_skill_profile <- function(player_name, match_stats = NULL,
     if (file.exists(opt_path)) {
       decay_params <- readRDS(opt_path)
     } else {
-      cli::cli_alert_info("No optimized decay params found at {.path {opt_path}}. Using defaults.")
       decay_params <- get_default_decay_params()
     }
   }
@@ -1332,8 +1340,29 @@ player_skill_profile <- function(player_name, match_stats = NULL,
   if (!is.null(skills)) {
     all_skills <- data.table::as.data.table(skills)
   } else {
+    # Auto-load Big 5 match stats if none provided
     if (is.null(match_stats)) {
-      cli::cli_abort("Either {.arg match_stats} or {.arg skills} must be provided.")
+      cli::cli_alert_info("Loading Opta match stats for Big 5 leagues...")
+      big5_codes <- c("ENG", "ESP", "GER", "ITA", "FRA")
+      match_stats_list <- lapply(big5_codes, function(lg) {
+        tryCatch(
+          load_opta_stats(lg, source = source),
+          error = function(e) {
+            cli::cli_alert_warning("Failed to load {lg}: {e$message}")
+            NULL
+          }
+        )
+      })
+      match_stats <- data.table::rbindlist(
+        Filter(Negate(is.null), match_stats_list),
+        use.names = TRUE, fill = TRUE
+      )
+      if (nrow(match_stats) == 0) {
+        cli::cli_abort(c(
+          "Could not load match stats for any Big 5 league.",
+          "i" = "Provide {.arg match_stats} or {.arg skills} directly."
+        ))
+      }
     }
     dt <- data.table::as.data.table(match_stats)
     all_skills <- estimate_player_skills(

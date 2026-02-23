@@ -7,13 +7,21 @@
 get_panna_ratings(panna_model)
 }
 \arguments{
-\item{panna_model}{Fitted panna model from fit_panna_model}
+\item{panna_model}{Fitted panna model from \code{\link{fit_panna_model}}.}
 }
 \value{
-Data frame with player panna ratings
+Data frame with player panna ratings.
 }
 \description{
-Gets the final panna ratings from a fitted panna model.
+Extracts the final panna ratings from a fitted panna model object.
+Requires a model fitted with \code{\link{fit_panna_model}}.
+}
+\details{
+To generate ratings, run one of the pipeline scripts:
+\itemize{
+\item Opta (15 leagues): \code{source("data-raw/player-ratings-opta/run_pipeline_opta.R")}
+\item FBref (Big 5): \code{source("data-raw/player-ratings/run_pipeline.R")}
+}
 }
 \examples{
 \dontrun{

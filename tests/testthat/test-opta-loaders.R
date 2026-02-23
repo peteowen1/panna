@@ -17,6 +17,21 @@ test_that("to_opta_league resolves panna aliases", {
   expect_equal(to_opta_league("FRA"), "Ligue_1")
 })
 
+test_that("to_opta_league is case-insensitive for panna aliases", {
+  expect_equal(to_opta_league("eng"), "EPL")
+  expect_equal(to_opta_league("Eng"), "EPL")
+  expect_equal(to_opta_league("esp"), "La_Liga")
+  expect_equal(to_opta_league("ger"), "Bundesliga")
+})
+
+test_that("to_opta_league is case-insensitive for Opta codes", {
+  expect_equal(to_opta_league("epl"), "EPL")
+  expect_equal(to_opta_league("Epl"), "EPL")
+  expect_equal(to_opta_league("la_liga"), "La_Liga")
+  expect_equal(to_opta_league("BUNDESLIGA"), "Bundesliga")
+  expect_equal(to_opta_league("ucl"), "UCL")
+})
+
 test_that("to_opta_league errors on invalid format", {
   expect_error(to_opta_league("123!"), "Invalid league code")
   expect_error(to_opta_league("  "), "Invalid league code")
@@ -24,6 +39,39 @@ test_that("to_opta_league errors on invalid format", {
 
 test_that("to_opta_league warns on unknown but valid-looking codes", {
   expect_warning(to_opta_league("MLS"), "not in hardcoded mappings")
+})
+
+
+# -- validate_parquet_file --
+
+test_that("validate_parquet_file returns FALSE for missing file", {
+  expect_false(validate_parquet_file("/nonexistent/path/file.parquet"))
+})
+
+test_that("validate_parquet_file returns FALSE for empty file", {
+  tmp <- withr::local_tempfile(fileext = ".parquet")
+  file.create(tmp)
+  expect_false(validate_parquet_file(tmp))
+})
+
+test_that("validate_parquet_file returns FALSE for truncated file", {
+  tmp <- withr::local_tempfile(fileext = ".parquet")
+  # Write only the header magic, not footer
+  con <- file(tmp, "wb")
+  writeBin(charToRaw("PAR1"), con)
+  writeBin(raw(100), con)
+  close(con)
+  expect_false(validate_parquet_file(tmp))
+})
+
+test_that("validate_parquet_file returns TRUE for valid parquet magic", {
+  tmp <- withr::local_tempfile(fileext = ".parquet")
+  con <- file(tmp, "wb")
+  writeBin(charToRaw("PAR1"), con)
+  writeBin(raw(100), con)  # some content
+  writeBin(charToRaw("PAR1"), con)
+  close(con)
+  expect_true(validate_parquet_file(tmp))
 })
 
 

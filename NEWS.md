@@ -2,6 +2,17 @@
 
 Major expansion: Opta is now the primary data source with full pipeline support across 15 leagues.
 
+## User Experience Improvements
+
+* `load_opta_*()` functions now default to `source = "remote"`, so data loads directly from GitHub without requiring `pb_download_opta()` first (#11)
+* `to_opta_league()` now accepts case-insensitive input: "epl", "eng", "Eng" all work (#11)
+* `list_opta_seasons()` now defaults to `source = "catalog"` for immediate season discovery (#11)
+* Local-only error messages now suggest `source = 'remote'` as an alternative (#11)
+* `player_skill_profile()` auto-loads Big 5 match stats when no data is provided (#13)
+* Corrupt parquet files from interrupted downloads are now detected and re-downloaded automatically (#12)
+* DuckDB "No magic bytes" errors now give a clear message and auto-remove the corrupt cache (#12)
+* Fixed `on.exit()` calls to use `add = TRUE` to prevent DuckDB connection leaks (#12)
+
 ## Opta RAPM/SPM Pipeline
 
 * Full RAPM/SPM/Panna rating pipeline for Opta data (15 leagues, 42K+ matches)

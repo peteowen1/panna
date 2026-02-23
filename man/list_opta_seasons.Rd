@@ -4,13 +4,13 @@
 \alias{list_opta_seasons}
 \title{List Available Opta Seasons}
 \usage{
-list_opta_seasons(league, source = c("local", "catalog"))
+list_opta_seasons(league, source = c("catalog", "local"))
 }
 \arguments{
 \item{league}{League code (e.g., "ENG", "EPL", "ESP", "La_Liga").}
 
-\item{source}{Data source: "local" (default) scans filesystem,
-"catalog" reads from downloaded catalog. Falls back to catalog if
+\item{source}{Data source: "catalog" (default) reads from downloaded catalog,
+"local" scans the local filesystem. Falls back to catalog if
 local directory doesn't exist.}
 }
 \value{
@@ -22,6 +22,6 @@ Returns available seasons for a given league in the Opta data.
 \examples{
 \dontrun{
 list_opta_seasons("ENG")
-list_opta_seasons("MLS", source = "catalog")
+list_opta_seasons("EPL", source = "local")
 }
 }

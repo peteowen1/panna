@@ -37,6 +37,28 @@ validate_sql_columns <- function(columns) {
 }
 
 
+#' Validate a parquet file by checking magic bytes
+#'
+#' Parquet files must start and end with the 4-byte magic number "PAR1".
+#' Interrupted downloads produce truncated files missing the footer.
+#'
+#' @param path Path to the parquet file.
+#' @return TRUE if valid parquet file, FALSE otherwise.
+#' @keywords internal
+validate_parquet_file <- function(path) {
+  if (!file.exists(path)) return(FALSE)
+  fsize <- file.info(path)$size
+  if (is.na(fsize) || fsize < 12) return(FALSE)
+  con <- file(path, "rb")
+  on.exit(close(con), add = TRUE)
+  header <- readBin(con, "raw", n = 4)
+  seek(con, fsize - 4)
+  footer <- readBin(con, "raw", n = 4)
+  magic <- charToRaw("PAR1")
+  identical(header, magic) && identical(footer, magic)
+}
+
+
 # Opta league code mapping
 OPTA_LEAGUES <- c(
   # Big 5
@@ -120,19 +142,24 @@ opta_data_dir <- function(path = NULL) {
 #' Convert League Code to Opta Format
 #'
 #' Converts panna league codes (ENG, ESP, etc.) to Opta format (EPL, La_Liga, etc.).
+#' Matching is case-insensitive for convenience (e.g., "epl", "eng", "Eng" all work).
 #' Falls back to catalog lookup, then pass-through for valid-looking codes.
 #'
-#' @param league Panna league code or Opta league code.
+#' @param league Panna league code or Opta league code (case-insensitive).
 #' @return Opta league code.
 #' @keywords internal
 to_opta_league <- function(league) {
-  # 1. Direct Opta code (e.g., "EPL", "La_Liga")
-  if (league %in% OPTA_LEAGUES) {
-    return(league)
+  league_upper <- toupper(league)
+
+  # 1. Panna alias, case-insensitive (e.g., "ENG"/"eng" -> "EPL")
+  if (league_upper %in% names(OPTA_LEAGUES)) {
+    return(OPTA_LEAGUES[[league_upper]])
   }
-  # 2. Panna alias (e.g., "ENG" -> "EPL")
-  if (league %in% names(OPTA_LEAGUES)) {
-    return(OPTA_LEAGUES[[league]])
+  # 2. Direct Opta code, case-insensitive (e.g., "EPL"/"epl" -> "EPL")
+  opta_codes_upper <- toupper(OPTA_LEAGUES)
+  match_idx <- match(league_upper, opta_codes_upper)
+  if (!is.na(match_idx)) {
+    return(OPTA_LEAGUES[[match_idx]])
   }
   # 3. Catalog lookup (session-cached)
   catalog <- tryCatch(download_opta_catalog(), error = function(e) {
@@ -165,8 +192,8 @@ to_opta_league <- function(league) {
 #' Returns available seasons for a given league in the Opta data.
 #'
 #' @param league League code (e.g., "ENG", "EPL", "ESP", "La_Liga").
-#' @param source Data source: "local" (default) scans filesystem,
-#'   "catalog" reads from downloaded catalog. Falls back to catalog if
+#' @param source Data source: "catalog" (default) reads from downloaded catalog,
+#'   "local" scans the local filesystem. Falls back to catalog if
 #'   local directory doesn't exist.
 #'
 #' @return Character vector of available seasons.
@@ -175,9 +202,9 @@ to_opta_league <- function(league) {
 #' @examples
 #' \dontrun{
 #' list_opta_seasons("ENG")
-#' list_opta_seasons("MLS", source = "catalog")
+#' list_opta_seasons("EPL", source = "local")
 #' }
-list_opta_seasons <- function(league, source = c("local", "catalog")) {
+list_opta_seasons <- function(league, source = c("catalog", "local")) {
   source <- match.arg(source)
   opta_league <- to_opta_league(league)
 
@@ -213,19 +240,19 @@ list_opta_seasons <- function(league, source = c("local", "catalog")) {
 #'   or Opta format (EPL, La_Liga, Bundesliga, Serie_A, Ligue_1).
 #' @param season Optional season filter (e.g., "2021-2022"). If NULL, loads all seasons.
 #' @param columns Optional character vector of columns to select. If NULL, selects all.
-#' @param source Data source: "local" (default) to load from local files,
-#'   "remote" to download from GitHub releases.
+#' @param source Data source: "remote" (default) downloads from GitHub releases,
+#'   "local" loads from local files (requires prior \code{pb_download_opta()}).
 #'
 #' @return Data frame of player statistics.
 #'
 #' @export
 #' @examples
 #' \dontrun{
-#' # Load all EPL data from local files
+#' # Load EPL data (downloads automatically from GitHub)
 #' epl <- load_opta_stats("ENG")
 #'
-#' # Load from GitHub releases (downloads opta_player_stats.parquet)
-#' epl_remote <- load_opta_stats("ENG", season = "2021-2022", source = "remote")
+#' # Load from local files (requires pb_download_opta() first)
+#' epl_local <- load_opta_stats("ENG", season = "2021-2022", source = "local")
 #'
 #' # Load specific columns only
 #' epl_basic <- load_opta_stats("ENG", columns = c(
@@ -237,7 +264,7 @@ list_opta_seasons <- function(league, source = c("local", "catalog")) {
 #' big5 <- data.table::rbindlist(lapply(c("ENG", "ESP", "GER", "ITA", "FRA"), load_opta_stats))
 #' }
 load_opta_stats <- function(league, season = NULL, columns = NULL,
-                            source = c("local", "remote")) {
+                            source = c("remote", "local")) {
   source <- match.arg(source)
   load_opta_table("player_stats", league, season, columns, source)
 }
@@ -262,7 +289,7 @@ load_opta_stats <- function(league, season = NULL, columns = NULL,
 #' shots_2122 <- load_opta_shots("ENG", season = "2021-2022", source = "remote")
 #' }
 load_opta_shots <- function(league, season = NULL, columns = NULL,
-                            source = c("local", "remote")) {
+                            source = c("remote", "local")) {
   source <- match.arg(source)
   load_opta_table("shots", league, season, columns, source)
 }
@@ -304,7 +331,7 @@ load_opta_shots <- function(league, season = NULL, columns = NULL,
 #'   geom_point(alpha = 0.5)
 #' }
 load_opta_shot_events <- function(league, season = NULL, columns = NULL,
-                                   source = c("local", "remote")) {
+                                   source = c("remote", "local")) {
   source <- match.arg(source)
   load_opta_table("shot_events", league, season, columns, source)
 }
@@ -340,7 +367,7 @@ load_opta_shot_events <- function(league, season = NULL, columns = NULL,
 #'   dplyr::filter(event_type == "red_card")
 #' }
 load_opta_events <- function(league, season = NULL, columns = NULL,
-                              source = c("local", "remote")) {
+                              source = c("remote", "local")) {
   source <- match.arg(source)
   load_opta_table("events", league, season, columns, source)
 }
@@ -389,7 +416,7 @@ load_opta_events <- function(league, season = NULL, columns = NULL,
 #'   dplyr::filter(type_id == 7)
 #' }
 load_opta_match_events <- function(league, season = NULL, columns = NULL,
-                                    source = c("local", "remote")) {
+                                    source = c("remote", "local")) {
   source <- match.arg(source)
   load_opta_table("match_events", league, season, columns, source)
 }
@@ -431,7 +458,7 @@ load_opta_match_events <- function(league, season = NULL, columns = NULL,
 #'   dplyr::summarise(total_mins = sum(minutes_played))
 #' }
 load_opta_lineups <- function(league, season = NULL, columns = NULL,
-                               source = c("local", "remote")) {
+                               source = c("remote", "local")) {
   source <- match.arg(source)
   load_opta_table("lineups", league, season, columns, source)
 }
@@ -469,7 +496,7 @@ load_opta_lineups <- function(league, season = NULL, columns = NULL,
 #' }
 load_opta_fixtures <- function(league, season = NULL, columns = NULL,
                                 status = NULL,
-                                source = c("local", "remote")) {
+                                source = c("remote", "local")) {
   source <- match.arg(source)
   result <- load_opta_table("fixtures", league, season, columns, source)
 
@@ -563,7 +590,7 @@ suggest_opta_seasons <- function(league, table_type = "match_events",
     if (file.exists(consolidated)) {
       tryCatch({
         conn <- DBI::dbConnect(duckdb::duckdb())
-        on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+        on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
         pq <- normalizePath(consolidated, winslash = "/", mustWork = TRUE)
         where_sql <- build_where_clause(list(competition = opta_league), prefix = FALSE)
         sql <- sprintf(
@@ -652,7 +679,8 @@ load_opta_table <- function(table_type, league, season, columns,
         } else {
           cli::cli_abort(c(
             "Opta data not found for {opta_league}.",
-            "i" = "Run {.code pb_download_opta()} to download the latest data."
+            "i" = "Run {.code pb_download_opta()} to download the latest data.",
+            "i" = "Or use {.code source = 'remote'} to load directly from GitHub."
           ))
         }
       }
@@ -662,7 +690,8 @@ load_opta_table <- function(table_type, league, season, columns,
       if (!dir.exists(league_dir)) {
         cli::cli_abort(c(
           "Opta data not found.",
-          "i" = "Run {.code pb_download_opta()} to download the latest data."
+          "i" = "Run {.code pb_download_opta()} to download the latest data.",
+          "i" = "Or use {.code source = 'remote'} to load directly from GitHub."
         ))
       }
       parquet_pattern <- sprintf("'%s/*.parquet'", normalizePath(league_dir, winslash = "/", mustWork = TRUE))
@@ -679,7 +708,7 @@ load_opta_table <- function(table_type, league, season, columns,
 
   # Execute query with DuckDB
   conn <- DBI::dbConnect(duckdb::duckdb())
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
   cli::cli_alert_info("Loading Opta {table_type} for {opta_league}...")
 
@@ -748,7 +777,7 @@ get_opta_columns <- function(table_type = c("player_stats", "shots", "shot_event
   parquet_path <- normalizePath(files[1], winslash = "/", mustWork = TRUE)
 
   conn <- DBI::dbConnect(duckdb::duckdb())
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
   sql <- sprintf("SELECT * FROM '%s' LIMIT 0", parquet_path)
   result <- DBI::dbGetQuery(conn, sql)
@@ -958,12 +987,16 @@ query_remote_opta_parquet <- function(table_type, opta_league, season = NULL,
   file_name <- paste0("opta_", table_type, ".parquet")
   cache_key <- paste0(table_type, "_", repo, "_", tag)
 
-  # Check cache
+  # Check cache (validate parquet is not corrupt)
   parquet_path <- NULL
   if (exists(cache_key, envir = .opta_remote_env)) {
     cached_path <- get(cache_key, envir = .opta_remote_env)
-    if (file.exists(cached_path)) {
+    if (file.exists(cached_path) && validate_parquet_file(cached_path)) {
       parquet_path <- cached_path
+    } else if (file.exists(cached_path)) {
+      cli::cli_alert_warning("Cached {file_name} is corrupt (incomplete download?). Re-downloading...")
+      unlink(cached_path)
+      rm(list = cache_key, envir = .opta_remote_env)
     }
   }
 
@@ -995,6 +1028,15 @@ query_remote_opta_parquet <- function(table_type, opta_league, season = NULL,
       cli::cli_abort("Download failed - {file_name} not found after download")
     }
 
+    # Validate downloaded file
+    if (!validate_parquet_file(parquet_path)) {
+      unlink(parquet_path)
+      cli::cli_abort(c(
+        "Downloaded {file_name} is corrupt (incomplete download).",
+        "i" = "Please try again. If the problem persists, check your network connection."
+      ))
+    }
+
     assign(cache_key, parquet_path, envir = .opta_remote_env)
   }
 
@@ -1019,13 +1061,25 @@ query_remote_opta_parquet <- function(table_type, opta_league, season = NULL,
 
   # Execute query with DuckDB
   conn <- DBI::dbConnect(duckdb::duckdb())
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
   cli::cli_alert_info("Querying remote Opta {table_type} for {opta_league}...")
 
   result <- tryCatch({
     DBI::dbGetQuery(conn, sql)
   }, error = function(e) {
+    if (grepl("magic bytes|No magic bytes", e$message, ignore.case = TRUE)) {
+      # Invalidate corrupt cached file
+      if (exists(cache_key, envir = .opta_remote_env)) {
+        cached <- get(cache_key, envir = .opta_remote_env)
+        if (file.exists(cached)) unlink(cached)
+        rm(list = cache_key, envir = .opta_remote_env)
+      }
+      cli::cli_abort(c(
+        "Cached parquet file is corrupt (no magic bytes).",
+        "i" = "The corrupt file has been removed. Please re-run your command to re-download."
+      ))
+    }
     cli::cli_abort("DuckDB query failed: {e$message}")
   })
 
@@ -1055,12 +1109,17 @@ query_remote_opta_match_events <- function(opta_league, season = NULL,
   # Cache key for this league's events file
   cache_key <- paste0("match_events_", opta_league, "_", repo, "_", tag)
 
-  # Check cache first
+  # Check cache first (validate parquet is not corrupt)
   if (exists(cache_key, envir = .opta_remote_env)) {
     cached_path <- get(cache_key, envir = .opta_remote_env)
-    if (file.exists(cached_path)) {
+    if (file.exists(cached_path) && validate_parquet_file(cached_path)) {
       parquet_path <- cached_path
     } else {
+      if (file.exists(cached_path)) {
+        cli::cli_alert_warning("Cached events for {opta_league} is corrupt. Re-downloading...")
+        unlink(cached_path)
+      }
+      rm(list = cache_key, envir = .opta_remote_env)
       parquet_path <- NULL
     }
   } else {
@@ -1096,6 +1155,15 @@ query_remote_opta_match_events <- function(opta_league, season = NULL,
       cli::cli_abort("Download failed - {file_name} not found after download")
     }
 
+    # Validate downloaded file
+    if (!validate_parquet_file(parquet_path)) {
+      unlink(parquet_path)
+      cli::cli_abort(c(
+        "Downloaded events for {opta_league} is corrupt (incomplete download).",
+        "i" = "Please try again. If the problem persists, check your network connection."
+      ))
+    }
+
     # Cache the path
     assign(cache_key, parquet_path, envir = .opta_remote_env)
   }
@@ -1118,13 +1186,24 @@ query_remote_opta_match_events <- function(opta_league, season = NULL,
 
   # Execute query with DuckDB
   conn <- DBI::dbConnect(duckdb::duckdb())
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
   cli::cli_alert_info("Querying match events for {opta_league}...")
 
   result <- tryCatch({
     DBI::dbGetQuery(conn, sql)
   }, error = function(e) {
+    if (grepl("magic bytes|No magic bytes", e$message, ignore.case = TRUE)) {
+      if (exists(cache_key, envir = .opta_remote_env)) {
+        cached <- get(cache_key, envir = .opta_remote_env)
+        if (file.exists(cached)) unlink(cached)
+        rm(list = cache_key, envir = .opta_remote_env)
+      }
+      cli::cli_abort(c(
+        "Cached parquet file is corrupt (no magic bytes).",
+        "i" = "The corrupt file has been removed. Please re-run your command to re-download."
+      ))
+    }
     cli::cli_abort("DuckDB query failed: {e$message}")
   })
 
@@ -1190,7 +1269,7 @@ load_opta_xmetrics <- function(league, season = NULL, columns = NULL,
   sql <- sprintf("SELECT %s FROM read_parquet(%s, union_by_name=true)", col_sql, parquet_pattern)
 
   conn <- DBI::dbConnect(duckdb::duckdb())
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
   cli::cli_alert_info("Loading Opta xmetrics for {opta_league}...")
 

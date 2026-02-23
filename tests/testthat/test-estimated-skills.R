@@ -226,3 +226,26 @@ test_that(".compute_denominator errors on all missing compound columns", {
     "No denominator columns found"
   )
 })
+
+
+# -- player_skill_profile --
+
+test_that("player_skill_profile accepts pre-computed skills", {
+  ms <- make_test_match_stats(n_players = 5, n_matches = 10)
+  params <- get_default_decay_params()
+  skills <- estimate_player_skills(ms, decay_params = params,
+                                    stat_cols = c("goals_p90", "tackles_won_p90"))
+
+  profile <- player_skill_profile("Player_3", match_stats = ms,
+                                   decay_params = params, skills = skills)
+  expect_s3_class(profile, "data.table")
+  expect_true("stat" %in% names(profile))
+  expect_true("skill" %in% names(profile))
+  expect_true(nrow(profile) > 0)
+})
+
+test_that("player_skill_profile has source parameter", {
+  # Verify the function signature includes source parameter
+  args <- formals(player_skill_profile)
+  expect_true("source" %in% names(args))
+})

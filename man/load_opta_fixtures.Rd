@@ -9,7 +9,7 @@ load_opta_fixtures(
   season = NULL,
   columns = NULL,
   status = NULL,
-  source = c("local", "remote")
+  source = c("remote", "local")
 )
 }
 \arguments{
@@ -23,8 +23,8 @@ or Opta format (EPL, La_Liga, Bundesliga, Serie_A, Ligue_1).}
 \item{status}{Optional match status filter (e.g., "Fixture", "Played", "Postponed").
 If NULL (default), returns all statuses.}
 
-\item{source}{Data source: "local" (default) to load from local files,
-"remote" to download from GitHub releases.}
+\item{source}{Data source: "remote" (default) downloads from GitHub releases,
+"local" loads from local files (requires prior \code{pb_download_opta()}).}
 }
 \value{
 Data frame of fixtures with columns:

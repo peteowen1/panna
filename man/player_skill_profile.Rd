@@ -10,7 +10,8 @@ player_skill_profile(
   decay_params = NULL,
   date = Sys.Date(),
   min_weighted_90s = 5,
-  skills = NULL
+  skills = NULL,
+  source = c("remote", "local")
 )
 }
 \arguments{
@@ -19,7 +20,7 @@ Supports exact names ("H. Kane"), abbreviations ("H.Kane"),
 surnames ("Kane"), and accent-insensitive input ("Mbappe").}
 
 \item{match_stats}{A data.table from \code{compute_match_level_opta_stats()}.
-Can be omitted if \code{skills} is provided.}
+Can be omitted if \code{skills} is provided, or to auto-load Big 5 data.}
 
 \item{decay_params}{Decay parameters list.}
 
@@ -30,6 +31,9 @@ Can be omitted if \code{skills} is provided.}
 \item{skills}{Pre-computed skills data.table from
 \code{estimate_player_skills()}. If provided, skips the expensive
 skill estimation step (~7s) and uses these directly.}
+
+\item{source}{Data source for auto-loading: "remote" (default) or "local".
+Only used when both \code{match_stats} and \code{skills} are NULL.}
 }
 \value{
 A data.table with columns: category, stat, skill, league_avg,
@@ -39,4 +43,9 @@ league_pct, pos_avg, pos_pct, weighted_90s, confidence.
 Returns a clean summary of a player's current estimated skills: per-stat
 skill estimates, league averages, percentile ranks, and confidence levels.
 Groups stats by category for easy interpretation.
+}
+\details{
+When called without \code{match_stats} or \code{skills}, automatically loads
+Opta match stats for the Big 5 leagues (ENG, ESP, GER, ITA, FRA) using
+\code{load_opta_stats()}.
 }
