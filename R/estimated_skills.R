@@ -1360,7 +1360,7 @@ player_skill_profile <- function(player_name, match_stats = NULL,
     match_stats <- tryCatch(
       data.table::as.data.table(load_opta_match_stats(source = source)),
       error = function(e) {
-        cli::cli_alert_warning("Could not load match stats (raw_avg/attempts will be NA).")
+        cli::cli_alert_warning("Could not load match stats: {e$message} (raw_avg/attempts will be NA).")
         NULL
       }
     )

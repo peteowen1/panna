@@ -49,13 +49,15 @@ validate_parquet_file <- function(path) {
   if (!file.exists(path)) return(FALSE)
   fsize <- file.info(path)$size
   if (is.na(fsize) || fsize < 12) return(FALSE)
-  con <- file(path, "rb")
-  on.exit(close(con), add = TRUE)
-  header <- readBin(con, "raw", n = 4)
-  seek(con, fsize - 4)
-  footer <- readBin(con, "raw", n = 4)
-  magic <- charToRaw("PAR1")
-  identical(header, magic) && identical(footer, magic)
+  tryCatch({
+    con <- file(path, "rb")
+    on.exit(close(con), add = TRUE)
+    header <- readBin(con, "raw", n = 4)
+    seek(con, fsize - 4)
+    footer <- readBin(con, "raw", n = 4)
+    magic <- charToRaw("PAR1")
+    identical(header, magic) && identical(footer, magic)
+  }, error = function(e) FALSE)
 }
 
 
@@ -724,6 +726,12 @@ load_opta_table <- function(table_type, league, season, columns,
   result <- tryCatch({
     DBI::dbGetQuery(conn, sql)
   }, error = function(e) {
+    if (grepl("magic bytes|No magic bytes", e$message, ignore.case = TRUE)) {
+      cli::cli_abort(c(
+        "Parquet file is corrupt for {opta_league} {table_type}.",
+        "i" = "Try {.code source = 'remote'} or re-download with {.fn pb_download_opta}."
+      ))
+    }
     cli::cli_abort("DuckDB query failed: {e$message}")
   })
 
