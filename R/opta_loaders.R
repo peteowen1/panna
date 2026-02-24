@@ -59,12 +59,8 @@ validate_parquet_file <- function(path) {
     magic <- charToRaw("PAR1")
     identical(header, magic) && identical(footer, magic)
   }, error = function(e) {
-    if (grepl("permission|access denied|locked", e$message, ignore.case = TRUE)) {
-      cli::cli_warn("Cannot read parquet file {.path {path}}: {e$message}")
-      return(NA)  # Indeterminate — callers should not delete
-    }
-    cli::cli_alert_warning("Could not validate parquet file {.path {path}}: {e$message}")
-    FALSE
+    cli::cli_warn("Could not validate parquet file {.path {path}}: {e$message}")
+    NA  # Indeterminate — callers should not delete
   })
 }
 
@@ -187,15 +183,18 @@ to_opta_league <- function(league) {
       return(aliases[[match(league_upper, aliases_names_upper)]])
     }
   }
-  # 4. Pass-through with warning for valid-looking codes
-  if (grepl("^[A-Za-z][A-Za-z0-9_]+$", league)) {
+  # 4. Pass-through with warning only when catalog was unavailable (offline scenario)
+  if (is.null(catalog) && grepl("^[A-Za-z][A-Za-z0-9_]+$", league)) {
     cli::cli_warn(c(
-      "League {.val {league}} not in hardcoded mappings.",
+      "League {.val {league}} not in hardcoded mappings (catalog unavailable).",
       "i" = "Passing through as-is. Use {.fn list_opta_leagues} to see available competitions."
     ))
     return(league)
   }
-  cli::cli_abort("Invalid league code: {.val {league}}. Use {.fn list_opta_leagues} to see available competitions.")
+  cli::cli_abort(c(
+    "Unknown league code: {.val {league}}.",
+    "i" = "Use {.fn list_opta_leagues} to see available competitions."
+  ))
 }
 
 
@@ -205,8 +204,8 @@ to_opta_league <- function(league) {
 #'
 #' @param league League code (e.g., "ENG", "EPL", "ESP", "La_Liga").
 #' @param source Data source: "catalog" (default) reads from downloaded catalog,
-#'   "local" scans the local filesystem. Falls back to catalog if
-#'   local directory doesn't exist.
+#'   "remote" is an alias for "catalog", "local" scans the local filesystem.
+#'   Falls back to catalog if local directory doesn't exist.
 #'
 #' @return Character vector of available seasons.
 #'
@@ -216,8 +215,9 @@ to_opta_league <- function(league) {
 #' list_opta_seasons("ENG")
 #' list_opta_seasons("EPL", source = "local")
 #' }
-list_opta_seasons <- function(league, source = c("catalog", "local")) {
+list_opta_seasons <- function(league, source = c("catalog", "remote", "local")) {
   source <- match.arg(source)
+  if (source == "remote") source <- "catalog"
   opta_league <- to_opta_league(league)
 
   if (source == "local") {
@@ -601,7 +601,7 @@ load_opta_big5 <- function(season = NULL, columns = NULL) {
 #'
 #' @return Character vector of available seasons (most recent first), or empty.
 #'
-#' @export
+#' @keywords internal
 #' @examples
 #' \dontrun{
 #' suggest_opta_seasons("World_Cup")
@@ -934,7 +934,7 @@ download_opta_catalog <- function(repo = "peteowen1/pannadata",
 #' @param type Optional filter: "league", "cup", "domestic_cup", "international".
 #' @param tier Optional numeric filter for competition tier (1 = top tier).
 #' @param source Data source: "catalog" (default) downloads the catalog,
-#'   "local" scans the local filesystem.
+#'   "remote" is an alias for "catalog", "local" scans the local filesystem.
 #'
 #' @return Data frame with columns: code, name, country, type, tier,
 #'   n_seasons, n_matches, panna_alias.
@@ -955,8 +955,9 @@ download_opta_catalog <- function(repo = "peteowen1/pannadata",
 #' list_opta_leagues(source = "local")
 #' }
 list_opta_leagues <- function(type = NULL, tier = NULL,
-                               source = c("catalog", "local")) {
+                               source = c("catalog", "remote", "local")) {
   source <- match.arg(source)
+  if (source == "remote") source <- "catalog"
 
   if (source == "catalog") {
     catalog <- download_opta_catalog()
@@ -1596,6 +1597,10 @@ download_opta_release_file <- function(file_name,
 
   cli::cli_alert_info("Downloading {file_name} from {repo} ({tag})...")
 
+  # Remove any stale cached file before downloading to prevent using outdated data
+  parquet_path <- file.path(temp_dir, file_name)
+  if (file.exists(parquet_path)) unlink(parquet_path)
+
   # Try piggyback first; fall back to direct URL if stale cache
   pb_error_msg <- NULL
   tryCatch({
@@ -1611,8 +1616,6 @@ download_opta_release_file <- function(file_name,
     cli::cli_alert_warning("piggyback failed: {e$message}, trying direct URL...")
     NULL
   })
-
-  parquet_path <- file.path(temp_dir, file_name)
 
   if (!file.exists(parquet_path)) {
     direct_url <- sprintf(

@@ -4,7 +4,11 @@
 \alias{list_opta_leagues}
 \title{List Available Opta Leagues}
 \usage{
-list_opta_leagues(type = NULL, tier = NULL, source = c("catalog", "local"))
+list_opta_leagues(
+  type = NULL,
+  tier = NULL,
+  source = c("catalog", "remote", "local")
+)
 }
 \arguments{
 \item{type}{Optional filter: "league", "cup", "domestic_cup", "international".}
@@ -12,7 +16,7 @@ list_opta_leagues(type = NULL, tier = NULL, source = c("catalog", "local"))
 \item{tier}{Optional numeric filter for competition tier (1 = top tier).}
 
 \item{source}{Data source: "catalog" (default) downloads the catalog,
-"local" scans the local filesystem.}
+"remote" is an alias for "catalog", "local" scans the local filesystem.}
 }
 \value{
 Data frame with columns: code, name, country, type, tier,

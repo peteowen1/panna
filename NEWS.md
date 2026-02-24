@@ -2,11 +2,19 @@
 
 Major expansion: Opta is now the primary data source with full pipeline support across 15 leagues.
 
+## Breaking Changes
+
+* `load_opta_*()` functions now default to `source = "remote"` instead of `"local"`. Existing code that relied on the default loading from local files will now download from GitHub. Add `source = "local"` explicitly to restore the old behavior. (#11)
+* `player_skill_profile()` now errors (with name suggestions) when a player is not found, instead of returning `NULL` with a warning. Code checking `is.null(result)` should use `tryCatch()` instead. (#13)
+* `player_skill_profile()` return columns changed: `weighted_90s` and `confidence` removed; new columns `type`, `raw_avg`, `n90`, `w90`, `attempts`, `w_attempts` added. (#13)
+* `to_opta_league()` now errors on unknown league codes when the catalog is available (previously warned and passed through). Typos like `"EPLL"` now fail fast. (#11)
+* `suggest_opta_seasons()` is no longer exported (now internal). Use `list_opta_seasons()` instead. (#11)
+
 ## User Experience Improvements
 
 * `load_opta_*()` functions now default to `source = "remote"`, so data loads directly from GitHub without requiring `pb_download_opta()` first (#11)
 * `to_opta_league()` now accepts case-insensitive input: "epl", "eng", "Eng" all work (#11)
-* `list_opta_seasons()` now defaults to `source = "catalog"` for immediate season discovery (#11)
+* `list_opta_seasons()` and `list_opta_leagues()` now accept `source = "remote"` as an alias for `"catalog"` for consistency with `load_opta_*()` functions (#11)
 * Local-only error messages now suggest `source = 'remote'` as an alternative (#11)
 * `player_skill_profile()` auto-loads pre-computed skills and match stats from GitHub releases when called with no data, instead of downloading ~200 MB of raw stats (#13)
 * New `load_opta_skills()` function for loading pre-computed skill estimates from GitHub releases (#13)

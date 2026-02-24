@@ -33,11 +33,12 @@ test_that("to_opta_league is case-insensitive for Opta codes", {
 })
 
 test_that("to_opta_league errors on invalid format", {
-  expect_error(to_opta_league("123!"), "Invalid league code")
-  expect_error(to_opta_league("  "), "Invalid league code")
+  expect_error(to_opta_league("123!"), "Unknown league code")
+  expect_error(to_opta_league("  "), "Unknown league code")
 })
 
-test_that("to_opta_league warns on unknown but valid-looking codes", {
+test_that("to_opta_league warns on unknown but valid-looking codes when catalog unavailable", {
+  # When catalog is unavailable (offline), unknown valid-looking codes pass through with warning
   expect_warning(to_opta_league("MLS"), "not in hardcoded mappings")
 })
 

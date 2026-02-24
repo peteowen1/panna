@@ -31,3 +31,4 @@ suggest_opta_seasons("EPL")
 # [1] "2025-2026" "2024-2025" "2023-2024" ...
 }
 }
+\keyword{internal}

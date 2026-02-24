@@ -4,14 +4,14 @@
 \alias{list_opta_seasons}
 \title{List Available Opta Seasons}
 \usage{
-list_opta_seasons(league, source = c("catalog", "local"))
+list_opta_seasons(league, source = c("catalog", "remote", "local"))
 }
 \arguments{
 \item{league}{League code (e.g., "ENG", "EPL", "ESP", "La_Liga").}
 
 \item{source}{Data source: "catalog" (default) reads from downloaded catalog,
-"local" scans the local filesystem. Falls back to catalog if
-local directory doesn't exist.}
+"remote" is an alias for "catalog", "local" scans the local filesystem.
+Falls back to catalog if local directory doesn't exist.}
 }
 \value{
 Character vector of available seasons.

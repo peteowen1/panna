@@ -1565,6 +1565,7 @@ player_skill_profile <- function(player_name, match_stats = NULL,
             denom <- compute_denominator(player_matches, eff_map[[s]])
             round(sum(w * denom, na.rm = TRUE), 0)
           }, error = function(e) {
+            failed_denom_stats <<- c(failed_denom_stats, s)
             NA_real_
           })
         } else {

@@ -98,9 +98,9 @@ for (league in leagues) {
 
     tryCatch({
       # Load standard Opta data
-      lineups <- load_opta_lineups(league, season = season)
-      events <- load_opta_events(league, season = season)
-      stats <- load_opta_stats(league, season = season)
+      lineups <- load_opta_lineups(league, season = season, source = "local")
+      events <- load_opta_events(league, season = season, source = "local")
+      stats <- load_opta_stats(league, season = season, source = "local")
 
       if (is.null(lineups) || nrow(lineups) == 0) {
         message(sprintf("    Skipping %s: no lineup data", label))
@@ -140,7 +140,7 @@ for (league in leagues) {
 
         # Load raw match events for penalty detection
         raw_events <- tryCatch(
-          load_opta_match_events(league, season = season),
+          load_opta_match_events(league, season = season, source = "local"),
           error = function(e) NULL
         )
 

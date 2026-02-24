@@ -46,9 +46,9 @@ for (league in LEAGUES) {
     cli_alert_info("Loading {league} {season}...")
 
     tryCatch({
-      events <- load_opta_match_events(league, season = season)
-      shots <- load_opta_shot_events(league, season = season)
-      lineups <- load_opta_lineups(league, season = season)
+      events <- load_opta_match_events(league, season = season, source = "local")
+      shots <- load_opta_shot_events(league, season = season, source = "local")
+      lineups <- load_opta_lineups(league, season = season, source = "local")
 
       all_events[[paste(league, season)]] <- events
       all_shots[[paste(league, season)]] <- shots
