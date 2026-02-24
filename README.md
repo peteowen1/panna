@@ -162,8 +162,9 @@ spadl <- convert_opta_to_spadl(match_events)
 xg_model <- load_xg_model()
 epv_model <- load_epv_model()
 
-# Calculate action-level EPV
-epv_values <- calculate_action_epv(spadl, xg_model, epv_model)
+# Build features and calculate action-level EPV
+features <- create_epv_features(spadl)
+epv_values <- calculate_action_epv(spadl, features, epv_model, xg_model)
 player_epv <- aggregate_player_epv(epv_values)
 ```
 

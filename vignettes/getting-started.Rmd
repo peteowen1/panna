@@ -185,11 +185,11 @@ Many functions accept vectors of leagues and seasons:
 # Load Big 5 Opta stats
 big5_opta <- load_opta_big5("2024-2025")
 
-# Or load specific leagues
-multi_league <- load_opta_stats(
-  league = c("EPL", "La_Liga", "Bundesliga"),
-  season = "2024-2025"
-)
+# Or load specific leagues individually
+multi_league <- data.table::rbindlist(lapply(
+  c("EPL", "La_Liga", "Bundesliga"),
+  function(lg) load_opta_stats(lg, "2024-2025")
+), fill = TRUE)
 ```
 
 ## Advanced Features

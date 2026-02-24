@@ -47,6 +47,8 @@ if (isTRUE(use_skill_ratings) && file.exists(skill_ratings_path)) {
 } else if (file.exists(raw_ratings_path)) {
   message("========================================")
   if (isTRUE(use_skill_ratings)) {
+    warning("Skill ratings not found at ", skill_ratings_path,
+            ". Falling back to raw-stat ratings.", call. = FALSE)
     message("  USING: RAW-STAT ratings (FALLBACK - skill ratings not found)")
     message("  Expected at: ", skill_ratings_path)
     message("  Run the skills pipeline first for skill-based predictions.")

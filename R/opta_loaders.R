@@ -57,7 +57,10 @@ validate_parquet_file <- function(path) {
     footer <- readBin(con, "raw", n = 4)
     magic <- charToRaw("PAR1")
     identical(header, magic) && identical(footer, magic)
-  }, error = function(e) FALSE)
+  }, error = function(e) {
+    cli::cli_alert_warning("Could not validate parquet file {.path {path}}: {e$message}")
+    FALSE
+  })
 }
 
 
@@ -551,7 +554,22 @@ load_opta_big5 <- function(season = NULL, columns = NULL) {
     })
   })
 
-  rbindlist(Filter(Negate(is.null), results), use.names = TRUE, fill = TRUE)
+  valid_results <- Filter(Negate(is.null), results)
+
+  if (length(valid_results) == 0) {
+    cli::cli_abort("Failed to load data for any Big 5 league.")
+  }
+  if (length(valid_results) < length(leagues)) {
+    loaded <- vapply(valid_results, function(x) x$league[1], character(1))
+    failed <- setdiff(leagues, loaded)
+    cli::cli_warn(c(
+      "Only {length(valid_results)}/{length(leagues)} Big 5 leagues loaded.",
+      "i" = "Failed: {paste(failed, collapse = ', ')}",
+      "i" = "Results may be incomplete."
+    ))
+  }
+
+  rbindlist(valid_results, use.names = TRUE, fill = TRUE)
 }
 
 
@@ -1530,7 +1548,7 @@ download_opta_release_file <- function(file_name,
   cli::cli_alert_info("Downloading {file_name} from {repo} ({tag})...")
 
   # Try piggyback first; fall back to direct URL if stale cache
-  suppressWarnings(tryCatch({
+  tryCatch({
     piggyback::pb_download(
       file = file_name,
       repo = repo,
@@ -1541,7 +1559,7 @@ download_opta_release_file <- function(file_name,
   }, error = function(e) {
     cli::cli_alert_warning("piggyback failed: {e$message}, trying direct URL...")
     NULL
-  }))
+  })
 
   parquet_path <- file.path(temp_dir, file_name)
 

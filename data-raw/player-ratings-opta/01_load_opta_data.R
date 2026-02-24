@@ -175,7 +175,7 @@ for (league in leagues) {
                 spadl$match_id[spadl_shot_idx],
                 spadl$player_id[spadl_shot_idx],
                 floor(spadl$time_seconds[spadl_shot_idx] / 60),
-                spadl$time_seconds[spadl_shot_idx] %% 60,
+                floor(spadl$time_seconds[spadl_shot_idx] %% 60),
                 sep = "_"
               )
               spadl$is_penalty[spadl_shot_idx[spadl_keys %in% pen_keys]] <- 1L

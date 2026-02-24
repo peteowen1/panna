@@ -8,7 +8,7 @@ load_opta_xmetrics(
   league,
   season = NULL,
   columns = NULL,
-  source = c("local", "remote")
+  source = c("remote", "local")
 )
 }
 \arguments{
@@ -18,7 +18,7 @@ load_opta_xmetrics(
 
 \item{columns}{Optional character vector of columns to select.}
 
-\item{source}{Data source: "local" (default) or "remote".}
+\item{source}{Data source: "remote" (default) or "local".}
 }
 \value{
 Data frame with player xmetrics including xg, npxg, xa, xpass stats.

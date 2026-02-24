@@ -69,14 +69,21 @@ if (!requireNamespace("piggyback", quietly = TRUE)) {
   stop("Package 'piggyback' is required for upload.")
 }
 
+upload_failures <- character(0)
 for (f in c(skills_path, ms_path)) {
   fname <- basename(f)
   tryCatch({
     piggyback::pb_upload(file = f, repo = repo, tag = tag, overwrite = TRUE)
     cat(sprintf("  Uploaded %s to %s (%s)\n", fname, repo, tag))
   }, error = function(e) {
-    cat(sprintf("  WARNING: Upload of %s failed: %s\n", fname, e$message))
+    upload_failures <<- c(upload_failures, fname)
+    warning(sprintf("Upload of %s failed: %s", fname, e$message), call. = FALSE)
   })
+}
+
+if (length(upload_failures) > 0) {
+  stop(sprintf("Failed to upload %d file(s): %s. Skills are NOT published.",
+               length(upload_failures), paste(upload_failures, collapse = ", ")))
 }
 
 cat("\n=== COMPLETE ===\n")

@@ -27,7 +27,7 @@ Data frame of player statistics.
 }
 \description{
 Loads player-level match statistics from Opta/TheAnalyst data.
-Contains 200+ columns including Opta-exclusive stats like progressiveCarries,
+Contains 263 columns including Opta-exclusive stats like progressiveCarries,
 possWonDef3rd, touchesInOppBox, bigChanceCreated, etc.
 }
 \examples{

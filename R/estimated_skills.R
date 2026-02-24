@@ -1344,7 +1344,7 @@ player_skill_profile <- function(player_name, match_stats = NULL,
   if (!is.null(skills)) {
     all_skills <- data.table::as.data.table(skills)
   } else if (is.null(match_stats)) {
-    # Auto-load pre-computed skills (~4 MB) and match stats (~15 MB)
+    # Auto-load pre-computed skills (~2-3 MB) and match stats (~15 MB)
     cli::cli_alert_info("Loading pre-computed skills from GitHub...")
     all_skills <- tryCatch(
       data.table::as.data.table(load_opta_skills(source = source)),
@@ -1536,7 +1536,10 @@ player_skill_profile <- function(player_name, match_stats = NULL,
           tryCatch({
             denom <- compute_denominator(player_matches, eff_map[[s]])
             round(sum(denom, na.rm = TRUE), 0)
-          }, error = function(e) NA_real_)
+          }, error = function(e) {
+            cli::cli_alert_warning("Could not compute denominator for {s}: {e$message}")
+            NA_real_
+          })
         } else {
           NA_real_
         }
@@ -1549,7 +1552,10 @@ player_skill_profile <- function(player_name, match_stats = NULL,
           tryCatch({
             denom <- compute_denominator(player_matches, eff_map[[s]])
             round(sum(w * denom, na.rm = TRUE), 0)
-          }, error = function(e) NA_real_)
+          }, error = function(e) {
+            cli::cli_alert_warning("Could not compute weighted denominator for {s}: {e$message}")
+            NA_real_
+          })
         } else {
           NA_real_
         }
