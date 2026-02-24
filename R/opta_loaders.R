@@ -58,7 +58,11 @@ validate_parquet_file <- function(path) {
     magic <- charToRaw("PAR1")
     identical(header, magic) && identical(footer, magic)
   }, error = function(e) {
-    cli::cli_alert_warning("Could not validate parquet file {.path {path}}: {e$message}")
+    if (grepl("permission|access denied|locked", e$message, ignore.case = TRUE)) {
+      cli::cli_warn("Cannot read parquet file {.path {path}}: {e$message}")
+    } else {
+      cli::cli_alert_warning("Could not validate parquet file {.path {path}}: {e$message}")
+    }
     FALSE
   })
 }
@@ -299,8 +303,8 @@ load_opta_stats <- function(league, season = NULL, columns = NULL,
 #' # Load all EPL shot data
 #' epl_shots <- load_opta_shots("ENG")
 #'
-#' # Load specific season from remote
-#' shots_2122 <- load_opta_shots("ENG", season = "2021-2022", source = "remote")
+#' # Load specific season
+#' shots_2122 <- load_opta_shots("ENG", season = "2021-2022")
 #' }
 load_opta_shots <- function(league, season = NULL, columns = NULL,
                             source = c("remote", "local")) {
@@ -850,9 +854,20 @@ download_opta_catalog <- function(repo = "peteowen1/pannadata",
     error = function(e) NULL
   )
   if (!is.null(local_path) && file.exists(local_path)) {
-    catalog <- jsonlite::fromJSON(local_path, simplifyVector = FALSE)
-    assign("opta_catalog", catalog, envir = .opta_remote_env)
-    return(catalog)
+    catalog <- tryCatch(
+      jsonlite::fromJSON(local_path, simplifyVector = FALSE),
+      error = function(e) {
+        cli::cli_alert_warning(
+          "Local catalog at {.path {local_path}} is corrupt: {e$message}. Downloading fresh."
+        )
+        NULL
+      }
+    )
+    if (!is.null(catalog) && !is.null(catalog$competitions)) {
+      assign("opta_catalog", catalog, envir = .opta_remote_env)
+      return(catalog)
+    }
+    # Fall through to download if invalid structure
   }
 
   # 3. Download from release
@@ -883,7 +898,16 @@ download_opta_catalog <- function(repo = "peteowen1/pannadata",
     cli::cli_abort("Download failed - opta-catalog.json not found")
   }
 
-  catalog <- jsonlite::fromJSON(catalog_path, simplifyVector = FALSE)
+  catalog <- tryCatch(
+    jsonlite::fromJSON(catalog_path, simplifyVector = FALSE),
+    error = function(e) {
+      cli::cli_abort(c(
+        "Downloaded opta-catalog.json is corrupt.",
+        "x" = e$message,
+        "i" = "Please try again or check your network connection."
+      ))
+    }
+  )
   assign("opta_catalog", catalog, envir = .opta_remote_env)
   catalog
 }
@@ -1311,6 +1335,12 @@ load_opta_xmetrics <- function(league, season = NULL, columns = NULL,
   result <- tryCatch({
     DBI::dbGetQuery(conn, sql)
   }, error = function(e) {
+    if (grepl("magic bytes|No magic bytes", e$message, ignore.case = TRUE)) {
+      cli::cli_abort(c(
+        "Parquet file is corrupt for {opta_league} xmetrics.",
+        "i" = "Re-run the 03_calculate_player_xmetrics.R pipeline to regenerate."
+      ))
+    }
     cli::cli_abort("DuckDB query failed: {e$message}")
   })
 
@@ -1505,7 +1535,7 @@ load_opta_match_stats <- function(season = NULL, columns = NULL,
 #' @param repo GitHub repository.
 #' @param tag Release tag.
 #'
-#' @return Path to the local parquet file.
+#' @return Path to the downloaded file.
 #' @keywords internal
 download_opta_release_file <- function(file_name,
                                         source = c("remote", "local"),
@@ -1548,6 +1578,7 @@ download_opta_release_file <- function(file_name,
   cli::cli_alert_info("Downloading {file_name} from {repo} ({tag})...")
 
   # Try piggyback first; fall back to direct URL if stale cache
+  pb_error_msg <- NULL
   tryCatch({
     piggyback::pb_download(
       file = file_name,
@@ -1557,6 +1588,7 @@ download_opta_release_file <- function(file_name,
       overwrite = TRUE
     )
   }, error = function(e) {
+    pb_error_msg <<- e$message
     cli::cli_alert_warning("piggyback failed: {e$message}, trying direct URL...")
     NULL
   })
@@ -1577,11 +1609,15 @@ download_opta_release_file <- function(file_name,
         quiet = TRUE
       )
     }, error = function(e) {
-      cli::cli_abort(c(
+      bullets <- c(
         "Failed to download {file_name} from {repo} ({tag})",
-        "i" = "Run {.code pb_download_opta()} to download all Opta data.",
-        "x" = e$message
-      ))
+        "i" = "Run {.code pb_download_opta()} to download all Opta data."
+      )
+      if (!is.null(pb_error_msg)) {
+        bullets <- c(bullets, "x" = "piggyback: {pb_error_msg}")
+      }
+      bullets <- c(bullets, "x" = "Direct URL: {e$message}")
+      cli::cli_abort(bullets)
     })
   }
 
@@ -1677,6 +1713,7 @@ pb_download_opta <- function(repo = "peteowen1/pannadata",
     "opta-catalog.json"
   )
 
+  download_success <- character(0)
   for (f in files_to_download) {
     cli::cli_alert_info("Downloading {f}...")
     tryCatch({
@@ -1687,6 +1724,7 @@ pb_download_opta <- function(repo = "peteowen1/pannadata",
         dest = opta_dir,
         overwrite = TRUE
       )
+      download_success <- c(download_success, f)
     }, error = function(e) {
       cli::cli_warn(c(
         "Failed to download {f} from {repo} ({tag})",
@@ -1695,24 +1733,42 @@ pb_download_opta <- function(repo = "peteowen1/pannadata",
     })
   }
 
-  # Check for failed downloads
-  downloaded <- files_to_download[file.exists(file.path(opta_dir, files_to_download))]
-  failed <- setdiff(files_to_download, downloaded)
+  # Check for files that failed to download
+  failed <- setdiff(files_to_download, download_success)
   if (length(failed) > 0) {
-    cli::cli_abort(c(
-      "Failed to download {length(failed)} Opta file(s)",
-      "x" = paste(failed, collapse = ", ")
-    ))
+    stale <- failed[file.exists(file.path(opta_dir, failed))]
+    missing <- setdiff(failed, stale)
+    if (length(stale) > 0) {
+      cli::cli_warn(c(
+        "Using stale cached versions of {length(stale)} file(s) (download failed)",
+        "i" = paste(stale, collapse = ", ")
+      ))
+    }
+    if (length(missing) > 0) {
+      cli::cli_abort(c(
+        "Failed to download {length(missing)} Opta file(s)",
+        "x" = paste(missing, collapse = ", ")
+      ))
+    }
   }
 
-  # Validate parquet files and warn about corrupt ones
-  parquet_files <- grep("\\.parquet$", files_to_download, value = TRUE)
+  # Validate parquet files and error if any are corrupt
+  parquet_files <- grep("\\.parquet$", download_success, value = TRUE)
+  corrupt_files <- character(0)
   for (f in parquet_files) {
     fpath <- file.path(opta_dir, f)
     if (file.exists(fpath) && !validate_parquet_file(fpath)) {
       cli::cli_warn("Downloaded {f} is corrupt (invalid parquet). Deleting.")
       unlink(fpath)
+      corrupt_files <- c(corrupt_files, f)
     }
+  }
+  if (length(corrupt_files) > 0) {
+    cli::cli_abort(c(
+      "{length(corrupt_files)} downloaded file(s) were corrupt and deleted.",
+      "x" = paste(corrupt_files, collapse = ", "),
+      "i" = "Please re-run {.fn pb_download_opta} or check your network connection."
+    ))
   }
 
   # Report sizes

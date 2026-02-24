@@ -31,10 +31,7 @@ devtools::install_github("peteowen1/panna")
 ```r
 library(panna)
 
-# Download data from GitHub releases (first time only)
-pb_download_source("opta")
-
-# Load Opta player statistics for a league/season
+# Load Opta player statistics (loads from GitHub automatically)
 opta_stats <- load_opta_stats("EPL", "2024-2025")
 
 # Get aggregated player stats
@@ -180,7 +177,7 @@ skills <- estimate_player_skills(player_stats, decay_params)
 profile <- player_skill_profile("Bukayo Saka", skills = skills)
 
 # Estimate skills at a specific date (for predictions)
-date_skills <- estimate_player_skills_at_date(player_stats, "2025-01-15")
+date_skills <- estimate_player_skills_at_date(player_stats, date = "2025-01-15")
 ```
 
 #### Match Predictions

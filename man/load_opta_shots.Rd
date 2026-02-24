@@ -34,7 +34,7 @@ Includes shot locations, body parts, and big chance metrics.
 # Load all EPL shot data
 epl_shots <- load_opta_shots("ENG")
 
-# Load specific season from remote
-shots_2122 <- load_opta_shots("ENG", season = "2021-2022", source = "remote")
+# Load specific season
+shots_2122 <- load_opta_shots("ENG", season = "2021-2022")
 }
 }

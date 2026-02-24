@@ -174,8 +174,18 @@ aggregate_lineup_skills <- function(lineups, skill_estimates,
   }
 
   # Filter to columns that exist in the data
+  att_orig <- attacking_stats
+  def_orig <- defensive_stats
   attacking_stats <- intersect(attacking_stats, names(dt_skills))
   defensive_stats <- intersect(defensive_stats, names(dt_skills))
+  att_dropped <- setdiff(att_orig, attacking_stats)
+  def_dropped <- setdiff(def_orig, defensive_stats)
+  if (length(att_dropped) > 0) {
+    cli::cli_warn("Dropped unknown attacking stats: {paste(att_dropped, collapse = ', ')}")
+  }
+  if (length(def_dropped) > 0) {
+    cli::cli_warn("Dropped unknown defensive stats: {paste(def_dropped, collapse = ', ')}")
+  }
   all_stats <- c(attacking_stats, defensive_stats)
   if (length(all_stats) == 0) {
     available <- setdiff(names(dt_skills), c("player_name", "clean_name"))

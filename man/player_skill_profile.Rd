@@ -40,8 +40,8 @@ provided, skips estimation and uses these directly.}
 Only used when both \code{match_stats} and \code{skills} are NULL.}
 }
 \value{
-A data.table with columns: category, stat, skill, league_avg,
-league_pct, pos_avg, pos_pct, weighted_90s, confidence.
+A data.table with columns: category, stat, type, skill, raw_avg,
+league_avg, league_pct, pos_avg, pos_pct, n90, w90, attempts, w_attempts.
 }
 \description{
 Returns a clean summary of a player's current estimated skills: per-stat

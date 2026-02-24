@@ -21,7 +21,7 @@ download_opta_release_file(
 \item{tag}{Release tag.}
 }
 \value{
-Path to the local parquet file.
+Path to the downloaded file.
 }
 \description{
 Handles session caching, parquet validation, and falls back to a direct

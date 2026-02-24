@@ -42,6 +42,8 @@ reference:
   - load_opta_shot_events
   - load_opta_events
   - load_opta_big5
+  - load_opta_skills
+  - load_opta_match_stats
 
 - title: Data Loading - Understat
   desc: Load Understat data (xGChain, xGBuildup)

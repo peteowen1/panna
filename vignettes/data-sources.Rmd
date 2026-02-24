@@ -236,7 +236,6 @@ passing <- load_passing("ENG", "2024-2025")
 defense <- load_defense("ENG", "2024-2025")
 possession <- load_possession("ENG", "2024-2025")
 keeper <- load_keeper("ENG", "2024-2025")
-misc <- load_misc("ENG", "2024-2025")
 shots <- load_shots()  # All leagues/seasons
 
 # Aggregated player stats

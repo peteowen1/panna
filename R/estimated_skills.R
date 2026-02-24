@@ -1318,8 +1318,8 @@ adjust_match_stats_for_context <- function(match_stats, elo_ratings = NULL,
 #' @param source Data source for auto-loading: "remote" (default) or "local".
 #'   Only used when both \code{match_stats} and \code{skills} are NULL.
 #'
-#' @return A data.table with columns: category, stat, skill, league_avg,
-#'   league_pct, pos_avg, pos_pct, weighted_90s, confidence.
+#' @return A data.table with columns: category, stat, type, skill, raw_avg,
+#'   league_avg, league_pct, pos_avg, pos_pct, n90, w90, attempts, w_attempts.
 #'
 #' @export
 player_skill_profile <- function(player_name, match_stats = NULL,
@@ -1360,7 +1360,11 @@ player_skill_profile <- function(player_name, match_stats = NULL,
     match_stats <- tryCatch(
       data.table::as.data.table(load_opta_match_stats(source = source)),
       error = function(e) {
-        cli::cli_alert_warning("Could not load match stats: {e$message} (raw_avg/attempts will be NA).")
+        cli::cli_warn(c(
+          "Could not load match-level stats ({e$message}).",
+          "i" = "Profile will lack raw averages and attempt counts (raw_avg, attempts columns).",
+          "i" = "For complete output, provide {.arg match_stats} directly."
+        ))
         NULL
       }
     )
