@@ -7,7 +7,7 @@
 # League codes: EPL, La_Liga, Bundesliga, Serie_A, Ligue_1, Eredivisie,
 #   Primeira_Liga, Super_Lig, Championship, Scottish_Premiership,
 #   UCL, UEL, Conference_League, World_Cup, UEFA_Euros
-# Seasons: 2010-2011 to 2025-2026
+# Seasons: 2013-2014 to 2025-2026
 
 #' @importFrom DBI dbConnect dbDisconnect dbGetQuery
 #' @importFrom duckdb duckdb
@@ -167,12 +167,14 @@ to_opta_league <- function(league) {
     NULL
   })
   if (!is.null(catalog)) {
-    if (league %in% names(catalog$competitions)) {
-      return(league)
+    catalog_names_upper <- toupper(names(catalog$competitions))
+    if (league_upper %in% catalog_names_upper) {
+      return(names(catalog$competitions)[match(league_upper, catalog_names_upper)])
     }
     aliases <- catalog$panna_aliases
-    if (league %in% names(aliases)) {
-      return(aliases[[league]])
+    aliases_names_upper <- toupper(names(aliases))
+    if (league_upper %in% aliases_names_upper) {
+      return(aliases[[match(league_upper, aliases_names_upper)]])
     }
   }
   # 4. Pass-through with warning for valid-looking codes
@@ -220,20 +222,27 @@ list_opta_seasons <- function(league, source = c("catalog", "local")) {
   }
 
   # Catalog source
-  catalog <- tryCatch(download_opta_catalog(), error = function(e) NULL)
+  catalog <- tryCatch(download_opta_catalog(), error = function(e) {
+    cli::cli_alert_warning("Could not load Opta catalog: {e$message}")
+    NULL
+  })
   if (!is.null(catalog) && opta_league %in% names(catalog$competitions)) {
     seasons <- catalog$competitions[[opta_league]]$seasons
     return(sort(unlist(seasons), decreasing = TRUE))
   }
 
-  cli::cli_abort("No data found for league: {.val {league}}")
+  cli::cli_abort(c(
+    "No data found for league: {.val {league}}",
+    "i" = "If the catalog failed to load, check your internet connection.",
+    "i" = "Use {.fn list_opta_leagues} to see available competitions."
+  ))
 }
 
 
 #' Load Opta Player Stats
 #'
 #' Loads player-level match statistics from Opta/TheAnalyst data.
-#' Contains 200+ columns including Opta-exclusive stats like progressiveCarries,
+#' Contains 263 columns including Opta-exclusive stats like progressiveCarries,
 #' possWonDef3rd, touchesInOppBox, bigChanceCreated, etc.
 #'
 #' @param league League code. Accepts panna format (ENG, ESP, GER, ITA, FRA)
@@ -527,7 +536,7 @@ load_opta_fixtures <- function(league, season = NULL, columns = NULL,
 #' big5_2122 <- load_opta_big5(season = "2021-2022")
 #' }
 load_opta_big5 <- function(season = NULL, columns = NULL) {
-  leagues <- names(OPTA_LEAGUES)
+  leagues <- c("ENG", "ESP", "GER", "ITA", "FRA")
 
   results <- lapply(leagues, function(lg) {
     tryCatch({
@@ -561,7 +570,7 @@ load_opta_big5 <- function(season = NULL, columns = NULL) {
 #' @examples
 #' \dontrun{
 #' suggest_opta_seasons("World_Cup")
-#' # [1] "2018 Russia" "2014 Brazil" "2010 South Africa" ...
+#' # [1] "2022 Qatar" "2018 Russia" "2014 Brazil" ...
 #'
 #' suggest_opta_seasons("EPL")
 #' # [1] "2025-2026" "2024-2025" "2023-2024" ...
@@ -1221,7 +1230,7 @@ query_remote_opta_match_events <- function(opta_league, season = NULL,
 #' @param league League code (e.g., "ENG", "EPL").
 #' @param season Optional season filter (e.g., "2024-2025").
 #' @param columns Optional character vector of columns to select.
-#' @param source Data source: "local" (default) or "remote".
+#' @param source Data source: "remote" (default) or "local".
 #'
 #' @return Data frame with player xmetrics including xg, npxg, xa, xpass stats.
 #'
@@ -1235,7 +1244,7 @@ query_remote_opta_match_events <- function(opta_league, season = NULL,
 #' head(epl_xm[order(-epl_xm$xg), c("player_name", "team_name", "xg", "goals")])
 #' }
 load_opta_xmetrics <- function(league, season = NULL, columns = NULL,
-                                source = c("local", "remote")) {
+                                source = c("remote", "local")) {
   source <- match.arg(source)
   opta_league <- to_opta_league(league)
 
@@ -1434,9 +1443,22 @@ load_opta_match_stats <- function(season = NULL, columns = NULL,
   conn <- DBI::dbConnect(duckdb::duckdb())
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
+  cache_key <- paste0(file_name, "_", repo, "_", tag)
+
   result <- tryCatch({
     DBI::dbGetQuery(conn, sql)
   }, error = function(e) {
+    if (grepl("magic bytes|No magic bytes", e$message, ignore.case = TRUE)) {
+      if (source == "remote" && exists(cache_key, envir = .opta_remote_env)) {
+        cached <- get(cache_key, envir = .opta_remote_env)
+        if (file.exists(cached)) unlink(cached)
+        rm(list = cache_key, envir = .opta_remote_env)
+      }
+      cli::cli_abort(c(
+        "Parquet file is corrupt.",
+        "i" = "The corrupt file has been removed. Please re-run your command."
+      ))
+    }
     cli::cli_abort("DuckDB query failed: {e$message}")
   })
 
@@ -1508,7 +1530,10 @@ download_opta_release_file <- function(file_name,
       dest = temp_dir,
       overwrite = TRUE
     )
-  }, error = function(e) NULL))
+  }, error = function(e) {
+    cli::cli_alert_warning("piggyback failed: {e$message}, trying direct URL...")
+    NULL
+  }))
 
   parquet_path <- file.path(temp_dir, file_name)
 
@@ -1652,6 +1677,16 @@ pb_download_opta <- function(repo = "peteowen1/pannadata",
       "Failed to download {length(failed)} Opta file(s)",
       "x" = paste(failed, collapse = ", ")
     ))
+  }
+
+  # Validate parquet files and warn about corrupt ones
+  parquet_files <- grep("\\.parquet$", files_to_download, value = TRUE)
+  for (f in parquet_files) {
+    fpath <- file.path(opta_dir, f)
+    if (file.exists(fpath) && !validate_parquet_file(fpath)) {
+      cli::cli_warn("Downloaded {f} is corrupt (invalid parquet). Deleting.")
+      unlink(fpath)
+    }
   }
 
   # Report sizes

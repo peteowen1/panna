@@ -31,7 +31,7 @@ devtools::install_github("peteowen1/panna")
 
 ## Downloading Data
 
-Data is stored in GitHub Releases and must be downloaded before use. The package supports three data sources:
+Data is stored in GitHub Releases. Most `load_*()` functions default to `source = "remote"`, so you can start using data immediately. For faster repeated access, download data locally first:
 
 ```{r download}
 library(panna)
@@ -187,8 +187,8 @@ big5_opta <- load_opta_big5("2024-2025")
 
 # Or load specific leagues
 multi_league <- load_opta_stats(
-  leagues = c("EPL", "La_Liga", "Bundesliga"),
-  seasons = "2024-2025"
+  league = c("EPL", "La_Liga", "Bundesliga"),
+  season = "2024-2025"
 )
 ```
 

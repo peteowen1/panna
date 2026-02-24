@@ -22,10 +22,7 @@ Ratings are split into offensive and defensive components:
 ## Installation
 
 ```r
-# Install from CRAN
-install.packages("panna")
-
-# Or install the development version from GitHub
+# Install from GitHub
 devtools::install_github("peteowen1/panna")
 ```
 
@@ -179,7 +176,7 @@ Bayesian decay-weighted skill estimation with position-specific priors:
 skills <- estimate_player_skills(player_stats, decay_params)
 
 # Get a player's skill profile with percentiles
-profile <- player_skill_profile(skills, "Bukayo Saka")
+profile <- player_skill_profile("Bukayo Saka", skills = skills)
 
 # Estimate skills at a specific date (for predictions)
 date_skills <- estimate_player_skills_at_date(player_stats, "2025-01-15")
