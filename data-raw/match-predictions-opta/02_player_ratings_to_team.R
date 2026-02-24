@@ -40,16 +40,22 @@ skill_ratings_path <- file.path("data-raw", "cache-skills", "06_seasonal_ratings
 raw_ratings_path <- file.path("data-raw", "cache-opta", "07_seasonal_ratings.rds")
 
 if (isTRUE(use_skill_ratings) && file.exists(skill_ratings_path)) {
-  message("  Using SKILL-BASED seasonal ratings (cache-skills/06_seasonal_ratings.rds)")
+  message("========================================")
+  message("  USING: SKILL-BASED ratings (cache-skills/06_seasonal_ratings.rds)")
+  message("========================================")
   seasonal_data <- readRDS(skill_ratings_path)
 } else if (file.exists(raw_ratings_path)) {
+  message("========================================")
   if (isTRUE(use_skill_ratings)) {
     warning("Skill ratings not found at ", skill_ratings_path,
-            ". Falling back to raw-stat ratings. Run the skills pipeline first.",
-            call. = FALSE)
+            ". Falling back to raw-stat ratings.", call. = FALSE, immediate. = TRUE)
+    message("  USING: RAW-STAT ratings (FALLBACK - skill ratings not found)")
+    message("  Expected at: ", skill_ratings_path)
+    message("  Run the skills pipeline first for skill-based predictions.")
   } else {
-    message("  Using raw-stat seasonal ratings (use_skill_ratings = FALSE)")
+    message("  USING: RAW-STAT ratings (use_skill_ratings = FALSE)")
   }
+  message("========================================")
   seasonal_data <- readRDS(raw_ratings_path)
 } else {
   stop("No seasonal ratings found. Run the Opta RAPM pipeline first:\n  ",
@@ -102,10 +108,10 @@ if (file.exists(rapm_cache)) {
   leagues <- unique(played$league)
   all_lineups <- list()
   for (league in leagues) {
-    available_seasons <- tryCatch(list_opta_seasons(league), error = function(e) character(0))
+    available_seasons <- tryCatch(list_opta_seasons(league, source = "local"), error = function(e) character(0))
     for (season in available_seasons) {
       tryCatch({
-        lu <- load_opta_lineups(league, season = season)
+        lu <- load_opta_lineups(league, season = season, source = "local")
         if (!is.null(lu) && nrow(lu) > 0) {
           lu$league <- league
           lu$season <- season
@@ -121,6 +127,9 @@ if (file.exists(rapm_cache)) {
 }
 
 message(sprintf("  Lineups: %d rows", nrow(lineups)))
+if (nrow(lineups) == 0) {
+  stop("No lineups loaded. Cannot compute team-level ratings. Check data availability and error messages above.")
+}
 
 # 6. Aggregate Ratings to Team Level ----
 

@@ -52,8 +52,8 @@ for (league in LEAGUES) {
 
     tryCatch({
       # Load data
-      events <- load_opta_match_events(league, season = season)
-      lineups <- load_opta_lineups(league, season = season)
+      events <- load_opta_match_events(league, season = season, source = "local")
+      lineups <- load_opta_lineups(league, season = season, source = "local")
 
       # Convert to SPADL
       spadl <- convert_opta_to_spadl(events)

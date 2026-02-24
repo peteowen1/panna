@@ -21,7 +21,7 @@ seasons <- if (exists("seasons")) seasons else NULL
 min_season <- if (exists("min_season")) min_season else NULL
 use_xmetrics_features <- if (exists("use_xmetrics_features")) use_xmetrics_features else TRUE
 
-PENALTY_XG <- 0.76
+# PENALTY_XG is exported from panna::constants.R (loaded via devtools::load_all())
 SPADL_CACHE_DIR <- "data-raw/cache/epv/spadl"
 
 # Helper: extract season end year from both standard and tournament formats
@@ -98,9 +98,9 @@ for (league in leagues) {
 
     tryCatch({
       # Load standard Opta data
-      lineups <- load_opta_lineups(league, season = season)
-      events <- load_opta_events(league, season = season)
-      stats <- load_opta_stats(league, season = season)
+      lineups <- load_opta_lineups(league, season = season, source = "local")
+      events <- load_opta_events(league, season = season, source = "local")
+      stats <- load_opta_stats(league, season = season, source = "local")
 
       if (is.null(lineups) || nrow(lineups) == 0) {
         message(sprintf("    Skipping %s: no lineup data", label))
@@ -140,20 +140,33 @@ for (league in leagues) {
 
         # Load raw match events for penalty detection
         raw_events <- tryCatch(
-          load_opta_match_events(league, season = season),
+          load_opta_match_events(league, season = season, source = "local"),
           error = function(e) NULL
         )
 
         # Detect penalties from raw events (qualifier 9)
+        # Uses (match_id, player_id, minute, second) composite key to avoid
+        # collisions when a player has multiple shots in the same minute
         spadl$is_penalty <- 0L
         if (!is.null(raw_events) && nrow(raw_events) > 0) {
-          pen_mask <- raw_events$type_id %in% c(13L, 14L, 15L, 16L) &
-            grepl('"9"', raw_events$qualifier_json)
+          # Match qualifier "9" as a standalone value in the JSON array
+          # Anchored regex avoids false positives from "19", "90", "109", etc.
+          has_pen_qualifier <- grepl(
+            '(^|[,\\[])\\s*"9"\\s*(,|\\]|$)', raw_events$qualifier_json
+          )
+          pen_mask <- raw_events$type_id %in% c(13L, 14L, 15L, 16L) & has_pen_qualifier
           if (sum(pen_mask) > 0) {
+            raw_second <- if ("second" %in% names(raw_events)) {
+              raw_events$second[pen_mask]
+            } else {
+              message(sprintf("    Note: raw events missing 'second' column for %s %s. Penalty matching may be incomplete.", league, season))
+              rep(0L, sum(pen_mask))
+            }
             pen_keys <- paste(
               raw_events$match_id[pen_mask],
               raw_events$player_id[pen_mask],
               raw_events$minute[pen_mask],
+              raw_second,
               sep = "_"
             )
             spadl_shot_idx <- which(spadl$action_type == "shot")
@@ -162,6 +175,7 @@ for (league in leagues) {
                 spadl$match_id[spadl_shot_idx],
                 spadl$player_id[spadl_shot_idx],
                 floor(spadl$time_seconds[spadl_shot_idx] / 60),
+                floor(spadl$time_seconds[spadl_shot_idx] %% 60),
                 sep = "_"
               )
               spadl$is_penalty[spadl_shot_idx[spadl_keys %in% pen_keys]] <- 1L
@@ -252,7 +266,23 @@ combined_xmetrics <- if (length(all_xmetrics) > 0) bind_rows(all_xmetrics) else 
 combined_shots <- if (length(all_shots_from_spadl) > 0) bind_rows(all_shots_from_spadl) else NULL
 combined_match_xg <- if (length(all_match_xg) > 0) bind_rows(all_match_xg) else NULL
 
-message(sprintf("  Lineups: %d rows", nrow(combined_lineups)))
+# Data scale validation: catch partial/empty loads early
+n_leagues_loaded <- length(unique(combined_lineups$league))
+n_matches_loaded <- length(unique(combined_lineups$match_id))
+if (n_leagues_loaded < length(leagues)) {
+  warning(sprintf("Expected %d leagues but only loaded %d: %s",
+                  length(leagues), n_leagues_loaded,
+                  paste(unique(combined_lineups$league), collapse = ", ")),
+          call. = FALSE)
+}
+if (n_matches_loaded < 100 && length(leagues) >= 5) {
+  warning(sprintf("Only %d matches loaded for %d leagues. Expected thousands. Check data availability.",
+                  n_matches_loaded, n_leagues_loaded),
+          call. = FALSE)
+}
+
+message(sprintf("  Lineups: %d rows (%d leagues, %d matches)",
+                nrow(combined_lineups), n_leagues_loaded, n_matches_loaded))
 message(sprintf("  Events: %d rows", nrow(combined_events)))
 message(sprintf("  Stats: %d rows", nrow(combined_stats)))
 message(sprintf("  xMetrics: %s rows",

@@ -74,7 +74,7 @@ for (league in leagues) {
     n_attempted <- n_attempted + 1L
 
     tryCatch({
-      stats <- load_opta_stats(league, season = season)
+      stats <- load_opta_stats(league, season = season, source = "local")
 
       if (is.null(stats) || nrow(stats) == 0) {
         message(sprintf("  Skipping %s: no data", label))

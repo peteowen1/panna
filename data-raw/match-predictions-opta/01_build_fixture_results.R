@@ -83,8 +83,8 @@ if (is.null(results)) {
     for (season in available_seasons) {
       label <- paste(league, season)
       tryCatch({
-        lineups <- load_opta_lineups(league, season = season)
-        events <- load_opta_events(league, season = season)
+        lineups <- load_opta_lineups(league, season = season, source = "local")
+        events <- load_opta_events(league, season = season, source = "local")
 
         if (is.null(lineups) || nrow(lineups) == 0) next
 
@@ -163,7 +163,7 @@ for (league in leagues) {
   current_season <- available_seasons[1]
 
   tryCatch({
-    fixtures <- load_opta_fixtures(league, season = current_season, status = "Fixture")
+    fixtures <- load_opta_fixtures(league, season = current_season, status = "Fixture", source = "local")
     if (!is.null(fixtures) && nrow(fixtures) > 0) {
       fixtures$league <- league
       fixtures$season_end_year <- extract_season_end_year(current_season)

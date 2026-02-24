@@ -13,7 +13,7 @@ Named list with elements:
 \item{efficiency}{Lambda for efficiency/accuracy stats (~1 year half-life)}
 \item{xmetrics}{Lambda for xG/xA/xPass metrics (~8 month half-life)}
 \item{prior_90s}{Gamma prior strength for rate stats, in equivalent 90s.
-Higher = more shrinkage toward position mean. Default 10.}
+Higher = more shrinkage toward position mean. Default 2.}
 \item{prior_attempts}{Beta prior strength for efficiency stats, in
 equivalent attempts. Higher = more shrinkage. Default 50.}
 }

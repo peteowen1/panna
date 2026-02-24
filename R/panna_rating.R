@@ -187,11 +187,18 @@ fit_panna_model <- function(splint_data, player_features, min_minutes = 180,
 
 #' Get panna ratings from fitted model
 #'
-#' Gets the final panna ratings from a fitted panna model.
+#' Extracts the final panna ratings from a fitted panna model object.
+#' Requires a model fitted with \code{\link{fit_panna_model}}.
 #'
-#' @param panna_model Fitted panna model from fit_panna_model
+#' To generate ratings, run one of the pipeline scripts:
+#' \itemize{
+#'   \item Opta (15 leagues): \code{source("data-raw/player-ratings-opta/run_pipeline_opta.R")}
+#'   \item FBref (Big 5): \code{source("data-raw/player-ratings/run_pipeline.R")}
+#' }
 #'
-#' @return Data frame with player panna ratings
+#' @param panna_model Fitted panna model from \code{\link{fit_panna_model}}.
+#'
+#' @return Data frame with player panna ratings.
 #'
 #' @examples
 #' \dontrun{

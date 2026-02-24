@@ -164,6 +164,9 @@ message("#")
 message(sprintf("#   Leagues: %s", paste(leagues, collapse = ", ")))
 message(sprintf("#   Seasons: %s", if (is.null(seasons)) "All available" else paste(seasons, collapse = ", ")))
 message(sprintf("#   Min season: %s", if (is.null(min_season)) "None" else min_season))
+message(sprintf("#   Skill ratings: %s", use_skill_ratings))
+message(sprintf("#   Force rebuild from: %s",
+                if (is.null(force_rebuild_from)) "None (use cache)" else force_rebuild_from))
 message("#")
 message(paste(rep("#", 70), collapse = ""))
 

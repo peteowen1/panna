@@ -28,7 +28,7 @@ Data frame with query results
 }
 \description{
 Match events are too large for a single consolidated file, so they are stored
-as per-league files (events_{league}.parquet) in the release. This function
+as per-league files (\code{events_\{league\}.parquet}) in the release. This function
 downloads the per-league file and queries it with DuckDB.
 }
 \keyword{internal}

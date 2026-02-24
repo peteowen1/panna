@@ -34,8 +34,7 @@ LEAGUES <- c(
 # Only process seasons from 2013-2014 onwards (2014+ data)
 START_SEASON <- "2013-2014"
 
-# Penalty xG (model trained without penalties)
-PENALTY_XG <- 0.76
+# PENALTY_XG is exported from panna::constants.R (loaded via devtools::load_all())
 
 # Minimum minutes for output (0 = keep all)
 MIN_MINUTES <- 0
@@ -91,8 +90,8 @@ for (league in names(league_seasons)) {
 
     tryCatch({
       # 4a. Load match events
-      events <- load_opta_match_events(league, season = season)
-      lineups <- load_opta_lineups(league, season = season)
+      events <- load_opta_match_events(league, season = season, source = "local")
+      lineups <- load_opta_lineups(league, season = season, source = "local")
 
       if (nrow(events) < 100) {
         cli_alert_warning("  Skipping {label}: too few events ({nrow(events)})")

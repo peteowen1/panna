@@ -7,12 +7,14 @@
 to_opta_league(league)
 }
 \arguments{
-\item{league}{Panna league code or Opta league code.}
+\item{league}{Panna league code or Opta league code (case-insensitive).}
 }
 \value{
 Opta league code.
 }
 \description{
 Converts panna league codes (ENG, ESP, etc.) to Opta format (EPL, La_Liga, etc.).
+Matching is case-insensitive for convenience (e.g., "epl", "eng", "Eng" all work).
+Falls back to catalog lookup, then pass-through for valid-looking codes.
 }
 \keyword{internal}

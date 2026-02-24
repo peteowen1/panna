@@ -167,18 +167,32 @@ aggregate_lineup_skills <- function(lineups, skill_estimates,
     attacking_stats <- c("goals_p90", "shots_p90", "shots_on_target_p90",
                           "key_passes_p90", "assists_p90", "big_chance_created_p90",
                           "touches_opp_box_p90", "crosses_p90")
-    attacking_stats <- intersect(attacking_stats, names(dt_skills))
   }
   if (is.null(defensive_stats)) {
     defensive_stats <- c("tackles_won_p90", "interceptions_p90", "clearances_p90",
                           "blocks_p90", "aerial_won_p90", "ball_recovery_p90")
-    defensive_stats <- intersect(defensive_stats, names(dt_skills))
   }
 
+  # Filter to columns that exist in the data
+  att_orig <- attacking_stats
+  def_orig <- defensive_stats
+  attacking_stats <- intersect(attacking_stats, names(dt_skills))
+  defensive_stats <- intersect(defensive_stats, names(dt_skills))
+  att_dropped <- setdiff(att_orig, attacking_stats)
+  def_dropped <- setdiff(def_orig, defensive_stats)
+  if (length(att_dropped) > 0) {
+    cli::cli_warn("Dropped unknown attacking stats: {paste(att_dropped, collapse = ', ')}")
+  }
+  if (length(def_dropped) > 0) {
+    cli::cli_warn("Dropped unknown defensive stats: {paste(def_dropped, collapse = ', ')}")
+  }
   all_stats <- c(attacking_stats, defensive_stats)
   if (length(all_stats) == 0) {
-    cli::cli_warn("No skill stat columns found in skill_estimates.")
-    return(NULL)
+    available <- setdiff(names(dt_skills), c("player_name", "clean_name"))
+    cli::cli_abort(c(
+      "No skill stat columns found in {.arg skill_estimates}.",
+      "i" = "Available columns: {paste(head(available, 10), collapse = ', ')}{if (length(available) > 10) ', ...' else ''}"
+    ))
   }
 
   # Filter to starters
@@ -203,7 +217,7 @@ aggregate_lineup_skills <- function(lineups, skill_estimates,
     stat_means <- numeric(length(all_stats))
     for (j in seq_along(all_stats)) {
       stat <- all_stats[j]
-      vals <- get(stat)
+      vals <- .SD[[stat]]
       vals[is.na(vals)] <- 0
       prefix <- if (stat %in% attacking_stats) "sk_att" else "sk_def"
       col_name <- paste0(prefix, "_", sub("_p90$", "", stat))
@@ -220,7 +234,7 @@ aggregate_lineup_skills <- function(lineups, skill_estimates,
       result[["sk_def_composite"]] <- mean(stat_means[def_idx])
     }
     result
-  }, by = .(match_id, team_name, team_position)]
+  }, by = .(match_id, team_name, team_position), .SDcols = all_stats]
 
   # Pivot to wide (home_ / away_ prefix)
   home <- team_skills[tolower(team_position) == "home"]

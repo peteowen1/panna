@@ -28,7 +28,7 @@
 #'     \item{efficiency}{Lambda for efficiency/accuracy stats (~1 year half-life)}
 #'     \item{xmetrics}{Lambda for xG/xA/xPass metrics (~8 month half-life)}
 #'     \item{prior_90s}{Gamma prior strength for rate stats, in equivalent 90s.
-#'       Higher = more shrinkage toward position mean. Default 10.}
+#'       Higher = more shrinkage toward position mean. Default 2.}
 #'     \item{prior_attempts}{Beta prior strength for efficiency stats, in
 #'       equivalent attempts. Higher = more shrinkage. Default 50.}
 #'   }
@@ -1113,7 +1113,7 @@ backtest_skill_predictions <- function(match_stats, decay_params = NULL,
       avg_ll <- sum(w * ll(actual, avg_predicted))
       last_ll <- sum(w * ll(actual, last_predicted))
       tw <- sum(w)
-      safe_pct <- function(x, ref) if (ref > 0) round((1 - x / ref) * 100, 1) else 0
+      safe_pct <- function(x, ref) if (ref > 0) round((1 - x / ref) * 100, 1) else NA_real_
       list(
         metric = "logloss",
         value = if (tw > 0) bayes_ll / tw else NA_real_,
@@ -1130,7 +1130,7 @@ backtest_skill_predictions <- function(match_stats, decay_params = NULL,
       avg_se <- sum(w * (avg_predicted - actual)^2)
       last_se <- sum(w * (last_predicted - actual)^2)
       tw <- sum(w)
-      safe_pct <- function(x, ref) if (ref > 0) round((1 - x / ref) * 100, 1) else 0
+      safe_pct <- function(x, ref) if (ref > 0) round((1 - x / ref) * 100, 1) else NA_real_
       list(
         metric = "rmse",
         value = if (tw > 0) sqrt(bayes_se / tw) else NA_real_,
@@ -1296,25 +1296,38 @@ adjust_match_stats_for_context <- function(match_stats, elo_ratings = NULL,
 #' skill estimates, league averages, percentile ranks, and confidence levels.
 #' Groups stats by category for easy interpretation.
 #'
+#' When called without \code{match_stats} or \code{skills}, automatically loads
+#' pre-computed skill estimates via \code{load_opta_skills()} (~2-3 MB download).
+#' This covers all 15 Opta leagues across all available seasons.
+#'
 #' @param player_name Character string of the player name to profile.
 #'   Supports exact names ("H. Kane"), abbreviations ("H.Kane"),
 #'   surnames ("Kane"), and accent-insensitive input ("Mbappe").
 #' @param match_stats A data.table from \code{compute_match_level_opta_stats()}.
-#'   Can be omitted if \code{skills} is provided.
-#' @param decay_params Decay parameters list.
-#' @param date Date to estimate skills at (default today).
-#' @param min_weighted_90s Regression threshold.
+#'   If provided, runs full skill estimation from raw data. When omitted (and
+#'   \code{skills} is also NULL), downloads pre-computed skills instead.
+#' @param decay_params Decay parameters list. Only used when
+#'   \code{match_stats} is provided.
+#' @param date Date to estimate skills at (default today). Only used when
+#'   \code{match_stats} is provided.
+#' @param min_weighted_90s Regression threshold. Only used when
+#'   \code{match_stats} is provided.
 #' @param skills Pre-computed skills data.table from
-#'   \code{estimate_player_skills()}. If provided, skips the expensive
-#'   skill estimation step (~7s) and uses these directly.
+#'   \code{estimate_player_skills()} or \code{load_opta_skills()}. If
+#'   provided, skips estimation and uses these directly.
+#' @param source Data source for auto-loading: "remote" (default) or "local".
+#'   Only used when both \code{match_stats} and \code{skills} are NULL.
 #'
-#' @return A data.table with columns: category, stat, skill, league_avg,
-#'   league_pct, pos_avg, pos_pct, weighted_90s, confidence.
+#' @return A data.table with columns: category, stat, type, skill, raw_avg,
+#'   league_avg, league_pct, pos_avg, pos_pct, n90, w90, attempts, w_attempts.
 #'
 #' @export
 player_skill_profile <- function(player_name, match_stats = NULL,
                                   decay_params = NULL, date = Sys.Date(),
-                                  min_weighted_90s = 5, skills = NULL) {
+                                  min_weighted_90s = 5, skills = NULL,
+                                  source = c("remote", "local")) {
+  source <- match.arg(source)
+
   # Capture search target before entering data.table scope (avoid NSE shadowing)
   target_player <- player_name
   if (is.null(decay_params)) {
@@ -1323,7 +1336,6 @@ player_skill_profile <- function(player_name, match_stats = NULL,
     if (file.exists(opt_path)) {
       decay_params <- readRDS(opt_path)
     } else {
-      cli::cli_alert_info("No optimized decay params found at {.path {opt_path}}. Using defaults.")
       decay_params <- get_default_decay_params()
     }
   }
@@ -1331,10 +1343,32 @@ player_skill_profile <- function(player_name, match_stats = NULL,
   # Use pre-computed skills if provided, otherwise estimate from match_stats
   if (!is.null(skills)) {
     all_skills <- data.table::as.data.table(skills)
+  } else if (is.null(match_stats)) {
+    # Auto-load pre-computed skills (~2-3 MB) and match stats (~15 MB)
+    cli::cli_alert_info("Loading pre-computed skills from GitHub...")
+    all_skills <- tryCatch(
+      data.table::as.data.table(load_opta_skills(source = source)),
+      error = function(e) {
+        cli::cli_abort(c(
+          "Could not load pre-computed skills.",
+          "i" = "Provide {.arg match_stats} or {.arg skills} directly.",
+          "x" = e$message
+        ))
+      }
+    )
+    # Also load match stats for raw_avg/attempts/w90 columns
+    match_stats <- tryCatch(
+      data.table::as.data.table(load_opta_match_stats(source = source)),
+      error = function(e) {
+        cli::cli_warn(c(
+          "Could not load match-level stats ({e$message}).",
+          "i" = "Profile will lack raw averages and attempt counts (raw_avg, attempts columns).",
+          "i" = "For complete output, provide {.arg match_stats} directly."
+        ))
+        NULL
+      }
+    )
   } else {
-    if (is.null(match_stats)) {
-      cli::cli_abort("Either {.arg match_stats} or {.arg skills} must be provided.")
-    }
     dt <- data.table::as.data.table(match_stats)
     all_skills <- estimate_player_skills(
       match_stats = dt,
@@ -1391,8 +1425,15 @@ player_skill_profile <- function(player_name, match_stats = NULL,
   }
 
   if (nrow(player_row) == 0) {
-    cli::cli_warn("Player '{target_player}' not found in skill estimates.")
-    return(NULL)
+    # Suggest close matches using string distance
+    all_names <- unique(all_skills$player_name)
+    dists <- utils::adist(target_player, all_names, ignore.case = TRUE)[1, ]
+    closest <- all_names[order(dists)][seq_len(min(5, length(all_names)))]
+    cli::cli_abort(c(
+      "Player {.val {target_player}} not found in skill estimates.",
+      "i" = "Did you mean: {paste(closest, collapse = ', ')}?",
+      "i" = "Use exact player names as they appear in the data."
+    ))
   }
 
   if (nrow(player_row) > 1) {
@@ -1410,7 +1451,9 @@ player_skill_profile <- function(player_name, match_stats = NULL,
 
   # Identify stat columns
   meta_cols <- c("player_id", "player_name", "primary_position", "date",
-                  "weighted_90s", "clean_name")
+                  "weighted_90s", "clean_name", "season_end_year",
+                  "total_minutes", "n_matches", "is_gk", "is_df", "is_mf",
+                  "is_fw", "competition", "league")
   stat_cols <- setdiff(names(all_skills), meta_cols)
   stat_cols <- stat_cols[vapply(all_skills, is.numeric, logical(1))[stat_cols]]
 
@@ -1448,6 +1491,8 @@ player_skill_profile <- function(player_name, match_stats = NULL,
   player_id_val <- player_row$player_id
   raw_avgs <- NULL
   stat_w90s <- NULL
+  stat_raw_attempts <- NULL
+  stat_w_attempts <- NULL
   total_90s <- NA_real_
   n_matches_val <- NA_integer_
   if (!is.null(match_stats)) {
@@ -1495,10 +1540,18 @@ player_skill_profile <- function(player_name, match_stats = NULL,
       }, numeric(1))
 
       # Raw (unweighted) attempts per efficiency stat
+      # tryCatch handles missing denominator columns (e.g., fifty_fifty
+      # may not exist in all data sources)
+      failed_denom_stats <- character(0)
       stat_raw_attempts <- vapply(stat_cols, function(s) {
         if (s %in% names(eff_map)) {
-          denom <- compute_denominator(player_matches, eff_map[[s]])
-          round(sum(denom, na.rm = TRUE), 0)
+          tryCatch({
+            denom <- compute_denominator(player_matches, eff_map[[s]])
+            round(sum(denom, na.rm = TRUE), 0)
+          }, error = function(e) {
+            failed_denom_stats <<- c(failed_denom_stats, s)
+            NA_real_
+          })
         } else {
           NA_real_
         }
@@ -1508,12 +1561,22 @@ player_skill_profile <- function(player_name, match_stats = NULL,
         lam <- resolve_lambda(s)
         w <- exp(-lam * days_since)
         if (s %in% names(eff_map)) {
-          denom <- compute_denominator(player_matches, eff_map[[s]])
-          round(sum(w * denom, na.rm = TRUE), 0)
+          tryCatch({
+            denom <- compute_denominator(player_matches, eff_map[[s]])
+            round(sum(w * denom, na.rm = TRUE), 0)
+          }, error = function(e) {
+            failed_denom_stats <<- c(failed_denom_stats, s)
+            NA_real_
+          })
         } else {
           NA_real_
         }
       }, numeric(1))
+
+      if (length(failed_denom_stats) > 0) {
+        failed_unique <- unique(failed_denom_stats)
+        cli::cli_warn("Could not compute denominators for {length(failed_unique)} stat{?s}: {paste(failed_unique, collapse = ', ')}")
+      }
     }
   }
 

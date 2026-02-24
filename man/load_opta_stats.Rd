@@ -8,7 +8,7 @@ load_opta_stats(
   league,
   season = NULL,
   columns = NULL,
-  source = c("local", "remote")
+  source = c("remote", "local")
 )
 }
 \arguments{
@@ -19,24 +19,24 @@ or Opta format (EPL, La_Liga, Bundesliga, Serie_A, Ligue_1).}
 
 \item{columns}{Optional character vector of columns to select. If NULL, selects all.}
 
-\item{source}{Data source: "local" (default) to load from local files,
-"remote" to download from GitHub releases.}
+\item{source}{Data source: "remote" (default) downloads from GitHub releases,
+"local" loads from local files (requires prior \code{pb_download_opta()}).}
 }
 \value{
 Data frame of player statistics.
 }
 \description{
 Loads player-level match statistics from Opta/TheAnalyst data.
-Contains 271 columns including Opta-exclusive stats like progressiveCarries,
+Contains 263 columns including Opta-exclusive stats like progressiveCarries,
 possWonDef3rd, touchesInOppBox, bigChanceCreated, etc.
 }
 \examples{
 \dontrun{
-# Load all EPL data from local files
+# Load EPL data (downloads automatically from GitHub)
 epl <- load_opta_stats("ENG")
 
-# Load from GitHub releases (downloads opta_player_stats.parquet)
-epl_remote <- load_opta_stats("ENG", season = "2021-2022", source = "remote")
+# Load from local files (requires pb_download_opta() first)
+epl_local <- load_opta_stats("ENG", season = "2021-2022", source = "local")
 
 # Load specific columns only
 epl_basic <- load_opta_stats("ENG", columns = c(

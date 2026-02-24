@@ -209,3 +209,89 @@ test_that("efficiency stat uses Beta-Binomial posterior", {
   # posterior should be close to 0.90
   expect_equal(result$pass_accuracy, 0.90, tolerance = 0.02)
 })
+
+
+test_that(".compute_denominator errors on missing column", {
+  dt <- data.frame(goals_p90 = c(0.5, 0.3), tackles = c(10, 8))
+  expect_error(
+    .compute_denominator(dt, "passes"),
+    "not found"
+  )
+})
+
+test_that(".compute_denominator errors on all missing compound columns", {
+  dt <- data.frame(goals_p90 = c(0.5, 0.3))
+  expect_error(
+    .compute_denominator(dt, "passes+crosses"),
+    "No denominator columns found"
+  )
+})
+
+
+# -- player_skill_profile --
+
+test_that("player_skill_profile accepts pre-computed skills", {
+  ms <- make_test_match_stats(n_players = 5, n_matches = 10)
+  params <- get_default_decay_params()
+  skills <- estimate_player_skills(ms, decay_params = params,
+                                    stat_cols = c("goals_p90", "tackles_won_p90"))
+
+  profile <- player_skill_profile("Player_3", match_stats = ms,
+                                   decay_params = params, skills = skills)
+  expect_s3_class(profile, "data.table")
+  expect_true("stat" %in% names(profile))
+  expect_true("skill" %in% names(profile))
+  expect_true(nrow(profile) > 0)
+})
+
+test_that("player_skill_profile has source parameter", {
+  args <- formals(player_skill_profile)
+  expect_true("source" %in% names(args))
+})
+
+test_that("player_skill_profile errors on player not found with suggestions", {
+  skills <- data.table::data.table(
+    player_id = c("p1", "p2"),
+    player_name = c("Harry Kane", "Kevin De Bruyne"),
+    primary_position = c("Striker", "Midfielder"),
+    weighted_90s = c(15.0, 12.0),
+    total_minutes = c(1350, 1080),
+    n_matches = c(15L, 12L),
+    is_gk = c(0L, 0L), is_df = c(0L, 0L), is_mf = c(0L, 1L), is_fw = c(1L, 0L),
+    goals_p90 = c(0.7, 0.3)
+  )
+  expect_error(
+    player_skill_profile("Zzzzz Nonexistent", skills = skills),
+    "not found in skill estimates"
+  )
+})
+
+test_that("player_skill_profile works with pre-computed skills from parquet format", {
+  # Simulate the format from load_opta_skills() (aggregate_skills_for_spm output)
+  skills <- data.table::data.table(
+    player_id = c("p1", "p2", "p3", "p1"),
+    player_name = c("H. Kane", "K. Mbappe", "V. van Dijk", "H. Kane"),
+    primary_position = c("Striker", "Striker", "Defender", "Striker"),
+    season_end_year = c(2025, 2025, 2025, 2024),
+    weighted_90s = c(15.0, 12.0, 18.0, 10.0),
+    total_minutes = c(1350, 1080, 1620, 900),
+    n_matches = c(15L, 12L, 18L, 10L),
+    is_gk = c(0L, 0L, 0L, 0L),
+    is_df = c(0L, 0L, 1L, 0L),
+    is_mf = c(0L, 0L, 0L, 0L),
+    is_fw = c(1L, 1L, 0L, 1L),
+    goals_p90 = c(0.7, 0.8, 0.05, 0.6),
+    tackles_won_p90 = c(0.3, 0.4, 2.5, 0.3)
+  )
+
+  profile <- player_skill_profile("Kane", skills = skills)
+  expect_s3_class(profile, "data.table")
+  expect_true(nrow(profile) > 0)
+  # Should pick the row with most weighted_90s (2025 season, 15.0)
+  expect_true("stat" %in% names(profile))
+
+  # Metadata columns should NOT appear as stats
+  expect_false("season_end_year" %in% profile$stat)
+  expect_false("is_gk" %in% profile$stat)
+  expect_false("total_minutes" %in% profile$stat)
+})

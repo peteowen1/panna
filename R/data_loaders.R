@@ -150,7 +150,7 @@ query_local_parquet <- function(table_type, sql_template, league = NULL, season 
 
   # Run SQL query with DuckDB
   conn <- DBI::dbConnect(duckdb::duckdb())
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
   # Replace {table} placeholder with actual file pattern
   sql <- gsub("\\{table\\}", parquet_pattern, sql_template)
@@ -757,7 +757,7 @@ query_local_understat_parquet <- function(table_type, sql_template, league = NUL
 
   # Run SQL query with DuckDB
   conn <- DBI::dbConnect(duckdb::duckdb())
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
   sql <- gsub("\\{table\\}", parquet_pattern, sql_template)
 
