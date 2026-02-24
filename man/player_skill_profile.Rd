@@ -20,17 +20,21 @@ Supports exact names ("H. Kane"), abbreviations ("H.Kane"),
 surnames ("Kane"), and accent-insensitive input ("Mbappe").}
 
 \item{match_stats}{A data.table from \code{compute_match_level_opta_stats()}.
-Can be omitted if \code{skills} is provided, or to auto-load Big 5 data.}
+If provided, runs full skill estimation from raw data. When omitted (and
+\code{skills} is also NULL), downloads pre-computed skills instead.}
 
-\item{decay_params}{Decay parameters list.}
+\item{decay_params}{Decay parameters list. Only used when
+\code{match_stats} is provided.}
 
-\item{date}{Date to estimate skills at (default today).}
+\item{date}{Date to estimate skills at (default today). Only used when
+\code{match_stats} is provided.}
 
-\item{min_weighted_90s}{Regression threshold.}
+\item{min_weighted_90s}{Regression threshold. Only used when
+\code{match_stats} is provided.}
 
 \item{skills}{Pre-computed skills data.table from
-\code{estimate_player_skills()}. If provided, skips the expensive
-skill estimation step (~7s) and uses these directly.}
+\code{estimate_player_skills()} or \code{load_opta_skills()}. If
+provided, skips estimation and uses these directly.}
 
 \item{source}{Data source for auto-loading: "remote" (default) or "local".
 Only used when both \code{match_stats} and \code{skills} are NULL.}
@@ -46,6 +50,6 @@ Groups stats by category for easy interpretation.
 }
 \details{
 When called without \code{match_stats} or \code{skills}, automatically loads
-Opta match stats for the Big 5 leagues (ENG, ESP, GER, ITA, FRA) using
-\code{load_opta_stats()}.
+pre-computed skill estimates via \code{load_opta_skills()} (~2-3 MB download).
+This covers all 15 Opta leagues across all available seasons.
 }

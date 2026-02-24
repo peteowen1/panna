@@ -142,3 +142,95 @@ test_that("suggest_opta_seasons returns empty for nonexistent league", {
   )
   expect_equal(length(seasons), 0)
 })
+
+
+# -- load_opta_skills --
+
+test_that("load_opta_skills local reads parquet file", {
+  tmp <- withr::local_tempdir()
+
+  # Create a minimal skills parquet
+  skills_df <- data.frame(
+    player_id = c("p1", "p2", "p3"),
+    player_name = c("Player A", "Player B", "Player C"),
+    primary_position = c("Striker", "Midfielder", "Defender"),
+    season_end_year = c(2025, 2025, 2024),
+    weighted_90s = c(10.5, 15.2, 8.1),
+    total_minutes = c(945, 1368, 729),
+    goals_p90 = c(0.5, 0.2, 0.05),
+    tackles_won_p90 = c(0.3, 1.5, 2.8)
+  )
+  arrow::write_parquet(skills_df, file.path(tmp, "opta_skills.parquet"))
+
+  old_dir <- tryCatch(opta_data_dir(), error = function(e) NULL)
+  opta_data_dir(tmp)
+  withr::defer({
+    if (!is.null(old_dir)) opta_data_dir(old_dir)
+  })
+
+  result <- load_opta_skills(source = "local")
+  expect_true(is.data.frame(result))
+  expect_equal(nrow(result), 3)
+  expect_true("player_name" %in% names(result))
+  expect_true("goals_p90" %in% names(result))
+})
+
+test_that("load_opta_skills filters by season", {
+  tmp <- withr::local_tempdir()
+
+  skills_df <- data.frame(
+    player_id = c("p1", "p1"),
+    player_name = c("Player A", "Player A"),
+    primary_position = c("Striker", "Striker"),
+    season_end_year = c(2024, 2025),
+    weighted_90s = c(8.0, 12.0),
+    total_minutes = c(720, 1080),
+    goals_p90 = c(0.4, 0.6)
+  )
+  arrow::write_parquet(skills_df, file.path(tmp, "opta_skills.parquet"))
+
+  old_dir <- tryCatch(opta_data_dir(), error = function(e) NULL)
+  opta_data_dir(tmp)
+  withr::defer({
+    if (!is.null(old_dir)) opta_data_dir(old_dir)
+  })
+
+  result <- load_opta_skills(season = 2025, source = "local")
+  expect_equal(nrow(result), 1)
+  expect_equal(result$season_end_year, 2025)
+})
+
+test_that("load_opta_skills selects columns", {
+  tmp <- withr::local_tempdir()
+
+  skills_df <- data.frame(
+    player_id = "p1",
+    player_name = "Player A",
+    season_end_year = 2025,
+    goals_p90 = 0.5,
+    tackles_won_p90 = 1.2
+  )
+  arrow::write_parquet(skills_df, file.path(tmp, "opta_skills.parquet"))
+
+  old_dir <- tryCatch(opta_data_dir(), error = function(e) NULL)
+  opta_data_dir(tmp)
+  withr::defer({
+    if (!is.null(old_dir)) opta_data_dir(old_dir)
+  })
+
+  result <- load_opta_skills(columns = c("player_name", "goals_p90"), source = "local")
+  expect_equal(ncol(result), 2)
+  expect_equal(names(result), c("player_name", "goals_p90"))
+})
+
+test_that("load_opta_skills errors for missing local file", {
+  tmp <- withr::local_tempdir()
+
+  old_dir <- tryCatch(opta_data_dir(), error = function(e) NULL)
+  opta_data_dir(tmp)
+  withr::defer({
+    if (!is.null(old_dir)) opta_data_dir(old_dir)
+  })
+
+  expect_error(load_opta_skills(source = "local"), "not found")
+})

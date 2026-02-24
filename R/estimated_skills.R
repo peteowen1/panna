@@ -1297,20 +1297,24 @@ adjust_match_stats_for_context <- function(match_stats, elo_ratings = NULL,
 #' Groups stats by category for easy interpretation.
 #'
 #' When called without \code{match_stats} or \code{skills}, automatically loads
-#' Opta match stats for the Big 5 leagues (ENG, ESP, GER, ITA, FRA) using
-#' \code{load_opta_stats()}.
+#' pre-computed skill estimates via \code{load_opta_skills()} (~2-3 MB download).
+#' This covers all 15 Opta leagues across all available seasons.
 #'
 #' @param player_name Character string of the player name to profile.
 #'   Supports exact names ("H. Kane"), abbreviations ("H.Kane"),
 #'   surnames ("Kane"), and accent-insensitive input ("Mbappe").
 #' @param match_stats A data.table from \code{compute_match_level_opta_stats()}.
-#'   Can be omitted if \code{skills} is provided, or to auto-load Big 5 data.
-#' @param decay_params Decay parameters list.
-#' @param date Date to estimate skills at (default today).
-#' @param min_weighted_90s Regression threshold.
+#'   If provided, runs full skill estimation from raw data. When omitted (and
+#'   \code{skills} is also NULL), downloads pre-computed skills instead.
+#' @param decay_params Decay parameters list. Only used when
+#'   \code{match_stats} is provided.
+#' @param date Date to estimate skills at (default today). Only used when
+#'   \code{match_stats} is provided.
+#' @param min_weighted_90s Regression threshold. Only used when
+#'   \code{match_stats} is provided.
 #' @param skills Pre-computed skills data.table from
-#'   \code{estimate_player_skills()}. If provided, skips the expensive
-#'   skill estimation step (~7s) and uses these directly.
+#'   \code{estimate_player_skills()} or \code{load_opta_skills()}. If
+#'   provided, skips estimation and uses these directly.
 #' @param source Data source for auto-loading: "remote" (default) or "local".
 #'   Only used when both \code{match_stats} and \code{skills} are NULL.
 #'
@@ -1339,31 +1343,28 @@ player_skill_profile <- function(player_name, match_stats = NULL,
   # Use pre-computed skills if provided, otherwise estimate from match_stats
   if (!is.null(skills)) {
     all_skills <- data.table::as.data.table(skills)
-  } else {
-    # Auto-load Big 5 match stats if none provided
-    if (is.null(match_stats)) {
-      cli::cli_alert_info("Loading Opta match stats for Big 5 leagues...")
-      big5_codes <- c("ENG", "ESP", "GER", "ITA", "FRA")
-      match_stats_list <- lapply(big5_codes, function(lg) {
-        tryCatch(
-          load_opta_stats(lg, source = source),
-          error = function(e) {
-            cli::cli_alert_warning("Failed to load {lg}: {e$message}")
-            NULL
-          }
-        )
-      })
-      match_stats <- data.table::rbindlist(
-        Filter(Negate(is.null), match_stats_list),
-        use.names = TRUE, fill = TRUE
-      )
-      if (nrow(match_stats) == 0) {
+  } else if (is.null(match_stats)) {
+    # Auto-load pre-computed skills (~4 MB) and match stats (~15 MB)
+    cli::cli_alert_info("Loading pre-computed skills from GitHub...")
+    all_skills <- tryCatch(
+      data.table::as.data.table(load_opta_skills(source = source)),
+      error = function(e) {
         cli::cli_abort(c(
-          "Could not load match stats for any Big 5 league.",
-          "i" = "Provide {.arg match_stats} or {.arg skills} directly."
+          "Could not load pre-computed skills.",
+          "i" = "Provide {.arg match_stats} or {.arg skills} directly.",
+          "x" = e$message
         ))
       }
-    }
+    )
+    # Also load match stats for raw_avg/attempts/w90 columns
+    match_stats <- tryCatch(
+      data.table::as.data.table(load_opta_match_stats(source = source)),
+      error = function(e) {
+        cli::cli_alert_warning("Could not load match stats (raw_avg/attempts will be NA).")
+        NULL
+      }
+    )
+  } else {
     dt <- data.table::as.data.table(match_stats)
     all_skills <- estimate_player_skills(
       match_stats = dt,
@@ -1439,7 +1440,9 @@ player_skill_profile <- function(player_name, match_stats = NULL,
 
   # Identify stat columns
   meta_cols <- c("player_id", "player_name", "primary_position", "date",
-                  "weighted_90s", "clean_name")
+                  "weighted_90s", "clean_name", "season_end_year",
+                  "total_minutes", "n_matches", "is_gk", "is_df", "is_mf",
+                  "is_fw", "competition", "league")
   stat_cols <- setdiff(names(all_skills), meta_cols)
   stat_cols <- stat_cols[vapply(all_skills, is.numeric, logical(1))[stat_cols]]
 
@@ -1477,6 +1480,8 @@ player_skill_profile <- function(player_name, match_stats = NULL,
   player_id_val <- player_row$player_id
   raw_avgs <- NULL
   stat_w90s <- NULL
+  stat_raw_attempts <- NULL
+  stat_w_attempts <- NULL
   total_90s <- NA_real_
   n_matches_val <- NA_integer_
   if (!is.null(match_stats)) {
@@ -1524,10 +1529,14 @@ player_skill_profile <- function(player_name, match_stats = NULL,
       }, numeric(1))
 
       # Raw (unweighted) attempts per efficiency stat
+      # tryCatch handles missing denominator columns (e.g., fifty_fifty
+      # may not exist in all data sources)
       stat_raw_attempts <- vapply(stat_cols, function(s) {
         if (s %in% names(eff_map)) {
-          denom <- compute_denominator(player_matches, eff_map[[s]])
-          round(sum(denom, na.rm = TRUE), 0)
+          tryCatch({
+            denom <- compute_denominator(player_matches, eff_map[[s]])
+            round(sum(denom, na.rm = TRUE), 0)
+          }, error = function(e) NA_real_)
         } else {
           NA_real_
         }
@@ -1537,8 +1546,10 @@ player_skill_profile <- function(player_name, match_stats = NULL,
         lam <- resolve_lambda(s)
         w <- exp(-lam * days_since)
         if (s %in% names(eff_map)) {
-          denom <- compute_denominator(player_matches, eff_map[[s]])
-          round(sum(w * denom, na.rm = TRUE), 0)
+          tryCatch({
+            denom <- compute_denominator(player_matches, eff_map[[s]])
+            round(sum(w * denom, na.rm = TRUE), 0)
+          }, error = function(e) NA_real_)
         } else {
           NA_real_
         }

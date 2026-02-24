@@ -249,3 +249,33 @@ test_that("player_skill_profile has source parameter", {
   args <- formals(player_skill_profile)
   expect_true("source" %in% names(args))
 })
+
+test_that("player_skill_profile works with pre-computed skills from parquet format", {
+  # Simulate the format from load_opta_skills() (aggregate_skills_for_spm output)
+  skills <- data.table::data.table(
+    player_id = c("p1", "p2", "p3", "p1"),
+    player_name = c("H. Kane", "K. Mbappe", "V. van Dijk", "H. Kane"),
+    primary_position = c("Striker", "Striker", "Defender", "Striker"),
+    season_end_year = c(2025, 2025, 2025, 2024),
+    weighted_90s = c(15.0, 12.0, 18.0, 10.0),
+    total_minutes = c(1350, 1080, 1620, 900),
+    n_matches = c(15L, 12L, 18L, 10L),
+    is_gk = c(0L, 0L, 0L, 0L),
+    is_df = c(0L, 0L, 1L, 0L),
+    is_mf = c(0L, 0L, 0L, 0L),
+    is_fw = c(1L, 1L, 0L, 1L),
+    goals_p90 = c(0.7, 0.8, 0.05, 0.6),
+    tackles_won_p90 = c(0.3, 0.4, 2.5, 0.3)
+  )
+
+  profile <- player_skill_profile("Kane", skills = skills)
+  expect_s3_class(profile, "data.table")
+  expect_true(nrow(profile) > 0)
+  # Should pick the row with most weighted_90s (2025 season, 15.0)
+  expect_true("stat" %in% names(profile))
+
+  # Metadata columns should NOT appear as stats
+  expect_false("season_end_year" %in% profile$stat)
+  expect_false("is_gk" %in% profile$stat)
+  expect_false("total_minutes" %in% profile$stat)
+})

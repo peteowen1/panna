@@ -37,7 +37,8 @@ if (!exists("run_steps")) {
     step_03_skill_spm              = TRUE,
     step_04_skill_xrapm            = TRUE,
     step_05_skill_panna_ratings    = TRUE,
-    step_06_seasonal_skill_ratings = TRUE     # Seasonal ratings for match predictions
+    step_06_seasonal_skill_ratings = TRUE,    # Seasonal ratings for match predictions
+    step_08_export_skills          = TRUE     # Export opta_skills.parquet to GitHub
   )
 }
 
@@ -109,7 +110,8 @@ if (!is.null(force_rebuild_from)) {
     "3" = "03_skill_spm.rds",
     "4" = "04_skill_xrapm.rds",
     "5" = c("05_skill_panna.rds", "skill_panna_ratings.csv"),
-    "6" = c("06_seasonal_ratings.rds", "seasonal_skill_xrapm.csv")
+    "6" = c("06_seasonal_ratings.rds", "seasonal_skill_xrapm.csv"),
+    "8" = character(0)  # export step has no cache file to clear
   )
 
   # Build list of steps to clear: numeric steps >= force_rebuild_from + fractional steps
@@ -204,7 +206,13 @@ step_results[[7]] <- run_step("seasonal_skill_ratings", 6, function() {
   source("data-raw/estimated-skills/06_seasonal_skill_ratings.R", local = TRUE)
 })
 
-# 12. Summary ----
+# 12. Step 8: Export Skills ----
+
+step_results[[8]] <- run_step("export_skills", 8, function() {
+  source("data-raw/estimated-skills/08_export_skills.R", local = TRUE)
+})
+
+# 13. Summary ----
 
 pipeline_end <- Sys.time()
 total_duration <- difftime(pipeline_end, pipeline_start, units = "secs")
@@ -232,5 +240,6 @@ message("\nOutput files:")
 message(sprintf("  - %s", file.path(cache_dir, "05_skill_panna.rds")))
 message(sprintf("  - %s", file.path(cache_dir, "skill_panna_ratings.csv")))
 message(sprintf("  - %s", file.path(cache_dir, "06_seasonal_ratings.rds")))
+message("  - pannadata/data/opta/opta_skills.parquet (uploaded to GitHub)")
 
 message("\nDone!")
