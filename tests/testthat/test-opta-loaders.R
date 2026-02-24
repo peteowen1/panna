@@ -88,7 +88,11 @@ test_that("list_opta_leagues local returns correct structure from filesystem", {
   old_dir <- tryCatch(opta_data_dir(), error = function(e) NULL)
   opta_data_dir(tmp)
   withr::defer({
-    if (!is.null(old_dir)) opta_data_dir(old_dir)
+    if (!is.null(old_dir)) {
+      opta_data_dir(old_dir)
+    } else {
+      rm("opta_dir", envir = panna:::.opta_env, inherits = FALSE)
+    }
   })
 
   result <- list_opta_leagues(source = "local")
@@ -115,7 +119,11 @@ test_that("suggest_opta_seasons returns seasons from local filesystem", {
   old_dir <- tryCatch(opta_data_dir(), error = function(e) NULL)
   opta_data_dir(tmp)
   withr::defer({
-    if (!is.null(old_dir)) opta_data_dir(old_dir)
+    if (!is.null(old_dir)) {
+      opta_data_dir(old_dir)
+    } else {
+      rm("opta_dir", envir = panna:::.opta_env, inherits = FALSE)
+    }
   })
 
   seasons <- suggest_opta_seasons("EPL")
@@ -133,7 +141,11 @@ test_that("suggest_opta_seasons returns empty for nonexistent league", {
   old_dir <- tryCatch(opta_data_dir(), error = function(e) NULL)
   opta_data_dir(tmp)
   withr::defer({
-    if (!is.null(old_dir)) opta_data_dir(old_dir)
+    if (!is.null(old_dir)) {
+      opta_data_dir(old_dir)
+    } else {
+      rm("opta_dir", envir = panna:::.opta_env, inherits = FALSE)
+    }
   })
 
   expect_warning(
@@ -165,7 +177,11 @@ test_that("load_opta_skills local reads parquet file", {
   old_dir <- tryCatch(opta_data_dir(), error = function(e) NULL)
   opta_data_dir(tmp)
   withr::defer({
-    if (!is.null(old_dir)) opta_data_dir(old_dir)
+    if (!is.null(old_dir)) {
+      opta_data_dir(old_dir)
+    } else {
+      rm("opta_dir", envir = panna:::.opta_env, inherits = FALSE)
+    }
   })
 
   result <- load_opta_skills(source = "local")
@@ -192,7 +208,11 @@ test_that("load_opta_skills filters by season", {
   old_dir <- tryCatch(opta_data_dir(), error = function(e) NULL)
   opta_data_dir(tmp)
   withr::defer({
-    if (!is.null(old_dir)) opta_data_dir(old_dir)
+    if (!is.null(old_dir)) {
+      opta_data_dir(old_dir)
+    } else {
+      rm("opta_dir", envir = panna:::.opta_env, inherits = FALSE)
+    }
   })
 
   result <- load_opta_skills(season = 2025, source = "local")
@@ -215,7 +235,11 @@ test_that("load_opta_skills selects columns", {
   old_dir <- tryCatch(opta_data_dir(), error = function(e) NULL)
   opta_data_dir(tmp)
   withr::defer({
-    if (!is.null(old_dir)) opta_data_dir(old_dir)
+    if (!is.null(old_dir)) {
+      opta_data_dir(old_dir)
+    } else {
+      rm("opta_dir", envir = panna:::.opta_env, inherits = FALSE)
+    }
   })
 
   result <- load_opta_skills(columns = c("player_name", "goals_p90"), source = "local")
@@ -229,7 +253,11 @@ test_that("load_opta_skills errors for missing local file", {
   old_dir <- tryCatch(opta_data_dir(), error = function(e) NULL)
   opta_data_dir(tmp)
   withr::defer({
-    if (!is.null(old_dir)) opta_data_dir(old_dir)
+    if (!is.null(old_dir)) {
+      opta_data_dir(old_dir)
+    } else {
+      rm("opta_dir", envir = panna:::.opta_env, inherits = FALSE)
+    }
   })
 
   expect_error(load_opta_skills(source = "local"), "not found")

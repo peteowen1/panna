@@ -10,7 +10,8 @@ validate_parquet_file(path)
 \item{path}{Path to the parquet file.}
 }
 \value{
-TRUE if valid parquet file, FALSE otherwise.
+TRUE if valid parquet file, FALSE if corrupt, NA if validation
+could not be performed (e.g., permission denied).
 }
 \description{
 Parquet files must start and end with the 4-byte magic number "PAR1".

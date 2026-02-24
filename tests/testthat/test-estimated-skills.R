@@ -245,9 +245,25 @@ test_that("player_skill_profile accepts pre-computed skills", {
 })
 
 test_that("player_skill_profile has source parameter", {
-  # Verify the function signature includes source parameter
   args <- formals(player_skill_profile)
   expect_true("source" %in% names(args))
+})
+
+test_that("player_skill_profile errors on player not found with suggestions", {
+  skills <- data.table::data.table(
+    player_id = c("p1", "p2"),
+    player_name = c("Harry Kane", "Kevin De Bruyne"),
+    primary_position = c("Striker", "Midfielder"),
+    weighted_90s = c(15.0, 12.0),
+    total_minutes = c(1350, 1080),
+    n_matches = c(15L, 12L),
+    is_gk = c(0L, 0L), is_df = c(0L, 0L), is_mf = c(0L, 1L), is_fw = c(1L, 0L),
+    goals_p90 = c(0.7, 0.3)
+  )
+  expect_error(
+    player_skill_profile("Zzzzz Nonexistent", skills = skills),
+    "not found in skill estimates"
+  )
 })
 
 test_that("player_skill_profile works with pre-computed skills from parquet format", {

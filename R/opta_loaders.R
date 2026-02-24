@@ -43,7 +43,8 @@ validate_sql_columns <- function(columns) {
 #' Interrupted downloads produce truncated files missing the footer.
 #'
 #' @param path Path to the parquet file.
-#' @return TRUE if valid parquet file, FALSE otherwise.
+#' @return TRUE if valid parquet file, FALSE if corrupt, NA if validation
+#'   could not be performed (e.g., permission denied).
 #' @keywords internal
 validate_parquet_file <- function(path) {
   if (!file.exists(path)) return(FALSE)
@@ -60,9 +61,9 @@ validate_parquet_file <- function(path) {
   }, error = function(e) {
     if (grepl("permission|access denied|locked", e$message, ignore.case = TRUE)) {
       cli::cli_warn("Cannot read parquet file {.path {path}}: {e$message}")
-    } else {
-      cli::cli_alert_warning("Could not validate parquet file {.path {path}}: {e$message}")
+      return(NA)  # Indeterminate — callers should not delete
     }
+    cli::cli_alert_warning("Could not validate parquet file {.path {path}}: {e$message}")
     FALSE
   })
 }
@@ -172,7 +173,7 @@ to_opta_league <- function(league) {
   }
   # 3. Catalog lookup (session-cached)
   catalog <- tryCatch(download_opta_catalog(), error = function(e) {
-    cli::cli_alert_warning("Could not load Opta catalog: {e$message}")
+    cli::cli_warn("Could not load Opta catalog: {e$message}")
     NULL
   })
   if (!is.null(catalog)) {
@@ -232,7 +233,7 @@ list_opta_seasons <- function(league, source = c("catalog", "local")) {
 
   # Catalog source
   catalog <- tryCatch(download_opta_catalog(), error = function(e) {
-    cli::cli_alert_warning("Could not load Opta catalog: {e$message}")
+    cli::cli_warn("Could not load Opta catalog: {e$message}")
     NULL
   })
   if (!is.null(catalog) && opta_league %in% names(catalog$competitions)) {
@@ -547,12 +548,14 @@ load_opta_fixtures <- function(league, season = NULL, columns = NULL,
 load_opta_big5 <- function(season = NULL, columns = NULL) {
   leagues <- c("ENG", "ESP", "GER", "ITA", "FRA")
 
+  error_msgs <- character(0)
   results <- lapply(leagues, function(lg) {
     tryCatch({
       df <- load_opta_stats(lg, season, columns)
       df$league <- lg
       df
     }, error = function(e) {
+      error_msgs[[lg]] <<- e$message
       cli::cli_warn("Failed to load {lg}: {e$message}")
       NULL
     })
@@ -561,7 +564,15 @@ load_opta_big5 <- function(season = NULL, columns = NULL) {
   valid_results <- Filter(Negate(is.null), results)
 
   if (length(valid_results) == 0) {
-    cli::cli_abort("Failed to load data for any Big 5 league.")
+    unique_errs <- unique(error_msgs)
+    if (length(unique_errs) == 1) {
+      cli::cli_abort(c(
+        "Failed to load data for any Big 5 league.",
+        "x" = "All 5 leagues failed with: {unique_errs}"
+      ))
+    } else {
+      cli::cli_abort("Failed to load data for any Big 5 league.")
+    }
   }
   if (length(valid_results) < length(leagues)) {
     loaded <- vapply(valid_results, function(x) x$league[1], character(1))
@@ -633,7 +644,7 @@ suggest_opta_seasons <- function(league, table_type = "match_events",
         res <- DBI::dbGetQuery(conn, sql)
         seasons <- res$season
       }, error = function(e) {
-        cli::cli_alert_warning("Could not query consolidated parquet: {e$message}")
+        cli::cli_warn("Could not query consolidated parquet: {e$message}")
         NULL
       })
     }
@@ -642,7 +653,7 @@ suggest_opta_seasons <- function(league, table_type = "match_events",
   # Fall back to catalog
   if (length(seasons) == 0) {
     catalog <- tryCatch(download_opta_catalog(), error = function(e) {
-      cli::cli_alert_warning("Could not load Opta catalog: {e$message}")
+      cli::cli_warn("Could not load Opta catalog: {e$message}")
       NULL
     })
     if (!is.null(catalog) && opta_league %in% names(catalog$competitions)) {
@@ -760,11 +771,13 @@ load_opta_table <- function(table_type, league, season, columns,
   # If season was requested but got 0 rows, show available seasons
   if (nrow(result) == 0 && !is.null(season)) {
     avail <- suggest_opta_seasons(opta_league, table_type, base_dir)
-    cli::cli_abort(c(
-      "No data found for {opta_league} season {.val {season}}.",
-      "i" = "Available seasons: {paste(avail, collapse = ', ')}",
-      "i" = "Note: leagues use {.val 2024-2025} format, tournaments use {.val {c('2024', '2024 Germany')}} format."
-    ))
+    msg <- "No data found for {opta_league} season {.val {season}}."
+    hints <- character(0)
+    if (length(avail) > 0) {
+      hints <- c(hints, "i" = "Available seasons: {paste(avail, collapse = ', ')}")
+    }
+    hints <- c(hints, "i" = "Note: leagues use {.val 2024-2025} format, tournaments use {.val {c('2024', '2024 Germany')}} format.")
+    cli::cli_abort(c(msg, hints))
   }
 
   cli::cli_alert_success("Loaded {format(nrow(result), big.mark=',')} rows ({ncol(result)} columns)")
@@ -997,7 +1010,12 @@ list_opta_leagues <- function(type = NULL, tier = NULL,
         stringsAsFactors = FALSE
       )
     })
-    result <- do.call(rbind, rows)
+    result <- if (length(rows) > 0) do.call(rbind, rows) else {
+      data.frame(code = character(0), name = character(0), country = character(0),
+                 type = character(0), tier = integer(0), n_seasons = integer(0),
+                 n_matches = integer(0), panna_alias = character(0),
+                 stringsAsFactors = FALSE)
+    }
   }
 
   # Apply filters
@@ -1087,8 +1105,8 @@ query_remote_opta_parquet <- function(table_type, opta_league, season = NULL,
       cli::cli_abort("Download failed - {file_name} not found after download")
     }
 
-    # Validate downloaded file
-    if (!validate_parquet_file(parquet_path)) {
+    # Validate downloaded file (isFALSE: skip deletion if validation is indeterminate/NA)
+    if (isFALSE(validate_parquet_file(parquet_path))) {
       unlink(parquet_path)
       cli::cli_abort(c(
         "Downloaded {file_name} is corrupt (incomplete download).",
@@ -1214,8 +1232,8 @@ query_remote_opta_match_events <- function(opta_league, season = NULL,
       cli::cli_abort("Download failed - {file_name} not found after download")
     }
 
-    # Validate downloaded file
-    if (!validate_parquet_file(parquet_path)) {
+    # Validate downloaded file (isFALSE: skip deletion if validation is indeterminate/NA)
+    if (isFALSE(validate_parquet_file(parquet_path))) {
       unlink(parquet_path)
       cli::cli_abort(c(
         "Downloaded events for {opta_league} is corrupt (incomplete download).",
@@ -1280,7 +1298,8 @@ query_remote_opta_match_events <- function(opta_league, season = NULL,
 #' @param league League code (e.g., "ENG", "EPL").
 #' @param season Optional season filter (e.g., "2024-2025").
 #' @param columns Optional character vector of columns to select.
-#' @param source Data source: "remote" (default) or "local".
+#' @param source Data source: only "local" is supported (xmetrics are
+#'   pipeline-generated, not available in GitHub releases).
 #'
 #' @return Data frame with player xmetrics including xg, npxg, xa, xpass stats.
 #'
@@ -1294,11 +1313,11 @@ query_remote_opta_match_events <- function(opta_league, season = NULL,
 #' head(epl_xm[order(-epl_xm$xg), c("player_name", "team_name", "xg", "goals")])
 #' }
 load_opta_xmetrics <- function(league, season = NULL, columns = NULL,
-                                source = c("remote", "local")) {
+                                source = c("local")) {
   source <- match.arg(source)
   opta_league <- to_opta_league(league)
 
-  # xmetrics live under opta_data_dir()/xmetrics/ (alongside player_stats, shots, etc.)
+  # xmetrics are pipeline-generated per-league/season files, not in the GitHub release
   xmetrics_dir <- file.path(opta_data_dir(), "xmetrics", opta_league)
 
   if (!is.null(season)) {
@@ -1625,7 +1644,7 @@ download_opta_release_file <- function(file_name,
     cli::cli_abort("Download failed - {file_name} not found after download")
   }
 
-  if (!validate_parquet_file(parquet_path)) {
+  if (isFALSE(validate_parquet_file(parquet_path))) {
     unlink(parquet_path)
     cli::cli_abort(c(
       "Downloaded {file_name} is corrupt (incomplete download).",
@@ -1757,7 +1776,7 @@ pb_download_opta <- function(repo = "peteowen1/pannadata",
   corrupt_files <- character(0)
   for (f in parquet_files) {
     fpath <- file.path(opta_dir, f)
-    if (file.exists(fpath) && !validate_parquet_file(fpath)) {
+    if (file.exists(fpath) && isFALSE(validate_parquet_file(fpath))) {
       cli::cli_warn("Downloaded {f} is corrupt (invalid parquet). Deleting.")
       unlink(fpath)
       corrupt_files <- c(corrupt_files, f)

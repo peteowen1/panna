@@ -1425,8 +1425,15 @@ player_skill_profile <- function(player_name, match_stats = NULL,
   }
 
   if (nrow(player_row) == 0) {
-    cli::cli_warn("Player '{target_player}' not found in skill estimates.")
-    return(NULL)
+    # Suggest close matches using string distance
+    all_names <- unique(all_skills$player_name)
+    dists <- utils::adist(target_player, all_names, ignore.case = TRUE)[1, ]
+    closest <- all_names[order(dists)][seq_len(min(5, length(all_names)))]
+    cli::cli_abort(c(
+      "Player {.val {target_player}} not found in skill estimates.",
+      "i" = "Did you mean: {paste(closest, collapse = ', ')}?",
+      "i" = "Use exact player names as they appear in the data."
+    ))
   }
 
   if (nrow(player_row) > 1) {
@@ -1535,13 +1542,14 @@ player_skill_profile <- function(player_name, match_stats = NULL,
       # Raw (unweighted) attempts per efficiency stat
       # tryCatch handles missing denominator columns (e.g., fifty_fifty
       # may not exist in all data sources)
+      failed_denom_stats <- character(0)
       stat_raw_attempts <- vapply(stat_cols, function(s) {
         if (s %in% names(eff_map)) {
           tryCatch({
             denom <- compute_denominator(player_matches, eff_map[[s]])
             round(sum(denom, na.rm = TRUE), 0)
           }, error = function(e) {
-            cli::cli_alert_warning("Could not compute denominator for {s}: {e$message}")
+            failed_denom_stats <<- c(failed_denom_stats, s)
             NA_real_
           })
         } else {
@@ -1557,13 +1565,17 @@ player_skill_profile <- function(player_name, match_stats = NULL,
             denom <- compute_denominator(player_matches, eff_map[[s]])
             round(sum(w * denom, na.rm = TRUE), 0)
           }, error = function(e) {
-            cli::cli_alert_warning("Could not compute weighted denominator for {s}: {e$message}")
             NA_real_
           })
         } else {
           NA_real_
         }
       }, numeric(1))
+
+      if (length(failed_denom_stats) > 0) {
+        failed_unique <- unique(failed_denom_stats)
+        cli::cli_warn("Could not compute denominators for {length(failed_unique)} stat{?s}: {paste(failed_unique, collapse = ', ')}")
+      }
     }
   }
 

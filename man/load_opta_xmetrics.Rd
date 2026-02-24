@@ -4,12 +4,7 @@
 \alias{load_opta_xmetrics}
 \title{Load Opta xG/xA/xPass Player Metrics}
 \usage{
-load_opta_xmetrics(
-  league,
-  season = NULL,
-  columns = NULL,
-  source = c("remote", "local")
-)
+load_opta_xmetrics(league, season = NULL, columns = NULL, source = c("local"))
 }
 \arguments{
 \item{league}{League code (e.g., "ENG", "EPL").}
@@ -18,7 +13,8 @@ load_opta_xmetrics(
 
 \item{columns}{Optional character vector of columns to select.}
 
-\item{source}{Data source: "remote" (default) or "local".}
+\item{source}{Data source: only "local" is supported (xmetrics are
+pipeline-generated, not available in GitHub releases).}
 }
 \value{
 Data frame with player xmetrics including xg, npxg, xa, xpass stats.
