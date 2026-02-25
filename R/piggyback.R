@@ -523,6 +523,7 @@ get_source_tag <- function(source_type) {
     fbref = "fbref-latest",
     understat = "understat-latest",
     opta = "opta-latest",
+    predictions = "predictions-latest",
     all = "latest",
     cli::cli_abort("Unknown source_type: {.val {source_type}}")
   )
@@ -542,6 +543,7 @@ get_source_archive_name <- function(source_type) {
     fbref = "fbref-parquet.tar.gz",
     understat = "understat-parquet.tar.gz",
     opta = "opta-parquet.tar.gz",
+    predictions = "predictions.parquet",
     all = "pannadata-parquet.tar.gz",
     cli::cli_abort("Unknown source_type: {.val {source_type}}")
   )
@@ -826,7 +828,7 @@ pb_list_sources <- function(repo = "peteowen1/pannadata") {
     cli::cli_abort("Package 'piggyback' is required. Install with: install.packages('piggyback')")
   }
 
-  sources <- c("fbref", "understat", "opta", "all")
+  sources <- c("fbref", "understat", "opta", "predictions", "all")
   results <- list()
 
   for (src in sources) {
@@ -867,4 +869,130 @@ pb_list_sources <- function(repo = "peteowen1/pannadata") {
   }
 
   do.call(rbind, results)
+}
+
+
+# Predictions download/load ----
+
+#' Download match predictions from GitHub Releases
+#'
+#' Downloads predictions.parquet from the predictions-latest release
+#' on peteowen1/pannadata.
+#'
+#' @param repo GitHub repository in "owner/repo" format.
+#' @param tag Release tag (default: "predictions-latest").
+#' @param dest Destination directory. If NULL, uses pannadata_dir()/predictions.
+#'
+#' @return Invisibly returns the path to the downloaded file.
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' pb_download_predictions()
+#' }
+pb_download_predictions <- function(repo = "peteowen1/pannadata",
+                                     tag = "predictions-latest",
+                                     dest = NULL) {
+  if (!requireNamespace("piggyback", quietly = TRUE)) {
+    cli::cli_abort("Package 'piggyback' is required. Install with: install.packages('piggyback')")
+  }
+
+  if (is.null(dest)) {
+    dest <- tryCatch({
+      file.path(pannadata_dir(), "predictions")
+    }, error = function(e) {
+      cli::cli_abort(c(
+        "Could not determine pannadata directory.",
+        "i" = "Set dest explicitly or configure pannadata_dir() first."
+      ))
+    })
+  }
+
+  dir.create(dest, showWarnings = FALSE, recursive = TRUE)
+
+  cli::cli_alert_info("Downloading predictions from {repo} ({tag})...")
+
+  tryCatch({
+    piggyback::pb_download(
+      file = "predictions.parquet",
+      repo = repo,
+      tag = tag,
+      dest = dest,
+      overwrite = TRUE
+    )
+  }, error = function(e) {
+    cli::cli_abort(c(
+      "Failed to download predictions.parquet from {repo} ({tag})",
+      "x" = e$message,
+      "i" = "Make sure the predictions-latest release exists."
+    ))
+  })
+
+  parquet_path <- file.path(dest, "predictions.parquet")
+  if (!file.exists(parquet_path)) {
+    cli::cli_abort("Download failed - predictions.parquet not found after download.")
+  }
+
+  size_mb <- round(file.info(parquet_path)$size / (1024 * 1024), 2)
+  cli::cli_alert_success("Downloaded predictions.parquet ({size_mb} MB)")
+
+  invisible(parquet_path)
+}
+
+
+#' Load match predictions
+#'
+#' Loads match predictions from local cache or downloads from GitHub Releases.
+#'
+#' @param source Data source: "local" loads from pannadata/predictions/,
+#'   "remote" downloads from GitHub release first.
+#' @param filter_future If TRUE, returns only matches with match_date >= today.
+#'
+#' @return Data frame of match predictions.
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' # Load from remote (downloads if needed)
+#' preds <- load_predictions(source = "remote")
+#'
+#' # Load only future matches
+#' preds <- load_predictions(source = "remote", filter_future = TRUE)
+#'
+#' # Load from local cache
+#' preds <- load_predictions(source = "local")
+#' }
+load_predictions <- function(source = c("remote", "local"),
+                              filter_future = FALSE) {
+  source <- match.arg(source)
+
+  pred_dir <- tryCatch({
+    file.path(pannadata_dir(), "predictions")
+  }, error = function(e) {
+    cli::cli_abort(c(
+      "Could not determine pannadata directory.",
+      "i" = "Set dest in {.fn pb_download_predictions} explicitly."
+    ))
+  })
+
+  parquet_path <- file.path(pred_dir, "predictions.parquet")
+
+  if (source == "remote" || !file.exists(parquet_path)) {
+    pb_download_predictions(dest = pred_dir)
+  }
+
+  if (!file.exists(parquet_path)) {
+    cli::cli_abort(c(
+      "predictions.parquet not found at {.path {parquet_path}}.",
+      "i" = "Run {.code pb_download_predictions()} first."
+    ))
+  }
+
+  predictions <- arrow::read_parquet(parquet_path)
+
+  if (filter_future) {
+    predictions <- predictions[predictions$match_date >= Sys.Date(), ]
+  }
+
+  predictions
 }

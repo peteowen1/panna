@@ -102,6 +102,10 @@ if (nrow(fixtures) == 0) {
   csv_path <- file.path(cache_dir, "predictions.csv")
   write.csv(predictions, csv_path, row.names = FALSE)
 
+  # Save parquet for GitHub release upload
+  parquet_path <- file.path(cache_dir, "predictions.parquet")
+  arrow::write_parquet(predictions, parquet_path)
+
   # 10. Summary ----
 
   message("\n========================================")
@@ -129,4 +133,5 @@ if (nrow(fixtures) == 0) {
 
   message(sprintf("\nSaved to: %s", output_path))
   message(sprintf("CSV: %s", csv_path))
+  message(sprintf("Parquet: %s", parquet_path))
 }
