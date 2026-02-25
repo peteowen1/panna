@@ -523,7 +523,6 @@ get_source_tag <- function(source_type) {
     fbref = "fbref-latest",
     understat = "understat-latest",
     opta = "opta-latest",
-    predictions = "predictions-latest",
     all = "latest",
     cli::cli_abort("Unknown source_type: {.val {source_type}}")
   )
@@ -543,7 +542,6 @@ get_source_archive_name <- function(source_type) {
     fbref = "fbref-parquet.tar.gz",
     understat = "understat-parquet.tar.gz",
     opta = "opta-parquet.tar.gz",
-    predictions = "predictions.parquet",
     all = "pannadata-parquet.tar.gz",
     cli::cli_abort("Unknown source_type: {.val {source_type}}")
   )
@@ -828,12 +826,20 @@ pb_list_sources <- function(repo = "peteowen1/pannadata") {
     cli::cli_abort("Package 'piggyback' is required. Install with: install.packages('piggyback')")
   }
 
-  sources <- c("fbref", "understat", "opta", "predictions", "all")
+  sources <- c("fbref", "understat", "opta", "all")
+  # Predictions uses a dedicated download path (pb_download_predictions),
+  # not the generic tar.gz pipeline, so handle it separately here.
+  pred_sources <- list(predictions = list(tag = "predictions-latest", file = "predictions.parquet"))
   results <- list()
 
-  for (src in sources) {
-    tag <- get_source_tag(src)
-    archive_name <- get_source_archive_name(src)
+  for (src in c(sources, names(pred_sources))) {
+    if (src %in% names(pred_sources)) {
+      tag <- pred_sources[[src]]$tag
+      archive_name <- pred_sources[[src]]$file
+    } else {
+      tag <- get_source_tag(src)
+      archive_name <- get_source_archive_name(src)
+    }
 
     info <- tryCatch({
       files <- piggyback::pb_list(repo = repo, tag = tag)
@@ -944,8 +950,8 @@ pb_download_predictions <- function(repo = "peteowen1/pannadata",
 #'
 #' Loads match predictions from local cache or downloads from GitHub Releases.
 #'
-#' @param source Data source: "local" loads from pannadata/predictions/,
-#'   "remote" downloads from GitHub release first.
+#' @param source Data source: "local" loads from pannadata/predictions/ (errors
+#'   if not found), "remote" always downloads latest from GitHub release first.
 #' @param filter_future If TRUE, returns only matches with match_date >= today.
 #'
 #' @return Data frame of match predictions.
@@ -953,7 +959,7 @@ pb_download_predictions <- function(repo = "peteowen1/pannadata",
 #'
 #' @examples
 #' \dontrun{
-#' # Load from remote (downloads if needed)
+#' # Load from remote (always downloads latest)
 #' preds <- load_predictions(source = "remote")
 #'
 #' # Load only future matches
@@ -977,20 +983,35 @@ load_predictions <- function(source = c("remote", "local"),
 
   parquet_path <- file.path(pred_dir, "predictions.parquet")
 
-  if (source == "remote" || !file.exists(parquet_path)) {
+  if (source == "remote") {
     pb_download_predictions(dest = pred_dir)
   }
 
   if (!file.exists(parquet_path)) {
     cli::cli_abort(c(
       "predictions.parquet not found at {.path {parquet_path}}.",
-      "i" = "Run {.code pb_download_predictions()} first."
+      "i" = "Run {.code pb_download_predictions()} first, or use {.code source = \"remote\"}."
     ))
   }
 
-  predictions <- arrow::read_parquet(parquet_path)
+  predictions <- tryCatch(
+    arrow::read_parquet(parquet_path),
+    error = function(e) {
+      cli::cli_abort(c(
+        "Failed to read {.path {parquet_path}}.",
+        "x" = e$message,
+        "i" = "The file may be corrupt. Try {.code pb_download_predictions()} to re-download."
+      ))
+    }
+  )
 
   if (filter_future) {
+    if (!"match_date" %in% names(predictions)) {
+      cli::cli_abort("Column {.val match_date} not found in predictions data.")
+    }
+    if (!inherits(predictions$match_date, "Date")) {
+      predictions$match_date <- as.Date(predictions$match_date)
+    }
     predictions <- predictions[predictions$match_date >= Sys.Date(), ]
   }
 

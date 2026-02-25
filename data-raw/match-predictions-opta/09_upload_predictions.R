@@ -22,6 +22,16 @@ csv_path <- file.path(cache_dir, "predictions.csv")
 
 message("\n=== Uploading Predictions to GitHub ===\n")
 
+# Check gh CLI is available
+gh_check <- tryCatch(
+  system2("gh", "--version", stdout = TRUE, stderr = TRUE),
+  error = function(e) NULL,
+  warning = function(w) NULL
+)
+if (is.null(gh_check)) {
+  stop("'gh' CLI is not installed or not on PATH. Install from https://cli.github.com/")
+}
+
 missing <- character(0)
 if (!file.exists(parquet_path)) missing <- c(missing, "predictions.parquet")
 if (!file.exists(csv_path)) missing <- c(missing, "predictions.csv")
@@ -43,21 +53,36 @@ message(sprintf("  Leagues: %s", paste(sort(unique(predictions$league)), collaps
 
 message(sprintf("\n  Checking release '%s' on %s...", tag, repo))
 
-release_exists <- system2(
+release_check <- system2(
   "gh", c("release", "view", tag, "--repo", repo),
-  stdout = FALSE, stderr = FALSE
+  stdout = TRUE, stderr = TRUE
 )
+release_status <- attr(release_check, "status")
 
-if (release_exists != 0) {
-  message("  Creating release...")
-  system2("gh", c("release", "create", tag,
-                   "--repo", repo,
-                   "--title", shQuote("Match Predictions (Latest)"),
-                   "--notes", shQuote("Auto-generated predictions from the Opta match prediction pipeline.")),
-          stdout = TRUE, stderr = TRUE)
+if (!is.null(release_status) && release_status != 0) {
+  # Check if it's an auth/network error vs genuinely missing release
+  stderr_text <- paste(release_check, collapse = "\n")
+  if (grepl("auth|login|credential|forbidden|401|403", stderr_text, ignore.case = TRUE)) {
+    stop(sprintf("gh authentication error: %s\nRun 'gh auth login' first.", stderr_text))
+  }
+
+  message("  Release not found. Creating...")
+  create_result <- system2(
+    "gh", c("release", "create", tag,
+            "--repo", repo,
+            "--title", shQuote("Match Predictions (Latest)"),
+            "--notes", shQuote("Auto-generated predictions from the Opta match prediction pipeline.")),
+    stdout = TRUE, stderr = TRUE
+  )
+  create_status <- attr(create_result, "status")
+  if (!is.null(create_status) && create_status != 0) {
+    stop(sprintf("Failed to create release '%s': %s",
+                 tag, paste(create_result, collapse = "\n")))
+  }
 }
 
 # 5. Upload ----
+# Both parquet (for pb_download_predictions) and CSV (for manual/browser download) are uploaded.
 
 for (fpath in c(parquet_path, csv_path)) {
   fname <- basename(fpath)
