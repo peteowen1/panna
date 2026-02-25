@@ -45,7 +45,8 @@ if (!exists("run_steps")) {
     step_05_fit_goals_model          = TRUE,
     step_06_fit_outcome_model        = TRUE,
     step_07_predict_fixtures         = TRUE,
-    step_08_evaluate_model           = TRUE
+    step_08_evaluate_model           = TRUE,
+    step_09_upload_predictions       = FALSE   # Opt-in: upload to GitHub
   )
 }
 
@@ -114,7 +115,7 @@ if (!dir.exists(cache_dir)) {
 }
 
 # Handle force rebuild
-if (!is.null(force_rebuild_from) && force_rebuild_from >= 1 && force_rebuild_from <= 8) {
+if (!is.null(force_rebuild_from) && force_rebuild_from >= 1 && force_rebuild_from <= 9) {
   cache_files <- list(
     "1" = "01_fixture_results.rds",
     "2" = "02_team_ratings.rds",
@@ -123,14 +124,15 @@ if (!is.null(force_rebuild_from) && force_rebuild_from >= 1 && force_rebuild_fro
     "4" = "04_match_dataset.rds",
     "5" = "05_goals_model.rds",
     "6" = "06_outcome_model.rds",
-    "7" = c("07_predictions.rds", "predictions.csv"),
-    "8" = "08_evaluation.rds"
+    "7" = c("07_predictions.rds", "predictions.csv", "predictions.parquet"),
+    "8" = "08_evaluation.rds",
+    "9" = character(0)
   )
 
   # Build list of steps to clear: numeric steps >= force_rebuild_from + fractional steps
-  steps_to_clear <- as.character(force_rebuild_from:8)
+  steps_to_clear <- as.character(force_rebuild_from:9)
   # Include fractional steps (e.g., "2b") when their parent step is being rebuilt
-  fractional_steps <- setdiff(names(cache_files), as.character(1:8))
+  fractional_steps <- setdiff(names(cache_files), as.character(1:9))
   for (fs in fractional_steps) {
     parent <- as.numeric(sub("[a-z]+$", "", fs))
     if (!is.na(parent) && parent >= force_rebuild_from) {
@@ -224,7 +226,13 @@ step_results[[8]] <- run_step("evaluate_model", 8, function() {
   source("data-raw/match-predictions-opta/08_evaluate_model.R", local = TRUE)
 })
 
-# 13. Summary ----
+# 13. Step 9: Upload Predictions ----
+
+step_results[[9]] <- run_step("upload_predictions", 9, function() {
+  source("data-raw/match-predictions-opta/09_upload_predictions.R", local = TRUE)
+})
+
+# 14. Summary ----
 
 pipeline_end <- Sys.time()
 total_duration <- difftime(pipeline_end, pipeline_start, units = "secs")
@@ -253,6 +261,7 @@ message(sprintf("%-35s %-10s %s", "TOTAL", "", format_duration(as.numeric(total_
 message("\nOutput files:")
 message(sprintf("  - %s", file.path(cache_dir, "07_predictions.rds")))
 message(sprintf("  - %s", file.path(cache_dir, "predictions.csv")))
+message(sprintf("  - %s", file.path(cache_dir, "predictions.parquet")))
 message(sprintf("  - %s", file.path(cache_dir, "08_evaluation.rds")))
 
 message("\nDone!")
