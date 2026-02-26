@@ -1,0 +1,103 @@
+# Scrape FBref match data directly
+
+Master function for scraping match-level data from FBref. Uses direct
+HTTP requests with browser headers to bypass Cloudflare. Implements
+polite scraping with rate limiting and incremental caching.
+
+## Usage
+
+``` r
+scrape_fbref_matches(
+  match_urls,
+  league,
+  season,
+  table_types = c("summary", "passing", "passing_types", "defense", "possession", "misc",
+    "keeper", "shots", "events", "metadata"),
+  delay = 5,
+  use_cache = TRUE,
+  verbose = TRUE,
+  max_matches = Inf
+)
+```
+
+## Arguments
+
+- match_urls:
+
+  Character vector of FBref match URLs
+
+- league:
+
+  League code for file naming (e.g., "ENG", "ESP", "GER", "ITA", "FRA")
+
+- season:
+
+  Season string for file naming (e.g., "2024-2025")
+
+- table_types:
+
+  Character vector of table types to scrape. Options: "summary",
+  "passing", "passing_types", "defense", "possession", "misc", "keeper",
+  "shots", "metadata" Default: all of the above
+
+- delay:
+
+  Seconds between requests (default 5, minimum 3)
+
+- use_cache:
+
+  Whether to use/update cache (default TRUE)
+
+- verbose:
+
+  Print progress messages (default TRUE)
+
+- max_matches:
+
+  Maximum number of matches to scrape (default Inf for all)
+
+## Value
+
+List containing data frames for each table type:
+
+- metadata:
+
+  Match metadata (teams, scores, IDs, manager, captain, venue, etc.)
+
+- summary:
+
+  Player summary stats
+
+- passing:
+
+  Passing stats
+
+- defense:
+
+  Defensive stats
+
+- possession:
+
+  Possession stats
+
+- shots:
+
+  Shot data
+
+- events:
+
+  Match events timeline (goals, cards, substitutions)
+
+## Examples
+
+``` r
+if (FALSE) { # \dontrun{
+urls <- c(
+  "https://fbref.com/en/matches/12c8079e/Girona-Rayo-Vallecano-August-15-2025-La-Liga"
+)
+data <- scrape_fbref_matches(urls, league = "ESP", season = "2025-2026")
+data$summary  # Player stats
+data$shots    # Shot-level data
+data$events   # Match timeline
+} # }
+```

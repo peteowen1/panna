@@ -1,0 +1,256 @@
+# Player Ratings Methodology
+
+This vignette explains the RAPM, SPM, and Panna rating methodologies
+used in the package.
+
+## Overview
+
+Panna ratings measure player impact on team performance using a
+three-stage approach:
+
+1.  **RAPM** (Regularized Adjusted Plus-Minus) - Lineup-based impact
+    measurement
+2.  **SPM** (Statistical Plus-Minus) - Box score prediction of RAPM
+3.  **Panna** - RAPM with SPM as a Bayesian prior
+
+All ratings are expressed as **xG per 90 minutes above/below average**.
+
+## Stage 1: RAPM (Regularized Adjusted Plus-Minus)
+
+### What is RAPM?
+
+RAPM isolates individual player contributions by analyzing lineup
+combinations. It answers: “How much does having Player X on the field
+change the team’s expected goal differential?”
+
+### Splints
+
+RAPM uses “splints” - time segments where the lineup is constant. Splint
+boundaries are created at:
+
+- Goals scored
+- Substitutions
+- Red cards
+- Halftime
+
+Each splint has approximately 22 players (11 per team) and records the
+non-penalty xG differential (npxGD) during that segment.
+
+``` r
+library(panna)
+
+# After loading processed data...
+splints <- create_all_splints(processed_data)
+```
+
+### Design Matrix
+
+The RAPM model uses a sparse design matrix where:
+
+- **Rows**: 2 per splint (one from each team’s attacking perspective)
+- **Player columns**: `playerX_off` (offensive) and `playerX_def`
+  (defensive) indicators
+- **Covariates**: Goal difference, average minute, home/away, player
+  counts
+- **Target**: xG FOR per 90 minutes (`xgf90`)
+
+``` r
+# Build the design matrix
+rapm_data <- create_rapm_design_matrix(splints)
+
+# Components:
+# - X_players: Sparse player indicator matrix
+# - X_full: Player indicators + covariates
+# - y: Target variable (xgf90)
+# - weights: Splint duration / 90
+```
+
+### Ridge Regression
+
+RAPM uses ridge regression (L2 penalty) with cross-validated lambda to
+prevent overfitting:
+
+``` r
+# Fit the model
+rapm_results <- fit_rapm(rapm_data)
+
+# Extract player ratings
+ratings <- extract_panna_ratings(rapm_results)
+```
+
+### Offensive vs Defensive Ratings
+
+Each player gets two coefficients:
+
+- **Offense coefficient**: Player’s impact when their team is attacking
+  - Positive = helps create xG (good)
+  - Negative = hurts attack (bad)
+- **Defense coefficient**: Player’s impact when their team is defending
+  - Positive = allows xG against (bad)
+  - Negative = prevents xG (good)
+
+## Stage 2: SPM (Statistical Plus-Minus)
+
+### What is SPM?
+
+SPM predicts RAPM ratings from box score statistics. It answers: “What
+RAPM should we expect given a player’s traditional stats?”
+
+This serves two purposes:
+
+1.  Provides ratings for players with insufficient RAPM sample size
+2.  Acts as a prior to stabilize RAPM estimates
+
+### Model
+
+SPM uses elastic net regression to predict RAPM from aggregated per-90
+statistics:
+
+``` r
+# Aggregate box score stats to per-90 rates
+player_stats <- aggregate_player_stats(processed_data)
+
+# Fit SPM model
+spm_results <- fit_spm_model(player_stats, rapm_ratings)
+
+# Get SPM ratings for all players
+spm_ratings <- calculate_spm_ratings(spm_results, player_stats)
+```
+
+### Features Used
+
+SPM uses statistics like:
+
+- Goals, assists, xG, xA per 90
+- Pass completion rates
+- Tackles, interceptions, blocks per 90
+- Progressive passes and carries per 90
+- Aerial duel win rates
+
+## Stage 3: Panna Rating
+
+### Combining RAPM and SPM
+
+The final Panna rating uses SPM as a Bayesian prior for RAPM:
+
+``` r
+# Fit RAPM with SPM prior (xRAPM)
+xrapm_results <- fit_rapm_with_prior(rapm_data, spm_ratings)
+
+# Final ratings
+panna_ratings <- extract_panna_ratings(xrapm_results)
+```
+
+This approach:
+
+- Shrinks noisy RAPM estimates toward SPM predictions
+- Gives more weight to RAPM for players with more minutes
+- Provides stable ratings even for players with limited data
+
+### Final Rating Calculation
+
+    panna = offense - defense
+
+Where: - Higher offense = better (creates more xG) - Lower (more
+negative) defense = better (prevents xG) - Higher overall panna = better
+player
+
+## Interpreting Ratings
+
+### Example: Elite Forward
+
+    Player: Erling Haaland
+    Offense: +0.15
+    Defense: +0.02
+    Panna: +0.13
+
+Interpretation: - Creates +0.15 xG/90 above average when attacking -
+Allows +0.02 xG/90 when defending (slightly below average) - Overall
+impact: +0.13 xG/90
+
+### Example: Elite Defender
+
+    Player: Virgil van Dijk
+    Offense: -0.02
+    Defense: -0.10
+    Panna: +0.08
+
+Interpretation: - Creates -0.02 xG/90 on offense (average) - Prevents
+0.10 xG/90 on defense (excellent) - Overall impact: +0.08 xG/90
+
+### Scale Reference
+
+| Rating | Interpretation |
+|--------|----------------|
+| +0.15+ | Elite          |
+| +0.10  | Very good      |
+| +0.05  | Above average  |
+| 0.00   | Average        |
+| -0.05  | Below average  |
+| -0.10  | Poor           |
+
+## Running the Full Pipeline
+
+The complete rating pipeline:
+
+``` r
+library(panna)
+
+# 1. Load raw data
+raw_data <- load_all_data(leagues = "ENG", seasons = "2024-2025")
+
+# 2. Process data
+processed_data <- process_raw_data(raw_data)
+
+# 3. Create splints
+splints <- create_all_splints(processed_data)
+
+# 4. Build RAPM matrix
+rapm_data <- create_rapm_design_matrix(splints)
+
+# 5. Fit base RAPM
+rapm_results <- fit_rapm(rapm_data)
+
+# 6. Fit SPM
+spm_results <- fit_spm_model(processed_data, rapm_results)
+
+# 7. Fit xRAPM (RAPM with SPM prior)
+xrapm_results <- fit_rapm_with_prior(rapm_data, spm_results)
+
+# 8. Extract final ratings
+panna_ratings <- extract_panna_ratings(xrapm_results)
+```
+
+## Limitations
+
+### Sample Size
+
+RAPM requires substantial playing time for reliable estimates.
+Recommended minimums:
+
+- **Exploratory analysis**: 450+ minutes
+- **Reliable estimates**: 900+ minutes
+- **Stable comparisons**: 1800+ minutes
+
+### Context Dependence
+
+Ratings are relative to: - The players they shared the field with - The
+opponents they faced - The leagues/seasons included in the model
+
+### Position Blindness
+
+RAPM doesn’t know player positions. A midfielder and striker with
+identical lineups would have identical ratings, even if their roles
+differ.
+
+## Next Steps
+
+- [Getting
+  Started](https://peteowen1.github.io/panna/articles/getting-started.md) -
+  Installation and data loading
+- [Data
+  Sources](https://peteowen1.github.io/panna/articles/data-sources.md) -
+  FBref vs Opta vs Understat
+- [Data
+  Dictionary](https://peteowen1.github.io/panna/DATA_DICTIONARY.md) -
+  Column definitions at each pipeline stage
