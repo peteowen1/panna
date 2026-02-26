@@ -74,11 +74,14 @@ reference:
   - player_opta_keeper
   - player_opta_shots
   - player_opta_setpiece
+  - player_opta_xg
+  - player_opta_xpass
   - player_understat_summary
   - player_fbref_summary
   - player_fbref_passing
   - player_fbref_defense
   - player_fbref_keeper
+  - player_profile
 
 - title: RAPM Pipeline
   desc: Regularized Adjusted Plus-Minus model
@@ -108,6 +111,14 @@ reference:
   - extract_spm_coefficients
   - get_spm_feature_importance
   - prepare_spm_regression_data
+
+- title: SPM Pipeline - Opta
+  desc: Opta-specific SPM model with 80+ features
+  contents:
+  - aggregate_opta_stats
+  - compute_match_level_opta_stats
+  - fit_spm_opta
+  - compare_spm_features
 
 - title: Panna Ratings
   desc: Combined RAPM + SPM ratings
@@ -224,6 +235,7 @@ reference:
   - pb_download_data
   - pb_download_parquet
   - pb_download_opta
+  - pb_download_predictions
   - pb_upload_source
   - pb_upload_data
   - pb_upload_parquet
@@ -233,6 +245,7 @@ reference:
   - pb_list_sources
   - pb_status
   - get_latest_release
+  - load_predictions
 
 - title: Scraping - FBref
   desc: FBref data scraping functions
@@ -261,6 +274,9 @@ reference:
   - fetch_understat_page
   - aggregate_understat_data
   - bulk_scrape_understat
+  - smart_scrape_understat
+  - load_understat_manifest
+  - save_understat_manifest
   - understat_competitions
   - list_understat_competitions
   - get_understat_league_url
@@ -314,6 +330,7 @@ reference:
   - per_90
   - calculate_npxg
   - validate_seasons
+  - validate_dataframe
   - get_seasons_since
   - get_big5_leagues
 
@@ -348,6 +365,37 @@ reference:
   - get_covariate_effects
   - aggregate_rapm_by_team
   - report_season_ranges
+
+- title: Constants
+  desc: Package-wide constants and thresholds
+  contents:
+  - BETA_PRIOR_ALPHA
+  - CHAIN_TIME_GAP_SECONDS
+  - CONFIDENCE_LEVEL
+  - HALFTIME_MINUTE
+  - MINUTES_PER_MATCH
+  - MIN_GAMES_FOR_PADDING
+  - MIN_MINUTES_FEATURES
+  - MIN_MINUTES_RAPM
+  - MIN_MINUTES_SPM
+  - MIN_SEQUENCES_PER_MATCH
+  - MIN_SHOTS_FOR_FINISHING
+  - MIN_WEIGHT_DURATION
+  - PENALTY_XG
+  - PLAYERS_PER_TEAM
+  - SIX_YARD_X_MIN
+  - SIX_YARD_Y_MAX
+  - SIX_YARD_Y_MIN
+  - TOUCHES_PER_SEQUENCE
+  - XG_MAX
+  - XG_MIN
+
+- title: Deprecated
+  desc: Deprecated functions (use alternatives instead)
+  contents:
+  - fit_epv_scoring_model
+  - fit_epv_conceding_model
+  - assign_pass_credit
 
 - title: Internal
   desc: Internal functions (advanced users)
