@@ -20,7 +20,7 @@ Requires a model fitted with \code{\link{fit_panna_model}}.
 To generate ratings, run one of the pipeline scripts:
 \itemize{
 \item Opta (15 leagues): \code{source("data-raw/player-ratings-opta/run_pipeline_opta.R")}
-\item FBref (Big 5): \code{source("data-raw/player-ratings/run_pipeline.R")}
+\item FBref (Big 5): \code{source("data-raw/player-ratings-fbref/run_pipeline.R")}
 }
 }
 \examples{

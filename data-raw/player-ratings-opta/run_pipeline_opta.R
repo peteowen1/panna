@@ -197,9 +197,16 @@ step_results[[8]] <- run_step("panna_ratings", 8, function() {
 
 # 13. Step 9: Export Ratings ----
 
-step_results[[9]] <- run_step("export_ratings", 9, function() {
-  source("data-raw/player-ratings-opta/09_export_ratings.R", local = TRUE)
-})
+# Skip export if step 7 failed (stale/missing data)
+if (!is.null(step_results[[7]]) && step_results[[7]]$status == "FAILED") {
+  message("\nSkipping export: step 7 (seasonal_ratings) failed")
+  step_results[[9]] <- list(step = 9, name = "export_ratings", status = "SKIPPED",
+                            duration_secs = 0, duration_formatted = "0.0 seconds")
+} else {
+  step_results[[9]] <- run_step("export_ratings", 9, function() {
+    source("data-raw/player-ratings-opta/09_export_ratings.R", local = TRUE)
+  })
+}
 
 # 14. Summary ----
 

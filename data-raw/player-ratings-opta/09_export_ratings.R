@@ -23,40 +23,69 @@ if (!file.exists(ratings_file)) {
 
 seasonal_results <- readRDS(ratings_file)
 
+if (is.null(seasonal_results$seasonal_xrapm) || nrow(seasonal_results$seasonal_xrapm) == 0) {
+  stop("seasonal_xrapm is empty or NULL - cannot export. Check step 7 output.")
+}
+
 repo <- "peteowen1/pannadata"
 tag <- "ratings-data"
 
 # 3. Ensure Release Exists ----
 
-tryCatch(
-  piggyback::pb_list(repo = repo, tag = tag),
-  error = function(e) {
-    message("Creating ratings-data release on pannadata...")
-    piggyback::pb_new_release(repo = repo, tag = tag)
-    Sys.sleep(3)
+release_ok <- tryCatch({
+  piggyback::pb_list(repo = repo, tag = tag)
+  TRUE
+}, error = function(e) {
+  if (grepl("not found|404|No GitHub release", e$message, ignore.case = TRUE)) {
+    FALSE
+  } else {
+    stop(sprintf("Failed to check release '%s' on %s: %s", tag, repo, e$message))
   }
-)
+})
 
-# 4. Upload seasonal_xrapm.parquet ----
+if (!release_ok) {
+  message("Creating ratings-data release on pannadata...")
+  piggyback::pb_new_release(repo = repo, tag = tag)
+  Sys.sleep(3)
+}
 
+# 4. Upload files ----
+
+upload_failures <- character(0)
+
+# Upload seasonal_xrapm.parquet
 tf_xrapm <- tempfile(fileext = ".parquet")
 arrow::write_parquet(seasonal_results$seasonal_xrapm, tf_xrapm)
-piggyback::pb_upload(tf_xrapm, repo = repo, tag = tag,
-                     name = "seasonal_xrapm.parquet")
-message(sprintf("Uploaded seasonal_xrapm.parquet (%d rows)",
-                nrow(seasonal_results$seasonal_xrapm)))
+tryCatch({
+  piggyback::pb_upload(tf_xrapm, repo = repo, tag = tag,
+                       name = "seasonal_xrapm.parquet", overwrite = TRUE)
+  message(sprintf("Uploaded seasonal_xrapm.parquet (%d rows)",
+                  nrow(seasonal_results$seasonal_xrapm)))
+}, error = function(e) {
+  upload_failures <<- c(upload_failures, "seasonal_xrapm.parquet")
+  warning(sprintf("Upload of seasonal_xrapm.parquet failed: %s", e$message), call. = FALSE)
+})
 unlink(tf_xrapm)
 
-# 5. Upload seasonal_spm.parquet ----
-
+# Upload seasonal_spm.parquet
 if (!is.null(seasonal_results$seasonal_spm)) {
   tf_spm <- tempfile(fileext = ".parquet")
   arrow::write_parquet(seasonal_results$seasonal_spm, tf_spm)
-  piggyback::pb_upload(tf_spm, repo = repo, tag = tag,
-                       name = "seasonal_spm.parquet")
-  message(sprintf("Uploaded seasonal_spm.parquet (%d rows)",
-                  nrow(seasonal_results$seasonal_spm)))
+  tryCatch({
+    piggyback::pb_upload(tf_spm, repo = repo, tag = tag,
+                         name = "seasonal_spm.parquet", overwrite = TRUE)
+    message(sprintf("Uploaded seasonal_spm.parquet (%d rows)",
+                    nrow(seasonal_results$seasonal_spm)))
+  }, error = function(e) {
+    upload_failures <<- c(upload_failures, "seasonal_spm.parquet")
+    warning(sprintf("Upload of seasonal_spm.parquet failed: %s", e$message), call. = FALSE)
+  })
   unlink(tf_spm)
 } else {
   warning("seasonal_spm not found in cache - re-run step 7 to generate both rating types")
+}
+
+if (length(upload_failures) > 0) {
+  stop(sprintf("Failed to upload %d file(s): %s",
+               length(upload_failures), paste(upload_failures, collapse = ", ")))
 }

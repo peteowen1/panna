@@ -7,39 +7,42 @@ library(dplyr)
 devtools::load_all()
 
 # 2. Configuration ----
+# Use if (!exists(...)) so test scripts/CI can override before sourcing
 
 # DATA SOURCE: "pannadata" only (worldfootballR removed)
-data_source <- "pannadata"
+if (!exists("data_source")) data_source <- "pannadata"
 
 # LEAGUES TO INCLUDE
 # Options: "ENG", "ESP", "GER", "ITA", "FRA" (Big 5)
 #          "UCL", "UEL" (European competitions)
-leagues <- c("ENG", "ESP", "GER", "ITA", "FRA", "UCL", "UEL")
+if (!exists("leagues")) leagues <- c("ENG", "ESP", "GER", "ITA", "FRA", "UCL", "UEL")
 
 # SEASONS (NULL = all available, or specify like c("2023-2024", "2024-2025"))
-seasons <- NULL
+if (!exists("seasons")) seasons <- NULL
 
 # WHICH STEPS TO RUN
 # Set to FALSE to skip a step (uses cached data from previous run)
-run_steps <- list(
-  step_01_load_data        = TRUE,
-  step_02_data_processing  = TRUE,
-  step_03_splint_creation  = TRUE,
-  step_04_rapm             = TRUE,
-  step_05_spm              = TRUE,
-  step_06_xrapm            = TRUE,
-  step_07_seasonal_ratings = TRUE,
-  step_08_panna_ratings    = TRUE,
-  step_09_export_ratings   = TRUE
-)
+if (!exists("run_steps")) {
+  run_steps <- list(
+    step_01_load_data        = TRUE,
+    step_02_data_processing  = TRUE,
+    step_03_splint_creation  = TRUE,
+    step_04_rapm             = TRUE,
+    step_05_spm              = TRUE,
+    step_06_xrapm            = TRUE,
+    step_07_seasonal_ratings = TRUE,
+    step_08_panna_ratings    = TRUE,
+    step_09_export_ratings   = TRUE
+  )
+}
 
 # FORCE REBUILD FROM STEP
 # Set to a step number to clear cache and rebuild from that step onwards
 # NULL = normal run (use cache), 1 = full refresh, 3 = rebuild from splints, etc.
-force_rebuild_from <- 1 # NULL
+if (!exists("force_rebuild_from")) force_rebuild_from <- 1 # NULL
 
 # PANNADATA LOCATION (relative to panna directory)
-pannadata_path <- "../pannadata/data"
+if (!exists("pannadata_path")) pannadata_path <- "../pannadata/data"
 
 # 3. Helper Functions ----
 
@@ -418,6 +421,13 @@ step_results[[8]] <- run_step("panna_ratings", 8, function() {
 
 # 14. Export to pannadata releases ----
 
+# Skip export if step 7 failed (stale/missing data)
+if (!is.null(step_results[[7]]) && step_results[[7]]$status == "FAILED") {
+  message("\nSkipping export: step 7 (seasonal_ratings) failed")
+  step_results[[9]] <- list(step = 9, name = "export_ratings", status = "SKIPPED",
+                            duration_secs = 0, duration_formatted = "0.0 seconds")
+} else {
+
 step_results[[9]] <- run_step("export_ratings", 9, function() {
   if (!requireNamespace("piggyback", quietly = TRUE)) {
     stop("Package 'piggyback' is required for export. Install with: install.packages('piggyback')")
@@ -436,42 +446,73 @@ step_results[[9]] <- run_step("export_ratings", 9, function() {
   }
 
   seasonal_results <- readRDS(ratings_file)
+
+  if (is.null(seasonal_results$seasonal_xrapm) || nrow(seasonal_results$seasonal_xrapm) == 0) {
+    stop("seasonal_xrapm is empty or NULL - cannot export. Check step 7 output.")
+  }
+
   repo <- "peteowen1/pannadata"
   tag <- "ratings-data"
 
   # Ensure release exists
-  tryCatch(
-    piggyback::pb_list(repo = repo, tag = tag),
-    error = function(e) {
-      message("Creating ratings-data release on pannadata...")
-      piggyback::pb_new_release(repo = repo, tag = tag)
-      Sys.sleep(3)
+  release_ok <- tryCatch({
+    piggyback::pb_list(repo = repo, tag = tag)
+    TRUE
+  }, error = function(e) {
+    if (grepl("not found|404|No GitHub release", e$message, ignore.case = TRUE)) {
+      FALSE
+    } else {
+      stop(sprintf("Failed to check release '%s' on %s: %s", tag, repo, e$message))
     }
-  )
+  })
+
+  if (!release_ok) {
+    message("Creating ratings-data release on pannadata...")
+    piggyback::pb_new_release(repo = repo, tag = tag)
+    Sys.sleep(3)
+  }
+
+  upload_failures <- character(0)
 
   # Upload seasonal_xrapm.parquet
   tf_xrapm <- tempfile(fileext = ".parquet")
   arrow::write_parquet(seasonal_results$seasonal_xrapm, tf_xrapm)
-  piggyback::pb_upload(tf_xrapm, repo = repo, tag = tag,
-                       name = "seasonal_xrapm.parquet")
-  message(sprintf("Uploaded seasonal_xrapm.parquet (%d rows)",
-                  nrow(seasonal_results$seasonal_xrapm)))
+  tryCatch({
+    piggyback::pb_upload(tf_xrapm, repo = repo, tag = tag,
+                         name = "seasonal_xrapm.parquet", overwrite = TRUE)
+    message(sprintf("Uploaded seasonal_xrapm.parquet (%d rows)",
+                    nrow(seasonal_results$seasonal_xrapm)))
+  }, error = function(e) {
+    upload_failures <<- c(upload_failures, "seasonal_xrapm.parquet")
+    warning(sprintf("Upload of seasonal_xrapm.parquet failed: %s", e$message), call. = FALSE)
+  })
+  unlink(tf_xrapm)
 
   # Upload seasonal_spm.parquet (may not exist in legacy cache)
   if (!is.null(seasonal_results$seasonal_spm)) {
     tf_spm <- tempfile(fileext = ".parquet")
     arrow::write_parquet(seasonal_results$seasonal_spm, tf_spm)
-    piggyback::pb_upload(tf_spm, repo = repo, tag = tag,
-                         name = "seasonal_spm.parquet")
-    message(sprintf("Uploaded seasonal_spm.parquet (%d rows)",
-                    nrow(seasonal_results$seasonal_spm)))
+    tryCatch({
+      piggyback::pb_upload(tf_spm, repo = repo, tag = tag,
+                           name = "seasonal_spm.parquet", overwrite = TRUE)
+      message(sprintf("Uploaded seasonal_spm.parquet (%d rows)",
+                      nrow(seasonal_results$seasonal_spm)))
+    }, error = function(e) {
+      upload_failures <<- c(upload_failures, "seasonal_spm.parquet")
+      warning(sprintf("Upload of seasonal_spm.parquet failed: %s", e$message), call. = FALSE)
+    })
     unlink(tf_spm)
   } else {
     warning("seasonal_spm not found in cache - re-run step 7 to generate both rating types")
   }
 
-  unlink(tf_xrapm)
+  if (length(upload_failures) > 0) {
+    stop(sprintf("Failed to upload %d file(s): %s",
+                 length(upload_failures), paste(upload_failures, collapse = ", ")))
+  }
 })
+
+} # end else (step 7 prerequisite check)
 
 # 15. Summary ----
 
