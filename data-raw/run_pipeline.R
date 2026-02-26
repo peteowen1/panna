@@ -29,7 +29,8 @@ run_steps <- list(
   step_05_spm              = TRUE,
   step_06_xrapm            = TRUE,
   step_07_seasonal_ratings = TRUE,
-  step_08_panna_ratings    = TRUE
+  step_08_panna_ratings    = TRUE,
+  step_09_export_ratings   = TRUE
 )
 
 # FORCE REBUILD FROM STEP
@@ -140,7 +141,8 @@ if (!is.null(force_rebuild_from) && force_rebuild_from >= 1 && force_rebuild_fro
     "5" = "05_spm.rds",
     "6" = "06_xrapm.rds",
     "7" = c("07_seasonal_ratings.rds", "seasonal_spm.csv", "seasonal_rapm.csv", "seasonal_xrapm.csv"),
-    "8" = c("08_panna.rds", "panna_ratings.csv")
+    "8" = c("08_panna.rds", "panna_ratings.csv"),
+    "9" = character(0)
   )
 
   files_to_delete <- unlist(cache_files[as.character(force_rebuild_from:8)])
@@ -414,7 +416,55 @@ step_results[[8]] <- run_step("panna_ratings", 8, function() {
   source("data-raw/08_panna_ratings.R", local = TRUE)
 })
 
-# 14. Summary ----
+# 14. Export to pannadata releases ----
+
+step_results[[9]] <- run_step("export_ratings", 9, function() {
+  if (!requireNamespace("piggyback", quietly = TRUE)) {
+    stop("Package 'piggyback' is required for export. Install with: install.packages('piggyback')")
+  }
+  if (!requireNamespace("arrow", quietly = TRUE)) {
+    stop("Package 'arrow' is required for export. Install with: install.packages('arrow')")
+  }
+
+  ratings_file <- file.path(cache_dir, "07_seasonal_ratings.rds")
+  if (!file.exists(ratings_file)) {
+    stop("07_seasonal_ratings.rds not found in cache - run step 7 first")
+  }
+
+  seasonal_results <- readRDS(ratings_file)
+  repo <- "peteowen1/pannadata"
+  tag <- "ratings-data"
+
+  # Ensure release exists
+  tryCatch(
+    piggyback::pb_list(repo = repo, tag = tag),
+    error = function(e) {
+      message("Creating ratings-data release on pannadata...")
+      piggyback::pb_new_release(repo = repo, tag = tag)
+      Sys.sleep(3)
+    }
+  )
+
+  # Upload seasonal_xrapm.parquet
+  tf_xrapm <- tempfile(fileext = ".parquet")
+  arrow::write_parquet(seasonal_results$seasonal_xrapm, tf_xrapm)
+  piggyback::pb_upload(tf_xrapm, repo = repo, tag = tag,
+                       name = "seasonal_xrapm.parquet")
+  message(sprintf("Uploaded seasonal_xrapm.parquet (%d rows)",
+                  nrow(seasonal_results$seasonal_xrapm)))
+
+  # Upload seasonal_spm.parquet
+  tf_spm <- tempfile(fileext = ".parquet")
+  arrow::write_parquet(seasonal_results$seasonal_spm, tf_spm)
+  piggyback::pb_upload(tf_spm, repo = repo, tag = tag,
+                       name = "seasonal_spm.parquet")
+  message(sprintf("Uploaded seasonal_spm.parquet (%d rows)",
+                  nrow(seasonal_results$seasonal_spm)))
+
+  unlink(c(tf_xrapm, tf_spm))
+})
+
+# 15. Summary ----
 
 pipeline_end <- Sys.time()
 total_duration <- difftime(pipeline_end, pipeline_start, units = "secs")
@@ -445,7 +495,6 @@ message(sprintf("  - %s", file.path(cache_dir, "07_seasonal_ratings.rds")))
 message(sprintf("  - %s", file.path(cache_dir, "seasonal_spm.csv")))
 message(sprintf("  - %s", file.path(cache_dir, "seasonal_rapm.csv")))
 message(sprintf("  - %s", file.path(cache_dir, "seasonal_xrapm.csv")))
-message(sprintf("  - %s", file.path(cache_dir, "08_panna.rds")))
-message(sprintf("  - %s", file.path(cache_dir, "panna_ratings.csv")))
+message("  - peteowen1/pannadata releases: seasonal_xrapm.parquet, seasonal_spm.parquet")
 
 message("\nDone!")

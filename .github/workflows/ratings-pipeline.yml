@@ -1,0 +1,97 @@
+name: Ratings Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: 'Force full rebuild from step 1'
+        type: boolean
+        default: false
+
+env:
+  GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
+  R_KEEP_PKG_SOURCE: yes
+
+jobs:
+  compute-ratings:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.4.0'
+          use-public-rspm: true
+
+      - name: Setup R dependencies
+        uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          cache-version: 1
+          extra-packages: |
+            any::devtools
+            any::piggyback
+            any::arrow
+            any::dplyr
+            any::tidyr
+            any::glmnet
+            any::xgboost
+            any::Matrix
+            any::data.table
+            any::DBI
+            any::duckdb
+            any::cli
+          needs: |
+            devtools
+
+      - name: Download source data from pannadata
+        run: |
+          Rscript -e "
+            devtools::load_all()
+            dest <- file.path(tempdir(), 'pannadata')
+            dir.create(dest, recursive = TRUE)
+            pb_download_source('fbref', dest = dest)
+            pannadata_dir(dest)
+            cat('pannadata_dir:', pannadata_dir(), '\n')
+            cat('Files:', length(list.files(dest, recursive = TRUE)), '\n')
+          "
+
+      - name: Run ratings pipeline
+        env:
+          PANNADATA_DIR: ${{ runner.temp }}/pannadata
+        run: |
+          Rscript -e "
+            force_rebuild <- as.logical('${{ inputs.force_rebuild }}')
+            SEASONS <- NULL
+            run_steps <- list(
+              step_01_load_data        = TRUE,
+              step_02_data_processing  = TRUE,
+              step_03_splint_creation  = TRUE,
+              step_04_rapm             = TRUE,
+              step_05_spm              = TRUE,
+              step_06_xrapm            = TRUE,
+              step_07_seasonal_ratings = TRUE,
+              step_08_panna_ratings    = FALSE,
+              step_09_export_ratings   = TRUE
+            )
+            force_rebuild_from <- if (isTRUE(force_rebuild)) 1 else NULL
+            source('data-raw/run_pipeline.R')
+          "
+
+      - name: Pipeline summary
+        run: |
+          echo "## Panna Ratings Pipeline" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Date:** $(date +'%Y-%m-%d %H:%M UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "**Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Seasonal ratings uploaded to \`peteowen1/pannadata\` release \`ratings-data\`:" >> $GITHUB_STEP_SUMMARY
+          echo "- \`seasonal_xrapm.parquet\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`seasonal_spm.parquet\`" >> $GITHUB_STEP_SUMMARY
