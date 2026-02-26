@@ -426,9 +426,13 @@ step_results[[9]] <- run_step("export_ratings", 9, function() {
     stop("Package 'arrow' is required for export. Install with: install.packages('arrow')")
   }
 
+  # Support both current and legacy cache file names
   ratings_file <- file.path(cache_dir, "07_seasonal_ratings.rds")
   if (!file.exists(ratings_file)) {
-    stop("07_seasonal_ratings.rds not found in cache - run step 7 first")
+    ratings_file <- file.path(cache_dir, "07_seasonal_xrapm.rds")
+  }
+  if (!file.exists(ratings_file)) {
+    stop("No seasonal ratings cache found - run step 7 first")
   }
 
   seasonal_results <- readRDS(ratings_file)
@@ -453,15 +457,20 @@ step_results[[9]] <- run_step("export_ratings", 9, function() {
   message(sprintf("Uploaded seasonal_xrapm.parquet (%d rows)",
                   nrow(seasonal_results$seasonal_xrapm)))
 
-  # Upload seasonal_spm.parquet
-  tf_spm <- tempfile(fileext = ".parquet")
-  arrow::write_parquet(seasonal_results$seasonal_spm, tf_spm)
-  piggyback::pb_upload(tf_spm, repo = repo, tag = tag,
-                       name = "seasonal_spm.parquet")
-  message(sprintf("Uploaded seasonal_spm.parquet (%d rows)",
-                  nrow(seasonal_results$seasonal_spm)))
+  # Upload seasonal_spm.parquet (may not exist in legacy cache)
+  if (!is.null(seasonal_results$seasonal_spm)) {
+    tf_spm <- tempfile(fileext = ".parquet")
+    arrow::write_parquet(seasonal_results$seasonal_spm, tf_spm)
+    piggyback::pb_upload(tf_spm, repo = repo, tag = tag,
+                         name = "seasonal_spm.parquet")
+    message(sprintf("Uploaded seasonal_spm.parquet (%d rows)",
+                    nrow(seasonal_results$seasonal_spm)))
+    unlink(tf_spm)
+  } else {
+    warning("seasonal_spm not found in cache - re-run step 7 to generate both rating types")
+  }
 
-  unlink(c(tf_xrapm, tf_spm))
+  unlink(tf_xrapm)
 })
 
 # 15. Summary ----
