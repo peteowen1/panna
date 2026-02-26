@@ -72,14 +72,6 @@ process_match_lineups <- function(lineups, results) {
     return(NULL)
   }
 
-  # Require data.table for speed with large datasets
-  if (!requireNamespace("data.table", quietly = TRUE)) {
-    cli::cli_abort(c(
-      "Package {.pkg data.table} is required for processing large datasets.",
-      "i" = "Install with: {.code install.packages('data.table')}"
-    ))
-  }
-
   progress_msg(sprintf("  [data.table] Processing %d lineup rows...", nrow(lineups)))
 
   dt_lineups <- data.table::as.data.table(lineups)
@@ -90,7 +82,7 @@ process_match_lineups <- function(lineups, results) {
   dt_lineups <- dt_results[dt_lineups, on = "match_url"]
 
   # Standardize column names before processing using helper
-  standardize_data_columns(dt_lineups, list(
+  dt_lineups <- standardize_data_columns(dt_lineups, list(
     team = c("squad", "team_name"),
     player_name = c("player"),
     minutes = c("min", "mins_played")
@@ -320,14 +312,6 @@ process_shooting_data <- function(shooting, results) {
     return(NULL)
   }
 
-  # Require data.table for speed with large datasets
-  if (!requireNamespace("data.table", quietly = TRUE)) {
-    cli::cli_abort(c(
-      "Package {.pkg data.table} is required for processing large datasets.",
-      "i" = "Install with: {.code install.packages('data.table')}"
-    ))
-  }
-
   progress_msg(sprintf("  [data.table] Processing %d shot rows...", nrow(shooting)))
 
   dt_shooting <- data.table::as.data.table(shooting)
@@ -386,16 +370,7 @@ process_advanced_stats <- function(stats, results, stat_type = "summary") {
     return(NULL)
   }
 
-  # Require data.table for speed with large datasets
-  if (!requireNamespace("data.table", quietly = TRUE)) {
-    cli::cli_abort(c(
-      "Package {.pkg data.table} is required for processing large datasets.",
-      "i" = "Install with: {.code install.packages('data.table')}"
-    ))
-  }
-
-  # Row count shown for debugging if needed
-  # progress_msg(sprintf("  [data.table] Processing %s: %d rows...", stat_type, nrow(stats)))
+  progress_msg(sprintf("  [data.table] Processing %s: %d rows...", stat_type, nrow(stats)))
 
   # Convert to data.table
 
@@ -407,7 +382,7 @@ process_advanced_stats <- function(stats, results, stat_type = "summary") {
   dt_stats <- dt_results[dt_stats, on = "match_url"]
 
   # Standardize column names using helper
-  standardize_data_columns(dt_stats, list(
+  dt_stats <- standardize_data_columns(dt_stats, list(
     player_name = c("player"),
     team = c("squad", "team_name")
   ))

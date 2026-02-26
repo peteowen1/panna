@@ -193,7 +193,7 @@ calculate_match_end <- function(events, shots = NULL, default_end = 91) {
   candidates <- candidates[!is.na(candidates)]
 
   if (length(candidates) == 0) {
-    return(default_end)
+    return(max(default_end, min_end))
   }
 
   max(min_end, max(candidates))
@@ -512,14 +512,14 @@ assign_players_to_splints <- function(boundaries, lineups, events, match_id) {
 
   # Calculate on/off minutes for each player
   # Starters: on at minute 0
-  # Subs: on at (90 - minutes) approximately
+  # Subs: on at (match_end - minutes) approximately
   # This is an approximation since we don't have exact sub timing
+  match_end <- max(boundaries$end_minute)
   player_timing <- match_lineups
-  # Starters come on at minute 0, subs come on at (90 - minutes_played)
-  player_timing$on_minute <- ifelse(player_timing$is_starter, 0, pmax(0, 90 - player_timing$minutes))
-  # Everyone who isn't subbed off stays until 90
+  # Starters come on at minute 0, subs come on at (match_end - minutes_played)
+  player_timing$on_minute <- ifelse(player_timing$is_starter, 0, pmax(0, match_end - player_timing$minutes))
   # Players who are subbed off: their off_minute = on_minute + minutes
-  player_timing$off_minute <- pmin(90, player_timing$on_minute + player_timing$minutes)
+  player_timing$off_minute <- pmin(match_end, player_timing$on_minute + player_timing$minutes)
   player_timing <- player_timing[, c("match_id", "team", "is_home", "player_name", "player_id", "on_minute", "off_minute"), drop = FALSE]
 
   # For each splint, determine players on pitch
@@ -720,13 +720,6 @@ create_match_splints <- function(match_id, events, lineups, shooting, results,
 #' @return List with combined splint data
 #' @export
 create_all_splints <- function(processed_data, include_goals = TRUE, verbose = TRUE) {
-  if (!requireNamespace("data.table", quietly = TRUE)) {
-    cli::cli_abort(c(
-      "Package {.pkg data.table} is required.",
-      "i" = "Install with: {.code install.packages('data.table')}"
-    ))
-  }
-
   match_ids <- unique(processed_data$results$match_id)
   n_matches <- length(match_ids)
 
@@ -1165,8 +1158,9 @@ assign_players_to_splints_fast <- function(boundaries, lineups, match_id) {
   } else {
     # Fallback: approximate from is_starter and minutes
     is_starter <- if ("is_starter" %in% names(lineups)) lineups$is_starter else TRUE
-    on_minute <- ifelse(is_starter, 0, pmax(0, 90 - lineups$minutes))
-    off_minute <- pmin(90, on_minute + lineups$minutes)
+    match_end <- max(boundaries$end_minute)
+    on_minute <- ifelse(is_starter, 0, pmax(0, match_end - lineups$minutes))
+    off_minute <- pmin(match_end, on_minute + lineups$minutes)
   }
 
   # Vectorized assignment using data.table non-equi join

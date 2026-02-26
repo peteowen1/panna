@@ -208,8 +208,8 @@ clean_player_name <- function(names) {
 #' Extracts the 8-character hex ID from an FBref player URL.
 #' Example: "/players/d080ed5e/Kylian-Mbappe" -> "d080ed5e"
 #'
-#' Note: This function is ready for use when player_href is available
-#' in scraped data. Currently player_href is not extracted during scraping.
+#' Note: player_href is extracted during FBref scraping and used in
+#' data processing to derive player IDs.
 #'
 #' @param hrefs Character vector of FBref player hrefs
 #'

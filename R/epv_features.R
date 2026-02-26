@@ -58,8 +58,8 @@ create_epv_features <- function(spadl_actions, n_prev = 3) {
   # Convert to data.table for performance
   dt <- data.table::as.data.table(spadl_actions)
 
-  # Note: Aerial actions are filtered out in convert_opta_to_spadl() due to
-  # data structure issues (end_x=0). See ENHANCEMENTS.md for future improvements.
+  # Note: Aerial actions are handled as stationary duel actions in
+  # convert_opta_to_spadl() (end coordinates set to start coordinates).
 
   # Sort by match, period, time, action_id
   data.table::setorder(dt, match_id, period_id, time_seconds, action_id)

@@ -559,9 +559,8 @@ calculate_action_epv <- function(spadl_actions, features, epv_model, xg_model = 
     dt[, epv := expected_xg]
   }
 
-  # Note: Aerial actions are filtered out in convert_opta_to_spadl() due to
-  # data structure issues (end_x=0 breaks EPV chain). See ENHANCEMENTS.md for
-  # future improvements on proper aerial credit assignment.
+  # Note: Aerial actions are handled as stationary duel actions in SPADL
+  # (end coordinates set to start coordinates via merge_duel_rows).
 
   # Sort by match and action_id
   data.table::setorder(dt, match_id, action_id)
@@ -1004,7 +1003,8 @@ assign_epv_credit <- function(spadl_with_epv, xpass_model = NULL) {
   #
   # Note: keeper_save already gets proper credit through the save handling above.
   #
-  # Note: aerials are filtered at SPADL conversion, so not included here
+  # Note: aerials are handled as stationary duels in SPADL but excluded from
+  # defensive boost since their EPV contribution is captured through duel outcomes
   defensive_action_types <- c("clearance", "interception", "tackle", "ball_recovery")
 
   defensive_idx <- which(dt$action_type %in% defensive_action_types &
@@ -1246,8 +1246,7 @@ calculate_action_type_epv <- function(spadl_with_epv) {
                        .(epv_dribbling = sum(get(credit_col), na.rm = TRUE)),
                        by = .(player_id, player_name)]
 
-  # Defending
-  # Note: aerials are filtered at SPADL conversion
+  # Defending (aerials excluded — their value is captured through duel outcomes)
   defending_epv <- dt[action_type %in% c("tackle", "interception", "clearance", "ball_recovery"),
                        .(epv_defending = sum(get(credit_col), na.rm = TRUE)),
                        by = .(player_id, player_name)]

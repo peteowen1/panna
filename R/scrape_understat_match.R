@@ -132,6 +132,7 @@ scrape_understat_fixtures <- function(league, season, completed_only = TRUE) {
 #' }
 scrape_understat_match_range <- function(start_id, end_id, league, season,
                                           delay = 3, skip_invalid = TRUE) {
+  .check_suggests("arrow", "Caching Understat data requires arrow.")
   start_id <- as.integer(start_id)
   end_id <- as.integer(end_id)
 
@@ -399,6 +400,7 @@ scrape_understat_match <- function(understat_id, league, season, save_cache = TR
   .check_suggests("rvest", "Scraping Understat requires rvest.")
   .check_suggests("jsonlite", "Scraping Understat requires jsonlite.")
   .check_suggests("stringi", "Scraping Understat requires stringi.")
+  .check_suggests("arrow", "Caching Understat data requires arrow.")
   url <- get_understat_match_url(understat_id)
 
   # Fetch HTML page for metadata and events
