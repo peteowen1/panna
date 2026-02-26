@@ -46,7 +46,8 @@ if (!exists("run_steps")) {
     step_06_fit_outcome_model        = TRUE,
     step_07_predict_fixtures         = TRUE,
     step_08_evaluate_model           = TRUE,
-    step_09_upload_predictions       = FALSE   # Opt-in: upload to GitHub
+    step_09_upload_predictions       = FALSE,  # Opt-in: upload to GitHub
+    step_10_export_blog_data         = FALSE   # Opt-in: export blog parquets
   )
 }
 
@@ -115,7 +116,7 @@ if (!dir.exists(cache_dir)) {
 }
 
 # Handle force rebuild
-if (!is.null(force_rebuild_from) && force_rebuild_from >= 1 && force_rebuild_from <= 9) {
+if (!is.null(force_rebuild_from) && force_rebuild_from >= 1 && force_rebuild_from <= 10) {
   cache_files <- list(
     "1" = "01_fixture_results.rds",
     "2" = "02_team_ratings.rds",
@@ -126,13 +127,14 @@ if (!is.null(force_rebuild_from) && force_rebuild_from >= 1 && force_rebuild_fro
     "6" = "06_outcome_model.rds",
     "7" = c("07_predictions.rds", "predictions.csv", "predictions.parquet"),
     "8" = "08_evaluation.rds",
-    "9" = character(0)
+    "9" = character(0),
+    "10" = c("panna_ratings.parquet", "match_predictions.parquet")
   )
 
   # Build list of steps to clear: numeric steps >= force_rebuild_from + fractional steps
-  steps_to_clear <- as.character(force_rebuild_from:9)
+  steps_to_clear <- as.character(force_rebuild_from:10)
   # Include fractional steps (e.g., "2b") when their parent step is being rebuilt
-  fractional_steps <- setdiff(names(cache_files), as.character(1:9))
+  fractional_steps <- setdiff(names(cache_files), as.character(1:10))
   for (fs in fractional_steps) {
     parent <- as.numeric(sub("[a-z]+$", "", fs))
     if (!is.na(parent) && parent >= force_rebuild_from) {
@@ -232,7 +234,13 @@ step_results[[9]] <- run_step("upload_predictions", 9, function() {
   source("data-raw/match-predictions-opta/09_upload_predictions.R", local = TRUE)
 })
 
-# 14. Summary ----
+# 14. Step 10: Export Blog Data ----
+
+step_results[[10]] <- run_step("export_blog_data", 10, function() {
+  source("data-raw/match-predictions-opta/10_export_blog_data.R", local = TRUE)
+})
+
+# 15. Summary ----
 
 pipeline_end <- Sys.time()
 total_duration <- difftime(pipeline_end, pipeline_start, units = "secs")
@@ -263,5 +271,7 @@ message(sprintf("  - %s", file.path(cache_dir, "07_predictions.rds")))
 message(sprintf("  - %s", file.path(cache_dir, "predictions.csv")))
 message(sprintf("  - %s", file.path(cache_dir, "predictions.parquet")))
 message(sprintf("  - %s", file.path(cache_dir, "08_evaluation.rds")))
+message(sprintf("  - %s", file.path(cache_dir, "panna_ratings.parquet")))
+message(sprintf("  - %s", file.path(cache_dir, "match_predictions.parquet")))
 
 message("\nDone!")
