@@ -190,13 +190,13 @@ compute_position_multipliers <- function(match_stats, stat_cols = NULL) {
 # Stat classification
 # ============================================================================
 
-#' Classify stats into rate vs efficiency categories
+#' Get efficiency stat denominator mapping
 #'
-#' Per-90 rate stats are weighted by minutes; efficiency stats (success rates,
-#' conversion rates) are weighted by their denominator (attempts). This function
-#' returns the classification and the denominator column for efficiency stats.
+#' Returns a named list mapping efficiency stat column names to their
+#' denominator column names. Stats not in this list are treated as per-90
+#' rate stats (weighted by minutes).
 #'
-#' @return A data.table with columns: stat, category, denominator
+#' @return A named list mapping efficiency stat names to denominator column names
 #' @keywords internal
 .classify_skill_stats <- function() {
   # Efficiency stats: column name -> denominator column name
@@ -268,7 +268,7 @@ compute_position_multipliers <- function(match_stats, stat_cols = NULL) {
 #' @param decay_params Named list of decay rates and prior strengths. Output of
 #'   \code{get_default_decay_params()} or custom. Supports per-stat lambda
 #'   overrides (named by stat column). Prior strength via \code{prior_90s}
-#'   (Gamma, default 10) and \code{prior_attempts} (Beta, default 50).
+#'   (Gamma, default 2) and \code{prior_attempts} (Beta, default 50).
 #' @param target_date Date object. Only matches before this date are used.
 #'   If NULL, uses all available data.
 #' @param min_weighted_90s Not used for shrinkage (handled by Bayesian prior).
@@ -277,7 +277,7 @@ compute_position_multipliers <- function(match_stats, stat_cols = NULL) {
 #'   auto-detects all _p90 columns plus efficiency columns.
 #'
 #' @return A data.table with one row per player containing estimated skill
-#'   values for each stat, plus player_id, player_name, position, and
+#'   values for each stat, plus player_id, player_name, primary_position, and
 #'   weighted_90s (effective sample size in decay-weighted 90-minute units).
 #'
 #' @export
@@ -1180,7 +1180,7 @@ backtest_skill_predictions <- function(match_stats, decay_params = NULL,
 #' @param adjust_league Logical, apply cross-league adjustment (default TRUE).
 #' @param big5_leagues Character vector of Big 5 league codes for reference level.
 #'
-#' @return The input data.table with stat columns adjusted in place.
+#' @return A copy of the input data.table with stat columns adjusted.
 #'
 #' @export
 adjust_match_stats_for_context <- function(match_stats, elo_ratings = NULL,
