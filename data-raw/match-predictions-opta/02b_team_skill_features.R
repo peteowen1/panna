@@ -10,12 +10,9 @@
 
 # 1. Setup ----
 
-library(dplyr)
-devtools::load_all()
-
 # 2. Configuration ----
 
-cache_dir <- file.path("data-raw", "cache-predictions-opta")
+if (!exists("cache_dir")) cache_dir <- file.path("data-raw", "cache-predictions-opta")
 skill_cache_dir <- file.path("data-raw", "cache-skills")
 output_path <- file.path(cache_dir, "02b_team_skill_features.rds")
 
@@ -34,9 +31,10 @@ match_stats_path <- file.path(skill_cache_dir, "01_match_stats.rds")
 decay_params_path <- file.path(skill_cache_dir, "02b_decay_params.rds")
 
 if (!file.exists(match_stats_path)) {
-  message("  Skill match stats not found - skipping team skill features")
-  message("  Run the estimated skills pipeline first")
+  warning("Skill match stats not found - model will train WITHOUT skill features. ",
+          "Run the estimated skills pipeline first.", call. = FALSE)
   team_skill_features <- NULL
+  saveRDS(team_skill_features, output_path)
   return(invisible(NULL))
 }
 
@@ -54,7 +52,8 @@ if (file.exists(rapm_cache)) {
   raw_data <- readRDS(rapm_cache)
   lineups <- raw_data$lineups
 } else {
-  message("  RAPM cache not found for lineups - skipping team skill features")
+  warning("RAPM cache not found for lineups - model will train WITHOUT skill features.",
+          call. = FALSE)
   team_skill_features <- NULL
   saveRDS(team_skill_features, output_path)
   return(invisible(NULL))
@@ -72,6 +71,7 @@ message(sprintf("  Match stats rows: %d", nrow(match_stats)))
 # and use those for all matches in that season
 sey_values <- sort(unique(played$season_end_year))
 all_skill_features <- list()
+n_failed <- 0L
 
 for (sey in sey_values) {
   # Use season START (previous July) to avoid data leakage: skills estimated
@@ -101,8 +101,14 @@ for (sey in sey_values) {
       message(sprintf("    SEY %d: %d matches with skill features", sey, nrow(tr)))
     }
   }, error = function(e) {
+    n_failed <<- n_failed + 1L
     message(sprintf("    SEY %d ERROR: %s", sey, e$message))
   })
+}
+
+if (n_failed > 0) {
+  warning(sprintf("%d/%d season-end-years failed skill estimation.",
+                  n_failed, length(sey_values)), call. = FALSE)
 }
 
 # 7. Handle Fixtures ----
@@ -148,7 +154,8 @@ if (nrow(upcoming) > 0) {
       }
     }
   }, error = function(e) {
-    message(sprintf("  Fixture skills error: %s", e$message))
+    warning(sprintf("Fixture skills failed: %s (using seasonal only)", e$message),
+            call. = FALSE)
   })
 }
 
@@ -159,7 +166,8 @@ if (length(all_skill_features) > 0) {
   message(sprintf("\nTotal: %d matches with team skill features (%d columns)",
                   nrow(team_skill_features), ncol(team_skill_features)))
 } else {
-  message("\nNo team skill features computed")
+  warning("No team skill features computed - model will train WITHOUT skill features.",
+          call. = FALSE)
   team_skill_features <- NULL
 }
 

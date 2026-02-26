@@ -69,6 +69,7 @@ jobs:
         run: |
           Rscript -e "
             force_rebuild <- as.logical('${{ inputs.force_rebuild }}')
+            pannadata_path <- Sys.getenv('PANNADATA_DIR', '../pannadata/data')
             SEASONS <- NULL
             run_steps <- list(
               step_01_load_data        = TRUE,

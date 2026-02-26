@@ -4,14 +4,9 @@
 # Uploads predictions.parquet and predictions.csv to the
 # predictions-latest release on peteowen1/pannadata using gh CLI.
 
-# 1. Setup ----
+# 1. Configuration ----
 
-library(dplyr)
-devtools::load_all()
-
-# 2. Configuration ----
-
-cache_dir <- file.path("data-raw", "cache-predictions-opta")
+if (!exists("cache_dir")) cache_dir <- file.path("data-raw", "cache-predictions-opta")
 repo <- "peteowen1/pannadata"
 tag <- "predictions-latest"
 
@@ -25,8 +20,7 @@ message("\n=== Uploading Predictions to GitHub ===\n")
 # Check gh CLI is available
 gh_check <- tryCatch(
   system2("gh", "--version", stdout = TRUE, stderr = TRUE),
-  error = function(e) NULL,
-  warning = function(w) NULL
+  error = function(e) NULL
 )
 if (is.null(gh_check)) {
   stop("'gh' CLI is not installed or not on PATH. Install from https://cli.github.com/")

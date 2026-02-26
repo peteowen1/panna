@@ -4,12 +4,7 @@
 # Produces two parquet files and uploads them to the blog-latest
 # release on peteowen1/pannadata for the blog to consume directly.
 
-# 1. Setup ----
-
-library(dplyr)
-devtools::load_all()
-
-# 2. Configuration ----
+# 1. Configuration ----
 
 if (!exists("cache_dir")) cache_dir <- file.path("data-raw", "cache-predictions-opta")
 if (!dir.exists(cache_dir)) dir.create(cache_dir, recursive = TRUE)

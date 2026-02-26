@@ -502,7 +502,7 @@ predict_epv_probs <- function(model, features) {
 #' @param features EPV features from create_epv_features()
 #' @param epv_model Fitted EPV model from fit_epv_model()
 #' @param xg_model Optional pre-trained xG model from fit_xg_model(). If NULL,
-#'   attempts to load from pannadata/opta/models/xg_model.rds. Falls back to
+#'   attempts to load from pannadata/data/opta/models/xg_model.rds. Falls back to
 #'   position-based estimate if no model available.
 #'
 #' @return SPADL actions with EPV columns added:
@@ -1277,7 +1277,7 @@ calculate_action_type_epv <- function(spadl_with_epv) {
 #' Saves trained EPV model to disk.
 #'
 #' @param epv_model EPV model from fit_epv_model()
-#' @param path Directory to save model. If NULL, uses pannadata/opta/models/
+#' @param path Directory to save model. If NULL, uses pannadata/data/opta/models/
 #'
 #' @return Invisibly returns path
 #' @export
@@ -1300,7 +1300,7 @@ save_epv_model <- function(epv_model, path = NULL) {
 #'
 #' Loads pre-trained EPV model from disk.
 #'
-#' @param path Directory containing model. If NULL, uses pannadata/opta/models/
+#' @param path Directory containing model. If NULL, uses pannadata/data/opta/models/
 #'
 #' @return EPV model
 #' @export
@@ -1333,7 +1333,7 @@ load_epv_model <- function(path = NULL) {
 #'
 #' @param repo GitHub repository (default: peteowen1/pannadata)
 #' @param tag Release tag (default: epv-models)
-#' @param dest Destination directory. If NULL, uses pannadata/opta/models/
+#' @param dest Destination directory. If NULL, uses pannadata/data/opta/models/
 #'
 #' @return Invisibly returns path to models
 #' @export

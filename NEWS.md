@@ -73,7 +73,6 @@ Major expansion: Opta is now the primary data source with full pipeline support 
 * `load_opta_events()` - Goals, cards, substitutions
 * `list_opta_leagues()` - Automatic league discovery from data catalog
 * `load_opta_match_stats()` - Load pre-computed match-level statistics
-* `suggest_opta_seasons()` - Suggest available seasons for a league
 
 ## Other Improvements
 
