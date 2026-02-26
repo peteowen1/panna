@@ -40,7 +40,8 @@ if (!exists("run_steps")) {
     step_05_spm              = TRUE,
     step_06_xrapm            = TRUE,
     step_07_seasonal_ratings = TRUE,
-    step_08_panna_ratings    = TRUE
+    step_08_panna_ratings    = TRUE,
+    step_09_export_ratings   = TRUE
   )
 }
 
@@ -103,7 +104,7 @@ if (!dir.exists(cache_dir)) {
 }
 
 # Handle force rebuild
-if (!is.null(force_rebuild_from) && force_rebuild_from >= 1 && force_rebuild_from <= 8) {
+if (!is.null(force_rebuild_from) && force_rebuild_from >= 1 && force_rebuild_from <= 9) {
   cache_files <- list(
     "1" = c("01_raw_data.rds", "01_config.rds"),
     "2" = "02_processed_data.rds",
@@ -112,10 +113,11 @@ if (!is.null(force_rebuild_from) && force_rebuild_from >= 1 && force_rebuild_fro
     "5" = "05_spm.rds",
     "6" = "06_xrapm.rds",
     "7" = c("07_seasonal_ratings.rds", "seasonal_spm.csv", "seasonal_rapm.csv", "seasonal_xrapm.csv"),
-    "8" = c("08_panna.rds", "panna_ratings.csv")
+    "8" = c("08_panna.rds", "panna_ratings.csv"),
+    "9" = character(0)
   )
 
-  files_to_delete <- unlist(cache_files[as.character(force_rebuild_from:8)])
+  files_to_delete <- unlist(cache_files[as.character(force_rebuild_from:9)])
   deleted <- 0
   for (f in files_to_delete) {
     fpath <- file.path(cache_dir, f)
@@ -193,7 +195,20 @@ step_results[[8]] <- run_step("panna_ratings", 8, function() {
   source("data-raw/player-ratings-opta/08_panna_ratings.R", local = TRUE)
 })
 
-# 13. Summary ----
+# 13. Step 9: Export Ratings ----
+
+# Skip export if step 7 failed (stale/missing data)
+if (!is.null(step_results[[7]]) && step_results[[7]]$status == "FAILED") {
+  message("\nSkipping export: step 7 (seasonal_ratings) failed")
+  step_results[[9]] <- list(step = 9, name = "export_ratings", status = "SKIPPED",
+                            duration_secs = 0, duration_formatted = "0.0 seconds")
+} else {
+  step_results[[9]] <- run_step("export_ratings", 9, function() {
+    source("data-raw/player-ratings-opta/09_export_ratings.R", local = TRUE)
+  })
+}
+
+# 14. Summary ----
 
 pipeline_end <- Sys.time()
 total_duration <- difftime(pipeline_end, pipeline_start, units = "secs")
@@ -222,5 +237,6 @@ message(sprintf("%-25s %-10s %s", "TOTAL", "", format_duration(as.numeric(total_
 message("\nOutput files:")
 message(sprintf("  - %s", file.path(cache_dir, "08_panna.rds")))
 message(sprintf("  - %s", file.path(cache_dir, "panna_ratings.csv")))
+message("  - peteowen1/pannadata releases: seasonal_xrapm.parquet, seasonal_spm.parquet")
 
 message("\nDone!")

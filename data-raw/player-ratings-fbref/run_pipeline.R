@@ -7,38 +7,42 @@ library(dplyr)
 devtools::load_all()
 
 # 2. Configuration ----
+# Use if (!exists(...)) so test scripts/CI can override before sourcing
 
 # DATA SOURCE: "pannadata" only (worldfootballR removed)
-data_source <- "pannadata"
+if (!exists("data_source")) data_source <- "pannadata"
 
 # LEAGUES TO INCLUDE
 # Options: "ENG", "ESP", "GER", "ITA", "FRA" (Big 5)
 #          "UCL", "UEL" (European competitions)
-leagues <- c("ENG", "ESP", "GER", "ITA", "FRA", "UCL", "UEL")
+if (!exists("leagues")) leagues <- c("ENG", "ESP", "GER", "ITA", "FRA", "UCL", "UEL")
 
 # SEASONS (NULL = all available, or specify like c("2023-2024", "2024-2025"))
-seasons <- NULL
+if (!exists("seasons")) seasons <- NULL
 
 # WHICH STEPS TO RUN
 # Set to FALSE to skip a step (uses cached data from previous run)
-run_steps <- list(
-  step_01_load_data        = TRUE,
-  step_02_data_processing  = TRUE,
-  step_03_splint_creation  = TRUE,
-  step_04_rapm             = TRUE,
-  step_05_spm              = TRUE,
-  step_06_xrapm            = TRUE,
-  step_07_seasonal_ratings = TRUE,
-  step_08_panna_ratings    = TRUE
-)
+if (!exists("run_steps")) {
+  run_steps <- list(
+    step_01_load_data        = TRUE,
+    step_02_data_processing  = TRUE,
+    step_03_splint_creation  = TRUE,
+    step_04_rapm             = TRUE,
+    step_05_spm              = TRUE,
+    step_06_xrapm            = TRUE,
+    step_07_seasonal_ratings = TRUE,
+    step_08_panna_ratings    = TRUE,
+    step_09_export_ratings   = TRUE
+  )
+}
 
 # FORCE REBUILD FROM STEP
 # Set to a step number to clear cache and rebuild from that step onwards
 # NULL = normal run (use cache), 1 = full refresh, 3 = rebuild from splints, etc.
-force_rebuild_from <- 1 # NULL
+if (!exists("force_rebuild_from")) force_rebuild_from <- 1 # NULL
 
 # PANNADATA LOCATION (relative to panna directory)
-pannadata_path <- "../pannadata/data"
+if (!exists("pannadata_path")) pannadata_path <- "../pannadata/data"
 
 # 3. Helper Functions ----
 
@@ -140,7 +144,8 @@ if (!is.null(force_rebuild_from) && force_rebuild_from >= 1 && force_rebuild_fro
     "5" = "05_spm.rds",
     "6" = "06_xrapm.rds",
     "7" = c("07_seasonal_ratings.rds", "seasonal_spm.csv", "seasonal_rapm.csv", "seasonal_xrapm.csv"),
-    "8" = c("08_panna.rds", "panna_ratings.csv")
+    "8" = c("08_panna.rds", "panna_ratings.csv"),
+    "9" = character(0)
   )
 
   files_to_delete <- unlist(cache_files[as.character(force_rebuild_from:8)])
@@ -375,46 +380,141 @@ step_results[[1]] <- run_step("load_data", 1, function() {
 # 7. Step 2: Data Processing ----
 
 step_results[[2]] <- run_step("data_processing", 2, function() {
-  source("data-raw/02_data_processing.R", local = TRUE)
+  source("data-raw/player-ratings-fbref/02_data_processing.R", local = TRUE)
 })
 
 # 8. Step 3: Splint Creation ----
 
 step_results[[3]] <- run_step("splint_creation", 3, function() {
-  source("data-raw/03_splint_creation.R", local = TRUE)
+  source("data-raw/player-ratings-fbref/03_splint_creation.R", local = TRUE)
 })
 
 # 9. Step 4: RAPM ----
 
 step_results[[4]] <- run_step("rapm", 4, function() {
-  source("data-raw/04_rapm.R", local = TRUE)
+  source("data-raw/player-ratings-fbref/04_rapm.R", local = TRUE)
 })
 
 # 10. Step 5: SPM ----
 
 step_results[[5]] <- run_step("spm", 5, function() {
-  source("data-raw/05_spm.R", local = TRUE)
+  source("data-raw/player-ratings-fbref/05_spm.R", local = TRUE)
 })
 
 # 11. Step 6: xRAPM ----
 
 step_results[[6]] <- run_step("xrapm", 6, function() {
-  source("data-raw/06_xrapm.R", local = TRUE)
+  source("data-raw/player-ratings-fbref/06_xrapm.R", local = TRUE)
 })
 
 # 12. Step 7: Seasonal Ratings (SPM, RAPM, xRAPM) ----
 
 step_results[[7]] <- run_step("seasonal_ratings", 7, function() {
-  source("data-raw/07_seasonal_ratings.R", local = TRUE)
+  source("data-raw/player-ratings-fbref/07_seasonal_ratings.R", local = TRUE)
 })
 
 # 13. Step 8: Final Ratings ----
 
 step_results[[8]] <- run_step("panna_ratings", 8, function() {
-  source("data-raw/08_panna_ratings.R", local = TRUE)
+  source("data-raw/player-ratings-fbref/08_panna_ratings.R", local = TRUE)
 })
 
-# 14. Summary ----
+# 14. Export to pannadata releases ----
+
+# Skip export if step 7 failed (stale/missing data)
+if (!is.null(step_results[[7]]) && step_results[[7]]$status == "FAILED") {
+  message("\nSkipping export: step 7 (seasonal_ratings) failed")
+  step_results[[9]] <- list(step = 9, name = "export_ratings", status = "SKIPPED",
+                            duration_secs = 0, duration_formatted = "0.0 seconds")
+} else {
+
+step_results[[9]] <- run_step("export_ratings", 9, function() {
+  if (!requireNamespace("piggyback", quietly = TRUE)) {
+    stop("Package 'piggyback' is required for export. Install with: install.packages('piggyback')")
+  }
+  if (!requireNamespace("arrow", quietly = TRUE)) {
+    stop("Package 'arrow' is required for export. Install with: install.packages('arrow')")
+  }
+
+  # Support both current and legacy cache file names
+  ratings_file <- file.path(cache_dir, "07_seasonal_ratings.rds")
+  if (!file.exists(ratings_file)) {
+    ratings_file <- file.path(cache_dir, "07_seasonal_xrapm.rds")
+  }
+  if (!file.exists(ratings_file)) {
+    stop("No seasonal ratings cache found - run step 7 first")
+  }
+
+  seasonal_results <- readRDS(ratings_file)
+
+  if (is.null(seasonal_results$seasonal_xrapm) || nrow(seasonal_results$seasonal_xrapm) == 0) {
+    stop("seasonal_xrapm is empty or NULL - cannot export. Check step 7 output.")
+  }
+
+  repo <- "peteowen1/pannadata"
+  tag <- "ratings-data"
+
+  # Ensure release exists
+  release_ok <- tryCatch({
+    piggyback::pb_list(repo = repo, tag = tag)
+    TRUE
+  }, error = function(e) {
+    if (grepl("not found|404|No GitHub release", e$message, ignore.case = TRUE)) {
+      FALSE
+    } else {
+      stop(sprintf("Failed to check release '%s' on %s: %s", tag, repo, e$message))
+    }
+  })
+
+  if (!release_ok) {
+    message("Creating ratings-data release on pannadata...")
+    piggyback::pb_new_release(repo = repo, tag = tag)
+    Sys.sleep(3)
+  }
+
+  upload_failures <- character(0)
+
+  # Upload seasonal_xrapm.parquet
+  tf_xrapm <- tempfile(fileext = ".parquet")
+  arrow::write_parquet(seasonal_results$seasonal_xrapm, tf_xrapm)
+  tryCatch({
+    piggyback::pb_upload(tf_xrapm, repo = repo, tag = tag,
+                         name = "seasonal_xrapm.parquet", overwrite = TRUE)
+    message(sprintf("Uploaded seasonal_xrapm.parquet (%d rows)",
+                    nrow(seasonal_results$seasonal_xrapm)))
+  }, error = function(e) {
+    upload_failures <<- c(upload_failures, "seasonal_xrapm.parquet")
+    warning(sprintf("Upload of seasonal_xrapm.parquet failed: %s", e$message), call. = FALSE)
+  })
+  unlink(tf_xrapm)
+
+  # Upload seasonal_spm.parquet (may not exist in legacy cache)
+  if (!is.null(seasonal_results$seasonal_spm)) {
+    tf_spm <- tempfile(fileext = ".parquet")
+    arrow::write_parquet(seasonal_results$seasonal_spm, tf_spm)
+    tryCatch({
+      piggyback::pb_upload(tf_spm, repo = repo, tag = tag,
+                           name = "seasonal_spm.parquet", overwrite = TRUE)
+      message(sprintf("Uploaded seasonal_spm.parquet (%d rows)",
+                      nrow(seasonal_results$seasonal_spm)))
+    }, error = function(e) {
+      upload_failures <<- c(upload_failures, "seasonal_spm.parquet")
+      warning(sprintf("Upload of seasonal_spm.parquet failed: %s", e$message), call. = FALSE)
+    })
+    unlink(tf_spm)
+  } else {
+    warning("seasonal_spm not found in cache - re-run step 7 to generate both rating types")
+  }
+
+  if (length(upload_failures) > 0) {
+    stop(sprintf("Failed to upload %d file(s): %s",
+                 length(upload_failures), paste(upload_failures, collapse = ", ")))
+  }
+})
+
+} # end else (step 7 prerequisite check)
+
+# 15. Summary ----
 
 pipeline_end <- Sys.time()
 total_duration <- difftime(pipeline_end, pipeline_start, units = "secs")
@@ -445,7 +545,6 @@ message(sprintf("  - %s", file.path(cache_dir, "07_seasonal_ratings.rds")))
 message(sprintf("  - %s", file.path(cache_dir, "seasonal_spm.csv")))
 message(sprintf("  - %s", file.path(cache_dir, "seasonal_rapm.csv")))
 message(sprintf("  - %s", file.path(cache_dir, "seasonal_xrapm.csv")))
-message(sprintf("  - %s", file.path(cache_dir, "08_panna.rds")))
-message(sprintf("  - %s", file.path(cache_dir, "panna_ratings.csv")))
+message("  - peteowen1/pannadata releases: seasonal_xrapm.parquet, seasonal_spm.parquet")
 
 message("\nDone!")

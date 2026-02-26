@@ -2,9 +2,9 @@
 # Benchmark key pipeline functions to identify bottlenecks
 #
 # Usage:
-#   Rscript data-raw/profile_pipeline.R
+#   Rscript data-raw/analysis/profile_pipeline.R
 #   # Or with profvis (interactive):
-#   source("data-raw/profile_pipeline.R")
+#   source("data-raw/analysis/profile_pipeline.R")
 
 # 1. Setup ----
 

@@ -193,7 +193,7 @@ fit_panna_model <- function(splint_data, player_features, min_minutes = 180,
 #' To generate ratings, run one of the pipeline scripts:
 #' \itemize{
 #'   \item Opta (15 leagues): \code{source("data-raw/player-ratings-opta/run_pipeline_opta.R")}
-#'   \item FBref (Big 5): \code{source("data-raw/player-ratings/run_pipeline.R")}
+#'   \item FBref (Big 5): \code{source("data-raw/player-ratings-fbref/run_pipeline.R")}
 #' }
 #'
 #' @param panna_model Fitted panna model from \code{\link{fit_panna_model}}.
