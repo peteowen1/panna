@@ -271,7 +271,9 @@ message(sprintf("  - %s", file.path(cache_dir, "07_predictions.rds")))
 message(sprintf("  - %s", file.path(cache_dir, "predictions.csv")))
 message(sprintf("  - %s", file.path(cache_dir, "predictions.parquet")))
 message(sprintf("  - %s", file.path(cache_dir, "08_evaluation.rds")))
-message(sprintf("  - %s", file.path(cache_dir, "panna_ratings.parquet")))
-message(sprintf("  - %s", file.path(cache_dir, "match_predictions.parquet")))
+if (isTRUE(run_steps$step_10_export_blog_data)) {
+  message(sprintf("  - %s", file.path(cache_dir, "panna_ratings.parquet")))
+  message(sprintf("  - %s", file.path(cache_dir, "match_predictions.parquet")))
+}
 
 message("\nDone!")
