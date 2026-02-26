@@ -260,4 +260,4 @@ for (season in names(sort(unique(raw_data$results$season)))) {
 }
 
 message("\nData saved to: data-raw/cache/01_raw_data.rds")
-message("Next step: source('data-raw/02_data_processing.R')")
+message("Next step: source('data-raw/player-ratings-fbref/02_data_processing.R')")

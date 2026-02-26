@@ -82,7 +82,7 @@ jobs:
               step_09_export_ratings   = TRUE
             )
             force_rebuild_from <- if (isTRUE(force_rebuild)) 1 else NULL
-            source('data-raw/run_pipeline.R', chdir = FALSE)
+            source('data-raw/player-ratings-fbref/run_pipeline.R', chdir = FALSE)
           "
 
       - name: Pipeline summary
