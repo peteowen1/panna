@@ -12,6 +12,7 @@ devtools::load_all()
 # 2. Configuration ----
 
 if (!exists("cache_dir")) cache_dir <- file.path("data-raw", "cache-predictions-opta")
+if (!dir.exists(cache_dir)) dir.create(cache_dir, recursive = TRUE)
 if (!exists("use_skill_ratings")) use_skill_ratings <- TRUE
 repo <- "peteowen1/pannadata"
 tag <- "blog-latest"
@@ -33,6 +34,7 @@ if (isTRUE(use_skill_ratings) && file.exists(skill_ratings_path)) {
 } else if (file.exists(raw_ratings_path)) {
   ratings_path <- raw_ratings_path
   if (isTRUE(use_skill_ratings)) {
+    warning("Skill ratings not found. Falling back to raw-stat ratings.", call. = FALSE, immediate. = TRUE)
     message("  USING: RAW-STAT ratings (FALLBACK - skill ratings not found)")
   } else {
     message("  USING: RAW-STAT ratings (use_skill_ratings = FALSE)")
@@ -42,6 +44,11 @@ if (isTRUE(use_skill_ratings) && file.exists(skill_ratings_path)) {
 }
 
 seasonal_results <- readRDS(ratings_path)
+if (!is.list(seasonal_results) ||
+    is.null(seasonal_results$seasonal_xrapm) ||
+    is.null(seasonal_results$seasonal_spm)) {
+  stop(sprintf("Ratings cache at '%s' has unexpected structure. Rebuild the ratings pipeline.", ratings_path))
+}
 latest_season <- max(seasonal_results$seasonal_xrapm$season_end_year)
 
 message(sprintf("  Latest season end year: %d", latest_season))
