@@ -330,22 +330,12 @@ Regularized Adjusted Plus-Minus model
 
 - [`create_all_splints()`](https://peteowen1.github.io/panna/reference/create_all_splints.md)
   : Create splints for all matches
-- [`create_match_splints()`](https://peteowen1.github.io/panna/reference/create_match_splints.md)
-  : Create splints for a single match
-- [`create_splint_boundaries()`](https://peteowen1.github.io/panna/reference/create_splint_boundaries.md)
-  : Create splint boundaries
-- [`assign_players_to_splints()`](https://peteowen1.github.io/panna/reference/assign_players_to_splints.md)
-  : Assign players to splints
-- [`calculate_splint_npxgd()`](https://peteowen1.github.io/panna/reference/calculate_splint_npxgd.md)
-  : Calculate splint-level xG differential
 - [`create_rapm_design_matrix()`](https://peteowen1.github.io/panna/reference/create_rapm_design_matrix.md)
   : Create RAPM design matrix (new structure)
 - [`fit_rapm()`](https://peteowen1.github.io/panna/reference/fit_rapm.md)
   : Fit RAPM model
 - [`fit_rapm_with_prior()`](https://peteowen1.github.io/panna/reference/fit_rapm_with_prior.md)
   : Fit RAPM with SPM prior (xRAPM)
-- [`extract_rapm_coefficients()`](https://peteowen1.github.io/panna/reference/extract_rapm_coefficients.md)
-  : Extract RAPM coefficients
 - [`extract_rapm_ratings()`](https://peteowen1.github.io/panna/reference/extract_rapm_ratings.md)
   : Extract RAPM ratings from fitted model
 
@@ -355,8 +345,6 @@ Statistical Plus-Minus model
 
 - [`aggregate_player_stats()`](https://peteowen1.github.io/panna/reference/aggregate_player_stats.md)
   : Aggregate player statistics to per-90 rates
-- [`aggregate_player_season_stats()`](https://peteowen1.github.io/panna/reference/aggregate_player_season_stats.md)
-  : Aggregate player season stats
 - [`fit_spm_model()`](https://peteowen1.github.io/panna/reference/fit_spm_model.md)
   : Fit SPM model
 - [`fit_spm_xgb()`](https://peteowen1.github.io/panna/reference/fit_spm_xgb.md)
@@ -365,16 +353,8 @@ Statistical Plus-Minus model
   : Calculate SPM ratings for all players
 - [`calculate_spm_ratings_xgb()`](https://peteowen1.github.io/panna/reference/calculate_spm_ratings_xgb.md)
   : Calculate SPM ratings using XGBoost model
-- [`create_spm_prior()`](https://peteowen1.github.io/panna/reference/create_spm_prior.md)
-  : Create SPM prior vector for RAPM
-- [`build_prior_vector()`](https://peteowen1.github.io/panna/reference/build_prior_vector.md)
-  : Build prior vector for RAPM from SPM predictions
-- [`extract_spm_coefficients()`](https://peteowen1.github.io/panna/reference/extract_spm_coefficients.md)
-  : Extract SPM coefficients
 - [`get_spm_feature_importance()`](https://peteowen1.github.io/panna/reference/get_spm_feature_importance.md)
   : Get top SPM feature importance
-- [`prepare_spm_regression_data()`](https://peteowen1.github.io/panna/reference/prepare_spm_regression_data.md)
-  : Prepare SPM regression data
 
 ## SPM Pipeline - Opta
 
@@ -414,22 +394,12 @@ Rating decomposition and analysis
   : Split O/D contributions from existing ratings
 - [`calculate_od_panna()`](https://peteowen1.github.io/panna/reference/calculate_od_panna.md)
   : Calculate O-panna and D-panna
-- [`extract_od_rapm_coefficients()`](https://peteowen1.github.io/panna/reference/extract_od_rapm_coefficients.md)
-  : Extract offensive/defensive RAPM coefficients
-- [`calculate_offensive_spm()`](https://peteowen1.github.io/panna/reference/calculate_offensive_spm.md)
-  : Calculate offensive SPM
-- [`calculate_defensive_spm()`](https://peteowen1.github.io/panna/reference/calculate_defensive_spm.md)
-  : Calculate defensive SPM
-- [`calculate_spm_blend()`](https://peteowen1.github.io/panna/reference/calculate_spm_blend.md)
-  : Calculate blended SPM ratings from Elastic Net and XGBoost
 - [`categorize_player_profile()`](https://peteowen1.github.io/panna/reference/categorize_player_profile.md)
   : Categorize player profile
 - [`get_top_offensive()`](https://peteowen1.github.io/panna/reference/get_top_offensive.md)
   : Get top offensive players
 - [`get_top_defensive()`](https://peteowen1.github.io/panna/reference/get_top_defensive.md)
   : Get top defensive players
-- [`prepare_od_scatter_data()`](https://peteowen1.github.io/panna/reference/prepare_od_scatter_data.md)
-  : Create O/D scatter plot data
 - [`visualize_od_scatter()`](https://peteowen1.github.io/panna/reference/visualize_od_scatter.md)
   : Visualize O/D scatter
 
@@ -441,12 +411,6 @@ Action-level player valuation from Opta event data
   : Convert Opta Match Events to SPADL Format
 - [`create_possession_chains()`](https://peteowen1.github.io/panna/reference/create_possession_chains.md)
   : Create Possession Chains from SPADL Actions
-- [`classify_chain_outcomes()`](https://peteowen1.github.io/panna/reference/classify_chain_outcomes.md)
-  : Classify Chain Outcomes
-- [`label_actions_with_outcomes()`](https://peteowen1.github.io/panna/reference/label_actions_with_outcomes.md)
-  : Label Actions with Chain Outcomes
-- [`create_epv_features()`](https://peteowen1.github.io/panna/reference/create_epv_features.md)
-  : Create Game State Features for EPV
 - [`fit_epv_model()`](https://peteowen1.github.io/panna/reference/fit_epv_model.md)
   : Fit EPV Model
 - [`calculate_action_epv()`](https://peteowen1.github.io/panna/reference/calculate_action_epv.md)
@@ -543,47 +507,12 @@ XGBoost Poisson/multinomial match outcome prediction
 - [`calibration_table()`](https://peteowen1.github.io/panna/reference/calibration_table.md)
   : Create Calibration Table
 
-## Data Processing
-
-Raw data processing and cleaning
-
-- [`process_all_data()`](https://peteowen1.github.io/panna/reference/process_all_data.md)
-  : Process all raw data
-- [`process_match_results()`](https://peteowen1.github.io/panna/reference/process_match_results.md)
-  : Process and clean match results
-- [`process_match_lineups()`](https://peteowen1.github.io/panna/reference/process_match_lineups.md)
-  : Process match lineups
-- [`process_match_events()`](https://peteowen1.github.io/panna/reference/process_match_events.md)
-  : Process match events
-- [`process_shooting_data()`](https://peteowen1.github.io/panna/reference/process_shooting_data.md)
-  : Process shooting data
-- [`process_advanced_stats()`](https://peteowen1.github.io/panna/reference/process_advanced_stats.md)
-  : Process advanced match stats
-- [`merge_processed_data()`](https://peteowen1.github.io/panna/reference/merge_processed_data.md)
-  : Merge all processed data
-- [`derive_events_from_shooting()`](https://peteowen1.github.io/panna/reference/derive_events_from_shooting.md)
-  : Derive goal events from shooting data
-- [`derive_lineups_from_stats()`](https://peteowen1.github.io/panna/reference/derive_lineups_from_stats.md)
-  : Get match lineups from advanced stats (no scraping needed)
-- [`filter_bad_xg_data()`](https://peteowen1.github.io/panna/reference/filter_bad_xg_data.md)
-  : Detect and filter bad xG data from splints
-
 ## Feature Engineering
 
 Advanced feature creation
 
 - [`create_player_feature_matrix()`](https://peteowen1.github.io/panna/reference/create_player_feature_matrix.md)
   : Create full player feature matrix
-- [`create_offensive_features()`](https://peteowen1.github.io/panna/reference/create_offensive_features.md)
-  : Create offensive features
-- [`create_defensive_features()`](https://peteowen1.github.io/panna/reference/create_defensive_features.md)
-  : Create defensive features
-- [`calculate_per_100_sequences()`](https://peteowen1.github.io/panna/reference/calculate_per_100_sequences.md)
-  : Convert statistics to per-100-sequences rate
-- [`calculate_team_sequences()`](https://peteowen1.github.io/panna/reference/calculate_team_sequences.md)
-  : Calculate team possession sequences
-- [`calculate_finishing_modifier()`](https://peteowen1.github.io/panna/reference/calculate_finishing_modifier.md)
-  : Calculate player finishing modifier
 
 ## Data Distribution
 
@@ -615,8 +544,6 @@ GitHub Releases upload/download
   : List releases by source type
 - [`pb_status()`](https://peteowen1.github.io/panna/reference/pb_status.md)
   : Check if local data is in sync with GitHub Releases
-- [`get_latest_release()`](https://peteowen1.github.io/panna/reference/get_latest_release.md)
-  : Get Release Info
 - [`load_predictions()`](https://peteowen1.github.io/panna/reference/load_predictions.md)
   : Load match predictions
 
@@ -630,24 +557,10 @@ FBref data scraping functions
   : Scrape a competition-season
 - [`scrape_fixtures()`](https://peteowen1.github.io/panna/reference/scrape_fixtures.md)
   : Scrape match URLs from fixtures page
-- [`fetch_match_page()`](https://peteowen1.github.io/panna/reference/fetch_match_page.md)
-  : Fetch FBref match page HTML
-- [`parse_match_page()`](https://peteowen1.github.io/panna/reference/parse_match_page.md)
-  : Parse all tables from FBref match page
-- [`extract_match_events()`](https://peteowen1.github.io/panna/reference/extract_match_events.md)
-  : Extract match events with timing
 - [`fbref_competitions`](https://peteowen1.github.io/panna/reference/fbref_competitions.md)
   : FBref competition metadata
 - [`list_competitions()`](https://peteowen1.github.io/panna/reference/list_competitions.md)
   : List competitions by type
-- [`get_fbref_comp_id()`](https://peteowen1.github.io/panna/reference/get_fbref_comp_id.md)
-  : Get FBref competition ID
-- [`get_fbref_schedule_url()`](https://peteowen1.github.io/panna/reference/get_fbref_schedule_url.md)
-  : Get FBref schedule URL
-- [`get_fbref_session()`](https://peteowen1.github.io/panna/reference/get_fbref_session.md)
-  : Get or create FBref session
-- [`reset_fbref_session()`](https://peteowen1.github.io/panna/reference/reset_fbref_session.md)
-  : Reset FBref session
 
 ## Scraping - Understat
 
@@ -663,10 +576,6 @@ Understat data scraping functions
   : Scrape matches by Understat ID range
 - [`scrape_understat_fixtures()`](https://peteowen1.github.io/panna/reference/scrape_understat_fixtures.md)
   : Scrape fixtures from Understat league page
-- [`fetch_understat_page()`](https://peteowen1.github.io/panna/reference/fetch_understat_page.md)
-  : Fetch Understat page HTML
-- [`aggregate_understat_data()`](https://peteowen1.github.io/panna/reference/aggregate_understat_data.md)
-  : Aggregate cached Understat data
 - [`bulk_scrape_understat()`](https://peteowen1.github.io/panna/reference/bulk_scrape_understat.md)
   : Bulk scrape Understat matches with auto-detection
 - [`smart_scrape_understat()`](https://peteowen1.github.io/panna/reference/smart_scrape_understat.md)
@@ -679,22 +588,6 @@ Understat data scraping functions
   : Understat competition metadata
 - [`list_understat_competitions()`](https://peteowen1.github.io/panna/reference/list_understat_competitions.md)
   : List Understat competitions
-- [`get_understat_league_url()`](https://peteowen1.github.io/panna/reference/get_understat_league_url.md)
-  : Get Understat league URL
-- [`get_understat_match_url()`](https://peteowen1.github.io/panna/reference/get_understat_match_url.md)
-  : Get Understat match URL
-- [`get_understat_seasons()`](https://peteowen1.github.io/panna/reference/get_understat_seasons.md)
-  : Get available Understat seasons
-- [`get_understat_slug()`](https://peteowen1.github.io/panna/reference/get_understat_slug.md)
-  : Get Understat URL slug
-- [`get_understat_session()`](https://peteowen1.github.io/panna/reference/get_understat_session.md)
-  : Get or create Understat session
-- [`reset_understat_session()`](https://peteowen1.github.io/panna/reference/reset_understat_session.md)
-  : Reset Understat session
-- [`is_understat_league()`](https://peteowen1.github.io/panna/reference/is_understat_league.md)
-  : Check if league is available on Understat
-- [`understat_league_to_code()`](https://peteowen1.github.io/panna/reference/understat_league_to_code.md)
-  : Map Understat league name to our code
 
 ## Cache Management
 
@@ -704,24 +597,8 @@ Local and remote cache operations
   : Get or set pannadata directory
 - [`opta_data_dir()`](https://peteowen1.github.io/panna/reference/opta_data_dir.md)
   : Get or Set Opta Data Directory
-- [`load_cached_data()`](https://peteowen1.github.io/panna/reference/load_cached_data.md)
-  : Load cached data for a specific type
-- [`save_cached_data()`](https://peteowen1.github.io/panna/reference/save_cached_data.md)
-  : Save data to cache
-- [`list_cached_matches()`](https://peteowen1.github.io/panna/reference/list_cached_matches.md)
-  : List cached matches
-- [`get_cached_match_urls()`](https://peteowen1.github.io/panna/reference/get_cached_match_urls.md)
-  : Get cached match URLs from metadata
-- [`get_cached_fbref_ids()`](https://peteowen1.github.io/panna/reference/get_cached_fbref_ids.md)
-  : Get cached match IDs for a league-season (fast batch version)
-- [`get_cached_understat_ids()`](https://peteowen1.github.io/panna/reference/get_cached_understat_ids.md)
-  : Get cached Understat match IDs
-- [`aggregate_cached_matches()`](https://peteowen1.github.io/panna/reference/aggregate_cached_matches.md)
-  : Aggregate cached match data
 - [`clear_remote_cache()`](https://peteowen1.github.io/panna/reference/clear_remote_cache.md)
   : Clear Remote Data Cache
-- [`clear_remote_opta_cache()`](https://peteowen1.github.io/panna/reference/clear_remote_opta_cache.md)
-  : Clear remote Opta data cache
 
 ## Parquet Operations
 
@@ -735,12 +612,6 @@ Building and querying parquet files
   : Build Consolidated Parquet Files for Remote Queries
 - [`build_consolidated_understat_parquet()`](https://peteowen1.github.io/panna/reference/build_consolidated_understat_parquet.md)
   : Build Consolidated Understat Parquet Files
-- [`query_local_parquet()`](https://peteowen1.github.io/panna/reference/query_local_parquet.md)
-  : Query Local Parquet with SQL
-- [`query_remote_parquet()`](https://peteowen1.github.io/panna/reference/query_remote_parquet.md)
-  : Query Remote Parquet with SQL (Primary Method)
-- [`get_remote_tables()`](https://peteowen1.github.io/panna/reference/get_remote_tables.md)
-  : Get Available Remote Tables
 
 ## Utilities
 
@@ -748,60 +619,25 @@ Helper functions
 
 - [`clean_column_names()`](https://peteowen1.github.io/panna/reference/clean_column_names.md)
   : Clean column names to snake_case
-- [`clean_player_name()`](https://peteowen1.github.io/panna/reference/clean_player_name.md)
-  : Clean player name for matching
-- [`standardize_player_names()`](https://peteowen1.github.io/panna/reference/standardize_player_names.md)
-  : Standardize player names
-- [`standardize_team_names()`](https://peteowen1.github.io/panna/reference/standardize_team_names.md)
-  : Standardize team names
-- [`create_match_id()`](https://peteowen1.github.io/panna/reference/create_match_id.md)
-  : Create unique match ID
-- [`create_player_id()`](https://peteowen1.github.io/panna/reference/create_player_id.md)
-  : Create unique player ID
-- [`extract_fbref_player_id()`](https://peteowen1.github.io/panna/reference/extract_fbref_player_id.md)
-  : Extract FBref player ID from href
-- [`extract_season_from_match_id()`](https://peteowen1.github.io/panna/reference/extract_season_from_match_id.md)
-  : Extract season from match_id
-- [`extract_season_end_year_from_match_id()`](https://peteowen1.github.io/panna/reference/extract_season_end_year_from_match_id.md)
-  : Extract season end year from match_id
 - [`safe_divide()`](https://peteowen1.github.io/panna/reference/safe_divide.md)
   : Safe division handling division by zero
 - [`per_90()`](https://peteowen1.github.io/panna/reference/per_90.md) :
   Calculate minutes per 90
-- [`calculate_npxg()`](https://peteowen1.github.io/panna/reference/calculate_npxg.md)
-  : Calculate non-penalty xG and goals
 - [`validate_seasons()`](https://peteowen1.github.io/panna/reference/validate_seasons.md)
   : Validate season input
 - [`validate_dataframe()`](https://peteowen1.github.io/panna/reference/validate_dataframe.md)
   : Validate data frame input
-- [`get_seasons_since()`](https://peteowen1.github.io/panna/reference/get_seasons_since.md)
-  : Get all seasons since a start year
 - [`get_big5_leagues()`](https://peteowen1.github.io/panna/reference/get_big5_leagues.md)
   : Big 5 European league configurations
-
-## Season Conversion
-
-Season format conversion between sources
-
-- [`fbref_to_understat_season()`](https://peteowen1.github.io/panna/reference/fbref_to_understat_season.md)
-  : Convert FBref season to Understat season
-- [`understat_to_fbref_season()`](https://peteowen1.github.io/panna/reference/understat_to_fbref_season.md)
-  : Convert Understat season to FBref season
 
 ## Competition Metadata
 
 League and competition information
 
-- [`get_tournament_years()`](https://peteowen1.github.io/panna/reference/get_tournament_years.md)
-  : Get tournament years with available data
-- [`is_tournament_competition()`](https://peteowen1.github.io/panna/reference/is_tournament_competition.md)
-  : Check if competition uses tournament (year-only) format
 - [`list_opta_seasons()`](https://peteowen1.github.io/panna/reference/list_opta_seasons.md)
   : List Available Opta Seasons
 - [`list_opta_leagues()`](https://peteowen1.github.io/panna/reference/list_opta_leagues.md)
   : List Available Opta Leagues
-- [`suggest_opta_seasons()`](https://peteowen1.github.io/panna/reference/suggest_opta_seasons.md)
-  : Suggest Available Seasons for an Opta League
 - [`get_opta_columns()`](https://peteowen1.github.io/panna/reference/get_opta_columns.md)
   : Get Opta Column Names
 
@@ -809,12 +645,16 @@ League and competition information
 
 Model and data validation
 
-- [`validate_data_completeness()`](https://peteowen1.github.io/panna/reference/validate_data_completeness.md)
-  : Check and report data completeness
 - [`validate_predictive_power()`](https://peteowen1.github.io/panna/reference/validate_predictive_power.md)
   : Validate predictive power
 - [`validate_spm_prediction()`](https://peteowen1.github.io/panna/reference/validate_spm_prediction.md)
   : Validate SPM prediction accuracy
+- [`validate_epv_model()`](https://peteowen1.github.io/panna/reference/validate_epv_model.md)
+  : Validate EPV Model
+- [`validate_xg_model()`](https://peteowen1.github.io/panna/reference/validate_xg_model.md)
+  : Validate xG Model Performance
+- [`validate_panna_ratings()`](https://peteowen1.github.io/panna/reference/validate_panna_ratings.md)
+  : Validate panna ratings
 
 ## Analysis & Reporting
 
@@ -824,10 +664,6 @@ Analysis helpers and reporting
   : Compare panna, RAPM, and SPM ratings
 - [`generate_panna_report()`](https://peteowen1.github.io/panna/reference/generate_panna_report.md)
   : Generate prediction report
-- [`get_covariate_effects()`](https://peteowen1.github.io/panna/reference/get_covariate_effects.md)
-  : Get covariate effects from fitted model
-- [`aggregate_rapm_by_team()`](https://peteowen1.github.io/panna/reference/aggregate_rapm_by_team.md)
-  : Aggregate RAPM by team
 - [`report_season_ranges()`](https://peteowen1.github.io/panna/reference/report_season_ranges.md)
   : Report season ranges for all data types
 
@@ -886,19 +722,6 @@ Deprecated functions (use alternatives instead)
   **\[deprecated\]** : Deprecated: Fit EPV Conceding Model
 - [`assign_pass_credit()`](https://peteowen1.github.io/panna/reference/assign_pass_credit.md)
   **\[deprecated\]** : Deprecated: Assign Pass Credit
-
-## Internal
-
-Internal functions (advanced users)
-
-- [`prepare_rapm_data()`](https://peteowen1.github.io/panna/reference/prepare_rapm_data.md)
-  : Prepare RAPM data for model fitting
-- [`get_splint_players()`](https://peteowen1.github.io/panna/reference/get_splint_players.md)
-  : Get players on pitch for a splint
-- [`apply_bayesian_padding()`](https://peteowen1.github.io/panna/reference/apply_bayesian_padding.md)
-  : Apply Bayesian padding to statistics
-- [`migrate_metadata_tables_available()`](https://peteowen1.github.io/panna/reference/migrate_metadata_tables_available.md)
-  : Migrate old metadata files to include tables_available field
 
 # Articles
 
