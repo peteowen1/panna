@@ -763,7 +763,7 @@ build_understat_manifest_from_cache <- function(data_dir = NULL) {
 #' results <- smart_scrape_understat(
 #'   manifest_path = "data/understat-manifest.parquet",
 #'   lookback = 20,
-#'   max_misses = 50,
+#'   max_misses = 25,
 #'   delay = 3
 #' )
 #'
@@ -773,7 +773,7 @@ build_understat_manifest_from_cache <- function(data_dir = NULL) {
 smart_scrape_understat <- function(manifest_path,
                                     leagues = c("RUS", "ENG", "ESP", "FRA", "ITA", "GER"),
                                     lookback = 20,
-                                    max_misses = 50,
+                                    max_misses = 25,
                                     delay = 3,
                                     verbose = TRUE) {
 
@@ -814,6 +814,34 @@ smart_scrape_understat <- function(manifest_path,
     league_results <- list()
 
     while (consecutive_misses < max_misses) {
+      # Check manifest BEFORE making any HTTP requests
+      # This avoids the 3s delay + fetch for IDs we already have
+      if (current_id %in% manifest$match_id) {
+        cached_league <- manifest$league[manifest$match_id == current_id][1]
+        cached_season <- manifest$season[manifest$match_id == current_id][1]
+
+        if (identical(cached_league, league)) {
+          # Match belongs to our target league - reset miss counter
+          consecutive_misses <- 0
+        } else {
+          # Match belongs to a different league - count as miss
+          consecutive_misses <- consecutive_misses + 1
+        }
+
+        league_results[[length(league_results) + 1]] <- data.frame(
+          match_id = current_id,
+          league = cached_league,
+          season = cached_season,
+          status = "cached"
+        )
+        if (verbose) {
+          cat(sprintf("  [%d] Cached (%s)\n", current_id, cached_league))
+        }
+        current_id <- current_id + 1
+        next
+      }
+
+      # Not in manifest - need to fetch from web
       # Rate limiting (skip on first iteration)
       if (current_id > start_id) {
         jitter <- delay * 0.3
@@ -891,22 +919,6 @@ smart_scrape_understat <- function(manifest_path,
 
       # Found a match for this league! Reset miss counter
       consecutive_misses <- 0
-
-      # Check if already in manifest
-      if (current_id %in% manifest$match_id) {
-        league_results[[length(league_results) + 1]] <- data.frame(
-          match_id = current_id,
-          league = match_league,
-          season = match_season,
-          status = "cached"
-        )
-        if (verbose) {
-          cat(sprintf("  [%d] Cached: %s vs %s\n",
-                      current_id, metadata$home_team, metadata$away_team))
-        }
-        current_id <- current_id + 1
-        next
-      }
 
       # Scrape full match data
       events <- tryCatch({
