@@ -9,7 +9,7 @@ save_epv_model(epv_model, path = NULL)
 \arguments{
 \item{epv_model}{EPV model from fit_epv_model()}
 
-\item{path}{Directory to save model. If NULL, uses pannadata/opta/models/}
+\item{path}{Directory to save model. If NULL, uses pannadata/data/opta/models/}
 }
 \value{
 Invisibly returns path

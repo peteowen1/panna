@@ -31,7 +31,7 @@ If NULL, opponent adjustment is skipped.}
 \item{big5_leagues}{Character vector of Big 5 league codes for reference level.}
 }
 \value{
-The input data.table with stat columns adjusted in place.
+A copy of the input data.table with stat columns adjusted.
 }
 \description{
 Normalizes raw match-level stats to account for contextual factors before

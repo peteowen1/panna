@@ -51,17 +51,17 @@ message(sprintf("  Latest season end year: %d", latest_season))
 # Filter xRAPM to latest season, deduplicate by player_name
 seasonal_xrapm <- seasonal_results$seasonal_xrapm %>%
   filter(season_end_year == latest_season) %>%
-  group_by(player_name) %>%
+  group_by(player_id) %>%
   slice_max(total_minutes, n = 1, with_ties = FALSE) %>%
   ungroup()
 
-# Filter SPM to latest season, deduplicate by player_name
+# Filter SPM to latest season, deduplicate by player_id
 seasonal_spm <- seasonal_results$seasonal_spm %>%
   filter(season_end_year == latest_season) %>%
-  group_by(player_name) %>%
+  group_by(player_id) %>%
   slice_max(total_minutes, n = 1, with_ties = FALSE) %>%
   ungroup() %>%
-  select(player_name, spm_overall = spm)
+  select(player_id, spm_overall = spm)
 
 message(sprintf("  xRAPM players: %d", nrow(seasonal_xrapm)))
 message(sprintf("  SPM players: %d", nrow(seasonal_spm)))
@@ -72,7 +72,7 @@ if (nrow(seasonal_xrapm) == 0) {
 
 # Join and compute ranks/percentiles
 panna_ratings <- seasonal_xrapm %>%
-  left_join(seasonal_spm, by = "player_name") %>%
+  left_join(seasonal_spm, by = "player_id") %>%
   mutate(
     panna_rank = as.integer(rank(-xrapm, ties.method = "min")),
     panna_percentile = round(100 * rank(xrapm, ties.method = "min") / n(), 1)

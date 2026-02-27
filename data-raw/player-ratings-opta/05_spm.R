@@ -52,7 +52,6 @@ if (use_xmetrics_features && !is.null(processed_data$opta_xmetrics)) {
 
   # Aggregate xMetrics to player level (may span multiple seasons)
   xmetrics_agg <- xmetrics %>%
-    mutate(player_id = clean_player_name(player_name)) %>%
     group_by(player_id) %>%
     summarise(
       xg_total = sum(xg, na.rm = TRUE),
@@ -97,8 +96,8 @@ cat("\n=== Preparing SPM Training Data ===\n")
 spm_train_data <- player_stats %>%
   inner_join(
     rapm_ratings %>%
-      select(player_name, rapm, offense, defense),
-    by = "player_name"
+      select(player_id, rapm, offense, defense),
+    by = "player_id"
   )
 
 cat("Players for SPM training:", nrow(spm_train_data), "\n")
@@ -154,7 +153,7 @@ cat("Blended SPM ratings:", nrow(spm_ratings_blend), "players\n")
 
 # Evaluate correlation with RAPM
 blend_eval <- spm_ratings_blend %>%
-  inner_join(rapm_ratings %>% select(player_name, rapm), by = "player_name")
+  inner_join(rapm_ratings %>% select(player_id, rapm), by = "player_id")
 
 cat("\nCorrelation with RAPM:\n")
 cat(sprintf("  Elastic Net: %.3f\n", cor(blend_eval$spm_glmnet, blend_eval$rapm)))
@@ -360,8 +359,8 @@ combined_spm <- spm_ratings %>%
     by = "player_id"
   ) %>%
   left_join(
-    rapm_ratings %>% select(player_name, rapm, offense, defense),
-    by = "player_name"
+    rapm_ratings %>% select(player_id, rapm, offense, defense),
+    by = "player_id"
   ) %>%
   arrange(desc(spm))
 

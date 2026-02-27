@@ -461,7 +461,10 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
 
   progress_msg(sprintf("Aggregating %d Opta player-match rows...", nrow(opta_stats)))
 
-  opta_stats$player_id <- clean_player_name(opta_stats$player_name)
+  # Use native player_id if available, fall back to clean_player_name
+  if (!"player_id" %in% names(opta_stats)) {
+    opta_stats$player_id <- clean_player_name(opta_stats$player_name)
+  }
 
   # Get column mapping and filter to existing columns
   opta_cols <- .get_opta_col_mapping()
