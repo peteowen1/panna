@@ -136,7 +136,6 @@ fit_season_ratings_opta <- function(splint_data, opta_stats, season,
     }
     if (nrow(season_xm) > 0) {
       xm_agg <- season_xm %>%
-        mutate(player_id = clean_player_name(player_name)) %>%
         group_by(player_id) %>%
         summarise(
           xg_total = sum(xg, na.rm = TRUE),
@@ -380,7 +379,7 @@ cat("Saved to cache-opta/07_seasonal_ratings.rds\n")
 # Export CSVs
 write.csv(
   seasonal_spm %>%
-    select(season_end_year, player_name, spm, offense_spm, defense_spm, total_minutes) %>%
+    select(season_end_year, player_id, player_name, spm, offense_spm, defense_spm, total_minutes) %>%
     mutate(across(where(is.numeric) & !matches("season|minutes"), ~round(.x, 4))) %>%
     arrange(season_end_year, desc(spm)),
   file.path(cache_dir, "seasonal_spm.csv"),

@@ -36,28 +36,49 @@ aggregate_lineup_ratings <- function(lineups, ratings, season_end_year,
   # Filter to starters only
   starters <- dt_lineups[is_starter == TRUE]
 
-  # Clean player names for matching
-  starters[, clean_name := clean_player_name(player_name)]
+  # Determine join key: use player_id when both sides have it and IDs overlap
+  has_id_both <- "player_id" %in% names(dt_lineups) &&
+    "player_id" %in% names(dt_ratings)
+  use_id_join <- FALSE
+  if (has_id_both) {
+    if (any(dt_lineups$player_id %in% dt_ratings$player_id, na.rm = TRUE)) {
+      use_id_join <- TRUE
+    } else {
+      warning(sprintf(
+        "Both lineups and ratings have player_id but 0 IDs overlap (lineups: %d unique, ratings: %d unique). Falling back to name-based join.",
+        length(unique(dt_lineups$player_id)),
+        length(unique(dt_ratings$player_id))
+      ), call. = FALSE)
+    }
+  }
+
+  if (use_id_join) {
+    join_key <- "player_id"
+  } else {
+    join_key <- "clean_name"
+    starters[, clean_name := clean_player_name(player_name)]
+    dt_ratings[, clean_name := clean_player_name(player_name)]
+  }
 
   # Current season ratings
-  curr <- dt_ratings[season_end_year == sey_curr,
-                     .(clean_name = clean_player_name(player_name),
-                       panna, offense, defense, spm)]
-  curr <- curr[!duplicated(clean_name)]
+  rating_cols <- c(join_key, "panna", "offense", "defense", "spm")
+  curr <- dt_ratings[season_end_year == sey_curr, rating_cols, with = FALSE]
+  curr <- curr[!duplicated(curr[[join_key]])]
 
   # Previous season ratings (fallback with decay)
-  prev <- dt_ratings[season_end_year == sey_prev,
-                     .(clean_name = clean_player_name(player_name),
-                       panna_prev = panna * prev_season_decay,
-                       offense_prev = offense * prev_season_decay,
-                       defense_prev = defense * prev_season_decay,
-                       spm_prev = spm * prev_season_decay)]
-  prev <- prev[!duplicated(clean_name)]
+  prev <- dt_ratings[season_end_year == sey_prev, rating_cols, with = FALSE]
+  prev <- prev[!duplicated(prev[[join_key]])]
+  prev[, panna := panna * prev_season_decay]
+  prev[, offense := offense * prev_season_decay]
+  prev[, defense := defense * prev_season_decay]
+  prev[, spm := spm * prev_season_decay]
+  data.table::setnames(prev, c("panna", "offense", "defense", "spm"),
+                       c("panna_prev", "offense_prev", "defense_prev", "spm_prev"))
 
   # Join current ratings
-  starters <- curr[starters, on = "clean_name"]
+  starters <- curr[starters, on = join_key]
   # Fallback to previous season
-  starters <- prev[starters, on = "clean_name"]
+  starters <- prev[starters, on = join_key]
   starters[is.na(panna), panna := panna_prev]
   starters[is.na(offense), offense := offense_prev]
   starters[is.na(defense), defense := defense_prev]

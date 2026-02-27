@@ -20,7 +20,7 @@ and the stat columns to estimate.}
 \item{decay_params}{Named list of decay rates and prior strengths. Output of
 \code{get_default_decay_params()} or custom. Supports per-stat lambda
 overrides (named by stat column). Prior strength via \code{prior_90s}
-(Gamma, default 10) and \code{prior_attempts} (Beta, default 50).}
+(Gamma, default 2) and \code{prior_attempts} (Beta, default 50).}
 
 \item{target_date}{Date object. Only matches before this date are used.
 If NULL, uses all available data.}
@@ -33,7 +33,7 @@ auto-detects all _p90 columns plus efficiency columns.}
 }
 \value{
 A data.table with one row per player containing estimated skill
-values for each stat, plus player_id, player_name, position, and
+values for each stat, plus player_id, player_name, primary_position, and
 weighted_90s (effective sample size in decay-weighted 90-minute units).
 }
 \description{

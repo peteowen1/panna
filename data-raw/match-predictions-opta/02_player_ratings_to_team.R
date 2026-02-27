@@ -68,16 +68,26 @@ if (is.data.frame(seasonal_data)) {
   ratings <- seasonal_data
 } else if ("seasonal_xrapm" %in% names(seasonal_data)) {
   # Standard structure from Opta RAPM pipeline
-  xrapm <- seasonal_data$seasonal_xrapm[, c("player_name", "season_end_year",
-                                             "xrapm", "offense", "defense",
-                                             "total_minutes")]
+  xrapm_cols <- c("player_id", "player_name", "season_end_year",
+                   "xrapm", "offense", "defense", "total_minutes")
+  xrapm_cols <- intersect(xrapm_cols, names(seasonal_data$seasonal_xrapm))
+  xrapm <- seasonal_data$seasonal_xrapm[, xrapm_cols]
   names(xrapm)[names(xrapm) == "xrapm"] <- "panna"
 
-  spm <- seasonal_data$seasonal_spm[, c("player_name", "season_end_year", "spm")]
-  spm <- spm[!duplicated(spm[, c("player_name", "season_end_year")]), ]
+  spm_cols <- c("player_id", "player_name", "season_end_year", "spm")
+  spm_cols <- intersect(spm_cols, names(seasonal_data$seasonal_spm))
+  spm <- seasonal_data$seasonal_spm[, spm_cols]
 
-  ratings <- merge(xrapm, spm,
-                   by = c("player_name", "season_end_year"),
+  # Choose merge key: player_id if available in both, else player_name
+  merge_key <- if ("player_id" %in% names(xrapm) && "player_id" %in% names(spm)) {
+    c("player_id", "season_end_year")
+  } else {
+    c("player_name", "season_end_year")
+  }
+  spm <- spm[!duplicated(spm[, merge_key]), ]
+
+  ratings <- merge(xrapm, spm[, c(merge_key, "spm")],
+                   by = merge_key,
                    all.x = TRUE)
   ratings$spm[is.na(ratings$spm)] <- 0
 } else if ("combined" %in% names(seasonal_data)) {
@@ -89,10 +99,13 @@ if (is.data.frame(seasonal_data)) {
 message(sprintf("  Ratings: %d player-seasons", nrow(ratings)))
 
 # Validate required columns
-required_rating_cols <- c("player_name", "season_end_year", "panna", "offense", "defense", "spm")
+required_rating_cols <- c("season_end_year", "panna", "offense", "defense", "spm")
 missing <- setdiff(required_rating_cols, names(ratings))
 if (length(missing) > 0) {
   stop("Missing required columns in ratings: ", paste(missing, collapse = ", "))
+}
+if (!any(c("player_id", "player_name") %in% names(ratings))) {
+  stop("Ratings must have at least one of 'player_id' or 'player_name' for player matching.")
 }
 
 # 5. Load Lineups ----

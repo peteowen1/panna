@@ -584,29 +584,38 @@ create_spm_prior <- function(spm_predictions, player_mapping, default_prior = 0)
 #' )
 #' }
 build_prior_vector <- function(spm_data, spm_col, player_mapping, default = 0) {
-  # Create lookup from player_name to player_id
-  name_to_id <- stats::setNames(
-    player_mapping$player_id,
-    player_mapping$player_name
-  )
-
   # Initialize prior vector for all players in mapping
   all_player_ids <- unique(player_mapping$player_id)
   prior <- stats::setNames(rep(default, length(all_player_ids)), all_player_ids)
 
-  # Vectorized matching: find SPM data rows that match player names in mapping
-  matched_names <- intersect(spm_data$player_name, names(name_to_id))
-  if (length(matched_names) > 0) {
-    matched_ids <- name_to_id[matched_names]
-    spm_idx <- match(matched_names, spm_data$player_name)
-    valid <- !is.na(spm_idx) & matched_ids %in% names(prior)
-    if (any(valid)) {
-      prior[matched_ids[valid]] <- spm_data[[spm_col]][spm_idx[valid]]
+  # Try direct player_id matching (Opta pipeline — both use same numeric ID)
+  join_method <- "player_name"
+  if ("player_id" %in% names(spm_data) &&
+      any(as.character(spm_data$player_id) %in% as.character(all_player_ids))) {
+    join_method <- "player_id"
+    spm_lookup <- stats::setNames(spm_data[[spm_col]], as.character(spm_data$player_id))
+    matched_ids <- intersect(names(spm_lookup), names(prior))
+    prior[matched_ids] <- spm_lookup[matched_ids]
+  } else {
+    # Name-based matching fallback (FBref pipeline — different ID systems)
+    name_to_id <- stats::setNames(
+      player_mapping$player_id,
+      player_mapping$player_name
+    )
+    matched_names <- intersect(spm_data$player_name, names(name_to_id))
+    if (length(matched_names) > 0) {
+      matched_ids <- name_to_id[matched_names]
+      spm_idx <- match(matched_names, spm_data$player_name)
+      valid <- !is.na(spm_idx) & matched_ids %in% names(prior)
+      if (any(valid)) {
+        prior[matched_ids[valid]] <- spm_data[[spm_col]][spm_idx[valid]]
+      }
     }
   }
 
   n_matched <- sum(prior != default)
-  progress_msg(sprintf("Prior '%s': matched %d of %d players", spm_col, n_matched, nrow(spm_data)))
+  progress_msg(sprintf("Prior '%s': matched %d of %d players [via %s]",
+                       spm_col, n_matched, nrow(spm_data), join_method))
 
   prior
 }

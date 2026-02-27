@@ -2,16 +2,16 @@
 % Please edit documentation in R/estimated_skills.R
 \name{.classify_skill_stats}
 \alias{.classify_skill_stats}
-\title{Classify stats into rate vs efficiency categories}
+\title{Get efficiency stat denominator mapping}
 \usage{
 .classify_skill_stats()
 }
 \value{
-A data.table with columns: stat, category, denominator
+A named list mapping efficiency stat names to denominator column names
 }
 \description{
-Per-90 rate stats are weighted by minutes; efficiency stats (success rates,
-conversion rates) are weighted by their denominator (attempts). This function
-returns the classification and the denominator column for efficiency stats.
+Returns a named list mapping efficiency stat column names to their
+denominator column names. Stats not in this list are treated as per-90
+rate stats (weighted by minutes).
 }
 \keyword{internal}

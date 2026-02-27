@@ -14,7 +14,7 @@ calculate_action_epv(spadl_actions, features, epv_model, xg_model = NULL)
 \item{epv_model}{Fitted EPV model from fit_epv_model()}
 
 \item{xg_model}{Optional pre-trained xG model from fit_xg_model(). If NULL,
-attempts to load from pannadata/opta/models/xg_model.rds. Falls back to
+attempts to load from pannadata/data/opta/models/xg_model.rds. Falls back to
 position-based estimate if no model available.}
 }
 \value{
