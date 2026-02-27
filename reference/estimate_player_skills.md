@@ -30,8 +30,8 @@ estimate_player_skills(
   Named list of decay rates and prior strengths. Output of
   [`get_default_decay_params()`](https://peteowen1.github.io/panna/reference/get_default_decay_params.md)
   or custom. Supports per-stat lambda overrides (named by stat column).
-  Prior strength via `prior_90s` (Gamma, default 10) and
-  `prior_attempts` (Beta, default 50).
+  Prior strength via `prior_90s` (Gamma, default 2) and `prior_attempts`
+  (Beta, default 50).
 
 - target_date:
 
@@ -51,8 +51,8 @@ estimate_player_skills(
 ## Value
 
 A data.table with one row per player containing estimated skill values
-for each stat, plus player_id, player_name, position, and weighted_90s
-(effective sample size in decay-weighted 90-minute units).
+for each stat, plus player_id, player_name, primary_position, and
+weighted_90s (effective sample size in decay-weighted 90-minute units).
 
 ## Details
 

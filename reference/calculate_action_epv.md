@@ -29,7 +29,7 @@ calculate_action_epv(spadl_actions, features, epv_model, xg_model = NULL)
 - xg_model:
 
   Optional pre-trained xG model from fit_xg_model(). If NULL, attempts
-  to load from pannadata/opta/models/xg_model.rds. Falls back to
+  to load from pannadata/data/opta/models/xg_model.rds. Falls back to
   position-based estimate if no model available.
 
 ## Value

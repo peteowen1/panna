@@ -50,7 +50,7 @@ adjust_match_stats_for_context(
 
 ## Value
 
-The input data.table with stat columns adjusted in place.
+A copy of the input data.table with stat columns adjusted.
 
 ## Details
 

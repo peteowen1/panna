@@ -16,7 +16,7 @@ save_epv_model(epv_model, path = NULL)
 
 - path:
 
-  Directory to save model. If NULL, uses pannadata/opta/models/
+  Directory to save model. If NULL, uses pannadata/data/opta/models/
 
 ## Value
 

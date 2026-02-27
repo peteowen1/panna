@@ -21,8 +21,8 @@ Character vector of 8-char hex IDs (NA if not found)
 
 ## Details
 
-Note: This function is ready for use when player_href is available in
-scraped data. Currently player_href is not extracted during scraping.
+Note: player_href is extracted during FBref scraping and used in data
+processing to derive player IDs.
 
 ## Examples
 

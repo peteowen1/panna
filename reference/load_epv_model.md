@@ -12,7 +12,7 @@ load_epv_model(path = NULL)
 
 - path:
 
-  Directory containing model. If NULL, uses pannadata/opta/models/
+  Directory containing model. If NULL, uses pannadata/data/opta/models/
 
 ## Value
 

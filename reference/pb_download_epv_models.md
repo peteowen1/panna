@@ -24,7 +24,7 @@ pb_download_epv_models(
 
 - dest:
 
-  Destination directory. If NULL, uses pannadata/opta/models/
+  Destination directory. If NULL, uses pannadata/data/opta/models/
 
 ## Value
 
