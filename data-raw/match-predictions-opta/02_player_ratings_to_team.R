@@ -104,6 +104,9 @@ missing <- setdiff(required_rating_cols, names(ratings))
 if (length(missing) > 0) {
   stop("Missing required columns in ratings: ", paste(missing, collapse = ", "))
 }
+if (!any(c("player_id", "player_name") %in% names(ratings))) {
+  stop("Ratings must have at least one of 'player_id' or 'player_name' for player matching.")
+}
 
 # 5. Load Lineups ----
 

@@ -48,22 +48,25 @@ latest_season <- max(seasonal_results$seasonal_xrapm$season_end_year)
 
 message(sprintf("  Latest season end year: %d", latest_season))
 
-# Filter xRAPM to latest season, deduplicate by player_name
+# Determine dedup/join key based on available columns
+dedup_key <- if ("player_id" %in% names(seasonal_results$seasonal_xrapm)) "player_id" else "player_name"
+
+# Filter xRAPM to latest season, deduplicate
 seasonal_xrapm <- seasonal_results$seasonal_xrapm %>%
   filter(season_end_year == latest_season) %>%
-  group_by(player_id) %>%
+  group_by(.data[[dedup_key]]) %>%
   slice_max(total_minutes, n = 1, with_ties = FALSE) %>%
   ungroup()
 
-# Filter SPM to latest season, deduplicate by player_id
+# Filter SPM to latest season, deduplicate
 seasonal_spm <- seasonal_results$seasonal_spm %>%
   filter(season_end_year == latest_season) %>%
-  group_by(player_id) %>%
+  group_by(.data[[dedup_key]]) %>%
   slice_max(total_minutes, n = 1, with_ties = FALSE) %>%
   ungroup() %>%
-  select(player_id, spm_overall = spm)
+  select(all_of(dedup_key), spm_overall = spm)
 
-message(sprintf("  xRAPM players: %d", nrow(seasonal_xrapm)))
+message(sprintf("  xRAPM players: %d (joined by %s)", nrow(seasonal_xrapm), dedup_key))
 message(sprintf("  SPM players: %d", nrow(seasonal_spm)))
 
 if (nrow(seasonal_xrapm) == 0) {
@@ -72,7 +75,7 @@ if (nrow(seasonal_xrapm) == 0) {
 
 # Join and compute ranks/percentiles
 panna_ratings <- seasonal_xrapm %>%
-  left_join(seasonal_spm, by = "player_id") %>%
+  left_join(seasonal_spm, by = dedup_key) %>%
   mutate(
     panna_rank = as.integer(rank(-xrapm, ties.method = "min")),
     panna_percentile = round(100 * rank(xrapm, ties.method = "min") / n(), 1)

@@ -8,7 +8,7 @@ smart_scrape_understat(
   manifest_path,
   leagues = c("RUS", "ENG", "ESP", "FRA", "ITA", "GER"),
   lookback = 20,
-  max_misses = 50,
+  max_misses = 25,
   delay = 3,
   verbose = TRUE
 )
@@ -40,7 +40,7 @@ nature of Understat match IDs across leagues.
 results <- smart_scrape_understat(
   manifest_path = "data/understat-manifest.parquet",
   lookback = 20,
-  max_misses = 50,
+  max_misses = 25,
   delay = 3
 )
 

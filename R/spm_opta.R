@@ -464,6 +464,16 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
   # Use native player_id if available, fall back to clean_player_name
   if (!"player_id" %in% names(opta_stats)) {
     opta_stats$player_id <- clean_player_name(opta_stats$player_name)
+  } else {
+    n_na <- sum(is.na(opta_stats$player_id))
+    if (n_na > 0) {
+      warning(sprintf(
+        "aggregate_opta_stats: %d/%d rows have NA player_id, using clean_player_name for those rows.",
+        n_na, nrow(opta_stats)
+      ), call. = FALSE)
+      na_mask <- is.na(opta_stats$player_id)
+      opta_stats$player_id[na_mask] <- clean_player_name(opta_stats$player_name[na_mask])
+    }
   }
 
   # Get column mapping and filter to existing columns

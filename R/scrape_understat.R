@@ -816,9 +816,10 @@ smart_scrape_understat <- function(manifest_path,
     while (consecutive_misses < max_misses) {
       # Check manifest BEFORE making any HTTP requests
       # This avoids the 3s delay + fetch for IDs we already have
-      if (current_id %in% manifest$match_id) {
-        cached_league <- manifest$league[manifest$match_id == current_id][1]
-        cached_season <- manifest$season[manifest$match_id == current_id][1]
+      manifest_idx <- match(current_id, manifest$match_id)
+      if (!is.na(manifest_idx)) {
+        cached_league <- manifest$league[manifest_idx]
+        cached_season <- manifest$season[manifest_idx]
 
         if (identical(cached_league, league)) {
           # Match belongs to our target league - reset miss counter

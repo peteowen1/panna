@@ -589,8 +589,10 @@ build_prior_vector <- function(spm_data, spm_col, player_mapping, default = 0) {
   prior <- stats::setNames(rep(default, length(all_player_ids)), all_player_ids)
 
   # Try direct player_id matching (Opta pipeline — both use same numeric ID)
+  join_method <- "player_name"
   if ("player_id" %in% names(spm_data) &&
       any(as.character(spm_data$player_id) %in% as.character(all_player_ids))) {
+    join_method <- "player_id"
     spm_lookup <- stats::setNames(spm_data[[spm_col]], as.character(spm_data$player_id))
     matched_ids <- intersect(names(spm_lookup), names(prior))
     prior[matched_ids] <- spm_lookup[matched_ids]
@@ -612,7 +614,8 @@ build_prior_vector <- function(spm_data, spm_col, player_mapping, default = 0) {
   }
 
   n_matched <- sum(prior != default)
-  progress_msg(sprintf("Prior '%s': matched %d of %d players", spm_col, n_matched, nrow(spm_data)))
+  progress_msg(sprintf("Prior '%s': matched %d of %d players [via %s]",
+                       spm_col, n_matched, nrow(spm_data), join_method))
 
   prior
 }
