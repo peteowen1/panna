@@ -1,0 +1,190 @@
+name: Predictions Pipeline
+
+on:
+  schedule:
+    # Wednesday 8 AM UTC — after Tuesday matches + overnight Opta scrape
+    - cron: '0 8 * * 3'
+  workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: 'Force full rebuild from step 1'
+        type: boolean
+        default: false
+      force_rebuild_from:
+        description: 'Force rebuild from step N (1-10, blank = use cache)'
+        type: number
+        required: false
+  repository_dispatch:
+    types: [opta-scrape-complete]
+
+env:
+  GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
+  R_KEEP_PKG_SOURCE: yes
+
+jobs:
+  predict:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.4.0'
+          use-public-rspm: true
+
+      - name: Setup R dependencies
+        uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          cache-version: 1
+          extra-packages: |
+            any::devtools
+            any::piggyback
+            any::arrow
+            any::dplyr
+            any::tidyr
+            any::glmnet
+            any::xgboost
+            any::Matrix
+            any::data.table
+            any::DBI
+            any::duckdb
+            any::cli
+          needs: |
+            devtools
+
+      - name: Download consolidated Opta data
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+        run: |
+          OPTA_DIR="${{ runner.temp }}/pannadata/opta"
+          mkdir -p "$OPTA_DIR"
+
+          echo "Downloading consolidated Opta files..."
+          for f in opta_player_stats.parquet opta_shots.parquet opta_shot_events.parquet \
+                   opta_events.parquet opta_lineups.parquet opta_fixtures.parquet \
+                   opta_skills.parquet opta_match_stats.parquet opta_xmetrics.parquet \
+                   opta-catalog.json; do
+            if gh release download opta-latest --repo peteowen1/pannadata --pattern "$f" --dir "$OPTA_DIR" 2>/dev/null; then
+              echo "  Downloaded $f"
+            else
+              echo "  Skipped $f (not found)"
+            fi
+          done
+
+          echo "Opta data downloaded to $OPTA_DIR"
+          ls -lh "$OPTA_DIR"
+
+      - name: Download prediction caches
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+        run: |
+          CACHE_OPTA="data-raw/cache-opta"
+          CACHE_SKILLS="data-raw/cache-skills"
+          mkdir -p "$CACHE_OPTA" "$CACHE_SKILLS"
+
+          echo "Downloading prediction caches..."
+
+          # RAPM seasonal ratings
+          if gh release download predictions-cache --repo peteowen1/pannadata \
+               --pattern "07_seasonal_ratings.rds" --dir "$CACHE_OPTA" 2>/dev/null; then
+            echo "  Downloaded 07_seasonal_ratings.rds -> $CACHE_OPTA"
+          else
+            echo "  WARNING: 07_seasonal_ratings.rds not found"
+          fi
+
+          # Skills caches
+          for f in 06_seasonal_ratings.rds 01_match_stats.rds 02b_decay_params.rds 03_skill_spm.rds; do
+            if gh release download predictions-cache --repo peteowen1/pannadata \
+                 --pattern "$f" --dir "$CACHE_SKILLS" 2>/dev/null; then
+              echo "  Downloaded $f -> $CACHE_SKILLS"
+            else
+              echo "  WARNING: $f not found"
+            fi
+          done
+
+          echo ""
+          echo "Cache files:"
+          ls -lh "$CACHE_OPTA"/*.rds 2>/dev/null || echo "  No RAPM caches"
+          ls -lh "$CACHE_SKILLS"/*.rds 2>/dev/null || echo "  No skill caches"
+
+      - name: Run predictions pipeline
+        env:
+          PANNADATA_DIR: ${{ runner.temp }}/pannadata
+        run: |
+          Rscript -e "
+            # Point panna at downloaded Opta data
+            pannadata_path <- Sys.getenv('PANNADATA_DIR', '../pannadata/data')
+            opta_path <- file.path(pannadata_path, 'opta')
+            cat('PANNADATA_DIR:', pannadata_path, '\n')
+            cat('Opta data dir:', opta_path, '\n')
+            cat('Files:', length(list.files(opta_path)), '\n')
+
+            devtools::load_all()
+            pannadata_dir(pannadata_path)
+            opta_data_dir(opta_path)
+
+            # Config overrides
+            force_rebuild_input <- '${{ inputs.force_rebuild }}'
+            force_rebuild_from_input <- '${{ inputs.force_rebuild_from }}'
+
+            if (isTRUE(as.logical(force_rebuild_input))) {
+              force_rebuild_from <- 1L
+            } else if (nzchar(force_rebuild_from_input) && !is.na(as.numeric(force_rebuild_from_input))) {
+              force_rebuild_from <- as.integer(force_rebuild_from_input)
+            } else {
+              force_rebuild_from <- NULL
+            }
+
+            use_skill_ratings <- TRUE
+
+            run_steps <- list(
+              step_01_build_fixture_results  = TRUE,
+              step_02_player_ratings_to_team = TRUE,
+              step_02b_team_skill_features   = TRUE,
+              step_03_team_rolling_features  = TRUE,
+              step_04_build_match_dataset    = TRUE,
+              step_05_fit_goals_model        = TRUE,
+              step_06_fit_outcome_model      = TRUE,
+              step_07_predict_fixtures       = TRUE,
+              step_08_evaluate_model         = TRUE,
+              step_09_upload_predictions     = TRUE,
+              step_10_export_blog_data       = TRUE
+            )
+
+            source('data-raw/match-predictions-opta/run_predictions_opta.R', chdir = FALSE)
+          "
+
+      - name: Pipeline summary
+        if: always()
+        run: |
+          echo "## Predictions Pipeline" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Date:** $(date +'%Y-%m-%d %H:%M UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "**Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          CACHE_DIR="data-raw/cache-predictions-opta"
+          if [ -f "$CACHE_DIR/predictions.parquet" ]; then
+            echo "**Predictions:** uploaded to \`predictions-latest\` release" >> $GITHUB_STEP_SUMMARY
+            echo "**Blog data:** uploaded to \`blog-latest\` release" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**Status:** No predictions file found (pipeline may have failed)" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Trigger blog data build
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+        run: |
+          gh api repos/peteowen1/pannadata/dispatches \
+            -f event_type=predictions-complete
+          echo "Triggered build-blog-data.yml in pannadata"

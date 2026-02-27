@@ -46,21 +46,44 @@ fixture_results <- readRDS(file.path(cache_dir, "01_fixture_results.rds"))
 match_stats <- readRDS(match_stats_path)
 decay_params <- if (file.exists(decay_params_path)) readRDS(decay_params_path) else NULL
 
+played <- fixture_results[fixture_results$match_status == "Played", ]
+upcoming <- fixture_results[fixture_results$match_status != "Played", ]
+
 # Load lineups
 rapm_cache <- file.path("data-raw", "cache-opta", "01_raw_data.rds")
 if (file.exists(rapm_cache)) {
+  message("  Loading lineups from RAPM cache...")
   raw_data <- readRDS(rapm_cache)
   lineups <- raw_data$lineups
 } else {
-  warning("RAPM cache not found for lineups - model will train WITHOUT skill features.",
-          call. = FALSE)
-  team_skill_features <- NULL
-  saveRDS(team_skill_features, output_path)
-  return(invisible(NULL))
+  # GHA mode: load from consolidated Opta data
+  message("  Loading lineups from consolidated Opta data...")
+  leagues <- unique(played$league)
+  all_lineups <- list()
+  for (league in leagues) {
+    available_seasons <- tryCatch(list_opta_seasons(league, source = "local"), error = function(e) character(0))
+    for (season in available_seasons) {
+      tryCatch({
+        lu <- load_opta_lineups(league, season = season, source = "local")
+        if (!is.null(lu) && nrow(lu) > 0) {
+          lu$league <- league
+          lu$season <- season
+          all_lineups[[paste(league, season)]] <- lu
+        }
+      }, error = function(e) {
+        message(sprintf("  Warning: failed to load lineups for %s %s: %s", league, season, e$message))
+        NULL
+      })
+    }
+  }
+  lineups <- bind_rows(all_lineups)
+  if (nrow(lineups) == 0) {
+    warning("No lineups loaded - model will train WITHOUT skill features.", call. = FALSE)
+    team_skill_features <- NULL
+    saveRDS(team_skill_features, output_path)
+    return(invisible(NULL))
+  }
 }
-
-played <- fixture_results[fixture_results$match_status == "Played", ]
-upcoming <- fixture_results[fixture_results$match_status != "Played", ]
 
 message(sprintf("  Played matches: %d", nrow(played)))
 message(sprintf("  Match stats rows: %d", nrow(match_stats)))
@@ -125,23 +148,45 @@ if (nrow(upcoming) > 0) {
     if (!is.null(live_skills) && nrow(live_skills) > 0) {
       latest_lineups <- lineups %>%
         filter(is_starter) %>%
-        group_by(team_name) %>%
+        group_by(team_id) %>%
         filter(match_date == max(match_date)) %>%
         ungroup()
+
+      # Helper: dummy lineup for teams with no history
+      make_dummy_lineup <- function(match_id, team_id, team_name, team_position) {
+        positions <- c("Goalkeeper", rep("Defender", 4), rep("Midfielder", 4),
+                       rep("Forward", 2))
+        data.frame(
+          match_id = match_id, team_id = team_id, team_name = team_name,
+          team_position = team_position, player_name = paste0("Unknown_", seq(11)),
+          position = positions, is_starter = TRUE,
+          stringsAsFactors = FALSE
+        )
+      }
 
       # Build fixture lineups
       fixture_lu_list <- list()
       for (i in seq_len(nrow(upcoming))) {
         m <- upcoming[i, ]
+        htid <- m$home_team_id
+        atid <- m$away_team_id
+        if (is.na(htid) || htid == "" || is.na(atid) || atid == "") next
+
         home_lu <- latest_lineups %>%
-          filter(team_name == m$home_team) %>%
+          filter(team_id == htid) %>%
           mutate(match_id = m$match_id, team_position = "home")
         away_lu <- latest_lineups %>%
-          filter(team_name == m$away_team) %>%
+          filter(team_id == atid) %>%
           mutate(match_id = m$match_id, team_position = "away")
-        if (nrow(home_lu) > 0 && nrow(away_lu) > 0) {
-          fixture_lu_list[[i]] <- bind_rows(home_lu, away_lu)
+
+        if (nrow(home_lu) == 0) {
+          home_lu <- make_dummy_lineup(m$match_id, htid, m$home_team, "home")
         }
+        if (nrow(away_lu) == 0) {
+          away_lu <- make_dummy_lineup(m$match_id, atid, m$away_team, "away")
+        }
+
+        fixture_lu_list[[i]] <- bind_rows(home_lu, away_lu)
       }
 
       if (length(fixture_lu_list) > 0) {

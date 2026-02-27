@@ -169,29 +169,56 @@ if (nrow(upcoming) > 0) {
   # Get most recent lineup per team (last played match)
   latest_lineups <- lineups %>%
     filter(is_starter) %>%
-    group_by(team_name) %>%
+    group_by(team_id) %>%
     filter(match_date == max(match_date)) %>%
     ungroup()
 
+  # Helper: create a dummy lineup (11 players, all-zero ratings) for teams
+
+  # with no lineup history. Positions: 1 GK, 4 DEF, 4 MID, 2 FWD.
+  make_dummy_lineup <- function(match_id, team_id, team_name, team_position) {
+    positions <- c("Goalkeeper", rep("Defender", 4), rep("Midfielder", 4),
+                   rep("Forward", 2))
+    data.frame(
+      match_id = match_id, team_id = team_id, team_name = team_name,
+      team_position = team_position, player_name = paste0("Unknown_", seq(11)),
+      position = positions, is_starter = TRUE,
+      stringsAsFactors = FALSE
+    )
+  }
+
   # For each upcoming match, construct synthetic lineup rows
   upcoming_lineups <- list()
+  n_dummy <- 0L
   for (i in seq_len(nrow(upcoming))) {
     m <- upcoming[i, ]
-    ht <- m$home_team
-    at <- m$away_team
+    htid <- m$home_team_id
+    atid <- m$away_team_id
+
+    # Skip TBD matches (empty team_id from unresolved knockouts)
+    if (is.na(htid) || htid == "" || is.na(atid) || atid == "") next
 
     home_lu <- latest_lineups %>%
-      filter(team_name == ht) %>%
+      filter(team_id == htid) %>%
       mutate(match_id = m$match_id, team_position = "home")
 
     away_lu <- latest_lineups %>%
-      filter(team_name == at) %>%
+      filter(team_id == atid) %>%
       mutate(match_id = m$match_id, team_position = "away")
 
-    if (nrow(home_lu) > 0 && nrow(away_lu) > 0) {
-      upcoming_lineups[[i]] <- bind_rows(home_lu, away_lu)
+    # Fallback to dummy lineup (replacement-level ratings) for unknown teams
+    if (nrow(home_lu) == 0) {
+      home_lu <- make_dummy_lineup(m$match_id, htid, m$home_team, "home")
+      n_dummy <- n_dummy + 1L
     }
+    if (nrow(away_lu) == 0) {
+      away_lu <- make_dummy_lineup(m$match_id, atid, m$away_team, "away")
+      n_dummy <- n_dummy + 1L
+    }
+
+    upcoming_lineups[[i]] <- bind_rows(home_lu, away_lu)
   }
+  if (n_dummy > 0) message(sprintf("  Used default ratings for %d team-fixtures with no lineup history", n_dummy))
 
   # Try date-specific skill ratings for fixtures
   fixture_ratings <- NULL

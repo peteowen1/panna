@@ -64,7 +64,8 @@ run_step <- function(step_name, step_num, code_block) {
   if (is.numeric(step_num)) {
     step_key <- sprintf("step_%02d_%s", step_num, step_name)
   } else {
-    step_key <- sprintf("step_%s_%s", step_num, step_name)
+    padded <- sub("^(\\d)([a-z])", "0\\1\\2", as.character(step_num))
+    step_key <- sprintf("step_%s_%s", padded, step_name)
   }
   if (!isTRUE(run_steps[[step_key]])) {
     message(sprintf("\n[%s] Step %s: %s - SKIPPED",
