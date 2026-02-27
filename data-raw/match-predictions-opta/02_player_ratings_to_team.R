@@ -138,6 +138,7 @@ sey_values <- unique(played$season_end_year)
 message(sprintf("  Processing %d season-years...", length(sey_values)))
 
 all_team_ratings <- list()
+n_failed <- 0L
 
 for (sey in sey_values) {
   matches_sey <- played[played$season_end_year == sey, ]
@@ -152,8 +153,14 @@ for (sey in sey_values) {
     all_team_ratings[[as.character(sey)]] <- tr
     message(sprintf("    SEY %d: %d matches", sey, nrow(tr)))
   }, error = function(e) {
+    n_failed <<- n_failed + 1L
     message(sprintf("    SEY %d ERROR: %s", sey, e$message))
   })
+}
+
+if (n_failed > 0) {
+  warning(sprintf("%d/%d season-end-years failed team rating aggregation.",
+                  n_failed, length(sey_values)), call. = FALSE)
 }
 
 team_ratings <- bind_rows(all_team_ratings)
@@ -173,9 +180,8 @@ if (nrow(upcoming) > 0) {
     filter(match_date == max(match_date)) %>%
     ungroup()
 
-  # Helper: create a dummy lineup (11 players, all-zero ratings) for teams
-
-  # with no lineup history. Positions: 1 GK, 4 DEF, 4 MID, 2 FWD.
+  # Helper: create a dummy lineup (11 players, replacement-level ratings) for
+  # teams with no lineup history. Positions: 1 GK, 4 DEF, 4 MID, 2 FWD.
   make_dummy_lineup <- function(match_id, team_id, team_name, team_position) {
     positions <- c("Goalkeeper", rep("Defender", 4), rep("Midfielder", 4),
                    rep("Forward", 2))
@@ -218,7 +224,7 @@ if (nrow(upcoming) > 0) {
 
     upcoming_lineups[[i]] <- bind_rows(home_lu, away_lu)
   }
-  if (n_dummy > 0) message(sprintf("  Used default ratings for %d team-fixtures with no lineup history", n_dummy))
+  if (n_dummy > 0) message(sprintf("  Used replacement-level ratings for %d team-fixtures with no lineup history", n_dummy))
 
   # Try date-specific skill ratings for fixtures
   fixture_ratings <- NULL
@@ -295,7 +301,8 @@ if (nrow(upcoming) > 0) {
                         nrow(fixture_ratings), fixture_date))
       }
     }, error = function(e) {
-      message(sprintf("  Date-specific skills failed: %s (using seasonal fallback)", e$message))
+      warning(sprintf("Date-specific skills failed: %s (using seasonal fallback)", e$message),
+              call. = FALSE)
     })
   }
 
@@ -309,7 +316,7 @@ if (nrow(upcoming) > 0) {
       team_ratings <- bind_rows(team_ratings, upcoming_tr)
       message(sprintf("  Added %d fixture team ratings", nrow(upcoming_tr)))
     }, error = function(e) {
-      message(sprintf("  Fixture ratings error: %s", e$message))
+      warning(sprintf("Fixture team ratings failed: %s", e$message), call. = FALSE)
     })
   }
 }

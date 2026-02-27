@@ -99,6 +99,13 @@ run_step <- function(step_name, step_num, code_block) {
   )
 }
 
+check_critical_step <- function(result) {
+  if (!is.null(result) && result$status == "FAILED") {
+    stop(sprintf("Critical step %s (%s) failed. Cannot continue pipeline.",
+                 result$step, result$name), call. = FALSE)
+  }
+}
+
 format_duration <- function(secs) {
   if (secs < 60) {
     sprintf("%.1f seconds", secs)
@@ -180,30 +187,35 @@ message(paste(rep("#", 70), collapse = ""))
 step_results[[1]] <- run_step("build_fixture_results", 1, function() {
   source("data-raw/match-predictions-opta/01_build_fixture_results.R", local = TRUE)
 })
+check_critical_step(step_results[[1]])
 
 # 6. Step 2: Player Ratings to Team ----
 
 step_results[[2]] <- run_step("player_ratings_to_team", 2, function() {
   source("data-raw/match-predictions-opta/02_player_ratings_to_team.R", local = TRUE)
 })
+check_critical_step(step_results[[2]])
 
 # 6b. Step 2b: Team Skill Features ----
 
 step_results[["2b"]] <- run_step("team_skill_features", "2b", function() {
   source("data-raw/match-predictions-opta/02b_team_skill_features.R", local = TRUE)
 })
+# 2b is optional — don't abort if it fails
 
 # 7. Step 3: Team Rolling Features ----
 
 step_results[[3]] <- run_step("team_rolling_features", 3, function() {
   source("data-raw/match-predictions-opta/03_team_rolling_features.R", local = TRUE)
 })
+check_critical_step(step_results[[3]])
 
 # 8. Step 4: Build Match Dataset ----
 
 step_results[[4]] <- run_step("build_match_dataset", 4, function() {
   source("data-raw/match-predictions-opta/04_build_match_dataset.R", local = TRUE)
 })
+check_critical_step(step_results[[4]])
 
 # 9. Step 5: Fit Goals Model ----
 

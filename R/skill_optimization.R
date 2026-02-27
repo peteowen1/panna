@@ -656,10 +656,10 @@ optimize_all_priors <- function(match_stats, decay_params = NULL,
           devtools::load_all(pkg_path, quiet = TRUE),
           error = function(e) {
             message("devtools::load_all() failed on worker, falling back to library(panna)")
-            requireNamespace("panna", quietly = TRUE)
+            library(panna)
           }
         )
-        requireNamespace("data.table", quietly = TRUE)
+        library(data.table)
       })
       parallel::clusterExport(cl, c("precomputed", "pos_multipliers", "sample_n"),
                               envir = environment())

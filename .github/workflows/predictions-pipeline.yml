@@ -83,6 +83,19 @@ jobs:
           echo "Opta data downloaded to $OPTA_DIR"
           ls -lh "$OPTA_DIR"
 
+          # Validate required files
+          MISSING=0
+          for f in opta_lineups.parquet opta_fixtures.parquet opta_player_stats.parquet opta-catalog.json; do
+            if [ ! -f "$OPTA_DIR/$f" ]; then
+              echo "FATAL: Required file $f was not downloaded"
+              MISSING=$((MISSING + 1))
+            fi
+          done
+          if [ "$MISSING" -gt 0 ]; then
+            echo "ERROR: $MISSING required file(s) missing. Cannot run predictions pipeline."
+            exit 1
+          fi
+
       - name: Download prediction caches
         env:
           GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
@@ -115,6 +128,12 @@ jobs:
           echo "Cache files:"
           ls -lh "$CACHE_OPTA"/*.rds 2>/dev/null || echo "  No RAPM caches"
           ls -lh "$CACHE_SKILLS"/*.rds 2>/dev/null || echo "  No skill caches"
+
+          # Validate required cache (pipeline cannot run without seasonal ratings)
+          if [ ! -f "$CACHE_OPTA/07_seasonal_ratings.rds" ] && [ ! -f "$CACHE_SKILLS/06_seasonal_ratings.rds" ]; then
+            echo "FATAL: No seasonal ratings cache found. Run upload_prediction_caches.R first."
+            exit 1
+          fi
 
       - name: Run predictions pipeline
         env:
