@@ -637,6 +637,19 @@ derive_xa <- function(spadl_actions) {
 #' @export
 aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0) {
   dt <- data.table::as.data.table(spadl)
+  lineup_dt <- data.table::as.data.table(lineups)
+
+  # Filter SPADL to only (match_id, player_id) pairs with valid lineup minutes
+  # This ensures passes/shots/assists are counted from the same matches as minutes
+  valid_appearances <- unique(lineup_dt[
+    !is.na(minutes_played) & minutes_played > 0, .(match_id, player_id)
+  ])
+  n_before <- nrow(dt)
+  dt <- dt[valid_appearances, on = c("match_id", "player_id"), nomatch = NULL]
+  n_dropped <- n_before - nrow(dt)
+  if (n_dropped > 0) {
+    cli::cli_alert_info("Filtered {n_dropped} SPADL actions without valid lineup minutes")
+  }
 
   # --- Shooting stats ---
   shots_dt <- dt[action_type == "shot"]
@@ -695,7 +708,6 @@ aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0) {
   }
 
   # --- Minutes from lineups ---
-  lineup_dt <- data.table::as.data.table(lineups)
   minutes_df <- lineup_dt[, .(
     minutes = sum(minutes_played, na.rm = TRUE),
     team_name = team_name[1]

@@ -943,6 +943,9 @@ fit_spm_xgb <- function(data, predictor_cols = NULL, nfolds = 10,
 calculate_spm_ratings_xgb <- function(player_features, spm_xgb_model) {
   predictor_cols <- spm_xgb_model$panna_metadata$predictor_cols
 
+  # Ensure data.frame (data.table subsetting interprets predictor_cols as column name)
+  player_features <- as.data.frame(player_features)
+
   # Prepare prediction matrix
   X <- as.matrix(player_features[, predictor_cols, drop = FALSE])
   X[is.na(X)] <- 0
@@ -1027,6 +1030,9 @@ extract_spm_coefficients <- function(model, lambda = "min") {
 calculate_spm_ratings <- function(player_features, spm_model, lambda = "min") {
   predictor_cols <- spm_model$panna_metadata$predictor_cols
   lambda_val <- if (lambda == "min") spm_model$lambda.min else spm_model$lambda.1se
+
+  # Ensure data.frame (data.table subsetting interprets predictor_cols as column name)
+  player_features <- as.data.frame(player_features)
 
   # Prepare prediction matrix
   X <- as.matrix(player_features[, predictor_cols, drop = FALSE])

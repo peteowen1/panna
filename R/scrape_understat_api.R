@@ -187,6 +187,8 @@ extract_json_element <- function(scripts, var_name) {
 #' @return Cleaned JSON string
 #' @keywords internal
 parse_understat_json <- function(json_str) {
+  .check_suggests("stringi", "Understat JSON parsing requires stringi.")
+
   # Convert hex escapes (\\xNN) to unicode escapes (\\u00NN)
   # Understat uses hex format: \x7B for { instead of unicode \u007B
   json_str <- gsub("\\\\x([0-9A-Fa-f]{2})", "\\\\u00\\1", json_str)
