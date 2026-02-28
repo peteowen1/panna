@@ -40,23 +40,23 @@ panna_ratings <- xrapm_results$ratings %>%
 
 # Add base RAPM
 base_rapm <- rapm_results$ratings %>%
-  group_by(player_name) %>%
+  group_by(player_id) %>%
   slice_max(total_minutes, n = 1, with_ties = FALSE) %>%
   ungroup() %>%
-  select(player_name, base_rapm = rapm, base_offense = offense, base_defense = defense)
+  select(player_id, base_rapm = rapm, base_offense = offense, base_defense = defense)
 
 panna_ratings <- panna_ratings %>%
-  left_join(base_rapm, by = "player_name")
+  left_join(base_rapm, by = "player_id")
 
 # Add skill SPM
 spm_overall <- spm_results$spm_ratings %>%
-  group_by(player_name) %>%
+  group_by(player_id) %>%
   slice_max(total_minutes, n = 1, with_ties = FALSE) %>%
   ungroup() %>%
-  select(player_name, spm_overall = spm)
+  select(player_id, spm_overall = spm)
 
 panna_ratings <- panna_ratings %>%
-  left_join(spm_overall, by = "player_name")
+  left_join(spm_overall, by = "player_id")
 
 # Ranks and percentiles
 panna_ratings <- panna_ratings %>%
@@ -98,10 +98,10 @@ if (file.exists(opta_panna_path)) {
   raw_panna <- readRDS(opta_panna_path)
 
   comp <- panna_ratings %>%
-    select(player_name, skill_panna = panna) %>%
+    select(player_id, player_name, skill_panna = panna) %>%
     inner_join(
-      raw_panna$panna_ratings %>% select(player_name, raw_panna = panna),
-      by = "player_name"
+      raw_panna$panna_ratings %>% select(player_id, raw_panna = panna),
+      by = "player_id"
     )
 
   cat(sprintf("Skill vs Raw Panna: r = %.3f\n", cor(comp$skill_panna, comp$raw_panna)))
@@ -121,15 +121,15 @@ cat("\n=== Team-Level Validation ===\n")
 if (!is.null(processed_data$lineups)) {
   player_teams <- processed_data$lineups %>%
     mutate(team = if ("team_name" %in% names(.)) team_name else team) %>%
-    group_by(player_name, team) %>%
+    group_by(player_id, team) %>%
     summarise(appearances = n(), .groups = "drop") %>%
-    group_by(player_name) %>%
+    group_by(player_id) %>%
     slice_max(appearances, n = 1) %>%
     ungroup() %>%
-    select(player_name, primary_team = team)
+    select(player_id, primary_team = team)
 
   team_panna <- panna_ratings %>%
-    left_join(player_teams, by = "player_name") %>%
+    left_join(player_teams, by = "player_id") %>%
     filter(!is.na(primary_team)) %>%
     group_by(primary_team) %>%
     summarise(

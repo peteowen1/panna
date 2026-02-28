@@ -358,9 +358,10 @@ compute_match_level_opta_stats <- function(opta_stats, min_minutes = 10) {
 
   dt <- data.table::copy(data.table::as.data.table(opta_stats))
 
-  # Clean player ID
-
-  dt[, player_id := clean_player_name(player_name)]
+  # Ensure player_id exists (preserve native Opta IDs if present)
+  if (!"player_id" %in% names(dt)) {
+    dt[, player_id := clean_player_name(player_name)]
+  }
 
   # Get column mapping and rename
   opta_cols <- .get_opta_col_mapping()

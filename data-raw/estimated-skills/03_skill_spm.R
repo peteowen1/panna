@@ -53,8 +53,8 @@ if (!"mins_per_90" %in% names(player_stats)) {
 # Join with RAPM for training
 spm_train_data <- player_stats %>%
   inner_join(
-    rapm_ratings %>% select(player_name, rapm, offense, defense),
-    by = "player_name"
+    rapm_ratings %>% select(player_id, rapm, offense, defense),
+    by = "player_id"
   )
 
 cat("Players for SPM training:", nrow(spm_train_data), "\n")
@@ -117,7 +117,7 @@ cat("Blended SPM ratings:", nrow(spm_ratings_blend), "players\n")
 
 # Evaluate correlation with RAPM
 blend_eval <- spm_ratings_blend %>%
-  inner_join(rapm_ratings %>% select(player_name, rapm), by = "player_name")
+  inner_join(rapm_ratings %>% select(player_id, rapm), by = "player_id")
 
 cat("\nCorrelation with RAPM:\n")
 cat(sprintf("  Elastic Net: %.3f\n", cor(blend_eval$spm_glmnet, blend_eval$rapm)))
@@ -129,7 +129,7 @@ opta_spm_path <- file.path(opta_cache_dir, "05_spm.rds")
 if (file.exists(opta_spm_path)) {
   opta_spm <- readRDS(opta_spm_path)
   raw_eval <- opta_spm$spm_ratings %>%
-    inner_join(rapm_ratings %>% select(player_name, rapm), by = "player_name")
+    inner_join(rapm_ratings %>% select(player_id, rapm), by = "player_id")
   raw_corr <- cor(raw_eval$spm, raw_eval$rapm)
   skill_corr <- cor(blend_eval$spm, blend_eval$rapm)
   cat(sprintf("\n*** Skill-based vs Raw-stat SPM ***\n"))

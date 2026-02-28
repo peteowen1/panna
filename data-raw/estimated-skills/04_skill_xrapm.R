@@ -86,11 +86,11 @@ if (file.exists(opta_xrapm_path)) {
   raw_xrapm <- readRDS(opta_xrapm_path)
 
   comparison <- xrapm_ratings %>%
-    select(player_name, skill_xrapm = xrapm, skill_off = offense, skill_def = defense) %>%
+    select(player_id, player_name, skill_xrapm = xrapm, skill_off = offense, skill_def = defense) %>%
     inner_join(
       raw_xrapm$ratings %>%
-        select(player_name, raw_xrapm = xrapm, raw_off = offense, raw_def = defense),
-      by = "player_name"
+        select(player_id, raw_xrapm = xrapm, raw_off = offense, raw_def = defense),
+      by = "player_id"
     )
 
   cat(sprintf("Skill vs Raw xRAPM: r = %.3f\n", cor(comparison$skill_xrapm, comparison$raw_xrapm)))
