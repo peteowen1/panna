@@ -48,6 +48,13 @@ base_rapm <- rapm_results$ratings %>%
 panna_ratings <- panna_ratings %>%
   left_join(base_rapm, by = "player_id")
 
+n_missing_rapm <- sum(is.na(panna_ratings$base_rapm))
+if (n_missing_rapm > 0) {
+  cat(sprintf("  NOTE: %d/%d players have no base RAPM match (%.1f%%)\n",
+              n_missing_rapm, nrow(panna_ratings),
+              100 * n_missing_rapm / nrow(panna_ratings)))
+}
+
 # Add skill SPM
 spm_overall <- spm_results$spm_ratings %>%
   group_by(player_id) %>%
@@ -57,6 +64,13 @@ spm_overall <- spm_results$spm_ratings %>%
 
 panna_ratings <- panna_ratings %>%
   left_join(spm_overall, by = "player_id")
+
+n_missing_spm <- sum(is.na(panna_ratings$spm_overall))
+if (n_missing_spm > 0) {
+  cat(sprintf("  NOTE: %d/%d players have no skill SPM match (%.1f%%)\n",
+              n_missing_spm, nrow(panna_ratings),
+              100 * n_missing_spm / nrow(panna_ratings)))
+}
 
 # Ranks and percentiles
 panna_ratings <- panna_ratings %>%
@@ -104,14 +118,18 @@ if (file.exists(opta_panna_path)) {
       by = "player_id"
     )
 
-  cat(sprintf("Skill vs Raw Panna: r = %.3f\n", cor(comp$skill_panna, comp$raw_panna)))
+  if (nrow(comp) > 0) {
+    cat(sprintf("Skill vs Raw Panna: r = %.3f\n", cor(comp$skill_panna, comp$raw_panna)))
 
-  # Players most changed
-  comp <- comp %>% mutate(diff = skill_panna - raw_panna)
-  cat("\nMost improved by skill estimation:\n")
-  print(head(comp %>% arrange(desc(diff)) %>% select(player_name, skill_panna, raw_panna, diff), 10))
-  cat("\nMost penalized by skill estimation:\n")
-  print(head(comp %>% arrange(diff) %>% select(player_name, skill_panna, raw_panna, diff), 10))
+    # Players most changed
+    comp <- comp %>% mutate(diff = skill_panna - raw_panna)
+    cat("\nMost improved by skill estimation:\n")
+    print(head(comp %>% arrange(desc(diff)) %>% select(player_name, skill_panna, raw_panna, diff), 10))
+    cat("\nMost penalized by skill estimation:\n")
+    print(head(comp %>% arrange(diff) %>% select(player_name, skill_panna, raw_panna, diff), 10))
+  } else {
+    cat("  WARNING: 0 players matched between skill and raw Panna\n")
+  }
 }
 
 # 8. Team Validation ----
@@ -159,7 +177,12 @@ if (!is.null(processed_data$lineups)) {
     team_validation <- team_npxgd %>%
       inner_join(team_panna %>% select(primary_team, sum_panna), by = c("team" = "primary_team"))
 
-    cat("npxGD vs Sum Skill Panna: r =", round(cor(team_validation$total_npxgd, team_validation$sum_panna), 3), "\n")
+    if (nrow(team_validation) > 0) {
+      cat(sprintf("  Teams matched: %d/%d\n", nrow(team_validation), nrow(team_npxgd)))
+      cat("npxGD vs Sum Skill Panna: r =", round(cor(team_validation$total_npxgd, team_validation$sum_panna), 3), "\n")
+    } else {
+      cat("  WARNING: 0 teams matched between npxGD and Panna ratings\n")
+    }
   }
 }
 

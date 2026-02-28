@@ -98,7 +98,12 @@ if (file.exists(opta_spm_path)) {
       }
     }
   } else {
-    cat("  Skipping comparison (player_id types differ between SPM and skills)\n")
+    warning(sprintf(
+      paste0("Zero overlap in player_id between skills (%s, e.g. '%s') and SPM (%s, e.g. '%s'). ",
+             "Diagnostic comparison skipped. If IDs should match, downstream joins will also fail."),
+      class(skill_features$player_id), skill_features$player_id[1],
+      class(raw_stats$player_id), raw_stats$player_id[1]
+    ), call. = FALSE, immediate. = TRUE)
   }
 }
 
