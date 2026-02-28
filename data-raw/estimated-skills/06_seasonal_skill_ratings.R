@@ -323,10 +323,10 @@ if (file.exists(raw_seasonal_path)) {
   raw_xrapm <- raw_seasonal$seasonal_xrapm
 
   comp <- seasonal_xrapm %>%
-    select(player_name, season_end_year, skill_xrapm = xrapm) %>%
+    select(player_id, player_name, season_end_year, skill_xrapm = xrapm) %>%
     inner_join(
-      raw_xrapm %>% select(player_name, season_end_year, raw_xrapm = xrapm),
-      by = c("player_name", "season_end_year")
+      raw_xrapm %>% select(player_id, season_end_year, raw_xrapm = xrapm),
+      by = c("player_id", "season_end_year")
     )
 
   if (nrow(comp) > 0) {
@@ -341,6 +341,8 @@ if (file.exists(raw_seasonal_path)) {
         cat(sprintf("  Season %d: r = %.3f (n=%d)\n", s, cor(sc$skill_xrapm, sc$raw_xrapm), nrow(sc)))
       }
     }
+  } else {
+    cat("  WARNING: 0 player-seasons matched between skill and raw seasonal xRAPM\n")
   }
 }
 

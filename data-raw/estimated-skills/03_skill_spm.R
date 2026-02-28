@@ -53,12 +53,21 @@ if (!"mins_per_90" %in% names(player_stats)) {
 # Join with RAPM for training
 spm_train_data <- player_stats %>%
   inner_join(
-    rapm_ratings %>% select(player_name, rapm, offense, defense),
-    by = "player_name"
+    rapm_ratings %>% select(player_id, rapm, offense, defense),
+    by = "player_id"
   )
 
 cat("Players for SPM training:", nrow(spm_train_data), "\n")
+cat(sprintf("  Match rate: %.1f%% of skill features matched RAPM ratings\n",
+            100 * nrow(spm_train_data) / nrow(player_stats)))
 
+if (nrow(spm_train_data) == 0) {
+  stop(sprintf(
+    "Zero players matched. player_id class: skills=%s (e.g. '%s'), RAPM=%s (e.g. '%s'). Likely a type mismatch.",
+    class(player_stats$player_id), player_stats$player_id[1],
+    class(rapm_ratings$player_id), rapm_ratings$player_id[1]
+  ))
+}
 if (nrow(spm_train_data) < 100) {
   stop("Too few players for SPM training. Check RAPM/skill feature overlap.")
 }
@@ -117,25 +126,31 @@ cat("Blended SPM ratings:", nrow(spm_ratings_blend), "players\n")
 
 # Evaluate correlation with RAPM
 blend_eval <- spm_ratings_blend %>%
-  inner_join(rapm_ratings %>% select(player_name, rapm), by = "player_name")
+  inner_join(rapm_ratings %>% select(player_id, rapm), by = "player_id")
 
-cat("\nCorrelation with RAPM:\n")
-cat(sprintf("  Elastic Net: %.3f\n", cor(blend_eval$spm_glmnet, blend_eval$rapm)))
-cat(sprintf("  XGBoost:     %.3f\n", cor(blend_eval$spm_xgb, blend_eval$rapm)))
-cat(sprintf("  50/50 Blend: %.3f\n", cor(blend_eval$spm, blend_eval$rapm)))
+if (nrow(blend_eval) > 0) {
+  cat("\nCorrelation with RAPM:\n")
+  cat(sprintf("  Elastic Net: %.3f\n", cor(blend_eval$spm_glmnet, blend_eval$rapm)))
+  cat(sprintf("  XGBoost:     %.3f\n", cor(blend_eval$spm_xgb, blend_eval$rapm)))
+  cat(sprintf("  50/50 Blend: %.3f\n", cor(blend_eval$spm, blend_eval$rapm)))
+} else {
+  cat("\n  WARNING: 0 players matched for RAPM correlation eval\n")
+}
 
 # Compare with raw-stat SPM if available
 opta_spm_path <- file.path(opta_cache_dir, "05_spm.rds")
 if (file.exists(opta_spm_path)) {
   opta_spm <- readRDS(opta_spm_path)
   raw_eval <- opta_spm$spm_ratings %>%
-    inner_join(rapm_ratings %>% select(player_name, rapm), by = "player_name")
-  raw_corr <- cor(raw_eval$spm, raw_eval$rapm)
-  skill_corr <- cor(blend_eval$spm, blend_eval$rapm)
-  cat(sprintf("\n*** Skill-based vs Raw-stat SPM ***\n"))
-  cat(sprintf("  Raw-stat SPM  r(RAPM): %.3f\n", raw_corr))
-  cat(sprintf("  Skill SPM     r(RAPM): %.3f\n", skill_corr))
-  cat(sprintf("  Improvement:           %+.3f\n", skill_corr - raw_corr))
+    inner_join(rapm_ratings %>% select(player_id, rapm), by = "player_id")
+  if (nrow(raw_eval) > 0 && nrow(blend_eval) > 0) {
+    raw_corr <- cor(raw_eval$spm, raw_eval$rapm)
+    skill_corr <- cor(blend_eval$spm, blend_eval$rapm)
+    cat(sprintf("\n*** Skill-based vs Raw-stat SPM ***\n"))
+    cat(sprintf("  Raw-stat SPM  r(RAPM): %.3f\n", raw_corr))
+    cat(sprintf("  Skill SPM     r(RAPM): %.3f\n", skill_corr))
+    cat(sprintf("  Improvement:           %+.3f\n", skill_corr - raw_corr))
+  }
 }
 
 # 9. Validate ----

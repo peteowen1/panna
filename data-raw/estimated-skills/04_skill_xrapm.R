@@ -86,24 +86,28 @@ if (file.exists(opta_xrapm_path)) {
   raw_xrapm <- readRDS(opta_xrapm_path)
 
   comparison <- xrapm_ratings %>%
-    select(player_name, skill_xrapm = xrapm, skill_off = offense, skill_def = defense) %>%
+    select(player_id, player_name, skill_xrapm = xrapm, skill_off = offense, skill_def = defense) %>%
     inner_join(
       raw_xrapm$ratings %>%
-        select(player_name, raw_xrapm = xrapm, raw_off = offense, raw_def = defense),
-      by = "player_name"
+        select(player_id, raw_xrapm = xrapm, raw_off = offense, raw_def = defense),
+      by = "player_id"
     )
 
-  cat(sprintf("Skill vs Raw xRAPM: r = %.3f\n", cor(comparison$skill_xrapm, comparison$raw_xrapm)))
-  cat(sprintf("Skill vs Raw Offense: r = %.3f\n", cor(comparison$skill_off, comparison$raw_off)))
-  cat(sprintf("Skill vs Raw Defense: r = %.3f\n", cor(comparison$skill_def, comparison$raw_def)))
+  if (nrow(comparison) > 0) {
+    cat(sprintf("Skill vs Raw xRAPM: r = %.3f\n", cor(comparison$skill_xrapm, comparison$raw_xrapm)))
+    cat(sprintf("Skill vs Raw Offense: r = %.3f\n", cor(comparison$skill_off, comparison$raw_off)))
+    cat(sprintf("Skill vs Raw Defense: r = %.3f\n", cor(comparison$skill_def, comparison$raw_def)))
 
-  # Players most changed
-  comparison <- comparison %>%
-    mutate(diff = skill_xrapm - raw_xrapm) %>%
-    arrange(desc(abs(diff)))
+    # Players most changed
+    comparison <- comparison %>%
+      mutate(diff = skill_xrapm - raw_xrapm) %>%
+      arrange(desc(abs(diff)))
 
-  cat("\nPlayers most changed by skill estimation:\n")
-  print(head(comparison %>% select(player_name, skill_xrapm, raw_xrapm, diff), 15))
+    cat("\nPlayers most changed by skill estimation:\n")
+    print(head(comparison %>% select(player_name, skill_xrapm, raw_xrapm, diff), 15))
+  } else {
+    cat("  WARNING: 0 players matched between skill and raw xRAPM\n")
+  }
 }
 
 # 8. Save ----

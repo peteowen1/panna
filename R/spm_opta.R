@@ -358,9 +358,20 @@ compute_match_level_opta_stats <- function(opta_stats, min_minutes = 10) {
 
   dt <- data.table::copy(data.table::as.data.table(opta_stats))
 
-  # Clean player ID
-
-  dt[, player_id := clean_player_name(player_name)]
+  # Use native player_id if available, fall back to clean_player_name
+  if (!"player_id" %in% names(dt)) {
+    dt[, player_id := clean_player_name(player_name)]
+  } else {
+    n_na <- sum(is.na(dt$player_id))
+    if (n_na > 0) {
+      warning(sprintf(
+        "compute_match_level_opta_stats: %d/%d rows have NA player_id, using clean_player_name for those rows.",
+        n_na, nrow(dt)
+      ), call. = FALSE)
+      na_mask <- is.na(dt$player_id)
+      dt[na_mask, player_id := clean_player_name(player_name)]
+    }
+  }
 
   # Get column mapping and rename
   opta_cols <- .get_opta_col_mapping()

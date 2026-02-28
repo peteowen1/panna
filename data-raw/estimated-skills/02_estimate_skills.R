@@ -85,17 +85,25 @@ if (file.exists(opta_spm_path)) {
   overlap <- intersect(skill_features$player_id, raw_stats$player_id)
   cat(sprintf("Overlapping players with raw stats: %d\n", length(overlap)))
 
-  # Compare a few key stats
-  key_stats <- c("goals_p90", "assists_p90", "tackles_won_p90", "shots_p90")
-  for (stat in key_stats) {
-    if (stat %in% names(skill_features) && stat %in% names(raw_stats)) {
-      sf <- skill_features[player_id %in% overlap, .(player_id, skill = get(stat))]
-      rf <- raw_stats[raw_stats$player_id %in% overlap, c("player_id", stat)]
-      names(rf)[2] <- "raw"
-      merged <- merge(sf, rf, by = "player_id")
-      r <- cor(merged$skill, merged$raw, use = "complete.obs")
-      cat(sprintf("  %s: skill vs raw r = %.3f\n", stat, r))
+  if (length(overlap) > 0) {
+    key_stats <- c("goals_p90", "assists_p90", "tackles_won_p90", "shots_p90")
+    for (stat in key_stats) {
+      if (stat %in% names(skill_features) && stat %in% names(raw_stats)) {
+        sf <- skill_features[player_id %in% overlap, .(player_id, skill = get(stat))]
+        rf <- raw_stats[raw_stats$player_id %in% overlap, c("player_id", stat)]
+        names(rf)[2] <- "raw"
+        merged <- merge(sf, rf, by = "player_id")
+        r <- cor(merged$skill, merged$raw, use = "complete.obs")
+        cat(sprintf("  %s: skill vs raw r = %.3f\n", stat, r))
+      }
     }
+  } else {
+    warning(sprintf(
+      paste0("Zero overlap in player_id between skills (%s, e.g. '%s') and SPM (%s, e.g. '%s'). ",
+             "Diagnostic comparison skipped. If IDs should match, downstream joins will also fail."),
+      class(skill_features$player_id), skill_features$player_id[1],
+      class(raw_stats$player_id), raw_stats$player_id[1]
+    ), call. = FALSE, immediate. = TRUE)
   }
 }
 
