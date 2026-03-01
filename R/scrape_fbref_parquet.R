@@ -117,7 +117,7 @@ if (!force && exists(cache_key, envir = .remote_parquet_cache)) {
 #' }
 aggregate_cached_matches <- function(table_type, league = NULL, season = NULL,
                                      prefer_parquet = TRUE,
-                                     source = c("local", "remote")) {
+                                     source = c("remote", "local")) {
   source <- match.arg(source)
 
   # Determine base directory

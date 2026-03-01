@@ -46,7 +46,7 @@
 #' @param season Character. Season (e.g., "2024-2025").
 #' @param min_minutes Integer. Minimum minutes for inclusion (default 450).
 #' @param by_team Logical. If TRUE, aggregate by player and team separately.
-#' @param source Character. "local" (default) or "remote".
+#' @param source Character. "remote" (default) or "local".
 #'
 #' @return Data frame with player summary statistics.
 #'
@@ -61,7 +61,7 @@ player_opta_summary <- function(player = NULL,
                                  season = NULL,
                                  min_minutes = 450,
                                  by_team = FALSE,
-                                 source = c("local", "remote")) {
+                                 source = c("remote", "local")) {
   source <- match.arg(source)
   validate_min_minutes(min_minutes)
 
@@ -171,7 +171,7 @@ player_opta_passing <- function(player = NULL,
                                  season = NULL,
                                  min_minutes = 450,
                                  by_team = FALSE,
-                                 source = c("local", "remote")) {
+                                 source = c("remote", "local")) {
   source <- match.arg(source)
   validate_min_minutes(min_minutes)
 
@@ -271,7 +271,7 @@ player_opta_defense <- function(player = NULL,
                                  season = NULL,
                                  min_minutes = 450,
                                  by_team = FALSE,
-                                 source = c("local", "remote")) {
+                                 source = c("remote", "local")) {
   source <- match.arg(source)
   validate_min_minutes(min_minutes)
 
@@ -376,7 +376,7 @@ player_opta_possession <- function(player = NULL,
                                     season = NULL,
                                     min_minutes = 450,
                                     by_team = FALSE,
-                                    source = c("local", "remote")) {
+                                    source = c("remote", "local")) {
   source <- match.arg(source)
   validate_min_minutes(min_minutes)
 
@@ -479,7 +479,7 @@ player_opta_keeper <- function(player = NULL,
                                 season = NULL,
                                 min_minutes = 450,
                                 by_team = FALSE,
-                                source = c("local", "remote")) {
+                                source = c("remote", "local")) {
   source <- match.arg(source)
   validate_min_minutes(min_minutes)
 
@@ -595,7 +595,7 @@ player_opta_shots <- function(player = NULL,
                                season = NULL,
                                min_minutes = 450,
                                by_team = FALSE,
-                               source = c("local", "remote")) {
+                               source = c("remote", "local")) {
   source <- match.arg(source)
   validate_min_minutes(min_minutes)
 
@@ -703,7 +703,7 @@ player_opta_shots <- function(player = NULL,
 #' @param season Character. Season (e.g., "2024-2025").
 #' @param min_minutes Integer. Minimum minutes for inclusion (default 450).
 #' @param by_team Logical. If TRUE, aggregate by player and team separately.
-#' @param source Character. "local" (default) or "remote".
+#' @param source Character. "remote" (default) or "local".
 #'
 #' @return Data frame with xG/xA statistics per player.
 #'
@@ -722,7 +722,7 @@ player_opta_xg <- function(player = NULL,
                             season = NULL,
                             min_minutes = 450,
                             by_team = FALSE,
-                            source = c("local", "remote")) {
+                            source = c("remote", "local")) {
   source <- match.arg(source)
   validate_min_minutes(min_minutes)
 
@@ -838,7 +838,7 @@ player_opta_xpass <- function(player = NULL,
                                season = NULL,
                                min_minutes = 450,
                                by_team = FALSE,
-                               source = c("local", "remote")) {
+                               source = c("remote", "local")) {
   source <- match.arg(source)
   validate_min_minutes(min_minutes)
 
@@ -938,7 +938,7 @@ player_opta_setpiece <- function(player = NULL,
                                   season = NULL,
                                   min_minutes = 450,
                                   by_team = FALSE,
-                                  source = c("local", "remote")) {
+                                  source = c("remote", "local")) {
   source <- match.arg(source)
   validate_min_minutes(min_minutes)
 
