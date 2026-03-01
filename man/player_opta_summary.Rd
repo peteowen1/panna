@@ -10,7 +10,7 @@ player_opta_summary(
   season = NULL,
   min_minutes = 450,
   by_team = FALSE,
-  source = c("local", "remote")
+  source = c("remote", "local")
 )
 }
 \arguments{
@@ -24,14 +24,14 @@ player_opta_summary(
 
 \item{by_team}{Logical. If TRUE, aggregate by player and team separately.}
 
-\item{source}{Character. "local" (default) or "remote".}
+\item{source}{Character. "remote" (default) or "local".}
 }
 \value{
 Data frame with player summary statistics.
 }
 \description{
 Aggregate basic statistics from Opta data. Returns totals and per-90 rates.
-Note: Opta does not have xG data.
+Note: This uses raw Opta match stats (no xG). For xG/xA, use \code{player_opta_xg()}.
 }
 \examples{
 \dontrun{
