@@ -152,7 +152,7 @@ if (nrow(upcoming) > 0) {
         filter(match_date == max(match_date)) %>%
         ungroup()
 
-      # make_dummy_lineup() is defined in 02_player_ratings_to_team.R
+      # make_dummy_lineup() is defined in R/match_prediction.R
 
       # Build fixture lineups
       fixture_lu_list <- list()

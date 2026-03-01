@@ -156,18 +156,25 @@ message(paste(rep("#", 70), collapse = ""))
 step_results[[1]] <- run_step("load_data", 1, function() {
   source("data-raw/player-ratings-opta/01_load_opta_data.R", local = TRUE)
 })
+check_critical_step(1, "load_data")
 
 # 6. Step 2: Data Processing ----
 
-step_results[[2]] <- run_step("data_processing", 2, function() {
-  source("data-raw/player-ratings-opta/02_data_processing.R", local = TRUE)
-})
+if (!isTRUE(pipeline_failed)) {
+  step_results[[2]] <- run_step("data_processing", 2, function() {
+    source("data-raw/player-ratings-opta/02_data_processing.R", local = TRUE)
+  })
+  check_critical_step(2, "data_processing")
+}
 
 # 7. Step 3: Splint Creation ----
 
-step_results[[3]] <- run_step("splint_creation", 3, function() {
-  source("data-raw/player-ratings-opta/03_splint_creation.R", local = TRUE)
-})
+if (!isTRUE(pipeline_failed)) {
+  step_results[[3]] <- run_step("splint_creation", 3, function() {
+    source("data-raw/player-ratings-opta/03_splint_creation.R", local = TRUE)
+  })
+  check_critical_step(3, "splint_creation")
+}
 
 # 8. Step 4: RAPM ----
 
@@ -202,6 +209,7 @@ if (!isTRUE(pipeline_failed)) {
   step_results[[7]] <- run_step("seasonal_ratings", 7, function() {
     source("data-raw/player-ratings-opta/07_seasonal_ratings.R", local = TRUE)
   })
+  check_critical_step(7, "seasonal_ratings")
 }
 
 # 12. Step 8: Final Ratings ----
@@ -210,13 +218,13 @@ if (!isTRUE(pipeline_failed)) {
   step_results[[8]] <- run_step("panna_ratings", 8, function() {
     source("data-raw/player-ratings-opta/08_panna_ratings.R", local = TRUE)
   })
+  check_critical_step(8, "panna_ratings")
 }
 
 # 13. Step 9: Export Ratings ----
 
-# Skip export if pipeline failed or step 7 failed
-if (isTRUE(pipeline_failed) ||
-    (!is.null(step_results[[7]]) && step_results[[7]]$status == "FAILED")) {
+# Skip export if pipeline failed
+if (isTRUE(pipeline_failed)) {
   message("\nSkipping export: upstream step failed")
   step_results[[9]] <- list(step = 9, name = "export_ratings", status = "SKIPPED",
                             duration_secs = 0, duration_formatted = "0.0 seconds")

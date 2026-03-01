@@ -564,7 +564,7 @@ load_opta_big5 <- function(season = NULL, columns = NULL) {
   valid_results <- Filter(Negate(is.null), results)
 
   if (length(valid_results) == 0) {
-    unique_errs <- unique(error_msgs)
+    unique_errs <- unique(unlist(error_msgs))
     if (length(unique_errs) == 1) {
       cli::cli_abort(c(
         "Failed to load data for any Big 5 league.",

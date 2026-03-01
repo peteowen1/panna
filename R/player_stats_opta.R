@@ -8,7 +8,7 @@
 # Internal helper to load Opta data, handling NULL league
 .load_opta_data <- function(league, season, source) {
   data <- if (is.null(league)) {
-    # Load all Big 5 leagues (load_opta_big5 only supports local)
+    # Load all Big 5 leagues (load_opta_big5 uses load_opta_stats default source)
     load_opta_big5(season = season)
   } else {
     load_opta_stats(league = league, season = season, source = source)
@@ -18,6 +18,7 @@
 }
 
 # Internal helper to load Opta xmetrics data
+# Note: source param is accepted for API consistency but xmetrics only supports local
 .load_opta_xmetrics_data <- function(league, season, source) {
   data <- if (is.null(league)) {
     # Load all Big 5 leagues
@@ -39,7 +40,7 @@
 #' Opta Player Summary Statistics
 #'
 #' Aggregate basic statistics from Opta data. Returns totals and per-90 rates.
-#' Note: Opta does not have xG data.
+#' Note: This uses raw Opta match stats (no xG). For xG/xA, use \code{player_opta_xg()}.
 #'
 #' @param player Character. Player name to filter (case-insensitive partial match).
 #' @param league Character. League code (ENG, ESP, GER, ITA, FRA).

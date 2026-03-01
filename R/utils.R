@@ -48,7 +48,7 @@ clean_column_names <- function(data) {
 #' @param y Denominator
 #' @param default Value to return when denominator is zero (default: 0)
 #'
-#' @return x / y, or default if y is zero
+#' @return x / y, with Inf/NaN from division-by-zero replaced by default. Input NAs are preserved.
 #' @export
 #'
 #' @examples
