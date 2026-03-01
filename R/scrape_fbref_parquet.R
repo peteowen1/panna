@@ -101,7 +101,7 @@ if (!force && exists(cache_key, envir = .remote_parquet_cache)) {
 #' @param league Optional league filter (e.g., "ENG")
 #' @param season Optional season filter (e.g., "2024-2025")
 #' @param prefer_parquet If TRUE (default), use parquet when available
-#' @param source "local" (default) or "remote" to download from GitHub releases
+#' @param source "remote" (default) or "local" to load from local files
 #'
 #' @return Combined data frame, or NULL if no cached data
 #' @keywords internal
@@ -117,7 +117,7 @@ if (!force && exists(cache_key, envir = .remote_parquet_cache)) {
 #' }
 aggregate_cached_matches <- function(table_type, league = NULL, season = NULL,
                                      prefer_parquet = TRUE,
-                                     source = c("local", "remote")) {
+                                     source = c("remote", "local")) {
   source <- match.arg(source)
 
   # Determine base directory

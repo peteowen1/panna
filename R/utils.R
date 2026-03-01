@@ -48,7 +48,7 @@ clean_column_names <- function(data) {
 #' @param y Denominator
 #' @param default Value to return when denominator is zero (default: 0)
 #'
-#' @return x / y, or default if y is zero
+#' @return x / y, with Inf/NaN from division-by-zero replaced by default. Input NAs are preserved.
 #' @export
 #'
 #' @examples
@@ -56,8 +56,11 @@ clean_column_names <- function(data) {
 #' safe_divide(10, 0)
 #' safe_divide(10, 0, default = NA)
 safe_divide <- function(x, y, default = 0) {
+  # Preserve genuine NAs from inputs; only replace Inf/NaN from division-by-zero
+  input_na <- is.na(x) | is.na(y)
   result <- x / y
-  result[is.na(result) | is.infinite(result) | is.nan(result)] <- default
+  bad <- (is.infinite(result) | is.nan(result)) & !input_na
+  result[bad] <- default
   result
 }
 
@@ -158,7 +161,7 @@ standardize_player_names <- function(names) {
   # Fast title case: lowercase then capitalize first letter of each word
   cleaned <- tolower(cleaned)
   # Use gsub with perl regex for fast word boundary capitalization
-  cleaned <- gsub("(?<=^|\\s)([a-z])", "\\U\\1", cleaned, perl = TRUE)
+  cleaned <- gsub("(^|\\s)([a-z])", "\\1\\U\\2", cleaned, perl = TRUE)
 
   # Build lookup and return via O(1) match
   lookup <- setNames(cleaned, unique_names)
@@ -418,7 +421,7 @@ validate_data_completeness <- function(data, required_cols = NULL, warn = TRUE) 
 
   # Check NA values
   na_counts <- sapply(data, function(x) sum(is.na(x)))
-  na_pcts <- round(na_counts / nrow(data) * 100, 1)
+  na_pcts <- if (nrow(data) > 0) round(na_counts / nrow(data) * 100, 1) else rep(0, length(na_counts))
   result$na_summary <- data.frame(
     column = names(na_counts),
     na_count = na_counts,
@@ -449,14 +452,14 @@ per_90 <- function(stat, minutes) {
 
 #' Print progress message
 #'
-#' @param message Message to print
+#' @param msg Message to print
 #' @param verbose Whether to print
 #'
 #' @return NULL (invisibly)
 #' @keywords internal
-progress_msg <- function(message, verbose = TRUE) {
+progress_msg <- function(msg, verbose = TRUE) {
   if (verbose) {
-    message(paste0("[", format(Sys.time(), "%H:%M:%S"), "] ", message))
+    message(paste0("[", format(Sys.time(), "%H:%M:%S"), "] ", msg))
   }
   invisible(NULL)
 }
@@ -594,6 +597,48 @@ extract_season_from_match_id <- function(match_id) {
 extract_season_end_year_from_match_id <- function(match_id) {
   season <- extract_season_from_match_id(match_id)
   as.numeric(substr(season, 6, 9))
+}
+
+
+#' Extract season end year from a season string
+#'
+#' Handles both "YYYY-YYYY" format (returns second year) and
+#' tournament "YYYY Country" format (returns the year).
+#'
+#' @param season Season string (e.g., "2023-2024" or "2018 Russia")
+#' @return Numeric end year, or NA_real_ if unparseable
+#' @keywords internal
+extract_season_end_year <- function(season) {
+  if (grepl("^\\d{4}-\\d{4}$", season)) return(as.numeric(substr(season, 6, 9)))
+  year <- as.numeric(sub("^(\\d{4}).*", "\\1", season))
+  if (!is.na(year)) return(year)
+  NA_real_
+}
+
+
+#' Format a duration in seconds as a human-readable string
+#'
+#' @param secs Duration in seconds
+#' @return Formatted string (e.g., "3.2 seconds", "1.5 minutes", "2.1 hours")
+#' @keywords internal
+format_duration <- function(secs) {
+  if (secs < 60) return(sprintf("%.1f seconds", secs))
+  if (secs < 3600) return(sprintf("%.1f minutes", secs / 60))
+  sprintf("%.1f hours", secs / 3600)
+}
+
+
+#' Extract column from data frame with zero fallback
+#'
+#' Returns the column as numeric if it exists, otherwise a vector of zeros.
+#' Used internally by player stat aggregation functions.
+#'
+#' @param df Data frame
+#' @param col Column name
+#' @return Numeric vector
+#' @keywords internal
+.get_col <- function(df, col) {
+  if (col %in% names(df)) as.numeric(df[[col]]) else rep(0, nrow(df))
 }
 
 
@@ -873,15 +918,24 @@ build_where_clause <- function(filters, prefix = TRUE) {
   # Build conditions
   conditions <- vapply(names(filters), function(col_name) {
     value <- filters[[col_name]]
-    if (is.character(value)) {
-      # Quote strings (escape single quotes to prevent SQL injection)
+    if (length(value) > 1) {
+      # Multiple values: use IN clause
+      if (is.character(value)) {
+        escaped <- gsub("'", "''", value)
+        vals <- paste0("'", escaped, "'", collapse = ", ")
+      } else if (is.numeric(value)) {
+        vals <- paste(value, collapse = ", ")
+      } else {
+        escaped <- gsub("'", "''", as.character(value))
+        vals <- paste0("'", escaped, "'", collapse = ", ")
+      }
+      sprintf("%s IN (%s)", col_name, vals)
+    } else if (is.character(value)) {
       escaped <- gsub("'", "''", value)
       sprintf("%s = '%s'", col_name, escaped)
     } else if (is.numeric(value)) {
-      # Don't quote numbers
       sprintf("%s = %s", col_name, value)
     } else {
-      # Convert to string and quote (escape single quotes)
       escaped <- gsub("'", "''", as.character(value))
       sprintf("%s = '%s'", col_name, escaped)
     }

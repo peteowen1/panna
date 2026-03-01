@@ -26,14 +26,7 @@ SPADL_CACHE_DIR <- "data-raw/cache/epv/spadl"
 
 # Helper: extract season end year from both standard and tournament formats
 # "2024-2025" -> 2025, "2018 Russia" -> 2018, "2024 Germany" -> 2024
-extract_season_end_year <- function(season) {
-  # Standard "YYYY-YYYY" format
-  if (grepl("^\\d{4}-\\d{4}$", season)) return(as.numeric(substr(season, 6, 9)))
-  # Tournament "YYYY Country" format (year IS the end year)
-  year <- as.numeric(sub("^(\\d{4}).*", "\\1", season))
-  if (!is.na(year)) return(year)
-  NA_real_
-}
+# extract_season_end_year() is defined in R/utils.R
 
 raw_data_path <- file.path(cache_dir, "01_raw_data.rds")
 config_path <- file.path(cache_dir, "01_config.rds")

@@ -249,10 +249,13 @@ fit_xg_model <- function(shot_features,
     verbose = 0
   )
 
-  # Get predictions for calibration
-  y_pred <- stats::predict(final_model, dtrain)
+  # Get CV predictions for calibration (avoids optimistic in-sample estimate)
+  y_pred <- cv_result$pred
+  if (is.null(y_pred) || length(y_pred) == 0) {
+    cli::cli_warn("CV predictions not available; using in-sample predictions for calibration (may be optimistic).")
+    y_pred <- stats::predict(final_model, dtrain)
+  }
 
-  # Calculate calibration metrics
   calibration <- calculate_xg_calibration(y, y_pred)
 
   # Feature importance
@@ -713,10 +716,10 @@ aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0) {
     team_name = team_name[1]
   ), by = .(player_id, player_name, team_id)]
 
-  # --- Merge all ---
-  result <- shooting[minutes_df, on = c("player_id", "player_name", "team_id")]
-  result <- assisting[result, on = c("player_id", "player_name", "team_id")]
-  result <- passing[result, on = c("player_id", "player_name", "team_id")]
+  # --- Merge all (join on player_id + team_id to avoid Cartesian product for transfers) ---
+  result <- shooting[minutes_df, on = c("player_id", "team_id")]
+  result <- assisting[result, on = c("player_id", "team_id")]
+  result <- passing[result, on = c("player_id", "team_id")]
 
   # Fill NAs with 0
   num_cols <- c("shots", "shots_on_target", "goals", "penalty_goals", "npgoals",

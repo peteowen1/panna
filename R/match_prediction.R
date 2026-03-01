@@ -57,6 +57,7 @@ aggregate_lineup_ratings <- function(lineups, ratings, season_end_year,
   } else {
     join_key <- "clean_name"
     starters[, clean_name := clean_player_name(player_name)]
+    dt_ratings <- data.table::copy(dt_ratings)
     dt_ratings[, clean_name := clean_player_name(player_name)]
   }
 
@@ -400,6 +401,21 @@ compute_match_elos <- function(results, k = 20, home_advantage = 65,
 }
 
 
+# Helper: create a dummy lineup (11 players, replacement-level ratings) for
+# teams with no lineup history. Positions: 1 GK, 4 DEF, 4 MID, 2 FWD.
+#' @keywords internal
+make_dummy_lineup <- function(match_id, team_id, team_name, team_position) {
+  positions <- c("Goalkeeper", rep("Defender", 4), rep("Midfielder", 4),
+                 rep("Forward", 2))
+  data.frame(
+    match_id = match_id, team_id = team_id, team_name = team_name,
+    team_position = team_position, player_name = paste0("Unknown_", seq(11)),
+    position = positions, is_starter = TRUE,
+    stringsAsFactors = FALSE
+  )
+}
+
+
 # =============================================================================
 # Rolling Features
 # =============================================================================
@@ -497,10 +513,32 @@ compute_team_rolling_features <- function(results, windows = c(5L, 10L, 20L)) {
 # XGBoost Model Wrappers
 # =============================================================================
 
+# Helper: extract best nrounds from CV result with fallback
+.get_best_nrounds <- function(cv_result) {
+  n <- cv_result$best_iteration
+  if (is.null(n) || length(n) == 0) {
+    eval_log <- cv_result$evaluation_log
+    metric_col <- grep("test.*mean", names(eval_log), value = TRUE)[1]
+    if (is.na(metric_col)) {
+      cli::cli_abort(c(
+        "Cannot determine best nrounds from CV result.",
+        "x" = "No {.field best_iteration} and no {.field test.*mean} column in evaluation_log.",
+        "i" = "Available columns: {paste(names(eval_log), collapse = ', ')}"
+      ))
+    }
+    n <- which.min(eval_log[[metric_col]])
+  }
+  if (length(n) == 0 || is.na(n)) {
+    cli::cli_abort("Failed to determine best nrounds from CV result.")
+  }
+  n
+}
+
+
 #' Fit XGBoost Poisson Model for Goal Prediction
 #'
 #' Fits an XGBoost model with Poisson objective for predicting goal counts.
-#' Uses time-based cross-validation with early stopping.
+#' Uses k-fold cross-validation with early stopping.
 #'
 #' @param X Feature matrix
 #' @param y Target vector (goal counts)
@@ -543,12 +581,7 @@ fit_goals_xgb <- function(X, y, nfolds = 5L, params = NULL,
     print_every_n = 50L
   )
 
-  best_nrounds <- cv_result$best_iteration
-  if (is.null(best_nrounds) || length(best_nrounds) == 0) {
-    eval_log <- cv_result$evaluation_log
-    metric_col <- grep("test.*mean", names(eval_log), value = TRUE)[1]
-    best_nrounds <- which.min(eval_log[[metric_col]])
-  }
+  best_nrounds <- .get_best_nrounds(cv_result)
 
   model <- xgboost::xgb.train(
     params = params,
@@ -620,12 +653,7 @@ fit_outcome_xgb <- function(X, y, nfolds = 5L, params = NULL,
     print_every_n = 50L
   )
 
-  best_nrounds <- cv_result$best_iteration
-  if (is.null(best_nrounds) || length(best_nrounds) == 0) {
-    eval_log <- cv_result$evaluation_log
-    metric_col <- grep("test.*mean", names(eval_log), value = TRUE)[1]
-    best_nrounds <- which.min(eval_log[[metric_col]])
-  }
+  best_nrounds <- .get_best_nrounds(cv_result)
 
   model <- xgboost::xgb.train(
     params = params,
@@ -686,7 +714,18 @@ predict_match <- function(goals_home_model, goals_away_model, outcome_model,
   # Predict outcome probabilities
   d_outcome <- xgboost::xgb.DMatrix(data = X_full)
   probs <- stats::predict(outcome_model$model, d_outcome)
-  prob_matrix <- matrix(probs, ncol = 3, byrow = FALSE)
+  # xgboost >= 2.0 returns a matrix; older versions return a flat vector
+  if (is.matrix(probs)) {
+    prob_matrix <- probs
+  } else {
+    prob_matrix <- matrix(probs, ncol = 3, byrow = TRUE)
+  }
+  if (ncol(prob_matrix) != 3 || nrow(prob_matrix) != nrow(X_full)) {
+    cli::cli_abort(c(
+      "Unexpected probability matrix dimensions from XGBoost outcome model.",
+      "x" = "Expected {nrow(X_full)} rows x 3 columns, got {nrow(prob_matrix)} x {ncol(prob_matrix)}."
+    ))
+  }
 
   data.frame(
     pred_home_goals = pred_home_goals,

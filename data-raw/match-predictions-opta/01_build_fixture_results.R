@@ -27,12 +27,7 @@ min_season <- if (exists("min_season")) min_season else "2013-2014"
 # Tournament leagues (neutral venue flag)
 TOURNAMENT_LEAGUES <- c("WC", "EURO")
 
-extract_season_end_year <- function(season) {
-  if (grepl("^\\d{4}-\\d{4}$", season)) return(as.numeric(substr(season, 6, 9)))
-  year <- as.numeric(sub("^(\\d{4}).*", "\\1", season))
-  if (!is.na(year)) return(year)
-  NA_real_
-}
+# extract_season_end_year() is defined in R/utils.R
 
 output_path <- file.path(cache_dir, "01_fixture_results.rds")
 

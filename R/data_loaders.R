@@ -486,10 +486,10 @@ load_table_data <- function(table_type, league, season, source) {
         tryCatch({
           aggregate_cached_matches(table_type, league, season, source = "remote")
         }, error = function(e2) {
-          cli::cli_abort("Remote loading failed: {e2$message}")
+          cli::cli_abort("Remote loading failed: {e2$message}", parent = e2)
         })
       } else {
-        cli::cli_abort("Remote query failed: {e$message}")
+        cli::cli_abort("Remote query failed: {e$message}", parent = e)
       }
     })
   } else {
@@ -634,10 +634,10 @@ load_understat_table_data <- function(table_type, league, season, source) {
         tryCatch({
           aggregate_understat_data(table_type, league, season)
         }, error = function(e2) {
-          cli::cli_abort("Remote loading failed: {e2$message}")
+          cli::cli_abort("Remote loading failed: {e2$message}", parent = e2)
         })
       } else {
-        cli::cli_abort("Remote query failed: {e$message}")
+        cli::cli_abort("Remote query failed: {e$message}", parent = e)
       }
     })
   } else {
