@@ -84,9 +84,7 @@ player_opta_summary <- function(player = NULL,
 
   # Define columns to aggregate (using Opta column names)
   # Use coalesce to handle missing columns
-  get_col <- function(df, col) {
-    if (col %in% names(df)) as.numeric(df[[col]]) else rep(0, nrow(df))
-  }
+  get_col <- .get_col
 
   if (by_team) {
     result <- stats::aggregate(
@@ -175,6 +173,7 @@ player_opta_passing <- function(player = NULL,
                                  by_team = FALSE,
                                  source = c("local", "remote")) {
   source <- match.arg(source)
+  validate_min_minutes(min_minutes)
 
   data <- .load_opta_data(league, season, source)
 
@@ -191,9 +190,7 @@ player_opta_passing <- function(player = NULL,
     }
   }
 
-  get_col <- function(df, col) {
-    if (col %in% names(df)) as.numeric(df[[col]]) else rep(0, nrow(df))
-  }
+  get_col <- .get_col
 
   if (by_team) {
     result <- stats::aggregate(
@@ -276,6 +273,7 @@ player_opta_defense <- function(player = NULL,
                                  by_team = FALSE,
                                  source = c("local", "remote")) {
   source <- match.arg(source)
+  validate_min_minutes(min_minutes)
 
   data <- .load_opta_data(league, season, source)
 
@@ -292,9 +290,7 @@ player_opta_defense <- function(player = NULL,
     }
   }
 
-  get_col <- function(df, col) {
-    if (col %in% names(df)) as.numeric(df[[col]]) else rep(0, nrow(df))
-  }
+  get_col <- .get_col
 
   if (by_team) {
     result <- stats::aggregate(
@@ -382,6 +378,7 @@ player_opta_possession <- function(player = NULL,
                                     by_team = FALSE,
                                     source = c("local", "remote")) {
   source <- match.arg(source)
+  validate_min_minutes(min_minutes)
 
   data <- .load_opta_data(league, season, source)
 
@@ -398,9 +395,7 @@ player_opta_possession <- function(player = NULL,
     }
   }
 
-  get_col <- function(df, col) {
-    if (col %in% names(df)) as.numeric(df[[col]]) else rep(0, nrow(df))
-  }
+  get_col <- .get_col
 
   if (by_team) {
     result <- stats::aggregate(
@@ -486,6 +481,7 @@ player_opta_keeper <- function(player = NULL,
                                 by_team = FALSE,
                                 source = c("local", "remote")) {
   source <- match.arg(source)
+  validate_min_minutes(min_minutes)
 
   data <- .load_opta_data(league, season, source)
 
@@ -505,9 +501,7 @@ player_opta_keeper <- function(player = NULL,
     }
   }
 
-  get_col <- function(df, col) {
-    if (col %in% names(df)) as.numeric(df[[col]]) else rep(0, nrow(df))
-  }
+  get_col <- .get_col
 
   if (by_team) {
     result <- stats::aggregate(
@@ -601,8 +595,9 @@ player_opta_shots <- function(player = NULL,
                                season = NULL,
                                min_minutes = 450,
                                by_team = FALSE,
-                               source = c("remote", "local")) {
+                               source = c("local", "remote")) {
   source <- match.arg(source)
+  validate_min_minutes(min_minutes)
 
   data <- .load_opta_data(league, season, source)
 
@@ -619,9 +614,7 @@ player_opta_shots <- function(player = NULL,
     }
   }
 
-  get_col <- function(df, col) {
-    if (col %in% names(df)) as.numeric(df[[col]]) else rep(0, nrow(df))
-  }
+  get_col <- .get_col
 
   if (by_team) {
     result <- stats::aggregate(
@@ -731,6 +724,7 @@ player_opta_xg <- function(player = NULL,
                             by_team = FALSE,
                             source = c("local", "remote")) {
   source <- match.arg(source)
+  validate_min_minutes(min_minutes)
 
   data <- .load_opta_xmetrics_data(league, season, source)
 
@@ -747,9 +741,7 @@ player_opta_xg <- function(player = NULL,
     }
   }
 
-  get_col <- function(df, col) {
-    if (col %in% names(df)) as.numeric(df[[col]]) else rep(0, nrow(df))
-  }
+  get_col <- .get_col
 
   if (by_team) {
     result <- stats::aggregate(
@@ -848,6 +840,7 @@ player_opta_xpass <- function(player = NULL,
                                by_team = FALSE,
                                source = c("local", "remote")) {
   source <- match.arg(source)
+  validate_min_minutes(min_minutes)
 
   data <- .load_opta_xmetrics_data(league, season, source)
 
@@ -864,9 +857,7 @@ player_opta_xpass <- function(player = NULL,
     }
   }
 
-  get_col <- function(df, col) {
-    if (col %in% names(df)) as.numeric(df[[col]]) else rep(0, nrow(df))
-  }
+  get_col <- .get_col
 
   if (by_team) {
     result <- stats::aggregate(
@@ -947,8 +938,9 @@ player_opta_setpiece <- function(player = NULL,
                                   season = NULL,
                                   min_minutes = 450,
                                   by_team = FALSE,
-                                  source = c("remote", "local")) {
+                                  source = c("local", "remote")) {
   source <- match.arg(source)
+  validate_min_minutes(min_minutes)
 
   data <- .load_opta_data(league, season, source)
 
@@ -965,9 +957,7 @@ player_opta_setpiece <- function(player = NULL,
     }
   }
 
-  get_col <- function(df, col) {
-    if (col %in% names(df)) as.numeric(df[[col]]) else rep(0, nrow(df))
-  }
+  get_col <- .get_col
 
   if (by_team) {
     result <- stats::aggregate(

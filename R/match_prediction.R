@@ -57,6 +57,7 @@ aggregate_lineup_ratings <- function(lineups, ratings, season_end_year,
   } else {
     join_key <- "clean_name"
     starters[, clean_name := clean_player_name(player_name)]
+    dt_ratings <- data.table::copy(dt_ratings)
     dt_ratings[, clean_name := clean_player_name(player_name)]
   }
 
@@ -497,6 +498,18 @@ compute_team_rolling_features <- function(results, windows = c(5L, 10L, 20L)) {
 # XGBoost Model Wrappers
 # =============================================================================
 
+# Helper: extract best nrounds from CV result with fallback
+.get_best_nrounds <- function(cv_result) {
+  n <- cv_result$best_iteration
+  if (is.null(n) || length(n) == 0) {
+    eval_log <- cv_result$evaluation_log
+    metric_col <- grep("test.*mean", names(eval_log), value = TRUE)[1]
+    n <- which.min(eval_log[[metric_col]])
+  }
+  n
+}
+
+
 #' Fit XGBoost Poisson Model for Goal Prediction
 #'
 #' Fits an XGBoost model with Poisson objective for predicting goal counts.
@@ -543,12 +556,7 @@ fit_goals_xgb <- function(X, y, nfolds = 5L, params = NULL,
     print_every_n = 50L
   )
 
-  best_nrounds <- cv_result$best_iteration
-  if (is.null(best_nrounds) || length(best_nrounds) == 0) {
-    eval_log <- cv_result$evaluation_log
-    metric_col <- grep("test.*mean", names(eval_log), value = TRUE)[1]
-    best_nrounds <- which.min(eval_log[[metric_col]])
-  }
+  best_nrounds <- .get_best_nrounds(cv_result)
 
   model <- xgboost::xgb.train(
     params = params,
@@ -620,12 +628,7 @@ fit_outcome_xgb <- function(X, y, nfolds = 5L, params = NULL,
     print_every_n = 50L
   )
 
-  best_nrounds <- cv_result$best_iteration
-  if (is.null(best_nrounds) || length(best_nrounds) == 0) {
-    eval_log <- cv_result$evaluation_log
-    metric_col <- grep("test.*mean", names(eval_log), value = TRUE)[1]
-    best_nrounds <- which.min(eval_log[[metric_col]])
-  }
+  best_nrounds <- .get_best_nrounds(cv_result)
 
   model <- xgboost::xgb.train(
     params = params,
@@ -686,7 +689,12 @@ predict_match <- function(goals_home_model, goals_away_model, outcome_model,
   # Predict outcome probabilities
   d_outcome <- xgboost::xgb.DMatrix(data = X_full)
   probs <- stats::predict(outcome_model$model, d_outcome)
-  prob_matrix <- matrix(probs, ncol = 3, byrow = FALSE)
+  # xgboost >= 2.0 returns a matrix; older versions return a flat vector
+  if (is.matrix(probs)) {
+    prob_matrix <- probs
+  } else {
+    prob_matrix <- matrix(probs, ncol = 3, byrow = TRUE)
+  }
 
   data.frame(
     pred_home_goals = pred_home_goals,

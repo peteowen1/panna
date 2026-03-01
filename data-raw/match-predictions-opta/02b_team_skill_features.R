@@ -152,17 +152,7 @@ if (nrow(upcoming) > 0) {
         filter(match_date == max(match_date)) %>%
         ungroup()
 
-      # Helper: dummy lineup for teams with no history
-      make_dummy_lineup <- function(match_id, team_id, team_name, team_position) {
-        positions <- c("Goalkeeper", rep("Defender", 4), rep("Midfielder", 4),
-                       rep("Forward", 2))
-        data.frame(
-          match_id = match_id, team_id = team_id, team_name = team_name,
-          team_position = team_position, player_name = paste0("Unknown_", seq(11)),
-          position = positions, is_starter = TRUE,
-          stringsAsFactors = FALSE
-        )
-      }
+      # make_dummy_lineup() is defined in 02_player_ratings_to_team.R
 
       # Build fixture lineups
       fixture_lu_list <- list()

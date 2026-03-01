@@ -114,23 +114,43 @@ if (nrow(upcoming) > 0) {
   )
   fixture_elos$elo_diff <- fixture_elos$home_elo - fixture_elos$away_elo
 
-  # Get most recent rolling features per team
-  dt_roll <- data.table::as.data.table(rolling_team)
-  roll_cols <- setdiff(names(dt_roll), "match_id")
+  # Carry forward each team's last known rolling features to fixtures
+  dt_roll <- data.table::as.data.table(rolling_features)
+  home_roll_cols <- grep("^home_roll_", names(dt_roll), value = TRUE)
+  away_roll_cols <- grep("^away_roll_", names(dt_roll), value = TRUE)
 
-  # For fixtures, we use the last known rolling features
-  # This requires re-computing from team perspective
-  # For simplicity, use the last match's features for each team
-  home_last <- data.table::as.data.table(played) %>%
-    .[order(match_date)] %>%
-    .[, .SD[.N], by = home_team]
+  if (length(home_roll_cols) > 0) {
+    dt_played <- data.table::as.data.table(played)
+    fixture_dt <- data.table::as.data.table(fixture_elos)
+    fixture_dt[, home_team := upcoming$home_team]
+    fixture_dt[, away_team := upcoming$away_team]
 
-  away_last <- data.table::as.data.table(played) %>%
-    .[order(match_date)] %>%
-    .[, .SD[.N], by = away_team]
+    # Last home-side rolling features per team (from their most recent home match)
+    home_lookup <- merge(dt_played[, .(match_id, home_team, match_date)],
+                         dt_roll[, c("match_id", home_roll_cols), with = FALSE],
+                         by = "match_id")
+    data.table::setorder(home_lookup, match_date)
+    home_lookup <- home_lookup[, .SD[.N], by = home_team]
 
-  # Merge latest rolling features into fixture_elos
-  # (rolling features for fixtures will have NAs for new teams)
+    # Last away-side rolling features per team (from their most recent away match)
+    away_lookup <- merge(dt_played[, .(match_id, away_team, match_date)],
+                         dt_roll[, c("match_id", away_roll_cols), with = FALSE],
+                         by = "match_id")
+    data.table::setorder(away_lookup, match_date)
+    away_lookup <- away_lookup[, .SD[.N], by = away_team]
+
+    # Join onto fixtures by team name
+    fixture_dt <- merge(fixture_dt,
+                        home_lookup[, c("home_team", home_roll_cols), with = FALSE],
+                        by = "home_team", all.x = TRUE)
+    fixture_dt <- merge(fixture_dt,
+                        away_lookup[, c("away_team", away_roll_cols), with = FALSE],
+                        by = "away_team", all.x = TRUE)
+    fixture_dt[, c("home_team", "away_team") := NULL]
+    fixture_elos <- fixture_dt
+  }
+
+  # Append fixture rows to rolling_features
   rolling_features <- data.table::rbindlist(
     list(rolling_features, fixture_elos),
     use.names = TRUE, fill = TRUE

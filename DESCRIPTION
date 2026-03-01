@@ -22,8 +22,12 @@ Imports:
     DBI,
     duckdb (>= 0.9.0),
     glmnet (>= 4.0),
+    httr2,
+    janitor,
+    jsonlite,
     Matrix,
     rlang,
+    stringi,
     tools
 Suggests:
     arrow (>= 10.0.0),
@@ -31,9 +35,6 @@ Suggests:
     ggplot2,
     ggrepel,
     httr (>= 1.4.0),
-    httr2,
-    janitor,
-    jsonlite,
     knitr,
     lifecycle,
     parallel,
@@ -41,7 +42,6 @@ Suggests:
     pROC,
     rmarkdown,
     rvest (>= 1.0.0),
-    stringi,
     testthat (>= 3.0.0),
     withr,
     xgboost

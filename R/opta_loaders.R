@@ -548,7 +548,7 @@ load_opta_fixtures <- function(league, season = NULL, columns = NULL,
 load_opta_big5 <- function(season = NULL, columns = NULL) {
   leagues <- c("ENG", "ESP", "GER", "ITA", "FRA")
 
-  error_msgs <- character(0)
+  error_msgs <- list()
   results <- lapply(leagues, function(lg) {
     tryCatch({
       df <- load_opta_stats(lg, season, columns)
@@ -707,7 +707,11 @@ load_opta_table <- function(table_type, league, season, columns,
       prefix = FALSE
     )
 
-    sql <- sprintf("SELECT %s FROM '%s' WHERE %s", col_sql, parquet_path, where_sql)
+    if (nzchar(where_sql)) {
+      sql <- sprintf("SELECT %s FROM '%s' WHERE %s", col_sql, parquet_path, where_sql)
+    } else {
+      sql <- sprintf("SELECT %s FROM '%s'", col_sql, parquet_path)
+    }
   } else {
     # Fall back to hierarchical structure
     if (!is.null(season)) {
@@ -968,15 +972,15 @@ list_opta_leagues <- function(type = NULL, tier = NULL,
     reverse_aliases <- stats::setNames(names(aliases), unlist(aliases))
 
     rows <- lapply(names(comps), function(code) {
-      c <- comps[[code]]
+      comp <- comps[[code]]
       data.frame(
         code = code,
-        name = c$name %||% code,
-        country = c$country %||% "Unknown",
-        type = c$type %||% "unknown",
-        tier = as.integer(c$tier %||% 99L),
-        n_seasons = length(c$seasons),
-        n_matches = as.integer(c$n_matches %||% 0L),
+        name = comp$name %||% code,
+        country = comp$country %||% "Unknown",
+        type = comp$type %||% "unknown",
+        tier = as.integer(comp$tier %||% 99L),
+        n_seasons = length(comp$seasons),
+        n_matches = as.integer(comp$n_matches %||% 0L),
         panna_alias = if (code %in% names(reverse_aliases)) reverse_aliases[[code]] else NA_character_,
         stringsAsFactors = FALSE
       )

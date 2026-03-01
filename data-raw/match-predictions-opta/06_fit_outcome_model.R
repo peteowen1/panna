@@ -133,7 +133,7 @@ message("\n--- Validation Metrics ---")
 
 val_probs_raw <- stats::predict(outcome_model$model,
                                  xgboost::xgb.DMatrix(data = X_val))
-val_probs <- matrix(val_probs_raw, ncol = 3, byrow = FALSE)
+val_probs <- if (is.matrix(val_probs_raw)) val_probs_raw else matrix(val_probs_raw, ncol = 3, byrow = TRUE)
 
 # Multi-class log loss
 val_logloss <- compute_multiclass_logloss(y_val, val_probs)

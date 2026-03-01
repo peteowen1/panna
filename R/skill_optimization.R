@@ -90,8 +90,13 @@ get_stat_tiers <- function() {
   data.table::setorder(dt, player_id, match_date)
   dt <- .resolve_positions(dt)
 
-  # Sample players
+  # Sample players (restore RNG state to avoid side effects on caller)
   players <- unique(dt$player_id)
+  old_seed <- if (exists(".Random.seed", envir = .GlobalEnv)) get(".Random.seed", envir = .GlobalEnv) else NULL
+  on.exit({
+    if (!is.null(old_seed)) assign(".Random.seed", old_seed, envir = .GlobalEnv)
+    else if (exists(".Random.seed", envir = .GlobalEnv)) rm(".Random.seed", envir = .GlobalEnv)
+  }, add = TRUE)
   set.seed(seed)
   if (length(players) > sample_n) players <- sample(players, sample_n)
   dt <- dt[player_id %in% players]
@@ -652,13 +657,14 @@ optimize_all_priors <- function(match_stats, decay_params = NULL,
       cl <- parallel::makeCluster(n_cores)
       parallel::clusterExport(cl, "pkg_path", envir = environment())
       parallel::clusterEvalQ(cl, {
-        tryCatch(
-          devtools::load_all(pkg_path, quiet = TRUE),
-          error = function(e) {
-            message("devtools::load_all() failed on worker, falling back to library(panna)")
-            library(panna)
-          }
-        )
+        if (isTRUE(getOption("panna.dev_mode")) && requireNamespace("devtools", quietly = TRUE)) {
+          tryCatch(
+            devtools::load_all(pkg_path, quiet = TRUE),
+            error = function(e) library(panna)
+          )
+        } else {
+          library(panna)
+        }
         library(data.table)
       })
       parallel::clusterExport(cl, c("precomputed", "pos_multipliers", "sample_n"),
