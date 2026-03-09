@@ -8,6 +8,13 @@ test_that("safe_divide handles division by zero", {
   expect_equal(safe_divide(c(10, 20), c(2, 0)), c(5, 0))
 })
 
+test_that("safe_divide preserves input NAs", {
+  expect_true(is.na(safe_divide(NA, 5)))
+  expect_true(is.na(safe_divide(5, NA)))
+  expect_true(is.na(safe_divide(NA, 0)))
+  expect_equal(safe_divide(c(10, NA, 5), c(2, 3, 0)), c(5, NA, 0))
+})
+
 test_that("validate_seasons accepts valid seasons", {
   expect_true(validate_seasons("2023-2024"))
   expect_true(validate_seasons(c("2022-2023", "2023-2024")))
@@ -171,6 +178,13 @@ test_that("build_where_clause respects prefix parameter", {
   expect_equal(result2, "league = 'ENG' AND season = '2023-2024'")
 })
 
+test_that("build_where_clause handles multi-value IN clause", {
+  result <- build_where_clause(list(league = c("ENG", "ESP")))
+  expect_match(result, "IN")
+  expect_match(result, "'ENG'")
+  expect_match(result, "'ESP'")
+})
+
 
 # =============================================================================
 # Tests for standardize_data_columns()
@@ -321,4 +335,15 @@ test_that("validate_dataframe uses custom arg_name in errors", {
     validate_dataframe(NULL, arg_name = "my_data"),
     "my_data.*cannot be NULL"
   )
+})
+
+
+# =============================================================================
+# Tests for extract_season_end_year()
+# =============================================================================
+
+test_that("extract_season_end_year handles standard and tournament formats", {
+  expect_equal(extract_season_end_year("2023-2024"), 2024)
+  expect_equal(extract_season_end_year("2018 Russia"), 2018)
+  expect_true(is.na(extract_season_end_year("garbage")))
 })

@@ -24,8 +24,6 @@ use_xmetrics_features <- if (exists("use_xmetrics_features")) use_xmetrics_featu
 # PENALTY_XG is exported from panna::constants.R (loaded via devtools::load_all())
 SPADL_CACHE_DIR <- "data-raw/cache/epv/spadl"
 
-# Helper: extract season end year from both standard and tournament formats
-# "2024-2025" -> 2025, "2018 Russia" -> 2018, "2024 Germany" -> 2024
 # extract_season_end_year() is defined in R/utils.R
 
 raw_data_path <- file.path(cache_dir, "01_raw_data.rds")

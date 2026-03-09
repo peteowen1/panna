@@ -228,7 +228,8 @@ fit_xg_model <- function(shot_features,
     nfold = nfolds,
     early_stopping_rounds = early_stopping_rounds,
     verbose = verbose,
-    print_every_n = 50
+    print_every_n = 50,
+    prediction = TRUE
   )
 
   # Get best iteration
@@ -720,6 +721,10 @@ aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0) {
   result <- shooting[minutes_df, on = c("player_id", "team_id")]
   result <- assisting[result, on = c("player_id", "team_id")]
   result <- passing[result, on = c("player_id", "team_id")]
+
+  # Drop duplicate player_name columns from data.table joins
+  i_cols <- grep("^i\\.", names(result), value = TRUE)
+  if (length(i_cols) > 0) result[, (i_cols) := NULL]
 
   # Fill NAs with 0
   num_cols <- c("shots", "shots_on_target", "goals", "penalty_goals", "npgoals",

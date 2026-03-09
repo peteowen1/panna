@@ -150,16 +150,19 @@ if (nrow(upcoming) > 0) {
 rm(lineups); gc(verbose = FALSE)
 
 if (nrow(upcoming) > 0 && !is.null(latest_lineups)) {
-  tryCatch({
-    # Filter match_stats to only players in upcoming lineups (memory optimization)
-    upcoming_player_ids <- unique(latest_lineups$player_id)
-    if (length(upcoming_player_ids) > 0 && "player_id" %in% names(match_stats)) {
-      ms_fixture <- match_stats[match_stats$player_id %in% upcoming_player_ids, ]
-    } else {
-      ms_fixture <- match_stats
-    }
-    rm(match_stats); gc(verbose = FALSE)
+  # Filter match_stats to only players in upcoming lineups (memory optimization)
+  upcoming_player_ids <- unique(latest_lineups$player_id)
+  if (length(upcoming_player_ids) > 0 && "player_id" %in% names(match_stats)) {
+    n_before <- nrow(match_stats)
+    ms_fixture <- match_stats[match_stats$player_id %in% upcoming_player_ids, ]
+    message(sprintf("  Filtered match_stats: %d -> %d rows (%d players)",
+                    n_before, nrow(ms_fixture), length(upcoming_player_ids)))
+  } else {
+    ms_fixture <- match_stats
+  }
+  rm(match_stats); gc(verbose = FALSE)
 
+  tryCatch({
     # Use current date skills for fixtures
     live_skills <- estimate_player_skills(
       match_stats = ms_fixture,

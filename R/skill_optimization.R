@@ -660,7 +660,10 @@ optimize_all_priors <- function(match_stats, decay_params = NULL,
         if (isTRUE(getOption("panna.dev_mode")) && requireNamespace("devtools", quietly = TRUE)) {
           tryCatch(
             devtools::load_all(pkg_path, quiet = TRUE),
-            error = function(e) library(panna)
+            error = function(e) {
+              message(sprintf("Worker: devtools::load_all() failed (%s), using library(panna)", e$message))
+              library(panna)
+            }
           )
         } else {
           library(panna)
