@@ -844,9 +844,16 @@ estimate_player_skills_at_date <- function(match_stats, decay_params = NULL,
   dt <- data.table::as.data.table(match_stats)
 
   # Filter to requested players if specified
-
   if (!is.null(player_ids)) {
     dt <- dt[player_id %in% player_ids]
+  }
+
+  # Pre-filter by date to reduce memory in estimate_player_skills() copy
+  if (!is.null(date)) {
+    if (!inherits(dt$match_date, "Date")) {
+      dt[, match_date := as.Date(match_date)]
+    }
+    dt <- dt[match_date < as.Date(date)]
   }
 
   estimate_player_skills(
