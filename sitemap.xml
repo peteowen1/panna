@@ -153,6 +153,7 @@
 <url><loc>https://peteowen1.github.io/panna/reference/dot-classify_skill_stats.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-count_events.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-extract_end_year.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/dot-get_col.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-get_defense_col_mapping.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-get_keeper_col_mapping.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-get_misc_col_mapping.html</loc></url>
@@ -176,6 +177,7 @@
 <url><loc>https://peteowen1.github.io/panna/reference/extract_od_rapm_coefficients.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/extract_rapm_coefficients.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/extract_rapm_ratings.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/extract_season_end_year.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/extract_season_end_year_from_match_id.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/extract_season_from_date.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/extract_season_from_match_id.html</loc></url>
@@ -211,6 +213,7 @@
 <url><loc>https://peteowen1.github.io/panna/reference/fit_spm_xgb.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/fit_xg_model.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/fit_xpass_model.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/format_duration.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/generate_panna_report.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/get_big5_leagues.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/get_cache_dir.html</loc></url>

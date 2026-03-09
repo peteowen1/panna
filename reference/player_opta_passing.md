@@ -11,7 +11,7 @@ player_opta_passing(
   season = NULL,
   min_minutes = 450,
   by_team = FALSE,
-  source = c("local", "remote")
+  source = c("remote", "local")
 )
 ```
 
@@ -39,7 +39,7 @@ player_opta_passing(
 
 - source:
 
-  Character. "local" (default) or "remote".
+  Character. "remote" (default) or "local".
 
 ## Value
 

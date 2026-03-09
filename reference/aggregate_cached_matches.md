@@ -11,7 +11,7 @@ aggregate_cached_matches(
   league = NULL,
   season = NULL,
   prefer_parquet = TRUE,
-  source = c("local", "remote")
+  source = c("remote", "local")
 )
 ```
 
@@ -35,7 +35,7 @@ aggregate_cached_matches(
 
 - source:
 
-  "local" (default) or "remote" to download from GitHub releases
+  "remote" (default) or "local" to load from local files
 
 ## Value
 

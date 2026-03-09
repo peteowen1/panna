@@ -5,12 +5,12 @@ Print progress message
 ## Usage
 
 ``` r
-progress_msg(message, verbose = TRUE)
+progress_msg(msg, verbose = TRUE)
 ```
 
 ## Arguments
 
-- message:
+- msg:
 
   Message to print
 

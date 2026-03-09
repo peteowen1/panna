@@ -1,7 +1,8 @@
 # Opta Player Summary Statistics
 
 Aggregate basic statistics from Opta data. Returns totals and per-90
-rates. Note: Opta does not have xG data.
+rates. Note: This uses raw Opta match stats (no xG). For xG/xA, use
+[`player_opta_xg()`](https://peteowen1.github.io/panna/reference/player_opta_xg.md).
 
 ## Usage
 
@@ -12,7 +13,7 @@ player_opta_summary(
   season = NULL,
   min_minutes = 450,
   by_team = FALSE,
-  source = c("local", "remote")
+  source = c("remote", "local")
 )
 ```
 
@@ -40,7 +41,7 @@ player_opta_summary(
 
 - source:
 
-  Character. "local" (default) or "remote".
+  Character. "remote" (default) or "local".
 
 ## Value
 
