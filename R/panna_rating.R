@@ -56,6 +56,12 @@ calculate_panna_rating <- function(rapm_data, spm_ratings, lambda_prior = 1, alp
     spm_idx <- match(player_names, spm_ratings$player_name)
     matched <- !is.na(spm_idx)
     spm_prior[matched] <- spm_ratings$spm[spm_idx[matched]]
+  } else {
+    cli::cli_warn(c(
+      "Could not match SPM ratings to RAPM players.",
+      "i" = "SPM has {.val {names(spm_ratings)[1:min(3, ncol(spm_ratings))]}} columns but no matching ID or player_mapping.",
+      "!" = "All players will use zero prior (equivalent to plain RAPM)."
+    ))
   }
 
   # Transform regression to center on SPM prior
@@ -354,7 +360,7 @@ generate_panna_report <- function(panna_model, top_n = 10) {
     paste("Total players rated:", nrow(ratings)),
     paste("Lambda (prior strength):", panna_model$lambda),
     "",
-    "--- Top", top_n, "Players ---"
+    paste("--- Top", top_n, "Players ---")
   )
 
   top_players <- head(ratings, top_n)
@@ -368,7 +374,7 @@ generate_panna_report <- function(panna_model, top_n = 10) {
   }
 
   report <- c(report, "",
-              "--- Bottom", top_n, "Players ---")
+              paste("--- Bottom", top_n, "Players ---"))
 
   bottom_players <- tail(ratings, top_n)
   for (i in seq_len(nrow(bottom_players))) {

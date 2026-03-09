@@ -14,7 +14,7 @@ safe_divide(x, y, default = 0)
 \item{default}{Value to return when denominator is zero (default: 0)}
 }
 \value{
-x / y, or default if y is zero
+x / y, with Inf/NaN from division-by-zero replaced by default. Input NAs are preserved.
 }
 \description{
 Safe division handling division by zero

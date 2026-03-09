@@ -48,7 +48,7 @@ if (!exists("run_steps")) {
 # FORCE REBUILD FROM STEP
 # Set to a step number to clear cache and rebuild from that step onwards
 # NULL = normal run (use cache), 1 = full refresh
-if (!exists("force_rebuild_from")) force_rebuild_from <- 1
+if (!exists("force_rebuild_from")) force_rebuild_from <- NULL
 
 # 3. Helper Functions ----
 
@@ -86,15 +86,7 @@ run_step <- function(step_name, step_num, code_block) {
   )
 }
 
-format_duration <- function(secs) {
-  if (secs < 60) {
-    sprintf("%.1f seconds", secs)
-  } else if (secs < 3600) {
-    sprintf("%.1f minutes", secs / 60)
-  } else {
-    sprintf("%.1f hours", secs / 3600)
-  }
-}
+# format_duration() is defined in R/utils.R
 
 # 4. Initialize Pipeline ----
 
@@ -132,6 +124,18 @@ if (!is.null(force_rebuild_from) && force_rebuild_from >= 1 && force_rebuild_fro
 
 pipeline_start <- Sys.time()
 step_results <- list()
+pipeline_failed <- FALSE
+
+# Check if a critical step failed and halt downstream steps
+check_critical_step <- function(step_num, step_name) {
+  result <- step_results[[step_num]]
+  if (!is.null(result) && result$status == "FAILED") {
+    pipeline_failed <<- TRUE
+    message(sprintf("\nCRITICAL: Step %d (%s) failed — halting downstream steps.", step_num, step_name))
+    return(TRUE)
+  }
+  FALSE
+}
 
 message("\n")
 message(paste(rep("#", 70), collapse = ""))
@@ -152,54 +156,76 @@ message(paste(rep("#", 70), collapse = ""))
 step_results[[1]] <- run_step("load_data", 1, function() {
   source("data-raw/player-ratings-opta/01_load_opta_data.R", local = TRUE)
 })
+check_critical_step(1, "load_data")
 
 # 6. Step 2: Data Processing ----
 
-step_results[[2]] <- run_step("data_processing", 2, function() {
-  source("data-raw/player-ratings-opta/02_data_processing.R", local = TRUE)
-})
+if (!isTRUE(pipeline_failed)) {
+  step_results[[2]] <- run_step("data_processing", 2, function() {
+    source("data-raw/player-ratings-opta/02_data_processing.R", local = TRUE)
+  })
+  check_critical_step(2, "data_processing")
+}
 
 # 7. Step 3: Splint Creation ----
 
-step_results[[3]] <- run_step("splint_creation", 3, function() {
-  source("data-raw/player-ratings-opta/03_splint_creation.R", local = TRUE)
-})
+if (!isTRUE(pipeline_failed)) {
+  step_results[[3]] <- run_step("splint_creation", 3, function() {
+    source("data-raw/player-ratings-opta/03_splint_creation.R", local = TRUE)
+  })
+  check_critical_step(3, "splint_creation")
+}
 
 # 8. Step 4: RAPM ----
 
-step_results[[4]] <- run_step("rapm", 4, function() {
-  source("data-raw/player-ratings-opta/04_rapm.R", local = TRUE)
-})
+if (!isTRUE(pipeline_failed)) {
+  step_results[[4]] <- run_step("rapm", 4, function() {
+    source("data-raw/player-ratings-opta/04_rapm.R", local = TRUE)
+  })
+  check_critical_step(4, "rapm")
+}
 
 # 9. Step 5: SPM ----
 
-step_results[[5]] <- run_step("spm", 5, function() {
-  source("data-raw/player-ratings-opta/05_spm.R", local = TRUE)
-})
+if (!isTRUE(pipeline_failed)) {
+  step_results[[5]] <- run_step("spm", 5, function() {
+    source("data-raw/player-ratings-opta/05_spm.R", local = TRUE)
+  })
+  check_critical_step(5, "spm")
+}
 
 # 10. Step 6: xRAPM ----
 
-step_results[[6]] <- run_step("xrapm", 6, function() {
-  source("data-raw/player-ratings-opta/06_xrapm.R", local = TRUE)
-})
+if (!isTRUE(pipeline_failed)) {
+  step_results[[6]] <- run_step("xrapm", 6, function() {
+    source("data-raw/player-ratings-opta/06_xrapm.R", local = TRUE)
+  })
+  check_critical_step(6, "xrapm")
+}
 
 # 11. Step 7: Seasonal Ratings ----
 
-step_results[[7]] <- run_step("seasonal_ratings", 7, function() {
-  source("data-raw/player-ratings-opta/07_seasonal_ratings.R", local = TRUE)
-})
+if (!isTRUE(pipeline_failed)) {
+  step_results[[7]] <- run_step("seasonal_ratings", 7, function() {
+    source("data-raw/player-ratings-opta/07_seasonal_ratings.R", local = TRUE)
+  })
+  check_critical_step(7, "seasonal_ratings")
+}
 
 # 12. Step 8: Final Ratings ----
 
-step_results[[8]] <- run_step("panna_ratings", 8, function() {
-  source("data-raw/player-ratings-opta/08_panna_ratings.R", local = TRUE)
-})
+if (!isTRUE(pipeline_failed)) {
+  step_results[[8]] <- run_step("panna_ratings", 8, function() {
+    source("data-raw/player-ratings-opta/08_panna_ratings.R", local = TRUE)
+  })
+  check_critical_step(8, "panna_ratings")
+}
 
 # 13. Step 9: Export Ratings ----
 
-# Skip export if step 7 failed (stale/missing data)
-if (!is.null(step_results[[7]]) && step_results[[7]]$status == "FAILED") {
-  message("\nSkipping export: step 7 (seasonal_ratings) failed")
+# Skip export if pipeline failed
+if (isTRUE(pipeline_failed)) {
+  message("\nSkipping export: upstream step failed")
   step_results[[9]] <- list(step = 9, name = "export_ratings", status = "SKIPPED",
                             duration_secs = 0, duration_formatted = "0.0 seconds")
 } else {

@@ -10,7 +10,7 @@ player_opta_keeper(
   season = NULL,
   min_minutes = 450,
   by_team = FALSE,
-  source = c("local", "remote")
+  source = c("remote", "local")
 )
 }
 \arguments{
@@ -24,7 +24,7 @@ player_opta_keeper(
 
 \item{by_team}{Logical. If TRUE, aggregate by player and team separately.}
 
-\item{source}{Character. "local" (default) or "remote".}
+\item{source}{Character. "remote" (default) or "local".}
 }
 \value{
 Data frame with columns: player, team, matches, minutes,

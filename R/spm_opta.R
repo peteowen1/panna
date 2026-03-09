@@ -164,7 +164,9 @@
     } else {
       x <- rep(0, nrow(player_stats))
     }
-    player_stats[[paste0(col, "_p90")]] <- x / mins_per_90
+    p90_val <- x / mins_per_90
+    p90_val[is.infinite(p90_val) | is.nan(p90_val)] <- 0
+    player_stats[[paste0(col, "_p90")]] <- p90_val
   }
 
   player_stats

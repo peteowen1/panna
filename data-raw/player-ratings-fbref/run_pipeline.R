@@ -39,7 +39,7 @@ if (!exists("run_steps")) {
 # FORCE REBUILD FROM STEP
 # Set to a step number to clear cache and rebuild from that step onwards
 # NULL = normal run (use cache), 1 = full refresh, 3 = rebuild from splints, etc.
-if (!exists("force_rebuild_from")) force_rebuild_from <- 1 # NULL
+if (!exists("force_rebuild_from")) force_rebuild_from <- NULL
 
 # PANNADATA LOCATION (relative to panna directory)
 if (!exists("pannadata_path")) pannadata_path <- "../pannadata/data"
@@ -81,16 +81,7 @@ run_step <- function(step_name, step_num, code_block) {
   )
 }
 
-format_duration <- function(secs) {
-
-  if (secs < 60) {
-    sprintf("%.1f seconds", secs)
-  } else if (secs < 3600) {
-    sprintf("%.1f minutes", secs / 60)
-  } else {
-    sprintf("%.1f hours", secs / 3600)
-  }
-}
+# format_duration() is defined in R/utils.R
 
 validate_pipeline_config <- function(pannadata_path, leagues, seasons) {
   errors <- character(0)

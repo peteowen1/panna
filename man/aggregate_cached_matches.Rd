@@ -9,7 +9,7 @@ aggregate_cached_matches(
   league = NULL,
   season = NULL,
   prefer_parquet = TRUE,
-  source = c("local", "remote")
+  source = c("remote", "local")
 )
 }
 \arguments{
@@ -21,7 +21,7 @@ aggregate_cached_matches(
 
 \item{prefer_parquet}{If TRUE (default), use parquet when available}
 
-\item{source}{"local" (default) or "remote" to download from GitHub releases}
+\item{source}{"remote" (default) or "local" to load from local files}
 }
 \value{
 Combined data frame, or NULL if no cached data

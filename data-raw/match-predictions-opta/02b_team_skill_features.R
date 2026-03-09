@@ -55,6 +55,7 @@ if (file.exists(rapm_cache)) {
   message("  Loading lineups from RAPM cache...")
   raw_data <- readRDS(rapm_cache)
   lineups <- raw_data$lineups
+  rm(raw_data); gc(verbose = FALSE)
 } else {
   # GHA mode: load from consolidated Opta data
   message("  Loading lineups from consolidated Opta data...")
@@ -127,6 +128,7 @@ for (sey in sey_values) {
     n_failed <<- n_failed + 1L
     message(sprintf("    SEY %d ERROR: %s", sey, e$message))
   })
+  gc(verbose = FALSE)
 }
 
 if (n_failed > 0) {
@@ -136,33 +138,42 @@ if (n_failed > 0) {
 
 # 7. Handle Fixtures ----
 
+# Compute latest lineups before freeing the full lineups object
+latest_lineups <- NULL
 if (nrow(upcoming) > 0) {
+  latest_lineups <- lineups %>%
+    filter(is_starter) %>%
+    group_by(team_id) %>%
+    filter(match_date == max(match_date)) %>%
+    ungroup()
+}
+rm(lineups); gc(verbose = FALSE)
+
+if (nrow(upcoming) > 0 && !is.null(latest_lineups)) {
+  # Filter match_stats to only players in upcoming lineups (memory optimization)
+  upcoming_player_ids <- unique(latest_lineups$player_id)
+  if (length(upcoming_player_ids) > 0 && "player_id" %in% names(match_stats)) {
+    n_before <- nrow(match_stats)
+    ms_fixture <- match_stats[match_stats$player_id %in% upcoming_player_ids, ]
+    message(sprintf("  Filtered match_stats: %d -> %d rows (%d players)",
+                    n_before, nrow(ms_fixture), length(upcoming_player_ids)))
+  } else {
+    ms_fixture <- match_stats
+  }
+  rm(match_stats); gc(verbose = FALSE)
+
   tryCatch({
     # Use current date skills for fixtures
     live_skills <- estimate_player_skills(
-      match_stats = match_stats,
+      match_stats = ms_fixture,
       decay_params = decay_params,
       target_date = Sys.Date()
     )
+    rm(ms_fixture); gc(verbose = FALSE)
 
     if (!is.null(live_skills) && nrow(live_skills) > 0) {
-      latest_lineups <- lineups %>%
-        filter(is_starter) %>%
-        group_by(team_id) %>%
-        filter(match_date == max(match_date)) %>%
-        ungroup()
 
-      # Helper: dummy lineup for teams with no history
-      make_dummy_lineup <- function(match_id, team_id, team_name, team_position) {
-        positions <- c("Goalkeeper", rep("Defender", 4), rep("Midfielder", 4),
-                       rep("Forward", 2))
-        data.frame(
-          match_id = match_id, team_id = team_id, team_name = team_name,
-          team_position = team_position, player_name = paste0("Unknown_", seq(11)),
-          position = positions, is_starter = TRUE,
-          stringsAsFactors = FALSE
-        )
-      }
+      # make_dummy_lineup() is defined in R/match_prediction.R
 
       # Build fixture lineups
       fixture_lu_list <- list()

@@ -90,11 +90,7 @@ run_step <- function(step_name, step_num, code_block) {
   )
 }
 
-format_duration <- function(secs) {
-  if (secs < 60) sprintf("%.1f seconds", secs)
-  else if (secs < 3600) sprintf("%.1f minutes", secs / 60)
-  else sprintf("%.1f hours", secs / 3600)
-}
+# format_duration() is defined in R/utils.R
 
 # 4. Initialize ----
 

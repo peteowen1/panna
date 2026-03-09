@@ -20,7 +20,7 @@ if (!dir.exists(cache_dir)) dir.create(cache_dir, recursive = TRUE)
 
 # Override these before sourcing for custom runs
 if (!exists("sample_n")) sample_n <- 500
-if (!exists("n_cores")) n_cores <- 12
+if (!exists("n_cores")) n_cores <- max(1L, parallel::detectCores() %/% 2L)
 if (!exists("optim_leagues")) optim_leagues <- c("ENG", "ESP", "GER", "ITA", "FRA")
 
 output_path <- file.path(cache_dir, "02b_decay_params.rds")

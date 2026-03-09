@@ -35,7 +35,6 @@ fit_rapm <- function(rapm_data, alpha = 0, nfolds = 10,
     ))
   }
 
-  required_elements <- c("y")
   has_X <- "X" %in% names(rapm_data) || "X_full" %in% names(rapm_data)
   if (!has_X) {
     cli::cli_abort(c(
@@ -160,8 +159,9 @@ extract_rapm_ratings <- function(model, lambda = "min") {
   }
 
   # Extract all coefficients
-  all_coefs <- as.vector(stats::coef(model, s = lambda_val))[-1]  # Remove intercept
-  col_names <- rownames(stats::coef(model, s = lambda_val))[-1]
+  coef_mat <- stats::coef(model, s = lambda_val)
+  all_coefs <- as.vector(coef_mat)[-1]  # Remove intercept
+  col_names <- rownames(coef_mat)[-1]
   names(all_coefs) <- col_names
 
   # Separate player coefficients from covariates
@@ -219,8 +219,9 @@ extract_rapm_ratings <- function(model, lambda = "min") {
 get_covariate_effects <- function(model, lambda = "min") {
   lambda_val <- if (lambda == "min") model$lambda.min else model$lambda.1se
 
-  all_coefs <- as.vector(stats::coef(model, s = lambda_val))[-1]
-  col_names <- rownames(stats::coef(model, s = lambda_val))[-1]
+  coef_mat <- stats::coef(model, s = lambda_val)
+  all_coefs <- as.vector(coef_mat)[-1]
+  col_names <- rownames(coef_mat)[-1]
   names(all_coefs) <- col_names
 
   covariate_names <- model$panna_metadata$covariate_names
@@ -381,8 +382,9 @@ extract_xrapm_ratings <- function(model, lambda = "min") {
   }
 
   # Extract gamma (deviation from prior)
-  gamma <- as.vector(stats::coef(model, s = lambda_val))[-1]
-  col_names <- rownames(stats::coef(model, s = lambda_val))[-1]
+  coef_mat <- stats::coef(model, s = lambda_val)
+  gamma <- as.vector(coef_mat)[-1]
+  col_names <- rownames(coef_mat)[-1]
   names(gamma) <- col_names
 
   # Get prior vector

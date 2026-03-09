@@ -4,10 +4,10 @@
 \alias{progress_msg}
 \title{Print progress message}
 \usage{
-progress_msg(message, verbose = TRUE)
+progress_msg(msg, verbose = TRUE)
 }
 \arguments{
-\item{message}{Message to print}
+\item{msg}{Message to print}
 
 \item{verbose}{Whether to print}
 }

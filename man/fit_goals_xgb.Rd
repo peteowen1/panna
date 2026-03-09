@@ -34,5 +34,5 @@ List with model, cv_result, best_nrounds, metadata
 }
 \description{
 Fits an XGBoost model with Poisson objective for predicting goal counts.
-Uses time-based cross-validation with early stopping.
+Uses k-fold cross-validation with early stopping.
 }

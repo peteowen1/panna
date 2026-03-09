@@ -96,6 +96,7 @@ if (is.data.frame(seasonal_data)) {
   ratings <- seasonal_data[[1]]
 }
 
+rm(seasonal_data); gc(verbose = FALSE)
 message(sprintf("  Ratings: %d player-seasons", nrow(ratings)))
 
 # Validate required columns
@@ -116,6 +117,7 @@ if (file.exists(rapm_cache)) {
   message("  Loading lineups from RAPM cache...")
   raw_data <- readRDS(rapm_cache)
   lineups <- raw_data$lineups
+  rm(raw_data); gc(verbose = FALSE)
 } else {
   message("  Loading lineups from Opta data...")
   leagues <- unique(played$league)
@@ -177,6 +179,7 @@ if (n_failed > 0) {
 }
 
 team_ratings <- bind_rows(all_team_ratings)
+rm(all_team_ratings); gc(verbose = FALSE)
 
 # 7. Handle Future Fixtures ----
 
@@ -192,19 +195,9 @@ if (nrow(upcoming) > 0) {
     group_by(team_id) %>%
     filter(match_date == max(match_date)) %>%
     ungroup()
+  rm(lineups); gc(verbose = FALSE)
 
-  # Helper: create a dummy lineup (11 players, replacement-level ratings) for
-  # teams with no lineup history. Positions: 1 GK, 4 DEF, 4 MID, 2 FWD.
-  make_dummy_lineup <- function(match_id, team_id, team_name, team_position) {
-    positions <- c("Goalkeeper", rep("Defender", 4), rep("Midfielder", 4),
-                   rep("Forward", 2))
-    data.frame(
-      match_id = match_id, team_id = team_id, team_name = team_name,
-      team_position = team_position, player_name = paste0("Unknown_", seq(11)),
-      position = positions, is_starter = TRUE,
-      stringsAsFactors = FALSE
-    )
-  }
+  # make_dummy_lineup() is defined in R/match_prediction.R
 
   # For each upcoming match, construct synthetic lineup rows
   upcoming_lineups <- list()
@@ -250,7 +243,16 @@ if (nrow(upcoming) > 0) {
       file.exists(skill_spm_path)) {
     tryCatch({
       message("  Computing date-specific skill estimates for fixtures...")
+
+      # Only load match history for players in upcoming lineups (memory optimization)
+      upcoming_player_ids <- unique(unlist(lapply(upcoming_lineups, function(x) x$player_id)))
       match_stats <- readRDS(match_stats_path)
+      if (length(upcoming_player_ids) > 0 && "player_id" %in% names(match_stats)) {
+        match_stats <- match_stats[match_stats$player_id %in% upcoming_player_ids, ]
+        message(sprintf("  Filtered match_stats to %d players (%d rows)",
+                        length(upcoming_player_ids), nrow(match_stats)))
+      }
+
       decay_params <- if (file.exists(decay_params_path)) readRDS(decay_params_path) else NULL
       skill_spm <- readRDS(skill_spm_path)
 
@@ -261,6 +263,7 @@ if (nrow(upcoming) > 0) {
         decay_params = decay_params,
         date = fixture_date
       )
+      rm(match_stats, decay_params); gc(verbose = FALSE)
 
       if (!is.null(live_skills) && nrow(live_skills) > 0) {
         # estimate_player_skills() now outputs "primary_position" directly

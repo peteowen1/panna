@@ -411,7 +411,6 @@ utils::globalVariables(c(
   "clean_name",
   "pos_group",
   "modal_pos",
-  "is_home",
   "goals_scored",
   "goals_conceded",
   "xg_for",

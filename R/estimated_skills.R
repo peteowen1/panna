@@ -286,18 +286,23 @@ estimate_player_skills <- function(match_stats, decay_params = NULL,
                                     stat_cols = NULL) {
   if (is.null(decay_params)) decay_params <- get_default_decay_params()
 
-  dt <- data.table::copy(data.table::as.data.table(match_stats))
+  dt <- data.table::as.data.table(match_stats)
 
-  # Ensure match_date is Date
-
-  if (!inherits(dt$match_date, "Date")) {
-    dt[, match_date := as.Date(match_date)]
-  }
-
-  # Filter to before target_date
+  # Filter by date BEFORE copying — subsetting creates a new data.table,
+  # avoiding a full copy of the (potentially multi-GB) input
   if (!is.null(target_date)) {
     target_date <- as.Date(target_date)
-    dt <- dt[match_date < target_date]
+    # Compare using temp vector to avoid mutating caller's data.table
+    md <- if (!inherits(dt$match_date, "Date")) as.Date(dt$match_date) else dt$match_date
+    dt <- dt[md < target_date]
+  } else {
+    # Without filtering, copy to avoid mutating caller's data
+    dt <- data.table::copy(dt)
+  }
+
+  # Now safe to mutate — dt is either a subset (new object) or an explicit copy
+  if (!inherits(dt$match_date, "Date")) {
+    dt[, match_date := as.Date(match_date)]
   }
 
   if (nrow(dt) == 0) {
@@ -844,9 +849,14 @@ estimate_player_skills_at_date <- function(match_stats, decay_params = NULL,
   dt <- data.table::as.data.table(match_stats)
 
   # Filter to requested players if specified
-
   if (!is.null(player_ids)) {
     dt <- dt[player_id %in% player_ids]
+  }
+
+  # Pre-filter by date to reduce data flowing into estimate_player_skills()
+  if (!is.null(date)) {
+    md <- if (!inherits(dt$match_date, "Date")) as.Date(dt$match_date) else dt$match_date
+    dt <- dt[md < as.Date(date)]
   }
 
   estimate_player_skills(

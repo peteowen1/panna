@@ -38,7 +38,8 @@ test_that("to_opta_league errors on invalid format", {
 })
 
 test_that("to_opta_league warns on unknown but valid-looking codes when catalog unavailable", {
-  # When catalog is unavailable (offline), unknown valid-looking codes pass through with warning
+  # Mock catalog as unavailable to test offline fallback path
+  local_mocked_bindings(download_opta_catalog = function(...) stop("offline"))
   expect_warning(to_opta_league("MLS"), "not in hardcoded mappings")
 })
 
@@ -149,6 +150,8 @@ test_that("suggest_opta_seasons returns empty for nonexistent league", {
     }
   })
 
+  # Mock catalog as unavailable to test offline fallback path
+  local_mocked_bindings(download_opta_catalog = function(...) stop("offline"))
   expect_warning(
     seasons <- suggest_opta_seasons("NonExistent"),
     "not in hardcoded mappings"
