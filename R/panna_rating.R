@@ -69,10 +69,20 @@ calculate_panna_rating <- function(rapm_data, spm_ratings, lambda_prior = 1, alp
   y_adjusted <- as.vector(y - X %*% spm_prior)
 
   # Penalty factor: don't penalize covariates (same pattern as fit_rapm())
+  # Covariates must be the last columns (cbind(X_players, X_covariates) in prepare_rapm_data)
   covariate_names <- rapm_data$covariate_names %||% character(0)
   n_cols <- ncol(X)
   n_cov <- length(covariate_names)
   if (n_cov > 0) {
+    actual_last_cols <- colnames(X)[(n_cols - n_cov + 1):n_cols]
+    if (!all(covariate_names %in% actual_last_cols)) {
+      cli::cli_warn(c(
+        "Covariate columns are not at the end of X matrix.",
+        "i" = "Expected last {n_cov} cols to contain: {paste(covariate_names, collapse=', ')}",
+        "i" = "Actual last {n_cov} cols: {paste(actual_last_cols, collapse=', ')}",
+        "!" = "Penalty factor may be misaligned."
+      ))
+    }
     penalty_factor <- c(rep(1, n_cols - n_cov), rep(0, n_cov))
   } else {
     penalty_factor <- rep(1, n_cols)

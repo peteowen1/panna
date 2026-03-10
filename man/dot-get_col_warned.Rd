@@ -11,6 +11,8 @@ An object of class \code{environment} of length 0.
 .get_col_warned
 }
 \description{
-Memoization environment for .get_col warnings
+Tracks which missing-column warnings have been emitted by \code{.get_col()}.
+Each column name is stored as a key once warned, preventing duplicate warnings
+within a session. To reset: \code{rm(list = ls(.get_col_warned), envir = .get_col_warned)}
 }
 \keyword{internal}

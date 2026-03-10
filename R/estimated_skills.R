@@ -827,6 +827,11 @@ aggregate_skills_for_spm <- function(match_stats, decay_params = NULL,
   # Compute position dummies if primary_position exists
   if ("primary_position" %in% names(result)) {
     pos <- result$primary_position
+    valid_pos <- c("GK", "DEF", "MID", "FWD")
+    unrecognized <- setdiff(unique(pos[!is.na(pos)]), valid_pos)
+    if (length(unrecognized) > 0) {
+      cli::cli_warn("Unrecognized positions in primary_position: {paste(unrecognized, collapse=', ')}. Position dummies may be incomplete.")
+    }
     result[, is_gk := as.integer(grepl("GK", pos, ignore.case = TRUE))]
     result[, is_df := as.integer(grepl("DEF", pos, ignore.case = TRUE))]
     result[, is_mf := as.integer(grepl("MID", pos, ignore.case = TRUE))]
@@ -1074,7 +1079,9 @@ backtest_skill_predictions <- function(match_stats, decay_params = NULL,
 
       # Vectorized decay weights via cumsum trick: O(n) instead of O(n^2)
       # exp(-lambda * (d_j - d_i)) = exp(-lambda * d_j) * exp(lambda * d_i)
+      # Cumulative sums computed once; for each j, multiply by exp(-lambda*d_j) to get time-decayed running totals
       d_rel <- dates - dates[1]
+      if (anyNA(d_rel)) next
       exp_pos <- exp(pmin(lambda * d_rel, 500))
       exp_neg <- exp(pmax(-lambda * d_rel, -500))
 

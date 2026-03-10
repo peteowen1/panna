@@ -467,7 +467,7 @@ get_cached_fbref_ids <- function(league, season) {
     fname <- basename(fpath)
     fbref_id <- gsub("\\.rds$", "", fname)
 
-    # Fast path: check if all 9 table files exist
+    # Fast path: check if all 10 table files exist
     all_tables_exist <- TRUE
     for (tt in all_table_types) {
       tt_dir <- get_fbref_match_cache_dir(tt, league, season, create = FALSE)

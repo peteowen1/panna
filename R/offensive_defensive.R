@@ -137,7 +137,7 @@ split_od_contributions <- function(panna_ratings, player_features) {
     names(player_features), ignore.case = TRUE
   )]
   def_cols <- names(player_features)[grepl(
-    "(tkl|int|block|clr|tackles|interceptions|clearances|blocked|aerial)",
+    "(tkl|\\bint\\b|block|clr|tackles|interceptions|clearances|blocked|aerial)",
     names(player_features), ignore.case = TRUE
   )]
 

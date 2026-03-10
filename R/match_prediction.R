@@ -535,22 +535,22 @@ compute_team_rolling_features <- function(results, windows = c(5L, 10L, 20L)) {
 }
 
 
-#' Fit XGBoost Poisson Model for Goal Prediction
+#' Fit XGBoost Model with Cross-Validation
 #'
-#' Fits an XGBoost model with Poisson objective for predicting goal counts.
-#' Uses k-fold cross-validation with early stopping.
+#' Shared helper for training XGBoost models with k-fold cross-validation
+#' and early stopping. Used by \code{\link{fit_goals_xgb}} (Poisson) and
+#' \code{\link{fit_outcome_xgb}} (multinomial).
 #'
 #' @param X Feature matrix
-#' @param y Target vector (goal counts)
+#' @param y Target vector (goal counts for Poisson, integer labels for multinomial)
+#' @param params XGBoost parameters list (objective, eval_metric, etc.)
 #' @param nfolds Number of CV folds (default 5)
-#' @param params XGBoost parameters (default Poisson regression)
 #' @param nrounds Max boosting rounds (default 500)
 #' @param early_stopping Patience for early stopping (default 30)
 #' @param verbose Print progress (default 1)
 #'
 #' @return List with model, cv_result, best_nrounds, metadata
-#' @export
-# Shared XGBoost training helper used by fit_goals_xgb and fit_outcome_xgb
+#' @keywords internal
 .fit_xgb_model <- function(X, y, params, nfolds = 5L, nrounds = 500L,
                            early_stopping = 30L, verbose = 1L) {
   if (!requireNamespace("xgboost", quietly = TRUE)) {
@@ -593,6 +593,20 @@ compute_team_rolling_features <- function(results, windows = c(5L, 10L, 20L)) {
   )
 }
 
+#' Fit XGBoost Poisson Model for Goal Prediction
+#'
+#' Wrapper around \code{\link{.fit_xgb_model}} with Poisson regression defaults.
+#'
+#' @param X Feature matrix
+#' @param y Target vector (goal counts)
+#' @param nfolds Number of CV folds (default 5)
+#' @param params XGBoost parameters (default: Poisson regression with eta=0.05)
+#' @param nrounds Max boosting rounds (default 500)
+#' @param early_stopping Patience for early stopping (default 30)
+#' @param verbose Print progress (default 1)
+#'
+#' @return List with model, cv_result, best_nrounds, metadata
+#' @export
 fit_goals_xgb <- function(X, y, nfolds = 5L, params = NULL,
                            nrounds = 500L, early_stopping = 30L,
                            verbose = 1L) {

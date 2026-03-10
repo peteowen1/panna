@@ -441,9 +441,16 @@ compute_match_level_opta_stats <- function(opta_stats, min_minutes = 10) {
     ifelse(is.na(x) | is.infinite(x), 0, x)
   })
   if (n_replaced > 0) {
+    total_cells <- sum(numeric_cols) * nrow(df)
+    pct <- round(n_replaced / total_cells * 100, 1)
     top_cols <- head(names(sort(na_counts[na_counts > 0], decreasing = TRUE)), 5)
-    progress_msg(sprintf("Replaced %d NA/Inf values with 0 (top: %s)",
-                         n_replaced, paste(top_cols, collapse = ", ")))
+    msg <- sprintf("Replaced %d NA/Inf values with 0 (%.1f%%, top: %s)",
+                   n_replaced, pct, paste(top_cols, collapse = ", "))
+    if (pct > 5) {
+      cli::cli_warn(msg)
+    } else {
+      progress_msg(msg)
+    }
   }
 
   result <- data.table::as.data.table(df)
@@ -554,9 +561,16 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
     ifelse(is.na(x), 0, x)
   })
   if (n_replaced > 0) {
+    total_cells <- sum(numeric_cols) * nrow(player_stats)
+    pct <- round(n_replaced / total_cells * 100, 1)
     top_cols <- head(names(sort(na_counts[na_counts > 0], decreasing = TRUE)), 5)
-    progress_msg(sprintf("Replaced %d NA values with 0 (top: %s)",
-                         n_replaced, paste(top_cols, collapse = ", ")))
+    msg <- sprintf("Replaced %d NA values with 0 (%.1f%%, top: %s)",
+                   n_replaced, pct, paste(top_cols, collapse = ", "))
+    if (pct > 5) {
+      cli::cli_warn(msg)
+    } else {
+      progress_msg(msg)
+    }
   }
 
   progress_msg(sprintf("Aggregated Opta stats for %d players with %d features",

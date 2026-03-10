@@ -12,7 +12,7 @@
   } else {
     load_opta_stats(league = league, season = season, source = source)
   }
-  # Convert to base data.frame for stats::aggregate compatibility
+  # Convert to base data.frame for downstream compatibility
   as.data.frame(data)
 }
 
@@ -20,13 +20,16 @@
 # Note: source param is accepted for API consistency but xmetrics only supports local
 .load_opta_xmetrics_data <- function(league, season, source) {
   data <- if (is.null(league)) {
-    # Load all Big 5 leagues
+    # Load all available Opta leagues
     results <- lapply(names(OPTA_LEAGUES), function(lg) {
       tryCatch({
         df <- load_opta_xmetrics(lg, season)
         df$league <- lg
         df
-      }, error = function(e) NULL)
+      }, error = function(e) {
+        cli::cli_warn("Failed to load xmetrics for {lg}/{season}: {conditionMessage(e)}")
+        NULL
+      })
     })
     rbindlist(Filter(Negate(is.null), results), use.names = TRUE, fill = TRUE)
   } else {
@@ -36,11 +39,20 @@
 }
 
 
-# Shared helper for all player_opta_* aggregation functions.
-# col_spec: named list mapping output_name -> opta_column_name
-# derive_fn: function(result) that adds derived metrics (per-90 rates, etc.)
-# col_order: character vector of final column order
-# loader: function(league, season, source) for data loading (default .load_opta_data)
+#' Shared aggregation helper for player_opta_* functions
+#'
+#' @param player Character. Player name filter (case-insensitive substring match).
+#' @param league Character. League code (NULL for all leagues).
+#' @param season Character. Season string.
+#' @param min_minutes Numeric. Minimum minutes threshold.
+#' @param by_team Logical. Aggregate by player+team if TRUE.
+#' @param source Character. "remote" or "local".
+#' @param col_spec Named list mapping output column names to source column names.
+#' @param derive_fn Function(result) -> result that adds derived metrics.
+#' @param col_order Character vector of final column ordering.
+#' @param loader Function(league, season, source) for data loading.
+#' @return data.frame with aggregated player statistics.
+#' @keywords internal
 .aggregate_opta_player_stats <- function(player, league, season, min_minutes,
                                           by_team, source, col_spec, derive_fn,
                                           col_order, loader = .load_opta_data) {
