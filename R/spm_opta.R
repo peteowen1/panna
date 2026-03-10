@@ -433,11 +433,18 @@ compute_match_level_opta_stats <- function(opta_stats, min_minutes = 10) {
   # Compute derived features
   df <- .calculate_opta_derived_features(df)
 
-  # Replace NAs with 0 in numeric columns
+  # Replace NAs/Inf with 0 in numeric columns (required for glmnet)
   numeric_cols <- vapply(df, is.numeric, logical(1))
+  na_counts <- vapply(df[numeric_cols], function(x) sum(is.na(x) | is.infinite(x)), integer(1))
+  n_replaced <- sum(na_counts)
   df[numeric_cols] <- lapply(df[numeric_cols], function(x) {
     ifelse(is.na(x) | is.infinite(x), 0, x)
   })
+  if (n_replaced > 0) {
+    top_cols <- head(names(sort(na_counts[na_counts > 0], decreasing = TRUE)), 5)
+    progress_msg(sprintf("Replaced %d NA/Inf values with 0 (top: %s)",
+                         n_replaced, paste(top_cols, collapse = ", ")))
+  }
 
   result <- data.table::as.data.table(df)
 
@@ -493,55 +500,37 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
   opta_cols <- .get_opta_col_mapping()
   existing_cols <- opta_cols[opta_cols %in% names(opta_stats)]
 
-  # Aggregate by player_id
-  player_stats <- stats::aggregate(
-    opta_stats[, existing_cols, drop = FALSE],
-    by = list(player_id = opta_stats$player_id),
-    FUN = function(x) sum(as.numeric(x), na.rm = TRUE)
-  )
-  player_stats <- rename_columns(player_stats, existing_cols)
+  # Aggregate by player_id using data.table for performance
+  opta_dt <- data.table::as.data.table(opta_stats)
 
-  # Count matches
-  match_counts <- stats::aggregate(
-    opta_stats$match_id,
-    by = list(player_id = opta_stats$player_id),
-    FUN = function(x) length(unique(x))
-  )
-  names(match_counts)[2] <- "n_matches"
-  player_stats <- data.table::as.data.table(player_stats)[data.table::as.data.table(match_counts), on = "player_id", nomatch = NULL]
-  data.table::setDF(player_stats)
+  # Sum numeric columns + count matches in one pass
+  player_stats <- opta_dt[, c(
+    lapply(.SD, function(x) sum(as.numeric(x), na.rm = TRUE)),
+    list(n_matches = data.table::uniqueN(match_id))
+  ), by = player_id, .SDcols = existing_cols]
+  data.table::setnames(player_stats, old = existing_cols,
+                       new = names(existing_cols), skip_absent = TRUE)
 
-  # Get canonical player_name
-  cleaned_names <- gsub("\u00A0", " ", opta_stats$player_name)
-  cleaned_names <- trimws(cleaned_names)
-
-  player_name_lookup <- stats::aggregate(
-    cleaned_names,
-    by = list(player_id = opta_stats$player_id),
-    FUN = function(x) {
-      tbl <- table(x)
-      names(tbl)[which.max(tbl)]
-    }
-  )
-  names(player_name_lookup)[2] <- "player_name"
-  player_stats <- data.table::as.data.table(player_name_lookup)[data.table::as.data.table(player_stats), on = "player_id"]
-  data.table::setDF(player_stats)
+  # Get canonical player_name (modal name per player)
+  cleaned_names_vec <- trimws(gsub("\u00A0", " ", opta_dt$player_name))
+  opta_dt[, clean_name := cleaned_names_vec]
+  name_lookup <- opta_dt[, {
+    tbl <- table(clean_name)
+    list(player_name = names(tbl)[which.max(tbl)])
+  }, by = player_id]
+  player_stats <- name_lookup[player_stats, on = "player_id"]
+  opta_dt[, clean_name := NULL]
 
   # Get primary position
-  if ("position" %in% names(opta_stats)) {
-    pos_mode <- stats::aggregate(
-      opta_stats$position,
-      by = list(player_id = opta_stats$player_id),
-      FUN = function(x) {
-        tbl <- table(x[!is.na(x) & x != ""])
-        if (length(tbl) == 0) return(NA_character_)
-        names(tbl)[which.max(tbl)]
-      }
-    )
-    names(pos_mode)[2] <- "primary_position"
-    player_stats <- data.table::as.data.table(pos_mode)[data.table::as.data.table(player_stats), on = "player_id"]
-    data.table::setDF(player_stats)
+  if ("position" %in% names(opta_dt)) {
+    pos_mode <- opta_dt[!is.na(position) & position != "", {
+      tbl <- table(position)
+      list(primary_position = names(tbl)[which.max(tbl)])
+    }, by = player_id]
+    player_stats <- pos_mode[player_stats, on = "player_id"]
   }
+
+  data.table::setDF(player_stats)
 
   # Filter by minimum minutes
   player_stats <- player_stats[player_stats$total_minutes >= min_minutes, ]
@@ -557,11 +546,18 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
   player_stats <- .calculate_opta_per90(player_stats)
   player_stats <- .calculate_opta_derived_features(player_stats)
 
-  # Replace NAs with 0
+  # Replace NAs with 0 (required for glmnet/SPM model fitting)
   numeric_cols <- sapply(player_stats, is.numeric)
+  na_counts <- vapply(player_stats[numeric_cols], function(x) sum(is.na(x)), integer(1))
+  n_replaced <- sum(na_counts)
   player_stats[numeric_cols] <- lapply(player_stats[numeric_cols], function(x) {
     ifelse(is.na(x), 0, x)
   })
+  if (n_replaced > 0) {
+    top_cols <- head(names(sort(na_counts[na_counts > 0], decreasing = TRUE)), 5)
+    progress_msg(sprintf("Replaced %d NA values with 0 (top: %s)",
+                         n_replaced, paste(top_cols, collapse = ", ")))
+  }
 
   progress_msg(sprintf("Aggregated Opta stats for %d players with %d features",
                        nrow(player_stats), ncol(player_stats)))

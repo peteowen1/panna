@@ -4,12 +4,14 @@
 \alias{load_opta_big5}
 \title{Load All Opta Data for Big 5 Leagues}
 \usage{
-load_opta_big5(season = NULL, columns = NULL)
+load_opta_big5(season = NULL, columns = NULL, source = c("remote", "local"))
 }
 \arguments{
 \item{season}{Optional season filter. If NULL, loads all available seasons.}
 
 \item{columns}{Optional character vector of columns to select.}
+
+\item{source}{Character. "remote" (default) or "local".}
 }
 \value{
 Data frame with league column added.

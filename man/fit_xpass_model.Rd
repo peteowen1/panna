@@ -23,7 +23,7 @@ fit_xpass_model(
 
 \item{max_depth}{Maximum tree depth (default 6)}
 
-\item{eta}{Learning rate (default 0.05)}
+\item{eta}{Learning rate (default 0.1)}
 
 \item{subsample}{Row subsampling (default 0.8)}
 

@@ -138,7 +138,7 @@ if (!grepl("fbref\\.com/en/matches/", match_url)) {
   )
 
   # Check for errors returned by fetch_with_retry
-  if (is.null(response)) {
+  if (inherits(response, "fetch_error")) {
     if (isTRUE(attr(response, "rate_limited"))) {
       cli::cli_warn("Rate limited by FBref (429). Stopping.")
     } else if (isTRUE(attr(response, "blocked"))) {
@@ -148,7 +148,7 @@ if (!grepl("fbref\\.com/en/matches/", match_url)) {
     } else {
       cli::cli_warn("Failed to fetch {match_url}")
     }
-    return(response)
+    return(NULL)
   }
 
   # Parse HTML
@@ -437,7 +437,7 @@ is_match_cached <- function(league, season, fbref_id, table_types = "metadata") 
 #'
 #' Returns all fully-cached match IDs for a league-season. A match is
 #' considered cached if:
-#' 1. All 9 table type files exist (fast path for Big 5 leagues), OR
+#' 1. All 10 table type files exist (fast path for Big 5 leagues), OR
 #' 2. The metadata has `tables_available` field and all those tables exist
 #'
 #' Uses hierarchical path: \code{\{table_type\}/\{league\}/\{season\}/\{id\}.rds}
@@ -468,17 +468,17 @@ get_cached_fbref_ids <- function(league, season) {
     fbref_id <- gsub("\\.rds$", "", fname)
 
     # Fast path: check if all 9 table files exist
-    all_nine_exist <- TRUE
+    all_tables_exist <- TRUE
     for (tt in all_table_types) {
       tt_dir <- get_fbref_match_cache_dir(tt, league, season, create = FALSE)
       if (!dir.exists(tt_dir) || !file.exists(file.path(tt_dir, fname))) {
-        all_nine_exist <- FALSE
+        all_tables_exist <- FALSE
         break
       }
     }
 
-    if (all_nine_exist) {
-      # All 9 tables exist - definitely cached
+    if (all_tables_exist) {
+      # All 10 tables exist - definitely cached
       cached_ids <- c(cached_ids, fbref_id)
       next
     }

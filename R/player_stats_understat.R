@@ -36,16 +36,14 @@ player_understat_summary <- function(player = NULL,
   }
 
   if (!is.null(player)) {
-    data <- data[grepl(player, data$player, ignore.case = TRUE), ]
+    data <- data[grepl(tolower(player), tolower(data$player), fixed = TRUE), ]
     if (nrow(data) == 0) {
       cli::cli_warn("No data found for player: {player}")
       return(data.frame())
     }
   }
 
-  get_col <- function(df, col) {
-    if (col %in% names(df)) as.numeric(df[[col]]) else rep(0, nrow(df))
-  }
+  get_col <- .get_col
 
   # Determine team column (Understat data has team_id, not team)
   team_col <- if ("team" %in% names(data)) "team" else "team_id"

@@ -628,6 +628,10 @@ format_duration <- function(secs) {
 }
 
 
+#' Memoization environment for .get_col warnings
+#' @keywords internal
+.get_col_warned <- new.env(parent = emptyenv())
+
 #' Extract column from data frame with zero fallback
 #'
 #' Returns the column as numeric if it exists, otherwise a vector of zeros.
@@ -638,7 +642,12 @@ format_duration <- function(secs) {
 #' @return Numeric vector
 #' @keywords internal
 .get_col <- function(df, col) {
-  if (col %in% names(df)) as.numeric(df[[col]]) else rep(0, nrow(df))
+  if (col %in% names(df)) return(as.numeric(df[[col]]))
+  if (!exists(col, envir = .get_col_warned, inherits = FALSE)) {
+    cli::cli_warn("Column {.val {col}} not found, defaulting to 0.")
+    assign(col, TRUE, envir = .get_col_warned)
+  }
+  rep(0, nrow(df))
 }
 
 

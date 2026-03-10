@@ -54,7 +54,7 @@ player_fbref_summary <- function(player = NULL,
 
   # Filter by player if specified (case-insensitive partial match)
   if (!is.null(player)) {
-    data <- data[grepl(player, data$player, ignore.case = TRUE), ]
+    data <- data[grepl(tolower(player), tolower(data$player), fixed = TRUE), ]
     if (nrow(data) == 0) {
       cli::cli_warn("No data found for player: {player}")
       return(data.frame())
@@ -174,7 +174,7 @@ player_fbref_passing <- function(player = NULL,
 
   # Filter by player if specified
   if (!is.null(player)) {
-    data <- data[grepl(player, data$player, ignore.case = TRUE), ]
+    data <- data[grepl(tolower(player), tolower(data$player), fixed = TRUE), ]
     if (nrow(data) == 0) {
       cli::cli_warn("No data found for player: {player}")
       return(data.frame())
@@ -310,7 +310,7 @@ player_fbref_defense <- function(player = NULL,
 
   # Filter by player if specified
   if (!is.null(player)) {
-    data <- data[grepl(player, data$player, ignore.case = TRUE), ]
+    data <- data[grepl(tolower(player), tolower(data$player), fixed = TRUE), ]
     if (nrow(data) == 0) {
       cli::cli_warn("No data found for player: {player}")
       return(data.frame())
@@ -443,7 +443,7 @@ player_fbref_keeper <- function(player = NULL,
 
   # Filter by player if specified
   if (!is.null(player)) {
-    data <- data[grepl(player, data$player, ignore.case = TRUE), ]
+    data <- data[grepl(tolower(player), tolower(data$player), fixed = TRUE), ]
     if (nrow(data) == 0) {
       cli::cli_warn("No data found for player: {player}")
       return(data.frame())

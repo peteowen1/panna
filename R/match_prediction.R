@@ -550,23 +550,11 @@ compute_team_rolling_features <- function(results, windows = c(5L, 10L, 20L)) {
 #'
 #' @return List with model, cv_result, best_nrounds, metadata
 #' @export
-fit_goals_xgb <- function(X, y, nfolds = 5L, params = NULL,
-                           nrounds = 500L, early_stopping = 30L,
-                           verbose = 1L) {
+# Shared XGBoost training helper used by fit_goals_xgb and fit_outcome_xgb
+.fit_xgb_model <- function(X, y, params, nfolds = 5L, nrounds = 500L,
+                           early_stopping = 30L, verbose = 1L) {
   if (!requireNamespace("xgboost", quietly = TRUE)) {
     cli::cli_abort("Package {.pkg xgboost} is required.")
-  }
-
-  if (is.null(params)) {
-    params <- list(
-      objective = "count:poisson",
-      eval_metric = "poisson-nloglik",
-      max_depth = 5L,
-      eta = 0.05,
-      subsample = 0.8,
-      colsample_bytree = 0.8,
-      min_child_weight = 10
-    )
   }
 
   dtrain <- xgboost::xgb.DMatrix(data = X, label = y)
@@ -605,6 +593,23 @@ fit_goals_xgb <- function(X, y, nfolds = 5L, params = NULL,
   )
 }
 
+fit_goals_xgb <- function(X, y, nfolds = 5L, params = NULL,
+                           nrounds = 500L, early_stopping = 30L,
+                           verbose = 1L) {
+  if (is.null(params)) {
+    params <- list(
+      objective = "count:poisson",
+      eval_metric = "poisson-nloglik",
+      max_depth = 5L,
+      eta = 0.05,
+      subsample = 0.8,
+      colsample_bytree = 0.8,
+      min_child_weight = 10
+    )
+  }
+  .fit_xgb_model(X, y, params, nfolds, nrounds, early_stopping, verbose)
+}
+
 
 #' Fit XGBoost Multinomial Model for Match Outcome
 #'
@@ -624,10 +629,6 @@ fit_goals_xgb <- function(X, y, nfolds = 5L, params = NULL,
 fit_outcome_xgb <- function(X, y, nfolds = 5L, params = NULL,
                               nrounds = 500L, early_stopping = 30L,
                               verbose = 1L) {
-  if (!requireNamespace("xgboost", quietly = TRUE)) {
-    cli::cli_abort("Package {.pkg xgboost} is required.")
-  }
-
   if (is.null(params)) {
     params <- list(
       objective = "multi:softprob",
@@ -640,41 +641,7 @@ fit_outcome_xgb <- function(X, y, nfolds = 5L, params = NULL,
       min_child_weight = 10
     )
   }
-
-  dtrain <- xgboost::xgb.DMatrix(data = X, label = y)
-
-  cv_result <- xgboost::xgb.cv(
-    params = params,
-    data = dtrain,
-    nrounds = nrounds,
-    nfold = nfolds,
-    early_stopping_rounds = early_stopping,
-    verbose = verbose,
-    print_every_n = 50L
-  )
-
-  best_nrounds <- .get_best_nrounds(cv_result)
-
-  model <- xgboost::xgb.train(
-    params = params,
-    data = dtrain,
-    nrounds = best_nrounds,
-    verbose = 0L
-  )
-
-  importance <- xgboost::xgb.importance(
-    feature_names = colnames(X),
-    model = model
-  )
-
-  list(
-    model = model,
-    cv_result = cv_result,
-    importance = importance,
-    best_nrounds = best_nrounds,
-    params = params,
-    feature_names = colnames(X)
-  )
+  .fit_xgb_model(X, y, params, nfolds, nrounds, early_stopping, verbose)
 }
 
 

@@ -131,8 +131,15 @@ calculate_od_panna <- function(rapm_data, spm_ratings, lambda_prior = 1) {
 #' }
 split_od_contributions <- function(panna_ratings, player_features) {
   # Calculate offensive/defensive feature indices
-  off_cols <- names(player_features)[grepl("(xG|Sh|Ast|SCA|GCA|PrgP|PrgC)", names(player_features))]
-  def_cols <- names(player_features)[grepl("(Tkl|Int|Block|Clr)", names(player_features))]
+  # Match both FBref snake_case (after clean_column_names) and Opta column names
+  off_cols <- names(player_features)[grepl(
+    "(xg|npxg|sh|ast|sca|gca|prgp|prgc|shots|assists|key_pass|progressive|scoring_att|big_chance)",
+    names(player_features), ignore.case = TRUE
+  )]
+  def_cols <- names(player_features)[grepl(
+    "(tkl|int|block|clr|tackles|interceptions|clearances|blocked|aerial)",
+    names(player_features), ignore.case = TRUE
+  )]
 
   if (length(off_cols) == 0 || length(def_cols) == 0) {
     cli::cli_warn(c(

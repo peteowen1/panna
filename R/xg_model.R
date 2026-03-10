@@ -7,6 +7,62 @@
 NULL
 
 
+#' Create shot features from coordinates and context
+#'
+#' Shared helper for building xG prediction features. Used by both
+#' \code{prepare_shots_for_xg()} (training) and \code{add_xg_to_spadl()} (inference).
+#'
+#' @param x,y Numeric vectors of shot coordinates
+#' @param bodypart Character vector of body part (e.g., "head", "foot_right", "right foot")
+#' @param situation Character vector of shot situation (e.g., "open play", "set piece")
+#' @param is_big_chance Integer vector (0/1) for big chances
+#' @return Data frame of xG features (location, body part, situation)
+#' @keywords internal
+.create_shot_features <- function(x, y, bodypart = NULL, situation = NULL,
+                                  is_big_chance = 0L) {
+  features <- data.frame(
+    x = x,
+    y = y,
+    distance_to_goal = calculate_distance_to_goal(x, y),
+    angle_to_goal = calculate_angle_to_goal(x, y),
+    in_penalty_area = as.integer(is_in_penalty_area(x, y)),
+    in_six_yard_box = as.integer(
+      x > SIX_YARD_X_MIN & y > SIX_YARD_Y_MIN & y < SIX_YARD_Y_MAX
+    )
+  )
+
+  # Body part: use grepl for consistent matching across naming conventions
+  if (!is.null(bodypart)) {
+    bp_lower <- tolower(bodypart)
+    features$is_header <- as.integer(grepl("head", bp_lower))
+    features$is_right_foot <- as.integer(grepl("right", bp_lower))
+    features$is_left_foot <- as.integer(grepl("left", bp_lower))
+  } else {
+    features$is_header <- 0L
+    features$is_right_foot <- 0L
+    features$is_left_foot <- 0L
+  }
+
+  # Situation
+  if (!is.null(situation)) {
+    sit_lower <- tolower(situation)
+    features$is_open_play <- as.integer(grepl("open", sit_lower))
+    features$is_set_piece <- as.integer(grepl("set", sit_lower))
+    features$is_corner <- as.integer(grepl("corner", sit_lower))
+    features$is_direct_freekick <- as.integer(grepl("free", sit_lower))
+  } else {
+    features$is_open_play <- 1L
+    features$is_set_piece <- 0L
+    features$is_corner <- 0L
+    features$is_direct_freekick <- 0L
+  }
+
+  features$is_big_chance <- as.integer(is_big_chance)
+
+  features
+}
+
+
 #' Prepare Shot Data for xG Model
 #'
 #' Prepares Opta shot event data with features needed for xG modeling.
@@ -52,57 +108,28 @@ prepare_shots_for_xg <- function(shot_events) {
     cli::cli_warn("Some x/y coordinates are outside the expected [0, 100] range.")
   }
 
-  # Create features
-  features <- data.frame(
-    match_id = shot_events$match_id,
-    event_id = if ("event_id" %in% names(shot_events)) shot_events$event_id else seq_len(nrow(shot_events)),
-    player_id = shot_events$player_id,
-    player_name = shot_events$player_name,
-    x = shot_events$x,
-    y = shot_events$y
+  # Create features using shared helper
+  bodypart <- if ("body_part" %in% names(shot_events)) shot_events$body_part else NULL
+  situation <- if ("situation" %in% names(shot_events)) shot_events$situation else NULL
+  big_chance <- if ("big_chance" %in% names(shot_events)) as.integer(shot_events$big_chance) else 0L
+
+  features <- .create_shot_features(
+    x = shot_events$x, y = shot_events$y,
+    bodypart = bodypart, situation = situation,
+    is_big_chance = big_chance
   )
 
-  # Distance and angle to goal
-  features$distance_to_goal <- calculate_distance_to_goal(features$x, features$y)
-  features$angle_to_goal <- calculate_angle_to_goal(features$x, features$y)
+  # Add metadata columns
+  features$match_id <- shot_events$match_id
+  features$event_id <- if ("event_id" %in% names(shot_events)) shot_events$event_id else seq_len(nrow(shot_events))
+  features$player_id <- shot_events$player_id
+  features$player_name <- shot_events$player_name
 
-  # Location features
-  features$in_penalty_area <- as.integer(is_in_penalty_area(features$x, features$y))
-  features$in_six_yard_box <- as.integer(
-    features$x > SIX_YARD_X_MIN & features$y > SIX_YARD_Y_MIN & features$y < SIX_YARD_Y_MAX
-  )
-
-  # Body part (if available)
-  if ("body_part" %in% names(shot_events)) {
-    features$is_header <- as.integer(grepl("head", tolower(shot_events$body_part)))
-    features$is_right_foot <- as.integer(grepl("right", tolower(shot_events$body_part)))
-    features$is_left_foot <- as.integer(grepl("left", tolower(shot_events$body_part)))
-  } else {
-    features$is_header <- 0L
-    features$is_right_foot <- 0L
-    features$is_left_foot <- 0L
-  }
-
-  # Situation (if available)
+  # Penalty flag (from situation)
   if ("situation" %in% names(shot_events)) {
-    features$is_open_play <- as.integer(grepl("open", tolower(shot_events$situation)))
-    features$is_set_piece <- as.integer(grepl("set", tolower(shot_events$situation)))
-    features$is_corner <- as.integer(grepl("corner", tolower(shot_events$situation)))
     features$is_penalty <- as.integer(grepl("penalty", tolower(shot_events$situation)))
-    features$is_direct_freekick <- as.integer(grepl("free", tolower(shot_events$situation)))
   } else {
-    features$is_open_play <- 1L
-    features$is_set_piece <- 0L
-    features$is_corner <- 0L
     features$is_penalty <- 0L
-    features$is_direct_freekick <- 0L
-  }
-
-  # Big chance (if available)
-  if ("big_chance" %in% names(shot_events)) {
-    features$is_big_chance <- as.integer(shot_events$big_chance)
-  } else {
-    features$is_big_chance <- 0L
   }
 
   # Shot type from type_id (if available)
@@ -365,7 +392,7 @@ predict_xg <- function(xg_model, shot_features) {
   # Ensure all required columns exist
   missing_cols <- setdiff(feature_cols, names(shot_features))
   if (length(missing_cols) > 0) {
-    # Add missing columns as zeros
+    cli::cli_warn("xG prediction: {length(missing_cols)} feature{?s} missing, defaulting to 0: {paste(missing_cols, collapse=', ')}")
     for (col in missing_cols) {
       shot_features[[col]] <- 0
     }
@@ -406,29 +433,20 @@ add_xg_to_spadl <- function(spadl_actions, xg_model) {
   # Prepare shot features
   shots <- spadl_actions[shot_idx, ]
 
-  # Use is_big_chance from SPADL if available (from Opta qualifier 214)
+  # Build shot features using shared helper (consistent with training)
   is_big_chance <- if ("is_big_chance" %in% names(shots)) {
     as.integer(shots$is_big_chance)
   } else {
     0L
   }
 
-  shot_features <- data.frame(
-    x = shots$start_x,
-    y = shots$start_y,
-    distance_to_goal = calculate_distance_to_goal(shots$start_x, shots$start_y),
-    angle_to_goal = calculate_angle_to_goal(shots$start_x, shots$start_y),
-    in_penalty_area = as.integer(is_in_penalty_area(shots$start_x, shots$start_y)),
-    in_six_yard_box = as.integer(
-      shots$start_x > SIX_YARD_X_MIN & shots$start_y > SIX_YARD_Y_MIN & shots$start_y < SIX_YARD_Y_MAX
-    ),
-    is_header = as.integer(shots$bodypart == "head"),
-    is_right_foot = 0L,
-    is_left_foot = 0L,
-    is_open_play = 1L,
-    is_set_piece = 0L,
-    is_corner = 0L,
-    is_direct_freekick = 0L,
+  # SPADL bodypart column has values like "head", "foot_left", "foot_right"
+  bodypart <- if ("bodypart" %in% names(shots)) shots$bodypart else NULL
+
+  shot_features <- .create_shot_features(
+    x = shots$start_x, y = shots$start_y,
+    bodypart = bodypart,
+    situation = NULL,
     is_big_chance = is_big_chance
   )
 
