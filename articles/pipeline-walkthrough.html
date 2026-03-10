@@ -223,13 +223,13 @@ attacking perspective, one from the away team’s. Player columns are
 split into offense and defense indicators.</p>
 <div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">rapm_data</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/create_rapm_design_matrix.html">create_rapm_design_matrix</a></span><span class="op">(</span><span class="va">splint_data</span>, min_minutes <span class="op">=</span> <span class="fl">45</span><span class="op">)</span></span>
-<span><span class="co">#&gt; [08:34:19] Processing 81 splints...</span></span>
-<span><span class="co">#&gt; [08:34:19] Including 50 players (&gt;= 45 minutes)</span></span>
-<span><span class="co">#&gt; [08:34:19] Replacement pool: 0 players (&lt; 45 minutes)</span></span>
-<span><span class="co">#&gt; [08:34:19] Building row data (vectorized)...</span></span>
-<span><span class="co">#&gt; [08:34:19] Building sparse matrix (vectorized)...</span></span>
-<span><span class="co">#&gt; [08:34:19] Replacement appearances: 0 offense, 0 defense</span></span>
-<span><span class="co">#&gt; [08:34:20] Design matrix: 162 rows, 100 player columns (+2 replacement), 5 covariates</span></span>
+<span><span class="co">#&gt; [02:19:59] Processing 81 splints...</span></span>
+<span><span class="co">#&gt; [02:19:59] Including 50 players (&gt;= 45 minutes)</span></span>
+<span><span class="co">#&gt; [02:19:59] Replacement pool: 0 players (&lt; 45 minutes)</span></span>
+<span><span class="co">#&gt; [02:19:59] Building row data (vectorized)...</span></span>
+<span><span class="co">#&gt; [02:19:59] Building sparse matrix (vectorized)...</span></span>
+<span><span class="co">#&gt; [02:19:59] Replacement appearances: 0 offense, 0 defense</span></span>
+<span><span class="co">#&gt; [02:19:59] Design matrix: 162 rows, 100 player columns (+2 replacement), 5 covariates</span></span>
 <span></span>
 <span><span class="co"># Add covariates to the player matrix for model fitting</span></span>
 <span><span class="va">covariates</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span></span>
@@ -256,8 +256,8 @@ offensive and defensive impact. Cross-validation selects the
 regularization strength.</p>
 <div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">rapm_model</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/fit_rapm.html">fit_rapm</a></span><span class="op">(</span><span class="va">rapm_data</span>, parallel <span class="op">=</span> <span class="cn">FALSE</span>, nfolds <span class="op">=</span> <span class="fl">3</span><span class="op">)</span></span>
-<span><span class="co">#&gt; [08:34:20] Fitting RAPM: 162 observations, 105 columns</span></span>
-<span><span class="co">#&gt; [08:34:20] RAPM fit complete (xG-based). Lambda.min: 140.1164, R^2: 0.840</span></span>
+<span><span class="co">#&gt; [02:20:00] Fitting RAPM: 162 observations, 105 columns</span></span>
+<span><span class="co">#&gt; [02:20:00] RAPM fit complete (xG-based). Lambda.min: 140.1164, R^2: 0.840</span></span>
 <span><span class="va">rapm_ratings</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/extract_rapm_ratings.html">extract_rapm_ratings</a></span><span class="op">(</span><span class="va">rapm_model</span><span class="op">)</span></span>
 <span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span><span class="st">"RAPM ratings for %d players\n"</span>, <span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">rapm_ratings</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
@@ -303,9 +303,9 @@ impact, providing a prior for players with limited RAPM sample size.</p>
 <span><span class="op">)</span></span>
 <span></span>
 <span><span class="va">spm_model</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/fit_spm_model.html">fit_spm_model</a></span><span class="op">(</span><span class="va">player_features</span>, nfolds <span class="op">=</span> <span class="fl">3</span><span class="op">)</span></span>
-<span><span class="co">#&gt; [08:34:20] Fitting SPM model with 6 predictors on 51 players</span></span>
-<span><span class="co">#&gt; [08:34:20]   Weighting by minutes (sqrt transform)</span></span>
-<span><span class="co">#&gt; [08:34:20] SPM fit complete. R-squared: 0.000 (weighted in-sample)</span></span>
+<span><span class="co">#&gt; [02:20:00] Fitting SPM model with 6 predictors on 51 players</span></span>
+<span><span class="co">#&gt; [02:20:00]   Weighting by minutes (sqrt transform)</span></span>
+<span><span class="co">#&gt; [02:20:00] SPM fit complete. R-squared: 0.000 (weighted in-sample)</span></span>
 <span><span class="va">spm_ratings</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/calculate_spm_ratings.html">calculate_spm_ratings</a></span><span class="op">(</span><span class="va">player_features</span>, <span class="va">spm_model</span><span class="op">)</span></span>
 <span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span><span class="st">"SPM predictions for %d players\n"</span>, <span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">spm_ratings</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
@@ -330,20 +330,20 @@ stable ratings.</p>
 prediction after regularization.</p>
 <div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">panna_result</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/calculate_panna_rating.html">calculate_panna_rating</a></span><span class="op">(</span><span class="va">rapm_data</span>, <span class="va">spm_ratings</span>, lambda_prior <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
-<span><span class="co">#&gt; [08:34:20] Fitting panna model with SPM prior...</span></span>
-<span><span class="co">#&gt; [08:34:20] Panna ratings calculated for 105 players</span></span>
+<span><span class="co">#&gt; [02:20:00] Fitting panna model with SPM prior...</span></span>
+<span><span class="co">#&gt; [02:20:00] Panna ratings calculated for 105 players</span></span>
 <span><span class="va">panna_ratings</span> <span class="op">&lt;-</span> <span class="va">panna_result</span><span class="op">$</span><span class="va">ratings</span></span>
 <span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span><span class="st">"Panna ratings for %d players\n"</span>, <span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">panna_ratings</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt; Panna ratings for 105 players</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">panna_ratings</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"player_name"</span>, <span class="st">"panna"</span>, <span class="st">"spm_prior"</span>, <span class="st">"deviation"</span><span class="op">)</span><span class="op">]</span><span class="op">)</span></span>
 <span><span class="co">#&gt;     player_name     panna spm_prior deviation</span></span>
-<span><span class="co">#&gt; 103        &lt;NA&gt; 1.0218390         0 1.0218390</span></span>
-<span><span class="co">#&gt; 93         &lt;NA&gt; 0.9517237         0 0.9517237</span></span>
-<span><span class="co">#&gt; 31         &lt;NA&gt; 0.9412482         0 0.9412482</span></span>
-<span><span class="co">#&gt; 21         &lt;NA&gt; 0.8199820         0 0.8199820</span></span>
-<span><span class="co">#&gt; 14         &lt;NA&gt; 0.6106109         0 0.6106109</span></span>
-<span><span class="co">#&gt; 59         &lt;NA&gt; 0.4946201         0 0.4946201</span></span></code></pre></div>
+<span><span class="co">#&gt; 103        &lt;NA&gt; 1.2129680         0 1.2129680</span></span>
+<span><span class="co">#&gt; 93         &lt;NA&gt; 0.9456541         0 0.9456541</span></span>
+<span><span class="co">#&gt; 31         &lt;NA&gt; 0.9296163         0 0.9296163</span></span>
+<span><span class="co">#&gt; 104        &lt;NA&gt; 0.8820030         0 0.8820030</span></span>
+<span><span class="co">#&gt; 21         &lt;NA&gt; 0.8046113         0 0.8046113</span></span>
+<span><span class="co">#&gt; 14         &lt;NA&gt; 0.5787064         0 0.5787064</span></span></code></pre></div>
 <div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># Verify: panna = spm_prior + deviation</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/all.equal.html" class="external-link">all.equal</a></span><span class="op">(</span><span class="va">panna_ratings</span><span class="op">$</span><span class="va">panna</span>, <span class="va">panna_ratings</span><span class="op">$</span><span class="va">spm_prior</span> <span class="op">+</span> <span class="va">panna_ratings</span><span class="op">$</span><span class="va">deviation</span><span class="op">)</span></span>
@@ -368,22 +368,22 @@ defensive contributions, useful for understanding player profiles.</p>
 <span><span class="co">#&gt; Top 5 players:</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">summary_df</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/order.html" class="external-link">order</a></span><span class="op">(</span><span class="op">-</span><span class="va">summary_df</span><span class="op">$</span><span class="va">panna</span><span class="op">)</span>, <span class="op">]</span>, <span class="fl">5</span><span class="op">)</span>, row.names <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
 <span><span class="co">#&gt;  player panna spm_prior deviation</span></span>
-<span><span class="co">#&gt;    &lt;NA&gt; 1.022         0     1.022</span></span>
-<span><span class="co">#&gt;    &lt;NA&gt; 0.952         0     0.952</span></span>
-<span><span class="co">#&gt;    &lt;NA&gt; 0.941         0     0.941</span></span>
-<span><span class="co">#&gt;    &lt;NA&gt; 0.820         0     0.820</span></span>
-<span><span class="co">#&gt;    &lt;NA&gt; 0.611         0     0.611</span></span>
+<span><span class="co">#&gt;    &lt;NA&gt; 1.213         0     1.213</span></span>
+<span><span class="co">#&gt;    &lt;NA&gt; 0.946         0     0.946</span></span>
+<span><span class="co">#&gt;    &lt;NA&gt; 0.930         0     0.930</span></span>
+<span><span class="co">#&gt;    &lt;NA&gt; 0.882         0     0.882</span></span>
+<span><span class="co">#&gt;    &lt;NA&gt; 0.805         0     0.805</span></span>
 <span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"\nBottom 5 players:\n"</span><span class="op">)</span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Bottom 5 players:</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">tail</a></span><span class="op">(</span><span class="va">summary_df</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/order.html" class="external-link">order</a></span><span class="op">(</span><span class="op">-</span><span class="va">summary_df</span><span class="op">$</span><span class="va">panna</span><span class="op">)</span>, <span class="op">]</span>, <span class="fl">5</span><span class="op">)</span>, row.names <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
 <span><span class="co">#&gt;  player  panna spm_prior deviation</span></span>
-<span><span class="co">#&gt;    &lt;NA&gt; -0.475         0    -0.475</span></span>
+<span><span class="co">#&gt;    &lt;NA&gt; -0.487         0    -0.487</span></span>
 <span><span class="co">#&gt;    &lt;NA&gt; -0.497         0    -0.497</span></span>
-<span><span class="co">#&gt;    &lt;NA&gt; -0.563         0    -0.563</span></span>
-<span><span class="co">#&gt;    &lt;NA&gt; -0.629         0    -0.629</span></span>
-<span><span class="co">#&gt;    &lt;NA&gt; -0.855         0    -0.855</span></span></code></pre></div>
+<span><span class="co">#&gt;    &lt;NA&gt; -0.587         0    -0.587</span></span>
+<span><span class="co">#&gt;    &lt;NA&gt; -0.605         0    -0.605</span></span>
+<span><span class="co">#&gt;    &lt;NA&gt; -0.831         0    -0.831</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="pipeline-summary">Pipeline Summary<a class="anchor" aria-label="anchor" href="#pipeline-summary"></a>

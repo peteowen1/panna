@@ -141,6 +141,7 @@
 <url><loc>https://peteowen1.github.io/panna/reference/derive_lineups_from_stats.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/derive_xa.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-add_position_dummies.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/dot-aggregate_opta_player_stats.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-aggregate_player_minutes.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-aggregate_stat_table.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-build_rapm_row_data.html</loc></url>
@@ -152,8 +153,10 @@
 <url><loc>https://peteowen1.github.io/panna/reference/dot-check_suggests.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-classify_skill_stats.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-count_events.html</loc></url>
-<url><loc>https://peteowen1.github.io/panna/reference/dot-extract_end_year.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/dot-create_shot_features.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/dot-fit_xgb_model.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-get_col.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/dot-get_col_warned.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-get_defense_col_mapping.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-get_keeper_col_mapping.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-get_misc_col_mapping.html</loc></url>
@@ -162,7 +165,9 @@
 <url><loc>https://peteowen1.github.io/panna/reference/dot-get_passing_types_col_mapping.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-get_possession_col_mapping.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-get_summary_col_mapping.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/dot-resolve_lambda.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-resolve_positions.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/dot-resolve_prior_strength.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-simplify_position.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/download_opta_catalog.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/download_opta_release_file.html</loc></url>
@@ -198,7 +203,6 @@
 <url><loc>https://peteowen1.github.io/panna/reference/fetch_understat_page.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/fetch_with_retry.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/filter_bad_xg_data.html</loc></url>
-<url><loc>https://peteowen1.github.io/panna/reference/filter_rapm_by_season.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/find_column.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/fit_epv_conceding_model.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/fit_epv_model.html</loc></url>

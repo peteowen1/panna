@@ -3,7 +3,7 @@
 Returns all fully-cached match IDs for a league-season. A match is
 considered cached if:
 
-1.  All 9 table type files exist (fast path for Big 5 leagues), OR
+1.  All 10 table type files exist (fast path for Big 5 leagues), OR
 
 2.  The metadata has `tables_available` field and all those tables exist
 

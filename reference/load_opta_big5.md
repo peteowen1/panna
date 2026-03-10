@@ -5,7 +5,7 @@ Convenience function to load Opta stats for all Big 5 European leagues.
 ## Usage
 
 ``` r
-load_opta_big5(season = NULL, columns = NULL)
+load_opta_big5(season = NULL, columns = NULL, source = c("remote", "local"))
 ```
 
 ## Arguments
@@ -17,6 +17,10 @@ load_opta_big5(season = NULL, columns = NULL)
 - columns:
 
   Optional character vector of columns to select.
+
+- source:
+
+  Character. "remote" (default) or "local".
 
 ## Value
 

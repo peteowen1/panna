@@ -52,7 +52,7 @@ fit_epv_model(
 
 - eta:
 
-  Learning rate (default 0.05)
+  Learning rate (default 0.1)
 
 - subsample:
 

@@ -1,7 +1,8 @@
 # Fit XGBoost Poisson Model for Goal Prediction
 
-Fits an XGBoost model with Poisson objective for predicting goal counts.
-Uses k-fold cross-validation with early stopping.
+Wrapper around
+[`.fit_xgb_model`](https://peteowen1.github.io/panna/reference/dot-fit_xgb_model.md)
+with Poisson regression defaults.
 
 ## Usage
 
@@ -33,7 +34,7 @@ fit_goals_xgb(
 
 - params:
 
-  XGBoost parameters (default Poisson regression)
+  XGBoost parameters (default: Poisson regression with eta=0.05)
 
 - nrounds:
 

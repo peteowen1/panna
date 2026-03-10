@@ -157,13 +157,13 @@ split into offense and defense indicators.
 
 ``` r
 rapm_data <- create_rapm_design_matrix(splint_data, min_minutes = 45)
-#> [08:34:19] Processing 81 splints...
-#> [08:34:19] Including 50 players (>= 45 minutes)
-#> [08:34:19] Replacement pool: 0 players (< 45 minutes)
-#> [08:34:19] Building row data (vectorized)...
-#> [08:34:19] Building sparse matrix (vectorized)...
-#> [08:34:19] Replacement appearances: 0 offense, 0 defense
-#> [08:34:20] Design matrix: 162 rows, 100 player columns (+2 replacement), 5 covariates
+#> [02:19:59] Processing 81 splints...
+#> [02:19:59] Including 50 players (>= 45 minutes)
+#> [02:19:59] Replacement pool: 0 players (< 45 minutes)
+#> [02:19:59] Building row data (vectorized)...
+#> [02:19:59] Building sparse matrix (vectorized)...
+#> [02:19:59] Replacement appearances: 0 offense, 0 defense
+#> [02:19:59] Design matrix: 162 rows, 100 player columns (+2 replacement), 5 covariates
 
 # Add covariates to the player matrix for model fitting
 covariates <- cbind(
@@ -191,8 +191,8 @@ regularization strength.
 
 ``` r
 rapm_model <- fit_rapm(rapm_data, parallel = FALSE, nfolds = 3)
-#> [08:34:20] Fitting RAPM: 162 observations, 105 columns
-#> [08:34:20] RAPM fit complete (xG-based). Lambda.min: 140.1164, R^2: 0.840
+#> [02:20:00] Fitting RAPM: 162 observations, 105 columns
+#> [02:20:00] RAPM fit complete (xG-based). Lambda.min: 140.1164, R^2: 0.840
 rapm_ratings <- extract_rapm_ratings(rapm_model)
 
 cat(sprintf("RAPM ratings for %d players\n", nrow(rapm_ratings)))
@@ -241,9 +241,9 @@ player_features <- data.frame(
 )
 
 spm_model <- fit_spm_model(player_features, nfolds = 3)
-#> [08:34:20] Fitting SPM model with 6 predictors on 51 players
-#> [08:34:20]   Weighting by minutes (sqrt transform)
-#> [08:34:20] SPM fit complete. R-squared: 0.000 (weighted in-sample)
+#> [02:20:00] Fitting SPM model with 6 predictors on 51 players
+#> [02:20:00]   Weighting by minutes (sqrt transform)
+#> [02:20:00] SPM fit complete. R-squared: 0.000 (weighted in-sample)
 spm_ratings <- calculate_spm_ratings(player_features, spm_model)
 
 cat(sprintf("SPM predictions for %d players\n", nrow(spm_ratings)))
@@ -271,20 +271,20 @@ regularization.
 
 ``` r
 panna_result <- calculate_panna_rating(rapm_data, spm_ratings, lambda_prior = 1)
-#> [08:34:20] Fitting panna model with SPM prior...
-#> [08:34:20] Panna ratings calculated for 105 players
+#> [02:20:00] Fitting panna model with SPM prior...
+#> [02:20:00] Panna ratings calculated for 105 players
 panna_ratings <- panna_result$ratings
 
 cat(sprintf("Panna ratings for %d players\n", nrow(panna_ratings)))
 #> Panna ratings for 105 players
 head(panna_ratings[, c("player_name", "panna", "spm_prior", "deviation")])
 #>     player_name     panna spm_prior deviation
-#> 103        <NA> 1.0218390         0 1.0218390
-#> 93         <NA> 0.9517237         0 0.9517237
-#> 31         <NA> 0.9412482         0 0.9412482
-#> 21         <NA> 0.8199820         0 0.8199820
-#> 14         <NA> 0.6106109         0 0.6106109
-#> 59         <NA> 0.4946201         0 0.4946201
+#> 103        <NA> 1.2129680         0 1.2129680
+#> 93         <NA> 0.9456541         0 0.9456541
+#> 31         <NA> 0.9296163         0 0.9296163
+#> 104        <NA> 0.8820030         0 0.8820030
+#> 21         <NA> 0.8046113         0 0.8046113
+#> 14         <NA> 0.5787064         0 0.5787064
 ```
 
 ``` r
@@ -312,22 +312,22 @@ cat("Top 5 players:\n")
 #> Top 5 players:
 print(head(summary_df[order(-summary_df$panna), ], 5), row.names = FALSE)
 #>  player panna spm_prior deviation
-#>    <NA> 1.022         0     1.022
-#>    <NA> 0.952         0     0.952
-#>    <NA> 0.941         0     0.941
-#>    <NA> 0.820         0     0.820
-#>    <NA> 0.611         0     0.611
+#>    <NA> 1.213         0     1.213
+#>    <NA> 0.946         0     0.946
+#>    <NA> 0.930         0     0.930
+#>    <NA> 0.882         0     0.882
+#>    <NA> 0.805         0     0.805
 
 cat("\nBottom 5 players:\n")
 #> 
 #> Bottom 5 players:
 print(tail(summary_df[order(-summary_df$panna), ], 5), row.names = FALSE)
 #>  player  panna spm_prior deviation
-#>    <NA> -0.475         0    -0.475
+#>    <NA> -0.487         0    -0.487
 #>    <NA> -0.497         0    -0.497
-#>    <NA> -0.563         0    -0.563
-#>    <NA> -0.629         0    -0.629
-#>    <NA> -0.855         0    -0.855
+#>    <NA> -0.587         0    -0.587
+#>    <NA> -0.605         0    -0.605
+#>    <NA> -0.831         0    -0.831
 ```
 
 ## Pipeline Summary
