@@ -436,11 +436,6 @@ test_that("fit_epv_model works with xg method", {
 # Tests for EPV calculation (epv_model.R)
 # =============================================================================
 
-test_that("calculate_action_epv computes EPV values", {
-  skip_if_not_installed("xgboost")
-  skip("calculate_action_epv requires complex integration - tested via integration tests")
-})
-
 
 # =============================================================================
 # Tests for EPV credit assignment (epv_model.R)

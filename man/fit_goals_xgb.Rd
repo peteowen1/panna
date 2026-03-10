@@ -21,7 +21,7 @@ fit_goals_xgb(
 
 \item{nfolds}{Number of CV folds (default 5)}
 
-\item{params}{XGBoost parameters (default Poisson regression)}
+\item{params}{XGBoost parameters (default: Poisson regression with eta=0.05)}
 
 \item{nrounds}{Max boosting rounds (default 500)}
 
@@ -33,6 +33,5 @@ fit_goals_xgb(
 List with model, cv_result, best_nrounds, metadata
 }
 \description{
-Fits an XGBoost model with Poisson objective for predicting goal counts.
-Uses k-fold cross-validation with early stopping.
+Wrapper around \code{\link{.fit_xgb_model}} with Poisson regression defaults.
 }

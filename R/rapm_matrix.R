@@ -424,6 +424,7 @@ prepare_rapm_data <- function(splint_data, min_minutes = 90,
         "target_type='goals' requires 'goals_home' and 'goals_away' columns in splints.",
         "i" = "Falling back to xG-based target. Splints may need to be regenerated with {.fn create_all_splints}."
       ))
+      target_type <- "xg"
     }
   }
 
@@ -552,44 +553,6 @@ prepare_rapm_data <- function(splint_data, min_minutes = 90,
   progress_msg(sprintf("RAPM data ready (%s): %d observations, %d players (%d columns), %d covariates",
                        target_desc, rapm_data$n_rows, rapm_data$n_players,
                        rapm_data$n_players * 2, length(rapm_data$covariate_names)))
-
-  rapm_data
-}
-
-
-#' Filter RAPM data to specific seasons
-#'
-#' Subsets RAPM data to include only splints from specified seasons.
-#'
-#' @param rapm_data List from prepare_rapm_data
-#' @param seasons Character vector of seasons to include
-#' @param match_info Match info data frame with season column
-#'
-#' @return Filtered rapm_data
-#' @keywords internal
-filter_rapm_by_season <- function(rapm_data, seasons, match_info) {
-  # Get match_ids for specified seasons
-  valid_matches <- match_info$match_id[match_info$season %in% seasons]
-
-  # Get splint indices
-  splint_info <- rapm_data$splint_info
-  splint_info$row_num <- seq_len(nrow(splint_info))
-  idx <- splint_info$row_num[splint_info$match_id %in% valid_matches]
-
-  # Subset all components
-  rapm_data$X <- rapm_data$X[idx, , drop = FALSE]
-  rapm_data$y <- rapm_data$y[idx]
-  rapm_data$weights <- rapm_data$weights[idx]
-  rapm_data$splint_info <- rapm_data$splint_info[idx, ]
-
-  if (!is.null(rapm_data$X_weighted)) {
-    rapm_data$X_weighted <- rapm_data$X_weighted[idx, , drop = FALSE]
-    rapm_data$y_weighted <- rapm_data$y_weighted[idx]
-  }
-
-  if (!is.null(rapm_data$X_od)) {
-    rapm_data$X_od <- rapm_data$X_od[idx, , drop = FALSE]
-  }
 
   rapm_data
 }

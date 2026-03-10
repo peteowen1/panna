@@ -634,14 +634,10 @@ optimize_all_priors <- function(match_stats, decay_params = NULL,
     lapply(seq_along(all_stats), function(i) {
       stat <- all_stats[i]
       is_eff <- is_eff_flags[i]
-      lam <- if (stat %in% names(decay_params)) decay_params[[stat]] else {
-        if (is_eff) decay_params$efficiency else decay_params$rate
-      }
+      lam <- .resolve_lambda(stat, decay_params, eff_map)
       denom_col <- if (is_eff && stat %in% names(eff_map)) eff_map[[stat]] else NULL
       p_bounds <- if (opt_prior) NULL else {
-        p <- if (stat %in% names(stat_priors)) stat_priors[stat] else {
-          if (is_eff) decay_params$prior_attempts %||% 50 else decay_params$prior_90s %||% 2
-        }
+        p <- .resolve_prior_strength(stat, decay_params, is_eff)
         c(p, p)
       }
       list(stat = stat, is_eff = is_eff, lam = lam, denom_col = denom_col,

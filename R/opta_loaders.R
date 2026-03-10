@@ -533,6 +533,7 @@ load_opta_fixtures <- function(league, season = NULL, columns = NULL,
 #'
 #' @param season Optional season filter. If NULL, loads all available seasons.
 #' @param columns Optional character vector of columns to select.
+#' @param source Character. "remote" (default) or "local".
 #'
 #' @return Data frame with league column added.
 #'
@@ -545,13 +546,15 @@ load_opta_fixtures <- function(league, season = NULL, columns = NULL,
 #' # Load specific season across all leagues
 #' big5_2122 <- load_opta_big5(season = "2021-2022")
 #' }
-load_opta_big5 <- function(season = NULL, columns = NULL) {
+load_opta_big5 <- function(season = NULL, columns = NULL,
+                            source = c("remote", "local")) {
+  source <- match.arg(source)
   leagues <- c("ENG", "ESP", "GER", "ITA", "FRA")
 
   error_msgs <- list()
   results <- lapply(leagues, function(lg) {
     tryCatch({
-      df <- load_opta_stats(lg, season, columns)
+      df <- load_opta_stats(lg, season, columns, source = source)
       df$league <- lg
       df
     }, error = function(e) {

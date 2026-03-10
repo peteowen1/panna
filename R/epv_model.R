@@ -239,7 +239,7 @@ estimate_simple_xg <- function(x, y) {
 #' @param method Either "goal" (multinomial) or "xg" (regression). Default "goal".
 #' @param nfolds Number of CV folds (default 5)
 #' @param max_depth Maximum tree depth (default 6)
-#' @param eta Learning rate (default 0.05)
+#' @param eta Learning rate (default 0.1)
 #' @param subsample Row subsampling (default 0.8)
 #' @param colsample_bytree Column subsampling (default 0.8)
 #' @param nrounds Maximum boosting rounds (default 1000)

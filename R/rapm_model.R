@@ -258,6 +258,23 @@ fit_rapm_with_prior <- function(rapm_data, offense_prior, defense_prior,
                                  alpha = 0, nfolds = 10,
                                  use_weights = TRUE,
                                  penalize_covariates = FALSE) {
+  # Validate input structure (matching fit_rapm())
+  if (!is.list(rapm_data)) {
+    cli::cli_abort(c(
+      "{.arg rapm_data} must be a list.",
+      "x" = "Got {.cls {class(rapm_data)}} instead.",
+      "i" = "Use {.fn create_rapm_design_matrix} to generate valid rapm_data."
+    ))
+  }
+
+  has_X <- "X" %in% names(rapm_data) || "X_full" %in% names(rapm_data)
+  if (!has_X || !"y" %in% names(rapm_data)) {
+    cli::cli_abort(c(
+      "{.arg rapm_data} must contain 'X' (or 'X_full') and 'y'.",
+      "i" = "Use {.fn create_rapm_design_matrix} to generate valid rapm_data."
+    ))
+  }
+
   # Support both X_full (production) and X (tests)
   X <- if (!is.null(rapm_data$X_full)) rapm_data$X_full else rapm_data$X
   y <- rapm_data$y
@@ -443,56 +460,34 @@ extract_xrapm_ratings <- function(model, lambda = "min") {
 #' @return Data frame with player ratings
 #' @keywords internal
 extract_rapm_coefficients <- function(model, lambda = "min") {
-  # Check if model used a prior and has final coefficients stored
-  if (!is.null(model$panna_metadata$used_prior) &&
-      model$panna_metadata$used_prior &&
-      !is.null(model$panna_metadata$coefficients_final)) {
-    # Use pre-computed final coefficients (gamma + prior)
-    player_coefs <- model$panna_metadata$coefficients_final
-    player_ids <- names(player_coefs)
-
-    # Create results data frame
-    ratings <- data.frame(
-      player_id = player_ids,
-      rapm = as.numeric(player_coefs),
-      deviation_from_prior = as.numeric(model$panna_metadata$deviation_from_prior)
-    )
-
-    # Add prior values for reference
-    if (!is.null(model$panna_metadata$prior)) {
-      ratings$spm_prior <- as.numeric(model$panna_metadata$prior)
+  # Determine lambda value
+  if (is.character(lambda)) {
+    lambda_val <- if (lambda == "min") {
+      model$lambda.min
+    } else if (lambda == "1se") {
+      model$lambda.1se
+    } else {
+      cli::cli_abort(c(
+        "{.arg lambda} must be {.val min}, {.val 1se}, or numeric.",
+        "x" = "Got {.val {lambda}} instead."
+      ))
     }
   } else {
-    # Standard extraction (no prior used)
-    # Determine lambda value
-    if (is.character(lambda)) {
-      lambda_val <- if (lambda == "min") {
-        model$lambda.min
-      } else if (lambda == "1se") {
-        model$lambda.1se
-      } else {
-        cli::cli_abort(c(
-          "{.arg lambda} must be {.val min}, {.val 1se}, or numeric.",
-          "x" = "Got {.val {lambda}} instead."
-        ))
-      }
-    } else {
-      lambda_val <- lambda
-    }
-
-    # Extract coefficients
-    coefs <- as.vector(stats::coef(model, s = lambda_val))
-    player_coefs <- coefs[-1]  # Remove intercept
-
-    # Get player IDs from model
-    player_ids <- rownames(stats::coef(model))[-1]
-
-    # Create results data frame
-    ratings <- data.frame(
-      player_id = player_ids,
-      rapm = player_coefs
-    )
+    lambda_val <- lambda
   }
+
+  # Extract coefficients
+  coefs <- as.vector(stats::coef(model, s = lambda_val))
+  player_coefs <- coefs[-1]  # Remove intercept
+
+  # Get player IDs from model
+  player_ids <- rownames(stats::coef(model))[-1]
+
+  # Create results data frame
+  ratings <- data.frame(
+    player_id = player_ids,
+    rapm = player_coefs
+  )
 
   # Join with player mapping if available
   if (!is.null(model$panna_metadata$player_mapping)) {

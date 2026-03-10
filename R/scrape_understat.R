@@ -170,19 +170,19 @@ aggregate_understat_data <- function(table_type, league = NULL, season = NULL) {
   base_dir <- file.path(pannadata_dir(), "understat", table_type)
 
   if (!dir.exists(base_dir)) {
-    return(data.frame())
+    return(data.table::data.table())
   }
 
   # Find parquet files based on filters
   if (!is.null(league) && !is.null(season)) {
     # Specific league and season
     parquet_path <- get_understat_parquet_path(table_type, league, season, create = FALSE)
-    if (!file.exists(parquet_path)) return(data.frame())
+    if (!file.exists(parquet_path)) return(data.table::data.table())
     files <- parquet_path
   } else if (!is.null(league)) {
     # All seasons for a league
     league_dir <- file.path(base_dir, league)
-    if (!dir.exists(league_dir)) return(data.frame())
+    if (!dir.exists(league_dir)) return(data.table::data.table())
     files <- list.files(league_dir, pattern = "\\.parquet$", full.names = TRUE)
   } else {
     # All leagues and seasons
@@ -190,7 +190,7 @@ aggregate_understat_data <- function(table_type, league = NULL, season = NULL) {
   }
 
   if (length(files) == 0) {
-    return(data.frame())
+    return(data.table::data.table())
   }
 
   # Load and combine
@@ -201,7 +201,7 @@ aggregate_understat_data <- function(table_type, league = NULL, season = NULL) {
   all_data <- all_data[!sapply(all_data, is.null)]
 
   if (length(all_data) == 0) {
-    return(data.frame())
+    return(data.table::data.table())
   }
 
   rbindlist(all_data, use.names = TRUE, fill = TRUE)

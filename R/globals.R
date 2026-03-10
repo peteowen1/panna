@@ -438,6 +438,7 @@ utils::globalVariables(c(
   "bin",
   "prob",
   "actual",
+  "attempts",
 
   # data.table NSE from match_prediction.R
   "..season_end_year",

@@ -18,7 +18,7 @@ Character vector of cached fbref_ids
 Returns all fully-cached match IDs for a league-season. A match is
 considered cached if:
 \enumerate{
-\item All 9 table type files exist (fast path for Big 5 leagues), OR
+\item All 10 table type files exist (fast path for Big 5 leagues), OR
 \item The metadata has \code{tables_available} field and all those tables exist
 }
 }

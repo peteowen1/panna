@@ -8,12 +8,11 @@
 # Internal helper to load Opta data, handling NULL league
 .load_opta_data <- function(league, season, source) {
   data <- if (is.null(league)) {
-    # Load all Big 5 leagues (load_opta_big5 uses load_opta_stats default source)
-    load_opta_big5(season = season)
+    load_opta_big5(season = season, source = source)
   } else {
     load_opta_stats(league = league, season = season, source = source)
   }
-  # Convert to base data.frame for stats::aggregate compatibility
+  # Convert to base data.frame for downstream compatibility
   as.data.frame(data)
 }
 
@@ -21,19 +20,95 @@
 # Note: source param is accepted for API consistency but xmetrics only supports local
 .load_opta_xmetrics_data <- function(league, season, source) {
   data <- if (is.null(league)) {
-    # Load all Big 5 leagues
+    # Load all available Opta leagues
     results <- lapply(names(OPTA_LEAGUES), function(lg) {
       tryCatch({
         df <- load_opta_xmetrics(lg, season)
         df$league <- lg
         df
-      }, error = function(e) NULL)
+      }, error = function(e) {
+        cli::cli_warn("Failed to load xmetrics for {lg}/{season}: {conditionMessage(e)}")
+        NULL
+      })
     })
     rbindlist(Filter(Negate(is.null), results), use.names = TRUE, fill = TRUE)
   } else {
     load_opta_xmetrics(league = league, season = season)
   }
   as.data.frame(data)
+}
+
+
+#' Shared aggregation helper for player_opta_* functions
+#'
+#' @param player Character. Player name filter (case-insensitive substring match).
+#' @param league Character. League code (NULL for all leagues).
+#' @param season Character. Season string.
+#' @param min_minutes Numeric. Minimum minutes threshold.
+#' @param by_team Logical. Aggregate by player+team if TRUE.
+#' @param source Character. "remote" or "local".
+#' @param col_spec Named list mapping output column names to source column names.
+#' @param derive_fn Function(result) -> result that adds derived metrics.
+#' @param col_order Character vector of final column ordering.
+#' @param loader Function(league, season, source) for data loading.
+#' @return data.frame with aggregated player statistics.
+#' @keywords internal
+.aggregate_opta_player_stats <- function(player, league, season, min_minutes,
+                                          by_team, source, col_spec, derive_fn,
+                                          col_order, loader = .load_opta_data) {
+  source <- match.arg(source, c("remote", "local"))
+  validate_min_minutes(min_minutes)
+
+  data <- loader(league, season, source)
+  if (is.null(data) || nrow(data) == 0) {
+    cli::cli_warn("No Opta data found")
+    return(data.frame())
+  }
+
+  if (!is.null(player)) {
+    data <- data[grepl(tolower(player), tolower(data$player_name), fixed = TRUE), ]
+    if (nrow(data) == 0) {
+      cli::cli_warn("No data found for player: {player}")
+      return(data.frame())
+    }
+  }
+
+  # Build aggregation data.table from col_spec
+  agg_dt <- data.table::data.table(
+    player = data$player_name,
+    team = data$team_name,
+    matches = 1
+  )
+  for (nm in names(col_spec)) {
+    data.table::set(agg_dt, j = nm, value = .get_col(data, col_spec[[nm]]))
+  }
+  stat_cols_agg <- c("matches", names(col_spec))
+
+  if (by_team) {
+    result <- agg_dt[, lapply(.SD, function(x) sum(x, na.rm = TRUE)),
+                     by = .(player, team), .SDcols = stat_cols_agg]
+  } else {
+    result <- agg_dt[, lapply(.SD, function(x) sum(x, na.rm = TRUE)),
+                     by = .(player), .SDcols = stat_cols_agg]
+    team_mode <- agg_dt[, .(team = names(which.max(table(team)))), by = player]
+    result <- team_mode[result, on = "player"]
+  }
+  data.table::setDF(result)
+
+  # Apply custom derived metrics
+  result <- derive_fn(result)
+
+  # Filter by min_minutes
+  if (is.null(player)) {
+    result <- result[result$minutes >= min_minutes, ]
+  }
+
+  result <- result[order(-result$minutes), ]
+  col_order <- intersect(col_order, names(result))
+  result <- result[, col_order]
+  rownames(result) <- NULL
+
+  as.data.frame(result)
 }
 
 
@@ -63,98 +138,27 @@ player_opta_summary <- function(player = NULL,
                                  min_minutes = 450,
                                  by_team = FALSE,
                                  source = c("remote", "local")) {
-  source <- match.arg(source)
-  validate_min_minutes(min_minutes)
-
-  # Load data
-  data <- .load_opta_data(league, season, source)
-
-  if (is.null(data) || nrow(data) == 0) {
-    cli::cli_warn("No Opta data found for specified filters")
-    return(data.frame())
-  }
-
-  # Filter by player if specified
-  if (!is.null(player)) {
-    data <- data[grepl(player, data$player_name, ignore.case = TRUE), ]
-    if (nrow(data) == 0) {
-      cli::cli_warn("No data found for player: {player}")
-      return(data.frame())
-    }
-  }
-
-  # Define columns to aggregate (using Opta column names)
-  # Use coalesce to handle missing columns
-  get_col <- .get_col
-
-  if (by_team) {
-    result <- stats::aggregate(
-      cbind(
-        matches = 1,
-        minutes = get_col(data, "minsPlayed"),
-        goals = get_col(data, "goals"),
-        assists = get_col(data, "goalAssist"),
-        shots = get_col(data, "totalScoringAtt"),
-        shots_on_target = get_col(data, "ontargetScoringAtt"),
-        big_chances_created = get_col(data, "bigChanceCreated"),
-        big_chances_scored = get_col(data, "bigChanceScored"),
-        big_chances_missed = get_col(data, "bigChanceMissed")
-      ) ~ player_name + team_name,
-      data = data,
-      FUN = function(x) sum(x, na.rm = TRUE),
-      na.action = na.pass
-    )
-    names(result)[1:2] <- c("player", "team")
-  } else {
-    result <- stats::aggregate(
-      cbind(
-        matches = 1,
-        minutes = get_col(data, "minsPlayed"),
-        goals = get_col(data, "goals"),
-        assists = get_col(data, "goalAssist"),
-        shots = get_col(data, "totalScoringAtt"),
-        shots_on_target = get_col(data, "ontargetScoringAtt"),
-        big_chances_created = get_col(data, "bigChanceCreated"),
-        big_chances_scored = get_col(data, "bigChanceScored"),
-        big_chances_missed = get_col(data, "bigChanceMissed")
-      ) ~ player_name,
-      data = data,
-      FUN = function(x) sum(x, na.rm = TRUE),
-      na.action = na.pass
-    )
-    names(result)[1] <- "player"
-
-    # Get most frequent team
-    team_mode <- stats::aggregate(
-      team_name ~ player_name,
-      data = data,
-      FUN = function(x) names(which.max(table(x)))
-    )
-    names(team_mode) <- c("player", "team")
-    result <- data.table::as.data.table(team_mode)[data.table::as.data.table(result), on = "player"]
-    data.table::setDF(result)
-  }
-
-  # Calculate per-90 rates
-  result$goals_per90 <- round(per_90(result$goals, result$minutes), 2)
-  result$assists_per90 <- round(per_90(result$assists, result$minutes), 2)
-  result$shots_per90 <- round(per_90(result$shots, result$minutes), 2)
-
-  # Apply min_minutes filter
-  if (is.null(player)) {
-    result <- result[result$minutes >= min_minutes, ]
-  }
-
-  # Sort and reorder
-  result <- result[order(-result$minutes), ]
-  col_order <- c("player", "team", "matches", "minutes",
-                 "goals", "assists", "shots", "shots_on_target",
-                 "big_chances_created", "big_chances_scored", "big_chances_missed",
-                 "goals_per90", "assists_per90", "shots_per90")
-  result <- result[, col_order]
-  rownames(result) <- NULL
-
-  as.data.frame(result)
+  .aggregate_opta_player_stats(
+    player = player, league = league, season = season,
+    min_minutes = min_minutes, by_team = by_team, source = source,
+    col_spec = list(
+      minutes = "minsPlayed", goals = "goals", assists = "goalAssist",
+      shots = "totalScoringAtt", shots_on_target = "ontargetScoringAtt",
+      big_chances_created = "bigChanceCreated",
+      big_chances_scored = "bigChanceScored",
+      big_chances_missed = "bigChanceMissed"
+    ),
+    derive_fn = function(r) {
+      r$goals_per90 <- round(per_90(r$goals, r$minutes), 2)
+      r$assists_per90 <- round(per_90(r$assists, r$minutes), 2)
+      r$shots_per90 <- round(per_90(r$shots, r$minutes), 2)
+      r
+    },
+    col_order = c("player", "team", "matches", "minutes",
+                  "goals", "assists", "shots", "shots_on_target",
+                  "big_chances_created", "big_chances_scored", "big_chances_missed",
+                  "goals_per90", "assists_per90", "shots_per90")
+  )
 }
 
 
@@ -173,88 +177,32 @@ player_opta_passing <- function(player = NULL,
                                  min_minutes = 450,
                                  by_team = FALSE,
                                  source = c("remote", "local")) {
-  source <- match.arg(source)
-  validate_min_minutes(min_minutes)
-
-  data <- .load_opta_data(league, season, source)
-
-  if (is.null(data) || nrow(data) == 0) {
-    cli::cli_warn("No Opta data found")
-    return(data.frame())
-  }
-
-  if (!is.null(player)) {
-    data <- data[grepl(player, data$player_name, ignore.case = TRUE), ]
-    if (nrow(data) == 0) {
-      cli::cli_warn("No data found for player: {player}")
-      return(data.frame())
-    }
-  }
-
-  get_col <- .get_col
-
-  if (by_team) {
-    result <- stats::aggregate(
-      cbind(
-        matches = 1,
-        minutes = get_col(data, "minsPlayed"),
-        passes_completed = get_col(data, "accuratePass"),
-        passes_attempted = get_col(data, "totalPass"),
-        long_balls_completed = get_col(data, "accurateLongBalls"),
-        long_balls_attempted = get_col(data, "totalLongBalls"),
-        crosses_completed = get_col(data, "accurateCross"),
-        crosses_attempted = get_col(data, "totalCross"),
-        through_balls_completed = get_col(data, "accurateThroughBall"),
-        through_balls_attempted = get_col(data, "totalThroughBall"),
-        key_passes = get_col(data, "totalAttAssist"),
-        final_third_passes = get_col(data, "successfulFinalThirdPasses")
-      ) ~ player_name + team_name,
-      data = data,
-      FUN = function(x) sum(x, na.rm = TRUE),
-      na.action = na.pass
-    )
-    names(result)[1:2] <- c("player", "team")
-  } else {
-    result <- stats::aggregate(
-      cbind(
-        matches = 1,
-        minutes = get_col(data, "minsPlayed"),
-        passes_completed = get_col(data, "accuratePass"),
-        passes_attempted = get_col(data, "totalPass"),
-        long_balls_completed = get_col(data, "accurateLongBalls"),
-        long_balls_attempted = get_col(data, "totalLongBalls"),
-        crosses_completed = get_col(data, "accurateCross"),
-        crosses_attempted = get_col(data, "totalCross"),
-        through_balls_completed = get_col(data, "accurateThroughBall"),
-        through_balls_attempted = get_col(data, "totalThroughBall"),
-        key_passes = get_col(data, "totalAttAssist"),
-        final_third_passes = get_col(data, "successfulFinalThirdPasses")
-      ) ~ player_name,
-      data = data,
-      FUN = function(x) sum(x, na.rm = TRUE),
-      na.action = na.pass
-    )
-    names(result)[1] <- "player"
-
-    team_mode <- stats::aggregate(team_name ~ player_name, data = data,
-                                   FUN = function(x) names(which.max(table(x))))
-    names(team_mode) <- c("player", "team")
-    result <- data.table::as.data.table(team_mode)[data.table::as.data.table(result), on = "player"]
-    data.table::setDF(result)
-  }
-
-  # Calculate rates
-  result$pass_pct <- round(safe_divide(result$passes_completed * 100, result$passes_attempted), 1)
-  result$passes_per90 <- round(per_90(result$passes_completed, result$minutes), 1)
-  result$key_passes_per90 <- round(per_90(result$key_passes, result$minutes), 2)
-
-  if (is.null(player)) {
-    result <- result[result$minutes >= min_minutes, ]
-  }
-
-  result <- result[order(-result$minutes), ]
-  rownames(result) <- NULL
-  as.data.frame(result)
+  .aggregate_opta_player_stats(
+    player = player, league = league, season = season,
+    min_minutes = min_minutes, by_team = by_team, source = source,
+    col_spec = list(
+      minutes = "minsPlayed",
+      passes_completed = "accuratePass", passes_attempted = "totalPass",
+      long_balls_completed = "accurateLongBalls", long_balls_attempted = "totalLongBalls",
+      crosses_completed = "accurateCross", crosses_attempted = "totalCross",
+      through_balls_completed = "accurateThroughBall", through_balls_attempted = "totalThroughBall",
+      key_passes = "totalAttAssist",
+      final_third_passes = "successfulFinalThirdPasses"
+    ),
+    derive_fn = function(r) {
+      r$pass_pct <- round(safe_divide(r$passes_completed * 100, r$passes_attempted), 1)
+      r$passes_per90 <- round(per_90(r$passes_completed, r$minutes), 1)
+      r$key_passes_per90 <- round(per_90(r$key_passes, r$minutes), 2)
+      r
+    },
+    col_order = c("player", "team", "matches", "minutes",
+                  "passes_completed", "passes_attempted",
+                  "long_balls_completed", "long_balls_attempted",
+                  "crosses_completed", "crosses_attempted",
+                  "through_balls_completed", "through_balls_attempted",
+                  "key_passes", "final_third_passes",
+                  "pass_pct", "passes_per90", "key_passes_per90")
+  )
 }
 
 
@@ -273,93 +221,33 @@ player_opta_defense <- function(player = NULL,
                                  min_minutes = 450,
                                  by_team = FALSE,
                                  source = c("remote", "local")) {
-  source <- match.arg(source)
-  validate_min_minutes(min_minutes)
-
-  data <- .load_opta_data(league, season, source)
-
-  if (is.null(data) || nrow(data) == 0) {
-    cli::cli_warn("No Opta data found")
-    return(data.frame())
-  }
-
-  if (!is.null(player)) {
-    data <- data[grepl(player, data$player_name, ignore.case = TRUE), ]
-    if (nrow(data) == 0) {
-      cli::cli_warn("No data found for player: {player}")
-      return(data.frame())
-    }
-  }
-
-  get_col <- .get_col
-
-  if (by_team) {
-    result <- stats::aggregate(
-      cbind(
-        matches = 1,
-        minutes = get_col(data, "minsPlayed"),
-        tackles = get_col(data, "totalTackle"),
-        tackles_won = get_col(data, "wonTackle"),
-        interceptions = get_col(data, "interception"),
-        blocks = get_col(data, "outfielderBlock"),
-        clearances = get_col(data, "totalClearance"),
-        ball_recoveries = get_col(data, "ballRecovery"),
-        duels_won = get_col(data, "duelWon"),
-        duels_lost = get_col(data, "duelLost"),
-        aerials_won = get_col(data, "aerialWon"),
-        aerials_lost = get_col(data, "aerialLost"),
-        poss_won_def3rd = get_col(data, "possWonDef3rd"),
-        poss_won_mid3rd = get_col(data, "possWonMid3rd")
-      ) ~ player_name + team_name,
-      data = data,
-      FUN = function(x) sum(x, na.rm = TRUE),
-      na.action = na.pass
-    )
-    names(result)[1:2] <- c("player", "team")
-  } else {
-    result <- stats::aggregate(
-      cbind(
-        matches = 1,
-        minutes = get_col(data, "minsPlayed"),
-        tackles = get_col(data, "totalTackle"),
-        tackles_won = get_col(data, "wonTackle"),
-        interceptions = get_col(data, "interception"),
-        blocks = get_col(data, "outfielderBlock"),
-        clearances = get_col(data, "totalClearance"),
-        ball_recoveries = get_col(data, "ballRecovery"),
-        duels_won = get_col(data, "duelWon"),
-        duels_lost = get_col(data, "duelLost"),
-        aerials_won = get_col(data, "aerialWon"),
-        aerials_lost = get_col(data, "aerialLost"),
-        poss_won_def3rd = get_col(data, "possWonDef3rd"),
-        poss_won_mid3rd = get_col(data, "possWonMid3rd")
-      ) ~ player_name,
-      data = data,
-      FUN = function(x) sum(x, na.rm = TRUE),
-      na.action = na.pass
-    )
-    names(result)[1] <- "player"
-
-    team_mode <- stats::aggregate(team_name ~ player_name, data = data,
-                                   FUN = function(x) names(which.max(table(x))))
-    names(team_mode) <- c("player", "team")
-    result <- data.table::as.data.table(team_mode)[data.table::as.data.table(result), on = "player"]
-    data.table::setDF(result)
-  }
-
-  # Calculate rates
-  result$tackles_per90 <- round(per_90(result$tackles, result$minutes), 2)
-  result$interceptions_per90 <- round(per_90(result$interceptions, result$minutes), 2)
-  result$tackle_win_pct <- round(safe_divide(result$tackles_won * 100, result$tackles), 1)
-  result$aerial_win_pct <- round(safe_divide(result$aerials_won * 100, result$aerials_won + result$aerials_lost), 1)
-
-  if (is.null(player)) {
-    result <- result[result$minutes >= min_minutes, ]
-  }
-
-  result <- result[order(-result$minutes), ]
-  rownames(result) <- NULL
-  as.data.frame(result)
+  .aggregate_opta_player_stats(
+    player = player, league = league, season = season,
+    min_minutes = min_minutes, by_team = by_team, source = source,
+    col_spec = list(
+      minutes = "minsPlayed",
+      tackles = "totalTackle", tackles_won = "wonTackle",
+      interceptions = "interception", blocks = "outfielderBlock",
+      clearances = "totalClearance", ball_recoveries = "ballRecovery",
+      duels_won = "duelWon", duels_lost = "duelLost",
+      aerials_won = "aerialWon", aerials_lost = "aerialLost",
+      poss_won_def3rd = "possWonDef3rd", poss_won_mid3rd = "possWonMid3rd"
+    ),
+    derive_fn = function(r) {
+      r$tackles_per90 <- round(per_90(r$tackles, r$minutes), 2)
+      r$interceptions_per90 <- round(per_90(r$interceptions, r$minutes), 2)
+      r$tackle_win_pct <- round(safe_divide(r$tackles_won * 100, r$tackles), 1)
+      r$aerial_win_pct <- round(safe_divide(r$aerials_won * 100, r$aerials_won + r$aerials_lost), 1)
+      r
+    },
+    col_order = c("player", "team", "matches", "minutes",
+                  "tackles", "tackles_won", "interceptions", "blocks",
+                  "clearances", "ball_recoveries",
+                  "duels_won", "duels_lost", "aerials_won", "aerials_lost",
+                  "poss_won_def3rd", "poss_won_mid3rd",
+                  "tackles_per90", "interceptions_per90",
+                  "tackle_win_pct", "aerial_win_pct")
+  )
 }
 
 
@@ -378,87 +266,30 @@ player_opta_possession <- function(player = NULL,
                                     min_minutes = 450,
                                     by_team = FALSE,
                                     source = c("remote", "local")) {
-  source <- match.arg(source)
-  validate_min_minutes(min_minutes)
-
-  data <- .load_opta_data(league, season, source)
-
-  if (is.null(data) || nrow(data) == 0) {
-    cli::cli_warn("No Opta data found")
-    return(data.frame())
-  }
-
-  if (!is.null(player)) {
-    data <- data[grepl(player, data$player_name, ignore.case = TRUE), ]
-    if (nrow(data) == 0) {
-      cli::cli_warn("No data found for player: {player}")
-      return(data.frame())
-    }
-  }
-
-  get_col <- .get_col
-
-  if (by_team) {
-    result <- stats::aggregate(
-      cbind(
-        matches = 1,
-        minutes = get_col(data, "minsPlayed"),
-        touches = get_col(data, "touches"),
-        touches_final_third = get_col(data, "touchesInFinalThird"),
-        touches_opp_box = get_col(data, "touchesInOppBox"),
-        carries = get_col(data, "carries"),
-        progressive_carries = get_col(data, "progressiveCarries"),
-        final_third_entries = get_col(data, "finalThirdEntries"),
-        pen_area_entries = get_col(data, "penAreaEntries"),
-        dispossessed = get_col(data, "dispossessed"),
-        turnovers = get_col(data, "turnover"),
-        times_tackled = get_col(data, "timesTackled")
-      ) ~ player_name + team_name,
-      data = data,
-      FUN = function(x) sum(x, na.rm = TRUE),
-      na.action = na.pass
-    )
-    names(result)[1:2] <- c("player", "team")
-  } else {
-    result <- stats::aggregate(
-      cbind(
-        matches = 1,
-        minutes = get_col(data, "minsPlayed"),
-        touches = get_col(data, "touches"),
-        touches_final_third = get_col(data, "touchesInFinalThird"),
-        touches_opp_box = get_col(data, "touchesInOppBox"),
-        carries = get_col(data, "carries"),
-        progressive_carries = get_col(data, "progressiveCarries"),
-        final_third_entries = get_col(data, "finalThirdEntries"),
-        pen_area_entries = get_col(data, "penAreaEntries"),
-        dispossessed = get_col(data, "dispossessed"),
-        turnovers = get_col(data, "turnover"),
-        times_tackled = get_col(data, "timesTackled")
-      ) ~ player_name,
-      data = data,
-      FUN = function(x) sum(x, na.rm = TRUE),
-      na.action = na.pass
-    )
-    names(result)[1] <- "player"
-
-    team_mode <- stats::aggregate(team_name ~ player_name, data = data,
-                                   FUN = function(x) names(which.max(table(x))))
-    names(team_mode) <- c("player", "team")
-    result <- data.table::as.data.table(team_mode)[data.table::as.data.table(result), on = "player"]
-    data.table::setDF(result)
-  }
-
-  # Calculate rates
-  result$touches_per90 <- round(per_90(result$touches, result$minutes), 1)
-  result$progressive_carries_per90 <- round(per_90(result$progressive_carries, result$minutes), 2)
-
-  if (is.null(player)) {
-    result <- result[result$minutes >= min_minutes, ]
-  }
-
-  result <- result[order(-result$minutes), ]
-  rownames(result) <- NULL
-  as.data.frame(result)
+  .aggregate_opta_player_stats(
+    player = player, league = league, season = season,
+    min_minutes = min_minutes, by_team = by_team, source = source,
+    col_spec = list(
+      minutes = "minsPlayed",
+      touches = "touches", touches_final_third = "touchesInFinalThird",
+      touches_opp_box = "touchesInOppBox",
+      carries = "carries", progressive_carries = "progressiveCarries",
+      final_third_entries = "finalThirdEntries", pen_area_entries = "penAreaEntries",
+      dispossessed = "dispossessed", turnovers = "turnover",
+      times_tackled = "timesTackled"
+    ),
+    derive_fn = function(r) {
+      r$touches_per90 <- round(per_90(r$touches, r$minutes), 1)
+      r$progressive_carries_per90 <- round(per_90(r$progressive_carries, r$minutes), 2)
+      r
+    },
+    col_order = c("player", "team", "matches", "minutes",
+                  "touches", "touches_final_third", "touches_opp_box",
+                  "carries", "progressive_carries",
+                  "final_third_entries", "pen_area_entries",
+                  "dispossessed", "turnovers", "times_tackled",
+                  "touches_per90", "progressive_carries_per90")
+  )
 }
 
 
@@ -481,98 +312,46 @@ player_opta_keeper <- function(player = NULL,
                                 min_minutes = 450,
                                 by_team = FALSE,
                                 source = c("remote", "local")) {
-  source <- match.arg(source)
-  validate_min_minutes(min_minutes)
-
-  data <- .load_opta_data(league, season, source)
-
-  if (is.null(data) || nrow(data) == 0) {
-    cli::cli_warn("No Opta data found")
-    return(data.frame())
-  }
-
-  # Filter for goalkeepers
-  data <- data[grepl("Goalkeeper", data$position, ignore.case = TRUE), ]
-
-  if (!is.null(player)) {
-    data <- data[grepl(player, data$player_name, ignore.case = TRUE), ]
-    if (nrow(data) == 0) {
-      cli::cli_warn("No data found for player: {player}")
-      return(data.frame())
+  # Custom loader that filters for goalkeepers
+  gk_loader <- function(league, season, source) {
+    data <- .load_opta_data(league, season, source)
+    if (!is.null(data) && nrow(data) > 0) {
+      data <- data[grepl("Goalkeeper", data$position, ignore.case = TRUE), ]
     }
+    data
   }
 
-  get_col <- .get_col
-
-  if (by_team) {
-    result <- stats::aggregate(
-      cbind(
-        matches = 1,
-        minutes = get_col(data, "minsPlayed"),
-        saves = get_col(data, "saves"),
-        saves_ibox = get_col(data, "savedIbox"),
-        saves_obox = get_col(data, "savedObox"),
-        goals_conceded = get_col(data, "goalsConceded"),
-        goals_conceded_ibox = get_col(data, "goalsConcededIbox"),
-        shots_conceded_ibox = get_col(data, "attemptsConcededIbox"),
-        shots_conceded_obox = get_col(data, "attemptsConcededObox"),
-        clean_sheets = get_col(data, "cleanSheet"),
-        diving_saves = get_col(data, "divingSave"),
-        high_claims = get_col(data, "goodHighClaim"),
-        punches = get_col(data, "punches"),
-        big_chance_saves = get_col(data, "bigChanceSaves")
-      ) ~ player_name + team_name,
-      data = data,
-      FUN = function(x) sum(x, na.rm = TRUE),
-      na.action = na.pass
-    )
-    names(result)[1:2] <- c("player", "team")
-  } else {
-    result <- stats::aggregate(
-      cbind(
-        matches = 1,
-        minutes = get_col(data, "minsPlayed"),
-        saves = get_col(data, "saves"),
-        saves_ibox = get_col(data, "savedIbox"),
-        saves_obox = get_col(data, "savedObox"),
-        goals_conceded = get_col(data, "goalsConceded"),
-        goals_conceded_ibox = get_col(data, "goalsConcededIbox"),
-        shots_conceded_ibox = get_col(data, "attemptsConcededIbox"),
-        shots_conceded_obox = get_col(data, "attemptsConcededObox"),
-        clean_sheets = get_col(data, "cleanSheet"),
-        diving_saves = get_col(data, "divingSave"),
-        high_claims = get_col(data, "goodHighClaim"),
-        punches = get_col(data, "punches"),
-        big_chance_saves = get_col(data, "bigChanceSaves")
-      ) ~ player_name,
-      data = data,
-      FUN = function(x) sum(x, na.rm = TRUE),
-      na.action = na.pass
-    )
-    names(result)[1] <- "player"
-
-    team_mode <- stats::aggregate(team_name ~ player_name, data = data,
-                                   FUN = function(x) names(which.max(table(x))))
-    names(team_mode) <- c("player", "team")
-    result <- data.table::as.data.table(team_mode)[data.table::as.data.table(result), on = "player"]
-    data.table::setDF(result)
-  }
-
-  # Calculate derived stats
-  result$shots_conceded <- result$shots_conceded_ibox + result$shots_conceded_obox
-  shots_on_target_against <- result$saves + result$goals_conceded
-  result$save_pct <- round(safe_divide(result$saves * 100, shots_on_target_against), 1)
-  result$goals_against_per90 <- round(per_90(result$goals_conceded, result$minutes), 2)
-  result$shots_conceded_per90 <- round(per_90(result$shots_conceded, result$minutes), 2)
-  result$clean_sheet_pct <- round(safe_divide(result$clean_sheets * 100, result$matches), 1)
-
-  if (is.null(player)) {
-    result <- result[result$minutes >= min_minutes, ]
-  }
-
-  result <- result[order(-result$minutes), ]
-  rownames(result) <- NULL
-  as.data.frame(result)
+  .aggregate_opta_player_stats(
+    player = player, league = league, season = season,
+    min_minutes = min_minutes, by_team = by_team, source = source,
+    col_spec = list(
+      minutes = "minsPlayed",
+      saves = "saves", saves_ibox = "savedIbox", saves_obox = "savedObox",
+      goals_conceded = "goalsConceded", goals_conceded_ibox = "goalsConcededIbox",
+      shots_conceded_ibox = "attemptsConcededIbox", shots_conceded_obox = "attemptsConcededObox",
+      clean_sheets = "cleanSheet",
+      diving_saves = "divingSave", high_claims = "goodHighClaim",
+      punches = "punches", big_chance_saves = "bigChanceSaves"
+    ),
+    derive_fn = function(r) {
+      r$shots_conceded <- r$shots_conceded_ibox + r$shots_conceded_obox
+      shots_on_target_against <- r$saves + r$goals_conceded
+      r$save_pct <- round(safe_divide(r$saves * 100, shots_on_target_against), 1)
+      r$goals_against_per90 <- round(per_90(r$goals_conceded, r$minutes), 2)
+      r$shots_conceded_per90 <- round(per_90(r$shots_conceded, r$minutes), 2)
+      r$clean_sheet_pct <- round(safe_divide(r$clean_sheets * 100, r$matches), 1)
+      r
+    },
+    col_order = c("player", "team", "matches", "minutes",
+                  "saves", "saves_ibox", "saves_obox",
+                  "goals_conceded", "goals_conceded_ibox",
+                  "shots_conceded_ibox", "shots_conceded_obox",
+                  "clean_sheets", "diving_saves", "high_claims",
+                  "punches", "big_chance_saves", "shots_conceded",
+                  "save_pct", "goals_against_per90",
+                  "shots_conceded_per90", "clean_sheet_pct"),
+    loader = gk_loader
+  )
 }
 
 
@@ -597,100 +376,44 @@ player_opta_shots <- function(player = NULL,
                                min_minutes = 450,
                                by_team = FALSE,
                                source = c("remote", "local")) {
-  source <- match.arg(source)
-  validate_min_minutes(min_minutes)
+  result <- .aggregate_opta_player_stats(
+    player = player, league = league, season = season,
+    min_minutes = min_minutes, by_team = by_team, source = source,
+    col_spec = list(
+      minutes = "minsPlayed",
+      shots_inside_box = "attemptsIbox", shots_outside_box = "attemptsObox",
+      shots_on_target = "ontargetScoringAtt", shots_off_target = "shotOffTarget",
+      shots_blocked = "blockedScoringAtt",
+      goals = "goals", goals_inside_box = "attIboxGoal", goals_outside_box = "attOboxGoal",
+      headed_goals = "attHdGoal", left_foot_goals = "attLfGoal",
+      right_foot_goals = "attRfGoal", penalty_goals = "attPenGoal",
+      big_chances_scored = "bigChanceScored", big_chances_missed = "bigChanceMissed",
+      hit_woodwork = "hitWoodwork"
+    ),
+    derive_fn = function(r) {
+      r$total_shots <- r$shots_inside_box + r$shots_outside_box
+      r$conversion_rate <- round(safe_divide(r$goals, r$total_shots) * 100, 1)
+      r$shot_accuracy <- round(safe_divide(r$shots_on_target, r$total_shots) * 100, 1)
+      r$goals_per90 <- round(per_90(r$goals, r$minutes), 2)
+      r$shots_per90 <- round(per_90(r$total_shots, r$minutes), 2)
+      r
+    },
+    col_order = c("player", "team", "matches", "minutes",
+                  "shots_inside_box", "shots_outside_box",
+                  "shots_on_target", "shots_off_target", "shots_blocked",
+                  "goals", "goals_inside_box", "goals_outside_box",
+                  "headed_goals", "left_foot_goals", "right_foot_goals",
+                  "penalty_goals", "big_chances_scored", "big_chances_missed",
+                  "hit_woodwork", "total_shots",
+                  "conversion_rate", "shot_accuracy", "goals_per90", "shots_per90")
+  )
 
-  data <- .load_opta_data(league, season, source)
-
-  if (is.null(data) || nrow(data) == 0) {
-    cli::cli_warn("No Opta data found")
-    return(data.frame())
+  # Re-sort by goals and total shots (helper sorts by minutes)
+  if (nrow(result) > 0) {
+    result <- result[order(-result$goals, -result$total_shots), ]
+    rownames(result) <- NULL
   }
-
-  if (!is.null(player)) {
-    data <- data[grepl(player, data$player_name, ignore.case = TRUE), ]
-    if (nrow(data) == 0) {
-      cli::cli_warn("No data found for player: {player}")
-      return(data.frame())
-    }
-  }
-
-  get_col <- .get_col
-
-  if (by_team) {
-    result <- stats::aggregate(
-      cbind(
-        matches = 1,
-        minutes = get_col(data, "minsPlayed"),
-        shots_inside_box = get_col(data, "attemptsIbox"),
-        shots_outside_box = get_col(data, "attemptsObox"),
-        shots_on_target = get_col(data, "ontargetScoringAtt"),
-        shots_off_target = get_col(data, "shotOffTarget"),
-        shots_blocked = get_col(data, "blockedScoringAtt"),
-        goals = get_col(data, "goals"),
-        goals_inside_box = get_col(data, "attIboxGoal"),
-        goals_outside_box = get_col(data, "attOboxGoal"),
-        headed_goals = get_col(data, "attHdGoal"),
-        left_foot_goals = get_col(data, "attLfGoal"),
-        right_foot_goals = get_col(data, "attRfGoal"),
-        penalty_goals = get_col(data, "attPenGoal"),
-        big_chances_scored = get_col(data, "bigChanceScored"),
-        big_chances_missed = get_col(data, "bigChanceMissed"),
-        hit_woodwork = get_col(data, "hitWoodwork")
-      ) ~ player_name + team_name,
-      data = data,
-      FUN = function(x) sum(x, na.rm = TRUE),
-      na.action = na.pass
-    )
-    names(result)[1:2] <- c("player", "team")
-  } else {
-    result <- stats::aggregate(
-      cbind(
-        matches = 1,
-        minutes = get_col(data, "minsPlayed"),
-        shots_inside_box = get_col(data, "attemptsIbox"),
-        shots_outside_box = get_col(data, "attemptsObox"),
-        shots_on_target = get_col(data, "ontargetScoringAtt"),
-        shots_off_target = get_col(data, "shotOffTarget"),
-        shots_blocked = get_col(data, "blockedScoringAtt"),
-        goals = get_col(data, "goals"),
-        goals_inside_box = get_col(data, "attIboxGoal"),
-        goals_outside_box = get_col(data, "attOboxGoal"),
-        headed_goals = get_col(data, "attHdGoal"),
-        left_foot_goals = get_col(data, "attLfGoal"),
-        right_foot_goals = get_col(data, "attRfGoal"),
-        penalty_goals = get_col(data, "attPenGoal"),
-        big_chances_scored = get_col(data, "bigChanceScored"),
-        big_chances_missed = get_col(data, "bigChanceMissed"),
-        hit_woodwork = get_col(data, "hitWoodwork")
-      ) ~ player_name,
-      data = data,
-      FUN = function(x) sum(x, na.rm = TRUE),
-      na.action = na.pass
-    )
-    names(result)[1] <- "player"
-
-    team_mode <- stats::aggregate(team_name ~ player_name, data = data,
-                                   FUN = function(x) names(which.max(table(x))))
-    names(team_mode) <- c("player", "team")
-    result <- data.table::as.data.table(team_mode)[data.table::as.data.table(result), on = "player"]
-    data.table::setDF(result)
-  }
-
-  # Calculate derived stats
-  result$total_shots <- result$shots_inside_box + result$shots_outside_box
-  result$conversion_rate <- round(safe_divide(result$goals, result$total_shots) * 100, 1)
-  result$shot_accuracy <- round(safe_divide(result$shots_on_target, result$total_shots) * 100, 1)
-  result$goals_per90 <- round(per_90(result$goals, result$minutes), 2)
-  result$shots_per90 <- round(per_90(result$total_shots, result$minutes), 2)
-
-  if (is.null(player)) {
-    result <- result[result$minutes >= min_minutes, ]
-  }
-
-  result <- result[order(-result$goals, -result$total_shots), ]
-  rownames(result) <- NULL
-  as.data.frame(result)
+  result
 }
 
 
@@ -724,94 +447,37 @@ player_opta_xg <- function(player = NULL,
                             min_minutes = 450,
                             by_team = FALSE,
                             source = c("remote", "local")) {
-  source <- match.arg(source)
-  validate_min_minutes(min_minutes)
+  result <- .aggregate_opta_player_stats(
+    player = player, league = league, season = season,
+    min_minutes = min_minutes, by_team = by_team, source = source,
+    col_spec = list(
+      minutes = "minutes",
+      shots = "shots", shots_on_target = "shots_on_target",
+      goals = "goals", npgoals = "npgoals",
+      xg = "xg", npxg = "npxg",
+      key_passes = "key_passes", assists = "assists", xa = "xa"
+    ),
+    derive_fn = function(r) {
+      r$goals_minus_xg <- round(r$goals - r$xg, 2)
+      r$xg_per90 <- round(per_90(r$xg, r$minutes), 2)
+      r$npxg_per90 <- round(per_90(r$npxg, r$minutes), 2)
+      r$xa_per90 <- round(per_90(r$xa, r$minutes), 2)
+      r
+    },
+    col_order = c("player", "team", "minutes",
+                  "shots", "shots_on_target", "goals", "npgoals",
+                  "xg", "npxg", "goals_minus_xg",
+                  "xg_per90", "npxg_per90",
+                  "key_passes", "assists", "xa", "xa_per90"),
+    loader = .load_opta_xmetrics_data
+  )
 
-  data <- .load_opta_xmetrics_data(league, season, source)
-
-  if (is.null(data) || nrow(data) == 0) {
-    cli::cli_warn("No Opta xmetrics data found. Run 03_calculate_player_xmetrics.R first.")
-    return(data.frame())
+  # Re-sort by xg (helper sorts by minutes)
+  if (nrow(result) > 0) {
+    result <- result[order(-result$xg), ]
+    rownames(result) <- NULL
   }
-
-  if (!is.null(player)) {
-    data <- data[grepl(player, data$player_name, ignore.case = TRUE), ]
-    if (nrow(data) == 0) {
-      cli::cli_warn("No data found for player: {player}")
-      return(data.frame())
-    }
-  }
-
-  get_col <- .get_col
-
-  if (by_team) {
-    result <- stats::aggregate(
-      cbind(
-        minutes = get_col(data, "minutes"),
-        shots = get_col(data, "shots"),
-        shots_on_target = get_col(data, "shots_on_target"),
-        goals = get_col(data, "goals"),
-        npgoals = get_col(data, "npgoals"),
-        xg = get_col(data, "xg"),
-        npxg = get_col(data, "npxg"),
-        key_passes = get_col(data, "key_passes"),
-        assists = get_col(data, "assists"),
-        xa = get_col(data, "xa")
-      ) ~ player_name + team_name,
-      data = data,
-      FUN = function(x) sum(x, na.rm = TRUE),
-      na.action = na.pass
-    )
-    names(result)[1:2] <- c("player", "team")
-  } else {
-    result <- stats::aggregate(
-      cbind(
-        minutes = get_col(data, "minutes"),
-        shots = get_col(data, "shots"),
-        shots_on_target = get_col(data, "shots_on_target"),
-        goals = get_col(data, "goals"),
-        npgoals = get_col(data, "npgoals"),
-        xg = get_col(data, "xg"),
-        npxg = get_col(data, "npxg"),
-        key_passes = get_col(data, "key_passes"),
-        assists = get_col(data, "assists"),
-        xa = get_col(data, "xa")
-      ) ~ player_name,
-      data = data,
-      FUN = function(x) sum(x, na.rm = TRUE),
-      na.action = na.pass
-    )
-    names(result)[1] <- "player"
-
-    team_mode <- stats::aggregate(
-      team_name ~ player_name, data = data,
-      FUN = function(x) names(which.max(table(x)))
-    )
-    names(team_mode) <- c("player", "team")
-    result <- data.table::as.data.table(team_mode)[data.table::as.data.table(result), on = "player"]
-    data.table::setDF(result)
-  }
-
-  # Derived stats
-  result$goals_minus_xg <- round(result$goals - result$xg, 2)
-  result$xg_per90 <- round(per_90(result$xg, result$minutes), 2)
-  result$npxg_per90 <- round(per_90(result$npxg, result$minutes), 2)
-  result$xa_per90 <- round(per_90(result$xa, result$minutes), 2)
-
-  if (is.null(player)) {
-    result <- result[result$minutes >= min_minutes, ]
-  }
-
-  result <- result[order(-result$xg), ]
-  col_order <- c("player", "team", "minutes",
-                 "shots", "shots_on_target", "goals", "npgoals",
-                 "xg", "npxg", "goals_minus_xg",
-                 "xg_per90", "npxg_per90",
-                 "key_passes", "assists", "xa", "xa_per90")
-  result <- result[, col_order]
-  rownames(result) <- NULL
-
-  as.data.frame(result)
+  result
 }
 
 
@@ -840,82 +506,33 @@ player_opta_xpass <- function(player = NULL,
                                min_minutes = 450,
                                by_team = FALSE,
                                source = c("remote", "local")) {
-  source <- match.arg(source)
-  validate_min_minutes(min_minutes)
+  result <- .aggregate_opta_player_stats(
+    player = player, league = league, season = season,
+    min_minutes = min_minutes, by_team = by_team, source = source,
+    col_spec = list(
+      minutes = "minutes",
+      passes_attempted = "passes_attempted", passes_completed = "passes_completed",
+      sum_xpass = "sum_xpass", xpass_overperformance = "xpass_overperformance"
+    ),
+    derive_fn = function(r) {
+      r$pass_pct <- round(safe_divide(r$passes_completed * 100, r$passes_attempted), 1)
+      r$xpass_overperformance_per90 <- round(per_90(r$xpass_overperformance, r$minutes), 2)
+      r$xpass_avg <- round(safe_divide(r$sum_xpass, r$passes_attempted), 3)
+      r
+    },
+    col_order = c("player", "team", "minutes",
+                  "passes_attempted", "passes_completed", "pass_pct",
+                  "sum_xpass", "xpass_overperformance", "xpass_overperformance_per90",
+                  "xpass_avg"),
+    loader = .load_opta_xmetrics_data
+  )
 
-  data <- .load_opta_xmetrics_data(league, season, source)
-
-  if (is.null(data) || nrow(data) == 0) {
-    cli::cli_warn("No Opta xmetrics data found. Run 03_calculate_player_xmetrics.R first.")
-    return(data.frame())
+  # Re-sort by xpass overperformance (helper sorts by minutes)
+  if (nrow(result) > 0) {
+    result <- result[order(-result$xpass_overperformance), ]
+    rownames(result) <- NULL
   }
-
-  if (!is.null(player)) {
-    data <- data[grepl(player, data$player_name, ignore.case = TRUE), ]
-    if (nrow(data) == 0) {
-      cli::cli_warn("No data found for player: {player}")
-      return(data.frame())
-    }
-  }
-
-  get_col <- .get_col
-
-  if (by_team) {
-    result <- stats::aggregate(
-      cbind(
-        minutes = get_col(data, "minutes"),
-        passes_attempted = get_col(data, "passes_attempted"),
-        passes_completed = get_col(data, "passes_completed"),
-        sum_xpass = get_col(data, "sum_xpass"),
-        xpass_overperformance = get_col(data, "xpass_overperformance")
-      ) ~ player_name + team_name,
-      data = data,
-      FUN = function(x) sum(x, na.rm = TRUE),
-      na.action = na.pass
-    )
-    names(result)[1:2] <- c("player", "team")
-  } else {
-    result <- stats::aggregate(
-      cbind(
-        minutes = get_col(data, "minutes"),
-        passes_attempted = get_col(data, "passes_attempted"),
-        passes_completed = get_col(data, "passes_completed"),
-        sum_xpass = get_col(data, "sum_xpass"),
-        xpass_overperformance = get_col(data, "xpass_overperformance")
-      ) ~ player_name,
-      data = data,
-      FUN = function(x) sum(x, na.rm = TRUE),
-      na.action = na.pass
-    )
-    names(result)[1] <- "player"
-
-    team_mode <- stats::aggregate(
-      team_name ~ player_name, data = data,
-      FUN = function(x) names(which.max(table(x)))
-    )
-    names(team_mode) <- c("player", "team")
-    result <- data.table::as.data.table(team_mode)[data.table::as.data.table(result), on = "player"]
-    data.table::setDF(result)
-  }
-
-  # Derived stats
-  result$pass_pct <- round(safe_divide(result$passes_completed * 100, result$passes_attempted), 1)
-  result$xpass_overperformance_per90 <- round(per_90(result$xpass_overperformance, result$minutes), 2)
-  result$xpass_avg <- round(safe_divide(result$sum_xpass, result$passes_attempted), 3)
-
-  if (is.null(player)) {
-    result <- result[result$minutes >= min_minutes, ]
-  }
-
-  result <- result[order(-result$xpass_overperformance), ]
-  col_order <- c("player", "team", "minutes",
-                 "passes_attempted", "passes_completed", "pass_pct",
-                 "sum_xpass", "xpass_overperformance", "xpass_overperformance_per90",
-                 "xpass_avg")
-  result <- result[, col_order]
-  rownames(result) <- NULL
-
-  as.data.frame(result)
+  result
 }
 
 
@@ -940,96 +557,41 @@ player_opta_setpiece <- function(player = NULL,
                                   min_minutes = 450,
                                   by_team = FALSE,
                                   source = c("remote", "local")) {
-  source <- match.arg(source)
-  validate_min_minutes(min_minutes)
+  result <- .aggregate_opta_player_stats(
+    player = player, league = league, season = season,
+    min_minutes = min_minutes, by_team = by_team, source = source,
+    col_spec = list(
+      minutes = "minsPlayed",
+      corners_taken = "cornerTaken", corners_accurate = "accurateCornersIntobox",
+      corners_won = "wonCorners",
+      freekicks_taken = "attFreekickTotal", freekick_goals = "attFreekickGoal",
+      freekick_on_target = "attFreekickTarget",
+      freekick_crosses = "freekickCross", freekick_crosses_accurate = "accurateFreekickCross",
+      penalties_won = "penaltyWon", penalties_conceded = "penaltyConceded",
+      setpiece_goals = "attSetpiece", setpiece_assists = "goalAssistSetplay",
+      deadball_assists = "goalAssistDeadball",
+      throws_total = "totalThrows", throws_accurate = "accurateThrows"
+    ),
+    derive_fn = function(r) {
+      r$corner_accuracy <- round(safe_divide(r$corners_accurate, r$corners_taken) * 100, 1)
+      r$throw_accuracy <- round(safe_divide(r$throws_accurate, r$throws_total) * 100, 1)
+      r$corners_per90 <- round(per_90(r$corners_taken, r$minutes), 2)
+      r
+    },
+    col_order = c("player", "team", "matches", "minutes",
+                  "corners_taken", "corners_accurate", "corners_won",
+                  "freekicks_taken", "freekick_goals", "freekick_on_target",
+                  "freekick_crosses", "freekick_crosses_accurate",
+                  "penalties_won", "penalties_conceded",
+                  "setpiece_goals", "setpiece_assists", "deadball_assists",
+                  "throws_total", "throws_accurate",
+                  "corner_accuracy", "throw_accuracy", "corners_per90")
+  )
 
-  data <- .load_opta_data(league, season, source)
-
-  if (is.null(data) || nrow(data) == 0) {
-    cli::cli_warn("No Opta data found")
-    return(data.frame())
+  # Re-sort by corners and freekicks (helper sorts by minutes)
+  if (nrow(result) > 0) {
+    result <- result[order(-result$corners_taken, -result$freekicks_taken), ]
+    rownames(result) <- NULL
   }
-
-  if (!is.null(player)) {
-    data <- data[grepl(player, data$player_name, ignore.case = TRUE), ]
-    if (nrow(data) == 0) {
-      cli::cli_warn("No data found for player: {player}")
-      return(data.frame())
-    }
-  }
-
-  get_col <- .get_col
-
-  if (by_team) {
-    result <- stats::aggregate(
-      cbind(
-        matches = 1,
-        minutes = get_col(data, "minsPlayed"),
-        corners_taken = get_col(data, "cornerTaken"),
-        corners_accurate = get_col(data, "accurateCornersIntobox"),
-        corners_won = get_col(data, "wonCorners"),
-        freekicks_taken = get_col(data, "attFreekickTotal"),
-        freekick_goals = get_col(data, "attFreekickGoal"),
-        freekick_on_target = get_col(data, "attFreekickTarget"),
-        freekick_crosses = get_col(data, "freekickCross"),
-        freekick_crosses_accurate = get_col(data, "accurateFreekickCross"),
-        penalties_won = get_col(data, "penaltyWon"),
-        penalties_conceded = get_col(data, "penaltyConceded"),
-        setpiece_goals = get_col(data, "attSetpiece"),
-        setpiece_assists = get_col(data, "goalAssistSetplay"),
-        deadball_assists = get_col(data, "goalAssistDeadball"),
-        throws_total = get_col(data, "totalThrows"),
-        throws_accurate = get_col(data, "accurateThrows")
-      ) ~ player_name + team_name,
-      data = data,
-      FUN = function(x) sum(x, na.rm = TRUE),
-      na.action = na.pass
-    )
-    names(result)[1:2] <- c("player", "team")
-  } else {
-    result <- stats::aggregate(
-      cbind(
-        matches = 1,
-        minutes = get_col(data, "minsPlayed"),
-        corners_taken = get_col(data, "cornerTaken"),
-        corners_accurate = get_col(data, "accurateCornersIntobox"),
-        corners_won = get_col(data, "wonCorners"),
-        freekicks_taken = get_col(data, "attFreekickTotal"),
-        freekick_goals = get_col(data, "attFreekickGoal"),
-        freekick_on_target = get_col(data, "attFreekickTarget"),
-        freekick_crosses = get_col(data, "freekickCross"),
-        freekick_crosses_accurate = get_col(data, "accurateFreekickCross"),
-        penalties_won = get_col(data, "penaltyWon"),
-        penalties_conceded = get_col(data, "penaltyConceded"),
-        setpiece_goals = get_col(data, "attSetpiece"),
-        setpiece_assists = get_col(data, "goalAssistSetplay"),
-        deadball_assists = get_col(data, "goalAssistDeadball"),
-        throws_total = get_col(data, "totalThrows"),
-        throws_accurate = get_col(data, "accurateThrows")
-      ) ~ player_name,
-      data = data,
-      FUN = function(x) sum(x, na.rm = TRUE),
-      na.action = na.pass
-    )
-    names(result)[1] <- "player"
-
-    team_mode <- stats::aggregate(team_name ~ player_name, data = data,
-                                   FUN = function(x) names(which.max(table(x))))
-    names(team_mode) <- c("player", "team")
-    result <- data.table::as.data.table(team_mode)[data.table::as.data.table(result), on = "player"]
-    data.table::setDF(result)
-  }
-
-  # Calculate derived stats
-  result$corner_accuracy <- round(safe_divide(result$corners_accurate, result$corners_taken) * 100, 1)
-  result$throw_accuracy <- round(safe_divide(result$throws_accurate, result$throws_total) * 100, 1)
-  result$corners_per90 <- round(per_90(result$corners_taken, result$minutes), 2)
-
-  if (is.null(player)) {
-    result <- result[result$minutes >= min_minutes, ]
-  }
-
-  result <- result[order(-result$corners_taken, -result$freekicks_taken), ]
-  rownames(result) <- NULL
-  as.data.frame(result)
+  result
 }

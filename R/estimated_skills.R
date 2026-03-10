@@ -48,6 +48,41 @@ get_default_decay_params <- function() {
 }
 
 
+#' Resolve decay lambda for a stat
+#'
+#' Looks up per-stat override, then falls back to category default.
+#'
+#' @param stat_name Name of the stat
+#' @param decay_params Decay parameter list
+#' @param eff_map Named list from \code{.classify_skill_stats()}
+#' @return Numeric lambda value
+#' @keywords internal
+.resolve_lambda <- function(stat_name, decay_params, eff_map = NULL) {
+  if (stat_name %in% names(decay_params)) return(decay_params[[stat_name]])
+  if (!is.null(eff_map) && stat_name %in% names(eff_map)) return(decay_params$efficiency)
+  if (grepl("^(xg|npxg|xa|xpass)", stat_name)) return(decay_params$xmetrics)
+  decay_params$rate
+}
+
+
+#' Resolve prior strength for a stat
+#'
+#' Looks up per-stat override, then falls back to rate/efficiency default.
+#'
+#' @param stat_name Name of the stat
+#' @param decay_params Decay parameter list
+#' @param is_efficiency Logical — is this an efficiency stat?
+#' @return Numeric prior strength
+#' @keywords internal
+.resolve_prior_strength <- function(stat_name, decay_params, is_efficiency = FALSE) {
+  stat_priors <- decay_params$stat_priors
+  if (!is.null(stat_priors) && stat_name %in% names(stat_priors)) {
+    return(stat_priors[[stat_name]])
+  }
+  if (is_efficiency) decay_params$prior_attempts %||% 50 else decay_params$prior_90s %||% 2
+}
+
+
 # ============================================================================
 # Position helpers
 # ============================================================================
@@ -315,8 +350,6 @@ estimate_player_skills <- function(match_stats, decay_params = NULL,
     p90_cols <- grep("_p90$", names(dt), value = TRUE)
     efficiency_stats <- names(.classify_skill_stats())
     eff_cols <- intersect(efficiency_stats, names(dt))
-    # Position dummies
-    pos_cols <- intersect(c("is_gk", "is_df", "is_mf", "is_fw"), names(dt))
     stat_cols <- c(p90_cols, eff_cols)
   }
 
@@ -333,15 +366,8 @@ estimate_player_skills <- function(match_stats, decay_params = NULL,
   # Classify stats
   eff_map <- .classify_skill_stats()
 
-  # Resolve lambda per stat
-  get_lambda <- function(stat_name) {
-    # If decay_params has per-stat overrides
-    if (stat_name %in% names(decay_params)) return(decay_params[[stat_name]])
-    # Category-based defaults
-    if (stat_name %in% names(eff_map)) return(decay_params$efficiency)
-    if (grepl("^(xg|npxg|xa|xpass)", stat_name)) return(decay_params$xmetrics)
-    decay_params$rate
-  }
+  # Resolve lambda per stat (using shared helper)
+  get_lambda <- function(stat_name) .resolve_lambda(stat_name, decay_params, eff_map)
 
   compute_denominator <- .compute_denominator
 
@@ -385,10 +411,7 @@ estimate_player_skills <- function(match_stats, decay_params = NULL,
   stat_priors <- decay_params$stat_priors
 
   get_prior <- function(stat_name, is_eff) {
-    if (!is.null(stat_priors) && stat_name %in% names(stat_priors)) {
-      return(stat_priors[[stat_name]])
-    }
-    if (is_eff) default_prior_attempts else default_prior_90s
+    .resolve_prior_strength(stat_name, decay_params, is_eff)
   }
 
   # --- Vectorized skill estimation via data.table grouped operations ---
@@ -720,7 +743,7 @@ aggregate_skills_for_spm <- function(match_stats, decay_params = NULL,
   # Determine seasons from data
   if (!"season_end_year" %in% names(dt)) {
     if ("season" %in% names(dt)) {
-      dt[, season_end_year := .extract_end_year(season)]
+      dt[, season_end_year := as.integer(vapply(season, extract_season_end_year, numeric(1)))]
     } else {
       # Infer from match_date: season ending in June
       dt[, season_end_year := data.table::fifelse(
@@ -804,10 +827,15 @@ aggregate_skills_for_spm <- function(match_stats, decay_params = NULL,
   # Compute position dummies if primary_position exists
   if ("primary_position" %in% names(result)) {
     pos <- result$primary_position
-    result[, is_gk := as.integer(grepl("GK|Goalkeeper", pos, ignore.case = TRUE))]
-    result[, is_df := as.integer(grepl("DEF|Defender", pos, ignore.case = TRUE))]
-    result[, is_mf := as.integer(grepl("MID|Midfielder", pos, ignore.case = TRUE))]
-    result[, is_fw := as.integer(grepl("FWD|Forward|Striker", pos, ignore.case = TRUE))]
+    valid_pos <- c("GK", "DEF", "MID", "FWD")
+    unrecognized <- setdiff(unique(pos[!is.na(pos)]), valid_pos)
+    if (length(unrecognized) > 0) {
+      cli::cli_warn("Unrecognized positions in primary_position: {paste(unrecognized, collapse=', ')}. Position dummies may be incomplete.")
+    }
+    result[, is_gk := as.integer(grepl("GK", pos, ignore.case = TRUE))]
+    result[, is_df := as.integer(grepl("DEF", pos, ignore.case = TRUE))]
+    result[, is_mf := as.integer(grepl("MID", pos, ignore.case = TRUE))]
+    result[, is_fw := as.integer(grepl("FWD", pos, ignore.case = TRUE))]
   }
 
   # Replace NAs with 0 in numeric columns
@@ -1023,7 +1051,8 @@ backtest_skill_predictions <- function(match_stats, decay_params = NULL,
 
     for (pid in players) {
       pdf_idx <- which(dt$player_id == pid)
-      if (length(pdf_idx) <= min_history) next
+      n <- length(pdf_idx)
+      if (n <= min_history) next
 
       vals <- as.numeric(dt[[sc]][pdf_idx])
       vals[is.na(vals)] <- 0
@@ -1046,60 +1075,76 @@ backtest_skill_predictions <- function(match_stats, decay_params = NULL,
         }
       }
 
-      for (j in (min_history + 1):length(pdf_idx)) {
-        if (mins_90[j] == 0) next
+      j_idx <- (min_history + 1):n
 
-        days_since <- dates[j] - dates[1:(j - 1)]
-        time_decay <- exp(-lambda * days_since)
-        h_vals <- vals[1:(j - 1)]
+      # Vectorized decay weights via cumsum trick: O(n) instead of O(n^2)
+      # exp(-lambda * (d_j - d_i)) = exp(-lambda * d_j) * exp(lambda * d_i)
+      # Cumulative sums computed once; for each j, multiply by exp(-lambda*d_j) to get time-decayed running totals
+      d_rel <- dates - dates[1]
+      if (anyNA(d_rel)) next
+      exp_pos <- exp(pmin(lambda * d_rel, 500))
+      exp_neg <- exp(pmax(-lambda * d_rel, -500))
 
-        if (is_eff) {
-          # Beta-Binomial with actual attempt counts
-          attempts <- denoms[1:(j - 1)]
-          successes <- h_vals * attempts
-          w_succ <- sum(time_decay * successes)
-          w_att <- sum(time_decay * attempts)
-          if (w_att == 0) next
+      if (is_eff) {
+        attempts_vec <- denoms
+        successes_vec <- vals * attempts_vec
 
-          mu <- max(min(player_mu0, 1 - 1e-6), 1e-6)
-          alpha0 <- mu * prior_strength
-          beta0 <- (1 - mu) * prior_strength
-          bayes_pred <- (alpha0 + w_succ) / (alpha0 + beta0 + w_att)
-        } else {
-          # Gamma-Poisson
-          events <- h_vals * mins_90[1:(j - 1)]
-          w_events <- sum(time_decay * events)
-          w_exposure <- sum(time_decay * mins_90[1:(j - 1)])
-          alpha0 <- player_mu0 * prior_strength
-          beta0 <- prior_strength
-          bayes_pred <- (alpha0 + w_events) / (beta0 + w_exposure)
-        }
+        cum_succ <- cumsum(exp_pos * successes_vec)
+        cum_att <- cumsum(exp_pos * attempts_vec)
 
-        if (is_eff) {
-          # Attempt-weighted career average (total successes / total attempts)
-          h_attempts <- denoms[1:(j - 1)]
-          total_att <- sum(h_attempts)
-          avg_pred <- if (total_att > 0) sum(h_vals * h_attempts) / total_att else mean(h_vals)
-        } else {
-          # 90s-weighted career average (total events / total exposure)
-          h_mins90 <- mins_90[1:(j - 1)]
-          total_exp <- sum(h_mins90)
-          avg_pred <- if (total_exp > 0) sum(h_vals * h_mins90) / total_exp else mean(h_vals)
-        }
-        last_pred <- vals[j - 1]
+        w_succ <- exp_neg[j_idx] * cum_succ[j_idx - 1]
+        w_att <- exp_neg[j_idx] * cum_att[j_idx - 1]
 
-        k <- k + 1
-        match_preds[[k]] <- list(
-          player_id = pid,
-          match_date = dt$match_date[pdf_idx[j]],
-          predicted = bayes_pred,
-          avg_predicted = avg_pred,
-          last_predicted = last_pred,
-          actual = vals[j],
-          minutes = mins[j],
-          attempts = if (is_eff) denoms[j] else NA_real_
-        )
+        mu <- max(min(player_mu0, 1 - 1e-6), 1e-6)
+        alpha0 <- mu * prior_strength
+        beta0 <- (1 - mu) * prior_strength
+        bayes_pred <- (alpha0 + w_succ) / (alpha0 + beta0 + w_att)
+
+        # Career average via cumsum (attempt-weighted)
+        cum_wv <- cumsum(vals * attempts_vec)
+        cum_wa <- cumsum(attempts_vec)
+        avg_pred <- ifelse(cum_wa[j_idx - 1] > 0,
+                           cum_wv[j_idx - 1] / cum_wa[j_idx - 1],
+                           mean(vals[seq_len(min_history)]))
+      } else {
+        events <- vals * mins_90
+
+        cum_events <- cumsum(exp_pos * events)
+        cum_exposure <- cumsum(exp_pos * mins_90)
+
+        w_events <- exp_neg[j_idx] * cum_events[j_idx - 1]
+        w_exposure <- exp_neg[j_idx] * cum_exposure[j_idx - 1]
+
+        alpha0 <- player_mu0 * prior_strength
+        beta0 <- prior_strength
+        bayes_pred <- (alpha0 + w_events) / (beta0 + w_exposure)
+
+        # Career average via cumsum (minutes-weighted)
+        cum_wv <- cumsum(vals * mins_90)
+        cum_we <- cumsum(mins_90)
+        avg_pred <- ifelse(cum_we[j_idx - 1] > 0,
+                           cum_wv[j_idx - 1] / cum_we[j_idx - 1],
+                           mean(vals[seq_len(min_history)]))
       }
+
+      last_pred <- vals[j_idx - 1]
+
+      # Filter for non-zero minutes and build batch result
+      ok <- mins_90[j_idx] > 0
+      if (!any(ok)) next
+
+      j_ok <- j_idx[ok]
+      k <- k + 1
+      match_preds[[k]] <- data.table::data.table(
+        player_id = pid,
+        match_date = dt$match_date[pdf_idx[j_ok]],
+        predicted = bayes_pred[ok],
+        avg_predicted = avg_pred[ok],
+        last_predicted = last_pred[ok],
+        actual = vals[j_ok],
+        minutes = mins[j_ok],
+        attempts = if (is_eff) denoms[j_ok] else NA_real_
+      )
     }
 
     pred_list[[si]] <- data.table::rbindlist(match_preds)
@@ -1643,17 +1688,3 @@ player_skill_profile <- function(player_name, match_stats = NULL,
 # Internal helpers
 # ============================================================================
 
-#' Extract season end year from season string
-#' @param season Character vector of season strings
-#' @return Integer vector of end years
-#' @keywords internal
-.extract_end_year <- function(season) {
-  vapply(season, function(s) {
-    # "2024-2025" -> 2025
-    if (grepl("^\\d{4}-\\d{4}$", s)) return(as.integer(substr(s, 6, 9)))
-    # "2018 Russia" -> 2018
-    year <- suppressWarnings(as.integer(sub("^(\\d{4}).*", "\\1", s)))
-    if (!is.na(year)) return(year)
-    NA_integer_
-  }, integer(1), USE.NAMES = FALSE)
-}
