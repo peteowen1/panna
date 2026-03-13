@@ -96,6 +96,10 @@ fit_season_ratings_opta <- function(splint_data, opta_stats, season,
   if (nrow(season_opta_stats) == 0) {
     end_years <- sapply(unique(opta_stats$season), extract_season_end_year)
     matching_seasons <- names(end_years)[end_years == season]
+    if (length(matching_seasons) > 1) {
+      cat(sprintf("  Note: %d seasons match end year %d: %s\n",
+                  length(matching_seasons), season, paste(matching_seasons, collapse = ", ")))
+    }
     if (length(matching_seasons) > 0) {
       season_opta_stats <- opta_stats[opta_stats$season %in% matching_seasons, ]
     }

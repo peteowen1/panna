@@ -54,7 +54,7 @@ if (!exists("processed_data")) {
   # Add season_end_year to results if not present
   if (!is.null(processed_data$results) && !"season_end_year" %in% names(processed_data$results)) {
     processed_data$results <- processed_data$results %>%
-      mutate(season_end_year = as.numeric(substr(season, 6, 9)))
+      mutate(season_end_year = vapply(season, extract_season_end_year, numeric(1)))
   }
 
   # Store raw stats for SPM (Step 05)

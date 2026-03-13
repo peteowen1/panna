@@ -14,6 +14,43 @@
 #   - UPLOADING data to GitHub releases (pb_upload_parquet)
 #   - Downloading the entire dataset for local development (pb_download_parquet)
 
+# Internal helper: download a file from GitHub Releases via piggyback.
+# Returns the path to the downloaded file in tempdir(). Caller is responsible
+# for cleanup (e.g., on.exit(unlink(path), add = TRUE)).
+.pb_download_file <- function(file_name, repo, tag, label = file_name,
+                               show_progress = TRUE) {
+  if (!requireNamespace("piggyback", quietly = TRUE)) {
+    cli::cli_abort("Package 'piggyback' is required. Install with: install.packages('piggyback')")
+  }
+
+  temp_dir <- tempdir()
+  local_path <- file.path(temp_dir, file_name)
+
+  tryCatch({
+    piggyback::pb_download(
+      file = file_name,
+      repo = repo,
+      tag = tag,
+      dest = temp_dir,
+      overwrite = TRUE,
+      show_progress = show_progress
+    )
+  }, error = function(e) {
+    cli::cli_abort(c(
+      "Failed to download {label}.",
+      "x" = conditionMessage(e),
+      "i" = "Make sure {.file {file_name}} exists in the {.val {tag}} release."
+    ))
+  })
+
+  if (!file.exists(local_path)) {
+    cli::cli_abort("Download failed - {.file {file_name}} not found in release.")
+  }
+
+  local_path
+}
+
+
 #' Download data from GitHub Releases
 #'
 #' Downloads the pannadata.zip file from a GitHub Release and extracts it
@@ -51,59 +88,20 @@ pb_download_data <- function(repo = "peteowen1/pannadata",
                               dest = NULL,
                               overwrite = TRUE,
                               show_progress = TRUE) {
-  if (!requireNamespace("piggyback", quietly = TRUE)) {
-    cli::cli_abort("Package 'piggyback' is required. Install with: install.packages('piggyback')")
-  }
-
-  if (is.null(dest)) {
-    dest <- pannadata_dir()
-  }
+  if (is.null(dest)) dest <- pannadata_dir()
 
   progress_msg(sprintf("Downloading data from %s (tag: %s)...", repo, tag))
-
-  # Create temp directory for download
-  temp_dir <- tempdir()
-  zip_file <- file.path(temp_dir, "pannadata.zip")
-
-  # Download the zip file
-  tryCatch({
-    piggyback::pb_download(
-      file = "pannadata.zip",
-      repo = repo,
-      tag = tag,
-      dest = temp_dir,
-      overwrite = TRUE,
-      show_progress = show_progress
-    )
-  }, error = function(e) {
-    cli::cli_abort(c(
-      "Failed to download from {repo}.",
-      "x" = conditionMessage(e),
-      "i" = "Make sure the 'latest' release exists with pannadata.zip."
-    ))
-  })
-
-  if (!file.exists(zip_file)) {
-    cli::cli_abort("Download failed - pannadata.zip not found in release")
-  }
+  zip_file <- .pb_download_file("pannadata.zip", repo, tag,
+                                 show_progress = show_progress)
+  on.exit(unlink(zip_file), add = TRUE)
 
   zip_size <- file.size(zip_file) / (1024 * 1024)
   progress_msg(sprintf("Downloaded pannadata.zip (%.1f MB)", zip_size))
 
-  # Extract to destination
   progress_msg(sprintf("Extracting to %s...", dest))
-
-  if (!dir.exists(dest)) {
-    dir.create(dest, recursive = TRUE)
-  }
-
-  # Extract - the zip contains a 'data' folder
+  if (!dir.exists(dest)) dir.create(dest, recursive = TRUE)
   unzip(zip_file, exdir = dest, overwrite = overwrite)
 
-  # Cleanup
-  file.remove(zip_file)
-
-  # Count extracted files
   data_dir <- file.path(dest, "data")
   if (dir.exists(data_dir)) {
     n_files <- length(list.files(data_dir, recursive = TRUE, pattern = "\\.rds$"))
@@ -166,17 +164,14 @@ pb_upload_data <- function(repo = "peteowen1/pannadata",
 
   progress_msg("Zipping data directory...")
 
-  # Zip from within source directory to preserve structure
-
-  old_wd <- getwd()
-  on.exit(setwd(old_wd), add = TRUE)
-  setwd(source)
-
   # Remove old zip if exists
   if (file.exists(zip_file)) file.remove(zip_file)
 
-  # Create zip with directory structure
-  zip(zip_file, files = "data", extras = "-r")
+  # Create zip with directory structure (use withr to avoid process-wide setwd)
+  zip_status <- withr::with_dir(source, {
+    zip(zip_file, files = "data", extras = "-r")
+  })
+  if (zip_status != 0) cli::cli_abort("zip() failed with exit code {zip_status}")
 
   zip_size <- file.size(zip_file) / (1024 * 1024)
   progress_msg(sprintf("Created pannadata.zip (%.1f MB)", zip_size))
@@ -366,30 +361,29 @@ pb_upload_parquet <- function(repo = "peteowen1/pannadata",
 
   if (verbose) message("Zipping parquet files...")
 
-  # Create relative paths for zip
-  old_wd <- getwd()
-  on.exit(setwd(old_wd), add = TRUE)
-  setwd(source)
-
+  # Create relative paths for zip (use withr to avoid process-wide setwd)
   rel_files <- gsub(paste0("^", normalizePath(source, winslash = "/"), "/?"), "",
                     normalizePath(parquet_files, winslash = "/"))
 
   # Use R's zip function (works on all platforms, handles long file lists)
   result <- tryCatch({
-    zip(zip_file, files = rel_files, flags = "-rq")
+    withr::with_dir(source, {
+      zip(zip_file, files = rel_files, flags = "-rq")
+    })
     TRUE
   }, error = function(e) {
-    cli::cli_warn("zip() failed: {conditionMessage(e)}")
+    cli::cli_warn("zip() with -rq failed, retrying without quiet flag: {conditionMessage(e)}")
     FALSE
   }, warning = function(w) {
-    # zip() may warn but still succeed
-    TRUE
+    cli::cli_warn("zip() warning (proceeding): {conditionMessage(w)}")
+    invokeRestart("muffleWarning")
   })
 
   if (!result || !file.exists(zip_file)) {
-    # Fallback: try without -q flag
     tryCatch({
-      zip(zip_file, files = rel_files, flags = "-r")
+      withr::with_dir(source, {
+        zip(zip_file, files = rel_files, flags = "-r")
+      })
     }, error = function(e) {
       cli::cli_abort("Failed to create zip: {conditionMessage(e)}")
     })
@@ -452,55 +446,21 @@ pb_download_parquet <- function(repo = "peteowen1/pannadata",
                                 tag = "latest",
                                 dest = NULL,
                                 verbose = TRUE) {
-  if (!requireNamespace("piggyback", quietly = TRUE)) {
-    cli::cli_abort("Package 'piggyback' is required. Install with: install.packages('piggyback')")
-  }
-
-  if (is.null(dest)) {
-    dest <- pannadata_dir()
-  }
+  if (is.null(dest)) dest <- pannadata_dir()
 
   if (verbose) message(sprintf("Downloading from %s (tag: %s)...", repo, tag))
-
-  temp_dir <- tempdir()
-  zip_file <- file.path(temp_dir, "pannadata-parquet.zip")
-
-  tryCatch({
-    piggyback::pb_download(
-      file = "pannadata-parquet.zip",
-      repo = repo,
-      tag = tag,
-      dest = temp_dir,
-      overwrite = TRUE
-    )
-  }, error = function(e) {
-    cli::cli_abort(c(
-      "Failed to download parquet data.",
-      "x" = conditionMessage(e),
-      "i" = "Make sure pannadata-parquet.zip exists in the release."
-    ))
-  })
-
-  if (!file.exists(zip_file)) {
-    cli::cli_abort("Download failed - pannadata-parquet.zip not found in release")
-  }
+  zip_file <- .pb_download_file("pannadata-parquet.zip", repo, tag, label = "parquet data")
+  on.exit(unlink(zip_file), add = TRUE)
 
   if (verbose) {
     zip_size <- file.size(zip_file) / (1024 * 1024)
     message(sprintf("Downloaded (%.1f MB)", zip_size))
   }
 
-  # Extract
   if (verbose) message(sprintf("Extracting to %s...", dest))
-
-  if (!dir.exists(dest)) {
-    dir.create(dest, recursive = TRUE)
-  }
-
+  if (!dir.exists(dest)) dir.create(dest, recursive = TRUE)
   unzip(zip_file, exdir = dest, overwrite = TRUE)
-  file.remove(zip_file)
 
-  # Count extracted files
   n_parquet <- length(list.files(dest, pattern = "\\.parquet$", recursive = TRUE))
   if (verbose) message(sprintf("Extracted %d parquet files", n_parquet))
 
@@ -552,7 +512,7 @@ get_source_archive_name <- function(source_type) {
 #'
 #' Returns regex pattern to match parquet files for a source.
 #'
-#' @param source_type One of "fbref", "understat", or "all"
+#' @param source_type One of "fbref", "understat", "opta", or "all"
 #'
 #' @return Character regex pattern
 #' @keywords internal
@@ -573,7 +533,7 @@ get_source_pattern <- function(source_type) {
 #' - "understat": Understat data to understat-latest tag
 #' - "all": All data to latest tag (legacy behavior)
 #'
-#' @param source_type Data source: "fbref", "understat", or "all"
+#' @param source_type Data source: "fbref", "understat", "opta", or "all"
 #' @param repo GitHub repository in "owner/repo" format
 #' @param source Source directory containing data folder (default: pannadata_dir())
 #' @param verbose Print progress messages
@@ -655,17 +615,14 @@ pb_upload_source <- function(source_type = c("fbref", "understat", "opta", "all"
 
   if (verbose) message("Creating tar.gz archive...")
 
-  # Create relative paths for tar
-  old_wd <- getwd()
-  on.exit(setwd(old_wd), add = TRUE)
-  setwd(source)
-
+  # Create relative paths for tar (use withr to avoid process-wide setwd)
   rel_files <- gsub(paste0("^", normalizePath(source, winslash = "/"), "/?"), "",
                     normalizePath(parquet_files, winslash = "/"))
 
-  # Use R's tar function with gzip compression
   result <- tryCatch({
-    tar(archive_file, files = rel_files, compression = "gzip")
+    withr::with_dir(source, {
+      tar(archive_file, files = rel_files, compression = "gzip")
+    })
     TRUE
   }, error = function(e) {
     cli::cli_warn("tar() failed: {conditionMessage(e)}")
@@ -715,7 +672,7 @@ pb_upload_source <- function(source_type = c("fbref", "understat", "opta", "all"
 #'
 #' Downloads parquet files from source-specific GitHub releases.
 #'
-#' @param source_type Data source: "fbref", "understat", or "all"
+#' @param source_type Data source: "fbref", "understat", "opta", or "all"
 #' @param repo GitHub repository in "owner/repo" format
 #' @param dest Destination directory (default: pannadata_dir())
 #' @param verbose Print progress messages
@@ -736,70 +693,33 @@ pb_download_source <- function(source_type = c("fbref", "understat", "opta", "al
                                 dest = NULL,
                                 verbose = TRUE) {
   source_type <- match.arg(source_type)
-
-  if (!requireNamespace("piggyback", quietly = TRUE)) {
-    cli::cli_abort("Package 'piggyback' is required. Install with: install.packages('piggyback')")
-  }
-
-  if (is.null(dest)) {
-    dest <- pannadata_dir()
-  }
+  if (is.null(dest)) dest <- pannadata_dir()
 
   tag <- get_source_tag(source_type)
   archive_name <- get_source_archive_name(source_type)
 
   if (verbose) message(sprintf("Downloading %s from %s (tag: %s)...",
                                source_type, repo, tag))
-
-  temp_dir <- tempdir()
-  archive_file <- file.path(temp_dir, archive_name)
-
-  tryCatch({
-    piggyback::pb_download(
-      file = archive_name,
-      repo = repo,
-      tag = tag,
-      dest = temp_dir,
-      overwrite = TRUE
-    )
-  }, error = function(e) {
-    cli::cli_abort(c(
-      "Failed to download {source_type} parquet data.",
-      "x" = conditionMessage(e),
-      "i" = "Make sure {archive_name} exists in the '{tag}' release."
-    ))
-  })
-
-  if (!file.exists(archive_file)) {
-    cli::cli_abort("Download failed - {archive_name} not found in release.")
-  }
+  archive_file <- .pb_download_file(archive_name, repo, tag,
+                                     label = paste(source_type, "parquet data"))
+  on.exit(unlink(archive_file), add = TRUE)
 
   if (verbose) {
     archive_size <- file.size(archive_file) / (1024 * 1024)
     message(sprintf("Downloaded (%.1f MB)", archive_size))
   }
 
-  # Extract tar.gz
   if (verbose) message(sprintf("Extracting to %s...", dest))
-
-  if (!dir.exists(dest)) {
-    dir.create(dest, recursive = TRUE)
-  }
-
+  if (!dir.exists(dest)) dir.create(dest, recursive = TRUE)
   untar(archive_file, exdir = dest)
-  file.remove(archive_file)
 
-  # Count extracted files
-  # New structure: data/{source_type}/{table_type}/{league}/{season}.parquet
   if (source_type == "all") {
     n_parquet <- length(list.files(dest, pattern = "\\.parquet$", recursive = TRUE))
   } else {
     source_dir <- file.path(dest, source_type)
-    if (dir.exists(source_dir)) {
-      n_parquet <- length(list.files(source_dir, pattern = "\\.parquet$", recursive = TRUE))
-    } else {
-      n_parquet <- 0
-    }
+    n_parquet <- if (dir.exists(source_dir)) {
+      length(list.files(source_dir, pattern = "\\.parquet$", recursive = TRUE))
+    } else 0
   }
 
   if (verbose) message(sprintf("Extracted %d parquet files", n_parquet))

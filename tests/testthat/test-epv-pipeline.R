@@ -276,6 +276,10 @@ test_that("create_next_goal_labels generates valid labels", {
   expect_true("next_goal_label" %in% names(result))
   # Labels should be 0 (no goal), 1 (team scores), 2 (opponent scores)
   expect_true(all(result$next_goal_label %in% c(0, 1, 2) | is.na(result$next_goal_label)))
+
+  # At least one label type should be present in generated data
+  label_counts <- table(result$next_goal_label)
+  expect_true(length(label_counts) >= 1, info = "At least one label should be present")
 })
 
 test_that("create_next_xg_labels generates numeric labels", {
@@ -436,6 +440,101 @@ test_that("fit_epv_model works with xg method", {
 # Tests for EPV calculation (epv_model.R)
 # =============================================================================
 
+test_that("calculate_action_epv produces bounded EPV values", {
+  skip_if_not_installed("xgboost")
+
+  # Build a minimal trained model first
+  n <- 200
+  set.seed(42)
+  features <- data.frame(
+    match_id = rep("match_1", n),
+    action_id = 1:n,
+    x = runif(n, 0, 100),
+    y = runif(n, 0, 100),
+    distance_to_goal = runif(n, 0, 120),
+    angle_to_goal = runif(n, 0, 1),
+    zone_id = sample(1:9, n, replace = TRUE),
+    in_penalty_area = sample(0:1, n, replace = TRUE),
+    in_final_third = sample(0:1, n, replace = TRUE),
+    in_own_third = sample(0:1, n, replace = TRUE),
+    in_mid_third = sample(0:1, n, replace = TRUE),
+    y_left = sample(0:1, n, replace = TRUE),
+    y_center = sample(0:1, n, replace = TRUE),
+    y_right = sample(0:1, n, replace = TRUE),
+    dx = rnorm(n, 5, 10),
+    dy = rnorm(n, 0, 5),
+    move_distance = runif(n, 0, 50),
+    dist_delta = rnorm(n, 0, 20),
+    result_success = sample(0:1, n, replace = TRUE),
+    is_foot = sample(0:1, n, replace = TRUE),
+    is_head = sample(0:1, n, replace = TRUE),
+    is_pass = sample(0:1, n, replace = TRUE),
+    is_shot = sample(0:1, n, replace = TRUE),
+    is_take_on = sample(0:1, n, replace = TRUE),
+    is_tackle = sample(0:1, n, replace = TRUE),
+    is_interception = sample(0:1, n, replace = TRUE),
+    is_clearance = sample(0:1, n, replace = TRUE),
+    is_aerial = sample(0:1, n, replace = TRUE),
+    is_foul = sample(0:1, n, replace = TRUE),
+    is_ball_recovery = sample(0:1, n, replace = TRUE),
+    seconds_since_chain_start = runif(n, 0, 60),
+    action_in_chain = sample(1:10, n, replace = TRUE),
+    time_normalized = runif(n, 0, 1),
+    period_id = sample(1:2, n, replace = TRUE),
+    next_goal_label = sample(c(0, 1, 2), n, replace = TRUE),
+    stringsAsFactors = FALSE
+  )
+
+  epv_model <- fit_epv_model(
+    features = features,
+    labels = features,
+    method = "goal",
+    nrounds = 10,
+    early_stopping_rounds = 5,
+    verbose = 0
+  )
+
+  # Create SPADL actions matching the features
+  spadl <- data.frame(
+    match_id = features$match_id,
+    action_id = features$action_id,
+    period_id = features$period_id,
+    time_seconds = seq(60, by = 30, length.out = n),
+    team_id = rep(c(101, 102), length.out = n),
+    player_id = rep(paste0("p", 1:10), length.out = n),
+    player_name = rep(paste0("Player_", 1:10), length.out = n),
+    start_x = features$x,
+    start_y = features$y,
+    end_x = features$x + features$dx,
+    end_y = features$y + features$dy,
+    action_type = sample(c("pass", "dribble", "shot", "tackle"), n, replace = TRUE),
+    result = sample(c("success", "fail"), n, replace = TRUE),
+    bodypart = sample(c("foot", "head"), n, replace = TRUE),
+    stringsAsFactors = FALSE
+  )
+
+  result <- calculate_action_epv(spadl, features, epv_model, xg_model = NULL)
+
+  # EPV = P(team_scores) - P(opponent_scores), so bounded in [-1, 1]
+  expect_true(all(result$epv >= -1 & result$epv <= 1),
+              info = "EPV values should be bounded in [-1, 1]")
+  expect_true(all(is.finite(result$epv)),
+              info = "EPV values should all be finite")
+
+  # EPV delta should also be bounded (max swing is from -1 to +1 = 2)
+  non_na_delta <- result$epv_delta[!is.na(result$epv_delta)]
+  expect_true(all(abs(non_na_delta) <= 2),
+              info = "EPV delta should be bounded within [-2, 2]")
+
+  # Most EPV deltas should be small (close to 0) for typical actions
+  expect_true(median(abs(non_na_delta)) < 0.5,
+              info = "Median absolute EPV delta should be small for typical actions")
+
+  # Last action per match should have epv_delta = 0 (no next action)
+  last_actions <- result[!duplicated(result$match_id, fromLast = TRUE), ]
+  expect_true(all(last_actions$epv_delta == 0),
+              info = "Last action per match should have epv_delta = 0")
+})
 
 # =============================================================================
 # Tests for EPV credit assignment (epv_model.R)
@@ -464,6 +563,54 @@ test_that("assign_epv_credit handles passes correctly", {
 
   expect_s3_class(result, "data.frame")
   expect_equal(nrow(result), nrow(spadl))
+
+  # Credit values should be in reasonable range (EPV deltas are small)
+  expect_true(all(result$player_credit >= -0.15 & result$player_credit <= 0.15),
+              info = "player_credit values should be bounded within [-0.15, 0.15]")
+  expect_true(all(is.finite(result$player_credit)),
+              info = "player_credit should have no NaN/Inf values")
+
+  # Without possession_change column, player_credit should equal epv_delta
+  # (no turnover splitting occurs)
+  expect_equal(result$player_credit, result$epv_delta,
+               info = "Without possession_change, player_credit should equal epv_delta")
+})
+
+test_that("assign_epv_credit splits turnover credit correctly", {
+  set.seed(42)
+  spadl <- data.frame(
+    match_id = rep("match_1", 10),
+    action_id = 1:10,
+    period_id = rep(1L, 10),
+    time_seconds = 1:10 * 60,
+    team_id = c(101, 101, 101, 102, 102, 101, 101, 101, 102, 102),
+    player_id = c(1, 2, 3, 4, 5, 1, 2, 3, 4, 5),
+    player_name = c("A", "B", "C", "D", "E", "A", "B", "C", "D", "E"),
+    action_type = rep("pass", 10),
+    result = rep("success", 10),
+    start_x = runif(10, 0, 100),
+    start_y = runif(10, 0, 100),
+    end_x = runif(10, 0, 100),
+    end_y = runif(10, 0, 100),
+    epv = c(0.02, 0.03, 0.04, 0.03, 0.02, 0.01, 0.03, 0.05, 0.04, 0.02),
+    epv_delta = c(0.01, 0.01, -0.07, 0.01, -0.01, 0.02, 0.02, -0.09, 0.01, 0.00),
+    possession_change = c(FALSE, FALSE, TRUE, FALSE, TRUE, FALSE, FALSE, TRUE, FALSE, FALSE),
+    stringsAsFactors = FALSE
+  )
+
+  result <- assign_epv_credit(spadl, xpass_model = NULL)
+
+  # On turnovers with negative delta, credit is split 50/50
+  # Action 3 (team change, delta = -0.07): player_credit = -0.07 * 0.5
+  turnover_rows <- which(spadl$possession_change & spadl$epv_delta < 0)
+  for (i in turnover_rows) {
+    expect_equal(result$player_credit[i], spadl$epv_delta[i] * 0.5,
+                 tolerance = 1e-10,
+                 info = paste("Turnover at row", i, "should split blame 50/50"))
+    expect_equal(result$receiver_credit[i], -spadl$epv_delta[i] * 0.5,
+                 tolerance = 1e-10,
+                 info = paste("Receiver at turnover row", i, "should get positive credit"))
+  }
 })
 
 
@@ -506,6 +653,34 @@ test_that("aggregate_player_epv summarizes by player", {
   expect_s3_class(result, "data.frame")
   expect_true("player_id" %in% names(result) || "player_name" %in% names(result))
   expect_true("epv_as_actor" %in% names(result) || "total_epv" %in% names(result))
+
+  # All numeric columns should be finite (no NaN/Inf)
+  numeric_cols <- names(result)[vapply(result, is.numeric, logical(1))]
+  for (col in numeric_cols) {
+    expect_true(all(is.finite(result[[col]])),
+                info = paste("Column", col, "should have no NaN/Inf values"))
+  }
+
+  # Sum of actor credit across players should equal sum of player_credit in input
+  total_input_credit <- sum(spadl$player_credit, na.rm = TRUE)
+  if ("epv_as_actor" %in% names(result)) {
+    total_actor_credit <- sum(result$epv_as_actor, na.rm = TRUE)
+    expect_equal(total_actor_credit, total_input_credit, tolerance = 1e-10,
+                 info = "Total actor credit should equal sum of input player_credit")
+  }
+
+  # EPV per-90 values should be in a reasonable range for typical match data
+  if ("epv_total_p90" %in% names(result)) {
+    expect_true(all(abs(result$epv_total_p90) < 5),
+                info = "epv_total_p90 should be in a reasonable range (< 5 in magnitude)")
+  }
+
+  # Each player-team combination should appear exactly once
+  if (all(c("player_id", "team_id") %in% names(result))) {
+    combo <- paste(result$player_id, result$team_id, sep = "_")
+    expect_equal(length(unique(combo)), nrow(result),
+                 info = "Each player_id+team_id combo should appear exactly once")
+  }
 })
 
 

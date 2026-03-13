@@ -42,35 +42,43 @@ panna_ratings <- xrapm_results$ratings %>%
     def_prior
   )
 
-# Add base RAPM for comparison (deduplicate by player_name to avoid many-to-many)
+# Validate player_id exists in all datasets (stale caches may lack it)
+if (!"player_id" %in% names(rapm_results$ratings)) {
+  stop("rapm_results$ratings missing 'player_id'. Re-run steps 04-06 to regenerate cache.")
+}
+if (!"player_id" %in% names(spm_results$spm_ratings)) {
+  stop("spm_results$spm_ratings missing 'player_id'. Re-run steps 04-06 to regenerate cache.")
+}
+
+# Add base RAPM for comparison (deduplicate by player_id to avoid many-to-many)
 rapm_before_dedup <- nrow(rapm_results$ratings)
 base_rapm <- rapm_results$ratings %>%
-  group_by(player_name) %>%
+  group_by(player_id) %>%
   slice_max(total_minutes, n = 1, with_ties = FALSE) %>%
   ungroup() %>%
-  select(player_name, base_rapm = rapm, base_offense = offense, base_defense = defense)
+  select(player_id, base_rapm = rapm, base_offense = offense, base_defense = defense)
 rapm_deduped <- rapm_before_dedup - nrow(base_rapm)
 if (rapm_deduped > 0) {
-  cat(sprintf("  Deduplicated %d RAPM entries (keeping max-minutes per player_name)\n", rapm_deduped))
+  cat(sprintf("  Deduplicated %d RAPM entries (keeping max-minutes per player_id)\n", rapm_deduped))
 }
 
 panna_ratings <- panna_ratings %>%
-  left_join(base_rapm, by = "player_name")
+  left_join(base_rapm, by = "player_id")
 
 # Add overall SPM prediction (deduplicate similarly)
 spm_before_dedup <- nrow(spm_results$spm_ratings)
 spm_overall <- spm_results$spm_ratings %>%
-  group_by(player_name) %>%
+  group_by(player_id) %>%
   slice_max(total_minutes, n = 1, with_ties = FALSE) %>%
   ungroup() %>%
-  select(player_name, spm_overall = spm)
+  select(player_id, spm_overall = spm)
 spm_deduped <- spm_before_dedup - nrow(spm_overall)
 if (spm_deduped > 0) {
-  cat(sprintf("  Deduplicated %d SPM entries (keeping max-minutes per player_name)\n", spm_deduped))
+  cat(sprintf("  Deduplicated %d SPM entries (keeping max-minutes per player_id)\n", spm_deduped))
 }
 
 panna_ratings <- panna_ratings %>%
-  left_join(spm_overall, by = "player_name")
+  left_join(spm_overall, by = "player_id")
 
 # Calculate percentiles and ranks
 panna_ratings <- panna_ratings %>%
