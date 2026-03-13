@@ -14,9 +14,11 @@
 #   - UPLOADING data to GitHub releases (pb_upload_parquet)
 #   - Downloading the entire dataset for local development (pb_download_parquet)
 
-# Internal helper: download a file from GitHub Releases via piggyback
-# Returns the path to the downloaded file in a temp directory.
-.pb_download_file <- function(file_name, repo, tag, label = file_name) {
+# Internal helper: download a file from GitHub Releases via piggyback.
+# Returns the path to the downloaded file in tempdir(). Caller is responsible
+# for cleanup (e.g., on.exit(unlink(path), add = TRUE)).
+.pb_download_file <- function(file_name, repo, tag, label = file_name,
+                               show_progress = TRUE) {
   if (!requireNamespace("piggyback", quietly = TRUE)) {
     cli::cli_abort("Package 'piggyback' is required. Install with: install.packages('piggyback')")
   }
@@ -30,7 +32,8 @@
       repo = repo,
       tag = tag,
       dest = temp_dir,
-      overwrite = TRUE
+      overwrite = TRUE,
+      show_progress = show_progress
     )
   }, error = function(e) {
     cli::cli_abort(c(
@@ -88,7 +91,8 @@ pb_download_data <- function(repo = "peteowen1/pannadata",
   if (is.null(dest)) dest <- pannadata_dir()
 
   progress_msg(sprintf("Downloading data from %s (tag: %s)...", repo, tag))
-  zip_file <- .pb_download_file("pannadata.zip", repo, tag)
+  zip_file <- .pb_download_file("pannadata.zip", repo, tag,
+                                 show_progress = show_progress)
   on.exit(unlink(zip_file), add = TRUE)
 
   zip_size <- file.size(zip_file) / (1024 * 1024)
@@ -164,9 +168,10 @@ pb_upload_data <- function(repo = "peteowen1/pannadata",
   if (file.exists(zip_file)) file.remove(zip_file)
 
   # Create zip with directory structure (use withr to avoid process-wide setwd)
-  withr::with_dir(source, {
+  zip_status <- withr::with_dir(source, {
     zip(zip_file, files = "data", extras = "-r")
   })
+  if (zip_status != 0) cli::cli_abort("zip() failed with exit code {zip_status}")
 
   zip_size <- file.size(zip_file) / (1024 * 1024)
   progress_msg(sprintf("Created pannadata.zip (%.1f MB)", zip_size))
@@ -356,30 +361,29 @@ pb_upload_parquet <- function(repo = "peteowen1/pannadata",
 
   if (verbose) message("Zipping parquet files...")
 
-  # Create relative paths for zip
-  old_wd <- getwd()
-  on.exit(setwd(old_wd), add = TRUE)
-  setwd(source)
-
+  # Create relative paths for zip (use withr to avoid process-wide setwd)
   rel_files <- gsub(paste0("^", normalizePath(source, winslash = "/"), "/?"), "",
                     normalizePath(parquet_files, winslash = "/"))
 
   # Use R's zip function (works on all platforms, handles long file lists)
   result <- tryCatch({
-    zip(zip_file, files = rel_files, flags = "-rq")
+    withr::with_dir(source, {
+      zip(zip_file, files = rel_files, flags = "-rq")
+    })
     TRUE
   }, error = function(e) {
-    cli::cli_warn("zip() failed: {conditionMessage(e)}")
+    cli::cli_warn("zip() with -rq failed, retrying without quiet flag: {conditionMessage(e)}")
     FALSE
   }, warning = function(w) {
-    # zip() may warn but still succeed
-    TRUE
+    cli::cli_warn("zip() warning (proceeding): {conditionMessage(w)}")
+    invokeRestart("muffleWarning")
   })
 
   if (!result || !file.exists(zip_file)) {
-    # Fallback: try without -q flag
     tryCatch({
-      zip(zip_file, files = rel_files, flags = "-r")
+      withr::with_dir(source, {
+        zip(zip_file, files = rel_files, flags = "-r")
+      })
     }, error = function(e) {
       cli::cli_abort("Failed to create zip: {conditionMessage(e)}")
     })
@@ -508,7 +512,7 @@ get_source_archive_name <- function(source_type) {
 #'
 #' Returns regex pattern to match parquet files for a source.
 #'
-#' @param source_type One of "fbref", "understat", or "all"
+#' @param source_type One of "fbref", "understat", "opta", or "all"
 #'
 #' @return Character regex pattern
 #' @keywords internal
@@ -529,7 +533,7 @@ get_source_pattern <- function(source_type) {
 #' - "understat": Understat data to understat-latest tag
 #' - "all": All data to latest tag (legacy behavior)
 #'
-#' @param source_type Data source: "fbref", "understat", or "all"
+#' @param source_type Data source: "fbref", "understat", "opta", or "all"
 #' @param repo GitHub repository in "owner/repo" format
 #' @param source Source directory containing data folder (default: pannadata_dir())
 #' @param verbose Print progress messages
@@ -668,7 +672,7 @@ pb_upload_source <- function(source_type = c("fbref", "understat", "opta", "all"
 #'
 #' Downloads parquet files from source-specific GitHub releases.
 #'
-#' @param source_type Data source: "fbref", "understat", or "all"
+#' @param source_type Data source: "fbref", "understat", "opta", or "all"
 #' @param repo GitHub repository in "owner/repo" format
 #' @param dest Destination directory (default: pannadata_dir())
 #' @param verbose Print progress messages

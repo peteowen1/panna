@@ -277,7 +277,7 @@ test_that("create_next_goal_labels generates valid labels", {
   # Labels should be 0 (no goal), 1 (team scores), 2 (opponent scores)
   expect_true(all(result$next_goal_label %in% c(0, 1, 2) | is.na(result$next_goal_label)))
 
-  # All three labels should be present in typical data
+  # At least one label type should be present in generated data
   label_counts <- table(result$next_goal_label)
   expect_true(length(label_counts) >= 1, info = "At least one label should be present")
 })

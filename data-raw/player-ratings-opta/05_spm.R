@@ -80,7 +80,7 @@ if (use_xmetrics_features && !is.null(processed_data$opta_xmetrics)) {
 
   # Fill NAs with 0 for players without xMetrics (no SPADL data = no modeled output)
   xm_cols <- c("xg_per90", "npxg_per90", "xa_per90_xmetrics", "xpass_overperformance_per90_xmetrics")
-  n_imputed <- sum(is.na(player_stats[[xm_cols[1]]]))
+  n_imputed <- sum(rowSums(is.na(player_stats[, xm_cols, drop = FALSE])) > 0)
   for (col in xm_cols) {
     player_stats[[col]][is.na(player_stats[[col]])] <- 0
   }

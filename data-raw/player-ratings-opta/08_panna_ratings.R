@@ -42,6 +42,14 @@ panna_ratings <- xrapm_results$ratings %>%
     def_prior
   )
 
+# Validate player_id exists in all datasets (stale caches may lack it)
+if (!"player_id" %in% names(rapm_results$ratings)) {
+  stop("rapm_results$ratings missing 'player_id'. Re-run steps 04-06 to regenerate cache.")
+}
+if (!"player_id" %in% names(spm_results$spm_ratings)) {
+  stop("spm_results$spm_ratings missing 'player_id'. Re-run steps 04-06 to regenerate cache.")
+}
+
 # Add base RAPM for comparison (deduplicate by player_id to avoid many-to-many)
 rapm_before_dedup <- nrow(rapm_results$ratings)
 base_rapm <- rapm_results$ratings %>%
