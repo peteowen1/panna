@@ -59,7 +59,14 @@ message(sprintf("  Val: %d matches", nrow(val_data)))
 X_train <- as.matrix(train_data[, feature_cols, drop = FALSE])
 X_val <- as.matrix(val_data[, feature_cols, drop = FALSE])
 
-# Replace remaining NAs with 0
+# Replace remaining NAs with 0 (early-season rolling features before enough history)
+n_na_train <- sum(is.na(X_train))
+n_na_val <- sum(is.na(X_val))
+if (n_na_train > 0 || n_na_val > 0) {
+  message(sprintf("  Imputing NAs to 0: train=%d, val=%d (%.1f%% of train cells)",
+                  n_na_train, n_na_val,
+                  100 * n_na_train / length(X_train)))
+}
 X_train[is.na(X_train)] <- 0
 X_val[is.na(X_val)] <- 0
 

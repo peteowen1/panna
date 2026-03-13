@@ -44,11 +44,11 @@ aggregate_lineup_ratings <- function(lineups, ratings, season_end_year,
     if (any(dt_lineups$player_id %in% dt_ratings$player_id, na.rm = TRUE)) {
       use_id_join <- TRUE
     } else {
-      warning(sprintf(
-        "Both lineups and ratings have player_id but 0 IDs overlap (lineups: %d unique, ratings: %d unique). Falling back to name-based join.",
-        length(unique(dt_lineups$player_id)),
-        length(unique(dt_ratings$player_id))
-      ), call. = FALSE)
+      cli::cli_warn(c(
+        "Both lineups and ratings have {.field player_id} but 0 IDs overlap.",
+        "i" = "Lineups: {length(unique(dt_lineups$player_id))} unique, Ratings: {length(unique(dt_ratings$player_id))} unique.",
+        "!" = "Falling back to name-based join."
+      ))
     }
   }
 

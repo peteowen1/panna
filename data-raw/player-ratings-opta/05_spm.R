@@ -78,15 +78,16 @@ if (use_xmetrics_features && !is.null(processed_data$opta_xmetrics)) {
       by = "player_id"
     )
 
-  # Fill NAs with 0 for players without xMetrics
+  # Fill NAs with 0 for players without xMetrics (no SPADL data = no modeled output)
   xm_cols <- c("xg_per90", "npxg_per90", "xa_per90_xmetrics", "xpass_overperformance_per90_xmetrics")
+  n_imputed <- sum(is.na(player_stats[[xm_cols[1]]]))
   for (col in xm_cols) {
     player_stats[[col]][is.na(player_stats[[col]])] <- 0
   }
 
   cat(sprintf("  Added %d xMetrics features\n", ncol(player_stats) - before_cols))
-  cat(sprintf("  Players with xMetrics: %d / %d\n",
-              sum(player_stats$xg_per90 > 0), nrow(player_stats)))
+  cat(sprintf("  Players with xMetrics: %d / %d (%d imputed to 0)\n",
+              nrow(player_stats) - n_imputed, nrow(player_stats), n_imputed))
 }
 
 # 5. Join with RAPM for Training ----

@@ -166,17 +166,13 @@ pb_upload_data <- function(repo = "peteowen1/pannadata",
 
   progress_msg("Zipping data directory...")
 
-  # Zip from within source directory to preserve structure
-
-  old_wd <- getwd()
-  on.exit(setwd(old_wd), add = TRUE)
-  setwd(source)
-
   # Remove old zip if exists
   if (file.exists(zip_file)) file.remove(zip_file)
 
-  # Create zip with directory structure
-  zip(zip_file, files = "data", extras = "-r")
+  # Create zip with directory structure (use withr to avoid process-wide setwd)
+  withr::with_dir(source, {
+    zip(zip_file, files = "data", extras = "-r")
+  })
 
   zip_size <- file.size(zip_file) / (1024 * 1024)
   progress_msg(sprintf("Created pannadata.zip (%.1f MB)", zip_size))
@@ -655,17 +651,14 @@ pb_upload_source <- function(source_type = c("fbref", "understat", "opta", "all"
 
   if (verbose) message("Creating tar.gz archive...")
 
-  # Create relative paths for tar
-  old_wd <- getwd()
-  on.exit(setwd(old_wd), add = TRUE)
-  setwd(source)
-
+  # Create relative paths for tar (use withr to avoid process-wide setwd)
   rel_files <- gsub(paste0("^", normalizePath(source, winslash = "/"), "/?"), "",
                     normalizePath(parquet_files, winslash = "/"))
 
-  # Use R's tar function with gzip compression
   result <- tryCatch({
-    tar(archive_file, files = rel_files, compression = "gzip")
+    withr::with_dir(source, {
+      tar(archive_file, files = rel_files, compression = "gzip")
+    })
     TRUE
   }, error = function(e) {
     cli::cli_warn("tar() failed: {conditionMessage(e)}")

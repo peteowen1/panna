@@ -366,10 +366,7 @@ compute_match_level_opta_stats <- function(opta_stats, min_minutes = 10) {
   } else {
     n_na <- sum(is.na(dt$player_id))
     if (n_na > 0) {
-      warning(sprintf(
-        "compute_match_level_opta_stats: %d/%d rows have NA player_id, using clean_player_name for those rows.",
-        n_na, nrow(dt)
-      ), call. = FALSE)
+      cli::cli_warn("{.fn compute_match_level_opta_stats}: {n_na}/{nrow(dt)} rows have NA {.field player_id}, using {.fn clean_player_name} for those rows.")
       na_mask <- is.na(dt$player_id)
       dt[na_mask, player_id := clean_player_name(player_name)]
     }
@@ -494,10 +491,7 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
   } else {
     n_na <- sum(is.na(opta_stats$player_id))
     if (n_na > 0) {
-      warning(sprintf(
-        "aggregate_opta_stats: %d/%d rows have NA player_id, using clean_player_name for those rows.",
-        n_na, nrow(opta_stats)
-      ), call. = FALSE)
+      cli::cli_warn("{.fn aggregate_opta_stats}: {n_na}/{nrow(opta_stats)} rows have NA {.field player_id}, using {.fn clean_player_name} for those rows.")
       na_mask <- is.na(opta_stats$player_id)
       opta_stats$player_id[na_mask] <- clean_player_name(opta_stats$player_name[na_mask])
     }
