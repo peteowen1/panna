@@ -536,7 +536,6 @@ test_that("calculate_action_epv produces bounded EPV values", {
               info = "Last action per match should have epv_delta = 0")
 })
 
-
 # =============================================================================
 # Tests for EPV credit assignment (epv_model.R)
 # =============================================================================
