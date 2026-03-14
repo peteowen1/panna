@@ -58,6 +58,8 @@ test_that("per_90 calculates correctly", {
   expect_equal(per_90(10, 90), 10)
   expect_equal(per_90(10, 45), 20)
   expect_equal(per_90(0, 90), 0)
+  # Zero minutes returns 0 (not NA) — per_90 feeds into model matrices
+  expect_equal(per_90(10, 0), 0)
 })
 
 test_that("clean_player_name normalizes case and whitespace", {

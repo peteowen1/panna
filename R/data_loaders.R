@@ -216,7 +216,7 @@ get_latest_release <- function(repo = "peteowen1/pannadata", tag = NULL) {
 get_remote_tables <- function() {
   cache_key <- "release_fbref-latest"
   if (!exists(cache_key, envir = .panna_remote_cache)) {
-    release <- get_latest_release()
+    release <- get_latest_release(tag = "fbref-latest")
     assign(cache_key, release, envir = .panna_remote_cache)
   } else {
     release <- get(cache_key, envir = .panna_remote_cache)

@@ -11,7 +11,7 @@ safe_divide(x, y, default = NA_real_)
 
 \item{y}{Denominator}
 
-\item{default}{Value to return when denominator is zero (default: 0)}
+\item{default}{Value to return when denominator is zero (default: NA_real_)}
 }
 \value{
 x / y, with Inf/NaN from division-by-zero replaced by default. Input NAs are preserved.
