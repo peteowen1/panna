@@ -88,6 +88,50 @@ if (use_xmetrics_features && !is.null(processed_data$opta_xmetrics)) {
   cat(sprintf("  Added %d xMetrics features\n", ncol(player_stats) - before_cols))
   cat(sprintf("  Players with xMetrics: %d / %d (%d imputed to 0)\n",
               nrow(player_stats) - n_imputed, nrow(player_stats), n_imputed))
+
+  # Chain features (available if xMetrics pipeline ran with chain enrichment)
+  chain_cols_avail <- c("chains_involved", "chain_actions", "successful_chains",
+                        "chain_goals", "chain_starts", "chain_xg")
+  if (any(chain_cols_avail %in% names(xmetrics))) {
+    cat("\n=== Enriching with Chain Features ===\n")
+
+    chain_agg <- xmetrics %>%
+      filter(minutes > 0) %>%
+      group_by(player_id) %>%
+      summarise(
+        chains_total = sum(chains_involved, na.rm = TRUE),
+        chain_actions_total = sum(chain_actions, na.rm = TRUE),
+        successful_chains_total = sum(successful_chains, na.rm = TRUE),
+        chain_goals_total = sum(chain_goals, na.rm = TRUE),
+        chain_starts_total = sum(chain_starts, na.rm = TRUE),
+        chain_xg_total = sum(chain_xg, na.rm = TRUE),
+        chain_minutes = sum(minutes, na.rm = TRUE),
+        .groups = "drop"
+      ) %>%
+      filter(chain_minutes > 0) %>%
+      mutate(
+        chains_p90 = chains_total / chain_minutes * 90,
+        chain_shot_pct = ifelse(chains_total > 0, successful_chains_total / chains_total, 0),
+        chain_goal_pct = ifelse(chains_total > 0, chain_goals_total / chains_total, 0),
+        chain_starts_p90 = chain_starts_total / chain_minutes * 90,
+        avg_actions_per_chain = ifelse(chains_total > 0, chain_actions_total / chains_total, 0),
+        chain_xg_p90 = chain_xg_total / chain_minutes * 90
+      )
+
+    before_cols2 <- ncol(player_stats)
+    chain_join_cols <- c("player_id", "chains_p90", "chain_shot_pct", "chain_goal_pct",
+                         "chain_starts_p90", "avg_actions_per_chain", "chain_xg_p90")
+    chain_join_cols <- intersect(chain_join_cols, names(chain_agg))
+    player_stats <- player_stats %>%
+      left_join(chain_agg %>% select(all_of(chain_join_cols)), by = "player_id")
+
+    chain_feat_cols <- setdiff(chain_join_cols, "player_id")
+    for (col in chain_feat_cols) {
+      player_stats[[col]][is.na(player_stats[[col]])] <- 0
+    }
+
+    cat(sprintf("  Added %d chain features\n", ncol(player_stats) - before_cols2))
+  }
 }
 
 # 5. Join with RAPM for Training ----
@@ -227,6 +271,14 @@ if ("xg_per90" %in% names(spm_train_data)) {
   offense_cols <- c(offense_cols, "xg_per90", "npxg_per90", "xa_per90_xmetrics")
 }
 
+# Add chain features to offense if available
+chain_offense <- c("chains_p90", "chain_shot_pct", "chain_goal_pct",
+                   "chain_starts_p90", "chain_xg_p90")
+chain_offense <- intersect(chain_offense, names(spm_train_data))
+if (length(chain_offense) > 0) {
+  offense_cols <- c(offense_cols, chain_offense)
+}
+
 # Filter to available columns
 offense_cols <- intersect(offense_cols, names(spm_train_data))
 
@@ -288,6 +340,13 @@ defense_cols <- c(
   # Round 2: long pass own-to-opp
   "long_pass_own_to_opp_p90", "long_pass_own_to_opp_accuracy"
 )
+
+# Add chain features to defense if available (chain starts reflect build-up from back)
+chain_defense <- c("chains_p90", "chain_starts_p90", "avg_actions_per_chain")
+chain_defense <- intersect(chain_defense, names(spm_train_data))
+if (length(chain_defense) > 0) {
+  defense_cols <- c(defense_cols, chain_defense)
+}
 
 defense_cols <- intersect(defense_cols, names(spm_train_data))
 
