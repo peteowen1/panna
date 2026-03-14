@@ -289,3 +289,37 @@ test_that("aggregate_lineup_skills errors with no matching stat columns", {
     "No skill stat columns found"
   )
 })
+
+
+# =============================================================================
+# Edge Case Tests (from code review)
+# =============================================================================
+
+test_that("update_elo rejects vector inputs", {
+  expect_error(
+    update_elo(1500, 1500, home_goals = c(1, 2), away_goals = c(0, 1)),
+    "length"
+  )
+})
+
+test_that("compute_match_elos handles NA team names without corruption", {
+  results <- data.frame(
+    match_id = paste0("m", 1:4),
+    match_date = as.Date("2024-01-01") + c(0, 7, 14, 21),
+    home_team = c("Team A", NA, "Team A", "Team B"),
+    away_team = c("Team B", "Team A", "Team B", "Team A"),
+    home_goals = c(2, 1, 1, 0),
+    away_goals = c(1, 0, 0, 1)
+  )
+
+  elos <- compute_match_elos(results)
+
+  # Row 2 should have NA Elos (NA team)
+  expect_true(is.na(elos$home_elo[2]))
+  expect_true(is.na(elos$away_elo[2]))
+
+  # Rows 1, 3, 4 should have valid Elos (NA row should not corrupt them)
+  expect_false(is.na(elos$home_elo[1]))
+  expect_false(is.na(elos$home_elo[3]))
+  expect_false(is.na(elos$home_elo[4]))
+})

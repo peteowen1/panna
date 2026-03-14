@@ -631,7 +631,7 @@ calculate_splint_npxgd <- function(boundaries, shooting, match_id,
   }), fill = TRUE)
 
   splint_xg$npxgd <- splint_xg$npxg_home - splint_xg$npxg_away
-  splint_xg$npxgd_per_90 <- safe_divide(splint_xg$npxgd * 90, splint_xg$duration)
+  splint_xg$npxgd_per_90 <- safe_divide(splint_xg$npxgd * 90, splint_xg$duration, default = 0)
   splint_xg
 }
 

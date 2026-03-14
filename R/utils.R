@@ -37,7 +37,6 @@ clean_column_names <- function(data) {
   if (is.null(data) || !is.data.frame(data)) {
     return(data)
   }
-  .check_suggests("janitor", "clean_column_names() requires janitor.")
   janitor::clean_names(data)
 }
 
@@ -46,16 +45,16 @@ clean_column_names <- function(data) {
 #'
 #' @param x Numerator
 #' @param y Denominator
-#' @param default Value to return when denominator is zero (default: 0)
+#' @param default Value to return when denominator is zero (default: NA_real_)
 #'
 #' @return x / y, with Inf/NaN from division-by-zero replaced by default. Input NAs are preserved.
 #' @export
 #'
 #' @examples
 #' safe_divide(10, 2)
-#' safe_divide(10, 0)
-#' safe_divide(10, 0, default = NA)
-safe_divide <- function(x, y, default = 0) {
+#' safe_divide(10, 0)          # NA (unknown)
+#' safe_divide(10, 0, default = 0)
+safe_divide <- function(x, y, default = NA_real_) {
   # Preserve genuine NAs from inputs; only replace Inf/NaN from division-by-zero
   input_na <- is.na(x) | is.na(y)
   result <- x / y
@@ -446,7 +445,7 @@ validate_data_completeness <- function(data, required_cols = NULL, warn = TRUE) 
 #' @return Statistic per 90 minutes
 #' @export
 per_90 <- function(stat, minutes) {
-  safe_divide(stat * 90, minutes)
+  safe_divide(stat * 90, minutes, default = 0)
 }
 
 

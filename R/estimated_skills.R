@@ -498,7 +498,9 @@ estimate_player_skills <- function(match_stats, decay_params = NULL,
             m[pos_group == pg] <- gm * pm_lookup[pg]
           }
         }
-        m * prior_strength
+        # Floor at small positive value so prior always provides shrinkage
+        # (prevents zero alpha0 when grand_mean is 0 for position-specific stats)
+        pmax(m * prior_strength, 1e-4)
       }]
       agg[, (sc) := (alpha0 + w_num) / (prior_strength + w_den)]
       skill_results[[sc]] <- agg[, .(player_id, skill = get(sc))]

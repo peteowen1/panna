@@ -4,14 +4,14 @@
 \alias{safe_divide}
 \title{Safe division handling division by zero}
 \usage{
-safe_divide(x, y, default = 0)
+safe_divide(x, y, default = NA_real_)
 }
 \arguments{
 \item{x}{Numerator}
 
 \item{y}{Denominator}
 
-\item{default}{Value to return when denominator is zero (default: 0)}
+\item{default}{Value to return when denominator is zero (default: NA_real_)}
 }
 \value{
 x / y, with Inf/NaN from division-by-zero replaced by default. Input NAs are preserved.
@@ -21,6 +21,6 @@ Safe division handling division by zero
 }
 \examples{
 safe_divide(10, 2)
-safe_divide(10, 0)
-safe_divide(10, 0, default = NA)
+safe_divide(10, 0)          # NA (unknown)
+safe_divide(10, 0, default = 0)
 }
