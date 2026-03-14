@@ -324,3 +324,26 @@ EPV_POSITION_RAMP_X <- 40
 #' @examples
 #' PENALTY_XG
 PENALTY_XG <- 0.76
+
+
+# =============================================================================
+# Chain Analytics Constants
+# =============================================================================
+
+#' Final third x-coordinate threshold
+#'
+#' Actions with start_x greater than this value are considered
+#' to be in the attacking final third (0-100 pitch scale).
+#'
+#' @format Numeric value: 66
+#' @keywords internal
+CHAIN_FINAL_THIRD_X <- 66
+
+#' Progressive chain distance threshold
+#'
+#' Minimum forward x-distance (in 0-100 units) a player must move
+#' the ball within a chain to count as a "progressive" chain contribution.
+#'
+#' @format Numeric value: 25
+#' @keywords internal
+CHAIN_PROGRESSIVE_THRESHOLD <- 25

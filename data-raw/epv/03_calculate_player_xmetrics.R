@@ -144,12 +144,17 @@ for (league in names(league_seasons)) {
       # 4f. Derive xA
       spadl <- derive_xa(spadl)
 
-      # 4g. Aggregate to player level
+      # 4g. Add possession chain data
+      spadl <- create_possession_chains(spadl)
+      chain_outcomes <- classify_chain_outcomes(spadl)
+      spadl <- label_actions_with_outcomes(spadl, chain_outcomes)
+
+      # 4i. Aggregate to player level
       player_metrics <- aggregate_player_xmetrics(spadl, lineups, min_minutes = MIN_MINUTES)
       player_metrics$league <- league
       player_metrics$season <- season
 
-      # 4h. Save as parquet
+      # 4j. Save as parquet
       output_dir <- file.path(opta_data_dir(), "xmetrics", opta_league)
       dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
       output_file <- file.path(output_dir, paste0(season, ".parquet"))

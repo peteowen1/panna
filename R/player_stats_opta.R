@@ -536,6 +536,72 @@ player_opta_xpass <- function(player = NULL,
 }
 
 
+#' Opta Player Possession Chain Statistics
+#'
+#' Aggregate possession chain statistics from xMetrics data. Shows how
+#' players contribute to possession sequences — chain involvement,
+#' chain starts, and chain success rates.
+#'
+#' Requires xMetrics parquet files with chain columns (from pipeline with
+#' chain integration enabled).
+#'
+#' @inheritParams player_opta_xg
+#'
+#' @return Data frame with chain statistics per player.
+#'
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' # Top chain contributors in EPL
+#' player_opta_chains(league = "ENG", season = "2024-2025")
+#'
+#' # Specific player
+#' player_opta_chains("B. Saka", league = "ENG")
+#' }
+player_opta_chains <- function(player = NULL,
+                                league = NULL,
+                                season = NULL,
+                                min_minutes = 450,
+                                by_team = FALSE,
+                                source = c("remote", "local")) {
+  result <- .aggregate_opta_player_stats(
+    player = player, league = league, season = season,
+    min_minutes = min_minutes, by_team = by_team, source = source,
+    col_spec = list(
+      minutes = "minutes",
+      chains_involved = "chains_involved",
+      chain_actions = "chain_actions",
+      successful_chains = "successful_chains",
+      chain_goals = "chain_goals",
+      chain_starts = "chain_starts",
+      chain_xg = "chain_xg"
+    ),
+    derive_fn = function(r) {
+      r$chains_p90 <- round(per_90(r$chains_involved, r$minutes), 1)
+      r$chain_shot_pct <- round(safe_divide(r$successful_chains * 100, r$chains_involved), 1)
+      r$chain_goal_pct <- round(safe_divide(r$chain_goals * 100, r$chains_involved), 1)
+      r$avg_actions_per_chain <- round(safe_divide(r$chain_actions, r$chains_involved), 1)
+      r$chain_starts_p90 <- round(per_90(r$chain_starts, r$minutes), 1)
+      r
+    },
+    col_order = c("player", "team", "minutes",
+                  "chains_involved", "chains_p90", "chain_actions",
+                  "avg_actions_per_chain", "chain_starts", "chain_starts_p90",
+                  "successful_chains", "chain_shot_pct",
+                  "chain_goals", "chain_goal_pct", "chain_xg"),
+    loader = .load_opta_xmetrics_data
+  )
+
+  # Re-sort by chains involved (helper sorts by minutes)
+  if (nrow(result) > 0) {
+    result <- result[order(-result$chains_involved), ]
+    rownames(result) <- NULL
+  }
+  result
+}
+
+
 #' Opta Player Set Piece Statistics
 #'
 #' Aggregate set piece statistics from Opta data. Includes corners,

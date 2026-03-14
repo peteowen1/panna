@@ -278,6 +278,7 @@ utils::globalVariables(c(
   "feature",
   "goal_time",
   "has_shot",
+  "has_goal",
   "is_headed_pass",
   "is_red_card",
   "last_action_result",
@@ -529,5 +530,35 @@ utils::globalVariables(c(
   "decay_attempts",
   "decay_events",
   "decay_exposure",
-  "save_percentage"
+  "save_percentage",
+
+  # Chain aggregation columns (aggregate_player_xmetrics / player_opta_chains)
+  "chains_involved",
+  "chain_actions",
+  "successful_chains",
+  "chain_goals",
+  "chain_starts",
+  "chain_shot_pct",
+  "chain_goal_pct",
+  "avg_actions_per_chain",
+  "chains_p90",
+  "chain_starts_p90",
+  "chain_key",
+  "is_goal_chain",
+
+  # Chain summary columns (summarize_match_chains / summarize_player_chains)
+  "total_chains",
+  "chains_with_shot",
+  "chains_with_goal",
+  "avg_chain_length",
+  "avg_chain_duration",
+  "territory_pct",
+  "possession_pct",
+  "match_total",
+  "max_x",
+  "is_first",
+  "is_last",
+  "in_successful_chain",
+  "progressive_chains",
+  "key_chain_actions"
 ))

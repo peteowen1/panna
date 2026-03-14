@@ -755,6 +755,31 @@ aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0) {
     }
   }
 
+  # --- Chain stats (optional, only if chain_id exists in SPADL) ---
+  if ("chain_id" %in% names(dt)) {
+    chain_dt <- dt[, .(
+      chains_involved = data.table::uniqueN(paste(match_id, chain_id)),
+      chain_actions = .N,
+      successful_chains = data.table::uniqueN(paste(match_id, chain_id)[
+        chain_outcome %in% c("shot", "goal")]),
+      chain_goals = data.table::uniqueN(paste(match_id, chain_id)[
+        chain_outcome == "goal"]),
+      chain_starts = sum(action_in_chain == 1L, na.rm = TRUE),
+      chain_xg = sum(xg[action_type == "shot"], na.rm = TRUE)
+    ), by = .(player_id, team_id)]
+
+    result <- chain_dt[result, on = c("player_id", "team_id")]
+
+    # Fill NAs with 0 for players with no chain data
+    chain_cols <- c("chains_involved", "chain_actions", "successful_chains",
+                    "chain_goals", "chain_starts", "chain_xg")
+    for (col in chain_cols) {
+      if (col %in% names(result)) {
+        data.table::set(result, which(is.na(result[[col]])), col, 0)
+      }
+    }
+  }
+
   # --- Derived stats ---
   result[, `:=`(
     goals_minus_xg = goals - xg,
@@ -762,6 +787,24 @@ aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0) {
     xa_per90 = round(xa / minutes * 90, 2),
     xpass_overperformance_per90 = round(xpass_overperformance / minutes * 90, 2)
   )]
+
+  # Chain derived stats (only if chain data present)
+  if ("chains_involved" %in% names(result)) {
+    result[, `:=`(
+      chain_shot_pct = round(successful_chains / chains_involved * 100, 1),
+      chain_goal_pct = round(chain_goals / chains_involved * 100, 1),
+      avg_actions_per_chain = round(chain_actions / chains_involved, 1),
+      chains_p90 = round(chains_involved / minutes * 90, 1)
+    )]
+    # Handle NaN/Inf from 0-chain players
+    chain_derived <- c("chain_shot_pct", "chain_goal_pct",
+                       "avg_actions_per_chain", "chains_p90")
+    for (col in chain_derived) {
+      data.table::set(result,
+                      which(is.infinite(result[[col]]) | is.nan(result[[col]])),
+                      col, 0)
+    }
+  }
 
   # Handle Inf/NaN from 0-minute players
   inf_cols <- c("xg_per90", "xa_per90", "xpass_overperformance_per90")
