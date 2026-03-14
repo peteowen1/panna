@@ -60,7 +60,7 @@ calculate_per_100_sequences <- function(player_stats, team_sequences, stat_cols 
   for (col in stat_cols) {
     if (col %in% names(data)) {
       new_col <- paste0(col, "_p100")
-      data[[new_col]] <- safe_divide(data[[col]] * 100, data$estimated_sequences)
+      data[[new_col]] <- safe_divide(data[[col]] * 100, data$estimated_sequences, default = 0)
     }
   }
 

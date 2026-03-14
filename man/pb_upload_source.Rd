@@ -12,7 +12,7 @@ pb_upload_source(
 )
 }
 \arguments{
-\item{source_type}{Data source: "fbref", "understat", or "all"}
+\item{source_type}{Data source: "fbref", "understat", "opta", or "all"}
 
 \item{repo}{GitHub repository in "owner/repo" format}
 

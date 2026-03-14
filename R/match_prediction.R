@@ -321,6 +321,8 @@ init_team_elos <- function(teams, initial_elo = 1500) {
 #' @export
 update_elo <- function(home_elo, away_elo, home_goals, away_goals,
                         k = 20, home_advantage = 65) {
+  stopifnot(length(home_goals) == 1, length(away_goals) == 1)
+
   # Expected scores
   diff <- (home_elo + home_advantage - away_elo) / 400
   exp_home <- 1 / (1 + 10^(-diff))
@@ -367,6 +369,7 @@ compute_match_elos <- function(results, k = 20, home_advantage = 65,
   results <- results[order(results$match_date), ]
 
   all_teams <- unique(c(results$home_team, results$away_team))
+  all_teams <- all_teams[!is.na(all_teams)]
   elos <- init_team_elos(all_teams, initial_elo)
 
   n <- nrow(results)
@@ -376,6 +379,13 @@ compute_match_elos <- function(results, k = 20, home_advantage = 65,
   for (i in seq_len(n)) {
     ht <- results$home_team[i]
     at <- results$away_team[i]
+
+    # Skip rows with missing team names to prevent NA propagation
+    if (is.na(ht) || is.na(at)) {
+      home_elo_pre[i] <- NA_real_
+      away_elo_pre[i] <- NA_real_
+      next
+    }
 
     # Record pre-match Elo
     home_elo_pre[i] <- elos[ht]

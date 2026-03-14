@@ -4,7 +4,7 @@
 \alias{safe_divide}
 \title{Safe division handling division by zero}
 \usage{
-safe_divide(x, y, default = 0)
+safe_divide(x, y, default = NA_real_)
 }
 \arguments{
 \item{x}{Numerator}
@@ -21,6 +21,6 @@ Safe division handling division by zero
 }
 \examples{
 safe_divide(10, 2)
-safe_divide(10, 0)
-safe_divide(10, 0, default = NA)
+safe_divide(10, 0)          # NA (unknown)
+safe_divide(10, 0, default = 0)
 }

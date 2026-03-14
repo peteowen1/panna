@@ -214,11 +214,12 @@ get_latest_release <- function(repo = "peteowen1/pannadata", tag = NULL) {
 #' print(tables)
 #' }
 get_remote_tables <- function() {
-  if (!exists("release_info", envir = .panna_remote_cache)) {
+  cache_key <- "release_fbref-latest"
+  if (!exists(cache_key, envir = .panna_remote_cache)) {
     release <- get_latest_release()
-    assign("release_info", release, envir = .panna_remote_cache)
+    assign(cache_key, release, envir = .panna_remote_cache)
   } else {
-    release <- get("release_info", envir = .panna_remote_cache)
+    release <- get(cache_key, envir = .panna_remote_cache)
   }
 
   assets <- sapply(release$assets, function(a) a$name)

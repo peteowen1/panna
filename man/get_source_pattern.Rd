@@ -7,7 +7,7 @@
 get_source_pattern(source_type)
 }
 \arguments{
-\item{source_type}{One of "fbref", "understat", or "all"}
+\item{source_type}{One of "fbref", "understat", "opta", or "all"}
 }
 \value{
 Character regex pattern

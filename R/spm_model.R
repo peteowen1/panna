@@ -303,34 +303,34 @@
     }
   }
 
-  # Shooting efficiency
-  player_stats$shot_accuracy <- safe_divide(safe_col("shots_on_target"), safe_col("shots"))
-  player_stats$goals_per_shot <- safe_divide(safe_col("goals"), safe_col("shots"))
-  player_stats$xg_per_shot <- safe_divide(safe_col("xg"), safe_col("shots"))
+  # Shooting efficiency (default = 0 for SPM feature matrix — NAs crash XGBoost)
+  player_stats$shot_accuracy <- safe_divide(safe_col("shots_on_target"), safe_col("shots"), default = 0)
+  player_stats$goals_per_shot <- safe_divide(safe_col("goals"), safe_col("shots"), default = 0)
+  player_stats$xg_per_shot <- safe_divide(safe_col("xg"), safe_col("shots"), default = 0)
   player_stats$goals_minus_xg <- player_stats$goals_p90 - player_stats$xg_p90
   player_stats$npxg_plus_xa_p90 <- player_stats$npxg_p90 + player_stats$xa_p90
 
   # Passing efficiency
-  player_stats$pass_completion <- safe_divide(safe_col("passes_completed"), safe_col("passes_attempted"))
-  player_stats$pass_short_success <- safe_divide(safe_col("pass_short_cmp"), safe_col("pass_short_att"))
-  player_stats$pass_med_success <- safe_divide(safe_col("pass_med_cmp"), safe_col("pass_med_att"))
-  player_stats$pass_long_success <- safe_divide(safe_col("pass_long_cmp"), safe_col("pass_long_att"))
-  player_stats$long_pass_ratio <- safe_divide(safe_col("pass_long_att"), safe_col("pass_att"))
+  player_stats$pass_completion <- safe_divide(safe_col("passes_completed"), safe_col("passes_attempted"), default = 0)
+  player_stats$pass_short_success <- safe_divide(safe_col("pass_short_cmp"), safe_col("pass_short_att"), default = 0)
+  player_stats$pass_med_success <- safe_divide(safe_col("pass_med_cmp"), safe_col("pass_med_att"), default = 0)
+  player_stats$pass_long_success <- safe_divide(safe_col("pass_long_cmp"), safe_col("pass_long_att"), default = 0)
+  player_stats$long_pass_ratio <- safe_divide(safe_col("pass_long_att"), safe_col("pass_att"), default = 0)
 
   # Take-on success
-  player_stats$take_on_success <- safe_divide(safe_col("take_ons_succ"), safe_col("take_ons_att"))
+  player_stats$take_on_success <- safe_divide(safe_col("take_ons_succ"), safe_col("take_ons_att"), default = 0)
 
   # Tackle success
-  player_stats$tackle_success <- safe_divide(safe_col("tackles_won"), safe_col("tackles"))
-  player_stats$challenge_success <- safe_divide(safe_col("challenges_tkl"), safe_col("challenges_att"))
+  player_stats$tackle_success <- safe_divide(safe_col("tackles_won"), safe_col("tackles"), default = 0)
+  player_stats$challenge_success <- safe_divide(safe_col("challenges_tkl"), safe_col("challenges_att"), default = 0)
 
   # Touch location ratios (indicates where player operates on pitch)
   total_touches <- safe_col("touches_poss")
   total_touches <- ifelse(total_touches == 0, safe_col("touches"), total_touches)
-  player_stats$touch_def_3rd_pct <- safe_divide(safe_col("touches_def_3rd"), total_touches)
-  player_stats$touch_mid_3rd_pct <- safe_divide(safe_col("touches_mid_3rd"), total_touches)
-  player_stats$touch_att_3rd_pct <- safe_divide(safe_col("touches_att_3rd"), total_touches)
-  player_stats$touch_att_pen_pct <- safe_divide(safe_col("touches_att_pen"), total_touches)
+  player_stats$touch_def_3rd_pct <- safe_divide(safe_col("touches_def_3rd"), total_touches, default = 0)
+  player_stats$touch_mid_3rd_pct <- safe_divide(safe_col("touches_mid_3rd"), total_touches, default = 0)
+  player_stats$touch_att_3rd_pct <- safe_divide(safe_col("touches_att_3rd"), total_touches, default = 0)
+  player_stats$touch_att_pen_pct <- safe_divide(safe_col("touches_att_pen"), total_touches, default = 0)
 
   # Ball retention
   turnovers <- safe_col("miscontrols") + safe_col("dispossessed")
@@ -341,18 +341,18 @@
 
   # Progressive actions per touch
   prg_actions <- safe_col("progressive_carries") + safe_col("progressive_passes")
-  player_stats$prg_actions_per_touch <- safe_divide(prg_actions, total_touches)
+  player_stats$prg_actions_per_touch <- safe_divide(prg_actions, total_touches, default = 0)
 
   # Aerial duel success
   total_aerials <- safe_col("aerials_won") + safe_col("aerials_lost")
-  player_stats$aerial_success <- safe_divide(safe_col("aerials_won"), total_aerials)
+  player_stats$aerial_success <- safe_divide(safe_col("aerials_won"), total_aerials, default = 0)
   player_stats$aerials_total_p90 <- total_aerials / mins_per_90
 
   # Foul differential (fouls drawn - committed, higher = better)
   player_stats$foul_differential_p90 <- player_stats$fouls_drawn_p90 - player_stats$fouls_committed_p90
 
   # Goalkeeper metrics
-  player_stats$gk_save_pct <- safe_divide(safe_col("saves"), safe_col("shots_on_target_against"))
+  player_stats$gk_save_pct <- safe_divide(safe_col("saves"), safe_col("shots_on_target_against"), default = 0)
   player_stats$gk_goals_prevented <- safe_col("psxg") - safe_col("goals_against")
   player_stats$gk_goals_prevented_p90 <- player_stats$gk_goals_prevented / mins_per_90
 

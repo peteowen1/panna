@@ -295,3 +295,33 @@ test_that("player_skill_profile works with pre-computed skills from parquet form
   expect_false("is_gk" %in% profile$stat)
   expect_false("total_minutes" %in% profile$stat)
 })
+
+
+# =============================================================================
+# Edge Case Tests (from code review)
+# =============================================================================
+
+test_that("estimate_player_skills handles zero grand_mean stats with shrinkage", {
+  # Stat where global mean is 0 (e.g., saves_p90 in outfield-only data)
+  ms <- data.frame(
+    player_id = c(1, 1, 2),
+    player_name = c("A", "A", "B"),
+    match_id = c("m1", "m2", "m3"),
+    match_date = as.Date("2024-01-01") + c(0, 7, 14),
+    total_minutes = c(90, 90, 10),  # B has very few minutes
+    position = c("Midfielder", "Midfielder", "Midfielder"),
+    zero_stat_p90 = c(0, 0, 5)  # all zero except one match for B
+  )
+
+  result <- estimate_player_skills(ms,
+    stat_cols = "zero_stat_p90",
+    decay_params = get_default_decay_params()
+  )
+
+  # Player B had 5.0 in one 10-min match — with proper shrinkage toward 0,
+  # the estimate should be pulled down substantially (not stay at 5.0)
+  b_skill <- result[result$player_id == 2, ]$zero_stat_p90
+  expect_true(b_skill < 5.0)
+  # Should still be finite (no NaN from 0/0)
+  expect_true(is.finite(b_skill))
+})
