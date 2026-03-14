@@ -250,6 +250,134 @@ label_actions_with_outcomes <- function(spadl_with_chains, chain_outcomes) {
 }
 
 
+#' Summarize Match-Level Possession Chains
+#'
+#' Aggregates possession chain data at the match-team level, providing
+#' chain counts, success rates, territory metrics, and duration stats.
+#'
+#' @param spadl_with_chains SPADL actions with chain_id and chain outcome columns
+#'   (from \code{create_possession_chains()} + \code{label_actions_with_outcomes()}).
+#'
+#' @return Data frame with one row per team per match containing:
+#'   \itemize{
+#'     \item \code{match_id}, \code{team_id}: Identifiers
+#'     \item \code{total_chains}: Number of possession chains
+#'     \item \code{chains_with_shot}, \code{chains_with_goal}: Chain outcomes
+#'     \item \code{avg_chain_length}: Mean actions per chain
+#'     \item \code{avg_chain_duration}: Mean chain duration (seconds)
+#'     \item \code{territory_pct}: Percentage of chains reaching final third (x > 66)
+#'     \item \code{chain_xg}: Sum of xG across all chains (if available)
+#'     \item \code{possession_pct}: Team's share of total chains in the match
+#'   }
+#'
+#' @export
+#' @examples
+#' \dontrun{
+#' spadl <- convert_opta_to_spadl(events)
+#' spadl <- create_possession_chains(spadl)
+#' outcomes <- classify_chain_outcomes(spadl)
+#' spadl <- label_actions_with_outcomes(spadl, outcomes)
+#' match_chains <- summarize_match_chains(spadl)
+#' }
+summarize_match_chains <- function(spadl_with_chains) {
+  if (!"chain_id" %in% names(spadl_with_chains)) {
+    cli::cli_abort("Input must have chain_id column. Run create_possession_chains() first.")
+  }
+
+  dt <- data.table::as.data.table(spadl_with_chains)
+
+  # Per-chain summary first
+  chain_level <- dt[, .(
+    team_id = team_id[1],
+    n_actions = .N,
+    duration = time_seconds[.N] - time_seconds[1],
+    has_shot = any(action_type == "shot"),
+    has_goal = any(action_type == "shot" & result == "success"),
+    max_x = max(start_x, na.rm = TRUE),
+    chain_xg = sum(xg[action_type == "shot"], na.rm = TRUE)
+  ), by = .(match_id, chain_id)]
+
+  # Aggregate to match-team level
+  result <- chain_level[, .(
+    total_chains = .N,
+    chains_with_shot = sum(has_shot),
+    chains_with_goal = sum(has_goal),
+    avg_chain_length = round(mean(n_actions), 1),
+    avg_chain_duration = round(mean(duration), 1),
+    territory_pct = round(sum(max_x > CHAIN_FINAL_THIRD_X) / .N * 100, 1),
+    chain_xg = round(sum(chain_xg), 2)
+  ), by = .(match_id, team_id)]
+
+  # Add possession percentage (team chains / total chains in match)
+  match_totals <- result[, .(match_total = sum(total_chains)), by = match_id]
+  result <- match_totals[result, on = "match_id"]
+  result[, possession_pct := round(total_chains / match_total * 100, 1)]
+  result[, match_total := NULL]
+
+  data.table::setorder(result, match_id, -total_chains)
+
+  as.data.frame(result)
+}
+
+
+#' Summarize Player-Level Possession Chains
+#'
+#' Aggregates how each player contributes to possession chains within a match.
+#' Tracks chain involvement, starts, finishes, and progressive contributions.
+#'
+#' @param spadl_with_chains SPADL actions with chain_id and chain outcome columns
+#'   (from \code{create_possession_chains()} + \code{label_actions_with_outcomes()}).
+#'
+#' @return Data frame with one row per player per match containing:
+#'   \itemize{
+#'     \item \code{match_id}, \code{player_id}, \code{player_name}, \code{team_id}
+#'     \item \code{chains_involved}: Unique chains the player participated in
+#'     \item \code{chain_starts}: Chains where player had the first action
+#'     \item \code{chain_finishes}: Chains where player had the last action before outcome
+#'     \item \code{progressive_chains}: Chains where player advanced ball >25 units forward
+#'     \item \code{key_chain_actions}: Actions in chains ending in shot/goal
+#'   }
+#'
+#' @export
+#' @examples
+#' \dontrun{
+#' spadl <- convert_opta_to_spadl(events)
+#' spadl <- create_possession_chains(spadl)
+#' outcomes <- classify_chain_outcomes(spadl)
+#' spadl <- label_actions_with_outcomes(spadl, outcomes)
+#' player_chains <- summarize_player_chains(spadl)
+#' }
+summarize_player_chains <- function(spadl_with_chains) {
+  if (!"chain_id" %in% names(spadl_with_chains)) {
+    cli::cli_abort("Input must have chain_id column. Run create_possession_chains() first.")
+  }
+
+  dt <- data.table::as.data.table(spadl_with_chains)
+
+  # Per player-chain: track contribution metrics
+  player_chain <- dt[, .(
+    is_first = any(action_in_chain == 1L),
+    is_last = any(action_in_chain == max(action_in_chain)),
+    x_progression = max(start_x, na.rm = TRUE) - min(start_x, na.rm = TRUE),
+    in_successful_chain = any(chain_outcome %in% c("shot", "goal"), na.rm = TRUE),
+    n_actions = .N
+  ), by = .(match_id, chain_id, player_id, player_name, team_id)]
+
+  # Aggregate to player-match level
+  result <- player_chain[, .(
+    chains_involved = .N,
+    chain_starts = sum(is_first),
+    chain_finishes = sum(is_last),
+    progressive_chains = sum(x_progression > CHAIN_PROGRESSIVE_THRESHOLD),
+    key_chain_actions = sum(n_actions[in_successful_chain])
+  ), by = .(match_id, player_id, player_name, team_id)]
+
+  data.table::setorder(result, match_id, -chains_involved)
+
+  as.data.frame(result)
+}
+
+
 #' Calculate Chain Statistics
 #'
 #' Computes summary statistics about possession chains in the dataset.
