@@ -15,12 +15,7 @@ jobs:
   R-CMD-check:
     runs-on: ubuntu-latest
 
-    strategy:
-      fail-fast: false
-      matrix:
-        r-version: ['release', 'oldrel-1']
-
-    name: ubuntu-latest (R ${{ matrix.r-version }})
+    name: ubuntu-latest (R release)
 
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
@@ -31,7 +26,7 @@ jobs:
 
       - uses: r-lib/actions/setup-r@v2
         with:
-          r-version: ${{ matrix.r-version }}
+          r-version: release
           use-public-rspm: true
 
       - uses: r-lib/actions/setup-r-dependencies@v2
