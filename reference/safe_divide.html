@@ -44,7 +44,7 @@
 
     <div class="section level2">
     <h2 id="ref-usage">Usage<a class="anchor" aria-label="anchor" href="#ref-usage"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">safe_divide</span><span class="op">(</span><span class="va">x</span>, <span class="va">y</span>, default <span class="op">=</span> <span class="fl">0</span><span class="op">)</span></span></code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">safe_divide</span><span class="op">(</span><span class="va">x</span>, <span class="va">y</span>, default <span class="op">=</span> <span class="cn">NA_real_</span><span class="op">)</span></span></code></pre></div>
     </div>
 
     <div class="section level2">
@@ -60,7 +60,7 @@
 
 
 <dt id="arg-default">default<a class="anchor" aria-label="anchor" href="#arg-default"></a></dt>
-<dd><p>Value to return when denominator is zero (default: 0)</p></dd>
+<dd><p>Value to return when denominator is zero (default: NA_real_)</p></dd>
 
 </dl></div>
     <div class="section level2">
@@ -72,10 +72,10 @@
     <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
     <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="fu">safe_divide</span><span class="op">(</span><span class="fl">10</span>, <span class="fl">2</span><span class="op">)</span></span></span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> [1] 5</span>
-<span class="r-in"><span><span class="fu">safe_divide</span><span class="op">(</span><span class="fl">10</span>, <span class="fl">0</span><span class="op">)</span></span></span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> [1] 0</span>
-<span class="r-in"><span><span class="fu">safe_divide</span><span class="op">(</span><span class="fl">10</span>, <span class="fl">0</span>, default <span class="op">=</span> <span class="cn">NA</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="fu">safe_divide</span><span class="op">(</span><span class="fl">10</span>, <span class="fl">0</span><span class="op">)</span>          <span class="co"># NA (unknown)</span></span></span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> [1] NA</span>
+<span class="r-in"><span><span class="fu">safe_divide</span><span class="op">(</span><span class="fl">10</span>, <span class="fl">0</span>, default <span class="op">=</span> <span class="fl">0</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> [1] 0</span>
 </code></pre></div>
     </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

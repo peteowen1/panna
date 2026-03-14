@@ -12,7 +12,7 @@ get_source_pattern(source_type)
 
 - source_type:
 
-  One of "fbref", "understat", or "all"
+  One of "fbref", "understat", "opta", or "all"
 
 ## Value
 

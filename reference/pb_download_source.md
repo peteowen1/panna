@@ -17,7 +17,7 @@ pb_download_source(
 
 - source_type:
 
-  Data source: "fbref", "understat", or "all"
+  Data source: "fbref", "understat", "opta", or "all"
 
 - repo:
 
