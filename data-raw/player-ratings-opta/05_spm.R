@@ -96,7 +96,7 @@ if (use_xmetrics_features && !is.null(processed_data$opta_xmetrics)) {
     cat("\n=== Enriching with Chain Features ===\n")
 
     chain_agg <- xmetrics %>%
-      filter(xmetrics_minutes > 0) %>%
+      filter(minutes > 0) %>%
       group_by(player_id) %>%
       summarise(
         chains_total = sum(chains_involved, na.rm = TRUE),
