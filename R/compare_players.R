@@ -43,10 +43,21 @@ compare_players <- function(players,
     return(data.frame())
   }
 
-  # Filter to requested players
+
+  # Filter to requested players using word-boundary matching
+  # "Saka" matches "B. Saka" but NOT "Wan-Bissaka"
   player_mask <- rep(FALSE, nrow(xm_data))
+  lower_names <- tolower(xm_data$player_name)
   for (p in players) {
-    player_mask <- player_mask | grepl(tolower(p), tolower(xm_data$player_name), fixed = TRUE)
+    # Try exact surname/name match with word boundaries first
+    pattern <- paste0("\\b", tolower(p), "\\b")
+    boundary_match <- grepl(pattern, lower_names, perl = TRUE)
+    if (any(boundary_match)) {
+      player_mask <- player_mask | boundary_match
+    } else {
+      # Fallback to substring for partial names (e.g., accented characters)
+      player_mask <- player_mask | grepl(tolower(p), lower_names, fixed = TRUE)
+    }
   }
   xm_data <- xm_data[player_mask, ]
 
