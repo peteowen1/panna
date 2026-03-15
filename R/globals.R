@@ -560,5 +560,8 @@ utils::globalVariables(c(
   "is_last",
   "in_successful_chain",
   "progressive_chains",
-  "key_chain_actions"
+  "key_chain_actions",
+
+  # compare_players columns
+  "chain_xg"
 ))

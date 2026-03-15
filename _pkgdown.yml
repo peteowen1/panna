@@ -76,6 +76,8 @@ reference:
   - player_opta_setpiece
   - player_opta_xg
   - player_opta_xpass
+  - player_opta_chains
+  - compare_players
   - player_understat_summary
   - player_fbref_summary
   - player_fbref_passing
@@ -130,11 +132,20 @@ reference:
   - get_top_defensive
   - visualize_od_scatter
 
+- title: Possession Chain Analytics
+  desc: Possession chain analysis and pitch visualization
+  contents:
+  - create_possession_chains
+  - summarize_match_chains
+  - summarize_player_chains
+  - draw_pitch
+  - plot_chain
+  - plot_match_chains
+
 - title: EPV (Expected Possession Value)
   desc: Action-level player valuation from Opta event data
   contents:
   - convert_opta_to_spadl
-  - create_possession_chains
   - fit_epv_model
   - calculate_action_epv
   - assign_epv_credit
@@ -285,6 +296,8 @@ reference:
   desc: Package-wide constants and thresholds
   contents:
   - BETA_PRIOR_ALPHA
+  - CHAIN_FINAL_THIRD_X
+  - CHAIN_PROGRESSIVE_THRESHOLD
   - CHAIN_TIME_GAP_SECONDS
   - CONFIDENCE_LEVEL
   - HALFTIME_MINUTE

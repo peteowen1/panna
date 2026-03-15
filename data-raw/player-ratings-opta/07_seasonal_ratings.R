@@ -164,9 +164,54 @@ fit_season_ratings_opta <- function(splint_data, opta_stats, season,
     }
   }
 
-  # Ensure xMetrics columns exist (even if no xMetrics data) for SPM model compatibility
+  # Enrich with chain features if available in xMetrics
+  if (!is.null(opta_xmetrics) && nrow(opta_xmetrics) > 0) {
+    chain_cols_avail <- c("chains_involved", "chain_actions", "successful_chains",
+                          "chain_goals", "chain_starts", "chain_xg")
+    if (any(chain_cols_avail %in% names(season_xm %||% opta_xmetrics))) {
+      xm_source <- if (exists("season_xm") && nrow(season_xm) > 0) season_xm else NULL
+      if (!is.null(xm_source) && any(chain_cols_avail %in% names(xm_source))) {
+        chain_agg <- xm_source %>%
+          filter(minutes > 0) %>%
+          group_by(player_id) %>%
+          summarise(
+            chains_total = sum(chains_involved, na.rm = TRUE),
+            chain_actions_total = sum(chain_actions, na.rm = TRUE),
+            successful_chains_total = sum(successful_chains, na.rm = TRUE),
+            chain_goals_total = sum(chain_goals, na.rm = TRUE),
+            chain_starts_total = sum(chain_starts, na.rm = TRUE),
+            chain_xg_total = sum(chain_xg, na.rm = TRUE),
+            chain_minutes = sum(minutes, na.rm = TRUE),
+            .groups = "drop"
+          ) %>%
+          filter(chain_minutes > 0) %>%
+          mutate(
+            chains_p90 = chains_total / chain_minutes * 90,
+            chain_shot_pct = ifelse(chains_total > 0, successful_chains_total / chains_total, 0),
+            chain_goal_pct = ifelse(chains_total > 0, chain_goals_total / chains_total, 0),
+            chain_starts_p90 = chain_starts_total / chain_minutes * 90,
+            avg_actions_per_chain = ifelse(chains_total > 0, chain_actions_total / chains_total, 0),
+            chain_xg_p90 = chain_xg_total / chain_minutes * 90
+          )
+
+        chain_join_cols <- c("player_id", "chains_p90", "chain_shot_pct", "chain_goal_pct",
+                             "chain_starts_p90", "avg_actions_per_chain", "chain_xg_p90")
+        chain_join_cols <- intersect(chain_join_cols, names(chain_agg))
+        season_player_stats <- season_player_stats %>%
+          left_join(chain_agg %>% select(all_of(chain_join_cols)), by = "player_id")
+
+        for (col in setdiff(chain_join_cols, "player_id")) {
+          season_player_stats[[col]][is.na(season_player_stats[[col]])] <- 0
+        }
+      }
+    }
+  }
+
+  # Ensure xMetrics and chain columns exist (even if no data) for SPM model compatibility
   xm_cols <- c("xg_per90", "npxg_per90", "xa_per90_xmetrics", "xpass_overperformance_per90_xmetrics")
-  for (col in xm_cols) {
+  chain_feat_cols <- c("chains_p90", "chain_shot_pct", "chain_goal_pct",
+                       "chain_starts_p90", "avg_actions_per_chain", "chain_xg_p90")
+  for (col in c(xm_cols, chain_feat_cols)) {
     if (!col %in% names(season_player_stats)) {
       season_player_stats[[col]] <- 0
     }
@@ -333,20 +378,25 @@ for (s in sort(unique(seasonal_xrapm$season_end_year))) {
 # Player consistency
 cat("\n=== Player Consistency Across Seasons (xRAPM) ===\n")
 
-player_season_counts <- seasonal_xrapm %>%
-  group_by(player_name) %>%
-  summarise(
-    n_seasons = n(),
-    seasons = paste(season_end_year, collapse = ", "),
-    mean_xrapm = mean(xrapm),
-    sd_xrapm = sd(xrapm),
-    total_minutes = sum(total_minutes),
-    .groups = "drop"
-  ) %>%
-  arrange(desc(n_seasons), desc(mean_xrapm))
+if (nrow(seasonal_xrapm) > 0) {
+  player_season_counts <- seasonal_xrapm %>%
+    group_by(player_name) %>%
+    summarise(
+      n_seasons = n(),
+      seasons = paste(season_end_year, collapse = ", "),
+      mean_xrapm = mean(xrapm),
+      sd_xrapm = sd(xrapm),
+      total_minutes = sum(total_minutes),
+      .groups = "drop"
+    ) %>%
+    arrange(desc(n_seasons), desc(mean_xrapm))
 
-cat("\nPlayers with most seasons:\n")
-print(head(player_season_counts, 20))
+  cat("\nPlayers with most seasons:\n")
+  print(head(player_season_counts, 20))
+} else {
+  player_season_counts <- data.frame()
+  cat("No seasonal xRAPM data available\n")
+}
 
 # 7. Save Results ----
 
