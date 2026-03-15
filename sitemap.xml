@@ -15,6 +15,8 @@
 <url><loc>https://peteowen1.github.io/panna/index.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/news/index.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/BETA_PRIOR_ALPHA.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/CHAIN_FINAL_THIRD_X.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/CHAIN_PROGRESSIVE_THRESHOLD.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/CHAIN_TIME_GAP_SECONDS.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/CONFIDENCE_LEVEL.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/DEFAULT_LEAGUE_STARTS.html</loc></url>
@@ -106,6 +108,7 @@
 <url><loc>https://peteowen1.github.io/panna/reference/clear_remote_opta_cache.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/combine_team_tables.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/compare_panna_rapm_spm.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/compare_players.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/compare_spm_features.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/compute_match_elos.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/compute_match_level_opta_stats.html</loc></url>
@@ -171,6 +174,7 @@
 <url><loc>https://peteowen1.github.io/panna/reference/dot-simplify_position.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/download_opta_catalog.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/download_opta_release_file.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/draw_pitch.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/ensure_column.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/estimate_player_skills.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/estimate_player_skills_at_date.html</loc></url>
@@ -350,6 +354,7 @@
 <url><loc>https://peteowen1.github.io/panna/reference/player_fbref_keeper.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/player_fbref_passing.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/player_fbref_summary.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/player_opta_chains.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/player_opta_defense.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/player_opta_keeper.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/player_opta_passing.html</loc></url>
@@ -362,6 +367,8 @@
 <url><loc>https://peteowen1.github.io/panna/reference/player_profile.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/player_skill_profile.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/player_understat_summary.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/plot_chain.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/plot_match_chains.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/predict_epv_probs.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/predict_match.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/predict_xg.html</loc></url>
@@ -417,6 +424,8 @@
 <url><loc>https://peteowen1.github.io/panna/reference/standardize_player_names.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/standardize_team_names.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/suggest_opta_seasons.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/summarize_match_chains.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/summarize_player_chains.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/to_opta_league.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/understat_competitions.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/understat_league_to_code.html</loc></url>

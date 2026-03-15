@@ -81,6 +81,10 @@ Aggregated player statistics by source
   : Opta Player xG and xA Statistics
 - [`player_opta_xpass()`](https://peteowen1.github.io/panna/reference/player_opta_xpass.md)
   : Opta Player xPass Statistics
+- [`player_opta_chains()`](https://peteowen1.github.io/panna/reference/player_opta_chains.md)
+  : Opta Player Possession Chain Statistics
+- [`compare_players()`](https://peteowen1.github.io/panna/reference/compare_players.md)
+  : Compare Two or More Players
 - [`player_understat_summary()`](https://peteowen1.github.io/panna/reference/player_understat_summary.md)
   : Understat Player Summary Statistics
 - [`player_fbref_summary()`](https://peteowen1.github.io/panna/reference/player_fbref_summary.md)
@@ -173,14 +177,29 @@ Rating decomposition and analysis
 - [`visualize_od_scatter()`](https://peteowen1.github.io/panna/reference/visualize_od_scatter.md)
   : Visualize O/D scatter
 
+## Possession Chain Analytics
+
+Possession chain analysis and pitch visualization
+
+- [`create_possession_chains()`](https://peteowen1.github.io/panna/reference/create_possession_chains.md)
+  : Create Possession Chains from SPADL Actions
+- [`summarize_match_chains()`](https://peteowen1.github.io/panna/reference/summarize_match_chains.md)
+  : Summarize Match-Level Possession Chains
+- [`summarize_player_chains()`](https://peteowen1.github.io/panna/reference/summarize_player_chains.md)
+  : Summarize Player-Level Possession Chains
+- [`draw_pitch()`](https://peteowen1.github.io/panna/reference/draw_pitch.md)
+  : Draw a Football Pitch
+- [`plot_chain()`](https://peteowen1.github.io/panna/reference/plot_chain.md)
+  : Plot a Single Possession Chain
+- [`plot_match_chains()`](https://peteowen1.github.io/panna/reference/plot_match_chains.md)
+  : Plot All Chains for a Match
+
 ## EPV (Expected Possession Value)
 
 Action-level player valuation from Opta event data
 
 - [`convert_opta_to_spadl()`](https://peteowen1.github.io/panna/reference/convert_opta_to_spadl.md)
   : Convert Opta Match Events to SPADL Format
-- [`create_possession_chains()`](https://peteowen1.github.io/panna/reference/create_possession_chains.md)
-  : Create Possession Chains from SPADL Actions
 - [`fit_epv_model()`](https://peteowen1.github.io/panna/reference/fit_epv_model.md)
   : Fit EPV Model
 - [`calculate_action_epv()`](https://peteowen1.github.io/panna/reference/calculate_action_epv.md)
@@ -443,6 +462,10 @@ Package-wide constants and thresholds
 
 - [`BETA_PRIOR_ALPHA`](https://peteowen1.github.io/panna/reference/BETA_PRIOR_ALPHA.md)
   : Beta prior alpha for finishing modifier (shrinkage toward 1.0)
+- [`CHAIN_FINAL_THIRD_X`](https://peteowen1.github.io/panna/reference/CHAIN_FINAL_THIRD_X.md)
+  : Final third x-coordinate threshold
+- [`CHAIN_PROGRESSIVE_THRESHOLD`](https://peteowen1.github.io/panna/reference/CHAIN_PROGRESSIVE_THRESHOLD.md)
+  : Progressive chain distance threshold
 - [`CHAIN_TIME_GAP_SECONDS`](https://peteowen1.github.io/panna/reference/CHAIN_TIME_GAP_SECONDS.md)
   : Time gap threshold for chain breaks (seconds)
 - [`CONFIDENCE_LEVEL`](https://peteowen1.github.io/panna/reference/CONFIDENCE_LEVEL.md)
