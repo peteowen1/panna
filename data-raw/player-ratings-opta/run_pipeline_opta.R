@@ -30,18 +30,22 @@ if (!exists("min_season")) min_season <- "2013-2014"
 # ENRICH SPM WITH xMETRICS FEATURES (xG/xA/xPass per-90)
 if (!exists("use_xmetrics_features")) use_xmetrics_features <- TRUE
 
-# WHICH STEPS TO RUN
+# START FROM STEP (skip earlier steps that are already cached)
+# Set before sourcing: start_step <- 3  # resume from splints
+if (!exists("start_step")) start_step <- 1
+
+# WHICH STEPS TO RUN (auto-populated from start_step)
 if (!exists("run_steps")) {
   run_steps <- list(
-    step_01_load_data        = TRUE,
-    step_02_data_processing  = TRUE,
-    step_03_splint_creation  = TRUE,
-    step_04_rapm             = TRUE,
-    step_05_spm              = TRUE,
-    step_06_xrapm            = TRUE,
-    step_07_seasonal_ratings = TRUE,
-    step_08_panna_ratings    = TRUE,
-    step_09_export_ratings   = TRUE
+    step_01_load_data        = start_step <= 1,
+    step_02_data_processing  = start_step <= 2,
+    step_03_splint_creation  = start_step <= 3,
+    step_04_rapm             = start_step <= 4,
+    step_05_spm              = start_step <= 5,
+    step_06_xrapm            = start_step <= 6,
+    step_07_seasonal_ratings = start_step <= 7,
+    step_08_panna_ratings    = start_step <= 8,
+    step_09_export_ratings   = start_step <= 9
   )
 }
 
@@ -128,6 +132,7 @@ pipeline_failed <- FALSE
 
 # Check if a critical step failed and halt downstream steps
 check_critical_step <- function(step_num, step_name) {
+  if (step_num > length(step_results)) return(FALSE)
   result <- step_results[[step_num]]
   if (!is.null(result) && result$status == "FAILED") {
     pipeline_failed <<- TRUE
@@ -146,6 +151,7 @@ message(sprintf("#   Leagues: %s", paste(leagues, collapse = ", ")))
 message(sprintf("#   Seasons: %s", if (is.null(seasons)) "All available" else paste(seasons, collapse = ", ")))
 message(sprintf("#   Min season: %s", if (is.null(min_season)) "None" else min_season))
 message(sprintf("#   xMetrics enrichment: %s", use_xmetrics_features))
+message(sprintf("#   Start from step: %d", start_step))
 message(sprintf("#   Force rebuild from: %s",
                 if (is.null(force_rebuild_from)) "None (use cache)" else force_rebuild_from))
 message("#")

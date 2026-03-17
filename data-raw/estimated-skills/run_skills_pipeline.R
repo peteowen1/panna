@@ -29,17 +29,25 @@ if (!exists("use_xmetrics_features")) use_xmetrics_features <- TRUE
 # Which steps to run
 if (!exists("n_cores")) n_cores <- 1  # Parallel cores for optimization
 
+# START FROM STEP (skip earlier steps that are already cached)
+# Set before sourcing: start_step <- 3  # resume from skill SPM
+# Use "2b" or 2.5 for the optimize step
+if (!exists("start_step")) start_step <- 1
+
+# Normalize "2b" to 2.5 for comparison
+start_num <- if (is.character(start_step) && start_step == "2b") 2.5 else as.numeric(start_step)
+
 if (!exists("run_steps")) {
   run_steps <- list(
-    step_01_compute_match_stats    = TRUE,
-    step_02_estimate_skills        = TRUE,
-    step_02b_optimize_params       = TRUE,   # Joint 2D optimization (prior + lambda), faster with n_cores
-    step_03_skill_spm              = TRUE,
-    step_04_skill_xrapm            = TRUE,
-    step_05_skill_panna_ratings    = TRUE,
-    step_06_seasonal_skill_ratings = TRUE,    # Seasonal ratings for match predictions
-    step_07_train_psr_model        = TRUE,    # Train PSR model from skills → goal diff
-    step_08_export_skills          = TRUE     # Export opta_skills.parquet to GitHub
+    step_01_compute_match_stats    = start_num <= 1,
+    step_02_estimate_skills        = start_num <= 2,
+    step_02b_optimize_params       = start_num <= 2.5,
+    step_03_skill_spm              = start_num <= 3,
+    step_04_skill_xrapm            = start_num <= 4,
+    step_05_skill_panna_ratings    = start_num <= 5,
+    step_06_seasonal_skill_ratings = start_num <= 6,
+    step_07_train_psr_model        = start_num <= 7,
+    step_08_export_skills          = start_num <= 8
   )
 }
 
@@ -136,15 +144,21 @@ if (!is.null(force_rebuild_from)) {
                   deleted, force_rebuild_from))
 }
 
-# Check prerequisites
+# Check prerequisites (only if steps that need them are enabled)
 opta_cache <- file.path("data-raw", "cache-opta")
-required_files <- c("03_splints.rds", "04_rapm.rds")
-missing <- required_files[!file.exists(file.path(opta_cache, required_files))]
-if (length(missing) > 0) {
-  stop(sprintf(
-    "Missing Opta pipeline prerequisites: %s\nRun run_pipeline_opta.R first.",
-    paste(missing, collapse = ", ")
-  ))
+needs_opta_cache <- any(vapply(c("step_03_skill_spm", "step_04_skill_xrapm",
+                                  "step_05_skill_panna_ratings",
+                                  "step_06_seasonal_skill_ratings"),
+                                function(s) isTRUE(run_steps[[s]]), logical(1)))
+if (needs_opta_cache) {
+  required_files <- c("03_splints.rds", "04_rapm.rds")
+  missing <- required_files[!file.exists(file.path(opta_cache, required_files))]
+  if (length(missing) > 0) {
+    stop(sprintf(
+      "Missing Opta pipeline prerequisites: %s\nRun run_pipeline_opta.R first.",
+      paste(missing, collapse = ", ")
+    ))
+  }
 }
 
 pipeline_start <- Sys.time()
@@ -159,6 +173,7 @@ message("#")
 message(sprintf("#   Leagues: %s", paste(leagues, collapse = ", ")))
 message(sprintf("#   Seasons: %s", if (is.null(seasons)) "All available" else paste(seasons, collapse = ", ")))
 message(sprintf("#   Min season: %s", if (is.null(min_season)) "None" else min_season))
+message(sprintf("#   Start from step: %s", start_step))
 message("#")
 message(paste(rep("#", 70), collapse = ""))
 
