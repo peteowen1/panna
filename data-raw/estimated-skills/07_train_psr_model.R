@@ -495,17 +495,15 @@ evaluate_model <- function(model, X_test_std, y_test, name) {
 }
 
 train_and_save <- function(y_margin, y_off, y_def, y_margin_test, y_off_test,
-                            y_def_test, prefix, label) {
+                            y_def_test, prefix, label,
+                            X = X_train_std, w = weights, fids = fold_ids) {
   cat(sprintf("\n%s\n=== Training %s Models ===\n%s\n",
               paste(rep("=", 50), collapse = ""), label,
               paste(rep("=", 50), collapse = "")))
 
-  margin_m <- train_model(X_train_std, y_margin, weights, fold_ids,
-                            ALPHA_GRID, paste(label, "Margin"))
-  off_m <- train_model(X_train_std, y_off, weights, fold_ids,
-                         ALPHA_GRID, paste(label, "Offense"))
-  def_m <- train_model(X_train_std, y_def, weights, fold_ids,
-                         ALPHA_GRID, paste(label, "Defense"))
+  margin_m <- train_model(X, y_margin, w, fids, ALPHA_GRID, paste(label, "Margin"))
+  off_m    <- train_model(X, y_off,    w, fids, ALPHA_GRID, paste(label, "Offense"))
+  def_m    <- train_model(X, y_def,    w, fids, ALPHA_GRID, paste(label, "Defense"))
 
   if (sum(is_test) > 0) {
     cat(sprintf("\n--- %s Test Set ---\n", label))
@@ -547,25 +545,27 @@ train_and_save <- function(y_margin, y_off, y_def, y_margin_test, y_off_test,
 
 xg_models <- NULL
 if (has_xg) {
-  # Filter to matches with xG data
-  has_xg_mask_train <- is_train & !is.na(train_data$xg_diff)
-  has_xg_mask_test <- is_test & !is.na(train_data$xg_diff)
+  # Use which() for unambiguous integer indexing — avoids NA-in-logical edge cases
+  train_rows <- which(is_train)
+  test_rows  <- which(is_test)
 
-  X_xg_train <- X_train_std[has_xg_mask_train[is_train], ]
-  w_xg <- weights[has_xg_mask_train[is_train]]
-  fold_xg <- fold_ids[has_xg_mask_train[is_train]]
-  # Reindex folds to be sequential
-  fold_xg <- as.integer(factor(fold_xg))
+  xg_in_train <- which(!is.na(train_data$xg_diff[train_rows]))
+  xg_in_test  <- which(!is.na(train_data$xg_diff[test_rows]))
+
+  X_xg_train <- X_train_std[xg_in_train, ]
+  w_xg       <- weights[xg_in_train]
+  fold_xg    <- as.integer(factor(fold_ids[xg_in_train]))
 
   xg_models <- train_and_save(
-    y_margin = train_data$xg_diff[has_xg_mask_train],
-    y_off = train_data$home_xg[has_xg_mask_train],
-    y_def = train_data$away_xg[has_xg_mask_train],
-    y_margin_test = train_data$xg_diff[has_xg_mask_test],
-    y_off_test = train_data$home_xg[has_xg_mask_test],
-    y_def_test = train_data$away_xg[has_xg_mask_test],
+    y_margin = train_data$xg_diff[train_rows][xg_in_train],
+    y_off    = train_data$home_xg[train_rows][xg_in_train],
+    y_def    = train_data$away_xg[train_rows][xg_in_train],
+    y_margin_test = train_data$xg_diff[test_rows][xg_in_test],
+    y_off_test    = train_data$home_xg[test_rows][xg_in_test],
+    y_def_test    = train_data$away_xg[test_rows][xg_in_test],
     prefix = "",
-    label = "xG"
+    label  = "xG",
+    X = X_xg_train, w = w_xg, fids = fold_xg
   )
 }
 
