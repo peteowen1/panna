@@ -23,6 +23,8 @@ skill_features <- readRDS(file.path(cache_dir, "02_skill_features.rds"))
 rapm_results <- readRDS(file.path(opta_cache_dir, "04_rapm.rds"))
 
 rapm_ratings <- rapm_results$ratings
+# Free memory
+rm(rapm_results); gc(verbose = FALSE)
 cat("Players with skill features:", nrow(skill_features), "\n")
 cat("Players with RAPM ratings:", nrow(rapm_ratings), "\n")
 
@@ -116,6 +118,9 @@ cat(sprintf("  XGBoost:     %.4f\n", cv_rmse_xgb))
 # Get predictions
 spm_ratings_glmnet <- calculate_spm_ratings(player_stats, spm_glmnet)
 spm_ratings_xgb <- calculate_spm_ratings_xgb(player_stats, spm_xgb)
+
+# Free memory
+rm(spm_ratings_glmnet, spm_ratings_xgb); gc(verbose = FALSE)
 
 # 8. Create 50/50 Blend ----
 
@@ -256,6 +261,10 @@ defense_spm_ratings <- defense_glmnet_pred %>%
 
 cat("Offense SPM predictions:", nrow(offense_spm_ratings), "\n")
 cat("Defense SPM predictions:", nrow(defense_spm_ratings), "\n")
+
+# Free memory
+rm(offense_glmnet_pred, offense_xgb_pred, defense_glmnet_pred, defense_xgb_pred)
+rm(offense_train, defense_train, spm_train_data); gc(verbose = FALSE)
 
 # 11. Save ----
 

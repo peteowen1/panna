@@ -44,6 +44,9 @@ offense_spm_xgb <- spm_results$offense_spm_xgb
 defense_spm_glmnet <- spm_results$defense_spm_glmnet
 defense_spm_xgb <- spm_results$defense_spm_xgb
 
+# Free memory
+rm(spm_results); gc(verbose = FALSE)
+
 required_models <- list(
   offense_spm_glmnet = offense_spm_glmnet,
   offense_spm_xgb = offense_spm_xgb,
@@ -325,6 +328,9 @@ cat(sprintf("Processing %d seasons: %s\n",
 opta_stats <- processed_data$opta_stats
 opta_xmetrics <- processed_data$opta_xmetrics
 
+# Free memory
+rm(processed_data); gc(verbose = FALSE)
+
 seasonal_ratings_list <- lapply(seasons, function(season) {
   tryCatch({
     fit_season_ratings_opta(
@@ -346,6 +352,9 @@ seasonal_ratings_list <- lapply(seasons, function(season) {
 })
 
 seasonal_ratings_list <- Filter(Negate(is.null), seasonal_ratings_list)
+
+# Free memory
+rm(splint_data, opta_stats, opta_xmetrics); gc(verbose = FALSE)
 
 seasonal_spm <- bind_rows(lapply(seasonal_ratings_list, `[[`, "spm"))
 seasonal_rapm <- bind_rows(lapply(seasonal_ratings_list, `[[`, "rapm"))

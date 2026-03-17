@@ -54,6 +54,9 @@ offense_spm_xgb <- spm_results$offense_spm_xgb
 defense_spm_glmnet <- spm_results$defense_spm_glmnet
 defense_spm_xgb <- spm_results$defense_spm_xgb
 
+# Free memory
+rm(spm_results); gc(verbose = FALSE)
+
 required_models <- list(
   offense_spm_glmnet = offense_spm_glmnet,
   offense_spm_xgb = offense_spm_xgb,
@@ -244,6 +247,9 @@ seasonal_ratings_list <- lapply(seasons, function(season) {
     NULL
   })
 })
+
+# Free memory
+rm(splint_data, skill_features); gc(verbose = FALSE)
 
 n_total <- length(seasons)
 n_failed <- sum(vapply(seasonal_ratings_list, is.null, logical(1)))

@@ -42,6 +42,9 @@ panna_ratings <- xrapm_results$ratings %>%
     def_prior
   )
 
+# Free memory
+rm(xrapm_results); gc(verbose = FALSE)
+
 # Validate player_id exists in all datasets (stale caches may lack it)
 if (!"player_id" %in% names(rapm_results$ratings)) {
   stop("rapm_results$ratings missing 'player_id'. Re-run steps 04-06 to regenerate cache.")
@@ -65,6 +68,9 @@ if (rapm_deduped > 0) {
 panna_ratings <- panna_ratings %>%
   left_join(base_rapm, by = "player_id")
 
+# Free memory
+rm(rapm_results, base_rapm); gc(verbose = FALSE)
+
 # Add overall SPM prediction (deduplicate similarly)
 spm_before_dedup <- nrow(spm_results$spm_ratings)
 spm_overall <- spm_results$spm_ratings %>%
@@ -79,6 +85,9 @@ if (spm_deduped > 0) {
 
 panna_ratings <- panna_ratings %>%
   left_join(spm_overall, by = "player_id")
+
+# Free memory
+rm(spm_results, spm_overall); gc(verbose = FALSE)
 
 # Calculate percentiles and ranks
 panna_ratings <- panna_ratings %>%

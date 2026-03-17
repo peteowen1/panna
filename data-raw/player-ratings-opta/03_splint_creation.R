@@ -34,6 +34,8 @@ if (file.exists(splint_data_path)) {
       verbose = TRUE
     )
     saveRDS(splint_data, splint_data_path)
+    # Free memory
+    rm(processed_data); gc(verbose = FALSE)
   }
 } else {
   message("=== Creating splints ===")
@@ -44,6 +46,8 @@ if (file.exists(splint_data_path)) {
     verbose = TRUE
   )
   saveRDS(splint_data, splint_data_path)
+  # Free memory
+  rm(processed_data); gc(verbose = FALSE)
 }
 
 # 4. Summary Statistics ----

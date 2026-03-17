@@ -21,6 +21,8 @@ processed_data <- readRDS(file.path(cache_dir, "02_processed_data.rds"))
 rapm_results <- readRDS(file.path(cache_dir, "04_rapm.rds"))
 
 rapm_ratings <- rapm_results$ratings
+# Free memory
+rm(rapm_results); gc(verbose = FALSE)
 cat("Players with RAPM ratings:", nrow(rapm_ratings), "\n")
 
 # 3. Aggregate Opta Player Statistics ----
@@ -131,8 +133,16 @@ if (use_xmetrics_features && !is.null(processed_data$opta_xmetrics)) {
     }
 
     cat(sprintf("  Added %d chain features\n", ncol(player_stats) - before_cols2))
+    # Free memory
+    rm(chain_agg); gc(verbose = FALSE)
   }
+
+  # Free memory
+  rm(xmetrics, xmetrics_agg); gc(verbose = FALSE)
 }
+
+# Free memory
+rm(processed_data); gc(verbose = FALSE)
 
 # 5. Join with RAPM for Training ----
 
@@ -187,6 +197,9 @@ cat(sprintf("  XGBoost:     %.4f\n", cv_rmse_xgb))
 # Get predictions from each model
 spm_ratings_glmnet <- calculate_spm_ratings(player_stats, spm_glmnet)
 spm_ratings_xgb <- calculate_spm_ratings_xgb(player_stats, spm_xgb)
+
+# Free memory
+rm(spm_ratings_glmnet, spm_ratings_xgb); gc(verbose = FALSE)
 
 # 8. Create 50/50 Blend ----
 
@@ -403,6 +416,10 @@ defense_spm_ratings <- defense_glmnet_pred %>%
 
 cat("Offense SPM predictions:", nrow(offense_spm_ratings), "\n")
 cat("Defense SPM predictions:", nrow(defense_spm_ratings), "\n")
+
+# Free memory
+rm(offense_glmnet_pred, offense_xgb_pred, defense_glmnet_pred, defense_xgb_pred)
+rm(offense_train, defense_train, spm_train_data); gc(verbose = FALSE)
 
 # 12. Combined SPM Ratings ----
 

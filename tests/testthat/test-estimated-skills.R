@@ -211,20 +211,14 @@ test_that("efficiency stat uses Beta-Binomial posterior", {
 })
 
 
-test_that(".compute_denominator errors on missing column", {
+test_that(".compute_denominator returns NULL on missing column", {
   dt <- data.frame(goals_p90 = c(0.5, 0.3), tackles = c(10, 8))
-  expect_error(
-    .compute_denominator(dt, "passes"),
-    "not found"
-  )
+  expect_null(.compute_denominator(dt, "passes"))
 })
 
-test_that(".compute_denominator errors on all missing compound columns", {
+test_that(".compute_denominator returns NULL on all missing compound columns", {
   dt <- data.frame(goals_p90 = c(0.5, 0.3))
-  expect_error(
-    .compute_denominator(dt, "passes+crosses"),
-    "No denominator columns found"
-  )
+  expect_null(.compute_denominator(dt, "passes+crosses"))
 })
 
 

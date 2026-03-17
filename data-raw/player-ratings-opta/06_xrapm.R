@@ -26,6 +26,9 @@ cat("Splints:", nrow(splint_data$splints), "\n")
 cat("Players with RAPM:", nrow(rapm_results$ratings), "\n")
 cat("Players with SPM:", nrow(spm_results$spm_ratings), "\n")
 
+# Free memory
+rm(splint_data); gc(verbose = FALSE)
+
 # 3. Create SPM Priors (from blended models) ----
 
 cat("\n=== Creating SPM Priors ===\n")
@@ -53,6 +56,9 @@ print(summary(offense_prior[offense_prior != 0]))
 cat("\nDefense prior summary:\n")
 print(summary(defense_prior[defense_prior != 0]))
 
+# Free memory
+rm(spm_results); gc(verbose = FALSE)
+
 # 4. Fit xRAPM Model ----
 
 cat("\n=== Fitting xRAPM Model ===\n")
@@ -68,6 +74,9 @@ xrapm_model <- fit_rapm_with_prior(
   use_weights = TRUE,
   penalize_covariates = FALSE
 )
+
+# Free memory
+rm(rapm_data); gc(verbose = FALSE)
 
 # 5. Extract xRAPM Ratings ----
 
@@ -110,6 +119,9 @@ print(
     head(15) %>%
     select(player_name, xrapm, base_rapm, rating_diff, off_deviation, def_deviation)
 )
+
+# Free memory
+rm(rapm_results, base_ratings); gc(verbose = FALSE)
 
 # 7. Team-Level Validation ----
 
