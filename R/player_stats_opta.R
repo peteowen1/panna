@@ -17,13 +17,12 @@
 }
 
 # Internal helper to load Opta xmetrics data
-# Note: source param is accepted for API consistency but xmetrics only supports local
 .load_opta_xmetrics_data <- function(league, season, source) {
   data <- if (is.null(league)) {
     # Load all available Opta leagues
     results <- lapply(names(OPTA_LEAGUES), function(lg) {
       tryCatch({
-        df <- load_opta_xmetrics(lg, season)
+        df <- load_opta_xmetrics(lg, season, source = source)
         df$league <- lg
         df
       }, error = function(e) {
@@ -33,7 +32,7 @@
     })
     rbindlist(Filter(Negate(is.null), results), use.names = TRUE, fill = TRUE)
   } else {
-    load_opta_xmetrics(league = league, season = season)
+    load_opta_xmetrics(league = league, season = season, source = source)
   }
   as.data.frame(data)
 }
@@ -58,6 +57,14 @@
                                           col_order, loader = .load_opta_data) {
   source <- match.arg(source, c("remote", "local"))
   validate_min_minutes(min_minutes)
+
+  # Guard: detect league code passed as player name
+  if (!is.null(player) && toupper(player) %in% names(OPTA_LEAGUES)) {
+    cli::cli_warn(c(
+      "{.arg player} looks like a league code ({.val {player}}).",
+      "i" = "Did you mean {.code league = \"{toupper(player)}\"} instead?"
+    ))
+  }
 
   data <- loader(league, season, source)
   if (is.null(data) || nrow(data) == 0) {
