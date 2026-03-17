@@ -38,6 +38,7 @@ if (!exists("run_steps")) {
     step_04_skill_xrapm            = TRUE,
     step_05_skill_panna_ratings    = TRUE,
     step_06_seasonal_skill_ratings = TRUE,    # Seasonal ratings for match predictions
+    step_07_train_psr_model        = TRUE,    # Train PSR model from skills → goal diff
     step_08_export_skills          = TRUE     # Export opta_skills.parquet to GitHub
   )
 }
@@ -107,11 +108,12 @@ if (!is.null(force_rebuild_from)) {
     "4" = "04_skill_xrapm.rds",
     "5" = c("05_skill_panna.rds", "skill_panna_ratings.csv"),
     "6" = c("06_seasonal_ratings.rds", "seasonal_skill_xrapm.csv"),
+    "7" = "07_psr_model.rds",
     "8" = character(0)  # export step has no cache file to clear
   )
 
   # Build list of steps to clear: numeric steps >= force_rebuild_from + fractional steps
-  steps_to_clear <- as.character(force_rebuild_from:6)
+  steps_to_clear <- as.character(force_rebuild_from:8)
   # Include fractional steps (e.g., "2b") when their parent step is being rebuilt
   fractional_steps <- setdiff(names(cache_files), as.character(1:6))
   for (fs in fractional_steps) {
@@ -202,9 +204,15 @@ step_results[[7]] <- run_step("seasonal_skill_ratings", 6, function() {
   source("data-raw/estimated-skills/06_seasonal_skill_ratings.R", local = TRUE)
 })
 
-# 12. Step 8: Export Skills ----
+# 12. Step 7: Train PSR Model ----
 
-step_results[[8]] <- run_step("export_skills", 8, function() {
+step_results[[8]] <- run_step("train_psr_model", 7, function() {
+  source("data-raw/estimated-skills/07_train_psr_model.R", local = TRUE)
+})
+
+# 13. Step 8: Export Skills ----
+
+step_results[[9]] <- run_step("export_skills", 8, function() {
   source("data-raw/estimated-skills/08_export_skills.R", local = TRUE)
 })
 
