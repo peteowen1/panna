@@ -27,9 +27,15 @@ cat(paste(rep("#", 70), collapse = ""), "\n\n")
 
 # 2. Check Prerequisites ----
 
-coef_path <- system.file("extdata", "psr_coefficients.csv", package = "panna")
-if (coef_path == "") {
+coef_xg <- system.file("extdata", "psr_coefficients.csv", package = "panna")
+coef_gd <- system.file("extdata", "gd_psr_coefficients.csv", package = "panna")
+if (coef_xg == "" && coef_gd == "") {
   stop("PSR coefficients not found. Run step 07 (07_train_psr_model.R) first.")
+}
+psr_target <- if (coef_xg != "") "xg" else "goals"
+if (psr_target == "goals") {
+  cat("Note: xG coefficients not found, using goal-diff PSR instead.\n")
+  cat("Re-run step 07 after fixing splint xG columns for xG-based PSR.\n\n")
 }
 
 slim_path <- file.path(cache_dir, "01_match_stats_slim.rds")
@@ -115,7 +121,7 @@ for (i in seq_along(snapshot_dates)) {
   if (is.null(skills) || nrow(skills) == 0) next
 
   psr <- tryCatch(
-    compute_player_psr(skills, center = TRUE, target = "xg"),
+    compute_player_psr(skills, center = TRUE, target = psr_target),
     error = function(e) NULL
   )
   if (is.null(psr) || nrow(psr) == 0) next

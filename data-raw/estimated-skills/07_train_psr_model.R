@@ -128,12 +128,17 @@ if (file.exists(splint_path)) {
   splint_data <- readRDS(splint_path)
   splints <- data.table::as.data.table(splint_data$splints)
 
-  if (all(c("match_id", "home_xg", "away_xg") %in% names(splints))) {
+  # Accept either home_xg/away_xg or npxg_home/npxg_away column names
+  xg_home_col <- intersect(c("home_xg", "npxg_home"), names(splints))[1]
+  xg_away_col <- intersect(c("away_xg", "npxg_away"), names(splints))[1]
+
+  if ("match_id" %in% names(splints) && !is.na(xg_home_col) && !is.na(xg_away_col)) {
+    cat(sprintf("Using xG columns: %s, %s\n", xg_home_col, xg_away_col))
     # Aggregate xG per match from splints (sum across all splints in a match)
     match_xg <- splints[, .(
-      home_xg = sum(home_xg, na.rm = TRUE),
-      away_xg = sum(away_xg, na.rm = TRUE)
-    ), by = match_id]
+      home_xg = sum(.SD[[xg_home_col]], na.rm = TRUE),
+      away_xg = sum(.SD[[xg_away_col]], na.rm = TRUE)
+    ), .SDcols = c(xg_home_col, xg_away_col), by = match_id]
     match_xg[, xg_diff := home_xg - away_xg]
 
     # Join to match outcomes
@@ -149,7 +154,7 @@ if (file.exists(splint_path)) {
                   mean(match_outcomes$xg_diff, na.rm = TRUE)))
     }
   } else {
-    cat("Splint data missing xG columns (home_xg, away_xg)\n")
+    cat("Splint data missing xG columns (checked: home_xg, npxg_home, away_xg, npxg_away)\n")
   }
   rm(splint_data, splints)  # free memory
 } else {
