@@ -68,6 +68,9 @@ if (rapm_deduped > 0) {
 panna_ratings <- panna_ratings %>%
   left_join(base_rapm, by = "player_id")
 
+# Save covariate effects before freeing rapm_results (used in final save)
+covariate_effects <- rapm_results$covariate_effects
+
 # Free memory
 rm(rapm_results, base_rapm); gc(verbose = FALSE)
 
@@ -241,7 +244,7 @@ final_results <- list(
   panna_ratings = panna_ratings,
   team_panna = if (exists("team_panna")) team_panna else NULL,
   team_validation = if (exists("team_validation")) team_validation else NULL,
-  covariate_effects = rapm_results$covariate_effects,
+  covariate_effects = covariate_effects,
   metadata = list(
     source = "opta",
     n_players = nrow(panna_ratings),

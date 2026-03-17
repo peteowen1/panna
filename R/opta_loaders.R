@@ -1558,6 +1558,95 @@ load_opta_match_stats <- function(season = NULL, columns = NULL,
 }
 
 
+#' Load pre-computed weekly PSR snapshots
+#'
+#' Downloads and queries \code{opta_psr_weekly.parquet} from the
+#' \code{opta-latest} GitHub release. Contains PSR/OSR/DSR for every player
+#' at weekly (last 2 years) or monthly (older) snapshot dates.
+#'
+#' @param date Optional date filter. If provided, returns the snapshot for the
+#'   nearest weekly date at or before this date. Accepts a \code{Date} or a
+#'   character string parseable by \code{as.Date()}.
+#' @param columns Optional character vector of columns to select.
+#' @param source Data source: \code{"remote"} (default) or \code{"local"}.
+#' @param repo GitHub repository (default: "peteowen1/pannadata").
+#' @param tag Release tag (default: "opta-latest").
+#'
+#' @return Data frame with columns: \code{snapshot_date}, \code{player_id},
+#'   \code{player_name}, \code{primary_position}, \code{psr}, \code{osr},
+#'   \code{dsr}, \code{weighted_90s}.
+#'
+#' @export
+#' @examples
+#' \dontrun{
+#' # Latest snapshot
+#' psr <- load_opta_psr_weekly()
+#'
+#' # Snapshot nearest to a specific date
+#' psr <- load_opta_psr_weekly(date = "2026-03-18")
+#' }
+load_opta_psr_weekly <- function(date = NULL, columns = NULL,
+                                  source = c("remote", "local"),
+                                  repo = "peteowen1/pannadata",
+                                  tag = "opta-latest") {
+  source <- match.arg(source)
+  file_name <- "opta_psr_weekly.parquet"
+
+  parquet_path <- download_opta_release_file(
+    file_name, source = source, repo = repo, tag = tag
+  )
+
+  col_sql <- if (!is.null(columns)) {
+    paste(validate_sql_columns(columns), collapse = ", ")
+  } else {
+    "*"
+  }
+
+  parquet_norm <- normalizePath(parquet_path, winslash = "/", mustWork = TRUE)
+
+  # Build date filter: latest snapshot_date <= requested date
+  where_sql <- if (!is.null(date)) {
+    d <- as.Date(date)
+    # Find the max snapshot_date that is <= d, then return all rows for that date
+    sprintf("snapshot_date = (SELECT MAX(snapshot_date) FROM '%s' WHERE snapshot_date <= DATE '%s')",
+            parquet_norm, format(d, "%Y-%m-%d"))
+  } else {
+    # Default: latest snapshot date
+    sprintf("snapshot_date = (SELECT MAX(snapshot_date) FROM '%s')", parquet_norm)
+  }
+
+  sql <- sprintf("SELECT %s FROM '%s' WHERE %s", col_sql, parquet_norm, where_sql)
+
+  conn <- DBI::dbConnect(duckdb::duckdb())
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
+
+  cache_key <- paste0(file_name, "_", repo, "_", tag)
+
+  result <- tryCatch({
+    DBI::dbGetQuery(conn, sql)
+  }, error = function(e) {
+    if (grepl("magic bytes|No magic bytes", e$message, ignore.case = TRUE)) {
+      if (source == "remote" && exists(cache_key, envir = .opta_remote_env)) {
+        cached <- get(cache_key, envir = .opta_remote_env)
+        if (file.exists(cached)) unlink(cached)
+        rm(list = cache_key, envir = .opta_remote_env)
+      }
+      cli::cli_abort(c(
+        "Parquet file is corrupt.",
+        "i" = "The corrupt file has been removed. Please re-run your command."
+      ))
+    }
+    cli::cli_abort("DuckDB query failed: {e$message}")
+  })
+
+  snap_date <- if (nrow(result) > 0) as.character(result$snapshot_date[1]) else "none"
+  cli::cli_alert_success(
+    "Loaded {format(nrow(result), big.mark=',')} PSR ratings (snapshot: {snap_date})"
+  )
+  result
+}
+
+
 #' Download a file from an Opta GitHub release with fallback
 #'
 #' Handles session caching, parquet validation, and falls back to a direct

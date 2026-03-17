@@ -2,7 +2,7 @@
 % Please edit documentation in R/psr.R
 \name{.estimate_prematch_skills_batch}
 \alias{.estimate_prematch_skills_batch}
-\title{Estimate pre-match skills at multiple dates}
+\title{Estimate pre-match skills at multiple dates (incremental batch version)}
 \usage{
 .estimate_prematch_skills_batch(
   match_stats,
@@ -16,8 +16,7 @@
 \item{match_stats}{Match-level stats (output of
 \code{compute_match_level_opta_stats}).}
 
-\item{ref_dates}{Character or Date vector of dates to estimate skills at.
-Typically unique match dates from the training data.}
+\item{ref_dates}{Character or Date vector of dates to estimate skills at.}
 
 \item{decay_params}{Decay parameters (default: \code{get_default_decay_params()}).}
 
@@ -30,8 +29,13 @@ Named list of data.tables (one per ref_date), keyed by date string.
 Each table has one row per player with skill columns.
 }
 \description{
-Calls \code{\link{estimate_player_skills}} at each reference date in
-chronological order, using all match data strictly before each date.
-This mirrors torpverse's \code{.estimate_skills_batch()} approach.
+Highly optimized for sequential date estimation. Instead of re-processing
+all historical data at each date, maintains running cumulative sums that
+are decayed forward and incrementally updated with new observations.
+Uses \code{rowsum()} (C-level) for grouped matrix sums.
+}
+\details{
+Complexity: O(N + D * new_rows_per_date) instead of O(N * D).
+For typical data (~1M rows, 659 dates), this is ~100-300x faster.
 }
 \keyword{internal}

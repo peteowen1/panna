@@ -630,7 +630,7 @@ psr_model_data <- list(
     n_train_matches = sum(is_train),
     n_test_matches = sum(is_test),
     n_features = length(feature_cols),
-    n_skill_dates = length(prematch_skills),
+    n_skill_dates = dates_processed,
     alpha_grid = ALPHA_GRID,
     decay_days = MATCH_WEIGHT_DECAY_DAYS,
     min_w90 = MIN_W90_FOR_SKILLS,

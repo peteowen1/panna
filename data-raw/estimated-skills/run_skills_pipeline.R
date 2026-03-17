@@ -34,8 +34,12 @@ if (!exists("n_cores")) n_cores <- 1  # Parallel cores for optimization
 # Use "2b" or 2.5 for the optimize step
 if (!exists("start_step")) start_step <- 1
 
-# Normalize "2b" to 2.5 for comparison
-start_num <- if (is.character(start_step) && start_step == "2b") 2.5 else as.numeric(start_step)
+# Normalize lettered steps to numeric for comparison: "2b" -> 2.5, "8b" -> 8.5
+start_num <- switch(as.character(start_step),
+  "2b" = 2.5,
+  "8b" = 8.5,
+  as.numeric(start_step)
+)
 
 if (!exists("run_steps")) {
   run_steps <- list(
@@ -47,7 +51,8 @@ if (!exists("run_steps")) {
     step_05_skill_panna_ratings    = start_num <= 5,
     step_06_seasonal_skill_ratings = start_num <= 6,
     step_07_train_psr_model        = start_num <= 7,
-    step_08_export_skills          = start_num <= 8
+    step_08_export_skills          = start_num <= 8,
+    step_08b_export_psr_weekly     = start_num <= 8.5
   )
 }
 
@@ -117,7 +122,8 @@ if (!is.null(force_rebuild_from)) {
     "5" = c("05_skill_panna.rds", "skill_panna_ratings.csv"),
     "6" = c("06_seasonal_ratings.rds", "seasonal_skill_xrapm.csv"),
     "7" = "07_psr_model.rds",
-    "8" = character(0)  # export step has no cache file to clear
+    "8" = character(0),  # export step has no cache file to clear
+    "8b" = character(0)  # export step has no cache file to clear
   )
 
   # Build list of steps to clear: numeric steps >= force_rebuild_from + fractional steps
@@ -231,7 +237,13 @@ step_results[[9]] <- run_step("export_skills", 8, function() {
   source("data-raw/estimated-skills/08_export_skills.R", local = TRUE)
 })
 
-# 13. Summary ----
+# 14. Step 8b: Export Weekly PSR Snapshots ----
+
+step_results[[10]] <- run_step("export_psr_weekly", "8b", function() {
+  source("data-raw/estimated-skills/08b_export_psr_weekly.R", local = TRUE)
+})
+
+# 15. Summary ----
 
 pipeline_end <- Sys.time()
 total_duration <- difftime(pipeline_end, pipeline_start, units = "secs")
@@ -260,5 +272,6 @@ message(sprintf("  - %s", file.path(cache_dir, "05_skill_panna.rds")))
 message(sprintf("  - %s", file.path(cache_dir, "skill_panna_ratings.csv")))
 message(sprintf("  - %s", file.path(cache_dir, "06_seasonal_ratings.rds")))
 message("  - pannadata/data/opta/opta_skills.parquet (uploaded to GitHub)")
+message("  - pannadata/data/opta/opta_psr_weekly.parquet (uploaded to GitHub)")
 
 message("\nDone!")

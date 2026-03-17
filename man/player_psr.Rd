@@ -5,8 +5,8 @@
 \title{Get Player Skill Ratings}
 \usage{
 player_psr(
-  season = NULL,
-  league = NULL,
+  date = NULL,
+  player = NULL,
   n = 50,
   position = NULL,
   target = c("xg", "goals"),
@@ -14,11 +14,11 @@ player_psr(
 )
 }
 \arguments{
-\item{season}{Season filter as end year (e.g., 2025 for 2024-2025).
-If NULL, returns all available seasons.}
+\item{date}{Date to query as a \code{Date} or \code{"YYYY-MM-DD"} string.
+Defaults to the latest available snapshot.}
 
-\item{league}{League code filter (e.g., \code{"ENG"}). Ignored for now
-since skills are cross-league.}
+\item{player}{Optional player name filter (partial match, case-insensitive).
+E.g., \code{"Salah"} matches "Mohamed Salah".}
 
 \item{n}{Number of top players to show (default 50, NULL for all).}
 
@@ -26,30 +26,33 @@ since skills are cross-league.}
 \code{"MID"}, \code{"FWD"}, or NULL for all.}
 
 \item{target}{One of \code{"xg"} (default, xG differential) or
-\code{"goals"} (goal differential).}
+\code{"goals"} (goal differential). Note: weekly snapshots are xG-based;
+\code{"goals"} recomputes from skills on-demand (slower).}
 
 \item{source}{Data source: \code{"remote"} (default, GitHub Releases) or
 \code{"local"}.}
 }
 \value{
-A data.table with columns: \code{player_name}, \code{primary_position},
-\code{psr}, \code{osr}, \code{dsr}, \code{weighted_90s}, and key skill
-columns for context.
+A data.table with columns: \code{snapshot_date}, \code{player_name},
+\code{primary_position}, \code{psr}, \code{osr}, \code{dsr},
+\code{weighted_90s}.
 }
 \description{
-Loads pre-computed skill estimates and applies PSR coefficients to produce
-a ranked table of player ratings. PSR predicts each player's contribution
-to xG differential based on their Bayesian skill profile.
+Returns a ranked PSR leaderboard using pre-computed weekly snapshots.
+Snaps to the nearest weekly date at or before \code{date}.
 }
 \examples{
 \dontrun{
-# Top 50 players in 2024-2025 (xG-based PSR)
-player_psr(season = 2025)
+# Latest PSR leaderboard
+player_psr()
+
+# As of a specific date
+player_psr(date = "2026-03-18")
+
+# Look up a specific player
+player_psr(date = "2026-03-18", player = "Salah")
 
 # Top midfielders
-player_psr(season = 2025, position = "MID")
-
-# Goal-differential-based PSR
-player_psr(season = 2025, target = "goals")
+player_psr(position = "MID")
 }
 }

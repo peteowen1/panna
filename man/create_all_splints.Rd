@@ -4,7 +4,12 @@
 \alias{create_all_splints}
 \title{Create splints for all matches}
 \usage{
-create_all_splints(processed_data, include_goals = TRUE, verbose = TRUE)
+create_all_splints(
+  processed_data,
+  include_goals = TRUE,
+  verbose = TRUE,
+  chunk_by = c("league", "none")
+)
 }
 \arguments{
 \item{processed_data}{List of processed data from process_all_data}
@@ -12,6 +17,10 @@ create_all_splints(processed_data, include_goals = TRUE, verbose = TRUE)
 \item{include_goals}{Whether to create splints at goal times}
 
 \item{verbose}{Print progress messages}
+
+\item{chunk_by}{Chunking strategy for memory efficiency. \code{"league"} (default)
+processes matches grouped by league to reduce peak memory usage.
+\code{"none"} processes all matches at once (original behaviour).}
 }
 \value{
 List with combined splint data

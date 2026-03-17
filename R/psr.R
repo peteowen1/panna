@@ -697,78 +697,81 @@ compute_player_psr <- function(skills, center = TRUE,
 
 #' Get Player Skill Ratings
 #'
-#' Loads pre-computed skill estimates and applies PSR coefficients to produce
-#' a ranked table of player ratings. PSR predicts each player's contribution
-#' to xG differential based on their Bayesian skill profile.
+#' Returns a ranked PSR leaderboard using pre-computed weekly snapshots.
+#' Snaps to the nearest weekly date at or before \code{date}.
 #'
-#' @param season Season filter as end year (e.g., 2025 for 2024-2025).
-#'   If NULL, returns all available seasons.
-#' @param league League code filter (e.g., \code{"ENG"}). Ignored for now
-#'   since skills are cross-league.
+#' @param date Date to query as a \code{Date} or \code{"YYYY-MM-DD"} string.
+#'   Defaults to the latest available snapshot.
+#' @param player Optional player name filter (partial match, case-insensitive).
+#'   E.g., \code{"Salah"} matches "Mohamed Salah".
 #' @param n Number of top players to show (default 50, NULL for all).
 #' @param position Filter by position group: \code{"GK"}, \code{"DEF"},
 #'   \code{"MID"}, \code{"FWD"}, or NULL for all.
 #' @param target One of \code{"xg"} (default, xG differential) or
-#'   \code{"goals"} (goal differential).
+#'   \code{"goals"} (goal differential). Note: weekly snapshots are xG-based;
+#'   \code{"goals"} recomputes from skills on-demand (slower).
 #' @param source Data source: \code{"remote"} (default, GitHub Releases) or
 #'   \code{"local"}.
 #'
-#' @return A data.table with columns: \code{player_name}, \code{primary_position},
-#'   \code{psr}, \code{osr}, \code{dsr}, \code{weighted_90s}, and key skill
-#'   columns for context.
+#' @return A data.table with columns: \code{snapshot_date}, \code{player_name},
+#'   \code{primary_position}, \code{psr}, \code{osr}, \code{dsr},
+#'   \code{weighted_90s}.
 #'
 #' @export
 #'
 #' @examples
 #' \dontrun{
-#' # Top 50 players in 2024-2025 (xG-based PSR)
-#' player_psr(season = 2025)
+#' # Latest PSR leaderboard
+#' player_psr()
+#'
+#' # As of a specific date
+#' player_psr(date = "2026-03-18")
+#'
+#' # Look up a specific player
+#' player_psr(date = "2026-03-18", player = "Salah")
 #'
 #' # Top midfielders
-#' player_psr(season = 2025, position = "MID")
-#'
-#' # Goal-differential-based PSR
-#' player_psr(season = 2025, target = "goals")
+#' player_psr(position = "MID")
 #' }
-player_psr <- function(season = NULL, league = NULL, n = 50,
+player_psr <- function(date = NULL, player = NULL, n = 50,
                         position = NULL, target = c("xg", "goals"),
                         source = c("remote", "local")) {
   source <- match.arg(source)
   target <- match.arg(target)
 
-  # Load skills
-  skills <- load_opta_skills(season = season, source = source)
-  if (is.null(skills) || nrow(skills) == 0) {
-    cli::cli_abort("No skill data available for season {.val {season}}")
+  if (target == "goals") {
+    cli::cli_warn(c(
+      "Weekly snapshots are xG-based.",
+      "i" = "goal-diff PSR is not pre-computed; returning xG-based PSR."
+    ))
   }
 
-  # Compute PSR
-  psr <- compute_player_psr(skills, center = TRUE, target = target)
+  # Load from weekly snapshot parquet (snaps to nearest date <= requested)
+  psr <- data.table::as.data.table(
+    load_opta_psr_weekly(date = date, source = source)
+  )
+
+  if (is.null(psr) || nrow(psr) == 0) {
+    cli::cli_abort("No weekly PSR data available{if (!is.null(date)) paste0(' for date ', date) else ''}.")
+  }
+
+  # Filter by player name (partial, case-insensitive)
+  if (!is.null(player)) {
+    target_clean <- tolower(gsub("[^a-zA-Z0-9]", "", player))
+    clean_names  <- tolower(gsub("[^a-zA-Z0-9]", "", psr$player_name))
+    psr <- psr[grepl(target_clean, clean_names, fixed = TRUE)]
+    if (nrow(psr) == 0) {
+      cli::cli_abort("No players found matching {.val {player}}.")
+    }
+  }
 
   # Filter by position
   if (!is.null(position)) {
     position <- toupper(position)
-    if ("primary_position" %in% names(psr)) {
-      pos_map <- c(
-        GK = "Goalkeeper", DEF = "Defender", MID = "Midfielder", FWD = "Striker"
-      )
-      if (position %in% names(pos_map)) {
-        psr <- psr[grepl(pos_map[position], primary_position, ignore.case = TRUE)]
-      }
+    pos_map <- c(GK = "Goalkeeper", DEF = "Defender", MID = "Midfielder", FWD = "Striker")
+    if (position %in% names(pos_map)) {
+      psr <- psr[grepl(pos_map[position], primary_position, ignore.case = TRUE)]
     }
-  }
-
-  # Add key skill columns for context
-  context_cols <- c(
-    "goals_p90", "assists_p90", "xg_per90", "key_passes_p90",
-    "tackles_won_p90", "interceptions_p90", "pass_accuracy",
-    "duel_success", "touches_p90"
-  )
-  context_available <- intersect(context_cols, names(skills))
-  if (length(context_available) > 0) {
-    skill_dt <- data.table::as.data.table(skills)
-    context_data <- skill_dt[, c("player_id", context_available), with = FALSE]
-    psr <- context_data[psr, on = "player_id"]
   }
 
   # Sort by PSR descending
@@ -781,8 +784,7 @@ player_psr <- function(season = NULL, league = NULL, n = 50,
 
   # Round numeric columns for display
   num_cols <- names(psr)[vapply(psr, is.numeric, logical(1))]
-  display_cols <- setdiff(num_cols, c("season_end_year", "total_minutes", "n_matches"))
-  for (col in display_cols) {
+  for (col in setdiff(num_cols, "weighted_90s")) {
     data.table::set(psr, j = col, value = round(psr[[col]], 3))
   }
 

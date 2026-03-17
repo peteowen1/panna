@@ -24,7 +24,7 @@ env:
 jobs:
   predict:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 75
 
     permissions:
       contents: write
@@ -181,6 +181,22 @@ jobs:
 
             source('data-raw/match-predictions-opta/run_predictions_opta.R', chdir = FALSE)
           "
+
+      - name: Export weekly PSR snapshots
+        env:
+          PANNADATA_DIR: ${{ runner.temp }}/pannadata
+          GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
+        run: |
+          cat > /tmp/run_psr_weekly.R << 'EOF'
+          pannadata_path <- Sys.getenv("PANNADATA_DIR", "../pannadata/data")
+          opta_path <- file.path(pannadata_path, "opta")
+          devtools::load_all()
+          pannadata_dir(pannadata_path)
+          opta_data_dir(opta_path)
+          start_step <- "8b"
+          source("data-raw/estimated-skills/run_skills_pipeline.R")
+          EOF
+          Rscript /tmp/run_psr_weekly.R
 
       - name: Pipeline summary
         if: always()
