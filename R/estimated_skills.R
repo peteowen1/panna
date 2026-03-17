@@ -137,6 +137,7 @@ get_default_decay_params <- function() {
 
 # Compute denominator vector for efficiency stats from a denom_spec string.
 # Supports "col1+col2" for summing multiple columns.
+# Returns NULL if denominator columns are not found (caller should skip stat).
 .compute_denominator <- function(dt_sub, denom_spec) {
   if (grepl("\\+", denom_spec)) {
     parts <- strsplit(denom_spec, "\\+")[[1]]
@@ -150,9 +151,7 @@ get_default_decay_params <- function() {
         found_any <- TRUE
       }
     }
-    if (!found_any) {
-      cli::cli_abort("No denominator columns found for {.val {denom_spec}}. Cannot compute efficiency stat.")
-    }
+    if (!found_any) return(NULL)
     return(result)
   }
   if (denom_spec %in% names(dt_sub)) {
@@ -160,7 +159,7 @@ get_default_decay_params <- function() {
     v[is.na(v)] <- 0
     return(v)
   }
-  cli::cli_abort("Denominator column {.val {denom_spec}} not found. Cannot compute efficiency stat.")
+  NULL
 }
 
 
@@ -462,6 +461,7 @@ estimate_player_skills <- function(match_stats, decay_params = NULL,
 
     if (is_eff) {
       denom <- compute_denominator(dt, eff_map[[sc]])
+      if (is.null(denom)) next  # skip stat if denominator columns missing
       data.table::set(dt, j = ".wnum", value = w_vec * vals * denom)
       data.table::set(dt, j = ".wden", value = w_vec * denom)
       agg <- dt[, .(w_num = sum(.wnum), w_den = sum(.wden)), by = player_id]
@@ -523,6 +523,7 @@ estimate_player_skills <- function(match_stats, decay_params = NULL,
 
   for (sc in stat_cols) {
     sr <- skill_results[[sc]]
+    if (is.null(sr)) next
     data.table::setnames(sr, "skill", sc)
     result[sr, (sc) := get(paste0("i.", sc)), on = "player_id"]
   }

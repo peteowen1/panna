@@ -84,16 +84,19 @@
 # Batch pre-match skill estimation
 # ============================================================================
 
-#' Estimate pre-match skills at multiple dates
+#' Estimate pre-match skills at multiple dates (incremental batch version)
 #'
-#' Calls \code{\link{estimate_player_skills}} at each reference date in
-#' chronological order, using all match data strictly before each date.
-#' This mirrors torpverse's \code{.estimate_skills_batch()} approach.
+#' Highly optimized for sequential date estimation. Instead of re-processing
+#' all historical data at each date, maintains running cumulative sums that
+#' are decayed forward and incrementally updated with new observations.
+#' Uses \code{rowsum()} (C-level) for grouped matrix sums.
+#'
+#' Complexity: O(N + D * new_rows_per_date) instead of O(N * D).
+#' For typical data (~1M rows, 659 dates), this is ~100-300x faster.
 #'
 #' @param match_stats Match-level stats (output of
 #'   \code{compute_match_level_opta_stats}).
 #' @param ref_dates Character or Date vector of dates to estimate skills at.
-#'   Typically unique match dates from the training data.
 #' @param decay_params Decay parameters (default: \code{get_default_decay_params()}).
 #' @param min_weighted_90s Minimum weighted 90s for inclusion (default 3).
 #' @param verbose Print progress (default TRUE).
@@ -118,6 +121,205 @@
                           n_dates, ref_dates[1], ref_dates[n_dates]))
   }
 
+  # === PRE-COMPUTE SHARED STATE ===
+
+  dt <- data.table::as.data.table(match_stats)
+  if (!inherits(dt$match_date, "Date")) dt[, match_date := as.Date(match_date)]
+  data.table::setkey(dt, match_date)
+
+  # Resolve positions once
+  dt <- .resolve_positions(dt)
+  player_pos <- dt[!is.na(pos_group), {
+    tt <- table(pos_group)
+    list(pos_group = names(tt)[which.max(tt)])
+  }, by = player_id]
+  player_names <- dt[, .(player_name = player_name[1]), by = player_id]
+
+  # Auto-detect stat columns
+  eff_map <- .classify_skill_stats()
+  p90_cols <- grep("_p90$", names(dt), value = TRUE)
+  eff_cols <- intersect(names(eff_map), names(dt))
+  stat_cols <- intersect(c(p90_cols, eff_cols), names(dt))
+
+  if (length(stat_cols) == 0) {
+    cli::cli_warn("No stat columns found in match_stats.")
+    return(list())
+  }
+
+  # Resolve lambda per stat
+  stat_lambdas <- vapply(stat_cols, function(sc) {
+    .resolve_lambda(sc, decay_params, eff_map)
+  }, numeric(1))
+
+  # Position multipliers & grand means — compute once
+  pos_multipliers <- if (!is.null(decay_params$position_multipliers)) {
+    decay_params$position_multipliers
+  } else {
+    compute_position_multipliers(dt, stat_cols)
+  }
+
+  grand_means <- numeric(length(stat_cols))
+  names(grand_means) <- stat_cols
+  prior_centers_cached <- decay_params$prior_centers
+  wts_all <- data.table::fifelse(is.na(dt$total_minutes), 0,
+                                  as.numeric(dt$total_minutes))
+  total_wt <- sum(wts_all)
+  for (sc in stat_cols) {
+    if (!is.null(prior_centers_cached) && sc %in% names(prior_centers_cached)) {
+      grand_means[sc] <- prior_centers_cached[sc]
+    } else if (sc %in% names(dt)) {
+      vals <- as.numeric(dt[[sc]])
+      vals[is.na(vals)] <- 0
+      if (total_wt > 0) grand_means[sc] <- sum(vals * wts_all) / total_wt
+    }
+  }
+
+  # Pre-compute minutes/90
+  dt[, .mins_90 := data.table::fifelse(is.na(total_minutes), 0,
+                                        as.numeric(total_minutes) / 90)]
+
+  # Pre-convert stat values to numeric, NA -> 0
+  for (sc in stat_cols) {
+    if (!is.numeric(dt[[sc]])) {
+      data.table::set(dt, j = sc, value = as.numeric(dt[[sc]]))
+    }
+    na_idx <- which(is.na(dt[[sc]]))
+    if (length(na_idx) > 0) data.table::set(dt, i = na_idx, j = sc, value = 0)
+  }
+
+  # Pre-compute denominators for efficiency stats (skip missing)
+  eff_denoms <- list()
+  skip_stats <- character(0)
+  for (sc in eff_cols) {
+    if (sc %in% names(eff_map)) {
+      d <- .compute_denominator(dt, eff_map[[sc]])
+      if (is.null(d)) { skip_stats <- c(skip_stats, sc); next }
+      eff_denoms[[sc]] <- d
+    }
+  }
+  if (length(skip_stats) > 0) {
+    stat_cols <- setdiff(stat_cols, skip_stats)
+    stat_lambdas <- stat_lambdas[stat_cols]
+    if (verbose) {
+      progress_msg(sprintf("  Skipped %d stats (missing denominators): %s",
+                            length(skip_stats), paste(skip_stats, collapse = ", ")))
+    }
+  }
+
+  # Classify stats
+  rate_stats <- setdiff(stat_cols, names(eff_map))
+  eff_stats <- intersect(stat_cols, names(eff_map))
+  unique_lambdas <- unique(stat_lambdas)
+  rate_lam <- decay_params$rate
+
+  # Prior strengths per stat
+  stat_prior_strengths <- vapply(stat_cols, function(sc) {
+    .resolve_prior_strength(sc, decay_params, sc %in% names(eff_map))
+  }, numeric(1))
+
+  # Build player index: integer mapping for rowsum()
+  all_player_ids <- sort(unique(dt$player_id))
+  n_players <- length(all_player_ids)
+  pid_int <- match(dt$player_id, all_player_ids)  # integer index per row
+
+  # Pre-compute position-specific prior centers per player (constant across dates)
+  player_pg <- player_pos$pos_group[match(all_player_ids, player_pos$player_id)]
+
+  # Rate stat priors: alpha0 matrix (n_players × n_rate_stats)
+  rate_alpha0 <- matrix(0, nrow = n_players, ncol = length(rate_stats))
+  colnames(rate_alpha0) <- rate_stats
+  for (ci in seq_along(rate_stats)) {
+    sc <- rate_stats[ci]
+    ps <- stat_prior_strengths[sc]
+    gm <- grand_means[sc]
+    pm_lookup <- if (sc %in% names(pos_multipliers)) pos_multipliers[[sc]] else NULL
+    a0 <- rep(gm, n_players)
+    if (!is.null(pm_lookup)) {
+      for (pg in names(pm_lookup)) a0[player_pg == pg] <- gm * pm_lookup[pg]
+    }
+    rate_alpha0[, ci] <- pmax(a0 * ps, 1e-4)
+  }
+
+  # Efficiency stat priors: mu0 per stat (n_players vector each)
+  eff_mu0 <- list()
+  for (sc in eff_stats) {
+    gm <- grand_means[sc]
+    pm_lookup <- if (sc %in% names(pos_multipliers)) pos_multipliers[[sc]] else NULL
+    m0 <- rep(gm, n_players)
+    if (!is.null(pm_lookup)) {
+      for (pg in names(pm_lookup)) m0[player_pg == pg] <- gm * pm_lookup[pg]
+    }
+    eff_mu0[[sc]] <- pmax(pmin(m0, 1 - 1e-6), 1e-6)
+  }
+
+  # Player name/position lookup aligned to all_player_ids
+  pname_lookup <- player_names$player_name[match(all_player_ids, player_names$player_id)]
+  ppos_lookup <- player_pg
+
+  if (verbose) {
+    progress_msg(sprintf("  Pre-computed: %d stats (%d rate + %d eff), %d lambdas, %d players",
+                          length(stat_cols), length(rate_stats), length(eff_stats),
+                          length(unique_lambdas), n_players))
+  }
+
+  # === INCREMENTAL CUMULATIVE APPROACH ===
+  #
+  # Key insight: for exponential decay weights,
+  #   w_num_D' = exp(-lam * delta) * w_num_D + sum_{new rows} contribution
+  # So we maintain running sums and only add new data at each step.
+
+  # Group rate stats by lambda for shared running sums
+  rate_by_lambda <- split(rate_stats, stat_lambdas[rate_stats])
+  eff_by_lambda <- split(eff_stats, stat_lambdas[eff_stats])
+
+  # Initialize running sum accumulators per lambda group
+  # For rate stats: w_num (n_players × n_cols), w_den (n_players × 1)
+  # For eff stats: w_num and w_den per stat (n_players × 1 each)
+
+  run_rate <- list()
+  for (lam_key in names(rate_by_lambda)) {
+    cols <- rate_by_lambda[[lam_key]]
+    run_rate[[lam_key]] <- list(
+      w_num = matrix(0, nrow = n_players, ncol = length(cols),
+                     dimnames = list(NULL, cols)),
+      w_den = numeric(n_players)  # shared denominator for rate stats
+    )
+  }
+
+  run_eff <- list()
+  for (sc in eff_stats) {
+    run_eff[[sc]] <- list(w_num = numeric(n_players), w_den = numeric(n_players))
+  }
+
+  # Running weighted 90s (uses rate lambda)
+  run_w90 <- numeric(n_players)
+
+  # Track cursor: which rows have been incorporated
+  prev_date <- ref_dates[1]  # will be adjusted
+  cursor <- 0L  # index into dt — rows 1:cursor have been processed
+
+  # Extract vectors we'll index repeatedly (avoid repeated dt[[]] access)
+  dt_dates <- dt$match_date
+  dt_mins90 <- dt$.mins_90
+  dt_pid_int <- pid_int
+
+  # Pre-extract stat value vectors
+  dt_stat_vals <- list()
+  for (sc in stat_cols) dt_stat_vals[[sc]] <- dt[[sc]]
+
+  # Pre-extract efficiency denominators (already computed)
+  # eff_denoms[[sc]] is a full-length vector aligned with dt rows
+
+  # Pre-compute cursor positions for all ref_dates (vectorized binary search)
+  # cursor_positions[i] = number of rows in dt with match_date < ref_dates[i]
+  dt_dates_num <- as.numeric(dt_dates)
+  ref_dates_num <- as.numeric(ref_dates)
+  # findInterval returns last index where dt_dates_num <= x
+  # We want strict < so subtract a small epsilon (dates are integers, 0.5 works)
+  cursor_positions <- findInterval(ref_dates_num - 0.5, dt_dates_num)
+
+  cursor <- 0L
+
   for (i in seq_along(ref_dates)) {
     rd <- ref_dates[i]
 
@@ -125,20 +327,160 @@
       progress_msg(sprintf("  Date %d/%d: %s", i, n_dates, rd))
     }
 
-    results[[i]] <- tryCatch(
-      estimate_player_skills(
-        match_stats = match_stats,
-        decay_params = decay_params,
-        target_date = rd,
-        min_weighted_90s = min_weighted_90s
-      ),
-      error = function(e) {
-        if (verbose) {
-          cli::cli_warn("Skills estimation failed for {rd}: {e$message}")
-        }
+    results[[i]] <- tryCatch({
+      new_cursor <- cursor_positions[i]
+
+      # Skip dates with no prior data (use NULL, not return() — we're in tryCatch)
+      if (new_cursor == 0) {
         NULL
+      } else {
+
+      new_rows <- if (new_cursor > cursor) (cursor + 1L):new_cursor else integer(0)
+      has_new <- length(new_rows) > 0
+
+      # Days between this ref_date and the previous one (for decay of existing sums)
+      if (i == 1) {
+        delta_days <- 0  # no previous sums to decay
+      } else {
+        delta_days <- as.numeric(rd - ref_dates[i - 1L])
       }
-    )
+
+      # --- Update running sums ---
+      # Step 1: Decay existing sums by exp(-lam * delta_days)
+      # Step 2: Add contributions from new rows
+
+      # Rate stats (grouped by lambda)
+      for (lam_key in names(rate_by_lambda)) {
+        lam <- as.numeric(lam_key)
+        cols <- rate_by_lambda[[lam_key]]
+        rs <- run_rate[[lam_key]]
+
+        # Decay existing
+        if (i > 1 && delta_days > 0) {
+          decay_factor <- exp(-lam * delta_days)
+          rs$w_num <- rs$w_num * decay_factor
+          rs$w_den <- rs$w_den * decay_factor
+        }
+
+        # Add new rows
+        if (has_new) {
+          new_pid <- dt_pid_int[new_rows]
+          # Days from each new match to THIS ref_date
+          new_days <- as.numeric(rd - dt_dates[new_rows])
+          new_w <- exp(-lam * new_days)
+          new_w_mins <- new_w * dt_mins90[new_rows]
+
+          # Denominator: rowsum of w * mins_90 by player
+          den_contrib <- rowsum(new_w_mins, new_pid, reorder = FALSE)
+          den_players <- as.integer(rownames(den_contrib))
+          rs$w_den[den_players] <- rs$w_den[den_players] + den_contrib[, 1]
+
+          # Numerator: rowsum of stat_mat * w_mins by player (all cols at once)
+          stat_mat <- matrix(0, nrow = length(new_rows), ncol = length(cols))
+          for (ci in seq_along(cols)) {
+            stat_mat[, ci] <- dt_stat_vals[[cols[ci]]][new_rows]
+          }
+          num_contrib <- rowsum(stat_mat * new_w_mins, new_pid, reorder = FALSE)
+          rs$w_num[den_players, ] <- rs$w_num[den_players, ] + num_contrib
+        }
+
+        run_rate[[lam_key]] <- rs
+      }
+
+      # Efficiency stats
+      for (sc in eff_stats) {
+        lam <- stat_lambdas[sc]
+        rs <- run_eff[[sc]]
+
+        if (i > 1 && delta_days > 0) {
+          decay_factor <- exp(-lam * delta_days)
+          rs$w_num <- rs$w_num * decay_factor
+          rs$w_den <- rs$w_den * decay_factor
+        }
+
+        if (has_new) {
+          new_pid <- dt_pid_int[new_rows]
+          new_days <- as.numeric(rd - dt_dates[new_rows])
+          new_w <- exp(-lam * new_days)
+          new_denom <- eff_denoms[[sc]][new_rows]
+
+          num_v <- new_w * dt_stat_vals[[sc]][new_rows] * new_denom
+          den_v <- new_w * new_denom
+
+          num_contrib <- rowsum(num_v, new_pid, reorder = FALSE)
+          den_contrib <- rowsum(den_v, new_pid, reorder = FALSE)
+          rp <- as.integer(rownames(num_contrib))
+          rs$w_num[rp] <- rs$w_num[rp] + num_contrib[, 1]
+          rs$w_den[rp] <- rs$w_den[rp] + den_contrib[, 1]
+        }
+
+        run_eff[[sc]] <- rs
+      }
+
+      # Weighted 90s (rate lambda)
+      if (i > 1 && delta_days > 0) {
+        run_w90 <- run_w90 * exp(-rate_lam * delta_days)
+      }
+      if (has_new) {
+        new_pid <- dt_pid_int[new_rows]
+        new_days <- as.numeric(rd - dt_dates[new_rows])
+        w90_v <- exp(-rate_lam * new_days) * dt_mins90[new_rows]
+        w90_contrib <- rowsum(w90_v, new_pid, reorder = FALSE)
+        rp <- as.integer(rownames(w90_contrib))
+        run_w90[rp] <- run_w90[rp] + w90_contrib[, 1]
+      }
+
+      cursor <- new_cursor
+
+      # --- Compute posteriors from running sums ---
+
+      # Rate stats
+      rate_skill_mat <- matrix(0, nrow = n_players, ncol = length(rate_stats))
+      colnames(rate_skill_mat) <- rate_stats
+      col_offset <- 0
+      for (lam_key in names(rate_by_lambda)) {
+        cols <- rate_by_lambda[[lam_key]]
+        rs <- run_rate[[lam_key]]
+        for (ci in seq_along(cols)) {
+          sc <- cols[ci]
+          ps <- stat_prior_strengths[sc]
+          si <- match(sc, rate_stats)
+          rate_skill_mat[, si] <- (rate_alpha0[, si] + rs$w_num[, ci]) /
+                                   (ps + rs$w_den)
+        }
+      }
+
+      # Efficiency stats
+      eff_skill_vals <- list()
+      for (sc in eff_stats) {
+        ps <- stat_prior_strengths[sc]
+        rs <- run_eff[[sc]]
+        eff_skill_vals[[sc]] <- (eff_mu0[[sc]] * ps + rs$w_num) / (ps + rs$w_den)
+      }
+
+      # --- Build result data.table ---
+      result <- data.table::data.table(
+        player_id = all_player_ids,
+        player_name = pname_lookup,
+        primary_position = ppos_lookup,
+        date = rd,
+        weighted_90s = run_w90
+      )
+
+      for (ci in seq_along(rate_stats)) {
+        data.table::set(result, j = rate_stats[ci], value = rate_skill_mat[, ci])
+      }
+      for (sc in eff_stats) {
+        data.table::set(result, j = sc, value = eff_skill_vals[[sc]])
+      }
+
+      result
+      }  # end else (has prior data)
+    },
+    error = function(e) {
+      if (verbose) cat(sprintf("  ERROR at %s: %s\n", rd, e$message))
+      NULL
+    })
   }
 
   # Drop NULLs

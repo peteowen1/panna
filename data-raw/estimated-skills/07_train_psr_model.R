@@ -60,9 +60,15 @@ cat(paste(rep("#", 70), collapse = ""), "\n\n")
 
 cat("=== Loading Data ===\n\n")
 
-match_stats <- readRDS(file.path(cache_dir, "01_match_stats.rds"))
-cat(sprintf("Match stats: %s player-match rows\n",
-            format(nrow(match_stats), big.mark = ",")))
+# Prefer slim version (fewer columns, less memory) if available
+slim_path <- file.path(cache_dir, "01_match_stats_slim.rds")
+full_path <- file.path(cache_dir, "01_match_stats.rds")
+ms_path <- if (file.exists(slim_path)) slim_path else full_path
+cat(sprintf("Loading: %s\n", basename(ms_path)))
+match_stats <- readRDS(ms_path)
+gc(verbose = FALSE)
+cat(sprintf("Match stats: %s player-match rows x %d cols\n",
+            format(nrow(match_stats), big.mark = ","), ncol(match_stats)))
 
 # Load optimized decay params (if available)
 decay_params_path <- file.path(cache_dir, "02b_decay_params.rds")
@@ -76,6 +82,7 @@ if (file.exists(decay_params_path)) {
 
 # Ensure season_end_year exists
 ms_dt <- data.table::as.data.table(match_stats)
+rm(match_stats); gc(verbose = FALSE)
 if (!"season_end_year" %in% names(ms_dt)) {
   ms_dt[, season_end_year := data.table::fifelse(
     data.table::month(as.Date(match_date)) >= 7L,
@@ -153,68 +160,142 @@ if (file.exists(splint_path)) {
 
 cat("\n=== Computing Pre-Match Skills ===\n\n")
 
-# Get unique match dates from training data
+# Use weekly date bins to reduce computation (~400 calls vs ~3000)
+# Each match uses skills from the most recent weekly bin BEFORE its date
 unique_match_dates <- sort(unique(match_outcomes$match_date))
 cat(sprintf("Unique match dates: %d (%s to %s)\n",
             length(unique_match_dates),
             min(unique_match_dates), max(unique_match_dates)))
 
-# Batch-estimate skills at each match date (lag-1: all data < match_date)
-prematch_skills <- .estimate_prematch_skills_batch(
-  match_stats = ms_dt,
-  ref_dates = unique_match_dates,
-  decay_params = decay_params,
-  min_weighted_90s = MIN_W90_FOR_SKILLS,
-  verbose = TRUE
-)
+# Create weekly reference dates (every 7 days)
+SKILL_BIN_DAYS <- 7L
+all_dates_num <- as.numeric(unique_match_dates)
+bin_breaks <- seq(min(all_dates_num), max(all_dates_num) + SKILL_BIN_DAYS,
+                  by = SKILL_BIN_DAYS)
+weekly_dates <- as.Date(bin_breaks, origin = "1970-01-01")
+cat(sprintf("Weekly skill dates: %d (every %d days)\n",
+            length(weekly_dates), SKILL_BIN_DAYS))
 
-cat(sprintf("\nSkills computed for %d / %d dates\n",
-            length(prematch_skills), length(unique_match_dates)))
+# Map each match date to its weekly bin (latest bin <= match_date)
+match_date_to_bin <- function(md) {
+  idx <- findInterval(as.numeric(md), as.numeric(weekly_dates))
+  idx[idx < 1] <- 1
+  weekly_dates[idx]
+}
+
+# Batch-estimate skills at each weekly date
+prematch_skills <- tryCatch(
+  .estimate_prematch_skills_batch(
+    match_stats = ms_dt,
+    ref_dates = weekly_dates,
+    decay_params = decay_params,
+    min_weighted_90s = MIN_W90_FOR_SKILLS,
+    verbose = TRUE
+  ),
+  error = function(e) {
+    cat(sprintf("\n!!! BATCH ESTIMATION ERROR: %s\n", e$message))
+    cat(sprintf("Traceback:\n"))
+    traceback()
+    list()
+  }
+)
+gc(verbose = FALSE)
+
+cat(sprintf("\nSkills computed for %d / %d weekly dates\n",
+            length(prematch_skills), length(weekly_dates)))
 
 # 7. Join Pre-Match Skills to Player-Matches ----
+# Memory-safe: process one weekly date at a time instead of stacking all
+# skills into one giant table. Avoids ~4GB peak from rbindlist.
 
-cat("\n=== Joining Skills to Matches ===\n\n")
+cat("\n=== Joining Skills to Matches (chunked) ===\n\n")
 
 psr_cols <- .get_psr_skill_cols()
 
-# For each player-match, look up their pre-match skills by date
-# Create a long table: match_id, player_id, team_name, is_home, minutes, [skills]
+# For each player-match, look up their pre-match skills by weekly bin date
 player_match_ids <- ms_dt[, .(match_id, player_id, team_name, is_home,
                                total_minutes, match_date)]
+rm(ms_dt); gc(verbose = FALSE)
+# Map each match to its weekly bin
+player_match_ids[, skill_date := match_date_to_bin(match_date)]
 
-# Stack all prematch skills with their ref_date
-skills_list <- lapply(names(prematch_skills), function(d) {
-  sk <- prematch_skills[[d]]
-  if (is.null(sk) || nrow(sk) == 0) return(NULL)
-  sk <- data.table::as.data.table(sk)
-  sk[, skill_date := as.Date(d)]
-  sk
-})
-all_skills <- data.table::rbindlist(skills_list, fill = TRUE, use.names = TRUE)
-
-if (nrow(all_skills) == 0) {
+# Determine skill_keep_cols from the first non-empty result
+first_sk <- NULL
+for (d in names(prematch_skills)) {
+  if (!is.null(prematch_skills[[d]]) && nrow(prematch_skills[[d]]) > 0) {
+    first_sk <- data.table::as.data.table(prematch_skills[[d]])
+    break
+  }
+}
+if (is.null(first_sk)) {
   stop("No skills were computed. Check match_stats and decay_params.")
 }
+skill_keep_cols <- intersect(psr_cols, names(first_sk))
+rm(first_sk)
 
-cat(sprintf("Total skill rows: %s (players x dates)\n",
-            format(nrow(all_skills), big.mark = ",")))
+# Save the latest date's skills for validation BEFORE freeing prematch_skills
+latest_skill_date <- max(names(prematch_skills))
+latest_skills_for_validation <- prematch_skills[[latest_skill_date]]
 
-# Join: player_match gets skills from the matching date
-player_match_ids[, skill_date := match_date]  # match_date = skill ref_date
+# Chunked join: for each weekly date, join its skills with matching
+# player-matches, then discard. Never hold all dates in memory at once.
+skill_join_cols <- c("player_id", skill_keep_cols)
+matched_chunks <- vector("list", length(prematch_skills))
+dates_processed <- 0L
 
-# Select only needed skill columns
-skill_keep_cols <- intersect(psr_cols, names(all_skills))
-skill_join_cols <- c("player_id", "skill_date", skill_keep_cols)
-skill_join_data <- all_skills[, ..skill_join_cols]
+for (j in seq_along(prematch_skills)) {
+  d <- names(prematch_skills)[j]
+  sk <- prematch_skills[[d]]
+  # Free this slot immediately after extracting
+  prematch_skills[[j]] <- NULL
 
-pm_with_skills <- skill_join_data[player_match_ids,
-                                   on = .(player_id, skill_date),
-                                   nomatch = NA]
+  if (is.null(sk) || nrow(sk) == 0) next
+
+  sk <- data.table::as.data.table(sk)
+  # Only keep needed columns
+  sk_cols <- intersect(skill_join_cols, names(sk))
+  sk <- sk[, ..sk_cols]
+
+  # Find player-matches mapped to this weekly bin
+  bin_date <- as.Date(d)
+  pm_subset <- player_match_ids[skill_date == bin_date]
+  if (nrow(pm_subset) == 0) next
+
+  # Join: attach skills to player-matches for this date
+  matched <- sk[pm_subset, on = "player_id", nomatch = NA]
+  matched_chunks[[j]] <- matched
+
+  dates_processed <- dates_processed + 1L
+  if (dates_processed %% 100 == 0) {
+    cat(sprintf("  Joined %d / %d dates\n", dates_processed, length(names(prematch_skills)) + dates_processed))
+    gc(verbose = FALSE)
+  }
+}
+
+rm(prematch_skills)
+gc(verbose = FALSE)
+
+pm_with_skills <- data.table::rbindlist(matched_chunks, fill = TRUE, use.names = TRUE)
+rm(matched_chunks)
+gc(verbose = FALSE)
+
+# Add any player-matches that had no matching skill date (fill with NA)
+missing_matches <- player_match_ids[!match_id %in% pm_with_skills$match_id |
+                                     !player_id %in% pm_with_skills$player_id]
+if (nrow(missing_matches) > 0) {
+  # These will get NA skills, which get imputed to 0 below
+  pm_with_skills <- data.table::rbindlist(
+    list(pm_with_skills, missing_matches), fill = TRUE, use.names = TRUE
+  )
+}
+rm(player_match_ids)
+gc(verbose = FALSE)
 
 n_with_skills <- sum(!is.na(pm_with_skills[[skill_keep_cols[1]]]))
 n_total <- nrow(pm_with_skills)
 cat(sprintf("Player-matches with skills: %d / %d (%.1f%%)\n",
             n_with_skills, n_total, 100 * n_with_skills / n_total))
+cat(sprintf("Dates processed: %d\n", dates_processed))
 
 # Impute missing skills with 0 (player has no prior data)
 for (col in skill_keep_cols) {
@@ -500,9 +581,9 @@ gd_models <- train_and_save(
 
 cat("\n=== Validation: PSR for Latest Date ===\n\n")
 
-# Use the most recent pre-match skills
-latest_date <- max(names(prematch_skills))
-latest_skills <- prematch_skills[[latest_date]]
+# Use the saved latest skills (prematch_skills was freed in section 7)
+latest_date <- latest_skill_date
+latest_skills <- latest_skills_for_validation
 
 if (!is.null(latest_skills) && nrow(latest_skills) > 0) {
   # Use xG coefficients if available, otherwise goal diff
