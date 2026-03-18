@@ -38,6 +38,9 @@ panna_ratings <- xrapm_results$ratings %>%
     off_deviation, def_deviation, off_prior, def_prior
   )
 
+# Free memory
+rm(xrapm_results); gc(verbose = FALSE)
+
 # Add base RAPM
 base_rapm <- rapm_results$ratings %>%
   group_by(player_id) %>%
@@ -47,6 +50,9 @@ base_rapm <- rapm_results$ratings %>%
 
 panna_ratings <- panna_ratings %>%
   left_join(base_rapm, by = "player_id")
+
+# Free memory
+rm(rapm_results, base_rapm); gc(verbose = FALSE)
 
 n_missing_rapm <- sum(is.na(panna_ratings$base_rapm))
 if (n_missing_rapm > 0) {
@@ -64,6 +70,9 @@ spm_overall <- spm_results$spm_ratings %>%
 
 panna_ratings <- panna_ratings %>%
   left_join(spm_overall, by = "player_id")
+
+# Free memory
+rm(spm_results, spm_overall); gc(verbose = FALSE)
 
 n_missing_spm <- sum(is.na(panna_ratings$spm_overall))
 if (n_missing_spm > 0) {

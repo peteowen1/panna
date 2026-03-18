@@ -27,6 +27,9 @@ cat("Splints:", nrow(splint_data$splints), "\n")
 cat("Players with RAPM:", nrow(rapm_results$ratings), "\n")
 cat("Players with skill SPM:", nrow(spm_results$spm_ratings), "\n")
 
+# Free memory
+rm(splint_data); gc(verbose = FALSE)
+
 # 4. Create SPM Priors ----
 
 cat("\n=== Creating Skill-Based SPM Priors ===\n")
@@ -48,6 +51,9 @@ defense_prior <- build_prior_vector(
 cat("Offense priors set:", sum(offense_prior != 0), "\n")
 cat("Defense priors set:", sum(defense_prior != 0), "\n")
 
+# Free memory
+rm(spm_results); gc(verbose = FALSE)
+
 # 5. Fit xRAPM ----
 
 cat("\n=== Fitting xRAPM with Skill-Based Prior ===\n")
@@ -63,6 +69,9 @@ xrapm_model <- fit_rapm_with_prior(
   use_weights = TRUE,
   penalize_covariates = FALSE
 )
+
+# Free memory
+rm(rapm_data, rapm_results); gc(verbose = FALSE)
 
 # 6. Extract Ratings ----
 

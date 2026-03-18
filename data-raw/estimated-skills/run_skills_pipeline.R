@@ -29,16 +29,30 @@ if (!exists("use_xmetrics_features")) use_xmetrics_features <- TRUE
 # Which steps to run
 if (!exists("n_cores")) n_cores <- 1  # Parallel cores for optimization
 
+# START FROM STEP (skip earlier steps that are already cached)
+# Set before sourcing: start_step <- 3  # resume from skill SPM
+# Use "2b" or 2.5 for the optimize step
+if (!exists("start_step")) start_step <- 1
+
+# Normalize lettered steps to numeric for comparison: "2b" -> 2.5, "8b" -> 8.5
+start_num <- switch(as.character(start_step),
+  "2b" = 2.5,
+  "8b" = 8.5,
+  as.numeric(start_step)
+)
+
 if (!exists("run_steps")) {
   run_steps <- list(
-    step_01_compute_match_stats    = TRUE,
-    step_02_estimate_skills        = TRUE,
-    step_02b_optimize_params       = TRUE,   # Joint 2D optimization (prior + lambda), faster with n_cores
-    step_03_skill_spm              = TRUE,
-    step_04_skill_xrapm            = TRUE,
-    step_05_skill_panna_ratings    = TRUE,
-    step_06_seasonal_skill_ratings = TRUE,    # Seasonal ratings for match predictions
-    step_08_export_skills          = TRUE     # Export opta_skills.parquet to GitHub
+    step_01_compute_match_stats    = start_num <= 1,
+    step_02_estimate_skills        = start_num <= 2,
+    step_2b_optimize_params        = start_num <= 2.5,
+    step_03_skill_spm              = start_num <= 3,
+    step_04_skill_xrapm            = start_num <= 4,
+    step_05_skill_panna_ratings    = start_num <= 5,
+    step_06_seasonal_skill_ratings = start_num <= 6,
+    step_07_train_psr_model        = start_num <= 7,
+    step_08_export_skills          = start_num <= 8,
+    step_8b_export_psr_weekly      = start_num <= 8.5
   )
 }
 
@@ -107,11 +121,13 @@ if (!is.null(force_rebuild_from)) {
     "4" = "04_skill_xrapm.rds",
     "5" = c("05_skill_panna.rds", "skill_panna_ratings.csv"),
     "6" = c("06_seasonal_ratings.rds", "seasonal_skill_xrapm.csv"),
-    "8" = character(0)  # export step has no cache file to clear
+    "7" = "07_psr_model.rds",
+    "8" = character(0),  # export step has no cache file to clear
+    "8b" = character(0)  # export step has no cache file to clear
   )
 
   # Build list of steps to clear: numeric steps >= force_rebuild_from + fractional steps
-  steps_to_clear <- as.character(force_rebuild_from:6)
+  steps_to_clear <- as.character(force_rebuild_from:8)
   # Include fractional steps (e.g., "2b") when their parent step is being rebuilt
   fractional_steps <- setdiff(names(cache_files), as.character(1:6))
   for (fs in fractional_steps) {
@@ -134,15 +150,21 @@ if (!is.null(force_rebuild_from)) {
                   deleted, force_rebuild_from))
 }
 
-# Check prerequisites
+# Check prerequisites (only if steps that need them are enabled)
 opta_cache <- file.path("data-raw", "cache-opta")
-required_files <- c("03_splints.rds", "04_rapm.rds")
-missing <- required_files[!file.exists(file.path(opta_cache, required_files))]
-if (length(missing) > 0) {
-  stop(sprintf(
-    "Missing Opta pipeline prerequisites: %s\nRun run_pipeline_opta.R first.",
-    paste(missing, collapse = ", ")
-  ))
+needs_opta_cache <- any(vapply(c("step_03_skill_spm", "step_04_skill_xrapm",
+                                  "step_05_skill_panna_ratings",
+                                  "step_06_seasonal_skill_ratings"),
+                                function(s) isTRUE(run_steps[[s]]), logical(1)))
+if (needs_opta_cache) {
+  required_files <- c("03_splints.rds", "04_rapm.rds")
+  missing <- required_files[!file.exists(file.path(opta_cache, required_files))]
+  if (length(missing) > 0) {
+    stop(sprintf(
+      "Missing Opta pipeline prerequisites: %s\nRun run_pipeline_opta.R first.",
+      paste(missing, collapse = ", ")
+    ))
+  }
 }
 
 pipeline_start <- Sys.time()
@@ -157,6 +179,7 @@ message("#")
 message(sprintf("#   Leagues: %s", paste(leagues, collapse = ", ")))
 message(sprintf("#   Seasons: %s", if (is.null(seasons)) "All available" else paste(seasons, collapse = ", ")))
 message(sprintf("#   Min season: %s", if (is.null(min_season)) "None" else min_season))
+message(sprintf("#   Start from step: %s", start_step))
 message("#")
 message(paste(rep("#", 70), collapse = ""))
 
@@ -202,13 +225,25 @@ step_results[[7]] <- run_step("seasonal_skill_ratings", 6, function() {
   source("data-raw/estimated-skills/06_seasonal_skill_ratings.R", local = TRUE)
 })
 
-# 12. Step 8: Export Skills ----
+# 12. Step 7: Train PSR Model ----
 
-step_results[[8]] <- run_step("export_skills", 8, function() {
+step_results[[8]] <- run_step("train_psr_model", 7, function() {
+  source("data-raw/estimated-skills/07_train_psr_model.R", local = TRUE)
+})
+
+# 13. Step 8: Export Skills ----
+
+step_results[[9]] <- run_step("export_skills", 8, function() {
   source("data-raw/estimated-skills/08_export_skills.R", local = TRUE)
 })
 
-# 13. Summary ----
+# 14. Step 8b: Export Weekly PSR Snapshots ----
+
+step_results[[10]] <- run_step("export_psr_weekly", "8b", function() {
+  source("data-raw/estimated-skills/08b_export_psr_weekly.R", local = TRUE)
+})
+
+# 15. Summary ----
 
 pipeline_end <- Sys.time()
 total_duration <- difftime(pipeline_end, pipeline_start, units = "secs")
@@ -237,5 +272,6 @@ message(sprintf("  - %s", file.path(cache_dir, "05_skill_panna.rds")))
 message(sprintf("  - %s", file.path(cache_dir, "skill_panna_ratings.csv")))
 message(sprintf("  - %s", file.path(cache_dir, "06_seasonal_ratings.rds")))
 message("  - pannadata/data/opta/opta_skills.parquet (uploaded to GitHub)")
+message("  - pannadata/data/opta/opta_psr_weekly.parquet (uploaded to GitHub)")
 
 message("\nDone!")

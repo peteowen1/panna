@@ -29,6 +29,9 @@ cat("\nAfter filtering:\n")
 cat("  Splints:", nrow(splint_data$splints), "\n")
 cat("  Players:", nrow(splint_data$players), "\n")
 
+# Free memory
+rm(filter_result); gc(verbose = FALSE)
+
 # 3. Create RAPM Design Matrix ----
 
 cat("\n=== Creating RAPM Design Matrix ===\n")
@@ -38,6 +41,9 @@ rapm_data <- prepare_rapm_data(
   min_minutes = 200,
   include_covariates = TRUE
 )
+
+# Free memory
+rm(splint_data); gc(verbose = FALSE)
 
 cat("\nDesign matrix summary:\n")
 cat("  Rows:", rapm_data$n_rows, "\n")

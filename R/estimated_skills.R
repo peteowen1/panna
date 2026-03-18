@@ -137,6 +137,7 @@ get_default_decay_params <- function() {
 
 # Compute denominator vector for efficiency stats from a denom_spec string.
 # Supports "col1+col2" for summing multiple columns.
+# Returns NULL if denominator columns are not found (caller should skip stat).
 .compute_denominator <- function(dt_sub, denom_spec) {
   if (grepl("\\+", denom_spec)) {
     parts <- strsplit(denom_spec, "\\+")[[1]]
@@ -150,9 +151,7 @@ get_default_decay_params <- function() {
         found_any <- TRUE
       }
     }
-    if (!found_any) {
-      cli::cli_abort("No denominator columns found for {.val {denom_spec}}. Cannot compute efficiency stat.")
-    }
+    if (!found_any) return(NULL)
     return(result)
   }
   if (denom_spec %in% names(dt_sub)) {
@@ -160,7 +159,7 @@ get_default_decay_params <- function() {
     v[is.na(v)] <- 0
     return(v)
   }
-  cli::cli_abort("Denominator column {.val {denom_spec}} not found. Cannot compute efficiency stat.")
+  NULL
 }
 
 
@@ -192,19 +191,24 @@ compute_position_multipliers <- function(match_stats, stat_cols = NULL) {
   pos_groups <- c("GK", "DEF", "MID", "FWD")
   multipliers <- list()
 
+  # Pre-compute position indices and weights once (reused across all stats)
+  pos_idx <- lapply(stats::setNames(pos_groups, pos_groups),
+                    function(pg) which(dt$pos_group == pg))
+  wts      <- as.numeric(dt$total_minutes)
+  wts[is.na(wts)] <- 0
+  total_wt <- sum(wts)
+
   for (sc in stat_cols) {
     vals <- as.numeric(dt[[sc]])
     vals[is.na(vals)] <- 0
-    wts <- as.numeric(dt$total_minutes)
-    wts[is.na(wts)] <- 0
 
-    global_avg <- if (sum(wts) > 0) sum(vals * wts) / sum(wts) else 0
+    global_avg <- if (total_wt > 0) sum(vals * wts) / total_wt else 0
 
     pos_mults <- stats::setNames(rep(1.0, 4), pos_groups)
 
     if (global_avg > 0) {
       for (pg in pos_groups) {
-        idx <- which(dt$pos_group == pg)
+        idx <- pos_idx[[pg]]
         if (length(idx) > 0) {
           pw <- wts[idx]
           pv <- vals[idx]
@@ -462,6 +466,7 @@ estimate_player_skills <- function(match_stats, decay_params = NULL,
 
     if (is_eff) {
       denom <- compute_denominator(dt, eff_map[[sc]])
+      if (is.null(denom)) next  # skip stat if denominator columns missing
       data.table::set(dt, j = ".wnum", value = w_vec * vals * denom)
       data.table::set(dt, j = ".wden", value = w_vec * denom)
       agg <- dt[, .(w_num = sum(.wnum), w_den = sum(.wden)), by = player_id]
@@ -523,6 +528,7 @@ estimate_player_skills <- function(match_stats, decay_params = NULL,
 
   for (sc in stat_cols) {
     sr <- skill_results[[sc]]
+    if (is.null(sr)) next
     data.table::setnames(sr, "skill", sc)
     result[sr, (sc) := get(paste0("i.", sc)), on = "player_id"]
   }

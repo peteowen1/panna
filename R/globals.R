@@ -563,5 +563,14 @@ utils::globalVariables(c(
   "key_chain_actions",
 
   # compare_players columns
-  "chain_xg"
+  "chain_xg",
+
+  # PSR columns
+  "psr_raw",
+  "psr",
+  "osr",
+  "dsr",
+  "match_season",
+  "team_goals",
+  "n_players"
 ))

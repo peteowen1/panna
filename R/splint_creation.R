@@ -716,10 +716,73 @@ create_match_splints <- function(match_id, events, lineups, shooting, results,
 #' @param processed_data List of processed data from process_all_data
 #' @param include_goals Whether to create splints at goal times
 #' @param verbose Print progress messages
+#' @param chunk_by Chunking strategy for memory efficiency. `"league"` (default)
+#'   processes matches grouped by league to reduce peak memory usage.
+#'   `"none"` processes all matches at once (original behaviour).
 #'
 #' @return List with combined splint data
 #' @export
-create_all_splints <- function(processed_data, include_goals = TRUE, verbose = TRUE) {
+create_all_splints <- function(processed_data, include_goals = TRUE, verbose = TRUE,
+                                chunk_by = c("league", "none")) {
+  chunk_by <- match.arg(chunk_by)
+
+  # --- Chunked processing by league ---
+  if (chunk_by == "league" && "league" %in% names(processed_data$results)) {
+    leagues <- unique(processed_data$results$league)
+    n_matches_total <- length(unique(processed_data$results$match_id))
+
+    if (verbose) {
+      message(sprintf("Creating splints for %d matches across %d leagues (chunked by league)",
+                      n_matches_total, length(leagues)))
+    }
+
+    all_chunks <- vector("list", length(leagues))
+
+    for (li in seq_along(leagues)) {
+      lg <- leagues[li]
+      if (verbose) message(sprintf("  League %d/%d: %s", li, length(leagues), lg))
+
+      # Filter to this league's matches
+      league_match_ids <- processed_data$results$match_id[processed_data$results$league == lg]
+      chunk_data <- list(
+        lineups = processed_data$lineups[processed_data$lineups$match_id %in% league_match_ids, , drop = FALSE],
+        shooting = processed_data$shooting[processed_data$shooting$match_id %in% league_match_ids, , drop = FALSE],
+        results = processed_data$results[processed_data$results$match_id %in% league_match_ids, , drop = FALSE],
+        events = if (!is.null(processed_data$events))
+          processed_data$events[processed_data$events$match_id %in% league_match_ids, , drop = FALSE] else NULL,
+        stats_summary = if (!is.null(processed_data$stats_summary))
+          processed_data$stats_summary[processed_data$stats_summary$match_id %in% league_match_ids, , drop = FALSE] else NULL
+      )
+
+      # Process this chunk using the non-chunked path
+      all_chunks[[li]] <- create_all_splints(chunk_data, include_goals = include_goals,
+                                              verbose = FALSE, chunk_by = "none")
+      gc(verbose = FALSE)
+    }
+
+    # Combine all league chunks
+    if (verbose) message("  Combining league results...")
+    combined <- list(
+      splints = data.table::rbindlist(lapply(all_chunks, `[[`, "splints"), fill = TRUE, use.names = TRUE),
+      players = data.table::rbindlist(lapply(all_chunks, `[[`, "players"), fill = TRUE, use.names = TRUE),
+      match_info = data.table::rbindlist(lapply(all_chunks, `[[`, "match_info"), fill = TRUE, use.names = TRUE)
+    )
+    rm(all_chunks); gc(verbose = FALSE)
+
+    # Convert to data.frame for consistency
+    combined$splints <- as.data.frame(combined$splints)
+    combined$players <- as.data.frame(combined$players)
+    combined$match_info <- as.data.frame(combined$match_info)
+
+    if (verbose) {
+      message(sprintf("Created %d splints from %d matches",
+                      nrow(combined$splints), n_matches_total))
+    }
+
+    return(combined)
+  }
+
+  # --- Non-chunked path (chunk_by = "none" or no league column) ---
   match_ids <- unique(processed_data$results$match_id)
   n_matches <- length(match_ids)
 
@@ -740,11 +803,18 @@ create_all_splints <- function(processed_data, include_goals = TRUE, verbose = T
   shooting_by_match <- split(dt_shooting, dt_shooting$match_id)
   results_by_match <- split(dt_results, dt_results$match_id)
 
+  # Free the original dt objects now that we have the split lists
+
+  rm(dt_lineups, dt_shooting, dt_results)
+  gc(verbose = FALSE)
+
   # Events may be NULL
   events_by_match <- NULL
   if (!is.null(processed_data$events) && nrow(processed_data$events) > 0) {
     dt_events <- data.table::as.data.table(processed_data$events)
     events_by_match <- split(dt_events, dt_events$match_id)
+    rm(dt_events)
+    gc(verbose = FALSE)
   }
 
   # Stats summary for red cards (crd_r column)
@@ -754,8 +824,11 @@ create_all_splints <- function(processed_data, include_goals = TRUE, verbose = T
 
     # Add match_id if not present (join via match_url)
     if (!"match_id" %in% names(dt_stats) && "match_url" %in% names(dt_stats)) {
-      match_id_lookup <- unique(dt_results[, c("match_url", "match_id"), with = FALSE])
+      # Need dt_results for the join — reconstruct from results_by_match
+      dt_results_tmp <- data.table::rbindlist(results_by_match, use.names = TRUE)
+      match_id_lookup <- unique(dt_results_tmp[, c("match_url", "match_id"), with = FALSE])
       dt_stats <- match_id_lookup[dt_stats, on = "match_url"]
+      rm(dt_results_tmp, match_id_lookup)
     }
 
     # Only keep rows with red cards to save memory
@@ -769,6 +842,7 @@ create_all_splints <- function(processed_data, include_goals = TRUE, verbose = T
         stats_by_match <- split(dt_stats, dt_stats$match_id)
       }
     }
+    rm(dt_stats)
   }
 
   if (verbose) {
@@ -797,18 +871,13 @@ create_all_splints <- function(processed_data, include_goals = TRUE, verbose = T
 
     tryCatch({
       # O(1) lookup instead of filtering full tables
-      match_lineups <- lineups_by_match[[mid]]
-      match_shooting <- shooting_by_match[[mid]]
-      match_results <- results_by_match[[mid]]
-      match_events <- if (!is.null(events_by_match)) events_by_match[[mid]] else NULL
-      match_stats <- if (!is.null(stats_by_match)) stats_by_match[[mid]] else NULL
-
-      # Convert back to data.frame for existing functions
-      if (!is.null(match_lineups)) match_lineups <- as.data.frame(match_lineups)
-      if (!is.null(match_shooting)) match_shooting <- as.data.frame(match_shooting)
-      if (!is.null(match_results)) match_results <- as.data.frame(match_results)
-      if (!is.null(match_events)) match_events <- as.data.frame(match_events)
-      if (!is.null(match_stats)) match_stats <- as.data.frame(match_stats)
+      # Convert to data.frame — create_match_splints_fast uses [, , drop = FALSE]
+      # which has different semantics in data.table
+      match_lineups <- as.data.frame(lineups_by_match[[mid]])
+      match_shooting <- as.data.frame(shooting_by_match[[mid]])
+      match_results <- as.data.frame(results_by_match[[mid]])
+      match_events <- if (!is.null(events_by_match)) as.data.frame(events_by_match[[mid]]) else NULL
+      match_stats <- if (!is.null(stats_by_match)) as.data.frame(stats_by_match[[mid]]) else NULL
 
       result <- create_match_splints_fast(
         match_id = mid,
@@ -827,11 +896,18 @@ create_all_splints <- function(processed_data, include_goals = TRUE, verbose = T
     }, error = function(e) {
       cli::cli_warn("Failed to create splints for match: {mid} - {conditionMessage(e)}")
     })
+
+    # Periodic GC to keep memory in check on large runs
+    if (i %% 5000 == 0) gc(verbose = FALSE)
   }
 
   if (verbose) {
     message("  Combining results...")
   }
+
+  # Free the split lists before rbindlist to reduce peak memory
+  rm(lineups_by_match, shooting_by_match, results_by_match, events_by_match, stats_by_match)
+  gc(verbose = FALSE)
 
   # Fast row-binding with data.table::rbindlist
   combined <- list(
@@ -840,7 +916,7 @@ create_all_splints <- function(processed_data, include_goals = TRUE, verbose = T
     match_info = data.table::rbindlist(all_match_info[!sapply(all_match_info, is.null)], fill = TRUE)
   )
 
-  # Convert back to data.frame and add splint_id
+  # Convert to data.frame and add splint_id
   combined$splints <- as.data.frame(combined$splints)
   combined$players <- as.data.frame(combined$players)
   combined$match_info <- as.data.frame(combined$match_info)

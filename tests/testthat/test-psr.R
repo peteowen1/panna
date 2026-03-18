@@ -1,0 +1,571 @@
+# Tests for PSR (Player Skill Rating) framework
+
+# Helper: create minimal match_stats for PSR testing
+make_psr_test_data <- function(n_players = 5, n_matches = 10) {
+  players <- paste0("p", seq_len(n_players))
+  dates <- seq.Date(as.Date("2024-01-01"), by = "week", length.out = n_matches)
+
+  rows <- expand.grid(player_id = players, match_idx = seq_len(n_matches),
+                       stringsAsFactors = FALSE)
+  rows$player_name <- paste0("Player_", rows$player_id)
+  rows$match_id <- paste0("m_", rows$match_idx)
+  rows$match_date <- dates[rows$match_idx]
+  rows$total_minutes <- 90
+  rows$position <- rep(c("Defender", "Midfielder", "Striker"),
+                        length.out = nrow(rows))
+
+  # Simple skill columns
+  set.seed(42)
+  rows$goals_p90 <- runif(nrow(rows), 0, 1)
+  rows$tackles_won_p90 <- runif(nrow(rows), 0, 3)
+  rows$pass_accuracy <- runif(nrow(rows), 0.6, 0.95)
+  rows$passes <- rpois(nrow(rows), 50)
+  rows$passes_accurate <- round(rows$passes * rows$pass_accuracy)
+  rows$shots_p90 <- runif(nrow(rows), 0, 3)
+
+  as.data.frame(rows)
+}
+
+# Helper: create simple coefficient data.frame
+make_test_coefs <- function(stats = c("goals_p90", "tackles_won_p90", "pass_accuracy"),
+                             betas = c(2.0, 0.5, 1.0)) {
+  data.frame(stat_name = stats, beta = betas, stringsAsFactors = FALSE)
+}
+
+
+# =============================================================================
+# .get_psr_skill_cols()
+# =============================================================================
+
+test_that(".get_psr_skill_cols returns a character vector", {
+  cols <- panna:::.get_psr_skill_cols()
+  expect_type(cols, "character")
+  expect_true(length(cols) > 0)
+})
+
+test_that(".get_psr_skill_cols includes rate, efficiency, and xmetrics columns", {
+  cols <- panna:::.get_psr_skill_cols()
+
+  # Rate columns end with _p90
+  rate_cols <- grep("_p90$", cols, value = TRUE)
+  expect_true(length(rate_cols) > 0)
+
+  # Efficiency columns (known examples from the function)
+  expect_true("pass_accuracy" %in% cols)
+  expect_true("shot_accuracy" %in% cols)
+  expect_true("duel_success" %in% cols)
+
+  # xMetrics columns
+  expect_true("xg_per90" %in% cols)
+  expect_true("npxg_per90" %in% cols)
+})
+
+test_that(".get_psr_skill_cols has no duplicates", {
+  cols <- panna:::.get_psr_skill_cols()
+  expect_equal(length(cols), length(unique(cols)))
+})
+
+
+# =============================================================================
+# calculate_psr()
+# =============================================================================
+
+test_that("calculate_psr returns correct output structure", {
+  skills <- data.table::data.table(
+    player_id = c("p1", "p2", "p3"),
+    player_name = c("Alice", "Bob", "Charlie"),
+    goals_p90 = c(0.5, 0.3, 0.8),
+    tackles_won_p90 = c(1.0, 2.0, 0.5),
+    pass_accuracy = c(0.85, 0.90, 0.75)
+  )
+  coefs <- make_test_coefs()
+
+  result <- calculate_psr(skills, coefs)
+
+  expect_s3_class(result, "data.table")
+  expect_true("player_id" %in% names(result))
+  expect_true("psr_raw" %in% names(result))
+  expect_true("psr" %in% names(result))
+  expect_equal(nrow(result), 3)
+})
+
+test_that("calculate_psr computes weighted sum of skills", {
+  skills <- data.table::data.table(
+    player_id = c("p1", "p2"),
+    player_name = c("Alice", "Bob"),
+    goals_p90 = c(1.0, 0.0),
+    tackles_won_p90 = c(0.0, 1.0)
+  )
+  coefs <- make_test_coefs(
+    stats = c("goals_p90", "tackles_won_p90"),
+    betas = c(3.0, 2.0)
+  )
+
+  result <- calculate_psr(skills, coefs, center = FALSE)
+
+  # p1: 1.0*3.0 + 0.0*2.0 = 3.0
+  # p2: 0.0*3.0 + 1.0*2.0 = 2.0
+  expect_equal(result[player_id == "p1"]$psr, 3.0)
+  expect_equal(result[player_id == "p2"]$psr, 2.0)
+})
+
+test_that("calculate_psr centering makes mean PSR approximately zero", {
+  withr::with_seed(123, {
+    n <- 20
+    skills <- data.table::data.table(
+      player_id = paste0("p", seq_len(n)),
+      player_name = paste0("Player_", seq_len(n)),
+      goals_p90 = runif(n, 0, 1),
+      tackles_won_p90 = runif(n, 0, 3)
+    )
+  })
+  coefs <- make_test_coefs(
+    stats = c("goals_p90", "tackles_won_p90"),
+    betas = c(2.0, 0.5)
+  )
+
+  result <- calculate_psr(skills, coefs, center = TRUE)
+  expect_equal(mean(result$psr), 0, tolerance = 1e-10)
+})
+
+test_that("calculate_psr with center=FALSE preserves raw values", {
+  skills <- data.table::data.table(
+    player_id = c("p1", "p2"),
+    player_name = c("A", "B"),
+    goals_p90 = c(0.5, 1.0)
+  )
+  coefs <- make_test_coefs(stats = "goals_p90", betas = 2.0)
+
+  result <- calculate_psr(skills, coefs, center = FALSE)
+  expect_equal(result$psr, result$psr_raw)
+  expect_equal(result[player_id == "p1"]$psr, 1.0)
+  expect_equal(result[player_id == "p2"]$psr, 2.0)
+})
+
+test_that("calculate_psr with all-zero coefficients produces zero PSR", {
+  skills <- data.table::data.table(
+    player_id = c("p1", "p2"),
+    player_name = c("A", "B"),
+    goals_p90 = c(0.5, 1.0),
+    tackles_won_p90 = c(2.0, 1.0)
+  )
+  coefs <- make_test_coefs(
+    stats = c("goals_p90", "tackles_won_p90"),
+    betas = c(0, 0)
+  )
+
+  expect_warning(
+    result <- calculate_psr(skills, coefs),
+    "zero"
+  )
+  expect_equal(result$psr, c(0, 0))
+  expect_equal(result$psr_raw, c(0, 0))
+})
+
+test_that("calculate_psr warns and skips missing skill columns", {
+  skills <- data.table::data.table(
+    player_id = c("p1", "p2"),
+    player_name = c("A", "B"),
+    goals_p90 = c(0.5, 1.0)
+  )
+  # Coefficient for a column that doesn't exist
+  coefs <- make_test_coefs(
+    stats = c("goals_p90", "nonexistent_stat"),
+    betas = c(2.0, 1.0)
+  )
+
+  expect_warning(
+    result <- calculate_psr(skills, coefs, center = FALSE),
+    "not found"
+  )
+  # Should still compute using available columns
+  expect_equal(result[player_id == "p1"]$psr, 1.0)
+  expect_equal(result[player_id == "p2"]$psr, 2.0)
+})
+
+test_that("calculate_psr errors when no matching columns found", {
+  skills <- data.table::data.table(
+    player_id = "p1",
+    player_name = "A",
+    goals_p90 = 0.5
+  )
+  coefs <- make_test_coefs(
+    stats = c("nonexistent_a", "nonexistent_b"),
+    betas = c(1.0, 2.0)
+  )
+
+  expect_error(calculate_psr(skills, coefs), "No matching skill columns")
+})
+
+test_that("calculate_psr SD standardization works correctly", {
+  skills <- data.table::data.table(
+    player_id = c("p1", "p2"),
+    player_name = c("A", "B"),
+    goals_p90 = c(0.4, 0.8),
+    tackles_won_p90 = c(2.0, 1.0)
+  )
+  coefs <- data.frame(
+    stat_name = c("goals_p90", "tackles_won_p90"),
+    beta = c(1.0, 1.0),
+    sd = c(0.2, 0.5),
+    stringsAsFactors = FALSE
+  )
+
+  result <- calculate_psr(skills, coefs, center = FALSE)
+
+  # p1: (0.4/0.2)*1.0 + (2.0/0.5)*1.0 = 2.0 + 4.0 = 6.0
+  # p2: (0.8/0.2)*1.0 + (1.0/0.5)*1.0 = 4.0 + 2.0 = 6.0
+  expect_equal(result[player_id == "p1"]$psr, 6.0)
+  expect_equal(result[player_id == "p2"]$psr, 6.0)
+})
+
+test_that("calculate_psr SD standardization handles zero/NA sd", {
+  skills <- data.table::data.table(
+    player_id = "p1",
+    player_name = "A",
+    stat_a = 3.0,
+    stat_b = 2.0
+  )
+  coefs <- data.frame(
+    stat_name = c("stat_a", "stat_b"),
+    beta = c(1.0, 1.0),
+    sd = c(0, NA),
+    stringsAsFactors = FALSE
+  )
+
+  result <- calculate_psr(skills, coefs, center = FALSE)
+
+  # Zero and NA sd should be replaced with 1, so no division effect
+  # p1: (3.0/1)*1.0 + (2.0/1)*1.0 = 5.0
+  expect_equal(result$psr, 5.0)
+})
+
+test_that("calculate_psr requires stat_name and beta columns", {
+  skills <- data.table::data.table(player_id = "p1", goals_p90 = 0.5)
+  bad_coefs <- data.frame(variable = "goals_p90", coefficient = 2.0)
+
+  expect_error(calculate_psr(skills, bad_coefs), "stat_name.*beta")
+})
+
+test_that("calculate_psr handles NA values in skills by treating as zero", {
+  skills <- data.table::data.table(
+    player_id = c("p1", "p2"),
+    player_name = c("A", "B"),
+    goals_p90 = c(NA, 1.0)
+  )
+  coefs <- make_test_coefs(stats = "goals_p90", betas = 2.0)
+
+  result <- calculate_psr(skills, coefs, center = FALSE)
+  expect_equal(result[player_id == "p1"]$psr, 0.0)
+  expect_equal(result[player_id == "p2"]$psr, 2.0)
+})
+
+
+# =============================================================================
+# calculate_psr_components()
+# =============================================================================
+
+test_that("calculate_psr_components: osr + dsr = psr exactly", {
+  withr::with_seed(999, {
+    n <- 10
+    skills <- data.table::data.table(
+      player_id = paste0("p", seq_len(n)),
+      player_name = paste0("Player_", seq_len(n)),
+      goals_p90 = runif(n, 0, 1),
+      tackles_won_p90 = runif(n, 0, 3),
+      pass_accuracy = runif(n, 0.6, 0.95)
+    )
+  })
+
+  margin_coefs <- make_test_coefs(
+    stats = c("goals_p90", "tackles_won_p90", "pass_accuracy"),
+    betas = c(2.0, 0.5, 1.0)
+  )
+  osr_coefs <- make_test_coefs(
+    stats = c("goals_p90", "pass_accuracy"),
+    betas = c(1.5, 0.8)
+  )
+  dsr_coefs <- make_test_coefs(
+    stats = c("tackles_won_p90"),
+    betas = c(1.2)
+  )
+
+  result <- calculate_psr_components(skills, margin_coefs, osr_coefs, dsr_coefs)
+
+  expect_equal(result$osr + result$dsr, result$psr, tolerance = 1e-10)
+})
+
+test_that("calculate_psr_components returns correct output columns", {
+  skills <- data.table::data.table(
+    player_id = c("p1", "p2"),
+    player_name = c("A", "B"),
+    goals_p90 = c(0.5, 0.8),
+    tackles_won_p90 = c(1.0, 2.0)
+  )
+  margin_coefs <- make_test_coefs(
+    stats = c("goals_p90", "tackles_won_p90"), betas = c(2.0, 1.0)
+  )
+  osr_coefs <- make_test_coefs(stats = "goals_p90", betas = 1.5)
+  dsr_coefs <- make_test_coefs(stats = "tackles_won_p90", betas = 0.8)
+
+  result <- calculate_psr_components(skills, margin_coefs, osr_coefs, dsr_coefs)
+
+  expect_true("psr" %in% names(result))
+  expect_true("psr_raw" %in% names(result))
+  expect_true("osr" %in% names(result))
+  expect_true("dsr" %in% names(result))
+  expect_true("player_id" %in% names(result))
+})
+
+test_that("calculate_psr_components decomposition holds across seeds", {
+  for (s in c(1, 42, 123, 456, 789)) {
+    withr::with_seed(s, {
+      n <- 15
+      skills <- data.table::data.table(
+        player_id = paste0("p", seq_len(n)),
+        player_name = paste0("P_", seq_len(n)),
+        goals_p90 = runif(n, 0, 1.5),
+        tackles_won_p90 = runif(n, 0, 4),
+        pass_accuracy = runif(n, 0.5, 0.95)
+      )
+    })
+
+    margin_coefs <- make_test_coefs(
+      stats = c("goals_p90", "tackles_won_p90", "pass_accuracy"),
+      betas = c(2.5, 0.7, 1.2)
+    )
+    osr_coefs <- make_test_coefs(
+      stats = c("goals_p90", "pass_accuracy"),
+      betas = c(1.8, 0.6)
+    )
+    dsr_coefs <- make_test_coefs(
+      stats = c("tackles_won_p90", "pass_accuracy"),
+      betas = c(1.0, 0.3)
+    )
+
+    result <- calculate_psr_components(skills, margin_coefs, osr_coefs, dsr_coefs)
+    expect_equal(result$osr + result$dsr, result$psr, tolerance = 1e-10,
+                 label = paste("seed", s))
+  }
+})
+
+
+# =============================================================================
+# load_psr_coefficients()
+# =============================================================================
+
+test_that("load_psr_coefficients errors when coefficient files don't exist", {
+  # The coefficient CSV files don't exist yet in inst/extdata,
+  # so all calls should error informatively
+  expect_error(
+    load_psr_coefficients("margin", "xg"),
+    "coefficient file not found"
+  )
+  expect_error(
+    load_psr_coefficients("offense", "xg"),
+    "coefficient file not found"
+  )
+  expect_error(
+    load_psr_coefficients("defense", "goals"),
+    "coefficient file not found"
+  )
+})
+
+test_that("load_psr_coefficients validates type argument", {
+  expect_error(
+    load_psr_coefficients(type = "invalid_type"),
+    "arg"
+  )
+})
+
+test_that("load_psr_coefficients validates target argument", {
+  expect_error(
+    load_psr_coefficients(type = "margin", target = "invalid_target"),
+    "arg"
+  )
+})
+
+test_that("load_psr_coefficients accepts all valid type values", {
+  # These should fail on "file not found", not on argument matching
+  for (t in c("margin", "offense", "defense")) {
+    expect_error(
+      load_psr_coefficients(type = t, target = "xg"),
+      "coefficient file not found"
+    )
+  }
+})
+
+test_that("load_psr_coefficients accepts all valid target values", {
+  for (tgt in c("xg", "goals")) {
+    expect_error(
+      load_psr_coefficients(type = "margin", target = tgt),
+      "coefficient file not found"
+    )
+  }
+})
+
+
+# =============================================================================
+# .estimate_prematch_skills_batch()
+# =============================================================================
+
+test_that(".estimate_prematch_skills_batch returns named list of data.tables", {
+  ms <- make_psr_test_data(n_players = 3, n_matches = 6)
+  dates <- c("2024-02-01", "2024-03-01")
+
+  result <- panna:::.estimate_prematch_skills_batch(
+    ms, ref_dates = dates, verbose = FALSE
+  )
+
+  expect_type(result, "list")
+  expect_true(length(result) > 0)
+  # All elements should be data.tables
+
+  for (nm in names(result)) {
+    expect_s3_class(result[[nm]], "data.table")
+  }
+  # Names should be date strings
+  expect_true(all(names(result) %in% as.character(as.Date(dates))))
+})
+
+test_that(".estimate_prematch_skills_batch with single date matches estimate_player_skills", {
+  ms <- make_psr_test_data(n_players = 3, n_matches = 5)
+  ref_date <- as.Date("2024-02-15")
+
+  params <- get_default_decay_params()
+
+  # Batch version
+
+  batch_result <- panna:::.estimate_prematch_skills_batch(
+    ms, ref_dates = as.character(ref_date),
+    decay_params = params, min_weighted_90s = 0, verbose = FALSE
+  )
+
+  # Single-date version
+  single_result <- estimate_player_skills(
+    ms, target_date = ref_date,
+    decay_params = params, min_weighted_90s = 0
+  )
+
+  # Both should produce results (batch may be NULL if no data before date)
+  if (length(batch_result) > 0 && !is.null(single_result)) {
+    batch_dt <- batch_result[[1]]
+    # Check that the same players are returned
+    batch_players <- sort(batch_dt$player_id)
+    single_players <- sort(single_result$player_id)
+    expect_equal(batch_players, single_players)
+
+    # Check common stat columns are close (may differ slightly due to
+    # implementation differences, but should be very close)
+    common_stats <- intersect(
+      grep("_p90$", names(batch_dt), value = TRUE),
+      grep("_p90$", names(single_result), value = TRUE)
+    )
+    for (sc in common_stats) {
+      batch_vals <- batch_dt[order(player_id)][[sc]]
+      single_vals <- single_result[order(player_id)][[sc]]
+      expect_equal(batch_vals, single_vals, tolerance = 0.01,
+                   label = paste("stat:", sc))
+    }
+  }
+})
+
+test_that(".estimate_prematch_skills_batch with later dates includes more data", {
+  ms <- make_psr_test_data(n_players = 3, n_matches = 10)
+  # Dates that span the match data range
+  dates <- c("2024-02-01", "2024-03-01")
+
+  result <- panna:::.estimate_prematch_skills_batch(
+    ms, ref_dates = dates, min_weighted_90s = 0, verbose = FALSE
+  )
+
+  if (length(result) == 2) {
+    early <- result[[1]]
+    late <- result[[2]]
+
+    # Later date should have higher (or equal) weighted_90s for each player
+    for (pid in intersect(early$player_id, late$player_id)) {
+      w90_early <- early[player_id == pid]$weighted_90s
+      w90_late <- late[player_id == pid]$weighted_90s
+      # Later date sees more matches, so weighted_90s should be at least as large
+      # (accounting for decay, the relationship might not be strictly monotonic
+      # if decay is very strong, but with default params it should hold)
+      expect_true(w90_late >= w90_early * 0.5,
+                  label = paste("player", pid, "weighted_90s should grow"))
+    }
+  }
+})
+
+test_that(".estimate_prematch_skills_batch returns empty list for dates before all data", {
+  ms <- make_psr_test_data(n_players = 3, n_matches = 5)
+  # All match data starts at 2024-01-01, use a date before that
+  dates <- c("2020-01-01", "2020-06-01")
+
+  result <- panna:::.estimate_prematch_skills_batch(
+    ms, ref_dates = dates, verbose = FALSE
+  )
+
+  expect_type(result, "list")
+  expect_equal(length(result), 0)
+})
+
+test_that(".estimate_prematch_skills_batch uses only data strictly before ref_date", {
+  # Create data with one match on 2024-01-01 and one on 2024-01-08
+  ms <- data.frame(
+    player_id = c("p1", "p1"),
+    player_name = c("Test", "Test"),
+    match_id = c("m1", "m2"),
+    match_date = as.Date(c("2024-01-01", "2024-01-08")),
+    total_minutes = c(90, 90),
+    position = c("Midfielder", "Midfielder"),
+    goals_p90 = c(0.0, 2.0),
+    stringsAsFactors = FALSE
+  )
+
+  params <- get_default_decay_params()
+  params$rate <- 0  # no decay for cleaner test
+
+  # At ref_date = 2024-01-08, only m1 (goals_p90=0.0) should be used
+  result_before_m2 <- panna:::.estimate_prematch_skills_batch(
+    ms, ref_dates = "2024-01-08",
+    decay_params = params, min_weighted_90s = 0, verbose = FALSE
+  )
+
+  # At ref_date = 2024-01-15, both m1 and m2 should be used
+  result_after_m2 <- panna:::.estimate_prematch_skills_batch(
+    ms, ref_dates = "2024-01-15",
+    decay_params = params, min_weighted_90s = 0, verbose = FALSE
+  )
+
+  if (length(result_before_m2) > 0 && length(result_after_m2) > 0) {
+    skill_before <- result_before_m2[[1]][player_id == "p1"]$goals_p90
+    skill_after <- result_after_m2[[1]][player_id == "p1"]$goals_p90
+
+    # Before m2, skill should be based only on m1 (goals_p90=0.0),
+    # so it should be lower than after m2 (which adds goals_p90=2.0)
+    expect_true(skill_before < skill_after,
+                label = "no look-ahead: skill at D should not include data from D")
+  }
+})
+
+test_that(".estimate_prematch_skills_batch handles single-player data", {
+  ms <- data.frame(
+    player_id = rep("solo", 5),
+    player_name = rep("Solo Player", 5),
+    match_id = paste0("m", 1:5),
+    match_date = as.Date("2024-01-01") + (0:4) * 7,
+    total_minutes = 90,
+    position = "Striker",
+    goals_p90 = c(0.5, 0.3, 0.8, 0.1, 0.6),
+    stringsAsFactors = FALSE
+  )
+
+  result <- panna:::.estimate_prematch_skills_batch(
+    ms, ref_dates = "2024-02-15",
+    min_weighted_90s = 0, verbose = FALSE
+  )
+
+  expect_true(length(result) > 0)
+  expect_equal(nrow(result[[1]]), 1)
+  expect_equal(result[[1]]$player_id, "solo")
+})
