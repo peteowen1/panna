@@ -90,9 +90,51 @@ cat(sprintf("  Weekly (last 2yr): %d | Monthly (older): %d\n",
             length(recent_weekly),
             length(older_monthly[older_monthly >= min_history])))
 
-# 5. Compute PSR at Each Snapshot Date ----
+# 5. Pre-Compute Shared Data (position multipliers + prior centers) ----
+#
+# Position multipliers and global prior centers change negligibly across dates
+# when computed from the full dataset. Computing them once and passing via
+# decay_params$position_multipliers / $prior_centers avoids re-running
+# compute_position_multipliers() on every snapshot date (saves ~N_stats × 4
+# which() calls × 231 dates = tens of thousands of vector scans).
 
-cat("\n=== Computing PSR Snapshots ===\n\n")
+cat("\n=== Pre-Computing Shared Priors ===\n")
+
+# Auto-detect stat columns the same way estimate_player_skills() does
+p90_cols   <- grep("_p90$", names(match_stats), value = TRUE)
+eff_cols   <- intersect(names(.classify_skill_stats()), names(match_stats))
+stat_cols_all <- intersect(c(p90_cols, eff_cols), names(match_stats))
+cat(sprintf("  Stat columns detected: %d\n", length(stat_cols_all)))
+
+# Pre-sort by date so each date filter is a fast prefix scan
+data.table::setorder(match_stats, match_date)
+match_date_vec <- match_stats$match_date  # cached for binary search
+cat(sprintf("  match_stats sorted by date\n"))
+
+# Position multipliers from full dataset
+pos_mults_precomp <- compute_position_multipliers(match_stats, stat_cols_all)
+cat(sprintf("  Position multipliers computed\n"))
+
+# Prior centers (minutes-weighted global mean per stat) from full dataset
+wts_all   <- as.numeric(match_stats$total_minutes)
+wts_all[is.na(wts_all)] <- 0
+total_wt  <- sum(wts_all)
+prior_centers_precomp <- vapply(stat_cols_all, function(sc) {
+  v <- as.numeric(match_stats[[sc]])
+  v[is.na(v)] <- 0
+  if (total_wt > 0) sum(v * wts_all) / total_wt else 0
+}, numeric(1))
+cat(sprintf("  Prior centers computed\n\n"))
+
+# Augment decay_params with pre-computed values so estimate_player_skills()
+# skips recomputing these inside each loop iteration
+decay_params_fast <- decay_params
+decay_params_fast$position_multipliers <- pos_mults_precomp
+decay_params_fast$prior_centers        <- prior_centers_precomp
+
+# 6. Compute PSR at Each Snapshot Date ----
+
+cat("=== Computing PSR Snapshots ===\n\n")
 
 psr_list <- vector("list", length(snapshot_dates))
 n_success <- 0L
@@ -109,11 +151,16 @@ for (i in seq_along(snapshot_dates)) {
                 i, length(snapshot_dates), d, elapsed, eta_min))
   }
 
+  # Fast prefix filter using pre-sorted data: binary search O(log n) vs O(n)
+  cutoff <- findInterval(as.numeric(d) - 1L, as.numeric(match_date_vec))
+  if (cutoff < 1L) next
+  dt_sub <- match_stats[seq_len(cutoff)]
+
   skills <- tryCatch(
-    estimate_player_skills_at_date(
-      match_stats  = match_stats,
-      decay_params = decay_params,
-      date         = d,
+    estimate_player_skills(
+      match_stats  = dt_sub,
+      decay_params = decay_params_fast,
+      target_date  = d,
       min_weighted_90s = 3
     ),
     error = function(e) NULL
@@ -137,7 +184,7 @@ cat(sprintf("\nCompleted: %d / %d dates (%.0fs, %.1f sec/date)\n",
             n_success, length(snapshot_dates),
             total_secs, total_secs / max(n_success, 1)))
 
-# 6. Combine and Export ----
+# 7. Combine and Export ----
 
 cat("\n=== Exporting ===\n")
 
@@ -151,7 +198,7 @@ arrow::write_parquet(as.data.frame(weekly_psr), out_path)
 mb <- round(file.info(out_path)$size / 1024^2, 1)
 cat(sprintf("  Written: %s (%s MB)\n", out_path, mb))
 
-# 7. Upload to GitHub Release ----
+# 8. Upload to GitHub Release ----
 
 cat("\n=== Uploading to GitHub Release ===\n")
 

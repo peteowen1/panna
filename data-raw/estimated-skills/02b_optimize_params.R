@@ -20,7 +20,7 @@ if (!dir.exists(cache_dir)) dir.create(cache_dir, recursive = TRUE)
 
 # Override these before sourcing for custom runs
 if (!exists("sample_n")) sample_n <- 500
-if (!exists("n_cores")) n_cores <- max(1L, parallel::detectCores() %/% 2L)
+if (!exists("n_cores")) n_cores <- 1L
 if (!exists("optim_leagues")) optim_leagues <- c("ENG", "ESP", "GER", "ITA", "FRA")
 
 output_path <- file.path(cache_dir, "02b_decay_params.rds")
@@ -32,11 +32,11 @@ cat("\n=== Loading Match Stats ===\n")
 match_stats <- readRDS(file.path(cache_dir, "01_match_stats.rds"))
 cat("Total match-level rows:", nrow(match_stats), "\n")
 
-# Filter to optimization leagues
-if ("competition" %in% names(match_stats)) {
-  match_stats <- match_stats[competition %in% optim_leagues]
-} else if ("league" %in% names(match_stats)) {
+# Filter to optimization leagues (use short code column)
+if ("league" %in% names(match_stats)) {
   match_stats <- match_stats[league %in% optim_leagues]
+} else if ("competition" %in% names(match_stats)) {
+  match_stats <- match_stats[competition %in% optim_leagues]
 }
 
 cat("After filtering:", nrow(match_stats), "rows\n")

@@ -765,13 +765,10 @@ player_psr <- function(date = NULL, player = NULL, n = 50,
     }
   }
 
-  # Filter by position
+  # Filter by position (primary_position values are GK/DEF/MID/FWD)
   if (!is.null(position)) {
     position <- toupper(position)
-    pos_map <- c(GK = "Goalkeeper", DEF = "Defender", MID = "Midfielder", FWD = "Striker")
-    if (position %in% names(pos_map)) {
-      psr <- psr[grepl(pos_map[position], primary_position, ignore.case = TRUE)]
-    }
+    psr <- psr[primary_position == position]
   }
 
   # Sort by PSR descending

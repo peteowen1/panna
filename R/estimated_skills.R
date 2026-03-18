@@ -191,19 +191,24 @@ compute_position_multipliers <- function(match_stats, stat_cols = NULL) {
   pos_groups <- c("GK", "DEF", "MID", "FWD")
   multipliers <- list()
 
+  # Pre-compute position indices and weights once (reused across all stats)
+  pos_idx <- lapply(stats::setNames(pos_groups, pos_groups),
+                    function(pg) which(dt$pos_group == pg))
+  wts      <- as.numeric(dt$total_minutes)
+  wts[is.na(wts)] <- 0
+  total_wt <- sum(wts)
+
   for (sc in stat_cols) {
     vals <- as.numeric(dt[[sc]])
     vals[is.na(vals)] <- 0
-    wts <- as.numeric(dt$total_minutes)
-    wts[is.na(wts)] <- 0
 
-    global_avg <- if (sum(wts) > 0) sum(vals * wts) / sum(wts) else 0
+    global_avg <- if (total_wt > 0) sum(vals * wts) / total_wt else 0
 
     pos_mults <- stats::setNames(rep(1.0, 4), pos_groups)
 
     if (global_avg > 0) {
       for (pg in pos_groups) {
-        idx <- which(dt$pos_group == pg)
+        idx <- pos_idx[[pg]]
         if (length(idx) > 0) {
           pw <- wts[idx]
           pv <- vals[idx]
