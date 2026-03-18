@@ -163,13 +163,19 @@ for (i in seq_along(snapshot_dates)) {
       target_date  = d,
       min_weighted_90s = 3
     ),
-    error = function(e) NULL
+    error = function(e) {
+      cat(sprintf("  WARN: skills failed for %s: %s\n", d, e$message))
+      NULL
+    }
   )
   if (is.null(skills) || nrow(skills) == 0) next
 
   psr <- tryCatch(
     compute_player_psr(skills, center = TRUE, target = psr_target),
-    error = function(e) NULL
+    error = function(e) {
+      cat(sprintf("  WARN: PSR failed for %s: %s\n", d, e$message))
+      NULL
+    }
   )
   if (is.null(psr) || nrow(psr) == 0) next
 
@@ -183,6 +189,15 @@ total_secs <- as.numeric(difftime(Sys.time(), start_time, units = "secs"))
 cat(sprintf("\nCompleted: %d / %d dates (%.0fs, %.1f sec/date)\n",
             n_success, length(snapshot_dates),
             total_secs, total_secs / max(n_success, 1)))
+
+# Guard: abort if too many dates failed
+if (n_success == 0) {
+  stop("All snapshot dates failed. No PSR data computed.")
+}
+if (n_success < length(snapshot_dates) * 0.5) {
+  warning(sprintf("Only %d / %d dates succeeded (%.0f%%). Investigate failures.",
+                  n_success, length(snapshot_dates), 100 * n_success / length(snapshot_dates)))
+}
 
 # 7. Combine and Export ----
 

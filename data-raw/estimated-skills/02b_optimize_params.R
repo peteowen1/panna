@@ -42,6 +42,9 @@ if ("league" %in% names(match_stats)) {
 cat("After filtering:", nrow(match_stats), "rows\n")
 cat("Leagues:", paste(optim_leagues, collapse = ", "), "\n")
 cat("Players:", uniqueN(match_stats$player_id), "\n")
+if (nrow(match_stats) == 0) {
+  stop("No rows after league filter. Check that league codes match optim_leagues.")
+}
 
 # 4. Run Optimization ----
 

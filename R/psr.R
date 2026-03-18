@@ -768,6 +768,13 @@ player_psr <- function(date = NULL, player = NULL, n = 50,
   # Filter by position (primary_position values are GK/DEF/MID/FWD)
   if (!is.null(position)) {
     position <- toupper(position)
+    valid_positions <- c("GK", "DEF", "MID", "FWD")
+    if (!position %in% valid_positions) {
+      cli::cli_abort(c(
+        "Invalid position: {.val {position}}.",
+        "i" = "Valid positions: {paste(valid_positions, collapse = ', ')}"
+      ))
+    }
     psr <- psr[primary_position == position]
   }
 
