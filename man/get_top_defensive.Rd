@@ -23,3 +23,4 @@ od_result <- calculate_od_panna(rapm_data, spm_ratings)
 top_defenders <- get_top_defensive(od_result$ratings, n = 20)
 }
 }
+\keyword{internal}

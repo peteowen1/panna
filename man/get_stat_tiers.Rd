@@ -14,3 +14,4 @@ Named list with elements \code{tier1} (individually optimized),
 Classifies stats into tiers for optimization. Tier 1 stats get individual
 lambda optimization. Tier 2 stats share a group lambda.
 }
+\keyword{internal}

@@ -41,3 +41,4 @@ Handles possession changes by flipping perspective:
 \item Team change: delta = (-EPV_after) - EPV_before
 }
 }
+\keyword{internal}

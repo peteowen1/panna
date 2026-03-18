@@ -26,3 +26,4 @@ head(comparison)
 }
 
 }
+\keyword{internal}

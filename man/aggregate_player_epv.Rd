@@ -30,3 +30,4 @@ Data frame with player EPV statistics:
 Summarizes EPV by player, calculating total and per-90 metrics.
 Properly attributes receiver credit to the actual receivers.
 }
+\keyword{internal}

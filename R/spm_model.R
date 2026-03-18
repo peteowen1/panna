@@ -794,7 +794,7 @@ fit_spm_model <- function(data, predictor_cols = NULL, alpha = 0.5, nfolds = 10,
 #' @param verbose Print progress (0=silent, 1=performance, 2=details)
 #'
 #' @return List with xgb model, cv results, and metadata
-#' @export
+#' @keywords internal
 fit_spm_xgb <- function(data, predictor_cols = NULL, nfolds = 10,
                          max_depth = 4, eta = 0.1,
                          subsample = 0.8, colsample_bytree = 0.8,
@@ -1119,7 +1119,7 @@ calculate_defensive_spm <- function(data, defensive_cols = NULL, alpha = 0.5) {
 #' @param weight_transform Transform for weights: "sqrt" (default), "linear", "log"
 #'
 #' @return List with validation metrics (both weighted and unweighted)
-#' @export
+#' @keywords internal
 validate_spm_prediction <- function(spm_ratings, rapm_ratings,
                                      weight_by_minutes = TRUE,
                                      weight_transform = "sqrt") {

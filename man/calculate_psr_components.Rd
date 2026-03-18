@@ -40,3 +40,4 @@ then decomposes it into offensive (OSR) and defensive (DSR) components using
 separately trained coefficient models. The decomposition uses an additive
 shift so that \code{osr + dsr = psr} exactly.
 }
+\keyword{internal}

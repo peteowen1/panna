@@ -24,3 +24,4 @@ od_ratings <- split_od_contributions(panna_ratings, features)
 head(od_ratings[, c("player_name", "panna", "o_panna", "d_panna")])
 }
 }
+\keyword{internal}

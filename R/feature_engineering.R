@@ -242,7 +242,7 @@ aggregate_player_season_stats <- function(match_stats, rate_cols = NULL, count_c
 #' @param min_minutes Minimum minutes for inclusion
 #'
 #' @return Data frame with all player features
-#' @export
+#' @keywords internal
 #' @examples
 #' \dontrun{
 #' processed_data <- process_all_data("ENG", "2024-2025")

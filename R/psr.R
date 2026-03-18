@@ -592,7 +592,7 @@ calculate_psr <- function(skills, coef_df, center = TRUE) {
 #' @return A data.table with columns: identity columns, \code{psr_raw},
 #'   \code{psr}, \code{osr}, \code{dsr}.
 #'
-#' @export
+#' @keywords internal
 calculate_psr_components <- function(skills, coef_df, osr_coef_df, dsr_coef_df,
                                      center = TRUE) {
   # Margin PSR (the authoritative total)
@@ -630,7 +630,7 @@ calculate_psr_components <- function(skills, coef_df, osr_coef_df, dsr_coef_df,
 #' @return A data.frame with columns \code{stat_name}, \code{beta}, and
 #'   optionally \code{sd}.
 #'
-#' @export
+#' @keywords internal
 load_psr_coefficients <- function(type = c("margin", "offense", "defense"),
                                    target = c("xg", "goals")) {
   type <- match.arg(type)
@@ -668,7 +668,7 @@ load_psr_coefficients <- function(type = c("margin", "offense", "defense"),
 #'
 #' @return A data.table with \code{psr}, \code{osr}, \code{dsr} columns.
 #'
-#' @export
+#' @keywords internal
 compute_player_psr <- function(skills, center = TRUE,
                                 target = c("xg", "goals")) {
   target <- match.arg(target)

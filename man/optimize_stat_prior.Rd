@@ -74,3 +74,4 @@ Finds the optimal prior strength (prior_90s for rate stats, prior_attempts
 for efficiency stats) that minimizes next-match prediction MSE using the
 Gamma-Poisson or Beta-Binomial posterior.
 }
+\keyword{internal}

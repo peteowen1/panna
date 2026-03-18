@@ -1,5 +1,9 @@
 # Tests for SPM model functions
 
+# Internal function aliases (not exported)
+fit_spm_xgb <- panna:::fit_spm_xgb
+validate_spm_prediction <- panna:::validate_spm_prediction
+
 # Helper to create minimal player stats for SPM testing
 create_test_player_stats <- function(n_players = 30) {
   set.seed(42)

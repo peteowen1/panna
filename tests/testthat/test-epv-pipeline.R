@@ -1,6 +1,11 @@
 # Tests for EPV pipeline functions
 # Covers: SPADL conversion, possession chains, EPV calculation
 
+# Internal function aliases (not exported)
+calculate_action_epv <- panna:::calculate_action_epv
+aggregate_player_epv <- panna:::aggregate_player_epv
+fit_epv_scoring_model <- panna:::fit_epv_scoring_model
+
 # =============================================================================
 # Helper functions for creating mock data
 # =============================================================================

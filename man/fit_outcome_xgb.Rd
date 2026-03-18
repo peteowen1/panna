@@ -36,3 +36,4 @@ List with model, cv_result, best_nrounds, metadata
 Fits XGBoost multi:softprob for P(Home Win), P(Draw), P(Away Win).
 Labels: 0 = Home Win, 1 = Draw, 2 = Away Win.
 }
+\keyword{internal}

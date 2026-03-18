@@ -15,3 +15,4 @@ Invisible data frame with season range info
 \description{
 Prints a summary table showing min/max seasons for each data component.
 }
+\keyword{internal}

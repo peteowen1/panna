@@ -800,7 +800,7 @@ load_opta_table <- function(table_type, league, season, columns,
 #'
 #' @return Character vector of column names.
 #'
-#' @export
+#' @keywords internal
 #' @examples
 #' \dontrun{
 #' # See all player stats columns

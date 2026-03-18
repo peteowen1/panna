@@ -1,5 +1,9 @@
 # Tests for PSR (Player Skill Rating) framework
 
+# Internal function aliases (not exported)
+load_psr_coefficients <- panna:::load_psr_coefficients
+calculate_psr_components <- panna:::calculate_psr_components
+
 # Helper: create minimal match_stats for PSR testing
 make_psr_test_data <- function(n_players = 5, n_matches = 10) {
   players <- paste0("p", seq_len(n_players))

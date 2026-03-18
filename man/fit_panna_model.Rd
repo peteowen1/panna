@@ -36,3 +36,4 @@ head(get_panna_ratings(panna_model))
 }
 
 }
+\keyword{internal}

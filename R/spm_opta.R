@@ -471,7 +471,7 @@ compute_match_level_opta_stats <- function(opta_stats, min_minutes = 10) {
 #' @param min_minutes Minimum total minutes for inclusion (default 450)
 #'
 #' @return Data frame with per-90 rates for each player
-#' @export
+#' @keywords internal
 #' @examples
 #' \dontrun{
 #' opta_stats <- load_opta_stats("ENG", "2024-2025")
@@ -649,7 +649,7 @@ fit_spm_opta <- function(data, alpha = 0.5, nfolds = 10,
 #' @param n Number of top features to compare (default 20)
 #'
 #' @return Data frame comparing feature importance
-#' @export
+#' @keywords internal
 compare_spm_features <- function(fbref_model, opta_model, n = 20) {
   fbref_imp <- get_spm_feature_importance(fbref_model, n = n)
   fbref_imp$source <- "FBref"

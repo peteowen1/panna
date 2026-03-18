@@ -616,7 +616,7 @@ compute_team_rolling_features <- function(results, windows = c(5L, 10L, 20L)) {
 #' @param verbose Print progress (default 1)
 #'
 #' @return List with model, cv_result, best_nrounds, metadata
-#' @export
+#' @keywords internal
 fit_goals_xgb <- function(X, y, nfolds = 5L, params = NULL,
                            nrounds = 500L, early_stopping = 30L,
                            verbose = 1L) {
@@ -649,7 +649,7 @@ fit_goals_xgb <- function(X, y, nfolds = 5L, params = NULL,
 #' @param verbose Print progress (default 1)
 #'
 #' @return List with model, cv_result, best_nrounds, metadata
-#' @export
+#' @keywords internal
 fit_outcome_xgb <- function(X, y, nfolds = 5L, params = NULL,
                               nrounds = 500L, early_stopping = 30L,
                               verbose = 1L) {

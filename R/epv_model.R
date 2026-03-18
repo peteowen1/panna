@@ -514,7 +514,7 @@ predict_epv_probs <- function(model, features) {
 #'     \item For "xg" method: expected_xg
 #'   }
 #'
-#' @export
+#' @keywords internal
 calculate_action_epv <- function(spadl_actions, features, epv_model, xg_model = NULL) {
   cli::cli_alert_info("Calculating EPV for {nrow(spadl_actions)} actions...")
 
@@ -1090,7 +1090,7 @@ split_pass_credit <- function(pass_value, xpass) {
 #'     \item epv_passing, epv_shooting, epv_dribbling, epv_defending
 #'   }
 #'
-#' @export
+#' @keywords internal
 aggregate_player_epv <- function(spadl_with_epv, lineups = NULL, min_minutes = 450) {
   cli::cli_alert_info("Aggregating player EPV metrics...")
 
@@ -1388,7 +1388,7 @@ pb_download_epv_models <- function(repo = "peteowen1/pannadata",
 #' @param spadl_with_epv SPADL actions with EPV values
 #'
 #' @return List with validation statistics
-#' @export
+#' @keywords internal
 validate_epv_model <- function(spadl_with_epv) {
   cli::cli_alert_info("Validating EPV model...")
 
@@ -1447,7 +1447,7 @@ validate_epv_model <- function(spadl_with_epv) {
 #'
 #' @return An EPV model object
 #' @seealso [fit_epv_model()]
-#' @export
+#' @keywords internal
 fit_epv_scoring_model <- function(...) {
   cli::cli_warn(c(
     "!" = "{.fn fit_epv_scoring_model} is deprecated as of panna 0.1.0.",
@@ -1470,7 +1470,7 @@ fit_epv_scoring_model <- function(...) {
 #'
 #' @return An EPV model object
 #' @seealso [fit_epv_model()]
-#' @export
+#' @keywords internal
 fit_epv_conceding_model <- function(...) {
   cli::cli_warn(c(
     "!" = "{.fn fit_epv_conceding_model} is deprecated as of panna 0.1.0.",
@@ -1527,7 +1527,7 @@ create_epv_labels_legacy <- function(spadl_actions) {
 #'
 #' @return SPADL with credit columns
 #' @seealso [assign_epv_credit()]
-#' @export
+#' @keywords internal
 assign_pass_credit <- function(spadl_with_epv, xpass_model) {
   cli::cli_warn(c(
     "!" = "{.fn assign_pass_credit} is deprecated as of panna 0.1.0.",

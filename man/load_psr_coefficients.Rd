@@ -23,3 +23,4 @@ optionally \code{sd}.
 Loads pre-trained PSR coefficient CSV files from the package's
 \code{inst/extdata} directory.
 }
+\keyword{internal}

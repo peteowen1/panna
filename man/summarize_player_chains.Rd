@@ -34,3 +34,4 @@ spadl <- label_actions_with_outcomes(spadl, outcomes)
 player_chains <- summarize_player_chains(spadl)
 }
 }
+\keyword{internal}

@@ -36,3 +36,4 @@ get_opta_columns("events")
 get_opta_columns("lineups")
 }
 }
+\keyword{internal}

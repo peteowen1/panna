@@ -12,7 +12,7 @@
 #' @param lambda_prior Regularization strength
 #'
 #' @return List with separated offensive and defensive ratings
-#' @export
+#' @keywords internal
 #' @examples
 #' \dontrun{
 #' rapm_data <- create_rapm_design_matrix(splints, separate_od = TRUE)
@@ -122,7 +122,7 @@ calculate_od_panna <- function(rapm_data, spm_ratings, lambda_prior = 1) {
 #' @param player_features Player features with offensive/defensive stats
 #'
 #' @return Data frame with estimated O-panna and D-panna
-#' @export
+#' @keywords internal
 #' @examples
 #' \dontrun{
 #' features <- create_player_feature_matrix(processed_data)
@@ -187,7 +187,7 @@ split_od_contributions <- function(panna_ratings, player_features) {
 #' @param d_rating Defensive rating
 #'
 #' @return Character vector of player types
-#' @export
+#' @keywords internal
 #' @examples
 #' \dontrun{
 #' categorize_player_profile(0.8, 0.2)
@@ -215,7 +215,7 @@ categorize_player_profile <- function(o_rating, d_rating) {
 #' @param n Number of players
 #'
 #' @return Data frame of top offensive players
-#' @export
+#' @keywords internal
 #' @examples
 #' \dontrun{
 #' od_result <- calculate_od_panna(rapm_data, spm_ratings)
@@ -241,7 +241,7 @@ get_top_offensive <- function(ratings, n = 10) {
 #' @param n Number of players
 #'
 #' @return Data frame of top defensive players
-#' @export
+#' @keywords internal
 #' @examples
 #' \dontrun{
 #' od_result <- calculate_od_panna(rapm_data, spm_ratings)
@@ -291,7 +291,7 @@ prepare_od_scatter_data <- function(ratings) {
 #' @param highlight_top Number of top players to label
 #'
 #' @return ggplot object
-#' @export
+#' @keywords internal
 #' @examples
 #' \dontrun{
 #' od_result <- calculate_od_panna(rapm_data, spm_ratings)

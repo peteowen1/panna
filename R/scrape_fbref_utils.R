@@ -860,7 +860,7 @@ extract_season_range <- function(data, data_name = "data") {
 #' @param data List of data frames from pannadata
 #'
 #' @return Invisible data frame with season range info
-#' @export
+#' @keywords internal
 report_season_ranges <- function(data) {
   # Define data components and their display names
   components <- list(

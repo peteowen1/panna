@@ -36,3 +36,4 @@ Produces a data frame in the same format as \code{aggregate_opta_stats()},
 where each row is one player's estimated skill profile at the end of a season.
 This is a drop-in replacement for SPM input.
 }
+\keyword{internal}

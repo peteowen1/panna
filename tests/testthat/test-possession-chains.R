@@ -1,5 +1,12 @@
 # Tests for possession chain analytics and visualization
 
+# Internal function aliases (not exported)
+summarize_match_chains <- panna:::summarize_match_chains
+summarize_player_chains <- panna:::summarize_player_chains
+draw_pitch <- panna:::draw_pitch
+plot_chain <- panna:::plot_chain
+plot_match_chains <- panna:::plot_match_chains
+
 # Helper: create minimal SPADL-like data with chain-relevant columns
 create_test_spadl <- function() {
   data.frame(
