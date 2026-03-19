@@ -564,6 +564,13 @@ utils::globalVariables(c(
 
   # compare_players columns
   "chain_xg",
+  "shots",
+  "assists",
+  "key_passes",
+
+  # aggregate_player_data internal columns
+  ".player",
+  ".team",
 
   # PSR columns
   "psr_raw",
