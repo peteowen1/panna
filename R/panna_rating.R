@@ -160,7 +160,7 @@ calculate_panna_rating <- function(rapm_data, spm_ratings, lambda_prior = 1, alp
 #' head(get_panna_ratings(panna_model))
 #' }
 #'
-#' @export
+#' @keywords internal
 fit_panna_model <- function(splint_data, player_features, min_minutes = 180,
                              lambda_prior = 1, validate = TRUE) {
   progress_msg("=== Fitting Panna Model ===")
@@ -290,7 +290,7 @@ rank_players_panna <- function(ratings, top_n = NULL, position = NULL) {
 #' head(comparison)
 #' }
 #'
-#' @export
+#' @keywords internal
 compare_panna_rapm_spm <- function(panna_ratings, rapm_ratings, spm_ratings) {
   # Join all ratings
   id_col <- if ("player_id" %in% names(panna_ratings)) "player_id" else "player_name"
@@ -328,7 +328,7 @@ compare_panna_rapm_spm <- function(panna_ratings, rapm_ratings, spm_ratings) {
 #' validation$panna_spm_cor
 #' }
 #'
-#' @export
+#' @keywords internal
 validate_panna_ratings <- function(panna_ratings, rapm_ratings, spm_ratings) {
   comparison <- compare_panna_rapm_spm(panna_ratings, rapm_ratings, spm_ratings)
   comparison <- comparison[stats::complete.cases(comparison), ]
@@ -369,7 +369,7 @@ validate_panna_ratings <- function(panna_ratings, rapm_ratings, spm_ratings) {
 #' cat(report)
 #' }
 #'
-#' @export
+#' @keywords internal
 generate_panna_report <- function(panna_model, top_n = 10) {
   ratings <- panna_model$ratings
 
@@ -428,7 +428,7 @@ generate_panna_report <- function(panna_model, top_n = 10) {
 #' metrics$rmse
 #' }
 #'
-#' @export
+#' @keywords internal
 validate_predictive_power <- function(panna_ratings, next_season_rapm) {
   # Match players
   id_col <- intersect(names(panna_ratings), names(next_season_rapm))

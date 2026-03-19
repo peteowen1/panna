@@ -21,7 +21,9 @@ cat("Raw splints:", nrow(splint_data$splints), "\n")
 cat("Raw players:", nrow(splint_data$players), "\n")
 
 # Filter out league-seasons with bad xG data
-# Opta uses SPADL-derived xG so ~25% zero-xG splints is normal (short splints without shots)
+# Opta uses SPADL-derived xG so ~25% zero-xG splints is normal (short splints
+# without shots). Threshold of 30% avoids discarding valid league-seasons where
+# zero-xG splints are inherent to the SPADL conversion process.
 filter_result <- filter_bad_xg_data(splint_data, zero_xg_threshold = 30, verbose = TRUE)
 splint_data <- filter_result$splint_data
 

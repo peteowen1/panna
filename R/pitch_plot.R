@@ -12,7 +12,7 @@
 #'
 #' @return A ggplot2 object with pitch markings.
 #'
-#' @export
+#' @keywords internal
 #' @examples
 #' \dontrun{
 #' draw_pitch()
@@ -101,7 +101,7 @@ draw_pitch <- function(background = c("white", "green")) {
 #'
 #' @return A ggplot2 object showing the chain on a pitch.
 #'
-#' @export
+#' @keywords internal
 #' @examples
 #' \dontrun{
 #' spadl <- create_possession_chains(convert_opta_to_spadl(events))
@@ -204,7 +204,7 @@ plot_chain <- function(spadl_with_chains, target_match_id, target_chain_id,
 #'
 #' @return A ggplot2 object showing possession chains on a pitch.
 #'
-#' @export
+#' @keywords internal
 #' @examples
 #' \dontrun{
 #' spadl <- create_possession_chains(convert_opta_to_spadl(events))

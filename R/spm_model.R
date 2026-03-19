@@ -31,13 +31,13 @@
   }
 
   # Create player_id for consistent matching
-  stats_df$player_id <- clean_player_name(stats_df$player_name)
+  dt <- data.table::as.data.table(stats_df)
+  dt[, player_id := clean_player_name(player_name)]
 
-  agg <- stats::aggregate(
-    stats_df[, existing_cols, drop = FALSE],
-    by = list(player_id = stats_df$player_id),
-    FUN = function(x) sum(as.numeric(x), na.rm = TRUE)
-  )
+  # Aggregate using data.table (much faster than stats::aggregate)
+  agg <- dt[, lapply(.SD, function(x) sum(as.numeric(x), na.rm = TRUE)),
+            by = player_id, .SDcols = existing_cols]
+  data.table::setDF(agg)
 
   rename_columns(agg, existing_cols)
 }
@@ -184,98 +184,38 @@
 #' @return player_stats with per-90 columns added
 #' @keywords internal
 .calculate_per90_rates <- function(player_stats, mins_per_90) {
-  n_players <- nrow(player_stats)
+  # All counting stats to convert to per-90
+  p90_cols <- c(
+    "goals", "assists", "shots", "shots_on_target",
+    "xg", "npxg", "xa", "sca", "gca",
+    "tackles", "interceptions", "blocks", "clearances",
+    "tackles_won", "tackles_def_3rd", "tackles_mid_3rd", "tackles_att_3rd",
+    "blocks_shots", "blocks_pass", "errors",
+    "touches", "progressive_passes", "key_passes", "final_third_passes",
+    "passes_into_box", "crosses_into_box",
+    "pass_long_cmp", "pass_short_cmp", "pass_med_cmp",
+    "pass_tot_dist", "pass_prg_dist",
+    "carries", "progressive_carries", "carries_final_3rd", "carries_into_box",
+    "take_ons_att", "take_ons_succ", "miscontrols", "dispossessed",
+    "prg_passes_received",
+    "touches_def_3rd", "touches_mid_3rd", "touches_att_3rd", "touches_att_pen",
+    "fouls_committed", "fouls_drawn", "offsides", "recoveries",
+    "aerials_won", "aerials_lost", "penalties_won", "penalties_conceded",
+    "through_balls", "switches", "crosses_pt", "corner_kicks", "passes_dead",
+    "saves", "goals_against", "gk_sweeper_actions"
+  )
 
-  # Helper to safely get column or return zeros
-  safe_col <- function(col_name) {
-    if (col_name %in% names(player_stats)) {
-      x <- as.numeric(player_stats[[col_name]])
-      ifelse(is.na(x), 0, x)
-    } else {
-      rep(0, n_players)
-    }
+  for (col in p90_cols) {
+    x <- .safe_col(player_stats, col)
+    p90_val <- x / mins_per_90
+    p90_val[!is.finite(p90_val)] <- 0
+    player_stats[[paste0(col, "_p90")]] <- p90_val
   }
 
-  # Helper to safely calculate per-90
-  safe_p90 <- function(col_name) {
-    safe_col(col_name) / mins_per_90
+  # Alias: crosses_pt_p90 -> crosses_p90 (FBref SPM and PSR coefficients expect crosses_p90)
+  if ("crosses_pt_p90" %in% names(player_stats)) {
+    player_stats$crosses_p90 <- player_stats$crosses_pt_p90
   }
-
-  # Core per-90 stats
-  player_stats$goals_p90 <- safe_p90("goals")
-  player_stats$assists_p90 <- safe_p90("assists")
-  player_stats$shots_p90 <- safe_p90("shots")
-  player_stats$shots_on_target_p90 <- safe_p90("shots_on_target")
-  player_stats$xg_p90 <- safe_p90("xg")
-  player_stats$npxg_p90 <- safe_p90("npxg")
-  player_stats$xa_p90 <- safe_p90("xa")
-  player_stats$sca_p90 <- safe_p90("sca")
-  player_stats$gca_p90 <- safe_p90("gca")
-
-  # Defensive per-90
-  player_stats$tackles_p90 <- safe_p90("tackles")
-  player_stats$interceptions_p90 <- safe_p90("interceptions")
-  player_stats$blocks_p90 <- safe_p90("blocks")
-  player_stats$clearances_p90 <- safe_p90("clearances")
-  player_stats$tackles_won_p90 <- safe_p90("tackles_won")
-  player_stats$tackles_def_3rd_p90 <- safe_p90("tackles_def_3rd")
-  player_stats$tackles_mid_3rd_p90 <- safe_p90("tackles_mid_3rd")
-  player_stats$tackles_att_3rd_p90 <- safe_p90("tackles_att_3rd")
-  player_stats$blocks_shots_p90 <- safe_p90("blocks_shots")
-  player_stats$blocks_pass_p90 <- safe_p90("blocks_pass")
-  player_stats$errors_p90 <- safe_p90("errors")
-
-  # Passing per-90
-  player_stats$touches_p90 <- safe_p90("touches")
-  player_stats$progressive_passes_p90 <- safe_p90("progressive_passes")
-  player_stats$key_passes_p90 <- safe_p90("key_passes")
-  player_stats$final_third_passes_p90 <- safe_p90("final_third_passes")
-  player_stats$passes_into_box_p90 <- safe_p90("passes_into_box")
-  player_stats$crosses_into_box_p90 <- safe_p90("crosses_into_box")
-  player_stats$pass_long_cmp_p90 <- safe_p90("pass_long_cmp")
-  player_stats$pass_short_cmp_p90 <- safe_p90("pass_short_cmp")
-  player_stats$pass_med_cmp_p90 <- safe_p90("pass_med_cmp")
-  player_stats$pass_tot_dist_p90 <- safe_p90("pass_tot_dist")
-  player_stats$pass_prg_dist_p90 <- safe_p90("pass_prg_dist")
-
-  # Possession per-90
-  player_stats$carries_p90 <- safe_p90("carries")
-  player_stats$progressive_carries_p90 <- safe_p90("progressive_carries")
-  player_stats$carries_final_3rd_p90 <- safe_p90("carries_final_3rd")
-  player_stats$carries_into_box_p90 <- safe_p90("carries_into_box")
-  player_stats$take_ons_att_p90 <- safe_p90("take_ons_att")
-  player_stats$take_ons_succ_p90 <- safe_p90("take_ons_succ")
-  player_stats$miscontrols_p90 <- safe_p90("miscontrols")
-  player_stats$dispossessed_p90 <- safe_p90("dispossessed")
-  player_stats$prg_passes_received_p90 <- safe_p90("prg_passes_received")
-
-  # Touches by location per-90
-  player_stats$touches_def_3rd_p90 <- safe_p90("touches_def_3rd")
-  player_stats$touches_mid_3rd_p90 <- safe_p90("touches_mid_3rd")
-  player_stats$touches_att_3rd_p90 <- safe_p90("touches_att_3rd")
-  player_stats$touches_att_pen_p90 <- safe_p90("touches_att_pen")
-
-  # Misc stats per-90
-  player_stats$fouls_committed_p90 <- safe_p90("fouls_committed")
-  player_stats$fouls_drawn_p90 <- safe_p90("fouls_drawn")
-  player_stats$offsides_p90 <- safe_p90("offsides")
-  player_stats$recoveries_p90 <- safe_p90("recoveries")
-  player_stats$aerials_won_p90 <- safe_p90("aerials_won")
-  player_stats$aerials_lost_p90 <- safe_p90("aerials_lost")
-  player_stats$penalties_won_p90 <- safe_p90("penalties_won")
-  player_stats$penalties_conceded_p90 <- safe_p90("penalties_conceded")
-
-  # Passing types per-90
-  player_stats$through_balls_p90 <- safe_p90("through_balls")
-  player_stats$switches_p90 <- safe_p90("switches")
-  player_stats$crosses_p90 <- safe_p90("crosses_pt")
-  player_stats$corner_kicks_p90 <- safe_p90("corner_kicks")
-  player_stats$passes_dead_p90 <- safe_p90("passes_dead")
-
-  # Keeper stats per-90 (only meaningful for GKs)
-  player_stats$saves_p90 <- safe_p90("saves")
-  player_stats$goals_against_p90 <- safe_p90("goals_against")
-  player_stats$gk_sweeper_actions_p90 <- safe_p90("gk_sweeper_actions")
 
   player_stats
 }
@@ -291,69 +231,59 @@
 #' @return player_stats with derived feature columns added
 #' @keywords internal
 .calculate_derived_features <- function(player_stats, mins_per_90) {
-  n_players <- nrow(player_stats)
-
-  # Helper to safely get column or return zeros
-  safe_col <- function(col_name) {
-    if (col_name %in% names(player_stats)) {
-      x <- as.numeric(player_stats[[col_name]])
-      ifelse(is.na(x), 0, x)
-    } else {
-      rep(0, n_players)
-    }
-  }
+  sc <- function(col_name) .safe_col(player_stats, col_name)
 
   # Shooting efficiency (default = 0 for SPM feature matrix — NAs crash XGBoost)
-  player_stats$shot_accuracy <- safe_divide(safe_col("shots_on_target"), safe_col("shots"), default = 0)
-  player_stats$goals_per_shot <- safe_divide(safe_col("goals"), safe_col("shots"), default = 0)
-  player_stats$xg_per_shot <- safe_divide(safe_col("xg"), safe_col("shots"), default = 0)
+  player_stats$shot_accuracy <- safe_divide(sc("shots_on_target"), sc("shots"), default = 0)
+  player_stats$goals_per_shot <- safe_divide(sc("goals"), sc("shots"), default = 0)
+  player_stats$xg_per_shot <- safe_divide(sc("xg"), sc("shots"), default = 0)
   player_stats$goals_minus_xg <- player_stats$goals_p90 - player_stats$xg_p90
   player_stats$npxg_plus_xa_p90 <- player_stats$npxg_p90 + player_stats$xa_p90
 
   # Passing efficiency
-  player_stats$pass_completion <- safe_divide(safe_col("passes_completed"), safe_col("passes_attempted"), default = 0)
-  player_stats$pass_short_success <- safe_divide(safe_col("pass_short_cmp"), safe_col("pass_short_att"), default = 0)
-  player_stats$pass_med_success <- safe_divide(safe_col("pass_med_cmp"), safe_col("pass_med_att"), default = 0)
-  player_stats$pass_long_success <- safe_divide(safe_col("pass_long_cmp"), safe_col("pass_long_att"), default = 0)
-  player_stats$long_pass_ratio <- safe_divide(safe_col("pass_long_att"), safe_col("pass_att"), default = 0)
+  player_stats$pass_completion <- safe_divide(sc("passes_completed"), sc("passes_attempted"), default = 0)
+  player_stats$pass_short_success <- safe_divide(sc("pass_short_cmp"), sc("pass_short_att"), default = 0)
+  player_stats$pass_med_success <- safe_divide(sc("pass_med_cmp"), sc("pass_med_att"), default = 0)
+  player_stats$pass_long_success <- safe_divide(sc("pass_long_cmp"), sc("pass_long_att"), default = 0)
+  player_stats$long_pass_ratio <- safe_divide(sc("pass_long_att"), sc("pass_att"), default = 0)
 
   # Take-on success
-  player_stats$take_on_success <- safe_divide(safe_col("take_ons_succ"), safe_col("take_ons_att"), default = 0)
+  player_stats$take_on_success <- safe_divide(sc("take_ons_succ"), sc("take_ons_att"), default = 0)
 
   # Tackle success
-  player_stats$tackle_success <- safe_divide(safe_col("tackles_won"), safe_col("tackles"), default = 0)
-  player_stats$challenge_success <- safe_divide(safe_col("challenges_tkl"), safe_col("challenges_att"), default = 0)
+  player_stats$tackle_success <- safe_divide(sc("tackles_won"), sc("tackles"), default = 0)
+  player_stats$challenge_success <- safe_divide(sc("challenges_tkl"), sc("challenges_att"), default = 0)
 
   # Touch location ratios (indicates where player operates on pitch)
-  total_touches <- safe_col("touches_poss")
-  total_touches <- ifelse(total_touches == 0, safe_col("touches"), total_touches)
-  player_stats$touch_def_3rd_pct <- safe_divide(safe_col("touches_def_3rd"), total_touches, default = 0)
-  player_stats$touch_mid_3rd_pct <- safe_divide(safe_col("touches_mid_3rd"), total_touches, default = 0)
-  player_stats$touch_att_3rd_pct <- safe_divide(safe_col("touches_att_3rd"), total_touches, default = 0)
-  player_stats$touch_att_pen_pct <- safe_divide(safe_col("touches_att_pen"), total_touches, default = 0)
+  total_touches <- sc("touches_poss")
+  total_touches <- ifelse(total_touches == 0, sc("touches"), total_touches)
+  player_stats$touch_def_3rd_pct <- safe_divide(sc("touches_def_3rd"), total_touches, default = 0)
+  player_stats$touch_mid_3rd_pct <- safe_divide(sc("touches_mid_3rd"), total_touches, default = 0)
+  player_stats$touch_att_3rd_pct <- safe_divide(sc("touches_att_3rd"), total_touches, default = 0)
+  player_stats$touch_att_pen_pct <- safe_divide(sc("touches_att_pen"), total_touches, default = 0)
 
   # Ball retention
-  turnovers <- safe_col("miscontrols") + safe_col("dispossessed")
+  turnovers <- sc("miscontrols") + sc("dispossessed")
   player_stats$turnovers_p90 <- turnovers / mins_per_90
-  total_carries <- safe_col("carries_poss")
-  total_carries <- ifelse(total_carries == 0, safe_col("carries"), total_carries)
+  total_carries <- sc("carries_poss")
+  total_carries <- ifelse(total_carries == 0, sc("carries"), total_carries)
   player_stats$carry_retention <- ifelse(total_carries > 0, 1 - turnovers / total_carries, NA_real_)
 
   # Progressive actions per touch
-  prg_actions <- safe_col("progressive_carries") + safe_col("progressive_passes")
+  prg_actions <- sc("progressive_carries") + sc("progressive_passes")
   player_stats$prg_actions_per_touch <- safe_divide(prg_actions, total_touches, default = 0)
 
   # Aerial duel success
-  total_aerials <- safe_col("aerials_won") + safe_col("aerials_lost")
-  player_stats$aerial_success <- safe_divide(safe_col("aerials_won"), total_aerials, default = 0)
+  total_aerials <- sc("aerials_won") + sc("aerials_lost")
+  player_stats$aerial_success <- safe_divide(sc("aerials_won"), total_aerials, default = 0)
   player_stats$aerials_total_p90 <- total_aerials / mins_per_90
 
   # Foul differential (fouls drawn - committed, higher = better)
   player_stats$foul_differential_p90 <- player_stats$fouls_drawn_p90 - player_stats$fouls_committed_p90
 
   # Goalkeeper metrics
-  player_stats$gk_save_pct <- safe_divide(safe_col("saves"), safe_col("shots_on_target_against"), default = 0)
-  player_stats$gk_goals_prevented <- safe_col("psxg") - safe_col("goals_against")
+  player_stats$gk_save_pct <- safe_divide(sc("saves"), sc("shots_on_target_against"), default = 0)
+  player_stats$gk_goals_prevented <- sc("psxg") - sc("goals_against")
   player_stats$gk_goals_prevented_p90 <- player_stats$gk_goals_prevented / mins_per_90
 
   player_stats
@@ -422,20 +352,17 @@ aggregate_player_stats <- function(stats_summary,
   # Create player_id for consistent matching
   stats_summary$player_id <- clean_player_name(stats_summary$player_name)
 
-  # Create lookup for canonical player_name
-  cleaned_names <- gsub("\u00A0", " ", stats_summary$player_name)
-  cleaned_names <- trimws(cleaned_names)
-
-  player_name_lookup <- stats::aggregate(
-    cleaned_names,
-    by = list(player_id = stats_summary$player_id),
-    FUN = function(x) {
-      tbl <- table(x)
-      best_name <- names(tbl)[which.max(tbl)]
-      tools::toTitleCase(tolower(best_name))
-    }
+  # Create lookup for canonical player_name using data.table
+  cleaned_names_vec <- trimws(gsub("\u00A0", " ", stats_summary$player_name))
+  dt_names <- data.table::data.table(
+    player_id = stats_summary$player_id,
+    clean_name = cleaned_names_vec
   )
-  names(player_name_lookup)[2] <- "player_name"
+  player_name_lookup <- dt_names[, {
+    tbl <- table(clean_name)
+    list(player_name = tools::toTitleCase(tolower(names(tbl)[which.max(tbl)])))
+  }, by = player_id]
+  data.table::setDF(player_name_lookup)
 
   # Aggregate summary stats using data.table for performance
   summary_cols <- .get_summary_col_mapping()
@@ -794,7 +721,7 @@ fit_spm_model <- function(data, predictor_cols = NULL, alpha = 0.5, nfolds = 10,
 #' @param verbose Print progress (0=silent, 1=performance, 2=details)
 #'
 #' @return List with xgb model, cv results, and metadata
-#' @export
+#' @keywords internal
 fit_spm_xgb <- function(data, predictor_cols = NULL, nfolds = 10,
                          max_depth = 4, eta = 0.1,
                          subsample = 0.8, colsample_bytree = 0.8,
@@ -1119,7 +1046,7 @@ calculate_defensive_spm <- function(data, defensive_cols = NULL, alpha = 0.5) {
 #' @param weight_transform Transform for weights: "sqrt" (default), "linear", "log"
 #'
 #' @return List with validation metrics (both weighted and unweighted)
-#' @export
+#' @keywords internal
 validate_spm_prediction <- function(spm_ratings, rapm_ratings,
                                      weight_by_minutes = TRUE,
                                      weight_transform = "sqrt") {

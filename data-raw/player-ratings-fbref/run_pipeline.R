@@ -46,42 +46,12 @@ if (!exists("pannadata_path")) pannadata_path <- "../pannadata/data"
 
 # 3. Helper Functions ----
 
-run_step <- function(step_name, step_num, code_block) {
-  step_key <- sprintf("step_%02d_%s", step_num, step_name)
-  if (!isTRUE(run_steps[[step_key]])) {
-    message(sprintf("\n[%s] Step %d: %s - SKIPPED",
-                    format(Sys.time(), "%H:%M:%S"), step_num, step_name))
-    return(NULL)
+source("data-raw/pipeline_utils.R")
 
-  }
-
-  message(sprintf("\n%s", paste(rep("=", 70), collapse = "")))
-  message(sprintf("[%s] Step %d: %s",
-                  format(Sys.time(), "%H:%M:%S"), step_num, step_name))
-  message(sprintf("%s\n", paste(rep("=", 70), collapse = "")))
-
-  start_time <- Sys.time()
-  result <- tryCatch({
-    code_block()
-    "SUCCESS"
-  }, error = function(e) {
-    message(sprintf("ERROR: %s", e$message))
-    "FAILED"
-  })
-  end_time <- Sys.time()
-
-  duration <- difftime(end_time, start_time, units = "secs")
-
-  list(
-    step = step_num,
-    name = step_name,
-    status = result,
-    duration_secs = as.numeric(duration),
-    duration_formatted = format_duration(as.numeric(duration))
-  )
+# Wrapper that passes run_steps from the pipeline environment
+run_step_fbref <- function(step_name, step_num, code_block) {
+  run_step(step_name, step_num, code_block, run_steps)
 }
-
-# format_duration() is defined in R/utils.R
 
 validate_pipeline_config <- function(pannadata_path, leagues, seasons) {
   errors <- character(0)
@@ -125,35 +95,21 @@ if (!dir.exists(cache_dir)) {
   dir.create(cache_dir, recursive = TRUE)
 }
 
-# Handle force rebuild - delete cache files from specified step onwards
-if (!is.null(force_rebuild_from) && force_rebuild_from >= 1 && force_rebuild_from <= 8) {
-  cache_files <- list(
-    "1" = c("01_raw_data.rds", "01_config.rds"),
-    "2" = "02_processed_data.rds",
-    "3" = "03_splints.rds",
-    "4" = "04_rapm.rds",
-    "5" = "05_spm.rds",
-    "6" = "06_xrapm.rds",
-    "7" = c("07_seasonal_ratings.rds", "seasonal_spm.csv", "seasonal_rapm.csv", "seasonal_xrapm.csv"),
-    "8" = c("08_panna.rds", "panna_ratings.csv"),
-    "9" = character(0)
-  )
-
-  files_to_delete <- unlist(cache_files[as.character(force_rebuild_from:8)])
-  deleted <- 0
-  for (f in files_to_delete) {
-    fpath <- file.path(cache_dir, f)
-    if (file.exists(fpath)) {
-      file.remove(fpath)
-      deleted <- deleted + 1
-    }
-  }
-  message(sprintf("\n[Force rebuild] Cleared %d cache files from step %d onwards\n",
-                  deleted, force_rebuild_from))
-}
+# Handle force rebuild
+handle_force_rebuild(force_rebuild_from, cache_dir)
 
 pipeline_start <- Sys.time()
 step_results <- list()
+pipeline_failed <- FALSE
+
+# Wrapper that updates pipeline_failed in parent env
+check_step <- function(step_num, step_name) {
+  if (check_critical_step(step_num, step_name, step_results)) {
+    pipeline_failed <<- TRUE
+    return(TRUE)
+  }
+  FALSE
+}
 
 message("\n")
 message(paste(rep("#", 70), collapse = ""))
@@ -168,7 +124,7 @@ message(paste(rep("#", 70), collapse = ""))
 
 # 6. Step 1: Load Data ----
 
-step_results[[1]] <- run_step("load_data", 1, function() {
+step_results[[1]] <- run_step_fbref("load_data", 1, function() {
   raw_data_path <- file.path(cache_dir, "01_raw_data.rds")
   config_path <- file.path(cache_dir, "01_config.rds")
 
@@ -299,7 +255,10 @@ step_results[[1]] <- run_step("load_data", 1, function() {
     aggregate_cached_matches("passing") %>%
       { if (!is.null(leagues)) filter(., league %in% leagues) else . } %>%
       { if (!is.null(seasons)) filter(., season %in% seasons) else . },
-    error = function(e) NULL
+    error = function(e) {
+      warning(sprintf("Failed to load: %s", e$message), call. = FALSE)
+      NULL
+    }
   )
 
   message("Loading defense stats...")
@@ -307,7 +266,10 @@ step_results[[1]] <- run_step("load_data", 1, function() {
     aggregate_cached_matches("defense") %>%
       { if (!is.null(leagues)) filter(., league %in% leagues) else . } %>%
       { if (!is.null(seasons)) filter(., season %in% seasons) else . },
-    error = function(e) NULL
+    error = function(e) {
+      warning(sprintf("Failed to load: %s", e$message), call. = FALSE)
+      NULL
+    }
   )
 
   message("Loading possession stats...")
@@ -315,7 +277,10 @@ step_results[[1]] <- run_step("load_data", 1, function() {
     aggregate_cached_matches("possession") %>%
       { if (!is.null(leagues)) filter(., league %in% leagues) else . } %>%
       { if (!is.null(seasons)) filter(., season %in% seasons) else . },
-    error = function(e) NULL
+    error = function(e) {
+      warning(sprintf("Failed to load: %s", e$message), call. = FALSE)
+      NULL
+    }
   )
 
   message("Loading misc stats...")
@@ -323,7 +288,10 @@ step_results[[1]] <- run_step("load_data", 1, function() {
     aggregate_cached_matches("misc") %>%
       { if (!is.null(leagues)) filter(., league %in% leagues) else . } %>%
       { if (!is.null(seasons)) filter(., season %in% seasons) else . },
-    error = function(e) NULL
+    error = function(e) {
+      warning(sprintf("Failed to load: %s", e$message), call. = FALSE)
+      NULL
+    }
   )
 
   message("Loading passing types stats...")
@@ -331,7 +299,10 @@ step_results[[1]] <- run_step("load_data", 1, function() {
     aggregate_cached_matches("passing_types") %>%
       { if (!is.null(leagues)) filter(., league %in% leagues) else . } %>%
       { if (!is.null(seasons)) filter(., season %in% seasons) else . },
-    error = function(e) NULL
+    error = function(e) {
+      warning(sprintf("Failed to load: %s", e$message), call. = FALSE)
+      NULL
+    }
   )
 
   message("Loading keeper stats...")
@@ -339,7 +310,10 @@ step_results[[1]] <- run_step("load_data", 1, function() {
     aggregate_cached_matches("keeper") %>%
       { if (!is.null(leagues)) filter(., league %in% leagues) else . } %>%
       { if (!is.null(seasons)) filter(., season %in% seasons) else . },
-    error = function(e) NULL
+    error = function(e) {
+      warning(sprintf("Failed to load: %s", e$message), call. = FALSE)
+      NULL
+    }
   )
 
   raw_data <<- list(
@@ -370,56 +344,77 @@ step_results[[1]] <- run_step("load_data", 1, function() {
 
 # 7. Step 2: Data Processing ----
 
-step_results[[2]] <- run_step("data_processing", 2, function() {
-  source("data-raw/player-ratings-fbref/02_data_processing.R", local = TRUE)
-})
+if (!isTRUE(pipeline_failed)) {
+  step_results[[2]] <- run_step_fbref("data_processing", 2, function() {
+    source("data-raw/player-ratings-fbref/02_data_processing.R", local = TRUE)
+  })
+  check_step(2, "data_processing")
+}
 
 # 8. Step 3: Splint Creation ----
 
-step_results[[3]] <- run_step("splint_creation", 3, function() {
-  source("data-raw/player-ratings-fbref/03_splint_creation.R", local = TRUE)
-})
+if (!isTRUE(pipeline_failed)) {
+  step_results[[3]] <- run_step_fbref("splint_creation", 3, function() {
+    source("data-raw/player-ratings-fbref/03_splint_creation.R", local = TRUE)
+  })
+  check_step(3, "splint_creation")
+}
 
 # 9. Step 4: RAPM ----
 
-step_results[[4]] <- run_step("rapm", 4, function() {
-  source("data-raw/player-ratings-fbref/04_rapm.R", local = TRUE)
-})
+if (!isTRUE(pipeline_failed)) {
+  step_results[[4]] <- run_step_fbref("rapm", 4, function() {
+    source("data-raw/player-ratings-fbref/04_rapm.R", local = TRUE)
+  })
+  check_step(4, "rapm")
+}
 
 # 10. Step 5: SPM ----
 
-step_results[[5]] <- run_step("spm", 5, function() {
-  source("data-raw/player-ratings-fbref/05_spm.R", local = TRUE)
-})
+if (!isTRUE(pipeline_failed)) {
+  step_results[[5]] <- run_step_fbref("spm", 5, function() {
+    source("data-raw/player-ratings-fbref/05_spm.R", local = TRUE)
+  })
+  check_step(5, "spm")
+}
 
 # 11. Step 6: xRAPM ----
 
-step_results[[6]] <- run_step("xrapm", 6, function() {
-  source("data-raw/player-ratings-fbref/06_xrapm.R", local = TRUE)
-})
+if (!isTRUE(pipeline_failed)) {
+  step_results[[6]] <- run_step_fbref("xrapm", 6, function() {
+    source("data-raw/player-ratings-fbref/06_xrapm.R", local = TRUE)
+  })
+  check_step(6, "xrapm")
+}
 
 # 12. Step 7: Seasonal Ratings (SPM, RAPM, xRAPM) ----
 
-step_results[[7]] <- run_step("seasonal_ratings", 7, function() {
-  source("data-raw/player-ratings-fbref/07_seasonal_ratings.R", local = TRUE)
-})
+if (!isTRUE(pipeline_failed)) {
+  step_results[[7]] <- run_step_fbref("seasonal_ratings", 7, function() {
+    source("data-raw/player-ratings-fbref/07_seasonal_ratings.R", local = TRUE)
+  })
+  check_step(7, "seasonal_ratings")
+}
 
 # 13. Step 8: Final Ratings ----
 
-step_results[[8]] <- run_step("panna_ratings", 8, function() {
-  source("data-raw/player-ratings-fbref/08_panna_ratings.R", local = TRUE)
-})
+if (!isTRUE(pipeline_failed)) {
+  step_results[[8]] <- run_step_fbref("panna_ratings", 8, function() {
+    source("data-raw/player-ratings-fbref/08_panna_ratings.R", local = TRUE)
+  })
+  check_step(8, "panna_ratings")
+}
 
 # 14. Export to pannadata releases ----
 
-# Skip export if step 7 failed (stale/missing data)
-if (!is.null(step_results[[7]]) && step_results[[7]]$status == "FAILED") {
-  message("\nSkipping export: step 7 (seasonal_ratings) failed")
+# Skip export if pipeline failed
+if (isTRUE(pipeline_failed)) {
+  message("\nSkipping export: upstream step failed")
   step_results[[9]] <- list(step = 9, name = "export_ratings", status = "SKIPPED",
                             duration_secs = 0, duration_formatted = "0.0 seconds")
 } else {
 
-step_results[[9]] <- run_step("export_ratings", 9, function() {
+step_results[[9]] <- run_step_fbref("export_ratings", 9, function() {
   if (!requireNamespace("piggyback", quietly = TRUE)) {
     stop("Package 'piggyback' is required for export. Install with: install.packages('piggyback')")
   }
@@ -507,29 +502,7 @@ step_results[[9]] <- run_step("export_ratings", 9, function() {
 
 # 15. Summary ----
 
-pipeline_end <- Sys.time()
-total_duration <- difftime(pipeline_end, pipeline_start, units = "secs")
-
-message("\n")
-message(paste(rep("=", 70), collapse = ""))
-message("PIPELINE COMPLETE")
-message(paste(rep("=", 70), collapse = ""))
-
-message("\nStep Summary:")
-message(sprintf("%-25s %-10s %s", "Step", "Status", "Duration"))
-message(paste(rep("-", 50), collapse = ""))
-
-for (result in step_results) {
-  if (!is.null(result)) {
-    message(sprintf("%-25s %-10s %s",
-                    result$name,
-                    result$status,
-                    result$duration_formatted))
-  }
-}
-
-message(paste(rep("-", 50), collapse = ""))
-message(sprintf("%-25s %-10s %s", "TOTAL", "", format_duration(as.numeric(total_duration))))
+print_pipeline_summary(step_results, pipeline_start, "FBREF PIPELINE")
 
 message("\nOutput files:")
 message(sprintf("  - %s", file.path(cache_dir, "07_seasonal_ratings.rds")))

@@ -736,7 +736,7 @@ inspect_skill <- function(stat_name, match_stats, decay_params = NULL,
 #'   skill estimates for all stats plus identity/context columns. Compatible
 #'   with \code{fit_spm_opta()}.
 #'
-#' @export
+#' @keywords internal
 aggregate_skills_for_spm <- function(match_stats, decay_params = NULL,
                                       season_end_dates = NULL,
                                       min_minutes = 450,

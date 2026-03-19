@@ -627,6 +627,29 @@ format_duration <- function(secs) {
 }
 
 
+#' Safely extract a column from a data frame, returning zeros if missing
+#'
+#' Returns the column as numeric with NAs replaced by 0. If the column
+#' doesn't exist, returns a vector of zeros. Used by SPM feature calculations.
+#'
+#' @param df Data frame
+#' @param col_name Column name to extract
+#' @return Numeric vector (same length as nrow(df)), NAs replaced with 0
+#' @keywords internal
+.safe_col <- function(df, col_name) {
+  if (col_name %in% names(df)) {
+    x <- as.numeric(df[[col_name]])
+    ifelse(is.na(x), 0, x)
+  } else {
+    if (!exists(col_name, envir = .get_col_warned, inherits = FALSE)) {
+      cli::cli_warn("Column {.val {col_name}} not found, defaulting to 0.")
+      assign(col_name, TRUE, envir = .get_col_warned)
+    }
+    rep(0, nrow(df))
+  }
+}
+
+
 #' Memoization environment for .get_col warnings
 #'
 #' Tracks which missing-column warnings have been emitted by \code{.get_col()}.
@@ -742,57 +765,56 @@ aggregate_player_data <- function(data, agg_cols, by_team = FALSE,
     return(data.frame())
   }
 
-  # Build formula for aggregate
-  agg_formula <- if (by_team) {
-    stats::as.formula(paste(". ~", player_col, "+", team_col))
-  } else {
-    stats::as.formula(paste(". ~", player_col))
+  # Build data.table with columns to aggregate
+  dt <- data.table::data.table(.player = data[[player_col]])
+  if (by_team && team_col %in% names(data)) {
+    dt[, .team := data[[team_col]]]
   }
 
-  # Build data frame of columns to aggregate
-  agg_data <- data.frame(row.names = seq_len(nrow(data)))
   for (col_name in names(agg_cols)) {
     col_expr <- agg_cols[[col_name]]
     if (col_expr == "1") {
-      # Count rows
-      agg_data[[col_name]] <- 1
+      dt[, (col_name) := 1L]
     } else if (col_expr %in% names(data)) {
-      agg_data[[col_name]] <- as.numeric(data[[col_expr]])
+      dt[, (col_name) := as.numeric(data[[col_expr]])]
     } else {
-      # Unknown column - warn and fill with zeros
       cli::cli_warn(c(
         "Column {.val {col_expr}} not found in data.",
         "i" = "Pre-compute derived columns before passing to {.fn aggregate_player_data}."
       ))
-      agg_data[[col_name]] <- rep(0, nrow(data))
+      dt[, (col_name) := 0]
     }
   }
 
-  # Add grouping columns
-  agg_data[[player_col]] <- data[[player_col]]
-  if (by_team && team_col %in% names(data)) {
-    agg_data[[team_col]] <- data[[team_col]]
-  }
+  # Aggregate using data.table
+  agg_col_names <- names(agg_cols)
+  by_cols <- if (by_team && ".team" %in% names(dt)) c(".player", ".team") else ".player"
 
-  # Aggregate
-  result <- stats::aggregate(
-    agg_formula,
-    data = agg_data,
-    FUN = function(x) sum(x, na.rm = TRUE),
-    na.action = stats::na.pass
-  )
+  result <- dt[, lapply(.SD, function(x) sum(x, na.rm = TRUE)),
+               by = by_cols, .SDcols = agg_col_names]
+
+  # Rename grouping columns back
+  data.table::setnames(result, ".player", player_col)
+  if (".team" %in% names(result)) {
+    data.table::setnames(result, ".team", team_col)
+  }
 
   # Add most frequent team if not grouping by team
   if (!by_team && team_col %in% names(data)) {
-    team_mode <- stats::aggregate(
-      stats::as.formula(paste(team_col, "~", player_col)),
-      data = data,
-      FUN = function(x) names(which.max(table(x)))
+    team_dt <- data.table::data.table(
+      .player = data[[player_col]],
+      .team = data[[team_col]]
     )
-    result <- data.table::as.data.table(team_mode)[data.table::as.data.table(result), on = player_col]
-    data.table::setDF(result)
+    team_mode <- team_dt[, {
+      valid <- .team[!is.na(.team)]
+      if (length(valid) == 0) list(.team = NA_character_)
+      else list(.team = names(which.max(table(valid))))
+    }, by = .player]
+    data.table::setnames(team_mode, c(".player", ".team"), c(player_col, team_col))
+    result <- team_mode[result, on = player_col]
   }
 
+  data.table::setDF(result)
   result
 }
 

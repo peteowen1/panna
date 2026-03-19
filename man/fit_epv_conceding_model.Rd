@@ -22,3 +22,4 @@ using a multinomial approach.
 \seealso{
 \code{\link[=fit_epv_model]{fit_epv_model()}}
 }
+\keyword{internal}

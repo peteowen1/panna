@@ -24,3 +24,4 @@ od_result <- calculate_od_panna(rapm_data, spm_ratings)
 visualize_od_scatter(od_result$ratings, highlight_top = 15)
 }
 }
+\keyword{internal}

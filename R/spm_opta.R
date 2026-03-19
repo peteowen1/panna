@@ -158,14 +158,9 @@
   )
 
   for (col in p90_cols) {
-    if (col %in% names(player_stats)) {
-      x <- as.numeric(player_stats[[col]])
-      x[is.na(x)] <- 0
-    } else {
-      x <- rep(0, nrow(player_stats))
-    }
+    x <- .safe_col(player_stats, col)
     p90_val <- x / mins_per_90
-    p90_val[is.infinite(p90_val) | is.nan(p90_val)] <- 0
+    p90_val[!is.finite(p90_val)] <- 0
     player_stats[[paste0(col, "_p90")]] <- p90_val
   }
 
@@ -178,129 +173,115 @@
 #' @return player_stats with derived feature columns added
 #' @keywords internal
 .calculate_opta_derived_features <- function(player_stats) {
-  n_players <- nrow(player_stats)
   mins_per_90 <- player_stats$total_minutes / 90
-
-  safe_col <- function(col_name) {
-    if (col_name %in% names(player_stats)) {
-      x <- as.numeric(player_stats[[col_name]])
-      ifelse(is.na(x), 0, x)
-    } else {
-      rep(0, n_players)
-    }
-  }
-
-  safe_div_local <- function(num, denom) {
-    num <- as.numeric(num)
-    denom <- as.numeric(denom)
-    ifelse(is.na(denom) | denom == 0, 0, num / denom)
-  }
+  sc <- function(col_name) .safe_col(player_stats, col_name)
+  sdiv <- function(num, denom) safe_divide(num, denom, default = 0)
 
   # Shooting efficiency
-  player_stats$shot_accuracy <- safe_div_local(safe_col("shots_on_target"), safe_col("shots"))
-  player_stats$goals_per_shot <- safe_div_local(safe_col("goals"), safe_col("shots"))
-  player_stats$ibox_shot_ratio <- safe_div_local(safe_col("shots_ibox"), safe_col("shots"))
-  player_stats$big_chance_conversion <- safe_div_local(
-    safe_col("big_chance_scored"),
-    safe_col("big_chance_scored") + safe_col("big_chance_missed")
+  player_stats$shot_accuracy <- sdiv(sc("shots_on_target"), sc("shots"))
+  player_stats$goals_per_shot <- sdiv(sc("goals"), sc("shots"))
+  player_stats$ibox_shot_ratio <- sdiv(sc("shots_ibox"), sc("shots"))
+  player_stats$big_chance_conversion <- sdiv(
+    sc("big_chance_scored"),
+    sc("big_chance_scored") + sc("big_chance_missed")
   )
 
   # Passing efficiency
-  player_stats$pass_accuracy <- safe_div_local(safe_col("passes_accurate"), safe_col("passes"))
-  player_stats$final_third_pass_acc <- safe_div_local(
-    safe_col("final_third_passes_acc"), safe_col("final_third_passes")
+  player_stats$pass_accuracy <- sdiv(sc("passes_accurate"), sc("passes"))
+  player_stats$final_third_pass_acc <- sdiv(
+    sc("final_third_passes_acc"), sc("final_third_passes")
   )
-  player_stats$long_ball_accuracy <- safe_div_local(safe_col("long_balls_acc"), safe_col("long_balls"))
-  player_stats$through_ball_accuracy <- safe_div_local(
-    safe_col("through_balls_acc"), safe_col("through_balls")
+  player_stats$long_ball_accuracy <- sdiv(sc("long_balls_acc"), sc("long_balls"))
+  player_stats$through_ball_accuracy <- sdiv(
+    sc("through_balls_acc"), sc("through_balls")
   )
-  player_stats$cross_accuracy <- safe_div_local(safe_col("crosses_acc"), safe_col("crosses"))
+  player_stats$cross_accuracy <- sdiv(sc("crosses_acc"), sc("crosses"))
 
   # Defensive success rates
-  player_stats$tackle_success <- safe_div_local(safe_col("tackles_won"), safe_col("tackles"))
-  player_stats$interception_success <- safe_div_local(
-    safe_col("interceptions_won"), safe_col("interceptions")
+  player_stats$tackle_success <- sdiv(sc("tackles_won"), sc("tackles"))
+  player_stats$interception_success <- sdiv(
+    sc("interceptions_won"), sc("interceptions")
   )
-  player_stats$clearance_effectiveness <- safe_div_local(
-    safe_col("clearances_effective"), safe_col("clearances")
+  player_stats$clearance_effectiveness <- sdiv(
+    sc("clearances_effective"), sc("clearances")
   )
 
   # Duel success rates
-  player_stats$duel_success <- safe_div_local(
-    safe_col("duel_won"), safe_col("duel_won") + safe_col("duel_lost")
+  player_stats$duel_success <- sdiv(
+    sc("duel_won"), sc("duel_won") + sc("duel_lost")
   )
-  player_stats$aerial_success <- safe_div_local(
-    safe_col("aerial_won"), safe_col("aerial_won") + safe_col("aerial_lost")
+  player_stats$aerial_success <- sdiv(
+    sc("aerial_won"), sc("aerial_won") + sc("aerial_lost")
   )
 
   # Possession balance
-  total_poss_won <- safe_col("poss_won_def3rd") + safe_col("poss_won_mid3rd") +
-    safe_col("poss_won_att3rd")
+  total_poss_won <- sc("poss_won_def3rd") + sc("poss_won_mid3rd") +
+    sc("poss_won_att3rd")
   player_stats$poss_won_total_p90 <- total_poss_won / mins_per_90
-  player_stats$poss_won_att_ratio <- safe_div_local(safe_col("poss_won_att3rd"), total_poss_won)
+  player_stats$poss_won_att_ratio <- sdiv(sc("poss_won_att3rd"), total_poss_won)
 
   # Ball retention
-  player_stats$turnovers_p90 <- (safe_col("dispossessed") + safe_col("turnover")) / mins_per_90
+  player_stats$turnovers_p90 <- (sc("dispossessed") + sc("turnover")) / mins_per_90
   player_stats$foul_differential_p90 <- player_stats$was_fouled_p90 - player_stats$fouls_p90
 
   # Progressive passing accuracy
-  player_stats$fwd_zone_pass_accuracy <- safe_div_local(
-    safe_col("fwd_zone_pass_acc"), safe_col("fwd_zone_pass")
+  player_stats$fwd_zone_pass_accuracy <- sdiv(
+    sc("fwd_zone_pass_acc"), sc("fwd_zone_pass")
   )
-  player_stats$open_play_pass_accuracy <- safe_div_local(
-    safe_col("open_play_pass_acc"), safe_col("open_play_pass")
+  player_stats$open_play_pass_accuracy <- sdiv(
+    sc("open_play_pass_acc"), sc("open_play_pass")
   )
 
   # Open-play cross accuracy
-  player_stats$crosses_open_play_accuracy <- safe_div_local(
-    safe_col("crosses_open_play_acc"), safe_col("crosses_open_play")
+  player_stats$crosses_open_play_accuracy <- sdiv(
+    sc("crosses_open_play_acc"), sc("crosses_open_play")
   )
 
   # Touch quality rate
-  player_stats$bad_touch_rate <- safe_div_local(
-    safe_col("unsuccessful_touch") + safe_col("overrun"), safe_col("touches")
+  player_stats$bad_touch_rate <- sdiv(
+    sc("unsuccessful_touch") + sc("overrun"), sc("touches")
   )
 
   # Error total per-90
-  player_stats$errors_total_p90 <- (safe_col("error_lead_to_shot") +
-    safe_col("error_lead_to_goal")) / mins_per_90
+  player_stats$errors_total_p90 <- (sc("error_lead_to_shot") +
+    sc("error_lead_to_goal")) / mins_per_90
 
   # Headed goal rate
-  player_stats$headed_goal_rate <- safe_div_local(safe_col("att_headed_goal"), safe_col("att_headed"))
+  player_stats$headed_goal_rate <- sdiv(sc("att_headed_goal"), sc("att_headed"))
 
   # Flick-on accuracy
-  player_stats$flick_on_accuracy <- safe_div_local(safe_col("flick_on_acc"), safe_col("flick_on"))
+  player_stats$flick_on_accuracy <- sdiv(sc("flick_on_acc"), sc("flick_on"))
 
   # GK sweeper accuracy
-  player_stats$keeper_sweeper_accuracy <- safe_div_local(
-    safe_col("keeper_sweeper_acc"), safe_col("keeper_sweeper")
+  player_stats$keeper_sweeper_accuracy <- sdiv(
+    sc("keeper_sweeper_acc"), sc("keeper_sweeper")
   )
 
   # Round 2 derived features
-  player_stats$back_zone_pass_accuracy <- safe_div_local(
-    safe_col("back_zone_pass_acc"), safe_col("back_zone_pass")
+  player_stats$back_zone_pass_accuracy <- sdiv(
+    sc("back_zone_pass_acc"), sc("back_zone_pass")
   )
-  player_stats$chipped_pass_accuracy <- safe_div_local(
-    safe_col("chipped_pass_acc"), safe_col("chipped_pass")
+  player_stats$chipped_pass_accuracy <- sdiv(
+    sc("chipped_pass_acc"), sc("chipped_pass")
   )
-  player_stats$ibox_goal_rate <- safe_div_local(safe_col("att_ibox_goal"), safe_col("shots_ibox"))
-  player_stats$obox_goal_rate <- safe_div_local(safe_col("att_obox_goal"), safe_col("shots_obox"))
-  player_stats$penalty_conversion <- safe_div_local(
-    safe_col("att_pen_goal"), safe_col("att_pen_goal") + safe_col("att_pen_miss")
+  player_stats$ibox_goal_rate <- sdiv(sc("att_ibox_goal"), sc("shots_ibox"))
+  player_stats$obox_goal_rate <- sdiv(sc("att_obox_goal"), sc("shots_obox"))
+  player_stats$penalty_conversion <- sdiv(
+    sc("att_pen_goal"), sc("att_pen_goal") + sc("att_pen_miss")
   )
-  player_stats$long_pass_own_to_opp_accuracy <- safe_div_local(
-    safe_col("long_pass_own_to_opp_acc"), safe_col("long_pass_own_to_opp")
+  player_stats$long_pass_own_to_opp_accuracy <- sdiv(
+    sc("long_pass_own_to_opp_acc"), sc("long_pass_own_to_opp")
   )
-  player_stats$fifty_fifty_success <- safe_div_local(
-    safe_col("fifty_fifty_won"), safe_col("fifty_fifty")
+  player_stats$fifty_fifty_success <- sdiv(
+    sc("fifty_fifty_won"), sc("fifty_fifty")
   )
-  player_stats$poss_lost_ctrl_per_touch <- safe_div_local(
-    safe_col("poss_lost_ctrl"), safe_col("touches")
+  player_stats$poss_lost_ctrl_per_touch <- sdiv(
+    sc("poss_lost_ctrl"), sc("touches")
   )
 
   # Goalkeeper metrics
-  shots_faced <- safe_col("saves") + safe_col("goals_conceded")
-  player_stats$save_percentage <- safe_div_local(safe_col("saves"), shots_faced)
+  shots_faced <- sc("saves") + sc("goals_conceded")
+  player_stats$save_percentage <- sdiv(sc("saves"), shots_faced)
 
   # Position dummies
   if ("primary_position" %in% names(player_stats)) {
@@ -471,7 +452,7 @@ compute_match_level_opta_stats <- function(opta_stats, min_minutes = 10) {
 #' @param min_minutes Minimum total minutes for inclusion (default 450)
 #'
 #' @return Data frame with per-90 rates for each player
-#' @export
+#' @keywords internal
 #' @examples
 #' \dontrun{
 #' opta_stats <- load_opta_stats("ENG", "2024-2025")
@@ -649,7 +630,7 @@ fit_spm_opta <- function(data, alpha = 0.5, nfolds = 10,
 #' @param n Number of top features to compare (default 20)
 #'
 #' @return Data frame comparing feature importance
-#' @export
+#' @keywords internal
 compare_spm_features <- function(fbref_model, opta_model, n = 20) {
   fbref_imp <- get_spm_feature_importance(fbref_model, n = n)
   fbref_imp$source <- "FBref"

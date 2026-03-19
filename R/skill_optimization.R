@@ -18,7 +18,7 @@
 #' @return Named list with elements \code{tier1} (individually optimized),
 #'   \code{tier2} (group optimized), and \code{efficiency} (attempt-weighted group).
 #'
-#' @export
+#' @keywords internal
 get_stat_tiers <- function() {
   list(
     tier1 = c(
@@ -171,7 +171,7 @@ get_stat_tiers <- function() {
 #' @return A list with \code{stat}, \code{optimal_prior}, \code{mse}, and
 #'   \code{n_predictions}.
 #'
-#' @export
+#' @keywords internal
 optimize_stat_prior <- function(match_stats = NULL, stat_name,
                                  lambda = 0.003,
                                  pos_mean = NULL,
@@ -573,7 +573,7 @@ optimize_stat_prior <- function(match_stats = NULL, stat_name,
 #' @return Updated decay_params with \code{stat_priors} element: a named
 #'   numeric vector mapping stat names to optimal prior strengths.
 #'
-#' @export
+#' @keywords internal
 optimize_all_priors <- function(match_stats, decay_params = NULL,
                                  stat_tiers = NULL,
                                  optimize_lambda = TRUE,

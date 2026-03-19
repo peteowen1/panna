@@ -18,6 +18,77 @@ NULL
 # LABEL CREATION
 # =============================================================================
 
+#' Find the next event after each action via non-equi rolling join
+#'
+#' Core helper for label creation. For each action, finds the first matching
+#' event (goal, shot, etc.) that occurs after it in the same match-period.
+#' Uses data.table non-equi join for O(n log n) performance.
+#'
+#' @param dt data.table of SPADL actions (must have match_id, period_id,
+#'   time_seconds, action_id, team_id)
+#' @param events_dt data.table of target events. Must have columns:
+#'   match_id, period_id, event_time, event_team
+#'
+#' @return dt with next_event_team column added (NA if no subsequent event)
+#' @keywords internal
+.find_next_event <- function(dt, events_dt) {
+  events_dt <- data.table::copy(events_dt)
+  data.table::setorder(events_dt, match_id, period_id, event_time)
+  dt[, action_time := time_seconds]
+
+  result <- events_dt[dt,
+    on = .(match_id, period_id, event_time > action_time),
+    mult = "first",
+    .(match_id = i.match_id,
+      action_id = i.action_id,
+      next_event_team = x.event_team)
+  ]
+
+  dt <- result[dt, on = c("match_id", "action_id")]
+  dt[, action_time := NULL]
+  dt
+}
+
+
+#' Find the next event with extra columns via non-equi rolling join
+#'
+#' Like \code{.find_next_event()} but also carries through an extra numeric
+#' column (e.g., shot_xg) from the events table.
+#'
+#' @param dt data.table of SPADL actions
+#' @param events_dt data.table of target events. Must have columns:
+#'   match_id, period_id, event_time, event_team, plus \code{extra_col}
+#' @param extra_col Name of the additional column to carry through
+#'
+#' @return dt with next_event_team and next_{extra_col} columns added
+#' @keywords internal
+.find_next_event_with_value <- function(dt, events_dt, extra_col) {
+  # Copy to avoid mutating caller's data.table (setorder + setnames modify in place)
+  events_dt <- data.table::copy(events_dt)
+  data.table::setorder(events_dt, match_id, period_id, event_time)
+  dt[, action_time := time_seconds]
+
+  # Rename the extra column to a known name for the join
+  data.table::setnames(events_dt, extra_col, "extra_value")
+
+  result <- events_dt[dt,
+    on = .(match_id, period_id, event_time > action_time),
+    mult = "first",
+    .(match_id = i.match_id,
+      action_id = i.action_id,
+      next_event_team = x.event_team,
+      next_extra_value = x.extra_value)
+  ]
+
+  next_col_name <- paste0("next_", extra_col)
+  data.table::setnames(result, "next_extra_value", next_col_name)
+
+  dt <- result[dt, on = c("match_id", "action_id")]
+  dt[, action_time := NULL]
+  dt
+}
+
+
 #' Create Next Goal Labels for EPV Model
 #'
 #' Determines who scores the next goal in each half for each action.
@@ -38,43 +109,20 @@ create_next_goal_labels <- function(spadl_actions) {
   goals_dt <- dt[action_type == "shot" & result == "success", .(
     match_id,
     period_id,
-    goal_time = time_seconds,
-    goal_team = team_id
+    event_time = time_seconds,
+    event_team = team_id
   )]
 
-  # Sort goals by time within each match-period
-  data.table::setorder(goals_dt, match_id, period_id, goal_time)
+  # Rolling join to find next goal for each action
+  dt <- .find_next_event(dt, goals_dt)
 
-  # Use non-equi rolling join to find next goal for each action
-
-  # This is much faster than nested for loops
-  dt[, action_time := time_seconds]
-
-  # Join: for each action, find the first goal where goal_time > action_time
-  # in the same match-period
-  result <- goals_dt[dt,
-    on = .(match_id, period_id, goal_time > action_time),
-    mult = "first",
-    .(match_id = i.match_id,
-      period_id = i.period_id,
-      action_id = i.action_id,
-      team_id = i.team_id,
-      next_goal_team = x.goal_team)
-  ]
-
-  # Merge back to main data
-  dt <- result[, .(match_id, action_id, next_goal_team)][dt, on = c("match_id", "action_id")]
-
-  # Create label based on who scores next
-  # 0 = possession team scores, 1 = opponent scores, 2 = nobody scores
+  # Create label: 0 = team scores, 1 = opponent scores, 2 = nobody scores
   dt[, next_goal_label := fifelse(
-    is.na(next_goal_team),
-    2L,  # Nobody scores (no more goals this half)
-    fifelse(next_goal_team == team_id, 0L, 1L)
+    is.na(next_event_team),
+    2L,
+    fifelse(next_event_team == team_id, 0L, 1L)
   )]
-
-  # Cleanup
-  dt[, c("action_time", "next_goal_team") := NULL]
+  dt[, next_event_team := NULL]
 
   # Summary stats
   label_counts <- table(dt$next_goal_label)
@@ -116,7 +164,6 @@ create_next_xg_labels <- function(spadl_actions, xg_values = NULL) {
       }
     }
   } else if ("chain_xg" %in% names(dt)) {
-    # Use chain_xg for shots
     dt[action_type == "shot", shot_xg := chain_xg]
   }
 
@@ -133,46 +180,24 @@ create_next_xg_labels <- function(spadl_actions, xg_values = NULL) {
   shots_dt <- dt[action_type == "shot", .(
     match_id,
     period_id,
-    shot_time = time_seconds,
-    shot_team = team_id,
+    event_time = time_seconds,
+    event_team = team_id,
     shot_xg = shot_xg
   )]
 
-  data.table::setorder(shots_dt, match_id, period_id, shot_time)
-
-  # Use non-equi rolling join to find next shot for each action
-  # This is much faster than nested for loops
-  dt[, action_time := time_seconds]
-
-  # Join: for each action, find the first shot where shot_time > action_time
-  result <- shots_dt[dt,
-    on = .(match_id, period_id, shot_time > action_time),
-    mult = "first",
-    .(match_id = i.match_id,
-      period_id = i.period_id,
-      action_id = i.action_id,
-      team_id = i.team_id,
-      next_shot_team = x.shot_team,
-      next_shot_xg = x.shot_xg)
-  ]
-
-  # Merge back to main data
-  dt <- result[, .(match_id, action_id, next_shot_team, next_shot_xg)][dt, on = c("match_id", "action_id")]
+  # Rolling join to find next shot + its xG for each action
+  dt <- .find_next_event_with_value(dt, shots_dt, "shot_xg")
 
   # Create label: positive xG for team's shot, negative for opponent's, 0 for none
   dt[, next_xg_label := fifelse(
     is.na(next_shot_xg),
-    0,  # No more shots this half
-    fifelse(next_shot_team == team_id, next_shot_xg, -next_shot_xg)
+    0,
+    fifelse(next_event_team == team_id, next_shot_xg, -next_shot_xg)
   )]
 
   # Cleanup
-  dt[, c("action_time", "next_shot_team", "next_shot_xg") := NULL]
-
-  # Cleanup
-  if ("shot_xg" %in% names(dt)) {
-    dt[, shot_xg := NULL]
-  }
+  dt[, c("next_event_team", "next_shot_xg") := NULL]
+  if ("shot_xg" %in% names(dt)) dt[, shot_xg := NULL]
 
   # Summary stats
   mean_xg <- mean(dt$next_xg_label, na.rm = TRUE)
@@ -514,7 +539,7 @@ predict_epv_probs <- function(model, features) {
 #'     \item For "xg" method: expected_xg
 #'   }
 #'
-#' @export
+#' @keywords internal
 calculate_action_epv <- function(spadl_actions, features, epv_model, xg_model = NULL) {
   cli::cli_alert_info("Calculating EPV for {nrow(spadl_actions)} actions...")
 
@@ -1090,7 +1115,7 @@ split_pass_credit <- function(pass_value, xpass) {
 #'     \item epv_passing, epv_shooting, epv_dribbling, epv_defending
 #'   }
 #'
-#' @export
+#' @keywords internal
 aggregate_player_epv <- function(spadl_with_epv, lineups = NULL, min_minutes = 450) {
   cli::cli_alert_info("Aggregating player EPV metrics...")
 
@@ -1388,7 +1413,7 @@ pb_download_epv_models <- function(repo = "peteowen1/pannadata",
 #' @param spadl_with_epv SPADL actions with EPV values
 #'
 #' @return List with validation statistics
-#' @export
+#' @keywords internal
 validate_epv_model <- function(spadl_with_epv) {
   cli::cli_alert_info("Validating EPV model...")
 
@@ -1447,7 +1472,7 @@ validate_epv_model <- function(spadl_with_epv) {
 #'
 #' @return An EPV model object
 #' @seealso [fit_epv_model()]
-#' @export
+#' @keywords internal
 fit_epv_scoring_model <- function(...) {
   cli::cli_warn(c(
     "!" = "{.fn fit_epv_scoring_model} is deprecated as of panna 0.1.0.",
@@ -1470,7 +1495,7 @@ fit_epv_scoring_model <- function(...) {
 #'
 #' @return An EPV model object
 #' @seealso [fit_epv_model()]
-#' @export
+#' @keywords internal
 fit_epv_conceding_model <- function(...) {
   cli::cli_warn(c(
     "!" = "{.fn fit_epv_conceding_model} is deprecated as of panna 0.1.0.",
@@ -1527,7 +1552,7 @@ create_epv_labels_legacy <- function(spadl_actions) {
 #'
 #' @return SPADL with credit columns
 #' @seealso [assign_epv_credit()]
-#' @export
+#' @keywords internal
 assign_pass_credit <- function(spadl_with_epv, xpass_model) {
   cli::cli_warn(c(
     "!" = "{.fn assign_pass_credit} is deprecated as of panna 0.1.0.",

@@ -405,13 +405,15 @@ prepare_passes_for_xpass_minimal <- function(passes) {
 #'
 #' @return List with passer_credit and receiver_credit
 #'
-#' @export
+#' @keywords internal
 #' @examples
+#' \dontrun{
 #' # Easy pass (80% completion): receiver gets most credit
 #' split_pass_credit(0.1, 0.8)
 #'
 #' # Difficult pass (30% completion): passer gets most credit
 #' split_pass_credit(0.1, 0.3)
+#' }
 split_pass_credit <- function(pass_value, xpass) {
   # Clip xpass to avoid extreme splits
   xpass <- pmax(pmin(xpass, 0.95), 0.05)

@@ -3,6 +3,9 @@
 # Covers the public API functions and internal .aggregate_opta_player_stats()
 # helper. Uses synthetic data with mocked loaders to avoid network calls.
 
+# Internal function aliases (not exported)
+aggregate_opta_stats <- panna:::aggregate_opta_stats
+
 # =============================================================================
 # Synthetic Data Helpers
 # =============================================================================

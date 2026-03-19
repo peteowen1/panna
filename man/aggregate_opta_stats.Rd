@@ -24,3 +24,4 @@ opta_stats <- load_opta_stats("ENG", "2024-2025")
 player_features <- aggregate_opta_stats(opta_stats, min_minutes = 450)
 }
 }
+\keyword{internal}

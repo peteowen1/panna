@@ -23,7 +23,10 @@ splint_data <- readRDS(file.path(cache_dir, "03_splints.rds"))
 cat("Raw splints:", nrow(splint_data$splints), "\n")
 cat("Raw players:", nrow(splint_data$players), "\n")
 
-# Filter out league-seasons with bad xG data (>20% zero xG splints)
+# Filter out league-seasons with bad xG data
+# FBref xG comes from the data source directly (not SPADL-derived), so zero-xG
+# splints are less common. Lower 20% threshold catches data quality issues without
+# being too aggressive. (Opta uses 30% because SPADL conversion produces more zeros.)
 filter_result <- filter_bad_xg_data(splint_data, zero_xg_threshold = 20, verbose = TRUE)
 splint_data <- filter_result$splint_data
 

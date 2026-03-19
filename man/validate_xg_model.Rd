@@ -17,3 +17,4 @@ List with validation metrics
 \description{
 Evaluates xG model on held-out test data.
 }
+\keyword{internal}

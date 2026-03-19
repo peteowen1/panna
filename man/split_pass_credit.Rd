@@ -25,10 +25,12 @@ Splits EPV credit between passer and receiver based on pass difficulty.
 Harder passes (lower xPass) give more credit to the passer.
 }
 \examples{
+\dontrun{
 # Easy pass (80\% completion): receiver gets most credit
 split_pass_credit(0.1, 0.8)
 
 # Difficult pass (30\% completion): passer gets most credit
 split_pass_credit(0.1, 0.3)
+}
 }
 \keyword{internal}

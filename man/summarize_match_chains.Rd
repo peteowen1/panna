@@ -36,3 +36,4 @@ spadl <- label_actions_with_outcomes(spadl, outcomes)
 match_chains <- summarize_match_chains(spadl)
 }
 }
+\keyword{internal}

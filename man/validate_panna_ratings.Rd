@@ -27,3 +27,4 @@ validation$panna_spm_cor
 }
 
 }
+\keyword{internal}

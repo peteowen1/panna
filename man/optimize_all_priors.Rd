@@ -43,3 +43,4 @@ Finds the optimal Bayesian prior strength per stat. Rate stats get
 per-stat \code{prior_90s}, efficiency stats get per-stat
 \code{prior_attempts}. Results are stored in \code{decay_params$stat_priors}.
 }
+\keyword{internal}

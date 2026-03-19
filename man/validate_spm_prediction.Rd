@@ -28,3 +28,4 @@ Assesses how well SPM predicts RAPM. Supports weighted metrics to match
 weighted model fitting - we care more about accuracy for high-minute players
 whose RAPM estimates are more reliable.
 }
+\keyword{internal}

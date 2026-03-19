@@ -35,3 +35,4 @@ List with model, cv_result, best_nrounds, metadata
 \description{
 Wrapper around \code{\link{.fit_xgb_model}} with Poisson regression defaults.
 }
+\keyword{internal}

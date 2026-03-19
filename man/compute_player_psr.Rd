@@ -22,3 +22,4 @@ Convenience wrapper that loads pre-trained coefficients and computes
 PSR with OSR/DSR decomposition (if offensive/defensive coefficient files
 are available).
 }
+\keyword{internal}

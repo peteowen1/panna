@@ -387,7 +387,7 @@ fit_rapm_with_prior <- function(rapm_data, offense_prior, defense_prior,
 #' @param lambda Which lambda to use ("min" or "1se")
 #'
 #' @return Data frame with player ratings including deviation from prior
-#' @export
+#' @keywords internal
 extract_xrapm_ratings <- function(model, lambda = "min") {
   # Get lambda value
   lambda_val <- if (lambda == "min") {

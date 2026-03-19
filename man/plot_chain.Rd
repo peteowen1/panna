@@ -33,3 +33,4 @@ spadl <- create_possession_chains(convert_opta_to_spadl(events))
 plot_chain(spadl, match_id = "abc123", chain_id = 5)
 }
 }
+\keyword{internal}

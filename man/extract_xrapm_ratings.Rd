@@ -18,3 +18,4 @@ Data frame with player ratings including deviation from prior
 Extracts player ratings from a model fit with SPM prior.
 The final coefficient is gamma + prior, where gamma is the deviation.
 }
+\keyword{internal}

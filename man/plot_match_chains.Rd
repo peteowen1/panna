@@ -40,3 +40,4 @@ plot_match_chains(spadl, match_id = "abc123")
 plot_match_chains(spadl, match_id = "abc123", team_id = "team1")
 }
 }
+\keyword{internal}

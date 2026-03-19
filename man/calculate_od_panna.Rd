@@ -26,3 +26,4 @@ od_result <- calculate_od_panna(rapm_data, spm_ratings, lambda_prior = 1)
 head(od_result$ratings[, c("player_name", "o_panna", "d_panna", "panna")])
 }
 }
+\keyword{internal}

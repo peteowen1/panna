@@ -270,7 +270,7 @@ label_actions_with_outcomes <- function(spadl_with_chains, chain_outcomes) {
 #'     \item \code{possession_pct}: Team's share of total chains in the match
 #'   }
 #'
-#' @export
+#' @keywords internal
 #' @examples
 #' \dontrun{
 #' spadl <- convert_opta_to_spadl(events)
@@ -338,7 +338,7 @@ summarize_match_chains <- function(spadl_with_chains) {
 #'     \item \code{key_chain_actions}: Actions in chains ending in shot/goal
 #'   }
 #'
-#' @export
+#' @keywords internal
 #' @examples
 #' \dontrun{
 #' spadl <- convert_opta_to_spadl(events)

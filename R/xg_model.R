@@ -523,7 +523,7 @@ save_xg_model <- function(xg_model, path = NULL) {
 #' @param test_shots Shot features for validation
 #'
 #' @return List with validation metrics
-#' @export
+#' @keywords internal
 validate_xg_model <- function(xg_model, test_shots) {
   # Predict
   xg_pred <- predict_xg(xg_model, test_shots)

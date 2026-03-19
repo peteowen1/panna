@@ -8,6 +8,7 @@ prepare_opta_shots_for_splints <- panna:::prepare_opta_shots_for_splints
 extract_season_from_date <- panna:::extract_season_from_date
 count_events_before <- panna:::count_events_before
 count_events_in_splint <- panna:::count_events_in_splint
+aggregate_opta_stats <- panna:::aggregate_opta_stats
 
 # ============================================================================
 # OPTA DATA ADAPTER TESTS

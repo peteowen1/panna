@@ -52,3 +52,4 @@ List with xgb model, cv results, and metadata
 Fits an XGBoost model predicting RAPM from box score statistics.
 Uses xgb.cv to find optimal number of boosting rounds via early stopping.
 }
+\keyword{internal}

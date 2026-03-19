@@ -1,5 +1,9 @@
 # Tests for skill optimization functions
 
+# Internal function aliases (not exported)
+get_stat_tiers <- panna:::get_stat_tiers
+optimize_stat_prior <- panna:::optimize_stat_prior
+
 # Helper: create match stats with enough players/matches for optimization
 make_optimization_match_stats <- function(n_players = 20, n_matches = 15) {
   players <- seq_len(n_players)
