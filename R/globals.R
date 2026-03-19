@@ -572,6 +572,13 @@ utils::globalVariables(c(
   ".player",
   ".team",
 
+  # EPV label creation (.find_next_event helpers)
+  "event_time",
+  "event_team",
+  "next_event_team",
+  "extra_value",
+  "next_extra_value",
+
   # PSR columns
   "psr_raw",
   "psr",
