@@ -65,7 +65,17 @@ if (use_rapm_cache) {
   rapm_processed <- readRDS(rapm_cache_path)
   opta_stats_cached <- rapm_processed$opta_stats
 
-  if (!is.null(opta_stats_cached) && nrow(opta_stats_cached) > 0) {
+  # Validate cache has expected columns before using
+  required_cache_cols <- c("match_id", "player_name", "minsPlayed")
+  missing_cols <- setdiff(required_cache_cols, names(opta_stats_cached))
+  if (length(missing_cols) > 0) {
+    message(sprintf("  RAPM cache missing columns: %s -- falling back to per-league loading",
+                    paste(missing_cols, collapse = ", ")))
+    use_rapm_cache <- FALSE
+    rm(rapm_processed, opta_stats_cached); gc(verbose = FALSE)
+  }
+
+  if (use_rapm_cache && !is.null(opta_stats_cached) && nrow(opta_stats_cached) > 0) {
     message(sprintf("  Cached Opta stats: %d rows", nrow(opta_stats_cached)))
 
     # Apply league/season filters if needed

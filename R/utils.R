@@ -641,6 +641,10 @@ format_duration <- function(secs) {
     x <- as.numeric(df[[col_name]])
     ifelse(is.na(x), 0, x)
   } else {
+    if (!exists(col_name, envir = .get_col_warned, inherits = FALSE)) {
+      cli::cli_warn("Column {.val {col_name}} not found, defaulting to 0.")
+      assign(col_name, TRUE, envir = .get_col_warned)
+    }
     rep(0, nrow(df))
   }
 }
@@ -801,7 +805,11 @@ aggregate_player_data <- function(data, agg_cols, by_team = FALSE,
       .player = data[[player_col]],
       .team = data[[team_col]]
     )
-    team_mode <- team_dt[, .(.team = names(which.max(table(.team)))), by = .player]
+    team_mode <- team_dt[, {
+      valid <- .team[!is.na(.team)]
+      if (length(valid) == 0) list(.team = NA_character_)
+      else list(.team = names(which.max(table(valid))))
+    }, by = .player]
     data.table::setnames(team_mode, c(".player", ".team"), c(player_col, team_col))
     result <- team_mode[result, on = player_col]
   }

@@ -255,7 +255,10 @@ step_results[[1]] <- run_step_fbref("load_data", 1, function() {
     aggregate_cached_matches("passing") %>%
       { if (!is.null(leagues)) filter(., league %in% leagues) else . } %>%
       { if (!is.null(seasons)) filter(., season %in% seasons) else . },
-    error = function(e) NULL
+    error = function(e) {
+      warning(sprintf("Failed to load: %s", e$message), call. = FALSE)
+      NULL
+    }
   )
 
   message("Loading defense stats...")
@@ -263,7 +266,10 @@ step_results[[1]] <- run_step_fbref("load_data", 1, function() {
     aggregate_cached_matches("defense") %>%
       { if (!is.null(leagues)) filter(., league %in% leagues) else . } %>%
       { if (!is.null(seasons)) filter(., season %in% seasons) else . },
-    error = function(e) NULL
+    error = function(e) {
+      warning(sprintf("Failed to load: %s", e$message), call. = FALSE)
+      NULL
+    }
   )
 
   message("Loading possession stats...")
@@ -271,7 +277,10 @@ step_results[[1]] <- run_step_fbref("load_data", 1, function() {
     aggregate_cached_matches("possession") %>%
       { if (!is.null(leagues)) filter(., league %in% leagues) else . } %>%
       { if (!is.null(seasons)) filter(., season %in% seasons) else . },
-    error = function(e) NULL
+    error = function(e) {
+      warning(sprintf("Failed to load: %s", e$message), call. = FALSE)
+      NULL
+    }
   )
 
   message("Loading misc stats...")
@@ -279,7 +288,10 @@ step_results[[1]] <- run_step_fbref("load_data", 1, function() {
     aggregate_cached_matches("misc") %>%
       { if (!is.null(leagues)) filter(., league %in% leagues) else . } %>%
       { if (!is.null(seasons)) filter(., season %in% seasons) else . },
-    error = function(e) NULL
+    error = function(e) {
+      warning(sprintf("Failed to load: %s", e$message), call. = FALSE)
+      NULL
+    }
   )
 
   message("Loading passing types stats...")
@@ -287,7 +299,10 @@ step_results[[1]] <- run_step_fbref("load_data", 1, function() {
     aggregate_cached_matches("passing_types") %>%
       { if (!is.null(leagues)) filter(., league %in% leagues) else . } %>%
       { if (!is.null(seasons)) filter(., season %in% seasons) else . },
-    error = function(e) NULL
+    error = function(e) {
+      warning(sprintf("Failed to load: %s", e$message), call. = FALSE)
+      NULL
+    }
   )
 
   message("Loading keeper stats...")
@@ -295,7 +310,10 @@ step_results[[1]] <- run_step_fbref("load_data", 1, function() {
     aggregate_cached_matches("keeper") %>%
       { if (!is.null(leagues)) filter(., league %in% leagues) else . } %>%
       { if (!is.null(seasons)) filter(., season %in% seasons) else . },
-    error = function(e) NULL
+    error = function(e) {
+      warning(sprintf("Failed to load: %s", e$message), call. = FALSE)
+      NULL
+    }
   )
 
   raw_data <<- list(
@@ -326,10 +344,12 @@ step_results[[1]] <- run_step_fbref("load_data", 1, function() {
 
 # 7. Step 2: Data Processing ----
 
-step_results[[2]] <- run_step_fbref("data_processing", 2, function() {
-  source("data-raw/player-ratings-fbref/02_data_processing.R", local = TRUE)
-})
-check_step(2, "data_processing")
+if (!isTRUE(pipeline_failed)) {
+  step_results[[2]] <- run_step_fbref("data_processing", 2, function() {
+    source("data-raw/player-ratings-fbref/02_data_processing.R", local = TRUE)
+  })
+  check_step(2, "data_processing")
+}
 
 # 8. Step 3: Splint Creation ----
 

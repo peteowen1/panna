@@ -28,13 +28,25 @@ run_step <- function(step_name, step_num, code_block, run_steps) {
   message(sprintf("%s\n", paste(rep("=", 70), collapse = "")))
 
   start_time <- Sys.time()
-  result <- tryCatch({
-    code_block()
-    "SUCCESS"
-  }, error = function(e) {
-    message(sprintf("ERROR: %s", e$message))
-    "FAILED"
-  })
+  result <- tryCatch(
+    withCallingHandlers({
+      code_block()
+      "SUCCESS"
+    }, error = function(e) {
+      # Capture traceback before stack unwinds
+      message(sprintf("ERROR: %s", e$message))
+      tb <- sys.calls()
+      if (length(tb) > 2) {
+        message("Traceback (most recent calls):")
+        # Show last few calls (skip withCallingHandlers/tryCatch boilerplate)
+        n <- min(length(tb), 10)
+        for (i in seq(max(1, length(tb) - n + 1), length(tb))) {
+          message(sprintf("  %s", deparse(tb[[i]], nlines = 1)))
+        }
+      }
+    }),
+    error = function(e) "FAILED"
+  )
   end_time <- Sys.time()
 
   duration <- difftime(end_time, start_time, units = "secs")

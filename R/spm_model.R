@@ -212,6 +212,11 @@
     player_stats[[paste0(col, "_p90")]] <- p90_val
   }
 
+  # Alias: crosses_pt_p90 -> crosses_p90 (FBref SPM and PSR coefficients expect crosses_p90)
+  if ("crosses_pt_p90" %in% names(player_stats)) {
+    player_stats$crosses_p90 <- player_stats$crosses_pt_p90
+  }
+
   player_stats
 }
 

@@ -32,6 +32,7 @@ NULL
 #' @return dt with next_event_team column added (NA if no subsequent event)
 #' @keywords internal
 .find_next_event <- function(dt, events_dt) {
+  events_dt <- data.table::copy(events_dt)
   data.table::setorder(events_dt, match_id, period_id, event_time)
   dt[, action_time := time_seconds]
 
@@ -62,6 +63,8 @@ NULL
 #' @return dt with next_event_team and next_{extra_col} columns added
 #' @keywords internal
 .find_next_event_with_value <- function(dt, events_dt, extra_col) {
+  # Copy to avoid mutating caller's data.table (setorder + setnames modify in place)
+  events_dt <- data.table::copy(events_dt)
   data.table::setorder(events_dt, match_id, period_id, event_time)
   dt[, action_time := time_seconds]
 
@@ -77,10 +80,8 @@ NULL
       next_extra_value = x.extra_value)
   ]
 
-  # Rename back
   next_col_name <- paste0("next_", extra_col)
   data.table::setnames(result, "next_extra_value", next_col_name)
-  data.table::setnames(events_dt, "extra_value", extra_col)
 
   dt <- result[dt, on = c("match_id", "action_id")]
   dt[, action_time := NULL]
