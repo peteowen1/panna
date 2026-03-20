@@ -138,6 +138,7 @@ jobs:
       - name: Run predictions pipeline
         env:
           PANNADATA_DIR: ${{ runner.temp }}/pannadata
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
         run: |
           Rscript -e "
             # Point panna at downloaded Opta data
@@ -183,6 +184,7 @@ jobs:
           "
 
       - name: Export weekly PSR snapshots
+        continue-on-error: true
         env:
           PANNADATA_DIR: ${{ runner.temp }}/pannadata
           GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
@@ -216,7 +218,7 @@ jobs:
           fi
 
       - name: Trigger blog data build
-        if: success()
+        if: always()
         env:
           GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
         run: |
