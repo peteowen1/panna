@@ -97,6 +97,8 @@ run_step <- function(step_name, step_num, code_block, run_steps,
 #' @param step_results List of step results (legacy form only)
 #' @return TRUE if the step failed, FALSE otherwise
 check_critical_step <- function(result_or_num, step_name = NULL, step_results = NULL) {
+  if (is.null(result_or_num)) return(FALSE)
+
   # 1-arg form: result_or_num is a step result list
   if (is.list(result_or_num)) {
     result <- result_or_num
@@ -165,6 +167,8 @@ clear_cache_files <- function(force_rebuild_from, cache_dir, cache_files, max_st
 
   rebuild_num <- as.numeric(sub("[a-z]+$", "", as.character(force_rebuild_from)))
   if (is.na(rebuild_num) || rebuild_num < 1 || rebuild_num > max_step) {
+    warning(sprintf("Invalid force_rebuild_from value '%s' (must be 1-%d). Ignoring.",
+                    force_rebuild_from, max_step))
     return(invisible(NULL))
   }
 
@@ -183,8 +187,11 @@ clear_cache_files <- function(force_rebuild_from, cache_dir, cache_files, max_st
   for (f in files_to_delete) {
     fpath <- file.path(cache_dir, f)
     if (file.exists(fpath)) {
-      file.remove(fpath)
-      deleted <- deleted + 1
+      if (file.remove(fpath)) {
+        deleted <- deleted + 1
+      } else {
+        warning(sprintf("Could not delete cache file: %s", fpath))
+      }
     }
   }
   message(sprintf("\n[Force rebuild] Cleared %d cache files from step %s onwards\n",

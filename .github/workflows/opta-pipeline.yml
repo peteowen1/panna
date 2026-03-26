@@ -109,6 +109,18 @@ jobs:
             exit 1
           fi
 
+          # Log optional file status for pipeline summary
+          OPTIONAL_MISSING=""
+          for f in opta_events.parquet opta_xmetrics.parquet opta_shots.parquet opta_shot_events.parquet; do
+            if [ ! -f "$OPTA_DIR/$f" ]; then
+              OPTIONAL_MISSING="$OPTIONAL_MISSING $f"
+            fi
+          done
+          if [ -n "$OPTIONAL_MISSING" ]; then
+            echo "NOTE: Optional files not downloaded:$OPTIONAL_MISSING"
+            echo "Pipeline will run but may produce degraded results."
+          fi
+
       - name: Run Opta RAPM/SPM pipeline
         env:
           PANNADATA_DIR: ${{ runner.temp }}/pannadata
@@ -137,6 +149,7 @@ jobs:
             }
 
             source('data-raw/player-ratings-opta/run_pipeline_opta.R', chdir = FALSE)
+            if (isTRUE(pipeline_failed)) quit(status = 1)
           "
 
       - name: Upload caches to predictions-cache release

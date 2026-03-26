@@ -60,16 +60,19 @@ if (!exists("force_rebuild_from")) force_rebuild_from <- NULL
 
 source("data-raw/pipeline_utils.R")
 
-# Wrapper that passes run_steps from this scope
+# Wrapper that passes run_steps and pipeline_failed from this scope
 run_pred_step <- function(step_name, step_num, code_block) {
-  run_step(step_name, step_num, code_block, run_steps)
+  result <- run_step(step_name, step_num, code_block, run_steps, pipeline_failed)
+  if (!is.null(result) && identical(result$status, "FAILED")) {
+    pipeline_failed <<- TRUE
+  }
+  result
 }
 
-# Critical step check: abort pipeline on failure
+# Critical step check: set pipeline_failed flag to skip downstream steps
 check_pred_critical <- function(result) {
   if (check_critical_step(result)) {
-    stop(sprintf("Critical step %s (%s) failed. Cannot continue pipeline.",
-                 result$step, result$name), call. = FALSE)
+    pipeline_failed <<- TRUE
   }
 }
 
@@ -99,6 +102,7 @@ force_rebuild <- !is.null(force_rebuild_from) && force_rebuild_from >= 1
 
 pipeline_start <- Sys.time()
 step_results <- list()
+pipeline_failed <- FALSE
 
 message("\n")
 message(paste(rep("#", 70), collapse = ""))
@@ -154,12 +158,14 @@ check_pred_critical(step_results[[4]])
 step_results[[5]] <- run_pred_step("fit_goals_model", 5, function() {
   source("data-raw/match-predictions-opta/05_fit_goals_model.R", local = TRUE)
 })
+check_pred_critical(step_results[[5]])
 
 # 10. Step 6: Fit Outcome Model ----
 
 step_results[[6]] <- run_pred_step("fit_outcome_model", 6, function() {
   source("data-raw/match-predictions-opta/06_fit_outcome_model.R", local = TRUE)
 })
+check_pred_critical(step_results[[6]])
 
 # 11. Step 7: Predict Fixtures ----
 

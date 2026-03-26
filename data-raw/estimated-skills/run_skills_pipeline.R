@@ -45,14 +45,14 @@ if (!exists("run_steps")) {
   run_steps <- list(
     step_01_compute_match_stats    = start_num <= 1,
     step_02_estimate_skills        = start_num <= 2,
-    step_2b_optimize_params        = start_num <= 2.5,
+    step_02b_optimize_params       = start_num <= 2.5,
     step_03_skill_spm              = start_num <= 3,
     step_04_skill_xrapm            = start_num <= 4,
     step_05_skill_panna_ratings    = start_num <= 5,
     step_06_seasonal_skill_ratings = start_num <= 6,
     step_07_train_psr_model        = start_num <= 7,
     step_08_export_skills          = start_num <= 8,
-    step_8b_export_psr_weekly      = start_num <= 8.5
+    step_08b_export_psr_weekly     = start_num <= 8.5
   )
 }
 
@@ -65,7 +65,7 @@ source("data-raw/pipeline_utils.R")
 # Wrapper that passes run_steps and pipeline_failed from this scope
 run_skills_step <- function(step_name, step_num, code_block) {
   result <- run_step(step_name, step_num, code_block, run_steps, pipeline_failed)
-  if (!is.null(result) && result$status == "FAILED") {
+  if (!is.null(result) && identical(result$status, "FAILED")) {
     pipeline_failed <<- TRUE
   }
   result

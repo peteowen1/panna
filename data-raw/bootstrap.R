@@ -53,25 +53,32 @@ if (what %in% c("all", "opta", "models")) {
   dir.create(models_dir, recursive = TRUE, showWarnings = FALSE)
 
   model_files <- c("xg_model.rds", "xpass_model.rds", "epv_model.rds")
-  tryCatch({
-    for (mf in model_files) {
-      dest <- file.path(models_dir, mf)
-      if (file.exists(dest)) {
-        message(sprintf("  SKIP: %s already exists", mf))
-        next
-      }
+  failed_models <- character(0)
+  for (mf in model_files) {
+    dest <- file.path(models_dir, mf)
+    if (file.exists(dest)) {
+      message(sprintf("  SKIP: %s already exists", mf))
+      next
+    }
+    tryCatch({
       tmp <- .pb_download_file(mf, repo = "peteowen1/pannadata",
                                 tag = "epv-models",
                                 label = paste("model:", mf))
       file.copy(tmp, dest, overwrite = TRUE)
       unlink(tmp)
       message(sprintf("  OK: %s", mf))
-    }
-  }, error = function(e) {
-    message(sprintf("  WARN: Failed to download models: %s", e$message))
+    }, error = function(e) {
+      failed_models <<- c(failed_models, mf)
+      message(sprintf("  FAIL: %s — %s", mf, e$message))
+    })
+  }
+  if (length(failed_models) > 0) {
+    message(sprintf("  WARNING: %d/%d models failed: %s",
+                    length(failed_models), length(model_files),
+                    paste(failed_models, collapse = ", ")))
     message("  Models are needed for xMetrics pipeline. Download manually from:")
     message("  gh release download epv-models -R peteowen1/pannadata -D pannadata/data/opta/models/")
-  })
+  }
 }
 
 # ---- Step 3: Download prediction caches ----
@@ -88,26 +95,32 @@ if (what %in% c("all", "caches")) {
     "03_skill_spm.rds" = cache_skills
   )
 
-  tryCatch({
-    for (asset_name in names(cache_assets)) {
-      dest_dir <- cache_assets[[asset_name]]
-      dest <- file.path(dest_dir, asset_name)
-      if (file.exists(dest)) {
-        message(sprintf("  SKIP: %s already exists", asset_name))
-        next
-      }
+  failed_caches <- character(0)
+  for (asset_name in names(cache_assets)) {
+    dest_dir <- cache_assets[[asset_name]]
+    dest <- file.path(dest_dir, asset_name)
+    if (file.exists(dest)) {
+      message(sprintf("  SKIP: %s already exists", asset_name))
+      next
+    }
+    tryCatch({
       tmp <- .pb_download_file(asset_name, repo = "peteowen1/pannadata",
                                 tag = "predictions-cache",
                                 label = paste("cache:", asset_name))
       file.copy(tmp, dest, overwrite = TRUE)
       unlink(tmp)
       message(sprintf("  OK: %s -> %s", asset_name, dest_dir))
-    }
-  }, error = function(e) {
-    message(sprintf("  WARN: Failed to download caches: %s", e$message))
-    message("  Caches are needed for predictions pipeline on GHA.")
+    }, error = function(e) {
+      failed_caches <<- c(failed_caches, asset_name)
+      message(sprintf("  FAIL: %s — %s", asset_name, e$message))
+    })
+  }
+  if (length(failed_caches) > 0) {
+    message(sprintf("  WARNING: %d/%d caches failed: %s",
+                    length(failed_caches), length(cache_assets),
+                    paste(failed_caches, collapse = ", ")))
     message("  Run the RAPM + Skills pipelines locally to regenerate.")
-  })
+  }
 }
 
 message("\n")
