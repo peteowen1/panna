@@ -19,8 +19,7 @@ Approximates O/D split from overall panna and feature data.
 }
 \examples{
 \dontrun{
-features <- create_player_feature_matrix(processed_data)
-od_ratings <- split_od_contributions(panna_ratings, features)
+od_ratings <- split_od_contributions(panna_ratings, player_features)
 head(od_ratings[, c("player_name", "panna", "o_panna", "d_panna")])
 }
 }

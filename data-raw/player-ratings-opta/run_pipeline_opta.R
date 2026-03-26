@@ -22,6 +22,10 @@ if (!exists("leagues")) leagues <- c(
 )
 
 # SEASONS (NULL = all available, or specify like c("2024-2025"))
+# For incremental rebuilds, set to the changed season(s):
+#   seasons <- c("2025-2026")  # Only rebuild current season
+# Note: Steps 04+ (RAPM/SPM/xRAPM) run on ALL data regardless,
+# since RAPM is cross-season by design. Only steps 01-03 benefit.
 if (!exists("seasons")) seasons <- NULL
 
 # MINIMUM SEASON (skip data before this season, NULL = no filter)

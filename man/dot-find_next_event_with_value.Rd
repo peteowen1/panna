@@ -15,7 +15,7 @@ match_id, period_id, event_time, event_team, plus \code{extra_col}}
 \item{extra_col}{Name of the additional column to carry through}
 }
 \value{
-dt with next_event_team and next_{extra_col} columns added
+dt with next_event_team and next_\{extra_col\} columns added
 }
 \description{
 Like \code{.find_next_event()} but also carries through an extra numeric

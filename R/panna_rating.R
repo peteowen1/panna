@@ -16,6 +16,11 @@
 #'
 #' @return List with panna ratings and model details
 #'
+#' @seealso [fit_rapm_with_prior()] for the cross-validated production variant
+#'   used in the multi-league pipeline. This function uses a single fixed lambda
+#'   via `glmnet::glmnet()`, while `fit_rapm_with_prior()` selects lambda via
+#'   `glmnet::cv.glmnet()` and supports offense/defense priors separately.
+#'
 #' @examples
 #' \dontrun{
 #' rapm_data <- prepare_rapm_data(splint_data)

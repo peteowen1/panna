@@ -60,7 +60,7 @@ NULL
 #'   match_id, period_id, event_time, event_team, plus \code{extra_col}
 #' @param extra_col Name of the additional column to carry through
 #'
-#' @return dt with next_event_team and next_{extra_col} columns added
+#' @return dt with next_event_team and next_\{extra_col\} columns added
 #' @keywords internal
 .find_next_event_with_value <- function(dt, events_dt, extra_col) {
   # Copy to avoid mutating caller's data.table (setorder + setnames modify in place)

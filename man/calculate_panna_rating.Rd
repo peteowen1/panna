@@ -32,3 +32,9 @@ head(panna$ratings)
 }
 
 }
+\seealso{
+\code{\link[=fit_rapm_with_prior]{fit_rapm_with_prior()}} for the cross-validated production variant
+used in the multi-league pipeline. This function uses a single fixed lambda
+via \code{glmnet::glmnet()}, while \code{fit_rapm_with_prior()} selects lambda via
+\code{glmnet::cv.glmnet()} and supports offense/defense priors separately.
+}

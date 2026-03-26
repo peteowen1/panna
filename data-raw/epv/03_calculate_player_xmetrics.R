@@ -39,8 +39,8 @@ START_SEASON <- "2013-2014"
 # Minimum minutes for output (0 = keep all)
 MIN_MINUTES <- 0
 
-# Cache directory for intermediate SPADL files
-CACHE_DIR <- "data-raw/cache/epv/spadl"
+# SPADL_CACHE_DIR is from panna::constants.R (loaded via devtools::load_all())
+CACHE_DIR <- SPADL_CACHE_DIR
 dir.create(CACHE_DIR, recursive = TRUE, showWarnings = FALSE)
 
 cli_h1("Calculate Player xG/xA/xPass Metrics")

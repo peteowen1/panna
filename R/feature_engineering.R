@@ -97,64 +97,6 @@ calculate_finishing_modifier <- function(shooting, min_shots = 20) {
 }
 
 
-#' Create offensive features
-#'
-#' Builds attacking-related rate statistics for SPM model.
-#'
-#' @param stats Processed player stats with rate columns
-#'
-#' @return Data frame with offensive features
-#' @keywords internal
-create_offensive_features <- function(stats) {
-  # Ensure we have the necessary columns (snake_case)
-  offensive_cols <- c(
-    "gls_p100", "x_g_p100", "npx_g_p100",
-    "sh_p100", "so_t_p100",
-    "ast_p100", "x_ag_p100",
-    "sca_p100", "gca_p100",
-    "prg_p_p100", "prg_c_p100",
-    "carries_p100"
-  )
-
-  available_cols <- intersect(offensive_cols, names(stats))
-
-  if (length(available_cols) == 0) {
-    cli::cli_warn("No offensive feature columns found")
-    return(stats)
-  }
-
-  keep_cols <- intersect(c("match_id", "team", "player_name", available_cols), names(stats))
-  stats[, keep_cols, drop = FALSE]
-}
-
-
-#' Create defensive features
-#'
-#' Builds defensive-related rate statistics for SPM model.
-#'
-#' @param stats Processed player stats with rate columns
-#'
-#' @return Data frame with defensive features
-#' @keywords internal
-create_defensive_features <- function(stats) {
-  # Defensive columns (snake_case)
-  defensive_cols <- c(
-    "tkl_p100", "int_p100", "blocks_p100",
-    "tkl_won_p100", "clr_p100"
-  )
-
-  available_cols <- intersect(defensive_cols, names(stats))
-
-  if (length(available_cols) == 0) {
-    cli::cli_warn("No defensive feature columns found")
-    return(stats)
-  }
-
-  keep_cols <- intersect(c("match_id", "team", "player_name", available_cols), names(stats))
-  stats[, keep_cols, drop = FALSE]
-}
-
-
 #' Apply Bayesian padding to statistics
 #'
 #' Regresses statistics toward population mean for players with few games.
@@ -195,42 +137,6 @@ apply_bayesian_padding <- function(player_stats, stat_cols, min_games = 10,
   }
 
   player_stats
-}
-
-
-#' Aggregate player season stats
-#'
-#' Combines match-level stats into season aggregates.
-#'
-#' @param match_stats Data frame of match-level player stats
-#' @param rate_cols Columns with rate statistics
-#' @param count_cols Columns with counting statistics
-#'
-#' @return Data frame with season-level player stats
-#' @keywords internal
-aggregate_player_season_stats <- function(match_stats, rate_cols = NULL, count_cols = NULL) {
-  dt <- data.table::as.data.table(match_stats)
-
-  # Sum counting stats per group
-  if (!is.null(count_cols) && length(count_cols) > 0) {
-    count_cols <- intersect(count_cols, names(dt))
-    for (col in count_cols) {
-      new_col <- paste0(col, "_total")
-      dt[, (new_col) := sum(get(col), na.rm = TRUE), by = .(player_name, team)]
-    }
-  }
-
-  # Weight-average rate stats (by minutes or appearances)
-  if (!is.null(rate_cols) && length(rate_cols) > 0) {
-    rate_cols <- intersect(rate_cols, names(dt))
-    for (col in rate_cols) {
-      new_col <- paste0(col, "_avg")
-      dt[, (new_col) := mean(get(col), na.rm = TRUE), by = .(player_name, team)]
-    }
-  }
-
-  # Add game counts
-  as.data.frame(dt[, .(n_games = .N), by = .(player_name, team)])
 }
 
 

@@ -253,6 +253,11 @@ get_covariate_effects <- function(model, lambda = "min") {
 #' @param penalize_covariates Whether to penalize covariate coefficients
 #'
 #' @return Fitted model with prior adjustment metadata
+#'
+#' @seealso [calculate_panna_rating()] for a simpler single-lambda variant
+#'   that takes a scalar `lambda_prior` and combined SPM vector. This function
+#'   is the production path used in the multi-league pipeline.
+#'
 #' @export
 fit_rapm_with_prior <- function(rapm_data, offense_prior, defense_prior,
                                  alpha = 0, nfolds = 10,
@@ -387,7 +392,7 @@ fit_rapm_with_prior <- function(rapm_data, offense_prior, defense_prior,
 #' @param lambda Which lambda to use ("min" or "1se")
 #'
 #' @return Data frame with player ratings including deviation from prior
-#' @keywords internal
+#' @export
 extract_xrapm_ratings <- function(model, lambda = "min") {
   # Get lambda value
   lambda_val <- if (lambda == "min") {

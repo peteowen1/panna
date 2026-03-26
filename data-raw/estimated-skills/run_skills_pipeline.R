@@ -58,53 +58,18 @@ if (!exists("run_steps")) {
 
 if (!exists("force_rebuild_from")) force_rebuild_from <- NULL
 
-# 3. Helper Functions ----
+# 3. Shared Pipeline Utilities ----
 
-run_step <- function(step_name, step_num, code_block) {
-  step_key <- sprintf("step_%s_%s",
-                       if (grepl("b$", as.character(step_num))) step_num
-                       else sprintf("%02d", as.numeric(step_num)),
-                       step_name)
-  if (!isTRUE(run_steps[[step_key]])) {
-    message(sprintf("\n[%s] Step %s: %s - SKIPPED",
-                    format(Sys.time(), "%H:%M:%S"), step_num, step_name))
-    return(NULL)
-  }
+source("data-raw/pipeline_utils.R")
 
-  message(sprintf("\n%s", paste(rep("=", 70), collapse = "")))
-  message(sprintf("[%s] Step %s: %s",
-                  format(Sys.time(), "%H:%M:%S"), step_num, step_name))
-  message(sprintf("%s\n", paste(rep("=", 70), collapse = "")))
-
-  start_time <- Sys.time()
-  if (pipeline_failed) {
-    message("  SKIPPED (previous step failed)")
-    return(list(step = step_num, name = step_name, status = "SKIPPED",
-                duration_secs = 0, duration_formatted = "0.0 seconds"))
-  }
-
-  result <- tryCatch({
-    code_block()
-    "SUCCESS"
-  }, error = function(e) {
-    message(sprintf("ERROR: %s", e$message))
+# Wrapper that passes run_steps and pipeline_failed from this scope
+run_skills_step <- function(step_name, step_num, code_block) {
+  result <- run_step(step_name, step_num, code_block, run_steps, pipeline_failed)
+  if (!is.null(result) && result$status == "FAILED") {
     pipeline_failed <<- TRUE
-    "FAILED"
-  })
-  end_time <- Sys.time()
-
-  duration <- difftime(end_time, start_time, units = "secs")
-
-  list(
-    step = step_num,
-    name = step_name,
-    status = result,
-    duration_secs = as.numeric(duration),
-    duration_formatted = format_duration(as.numeric(duration))
-  )
+  }
+  result
 }
-
-# format_duration() is defined in R/utils.R
 
 # 4. Initialize ----
 
@@ -112,43 +77,19 @@ cache_dir <- file.path("data-raw", "cache-skills")
 if (!dir.exists(cache_dir)) dir.create(cache_dir, recursive = TRUE)
 
 # Handle force rebuild
-if (!is.null(force_rebuild_from)) {
-  cache_files <- list(
-    "1" = c("01_match_stats.rds", "01_config.rds"),
-    "2" = "02_skill_features.rds",
-    "2b" = "02b_decay_params.rds",
-    "3" = "03_skill_spm.rds",
-    "4" = "04_skill_xrapm.rds",
-    "5" = c("05_skill_panna.rds", "skill_panna_ratings.csv"),
-    "6" = c("06_seasonal_ratings.rds", "seasonal_skill_xrapm.csv"),
-    "7" = "07_psr_model.rds",
-    "8" = character(0),  # export step has no cache file to clear
-    "8b" = character(0)  # export step has no cache file to clear
-  )
-
-  # Build list of steps to clear: numeric steps >= force_rebuild_from + fractional steps
-  steps_to_clear <- as.character(force_rebuild_from:8)
-  # Include fractional steps (e.g., "2b") when their parent step is being rebuilt
-  fractional_steps <- setdiff(names(cache_files), as.character(1:6))
-  for (fs in fractional_steps) {
-    parent <- as.numeric(sub("[a-z]+$", "", fs))
-    if (!is.na(parent) && parent >= force_rebuild_from) {
-      steps_to_clear <- c(steps_to_clear, fs)
-    }
-  }
-
-  files_to_delete <- unlist(cache_files[steps_to_clear])
-  deleted <- 0
-  for (f in files_to_delete) {
-    fpath <- file.path(cache_dir, f)
-    if (file.exists(fpath)) {
-      file.remove(fpath)
-      deleted <- deleted + 1
-    }
-  }
-  message(sprintf("\n[Force rebuild] Cleared %d cache files from step %s onwards\n",
-                  deleted, force_rebuild_from))
-}
+skills_cache_files <- list(
+  "1" = c("01_match_stats.rds", "01_config.rds"),
+  "2" = "02_skill_features.rds",
+  "2b" = "02b_decay_params.rds",
+  "3" = "03_skill_spm.rds",
+  "4" = "04_skill_xrapm.rds",
+  "5" = c("05_skill_panna.rds", "skill_panna_ratings.csv"),
+  "6" = c("06_seasonal_ratings.rds", "seasonal_skill_xrapm.csv"),
+  "7" = "07_psr_model.rds",
+  "8" = character(0),
+  "8b" = character(0)
+)
+clear_cache_files(force_rebuild_from, cache_dir, skills_cache_files, max_step = 8)
 
 # Check prerequisites (only if steps that need them are enabled)
 opta_cache <- file.path("data-raw", "cache-opta")
@@ -185,87 +126,67 @@ message(paste(rep("#", 70), collapse = ""))
 
 # 5. Step 1: Compute Match-Level Stats ----
 
-step_results[[1]] <- run_step("compute_match_stats", 1, function() {
+step_results[[1]] <- run_skills_step("compute_match_stats", 1, function() {
   source("data-raw/estimated-skills/01_compute_match_stats.R", local = TRUE)
 })
 
 # 6. Step 2: Estimate Skills ----
 
-step_results[[2]] <- run_step("estimate_skills", 2, function() {
+step_results[[2]] <- run_skills_step("estimate_skills", 2, function() {
   source("data-raw/estimated-skills/02_estimate_skills.R", local = TRUE)
 })
 
 # 7. Step 2b: Optimize Params (optional) ----
 
-step_results[[3]] <- run_step("optimize_params", "2b", function() {
+step_results[[3]] <- run_skills_step("optimize_params", "2b", function() {
   source("data-raw/estimated-skills/02b_optimize_params.R", local = TRUE)
 })
 
 # 8. Step 3: Skill SPM ----
 
-step_results[[4]] <- run_step("skill_spm", 3, function() {
+step_results[[4]] <- run_skills_step("skill_spm", 3, function() {
   source("data-raw/estimated-skills/03_skill_spm.R", local = TRUE)
 })
 
 # 9. Step 4: Skill xRAPM ----
 
-step_results[[5]] <- run_step("skill_xrapm", 4, function() {
+step_results[[5]] <- run_skills_step("skill_xrapm", 4, function() {
   source("data-raw/estimated-skills/04_skill_xrapm.R", local = TRUE)
 })
 
 # 10. Step 5: Skill Panna Ratings ----
 
-step_results[[6]] <- run_step("skill_panna_ratings", 5, function() {
+step_results[[6]] <- run_skills_step("skill_panna_ratings", 5, function() {
   source("data-raw/estimated-skills/05_skill_panna_ratings.R", local = TRUE)
 })
 
 # 11. Step 6: Seasonal Skill Ratings ----
 
-step_results[[7]] <- run_step("seasonal_skill_ratings", 6, function() {
+step_results[[7]] <- run_skills_step("seasonal_skill_ratings", 6, function() {
   source("data-raw/estimated-skills/06_seasonal_skill_ratings.R", local = TRUE)
 })
 
 # 12. Step 7: Train PSR Model ----
 
-step_results[[8]] <- run_step("train_psr_model", 7, function() {
+step_results[[8]] <- run_skills_step("train_psr_model", 7, function() {
   source("data-raw/estimated-skills/07_train_psr_model.R", local = TRUE)
 })
 
 # 13. Step 8: Export Skills ----
 
-step_results[[9]] <- run_step("export_skills", 8, function() {
+step_results[[9]] <- run_skills_step("export_skills", 8, function() {
   source("data-raw/estimated-skills/08_export_skills.R", local = TRUE)
 })
 
 # 14. Step 8b: Export Weekly PSR Snapshots ----
 
-step_results[[10]] <- run_step("export_psr_weekly", "8b", function() {
+step_results[[10]] <- run_skills_step("export_psr_weekly", "8b", function() {
   source("data-raw/estimated-skills/08b_export_psr_weekly.R", local = TRUE)
 })
 
 # 15. Summary ----
 
-pipeline_end <- Sys.time()
-total_duration <- difftime(pipeline_end, pipeline_start, units = "secs")
-
-message("\n")
-message(paste(rep("=", 70), collapse = ""))
-message("ESTIMATED SKILLS PIPELINE COMPLETE")
-message(paste(rep("=", 70), collapse = ""))
-
-message("\nStep Summary:")
-message(sprintf("%-30s %-10s %s", "Step", "Status", "Duration"))
-message(paste(rep("-", 55), collapse = ""))
-
-for (result in step_results) {
-  if (!is.null(result)) {
-    message(sprintf("%-30s %-10s %s",
-                    result$name, result$status, result$duration_formatted))
-  }
-}
-
-message(paste(rep("-", 55), collapse = ""))
-message(sprintf("%-30s %-10s %s", "TOTAL", "", format_duration(as.numeric(total_duration))))
+print_pipeline_summary(step_results, pipeline_start, "ESTIMATED SKILLS PIPELINE")
 
 message("\nOutput files:")
 message(sprintf("  - %s", file.path(cache_dir, "05_skill_panna.rds")))

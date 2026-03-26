@@ -1,0 +1,180 @@
+name: Opta RAPM/SPM Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: 'Force full rebuild from step 1'
+        type: boolean
+        default: false
+      force_rebuild_from:
+        description: 'Force rebuild from step N (1-9, blank = use cache)'
+        type: number
+        required: false
+      upload_caches:
+        description: 'Upload caches to predictions-cache release when done'
+        type: boolean
+        default: true
+  repository_dispatch:
+    types: [opta-scrape-complete]
+
+env:
+  GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
+  R_KEEP_PKG_SOURCE: yes
+
+jobs:
+  opta-pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.5.0'
+          use-public-rspm: true
+
+      - name: Setup R dependencies
+        uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          cache-version: 1
+          extra-packages: |
+            any::devtools
+            any::piggyback
+            any::arrow
+            any::dplyr
+            any::glmnet
+            any::xgboost
+            any::Matrix
+            any::data.table
+            any::DBI
+            any::duckdb
+            any::cli
+          needs: |
+            devtools
+
+      - name: Download Opta data
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+        run: |
+          OPTA_DIR="${{ runner.temp }}/pannadata/opta"
+          MODELS_DIR="${{ runner.temp }}/pannadata/opta/models"
+          mkdir -p "$OPTA_DIR" "$MODELS_DIR"
+
+          echo "Downloading consolidated Opta files..."
+          for f in opta_player_stats.parquet opta_shots.parquet opta_shot_events.parquet \
+                   opta_events.parquet opta_lineups.parquet opta_fixtures.parquet \
+                   opta_xmetrics.parquet opta-catalog.json; do
+            if gh release download opta-latest --repo peteowen1/pannadata --pattern "$f" --dir "$OPTA_DIR" 2>/dev/null; then
+              echo "  Downloaded $f"
+            else
+              echo "  Skipped $f (not found)"
+            fi
+          done
+
+          echo ""
+          echo "Downloading pre-trained models..."
+          for f in xg_model.rds xpass_model.rds epv_model.rds; do
+            if gh release download epv-models --repo peteowen1/pannadata --pattern "$f" --dir "$MODELS_DIR" 2>/dev/null; then
+              echo "  Downloaded $f"
+            else
+              echo "  WARNING: $f not found"
+            fi
+          done
+
+          echo ""
+          echo "Opta data:"
+          ls -lh "$OPTA_DIR"
+          echo "Models:"
+          ls -lh "$MODELS_DIR"
+
+          # Validate required files
+          MISSING=0
+          for f in opta_lineups.parquet opta_player_stats.parquet opta-catalog.json; do
+            if [ ! -f "$OPTA_DIR/$f" ]; then
+              echo "FATAL: Required file $f was not downloaded"
+              MISSING=$((MISSING + 1))
+            fi
+          done
+          if [ "$MISSING" -gt 0 ]; then
+            echo "ERROR: $MISSING required file(s) missing."
+            exit 1
+          fi
+
+      - name: Run Opta RAPM/SPM pipeline
+        env:
+          PANNADATA_DIR: ${{ runner.temp }}/pannadata
+        run: |
+          Rscript -e "
+            pannadata_path <- Sys.getenv('PANNADATA_DIR', '../pannadata/data')
+            opta_path <- file.path(pannadata_path, 'opta')
+            cat('PANNADATA_DIR:', pannadata_path, '\n')
+            cat('Opta data dir:', opta_path, '\n')
+            cat('Files:', length(list.files(opta_path)), '\n')
+
+            devtools::load_all()
+            pannadata_dir(pannadata_path)
+            opta_data_dir(opta_path)
+
+            # Config overrides
+            force_rebuild_input <- '${{ inputs.force_rebuild }}'
+            force_rebuild_from_input <- '${{ inputs.force_rebuild_from }}'
+
+            if (isTRUE(as.logical(force_rebuild_input))) {
+              force_rebuild_from <- 1L
+            } else if (nzchar(force_rebuild_from_input) && !is.na(as.numeric(force_rebuild_from_input))) {
+              force_rebuild_from <- as.integer(force_rebuild_from_input)
+            } else {
+              force_rebuild_from <- NULL
+            }
+
+            source('data-raw/player-ratings-opta/run_pipeline_opta.R', chdir = FALSE)
+          "
+
+      - name: Upload caches to predictions-cache release
+        if: success() && inputs.upload_caches != 'false'
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+        run: |
+          CACHE_DIR="data-raw/cache-opta"
+
+          if [ ! -f "$CACHE_DIR/07_seasonal_ratings.rds" ]; then
+            echo "WARNING: 07_seasonal_ratings.rds not found, skipping upload"
+            exit 0
+          fi
+
+          echo "Uploading caches to predictions-cache release..."
+          for f in 07_seasonal_ratings.rds; do
+            if [ -f "$CACHE_DIR/$f" ]; then
+              gh release upload predictions-cache "$CACHE_DIR/$f" \
+                --repo peteowen1/pannadata --clobber
+              echo "  Uploaded $f"
+            fi
+          done
+
+      - name: Pipeline summary
+        if: always()
+        run: |
+          echo "## Opta RAPM/SPM Pipeline" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Date:** $(date +'%Y-%m-%d %H:%M UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "**Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          CACHE_DIR="data-raw/cache-opta"
+          if [ -f "$CACHE_DIR/07_seasonal_ratings.rds" ]; then
+            echo "**Ratings:** generated successfully" >> $GITHUB_STEP_SUMMARY
+            if [ "${{ inputs.upload_caches }}" != "false" ]; then
+              echo "**Caches:** uploaded to \`predictions-cache\` release" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "**Status:** Pipeline may have failed (no ratings cache found)" >> $GITHUB_STEP_SUMMARY
+          fi

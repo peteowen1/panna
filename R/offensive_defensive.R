@@ -44,25 +44,17 @@ calculate_od_panna <- function(rapm_data, spm_ratings, lambda_prior = 1) {
   names(o_prior) <- player_ids
   names(d_prior) <- player_ids
 
-  # If we have O-SPM and D-SPM, use them
+  # Match player IDs to SPM ratings (vectorized)
+  idx <- match(player_ids, spm_ratings$player_id)
+  matched <- !is.na(idx)
+
   if ("o_spm" %in% names(spm_ratings)) {
-    for (i in seq_along(player_ids)) {
-      pid <- player_ids[i]
-      if (pid %in% spm_ratings$player_id) {
-        o_prior[i] <- spm_ratings$o_spm[spm_ratings$player_id == pid]
-        d_prior[i] <- spm_ratings$d_spm[spm_ratings$player_id == pid]
-      }
-    }
+    o_prior[matched] <- spm_ratings$o_spm[idx[matched]]
+    d_prior[matched] <- spm_ratings$d_spm[idx[matched]]
   } else if ("spm" %in% names(spm_ratings)) {
-    # Split overall SPM evenly between O and D as approximation
-    for (i in seq_along(player_ids)) {
-      pid <- player_ids[i]
-      if (pid %in% spm_ratings$player_id) {
-        spm_val <- spm_ratings$spm[spm_ratings$player_id == pid]
-        o_prior[i] <- spm_val / 2
-        d_prior[i] <- spm_val / 2
-      }
-    }
+    spm_vals <- spm_ratings$spm[idx[matched]] / 2
+    o_prior[matched] <- spm_vals
+    d_prior[matched] <- spm_vals
   }
 
   # Combined prior for O/D model
@@ -125,8 +117,7 @@ calculate_od_panna <- function(rapm_data, spm_ratings, lambda_prior = 1) {
 #' @keywords internal
 #' @examples
 #' \dontrun{
-#' features <- create_player_feature_matrix(processed_data)
-#' od_ratings <- split_od_contributions(panna_ratings, features)
+#' od_ratings <- split_od_contributions(panna_ratings, player_features)
 #' head(od_ratings[, c("player_name", "panna", "o_panna", "d_panna")])
 #' }
 split_od_contributions <- function(panna_ratings, player_features) {
