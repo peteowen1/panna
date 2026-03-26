@@ -297,6 +297,77 @@
 
 
 # ============================================================================
+# Shared column preparation helpers
+# ============================================================================
+
+#' Ensure player_id column exists in an Opta data.table
+#' @param dt data.table with player data
+#' @param fn_name Character function name for warning messages
+#' @return dt (modified by reference)
+#' @keywords internal
+.ensure_player_id <- function(dt, fn_name = "spm_opta") {
+  if (!"player_id" %in% names(dt)) {
+    dt[, player_id := clean_player_name(player_name)]
+  } else {
+    n_na <- sum(is.na(dt$player_id))
+    if (n_na > 0) {
+      cli::cli_warn("{.fn {fn_name}}: {n_na}/{nrow(dt)} rows have NA {.field player_id}, using {.fn clean_player_name} for those rows.")
+      na_mask <- is.na(dt$player_id)
+      dt[na_mask, player_id := clean_player_name(player_name)]
+    }
+  }
+  dt
+}
+
+
+#' Rename Opta columns to panna names using the standard mapping
+#' @param dt data.table or data.frame
+#' @return The input with columns renamed
+#' @keywords internal
+.rename_opta_columns <- function(dt) {
+  opta_cols <- .get_opta_col_mapping()
+  existing_cols <- opta_cols[opta_cols %in% names(dt)]
+  if (length(existing_cols) > 0) {
+    data.table::setnames(dt, old = unname(existing_cols),
+                         new = names(existing_cols), skip_absent = TRUE)
+  }
+  existing_cols
+}
+
+
+#' Replace NA/Inf with 0 in numeric columns and log summary
+#' @param df data.frame with numeric columns
+#' @param check_inf Whether to also replace Inf values (default TRUE)
+#' @return df with NAs/Inf replaced
+#' @keywords internal
+.clean_numeric_na <- function(df, check_inf = TRUE) {
+  numeric_cols <- vapply(df, is.numeric, logical(1))
+  if (!any(numeric_cols)) return(df)
+
+  na_counts <- vapply(df[numeric_cols], function(x) {
+    sum(is.na(x) | (check_inf & is.infinite(x)))
+  }, integer(1))
+  n_replaced <- sum(na_counts)
+
+  if (n_replaced > 0) {
+    df[numeric_cols] <- lapply(df[numeric_cols], function(x) {
+      bad <- is.na(x) | (check_inf & is.infinite(x))
+      x[bad] <- 0
+      x
+    })
+    total_cells <- sum(numeric_cols) * nrow(df)
+    pct <- round(n_replaced / total_cells * 100, 1)
+    top_cols <- head(names(sort(na_counts[na_counts > 0], decreasing = TRUE)), 5)
+    msg <- sprintf("Replaced %d NA%s values with 0 (%.1f%%, top: %s)",
+                   n_replaced, if (check_inf) "/Inf" else "",
+                   pct, paste(top_cols, collapse = ", "))
+    if (pct > 5) cli::cli_warn(msg) else progress_msg(msg)
+  }
+  df
+}
+
+
+# ============================================================================
 # Match-level Opta stats (for estimated skills pipeline)
 # ============================================================================
 
@@ -341,30 +412,8 @@ compute_match_level_opta_stats <- function(opta_stats, min_minutes = 10) {
 
   dt <- data.table::copy(data.table::as.data.table(opta_stats))
 
-  # Use native player_id if available, fall back to clean_player_name
-  if (!"player_id" %in% names(dt)) {
-    dt[, player_id := clean_player_name(player_name)]
-  } else {
-    n_na <- sum(is.na(dt$player_id))
-    if (n_na > 0) {
-      cli::cli_warn("{.fn compute_match_level_opta_stats}: {n_na}/{nrow(dt)} rows have NA {.field player_id}, using {.fn clean_player_name} for those rows.")
-      na_mask <- is.na(dt$player_id)
-      dt[na_mask, player_id := clean_player_name(player_name)]
-    }
-  }
-
-  # Get column mapping and rename
-  opta_cols <- .get_opta_col_mapping()
-  existing_cols <- opta_cols[opta_cols %in% names(dt)]
-
-  # Rename Opta columns to panna names (only the ones that exist)
-  for (i in seq_along(existing_cols)) {
-    panna_name <- names(existing_cols)[i]
-    opta_name <- existing_cols[i]
-    if (panna_name != opta_name && opta_name %in% names(dt)) {
-      data.table::setnames(dt, opta_name, panna_name, skip_absent = TRUE)
-    }
-  }
+  .ensure_player_id(dt, "compute_match_level_opta_stats")
+  .rename_opta_columns(dt)
 
   # Ensure total_minutes exists
   if (!"total_minutes" %in% names(dt) && "minsPlayed" %in% names(dt)) {
@@ -412,24 +461,7 @@ compute_match_level_opta_stats <- function(opta_stats, min_minutes = 10) {
   df <- .calculate_opta_derived_features(df)
 
   # Replace NAs/Inf with 0 in numeric columns (required for glmnet)
-  numeric_cols <- vapply(df, is.numeric, logical(1))
-  na_counts <- vapply(df[numeric_cols], function(x) sum(is.na(x) | is.infinite(x)), integer(1))
-  n_replaced <- sum(na_counts)
-  df[numeric_cols] <- lapply(df[numeric_cols], function(x) {
-    ifelse(is.na(x) | is.infinite(x), 0, x)
-  })
-  if (n_replaced > 0) {
-    total_cells <- sum(numeric_cols) * nrow(df)
-    pct <- round(n_replaced / total_cells * 100, 1)
-    top_cols <- head(names(sort(na_counts[na_counts > 0], decreasing = TRUE)), 5)
-    msg <- sprintf("Replaced %d NA/Inf values with 0 (%.1f%%, top: %s)",
-                   n_replaced, pct, paste(top_cols, collapse = ", "))
-    if (pct > 5) {
-      cli::cli_warn(msg)
-    } else {
-      progress_msg(msg)
-    }
-  }
+  df <- .clean_numeric_na(df, check_inf = TRUE)
 
   result <- data.table::as.data.table(df)
 
@@ -466,24 +498,12 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
 
   progress_msg(sprintf("Aggregating %d Opta player-match rows...", nrow(opta_stats)))
 
-  # Use native player_id if available, fall back to clean_player_name
-  if (!"player_id" %in% names(opta_stats)) {
-    opta_stats$player_id <- clean_player_name(opta_stats$player_name)
-  } else {
-    n_na <- sum(is.na(opta_stats$player_id))
-    if (n_na > 0) {
-      cli::cli_warn("{.fn aggregate_opta_stats}: {n_na}/{nrow(opta_stats)} rows have NA {.field player_id}, using {.fn clean_player_name} for those rows.")
-      na_mask <- is.na(opta_stats$player_id)
-      opta_stats$player_id[na_mask] <- clean_player_name(opta_stats$player_name[na_mask])
-    }
-  }
-
-  # Get column mapping and filter to existing columns
-  opta_cols <- .get_opta_col_mapping()
-  existing_cols <- opta_cols[opta_cols %in% names(opta_stats)]
-
-  # Aggregate by player_id using data.table for performance
   opta_dt <- data.table::as.data.table(opta_stats)
+  .ensure_player_id(opta_dt, "aggregate_opta_stats")
+
+  # Get column mapping and filter to existing columns (before rename for aggregation)
+  opta_cols <- .get_opta_col_mapping()
+  existing_cols <- opta_cols[opta_cols %in% names(opta_dt)]
 
   # Sum numeric columns + count matches in one pass
   player_stats <- opta_dt[, c(
@@ -529,24 +549,7 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
   player_stats <- .calculate_opta_derived_features(player_stats)
 
   # Replace NAs with 0 (required for glmnet/SPM model fitting)
-  numeric_cols <- sapply(player_stats, is.numeric)
-  na_counts <- vapply(player_stats[numeric_cols], function(x) sum(is.na(x)), integer(1))
-  n_replaced <- sum(na_counts)
-  player_stats[numeric_cols] <- lapply(player_stats[numeric_cols], function(x) {
-    ifelse(is.na(x), 0, x)
-  })
-  if (n_replaced > 0) {
-    total_cells <- sum(numeric_cols) * nrow(player_stats)
-    pct <- round(n_replaced / total_cells * 100, 1)
-    top_cols <- head(names(sort(na_counts[na_counts > 0], decreasing = TRUE)), 5)
-    msg <- sprintf("Replaced %d NA values with 0 (%.1f%%, top: %s)",
-                   n_replaced, pct, paste(top_cols, collapse = ", "))
-    if (pct > 5) {
-      cli::cli_warn(msg)
-    } else {
-      progress_msg(msg)
-    }
-  }
+  player_stats <- .clean_numeric_na(player_stats, check_inf = FALSE)
 
   progress_msg(sprintf("Aggregated Opta stats for %d players with %d features",
                        nrow(player_stats), ncol(player_stats)))

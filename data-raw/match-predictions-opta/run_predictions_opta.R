@@ -56,57 +56,25 @@ if (!exists("run_steps")) {
 # NULL = normal run (use cache), 1 = full refresh
 if (!exists("force_rebuild_from")) force_rebuild_from <- NULL
 
-# 3. Helper Functions ----
+# 3. Shared Pipeline Utilities ----
 
-run_step <- function(step_name, step_num, code_block) {
-  # Support both numeric (2) and string ("2b") step numbers
-  step_label <- as.character(step_num)
-  if (is.numeric(step_num)) {
-    step_key <- sprintf("step_%02d_%s", step_num, step_name)
-  } else {
-    padded <- sub("^(\\d)([a-z])", "0\\1\\2", as.character(step_num))
-    step_key <- sprintf("step_%s_%s", padded, step_name)
+source("data-raw/pipeline_utils.R")
+
+# Wrapper that passes run_steps and pipeline_failed from this scope
+run_pred_step <- function(step_name, step_num, code_block) {
+  result <- run_step(step_name, step_num, code_block, run_steps, pipeline_failed)
+  if (!is.null(result) && identical(result$status, "FAILED")) {
+    pipeline_failed <<- TRUE
   }
-  if (!isTRUE(run_steps[[step_key]])) {
-    message(sprintf("\n[%s] Step %s: %s - SKIPPED",
-                    format(Sys.time(), "%H:%M:%S"), step_label, step_name))
-    return(NULL)
-  }
-
-  message(sprintf("\n%s", paste(rep("=", 70), collapse = "")))
-  message(sprintf("[%s] Step %s: %s",
-                  format(Sys.time(), "%H:%M:%S"), step_label, step_name))
-  message(sprintf("%s\n", paste(rep("=", 70), collapse = "")))
-
-  start_time <- Sys.time()
-  result <- tryCatch({
-    code_block()
-    "SUCCESS"
-  }, error = function(e) {
-    message(sprintf("ERROR: %s", e$message))
-    "FAILED"
-  })
-  end_time <- Sys.time()
-
-  duration <- difftime(end_time, start_time, units = "secs")
-
-  list(
-    step = step_num,
-    name = step_name,
-    status = result,
-    duration_secs = as.numeric(duration),
-    duration_formatted = format_duration(as.numeric(duration))
-  )
+  result
 }
 
-check_critical_step <- function(result) {
-  if (!is.null(result) && result$status == "FAILED") {
-    stop(sprintf("Critical step %s (%s) failed. Cannot continue pipeline.",
-                 result$step, result$name), call. = FALSE)
+# Critical step check: set pipeline_failed flag to skip downstream steps
+check_pred_critical <- function(result) {
+  if (check_critical_step(result)) {
+    pipeline_failed <<- TRUE
   }
 }
-
-# format_duration() is defined in R/utils.R
 
 # 4. Initialize Pipeline ----
 
@@ -116,49 +84,25 @@ if (!dir.exists(cache_dir)) {
 }
 
 # Handle force rebuild
-if (!is.null(force_rebuild_from) && force_rebuild_from >= 1 && force_rebuild_from <= 10) {
-  cache_files <- list(
-    "1" = "01_fixture_results.rds",
-    "2" = "02_team_ratings.rds",
-    "2b" = "02b_team_skill_features.rds",
-    "3" = "03_rolling_features.rds",
-    "4" = "04_match_dataset.rds",
-    "5" = "05_goals_model.rds",
-    "6" = "06_outcome_model.rds",
-    "7" = c("07_predictions.rds", "predictions.csv", "predictions.parquet"),
-    "8" = "08_evaluation.rds",
-    "9" = character(0),
-    "10" = c("panna_ratings.parquet", "match_predictions.parquet")
-  )
-
-  # Build list of steps to clear: numeric steps >= force_rebuild_from + fractional steps
-  steps_to_clear <- as.character(force_rebuild_from:10)
-  # Include fractional steps (e.g., "2b") when their parent step is being rebuilt
-  fractional_steps <- setdiff(names(cache_files), as.character(1:10))
-  for (fs in fractional_steps) {
-    parent <- as.numeric(sub("[a-z]+$", "", fs))
-    if (!is.na(parent) && parent >= force_rebuild_from) {
-      steps_to_clear <- c(steps_to_clear, fs)
-    }
-  }
-  files_to_delete <- unlist(cache_files[steps_to_clear])
-  deleted <- 0
-  for (f in files_to_delete) {
-    fpath <- file.path(cache_dir, f)
-    if (file.exists(fpath)) {
-      file.remove(fpath)
-      deleted <- deleted + 1
-    }
-  }
-  force_rebuild <- TRUE
-  message(sprintf("\n[Force rebuild] Cleared %d cache files from step %d onwards\n",
-                  deleted, force_rebuild_from))
-} else {
-  force_rebuild <- FALSE
-}
+pred_cache_files <- list(
+  "1" = "01_fixture_results.rds",
+  "2" = "02_team_ratings.rds",
+  "2b" = "02b_team_skill_features.rds",
+  "3" = "03_rolling_features.rds",
+  "4" = "04_match_dataset.rds",
+  "5" = "05_goals_model.rds",
+  "6" = "06_outcome_model.rds",
+  "7" = c("07_predictions.rds", "predictions.csv", "predictions.parquet"),
+  "8" = "08_evaluation.rds",
+  "9" = character(0),
+  "10" = c("panna_ratings.parquet", "match_predictions.parquet")
+)
+clear_cache_files(force_rebuild_from, cache_dir, pred_cache_files, max_step = 10)
+force_rebuild <- !is.null(force_rebuild_from) && force_rebuild_from >= 1
 
 pipeline_start <- Sys.time()
 step_results <- list()
+pipeline_failed <- FALSE
 
 message("\n")
 message(paste(rep("#", 70), collapse = ""))
@@ -176,100 +120,80 @@ message(paste(rep("#", 70), collapse = ""))
 
 # 5. Step 1: Build Fixture Results ----
 
-step_results[[1]] <- run_step("build_fixture_results", 1, function() {
+step_results[[1]] <- run_pred_step("build_fixture_results", 1, function() {
   source("data-raw/match-predictions-opta/01_build_fixture_results.R", local = TRUE)
 })
-check_critical_step(step_results[[1]])
+check_pred_critical(step_results[[1]])
 
 # 6. Step 2: Player Ratings to Team ----
 
-step_results[[2]] <- run_step("player_ratings_to_team", 2, function() {
+step_results[[2]] <- run_pred_step("player_ratings_to_team", 2, function() {
   source("data-raw/match-predictions-opta/02_player_ratings_to_team.R", local = TRUE)
 })
-check_critical_step(step_results[[2]])
+check_pred_critical(step_results[[2]])
 
 # 6b. Step 2b: Team Skill Features ----
 
-step_results[["2b"]] <- run_step("team_skill_features", "2b", function() {
+step_results[["2b"]] <- run_pred_step("team_skill_features", "2b", function() {
   source("data-raw/match-predictions-opta/02b_team_skill_features.R", local = TRUE)
 })
 # 2b is optional — don't abort if it fails
 
 # 7. Step 3: Team Rolling Features ----
 
-step_results[[3]] <- run_step("team_rolling_features", 3, function() {
+step_results[[3]] <- run_pred_step("team_rolling_features", 3, function() {
   source("data-raw/match-predictions-opta/03_team_rolling_features.R", local = TRUE)
 })
-check_critical_step(step_results[[3]])
+check_pred_critical(step_results[[3]])
 
 # 8. Step 4: Build Match Dataset ----
 
-step_results[[4]] <- run_step("build_match_dataset", 4, function() {
+step_results[[4]] <- run_pred_step("build_match_dataset", 4, function() {
   source("data-raw/match-predictions-opta/04_build_match_dataset.R", local = TRUE)
 })
-check_critical_step(step_results[[4]])
+check_pred_critical(step_results[[4]])
 
 # 9. Step 5: Fit Goals Model ----
 
-step_results[[5]] <- run_step("fit_goals_model", 5, function() {
+step_results[[5]] <- run_pred_step("fit_goals_model", 5, function() {
   source("data-raw/match-predictions-opta/05_fit_goals_model.R", local = TRUE)
 })
+check_pred_critical(step_results[[5]])
 
 # 10. Step 6: Fit Outcome Model ----
 
-step_results[[6]] <- run_step("fit_outcome_model", 6, function() {
+step_results[[6]] <- run_pred_step("fit_outcome_model", 6, function() {
   source("data-raw/match-predictions-opta/06_fit_outcome_model.R", local = TRUE)
 })
+check_pred_critical(step_results[[6]])
 
 # 11. Step 7: Predict Fixtures ----
 
-step_results[[7]] <- run_step("predict_fixtures", 7, function() {
+step_results[[7]] <- run_pred_step("predict_fixtures", 7, function() {
   source("data-raw/match-predictions-opta/07_predict_fixtures.R", local = TRUE)
 })
 
 # 12. Step 8: Evaluate Model ----
 
-step_results[[8]] <- run_step("evaluate_model", 8, function() {
+step_results[[8]] <- run_pred_step("evaluate_model", 8, function() {
   source("data-raw/match-predictions-opta/08_evaluate_model.R", local = TRUE)
 })
 
 # 13. Step 9: Upload Predictions ----
 
-step_results[[9]] <- run_step("upload_predictions", 9, function() {
+step_results[[9]] <- run_pred_step("upload_predictions", 9, function() {
   source("data-raw/match-predictions-opta/09_upload_predictions.R", local = TRUE)
 })
 
 # 14. Step 10: Export Blog Data ----
 
-step_results[[10]] <- run_step("export_blog_data", 10, function() {
+step_results[[10]] <- run_pred_step("export_blog_data", 10, function() {
   source("data-raw/match-predictions-opta/10_export_blog_data.R", local = TRUE)
 })
 
 # 15. Summary ----
 
-pipeline_end <- Sys.time()
-total_duration <- difftime(pipeline_end, pipeline_start, units = "secs")
-
-message("\n")
-message(paste(rep("=", 70), collapse = ""))
-message("MATCH PREDICTION PIPELINE COMPLETE")
-message(paste(rep("=", 70), collapse = ""))
-
-message("\nStep Summary:")
-message(sprintf("%-35s %-10s %s", "Step", "Status", "Duration"))
-message(paste(rep("-", 60), collapse = ""))
-
-for (result in step_results) {
-  if (!is.null(result)) {
-    message(sprintf("%-35s %-10s %s",
-                    result$name,
-                    result$status,
-                    result$duration_formatted))
-  }
-}
-
-message(paste(rep("-", 60), collapse = ""))
-message(sprintf("%-35s %-10s %s", "TOTAL", "", format_duration(as.numeric(total_duration))))
+print_pipeline_summary(step_results, pipeline_start, "MATCH PREDICTION PIPELINE", col_width = 35)
 
 message("\nOutput files:")
 message(sprintf("  - %s", file.path(cache_dir, "07_predictions.rds")))

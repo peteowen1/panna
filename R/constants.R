@@ -347,3 +347,17 @@ CHAIN_FINAL_THIRD_X <- 66
 #' @format Numeric value: 25
 #' @keywords internal
 CHAIN_PROGRESSIVE_THRESHOLD <- 25
+
+
+# =============================================================================
+# Cache Path Constants
+# =============================================================================
+
+#' Default SPADL cache directory
+#'
+#' Relative path (from panna/ root) to the SPADL conversion cache shared
+#' between the EPV/xMetrics pipeline and the Opta RAPM pipeline.
+#'
+#' @format Character value
+#' @keywords internal
+SPADL_CACHE_DIR <- "data-raw/cache/epv/spadl"

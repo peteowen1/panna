@@ -21,8 +21,7 @@ seasons <- if (exists("seasons")) seasons else NULL
 min_season <- if (exists("min_season")) min_season else NULL
 use_xmetrics_features <- if (exists("use_xmetrics_features")) use_xmetrics_features else TRUE
 
-# PENALTY_XG is exported from panna::constants.R (loaded via devtools::load_all())
-SPADL_CACHE_DIR <- "data-raw/cache/epv/spadl"
+# PENALTY_XG and SPADL_CACHE_DIR are exported from panna::constants.R (loaded via devtools::load_all())
 
 # extract_season_end_year() is defined in R/utils.R
 

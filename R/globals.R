@@ -586,5 +586,7 @@ utils::globalVariables(c(
   "dsr",
   "match_season",
   "team_goals",
-  "n_players"
+  "n_players",
+  "x.event_team",
+  "x.extra_value"
 ))

@@ -1,8 +1,5 @@
 # Tests for RAPM model functions
 
-# Internal function aliases (not exported)
-extract_xrapm_ratings <- panna:::extract_xrapm_ratings
-
 # Helper to create minimal RAPM data structure for testing
 create_test_rapm_data <- function(n_splints = 50, n_players = 20) {
   set.seed(42)

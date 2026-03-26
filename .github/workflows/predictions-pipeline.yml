@@ -218,7 +218,7 @@ jobs:
           fi
 
       - name: Trigger blog data build
-        if: always()
+        if: success()
         env:
           GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
         run: |
