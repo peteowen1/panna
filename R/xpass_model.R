@@ -453,6 +453,19 @@ load_xpass_model <- function(path = NULL) {
     return(model)
   }
 
+  # Try pannamodels package (preferred)
+  if (requireNamespace("pannamodels", quietly = TRUE)) {
+    model <- tryCatch(
+      pannamodels::load_panna_model("xpass_model", verbose = FALSE),
+      error = function(e) NULL
+    )
+    if (!is.null(model)) {
+      cli::cli_alert_success("Loaded xPass model from pannamodels")
+      return(model)
+    }
+  }
+
+  # Fall back to local path
   default_path <- file.path(opta_data_dir(), "models", "xpass_model.rds")
   if (file.exists(default_path)) {
     model <- readRDS(default_path)
@@ -462,7 +475,8 @@ load_xpass_model <- function(path = NULL) {
 
   cli::cli_abort(c(
     "xPass model not found.",
-    "i" = "Train a new model with fit_xpass_model() or download with pb_download_epv_models()"
+    "i" = "Install pannamodels: devtools::install_github('peteowen1/pannamodels')",
+    "i" = "Or download with pb_download_epv_models()"
   ))
 }
 

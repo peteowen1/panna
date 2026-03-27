@@ -38,6 +38,7 @@ Suggests:
     knitr,
     lifecycle,
     parallel,
+    pannamodels,
     piggyback,
     pROC,
     rmarkdown,

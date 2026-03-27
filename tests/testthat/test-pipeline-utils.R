@@ -2,7 +2,12 @@
 # Covers: run_step, check_critical_step, clear_cache_files
 
 # Source the pipeline utils (not part of the package, lives in data-raw/)
-source(file.path(testthat::test_path("..", ".."), "data-raw", "pipeline_utils.R"))
+# data-raw/ is excluded from the built tarball, so this file is unavailable during R CMD check
+pipeline_utils_path <- file.path(testthat::test_path("..", ".."), "data-raw", "pipeline_utils.R")
+if (!file.exists(pipeline_utils_path)) {
+  testthat::skip("pipeline_utils.R not available (likely running under R CMD check)")
+}
+source(pipeline_utils_path)
 
 # ===========================================================================
 # run_step — step key generation
