@@ -1,6 +1,6 @@
 # Player Network Centrality
 #
-# PageRank-based quality adjustment for player ratings. Detects "isolated
+# centrality-based quality adjustment for player ratings. Detects "isolated
 # cluster inflation" where a player's rating is inflated because they only
 # play against weak opponents in a small league/circuit.
 #
@@ -13,7 +13,7 @@
 #' Calculate Player Centrality
 #'
 #' Builds a player interaction network from match data and computes
-#' PageRank centrality scores. Players who face diverse, high-quality
+#' centrality centrality scores. Players who face diverse, high-quality
 #' opponents get higher centrality. Players isolated in weak leagues
 #' get lower centrality.
 #'
@@ -24,8 +24,8 @@
 #'   - `match_id`: Match identifier
 #'   - `minutes` (optional): Minutes played (used as weight)
 #' @param min_matches Integer. Minimum matches for inclusion. Default 5.
-#' @param damping Numeric. PageRank damping factor (0-1). Default 0.85.
-#' @param max_iter Integer. Maximum PageRank iterations. Default 100.
+#' @param damping Numeric. centrality damping factor (0-1). Default 0.85.
+#' @param max_iter Integer. Maximum centrality iterations. Default 100.
 #' @param tol Numeric. Convergence tolerance. Default 1e-6.
 #'
 #' @return Data frame with player_id, centrality (0-1), unique_opponents,
@@ -84,16 +84,16 @@ calculate_player_centrality <- function(player_matches,
   # Find connected components
   components <- find_components(adj)
 
-  # Calculate PageRank
-  pagerank <- calculate_pagerank(adj, damping = damping, max_iter = max_iter, tol = tol)
+  # Calculate centrality
+  scores <- calculate_centrality_scores(adj, damping = damping, max_iter = max_iter, tol = tol)
 
-  # Normalize PageRank to 0-1 range
-  pr_min <- min(pagerank)
-  pr_max <- max(pagerank)
+  # Normalize centrality to 0-1 range
+  pr_min <- min(scores)
+  pr_max <- max(scores)
   if (pr_max > pr_min) {
-    centrality <- (pagerank - pr_min) / (pr_max - pr_min)
+    centrality <- (scores - pr_min) / (pr_max - pr_min)
   } else {
-    centrality <- rep(1, length(pagerank))
+    centrality <- rep(1, length(scores))
   }
 
   # Count unique opponents per player
@@ -245,17 +245,17 @@ find_components <- function(adj) {
 }
 
 
-#' Calculate PageRank
+#' Calculate centrality
 #'
-#' Power iteration method for PageRank on an adjacency matrix.
+#' Power iteration method for centrality on an adjacency matrix.
 #'
 #' @param adj Sparse adjacency matrix
 #' @param damping Damping factor (0-1)
 #' @param max_iter Maximum iterations
 #' @param tol Convergence tolerance
-#' @return Named numeric vector of PageRank scores
+#' @return Named numeric vector of centrality scores
 #' @keywords internal
-calculate_pagerank <- function(adj, damping = 0.85, max_iter = 100L, tol = 1e-6) {
+calculate_centrality_scores <- function(adj, damping = 0.85, max_iter = 100L, tol = 1e-6) {
   n <- nrow(adj)
   ids <- rownames(adj)
 
