@@ -67,7 +67,22 @@ if (!is.null(team_skill_features) && nrow(team_skill_features) > 0) {
 
 message(sprintf("  After joins: %d rows, %d columns", nrow(dataset), ncol(dataset)))
 
-# 6. Add Structural Features ----
+# 6. Add Weather Features (optional) ----
+
+if ("venue" %in% names(dataset) && any(!is.na(dataset$venue))) {
+  message("  Adding weather features...")
+  dataset <- tryCatch(
+    add_weather_features(dataset, venue_col = "venue", date_col = "match_date"),
+    error = function(e) {
+      message(sprintf("  Weather features skipped: %s", e$message))
+      dataset
+    }
+  )
+} else {
+  message("  No venue column — weather features skipped (add venue data for weather-adjusted predictions)")
+}
+
+# 7. Add Structural Features ----
 
 message("  Adding structural features...")
 
