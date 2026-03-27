@@ -212,6 +212,12 @@ reference:
   contents:
   - calculate_player_centrality
 
+- title: Player Attribution
+  desc: Zero-ablation player impact measurement
+  contents:
+  - calculate_player_attribution
+  - batch_player_attribution
+
 - title: Player Skill Rating (PSR)
   desc: Composite player skill metric
   contents:
