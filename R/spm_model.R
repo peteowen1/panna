@@ -31,6 +31,9 @@
   }
 
   # Create player_id for consistent matching
+  # NOTE: FBref stats tables don't include player_href, so we use name-derived IDs.
+  # Real FBref 8-char hex IDs are only available in lineups/events data.
+  # The Opta pipeline uses real Opta player IDs throughout.
   dt <- data.table::as.data.table(stats_df)
   dt[, player_id := clean_player_name(player_name)]
 
@@ -349,7 +352,7 @@ aggregate_player_stats <- function(stats_summary,
 
   progress_msg(sprintf("Aggregating %d player-match rows...", nrow(stats_summary)))
 
-  # Create player_id for consistent matching
+  # Create player_id for consistent matching (name-derived; see .aggregate_stat_table note)
   stats_summary$player_id <- clean_player_name(stats_summary$player_name)
 
   # Create lookup for canonical player_name using data.table

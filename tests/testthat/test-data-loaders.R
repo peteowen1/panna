@@ -302,3 +302,126 @@ test_that("load functions return data frames or empty data frames", {
   )
   expect_true(is.data.frame(result))
 })
+
+
+# =============================================================================
+# Opta loader integration tests with temp parquet files
+# =============================================================================
+
+test_that("load_opta_stats reads from consolidated parquet via DuckDB", {
+  skip_if_not_installed("arrow")
+
+  # Create a temp directory mimicking opta data structure
+  tmp <- tempfile("opta_test_")
+  dir.create(tmp, recursive = TRUE)
+  on.exit(unlink(tmp, recursive = TRUE))
+
+  # Write a small consolidated parquet
+  mock_data <- data.frame(
+    player_id = c("p1", "p2", "p3"),
+    player_name = c("Player A", "Player B", "Player C"),
+    competition = c("EPL", "EPL", "La_Liga"),
+    season = c("2024-2025", "2024-2025", "2024-2025"),
+    minsPlayed = c(900, 450, 800),
+    goals = c(10, 3, 7),
+    stringsAsFactors = FALSE
+  )
+  arrow::write_parquet(mock_data, file.path(tmp, "opta_player_stats.parquet"))
+
+  # Point opta_data_dir to our temp dir
+  original_dir <- opta_data_dir()
+  opta_data_dir(tmp)
+  on.exit(opta_data_dir(original_dir), add = TRUE)
+
+  # Load all EPL data
+  result <- load_opta_stats("ENG", source = "local")
+
+  expect_true(is.data.frame(result))
+  expect_equal(nrow(result), 2)  # Only EPL rows
+  expect_true("player_name" %in% names(result))
+})
+
+test_that("load_opta_stats column selection works", {
+  skip_if_not_installed("arrow")
+
+  tmp <- tempfile("opta_test_")
+  dir.create(tmp, recursive = TRUE)
+  on.exit(unlink(tmp, recursive = TRUE))
+
+  mock_data <- data.frame(
+    player_id = "p1",
+    player_name = "Player A",
+    competition = "EPL",
+    season = "2024-2025",
+    minsPlayed = 900,
+    goals = 10,
+    assists = 5,
+    stringsAsFactors = FALSE
+  )
+  arrow::write_parquet(mock_data, file.path(tmp, "opta_player_stats.parquet"))
+
+  original_dir <- opta_data_dir()
+  opta_data_dir(tmp)
+  on.exit(opta_data_dir(original_dir), add = TRUE)
+
+  result <- load_opta_stats("ENG", columns = c("player_name", "goals"),
+                            source = "local")
+
+  expect_equal(ncol(result), 2)
+  expect_true(all(c("player_name", "goals") %in% names(result)))
+})
+
+test_that("load_opta_lineups reads from consolidated parquet", {
+  skip_if_not_installed("arrow")
+
+  tmp <- tempfile("opta_test_")
+  dir.create(tmp, recursive = TRUE)
+  on.exit(unlink(tmp, recursive = TRUE))
+
+  mock_data <- data.frame(
+    match_id = c("m1", "m1"),
+    player_id = c("p1", "p2"),
+    player_name = c("Player A", "Player B"),
+    competition = c("EPL", "EPL"),
+    season = c("2024-2025", "2024-2025"),
+    is_starter = c(TRUE, TRUE),
+    stringsAsFactors = FALSE
+  )
+  arrow::write_parquet(mock_data, file.path(tmp, "opta_lineups.parquet"))
+
+  original_dir <- opta_data_dir()
+  opta_data_dir(tmp)
+  on.exit(opta_data_dir(original_dir), add = TRUE)
+
+  result <- load_opta_lineups("ENG", source = "local")
+
+  expect_true(is.data.frame(result))
+  expect_equal(nrow(result), 2)
+})
+
+test_that("load_opta_stats season filter works", {
+  skip_if_not_installed("arrow")
+
+  tmp <- tempfile("opta_test_")
+  dir.create(tmp, recursive = TRUE)
+  on.exit(unlink(tmp, recursive = TRUE))
+
+  mock_data <- data.frame(
+    player_id = c("p1", "p2"),
+    player_name = c("A", "B"),
+    competition = c("EPL", "EPL"),
+    season = c("2023-2024", "2024-2025"),
+    minsPlayed = c(900, 800),
+    stringsAsFactors = FALSE
+  )
+  arrow::write_parquet(mock_data, file.path(tmp, "opta_player_stats.parquet"))
+
+  original_dir <- opta_data_dir()
+  opta_data_dir(tmp)
+  on.exit(opta_data_dir(original_dir), add = TRUE)
+
+  result <- load_opta_stats("ENG", season = "2024-2025", source = "local")
+
+  expect_equal(nrow(result), 1)
+  expect_equal(result$player_name, "B")
+})

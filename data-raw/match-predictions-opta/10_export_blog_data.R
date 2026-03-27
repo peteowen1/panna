@@ -82,6 +82,7 @@ panna_ratings <- seasonal_xrapm %>%
   ) %>%
   select(
     panna_rank,
+    any_of("player_id"),
     player_name,
     panna = xrapm,
     offense,
