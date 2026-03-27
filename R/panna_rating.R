@@ -3,11 +3,22 @@
 # The panna rating combines single-season RAPM with SPM as a Bayesian prior.
 # This provides stable, predictive player impact ratings.
 
-#' Calculate panna rating
+#' Calculate panna rating (simple single-season API)
 #'
-#' Core panna rating calculation combining RAPM with SPM prior.
+#' Simplified panna rating calculation for single-season use cases. Combines
+#' RAPM with SPM prior using a fixed lambda via `glmnet::glmnet()`.
+#'
 #' Formula: beta_panna = beta_diff + beta_spm
 #' Where beta_diff is from: min ||y - X*beta||^2 + lambda * ||beta - beta_spm||^2
+#'
+#' @section Production use:
+#' The multi-league pipeline uses [fit_rapm_with_prior()] instead, which:
+#' \itemize{
+#'   \item Selects lambda via cross-validation (`cv.glmnet`)
+#'   \item Supports separate offense/defense priors
+#'   \item Handles league-season covariates
+#' }
+#' Use this function for quick single-season analyses or prototyping.
 #'
 #' @param rapm_data RAPM data from prepare_rapm_data
 #' @param spm_ratings SPM ratings from calculate_spm_ratings
@@ -16,10 +27,7 @@
 #'
 #' @return List with panna ratings and model details
 #'
-#' @seealso [fit_rapm_with_prior()] for the cross-validated production variant
-#'   used in the multi-league pipeline. This function uses a single fixed lambda
-#'   via `glmnet::glmnet()`, while `fit_rapm_with_prior()` selects lambda via
-#'   `glmnet::cv.glmnet()` and supports offense/defense priors separately.
+#' @seealso [fit_rapm_with_prior()] for the cross-validated production variant.
 #'
 #' @examples
 #' \dontrun{
