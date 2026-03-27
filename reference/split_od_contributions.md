@@ -26,8 +26,7 @@ Data frame with estimated O-panna and D-panna
 
 ``` r
 if (FALSE) { # \dontrun{
-features <- create_player_feature_matrix(processed_data)
-od_ratings <- split_od_contributions(panna_ratings, features)
+od_ratings <- split_od_contributions(panna_ratings, player_features)
 head(od_ratings[, c("player_name", "panna", "o_panna", "d_panna")])
 } # }
 ```

@@ -6,7 +6,12 @@ pre-splitting by match_id.
 ## Usage
 
 ``` r
-create_all_splints(processed_data, include_goals = TRUE, verbose = TRUE)
+create_all_splints(
+  processed_data,
+  include_goals = TRUE,
+  verbose = TRUE,
+  chunk_by = c("league", "none")
+)
 ```
 
 ## Arguments
@@ -22,6 +27,12 @@ create_all_splints(processed_data, include_goals = TRUE, verbose = TRUE)
 - verbose:
 
   Print progress messages
+
+- chunk_by:
+
+  Chunking strategy for memory efficiency. `"league"` (default)
+  processes matches grouped by league to reduce peak memory usage.
+  `"none"` processes all matches at once (original behaviour).
 
 ## Value
 

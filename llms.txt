@@ -380,7 +380,7 @@ Combined RAPM + SPM ratings
 - [`fit_panna_model()`](https://peteowen1.github.io/panna/reference/fit_panna_model.md)
   : Fit end-to-end panna model
 - [`calculate_panna_rating()`](https://peteowen1.github.io/panna/reference/calculate_panna_rating.md)
-  : Calculate panna rating
+  : Calculate panna rating (simple single-season API)
 - [`get_panna_ratings()`](https://peteowen1.github.io/panna/reference/get_panna_ratings.md)
   : Get panna ratings from fitted model
 - [`extract_xrapm_ratings()`](https://peteowen1.github.io/panna/reference/extract_xrapm_ratings.md)
@@ -525,6 +525,38 @@ XGBoost Poisson/multinomial match outcome prediction
   : Compute Multi-Class Log Loss
 - [`calibration_table()`](https://peteowen1.github.io/panna/reference/calibration_table.md)
   : Create Calibration Table
+
+## Season Simulation
+
+Monte Carlo season projection
+
+- [`simulate_season()`](https://peteowen1.github.io/panna/reference/simulate_season.md)
+  : Simulate Season
+
+## Weather
+
+Open-Meteo weather data for match conditions
+
+- [`add_weather_features()`](https://peteowen1.github.io/panna/reference/add_weather_features.md)
+  : Add Weather Features to Match Data
+
+## Network Centrality
+
+Opponent quality adjustment via network analysis
+
+- [`calculate_player_centrality()`](https://peteowen1.github.io/panna/reference/calculate_player_centrality.md)
+  : Calculate Player Centrality
+
+## Player Skill Rating (PSR)
+
+Composite player skill metric
+
+- [`calculate_psr()`](https://peteowen1.github.io/panna/reference/calculate_psr.md)
+  : Calculate Player Skill Ratings (PSR)
+- [`player_psr()`](https://peteowen1.github.io/panna/reference/player_psr.md)
+  : Get Player Skill Ratings
+- [`load_opta_psr_weekly()`](https://peteowen1.github.io/panna/reference/load_opta_psr_weekly.md)
+  : Load pre-computed weekly PSR snapshots
 
 ## Feature Engineering
 

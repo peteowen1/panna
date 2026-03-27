@@ -1,0 +1,59 @@
+# Load pre-computed weekly PSR snapshots
+
+Downloads and queries `opta_psr_weekly.parquet` from the `opta-latest`
+GitHub release. Contains PSR/OSR/DSR for every player at weekly (last 2
+years) or monthly (older) snapshot dates.
+
+## Usage
+
+``` r
+load_opta_psr_weekly(
+  date = NULL,
+  columns = NULL,
+  source = c("remote", "local"),
+  repo = "peteowen1/pannadata",
+  tag = "opta-latest"
+)
+```
+
+## Arguments
+
+- date:
+
+  Optional date filter. If provided, returns the snapshot for the
+  nearest weekly date at or before this date. Accepts a `Date` or a
+  character string parseable by
+  [`as.Date()`](https://rdrr.io/r/base/as.Date.html).
+
+- columns:
+
+  Optional character vector of columns to select.
+
+- source:
+
+  Data source: `"remote"` (default) or `"local"`.
+
+- repo:
+
+  GitHub repository (default: "peteowen1/pannadata").
+
+- tag:
+
+  Release tag (default: "opta-latest").
+
+## Value
+
+Data frame with columns: `snapshot_date`, `player_id`, `player_name`,
+`primary_position`, `psr`, `osr`, `dsr`, `weighted_90s`.
+
+## Examples
+
+``` r
+if (FALSE) { # \dontrun{
+# Latest snapshot
+psr <- load_opta_psr_weekly()
+
+# Snapshot nearest to a specific date
+psr <- load_opta_psr_weekly(date = "2026-03-18")
+} # }
+```

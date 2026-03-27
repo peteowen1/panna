@@ -59,3 +59,10 @@ For the O/D design matrix:
 - offense_prior: SPM-predicted offensive contribution
 
 - defense_prior: SPM-predicted defensive contribution
+
+## See also
+
+[`calculate_panna_rating()`](https://peteowen1.github.io/panna/reference/calculate_panna_rating.md)
+for a simpler single-lambda variant that takes a scalar `lambda_prior`
+and combined SPM vector. This function is the production path used in
+the multi-league pipeline.
