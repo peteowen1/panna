@@ -41,7 +41,7 @@ geocode_venue <- function(venue, country = NULL, use_nominatim = TRUE) {
   }
 
   # Fallback to Nominatim
- if (use_nominatim) {
+  if (use_nominatim) {
     result <- tryCatch({
       query <- if (!is.null(country)) paste(venue, country, sep = ", ") else venue
       url <- paste0("https://nominatim.openstreetmap.org/search?q=",
@@ -50,9 +50,9 @@ geocode_venue <- function(venue, country = NULL, use_nominatim = TRUE) {
         httr2::req_headers(`User-Agent` = "panna-r-package/0.2.0") |>
         httr2::req_retry(max_tries = 2) |>
         httr2::req_perform()
+      Sys.sleep(1.1)  # Nominatim rate limit: always sleep after request
       data <- httr2::resp_body_json(resp)
       if (length(data) > 0) {
-        Sys.sleep(1.1)  # Nominatim rate limit
         list(lat = as.numeric(data[[1]]$lat), lon = as.numeric(data[[1]]$lon), source = "nominatim")
       } else {
         list(lat = NA_real_, lon = NA_real_, source = "not_found")
@@ -232,20 +232,19 @@ add_weather_features <- function(matches, venue_col = "venue",
   weather_df$humidity_avg <- weather_df$humidity_mean
   weather_df$is_rain <- as.integer(!is.na(weather_df$precipitation) & weather_df$precipitation > 1)
 
-  # Select and rename for merge
+  # Select weather columns for join
   weather_merge <- weather_df[, c("venue", "date", "temp_avg", "precipitation_total",
                                     "wind_avg", "humidity_avg", "is_rain")]
 
-  # Merge
-  matches$`.weather_date` <- as.Date(matches[[date_col]])
-  weather_merge$`.weather_date` <- as.Date(weather_merge$date)
-  weather_merge$date <- NULL
+  # Join via match() to preserve row order (merge() reorders)
+  match_key <- paste(matches[[venue_col]], as.character(as.Date(matches[[date_col]])))
+  weather_key <- paste(weather_merge$venue, as.character(as.Date(weather_merge$date)))
+  idx <- match(match_key, weather_key)
 
-  result <- merge(matches, weather_merge,
-                  by.x = c(venue_col, ".weather_date"),
-                  by.y = c("venue", ".weather_date"),
-                  all.x = TRUE, sort = FALSE)
-  result$`.weather_date` <- NULL
+  for (col in c("temp_avg", "precipitation_total", "wind_avg", "humidity_avg", "is_rain")) {
+    matches[[col]] <- weather_merge[[col]][idx]
+  }
+  result <- matches
 
   # Impute missing + log transforms
   result <- impute_weather(result)

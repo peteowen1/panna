@@ -73,6 +73,13 @@ simulate_season <- function(predictions, completed,
   )))
   n_teams <- length(all_teams)
 
+  if (n_teams == 0) {
+    cli::cli_warn("No teams found in predictions or completed matches")
+    return(list(table = data.frame(), simulations = matrix(nrow = 0, ncol = 0),
+                goal_diff = matrix(nrow = 0, ncol = 0), positions = matrix(nrow = 0, ncol = 0),
+                n_sims = n_sims, n_teams = 0L, n_remaining = 0L))
+  }
+
   if (verbose) {
     cli::cli_alert_info("Simulating {n_sims} seasons for {n_teams} teams ({nrow(predictions)} remaining fixtures)")
   }

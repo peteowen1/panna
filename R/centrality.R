@@ -147,50 +147,48 @@ build_player_adjacency <- function(pm) {
   # For each match, connect all players who participated
   matches <- split(pm, pm$match_id)
 
-  # Pre-allocate lists for sparse matrix triplets
-  row_idx <- integer()
-  col_idx <- integer()
-  values <- numeric()
+  # Accumulate triplets in lists (avoid O(n^2) vector growth via c())
+  row_chunks <- vector("list", length(matches))
+  col_chunks <- vector("list", length(matches))
+  val_chunks <- vector("list", length(matches))
 
-  for (match_data in matches) {
+  for (m_idx in seq_along(matches)) {
+    match_data <- matches[[m_idx]]
     pids <- unique(match_data$player_id)
     if (length(pids) < 2) next
 
     pidx <- player_idx[pids]
-    # Create all pairs
     pairs <- utils::combn(pidx, 2)
+    np <- ncol(pairs)
 
     if (has_minutes) {
-      # Weight by geometric mean of minutes
       mins <- stats::setNames(
         tapply(match_data$minutes, match_data$player_id, max, na.rm = TRUE),
         NULL
       )
-      for (k in seq_len(ncol(pairs))) {
-        i <- pairs[1, k]
-        j <- pairs[2, k]
-        w <- sqrt(mins[pids[which(pidx == i)[1]]] * mins[pids[which(pidx == j)[1]]])
-        if (is.na(w)) w <- 1
-        row_idx <- c(row_idx, i, j)
-        col_idx <- c(col_idx, j, i)
-        values <- c(values, w, w)
-      }
+      weights <- vapply(seq_len(np), function(k) {
+        w <- sqrt(mins[pids[which(pidx == pairs[1, k])[1]]] *
+                  mins[pids[which(pidx == pairs[2, k])[1]]])
+        if (is.na(w)) 1 else w
+      }, numeric(1))
+      row_chunks[[m_idx]] <- c(pairs[1, ], pairs[2, ])
+      col_chunks[[m_idx]] <- c(pairs[2, ], pairs[1, ])
+      val_chunks[[m_idx]] <- rep(weights, 2)
     } else {
-      for (k in seq_len(ncol(pairs))) {
-        i <- pairs[1, k]
-        j <- pairs[2, k]
-        row_idx <- c(row_idx, i, j)
-        col_idx <- c(col_idx, j, i)
-        values <- c(values, 1, 1)
-      }
+      row_chunks[[m_idx]] <- c(pairs[1, ], pairs[2, ])
+      col_chunks[[m_idx]] <- c(pairs[2, ], pairs[1, ])
+      val_chunks[[m_idx]] <- rep(1, np * 2)
     }
   }
+
+  row_idx <- unlist(row_chunks)
+  col_idx <- unlist(col_chunks)
+  values <- unlist(val_chunks)
 
   # Build sparse matrix, summing duplicates
   adj <- Matrix::sparseMatrix(
     i = row_idx, j = col_idx, x = values,
-    dims = c(n, n), dimnames = list(player_ids, player_ids),
-    giveCsparse = TRUE
+    dims = c(n, n), dimnames = list(player_ids, player_ids)
   )
 
   adj
@@ -225,7 +223,7 @@ find_components <- function(adj) {
     j <- adj_summary$j[k]
     ri <- find_root(i)
     rj <- find_root(j)
-    if (ri != rj) parent[ri] <<- rj
+    if (ri != rj) parent[ri] <- rj
   }
 
   # Resolve all roots
