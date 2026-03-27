@@ -1329,25 +1329,39 @@ save_epv_model <- function(epv_model, path = NULL) {
 #' @return EPV model
 #' @export
 load_epv_model <- function(path = NULL) {
-  if (is.null(path)) {
-    path <- file.path(opta_data_dir(), "models")
+  # Try explicit path first
+  if (!is.null(path)) {
+    model_path <- file.path(path, "epv_model.rds")
+    if (file.exists(model_path)) {
+      cli::cli_alert_success("Loaded EPV model from {model_path}")
+      return(readRDS(model_path))
+    }
   }
 
-  model_path <- file.path(path, "epv_model.rds")
-
-  if (!file.exists(model_path)) {
-    cli::cli_abort(c(
-      "EPV model not found at {model_path}",
-      "i" = "Train model with fit_epv_model()",
-      "i" = "Or download with pb_download_epv_models()"
-    ))
+  # Try pannamodels package (preferred)
+  if (requireNamespace("pannamodels", quietly = TRUE)) {
+    model <- tryCatch(
+      pannamodels::load_panna_model("epv_model", verbose = FALSE),
+      error = function(e) NULL
+    )
+    if (!is.null(model)) {
+      cli::cli_alert_success("Loaded EPV model from pannamodels")
+      return(model)
+    }
   }
 
-  epv_model <- readRDS(model_path)
+  # Fall back to local pannadata path
+  default_path <- file.path(opta_data_dir(), "models", "epv_model.rds")
+  if (file.exists(default_path)) {
+    cli::cli_alert_success("Loaded EPV model from {default_path}")
+    return(readRDS(default_path))
+  }
 
-  cli::cli_alert_success("Loaded EPV model from {model_path}")
-
-  epv_model
+  cli::cli_abort(c(
+    "EPV model not found.",
+    "i" = "Install pannamodels: devtools::install_github('peteowen1/pannamodels')",
+    "i" = "Or download with pb_download_epv_models()"
+  ))
 }
 
 
