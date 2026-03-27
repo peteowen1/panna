@@ -197,6 +197,28 @@ reference:
   - compute_multiclass_logloss
   - calibration_table
 
+- title: Season Simulation
+  desc: Monte Carlo season projection
+  contents:
+  - simulate_season
+
+- title: Weather
+  desc: Open-Meteo weather data for match conditions
+  contents:
+  - add_weather_features
+
+- title: Network Centrality
+  desc: Opponent quality adjustment via network analysis
+  contents:
+  - calculate_player_centrality
+
+- title: Player Skill Rating (PSR)
+  desc: Composite player skill metric
+  contents:
+  - calculate_psr
+  - player_psr
+  - load_opta_psr_weekly
+
 - title: Feature Engineering
   desc: Advanced feature creation
   contents:
