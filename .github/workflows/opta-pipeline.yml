@@ -124,6 +124,8 @@ jobs:
       - name: Run Opta RAPM/SPM pipeline
         env:
           PANNADATA_DIR: ${{ runner.temp }}/pannadata
+          INPUT_FORCE_REBUILD: ${{ inputs.force_rebuild }}
+          INPUT_FORCE_REBUILD_FROM: ${{ inputs.force_rebuild_from }}
         run: |
           Rscript -e "
             pannadata_path <- Sys.getenv('PANNADATA_DIR', '../pannadata/data')
@@ -136,9 +138,9 @@ jobs:
             pannadata_dir(pannadata_path)
             opta_data_dir(opta_path)
 
-            # Config overrides
-            force_rebuild_input <- '${{ inputs.force_rebuild }}'
-            force_rebuild_from_input <- '${{ inputs.force_rebuild_from }}'
+            # Config overrides (from env vars, not interpolated inputs)
+            force_rebuild_input <- Sys.getenv('INPUT_FORCE_REBUILD', 'false')
+            force_rebuild_from_input <- Sys.getenv('INPUT_FORCE_REBUILD_FROM', '')
 
             if (isTRUE(as.logical(force_rebuild_input))) {
               force_rebuild_from <- 1L
@@ -189,5 +191,6 @@ jobs:
               echo "**Caches:** uploaded to \`predictions-cache\` release" >> $GITHUB_STEP_SUMMARY
             fi
           else
-            echo "**Status:** Pipeline may have failed (no ratings cache found)" >> $GITHUB_STEP_SUMMARY
+            echo "**Status:** Pipeline FAILED (no ratings cache found)" >> $GITHUB_STEP_SUMMARY
+            exit 1
           fi
