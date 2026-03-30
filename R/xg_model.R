@@ -20,6 +20,10 @@ NULL
 #' @keywords internal
 .create_shot_features <- function(x, y, bodypart = NULL, situation = NULL,
                                   is_big_chance = 0L) {
+  # Clamp coordinates to valid pitch range
+  x <- pmin(pmax(x, 0), 100)
+  y <- pmin(pmax(y, 0), 100)
+
   features <- data.frame(
     x = x,
     y = y,
@@ -102,10 +106,13 @@ prepare_shots_for_xg <- function(shot_events) {
     cli::cli_abort("Missing required columns: {paste(missing, collapse=', ')}")
   }
 
-  # Validate coordinate range
-  if (any(shot_events$x < 0 | shot_events$x > 100, na.rm = TRUE) ||
-      any(shot_events$y < 0 | shot_events$y > 100, na.rm = TRUE)) {
-    cli::cli_warn("Some x/y coordinates are outside the expected [0, 100] range.")
+  # Validate and clamp coordinate range
+  n_oob <- sum(shot_events$x < 0 | shot_events$x > 100 |
+               shot_events$y < 0 | shot_events$y > 100, na.rm = TRUE)
+  if (n_oob > 0) {
+    cli::cli_warn("Clamping {n_oob} shot{?s} with x/y coordinates outside [0, 100].")
+    shot_events$x <- pmin(pmax(shot_events$x, 0), 100)
+    shot_events$y <- pmin(pmax(shot_events$y, 0), 100)
   }
 
   # Create features using shared helper

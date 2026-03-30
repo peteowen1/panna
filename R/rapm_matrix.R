@@ -30,7 +30,7 @@
     total_minutes = sum(duration, na.rm = TRUE),
     player_name = {
       tbl <- table(player_name)
-      tools::toTitleCase(tolower(names(tbl)[which.max(tbl)]))
+      stringi::stri_trans_totitle(tolower(names(tbl)[which.max(tbl)]))
     }
   ), by = player_id]
 

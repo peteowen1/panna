@@ -75,9 +75,11 @@ for (league in leagues) {
     available_seasons <- intersect(available_seasons, seasons)
   }
 
-  # Filter by min_season (works for both "2024-2025" and "2018 Russia" via string comparison)
+  # Filter by min_season using year prefix (handles both "2024-2025" and "2018 Russia")
   if (!is.null(min_season)) {
-    available_seasons <- available_seasons[available_seasons >= min_season]
+    min_year <- as.integer(substr(min_season, 1, 4))
+    season_years <- as.integer(substr(available_seasons, 1, 4))
+    available_seasons <- available_seasons[season_years >= min_year]
   }
 
   message(sprintf("\n--- %s (%s): %d seasons ---", league, opta_league, length(available_seasons)))
@@ -139,10 +141,11 @@ for (league in leagues) {
         # collisions when a player has multiple shots in the same minute
         spadl$is_penalty <- 0L
         if (!is.null(raw_events) && nrow(raw_events) > 0) {
-          # Match qualifier "9" as a standalone value in the JSON array
+          # Match qualifier 9 as a standalone value in the JSON array.
+          # Handles both string ("9") and bare numeric (9) formats.
           # Anchored regex avoids false positives from "19", "90", "109", etc.
           has_pen_qualifier <- grepl(
-            '(^|[,\\[])\\s*"9"\\s*(,|\\]|$)', raw_events$qualifier_json
+            '(^|[,\\[])\\s*"?9"?\\s*(,|\\]|$)', raw_events$qualifier_json
           )
           pen_mask <- raw_events$type_id %in% c(13L, 14L, 15L, 16L) & has_pen_qualifier
           if (sum(pen_mask) > 0) {
@@ -354,6 +357,12 @@ raw_opta_data <- list(
 
 saveRDS(raw_opta_data, raw_data_path)
 saveRDS(current_config, config_path)
+
+# Validate critical outputs
+validate_step_output(results, step_name = "01_load: results", min_rows = 100,
+                     warn_below = 10000)
+validate_step_output(combined_lineups, step_name = "01_load: lineups", min_rows = 100,
+                     warn_below = 50000)
 
 # 9. Summary ----
 

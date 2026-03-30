@@ -388,7 +388,8 @@ seasonal_results <- list(
   )
 )
 
-saveRDS(seasonal_results, file.path(cache_dir, "06_seasonal_ratings.rds"))
+save_cache_with_meta(seasonal_results, file.path(cache_dir, "06_seasonal_ratings.rds"),
+                     pipeline = "skills")
 cat("Saved to cache-skills/06_seasonal_ratings.rds\n")
 
 # Export CSVs

@@ -43,7 +43,8 @@ if (isTRUE(use_skill_ratings) && file.exists(skill_ratings_path)) {
   message("========================================")
   message("  USING: SKILL-BASED ratings (cache-skills/06_seasonal_ratings.rds)")
   message("========================================")
-  seasonal_data <- readRDS(skill_ratings_path)
+  seasonal_data <- load_cache_with_meta(skill_ratings_path, max_age_hours = 336,
+                                        expected_pipeline = "skills")
 } else if (file.exists(raw_ratings_path)) {
   message("========================================")
   if (isTRUE(use_skill_ratings)) {
@@ -56,7 +57,8 @@ if (isTRUE(use_skill_ratings) && file.exists(skill_ratings_path)) {
     message("  USING: RAW-STAT ratings (use_skill_ratings = FALSE)")
   }
   message("========================================")
-  seasonal_data <- readRDS(raw_ratings_path)
+  seasonal_data <- load_cache_with_meta(raw_ratings_path, max_age_hours = 336,
+                                        expected_pipeline = "opta-rapm")
 } else {
   stop("No seasonal ratings found. Run the Opta RAPM pipeline first:\n  ",
        "source('data-raw/player-ratings-opta/run_pipeline_opta.R')")

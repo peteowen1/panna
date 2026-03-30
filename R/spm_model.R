@@ -236,7 +236,7 @@
 .calculate_derived_features <- function(player_stats, mins_per_90) {
   sc <- function(col_name) .safe_col(player_stats, col_name)
 
-  # Shooting efficiency (default = 0 for SPM feature matrix — NAs crash XGBoost)
+  # Shooting efficiency (default = 0 when denominator is 0 but data exists)
   player_stats$shot_accuracy <- safe_divide(sc("shots_on_target"), sc("shots"), default = 0)
   player_stats$goals_per_shot <- safe_divide(sc("goals"), sc("shots"), default = 0)
   player_stats$xg_per_shot <- safe_divide(sc("xg"), sc("shots"), default = 0)
@@ -363,7 +363,7 @@ aggregate_player_stats <- function(stats_summary,
   )
   player_name_lookup <- dt_names[, {
     tbl <- table(clean_name)
-    list(player_name = tools::toTitleCase(tolower(names(tbl)[which.max(tbl)])))
+    list(player_name = stringi::stri_trans_totitle(tolower(names(tbl)[which.max(tbl)])))
   }, by = player_id]
   data.table::setDF(player_name_lookup)
 
@@ -430,9 +430,21 @@ aggregate_player_stats <- function(stats_summary,
   # Add position dummies
   player_stats <- .add_position_dummies(player_stats)
 
-  # Replace remaining NAs with 0 for numeric columns
-  numeric_cols <- sapply(player_stats, is.numeric)
-  player_stats[numeric_cols] <- lapply(player_stats[numeric_cols], function(x) {
+
+  # Replace NAs with 0 for counting and per-90 columns only.
+  # Rate/derived columns (pass_completion, tackle_success, etc.) keep NAs
+  # so XGBoost can learn the "no data" signal rather than treating missing as 0%.
+  rate_cols <- c(
+    "shot_accuracy", "goals_per_shot", "xg_per_shot",
+    "pass_completion", "pass_short_success", "pass_med_success",
+    "pass_long_success", "long_pass_ratio",
+    "take_on_success", "tackle_success", "challenge_success",
+    "touch_def_3rd_pct", "touch_mid_3rd_pct", "touch_att_3rd_pct",
+    "touch_att_pen_pct", "carry_retention", "prg_actions_per_touch",
+    "aerial_success", "gk_save_pct"
+  )
+  counting_cols <- setdiff(names(player_stats)[sapply(player_stats, is.numeric)], rate_cols)
+  player_stats[counting_cols] <- lapply(player_stats[counting_cols], function(x) {
     ifelse(is.na(x), 0, x)
   })
 

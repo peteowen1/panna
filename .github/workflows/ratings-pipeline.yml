@@ -66,9 +66,10 @@ jobs:
       - name: Run ratings pipeline
         env:
           PANNADATA_DIR: ${{ runner.temp }}/pannadata
+          INPUT_FORCE_REBUILD: ${{ inputs.force_rebuild }}
         run: |
           Rscript -e "
-            force_rebuild <- as.logical('${{ inputs.force_rebuild }}')
+            force_rebuild <- as.logical(Sys.getenv('INPUT_FORCE_REBUILD', 'false'))
             pannadata_path <- Sys.getenv('PANNADATA_DIR', '../pannadata/data')
             SEASONS <- NULL
             run_steps <- list(
@@ -84,6 +85,7 @@ jobs:
             )
             force_rebuild_from <- if (isTRUE(force_rebuild)) 1 else NULL
             source('data-raw/player-ratings-fbref/run_pipeline.R', chdir = FALSE)
+            if (isTRUE(pipeline_failed)) quit(status = 1)
           "
 
       - name: Pipeline summary

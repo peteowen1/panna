@@ -111,6 +111,8 @@ rapm_results <- list(
 )
 
 saveRDS(rapm_results, file.path(cache_dir, "04_rapm.rds"))
+validate_step_output(ratings, step_name = "04_rapm: ratings",
+                     min_rows = 100, warn_below = 5000)
 cat("Saved to cache-opta/04_rapm.rds\n")
 
 message("\nRAPM complete!")

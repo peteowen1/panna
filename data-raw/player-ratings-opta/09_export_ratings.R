@@ -57,8 +57,10 @@ upload_failures <- character(0)
 tf_xrapm <- tempfile(fileext = ".parquet")
 arrow::write_parquet(seasonal_results$seasonal_xrapm, tf_xrapm)
 tryCatch({
-  piggyback::pb_upload(tf_xrapm, repo = repo, tag = tag,
-                       name = "seasonal_xrapm.parquet", overwrite = TRUE)
+  retry_with_backoff(function() {
+    piggyback::pb_upload(tf_xrapm, repo = repo, tag = tag,
+                         name = "seasonal_xrapm.parquet", overwrite = TRUE)
+  }, label = "upload seasonal_xrapm.parquet")
   message(sprintf("Uploaded seasonal_xrapm.parquet (%d rows)",
                   nrow(seasonal_results$seasonal_xrapm)))
 }, error = function(e) {
@@ -72,8 +74,10 @@ if (!is.null(seasonal_results$seasonal_spm)) {
   tf_spm <- tempfile(fileext = ".parquet")
   arrow::write_parquet(seasonal_results$seasonal_spm, tf_spm)
   tryCatch({
-    piggyback::pb_upload(tf_spm, repo = repo, tag = tag,
-                         name = "seasonal_spm.parquet", overwrite = TRUE)
+    retry_with_backoff(function() {
+      piggyback::pb_upload(tf_spm, repo = repo, tag = tag,
+                           name = "seasonal_spm.parquet", overwrite = TRUE)
+    }, label = "upload seasonal_spm.parquet")
     message(sprintf("Uploaded seasonal_spm.parquet (%d rows)",
                     nrow(seasonal_results$seasonal_spm)))
   }, error = function(e) {
