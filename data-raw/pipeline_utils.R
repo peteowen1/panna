@@ -376,7 +376,7 @@ retry_with_backoff <- function(fn, max_retries = 3L, initial_delay_secs = 5,
     last_error <- result
     if (attempt <= max_retries) {
       delay <- initial_delay_secs * (2 ^ (attempt - 1))
-      message(sprintf("[Retry] %s failed (attempt %d/%d): %s. Retrying in %ds...",
+      message(sprintf("[Retry] %s failed (attempt %d/%d): %s. Retrying in %.0fs...",
                       label, attempt, max_retries + 1L, conditionMessage(last_error), delay))
       Sys.sleep(delay)
     }
