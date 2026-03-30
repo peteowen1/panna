@@ -429,7 +429,10 @@ seasonal_results <- list(
   )
 )
 
-saveRDS(seasonal_results, file.path(cache_dir, "07_seasonal_ratings.rds"))
+save_cache_with_meta(seasonal_results, file.path(cache_dir, "07_seasonal_ratings.rds"),
+                     pipeline = "opta-rapm")
+validate_step_output(seasonal_xrapm, step_name = "07_seasonal: xrapm ratings",
+                     min_rows = 100, warn_below = 5000)
 cat("Saved to cache-opta/07_seasonal_ratings.rds\n")
 
 # Export CSVs

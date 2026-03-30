@@ -50,6 +50,12 @@ if (file.exists(splint_data_path)) {
   rm(processed_data); gc(verbose = FALSE)
 }
 
+# Validate splint output
+validate_step_output(splint_data$splints, step_name = "03_splints: splints",
+                     min_rows = 1000, warn_below = 100000)
+validate_step_output(splint_data$players, step_name = "03_splints: players",
+                     min_rows = 1000, warn_below = 200000)
+
 # 4. Summary Statistics ----
 
 cat("\n=== Splint Summary ===\n")

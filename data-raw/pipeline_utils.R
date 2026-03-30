@@ -218,3 +218,169 @@ handle_force_rebuild <- function(force_rebuild_from, cache_dir, max_step = 9) {
   )
   clear_cache_files(force_rebuild_from, cache_dir, opta_cache_files, max_step)
 }
+
+
+#' Validate pipeline step output before proceeding
+#'
+#' Checks that a data frame or RDS cache file has at least the expected
+#' number of rows. Stops the pipeline with an informative error if
+#' the output is empty or unexpectedly small.
+#'
+#' @param data Data frame to validate, or NULL to read from cache_path
+#' @param cache_path Path to RDS cache file (used if data is NULL)
+#' @param step_name Character label for error messages
+#' @param min_rows Minimum expected rows (default 1). Set higher for
+#'   known-large outputs (e.g., min_rows = 1000 for splints).
+#' @param warn_below Optional threshold: warn (but don't stop) if rows
+#'   are below this count. Useful for catching partial data loads.
+validate_step_output <- function(data = NULL, cache_path = NULL,
+                                 step_name = "step", min_rows = 1L,
+                                 warn_below = NULL) {
+  if (is.null(data) && !is.null(cache_path)) {
+    if (!file.exists(cache_path)) {
+      stop(sprintf("[%s] Expected cache file not found: %s", step_name, cache_path))
+    }
+    data <- readRDS(cache_path)
+  }
+
+  if (is.null(data)) {
+    stop(sprintf("[%s] Output is NULL — step produced no data", step_name))
+  }
+
+  if (!is.data.frame(data) && is.list(data)) {
+    # For list outputs (e.g., RAPM results), check the first data frame element
+    df_elements <- Filter(is.data.frame, data)
+    if (length(df_elements) > 0) {
+      data <- df_elements[[1]]
+    } else {
+      message(sprintf("[%s] Output is a list (not a data frame); skipping row validation", step_name))
+      return(invisible(TRUE))
+    }
+  }
+
+  n <- nrow(data)
+  if (is.null(n)) {
+    message(sprintf("[%s] Output has no rows attribute; skipping row validation", step_name))
+    return(invisible(TRUE))
+  }
+
+  if (n < min_rows) {
+    stop(sprintf("[%s] Output has %d rows, expected at least %d — aborting to prevent downstream corruption",
+                 step_name, n, min_rows))
+  }
+
+  if (!is.null(warn_below) && n < warn_below) {
+    warning(sprintf("[%s] Output has only %d rows (expected ~%d+). Data may be incomplete.",
+                    step_name, n, warn_below))
+  }
+
+  message(sprintf("[%s] Validated: %s rows", step_name, format(n, big.mark = ",")))
+  invisible(TRUE)
+}
+
+
+#' Save cache file with metadata sidecar
+#'
+#' Saves an RDS file and writes a .meta.json sidecar with timestamp,
+#' row count, and pipeline name. Consuming pipelines can use
+#' \code{load_cache_with_meta()} to validate freshness.
+#'
+#' @param data Object to save (typically a data frame or list)
+#' @param path Path for the RDS file
+#' @param pipeline Character name of the producing pipeline
+save_cache_with_meta <- function(data, path, pipeline = "unknown") {
+  saveRDS(data, path)
+
+  n_rows <- if (is.data.frame(data)) nrow(data)
+            else if (is.list(data)) {
+              dfs <- Filter(is.data.frame, data)
+              if (length(dfs) > 0) nrow(dfs[[1]]) else NA
+            } else NA
+
+  meta <- list(
+    written_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%S%z"),
+    pipeline = pipeline,
+    n_rows = n_rows,
+    file = basename(path)
+  )
+  meta_path <- paste0(path, ".meta.json")
+  writeLines(jsonlite::toJSON(meta, auto_unbox = TRUE, pretty = TRUE), meta_path)
+  invisible(path)
+}
+
+
+#' Load cache file with freshness validation
+#'
+#' Reads an RDS cache file and optionally checks its metadata sidecar
+#' to ensure the data isn't stale (older than \code{max_age_hours}).
+#'
+#' @param path Path to the RDS file
+#' @param max_age_hours Maximum age in hours. NULL = no age check.
+#'   Default 168 (1 week).
+#' @param expected_pipeline If not NULL, warns if the producing pipeline
+#'   doesn't match (catches accidental file overwrites).
+#' @return The loaded R object
+load_cache_with_meta <- function(path, max_age_hours = 168,
+                                 expected_pipeline = NULL) {
+  if (!file.exists(path)) {
+    stop(sprintf("Cache file not found: %s", path))
+  }
+
+  meta_path <- paste0(path, ".meta.json")
+  if (file.exists(meta_path)) {
+    meta <- jsonlite::fromJSON(meta_path)
+
+    if (!is.null(max_age_hours) && !is.null(meta$written_at)) {
+      written <- as.POSIXct(meta$written_at, format = "%Y-%m-%dT%H:%M:%S%z")
+      age_hours <- as.numeric(difftime(Sys.time(), written, units = "hours"))
+      if (!is.na(age_hours) && age_hours > max_age_hours) {
+        warning(sprintf("Cache %s is %.0f hours old (max: %d). Data may be stale.",
+                        basename(path), age_hours, max_age_hours))
+      }
+    }
+
+    if (!is.null(expected_pipeline) && !is.null(meta$pipeline)) {
+      if (meta$pipeline != expected_pipeline) {
+        warning(sprintf("Cache %s was written by '%s', expected '%s'.",
+                        basename(path), meta$pipeline, expected_pipeline))
+      }
+    }
+
+    message(sprintf("Loading %s (written: %s, rows: %s)",
+                    basename(path),
+                    if (!is.null(meta$written_at)) meta$written_at else "unknown",
+                    if (!is.null(meta$n_rows)) format(meta$n_rows, big.mark = ",") else "unknown"))
+  } else {
+    message(sprintf("Loading %s (no metadata sidecar found)", basename(path)))
+  }
+
+  readRDS(path)
+}
+
+
+#' Retry a function with exponential backoff
+#'
+#' Useful for wrapping transient network operations (GitHub API, piggyback uploads).
+#'
+#' @param fn Function (thunk) to call — should take no arguments
+#' @param max_retries Maximum number of retry attempts (default 3)
+#' @param initial_delay_secs Initial delay before first retry (default 5)
+#' @param label Human-readable label for log messages
+#' @return The result of fn() if successful
+retry_with_backoff <- function(fn, max_retries = 3L, initial_delay_secs = 5,
+                               label = "operation") {
+  last_error <- NULL
+  for (attempt in seq_len(max_retries + 1L)) {
+    result <- tryCatch(fn(), error = function(e) e)
+    if (!inherits(result, "error")) return(result)
+    last_error <- result
+    if (attempt <= max_retries) {
+      delay <- initial_delay_secs * (2 ^ (attempt - 1))
+      message(sprintf("[Retry] %s failed (attempt %d/%d): %s. Retrying in %ds...",
+                      label, attempt, max_retries + 1L, conditionMessage(last_error), delay))
+      Sys.sleep(delay)
+    }
+  }
+  stop(sprintf("%s failed after %d attempts: %s",
+               label, max_retries + 1L, conditionMessage(last_error)), call. = FALSE)
+}
