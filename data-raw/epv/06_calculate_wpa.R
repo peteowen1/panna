@@ -14,6 +14,42 @@
 library(cli)
 devtools::load_all()
 
+# ============================================================================
+# Internal helper (defined before use)
+# ============================================================================
+
+.build_match_results_from_events <- function(events, lineups) {
+  dt_events <- data.table::as.data.table(events)
+  dt_lineups <- data.table::as.data.table(lineups)
+
+  if ("team_position" %in% names(dt_lineups)) {
+    match_teams <- dt_lineups[, .(
+      home_team_id = team_id[tolower(team_position) == "home"][1],
+      away_team_id = team_id[tolower(team_position) == "away"][1]
+    ), by = match_id]
+  } else if ("is_home" %in% names(dt_lineups)) {
+    match_teams <- dt_lineups[, .(
+      home_team_id = team_id[is_home == 1L][1],
+      away_team_id = team_id[is_home == 0L][1]
+    ), by = match_id]
+  } else {
+    cli::cli_abort("Lineups must have team_position or is_home column")
+  }
+
+  goals <- dt_events[type_id == 16L]
+  if (nrow(goals) == 0 && "type_name" %in% names(dt_events)) {
+    goals <- dt_events[grepl("[Gg]oal", type_name) & !grepl("[Oo]wn", type_name)]
+  }
+
+  goal_counts <- goals[, .N, by = .(match_id, team_id)]
+  match_teams[goal_counts, home_goals := i.N, on = .(match_id, home_team_id = team_id)]
+  match_teams[goal_counts, away_goals := i.N, on = .(match_id, away_team_id = team_id)]
+  match_teams[is.na(home_goals), home_goals := 0L]
+  match_teams[is.na(away_goals), away_goals := 0L]
+
+  as.data.frame(match_teams)
+}
+
 # 1. Configuration ----
 
 LEAGUES <- if (exists("leagues")) leagues else c("ENG", "ESP", "GER", "ITA", "FRA")
@@ -95,33 +131,4 @@ if (length(all_wpa) > 0) {
   top_wpa <- head(combined[order(-combined$wpa_total), ], 20)
   print(top_wpa[, c("player_name", "league", "match_id",
                      "wpa_total", "wpa_as_actor", "wpa_as_receiver", "max_wpa")])
-}
-
-
-# ============================================================================
-# Internal helper (shared with 05_train_wp_model.R)
-# ============================================================================
-
-.build_match_results_from_events <- function(events, lineups) {
-  dt_events <- data.table::as.data.table(events)
-  dt_lineups <- data.table::as.data.table(lineups)
-
-  match_teams <- dt_lineups[, .(
-    home_team_id = team_id[is_home == 1L][1],
-    away_team_id = team_id[is_home == 0L][1]
-  ), by = match_id]
-
-  goals <- dt_events[type_id == 16L | (grepl("[Gg]oal", type_name) & !grepl("[Oo]wn", type_name))]
-  if (nrow(goals) == 0) goals <- dt_events[type_name == "Goal"]
-
-  goal_counts <- goals[, .N, by = .(match_id, team_id)]
-
-  match_teams[goal_counts, home_goals := i.N,
-              on = .(match_id, home_team_id = team_id)]
-  match_teams[goal_counts, away_goals := i.N,
-              on = .(match_id, away_team_id = team_id)]
-  match_teams[is.na(home_goals), home_goals := 0L]
-  match_teams[is.na(away_goals), away_goals := 0L]
-
-  as.data.frame(match_teams)
 }
