@@ -263,6 +263,9 @@ add_wp_vars <- function(wp_features, wp_model) {
   # Adjust sign for acting team: home team gets positive, away gets negative
   dt[, wpa := data.table::fifelse(is_home == 1L, wpa_home, -wpa_home)]
 
+  # Center WPA per match so it sums to zero (removes WP model calibration bias)
+  dt[, wpa := wpa - mean(wpa, na.rm = TRUE), by = match_id]
+
   # Clean up
   dt[, c("wp_next", "wpa_home") := NULL]
 
