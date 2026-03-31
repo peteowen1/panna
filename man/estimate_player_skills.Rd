@@ -9,7 +9,9 @@ estimate_player_skills(
   decay_params = NULL,
   target_date = NULL,
   min_weighted_90s = 5,
-  stat_cols = NULL
+  stat_cols = NULL,
+  rating_names = FALSE,
+  compute_ci = FALSE
 )
 }
 \arguments{
@@ -30,6 +32,14 @@ Retained for backward compatibility.}
 
 \item{stat_cols}{Character vector of stat columns to estimate. If NULL,
 auto-detects all _p90 columns plus efficiency columns.}
+
+\item{rating_names}{Logical. If \code{TRUE}, suffix output stat columns
+with \code{_rating} (e.g., \code{goals_p90_rating}) for alignment with
+torpverse's \code{_stat_rating} convention. Default \code{FALSE}.}
+
+\item{compute_ci}{Logical. If \code{TRUE}, compute 80\\% credible intervals
+and add \code{_rating_lower} / \code{_rating_upper} columns. Implies
+\code{rating_names = TRUE}. Default \code{FALSE}.}
 }
 \value{
 A data.table with one row per player containing estimated skill

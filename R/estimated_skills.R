@@ -319,10 +319,19 @@ compute_position_multipliers <- function(match_stats, stat_cols = NULL) {
 #'   values for each stat, plus player_id, player_name, primary_position, and
 #'   weighted_90s (effective sample size in decay-weighted 90-minute units).
 #'
+#' @param rating_names Logical. If \code{TRUE}, suffix output stat columns
+#'   with \code{_rating} (e.g., \code{goals_p90_rating}) for alignment with
+#'   torpverse's \code{_stat_rating} convention. Default \code{FALSE}.
+#' @param compute_ci Logical. If \code{TRUE}, compute 80\% credible intervals
+#'   and add \code{_rating_lower} / \code{_rating_upper} columns. Implies
+#'   \code{rating_names = TRUE}. Default \code{FALSE}.
+#'
 #' @export
 estimate_player_skills <- function(match_stats, decay_params = NULL,
                                     target_date = NULL, min_weighted_90s = 5,
-                                    stat_cols = NULL) {
+                                    stat_cols = NULL, rating_names = FALSE,
+                                    compute_ci = FALSE) {
+  if (compute_ci) rating_names <- TRUE
   if (is.null(decay_params)) decay_params <- get_default_decay_params()
 
   dt <- data.table::as.data.table(match_stats)
@@ -486,7 +495,17 @@ estimate_player_skills <- function(match_stats, decay_params = NULL,
       }]
       agg[, (sc) := (mu0 * prior_strength + w_num) /
                      (prior_strength + w_den)]
-      skill_results[[sc]] <- agg[, .(player_id, skill = get(sc))]
+      if (compute_ci) {
+        # Beta posterior: alpha = mu0*ps + w_num, beta = (1-mu0)*ps + w_den - w_num
+        agg[, ci_alpha := mu0 * prior_strength + w_num]
+        agg[, ci_beta := (1 - mu0) * prior_strength + w_den - w_num]
+        agg[, ci_beta := pmax(ci_beta, 1e-4)]
+        skill_results[[sc]] <- agg[, .(player_id, skill = get(sc),
+                                        ci_lower = stats::qbeta(0.1, ci_alpha, ci_beta),
+                                        ci_upper = stats::qbeta(0.9, ci_alpha, ci_beta))]
+      } else {
+        skill_results[[sc]] <- agg[, .(player_id, skill = get(sc))]
+      }
     } else {
       data.table::set(dt, j = ".wnum", value = w_vec * vals * dt$.mins_90)
       data.table::set(dt, j = ".wden", value = w_vec * dt$.mins_90)
@@ -508,7 +527,16 @@ estimate_player_skills <- function(match_stats, decay_params = NULL,
         pmax(m * prior_strength, 1e-4)
       }]
       agg[, (sc) := (alpha0 + w_num) / (prior_strength + w_den)]
-      skill_results[[sc]] <- agg[, .(player_id, skill = get(sc))]
+      if (compute_ci) {
+        # Gamma posterior: shape = alpha0 + w_num, rate = prior_strength + w_den
+        agg[, ci_shape := alpha0 + w_num]
+        agg[, ci_rate_param := prior_strength + w_den]
+        skill_results[[sc]] <- agg[, .(player_id, skill = get(sc),
+                                        ci_lower = stats::qgamma(0.1, ci_shape, ci_rate_param),
+                                        ci_upper = stats::qgamma(0.9, ci_shape, ci_rate_param))]
+      } else {
+        skill_results[[sc]] <- agg[, .(player_id, skill = get(sc))]
+      }
     }
   }
 
@@ -529,8 +557,21 @@ estimate_player_skills <- function(match_stats, decay_params = NULL,
   for (sc in stat_cols) {
     sr <- skill_results[[sc]]
     if (is.null(sr)) next
-    data.table::setnames(sr, "skill", sc)
-    result[sr, (sc) := get(paste0("i.", sc)), on = "player_id"]
+
+    if (compute_ci) {
+      out_name <- if (rating_names) paste0(sc, "_rating") else sc
+      lower_name <- paste0(sc, "_rating_lower")
+      upper_name <- paste0(sc, "_rating_upper")
+      data.table::setnames(sr, c("skill", "ci_lower", "ci_upper"),
+                            c(out_name, lower_name, upper_name))
+      result[sr, (out_name) := get(paste0("i.", out_name)), on = "player_id"]
+      result[sr, (lower_name) := get(paste0("i.", lower_name)), on = "player_id"]
+      result[sr, (upper_name) := get(paste0("i.", upper_name)), on = "player_id"]
+    } else {
+      out_name <- if (rating_names) paste0(sc, "_rating") else sc
+      data.table::setnames(sr, "skill", out_name)
+      result[sr, (out_name) := get(paste0("i.", out_name)), on = "player_id"]
+    }
   }
 
   progress_msg(sprintf("Estimated skills for %d players (%d stats)",

@@ -115,4 +115,76 @@ validate_step_output(ratings, step_name = "04_rapm: ratings",
                      min_rows = 100, warn_below = 5000)
 cat("Saved to cache-opta/04_rapm.rds\n")
 
+# 8. Multi-Target RAPM (optional) ----
+# Fit RAPM on additional value metric targets if available on splints
+
+use_multi_target <- if (exists("use_multi_target")) use_multi_target else TRUE
+
+if (use_multi_target) {
+  # Reload splints (freed earlier)
+  splint_data <- readRDS(file.path(cache_dir, "03_splints.rds"))
+
+  value_targets <- c("epv", "wpa", "psv")
+  available_targets <- character(0)
+  for (tgt in value_targets) {
+    home_col <- paste0(tgt, "_home")
+    if (home_col %in% names(splint_data$splints)) {
+      available_targets <- c(available_targets, tgt)
+    }
+  }
+
+  if (length(available_targets) > 0) {
+    cat("\n=== Multi-Target RAPM ===\n")
+    cat("Available targets:", paste(available_targets, collapse = ", "), "\n")
+
+    multi_target_results <- list()
+
+    for (tgt in available_targets) {
+      cat(sprintf("\n--- Fitting RAPM for target: %s ---\n", tgt))
+
+      tryCatch({
+        rapm_data_tgt <- prepare_rapm_data(
+          splint_data,
+          min_minutes = 200,
+          target_type = tgt,
+          include_covariates = TRUE
+        )
+
+        model_tgt <- fit_rapm(
+          rapm_data_tgt,
+          alpha = 0,
+          nfolds = 10,
+          use_weights = TRUE,
+          penalize_covariates = FALSE
+        )
+
+        ratings_tgt <- extract_rapm_ratings(model_tgt)
+        data.table::setnames(ratings_tgt, "rapm", paste0("rapm_", tgt),
+                              skip_absent = TRUE)
+
+        multi_target_results[[tgt]] <- list(
+          rapm_data = rapm_data_tgt,
+          model = model_tgt,
+          ratings = ratings_tgt
+        )
+
+        cat(sprintf("  %s RAPM: %d players rated\n", toupper(tgt), nrow(ratings_tgt)))
+
+      }, error = function(e) {
+        cat(sprintf("  Skipping %s RAPM: %s\n", tgt, e$message))
+      })
+    }
+
+    if (length(multi_target_results) > 0) {
+      saveRDS(multi_target_results, file.path(cache_dir, "04_rapm_multi.rds"))
+      cat("\nSaved multi-target RAPM to cache-opta/04_rapm_multi.rds\n")
+    }
+
+    rm(splint_data); gc(verbose = FALSE)
+  } else {
+    cat("\nNo value metric columns found on splints — skipping multi-target RAPM.\n")
+    cat("Run EPV/WPA pipeline and step 03 with value metrics first.\n")
+  }
+}
+
 message("\nRAPM complete!")

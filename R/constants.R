@@ -361,3 +361,24 @@ CHAIN_PROGRESSIVE_THRESHOLD <- 25
 #' @format Character value
 #' @keywords internal
 SPADL_CACHE_DIR <- "data-raw/cache/epv/spadl"
+
+
+# =============================================================================
+# Panna Value Blend Constants
+# =============================================================================
+
+#' EPR weight in combined Panna Value rating
+#'
+#' Fraction of the combined rating attributed to EPR (play-by-play EPV-based).
+#' The remaining \code{1 - PANNA_EPR_WEIGHT} goes to PSR (stat-based).
+#' Analogous to torpverse's \code{TORP_EPR_WEIGHT = 0.5}.
+#'
+#' @format Numeric value: 0.5
+#' @export
+PANNA_EPR_WEIGHT <- 0.5
+
+#' PSR weight in combined Panna Value rating
+#'
+#' @format Numeric value: 0.5
+#' @export
+PANNA_PSR_WEIGHT <- 0.5

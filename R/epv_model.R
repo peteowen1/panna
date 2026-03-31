@@ -1293,6 +1293,198 @@ calculate_action_type_epv <- function(spadl_with_epv) {
 
 
 # =============================================================================
+# PER-GAME PLAYER EPV
+# =============================================================================
+
+#' Aggregate Player EPV Per Game
+#'
+#' Like \code{\link{aggregate_player_epv}} but groups by \code{(player_id, match_id)}
+#' to produce one row per player per match. Includes offensive/defensive
+#' decomposition, per-90 rates, and optional position-centering.
+#'
+#' @param spadl_with_epv SPADL actions with EPV and credit columns from
+#'   \code{\link{assign_epv_credit}}.
+#' @param lineups Optional lineup data with \code{player_id}, \code{match_id},
+#'   \code{minutes_played}, and optionally \code{position}.
+#' @param position_center Logical; subtract position-group mean per season
+#'   to produce \code{epv_adj} columns. Requires lineups with \code{position}.
+#'   Default \code{FALSE}.
+#'
+#' @return A data.table with one row per player per match:
+#'   \describe{
+#'     \item{player_id, player_name, team_id, match_id}{Identifiers}
+#'     \item{n_actions}{Number of SPADL actions by this player in this match}
+#'     \item{epv_total}{Total EPV = actor + receiver + duel_blame}
+#'     \item{epv_offensive}{Offensive EPV = passing + shooting + dribbling}
+#'     \item{epv_defensive}{Defensive EPV = defending + duel_blame}
+#'     \item{epv_as_actor, epv_as_receiver, epv_duel_blame}{Credit source breakdown}
+#'     \item{epv_passing, epv_shooting, epv_dribbling, epv_defending}{Action type breakdown}
+#'     \item{minutes_played}{Minutes played (if lineups provided)}
+#'     \item{epv_p90, epv_offensive_p90, ...}{Per-90 rates (if lineups provided)}
+#'     \item{epv_adj}{Position-centered EPV (if \code{position_center = TRUE})}
+#'   }
+#'
+#' @export
+aggregate_player_game_epv <- function(spadl_with_epv, lineups = NULL,
+                                       position_center = FALSE) {
+  dt <- data.table::as.data.table(spadl_with_epv)
+
+  # --- Actor credit per player per match ---
+  actor_credit <- dt[, .(
+    epv_as_actor = sum(player_credit, na.rm = TRUE),
+    n_actions = .N
+  ), by = .(player_id, player_name, team_id, match_id)]
+
+  # --- Receiver credit per player per match ---
+  if ("receiver_player_id" %in% names(dt) && "receiver_credit" %in% names(dt)) {
+    receiver_dt <- dt[!is.na(receiver_player_id) & !is.na(receiver_credit)]
+    if (nrow(receiver_dt) > 0) {
+      receiver_credit <- receiver_dt[, .(
+        epv_as_receiver = sum(receiver_credit, na.rm = TRUE)
+      ), by = .(receiver_player_id, receiver_player_name, match_id)]
+      data.table::setnames(receiver_credit,
+                            c("receiver_player_id", "receiver_player_name"),
+                            c("player_id", "player_name"))
+    } else {
+      receiver_credit <- data.table::data.table(
+        player_id = character(0), player_name = character(0),
+        match_id = character(0), epv_as_receiver = numeric(0))
+    }
+  } else {
+    receiver_credit <- data.table::data.table(
+      player_id = character(0), player_name = character(0),
+      match_id = character(0), epv_as_receiver = numeric(0))
+  }
+
+  # Join actor + receiver
+  player_epv <- merge(actor_credit, receiver_credit,
+                       by = c("player_id", "player_name", "match_id"),
+                       all = TRUE)
+  player_epv[is.na(epv_as_actor), epv_as_actor := 0]
+  player_epv[is.na(epv_as_receiver), epv_as_receiver := 0]
+  player_epv[is.na(n_actions), n_actions := 0L]
+  # Fill team_id for receiver-only rows
+  if (any(is.na(player_epv$team_id))) {
+    pid_team <- unique(dt[, .(player_id, team_id)])
+    player_epv[is.na(team_id), team_id := pid_team[.SD, team_id,
+                                                     on = "player_id"]]
+  }
+
+  # --- Opponent credit (duel blame) per player per match ---
+  if ("opponent_player_id" %in% names(dt) && "opponent_credit" %in% names(dt)) {
+    opponent_dt <- dt[!is.na(opponent_player_id) & !is.na(opponent_credit)]
+    if (nrow(opponent_dt) > 0) {
+      opponent_blame <- opponent_dt[, .(
+        epv_duel_blame = sum(opponent_credit, na.rm = TRUE)
+      ), by = .(opponent_player_id, opponent_player_name, match_id)]
+      data.table::setnames(opponent_blame,
+                            c("opponent_player_id", "opponent_player_name"),
+                            c("player_id", "player_name"))
+      player_epv <- merge(player_epv, opponent_blame,
+                           by = c("player_id", "player_name", "match_id"),
+                           all = TRUE)
+      player_epv[is.na(epv_as_actor), epv_as_actor := 0]
+      player_epv[is.na(epv_as_receiver), epv_as_receiver := 0]
+      player_epv[is.na(epv_duel_blame), epv_duel_blame := 0]
+      player_epv[is.na(n_actions), n_actions := 0L]
+    } else {
+      player_epv[, epv_duel_blame := 0]
+    }
+  } else {
+    player_epv[, epv_duel_blame := 0]
+  }
+
+  # --- Total EPV ---
+  player_epv[, epv_total := epv_as_actor + epv_as_receiver + epv_duel_blame]
+
+  # --- Action-type decomposition per match ---
+  credit_col <- if ("player_credit" %in% names(dt)) "player_credit"
+                else if ("epv_delta" %in% names(dt)) "epv_delta"
+                else "epv"
+
+  action_types <- list(
+    epv_passing   = "pass",
+    epv_shooting  = "shot",
+    epv_dribbling = "take_on",
+    epv_defending = c("tackle", "interception", "clearance", "ball_recovery")
+  )
+  for (col_name in names(action_types)) {
+    at <- action_types[[col_name]]
+    at_dt <- dt[action_type %in% at, .(
+      val = sum(get(credit_col), na.rm = TRUE)
+    ), by = .(player_id, match_id)]
+    data.table::setnames(at_dt, "val", col_name)
+    player_epv <- merge(player_epv, at_dt, by = c("player_id", "match_id"),
+                         all.x = TRUE)
+    player_epv[is.na(get(col_name)), (col_name) := 0]
+  }
+
+  # Offensive = passing + shooting + dribbling; Defensive = defending + duel_blame
+  player_epv[, `:=`(
+    epv_offensive = epv_passing + epv_shooting + epv_dribbling,
+    epv_defensive = epv_defending + epv_duel_blame
+  )]
+
+  # --- Join lineups for minutes and per-90 ---
+  if (!is.null(lineups) && "minutes_played" %in% names(lineups)) {
+    dt_lineups <- data.table::as.data.table(lineups)
+    key_cols <- intersect(c("player_id", "match_id"), names(dt_lineups))
+    if (length(key_cols) == 2) {
+      mins <- dt_lineups[, .(minutes_played = sum(minutes_played, na.rm = TRUE)),
+                          by = .(player_id, match_id)]
+      # Carry position if available
+      if ("position" %in% names(dt_lineups)) {
+        pos <- dt_lineups[, .(position = position[1]), by = .(player_id, match_id)]
+        mins <- merge(mins, pos, by = c("player_id", "match_id"), all.x = TRUE)
+      }
+      player_epv <- merge(player_epv, mins, by = c("player_id", "match_id"),
+                           all.x = TRUE)
+
+      # Per-90 rates
+      epv_cols <- grep("^epv_", names(player_epv), value = TRUE)
+      epv_cols <- setdiff(epv_cols, grep("_p90$|_adj$", epv_cols, value = TRUE))
+      mins_safe <- pmax(player_epv$minutes_played, 1, na.rm = TRUE)
+      for (col in epv_cols) {
+        p90_col <- paste0(col, "_p90")
+        data.table::set(player_epv, j = p90_col,
+                         value = player_epv[[col]] / (mins_safe / 90))
+      }
+    }
+  }
+
+  # --- Position centering ---
+  if (isTRUE(position_center) && "position" %in% names(player_epv)) {
+    # Map to broad groups
+    player_epv[, pos_group := data.table::fcase(
+      grepl("GK|Goalkeeper", position, ignore.case = TRUE), "GK",
+      grepl("DEF|Back|CB|LB|RB|WB", position, ignore.case = TRUE), "DEF",
+      grepl("MID|CM|DM|AM|Wing", position, ignore.case = TRUE), "MID",
+      grepl("FWD|Forward|Striker|CF|ST", position, ignore.case = TRUE), "FWD",
+      default = "MID"
+    )]
+    adj_cols <- c("epv_total", "epv_offensive", "epv_defensive")
+    for (col in adj_cols) {
+      adj_name <- sub("^epv_", "epv_", paste0(col, "_adj"))
+      if (col == "epv_total") adj_name <- "epv_adj"
+      else adj_name <- paste0(col, "_adj")
+      player_epv[, (adj_name) := get(col) - mean(get(col), na.rm = TRUE),
+                  by = pos_group]
+    }
+    player_epv[, pos_group := NULL]
+  }
+
+  # Fill remaining NAs in numeric columns
+  num_cols <- names(player_epv)[vapply(player_epv, is.numeric, logical(1))]
+  for (col in num_cols) {
+    data.table::set(player_epv, which(is.na(player_epv[[col]])), col, 0)
+  }
+
+  data.table::setorder(player_epv, match_id, -epv_total)
+  player_epv[]
+}
+
+
+# =============================================================================
 # MODEL PERSISTENCE
 # =============================================================================
 

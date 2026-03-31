@@ -615,6 +615,234 @@ calculate_psr_components <- function(skills, coef_df, osr_coef_df, dsr_coef_df,
 
 
 # ============================================================================
+# Per-Game Player Stat Value (PSV/OSV/DSV)
+# ============================================================================
+
+#' Calculate Per-Game Player Stat Value
+#'
+#' Applies pre-trained glmnet coefficients to raw per-game box-score stats,
+#' producing a single-game "stat contribution" value. This is the per-game
+#' analogue of \code{\link{calculate_psr}}, which operates on smoothed skill
+#' ratings.
+#'
+#' Stats are minutes-adjusted (divided by \code{minutes_played / 90}) to get
+#' per-90 rates, then optionally standardized using training SDs from the
+#' coefficient file. Efficiency stats (ratios) are excluded from PSV by default.
+#'
+#' @param player_match_stats Data.frame/data.table with one row per player per
+#'   match. Must contain raw stat columns matching \code{coef_df$stat_name},
+#'   plus optionally \code{minutes_played} (or \code{total_minutes}).
+#' @param coef_df Coefficient data.frame with columns \code{stat_name},
+#'   \code{beta}, and optionally \code{sd}.
+#' @param min_adjust Logical. Divide raw counts by \code{minutes_played / 90}
+#'   to get per-90 rates before applying coefficients. Default \code{TRUE}.
+#' @param center Logical. Center PSV within each matchday/round so
+#'   PSV = contribution above average that round. Default \code{TRUE}.
+#' @param exclude_efficiency Logical. Exclude efficiency/ratio stats from PSV
+#'   calculation. Default \code{TRUE}.
+#'
+#' @return A data.table with identifier columns plus \code{psv_raw} and
+#'   \code{psv}.
+#'
+#' @export
+calculate_psv <- function(player_match_stats, coef_df, min_adjust = TRUE,
+                           center = TRUE, exclude_efficiency = TRUE) {
+  dt <- data.table::as.data.table(player_match_stats)
+
+  if (!all(c("stat_name", "beta") %in% names(coef_df))) {
+    cli::cli_abort("{.arg coef_df} must have columns {.val stat_name} and {.val beta}")
+  }
+
+  coef_df <- coef_df[coef_df$beta != 0, , drop = FALSE]
+
+  if (nrow(coef_df) == 0) {
+    dt[, c("psv_raw", "psv") := 0]
+    id_cols <- intersect(
+      c("player_id", "player_name", "season", "round", "match_id",
+        "team_name", "match_date", "minutes_played", "total_minutes"),
+      names(dt)
+    )
+    return(dt[, c(id_cols, "psv_raw", "psv"), with = FALSE])
+  }
+
+  # Exclude efficiency stats from PSV (they're ratios, not additive counts)
+  if (exclude_efficiency) {
+    eff_stats <- .get_psr_efficiency_cols()
+    keep <- !coef_df$stat_name %in% eff_stats
+    coef_df <- coef_df[keep, , drop = FALSE]
+  }
+
+  stat_cols <- coef_df$stat_name
+  available <- stat_cols %in% names(dt)
+
+  if (sum(available) == 0) {
+    cli::cli_abort("No matching stat columns found in data for PSV calculation")
+  }
+  if (any(!available)) {
+    missing <- stat_cols[!available]
+    cli::cli_warn("Stat columns not found (skipped): {paste(missing, collapse = ', ')}")
+  }
+
+  coef_df <- coef_df[available, , drop = FALSE]
+  stat_cols <- stat_cols[available]
+  betas <- coef_df$beta
+
+  # Extract raw stat values
+  mat <- as.matrix(dt[, stat_cols, with = FALSE])
+  mat[is.na(mat)] <- 0
+
+  # Minutes-adjust: divide counts by minutes/90 to get per-90 rates
+  if (min_adjust) {
+    mins_col <- if ("minutes_played" %in% names(dt)) "minutes_played"
+                else if ("total_minutes" %in% names(dt)) "total_minutes"
+                else NULL
+    if (!is.null(mins_col)) {
+      mins <- as.numeric(dt[[mins_col]])
+      mins[is.na(mins) | mins <= 0] <- 90  # default to 90 for missing
+      mat <- mat / (mins / 90)
+    }
+  }
+
+  # Standardize using SDs from coefficient file (same scale as PSR training)
+  if ("sd" %in% names(coef_df)) {
+    sds <- coef_df$sd
+    sds[sds == 0 | is.na(sds)] <- 1
+    mat <- sweep(mat, 2, sds, "/")
+  }
+
+  dt[, psv_raw := as.numeric(mat %*% betas)]
+
+  if (center) {
+    group_cols <- intersect(c("season", "round"), names(dt))
+    if (length(group_cols) > 0) {
+      dt[, psv := psv_raw - mean(psv_raw, na.rm = TRUE), by = group_cols]
+    } else {
+      dt[, psv := psv_raw - mean(psv_raw, na.rm = TRUE)]
+    }
+  } else {
+    dt[, psv := psv_raw]
+  }
+
+  id_cols <- intersect(
+    c("player_id", "player_name", "season", "round", "match_id",
+      "team_name", "match_date", "minutes_played", "total_minutes",
+      "position", "primary_position"),
+    names(dt)
+  )
+
+  dt[, c(id_cols, "psv_raw", "psv"), with = FALSE]
+}
+
+
+#' Calculate PSV with Offensive/Defensive Decomposition
+#'
+#' Applies offensive and defensive coefficient models to per-game stats,
+#' producing \code{psv}, \code{osv}, and \code{dsv} columns where
+#' \code{osv + dsv = psv} exactly (via additive reconciliation).
+#'
+#' @inheritParams calculate_psv
+#' @param osr_coef_df Coefficient data.frame for the offensive model
+#'   (predicting goals scored / xG for).
+#' @param dsr_coef_df Coefficient data.frame for the defensive model
+#'   (predicting goals conceded / xG against).
+#'
+#' @return A data.table with identifier columns plus \code{psv_raw},
+#'   \code{psv}, \code{osv}, \code{dsv}.
+#'
+#' @export
+calculate_psv_components <- function(player_match_stats, coef_df, osr_coef_df,
+                                      dsr_coef_df, min_adjust = TRUE,
+                                      center = TRUE) {
+  psv_result <- calculate_psv(player_match_stats, coef_df,
+                               min_adjust = min_adjust, center = center)
+  osv_result <- calculate_psv(player_match_stats, osr_coef_df,
+                               min_adjust = min_adjust, center = center)
+  dsv_result <- calculate_psv(player_match_stats, dsr_coef_df,
+                               min_adjust = min_adjust, center = center)
+
+  # Additive shift so osv + dsv = psv
+  raw_osv <- osv_result$psv
+  raw_dsv <- dsv_result$psv
+  delta <- (psv_result$psv - raw_osv - raw_dsv) / 2
+
+  psv_result[, osv := raw_osv + delta]
+  psv_result[, dsv := raw_dsv + delta]
+
+  psv_result
+}
+
+
+#' Compute PSV from bundled coefficient files
+#'
+#' Convenience wrapper that loads pre-trained coefficients and calls
+#' \code{\link{calculate_psv_components}}.
+#'
+#' @param player_match_stats Per-game player stats (one row per player per
+#'   match).
+#' @param min_adjust Logical. Minutes-adjust raw counts. Default \code{TRUE}.
+#' @param center Logical. Center within each round. Default \code{TRUE}.
+#' @param target One of \code{"xg"} (default) or \code{"goals"}.
+#'
+#' @return A data.table with \code{psv}, \code{osv}, \code{dsv} columns.
+#'
+#' @export
+compute_player_psv <- function(player_match_stats, min_adjust = TRUE,
+                                center = TRUE, target = c("xg", "goals")) {
+  target <- match.arg(target)
+  margin_coef <- load_psr_coefficients("margin", target = target)
+
+  prefix <- if (target == "goals") "gd_" else ""
+  osr_path <- system.file("extdata", paste0(prefix, "osr_coefficients.csv"),
+                           package = "panna")
+  dsr_path <- system.file("extdata", paste0(prefix, "dsr_coefficients.csv"),
+                           package = "panna")
+
+  if (osr_path != "" && dsr_path != "") {
+    osr_coef <- utils::read.csv(osr_path, stringsAsFactors = FALSE)
+    dsr_coef <- utils::read.csv(dsr_path, stringsAsFactors = FALSE)
+    calculate_psv_components(player_match_stats, margin_coef, osr_coef, dsr_coef,
+                              min_adjust = min_adjust, center = center)
+  } else {
+    cli::cli_inform("OSR/DSR coefficient files not found -- computing PSV only")
+    calculate_psv(player_match_stats, margin_coef,
+                   min_adjust = min_adjust, center = center)
+  }
+}
+
+
+# ============================================================================
+# PSV helper: efficiency stat exclusion list
+# ============================================================================
+
+#' Get efficiency stat columns to exclude from PSV
+#'
+#' Returns the subset of \code{.get_psr_skill_cols()} that are efficiency/ratio
+#' stats. These are excluded from PSV because they are ratios (not additive
+#' counts) and are redundant when their numerator and denominator are already
+#' included as rate stats.
+#'
+#' @return Character vector
+#' @keywords internal
+.get_psr_efficiency_cols <- function() {
+  c(
+    "shot_accuracy", "goals_per_shot", "pass_accuracy",
+    "tackle_success", "duel_success", "aerial_success",
+    "big_chance_conversion", "final_third_pass_acc",
+    "long_ball_accuracy", "cross_accuracy",
+    "fwd_zone_pass_accuracy", "open_play_pass_accuracy",
+    "crosses_open_play_accuracy", "bad_touch_rate",
+    "keeper_sweeper_accuracy", "errors_total_p90",
+    "headed_goal_rate", "flick_on_accuracy",
+    "back_zone_pass_accuracy", "chipped_pass_accuracy",
+    "ibox_goal_rate", "obox_goal_rate",
+    "penalty_conversion", "long_pass_own_to_opp_accuracy",
+    "fifty_fifty_success", "poss_lost_ctrl_per_touch",
+    "save_percentage"
+  )
+}
+
+
+# ============================================================================
 # Coefficient loading
 # ============================================================================
 

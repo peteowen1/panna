@@ -5,6 +5,109 @@
 
 
 # ============================================================================
+# Value metric helpers
+# ============================================================================
+
+#' Add value metric columns to splints
+#'
+#' Joins per-game player value metrics (EPV, WPA, PSV) to splint data,
+#' aggregating to team-level totals within each splint. Values are prorated
+#' by splint duration relative to total match minutes.
+#'
+#' This allows RAPM to be trained on EPV, WPA, or PSV as response variables
+#' alongside the default xG target.
+#'
+#' @param splint_data List with \code{splints} and \code{players} data.frames
+#'   (from \code{create_all_splints()}).
+#' @param player_game_epv Per-game EPV from \code{aggregate_player_game_epv()}.
+#'   If NULL, EPV columns are not added.
+#' @param player_game_wpa Per-game WPA from \code{aggregate_player_game_wpa()}.
+#'   If NULL, WPA columns are not added.
+#' @param player_game_psv Per-game PSV from \code{calculate_psv()}.
+#'   If NULL, PSV columns are not added.
+#'
+#' @return The \code{splint_data} list with additional columns on the
+#'   \code{splints} data.frame: \code{epv_home/epv_away},
+#'   \code{wpa_home/wpa_away}, \code{psv_home/psv_away}.
+#'
+#' @export
+add_value_metrics_to_splints <- function(splint_data, player_game_epv = NULL,
+                                          player_game_wpa = NULL,
+                                          player_game_psv = NULL) {
+  splints <- data.table::as.data.table(splint_data$splints)
+  players <- data.table::as.data.table(splint_data$players)
+
+  # Total match duration per match (for prorating)
+  match_dur <- splints[, .(match_duration = sum(duration, na.rm = TRUE)),
+                        by = match_id]
+  splints[match_dur, match_duration := i.match_duration, on = "match_id"]
+  splints[, prorate := data.table::fifelse(
+    match_duration > 0, duration / match_duration, 0)]
+
+  # Helper: join player values to splint players, sum per team, prorate
+  .add_metric <- function(splints, players, pgd, value_col, suffix) {
+    if (is.null(pgd)) return(splints)
+    pgd <- data.table::as.data.table(pgd)
+
+    if (!value_col %in% names(pgd)) {
+      cli::cli_warn("Column {.val {value_col}} not found in player game data")
+      return(splints)
+    }
+
+    # Join player game values to splint players
+    player_vals <- merge(
+      players[, .(splint_id, match_id, player_id, team_id, is_home)],
+      pgd[, c("player_id", "match_id", value_col), with = FALSE],
+      by = c("player_id", "match_id"),
+      all.x = TRUE
+    )
+    player_vals[is.na(get(value_col)), (value_col) := 0]
+
+    # Sum per splint per team (is_home determines home/away)
+    if ("is_home" %in% names(player_vals)) {
+      team_totals <- player_vals[, .(
+        val_home = sum(get(value_col)[is_home == 1L], na.rm = TRUE),
+        val_away = sum(get(value_col)[is_home == 0L], na.rm = TRUE)
+      ), by = splint_id]
+    } else {
+      # Fallback: use home_team_id from splints
+      splint_home <- splints[, .(splint_id, home_team_id)]
+      player_vals[splint_home, home_team_id := i.home_team_id, on = "splint_id"]
+      team_totals <- player_vals[, .(
+        val_home = sum(get(value_col)[team_id == home_team_id], na.rm = TRUE),
+        val_away = sum(get(value_col)[team_id != home_team_id], na.rm = TRUE)
+      ), by = splint_id]
+    }
+
+    home_col <- paste0(suffix, "_home")
+    away_col <- paste0(suffix, "_away")
+    data.table::setnames(team_totals, c("val_home", "val_away"),
+                          c(home_col, away_col))
+
+    # Prorate by splint duration fraction
+    splints[team_totals, (home_col) := get(paste0("i.", home_col)) * prorate,
+            on = "splint_id"]
+    splints[team_totals, (away_col) := get(paste0("i.", away_col)) * prorate,
+            on = "splint_id"]
+    splints[is.na(get(home_col)), (home_col) := 0]
+    splints[is.na(get(away_col)), (away_col) := 0]
+
+    splints
+  }
+
+  splints <- .add_metric(splints, players, player_game_epv, "epv_total", "epv")
+  splints <- .add_metric(splints, players, player_game_wpa, "wpa_total", "wpa")
+  splints <- .add_metric(splints, players, player_game_psv, "psv", "psv")
+
+  # Clean up
+  splints[, c("match_duration", "prorate") := NULL]
+
+  splint_data$splints <- as.data.frame(splints)
+  splint_data
+}
+
+
+# ============================================================================
 # Internal helpers for create_rapm_design_matrix
 # ============================================================================
 
@@ -70,7 +173,7 @@
 #' covariates and target variable.
 #'
 #' @param valid_splints Data frame of splints with duration > 0
-#' @param target_type "xg" or "goals"
+#' @param target_type One of "xg", "goals", "epv", "wpa", "psv", or "custom"
 #'
 #' @return List with row_data data.frame and target_per90_name string
 #' @keywords internal
@@ -99,14 +202,32 @@
 
   duration <- valid_splints$duration
 
-  if (target_type == "xg") {
-    target_home <- ifelse(is.na(valid_splints$npxg_home), 0, valid_splints$npxg_home)
-    target_away <- ifelse(is.na(valid_splints$npxg_away), 0, valid_splints$npxg_away)
-    target_per90_name <- "xgf90"
+  target_map <- list(
+    xg   = list(home = "npxg_home",   away = "npxg_away",   name = "xgf90"),
+    goals = list(home = "goals_home", away = "goals_away",  name = "gf90"),
+    epv  = list(home = "epv_home",    away = "epv_away",    name = "epvf90"),
+    wpa  = list(home = "wpa_home",    away = "wpa_away",    name = "wpaf90"),
+    psv  = list(home = "psv_home",    away = "psv_away",    name = "psvf90")
+  )
+
+  if (target_type %in% names(target_map)) {
+    tm <- target_map[[target_type]]
+    home_col <- tm$home
+    away_col <- tm$away
+    target_per90_name <- tm$name
+
+    if (home_col %in% names(valid_splints)) {
+      target_home <- ifelse(is.na(valid_splints[[home_col]]), 0, valid_splints[[home_col]])
+    } else {
+      cli::cli_abort("Splints missing column {.val {home_col}} for target_type={.val {target_type}}")
+    }
+    if (away_col %in% names(valid_splints)) {
+      target_away <- ifelse(is.na(valid_splints[[away_col]]), 0, valid_splints[[away_col]])
+    } else {
+      cli::cli_abort("Splints missing column {.val {away_col}} for target_type={.val {target_type}}")
+    }
   } else {
-    target_home <- ifelse(is.na(valid_splints$goals_home), 0, valid_splints$goals_home)
-    target_away <- ifelse(is.na(valid_splints$goals_away), 0, valid_splints$goals_away)
-    target_per90_name <- "gf90"
+    cli::cli_abort("Unknown target_type: {.val {target_type}}")
   }
 
   n_rows <- n_splints * 2
@@ -298,13 +419,17 @@
 #'
 #' @param splint_data Combined splint data from create_all_splints
 #' @param min_minutes Minimum total minutes for player inclusion
-#' @param target_type Type of target variable: "xg" for non-penalty xG (default),
-#'   "goals" for actual goals scored
+#' @param target_type Type of target variable: \code{"xg"} for non-penalty xG
+#'   (default), \code{"goals"} for actual goals, \code{"epv"} for Expected
+#'   Possession Value, \code{"wpa"} for Win Probability Added, \code{"psv"}
+#'   for Player Stat Value. Requires corresponding home/away columns on
+#'   splints (e.g., \code{epv_home}, \code{epv_away}).
 #'
 #' @return List with design matrix components
 #' @export
 create_rapm_design_matrix <- function(splint_data, min_minutes = 90,
-                                       target_type = c("xg", "goals")) {
+                                       target_type = c("xg", "goals", "epv",
+                                                        "wpa", "psv")) {
   target_type <- match.arg(target_type)
 
   # Validate splint_data structure
@@ -402,7 +527,8 @@ create_rapm_design_matrix <- function(splint_data, min_minutes = 90,
 #' @param splint_data Combined splint data from create_all_splints
 #' @param min_minutes Minimum minutes for player inclusion
 #' @param target_type Type of target variable: "xg" for non-penalty xG (default),
-#'   "goals" for actual goals scored. Use "goals" when shots data unavailable.
+#'   "goals" for actual goals scored, "epv" for EPV, "wpa" for WPA, "psv" for
+#'   PSV. Use "goals" when shots data unavailable.
 #' @param include_covariates Whether to include game state covariates
 #' @param include_league Whether to include league dummies (for multi-league)
 #' @param include_season Whether to include season dummies
@@ -410,7 +536,8 @@ create_rapm_design_matrix <- function(splint_data, min_minutes = 90,
 #' @return List with all model inputs
 #' @keywords internal
 prepare_rapm_data <- function(splint_data, min_minutes = 90,
-                               target_type = c("xg", "goals"),
+                               target_type = c("xg", "goals", "epv",
+                                                "wpa", "psv"),
                                include_covariates = TRUE,
                                include_league = NULL,
                                include_season = NULL) {

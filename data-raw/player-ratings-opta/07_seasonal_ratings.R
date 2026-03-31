@@ -464,4 +464,21 @@ write.csv(
   row.names = FALSE
 )
 
+# Multi-target seasonal ratings ----
+# If multi-target xRAPM results exist, save seasonal ratings for each target
+
+multi_xrapm_path <- file.path(cache_dir, "06_xrapm_multi.rds")
+if (file.exists(multi_xrapm_path)) {
+  cat("\n=== Multi-Target Seasonal Ratings ===\n")
+  multi_xrapm <- readRDS(multi_xrapm_path)
+
+  for (tgt in names(multi_xrapm)) {
+    ratings_tgt <- multi_xrapm[[tgt]]$ratings
+    if (!is.null(ratings_tgt) && nrow(ratings_tgt) > 0) {
+      saveRDS(ratings_tgt, file.path(cache_dir, sprintf("07_seasonal_%s.rds", tgt)))
+      cat(sprintf("  Saved %s seasonal ratings: %d players\n", toupper(tgt), nrow(ratings_tgt)))
+    }
+  }
+}
+
 cat("\n=== COMPLETE ===\n")

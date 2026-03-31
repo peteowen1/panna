@@ -113,7 +113,12 @@ aggregate_lineup_ratings <- function(lineups, ratings, season_end_year,
 
     safe_mean <- function(x) if (length(x) == 0 || all(is.na(x))) 0 else mean(x, na.rm = TRUE)
 
-    list(
+    # Value metric columns (included if present in ratings)
+    has_epr <- "epr" %in% names(.SD)
+    has_wpa <- "wpa_rating" %in% names(.SD)
+    has_psv <- "psv_rating" %in% names(.SD)
+
+    base <- list(
       sum_panna = sum(panna), sum_offense = sum(offense),
       sum_defense = sum(defense), sum_spm = sum(spm),
       avg_panna = mean(panna), max_panna = max(panna),
@@ -131,6 +136,25 @@ aggregate_lineup_ratings <- function(lineups, ratings, season_end_year,
       avg_fwd_defense = safe_mean(defense[fwd_idx]),
       n_rated_players = n_rated
     )
+
+    # EPR features (from EPV-based ratings)
+    if (has_epr) {
+      base$sum_epr <- sum(epr)
+      base$sum_epr_off <- sum(epr_offensive)
+      base$sum_epr_def <- sum(epr_defensive)
+    }
+
+    # WPA rating features
+    if (has_wpa) {
+      base$sum_wpa <- sum(wpa_rating)
+    }
+
+    # PSV rating features
+    if (has_psv) {
+      base$sum_psv <- sum(psv_rating)
+    }
+
+    base
   }, by = .(match_id, team_name, team_position)]
 
   # Pivot to wide (home_ / away_ prefix)
@@ -148,6 +172,19 @@ aggregate_lineup_ratings <- function(lineups, ratings, season_end_year,
   result[, offense_diff := home_sum_offense - away_sum_offense]
   result[, defense_diff := home_sum_defense - away_sum_defense]
   result[, spm_diff := home_sum_spm - away_sum_spm]
+
+  # Value metric differentials (if available)
+  if ("home_sum_epr" %in% names(result)) {
+    result[, epr_diff := home_sum_epr - away_sum_epr]
+    result[, epr_off_diff := home_sum_epr_off - away_sum_epr_off]
+    result[, epr_def_diff := home_sum_epr_def - away_sum_epr_def]
+  }
+  if ("home_sum_wpa" %in% names(result)) {
+    result[, wpa_diff := home_sum_wpa - away_sum_wpa]
+  }
+  if ("home_sum_psv" %in% names(result)) {
+    result[, psv_diff := home_sum_psv - away_sum_psv]
+  }
 
   # Clean up team_position columns
   cols_to_drop <- grep("team_position|team_name", names(result), value = TRUE)
