@@ -55,8 +55,12 @@ add_value_metrics_to_splints <- function(splint_data, player_game_epv = NULL,
     }
 
     # Join player game values to splint players
+    # Splint players may use "team" or "team_id" for team column
+    team_col <- if ("team_id" %in% names(players)) "team_id" else "team"
+    keep_cols <- intersect(c("splint_id", "match_id", "player_id", team_col, "is_home"),
+                            names(players))
     player_vals <- merge(
-      players[, .(splint_id, match_id, player_id, team_id, is_home)],
+      players[, ..keep_cols],
       pgd[, c("player_id", "match_id", value_col), with = FALSE],
       by = c("player_id", "match_id"),
       all.x = TRUE
