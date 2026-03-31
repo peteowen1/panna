@@ -39,9 +39,14 @@ test_that("build_player_game_ratings merges EPV, WPA, PSV", {
   expect_true("psv" %in% names(result))
   expect_true("panna_value" %in% names(result))
 
-  # panna_value = 0.5 * epv_total + 0.5 * psv
+  # panna_value is a weighted combination of EPV and PSV using package constants
   alice <- result[result$player_id == "p1", ]
-  expect_equal(alice$panna_value, 0.5 * 0.5 + 0.5 * 0.6)
+  expect_equal(alice$panna_value,
+               PANNA_EPR_WEIGHT * 0.5 + PANNA_PSR_WEIGHT * 0.6)
+
+  # Higher EPV+PSV player should have higher panna_value
+  bob <- result[result$player_id == "p2", ]
+  expect_gt(alice$panna_value, bob$panna_value)
 })
 
 test_that("build_player_game_ratings works without WPA/PSV", {
@@ -61,8 +66,8 @@ test_that("build_player_game_ratings works without WPA/PSV", {
 
   expect_equal(nrow(result), 1)
   expect_true("panna_value" %in% names(result))
-  # No PSV → panna_value = 0.5 * 0.5 + 0.5 * 0 = 0.25
-  expect_equal(result$panna_value, 0.5 * 0.5)
+  # No PSV → panna_value uses EPV only (PSV defaults to 0)
+  expect_equal(result$panna_value, PANNA_EPR_WEIGHT * 0.5)
 })
 
 test_that("build_player_game_ratings computes panna_value_p90", {
@@ -81,11 +86,11 @@ test_that("build_player_game_ratings computes panna_value_p90", {
   result <- build_player_game_ratings(epv)
 
   expect_true("panna_value_p90" %in% names(result))
-  # panna_value = 0.25, mins = 45, p90 = 0.25 / (45/90) = 0.5
-  expect_equal(result$panna_value_p90, 0.5)
+  # p90 should be double the raw value for a 45-min appearance
+  expect_equal(result$panna_value_p90, result$panna_value / (45 / 90))
 })
 
-test_that("build_player_game_ratings custom weights", {
+test_that("build_player_game_ratings custom weights override defaults", {
   epv <- data.frame(
     player_id = "p1", player_name = "Alice", team_id = "t1",
     match_id = "m1", minutes_played = 90,
@@ -98,10 +103,16 @@ test_that("build_player_game_ratings custom weights", {
     stringsAsFactors = FALSE
   )
 
-  # 70% EPV, 30% PSV
+  # Custom weights should be respected
   result <- build_player_game_ratings(epv, player_game_psv = psv,
                                        epv_weight = 0.7, psv_weight = 0.3)
   expect_equal(result$panna_value, 0.7 * 1.0 + 0.3 * 2.0)
+})
+
+test_that("blend weight constants sum to 1", {
+  expect_equal(PANNA_EPR_WEIGHT + PANNA_PSR_WEIGHT, 1.0)
+  expect_true(PANNA_EPR_WEIGHT >= 0 && PANNA_EPR_WEIGHT <= 1)
+  expect_true(PANNA_PSR_WEIGHT >= 0 && PANNA_PSR_WEIGHT <= 1)
 })
 
 test_that("aggregate_season_ratings sums and averages correctly", {
