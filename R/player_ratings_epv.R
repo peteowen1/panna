@@ -11,11 +11,11 @@
 # Constants (defaults — can be overridden or optimized)
 # ============================================================================
 
-EPR_DECAY_OFFENSIVE <- 400   # ~555 day half-life
-EPR_DECAY_DEFENSIVE <- 400   # ~555 day half-life
-EPR_PRIOR_GAMES     <- 3.0   # Prior strength in equivalent full games
-EPR_PRIOR_RATE_OFF  <- -0.3  # Prior rate for offensive EPV (slightly below 0)
-EPR_PRIOR_RATE_DEF  <- 0.0   # Prior rate for defensive EPV (neutral)
+EPR_DECAY_OFFENSIVE <- 400   # ~277 day half-life (optimized)
+EPR_DECAY_DEFENSIVE <- 400   # ~277 day half-life (optimized)
+EPR_PRIOR_GAMES     <- 10.2  # Prior strength in equivalent full games (optimized)
+EPR_PRIOR_RATE_OFF  <- 0.20  # Prior rate for offensive EPV (optimized, ~global mean)
+EPR_PRIOR_RATE_DEF  <- 0.04  # Prior rate for defensive EPV (optimized, ~global mean)
 EPR_LOADING         <- 1.0   # Loading factor (default 1:1)
 
 
