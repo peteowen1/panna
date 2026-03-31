@@ -96,12 +96,12 @@ print(
 cat("\n=== xRAPM vs Base RAPM ===\n")
 
 base_ratings <- rapm_results$ratings %>%
-  select(player_name, base_rapm = rapm, base_off = offense, base_def = defense)
+  select(player_id, base_rapm = rapm, base_off = offense, base_def = defense)
 
 comparison <- xrapm_ratings %>%
-  select(player_name, xrapm, xrapm_off = offense, xrapm_def = defense,
+  select(player_id, player_name, xrapm, xrapm_off = offense, xrapm_def = defense,
          off_deviation, def_deviation, off_prior, def_prior, total_minutes) %>%
-  inner_join(base_ratings, by = "player_name") %>%
+  inner_join(base_ratings, by = "player_id") %>%
   mutate(
     rating_diff = xrapm - base_rapm,
     off_diff = xrapm_off - base_off,
