@@ -547,6 +547,15 @@ Opponent quality adjustment via network analysis
 - [`calculate_player_centrality()`](https://peteowen1.github.io/panna/reference/calculate_player_centrality.md)
   : Calculate Player Centrality
 
+## Player Attribution
+
+Zero-ablation player impact measurement
+
+- [`calculate_player_attribution()`](https://peteowen1.github.io/panna/reference/calculate_player_attribution.md)
+  : Calculate Player Attribution for a Match
+- [`batch_player_attribution()`](https://peteowen1.github.io/panna/reference/batch_player_attribution.md)
+  : Batch Player Attribution Across Matches
+
 ## Player Skill Rating (PSR)
 
 Composite player skill metric

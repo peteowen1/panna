@@ -70,6 +70,7 @@
 <url><loc>https://peteowen1.github.io/panna/reference/assign_players_to_splints.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/assign_players_to_splints_fast.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/backtest_skill_predictions.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/batch_player_attribution.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/build_all_parquet.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/build_consolidated_parquet.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/build_consolidated_understat_parquet.html</loc></url>
@@ -96,6 +97,7 @@
 <url><loc>https://peteowen1.github.io/panna/reference/calculate_panna_rating.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/calculate_per_100_sequences.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/calculate_physical_discontinuity.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/calculate_player_attribution.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/calculate_player_centrality.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/calculate_psr.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/calculate_psr_components.html</loc></url>
