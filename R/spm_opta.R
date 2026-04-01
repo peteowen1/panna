@@ -145,6 +145,9 @@
     "last_man_tackle", "six_yard_block", "clearance_off_line",
     "keeper_sweeper", "attempts_conceded_ibox", "attempts_conceded_obox",
     "gk_smother",
+    "saves_ibox", "saves_obox",
+    "high_claim", "good_high_claim", "punches",
+    "keeper_throws",
     "unsuccessful_touch", "overrun",
     "flick_on",
     # Round 2
@@ -282,6 +285,9 @@
   # Goalkeeper metrics
   shots_faced <- sc("saves") + sc("goals_conceded")
   player_stats$save_percentage <- sdiv(sc("saves"), shots_faced)
+  player_stats$keeper_throws_accuracy <- sdiv(
+    sc("keeper_throws_acc"), sc("keeper_throws")
+  )
 
   # Position dummies
   if ("primary_position" %in% names(player_stats)) {

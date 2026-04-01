@@ -619,14 +619,256 @@ if (!is.null(latest_skills) && nrow(latest_skills) > 0) {
   }
 }
 
-# 18. Save Full Model Objects ----
+# 18. Train GK Sub-Model ----
+#
+# Separate model for goalkeepers using:
+#   - GK-specific features (.get_gk_skill_cols())
+#   - Goal differential as target (not xG diff) — GK value is in the
+#     goals-saved-above-xG residual, which xG deliberately strips out
+#
+# Same architecture: team-aggregated GK skills → glmnet → coefficients.
+# Since outfield players have ~0 for GK stats (saves, claims, etc.),
+# the team sum is effectively just the GK's values.
+
+cat("\n")
+cat(paste(rep("=", 50), collapse = ""), "\n")
+cat("=== Training GK Sub-Model (Goal Diff Target) ===\n")
+cat(paste(rep("=", 50), collapse = ""), "\n\n")
+
+gk_models <- NULL
+gk_psr_cols <- .get_gk_skill_cols()
+gk_skill_keep_cols <- character(0)
+
+# If we still have pm_with_skills in memory, try to use GK cols from it.
+# Otherwise re-derive from the pre-match skills cache.
+# The pm_with_skills was freed after section 8, so we need to rebuild
+# from the same weekly skill chunks.
+
+# Check if GK features exist in the already-joined data
+# If pm_with_skills was freed, we need to reload match_stats and re-join
+# pm_with_skills only has outfield skill_keep_cols — GK features were never
+# joined. Re-load match stats and re-join GK-specific skills from prematch_skills.
+{
+  cat("Loading match stats for GK feature extraction...\n")
+  ms_dt_gk <- data.table::as.data.table(readRDS(ms_path))
+  ms_dt_gk[, match_date := as.Date(match_date)]
+  if (!"season_end_year" %in% names(ms_dt_gk)) {
+    ms_dt_gk[, season_end_year := data.table::fifelse(
+      data.table::month(match_date) >= 7L,
+      data.table::year(match_date) + 1L,
+      data.table::year(match_date)
+    )]
+  }
+
+  # Reload prematch_skills if freed
+  if (!exists("prematch_skills") || length(prematch_skills) == 0) {
+    cat("Re-computing pre-match skills for GK features...\n")
+    prematch_skills <- .estimate_prematch_skills_batch(
+      match_stats = ms_dt_gk,
+      ref_dates = weekly_dates,
+      decay_params = decay_params,
+      min_weighted_90s = MIN_W90_FOR_SKILLS,
+      verbose = TRUE
+    )
+  }
+
+  # Determine available GK skill columns from first non-empty result
+  gk_first_sk <- NULL
+  for (d in names(prematch_skills)) {
+    if (!is.null(prematch_skills[[d]]) && nrow(prematch_skills[[d]]) > 0) {
+      gk_first_sk <- data.table::as.data.table(prematch_skills[[d]])
+      break
+    }
+  }
+
+  if (!is.null(gk_first_sk)) {
+    gk_skill_keep_cols <- intersect(gk_psr_cols, names(gk_first_sk))
+    cat(sprintf("GK features available: %d / %d\n",
+                length(gk_skill_keep_cols), length(gk_psr_cols)))
+
+    if (length(gk_skill_keep_cols) >= 3) {
+      # Join GK skills to player-matches (same chunked approach as section 7)
+      gk_pm <- ms_dt_gk[, .(match_id, player_id, team_name, is_home,
+                              total_minutes, match_date)]
+      gk_pm[, skill_date := match_date_to_bin(match_date)]
+
+      gk_skill_col_set <- c("player_id", gk_skill_keep_cols)
+      gk_dates_done <- 0L
+
+      for (d_chr in names(prematch_skills)) {
+        sk_d <- prematch_skills[[d_chr]]
+        if (is.null(sk_d) || nrow(sk_d) == 0) next
+        sk_dt <- data.table::as.data.table(sk_d)
+        avail <- intersect(gk_skill_col_set, names(sk_dt))
+        if (length(avail) < 2) next
+        sk_dt <- sk_dt[, avail, with = FALSE]
+
+        d_date <- as.Date(d_chr)
+        rows_for_date <- which(gk_pm$skill_date == d_date)
+        if (length(rows_for_date) == 0) next
+
+        matched <- sk_dt[gk_pm[rows_for_date], on = "player_id", nomatch = NA]
+        for (col in gk_skill_keep_cols) {
+          if (col %in% names(matched)) {
+            data.table::set(gk_pm, i = rows_for_date, j = col,
+                            value = matched[[col]])
+          }
+        }
+        gk_dates_done <- gk_dates_done + 1L
+      }
+
+      cat(sprintf("GK skills joined for %d weekly dates\n", gk_dates_done))
+
+      # Impute missing with 0
+      for (col in gk_skill_keep_cols) {
+        if (col %in% names(gk_pm)) {
+          data.table::set(gk_pm, which(is.na(gk_pm[[col]])), col, 0)
+        }
+      }
+
+      # Weight by minutes and aggregate per team
+      gk_weight <- gk_pm$total_minutes / 90
+      gk_weight[is.na(gk_weight) | gk_weight <= 0] <- 0
+      for (col in gk_skill_keep_cols) {
+        if (col %in% names(gk_pm)) {
+          data.table::set(gk_pm, j = col, value = gk_pm[[col]] * gk_weight)
+        }
+      }
+
+      gk_team_skills <- gk_pm[, c(
+        lapply(.SD, sum, na.rm = TRUE),
+        list(n_players = .N)
+      ), by = .(match_id, team_name, is_home), .SDcols = gk_skill_keep_cols]
+
+      gk_team_skills <- gk_team_skills[n_players >= MIN_PLAYERS_PER_TEAM]
+
+      # Home/away feature matrix
+      gk_home <- data.table::copy(
+        gk_team_skills[is_home == 1, c("match_id", gk_skill_keep_cols), with = FALSE]
+      )
+      data.table::setnames(gk_home, gk_skill_keep_cols, paste0("home_", gk_skill_keep_cols))
+
+      gk_away <- data.table::copy(
+        gk_team_skills[is_home == 0, c("match_id", gk_skill_keep_cols), with = FALSE]
+      )
+      data.table::setnames(gk_away, gk_skill_keep_cols, paste0("away_", gk_skill_keep_cols))
+
+      gk_train_data <- gk_home[gk_away, on = "match_id", nomatch = NULL]
+      gk_train_data <- match_outcomes[gk_train_data, on = "match_id", nomatch = NULL]
+
+      cat(sprintf("GK training data: %s matches x %d features\n",
+                  format(nrow(gk_train_data), big.mark = ","),
+                  2 * length(gk_skill_keep_cols)))
+
+      # Train/test split (same as outfield)
+      gk_is_train <- gk_train_data$season_end_year < test_season_year
+      gk_is_test <- gk_train_data$season_end_year >= test_season_year
+
+      gk_feature_cols <- c(paste0("home_", gk_skill_keep_cols),
+                            paste0("away_", gk_skill_keep_cols))
+      gk_X_train <- as.matrix(gk_train_data[gk_is_train, ..gk_feature_cols])
+      gk_X_test <- if (sum(gk_is_test) > 0) {
+        as.matrix(gk_train_data[gk_is_test, ..gk_feature_cols])
+      } else NULL
+
+      gk_X_train[is.na(gk_X_train) | is.infinite(gk_X_train)] <- 0
+      if (!is.null(gk_X_test)) {
+        gk_X_test[is.na(gk_X_test) | is.infinite(gk_X_test)] <- 0
+      }
+
+      # Weights (same decay)
+      gk_anchor_date <- max(gk_train_data$match_date[gk_is_train])
+      gk_train_dates <- as.Date(gk_train_data$match_date[gk_is_train])
+      gk_days_ago <- as.numeric(gk_anchor_date - gk_train_dates)
+      gk_weights <- exp(-gk_days_ago / MATCH_WEIGHT_DECAY_DAYS)
+      gk_weights <- gk_weights / mean(gk_weights)
+
+      # Standardize
+      gk_train_sds <- apply(gk_X_train, 2, sd, na.rm = TRUE)
+      gk_train_sds[gk_train_sds == 0 | is.na(gk_train_sds)] <- 1
+      gk_X_train_std <- sweep(gk_X_train, 2, gk_train_sds, "/")
+      gk_X_train_std[is.na(gk_X_train_std) | is.infinite(gk_X_train_std)] <- 0
+      if (!is.null(gk_X_test)) {
+        gk_X_test_std <- sweep(gk_X_test, 2, gk_train_sds, "/")
+        gk_X_test_std[is.na(gk_X_test_std) | is.infinite(gk_X_test_std)] <- 0
+      }
+
+      # Season folds for CV
+      gk_fold_ids <- as.integer(factor(gk_train_data$season_end_year[gk_is_train]))
+
+      cat(sprintf("GK train: %d matches, test: %d matches\n",
+                  sum(gk_is_train), sum(gk_is_test)))
+
+      # Train GK models on GOAL DIFF (not xG diff)
+      # GK value is in the goals-saved-above-xG residual
+      gk_train_and_save <- function() {
+        # Temporarily override globals used by train_and_save
+        old_skill_keep_cols <- skill_keep_cols
+        old_train_sds <- train_sds
+        old_X_test_std <- if (exists("X_test_std")) X_test_std else NULL
+        old_is_test <- is_test
+
+        skill_keep_cols <<- gk_skill_keep_cols
+        train_sds <<- gk_train_sds
+        is_test <<- gk_is_test
+        if (!is.null(gk_X_test)) {
+          X_test_std <<- gk_X_test_std
+        }
+        on.exit({
+          skill_keep_cols <<- old_skill_keep_cols
+          train_sds <<- old_train_sds
+          is_test <<- old_is_test
+          if (!is.null(old_X_test_std)) X_test_std <<- old_X_test_std
+        })
+
+        train_and_save(
+          y_margin = gk_train_data$goal_diff[gk_is_train],
+          y_off = gk_train_data$home_goals[gk_is_train],
+          y_def = gk_train_data$away_goals[gk_is_train],
+          y_margin_test = if (sum(gk_is_test) > 0) gk_train_data$goal_diff[gk_is_test] else numeric(0),
+          y_off_test = if (sum(gk_is_test) > 0) gk_train_data$home_goals[gk_is_test] else numeric(0),
+          y_def_test = if (sum(gk_is_test) > 0) gk_train_data$away_goals[gk_is_test] else numeric(0),
+          prefix = "gk_",
+          label = "GK (Goal Diff)",
+          X = gk_X_train_std, w = gk_weights, fids = gk_fold_ids
+        )
+      }
+
+      gk_models <- tryCatch(
+        gk_train_and_save(),
+        error = function(e) {
+          cat(sprintf("GK model training failed: %s\n", e$message))
+          NULL
+        }
+      )
+
+      rm(gk_pm, gk_team_skills, gk_home, gk_away, gk_train_data,
+         gk_X_train, gk_X_train_std)
+      gc(verbose = FALSE)
+    } else {
+      cat("Too few GK features available. Skipping GK sub-model.\n")
+    }
+  }
+  rm(ms_dt_gk); gc(verbose = FALSE)
+}
+
+if (is.null(gk_models)) {
+  cat("\nGK sub-model not trained. GK PSR will be zero until retrained.\n")
+} else {
+  cat("\nGK sub-model trained successfully.\n")
+}
+
+
+# 19. Save Full Model Objects ----
 
 cat("\n=== Saving Model Objects ===\n\n")
 
 psr_model_data <- list(
   xg_models = xg_models,
   gd_models = gd_models,
+  gk_models = gk_models,
   skill_cols = skill_keep_cols,
+  gk_skill_cols = gk_skill_keep_cols,
   train_sds = train_sds,
   feature_cols = feature_cols,
   test_season = test_season_year,

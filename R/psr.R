@@ -20,7 +20,9 @@
 #' @return Character vector of column names
 #' @keywords internal
 .get_psr_skill_cols <- function() {
-  # Per-90 rate columns
+
+  # Per-90 rate columns — outfield player actions only
+  # GK/team-level stats (saves, attempts_conceded, etc.) moved to .get_gk_skill_cols()
   rate_cols <- c(
     "goals_p90", "shots_p90", "shots_on_target_p90", "shots_ibox_p90",
     "shots_obox_p90", "big_chance_scored_p90", "big_chance_missed_p90",
@@ -39,7 +41,6 @@
     "corners_taken_p90", "corners_won_p90",
     "pen_area_entries_p90", "final_third_entries_p90",
     "fouls_p90", "was_fouled_p90",
-    "saves_p90", "goals_conceded_p90",
     "fwd_zone_pass_p90", "open_play_pass_p90",
     "error_lead_to_shot_p90", "error_lead_to_goal_p90",
     "att_fastbreak_p90", "shot_fastbreak_p90",
@@ -48,8 +49,6 @@
     "penalty_won_p90", "penalty_conceded_p90",
     "offtarget_att_assist_p90",
     "last_man_tackle_p90", "six_yard_block_p90", "clearance_off_line_p90",
-    "keeper_sweeper_p90", "attempts_conceded_ibox_p90",
-    "attempts_conceded_obox_p90", "gk_smother_p90",
     "unsuccessful_touch_p90", "overrun_p90", "flick_on_p90"
   )
 
@@ -61,13 +60,12 @@
     "long_ball_accuracy", "cross_accuracy",
     "fwd_zone_pass_accuracy", "open_play_pass_accuracy",
     "crosses_open_play_accuracy", "bad_touch_rate",
-    "keeper_sweeper_accuracy", "errors_total_p90",
+    "errors_total_p90",
     "headed_goal_rate", "flick_on_accuracy",
     "back_zone_pass_accuracy", "chipped_pass_accuracy",
     "ibox_goal_rate", "obox_goal_rate",
     "penalty_conversion", "long_pass_own_to_opp_accuracy",
-    "fifty_fifty_success", "poss_lost_ctrl_per_touch",
-    "save_percentage"
+    "fifty_fifty_success", "poss_lost_ctrl_per_touch"
   )
 
   # xMetrics columns (if available)
@@ -77,6 +75,49 @@
   )
 
   c(rate_cols, efficiency_cols, xmetrics_cols)
+}
+
+
+#' Get GK-specific PSR skill feature column names
+#'
+#' Returns the per-90 rate and efficiency columns used for the GK sub-model.
+#' GK model uses goal differential (not xG diff) as target, so GK action stats
+#' like save percentage can have meaningful signal.
+#'
+#' @return Character vector of column names
+#' @keywords internal
+.get_gk_skill_cols <- function() {
+
+  # GK action stats — things the keeper actually does
+  gk_action_cols <- c(
+    "saves_p90", "saves_ibox_p90", "saves_obox_p90",
+    "keeper_sweeper_p90", "gk_smother_p90",
+    "high_claim_p90", "good_high_claim_p90",
+    "punches_p90", "keeper_throws_p90", "keeper_pickup_p90"
+  )
+
+  # GK efficiency stats
+  gk_efficiency_cols <- c(
+    "save_percentage", "keeper_sweeper_accuracy",
+    "keeper_throws_accuracy"
+  )
+
+  # Distribution / passing — GKs contribute here meaningfully
+  distribution_cols <- c(
+    "passes_p90", "passes_accurate_p90", "pass_accuracy",
+    "long_balls_p90", "long_ball_accuracy",
+    "long_pass_own_to_opp_accuracy",
+    "goals_conceded_p90"
+  )
+
+  # Shared outfield stats that GKs also accumulate
+  shared_cols <- c(
+    "clearances_p90", "aerial_won_p90", "aerial_lost_p90",
+    "aerial_success", "touches_p90",
+    "error_lead_to_shot_p90", "error_lead_to_goal_p90"
+  )
+
+  c(gk_action_cols, gk_efficiency_cols, distribution_cols, shared_cols)
 }
 
 
@@ -854,17 +895,27 @@ compute_player_psv <- function(player_match_stats, min_adjust = TRUE,
 #' @param type One of \code{"margin"}, \code{"offense"}, or \code{"defense"}.
 #' @param target One of \code{"xg"} (default, xG differential) or
 #'   \code{"goals"} (goal differential).
+#' @param model One of \code{"outfield"} (default) or \code{"gk"} (goalkeeper
+#'   sub-model, trained on goal differential).
 #'
 #' @return A data.frame with columns \code{stat_name}, \code{beta}, and
 #'   optionally \code{sd}.
 #'
 #' @keywords internal
 load_psr_coefficients <- function(type = c("margin", "offense", "defense"),
-                                   target = c("xg", "goals")) {
+                                   target = c("xg", "goals"),
+                                   model = c("outfield", "gk")) {
   type <- match.arg(type)
   target <- match.arg(target)
+  model <- match.arg(model)
 
-  prefix <- if (target == "goals") "gd_" else ""
+  if (model == "gk") {
+    # GK sub-model always uses goal diff target
+    prefix <- "gk_"
+  } else {
+    prefix <- if (target == "goals") "gd_" else ""
+  }
+
   filename <- switch(type,
     margin  = paste0(prefix, "psr_coefficients.csv"),
     offense = paste0(prefix, "osr_coefficients.csv"),
@@ -886,13 +937,18 @@ load_psr_coefficients <- function(type = c("margin", "offense", "defense"),
 #' Compute PSR from skills using bundled coefficients
 #'
 #' Convenience wrapper that loads pre-trained coefficients and computes
-#' PSR with OSR/DSR decomposition (if offensive/defensive coefficient files
-#' are available).
+#' PSR with OSR/DSR decomposition. Automatically routes goalkeepers through
+#' a separate GK sub-model (trained on goal differential with GK-specific
+#' features) and outfield players through the standard xG-based model.
+#'
+#' GKs and outfield players are centered separately within their respective
+#' populations, then combined.
 #'
 #' @param skills Player skill data (output of \code{estimate_player_skills()}
 #'   or \code{load_opta_skills()}).
-#' @param center Logical. Center PSR around league mean (default TRUE).
-#' @param target One of \code{"xg"} (default) or \code{"goals"}.
+#' @param center Logical. Center PSR around position-group mean (default TRUE).
+#' @param target One of \code{"xg"} (default) or \code{"goals"} for the
+#'   outfield model. GK model always uses goal differential.
 #'
 #' @return A data.table with \code{psr}, \code{osr}, \code{dsr} columns.
 #'
@@ -900,22 +956,86 @@ load_psr_coefficients <- function(type = c("margin", "offense", "defense"),
 compute_player_psr <- function(skills, center = TRUE,
                                 target = c("xg", "goals")) {
   target <- match.arg(target)
-  margin_coef <- load_psr_coefficients("margin", target = target)
+  dt <- data.table::as.data.table(skills)
 
-  prefix <- if (target == "goals") "gd_" else ""
-  osr_path <- system.file("extdata", paste0(prefix, "osr_coefficients.csv"),
-                           package = "panna")
-  dsr_path <- system.file("extdata", paste0(prefix, "dsr_coefficients.csv"),
-                           package = "panna")
+  # Split GKs from outfield players
+  is_gk <- dt$primary_position == "GK"
+  has_gks <- any(is_gk, na.rm = TRUE)
+  has_outfield <- any(!is_gk, na.rm = TRUE)
 
-  if (osr_path != "" && dsr_path != "") {
-    osr_coef <- utils::read.csv(osr_path, stringsAsFactors = FALSE)
-    dsr_coef <- utils::read.csv(dsr_path, stringsAsFactors = FALSE)
-    calculate_psr_components(skills, margin_coef, osr_coef, dsr_coef, center = center)
-  } else {
-    cli::cli_inform("OSR/DSR coefficient files not found -- computing PSR only (no osr/dsr decomposition)")
-    calculate_psr(skills, margin_coef, center = center)
+  results <- list()
+
+  # --- Outfield model: xG/GD target, outfield features ---
+  if (has_outfield) {
+    outfield_skills <- dt[!is_gk]
+    margin_coef <- load_psr_coefficients("margin", target = target)
+
+    prefix <- if (target == "goals") "gd_" else ""
+    osr_path <- system.file("extdata", paste0(prefix, "osr_coefficients.csv"),
+                             package = "panna")
+    dsr_path <- system.file("extdata", paste0(prefix, "dsr_coefficients.csv"),
+                             package = "panna")
+
+    if (osr_path != "" && dsr_path != "") {
+      osr_coef <- utils::read.csv(osr_path, stringsAsFactors = FALSE)
+      dsr_coef <- utils::read.csv(dsr_path, stringsAsFactors = FALSE)
+      results$outfield <- calculate_psr_components(
+        outfield_skills, margin_coef, osr_coef, dsr_coef, center = center
+      )
+    } else {
+      results$outfield <- calculate_psr(outfield_skills, margin_coef, center = center)
+    }
   }
+
+  # --- GK model: goal diff target, GK-specific features ---
+  if (has_gks) {
+    gk_skills <- dt[is_gk]
+
+    # Check if trained GK coefficients exist
+    gk_psr_path <- system.file("extdata", "gk_psr_coefficients.csv",
+                                package = "panna")
+    gk_osr_path <- system.file("extdata", "gk_osr_coefficients.csv",
+                                package = "panna")
+    gk_dsr_path <- system.file("extdata", "gk_dsr_coefficients.csv",
+                                package = "panna")
+
+    if (gk_psr_path != "") {
+      gk_margin_coef <- utils::read.csv(gk_psr_path, stringsAsFactors = FALSE)
+
+      # Check if all betas are zero (placeholder — model not yet trained)
+      if (all(gk_margin_coef$beta == 0)) {
+        cli::cli_inform(c(
+          "i" = "GK PSR coefficients are placeholders (all zero).",
+          "i" = "Run {.file 07_train_psr_model.R} to train the GK sub-model.",
+          "i" = "GKs will have PSR = 0 until trained."
+        ))
+      }
+
+      if (gk_osr_path != "" && gk_dsr_path != "") {
+        gk_osr_coef <- utils::read.csv(gk_osr_path, stringsAsFactors = FALSE)
+        gk_dsr_coef <- utils::read.csv(gk_dsr_path, stringsAsFactors = FALSE)
+        results$gk <- calculate_psr_components(
+          gk_skills, gk_margin_coef, gk_osr_coef, gk_dsr_coef, center = center
+        )
+      } else {
+        results$gk <- calculate_psr(gk_skills, gk_margin_coef, center = center)
+      }
+    } else {
+      # No GK model at all — warn and assign zeros
+      cli::cli_warn("GK coefficient files not found. GKs will have PSR = 0.")
+      id_cols <- intersect(
+        c("player_id", "player_name", "season_end_year", "primary_position",
+          "weighted_90s", "total_minutes", "competition", "n_matches"),
+        names(gk_skills)
+      )
+      gk_result <- gk_skills[, id_cols, with = FALSE]
+      gk_result[, c("psr_raw", "psr", "osr", "dsr") := 0]
+      results$gk <- gk_result
+    }
+  }
+
+  # Combine results
+  data.table::rbindlist(results, fill = TRUE, use.names = TRUE)
 }
 
 
