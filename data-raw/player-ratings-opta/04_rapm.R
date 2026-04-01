@@ -24,7 +24,7 @@ cat("Raw players:", nrow(splint_data$players), "\n")
 # Opta uses SPADL-derived xG so ~25% zero-xG splints is normal (short splints
 # without shots). Threshold of 30% avoids discarding valid league-seasons where
 # zero-xG splints are inherent to the SPADL conversion process.
-filter_result <- filter_bad_xg_data(splint_data, zero_xg_threshold = 30, verbose = TRUE)
+filter_result <- filter_bad_xg_data(splint_data, zero_xg_threshold = ZERO_XG_THRESHOLD_OPTA, verbose = TRUE)
 splint_data <- filter_result$splint_data
 
 cat("\nAfter filtering:\n")
@@ -40,7 +40,7 @@ cat("\n=== Creating RAPM Design Matrix ===\n")
 
 rapm_data <- prepare_rapm_data(
   splint_data,
-  min_minutes = 200,
+  min_minutes = MIN_MINUTES_RAPM_FIT,
   include_covariates = TRUE
 )
 
@@ -145,7 +145,7 @@ if (use_multi_target) {
       tryCatch({
         rapm_data_tgt <- prepare_rapm_data(
           splint_data,
-          min_minutes = 200,
+          min_minutes = MIN_MINUTES_RAPM_FIT,
           target_type = tgt,
           include_covariates = TRUE
         )

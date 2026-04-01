@@ -54,6 +54,8 @@ if (length(missing) == 0 && "keeper_throws_accuracy" %in% names(df)) {
 
   cat(sprintf("Writing %s rows x %s cols...\n",
               format(nrow(df), big.mark = ","), ncol(df)))
-  write_parquet(df, pq_path)
+  tmp_path <- paste0(pq_path, ".tmp")
+  write_parquet(df, tmp_path)
+  file.rename(tmp_path, pq_path)
   cat("Done.\n")
 }

@@ -199,13 +199,15 @@ prematch_skills <- tryCatch(
   ),
   error = function(e) {
     cat(sprintf("\n!!! BATCH ESTIMATION ERROR: %s\n", e$message))
-    cat(sprintf("Traceback:\n"))
-    traceback()
+    cat(sprintf("Condition: %s\n", conditionMessage(e)))
     list()
   }
 )
 gc(verbose = FALSE)
 
+if (length(prematch_skills) == 0) {
+  stop("Batch skill estimation produced no results. Cannot proceed with PSR training.")
+}
 cat(sprintf("\nSkills computed for %d / %d weekly dates\n",
             length(prematch_skills), length(weekly_dates)))
 
@@ -496,7 +498,9 @@ evaluate_model <- function(model, X_test_std, y_test, name) {
 
 train_and_save <- function(y_margin, y_off, y_def, y_margin_test, y_off_test,
                             y_def_test, prefix, label,
-                            X = X_train_std, w = weights, fids = fold_ids) {
+                            X = X_train_std, w = weights, fids = fold_ids,
+                            skill_cols = skill_keep_cols, sds = train_sds,
+                            test_mask = is_test, X_test = X_test_std) {
   cat(sprintf("\n%s\n=== Training %s Models ===\n%s\n",
               paste(rep("=", 50), collapse = ""), label,
               paste(rep("=", 50), collapse = "")))
@@ -505,19 +509,19 @@ train_and_save <- function(y_margin, y_off, y_def, y_margin_test, y_off_test,
   off_m    <- train_model(X, y_off,    w, fids, ALPHA_GRID, paste(label, "Offense"))
   def_m    <- train_model(X, y_def,    w, fids, ALPHA_GRID, paste(label, "Defense"))
 
-  if (sum(is_test) > 0) {
+  if (sum(test_mask) > 0) {
     cat(sprintf("\n--- %s Test Set ---\n", label))
-    evaluate_model(margin_m, X_test_std, y_margin_test, "Margin")
-    evaluate_model(off_m, X_test_std, y_off_test, "Offense")
-    evaluate_model(def_m, X_test_std, y_def_test, "Defense")
+    evaluate_model(margin_m, X_test, y_margin_test, "Margin")
+    evaluate_model(off_m, X_test, y_off_test, "Offense")
+    evaluate_model(def_m, X_test, y_def_test, "Defense")
     baseline_rmse <- sqrt(mean(y_margin_test^2))
     cat(sprintf("  Baseline (predict 0): RMSE=%.3f\n", baseline_rmse))
   }
 
   # Extract coefficients
-  margin_coefs <- extract_symmetric_coefs(margin_m, skill_keep_cols, train_sds, "margin")
-  osr_coefs <- extract_symmetric_coefs(off_m, skill_keep_cols, train_sds, "offense")
-  dsr_coefs <- extract_symmetric_coefs(def_m, skill_keep_cols, train_sds, "defense")
+  margin_coefs <- extract_symmetric_coefs(margin_m, skill_cols, sds, "margin")
+  osr_coefs <- extract_symmetric_coefs(off_m, skill_cols, sds, "offense")
+  dsr_coefs <- extract_symmetric_coefs(def_m, skill_cols, sds, "defense")
 
   # Top coefficients
   cat(sprintf("\nTop 15 %s margin coefficients:\n", label))
@@ -801,26 +805,7 @@ gk_skill_keep_cols <- character(0)
 
       # Train GK models on GOAL DIFF (not xG diff)
       # GK value is in the goals-saved-above-xG residual
-      gk_train_and_save <- function() {
-        # Temporarily override globals used by train_and_save
-        old_skill_keep_cols <- skill_keep_cols
-        old_train_sds <- train_sds
-        old_X_test_std <- if (exists("X_test_std")) X_test_std else NULL
-        old_is_test <- is_test
-
-        skill_keep_cols <<- gk_skill_keep_cols
-        train_sds <<- gk_train_sds
-        is_test <<- gk_is_test
-        if (!is.null(gk_X_test)) {
-          X_test_std <<- gk_X_test_std
-        }
-        on.exit({
-          skill_keep_cols <<- old_skill_keep_cols
-          train_sds <<- old_train_sds
-          is_test <<- old_is_test
-          if (!is.null(old_X_test_std)) X_test_std <<- old_X_test_std
-        })
-
+      gk_models <- tryCatch(
         train_and_save(
           y_margin = gk_train_data$goal_diff[gk_is_train],
           y_off = gk_train_data$home_goals[gk_is_train],
@@ -830,12 +815,11 @@ gk_skill_keep_cols <- character(0)
           y_def_test = if (sum(gk_is_test) > 0) gk_train_data$away_goals[gk_is_test] else numeric(0),
           prefix = "gk_",
           label = "GK (Goal Diff)",
-          X = gk_X_train_std, w = gk_weights, fids = gk_fold_ids
-        )
-      }
-
-      gk_models <- tryCatch(
-        gk_train_and_save(),
+          X = gk_X_train_std, w = gk_weights, fids = gk_fold_ids,
+          skill_cols = gk_skill_keep_cols, sds = gk_train_sds,
+          test_mask = gk_is_test,
+          X_test = if (!is.null(gk_X_test)) gk_X_test_std else NULL
+        ),
         error = function(e) {
           cat(sprintf("GK model training failed: %s\n", e$message))
           NULL

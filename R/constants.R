@@ -350,6 +350,50 @@ CHAIN_PROGRESSIVE_THRESHOLD <- 25
 
 
 # =============================================================================
+# Pipeline Data Quality Constants
+# =============================================================================
+
+#' Zero-xG threshold for Opta pipeline data quality filter
+#'
+#' Maximum percentage of zero-xG splints allowed before a match is flagged
+#' as bad data. Opta data via SPADL conversion naturally has ~25% zero-xG
+#' splints, so the threshold is set higher than FBref.
+#' Used in \code{filter_bad_xg_data()}.
+#'
+#' @format Integer value: 30
+#' @keywords internal
+ZERO_XG_THRESHOLD_OPTA <- 30L
+
+#' Zero-xG threshold for FBref pipeline data quality filter
+#'
+#' Maximum percentage of zero-xG splints allowed before a match is flagged.
+#' FBref data has fewer zero-xG splints than Opta, so threshold is lower.
+#'
+#' @format Integer value: 20
+#' @keywords internal
+ZERO_XG_THRESHOLD_FBREF <- 20L
+
+#' Minimum minutes for RAPM model fitting
+#'
+#' Minimum total minutes a player needs across all matches to be included
+#' in RAPM model fitting. Higher than \code{MIN_MINUTES_RAPM} (design matrix
+#' inclusion), because the model fit needs more data per player.
+#'
+#' @format Integer value: 200
+#' @keywords internal
+MIN_MINUTES_RAPM_FIT <- 200L
+
+#' SPM model blend weight (glmnet vs XGBoost)
+#'
+#' Weight given to the glmnet (elastic net) model in the SPM blend.
+#' The remaining \code{1 - SPM_BLEND_WEIGHT_GLMNET} goes to XGBoost.
+#'
+#' @format Numeric value: 0.5
+#' @keywords internal
+SPM_BLEND_WEIGHT_GLMNET <- 0.5
+
+
+# =============================================================================
 # Cache Path Constants
 # =============================================================================
 

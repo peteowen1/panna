@@ -38,7 +38,7 @@ cat("Splints:", nrow(splint_data$splints), "\n")
 cat("Skill feature rows:", nrow(skill_features), "\n")
 
 # Filter bad xG data (same threshold as Opta pipeline)
-filter_result <- filter_bad_xg_data(splint_data, zero_xg_threshold = 30, verbose = TRUE)
+filter_result <- filter_bad_xg_data(splint_data, zero_xg_threshold = ZERO_XG_THRESHOLD_OPTA, verbose = TRUE)
 splint_data <- filter_result$splint_data
 
 seasons <- sort(unique(splint_data$splints$season_end_year))
