@@ -650,6 +650,17 @@ calculate_action_epv <- function(spadl_actions, features, epv_model, xg_model = 
     cli::cli_alert_info("Estimated shot EPV from position for {n_shots} shots (no xG column)")
   }
 
+  # Restore own goals to model EPV — xG is meaningless for deflections.
+  # The xG model sees start_x=3 (near own goal) and predicts 0.97, but
+  # that's the xG of a deliberate shot from 3m out, not a deflection.
+  if ("is_own_goal" %in% names(dt)) {
+    n_og <- sum(dt$action_type == "shot" & dt$is_own_goal == TRUE, na.rm = TRUE)
+    if (n_og > 0) {
+      dt[action_type == "shot" & is_own_goal == TRUE, epv := epv_model]
+      cli::cli_alert_info("Restored {n_og} own goals to model EPV (xG not applicable)")
+    }
+  }
+
   # For goals: delta = 1 - epv (where epv is now xG if available)
   # This gives credit = 1 - xG for scoring
   dt[action_type == "shot" & result == "success",
@@ -657,7 +668,7 @@ calculate_action_epv <- function(spadl_actions, features, epv_model, xg_model = 
 
   # Handle own goals (is_own_goal from Opta qualifier 28)
   # Own goals have negative terminal value: opponent achieved max value
-  # delta = -1 - epv (massive penalty)
+  # delta = -1 - epv (where epv is now model EPV, not xG)
   if ("is_own_goal" %in% names(dt)) {
     dt[action_type == "shot" & result == "success" & is_own_goal == TRUE,
        epv_delta := -1 - epv]
