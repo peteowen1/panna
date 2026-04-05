@@ -47,7 +47,9 @@ if (!exists("run_steps")) {
     step_07_predict_fixtures         = TRUE,
     step_08_evaluate_model           = TRUE,
     step_09_upload_predictions       = FALSE,  # Opt-in: upload to GitHub
-    step_10_export_blog_data         = FALSE   # Opt-in: export blog parquets
+    step_10_export_blog_data         = FALSE,  # Opt-in: export blog parquets
+    step_10b_export_game_logs        = FALSE,  # Opt-in: export per-match value metrics
+    step_10c_export_equity           = FALSE   # Opt-in: export per-action EPV equity
   )
 }
 
@@ -95,7 +97,9 @@ pred_cache_files <- list(
   "7" = c("07_predictions.rds", "predictions.csv", "predictions.parquet"),
   "8" = "08_evaluation.rds",
   "9" = character(0),
-  "10" = c("panna_ratings.parquet", "match_predictions.parquet")
+  "10" = c("panna_ratings.parquet", "match_predictions.parquet"),
+  "10b" = "game_logs.parquet",
+  "10c" = "action_equity.parquet"
 )
 clear_cache_files(force_rebuild_from, cache_dir, pred_cache_files, max_step = 10)
 force_rebuild <- !is.null(force_rebuild_from) && force_rebuild_from >= 1
@@ -191,6 +195,18 @@ step_results[[10]] <- run_pred_step("export_blog_data", 10, function() {
   source("data-raw/match-predictions-opta/10_export_blog_data.R", local = TRUE)
 })
 
+# 14b. Step 10b: Export Game Logs ----
+
+step_results[["10b"]] <- run_pred_step("export_game_logs", "10b", function() {
+  source("data-raw/match-predictions-opta/10b_export_game_logs.R", local = TRUE)
+})
+
+# 14c. Step 10c: Export Equity ----
+
+step_results[["10c"]] <- run_pred_step("export_equity", "10c", function() {
+  source("data-raw/match-predictions-opta/10c_export_equity.R", local = TRUE)
+})
+
 # 15. Summary ----
 
 print_pipeline_summary(step_results, pipeline_start, "MATCH PREDICTION PIPELINE", col_width = 35)
@@ -203,6 +219,12 @@ message(sprintf("  - %s", file.path(cache_dir, "08_evaluation.rds")))
 if (isTRUE(run_steps$step_10_export_blog_data)) {
   message(sprintf("  - %s", file.path(cache_dir, "panna_ratings.parquet")))
   message(sprintf("  - %s", file.path(cache_dir, "match_predictions.parquet")))
+}
+if (isTRUE(run_steps$step_10b_export_game_logs)) {
+  message(sprintf("  - %s", file.path(cache_dir, "game_logs.parquet")))
+}
+if (isTRUE(run_steps$step_10c_export_equity)) {
+  message(sprintf("  - %s", file.path(cache_dir, "action_equity.parquet")))
 }
 
 message("\nDone!")
