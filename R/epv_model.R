@@ -1414,10 +1414,11 @@ aggregate_player_game_epv <- function(spadl_with_epv, lineups = NULL,
                 else "epv"
 
   action_types <- list(
-    epv_passing   = "pass",
+    epv_passing   = c("pass", "ball_touch", "keeper_pick_up", "keeper_claim", "keeper_punch"),
     epv_shooting  = "shot",
-    epv_dribbling = "take_on",
-    epv_defending = c("tackle", "interception", "clearance", "ball_recovery")
+    epv_dribbling = c("take_on", "aerial"),
+    epv_defending = c("tackle", "interception", "clearance", "ball_recovery",
+                      "keeper_save", "foul", "dispossessed")
   )
   for (col_name in names(action_types)) {
     at <- action_types[[col_name]]
@@ -1430,9 +1431,9 @@ aggregate_player_game_epv <- function(spadl_with_epv, lineups = NULL,
     player_epv[is.na(get(col_name)), (col_name) := 0]
   }
 
-  # Offensive = passing + shooting + dribbling; Defensive = defending + duel_blame
+  # Offensive = passing + shooting + dribbling + receiver credit; Defensive = defending + duel_blame
   player_epv[, `:=`(
-    epv_offensive = epv_passing + epv_shooting + epv_dribbling,
+    epv_offensive = epv_passing + epv_shooting + epv_dribbling + epv_as_receiver,
     epv_defensive = epv_defending + epv_duel_blame
   )]
 
