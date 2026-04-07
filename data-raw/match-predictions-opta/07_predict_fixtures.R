@@ -25,10 +25,14 @@ outcome_result <- readRDS(file.path(cache_dir, "06_outcome_model.rds"))
 feature_cols <- goals_models$feature_cols
 augmented_features <- outcome_result$augmented_features
 
-# 4. Filter to Fixtures ----
+# 4. Select matches to predict ----
+# Predict ALL matches (played + fixtures) so the blog can show historical
+# predictions on Results view alongside upcoming fixtures.
 
-fixtures <- match_dataset[match_dataset$split == "fixture", ]
-message(sprintf("  %d upcoming fixtures to predict", nrow(fixtures)))
+fixtures <- match_dataset[match_dataset$split %in% c("fixture", "test", "train"), ]
+n_upcoming <- sum(match_dataset$split == "fixture")
+n_played <- nrow(fixtures) - n_upcoming
+message(sprintf("  %d matches to predict (%d played + %d upcoming)", nrow(fixtures), n_played, n_upcoming))
 
 if (nrow(fixtures) == 0) {
   message("  No upcoming fixtures found - skipping predictions.")
@@ -89,6 +93,7 @@ if (nrow(fixtures) == 0) {
     prob_D = round(probs[, 2], 3),
     prob_A = round(probs[, 3], 3),
     predicted_result = c("H", "D", "A")[apply(probs, 1, which.max)],
+    status = ifelse(fixtures$split == "fixture", "fixture", "played"),
     stringsAsFactors = FALSE
   )
 
@@ -109,9 +114,12 @@ if (nrow(fixtures) == 0) {
   # 10. Summary ----
 
   message("\n========================================")
-  message("Fixture predictions complete!")
+  message("Match predictions complete!")
   message("========================================")
-  message(sprintf("Predictions: %d fixtures", nrow(predictions)))
+  message(sprintf("Predictions: %d total (%d played, %d fixtures)",
+                  nrow(predictions),
+                  sum(predictions$status == "played"),
+                  sum(predictions$status == "fixture")))
   message(sprintf("Leagues: %s", paste(unique(predictions$league), collapse = ", ")))
 
   # Show predictions grouped by league
