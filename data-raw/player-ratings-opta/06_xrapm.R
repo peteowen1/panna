@@ -132,15 +132,15 @@ processed_data <- readRDS(file.path(cache_dir, "02_processed_data.rds"))
 if (!is.null(processed_data$lineups)) {
   player_teams <- processed_data$lineups %>%
     mutate(team = if ("team_name" %in% names(.)) team_name else team) %>%
-    group_by(player_name, team) %>%
+    group_by(player_id, team) %>%
     summarise(appearances = n(), .groups = "drop") %>%
-    group_by(player_name) %>%
+    group_by(player_id) %>%
     slice_max(appearances, n = 1) %>%
     ungroup() %>%
-    select(player_name, primary_team = team)
+    select(player_id, primary_team = team)
 
   team_xrapm <- xrapm_ratings %>%
-    left_join(player_teams, by = "player_name") %>%
+    left_join(player_teams, by = "player_id") %>%
     filter(!is.na(primary_team)) %>%
     group_by(primary_team) %>%
     summarise(
