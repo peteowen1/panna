@@ -105,6 +105,10 @@ build_player_game_ratings <- function(player_game_epv,
     result[, panna_value_p90 := panna_value / (mins_safe / 90)]
   }
 
+  # Track which metrics were computed (before NA fill masks the difference)
+  result[, has_wpa := !is.null(player_game_wpa) && "wpa_total" %in% names(result)]
+  result[, has_psv := !is.null(player_game_psv) && "psv" %in% names(result)]
+
   # Fill NAs in numeric columns
   num_cols <- names(result)[vapply(result, is.numeric, logical(1))]
   for (col in num_cols) {

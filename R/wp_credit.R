@@ -3,9 +3,6 @@
 # Splits Win Probability Added between actor and receiver, then aggregates
 # per player per game. Mirrors torpverse R/wp_credit.R adapted for SPADL.
 
-# Default WPA credit split: 50% to actor, 50% to receiver
-WPA_ACTOR_SHARE <- 0.5
-
 
 #' Assign WPA credit to players
 #'

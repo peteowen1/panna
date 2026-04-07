@@ -54,6 +54,15 @@ adjust_epv_for_position <- function(player_match, credit_cols = "total_credit") 
     dt[, (adj_col) := get(credit_cols[i]) - get(mean_cols[i])]
   }
 
+  # Players with NA position get no adjustment (adj = raw value)
+  n_na_pos <- sum(is.na(dt$position))
+  if (n_na_pos > 0) {
+    for (i in seq_along(credit_cols)) {
+      adj_col <- paste0(credit_cols[i], "_adj")
+      dt[is.na(position), (adj_col) := get(credit_cols[i])]
+    }
+  }
+
   # Clean up temp columns
   dt[, (mean_cols) := NULL]
 
@@ -158,8 +167,16 @@ adjust_epv_for_opponents <- function(player_match,
     team_total_mins = sum(minutes_played, na.rm = TRUE)
   ), by = .(match_id, team_id, match_date)]
 
-  # Get opponent team_id
+  # Get opponent team_id (requires exactly 2 teams per match)
   match_teams <- team_match[, .(team_id = team_id), by = match_id]
+  teams_per_match <- match_teams[, .N, by = match_id]
+  bad_matches <- teams_per_match[N != 2]$match_id
+  if (length(bad_matches) > 0) {
+    cli::cli_warn("{length(bad_matches)} match(es) have != 2 teams — excluding from opponent adjustment")
+    team_match <- team_match[!match_id %in% bad_matches]
+    match_teams <- match_teams[!match_id %in% bad_matches]
+    dt <- dt[!match_id %in% bad_matches]
+  }
   match_teams[, opp_team_id := rev(team_id), by = match_id]
   team_match <- match_teams[, .(match_id, team_id, opp_team_id)][
     team_match, on = .(match_id, team_id)]
@@ -200,7 +217,7 @@ adjust_epv_for_opponents <- function(player_match,
   dt <- team_match[, .(match_id, team_id, opp_team_id, opp_adjustment,
     team_total_mins)][dt, on = .(match_id, team_id)]
 
-  dt[, mins_share := minutes_played / team_total_mins]
+  dt[, mins_share := minutes_played / pmax(team_total_mins, 1)]
   dt[, player_opp_adj := opp_adjustment * mins_share]
 
   # Clean up

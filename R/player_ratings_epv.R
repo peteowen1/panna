@@ -7,17 +7,6 @@
 # Follows torpverse R/player_ratings.R calculate_epr() / calculate_epr_stats().
 
 
-# ============================================================================
-# Constants (defaults — can be overridden or optimized)
-# ============================================================================
-
-EPR_DECAY_OFFENSIVE <- 400   # ~277 day half-life (optimized)
-EPR_DECAY_DEFENSIVE <- 400   # ~277 day half-life (optimized)
-EPR_PRIOR_GAMES     <- 10.2  # Prior strength in equivalent full games (optimized)
-EPR_PRIOR_RATE_OFF  <- 0.20  # Prior rate for offensive EPV (optimized, ~global mean)
-EPR_PRIOR_RATE_DEF  <- 0.04  # Prior rate for defensive EPV (optimized, ~global mean)
-EPR_LOADING         <- 1.0   # Loading factor (default 1:1)
-
 
 # ============================================================================
 # Core EPR calculation

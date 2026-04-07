@@ -8,9 +8,6 @@
 # This follows the torpverse pattern (R/add_variables.R) adapted for soccer's
 # 3-outcome structure and low-scoring nature.
 
-# WP draw value: 0.5 points (a draw earns 1 of 3 points)
-WP_DRAW_VALUE <- 0.5
-
 
 # ============================================================================
 # Feature engineering
@@ -80,6 +77,7 @@ create_wp_features <- function(spadl_with_epv, match_results = NULL,
     dt[, cum_away_xg := cumsum(away_xg_action), by = match_id]
     dt[, xg_diff := cum_home_xg - cum_away_xg]
   } else {
+    cli::cli_warn("xg column not found — WP model will operate without xG differential")
     dt[, xg_diff := 0]
   }
 

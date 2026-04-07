@@ -116,6 +116,67 @@ test_that("get_player_positions returns most common position", {
   expect_equal(result[player_id == "p2"]$position, "Striker")
 })
 
+test_that("adjust_epv_for_opponents has correct sign (tough opponent = positive boost)", {
+  # Team 101 is strong (high credit), team 102 is weak (low credit)
+  # When facing team 101, team 102 should get a POSITIVE boost (tough opponent)
+  set.seed(42)
+  dt <- data.table::data.table(
+    player_id = c("p1", "p2", "p1", "p2", "p1", "p2"),
+    match_id = c("m1", "m1", "m2", "m2", "m3", "m3"),
+    team_id = c(101, 102, 101, 102, 101, 102),
+    match_date = as.Date("2024-01-01") + c(0, 0, 7, 7, 14, 14),
+    minutes_played = c(90, 90, 90, 90, 90, 90),
+    total_credit = c(0.8, 0.2, 0.9, 0.1, 0.7, 0.3)
+  )
+
+  result <- adjust_epv_for_opponents(dt, credit_col = "total_credit")
+
+  # By match 3, team 101 has consistently high credit → facing them
+  # should give a positive boost. The adjustment is -opp_profile.
+  m3 <- result[match_id == "m3"]
+  # Team 102 faces team 101 (strong) → should have positive or zero adjustment
+  # Team 101 faces team 102 (weak) → should have negative or zero adjustment
+  t102_adj <- m3[team_id == 102]$opp_adjustment
+  t101_adj <- m3[team_id == 101]$opp_adjustment
+  expect_true(t102_adj >= t101_adj,
+              info = "Facing a strong team should give >= adjustment than facing a weak team")
+})
+
+test_that("adjust_epv_for_position handles NA positions gracefully", {
+  dt <- data.table::data.table(
+    player_id = c("p1", "p2", "p3"),
+    match_id = rep("m1", 3),
+    position = c("Defender", "Defender", NA_character_),
+    total_credit = c(0.3, 0.5, 0.4)
+  )
+
+  result <- adjust_epv_for_position(dt, credit_cols = "total_credit")
+
+  # NA position player gets raw credit as adj (no centering)
+  expect_equal(result[player_id == "p3"]$total_credit_adj, 0.4)
+  # Defenders are centered normally
+  expect_equal(result[player_id == "p1"]$total_credit_adj, -0.1)
+})
+
+test_that("get_player_positions assigns substitute-only players from SPADL", {
+  lineups <- data.table::data.table(
+    player_id = c("p1", "p2"),
+    position = c("Midfielder", "Substitute"),
+    match_id = c("m1", "m1")
+  )
+
+  spadl <- data.table::data.table(
+    player_id = c("p1", "p1", "p2", "p2"),
+    start_x = c(50, 55, 80, 85)  # p2 avg_x = 82.5 → "Striker"
+  )
+
+  result <- get_player_positions(lineups, spadl_actions = spadl)
+
+  expect_equal(nrow(result), 2)
+  expect_equal(result[player_id == "p1"]$position, "Midfielder")
+  expect_equal(result[player_id == "p2"]$position, "Striker")
+})
+
 test_that("get_player_positions merges Wing Back into Defender", {
   lineups <- data.table::data.table(
     player_id = "p1",

@@ -2,20 +2,21 @@
 
 test_that("safe_divide handles division by zero", {
   expect_equal(safe_divide(10, 2), 5)
-  # Default is NA_real_ (unknown, not zero)
-  expect_true(is.na(safe_divide(10, 0)))
-  # Explicit default = 0 for model-feeding contexts
-  expect_equal(safe_divide(10, 0, default = 0), 0)
-  expect_equal(safe_divide(c(10, 20), c(2, 0)), c(5, NA))
-  expect_equal(safe_divide(c(10, 20), c(2, 0), default = 0), c(5, 0))
+  # Default is 0 (safe for stat tables and model features)
+  expect_equal(safe_divide(10, 0), 0)
+  # Explicit default = NA for contexts where unknown is preferred
+  expect_true(is.na(safe_divide(10, 0, default = NA_real_)))
+  expect_equal(safe_divide(c(10, 20), c(2, 0)), c(5, 0))
+  expect_equal(safe_divide(c(10, 20), c(2, 0), default = NA_real_), c(5, NA))
 })
 
 test_that("safe_divide preserves input NAs", {
   expect_true(is.na(safe_divide(NA, 5)))
   expect_true(is.na(safe_divide(5, NA)))
+  # NA input + zero denominator: input NA takes precedence
   expect_true(is.na(safe_divide(NA, 0)))
-  expect_equal(safe_divide(c(10, NA, 5), c(2, 3, 0)), c(5, NA, NA))
-  expect_equal(safe_divide(c(10, NA, 5), c(2, 3, 0), default = 0), c(5, NA, 0))
+  expect_equal(safe_divide(c(10, NA, 5), c(2, 3, 0)), c(5, NA, 0))
+  expect_equal(safe_divide(c(10, NA, 5), c(2, 3, 0), default = NA_real_), c(5, NA, NA))
 })
 
 test_that("validate_seasons accepts valid seasons", {

@@ -292,7 +292,13 @@ save_cache_with_meta <- function(data, path, pipeline = "unknown") {
   # Atomic write: save to temp file then rename (prevents partial reads)
   tmp_path <- paste0(path, ".tmp")
   saveRDS(data, tmp_path)
-  file.rename(tmp_path, path)
+  if (!file.rename(tmp_path, path)) {
+    # Fallback for cross-device or locked files (Windows NTFS)
+    if (!file.copy(tmp_path, path, overwrite = TRUE)) {
+      stop(sprintf("Failed to save cache file: %s", path))
+    }
+    file.remove(tmp_path)
+  }
 
   n_rows <- if (is.data.frame(data)) nrow(data)
             else if (is.list(data)) {

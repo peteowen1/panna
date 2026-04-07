@@ -550,7 +550,7 @@ predict_epv_probs <- function(model, features) {
 #'   }
 #'
 #' @keywords internal
-calculate_action_epv <- function(spadl_actions, features, epv_model, xg_model = NULL,
+calculate_action_epv <- function(spadl_actions, features = NULL, epv_model, xg_model = NULL,
                                   league = NULL) {
   cli::cli_alert_info("Calculating EPV for {nrow(spadl_actions)} actions...")
 
@@ -1562,7 +1562,10 @@ load_epv_model <- function(path = NULL) {
   if (requireNamespace("pannamodels", quietly = TRUE)) {
     model <- tryCatch(
       pannamodels::load_panna_model("epv_model", verbose = FALSE),
-      error = function(e) NULL
+      error = function(e) {
+        cli::cli_alert_info("pannamodels failed: {e$message}. Trying local path.")
+        NULL
+      }
     )
     if (!is.null(model)) {
       cli::cli_alert_success("Loaded EPV model from pannamodels")
@@ -1615,6 +1618,7 @@ pb_download_epv_models <- function(repo = "peteowen1/pannadata",
     "epv_model.rds"
   )
 
+  failed <- character(0)
   for (f in model_files) {
     tryCatch({
       piggyback::pb_download(
@@ -1626,11 +1630,16 @@ pb_download_epv_models <- function(repo = "peteowen1/pannadata",
       )
       cli::cli_alert_success("Downloaded {f}")
     }, error = function(e) {
+      failed <<- c(failed, f)
       cli::cli_warn("Failed to download {f}: {e$message}")
     })
   }
 
-  cli::cli_alert_success("EPV models downloaded to {dest}")
+  if (length(failed) > 0) {
+    cli::cli_warn("{length(failed)}/{length(model_files)} model files failed to download: {paste(failed, collapse = ', ')}")
+  } else {
+    cli::cli_alert_success("EPV models downloaded to {dest}")
+  }
 
   invisible(dest)
 }

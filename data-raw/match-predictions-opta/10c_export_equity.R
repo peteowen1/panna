@@ -52,9 +52,8 @@ for (league in blog_leagues) {
     spadl_labeled <- label_actions_with_outcomes(spadl_chains, chain_outcomes)
     spadl_labeled <- create_next_goal_labels(spadl_labeled)
 
-    # EPV credit assignment
-    epv_features <- create_epv_features(spadl_labeled, n_prev = 3)
-    spadl_epv <- calculate_action_epv(spadl_labeled, epv_features, epv_model,
+    # EPV credit assignment (features created internally for simple model)
+    spadl_epv <- calculate_action_epv(spadl_labeled, features = NULL, epv_model,
                                       league = league)
     spadl_credit <- assign_epv_credit(spadl_epv, xpass_model)
 

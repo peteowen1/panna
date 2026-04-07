@@ -111,8 +111,8 @@ for (league in blog_leagues) {
     spadl_labeled <- create_next_goal_labels(spadl_labeled)
 
     # --- EPV path ---
-    epv_features <- create_epv_features(spadl_labeled, n_prev = 3)
-    spadl_epv <- calculate_action_epv(spadl_labeled, epv_features, epv_model,
+    # Features created internally by calculate_action_epv when feature_mode = "simple"
+    spadl_epv <- calculate_action_epv(spadl_labeled, features = NULL, epv_model,
                                       league = league)
     spadl_credit <- assign_epv_credit(spadl_epv, xpass_model)
     player_game_epv <- aggregate_player_game_epv(spadl_credit, lineups)
@@ -141,12 +141,13 @@ for (league in blog_leagues) {
         )
       }
     }, error = function(e) {
-      message(sprintf("    EPV adjustments skipped: %s", e$message))
+      warning(sprintf("EPV adjustments skipped for %s: %s", league, e$message), call. = FALSE)
     })
 
     message(sprintf("    EPV: %d player-games", nrow(player_game_epv)))
 
     # --- WPA path ---
+    has_wpa <- FALSE
     player_game_wpa <- tryCatch({
       match_results <- .build_match_results(events, lineups)
       wp_feat <- create_wp_features(spadl_chains, match_results)
@@ -154,13 +155,15 @@ for (league in blog_leagues) {
       spadl_wpa <- assign_wpa_credit(spadl_wpa)
       pgw <- aggregate_player_game_wpa(spadl_wpa, lineups)
       message(sprintf("    WPA: %d player-games", nrow(pgw)))
+      has_wpa <<- TRUE
       pgw
     }, error = function(e) {
-      message(sprintf("    WPA failed: %s", e$message))
+      warning(sprintf("WPA failed for %s: %s", league, e$message), call. = FALSE)
       NULL
     })
 
     # --- PSV path ---
+    has_psv <- FALSE
     player_game_psv <- NULL
     if (has_match_stats) {
       tryCatch({
@@ -169,9 +172,10 @@ for (league in blog_leagues) {
         if (nrow(league_stats) > 0) {
           player_game_psv <- compute_player_psv(league_stats, min_adjust = FALSE, center = TRUE)
           message(sprintf("    PSV: %d player-games", nrow(player_game_psv)))
+          has_psv <- TRUE
         }
       }, error = function(e) {
-        message(sprintf("    PSV failed: %s", e$message))
+        warning(sprintf("PSV failed for %s: %s", league, e$message), call. = FALSE)
       })
     }
 
@@ -203,10 +207,13 @@ for (league in blog_leagues) {
     gc(verbose = FALSE)
 
   }, error = function(e) {
-    if (!grepl("not found|No data|does not exist", e$message)) {
-      message(sprintf("    ERROR %s: %s", league, e$message))
-    } else {
+    # Only treat data-loading errors as "skip" — all others are real errors
+    is_data_error <- inherits(e, "panna_data_not_found") ||
+      grepl("^No data found for|^No .+ data available", e$message)
+    if (is_data_error) {
       message(sprintf("    Skipping %s — data not available", league))
+    } else {
+      warning(sprintf("ERROR processing %s: %s", league, e$message), call. = FALSE)
     }
   })
 }

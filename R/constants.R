@@ -446,3 +446,42 @@ PANNA_EPR_WEIGHT <- 0.5
 #' @format Numeric value: 0.5
 #' @export
 PANNA_PSR_WEIGHT <- 0.5
+
+
+# =============================================================================
+# Win Probability / WPA Constants
+# =============================================================================
+
+#' WP draw value
+#'
+#' A draw is worth 0.5 in WP terms (1 of 3 league points).
+#'
+#' @format Numeric value: 0.5
+#' @keywords internal
+WP_DRAW_VALUE <- 0.5
+
+#' WPA actor share
+#'
+#' Fraction of WPA credited to the acting player (remainder to receiver).
+#'
+#' @format Numeric value: 0.5
+#' @keywords internal
+WPA_ACTOR_SHARE <- 0.5
+
+
+# =============================================================================
+# EPR (Expected Points Rating) Constants
+# =============================================================================
+
+#' @keywords internal
+EPR_DECAY_OFFENSIVE <- 400
+#' @keywords internal
+EPR_DECAY_DEFENSIVE <- 400
+#' @keywords internal
+EPR_PRIOR_GAMES <- 10.2
+#' @keywords internal
+EPR_PRIOR_RATE_OFF <- 0.20
+#' @keywords internal
+EPR_PRIOR_RATE_DEF <- 0.04
+#' @keywords internal
+EPR_LOADING <- 1.0

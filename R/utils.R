@@ -45,16 +45,16 @@ clean_column_names <- function(data) {
 #'
 #' @param x Numerator
 #' @param y Denominator
-#' @param default Value to return when denominator is zero (default: NA_real_)
+#' @param default Value to return when denominator is zero (default: 0)
 #'
 #' @return x / y, with Inf/NaN from division-by-zero replaced by default. Input NAs are preserved.
 #' @export
 #'
 #' @examples
 #' safe_divide(10, 2)
-#' safe_divide(10, 0)          # NA (unknown)
-#' safe_divide(10, 0, default = 0)
-safe_divide <- function(x, y, default = NA_real_) {
+#' safe_divide(10, 0)          # 0
+#' safe_divide(10, 0, default = NA_real_)
+safe_divide <- function(x, y, default = 0) {
   # Preserve genuine NAs from inputs; only replace Inf/NaN from division-by-zero
   input_na <- is.na(x) | is.na(y)
   result <- x / y
