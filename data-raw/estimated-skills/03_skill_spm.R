@@ -126,7 +126,7 @@ rm(spm_ratings_glmnet, spm_ratings_xgb); gc(verbose = FALSE)
 
 cat("\n=== Creating 50/50 Blend ===\n")
 
-spm_ratings_blend <- calculate_spm_blend(player_stats, spm_glmnet, spm_xgb, weight_glmnet = 0.5)
+spm_ratings_blend <- calculate_spm_blend(player_stats, spm_glmnet, spm_xgb, weight_glmnet = SPM_BLEND_WEIGHT_GLMNET)
 cat("Blended SPM ratings:", nrow(spm_ratings_blend), "players\n")
 
 # Evaluate correlation with RAPM

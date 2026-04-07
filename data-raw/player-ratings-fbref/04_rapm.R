@@ -27,7 +27,7 @@ cat("Raw players:", nrow(splint_data$players), "\n")
 # FBref xG comes from the data source directly (not SPADL-derived), so zero-xG
 # splints are less common. Lower 20% threshold catches data quality issues without
 # being too aggressive. (Opta uses 30% because SPADL conversion produces more zeros.)
-filter_result <- filter_bad_xg_data(splint_data, zero_xg_threshold = 20, verbose = TRUE)
+filter_result <- filter_bad_xg_data(splint_data, zero_xg_threshold = ZERO_XG_THRESHOLD_FBREF, verbose = TRUE)
 splint_data <- filter_result$splint_data
 
 cat("\nAfter filtering:\n")
@@ -40,7 +40,7 @@ cat("\n=== Creating RAPM Design Matrix ===\n")
 
 rapm_data <- prepare_rapm_data(
   splint_data,
-  min_minutes = 200,
+  min_minutes = MIN_MINUTES_RAPM_FIT,
   include_covariates = TRUE
 )
 

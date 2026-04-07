@@ -4,7 +4,13 @@
 \alias{calculate_action_epv}
 \title{Calculate Action EPV Values}
 \usage{
-calculate_action_epv(spadl_actions, features, epv_model, xg_model = NULL)
+calculate_action_epv(
+  spadl_actions,
+  features,
+  epv_model,
+  xg_model = NULL,
+  league = NULL
+)
 }
 \arguments{
 \item{spadl_actions}{SPADL actions data frame (with team_id, possession_change)}
@@ -16,6 +22,9 @@ calculate_action_epv(spadl_actions, features, epv_model, xg_model = NULL)
 \item{xg_model}{Optional pre-trained xG model from fit_xg_model(). If NULL,
 attempts to load from pannadata/data/opta/models/xg_model.rds. Falls back to
 position-based estimate if no model available.}
+
+\item{league}{League code (e.g., "ENG") for league-aware EPV features.
+Only used when feature_mode is "simple". If NULL, defaults to 0 (unknown).}
 }
 \value{
 SPADL actions with EPV columns added:

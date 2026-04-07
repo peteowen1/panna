@@ -96,12 +96,12 @@ print(
 cat("\n=== xRAPM vs Base RAPM ===\n")
 
 base_ratings <- rapm_results$ratings %>%
-  select(player_name, base_rapm = rapm, base_off = offense, base_def = defense)
+  select(player_id, base_rapm = rapm, base_off = offense, base_def = defense)
 
 comparison <- xrapm_ratings %>%
-  select(player_name, xrapm, xrapm_off = offense, xrapm_def = defense,
+  select(player_id, player_name, xrapm, xrapm_off = offense, xrapm_def = defense,
          off_deviation, def_deviation, off_prior, def_prior, total_minutes) %>%
-  inner_join(base_ratings, by = "player_name") %>%
+  inner_join(base_ratings, by = "player_id") %>%
   mutate(
     rating_diff = xrapm - base_rapm,
     off_diff = xrapm_off - base_off,
@@ -132,15 +132,15 @@ processed_data <- readRDS(file.path(cache_dir, "02_processed_data.rds"))
 if (!is.null(processed_data$lineups)) {
   player_teams <- processed_data$lineups %>%
     mutate(team = if ("team_name" %in% names(.)) team_name else team) %>%
-    group_by(player_name, team) %>%
+    group_by(player_id, team) %>%
     summarise(appearances = n(), .groups = "drop") %>%
-    group_by(player_name) %>%
+    group_by(player_id) %>%
     slice_max(appearances, n = 1) %>%
     ungroup() %>%
-    select(player_name, primary_team = team)
+    select(player_id, primary_team = team)
 
   team_xrapm <- xrapm_ratings %>%
-    left_join(player_teams, by = "player_name") %>%
+    left_join(player_teams, by = "player_id") %>%
     filter(!is.na(primary_team)) %>%
     group_by(primary_team) %>%
     summarise(
@@ -192,5 +192,71 @@ xrapm_results <- list(
 
 saveRDS(xrapm_results, file.path(cache_dir, "06_xrapm.rds"))
 cat("Saved to cache-opta/06_xrapm.rds\n")
+
+# 9. Multi-Target xRAPM (optional) ----
+# Fit xRAPM for value metric targets using their RAPM + SPM results
+
+use_multi_target <- if (exists("use_multi_target")) use_multi_target else TRUE
+multi_rapm_path <- file.path(cache_dir, "04_rapm_multi.rds")
+multi_spm_path <- file.path(cache_dir, "05_spm_multi.rds")
+
+if (use_multi_target && file.exists(multi_rapm_path) && file.exists(multi_spm_path)) {
+  cat("\n=== Multi-Target xRAPM ===\n")
+  multi_rapm <- readRDS(multi_rapm_path)
+  multi_spm <- readRDS(multi_spm_path)
+
+  multi_xrapm_results <- list()
+
+  for (tgt in intersect(names(multi_rapm), names(multi_spm))) {
+    cat(sprintf("\n--- Fitting xRAPM for target: %s ---\n", tgt))
+
+    tryCatch({
+      rapm_data_tgt <- multi_rapm[[tgt]]$rapm_data
+      spm_ratings_tgt <- multi_spm[[tgt]]$ratings
+
+      off_prior <- spm_ratings_tgt$spm_offense %||% rep(0, nrow(spm_ratings_tgt))
+      def_prior <- spm_ratings_tgt$spm_defense %||% rep(0, nrow(spm_ratings_tgt))
+
+      # Match SPM to RAPM player ordering
+      player_map <- rapm_data_tgt$player_mapping
+      off_prior_aligned <- rep(0, rapm_data_tgt$n_players_total)
+      def_prior_aligned <- rep(0, rapm_data_tgt$n_players_total)
+
+      for (i in seq_len(nrow(spm_ratings_tgt))) {
+        pid <- spm_ratings_tgt$player_id[i]
+        if (pid %in% names(player_map)) {
+          idx <- player_map[[pid]]
+          off_prior_aligned[idx] <- off_prior[i]
+          def_prior_aligned[idx] <- def_prior[i]
+        }
+      }
+
+      xrapm_model_tgt <- fit_rapm_with_prior(
+        rapm_data_tgt,
+        offense_prior = off_prior_aligned,
+        defense_prior = def_prior_aligned
+      )
+
+      xrapm_ratings_tgt <- extract_rapm_ratings(xrapm_model_tgt)
+      rapm_col <- paste0("xrapm_", tgt)
+      data.table::setnames(xrapm_ratings_tgt, "rapm", rapm_col,
+                            skip_absent = TRUE)
+
+      multi_xrapm_results[[tgt]] <- list(
+        model = xrapm_model_tgt,
+        ratings = xrapm_ratings_tgt
+      )
+      cat(sprintf("  %s xRAPM: %d players rated\n", toupper(tgt), nrow(xrapm_ratings_tgt)))
+
+    }, error = function(e) {
+      cat(sprintf("  Skipping %s xRAPM: %s\n", tgt, e$message))
+    })
+  }
+
+  if (length(multi_xrapm_results) > 0) {
+    saveRDS(multi_xrapm_results, file.path(cache_dir, "06_xrapm_multi.rds"))
+    cat("\nSaved multi-target xRAPM to cache-opta/06_xrapm_multi.rds\n")
+  }
+}
 
 cat("\n=== COMPLETE ===\n")

@@ -32,7 +32,7 @@ cat("Splints:", nrow(splint_data$splints), "\n")
 cat("Player-splint records:", nrow(splint_data$players), "\n")
 
 # Filter bad xG data (same as 04_rapm.R)
-filter_result <- filter_bad_xg_data(splint_data, zero_xg_threshold = 20, verbose = TRUE)
+filter_result <- filter_bad_xg_data(splint_data, zero_xg_threshold = ZERO_XG_THRESHOLD_FBREF, verbose = TRUE)
 splint_data <- filter_result$splint_data
 
 # Show available seasons

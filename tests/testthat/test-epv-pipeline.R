@@ -542,6 +542,53 @@ test_that("calculate_action_epv produces bounded EPV values", {
 })
 
 # =============================================================================
+# Tests for simple EPV features with league encoding (epv_features.R)
+# =============================================================================
+
+test_that("create_epv_features_simple produces 15 features with league_id", {
+  spadl <- create_mock_spadl_actions(n_actions = 20, n_matches = 1)
+
+  result <- panna:::create_epv_features_simple(spadl, league = "ENG")
+
+  expect_equal(ncol(result), 15 + 2)  # 15 features + match_id + action_id
+  expect_true("league_id" %in% names(result))
+  expect_equal(unique(result$league_id), 1L)  # ENG = 1
+})
+
+test_that("create_epv_features_simple encodes leagues correctly", {
+  spadl <- create_mock_spadl_actions(n_actions = 10, n_matches = 1)
+
+  # Test several leagues
+  eng <- panna:::create_epv_features_simple(spadl, league = "ENG")
+  ita <- panna:::create_epv_features_simple(spadl, league = "ITA")
+  ucl <- panna:::create_epv_features_simple(spadl, league = "UCL")
+
+  expect_equal(unique(eng$league_id), 1L)
+  expect_equal(unique(ita$league_id), 4L)
+  expect_equal(unique(ucl$league_id), 11L)
+})
+
+test_that("create_epv_features_simple defaults to 0 for unknown league", {
+  spadl <- create_mock_spadl_actions(n_actions = 10, n_matches = 1)
+
+  # Unknown league string
+  result <- panna:::create_epv_features_simple(spadl, league = "MARS")
+  expect_equal(unique(result$league_id), 0L)
+
+  # NULL league (default)
+  result_null <- panna:::create_epv_features_simple(spadl)
+  expect_equal(unique(result_null$league_id), 0L)
+})
+
+test_that("create_epv_features_simple reads league from spadl column", {
+  spadl <- create_mock_spadl_actions(n_actions = 10, n_matches = 1)
+  spadl$league <- "ESP"
+
+  result <- panna:::create_epv_features_simple(spadl)
+  expect_equal(unique(result$league_id), 2L)  # ESP = 2
+})
+
+# =============================================================================
 # Tests for EPV credit assignment (epv_model.R)
 # =============================================================================
 

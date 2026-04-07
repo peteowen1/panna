@@ -43,7 +43,7 @@ player_stats <- aggregate_player_stats(
   stats_misc = processed_data$stats_misc,
   stats_passing_types = processed_data$stats_passing_types,
   stats_keeper = processed_data$stats_keeper,
-  min_minutes = 450  # ~5 full matches minimum
+  min_minutes = MIN_MINUTES_SPM
 )
 
 cat("Players with sufficient minutes:", nrow(player_stats), "\n")
@@ -111,7 +111,7 @@ spm_ratings_xgb <- calculate_spm_ratings_xgb(player_stats, spm_xgb)
 
 cat("\n=== Creating 50/50 Blend ===\n")
 
-spm_ratings_blend <- calculate_spm_blend(player_stats, spm_glmnet, spm_xgb, weight_glmnet = 0.5)
+spm_ratings_blend <- calculate_spm_blend(player_stats, spm_glmnet, spm_xgb, weight_glmnet = SPM_BLEND_WEIGHT_GLMNET)
 
 cat("Blended SPM ratings:", nrow(spm_ratings_blend), "players\n")
 

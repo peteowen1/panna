@@ -62,7 +62,8 @@ if (use_rapm_cache) {
   message("\n=== Loading from RAPM pipeline cache ===\n")
   message(sprintf("  Reading: %s", rapm_cache_path))
 
-  rapm_processed <- readRDS(rapm_cache_path)
+  rapm_processed <- load_cache_with_meta(rapm_cache_path, max_age_hours = 336,
+                                         expected_pipeline = "opta-rapm")
   opta_stats_cached <- rapm_processed$opta_stats
 
   # Validate cache has expected columns before using
@@ -91,11 +92,16 @@ if (use_rapm_cache) {
 
     message(sprintf("  After filtering: %d rows", nrow(opta_stats_cached)))
 
-    # Process in one batch
-    match_level <- compute_match_level_opta_stats(opta_stats_cached, min_minutes = min_match_minutes)
-    if (!is.null(match_level) && nrow(match_level) > 0) {
-      all_stats[["rapm_cache"]] <- match_level
-      message(sprintf("  Computed match-level stats: %d player-matches", nrow(match_level)))
+    if (nrow(opta_stats_cached) == 0) {
+      message("  RAPM cache empty after filtering — falling back to per-league loading")
+      use_rapm_cache <- FALSE
+    } else {
+      # Process in one batch
+      match_level <- compute_match_level_opta_stats(opta_stats_cached, min_minutes = min_match_minutes)
+      if (!is.null(match_level) && nrow(match_level) > 0) {
+        all_stats[["rapm_cache"]] <- match_level
+        message(sprintf("  Computed match-level stats: %d player-matches", nrow(match_level)))
+      }
     }
 
     rm(rapm_processed, opta_stats_cached); gc(verbose = FALSE)
@@ -175,7 +181,9 @@ if (n_failed > 0 && n_attempted > 0) {
 
 match_stats <- data.table::rbindlist(all_stats, fill = TRUE, use.names = TRUE)
 
-if (nrow(match_stats) < 1000) {
+if (nrow(match_stats) < 100) {
+  stop(sprintf("Only %d match stats loaded (expected 300k+). Too few to proceed.", nrow(match_stats)))
+} else if (nrow(match_stats) < 1000) {
   warning(sprintf("Only %d match stats loaded (expected 300k+). Data may be incomplete.",
                   nrow(match_stats)), call. = FALSE)
 }

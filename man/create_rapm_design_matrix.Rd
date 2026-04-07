@@ -7,7 +7,7 @@
 create_rapm_design_matrix(
   splint_data,
   min_minutes = 90,
-  target_type = c("xg", "goals")
+  target_type = c("xg", "goals", "epv", "wpa", "psv")
 )
 }
 \arguments{
@@ -15,8 +15,11 @@ create_rapm_design_matrix(
 
 \item{min_minutes}{Minimum total minutes for player inclusion}
 
-\item{target_type}{Type of target variable: "xg" for non-penalty xG (default),
-"goals" for actual goals scored}
+\item{target_type}{Type of target variable: \code{"xg"} for non-penalty xG
+(default), \code{"goals"} for actual goals, \code{"epv"} for Expected
+Possession Value, \code{"wpa"} for Win Probability Added, \code{"psv"}
+for Player Stat Value. Requires corresponding home/away columns on
+splints (e.g., \code{epv_home}, \code{epv_away}).}
 }
 \value{
 List with design matrix components

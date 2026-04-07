@@ -205,6 +205,109 @@ create_epv_features <- function(spadl_actions, n_prev = 3) {
 }
 
 
+# Simple feature column names (single source of truth)
+EPV_SIMPLE_FEATURE_COLS <- c(
+  "start_x", "start_y", "distance_to_goal", "angle_to_goal",
+  "dx", "dy", "time_remaining",
+  "prev_x", "prev_y", "prev_dx", "prev_dy",
+  "same_team_prev", "action_cat", "result_success",
+  "league_id"
+)
+
+# Action type encoding for simple features
+EPV_SIMPLE_ACTION_MAP <- c(
+  "pass" = 1L, "cross" = 2L, "shot" = 3L, "take_on" = 4L,
+  "tackle" = 5L, "interception" = 6L, "clearance" = 7L,
+  "aerial" = 8L, "foul" = 9L, "ball_recovery" = 10L
+)
+
+# League encoding for simple features (0 = unknown)
+EPV_LEAGUE_MAP <- c(
+  "ENG" = 1L, "ESP" = 2L, "GER" = 3L, "ITA" = 4L, "FRA" = 5L,
+  "NED" = 6L, "POR" = 7L, "TUR" = 8L, "ENG2" = 9L, "SCO" = 10L,
+  "UCL" = 11L, "UEL" = 12L, "UECL" = 13L, "WC" = 14L, "EURO" = 15L
+)
+
+
+#' Create Simple EPV Features
+#'
+#' Builds a 15-feature set for EPV prediction: spatial location,
+#' movement, time remaining, previous action context, action type, result,
+#' and league identity. Designed for the xG-method simple model which
+#' prioritises spatial signal while allowing league-specific adjustments.
+#'
+#' @param spadl_actions SPADL actions data frame
+#' @param league League code (e.g., "ENG"). If NULL, uses \code{league} column
+#'   from spadl_actions if present, otherwise defaults to 0 (unknown).
+#'
+#' @return Data frame with 15 EPV features plus match_id and action_id
+#' @keywords internal
+create_epv_features_simple <- function(spadl_actions, league = NULL) {
+  if (is.null(spadl_actions) || nrow(spadl_actions) == 0) {
+    cli::cli_abort("No SPADL actions provided for feature creation")
+  }
+
+  cli::cli_alert_info("Creating simple EPV features for {format(nrow(spadl_actions), big.mark=',')} actions...")
+
+  dt <- data.table::as.data.table(spadl_actions)
+  data.table::setorder(dt, match_id, period_id, time_seconds, action_id)
+
+  # Spatial
+  dt[, distance_to_goal := sqrt((100 - start_x)^2 + (50 - start_y)^2)]
+  dt[, angle_to_goal := abs(atan2(56 - start_y, pmax(100 - start_x, 0.1)) -
+                            atan2(44 - start_y, pmax(100 - start_x, 0.1)))]
+
+  # Movement
+  dt[, dx := end_x - start_x]
+  dt[, dy := end_y - start_y]
+
+  # Time remaining in half (1 = start, 0 = end)
+  dt[, time_remaining := 1 - pmin(time_seconds / (45 * 60), 1)]
+
+  # Previous action context
+  dt[, prev_x := shift(start_x, 1, type = "lag"), by = .(match_id, period_id)]
+  dt[, prev_y := shift(start_y, 1, type = "lag"), by = .(match_id, period_id)]
+  dt[is.na(prev_x), prev_x := start_x]
+  dt[is.na(prev_y), prev_y := start_y]
+  dt[, prev_dx := start_x - prev_x]
+  dt[, prev_dy := start_y - prev_y]
+
+  # Possession continuity
+  dt[, prev_team := shift(team_id, 1, type = "lag"), by = .(match_id, period_id)]
+  dt[, same_team_prev := as.integer(!is.na(prev_team) & team_id == prev_team)]
+  dt[, prev_team := NULL]
+
+  # Action type (integer-encoded)
+  dt[, action_cat := EPV_SIMPLE_ACTION_MAP[action_type]]
+  dt[is.na(action_cat), action_cat := 0L]
+
+  # Result
+  dt[, result_success := as.integer(result == "success")]
+
+  # League identity (integer-encoded)
+  if (!is.null(league) && is.character(league) && length(league) == 1) {
+    dt[, league_id := as.integer(EPV_LEAGUE_MAP[league] %||% 0L)]
+  } else if ("league" %in% names(dt)) {
+    mapped <- as.integer(EPV_LEAGUE_MAP[dt$league])
+    dt[, league_id := data.table::fifelse(is.na(mapped), 0L, mapped)]
+  } else {
+    dt[, league_id := 0L]
+  }
+
+  # Keep only feature columns + identifiers
+  keep_cols <- c("match_id", "action_id", EPV_SIMPLE_FEATURE_COLS)
+  out <- dt[, ..keep_cols]
+
+  # Fill NAs with 0
+  numeric_cols <- EPV_SIMPLE_FEATURE_COLS
+  data.table::setnafill(out, fill = 0, cols = numeric_cols)
+
+  cli::cli_alert_success("Created {length(EPV_SIMPLE_FEATURE_COLS)} simple features for {nrow(out)} actions")
+
+  as.data.frame(out)
+}
+
+
 #' Create Location-Only Features
 #'
 #' Creates a minimal feature set based only on location.

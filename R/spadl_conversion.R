@@ -385,7 +385,8 @@ convert_opta_to_spadl <- function(opta_events, normalize_direction = FALSE) {
   # Select final columns
   # Keep opta_type_id and opta_type_name for downstream use and debugging
   # Include opponent_player_id/name for duel credit assignment
-  base_cols <- c("match_id", "action_id", "period_id", "time_seconds",
+  base_cols <- c("match_id", "action_id", "original_event_id",
+                  "period_id", "time_seconds",
                   "team_id", "player_id", "player_name",
                   "start_x", "start_y", "end_x", "end_y",
                   "action_type", "action_type_id", "opta_type_id", "opta_type_name",

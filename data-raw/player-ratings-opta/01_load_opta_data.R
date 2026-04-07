@@ -260,6 +260,9 @@ combined_shots <- if (length(all_shots_from_spadl) > 0) bind_rows(all_shots_from
 combined_match_xg <- if (length(all_match_xg) > 0) bind_rows(all_match_xg) else NULL
 
 # Data scale validation: catch partial/empty loads early
+if (nrow(combined_lineups) == 0) {
+  stop("No lineup data loaded for any league-season. Check data availability and source paths.")
+}
 n_leagues_loaded <- length(unique(combined_lineups$league))
 n_matches_loaded <- length(unique(combined_lineups$match_id))
 if (n_leagues_loaded < length(leagues)) {

@@ -38,7 +38,7 @@ if (isTRUE(use_skill_ratings) && file.exists(skill_ratings_path)) {
   stop("No ratings cache found. Run the Opta RAPM pipeline first.")
 }
 
-seasonal_results <- readRDS(ratings_path)
+seasonal_results <- load_cache_with_meta(ratings_path, max_age_hours = 336)
 if (!is.list(seasonal_results) ||
     is.null(seasonal_results$seasonal_xrapm) ||
     is.null(seasonal_results$seasonal_spm)) {

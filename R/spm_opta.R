@@ -145,6 +145,9 @@
     "last_man_tackle", "six_yard_block", "clearance_off_line",
     "keeper_sweeper", "attempts_conceded_ibox", "attempts_conceded_obox",
     "gk_smother",
+    "saves_ibox", "saves_obox",
+    "high_claim", "good_high_claim", "punches",
+    "keeper_throws",
     "unsuccessful_touch", "overrun",
     "flick_on",
     # Round 2
@@ -282,6 +285,9 @@
   # Goalkeeper metrics
   shots_faced <- sc("saves") + sc("goals_conceded")
   player_stats$save_percentage <- sdiv(sc("saves"), shots_faced)
+  player_stats$keeper_throws_accuracy <- sdiv(
+    sc("keeper_throws_acc"), sc("keeper_throws")
+  )
 
   # Position dummies
   if ("primary_position" %in% names(player_stats)) {
@@ -620,6 +626,44 @@ fit_spm_opta <- function(data, alpha = 0.5, nfolds = 10,
     weight_by_minutes = weight_by_minutes,
     weight_transform = weight_transform
   )
+}
+
+
+#' Fit SPM for a custom target variable
+#'
+#' Convenience wrapper around \code{\link{fit_spm_opta}} that allows fitting
+#' SPM on any target column (not just the default \code{rapm}). Useful for
+#' multi-target RAPM where each value metric (EPV, WPA, PSV) has its own
+#' RAPM rating that needs an SPM predictor.
+#'
+#' @param data Player features data with RAPM ratings. Must contain a column
+#'   named \code{target_col}.
+#' @param target_col Name of the target column (e.g., \code{"rapm_epv"},
+#'   \code{"rapm_wpa"}, \code{"rapm_psv"}). This column is temporarily
+#'   renamed to \code{"rapm"} for compatibility with \code{fit_spm_model()}.
+#' @param ... Additional arguments passed to \code{\link{fit_spm_opta}}.
+#'
+#' @return Fitted SPM model (same as \code{fit_spm_opta}).
+#'
+#' @export
+fit_spm_opta_target <- function(data, target_col = "rapm", ...) {
+  dt <- data.table::as.data.table(data)
+
+  if (!target_col %in% names(dt)) {
+    cli::cli_abort("Target column {.val {target_col}} not found in data")
+  }
+
+  if (target_col != "rapm") {
+    # Temporarily rename target to "rapm" for fit_spm_model compatibility
+    if ("rapm" %in% names(dt)) {
+      dt[, rapm_orig := rapm]
+    }
+    data.table::setnames(dt, target_col, "rapm")
+  }
+
+  result <- fit_spm_opta(dt, ...)
+
+  result
 }
 
 

@@ -9,7 +9,7 @@
 \arguments{
 \item{valid_splints}{Data frame of splints with duration > 0}
 
-\item{target_type}{"xg" or "goals"}
+\item{target_type}{One of "xg", "goals", "epv", "wpa", "psv", or "custom"}
 }
 \value{
 List with row_data data.frame and target_per90_name string

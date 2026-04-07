@@ -313,6 +313,26 @@ EPV_POSITION_SCALE_MIN <- 0.3
 EPV_POSITION_RAMP_X <- 40
 
 
+#' Opponent adjustment: exponential decay rate
+#'
+#' Controls how quickly past matches lose influence in opponent profiling.
+#' lambda = 0.003 gives ~231-day half-life, suitable for within-season use.
+#'
+#' @format Numeric value: 0.003
+#' @keywords internal
+EPV_OPP_LAMBDA_DECAY <- 0.003
+
+#' Opponent adjustment: prior games for shrinkage
+#'
+#' Number of pseudo-games at league average for Bayesian shrinkage of
+#' opponent profiles. Lower = faster response, higher = more stable.
+#' 2 is appropriate for within-season single-league data.
+#'
+#' @format Numeric value: 2
+#' @keywords internal
+EPV_OPP_PRIOR_GAMES <- 2
+
+
 #' Default penalty kick xG value
 #'
 #' xG override for penalty kicks. Based on historical penalty
@@ -350,6 +370,50 @@ CHAIN_PROGRESSIVE_THRESHOLD <- 25
 
 
 # =============================================================================
+# Pipeline Data Quality Constants
+# =============================================================================
+
+#' Zero-xG threshold for Opta pipeline data quality filter
+#'
+#' Maximum percentage of zero-xG splints allowed before a match is flagged
+#' as bad data. Opta data via SPADL conversion naturally has ~25% zero-xG
+#' splints, so the threshold is set higher than FBref.
+#' Used in \code{filter_bad_xg_data()}.
+#'
+#' @format Integer value: 30
+#' @keywords internal
+ZERO_XG_THRESHOLD_OPTA <- 30L
+
+#' Zero-xG threshold for FBref pipeline data quality filter
+#'
+#' Maximum percentage of zero-xG splints allowed before a match is flagged.
+#' FBref data has fewer zero-xG splints than Opta, so threshold is lower.
+#'
+#' @format Integer value: 20
+#' @keywords internal
+ZERO_XG_THRESHOLD_FBREF <- 20L
+
+#' Minimum minutes for RAPM model fitting
+#'
+#' Minimum total minutes a player needs across all matches to be included
+#' in RAPM model fitting. Higher than \code{MIN_MINUTES_RAPM} (design matrix
+#' inclusion), because the model fit needs more data per player.
+#'
+#' @format Integer value: 200
+#' @keywords internal
+MIN_MINUTES_RAPM_FIT <- 200L
+
+#' SPM model blend weight (glmnet vs XGBoost)
+#'
+#' Weight given to the glmnet (elastic net) model in the SPM blend.
+#' The remaining \code{1 - SPM_BLEND_WEIGHT_GLMNET} goes to XGBoost.
+#'
+#' @format Numeric value: 0.5
+#' @keywords internal
+SPM_BLEND_WEIGHT_GLMNET <- 0.5
+
+
+# =============================================================================
 # Cache Path Constants
 # =============================================================================
 
@@ -361,3 +425,63 @@ CHAIN_PROGRESSIVE_THRESHOLD <- 25
 #' @format Character value
 #' @keywords internal
 SPADL_CACHE_DIR <- "data-raw/cache/epv/spadl"
+
+
+# =============================================================================
+# Panna Value Blend Constants
+# =============================================================================
+
+#' EPR weight in combined Panna Value rating
+#'
+#' Fraction of the combined rating attributed to EPR (play-by-play EPV-based).
+#' The remaining \code{1 - PANNA_EPR_WEIGHT} goes to PSR (stat-based).
+#' Analogous to torpverse's \code{TORP_EPR_WEIGHT = 0.5}.
+#'
+#' @format Numeric value: 0.5
+#' @export
+PANNA_EPR_WEIGHT <- 0.5
+
+#' PSR weight in combined Panna Value rating
+#'
+#' @format Numeric value: 0.5
+#' @export
+PANNA_PSR_WEIGHT <- 0.5
+
+
+# =============================================================================
+# Win Probability / WPA Constants
+# =============================================================================
+
+#' WP draw value
+#'
+#' A draw is worth 0.5 in WP terms (1 of 3 league points).
+#'
+#' @format Numeric value: 0.5
+#' @keywords internal
+WP_DRAW_VALUE <- 0.5
+
+#' WPA actor share
+#'
+#' Fraction of WPA credited to the acting player (remainder to receiver).
+#'
+#' @format Numeric value: 0.5
+#' @keywords internal
+WPA_ACTOR_SHARE <- 0.5
+
+
+# =============================================================================
+# EPR (Expected Points Rating) Constants
+# =============================================================================
+
+#' @keywords internal
+EPR_DECAY_OFFENSIVE <- 400
+#' @keywords internal
+EPR_DECAY_DEFENSIVE <- 400
+#' @keywords internal
+EPR_PRIOR_GAMES <- 10.2
+#' @keywords internal
+EPR_PRIOR_RATE_OFF <- 0.20
+#' @keywords internal
+EPR_PRIOR_RATE_DEF <- 0.04
+#' @keywords internal
+EPR_LOADING <- 1.0

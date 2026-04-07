@@ -114,4 +114,56 @@ cat("\n=== npxGD Distribution ===\n")
 cat("npxgd_per_90 summary:\n")
 print(summary(splint_data$splints$npxgd_per_90))
 
+# 8. Add Value Metrics to Splints (optional) ----
+# If per-game EPV/WPA/PSV caches exist, add them to splints for multi-target RAPM
+
+use_value_metrics <- if (exists("use_value_metrics")) use_value_metrics else TRUE
+
+if (use_value_metrics) {
+  epv_cache_dir <- "data-raw/cache/epv/players"
+
+  # Load per-game EPV (if available)
+  epv_files <- list.files(epv_cache_dir, pattern = "^player_game_epv_", full.names = TRUE)
+  player_game_epv <- if (length(epv_files) > 0) {
+    cat("\n=== Adding per-game EPV to splints ===\n")
+    dt <- data.table::rbindlist(lapply(epv_files, readRDS), fill = TRUE)
+    if (nrow(dt) == 0) { cat("  Warning: EPV files loaded but 0 rows\n"); NULL } else dt
+  } else NULL
+
+  # Load per-game WPA (if available)
+  wpa_files <- list.files(epv_cache_dir, pattern = "^player_game_wpa_", full.names = TRUE)
+  player_game_wpa <- if (length(wpa_files) > 0) {
+    cat("=== Adding per-game WPA to splints ===\n")
+    dt <- data.table::rbindlist(lapply(wpa_files, readRDS), fill = TRUE)
+    if (nrow(dt) == 0) { cat("  Warning: WPA files loaded but 0 rows\n"); NULL } else dt
+  } else NULL
+
+  # Load per-game PSV (if available from skills pipeline)
+  psv_cache <- file.path("data-raw", "cache-skills", "player_game_psv.rds")
+  player_game_psv <- if (file.exists(psv_cache)) {
+    cat("=== Adding per-game PSV to splints ===\n")
+    readRDS(psv_cache)
+  } else NULL
+
+  if (!is.null(player_game_epv) || !is.null(player_game_wpa) || !is.null(player_game_psv)) {
+    splint_data <- add_value_metrics_to_splints(
+      splint_data,
+      player_game_epv = player_game_epv,
+      player_game_wpa = player_game_wpa,
+      player_game_psv = player_game_psv
+    )
+    # Re-save with value metrics
+    saveRDS(splint_data, splint_data_path)
+
+    added <- c()
+    if ("epv_home" %in% names(splint_data$splints)) added <- c(added, "EPV")
+    if ("wpa_home" %in% names(splint_data$splints)) added <- c(added, "WPA")
+    if ("psv_home" %in% names(splint_data$splints)) added <- c(added, "PSV")
+    cat(sprintf("Value metrics added to splints: %s\n", paste(added, collapse = ", ")))
+  } else {
+    cat("\nNo per-game value metric caches found — skipping value metrics on splints.\n")
+    cat("Run EPV/WPA pipeline steps first to enable multi-target RAPM.\n")
+  }
+}
+
 message("\nSplint creation complete!")

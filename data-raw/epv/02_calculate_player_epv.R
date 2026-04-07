@@ -10,6 +10,7 @@
 #
 # Outputs:
 #   - data-raw/cache/epv/player_epv_{league}_{season}.rds
+#   - data-raw/cache/epv/players/player_game_epv_{league}_{season}.rds  (per-game)
 
 library(cli)
 devtools::load_all()
@@ -71,22 +72,31 @@ for (league in LEAGUES) {
 
       # Create features and calculate EPV
       epv_features <- create_epv_features(spadl_labeled, n_prev = 3)
-      spadl_epv <- calculate_action_epv(spadl_labeled, epv_features, epv_model)
+      spadl_epv <- calculate_action_epv(spadl_labeled, epv_features, epv_model,
+                                        league = league)
 
       # Assign credit
       spadl_credit <- assign_epv_credit(spadl_epv, xpass_model)
 
-      # Aggregate to player level
+      # Aggregate to player level (season totals)
       player_epv <- aggregate_player_epv(spadl_credit, lineups, min_minutes = MIN_MINUTES)
       player_epv$league <- league
       player_epv$season <- season
 
-      # Save
+      # Aggregate to player-game level (one row per player per match)
+      player_game_epv <- aggregate_player_game_epv(spadl_credit, lineups)
+      player_game_epv$league <- league
+      player_game_epv$season <- season
+
+      # Save both
       output_file <- file.path(OUTPUT_DIR, sprintf("player_epv_%s_%s.rds", league, season))
       saveRDS(player_epv, output_file)
 
+      game_output_file <- file.path(OUTPUT_DIR, sprintf("player_game_epv_%s_%s.rds", league, season))
+      saveRDS(player_game_epv, game_output_file)
+
       all_player_epv[[paste(league, season)]] <- player_epv
-      cli_alert_success("  {nrow(player_epv)} players saved")
+      cli_alert_success("  {nrow(player_epv)} players, {nrow(player_game_epv)} player-games saved")
 
     }, error = function(e) {
       cli_alert_warning("  Skipping: {e$message}")

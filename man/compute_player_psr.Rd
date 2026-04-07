@@ -10,16 +10,22 @@ compute_player_psr(skills, center = TRUE, target = c("xg", "goals"))
 \item{skills}{Player skill data (output of \code{estimate_player_skills()}
 or \code{load_opta_skills()}).}
 
-\item{center}{Logical. Center PSR around league mean (default TRUE).}
+\item{center}{Logical. Center PSR around position-group mean (default TRUE).}
 
-\item{target}{One of \code{"xg"} (default) or \code{"goals"}.}
+\item{target}{One of \code{"xg"} (default) or \code{"goals"} for the
+outfield model. GK model always uses goal differential.}
 }
 \value{
 A data.table with \code{psr}, \code{osr}, \code{dsr} columns.
 }
 \description{
 Convenience wrapper that loads pre-trained coefficients and computes
-PSR with OSR/DSR decomposition (if offensive/defensive coefficient files
-are available).
+PSR with OSR/DSR decomposition. Automatically routes goalkeepers through
+a separate GK sub-model (trained on goal differential with GK-specific
+features) and outfield players through the standard xG-based model.
+}
+\details{
+GKs and outfield players are centered separately within their respective
+populations, then combined.
 }
 \keyword{internal}

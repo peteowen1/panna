@@ -28,7 +28,7 @@ cat("Splints:", nrow(splint_data$splints), "\n")
 cat("Player-splint records:", nrow(splint_data$players), "\n")
 
 # Filter bad xG data (higher threshold for SPADL-derived xG)
-filter_result <- filter_bad_xg_data(splint_data, zero_xg_threshold = 30, verbose = TRUE)
+filter_result <- filter_bad_xg_data(splint_data, zero_xg_threshold = ZERO_XG_THRESHOLD_OPTA, verbose = TRUE)
 splint_data <- filter_result$splint_data
 
 seasons <- sort(unique(splint_data$splints$season_end_year))
@@ -463,5 +463,22 @@ write.csv(
   file.path(cache_dir, "seasonal_xrapm.csv"),
   row.names = FALSE
 )
+
+# Multi-target seasonal ratings ----
+# If multi-target xRAPM results exist, save seasonal ratings for each target
+
+multi_xrapm_path <- file.path(cache_dir, "06_xrapm_multi.rds")
+if (file.exists(multi_xrapm_path)) {
+  cat("\n=== Multi-Target Seasonal Ratings ===\n")
+  multi_xrapm <- readRDS(multi_xrapm_path)
+
+  for (tgt in names(multi_xrapm)) {
+    ratings_tgt <- multi_xrapm[[tgt]]$ratings
+    if (!is.null(ratings_tgt) && nrow(ratings_tgt) > 0) {
+      saveRDS(ratings_tgt, file.path(cache_dir, sprintf("07_seasonal_%s.rds", tgt)))
+      cat(sprintf("  Saved %s seasonal ratings: %d players\n", toupper(tgt), nrow(ratings_tgt)))
+    }
+  }
+}
 
 cat("\n=== COMPLETE ===\n")

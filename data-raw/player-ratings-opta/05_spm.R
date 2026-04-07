@@ -38,7 +38,7 @@ cat("Opta stats rows:", nrow(opta_stats), "\n")
 
 player_stats <- aggregate_opta_stats(
   opta_stats,
-  min_minutes = 450
+  min_minutes = MIN_MINUTES_SPM
 )
 
 cat("Players with sufficient minutes:", nrow(player_stats), "\n")
@@ -205,7 +205,7 @@ rm(spm_ratings_glmnet, spm_ratings_xgb); gc(verbose = FALSE)
 
 cat("\n=== Creating 50/50 Blend ===\n")
 
-spm_ratings_blend <- calculate_spm_blend(player_stats, spm_glmnet, spm_xgb, weight_glmnet = 0.5)
+spm_ratings_blend <- calculate_spm_blend(player_stats, spm_glmnet, spm_xgb, weight_glmnet = SPM_BLEND_WEIGHT_GLMNET)
 
 cat("Blended SPM ratings:", nrow(spm_ratings_blend), "players\n")
 
@@ -476,5 +476,59 @@ spm_results <- list(
 
 saveRDS(spm_results, file.path(cache_dir, "05_spm.rds"))
 cat("Saved to cache-opta/05_spm.rds\n")
+
+# 14. Multi-Target SPM (optional) ----
+# Fit SPM predicting each value metric RAPM if multi-target results exist
+
+use_multi_target <- if (exists("use_multi_target")) use_multi_target else TRUE
+multi_rapm_path <- file.path(cache_dir, "04_rapm_multi.rds")
+
+if (use_multi_target && file.exists(multi_rapm_path)) {
+  cat("\n=== Multi-Target SPM ===\n")
+  multi_rapm <- readRDS(multi_rapm_path)
+
+  multi_spm_results <- list()
+
+  for (tgt in names(multi_rapm)) {
+    cat(sprintf("\n--- Fitting SPM for target: %s ---\n", tgt))
+
+    tryCatch({
+      tgt_ratings <- multi_rapm[[tgt]]$ratings
+      rapm_col <- paste0("rapm_", tgt)
+
+      # Rename to "rapm" for fit_spm_opta compatibility
+      if (rapm_col %in% names(tgt_ratings)) {
+        data.table::setnames(tgt_ratings, rapm_col, "rapm")
+      }
+
+      # Prepare regression data: join player stats with RAPM ratings
+      spm_data <- prepare_spm_regression_data(player_stats, tgt_ratings)
+
+      if (nrow(spm_data) < 50) {
+        cat(sprintf("  Skipping %s: only %d players with both stats and RAPM\n",
+                    tgt, nrow(spm_data)))
+        next
+      }
+
+      # Fit SPM
+      spm_model <- fit_spm_opta(spm_data)
+      spm_ratings <- calculate_spm_ratings(spm_model, player_stats)
+
+      multi_spm_results[[tgt]] <- list(
+        model = spm_model,
+        ratings = spm_ratings
+      )
+      cat(sprintf("  %s SPM: %d players rated\n", toupper(tgt), nrow(spm_ratings)))
+
+    }, error = function(e) {
+      cat(sprintf("  Skipping %s SPM: %s\n", tgt, e$message))
+    })
+  }
+
+  if (length(multi_spm_results) > 0) {
+    saveRDS(multi_spm_results, file.path(cache_dir, "05_spm_multi.rds"))
+    cat("\nSaved multi-target SPM to cache-opta/05_spm_multi.rds\n")
+  }
+}
 
 cat("\n=== COMPLETE ===\n")

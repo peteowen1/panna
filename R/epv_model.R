@@ -163,12 +163,12 @@ create_next_xg_labels <- function(spadl_actions, xg_values = NULL) {
         dt <- xg_df[, .(match_id, action_id, shot_xg = xg)][dt, on = c("match_id", "action_id")]
       }
     }
-  } else if ("chain_xg" %in% names(dt)) {
+  } else if ("chain_xg" %in% names(dt) && any(!is.na(dt$chain_xg))) {
     dt[action_type == "shot", shot_xg := chain_xg]
   }
 
-  # If no xG available, estimate from position (simple model)
-  if (!"shot_xg" %in% names(dt)) {
+  # If no xG available (or all NA), estimate from position (simple model)
+  if (!"shot_xg" %in% names(dt) || all(is.na(dt$shot_xg))) {
     cli::cli_alert_info("No xG values found, estimating from position...")
     dt[action_type == "shot", shot_xg := estimate_simple_xg(start_x, start_y)]
   }
@@ -295,9 +295,15 @@ fit_epv_model <- function(features,
     cli::cli_abort("xgboost package required. Install with: install.packages('xgboost')")
   }
 
-  # Get feature columns
-  feature_cols <- get_epv_feature_cols(include_sequence = TRUE, n_prev = 3)
-  available_cols <- intersect(feature_cols, names(features))
+
+  # Get feature columns — check simple features first, then full
+  simple_available <- intersect(EPV_SIMPLE_FEATURE_COLS, names(features))
+  if (length(simple_available) >= length(EPV_SIMPLE_FEATURE_COLS)) {
+    available_cols <- simple_available
+  } else {
+    feature_cols <- get_epv_feature_cols(include_sequence = TRUE, n_prev = 3)
+    available_cols <- intersect(feature_cols, names(features))
+  }
 
   if (length(available_cols) < 5) {
     cli::cli_abort("Insufficient features available for EPV model")
@@ -446,7 +452,9 @@ fit_epv_model <- function(features,
       feature_cols = available_cols,
       n_actions = length(y),
       distribution = distribution,
-      params = params
+      params = params,
+      leagues_trained = if ("league_id" %in% available_cols)
+        names(EPV_LEAGUE_MAP) else NULL
     )
   )
 
@@ -529,6 +537,8 @@ predict_epv_probs <- function(model, features) {
 #' @param xg_model Optional pre-trained xG model from fit_xg_model(). If NULL,
 #'   attempts to load from pannadata/data/opta/models/xg_model.rds. Falls back to
 #'   position-based estimate if no model available.
+#' @param league League code (e.g., "ENG") for league-aware EPV features.
+#'   Only used when feature_mode is "simple". If NULL, defaults to 0 (unknown).
 #'
 #' @return SPADL actions with EPV columns added:
 #'   \itemize{
@@ -540,7 +550,8 @@ predict_epv_probs <- function(model, features) {
 #'   }
 #'
 #' @keywords internal
-calculate_action_epv <- function(spadl_actions, features, epv_model, xg_model = NULL) {
+calculate_action_epv <- function(spadl_actions, features = NULL, epv_model, xg_model = NULL,
+                                  league = NULL) {
   cli::cli_alert_info("Calculating EPV for {nrow(spadl_actions)} actions...")
 
   # Try to load pre-trained Opta xG model if not provided
@@ -559,6 +570,12 @@ calculate_action_epv <- function(spadl_actions, features, epv_model, xg_model = 
   }
 
   method <- epv_model$method %||% "goal"
+
+  # For simple models, create features from the SPADL actions directly
+  feature_mode <- epv_model$panna_metadata$feature_mode %||% "full"
+  if (feature_mode == "simple") {
+    features <- create_epv_features_simple(spadl_actions, league = league)
+  }
 
   # Get predictions
   preds <- predict_epv_probs(epv_model, features)
@@ -650,6 +667,17 @@ calculate_action_epv <- function(spadl_actions, features, epv_model, xg_model = 
     cli::cli_alert_info("Estimated shot EPV from position for {n_shots} shots (no xG column)")
   }
 
+  # Restore own goals to model EPV — xG is meaningless for deflections.
+  # The xG model sees start_x=3 (near own goal) and predicts 0.97, but
+  # that's the xG of a deliberate shot from 3m out, not a deflection.
+  if ("is_own_goal" %in% names(dt)) {
+    n_og <- sum(dt$action_type == "shot" & dt$is_own_goal == TRUE, na.rm = TRUE)
+    if (n_og > 0) {
+      dt[action_type == "shot" & is_own_goal == TRUE, epv := epv_model]
+      cli::cli_alert_info("Restored {n_og} own goals to model EPV (xG not applicable)")
+    }
+  }
+
   # For goals: delta = 1 - epv (where epv is now xG if available)
   # This gives credit = 1 - xG for scoring
   dt[action_type == "shot" & result == "success",
@@ -657,7 +685,7 @@ calculate_action_epv <- function(spadl_actions, features, epv_model, xg_model = 
 
   # Handle own goals (is_own_goal from Opta qualifier 28)
   # Own goals have negative terminal value: opponent achieved max value
-  # delta = -1 - epv (massive penalty)
+  # delta = -1 - epv (where epv is now model EPV, not xG)
   if ("is_own_goal" %in% names(dt)) {
     dt[action_type == "shot" & result == "success" & is_own_goal == TRUE,
        epv_delta := -1 - epv]
@@ -876,13 +904,13 @@ assign_epv_credit <- function(spadl_with_epv, xpass_model = NULL) {
       # shouldn't be blamed for receiving a backpass (e.g., keeper receiving
       # backpasses shouldn't accumulate negative EPV).
       #
-      # POSITION SCALING: Passes from deep positions (x near 100 = own goal) get
+      # POSITION SCALING: Passes from deep positions (near own goal) get
       # scaled down because EPV improvement from own box is "expected" for routine
       # passes. A keeper's short pass to a defender shouldn't get more credit than
       # a midfielder's creative through ball just because EPV delta is higher.
       #
-      # Coordinate system: x=100 is own goal, x=0 is attacking goal
-      # Scale factor: EPV_POSITION_SCALE_MIN at x=100 (own goal), ramping to 1.0 at x=(100 - EPV_POSITION_RAMP_X)
+      # Coordinate system: x=0 is own goal, x=100 is attacking goal
+      # Scale factor: EPV_POSITION_SCALE_MIN at x=0 (own goal), ramping to 1.0 at x=EPV_POSITION_RAMP_X
       # This reduces credit for routine GK/defender distribution while maintaining
       # full credit for passes in advanced positions.
       #
@@ -893,10 +921,10 @@ assign_epv_credit <- function(spadl_with_epv, xpass_model = NULL) {
 
       if (length(success_pass_idx) > 0) {
         # Position-based scaling: reduce credit for routine deep passes
-        # x=100 (own goal): scale=EPV_POSITION_SCALE_MIN, x=(100-EPV_POSITION_RAMP_X): scale=1.0
+        # x=0 (own goal): scale=EPV_POSITION_SCALE_MIN, x=EPV_POSITION_RAMP_X: scale=1.0
         dt[success_pass_idx, `:=`(
           position_scale = pmin(1.0, EPV_POSITION_SCALE_MIN +
-            (1 - EPV_POSITION_SCALE_MIN) * ((100 - start_x) / EPV_POSITION_RAMP_X)),
+            (1 - EPV_POSITION_SCALE_MIN) * (start_x / EPV_POSITION_RAMP_X)),
           passer_share = EPV_BASE_PASSER_SHARE + EPV_PASS_DIFFICULTY_ADJUSTMENT * (1 - xpass)
         )]
 
@@ -928,10 +956,10 @@ assign_epv_credit <- function(spadl_with_epv, xpass_model = NULL) {
       #
       # For positive delta (rare: failed pass still benefited team), passer gets full credit
       #
-      # Position scaling: failed passes from deep positions (x near 100) get LESS
+      # Position scaling: failed passes from deep positions (near own goal) get LESS
       # scaling reduction since mistakes from deep ARE costly and should be penalized.
-      # Coordinate system: x=100 is own goal, x=0 is attacking goal
-      # Scale: 0.6 at x=100 (own goal), 1.0 at x=60 and beyond
+      # Coordinate system: x=0 is own goal, x=100 is attacking goal
+      # Scale: 0.6 at x=0 (own goal), 1.0 at x=EPV_POSITION_RAMP_X and beyond
       #
       # passer_blame_share: how much of the negative delta the passer takes
       # passer_blame = EPV_BASE_PASSER_SHARE + EPV_PASS_DIFFICULTY_ADJUSTMENT * xpass
@@ -942,22 +970,22 @@ assign_epv_credit <- function(spadl_with_epv, xpass_model = NULL) {
 
       if (length(failed_pass_idx) > 0) {
         # Less aggressive scaling for failed passes (mistakes from deep are still costly)
-        # x=100 (own goal): scale=0.6, x=(100-EPV_POSITION_RAMP_X): scale=1.0
+        # x=0 (own goal): scale=0.6, x=EPV_POSITION_RAMP_X: scale=1.0
         failed_scale_min <- 0.6
         dt[failed_pass_idx, `:=`(
           position_scale = pmin(1.0, failed_scale_min +
-            (1 - failed_scale_min) * ((100 - start_x) / EPV_POSITION_RAMP_X)),
+            (1 - failed_scale_min) * (start_x / EPV_POSITION_RAMP_X)),
           passer_blame = EPV_BASE_PASSER_SHARE + EPV_PASS_DIFFICULTY_ADJUSTMENT * xpass
         )]
 
         # Only split for negative delta (actual loss of value)
         # For positive delta (rare), passer gets full credit, receiver gets 0
-        # For deep positions (x > 80), reduce penalty further (routine distribution)
+        # For deep positions (x < 20), reduce penalty further (routine distribution)
         dt[failed_pass_idx, `:=`(
           player_credit = fifelse(
             epv_delta < 0,
             fifelse(
-              start_x > 80,
+              start_x < 20,
               epv_delta * passer_blame * position_scale * 0.5,  # Deep: halve the penalty
               epv_delta * passer_blame * position_scale          # Advanced: full penalty
             ),
@@ -966,7 +994,7 @@ assign_epv_credit <- function(spadl_with_epv, xpass_model = NULL) {
           receiver_credit = fifelse(
             epv_delta < 0,
             fifelse(
-              start_x > 80,
+              start_x < 20,
               -epv_delta * (1 - passer_blame) * position_scale * 0.5,  # Deep: halve
               -epv_delta * (1 - passer_blame) * position_scale          # Advanced: full
             ),
@@ -985,7 +1013,6 @@ assign_epv_credit <- function(spadl_with_epv, xpass_model = NULL) {
   # POSITION SCALING FOR OFFENSIVE ACTIONS FROM DEEP
   #
   # Apply position scaling to reduce credit for "routine" offensive actions
-
   # performed from deep positions (near own goal). The EPV model correctly
   # identifies that game state improves when ball moves upfield, but we don't
   # want to over-credit routine actions like keeper pick-ups or punts.
@@ -994,23 +1021,23 @@ assign_epv_credit <- function(spadl_with_epv, xpass_model = NULL) {
   # Defensive actions (NOT scaled): keeper_save, tackle, interception, clearance,
   #                                  ball_recovery, aerial, foul
   #
-  # Coordinate system: x=100 is own goal, x=0 is attacking goal
-  # Scale: EPV_POSITION_SCALE_MIN at x=100, ramping to 1.0 at x=(100 - EPV_POSITION_RAMP_X)
+  # Coordinate system: x=0 is own goal, x=100 is attacking goal
+  # Scale: EPV_POSITION_SCALE_MIN at x=0, ramping to 1.0 at x=EPV_POSITION_RAMP_X
   # This matches the pass position scaling for consistency.
   #
   offensive_action_types <- c("keeper_pick_up", "keeper_punch", "other",
                               "ball_touch", "take_on")
 
-  # Only scale actions from deep positions (x > 60) that are offensive
+  # Only scale actions from deep positions (x < EPV_POSITION_RAMP_X) that are offensive
   # and haven't already been handled (passes are already scaled above)
   offensive_deep_idx <- which(dt$action_type %in% offensive_action_types &
-                               dt$start_x > 60 &
+                               dt$start_x < EPV_POSITION_RAMP_X &
                                !is.na(dt$player_credit))
 
   if (length(offensive_deep_idx) > 0) {
     # Apply same position scaling formula as passes
     dt[offensive_deep_idx, position_scale := pmin(1.0, EPV_POSITION_SCALE_MIN +
-      (1 - EPV_POSITION_SCALE_MIN) * ((100 - start_x) / EPV_POSITION_RAMP_X))]
+      (1 - EPV_POSITION_SCALE_MIN) * (start_x / EPV_POSITION_RAMP_X))]
     dt[offensive_deep_idx, player_credit := player_credit * position_scale]
     dt[, position_scale := NULL]
 
@@ -1293,6 +1320,199 @@ calculate_action_type_epv <- function(spadl_with_epv) {
 
 
 # =============================================================================
+# PER-GAME PLAYER EPV
+# =============================================================================
+
+#' Aggregate Player EPV Per Game
+#'
+#' Like \code{\link{aggregate_player_epv}} but groups by \code{(player_id, match_id)}
+#' to produce one row per player per match. Includes offensive/defensive
+#' decomposition, per-90 rates, and optional position-centering.
+#'
+#' @param spadl_with_epv SPADL actions with EPV and credit columns from
+#'   \code{\link{assign_epv_credit}}.
+#' @param lineups Optional lineup data with \code{player_id}, \code{match_id},
+#'   \code{minutes_played}, and optionally \code{position}.
+#' @param position_center Logical; subtract position-group mean per season
+#'   to produce \code{epv_adj} columns. Requires lineups with \code{position}.
+#'   Default \code{FALSE}.
+#'
+#' @return A data.table with one row per player per match:
+#'   \describe{
+#'     \item{player_id, player_name, team_id, match_id}{Identifiers}
+#'     \item{n_actions}{Number of SPADL actions by this player in this match}
+#'     \item{epv_total}{Total EPV = actor + receiver + duel_blame}
+#'     \item{epv_offensive}{Offensive EPV = passing + shooting + dribbling}
+#'     \item{epv_defensive}{Defensive EPV = defending + duel_blame}
+#'     \item{epv_as_actor, epv_as_receiver, epv_duel_blame}{Credit source breakdown}
+#'     \item{epv_passing, epv_shooting, epv_dribbling, epv_defending}{Action type breakdown}
+#'     \item{minutes_played}{Minutes played (if lineups provided)}
+#'     \item{epv_p90, epv_offensive_p90, ...}{Per-90 rates (if lineups provided)}
+#'     \item{epv_adj}{Position-centered EPV (if \code{position_center = TRUE})}
+#'   }
+#'
+#' @export
+aggregate_player_game_epv <- function(spadl_with_epv, lineups = NULL,
+                                       position_center = FALSE) {
+  dt <- data.table::as.data.table(spadl_with_epv)
+
+  # --- Actor credit per player per match ---
+  actor_credit <- dt[, .(
+    epv_as_actor = sum(player_credit, na.rm = TRUE),
+    n_actions = .N
+  ), by = .(player_id, player_name, team_id, match_id)]
+
+  # --- Receiver credit per player per match ---
+  if ("receiver_player_id" %in% names(dt) && "receiver_credit" %in% names(dt)) {
+    receiver_dt <- dt[!is.na(receiver_player_id) & !is.na(receiver_credit)]
+    if (nrow(receiver_dt) > 0) {
+      receiver_credit <- receiver_dt[, .(
+        epv_as_receiver = sum(receiver_credit, na.rm = TRUE)
+      ), by = .(receiver_player_id, receiver_player_name, match_id)]
+      data.table::setnames(receiver_credit,
+                            c("receiver_player_id", "receiver_player_name"),
+                            c("player_id", "player_name"))
+    } else {
+      receiver_credit <- data.table::data.table(
+        player_id = character(0), player_name = character(0),
+        match_id = character(0), epv_as_receiver = numeric(0))
+    }
+  } else {
+    receiver_credit <- data.table::data.table(
+      player_id = character(0), player_name = character(0),
+      match_id = character(0), epv_as_receiver = numeric(0))
+  }
+
+  # Join actor + receiver
+  player_epv <- merge(actor_credit, receiver_credit,
+                       by = c("player_id", "player_name", "match_id"),
+                       all = TRUE)
+  player_epv[is.na(epv_as_actor), epv_as_actor := 0]
+  player_epv[is.na(epv_as_receiver), epv_as_receiver := 0]
+  player_epv[is.na(n_actions), n_actions := 0L]
+  # Fill team_id for receiver-only rows
+  if (any(is.na(player_epv$team_id))) {
+    pid_team <- unique(dt[, .(player_id, team_id)])
+    player_epv[is.na(team_id), team_id := pid_team[.SD, team_id,
+                                                     on = "player_id"]]
+  }
+
+  # --- Opponent credit (duel blame) per player per match ---
+  if ("opponent_player_id" %in% names(dt) && "opponent_credit" %in% names(dt)) {
+    opponent_dt <- dt[!is.na(opponent_player_id) & !is.na(opponent_credit)]
+    if (nrow(opponent_dt) > 0) {
+      opponent_blame <- opponent_dt[, .(
+        epv_duel_blame = sum(opponent_credit, na.rm = TRUE)
+      ), by = .(opponent_player_id, opponent_player_name, match_id)]
+      data.table::setnames(opponent_blame,
+                            c("opponent_player_id", "opponent_player_name"),
+                            c("player_id", "player_name"))
+      player_epv <- merge(player_epv, opponent_blame,
+                           by = c("player_id", "player_name", "match_id"),
+                           all = TRUE)
+      player_epv[is.na(epv_as_actor), epv_as_actor := 0]
+      player_epv[is.na(epv_as_receiver), epv_as_receiver := 0]
+      player_epv[is.na(epv_duel_blame), epv_duel_blame := 0]
+      player_epv[is.na(n_actions), n_actions := 0L]
+    } else {
+      player_epv[, epv_duel_blame := 0]
+    }
+  } else {
+    player_epv[, epv_duel_blame := 0]
+  }
+
+  # --- Total EPV ---
+  player_epv[, epv_total := epv_as_actor + epv_as_receiver + epv_duel_blame]
+
+  # --- Action-type decomposition per match ---
+  credit_col <- if ("player_credit" %in% names(dt)) "player_credit"
+                else if ("epv_delta" %in% names(dt)) "epv_delta"
+                else "epv"
+
+  action_types <- list(
+    epv_passing   = c("pass", "ball_touch", "keeper_pick_up", "keeper_claim", "keeper_punch"),
+    epv_shooting  = "shot",
+    epv_dribbling = c("take_on", "aerial"),
+    epv_defending = c("tackle", "interception", "clearance", "ball_recovery",
+                      "keeper_save", "foul", "dispossessed")
+  )
+  for (col_name in names(action_types)) {
+    at <- action_types[[col_name]]
+    at_dt <- dt[action_type %in% at, .(
+      val = sum(get(credit_col), na.rm = TRUE)
+    ), by = .(player_id, match_id)]
+    data.table::setnames(at_dt, "val", col_name)
+    player_epv <- merge(player_epv, at_dt, by = c("player_id", "match_id"),
+                         all.x = TRUE)
+    player_epv[is.na(get(col_name)), (col_name) := 0]
+  }
+
+  # Offensive = passing + shooting + dribbling + receiver credit; Defensive = defending + duel_blame
+  player_epv[, `:=`(
+    epv_offensive = epv_passing + epv_shooting + epv_dribbling + epv_as_receiver,
+    epv_defensive = epv_defending + epv_duel_blame
+  )]
+
+  # --- Join lineups for minutes and per-90 ---
+  if (!is.null(lineups) && "minutes_played" %in% names(lineups)) {
+    dt_lineups <- data.table::as.data.table(lineups)
+    key_cols <- intersect(c("player_id", "match_id"), names(dt_lineups))
+    if (length(key_cols) == 2) {
+      mins <- dt_lineups[, .(minutes_played = sum(minutes_played, na.rm = TRUE)),
+                          by = .(player_id, match_id)]
+      # Carry position if available
+      if ("position" %in% names(dt_lineups)) {
+        pos <- dt_lineups[, .(position = position[1]), by = .(player_id, match_id)]
+        mins <- merge(mins, pos, by = c("player_id", "match_id"), all.x = TRUE)
+      }
+      player_epv <- merge(player_epv, mins, by = c("player_id", "match_id"),
+                           all.x = TRUE)
+
+      # Per-90 rates
+      epv_cols <- grep("^epv_", names(player_epv), value = TRUE)
+      epv_cols <- setdiff(epv_cols, grep("_p90$|_adj$", epv_cols, value = TRUE))
+      mins_safe <- pmax(player_epv$minutes_played, 1, na.rm = TRUE)
+      for (col in epv_cols) {
+        p90_col <- paste0(col, "_p90")
+        data.table::set(player_epv, j = p90_col,
+                         value = player_epv[[col]] / (mins_safe / 90))
+      }
+    }
+  }
+
+  # --- Position centering ---
+  if (isTRUE(position_center) && "position" %in% names(player_epv)) {
+    # Map to broad groups
+    player_epv[, pos_group := data.table::fcase(
+      grepl("GK|Goalkeeper", position, ignore.case = TRUE), "GK",
+      grepl("DEF|Back|CB|LB|RB|WB", position, ignore.case = TRUE), "DEF",
+      grepl("MID|CM|DM|AM|Wing", position, ignore.case = TRUE), "MID",
+      grepl("FWD|Forward|Striker|CF|ST", position, ignore.case = TRUE), "FWD",
+      default = "MID"
+    )]
+    adj_cols <- c("epv_total", "epv_offensive", "epv_defensive")
+    for (col in adj_cols) {
+      adj_name <- sub("^epv_", "epv_", paste0(col, "_adj"))
+      if (col == "epv_total") adj_name <- "epv_adj"
+      else adj_name <- paste0(col, "_adj")
+      player_epv[, (adj_name) := get(col) - mean(get(col), na.rm = TRUE),
+                  by = pos_group]
+    }
+    player_epv[, pos_group := NULL]
+  }
+
+  # Fill remaining NAs in numeric columns
+  num_cols <- names(player_epv)[vapply(player_epv, is.numeric, logical(1))]
+  for (col in num_cols) {
+    data.table::set(player_epv, which(is.na(player_epv[[col]])), col, 0)
+  }
+
+  data.table::setorder(player_epv, match_id, -epv_total)
+  player_epv[]
+}
+
+
+# =============================================================================
 # MODEL PERSISTENCE
 # =============================================================================
 
@@ -1342,7 +1562,10 @@ load_epv_model <- function(path = NULL) {
   if (requireNamespace("pannamodels", quietly = TRUE)) {
     model <- tryCatch(
       pannamodels::load_panna_model("epv_model", verbose = FALSE),
-      error = function(e) NULL
+      error = function(e) {
+        cli::cli_alert_info("pannamodels failed: {e$message}. Trying local path.")
+        NULL
+      }
     )
     if (!is.null(model)) {
       cli::cli_alert_success("Loaded EPV model from pannamodels")
@@ -1395,6 +1618,7 @@ pb_download_epv_models <- function(repo = "peteowen1/pannadata",
     "epv_model.rds"
   )
 
+  failed <- character(0)
   for (f in model_files) {
     tryCatch({
       piggyback::pb_download(
@@ -1406,11 +1630,16 @@ pb_download_epv_models <- function(repo = "peteowen1/pannadata",
       )
       cli::cli_alert_success("Downloaded {f}")
     }, error = function(e) {
+      failed <<- c(failed, f)
       cli::cli_warn("Failed to download {f}: {e$message}")
     })
   }
 
-  cli::cli_alert_success("EPV models downloaded to {dest}")
+  if (length(failed) > 0) {
+    cli::cli_warn("{length(failed)}/{length(model_files)} model files failed to download: {paste(failed, collapse = ', ')}")
+  } else {
+    cli::cli_alert_success("EPV models downloaded to {dest}")
+  }
 
   invisible(dest)
 }
