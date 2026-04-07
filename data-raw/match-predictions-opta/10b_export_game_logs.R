@@ -218,8 +218,15 @@ if (length(all_game_logs) == 0) {
 }
 
 game_logs <- data.table::rbindlist(all_game_logs, fill = TRUE)
+
+n_leagues_ok <- length(all_game_logs)
+if (n_leagues_ok < length(blog_leagues) / 2) {
+  warning(sprintf("Only %d/%d leagues produced game logs. Data may be incomplete.",
+                  n_leagues_ok, length(blog_leagues)), call. = FALSE)
+}
+
 message(sprintf("\n  Combined: %d player-games across %d leagues",
-                nrow(game_logs), length(all_game_logs)))
+                nrow(game_logs), n_leagues_ok))
 
 # Rename columns to match blog expectations
 # panna_value → panna, epv_offensive → offense, epv_defensive → defense

@@ -289,7 +289,10 @@ validate_step_output <- function(data = NULL, cache_path = NULL,
 #' @param path Path for the RDS file
 #' @param pipeline Character name of the producing pipeline
 save_cache_with_meta <- function(data, path, pipeline = "unknown") {
-  saveRDS(data, path)
+  # Atomic write: save to temp file then rename (prevents partial reads)
+  tmp_path <- paste0(path, ".tmp")
+  saveRDS(data, tmp_path)
+  file.rename(tmp_path, path)
 
   n_rows <- if (is.data.frame(data)) nrow(data)
             else if (is.list(data)) {

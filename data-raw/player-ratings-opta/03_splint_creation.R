@@ -126,14 +126,16 @@ if (use_value_metrics) {
   epv_files <- list.files(epv_cache_dir, pattern = "^player_game_epv_", full.names = TRUE)
   player_game_epv <- if (length(epv_files) > 0) {
     cat("\n=== Adding per-game EPV to splints ===\n")
-    data.table::rbindlist(lapply(epv_files, readRDS), fill = TRUE)
+    dt <- data.table::rbindlist(lapply(epv_files, readRDS), fill = TRUE)
+    if (nrow(dt) == 0) { cat("  Warning: EPV files loaded but 0 rows\n"); NULL } else dt
   } else NULL
 
   # Load per-game WPA (if available)
   wpa_files <- list.files(epv_cache_dir, pattern = "^player_game_wpa_", full.names = TRUE)
   player_game_wpa <- if (length(wpa_files) > 0) {
     cat("=== Adding per-game WPA to splints ===\n")
-    data.table::rbindlist(lapply(wpa_files, readRDS), fill = TRUE)
+    dt <- data.table::rbindlist(lapply(wpa_files, readRDS), fill = TRUE)
+    if (nrow(dt) == 0) { cat("  Warning: WPA files loaded but 0 rows\n"); NULL } else dt
   } else NULL
 
   # Load per-game PSV (if available from skills pipeline)
