@@ -157,10 +157,8 @@ standardize_player_names <- function(names) {
   cleaned <- gsub("\\s+", " ", cleaned)
   # Remove common suffixes
   cleaned <- gsub("\\s+(Jr\\.|Sr\\.|II|III|IV)$", "", cleaned)
-  # Fast title case: lowercase then capitalize first letter of each word
-  cleaned <- tolower(cleaned)
-  # Use gsub with perl regex for fast word boundary capitalization
-  cleaned <- gsub("(^|\\s)([a-z])", "\\1\\U\\2", cleaned, perl = TRUE)
+  # Title case with full Unicode support (handles Ødegaard, Müller, etc.)
+  cleaned <- stringi::stri_trans_totitle(cleaned)
 
   # Build lookup and return via O(1) match
   lookup <- setNames(cleaned, unique_names)

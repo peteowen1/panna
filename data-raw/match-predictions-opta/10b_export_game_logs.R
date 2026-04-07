@@ -116,6 +116,34 @@ for (league in blog_leagues) {
                                       league = league)
     spadl_credit <- assign_epv_credit(spadl_epv, xpass_model)
     player_game_epv <- aggregate_player_game_epv(spadl_credit, lineups)
+
+    # --- EPV adjustments (position centering + opponent) ---
+    tryCatch({
+      # Add match_date for opponent adjustment
+      dt_lu <- data.table::as.data.table(lineups)
+      if ("match_date" %in% names(dt_lu)) {
+        match_dates <- dt_lu[, .(match_date = match_date[1]), by = match_id]
+        player_game_epv <- merge(player_game_epv, match_dates, by = "match_id", all.x = TRUE)
+      }
+
+      # Position centering
+      if ("position" %in% names(player_game_epv)) {
+        player_game_epv <- adjust_epv_for_position(
+          player_game_epv,
+          credit_cols = c("epv_total", "epv_offensive", "epv_defensive")
+        )
+      }
+
+      # Opponent adjustment
+      if (all(c("match_date", "team_id", "minutes_played") %in% names(player_game_epv))) {
+        player_game_epv <- adjust_epv_for_opponents(
+          player_game_epv, credit_col = "epv_total"
+        )
+      }
+    }, error = function(e) {
+      message(sprintf("    EPV adjustments skipped: %s", e$message))
+    })
+
     message(sprintf("    EPV: %d player-games", nrow(player_game_epv)))
 
     # --- WPA path ---

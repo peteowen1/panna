@@ -88,6 +88,11 @@ query_remote_parquet <- function(table_name, sql_template, release = NULL,
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
   # Replace {table} placeholder with actual file path
+  # Note: DuckDB doesn't support parameterized FROM sources, so we validate
+  # the path to ensure it's a real filesystem path (no injection risk)
+  if (grepl("[;'\"]", temp_file_normalized)) {
+    cli::cli_abort("Invalid characters in file path: {temp_file_normalized}")
+  }
   sql <- gsub("\\{table\\}", sprintf("'%s'", temp_file_normalized), sql_template)
 
   result <- DBI::dbGetQuery(conn, sql)
@@ -153,6 +158,8 @@ query_local_parquet <- function(table_type, sql_template, league = NULL, season 
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
   # Replace {table} placeholder with actual file pattern
+  # Note: DuckDB doesn't support parameterized FROM sources; paths are from
+  # normalizePath() so injection risk is negligible
   sql <- gsub("\\{table\\}", parquet_pattern, sql_template)
 
   result <- DBI::dbGetQuery(conn, sql)

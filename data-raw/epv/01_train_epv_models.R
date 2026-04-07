@@ -17,6 +17,12 @@ devtools::load_all()
 if (!exists("LEAGUES")) LEAGUES <- names(OPTA_LEAGUES)
 if (!exists("SEASONS")) SEASONS <- c("2020-2021", "2021-2022", "2022-2023", "2023-2024")
 
+# Tournament seasons use "YYYY Country" format (not "YYYY-YYYY")
+TOURNAMENT_SEASONS <- list(
+  WC   = c("2014 Brazil", "2018 Russia"),
+  EURO = c("2016 France", "2024 Germany")
+)
+
 # EPV method: "goal" (multinomial) or "xg" (regression on signed next-shot xG)
 EPV_METHOD <- "xg"
 
@@ -44,8 +50,18 @@ all_shots <- list()
 all_lineups <- list()
 total_events <- 0L
 
+# Build league → season list (domestic use SEASONS, tournaments use TOURNAMENT_SEASONS)
+league_seasons <- list()
 for (league in LEAGUES) {
-  for (season in SEASONS) {
+  if (league %in% names(TOURNAMENT_SEASONS)) {
+    league_seasons[[league]] <- TOURNAMENT_SEASONS[[league]]
+  } else {
+    league_seasons[[league]] <- SEASONS
+  }
+}
+
+for (league in LEAGUES) {
+  for (season in league_seasons[[league]]) {
     key <- paste(league, season)
 
     tryCatch({

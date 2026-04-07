@@ -100,6 +100,10 @@ add_value_metrics_to_splints <- function(splint_data, player_game_epv = NULL,
   }
 
   splints <- .add_metric(splints, players, player_game_epv, "epv_total", "epv")
+  # Position-adjusted EPV (if available from adjust_epv_for_position)
+  if (!is.null(player_game_epv) && "epv_total_adj" %in% names(player_game_epv)) {
+    splints <- .add_metric(splints, players, player_game_epv, "epv_total_adj", "epv_adj")
+  }
   splints <- .add_metric(splints, players, player_game_wpa, "wpa_total", "wpa")
   splints <- .add_metric(splints, players, player_game_psv, "psv", "psv")
 
