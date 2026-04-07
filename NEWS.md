@@ -1,3 +1,43 @@
+# panna 0.3.0
+
+Value metrics infrastructure, pipeline hardening, and match prediction improvements.
+
+## Value Metrics (Two-Path System)
+
+* **EPR** (Expected Points Rating) — Decay-weighted Bayesian EPV ratings per player. New functions: `calculate_epr()`, `calculate_epr_batch()` in `player_ratings_epv.R`
+* **WPA** (Win Probability Added) — 3-class win probability model (H/D/A) with action-level WPA credit assignment. New functions: `create_wp_features()`, `train_wp_model()`, `add_wp_vars()`, `assign_wpa_credit()`, `aggregate_player_game_wpa()`
+* **PSV/PSR** (Player Stat Value / Player Skill Rating) — Per-game stat value via glmnet coefficients with O/D decomposition. New functions: `calculate_psv()`, `calculate_psv_components()`, `calculate_psr()`
+* **panna_value** — Combined per-game metric: 50% EPV + 50% PSV. `build_player_game_ratings()` merges EPV + WPA + PSV into unified per-game output
+* **Multi-target RAPM** — xG, EPV, WPA, PSV as response variables via `fit_spm_opta_target()`
+
+## New Features
+
+* **Player centrality** — PageRank-based network centrality from opponent graphs. `calculate_player_centrality()` in `centrality.R`, integrated as step 07b in Opta pipeline
+* **Player attribution** — Zero-ablation contribution method. `calculate_player_attribution()` + `batch_player_attribution()` in `player_attribution.R`
+* **Weather integration** — Weather data for match features via `weather.R`
+* **Match simulation** — Monte Carlo season simulation engine via `simulate.R`
+* **Player comparison** — Side-by-side player comparison via `compare_players.R`
+
+## Pipeline Improvements
+
+* **Unified `run_step()`** in `pipeline_utils.R` — serves all 4 pipelines (Opta, FBref, Skills, Predictions)
+* **Skills pipeline expanded** to 12 scripts (00, 01-06, 07, 08, 08b) with PSR model training and weekly PSR exports
+* **EPV pipeline expanded** to 6 steps — WP model training (step 05) and WPA calculation (step 06) added
+* **Opta pipeline GHA** — `opta-pipeline.yml` for running Opta RAPM/SPM on GitHub Actions with auto cache upload
+* **Bootstrap script** — `data-raw/bootstrap.R` for one-command fresh clone setup (data + models + caches)
+* **Predictions pipeline** — Skills-based team features (step 02b), blog dispatch guard (`if: success()`)
+
+## Bug Fixes & Hardening
+
+* Fixed `library()` vs `requireNamespace()` in PSOCK parallel workers — workers need `library()` to attach packages
+* Fixed `on.exit()` calls to use `add = TRUE` to prevent DuckDB connection leaks
+* Pipeline joins migrated from `player_name` to `player_id` (one legacy join remains in `06_xrapm.R`)
+* `filter_bad_xg_data` threshold set to 30% for Opta (25% zero-xG splints is normal with SPADL)
+
+## Tests
+
+* 35 test files, 2248+ expectations across loaders, models, pipelines, scraping, and value metrics
+
 # panna 0.2.0
 
 Major expansion: Opta is now the primary data source with full pipeline support across 15 leagues.

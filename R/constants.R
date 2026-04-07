@@ -313,6 +313,26 @@ EPV_POSITION_SCALE_MIN <- 0.3
 EPV_POSITION_RAMP_X <- 40
 
 
+#' Opponent adjustment: exponential decay rate
+#'
+#' Controls how quickly past matches lose influence in opponent profiling.
+#' lambda = 0.003 gives ~231-day half-life, suitable for within-season use.
+#'
+#' @format Numeric value: 0.003
+#' @keywords internal
+EPV_OPP_LAMBDA_DECAY <- 0.003
+
+#' Opponent adjustment: prior games for shrinkage
+#'
+#' Number of pseudo-games at league average for Bayesian shrinkage of
+#' opponent profiles. Lower = faster response, higher = more stable.
+#' 2 is appropriate for within-season single-league data.
+#'
+#' @format Numeric value: 2
+#' @keywords internal
+EPV_OPP_PRIOR_GAMES <- 2
+
+
 #' Default penalty kick xG value
 #'
 #' xG override for penalty kicks. Based on historical penalty

@@ -6,7 +6,8 @@
 \usage{
 load_psr_coefficients(
   type = c("margin", "offense", "defense"),
-  target = c("xg", "goals")
+  target = c("xg", "goals"),
+  model = c("outfield", "gk")
 )
 }
 \arguments{
@@ -14,6 +15,9 @@ load_psr_coefficients(
 
 \item{target}{One of \code{"xg"} (default, xG differential) or
 \code{"goals"} (goal differential).}
+
+\item{model}{One of \code{"outfield"} (default) or \code{"gk"} (goalkeeper
+sub-model, trained on goal differential).}
 }
 \value{
 A data.frame with columns \code{stat_name}, \code{beta}, and
