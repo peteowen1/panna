@@ -163,12 +163,12 @@ create_next_xg_labels <- function(spadl_actions, xg_values = NULL) {
         dt <- xg_df[, .(match_id, action_id, shot_xg = xg)][dt, on = c("match_id", "action_id")]
       }
     }
-  } else if ("chain_xg" %in% names(dt)) {
+  } else if ("chain_xg" %in% names(dt) && any(!is.na(dt$chain_xg))) {
     dt[action_type == "shot", shot_xg := chain_xg]
   }
 
-  # If no xG available, estimate from position (simple model)
-  if (!"shot_xg" %in% names(dt)) {
+  # If no xG available (or all NA), estimate from position (simple model)
+  if (!"shot_xg" %in% names(dt) || all(is.na(dt$shot_xg))) {
     cli::cli_alert_info("No xG values found, estimating from position...")
     dt[action_type == "shot", shot_xg := estimate_simple_xg(start_x, start_y)]
   }
@@ -295,9 +295,15 @@ fit_epv_model <- function(features,
     cli::cli_abort("xgboost package required. Install with: install.packages('xgboost')")
   }
 
-  # Get feature columns
-  feature_cols <- get_epv_feature_cols(include_sequence = TRUE, n_prev = 3)
-  available_cols <- intersect(feature_cols, names(features))
+
+  # Get feature columns — check simple features first, then full
+  simple_available <- intersect(EPV_SIMPLE_FEATURE_COLS, names(features))
+  if (length(simple_available) >= length(EPV_SIMPLE_FEATURE_COLS)) {
+    available_cols <- simple_available
+  } else {
+    feature_cols <- get_epv_feature_cols(include_sequence = TRUE, n_prev = 3)
+    available_cols <- intersect(feature_cols, names(features))
+  }
 
   if (length(available_cols) < 5) {
     cli::cli_abort("Insufficient features available for EPV model")
@@ -446,7 +452,9 @@ fit_epv_model <- function(features,
       feature_cols = available_cols,
       n_actions = length(y),
       distribution = distribution,
-      params = params
+      params = params,
+      leagues_trained = if ("league_id" %in% available_cols)
+        names(EPV_LEAGUE_MAP) else NULL
     )
   )
 
@@ -529,6 +537,8 @@ predict_epv_probs <- function(model, features) {
 #' @param xg_model Optional pre-trained xG model from fit_xg_model(). If NULL,
 #'   attempts to load from pannadata/data/opta/models/xg_model.rds. Falls back to
 #'   position-based estimate if no model available.
+#' @param league League code (e.g., "ENG") for league-aware EPV features.
+#'   Only used when feature_mode is "simple". If NULL, defaults to 0 (unknown).
 #'
 #' @return SPADL actions with EPV columns added:
 #'   \itemize{
@@ -540,7 +550,8 @@ predict_epv_probs <- function(model, features) {
 #'   }
 #'
 #' @keywords internal
-calculate_action_epv <- function(spadl_actions, features, epv_model, xg_model = NULL) {
+calculate_action_epv <- function(spadl_actions, features, epv_model, xg_model = NULL,
+                                  league = NULL) {
   cli::cli_alert_info("Calculating EPV for {nrow(spadl_actions)} actions...")
 
   # Try to load pre-trained Opta xG model if not provided
@@ -559,6 +570,12 @@ calculate_action_epv <- function(spadl_actions, features, epv_model, xg_model = 
   }
 
   method <- epv_model$method %||% "goal"
+
+  # For simple models, create features from the SPADL actions directly
+  feature_mode <- epv_model$panna_metadata$feature_mode %||% "full"
+  if (feature_mode == "simple") {
+    features <- create_epv_features_simple(spadl_actions, league = league)
+  }
 
   # Get predictions
   preds <- predict_epv_probs(epv_model, features)
@@ -887,13 +904,13 @@ assign_epv_credit <- function(spadl_with_epv, xpass_model = NULL) {
       # shouldn't be blamed for receiving a backpass (e.g., keeper receiving
       # backpasses shouldn't accumulate negative EPV).
       #
-      # POSITION SCALING: Passes from deep positions (x near 100 = own goal) get
+      # POSITION SCALING: Passes from deep positions (near own goal) get
       # scaled down because EPV improvement from own box is "expected" for routine
       # passes. A keeper's short pass to a defender shouldn't get more credit than
       # a midfielder's creative through ball just because EPV delta is higher.
       #
-      # Coordinate system: x=100 is own goal, x=0 is attacking goal
-      # Scale factor: EPV_POSITION_SCALE_MIN at x=100 (own goal), ramping to 1.0 at x=(100 - EPV_POSITION_RAMP_X)
+      # Coordinate system: x=0 is own goal, x=100 is attacking goal
+      # Scale factor: EPV_POSITION_SCALE_MIN at x=0 (own goal), ramping to 1.0 at x=EPV_POSITION_RAMP_X
       # This reduces credit for routine GK/defender distribution while maintaining
       # full credit for passes in advanced positions.
       #
@@ -904,10 +921,10 @@ assign_epv_credit <- function(spadl_with_epv, xpass_model = NULL) {
 
       if (length(success_pass_idx) > 0) {
         # Position-based scaling: reduce credit for routine deep passes
-        # x=100 (own goal): scale=EPV_POSITION_SCALE_MIN, x=(100-EPV_POSITION_RAMP_X): scale=1.0
+        # x=0 (own goal): scale=EPV_POSITION_SCALE_MIN, x=EPV_POSITION_RAMP_X: scale=1.0
         dt[success_pass_idx, `:=`(
           position_scale = pmin(1.0, EPV_POSITION_SCALE_MIN +
-            (1 - EPV_POSITION_SCALE_MIN) * ((100 - start_x) / EPV_POSITION_RAMP_X)),
+            (1 - EPV_POSITION_SCALE_MIN) * (start_x / EPV_POSITION_RAMP_X)),
           passer_share = EPV_BASE_PASSER_SHARE + EPV_PASS_DIFFICULTY_ADJUSTMENT * (1 - xpass)
         )]
 
@@ -939,10 +956,10 @@ assign_epv_credit <- function(spadl_with_epv, xpass_model = NULL) {
       #
       # For positive delta (rare: failed pass still benefited team), passer gets full credit
       #
-      # Position scaling: failed passes from deep positions (x near 100) get LESS
+      # Position scaling: failed passes from deep positions (near own goal) get LESS
       # scaling reduction since mistakes from deep ARE costly and should be penalized.
-      # Coordinate system: x=100 is own goal, x=0 is attacking goal
-      # Scale: 0.6 at x=100 (own goal), 1.0 at x=60 and beyond
+      # Coordinate system: x=0 is own goal, x=100 is attacking goal
+      # Scale: 0.6 at x=0 (own goal), 1.0 at x=EPV_POSITION_RAMP_X and beyond
       #
       # passer_blame_share: how much of the negative delta the passer takes
       # passer_blame = EPV_BASE_PASSER_SHARE + EPV_PASS_DIFFICULTY_ADJUSTMENT * xpass
@@ -953,22 +970,22 @@ assign_epv_credit <- function(spadl_with_epv, xpass_model = NULL) {
 
       if (length(failed_pass_idx) > 0) {
         # Less aggressive scaling for failed passes (mistakes from deep are still costly)
-        # x=100 (own goal): scale=0.6, x=(100-EPV_POSITION_RAMP_X): scale=1.0
+        # x=0 (own goal): scale=0.6, x=EPV_POSITION_RAMP_X: scale=1.0
         failed_scale_min <- 0.6
         dt[failed_pass_idx, `:=`(
           position_scale = pmin(1.0, failed_scale_min +
-            (1 - failed_scale_min) * ((100 - start_x) / EPV_POSITION_RAMP_X)),
+            (1 - failed_scale_min) * (start_x / EPV_POSITION_RAMP_X)),
           passer_blame = EPV_BASE_PASSER_SHARE + EPV_PASS_DIFFICULTY_ADJUSTMENT * xpass
         )]
 
         # Only split for negative delta (actual loss of value)
         # For positive delta (rare), passer gets full credit, receiver gets 0
-        # For deep positions (x > 80), reduce penalty further (routine distribution)
+        # For deep positions (x < 20), reduce penalty further (routine distribution)
         dt[failed_pass_idx, `:=`(
           player_credit = fifelse(
             epv_delta < 0,
             fifelse(
-              start_x > 80,
+              start_x < 20,
               epv_delta * passer_blame * position_scale * 0.5,  # Deep: halve the penalty
               epv_delta * passer_blame * position_scale          # Advanced: full penalty
             ),
@@ -977,7 +994,7 @@ assign_epv_credit <- function(spadl_with_epv, xpass_model = NULL) {
           receiver_credit = fifelse(
             epv_delta < 0,
             fifelse(
-              start_x > 80,
+              start_x < 20,
               -epv_delta * (1 - passer_blame) * position_scale * 0.5,  # Deep: halve
               -epv_delta * (1 - passer_blame) * position_scale          # Advanced: full
             ),
@@ -996,7 +1013,6 @@ assign_epv_credit <- function(spadl_with_epv, xpass_model = NULL) {
   # POSITION SCALING FOR OFFENSIVE ACTIONS FROM DEEP
   #
   # Apply position scaling to reduce credit for "routine" offensive actions
-
   # performed from deep positions (near own goal). The EPV model correctly
   # identifies that game state improves when ball moves upfield, but we don't
   # want to over-credit routine actions like keeper pick-ups or punts.
@@ -1005,23 +1021,23 @@ assign_epv_credit <- function(spadl_with_epv, xpass_model = NULL) {
   # Defensive actions (NOT scaled): keeper_save, tackle, interception, clearance,
   #                                  ball_recovery, aerial, foul
   #
-  # Coordinate system: x=100 is own goal, x=0 is attacking goal
-  # Scale: EPV_POSITION_SCALE_MIN at x=100, ramping to 1.0 at x=(100 - EPV_POSITION_RAMP_X)
+  # Coordinate system: x=0 is own goal, x=100 is attacking goal
+  # Scale: EPV_POSITION_SCALE_MIN at x=0, ramping to 1.0 at x=EPV_POSITION_RAMP_X
   # This matches the pass position scaling for consistency.
   #
   offensive_action_types <- c("keeper_pick_up", "keeper_punch", "other",
                               "ball_touch", "take_on")
 
-  # Only scale actions from deep positions (x > 60) that are offensive
+  # Only scale actions from deep positions (x < EPV_POSITION_RAMP_X) that are offensive
   # and haven't already been handled (passes are already scaled above)
   offensive_deep_idx <- which(dt$action_type %in% offensive_action_types &
-                               dt$start_x > 60 &
+                               dt$start_x < EPV_POSITION_RAMP_X &
                                !is.na(dt$player_credit))
 
   if (length(offensive_deep_idx) > 0) {
     # Apply same position scaling formula as passes
     dt[offensive_deep_idx, position_scale := pmin(1.0, EPV_POSITION_SCALE_MIN +
-      (1 - EPV_POSITION_SCALE_MIN) * ((100 - start_x) / EPV_POSITION_RAMP_X))]
+      (1 - EPV_POSITION_SCALE_MIN) * (start_x / EPV_POSITION_RAMP_X))]
     dt[offensive_deep_idx, player_credit := player_credit * position_scale]
     dt[, position_scale := NULL]
 

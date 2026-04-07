@@ -54,7 +54,8 @@ for (league in blog_leagues) {
 
     # EPV credit assignment
     epv_features <- create_epv_features(spadl_labeled, n_prev = 3)
-    spadl_epv <- calculate_action_epv(spadl_labeled, epv_features, epv_model)
+    spadl_epv <- calculate_action_epv(spadl_labeled, epv_features, epv_model,
+                                      league = league)
     spadl_credit <- assign_epv_credit(spadl_epv, xpass_model)
 
     # Extract slim equity lookup: match_id + original_event_id + player_credit

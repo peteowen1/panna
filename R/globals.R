@@ -146,6 +146,7 @@ utils::globalVariables(c(
   "action_type",
   "action_type_id",
   "action_id",
+  "league_id",
   "result",
   "bodypart",
   "start_x",

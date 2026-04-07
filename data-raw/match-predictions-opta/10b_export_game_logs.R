@@ -112,7 +112,8 @@ for (league in blog_leagues) {
 
     # --- EPV path ---
     epv_features <- create_epv_features(spadl_labeled, n_prev = 3)
-    spadl_epv <- calculate_action_epv(spadl_labeled, epv_features, epv_model)
+    spadl_epv <- calculate_action_epv(spadl_labeled, epv_features, epv_model,
+                                      league = league)
     spadl_credit <- assign_epv_credit(spadl_epv, xpass_model)
     player_game_epv <- aggregate_player_game_epv(spadl_credit, lineups)
     message(sprintf("    EPV: %d player-games", nrow(player_game_epv)))
