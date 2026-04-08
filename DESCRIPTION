@@ -46,6 +46,8 @@ Suggests:
     testthat (>= 3.0.0),
     withr,
     xgboost
+Remotes:
+    peteowen1/pannamodels
 Config/testthat/edition: 3
 VignetteBuilder: knitr
 URL: https://github.com/peteowen1/panna

@@ -110,6 +110,7 @@ reference:
   - aggregate_opta_stats
   - compute_match_level_opta_stats
   - fit_spm_opta
+  - fit_spm_opta_target
   - compare_spm_features
 
 - title: Panna Ratings
@@ -121,6 +122,8 @@ reference:
   - extract_xrapm_ratings
   - rank_players_panna
   - validate_panna_ratings
+  - aggregate_season_ratings
+  - add_value_metrics_to_splints
 
 - title: Offensive/Defensive Analysis
   desc: Rating decomposition and analysis
@@ -165,6 +168,29 @@ reference:
   - save_xpass_model
   - load_xpass_model
   - split_pass_credit
+
+- title: Win Probability (WPA)
+  desc: Win probability model and WPA credit assignment
+  contents:
+  - create_wp_features
+  - train_wp_model
+  - load_wp_model
+  - save_wp_model
+  - predict_wp
+  - add_wp_vars
+  - assign_wpa_credit
+  - aggregate_player_game_wpa
+
+- title: EPR (Expected Points Rating)
+  desc: Decay-weighted Bayesian EPV ratings
+  contents:
+  - calculate_epr
+  - calculate_epr_batch
+  - aggregate_player_game_epv
+  - build_player_game_ratings
+  - player_value
+  - PANNA_EPR_WEIGHT
+  - PANNA_PSR_WEIGHT
 
 - title: Estimated Skills
   desc: Bayesian decay-weighted skill estimation with position-specific priors
@@ -218,12 +244,19 @@ reference:
   - calculate_player_attribution
   - batch_player_attribution
 
-- title: Player Skill Rating (PSR)
-  desc: Composite player skill metric
+- title: Player Skill Rating (PSR) & Stat Value (PSV)
+  desc: Composite player skill and per-game stat value metrics
   contents:
   - calculate_psr
   - player_psr
   - load_opta_psr_weekly
+  - calculate_psv
+  - calculate_psv_components
+  - compute_player_psv
+  - default_stat_rating_params
+  - soccer_stat_rating_definitions
+  - soccer_position_map
+  - stat_rating_names
 
 - title: Feature Engineering
   desc: Advanced feature creation
