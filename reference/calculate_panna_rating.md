@@ -2,7 +2,7 @@
 
 Simplified panna rating calculation for single-season use cases.
 Combines RAPM with SPM prior using a fixed lambda via
-[`glmnet::glmnet()`](https://glmnet.stanford.edu/reference/glmnet.html).
+[`glmnet::glmnet()`](https://rdrr.io/pkg/glmnet/man/glmnet.html).
 
 ## Usage
 

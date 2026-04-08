@@ -17,7 +17,7 @@ state covariates and target variable.
 
 - target_type:
 
-  "xg" or "goals"
+  One of "xg", "goals", "epv", "wpa", "psv", or "custom"
 
 ## Value
 

@@ -1,0 +1,26 @@
+# Get all stat rating column names
+
+Returns the stat names from
+[`soccer_stat_rating_definitions`](https://peteowen1.github.io/panna/reference/soccer_stat_rating_definitions.md),
+optionally filtered by type or category.
+
+## Usage
+
+``` r
+stat_rating_names(type = NULL, category = NULL)
+```
+
+## Arguments
+
+- type:
+
+  Filter: "rate", "efficiency", or NULL for all.
+
+- category:
+
+  Filter: "offensive", "defensive", "goalkeeper", "xmetrics", "general",
+  or NULL for all.
+
+## Value
+
+Character vector of stat names.

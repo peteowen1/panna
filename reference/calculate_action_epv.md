@@ -9,7 +9,13 @@ Computes EPV for each action. Supports two methods:
 ## Usage
 
 ``` r
-calculate_action_epv(spadl_actions, features, epv_model, xg_model = NULL)
+calculate_action_epv(
+  spadl_actions,
+  features = NULL,
+  epv_model,
+  xg_model = NULL,
+  league = NULL
+)
 ```
 
 ## Arguments
@@ -31,6 +37,11 @@ calculate_action_epv(spadl_actions, features, epv_model, xg_model = NULL)
   Optional pre-trained xG model from fit_xg_model(). If NULL, attempts
   to load from pannadata/data/opta/models/xg_model.rds. Falls back to
   position-based estimate if no model available.
+
+- league:
+
+  League code (e.g., "ENG") for league-aware EPV features. Only used
+  when feature_mode is "simple". If NULL, defaults to 0 (unknown).
 
 ## Value
 

@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.2.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -37,6 +37,71 @@
       <small>Source: <a href="https://github.com/peteowen1/panna/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.0" id="panna-030">panna 0.3.0<a class="anchor" aria-label="anchor" href="#panna-030"></a></h2>
+<p>Value metrics infrastructure, pipeline hardening, and match prediction improvements.</p>
+<div class="section level3">
+<h3 id="value-metrics-two-path-system-0-3-0">Value Metrics (Two-Path System)<a class="anchor" aria-label="anchor" href="#value-metrics-two-path-system-0-3-0"></a></h3>
+<ul><li>
+<strong>EPR</strong> (Expected Points Rating) — Decay-weighted Bayesian EPV ratings per player. New functions: <code><a href="../reference/calculate_epr.html">calculate_epr()</a></code>, <code><a href="../reference/calculate_epr_batch.html">calculate_epr_batch()</a></code> in <code>player_ratings_epv.R</code>
+</li>
+<li>
+<strong>WPA</strong> (Win Probability Added) — 3-class win probability model (H/D/A) with action-level WPA credit assignment. New functions: <code><a href="../reference/create_wp_features.html">create_wp_features()</a></code>, <code><a href="../reference/train_wp_model.html">train_wp_model()</a></code>, <code><a href="../reference/add_wp_vars.html">add_wp_vars()</a></code>, <code><a href="../reference/assign_wpa_credit.html">assign_wpa_credit()</a></code>, <code><a href="../reference/aggregate_player_game_wpa.html">aggregate_player_game_wpa()</a></code>
+</li>
+<li>
+<strong>PSV/PSR</strong> (Player Stat Value / Player Skill Rating) — Per-game stat value via glmnet coefficients with O/D decomposition. New functions: <code><a href="../reference/calculate_psv.html">calculate_psv()</a></code>, <code><a href="../reference/calculate_psv_components.html">calculate_psv_components()</a></code>, <code><a href="../reference/calculate_psr.html">calculate_psr()</a></code>
+</li>
+<li>
+<strong>panna_value</strong> — Combined per-game metric: 50% EPV + 50% PSV. <code><a href="../reference/build_player_game_ratings.html">build_player_game_ratings()</a></code> merges EPV + WPA + PSV into unified per-game output</li>
+<li>
+<strong>Multi-target RAPM</strong> — xG, EPV, WPA, PSV as response variables via <code><a href="../reference/fit_spm_opta_target.html">fit_spm_opta_target()</a></code>
+</li>
+</ul></div>
+<div class="section level3">
+<h3 id="new-features-0-3-0">New Features<a class="anchor" aria-label="anchor" href="#new-features-0-3-0"></a></h3>
+<ul><li>
+<strong>Player centrality</strong> — PageRank-based network centrality from opponent graphs. <code><a href="../reference/calculate_player_centrality.html">calculate_player_centrality()</a></code> in <code>centrality.R</code>, integrated as step 07b in Opta pipeline</li>
+<li>
+<strong>Player attribution</strong> — Zero-ablation contribution method. <code><a href="../reference/calculate_player_attribution.html">calculate_player_attribution()</a></code> + <code><a href="../reference/batch_player_attribution.html">batch_player_attribution()</a></code> in <code>player_attribution.R</code>
+</li>
+<li>
+<strong>Weather integration</strong> — Weather data for match features via <code>weather.R</code>
+</li>
+<li>
+<strong>Match simulation</strong> — Monte Carlo season simulation engine via <code>simulate.R</code>
+</li>
+<li>
+<strong>Player comparison</strong> — Side-by-side player comparison via <code>compare_players.R</code>
+</li>
+</ul></div>
+<div class="section level3">
+<h3 id="pipeline-improvements-0-3-0">Pipeline Improvements<a class="anchor" aria-label="anchor" href="#pipeline-improvements-0-3-0"></a></h3>
+<ul><li>
+<strong>Unified <code>run_step()</code></strong> in <code>pipeline_utils.R</code> — serves all 4 pipelines (Opta, FBref, Skills, Predictions)</li>
+<li>
+<strong>Skills pipeline expanded</strong> to 12 scripts (00, 01-06, 07, 08, 08b) with PSR model training and weekly PSR exports</li>
+<li>
+<strong>EPV pipeline expanded</strong> to 6 steps — WP model training (step 05) and WPA calculation (step 06) added</li>
+<li>
+<strong>Opta pipeline GHA</strong> — <code>opta-pipeline.yml</code> for running Opta RAPM/SPM on GitHub Actions with auto cache upload</li>
+<li>
+<strong>Bootstrap script</strong> — <code>data-raw/bootstrap.R</code> for one-command fresh clone setup (data + models + caches)</li>
+<li>
+<strong>Predictions pipeline</strong> — Skills-based team features (step 02b), blog dispatch guard (<code>if: success()</code>)</li>
+</ul></div>
+<div class="section level3">
+<h3 id="bug-fixes--hardening-0-3-0">Bug Fixes &amp; Hardening<a class="anchor" aria-label="anchor" href="#bug-fixes--hardening-0-3-0"></a></h3>
+<ul><li>Fixed <code><a href="https://rdrr.io/r/base/library.html" class="external-link">library()</a></code> vs <code><a href="https://rdrr.io/r/base/ns-load.html" class="external-link">requireNamespace()</a></code> in PSOCK parallel workers — workers need <code><a href="https://rdrr.io/r/base/library.html" class="external-link">library()</a></code> to attach packages</li>
+<li>Fixed <code><a href="https://rdrr.io/r/base/on.exit.html" class="external-link">on.exit()</a></code> calls to use <code>add = TRUE</code> to prevent DuckDB connection leaks</li>
+<li>Pipeline joins migrated from <code>player_name</code> to <code>player_id</code> (one legacy join remains in <code>06_xrapm.R</code>)</li>
+<li>
+<code>filter_bad_xg_data</code> threshold set to 30% for Opta (25% zero-xG splints is normal with SPADL)</li>
+</ul></div>
+<div class="section level3">
+<h3 id="tests-0-3-0">Tests<a class="anchor" aria-label="anchor" href="#tests-0-3-0"></a></h3>
+<ul><li>35 test files, 2248+ expectations across loaders, models, pipelines, scraping, and value metrics</li>
+</ul></div>
+</div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.2.0" id="panna-020">panna 0.2.0<a class="anchor" aria-label="anchor" href="#panna-020"></a></h2>
 <p>Major expansion: Opta is now the primary data source with full pipeline support across 15 leagues.</p>

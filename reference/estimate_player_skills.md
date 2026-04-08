@@ -12,7 +12,9 @@ estimate_player_skills(
   decay_params = NULL,
   target_date = NULL,
   min_weighted_90s = 5,
-  stat_cols = NULL
+  stat_cols = NULL,
+  rating_names = FALSE,
+  compute_ci = FALSE
 )
 ```
 
@@ -47,6 +49,18 @@ estimate_player_skills(
 
   Character vector of stat columns to estimate. If NULL, auto-detects
   all \_p90 columns plus efficiency columns.
+
+- rating_names:
+
+  Logical. If `TRUE`, suffix output stat columns with `_rating` (e.g.,
+  `goals_p90_rating`) for alignment with torpverse's `_stat_rating`
+  convention. Default `FALSE`.
+
+- compute_ci:
+
+  Logical. If `TRUE`, compute 80\\ and add `_rating_lower` /
+  `_rating_upper` columns. Implies `rating_names = TRUE`. Default
+  `FALSE`.
 
 ## Value
 

@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.2.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -473,6 +473,13 @@
 
         <dt>
 
+          <code><a href="fit_spm_opta_target.html">fit_spm_opta_target()</a></code>
+
+        </dt>
+        <dd>Fit SPM for a custom target variable</dd>
+
+        <dt>
+
           <code><a href="compare_spm_features.html">compare_spm_features()</a></code>
 
         </dt>
@@ -528,6 +535,20 @@
 
         </dt>
         <dd>Validate panna ratings</dd>
+
+        <dt>
+
+          <code><a href="aggregate_season_ratings.html">aggregate_season_ratings()</a></code>
+
+        </dt>
+        <dd>Aggregate player game ratings to season level</dd>
+
+        <dt>
+
+          <code><a href="add_value_metrics_to_splints.html">add_value_metrics_to_splints()</a></code>
+
+        </dt>
+        <dd>Add value metric columns to splints</dd>
       </dl></div><div class="section level2">
       <h2 id="offensive-defensive-analysis">Offensive/Defensive Analysis<a class="anchor" aria-label="anchor" href="#offensive-defensive-analysis"></a></h2>
 
@@ -780,6 +801,129 @@
         </dt>
         <dd>Split Pass Credit (Legacy Helper)</dd>
       </dl></div><div class="section level2">
+      <h2 id="win-probability-wpa-">Win Probability (WPA)<a class="anchor" aria-label="anchor" href="#win-probability-wpa-"></a></h2>
+
+      <div class="section-desc"><p>Win probability model and WPA credit assignment</p></div>
+
+      <dl></dl></div><div class="section level2">
+
+
+
+
+      <dl><dt>
+
+          <code><a href="create_wp_features.html">create_wp_features()</a></code>
+
+        </dt>
+        <dd>Create win probability features from SPADL actions</dd>
+
+        <dt>
+
+          <code><a href="train_wp_model.html">train_wp_model()</a></code>
+
+        </dt>
+        <dd>Train a win probability model</dd>
+
+        <dt>
+
+          <code><a href="load_wp_model.html">load_wp_model()</a></code>
+
+        </dt>
+        <dd>Load WP model</dd>
+
+        <dt>
+
+          <code><a href="save_wp_model.html">save_wp_model()</a></code>
+
+        </dt>
+        <dd>Save WP model</dd>
+
+        <dt>
+
+          <code><a href="predict_wp.html">predict_wp()</a></code>
+
+        </dt>
+        <dd>Predict win probability</dd>
+
+        <dt>
+
+          <code><a href="add_wp_vars.html">add_wp_vars()</a></code>
+
+        </dt>
+        <dd>Add win probability and WPA to SPADL data</dd>
+
+        <dt>
+
+          <code><a href="assign_wpa_credit.html">assign_wpa_credit()</a></code>
+
+        </dt>
+        <dd>Assign WPA credit to players</dd>
+
+        <dt>
+
+          <code><a href="aggregate_player_game_wpa.html">aggregate_player_game_wpa()</a></code>
+
+        </dt>
+        <dd>Aggregate player WPA per game</dd>
+      </dl></div><div class="section level2">
+      <h2 id="epr-expected-points-rating-">EPR (Expected Points Rating)<a class="anchor" aria-label="anchor" href="#epr-expected-points-rating-"></a></h2>
+
+      <div class="section-desc"><p>Decay-weighted Bayesian EPV ratings</p></div>
+
+      <dl></dl></div><div class="section level2">
+
+
+
+
+      <dl><dt>
+
+          <code><a href="calculate_epr.html">calculate_epr()</a></code>
+
+        </dt>
+        <dd>Calculate EPR (Expected Points Rating) from per-game EPV</dd>
+
+        <dt>
+
+          <code><a href="calculate_epr_batch.html">calculate_epr_batch()</a></code>
+
+        </dt>
+        <dd>Calculate EPR at multiple dates (batch version)</dd>
+
+        <dt>
+
+          <code><a href="aggregate_player_game_epv.html">aggregate_player_game_epv()</a></code>
+
+        </dt>
+        <dd>Aggregate Player EPV Per Game</dd>
+
+        <dt>
+
+          <code><a href="build_player_game_ratings.html">build_player_game_ratings()</a></code>
+
+        </dt>
+        <dd>Build unified player game ratings</dd>
+
+        <dt>
+
+          <code><a href="player_value.html">player_value()</a></code>
+
+        </dt>
+        <dd>Get a player's value metrics profile</dd>
+
+        <dt>
+
+          <code><a href="PANNA_EPR_WEIGHT.html">PANNA_EPR_WEIGHT</a></code>
+
+        </dt>
+        <dd>EPR weight in combined Panna Value rating</dd>
+
+        <dt>
+
+          <code><a href="PANNA_PSR_WEIGHT.html">PANNA_PSR_WEIGHT</a></code>
+
+        </dt>
+        <dd>PSR weight in combined Panna Value rating</dd>
+      </dl></div><div class="section level2">
       <h2 id="estimated-skills">Estimated Skills<a class="anchor" aria-label="anchor" href="#estimated-skills"></a></h2>
 
       <div class="section-desc"><p>Bayesian decay-weighted skill estimation with position-specific priors</p></div>
@@ -1030,9 +1174,9 @@
         </dt>
         <dd>Batch Player Attribution Across Matches</dd>
       </dl></div><div class="section level2">
-      <h2 id="player-skill-rating-psr-">Player Skill Rating (PSR)<a class="anchor" aria-label="anchor" href="#player-skill-rating-psr-"></a></h2>
+      <h2 id="player-skill-rating-psr-stat-value-psv-">Player Skill Rating (PSR) &amp; Stat Value (PSV)<a class="anchor" aria-label="anchor" href="#player-skill-rating-psr-stat-value-psv-"></a></h2>
 
-      <div class="section-desc"><p>Composite player skill metric</p></div>
+      <div class="section-desc"><p>Composite player skill and per-game stat value metrics</p></div>
 
       <dl></dl></div><div class="section level2">
 
@@ -1059,6 +1203,55 @@
 
         </dt>
         <dd>Load pre-computed weekly PSR snapshots</dd>
+
+        <dt>
+
+          <code><a href="calculate_psv.html">calculate_psv()</a></code>
+
+        </dt>
+        <dd>Calculate Per-Game Player Stat Value</dd>
+
+        <dt>
+
+          <code><a href="calculate_psv_components.html">calculate_psv_components()</a></code>
+
+        </dt>
+        <dd>Calculate PSV with Offensive/Defensive Decomposition</dd>
+
+        <dt>
+
+          <code><a href="compute_player_psv.html">compute_player_psv()</a></code>
+
+        </dt>
+        <dd>Compute PSV from bundled coefficient files</dd>
+
+        <dt>
+
+          <code><a href="default_stat_rating_params.html">default_stat_rating_params()</a></code>
+
+        </dt>
+        <dd>Default stat rating hyperparameters</dd>
+
+        <dt>
+
+          <code><a href="soccer_stat_rating_definitions.html">soccer_stat_rating_definitions()</a></code>
+
+        </dt>
+        <dd>Soccer stat rating definitions</dd>
+
+        <dt>
+
+          <code><a href="soccer_position_map.html">soccer_position_map()</a></code>
+
+        </dt>
+        <dd>Soccer position group mapping</dd>
+
+        <dt>
+
+          <code><a href="stat_rating_names.html">stat_rating_names()</a></code>
+
+        </dt>
+        <dd>Get all stat rating column names</dd>
       </dl></div><div class="section level2">
       <h2 id="feature-engineering">Feature Engineering<a class="anchor" aria-label="anchor" href="#feature-engineering"></a></h2>
 

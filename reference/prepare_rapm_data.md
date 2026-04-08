@@ -9,7 +9,7 @@ primary RAPM data preparation function.
 prepare_rapm_data(
   splint_data,
   min_minutes = 90,
-  target_type = c("xg", "goals"),
+  target_type = c("xg", "goals", "epv", "wpa", "psv"),
   include_covariates = TRUE,
   include_league = NULL,
   include_season = NULL
@@ -29,7 +29,8 @@ prepare_rapm_data(
 - target_type:
 
   Type of target variable: "xg" for non-penalty xG (default), "goals"
-  for actual goals scored. Use "goals" when shots data unavailable.
+  for actual goals scored, "epv" for EPV, "wpa" for WPA, "psv" for PSV.
+  Use "goals" when shots data unavailable.
 
 - include_covariates:
 

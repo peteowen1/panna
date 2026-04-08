@@ -157,13 +157,13 @@ split into offense and defense indicators.
 
 ``` r
 rapm_data <- create_rapm_design_matrix(splint_data, min_minutes = 45)
-#> [00:10:17] Processing 81 splints...
-#> [00:10:17] Including 50 players (>= 45 minutes)
-#> [00:10:17] Replacement pool: 0 players (< 45 minutes)
-#> [00:10:17] Building row data (vectorized)...
-#> [00:10:17] Building sparse matrix (vectorized)...
-#> [00:10:17] Replacement appearances: 0 offense, 0 defense
-#> [00:10:18] Design matrix: 162 rows, 100 player columns (+2 replacement), 5 covariates
+#> [12:40:22] Processing 81 splints...
+#> [12:40:22] Including 50 players (>= 45 minutes)
+#> [12:40:22] Replacement pool: 0 players (< 45 minutes)
+#> [12:40:22] Building row data (vectorized)...
+#> [12:40:22] Building sparse matrix (vectorized)...
+#> [12:40:22] Replacement appearances: 0 offense, 0 defense
+#> [12:40:22] Design matrix: 162 rows, 100 player columns (+2 replacement), 5 covariates
 
 # Add covariates to the player matrix for model fitting
 covariates <- cbind(
@@ -191,8 +191,8 @@ regularization strength.
 
 ``` r
 rapm_model <- fit_rapm(rapm_data, parallel = FALSE, nfolds = 3)
-#> [00:10:18] Fitting RAPM: 162 observations, 105 columns
-#> [00:10:18] RAPM fit complete (xG-based). Lambda.min: 140.1164, R^2: 0.840
+#> [12:40:23] Fitting RAPM: 162 observations, 105 columns
+#> [12:40:23] RAPM fit complete (xG-based). Lambda.min: 140.1164, R^2: 0.840
 rapm_ratings <- extract_rapm_ratings(rapm_model)
 
 cat(sprintf("RAPM ratings for %d players\n", nrow(rapm_ratings)))
@@ -241,9 +241,9 @@ player_features <- data.frame(
 )
 
 spm_model <- fit_spm_model(player_features, nfolds = 3)
-#> [00:10:18] Fitting SPM model with 6 predictors on 51 players
-#> [00:10:18]   Weighting by minutes (sqrt transform)
-#> [00:10:18] SPM fit complete. R-squared: 0.000 (weighted in-sample)
+#> [12:40:23] Fitting SPM model with 6 predictors on 51 players
+#> [12:40:23]   Weighting by minutes (sqrt transform)
+#> [12:40:23] SPM fit complete. R-squared: 0.000 (weighted in-sample)
 spm_ratings <- calculate_spm_ratings(player_features, spm_model)
 
 cat(sprintf("SPM predictions for %d players\n", nrow(spm_ratings)))
@@ -271,8 +271,8 @@ regularization.
 
 ``` r
 panna_result <- calculate_panna_rating(rapm_data, spm_ratings, lambda_prior = 1)
-#> [00:10:18] Fitting panna model with SPM prior...
-#> [00:10:18] Panna ratings calculated for 105 players
+#> [12:40:23] Fitting panna model with SPM prior...
+#> [12:40:23] Panna ratings calculated for 105 players
 panna_ratings <- panna_result$ratings
 
 cat(sprintf("Panna ratings for %d players\n", nrow(panna_ratings)))

@@ -5,7 +5,7 @@ Safe division handling division by zero
 ## Usage
 
 ``` r
-safe_divide(x, y, default = NA_real_)
+safe_divide(x, y, default = 0)
 ```
 
 ## Arguments
@@ -20,7 +20,7 @@ safe_divide(x, y, default = NA_real_)
 
 - default:
 
-  Value to return when denominator is zero (default: NA_real\_)
+  Value to return when denominator is zero (default: 0)
 
 ## Value
 
@@ -32,8 +32,8 @@ are preserved.
 ``` r
 safe_divide(10, 2)
 #> [1] 5
-safe_divide(10, 0)          # NA (unknown)
-#> [1] NA
-safe_divide(10, 0, default = 0)
+safe_divide(10, 0)          # 0
 #> [1] 0
+safe_divide(10, 0, default = NA_real_)
+#> [1] NA
 ```

@@ -19,7 +19,7 @@ perspective):
 create_rapm_design_matrix(
   splint_data,
   min_minutes = 90,
-  target_type = c("xg", "goals")
+  target_type = c("xg", "goals", "epv", "wpa", "psv")
 )
 ```
 
@@ -35,8 +35,11 @@ create_rapm_design_matrix(
 
 - target_type:
 
-  Type of target variable: "xg" for non-penalty xG (default), "goals"
-  for actual goals scored
+  Type of target variable: `"xg"` for non-penalty xG (default),
+  `"goals"` for actual goals, `"epv"` for Expected Possession Value,
+  `"wpa"` for Win Probability Added, `"psv"` for Player Stat Value.
+  Requires corresponding home/away columns on splints (e.g., `epv_home`,
+  `epv_away`).
 
 ## Value
 

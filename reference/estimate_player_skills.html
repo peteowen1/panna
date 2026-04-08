@@ -11,7 +11,7 @@ exponential time decay:'><meta property="og:image" content="https://peteowen1.gi
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.2.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -55,7 +55,9 @@ exponential time decay:</p>
 <span>  decay_params <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  target_date <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  min_weighted_90s <span class="op">=</span> <span class="fl">5</span>,</span>
-<span>  stat_cols <span class="op">=</span> <span class="cn">NULL</span></span>
+<span>  stat_cols <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  rating_names <span class="op">=</span> <span class="cn">FALSE</span>,</span>
+<span>  compute_ci <span class="op">=</span> <span class="cn">FALSE</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -89,6 +91,18 @@ Retained for backward compatibility.</p></dd>
 <dt id="arg-stat-cols">stat_cols<a class="anchor" aria-label="anchor" href="#arg-stat-cols"></a></dt>
 <dd><p>Character vector of stat columns to estimate. If NULL,
 auto-detects all _p90 columns plus efficiency columns.</p></dd>
+
+
+<dt id="arg-rating-names">rating_names<a class="anchor" aria-label="anchor" href="#arg-rating-names"></a></dt>
+<dd><p>Logical. If <code>TRUE</code>, suffix output stat columns
+with <code>_rating</code> (e.g., <code>goals_p90_rating</code>) for alignment with
+torpverse's <code>_stat_rating</code> convention. Default <code>FALSE</code>.</p></dd>
+
+
+<dt id="arg-compute-ci">compute_ci<a class="anchor" aria-label="anchor" href="#arg-compute-ci"></a></dt>
+<dd><p>Logical. If <code>TRUE</code>, compute 80\<!-- % credible intervals -->
+and add <code>_rating_lower</code> / <code>_rating_upper</code> columns. Implies
+<code>rating_names = TRUE</code>. Default <code>FALSE</code>.</p></dd>
 
 </dl></div>
     <div class="section level2">

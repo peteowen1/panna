@@ -9,7 +9,7 @@ This is the primary RAPM data preparation function."><meta property="og:image" c
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.2.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -50,7 +50,7 @@ This is the primary RAPM data preparation function.</p>
     <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">prepare_rapm_data</span><span class="op">(</span></span>
 <span>  <span class="va">splint_data</span>,</span>
 <span>  min_minutes <span class="op">=</span> <span class="fl">90</span>,</span>
-<span>  target_type <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"xg"</span>, <span class="st">"goals"</span><span class="op">)</span>,</span>
+<span>  target_type <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"xg"</span>, <span class="st">"goals"</span>, <span class="st">"epv"</span>, <span class="st">"wpa"</span>, <span class="st">"psv"</span><span class="op">)</span>,</span>
 <span>  include_covariates <span class="op">=</span> <span class="cn">TRUE</span>,</span>
 <span>  include_league <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  include_season <span class="op">=</span> <span class="cn">NULL</span></span>
@@ -71,7 +71,8 @@ This is the primary RAPM data preparation function.</p>
 
 <dt id="arg-target-type">target_type<a class="anchor" aria-label="anchor" href="#arg-target-type"></a></dt>
 <dd><p>Type of target variable: "xg" for non-penalty xG (default),
-"goals" for actual goals scored. Use "goals" when shots data unavailable.</p></dd>
+"goals" for actual goals scored, "epv" for EPV, "wpa" for WPA, "psv" for
+PSV. Use "goals" when shots data unavailable.</p></dd>
 
 
 <dt id="arg-include-covariates">include_covariates<a class="anchor" aria-label="anchor" href="#arg-include-covariates"></a></dt>

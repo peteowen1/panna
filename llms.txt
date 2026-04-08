@@ -370,6 +370,8 @@ Opta-specific SPM model with 80+ features
   : Compute match-level Opta statistics with per-90 rates
 - [`fit_spm_opta()`](https://peteowen1.github.io/panna/reference/fit_spm_opta.md)
   : Fit SPM model using Opta features
+- [`fit_spm_opta_target()`](https://peteowen1.github.io/panna/reference/fit_spm_opta_target.md)
+  : Fit SPM for a custom target variable
 - [`compare_spm_features()`](https://peteowen1.github.io/panna/reference/compare_spm_features.md)
   : Compare FBref and Opta SPM feature importance
 
@@ -389,6 +391,10 @@ Combined RAPM + SPM ratings
   : Rank players by panna rating
 - [`validate_panna_ratings()`](https://peteowen1.github.io/panna/reference/validate_panna_ratings.md)
   : Validate panna ratings
+- [`aggregate_season_ratings()`](https://peteowen1.github.io/panna/reference/aggregate_season_ratings.md)
+  : Aggregate player game ratings to season level
+- [`add_value_metrics_to_splints()`](https://peteowen1.github.io/panna/reference/add_value_metrics_to_splints.md)
+  : Add value metric columns to splints
 
 ## Offensive/Defensive Analysis
 
@@ -468,6 +474,46 @@ Action-level player valuation from Opta event data
   : Load Pre-trained xPass Model
 - [`split_pass_credit()`](https://peteowen1.github.io/panna/reference/split_pass_credit.md)
   : Split Pass Credit (Legacy Helper)
+
+## Win Probability (WPA)
+
+Win probability model and WPA credit assignment
+
+- [`create_wp_features()`](https://peteowen1.github.io/panna/reference/create_wp_features.md)
+  : Create win probability features from SPADL actions
+- [`train_wp_model()`](https://peteowen1.github.io/panna/reference/train_wp_model.md)
+  : Train a win probability model
+- [`load_wp_model()`](https://peteowen1.github.io/panna/reference/load_wp_model.md)
+  : Load WP model
+- [`save_wp_model()`](https://peteowen1.github.io/panna/reference/save_wp_model.md)
+  : Save WP model
+- [`predict_wp()`](https://peteowen1.github.io/panna/reference/predict_wp.md)
+  : Predict win probability
+- [`add_wp_vars()`](https://peteowen1.github.io/panna/reference/add_wp_vars.md)
+  : Add win probability and WPA to SPADL data
+- [`assign_wpa_credit()`](https://peteowen1.github.io/panna/reference/assign_wpa_credit.md)
+  : Assign WPA credit to players
+- [`aggregate_player_game_wpa()`](https://peteowen1.github.io/panna/reference/aggregate_player_game_wpa.md)
+  : Aggregate player WPA per game
+
+## EPR (Expected Points Rating)
+
+Decay-weighted Bayesian EPV ratings
+
+- [`calculate_epr()`](https://peteowen1.github.io/panna/reference/calculate_epr.md)
+  : Calculate EPR (Expected Points Rating) from per-game EPV
+- [`calculate_epr_batch()`](https://peteowen1.github.io/panna/reference/calculate_epr_batch.md)
+  : Calculate EPR at multiple dates (batch version)
+- [`aggregate_player_game_epv()`](https://peteowen1.github.io/panna/reference/aggregate_player_game_epv.md)
+  : Aggregate Player EPV Per Game
+- [`build_player_game_ratings()`](https://peteowen1.github.io/panna/reference/build_player_game_ratings.md)
+  : Build unified player game ratings
+- [`player_value()`](https://peteowen1.github.io/panna/reference/player_value.md)
+  : Get a player's value metrics profile
+- [`PANNA_EPR_WEIGHT`](https://peteowen1.github.io/panna/reference/PANNA_EPR_WEIGHT.md)
+  : EPR weight in combined Panna Value rating
+- [`PANNA_PSR_WEIGHT`](https://peteowen1.github.io/panna/reference/PANNA_PSR_WEIGHT.md)
+  : PSR weight in combined Panna Value rating
 
 ## Estimated Skills
 
@@ -556,9 +602,9 @@ Zero-ablation player impact measurement
 - [`batch_player_attribution()`](https://peteowen1.github.io/panna/reference/batch_player_attribution.md)
   : Batch Player Attribution Across Matches
 
-## Player Skill Rating (PSR)
+## Player Skill Rating (PSR) & Stat Value (PSV)
 
-Composite player skill metric
+Composite player skill and per-game stat value metrics
 
 - [`calculate_psr()`](https://peteowen1.github.io/panna/reference/calculate_psr.md)
   : Calculate Player Skill Ratings (PSR)
@@ -566,6 +612,20 @@ Composite player skill metric
   : Get Player Skill Ratings
 - [`load_opta_psr_weekly()`](https://peteowen1.github.io/panna/reference/load_opta_psr_weekly.md)
   : Load pre-computed weekly PSR snapshots
+- [`calculate_psv()`](https://peteowen1.github.io/panna/reference/calculate_psv.md)
+  : Calculate Per-Game Player Stat Value
+- [`calculate_psv_components()`](https://peteowen1.github.io/panna/reference/calculate_psv_components.md)
+  : Calculate PSV with Offensive/Defensive Decomposition
+- [`compute_player_psv()`](https://peteowen1.github.io/panna/reference/compute_player_psv.md)
+  : Compute PSV from bundled coefficient files
+- [`default_stat_rating_params()`](https://peteowen1.github.io/panna/reference/default_stat_rating_params.md)
+  : Default stat rating hyperparameters
+- [`soccer_stat_rating_definitions()`](https://peteowen1.github.io/panna/reference/soccer_stat_rating_definitions.md)
+  : Soccer stat rating definitions
+- [`soccer_position_map()`](https://peteowen1.github.io/panna/reference/soccer_position_map.md)
+  : Soccer position group mapping
+- [`stat_rating_names()`](https://peteowen1.github.io/panna/reference/stat_rating_names.md)
+  : Get all stat rating column names
 
 ## Feature Engineering
 

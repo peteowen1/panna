@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.2.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,20 +39,83 @@
 
 <div id="panna-data-dictionary" class="section level1">
 
-<p>This document describes all data structures used in the panna pipeline.</p>
+<p>This document describes all data structures used in the panna pipelines.</p>
 <div class="section level2">
 <h2 id="pipeline-overview">Pipeline Overview<a class="anchor" aria-label="anchor" href="#pipeline-overview"></a></h2>
-<pre><code>01_data_collection.R  -&gt;  01_raw_data.rds
-02_data_processing.R  -&gt;  02_processed_data.rds
-03_splint_creation.R  -&gt;  03_splints.rds
-04_rapm.R             -&gt;  04_rapm.rds
-05_spm.R              -&gt;  05_spm.rds
-06_xrapm.R            -&gt;  06_xrapm.rds
-07_panna_ratings.R    -&gt;  07_panna.rds</code></pre>
+<div class="section level3">
+<h3 id="opta-rapmspm-pipeline-primary--data-rawplayer-ratings-opta">Opta RAPM/SPM Pipeline (Primary) — <code>data-raw/player-ratings-opta/</code>
+<a class="anchor" aria-label="anchor" href="#opta-rapmspm-pipeline-primary--data-rawplayer-ratings-opta"></a></h3>
+<pre><code>01_load_opta_data.R       -&gt;  cache-opta/01_opta_data.rds
+02_data_processing.R      -&gt;  cache-opta/02_processed_data.rds
+03_splint_creation.R      -&gt;  cache-opta/03_splints.rds
+04_rapm.R                 -&gt;  cache-opta/04_rapm.rds
+05_spm.R                  -&gt;  cache-opta/05_spm.rds
+06_xrapm.R                -&gt;  cache-opta/06_xrapm.rds
+07_seasonal_ratings.R     -&gt;  cache-opta/07_seasonal_ratings.rds
+07b_player_centrality.R   -&gt;  cache-opta/07b_centrality.rds
+08_panna_ratings.R        -&gt;  cache-opta/08_panna_ratings.rds
+09_export_ratings.R       -&gt;  seasonal_xrapm.parquet, seasonal_spm.parquet</code></pre>
+</div>
+<div class="section level3">
+<h3 id="fbref-rapmspm-pipeline-secondary--data-rawplayer-ratings-fbref">FBref RAPM/SPM Pipeline (Secondary) — <code>data-raw/player-ratings-fbref/</code>
+<a class="anchor" aria-label="anchor" href="#fbref-rapmspm-pipeline-secondary--data-rawplayer-ratings-fbref"></a></h3>
+<pre><code>01_load_pannadata.R       -&gt;  cache/01_raw_data.rds
+02_data_processing.R      -&gt;  cache/02_processed_data.rds
+03_splint_creation.R      -&gt;  cache/03_splints.rds
+04_rapm.R                 -&gt;  cache/04_rapm.rds
+05_spm.R                  -&gt;  cache/05_spm.rds
+06_xrapm.R                -&gt;  cache/06_xrapm.rds
+07_seasonal_ratings.R     -&gt;  cache/07_seasonal_ratings.rds
+08_panna_ratings.R        -&gt;  cache/08_panna_ratings.rds</code></pre>
+</div>
+<div class="section level3">
+<h3 id="epvwpa-pipeline--data-rawepv">EPV/WPA Pipeline — <code>data-raw/epv/</code>
+<a class="anchor" aria-label="anchor" href="#epvwpa-pipeline--data-rawepv"></a></h3>
+<pre><code>01_train_epv_models.R          -&gt;  xg_model.rds, xpass_model.rds, epv_model.rds
+02_calculate_player_epv.R      -&gt;  per-player EPV aggregation
+03_calculate_player_xmetrics.R -&gt;  xmetrics/{league}/{season}.parquet
+04_export_xmetrics.R           -&gt;  opta_xmetrics.parquet (GitHub Release)
+05_train_wp_model.R            -&gt;  wp_model.rds
+06_calculate_wpa.R             -&gt;  per-player WPA credits</code></pre>
+</div>
+<div class="section level3">
+<h3 id="skills-pipeline--data-rawestimated-skills">Skills Pipeline — <code>data-raw/estimated-skills/</code>
+<a class="anchor" aria-label="anchor" href="#skills-pipeline--data-rawestimated-skills"></a></h3>
+<pre><code>00_add_gk_per90_cols.R         -&gt;  GK feature prep
+01_compute_match_stats.R       -&gt;  cache-skills/01_match_stats.rds
+02_estimate_skills.R           -&gt;  cache-skills/02_skills.rds
+02b_optimize_params.R          -&gt;  cache-skills/02b_decay_params.rds
+03_skill_spm.R                 -&gt;  cache-skills/03_skill_spm.rds
+04_skill_xrapm.R               -&gt;  cache-skills/04_skill_xrapm.rds
+05_skill_panna_ratings.R       -&gt;  cache-skills/05_skill_panna.rds
+06_seasonal_skill_ratings.R    -&gt;  cache-skills/06_seasonal_ratings.rds
+07_train_psr_model.R           -&gt;  PSR/PSV glmnet models
+08_export_skills.R             -&gt;  opta_skills.parquet (GitHub Release)
+08b_export_psr_weekly.R        -&gt;  PSR weekly snapshots</code></pre>
+</div>
+<div class="section level3">
+<h3 id="predictions-pipeline--data-rawmatch-predictions-opta">Predictions Pipeline — <code>data-raw/match-predictions-opta/</code>
+<a class="anchor" aria-label="anchor" href="#predictions-pipeline--data-rawmatch-predictions-opta"></a></h3>
+<pre><code>01_build_fixture_results.R     -&gt;  cache-predictions-opta/01_fixtures.rds
+02_player_ratings_to_team.R    -&gt;  cache-predictions-opta/02_team_ratings.rds
+02b_team_skill_features.R      -&gt;  cache-predictions-opta/02b_team_skills.rds
+03_team_rolling_features.R     -&gt;  cache-predictions-opta/03_rolling.rds
+04_build_match_dataset.R       -&gt;  cache-predictions-opta/04_dataset.rds
+05_fit_goals_model.R           -&gt;  cache-predictions-opta/05_goals_model.rds
+06_fit_outcome_model.R         -&gt;  cache-predictions-opta/06_outcome_model.rds
+07_predict_fixtures.R          -&gt;  cache-predictions-opta/07_predictions.rds
+08_evaluate_model.R            -&gt;  backtesting evaluation
+09_upload_predictions.R        -&gt;  predictions-latest (GitHub Release)
+10_export_blog_data.R          -&gt;  blog-latest (GitHub Release)</code></pre>
 <hr></div>
+</div>
 <div class="section level2">
-<h2 id="id_01_raw_datards">01_raw_data.rds<a class="anchor" aria-label="anchor" href="#id_01_raw_datards"></a></h2>
+<h2 id="fbref-pipeline-data-structures">FBref Pipeline Data Structures<a class="anchor" aria-label="anchor" href="#fbref-pipeline-data-structures"></a></h2>
+<p>The FBref pipeline shares the same RAPM/SPM methodology as Opta but uses FBref data.</p>
+<div class="section level3">
+<h3 id="id_01_raw_datards">01_raw_data.rds<a class="anchor" aria-label="anchor" href="#id_01_raw_datards"></a></h3>
 <p>Raw data from pannadata repository. All columns are snake_case after <code><a href="reference/clean_column_names.html">clean_column_names()</a></code>.</p>
+</div>
 <div class="section level3">
 <h3 id="results">results<a class="anchor" aria-label="anchor" href="#results"></a></h3>
 <table class="table"><thead><tr class="header"><th>Column</th>
@@ -735,7 +798,7 @@
 </div>
 <div class="section level2">
 <h2 id="opta-data-schemas">Opta Data Schemas<a class="anchor" aria-label="anchor" href="#opta-data-schemas"></a></h2>
-<p>Alternative data source from TheAnalyst/Opta API. Use <code>load_opta_*()</code> functions.</p>
+<p>Primary data source (15 leagues, 263 columns per player). Use <code>load_opta_*()</code> functions.</p>
 <div class="section level3">
 <h3 id="opta-player-stats-load_opta_stats">Opta Player Stats (<code>load_opta_stats()</code>)<a class="anchor" aria-label="anchor" href="#opta-player-stats-load_opta_stats"></a></h3>
 <p>263 columns per player per match. Key columns:</p>
@@ -948,7 +1011,7 @@
 </tr><tr class="odd"><td>big_chance</td>
 <td>logical</td>
 <td>Big chance indicator</td>
-</tr></tbody></table><p>Note: Opta API does not include xG values. Use <code>prepare_opta_shots_for_splints(use_goals_as_xg = TRUE)</code> for a basic proxy, or calculate xG from x/y coordinates with an external model.</p>
+</tr></tbody></table><p>Note: Raw Opta data does not include xG values. The xMetrics pipeline (steps 01-04 in <code>data-raw/epv/</code>) computes xG/xA/xPass from SPADL + XGBoost models. Pre-computed xMetrics are loaded via <code><a href="reference/load_opta_xmetrics.html">load_opta_xmetrics()</a></code>. Penalty xG is overridden to 0.76.</p>
 </div>
 <div class="section level3">
 <h3 id="opta-lineups-load_opta_lineups">Opta Lineups (<code>load_opta_lineups()</code>)<a class="anchor" aria-label="anchor" href="#opta-lineups-load_opta_lineups"></a></h3>
@@ -1004,7 +1067,7 @@
 </tr></tbody></table></div>
 <div class="section level3">
 <h3 id="using-opta-data-for-splints">Using Opta Data for Splints<a class="anchor" aria-label="anchor" href="#using-opta-data-for-splints"></a></h3>
-<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># Load Opta data</span></span>
 <span><span class="va">lineups</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/load_opta_lineups.html">load_opta_lineups</a></span><span class="op">(</span><span class="st">"ENG"</span>, <span class="st">"2024-2025"</span><span class="op">)</span></span>
 <span><span class="va">events</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/load_opta_events.html">load_opta_events</a></span><span class="op">(</span><span class="st">"ENG"</span>, <span class="st">"2024-2025"</span><span class="op">)</span></span>
@@ -1014,13 +1077,266 @@
 <span><span class="va">processed</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/create_opta_processed_data.html">create_opta_processed_data</a></span><span class="op">(</span></span>
 <span>  opta_lineups <span class="op">=</span> <span class="va">lineups</span>,</span>
 <span>  opta_events <span class="op">=</span> <span class="va">events</span>,</span>
-<span>  opta_shot_events <span class="op">=</span> <span class="va">shots</span>,</span>
-<span>  use_goals_as_xg <span class="op">=</span> <span class="cn">TRUE</span>  <span class="co"># Use goals as xG proxy</span></span>
+<span>  opta_shot_events <span class="op">=</span> <span class="va">shots</span></span>
 <span><span class="op">)</span></span>
 <span></span>
 <span><span class="co"># Create splints</span></span>
 <span><span class="va">splints</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/create_all_splints.html">create_all_splints</a></span><span class="op">(</span><span class="va">processed</span><span class="op">)</span></span></code></pre></div>
+<p>xG values come from the xMetrics pipeline (<code><a href="reference/load_opta_xmetrics.html">load_opta_xmetrics()</a></code>), which pre-computes xG/xA/xPass per player per match. These are joined to splints during the Opta RAPM pipeline (step 03).</p>
 <hr></div>
+</div>
+<div class="section level2">
+<h2 id="opta-pipeline-cache-structures">Opta Pipeline Cache Structures<a class="anchor" aria-label="anchor" href="#opta-pipeline-cache-structures"></a></h2>
+<div class="section level3">
+<h3 id="id_07_seasonal_ratingsrds">07_seasonal_ratings.rds<a class="anchor" aria-label="anchor" href="#id_07_seasonal_ratingsrds"></a></h3>
+<p>List with seasonal aggregations of RAPM/SPM/xRAPM ratings.</p>
+<div class="section level4">
+<h4 id="seasonal_spm">seasonal_spm<a class="anchor" aria-label="anchor" href="#seasonal_spm"></a></h4>
+<table class="table"><thead><tr class="header"><th>Column</th>
+<th>Type</th>
+<th>Description</th>
+</tr></thead><tbody><tr class="odd"><td>season_end_year</td>
+<td>numeric</td>
+<td>Season</td>
+</tr><tr class="even"><td>player_id</td>
+<td>character</td>
+<td>Opta player ID</td>
+</tr><tr class="odd"><td>player_name</td>
+<td>character</td>
+<td>Player name</td>
+</tr><tr class="even"><td>spm</td>
+<td>numeric</td>
+<td>Overall SPM</td>
+</tr><tr class="odd"><td>offense_spm</td>
+<td>numeric</td>
+<td>Offensive SPM</td>
+</tr><tr class="even"><td>defense_spm</td>
+<td>numeric</td>
+<td>Defensive SPM</td>
+</tr><tr class="odd"><td>total_minutes</td>
+<td>numeric</td>
+<td>Minutes played</td>
+</tr></tbody></table></div>
+<div class="section level4">
+<h4 id="seasonal_xrapm">seasonal_xrapm<a class="anchor" aria-label="anchor" href="#seasonal_xrapm"></a></h4>
+<table class="table"><thead><tr class="header"><th>Column</th>
+<th>Type</th>
+<th>Description</th>
+</tr></thead><tbody><tr class="odd"><td>season_end_year</td>
+<td>numeric</td>
+<td>Season</td>
+</tr><tr class="even"><td>player_name</td>
+<td>character</td>
+<td>Player name</td>
+</tr><tr class="odd"><td>xrapm</td>
+<td>numeric</td>
+<td>Overall xRAPM</td>
+</tr><tr class="even"><td>offense</td>
+<td>numeric</td>
+<td>Offensive xRAPM</td>
+</tr><tr class="odd"><td>defense</td>
+<td>numeric</td>
+<td>Defensive xRAPM</td>
+</tr><tr class="even"><td>off_deviation</td>
+<td>numeric</td>
+<td>offense - off_prior</td>
+</tr><tr class="odd"><td>def_deviation</td>
+<td>numeric</td>
+<td>defense - def_prior</td>
+</tr><tr class="even"><td>total_minutes</td>
+<td>numeric</td>
+<td>Minutes played</td>
+</tr></tbody></table></div>
+<div class="section level4">
+<h4 id="metadata">metadata<a class="anchor" aria-label="anchor" href="#metadata"></a></h4>
+<table class="table"><thead><tr class="header"><th>Field</th>
+<th>Description</th>
+</tr></thead><tbody><tr class="odd"><td>min_minutes_spm</td>
+<td>Minimum minutes for SPM</td>
+</tr><tr class="even"><td>min_minutes_rapm</td>
+<td>Minimum minutes for RAPM</td>
+</tr><tr class="odd"><td>lambda</td>
+<td>Regularization parameter</td>
+</tr><tr class="even"><td>n_seasons</td>
+<td>Number of seasons</td>
+</tr><tr class="odd"><td>created</td>
+<td>Timestamp</td>
+</tr></tbody></table></div>
+</div>
+<div class="section level3">
+<h3 id="id_07b_centralityrds">07b_centrality.rds<a class="anchor" aria-label="anchor" href="#id_07b_centralityrds"></a></h3>
+<table class="table"><thead><tr class="header"><th>Column</th>
+<th>Type</th>
+<th>Description</th>
+</tr></thead><tbody><tr class="odd"><td>player_id</td>
+<td>character</td>
+<td>Opta player ID</td>
+</tr><tr class="even"><td>centrality</td>
+<td>numeric</td>
+<td>PageRank centrality (0-1)</td>
+</tr><tr class="odd"><td>unique_opponents</td>
+<td>integer</td>
+<td>Number of unique opponents faced</td>
+</tr><tr class="even"><td>matches_played</td>
+<td>integer</td>
+<td>Total matches</td>
+</tr><tr class="odd"><td>component_id</td>
+<td>integer</td>
+<td>Connected component label</td>
+</tr><tr class="even"><td>component_size</td>
+<td>integer</td>
+<td>Size of player’s connected component</td>
+</tr></tbody></table><hr></div>
+</div>
+<div class="section level2">
+<h2 id="value-metrics-data-structures">Value Metrics Data Structures<a class="anchor" aria-label="anchor" href="#value-metrics-data-structures"></a></h2>
+<p>Two-path system: EPV (action-level) + PSV (box-score-level) → <code>panna_value</code>.</p>
+<div class="section level3">
+<h3 id="per-game-epv-aggregate_player_game_epv">Per-Game EPV (<code>aggregate_player_game_epv()</code>)<a class="anchor" aria-label="anchor" href="#per-game-epv-aggregate_player_game_epv"></a></h3>
+<table class="table"><thead><tr class="header"><th>Column</th>
+<th>Type</th>
+<th>Description</th>
+</tr></thead><tbody><tr class="odd"><td>player_id</td>
+<td>character</td>
+<td>Player ID</td>
+</tr><tr class="even"><td>player_name</td>
+<td>character</td>
+<td>Player name</td>
+</tr><tr class="odd"><td>team_id</td>
+<td>character</td>
+<td>Team ID</td>
+</tr><tr class="even"><td>match_id</td>
+<td>character</td>
+<td>Match ID</td>
+</tr><tr class="odd"><td>minutes_played</td>
+<td>numeric</td>
+<td>Minutes in match</td>
+</tr><tr class="even"><td>epv_total</td>
+<td>numeric</td>
+<td>Total EPV credit</td>
+</tr><tr class="odd"><td>epv_offensive</td>
+<td>numeric</td>
+<td>Offensive EPV</td>
+</tr><tr class="even"><td>epv_defensive</td>
+<td>numeric</td>
+<td>Defensive EPV</td>
+</tr><tr class="odd"><td>epv_passing</td>
+<td>numeric</td>
+<td>Passing EPV</td>
+</tr><tr class="even"><td>epv_shooting</td>
+<td>numeric</td>
+<td>Shooting EPV</td>
+</tr><tr class="odd"><td>epv_p90</td>
+<td>numeric</td>
+<td>EPV per 90 minutes</td>
+</tr></tbody></table></div>
+<div class="section level3">
+<h3 id="wpa-aggregate_player_game_wpa">WPA (<code>aggregate_player_game_wpa()</code>)<a class="anchor" aria-label="anchor" href="#wpa-aggregate_player_game_wpa"></a></h3>
+<table class="table"><thead><tr class="header"><th>Column</th>
+<th>Type</th>
+<th>Description</th>
+</tr></thead><tbody><tr class="odd"><td>player_id</td>
+<td>character</td>
+<td>Player ID</td>
+</tr><tr class="even"><td>match_id</td>
+<td>character</td>
+<td>Match ID</td>
+</tr><tr class="odd"><td>wpa_total</td>
+<td>numeric</td>
+<td>Total WPA</td>
+</tr><tr class="even"><td>wpa_as_actor</td>
+<td>numeric</td>
+<td>WPA as acting player</td>
+</tr><tr class="odd"><td>wpa_as_receiver</td>
+<td>numeric</td>
+<td>WPA as pass receiver</td>
+</tr><tr class="even"><td>n_wpa_actions</td>
+<td>integer</td>
+<td>Number of WPA-credited actions</td>
+</tr><tr class="odd"><td>wpa_total_p90</td>
+<td>numeric</td>
+<td>WPA per 90</td>
+</tr></tbody></table></div>
+<div class="section level3">
+<h3 id="psv-calculate_psv">PSV (<code>calculate_psv()</code>)<a class="anchor" aria-label="anchor" href="#psv-calculate_psv"></a></h3>
+<table class="table"><thead><tr class="header"><th>Column</th>
+<th>Type</th>
+<th>Description</th>
+</tr></thead><tbody><tr class="odd"><td>player_id</td>
+<td>character</td>
+<td>Player ID</td>
+</tr><tr class="even"><td>psv</td>
+<td>numeric</td>
+<td>Player Stat Value (osv + dsv)</td>
+</tr><tr class="odd"><td>osv</td>
+<td>numeric</td>
+<td>Offensive stat value</td>
+</tr><tr class="even"><td>dsv</td>
+<td>numeric</td>
+<td>Defensive stat value</td>
+</tr></tbody></table></div>
+<div class="section level3">
+<h3 id="epr-calculate_epr">EPR (<code>calculate_epr()</code>)<a class="anchor" aria-label="anchor" href="#epr-calculate_epr"></a></h3>
+<p>Decay-weighted Bayesian EPV ratings.</p>
+<table class="table"><thead><tr class="header"><th>Column</th>
+<th>Type</th>
+<th>Description</th>
+</tr></thead><tbody><tr class="odd"><td>player_id</td>
+<td>character</td>
+<td>Player ID</td>
+</tr><tr class="even"><td>player_name</td>
+<td>character</td>
+<td>Player name</td>
+</tr><tr class="odd"><td>epr</td>
+<td>numeric</td>
+<td>Total EPR</td>
+</tr><tr class="even"><td>epr_offensive</td>
+<td>numeric</td>
+<td>Offensive EPR</td>
+</tr><tr class="odd"><td>epr_defensive</td>
+<td>numeric</td>
+<td>Defensive EPR</td>
+</tr><tr class="even"><td>wt_games</td>
+<td>numeric</td>
+<td>Effective sample size (weighted games)</td>
+</tr><tr class="odd"><td>n_games</td>
+<td>integer</td>
+<td>Raw game count</td>
+</tr></tbody></table></div>
+<div class="section level3">
+<h3 id="combined-game-ratings-build_player_game_ratings">Combined Game Ratings (<code>build_player_game_ratings()</code>)<a class="anchor" aria-label="anchor" href="#combined-game-ratings-build_player_game_ratings"></a></h3>
+<p>Merges EPV + WPA + PSV into unified per-game output.</p>
+<table class="table"><thead><tr class="header"><th>Column</th>
+<th>Type</th>
+<th>Description</th>
+</tr></thead><tbody><tr class="odd"><td>player_id</td>
+<td>character</td>
+<td>Player ID</td>
+</tr><tr class="even"><td>player_name</td>
+<td>character</td>
+<td>Player name</td>
+</tr><tr class="odd"><td>match_id</td>
+<td>character</td>
+<td>Match ID</td>
+</tr><tr class="even"><td>minutes_played</td>
+<td>numeric</td>
+<td>Minutes</td>
+</tr><tr class="odd"><td>epv_total</td>
+<td>numeric</td>
+<td>EPV credit</td>
+</tr><tr class="even"><td>wpa_total</td>
+<td>numeric</td>
+<td>WPA credit</td>
+</tr><tr class="odd"><td>psv</td>
+<td>numeric</td>
+<td>Player Stat Value</td>
+</tr><tr class="even"><td>panna_value</td>
+<td>numeric</td>
+<td><strong>Combined: 50% EPV + 50% PSV</strong></td>
+</tr><tr class="odd"><td>panna_value_p90</td>
+<td>numeric</td>
+<td>panna_value per 90</td>
+</tr></tbody></table><hr></div>
 </div>
 <div class="section level2">
 <h2 id="rating-interpretation">Rating Interpretation<a class="anchor" aria-label="anchor" href="#rating-interpretation"></a></h2>

@@ -1,20 +1,78 @@
 # Panna Data Dictionary
 
-This document describes all data structures used in the panna pipeline.
+This document describes all data structures used in the panna pipelines.
 
 ## Pipeline Overview
 
-    01_data_collection.R  ->  01_raw_data.rds
-    02_data_processing.R  ->  02_processed_data.rds
-    03_splint_creation.R  ->  03_splints.rds
-    04_rapm.R             ->  04_rapm.rds
-    05_spm.R              ->  05_spm.rds
-    06_xrapm.R            ->  06_xrapm.rds
-    07_panna_ratings.R    ->  07_panna.rds
+### Opta RAPM/SPM Pipeline (Primary) — `data-raw/player-ratings-opta/`
+
+    01_load_opta_data.R       ->  cache-opta/01_opta_data.rds
+    02_data_processing.R      ->  cache-opta/02_processed_data.rds
+    03_splint_creation.R      ->  cache-opta/03_splints.rds
+    04_rapm.R                 ->  cache-opta/04_rapm.rds
+    05_spm.R                  ->  cache-opta/05_spm.rds
+    06_xrapm.R                ->  cache-opta/06_xrapm.rds
+    07_seasonal_ratings.R     ->  cache-opta/07_seasonal_ratings.rds
+    07b_player_centrality.R   ->  cache-opta/07b_centrality.rds
+    08_panna_ratings.R        ->  cache-opta/08_panna_ratings.rds
+    09_export_ratings.R       ->  seasonal_xrapm.parquet, seasonal_spm.parquet
+
+### FBref RAPM/SPM Pipeline (Secondary) — `data-raw/player-ratings-fbref/`
+
+    01_load_pannadata.R       ->  cache/01_raw_data.rds
+    02_data_processing.R      ->  cache/02_processed_data.rds
+    03_splint_creation.R      ->  cache/03_splints.rds
+    04_rapm.R                 ->  cache/04_rapm.rds
+    05_spm.R                  ->  cache/05_spm.rds
+    06_xrapm.R                ->  cache/06_xrapm.rds
+    07_seasonal_ratings.R     ->  cache/07_seasonal_ratings.rds
+    08_panna_ratings.R        ->  cache/08_panna_ratings.rds
+
+### EPV/WPA Pipeline — `data-raw/epv/`
+
+    01_train_epv_models.R          ->  xg_model.rds, xpass_model.rds, epv_model.rds
+    02_calculate_player_epv.R      ->  per-player EPV aggregation
+    03_calculate_player_xmetrics.R ->  xmetrics/{league}/{season}.parquet
+    04_export_xmetrics.R           ->  opta_xmetrics.parquet (GitHub Release)
+    05_train_wp_model.R            ->  wp_model.rds
+    06_calculate_wpa.R             ->  per-player WPA credits
+
+### Skills Pipeline — `data-raw/estimated-skills/`
+
+    00_add_gk_per90_cols.R         ->  GK feature prep
+    01_compute_match_stats.R       ->  cache-skills/01_match_stats.rds
+    02_estimate_skills.R           ->  cache-skills/02_skills.rds
+    02b_optimize_params.R          ->  cache-skills/02b_decay_params.rds
+    03_skill_spm.R                 ->  cache-skills/03_skill_spm.rds
+    04_skill_xrapm.R               ->  cache-skills/04_skill_xrapm.rds
+    05_skill_panna_ratings.R       ->  cache-skills/05_skill_panna.rds
+    06_seasonal_skill_ratings.R    ->  cache-skills/06_seasonal_ratings.rds
+    07_train_psr_model.R           ->  PSR/PSV glmnet models
+    08_export_skills.R             ->  opta_skills.parquet (GitHub Release)
+    08b_export_psr_weekly.R        ->  PSR weekly snapshots
+
+### Predictions Pipeline — `data-raw/match-predictions-opta/`
+
+    01_build_fixture_results.R     ->  cache-predictions-opta/01_fixtures.rds
+    02_player_ratings_to_team.R    ->  cache-predictions-opta/02_team_ratings.rds
+    02b_team_skill_features.R      ->  cache-predictions-opta/02b_team_skills.rds
+    03_team_rolling_features.R     ->  cache-predictions-opta/03_rolling.rds
+    04_build_match_dataset.R       ->  cache-predictions-opta/04_dataset.rds
+    05_fit_goals_model.R           ->  cache-predictions-opta/05_goals_model.rds
+    06_fit_outcome_model.R         ->  cache-predictions-opta/06_outcome_model.rds
+    07_predict_fixtures.R          ->  cache-predictions-opta/07_predictions.rds
+    08_evaluate_model.R            ->  backtesting evaluation
+    09_upload_predictions.R        ->  predictions-latest (GitHub Release)
+    10_export_blog_data.R          ->  blog-latest (GitHub Release)
 
 ------------------------------------------------------------------------
 
-## 01_raw_data.rds
+## FBref Pipeline Data Structures
+
+The FBref pipeline shares the same RAPM/SPM methodology as Opta but uses
+FBref data.
+
+### 01_raw_data.rds
 
 Raw data from pannadata repository. All columns are snake_case after
 [`clean_column_names()`](https://peteowen1.github.io/panna/reference/clean_column_names.md).
@@ -342,8 +400,8 @@ Final unified ratings.
 
 ## Opta Data Schemas
 
-Alternative data source from TheAnalyst/Opta API. Use `load_opta_*()`
-functions.
+Primary data source (15 leagues, 263 columns per player). Use
+`load_opta_*()` functions.
 
 ### Opta Player Stats (`load_opta_stats()`)
 
@@ -430,9 +488,11 @@ Individual shots with x/y coordinates.
 | situation   | character | OpenPlay, SetPiece, Corner, Penalty |
 | big_chance  | logical   | Big chance indicator                |
 
-Note: Opta API does not include xG values. Use
-`prepare_opta_shots_for_splints(use_goals_as_xg = TRUE)` for a basic
-proxy, or calculate xG from x/y coordinates with an external model.
+Note: Raw Opta data does not include xG values. The xMetrics pipeline
+(steps 01-04 in `data-raw/epv/`) computes xG/xA/xPass from SPADL +
+XGBoost models. Pre-computed xMetrics are loaded via
+[`load_opta_xmetrics()`](https://peteowen1.github.io/panna/reference/load_opta_xmetrics.md).
+Penalty xG is overridden to 0.76.
 
 ### Opta Lineups (`load_opta_lineups()`)
 
@@ -468,13 +528,145 @@ shots <- load_opta_shot_events("ENG", "2024-2025")
 processed <- create_opta_processed_data(
   opta_lineups = lineups,
   opta_events = events,
-  opta_shot_events = shots,
-  use_goals_as_xg = TRUE  # Use goals as xG proxy
+  opta_shot_events = shots
 )
 
 # Create splints
 splints <- create_all_splints(processed)
 ```
+
+xG values come from the xMetrics pipeline
+([`load_opta_xmetrics()`](https://peteowen1.github.io/panna/reference/load_opta_xmetrics.md)),
+which pre-computes xG/xA/xPass per player per match. These are joined to
+splints during the Opta RAPM pipeline (step 03).
+
+------------------------------------------------------------------------
+
+## Opta Pipeline Cache Structures
+
+### 07_seasonal_ratings.rds
+
+List with seasonal aggregations of RAPM/SPM/xRAPM ratings.
+
+#### seasonal_spm
+
+| Column          | Type      | Description    |
+|-----------------|-----------|----------------|
+| season_end_year | numeric   | Season         |
+| player_id       | character | Opta player ID |
+| player_name     | character | Player name    |
+| spm             | numeric   | Overall SPM    |
+| offense_spm     | numeric   | Offensive SPM  |
+| defense_spm     | numeric   | Defensive SPM  |
+| total_minutes   | numeric   | Minutes played |
+
+#### seasonal_xrapm
+
+| Column          | Type      | Description         |
+|-----------------|-----------|---------------------|
+| season_end_year | numeric   | Season              |
+| player_name     | character | Player name         |
+| xrapm           | numeric   | Overall xRAPM       |
+| offense         | numeric   | Offensive xRAPM     |
+| defense         | numeric   | Defensive xRAPM     |
+| off_deviation   | numeric   | offense - off_prior |
+| def_deviation   | numeric   | defense - def_prior |
+| total_minutes   | numeric   | Minutes played      |
+
+#### metadata
+
+| Field            | Description              |
+|------------------|--------------------------|
+| min_minutes_spm  | Minimum minutes for SPM  |
+| min_minutes_rapm | Minimum minutes for RAPM |
+| lambda           | Regularization parameter |
+| n_seasons        | Number of seasons        |
+| created          | Timestamp                |
+
+### 07b_centrality.rds
+
+| Column           | Type      | Description                          |
+|------------------|-----------|--------------------------------------|
+| player_id        | character | Opta player ID                       |
+| centrality       | numeric   | PageRank centrality (0-1)            |
+| unique_opponents | integer   | Number of unique opponents faced     |
+| matches_played   | integer   | Total matches                        |
+| component_id     | integer   | Connected component label            |
+| component_size   | integer   | Size of player’s connected component |
+
+------------------------------------------------------------------------
+
+## Value Metrics Data Structures
+
+Two-path system: EPV (action-level) + PSV (box-score-level) →
+`panna_value`.
+
+### Per-Game EPV (`aggregate_player_game_epv()`)
+
+| Column         | Type      | Description        |
+|----------------|-----------|--------------------|
+| player_id      | character | Player ID          |
+| player_name    | character | Player name        |
+| team_id        | character | Team ID            |
+| match_id       | character | Match ID           |
+| minutes_played | numeric   | Minutes in match   |
+| epv_total      | numeric   | Total EPV credit   |
+| epv_offensive  | numeric   | Offensive EPV      |
+| epv_defensive  | numeric   | Defensive EPV      |
+| epv_passing    | numeric   | Passing EPV        |
+| epv_shooting   | numeric   | Shooting EPV       |
+| epv_p90        | numeric   | EPV per 90 minutes |
+
+### WPA (`aggregate_player_game_wpa()`)
+
+| Column          | Type      | Description                    |
+|-----------------|-----------|--------------------------------|
+| player_id       | character | Player ID                      |
+| match_id        | character | Match ID                       |
+| wpa_total       | numeric   | Total WPA                      |
+| wpa_as_actor    | numeric   | WPA as acting player           |
+| wpa_as_receiver | numeric   | WPA as pass receiver           |
+| n_wpa_actions   | integer   | Number of WPA-credited actions |
+| wpa_total_p90   | numeric   | WPA per 90                     |
+
+### PSV (`calculate_psv()`)
+
+| Column    | Type      | Description                   |
+|-----------|-----------|-------------------------------|
+| player_id | character | Player ID                     |
+| psv       | numeric   | Player Stat Value (osv + dsv) |
+| osv       | numeric   | Offensive stat value          |
+| dsv       | numeric   | Defensive stat value          |
+
+### EPR (`calculate_epr()`)
+
+Decay-weighted Bayesian EPV ratings.
+
+| Column        | Type      | Description                            |
+|---------------|-----------|----------------------------------------|
+| player_id     | character | Player ID                              |
+| player_name   | character | Player name                            |
+| epr           | numeric   | Total EPR                              |
+| epr_offensive | numeric   | Offensive EPR                          |
+| epr_defensive | numeric   | Defensive EPR                          |
+| wt_games      | numeric   | Effective sample size (weighted games) |
+| n_games       | integer   | Raw game count                         |
+
+### Combined Game Ratings (`build_player_game_ratings()`)
+
+Merges EPV + WPA + PSV into unified per-game output.
+
+| Column          | Type      | Description                     |
+|-----------------|-----------|---------------------------------|
+| player_id       | character | Player ID                       |
+| player_name     | character | Player name                     |
+| match_id        | character | Match ID                        |
+| minutes_played  | numeric   | Minutes                         |
+| epv_total       | numeric   | EPV credit                      |
+| wpa_total       | numeric   | WPA credit                      |
+| psv             | numeric   | Player Stat Value               |
+| panna_value     | numeric   | **Combined: 50% EPV + 50% PSV** |
+| panna_value_p90 | numeric   | panna_value per 90              |
 
 ------------------------------------------------------------------------
 
