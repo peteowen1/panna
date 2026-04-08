@@ -1,0 +1,189 @@
+name: EPV/WPA Model Training
+
+on:
+  workflow_dispatch:
+    inputs:
+      train_wp:
+        description: 'Also train WP model (steps 05-06)'
+        type: boolean
+        default: false
+      export_xmetrics:
+        description: 'Export xMetrics parquets (steps 03-04)'
+        type: boolean
+        default: true
+
+env:
+  GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
+  R_KEEP_PKG_SOURCE: yes
+
+jobs:
+  epv-pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.5.0'
+          use-public-rspm: true
+
+      - name: Setup R dependencies
+        uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          cache-version: 1
+          extra-packages: |
+            any::devtools
+            any::piggyback
+            any::arrow
+            any::dplyr
+            any::xgboost
+            any::data.table
+            any::DBI
+            any::duckdb
+            any::cli
+          needs: |
+            devtools
+
+      - name: Download Opta event data
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+        run: |
+          OPTA_DIR="${{ runner.temp }}/pannadata/opta"
+          mkdir -p "$OPTA_DIR"
+
+          echo "Downloading Opta files for EPV training..."
+          MISSING=0
+          for f in opta_lineups.parquet opta_fixtures.parquet opta_shot_events.parquet \
+                   opta-catalog.json; do
+            if gh release download opta-latest --repo peteowen1/pannadata --pattern "$f" --dir "$OPTA_DIR"; then
+              echo "  Downloaded $f"
+            else
+              echo "::error::Failed to download $f from opta-latest"
+              MISSING=$((MISSING + 1))
+            fi
+          done
+          if [ "$MISSING" -gt 0 ]; then
+            echo "::error::$MISSING required file(s) failed to download. Aborting."
+            exit 1
+          fi
+
+          # Per-league event files (match_events are too large for single consolidated file)
+          echo ""
+          echo "Downloading per-league event files..."
+          EVENT_COUNT=0
+          for f in $(gh release view opta-latest --repo peteowen1/pannadata --json assets -q '.assets[].name' | grep 'events_'); do
+            EVENTS_DIR="$OPTA_DIR/events_consolidated"
+            mkdir -p "$EVENTS_DIR"
+            if gh release download opta-latest --repo peteowen1/pannadata --pattern "$f" --dir "$EVENTS_DIR"; then
+              echo "  Downloaded $f"
+              EVENT_COUNT=$((EVENT_COUNT + 1))
+            else
+              echo "::warning::Failed to download event file $f"
+            fi
+          done
+          echo "Downloaded $EVENT_COUNT event files"
+
+          echo ""
+          echo "Opta data:"
+          ls -lh "$OPTA_DIR"
+          if [ -d "$OPTA_DIR/events_consolidated" ]; then
+            echo "Event files:"
+            ls -lh "$OPTA_DIR/events_consolidated/"
+          fi
+
+      - name: Train EPV models
+        env:
+          PANNADATA_DIR: ${{ runner.temp }}/pannadata
+        run: |
+          Rscript -e "
+            pannadata_path <- Sys.getenv('PANNADATA_DIR', '../pannadata/data')
+            opta_path <- file.path(pannadata_path, 'opta')
+            cat('Opta data dir:', opta_path, '\n')
+
+            devtools::load_all()
+            pannadata_dir(pannadata_path)
+            opta_data_dir(opta_path)
+
+            source('data-raw/epv/01_train_epv_models.R')
+          "
+
+      - name: Calculate player xMetrics
+        if: ${{ inputs.export_xmetrics }}
+        env:
+          PANNADATA_DIR: ${{ runner.temp }}/pannadata
+        run: |
+          Rscript -e "
+            pannadata_path <- Sys.getenv('PANNADATA_DIR', '../pannadata/data')
+            opta_path <- file.path(pannadata_path, 'opta')
+
+            devtools::load_all()
+            pannadata_dir(pannadata_path)
+            opta_data_dir(opta_path)
+
+            source('data-raw/epv/03_calculate_player_xmetrics.R')
+            source('data-raw/epv/04_export_xmetrics.R')
+          "
+
+      - name: Train WP model
+        if: ${{ inputs.train_wp }}
+        env:
+          PANNADATA_DIR: ${{ runner.temp }}/pannadata
+        run: |
+          Rscript -e "
+            pannadata_path <- Sys.getenv('PANNADATA_DIR', '../pannadata/data')
+            opta_path <- file.path(pannadata_path, 'opta')
+
+            devtools::load_all()
+            pannadata_dir(pannadata_path)
+            opta_data_dir(opta_path)
+
+            source('data-raw/epv/05_train_wp_model.R')
+          "
+
+      - name: Upload trained models
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+        run: |
+          echo "Uploading trained models to epv-models release..."
+          CACHE_DIR="data-raw/cache/epv"
+          UPLOADED=0
+
+          for f in xg_model.rds xpass_model.rds epv_model.rds; do
+            if [ -f "$CACHE_DIR/$f" ]; then
+              gh release upload epv-models "$CACHE_DIR/$f" --repo peteowen1/pannadata --clobber
+              echo "  Uploaded $f"
+              UPLOADED=$((UPLOADED + 1))
+            else
+              echo "::warning::Model file $f not found in $CACHE_DIR"
+            fi
+          done
+          if [ "$UPLOADED" -eq 0 ]; then
+            echo "::error::No model files were produced. Training may have failed."
+            exit 1
+          fi
+
+          if [ "${{ inputs.train_wp }}" = "true" ] && [ -f "$CACHE_DIR/wp_model.rds" ]; then
+            gh release upload epv-models "$CACHE_DIR/wp_model.rds" --repo peteowen1/pannadata --clobber
+            echo "  Uploaded wp_model.rds"
+          fi
+
+          # Upload xMetrics if generated
+          if [ "${{ inputs.export_xmetrics }}" = "true" ]; then
+            XMETRICS_FILE="data-raw/cache/epv/opta_xmetrics.parquet"
+            if [ -f "$XMETRICS_FILE" ]; then
+              gh release upload opta-latest "$XMETRICS_FILE" --repo peteowen1/pannadata --clobber
+              echo "  Uploaded opta_xmetrics.parquet to opta-latest"
+            fi
+          fi
+
+          echo ""
+          echo "=== EPV Pipeline Complete ==="

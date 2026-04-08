@@ -117,6 +117,8 @@ aggregate_lineup_ratings <- function(lineups, ratings, season_end_year,
     has_epr <- "epr" %in% names(.SD)
     has_wpa <- "wpa_rating" %in% names(.SD)
     has_psv <- "psv_rating" %in% names(.SD)
+    has_psr <- "psr" %in% names(.SD)
+    has_centrality <- "centrality" %in% names(.SD)
 
     base <- list(
       sum_panna = sum(panna), sum_offense = sum(offense),
@@ -154,6 +156,29 @@ aggregate_lineup_ratings <- function(lineups, ratings, season_end_year,
       base$sum_psv <- sum(psv_rating)
     }
 
+    # Centrality features (opponent quality adjustment)
+    if (has_centrality) {
+      base$avg_centrality <- mean(centrality)
+      base$min_centrality <- min(centrality)
+    }
+
+    # PSR features (Player Skill Rating with O/D decomposition)
+    if (has_psr) {
+      base$sum_psr <- sum(psr)
+      if ("osr" %in% names(.SD)) {
+        base$sum_osr <- sum(osr)
+        base$avg_def_osr <- safe_mean(osr[def_idx])
+        base$avg_mid_osr <- safe_mean(osr[mid_idx])
+        base$avg_fwd_osr <- safe_mean(osr[fwd_idx])
+      }
+      if ("dsr" %in% names(.SD)) {
+        base$sum_dsr <- sum(dsr)
+        base$avg_def_dsr <- safe_mean(dsr[def_idx])
+        base$avg_mid_dsr <- safe_mean(dsr[mid_idx])
+        base$avg_fwd_dsr <- safe_mean(dsr[fwd_idx])
+      }
+    }
+
     base
   }, by = .(match_id, team_name, team_position)]
 
@@ -184,6 +209,18 @@ aggregate_lineup_ratings <- function(lineups, ratings, season_end_year,
   }
   if ("home_sum_psv" %in% names(result)) {
     result[, psv_diff := home_sum_psv - away_sum_psv]
+  }
+  if ("home_sum_psr" %in% names(result)) {
+    result[, psr_diff := home_sum_psr - away_sum_psr]
+  }
+  if ("home_sum_osr" %in% names(result)) {
+    result[, osr_diff := home_sum_osr - away_sum_osr]
+  }
+  if ("home_sum_dsr" %in% names(result)) {
+    result[, dsr_diff := home_sum_dsr - away_sum_dsr]
+  }
+  if ("home_avg_centrality" %in% names(result)) {
+    result[, centrality_diff := home_avg_centrality - away_avg_centrality]
   }
 
   # Clean up team_position columns

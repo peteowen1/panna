@@ -214,10 +214,26 @@ fit_season_skill_ratings <- function(splint_data, skill_features, season,
 
   cat(sprintf("  Seasonal xRAPM ratings: %d players\n", nrow(seasonal_xrapm)))
 
+  # Compute PSR/OSR/DSR from season skills using bundled coefficients
+  seasonal_psr <- tryCatch({
+    psr_result <- compute_player_psr(season_skills, center = TRUE)
+    if (!is.null(psr_result) && nrow(psr_result) > 0) {
+      psr_result$season_end_year <- season
+      cat(sprintf("  Seasonal PSR ratings: %d players\n", nrow(psr_result)))
+      psr_result
+    } else {
+      NULL
+    }
+  }, error = function(e) {
+    warning(sprintf("PSR computation failed: %s", e$message), call. = FALSE)
+    NULL
+  })
+
   list(
     spm = seasonal_spm,
     rapm = seasonal_rapm,
-    xrapm = seasonal_xrapm
+    xrapm = seasonal_xrapm,
+    psr = seasonal_psr
   )
 }
 
@@ -288,6 +304,7 @@ if (n_failed > 0) {
 seasonal_spm <- bind_rows(lapply(seasonal_ratings_list, `[[`, "spm"))
 seasonal_rapm <- bind_rows(lapply(seasonal_ratings_list, `[[`, "rapm"))
 seasonal_xrapm <- bind_rows(lapply(seasonal_ratings_list, `[[`, "xrapm"))
+seasonal_psr <- bind_rows(Filter(Negate(is.null), lapply(seasonal_ratings_list, `[[`, "psr")))
 
 cat(sprintf("\n=== Combined Results ===\n"))
 cat(sprintf("Seasons processed: %d\n", length(seasonal_ratings_list)))
@@ -297,6 +314,10 @@ cat(sprintf("Seasonal RAPM: %d player-seasons, %d unique players\n",
             nrow(seasonal_rapm), n_distinct(seasonal_rapm$player_name)))
 cat(sprintf("Seasonal xRAPM: %d player-seasons, %d unique players\n",
             nrow(seasonal_xrapm), n_distinct(seasonal_xrapm$player_name)))
+if (nrow(seasonal_psr) > 0) {
+  cat(sprintf("Seasonal PSR:  %d player-seasons, %d unique players\n",
+              nrow(seasonal_psr), n_distinct(seasonal_psr$player_id)))
+}
 
 # 7. Summary Statistics ----
 
@@ -373,6 +394,7 @@ seasonal_results <- list(
   seasonal_spm = seasonal_spm,
   seasonal_rapm = seasonal_rapm,
   seasonal_xrapm = seasonal_xrapm,
+  seasonal_psr = seasonal_psr,
   player_season_counts = player_season_counts,
   seasons = seasons,
   metadata = list(

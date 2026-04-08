@@ -145,6 +145,70 @@ message(sprintf("  Date range: %s to %s",
 arrow::write_parquet(match_predictions, predictions_output)
 message(sprintf("  Written: %s", predictions_output))
 
+# 4b. Build Season Standings Parquet ----
+
+message("\n=== Building Season Standings ===\n")
+
+standings_output <- file.path(cache_dir, "season_standings.parquet")
+
+# Load fixture results from step 01 cache
+fixture_results_path <- file.path(cache_dir, "01_fixture_results.rds")
+if (!file.exists(fixture_results_path)) {
+  warning("01_fixture_results.rds not found — skipping standings export.", call. = FALSE)
+  standings_ok <- FALSE
+} else {
+  fixture_results <- readRDS(fixture_results_path)
+
+  # Leagues included in standings (domestic + UEFA cups for simulation scripts)
+  standings_leagues <- c("ENG", "ENG2", "ESP", "FRA", "GER", "ITA", "NED", "POR", "SCO", "TUR",
+                         "UCL", "UEL", "UECL")
+
+  played <- fixture_results %>%
+    filter(match_status == "Played", league %in% standings_leagues,
+           !is.na(home_goals), !is.na(away_goals))
+
+  # Current season only (same as predictions)
+  if ("season" %in% names(played)) {
+    latest <- max(played$season, na.rm = TRUE)
+    played <- played %>% filter(season == latest)
+  } else if ("season_end_year" %in% names(played)) {
+    latest <- max(played$season_end_year, na.rm = TRUE)
+    played <- played %>% filter(season_end_year == latest)
+  }
+
+  message(sprintf("  Played matches (current season): %d", nrow(played)))
+
+  # Compute standings from home and away perspectives
+  home_stats <- played %>%
+    group_by(league, team = home_team) %>%
+    summarise(gp = n(),
+              pts = sum(ifelse(home_goals > away_goals, 3L,
+                               ifelse(home_goals == away_goals, 1L, 0L))),
+              gf = sum(home_goals), ga = sum(away_goals), .groups = "drop")
+
+  away_stats <- played %>%
+    group_by(league, team = away_team) %>%
+    summarise(gp = n(),
+              pts = sum(ifelse(away_goals > home_goals, 3L,
+                               ifelse(away_goals == home_goals, 1L, 0L))),
+              gf = sum(away_goals), ga = sum(home_goals), .groups = "drop")
+
+  season_standings <- bind_rows(home_stats, away_stats) %>%
+    group_by(league, team) %>%
+    summarise(games_played = sum(gp), points = sum(pts),
+              gf = sum(gf), ga = sum(ga), .groups = "drop") %>%
+    mutate(gd = gf - ga) %>%
+    select(league, team, games_played, points, gd) %>%
+    arrange(league, desc(points), desc(gd))
+
+  message(sprintf("  Teams with standings: %d across %d leagues",
+                  nrow(season_standings), length(unique(season_standings$league))))
+
+  arrow::write_parquet(season_standings, standings_output)
+  message(sprintf("  Written: %s", standings_output))
+  standings_ok <- TRUE
+}
+
 # 5. Upload to GitHub Releases ----
 
 message("\n=== Uploading to GitHub ===\n")
@@ -191,8 +255,12 @@ if (!is.null(release_status) && release_status != 0) {
   }
 }
 
-# Upload both files
-for (fpath in c(ratings_output, predictions_output)) {
+# Upload files
+upload_files <- c(ratings_output, predictions_output)
+if (exists("standings_ok") && isTRUE(standings_ok)) {
+  upload_files <- c(upload_files, standings_output)
+}
+for (fpath in upload_files) {
   fname <- basename(fpath)
   size_mb <- round(file.size(fpath) / (1024 * 1024), 2)
   message(sprintf("  Uploading %s (%.2f MB)...", fname, size_mb))
@@ -212,9 +280,14 @@ message("\n========================================")
 message("Blog data exported successfully!")
 message("========================================")
 message(sprintf("  Release: https://github.com/%s/releases/tag/%s", repo, tag))
-message(sprintf("  Files: panna_ratings.parquet, match_predictions.parquet"))
 message(sprintf("  Ratings: %d players (season %d)", nrow(panna_ratings), latest_season))
 message(sprintf("  Predictions: %d matches", nrow(match_predictions)))
+if (exists("standings_ok") && isTRUE(standings_ok)) {
+  message(sprintf("  Standings: %d teams", nrow(season_standings)))
+}
 message("\nBlog URLs:")
 message(sprintf("  https://github.com/%s/releases/download/%s/panna_ratings.parquet", repo, tag))
 message(sprintf("  https://github.com/%s/releases/download/%s/match_predictions.parquet", repo, tag))
+if (exists("standings_ok") && isTRUE(standings_ok)) {
+  message(sprintf("  https://github.com/%s/releases/download/%s/season_standings.parquet", repo, tag))
+}

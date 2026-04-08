@@ -97,7 +97,7 @@ pred_cache_files <- list(
   "7" = c("07_predictions.rds", "predictions.csv", "predictions.parquet"),
   "8" = "08_evaluation.rds",
   "9" = character(0),
-  "10" = c("panna_ratings.parquet", "match_predictions.parquet"),
+  "10" = c("panna_ratings.parquet", "match_predictions.parquet", "season_standings.parquet"),
   "10b" = "game_logs.parquet",
   "10c" = "action_equity.parquet"
 )

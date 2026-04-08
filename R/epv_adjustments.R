@@ -161,7 +161,7 @@ adjust_epv_for_opponents <- function(player_match,
     cli::cli_abort("Missing columns: {paste(missing, collapse = ', ')}")
   }
 
-  # ── Team-match credit totals ──────────────────────────────────
+  # -- Team-match credit totals --
   team_match <- dt[, .(
     team_credit = sum(get(credit_col), na.rm = TRUE),
     team_total_mins = sum(minutes_played, na.rm = TRUE)
@@ -172,7 +172,7 @@ adjust_epv_for_opponents <- function(player_match,
   teams_per_match <- match_teams[, .N, by = match_id]
   bad_matches <- teams_per_match[N != 2]$match_id
   if (length(bad_matches) > 0) {
-    cli::cli_warn("{length(bad_matches)} match(es) have != 2 teams — excluding from opponent adjustment")
+    cli::cli_warn("{length(bad_matches)} match(es) have != 2 teams - excluding from opponent adjustment")
     team_match <- team_match[!match_id %in% bad_matches]
     match_teams <- match_teams[!match_id %in% bad_matches]
     dt <- dt[!match_id %in% bad_matches]
@@ -181,12 +181,12 @@ adjust_epv_for_opponents <- function(player_match,
   team_match <- match_teams[, .(match_id, team_id, opp_team_id)][
     team_match, on = .(match_id, team_id)]
 
-  # ── Residuals: team over/underperformance vs own average ──────
+  # -- Residuals: team over/underperformance vs own average --
   team_season_avg <- team_match[, .(team_avg = mean(team_credit)), by = team_id]
   team_match[team_season_avg, team_avg := i.team_avg, on = "team_id"]
   team_match[, residual := team_credit - team_avg]
 
-  # ── Rolling causal opponent profiles from residuals ───────────
+  # -- Rolling causal opponent profiles from residuals --
   data.table::setorder(team_match, opp_team_id, match_date)
   team_match[, match_date_num := as.numeric(as.Date(match_date))]
 
@@ -210,10 +210,10 @@ adjust_epv_for_opponents <- function(player_match,
 
   team_match[, opp_profile := .compute_rolling_profile(.SD), by = opp_team_id]
 
-  # Adjustment = -profile (tough opponent with negative residual → positive boost)
+  # Adjustment = -profile (tough opponent with negative residual -> positive boost)
   team_match[, opp_adjustment := -opp_profile]
 
-  # ── Distribute to players by minutes share ────────────────────
+  # -- Distribute to players by minutes share --
   dt <- team_match[, .(match_id, team_id, opp_team_id, opp_adjustment,
     team_total_mins)][dt, on = .(match_id, team_id)]
 
