@@ -6,7 +6,7 @@
 \usage{
 calculate_action_epv(
   spadl_actions,
-  features,
+  features = NULL,
   epv_model,
   xg_model = NULL,
   league = NULL

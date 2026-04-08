@@ -92,6 +92,39 @@ if (is.data.frame(seasonal_data)) {
                    by = merge_key,
                    all.x = TRUE)
   ratings$spm[is.na(ratings$spm)] <- 0
+
+  # Merge PSR/OSR/DSR if available in seasonal data
+  if ("seasonal_psr" %in% names(seasonal_data) &&
+      !is.null(seasonal_data$seasonal_psr) &&
+      nrow(seasonal_data$seasonal_psr) > 0) {
+    psr_data <- seasonal_data$seasonal_psr
+    psr_cols <- intersect(c("player_id", "season_end_year", "psr", "osr", "dsr"), names(psr_data))
+    if (length(psr_cols) >= 3) {
+      psr_data <- psr_data[, psr_cols]
+      psr_data <- psr_data[!duplicated(psr_data[, c("player_id", "season_end_year")]), ]
+      ratings <- merge(ratings, psr_data, by = c("player_id", "season_end_year"), all.x = TRUE)
+      ratings$psr[is.na(ratings$psr)] <- 0
+      if ("osr" %in% names(ratings)) ratings$osr[is.na(ratings$osr)] <- 0
+      if ("dsr" %in% names(ratings)) ratings$dsr[is.na(ratings$dsr)] <- 0
+      message(sprintf("  Merged PSR/OSR/DSR for %d player-seasons",
+                      sum(ratings$psr != 0)))
+    }
+  }
+
+  # Merge centrality scores if available
+  centrality_path <- file.path("data-raw", "cache-opta", "07b_centrality.rds")
+  if (file.exists(centrality_path)) {
+    centrality_data <- readRDS(centrality_path)
+    if (!is.null(centrality_data) && nrow(centrality_data) > 0 &&
+        "player_id" %in% names(centrality_data)) {
+      centrality_data <- centrality_data[, c("player_id", "centrality")]
+      centrality_data <- centrality_data[!duplicated(centrality_data$player_id), ]
+      ratings <- merge(ratings, centrality_data, by = "player_id", all.x = TRUE)
+      ratings$centrality[is.na(ratings$centrality)] <- 0
+      message(sprintf("  Merged centrality for %d players",
+                      sum(ratings$centrality > 0)))
+    }
+  }
 } else if ("combined" %in% names(seasonal_data)) {
   ratings <- seasonal_data$combined
 } else {
@@ -314,6 +347,22 @@ if (nrow(upcoming) > 0) {
             spm = panna,
             season_end_year = latest_sey
           )
+
+        # Add PSR/OSR/DSR from live skills
+        tryCatch({
+          live_psr <- compute_player_psr(live_skills, center = TRUE)
+          if (!is.null(live_psr) && nrow(live_psr) > 0) {
+            psr_cols <- intersect(c("player_id", "psr", "osr", "dsr"), names(live_psr))
+            fixture_ratings <- fixture_ratings %>%
+              left_join(live_psr[, psr_cols], by = "player_id")
+            fixture_ratings$psr[is.na(fixture_ratings$psr)] <- 0
+            if ("osr" %in% names(fixture_ratings)) fixture_ratings$osr[is.na(fixture_ratings$osr)] <- 0
+            if ("dsr" %in% names(fixture_ratings)) fixture_ratings$dsr[is.na(fixture_ratings$dsr)] <- 0
+            message(sprintf("  Added PSR for %d fixture players", sum(fixture_ratings$psr != 0)))
+          }
+        }, error = function(e) {
+          message(sprintf("  Fixture PSR skipped: %s", e$message))
+        })
 
         message(sprintf("  Live skill ratings for %d players at %s",
                         nrow(fixture_ratings), fixture_date))

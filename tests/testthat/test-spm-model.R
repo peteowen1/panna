@@ -151,13 +151,14 @@ test_that("get_spm_feature_importance returns top features", {
   expect_true("feature" %in% names(importance))
   expect_true("coefficient" %in% names(importance))
   expect_true("abs_coef" %in% names(importance))
+  expect_true("std_importance" %in% names(importance))
 
   # Returns at most n features
   expect_lte(nrow(importance), 5)
 
-  # Sorted by absolute coefficient
+  # Sorted by standardised importance (|beta * sd|)
   if (nrow(importance) > 1) {
-    expect_true(all(diff(importance$abs_coef) <= 0))
+    expect_true(all(diff(importance$std_importance) <= 0))
   }
 })
 
