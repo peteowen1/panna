@@ -52,10 +52,12 @@ jobs:
             devtools
 
       - name: Download source data from pannadata
+        env:
+          PANNADATA_DIR: ${{ runner.temp }}/pannadata
         run: |
           Rscript -e "
             devtools::load_all()
-            dest <- file.path(tempdir(), 'pannadata')
+            dest <- Sys.getenv('PANNADATA_DIR')
             dir.create(dest, recursive = TRUE)
             pb_download_source('fbref', dest = dest)
             pannadata_dir(dest)
