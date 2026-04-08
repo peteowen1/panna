@@ -361,7 +361,7 @@ if (nrow(upcoming) > 0) {
             message(sprintf("  Added PSR for %d fixture players", sum(fixture_ratings$psr != 0)))
           }
         }, error = function(e) {
-          message(sprintf("  Fixture PSR skipped: %s", e$message))
+          warning(sprintf("Fixture PSR failed: %s", e$message), call. = FALSE)
         })
 
         message(sprintf("  Live skill ratings for %d players at %s",

@@ -225,7 +225,7 @@ fit_season_skill_ratings <- function(splint_data, skill_features, season,
       NULL
     }
   }, error = function(e) {
-    cat(sprintf("  PSR computation skipped: %s\n", e$message))
+    warning(sprintf("PSR computation failed: %s", e$message), call. = FALSE)
     NULL
   })
 

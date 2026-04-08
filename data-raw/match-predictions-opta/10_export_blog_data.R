@@ -280,7 +280,6 @@ message("\n========================================")
 message("Blog data exported successfully!")
 message("========================================")
 message(sprintf("  Release: https://github.com/%s/releases/tag/%s", repo, tag))
-message(sprintf("  Files: panna_ratings.parquet, match_predictions.parquet, season_standings.parquet"))
 message(sprintf("  Ratings: %d players (season %d)", nrow(panna_ratings), latest_season))
 message(sprintf("  Predictions: %d matches", nrow(match_predictions)))
 if (exists("standings_ok") && isTRUE(standings_ok)) {
@@ -289,4 +288,6 @@ if (exists("standings_ok") && isTRUE(standings_ok)) {
 message("\nBlog URLs:")
 message(sprintf("  https://github.com/%s/releases/download/%s/panna_ratings.parquet", repo, tag))
 message(sprintf("  https://github.com/%s/releases/download/%s/match_predictions.parquet", repo, tag))
-message(sprintf("  https://github.com/%s/releases/download/%s/season_standings.parquet", repo, tag))
+if (exists("standings_ok") && isTRUE(standings_ok)) {
+  message(sprintf("  https://github.com/%s/releases/download/%s/season_standings.parquet", repo, tag))
+}

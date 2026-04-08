@@ -681,7 +681,6 @@ fit_spm_model <- function(data, predictor_cols = NULL, alpha = 0.5, nfolds = 10,
   )
 
   # Store feature SDs for standardised importance (glmnet standardize=TRUE
-
   # returns coefficients on original scale; multiply by SD for comparison)
   feature_sds <- apply(X, 2, stats::sd, na.rm = TRUE)
   feature_sds[feature_sds == 0 | is.na(feature_sds)] <- 1
@@ -1198,6 +1197,7 @@ get_spm_feature_importance <- function(model, n = 10, lambda = "min") {
     importance$sd <- as.numeric(sd_vals)
     importance$std_importance <- abs(importance$coefficient) * importance$sd
   } else {
+    cli::cli_inform("feature_sds not found in model metadata; std_importance uses raw |coefficient|")
     importance$std_importance <- importance$abs_coef
   }
 

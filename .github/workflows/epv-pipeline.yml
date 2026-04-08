@@ -61,23 +61,36 @@ jobs:
           mkdir -p "$OPTA_DIR"
 
           echo "Downloading Opta files for EPV training..."
+          MISSING=0
           for f in opta_lineups.parquet opta_fixtures.parquet opta_shot_events.parquet \
                    opta-catalog.json; do
-            if gh release download opta-latest --repo peteowen1/pannadata --pattern "$f" --dir "$OPTA_DIR" 2>/dev/null; then
+            if gh release download opta-latest --repo peteowen1/pannadata --pattern "$f" --dir "$OPTA_DIR"; then
               echo "  Downloaded $f"
             else
-              echo "  WARNING: $f not found"
+              echo "::error::Failed to download $f from opta-latest"
+              MISSING=$((MISSING + 1))
             fi
           done
+          if [ "$MISSING" -gt 0 ]; then
+            echo "::error::$MISSING required file(s) failed to download. Aborting."
+            exit 1
+          fi
 
           # Per-league event files (match_events are too large for single consolidated file)
           echo ""
           echo "Downloading per-league event files..."
+          EVENT_COUNT=0
           for f in $(gh release view opta-latest --repo peteowen1/pannadata --json assets -q '.assets[].name' | grep 'events_'); do
             EVENTS_DIR="$OPTA_DIR/events_consolidated"
             mkdir -p "$EVENTS_DIR"
-            gh release download opta-latest --repo peteowen1/pannadata --pattern "$f" --dir "$EVENTS_DIR" 2>/dev/null && echo "  Downloaded $f"
+            if gh release download opta-latest --repo peteowen1/pannadata --pattern "$f" --dir "$EVENTS_DIR"; then
+              echo "  Downloaded $f"
+              EVENT_COUNT=$((EVENT_COUNT + 1))
+            else
+              echo "::warning::Failed to download event file $f"
+            fi
           done
+          echo "Downloaded $EVENT_COUNT event files"
 
           echo ""
           echo "Opta data:"
@@ -142,13 +155,21 @@ jobs:
         run: |
           echo "Uploading trained models to epv-models release..."
           CACHE_DIR="data-raw/cache/epv"
+          UPLOADED=0
 
           for f in xg_model.rds xpass_model.rds epv_model.rds; do
             if [ -f "$CACHE_DIR/$f" ]; then
               gh release upload epv-models "$CACHE_DIR/$f" --repo peteowen1/pannadata --clobber
               echo "  Uploaded $f"
+              UPLOADED=$((UPLOADED + 1))
+            else
+              echo "::warning::Model file $f not found in $CACHE_DIR"
             fi
           done
+          if [ "$UPLOADED" -eq 0 ]; then
+            echo "::error::No model files were produced. Training may have failed."
+            exit 1
+          fi
 
           if [ "${{ inputs.train_wp }}" = "true" ] && [ -f "$CACHE_DIR/wp_model.rds" ]; then
             gh release upload epv-models "$CACHE_DIR/wp_model.rds" --repo peteowen1/pannadata --clobber
