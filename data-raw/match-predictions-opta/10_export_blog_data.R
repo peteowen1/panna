@@ -159,11 +159,12 @@ if (!file.exists(fixture_results_path)) {
 } else {
   fixture_results <- readRDS(fixture_results_path)
 
-  # Domestic leagues only (same set the simulation script uses)
-  domestic_leagues <- c("ENG", "ENG2", "ESP", "FRA", "GER", "ITA", "NED", "POR", "SCO", "TUR")
+  # Leagues included in standings (domestic + UEFA cups for simulation scripts)
+  standings_leagues <- c("ENG", "ENG2", "ESP", "FRA", "GER", "ITA", "NED", "POR", "SCO", "TUR",
+                         "UCL", "UEL", "UECL")
 
   played <- fixture_results %>%
-    filter(match_status == "Played", league %in% domestic_leagues,
+    filter(match_status == "Played", league %in% standings_leagues,
            !is.na(home_goals), !is.na(away_goals))
 
   # Current season only (same as predictions)
