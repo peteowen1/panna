@@ -150,7 +150,7 @@ step_results[[1]] <- run_step_fbref("load_data", 1, function() {
   pannadata_dir(pannadata_path)
 
   message("Loading metadata from pannadata...")
-  metadata <- aggregate_cached_matches("metadata")
+  metadata <- aggregate_cached_matches("metadata", source = "local")
 
   if (!is.null(leagues)) {
     metadata <- metadata %>% filter(league %in% leagues)
@@ -162,7 +162,7 @@ step_results[[1]] <- run_step_fbref("load_data", 1, function() {
   message(sprintf("  Found %d matches", nrow(metadata)))
 
   message("Loading player summary stats...")
-  summary_stats <- aggregate_cached_matches("summary")
+  summary_stats <- aggregate_cached_matches("summary", source = "local")
 
   if (!is.null(leagues)) {
     summary_stats <- summary_stats %>% filter(league %in% leagues)
@@ -174,7 +174,7 @@ step_results[[1]] <- run_step_fbref("load_data", 1, function() {
   message(sprintf("  Found %d player-match records", nrow(summary_stats)))
 
   message("Loading shots data...")
-  shots <- aggregate_cached_matches("shots")
+  shots <- aggregate_cached_matches("shots", source = "local")
 
   if (!is.null(shots)) {
     if (!is.null(leagues)) {
