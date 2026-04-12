@@ -90,6 +90,75 @@ cat(sprintf("  Weekly (last 2yr): %d | Monthly (older): %d\n",
             length(recent_weekly),
             length(older_monthly[older_monthly >= min_history])))
 
+# --- Incremental update: reuse prior weekly parquet if available ----
+#
+# Most dates are stable week-to-week — re-computing all 232 on every weekly
+# run is wasted work. Download the existing release parquet, keep rows for
+# dates older than a "recompute buffer" (handles retroactive match updates),
+# and compute only the missing dates.
+cat("\n=== Incremental Update Check ===\n")
+
+recompute_buffer_days <- 28L   # Recompute the last 4 weeks (covers late results)
+existing_parquet <- tryCatch({
+  tmp <- file.path(tempdir(), "opta_psr_weekly_existing.parquet")
+  piggyback::pb_download(
+    file = "opta_psr_weekly.parquet",
+    repo = "peteowen1/pannadata",
+    tag  = "opta-latest",
+    dest = tempdir()
+  )
+  if (file.exists(tmp)) arrow::read_parquet(tmp) else NULL
+}, error = function(e) {
+  cat(sprintf("  No existing parquet found (%s) - full rebuild\n", e$message))
+  NULL
+})
+
+keep_existing <- NULL
+recompute_cutoff <- today - recompute_buffer_days
+
+if (!is.null(existing_parquet) && "snapshot_date" %in% names(existing_parquet) &&
+    nrow(existing_parquet) > 0) {
+  existing_dt <- data.table::as.data.table(existing_parquet)
+  existing_dt[, snapshot_date := as.Date(snapshot_date)]
+
+  # Schema compatibility check: new run's output columns must match existing.
+  # If they differ, fall back to full rebuild (safer than merging incompatible).
+  expected_cols <- c("snapshot_date", "player_id", "player_name",
+                     "primary_position", "psr", "osr", "dsr", "weighted_90s")
+  if (!all(expected_cols %in% names(existing_dt))) {
+    cat("  Existing parquet schema mismatch - full rebuild\n")
+  } else {
+    existing_dates <- sort(unique(existing_dt$snapshot_date))
+    # Keep rows strictly older than the recompute buffer
+    keep_existing <- existing_dt[snapshot_date < recompute_cutoff]
+    # Skip target snapshot_dates that are already covered and outside buffer
+    already_covered <- snapshot_dates %in% keep_existing$snapshot_date
+    n_before <- length(snapshot_dates)
+    snapshot_dates <- snapshot_dates[!already_covered]
+
+    cat(sprintf("  Existing parquet: %s rows covering %d dates (%s to %s)\n",
+                format(nrow(existing_dt), big.mark = ","),
+                length(existing_dates),
+                min(existing_dates), max(existing_dates)))
+    cat(sprintf("  Recompute buffer: last %d days (dates >= %s)\n",
+                recompute_buffer_days, recompute_cutoff))
+    cat(sprintf("  Reused rows: %s (snapshot_date < %s)\n",
+                format(nrow(keep_existing), big.mark = ","),
+                recompute_cutoff))
+    cat(sprintf("  Dates to recompute: %d (down from %d)\n",
+                length(snapshot_dates), n_before))
+  }
+} else {
+  cat("  No valid existing data - computing all dates fresh\n")
+}
+
+# Safety: if incremental left nothing to do (unlikely but possible), force at
+# least the most recent date so we always emit a current snapshot.
+if (length(snapshot_dates) == 0) {
+  cat("  No new dates needed - forcing refresh of today's snapshot\n")
+  snapshot_dates <- today
+}
+
 # 5. Pre-Compute Shared Data (position multipliers + prior centers) ----
 #
 # Position multipliers and global prior centers change negligibly across dates
@@ -131,6 +200,42 @@ cat(sprintf("  Prior centers computed\n\n"))
 decay_params_fast <- decay_params
 decay_params_fast$position_multipliers <- pos_mults_precomp
 decay_params_fast$prior_centers        <- prior_centers_precomp
+
+# Pre-compute match_date exponentials: the decay weight
+#   exp(-lam * (target_date - match_date))
+# factors as
+#   exp(lam * match_date) * exp(-lam * target_date)
+# The first factor depends only on match_date (time-invariant across snapshot
+# dates), so we compute it once per unique lambda and cache as columns on
+# match_stats. Each snapshot iteration then replaces ~530K exp() calls per
+# lambda with a single scalar multiply inside estimate_player_skills(). For
+# 232 snapshot dates x ~8 unique lambdas, this avoids ~1 billion exp() calls.
+cat("\n=== Pre-Computing Decay Exponentials ===\n")
+mexp_start <- Sys.time()
+
+match_date_num <- as.numeric(match_stats$match_date)
+
+# Collect all lambdas used by estimate_player_skills(): rate + per-stat lambdas
+# resolved via .resolve_lambda() (same helper the function uses internally).
+stat_lambdas_all <- vapply(stat_cols_all,
+                           function(s) panna:::.resolve_lambda(s, decay_params_fast,
+                                                               panna:::.classify_skill_stats()),
+                           numeric(1))
+all_lambdas <- unique(c(decay_params_fast$rate, stat_lambdas_all))
+all_lambdas <- all_lambdas[!is.na(all_lambdas)]
+
+precomputed_mexp <- list()
+for (j in seq_along(all_lambdas)) {
+  lam <- all_lambdas[j]
+  col_name <- sprintf(".mexp_%d", j)
+  data.table::set(match_stats, j = col_name, value = exp(lam * match_date_num))
+  precomputed_mexp[[as.character(lam)]] <- col_name
+}
+decay_params_fast$precomputed_match_exp <- precomputed_mexp
+
+cat(sprintf("  Cached exp() for %d unique lambdas in %.1fs\n",
+            length(all_lambdas),
+            as.numeric(difftime(Sys.time(), mexp_start, units = "secs"))))
 
 # 6. Compute PSR at Each Snapshot Date ----
 
@@ -190,11 +295,15 @@ cat(sprintf("\nCompleted: %d / %d dates (%.0fs, %.1f sec/date)\n",
             n_success, length(snapshot_dates),
             total_secs, total_secs / max(n_success, 1)))
 
-# Guard: abort if too many dates failed
-if (n_success == 0) {
-  stop("All snapshot dates failed. No PSR data computed.")
+# Guard: abort if all new dates failed AND there's no reusable existing data.
+# (With incremental updates, snapshot_dates may contain just 1-2 new dates —
+# the 50% threshold below would fire on a single failure, so skip it when the
+# dataset is small enough to make the ratio unreliable.)
+has_fallback <- !is.null(keep_existing) && nrow(keep_existing) > 0
+if (n_success == 0 && !has_fallback) {
+  stop("All snapshot dates failed and no existing data to reuse.")
 }
-if (n_success < length(snapshot_dates) * 0.5) {
+if (length(snapshot_dates) >= 10 && n_success < length(snapshot_dates) * 0.5) {
   warning(sprintf("Only %d / %d dates succeeded (%.0f%%). Investigate failures.",
                   n_success, length(snapshot_dates), 100 * n_success / length(snapshot_dates)))
 }
@@ -203,7 +312,32 @@ if (n_success < length(snapshot_dates) * 0.5) {
 
 cat("\n=== Exporting ===\n")
 
-weekly_psr <- data.table::rbindlist(psr_list, fill = TRUE, use.names = TRUE)
+new_psr <- data.table::rbindlist(psr_list, fill = TRUE, use.names = TRUE)
+cat(sprintf("  Newly computed: %s rows across %d dates\n",
+            format(nrow(new_psr), big.mark = ","),
+            data.table::uniqueN(new_psr$snapshot_date)))
+
+# Merge with reused rows from the existing parquet (if any)
+if (!is.null(keep_existing) && nrow(keep_existing) > 0) {
+  # Ensure column order matches before rbind
+  common_cols <- intersect(names(new_psr), names(keep_existing))
+  weekly_psr <- data.table::rbindlist(
+    list(keep_existing[, ..common_cols], new_psr[, ..common_cols]),
+    use.names = TRUE, fill = TRUE
+  )
+  cat(sprintf("  Reused rows:    %s rows from existing parquet\n",
+              format(nrow(keep_existing), big.mark = ",")))
+} else {
+  weekly_psr <- new_psr
+}
+
+# Deduplicate on snapshot_date + player_id, keeping the latest (new_psr) rows.
+# Since new rows are appended after keep_existing, unique() with fromLast=TRUE
+# would keep the new version — but in practice the filter above already
+# ensures no overlap, so this is a safety net.
+weekly_psr <- unique(weekly_psr, by = c("snapshot_date", "player_id"), fromLast = TRUE)
+data.table::setorder(weekly_psr, snapshot_date, player_id)
+
 cat(sprintf("  Total rows:    %s\n", format(nrow(weekly_psr), big.mark = ",")))
 cat(sprintf("  Unique players: %s\n", format(data.table::uniqueN(weekly_psr$player_id), big.mark = ",")))
 cat(sprintf("  Unique dates:   %d\n", data.table::uniqueN(weekly_psr$snapshot_date)))
