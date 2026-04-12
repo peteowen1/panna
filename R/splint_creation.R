@@ -1228,7 +1228,9 @@ assign_players_to_splints_fast <- function(boundaries, lineups, match_id) {
 
   # Use pre-calculated on/off times from leading space detection if available
   # Otherwise fall back to the old approximation method
-  if ("on_minute" %in% names(lineups) && "off_minute" %in% names(lineups)) {
+  has_on_off <- "on_minute" %in% names(lineups) && "off_minute" %in% names(lineups) &&
+    !all(is.na(lineups$on_minute)) && !all(is.na(lineups$off_minute))
+  if (has_on_off) {
     on_minute <- lineups$on_minute
     off_minute <- lineups$off_minute
   } else {
