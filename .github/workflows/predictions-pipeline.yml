@@ -188,6 +188,7 @@ jobs:
 
       - name: Export weekly PSR snapshots
         continue-on-error: true
+        timeout-minutes: 50
         env:
           PANNADATA_DIR: ${{ runner.temp }}/pannadata
           GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
