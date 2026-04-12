@@ -90,6 +90,132 @@ cat(sprintf("  Weekly (last 2yr): %d | Monthly (older): %d\n",
             length(recent_weekly),
             length(older_monthly[older_monthly >= min_history])))
 
+# --- Incremental update: reuse prior weekly parquet if available ----
+#
+# Most dates are stable week-to-week — re-computing every date on every weekly
+# run is wasted work. Download the existing release parquet, keep rows for
+# dates older than a "recompute buffer" (handles retroactive match updates),
+# and compute only the missing dates.
+#
+# Failure policy: fall back to full rebuild ONLY when the asset doesn't exist
+# yet (first run) or when PSR_FORCE_FULL_REBUILD=1 is set. Auth, network, or
+# corruption errors halt the job — silently full-rebuilding on every failure
+# mode would mask a persistent regression behind a 60-min elapsed-time delta.
+message("\n=== Incremental Update Check ===")
+
+recompute_buffer_days <- 28L   # Recompute the last 4 weeks (covers late results)
+force_full_rebuild <- nzchar(Sys.getenv("PSR_FORCE_FULL_REBUILD"))
+
+existing_parquet <- NULL
+if (force_full_rebuild) {
+  message("  PSR_FORCE_FULL_REBUILD set - skipping incremental check")
+} else {
+  # piggyback writes under the asset's original name, so download into a
+  # dedicated subdir and read from <dir>/<asset>. Earlier versions of this
+  # block referenced a non-existent suffix and silently skipped the fast path.
+  dl_dir <- file.path(tempdir(), "psr_weekly_existing")
+  dir.create(dl_dir, showWarnings = FALSE, recursive = TRUE)
+  existing_path <- file.path(dl_dir, "opta_psr_weekly.parquet")
+  if (file.exists(existing_path)) file.remove(existing_path)
+
+  existing_parquet <- tryCatch({
+    piggyback::pb_download(
+      file = "opta_psr_weekly.parquet",
+      repo = "peteowen1/pannadata",
+      tag  = "opta-latest",
+      dest = dl_dir,
+      overwrite = TRUE
+    )
+    if (file.exists(existing_path)) {
+      arrow::read_parquet(existing_path)
+    } else {
+      message("  Release exists but asset 'opta_psr_weekly.parquet' not in it - full rebuild")
+      NULL
+    }
+  }, error = function(e) {
+    msg <- conditionMessage(e)
+    # piggyback surfaces missing assets with varied phrasings — accept any of
+    # these as a legitimate "first run" signal and fall back silently.
+    is_missing <- grepl("not found|404|no asset|unable to find",
+                        msg, ignore.case = TRUE)
+    if (is_missing) {
+      message("  No existing parquet on release (first run) - full rebuild")
+      return(NULL)
+    }
+    # Auth / network / corruption: fail loudly. Silent fallback here would
+    # mask a 60-minute elapsed-time regression for days.
+    stop(sprintf(
+      "Failed to fetch existing opta_psr_weekly.parquet: %s\n  ",
+      msg),
+      "Refusing to silently fall back to full rebuild. ",
+      "Set PSR_FORCE_FULL_REBUILD=1 to override if this is intentional.",
+      call. = FALSE)
+  })
+}
+
+keep_existing <- NULL
+recompute_cutoff <- today - recompute_buffer_days
+n_before <- length(snapshot_dates)
+incremental_active <- FALSE
+
+if (!is.null(existing_parquet) && "snapshot_date" %in% names(existing_parquet) &&
+    nrow(existing_parquet) > 0) {
+  existing_dt <- data.table::as.data.table(existing_parquet)
+  existing_dt[, snapshot_date := as.Date(snapshot_date)]
+
+  # Schema compatibility: all expected output columns must be present in the
+  # existing parquet. Missing columns = schema drift, fall back with a loud
+  # warning so the daily health check (which greps for Warning:) flags it.
+  expected_cols <- c("snapshot_date", "player_id", "player_name",
+                     "primary_position", "psr", "osr", "dsr", "weighted_90s")
+  missing_cols <- setdiff(expected_cols, names(existing_dt))
+  if (length(missing_cols) > 0) {
+    warning(sprintf(
+      "opta_psr_weekly.parquet schema mismatch: existing release missing [%s]. ",
+      paste(missing_cols, collapse = ", ")),
+      "Falling back to full rebuild. Investigate whether the schema changed ",
+      "intentionally.", call. = FALSE)
+  } else {
+    existing_dates <- sort(unique(existing_dt$snapshot_date))
+    # Keep rows strictly older than the recompute buffer
+    keep_existing <- existing_dt[snapshot_date < recompute_cutoff]
+    # Skip target snapshot_dates already covered by keep_existing
+    already_covered <- snapshot_dates %in% keep_existing$snapshot_date
+    snapshot_dates <- snapshot_dates[!already_covered]
+    incremental_active <- TRUE
+
+    message(sprintf("  Existing parquet: %s rows covering %d dates (%s to %s)",
+                    format(nrow(existing_dt), big.mark = ","),
+                    length(existing_dates),
+                    min(existing_dates), max(existing_dates)))
+    message(sprintf("  Recompute buffer: last %d days (dates >= %s)",
+                    recompute_buffer_days, recompute_cutoff))
+    message(sprintf("  Reused rows: %s (snapshot_date < %s)",
+                    format(nrow(keep_existing), big.mark = ","),
+                    recompute_cutoff))
+    message(sprintf("  Dates to recompute: %d (down from %d)",
+                    length(snapshot_dates), n_before))
+  }
+} else {
+  message("  No valid existing data - computing all dates fresh")
+}
+
+# Safety net: the incremental filter may legitimately leave zero dates when
+# everything is already covered outside the buffer. In that case, refresh
+# today's snapshot so the release always has a current row. BUT if we had
+# zero dates *before* incremental filtering that points to an upstream bug
+# in snapshot date generation — refuse to publish rather than masking it.
+if (length(snapshot_dates) == 0) {
+  if (n_before == 0) {
+    stop("snapshot_dates empty before incremental filtering - ",
+         "check recent_weekly / older_monthly generation. ",
+         "Refusing to publish a single-date parquet over the existing release.",
+         call. = FALSE)
+  }
+  message("  All target dates already covered; refreshing today's snapshot only")
+  snapshot_dates <- today
+}
+
 # 5. Pre-Compute Shared Data (position multipliers + prior centers) ----
 #
 # Position multipliers and global prior centers change negligibly across dates
@@ -131,6 +257,42 @@ cat(sprintf("  Prior centers computed\n\n"))
 decay_params_fast <- decay_params
 decay_params_fast$position_multipliers <- pos_mults_precomp
 decay_params_fast$prior_centers        <- prior_centers_precomp
+
+# Pre-compute match_date exponentials: the decay weight
+#   exp(-lam * (target_date - match_date))
+# factors as
+#   exp(lam * match_date) * exp(-lam * target_date)
+# The first factor depends only on match_date (time-invariant across snapshot
+# dates), so we compute it once per unique lambda and cache as columns on
+# match_stats. Each snapshot iteration then replaces ~530K exp() calls per
+# lambda with a single scalar multiply inside estimate_player_skills(). For
+# 232 snapshot dates x ~8 unique lambdas, this avoids ~1 billion exp() calls.
+cat("\n=== Pre-Computing Decay Exponentials ===\n")
+mexp_start <- Sys.time()
+
+match_date_num <- as.numeric(match_stats$match_date)
+
+# Collect all lambdas used by estimate_player_skills(): rate + per-stat lambdas
+# resolved via .resolve_lambda() (same helper the function uses internally).
+stat_lambdas_all <- vapply(stat_cols_all,
+                           function(s) panna:::.resolve_lambda(s, decay_params_fast,
+                                                               panna:::.classify_skill_stats()),
+                           numeric(1))
+all_lambdas <- unique(c(decay_params_fast$rate, stat_lambdas_all))
+all_lambdas <- all_lambdas[!is.na(all_lambdas)]
+
+precomputed_mexp <- list()
+for (j in seq_along(all_lambdas)) {
+  lam <- all_lambdas[j]
+  col_name <- sprintf(".mexp_%d", j)
+  data.table::set(match_stats, j = col_name, value = exp(lam * match_date_num))
+  precomputed_mexp[[as.character(lam)]] <- col_name
+}
+decay_params_fast$precomputed_match_exp <- precomputed_mexp
+
+cat(sprintf("  Cached exp() for %d unique lambdas in %.1fs\n",
+            length(all_lambdas),
+            as.numeric(difftime(Sys.time(), mexp_start, units = "secs"))))
 
 # 6. Compute PSR at Each Snapshot Date ----
 
@@ -190,20 +352,88 @@ cat(sprintf("\nCompleted: %d / %d dates (%.0fs, %.1f sec/date)\n",
             n_success, length(snapshot_dates),
             total_secs, total_secs / max(n_success, 1)))
 
-# Guard: abort if too many dates failed
+# Guard: always abort if ALL new dates failed. Having reusable existing rows
+# is NOT a reason to continue — an incremental run that computes nothing new
+# but re-publishes stale reused rows would silently stagnate the release.
 if (n_success == 0) {
-  stop("All snapshot dates failed. No PSR data computed.")
+  stop("All snapshot dates failed - refusing to publish. ",
+       "Reused rows alone would stagnate the release.", call. = FALSE)
 }
-if (n_success < length(snapshot_dates) * 0.5) {
-  warning(sprintf("Only %d / %d dates succeeded (%.0f%%). Investigate failures.",
-                  n_success, length(snapshot_dates), 100 * n_success / length(snapshot_dates)))
+# Warn on ANY failure (not just >50%). On incremental runs with 1-3 new
+# dates, a single failure is a 33-100% failure rate and the old threshold
+# logic would miss it entirely.
+n_failed <- length(snapshot_dates) - n_success
+if (n_failed > 0) {
+  warning(sprintf("%d / %d snapshot dates failed. Investigate before next run.",
+                  n_failed, length(snapshot_dates)), call. = FALSE)
 }
 
 # 7. Combine and Export ----
 
 cat("\n=== Exporting ===\n")
 
-weekly_psr <- data.table::rbindlist(psr_list, fill = TRUE, use.names = TRUE)
+new_psr <- data.table::rbindlist(psr_list, fill = TRUE, use.names = TRUE)
+message(sprintf("  Newly computed: %s rows across %d dates",
+                format(nrow(new_psr), big.mark = ","),
+                data.table::uniqueN(new_psr$snapshot_date)))
+
+# Merge with reused rows from the existing parquet (if any)
+if (!is.null(keep_existing) && nrow(keep_existing) > 0) {
+  # Detect column drift: if new_psr has columns not in keep_existing (or vice
+  # versa), intersecting would silently drop them and publish a parquet whose
+  # schema is inconsistent with a fresh full rebuild. Force a full rebuild so
+  # the new schema lands cleanly on the next run.
+  added_cols   <- setdiff(names(new_psr), names(keep_existing))
+  dropped_cols <- setdiff(names(keep_existing), names(new_psr))
+  if (length(added_cols) > 0 || length(dropped_cols) > 0) {
+    warning(sprintf(
+      "Column drift between new and existing parquet (added: [%s], removed: [%s]). ",
+      paste(added_cols,   collapse = ", "),
+      paste(dropped_cols, collapse = ", ")),
+      "Publishing new_psr only - rerun with PSR_FORCE_FULL_REBUILD=1 to ",
+      "rebuild full history under the new schema.",
+      call. = FALSE)
+    weekly_psr <- new_psr
+  } else {
+    common_cols <- names(new_psr)
+    weekly_psr <- data.table::rbindlist(
+      list(keep_existing[, ..common_cols], new_psr[, ..common_cols]),
+      use.names = TRUE, fill = TRUE
+    )
+    message(sprintf("  Reused rows:    %s rows from existing parquet",
+                    format(nrow(keep_existing), big.mark = ",")))
+  }
+} else {
+  weekly_psr <- new_psr
+}
+
+# Deduplicate on snapshot_date + player_id, keeping the newly computed rows.
+# Since new rows are appended after keep_existing, fromLast=TRUE keeps the new
+# version on any collision. The incremental filter already prevents overlap,
+# so this is a safety net.
+weekly_psr <- unique(weekly_psr, by = c("snapshot_date", "player_id"), fromLast = TRUE)
+data.table::setorder(weekly_psr, snapshot_date, player_id)
+
+# Hard assertions before we overwrite the release asset. A 0-row publish or
+# a coverage regression is never acceptable — better to fail loudly than to
+# silently break downstream consumers.
+if (nrow(weekly_psr) == 0) {
+  stop("Refusing to publish a 0-row opta_psr_weekly.parquet. ",
+       "Both new computation and reused rows came back empty.",
+       call. = FALSE)
+}
+if (incremental_active && !is.null(existing_parquet)) {
+  n_old_dates <- data.table::uniqueN(as.Date(existing_parquet$snapshot_date))
+  n_new_dates <- data.table::uniqueN(weekly_psr$snapshot_date)
+  if (n_new_dates < n_old_dates) {
+    warning(sprintf(
+      "Published snapshot date count decreased (%d -> %d). ",
+      n_old_dates, n_new_dates),
+      "This should not happen on a normal incremental run - investigate ",
+      "before trusting the release.", call. = FALSE)
+  }
+}
+
 cat(sprintf("  Total rows:    %s\n", format(nrow(weekly_psr), big.mark = ",")))
 cat(sprintf("  Unique players: %s\n", format(data.table::uniqueN(weekly_psr$player_id), big.mark = ",")))
 cat(sprintf("  Unique dates:   %d\n", data.table::uniqueN(weekly_psr$snapshot_date)))

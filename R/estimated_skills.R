@@ -438,22 +438,72 @@ estimate_player_skills <- function(match_stats, decay_params = NULL,
   player_meta <- dt[, .(player_name = player_name[1]), by = player_id]
   player_meta[player_pos, pos_group := i.pos_group, on = "player_id"]
 
-  # Precompute decay weights grouped by unique lambda values
+  # Precompute decay weights grouped by unique lambda values.
+  #
+  # Fast path: if the caller attached precomputed time-invariant match_date
+  # exponentials via decay_params$precomputed_match_exp (list of lambda -> col
+  # name, columns holding `exp(lam * as.numeric(match_date))`), we replace the
+  # per-row `exp(-lam * days_since)` call with a scalar multiplication:
+  #   w = exp(lam * match_date) * exp(-lam * target_date)
+  # This is identical algebraically but avoids re-evaluating ~530K exp() per
+  # snapshot date per lambda — the dominant cost when computing PSR across
+  # hundreds of snapshot dates.
   stat_lambdas <- vapply(stat_cols, get_lambda, numeric(1))
   unique_lambdas <- unique(stat_lambdas)
   decay_cols <- character(length(unique_lambdas))
   names(decay_cols) <- as.character(unique_lambdas)
+  precomp_mexp <- decay_params$precomputed_match_exp
+  target_num <- as.numeric(ref_date)
+
+  # When the caller explicitly configured the fast path via precomputed_match_exp,
+  # a lookup miss is a bug (lambda key drift, dropped column on subset, etc.)
+  # that would silently slow-path a 5-min run into 5 hours. Warn once per call
+  # so a regression is visible in the log.
+  fast_path_configured <- !is.null(precomp_mexp)
+  slow_path_warned <- FALSE
+  use_fast_path <- function(lam) {
+    if (!fast_path_configured) return(NULL)
+    mexp_col <- precomp_mexp[[as.character(lam)]]
+    if (is.null(mexp_col) || !(mexp_col %in% names(dt))) {
+      if (!slow_path_warned) {
+        warning(sprintf(
+          "precomputed_match_exp set but no cached column for lambda=%.6g ",
+          lam),
+          "(available: [",
+          paste(names(precomp_mexp), collapse = ", "),
+          "]). Falling back to slow exp() path for this and any other ",
+          "missing lambda in this call.",
+          call. = FALSE)
+        slow_path_warned <<- TRUE
+      }
+      return(NULL)
+    }
+    mexp_col
+  }
+
   for (j in seq_along(unique_lambdas)) {
     lam <- unique_lambdas[j]
     col_name <- sprintf(".w%d", j)
     decay_cols[as.character(lam)] <- col_name
-    data.table::set(dt, j = col_name, value = exp(-lam * dt$days_since))
+    mexp_col <- use_fast_path(lam)
+    if (!is.null(mexp_col)) {
+      data.table::set(dt, j = col_name, value = dt[[mexp_col]] * exp(-lam * target_num))
+    } else {
+      data.table::set(dt, j = col_name, value = exp(-lam * dt$days_since))
+    }
   }
 
   # Weighted 90s for player context (use default rate lambda)
   rate_w_col <- decay_cols[as.character(decay_params$rate)]
   if (is.null(rate_w_col) || is.na(rate_w_col)) {
-    dt[, .w_rate := exp(-decay_params$rate * days_since)]
+    rate_lam <- decay_params$rate
+    rate_mexp_col <- use_fast_path(rate_lam)
+    if (!is.null(rate_mexp_col)) {
+      data.table::set(dt, j = ".w_rate",
+                      value = dt[[rate_mexp_col]] * exp(-rate_lam * target_num))
+    } else {
+      dt[, .w_rate := exp(-rate_lam * days_since)]
+    }
     rate_w_col <- ".w_rate"
   }
   w90_agg <- dt[, .(weighted_90s = sum(get(rate_w_col) * .mins_90, na.rm = TRUE)),

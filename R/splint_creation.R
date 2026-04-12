@@ -1226,9 +1226,21 @@ assign_players_to_splints_fast <- function(boundaries, lineups, match_id) {
     ))
   }
 
-  # Use pre-calculated on/off times from leading space detection if available
-  # Otherwise fall back to the old approximation method
-  if ("on_minute" %in% names(lineups) && "off_minute" %in% names(lineups)) {
+  # Use pre-calculated on/off times from leading space detection if available;
+  # otherwise fall back to approximation from is_starter + minutes.
+  #
+  # Requires EVERY row to have non-NA on/off — a partially populated table
+  # would feed NAs into the non-equi join below, silently dropping those
+  # players from splint assignment. An upstream parser change that blanked
+  # the column for a subset of matches (or all matches) must fall back to
+  # the approximation path, not fail silently.
+  cols_present <- "on_minute" %in% names(lineups) && "off_minute" %in% names(lineups)
+  n_valid_on_off <- if (cols_present) {
+    sum(!is.na(lineups$on_minute) & !is.na(lineups$off_minute))
+  } else 0L
+  has_on_off <- cols_present && n_valid_on_off == nrow(lineups)
+
+  if (has_on_off) {
     on_minute <- lineups$on_minute
     off_minute <- lineups$off_minute
   } else {
