@@ -19,7 +19,7 @@ devtools::load_all()
 # 2. Configuration ----
 
 cache_dir <- file.path("data-raw", "cache")
-force <- if (exists("force")) force else FALSE
+force <- if (exists("force", inherits = FALSE)) force else FALSE
 leagues <- if (exists("leagues")) leagues else NULL  # NULL = all leagues
 
 processed_data_path <- file.path(cache_dir, "02_processed_data.rds")
