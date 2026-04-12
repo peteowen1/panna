@@ -454,12 +454,39 @@ estimate_player_skills <- function(match_stats, decay_params = NULL,
   names(decay_cols) <- as.character(unique_lambdas)
   precomp_mexp <- decay_params$precomputed_match_exp
   target_num <- as.numeric(ref_date)
+
+  # When the caller explicitly configured the fast path via precomputed_match_exp,
+  # a lookup miss is a bug (lambda key drift, dropped column on subset, etc.)
+  # that would silently slow-path a 5-min run into 5 hours. Warn once per call
+  # so a regression is visible in the log.
+  fast_path_configured <- !is.null(precomp_mexp)
+  slow_path_warned <- FALSE
+  use_fast_path <- function(lam) {
+    if (!fast_path_configured) return(NULL)
+    mexp_col <- precomp_mexp[[as.character(lam)]]
+    if (is.null(mexp_col) || !(mexp_col %in% names(dt))) {
+      if (!slow_path_warned) {
+        warning(sprintf(
+          "precomputed_match_exp set but no cached column for lambda=%.6g ",
+          lam),
+          "(available: [",
+          paste(names(precomp_mexp), collapse = ", "),
+          "]). Falling back to slow exp() path for this and any other ",
+          "missing lambda in this call.",
+          call. = FALSE)
+        slow_path_warned <<- TRUE
+      }
+      return(NULL)
+    }
+    mexp_col
+  }
+
   for (j in seq_along(unique_lambdas)) {
     lam <- unique_lambdas[j]
     col_name <- sprintf(".w%d", j)
     decay_cols[as.character(lam)] <- col_name
-    mexp_col <- if (!is.null(precomp_mexp)) precomp_mexp[[as.character(lam)]] else NULL
-    if (!is.null(mexp_col) && mexp_col %in% names(dt)) {
+    mexp_col <- use_fast_path(lam)
+    if (!is.null(mexp_col)) {
       data.table::set(dt, j = col_name, value = dt[[mexp_col]] * exp(-lam * target_num))
     } else {
       data.table::set(dt, j = col_name, value = exp(-lam * dt$days_since))
@@ -470,8 +497,8 @@ estimate_player_skills <- function(match_stats, decay_params = NULL,
   rate_w_col <- decay_cols[as.character(decay_params$rate)]
   if (is.null(rate_w_col) || is.na(rate_w_col)) {
     rate_lam <- decay_params$rate
-    rate_mexp_col <- if (!is.null(precomp_mexp)) precomp_mexp[[as.character(rate_lam)]] else NULL
-    if (!is.null(rate_mexp_col) && rate_mexp_col %in% names(dt)) {
+    rate_mexp_col <- use_fast_path(rate_lam)
+    if (!is.null(rate_mexp_col)) {
       data.table::set(dt, j = ".w_rate",
                       value = dt[[rate_mexp_col]] * exp(-rate_lam * target_num))
     } else {
