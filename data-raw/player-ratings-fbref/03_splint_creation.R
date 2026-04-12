@@ -78,14 +78,14 @@ if (!force && is.null(leagues) && file.exists(splint_data_path)) {
     include_goals = TRUE,
     verbose = TRUE
   )
-  # Only save to main cache if processing all leagues
-  if (is.null(leagues)) {
-    saveRDS(splint_data, splint_data_path)
-  } else {
-    # Save to league-specific cache
+  # Always save to the main cache path — downstream steps (04_rapm, 05_spm,
+  # etc.) read from 03_splints.rds regardless of which leagues were built.
+  # Also write a league-stamped copy for debugging when a subset is used.
+  saveRDS(splint_data, splint_data_path)
+  if (!is.null(leagues)) {
     league_cache_path <- file.path(cache_dir, paste0("03_splints_", paste(leagues, collapse = "_"), ".rds"))
     saveRDS(splint_data, league_cache_path)
-    message(sprintf("Saved to %s", league_cache_path))
+    message(sprintf("Also saved to %s", league_cache_path))
   }
 }
 
