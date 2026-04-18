@@ -379,10 +379,14 @@ CHAIN_PROGRESSIVE_THRESHOLD <- 25
 #' as bad data. Opta data via SPADL conversion naturally has ~25% zero-xG
 #' splints, so the threshold is set higher than FBref.
 #' Used in \code{filter_bad_xg_data()}.
+#' Raised from 30 → 50 on 2026-04-18: with second-precision splint creation
+#' and 5-min boundary-merge minimum, the per-splint zero-xG baseline rose
+#' (shorter splints naturally have fewer shots). 50% only catches genuine
+#' bad-data league-seasons rather than penalising fine-grained splits.
 #'
-#' @format Integer value: 30
+#' @format Integer value: 50
 #' @keywords internal
-ZERO_XG_THRESHOLD_OPTA <- 30L
+ZERO_XG_THRESHOLD_OPTA <- 50L
 
 #' Zero-xG threshold for FBref pipeline data quality filter
 #'

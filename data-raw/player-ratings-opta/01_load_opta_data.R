@@ -58,6 +58,8 @@ message("\n=== Loading Opta Data ===\n")
 all_lineups <- list()
 all_events <- list()
 all_stats <- list()
+all_period_ends <- list()  # exact second-precision period boundaries (Opta type_id == 30)
+all_player_timing <- list()  # per-(match, player) on/off times derived from chains
 all_xmetrics <- list()
 all_shots_from_spadl <- list()
 all_match_xg <- list()
@@ -174,6 +176,22 @@ for (league in leagues) {
               spadl$is_penalty[spadl_shot_idx[spadl_keys %in% pen_keys]] <- 1L
             }
           }
+        }
+
+        # Capture exact period-end times from raw events (type_id == 30
+        # marker; second-level precision). Splint creation uses these to
+        # avoid the historical "+0.5 min buffer" hack that produced
+        # spurious 0.5-minute stoppage-time splints.
+        if (!is.null(raw_events) && nrow(raw_events) > 0) {
+          all_period_ends[[label]] <- extract_period_end_times(raw_events)
+
+          # Derive per-player on/off times entirely from chain data:
+          # starters from type_id == 34 squad events, sub events from type_id
+          # 18/19, red cards from type_id 17 + qualifier 33/14, match end from
+          # type_id == 30. Every time has second-precision. This replaces the
+          # lineup-derived on/off (which records 90 min for finishers regardless
+          # of stoppage time and rounds sub minutes to integer).
+          all_player_timing[[label]] <- extract_player_timing_from_events(raw_events)
         }
 
         # Score shots with xG model
@@ -337,6 +355,30 @@ if (!is.null(combined_match_xg)) {
     left_join(combined_match_xg, by = "match_id")
 }
 
+# Join precomputed second-level period-end times (Opta type_id == 30 markers).
+# Splint creation reads first_half_end_time / match_end_time from results
+# to set exact period boundaries. Matches with no markers get NA and the
+# splint pipeline falls back to last-event time.
+combined_period_ends <- if (length(all_period_ends) > 0) bind_rows(all_period_ends) else NULL
+if (!is.null(combined_period_ends) && nrow(combined_period_ends) > 0) {
+  results <- results %>%
+    left_join(combined_period_ends, by = "match_id")
+  message(sprintf("  Period-end markers attached: %d / %d matches (%.1f%%)",
+                  sum(!is.na(results$match_end_time)),
+                  nrow(results),
+                  100 * sum(!is.na(results$match_end_time)) / nrow(results)))
+}
+
+# Combine chain-derived player timing across all leagues/seasons.
+# This becomes the authoritative source of on_minute/off_minute for splint
+# creation; lineups are kept only for player_name + metadata.
+combined_player_timing <- if (length(all_player_timing) > 0) bind_rows(all_player_timing) else NULL
+if (!is.null(combined_player_timing) && nrow(combined_player_timing) > 0) {
+  message(sprintf("  Chain-derived player timing rows: %d (across %d matches)",
+                  nrow(combined_player_timing),
+                  length(unique(combined_player_timing$match_id))))
+}
+
 # Fill missing xG with 0
 if (!"home_xg" %in% names(results)) results$home_xg <- NA_real_
 if (!"away_xg" %in% names(results)) results$away_xg <- NA_real_
@@ -355,7 +397,8 @@ raw_opta_data <- list(
   stats = combined_stats,
   xmetrics = combined_xmetrics,
   shooting = combined_shots,
-  match_xg = combined_match_xg
+  match_xg = combined_match_xg,
+  player_timing = combined_player_timing  # chain-derived on/off (second precision)
 )
 
 saveRDS(raw_opta_data, raw_data_path)

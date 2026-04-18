@@ -16,6 +16,13 @@ cache_dir <- file.path("data-raw", "cache-opta")
 processed_data_path <- file.path(cache_dir, "02_processed_data.rds")
 splint_data_path <- file.path(cache_dir, "03_splints.rds")
 
+# Boundary-merge minimum: any sub/goal/red within MIN_SPLINT_DURATION minutes
+# of the most recently kept boundary is dropped. Players who came on/off
+# inside such a removed boundary are still credited via fractional `share`
+# in the design matrix. Halves and match start/end are hard boundaries
+# (always kept regardless). 5 minutes is conservative — see panna/CLAUDE.md.
+if (!exists("MIN_SPLINT_DURATION", inherits = FALSE)) MIN_SPLINT_DURATION <- 5
+
 # 3. Create Splints ----
 
 if (file.exists(splint_data_path)) {
@@ -31,7 +38,8 @@ if (file.exists(splint_data_path)) {
     splint_data <- create_all_splints(
       processed_data,
       include_goals = TRUE,
-      verbose = TRUE
+      verbose = TRUE,
+      min_splint_duration = MIN_SPLINT_DURATION
     )
     saveRDS(splint_data, splint_data_path)
     # Free memory

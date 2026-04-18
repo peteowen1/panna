@@ -97,7 +97,7 @@ if (is.data.frame(seasonal_data)) {
   if ("seasonal_psr" %in% names(seasonal_data) &&
       !is.null(seasonal_data$seasonal_psr) &&
       nrow(seasonal_data$seasonal_psr) > 0) {
-    psr_data <- seasonal_data$seasonal_psr
+    psr_data <- as.data.frame(seasonal_data$seasonal_psr)
     psr_cols <- intersect(c("player_id", "season_end_year", "psr", "osr", "dsr"), names(psr_data))
     if (length(psr_cols) >= 3) {
       psr_data <- psr_data[, psr_cols]
@@ -352,6 +352,7 @@ if (nrow(upcoming) > 0) {
         tryCatch({
           live_psr <- compute_player_psr(live_skills, center = TRUE)
           if (!is.null(live_psr) && nrow(live_psr) > 0) {
+            live_psr <- as.data.frame(live_psr)
             psr_cols <- intersect(c("player_id", "psr", "osr", "dsr"), names(live_psr))
             fixture_ratings <- fixture_ratings %>%
               left_join(live_psr[, psr_cols], by = "player_id")
