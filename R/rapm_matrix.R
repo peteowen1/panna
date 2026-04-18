@@ -515,8 +515,13 @@ create_rapm_design_matrix <- function(splint_data, min_minutes = 90,
     players, valid_splints, pm$player_ids, pm$replacement_player_ids, n_rows
   )
 
-  # Weights based on duration
-  weights <- pmax(row_data$minutes / 90, 0.01)
+  # Weights based on duration. The historical 0.01 floor (pmax(.../90, 0.01))
+  # was a defensive guard against zero-weight rows when ultra-short stoppage
+  # splints existed. Now that splint creation enforces min_splint_duration
+  # (default 5 min, see create_splint_boundaries_fast) and per-90 inflation
+  # on tiny splints is structurally prevented, the floor never activates
+  # (5/90 ≈ 0.056). Dropping it for clarity.
+  weights <- row_data$minutes / 90
 
   progress_msg(sprintf("Design matrix: %d rows, %d player columns (+2 replacement), %d covariates",
                        n_rows, pm$n_players * 2, 5))

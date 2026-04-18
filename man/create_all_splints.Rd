@@ -8,7 +8,8 @@ create_all_splints(
   processed_data,
   include_goals = TRUE,
   verbose = TRUE,
-  chunk_by = c("league", "none")
+  chunk_by = c("league", "none"),
+  min_splint_duration = 5
 )
 }
 \arguments{

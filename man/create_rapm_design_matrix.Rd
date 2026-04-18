@@ -7,7 +7,8 @@
 create_rapm_design_matrix(
   splint_data,
   min_minutes = 90,
-  target_type = c("xg", "goals", "epv", "wpa", "psv")
+  target_type = c("xg", "goals", "epv", "wpa", "psv"),
+  min_duration = 1
 )
 }
 \arguments{

@@ -2,7 +2,8 @@
 % Please edit documentation in R/splint_creation.R
 \name{extract_season_from_date}
 \alias{extract_season_from_date}
-\title{Extract Season from Match Date}
+\title{Determines the season string (e.g., "2024-2025") from a match date.
+Assumes seasons run August to May: Aug-Dec = first year, Jan-May = second year.}
 \usage{
 extract_season_from_date(date)
 }

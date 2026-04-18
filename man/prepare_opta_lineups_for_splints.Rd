@@ -4,17 +4,33 @@
 \alias{prepare_opta_lineups_for_splints}
 \title{Prepare Opta Lineups for Splint Creation}
 \usage{
-prepare_opta_lineups_for_splints(opta_lineups)
+prepare_opta_lineups_for_splints(opta_lineups, player_timing = NULL)
 }
 \arguments{
 \item{opta_lineups}{Data frame from load_opta_lineups()}
+
+\item{player_timing}{Optional data frame from
+\code{extract_player_timing_from_events()} with columns \code{match_id},
+\code{player_id}, \code{on_minute}, \code{off_minute}, \code{is_starter}. When supplied,
+chain-derived on/off times override the lineup-derived ones.}
 }
 \value{
 Data frame with columns: match_id, player_id, player_name, team,
-is_home, is_starter, minutes, on_minute, off_minute
+is_home, is_starter, minutes, on_minute, off_minute, on_off_source.
+The \code{on_off_source} column is "chain" when chain-derived times were used,
+"lineup" otherwise.
 }
 \description{
 Converts Opta lineup data to the format expected by splint creation functions.
 Opta lineups have: is_starter, minutes_played, sub_on_minute, sub_off_minute.
+}
+\details{
+When \code{player_timing} is supplied (chain-derived from
+\code{extract_player_timing_from_events()}), it OVERRIDES the lineup-derived
+on/off times for any (match_id, player_id) pair present in the timing table.
+Chain timing is preferred because Opta lineups record \code{minutes_played = 90}
+for unsubstituted finishers regardless of stoppage time, and round sub
+minutes to integers — chains carry second-level precision and the real
+final-whistle time.
 }
 \keyword{internal}

@@ -8,6 +8,13 @@
 # avoiding loading entire datasets into R memory.
 #
 # All functions use source = "remote" (default) or "local".
+#
+# DEPRECATED SECTIONS: load_fbref_*() and load_understat_*() functions remain
+# in this file because the underlying parquet releases still exist, but the
+# Opta-only direction (2026-04-18+) means these data sources are no longer
+# processed by any active panna pipeline. Use load_opta_*() functions for
+# all new work. The FBref/understat sections below will be deleted entirely
+# once the GHA scrapes are decommissioned.
 
 #' @importFrom DBI dbConnect dbDisconnect dbGetQuery
 #' @importFrom duckdb duckdb

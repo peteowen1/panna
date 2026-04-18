@@ -9,7 +9,8 @@ create_opta_processed_data(
   opta_events = NULL,
   opta_shot_events = NULL,
   opta_stats = NULL,
-  use_goals_as_xg = FALSE
+  use_goals_as_xg = FALSE,
+  player_timing = NULL
 )
 }
 \arguments{
