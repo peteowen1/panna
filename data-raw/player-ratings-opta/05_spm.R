@@ -364,12 +364,45 @@ if (length(chain_defense) > 0) {
 defense_cols <- intersect(defense_cols, names(spm_train_data))
 
 cat("\n--- Defense Elastic Net ---\n")
+# Directional sign constraints. RAPM defense column uses the model's native
+# convention: negative = good defender (suppresses opponent xG). So features
+# that genuinely indicate good defense should have NON-POSITIVE coefficients
+# (more = lower defense = better defender), and bad-defense features should
+# have NON-NEGATIVE coefficients. Without these constraints, multicollinearity
+# can flip signs (e.g., elastic net learning that more tackles_won → worse
+# defense, because tackles concentrate when teams are under pressure).
+defense_good_features <- c(
+  # Direct defensive actions — more = better
+  "tackles_p90", "tackles_won_p90",
+  "interceptions_p90", "interceptions_won_p90",
+  "clearances_p90", "clearances_effective_p90",
+  "blocks_p90", "blocked_passes_p90",
+  "last_man_tackle_p90", "six_yard_block_p90", "clearance_off_line_p90",
+  "aerial_won_p90",
+  "ball_recovery_p90", "poss_won_def3rd_p90", "poss_won_mid3rd_p90",
+  "tackle_success", "aerial_success",
+  "fifty_fifty_won_p90", "fifty_fifty_success",
+  "back_zone_pass_accuracy"
+)
+defense_bad_features <- c(
+  # Mistakes / actions that lead to opponent xG — more = worse defender
+  "fouls_p90", "penalty_conceded_p90",
+  "error_lead_to_shot_p90", "error_lead_to_goal_p90", "errors_total_p90",
+  "unsuccessful_touch_p90", "aerial_lost_p90",
+  "pen_goals_conceded_p90",
+  "poss_lost_ctrl_p90", "poss_lost_ctrl_per_touch"
+)
+def_lower <- setNames(rep(0,    length(defense_bad_features)),  defense_bad_features)
+def_upper <- setNames(rep(0,    length(defense_good_features)), defense_good_features)
+
 defense_spm_glmnet <- fit_spm_model(
   defense_train,
   predictor_cols = defense_cols,
   alpha = 0.5,
   nfolds = 10,
-  weight_by_minutes = TRUE
+  weight_by_minutes = TRUE,
+  lower_limits = def_lower,
+  upper_limits = def_upper
 )
 
 cat("\n--- Defense XGBoost ---\n")

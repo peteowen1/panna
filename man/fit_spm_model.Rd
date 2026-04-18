@@ -10,7 +10,9 @@ fit_spm_model(
   alpha = 0.5,
   nfolds = 10,
   weight_by_minutes = TRUE,
-  weight_transform = "sqrt"
+  weight_transform = "sqrt",
+  lower_limits = NULL,
+  upper_limits = NULL
 )
 }
 \arguments{

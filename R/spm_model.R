@@ -615,7 +615,8 @@ prepare_spm_regression_data <- function(player_features, rapm_ratings) {
 #' @return Fitted glmnet model with metadata
 #' @export
 fit_spm_model <- function(data, predictor_cols = NULL, alpha = 0.5, nfolds = 10,
-                          weight_by_minutes = TRUE, weight_transform = "sqrt") {
+                          weight_by_minutes = TRUE, weight_transform = "sqrt",
+                          lower_limits = NULL, upper_limits = NULL) {
   # Validate input
   validate_dataframe(data, required_cols = "rapm", arg_name = "data")
 
@@ -669,7 +670,31 @@ fit_spm_model <- function(data, predictor_cols = NULL, alpha = 0.5, nfolds = 10,
     progress_msg(sprintf("  Weighting by minutes (%s transform)", weight_transform))
   }
 
-  # Fit cross-validated elastic net
+  # Fit cross-validated elastic net.
+  # lower_limits / upper_limits accept either:
+  #   - a single scalar applied to every coefficient
+  #   - a named numeric vector indexed by predictor names (used to enforce
+  #     directional sign constraints — e.g., tackles_won_p90 must have a
+  #     non-positive coefficient because more tackles won = better defense
+  #     in the negative-good defense convention)
+  # Default (NULL) = unconstrained (-Inf to +Inf), matching glmnet defaults.
+  resolve_limits <- function(lim, default) {
+    if (is.null(lim)) return(rep(default, ncol(X)))
+    if (length(lim) == 1) return(rep(lim, ncol(X)))
+    if (is.null(names(lim))) {
+      if (length(lim) != ncol(X)) {
+        cli::cli_abort("Unnamed limits vector must have length = ncol(X) ({ncol(X)})")
+      }
+      return(lim)
+    }
+    out <- rep(default, ncol(X))
+    matched <- intersect(names(lim), colnames(X))
+    out[match(matched, colnames(X))] <- lim[matched]
+    out
+  }
+  lower_vec <- resolve_limits(lower_limits, -Inf)
+  upper_vec <- resolve_limits(upper_limits,  Inf)
+
   cv_fit <- glmnet::cv.glmnet(
     x = X,
     y = y,
@@ -677,7 +702,9 @@ fit_spm_model <- function(data, predictor_cols = NULL, alpha = 0.5, nfolds = 10,
     alpha = alpha,
     standardize = TRUE,
     nfolds = nfolds,
-    type.measure = "mse"
+    type.measure = "mse",
+    lower.limits = lower_vec,
+    upper.limits = upper_vec
   )
 
   # Store feature SDs for standardised importance (glmnet standardize=TRUE
