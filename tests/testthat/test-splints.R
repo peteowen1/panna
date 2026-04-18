@@ -65,10 +65,13 @@ test_that("create_splint_boundaries handles added time correctly", {
 
   boundaries <- create_splint_boundaries(events, include_goals = TRUE)
 
-  # With continuous time: first half ends at 48, second half offset by 3
-  # Match end should be 90 + 11 + 3 (offset) + buffer = 104.5
+  # With continuous time: first half ends at 48, second half offset by 3.
+  # Match end should be 90 + 11 + 3 (offset) = 104. The historical +0.5
+  # buffer was removed in the 2026-04-18 splint rebuild — exact-second
+  # period-end markers now drive end times when available, otherwise the
+  # last event time is used directly.
   match_end <- boundaries$end_minute[nrow(boundaries)]
-  expect_gt(match_end, 104)
+  expect_gte(match_end, 104)
 
   # Check that first-half stoppage goal (45+3 = 48) creates boundary at 48
   expect_true(48 %in% boundaries$start_minute | 48 %in% boundaries$end_minute)
