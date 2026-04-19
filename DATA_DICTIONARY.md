@@ -4,7 +4,7 @@ This document describes all data structures used in the panna pipelines.
 
 ## Pipeline Overview
 
-### Opta RAPM/SPM Pipeline (Primary) — `data-raw/player-ratings-opta/`
+### RAPM/SPM Pipeline — `data-raw/player-ratings-opta/`
 
 ```
 01_load_opta_data.R       ->  cache-opta/01_opta_data.rds
@@ -17,19 +17,6 @@ This document describes all data structures used in the panna pipelines.
 07b_player_centrality.R   ->  cache-opta/07b_centrality.rds
 08_panna_ratings.R        ->  cache-opta/08_panna_ratings.rds
 09_export_ratings.R       ->  seasonal_xrapm.parquet, seasonal_spm.parquet
-```
-
-### FBref RAPM/SPM Pipeline (Secondary) — `data-raw/player-ratings-fbref/`
-
-```
-01_load_pannadata.R       ->  cache/01_raw_data.rds
-02_data_processing.R      ->  cache/02_processed_data.rds
-03_splint_creation.R      ->  cache/03_splints.rds
-04_rapm.R                 ->  cache/04_rapm.rds
-05_spm.R                  ->  cache/05_spm.rds
-06_xrapm.R                ->  cache/06_xrapm.rds
-07_seasonal_ratings.R     ->  cache/07_seasonal_ratings.rds
-08_panna_ratings.R        ->  cache/08_panna_ratings.rds
 ```
 
 ### EPV/WPA Pipeline — `data-raw/epv/`
