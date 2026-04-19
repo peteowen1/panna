@@ -21,6 +21,14 @@ create_rapm_design_matrix(
 Possession Value, \code{"wpa"} for Win Probability Added, \code{"psv"}
 for Player Stat Value. Requires corresponding home/away columns on
 splints (e.g., \code{epv_home}, \code{epv_away}).}
+
+\item{min_duration}{Minimum splint duration in minutes (default 1.0).
+Splints shorter than this are dropped to avoid per-90 inflation
+artefacts on stoppage-time fragments. Set to 0 to keep all splints.
+Note: with chain-derived splint creation
+(\code{create_splint_boundaries_fast}, default \code{min_splint_duration = 5}),
+the upstream pipeline already enforces a 5-min minimum so this
+secondary filter rarely fires.}
 }
 \value{
 List with design matrix components

@@ -739,6 +739,10 @@ create_match_splints <- function(match_id, events, lineups, shooting, results,
 #' @param chunk_by Chunking strategy for memory efficiency. `"league"` (default)
 #'   processes matches grouped by league to reduce peak memory usage.
 #'   `"none"` processes all matches at once (original behaviour).
+#' @param min_splint_duration Minimum splint duration in minutes (default 5).
+#'   Soft boundaries (subs/goals/red cards) within this window of the most
+#'   recently kept boundary are merged. Hard boundaries (kickoff, halftime,
+#'   full-time) are always kept. Set to 0 to disable merging entirely.
 #'
 #' @return List with combined splint data
 #' @export
