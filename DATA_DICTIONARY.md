@@ -66,6 +66,8 @@ This document describes all data structures used in the panna pipelines.
 
 ## FBref Pipeline Data Structures
 
+> **Archived in commit 43ea7fd** — the FBref pipeline code was moved to `archive/data-raw/player-ratings-fbref/` and is no longer actively maintained. These schemas are kept for historical reference (e.g. when reading older pannadata releases). The active player ratings pipeline is Opta-based — see **Pipeline Overview** above.
+
 The FBref pipeline shares the same RAPM/SPM methodology as Opta but uses FBref data.
 
 ### 01_raw_data.rds
