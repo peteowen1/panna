@@ -33,6 +33,13 @@ Reduces influence of noisy low-minute estimates on model coefficients.}
 "linear" - raw minutes (strong weighting toward high-minute players)
 "log" - log of minutes (gentle weighting)
 "none" - equal weights}
+
+\item{lower_limits, upper_limits}{Optional sign constraints on glmnet
+coefficients. Accepts a scalar (applied to all predictors), an unnamed
+numeric vector of length \code{ncol(X)}, or a named numeric vector keyed by
+predictor name (unmatched predictors default to \code{-Inf}/\code{Inf}). Use to
+enforce directional priors (e.g. negative defensive-tackle coefficient).
+\code{NULL} (default) = unconstrained.}
 }
 \value{
 Fitted glmnet model with metadata

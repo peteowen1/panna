@@ -611,6 +611,12 @@ prepare_spm_regression_data <- function(player_features, rapm_ratings) {
 #'   "linear" - raw minutes (strong weighting toward high-minute players)
 #'   "log" - log of minutes (gentle weighting)
 #'   "none" - equal weights
+#' @param lower_limits,upper_limits Optional sign constraints on glmnet
+#'   coefficients. Accepts a scalar (applied to all predictors), an unnamed
+#'   numeric vector of length `ncol(X)`, or a named numeric vector keyed by
+#'   predictor name (unmatched predictors default to `-Inf`/`Inf`). Use to
+#'   enforce directional priors (e.g. negative defensive-tackle coefficient).
+#'   `NULL` (default) = unconstrained.
 #'
 #' @return Fitted glmnet model with metadata
 #' @export
