@@ -197,6 +197,44 @@ if (!is.null(fixtures_df)) {
     if (!col %in% names(fixtures_df)) fixtures_df[[col]] <- NA
   }
   fixtures_clean <- fixtures_df[, intersect(keep_cols, names(fixtures_df))]
+
+  # Normalize fixture team names to the lineup variant used in played matches.
+  # Opta's fixtures endpoint sometimes serves full legal names ("AFC Ajax",
+  # "BV Borussia 09 Dortmund", "Çaykur Rize Spor Kulübü") while lineups use the
+  # short common names ("Ajax", "Borussia Dortmund", "Rizespor"). That split
+  # caused sim scripts to treat them as different teams and inflate team counts.
+  # Use team_id (stable across both feeds) to rewrite fixture names to match.
+  team_name_map <- results_clean %>%
+    filter(!is.na(home_team_id), !is.na(home_team)) %>%
+    select(team_id = home_team_id, team_name = home_team) %>%
+    bind_rows(
+      results_clean %>%
+        filter(!is.na(away_team_id), !is.na(away_team)) %>%
+        select(team_id = away_team_id, team_name = away_team)
+    ) %>%
+    count(team_id, team_name, name = "n") %>%
+    group_by(team_id) %>%
+    slice_max(n, n = 1, with_ties = FALSE) %>%
+    ungroup() %>%
+    select(team_id, team_name)
+
+  n_home_renamed <- 0L
+  n_away_renamed <- 0L
+  if (nrow(team_name_map) > 0) {
+    home_lookup <- setNames(team_name_map$team_name, team_name_map$team_id)
+    new_home <- home_lookup[as.character(fixtures_clean$home_team_id)]
+    n_home_renamed <- sum(!is.na(new_home) & new_home != fixtures_clean$home_team, na.rm = TRUE)
+    fixtures_clean$home_team <- ifelse(is.na(new_home), fixtures_clean$home_team, unname(new_home))
+
+    new_away <- home_lookup[as.character(fixtures_clean$away_team_id)]
+    n_away_renamed <- sum(!is.na(new_away) & new_away != fixtures_clean$away_team, na.rm = TRUE)
+    fixtures_clean$away_team <- ifelse(is.na(new_away), fixtures_clean$away_team, unname(new_away))
+  }
+  if (n_home_renamed + n_away_renamed > 0) {
+    message(sprintf("  Normalized %d fixture team names to match lineup names (home: %d, away: %d)",
+                    n_home_renamed + n_away_renamed, n_home_renamed, n_away_renamed))
+  }
+
   fixture_results <- bind_rows(results_clean, fixtures_clean)
 } else {
   fixture_results <- results_clean

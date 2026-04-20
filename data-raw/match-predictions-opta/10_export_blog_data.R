@@ -138,8 +138,11 @@ if (length(missing_required) > 0) {
                paste(missing_required, collapse = ", ")))
 }
 
-# Optional columns — include if available
-optional_cols <- c("season", "pred_home_goals", "pred_away_goals", "predicted_result")
+# Optional columns — include if available.
+# `status` ("played"/"fixture") is critical for the sim scripts: predictions.parquet
+# covers every match 2013→2026 (Results view shows historical predictions), so sims
+# must filter to status == "fixture" to avoid re-simulating completed matches.
+optional_cols <- c("season", "status", "pred_home_goals", "pred_away_goals", "predicted_result")
 missing_optional <- setdiff(optional_cols, names(predictions))
 if (length(missing_optional) > 0) {
   message(sprintf("  Note: Optional columns missing (excluded): %s",
