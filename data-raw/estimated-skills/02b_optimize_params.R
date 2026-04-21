@@ -19,9 +19,10 @@ cache_dir <- file.path("data-raw", "cache-skills")
 if (!dir.exists(cache_dir)) dir.create(cache_dir, recursive = TRUE)
 
 # Override these before sourcing for custom runs
-if (!exists("sample_n")) sample_n <- 500
-if (!exists("n_cores")) n_cores <- 1L
-if (!exists("optim_leagues")) optim_leagues <- c("ENG", "ESP", "GER", "ITA", "FRA")
+# Use inherits = FALSE to avoid colliding with dplyr::sample_n and similar exports
+if (!exists("sample_n", inherits = FALSE) || is.function(sample_n)) sample_n <- 500
+if (!exists("n_cores", inherits = FALSE)) n_cores <- 1L
+if (!exists("optim_leagues", inherits = FALSE)) optim_leagues <- c("ENG", "ESP", "GER", "ITA", "FRA")
 
 output_path <- file.path(cache_dir, "02b_decay_params.rds")
 

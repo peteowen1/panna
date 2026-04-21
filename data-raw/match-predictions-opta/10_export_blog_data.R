@@ -51,16 +51,25 @@ message(sprintf("  Latest season end year: %d", latest_season))
 # Determine dedup/join key based on available columns
 dedup_key <- if ("player_id" %in% names(seasonal_results$seasonal_xrapm)) "player_id" else "player_name"
 
-# Filter xRAPM to latest season, deduplicate
+# Filter xRAPM to latest season, drop the synthetic replacement-pool row,
+# and deduplicate to one row per player.
+# Why drop "replacement": rapm_matrix.R deliberately creates a synthetic
+# player_id == "replacement" representing all <200-min players pooled. It's
+# a model artifact (picks up uncontrolled game-state variance), not a
+# coherent player rating, so it should never appear on the blog leaderboard.
 seasonal_xrapm <- seasonal_results$seasonal_xrapm %>%
-  filter(season_end_year == latest_season) %>%
+  filter(season_end_year == latest_season,
+         !player_id %in% c("replacement"),
+         !player_name %in% c("Replacement Level")) %>%
   group_by(.data[[dedup_key]]) %>%
   slice_max(total_minutes, n = 1, with_ties = FALSE) %>%
   ungroup()
 
-# Filter SPM to latest season, deduplicate
+# Filter SPM to latest season, drop replacement-pool row, deduplicate.
 seasonal_spm <- seasonal_results$seasonal_spm %>%
-  filter(season_end_year == latest_season) %>%
+  filter(season_end_year == latest_season,
+         !player_id %in% c("replacement"),
+         !player_name %in% c("Replacement Level")) %>%
   group_by(.data[[dedup_key]]) %>%
   slice_max(total_minutes, n = 1, with_ties = FALSE) %>%
   ungroup() %>%
@@ -73,7 +82,13 @@ if (nrow(seasonal_xrapm) == 0) {
   stop(sprintf("No xRAPM data for season_end_year = %d. Check the ratings cache.", latest_season))
 }
 
-# Join and compute ranks/percentiles
+# Join and compute ranks/percentiles.
+# Sign convention for the published file: POSITIVE = good for both offense
+# and defense (matches torpverse, NBA RAPM, and consumer intuition).
+# Internally the model treats `defense` as "additive contribution to opponent
+# xG" where negative = good defender. We flip the sign here so the blog shows
+# `defense` as "defensive value added (xG suppression per 90)" — positive = good.
+# `panna` is unchanged because panna = offense - defense_internal = offense + defense_published.
 panna_ratings <- seasonal_xrapm %>%
   left_join(seasonal_spm, by = dedup_key) %>%
   mutate(
@@ -91,6 +106,7 @@ panna_ratings <- seasonal_xrapm %>%
     total_minutes,
     panna_percentile
   ) %>%
+  mutate(defense = -defense) %>%   # flip: positive = good defender
   mutate(across(c(panna, offense, defense, spm_overall), ~round(.x, 4))) %>%
   arrange(panna_rank)
 
@@ -113,16 +129,21 @@ if (!file.exists(predictions_input)) {
 
 predictions <- arrow::read_parquet(predictions_input)
 
-# Required columns the blog cannot function without
+# Required columns the blog cannot function without.
+# `status` ("played"/"fixture") is a required contract for sim consumers:
+# predictions.parquet covers every historical match plus upcoming fixtures
+# (the blog's Results view shows past predictions alongside projections), so
+# sims must filter to status == "fixture" to avoid re-simulating completed
+# matches. Hard-fail here rather than fall through to date-based guessing.
 required_cols <- c("match_id", "match_date", "league", "home_team", "away_team",
-                   "prob_H", "prob_D", "prob_A")
+                   "prob_H", "prob_D", "prob_A", "status")
 missing_required <- setdiff(required_cols, names(predictions))
 if (length(missing_required) > 0) {
   stop(sprintf("Missing required prediction columns: %s\nRebuild predictions with the current pipeline.",
                paste(missing_required, collapse = ", ")))
 }
 
-# Optional columns — include if available
+# Optional columns — include if available.
 optional_cols <- c("season", "pred_home_goals", "pred_away_goals", "predicted_result")
 missing_optional <- setdiff(optional_cols, names(predictions))
 if (length(missing_optional) > 0) {

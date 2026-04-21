@@ -743,5 +743,58 @@ utils::globalVariables(c(
   "epv_passing",
   "epv_shooting",
   "epv_dribbling",
-  "epv_defending"
+  "epv_defending",
+
+  # Opponent adjustment columns (adjust_epv_for_opponents / adjust_stats_for_opponents)
+  "N",
+  "total",
+  "residual",
+  "team_avg",
+  "team_credit",
+  "team_total_mins",
+  "opp_adjustment",
+  "opp_profile",
+  "opp_team_id",
+  "player_opp_adj",
+  "match_date_num",
+  "match_end",
+  "i.team_avg",
+
+  # Splint overlap / timing columns
+  "splint_start",
+  "splint_end",
+  "splint_duration",
+  "i.splint_start",
+  "i.splint_end",
+  "x.on_minute",
+  "x.off_minute",
+  "on_event_time",
+  "off_event_time",
+  "overlap_minutes",
+  "eff_minute",
+  "mins_share",
+  "share",
+  "end_time",
+
+  # Red card / sub timing (create_splint_boundaries_fast)
+  "card_time",
+  "is_red",
+  "red_time",
+  "sub_time",
+  "player_on",
+  "player_off",
+
+  # Physical discontinuity / motion features
+  "prev_x",
+  "prev_y",
+  "prev_dx",
+  "prev_dy",
+  "prev_team",
+  "same_team_prev",
+
+  # Miscellaneous NSE columns
+  "action_cat",
+  "position_num",
+  "second_num",
+  "minute_num"
 ))

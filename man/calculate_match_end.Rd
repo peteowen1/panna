@@ -4,7 +4,12 @@
 \alias{calculate_match_end}
 \title{Calculate match end minute from events and/or shots}
 \usage{
-calculate_match_end(events, shots = NULL, default_end = 91)
+calculate_match_end(
+  events,
+  shots = NULL,
+  default_end = 91,
+  period_end_time = NULL
+)
 }
 \arguments{
 \item{events}{Data frame with minute and optionally added_time columns}

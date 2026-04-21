@@ -32,12 +32,16 @@ if (!exists("processed_data")) {
   message("=== Processing Opta data ===")
   raw_opta_data <- readRDS(raw_data_path)
 
-  # Use the Opta adapter to create processed_data structure
+  # Use the Opta adapter to create processed_data structure.
+  # Pass chain-derived player_timing (from step 01) so on/off times come from
+  # event chains rather than lineups (second precision; correct stoppage-time
+  # accounting for finishers).
   processed_data <- create_opta_processed_data(
     opta_lineups = raw_opta_data$lineups,
     opta_events = raw_opta_data$events,
     opta_shot_events = NULL,  # We use SPADL-derived shots instead
-    opta_stats = raw_opta_data$stats
+    opta_stats = raw_opta_data$stats,
+    player_timing = raw_opta_data$player_timing
   )
 
   # Override shooting with SPADL-derived shots (which have model xG)

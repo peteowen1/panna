@@ -4,7 +4,12 @@
 \alias{calculate_first_half_end}
 \title{Calculate first-half end minute from events and/or shots}
 \usage{
-calculate_first_half_end(events, shots = NULL, default_end = 46)
+calculate_first_half_end(
+  events,
+  shots = NULL,
+  default_end = 46,
+  period_end_time = NULL
+)
 }
 \arguments{
 \item{events}{Data frame with minute and optionally added_time columns}

@@ -314,6 +314,13 @@ add_value_metrics_to_splints <- function(splint_data, player_game_epv = NULL,
   home_replacement <- players_valid[players_valid$is_home & players_valid$is_replacement, ]
   away_replacement <- players_valid[!players_valid$is_home & players_valid$is_replacement, ]
 
+  # Cell value: fractional share of splint that this player was on the field.
+  # If the players table doesn't carry `share` (legacy/FBref data), default
+  # to 1.0 (binary present/absent — backwards compatible).
+  share_or_one <- function(df) {
+    if (!is.null(df) && "share" %in% names(df)) df$share else rep(1, nrow(df))
+  }
+
   triplets <- list()
 
   # Home players on offense (home attacking)
@@ -321,7 +328,7 @@ add_value_metrics_to_splints <- function(splint_data, player_game_epv = NULL,
     triplets$home_off <- data.frame(
       i = 2 * home_regular$splint_idx - 1,
       j = home_regular$player_col,
-      x = 1
+      x = share_or_one(home_regular)
     )
   }
 
@@ -330,7 +337,7 @@ add_value_metrics_to_splints <- function(splint_data, player_game_epv = NULL,
     triplets$home_def <- data.frame(
       i = 2 * home_regular$splint_idx,
       j = home_regular$player_col + n_players + 1,
-      x = 1
+      x = share_or_one(home_regular)
     )
   }
 
@@ -339,7 +346,7 @@ add_value_metrics_to_splints <- function(splint_data, player_game_epv = NULL,
     triplets$away_off <- data.frame(
       i = 2 * away_regular$splint_idx,
       j = away_regular$player_col,
-      x = 1
+      x = share_or_one(away_regular)
     )
   }
 
@@ -348,39 +355,53 @@ add_value_metrics_to_splints <- function(splint_data, player_game_epv = NULL,
     triplets$away_def <- data.frame(
       i = 2 * away_regular$splint_idx - 1,
       j = away_regular$player_col + n_players + 1,
-      x = 1
+      x = share_or_one(away_regular)
     )
+  }
+
+  # Replacement aggregation: sum shares of all replacement players in a splint.
+  # If three replacements cover 30% / 40% / 20% of a splint, the replacement
+  # column gets x = 0.9 for that row. Binary fallback (no share col) gives 1.
+  agg_replacement_share <- function(df) {
+    if (nrow(df) == 0) return(NULL)
+    if ("share" %in% names(df)) {
+      ag <- stats::aggregate(df$share, by = list(splint_idx = df$splint_idx), sum)
+      names(ag)[2] <- "share_sum"
+      ag
+    } else {
+      data.frame(splint_idx = unique(df$splint_idx), share_sum = 1)
+    }
   }
 
   # Replacement on offense (home attacking with home replacement)
   if (nrow(home_replacement) > 0) {
-    home_repl_splints <- unique(home_replacement$splint_idx)
+    ag <- agg_replacement_share(home_replacement)
     triplets$home_repl_off <- data.frame(
-      i = 2 * home_repl_splints - 1, j = replacement_off_col, x = 1
+      i = 2 * ag$splint_idx - 1, j = replacement_off_col, x = ag$share_sum
     )
   }
 
   # Replacement on offense (away attacking with away replacement)
   if (nrow(away_replacement) > 0) {
-    away_repl_splints <- unique(away_replacement$splint_idx)
+    ag <- agg_replacement_share(away_replacement)
     triplets$away_repl_off <- data.frame(
-      i = 2 * away_repl_splints, j = replacement_off_col, x = 1
+      i = 2 * ag$splint_idx, j = replacement_off_col, x = ag$share_sum
     )
   }
 
   # Replacement on defense (home attacking with away replacement)
   if (nrow(away_replacement) > 0) {
-    away_repl_splints <- unique(away_replacement$splint_idx)
+    ag <- agg_replacement_share(away_replacement)
     triplets$away_repl_def <- data.frame(
-      i = 2 * away_repl_splints - 1, j = replacement_def_col, x = 1
+      i = 2 * ag$splint_idx - 1, j = replacement_def_col, x = ag$share_sum
     )
   }
 
   # Replacement on defense (away attacking with home replacement)
   if (nrow(home_replacement) > 0) {
-    home_repl_splints <- unique(home_replacement$splint_idx)
+    ag <- agg_replacement_share(home_replacement)
     triplets$home_repl_def <- data.frame(
-      i = 2 * home_repl_splints, j = replacement_def_col, x = 1
+      i = 2 * ag$splint_idx, j = replacement_def_col, x = ag$share_sum
     )
   }
 
@@ -432,12 +453,20 @@ add_value_metrics_to_splints <- function(splint_data, player_game_epv = NULL,
 #'   Possession Value, \code{"wpa"} for Win Probability Added, \code{"psv"}
 #'   for Player Stat Value. Requires corresponding home/away columns on
 #'   splints (e.g., \code{epv_home}, \code{epv_away}).
+#' @param min_duration Minimum splint duration in minutes (default 1.0).
+#'   Splints shorter than this are dropped to avoid per-90 inflation
+#'   artefacts on stoppage-time fragments. Set to 0 to keep all splints.
+#'   Note: with chain-derived splint creation
+#'   (\code{create_splint_boundaries_fast}, default \code{min_splint_duration = 5}),
+#'   the upstream pipeline already enforces a 5-min minimum so this
+#'   secondary filter rarely fires.
 #'
 #' @return List with design matrix components
 #' @export
 create_rapm_design_matrix <- function(splint_data, min_minutes = 90,
                                        target_type = c("xg", "goals", "epv",
-                                                        "wpa", "psv")) {
+                                                        "wpa", "psv"),
+                                       min_duration = 1.0) {
   target_type <- match.arg(target_type)
 
   # Validate splint_data structure
@@ -464,9 +493,18 @@ create_rapm_design_matrix <- function(splint_data, min_minutes = 90,
   validate_dataframe(splints, required_cols = c("splint_id", "duration"), arg_name = "splint_data$splints")
   validate_dataframe(players, required_cols = c("splint_id", "player_id", "player_name"), arg_name = "splint_data$players")
 
-  # Filter to valid splints
-  valid_splints <- splints[splints$duration > 0, ]
+  # Filter to valid splints. Drop splints under min_duration (default 1 min):
+  # ultra-short fragments come almost entirely from stoppage time and produce
+  # extreme per-90 targets (e.g. 0.5-min splint with one shot → 18+ xG per 90).
+  # See debug/measure_short_splints.R for the impact analysis.
+  n_before <- sum(splints$duration > 0)
+  valid_splints <- splints[splints$duration >= min_duration, ]
   n_splints <- nrow(valid_splints)
+  n_dropped <- n_before - n_splints
+  if (n_dropped > 0) {
+    progress_msg(sprintf("Dropping %d splints with duration < %.2f min (%.2f%% of valid splints)",
+                         n_dropped, min_duration, 100 * n_dropped / n_before))
+  }
   progress_msg(sprintf("Processing %d splints...", n_splints))
 
   # Step 1: Aggregate player minutes and split into regular/replacement
@@ -484,8 +522,13 @@ create_rapm_design_matrix <- function(splint_data, min_minutes = 90,
     players, valid_splints, pm$player_ids, pm$replacement_player_ids, n_rows
   )
 
-  # Weights based on duration
-  weights <- pmax(row_data$minutes / 90, 0.01)
+  # Weights based on duration. The historical 0.01 floor (pmax(.../90, 0.01))
+  # was a defensive guard against zero-weight rows when ultra-short stoppage
+  # splints existed. Now that splint creation enforces min_splint_duration
+  # (default 5 min, see create_splint_boundaries_fast) and per-90 inflation
+  # on tiny splints is structurally prevented, the floor never activates
+  # (5/90 ≈ 0.056). Dropping it for clarity.
+  weights <- row_data$minutes / 90
 
   progress_msg(sprintf("Design matrix: %d rows, %d player columns (+2 replacement), %d covariates",
                        n_rows, pm$n_players * 2, 5))

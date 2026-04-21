@@ -3,7 +3,7 @@
 \docType{data}
 \name{ZERO_XG_THRESHOLD_FBREF}
 \alias{ZERO_XG_THRESHOLD_FBREF}
-\title{Zero-xG threshold for FBref pipeline data quality filter}
+\title{Zero-xG threshold for FBref pipeline data quality filter (DEPRECATED)}
 \format{
 Integer value: 20
 }
@@ -13,5 +13,7 @@ ZERO_XG_THRESHOLD_FBREF
 \description{
 Maximum percentage of zero-xG splints allowed before a match is flagged.
 FBref data has fewer zero-xG splints than Opta, so threshold is lower.
+Kept for backward compatibility — FBref pipeline archived 2026-04-18,
+Opta is the active data source.
 }
 \keyword{internal}

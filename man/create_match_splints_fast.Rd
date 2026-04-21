@@ -11,7 +11,8 @@ create_match_splints_fast(
   shooting,
   results,
   stats = NULL,
-  include_goals = TRUE
+  include_goals = TRUE,
+  min_splint_duration = 5
 )
 }
 \arguments{

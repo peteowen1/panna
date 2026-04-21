@@ -21,8 +21,12 @@
 #' @param code_block Function (thunk) to execute
 #' @param run_steps Named list of step_XX_name = TRUE/FALSE flags
 #' @param pipeline_failed Logical; if TRUE, step is skipped with "SKIPPED" status
-#' @return List with step, name, status, duration_secs, duration_formatted;
-#'         NULL if step is disabled in run_steps
+#' @return List with step, name, status, duration_secs, duration_formatted.
+#'         status is "SUCCESS", "FAILED", "SKIPPED" (upstream failed), or
+#'         "DISABLED" (set FALSE in run_steps). Always returns a list — never
+#'         NULL — so orchestrator code that does `step_results[[i]] <-
+#'         run_step(...)` doesn't accidentally delete entries (assigning NULL
+#'         to list[[i]] removes the element, breaking subsequent indexing).
 run_step <- function(step_name, step_num, code_block, run_steps,
                      pipeline_failed = FALSE) {
   # Build step key: numeric -> "step_01_name", lettered -> "step_2b_name"
@@ -37,7 +41,14 @@ run_step <- function(step_name, step_num, code_block, run_steps,
   if (!isTRUE(run_steps[[step_key]])) {
     message(sprintf("\n[%s] Step %s: %s - SKIPPED",
                     format(Sys.time(), "%H:%M:%S"), step_label, step_name))
-    return(NULL)
+    # Return a list (not NULL!) so the orchestrator's
+    # `step_results[[i]] <- run_step(...)` assignment doesn't silently drop
+    # the entry — assigning NULL to a list[[i]] DELETES that element, which
+    # causes downstream `step_results[[i]]` access to throw "subscript out
+    # of bounds". With a real list here, downstream handling works uniformly
+    # for SUCCESS / SKIPPED / DISABLED.
+    return(list(step = step_num, name = step_name, status = "DISABLED",
+                duration_secs = 0, duration_formatted = "0.0 seconds"))
   }
 
   message(sprintf("\n%s", paste(rep("=", 70), collapse = "")))
