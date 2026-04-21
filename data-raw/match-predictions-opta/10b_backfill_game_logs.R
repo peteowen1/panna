@@ -43,6 +43,13 @@ if (!exists("upload_game_logs", inherits = FALSE)) upload_game_logs <- TRUE
 # Use the skill-adjusted SPM priors (TRUE) vs raw Opta xRAPM priors (FALSE)
 if (!exists("use_skill_ratings", inherits = FALSE)) use_skill_ratings <- TRUE
 
+# Season-level parallel workers. 1 = serial (safe default). Each worker
+# duplicates the in-memory match_stats snapshot (~600 MB) + xgboost models,
+# so 4 workers needs ~4 GB free RAM on top of the main process. On a 16 GB
+# laptop, 2-4 workers is comfortable; tune based on free memory.
+# Requires `future` and `future.apply` packages.
+if (!exists("parallel_workers", inherits = FALSE)) parallel_workers <- 1L
+
 # Paths
 cache_dir <- file.path("data-raw", "cache-predictions-opta")
 if (!dir.exists(cache_dir)) dir.create(cache_dir, recursive = TRUE)
@@ -72,23 +79,67 @@ message(sprintf("  Seasons to build: %s", paste(game_log_seasons, collapse = ", 
 message(sprintf("  Upload: %s", if (isTRUE(upload_game_logs)) "yes" else "no (dry run)"))
 message(sprintf("  Cache dir: %s", cache_dir))
 
-# Future optimisation: season-level parallelism.
-#   The 11 seasons are fully independent. future.apply::future_lapply with
-#   plan(multisession, workers = 4) would give ~3-4x wall-time reduction on
-#   multi-core machines. Memory cost: each worker loads its own copy of
-#   models + `all_match_stats` (~600 MB). Check free RAM before enabling.
-#   Implementation sketch:
-#     future::plan(future::multisession, workers = parallel_workers)
-#     future.apply::future_lapply(game_log_seasons, function(s) {
-#       devtools::load_all(".", quiet = TRUE)
-#       game_log_seasons <- s
-#       source("data-raw/match-predictions-opta/10b_export_game_logs.R",
-#              local = TRUE)
-#     })
-#
 # 3. Delegate to 10b ----
+#
+# Two paths:
+#   parallel_workers == 1  → single source of 10b (original behavior)
+#   parallel_workers >  1  → workers build per-season in parallel (no upload),
+#                            then main does a single alias + upload pass
 
 t0 <- Sys.time()
-source("data-raw/match-predictions-opta/10b_export_game_logs.R", local = FALSE)
+
+if (parallel_workers <= 1L) {
+  source("data-raw/match-predictions-opta/10b_export_game_logs.R", local = FALSE)
+} else {
+  if (!requireNamespace("future", quietly = TRUE) ||
+      !requireNamespace("future.apply", quietly = TRUE)) {
+    stop("parallel_workers > 1 requires both `future` and `future.apply`. ",
+         "Install with: install.packages(c('future', 'future.apply'))")
+  }
+  message(sprintf("\n  Parallel mode: %d workers (multisession)", parallel_workers))
+
+  future::plan(future::multisession, workers = parallel_workers)
+  on.exit(future::plan(future::sequential), add = TRUE)
+
+  # Each worker is a fresh R session. 10b's config-guard pattern uses
+  # `exists(..., inherits = FALSE)` which only checks the evaluation env —
+  # so we must stage overrides in globalenv BEFORE sourcing with
+  # local = FALSE (which evaluates in globalenv).
+  worker_wd <- getwd()
+  .run_one_season <- function(s) {
+    setwd(worker_wd)  # workers may inherit a different cwd
+    suppressMessages(devtools::load_all(".", quiet = TRUE))
+    ge <- globalenv()
+    assign("game_log_seasons",  s,     envir = ge)
+    assign("upload_game_logs",  FALSE, envir = ge)
+    assign("build_game_logs",   TRUE,  envir = ge)
+    assign("use_skill_ratings", TRUE,  envir = ge)
+    assign("cache_dir",
+           file.path("data-raw", "cache-predictions-opta"),
+           envir = ge)
+    source("data-raw/match-predictions-opta/10b_export_game_logs.R",
+           local = FALSE)
+    p <- file.path(ge$cache_dir, sprintf("game_logs_%s.parquet", s))
+    if (file.exists(p)) p else NULL
+  }
+
+  built <- future.apply::future_lapply(
+    game_log_seasons, .run_one_season,
+    future.seed = NULL
+  )
+  built <- Filter(Negate(is.null), built)
+  message(sprintf("\n  Parallel build complete: %d/%d seasons produced",
+                  length(built), length(game_log_seasons)))
+
+  # Second pass — upload only, in main process.
+  if (isTRUE(upload_game_logs) && length(built) > 0) {
+    build_game_logs  <- FALSE
+    # Keep game_log_seasons restricted to those we built so alias picks the
+    # right "current" season.
+    source("data-raw/match-predictions-opta/10b_export_game_logs.R",
+           local = FALSE)
+  }
+}
+
 elapsed <- round(as.numeric(difftime(Sys.time(), t0, units = "mins")), 1)
 message(sprintf("\nBackfill complete in %.1f min", elapsed))

@@ -191,13 +191,21 @@ get_or_build_spadl <- function(events, league, season,
 
   if (!force_rebuild && file.exists(cache_path)) {
     spadl <- readRDS(cache_path)
-    # Basic sanity: cache must cover all requested match_ids. Stale caches
-    # are silently rebuilt rather than failing downstream.
-    wanted <- unique(events$match_id)
-    if (length(setdiff(wanted, unique(spadl$match_id))) == 0) {
-      return(spadl)
+    # Schema sanity — downstream pipelines (equity export) assume certain
+    # columns exist. If the cache predates a schema addition, rebuild rather
+    # than silently returning a stale snapshot.
+    required_cols <- c("match_id", "action_id", "original_event_id",
+                       "player_id", "action_type", "start_x", "start_y",
+                       "result")
+    missing_cols <- setdiff(required_cols, names(spadl))
+    if (length(missing_cols) == 0) {
+      # Coverage sanity — cache must cover all requested match_ids.
+      wanted <- unique(events$match_id)
+      if (length(setdiff(wanted, unique(spadl$match_id))) == 0) {
+        return(spadl)
+      }
     }
-    # Stale or partial — rebuild.
+    # Stale, partial, or schema-outdated — rebuild.
   }
 
   spadl <- convert_opta_to_spadl(events)

@@ -199,7 +199,7 @@ FBref provides comprehensive passing statistics with StatsBomb xG values.
 
 ### League Codes
 
-```{r fbref-leagues}
+```{r fbref-leagues, eval = FALSE}
 # Big 5 leagues
 "ENG"  # Premier League
 "ESP"  # La Liga

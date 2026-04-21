@@ -743,6 +743,8 @@ utils::globalVariables(c(
   "epv_passing",
   "epv_shooting",
   "epv_dribbling",
+  "epv_aerial",
+  "epv_keeping",
   "epv_defending",
 
   # Opponent adjustment columns (adjust_epv_for_opponents / adjust_stats_for_opponents)

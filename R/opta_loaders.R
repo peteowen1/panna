@@ -249,6 +249,50 @@ list_opta_seasons <- function(league, source = c("catalog", "remote", "local")) 
 }
 
 
+#' Resolve a League-Season String for Blog-Style Pipelines
+#'
+#' Given a league and the "domestic" season a pipeline is iterating over,
+#' returns the Opta season string to pass to \code{load_opta_match_events()}.
+#' Continental club comps (UCL/UEL/UECL) share the "YYYY-YYYY" format with
+#' domestic leagues and are returned as-is. International tournaments (WC,
+#' EURO) use "YYYY Country" (or bare "YYYY" for pan-European EURO 2020);
+#' this helper maps a tournament played in summer YYYY onto the domestic
+#' season ending in YYYY (e.g. WC 2014 Brazil → "2013-2014").
+#'
+#' Returns \code{NULL} when there is no tournament in the given year so
+#' callers can skip gracefully.
+#'
+#' @param league League code (e.g. "ENG", "UCL", "WC", "EURO").
+#' @param domestic_season Domestic season string, e.g. "2013-2014".
+#' @param tournament_leagues Character vector of league codes that use
+#'   "YYYY Country"-style season strings. Defaults to \code{c("WC", "EURO")}.
+#'
+#' @return Season string to pass to \code{load_opta_*()}, or \code{NULL} if
+#'   no matching tournament exists for the given year.
+#' @export
+#' @examples
+#' \dontrun{
+#' resolve_league_season("ENG",  "2013-2014")  # → "2013-2014"
+#' resolve_league_season("UCL",  "2013-2014")  # → "2013-2014"
+#' resolve_league_season("WC",   "2013-2014")  # → "2014 Brazil"
+#' resolve_league_season("EURO", "2019-2020")  # → "2020" (pan-European)
+#' resolve_league_season("WC",   "2018-2019")  # → NULL (no WC that year)
+#' }
+resolve_league_season <- function(league, domestic_season,
+                                   tournament_leagues = c("WC", "EURO")) {
+  if (!league %in% tournament_leagues) return(domestic_season)
+
+  # Extract ending year from "YYYY-YYYY" format
+  t_year <- suppressWarnings(as.integer(sub(".*-", "", domestic_season)))
+  if (is.na(t_year)) return(NULL)
+
+  avail <- tryCatch(list_opta_seasons(league), error = function(e) character(0))
+  # Match "YYYY" (bare, for EURO 2020) or "YYYY Something" (e.g. "2014 Brazil")
+  matching <- avail[grepl(paste0("^", t_year, "( |$)"), avail)]
+  if (length(matching) == 0) NULL else matching[1]
+}
+
+
 #' Load Opta Player Stats
 #'
 #' Loads player-level match statistics from Opta/TheAnalyst data.

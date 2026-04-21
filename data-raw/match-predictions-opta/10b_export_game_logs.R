@@ -51,6 +51,11 @@ current_season_alias <- sort(game_log_seasons, decreasing = TRUE)[1]
 # Upload toggle — set FALSE during local dev to skip the GH release push.
 if (!exists("upload_game_logs", inherits = FALSE)) upload_game_logs <- TRUE
 
+# Build toggle — set FALSE to skip the per-season processing loop (e.g. when
+# parquets were already built in parallel workers and this invocation only
+# needs to do the alias + upload step in a single main-process pass).
+if (!exists("build_game_logs", inherits = FALSE)) build_game_logs <- TRUE
+
 message(sprintf("\n=== Building Game Logs: %d season(s) ===", length(game_log_seasons)))
 message(sprintf("  Seasons: %s", paste(game_log_seasons, collapse = ", ")))
 message(sprintf("  Alias (game_logs.parquet) → %s", current_season_alias))
@@ -113,22 +118,9 @@ if (!is.null(seasonal_results) && !is.null(seasonal_results$seasonal_spm)) {
   if (length(m) == 0) NA_integer_ else as.integer(m)
 }
 
-# Resolve the Opta season string to load for a given (league, domestic_season).
-# Continental cups (UCL/UEL/UECL) use the same "YYYY-YYYY" as domestic.
-# International tournaments (WC/EURO) use "YYYY Country" and are folded into
-# the domestic season that ENDS in the tournament year (summer convention,
-# e.g. WC 2014 Brazil → "2013-2014"). Returns NULL if no tournament runs.
-.resolve_league_season <- function(league, domestic_season) {
-  if (!league %in% intl_tournaments) return(domestic_season)
-
-  t_year <- .season_end_year(domestic_season)
-  if (is.na(t_year)) return(NULL)
-  avail <- tryCatch(list_opta_seasons(league), error = function(e) character(0))
-  # Match "2014 Brazil", "2024 Germany", bare "2020" (EURO 2020 was pan-European
-  # with no host country so Opta labels it just the year), etc.
-  matching <- avail[grepl(paste0("^", t_year, "( |$)"), avail)]
-  if (length(matching) == 0) NULL else matching[1]
-}
+# League-season resolution lives in panna::resolve_league_season() so 10b
+# and 10c_export_equity can share it. intl_tournaments list above controls
+# which leagues go through the tournament-year remapping.
 
 # Process a single season: returns path to written parquet, or NULL on failure.
 .process_season <- function(season) {
@@ -137,7 +129,8 @@ if (!is.null(seasonal_results) && !is.null(seasonal_results$seasonal_spm)) {
 
   for (league in blog_leagues) {
     tryCatch({
-      league_season <- .resolve_league_season(league, season)
+      league_season <- resolve_league_season(league, season,
+                                               tournament_leagues = intl_tournaments)
       if (is.null(league_season)) {
         message(sprintf("\n  Skipping %s %s — no tournament this year", league, season))
         stop("__skip_league__")
@@ -370,15 +363,26 @@ if (!is.null(seasonal_results) && !is.null(seasonal_results$seasonal_spm)) {
 # 4. Process each season ----
 
 season_paths <- list()
-for (s in game_log_seasons) {
-  p <- tryCatch(
-    .process_season(s),
-    error = function(e) {
-      warning(sprintf("Season %s aborted: %s", s, e$message), call. = FALSE)
-      NULL
-    }
-  )
-  if (!is.null(p)) season_paths[[s]] <- p
+if (isTRUE(build_game_logs)) {
+  for (s in game_log_seasons) {
+    p <- tryCatch(
+      .process_season(s),
+      error = function(e) {
+        warning(sprintf("Season %s aborted: %s", s, e$message), call. = FALSE)
+        NULL
+      }
+    )
+    if (!is.null(p)) season_paths[[s]] <- p
+  }
+} else {
+  # Upload-only mode: reconstruct season_paths from existing files so the
+  # alias + upload steps below have something to act on.
+  for (s in game_log_seasons) {
+    p <- file.path(cache_dir, sprintf("game_logs_%s.parquet", s))
+    if (file.exists(p)) season_paths[[s]] <- p
+  }
+  message(sprintf("Upload-only mode: %d existing season parquet(s) found",
+                  length(season_paths)))
 }
 
 if (length(season_paths) == 0) {
