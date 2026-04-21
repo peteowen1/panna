@@ -198,13 +198,13 @@ if (!is.null(fixtures_df)) {
   }
   fixtures_clean <- fixtures_df[, intersect(keep_cols, names(fixtures_df))]
 
-  # Normalize fixture team names to the lineup variant used in played matches.
+  # Normalize fixture team names to the variant Opta uses in its lineup feed.
   # Opta's fixtures endpoint sometimes serves full legal names ("AFC Ajax",
-  # "BV Borussia 09 Dortmund", "Çaykur Rize Spor Kulübü") while lineups use the
-  # short common names ("Ajax", "Borussia Dortmund", "Rizespor"). That split
+  # "BV Borussia 09 Dortmund", "Çaykur Rize Spor Kulübü") while lineups use a
+  # different spelling ("Ajax", "Borussia Dortmund", "Rizespor"). That split
   # caused sim scripts to treat them as different teams and inflate team counts.
   # Use team_id (stable across both feeds) to rewrite fixture names to match.
-  team_name_map <- results_clean %>%
+  team_variants <- results_clean %>%
     filter(!is.na(home_team_id), !is.na(home_team)) %>%
     select(team_id = home_team_id, team_name = home_team) %>%
     bind_rows(
@@ -212,27 +212,62 @@ if (!is.null(fixtures_df)) {
         filter(!is.na(away_team_id), !is.na(away_team)) %>%
         select(team_id = away_team_id, team_name = away_team)
     ) %>%
-    count(team_id, team_name, name = "n") %>%
+    count(team_id, team_name, name = "n")
+
+  # Deterministic tie-break: prefer the most-frequent name; on ties, prefer the
+  # shortest (lineup variants tend to be shorter than fixture-feed legal names)
+  # then alphabetically. Without this, the canonical name for a mid-season
+  # renamed team could flip between pipeline runs based on row ordering, and
+  # downstream name-keyed consumers (blog standings, PSR rollups) would see
+  # phantom "team renamed" events.
+  team_name_map <- team_variants %>%
     group_by(team_id) %>%
-    slice_max(n, n = 1, with_ties = FALSE) %>%
+    arrange(desc(n), nchar(team_name), team_name, .by_group = TRUE) %>%
+    slice(1) %>%
     ungroup() %>%
     select(team_id, team_name)
 
+  # Report team_ids with multiple name variants — these are the genuine
+  # split-identity cases and the debug info someone will want next time
+  # the standings view shows a split team.
+  collisions <- team_variants %>% count(team_id, name = "variants") %>% filter(variants > 1)
+  if (nrow(collisions) > 0) {
+    message(sprintf("  %d team_ids have multiple name variants in lineups (canonical = most frequent, tie-break = shortest)",
+                    nrow(collisions)))
+  }
+
   n_home_renamed <- 0L
   n_away_renamed <- 0L
+  unresolved_home <- 0L
+  unresolved_away <- 0L
   if (nrow(team_name_map) > 0) {
     home_lookup <- setNames(team_name_map$team_name, team_name_map$team_id)
     new_home <- home_lookup[as.character(fixtures_clean$home_team_id)]
-    n_home_renamed <- sum(!is.na(new_home) & new_home != fixtures_clean$home_team, na.rm = TRUE)
+    n_home_renamed <- sum(!is.na(new_home) & (is.na(fixtures_clean$home_team) | new_home != fixtures_clean$home_team))
+    unresolved_home <- sum(!is.na(fixtures_clean$home_team_id) & is.na(new_home))
     fixtures_clean$home_team <- ifelse(is.na(new_home), fixtures_clean$home_team, unname(new_home))
 
     new_away <- home_lookup[as.character(fixtures_clean$away_team_id)]
-    n_away_renamed <- sum(!is.na(new_away) & new_away != fixtures_clean$away_team, na.rm = TRUE)
+    n_away_renamed <- sum(!is.na(new_away) & (is.na(fixtures_clean$away_team) | new_away != fixtures_clean$away_team))
+    unresolved_away <- sum(!is.na(fixtures_clean$away_team_id) & is.na(new_away))
     fixtures_clean$away_team <- ifelse(is.na(new_away), fixtures_clean$away_team, unname(new_away))
   }
-  if (n_home_renamed + n_away_renamed > 0) {
-    message(sprintf("  Normalized %d fixture team names to match lineup names (home: %d, away: %d)",
-                    n_home_renamed + n_away_renamed, n_home_renamed, n_away_renamed))
+
+  # Always-on diagnostic: distinguishes "rename block ran correctly" from
+  # "rename block silently skipped due to upstream issue" (empty lineup map,
+  # zero fixture rows, etc.). Even the zero cases should be visible in logs.
+  message(sprintf("  Fixture team-name normalization: %d lineup variants, %d fixtures, %d renamed",
+                  nrow(team_name_map), nrow(fixtures_clean),
+                  n_home_renamed + n_away_renamed))
+
+  # Unresolved team_ids (fixture has a team_id absent from the lineup map) are
+  # the silent split-identity risk: a newly-promoted team with zero played
+  # matches yet keeps its Opta-fixtures name, and the moment they play their
+  # first match the same team_id will start producing the lineup variant —
+  # reintroducing the exact bug this block is meant to prevent. Warn loudly.
+  if (unresolved_home + unresolved_away > 0) {
+    message(sprintf("  WARNING: %d fixture team_ids have no lineup match (home: %d, away: %d) — names kept as-is, may cause split-identity after first played match",
+                    unresolved_home + unresolved_away, unresolved_home, unresolved_away))
   }
 
   fixture_results <- bind_rows(results_clean, fixtures_clean)

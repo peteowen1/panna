@@ -129,9 +129,14 @@ if (!file.exists(predictions_input)) {
 
 predictions <- arrow::read_parquet(predictions_input)
 
-# Required columns the blog cannot function without
+# Required columns the blog cannot function without.
+# `status` ("played"/"fixture") is a required contract for sim consumers:
+# predictions.parquet covers every historical match plus upcoming fixtures
+# (the blog's Results view shows past predictions alongside projections), so
+# sims must filter to status == "fixture" to avoid re-simulating completed
+# matches. Hard-fail here rather than fall through to date-based guessing.
 required_cols <- c("match_id", "match_date", "league", "home_team", "away_team",
-                   "prob_H", "prob_D", "prob_A")
+                   "prob_H", "prob_D", "prob_A", "status")
 missing_required <- setdiff(required_cols, names(predictions))
 if (length(missing_required) > 0) {
   stop(sprintf("Missing required prediction columns: %s\nRebuild predictions with the current pipeline.",
@@ -139,10 +144,7 @@ if (length(missing_required) > 0) {
 }
 
 # Optional columns — include if available.
-# `status` ("played"/"fixture") is critical for the sim scripts: predictions.parquet
-# covers every match 2013→2026 (Results view shows historical predictions), so sims
-# must filter to status == "fixture" to avoid re-simulating completed matches.
-optional_cols <- c("season", "status", "pred_home_goals", "pred_away_goals", "predicted_result")
+optional_cols <- c("season", "pred_home_goals", "pred_away_goals", "predicted_result")
 missing_optional <- setdiff(optional_cols, names(predictions))
 if (length(missing_optional) > 0) {
   message(sprintf("  Note: Optional columns missing (excluded): %s",
