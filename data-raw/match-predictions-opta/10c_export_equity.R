@@ -50,6 +50,11 @@ if (!exists("upload_equity", inherits = FALSE)) upload_equity <- TRUE
 # Build toggle — FALSE = skip per-season build, just do alias+upload
 if (!exists("build_equity", inherits = FALSE)) build_equity <- TRUE
 
+# Alias toggle — mirror most-recent processed season to action_equity.parquet.
+# Set FALSE when back-filling a non-current historical subset to avoid
+# clobbering the blog chain builder's current-season pointer.
+if (!exists("mirror_alias", inherits = FALSE)) mirror_alias <- TRUE
+
 message(sprintf("\n=== Building Action Equity: %d season(s) ===",
                 length(equity_seasons)))
 message(sprintf("  Seasons: %s", paste(equity_seasons, collapse = ", ")))
@@ -185,10 +190,12 @@ if (length(season_paths) == 0) {
 
 alias_src  <- file.path(cache_dir, sprintf("action_equity_%s.parquet", current_season_alias))
 alias_path <- file.path(cache_dir, "action_equity.parquet")
-if (file.exists(alias_src)) {
+if (isTRUE(mirror_alias) && file.exists(alias_src)) {
   file.copy(alias_src, alias_path, overwrite = TRUE)
   message(sprintf("\n  Mirrored alias: %s → action_equity.parquet",
                   basename(alias_src)))
+} else if (!isTRUE(mirror_alias)) {
+  message("\n  Skipping alias mirror (mirror_alias = FALSE) — keeping existing action_equity.parquet")
 }
 
 # 6. Upload to GitHub Releases ----
@@ -204,8 +211,12 @@ if (isTRUE(upload_equity)) {
     stop("'gh' CLI is not installed or not on PATH.")
   }
 
-  files_to_upload <- unique(c(unlist(season_paths), alias_path))
-  files_to_upload <- files_to_upload[file.exists(files_to_upload)]
+  candidates <- if (isTRUE(mirror_alias)) {
+    unique(c(unlist(season_paths), alias_path))
+  } else {
+    unlist(season_paths)
+  }
+  files_to_upload <- candidates[file.exists(candidates)]
 
   for (f in files_to_upload) {
     message(sprintf("  Uploading %s...", basename(f)))
