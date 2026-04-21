@@ -4,18 +4,29 @@
 \alias{download_opta_catalog}
 \title{Download and Cache Opta Data Catalog}
 \usage{
-download_opta_catalog(repo = "peteowen1/pannadata", tag = "opta-latest")
+download_opta_catalog(
+  repo = "peteowen1/pannadata",
+  tag = "opta-latest",
+  max_age_hours = getOption("panna.opta_catalog_ttl_hours", 6)
+)
 }
 \arguments{
 \item{repo}{GitHub repository (default: "peteowen1/pannadata").}
 
 \item{tag}{Release tag (default: "opta-latest").}
+
+\item{max_age_hours}{Freshness window for the local catalog cache.
+If the local file is older than this (mtime-based), it's treated as
+stale and re-downloaded. Default 6 hours, override globally via
+\code{options(panna.opta_catalog_ttl_hours = N)}. Set \code{Inf} to
+disable the TTL (legacy behavior — trust local forever).}
 }
 \value{
 List with catalog data (competitions, panna_aliases).
 }
 \description{
 Loads the opta-catalog.json file, checking session cache first,
-then local file, then downloading from GitHub releases.
+then local file (with TTL freshness check), then downloading from
+GitHub releases.
 }
 \keyword{internal}

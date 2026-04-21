@@ -898,40 +898,63 @@ get_opta_columns <- function(table_type = c("player_stats", "shots", "shot_event
 #' Download and Cache Opta Data Catalog
 #'
 #' Loads the opta-catalog.json file, checking session cache first,
-#' then local file, then downloading from GitHub releases.
+#' then local file (with TTL freshness check), then downloading from
+#' GitHub releases.
 #'
 #' @param repo GitHub repository (default: "peteowen1/pannadata").
 #' @param tag Release tag (default: "opta-latest").
+#' @param max_age_hours Freshness window for the local catalog cache.
+#'   If the local file is older than this (mtime-based), it's treated as
+#'   stale and re-downloaded. Default 6 hours, override globally via
+#'   \code{options(panna.opta_catalog_ttl_hours = N)}. Set \code{Inf} to
+#'   disable the TTL (legacy behavior — trust local forever).
 #'
 #' @return List with catalog data (competitions, panna_aliases).
 #' @keywords internal
 download_opta_catalog <- function(repo = "peteowen1/pannadata",
-                                   tag = "opta-latest") {
+                                   tag = "opta-latest",
+                                   max_age_hours = getOption(
+                                     "panna.opta_catalog_ttl_hours", 6
+                                   )) {
   # 1. Session cache
   if (exists("opta_catalog", envir = .opta_remote_env)) {
     return(get("opta_catalog", envir = .opta_remote_env))
   }
 
-  # 2. Local file
+  # 2. Local file (with TTL freshness check)
   local_path <- tryCatch(
     file.path(opta_data_dir(), "opta-catalog.json"),
     error = function(e) NULL
   )
   if (!is.null(local_path) && file.exists(local_path)) {
-    catalog <- tryCatch(
-      jsonlite::fromJSON(local_path, simplifyVector = FALSE),
-      error = function(e) {
-        cli::cli_alert_warning(
-          "Local catalog at {.path {local_path}} is corrupt: {e$message}. Downloading fresh."
-        )
-        NULL
-      }
+    # Freshness: skip local cache if older than max_age_hours. Prevents the
+    # classic "daily scrape refreshed the remote catalog but local is from
+    # two weeks ago" foot-gun — pipelines silently miss newly-scraped seasons
+    # (e.g. EURO 2020, WC 2022 Qatar) because they never re-downloaded.
+    local_age_hours <- as.numeric(
+      difftime(Sys.time(), file.info(local_path)$mtime, units = "hours")
     )
-    if (!is.null(catalog) && !is.null(catalog$competitions)) {
-      assign("opta_catalog", catalog, envir = .opta_remote_env)
-      return(catalog)
+    if (is.finite(max_age_hours) && local_age_hours > max_age_hours) {
+      cli::cli_alert_info(
+        "Local Opta catalog is {round(local_age_hours, 1)}h old (TTL {max_age_hours}h). Refreshing from {repo}."
+      )
+      # Fall through to download.
+    } else {
+      catalog <- tryCatch(
+        jsonlite::fromJSON(local_path, simplifyVector = FALSE),
+        error = function(e) {
+          cli::cli_alert_warning(
+            "Local catalog at {.path {local_path}} is corrupt: {e$message}. Downloading fresh."
+          )
+          NULL
+        }
+      )
+      if (!is.null(catalog) && !is.null(catalog$competitions)) {
+        assign("opta_catalog", catalog, envir = .opta_remote_env)
+        return(catalog)
+      }
+      # Fall through to download if invalid structure
     }
-    # Fall through to download if invalid structure
   }
 
   # 3. Download from release
@@ -972,6 +995,20 @@ download_opta_catalog <- function(repo = "peteowen1/pannadata",
       ))
     }
   )
+
+  # Persist the fresh catalog to opta_data_dir so subsequent R sessions pick
+  # up the refreshed file (with updated mtime for TTL) instead of re-downloading.
+  if (!is.null(local_path)) {
+    tryCatch(
+      file.copy(catalog_path, local_path, overwrite = TRUE),
+      error = function(e) {
+        cli::cli_alert_info(
+          "Could not persist catalog to {.path {local_path}}: {e$message}"
+        )
+      }
+    )
+  }
+
   assign("opta_catalog", catalog, envir = .opta_remote_env)
   catalog
 }

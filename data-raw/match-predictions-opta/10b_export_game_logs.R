@@ -56,6 +56,12 @@ if (!exists("upload_game_logs", inherits = FALSE)) upload_game_logs <- TRUE
 # needs to do the alias + upload step in a single main-process pass).
 if (!exists("build_game_logs", inherits = FALSE)) build_game_logs <- TRUE
 
+# Alias toggle — mirror the most-recent processed season to game_logs.parquet
+# (the blog chain builder's name-pinned download). Default TRUE for weekly
+# runs, but set FALSE when back-filling a NON-current historical subset so
+# the alias keeps pointing at the real current season.
+if (!exists("mirror_alias", inherits = FALSE)) mirror_alias <- TRUE
+
 message(sprintf("\n=== Building Game Logs: %d season(s) ===", length(game_log_seasons)))
 message(sprintf("  Seasons: %s", paste(game_log_seasons, collapse = ", ")))
 message(sprintf("  Alias (game_logs.parquet) → %s", current_season_alias))
@@ -393,10 +399,12 @@ if (length(season_paths) == 0) {
 
 alias_src  <- file.path(cache_dir, sprintf("game_logs_%s.parquet", current_season_alias))
 alias_path <- file.path(cache_dir, "game_logs.parquet")
-if (file.exists(alias_src)) {
+if (isTRUE(mirror_alias) && file.exists(alias_src)) {
   file.copy(alias_src, alias_path, overwrite = TRUE)
   message(sprintf("\n  Mirrored alias: %s → game_logs.parquet",
                   basename(alias_src)))
+} else if (!isTRUE(mirror_alias)) {
+  message("\n  Skipping alias mirror (mirror_alias = FALSE) — keeping existing game_logs.parquet")
 }
 
 # 6. Upload to GitHub Releases ----
@@ -412,8 +420,15 @@ if (isTRUE(upload_game_logs)) {
     stop("'gh' CLI is not installed or not on PATH.")
   }
 
-  files_to_upload <- unique(c(unlist(season_paths), alias_path))
-  files_to_upload <- files_to_upload[file.exists(files_to_upload)]
+  # Only include the alias file in the upload when we actually rewrote it —
+  # otherwise a partial historical re-backfill would overwrite the current-
+  # season alias on the release with a stale copy.
+  candidates <- if (isTRUE(mirror_alias)) {
+    unique(c(unlist(season_paths), alias_path))
+  } else {
+    unlist(season_paths)
+  }
+  files_to_upload <- candidates[file.exists(candidates)]
 
   for (f in files_to_upload) {
     message(sprintf("  Uploading %s...", basename(f)))

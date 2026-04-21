@@ -266,3 +266,88 @@ test_that("load_opta_skills errors for missing local file", {
 
   expect_error(load_opta_skills(source = "local"), "not found")
 })
+
+
+# --- download_opta_catalog TTL freshness check -----------------------------
+
+test_that("download_opta_catalog treats stale local file as expired", {
+  # Simulates the scenario where a scrape refreshed the remote catalog but
+  # the local copy is older than the TTL — stale local should be bypassed.
+
+  tmp_dir <- withr::local_tempdir()
+  local_path <- file.path(tmp_dir, "opta-catalog.json")
+
+  # Plant a local catalog that's technically valid but 48 hours old.
+  stale_catalog <- list(
+    competitions = list(EPL = list(seasons = c("2018-2019"))),
+    panna_aliases = list(ENG = "EPL")
+  )
+  jsonlite::write_json(stale_catalog, local_path, auto_unbox = TRUE)
+  # Back-date mtime 48 hours.
+  Sys.setFileTime(local_path, Sys.time() - as.difftime(48, units = "hours"))
+
+  # Fresh catalog that the "download" branch would return.
+  fresh_catalog <- list(
+    competitions = list(EPL = list(seasons = c("2018-2019", "2024-2025"))),
+    panna_aliases = list(ENG = "EPL")
+  )
+
+  # Stub opta_data_dir to our tmp path; stub pb_download to install fresh.
+  local_mocked_bindings(
+    opta_data_dir = function(...) tmp_dir,
+    .package = "panna"
+  )
+  local_mocked_bindings(
+    pb_download = function(file, repo, tag, dest, overwrite, ...) {
+      jsonlite::write_json(fresh_catalog, file.path(dest, file), auto_unbox = TRUE)
+      invisible(NULL)
+    },
+    .package = "piggyback"
+  )
+
+  # Clear any session cache so the test is deterministic.
+  .opta_remote_env <- asNamespace("panna")$.opta_remote_env
+  if (exists("opta_catalog", envir = .opta_remote_env)) {
+    rm("opta_catalog", envir = .opta_remote_env)
+  }
+
+  # TTL 6h: 48h-old local is stale → should return fresh catalog.
+  result <- download_opta_catalog(max_age_hours = 6)
+  expect_equal(unlist(result$competitions$EPL$seasons),
+               c("2018-2019", "2024-2025"))
+
+  # After download, local file's mtime should have been refreshed too
+  # (so next session doesn't re-download on the next call).
+  new_mtime_age_hours <- as.numeric(
+    difftime(Sys.time(), file.info(local_path)$mtime, units = "hours")
+  )
+  expect_lt(new_mtime_age_hours, 1)
+})
+
+test_that("download_opta_catalog accepts fresh local file within TTL", {
+
+  tmp_dir <- withr::local_tempdir()
+  local_path <- file.path(tmp_dir, "opta-catalog.json")
+
+  fresh_catalog <- list(
+    competitions = list(EPL = list(seasons = c("2024-2025"))),
+    panna_aliases = list(ENG = "EPL")
+  )
+  jsonlite::write_json(fresh_catalog, local_path, auto_unbox = TRUE)
+  # mtime is "now" — well within the 6h default TTL.
+
+  local_mocked_bindings(
+    opta_data_dir = function(...) tmp_dir,
+    .package = "panna"
+  )
+
+  # Clear cache so it's forced to hit the local-file path.
+  .opta_remote_env <- asNamespace("panna")$.opta_remote_env
+  if (exists("opta_catalog", envir = .opta_remote_env)) {
+    rm("opta_catalog", envir = .opta_remote_env)
+  }
+
+  # Would fail if the "download" path ran (no pb_download stub here).
+  result <- download_opta_catalog(max_age_hours = 6)
+  expect_equal(unlist(result$competitions$EPL$seasons), "2024-2025")
+})
