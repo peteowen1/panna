@@ -44,7 +44,7 @@ RAPM uses "splints" - time segments where the lineup is constant. Splint boundar
 
 Each splint has approximately 22 players (11 per team) and records the non-penalty xG differential (npxGD) during that segment.
 
-```{r splints}
+```{r splints, eval = FALSE}
 library(panna)
 
 # After loading processed data...
@@ -60,7 +60,7 @@ The RAPM model uses a sparse design matrix where:
 - **Covariates**: Goal difference, average minute, home/away, player counts
 - **Target**: xG FOR per 90 minutes (`xgf90`)
 
-```{r rapm-matrix}
+```{r rapm-matrix, eval = FALSE}
 # Build the design matrix
 rapm_data <- create_rapm_design_matrix(splints)
 
@@ -74,7 +74,7 @@ rapm_data <- create_rapm_design_matrix(splints)
 ### Ridge Regression
 
 RAPM uses ridge regression (L2 penalty) with cross-validated lambda to prevent overfitting:
-```{r rapm-fit}
+```{r rapm-fit, eval = FALSE}
 # Fit the model
 rapm_results <- fit_rapm(rapm_data)
 
@@ -109,7 +109,7 @@ This serves two purposes:
 
 SPM uses elastic net regression to predict RAPM from aggregated per-90 statistics:
 
-```{r spm}
+```{r spm, eval = FALSE}
 # Aggregate box score stats to per-90 rates
 player_stats <- aggregate_player_stats(processed_data)
 
@@ -136,7 +136,7 @@ SPM uses statistics like:
 
 The final Panna rating uses SPM as a Bayesian prior for RAPM:
 
-```{r panna}
+```{r panna, eval = FALSE}
 # Fit RAPM with SPM prior (xRAPM)
 xrapm_results <- fit_rapm_with_prior(rapm_data, spm_ratings)
 
@@ -206,7 +206,7 @@ Interpretation:
 
 The complete rating pipeline:
 
-```{r pipeline}
+```{r pipeline, eval = FALSE}
 library(panna)
 
 # 1. Load raw data

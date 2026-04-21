@@ -21,7 +21,7 @@ This vignette covers installation, data download, and basic usage of the panna p
 
 Install panna from GitHub:
 
-```{r install}
+```{r install, eval = FALSE}
 # Install devtools if needed
 install.packages("devtools")
 
@@ -33,7 +33,7 @@ devtools::install_github("peteowen1/panna")
 
 Data is stored in GitHub Releases. Most `load_*()` functions default to `source = "remote"`, so you can start using data immediately. For faster repeated access, download data locally first:
 
-```{r download}
+```{r download, eval = FALSE}
 library(panna)
 
 # Download Opta data (primary source, recommended)
@@ -57,7 +57,7 @@ Data is cached locally after download, so you only need to do this once (or when
 
 Opta is the primary data source with 263 columns per player across 15 leagues. It powers the full RAPM/SPM pipeline, EPV, xMetrics, estimated skills, and match predictions.
 
-```{r load-opta}
+```{r load-opta, eval = FALSE}
 # Load Opta player stats
 opta_stats <- load_opta_stats("EPL", "2024-2025")
 
@@ -78,7 +78,7 @@ xmetrics <- load_opta_xmetrics("EPL", "2024-2025")           # Pre-computed xG/x
 
 Understat includes xGChain and xGBuildup metrics not available elsewhere.
 
-```{r load-understat}
+```{r load-understat, eval = FALSE}
 # Load player roster with xGChain, xGBuildup
 roster <- load_understat_roster("EPL", "2024")
 
@@ -92,7 +92,7 @@ Note: Understat uses single-year seasons (e.g., "2024" for 2024-25).
 
 FBref provides comprehensive statistics with StatsBomb xG values.
 
-```{r load-fbref}
+```{r load-fbref, eval = FALSE}
 # Load summary stats for a league/season
 summary <- load_summary("ENG", "2024-2025")
 
@@ -148,7 +148,7 @@ metadata <- load_metadata("ENG", "2024-2025")
 
 The package provides convenience functions for aggregated player statistics:
 
-```{r player-stats}
+```{r player-stats, eval = FALSE}
 # Opta aggregated stats
 opta_players <- player_opta_summary(
   leagues = "EPL",
@@ -181,7 +181,7 @@ seasons = c("2023-2024", "2024-2025"),  # Multiple seasons
 
 Many functions accept vectors of leagues and seasons:
 
-```{r multi-league}
+```{r multi-league, eval = FALSE}
 # Load Big 5 Opta stats
 big5_opta <- load_opta_big5("2024-2025")
 
