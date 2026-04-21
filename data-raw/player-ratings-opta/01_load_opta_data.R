@@ -330,10 +330,10 @@ goal_counts <- combined_events %>%
   summarise(goals = n(), .groups = "drop")
 
 # Drop matches that exist in lineups but have no events at all. This is a
-# scraper-gap case — lineups are published ahead of events, so the match
+# scraper-gap case — Opta publishes lineups ahead of events, so the match
 # looks "played" but we can't compute a score. Without this guard,
 # coalesce(goals, 0L) silently records them as 0-0, injecting phantom
-# draws into standings and downstream ratings (see panna#59).
+# draws into standings and downstream ratings.
 matches_with_events <- unique(combined_events$match_id)
 matches_without_events <- setdiff(match_info$match_id, matches_with_events)
 if (length(matches_without_events) > 0) {
