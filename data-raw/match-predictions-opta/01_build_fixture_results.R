@@ -101,6 +101,18 @@ if (is.null(results)) {
           filter(event_type == "goal") %>%
           count(match_id, team_id, name = "goals")
 
+        # Drop matches with lineups but no events — Opta publishes lineups
+        # ahead of events for recent fixtures, so the match looks "played"
+        # but we can't compute a score. Without this guard, coalesce(goals, 0L)
+        # below silently codes them as 0-0 draws, corrupting standings.
+        matches_with_events <- unique(events$match_id)
+        matches_without_events <- setdiff(match_info$match_id, matches_with_events)
+        if (length(matches_without_events) > 0) {
+          message(sprintf("  WARNING: %s %s: dropping %d matches with no events (scraper gap)",
+                          league, season, length(matches_without_events)))
+          match_info <- match_info %>% filter(!match_id %in% matches_without_events)
+        }
+
         home_goals <- match_info %>%
           select(match_id, home_team_id) %>%
           left_join(goal_counts, by = c("match_id", "home_team_id" = "team_id")) %>%
