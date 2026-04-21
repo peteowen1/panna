@@ -101,6 +101,17 @@ if (is.null(results)) {
           filter(event_type == "goal") %>%
           count(match_id, team_id, name = "goals")
 
+        # Drop matches with lineups but no events — scraper-gap cases that
+        # would otherwise be silently coded as 0-0 draws by the coalesce
+        # below, corrupting standings downstream (panna#59).
+        matches_with_events <- unique(events$match_id)
+        matches_without_events <- setdiff(match_info$match_id, matches_with_events)
+        if (length(matches_without_events) > 0) {
+          message(sprintf("  %s %s: dropping %d matches with no events (scraper gap)",
+                          league, season, length(matches_without_events)))
+          match_info <- match_info %>% filter(!match_id %in% matches_without_events)
+        }
+
         home_goals <- match_info %>%
           select(match_id, home_team_id) %>%
           left_join(goal_counts, by = c("match_id", "home_team_id" = "team_id")) %>%

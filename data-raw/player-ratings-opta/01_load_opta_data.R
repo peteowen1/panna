@@ -329,6 +329,22 @@ goal_counts <- combined_events %>%
   group_by(match_id, team_id) %>%
   summarise(goals = n(), .groups = "drop")
 
+# Drop matches that exist in lineups but have no events at all. This is a
+# scraper-gap case — lineups are published ahead of events, so the match
+# looks "played" but we can't compute a score. Without this guard,
+# coalesce(goals, 0L) silently records them as 0-0, injecting phantom
+# draws into standings and downstream ratings (see panna#59).
+matches_with_events <- unique(combined_events$match_id)
+matches_without_events <- setdiff(match_info$match_id, matches_with_events)
+if (length(matches_without_events) > 0) {
+  warning(sprintf(
+    "%d match_ids have lineups but no events — dropping from results (likely scraper gap). First 5: %s",
+    length(matches_without_events),
+    paste(head(matches_without_events, 5), collapse = ", ")
+  ), call. = FALSE)
+  match_info <- match_info %>% filter(!match_id %in% matches_without_events)
+}
+
 home_goals <- match_info %>%
   select(match_id, home_team_id) %>%
   left_join(goal_counts, by = c("match_id", "home_team_id" = "team_id")) %>%
