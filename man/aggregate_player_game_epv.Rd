@@ -27,10 +27,17 @@ A data.table with one row per player per match:
 \item{player_id, player_name, team_id, match_id}{Identifiers}
 \item{n_actions}{Number of SPADL actions by this player in this match}
 \item{epv_total}{Total EPV = actor + receiver + duel_blame}
-\item{epv_offensive}{Offensive EPV = passing + shooting + dribbling}
+\item{epv_offensive}{Offensive EPV = passing + shooting + dribbling +
+aerial + keeping + receiver credit}
 \item{epv_defensive}{Defensive EPV = defending + duel_blame}
 \item{epv_as_actor, epv_as_receiver, epv_duel_blame}{Credit source breakdown}
-\item{epv_passing, epv_shooting, epv_dribbling, epv_defending}{Action type breakdown}
+\item{epv_passing}{Outfield passing + ball touches}
+\item{epv_shooting}{Shot credit (xG-weighted)}
+\item{epv_dribbling}{Ground take-on attempts}
+\item{epv_aerial}{Aerial duel credit (winner + / loser via duel_blame)}
+\item{epv_keeping}{Keeper pick-up, claim, punch (distribution/handling)}
+\item{epv_defending}{Tackles, interceptions, clearances, ball recoveries,
+keeper saves, fouls won, dispossessed events}
 \item{minutes_played}{Minutes played (if lineups provided)}
 \item{epv_p90, epv_offensive_p90, ...}{Per-90 rates (if lineups provided)}
 \item{epv_adj}{Position-centered EPV (if \code{position_center = TRUE})}

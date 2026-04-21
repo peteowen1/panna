@@ -190,22 +190,27 @@ adjust_epv_for_opponents <- function(player_match,
   data.table::setorder(team_match, opp_team_id, match_date)
   team_match[, match_date_num := as.numeric(as.Date(match_date))]
 
+  # Vectorised O(n) rolling profile via the cumsum trick.
+  #
+  # For causal weighted decay with weight_ij = exp(-lambda * (d_i - d_j)):
+  #   profile[i] = sum_{j<i} w_ij * r_j / (sum_{j<i} w_ij + prior_games)
+  # Let u_j = exp(lambda * (d_j - d_ref)) so w_ij = u_j / u_i. Then:
+  #   sum_{j<i} w_ij * r_j = (cumsum(u*r)[i-1]) / u_i
+  #   sum_{j<i} w_ij        = (cumsum(u)[i-1])    / u_i
+  # Cancel u_i:
+  #   profile[i] = cumsum(u*r)[i-1] / (cumsum(u)[i-1] + prior_games * u_i)
+  # First row is 0 (no prior history) — falls out of the formula since
+  # cumsum at i-1 is 0 for i=1 via the shift.
+  #
+  # d_ref = first date keeps exp() args bounded; the shift cancels in the ratio.
   .compute_rolling_profile <- function(sub_dt) {
     n <- nrow(sub_dt)
-    profile <- numeric(n)
-    for (i in seq_len(n)) {
-      if (i == 1L) {
-        profile[i] <- 0
-      } else {
-        prior <- sub_dt[1:(i - 1)]
-        days_since <- sub_dt$match_date_num[i] - prior$match_date_num
-        weights <- exp(-lambda_decay * days_since)
-        wt_sum <- sum(weights)
-        weighted_avg <- sum(weights * prior$residual) / wt_sum
-        profile[i] <- (wt_sum * weighted_avg) / (wt_sum + prior_games)
-      }
-    }
-    profile
+    if (n == 0L) return(numeric(0))
+    d_ref <- sub_dt$match_date_num[1L]
+    u <- exp(lambda_decay * (sub_dt$match_date_num - d_ref))
+    cs_u  <- c(0, cumsum(u)[seq_len(n - 1)])
+    cs_ur <- c(0, cumsum(u * sub_dt$residual)[seq_len(n - 1)])
+    cs_ur / (cs_u + prior_games * u)
   }
 
   team_match[, opp_profile := .compute_rolling_profile(.SD), by = opp_team_id]

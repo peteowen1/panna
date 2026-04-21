@@ -32,12 +32,17 @@ A data.table with one row per player per match:
 \describe{
 \item{player_id, player_name, team_id, match_id}{Identifiers}
 \item{minutes_played, position}{From lineups (if available)}
-\item{epv_total, epv_offensive, epv_defensive}{EPV components}
+\item{epv_total, epv_offensive, epv_defensive}{EPV components (raw)}
+\item{epv_total_adj, epv_offensive_adj, epv_defensive_adj}{EPV
+components after position centering. \code{epv_total_adj} also
+includes the opponent-strength adjustment.}
+\item{opp_adj}{Minutes-weighted opponent-strength adjustment (additive).}
 \item{epv_p90}{EPV per 90 minutes}
 \item{wpa_total, wpa_as_actor, wpa_as_receiver}{WPA components}
 \item{wpa_p90}{WPA per 90 minutes}
 \item{psv, osv, dsv}{Player Stat Value with O/D decomposition}
-\item{panna_value}{Combined: epv_weight * epv_total + psv_weight * psv}
+\item{panna_value}{Combined: \code{epv_weight * epv_total_adj +
+      psv_weight * psv} (falls back to \code{epv_total} if no adj columns).}
 \item{panna_value_p90}{Combined per 90 minutes}
 }
 }

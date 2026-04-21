@@ -1,14 +1,20 @@
 # 10b_export_game_logs.R
 # Export per-match player value metrics (EPV + WPA + PSV) for the blog
 #
-# Produces game_logs.parquet with one row per player per match for the
-# current season across blog leagues. Uploaded to blog-latest release
-# on peteowen1/pannadata for the blog to consume.
+# Produces game_logs_<season>.parquet — one parquet per season — uploaded to
+# the blog-latest release on peteowen1/pannadata. A mirror copy named
+# game_logs.parquet (= most recent season) is also produced/uploaded so the
+# blog workflow's download-by-name step keeps working unchanged.
 #
-# EPV: SPADL → EPV model → credit assignment → aggregate_player_game_epv()
-# WPA: SPADL → WP model → credit assignment → aggregate_player_game_wpa()
-# PSV: match stats → compute_player_psv()
-# Merged via build_player_game_ratings() → panna_value (50/50 EPV + PSV)
+# Default: current season only (weekly predictions pipeline). For historical
+# backfill, set `game_log_seasons <- c("2015-2016", ..., "2025-2026")` before
+# sourcing — see 10b_backfill_game_logs.R.
+#
+# Pipeline per season:
+#   EPV : SPADL → EPV model → credit assignment → aggregate_player_game_epv()
+#   WPA : SPADL → WP model  → credit assignment → aggregate_player_game_wpa()
+#   PSV : match stats → compute_player_psv()
+#   Merged via build_player_game_ratings() → panna_value (50/50 EPV + PSV)
 
 # 1. Configuration ----
 
@@ -17,25 +23,51 @@ if (!dir.exists(cache_dir)) dir.create(cache_dir, recursive = TRUE)
 repo <- "peteowen1/pannadata"
 tag <- "blog-latest"
 
-# Blog leagues (domestic only — no tournaments)
-blog_leagues <- c("ENG", "ESP", "GER", "ITA", "FRA", "NED", "POR", "SCO", "TUR", "ENG2")
+# Leagues to include in the per-match blog export. Three categories:
+#   (1) domestic       — iterate with the export season ("YYYY-YYYY")
+#   (2) continental    — UCL / UEL / UECL use "YYYY-YYYY" too
+#   (3) intl_tournament — WC / EURO use "YYYY Country"; map a summer
+#                         tournament to the domestic season ending that year.
+domestic_leagues  <- c("ENG", "ESP", "GER", "ITA", "FRA",
+                        "NED", "POR", "SCO", "TUR", "ENG2")
+continental_cups  <- c("UCL", "UEL", "UECL")
+intl_tournaments  <- c("WC", "EURO")
+blog_leagues      <- c(domestic_leagues, continental_cups, intl_tournaments)
 
-# Current season only
-if (!exists("game_log_season")) game_log_season <- "2025-2026"
+# Seasons to export. Vector (new) or scalar `game_log_season` (back-compat).
+if (!exists("game_log_seasons", inherits = FALSE)) {
+  if (exists("game_log_season", inherits = FALSE)) {
+    game_log_seasons <- game_log_season
+  } else {
+    game_log_seasons <- "2025-2026"
+  }
+}
+game_log_seasons <- as.character(game_log_seasons)
 
-output_path <- file.path(cache_dir, "game_logs.parquet")
+# The "current" season (most recent in the vector) is mirrored to
+# game_logs.parquet so the blog workflow's name-pinned download still works.
+current_season_alias <- sort(game_log_seasons, decreasing = TRUE)[1]
 
-# 2. Load models ----
+# Upload toggle — set FALSE during local dev to skip the GH release push.
+if (!exists("upload_game_logs", inherits = FALSE)) upload_game_logs <- TRUE
 
-message("\n=== Building Game Logs ===\n")
+# Build toggle — set FALSE to skip the per-season processing loop (e.g. when
+# parquets were already built in parallel workers and this invocation only
+# needs to do the alias + upload step in a single main-process pass).
+if (!exists("build_game_logs", inherits = FALSE)) build_game_logs <- TRUE
 
-epv_model <- load_epv_model()
+message(sprintf("\n=== Building Game Logs: %d season(s) ===", length(game_log_seasons)))
+message(sprintf("  Seasons: %s", paste(game_log_seasons, collapse = ", ")))
+message(sprintf("  Alias (game_logs.parquet) → %s", current_season_alias))
+
+# 2. Load shared resources (once across all seasons) ----
+
+epv_model   <- load_epv_model()
 xpass_model <- load_xpass_model()
-wp_model <- load_wp_model()
+wp_model    <- load_wp_model()
 
-# Load match stats for PSV (from skills pipeline cache)
 match_stats_path <- file.path("data-raw", "cache-skills", "01_match_stats.rds")
-has_match_stats <- file.exists(match_stats_path)
+has_match_stats  <- file.exists(match_stats_path)
 if (has_match_stats) {
   all_match_stats <- readRDS(match_stats_path)
   message(sprintf("  Loaded match stats: %d player-games", nrow(all_match_stats)))
@@ -43,10 +75,9 @@ if (has_match_stats) {
   message("  Note: No match stats cache — PSV will be unavailable")
 }
 
-# Load seasonal SPM for spm_overall column
+# Seasonal SPM (used for spm_overall enrichment, filtered per-season in loop)
 skill_ratings_path <- file.path("data-raw", "cache-skills", "06_seasonal_ratings.rds")
-raw_ratings_path <- file.path("data-raw", "cache-opta", "07_seasonal_ratings.rds")
-
+raw_ratings_path   <- file.path("data-raw", "cache-opta", "07_seasonal_ratings.rds")
 if (isTRUE(use_skill_ratings) && file.exists(skill_ratings_path)) {
   seasonal_results <- readRDS(skill_ratings_path)
 } else if (file.exists(raw_ratings_path)) {
@@ -54,18 +85,16 @@ if (isTRUE(use_skill_ratings) && file.exists(skill_ratings_path)) {
 } else {
   seasonal_results <- NULL
 }
-
-# Extract SPM lookup (player_id → spm_overall for current season)
-spm_lookup <- NULL
 if (!is.null(seasonal_results) && !is.null(seasonal_results$seasonal_spm)) {
-  spm_dt <- data.table::as.data.table(seasonal_results$seasonal_spm)
-  latest_year <- max(spm_dt$season_end_year, na.rm = TRUE)
-  spm_lookup <- spm_dt[season_end_year == latest_year, .(player_id, spm_overall = spm)]
-  spm_lookup <- spm_lookup[, .SD[1], by = player_id]
-  message(sprintf("  SPM lookup: %d players (season %d)", nrow(spm_lookup), latest_year))
+  all_spm_dt <- data.table::as.data.table(seasonal_results$seasonal_spm)
+  message(sprintf("  Seasonal SPM: %d player-seasons across %d years",
+                  nrow(all_spm_dt), length(unique(all_spm_dt$season_end_year))))
+} else {
+  all_spm_dt <- NULL
+  message("  Note: No seasonal SPM — spm_overall column will be NA")
 }
 
-# 3. Helper: build match results from events + lineups ----
+# 3. Helpers ----
 
 .build_match_results <- function(events, lineups) {
   dt_lineups <- data.table::as.data.table(lineups)
@@ -83,227 +112,323 @@ if (!is.null(seasonal_results) && !is.null(seasonal_results$seasonal_spm)) {
   as.data.frame(match_teams)
 }
 
-# 4. Process each league ----
+# season_str = "2025-2026"; returns integer season_end_year (2026) or NA
+.season_end_year <- function(season_str) {
+  m <- regmatches(season_str, regexpr("\\d{4}$", season_str))
+  if (length(m) == 0) NA_integer_ else as.integer(m)
+}
 
-all_game_logs <- list()
+# League-season resolution lives in panna::resolve_league_season() so 10b
+# and 10c_export_equity can share it. intl_tournaments list above controls
+# which leagues go through the tournament-year remapping.
 
-for (league in blog_leagues) {
-  tryCatch({
-    message(sprintf("\n  Processing %s %s...", league, game_log_season))
+# Process a single season: returns path to written parquet, or NULL on failure.
+.process_season <- function(season) {
+  message(sprintf("\n########## SEASON %s ##########", season))
+  all_game_logs <- list()
 
-    events <- load_opta_match_events(league, season = game_log_season)
-    lineups <- load_opta_lineups(league, season = game_log_season)
-
-    if (is.null(events) || nrow(events) < 100) {
-      message(sprintf("    Skipping %s — insufficient data", league))
-      next
-    }
-
-    n_matches <- length(unique(events$match_id))
-    message(sprintf("    %d matches, %d events", n_matches, nrow(events)))
-
-    # --- SPADL conversion (shared by EPV and WPA) ---
-    spadl <- convert_opta_to_spadl(events)
-    spadl_chains <- create_possession_chains(spadl)
-    chain_outcomes <- classify_chain_outcomes(spadl_chains)
-    chain_outcomes <- add_next_chain_outcome(chain_outcomes)
-    spadl_labeled <- label_actions_with_outcomes(spadl_chains, chain_outcomes)
-    spadl_labeled <- create_next_goal_labels(spadl_labeled)
-
-    # --- EPV path ---
-    # Features created internally by calculate_action_epv when feature_mode = "simple"
-    spadl_epv <- calculate_action_epv(spadl_labeled, features = NULL, epv_model,
-                                      league = league)
-    spadl_credit <- assign_epv_credit(spadl_epv, xpass_model)
-    player_game_epv <- aggregate_player_game_epv(spadl_credit, lineups)
-
-    # --- EPV adjustments (position centering + opponent) ---
+  for (league in blog_leagues) {
     tryCatch({
-      # Add match_date for opponent adjustment
-      dt_lu <- data.table::as.data.table(lineups)
-      if ("match_date" %in% names(dt_lu)) {
-        match_dates <- dt_lu[, .(match_date = match_date[1]), by = match_id]
-        player_game_epv <- merge(player_game_epv, match_dates, by = "match_id", all.x = TRUE)
+      league_season <- resolve_league_season(league, season,
+                                               tournament_leagues = intl_tournaments)
+      if (is.null(league_season)) {
+        message(sprintf("\n  Skipping %s %s — no tournament this year", league, season))
+        stop("__skip_league__")
+      }
+      label <- if (identical(league_season, season)) league else
+               sprintf("%s (%s)", league, league_season)
+      message(sprintf("\n  Processing %s %s...", label, season))
+
+      events  <- load_opta_match_events(league, season = league_season)
+      lineups <- load_opta_lineups(league, season = league_season)
+
+      if (is.null(events) || nrow(events) < 100) {
+        message(sprintf("    Skipping %s — insufficient data", league))
+        # Signal a skip via a tagged error caught by the outer handler.
+        # `return()` here would exit .process_season, aborting remaining leagues.
+        stop("__skip_league__")
       }
 
-      # Position centering
-      if ("position" %in% names(player_game_epv)) {
-        player_game_epv <- adjust_epv_for_position(
-          player_game_epv,
-          credit_cols = c("epv_total", "epv_offensive", "epv_defensive")
-        )
-      }
+      n_matches <- length(unique(events$match_id))
+      message(sprintf("    %d matches, %d events", n_matches, nrow(events)))
 
-      # Opponent adjustment
-      if (all(c("match_date", "team_id", "minutes_played") %in% names(player_game_epv))) {
-        player_game_epv <- adjust_epv_for_opponents(
-          player_game_epv, credit_col = "epv_total"
-        )
-      }
-    }, error = function(e) {
-      warning(sprintf("EPV adjustments skipped for %s: %s", league, e$message), call. = FALSE)
-    })
+      # --- SPADL conversion (shared by EPV and WPA). Cached on disk per
+      # league-season since it's the single biggest cost in this pipeline
+      # and deterministic given raw events. Use `league_season` in the key
+      # so tournament years (WC 2014 vs 2018) get separate cache entries.
+      spadl          <- get_or_build_spadl(events, league, league_season)
+      spadl_chains   <- create_possession_chains(spadl)
+      chain_outcomes <- classify_chain_outcomes(spadl_chains)
+      chain_outcomes <- add_next_chain_outcome(chain_outcomes)
+      spadl_labeled  <- label_actions_with_outcomes(spadl_chains, chain_outcomes)
+      spadl_labeled  <- create_next_goal_labels(spadl_labeled)
 
-    message(sprintf("    EPV: %d player-games", nrow(player_game_epv)))
+      # --- EPV path ---
+      spadl_epv        <- calculate_action_epv(spadl_labeled, features = NULL, epv_model,
+                                               league = league)
+      spadl_credit     <- assign_epv_credit(spadl_epv, xpass_model)
+      player_game_epv  <- aggregate_player_game_epv(spadl_credit, lineups)
 
-    # --- WPA path ---
-    has_wpa <- FALSE
-    player_game_wpa <- tryCatch({
-      match_results <- .build_match_results(events, lineups)
-      wp_feat <- create_wp_features(spadl_chains, match_results)
-      spadl_wpa <- add_wp_vars(wp_feat, wp_model)
-      spadl_wpa <- assign_wpa_credit(spadl_wpa)
-      pgw <- aggregate_player_game_wpa(spadl_wpa, lineups)
-      message(sprintf("    WPA: %d player-games", nrow(pgw)))
-      has_wpa <<- TRUE
-      pgw
-    }, error = function(e) {
-      warning(sprintf("WPA failed for %s: %s", league, e$message), call. = FALSE)
-      NULL
-    })
-
-    # --- PSV path ---
-    has_psv <- FALSE
-    player_game_psv <- NULL
-    if (has_match_stats) {
+      # EPV adjustments (position centering + opponent)
       tryCatch({
-        league_match_ids <- unique(events$match_id)
-        league_stats <- all_match_stats[all_match_stats$match_id %in% league_match_ids, ]
-        if (nrow(league_stats) > 0) {
-          player_game_psv <- compute_player_psv(league_stats, min_adjust = FALSE, center = TRUE)
-          message(sprintf("    PSV: %d player-games", nrow(player_game_psv)))
-          has_psv <- TRUE
+        dt_lu <- data.table::as.data.table(lineups)
+        if ("match_date" %in% names(dt_lu)) {
+          match_dates     <- dt_lu[, .(match_date = match_date[1]), by = match_id]
+          player_game_epv <- merge(player_game_epv, match_dates, by = "match_id", all.x = TRUE)
+        }
+        if ("position" %in% names(player_game_epv)) {
+          player_game_epv <- adjust_epv_for_position(
+            player_game_epv,
+            credit_cols = c("epv_total", "epv_offensive", "epv_defensive")
+          )
+        }
+        if (all(c("match_date", "team_id", "minutes_played") %in% names(player_game_epv))) {
+          player_game_epv <- adjust_epv_for_opponents(
+            player_game_epv, credit_col = "epv_total"
+          )
+        }
+        # Fold opponent adjustment into epv_total_adj so "adj" means
+        # position + opponent everywhere downstream. Offensive/defensive stay
+        # position-only — opp adj is computed at team-match level and not split
+        # across attack/defense. Expose the opp component separately as opp_adj.
+        player_game_epv <- data.table::as.data.table(player_game_epv)
+        if (all(c("epv_total_adj", "player_opp_adj") %in% names(player_game_epv))) {
+          player_game_epv[, epv_total_adj := epv_total_adj + player_opp_adj]
+          data.table::setnames(player_game_epv, "player_opp_adj", "opp_adj")
         }
       }, error = function(e) {
-        warning(sprintf("PSV failed for %s: %s", league, e$message), call. = FALSE)
+        warning(sprintf("EPV adjustments skipped for %s %s: %s",
+                        league, season, e$message), call. = FALSE)
       })
-    }
 
-    # --- Merge via build_player_game_ratings ---
-    game_ratings <- build_player_game_ratings(
-      player_game_epv = player_game_epv,
-      player_game_wpa = player_game_wpa,
-      player_game_psv = player_game_psv
-    )
+      message(sprintf("    EPV: %d player-games", nrow(player_game_epv)))
 
-    # --- Add match_date from lineups ---
-    dt_lineups <- data.table::as.data.table(lineups)
-    if ("match_date" %in% names(dt_lineups)) {
-      match_dates <- dt_lineups[, .(match_date = match_date[1]), by = match_id]
-      game_ratings <- merge(game_ratings, match_dates, by = "match_id", all.x = TRUE)
-    }
+      # --- WPA path ---
+      player_game_wpa <- tryCatch({
+        match_results <- .build_match_results(events, lineups)
+        wp_feat       <- create_wp_features(spadl_chains, match_results)
+        spadl_wpa     <- add_wp_vars(wp_feat, wp_model)
+        spadl_wpa     <- assign_wpa_credit(spadl_wpa)
+        pgw           <- aggregate_player_game_wpa(spadl_wpa, lineups)
+        message(sprintf("    WPA: %d player-games", nrow(pgw)))
+        pgw
+      }, error = function(e) {
+        warning(sprintf("WPA failed for %s %s: %s", league, season, e$message), call. = FALSE)
+        NULL
+      })
 
-    # --- Add league/season ---
-    game_ratings[, league := league]
-    game_ratings[, season := game_log_season]
+      # --- PSV path ---
+      player_game_psv <- NULL
+      if (has_match_stats) {
+        tryCatch({
+          league_match_ids <- unique(events$match_id)
+          league_stats <- all_match_stats[all_match_stats$match_id %in% league_match_ids, ]
+          if (nrow(league_stats) > 0) {
+            player_game_psv <- compute_player_psv(league_stats, min_adjust = FALSE, center = TRUE)
+            message(sprintf("    PSV: %d player-games", nrow(player_game_psv)))
+          }
+        }, error = function(e) {
+          warning(sprintf("PSV failed for %s %s: %s",
+                          league, season, e$message), call. = FALSE)
+        })
+      }
 
-    all_game_logs[[league]] <- game_ratings
-    message(sprintf("    Final: %d player-games", nrow(game_ratings)))
+      # --- Merge ---
+      game_ratings <- build_player_game_ratings(
+        player_game_epv = player_game_epv,
+        player_game_wpa = player_game_wpa,
+        player_game_psv = player_game_psv
+      )
 
-    # Free memory
-    rm(events, lineups, spadl, spadl_chains, chain_outcomes, spadl_labeled,
-       epv_features, spadl_epv, spadl_credit, player_game_epv,
-       player_game_wpa, player_game_psv, game_ratings)
-    gc(verbose = FALSE)
+      # match_date from lineups
+      dt_lineups <- data.table::as.data.table(lineups)
+      if ("match_date" %in% names(dt_lineups)) {
+        match_dates  <- dt_lineups[, .(match_date = match_date[1]), by = match_id]
+        game_ratings <- merge(game_ratings, match_dates, by = "match_id", all.x = TRUE)
+      }
 
-  }, error = function(e) {
-    # Only treat data-loading errors as "skip" — all others are real errors
-    is_data_error <- inherits(e, "panna_data_not_found") ||
-      grepl("^No data found for|^No .+ data available", e$message)
-    if (is_data_error) {
-      message(sprintf("    Skipping %s — data not available", league))
+      game_ratings[, league := league]
+      game_ratings[, season := season]
+
+      all_game_logs[[league]] <- game_ratings
+      message(sprintf("    Final: %d player-games", nrow(game_ratings)))
+
+      # Free memory between leagues
+      rm(events, lineups, spadl, spadl_chains, chain_outcomes, spadl_labeled,
+         spadl_epv, spadl_credit, player_game_epv,
+         player_game_wpa, player_game_psv, game_ratings)
+      gc(verbose = FALSE)
+
+    }, error = function(e) {
+      # Tagged skip from the "insufficient data" branch — already messaged.
+      if (identical(e$message, "__skip_league__")) return(invisible(NULL))
+
+      is_data_error <- inherits(e, "panna_data_not_found") ||
+        grepl("^No data found for|^No .+ data available", e$message)
+      if (is_data_error) {
+        message(sprintf("    Skipping %s %s — data not available", league, season))
+      } else {
+        warning(sprintf("ERROR processing %s %s: %s",
+                        league, season, e$message), call. = FALSE)
+      }
+    })
+  }
+
+  # --- Combine season output ---
+  if (length(all_game_logs) == 0) {
+    warning(sprintf("No game logs produced for season %s — skipping", season), call. = FALSE)
+    return(NULL)
+  }
+
+  game_logs <- data.table::rbindlist(all_game_logs, fill = TRUE)
+
+  n_leagues_ok <- length(all_game_logs)
+  if (n_leagues_ok < length(blog_leagues) / 2) {
+    warning(sprintf("Season %s: only %d/%d leagues produced game logs.",
+                    season, n_leagues_ok, length(blog_leagues)), call. = FALSE)
+  }
+
+  message(sprintf("\n  [%s] Combined: %d player-games across %d leagues",
+                  season, nrow(game_logs), n_leagues_ok))
+
+  # Rename columns to match blog expectations
+  data.table::setnames(
+    game_logs,
+    old = c("panna_value", "epv_offensive", "epv_defensive", "minutes_played"),
+    new = c("panna", "offense", "defense", "total_minutes"),
+    skip_absent = TRUE
+  )
+
+  # SPM lookup (for this season's end year)
+  if (!is.null(all_spm_dt)) {
+    sy <- .season_end_year(season)
+    spm_lookup <- all_spm_dt[season_end_year == sy, .(player_id, spm_overall = spm)]
+    spm_lookup <- spm_lookup[, .SD[1], by = player_id]
+    if (nrow(spm_lookup) > 0) {
+      game_logs <- merge(game_logs, spm_lookup, by = "player_id", all.x = TRUE)
+      na_spm <- sum(is.na(game_logs$spm_overall))
+      message(sprintf("  [%s] SPM joined: %d/%d have SPM (season_end_year=%s)",
+                      season, nrow(game_logs) - na_spm, nrow(game_logs), sy))
     } else {
-      warning(sprintf("ERROR processing %s: %s", league, e$message), call. = FALSE)
+      message(sprintf("  [%s] No SPM rows for season_end_year=%s — skipping join",
+                      season, sy))
     }
-  })
+  }
+
+  # Season-scoped panna percentile
+  player_totals <- game_logs[, .(total_panna = sum(panna, na.rm = TRUE)), by = player_id]
+  player_totals[, panna_percentile := round(100 * rank(total_panna, ties.method = "min") / .N, 1)]
+  game_logs <- merge(game_logs, player_totals[, .(player_id, panna_percentile)],
+                     by = "player_id", all.x = TRUE)
+
+  # Column selection/order
+  blog_cols <- intersect(
+    c("player_id", "player_name", "match_id", "match_date", "league", "season",
+      "team_id", "position", "total_minutes",
+      "panna", "offense", "defense", "spm_overall", "panna_percentile",
+      "epv_total", "epv_total_adj",
+      "epv_offensive_adj", "epv_defensive_adj", "opp_adj",
+      "epv_passing", "epv_shooting", "epv_dribbling", "epv_aerial",
+      "epv_keeping", "epv_defending",
+      "wpa_total", "wpa_as_actor", "wpa_as_receiver",
+      "psv", "osv", "dsv",
+      "panna_value_p90"),
+    names(game_logs)
+  )
+  game_logs <- game_logs[, ..blog_cols]
+
+  # Round numerics (except minutes)
+  num_cols   <- names(game_logs)[vapply(game_logs, is.numeric, logical(1))]
+  round_cols <- setdiff(num_cols, "total_minutes")
+  for (col in round_cols) {
+    data.table::set(game_logs, j = col, value = round(game_logs[[col]], 4))
+  }
+
+  data.table::setorder(game_logs, league, match_date, match_id, -panna)
+
+  out_path <- file.path(cache_dir, sprintf("game_logs_%s.parquet", season))
+  arrow::write_parquet(game_logs, out_path)
+  message(sprintf("  [%s] Written: %s (%.1f MB, %d rows × %d cols)",
+                  season, out_path,
+                  file.size(out_path) / (1024 * 1024),
+                  nrow(game_logs), ncol(game_logs)))
+
+  # Free memory between seasons
+  rm(game_logs, player_totals, all_game_logs)
+  gc(verbose = FALSE)
+
+  out_path
 }
 
-# 5. Combine and reshape for blog ----
+# 4. Process each season ----
 
-if (length(all_game_logs) == 0) {
-  stop("No game logs produced. Check that events/lineups are available for the current season.")
+season_paths <- list()
+if (isTRUE(build_game_logs)) {
+  for (s in game_log_seasons) {
+    p <- tryCatch(
+      .process_season(s),
+      error = function(e) {
+        warning(sprintf("Season %s aborted: %s", s, e$message), call. = FALSE)
+        NULL
+      }
+    )
+    if (!is.null(p)) season_paths[[s]] <- p
+  }
+} else {
+  # Upload-only mode: reconstruct season_paths from existing files so the
+  # alias + upload steps below have something to act on.
+  for (s in game_log_seasons) {
+    p <- file.path(cache_dir, sprintf("game_logs_%s.parquet", s))
+    if (file.exists(p)) season_paths[[s]] <- p
+  }
+  message(sprintf("Upload-only mode: %d existing season parquet(s) found",
+                  length(season_paths)))
 }
 
-game_logs <- data.table::rbindlist(all_game_logs, fill = TRUE)
-
-n_leagues_ok <- length(all_game_logs)
-if (n_leagues_ok < length(blog_leagues) / 2) {
-  warning(sprintf("Only %d/%d leagues produced game logs. Data may be incomplete.",
-                  n_leagues_ok, length(blog_leagues)), call. = FALSE)
+if (length(season_paths) == 0) {
+  stop("No seasons produced game logs. Check upstream data availability.")
 }
 
-message(sprintf("\n  Combined: %d player-games across %d leagues",
-                nrow(game_logs), n_leagues_ok))
+# 5. Mirror current-season alias → game_logs.parquet (blog-workflow compat) ----
 
-# Rename columns to match blog expectations
-# panna_value → panna, epv_offensive → offense, epv_defensive → defense
-# minutes_played → total_minutes
-data.table::setnames(game_logs, old = c("panna_value", "epv_offensive", "epv_defensive", "minutes_played"),
-                      new = c("panna", "offense", "defense", "total_minutes"),
-                      skip_absent = TRUE)
-
-# Join SPM lookup
-if (!is.null(spm_lookup)) {
-  game_logs <- merge(game_logs, spm_lookup, by = "player_id", all.x = TRUE)
-  na_spm <- sum(is.na(game_logs$spm_overall))
-  message(sprintf("  SPM joined: %d/%d have SPM", nrow(game_logs) - na_spm, nrow(game_logs)))
+alias_src  <- file.path(cache_dir, sprintf("game_logs_%s.parquet", current_season_alias))
+alias_path <- file.path(cache_dir, "game_logs.parquet")
+if (file.exists(alias_src)) {
+  file.copy(alias_src, alias_path, overwrite = TRUE)
+  message(sprintf("\n  Mirrored alias: %s → game_logs.parquet",
+                  basename(alias_src)))
 }
-
-# Compute panna_percentile (across all players in the season)
-player_totals <- game_logs[, .(total_panna = sum(panna, na.rm = TRUE)), by = player_id]
-player_totals[, panna_percentile := round(100 * rank(total_panna, ties.method = "min") / .N, 1)]
-game_logs <- merge(game_logs, player_totals[, .(player_id, panna_percentile)],
-                    by = "player_id", all.x = TRUE)
-
-# Select and order columns for blog
-blog_cols <- intersect(
-  c("player_id", "player_name", "match_id", "match_date", "league", "season",
-    "team_id", "position", "total_minutes",
-    "panna", "offense", "defense", "spm_overall", "panna_percentile",
-    "epv_total", "epv_passing", "epv_shooting", "epv_dribbling", "epv_defending",
-    "wpa_total", "wpa_as_actor", "wpa_as_receiver",
-    "psv", "osv", "dsv",
-    "panna_value_p90"),
-  names(game_logs)
-)
-game_logs <- game_logs[, ..blog_cols]
-
-# Round numeric columns
-num_cols <- names(game_logs)[vapply(game_logs, is.numeric, logical(1))]
-round_cols <- setdiff(num_cols, "total_minutes")
-for (col in round_cols) {
-  data.table::set(game_logs, j = col, value = round(game_logs[[col]], 4))
-}
-
-data.table::setorder(game_logs, league, match_date, match_id, -panna)
-
-message(sprintf("  Final game logs: %d rows, %d columns", nrow(game_logs), ncol(game_logs)))
-message(sprintf("  Leagues: %s", paste(unique(game_logs$league), collapse = ", ")))
-
-arrow::write_parquet(game_logs, output_path)
-message(sprintf("  Written: %s (%.1f MB)", output_path,
-                file.size(output_path) / (1024 * 1024)))
 
 # 6. Upload to GitHub Releases ----
 
-message("\n=== Uploading game logs to GitHub ===\n")
+if (isTRUE(upload_game_logs)) {
+  message("\n=== Uploading game logs to GitHub ===\n")
 
-gh_check <- tryCatch(
-  system2("gh", "--version", stdout = TRUE, stderr = TRUE),
-  error = function(e) NULL
-)
-if (is.null(gh_check)) {
-  stop("'gh' CLI is not installed or not on PATH.")
-}
+  gh_check <- tryCatch(
+    system2("gh", "--version", stdout = TRUE, stderr = TRUE),
+    error = function(e) NULL
+  )
+  if (is.null(gh_check)) {
+    stop("'gh' CLI is not installed or not on PATH.")
+  }
 
-message(sprintf("  Uploading to %s/%s...", repo, tag))
-result <- system2(
-  "gh", c("release", "upload", tag, shQuote(output_path),
-          "--repo", repo, "--clobber"),
-  stdout = TRUE, stderr = TRUE
-)
-if (!is.null(attr(result, "status")) && attr(result, "status") != 0) {
-  stop(sprintf("Failed to upload game_logs.parquet: %s", paste(result, collapse = "\n")))
+  files_to_upload <- unique(c(unlist(season_paths), alias_path))
+  files_to_upload <- files_to_upload[file.exists(files_to_upload)]
+
+  for (f in files_to_upload) {
+    message(sprintf("  Uploading %s...", basename(f)))
+    result <- system2(
+      "gh", c("release", "upload", tag, shQuote(f),
+              "--repo", repo, "--clobber"),
+      stdout = TRUE, stderr = TRUE
+    )
+    if (!is.null(attr(result, "status")) && attr(result, "status") != 0) {
+      stop(sprintf("Failed to upload %s: %s",
+                   basename(f), paste(result, collapse = "\n")))
+    }
+  }
+} else {
+  message("\n(upload_game_logs = FALSE — skipping GH release push)")
 }
 
 # 7. Summary ----
@@ -311,6 +436,11 @@ if (!is.null(attr(result, "status")) && attr(result, "status") != 0) {
 message("\n========================================")
 message("Game logs exported successfully!")
 message("========================================")
-message(sprintf("  %d player-games across %d leagues", nrow(game_logs), length(unique(game_logs$league))))
-message(sprintf("  Season: %s", game_log_season))
-message(sprintf("  Release: https://github.com/%s/releases/tag/%s", repo, tag))
+for (s in names(season_paths)) {
+  fi <- file.info(season_paths[[s]])
+  message(sprintf("  %s  %s  (%.1f MB)",
+                  s, season_paths[[s]], fi$size / (1024 * 1024)))
+}
+if (isTRUE(upload_game_logs)) {
+  message(sprintf("  Release: https://github.com/%s/releases/tag/%s", repo, tag))
+}

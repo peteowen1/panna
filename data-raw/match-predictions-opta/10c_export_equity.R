@@ -1,11 +1,20 @@
 # 10c_export_equity.R
 # Export per-action EPV credit (equity) for the blog match-events page
 #
-# Produces action_equity.parquet: a slim lookup table with one row per
-# SPADL action, keyed by match_id + original_event_id. The pannadata
-# chain builder joins this onto chain parquets as the `equity` column.
+# Produces action_equity_<season>.parquet — one parquet per season — with a
+# slim lookup of (match_id, event_id, equity) for every SPADL action. The
+# pannadata chain builder joins this onto chain parquets as the `equity`
+# column for per-action visualisation.
 #
-# Current season only to keep file size manageable.
+# Default: current season only (weekly predictions pipeline). For historical
+# backfill, set `equity_seasons <- c("2015-2016", ..., "2025-2026")` before
+# sourcing — see 10c_backfill_action_equity.R.
+#
+# Pipeline per season:
+#   events → SPADL (cached) → chains → EPV → credit → (match_id, event_id, equity)
+#
+# Cup competitions (UCL/UEL/UECL and WC/EURO where available) are included
+# via resolve_league_season(), matching 10b_export_game_logs.R.
 
 # 1. Configuration ----
 
@@ -14,116 +23,212 @@ if (!dir.exists(cache_dir)) dir.create(cache_dir, recursive = TRUE)
 repo <- "peteowen1/pannadata"
 tag <- "blog-latest"
 
-blog_leagues <- c("ENG", "ESP", "GER", "ITA", "FRA", "NED", "POR", "SCO", "TUR", "ENG2")
+domestic_leagues  <- c("ENG", "ESP", "GER", "ITA", "FRA",
+                        "NED", "POR", "SCO", "TUR", "ENG2")
+continental_cups  <- c("UCL", "UEL", "UECL")
+intl_tournaments  <- c("WC", "EURO")
+blog_leagues      <- c(domestic_leagues, continental_cups, intl_tournaments)
 
-if (!exists("game_log_season")) game_log_season <- "2025-2026"
+# Seasons to export. Vector (new) or scalar `game_log_season` (back-compat
+# with the previous single-season behavior).
+if (!exists("equity_seasons", inherits = FALSE)) {
+  if (exists("game_log_season", inherits = FALSE)) {
+    equity_seasons <- game_log_season
+  } else {
+    equity_seasons <- "2025-2026"
+  }
+}
+equity_seasons <- as.character(equity_seasons)
 
-output_path <- file.path(cache_dir, "action_equity.parquet")
+# The "current" season is mirrored to action_equity.parquet so the blog
+# chain builder's name-pinned download keeps working unchanged.
+current_season_alias <- sort(equity_seasons, decreasing = TRUE)[1]
 
-# 2. Load models ----
+# Upload toggle
+if (!exists("upload_equity", inherits = FALSE)) upload_equity <- TRUE
 
-message("\n=== Building Action Equity ===\n")
+# Build toggle — FALSE = skip per-season build, just do alias+upload
+if (!exists("build_equity", inherits = FALSE)) build_equity <- TRUE
 
-epv_model <- load_epv_model()
+message(sprintf("\n=== Building Action Equity: %d season(s) ===",
+                length(equity_seasons)))
+message(sprintf("  Seasons: %s", paste(equity_seasons, collapse = ", ")))
+message(sprintf("  Alias (action_equity.parquet) → %s", current_season_alias))
+
+# 2. Load models (once across all seasons) ----
+
+epv_model   <- load_epv_model()
 xpass_model <- load_xpass_model()
 
-# 3. Process each league ----
+# 3. Per-season processing ----
 
-all_equity <- list()
+.process_equity_season <- function(season) {
+  message(sprintf("\n########## EQUITY %s ##########", season))
+  season_equity <- list()
 
-for (league in blog_leagues) {
-  tryCatch({
-    message(sprintf("  Processing %s %s...", league, game_log_season))
+  for (league in blog_leagues) {
+    tryCatch({
+      league_season <- resolve_league_season(league, season,
+                                              tournament_leagues = intl_tournaments)
+      if (is.null(league_season)) {
+        message(sprintf("  Skipping %s %s — no tournament this year", league, season))
+        stop("__skip_league__")
+      }
+      label <- if (identical(league_season, season)) league else
+               sprintf("%s (%s)", league, league_season)
+      message(sprintf("  Processing %s %s...", label, season))
 
-    events <- load_opta_match_events(league, season = game_log_season)
+      events <- load_opta_match_events(league, season = league_season)
+      if (is.null(events) || nrow(events) < 100) {
+        message(sprintf("    Skipping %s — insufficient data", league))
+        stop("__skip_league__")
+      }
 
-    if (is.null(events) || nrow(events) < 100) {
-      message(sprintf("    Skipping %s — insufficient data", league))
-      next
+      n_matches <- length(unique(events$match_id))
+
+      # SPADL from shared disk cache (populated by 10b, xMetrics, etc).
+      # Cache key uses `league_season` so WC 2014 and WC 2018 don't collide.
+      spadl <- get_or_build_spadl(events, league, league_season)
+      spadl_chains   <- create_possession_chains(spadl)
+      chain_outcomes <- classify_chain_outcomes(spadl_chains)
+      chain_outcomes <- add_next_chain_outcome(chain_outcomes)
+      spadl_labeled  <- label_actions_with_outcomes(spadl_chains, chain_outcomes)
+      spadl_labeled  <- create_next_goal_labels(spadl_labeled)
+
+      # EPV credit — features built internally by calculate_action_epv.
+      spadl_epv    <- calculate_action_epv(spadl_labeled, features = NULL,
+                                           epv_model, league = league)
+      spadl_credit <- assign_epv_credit(spadl_epv, xpass_model)
+
+      # Slim equity lookup — drop rows without an original_event_id
+      # (synthetic SPADL actions like merged duels).
+      dt <- data.table::as.data.table(spadl_credit)
+      equity <- dt[, .(
+        match_id = match_id,
+        event_id = original_event_id,
+        equity   = round(player_credit, 4)
+      )]
+      equity <- equity[!is.na(event_id) & event_id != ""]
+
+      season_equity[[league]] <- equity
+      message(sprintf("    %d matches, %d actions with equity",
+                      n_matches, nrow(equity)))
+
+      rm(events, spadl, spadl_chains, chain_outcomes, spadl_labeled,
+         spadl_epv, spadl_credit, dt, equity)
+      gc(verbose = FALSE)
+
+    }, error = function(e) {
+      if (identical(e$message, "__skip_league__")) return(invisible(NULL))
+      # Tight match on typed errors + explicit data-absence phrasings.
+      # Generic "not found" is too broad — it matches unrelated column lookup
+      # bugs, silently swallowing real errors as if they were missing data.
+      is_data_error <- inherits(e, "panna_data_not_found") ||
+        grepl("^No data found for|^No .+ data available", e$message)
+      if (is_data_error) {
+        message(sprintf("    Skipping %s %s — data not available", league, season))
+      } else {
+        # Print to stderr immediately so errors surface in real time rather
+        # than being deferred as warnings until script end.
+        message(sprintf("    ERROR %s %s: %s", league, season, e$message))
+        warning(sprintf("ERROR processing %s %s: %s", league, season, e$message),
+                call. = FALSE)
+      }
+    })
+  }
+
+  if (length(season_equity) == 0) {
+    warning(sprintf("No equity data produced for season %s — skipping", season),
+            call. = FALSE)
+    return(NULL)
+  }
+
+  action_equity <- data.table::rbindlist(season_equity, fill = TRUE)
+  message(sprintf("\n  [%s] Combined: %d actions across %d leagues",
+                  season, nrow(action_equity), length(season_equity)))
+
+  out_path <- file.path(cache_dir, sprintf("action_equity_%s.parquet", season))
+  arrow::write_parquet(action_equity, out_path)
+  message(sprintf("  [%s] Written: %s (%.1f MB)",
+                  season, out_path, file.size(out_path) / (1024 * 1024)))
+
+  rm(action_equity, season_equity); gc(verbose = FALSE)
+  out_path
+}
+
+# 4. Process each season ----
+
+season_paths <- list()
+if (isTRUE(build_equity)) {
+  for (s in equity_seasons) {
+    p <- tryCatch(.process_equity_season(s), error = function(e) {
+      warning(sprintf("Equity season %s aborted: %s", s, e$message), call. = FALSE)
+      NULL
+    })
+    if (!is.null(p)) season_paths[[s]] <- p
+  }
+} else {
+  # Upload-only mode: reconstruct paths from existing files.
+  for (s in equity_seasons) {
+    p <- file.path(cache_dir, sprintf("action_equity_%s.parquet", s))
+    if (file.exists(p)) season_paths[[s]] <- p
+  }
+  message(sprintf("Upload-only mode: %d existing equity parquet(s) found",
+                  length(season_paths)))
+}
+
+if (length(season_paths) == 0) {
+  stop("No equity data produced. Check that events are available.")
+}
+
+# 5. Mirror current-season alias → action_equity.parquet ----
+
+alias_src  <- file.path(cache_dir, sprintf("action_equity_%s.parquet", current_season_alias))
+alias_path <- file.path(cache_dir, "action_equity.parquet")
+if (file.exists(alias_src)) {
+  file.copy(alias_src, alias_path, overwrite = TRUE)
+  message(sprintf("\n  Mirrored alias: %s → action_equity.parquet",
+                  basename(alias_src)))
+}
+
+# 6. Upload to GitHub Releases ----
+
+if (isTRUE(upload_equity)) {
+  message("\n=== Uploading equity to GitHub ===\n")
+
+  gh_check <- tryCatch(
+    system2("gh", "--version", stdout = TRUE, stderr = TRUE),
+    error = function(e) NULL
+  )
+  if (is.null(gh_check)) {
+    stop("'gh' CLI is not installed or not on PATH.")
+  }
+
+  files_to_upload <- unique(c(unlist(season_paths), alias_path))
+  files_to_upload <- files_to_upload[file.exists(files_to_upload)]
+
+  for (f in files_to_upload) {
+    message(sprintf("  Uploading %s...", basename(f)))
+    result <- system2("gh", c("release", "upload", tag, shQuote(f),
+                               "--repo", repo, "--clobber"),
+                      stdout = TRUE, stderr = TRUE)
+    if (!is.null(attr(result, "status")) && attr(result, "status") != 0) {
+      stop(sprintf("Failed to upload %s: %s", basename(f),
+                   paste(result, collapse = "\n")))
     }
-
-    n_matches <- length(unique(events$match_id))
-
-    # SPADL conversion (now includes original_event_id)
-    spadl <- convert_opta_to_spadl(events)
-    spadl_chains <- create_possession_chains(spadl)
-    chain_outcomes <- classify_chain_outcomes(spadl_chains)
-    chain_outcomes <- add_next_chain_outcome(chain_outcomes)
-    spadl_labeled <- label_actions_with_outcomes(spadl_chains, chain_outcomes)
-    spadl_labeled <- create_next_goal_labels(spadl_labeled)
-
-    # EPV credit assignment (features created internally for simple model)
-    spadl_epv <- calculate_action_epv(spadl_labeled, features = NULL, epv_model,
-                                      league = league)
-    spadl_credit <- assign_epv_credit(spadl_epv, xpass_model)
-
-    # Extract slim equity lookup: match_id + original_event_id + player_credit
-    dt <- data.table::as.data.table(spadl_credit)
-    equity <- dt[, .(
-      match_id = match_id,
-      event_id = original_event_id,
-      equity = round(player_credit, 4)
-    )]
-    # Drop rows where event_id is NA (synthetic SPADL actions)
-    equity <- equity[!is.na(event_id) & event_id != ""]
-
-    all_equity[[league]] <- equity
-    message(sprintf("    %d matches, %d actions with equity", n_matches, nrow(equity)))
-
-    rm(events, spadl, spadl_chains, chain_outcomes, spadl_labeled,
-       epv_features, spadl_epv, spadl_credit, dt, equity)
-    gc(verbose = FALSE)
-
-  }, error = function(e) {
-    if (!grepl("not found|No data|does not exist", e$message)) {
-      message(sprintf("    ERROR %s: %s", league, e$message))
-    } else {
-      message(sprintf("    Skipping %s — data not available", league))
-    }
-  })
+  }
 }
 
-# 4. Combine and write ----
-
-if (length(all_equity) == 0) {
-  stop("No equity data produced. Check that events are available for the current season.")
-}
-
-action_equity <- data.table::rbindlist(all_equity)
-message(sprintf("\n  Combined: %d actions across %d leagues",
-                nrow(action_equity), length(all_equity)))
-
-arrow::write_parquet(action_equity, output_path)
-message(sprintf("  Written: %s (%.1f MB)", output_path,
-                file.size(output_path) / (1024 * 1024)))
-
-# 5. Upload to GitHub Releases ----
-
-message("\n=== Uploading equity to GitHub ===\n")
-
-gh_check <- tryCatch(
-  system2("gh", "--version", stdout = TRUE, stderr = TRUE),
-  error = function(e) NULL
-)
-if (is.null(gh_check)) {
-  stop("'gh' CLI is not installed or not on PATH.")
-}
-
-message(sprintf("  Uploading to %s/%s...", repo, tag))
-result <- system2(
-  "gh", c("release", "upload", tag, shQuote(output_path),
-          "--repo", repo, "--clobber"),
-  stdout = TRUE, stderr = TRUE
-)
-if (!is.null(attr(result, "status")) && attr(result, "status") != 0) {
-  stop(sprintf("Failed to upload action_equity.parquet: %s", paste(result, collapse = "\n")))
-}
-
-# 6. Summary ----
+# 7. Summary ----
 
 message("\n========================================")
 message("Action equity exported successfully!")
 message("========================================")
-message(sprintf("  %d actions across %d leagues", nrow(action_equity), length(all_equity)))
-message(sprintf("  Season: %s", game_log_season))
-message(sprintf("  Release: https://github.com/%s/releases/tag/%s", repo, tag))
+for (s in names(season_paths)) {
+  fi <- file.info(season_paths[[s]])
+  message(sprintf("  %s  %s  (%.1f MB)",
+                  s, season_paths[[s]], fi$size / (1024 * 1024)))
+}
+if (isTRUE(upload_equity)) {
+  message(sprintf("  Release: https://github.com/%s/releases/tag/%s", repo, tag))
+}

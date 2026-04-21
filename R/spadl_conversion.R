@@ -165,6 +165,55 @@ OPTA_NON_GAMEPLAY_TYPES <- c(
 )
 
 
+#' Get or Build SPADL (with disk cache)
+#'
+#' Thin wrapper over \code{convert_opta_to_spadl()} that caches the result
+#' on disk, keyed by \code{league} and \code{season}. SPADL conversion is the
+#' single most expensive step in downstream EPV pipelines (~25% of total
+#' runtime per league-season) and is fully deterministic given raw events, so
+#' caching yields a large win on repeat runs and backfills.
+#'
+#' @param events Raw Opta events from \code{load_opta_match_events()}.
+#' @param league League code (e.g. "ENG"). Used only to build the cache key.
+#' @param season Season string (e.g. "2024-2025"). Used only to build the cache key.
+#' @param cache_dir Directory to read/write the cached \code{.rds}. Defaults to
+#'   \code{SPADL_CACHE_DIR} so all pipelines share one cache.
+#' @param force_rebuild If \code{TRUE}, rebuild and overwrite the cache.
+#'
+#' @return Data frame in SPADL format, identical to \code{convert_opta_to_spadl()}.
+#' @export
+get_or_build_spadl <- function(events, league, season,
+                                cache_dir = SPADL_CACHE_DIR,
+                                force_rebuild = FALSE) {
+  if (!dir.exists(cache_dir)) dir.create(cache_dir, recursive = TRUE)
+  cache_path <- file.path(cache_dir,
+                           sprintf("spadl_%s_%s.rds", league, season))
+
+  if (!force_rebuild && file.exists(cache_path)) {
+    spadl <- readRDS(cache_path)
+    # Schema sanity — downstream pipelines (equity export) assume certain
+    # columns exist. If the cache predates a schema addition, rebuild rather
+    # than silently returning a stale snapshot.
+    required_cols <- c("match_id", "action_id", "original_event_id",
+                       "player_id", "action_type", "start_x", "start_y",
+                       "result")
+    missing_cols <- setdiff(required_cols, names(spadl))
+    if (length(missing_cols) == 0) {
+      # Coverage sanity — cache must cover all requested match_ids.
+      wanted <- unique(events$match_id)
+      if (length(setdiff(wanted, unique(spadl$match_id))) == 0) {
+        return(spadl)
+      }
+    }
+    # Stale, partial, or schema-outdated — rebuild.
+  }
+
+  spadl <- convert_opta_to_spadl(events)
+  saveRDS(spadl, cache_path)
+  spadl
+}
+
+
 #' Convert Opta Match Events to SPADL Format
 #'
 #' Transforms Opta event data into a standardized SPADL-like format suitable

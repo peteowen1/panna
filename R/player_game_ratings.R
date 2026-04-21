@@ -26,12 +26,17 @@
 #'   \describe{
 #'     \item{player_id, player_name, team_id, match_id}{Identifiers}
 #'     \item{minutes_played, position}{From lineups (if available)}
-#'     \item{epv_total, epv_offensive, epv_defensive}{EPV components}
+#'     \item{epv_total, epv_offensive, epv_defensive}{EPV components (raw)}
+#'     \item{epv_total_adj, epv_offensive_adj, epv_defensive_adj}{EPV
+#'       components after position centering. \code{epv_total_adj} also
+#'       includes the opponent-strength adjustment.}
+#'     \item{opp_adj}{Minutes-weighted opponent-strength adjustment (additive).}
 #'     \item{epv_p90}{EPV per 90 minutes}
 #'     \item{wpa_total, wpa_as_actor, wpa_as_receiver}{WPA components}
 #'     \item{wpa_p90}{WPA per 90 minutes}
 #'     \item{psv, osv, dsv}{Player Stat Value with O/D decomposition}
-#'     \item{panna_value}{Combined: epv_weight * epv_total + psv_weight * psv}
+#'     \item{panna_value}{Combined: \code{epv_weight * epv_total_adj +
+#'       psv_weight * psv} (falls back to \code{epv_total} if no adj columns).}
 #'     \item{panna_value_p90}{Combined per 90 minutes}
 #'   }
 #'
@@ -43,12 +48,15 @@ build_player_game_ratings <- function(player_game_epv,
                                        psv_weight = PANNA_PSR_WEIGHT) {
   result <- data.table::as.data.table(player_game_epv)
 
-  # Select core EPV columns
+  # Select core EPV columns. Adjusted variants (position + opponent) are
+  # carried through when present so panna_value can prefer them over raw EPV.
   epv_cols <- intersect(
     c("player_id", "player_name", "team_id", "match_id",
       "minutes_played", "position", "n_actions",
       "epv_total", "epv_offensive", "epv_defensive",
-      "epv_passing", "epv_shooting", "epv_dribbling", "epv_defending",
+      "epv_total_adj", "epv_offensive_adj", "epv_defensive_adj", "opp_adj",
+      "epv_passing", "epv_shooting", "epv_dribbling", "epv_aerial",
+      "epv_keeping", "epv_defending",
       "epv_as_actor", "epv_as_receiver", "epv_duel_blame",
       "epv_total_p90", "epv_offensive_p90", "epv_defensive_p90",
       "epv_adj"),
@@ -92,7 +100,14 @@ build_player_game_ratings <- function(player_game_epv,
   }
 
   # --- Combined panna_value ---
-  epv_val <- if ("epv_total" %in% names(result)) result$epv_total else 0
+  # Prefer fully-adjusted EPV (position-centered + opponent-adjusted) when
+  # available. Falls back to raw epv_total if adjustments weren't applied
+  # upstream (e.g. missing position or match_date).
+  epv_val <- if ("epv_total_adj" %in% names(result)) {
+    data.table::fifelse(is.na(result$epv_total_adj), 0, result$epv_total_adj)
+  } else if ("epv_total" %in% names(result)) {
+    result$epv_total
+  } else 0
   psv_val <- if ("psv" %in% names(result)) {
     data.table::fifelse(is.na(result$psv), 0, result$psv)
   } else 0
