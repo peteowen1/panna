@@ -1342,10 +1342,17 @@ calculate_action_type_epv <- function(spadl_with_epv) {
 #'     \item{player_id, player_name, team_id, match_id}{Identifiers}
 #'     \item{n_actions}{Number of SPADL actions by this player in this match}
 #'     \item{epv_total}{Total EPV = actor + receiver + duel_blame}
-#'     \item{epv_offensive}{Offensive EPV = passing + shooting + dribbling}
+#'     \item{epv_offensive}{Offensive EPV = passing + shooting + dribbling +
+#'       aerial + keeping + receiver credit}
 #'     \item{epv_defensive}{Defensive EPV = defending + duel_blame}
 #'     \item{epv_as_actor, epv_as_receiver, epv_duel_blame}{Credit source breakdown}
-#'     \item{epv_passing, epv_shooting, epv_dribbling, epv_defending}{Action type breakdown}
+#'     \item{epv_passing}{Outfield passing + ball touches}
+#'     \item{epv_shooting}{Shot credit (xG-weighted)}
+#'     \item{epv_dribbling}{Ground take-on attempts}
+#'     \item{epv_aerial}{Aerial duel credit (winner + / loser via duel_blame)}
+#'     \item{epv_keeping}{Keeper pick-up, claim, punch (distribution/handling)}
+#'     \item{epv_defending}{Tackles, interceptions, clearances, ball recoveries,
+#'       keeper saves, fouls won, dispossessed events}
 #'     \item{minutes_played}{Minutes played (if lineups provided)}
 #'     \item{epv_p90, epv_offensive_p90, ...}{Per-90 rates (if lineups provided)}
 #'     \item{epv_adj}{Position-centered EPV (if \code{position_center = TRUE})}
@@ -1429,10 +1436,17 @@ aggregate_player_game_epv <- function(spadl_with_epv, lineups = NULL,
                 else if ("epv_delta" %in% names(dt)) "epv_delta"
                 else "epv"
 
+  # Action-type buckets. Keeper handling (pick-up/claim/punch) and aerial duels
+  # are split into their own components so `epv_passing` means outfield passing
+  # and `epv_dribbling` means ground take-ons — without this split, GKs
+  # dominated `epv_passing` and target strikers dominated `epv_dribbling` via
+  # aerial wins. Keeper saves stay in `epv_defending` (they suppress opponent EPV).
   action_types <- list(
-    epv_passing   = c("pass", "ball_touch", "keeper_pick_up", "keeper_claim", "keeper_punch"),
+    epv_passing   = c("pass", "ball_touch"),
     epv_shooting  = "shot",
-    epv_dribbling = c("take_on", "aerial"),
+    epv_dribbling = "take_on",
+    epv_aerial    = "aerial",
+    epv_keeping   = c("keeper_pick_up", "keeper_claim", "keeper_punch"),
     epv_defending = c("tackle", "interception", "clearance", "ball_recovery",
                       "keeper_save", "foul", "dispossessed")
   )
@@ -1447,9 +1461,13 @@ aggregate_player_game_epv <- function(spadl_with_epv, lineups = NULL,
     player_epv[is.na(get(col_name)), (col_name) := 0]
   }
 
-  # Offensive = passing + shooting + dribbling + receiver credit; Defensive = defending + duel_blame
+  # Offensive = passing + shooting + dribbling + aerial + keeping + receiver.
+  # Keeper and aerial credits stay in offense so the total is identical to the
+  # pre-split definition — only the breakdown is now more granular.
+  # Defensive = defending + duel_blame (unchanged).
   player_epv[, `:=`(
-    epv_offensive = epv_passing + epv_shooting + epv_dribbling + epv_as_receiver,
+    epv_offensive = epv_passing + epv_shooting + epv_dribbling + epv_aerial +
+                    epv_keeping + epv_as_receiver,
     epv_defensive = epv_defending + epv_duel_blame
   )]
 
