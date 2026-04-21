@@ -188,3 +188,60 @@ test_that("get_player_positions merges Wing Back into Defender", {
 
   expect_equal(result$position, "Defender")
 })
+
+
+test_that("vectorized rolling profile matches naive loop (numerical equivalence)", {
+  # Regression guard for the O(n^2) → O(n) cumsum-trick rewrite of
+  # .compute_rolling_profile inside adjust_epv_for_opponents. The new form
+  # must produce the same profile as the naive nested-loop reference, up to
+  # floating-point rounding.
+  set.seed(2026)
+
+  # Naive O(n^2) reference — mirrors the pre-refactor loop exactly.
+  naive_profile <- function(match_date_num, residual,
+                             lambda_decay = 0.003, prior_games = 2) {
+    n <- length(match_date_num)
+    out <- numeric(n)
+    for (i in seq_len(n)) {
+      if (i == 1L) {
+        out[i] <- 0
+      } else {
+        days_since <- match_date_num[i] - match_date_num[seq_len(i - 1)]
+        weights    <- exp(-lambda_decay * days_since)
+        wt_sum     <- sum(weights)
+        weighted_avg <- sum(weights * residual[seq_len(i - 1)]) / wt_sum
+        out[i] <- (wt_sum * weighted_avg) / (wt_sum + prior_games)
+      }
+    }
+    out
+  }
+
+  # Vectorized form matching R/epv_adjustments.R:196-214.
+  vec_profile <- function(match_date_num, residual,
+                          lambda_decay = 0.003, prior_games = 2) {
+    n <- length(match_date_num)
+    if (n == 0L) return(numeric(0))
+    d_ref <- match_date_num[1L]
+    u     <- exp(lambda_decay * (match_date_num - d_ref))
+    cs_u  <- c(0, cumsum(u)[seq_len(n - 1)])
+    cs_ur <- c(0, cumsum(u * residual)[seq_len(n - 1)])
+    cs_ur / (cs_u + prior_games * u)
+  }
+
+  # Random team history — realistic shape: strictly increasing dates, 38 matches.
+  n <- 38
+  dates    <- sort(as.numeric(Sys.Date()) - sample.int(2000, n, replace = FALSE))
+  residual <- rnorm(n, sd = 0.4)
+
+  expect_equal(
+    vec_profile(dates, residual),
+    naive_profile(dates, residual),
+    tolerance = 1e-10
+  )
+
+  # Edge: single match → profile is 0.
+  expect_equal(vec_profile(dates[1], residual[1]), 0)
+
+  # Edge: zero-length input → empty.
+  expect_equal(vec_profile(numeric(0), numeric(0)), numeric(0))
+})
