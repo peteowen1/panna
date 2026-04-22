@@ -276,6 +276,69 @@ if (!file.exists(fixture_results_path)) {
                     nrow(totals)))
   }
 
+  # Per-team schedule completeness — catches upstream Opta-scraper gaps that
+  # the prior invariants (which only validate aggregation arithmetic) can't
+  # see. A team with 37 fixtures in a 38-match league means the scraper lost
+  # a match somewhere (e.g., Opta API pagination cap — see pannadata scraper
+  # date-window logic). The sim then projects over the wrong number of
+  # remaining games, producing "current + projected" totals that can't match
+  # a fully-played season.
+  #
+  # Only applied to current-season domestic leagues with a fixed per-team
+  # match count. UEFA cups (UCL/UEL/UECL) have variable per-team totals
+  # (Swiss league phase + knockout path), so we skip them here.
+  # Expected matches per team = 2 × (n_teams − 1) for a double round-robin,
+  # with special cases for leagues that use a split format.
+  #   SCO: 12 teams × 3 round-robins (33) + 5 post-split matches = 38
+  LEAGUE_EXPECTED_MATCHES_PER_TEAM <- list(
+    ENG = 38L, ENG2 = 46L, ESP = 38L, FRA = 34L, GER = 34L,
+    ITA = 38L, NED = 34L, POR = 34L, SCO = 38L, TUR = 34L
+  )
+
+  current_fixtures_all <- fixture_results
+  if ("season" %in% names(current_fixtures_all)) {
+    current_fixtures_all <- current_fixtures_all %>% filter(season == latest)
+  } else if ("season_end_year" %in% names(current_fixtures_all)) {
+    current_fixtures_all <- current_fixtures_all %>% filter(season_end_year == latest)
+  }
+
+  team_totals <- bind_rows(
+    current_fixtures_all %>%
+      filter(league %in% names(LEAGUE_EXPECTED_MATCHES_PER_TEAM)) %>%
+      select(league, team = home_team),
+    current_fixtures_all %>%
+      filter(league %in% names(LEAGUE_EXPECTED_MATCHES_PER_TEAM)) %>%
+      select(league, team = away_team)
+  ) %>%
+    filter(!is.na(team), team != "") %>%
+    count(league, team, name = "total_fixtures") %>%
+    mutate(expected = vapply(league,
+                             function(l) LEAGUE_EXPECTED_MATCHES_PER_TEAM[[l]],
+                             integer(1)),
+           diff = total_fixtures - expected)
+
+  schedule_gaps <- team_totals %>% filter(diff != 0L)
+  if (nrow(schedule_gaps) > 0) {
+    # Warn, don't block. Root cause is an UPSTREAM data gap (Opta scraper
+    # missing fixtures) — panna can't fix it, only surface it. The sim still
+    # runs against what fixtures exist, producing projections over the wrong
+    # number of remaining games for affected teams. Blog will publish with
+    # the gap flagged. Hard-fail would cause all domestic leagues to go dark
+    # over a transient scraper issue in one league.
+    message(sprintf("  SCHEDULE GAP — %d team(s) have wrong total fixtures (played + upcoming):",
+                    nrow(schedule_gaps)))
+    for (i in seq_len(nrow(schedule_gaps))) {
+      r <- schedule_gaps[i, ]
+      message(sprintf("    %s %s: %d fixtures (expected %d, diff %+d)",
+                      r$league, r$team, r$total_fixtures, r$expected, r$diff))
+    }
+    warning(sprintf("%d team(s) have incomplete fixture lists — likely an upstream Opta scraper gap (see pannadata scripts/opta/scrape_opta.py date windows). Sim projections for affected teams will be over the wrong number of remaining games. Investigate before relying on these projections.",
+                    nrow(schedule_gaps)), call. = FALSE, immediate. = TRUE)
+  } else if (nrow(team_totals) > 0) {
+    message(sprintf("  Schedule completeness OK across %d teams in %d domestic leagues (all equal expected)",
+                    nrow(team_totals), length(unique(team_totals$league))))
+  }
+
   arrow::write_parquet(season_standings, standings_output)
   message(sprintf("  Written: %s", standings_output))
   standings_ok <- TRUE
