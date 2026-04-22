@@ -225,17 +225,16 @@ if (!file.exists(fixture_results_path)) {
   message(sprintf("  Teams with standings: %d across %d leagues",
                   nrow(season_standings), length(unique(season_standings$league))))
 
-  # Self-consistency invariants — cheaper than a cross-provider API check and
-  # catches the silent-regression scenarios we actually care about (aggregation
-  # bugs, double-counting, sign flips in pts formula). These invariants hold
-  # by arithmetic regardless of data provider, so a violation is a code bug in
-  # step 10's aggregation, not a data-freshness issue.
+  # Self-consistency invariants on the aggregation. Pure arithmetic on the
+  # same inputs step 10 already filtered; a violation means step 10's grouping
+  # or summation has a bug. Provider drift (stale Opta, FD.org disagreement)
+  # cannot trip these — only panna's own code can.
   #
-  # - sum(games_played) == 2 * n_matches per league (each match contributes to
-  #   exactly two teams' gp).
-  # - sum(gd) == 0 per league (one team's +X is another team's −X).
-  # - sum(points) == 2*n_draws + 3*n_decisives per league (decisives award 3+0,
-  #   draws award 1+1 split across the two teams).
+  # - sum(games_played) == 2 * n_matches per league (each match adds to two gp)
+  # - sum(gd) == 0 per league (zero-sum across the league)
+  # - sum(points) == 2*n_draws + 3*n_decisives per league (2 pts distributed on
+  #   a draw, 3 on a decisive). Assumes the standard 3-1-0 with no modeled
+  #   administrative point deductions — currently true across all our leagues.
   per_league_stats <- played %>%
     group_by(league) %>%
     summarise(n_matches = n(),
@@ -263,13 +262,16 @@ if (!file.exists(fixture_results_path)) {
       r <- failed[i, ]
       message(sprintf(
         "    %s: sum_gp=%d (expected %d%s), sum_pts=%d (expected %d%s), sum_gd=%d (expected 0%s)",
-        r$league, r$sum_gp, r$expected_gp, if (r$gp_ok) "" else " ❌",
-        r$sum_pts, r$expected_pts, if (r$pts_ok) "" else " ❌",
-        r$sum_gd, if (r$gd_ok) "" else " ❌"))
+        r$league, r$sum_gp, r$expected_gp, if (r$gp_ok) "" else " [FAIL]",
+        r$sum_pts, r$expected_pts, if (r$pts_ok) "" else " [FAIL]",
+        r$sum_gd, if (r$gd_ok) "" else " [FAIL]"))
     }
-    warning(sprintf("Standings invariants failed for %d league(s). Review aggregation logic before publishing.",
-                    nrow(failed)), call. = FALSE, immediate. = TRUE)
-  } else {
+    # Hard-fail rather than warn: if the invariants trip, panna's aggregation
+    # is broken and publishing the file would ship known-wrong standings to
+    # the blog. Safer to block the upload and surface the bug.
+    stop(sprintf("Standings invariants failed for %d league(s). Fix aggregation logic before republishing.",
+                 nrow(failed)), call. = FALSE)
+  } else if (nrow(totals) > 0) {
     message(sprintf("  Invariants OK across all %d leagues (gp, pts, gd sums consistent)",
                     nrow(totals)))
   }

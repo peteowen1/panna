@@ -138,9 +138,8 @@ if (is.null(results)) {
           left_join(home_goals_ev, by = "match_id") %>%
           left_join(away_goals_ev, by = "match_id") %>%
           mutate(
-            # Source of truth: fixtures first, events second. `NA_integer_` is
-            # preserved when neither source has a score so the drop-filter below
-            # can see it (coalesce-to-0 is what caused panna#59's phantom draws).
+            # NA preserved when neither source has a score, so section 5b's
+            # drop-filter can see missing data rather than fabricating 0-0.
             home_goals = coalesce(home_goals_fx, home_goals_ev),
             away_goals = coalesce(away_goals_fx, away_goals_ev),
             score_source = case_when(
@@ -152,8 +151,8 @@ if (is.null(results)) {
           )
 
         # Cross-check: where BOTH sources produced a score, they should agree.
-        # A disagreement is exactly the panna#59 signature (own goals split
-        # across team_ids) and a useful regression signal going forward.
+        # A disagreement is the own-goal attribution signature — useful
+        # regression signal if the events-derivation logic ever changes.
         both_scored <- match_results %>%
           filter(!is.na(home_goals_fx) & !is.na(home_goals_ev) &
                  !is.na(away_goals_fx) & !is.na(away_goals_ev))
@@ -219,24 +218,31 @@ if (is.null(results)) {
 
 # 5b. Override Scores from opta_fixtures (Source of Truth) ----
 #
-# Applies to both the RAPM-cache path (stale/buggy goals from historical
-# events-derivation) and the direct-load path (already mostly-correct, but
-# belt-and-braces for the overlap case). The fixtures endpoint provides
-# authoritative match scores that correctly attribute own goals — fixes
-# panna#59 uniformly regardless of which code path fed `results`.
+# RAPM-cache path: `results` carries goals from prior pipeline runs, which may
+# pre-date the own-goal fix and therefore disagree with fixtures.
+# Direct-load path: belt-and-braces for the overlap case; the in-loop logic
+# already prefers fixtures, so this is a no-op for matches we scored there.
+#
+# The fixtures endpoint provides authoritative match scores that correctly
+# attribute own goals — events-derived goal counts do not (see section 5
+# comment for the mechanism).
 
 message("\n=== Overriding scores from opta_fixtures (authoritative) ===\n")
 
 lg_seasons <- unique(results[, c("league", "season")])
 n_overridden <- 0L
-n_corrected <- 0L  # where fixtures disagreed with prior value (the panna#59 signal)
+n_corrected <- 0L  # disagreements between prior value and fixtures
 
 for (i in seq_len(nrow(lg_seasons))) {
   lg <- lg_seasons$league[i]
   sn <- lg_seasons$season[i]
   fx <- tryCatch(
     load_opta_fixtures(lg, season = sn, source = "local"),
-    error = function(e) NULL
+    error = function(e) {
+      message(sprintf("  ERROR loading fixtures for %s %s: %s (skipping override; matches will keep prior-path goals)",
+                      lg, sn, conditionMessage(e)))
+      NULL
+    }
   )
   if (is.null(fx) || nrow(fx) == 0) next
 
@@ -259,7 +265,7 @@ for (i in seq_len(nrow(lg_seasons))) {
 
   if (any(differs)) {
     n_corrected <- n_corrected + sum(differs)
-    message(sprintf("  %s %s: %d matches had derived scores that disagreed with fixtures (corrected)",
+    message(sprintf("  %s %s: %d matches had prior scores disagreeing with fixtures (corrected — likely own-goal miscount)",
                     lg, sn, sum(differs)))
   }
   if (any(has_fx)) {
@@ -274,10 +280,10 @@ for (i in seq_len(nrow(lg_seasons))) {
 
 message(sprintf("  Scores overridden from fixtures: %d matches", n_overridden))
 if (n_corrected > 0) {
-  message(sprintf("  Of those, %d had wrong goals prior (own-goal miscount, panna#59)", n_corrected))
+  message(sprintf("  Of those, %d had prior scores corrected (see panna#59 for the original symptom report)",
+                  n_corrected))
 }
 
-# Any matches we don't have authoritative scores for now? Worth surfacing.
 missing_scores <- sum(is.na(results$home_goals) | is.na(results$away_goals))
 if (missing_scores > 0) {
   message(sprintf("  WARNING: %d matches still have NA scores after fixtures override — scraper gap, will drop below",
