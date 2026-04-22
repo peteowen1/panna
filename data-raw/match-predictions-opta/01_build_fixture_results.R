@@ -55,6 +55,7 @@ if (use_rapm_cache) {
   results <- results[results$league %in% leagues, ]
   message(sprintf("  %d matches from RAPM cache (filtered to %s)",
                   nrow(results), paste(leagues, collapse = ", ")))
+  results$score_source <- "rapm_cache"  # will be overridden below where fixtures has scores
 } else {
   message("No RAPM cache found - loading from Opta data directly...")
   results <- NULL
@@ -80,10 +81,12 @@ if (is.null(results)) {
       tryCatch({
         lineups <- load_opta_lineups(league, season = season, source = "local")
         events <- load_opta_events(league, season = season, source = "local")
+        fixtures_all <- load_opta_fixtures(league, season = season, source = "local")
 
         if (is.null(lineups) || nrow(lineups) == 0) next
 
-        # Build match info from lineups
+        # Build match info from lineups (team_name here is the lineup-feed variant,
+        # which is canonical downstream).
         match_info <- lineups %>%
           filter(is_starter) %>%
           group_by(match_id) %>%
@@ -96,39 +99,89 @@ if (is.null(results)) {
             .groups = "drop"
           )
 
-        # Derive goals from events
+        # PRIMARY SOURCE for scores: opta_fixtures.parquet (matchstats endpoint).
+        # These are the authoritative match scores and crucially attribute own
+        # goals to the correct side. Deriving from goal events silently miscodes
+        # own goals because `events.parquet` tags `team_id` with the scoring
+        # player's team (= opponent of the credited side). See panna#59.
+        fixtures_scores <- if (!is.null(fixtures_all) && nrow(fixtures_all) > 0) {
+          fixtures_all %>%
+            mutate(home_goals_fx = suppressWarnings(as.integer(home_score)),
+                   away_goals_fx = suppressWarnings(as.integer(away_score))) %>%
+            select(match_id, home_goals_fx, away_goals_fx)
+        } else {
+          tibble::tibble(match_id = character(0),
+                         home_goals_fx = integer(0),
+                         away_goals_fx = integer(0))
+        }
+
+        # FALLBACK: events-derived goal counts, used only when fixtures has no
+        # score for a match (rare — usually only very recent matches that
+        # matchstats hasn't landed yet). Correct for non-own-goal matches;
+        # own goals get miscoded, so we warn on any fallback use.
         goal_counts <- events %>%
           filter(event_type == "goal") %>%
           count(match_id, team_id, name = "goals")
 
-        # Drop matches with lineups but no events — Opta publishes lineups
-        # ahead of events for recent fixtures, so the match looks "played"
-        # but we can't compute a score. Without this guard, coalesce(goals, 0L)
-        # below silently codes them as 0-0 draws, corrupting standings.
-        matches_with_events <- unique(events$match_id)
-        matches_without_events <- setdiff(match_info$match_id, matches_with_events)
-        if (length(matches_without_events) > 0) {
-          message(sprintf("  WARNING: %s %s: dropping %d matches with no events (scraper gap)",
-                          league, season, length(matches_without_events)))
-          match_info <- match_info %>% filter(!match_id %in% matches_without_events)
-        }
-
-        home_goals <- match_info %>%
+        home_goals_ev <- match_info %>%
           select(match_id, home_team_id) %>%
           left_join(goal_counts, by = c("match_id", "home_team_id" = "team_id")) %>%
-          mutate(home_goals = coalesce(goals, 0L)) %>%
-          select(match_id, home_goals)
+          select(match_id, home_goals_ev = goals)
 
-        away_goals <- match_info %>%
+        away_goals_ev <- match_info %>%
           select(match_id, away_team_id) %>%
           left_join(goal_counts, by = c("match_id", "away_team_id" = "team_id")) %>%
-          mutate(away_goals = coalesce(goals, 0L)) %>%
-          select(match_id, away_goals)
+          select(match_id, away_goals_ev = goals)
 
         match_results <- match_info %>%
-          left_join(home_goals, by = "match_id") %>%
-          left_join(away_goals, by = "match_id") %>%
-          mutate(league = !!league, season = !!season)
+          left_join(fixtures_scores, by = "match_id") %>%
+          left_join(home_goals_ev, by = "match_id") %>%
+          left_join(away_goals_ev, by = "match_id") %>%
+          mutate(
+            # Source of truth: fixtures first, events second. `NA_integer_` is
+            # preserved when neither source has a score so the drop-filter below
+            # can see it (coalesce-to-0 is what caused panna#59's phantom draws).
+            home_goals = coalesce(home_goals_fx, home_goals_ev),
+            away_goals = coalesce(away_goals_fx, away_goals_ev),
+            score_source = case_when(
+              !is.na(home_goals_fx) & !is.na(away_goals_fx) ~ "fixtures",
+              !is.na(home_goals_ev) & !is.na(away_goals_ev) ~ "events",
+              TRUE ~ NA_character_
+            ),
+            league = !!league, season = !!season
+          )
+
+        # Cross-check: where BOTH sources produced a score, they should agree.
+        # A disagreement is exactly the panna#59 signature (own goals split
+        # across team_ids) and a useful regression signal going forward.
+        both_scored <- match_results %>%
+          filter(!is.na(home_goals_fx) & !is.na(home_goals_ev) &
+                 !is.na(away_goals_fx) & !is.na(away_goals_ev))
+        mismatches <- both_scored %>%
+          filter(home_goals_fx != home_goals_ev | away_goals_fx != away_goals_ev)
+        if (nrow(mismatches) > 0) {
+          message(sprintf("  %s %s: %d/%d matches where events-derived scores disagree with fixtures (using fixtures; own goals the likely cause)",
+                          league, season, nrow(mismatches), nrow(both_scored)))
+        }
+
+        # Drop matches with no score from either source. This is the only
+        # legitimate drop reason — the previous "matches without events" filter
+        # conflated "no events" (common, fine if fixtures has score) with
+        # "no score anywhere" (the actual bad state).
+        no_score <- match_results %>% filter(is.na(score_source))
+        if (nrow(no_score) > 0) {
+          message(sprintf("  WARNING: %s %s: dropping %d matches with no fixture score AND no events (scraper gap)",
+                          league, season, nrow(no_score)))
+          match_results <- match_results %>% filter(!is.na(score_source))
+        }
+
+        # Drop the _fx/_ev intermediates but keep score_source so the
+        # aggregate summary below can surface fixtures-vs-events provenance
+        # across all leagues. Section 8 filters to keep_cols before saving, so
+        # score_source is excluded from the output schema.
+        match_results <- match_results %>%
+          select(-any_of(c("home_goals_fx", "away_goals_fx",
+                           "home_goals_ev", "away_goals_ev")))
 
         all_results[[label]] <- match_results
       }, error = function(e) {
@@ -139,6 +192,97 @@ if (is.null(results)) {
 
   results <- bind_rows(all_results)
   message(sprintf("  Loaded %d matches from Opta", nrow(results)))
+
+  # Provenance summary. Any non-zero "events" count points at Opta's matchstats
+  # endpoint lagging for recent matches — we're falling back to goal events
+  # which silently miscredits own goals (panna#59). Persistent high counts
+  # here mean fixtures scrape needs attention upstream.
+  if ("score_source" %in% names(results)) {
+    src_summary <- table(results$score_source, useNA = "always")
+    message("  Score provenance: ",
+            paste(names(src_summary), src_summary, sep = "=", collapse = ", "))
+    n_events_fallback <- sum(results$score_source == "events", na.rm = TRUE)
+    if (n_events_fallback > 0) {
+      # Isolate the recent-matches case (the healthy case) from systemic gaps.
+      # A handful of "today's matches" using the events fallback is normal.
+      recent <- results %>%
+        filter(score_source == "events") %>%
+        arrange(desc(match_date))
+      n_stale <- sum(as.Date(substr(recent$match_date, 1, 10)) <
+                     Sys.Date() - 7, na.rm = TRUE)
+      if (n_stale > 0) {
+        message(sprintf("  WARNING: %d matches older than 7 days still using events fallback — opta_fixtures.parquet may be stale", n_stale))
+      }
+    }
+  }
+}
+
+# 5b. Override Scores from opta_fixtures (Source of Truth) ----
+#
+# Applies to both the RAPM-cache path (stale/buggy goals from historical
+# events-derivation) and the direct-load path (already mostly-correct, but
+# belt-and-braces for the overlap case). The fixtures endpoint provides
+# authoritative match scores that correctly attribute own goals — fixes
+# panna#59 uniformly regardless of which code path fed `results`.
+
+message("\n=== Overriding scores from opta_fixtures (authoritative) ===\n")
+
+lg_seasons <- unique(results[, c("league", "season")])
+n_overridden <- 0L
+n_corrected <- 0L  # where fixtures disagreed with prior value (the panna#59 signal)
+
+for (i in seq_len(nrow(lg_seasons))) {
+  lg <- lg_seasons$league[i]
+  sn <- lg_seasons$season[i]
+  fx <- tryCatch(
+    load_opta_fixtures(lg, season = sn, source = "local"),
+    error = function(e) NULL
+  )
+  if (is.null(fx) || nrow(fx) == 0) next
+
+  fx_clean <- fx %>%
+    mutate(home_goals_fx = suppressWarnings(as.integer(home_score)),
+           away_goals_fx = suppressWarnings(as.integer(away_score))) %>%
+    filter(!is.na(home_goals_fx), !is.na(away_goals_fx)) %>%
+    select(match_id, home_goals_fx, away_goals_fx)
+
+  idx <- results$league == lg & results$season == sn
+  slice <- results[idx, , drop = FALSE]
+  merged <- slice %>%
+    left_join(fx_clean, by = "match_id")
+
+  has_fx <- !is.na(merged$home_goals_fx) & !is.na(merged$away_goals_fx)
+  had_prior <- !is.na(merged$home_goals) & !is.na(merged$away_goals)
+  differs <- has_fx & had_prior &
+             (merged$home_goals_fx != merged$home_goals |
+              merged$away_goals_fx != merged$away_goals)
+
+  if (any(differs)) {
+    n_corrected <- n_corrected + sum(differs)
+    message(sprintf("  %s %s: %d matches had derived scores that disagreed with fixtures (corrected)",
+                    lg, sn, sum(differs)))
+  }
+  if (any(has_fx)) {
+    merged$home_goals[has_fx] <- merged$home_goals_fx[has_fx]
+    merged$away_goals[has_fx] <- merged$away_goals_fx[has_fx]
+    if ("score_source" %in% names(merged)) merged$score_source[has_fx] <- "fixtures"
+    n_overridden <- n_overridden + sum(has_fx)
+  }
+
+  results[idx, ] <- merged[, names(results), drop = FALSE]
+}
+
+message(sprintf("  Scores overridden from fixtures: %d matches", n_overridden))
+if (n_corrected > 0) {
+  message(sprintf("  Of those, %d had wrong goals prior (own-goal miscount, panna#59)", n_corrected))
+}
+
+# Any matches we don't have authoritative scores for now? Worth surfacing.
+missing_scores <- sum(is.na(results$home_goals) | is.na(results$away_goals))
+if (missing_scores > 0) {
+  message(sprintf("  WARNING: %d matches still have NA scores after fixtures override — scraper gap, will drop below",
+                  missing_scores))
+  results <- results[!is.na(results$home_goals) & !is.na(results$away_goals), ]
 }
 
 # 6. Ensure Required Columns ----

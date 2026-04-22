@@ -225,6 +225,55 @@ if (!file.exists(fixture_results_path)) {
   message(sprintf("  Teams with standings: %d across %d leagues",
                   nrow(season_standings), length(unique(season_standings$league))))
 
+  # Self-consistency invariants — cheaper than a cross-provider API check and
+  # catches the silent-regression scenarios we actually care about (aggregation
+  # bugs, double-counting, sign flips in pts formula). These invariants hold
+  # by arithmetic regardless of data provider, so a violation is a code bug in
+  # step 10's aggregation, not a data-freshness issue.
+  #
+  # - sum(games_played) == 2 * n_matches per league (each match contributes to
+  #   exactly two teams' gp).
+  # - sum(gd) == 0 per league (one team's +X is another team's −X).
+  # - sum(points) == 2*n_draws + 3*n_decisives per league (decisives award 3+0,
+  #   draws award 1+1 split across the two teams).
+  per_league_stats <- played %>%
+    group_by(league) %>%
+    summarise(n_matches = n(),
+              n_draw = sum(home_goals == away_goals),
+              n_decisive = sum(home_goals != away_goals),
+              .groups = "drop")
+
+  totals <- season_standings %>%
+    group_by(league) %>%
+    summarise(sum_gp = sum(games_played), sum_pts = sum(points),
+              sum_gd = sum(gd), n_teams = n(), .groups = "drop") %>%
+    left_join(per_league_stats, by = "league") %>%
+    mutate(
+      expected_gp = 2L * n_matches,
+      expected_pts = 2L * n_draw + 3L * n_decisive,
+      gp_ok = sum_gp == expected_gp,
+      pts_ok = sum_pts == expected_pts,
+      gd_ok = sum_gd == 0
+    )
+
+  failed <- totals %>% filter(!gp_ok | !pts_ok | !gd_ok)
+  if (nrow(failed) > 0) {
+    message("  STANDINGS INVARIANT VIOLATION — aggregation bug in step 10:")
+    for (i in seq_len(nrow(failed))) {
+      r <- failed[i, ]
+      message(sprintf(
+        "    %s: sum_gp=%d (expected %d%s), sum_pts=%d (expected %d%s), sum_gd=%d (expected 0%s)",
+        r$league, r$sum_gp, r$expected_gp, if (r$gp_ok) "" else " ❌",
+        r$sum_pts, r$expected_pts, if (r$pts_ok) "" else " ❌",
+        r$sum_gd, if (r$gd_ok) "" else " ❌"))
+    }
+    warning(sprintf("Standings invariants failed for %d league(s). Review aggregation logic before publishing.",
+                    nrow(failed)), call. = FALSE, immediate. = TRUE)
+  } else {
+    message(sprintf("  Invariants OK across all %d leagues (gp, pts, gd sums consistent)",
+                    nrow(totals)))
+  }
+
   arrow::write_parquet(season_standings, standings_output)
   message(sprintf("  Written: %s", standings_output))
   standings_ok <- TRUE
