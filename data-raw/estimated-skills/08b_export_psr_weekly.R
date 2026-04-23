@@ -310,7 +310,15 @@ if (length(snapshot_dates) >= MEXP_PRECOMPUTE_MIN_DATES) {
 
 cat("=== Computing PSR Snapshots ===\n\n")
 
-psr_list <- vector("list", length(snapshot_dates))
+# Stream each iteration's result to a per-date parquet file, then rbind at the
+# end via arrow. Replaces an in-memory `psr_list` that retained every iteration
+# until the end; combined with explicit `gc()` per iteration, this bounds peak
+# memory to ~1 iteration instead of 105× on recompute-heavy runs. Fixes the
+# persistent OOM documented in panna#63.
+psr_chunks_dir <- tempfile("psr_chunks_")
+dir.create(psr_chunks_dir)
+on.exit(unlink(psr_chunks_dir, recursive = TRUE), add = TRUE)
+
 n_success <- 0L
 start_time <- Sys.time()
 
@@ -329,10 +337,8 @@ for (i in seq_along(snapshot_dates)) {
   # match_stats with seq_len(cutoff) as a "fast prefix filter", but that copy
   # runs alongside `estimate_player_skills()`'s own internal
   # `dt[md < target_date]` filter — two near-full-size data.table copies live
-  # simultaneously at ~1.7GB each, and on recent dates they were OOM-killing
-  # the step on standard GHA runners (7GB). The internal filter alone is fast
-  # enough for the 5-date weekly increment; skipping the pre-slice drops peak
-  # memory by ~1.7GB with no measurable runtime penalty.
+  # simultaneously at ~1.7GB each. The internal filter alone is fast enough;
+  # skipping the pre-slice drops peak memory by ~1.7GB.
   cutoff <- findInterval(as.numeric(d) - 1L, as.numeric(match_date_vec))
   if (cutoff < 1L) next
 
@@ -348,7 +354,7 @@ for (i in seq_along(snapshot_dates)) {
       NULL
     }
   )
-  if (is.null(skills) || nrow(skills) == 0) next
+  if (is.null(skills) || nrow(skills) == 0) { rm(skills); next }
 
   psr <- tryCatch(
     compute_player_psr(skills, center = TRUE, target = psr_target),
@@ -357,11 +363,18 @@ for (i in seq_along(snapshot_dates)) {
       NULL
     }
   )
-  if (is.null(psr) || nrow(psr) == 0) next
+  if (is.null(psr) || nrow(psr) == 0) { rm(skills, psr); next }
 
   psr[, snapshot_date := d]
-  psr_list[[i]] <- psr[, .(snapshot_date, player_id, player_name,
-                            primary_position, psr, osr, dsr, weighted_90s)]
+  psr_slim <- psr[, .(snapshot_date, player_id, player_name,
+                       primary_position, psr, osr, dsr, weighted_90s)]
+  arrow::write_parquet(
+    as.data.frame(psr_slim),
+    file.path(psr_chunks_dir, sprintf("%06d.parquet", i))
+  )
+
+  rm(skills, psr, psr_slim)
+  if (i %% 10L == 0L) gc(verbose = FALSE, full = TRUE)
   n_success <- n_success + 1L
 }
 
@@ -390,7 +403,19 @@ if (n_failed > 0) {
 
 cat("\n=== Exporting ===\n")
 
-new_psr <- data.table::rbindlist(psr_list, fill = TRUE, use.names = TRUE)
+# Read back all streamed per-date chunks. Each chunk is ~5-10 MB, so even at
+# 200+ dates the cumulative read fits easily in memory. Uses rbindlist to
+# stay on the data.table path the rest of the script is on.
+chunk_files <- list.files(psr_chunks_dir, pattern = "\\.parquet$",
+                          full.names = TRUE)
+if (length(chunk_files) == 0) {
+  stop("No PSR snapshot chunks were written - refusing to publish.",
+       call. = FALSE)
+}
+new_psr <- data.table::rbindlist(
+  lapply(chunk_files, arrow::read_parquet),
+  fill = TRUE, use.names = TRUE
+)
 message(sprintf("  Newly computed: %s rows across %d dates",
                 format(nrow(new_psr), big.mark = ","),
                 data.table::uniqueN(new_psr$snapshot_date)))
