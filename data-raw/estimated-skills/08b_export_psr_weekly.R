@@ -266,33 +266,45 @@ decay_params_fast$prior_centers        <- prior_centers_precomp
 # dates), so we compute it once per unique lambda and cache as columns on
 # match_stats. Each snapshot iteration then replaces ~530K exp() calls per
 # lambda with a single scalar multiply inside estimate_player_skills(). For
-# 232 snapshot dates x ~8 unique lambdas, this avoids ~1 billion exp() calls.
-cat("\n=== Pre-Computing Decay Exponentials ===\n")
-mexp_start <- Sys.time()
+# full rebuilds (~200+ dates) this saves several minutes of exp() calls, but
+# adds N_lambdas * N_rows * 8 bytes of columns to match_stats — on current
+# data that's ~540MB, which OOM-kills the step on standard GHA runners when
+# combined with the filtered copy `estimate_player_skills()` creates.
+#
+# For weekly incremental runs (~5 dates), the exp() savings are negligible
+# (~5 seconds total) and not worth the memory. Threshold chosen so a normal
+# weekly cron skips the precompute but a force-rebuild still gets the speed.
+MEXP_PRECOMPUTE_MIN_DATES <- 50L
 
-match_date_num <- as.numeric(match_stats$match_date)
+if (length(snapshot_dates) >= MEXP_PRECOMPUTE_MIN_DATES) {
+  cat("\n=== Pre-Computing Decay Exponentials ===\n")
+  mexp_start <- Sys.time()
 
-# Collect all lambdas used by estimate_player_skills(): rate + per-stat lambdas
-# resolved via .resolve_lambda() (same helper the function uses internally).
-stat_lambdas_all <- vapply(stat_cols_all,
-                           function(s) panna:::.resolve_lambda(s, decay_params_fast,
-                                                               panna:::.classify_skill_stats()),
-                           numeric(1))
-all_lambdas <- unique(c(decay_params_fast$rate, stat_lambdas_all))
-all_lambdas <- all_lambdas[!is.na(all_lambdas)]
+  match_date_num <- as.numeric(match_stats$match_date)
 
-precomputed_mexp <- list()
-for (j in seq_along(all_lambdas)) {
-  lam <- all_lambdas[j]
-  col_name <- sprintf(".mexp_%d", j)
-  data.table::set(match_stats, j = col_name, value = exp(lam * match_date_num))
-  precomputed_mexp[[as.character(lam)]] <- col_name
+  stat_lambdas_all <- vapply(stat_cols_all,
+                             function(s) panna:::.resolve_lambda(s, decay_params_fast,
+                                                                 panna:::.classify_skill_stats()),
+                             numeric(1))
+  all_lambdas <- unique(c(decay_params_fast$rate, stat_lambdas_all))
+  all_lambdas <- all_lambdas[!is.na(all_lambdas)]
+
+  precomputed_mexp <- list()
+  for (j in seq_along(all_lambdas)) {
+    lam <- all_lambdas[j]
+    col_name <- sprintf(".mexp_%d", j)
+    data.table::set(match_stats, j = col_name, value = exp(lam * match_date_num))
+    precomputed_mexp[[as.character(lam)]] <- col_name
+  }
+  decay_params_fast$precomputed_match_exp <- precomputed_mexp
+
+  cat(sprintf("  Cached exp() for %d unique lambdas in %.1fs\n",
+              length(all_lambdas),
+              as.numeric(difftime(Sys.time(), mexp_start, units = "secs"))))
+} else {
+  cat(sprintf("\n  Skipping mexp precompute (%d dates < threshold %d) — slow path is cheap at this size\n",
+              length(snapshot_dates), MEXP_PRECOMPUTE_MIN_DATES))
 }
-decay_params_fast$precomputed_match_exp <- precomputed_mexp
-
-cat(sprintf("  Cached exp() for %d unique lambdas in %.1fs\n",
-            length(all_lambdas),
-            as.numeric(difftime(Sys.time(), mexp_start, units = "secs"))))
 
 # 6. Compute PSR at Each Snapshot Date ----
 
@@ -313,14 +325,20 @@ for (i in seq_along(snapshot_dates)) {
                 i, length(snapshot_dates), d, elapsed, eta_min))
   }
 
-  # Fast prefix filter using pre-sorted data: binary search O(log n) vs O(n)
+  # Early-out if no history exists for this date. We used to pre-slice
+  # match_stats with seq_len(cutoff) as a "fast prefix filter", but that copy
+  # runs alongside `estimate_player_skills()`'s own internal
+  # `dt[md < target_date]` filter — two near-full-size data.table copies live
+  # simultaneously at ~1.7GB each, and on recent dates they were OOM-killing
+  # the step on standard GHA runners (7GB). The internal filter alone is fast
+  # enough for the 5-date weekly increment; skipping the pre-slice drops peak
+  # memory by ~1.7GB with no measurable runtime penalty.
   cutoff <- findInterval(as.numeric(d) - 1L, as.numeric(match_date_vec))
   if (cutoff < 1L) next
-  dt_sub <- match_stats[seq_len(cutoff)]
 
   skills <- tryCatch(
     estimate_player_skills(
-      match_stats  = dt_sub,
+      match_stats  = match_stats,
       decay_params = decay_params_fast,
       target_date  = d,
       min_weighted_90s = 3
