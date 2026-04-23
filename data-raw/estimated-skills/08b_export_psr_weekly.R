@@ -312,9 +312,12 @@ cat("=== Computing PSR Snapshots ===\n\n")
 
 # Stream each iteration's result to a per-date parquet file, then rbind at the
 # end via arrow. Replaces an in-memory `psr_list` that retained every iteration
-# until the end; combined with explicit `gc()` per iteration, this bounds peak
-# memory to ~1 iteration instead of 105× on recompute-heavy runs. Fixes the
-# persistent OOM documented in panna#63.
+# until the end; combined with `rm()` of transients every iteration and a
+# periodic `gc(full = TRUE)` every 10th iteration, this bounds *loop-retained
+# growth* to ~1 iteration's worth (the fixed ~1.7GB baseline of `match_stats`
+# + `precomputed_mexp` still persists across the loop by design). Fixes the
+# persistent OOM documented in panna#63, which hit at ~date 1/105 when the
+# recompute set grew well past the originally-assumed handful of dates.
 psr_chunks_dir <- tempfile("psr_chunks_")
 dir.create(psr_chunks_dir)
 on.exit(unlink(psr_chunks_dir, recursive = TRUE), add = TRUE)
@@ -374,6 +377,9 @@ for (i in seq_along(snapshot_dates)) {
   )
 
   rm(skills, psr, psr_slim)
+  # Full GC every 10th iteration to amortize its cost (~200ms on a ~2GB
+  # heap). Per-iteration would add ~20s across 100 dates for no real gain;
+  # lazy GC frees transients within a few iterations once refs drop.
   if (i %% 10L == 0L) gc(verbose = FALSE, full = TRUE)
   n_success <- n_success + 1L
 }
