@@ -347,8 +347,9 @@ if (!file.exists(fixture_results_path)) {
   # arithmetic + per-team invariants can't see — they validate internal
   # consistency, not freshness.
   STALE_MATCH_DAYS <- 5L
-  if (nrow(played) > 0) {
-    latest_played <- max(as.Date(substr(played$match_date, 1, 10)), na.rm = TRUE)
+  parsed_dates <- suppressWarnings(as.Date(substr(played$match_date, 1, 10)))
+  if (nrow(played) > 0 && any(!is.na(parsed_dates))) {
+    latest_played <- max(parsed_dates, na.rm = TRUE)
     days_stale <- as.integer(Sys.Date() - latest_played)
     if (days_stale > STALE_MATCH_DAYS) {
       warning(sprintf(
@@ -361,6 +362,11 @@ if (!file.exists(fixture_results_path)) {
       message(sprintf("  Sim freshness OK: latest played match %s (%d days ago, threshold %d)",
                       latest_played, days_stale, STALE_MATCH_DAYS))
     }
+  } else if (nrow(played) > 0) {
+    # All dates unparseable — schema drift / format regression upstream.
+    warning("Freshness check cannot run: all played$match_date values failed to parse as Date. ",
+            "Schema drift likely — check opta_fixtures parquet for match_date format.",
+            call. = FALSE, immediate. = TRUE)
   }
 
   # Cross-provider sanity check: compare sim's EPL current_points/gp to the
@@ -372,9 +378,41 @@ if (!file.exists(fixture_results_path)) {
   # to avoid team-name mapping headaches for other leagues. Soft-fails on
   # any network/parse error since football-data.org availability is out of
   # our control and we don't want a third-party outage to block the blog.
+  #
+  # Wrapped in a function so `return(NULL)` short-circuits just the check,
+  # not the enclosing source() call. The whole step-10 script is sourced
+  # with local = TRUE, so a bare return() inside tryCatch({...}) would exit
+  # the whole export — the exact bug pattern in feedback_r_tryCatch_return.md.
   fixtures_url <- "https://pub-ee4bf5b599a047f9ac2b9facc1587008.r2.dev/football/fixtures.json"
-  live_check <- tryCatch({
-    live_json <- jsonlite::fromJSON(fixtures_url, simplifyVector = FALSE)
+  compute_live_standings <- function() {
+    # httr-based fetch with an explicit timeout; jsonlite::fromJSON has no
+    # timeout option and can hang for minutes on a stuck connection.
+    resp <- tryCatch(
+      httr::GET(fixtures_url, httr::timeout(15)),
+      error = function(e) {
+        warning(sprintf("Cross-provider check SKIPPED (network): %s", conditionMessage(e)),
+                call. = FALSE, immediate. = TRUE)
+        NULL
+      },
+      warning = function(w) {
+        warning(sprintf("Cross-provider check SKIPPED (network warning): %s", conditionMessage(w)),
+                call. = FALSE, immediate. = TRUE)
+        NULL
+      }
+    )
+    if (is.null(resp) || httr::status_code(resp) >= 400) return(NULL)
+
+    live_json <- tryCatch(
+      jsonlite::fromJSON(rawToChar(httr::content(resp, "raw")),
+                         simplifyVector = FALSE),
+      error = function(e) {
+        warning(sprintf("Cross-provider check SKIPPED (parse): %s", conditionMessage(e)),
+                call. = FALSE, immediate. = TRUE)
+        NULL
+      }
+    )
+    if (is.null(live_json)) return(NULL)
+
     epl_finished <- Filter(function(m) identical(m$league, "ENG") &&
                                        identical(m$status, "FINISHED"),
                            live_json$matches)
@@ -402,14 +440,11 @@ if (!file.exists(fixture_results_path)) {
                               ifelse(live_df$ag == live_df$hg, 1L, 0L)),
                  stringsAsFactors = FALSE)
     )
-    live_std <- live_standings %>%
+    live_standings %>%
       group_by(team) %>%
       summarise(live_gp = n(), live_pts = sum(pts), .groups = "drop")
-    live_std
-  }, error = function(e) {
-    message(sprintf("  Cross-provider check SKIPPED: %s", conditionMessage(e)))
-    NULL
-  })
+  }
+  live_check <- compute_live_standings()
 
   if (!is.null(live_check) && nrow(live_check) > 0) {
     sim_eng <- season_standings[season_standings$league == "ENG", ]
@@ -418,12 +453,26 @@ if (!file.exists(fixture_results_path)) {
                  sim_pts = sim_eng$points, stringsAsFactors = FALSE),
       live_check, by = "team"
     )
+    # Coverage guard: if team-name normalization ever drifts (Opta renames a
+    # team, or the " FC"/" AFC" strip stops matching), the merge silently
+    # loses rows and the whole check quietly becomes no-op. A PL season has
+    # 20 teams — refuse to accept more than 2 unmatched before warning.
+    if (nrow(cmp) < 18L) {
+      warning(sprintf(
+        "Cross-provider coverage FAIL: only %d / 20 PL teams matched by name. ",
+        nrow(cmp)),
+        "Team-name normalization likely drifted — review the ` FC$`/` AFC$` strip.",
+        call. = FALSE, immediate. = TRUE)
+    }
     if (nrow(cmp) > 0) {
       cmp$dgp  <- cmp$sim_gp - cmp$live_gp
       cmp$dpts <- cmp$sim_pts - cmp$live_pts
-      # Physical bound with a small slack: each extra live-tracked game can
-      # account for at most 3 pts swing. Slack of +3 covers the case where
-      # provider scoring timing differs by an hour.
+      # Two-part predicate:
+      # (a) |Δpts| > 3·|Δgp| + 3 — physical bound; each extra live-tracked
+      #     game can swing at most 3 pts, slack of +3 covers minor timing.
+      # (b) |Δgp| > 2 — catches sim-behind-live by multiple games even if
+      #     the pts don't happen to violate (a). Both branches matter;
+      #     removing either would blind a real failure mode.
       cmp$violates <- abs(cmp$dpts) > 3L * abs(cmp$dgp) + 3L |
                       abs(cmp$dgp)  > 2L
       bad <- cmp[cmp$violates, , drop = FALSE]
