@@ -321,7 +321,8 @@ for (league in leagues) {
 
   tryCatch({
     fixtures <- load_opta_fixtures(league, season = current_season,
-                                   status = c("Fixture", "Postponed"), source = "local")
+                                   status = c("Fixture", "Postponed", "Awarded"),
+                                   source = "local")
     if (!is.null(fixtures) && nrow(fixtures) > 0) {
       fixtures$league <- league
       fixtures$season_end_year <- extract_season_end_year(current_season)
@@ -330,9 +331,30 @@ for (league in leagues) {
       fixtures$home_xg <- NA_real_
       fixtures$away_xg <- NA_real_
       fixtures$result <- NA_character_
+
+      # Awarded = walkover/forfeit with final scores. Promote to Played so the
+      # standings absorb the outcome instead of re-simulating a decided match.
+      # Gate on non-NA scores; any unresolved Awarded row stays as-is and flows
+      # through as an upcoming fixture.
+      is_awarded <- fixtures$match_status == "Awarded" &
+        !is.na(fixtures$home_score) & !is.na(fixtures$away_score)
+      if (any(is_awarded)) {
+        fixtures$home_goals[is_awarded] <- as.integer(fixtures$home_score[is_awarded])
+        fixtures$away_goals[is_awarded] <- as.integer(fixtures$away_score[is_awarded])
+        hg <- fixtures$home_goals[is_awarded]
+        ag <- fixtures$away_goals[is_awarded]
+        fixtures$result[is_awarded] <- ifelse(hg > ag, "H",
+                                       ifelse(hg == ag, "D", "A"))
+        fixtures$match_status[is_awarded] <- "Played"
+      }
+
       fixtures$is_neutral_venue <- as.integer(league %in% TOURNAMENT_LEAGUES)
       all_fixtures[[league]] <- fixtures
-      message(sprintf("  %s %s: %d upcoming fixtures", league, current_season, nrow(fixtures)))
+      n_fix <- sum(fixtures$match_status == "Fixture")
+      n_ppd <- sum(fixtures$match_status == "Postponed")
+      n_awd <- sum(is_awarded)
+      message(sprintf("  %s %s: %d Fixture + %d Postponed + %d Awarded(->Played)",
+                      league, current_season, n_fix, n_ppd, n_awd))
     }
   }, error = function(e) {
     message(sprintf("  No fixtures for %s: %s", league, e$message))
