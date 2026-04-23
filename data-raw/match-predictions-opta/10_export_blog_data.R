@@ -339,6 +339,111 @@ if (!file.exists(fixture_results_path)) {
                     nrow(team_totals), length(unique(team_totals$league))))
   }
 
+  # Max-played-date check — single strongest "is this sim stale" signal.
+  # If the latest played match in the current season is more than 5 days
+  # old, the Opta scraper likely missed recent matches (daily cron failed,
+  # pagination cap dropped overflow, etc.) and the whole sim is projecting
+  # off an old snapshot of reality. Catches failure modes that the
+  # arithmetic + per-team invariants can't see — they validate internal
+  # consistency, not freshness.
+  STALE_MATCH_DAYS <- 5L
+  if (nrow(played) > 0) {
+    latest_played <- max(as.Date(substr(played$match_date, 1, 10)), na.rm = TRUE)
+    days_stale <- as.integer(Sys.Date() - latest_played)
+    if (days_stale > STALE_MATCH_DAYS) {
+      warning(sprintf(
+        "Sim freshness FAIL: latest played match in current season is %s (%d days ago, threshold %d). ",
+        latest_played, days_stale, STALE_MATCH_DAYS),
+        "Opta scraper may have missed recent matches — the sim is projecting off a stale snapshot. ",
+        "Check pannadata daily-opta-scrape run history before trusting this publication.",
+        call. = FALSE, immediate. = TRUE)
+    } else {
+      message(sprintf("  Sim freshness OK: latest played match %s (%d days ago, threshold %d)",
+                      latest_played, days_stale, STALE_MATCH_DAYS))
+    }
+  }
+
+  # Cross-provider sanity check: compare sim's EPL current_points/gp to the
+  # live football-data.org standings from the blog's fixtures.json on R2
+  # (same feed the Current tab reads). Catches Opta-vs-reality drift that
+  # internal checks can't — specifically the "one played match silently
+  # missing" case that bit us 2026-04-22 (Burnley 0-1 MCI not in the sim
+  # until the manual backfill). Only runs for PL to keep scope narrow and
+  # to avoid team-name mapping headaches for other leagues. Soft-fails on
+  # any network/parse error since football-data.org availability is out of
+  # our control and we don't want a third-party outage to block the blog.
+  fixtures_url <- "https://pub-ee4bf5b599a047f9ac2b9facc1587008.r2.dev/football/fixtures.json"
+  live_check <- tryCatch({
+    live_json <- jsonlite::fromJSON(fixtures_url, simplifyVector = FALSE)
+    epl_finished <- Filter(function(m) identical(m$league, "ENG") &&
+                                       identical(m$status, "FINISHED"),
+                           live_json$matches)
+    if (length(epl_finished) == 0) return(NULL)
+
+    null_na <- function(x) if (is.null(x)) NA else x
+    live_df <- do.call(rbind, lapply(epl_finished, function(m) {
+      data.frame(
+        home = sub(" AFC$", "", sub(" FC$", "", null_na(m$homeTeam))),
+        away = sub(" AFC$", "", sub(" FC$", "", null_na(m$awayTeam))),
+        hg = as.integer(null_na(m$homeScore)),
+        ag = as.integer(null_na(m$awayScore)),
+        stringsAsFactors = FALSE
+      )
+    }))
+    live_df <- live_df[!is.na(live_df$hg) & !is.na(live_df$ag), , drop = FALSE]
+
+    live_standings <- rbind(
+      data.frame(team = live_df$home,
+                 pts = ifelse(live_df$hg > live_df$ag, 3L,
+                              ifelse(live_df$hg == live_df$ag, 1L, 0L)),
+                 stringsAsFactors = FALSE),
+      data.frame(team = live_df$away,
+                 pts = ifelse(live_df$ag > live_df$hg, 3L,
+                              ifelse(live_df$ag == live_df$hg, 1L, 0L)),
+                 stringsAsFactors = FALSE)
+    )
+    live_std <- live_standings %>%
+      group_by(team) %>%
+      summarise(live_gp = n(), live_pts = sum(pts), .groups = "drop")
+    live_std
+  }, error = function(e) {
+    message(sprintf("  Cross-provider check SKIPPED: %s", conditionMessage(e)))
+    NULL
+  })
+
+  if (!is.null(live_check) && nrow(live_check) > 0) {
+    sim_eng <- season_standings[season_standings$league == "ENG", ]
+    cmp <- merge(
+      data.frame(team = sim_eng$team, sim_gp = sim_eng$games_played,
+                 sim_pts = sim_eng$points, stringsAsFactors = FALSE),
+      live_check, by = "team"
+    )
+    if (nrow(cmp) > 0) {
+      cmp$dgp  <- cmp$sim_gp - cmp$live_gp
+      cmp$dpts <- cmp$sim_pts - cmp$live_pts
+      # Physical bound with a small slack: each extra live-tracked game can
+      # account for at most 3 pts swing. Slack of +3 covers the case where
+      # provider scoring timing differs by an hour.
+      cmp$violates <- abs(cmp$dpts) > 3L * abs(cmp$dgp) + 3L |
+                      abs(cmp$dgp)  > 2L
+      bad <- cmp[cmp$violates, , drop = FALSE]
+      if (nrow(bad) > 0) {
+        message("  CROSS-PROVIDER DRIFT — sim vs football-data.org disagreement:")
+        for (i in seq_len(nrow(bad))) {
+          r <- bad[i, ]
+          message(sprintf("    %-24s sim=%2d gp/%3d pts  live=%2d gp/%3d pts  (Δgp=%+d, Δpts=%+d)",
+                          r$team, r$sim_gp, r$sim_pts, r$live_gp, r$live_pts,
+                          r$dgp, r$dpts))
+        }
+        warning(sprintf("%d PL team(s) disagree with football-data.org by more than 3·|Δgp|+3 pts or |Δgp|>2. Sim is likely stale or has a data bug — investigate before relying on projections.",
+                        nrow(bad)), call. = FALSE, immediate. = TRUE)
+      } else {
+        message(sprintf("  Cross-provider check OK: %d PL teams, max |Δgp|=%d, max |Δpts|=%d",
+                        nrow(cmp), max(abs(cmp$dgp)), max(abs(cmp$dpts))))
+      }
+    }
+  }
+
   arrow::write_parquet(season_standings, standings_output)
   message(sprintf("  Written: %s", standings_output))
   standings_ok <- TRUE
