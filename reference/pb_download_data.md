@@ -47,10 +47,7 @@ Invisible path to destination directory
 For loading data, prefer the new DuckDB-based functions which are more
 efficient:
 
-- [`load_summary()`](https://peteowen1.github.io/panna/reference/load_summary.md),
-  [`load_events()`](https://peteowen1.github.io/panna/reference/load_events.md),
-  [`load_shots()`](https://peteowen1.github.io/panna/reference/load_shots.md),
-  etc.
+- `load_summary()`, `load_events()`, `load_shots()`, etc.
 
 - These download only what's needed and filter via SQL
 

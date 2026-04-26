@@ -57,7 +57,16 @@ A data.table with one row per player per match:
 
 - epv_total, epv_offensive, epv_defensive:
 
-  EPV components
+  EPV components (raw)
+
+- epv_total_adj, epv_offensive_adj, epv_defensive_adj:
+
+  EPV components after position centering. `epv_total_adj` also includes
+  the opponent-strength adjustment.
+
+- opp_adj:
+
+  Minutes-weighted opponent-strength adjustment (additive).
 
 - epv_p90:
 
@@ -77,7 +86,8 @@ A data.table with one row per player per match:
 
 - panna_value:
 
-  Combined: epv_weight \* epv_total + psv_weight \* psv
+  Combined: `epv_weight * epv_total_adj + psv_weight * psv` (falls back
+  to `epv_total` if no adj columns).
 
 - panna_value_p90:
 

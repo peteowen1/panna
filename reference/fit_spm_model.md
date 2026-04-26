@@ -14,7 +14,9 @@ fit_spm_model(
   alpha = 0.5,
   nfolds = 10,
   weight_by_minutes = TRUE,
-  weight_transform = "sqrt"
+  weight_transform = "sqrt",
+  lower_limits = NULL,
+  upper_limits = NULL
 )
 ```
 
@@ -48,6 +50,15 @@ fit_spm_model(
   of minutes (moderate weighting) "linear" - raw minutes (strong
   weighting toward high-minute players) "log" - log of minutes (gentle
   weighting) "none" - equal weights
+
+- lower_limits, upper_limits:
+
+  Optional sign constraints on glmnet coefficients. Accepts a scalar
+  (applied to all predictors), an unnamed numeric vector of length
+  `ncol(X)`, or a named numeric vector keyed by predictor name
+  (unmatched predictors default to `-Inf`/`Inf`). Use to enforce
+  directional priors (e.g. negative defensive-tackle coefficient).
+  `NULL` (default) = unconstrained.
 
 ## Value
 

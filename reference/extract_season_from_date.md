@@ -1,4 +1,4 @@
-# Extract Season from Match Date
+# Determines the season string (e.g., "2024-2025") from a match date. Assumes seasons run August to May: Aug-Dec = first year, Jan-May = second year.
 
 Determines the season string (e.g., "2024-2025") from a match date.
 Assumes seasons run August to May: Aug-Dec = first year, Jan-May =

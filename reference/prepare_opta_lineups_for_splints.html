@@ -47,7 +47,7 @@ Opta lineups have: is_starter, minutes_played, sub_on_minute, sub_off_minute.</p
 
     <div class="section level2">
     <h2 id="ref-usage">Usage<a class="anchor" aria-label="anchor" href="#ref-usage"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">prepare_opta_lineups_for_splints</span><span class="op">(</span><span class="va">opta_lineups</span><span class="op">)</span></span></code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">prepare_opta_lineups_for_splints</span><span class="op">(</span><span class="va">opta_lineups</span>, player_timing <span class="op">=</span> <span class="cn">NULL</span><span class="op">)</span></span></code></pre></div>
     </div>
 
     <div class="section level2">
@@ -57,11 +57,30 @@ Opta lineups have: is_starter, minutes_played, sub_on_minute, sub_off_minute.</p
 <dl><dt id="arg-opta-lineups">opta_lineups<a class="anchor" aria-label="anchor" href="#arg-opta-lineups"></a></dt>
 <dd><p>Data frame from load_opta_lineups()</p></dd>
 
+
+<dt id="arg-player-timing">player_timing<a class="anchor" aria-label="anchor" href="#arg-player-timing"></a></dt>
+<dd><p>Optional data frame from
+<code><a href="extract_player_timing_from_events.html">extract_player_timing_from_events()</a></code> with columns <code>match_id</code>,
+<code>player_id</code>, <code>on_minute</code>, <code>off_minute</code>, <code>is_starter</code>. When supplied,
+chain-derived on/off times override the lineup-derived ones.</p></dd>
+
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
     <p>Data frame with columns: match_id, player_id, player_name, team,
-is_home, is_starter, minutes, on_minute, off_minute</p>
+is_home, is_starter, minutes, on_minute, off_minute, on_off_source.
+The <code>on_off_source</code> column is "chain" when chain-derived times were used,
+"lineup" otherwise.</p>
+    </div>
+    <div class="section level2">
+    <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
+    <p>When <code>player_timing</code> is supplied (chain-derived from
+<code><a href="extract_player_timing_from_events.html">extract_player_timing_from_events()</a></code>), it OVERRIDES the lineup-derived
+on/off times for any (match_id, player_id) pair present in the timing table.
+Chain timing is preferred because Opta lineups record <code>minutes_played = 90</code>
+for unsubstituted finishers regardless of stoppage time, and round sub
+minutes to integers — chains carry second-level precision and the real
+final-whistle time.</p>
     </div>
 
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

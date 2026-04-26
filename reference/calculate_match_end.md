@@ -8,7 +8,12 @@ both.
 ## Usage
 
 ``` r
-calculate_match_end(events, shots = NULL, default_end = 91)
+calculate_match_end(
+  events,
+  shots = NULL,
+  default_end = 91,
+  period_end_time = NULL
+)
 ```
 
 ## Arguments

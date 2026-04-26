@@ -56,7 +56,9 @@ influence of noisy low-minute players whose RAPM and per-90 stats are unreliable
 <span>  alpha <span class="op">=</span> <span class="fl">0.5</span>,</span>
 <span>  nfolds <span class="op">=</span> <span class="fl">10</span>,</span>
 <span>  weight_by_minutes <span class="op">=</span> <span class="cn">TRUE</span>,</span>
-<span>  weight_transform <span class="op">=</span> <span class="st">"sqrt"</span></span>
+<span>  weight_transform <span class="op">=</span> <span class="st">"sqrt"</span>,</span>
+<span>  lower_limits <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  upper_limits <span class="op">=</span> <span class="cn">NULL</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -92,6 +94,15 @@ Reduces influence of noisy low-minute estimates on model coefficients.</p></dd>
 "linear" - raw minutes (strong weighting toward high-minute players)
 "log" - log of minutes (gentle weighting)
 "none" - equal weights</p></dd>
+
+
+<dt id="arg-lower-limits-upper-limits">lower_limits, upper_limits<a class="anchor" aria-label="anchor" href="#arg-lower-limits-upper-limits"></a></dt>
+<dd><p>Optional sign constraints on glmnet
+coefficients. Accepts a scalar (applied to all predictors), an unnamed
+numeric vector of length <code>ncol(X)</code>, or a named numeric vector keyed by
+predictor name (unmatched predictors default to <code>-Inf</code>/<code>Inf</code>). Use to
+enforce directional priors (e.g. negative defensive-tackle coefficient).
+<code>NULL</code> (default) = unconstrained.</p></dd>
 
 </dl></div>
     <div class="section level2">

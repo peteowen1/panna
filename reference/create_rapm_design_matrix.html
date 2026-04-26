@@ -62,7 +62,8 @@ Replacement columns: replacement_off, replacement_def for low-minute players
     <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">create_rapm_design_matrix</span><span class="op">(</span></span>
 <span>  <span class="va">splint_data</span>,</span>
 <span>  min_minutes <span class="op">=</span> <span class="fl">90</span>,</span>
-<span>  target_type <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"xg"</span>, <span class="st">"goals"</span>, <span class="st">"epv"</span>, <span class="st">"wpa"</span>, <span class="st">"psv"</span><span class="op">)</span></span>
+<span>  target_type <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"xg"</span>, <span class="st">"goals"</span>, <span class="st">"epv"</span>, <span class="st">"wpa"</span>, <span class="st">"psv"</span><span class="op">)</span>,</span>
+<span>  min_duration <span class="op">=</span> <span class="fl">1</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -84,6 +85,16 @@ Replacement columns: replacement_off, replacement_def for low-minute players
 Possession Value, <code>"wpa"</code> for Win Probability Added, <code>"psv"</code>
 for Player Stat Value. Requires corresponding home/away columns on
 splints (e.g., <code>epv_home</code>, <code>epv_away</code>).</p></dd>
+
+
+<dt id="arg-min-duration">min_duration<a class="anchor" aria-label="anchor" href="#arg-min-duration"></a></dt>
+<dd><p>Minimum splint duration in minutes (default 1.0).
+Splints shorter than this are dropped to avoid per-90 inflation
+artefacts on stoppage-time fragments. Set to 0 to keep all splints.
+Note: with chain-derived splint creation
+(<code>create_splint_boundaries_fast</code>, default <code>min_splint_duration = 5</code>),
+the upstream pipeline already enforces a 5-min minimum so this
+secondary filter rarely fires.</p></dd>
 
 </dl></div>
     <div class="section level2">

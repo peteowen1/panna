@@ -245,20 +245,13 @@ Initial release of the panna player rating system.
 ### Data Loading
 
 - DuckDB-based efficient parquet loading
-- [`load_summary()`](https://peteowen1.github.io/panna/reference/load_summary.md),
-  [`load_passing()`](https://peteowen1.github.io/panna/reference/load_passing.md),
-  [`load_defense()`](https://peteowen1.github.io/panna/reference/load_defense.md),
-  [`load_possession()`](https://peteowen1.github.io/panna/reference/load_possession.md),
-  [`load_shots()`](https://peteowen1.github.io/panna/reference/load_shots.md),
-  [`load_metadata()`](https://peteowen1.github.io/panna/reference/load_metadata.md)
-  for FBref
+- `load_summary()`, `load_passing()`, `load_defense()`,
+  `load_possession()`, `load_shots()`, `load_metadata()` for FBref
 - [`load_opta_stats()`](https://peteowen1.github.io/panna/reference/load_opta_stats.md),
   [`load_opta_shots()`](https://peteowen1.github.io/panna/reference/load_opta_shots.md),
   [`load_opta_big5()`](https://peteowen1.github.io/panna/reference/load_opta_big5.md)
   for Opta
-- [`load_understat_roster()`](https://peteowen1.github.io/panna/reference/load_understat_roster.md),
-  [`load_understat_shots()`](https://peteowen1.github.io/panna/reference/load_understat_shots.md)
-  for Understat
+- `load_understat_roster()`, `load_understat_shots()` for Understat
 
 ### Player Statistics
 

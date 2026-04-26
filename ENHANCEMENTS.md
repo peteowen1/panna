@@ -186,14 +186,9 @@ xG-based features for pre-shot actions
 
 ### Proposed Split: scrape_fbref_direct.R → 4 files
 
-**1. `scrape_fbref_http.R` (~150 lines)** -
-[`get_fbref_headers()`](https://peteowen1.github.io/panna/reference/get_fbref_headers.md) -
-Browser headers -
-[`add_delay_jitter()`](https://peteowen1.github.io/panna/reference/add_delay_jitter.md) -
-Request timing -
-[`get_fbref_session()`](https://peteowen1.github.io/panna/reference/get_fbref_session.md) -
-Session management -
-[`reset_fbref_session()`](https://peteowen1.github.io/panna/reference/reset_fbref_session.md) -
+**1. `scrape_fbref_http.R` (~150 lines)** - `get_fbref_headers()` -
+Browser headers - `add_delay_jitter()` - Request timing -
+`get_fbref_session()` - Session management - `reset_fbref_session()` -
 Session reset - `check_fbref_status()` - Connection check - `.fbref_env`
 environment
 
@@ -203,32 +198,21 @@ page fetching -
 Retry logic - `parse_match_tables()` - Table extraction -
 [`extract_match_events()`](https://peteowen1.github.io/panna/reference/extract_match_events.md) -
 Event parsing - `get_cached_path()` - Cache path utilities -
-[`list_cached_matches()`](https://peteowen1.github.io/panna/reference/list_cached_matches.md) -
-Cache listing
+`list_cached_matches()` - Cache listing
 
-**3. `scrape_fbref_batch.R` (~600 lines)** -
-[`scrape_fixtures()`](https://peteowen1.github.io/panna/reference/scrape_fixtures.md) -
-Fixture scraping -
-[`scrape_fbref_matches()`](https://peteowen1.github.io/panna/reference/scrape_fbref_matches.md) -
-Main batch scraper -
-[`aggregate_cached_matches()`](https://peteowen1.github.io/panna/reference/aggregate_cached_matches.md) -
-RDS aggregation - `rescrape_matches()` - Force rescrape
+**3. `scrape_fbref_batch.R` (~600 lines)** - `scrape_fixtures()` -
+Fixture scraping - `scrape_fbref_matches()` - Main batch scraper -
+`aggregate_cached_matches()` - RDS aggregation - `rescrape_matches()` -
+Force rescrape
 
-**4. `scrape_fbref_parquet.R` (~450 lines)** -
-[`build_parquet()`](https://peteowen1.github.io/panna/reference/build_parquet.md) -
-Single parquet build -
-[`build_consolidated_parquet()`](https://peteowen1.github.io/panna/reference/build_consolidated_parquet.md) -
-Multi-league consolidation -
-[`get_parquet_path()`](https://peteowen1.github.io/panna/reference/get_parquet_path.md) -
-Path utilities -
-[`migrate_metadata_tables_available()`](https://peteowen1.github.io/panna/reference/migrate_metadata_tables_available.md) -
-Migration utilities
+**4. `scrape_fbref_parquet.R` (~450 lines)** - `build_parquet()` -
+Single parquet build - `build_consolidated_parquet()` - Multi-league
+consolidation - `get_parquet_path()` - Path utilities -
+`migrate_metadata_tables_available()` - Migration utilities
 
-**Keep in `data_loaders.R`** (already exists): -
-[`load_summary()`](https://peteowen1.github.io/panna/reference/load_summary.md),
-[`load_passing()`](https://peteowen1.github.io/panna/reference/load_passing.md),
-etc. could be moved there - Currently uses DuckDB for remote parquet
-loading
+**Keep in `data_loaders.R`** (already exists): - `load_summary()`,
+`load_passing()`, etc. could be moved there - Currently uses DuckDB for
+remote parquet loading
 
 ### Proposed Split: spm_model.R → 2 files
 

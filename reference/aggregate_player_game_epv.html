@@ -89,7 +89,8 @@ Default <code>FALSE</code>.</p></dd>
 <dd><p>Total EPV = actor + receiver + duel_blame</p></dd>
 
 <dt>epv_offensive</dt>
-<dd><p>Offensive EPV = passing + shooting + dribbling</p></dd>
+<dd><p>Offensive EPV = passing + shooting + dribbling +
+aerial + keeping + receiver credit</p></dd>
 
 <dt>epv_defensive</dt>
 <dd><p>Defensive EPV = defending + duel_blame</p></dd>
@@ -97,8 +98,24 @@ Default <code>FALSE</code>.</p></dd>
 <dt>epv_as_actor, epv_as_receiver, epv_duel_blame</dt>
 <dd><p>Credit source breakdown</p></dd>
 
-<dt>epv_passing, epv_shooting, epv_dribbling, epv_defending</dt>
-<dd><p>Action type breakdown</p></dd>
+<dt>epv_passing</dt>
+<dd><p>Outfield passing + ball touches</p></dd>
+
+<dt>epv_shooting</dt>
+<dd><p>Shot credit (xG-weighted)</p></dd>
+
+<dt>epv_dribbling</dt>
+<dd><p>Ground take-on attempts</p></dd>
+
+<dt>epv_aerial</dt>
+<dd><p>Aerial duel credit (winner + / loser via duel_blame)</p></dd>
+
+<dt>epv_keeping</dt>
+<dd><p>Keeper pick-up, claim, punch (distribution/handling)</p></dd>
+
+<dt>epv_defending</dt>
+<dd><p>Tackles, interceptions, clearances, ball recoveries,
+keeper saves, fouls won, dispossessed events</p></dd>
 
 <dt>minutes_played</dt>
 <dd><p>Minutes played (if lineups provided)</p></dd>

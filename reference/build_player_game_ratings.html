@@ -96,7 +96,15 @@ Optional; PSV columns are NA if not provided.</p></dd>
 <dd><p>From lineups (if available)</p></dd>
 
 <dt>epv_total, epv_offensive, epv_defensive</dt>
-<dd><p>EPV components</p></dd>
+<dd><p>EPV components (raw)</p></dd>
+
+<dt>epv_total_adj, epv_offensive_adj, epv_defensive_adj</dt>
+<dd><p>EPV
+components after position centering. <code>epv_total_adj</code> also
+includes the opponent-strength adjustment.</p></dd>
+
+<dt>opp_adj</dt>
+<dd><p>Minutes-weighted opponent-strength adjustment (additive).</p></dd>
 
 <dt>epv_p90</dt>
 <dd><p>EPV per 90 minutes</p></dd>
@@ -111,7 +119,8 @@ Optional; PSV columns are NA if not provided.</p></dd>
 <dd><p>Player Stat Value with O/D decomposition</p></dd>
 
 <dt>panna_value</dt>
-<dd><p>Combined: epv_weight * epv_total + psv_weight * psv</p></dd>
+<dd><p>Combined: <code>epv_weight * epv_total_adj +
+      psv_weight * psv</code> (falls back to <code>epv_total</code> if no adj columns).</p></dd>
 
 <dt>panna_value_p90</dt>
 <dd><p>Combined per 90 minutes</p></dd>

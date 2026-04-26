@@ -10,7 +10,8 @@ create_all_splints(
   processed_data,
   include_goals = TRUE,
   verbose = TRUE,
-  chunk_by = c("league", "none")
+  chunk_by = c("league", "none"),
+  min_splint_duration = 5
 )
 ```
 
@@ -33,6 +34,13 @@ create_all_splints(
   Chunking strategy for memory efficiency. `"league"` (default)
   processes matches grouped by league to reduce peak memory usage.
   `"none"` processes all matches at once (original behaviour).
+
+- min_splint_duration:
+
+  Minimum splint duration in minutes (default 5). Soft boundaries
+  (subs/goals/red cards) within this window of the most recently kept
+  boundary are merged. Hard boundaries (kickoff, halftime, full-time)
+  are always kept. Set to 0 to disable merging entirely.
 
 ## Value
 

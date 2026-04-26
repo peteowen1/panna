@@ -7,7 +7,12 @@ to events only if shots is NULL.
 ## Usage
 
 ``` r
-calculate_first_half_end(events, shots = NULL, default_end = 46)
+calculate_first_half_end(
+  events,
+  shots = NULL,
+  default_end = 46,
+  period_end_time = NULL
+)
 ```
 
 ## Arguments

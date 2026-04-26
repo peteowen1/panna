@@ -13,11 +13,9 @@ set.seed(42)
 
 ## Step 1: Create Synthetic Match Data
 
-In production, you would load data with
-[`load_summary()`](https://peteowen1.github.io/panna/reference/load_summary.md),
-[`load_metadata()`](https://peteowen1.github.io/panna/reference/load_metadata.md),
-etc. Here we generate synthetic match data that mirrors the structure of
-processed FBref data.
+In production, you would load data with `load_summary()`,
+`load_metadata()`, etc. Here we generate synthetic match data that
+mirrors the structure of processed FBref data.
 
 ``` r
 n_matches <- 12
@@ -133,9 +131,9 @@ splint_data <- create_all_splints(processed_data, verbose = FALSE)
 cat(sprintf("Splints: %d across %d matches\n",
             nrow(splint_data$splints),
             length(unique(splint_data$splints$match_id))))
-#> Splints: 81 across 12 matches
+#> Splints: 66 across 12 matches
 cat(sprintf("Player-splint assignments: %d\n", nrow(splint_data$players)))
-#> Player-splint assignments: 1782
+#> Player-splint assignments: 1452
 
 # Example: first match's splints
 first_match <- splint_data$splints[splint_data$splints$match_id == "match_1", ]
@@ -144,8 +142,7 @@ first_match[, c("splint_num", "start_minute", "end_minute", "duration")]
 #> 1          1            0         46       46
 #> 2          2           46         64       18
 #> 3          3           64         74       10
-#> 4          4           74         75        1
-#> 5          5           75         91       16
+#> 4          4           74         91       17
 ```
 
 ## Step 3: Build RAPM Design Matrix
@@ -157,13 +154,13 @@ split into offense and defense indicators.
 
 ``` r
 rapm_data <- create_rapm_design_matrix(splint_data, min_minutes = 45)
-#> [00:05:21] Processing 81 splints...
-#> [00:05:21] Including 50 players (>= 45 minutes)
-#> [00:05:21] Replacement pool: 0 players (< 45 minutes)
-#> [00:05:21] Building row data (vectorized)...
-#> [00:05:21] Building sparse matrix (vectorized)...
-#> [00:05:21] Replacement appearances: 0 offense, 0 defense
-#> [00:05:22] Design matrix: 162 rows, 100 player columns (+2 replacement), 5 covariates
+#> [11:44:09] Processing 66 splints...
+#> [11:44:09] Including 50 players (>= 45 minutes)
+#> [11:44:09] Replacement pool: 0 players (< 45 minutes)
+#> [11:44:09] Building row data (vectorized)...
+#> [11:44:09] Building sparse matrix (vectorized)...
+#> [11:44:09] Replacement appearances: 0 offense, 0 defense
+#> [11:44:10] Design matrix: 132 rows, 100 player columns (+2 replacement), 5 covariates
 
 # Add covariates to the player matrix for model fitting
 covariates <- cbind(
@@ -176,7 +173,7 @@ rapm_data$covariate_names <- colnames(covariates)
 
 cat(sprintf("Design matrix: %d rows x %d columns\n",
             nrow(rapm_data$X), ncol(rapm_data$X)))
-#> Design matrix: 162 rows x 105 columns
+#> Design matrix: 132 rows x 105 columns
 cat(sprintf("Players included: %d (min 45 minutes)\n", rapm_data$n_players))
 #> Players included: 50 (min 45 minutes)
 cat(sprintf("Target: %s\n", rapm_data$target_name))
@@ -191,20 +188,20 @@ regularization strength.
 
 ``` r
 rapm_model <- fit_rapm(rapm_data, parallel = FALSE, nfolds = 3)
-#> [00:05:22] Fitting RAPM: 162 observations, 105 columns
-#> [00:05:22] RAPM fit complete (xG-based). Lambda.min: 140.1164, R^2: 0.840
+#> [11:44:10] Fitting RAPM: 132 observations, 105 columns
+#> [11:44:10] RAPM fit complete (xG-based). Lambda.min: 143.3328, R^2: 0.778
 rapm_ratings <- extract_rapm_ratings(rapm_model)
 
 cat(sprintf("RAPM ratings for %d players\n", nrow(rapm_ratings)))
 #> RAPM ratings for 51 players
 head(rapm_ratings[, c("player_name", "rapm", "offense", "defense", "total_minutes")])
 #>    player_name         rapm      offense       defense total_minutes
-#> 1    Player 10 1.243153e-37 1.013306e-37 -2.298464e-38           728
-#> 23    Player 7 1.097749e-37 7.331287e-38 -3.646203e-38           364
-#> 43   Player 30 1.083924e-37 9.399345e-39 -9.899306e-38           637
-#> 7    Player 22 1.029150e-37 5.422111e-38 -4.869392e-38           455
-#> 3    Player 23 8.216838e-38 1.415311e-37  5.936271e-38           455
-#> 45    Player 8 7.091842e-38 5.257829e-38 -1.834014e-38           273
+#> 1    Player 10 1.256191e-37 9.957186e-38 -2.604723e-38           728
+#> 43   Player 30 1.093097e-37 1.002352e-38 -9.928621e-38           637
+#> 7    Player 22 1.091733e-37 5.773439e-38 -5.143896e-38           455
+#> 23    Player 7 1.090507e-37 7.151214e-38 -3.753852e-38           364
+#> 3    Player 23 9.459901e-38 1.447800e-37  5.018102e-38           455
+#> 8     Player 4 7.741443e-38 1.293767e-38 -6.447676e-38           546
 ```
 
 The `rapm` column equals `offense - defense`. Positive offense means the
@@ -241,21 +238,21 @@ player_features <- data.frame(
 )
 
 spm_model <- fit_spm_model(player_features, nfolds = 3)
-#> [00:05:22] Fitting SPM model with 6 predictors on 51 players
-#> [00:05:22]   Weighting by minutes (sqrt transform)
-#> [00:05:22] SPM fit complete. R-squared: 0.000 (weighted in-sample)
+#> [11:44:10] Fitting SPM model with 6 predictors on 51 players
+#> [11:44:10]   Weighting by minutes (sqrt transform)
+#> [11:44:10] SPM fit complete. R-squared: 0.000 (weighted in-sample)
 spm_ratings <- calculate_spm_ratings(player_features, spm_model)
 
 cat(sprintf("SPM predictions for %d players\n", nrow(spm_ratings)))
 #> SPM predictions for 51 players
 head(spm_ratings[, c("player_name", "spm", "total_minutes")])
 #>   player_name           spm total_minutes
-#> 1   Player 10 -3.089047e-40           728
-#> 2    Player 7 -3.089047e-40           364
-#> 3   Player 30 -3.089047e-40           637
-#> 4   Player 22 -3.089047e-40           455
-#> 5   Player 23 -3.089047e-40           455
-#> 6    Player 8 -3.089047e-40           273
+#> 1   Player 10 -1.909488e-40           728
+#> 2   Player 30 -1.909488e-40           637
+#> 3   Player 22 -1.909488e-40           455
+#> 4    Player 7 -1.909488e-40           364
+#> 5   Player 23 -1.909488e-40           455
+#> 6    Player 4 -1.909488e-40           546
 ```
 
 ## Step 6: Calculate Panna Rating
@@ -271,20 +268,20 @@ regularization.
 
 ``` r
 panna_result <- calculate_panna_rating(rapm_data, spm_ratings, lambda_prior = 1)
-#> [00:05:22] Fitting panna model with SPM prior...
-#> [00:05:22] Panna ratings calculated for 105 players
+#> [11:44:10] Fitting panna model with SPM prior...
+#> [11:44:10] Panna ratings calculated for 105 players
 panna_ratings <- panna_result$ratings
 
 cat(sprintf("Panna ratings for %d players\n", nrow(panna_ratings)))
 #> Panna ratings for 105 players
 head(panna_ratings[, c("player_name", "panna", "spm_prior", "deviation")])
 #>     player_name     panna spm_prior deviation
-#> 103        <NA> 1.2129680         0 1.2129680
-#> 93         <NA> 0.9456541         0 0.9456541
-#> 31         <NA> 0.9296163         0 0.9296163
-#> 104        <NA> 0.8820030         0 0.8820030
-#> 21         <NA> 0.8046113         0 0.8046113
-#> 14         <NA> 0.5787064         0 0.5787064
+#> 103        <NA> 0.6735080         0 0.6735080
+#> 104        <NA> 0.5447075         0 0.5447075
+#> 31         <NA> 0.3699956         0 0.3699956
+#> 64         <NA> 0.3416393         0 0.3416393
+#> 15         <NA> 0.3231784         0 0.3231784
+#> 54         <NA> 0.3196302         0 0.3196302
 ```
 
 ``` r
@@ -312,22 +309,22 @@ cat("Top 5 players:\n")
 #> Top 5 players:
 print(head(summary_df[order(-summary_df$panna), ], 5), row.names = FALSE)
 #>  player panna spm_prior deviation
-#>    <NA> 1.213         0     1.213
-#>    <NA> 0.946         0     0.946
-#>    <NA> 0.930         0     0.930
-#>    <NA> 0.882         0     0.882
-#>    <NA> 0.805         0     0.805
+#>    <NA> 0.674         0     0.674
+#>    <NA> 0.545         0     0.545
+#>    <NA> 0.370         0     0.370
+#>    <NA> 0.342         0     0.342
+#>    <NA> 0.323         0     0.323
 
 cat("\nBottom 5 players:\n")
 #> 
 #> Bottom 5 players:
 print(tail(summary_df[order(-summary_df$panna), ], 5), row.names = FALSE)
 #>  player  panna spm_prior deviation
-#>    <NA> -0.487         0    -0.487
-#>    <NA> -0.497         0    -0.497
-#>    <NA> -0.587         0    -0.587
-#>    <NA> -0.605         0    -0.605
-#>    <NA> -0.831         0    -0.831
+#>    <NA> -0.238         0    -0.238
+#>    <NA> -0.242         0    -0.242
+#>    <NA> -0.257         0    -0.257
+#>    <NA> -0.258         0    -0.258
+#>    <NA> -0.264         0    -0.264
 ```
 
 ## Pipeline Summary

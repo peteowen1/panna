@@ -140,10 +140,10 @@ skills, and match predictions.</p>
 elsewhere.</p>
 <div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># Load player roster with xGChain, xGBuildup</span></span>
-<span><span class="va">roster</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/load_understat_roster.html">load_understat_roster</a></span><span class="op">(</span><span class="st">"EPL"</span>, <span class="st">"2024"</span><span class="op">)</span></span>
+<span><span class="va">roster</span> <span class="op">&lt;-</span> <span class="fu">load_understat_roster</span><span class="op">(</span><span class="st">"EPL"</span>, <span class="st">"2024"</span><span class="op">)</span></span>
 <span></span>
 <span><span class="co"># Load shot-level data</span></span>
-<span><span class="va">shots</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/load_understat_shots.html">load_understat_shots</a></span><span class="op">(</span><span class="st">"EPL"</span>, <span class="st">"2024"</span><span class="op">)</span></span></code></pre></div>
+<span><span class="va">shots</span> <span class="op">&lt;-</span> <span class="fu">load_understat_shots</span><span class="op">(</span><span class="st">"EPL"</span>, <span class="st">"2024"</span><span class="op">)</span></span></code></pre></div>
 <p>Note: Understat uses single-year seasons (e.g., “2024” for
 2024-25).</p>
 </div>
@@ -153,14 +153,14 @@ elsewhere.</p>
 <p>FBref provides comprehensive statistics with StatsBomb xG values.</p>
 <div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># Load summary stats for a league/season</span></span>
-<span><span class="va">summary</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/load_summary.html">load_summary</a></span><span class="op">(</span><span class="st">"ENG"</span>, <span class="st">"2024-2025"</span><span class="op">)</span></span>
+<span><span class="va">summary</span> <span class="op">&lt;-</span> <span class="fu">load_summary</span><span class="op">(</span><span class="st">"ENG"</span>, <span class="st">"2024-2025"</span><span class="op">)</span></span>
 <span></span>
 <span><span class="co"># Other table types</span></span>
-<span><span class="va">passing</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/load_passing.html">load_passing</a></span><span class="op">(</span><span class="st">"ENG"</span>, <span class="st">"2024-2025"</span><span class="op">)</span></span>
-<span><span class="va">defense</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/load_defense.html">load_defense</a></span><span class="op">(</span><span class="st">"ENG"</span>, <span class="st">"2024-2025"</span><span class="op">)</span></span>
-<span><span class="va">possession</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/load_possession.html">load_possession</a></span><span class="op">(</span><span class="st">"ENG"</span>, <span class="st">"2024-2025"</span><span class="op">)</span></span>
-<span><span class="va">shots</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/load_shots.html">load_shots</a></span><span class="op">(</span><span class="op">)</span>  <span class="co"># All leagues/seasons</span></span>
-<span><span class="va">metadata</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/load_metadata.html">load_metadata</a></span><span class="op">(</span><span class="st">"ENG"</span>, <span class="st">"2024-2025"</span><span class="op">)</span></span></code></pre></div>
+<span><span class="va">passing</span> <span class="op">&lt;-</span> <span class="fu">load_passing</span><span class="op">(</span><span class="st">"ENG"</span>, <span class="st">"2024-2025"</span><span class="op">)</span></span>
+<span><span class="va">defense</span> <span class="op">&lt;-</span> <span class="fu">load_defense</span><span class="op">(</span><span class="st">"ENG"</span>, <span class="st">"2024-2025"</span><span class="op">)</span></span>
+<span><span class="va">possession</span> <span class="op">&lt;-</span> <span class="fu">load_possession</span><span class="op">(</span><span class="st">"ENG"</span>, <span class="st">"2024-2025"</span><span class="op">)</span></span>
+<span><span class="va">shots</span> <span class="op">&lt;-</span> <span class="fu">load_shots</span><span class="op">(</span><span class="op">)</span>  <span class="co"># All leagues/seasons</span></span>
+<span><span class="va">metadata</span> <span class="op">&lt;-</span> <span class="fu">load_metadata</span><span class="op">(</span><span class="st">"ENG"</span>, <span class="st">"2024-2025"</span><span class="op">)</span></span></code></pre></div>
 </div>
 </div>
 <div class="section level2">
@@ -335,20 +335,20 @@ statistics:</p>
 <span><span class="op">)</span></span>
 <span></span>
 <span><span class="co"># Understat aggregated stats</span></span>
-<span><span class="va">understat_players</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/player_understat_summary.html">player_understat_summary</a></span><span class="op">(</span></span>
+<span><span class="va">understat_players</span> <span class="op">&lt;-</span> <span class="fu">player_understat_summary</span><span class="op">(</span></span>
 <span>  leagues <span class="op">=</span> <span class="st">"EPL"</span>,</span>
 <span>  seasons <span class="op">=</span> <span class="st">"2024"</span>,</span>
 <span>  min_minutes <span class="op">=</span> <span class="fl">900</span></span>
 <span><span class="op">)</span></span>
 <span></span>
 <span><span class="co"># FBref aggregated stats</span></span>
-<span><span class="va">players_summary</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/player_fbref_summary.html">player_fbref_summary</a></span><span class="op">(</span></span>
+<span><span class="va">players_summary</span> <span class="op">&lt;-</span> <span class="fu">player_fbref_summary</span><span class="op">(</span></span>
 <span>  leagues <span class="op">=</span> <span class="st">"ENG"</span>,</span>
 <span>  seasons <span class="op">=</span> <span class="st">"2024-2025"</span>,</span>
 <span>  min_minutes <span class="op">=</span> <span class="fl">900</span>  <span class="co"># Filter for players with 900+ minutes</span></span>
 <span><span class="op">)</span></span>
 <span></span>
-<span><span class="va">players_passing</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/player_fbref_passing.html">player_fbref_passing</a></span><span class="op">(</span></span>
+<span><span class="va">players_passing</span> <span class="op">&lt;-</span> <span class="fu">player_fbref_passing</span><span class="op">(</span></span>
 <span>  leagues <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"ENG"</span>, <span class="st">"ESP"</span><span class="op">)</span>,  <span class="co"># Multiple leagues</span></span>
 <span>seasons <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"2023-2024"</span>, <span class="st">"2024-2025"</span><span class="op">)</span>,  <span class="co"># Multiple seasons</span></span>
 <span>  min_minutes <span class="op">=</span> <span class="fl">1800</span></span>

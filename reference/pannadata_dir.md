@@ -26,12 +26,12 @@ Resolution order (first match wins):
 
 2.  `PANNADATA_DIR` environment variable
 
-3.  `../pannadata/data` if it exists (pannaverse developers)
+3.  `../pannadata/data` relative to working directory (for the
+    pannaverse monorepo layout)
 
-4.  R's standard user data directory via
-    `tools::R_user_dir("panna", "data")`
+4.  `tools::R_user_dir("panna", "data")` — OS-standard user data dir
 
-The default (`R_user_dir`) gives OS-appropriate persistent storage:
+OS-standard fallback paths:
 
 - Windows: `C:/Users/you/AppData/Local/R/panna/data`
 

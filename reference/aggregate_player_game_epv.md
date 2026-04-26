@@ -51,7 +51,8 @@ A data.table with one row per player per match:
 
 - epv_offensive:
 
-  Offensive EPV = passing + shooting + dribbling
+  Offensive EPV = passing + shooting + dribbling + aerial + keeping +
+  receiver credit
 
 - epv_defensive:
 
@@ -61,9 +62,30 @@ A data.table with one row per player per match:
 
   Credit source breakdown
 
-- epv_passing, epv_shooting, epv_dribbling, epv_defending:
+- epv_passing:
 
-  Action type breakdown
+  Outfield passing + ball touches
+
+- epv_shooting:
+
+  Shot credit (xG-weighted)
+
+- epv_dribbling:
+
+  Ground take-on attempts
+
+- epv_aerial:
+
+  Aerial duel credit (winner + / loser via duel_blame)
+
+- epv_keeping:
+
+  Keeper pick-up, claim, punch (distribution/handling)
+
+- epv_defending:
+
+  Tackles, interceptions, clearances, ball recoveries, keeper saves,
+  fouls won, dispossessed events
 
 - minutes_played:
 

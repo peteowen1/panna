@@ -51,7 +51,8 @@ Uses data.table for fast pre-splitting by match_id.</p>
 <span>  <span class="va">processed_data</span>,</span>
 <span>  include_goals <span class="op">=</span> <span class="cn">TRUE</span>,</span>
 <span>  verbose <span class="op">=</span> <span class="cn">TRUE</span>,</span>
-<span>  chunk_by <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"league"</span>, <span class="st">"none"</span><span class="op">)</span></span>
+<span>  chunk_by <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"league"</span>, <span class="st">"none"</span><span class="op">)</span>,</span>
+<span>  min_splint_duration <span class="op">=</span> <span class="fl">5</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -75,6 +76,13 @@ Uses data.table for fast pre-splitting by match_id.</p>
 <dd><p>Chunking strategy for memory efficiency. <code>"league"</code> (default)
 processes matches grouped by league to reduce peak memory usage.
 <code>"none"</code> processes all matches at once (original behaviour).</p></dd>
+
+
+<dt id="arg-min-splint-duration">min_splint_duration<a class="anchor" aria-label="anchor" href="#arg-min-splint-duration"></a></dt>
+<dd><p>Minimum splint duration in minutes (default 5).
+Soft boundaries (subs/goals/red cards) within this window of the most
+recently kept boundary are merged. Hard boundaries (kickoff, halftime,
+full-time) are always kept. Set to 0 to disable merging entirely.</p></dd>
 
 </dl></div>
     <div class="section level2">

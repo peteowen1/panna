@@ -14,7 +14,10 @@ create_splint_boundaries_fast(
   goal_is_home = NULL,
   sub_times = NULL,
   red_card_times = NULL,
-  red_card_is_home = NULL
+  red_card_is_home = NULL,
+  match_end_override = NULL,
+  first_half_end_override = NULL,
+  min_splint_duration = 5
 )
 ```
 

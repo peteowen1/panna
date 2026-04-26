@@ -257,38 +257,6 @@ Load Opta player statistics (263 columns, 15 leagues)
 - [`load_opta_match_stats()`](https://peteowen1.github.io/panna/reference/load_opta_match_stats.md)
   : Load pre-computed Opta match-level stats
 
-## Data Loading - Understat
-
-Load Understat data (xGChain, xGBuildup)
-
-- [`load_understat_roster()`](https://peteowen1.github.io/panna/reference/load_understat_roster.md)
-  : Load Understat Roster Data
-- [`load_understat_shots()`](https://peteowen1.github.io/panna/reference/load_understat_shots.md)
-  : Load Understat Shots Data
-- [`load_understat_metadata()`](https://peteowen1.github.io/panna/reference/load_understat_metadata.md)
-  : Load Understat Metadata
-
-## Data Loading - FBref
-
-Load FBref match data from pannadata (StatsBomb xG)
-
-- [`load_summary()`](https://peteowen1.github.io/panna/reference/load_summary.md)
-  : Load Summary Data
-- [`load_passing()`](https://peteowen1.github.io/panna/reference/load_passing.md)
-  : Load Passing Data
-- [`load_defense()`](https://peteowen1.github.io/panna/reference/load_defense.md)
-  : Load Defense Data
-- [`load_possession()`](https://peteowen1.github.io/panna/reference/load_possession.md)
-  : Load Possession Data
-- [`load_keeper()`](https://peteowen1.github.io/panna/reference/load_keeper.md)
-  : Load Keeper Data
-- [`load_shots()`](https://peteowen1.github.io/panna/reference/load_shots.md)
-  : Load Shots Data
-- [`load_metadata()`](https://peteowen1.github.io/panna/reference/load_metadata.md)
-  : Load Metadata
-- [`load_events()`](https://peteowen1.github.io/panna/reference/load_events.md)
-  : Load Events Data
-
 ## Player Statistics
 
 Aggregated player statistics by source
@@ -315,18 +283,6 @@ Aggregated player statistics by source
   : Opta Player Possession Chain Statistics
 - [`compare_players()`](https://peteowen1.github.io/panna/reference/compare_players.md)
   : Compare Two or More Players
-- [`player_understat_summary()`](https://peteowen1.github.io/panna/reference/player_understat_summary.md)
-  : Understat Player Summary Statistics
-- [`player_fbref_summary()`](https://peteowen1.github.io/panna/reference/player_fbref_summary.md)
-  : FBref Player Summary Statistics
-- [`player_fbref_passing()`](https://peteowen1.github.io/panna/reference/player_fbref_passing.md)
-  : FBref Player Passing Statistics
-- [`player_fbref_defense()`](https://peteowen1.github.io/panna/reference/player_fbref_defense.md)
-  : FBref Player Defense Statistics
-- [`player_fbref_keeper()`](https://peteowen1.github.io/panna/reference/player_fbref_keeper.md)
-  : FBref Player Keeper Statistics
-- [`player_profile()`](https://peteowen1.github.io/panna/reference/player_profile.md)
-  : Player Profile - Combined Statistics Across Sources
 
 ## RAPM Pipeline
 
@@ -342,6 +298,10 @@ Regularized Adjusted Plus-Minus model
   : Fit RAPM with SPM prior (xRAPM)
 - [`extract_rapm_ratings()`](https://peteowen1.github.io/panna/reference/extract_rapm_ratings.md)
   : Extract RAPM ratings from fitted model
+- [`extract_period_end_times()`](https://peteowen1.github.io/panna/reference/extract_period_end_times.md)
+  : Extract Period End Times from Raw Opta Match Events
+- [`extract_player_timing_from_events()`](https://peteowen1.github.io/panna/reference/extract_player_timing_from_events.md)
+  : Extract Season from Match Date
 
 ## SPM Pipeline
 
@@ -436,6 +396,8 @@ Action-level player valuation from Opta event data
 
 - [`convert_opta_to_spadl()`](https://peteowen1.github.io/panna/reference/convert_opta_to_spadl.md)
   : Convert Opta Match Events to SPADL Format
+- [`get_or_build_spadl()`](https://peteowen1.github.io/panna/reference/get_or_build_spadl.md)
+  : Get or Build SPADL (with disk cache)
 - [`fit_epv_model()`](https://peteowen1.github.io/panna/reference/fit_epv_model.md)
   : Fit EPV Model
 - [`calculate_action_epv()`](https://peteowen1.github.io/panna/reference/calculate_action_epv.md)
@@ -654,8 +616,6 @@ GitHub Releases upload/download
   : Upload data to GitHub Releases
 - [`pb_upload_parquet()`](https://peteowen1.github.io/panna/reference/pb_upload_parquet.md)
   : Upload parquet files to GitHub Releases
-- [`pb_upload_consolidated()`](https://peteowen1.github.io/panna/reference/pb_upload_consolidated.md)
-  : Upload Consolidated Parquet Files to GitHub Releases
 - [`pb_sync_data()`](https://peteowen1.github.io/panna/reference/pb_sync_data.md)
   : Sync local data with GitHub Releases
 - [`pb_list_data()`](https://peteowen1.github.io/panna/reference/pb_list_data.md)
@@ -667,48 +627,6 @@ GitHub Releases upload/download
 - [`load_predictions()`](https://peteowen1.github.io/panna/reference/load_predictions.md)
   : Load match predictions
 
-## Scraping - FBref
-
-FBref data scraping functions
-
-- [`scrape_fbref_matches()`](https://peteowen1.github.io/panna/reference/scrape_fbref_matches.md)
-  : Scrape FBref match data directly
-- [`scrape_comp_season()`](https://peteowen1.github.io/panna/reference/scrape_comp_season.md)
-  : Scrape a competition-season
-- [`scrape_fixtures()`](https://peteowen1.github.io/panna/reference/scrape_fixtures.md)
-  : Scrape match URLs from fixtures page
-- [`fbref_competitions`](https://peteowen1.github.io/panna/reference/fbref_competitions.md)
-  : FBref competition metadata
-- [`list_competitions()`](https://peteowen1.github.io/panna/reference/list_competitions.md)
-  : List competitions by type
-
-## Scraping - Understat
-
-Understat data scraping functions
-
-- [`scrape_understat_season()`](https://peteowen1.github.io/panna/reference/scrape_understat_season.md)
-  : Scrape full Understat season
-- [`scrape_understat_matches()`](https://peteowen1.github.io/panna/reference/scrape_understat_matches.md)
-  : Scrape multiple Understat matches
-- [`scrape_understat_match()`](https://peteowen1.github.io/panna/reference/scrape_understat_match.md)
-  : Scrape single Understat match
-- [`scrape_understat_match_range()`](https://peteowen1.github.io/panna/reference/scrape_understat_match_range.md)
-  : Scrape matches by Understat ID range
-- [`scrape_understat_fixtures()`](https://peteowen1.github.io/panna/reference/scrape_understat_fixtures.md)
-  : Scrape fixtures from Understat league page
-- [`bulk_scrape_understat()`](https://peteowen1.github.io/panna/reference/bulk_scrape_understat.md)
-  : Bulk scrape Understat matches with auto-detection
-- [`smart_scrape_understat()`](https://peteowen1.github.io/panna/reference/smart_scrape_understat.md)
-  : Smart scrape Understat with per-league tracking
-- [`load_understat_manifest()`](https://peteowen1.github.io/panna/reference/load_understat_manifest.md)
-  : Load Understat manifest from parquet file
-- [`save_understat_manifest()`](https://peteowen1.github.io/panna/reference/save_understat_manifest.md)
-  : Save Understat manifest to parquet file
-- [`understat_competitions`](https://peteowen1.github.io/panna/reference/understat_competitions.md)
-  : Understat competition metadata
-- [`list_understat_competitions()`](https://peteowen1.github.io/panna/reference/list_understat_competitions.md)
-  : List Understat competitions
-
 ## Cache Management
 
 Local and remote cache operations
@@ -717,21 +635,6 @@ Local and remote cache operations
   : Get or set pannadata directory
 - [`opta_data_dir()`](https://peteowen1.github.io/panna/reference/opta_data_dir.md)
   : Get or Set Opta Data Directory
-- [`clear_remote_cache()`](https://peteowen1.github.io/panna/reference/clear_remote_cache.md)
-  : Clear Remote Data Cache
-
-## Parquet Operations
-
-Building and querying parquet files
-
-- [`build_parquet()`](https://peteowen1.github.io/panna/reference/build_parquet.md)
-  : Build parquet file from RDS files for a league-season
-- [`build_all_parquet()`](https://peteowen1.github.io/panna/reference/build_all_parquet.md)
-  : Build all parquet files
-- [`build_consolidated_parquet()`](https://peteowen1.github.io/panna/reference/build_consolidated_parquet.md)
-  : Build Consolidated Parquet Files for Remote Queries
-- [`build_consolidated_understat_parquet()`](https://peteowen1.github.io/panna/reference/build_consolidated_understat_parquet.md)
-  : Build Consolidated Understat Parquet Files
 
 ## Utilities
 
@@ -747,8 +650,6 @@ Helper functions
   : Validate season input
 - [`validate_dataframe()`](https://peteowen1.github.io/panna/reference/validate_dataframe.md)
   : Validate data frame input
-- [`get_big5_leagues()`](https://peteowen1.github.io/panna/reference/get_big5_leagues.md)
-  : Big 5 European league configurations
 
 ## Competition Metadata
 
@@ -760,6 +661,8 @@ League and competition information
   : List Available Opta Leagues
 - [`get_opta_columns()`](https://peteowen1.github.io/panna/reference/get_opta_columns.md)
   : Get Opta Column Names
+- [`resolve_league_season()`](https://peteowen1.github.io/panna/reference/resolve_league_season.md)
+  : Resolve a League-Season String for Blog-Style Pipelines
 
 ## Validation
 
@@ -784,8 +687,6 @@ Analysis helpers and reporting
   : Compare panna, RAPM, and SPM ratings
 - [`generate_panna_report()`](https://peteowen1.github.io/panna/reference/generate_panna_report.md)
   : Generate prediction report
-- [`report_season_ranges()`](https://peteowen1.github.io/panna/reference/report_season_ranges.md)
-  : Report season ranges for all data types
 
 ## Constants
 

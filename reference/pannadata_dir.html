@@ -34,7 +34,7 @@
 <div class="row">
   <main id="main" class="col-md-9"><div class="page-header">
       <img src="../logo.png" class="logo" alt=""><h1>Get or set pannadata directory</h1>
-      <small class="dont-index">Source: <a href="https://github.com/peteowen1/panna/blob/main/R/scrape_fbref_utils.R" class="external-link"><code>R/scrape_fbref_utils.R</code></a></small>
+      <small class="dont-index">Source: <a href="https://github.com/peteowen1/panna/blob/main/R/dirs.R" class="external-link"><code>R/dirs.R</code></a></small>
       <div class="d-none name"><code>pannadata_dir.Rd</code></div>
     </div>
 
@@ -63,9 +63,10 @@
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
     <p>Resolution order (first match wins):</p><ol><li><p>Explicitly set via <code>pannadata_dir("path")</code></p></li>
 <li><p><code>PANNADATA_DIR</code> environment variable</p></li>
-<li><p><code>../pannadata/data</code> if it exists (pannaverse developers)</p></li>
-<li><p>R's standard user data directory via <code>tools::R_user_dir("panna", "data")</code></p></li>
-</ol><p>The default (<code>R_user_dir</code>) gives OS-appropriate persistent storage:</p><ul><li><p>Windows: <code>C:/Users/you/AppData/Local/R/panna/data</code></p></li>
+<li><p><code>../pannadata/data</code> relative to working directory (for the
+pannaverse monorepo layout)</p></li>
+<li><p><code>tools::R_user_dir("panna", "data")</code> — OS-standard user data dir</p></li>
+</ol><p>OS-standard fallback paths:</p><ul><li><p>Windows: <code>C:/Users/you/AppData/Local/R/panna/data</code></p></li>
 <li><p>Mac: <code>~/Library/Application Support/org.R-project.R/panna/data</code></p></li>
 <li><p>Linux: <code>~/.local/share/R/panna/data</code></p></li>
 </ul></div>
