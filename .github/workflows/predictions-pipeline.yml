@@ -213,20 +213,7 @@ jobs:
             -f event_type=predictions-complete
           echo "Triggered build-blog-data.yml in pannadata"
 
-      - name: Export weekly PSR snapshots
-        continue-on-error: true
-        timeout-minutes: 50
-        env:
-          PANNADATA_DIR: ${{ runner.temp }}/pannadata
-          GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
-        run: |
-          cat > /tmp/run_psr_weekly.R << 'EOF'
-          pannadata_path <- Sys.getenv("PANNADATA_DIR", "../pannadata/data")
-          opta_path <- file.path(pannadata_path, "opta")
-          devtools::load_all()
-          pannadata_dir(pannadata_path)
-          opta_data_dir(opta_path)
-          start_step <- "8b"
-          source("data-raw/estimated-skills/run_skills_pipeline.R")
-          EOF
-          Rscript /tmp/run_psr_weekly.R
+      # Weekly PSR snapshot (step 8b) was previously inline here. It was moved
+      # to .github/workflows/psr-weekly-snapshot.yml because runner-level OOM
+      # during the export reddened this job despite the predictions themselves
+      # succeeding. The snapshot runs Wednesday 10am UTC on its own runner.
