@@ -45,18 +45,6 @@ reference:
   - load_opta_skills
   - load_opta_match_stats
 
-- title: Data Loading - FBref
-  desc: Load FBref match data from pannadata (StatsBomb xG)
-  contents:
-  - load_summary
-  - load_passing
-  - load_defense
-  - load_possession
-  - load_keeper
-  - load_shots
-  - load_metadata
-  - load_events
-
 - title: Player Statistics
   desc: Aggregated player statistics by source
   contents:
@@ -71,12 +59,6 @@ reference:
   - player_opta_xpass
   - player_opta_chains
   - compare_players
-  - player_understat_summary
-  - player_fbref_summary
-  - player_fbref_passing
-  - player_fbref_defense
-  - player_fbref_keeper
-  - player_profile
 
 - title: RAPM Pipeline
   desc: Regularized Adjusted Plus-Minus model
@@ -267,51 +249,17 @@ reference:
   - pb_upload_source
   - pb_upload_data
   - pb_upload_parquet
-  - pb_upload_consolidated
   - pb_sync_data
   - pb_list_data
   - pb_list_sources
   - pb_status
   - load_predictions
 
-- title: Scraping - FBref
-  desc: FBref data scraping functions
-  contents:
-  - scrape_fbref_matches
-  - scrape_comp_season
-  - scrape_fixtures
-  - fbref_competitions
-  - list_competitions
-
-- title: Scraping - Understat
-  desc: Understat data scraping functions
-  contents:
-  - scrape_understat_season
-  - scrape_understat_matches
-  - scrape_understat_match
-  - scrape_understat_match_range
-  - scrape_understat_fixtures
-  - bulk_scrape_understat
-  - smart_scrape_understat
-  - load_understat_manifest
-  - save_understat_manifest
-  - understat_competitions
-  - list_understat_competitions
-
 - title: Cache Management
   desc: Local and remote cache operations
   contents:
   - pannadata_dir
   - opta_data_dir
-  - clear_remote_cache
-
-- title: Parquet Operations
-  desc: Building and querying parquet files
-  contents:
-  - build_parquet
-  - build_all_parquet
-  - build_consolidated_parquet
-  - build_consolidated_understat_parquet
 
 - title: Utilities
   desc: Helper functions
@@ -321,7 +269,6 @@ reference:
   - per_90
   - validate_seasons
   - validate_dataframe
-  - get_big5_leagues
 
 - title: Competition Metadata
   desc: League and competition information
@@ -344,7 +291,6 @@ reference:
   contents:
   - compare_panna_rapm_spm
   - generate_panna_report
-  - report_season_ranges
 
 - title: Constants
   desc: Package-wide constants and thresholds
