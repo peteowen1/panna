@@ -216,6 +216,41 @@ if (length(snapshot_dates) == 0) {
   snapshot_dates <- today
 }
 
+# 4b. Stream existing rows to disk to free RAM before the snapshot loop ----
+#
+# keep_existing is a 7-8M row data.table (~500MB). It's only consumed at the
+# very end during the merge step, but holding it in memory for the entire
+# snapshot loop steals headroom from per-iteration intermediates and trips
+# the OOM ceiling on standard GHA runners. Stream it to a tempfile, free the
+# in-memory reference, and read it back at merge time.
+#
+# Also capture metadata (column names, date count) needed for the schema-drift
+# check and date-coverage assertion at the end so we can fully drop
+# existing_parquet / existing_dt too.
+
+existing_chunk_path <- NULL
+existing_schema_cols <- NULL
+existing_n_dates <- 0L
+
+if (!is.null(keep_existing) && nrow(keep_existing) > 0) {
+  existing_schema_cols <- names(keep_existing)
+  if (!is.null(existing_parquet)) {
+    existing_n_dates <- data.table::uniqueN(as.Date(existing_parquet$snapshot_date))
+  }
+
+  existing_chunk_path <- tempfile(pattern = "psr_existing_", fileext = ".parquet")
+  arrow::write_parquet(as.data.frame(keep_existing), existing_chunk_path)
+  on.exit(unlink(existing_chunk_path), add = TRUE)
+
+  message(sprintf("  Streamed keep_existing to %s — freeing %s rows from RAM",
+                  basename(existing_chunk_path),
+                  format(nrow(keep_existing), big.mark = ",")))
+
+  rm(keep_existing, existing_parquet)
+  if (exists("existing_dt")) rm(existing_dt)
+  gc(verbose = FALSE, full = TRUE)
+}
+
 # 5. Pre-Compute Shared Data (position multipliers + prior centers) ----
 #
 # Position multipliers and global prior centers change negligibly across dates
@@ -276,7 +311,15 @@ decay_params_fast$prior_centers        <- prior_centers_precomp
 # weekly cron skips the precompute but a force-rebuild still gets the speed.
 MEXP_PRECOMPUTE_MIN_DATES <- 50L
 
-if (length(snapshot_dates) >= MEXP_PRECOMPUTE_MIN_DATES) {
+# Gate the precompute behind PSR_PRECOMPUTE_MEXP=1. The size-based threshold
+# alone wasn't enough — a 100+ date catch-up run from a multi-day scrape outage
+# triggers the precompute on a runner that can't fit it, OOMing at iteration 1.
+# Default-off keeps GHA runs on the slow path (a few extra minutes of exp() calls,
+# safely fits in 7GB). Local runs on bigger machines opt in for the speedup.
+mexp_enabled <- nzchar(Sys.getenv("PSR_PRECOMPUTE_MEXP")) &&
+                length(snapshot_dates) >= MEXP_PRECOMPUTE_MIN_DATES
+
+if (mexp_enabled) {
   cat("\n=== Pre-Computing Decay Exponentials ===\n")
   mexp_start <- Sys.time()
 
@@ -302,8 +345,13 @@ if (length(snapshot_dates) >= MEXP_PRECOMPUTE_MIN_DATES) {
               length(all_lambdas),
               as.numeric(difftime(Sys.time(), mexp_start, units = "secs"))))
 } else {
-  cat(sprintf("\n  Skipping mexp precompute (%d dates < threshold %d) — slow path is cheap at this size\n",
-              length(snapshot_dates), MEXP_PRECOMPUTE_MIN_DATES))
+  if (length(snapshot_dates) >= MEXP_PRECOMPUTE_MIN_DATES) {
+    cat(sprintf("\n  Skipping mexp precompute (%d dates >= threshold %d, but PSR_PRECOMPUTE_MEXP not set). Set env var to enable; needs ~540MB extra RAM.\n",
+                length(snapshot_dates), MEXP_PRECOMPUTE_MIN_DATES))
+  } else {
+    cat(sprintf("\n  Skipping mexp precompute (%d dates < threshold %d) — slow path is cheap at this size\n",
+                length(snapshot_dates), MEXP_PRECOMPUTE_MIN_DATES))
+  }
 }
 
 # 6. Compute PSR at Each Snapshot Date ----
@@ -426,14 +474,14 @@ message(sprintf("  Newly computed: %s rows across %d dates",
                 format(nrow(new_psr), big.mark = ","),
                 data.table::uniqueN(new_psr$snapshot_date)))
 
-# Merge with reused rows from the existing parquet (if any)
-if (!is.null(keep_existing) && nrow(keep_existing) > 0) {
-  # Detect column drift: if new_psr has columns not in keep_existing (or vice
-  # versa), intersecting would silently drop them and publish a parquet whose
-  # schema is inconsistent with a fresh full rebuild. Force a full rebuild so
-  # the new schema lands cleanly on the next run.
-  added_cols   <- setdiff(names(new_psr), names(keep_existing))
-  dropped_cols <- setdiff(names(keep_existing), names(new_psr))
+# Merge with reused rows from the existing parquet (if any). keep_existing was
+# streamed to existing_chunk_path before the snapshot loop to free ~500MB of
+# RAM during compute; read it back now for the merge.
+if (!is.null(existing_chunk_path)) {
+  # Drift check uses captured schema from before the stream-to-disk to avoid
+  # a wasted full read just to compare names.
+  added_cols   <- setdiff(names(new_psr), existing_schema_cols)
+  dropped_cols <- setdiff(existing_schema_cols, names(new_psr))
   if (length(added_cols) > 0 || length(dropped_cols) > 0) {
     warning(sprintf(
       "Column drift between new and existing parquet (added: [%s], removed: [%s]). ",
@@ -444,6 +492,7 @@ if (!is.null(keep_existing) && nrow(keep_existing) > 0) {
       call. = FALSE)
     weekly_psr <- new_psr
   } else {
+    keep_existing <- data.table::as.data.table(arrow::read_parquet(existing_chunk_path))
     common_cols <- names(new_psr)
     weekly_psr <- data.table::rbindlist(
       list(keep_existing[, ..common_cols], new_psr[, ..common_cols]),
@@ -451,6 +500,8 @@ if (!is.null(keep_existing) && nrow(keep_existing) > 0) {
     )
     message(sprintf("  Reused rows:    %s rows from existing parquet",
                     format(nrow(keep_existing), big.mark = ",")))
+    rm(keep_existing)
+    gc(verbose = FALSE, full = TRUE)
   }
 } else {
   weekly_psr <- new_psr
@@ -471,13 +522,12 @@ if (nrow(weekly_psr) == 0) {
        "Both new computation and reused rows came back empty.",
        call. = FALSE)
 }
-if (incremental_active && !is.null(existing_parquet)) {
-  n_old_dates <- data.table::uniqueN(as.Date(existing_parquet$snapshot_date))
+if (incremental_active && existing_n_dates > 0L) {
   n_new_dates <- data.table::uniqueN(weekly_psr$snapshot_date)
-  if (n_new_dates < n_old_dates) {
+  if (n_new_dates < existing_n_dates) {
     warning(sprintf(
       "Published snapshot date count decreased (%d -> %d). ",
-      n_old_dates, n_new_dates),
+      existing_n_dates, n_new_dates),
       "This should not happen on a normal incremental run - investigate ",
       "before trusting the release.", call. = FALSE)
   }
