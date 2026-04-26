@@ -45,13 +45,6 @@ reference:
   - load_opta_skills
   - load_opta_match_stats
 
-- title: Data Loading - Understat
-  desc: Load Understat data (xGChain, xGBuildup)
-  contents:
-  - load_understat_roster
-  - load_understat_shots
-  - load_understat_metadata
-
 - title: Data Loading - FBref
   desc: Load FBref match data from pannadata (StatsBomb xG)
   contents:
