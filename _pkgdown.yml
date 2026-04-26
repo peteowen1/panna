@@ -68,6 +68,8 @@ reference:
   - fit_rapm
   - fit_rapm_with_prior
   - extract_rapm_ratings
+  - extract_period_end_times
+  - extract_player_timing_from_events
 
 - title: SPM Pipeline
   desc: Statistical Plus-Minus model
@@ -124,6 +126,7 @@ reference:
   desc: Action-level player valuation from Opta event data
   contents:
   - convert_opta_to_spadl
+  - get_or_build_spadl
   - fit_epv_model
   - calculate_action_epv
   - assign_epv_credit
@@ -276,6 +279,7 @@ reference:
   - list_opta_seasons
   - list_opta_leagues
   - get_opta_columns
+  - resolve_league_season
 
 - title: Validation
   desc: Model and data validation
