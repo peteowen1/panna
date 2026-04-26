@@ -1,0 +1,144 @@
+name: Weekly PSR Snapshot
+
+# Builds opta_psr_weekly.parquet (~295 MB) for date-based player_psr() queries.
+# Split out of predictions-pipeline.yml because runner-level OOM in this step
+# was reddening Predictions Pipeline despite the predictions themselves succeeding.
+
+on:
+  schedule:
+    # Wednesday 10 AM UTC — 2 hours after Predictions Pipeline cron
+    - cron: '0 10 * * 3'
+  workflow_dispatch:
+
+env:
+  GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
+  R_KEEP_PKG_SOURCE: yes
+
+jobs:
+  psr-snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.5.0'
+          use-public-rspm: true
+
+      - name: Setup R dependencies
+        uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          cache-version: 2
+          extra-packages: |
+            any::devtools
+            any::piggyback
+            any::arrow
+            any::dplyr
+            any::tidyr
+            any::data.table
+            any::cli
+          needs: |
+            devtools
+
+      - name: Download consolidated Opta data
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+        run: |
+          OPTA_DIR="${{ runner.temp }}/pannadata/opta"
+          mkdir -p "$OPTA_DIR"
+
+          echo "Downloading Opta files needed for PSR step 8b..."
+          for f in opta_player_stats.parquet opta_match_stats.parquet \
+                   opta_skills.parquet opta_xmetrics.parquet opta-catalog.json; do
+            if gh release download opta-latest --repo peteowen1/pannadata --pattern "$f" --dir "$OPTA_DIR" 2>/dev/null; then
+              echo "  Downloaded $f"
+            else
+              echo "  Skipped $f (not found)"
+            fi
+          done
+
+          echo ""
+          ls -lh "$OPTA_DIR"
+
+          # Validate required files for step 8b
+          MISSING=0
+          for f in opta_match_stats.parquet opta-catalog.json; do
+            if [ ! -f "$OPTA_DIR/$f" ]; then
+              echo "FATAL: Required file $f was not downloaded"
+              MISSING=$((MISSING + 1))
+            fi
+          done
+          if [ "$MISSING" -gt 0 ]; then
+            echo "ERROR: $MISSING required file(s) missing. Cannot run PSR snapshot."
+            exit 1
+          fi
+
+      - name: Download skills caches
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+        run: |
+          CACHE_SKILLS="data-raw/cache-skills"
+          mkdir -p "$CACHE_SKILLS"
+
+          echo "Downloading skill caches..."
+          for f in 01_match_stats.rds 02b_decay_params.rds 03_skill_spm.rds; do
+            if gh release download predictions-cache --repo peteowen1/pannadata \
+                 --pattern "$f" --dir "$CACHE_SKILLS" 2>/dev/null; then
+              echo "  Downloaded $f"
+            else
+              echo "  WARNING: $f not found"
+            fi
+          done
+
+          echo ""
+          ls -lh "$CACHE_SKILLS"/*.rds 2>/dev/null || echo "  No skill caches"
+
+          # Validate prerequisite for step 8b
+          if [ ! -f "$CACHE_SKILLS/01_match_stats.rds" ] && [ ! -f "$CACHE_SKILLS/01_match_stats_slim.rds" ]; then
+            echo "FATAL: 01_match_stats(_slim).rds required for PSR snapshot"
+            exit 1
+          fi
+
+      - name: Export weekly PSR snapshots
+        env:
+          PANNADATA_DIR: ${{ runner.temp }}/pannadata
+          GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
+        run: |
+          cat > /tmp/run_psr_weekly.R << 'EOF'
+          pannadata_path <- Sys.getenv("PANNADATA_DIR", "../pannadata/data")
+          opta_path <- file.path(pannadata_path, "opta")
+          devtools::load_all()
+          pannadata_dir(pannadata_path)
+          opta_data_dir(opta_path)
+          start_step <- "8b"
+          source("data-raw/estimated-skills/run_skills_pipeline.R")
+          EOF
+          Rscript /tmp/run_psr_weekly.R
+
+      - name: Snapshot summary
+        if: always()
+        run: |
+          echo "## Weekly PSR Snapshot" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Date:** $(date +'%Y-%m-%d %H:%M UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "**Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          OUT_FILE="${{ runner.temp }}/pannadata/opta/opta_psr_weekly.parquet"
+          if [ -f "$OUT_FILE" ]; then
+            SIZE=$(ls -lh "$OUT_FILE" | awk '{print $5}')
+            echo "**Output:** opta_psr_weekly.parquet ($SIZE)" >> $GITHUB_STEP_SUMMARY
+            echo "**Upload:** uploaded to \`opta-latest\` release" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**Status:** Snapshot FAILED (no output parquet found)" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
