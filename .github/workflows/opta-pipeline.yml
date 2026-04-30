@@ -25,7 +25,12 @@ env:
 jobs:
   opta-pipeline:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # Bumped from 60 to 120 because step 01 now builds SPADL on-the-fly from
+    # raw events (~35 min for ~51K matches × 15 leagues). Previous 60-min
+    # cap killed step 03 with steps 04-09 still to run. Empirical breakdown:
+    # setup 3min + step01 35min + step02 4min + step03 8min + step04 ~12min
+    # + steps05-09 ~10min ≈ 72 min. 120 leaves comfortable headroom.
+    timeout-minutes: 120
 
     permissions:
       contents: write

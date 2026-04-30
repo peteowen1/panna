@@ -381,14 +381,25 @@ cat("=== Computing PSR Snapshots ===\n\n")
 # + `precomputed_mexp` still persists across the loop by design). Fixes the
 # persistent OOM documented in panna#63, which hit at ~date 1/105 when the
 # recompute set grew well past the originally-assumed handful of dates.
-# Use cache_dir, not tempfile() — same /tmp-vanishing problem we hit with
-# the existing-chunk parquet above. Per-iteration writes to /tmp/RtmpXXX/
-# fail with errno 2 partway through the loop. cache_dir is workspace-local
-# and unaffected by whatever cleans tempdir mid-script.
-psr_chunks_dir <- file.path(cache_dir, ".psr_chunks")
-unlink(psr_chunks_dir, recursive = TRUE, force = TRUE)  # clean any prior run's residue
-dir.create(psr_chunks_dir, recursive = TRUE)
+# Streaming chunks dir. Two prior fix attempts failed:
+#   v1: tempfile() under /tmp — disappeared mid-loop (gc/arrow/something).
+#   v2: dotfile dir under cache_dir — ALSO disappeared. Mechanism still
+#       unconfirmed.
+# This version: absolute path (rule out cwd drift), non-dotfile name (rule
+# out anyone treating "hidden" dirs specially), explicit dir.exists guards
+# right after creation AND on iteration 1's first write, with cwd printed
+# in the error message so the next failure tells us where to look next.
+psr_chunks_dir <- normalizePath(file.path(cache_dir, "psr_chunks_streaming"),
+                                 winslash = "/", mustWork = FALSE)
+dir_create_ok <- dir.create(psr_chunks_dir, recursive = TRUE,
+                             showWarnings = TRUE)
+if (!dir.exists(psr_chunks_dir)) {
+  stop("Failed to create psr_chunks_dir at startup: ", psr_chunks_dir,
+       " (dir.create returned: ", dir_create_ok,
+       ", cwd: ", getwd(), ")", call. = FALSE)
+}
 on.exit(unlink(psr_chunks_dir, recursive = TRUE, force = TRUE), add = TRUE)
+message(sprintf("  Streaming per-iteration chunks to: %s", psr_chunks_dir))
 
 n_success <- 0L
 start_time <- Sys.time()
@@ -439,6 +450,20 @@ for (i in seq_along(snapshot_dates)) {
   psr[, snapshot_date := d]
   psr_slim <- psr[, .(snapshot_date, player_id, player_name,
                        primary_position, psr, osr, dsr, weighted_90s)]
+
+  # Guard: if psr_chunks_dir vanished between dir.create and now, fail
+  # loudly with cwd + iteration so we know whether it was wiped before the
+  # first write or partway through. Two prior attempts at moving this dir
+  # both saw it disappear; the error message is what tells us where to
+  # look next.
+  if (!dir.exists(psr_chunks_dir)) {
+    stop("psr_chunks_dir vanished mid-loop at iteration ", i,
+         ": ", psr_chunks_dir,
+         " (cwd: ", getwd(),
+         ", parent exists: ", dir.exists(dirname(psr_chunks_dir)), ")",
+         call. = FALSE)
+  }
+
   arrow::write_parquet(
     as.data.frame(psr_slim),
     file.path(psr_chunks_dir, sprintf("%06d.parquet", i))
