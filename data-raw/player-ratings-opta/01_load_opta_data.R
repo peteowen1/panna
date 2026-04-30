@@ -127,8 +127,15 @@ for (league in leagues) {
 
       # Load raw match events. Used for both SPADL building (via
       # get_or_build_spadl) and penalty detection (qualifier 9).
+      #
+      # source = "remote" matches what 10b/10c do (the working predictions
+      # workflow). match_events live as per-league `events_<League>.parquet`
+      # files on the opta-latest release — not as a consolidated file — so
+      # source = "local" would only work if the workflow reorganised them
+      # into the hierarchical layout `load_opta_table` expects. Remote pulls
+      # each per-league file once via piggyback and caches it per R session.
       raw_events <- tryCatch(
-        load_opta_match_events(league, season = season, source = "local"),
+        load_opta_match_events(league, season = season),
         error = function(e) NULL
       )
 
