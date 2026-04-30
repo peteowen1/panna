@@ -392,10 +392,15 @@ cat("=== Computing PSR Snapshots ===\n\n")
 # flat-named files directly under cache_dir — same level as
 # psr_existing_chunk.parquet, which has proven to survive across the loop.
 # Cleanup uses a name pattern instead of recursive unlink.
-psr_chunk_prefix <- file.path(cache_dir, ".psr_chunk_")
+# Chunks named without leading dot. v4/v5 used ".psr_chunk_NNNNNN.parquet"
+# but list.files() defaults to all.files=FALSE which silently skips hidden
+# files — chunks were written successfully but the merge step's list.files
+# returned 0 entries. The "vanishing files" we'd been chasing for 3 iterations
+# was actually just our own filter omitting them. Drop the leading dot.
+psr_chunk_prefix <- file.path(cache_dir, "psr_chunk_")
 .cleanup_psr_chunks <- function() {
   files <- list.files(cache_dir,
-                       pattern = "^\\.psr_chunk_\\d+\\.parquet$",
+                       pattern = "^psr_chunk_\\d+\\.parquet$",
                        full.names = TRUE)
   if (length(files) > 0) unlink(files, force = TRUE)
 }
@@ -504,7 +509,7 @@ cat("\n=== Exporting ===\n")
 # and materializes them in a single pass without holding all individual
 # data.frames in memory simultaneously.
 chunk_files <- list.files(cache_dir,
-                          pattern = "^\\.psr_chunk_\\d+\\.parquet$",
+                          pattern = "^psr_chunk_\\d+\\.parquet$",
                           full.names = TRUE)
 if (length(chunk_files) == 0) {
   stop("No PSR snapshot chunks were written - refusing to publish.",
