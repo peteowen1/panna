@@ -228,7 +228,6 @@ if (length(snapshot_dates) == 0) {
 # check and date-coverage assertion at the end so we can fully drop
 # existing_parquet / existing_dt too.
 
-existing_chunk_path <- NULL
 existing_schema_cols <- NULL
 existing_n_dates <- 0L
 
@@ -238,32 +237,21 @@ if (!is.null(keep_existing) && nrow(keep_existing) > 0) {
     existing_n_dates <- data.table::uniqueN(as.Date(existing_parquet$snapshot_date))
   }
 
-  # Use cache_dir (not tempfile() / R's session tempdir) so the file survives
-  # the snapshot loop. We've seen the file vanish from /tmp/RtmpXXX between
-  # write and read here on GHA — mechanism unclear (gc() inside the loop,
-  # arrow mempool churn, or some helper cleaning tempdir) — but cache_dir is
-  # under the workspace and untouched by R/arrow/system tempdir cleanup.
-  existing_chunk_path <- file.path(cache_dir, ".psr_existing_chunk.parquet")
-  arrow::write_parquet(as.data.frame(keep_existing), existing_chunk_path)
-  on.exit(unlink(existing_chunk_path), add = TRUE)
-
-  if (!file.exists(existing_chunk_path) ||
-      file.size(existing_chunk_path) == 0) {
-    stop("Failed to stream keep_existing to ", existing_chunk_path,
-         " (file missing or zero bytes immediately after write_parquet).",
-         call. = FALSE)
-  }
-
-  message(sprintf("  Streamed keep_existing to %s (%s) — freeing %s rows from RAM",
-                  existing_chunk_path,
-                  format(structure(file.size(existing_chunk_path),
-                                   class = "object_size"),
-                         units = "auto"),
-                  format(nrow(keep_existing), big.mark = ",")))
-
-  rm(keep_existing, existing_parquet)
+  # Keep keep_existing in memory through the loop. Earlier versions streamed
+  # it to a parquet file under cache_dir to free ~500 MB of RAM during the
+  # snapshot loop, but the streamed file kept vanishing on GHA (v6 hit the
+  # guard: file genuinely absent at merge time despite successful write —
+  # leading-dot filename appears to be the trigger; visible-named chunks in
+  # the same dir survived fine in v6). Now that the loop has gc(full=TRUE)
+  # every iteration (added in v5), peak memory is bounded by ONE iter's
+  # transients rather than 10 iters' worth — keep_existing's 500 MB fits
+  # comfortably below the 7 GB ceiling without needing the disk round-trip.
+  rm(existing_parquet)
   if (exists("existing_dt")) rm(existing_dt)
   gc(verbose = FALSE, full = TRUE)
+  message(sprintf("  Holding keep_existing in memory: %s rows (~%s)",
+                  format(nrow(keep_existing), big.mark = ","),
+                  format(utils::object.size(keep_existing), units = "auto")))
 }
 
 # 5. Pre-Compute Shared Data (position multipliers + prior centers) ----
@@ -527,12 +515,12 @@ message(sprintf("  Newly computed: %s rows across %d dates",
                 format(nrow(new_psr), big.mark = ","),
                 data.table::uniqueN(new_psr$snapshot_date)))
 
-# Merge with reused rows from the existing parquet (if any). keep_existing was
-# streamed to existing_chunk_path before the snapshot loop to free ~500MB of
-# RAM during compute; read it back now for the merge.
-if (!is.null(existing_chunk_path)) {
-  # Drift check uses captured schema from before the stream-to-disk to avoid
-  # a wasted full read just to compare names.
+# Merge with reused rows from existing parquet (if any). keep_existing has
+# been held in memory throughout the loop — was previously streamed to a
+# parquet file to save RAM, but that file kept vanishing on GHA (mechanism
+# unclear — see comments at the streaming-removed block above).
+if (!is.null(keep_existing) && nrow(keep_existing) > 0) {
+  # Drift check uses captured schema from start of script.
   added_cols   <- setdiff(names(new_psr), existing_schema_cols)
   dropped_cols <- setdiff(existing_schema_cols, names(new_psr))
   if (length(added_cols) > 0 || length(dropped_cols) > 0) {
@@ -545,14 +533,6 @@ if (!is.null(existing_chunk_path)) {
       call. = FALSE)
     weekly_psr <- new_psr
   } else {
-    if (!file.exists(existing_chunk_path) ||
-        file.size(existing_chunk_path) == 0) {
-      stop("Streamed keep_existing chunk vanished or was truncated before merge: ",
-           existing_chunk_path,
-           ". Refusing to publish an incomplete parquet over the existing release.",
-           call. = FALSE)
-    }
-    keep_existing <- data.table::as.data.table(arrow::read_parquet(existing_chunk_path))
     common_cols <- names(new_psr)
     weekly_psr <- data.table::rbindlist(
       list(keep_existing[, ..common_cols], new_psr[, ..common_cols]),
