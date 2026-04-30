@@ -62,9 +62,16 @@ if (!exists("force_rebuild_from")) force_rebuild_from <- NULL
 
 source("data-raw/pipeline_utils.R")
 
-# Wrapper that passes run_steps from the pipeline environment
+# Wrapper that passes run_steps from the pipeline environment.
+# Forces a full GC after each step so the next step starts with clean memory.
+# Without this, R's lazy GC leaves the previous step's local-frame variables
+# (combined_lineups, raw_opta_data, processed_data, etc.) holding multi-GB of
+# unreachable-but-allocated heap, which pushes step 3's readRDS over the
+# 7GB ceiling on standard ubuntu-latest runners.
 run_step_opta <- function(step_name, step_num, code_block) {
-  run_step(step_name, step_num, code_block, run_steps)
+  result <- run_step(step_name, step_num, code_block, run_steps)
+  gc(verbose = FALSE, full = TRUE)
+  result
 }
 
 # 4. Initialize Pipeline ----
