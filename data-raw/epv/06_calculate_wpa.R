@@ -99,6 +99,27 @@ for (league in LEAGUES) {
       # Assign credit between actor and receiver
       spadl_wpa <- assign_wpa_credit(spadl_wpa)
 
+      # Write per-action WPA for chain enrichment by pannadata's
+      # build_chains_ci.R. Mirrors the per-season action_equity_*.parquet
+      # pattern from 10c_export_equity.R, but sharded per (league, season)
+      # to bound memory if/when this runs across all 15 leagues × 12 seasons.
+      # Schema matches the followup_panna_chains_per_event_wp memory note:
+      # match_id, event_id, wp, wpa, wpa_actor, wpa_receiver.
+      action_wpa_file <- file.path(opta_data_dir(),
+                                    sprintf("action_wpa_%s_%s.parquet",
+                                            league, season))
+      action_wpa_cols <- intersect(
+        c("match_id", "original_event_id",
+          "wp", "wpa", "wpa_actor", "wpa_receiver"),
+        names(spadl_wpa))
+      action_wpa_dt <- spadl_wpa[, ..action_wpa_cols]
+      if ("original_event_id" %in% names(action_wpa_dt)) {
+        data.table::setnames(action_wpa_dt, "original_event_id", "event_id")
+      }
+      arrow::write_parquet(action_wpa_dt, action_wpa_file)
+      cli_alert_info("    action_wpa written: {action_wpa_file} ({nrow(action_wpa_dt)} rows)")
+      rm(action_wpa_dt)
+
       # Aggregate per player per game
       player_game_wpa <- aggregate_player_game_wpa(spadl_wpa, lineups)
       player_game_wpa$league <- league
