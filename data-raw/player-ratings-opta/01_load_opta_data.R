@@ -125,19 +125,37 @@ for (league in leagues) {
         }
       }
 
-      # Load SPADL cache and score shots
-      spadl_cache <- file.path(SPADL_CACHE_DIR,
-                               sprintf("spadl_%s_%s.rds", league, season))
+      # Load raw match events. Used for both SPADL building (via
+      # get_or_build_spadl) and penalty detection (qualifier 9).
+      raw_events <- tryCatch(
+        load_opta_match_events(league, season = season, source = "local"),
+        error = function(e) NULL
+      )
 
-      if (file.exists(spadl_cache)) {
-        spadl <- readRDS(spadl_cache)
+      if (is.null(raw_events) || nrow(raw_events) == 0) {
+        message(sprintf("    No raw events for %s — skipping shot scoring", label))
+        next
+      }
 
-        # Load raw match events for penalty detection
-        raw_events <- tryCatch(
-          load_opta_match_events(league, season = season, source = "local"),
-          error = function(e) NULL
-        )
+      # Build (or load cached) SPADL. Replaces an old file.exists() check that
+      # silently degraded the pipeline to 0-xG splints when caches were absent
+      # (notably on fresh GHA runners that don't ship SPADL caches alongside
+      # opta-latest assets). get_or_build_spadl() rebuilds from raw_events on
+      # cache miss; downstream behaviour is identical when a valid cache exists.
+      spadl <- tryCatch(
+        get_or_build_spadl(raw_events, league, season),
+        error = function(e) {
+          message(sprintf("    SPADL build failed for %s: %s", label, e$message))
+          NULL
+        }
+      )
 
+      if (is.null(spadl) || nrow(spadl) == 0) {
+        message(sprintf("    No SPADL for %s — skipping shot scoring", label))
+        next
+      }
+
+      {
         # Detect penalties from raw events (qualifier 9)
         # Uses (match_id, player_id, minute, second) composite key to avoid
         # collisions when a player has multiple shots in the same minute
@@ -256,8 +274,6 @@ for (league in leagues) {
 
         message(sprintf("    SPADL: %d shots scored, %d penalties",
                         nrow(shots_df), sum(shots_df$is_penalty)))
-      } else {
-        message(sprintf("    No SPADL cache for %s", label))
       }
 
     }, error = function(e) {
@@ -280,6 +296,17 @@ combined_match_xg <- if (length(all_match_xg) > 0) bind_rows(all_match_xg) else 
 # Data scale validation: catch partial/empty loads early
 if (nrow(combined_lineups) == 0) {
   stop("No lineup data loaded for any league-season. Check data availability and source paths.")
+}
+
+# Fail fast at step 01 if SPADL produced zero shots across the entire run.
+# Otherwise the failure surfaces four steps downstream when filter_bad_xg_data
+# drops every splint as 100% zero-xG, with the actual root cause buried in
+# a per-season "No SPADL ..." message.
+if (is.null(combined_shots) || nrow(combined_shots) == 0) {
+  stop("No SPADL shots loaded for any league-season. ",
+       "Splints would have zero xG and step 04 would drop everything. ",
+       "Verify opta_match_events.parquet is downloaded and SPADL building succeeds.",
+       call. = FALSE)
 }
 n_leagues_loaded <- length(unique(combined_lineups$league))
 n_matches_loaded <- length(unique(combined_lineups$match_id))
