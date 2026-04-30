@@ -459,10 +459,13 @@ for (i in seq_along(snapshot_dates)) {
   )
 
   rm(skills, psr, psr_slim)
-  # Full GC every 10th iteration to amortize its cost (~200ms on a ~2GB
-  # heap). Per-iteration would add ~20s across 100 dates for no real gain;
-  # lazy GC frees transients within a few iterations once refs drop.
-  if (i %% 10L == 0L) gc(verbose = FALSE, full = TRUE)
+  # GC every iteration. The previous "every 10" cadence let ~10 iters of
+  # transient allocations accumulate as unreachable-but-uncollected heap
+  # — over 80+ iters this cumulatively pushed past 7GB on standard
+  # GHA runners (v4 cancelled at iter 84/106). Per-iter cost is ~200ms
+  # on a 2GB heap; ~20s total across 100 dates is a fair trade for
+  # bounded memory.
+  gc(verbose = FALSE, full = TRUE)
   n_success <- n_success + 1L
 }
 
@@ -491,9 +494,15 @@ if (n_failed > 0) {
 
 cat("\n=== Exporting ===\n")
 
-# Read back all streamed per-date chunks. Each chunk is ~5-10 MB, so even at
-# 200+ dates the cumulative read fits easily in memory. Uses rbindlist to
-# stay on the data.table path the rest of the script is on.
+# Read back all streamed per-date chunks. v4 used lapply() then rbindlist
+# which holds 2x the total chunk bytes briefly (the list and the bound
+# result both alive). With 106 chunks × ~5-10 MB plus existing residual
+# memory from the loop, that pushed us over the 7GB ceiling — manifested
+# as "operation cancelled" 15 sec after the loop's last iteration.
+#
+# Use arrow::open_dataset() instead, which lazy-reads the chunk files
+# and materializes them in a single pass without holding all individual
+# data.frames in memory simultaneously.
 chunk_files <- list.files(cache_dir,
                           pattern = "^\\.psr_chunk_\\d+\\.parquet$",
                           full.names = TRUE)
@@ -501,9 +510,13 @@ if (length(chunk_files) == 0) {
   stop("No PSR snapshot chunks were written - refusing to publish.",
        call. = FALSE)
 }
-new_psr <- data.table::rbindlist(
-  lapply(chunk_files, arrow::read_parquet),
-  fill = TRUE, use.names = TRUE
+
+# Force a full GC at the loop boundary so the merge starts clean.
+gc(verbose = FALSE, full = TRUE)
+
+new_psr <- data.table::as.data.table(
+  arrow::open_dataset(chunk_files, format = "parquet") |>
+    dplyr::collect()
 )
 message(sprintf("  Newly computed: %s rows across %d dates",
                 format(nrow(new_psr), big.mark = ","),
