@@ -381,25 +381,28 @@ cat("=== Computing PSR Snapshots ===\n\n")
 # + `precomputed_mexp` still persists across the loop by design). Fixes the
 # persistent OOM documented in panna#63, which hit at ~date 1/105 when the
 # recompute set grew well past the originally-assumed handful of dates.
-# Streaming chunks dir. Two prior fix attempts failed:
-#   v1: tempfile() under /tmp — disappeared mid-loop (gc/arrow/something).
-#   v2: dotfile dir under cache_dir — ALSO disappeared. Mechanism still
-#       unconfirmed.
-# This version: absolute path (rule out cwd drift), non-dotfile name (rule
-# out anyone treating "hidden" dirs specially), explicit dir.exists guards
-# right after creation AND on iteration 1's first write, with cwd printed
-# in the error message so the next failure tells us where to look next.
-psr_chunks_dir <- normalizePath(file.path(cache_dir, "psr_chunks_streaming"),
-                                 winslash = "/", mustWork = FALSE)
-dir_create_ok <- dir.create(psr_chunks_dir, recursive = TRUE,
-                             showWarnings = TRUE)
-if (!dir.exists(psr_chunks_dir)) {
-  stop("Failed to create psr_chunks_dir at startup: ", psr_chunks_dir,
-       " (dir.create returned: ", dir_create_ok,
-       ", cwd: ", getwd(), ")", call. = FALSE)
+# Streaming chunks. Three prior fix attempts failed:
+#   v1: tempfile() under /tmp — disappeared mid-loop.
+#   v2: dotfile dir under cache_dir — ALSO disappeared.
+#   v3: non-dotfile dir under cache_dir, with diagnostic guards — confirmed
+#       cwd is correct AND cache_dir parent exists, but the chunks SUBDIR
+#       still gets wiped between dir.create and iter 1 of the loop.
+#       Mechanism: still unconfirmed, but specifically targets subdirs.
+# This version: don't create a subdirectory at all. Stream chunks as
+# flat-named files directly under cache_dir — same level as
+# psr_existing_chunk.parquet, which has proven to survive across the loop.
+# Cleanup uses a name pattern instead of recursive unlink.
+psr_chunk_prefix <- file.path(cache_dir, ".psr_chunk_")
+.cleanup_psr_chunks <- function() {
+  files <- list.files(cache_dir,
+                       pattern = "^\\.psr_chunk_\\d+\\.parquet$",
+                       full.names = TRUE)
+  if (length(files) > 0) unlink(files, force = TRUE)
 }
-on.exit(unlink(psr_chunks_dir, recursive = TRUE, force = TRUE), add = TRUE)
-message(sprintf("  Streaming per-iteration chunks to: %s", psr_chunks_dir))
+.cleanup_psr_chunks()  # remove residue from a prior crashed run, if any
+on.exit(.cleanup_psr_chunks(), add = TRUE)
+message(sprintf("  Streaming per-iteration chunks as flat files: %s*.parquet",
+                psr_chunk_prefix))
 
 n_success <- 0L
 start_time <- Sys.time()
@@ -450,23 +453,9 @@ for (i in seq_along(snapshot_dates)) {
   psr[, snapshot_date := d]
   psr_slim <- psr[, .(snapshot_date, player_id, player_name,
                        primary_position, psr, osr, dsr, weighted_90s)]
-
-  # Guard: if psr_chunks_dir vanished between dir.create and now, fail
-  # loudly with cwd + iteration so we know whether it was wiped before the
-  # first write or partway through. Two prior attempts at moving this dir
-  # both saw it disappear; the error message is what tells us where to
-  # look next.
-  if (!dir.exists(psr_chunks_dir)) {
-    stop("psr_chunks_dir vanished mid-loop at iteration ", i,
-         ": ", psr_chunks_dir,
-         " (cwd: ", getwd(),
-         ", parent exists: ", dir.exists(dirname(psr_chunks_dir)), ")",
-         call. = FALSE)
-  }
-
   arrow::write_parquet(
     as.data.frame(psr_slim),
-    file.path(psr_chunks_dir, sprintf("%06d.parquet", i))
+    paste0(psr_chunk_prefix, sprintf("%06d.parquet", i))
   )
 
   rm(skills, psr, psr_slim)
@@ -505,7 +494,8 @@ cat("\n=== Exporting ===\n")
 # Read back all streamed per-date chunks. Each chunk is ~5-10 MB, so even at
 # 200+ dates the cumulative read fits easily in memory. Uses rbindlist to
 # stay on the data.table path the rest of the script is on.
-chunk_files <- list.files(psr_chunks_dir, pattern = "\\.parquet$",
+chunk_files <- list.files(cache_dir,
+                          pattern = "^\\.psr_chunk_\\d+\\.parquet$",
                           full.names = TRUE)
 if (length(chunk_files) == 0) {
   stop("No PSR snapshot chunks were written - refusing to publish.",
