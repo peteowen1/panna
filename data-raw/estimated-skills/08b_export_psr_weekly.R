@@ -238,12 +238,27 @@ if (!is.null(keep_existing) && nrow(keep_existing) > 0) {
     existing_n_dates <- data.table::uniqueN(as.Date(existing_parquet$snapshot_date))
   }
 
-  existing_chunk_path <- tempfile(pattern = "psr_existing_", fileext = ".parquet")
+  # Use cache_dir (not tempfile() / R's session tempdir) so the file survives
+  # the snapshot loop. We've seen the file vanish from /tmp/RtmpXXX between
+  # write and read here on GHA — mechanism unclear (gc() inside the loop,
+  # arrow mempool churn, or some helper cleaning tempdir) — but cache_dir is
+  # under the workspace and untouched by R/arrow/system tempdir cleanup.
+  existing_chunk_path <- file.path(cache_dir, ".psr_existing_chunk.parquet")
   arrow::write_parquet(as.data.frame(keep_existing), existing_chunk_path)
   on.exit(unlink(existing_chunk_path), add = TRUE)
 
-  message(sprintf("  Streamed keep_existing to %s — freeing %s rows from RAM",
-                  basename(existing_chunk_path),
+  if (!file.exists(existing_chunk_path) ||
+      file.size(existing_chunk_path) == 0) {
+    stop("Failed to stream keep_existing to ", existing_chunk_path,
+         " (file missing or zero bytes immediately after write_parquet).",
+         call. = FALSE)
+  }
+
+  message(sprintf("  Streamed keep_existing to %s (%s) — freeing %s rows from RAM",
+                  existing_chunk_path,
+                  format(structure(file.size(existing_chunk_path),
+                                   class = "object_size"),
+                         units = "auto"),
                   format(nrow(keep_existing), big.mark = ",")))
 
   rm(keep_existing, existing_parquet)
@@ -492,6 +507,13 @@ if (!is.null(existing_chunk_path)) {
       call. = FALSE)
     weekly_psr <- new_psr
   } else {
+    if (!file.exists(existing_chunk_path) ||
+        file.size(existing_chunk_path) == 0) {
+      stop("Streamed keep_existing chunk vanished or was truncated before merge: ",
+           existing_chunk_path,
+           ". Refusing to publish an incomplete parquet over the existing release.",
+           call. = FALSE)
+    }
     keep_existing <- data.table::as.data.table(arrow::read_parquet(existing_chunk_path))
     common_cols <- names(new_psr)
     weekly_psr <- data.table::rbindlist(
