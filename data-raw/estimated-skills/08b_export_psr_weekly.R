@@ -381,9 +381,14 @@ cat("=== Computing PSR Snapshots ===\n\n")
 # + `precomputed_mexp` still persists across the loop by design). Fixes the
 # persistent OOM documented in panna#63, which hit at ~date 1/105 when the
 # recompute set grew well past the originally-assumed handful of dates.
-psr_chunks_dir <- tempfile("psr_chunks_")
-dir.create(psr_chunks_dir)
-on.exit(unlink(psr_chunks_dir, recursive = TRUE), add = TRUE)
+# Use cache_dir, not tempfile() — same /tmp-vanishing problem we hit with
+# the existing-chunk parquet above. Per-iteration writes to /tmp/RtmpXXX/
+# fail with errno 2 partway through the loop. cache_dir is workspace-local
+# and unaffected by whatever cleans tempdir mid-script.
+psr_chunks_dir <- file.path(cache_dir, ".psr_chunks")
+unlink(psr_chunks_dir, recursive = TRUE, force = TRUE)  # clean any prior run's residue
+dir.create(psr_chunks_dir, recursive = TRUE)
+on.exit(unlink(psr_chunks_dir, recursive = TRUE, force = TRUE), add = TRUE)
 
 n_success <- 0L
 start_time <- Sys.time()
