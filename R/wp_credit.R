@@ -9,15 +9,27 @@
 #' Splits WPA between the acting player and receiver (for passes). When there
 #' is no receiver (shots, clearances, etc.), the actor gets 100% of WPA.
 #'
+#' Cross-team note: WPA is sign-flipped per actor's team in
+#' \code{\link{add_wp_vars}} so positive wpa always means "good for my team".
+#' When the next-action's player is on the OPPOSITE team (turnover, save,
+#' interception, opp shot), passing the receiver \code{(1 - actor_share) * wpa}
+#' unchanged would credit the receiver in the actor's team perspective — i.e.
+#' a goalkeeper saving a shot would inherit the shooter's negative WPA. We
+#' sign-flip on cross-team transitions so the receiver is credited in their
+#' own team's perspective (mirrors AFL pattern in
+#' worker/src/ep-model.js scoreChainRows lines 289-333 and afl/match.qmd:600).
+#'
 #' @param spadl_with_wpa SPADL actions with \code{wpa}, \code{player_id},
-#'   and optionally \code{receiver_player_id} columns.
+#'   \code{team_id}, and optionally \code{receiver_player_id} +
+#'   \code{receiver_team_id} columns.
 #' @param actor_share Fraction of WPA credited to the actor (0-1).
 #'   Default \code{WPA_ACTOR_SHARE} (0.5). Receiver gets \code{1 - actor_share}.
 #'
 #' @return The input data.table with added columns:
 #'   \describe{
 #'     \item{wpa_actor}{WPA credited to the acting player}
-#'     \item{wpa_receiver}{WPA credited to the receiver (0 if no receiver)}
+#'     \item{wpa_receiver}{WPA credited to the receiver (0 if no receiver),
+#'       sign-flipped on cross-team transitions}
 #'   }
 #'
 #' @export
@@ -29,12 +41,27 @@ assign_wpa_credit <- function(spadl_with_wpa, actor_share = WPA_ACTOR_SHARE) {
   }
 
   has_receiver <- "receiver_player_id" %in% names(dt)
+  has_receiver_team <- "receiver_team_id" %in% names(dt)
 
   if (has_receiver) {
     dt[, has_recv := !is.na(receiver_player_id) & receiver_player_id != player_id]
     dt[, wpa_actor := data.table::fifelse(has_recv, actor_share * wpa, wpa)]
-    dt[, wpa_receiver := data.table::fifelse(has_recv, (1 - actor_share) * wpa, 0)]
-    dt[, has_recv := NULL]
+
+    # Cross-team sign flip on receiver credit. pos_team = +1 for same-team
+    # (legitimate pass completion), -1 for cross-team (turnover/save) — flips
+    # the receiver's portion back into their own team's perspective.
+    if (has_receiver_team) {
+      dt[, pos_team := data.table::fifelse(
+        !is.na(receiver_team_id) & team_id == receiver_team_id, 1L, -1L)]
+    } else {
+      # Without receiver_team_id we can't detect cross-team; default to +1
+      # (assume same-team) which preserves prior behaviour. Callers should
+      # supply receiver_team_id (set in convert_opta_to_spadl line 428).
+      dt[, pos_team := 1L]
+    }
+    dt[, wpa_receiver := data.table::fifelse(
+      has_recv, pos_team * (1 - actor_share) * wpa, 0)]
+    dt[, c("has_recv", "pos_team") := NULL]
   } else {
     dt[, wpa_actor := wpa]
     dt[, wpa_receiver := 0]
