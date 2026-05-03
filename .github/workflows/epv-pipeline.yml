@@ -30,7 +30,9 @@ env:
 jobs:
   epv-pipeline:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # Per-chunk feature generation + xgboost training fits in ~75-90 min on a
+    # 7GB runner; bumped from 90 to 120 to give headroom on slower runners.
+    timeout-minutes: 120
 
     permissions:
       contents: write
@@ -196,21 +198,8 @@ jobs:
             fi
           fi
 
-          # Upload xMetrics if generated
-          if [ "$EXPORT_XMETRICS" = "true" ]; then
-            XMETRICS_FILE="data-raw/cache/epv/opta_xmetrics.parquet"
-            if [ -f "$XMETRICS_FILE" ]; then
-              if gh release upload opta-latest "$XMETRICS_FILE" --repo peteowen1/pannadata --clobber; then
-                echo "  Uploaded opta_xmetrics.parquet to opta-latest"
-              else
-                echo "::error::Failed to upload opta_xmetrics.parquet to opta-latest release"
-                exit 1
-              fi
-            else
-              echo "::error::EXPORT_XMETRICS=true but $XMETRICS_FILE was not produced"
-              exit 1
-            fi
-          fi
+          # xmetrics upload is handled by data-raw/epv/04_export_xmetrics.R
+          # via piggyback; do not re-add here.
 
           echo ""
           echo "=== EPV Pipeline Complete ==="
