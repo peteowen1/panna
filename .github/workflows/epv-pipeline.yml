@@ -2,10 +2,10 @@ name: EPV/WPA Model Training
 
 on:
   schedule:
-    # Weekly on Sunday 18:00 UTC (Mon 04:00 AEST). Refreshes xg/xpass/epv
-    # models + opta_xmetrics.parquet that the Opta RAPM/SPM Pipeline depends
-    # on. Defaults (train_wp=false, export_xmetrics=true) re-export xmetrics
-    # without retraining the WP model.
+    # Weekly Sunday 18:00 UTC. Refreshes xg/xpass/epv models +
+    # opta_xmetrics.parquet that the Opta RAPM/SPM Pipeline depends on.
+    # `inputs.*` are empty on schedule events, so the env block below
+    # supplies explicit defaults (export_xmetrics=true, train_wp=false).
     - cron: '0 18 * * 0'
   workflow_dispatch:
     inputs:
@@ -21,6 +21,11 @@ on:
 env:
   GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
   R_KEEP_PKG_SOURCE: yes
+  # Coerce inputs (boolean on workflow_dispatch, empty on schedule) to a
+  # string we can compare uniformly. Schedule defaults: export xmetrics,
+  # don't retrain WP.
+  EXPORT_XMETRICS: ${{ (inputs.export_xmetrics == true || github.event_name == 'schedule') && 'true' || 'false' }}
+  TRAIN_WP: ${{ inputs.train_wp == true && 'true' || 'false' }}
 
 jobs:
   epv-pipeline:
@@ -123,7 +128,7 @@ jobs:
           "
 
       - name: Calculate player xMetrics
-        if: ${{ inputs.export_xmetrics }}
+        if: ${{ env.EXPORT_XMETRICS == 'true' }}
         env:
           PANNADATA_DIR: ${{ runner.temp }}/pannadata
         run: |
@@ -140,7 +145,7 @@ jobs:
           "
 
       - name: Train WP model
-        if: ${{ inputs.train_wp }}
+        if: ${{ env.TRAIN_WP == 'true' }}
         env:
           PANNADATA_DIR: ${{ runner.temp }}/pannadata
         run: |
@@ -159,15 +164,20 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
         run: |
+          set -euo pipefail
           echo "Uploading trained models to models release..."
           CACHE_DIR="data-raw/cache/epv"
           UPLOADED=0
 
           for f in xg_model.rds xpass_model.rds epv_model.rds; do
             if [ -f "$CACHE_DIR/$f" ]; then
-              gh release upload models "$CACHE_DIR/$f" --repo peteowen1/pannadata --clobber
-              echo "  Uploaded $f"
-              UPLOADED=$((UPLOADED + 1))
+              if gh release upload models "$CACHE_DIR/$f" --repo peteowen1/pannadata --clobber; then
+                echo "  Uploaded $f"
+                UPLOADED=$((UPLOADED + 1))
+              else
+                echo "::error::Failed to upload $f to models release (does the release exist?)"
+                exit 1
+              fi
             else
               echo "::warning::Model file $f not found in $CACHE_DIR"
             fi
@@ -177,17 +187,28 @@ jobs:
             exit 1
           fi
 
-          if [ "${{ inputs.train_wp }}" = "true" ] && [ -f "$CACHE_DIR/wp_model.rds" ]; then
-            gh release upload models "$CACHE_DIR/wp_model.rds" --repo peteowen1/pannadata --clobber
-            echo "  Uploaded wp_model.rds"
+          if [ "$TRAIN_WP" = "true" ] && [ -f "$CACHE_DIR/wp_model.rds" ]; then
+            if gh release upload models "$CACHE_DIR/wp_model.rds" --repo peteowen1/pannadata --clobber; then
+              echo "  Uploaded wp_model.rds"
+            else
+              echo "::error::Failed to upload wp_model.rds to models release"
+              exit 1
+            fi
           fi
 
           # Upload xMetrics if generated
-          if [ "${{ inputs.export_xmetrics }}" = "true" ]; then
+          if [ "$EXPORT_XMETRICS" = "true" ]; then
             XMETRICS_FILE="data-raw/cache/epv/opta_xmetrics.parquet"
             if [ -f "$XMETRICS_FILE" ]; then
-              gh release upload opta-latest "$XMETRICS_FILE" --repo peteowen1/pannadata --clobber
-              echo "  Uploaded opta_xmetrics.parquet to opta-latest"
+              if gh release upload opta-latest "$XMETRICS_FILE" --repo peteowen1/pannadata --clobber; then
+                echo "  Uploaded opta_xmetrics.parquet to opta-latest"
+              else
+                echo "::error::Failed to upload opta_xmetrics.parquet to opta-latest release"
+                exit 1
+              fi
+            else
+              echo "::error::EXPORT_XMETRICS=true but $XMETRICS_FILE was not produced"
+              exit 1
             fi
           fi
 

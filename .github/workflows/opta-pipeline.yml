@@ -50,26 +50,33 @@ jobs:
           GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
           INPUT_START_STEP: ${{ inputs.start_step }}
         run: |
+          set -euo pipefail
           # opta_xmetrics.parquet is owned by the EPV/WPA Model Training
-          # pipeline. If it's stale (training hasn't run), step 02 joins
-          # against missing/empty xG and every splint ends up with 0 xG.
-          # Step 04's filter then strips them all and aborts with a confusing
-          # "0 splints" message 60+ minutes into the run. Fail loudly here
-          # before any heavy work, unless we're resuming past step 02 (where
-          # xmetrics is already baked into the cached 02_processed_data.rds).
-          if [ -n "$INPUT_START_STEP" ] && [ "$INPUT_START_STEP" -gt 2 ] 2>/dev/null; then
+          # workflow. If it's stale, the join step downstream produces zero xG
+          # for every splint, which the RAPM filter then strips — aborting
+          # with a confusing "0 splints" message far from the cause. Fail
+          # loudly here before any heavy work, unless we're resuming past the
+          # join step (xmetrics already baked into the cached
+          # 02_processed_data.rds).
+          if [[ "$INPUT_START_STEP" =~ ^[0-9]+$ ]] && [ "$INPUT_START_STEP" -gt 2 ]; then
             echo "Skipping xmetrics freshness check: start_step=$INPUT_START_STEP (>2)"
             exit 0
           fi
-          UPDATED=$(gh api repos/peteowen1/pannadata/releases/tags/opta-latest \
-            --jq '[.assets[] | select(.name == "opta_xmetrics.parquet") | .updated_at] | first')
+          if ! UPDATED=$(gh api repos/peteowen1/pannadata/releases/tags/opta-latest \
+            --jq '[.assets[] | select(.name == "opta_xmetrics.parquet") | .updated_at] | first'); then
+            echo "::error::Failed to query opta-latest release metadata via gh api."
+            exit 1
+          fi
           if [ -z "$UPDATED" ] || [ "$UPDATED" = "null" ]; then
             echo "::error::opta_xmetrics.parquet not found on opta-latest release."
             echo "::error::Run the EPV/WPA Model Training workflow with export_xmetrics=true."
             exit 1
           fi
           NOW=$(date -u +%s)
-          ASSET_TS=$(date -u -d "$UPDATED" +%s)
+          if ! ASSET_TS=$(date -u -d "$UPDATED" +%s 2>/dev/null) || [ -z "$ASSET_TS" ]; then
+            echo "::error::Could not parse opta_xmetrics.parquet timestamp: '$UPDATED'."
+            exit 1
+          fi
           AGE_DAYS=$(( (NOW - ASSET_TS) / 86400 ))
           echo "opta_xmetrics.parquet last updated $AGE_DAYS days ago ($UPDATED)"
           if [ "$AGE_DAYS" -gt 14 ]; then
@@ -124,13 +131,19 @@ jobs:
 
           echo ""
           echo "Downloading pre-trained models..."
+          MODELS_DOWNLOADED=0
           for f in xg_model.rds xpass_model.rds epv_model.rds; do
             if gh release download models --repo peteowen1/pannadata --pattern "$f" --dir "$MODELS_DIR" 2>/dev/null; then
               echo "  Downloaded $f"
+              MODELS_DOWNLOADED=$((MODELS_DOWNLOADED + 1))
             else
-              echo "  WARNING: $f not found"
+              echo "::warning::$f not found on models release"
             fi
           done
+          if [ "$MODELS_DOWNLOADED" -lt 3 ]; then
+            echo "::error::Only $MODELS_DOWNLOADED/3 pre-trained models downloaded. Run the EPV/WPA Model Training workflow first."
+            exit 1
+          fi
 
           echo ""
           echo "Opta data:"

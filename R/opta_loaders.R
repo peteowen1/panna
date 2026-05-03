@@ -697,7 +697,7 @@ suggest_opta_seasons <- function(league, table_type = "match_events",
     }
   }
 
-  # Try per-league parquet (pannadata's events_consolidated/ layout — match_events only)
+  # Per-league fallback (events_consolidated/ layout — see load_opta_table)
   if (length(seasons) == 0 && !is.null(base_dir) && table_type == "match_events") {
     per_league_file <- file.path(base_dir, "events_consolidated",
                                   paste0("events_", opta_league, ".parquet"))
@@ -756,10 +756,9 @@ load_opta_table <- function(table_type, league, season, columns,
   base_dir <- opta_data_dir()
   consolidated_file <- file.path(base_dir, paste0("opta_", table_type, ".parquet"))
 
-  # Pannadata's match_events are too large to consolidate into a single file
-  # (consolidate_opta.py excludes them). They ship as per-league parquets at
-  # events_consolidated/events_<league>.parquet — try that path before falling
-  # back to the hierarchical layout.
+  # Pannadata's match_events are too large to consolidate into a single file —
+  # they ship as per-league parquets at events_consolidated/events_<league>.parquet.
+  # Try that path before falling back to the hierarchical layout.
   per_league_file <- if (table_type == "match_events") {
     file.path(base_dir, "events_consolidated",
               paste0("events_", opta_league, ".parquet"))
@@ -790,8 +789,7 @@ load_opta_table <- function(table_type, league, season, columns,
       sql <- sprintf("SELECT %s FROM '%s'", col_sql, parquet_path)
     }
   } else if (!is.null(per_league_file) && file.exists(per_league_file)) {
-    # Per-league parquet (pannadata's events_consolidated/ layout). File is
-    # already filtered to one league, so only apply the season filter.
+    # File is already per-league, so apply only the season filter (no competition).
     parquet_path <- normalizePath(per_league_file, winslash = "/", mustWork = TRUE)
 
     col_sql <- if (!is.null(columns)) {
