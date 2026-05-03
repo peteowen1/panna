@@ -45,6 +45,39 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Verify opta_xmetrics freshness
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          INPUT_START_STEP: ${{ inputs.start_step }}
+        run: |
+          # opta_xmetrics.parquet is owned by the EPV/WPA Model Training
+          # pipeline. If it's stale (training hasn't run), step 02 joins
+          # against missing/empty xG and every splint ends up with 0 xG.
+          # Step 04's filter then strips them all and aborts with a confusing
+          # "0 splints" message 60+ minutes into the run. Fail loudly here
+          # before any heavy work, unless we're resuming past step 02 (where
+          # xmetrics is already baked into the cached 02_processed_data.rds).
+          if [ -n "$INPUT_START_STEP" ] && [ "$INPUT_START_STEP" -gt 2 ] 2>/dev/null; then
+            echo "Skipping xmetrics freshness check: start_step=$INPUT_START_STEP (>2)"
+            exit 0
+          fi
+          UPDATED=$(gh api repos/peteowen1/pannadata/releases/tags/opta-latest \
+            --jq '[.assets[] | select(.name == "opta_xmetrics.parquet") | .updated_at] | first')
+          if [ -z "$UPDATED" ] || [ "$UPDATED" = "null" ]; then
+            echo "::error::opta_xmetrics.parquet not found on opta-latest release."
+            echo "::error::Run the EPV/WPA Model Training workflow with export_xmetrics=true."
+            exit 1
+          fi
+          NOW=$(date -u +%s)
+          ASSET_TS=$(date -u -d "$UPDATED" +%s)
+          AGE_DAYS=$(( (NOW - ASSET_TS) / 86400 ))
+          echo "opta_xmetrics.parquet last updated $AGE_DAYS days ago ($UPDATED)"
+          if [ "$AGE_DAYS" -gt 14 ]; then
+            echo "::error::opta_xmetrics.parquet is $AGE_DAYS days old (>14d threshold)."
+            echo "::error::Trigger the EPV/WPA Model Training workflow with export_xmetrics=true to refresh."
+            exit 1
+          fi
+
       - name: Setup R
         uses: r-lib/actions/setup-r@v2
         with:
@@ -92,7 +125,7 @@ jobs:
           echo ""
           echo "Downloading pre-trained models..."
           for f in xg_model.rds xpass_model.rds epv_model.rds; do
-            if gh release download epv-models --repo peteowen1/pannadata --pattern "$f" --dir "$MODELS_DIR" 2>/dev/null; then
+            if gh release download models --repo peteowen1/pannadata --pattern "$f" --dir "$MODELS_DIR" 2>/dev/null; then
               echo "  Downloaded $f"
             else
               echo "  WARNING: $f not found"

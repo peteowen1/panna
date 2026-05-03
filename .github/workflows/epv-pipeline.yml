@@ -1,6 +1,12 @@
 name: EPV/WPA Model Training
 
 on:
+  schedule:
+    # Weekly on Sunday 18:00 UTC (Mon 04:00 AEST). Refreshes xg/xpass/epv
+    # models + opta_xmetrics.parquet that the Opta RAPM/SPM Pipeline depends
+    # on. Defaults (train_wp=false, export_xmetrics=true) re-export xmetrics
+    # without retraining the WP model.
+    - cron: '0 18 * * 0'
   workflow_dispatch:
     inputs:
       train_wp:
@@ -153,13 +159,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
         run: |
-          echo "Uploading trained models to epv-models release..."
+          echo "Uploading trained models to models release..."
           CACHE_DIR="data-raw/cache/epv"
           UPLOADED=0
 
           for f in xg_model.rds xpass_model.rds epv_model.rds; do
             if [ -f "$CACHE_DIR/$f" ]; then
-              gh release upload epv-models "$CACHE_DIR/$f" --repo peteowen1/pannadata --clobber
+              gh release upload models "$CACHE_DIR/$f" --repo peteowen1/pannadata --clobber
               echo "  Uploaded $f"
               UPLOADED=$((UPLOADED + 1))
             else
@@ -172,7 +178,7 @@ jobs:
           fi
 
           if [ "${{ inputs.train_wp }}" = "true" ] && [ -f "$CACHE_DIR/wp_model.rds" ]; then
-            gh release upload epv-models "$CACHE_DIR/wp_model.rds" --repo peteowen1/pannadata --clobber
+            gh release upload models "$CACHE_DIR/wp_model.rds" --repo peteowen1/pannadata --clobber
             echo "  Uploaded wp_model.rds"
           fi
 
