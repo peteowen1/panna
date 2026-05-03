@@ -41,14 +41,40 @@ cli_h1("EPV Model Training Pipeline")
 cli_alert_info("Leagues: {paste(LEAGUES, collapse = ', ')}")
 cli_alert_info("Seasons: {paste(SEASONS, collapse = ', ')}")
 
-# 2. Load Data & Convert to SPADL (per-league to preserve league tag) ----
+# 2. Load Data, Build Chains, Create Labels (per-chunk to fit in 7GB) ----
+#
+# Streams each (league, season) through the full chain pipeline immediately
+# after loading and writes the labeled output to a per-chunk parquet under
+# cache_dir before moving to the next iteration. Replaces an in-memory
+# `all_spadl` accumulation + a single `create_possession_chains()` on 22M
+# rows — the latter peaked at ~10GB working memory and OOM-killed the
+# 7GB GHA runner. All chain operations are by = match_id, so chunking by
+# (league, season) is safe — chains never span matches.
+#
+# Mirrors the `step-08b` chunk-stream playbook: flat-named chunks under
+# cache_dir (not tempdir, which has been observed to vanish mid-run on
+# GHA), no leading dot (list.files default skips hidden), gc(full = TRUE)
+# every 5th iteration to bound peak.
 
-cli_h2("Step 1: Load Opta Events and Convert to SPADL")
+cli_h2("Step 1: Load Opta + Build Labeled Chains (per-chunk)")
 
-all_spadl <- list()
+LABELED_CHUNKS_DIR <- file.path(CACHE_DIR, "labeled_chunks")
+dir.create(LABELED_CHUNKS_DIR, recursive = TRUE, showWarnings = FALSE)
+
+# Cleanup residue from any prior crashed run before we begin
+.cleanup_labeled_chunks <- function() {
+  files <- list.files(LABELED_CHUNKS_DIR, pattern = "^chunk_.*\\.parquet$", full.names = TRUE)
+  if (length(files) > 0) unlink(files, force = TRUE)
+}
+.cleanup_labeled_chunks()
+
 all_shots <- list()
 all_lineups <- list()
 total_events <- 0L
+total_actions <- 0L
+total_chains <- 0L
+loaded_leagues <- character(0)
+iter_count <- 0L
 
 # Build league → season list (domestic use SEASONS, tournaments use TOURNAMENT_SEASONS)
 league_seasons <- list()
@@ -63,56 +89,82 @@ for (league in LEAGUES) {
 for (league in LEAGUES) {
   for (season in league_seasons[[league]]) {
     key <- paste(league, season)
+    iter_count <- iter_count + 1L
+
+    chunk_name <- sprintf("chunk_%s_%s.parquet",
+                          gsub("[^A-Za-z0-9]", "_", league),
+                          gsub("[^A-Za-z0-9]", "_", season))
+    chunk_path <- file.path(LABELED_CHUNKS_DIR, chunk_name)
 
     tryCatch({
       events <- load_opta_match_events(league, season = season, source = "local")
-      shots <- load_opta_shot_events(league, season = season, source = "local")
+      shot_events <- load_opta_shot_events(league, season = season, source = "local")
       lineups <- load_opta_lineups(league, season = season, source = "local")
 
       # Convert to SPADL and tag with league
-      spadl <- convert_opta_to_spadl(events)
-      spadl$league <- league
+      spadl_chunk <- convert_opta_to_spadl(events)
+      spadl_chunk$league <- league
 
-      all_spadl[[key]] <- spadl
-      all_shots[[key]] <- shots
+      # Run the full chain + label pipeline on just this chunk. Free each
+      # intermediate as soon as the next one is built.
+      chains_chunk <- create_possession_chains(spadl_chunk)
+      rm(spadl_chunk); gc(verbose = FALSE)
+
+      outcomes_chunk <- classify_chain_outcomes(chains_chunk)
+      outcomes_chunk <- add_next_chain_outcome(outcomes_chunk)
+      labeled_chunk <- label_actions_with_outcomes(chains_chunk, outcomes_chunk)
+      rm(chains_chunk); gc(verbose = FALSE)
+
+      labeled_chunk <- create_next_goal_labels(labeled_chunk)
+      if (EPV_METHOD == "xg") {
+        labeled_chunk <- create_next_xg_labels(labeled_chunk)
+      }
+
+      arrow::write_parquet(labeled_chunk, chunk_path)
+
+      all_shots[[key]] <- shot_events
       all_lineups[[key]] <- lineups
       total_events <- total_events + nrow(events)
+      total_actions <- total_actions + nrow(labeled_chunk)
+      total_chains <- total_chains + nrow(outcomes_chunk)
+      loaded_leagues <- union(loaded_leagues, league)
 
-      cli_alert_success("  {key}: {nrow(events)} events -> {nrow(spadl)} SPADL actions")
+      cli_alert_success("  {key}: {format(nrow(events), big.mark=',')} events -> {format(nrow(labeled_chunk), big.mark=',')} labeled actions, {format(nrow(outcomes_chunk), big.mark=',')} chains -> {basename(chunk_path)}")
+
+      rm(labeled_chunk, outcomes_chunk, events, shot_events, lineups)
+      # Full gc every 5 iterations to bound long-running heap creep
+      gc(verbose = FALSE, full = (iter_count %% 5 == 0))
     }, error = function(e) {
       cli_alert_warning("  Skipping {key}: {e$message}")
     })
   }
 }
 
-# Combine
-spadl <- data.table::rbindlist(all_spadl, fill = TRUE)
+# Concat the small per-chunk shots/lineups (these don't OOM — total size is
+# in the hundreds of MB, well below the chain-creation peak).
 shots <- do.call(rbind, all_shots)
 lineups <- do.call(rbind, all_lineups)
+n_leagues_loaded <- length(loaded_leagues)
+rm(all_shots, all_lineups); gc(verbose = FALSE, full = TRUE)
 
-n_leagues_loaded <- length(unique(spadl$league))
-cli_alert_success("Total: {format(total_events, big.mark=',')} events -> {format(nrow(spadl), big.mark=',')} SPADL actions from {n_leagues_loaded} leagues")
+n_chunks <- length(list.files(LABELED_CHUNKS_DIR, pattern = "^chunk_.*\\.parquet$"))
+cli_alert_success("Total: {format(total_events, big.mark=',')} events -> {format(total_actions, big.mark=',')} labeled actions, {format(total_chains, big.mark=',')} chains from {n_leagues_loaded} leagues across {n_chunks} chunks")
 
-# 3. Create Possession Chains ----
+# 3. Read Labeled Chunks Back for Downstream Training ----
 
-cli_h2("Step 2: Create Possession Chains")
+cli_h2("Step 2: Materialize labeled actions from chunks for training")
 
-spadl_chains <- create_possession_chains(spadl)
-chain_outcomes <- classify_chain_outcomes(spadl_chains)
-chain_outcomes <- add_next_chain_outcome(chain_outcomes)
-spadl_labeled <- label_actions_with_outcomes(spadl_chains, chain_outcomes)
+# Read all chunks via arrow dataset and collect to a single data.table.
+# By this point the chain-creation working memory has been freed, so the
+# steady-state size of spadl_labeled (~5GB for 22M rows × ~30 cols) fits
+# in the 7GB ceiling. The downstream training steps subsample further to
+# MAX_XPASS_ROWS / MAX_EPV_ROWS, so this is the peak.
+spadl_labeled <- arrow::open_dataset(LABELED_CHUNKS_DIR) |>
+  dplyr::collect() |>
+  data.table::as.data.table()
+gc(verbose = FALSE, full = TRUE)
 
-cli_alert_success("Chains: {nrow(chain_outcomes)} possession sequences")
-
-# 4. Create Labels ----
-
-cli_h2("Step 3: Create Labels ({EPV_METHOD} method)")
-
-spadl_labeled <- create_next_goal_labels(spadl_labeled)
-
-if (EPV_METHOD == "xg") {
-  spadl_labeled <- create_next_xg_labels(spadl_labeled)
-}
+cli_alert_success("Materialized {format(nrow(spadl_labeled), big.mark=',')} labeled actions from {n_chunks} chunks")
 
 # 5. Train xG Model ----
 
@@ -131,7 +183,7 @@ saveRDS(xg_model, file.path(CACHE_DIR, "xg_model.rds"))
 
 cli_h2("Step 5: Train xPass Model")
 
-pass_features <- prepare_passes_for_xpass(spadl)
+pass_features <- prepare_passes_for_xpass(spadl_labeled)
 
 # Subsample if too large for CV (15M+ rows OOMs on xgb.cv)
 MAX_XPASS_ROWS <- 2000000L
@@ -211,4 +263,4 @@ cat("\nFeature Importance (EPV model, top 15):\n")
 print(head(epv_model$importance, 15))
 
 cat("\nLeague distribution in training data:\n")
-print(table(spadl$league))
+print(table(spadl_labeled$league))
