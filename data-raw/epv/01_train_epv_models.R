@@ -226,6 +226,13 @@ if (nrow(pass_features) > MAX_XPASS_ROWS) {
   pass_features <- pass_features[sample(nrow(pass_features), MAX_XPASS_ROWS)]
 }
 
+# Convert back to data.frame for downstream model fits. fit_xpass_model uses
+# `[.data.frame` semantics with `drop = FALSE` which data.table doesn't honor
+# the same way (caused the previous validation run to fail at xPass training).
+epv_features <- as.data.frame(epv_features)
+spadl_labeled <- as.data.frame(spadl_labeled)
+pass_features <- as.data.frame(pass_features)
+
 cli_alert_success("Sampled — epv: {format(nrow(epv_features), big.mark=',')} rows / spadl_labeled: {format(nrow(spadl_labeled), big.mark=',')} rows / pass_features: {format(nrow(pass_features), big.mark=',')} rows")
 
 # 5. Train xG Model ----
