@@ -30,7 +30,9 @@ env:
 jobs:
   epv-pipeline:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # Per-chunk feature generation + xgboost training fits in ~75-90 min on a
+    # 7GB runner; bumped from 90 to 120 to give headroom on slower runners.
+    timeout-minutes: 120
 
     permissions:
       contents: write
