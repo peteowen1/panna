@@ -61,10 +61,17 @@ cli_h2("Step 1: Load Opta + Build Labeled Chains (per-chunk)")
 LABELED_CHUNKS_DIR <- file.path(CACHE_DIR, "labeled_chunks")
 dir.create(LABELED_CHUNKS_DIR, recursive = TRUE, showWarnings = FALSE)
 
-# Cleanup residue from any prior crashed run before we begin
 .cleanup_labeled_chunks <- function() {
   files <- list.files(LABELED_CHUNKS_DIR, pattern = "^chunk_.*\\.parquet$", full.names = TRUE)
-  if (length(files) > 0) unlink(files, force = TRUE)
+  if (length(files) > 0) {
+    result <- unlink(files, force = TRUE)
+    if (any(result != 0)) {
+      cli::cli_abort(c(
+        "Failed to clean stale chunks under {.path {LABELED_CHUNKS_DIR}}.",
+        "i" = "Refusing to mix stale and fresh data into training."
+      ))
+    }
+  }
 }
 .cleanup_labeled_chunks()
 
@@ -74,6 +81,7 @@ total_events <- 0L
 total_actions <- 0L
 total_chains <- 0L
 loaded_leagues <- character(0)
+failed_keys <- character(0)
 iter_count <- 0L
 
 # Build league → season list (domestic use SEASONS, tournaments use TOURNAMENT_SEASONS)
@@ -136,19 +144,38 @@ for (league in LEAGUES) {
       gc(verbose = FALSE, full = (iter_count %% 5 == 0))
     }, error = function(e) {
       cli_alert_warning("  Skipping {key}: {e$message}")
+      failed_keys <<- c(failed_keys, key)
     })
   }
 }
 
-# Concat the small per-chunk shots/lineups (these don't OOM — total size is
-# in the hundreds of MB, well below the chain-creation peak).
-shots <- do.call(rbind, all_shots)
-lineups <- do.call(rbind, all_lineups)
+# Concat the small per-chunk shots/lineups — they don't get chain-expanded
+# so they fit easily.
+shots <- data.table::rbindlist(all_shots, fill = TRUE)
+lineups <- data.table::rbindlist(all_lineups, fill = TRUE)
 n_leagues_loaded <- length(loaded_leagues)
 rm(all_shots, all_lineups); gc(verbose = FALSE, full = TRUE)
 
 n_chunks <- length(list.files(LABELED_CHUNKS_DIR, pattern = "^chunk_.*\\.parquet$"))
 cli_alert_success("Total: {format(total_events, big.mark=',')} events -> {format(total_actions, big.mark=',')} labeled actions, {format(total_chains, big.mark=',')} chains from {n_leagues_loaded} leagues across {n_chunks} chunks")
+
+# Loud failure if no chunks were produced — every (league, season) skipped.
+# Without this, the per-chunk feature loop below silently produces zero-row
+# accumulators and training fails with a confusing error 50+ lines later.
+if (n_chunks == 0L) {
+  cli_abort(c(
+    "No labeled chunks were produced — every (league, season) was skipped.",
+    "i" = "Failed keys ({length(failed_keys)}): {paste(failed_keys, collapse = ', ')}",
+    "i" = "Check the warnings above for the underlying error."
+  ))
+}
+if (length(failed_keys) > iter_count * 0.5) {
+  cli_abort(c(
+    "Too many (league, season) loads failed: {length(failed_keys)} of {iter_count} (>50%).",
+    "i" = "Failed keys: {paste(failed_keys, collapse = ', ')}",
+    "i" = "Refusing to train on partial data."
+  ))
+}
 
 # 3. Per-Chunk Feature Generation + Sampling for Training ----
 #
@@ -187,6 +214,14 @@ pass_features_acc <- vector("list", length(chunk_files))
 set.seed(42)
 for (i in seq_along(chunk_files)) {
   chunk_dt <- arrow::read_parquet(chunk_files[[i]]) |> data.table::as.data.table()
+
+  # Make alignment between epv_features and spadl_labeled explicit. Without
+  # this sort, alignment depended on a side effect: create_epv_features_simple
+  # internally calls setorder() on its input, which mutates chunk_dt in place
+  # because as.data.table() on a data.table returns by reference. Pre-sorting
+  # here means alignment holds even if that internal contract changes (e.g.,
+  # someone adds a defensive data.table::copy() inside the function).
+  data.table::setorder(chunk_dt, match_id, period_id, time_seconds, action_id)
 
   # EPV features (must be created on full chunk because of per-match lags)
   epv_features_chunk <- create_epv_features_simple(chunk_dt) |> data.table::as.data.table()
@@ -227,8 +262,7 @@ if (nrow(pass_features) > MAX_XPASS_ROWS) {
 }
 
 # Convert back to data.frame for downstream model fits. fit_xpass_model uses
-# `[.data.frame` semantics with `drop = FALSE` which data.table doesn't honor
-# the same way (caused the previous validation run to fail at xPass training).
+# `[.data.frame` semantics with `drop = FALSE` that data.table doesn't honor.
 epv_features <- as.data.frame(epv_features)
 spadl_labeled <- as.data.frame(spadl_labeled)
 pass_features <- as.data.frame(pass_features)

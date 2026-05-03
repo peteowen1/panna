@@ -198,11 +198,8 @@ jobs:
             fi
           fi
 
-          # NOTE: opta_xmetrics.parquet is NOT uploaded here. The earlier
-          # "Calculate player xMetrics" step runs data-raw/epv/04_export_xmetrics.R,
-          # which writes to tempdir() and uploads to opta-latest via piggyback
-          # itself. A redundant upload block previously lived here and silently
-          # no-op'd because the file was never at data-raw/cache/epv/.
+          # xmetrics upload is handled by data-raw/epv/04_export_xmetrics.R
+          # via piggyback; do not re-add here.
 
           echo ""
           echo "=== EPV Pipeline Complete ==="
