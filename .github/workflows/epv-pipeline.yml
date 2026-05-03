@@ -198,21 +198,11 @@ jobs:
             fi
           fi
 
-          # Upload xMetrics if generated
-          if [ "$EXPORT_XMETRICS" = "true" ]; then
-            XMETRICS_FILE="data-raw/cache/epv/opta_xmetrics.parquet"
-            if [ -f "$XMETRICS_FILE" ]; then
-              if gh release upload opta-latest "$XMETRICS_FILE" --repo peteowen1/pannadata --clobber; then
-                echo "  Uploaded opta_xmetrics.parquet to opta-latest"
-              else
-                echo "::error::Failed to upload opta_xmetrics.parquet to opta-latest release"
-                exit 1
-              fi
-            else
-              echo "::error::EXPORT_XMETRICS=true but $XMETRICS_FILE was not produced"
-              exit 1
-            fi
-          fi
+          # NOTE: opta_xmetrics.parquet is NOT uploaded here. The earlier
+          # "Calculate player xMetrics" step runs data-raw/epv/04_export_xmetrics.R,
+          # which writes to tempdir() and uploads to opta-latest via piggyback
+          # itself. A redundant upload block previously lived here and silently
+          # no-op'd because the file was never at data-raw/cache/epv/.
 
           echo ""
           echo "=== EPV Pipeline Complete ==="
