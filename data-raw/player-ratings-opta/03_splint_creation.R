@@ -24,6 +24,97 @@ splint_data_path <- file.path(cache_dir, "03_splints.rds")
 if (!exists("MIN_SPLINT_DURATION", inherits = FALSE)) MIN_SPLINT_DURATION <- 5
 
 # 3. Create Splints ----
+#
+# Build splints per-league with intermediate disk writes. The previous code
+# called create_all_splints(chunk_by = "league") which chunks by league
+# internally but accumulates all chunks in a list before rbinding — peak
+# memory = sum of all leagues' splints + processed_data. With shots now
+# populated by the SPADL fix in step 01, that pushed standard GHA runners
+# (7GB) into OOM at iteration ~1-2 of step 03 (silently — manifests as
+# "operation cancelled" in the GHA log with no preceding error).
+#
+# This streaming version writes each league's splints to a per-league RDS
+# in a chunks dir, frees memory, then combines at the end. Peak memory
+# drops to processed_data + ONE league's splints. cleanup at end.
+.build_splints_streaming <- function(processed_data, chunks_dir,
+                                      min_splint_duration) {
+  if (!"league" %in% names(processed_data$results)) {
+    # No league column — fall back to single-pass (matches old non-chunked path).
+    return(create_all_splints(processed_data, include_goals = TRUE,
+                              verbose = TRUE, chunk_by = "none",
+                              min_splint_duration = min_splint_duration))
+  }
+
+  leagues <- unique(processed_data$results$league)
+  n_matches_total <- length(unique(processed_data$results$match_id))
+  message(sprintf(
+    "Streaming splint creation: %d matches across %d leagues (per-league disk writes)",
+    n_matches_total, length(leagues)))
+
+  unlink(chunks_dir, recursive = TRUE, force = TRUE)
+  dir.create(chunks_dir, recursive = TRUE)
+
+  for (li in seq_along(leagues)) {
+    lg <- leagues[li]
+    message(sprintf("  League %d/%d: %s", li, length(leagues), lg))
+
+    league_match_ids <- processed_data$results$match_id[
+      processed_data$results$league == lg]
+
+    chunk_data <- list(
+      lineups = processed_data$lineups[
+        processed_data$lineups$match_id %in% league_match_ids, , drop = FALSE],
+      shooting = processed_data$shooting[
+        processed_data$shooting$match_id %in% league_match_ids, , drop = FALSE],
+      results = processed_data$results[
+        processed_data$results$match_id %in% league_match_ids, , drop = FALSE],
+      events = if (!is.null(processed_data$events))
+        processed_data$events[
+          processed_data$events$match_id %in% league_match_ids, , drop = FALSE]
+        else NULL,
+      stats_summary = if (!is.null(processed_data$stats_summary))
+        processed_data$stats_summary[
+          processed_data$stats_summary$match_id %in% league_match_ids, , drop = FALSE]
+        else NULL
+    )
+
+    league_splints <- create_all_splints(
+      chunk_data, include_goals = TRUE, verbose = FALSE,
+      chunk_by = "none", min_splint_duration = min_splint_duration)
+
+    saveRDS(league_splints, file.path(chunks_dir, sprintf("%s.rds", lg)))
+    rm(chunk_data, league_splints); gc(verbose = FALSE)
+  }
+
+  # Combine per-league chunks. Read sequentially with rbindlist incremental
+  # accumulation rather than holding all in memory at once.
+  message("  Combining per-league chunks...")
+  chunk_files <- list.files(chunks_dir, pattern = "\\.rds$",
+                             full.names = TRUE)
+  splints_list <- vector("list", length(chunk_files))
+  players_list <- vector("list", length(chunk_files))
+  match_info_list <- vector("list", length(chunk_files))
+  for (i in seq_along(chunk_files)) {
+    one <- readRDS(chunk_files[i])
+    splints_list[[i]]    <- one$splints
+    players_list[[i]]    <- one$players
+    match_info_list[[i]] <- one$match_info
+    rm(one)
+  }
+  combined <- list(
+    splints    = as.data.frame(data.table::rbindlist(splints_list, fill = TRUE, use.names = TRUE)),
+    players    = as.data.frame(data.table::rbindlist(players_list, fill = TRUE, use.names = TRUE)),
+    match_info = as.data.frame(data.table::rbindlist(match_info_list, fill = TRUE, use.names = TRUE))
+  )
+  rm(splints_list, players_list, match_info_list); gc(verbose = FALSE)
+
+  unlink(chunks_dir, recursive = TRUE, force = TRUE)
+  message(sprintf("Created %d splints from %d matches",
+                  nrow(combined$splints), n_matches_total))
+  combined
+}
+
+splint_chunks_dir <- file.path(cache_dir, "03_splint_chunks")
 
 if (file.exists(splint_data_path)) {
   processed_mtime <- file.mtime(processed_data_path)
@@ -33,28 +124,19 @@ if (file.exists(splint_data_path)) {
     message("=== Skipping splint creation (cache is up to date) ===")
     splint_data <- readRDS(splint_data_path)
   } else {
-    message("=== Processed data is newer - recreating splints ===")
+    message("=== Processed data is newer - recreating splints (streaming) ===")
     processed_data <- readRDS(processed_data_path)
-    splint_data <- create_all_splints(
-      processed_data,
-      include_goals = TRUE,
-      verbose = TRUE,
-      min_splint_duration = MIN_SPLINT_DURATION
-    )
+    splint_data <- .build_splints_streaming(processed_data, splint_chunks_dir,
+                                             MIN_SPLINT_DURATION)
     saveRDS(splint_data, splint_data_path)
-    # Free memory
     rm(processed_data); gc(verbose = FALSE)
   }
 } else {
-  message("=== Creating splints ===")
+  message("=== Creating splints (streaming) ===")
   processed_data <- readRDS(processed_data_path)
-  splint_data <- create_all_splints(
-    processed_data,
-    include_goals = TRUE,
-    verbose = TRUE
-  )
+  splint_data <- .build_splints_streaming(processed_data, splint_chunks_dir,
+                                           MIN_SPLINT_DURATION)
   saveRDS(splint_data, splint_data_path)
-  # Free memory
   rm(processed_data); gc(verbose = FALSE)
 }
 

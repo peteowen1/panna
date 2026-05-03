@@ -271,8 +271,12 @@ fit_season_ratings_opta <- function(splint_data, opta_stats, season,
   n_folds <- min(10, floor(nrow(rapm_data$X) / 20))
   n_folds <- max(n_folds, 3)
 
-  # Fit base RAPM
-  rapm_model <- fit_rapm(rapm_data, alpha = 0, nfolds = n_folds, use_weights = TRUE)
+  # Fit base RAPM. parallel = FALSE for the same reason as step 04 — 2-core
+  # parallel CV doubles peak memory by forking the design matrix per worker.
+  # Step 07 fits 12+ seasons sequentially (one per loop iter); without
+  # parallel = FALSE, accumulated peak across iters trips the 7 GB ceiling.
+  rapm_model <- fit_rapm(rapm_data, alpha = 0, nfolds = n_folds,
+                          use_weights = TRUE, parallel = FALSE)
   seasonal_rapm <- extract_rapm_ratings(rapm_model, lambda = seasonal_lambda)
   seasonal_rapm$season_end_year <- season
 

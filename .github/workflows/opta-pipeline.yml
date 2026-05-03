@@ -15,6 +15,10 @@ on:
         description: 'Upload caches to predictions-cache release when done'
         type: boolean
         default: true
+      start_step:
+        description: 'Start from step N (1-9). Downloads intermediate caches from predictions-cache release. Default 1 = full run.'
+        type: number
+        required: false
   repository_dispatch:
     types: [opta-scrape-complete]
 
@@ -25,7 +29,12 @@ env:
 jobs:
   opta-pipeline:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # Bumped from 60 to 120 because step 01 now builds SPADL on-the-fly from
+    # raw events (~35 min for ~51K matches × 15 leagues). Previous 60-min
+    # cap killed step 03 with steps 04-09 still to run. Empirical breakdown:
+    # setup 3min + step01 35min + step02 4min + step03 8min + step04 ~12min
+    # + steps05-09 ~10min ≈ 72 min. 120 leaves comfortable headroom.
+    timeout-minutes: 120
 
     permissions:
       contents: write
@@ -35,6 +44,46 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+
+      - name: Verify opta_xmetrics freshness
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          INPUT_START_STEP: ${{ inputs.start_step }}
+        run: |
+          set -euo pipefail
+          # opta_xmetrics.parquet is owned by the EPV/WPA Model Training
+          # workflow. If it's stale, the join step downstream produces zero xG
+          # for every splint, which the RAPM filter then strips — aborting
+          # with a confusing "0 splints" message far from the cause. Fail
+          # loudly here before any heavy work, unless we're resuming past the
+          # join step (xmetrics already baked into the cached
+          # 02_processed_data.rds).
+          if [[ "$INPUT_START_STEP" =~ ^[0-9]+$ ]] && [ "$INPUT_START_STEP" -gt 2 ]; then
+            echo "Skipping xmetrics freshness check: start_step=$INPUT_START_STEP (>2)"
+            exit 0
+          fi
+          if ! UPDATED=$(gh api repos/peteowen1/pannadata/releases/tags/opta-latest \
+            --jq '[.assets[] | select(.name == "opta_xmetrics.parquet") | .updated_at] | first'); then
+            echo "::error::Failed to query opta-latest release metadata via gh api."
+            exit 1
+          fi
+          if [ -z "$UPDATED" ] || [ "$UPDATED" = "null" ]; then
+            echo "::error::opta_xmetrics.parquet not found on opta-latest release."
+            echo "::error::Run the EPV/WPA Model Training workflow with export_xmetrics=true."
+            exit 1
+          fi
+          NOW=$(date -u +%s)
+          if ! ASSET_TS=$(date -u -d "$UPDATED" +%s 2>/dev/null) || [ -z "$ASSET_TS" ]; then
+            echo "::error::Could not parse opta_xmetrics.parquet timestamp: '$UPDATED'."
+            exit 1
+          fi
+          AGE_DAYS=$(( (NOW - ASSET_TS) / 86400 ))
+          echo "opta_xmetrics.parquet last updated $AGE_DAYS days ago ($UPDATED)"
+          if [ "$AGE_DAYS" -gt 14 ]; then
+            echo "::error::opta_xmetrics.parquet is $AGE_DAYS days old (>14d threshold)."
+            echo "::error::Trigger the EPV/WPA Model Training workflow with export_xmetrics=true to refresh."
+            exit 1
+          fi
 
       - name: Setup R
         uses: r-lib/actions/setup-r@v2
@@ -82,13 +131,19 @@ jobs:
 
           echo ""
           echo "Downloading pre-trained models..."
+          MODELS_DOWNLOADED=0
           for f in xg_model.rds xpass_model.rds epv_model.rds; do
-            if gh release download epv-models --repo peteowen1/pannadata --pattern "$f" --dir "$MODELS_DIR" 2>/dev/null; then
+            if gh release download models --repo peteowen1/pannadata --pattern "$f" --dir "$MODELS_DIR" 2>/dev/null; then
               echo "  Downloaded $f"
+              MODELS_DOWNLOADED=$((MODELS_DOWNLOADED + 1))
             else
-              echo "  WARNING: $f not found"
+              echo "::warning::$f not found on models release"
             fi
           done
+          if [ "$MODELS_DOWNLOADED" -lt 3 ]; then
+            echo "::error::Only $MODELS_DOWNLOADED/3 pre-trained models downloaded. Run the EPV/WPA Model Training workflow first."
+            exit 1
+          fi
 
           echo ""
           echo "Opta data:"
@@ -121,11 +176,60 @@ jobs:
             echo "Pipeline will run but may produce degraded results."
           fi
 
+      - name: Download intermediate caches (resume mode)
+        if: inputs.start_step != '' && inputs.start_step != '1'
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          INPUT_START_STEP: ${{ inputs.start_step }}
+        run: |
+          # Resume from step N requires caches from steps 1..(N-1) to be present.
+          # Download whatever intermediate caches the predictions-cache release
+          # has. The pipeline's own per-step cache check (file.exists +
+          # mtime > prior step's mtime) decides whether to use them.
+          CACHE_DIR="data-raw/cache-opta"
+          mkdir -p "$CACHE_DIR"
+
+          # Map step number -> cache files needed BEFORE that step runs.
+          # Step N consumes step (N-1)'s output (and earlier).
+          declare -a NEEDED=()
+          if [ "$INPUT_START_STEP" -ge 2 ]; then NEEDED+=(01_raw_data.rds 01_config.rds); fi
+          if [ "$INPUT_START_STEP" -ge 3 ]; then NEEDED+=(02_processed_data.rds); fi
+          if [ "$INPUT_START_STEP" -ge 4 ]; then NEEDED+=(03_splints.rds); fi
+          if [ "$INPUT_START_STEP" -ge 5 ]; then NEEDED+=(04_rapm.rds); fi
+          if [ "$INPUT_START_STEP" -ge 6 ]; then NEEDED+=(05_spm.rds); fi
+          if [ "$INPUT_START_STEP" -ge 7 ]; then NEEDED+=(06_xrapm.rds); fi
+          if [ "$INPUT_START_STEP" -ge 8 ]; then NEEDED+=(07_seasonal_ratings.rds); fi
+          if [ "$INPUT_START_STEP" -ge 9 ]; then NEEDED+=(08_panna.rds); fi
+
+          echo "Resume mode: start_step=$INPUT_START_STEP, downloading ${#NEEDED[@]} cache files"
+          MISSING=()
+          for f in "${NEEDED[@]}"; do
+            if gh release download predictions-cache --repo peteowen1/pannadata \
+                 --pattern "$f" --dir "$CACHE_DIR" 2>/dev/null; then
+              echo "  Downloaded $f"
+            else
+              echo "  MISSING $f (will need to be regenerated by an earlier step)"
+              MISSING+=("$f")
+            fi
+          done
+
+          if [ "${#MISSING[@]}" -gt 0 ]; then
+            echo "ERROR: ${#MISSING[@]} required intermediate cache(s) missing: ${MISSING[*]}"
+            echo "Either run the pipeline from an earlier step, or upload the missing caches."
+            exit 1
+          fi
+
+          # Touch all downloaded files so their mtime matches each other and
+          # the pipeline's per-step "is cache fresh?" check passes.
+          touch "$CACHE_DIR"/*.rds
+          ls -lh "$CACHE_DIR"
+
       - name: Run Opta RAPM/SPM pipeline
         env:
           PANNADATA_DIR: ${{ runner.temp }}/pannadata
           INPUT_FORCE_REBUILD: ${{ inputs.force_rebuild }}
           INPUT_FORCE_REBUILD_FROM: ${{ inputs.force_rebuild_from }}
+          INPUT_START_STEP: ${{ inputs.start_step }}
         run: |
           Rscript -e "
             pannadata_path <- Sys.getenv('PANNADATA_DIR', '../pannadata/data')
@@ -141,6 +245,7 @@ jobs:
             # Config overrides (from env vars, not interpolated inputs)
             force_rebuild_input <- Sys.getenv('INPUT_FORCE_REBUILD', 'false')
             force_rebuild_from_input <- Sys.getenv('INPUT_FORCE_REBUILD_FROM', '')
+            start_step_input <- Sys.getenv('INPUT_START_STEP', '')
 
             if (isTRUE(as.logical(force_rebuild_input))) {
               force_rebuild_from <- 1L
@@ -150,30 +255,49 @@ jobs:
               force_rebuild_from <- NULL
             }
 
+            if (nzchar(start_step_input) && !is.na(as.numeric(start_step_input))) {
+              start_step <- as.integer(start_step_input)
+              cat('Resume mode: start_step =', start_step, '\n')
+            }
+
             source('data-raw/player-ratings-opta/run_pipeline_opta.R', chdir = FALSE)
             if (isTRUE(pipeline_failed)) quit(status = 1)
           "
 
       - name: Upload caches to predictions-cache release
-        if: success() && inputs.upload_caches != 'false'
+        # if: always() — upload whatever step caches were produced even if
+        # a later step failed. Lets us re-dispatch with start_step=N to skip
+        # already-completed steps and iterate on the failing one in ~5 min
+        # instead of 50+ min from scratch.
+        if: always() && inputs.upload_caches != 'false'
         env:
           GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
         run: |
           CACHE_DIR="data-raw/cache-opta"
 
-          if [ ! -f "$CACHE_DIR/07_seasonal_ratings.rds" ]; then
-            echo "WARNING: 07_seasonal_ratings.rds not found, skipping upload"
+          if [ ! -d "$CACHE_DIR" ]; then
+            echo "No cache dir found — pipeline didn't make it past setup."
             exit 0
           fi
 
-          echo "Uploading caches to predictions-cache release..."
-          for f in 07_seasonal_ratings.rds; do
+          echo "Uploading any per-step caches that were produced..."
+          UPLOADED=0
+          for f in 01_raw_data.rds 01_config.rds \
+                   02_processed_data.rds \
+                   03_splints.rds \
+                   04_rapm.rds 04_rapm_multi.rds \
+                   05_spm.rds \
+                   06_xrapm.rds \
+                   07_seasonal_ratings.rds 07_seasonal_ratings.rds.meta.json \
+                   08_panna.rds; do
             if [ -f "$CACHE_DIR/$f" ]; then
               gh release upload predictions-cache "$CACHE_DIR/$f" \
                 --repo peteowen1/pannadata --clobber
               echo "  Uploaded $f"
+              UPLOADED=$((UPLOADED + 1))
             fi
           done
+          echo "Uploaded $UPLOADED cache file(s)."
 
       - name: Pipeline summary
         if: always()

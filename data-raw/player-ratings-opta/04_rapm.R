@@ -76,7 +76,10 @@ model <- fit_rapm(
   alpha = 0,           # Ridge regression
   nfolds = 10,
   use_weights = TRUE,
-  penalize_covariates = FALSE
+  penalize_covariates = FALSE,
+  parallel = FALSE     # avoid 2x memory amplification from doParallel
+                       # workers — OOM-killed step 4 on 7GB GHA runners
+                       # at 664K obs x 38K cols on the v5 attempt.
 )
 
 # 5. Covariate Effects ----
@@ -155,7 +158,8 @@ if (use_multi_target) {
           alpha = 0,
           nfolds = 10,
           use_weights = TRUE,
-          penalize_covariates = FALSE
+          penalize_covariates = FALSE,
+          parallel = FALSE  # same reason as base RAPM above
         )
 
         ratings_tgt <- extract_rapm_ratings(model_tgt)

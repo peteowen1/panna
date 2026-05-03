@@ -21,15 +21,24 @@ processed_data <- readRDS(file.path(cache_dir, "02_processed_data.rds"))
 rapm_results <- readRDS(file.path(cache_dir, "04_rapm.rds"))
 
 rapm_ratings <- rapm_results$ratings
-# Free memory
+# Free memory — rapm_results contains the full sparse design matrix
+# (~664K x 38K), much bigger than just the ratings we need.
 rm(rapm_results); gc(verbose = FALSE)
 cat("Players with RAPM ratings:", nrow(rapm_ratings), "\n")
+
+# Extract just the bits of processed_data we need (opta_stats and
+# opta_xmetrics), then drop processed_data immediately. Holding the full
+# processed_data list (~3-5 GB with lineups + events + shooting) alongside
+# data.table aggregations of opta_stats (~1.3 GB) was OOM-killing step 5
+# on standard 7 GB GHA runners.
+opta_stats <- processed_data$opta_stats
+opta_xmetrics <- processed_data$opta_xmetrics
+rm(processed_data); gc(verbose = FALSE, full = TRUE)
 
 # 3. Aggregate Opta Player Statistics ----
 
 cat("\n=== Aggregating Opta Player Statistics ===\n")
 
-opta_stats <- processed_data$opta_stats
 if (is.null(opta_stats) || nrow(opta_stats) == 0) {
   stop("No Opta stats available. Check step 01 output.")
 }
@@ -46,10 +55,10 @@ cat("Features per player:", ncol(player_stats), "\n")
 
 # 4. Enrich with xMetrics Features ----
 
-if (use_xmetrics_features && !is.null(processed_data$opta_xmetrics)) {
+if (use_xmetrics_features && !is.null(opta_xmetrics)) {
   cat("\n=== Enriching with xMetrics Features ===\n")
 
-  xmetrics <- processed_data$opta_xmetrics
+  xmetrics <- opta_xmetrics
   cat("xMetrics rows:", nrow(xmetrics), "\n")
 
   # Aggregate xMetrics to player level (may span multiple seasons)
@@ -140,9 +149,6 @@ if (use_xmetrics_features && !is.null(processed_data$opta_xmetrics)) {
   # Free memory
   rm(xmetrics, xmetrics_agg); gc(verbose = FALSE)
 }
-
-# Free memory
-rm(processed_data); gc(verbose = FALSE)
 
 # 5. Join with RAPM for Training ----
 

@@ -697,6 +697,25 @@ suggest_opta_seasons <- function(league, table_type = "match_events",
     }
   }
 
+  # Per-league fallback (events_consolidated/ layout — see load_opta_table)
+  if (length(seasons) == 0 && !is.null(base_dir) && table_type == "match_events") {
+    per_league_file <- file.path(base_dir, "events_consolidated",
+                                  paste0("events_", opta_league, ".parquet"))
+    if (file.exists(per_league_file)) {
+      tryCatch({
+        conn <- DBI::dbConnect(duckdb::duckdb())
+        on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
+        pq <- normalizePath(per_league_file, winslash = "/", mustWork = TRUE)
+        sql <- sprintf("SELECT DISTINCT season FROM '%s' ORDER BY season DESC", pq)
+        res <- DBI::dbGetQuery(conn, sql)
+        seasons <- res$season
+      }, error = function(e) {
+        cli::cli_warn("Could not query per-league parquet: {e$message}")
+        NULL
+      })
+    }
+  }
+
   # Fall back to catalog
   if (length(seasons) == 0) {
     catalog <- tryCatch(download_opta_catalog(), error = function(e) {
@@ -737,6 +756,16 @@ load_opta_table <- function(table_type, league, season, columns,
   base_dir <- opta_data_dir()
   consolidated_file <- file.path(base_dir, paste0("opta_", table_type, ".parquet"))
 
+  # Pannadata's match_events are too large to consolidate into a single file —
+  # they ship as per-league parquets at events_consolidated/events_<league>.parquet.
+  # Try that path before falling back to the hierarchical layout.
+  per_league_file <- if (table_type == "match_events") {
+    file.path(base_dir, "events_consolidated",
+              paste0("events_", opta_league, ".parquet"))
+  } else {
+    NULL
+  }
+
   if (file.exists(consolidated_file)) {
     # Use consolidated file with WHERE clause
     parquet_path <- normalizePath(consolidated_file, winslash = "/", mustWork = TRUE)
@@ -753,6 +782,23 @@ load_opta_table <- function(table_type, league, season, columns,
       list(competition = opta_league, season = season),
       prefix = FALSE
     )
+
+    if (nzchar(where_sql)) {
+      sql <- sprintf("SELECT %s FROM '%s' WHERE %s", col_sql, parquet_path, where_sql)
+    } else {
+      sql <- sprintf("SELECT %s FROM '%s'", col_sql, parquet_path)
+    }
+  } else if (!is.null(per_league_file) && file.exists(per_league_file)) {
+    # File is already per-league, so apply only the season filter (no competition).
+    parquet_path <- normalizePath(per_league_file, winslash = "/", mustWork = TRUE)
+
+    col_sql <- if (!is.null(columns)) {
+      paste(validate_sql_columns(columns), collapse = ", ")
+    } else {
+      "*"
+    }
+
+    where_sql <- build_where_clause(list(season = season), prefix = FALSE)
 
     if (nzchar(where_sql)) {
       sql <- sprintf("SELECT %s FROM '%s' WHERE %s", col_sql, parquet_path, where_sql)

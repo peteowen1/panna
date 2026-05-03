@@ -228,7 +228,6 @@ if (length(snapshot_dates) == 0) {
 # check and date-coverage assertion at the end so we can fully drop
 # existing_parquet / existing_dt too.
 
-existing_chunk_path <- NULL
 existing_schema_cols <- NULL
 existing_n_dates <- 0L
 
@@ -238,17 +237,21 @@ if (!is.null(keep_existing) && nrow(keep_existing) > 0) {
     existing_n_dates <- data.table::uniqueN(as.Date(existing_parquet$snapshot_date))
   }
 
-  existing_chunk_path <- tempfile(pattern = "psr_existing_", fileext = ".parquet")
-  arrow::write_parquet(as.data.frame(keep_existing), existing_chunk_path)
-  on.exit(unlink(existing_chunk_path), add = TRUE)
-
-  message(sprintf("  Streamed keep_existing to %s — freeing %s rows from RAM",
-                  basename(existing_chunk_path),
-                  format(nrow(keep_existing), big.mark = ",")))
-
-  rm(keep_existing, existing_parquet)
+  # Keep keep_existing in memory through the loop. Earlier versions streamed
+  # it to a parquet file under cache_dir to free ~500 MB of RAM during the
+  # snapshot loop, but the streamed file kept vanishing on GHA (v6 hit the
+  # guard: file genuinely absent at merge time despite successful write —
+  # leading-dot filename appears to be the trigger; visible-named chunks in
+  # the same dir survived fine in v6). Now that the loop has gc(full=TRUE)
+  # every iteration (added in v5), peak memory is bounded by ONE iter's
+  # transients rather than 10 iters' worth — keep_existing's 500 MB fits
+  # comfortably below the 7 GB ceiling without needing the disk round-trip.
+  rm(existing_parquet)
   if (exists("existing_dt")) rm(existing_dt)
   gc(verbose = FALSE, full = TRUE)
+  message(sprintf("  Holding keep_existing in memory: %s rows (~%s)",
+                  format(nrow(keep_existing), big.mark = ","),
+                  format(utils::object.size(keep_existing), units = "auto")))
 }
 
 # 5. Pre-Compute Shared Data (position multipliers + prior centers) ----
@@ -358,7 +361,42 @@ if (mexp_enabled) {
 
 cat("=== Computing PSR Snapshots ===\n\n")
 
-psr_list <- vector("list", length(snapshot_dates))
+# Stream each iteration's result to a per-date parquet file, then rbind at the
+# end via arrow. Replaces an in-memory `psr_list` that retained every iteration
+# until the end; combined with `rm()` of transients every iteration and a
+# periodic `gc(full = TRUE)` every 10th iteration, this bounds *loop-retained
+# growth* to ~1 iteration's worth (the fixed ~1.7GB baseline of `match_stats`
+# + `precomputed_mexp` still persists across the loop by design). Fixes the
+# persistent OOM documented in panna#63, which hit at ~date 1/105 when the
+# recompute set grew well past the originally-assumed handful of dates.
+# Streaming chunks. Three prior fix attempts failed:
+#   v1: tempfile() under /tmp — disappeared mid-loop.
+#   v2: dotfile dir under cache_dir — ALSO disappeared.
+#   v3: non-dotfile dir under cache_dir, with diagnostic guards — confirmed
+#       cwd is correct AND cache_dir parent exists, but the chunks SUBDIR
+#       still gets wiped between dir.create and iter 1 of the loop.
+#       Mechanism: still unconfirmed, but specifically targets subdirs.
+# This version: don't create a subdirectory at all. Stream chunks as
+# flat-named files directly under cache_dir — same level as
+# psr_existing_chunk.parquet, which has proven to survive across the loop.
+# Cleanup uses a name pattern instead of recursive unlink.
+# Chunks named without leading dot. v4/v5 used ".psr_chunk_NNNNNN.parquet"
+# but list.files() defaults to all.files=FALSE which silently skips hidden
+# files — chunks were written successfully but the merge step's list.files
+# returned 0 entries. The "vanishing files" we'd been chasing for 3 iterations
+# was actually just our own filter omitting them. Drop the leading dot.
+psr_chunk_prefix <- file.path(cache_dir, "psr_chunk_")
+.cleanup_psr_chunks <- function() {
+  files <- list.files(cache_dir,
+                       pattern = "^psr_chunk_\\d+\\.parquet$",
+                       full.names = TRUE)
+  if (length(files) > 0) unlink(files, force = TRUE)
+}
+.cleanup_psr_chunks()  # remove residue from a prior crashed run, if any
+on.exit(.cleanup_psr_chunks(), add = TRUE)
+message(sprintf("  Streaming per-iteration chunks as flat files: %s*.parquet",
+                psr_chunk_prefix))
+
 n_success <- 0L
 start_time <- Sys.time()
 
@@ -377,10 +415,8 @@ for (i in seq_along(snapshot_dates)) {
   # match_stats with seq_len(cutoff) as a "fast prefix filter", but that copy
   # runs alongside `estimate_player_skills()`'s own internal
   # `dt[md < target_date]` filter — two near-full-size data.table copies live
-  # simultaneously at ~1.7GB each, and on recent dates they were OOM-killing
-  # the step on standard GHA runners (7GB). The internal filter alone is fast
-  # enough for the 5-date weekly increment; skipping the pre-slice drops peak
-  # memory by ~1.7GB with no measurable runtime penalty.
+  # simultaneously at ~1.7GB each. The internal filter alone is fast enough;
+  # skipping the pre-slice drops peak memory by ~1.7GB.
   cutoff <- findInterval(as.numeric(d) - 1L, as.numeric(match_date_vec))
   if (cutoff < 1L) next
 
@@ -396,7 +432,7 @@ for (i in seq_along(snapshot_dates)) {
       NULL
     }
   )
-  if (is.null(skills) || nrow(skills) == 0) next
+  if (is.null(skills) || nrow(skills) == 0) { rm(skills); next }
 
   psr <- tryCatch(
     compute_player_psr(skills, center = TRUE, target = psr_target),
@@ -405,11 +441,24 @@ for (i in seq_along(snapshot_dates)) {
       NULL
     }
   )
-  if (is.null(psr) || nrow(psr) == 0) next
+  if (is.null(psr) || nrow(psr) == 0) { rm(skills, psr); next }
 
   psr[, snapshot_date := d]
-  psr_list[[i]] <- psr[, .(snapshot_date, player_id, player_name,
-                            primary_position, psr, osr, dsr, weighted_90s)]
+  psr_slim <- psr[, .(snapshot_date, player_id, player_name,
+                       primary_position, psr, osr, dsr, weighted_90s)]
+  arrow::write_parquet(
+    as.data.frame(psr_slim),
+    paste0(psr_chunk_prefix, sprintf("%06d.parquet", i))
+  )
+
+  rm(skills, psr, psr_slim)
+  # GC every iteration. The previous "every 10" cadence let ~10 iters of
+  # transient allocations accumulate as unreachable-but-uncollected heap
+  # — over 80+ iters this cumulatively pushed past 7GB on standard
+  # GHA runners (v4 cancelled at iter 84/106). Per-iter cost is ~200ms
+  # on a 2GB heap; ~20s total across 100 dates is a fair trade for
+  # bounded memory.
+  gc(verbose = FALSE, full = TRUE)
   n_success <- n_success + 1L
 }
 
@@ -438,17 +487,40 @@ if (n_failed > 0) {
 
 cat("\n=== Exporting ===\n")
 
-new_psr <- data.table::rbindlist(psr_list, fill = TRUE, use.names = TRUE)
+# Read back all streamed per-date chunks. v4 used lapply() then rbindlist
+# which holds 2x the total chunk bytes briefly (the list and the bound
+# result both alive). With 106 chunks × ~5-10 MB plus existing residual
+# memory from the loop, that pushed us over the 7GB ceiling — manifested
+# as "operation cancelled" 15 sec after the loop's last iteration.
+#
+# Use arrow::open_dataset() instead, which lazy-reads the chunk files
+# and materializes them in a single pass without holding all individual
+# data.frames in memory simultaneously.
+chunk_files <- list.files(cache_dir,
+                          pattern = "^psr_chunk_\\d+\\.parquet$",
+                          full.names = TRUE)
+if (length(chunk_files) == 0) {
+  stop("No PSR snapshot chunks were written - refusing to publish.",
+       call. = FALSE)
+}
+
+# Force a full GC at the loop boundary so the merge starts clean.
+gc(verbose = FALSE, full = TRUE)
+
+new_psr <- data.table::as.data.table(
+  arrow::open_dataset(chunk_files, format = "parquet") |>
+    dplyr::collect()
+)
 message(sprintf("  Newly computed: %s rows across %d dates",
                 format(nrow(new_psr), big.mark = ","),
                 data.table::uniqueN(new_psr$snapshot_date)))
 
-# Merge with reused rows from the existing parquet (if any). keep_existing was
-# streamed to existing_chunk_path before the snapshot loop to free ~500MB of
-# RAM during compute; read it back now for the merge.
-if (!is.null(existing_chunk_path)) {
-  # Drift check uses captured schema from before the stream-to-disk to avoid
-  # a wasted full read just to compare names.
+# Merge with reused rows from existing parquet (if any). keep_existing has
+# been held in memory throughout the loop — was previously streamed to a
+# parquet file to save RAM, but that file kept vanishing on GHA (mechanism
+# unclear — see comments at the streaming-removed block above).
+if (!is.null(keep_existing) && nrow(keep_existing) > 0) {
+  # Drift check uses captured schema from start of script.
   added_cols   <- setdiff(names(new_psr), existing_schema_cols)
   dropped_cols <- setdiff(existing_schema_cols, names(new_psr))
   if (length(added_cols) > 0 || length(dropped_cols) > 0) {
@@ -461,7 +533,6 @@ if (!is.null(existing_chunk_path)) {
       call. = FALSE)
     weekly_psr <- new_psr
   } else {
-    keep_existing <- data.table::as.data.table(arrow::read_parquet(existing_chunk_path))
     common_cols <- names(new_psr)
     weekly_psr <- data.table::rbindlist(
       list(keep_existing[, ..common_cols], new_psr[, ..common_cols]),
