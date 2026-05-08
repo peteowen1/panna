@@ -146,6 +146,16 @@ jobs:
             source('data-raw/epv/04_export_xmetrics.R')
           "
 
+          # Fail here if the export silently no-op'd. Without this guard,
+          # Opta RAPM/SPM Pipeline blows up later with a confusing error
+          # far from the cause.
+          XMETRICS_FILE=data-raw/cache/epv/opta_xmetrics.parquet
+          if [ ! -f "$XMETRICS_FILE" ]; then
+            echo "::error::EXPORT_XMETRICS=true but $XMETRICS_FILE was not produced"
+            exit 1
+          fi
+          echo "✓ $XMETRICS_FILE produced ($(stat -c%s "$XMETRICS_FILE") bytes)"
+
       - name: Train WP model
         if: ${{ env.TRAIN_WP == 'true' }}
         env:
