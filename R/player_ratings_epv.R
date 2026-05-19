@@ -287,13 +287,13 @@ calculate_epr_regression <- function(player_game_epv,
   league_col <- intersect(c("league","competition"), names(dt))[1]
   has_league <- !is.na(league_col)
   has_opp    <- "opp_def_rating" %in% names(dt)
-  # NOTE: we experimented with own-team strength controls (team_off_rating
-  # and team_elo_n) in 2026-05-19 to try to push Eredivisie/Scottish stars
-  # (Veerman, Tavernier) down in the rankings. Both over-corrected on
-  # actual superstars (Vinícius, Haaland) because team strength is partly
-  # caused by player skill. Reverted; EPR uses only league FE + opp_def
-  # for league/opponent adjustment. The remaining ranking artifacts are
-  # legitimate per-90 productivity by mid-league standouts.
+  # NOTE: also tried opp_elo_n (cross-league opponent Elo) as a control
+  # alongside opp_def_rating. It barely moved Eredivisie/Scottish stars
+  # (Veerman, Tavernier) because their opponents are nearly all same-league
+  # (similar Elos → near-zero opp_elo_n contribution), but it disproportion-
+  # ately hurt UCL-heavy players like Haaland whose games span a wide Elo
+  # range. Reverted; opp_def_rating alone is the principled best.
+  has_opp_elo <- FALSE
 
   # Weights + per-90 targets
   dt[, days_since := as.numeric(ref_date - match_date)]
@@ -337,6 +337,12 @@ calculate_epr_regression <- function(player_game_epv,
                               dimnames = list(NULL, "opp_def_rating"))
     X_list <- c(X_list, list(X_opp))
     pf <- c(pf, 0)                          # opponent control unpenalized
+  }
+  if (has_opp_elo) {
+    X_oe <- Matrix::Matrix(dt$opp_elo_n, ncol = 1, sparse = TRUE,
+                             dimnames = list(NULL, "opp_elo_n"))
+    X_list <- c(X_list, list(X_oe))
+    pf <- c(pf, 0)                          # opponent-elo control unpenalized
   }
   X <- do.call(cbind, X_list)
 
