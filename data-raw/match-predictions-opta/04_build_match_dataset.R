@@ -108,8 +108,9 @@ rolling_cols <- grep("_last_\\d+$|days_since_last", numeric_cols, value = TRUE)
 
 if (length(rolling_cols) > 0) {
   # Create is_early_season flag: TRUE if ANY rolling feature is NA
+  ## (force data.frame indexing — rolling_features merge may return data.table)
   dataset$is_early_season <- as.integer(
-    rowSums(is.na(dataset[, rolling_cols, drop = FALSE])) > 0
+    rowSums(is.na(as.data.frame(dataset)[, rolling_cols, drop = FALSE])) > 0
   )
   early_count <- sum(dataset$is_early_season)
   if (early_count > 0) {

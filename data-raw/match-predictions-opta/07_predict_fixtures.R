@@ -29,7 +29,7 @@ augmented_features <- outcome_result$augmented_features
 # Predict ALL matches (played + fixtures) so the blog can show historical
 # predictions on Results view alongside upcoming fixtures.
 
-fixtures <- match_dataset[match_dataset$split %in% c("fixture", "test", "train"), ]
+fixtures <- as.data.frame(match_dataset[match_dataset$split %in% c("fixture", "test", "train"), ])
 n_upcoming <- sum(match_dataset$split == "fixture")
 n_played <- nrow(fixtures) - n_upcoming
 message(sprintf("  %d matches to predict (%d played + %d upcoming)", nrow(fixtures), n_played, n_upcoming))

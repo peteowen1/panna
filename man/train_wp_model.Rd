@@ -4,17 +4,34 @@
 \alias{train_wp_model}
 \title{Train a win probability model}
 \usage{
-train_wp_model(wp_features, nrounds = 200L, max_depth = 4L, eta = 0.05, ...)
+train_wp_model(
+  wp_features,
+  nrounds = 500L,
+  max_depth = 4L,
+  eta = 0.05,
+  nfolds = 5L,
+  early_stopping_rounds = 20L,
+  seed = 42L,
+  ...
+)
 }
 \arguments{
 \item{wp_features}{Output of \code{\link{create_wp_features}} with
-\code{wp_label} column.}
+\code{wp_label} column and \code{match_id} (for group-aware folds).}
 
-\item{nrounds}{Number of XGBoost boosting rounds (default 200).}
+\item{nrounds}{Maximum boosting rounds (default 500; early stopping
+typically halts well before).}
 
 \item{max_depth}{Maximum tree depth (default 4).}
 
 \item{eta}{Learning rate (default 0.05).}
+
+\item{nfolds}{Number of CV folds (default 5).}
+
+\item{early_stopping_rounds}{Stop CV if logloss hasn't improved in this
+many rounds (default 20).}
+
+\item{seed}{Random seed for reproducibility (default 42).}
 
 \item{...}{Additional parameters passed to \code{xgboost::xgb.train()}.}
 }
@@ -23,10 +40,22 @@ A list with:
 \describe{
 \item{model}{Trained xgboost model object}
 \item{feature_names}{Character vector of feature column names}
+\item{cv_logloss}{Best CV logloss (held-out mean)}
+\item{optimal_nrounds}{The nrounds selected by early stopping}
 }
 }
 \description{
 Fits an XGBoost model to predict match outcome (home win / draw / away win)
 from in-match game state features. Uses \code{WP_DRAW_VALUE} (0.5) for draws
-so the model predicts "expected points fraction" for the home team.
+so the model predicts home's expected points fraction. Uses binary:logistic
+(cross-entropy with fractional labels) for consistency with torp's AFL WP
+training harness and natural \link{0,1} output via sigmoid.
+}
+\details{
+Two-step training (matches torp::train_live_wp_xgb.R):
+\enumerate{
+\item 5-fold match-grouped xgb.cv with early_stopping_rounds=20 to find
+optimal nrounds
+\item Final xgb.train at the optimal round on all data
+}
 }

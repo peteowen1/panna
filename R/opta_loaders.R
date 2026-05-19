@@ -79,6 +79,12 @@ OPTA_LEAGUES <- c(
   TUR = "Super_Lig",
   ENG2 = "Championship",
   SCO = "Scottish_Premiership",
+  BEL = "Belgian_First_Division",
+  BRA = "Brazilian_Serie_A",
+  AUS = "A_League",
+  TUN = "Tunisian_Ligue_1",
+  # African club
+  CAFCL = "CAF_CL",
   # European comps
   UCL = "UCL",
   UEL = "UEL",

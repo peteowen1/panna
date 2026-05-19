@@ -24,6 +24,61 @@
 #'
 #' @return Data frame with one row per match, team-level rating features
 #' @export
+#' Augment a ratings table with time-decayed historical fallback
+#'
+#' For each player_id, finds their MOST recent non-zero rated season. If
+#' that season is older than `current_sey`, applies an exponential decay
+#' `decay_factor ^ years_gap` to the rating and emits a synthetic row
+#' under `current_sey`. This lets unrated-in-current-season players (who
+#' moved to a non-covered league like Saudi PL / MLS / Liga MX) still
+#' contribute a sensible non-zero panna estimate when their lineup is
+#' aggregated.
+#'
+#' @param ratings Data.table with at least `player_id`, `season_end_year`,
+#'   `panna`, `offense`, `defense` (and optionally `spm`).
+#' @param current_sey The season we want imputed rows for (e.g., 2026).
+#' @param decay_factor Per-year decay. Default 0.85 (15% decline per year
+#'   away from a player's last-rated season — accounts for both ageing and
+#'   uncertainty about their current form).
+#' @param max_years_back Cap how far back to look. Default 5 years.
+#'   Beyond that the decay is so heavy the imputation is near-zero anyway.
+#' @return The input `ratings` with extra synthetic rows for `current_sey`
+#'   covering players who weren't already rated there.
+#' @export
+augment_ratings_with_history <- function(ratings, current_sey,
+                                            decay_factor = 0.85,
+                                            max_years_back = 5L) {
+  dt <- data.table::as.data.table(ratings)
+
+  ## Players already rated in current_sey — leave them alone
+  curr_ids <- dt[season_end_year == current_sey &
+                  !is.na(panna) & panna != 0, unique(player_id)]
+
+  ## For everyone else: most recent rated season within max_years_back
+  candidates <- dt[!player_id %in% curr_ids &
+                    season_end_year >= current_sey - max_years_back &
+                    season_end_year < current_sey &
+                    !is.na(panna) & panna != 0]
+  if (nrow(candidates) == 0L) return(dt)
+  data.table::setorder(candidates, player_id, -season_end_year)
+  most_recent <- candidates[, .SD[1L], by = player_id]
+  most_recent[, years_gap := current_sey - season_end_year]
+  most_recent[, decay := decay_factor ^ years_gap]
+
+  ## Decay panna + components
+  for (col in intersect(c("panna","offense","defense","spm"), names(most_recent))) {
+    most_recent[, (col) := get(col) * decay]
+  }
+  ## Stamp as current_sey so downstream lookups find them
+  most_recent[, season_end_year := current_sey]
+  ## Tag for diagnostics (won't break callers — extra column)
+  most_recent[, imputed_from_history := TRUE]
+  most_recent[, c("years_gap","decay") := NULL]
+
+  ## Append to original
+  data.table::rbindlist(list(dt, most_recent), fill = TRUE, use.names = TRUE)
+}
+
 aggregate_lineup_ratings <- function(lineups, ratings, season_end_year,
                                       prev_season_decay = 0.8) {
   dt_lineups <- data.table::as.data.table(lineups)
@@ -61,35 +116,107 @@ aggregate_lineup_ratings <- function(lineups, ratings, season_end_year,
     dt_ratings[, clean_name := clean_player_name(player_name)]
   }
 
-  # Current season ratings
-  rating_cols <- c(join_key, "panna", "offense", "defense", "spm")
+  # Current season ratings. Carry through any value-metric columns that are
+  # present in dt_ratings so the downstream aggregator (has_epr / has_psr /
+  # has_wpa / has_psv checks in this function) can pick them up. Without
+  # this, those columns got silently dropped before the aggregator saw them,
+  # so sum_epr / sum_psr / etc were never created in team-level features.
+  core_cols <- c("panna", "offense", "defense", "spm")
+  known_optional <- c("epr", "epr_offensive", "epr_defensive",
+                       "psr", "osr", "dsr",
+                       "wpa_rating", "psv_rating",
+                       "centrality")
+  optional_cols <- intersect(known_optional, names(dt_ratings))
+  # Warn if any expected optional cols are NOT in dt_ratings — catches the
+  # pre-2026-05-19 silent-drop pattern where downstream `has_psr`/`has_epr`
+  # checks in this function would always evaluate FALSE, so no team-level
+  # PSR/EPR features ever got created. If we expect these columns to be
+  # passed in but they're missing, surface that loudly.
+  missing_optional <- setdiff(known_optional, names(dt_ratings))
+  if (length(missing_optional) > 0 && getOption("panna.verbose_ratings", FALSE)) {
+    cli::cli_warn(c(
+      "Ratings table is missing optional value-metric columns: {.field {missing_optional}}",
+      "i" = "Set {.code options(panna.verbose_ratings = FALSE)} to silence."
+    ))
+  }
+  rating_cols <- c(join_key, core_cols, optional_cols)
   curr <- dt_ratings[season_end_year == sey_curr, rating_cols, with = FALSE]
   curr <- curr[!duplicated(curr[[join_key]])]
 
   # Previous season ratings (fallback with decay)
   prev <- dt_ratings[season_end_year == sey_prev, rating_cols, with = FALSE]
   prev <- prev[!duplicated(prev[[join_key]])]
-  prev[, panna := panna * prev_season_decay]
-  prev[, offense := offense * prev_season_decay]
-  prev[, defense := defense * prev_season_decay]
-  prev[, spm := spm * prev_season_decay]
-  data.table::setnames(prev, c("panna", "offense", "defense", "spm"),
-                       c("panna_prev", "offense_prev", "defense_prev", "spm_prev"))
+  decay_cols <- c(core_cols, optional_cols)
+  for (c in decay_cols) {
+    if (c %in% names(prev)) prev[, (c) := get(c) * prev_season_decay]
+  }
+  # Rename to *_prev so we can fall back without column-name collisions
+  prev_renamed <- paste0(decay_cols, "_prev")
+  data.table::setnames(prev, decay_cols, prev_renamed)
 
   # Join current ratings
   starters <- curr[starters, on = join_key]
   # Fallback to previous season
   starters <- prev[starters, on = join_key]
-  starters[is.na(panna), panna := panna_prev]
-  starters[is.na(offense), offense := offense_prev]
-  starters[is.na(defense), defense := defense_prev]
-  starters[is.na(spm), spm := spm_prev]
-  # Replacement level for unrated players
+  for (c in decay_cols) {
+    prev_c <- paste0(c, "_prev")
+    if (c %in% names(starters) && prev_c %in% names(starters)) {
+      starters[is.na(get(c)), (c) := get(prev_c)]
+    }
+  }
 
-  starters[is.na(panna), panna := 0]
-  starters[is.na(offense), offense := 0]
-  starters[is.na(defense), defense := 0]
-  starters[is.na(spm), spm := 0]
+  # Coverage-shrunk team-mean imputation for unrated players
+  #
+  # Why: a Brazil player without a panna rating (e.g. Brasileirão-based, not
+  # in our European-focused RAPM pipeline) used to get panna = 0, which
+  # systematically depressed `home_sum_panna` for low-coverage countries.
+  # Naive team-mean imputation overshoots in the opposite direction: Saudi
+  # Arabia with only 1 rated player (a top star) would impute 25 others at
+  # that star's panna, inflating the whole team.
+  #
+  # Shrinkage formula: imputed = team_mean × coverage / (coverage + SHRINK_K)
+  #
+  # - coverage = n_rated_starters / n_total_starters per team (across the
+  #   season's matches passed in)
+  # - SHRINK_K = 0.3 — when coverage equals k, imputation gets half the
+  #   team mean (a Bayesian-flavoured shrinkage toward 0/replacement)
+  # - Brazil (cov ~0.7): imputed ≈ 0.70 × team_mean (mostly trust team mean)
+  # - Saudi  (cov ~0.04): imputed ≈ 0.12 × team_mean (mostly shrink to 0)
+  # - Qatar  (cov 0):    imputed = 0 (final fallback below handles)
+  ## Increased from 0.3 to 0.6: at 0.3, USA (50% coverage) imputed unrated
+  ## MLS players at 62% of team mean — selection bias because rated 13 are
+  ## all Europe-based stars. At 0.6, USA shrinks to 45% — more honest.
+  SHRINK_K <- 0.6
+  # All numeric rating columns get coverage-shrunk team-mean imputation:
+  # core (panna/offense/defense/spm) AND optional value metrics (EPR/PSR/etc.).
+  # Without this, non-European teams whose players lack EPR/PSR snapshots
+  # have sum_epr / sum_psr biased low because missing values fall back to 0,
+  # dragging team totals down vs full-coverage European squads.
+  shrink_cols <- intersect(c("panna","offense","defense","spm",
+                              "epr","epr_offensive","epr_defensive",
+                              "psr","osr","dsr"),
+                             names(starters))
+  if ("team_id" %in% names(starters) && length(shrink_cols) > 0) {
+    # Compute per-team count + per-column means via .SDcols
+    team_stats <- starters[, c(
+      list(team_n_total = .N, team_n_rated = sum(!is.na(panna))),
+      lapply(.SD, function(x) mean(x, na.rm = TRUE))
+    ), by = team_id, .SDcols = shrink_cols]
+    avg_cols <- paste0("team_avg_", shrink_cols)
+    data.table::setnames(team_stats, shrink_cols, avg_cols)
+    team_stats[, coverage := team_n_rated / team_n_total]
+    team_stats[, shrink_w := coverage / (coverage + SHRINK_K)]
+    for (c in avg_cols) team_stats[, (c) := get(c) * shrink_w]
+    starters <- team_stats[, c("team_id", avg_cols), with = FALSE][
+                  starters, on = "team_id"]
+    for (i in seq_along(shrink_cols)) {
+      c <- shrink_cols[i]; avg_c <- avg_cols[i]
+      starters[is.na(get(c)) & !is.na(get(avg_c)), (c) := get(avg_c)]
+    }
+    starters[, (avg_cols) := NULL]
+  }
+  # Final fallback: anything still NA becomes 0
+  for (c in shrink_cols) starters[is.na(get(c)), (c) := 0]
 
   # Classify positions
   starters[, pos_group := data.table::fcase(

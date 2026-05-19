@@ -111,6 +111,35 @@ if (is.data.frame(seasonal_data)) {
     }
   }
 
+  # Merge EPR/EPR_offensive/EPR_defensive from weekly snapshots if available.
+  # We take the LATEST snapshot whose snapshot_date falls within (or just
+  # before) each season_end_year (June 30 of that season). This treats EPR
+  # as a season-level rating for the prediction model — same staleness
+  # contract as PSR.
+  epr_path <- "../pannadata/data/opta/opta_epr_weekly.parquet"
+  if (file.exists(epr_path) && requireNamespace("arrow", quietly = TRUE)) {
+    epr_w <- as.data.frame(arrow::read_parquet(epr_path))
+    epr_w$snapshot_date <- as.Date(epr_w$snapshot_date)
+    epr_w$snapshot_season_end_year <- ifelse(
+      as.integer(format(epr_w$snapshot_date, "%m")) >= 7L,
+      as.integer(format(epr_w$snapshot_date, "%Y")) + 1L,
+      as.integer(format(epr_w$snapshot_date, "%Y"))
+    )
+    # Latest snapshot per (player_id, season)
+    epr_dt <- data.table::as.data.table(epr_w)
+    data.table::setorder(epr_dt, player_id, snapshot_season_end_year, -snapshot_date)
+    epr_seasonal <- epr_dt[, .SD[1L],
+                            by = .(player_id, season_end_year = snapshot_season_end_year),
+                            .SDcols = c("epr", "epr_offensive", "epr_defensive")]
+    ratings <- merge(ratings, as.data.frame(epr_seasonal),
+                      by = c("player_id", "season_end_year"), all.x = TRUE)
+    for (c in c("epr", "epr_offensive", "epr_defensive")) {
+      ratings[[c]][is.na(ratings[[c]])] <- 0
+    }
+    message(sprintf("  Merged EPR for %d player-seasons",
+                    sum(ratings$epr != 0)))
+  }
+
   # Merge centrality scores if available
   centrality_path <- file.path("data-raw", "cache-opta", "07b_centrality.rds")
   if (file.exists(centrality_path)) {
@@ -224,12 +253,48 @@ if (nrow(upcoming) > 0) {
   message(sprintf("\n  Processing %d upcoming fixtures...", nrow(upcoming)))
   latest_sey <- max(sey_values, na.rm = TRUE)
 
-  # Get most recent lineup per team (last played match)
-  latest_lineups <- lineups %>%
-    filter(is_starter) %>%
-    group_by(team_id) %>%
-    filter(match_date == max(match_date)) %>%
-    ungroup()
+  # Get most recent lineup per team (last played match).
+  #
+  # We supplement the RAPM-cache lineups with the full opta_lineups.parquet
+  # because the RAPM cache only contains domestic-league lineups + WC/EURO
+  # tournament rosters from 2014/2018 — so 93/377 international team_ids have
+  # NO rows there and fall back to make_dummy_lineup() (= all zeros across
+  # panna/PSR/EPR). Even teams that DID appear in WC 2014/2018 get stuck with
+  # decade-old squads (USA's "latest" lineup was the 2014 Tim Howard roster).
+  #
+  # opta_lineups.parquet has 7.6M rows across all comps (qualifiers, AFCON,
+  # friendlies, Gold Cup, Nations League, etc.), so 92/93 of those missing
+  # team_ids get a real recent lineup. The ratings join (player_id ×
+  # season_end_year) still works — same Opta IDs throughout.
+  opta_lineups_path <- "../pannadata/data/opta/opta_lineups.parquet"
+  if (file.exists(opta_lineups_path) && requireNamespace("arrow", quietly = TRUE)) {
+    message(sprintf("  Supplementing fixture lineups from %s", opta_lineups_path))
+    opta_all <- as.data.frame(arrow::read_parquet(opta_lineups_path))
+    opta_all$match_date <- as.Date(sub("Z$", "", opta_all$match_date))
+    # Same is_starter filter; harmonise columns to match RAPM cache schema
+    opta_all <- opta_all[opta_all$is_starter == TRUE & !is.na(opta_all$team_id), ]
+    # Normalize RAPM-cache match_date to Date (cache stores as character)
+    lineups$match_date <- as.Date(sub("Z$", "", as.character(lineups$match_date)))
+    # Combine: prefer opta_all (broader coverage), fall back to RAPM cache rows
+    common_cols <- intersect(names(opta_all), names(lineups))
+    combined_lu <- dplyr::bind_rows(
+      opta_all[, common_cols, drop = FALSE],
+      lineups[lineups$is_starter == TRUE, common_cols, drop = FALSE]
+    )
+    rm(opta_all); gc(verbose = FALSE)
+    latest_lineups <- combined_lu %>%
+      filter(!is.na(team_id)) %>%
+      group_by(team_id) %>%
+      filter(match_date == max(match_date)) %>%
+      ungroup()
+    rm(combined_lu)
+  } else {
+    latest_lineups <- lineups %>%
+      filter(is_starter) %>%
+      group_by(team_id) %>%
+      filter(match_date == max(match_date)) %>%
+      ungroup()
+  }
   rm(lineups); gc(verbose = FALSE)
 
   # make_dummy_lineup() is defined in R/match_prediction.R
@@ -363,6 +428,27 @@ if (nrow(upcoming) > 0) {
           }
         }, error = function(e) {
           warning(sprintf("Fixture PSR failed: %s", e$message), call. = FALSE)
+        })
+
+        # Add EPR from the most recent weekly snapshot
+        tryCatch({
+          epr_path <- "../pannadata/data/opta/opta_epr_weekly.parquet"
+          if (file.exists(epr_path) && requireNamespace("arrow", quietly = TRUE)) {
+            epr_w <- as.data.frame(arrow::read_parquet(epr_path))
+            epr_w$snapshot_date <- as.Date(epr_w$snapshot_date)
+            latest <- max(epr_w$snapshot_date)
+            live_epr <- epr_w[epr_w$snapshot_date == latest,
+                                c("player_id", "epr", "epr_offensive", "epr_defensive")]
+            fixture_ratings <- fixture_ratings %>%
+              left_join(live_epr, by = "player_id")
+            for (c in c("epr", "epr_offensive", "epr_defensive")) {
+              fixture_ratings[[c]][is.na(fixture_ratings[[c]])] <- 0
+            }
+            message(sprintf("  Added EPR for %d fixture players (snapshot %s)",
+                            sum(fixture_ratings$epr != 0), latest))
+          }
+        }, error = function(e) {
+          warning(sprintf("Fixture EPR failed: %s", e$message), call. = FALSE)
         })
 
         message(sprintf("  Live skill ratings for %d players at %s",

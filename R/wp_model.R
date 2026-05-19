@@ -66,6 +66,29 @@ create_wp_features <- function(spadl_with_epv, match_results = NULL,
   dt[, cum_away_goals := cumsum(away_goal) - away_goal, by = match_id]
   dt[, score_diff := cum_home_goals - cum_away_goals]  # from home perspective
 
+  # --- POSSESSION-POV convention ---
+  # Everything from here on is from the possession team's perspective. The
+  # model predicts P(possession_team wins match), not P(home wins). is_home
+  # becomes a home-advantage feature. xmargin and wp_label follow naturally:
+  #
+  #   margin_poss = possession_team_score - opponent_score  (sign follows poss)
+  #   epv is already possession-POV (positive = possessor about to score)
+  #   xmargin = margin_poss + epv   (no sign flipping needed — both poss-POV)
+  #   wp_label = did possession_team win? (1 / 0.5 / 0)
+  #
+  # Benefits: (1) no sym-flip needed — both home and away possession actions
+  # naturally appear in training, (2) EPV and WP now share the same reference
+  # frame, (3) home_advantage is a clean feature not a perspective question.
+  dt[, margin_poss := data.table::fifelse(is_home == 1L,
+                                          cum_home_goals - cum_away_goals,
+                                          cum_away_goals - cum_home_goals)]
+  if ("epv" %in% names(dt)) {
+    dt[, xmargin := margin_poss + epv]
+  } else {
+    cli::cli_warn("epv column not found - xmargin falls back to margin_poss")
+    dt[, xmargin := as.numeric(margin_poss)]
+  }
+
   # --- xG state ---
   # Cumulative xG differential (if xg column available)
   if ("xg" %in% names(dt)) {
@@ -95,23 +118,31 @@ create_wp_features <- function(spadl_with_epv, match_results = NULL,
   # --- Period ---
   dt[, is_second_half := as.integer(period_id == 2L)]
 
-  # --- Add training labels ---
+  # --- Add training labels (possession-POV) ---
+  # wp_label = did the POSSESSION team win the match? Not "did home win".
+  # For home-possession action: label = (home won ? 1 : lost ? 0 : 0.5)
+  # For away-possession action: label = (away won ? 1 : lost ? 0 : 0.5)
+  # Draw is 0.5 either way. This is what the possession-POV model predicts.
   if (!is.null(match_results)) {
     mr <- data.table::as.data.table(match_results)
-    # Outcome: 1 = home win, 0.5 = draw, 0 = away win
-    mr[, wp_label := data.table::fcase(
-      home_goals > away_goals, 1,
+    dt[mr, `:=`(home_goals = i.home_goals, away_goals = i.away_goals), on = "match_id"]
+    dt[, wp_label := data.table::fcase(
       home_goals == away_goals, WP_DRAW_VALUE,
-      home_goals < away_goals, 0
+      is_home == 1L & home_goals > away_goals, 1,
+      is_home == 1L & home_goals < away_goals, 0,
+      is_home == 0L & away_goals > home_goals, 1,
+      is_home == 0L & away_goals < home_goals, 0
     )]
-    dt[mr, wp_label := i.wp_label, on = "match_id"]
   }
 
-  # Select feature columns
+  # Select feature columns. score_diff (home-POV) and margin_poss (possession-POV)
+  # both surfaced — training uses xmargin, downstream may want score_diff for
+  # compatibility.
   feature_cols <- c("match_id", "team_id", "player_id", "player_name",
                      "action_type", "time_seconds", "period_id",
                      "time_remaining", "time_elapsed_frac",
-                     "score_diff", "xg_diff", "red_card_diff",
+                     "score_diff", "margin_poss", "xmargin",
+                     "xg_diff", "red_card_diff",
                      "is_home", "is_second_half", "is_goal")
   if ("wp_label" %in% names(dt)) feature_cols <- c(feature_cols, "wp_label")
 
@@ -131,24 +162,39 @@ create_wp_features <- function(spadl_with_epv, match_results = NULL,
 #'
 #' Fits an XGBoost model to predict match outcome (home win / draw / away win)
 #' from in-match game state features. Uses \code{WP_DRAW_VALUE} (0.5) for draws
-#' so the model predicts "expected points fraction" for the home team.
+#' so the model predicts home's expected points fraction. Uses binary:logistic
+#' (cross-entropy with fractional labels) for consistency with torp's AFL WP
+#' training harness and natural [0,1] output via sigmoid.
+#'
+#' Two-step training (matches torp::train_live_wp_xgb.R):
+#'   1. 5-fold match-grouped xgb.cv with early_stopping_rounds=20 to find
+#'      optimal nrounds
+#'   2. Final xgb.train at the optimal round on all data
 #'
 #' @param wp_features Output of \code{\link{create_wp_features}} with
-#'   \code{wp_label} column.
-#' @param nrounds Number of XGBoost boosting rounds (default 200).
+#'   \code{wp_label} column and \code{match_id} (for group-aware folds).
+#' @param nrounds Maximum boosting rounds (default 500; early stopping
+#'   typically halts well before).
 #' @param max_depth Maximum tree depth (default 4).
 #' @param eta Learning rate (default 0.05).
+#' @param nfolds Number of CV folds (default 5).
+#' @param early_stopping_rounds Stop CV if logloss hasn't improved in this
+#'   many rounds (default 20).
+#' @param seed Random seed for reproducibility (default 42).
 #' @param ... Additional parameters passed to \code{xgboost::xgb.train()}.
 #'
 #' @return A list with:
 #'   \describe{
 #'     \item{model}{Trained xgboost model object}
 #'     \item{feature_names}{Character vector of feature column names}
+#'     \item{cv_logloss}{Best CV logloss (held-out mean)}
+#'     \item{optimal_nrounds}{The nrounds selected by early stopping}
 #'   }
 #'
 #' @export
-train_wp_model <- function(wp_features, nrounds = 200L, max_depth = 4L,
-                            eta = 0.05, ...) {
+train_wp_model <- function(wp_features, nrounds = 500L, max_depth = 4L,
+                            eta = 0.05, nfolds = 5L,
+                            early_stopping_rounds = 20L, seed = 42L, ...) {
   if (!requireNamespace("xgboost", quietly = TRUE)) {
     cli::cli_abort("Package {.pkg xgboost} required for WP model training")
   }
@@ -158,41 +204,96 @@ train_wp_model <- function(wp_features, nrounds = 200L, max_depth = 4L,
   if (!"wp_label" %in% names(dt)) {
     cli::cli_abort("wp_features must contain {.val wp_label} column (from create_wp_features with match_results)")
   }
+  if (!"match_id" %in% names(dt)) {
+    cli::cli_abort("wp_features must contain {.val match_id} column (for match-grouped CV folds)")
+  }
 
-  feature_names <- c("time_remaining", "score_diff", "xg_diff",
+  # xmargin (score_diff + signed EPV) replaces score_diff — collapses to a
+  # single composite feature rather than asking the model to discover the
+  # interaction. Kept score_diff out of the training set on purpose: xmargin
+  # subsumes it when EPV=0, so keeping both would mostly be redundant.
+  feature_names <- c("time_remaining", "xmargin", "xg_diff",
                       "red_card_diff", "is_home", "is_second_half")
   feature_names <- intersect(feature_names, names(dt))
 
+  # Filter to valid rows (non-NA label)
+  dt <- dt[!is.na(wp_label)]
+
+  # No sym-flip needed under possession-POV convention: training data already
+  # contains both home-possession and away-possession actions naturally. Every
+  # match contributes ~700 home-possession rows and ~700 away-possession rows,
+  # so the symmetry is built into the data distribution. Monotonicity + data
+  # symmetry emerges from the natural feature structure, not from a hack.
+
   mat <- as.matrix(dt[, ..feature_names])
   label <- dt$wp_label
-
-  # Remove rows with NA labels
-  valid <- !is.na(label)
-  mat <- mat[valid, , drop = FALSE]
-  label <- label[valid]
+  match_ids <- dt$match_id
 
   dtrain <- xgboost::xgb.DMatrix(data = mat, label = label)
 
+  # Match-grouped CV folds: keep all rows of the same match in the same fold
+  # so we don't leak match-level signal across train/test.
+  unique_matches <- unique(match_ids)
+  set.seed(seed)
+  match_fold <- sample(rep(seq_len(nfolds), length.out = length(unique_matches)))
+  names(match_fold) <- unique_matches
+  row_fold <- match_fold[match_ids]
+  folds <- lapply(seq_len(nfolds), function(k) which(row_fold == k))
+
+  # Monotonicity constraint on xmargin: WP must be non-decreasing in xmargin.
+  # Prevents the trees from producing wrong-direction splits (e.g. "higher
+  # xmargin → lower WP in some leaf"). Order matches feature_names.
+  mono_vec <- rep(0L, length(feature_names))
+  names(mono_vec) <- feature_names
+  if ("xmargin" %in% feature_names) mono_vec["xmargin"] <- 1L
+  mono_str <- paste0("(", paste(mono_vec, collapse = ","), ")")
+
   params <- list(
-    objective = "reg:squarederror",
+    booster = "gbtree",
+    objective = "binary:logistic",
+    eval_metric = "logloss",
+    tree_method = "hist",
     max_depth = max_depth,
     eta = eta,
     subsample = 0.8,
     colsample_bytree = 0.8,
     min_child_weight = 50,
+    monotone_constraints = mono_str,
     ...
   )
 
-  model <- xgboost::xgb.train(
+  cli::cli_alert_info("Running {nfolds}-fold match-grouped CV...")
+  set.seed(seed)
+  cv_result <- xgboost::xgb.cv(
     params = params,
     data = dtrain,
     nrounds = nrounds,
+    folds = folds,
+    early_stopping_rounds = early_stopping_rounds,
+    print_every_n = 25L,
+    verbose = 1
+  )
+
+  optimal_nrounds <- which.min(cv_result$evaluation_log$test_logloss_mean)
+  best_logloss <- min(cv_result$evaluation_log$test_logloss_mean)
+  cli::cli_alert_info("Optimal nrounds: {optimal_nrounds}, CV logloss: {round(best_logloss, 6)}")
+
+  set.seed(seed)
+  model <- xgboost::xgb.train(
+    params = params,
+    data = dtrain,
+    nrounds = optimal_nrounds,
     verbose = 0
   )
 
-  cli::cli_alert_success("Trained WP model on {sum(valid)} actions ({length(unique(dt$match_id[valid]))} matches)")
+  cli::cli_alert_success("Trained WP model on {nrow(mat)} actions ({length(unique_matches)} matches) — optimal nrounds={optimal_nrounds}, CV logloss={round(best_logloss, 6)}")
 
-  list(model = model, feature_names = feature_names)
+  list(
+    model = model,
+    feature_names = feature_names,
+    cv_logloss = best_logloss,
+    optimal_nrounds = optimal_nrounds
+  )
 }
 
 

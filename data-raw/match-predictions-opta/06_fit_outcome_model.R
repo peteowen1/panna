@@ -37,8 +37,8 @@ feature_cols <- goals_models$feature_cols
 played <- match_dataset[match_dataset$match_status == "Played" &
                         !is.na(match_dataset$outcome_label), ]
 
-train_data <- played[played$split == "train", ]
-val_data <- played[played$split == "val", ]
+train_data <- as.data.frame(played[played$split == "train", ])
+val_data <- as.data.frame(played[played$split == "val", ])
 
 # Out-of-fold predictions for training data to avoid leakage.
 # In-sample goal predictions are too accurate, causing the outcome model

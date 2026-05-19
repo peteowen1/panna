@@ -46,8 +46,8 @@ message(sprintf("  Feature columns: %d", length(feature_cols)))
 
 # 6. Prepare Training Data ----
 
-train_data <- match_dataset[match_dataset$split == "train", ]
-val_data <- match_dataset[match_dataset$split == "val", ]
+train_data <- as.data.frame(match_dataset[match_dataset$split == "train", ])
+val_data <- as.data.frame(match_dataset[match_dataset$split == "val", ])
 
 # Remove rows with NA goals
 train_data <- train_data[!is.na(train_data$home_goals) & !is.na(train_data$away_goals), ]

@@ -27,8 +27,8 @@ augmented_features <- outcome_result$augmented_features
 
 # 4. Prepare Test Data ----
 
-test_data <- match_dataset[match_dataset$split == "test" &
-                           !is.na(match_dataset$outcome_label), ]
+test_data <- as.data.frame(match_dataset[match_dataset$split == "test" &
+                           !is.na(match_dataset$outcome_label), ])
 
 if (nrow(test_data) == 0) {
   message("No test data available.")
@@ -57,8 +57,8 @@ message(sprintf("  Home goals RMSE: %.3f", home_rmse))
 message(sprintf("  Away goals RMSE: %.3f", away_rmse))
 
 # Baseline: training set average
-train_data <- match_dataset[match_dataset$split == "train" &
-                            !is.na(match_dataset$home_goals), ]
+train_data <- as.data.frame(match_dataset[match_dataset$split == "train" &
+                            !is.na(match_dataset$home_goals), ])
 avg_home <- mean(train_data$home_goals)
 avg_away <- mean(train_data$away_goals)
 base_home_rmse <- sqrt(mean((test_data$home_goals - avg_home)^2))
