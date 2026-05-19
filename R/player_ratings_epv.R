@@ -7,6 +7,37 @@
 # Follows torpverse R/player_ratings.R calculate_epr() / calculate_epr_stats().
 
 
+# League tier partition for player x tier interaction in
+# calculate_epr_regression(). Tier 1 = top-5 domestic + UCL + top international
+# tournaments. Tier 2 = everything else. The interaction lets the model give
+# players two coefficients (one per tier) so cross-league standouts like
+# Tavernier (huge in SCO, modest in UCL) get correctly differentiated.
+EPR_LEAGUE_TIERS <- list(
+  # 3-letter codes (game_logs `league` column) — top-5 + UCL + top intl tournaments
+  tier_1 = c("ENG", "ESP", "GER", "ITA", "FRA",   # EPL, La Liga, Bundesliga, Serie A, Ligue 1
+              "UCL",                                 # Champions League
+              "WC", "EURO"),                          # World Cup, UEFA Euros
+  # Also accept full competition names (in case `competition` column is used instead)
+  tier_1_full = c("EPL", "La_Liga", "Bundesliga", "Serie_A", "Ligue_1",
+                    "UCL", "UEFA_Euros", "World_Cup")
+)
+
+
+#' Classify a league into EPR tier
+#'
+#' Accepts either 3-letter league codes (\code{ENG}, \code{ESP}, ...) or
+#' full competition names (\code{EPL}, \code{La_Liga}, ...). Tier 1 = top-5
+#' domestic + UCL + top international tournaments; tier 2 = everything else.
+#' @keywords internal
+.epr_league_tier <- function(league) {
+  data.table::fifelse(
+    league %in% EPR_LEAGUE_TIERS$tier_1 |
+      league %in% EPR_LEAGUE_TIERS$tier_1_full,
+    "t1",
+    "t2"
+  )
+}
+
 
 # ============================================================================
 # Core EPR calculation
@@ -238,6 +269,13 @@ calculate_epr_batch <- function(player_game_epv, ref_dates, ...) {
 #' @return A data.table with one row per player: \code{player_id},
 #'   \code{player_name}, \code{epr}, \code{epr_offensive}, \code{epr_defensive},
 #'   \code{n_games}, \code{wt_games}.
+#' @param tier_interaction If TRUE (default), fit player × league-tier
+#'   interaction — i.e. each player gets up to two β coefficients, one for
+#'   tier-1 (top-5 + UCL + WC/EURO) and one for tier-2 (everything else).
+#'   This fixes cross-league standouts (Tavernier at Rangers, Veerman at
+#'   PSV) whose single-β was a compromise between their elite domestic
+#'   per-90 and their modest UCL/UEL per-90. Set to FALSE for the legacy
+#'   "one β per player" behaviour.
 #' @export
 calculate_epr_regression <- function(player_game_epv,
                                        ref_date = NULL,
@@ -245,6 +283,7 @@ calculate_epr_regression <- function(player_game_epv,
                                        alpha = 0,
                                        lambda = NULL,
                                        prior_strength = 5,
+                                       tier_interaction = TRUE,
                                        verbose = FALSE) {
   if (!requireNamespace("glmnet", quietly = TRUE)) {
     cli::cli_abort("Package {.pkg glmnet} required for calculate_epr_regression()")
@@ -311,14 +350,46 @@ calculate_epr_regression <- function(player_game_epv,
   t_log(sprintf("rows=%d, players=%d, ref=%s, decay=%d",
                 n_obs, n_players, ref_date, decay))
 
+  # ---- Player tier classification (for player × tier interaction) ----
+  # Each row gets a tier label ("t1" / "t2") based on its league. The
+  # player-dummy block becomes player × tier instead of just player.
+  if (isTRUE(tier_interaction)) {
+    if (!has_league) {
+      cli::cli_warn("tier_interaction=TRUE but no `league` column — disabling")
+      tier_interaction <- FALSE
+    } else {
+      dt[, tier := .epr_league_tier(.SD[[league_col]])]
+    }
+  }
+
   # ---- Sparse design matrix: [players | league-seasons | opp_def] ----
   t0 <- Sys.time()
-  p_idx <- match(dt$player_id, players)
-  X_p <- Matrix::sparseMatrix(i = seq_len(n_obs), j = p_idx, x = 1,
-                                dims = c(n_obs, n_players),
-                                dimnames = list(NULL, players))
+  if (isTRUE(tier_interaction)) {
+    # Player × tier interaction. Only build columns for (player, tier)
+    # combinations that actually appear, so players with no tier-1 games
+    # don't get a phantom-anchored tier-1 estimate.
+    pt_levels <- unique(dt[, .(player_id, tier)])
+    data.table::setorder(pt_levels, player_id, tier)
+    pt_levels[, pt_key := paste0(player_id, "__", tier)]
+    pt_levels[, j_idx := seq_len(.N)]
+    n_pt <- nrow(pt_levels)
+    dt[, pt_key := paste0(player_id, "__", tier)]
+    dt[, pt_j := pt_levels$j_idx[match(pt_key, pt_levels$pt_key)]]
+    X_p <- Matrix::sparseMatrix(i = seq_len(n_obs), j = dt$pt_j, x = 1,
+                                  dims = c(n_obs, n_pt),
+                                  dimnames = list(NULL, pt_levels$pt_key))
+    n_player_cols <- n_pt
+    t_log(sprintf("tier interaction: %d (player, tier) coefs (vs %d players alone)",
+                  n_pt, n_players))
+  } else {
+    p_idx <- match(dt$player_id, players)
+    X_p <- Matrix::sparseMatrix(i = seq_len(n_obs), j = p_idx, x = 1,
+                                  dims = c(n_obs, n_players),
+                                  dimnames = list(NULL, players))
+    n_player_cols <- n_players
+  }
   X_list <- list(X_p)
-  pf <- rep(1, n_players)            # players penalized (shrinkage)
+  pf <- rep(1, n_player_cols)        # players penalized (shrinkage)
 
   if (has_league) {
     ls_keys <- sort(unique(paste0(dt[[league_col]], "_", dt$season_end_year)))
@@ -347,14 +418,18 @@ calculate_epr_regression <- function(player_game_epv,
   X <- do.call(cbind, X_list)
 
   # ---- Optional Bayesian prior via "phantom" zero-y rows ----
+  # One phantom row per player-coef column. With tier interaction enabled,
+  # this is one phantom row per (player, tier) combination that actually
+  # appears in the data — so players without tier-1 data don't get a
+  # phantom-anchored tier-1 estimate.
   if (prior_strength > 0) {
-    X_prior <- Matrix::sparseMatrix(i = seq_len(n_players), j = seq_len(n_players),
+    X_prior <- Matrix::sparseMatrix(i = seq_len(n_player_cols), j = seq_len(n_player_cols),
                                       x = 1,
-                                      dims = c(n_players, ncol(X)))
+                                      dims = c(n_player_cols, ncol(X)))
     X_full <- rbind(X, X_prior)
-    y_off_full <- c(dt$y_off, rep(0, n_players))
-    y_def_full <- c(dt$y_def, rep(0, n_players))
-    w_full     <- c(dt$w,     rep(prior_strength, n_players))
+    y_off_full <- c(dt$y_off, rep(0, n_player_cols))
+    y_def_full <- c(dt$y_def, rep(0, n_player_cols))
+    w_full     <- c(dt$w,     rep(prior_strength, n_player_cols))
   } else {
     X_full <- X
     y_off_full <- dt$y_off
@@ -388,29 +463,96 @@ calculate_epr_regression <- function(player_game_epv,
   t_log(sprintf("glmnet fits (2x) at lambda=%.4f in %.1fs",
                 lambda, as.numeric(Sys.time() - t0, units = "secs")))
 
-  # Player betas = positions 2..(n_players+1) (after intercept)
-  player_beta_off <- beta_off[2:(n_players + 1L)]
-  player_beta_def <- beta_def[2:(n_players + 1L)]
-
-  # Per-player wt_games & n_games (decay-weighted effective games)
-  wt_by_player <- dt[, .(wt_games = sum(w, na.rm = TRUE),
-                          n_games  = .N),
-                       by = player_id]
+  # Player betas = positions 2..(n_player_cols+1) (after intercept)
+  player_beta_off <- beta_off[2:(n_player_cols + 1L)]
+  player_beta_def <- beta_def[2:(n_player_cols + 1L)]
 
   # Resolve player_name -> first occurrence
   name_lookup <- dt[, .(player_name = player_name[1]), by = player_id]
 
-  out <- data.table::data.table(
-    player_id     = players,
-    epr_offensive = player_beta_off,
-    epr_defensive = player_beta_def
-  )
-  out[, epr := epr_offensive + epr_defensive]
-  out <- merge(out, name_lookup, by = "player_id", all.x = TRUE)
-  out <- merge(out, wt_by_player, by = "player_id", all.x = TRUE)
-  data.table::setorder(out, -epr)
-  out[, .(player_id, player_name, epr, epr_offensive, epr_defensive,
-           n_games, wt_games)]
+  if (isTRUE(tier_interaction)) {
+    # ---- Tier-stratified output ----
+    # Compute per-(player, tier) decay-weighted games + minutes
+    wt_pt <- dt[, .(wt_games_tier = sum(w, na.rm = TRUE),
+                     n_games_tier  = .N),
+                  by = .(player_id, tier)]
+
+    pt_out <- data.table::data.table(
+      player_id     = pt_levels$player_id,
+      tier          = pt_levels$tier,
+      epr_offensive = player_beta_off,
+      epr_defensive = player_beta_def
+    )
+    pt_out[, epr := epr_offensive + epr_defensive]
+    pt_out <- merge(pt_out, wt_pt, by = c("player_id","tier"), all.x = TRUE)
+
+    # Cast to one row per player with tier columns
+    out_wide <- data.table::dcast(
+      pt_out, player_id ~ tier,
+      value.var = c("epr","epr_offensive","epr_defensive",
+                     "wt_games_tier","n_games_tier"),
+      fill = NA
+    )
+    # Ensure both tier columns exist even if data only has one tier
+    for (suf in c("_t1","_t2")) {
+      for (m in c("epr","epr_offensive","epr_defensive",
+                   "wt_games_tier","n_games_tier")) {
+        col <- paste0(m, suf)
+        if (!col %in% names(out_wide)) out_wide[, (col) := NA_real_]
+      }
+    }
+    # Combined EPR weighted by tier playing time (NA if tier missing)
+    out_wide[, epr := {
+      w1 <- ifelse(is.na(wt_games_tier_t1), 0, wt_games_tier_t1)
+      w2 <- ifelse(is.na(wt_games_tier_t2), 0, wt_games_tier_t2)
+      e1 <- ifelse(is.na(epr_t1), 0, epr_t1)
+      e2 <- ifelse(is.na(epr_t2), 0, epr_t2)
+      ifelse(w1 + w2 > 0, (e1 * w1 + e2 * w2) / (w1 + w2), NA_real_)
+    }]
+    out_wide[, epr_offensive := {
+      w1 <- ifelse(is.na(wt_games_tier_t1), 0, wt_games_tier_t1)
+      w2 <- ifelse(is.na(wt_games_tier_t2), 0, wt_games_tier_t2)
+      e1 <- ifelse(is.na(epr_offensive_t1), 0, epr_offensive_t1)
+      e2 <- ifelse(is.na(epr_offensive_t2), 0, epr_offensive_t2)
+      ifelse(w1 + w2 > 0, (e1 * w1 + e2 * w2) / (w1 + w2), NA_real_)
+    }]
+    out_wide[, epr_defensive := {
+      w1 <- ifelse(is.na(wt_games_tier_t1), 0, wt_games_tier_t1)
+      w2 <- ifelse(is.na(wt_games_tier_t2), 0, wt_games_tier_t2)
+      e1 <- ifelse(is.na(epr_defensive_t1), 0, epr_defensive_t1)
+      e2 <- ifelse(is.na(epr_defensive_t2), 0, epr_defensive_t2)
+      ifelse(w1 + w2 > 0, (e1 * w1 + e2 * w2) / (w1 + w2), NA_real_)
+    }]
+    # Total games
+    out_wide[, wt_games := rowSums(out_wide[, .(wt_games_tier_t1, wt_games_tier_t2)],
+                                     na.rm = TRUE)]
+    out_wide[, n_games  := rowSums(out_wide[, .(n_games_tier_t1, n_games_tier_t2)],
+                                     na.rm = TRUE)]
+
+    out_wide <- merge(out_wide, name_lookup, by = "player_id", all.x = TRUE)
+    data.table::setorder(out_wide, -epr)
+    out_wide[, .(player_id, player_name,
+                  epr, epr_offensive, epr_defensive,
+                  epr_t1, epr_offensive_t1, epr_defensive_t1, wt_games_tier_t1, n_games_tier_t1,
+                  epr_t2, epr_offensive_t2, epr_defensive_t2, wt_games_tier_t2, n_games_tier_t2,
+                  n_games, wt_games)]
+  } else {
+    # ---- Legacy single-β output ----
+    wt_by_player <- dt[, .(wt_games = sum(w, na.rm = TRUE),
+                            n_games  = .N),
+                         by = player_id]
+    out <- data.table::data.table(
+      player_id     = players,
+      epr_offensive = player_beta_off,
+      epr_defensive = player_beta_def
+    )
+    out[, epr := epr_offensive + epr_defensive]
+    out <- merge(out, name_lookup, by = "player_id", all.x = TRUE)
+    out <- merge(out, wt_by_player, by = "player_id", all.x = TRUE)
+    data.table::setorder(out, -epr)
+    out[, .(player_id, player_name, epr, epr_offensive, epr_defensive,
+             n_games, wt_games)]
+  }
 }
 
 
