@@ -136,6 +136,43 @@ match_outcomes[, goal_diff := home_goals - away_goals]
 cat(sprintf("Matches with goal data: %s\n",
             format(nrow(match_outcomes), big.mark = ",")))
 
+# Join team-strength ratings (off/def from RAPM-derived team aggregates).
+# These act as unpenalized continuous controls for OPPONENT QUALITY, so the
+# skill betas only capture residual effect after controlling for league
+# baseline (already handled by league-season FE) AND opponent strength.
+#
+# Without this, a high-stat-rate player in a weaker league (Veerman in
+# Eredivisie, Tavernier in Scottish) gets a high PSR β because the model
+# can't tell whether his per-90 productivity is from skill or from facing
+# weak defenders. opp_def_rating is calibrated cross-league via RAPM, so
+# it provides cleanly comparable opposition-quality signal.
+ts_path <- file.path("data-raw", "cache-opta", "team_season_strength.parquet")
+if (file.exists(ts_path) && requireNamespace("arrow", quietly = TRUE)) {
+  ts <- data.table::as.data.table(arrow::read_parquet(ts_path))
+  match_outcomes <- merge(match_outcomes,
+                            ts[, .(team_name, season_end_year,
+                                    home_off_rating = off_rating,
+                                    home_def_rating = def_rating)],
+                            by.x = c("home_team","season_end_year"),
+                            by.y = c("team_name","season_end_year"), all.x = TRUE)
+  match_outcomes <- merge(match_outcomes,
+                            ts[, .(team_name, season_end_year,
+                                    away_off_rating = off_rating,
+                                    away_def_rating = def_rating)],
+                            by.x = c("away_team","season_end_year"),
+                            by.y = c("team_name","season_end_year"), all.x = TRUE)
+  for (c in c("home_off_rating","home_def_rating","away_off_rating","away_def_rating")) {
+    match_outcomes[is.na(get(c)), (c) := 0]
+  }
+  cat(sprintf("Team-strength controls joined: %d / %d matches have any rating\n",
+              sum(match_outcomes$home_off_rating != 0 |
+                    match_outcomes$away_off_rating != 0),
+              nrow(match_outcomes)))
+} else {
+  match_outcomes[, `:=`(home_off_rating = 0, home_def_rating = 0,
+                          away_off_rating = 0, away_def_rating = 0)]
+}
+
 # 5. Load Match-Level xG from Splint Data ----
 
 cat("\n=== Loading xG Data ===\n\n")
@@ -508,21 +545,37 @@ if (sum(is_test) > 0) {
   FE_test <- NULL
 }
 
-# Stitch FE + skills into a single sparse matrix
+# Stitch FE + opponent-strength controls + skills into a single sparse matrix
 n_fe <- ncol(FE_train)
 n_skill <- length(feature_cols)
-X_train_full <- cbind(FE_train, methods::as(X_train_std, "CsparseMatrix"))
-if (!is.null(FE_test)) {
-  X_test_full <- cbind(FE_test, methods::as(X_test_std, "CsparseMatrix"))
+
+# Opponent-strength controls (continuous, unpenalized) — mirrors EPR's
+# opp_def_rating. We deliberately only include each side's OPPONENT defense
+# rating (the home team's opponent is the away team, so home faces away_def;
+# vice-versa). Including the team's OWN ratings would absorb player-skill
+# signal at the team level — exactly the over-control problem we hit when
+# we tried team-season FE.
+team_strength_cols <- c("away_def_rating","home_def_rating")
+n_ts <- length(team_strength_cols)
+TS_train <- methods::as(as.matrix(train_data[is_train, ..team_strength_cols]),
+                          "CsparseMatrix")
+TS_test  <- if (sum(is_test) > 0) {
+  methods::as(as.matrix(train_data[is_test, ..team_strength_cols]),
+                "CsparseMatrix")
+} else NULL
+
+X_train_full <- cbind(FE_train, TS_train, methods::as(X_train_std, "CsparseMatrix"))
+if (!is.null(FE_test) && !is.null(TS_test)) {
+  X_test_full <- cbind(FE_test, TS_test, methods::as(X_test_std, "CsparseMatrix"))
 } else {
   X_test_full <- NULL
 }
 
-# penalty.factor: 0 for FE (unpenalized), 1 for skills (standard)
-penalty_factors <- c(rep(0, n_fe), rep(1, n_skill))
+# penalty.factor: 0 for FE + team-strength controls, 1 for skills
+penalty_factors <- c(rep(0, n_fe), rep(0, n_ts), rep(1, n_skill))
 
-cat(sprintf("Combined matrix: %d rows x %d cols (%d FE + %d skill)\n",
-            nrow(X_train_full), ncol(X_train_full), n_fe, n_skill))
+cat(sprintf("Combined matrix: %d rows x %d cols (%d FE + %d team-strength + %d skill)\n",
+            nrow(X_train_full), ncol(X_train_full), n_fe, n_ts, n_skill))
 
 # 12. Train Model Helper ----
 
@@ -622,7 +675,7 @@ train_and_save <- function(y_margin, y_off, y_def, y_margin_test, y_off_test,
                             X = X_train_full, w = weights, fids = fold_ids,
                             skill_cols = skill_keep_cols, sds = train_sds,
                             test_mask = is_test, X_test = X_test_full,
-                            pf = penalty_factors, fe_count = n_fe) {
+                            pf = penalty_factors, fe_count = n_fe + n_ts) {
   cat(sprintf("\n%s\n=== Training %s Models ===\n%s\n",
               paste(rep("=", 50), collapse = ""), label,
               paste(rep("=", 50), collapse = "")))
@@ -939,14 +992,25 @@ gk_skill_keep_cols <- character(0)
       }
       gk_n_fe <- ncol(FE_gk_train)
       gk_n_skill <- length(gk_feature_cols)
-      gk_X_train_full <- cbind(FE_gk_train, methods::as(gk_X_train_std, "CsparseMatrix"))
-      gk_X_test_full <- if (!is.null(FE_gk_test)) {
-        cbind(FE_gk_test, methods::as(gk_X_test_std, "CsparseMatrix"))
+      # Same 4 team-strength controls for the GK model
+      gk_TS_train <- methods::as(as.matrix(gk_train_data[gk_is_train, ..team_strength_cols]),
+                                    "CsparseMatrix")
+      gk_TS_test  <- if (sum(gk_is_test) > 0) {
+        methods::as(as.matrix(gk_train_data[gk_is_test, ..team_strength_cols]),
+                      "CsparseMatrix")
       } else NULL
-      gk_penalty_factors <- c(rep(0, gk_n_fe), rep(1, gk_n_skill))
+      gk_n_ts <- length(team_strength_cols)
 
-      cat(sprintf("GK combined matrix: %d rows x %d cols (%d FE + %d skill)\n",
-                  nrow(gk_X_train_full), ncol(gk_X_train_full), gk_n_fe, gk_n_skill))
+      gk_X_train_full <- cbind(FE_gk_train, gk_TS_train,
+                                  methods::as(gk_X_train_std, "CsparseMatrix"))
+      gk_X_test_full <- if (!is.null(FE_gk_test) && !is.null(gk_TS_test)) {
+        cbind(FE_gk_test, gk_TS_test, methods::as(gk_X_test_std, "CsparseMatrix"))
+      } else NULL
+      gk_penalty_factors <- c(rep(0, gk_n_fe), rep(0, gk_n_ts), rep(1, gk_n_skill))
+
+      cat(sprintf("GK combined matrix: %d rows x %d cols (%d FE + %d team-strength + %d skill)\n",
+                  nrow(gk_X_train_full), ncol(gk_X_train_full),
+                  gk_n_fe, gk_n_ts, gk_n_skill))
 
       # Train GK models on GOAL DIFF (not xG diff)
       # GK value is in the goals-saved-above-xG residual
@@ -964,7 +1028,7 @@ gk_skill_keep_cols <- character(0)
           skill_cols = gk_skill_keep_cols, sds = gk_train_sds,
           test_mask = gk_is_test,
           X_test = gk_X_test_full,
-          pf = gk_penalty_factors, fe_count = gk_n_fe
+          pf = gk_penalty_factors, fe_count = gk_n_fe + gk_n_ts
         ),
         error = function(e) {
           cat(sprintf("GK model training failed: %s\n", e$message))
