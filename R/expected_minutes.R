@@ -54,7 +54,8 @@ build_team_expected_minutes <- function(team,
                   "CONCACAF_Gold_Cup", "UEFA_Super_Cup",
                   "AFC_Asian_Cup", "AFC_WC_Qualifiers",
                   "Asian_Cup_Qualifiers", "Gulf_Cup_of_Nations",
-                  "CAF_WC_Qualifiers", "Intl_Friendlies")
+                  "CAF_WC_Qualifiers", "CONMEBOL_WC_Qualifiers",
+                  "Intl_Friendlies")
 
   ## --- 1. Slice down ----------------------------------------------------
   lu <- lineups[team_name == team]
