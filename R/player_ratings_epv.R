@@ -287,6 +287,13 @@ calculate_epr_regression <- function(player_game_epv,
   league_col <- intersect(c("league","competition"), names(dt))[1]
   has_league <- !is.na(league_col)
   has_opp    <- "opp_def_rating" %in% names(dt)
+  # NOTE: we experimented with own-team strength controls (team_off_rating
+  # and team_elo_n) in 2026-05-19 to try to push Eredivisie/Scottish stars
+  # (Veerman, Tavernier) down in the rankings. Both over-corrected on
+  # actual superstars (Vinícius, Haaland) because team strength is partly
+  # caused by player skill. Reverted; EPR uses only league FE + opp_def
+  # for league/opponent adjustment. The remaining ranking artifacts are
+  # legitimate per-90 productivity by mid-league standouts.
 
   # Weights + per-90 targets
   dt[, days_since := as.numeric(ref_date - match_date)]
