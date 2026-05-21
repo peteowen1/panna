@@ -2,11 +2,15 @@
 % Please edit documentation in R/simulate_world_cup.R
 \name{play_knockout_round}
 \alias{play_knockout_round}
-\title{Play one round of a knockout bracket (internal helper)}
+\title{Play one knockout round (internal helper)}
 \usage{
-play_knockout_round(bracket, r_vec, team_idx, nu)
+play_knockout_round(bracket, WIN, DRAW, LAM, elo_dyn, elo_base, elo_k)
 }
 \description{
-Play one round of a knockout bracket (internal helper)
+Resolves all ties in a round from the integer-indexed knockout matrices,
+applies the run-hot Elo nudge, simulates goals for the margin, and updates
+both teams' dynamic Elo. Round-level randomness is drawn in blocks. A
+90-minute draw is decided by a coin flip (extra time / penalties) but
+counts as a draw for the Elo update.
 }
 \keyword{internal}

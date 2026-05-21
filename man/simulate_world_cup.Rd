@@ -7,31 +7,32 @@
 simulate_world_cup(
   predictions,
   groups,
-  bt_ratings,
+  knockout,
   n_sims = 10000L,
+  elo_k = 40,
   verbose = TRUE
 )
 }
 \arguments{
 \item{predictions}{Data frame with \code{home_team}, \code{away_team}, \code{prob_H},
 \code{prob_D}, \code{prob_A}, \code{pred_home_goals}, \code{pred_away_goals} for all
-group-stage fixtures (rows where both teams are known).}
+group-stage fixtures.}
 
-\item{groups}{Data frame mapping \code{team} -> \code{group} (12 groups, 4 teams each).}
+\item{groups}{Data frame mapping \code{team} -> \code{group} (12 groups of 4).}
 
-\item{bt_ratings}{Output of \code{fit_bt_ratings(predictions, neutral = TRUE)}.}
+\item{knockout}{Output of \code{\link[=build_knockout_lookup]{build_knockout_lookup()}} — a list with \code{probs}
+(pairwise knockout probabilities) and \code{team_elo} (named vector of
+pre-tournament Elo, used as the run-hot baseline).}
 
 \item{n_sims}{Integer. Default 10000.}
+
+\item{elo_k}{Run-hot Elo K-factor (default 20; 0 disables momentum).}
 
 \item{verbose}{Logical. Print progress. Default TRUE.}
 }
 \value{
-A list with:
-\itemize{
-\item \code{summary}: per-team probabilities of reaching each round
-\item \code{group_table}: expected group standings (final position probs)
-\item \code{n_sims}: simulation count
-}
+A list with \code{summary} (per-team round probabilities),
+\code{group_table} (group-position probabilities), \code{n_sims}, \code{elo_k}.
 }
 \description{
 Simulate a 48-team World Cup

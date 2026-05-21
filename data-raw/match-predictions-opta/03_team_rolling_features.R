@@ -114,10 +114,13 @@ if (nrow(upcoming) > 0) {
   )
   fixture_elos$elo_diff <- fixture_elos$home_elo - fixture_elos$away_elo
 
-  # Carry forward each team's last known rolling features to fixtures
+  # Carry forward each team's last known rolling features to fixtures.
+  # Rolling-form columns are named home_<metric>_last_<window> (and
+  # home_days_since_last) — there is no `roll_` infix. Take the column names
+  # from rolling_team so the Elo columns (home_elo/away_elo) are excluded.
   dt_roll <- data.table::as.data.table(rolling_features)
-  home_roll_cols <- grep("^home_roll_", names(dt_roll), value = TRUE)
-  away_roll_cols <- grep("^away_roll_", names(dt_roll), value = TRUE)
+  home_roll_cols <- grep("^home_", names(rolling_team), value = TRUE)
+  away_roll_cols <- grep("^away_", names(rolling_team), value = TRUE)
 
   if (length(home_roll_cols) > 0) {
     dt_played <- data.table::as.data.table(played)
@@ -146,6 +149,28 @@ if (nrow(upcoming) > 0) {
     fixture_dt <- merge(fixture_dt,
                         away_lookup[, c("away_team", away_roll_cols), with = FALSE],
                         by = "away_team", all.x = TRUE)
+
+    # Recompute the rolling differentials for the fixture rows from the
+    # carried-forward home_/away_ values (compute_team_rolling_features only
+    # derived these for played matches).
+    for (w in ROLLING_WINDOWS) {
+      for (m in c("goals_scored", "xg_for", "points", "npxgd")) {
+        hc <- sprintf("home_%s_last_%d", m, w)
+        ac <- sprintf("away_%s_last_%d", m, w)
+        dc <- sprintf("diff_%s_last_%d", m, w)
+        if (hc %in% names(fixture_dt) && ac %in% names(fixture_dt)) {
+          fixture_dt[, (dc) := get(hc) - get(ac)]
+        }
+      }
+    }
+    if (all(c("home_days_since_last", "away_days_since_last") %in% names(fixture_dt))) {
+      fixture_dt[, rest_diff := home_days_since_last - away_days_since_last]
+    }
+
+    n_form <- sum(!is.na(fixture_dt[["home_points_last_10"]]))
+    message(sprintf("  Rolling form carried to %d/%d fixtures (%.0f%%)",
+                    n_form, nrow(fixture_dt), 100 * n_form / nrow(fixture_dt)))
+
     fixture_dt[, c("home_team", "away_team") := NULL]
     fixture_elos <- fixture_dt
   }

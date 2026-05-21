@@ -11,6 +11,8 @@ calculate_epr_regression(
   alpha = 0,
   lambda = NULL,
   prior_strength = 5,
+  tier_interaction = TRUE,
+  league_offsets = NULL,
   verbose = FALSE
 )
 }
@@ -34,6 +36,25 @@ path (good for ridge with sensible default shrinkage).}
 \item{prior_strength}{Equivalent-games prior for shrinking small-sample
 players toward 0. Implemented by adding "phantom" zero-y rows weighted
 by \code{prior_strength} for each player. Set to 0 to disable.}
+
+\item{tier_interaction}{If TRUE (default), fit player × league-tier
+interaction — i.e. each player gets up to two β coefficients, one for
+tier-1 (top-5 + UCL + WC/EURO) and one for tier-2 (everything else).
+This fixes cross-league standouts (Tavernier at Rangers, Veerman at
+PSV) whose single-β was a compromise between their elite domestic
+per-90 and their modest UCL/UEL per-90. Set to FALSE for the legacy
+"one β per player" behaviour. \strong{Ignored when
+\code{league_offsets} is supplied}, since offsets supersede the
+coarse two-tier split with continuous per-league calibration.}
+
+\item{league_offsets}{Optional data.table of per-league EPV calibration
+offsets from \code{\link{compute_league_offsets}}. Must have columns
+\code{league}, \code{offset_off}, \code{offset_def}. When supplied,
+the per-row response is shifted to a UCL-equivalent scale via
+\code{y_off <- y_off + offset_off[league]} (and likewise for defence)
+before the regression runs, so \code{β_player} is directly comparable
+across leagues. Leagues not present in the table are treated with a
+zero offset and a single warning is issued.}
 
 \item{verbose}{If TRUE, print step timings.}
 }

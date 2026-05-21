@@ -296,8 +296,22 @@ if (missing_scores > 0) {
 if (!"season_end_year" %in% names(results)) {
   results$season_end_year <- sapply(results$season, extract_season_end_year)
 }
-if (!"home_xg" %in% names(results)) results$home_xg <- NA_real_
-if (!"away_xg" %in% names(results)) results$away_xg <- NA_real_
+# Match-level team xG from panna's own xG model (per-shot xG summed by team;
+# built by debug/keep/build_match_team_xg.R -> opta_match_xg.parquet). Opta's
+# feed carries no usable match xG, so without this the xG-rolling features in
+# step 03 collapse to a constant.
+results$home_xg <- NA_real_
+results$away_xg <- NA_real_
+mxg_path <- "../pannadata/data/opta/opta_match_xg.parquet"
+if (file.exists(mxg_path) && requireNamespace("arrow", quietly = TRUE)) {
+  mxg <- as.data.frame(arrow::read_parquet(mxg_path))
+  xg_lookup <- stats::setNames(mxg$xg, paste(mxg$match_id, mxg$team_id))
+  results$home_xg <- unname(xg_lookup[paste(results$match_id, results$home_team_id)])
+  results$away_xg <- unname(xg_lookup[paste(results$match_id, results$away_team_id)])
+  n_xg <- sum(!is.na(results$home_xg) & !is.na(results$away_xg))
+  message(sprintf("  Match xG (panna model) joined: %d/%d matches (%.0f%%)",
+                  n_xg, nrow(results), 100 * n_xg / nrow(results)))
+}
 
 # Compute result label
 results$result <- ifelse(results$home_goals > results$away_goals, "H",

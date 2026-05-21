@@ -213,6 +213,37 @@ match_dataset$outcome_label[match_dataset$result == "H"] <- 0L
 match_dataset$outcome_label[match_dataset$result == "D"] <- 1L
 match_dataset$outcome_label[match_dataset$result == "A"] <- 2L
 
+# 9b. Signed venue feature ----
+# home_field carries the home-advantage signal for the orientation-symmetric
+# models: +1 = home_team is the real host, 0 = neutral, -1 = home_team is the
+# visitor. Original rows are always +1 (or 0 for neutral games); the mirrored
+# copy added in steps 05/06 has it negated by mirror_match_rows(). Once the
+# models train on both orientations, ALL home advantage flows through this
+# single feature instead of being smeared across the home_* columns.
+match_dataset$home_field <- ifelse(
+  !is.na(match_dataset$is_neutral_venue) & match_dataset$is_neutral_venue == 1,
+  0L, 1L)
+
+# 9c. World Cup 2026 host advantage ----
+# The WC2026 feed flags every group game as is_neutral_venue == 1, but the
+# three hosts (USA / Canada / Mexico) play their group games in their own
+# country and genuinely have home advantage. Re-flag those games: host as
+# home_team -> home_field +1, host as away_team -> -1, and mark them
+# non-neutral. The hosts are in different groups so no host-vs-host group
+# game exists. (Home-advantage magnitude is the model's learned home_field
+# effect, calibrated from club football — a reasonable proxy for host edge.)
+wc26_hosts <- c("United States", "Canada", "Mexico")
+is_wc26 <- match_dataset$league == "WC" &
+  match_dataset$season == "2026 Canada-Mexico-USA"
+host_is_home <- is_wc26 & match_dataset$home_team %in% wc26_hosts
+host_is_away <- is_wc26 & match_dataset$away_team %in% wc26_hosts
+match_dataset$is_neutral_venue[host_is_home | host_is_away] <- 0L
+match_dataset$home_field[host_is_home] <- 1L
+match_dataset$home_field[host_is_away] <- -1L
+message(sprintf("  WC2026 host advantage flagged: %d games (%d host-home, %d host-away)",
+                sum(host_is_home | host_is_away),
+                sum(host_is_home), sum(host_is_away)))
+
 # 10. Save ----
 
 saveRDS(match_dataset, output_path)

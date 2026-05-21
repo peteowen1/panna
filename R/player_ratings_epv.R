@@ -275,7 +275,17 @@ calculate_epr_batch <- function(player_game_epv, ref_dates, ...) {
 #'   This fixes cross-league standouts (Tavernier at Rangers, Veerman at
 #'   PSV) whose single-β was a compromise between their elite domestic
 #'   per-90 and their modest UCL/UEL per-90. Set to FALSE for the legacy
-#'   "one β per player" behaviour.
+#'   "one β per player" behaviour. \strong{Ignored when
+#'   \code{league_offsets} is supplied}, since offsets supersede the
+#'   coarse two-tier split with continuous per-league calibration.
+#' @param league_offsets Optional data.table of per-league EPV calibration
+#'   offsets from \code{\link{compute_league_offsets}}. Must have columns
+#'   \code{league}, \code{offset_off}, \code{offset_def}. When supplied,
+#'   the per-row response is shifted to a UCL-equivalent scale via
+#'   \code{y_off <- y_off + offset_off[league]} (and likewise for defence)
+#'   before the regression runs, so \code{β_player} is directly comparable
+#'   across leagues. Leagues not present in the table are treated with a
+#'   zero offset and a single warning is issued.
 #' @export
 calculate_epr_regression <- function(player_game_epv,
                                        ref_date = NULL,
@@ -284,6 +294,7 @@ calculate_epr_regression <- function(player_game_epv,
                                        lambda = NULL,
                                        prior_strength = 5,
                                        tier_interaction = TRUE,
+                                       league_offsets = NULL,
                                        verbose = FALSE) {
   if (!requireNamespace("glmnet", quietly = TRUE)) {
     cli::cli_abort("Package {.pkg glmnet} required for calculate_epr_regression()")
@@ -343,6 +354,45 @@ calculate_epr_regression <- function(player_game_epv,
   dt[, y_off := epv_offensive / mins_frac]
   dt[, y_def := epv_defensive / mins_frac]
 
+  # ---- League-offset calibration to a UCL-equivalent scale ---------------
+  # When league_offsets is supplied, shift each row's per-90 EPV to a
+  # cross-league-comparable scale: y' = y + offset[league], where
+  # offset[league] = mean(UCL_y - league_y) over bridging players. After this
+  # shift, β_player is a UCL-equivalent rate, so the player-coefficient axis
+  # is the same across all leagues — replacing the coarse two-tier split.
+  if (!is.null(league_offsets)) {
+    if (!has_league) {
+      cli::cli_abort("league_offsets supplied but {.field league}/{.field competition} column missing from input")
+    }
+    lo <- data.table::as.data.table(league_offsets)
+    needed_lo <- c("league","offset_off","offset_def")
+    miss_lo <- setdiff(needed_lo, names(lo))
+    if (length(miss_lo)) {
+      cli::cli_abort("league_offsets missing required columns: {.field {miss_lo}}")
+    }
+    leagues_present <- unique(dt[[league_col]])
+    missing_leagues <- setdiff(leagues_present, lo$league)
+    if (length(missing_leagues)) {
+      cli::cli_warn(c(
+        "{length(missing_leagues)} league(s) in data have no offset row; treating as 0:",
+        "i" = "{paste(missing_leagues, collapse = ', ')}"))
+    }
+    # Join offsets on the league column actually present
+    lo_join <- lo[, .(.lg = league,
+                       .off_adj = offset_off,
+                       .def_adj = offset_def)]
+    dt <- merge(dt, lo_join, by.x = league_col, by.y = ".lg", all.x = TRUE)
+    dt[is.na(.off_adj), .off_adj := 0]
+    dt[is.na(.def_adj), .def_adj := 0]
+    dt[, y_off := y_off + .off_adj]
+    dt[, y_def := y_def + .def_adj]
+    dt[, c(".off_adj", ".def_adj") := NULL]
+    if (isTRUE(tier_interaction)) {
+      if (isTRUE(verbose)) t_log("league_offsets supplied — disabling tier_interaction (offsets supersede)")
+      tier_interaction <- FALSE
+    }
+  }
+
   # Build factor levels
   players <- sort(unique(dt$player_id))
   n_obs <- nrow(dt)
@@ -391,14 +441,33 @@ calculate_epr_regression <- function(player_game_epv,
   X_list <- list(X_p)
   pf <- rep(1, n_player_cols)        # players penalized (shrinkage)
 
-  if (has_league) {
+  # Fixed-effects block.
+  # Without league_offsets: per-(league, season) FE absorbs each league-season's
+  #   raw EPV baseline; β_player is "above league-season mean".
+  # With league_offsets:    we've already shifted y to a UCL-equivalent scale,
+  #   so per-league FE would re-absorb the shift and cancel it. We therefore
+  #   replace it with a season-only FE (captures annual EPV-rate drift across
+  #   all leagues but does NOT re-absorb cross-league differences). The result
+  #   is β_player on a single, globally comparable UCL-equivalent scale.
+  if (has_league && is.null(league_offsets)) {
     ls_keys <- sort(unique(paste0(dt[[league_col]], "_", dt$season_end_year)))
     ls_idx  <- match(paste0(dt[[league_col]], "_", dt$season_end_year), ls_keys)
     X_ls <- Matrix::sparseMatrix(i = seq_len(n_obs), j = ls_idx, x = 1,
                                   dims = c(n_obs, length(ls_keys)),
                                   dimnames = list(NULL, paste0("ls_", ls_keys)))
     X_list <- c(X_list, list(X_ls))
-    pf <- c(pf, rep(0, length(ls_keys)))   # league FE unpenalized
+    pf <- c(pf, rep(0, length(ls_keys)))   # league-season FE unpenalized
+  } else if (!is.null(league_offsets)) {
+    s_keys <- sort(unique(dt$season_end_year))
+    s_idx  <- match(dt$season_end_year, s_keys)
+    X_s <- Matrix::sparseMatrix(i = seq_len(n_obs), j = s_idx, x = 1,
+                                 dims = c(n_obs, length(s_keys)),
+                                 dimnames = list(NULL, paste0("s_", s_keys)))
+    X_list <- c(X_list, list(X_s))
+    pf <- c(pf, rep(0, length(s_keys)))    # season-only FE unpenalized
+    ls_keys <- as.character(s_keys)        # for downstream coef-extraction count
+    if (isTRUE(verbose)) t_log(sprintf("offsets supplied: using season-only FE (%d seasons)",
+                                          length(s_keys)))
   } else {
     ls_keys <- character(0)
   }

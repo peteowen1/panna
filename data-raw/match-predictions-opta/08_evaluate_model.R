@@ -45,9 +45,42 @@ X_test[is.na(X_test)] <- 0
 
 message("\n--- Goals Model Evaluation ---\n")
 
-d_test <- xgboost::xgb.DMatrix(data = X_test)
-pred_home <- stats::predict(goals_models$home$model, d_test)
-pred_away <- stats::predict(goals_models$away$model, d_test)
+# Routed + blended prediction: domestic test matches use the pooled model;
+# international matches use the pooled + specialist blend. Goals and outcome
+# probabilities are produced together so the blend is consistent.
+predict_pair <- function(X, gm, om) {
+  d <- xgboost::xgb.DMatrix(data = X)
+  hg <- stats::predict(gm$home$model, d)
+  ag <- stats::predict(gm$away$model, d)
+  Xa <- cbind(X, pred_home_goals = hg, pred_away_goals = ag,
+              pred_goal_diff = hg - ag, pred_total_goals = hg + ag)
+  Xa <- Xa[, augmented_features, drop = FALSE]
+  pr <- matrix(stats::predict(om$model$model, xgboost::xgb.DMatrix(data = Xa)),
+               ncol = 3, byrow = FALSE)
+  list(home_goals = hg, away_goals = ag, probs = pr)
+}
+w_intl <- MATCH_INTL_BLEND_WEIGHT
+is_intl <- match_is_international(test_data$league)
+pred_home  <- numeric(nrow(test_data))
+pred_away  <- numeric(nrow(test_data))
+test_probs <- matrix(0, nrow = nrow(test_data), ncol = 3)
+for (grp in c(FALSE, TRUE)) {
+  idx <- which(is_intl == grp)
+  if (length(idx) == 0) next
+  Xg <- X_test[idx, , drop = FALSE]
+  pooled <- predict_pair(Xg, goals_models$pooled, outcome_result$pooled)
+  if (grp) {
+    intl <- predict_pair(Xg, goals_models$international,
+                         outcome_result$international)
+    pred_home[idx]    <- (1 - w_intl) * pooled$home_goals + w_intl * intl$home_goals
+    pred_away[idx]    <- (1 - w_intl) * pooled$away_goals + w_intl * intl$away_goals
+    test_probs[idx, ] <- (1 - w_intl) * pooled$probs + w_intl * intl$probs
+  } else {
+    pred_home[idx]    <- pooled$home_goals
+    pred_away[idx]    <- pooled$away_goals
+    test_probs[idx, ] <- pooled$probs
+  }
+}
 
 # RMSE
 home_rmse <- sqrt(mean((test_data$home_goals - pred_home)^2))
@@ -73,19 +106,7 @@ message(sprintf("  Improvement: Home %.1f%%, Away %.1f%%",
 
 message("\n--- Outcome Model Evaluation ---\n")
 
-# Generate predicted goals for test set
-test_data$pred_home_goals <- pred_home
-test_data$pred_away_goals <- pred_away
-test_data$pred_goal_diff <- pred_home - pred_away
-test_data$pred_total_goals <- pred_home + pred_away
-
-X_test_aug <- as.matrix(test_data[, augmented_features, drop = FALSE])
-X_test_aug[is.na(X_test_aug)] <- 0
-
-d_test_aug <- xgboost::xgb.DMatrix(data = X_test_aug)
-test_probs_raw <- stats::predict(outcome_result$model$model, d_test_aug)
-test_probs <- matrix(test_probs_raw, ncol = 3, byrow = FALSE)
-
+# test_probs was computed above (routed + blended alongside the goal preds).
 y_test <- test_data$outcome_label
 
 # Multi-class log loss
@@ -143,16 +164,17 @@ for (out in c("Home", "Draw", "Away")) {
 
 message("\n--- Top Features ---\n")
 
-message("Goals model (home):")
-home_imp <- head(goals_models$home$importance, 10)
-for (i in seq_len(nrow(home_imp))) {
-  message(sprintf("  %2d. %-35s %.4f", i, home_imp$Feature[i], home_imp$Gain[i]))
-}
-
-message("\nOutcome model:")
-out_imp <- head(outcome_result$model$importance, 10)
-for (i in seq_len(nrow(out_imp))) {
-  message(sprintf("  %2d. %-35s %.4f", i, out_imp$Feature[i], out_imp$Gain[i]))
+for (seg in c("pooled", "international")) {
+  message(sprintf("Goals model (home) [%s]:", seg))
+  home_imp <- head(goals_models[[seg]]$home$importance, 8)
+  for (i in seq_len(nrow(home_imp))) {
+    message(sprintf("  %2d. %-35s %.4f", i, home_imp$Feature[i], home_imp$Gain[i]))
+  }
+  message(sprintf("Outcome model [%s]:", seg))
+  out_imp <- head(outcome_result[[seg]]$model$importance, 8)
+  for (i in seq_len(nrow(out_imp))) {
+    message(sprintf("  %2d. %-35s %.4f", i, out_imp$Feature[i], out_imp$Gain[i]))
+  }
 }
 
 # 9. Per-League Breakdown ----

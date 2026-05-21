@@ -491,3 +491,46 @@ EPR_PRIOR_RATE_OFF <- 0.20
 EPR_PRIOR_RATE_DEF <- 0.04
 #' @keywords internal
 EPR_LOADING <- 1.0
+
+
+# =============================================================================
+# Match-Prediction Model Segmentation
+# =============================================================================
+
+#' Club (domestic) competitions
+#'
+#' Competitions played between club teams. Used to split the match-prediction
+#' models into a domestic (club) model and an international (national-team)
+#' model — the two behave very differently (international prediction leans on
+#' Elo + recent form; club prediction leans on squad player-ratings).
+#' Any competition NOT in this list is treated as international.
+#'
+#' @format Character vector of competition codes.
+#' @keywords internal
+MATCH_CLUB_LEAGUES <- c("EPL", "ENG2", "ESP", "ITA", "GER", "FRA", "NED",
+                        "POR", "TUR", "SCO", "UCL", "UEL", "UECL")
+
+#' Classify competitions as international vs domestic
+#'
+#' @param league Character vector of competition codes.
+#' @return Logical vector — \code{TRUE} for international (national-team)
+#'   competitions, \code{FALSE} for domestic club competitions.
+#' @export
+match_is_international <- function(league) {
+  !(league %in% MATCH_CLUB_LEAGUES)
+}
+
+#' International blend weight
+#'
+#' Weight on the international-specialist model when predicting international
+#' (national-team) matches; the remainder is on the pooled (all-data) model.
+#' The prediction is \code{w * international + (1 - w) * pooled}.
+#'
+#' A blend-weight sweep on held-out international games found accuracy improves
+#' monotonically toward \code{w = 1} (pure specialist), but only by ~0.6\%.
+#' The default 0.5 trades that small edge for robustness against the
+#' smaller-sample specialist model misbehaving on out-of-distribution squads.
+#'
+#' @format Numeric value: 0.5
+#' @keywords internal
+MATCH_INTL_BLEND_WEIGHT <- 0.5
