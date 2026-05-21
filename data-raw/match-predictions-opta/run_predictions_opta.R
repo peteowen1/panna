@@ -50,7 +50,8 @@ if (!exists("run_steps")) {
     step_10_export_blog_data         = FALSE,  # Opt-in: export blog parquets
     step_10b_export_game_logs        = FALSE,  # Opt-in: export per-match value metrics
     step_10c_export_equity           = FALSE,  # Opt-in: export per-action EPV equity
-    step_11_simulate_wc2026          = FALSE   # Opt-in: simulate the 2026 World Cup
+    step_11_simulate_wc2026          = FALSE,  # Opt-in: simulate the 2026 World Cup
+    step_12_export_wc2026_blog       = FALSE   # Opt-in: export WC2026 blog data
   )
 }
 
@@ -214,6 +215,12 @@ step_results[[11]] <- run_pred_step("simulate_wc2026", 11, function() {
   source("data-raw/match-predictions-opta/11_simulate_wc2026.R", local = TRUE)
 })
 
+# 14e. Step 12: Export WC 2026 Blog Data ----
+
+step_results[[12]] <- run_pred_step("export_wc2026_blog", 12, function() {
+  source("data-raw/match-predictions-opta/12_export_wc2026_blog.R", local = TRUE)
+})
+
 # 15. Summary ----
 
 print_pipeline_summary(step_results, pipeline_start, "MATCH PREDICTION PIPELINE", col_width = 35)
@@ -237,6 +244,11 @@ if (isTRUE(run_steps$step_11_simulate_wc2026)) {
   message(sprintf("  - %s", file.path(cache_dir, "wc2026_bt_ratings.parquet")))
   message(sprintf("  - %s", file.path(cache_dir, "wc2026_simulation.parquet")))
   message(sprintf("  - %s", file.path(cache_dir, "wc2026_group_expectations.parquet")))
+}
+if (isTRUE(run_steps$step_12_export_wc2026_blog)) {
+  message(sprintf("  - %s", file.path(cache_dir, "wc2026_predictions.parquet")))
+  message(sprintf("  - %s", file.path(cache_dir, "wc2026_team_strength.parquet")))
+  message("  - (wc2026_*.parquet uploaded to blog-latest)")
 }
 
 message("\nDone!")
