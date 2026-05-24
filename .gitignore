@@ -19,7 +19,6 @@ data/
 
 # Claude Code (local settings)
 .claude/
-CLAUDE.md
 docs/CLAUDE.html
 
 # IDE
