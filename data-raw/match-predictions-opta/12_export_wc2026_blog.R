@@ -115,9 +115,12 @@ wc_files <- file.path(cache_dir, c("wc2026_predictions.parquet",
                                    "wc2026_groups.parquet",
                                    "wc2026_team_strength.parquet"))
 
+no_upload <- isTRUE(Sys.getenv("WC2026_NO_UPLOAD", "") == "1")
 gh_ok <- !is.null(tryCatch(system2("gh", "--version", stdout = TRUE,
                                     stderr = TRUE), error = function(e) NULL))
-if (!gh_ok) {
+if (no_upload) {
+  message("  WC2026_NO_UPLOAD=1 — files written locally, skipping upload")
+} else if (!gh_ok) {
   message("  gh CLI not available — files written locally, skipping upload")
 } else {
   rel <- system2("gh", c("release", "view", tag, "--repo", repo),

@@ -6,8 +6,8 @@ library(jsonlite)
 # base_score — this small utility reads the RDS, pulls base_score from
 # the booster config, and writes it into the JSON envelope.
 
-rds_path <- "C:/Users/peteo/OneDrive/Documents/pannaverse/pannadata/data/opta/models/wp_model.rds"
-json_path <- "C:/Users/peteo/OneDrive/Documents/pannaverse/pannadata/data/opta/models/wp_model.json"
+rds_path <- "C:/dev/pannaverse/pannadata/data/opta/models/wp_model.rds"
+json_path <- "C:/dev/pannaverse/pannadata/data/opta/models/wp_model.json"
 
 wp <- readRDS(rds_path)
 bs_raw <- xgb.config(wp$model)$learner$learner_model_param$base_score
