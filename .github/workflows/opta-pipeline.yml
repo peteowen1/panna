@@ -231,6 +231,20 @@ jobs:
           INPUT_FORCE_REBUILD_FROM: ${{ inputs.force_rebuild_from }}
           INPUT_START_STEP: ${{ inputs.start_step }}
         run: |
+          # --- memory tracer (diagnostic, no pipeline logic) -----------------
+          # The pipeline dies intermittently with "runner received a shutdown
+          # signal" during the xRAPM glmnet fit — a message that carries no OOM
+          # trace. Sample RAM every 20s straight to the step log (the log
+          # survives a runner kill; an uploaded artifact would not). Grep [MEM]
+          # in a failed run to see if memory was near the ceiling at death.
+          ( while true; do
+              echo "[MEM] $(date -u +%H:%M:%S) $(free -m | awk '/^Mem:/{print "used="$3"MB avail="$7"MB total="$2"MB"}')"
+              sleep 20
+            done ) &
+          MEM_TRACER_PID=$!
+          # -------------------------------------------------------------------
+
+          RSCRIPT_EXIT=0
           Rscript -e "
             pannadata_path <- Sys.getenv('PANNADATA_DIR', '../pannadata/data')
             opta_path <- file.path(pannadata_path, 'opta')
@@ -262,7 +276,10 @@ jobs:
 
             source('data-raw/player-ratings-opta/run_pipeline_opta.R', chdir = FALSE)
             if (isTRUE(pipeline_failed)) quit(status = 1)
-          "
+          " || RSCRIPT_EXIT=$?
+
+          kill "$MEM_TRACER_PID" 2>/dev/null || true
+          exit "$RSCRIPT_EXIT"
 
       - name: Upload caches to predictions-cache release
         # if: always() — upload whatever step caches were produced even if
