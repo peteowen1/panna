@@ -299,9 +299,59 @@ if (nrow(upcoming) > 0) {
 
   # make_dummy_lineup() is defined in R/match_prediction.R
 
+  # Load WC2026 announced-squad override (built by
+  # data-raw/match-predictions-opta/announced_squads.R). For WC2026 group
+  # games we prefer the officially-announced 26-man squad over the
+  # most-recent-played-XI proxy: many federations make 4–10
+  # cuts/inclusions vs the last friendly, and our last-played-XI snapshot
+  # is sometimes a "look at fringe players" friendly, not a WC-relevant XI.
+  #
+  # All 26 squad members flow through with lineup_weight =
+  # expected_minutes_norm / 90 (sums to ~11 across the squad — same scale
+  # as the non-override path of 11 starters at weight 1). The aggregator
+  # in R/match_prediction.R consumes lineup_weight for the weighted sums
+  # and means; max/min stay unweighted ("best player in the squad").
+  ann_squads_path <- file.path(cache_dir, "wc2026_announced_squads.parquet")
+  ann_squads <- if (file.exists(ann_squads_path) &&
+                    requireNamespace("arrow", quietly = TRUE)) {
+    s <- as.data.frame(arrow::read_parquet(ann_squads_path))
+    s <- s[!is.na(s$player_id), , drop = FALSE]
+    s$lineup_weight <- pmax(0, s$expected_minutes_norm) / 90
+    message(sprintf("  WC2026 announced-squad override loaded: %d squad rows across %d teams (mean wt %.2f)",
+                    nrow(s), length(unique(s$team_id)),
+                    mean(s$lineup_weight)))
+    s
+  } else NULL
+
+  build_team_synthetic_lineup <- function(team_id, team_name, team_pos, m) {
+    use_override <- !is.null(ann_squads) && !is.na(team_id) &&
+      isTRUE(!is.na(m$league) && m$league == "WC" &&
+             !is.na(m$season) && m$season == "2026 Canada-Mexico-USA") &&
+      team_id %in% ann_squads$team_id
+    if (use_override) {
+      ann <- ann_squads[ann_squads$team_id == team_id, , drop = FALSE]
+      return(data.frame(
+        match_id      = m$match_id,
+        team_id       = team_id,
+        team_name     = team_name,
+        team_position = team_pos,
+        player_id     = ann$player_id,
+        player_name   = ann$player_name,
+        position      = ann$position,
+        is_starter    = TRUE,
+        lineup_weight = ann$lineup_weight,
+        stringsAsFactors = FALSE
+      ))
+    }
+    latest_lineups %>%
+      filter(team_id == !!team_id) %>%
+      mutate(match_id = m$match_id, team_position = team_pos)
+  }
+
   # For each upcoming match, construct synthetic lineup rows
   upcoming_lineups <- list()
   n_dummy <- 0L
+  n_wc_override <- 0L
   for (i in seq_len(nrow(upcoming))) {
     m <- upcoming[i, ]
     htid <- m$home_team_id
@@ -310,13 +360,14 @@ if (nrow(upcoming) > 0) {
     # Skip TBD matches (empty team_id from unresolved knockouts)
     if (is.na(htid) || htid == "" || is.na(atid) || atid == "") next
 
-    home_lu <- latest_lineups %>%
-      filter(team_id == htid) %>%
-      mutate(match_id = m$match_id, team_position = "home")
+    home_lu <- build_team_synthetic_lineup(htid, m$home_team, "home", m)
+    away_lu <- build_team_synthetic_lineup(atid, m$away_team, "away", m)
 
-    away_lu <- latest_lineups %>%
-      filter(team_id == atid) %>%
-      mutate(match_id = m$match_id, team_position = "away")
+    if (!is.null(ann_squads) &&
+        isTRUE(!is.na(m$league) && m$league == "WC")) {
+      if (htid %in% ann_squads$team_id) n_wc_override <- n_wc_override + 1L
+      if (atid %in% ann_squads$team_id) n_wc_override <- n_wc_override + 1L
+    }
 
     # Fallback to dummy lineup (replacement-level ratings) for unknown teams
     if (nrow(home_lu) == 0) {
@@ -331,6 +382,7 @@ if (nrow(upcoming) > 0) {
     upcoming_lineups[[i]] <- bind_rows(home_lu, away_lu)
   }
   if (n_dummy > 0) message(sprintf("  Used replacement-level ratings for %d team-fixtures with no lineup history", n_dummy))
+  if (n_wc_override > 0) message(sprintf("  Applied WC2026 announced-squad override to %d team-fixtures", n_wc_override))
 
   # Try date-specific skill ratings for fixtures
   fixture_ratings <- NULL

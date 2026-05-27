@@ -91,6 +91,17 @@ aggregate_lineup_ratings <- function(lineups, ratings, season_end_year,
   # Filter to starters only
   starters <- dt_lineups[is_starter == TRUE]
 
+  # Honour optional lineup_weight column (0..1; sum across a side ~= 11).
+  # When absent, default to 1.0 so the non-override path stays unchanged —
+  # 11 starters at weight 1 reproduces the previous sum/mean semantics.
+  # Used by the WC2026 announced-squad override (step 02 / 02b) to pass
+  # all 26 players weighted by expected minutes per match.
+  if (!"lineup_weight" %in% names(starters)) {
+    starters[, lineup_weight := 1.0]
+  } else {
+    starters[is.na(lineup_weight) | lineup_weight < 0, lineup_weight := 1.0]
+  }
+
   # Determine join key: use player_id when both sides have it and IDs overlap
   has_id_both <- "player_id" %in% names(dt_lineups) &&
     "player_id" %in% names(dt_ratings)
@@ -227,18 +238,39 @@ aggregate_lineup_ratings <- function(lineups, ratings, season_end_year,
     default = "mid"
   )]
 
-  # Aggregate per match-side
+  # Aggregate per match-side. Weighted by `lineup_weight` so the WC2026
+  # override (26-man squad, weights = expected_minutes/90 summing to ~11)
+  # produces team features on the same numeric scale as the non-override
+  # path (11 starters × weight 1, also summing to 11).
+  #
+  # max/min/stdev and n_rated stay UNWEIGHTED: they describe the squad
+  # (best-player-in-the-team, spread), not pitch-time contribution.
   team_stats <- starters[, {
+    w <- lineup_weight
+    w_sum <- sum(w, na.rm = TRUE)
+
     n_rated <- sum(panna != 0)
     gk_idx <- which(pos_group == "gk")
-    gk_panna_val <- if (length(gk_idx) > 0) panna[gk_idx[1]] else 0
+    # GK = the GK with the largest weight (most-likely starter). Falls back
+    # to the first GK row if all weights tie (e.g., non-override path where
+    # all weights are 1).
+    gk_panna_val <- if (length(gk_idx) > 0) {
+      panna[gk_idx[which.max(w[gk_idx])]]
+    } else 0
 
-    # Positional group averages
     def_idx <- pos_group == "def"
     mid_idx <- pos_group == "mid"
     fwd_idx <- pos_group == "fwd"
 
-    safe_mean <- function(x) if (length(x) == 0 || all(is.na(x))) 0 else mean(x, na.rm = TRUE)
+    # Weighted mean over a boolean mask. Returns 0 when the mask is empty,
+    # all values are NA, or total weight in the mask is 0 — matching the
+    # previous `safe_mean` semantics.
+    wmean <- function(x, mask) {
+      if (sum(mask) == 0 || all(is.na(x[mask]))) return(0)
+      wm <- sum(w[mask], na.rm = TRUE)
+      if (wm == 0) return(0)
+      sum(w[mask] * x[mask], na.rm = TRUE) / wm
+    }
 
     # Value metric columns (included if present in ratings)
     has_epr <- "epr" %in% names(.SD)
@@ -248,61 +280,61 @@ aggregate_lineup_ratings <- function(lineups, ratings, season_end_year,
     has_centrality <- "centrality" %in% names(.SD)
 
     base <- list(
-      sum_panna = sum(panna), sum_offense = sum(offense),
-      sum_defense = sum(defense), sum_spm = sum(spm),
-      avg_panna = mean(panna), max_panna = max(panna),
-      min_panna = min(panna),
+      sum_panna = sum(w * panna), sum_offense = sum(w * offense),
+      sum_defense = sum(w * defense), sum_spm = sum(w * spm),
+      avg_panna = if (w_sum > 0) sum(w * panna) / w_sum else 0,
+      max_panna = max(panna), min_panna = min(panna),
       stdev_panna = if (.N > 1) stats::sd(panna) else 0,
       gk_panna = gk_panna_val,
-      avg_def_panna = safe_mean(panna[def_idx]),
-      avg_mid_panna = safe_mean(panna[mid_idx]),
-      avg_fwd_panna = safe_mean(panna[fwd_idx]),
-      avg_def_offense = safe_mean(offense[def_idx]),
-      avg_def_defense = safe_mean(defense[def_idx]),
-      avg_mid_offense = safe_mean(offense[mid_idx]),
-      avg_mid_defense = safe_mean(defense[mid_idx]),
-      avg_fwd_offense = safe_mean(offense[fwd_idx]),
-      avg_fwd_defense = safe_mean(defense[fwd_idx]),
+      avg_def_panna = wmean(panna, def_idx),
+      avg_mid_panna = wmean(panna, mid_idx),
+      avg_fwd_panna = wmean(panna, fwd_idx),
+      avg_def_offense = wmean(offense, def_idx),
+      avg_def_defense = wmean(defense, def_idx),
+      avg_mid_offense = wmean(offense, mid_idx),
+      avg_mid_defense = wmean(defense, mid_idx),
+      avg_fwd_offense = wmean(offense, fwd_idx),
+      avg_fwd_defense = wmean(defense, fwd_idx),
       n_rated_players = n_rated
     )
 
     # EPR features (from EPV-based ratings)
     if (has_epr) {
-      base$sum_epr <- sum(epr)
-      base$sum_epr_off <- sum(epr_offensive)
-      base$sum_epr_def <- sum(epr_defensive)
+      base$sum_epr <- sum(w * epr)
+      base$sum_epr_off <- sum(w * epr_offensive)
+      base$sum_epr_def <- sum(w * epr_defensive)
     }
 
     # WPA rating features
     if (has_wpa) {
-      base$sum_wpa <- sum(wpa_rating)
+      base$sum_wpa <- sum(w * wpa_rating)
     }
 
     # PSV rating features
     if (has_psv) {
-      base$sum_psv <- sum(psv_rating)
+      base$sum_psv <- sum(w * psv_rating)
     }
 
     # Centrality features (opponent quality adjustment)
     if (has_centrality) {
-      base$avg_centrality <- mean(centrality)
+      base$avg_centrality <- if (w_sum > 0) sum(w * centrality) / w_sum else 0
       base$min_centrality <- min(centrality)
     }
 
     # PSR features (Player Skill Rating with O/D decomposition)
     if (has_psr) {
-      base$sum_psr <- sum(psr)
+      base$sum_psr <- sum(w * psr)
       if ("osr" %in% names(.SD)) {
-        base$sum_osr <- sum(osr)
-        base$avg_def_osr <- safe_mean(osr[def_idx])
-        base$avg_mid_osr <- safe_mean(osr[mid_idx])
-        base$avg_fwd_osr <- safe_mean(osr[fwd_idx])
+        base$sum_osr <- sum(w * osr)
+        base$avg_def_osr <- wmean(osr, def_idx)
+        base$avg_mid_osr <- wmean(osr, mid_idx)
+        base$avg_fwd_osr <- wmean(osr, fwd_idx)
       }
       if ("dsr" %in% names(.SD)) {
-        base$sum_dsr <- sum(dsr)
-        base$avg_def_dsr <- safe_mean(dsr[def_idx])
-        base$avg_mid_dsr <- safe_mean(dsr[mid_idx])
-        base$avg_fwd_dsr <- safe_mean(dsr[fwd_idx])
+        base$sum_dsr <- sum(w * dsr)
+        base$avg_def_dsr <- wmean(dsr, def_idx)
+        base$avg_mid_dsr <- wmean(dsr, mid_idx)
+        base$avg_fwd_dsr <- wmean(dsr, fwd_idx)
       }
     }
 
@@ -422,6 +454,14 @@ aggregate_lineup_skills <- function(lineups, skill_estimates,
   starters <- dt_lineups[is_starter == TRUE]
   starters[, clean_name := clean_player_name(player_name)]
 
+  # Honour optional lineup_weight column (see aggregate_lineup_ratings for
+  # rationale). Default 1.0 keeps non-override behaviour identical.
+  if (!"lineup_weight" %in% names(starters)) {
+    starters[, lineup_weight := 1.0]
+  } else {
+    starters[is.na(lineup_weight) | lineup_weight < 0, lineup_weight := 1.0]
+  }
+
   # Join skills
   dt_skills[, clean_name := clean_player_name(player_name)]
   skill_lookup <- dt_skills[!duplicated(clean_name), c("clean_name", all_stats), with = FALSE]
@@ -434,8 +474,10 @@ aggregate_lineup_skills <- function(lineups, skill_estimates,
     cli::cli_warn("{n_unmatched}/{n_total} starters had no matching skill estimates (filled with 0).")
   }
 
-  # Aggregate by match + side
+  # Aggregate by match + side (minute-weighted)
   team_skills <- starters[, {
+    w <- lineup_weight
+    w_sum <- sum(w, na.rm = TRUE)
     result <- list()
     stat_means <- numeric(length(all_stats))
     for (j in seq_along(all_stats)) {
@@ -444,7 +486,7 @@ aggregate_lineup_skills <- function(lineups, skill_estimates,
       vals[is.na(vals)] <- 0
       prefix <- if (stat %in% attacking_stats) "sk_att" else "sk_def"
       col_name <- paste0(prefix, "_", sub("_p90$", "", stat))
-      stat_means[j] <- mean(vals)
+      stat_means[j] <- if (w_sum > 0) sum(w * vals) / w_sum else 0
       result[[col_name]] <- stat_means[j]
     }
     # Composites: mean-of-means (equal stat weighting, not pooled across all player-stat values)

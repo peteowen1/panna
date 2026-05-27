@@ -175,6 +175,45 @@ if (nrow(upcoming) > 0 && !is.null(latest_lineups)) {
 
       # make_dummy_lineup() is defined in R/match_prediction.R
 
+      # WC2026 announced-squad override (same parquet as step 02). Built by
+      # data-raw/match-predictions-opta/announced_squads.R. All 26 squad
+      # members flow through with lineup_weight = expected_minutes_norm/90
+      # so the team-skill aggregation in R/match_prediction.R is
+      # minute-weighted instead of equal-weighting a synthetic XI.
+      ann_squads_path <- file.path(cache_dir, "wc2026_announced_squads.parquet")
+      ann_squads <- if (file.exists(ann_squads_path) &&
+                        requireNamespace("arrow", quietly = TRUE)) {
+        s <- as.data.frame(arrow::read_parquet(ann_squads_path))
+        s <- s[!is.na(s$player_id), , drop = FALSE]
+        s$lineup_weight <- pmax(0, s$expected_minutes_norm) / 90
+        s
+      } else NULL
+
+      lu_or_override <- function(team_id, team_name, team_pos, m) {
+        use_override <- !is.null(ann_squads) && !is.na(team_id) &&
+          isTRUE(!is.na(m$league) && m$league == "WC" &&
+                 !is.na(m$season) && m$season == "2026 Canada-Mexico-USA") &&
+          team_id %in% ann_squads$team_id
+        if (use_override) {
+          ann <- ann_squads[ann_squads$team_id == team_id, , drop = FALSE]
+          return(data.frame(
+            match_id      = m$match_id,
+            team_id       = team_id,
+            team_name     = team_name,
+            team_position = team_pos,
+            player_id     = ann$player_id,
+            player_name   = ann$player_name,
+            position      = ann$position,
+            is_starter    = TRUE,
+            lineup_weight = ann$lineup_weight,
+            stringsAsFactors = FALSE
+          ))
+        }
+        latest_lineups %>%
+          filter(team_id == !!team_id) %>%
+          mutate(match_id = m$match_id, team_position = team_pos)
+      }
+
       # Build fixture lineups
       fixture_lu_list <- list()
       for (i in seq_len(nrow(upcoming))) {
@@ -183,12 +222,8 @@ if (nrow(upcoming) > 0 && !is.null(latest_lineups)) {
         atid <- m$away_team_id
         if (is.na(htid) || htid == "" || is.na(atid) || atid == "") next
 
-        home_lu <- latest_lineups %>%
-          filter(team_id == htid) %>%
-          mutate(match_id = m$match_id, team_position = "home")
-        away_lu <- latest_lineups %>%
-          filter(team_id == atid) %>%
-          mutate(match_id = m$match_id, team_position = "away")
+        home_lu <- lu_or_override(htid, m$home_team, "home", m)
+        away_lu <- lu_or_override(atid, m$away_team, "away", m)
 
         if (nrow(home_lu) == 0) {
           home_lu <- make_dummy_lineup(m$match_id, htid, m$home_team, "home")
