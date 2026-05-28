@@ -46,7 +46,15 @@ elo_result <- compute_match_elos(
   played,
   k = ELO_K,
   home_advantage = ELO_HOME_ADV,
-  initial_elo = ELO_INITIAL
+  initial_elo = ELO_INITIAL,
+  # Optimized 2026-05-28: per-match-type K (tournaments 80, qualifiers
+  # 25, friendlies 5, club 20) + cross-conf multiplier 1.5 + per-
+  # confederation prior with conf_spread=200. WC-weighted Brier improved
+  # 8.6% vs single-K=20 baseline. The conf priors are what fixed the
+  # Norway < Uzbekistan cross-pool isolation issue.
+  k_table         = ELO_MATCH_TYPE_K,
+  cross_conf_mult = ELO_CROSS_CONF_MULT,
+  conf_priors     = elo_conf_priors_from_spread(ELO_CONF_SPREAD)
 )
 elo_features <- elo_result$per_match
 final_elos <- elo_result$final_elos

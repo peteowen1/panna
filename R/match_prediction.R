@@ -648,12 +648,38 @@ update_elo <- function(home_elo, away_elo, home_goals, away_goals,
 #'     for use with upcoming fixtures
 #' @export
 compute_match_elos <- function(results, k = 20, home_advantage = 65,
-                                initial_elo = 1500) {
+                                initial_elo = 1500,
+                                k_table = NULL,
+                                cross_conf_mult = 1.0,
+                                conf_priors = NULL) {
   # Sort by date
   results <- results[order(results$match_date), ]
 
   all_teams <- unique(c(results$home_team, results$away_team))
-  elos <- init_team_elos(all_teams, initial_elo)  # filters NAs internally
+
+  # Build confederation lookup once if needed for EITHER cross_conf_mult
+  # OR conf_priors (most callers want both, so build it if either flag is on).
+  need_lookup <- cross_conf_mult != 1.0 || !is.null(conf_priors)
+  conf_lookup <- if (need_lookup) build_team_confederations(results) else NULL
+
+  # Initial elos: confederation-prior if conf_priors supplied, else single
+  # initial_elo for every team (preserves legacy behaviour).
+  elos <- if (!is.null(conf_priors)) {
+    init_team_elos_with_priors(all_teams, conf_lookup,
+                                conf_priors = conf_priors,
+                                initial_elo = initial_elo)
+  } else {
+    init_team_elos(all_teams, initial_elo)  # filters NAs internally
+  }
+
+  # Per-match base K. If `k_table` is supplied use elo_match_k(); else
+  # fall back to the single `k` argument for every match (preserves the
+  # old single-K behaviour for any caller that hasn't opted in).
+  base_k_per_match <- if (!is.null(k_table)) {
+    elo_match_k(results$league, k_table = k_table, default = k)
+  } else {
+    rep(k, nrow(results))
+  }
 
   n <- nrow(results)
   home_elo_pre <- numeric(n)
@@ -678,9 +704,19 @@ compute_match_elos <- function(results, k = 20, home_advantage = 65,
 
     # Update only for played matches
     if (!is.na(results$home_goals[i]) && !is.na(results$away_goals[i])) {
+      # Effective K = base_K(match_type) × cross_conf_mult(team1, team2).
+      # The goal-difference multiplier is applied inside update_elo().
+      # Only apply the cross-conf multiplier when it's actually != 1.0;
+      # conf_lookup might be non-NULL purely for conf_priors init while
+      # cross_conf_mult=1.0 (disabled).
+      k_eff <- base_k_per_match[i]
+      if (!is.null(conf_lookup) && cross_conf_mult != 1.0) {
+        k_eff <- k_eff * cross_conf_multiplier(ht, at, conf_lookup,
+                                                mult = cross_conf_mult)
+      }
       updated <- update_elo(elos[ht], elos[at],
                             results$home_goals[i], results$away_goals[i],
-                            k = k, home_advantage = home_advantage)
+                            k = k_eff, home_advantage = home_advantage)
       elos[ht] <- updated$new_home_elo
       elos[at] <- updated$new_away_elo
     }
