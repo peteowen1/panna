@@ -27,8 +27,8 @@ augmented_features <- outcome_result$augmented_features
 
 # 4. Prepare Test Data ----
 
-test_data <- match_dataset[match_dataset$split == "test" &
-                           !is.na(match_dataset$outcome_label), ]
+test_data <- as.data.frame(match_dataset[match_dataset$split == "test" &
+                           !is.na(match_dataset$outcome_label), ])
 
 if (nrow(test_data) == 0) {
   message("No test data available.")
@@ -45,9 +45,42 @@ X_test[is.na(X_test)] <- 0
 
 message("\n--- Goals Model Evaluation ---\n")
 
-d_test <- xgboost::xgb.DMatrix(data = X_test)
-pred_home <- stats::predict(goals_models$home$model, d_test)
-pred_away <- stats::predict(goals_models$away$model, d_test)
+# Routed + blended prediction: domestic test matches use the pooled model;
+# international matches use the pooled + specialist blend. Goals and outcome
+# probabilities are produced together so the blend is consistent.
+predict_pair <- function(X, gm, om) {
+  d <- xgboost::xgb.DMatrix(data = X)
+  hg <- stats::predict(gm$home$model, d)
+  ag <- stats::predict(gm$away$model, d)
+  Xa <- cbind(X, pred_home_goals = hg, pred_away_goals = ag,
+              pred_goal_diff = hg - ag, pred_total_goals = hg + ag)
+  Xa <- Xa[, augmented_features, drop = FALSE]
+  pr <- matrix(stats::predict(om$model$model, xgboost::xgb.DMatrix(data = Xa)),
+               ncol = 3, byrow = FALSE)
+  list(home_goals = hg, away_goals = ag, probs = pr)
+}
+w_intl <- MATCH_INTL_BLEND_WEIGHT
+is_intl <- match_is_international(test_data$league)
+pred_home  <- numeric(nrow(test_data))
+pred_away  <- numeric(nrow(test_data))
+test_probs <- matrix(0, nrow = nrow(test_data), ncol = 3)
+for (grp in c(FALSE, TRUE)) {
+  idx <- which(is_intl == grp)
+  if (length(idx) == 0) next
+  Xg <- X_test[idx, , drop = FALSE]
+  pooled <- predict_pair(Xg, goals_models$pooled, outcome_result$pooled)
+  if (grp) {
+    intl <- predict_pair(Xg, goals_models$international,
+                         outcome_result$international)
+    pred_home[idx]    <- (1 - w_intl) * pooled$home_goals + w_intl * intl$home_goals
+    pred_away[idx]    <- (1 - w_intl) * pooled$away_goals + w_intl * intl$away_goals
+    test_probs[idx, ] <- (1 - w_intl) * pooled$probs + w_intl * intl$probs
+  } else {
+    pred_home[idx]    <- pooled$home_goals
+    pred_away[idx]    <- pooled$away_goals
+    test_probs[idx, ] <- pooled$probs
+  }
+}
 
 # RMSE
 home_rmse <- sqrt(mean((test_data$home_goals - pred_home)^2))
@@ -57,8 +90,8 @@ message(sprintf("  Home goals RMSE: %.3f", home_rmse))
 message(sprintf("  Away goals RMSE: %.3f", away_rmse))
 
 # Baseline: training set average
-train_data <- match_dataset[match_dataset$split == "train" &
-                            !is.na(match_dataset$home_goals), ]
+train_data <- as.data.frame(match_dataset[match_dataset$split == "train" &
+                            !is.na(match_dataset$home_goals), ])
 avg_home <- mean(train_data$home_goals)
 avg_away <- mean(train_data$away_goals)
 base_home_rmse <- sqrt(mean((test_data$home_goals - avg_home)^2))
@@ -73,19 +106,7 @@ message(sprintf("  Improvement: Home %.1f%%, Away %.1f%%",
 
 message("\n--- Outcome Model Evaluation ---\n")
 
-# Generate predicted goals for test set
-test_data$pred_home_goals <- pred_home
-test_data$pred_away_goals <- pred_away
-test_data$pred_goal_diff <- pred_home - pred_away
-test_data$pred_total_goals <- pred_home + pred_away
-
-X_test_aug <- as.matrix(test_data[, augmented_features, drop = FALSE])
-X_test_aug[is.na(X_test_aug)] <- 0
-
-d_test_aug <- xgboost::xgb.DMatrix(data = X_test_aug)
-test_probs_raw <- stats::predict(outcome_result$model$model, d_test_aug)
-test_probs <- matrix(test_probs_raw, ncol = 3, byrow = FALSE)
-
+# test_probs was computed above (routed + blended alongside the goal preds).
 y_test <- test_data$outcome_label
 
 # Multi-class log loss
@@ -114,13 +135,20 @@ message(sprintf("  Baseline log loss: %.4f (improvement: %.1f%%)",
                 naive_logloss, 100 * (1 - test_logloss / naive_logloss)))
 message(sprintf("  Baseline accuracy: %.1f%%", 100 * naive_accuracy))
 
-# Elo-only baseline
+# Elo-only baseline. Use train-set H/D/A base rates rather than the
+# hardcoded 0.72 / 0.26 from earlier seasons — when the train mix shifts
+# (more international fixtures, more low-scoring leagues), hardcoded
+# constants make the published "model beats Elo by X" comparison misleading.
+# Code-review item 19.
+base_decisive_rate <- 1 - as.numeric(train_dist["1"])  # 1 = Draw label
 elo_home_prob <- 1 / (1 + 10^(-test_data$elo_diff / 400))
-elo_probs <- cbind(elo_home_prob * 0.72, rep(0.26, length(elo_home_prob)),
-                   (1 - elo_home_prob) * 0.72)
+elo_probs <- cbind(elo_home_prob * base_decisive_rate,
+                   rep(1 - base_decisive_rate, length(elo_home_prob)),
+                   (1 - elo_home_prob) * base_decisive_rate)
 elo_probs <- elo_probs / rowSums(elo_probs)  # Normalize
 elo_logloss <- compute_multiclass_logloss(y_test, elo_probs)
-message(sprintf("  Elo-only log loss: %.4f", elo_logloss))
+message(sprintf("  Elo-only log loss: %.4f (base decisive rate from train = %.3f)",
+                elo_logloss, base_decisive_rate))
 
 # 7. Calibration ----
 
@@ -143,16 +171,17 @@ for (out in c("Home", "Draw", "Away")) {
 
 message("\n--- Top Features ---\n")
 
-message("Goals model (home):")
-home_imp <- head(goals_models$home$importance, 10)
-for (i in seq_len(nrow(home_imp))) {
-  message(sprintf("  %2d. %-35s %.4f", i, home_imp$Feature[i], home_imp$Gain[i]))
-}
-
-message("\nOutcome model:")
-out_imp <- head(outcome_result$model$importance, 10)
-for (i in seq_len(nrow(out_imp))) {
-  message(sprintf("  %2d. %-35s %.4f", i, out_imp$Feature[i], out_imp$Gain[i]))
+for (seg in c("pooled", "international")) {
+  message(sprintf("Goals model (home) [%s]:", seg))
+  home_imp <- head(goals_models[[seg]]$home$importance, 8)
+  for (i in seq_len(nrow(home_imp))) {
+    message(sprintf("  %2d. %-35s %.4f", i, home_imp$Feature[i], home_imp$Gain[i]))
+  }
+  message(sprintf("Outcome model [%s]:", seg))
+  out_imp <- head(outcome_result[[seg]]$model$importance, 8)
+  for (i in seq_len(nrow(out_imp))) {
+    message(sprintf("  %2d. %-35s %.4f", i, out_imp$Feature[i], out_imp$Gain[i]))
+  }
 }
 
 # 9. Per-League Breakdown ----

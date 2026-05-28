@@ -157,7 +157,7 @@ standardize_player_names <- function(names) {
   cleaned <- gsub("\\s+", " ", cleaned)
   # Remove common suffixes
   cleaned <- gsub("\\s+(Jr\\.|Sr\\.|II|III|IV)$", "", cleaned)
-  # Title case with full Unicode support (handles Ødegaard, Müller, etc.)
+  # Title case with full Unicode support (handles \u00d8degaard, M\u00fcller, etc.)
   cleaned <- stringi::stri_trans_totitle(cleaned)
 
   # Build lookup and return via O(1) match
@@ -180,8 +180,8 @@ standardize_player_names <- function(names) {
 #'
 #' @examples
 #' \dontrun{
-#' clean_player_name(c("Kylian Mbappé", "kylian mbappé", "KYLIAN MBAPPÉ"))
-#' # All return "kylianmbappé"
+#' clean_player_name(c("Kylian Mbapp\u00e9", "kylian mbapp\u00e9", "KYLIAN MBAPP\u00c9"))
+#' # All return "kylianmbapp\u00e9"
 #' }
 clean_player_name <- function(names) {
   # Memoization: process unique names once, then lookup
@@ -606,9 +606,22 @@ extract_season_end_year_from_match_id <- function(match_id) {
 #' @return Numeric end year, or NA_real_ if unparseable
 #' @keywords internal
 extract_season_end_year <- function(season) {
-  if (grepl("^\\d{4}-\\d{4}$", season)) return(as.numeric(substr(season, 6, 9)))
-  year <- as.numeric(sub("^(\\d{4}).*", "\\1", season))
+  if (is.na(season) || !nzchar(season)) return(NA_real_)
+  # Format 1: "2023-2024" -- domestic season, end year is the second
+  if (grepl("^\\d{4}-\\d{4}$", season)) {
+    return(as.numeric(substr(season, 6, 9)))
+  }
+  # Format 2: starts with a 4-digit year -- tournament name "2018 Russia",
+  # "2026 Canada-Mexico-USA"
+  year <- suppressWarnings(as.numeric(sub("^(\\d{4}).*", "\\1", season)))
   if (!is.na(year)) return(year)
+  # Format 3: trailing 4-digit year -- "Intl_Friendlies_2024",
+  # "Intl_Friendlies_2026". The intl-friendlies scrape uses this convention.
+  # Take the LAST 4-digit number anywhere in the string; otherwise NA.
+  matches <- regmatches(season, gregexpr("\\d{4}", season))[[1]]
+  if (length(matches) > 0L) {
+    return(as.numeric(matches[length(matches)]))
+  }
   NA_real_
 }
 

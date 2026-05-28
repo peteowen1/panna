@@ -9,6 +9,61 @@
 # Team Rating Aggregation
 # =============================================================================
 
+#' Augment a ratings table with time-decayed historical fallback
+#'
+#' For each player_id, finds their MOST recent non-zero rated season. If
+#' that season is older than `current_sey`, applies an exponential decay
+#' `decay_factor ^ years_gap` to the rating and emits a synthetic row
+#' under `current_sey`. This lets unrated-in-current-season players (who
+#' moved to a non-covered league like Saudi PL / MLS / Liga MX) still
+#' contribute a sensible non-zero panna estimate when their lineup is
+#' aggregated.
+#'
+#' @param ratings Data.table with at least `player_id`, `season_end_year`,
+#'   `panna`, `offense`, `defense` (and optionally `spm`).
+#' @param current_sey The season we want imputed rows for (e.g., 2026).
+#' @param decay_factor Per-year decay. Default 0.85 (15% decline per year
+#'   away from a player's last-rated season -- accounts for both ageing and
+#'   uncertainty about their current form).
+#' @param max_years_back Cap how far back to look. Default 5 years.
+#'   Beyond that the decay is so heavy the imputation is near-zero anyway.
+#' @return The input `ratings` with extra synthetic rows for `current_sey`
+#'   covering players who weren't already rated there.
+#' @export
+augment_ratings_with_history <- function(ratings, current_sey,
+                                            decay_factor = 0.85,
+                                            max_years_back = 5L) {
+  dt <- data.table::as.data.table(ratings)
+
+  ## Players already rated in current_sey -- leave them alone
+  curr_ids <- dt[season_end_year == current_sey &
+                  !is.na(panna) & panna != 0, unique(player_id)]
+
+  ## For everyone else: most recent rated season within max_years_back
+  candidates <- dt[!player_id %in% curr_ids &
+                    season_end_year >= current_sey - max_years_back &
+                    season_end_year < current_sey &
+                    !is.na(panna) & panna != 0]
+  if (nrow(candidates) == 0L) return(dt)
+  data.table::setorder(candidates, player_id, -season_end_year)
+  most_recent <- candidates[, .SD[1L], by = player_id]
+  most_recent[, years_gap := current_sey - season_end_year]
+  most_recent[, decay := decay_factor ^ years_gap]
+
+  ## Decay panna + components
+  for (col in intersect(c("panna","offense","defense","spm"), names(most_recent))) {
+    most_recent[, (col) := get(col) * decay]
+  }
+  ## Stamp as current_sey so downstream lookups find them
+  most_recent[, season_end_year := current_sey]
+  ## Tag for diagnostics (won't break callers -- extra column)
+  most_recent[, imputed_from_history := TRUE]
+  most_recent[, c("years_gap","decay") := NULL]
+
+  ## Append to original
+  data.table::rbindlist(list(dt, most_recent), fill = TRUE, use.names = TRUE)
+}
+
 #' Aggregate Player Ratings to Team Level
 #'
 #' For a given match, takes the starting XI from lineups and joins to seasonal
@@ -36,6 +91,17 @@ aggregate_lineup_ratings <- function(lineups, ratings, season_end_year,
   # Filter to starters only
   starters <- dt_lineups[is_starter == TRUE]
 
+  # Honour optional lineup_weight column (0..1; sum across a side ~= 11).
+  # When absent, default to 1.0 so the non-override path stays unchanged --
+  # 11 starters at weight 1 reproduces the previous sum/mean semantics.
+  # Used by the WC2026 announced-squad override (step 02 / 02b) to pass
+  # all 26 players weighted by expected minutes per match.
+  if (!"lineup_weight" %in% names(starters)) {
+    starters[, lineup_weight := 1.0]
+  } else {
+    starters[is.na(lineup_weight) | lineup_weight < 0, lineup_weight := 1.0]
+  }
+
   # Determine join key: use player_id when both sides have it and IDs overlap
   has_id_both <- "player_id" %in% names(dt_lineups) &&
     "player_id" %in% names(dt_ratings)
@@ -61,35 +127,116 @@ aggregate_lineup_ratings <- function(lineups, ratings, season_end_year,
     dt_ratings[, clean_name := clean_player_name(player_name)]
   }
 
-  # Current season ratings
-  rating_cols <- c(join_key, "panna", "offense", "defense", "spm")
+  # Current season ratings. Carry through any value-metric columns that are
+  # present in dt_ratings so the downstream aggregator (has_epr / has_psr /
+  # has_wpa / has_psv checks in this function) can pick them up. Without
+  # this, those columns got silently dropped before the aggregator saw them,
+  # so sum_epr / sum_psr / etc were never created in team-level features.
+  core_cols <- c("panna", "offense", "defense", "spm")
+  known_optional <- c("epr", "epr_offensive", "epr_defensive",
+                       "psr", "osr", "dsr",
+                       "wpa_rating", "psv_rating",
+                       "centrality")
+  optional_cols <- intersect(known_optional, names(dt_ratings))
+  # Warn if any expected optional cols are NOT in dt_ratings -- catches the
+  # pre-2026-05-19 silent-drop pattern where downstream `has_psr`/`has_epr`
+  # checks in this function would always evaluate FALSE, so no team-level
+  # PSR/EPR features ever got created. If we expect these columns to be
+  # passed in but they're missing, surface that loudly.
+  missing_optional <- setdiff(known_optional, names(dt_ratings))
+  if (length(missing_optional) > 0 && getOption("panna.verbose_ratings", FALSE)) {
+    cli::cli_warn(c(
+      "Ratings table is missing optional value-metric columns: {.field {missing_optional}}",
+      "i" = "Set {.code options(panna.verbose_ratings = FALSE)} to silence."
+    ))
+  }
+  rating_cols <- c(join_key, core_cols, optional_cols)
   curr <- dt_ratings[season_end_year == sey_curr, rating_cols, with = FALSE]
   curr <- curr[!duplicated(curr[[join_key]])]
 
   # Previous season ratings (fallback with decay)
   prev <- dt_ratings[season_end_year == sey_prev, rating_cols, with = FALSE]
   prev <- prev[!duplicated(prev[[join_key]])]
-  prev[, panna := panna * prev_season_decay]
-  prev[, offense := offense * prev_season_decay]
-  prev[, defense := defense * prev_season_decay]
-  prev[, spm := spm * prev_season_decay]
-  data.table::setnames(prev, c("panna", "offense", "defense", "spm"),
-                       c("panna_prev", "offense_prev", "defense_prev", "spm_prev"))
+  decay_cols <- c(core_cols, optional_cols)
+  for (c in decay_cols) {
+    if (c %in% names(prev)) prev[, (c) := get(c) * prev_season_decay]
+  }
+  # Rename to *_prev so we can fall back without column-name collisions
+  prev_renamed <- paste0(decay_cols, "_prev")
+  data.table::setnames(prev, decay_cols, prev_renamed)
 
   # Join current ratings
   starters <- curr[starters, on = join_key]
   # Fallback to previous season
   starters <- prev[starters, on = join_key]
-  starters[is.na(panna), panna := panna_prev]
-  starters[is.na(offense), offense := offense_prev]
-  starters[is.na(defense), defense := defense_prev]
-  starters[is.na(spm), spm := spm_prev]
-  # Replacement level for unrated players
+  for (c in decay_cols) {
+    prev_c <- paste0(c, "_prev")
+    if (c %in% names(starters) && prev_c %in% names(starters)) {
+      starters[is.na(get(c)), (c) := get(prev_c)]
+    }
+  }
 
-  starters[is.na(panna), panna := 0]
-  starters[is.na(offense), offense := 0]
-  starters[is.na(defense), defense := 0]
-  starters[is.na(spm), spm := 0]
+  # Capture pre-imputation rated status BEFORE the imputation block below
+  # rewrites NA panna with team-mean estimates. The post-imputation
+  # `sum(panna != 0)` count was effectively "always 11" because almost every
+  # NA was filled with a non-zero shrunk-mean -- making `n_rated_players`
+  # near-constant and the feature's name a lie. `was_rated` captures the
+  # honest signal: did this player have a real current-or-previous-season
+  # panna rating? (TRUE iff the join in the block above found one.)
+  starters[, was_rated := !is.na(panna)]
+
+  # Coverage-shrunk team-mean imputation for unrated players
+  #
+  # Why: a Brazil player without a panna rating (e.g. Brasileir\u00e3o-based, not
+  # in our European-focused RAPM pipeline) used to get panna = 0, which
+  # systematically depressed `home_sum_panna` for low-coverage countries.
+  # Naive team-mean imputation overshoots in the opposite direction: Saudi
+  # Arabia with only 1 rated player (a top star) would impute 25 others at
+  # that star's panna, inflating the whole team.
+  #
+  # Shrinkage formula: imputed = team_mean * coverage / (coverage + SHRINK_K)
+  #
+  # - coverage = n_rated_starters / n_total_starters per team (across the
+  #   season's matches passed in)
+  # - SHRINK_K = 0.3 -- when coverage equals k, imputation gets half the
+  #   team mean (a Bayesian-flavoured shrinkage toward 0/replacement)
+  # - Brazil (cov ~0.7): imputed ~= 0.70 * team_mean (mostly trust team mean)
+  # - Saudi  (cov ~0.04): imputed ~= 0.12 * team_mean (mostly shrink to 0)
+  # - Qatar  (cov 0):    imputed = 0 (final fallback below handles)
+  ## Increased from 0.3 to 0.6: at 0.3, USA (50% coverage) imputed unrated
+  ## MLS players at 62% of team mean -- selection bias because rated 13 are
+  ## all Europe-based stars. At 0.6, USA shrinks to 45% -- more honest.
+  SHRINK_K <- 0.6
+  # All numeric rating columns get coverage-shrunk team-mean imputation:
+  # core (panna/offense/defense/spm) AND optional value metrics (EPR/PSR/etc.).
+  # Without this, non-European teams whose players lack EPR/PSR snapshots
+  # have sum_epr / sum_psr biased low because missing values fall back to 0,
+  # dragging team totals down vs full-coverage European squads.
+  shrink_cols <- intersect(c("panna","offense","defense","spm",
+                              "epr","epr_offensive","epr_defensive",
+                              "psr","osr","dsr"),
+                             names(starters))
+  if ("team_id" %in% names(starters) && length(shrink_cols) > 0) {
+    # Compute per-team count + per-column means via .SDcols
+    team_stats <- starters[, c(
+      list(team_n_total = .N, team_n_rated = sum(!is.na(panna))),
+      lapply(.SD, function(x) mean(x, na.rm = TRUE))
+    ), by = team_id, .SDcols = shrink_cols]
+    avg_cols <- paste0("team_avg_", shrink_cols)
+    data.table::setnames(team_stats, shrink_cols, avg_cols)
+    team_stats[, coverage := team_n_rated / team_n_total]
+    team_stats[, shrink_w := coverage / (coverage + SHRINK_K)]
+    for (c in avg_cols) team_stats[, (c) := get(c) * shrink_w]
+    starters <- team_stats[, c("team_id", avg_cols), with = FALSE][
+                  starters, on = "team_id"]
+    for (i in seq_along(shrink_cols)) {
+      c <- shrink_cols[i]; avg_c <- avg_cols[i]
+      starters[is.na(get(c)) & !is.na(get(avg_c)), (c) := get(avg_c)]
+    }
+    starters[, (avg_cols) := NULL]
+  }
+  # Final fallback: anything still NA becomes 0
+  for (c in shrink_cols) starters[is.na(get(c)), (c) := 0]
 
   # Classify positions
   starters[, pos_group := data.table::fcase(
@@ -100,82 +247,121 @@ aggregate_lineup_ratings <- function(lineups, ratings, season_end_year,
     default = "mid"
   )]
 
-  # Aggregate per match-side
+  # Aggregate per match-side. Weighted by `lineup_weight` so the WC2026
+  # override (26-man squad, weights = expected_minutes/90 summing to ~11)
+  # produces team features on the same numeric scale as the non-override
+  # path (11 starters * weight 1, also summing to 11).
+  #
+  # max/min/stdev and n_rated stay UNWEIGHTED: they describe the squad
+  # (best-player-in-the-team, spread), not pitch-time contribution.
   team_stats <- starters[, {
-    n_rated <- sum(panna != 0)
-    gk_idx <- which(pos_group == "gk")
-    gk_panna_val <- if (length(gk_idx) > 0) panna[gk_idx[1]] else 0
+    w <- lineup_weight
+    w_sum <- sum(w, na.rm = TRUE)
 
-    # Positional group averages
+    # Honest pre-imputation count (see was_rated assignment above). The
+    # post-imputation `sum(panna != 0)` was ~always 11 and useless as a
+    # feature; this is what the column name promises.
+    n_rated <- if (exists("was_rated", inherits = FALSE)) sum(was_rated) else sum(panna != 0)
+    # Tie-break for GK pick: explicit ordering so the choice is
+    # deterministic and meaningful, not dependent on row order across two
+    # unrelated parquets. Priority:
+    #   1. is_starter_pred == TRUE  (announced-squad path marks the
+    #      predicted starter)
+    #   2. largest lineup_weight    (override: highest EM share)
+    #   3. largest panna            (final tie-break: best GK on paper)
+    gk_idx <- which(pos_group == "gk")
+    gk_panna_val <- if (length(gk_idx) > 0) {
+      gk_priority <- if (exists("is_starter_pred", inherits = FALSE)) {
+        as.integer(is_starter_pred[gk_idx])
+      } else {
+        rep(0L, length(gk_idx))
+      }
+      gk_order <- order(-gk_priority, -w[gk_idx], -panna[gk_idx])
+      panna[gk_idx[gk_order[1L]]]
+    } else 0
+
     def_idx <- pos_group == "def"
     mid_idx <- pos_group == "mid"
     fwd_idx <- pos_group == "fwd"
 
-    safe_mean <- function(x) if (length(x) == 0 || all(is.na(x))) 0 else mean(x, na.rm = TRUE)
+    # Weighted mean over a boolean mask. Returns 0 when the mask is empty,
+    # all values are NA, or total weight in the mask is 0 -- matching the
+    # previous `safe_mean` semantics.
+    wmean <- function(x, mask) {
+      if (sum(mask) == 0 || all(is.na(x[mask]))) return(0)
+      wm <- sum(w[mask], na.rm = TRUE)
+      if (wm == 0) return(0)
+      sum(w[mask] * x[mask], na.rm = TRUE) / wm
+    }
 
-    # Value metric columns (included if present in ratings)
-    has_epr <- "epr" %in% names(.SD)
+    # Value metric columns (included only when ALL bare-referenced columns
+    # for that block are present). Earlier the EPR block bare-referenced
+    # epr_offensive / epr_defensive while only gating on `epr` -- one column
+    # trim upstream would crash the aggregator inside a data.table NSE block
+    # with a useless error. Same logic for PSR (osr/dsr handled by per-block
+    # if() guards below).
+    has_epr <- all(c("epr", "epr_offensive", "epr_defensive") %in% names(.SD))
     has_wpa <- "wpa_rating" %in% names(.SD)
     has_psv <- "psv_rating" %in% names(.SD)
     has_psr <- "psr" %in% names(.SD)
     has_centrality <- "centrality" %in% names(.SD)
 
     base <- list(
-      sum_panna = sum(panna), sum_offense = sum(offense),
-      sum_defense = sum(defense), sum_spm = sum(spm),
-      avg_panna = mean(panna), max_panna = max(panna),
-      min_panna = min(panna),
+      sum_panna = sum(w * panna), sum_offense = sum(w * offense),
+      sum_defense = sum(w * defense), sum_spm = sum(w * spm),
+      avg_panna = if (w_sum > 0) sum(w * panna) / w_sum else 0,
+      max_panna = max(panna), min_panna = min(panna),
       stdev_panna = if (.N > 1) stats::sd(panna) else 0,
       gk_panna = gk_panna_val,
-      avg_def_panna = safe_mean(panna[def_idx]),
-      avg_mid_panna = safe_mean(panna[mid_idx]),
-      avg_fwd_panna = safe_mean(panna[fwd_idx]),
-      avg_def_offense = safe_mean(offense[def_idx]),
-      avg_def_defense = safe_mean(defense[def_idx]),
-      avg_mid_offense = safe_mean(offense[mid_idx]),
-      avg_mid_defense = safe_mean(defense[mid_idx]),
-      avg_fwd_offense = safe_mean(offense[fwd_idx]),
-      avg_fwd_defense = safe_mean(defense[fwd_idx]),
+      avg_def_panna = wmean(panna, def_idx),
+      avg_mid_panna = wmean(panna, mid_idx),
+      avg_fwd_panna = wmean(panna, fwd_idx),
+      avg_def_offense = wmean(offense, def_idx),
+      avg_def_defense = wmean(defense, def_idx),
+      avg_mid_offense = wmean(offense, mid_idx),
+      avg_mid_defense = wmean(defense, mid_idx),
+      avg_fwd_offense = wmean(offense, fwd_idx),
+      avg_fwd_defense = wmean(defense, fwd_idx),
       n_rated_players = n_rated
     )
 
     # EPR features (from EPV-based ratings)
     if (has_epr) {
-      base$sum_epr <- sum(epr)
-      base$sum_epr_off <- sum(epr_offensive)
-      base$sum_epr_def <- sum(epr_defensive)
+      base$sum_epr <- sum(w * epr)
+      base$sum_epr_off <- sum(w * epr_offensive)
+      base$sum_epr_def <- sum(w * epr_defensive)
     }
 
     # WPA rating features
     if (has_wpa) {
-      base$sum_wpa <- sum(wpa_rating)
+      base$sum_wpa <- sum(w * wpa_rating)
     }
 
     # PSV rating features
     if (has_psv) {
-      base$sum_psv <- sum(psv_rating)
+      base$sum_psv <- sum(w * psv_rating)
     }
 
     # Centrality features (opponent quality adjustment)
     if (has_centrality) {
-      base$avg_centrality <- mean(centrality)
+      base$avg_centrality <- if (w_sum > 0) sum(w * centrality) / w_sum else 0
       base$min_centrality <- min(centrality)
     }
 
     # PSR features (Player Skill Rating with O/D decomposition)
     if (has_psr) {
-      base$sum_psr <- sum(psr)
+      base$sum_psr <- sum(w * psr)
       if ("osr" %in% names(.SD)) {
-        base$sum_osr <- sum(osr)
-        base$avg_def_osr <- safe_mean(osr[def_idx])
-        base$avg_mid_osr <- safe_mean(osr[mid_idx])
-        base$avg_fwd_osr <- safe_mean(osr[fwd_idx])
+        base$sum_osr <- sum(w * osr)
+        base$avg_def_osr <- wmean(osr, def_idx)
+        base$avg_mid_osr <- wmean(osr, mid_idx)
+        base$avg_fwd_osr <- wmean(osr, fwd_idx)
       }
       if ("dsr" %in% names(.SD)) {
-        base$sum_dsr <- sum(dsr)
-        base$avg_def_dsr <- safe_mean(dsr[def_idx])
-        base$avg_mid_dsr <- safe_mean(dsr[mid_idx])
-        base$avg_fwd_dsr <- safe_mean(dsr[fwd_idx])
+        base$sum_dsr <- sum(w * dsr)
+        base$avg_def_dsr <- wmean(dsr, def_idx)
+        base$avg_mid_dsr <- wmean(dsr, mid_idx)
+        base$avg_fwd_dsr <- wmean(dsr, fwd_idx)
       }
     }
 
@@ -295,6 +481,14 @@ aggregate_lineup_skills <- function(lineups, skill_estimates,
   starters <- dt_lineups[is_starter == TRUE]
   starters[, clean_name := clean_player_name(player_name)]
 
+  # Honour optional lineup_weight column (see aggregate_lineup_ratings for
+  # rationale). Default 1.0 keeps non-override behaviour identical.
+  if (!"lineup_weight" %in% names(starters)) {
+    starters[, lineup_weight := 1.0]
+  } else {
+    starters[is.na(lineup_weight) | lineup_weight < 0, lineup_weight := 1.0]
+  }
+
   # Join skills
   dt_skills[, clean_name := clean_player_name(player_name)]
   skill_lookup <- dt_skills[!duplicated(clean_name), c("clean_name", all_stats), with = FALSE]
@@ -307,8 +501,10 @@ aggregate_lineup_skills <- function(lineups, skill_estimates,
     cli::cli_warn("{n_unmatched}/{n_total} starters had no matching skill estimates (filled with 0).")
   }
 
-  # Aggregate by match + side
+  # Aggregate by match + side (minute-weighted)
   team_skills <- starters[, {
+    w <- lineup_weight
+    w_sum <- sum(w, na.rm = TRUE)
     result <- list()
     stat_means <- numeric(length(all_stats))
     for (j in seq_along(all_stats)) {
@@ -317,7 +513,7 @@ aggregate_lineup_skills <- function(lineups, skill_estimates,
       vals[is.na(vals)] <- 0
       prefix <- if (stat %in% attacking_stats) "sk_att" else "sk_def"
       col_name <- paste0(prefix, "_", sub("_p90$", "", stat))
-      stat_means[j] <- mean(vals)
+      stat_means[j] <- if (w_sum > 0) sum(w * vals) / w_sum else 0
       result[[col_name]] <- stat_means[j]
     }
     # Composites: mean-of-means (equal stat weighting, not pooled across all player-stat values)
@@ -366,13 +562,17 @@ aggregate_lineup_skills <- function(lineups, skill_estimates,
 #' Initialize Team Elo Ratings
 #'
 #' Creates a named vector of initial Elo ratings for all teams.
+#' Filters NA team names defensively -- they would otherwise create an
+#' NA-named entry that `NA %in% names(elos)` returns TRUE for, opening
+#' the door to NA cascades when bad upstream data sneaks through.
 #'
 #' @param teams Character vector of team names
 #' @param initial_elo Starting Elo rating (default 1500)
 #'
-#' @return Named numeric vector of Elo ratings
+#' @return Named numeric vector of Elo ratings (one entry per non-NA team)
 #' @export
 init_team_elos <- function(teams, initial_elo = 1500) {
+  teams <- teams[!is.na(teams)]
   elos <- rep(initial_elo, length(teams))
   names(elos) <- teams
   elos
@@ -427,24 +627,127 @@ update_elo <- function(home_elo, away_elo, home_goals, away_goals,
 #' Compute Elo Ratings for All Matches
 #'
 #' Iterates through matches chronologically and computes Elo ratings.
-#' Returns match-level Elo features (pre-match ratings for each team).
+#' Returns BOTH per-match pre-match Elos (for joining onto the match
+#' dataset) AND the final post-iteration team-Elo state (for looking up
+#' the current Elo of teams in upcoming fixtures). Returning both is what
+#' prevents step 03 from having to duplicate the iteration -- the previous
+#' duplicate-iteration approach was missing the same NA guards as this
+#' function, which caused the 2026-05-28 NA-cascade bug where a single
+#' NA-team friendly poisoned every team's Elo via NA-named-lookup.
 #'
 #' @param results Data frame with match_date, home_team, away_team,
 #'   home_goals, away_goals columns, sorted by date
 #' @param k K-factor (default 20)
 #' @param home_advantage Home advantage in Elo points (default 65)
 #' @param initial_elo Starting Elo (default 1500)
+#' @param k_table Optional named numeric vector mapping league codes to
+#'   per-match-type K values (e.g., `ELO_MATCH_TYPE_K`). When supplied,
+#'   `elo_match_k()` selects the K for each match by its league; otherwise
+#'   every match uses the single `k` argument.
+#' @param cross_conf_mult Numeric multiplier (default 1.0 = disabled) applied
+#'   to K when home and away teams are in different confederations. Lets the
+#'   model learn faster from cross-confederation matches that constrain the
+#'   relative ordering between confederation prior centers.
+#' @param conf_priors Optional named numeric vector of starting Elos per
+#'   confederation (e.g., `c(UEFA=1500, CONMEBOL=1500, ...)`). When supplied,
+#'   teams are initialized from their confederation's prior instead of the
+#'   single `initial_elo`. Requires `build_team_confederations()` to be able
+#'   to derive each team's confederation from `results`.
+#' @param use_venue_factor Logical (default FALSE for backwards compat). When
+#'   TRUE, `home_advantage` is scaled by `compute_venue_factor()` per match --
+#'   +1 for true home, 0 for neutral tournament, -1 when the designated
+#'   "home_team" is actually visiting the host country.
+#' @param time_decay_halflife Optional numeric (days, default NULL = disabled).
+#'   When set, scales K by `0.5 ^ ((reference_date - match_date) / halflife)`
+#'   so older matches contribute less to the Elo iteration. Useful for
+#'   recency-weighting; v5 optimization converged near "off" (~6500 days), so
+#'   not default but available for callers wanting FIFA/SPI-style recency.
+#' @param decay_reference_date Optional Date or date-coercible string used as
+#'   "now" for the decay calculation. Defaults to `max(match_date)` in
+#'   `results`.
 #'
-#' @return Data frame with match_id, home_elo, away_elo, elo_diff columns
+#' @return A list with two elements:
+#'   - `per_match`: data frame with match_id, home_elo, away_elo, elo_diff
+#'     (pre-match Elo for each match in the input order)
+#'   - `final_elos`: named numeric vector of post-iteration team Elos,
+#'     for use with upcoming fixtures
 #' @export
 compute_match_elos <- function(results, k = 20, home_advantage = 65,
-                                initial_elo = 1500) {
+                                initial_elo = 1500,
+                                k_table = NULL,
+                                cross_conf_mult = 1.0,
+                                conf_priors = NULL,
+                                use_venue_factor = FALSE,
+                                time_decay_halflife = NULL,
+                                decay_reference_date = NULL) {
+  # time_decay_halflife (days, NULL = disabled): when set, scale K by
+  # 0.5 ^ ((reference_date - match_date) / halflife) so older training
+  # matches contribute exponentially less to the Elo trajectory than
+  # recent ones. Useful when the model is expected to predict matches at
+  # the END of the data -- older form should fade. Set decay_reference_date
+  # to control "now"; defaults to max(match_date) in `results`.
   # Sort by date
   results <- results[order(results$match_date), ]
 
   all_teams <- unique(c(results$home_team, results$away_team))
-  all_teams <- all_teams[!is.na(all_teams)]
-  elos <- init_team_elos(all_teams, initial_elo)
+
+  # Build confederation lookup once if needed for EITHER cross_conf_mult
+  # OR conf_priors (most callers want both, so build it if either flag is on).
+  need_lookup <- cross_conf_mult != 1.0 || !is.null(conf_priors)
+  conf_lookup <- if (need_lookup) build_team_confederations(results) else NULL
+
+  # Initial elos: confederation-prior if conf_priors supplied, else single
+  # initial_elo for every team (preserves legacy behaviour).
+  elos <- if (!is.null(conf_priors)) {
+    init_team_elos_with_priors(all_teams, conf_lookup,
+                                conf_priors = conf_priors,
+                                initial_elo = initial_elo)
+  } else {
+    init_team_elos(all_teams, initial_elo)  # filters NAs internally
+  }
+
+  # Per-match base K. If `k_table` is supplied use elo_match_k(); else
+  # fall back to the single `k` argument for every match (preserves the
+  # old single-K behaviour for any caller that hasn't opted in).
+  base_k_per_match <- if (!is.null(k_table)) {
+    elo_match_k(results$league, k_table = k_table, default = k)
+  } else {
+    rep(k, nrow(results))
+  }
+
+  # Per-match time-decay multiplier. Exponential decay relative to
+  # `decay_reference_date` (default: most recent match in results). The
+  # decay scales K -- older matches still update Elo, just by less -- so
+  # the long-run baseline is preserved but recent form dominates.
+  # When time_decay_halflife is NULL or <= 0, every match gets 1.0 (no decay).
+  decay_per_match <- if (!is.null(time_decay_halflife) &&
+                          is.finite(time_decay_halflife) &&
+                          time_decay_halflife > 0) {
+    dts <- suppressWarnings(as.Date(sub("Z$", "", results$match_date)))
+    ref_dt <- if (!is.null(decay_reference_date)) {
+      as.Date(decay_reference_date)
+    } else {
+      max(dts, na.rm = TRUE)
+    }
+    days_back <- pmax(0, as.numeric(ref_dt - dts))
+    0.5 ^ (days_back / time_decay_halflife)
+  } else {
+    rep(1.0, nrow(results))
+  }
+
+  # Per-match venue factor: scales home_advantage per match. See
+  # compute_venue_factor() docs. When use_venue_factor=FALSE (default for
+  # backwards compat), every match gets +1 (= old behaviour). When TRUE,
+  # tournament matches at neutral venues get 0 and host-country matches
+  # for visitors get -1, fixing the bias where Opta's arbitrary "home_team"
+  # designation was getting +65 advantage on actually-neutral matches.
+  venue_factor <- if (isTRUE(use_venue_factor) &&
+                      all(c("league", "season") %in% names(results))) {
+    compute_venue_factor(results$home_team, results$away_team,
+                          results$league, results$season)
+  } else {
+    rep(1, nrow(results))
+  }
 
   n <- nrow(results)
   home_elo_pre <- numeric(n)
@@ -454,7 +757,9 @@ compute_match_elos <- function(results, k = 20, home_advantage = 65,
     ht <- results$home_team[i]
     at <- results$away_team[i]
 
-    # Skip rows with missing team names to prevent NA propagation
+    # Skip rows with missing team names -- they cannot be processed (no
+    # team to update). Records NA pre-match Elo for the row so the join
+    # downstream sees the gap, but does NOT touch the elos vector.
     if (is.na(ht) || is.na(at)) {
       home_elo_pre[i] <- NA_real_
       away_elo_pre[i] <- NA_real_
@@ -467,20 +772,52 @@ compute_match_elos <- function(results, k = 20, home_advantage = 65,
 
     # Update only for played matches
     if (!is.na(results$home_goals[i]) && !is.na(results$away_goals[i])) {
+      # Effective K = base_K(match_type) * cross_conf_mult(team1, team2).
+      # The goal-difference multiplier is applied inside update_elo().
+      # Only apply the cross-conf multiplier when it's actually != 1.0;
+      # conf_lookup might be non-NULL purely for conf_priors init while
+      # cross_conf_mult=1.0 (disabled).
+      k_eff <- base_k_per_match[i] * decay_per_match[i]
+      if (!is.null(conf_lookup) && cross_conf_mult != 1.0) {
+        k_eff <- k_eff * cross_conf_multiplier(ht, at, conf_lookup,
+                                                mult = cross_conf_mult)
+      }
+      # Effective home_advantage scales by venue_factor (+1/0/-1).
+      ha_eff <- home_advantage * venue_factor[i]
       updated <- update_elo(elos[ht], elos[at],
                             results$home_goals[i], results$away_goals[i],
-                            k = k, home_advantage = home_advantage)
+                            k = k_eff, home_advantage = ha_eff)
       elos[ht] <- updated$new_home_elo
       elos[at] <- updated$new_away_elo
     }
   }
 
-  data.frame(
-    match_id = results$match_id,
-    home_elo = home_elo_pre,
-    away_elo = away_elo_pre,
-    elo_diff = home_elo_pre - away_elo_pre,
-    stringsAsFactors = FALSE
+  # Mid-season-rename smoke test: this function keys Elo by team_name, so
+  # if Opta ever renames a team mid-flow (e.g., "Rangers" -> "Rangers FC")
+  # the iteration silently treats them as two distinct teams each starting
+  # at initial_elo. Surface low-match teams as a soft warning -- domestic
+  # teams should have tens of matches across the dataset; cup competitions
+  # legitimately produce some low counts, so this is a hint rather than a
+  # hard fail. Code-review item 16.
+  match_counts <- sort(table(c(results$home_team[!is.na(results$home_team)],
+                                results$away_team[!is.na(results$away_team)])))
+  low_match_teams <- names(match_counts)[match_counts < 10L]
+  if (length(low_match_teams) > 10L) {
+    cli::cli_inform(c(
+      "i" = "{length(low_match_teams)} team(s) with <10 matches in Elo iteration -- possible split-identity from a mid-season rename. Investigate before publishing if any are domestic-league teams.",
+      "*" = "Sample: {paste(head(low_match_teams, 10), collapse = ', ')}..."
+    ))
+  }
+
+  list(
+    per_match = data.frame(
+      match_id = results$match_id,
+      home_elo = home_elo_pre,
+      away_elo = away_elo_pre,
+      elo_diff = home_elo_pre - away_elo_pre,
+      stringsAsFactors = FALSE
+    ),
+    final_elos = elos
   )
 }
 

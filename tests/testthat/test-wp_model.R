@@ -30,8 +30,12 @@ test_that("create_wp_features builds correct features", {
   expect_true("is_second_half" %in% names(result))
   expect_true("wp_label" %in% names(result))
 
-  # Home team wins → label = 1
-  expect_true(all(result$wp_label == 1))
+  # wp_label is possession-POV (see R/wp_model.R:122-125): the home team
+  # won here, so t1's actions (possession=home) label 1 and t2's action
+  # (possession=away, lost) labels 0. Earlier home-POV semantics had
+  # expected all-1 which only held when all actions were home-team's.
+  expect_equal(result$wp_label[result$team_id == "t1"], c(1, 1, 1))
+  expect_equal(result$wp_label[result$team_id == "t2"], 0)
 
   # is_home: t1 actions = 1, t2 actions = 0
   expect_equal(result$is_home[result$team_id == "t1"], c(1L, 1L, 1L))

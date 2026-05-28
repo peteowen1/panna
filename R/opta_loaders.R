@@ -60,7 +60,7 @@ validate_parquet_file <- function(path) {
     identical(header, magic) && identical(footer, magic)
   }, error = function(e) {
     cli::cli_warn("Could not validate parquet file {.path {path}}: {e$message}")
-    NA  # Indeterminate — callers should not delete
+    NA  # Indeterminate -- callers should not delete
   })
 }
 
@@ -79,13 +79,39 @@ OPTA_LEAGUES <- c(
   TUR = "Super_Lig",
   ENG2 = "Championship",
   SCO = "Scottish_Premiership",
+  BEL = "Belgian_First_Division",
+  BRA = "Brazilian_Serie_A",
+  AUS = "A_League",
+  TUN = "Tunisian_Ligue_1",
+  # African club
+  CAFCL = "CAF_CL",
   # European comps
   UCL = "UCL",
   UEL = "UEL",
   UECL = "Conference_League",
-  # International
+  # International -- tournaments
   WC = "World_Cup",
-  EURO = "UEFA_Euros"
+  EURO = "UEFA_Euros",
+  AFCON = "AFCON",
+  COPA = "Copa_America",
+  GOLD = "CONCACAF_Gold_Cup",
+  ACUP = "AFC_Asian_Cup",
+  GULF = "Gulf_Cup_of_Nations",
+  # International -- qualifiers + standing competitions
+  # Without these, national-team Elo iteration only saw WC + Euros,
+  # leaving teams like Norway (who topped UEFA WC Qualifying Group I)
+  # stuck near the 1500 initial. Adding the qualifier comps lets Elo
+  # accumulate proper national-team form across an entire qualifying
+  # cycle (~30 matches per UEFA team in a typical cycle).
+  WCQ_UEFA     = "UEFA_WC_Qualifiers",
+  WCQ_CONMEBOL = "CONMEBOL_WC_Qualifiers",
+  WCQ_CAF      = "CAF_WC_Qualifiers",
+  WCQ_AFC      = "AFC_WC_Qualifiers",
+  EUROQ        = "UEFA_Euro_Qualifiers",
+  AFCONQ       = "AFCON_Qualifiers",
+  ACUPQ        = "Asian_Cup_Qualifiers",
+  NL           = "UEFA_Nations_League",
+  INTL_FR      = "Intl_Friendlies"
 )
 
 # Environment to store opta data path
@@ -221,13 +247,68 @@ list_opta_seasons <- function(league, source = c("catalog", "remote", "local")) 
   opta_league <- to_opta_league(league)
 
   if (source == "local") {
-    league_dir <- file.path(opta_data_dir(), "player_stats", opta_league)
-    if (dir.exists(league_dir)) {
-      files <- list.files(league_dir, pattern = "\\.parquet$", full.names = FALSE)
-      seasons <- tools::file_path_sans_ext(files)
+    # Union seasons across every per-season data-type dir AND every top-level
+    # consolidated parquet. Previously this only checked player_stats/ and
+    # then fell through one dir at a time, returning on the first hit. That
+    # was wrong twice over:
+    #   * Newly-added intl comps (UEFA_WC_Qualifiers, NL, Intl_Friendlies)
+    #     have lineups+fixtures+events on disk but no player_stats files --
+    #     so a single-dir-first walk missed them.
+    #   * After a release sync, the consolidated opta_*.parquet contain
+    #     comp+season pairs that may NOT yet exist as per-season files
+    #     locally (the release only ships consolidated). The single-dir
+    #     walk never consulted the consolidated parquets, so freshly-synced
+    #     tournaments (e.g. WC 2022 Qatar arriving in opta_lineups.parquet)
+    #     were invisible to list_opta_seasons until manually materialized.
+    # Union all sources so any single one suffices.
+    base <- opta_data_dir()
+    seasons <- character(0)
+
+    candidate_dirs <- c("player_stats", "lineups", "fixtures", "events")
+    for (sub in candidate_dirs) {
+      league_dir <- file.path(base, sub, opta_league)
+      if (dir.exists(league_dir)) {
+        files <- list.files(league_dir, pattern = "\\.parquet$", full.names = FALSE)
+        if (length(files) > 0) {
+          seasons <- union(seasons, tools::file_path_sans_ext(files))
+        }
+      }
+    }
+
+    # Also query the consolidated parquets for season values not yet
+    # materialized as per-season files (typical after `pb_download_source()`
+    # of just the consolidated parquet).
+    for (tbl in c("lineups", "fixtures", "player_stats", "events")) {
+      consolidated <- file.path(base, sprintf("opta_%s.parquet", tbl))
+      if (file.exists(consolidated)) {
+        # Explicit connect+disconnect inside the tryCatch -- no on.exit, since
+        # on.exit registered inside tryCatch executes at the ENCLOSING function
+        # scope, not at the tryCatch scope, so multiple loop iterations would
+        # stack up disconnect calls against stale handles ("already closed"
+        # warnings on function return).
+        cons_seasons <- tryCatch({
+          conn_ls <- DBI::dbConnect(duckdb::duckdb())
+          path_q <- normalizePath(consolidated, winslash = "/", mustWork = TRUE)
+          sql <- sprintf(
+            "SELECT DISTINCT season FROM '%s' WHERE competition = '%s' AND season IS NOT NULL",
+            path_q, opta_league
+          )
+          rs <- DBI::dbGetQuery(conn_ls, sql)
+          DBI::dbDisconnect(conn_ls, shutdown = TRUE)
+          as.character(rs$season)
+        }, error = function(e) character(0))
+        if (length(cons_seasons) > 0) {
+          seasons <- union(seasons, cons_seasons)
+        }
+      }
+    }
+
+    if (length(seasons) > 0) {
       return(sort(seasons, decreasing = TRUE))
     }
-    # Fall through to catalog if local dir doesn't exist
+
+    # Fall through to catalog if NO local source -- per-season or consolidated --
+    # exposed any season for this league.
     cli::cli_alert_info("No local data for {opta_league}, checking catalog...")
   }
 
@@ -257,7 +338,7 @@ list_opta_seasons <- function(league, source = c("catalog", "remote", "local")) 
 #' domestic leagues and are returned as-is. International tournaments (WC,
 #' EURO) use "YYYY Country" (or bare "YYYY" for pan-European EURO 2020);
 #' this helper maps a tournament played in summer YYYY onto the domestic
-#' season ending in YYYY (e.g. WC 2014 Brazil → "2013-2014").
+#' season ending in YYYY (e.g. WC 2014 Brazil -> "2013-2014").
 #'
 #' Returns \code{NULL} when there is no tournament in the given year so
 #' callers can skip gracefully.
@@ -272,11 +353,11 @@ list_opta_seasons <- function(league, source = c("catalog", "remote", "local")) 
 #' @export
 #' @examples
 #' \dontrun{
-#' resolve_league_season("ENG",  "2013-2014")  # → "2013-2014"
-#' resolve_league_season("UCL",  "2013-2014")  # → "2013-2014"
-#' resolve_league_season("WC",   "2013-2014")  # → "2014 Brazil"
-#' resolve_league_season("EURO", "2019-2020")  # → "2020" (pan-European)
-#' resolve_league_season("WC",   "2018-2019")  # → NULL (no WC that year)
+#' resolve_league_season("ENG",  "2013-2014")  # -> "2013-2014"
+#' resolve_league_season("UCL",  "2013-2014")  # -> "2013-2014"
+#' resolve_league_season("WC",   "2013-2014")  # -> "2014 Brazil"
+#' resolve_league_season("EURO", "2019-2020")  # -> "2020" (pan-European)
+#' resolve_league_season("WC",   "2018-2019")  # -> NULL (no WC that year)
 #' }
 resolve_league_season <- function(league, domestic_season,
                                    tournament_leagues = c("WC", "EURO")) {
@@ -697,7 +778,7 @@ suggest_opta_seasons <- function(league, table_type = "match_events",
     }
   }
 
-  # Per-league fallback (events_consolidated/ layout — see load_opta_table)
+  # Per-league fallback (events_consolidated/ layout -- see load_opta_table)
   if (length(seasons) == 0 && !is.null(base_dir) && table_type == "match_events") {
     per_league_file <- file.path(base_dir, "events_consolidated",
                                   paste0("events_", opta_league, ".parquet"))
@@ -756,7 +837,7 @@ load_opta_table <- function(table_type, league, season, columns,
   base_dir <- opta_data_dir()
   consolidated_file <- file.path(base_dir, paste0("opta_", table_type, ".parquet"))
 
-  # Pannadata's match_events are too large to consolidate into a single file —
+  # Pannadata's match_events are too large to consolidate into a single file --
   # they ship as per-league parquets at events_consolidated/events_<league>.parquet.
   # Try that path before falling back to the hierarchical layout.
   per_league_file <- if (table_type == "match_events") {
@@ -766,7 +847,16 @@ load_opta_table <- function(table_type, league, season, columns,
     NULL
   }
 
+  # Track which branch produced the SQL -- needed so that when the
+  # consolidated parquet returns 0 rows for a (comp, season) pair, we can
+  # transparently fall through to the per-season file if one exists. This
+  # handles the freshness skew you get when only the consolidated parquet
+  # was re-synced (or only per-season files were regenerated locally) and
+  # the two sources disagree about which (comp, season) pairs are present.
+  used_consolidated <- FALSE
+
   if (file.exists(consolidated_file)) {
+    used_consolidated <- TRUE
     # Use consolidated file with WHERE clause
     parquet_path <- normalizePath(consolidated_file, winslash = "/", mustWork = TRUE)
 
@@ -865,7 +955,33 @@ load_opta_table <- function(table_type, league, season, columns,
     cli::cli_abort("DuckDB query failed: {e$message}")
   })
 
-  # If season was requested but got 0 rows, show available seasons
+  # If season was requested but got 0 rows AND we read from the consolidated
+  # parquet, try the per-season file before erroring. Consolidated parquets
+  # can be stale relative to per-season files (e.g. after a partial sync) --
+  # falling through lets recently-materialized per-season data work even when
+  # the consolidated file hasn't been re-uploaded.
+  if (nrow(result) == 0 && !is.null(season) && used_consolidated) {
+    per_season_path <- file.path(base_dir, table_type, opta_league,
+                                  paste0(season, ".parquet"))
+    if (file.exists(per_season_path)) {
+      cli::cli_alert_info(
+        "Consolidated {table_type} has no rows for {opta_league} {.val {season}} -- falling through to per-season file."
+      )
+      per_path_q <- normalizePath(per_season_path, winslash = "/", mustWork = TRUE)
+      col_sql <- if (!is.null(columns)) {
+        paste(validate_sql_columns(columns), collapse = ", ")
+      } else {
+        "*"
+      }
+      sql2 <- sprintf("SELECT %s FROM read_parquet('%s', union_by_name=true)",
+                       col_sql, per_path_q)
+      result <- tryCatch(DBI::dbGetQuery(conn, sql2),
+                          error = function(e) result)
+    }
+  }
+
+  # If season was requested but got 0 rows (and either no per-season fallback
+  # existed, or it also returned nothing), show available seasons.
   if (nrow(result) == 0 && !is.null(season)) {
     avail <- suggest_opta_seasons(opta_league, table_type, base_dir)
     msg <- "No data found for {opta_league} season {.val {season}}."
@@ -953,7 +1069,7 @@ get_opta_columns <- function(table_type = c("player_stats", "shots", "shot_event
 #'   If the local file is older than this (mtime-based), it's treated as
 #'   stale and re-downloaded. Default 6 hours, override globally via
 #'   \code{options(panna.opta_catalog_ttl_hours = N)}. Set \code{Inf} to
-#'   disable the TTL (legacy behavior — trust local forever).
+#'   disable the TTL (legacy behavior -- trust local forever).
 #'
 #' @return List with catalog data (competitions, panna_aliases).
 #' @keywords internal
@@ -975,7 +1091,7 @@ download_opta_catalog <- function(repo = "peteowen1/pannadata",
   if (!is.null(local_path) && file.exists(local_path)) {
     # Freshness: skip local cache if older than max_age_hours. Prevents the
     # classic "daily scrape refreshed the remote catalog but local is from
-    # two weeks ago" foot-gun — pipelines silently miss newly-scraped seasons
+    # two weeks ago" foot-gun -- pipelines silently miss newly-scraped seasons
     # (e.g. EURO 2020, WC 2022 Qatar) because they never re-downloaded.
     local_age_hours <- as.numeric(
       difftime(Sys.time(), file.info(local_path)$mtime, units = "hours")

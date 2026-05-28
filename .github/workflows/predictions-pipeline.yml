@@ -24,7 +24,10 @@ env:
 jobs:
   predict:
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    # Bumped from 75 to 100 after enabling step_10b + step_10c (per-match value
+    # metrics + per-action equity). Each iterates SPADL/EPV across 13 blog
+    # leagues for the current season; combined add ~15-25 min to the weekly run.
+    timeout-minutes: 100
 
     permissions:
       contents: write
@@ -179,7 +182,15 @@ jobs:
               step_07_predict_fixtures       = TRUE,
               step_08_evaluate_model         = TRUE,
               step_09_upload_predictions     = TRUE,
-              step_10_export_blog_data       = TRUE
+              step_10_export_blog_data       = TRUE,
+              # Per-match value metrics (EPV+WPA+PSV) and per-action equity.
+              # The blog's Value tab + possession-chains visualizations consume
+              # these. Defaults in run_predictions_opta.R are FALSE (manual
+              # backfill only); enabling here makes them weekly artifacts so
+              # game_logs.parquet / action_equity.parquet on blog-latest don't
+              # drift behind the box-score data. See panna#71.
+              step_10b_export_game_logs      = TRUE,
+              step_10c_export_equity         = TRUE
             )
 
             source('data-raw/match-predictions-opta/run_predictions_opta.R', chdir = FALSE)

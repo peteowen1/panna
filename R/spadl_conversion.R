@@ -191,7 +191,7 @@ get_or_build_spadl <- function(events, league, season,
 
   if (!force_rebuild && file.exists(cache_path)) {
     spadl <- readRDS(cache_path)
-    # Schema sanity — downstream pipelines (equity export) assume certain
+    # Schema sanity -- downstream pipelines (equity export) assume certain
     # columns exist. If the cache predates a schema addition, rebuild rather
     # than silently returning a stale snapshot.
     required_cols <- c("match_id", "action_id", "original_event_id",
@@ -199,13 +199,13 @@ get_or_build_spadl <- function(events, league, season,
                        "result")
     missing_cols <- setdiff(required_cols, names(spadl))
     if (length(missing_cols) == 0) {
-      # Coverage sanity — cache must cover all requested match_ids.
+      # Coverage sanity -- cache must cover all requested match_ids.
       wanted <- unique(events$match_id)
       if (length(setdiff(wanted, unique(spadl$match_id))) == 0) {
         return(spadl)
       }
     }
-    # Stale, partial, or schema-outdated — rebuild.
+    # Stale, partial, or schema-outdated -- rebuild.
   }
 
   spadl <- convert_opta_to_spadl(events)
@@ -875,7 +875,7 @@ merge_duel_rows <- function(dt) {
   # DUEL DETECTION: Same event recorded from both team perspectives
   #
   # Type 1: Same action type (Aerial vs Aerial)
-  # Type 2: Cross-type duels where x_sum ≈ 100:
+  # Type 2: Cross-type duels where x_sum ~= 100:
   #   - Take On (fail) + Tackle (success) = defender won dribble duel
   #   - Dispossessed + Tackle = defender won possession duel
   #   - Foul + Foul = same foul from both perspectives
@@ -890,13 +890,13 @@ merge_duel_rows <- function(dt) {
        time_seconds == next_time &
        team_id != next_team_id_duel]
 
-  # Cross-type duels (detected by x_sum ≈ 100, same time ±1sec, different teams)
+  # Cross-type duels (detected by x_sum ~= 100, same time +/-1sec, different teams)
   # Take On/Dispossessed + Tackle
   # Allow 1 second time tolerance because Opta sometimes records them at slightly different times
   dt[, is_cross_type_duel :=
        match_id == next_match_id &
        period_id == next_period_id &
-       abs(time_seconds - next_time) <= 1 &  # Same time ±1 second
+       abs(time_seconds - next_time) <= 1 &  # Same time +/-1 second
        team_id != next_team_id_duel &
        abs(x_sum - 100) < 2 &  # Same location (opposite perspectives)
        ((action_type %in% c("take_on", "dispossessed") & next_action_type == "tackle") |
@@ -935,7 +935,7 @@ merge_duel_rows <- function(dt) {
   }
 
   # For cross-type duels where both might have same outcome, prefer tackle
-  # (Take On fail + Tackle fail → keep Tackle as it's the defensive action)
+  # (Take On fail + Tackle fail -> keep Tackle as it's the defensive action)
   cross_same_outcome <- which(dt$is_cross_type_duel &
                                dt$action_type %in% c("take_on", "dispossessed") &
                                dt$next_action_type == "tackle" &

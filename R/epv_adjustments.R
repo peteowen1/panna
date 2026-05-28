@@ -199,7 +199,7 @@ adjust_epv_for_opponents <- function(player_match,
   #   sum_{j<i} w_ij        = (cumsum(u)[i-1])    / u_i
   # Cancel u_i:
   #   profile[i] = cumsum(u*r)[i-1] / (cumsum(u)[i-1] + prior_games * u_i)
-  # First row is 0 (no prior history) — falls out of the formula since
+  # First row is 0 (no prior history) -- falls out of the formula since
   # cumsum at i-1 is 0 for i=1 via the shift.
   #
   # d_ref = first date keeps exp() args bounded; the shift cancels in the ratio.

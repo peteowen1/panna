@@ -1,4 +1,4 @@
-# Directory resolution helpers — data-source-agnostic.
+# Directory resolution helpers -- data-source-agnostic.
 # Previously lived in scrape_fbref_utils.R (misleading name); extracted here
 # so they survive the FBref/understat archival sweep. opta_data_dir() in
 # opta_loaders.R depends on pannadata_dir(), so this MUST stay loaded.
@@ -16,7 +16,7 @@
 #'   \item \code{PANNADATA_DIR} environment variable
 #'   \item \code{../pannadata/data} relative to working directory (for the
 #'     pannaverse monorepo layout)
-#'   \item \code{tools::R_user_dir("panna", "data")} — OS-standard user data dir
+#'   \item \code{tools::R_user_dir("panna", "data")} -- OS-standard user data dir
 #' }
 #'
 #' OS-standard fallback paths:
@@ -55,13 +55,32 @@ pannadata_dir <- function(path = NULL) {
     return(env_path)
   }
 
-  # 3. Check for pannaverse structure (for developers)
-  # Look for ../pannadata/data relative to working directory
-  pannaverse_path <- file.path(dirname(getwd()), "pannadata", "data")
-  if (dir.exists(pannaverse_path)) {
-    return(normalizePath(pannaverse_path))
+  # 3. Walk up from cwd looking for a `pannadata/data` sibling, up to 3
+  # levels. Handles the common pannaverse layouts:
+  #   cwd = pannaverse/panna           -> ../pannadata/data
+  #   cwd = pannaverse                  -> ./pannadata/data
+  #   cwd = pannaverse/panna/data-raw   -> ../../pannadata/data
+  here <- getwd()
+  for (depth in 0:3) {
+    base <- if (depth == 0) here else do.call(file.path, c(list(here), as.list(rep("..", depth))))
+    candidate <- file.path(base, "pannadata", "data")
+    if (dir.exists(candidate)) {
+      return(normalizePath(candidate))
+    }
   }
 
-  # 4. Default: R's standard user data directory (works across sessions)
-  tools::R_user_dir("panna", "data")
+  # 4. Default: R's standard user data directory. Warn so callers know they
+  # got the silent fallback -- most local pipelines expect the workspace dir
+  # and this fallback signals a misconfigured environment.
+  fallback <- tools::R_user_dir("panna", "data")
+  if (!identical(getOption("panna.pannadata_dir.fallback_warned"), TRUE)) {
+    cli::cli_alert_warning(c(
+      "pannadata_dir() falling through to {.path {fallback}} ",
+      "(no `pannadata/data` near {.path {getwd()}}, no PANNADATA_DIR env var). ",
+      "If you meant to use a workspace clone, set PANNADATA_DIR or call ",
+      "{.code pannadata_dir('path/to/pannadata/data')} once."
+    ))
+    options(panna.pannadata_dir.fallback_warned = TRUE)
+  }
+  fallback
 }

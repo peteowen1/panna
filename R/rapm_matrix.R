@@ -316,7 +316,7 @@ add_value_metrics_to_splints <- function(splint_data, player_game_epv = NULL,
 
   # Cell value: fractional share of splint that this player was on the field.
   # If the players table doesn't carry `share` (legacy/FBref data), default
-  # to 1.0 (binary present/absent — backwards compatible).
+  # to 1.0 (binary present/absent -- backwards compatible).
   share_or_one <- function(df) {
     if (!is.null(df) && "share" %in% names(df)) df$share else rep(1, nrow(df))
   }
@@ -495,7 +495,7 @@ create_rapm_design_matrix <- function(splint_data, min_minutes = 90,
 
   # Filter to valid splints. Drop splints under min_duration (default 1 min):
   # ultra-short fragments come almost entirely from stoppage time and produce
-  # extreme per-90 targets (e.g. 0.5-min splint with one shot → 18+ xG per 90).
+  # extreme per-90 targets (e.g. 0.5-min splint with one shot -> 18+ xG per 90).
   # See debug/measure_short_splints.R for the impact analysis.
   n_before <- sum(splints$duration > 0)
   valid_splints <- splints[splints$duration >= min_duration, ]
@@ -527,7 +527,7 @@ create_rapm_design_matrix <- function(splint_data, min_minutes = 90,
   # splints existed. Now that splint creation enforces min_splint_duration
   # (default 5 min, see create_splint_boundaries_fast) and per-90 inflation
   # on tiny splints is structurally prevented, the floor never activates
-  # (5/90 ≈ 0.056). Dropping it for clarity.
+  # (5/90 ~= 0.056). Dropping it for clarity.
   weights <- row_data$minutes / 90
 
   progress_msg(sprintf("Design matrix: %d rows, %d player columns (+2 replacement), %d covariates",

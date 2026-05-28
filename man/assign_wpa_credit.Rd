@@ -8,7 +8,8 @@ assign_wpa_credit(spadl_with_wpa, actor_share = WPA_ACTOR_SHARE)
 }
 \arguments{
 \item{spadl_with_wpa}{SPADL actions with \code{wpa}, \code{player_id},
-and optionally \code{receiver_player_id} columns.}
+\code{team_id}, and optionally \code{receiver_player_id} +
+\code{receiver_team_id} columns.}
 
 \item{actor_share}{Fraction of WPA credited to the actor (0-1).
 Default \code{WPA_ACTOR_SHARE} (0.5). Receiver gets \code{1 - actor_share}.}
@@ -17,10 +18,22 @@ Default \code{WPA_ACTOR_SHARE} (0.5). Receiver gets \code{1 - actor_share}.}
 The input data.table with added columns:
 \describe{
 \item{wpa_actor}{WPA credited to the acting player}
-\item{wpa_receiver}{WPA credited to the receiver (0 if no receiver)}
+\item{wpa_receiver}{WPA credited to the receiver (0 if no receiver),
+sign-flipped on cross-team transitions}
 }
 }
 \description{
 Splits WPA between the acting player and receiver (for passes). When there
 is no receiver (shots, clearances, etc.), the actor gets 100\% of WPA.
+}
+\details{
+Cross-team note: WPA is sign-flipped per actor's team in
+\code{\link{add_wp_vars}} so positive wpa always means "good for my team".
+When the next-action's player is on the OPPOSITE team (turnover, save,
+interception, opp shot), passing the receiver \code{(1 - actor_share) * wpa}
+unchanged would credit the receiver in the actor's team perspective — i.e.
+a goalkeeper saving a shot would inherit the shooter's negative WPA. We
+sign-flip on cross-team transitions so the receiver is credited in their
+own team's perspective (mirrors AFL pattern in
+worker/src/ep-model.js scoreChainRows lines 289-333 and afl/match.qmd:600).
 }

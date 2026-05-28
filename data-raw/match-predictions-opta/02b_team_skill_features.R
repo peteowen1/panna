@@ -122,7 +122,15 @@ for (sey in sey_values) {
     tr <- aggregate_lineup_skills(lu_sey, skills)
     if (!is.null(tr) && nrow(tr) > 0) {
       all_skill_features[[as.character(sey)]] <- tr
-      message(sprintf("    SEY %d: %d matches with skill features", sey, nrow(tr)))
+      # Report per-season NA rate on a representative column so we can see
+      # at a glance when skill coverage was thin (early seasons have less
+      # because the underlying match_stats cache starts mid-2014).
+      rep_col <- intersect("home_sk_att_goals", names(tr))
+      na_rate <- if (length(rep_col) > 0L) {
+        sprintf("%.0f%% NA", 100 * mean(is.na(tr[[rep_col]])))
+      } else "n/a"
+      message(sprintf("    SEY %d: %d matches with skill features (%s on home_sk_att_goals)",
+                      sey, nrow(tr), na_rate))
     }
   }, error = function(e) {
     n_failed <<- n_failed + 1L
@@ -175,6 +183,62 @@ if (nrow(upcoming) > 0 && !is.null(latest_lineups)) {
 
       # make_dummy_lineup() is defined in R/match_prediction.R
 
+      # WC2026 announced-squad override (same parquet as step 02). Built by
+      # data-raw/match-predictions-opta/announced_squads.R. All 26 squad
+      # members flow through with lineup_weight = expected_minutes_norm/90
+      # so the team-skill aggregation in R/match_prediction.R is
+      # minute-weighted instead of equal-weighting a synthetic XI.
+      ann_squads_path <- file.path(cache_dir, "wc2026_announced_squads.parquet")
+      ann_squads <- if (file.exists(ann_squads_path) &&
+                        requireNamespace("arrow", quietly = TRUE)) {
+        s <- as.data.frame(arrow::read_parquet(ann_squads_path))
+        s <- s[!is.na(s$player_id), , drop = FALSE]
+        s$lineup_weight <- pmax(0, s$expected_minutes_norm) / 90
+        s
+      } else NULL
+
+      # Apply the same min-resolved threshold as step 02 — keeps the two
+      # paths' override eligibility identical so team_skill_features and
+      # team_ratings never disagree about which WC2026 teams used the
+      # override.
+      wc2026_eligible_ids <- character(0)
+      if (!is.null(ann_squads)) {
+        per_team_resolved <- as.data.frame(table(ann_squads$team_id))
+        names(per_team_resolved) <- c("team_id", "n_resolved")
+        wc2026_eligible_ids <- as.character(
+          per_team_resolved$team_id[per_team_resolved$n_resolved >= WC2026_OVERRIDE_MIN_RESOLVED]
+        )
+      }
+
+      n_wc_override <- 0L
+      lu_or_override <- function(team_id, team_name, team_pos, m) {
+        use_override <- !is.null(ann_squads) && !is.na(team_id) &&
+          isTRUE(!is.na(m$league) && m$league == WC2026_LEAGUE &&
+                 !is.na(m$season) && m$season == WC2026_SEASON_LABEL) &&
+          team_id %in% wc2026_eligible_ids
+        if (use_override) {
+          ann <- ann_squads[ann_squads$team_id == team_id, , drop = FALSE]
+          n_wc_override <<- n_wc_override + 1L
+          return(data.frame(
+            match_id        = m$match_id,
+            team_id         = team_id,
+            team_name       = team_name,
+            team_position   = team_pos,
+            player_id       = ann$player_id,
+            player_name     = ann$player_name,
+            position        = ann$position,
+            is_starter      = TRUE,
+            is_starter_pred = if ("is_starter_pred" %in% names(ann)) ann$is_starter_pred else FALSE,
+            lineup_weight   = ann$lineup_weight,
+            stringsAsFactors = FALSE
+          ))
+        }
+        latest_lineups %>%
+          filter(team_id == !!team_id) %>%
+          mutate(match_id = m$match_id, team_position = team_pos,
+                 team_name = !!team_name)
+      }
+
       # Build fixture lineups
       fixture_lu_list <- list()
       for (i in seq_len(nrow(upcoming))) {
@@ -183,12 +247,8 @@ if (nrow(upcoming) > 0 && !is.null(latest_lineups)) {
         atid <- m$away_team_id
         if (is.na(htid) || htid == "" || is.na(atid) || atid == "") next
 
-        home_lu <- latest_lineups %>%
-          filter(team_id == htid) %>%
-          mutate(match_id = m$match_id, team_position = "home")
-        away_lu <- latest_lineups %>%
-          filter(team_id == atid) %>%
-          mutate(match_id = m$match_id, team_position = "away")
+        home_lu <- lu_or_override(htid, m$home_team, "home", m)
+        away_lu <- lu_or_override(atid, m$away_team, "away", m)
 
         if (nrow(home_lu) == 0) {
           home_lu <- make_dummy_lineup(m$match_id, htid, m$home_team, "home")
@@ -207,6 +267,10 @@ if (nrow(upcoming) > 0 && !is.null(latest_lineups)) {
           all_skill_features[["fixtures"]] <- fixture_tr
           message(sprintf("  Added %d fixture skill features", nrow(fixture_tr)))
         }
+      }
+      if (n_wc_override > 0) {
+        message(sprintf("  Applied WC2026 announced-squad override to %d team-fixtures (skill features)",
+                        n_wc_override))
       }
     }
   }, error = function(e) {

@@ -195,7 +195,7 @@ aggregate_season_ratings <- function(game_ratings, season_col = "season") {
 #' EPV), PSR (from estimated skills), per-game EPV/WPA/PSV averages, and
 #' the combined panna value. Loads from cached pipeline output.
 #'
-#' @param player Character string — player name (partial match,
+#' @param player Character string -- player name (partial match,
 #'   case-insensitive). E.g., \code{"Salah"}, \code{"H. Kane"}.
 #' @param season Season filter (e.g., \code{"2024-2025"}). If NULL, uses
 #'   the most recent available season.

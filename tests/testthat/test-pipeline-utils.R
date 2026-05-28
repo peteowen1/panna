@@ -38,18 +38,20 @@ test_that("run_step zero-pads single-digit lettered steps", {
   expect_equal(result$status, "SUCCESS")
 })
 
-test_that("run_step returns NULL for disabled steps", {
+test_that("run_step returns a DISABLED result for disabled steps", {
   run_steps <- list(step_01_load_data = FALSE)
   result <- run_step("load_data", 1, function() "ok", run_steps)
 
-  expect_null(result)
+  # run_step always returns a list (never NULL) so orchestrator code doing
+  # step_results[[i]] <- run_step(...) doesn't drop list entries.
+  expect_equal(result$status, "DISABLED")
 })
 
-test_that("run_step returns NULL for missing step keys", {
+test_that("run_step returns a DISABLED result for missing step keys", {
   run_steps <- list(step_01_other = TRUE)
   result <- run_step("load_data", 1, function() "ok", run_steps)
 
-  expect_null(result)
+  expect_equal(result$status, "DISABLED")
 })
 
 test_that("run_step returns FAILED on error", {

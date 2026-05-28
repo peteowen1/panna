@@ -530,7 +530,7 @@ build_prior_vector <- function(spm_data, spm_col, player_mapping, default = 0) {
   all_player_ids <- unique(player_mapping$player_id)
   prior <- stats::setNames(rep(default, length(all_player_ids)), all_player_ids)
 
-  # Try direct player_id matching (Opta pipeline — both use same numeric ID)
+  # Try direct player_id matching (Opta pipeline -- both use same numeric ID)
   join_method <- "player_name"
   if ("player_id" %in% names(spm_data) &&
       any(as.character(spm_data$player_id) %in% as.character(all_player_ids))) {
@@ -539,7 +539,7 @@ build_prior_vector <- function(spm_data, spm_col, player_mapping, default = 0) {
     matched_ids <- intersect(names(spm_lookup), names(prior))
     prior[matched_ids] <- spm_lookup[matched_ids]
   } else {
-    # Name-based matching fallback (FBref pipeline — different ID systems)
+    # Name-based matching fallback (FBref pipeline -- different ID systems)
     name_to_id <- stats::setNames(
       player_mapping$player_id,
       player_mapping$player_name
@@ -680,7 +680,7 @@ fit_spm_model <- function(data, predictor_cols = NULL, alpha = 0.5, nfolds = 10,
   # lower_limits / upper_limits accept either:
   #   - a single scalar applied to every coefficient
   #   - a named numeric vector indexed by predictor names (used to enforce
-  #     directional sign constraints — e.g., tackles_won_p90 must have a
+  #     directional sign constraints -- e.g., tackles_won_p90 must have a
   #     non-positive coefficient because more tackles won = better defense
   #     in the negative-good defense convention)
   # Default (NULL) = unconstrained (-Inf to +Inf), matching glmnet defaults.

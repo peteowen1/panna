@@ -12,8 +12,11 @@ init_team_elos(teams, initial_elo = 1500)
 \item{initial_elo}{Starting Elo rating (default 1500)}
 }
 \value{
-Named numeric vector of Elo ratings
+Named numeric vector of Elo ratings (one entry per non-NA team)
 }
 \description{
 Creates a named vector of initial Elo ratings for all teams.
+Filters NA team names defensively — they would otherwise create an
+NA-named entry that \code{NA \%in\% names(elos)} returns TRUE for, opening
+the door to NA cascades when bad upstream data sneaks through.
 }

@@ -379,7 +379,7 @@ CHAIN_PROGRESSIVE_THRESHOLD <- 25
 #' as bad data. Opta data via SPADL conversion naturally has ~25% zero-xG
 #' splints, so the threshold is set higher than FBref.
 #' Used in \code{filter_bad_xg_data()}.
-#' Raised from 30 → 50 on 2026-04-18: with second-precision splint creation
+#' Raised from 30 -> 50 on 2026-04-18: with second-precision splint creation
 #' and 5-min boundary-merge minimum, the per-splint zero-xG baseline rose
 #' (shorter splints naturally have fewer shots). 50% only catches genuine
 #' bad-data league-seasons rather than penalising fine-grained splits.
@@ -392,7 +392,7 @@ ZERO_XG_THRESHOLD_OPTA <- 50L
 #'
 #' Maximum percentage of zero-xG splints allowed before a match is flagged.
 #' FBref data has fewer zero-xG splints than Opta, so threshold is lower.
-#' Kept for backward compatibility — FBref pipeline archived 2026-04-18,
+#' Kept for backward compatibility -- FBref pipeline archived 2026-04-18,
 #' Opta is the active data source.
 #'
 #' @format Integer value: 20
@@ -491,3 +491,103 @@ EPR_PRIOR_RATE_OFF <- 0.20
 EPR_PRIOR_RATE_DEF <- 0.04
 #' @keywords internal
 EPR_LOADING <- 1.0
+
+
+# =============================================================================
+# Match-Prediction Model Segmentation
+# =============================================================================
+
+#' Club (domestic) competitions
+#'
+#' Competitions played between club teams. Used to split the match-prediction
+#' models into a domestic (club) model and an international (national-team)
+#' model -- the two behave very differently (international prediction leans on
+#' Elo + recent form; club prediction leans on squad player-ratings).
+#' Any competition NOT in this list is treated as international.
+#'
+#' BUG-FIX 2026-05-28: previously this list contained "EPL" (the Opta-side
+#' competition name) but the rest as panna short codes ("ESP", "ITA", ...).
+#' Since the predictions pipeline passes SHORT CODES through (its `leagues`
+#' vector is "ENG", "ESP", ...), match_is_international("ENG") was returning
+#' TRUE -- i.e., the entire English Premier League was being trained on the
+#' international-specialist model and receiving the international prediction
+#' blend. Replaced "EPL" with "ENG" and added BEL/BRA/AUS/TUN/CAFCL so any
+#' future addition of those leagues to the default set classifies correctly.
+#'
+#' @format Character vector of panna short codes (matches what flows through
+#'   fixture_results$league in step 01).
+#' @keywords internal
+MATCH_CLUB_LEAGUES <- c(
+  # Big 5
+  "ENG", "ESP", "ITA", "GER", "FRA",
+  # Extended domestic
+  "ENG2", "NED", "POR", "TUR", "SCO", "BEL", "BRA", "AUS", "TUN",
+  # Continental club competitions
+  "UCL", "UEL", "UECL", "CAFCL"
+)
+
+#' Classify competitions as international vs domestic
+#'
+#' @param league Character vector of competition codes.
+#' @return Logical vector -- \code{TRUE} for international (national-team)
+#'   competitions, \code{FALSE} for domestic club competitions.
+#' @export
+match_is_international <- function(league) {
+  !(league %in% MATCH_CLUB_LEAGUES)
+}
+
+#' International blend weight
+#'
+#' Weight on the international-specialist model when predicting international
+#' (national-team) matches; the remainder is on the pooled (all-data) model.
+#' The prediction is \code{w * international + (1 - w) * pooled}.
+#'
+#' A blend-weight sweep on held-out international games found accuracy improves
+#' monotonically toward \code{w = 1} (pure specialist), but only by ~0.6\%.
+#' The default 0.5 trades that small edge for robustness against the
+#' smaller-sample specialist model misbehaving on out-of-distribution squads.
+#'
+#' @format Numeric value: 0.5
+#' @keywords internal
+MATCH_INTL_BLEND_WEIGHT <- 0.5
+
+
+# =============================================================================
+# WC 2026 Tournament Constants
+# =============================================================================
+# Centralised so a single Opta-side rename can't silently fan out into three
+# files (step 02 / 02b / 04 / 11 / 12) each treating it as a separate string
+# literal -- which would turn off the WC override / empty the blog parquet
+# without any warning.
+
+#' League code for the WC 2026 tournament
+#' @keywords internal
+WC2026_LEAGUE <- "WC"
+
+#' Season label for the WC 2026 tournament (as it appears in Opta fixtures)
+#' @keywords internal
+WC2026_SEASON_LABEL <- "2026 Canada-Mexico-USA"
+
+#' Opta team_ids of the three WC 2026 hosts (USA / Canada / Mexico)
+#'
+#' Keyed by team_id rather than name because Opta has already served at least
+#' one name variant for these teams ("USA" vs "United States" -- see the
+#' fixture-name normalisation block in 01_build_fixture_results.R). step 04
+#' asserts all three IDs resolve in the WC2026 fixture set before flagging
+#' host advantage.
+#' @keywords internal
+WC2026_HOST_TEAM_IDS <- c(
+  USA    = "9vh2u1p4ppm597tjfahst2m3n",
+  Canada = "eg7vduna0h3vis1wd47s41za7",
+  Mexico = "4vofb84dzb5fyc81n2ssws6ah"
+)
+
+#' Minimum resolved announced-squad players required to apply the override
+#'
+#' If fewer than this many of a team's announced-squad names resolve to
+#' Opta player_ids, the override is refused and the team falls back to the
+#' most-recent intl XI. Prevents the silent "near-empty synthetic team"
+#' failure mode where the override fires with 1-2 resolved players and the
+#' EM-weighted aggregation collapses to ~zero sum_panna.
+#' @keywords internal
+WC2026_OVERRIDE_MIN_RESOLVED <- 11L

@@ -65,6 +65,24 @@ if (!is.null(team_skill_features) && nrow(team_skill_features) > 0) {
                   ncol(team_skill_features) - 1))
 }
 
+# has_sk_data indicator — explicit 0/1 flag for whether this match has
+# both-sides skill estimates available. XGBoost's NA-split-direction is
+# good but can be subtly miscalibrated when "this match has no skill data"
+# is conflated with "skill data exists but a particular feature is zero".
+# The indicator gives the model the explicit "this row's skill features
+# are meaningful vs not" signal alongside the NAs. ~13.5% of historical
+# matches (pre-2014, before the skill cache exists) have it as 0.
+if ("home_sk_att_goals" %in% names(dataset) &&
+    "away_sk_att_goals" %in% names(dataset)) {
+  dataset$has_sk_data <- as.integer(
+    !is.na(dataset$home_sk_att_goals) & !is.na(dataset$away_sk_att_goals))
+  message(sprintf("  has_sk_data: %d / %d rows (%.1f%%) have skill data on both sides",
+                  sum(dataset$has_sk_data), nrow(dataset),
+                  100 * mean(dataset$has_sk_data)))
+} else {
+  dataset$has_sk_data <- 0L
+}
+
 message(sprintf("  After joins: %d rows, %d columns", nrow(dataset), ncol(dataset)))
 
 # 6. Add Weather Features (optional) ----
@@ -106,10 +124,34 @@ if (length(unique(dataset$league)) >= 2) {
 numeric_cols <- names(dataset)[sapply(dataset, is.numeric)]
 rolling_cols <- grep("_last_\\d+$|days_since_last", numeric_cols, value = TRUE)
 
+# Identify train rows. Split assignment hasn't happened yet at this point in
+# the script — derive an equivalent here (held-out seasons get split labels
+# in section 8 below). Computing imputation statistics from TRAIN ONLY
+# prevents leakage of val/test/fixture distributions into the rolling-feature
+# NA-fill that the model then sees in training.
+imp_played    <- dataset$match_status == "Played"
+imp_sey_vals  <- sort(unique(dataset$season_end_year[imp_played]))
+imp_n_sey     <- length(imp_sey_vals)
+imp_train_sey <- if (imp_n_sey >= 3L) {
+  imp_sey_vals[seq_len(imp_n_sey - 2L)]
+} else if (imp_n_sey == 2L) {
+  imp_sey_vals[1L]
+} else {
+  imp_sey_vals
+}
+imp_train_idx <- imp_played & dataset$season_end_year %in% imp_train_sey
+message(sprintf("  Imputation stats computed from %d train rows (split-leakage-free)",
+                sum(imp_train_idx)))
+
 if (length(rolling_cols) > 0) {
-  # Create is_early_season flag: TRUE if ANY rolling feature is NA
+  # is_early_season MUST be computed BEFORE the imputation block below —
+  # otherwise every row has non-NA rolling features and the flag is
+  # always 0. Computed here, the flag captures the pre-imputed state so
+  # the model learns to discount imputed rolling values for these rows.
+  # Code-review item 22.
+  ## (force data.frame indexing — rolling_features merge may return data.table)
   dataset$is_early_season <- as.integer(
-    rowSums(is.na(dataset[, rolling_cols, drop = FALSE])) > 0
+    rowSums(is.na(as.data.frame(dataset)[, rolling_cols, drop = FALSE])) > 0
   )
   early_count <- sum(dataset$is_early_season)
   if (early_count > 0) {
@@ -117,21 +159,31 @@ if (length(rolling_cols) > 0) {
                     early_count, 100 * early_count / nrow(dataset)))
   }
 
-  # Fill NAs with league-specific means for rolling features
+  # Fill NAs with TRAIN-only league-specific means for rolling features.
+  # Previously the per-league mean was computed across the full dataset
+  # (train + val + test + fixture), leaking held-out distribution into the
+  # fill values the model saw during training. Effect on published metrics
+  # was small (imputed values are constant per league, not row-specific),
+  # but the leak was real. Fall back to train-only global mean if a league
+  # has no train rows, then to 0.
   for (col in rolling_cols) {
     na_idx <- is.na(dataset[[col]])
     if (any(na_idx)) {
+      col_train <- dataset[[col]][imp_train_idx]
       for (lg in unique(dataset$league)) {
-        lg_idx <- dataset$league == lg & na_idx
-        lg_mean <- mean(dataset[[col]][dataset$league == lg & !na_idx], na.rm = TRUE)
+        lg_train_mask <- imp_train_idx & dataset$league == lg & !is.na(dataset[[col]])
+        lg_mean <- if (any(lg_train_mask)) mean(dataset[[col]][lg_train_mask], na.rm = TRUE) else NA_real_
         if (!is.na(lg_mean)) {
-          dataset[[col]][lg_idx] <- lg_mean
+          dataset[[col]][na_idx & dataset$league == lg] <- lg_mean
         }
       }
-      # Remaining NAs get global mean
+      # Remaining NAs get train-only global mean
       still_na <- is.na(dataset[[col]])
       if (any(still_na)) {
-        dataset[[col]][still_na] <- mean(dataset[[col]], na.rm = TRUE)
+        global_mean <- mean(col_train, na.rm = TRUE)
+        if (!is.na(global_mean)) {
+          dataset[[col]][still_na] <- global_mean
+        }
       }
     }
   }
@@ -139,8 +191,38 @@ if (length(rolling_cols) > 0) {
   dataset$is_early_season <- 0L
 }
 
-# Fill remaining numeric NAs with 0
-for (col in numeric_cols) {
+# Fill remaining numeric NAs with 0 — but VERY narrowly. The previous
+# "fill everything with 0" pattern silently hid real bugs (today's
+# Elo-NA-cascade ended at home_elo=0 in the published team_strength;
+# the EPR/PSR fixture join failure ended at sum_epr=0). Per feedback
+# 2026-05-28: do NOT substitute fake values for missing data. Let NAs
+# propagate so they're visible to the model (XGBoost handles NA natively
+# as a separate split direction) and to downstream consumers.
+#
+# Columns we DO 0-fill: the structural / engineered features where 0 is
+# a semantically valid default — e.g., a league dummy is 0 for matches
+# not in that league. Anything that represents a TEAM STRENGTH
+# measurement (panna, EPR, PSR, Elo, rolling form) must NOT be filled —
+# NA there means "we don't know", and we want that visible.
+skip_zero_fill <- c(
+  # Actual match outcomes — fixtures legitimately have these NA
+  "home_goals", "away_goals", "home_xg", "away_xg",
+  # Elo features — NA means the team wasn't in the played history
+  grep("^(home|away)_elo$|^elo_diff$", numeric_cols, value = TRUE),
+  # Team-aggregate ratings — NA means the join failed (visible signal)
+  grep("^(home|away)_(sum|avg|max|min|gk|stdev)_", numeric_cols, value = TRUE),
+  grep("_diff$", numeric_cols, value = TRUE),
+  grep("^(home|away)_sk_", numeric_cols, value = TRUE),
+  # Rolling form features — already imputed earlier with TRAIN-only means
+  # in the rolling-cols block above; this protects against NA leakage if
+  # a new rolling feature is added in future without that imputation.
+  grep("_last_\\d+$|days_since_last", numeric_cols, value = TRUE)
+)
+skip_zero_fill <- unique(skip_zero_fill)
+fill_cols <- setdiff(numeric_cols, skip_zero_fill)
+message(sprintf("  NA-filling %d structural numeric columns with 0; preserving NAs in %d value columns (Elo, ratings, rolling)",
+                length(fill_cols), length(skip_zero_fill)))
+for (col in fill_cols) {
   dataset[[col]][is.na(dataset[[col]])] <- 0
 }
 
@@ -211,6 +293,57 @@ match_dataset$outcome_label <- NA_integer_
 match_dataset$outcome_label[match_dataset$result == "H"] <- 0L
 match_dataset$outcome_label[match_dataset$result == "D"] <- 1L
 match_dataset$outcome_label[match_dataset$result == "A"] <- 2L
+
+# 9b. Signed venue feature ----
+# home_field carries the home-advantage signal for the orientation-symmetric
+# models: +1 = home_team is the real host, 0 = neutral, -1 = home_team is the
+# visitor. Original rows are always +1 (or 0 for neutral games); the mirrored
+# copy added in steps 05/06 has it negated by mirror_match_rows(). Once the
+# models train on both orientations, ALL home advantage flows through this
+# single feature instead of being smeared across the home_* columns.
+match_dataset$home_field <- ifelse(
+  !is.na(match_dataset$is_neutral_venue) & match_dataset$is_neutral_venue == 1,
+  0L, 1L)
+
+# 9c. World Cup 2026 host advantage ----
+# The WC2026 feed flags every group game as is_neutral_venue == 1, but the
+# three hosts (USA / Canada / Mexico) play their group games in their own
+# country and genuinely have home advantage. Re-flag those games: host as
+# home_team -> home_field +1, host as away_team -> -1, and mark them
+# non-neutral. The hosts are in different groups so no host-vs-host group
+# game exists. (Home-advantage magnitude is the model's learned home_field
+# effect, calibrated from club football — a reasonable proxy for host edge.)
+#
+# Key by team_id (not name) because Opta has already served at least one
+# variant for these teams ("USA" vs "United States" — see the fixture-name
+# normalisation block in 01_build_fixture_results.R). Assert all three host
+# IDs resolve in the WC2026 fixture set before applying the flag — silent
+# host-name drift would otherwise zero the host advantage and quietly tank
+# the US/Canada/Mexico projections.
+is_wc26 <- match_dataset$league == WC2026_LEAGUE &
+  match_dataset$season == WC2026_SEASON_LABEL
+if (any(is_wc26)) {
+  wc26_ids_seen <- unique(c(
+    match_dataset$home_team_id[is_wc26],
+    match_dataset$away_team_id[is_wc26]
+  ))
+  hosts_missing <- setdiff(WC2026_HOST_TEAM_IDS, wc26_ids_seen)
+  if (length(hosts_missing) > 0) {
+    stop(sprintf(
+      "WC2026 host team_id(s) missing from fixture set: %s. Has Opta renamed a host? Refusing to publish without host-advantage flags.",
+      paste(names(WC2026_HOST_TEAM_IDS)[match(hosts_missing, WC2026_HOST_TEAM_IDS)],
+            collapse = ", ")
+    ), call. = FALSE)
+  }
+}
+host_is_home <- is_wc26 & match_dataset$home_team_id %in% WC2026_HOST_TEAM_IDS
+host_is_away <- is_wc26 & match_dataset$away_team_id %in% WC2026_HOST_TEAM_IDS
+match_dataset$is_neutral_venue[host_is_home | host_is_away] <- 0L
+match_dataset$home_field[host_is_home] <- 1L
+match_dataset$home_field[host_is_away] <- -1L
+message(sprintf("  WC2026 host advantage flagged: %d games (%d host-home, %d host-away)",
+                sum(host_is_home | host_is_away),
+                sum(host_is_home), sum(host_is_away)))
 
 # 10. Save ----
 

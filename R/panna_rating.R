@@ -55,7 +55,7 @@ calculate_panna_rating <- function(rapm_data, spm_ratings, lambda_prior = 1, alp
   spm_prior <- rep(0, n_players)
   names(spm_prior) <- player_ids
 
-  # Match SPM ratings to player IDs (vectorized O(n) instead of O(n²) loop)
+  # Match SPM ratings to player IDs (vectorized O(n) instead of O(n^2) loop)
   if ("player_id" %in% names(spm_ratings)) {
     match_idx <- match(player_ids, spm_ratings$player_id)
     matched <- !is.na(match_idx)

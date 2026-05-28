@@ -27,6 +27,7 @@
 # 1. Setup ----
 
 library(glmnet)
+library(Matrix)
 devtools::load_all()
 
 # 2. Configuration ----
@@ -39,14 +40,29 @@ dir.create(extdata_dir, showWarnings = FALSE, recursive = TRUE)
 # Match weight decay: more recent matches weighted higher in training
 MATCH_WEIGHT_DECAY_DAYS <- 365  # ~1 year half-life
 
-# Elastic net alpha grid
-ALPHA_GRID <- c(0, 0.25, 0.5, 0.75, 1.0)
+# Elastic net alpha grid.
+# Reduced from c(0, 0.25, 0.5, 0.75, 1.0) for FE-augmented training: the FE
+# block (~4K cols) makes each cv.glmnet fit ~3 min, so 5 alphas x 9 models
+# x 3 min ~ 2h. Pre-FE alpha sweeps showed differences <1% in CV MSE, so a
+# single elastic-net alpha is enough. Restore the grid for a final tuned run.
+ALPHA_GRID <- c(0.5)
 
 # Minimum players per team-match to include in training
 MIN_PLAYERS_PER_TEAM <- 8
 
 # Minimum weighted 90s for a player's skills to be included
 MIN_W90_FOR_SKILLS <- 3
+
+# Fixed-effect granularity for league-quality control.
+#   - "league_season": one dummy per (competition, season). Absorbs the
+#     league-season baseline xG diff (e.g., Belgian league lower than EPL)
+#     without stripping individual player effects from team strength.
+#     Recommended — clean identification via bridging in UCL/UEL/internationals.
+#   - "team_season": one dummy per (team, season). Stronger control but
+#     over-corrects: team strength is partly CAUSED by player skill, so
+#     absorbing team FE strips elite players (Mbappé, Haaland) of their
+#     contribution to their team. Empirically zeros out most offensive betas.
+FE_GRANULARITY <- "league_season"
 
 # Hold-out test season
 if (!exists("test_season_year")) test_season_year <- NULL  # auto-detect
@@ -103,12 +119,14 @@ team_goals <- ms_dt[, .(
   is_home = is_home[1],
   match_date = match_date[1],
   season_end_year = season_end_year[1],
+  competition = competition[1],
   n_players = .N
 ), by = .(match_id, team_name)]
 
 home_side <- team_goals[is_home == 1, .(match_id, home_team = team_name,
                                           home_goals = team_goals,
-                                          match_date, season_end_year)]
+                                          match_date, season_end_year,
+                                          competition)]
 away_side <- team_goals[is_home == 0, .(match_id, away_team = team_name,
                                           away_goals = team_goals)]
 
@@ -117,6 +135,43 @@ match_outcomes[, goal_diff := home_goals - away_goals]
 
 cat(sprintf("Matches with goal data: %s\n",
             format(nrow(match_outcomes), big.mark = ",")))
+
+# Join team-strength ratings (off/def from RAPM-derived team aggregates).
+# These act as unpenalized continuous controls for OPPONENT QUALITY, so the
+# skill betas only capture residual effect after controlling for league
+# baseline (already handled by league-season FE) AND opponent strength.
+#
+# Without this, a high-stat-rate player in a weaker league (Veerman in
+# Eredivisie, Tavernier in Scottish) gets a high PSR β because the model
+# can't tell whether his per-90 productivity is from skill or from facing
+# weak defenders. opp_def_rating is calibrated cross-league via RAPM, so
+# it provides cleanly comparable opposition-quality signal.
+ts_path <- file.path("data-raw", "cache-opta", "team_season_strength.parquet")
+if (file.exists(ts_path) && requireNamespace("arrow", quietly = TRUE)) {
+  ts <- data.table::as.data.table(arrow::read_parquet(ts_path))
+  match_outcomes <- merge(match_outcomes,
+                            ts[, .(team_name, season_end_year,
+                                    home_off_rating = off_rating,
+                                    home_def_rating = def_rating)],
+                            by.x = c("home_team","season_end_year"),
+                            by.y = c("team_name","season_end_year"), all.x = TRUE)
+  match_outcomes <- merge(match_outcomes,
+                            ts[, .(team_name, season_end_year,
+                                    away_off_rating = off_rating,
+                                    away_def_rating = def_rating)],
+                            by.x = c("away_team","season_end_year"),
+                            by.y = c("team_name","season_end_year"), all.x = TRUE)
+  for (c in c("home_off_rating","home_def_rating","away_off_rating","away_def_rating")) {
+    match_outcomes[is.na(get(c)), (c) := 0]
+  }
+  cat(sprintf("Team-strength controls joined: %d / %d matches have any rating\n",
+              sum(match_outcomes$home_off_rating != 0 |
+                    match_outcomes$away_off_rating != 0),
+              nrow(match_outcomes)))
+} else {
+  match_outcomes[, `:=`(home_off_rating = 0, home_def_rating = 0,
+                          away_off_rating = 0, away_def_rating = 0)]
+}
 
 # 5. Load Match-Level xG from Splint Data ----
 
@@ -411,16 +466,120 @@ if (!is.null(X_test)) {
   X_test_std[is.na(X_test_std) | is.infinite(X_test_std)] <- 0
 }
 
-cat(sprintf("\n%d features standardized\n", length(feature_cols)))
+cat(sprintf("\n%d skill features standardized\n", length(feature_cols)))
 
-# CV folds: one per season (temporal CV)
-fold_ids <- as.integer(factor(train_data$season_end_year[is_train]))
+# CV folds: temporal blocks of seasons. With the FE block bloating each fit's
+# wall time, one-fold-per-season (12 folds) becomes prohibitive. Grouping into
+# 4 blocks of ~3 seasons each keeps temporal CV intact while cutting wall time
+# ~3x. Block boundaries: 2014-2016, 2017-2019, 2020-2022, 2023-2025.
+season_blocks <- function(yr) {
+  data.table::fcase(
+    yr <= 2016L, 1L,
+    yr <= 2019L, 2L,
+    yr <= 2022L, 3L,
+    default = 4L
+  )
+}
+fold_ids <- season_blocks(train_data$season_end_year[is_train])
 n_folds <- length(unique(fold_ids))
-cat(sprintf("Temporal CV: %d folds\n", n_folds))
+cat(sprintf("Temporal CV: %d folds (season-block CV)\n", n_folds))
+
+# 11b. Build Competition-Season Fixed Effects ----
+#
+# Why: the existing skill regression pools across leagues, so a player whose
+# stats come from Belgian/Super_Lig matches has the same beta-weighted PSR as
+# an EPL player. To make skill betas league-neutral we add an unpenalized
+# FE column per (competition, season).
+#
+# We deliberately do NOT use team-season FE. Team strength is partly CAUSED
+# by player skill, so absorbing team FE strips elite players (Mbappé,
+# Haaland) of their contribution to their team's attack. The league-season
+# baseline is exogenous to individual player skill in a way team strength
+# is not, and is the actual confound we care about.
+#
+# Identification: each match contributes to exactly one (competition, season)
+# FE. Cross-league bridging happens via UCL/UEL/international matches where
+# teams from different domestic leagues face off. The bridging matches let
+# the regression simultaneously estimate league-specific baselines and
+# league-invariant skill betas.
+
+build_league_season_fe <- function(rows_dt, all_keys) {
+  # rows_dt: data.table with columns season_end_year, competition.
+  # all_keys: character vector of "<competition>_<season>" keys (column order).
+  # Returns a sparse dgCMatrix with one column per (competition, season).
+  n <- nrow(rows_dt)
+  row_key <- paste0(rows_dt$competition, "_", rows_dt$season_end_year)
+  j_idx <- match(row_key, all_keys)
+  keep <- !is.na(j_idx)
+  Matrix::sparseMatrix(
+    i = seq_len(n)[keep],
+    j = j_idx[keep],
+    x = 1, dims = c(n, length(all_keys)),
+    dimnames = list(NULL, paste0("ls_", all_keys))
+  )
+}
+
+cat(sprintf("\n=== Building competition-season fixed effects (FE_GRANULARITY=%s) ===\n",
+            FE_GRANULARITY))
+
+if (FE_GRANULARITY != "league_season") {
+  stop(sprintf("FE_GRANULARITY=%s not supported in this build", FE_GRANULARITY))
+}
+
+# Build the universe of (competition, season) keys from training data
+fe_rows_train <- train_data[is_train, .(season_end_year, competition)]
+ls_keys <- sort(unique(paste0(fe_rows_train$competition, "_", fe_rows_train$season_end_year)))
+cat(sprintf("League-seasons: %d distinct keys\n", length(ls_keys)))
+
+FE_train <- build_league_season_fe(fe_rows_train, ls_keys)
+cat(sprintf("FE matrix: %d rows x %d cols (sparse)\n",
+            nrow(FE_train), ncol(FE_train)))
+
+if (sum(is_test) > 0) {
+  fe_rows_test <- train_data[is_test, .(season_end_year, competition)]
+  FE_test <- build_league_season_fe(fe_rows_test, ls_keys)
+  n_unmapped <- sum(rowSums(FE_test) == 0)
+  cat(sprintf("FE test matrix: %d rows x %d cols (%d rows have no FE match)\n",
+              nrow(FE_test), ncol(FE_test), n_unmapped))
+} else {
+  FE_test <- NULL
+}
+
+# Stitch FE + opponent-strength controls + skills into a single sparse matrix
+n_fe <- ncol(FE_train)
+n_skill <- length(feature_cols)
+
+# Opponent-strength controls (continuous, unpenalized) — mirrors EPR's
+# opp_def_rating. We deliberately only include each side's OPPONENT defense
+# rating (the home team's opponent is the away team, so home faces away_def;
+# vice-versa). Including the team's OWN ratings would absorb player-skill
+# signal at the team level — exactly the over-control problem we hit when
+# we tried team-season FE.
+team_strength_cols <- c("away_def_rating","home_def_rating")
+n_ts <- length(team_strength_cols)
+TS_train <- methods::as(as.matrix(train_data[is_train, ..team_strength_cols]),
+                          "CsparseMatrix")
+TS_test  <- if (sum(is_test) > 0) {
+  methods::as(as.matrix(train_data[is_test, ..team_strength_cols]),
+                "CsparseMatrix")
+} else NULL
+
+X_train_full <- cbind(FE_train, TS_train, methods::as(X_train_std, "CsparseMatrix"))
+if (!is.null(FE_test) && !is.null(TS_test)) {
+  X_test_full <- cbind(FE_test, TS_test, methods::as(X_test_std, "CsparseMatrix"))
+} else {
+  X_test_full <- NULL
+}
+
+# penalty.factor: 0 for FE + team-strength controls, 1 for skills
+penalty_factors <- c(rep(0, n_fe), rep(0, n_ts), rep(1, n_skill))
+
+cat(sprintf("Combined matrix: %d rows x %d cols (%d FE + %d team-strength + %d skill)\n",
+            nrow(X_train_full), ncol(X_train_full), n_fe, n_ts, n_skill))
 
 # 12. Train Model Helper ----
 
-train_model <- function(X, y, w, foldid, alpha_grid, model_name) {
+train_model <- function(X, y, w, foldid, alpha_grid, model_name, pf = NULL) {
   cat(sprintf("\n--- Training %s model ---\n", model_name))
 
   best_alpha <- 0
@@ -428,18 +587,28 @@ train_model <- function(X, y, w, foldid, alpha_grid, model_name) {
   best_fit <- NULL
 
   for (alpha in alpha_grid) {
+    cv_args <- list(
+      x = X, y = y, weights = w,
+      alpha = alpha, foldid = foldid,
+      standardize = FALSE,
+      type.measure = "mse",
+      # With ~4K unpenalized FE columns + 180 penalized skills, the default
+      # nlambda=100 path is overkill and dominates wall time. nlambda=30 still
+      # explores enough of the path to find lambda.min reliably.
+      nlambda = 30
+    )
+    if (!is.null(pf)) cv_args$penalty.factor <- pf
+
+    t0 <- Sys.time()
     fit <- tryCatch(
-      glmnet::cv.glmnet(
-        x = X, y = y, weights = w,
-        alpha = alpha, foldid = foldid,
-        standardize = FALSE,
-        type.measure = "mse"
-      ),
+      do.call(glmnet::cv.glmnet, cv_args),
       error = function(e) {
         cat(sprintf("  alpha=%.2f: ERROR - %s\n", alpha, e$message))
         NULL
       }
     )
+    elapsed <- round(as.numeric(difftime(Sys.time(), t0, units = "secs")), 1)
+    if (!is.null(fit)) cat(sprintf("  alpha=%.2f: fit in %ss\n", alpha, elapsed))
 
     if (!is.null(fit)) {
       min_cvm <- min(fit$cvm)
@@ -462,12 +631,17 @@ train_model <- function(X, y, w, foldid, alpha_grid, model_name) {
 }
 
 # 13. Extract Symmetric Coefficients Helper ----
+#
+# With FE prepended, the full coefficient vector is:
+#   [intercept, FE_1..FE_{n_fe}, home_skill_1..home_skill_n, away_skill_1..away_skill_n]
+# We want only the skill block (FE coefs are nuisance controls and discarded).
 
-extract_symmetric_coefs <- function(model, skill_cols, train_sds, type) {
-  coefs <- as.numeric(coef(model$fit, s = "lambda.min"))[-1]
+extract_symmetric_coefs <- function(model, skill_cols, train_sds, type, n_fe = 0L) {
+  coefs <- as.numeric(coef(model$fit, s = "lambda.min"))[-1]  # drop intercept
+  skill_start <- n_fe + 1L
   n <- length(skill_cols)
-  home_coefs <- coefs[1:n]
-  away_coefs <- coefs[(n + 1):(2 * n)]
+  home_coefs <- coefs[skill_start:(skill_start + n - 1L)]
+  away_coefs <- coefs[(skill_start + n):(skill_start + 2L * n - 1L)]
   home_sds <- train_sds[paste0("home_", skill_cols)]
 
   player_beta <- if (type == "margin") {
@@ -498,16 +672,17 @@ evaluate_model <- function(model, X_test_std, y_test, name) {
 
 train_and_save <- function(y_margin, y_off, y_def, y_margin_test, y_off_test,
                             y_def_test, prefix, label,
-                            X = X_train_std, w = weights, fids = fold_ids,
+                            X = X_train_full, w = weights, fids = fold_ids,
                             skill_cols = skill_keep_cols, sds = train_sds,
-                            test_mask = is_test, X_test = X_test_std) {
+                            test_mask = is_test, X_test = X_test_full,
+                            pf = penalty_factors, fe_count = n_fe + n_ts) {
   cat(sprintf("\n%s\n=== Training %s Models ===\n%s\n",
               paste(rep("=", 50), collapse = ""), label,
               paste(rep("=", 50), collapse = "")))
 
-  margin_m <- train_model(X, y_margin, w, fids, ALPHA_GRID, paste(label, "Margin"))
-  off_m    <- train_model(X, y_off,    w, fids, ALPHA_GRID, paste(label, "Offense"))
-  def_m    <- train_model(X, y_def,    w, fids, ALPHA_GRID, paste(label, "Defense"))
+  margin_m <- train_model(X, y_margin, w, fids, ALPHA_GRID, paste(label, "Margin"), pf = pf)
+  off_m    <- train_model(X, y_off,    w, fids, ALPHA_GRID, paste(label, "Offense"), pf = pf)
+  def_m    <- train_model(X, y_def,    w, fids, ALPHA_GRID, paste(label, "Defense"), pf = pf)
 
   if (sum(test_mask) > 0) {
     cat(sprintf("\n--- %s Test Set ---\n", label))
@@ -518,10 +693,10 @@ train_and_save <- function(y_margin, y_off, y_def, y_margin_test, y_off_test,
     cat(sprintf("  Baseline (predict 0): RMSE=%.3f\n", baseline_rmse))
   }
 
-  # Extract coefficients
-  margin_coefs <- extract_symmetric_coefs(margin_m, skill_cols, sds, "margin")
-  osr_coefs <- extract_symmetric_coefs(off_m, skill_cols, sds, "offense")
-  dsr_coefs <- extract_symmetric_coefs(def_m, skill_cols, sds, "defense")
+  # Extract coefficients (skip FE block)
+  margin_coefs <- extract_symmetric_coefs(margin_m, skill_cols, sds, "margin",  n_fe = fe_count)
+  osr_coefs    <- extract_symmetric_coefs(off_m,    skill_cols, sds, "offense", n_fe = fe_count)
+  dsr_coefs    <- extract_symmetric_coefs(def_m,    skill_cols, sds, "defense", n_fe = fe_count)
 
   # Top coefficients
   cat(sprintf("\nTop 15 %s margin coefficients:\n", label))
@@ -556,7 +731,8 @@ if (has_xg) {
   xg_in_train <- which(!is.na(train_data$xg_diff[train_rows]))
   xg_in_test  <- which(!is.na(train_data$xg_diff[test_rows]))
 
-  X_xg_train <- X_train_std[xg_in_train, ]
+  X_xg_train <- X_train_full[xg_in_train, ]
+  X_xg_test  <- if (length(xg_in_test) > 0 && !is.null(X_test_full)) X_test_full[xg_in_test, ] else NULL
   w_xg       <- weights[xg_in_train]
   fold_xg    <- as.integer(factor(fold_ids[xg_in_train]))
 
@@ -569,7 +745,7 @@ if (has_xg) {
     y_def_test    = train_data$away_xg[test_rows][xg_in_test],
     prefix = "",
     label  = "xG",
-    X = X_xg_train, w = w_xg, fids = fold_xg
+    X = X_xg_train, w = w_xg, fids = fold_xg, X_test = X_xg_test
   )
 }
 
@@ -798,10 +974,43 @@ gk_skill_keep_cols <- character(0)
       }
 
       # Season folds for CV
-      gk_fold_ids <- as.integer(factor(gk_train_data$season_end_year[gk_is_train]))
+      gk_fold_ids <- as.integer(factor(season_blocks(gk_train_data$season_end_year[gk_is_train])))
 
       cat(sprintf("GK train: %d matches, test: %d matches\n",
                   sum(gk_is_train), sum(gk_is_test)))
+
+      # Build league-season FE for GK matches (using the same helper as the
+      # outfield model). Re-use the outfield ls_keys universe to keep columns
+      # aligned in case any downstream tooling treats this as the same FE space.
+      gk_fe_rows_train <- gk_train_data[gk_is_train, .(season_end_year, competition)]
+      FE_gk_train <- build_league_season_fe(gk_fe_rows_train, ls_keys)
+      if (sum(gk_is_test) > 0) {
+        gk_fe_rows_test <- gk_train_data[gk_is_test, .(season_end_year, competition)]
+        FE_gk_test <- build_league_season_fe(gk_fe_rows_test, ls_keys)
+      } else {
+        FE_gk_test <- NULL
+      }
+      gk_n_fe <- ncol(FE_gk_train)
+      gk_n_skill <- length(gk_feature_cols)
+      # Same 4 team-strength controls for the GK model
+      gk_TS_train <- methods::as(as.matrix(gk_train_data[gk_is_train, ..team_strength_cols]),
+                                    "CsparseMatrix")
+      gk_TS_test  <- if (sum(gk_is_test) > 0) {
+        methods::as(as.matrix(gk_train_data[gk_is_test, ..team_strength_cols]),
+                      "CsparseMatrix")
+      } else NULL
+      gk_n_ts <- length(team_strength_cols)
+
+      gk_X_train_full <- cbind(FE_gk_train, gk_TS_train,
+                                  methods::as(gk_X_train_std, "CsparseMatrix"))
+      gk_X_test_full <- if (!is.null(FE_gk_test) && !is.null(gk_TS_test)) {
+        cbind(FE_gk_test, gk_TS_test, methods::as(gk_X_test_std, "CsparseMatrix"))
+      } else NULL
+      gk_penalty_factors <- c(rep(0, gk_n_fe), rep(0, gk_n_ts), rep(1, gk_n_skill))
+
+      cat(sprintf("GK combined matrix: %d rows x %d cols (%d FE + %d team-strength + %d skill)\n",
+                  nrow(gk_X_train_full), ncol(gk_X_train_full),
+                  gk_n_fe, gk_n_ts, gk_n_skill))
 
       # Train GK models on GOAL DIFF (not xG diff)
       # GK value is in the goals-saved-above-xG residual
@@ -815,10 +1024,11 @@ gk_skill_keep_cols <- character(0)
           y_def_test = if (sum(gk_is_test) > 0) gk_train_data$away_goals[gk_is_test] else numeric(0),
           prefix = "gk_",
           label = "GK (Goal Diff)",
-          X = gk_X_train_std, w = gk_weights, fids = gk_fold_ids,
+          X = gk_X_train_full, w = gk_weights, fids = gk_fold_ids,
           skill_cols = gk_skill_keep_cols, sds = gk_train_sds,
           test_mask = gk_is_test,
-          X_test = if (!is.null(gk_X_test)) gk_X_test_std else NULL
+          X_test = gk_X_test_full,
+          pf = gk_penalty_factors, fe_count = gk_n_fe + gk_n_ts
         ),
         error = function(e) {
           cat(sprintf("GK model training failed: %s\n", e$message))
@@ -827,7 +1037,7 @@ gk_skill_keep_cols <- character(0)
       )
 
       rm(gk_pm, gk_team_skills, gk_home, gk_away, gk_train_data,
-         gk_X_train, gk_X_train_std)
+         gk_X_train, gk_X_train_std, gk_X_train_full)
       gc(verbose = FALSE)
     } else {
       cat("Too few GK features available. Skipping GK sub-model.\n")

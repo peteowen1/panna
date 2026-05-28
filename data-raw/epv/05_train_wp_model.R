@@ -109,7 +109,10 @@ cli_alert_success("Total: {nrow(wp_data)} actions from {length(unique(wp_data$ma
 
 cli_h2("Step 2: Train XGBoost WP Model")
 
-wp_model <- train_wp_model(wp_data, nrounds = 300L, max_depth = 4L, eta = 0.03)
+# Match AFL v3 training harness: eta=0.1, max_depth=4, 5-fold match-grouped CV,
+# early_stopping_rounds=20. nrounds=500 is the cap — early stopping typically
+# halts well before that (AFL v3 stopped at 172).
+wp_model <- train_wp_model(wp_data, nrounds = 500L, max_depth = 4L, eta = 0.1)
 rm(wp_data); gc(verbose = FALSE)
 
 # ============================================================================

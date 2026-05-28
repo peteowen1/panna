@@ -171,7 +171,7 @@ get_first_half_stoppage <- function(events) {
 calculate_match_end <- function(events, shots = NULL, default_end = 91,
                                 period_end_time = NULL) {
   # If we have a precomputed period-2 end time (from Opta type_id == 30
-  # marker), use it directly — no fudge factor needed.
+  # marker), use it directly -- no fudge factor needed.
   if (!is.null(period_end_time) && length(period_end_time) == 1 &&
       !is.na(period_end_time) && period_end_time > 0) {
     return(period_end_time)
@@ -225,7 +225,7 @@ calculate_match_end <- function(events, shots = NULL, default_end = 91,
 calculate_first_half_end <- function(events, shots = NULL, default_end = 46,
                                      period_end_time = NULL) {
   # If we have a precomputed period-1 end time (Opta type_id == 30 marker
-  # for period 1), use it directly — exact second-level precision, no buffer.
+  # for period 1), use it directly -- exact second-level precision, no buffer.
   if (!is.null(period_end_time) && length(period_end_time) == 1 &&
       !is.na(period_end_time) && period_end_time > 0) {
     return(period_end_time)
@@ -850,7 +850,7 @@ create_all_splints <- function(processed_data, include_goals = TRUE, verbose = T
 
     # Add match_id if not present (join via match_url)
     if (!"match_id" %in% names(dt_stats) && "match_url" %in% names(dt_stats)) {
-      # Need dt_results for the join — reconstruct from results_by_match
+      # Need dt_results for the join -- reconstruct from results_by_match
       dt_results_tmp <- data.table::rbindlist(results_by_match, use.names = TRUE)
       match_id_lookup <- unique(dt_results_tmp[, c("match_url", "match_id"), with = FALSE])
       dt_stats <- match_id_lookup[dt_stats, on = "match_url"]
@@ -897,7 +897,7 @@ create_all_splints <- function(processed_data, include_goals = TRUE, verbose = T
 
     tryCatch({
       # O(1) lookup instead of filtering full tables
-      # Convert to data.frame — create_match_splints_fast uses [, , drop = FALSE]
+      # Convert to data.frame -- create_match_splints_fast uses [, , drop = FALSE]
       # which has different semantics in data.table
       match_lineups <- as.data.frame(lineups_by_match[[mid]])
       match_shooting <- as.data.frame(shooting_by_match[[mid]])
@@ -1173,7 +1173,7 @@ create_splint_boundaries_fast <- function(events, shots = NULL, include_goals = 
   # skip the lineups-derived sub_times fallback below to avoid creating
   # duplicate near-boundaries (events have second precision via added_time;
   # lineups have only minute precision, so identical subs would otherwise
-  # appear at e.g. both 67.42 and 67.00 → spurious 25-second splints).
+  # appear at e.g. both 67.42 and 67.00 -> spurious 25-second splints).
   event_subs_present <- FALSE
 
   # First try to get events from the events data frame
@@ -1259,7 +1259,7 @@ create_splint_boundaries_fast <- function(events, shots = NULL, include_goals = 
 
   # Merge soft boundaries within min_splint_duration of the most recently kept
   # boundary. Hard boundaries (kickoff, halftime, full-time) are always kept
-  # — even if a sub happened seconds after kickoff, halftime stays as a clean
+  # -- even if a sub happened seconds after kickoff, halftime stays as a clean
   # period break. Players whose on/off time falls inside a removed boundary
   # are still credited via fractional shares in assign_players_to_splints_fast.
   if (length(boundaries) > 1 && !is.null(min_splint_duration) && min_splint_duration > 0) {
@@ -1336,7 +1336,7 @@ assign_players_to_splints_fast <- function(boundaries, lineups, match_id) {
   # Use pre-calculated on/off times from leading space detection if available;
   # otherwise fall back to approximation from is_starter + minutes.
   #
-  # Requires EVERY row to have non-NA on/off — a partially populated table
+  # Requires EVERY row to have non-NA on/off -- a partially populated table
   # would feed NAs into the non-equi join below, silently dropping those
   # players from splint assignment. An upstream parser change that blanked
   # the column for a subset of matches (or all matches) must fall back to
@@ -1364,8 +1364,8 @@ assign_players_to_splints_fast <- function(boundaries, lineups, match_id) {
   # = overlap_minutes / splint_duration so the RAPM design matrix can use
   # fractional participation values instead of binary 0/1. This lets us
   # merge short splints together (boundary merge in create_splint_boundaries_fast)
-  # without losing any player-minute information — a player who came on at
-  # minute 67:42 inside a merged 65-72 splint gets share = (72-67.7)/(72-65) ≈ 0.61.
+  # without losing any player-minute information -- a player who came on at
+  # minute 67:42 inside a merged 65-72 splint gets share = (72-67.7)/(72-65) ~= 0.61.
 
   # Create data.tables for efficient join
   dt_players <- data.table::data.table(
@@ -1584,7 +1584,7 @@ prepare_opta_events_for_splints <- function(opta_events, match_results = NULL) {
 #' on/off times for any (match_id, player_id) pair present in the timing table.
 #' Chain timing is preferred because Opta lineups record `minutes_played = 90`
 #' for unsubstituted finishers regardless of stoppage time, and round sub
-#' minutes to integers — chains carry second-level precision and the real
+#' minutes to integers -- chains carry second-level precision and the real
 #' final-whistle time.
 #'
 #' @param opta_lineups Data frame from load_opta_lineups()
@@ -1806,7 +1806,7 @@ create_opta_processed_data <- function(opta_lineups, opta_events = NULL,
 #' Extract Per-Player On/Off Times from Raw Opta Match Events
 #'
 #' Derives `on_minute` and `off_minute` for every player in every match
-#' directly from Opta event data — no reliance on lineup minute counts.
+#' directly from Opta event data -- no reliance on lineup minute counts.
 #' Uses second-level precision throughout.
 #'
 #' Sources:
@@ -1912,7 +1912,7 @@ extract_player_timing_from_events <- function(match_events) {
   timing <- merge(timing, reds,       by = c("match_id", "player_id"), all.x = TRUE)
   timing <- merge(timing, match_end_dt, by = "match_id", all.x = TRUE)
 
-  # on_minute: starters = 0, others = sub-on time (NA if never came on → bench-warmer, drop)
+  # on_minute: starters = 0, others = sub-on time (NA if never came on -> bench-warmer, drop)
   timing[, on_minute := data.table::fifelse(is_starter, 0, on_event_time)]
   # off_minute: priority sub-off > red-card > match-end
   timing[, off_minute := data.table::fcoalesce(off_event_time, red_time, match_end)]

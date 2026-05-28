@@ -280,6 +280,15 @@ fit_season_ratings_opta <- function(splint_data, opta_stats, season,
   seasonal_rapm <- extract_rapm_ratings(rapm_model, lambda = seasonal_lambda)
   seasonal_rapm$season_end_year <- season
 
+  # Free rapm_model before xRAPM fits another cv.glmnet on the same X.
+  # Ridge (alpha=0) glmnet stores a dense coef path (~ncol(X) × ~100
+  # lambdas × 8B per fold-aggregated entry), which is hundreds of MB per
+  # fit; holding two simultaneously OOM-kills the 7 GB ubuntu runner on
+  # large seasons (2024+).
+  rm(rapm_model); inv <- gc(verbose = FALSE)
+  cat(sprintf("  [mem] after rm(rapm_model): %.0f MB used\n",
+              sum(inv[, 2])))  # col 2 = current used Mb (Ncells + Vcells)
+
   cat(sprintf("  Seasonal RAPM ratings: %d players\n", nrow(seasonal_rapm)))
 
   # Build prior vectors for xRAPM
@@ -315,6 +324,13 @@ fit_season_ratings_opta <- function(splint_data, opta_stats, season,
   seasonal_xrapm$season_end_year <- season
 
   cat(sprintf("  Seasonal xRAPM ratings: %d players\n", nrow(seasonal_xrapm)))
+
+  # Probe peak memory after xRAPM fit so the next run's log lets us
+  # confirm (or rule out) OOM-from-double-fit as the cause of the
+  # 05-10/05-13/05-14 runner-shutdown failures.
+  inv <- gc(verbose = FALSE)
+  cat(sprintf("  [mem] after xRAPM fit (season %d): %.0f MB used\n",
+              season, sum(inv[, 2])))
 
   list(
     spm = seasonal_spm,

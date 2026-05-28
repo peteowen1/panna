@@ -9,7 +9,7 @@
 #' @return Cleaned data frame with standardized columns
 #' @keywords internal
 process_match_results <- function(results) {
-  # Ensure base data.frame — data.table's [.data.table interprets column
+  # Ensure base data.frame -- data.table's [.data.table interprets column
 
   # selection differently, breaking results[, core_cols] below
   results <- as.data.frame(results)

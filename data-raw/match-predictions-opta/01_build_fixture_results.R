@@ -53,24 +53,43 @@ if (use_rapm_cache) {
   results <- raw_data$results
   # Filter to requested leagues
   results <- results[results$league %in% leagues, ]
-  message(sprintf("  %d matches from RAPM cache (filtered to %s)",
-                  nrow(results), paste(leagues, collapse = ", ")))
+  message(sprintf("  %d matches from RAPM cache (covers %d / %d requested leagues)",
+                  nrow(results),
+                  length(unique(results$league)), length(leagues)))
   results$score_source <- "rapm_cache"  # will be overridden below where fixtures has scores
+  cached_leagues <- unique(results$league)
 } else {
   message("No RAPM cache found - loading from Opta data directly...")
   results <- NULL
+  cached_leagues <- character(0)
 }
 
-# 5. Load Results from Opta (if no cache) ----
+# 5. Load Results from Opta for any leagues not in the cache ----
+#
+# Previously this block was only entered when the RAPM cache was absent
+# entirely (`if (is.null(results))`). When the cache existed but didn't
+# cover all requested leagues (e.g., 14 newly-added intl competitions
+# whose RAPM hasn't been run), the missing leagues silently produced
+# zero played matches — fixtures iterated them but historical results
+# were stuck on the cache's pre-existing scope. Result: Norway's entire
+# UEFA WC qualifying campaign was invisible to the Elo iteration despite
+# the data being on disk.
+#
+# Fix: compute `missing_leagues` and direct-load just those. The cache
+# fast-path still applies to leagues it already covers.
 
-if (is.null(results)) {
-  message("\n=== Loading Opta Data ===\n")
+missing_leagues <- setdiff(leagues, cached_leagues)
+if (length(missing_leagues) > 0) {
+  message(sprintf("\n=== Loading %d league%s directly from Opta (not in RAPM cache): %s ===\n",
+                  length(missing_leagues),
+                  if (length(missing_leagues) == 1L) "" else "s",
+                  paste(missing_leagues, collapse = ", ")))
 
   all_results <- list()
 
-  for (league in leagues) {
+  for (league in missing_leagues) {
     opta_league <- to_opta_league(league)
-    available_seasons <- tryCatch(list_opta_seasons(league), error = function(e) character(0))
+    available_seasons <- tryCatch(list_opta_seasons(league, source = "local"), error = function(e) character(0))
     if (length(available_seasons) == 0) next
 
     if (!is.null(seasons)) available_seasons <- intersect(available_seasons, seasons)
@@ -189,8 +208,20 @@ if (is.null(results)) {
     }
   }
 
-  results <- bind_rows(all_results)
-  message(sprintf("  Loaded %d matches from Opta", nrow(results)))
+  direct_results <- bind_rows(all_results)
+  message(sprintf("  Loaded %d matches from Opta direct (across %d leagues)",
+                  nrow(direct_results), length(unique(direct_results$league))))
+
+  # Combine cache results (if any) with direct-load results.
+  # Use bind_rows with fill semantics — direct-load may have columns the
+  # cache lacks (e.g., score_source = "fixtures" vs "rapm_cache").
+  if (!is.null(results) && nrow(results) > 0) {
+    results <- bind_rows(results, direct_results)
+  } else {
+    results <- direct_results
+  }
+  message(sprintf("  TOTAL matches available (cache + direct): %d across %d leagues",
+                  nrow(results), length(unique(results$league))))
 
   # Provenance summary. Any non-zero "events" count points at Opta's matchstats
   # endpoint lagging for recent matches — we're falling back to goal events
@@ -291,13 +322,147 @@ if (missing_scores > 0) {
   results <- results[!is.na(results$home_goals) & !is.na(results$away_goals), ]
 }
 
-# 6. Ensure Required Columns ----
-
-if (!"season_end_year" %in% names(results)) {
-  results$season_end_year <- sapply(results$season, extract_season_end_year)
+# 5c. Drop matches with missing team identification ----
+#
+# These are matches where ONE side has both team_name AND team_id missing
+# from the Opta feed (typically minnow international friendlies where the
+# scraper lost the opponent). They literally can't be processed downstream:
+#   - compute_match_elos can't update Elo without knowing both teams
+#   - the prior step 03 re-iteration was POISONING every other team's Elo
+#     through NA-name lookups in the elos named vector, cascading to
+#     France/Germany/Brazil all getting NA Elo and then 0 via step 04's
+#     NA-fill
+# Dropping at source surfaces the upstream scraper gap loudly (so it can
+# be reported to pannadata), and prevents the cascade. We don't impute
+# the missing team — there's nothing meaningful to impute.
+missing_team <- is.na(results$home_team) | is.na(results$away_team)
+if (any(missing_team)) {
+  bad <- results[missing_team, , drop = FALSE]
+  by_league <- table(bad$league)
+  message(sprintf("  WARNING: %d matches have NA home_team or away_team — DROPPING (Opta scraper gap, file a pannadata issue):",
+                  nrow(bad)))
+  for (lg in names(by_league)) {
+    message(sprintf("    %s: %d matches", lg, by_league[lg]))
+  }
+  # Show up to 5 examples so the user can see what's broken
+  example_n <- min(5, nrow(bad))
+  for (i in seq_len(example_n)) {
+    r <- bad[i, ]
+    message(sprintf("    e.g., %s [%s] '%s' vs '%s'",
+                    r$match_date, r$league,
+                    if (is.na(r$home_team)) "<NA>" else r$home_team,
+                    if (is.na(r$away_team)) "<NA>" else r$away_team))
+  }
+  results <- results[!missing_team, , drop = FALSE]
 }
-if (!"home_xg" %in% names(results)) results$home_xg <- NA_real_
-if (!"away_xg" %in% names(results)) results$away_xg <- NA_real_
+
+# 6. Ensure Required Columns ----
+#
+# season_end_year MUST be populated for every row — the ratings join
+# in step 02 is keyed by (player_id, season_end_year), so any row with
+# NA/0 silently produces a row with all-NA ratings that the model then
+# trains on. Previously we only ran extraction when the column was
+# ABSENT (`if (!... %in% names(results))`), but after the cache+direct
+# combine the column EXISTS (from cache) with NAs for direct-load rows
+# — so extraction was skipped and step 04's NA-fill turned NAs into 0.
+# Result: 6.3% of training rows (every direct-loaded intl match) had
+# season_end_year = 0 and silently joined zero ratings.
+if (!"season_end_year" %in% names(results)) {
+  results$season_end_year <- NA_real_
+}
+needs_extract <- is.na(results$season_end_year) | results$season_end_year == 0
+if (any(needs_extract)) {
+  results$season_end_year[needs_extract] <- vapply(
+    results$season[needs_extract], extract_season_end_year, numeric(1))
+  n_filled <- sum(needs_extract & !is.na(results$season_end_year))
+  message(sprintf("  season_end_year: extracted %d / %d previously missing values",
+                  n_filled, sum(needs_extract)))
+}
+
+# Hard-fail if any rows STILL have unparseable season_end_year — silently
+# leaving them would propagate to all-NA ratings.
+still_bad <- is.na(results$season_end_year) | results$season_end_year == 0
+if (any(still_bad)) {
+  bad_seasons <- unique(results$season[still_bad])
+  stop(sprintf(
+    "%d rows have unparseable season_end_year. Unique season strings: %s. Fix extract_season_end_year() in R/utils.R or filter these rows at the source.",
+    sum(still_bad),
+    paste(head(bad_seasons, 20), collapse = ", ")
+  ), call. = FALSE)
+}
+
+# 6b. Backfill missing home/away team_ids from opta_lineups.parquet ----
+#
+# The RAPM cache (01_raw_data.rds) provides historical matches with NA
+# home_team_id / away_team_id columns — when it was built, team_ids weren't
+# preserved. With cached matches making up most of the dataset, ~99% of
+# `results` rows have NA team_ids. Downstream:
+#   - the xG join (next block) is keyed by (match_id, team_id) so it
+#     misses every cache-loaded match → 0% join rate session-wide
+#   - rolling xG features in step 03 become all-NA → step 04 NA-fill (now
+#     narrowed) propagates NaN → the model trains on NaN xG for every
+#     match historically
+# Backfill from opta_lineups.parquet, which has team_ids for every match
+# we have a lineup for. This recovers ~99% coverage and lifts the xG join
+# from 0% to ~86% (the remaining 14% are matches in competitions the xG
+# model hasn't been run on yet — genuine NA, not a join failure).
+lineups_path <- "../pannadata/data/opta/opta_lineups.parquet"
+n_before_backfill <- sum(is.na(results$home_team_id) | is.na(results$away_team_id))
+if (n_before_backfill > 0L &&
+    file.exists(lineups_path) &&
+    requireNamespace("arrow", quietly = TRUE)) {
+  lu_all <- as.data.frame(arrow::read_parquet(
+    lineups_path, col_select = c("match_id", "team_id", "team_position")))
+  lu_dt <- data.table::as.data.table(lu_all)
+  # One team_id per (match_id, side). first() is safe because all lineup
+  # rows for a side of a match share the same team_id.
+  lu_dt <- lu_dt[, .(team_id = team_id[1L]),
+                  by = .(match_id, side = tolower(team_position))]
+  lu_home <- lu_dt[side == "home", .(match_id, home_tid = team_id)]
+  lu_away <- lu_dt[side == "away", .(match_id, away_tid = team_id)]
+  rm(lu_all, lu_dt); invisible(gc(verbose = FALSE))
+
+  rdt <- data.table::as.data.table(results)
+  rdt <- merge(rdt, lu_home, by = "match_id", all.x = TRUE)
+  rdt <- merge(rdt, lu_away, by = "match_id", all.x = TRUE)
+  rdt[is.na(home_team_id) & !is.na(home_tid), home_team_id := home_tid]
+  rdt[is.na(away_team_id) & !is.na(away_tid), away_team_id := away_tid]
+  rdt[, c("home_tid", "away_tid") := NULL]
+  results <- as.data.frame(rdt)
+
+  n_after_backfill <- sum(is.na(results$home_team_id) | is.na(results$away_team_id))
+  n_recovered <- n_before_backfill - n_after_backfill
+  message(sprintf("  Backfilled team_ids from opta_lineups: %d / %d previously-NA matches resolved (%.0f%%), %d still NA",
+                  n_recovered, n_before_backfill,
+                  100 * n_recovered / n_before_backfill, n_after_backfill))
+}
+
+# Match-level team xG from panna's own xG model (per-shot xG summed by team;
+# built by debug/keep/build_match_team_xg.R -> opta_match_xg.parquet). Opta's
+# feed carries no usable match xG, so without this the xG-rolling features in
+# step 03 collapse to a constant.
+results$home_xg <- NA_real_
+results$away_xg <- NA_real_
+mxg_path <- "../pannadata/data/opta/opta_match_xg.parquet"
+if (file.exists(mxg_path) && requireNamespace("arrow", quietly = TRUE)) {
+  mxg <- as.data.frame(arrow::read_parquet(mxg_path))
+  xg_lookup <- stats::setNames(mxg$xg, paste(mxg$match_id, mxg$team_id))
+  results$home_xg <- unname(xg_lookup[paste(results$match_id, results$home_team_id)])
+  results$away_xg <- unname(xg_lookup[paste(results$match_id, results$away_team_id)])
+  n_xg <- sum(!is.na(results$home_xg) & !is.na(results$away_xg))
+  message(sprintf("  Match xG (panna model) joined: %d/%d matches (%.0f%%)",
+                  n_xg, nrow(results), 100 * n_xg / nrow(results)))
+  # Sanity gate: if the join rate is implausibly low (signalling a key-mismatch
+  # bug rather than just missing-coverage), surface it loudly. Healthy state
+  # after the team_id backfill above is ~86% (club matches covered; intl
+  # qualifiers not, which is fine). Anything <50% is structurally wrong.
+  pct <- 100 * n_xg / nrow(results)
+  if (pct < 50) {
+    warning(sprintf(
+      "Match xG join rate is %.0f%% — implausibly low. Either the xG parquet is empty, the team_id backfill failed, or the encoding has drifted between sources. Rolling xG features will be mostly NA, hollowing out a major predictor.",
+      pct), call. = FALSE, immediate. = TRUE)
+  }
+}
 
 # Compute result label
 results$result <- ifelse(results$home_goals > results$away_goals, "H",

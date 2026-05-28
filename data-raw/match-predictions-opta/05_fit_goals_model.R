@@ -1,8 +1,11 @@
 # 05_fit_goals_model.R
 # Fit XGBoost Poisson models for home and away goal prediction
 #
-# Two separate models predict expected goals for each side.
-# Uses time-based cross-validation with early stopping.
+# Trains a POOLED model (all competitions) and an INTERNATIONAL-specialist
+# model (national-team competitions only). Domestic fixtures are predicted
+# with the pooled model; international fixtures with a blend of the two
+# (see MATCH_INTL_BLEND_WEIGHT). Each training set is mirrored
+# (orientation-symmetric) before fitting.
 
 # 1. Setup ----
 
@@ -19,20 +22,22 @@ output_path <- file.path(cache_dir, "05_goals_model.rds")
 if (file.exists(output_path) && !isTRUE(force_rebuild)) {
   message("Cache exists - loading 05_goals_model.rds")
   goals_models <- readRDS(output_path)
-  message(sprintf("  Home goals model: %d rounds", goals_models$home$best_nrounds))
-  message(sprintf("  Away goals model: %d rounds", goals_models$away$best_nrounds))
+  for (seg in goals_models$segments) {
+    message(sprintf("  [%s] home: %d rounds, away: %d rounds", seg,
+                    goals_models[[seg]]$home$best_nrounds,
+                    goals_models[[seg]]$away$best_nrounds))
+  }
   return(invisible(NULL))
 }
 
 # 4. Load Data ----
 
-message("\n=== Fitting Goals Models ===\n")
+message("\n=== Fitting Goals Models (pooled + international) ===\n")
 
 match_dataset <- readRDS(file.path(cache_dir, "04_match_dataset.rds"))
 
 # 5. Identify Feature Columns ----
 
-# Exclude non-feature columns
 exclude_cols <- c("match_id", "match_date", "match_status", "league", "season",
                   "home_team", "away_team", "home_team_id", "away_team_id",
                   "home_goals", "away_goals", "home_xg", "away_xg",
@@ -41,113 +46,79 @@ exclude_cols <- c("match_id", "match_date", "match_status", "league", "season",
 
 all_cols <- names(match_dataset)
 feature_cols <- setdiff(all_cols[sapply(match_dataset, is.numeric)], exclude_cols)
-
 message(sprintf("  Feature columns: %d", length(feature_cols)))
 
-# 6. Prepare Training Data ----
+# 6. Segment-fitting helper ----
+# Fits home + away goals models for one competition segment, mirroring the
+# training rows for orientation symmetry.
 
-train_data <- match_dataset[match_dataset$split == "train", ]
-val_data <- match_dataset[match_dataset$split == "val", ]
+fit_goals_segment <- function(seg_name, train_df, val_df) {
+  message(sprintf("\n--- Segment: %s ---", seg_name))
 
-# Remove rows with NA goals
-train_data <- train_data[!is.na(train_data$home_goals) & !is.na(train_data$away_goals), ]
-val_data <- val_data[!is.na(val_data$home_goals) & !is.na(val_data$away_goals), ]
+  train_df <- train_df[!is.na(train_df$home_goals) & !is.na(train_df$away_goals), ]
+  val_df   <- val_df[!is.na(val_df$home_goals) & !is.na(val_df$away_goals), ]
 
-message(sprintf("  Train: %d matches", nrow(train_data)))
-message(sprintf("  Val: %d matches", nrow(val_data)))
+  n_orig <- nrow(train_df)
+  train_df <- rbind(train_df, mirror_match_rows(train_df))
+  message(sprintf("  Train: %d matches (%d original + %d mirrored) | Val: %d",
+                  nrow(train_df), n_orig, n_orig, nrow(val_df)))
 
-X_train <- as.matrix(train_data[, feature_cols, drop = FALSE])
-X_val <- as.matrix(val_data[, feature_cols, drop = FALSE])
+  X_train <- as.matrix(train_df[, feature_cols, drop = FALSE])
+  X_val   <- as.matrix(val_df[, feature_cols, drop = FALSE])
+  X_train[is.na(X_train)] <- 0
+  X_val[is.na(X_val)]     <- 0
 
-# Replace remaining NAs with 0 (early-season rolling features before enough history)
-n_na_train <- sum(is.na(X_train))
-n_na_val <- sum(is.na(X_val))
-if (n_na_train > 0 || n_na_val > 0) {
-  message(sprintf("  Imputing NAs to 0: train=%d, val=%d (%.1f%% of train cells)",
-                  n_na_train, n_na_val,
-                  100 * n_na_train / length(X_train)))
+  home_model <- fit_goals_xgb(X = X_train, y = train_df$home_goals,
+                              nfolds = 5L, nrounds = 500L,
+                              early_stopping = 30L, verbose = 0L)
+  away_model <- fit_goals_xgb(X = X_train, y = train_df$away_goals,
+                              nfolds = 5L, nrounds = 500L,
+                              early_stopping = 30L, verbose = 0L)
+
+  home_pred <- stats::predict(home_model$model, xgboost::xgb.DMatrix(X_val))
+  away_pred <- stats::predict(away_model$model, xgboost::xgb.DMatrix(X_val))
+  home_rmse <- sqrt(mean((val_df$home_goals - home_pred)^2))
+  away_rmse <- sqrt(mean((val_df$away_goals - away_pred)^2))
+  base_home_rmse <- sqrt(mean((val_df$home_goals - mean(train_df$home_goals))^2))
+  base_away_rmse <- sqrt(mean((val_df$away_goals - mean(train_df$away_goals))^2))
+  message(sprintf("  Val RMSE — home %.3f (base %.3f), away %.3f (base %.3f)",
+                  home_rmse, base_home_rmse, away_rmse, base_away_rmse))
+
+  list(home = home_model, away = away_model,
+       val_metrics = list(home_rmse = home_rmse, away_rmse = away_rmse,
+                          baseline_home_rmse = base_home_rmse,
+                          baseline_away_rmse = base_away_rmse))
 }
-X_train[is.na(X_train)] <- 0
-X_val[is.na(X_val)] <- 0
 
-# 7. Fit Home Goals Model ----
+# 7. Fit each segment ----
 
-message("\n--- Home Goals Model ---")
-
-home_model <- fit_goals_xgb(
-  X = X_train,
-  y = train_data$home_goals,
-  nfolds = 5L,
-  nrounds = 500L,
-  early_stopping = 30L,
-  verbose = 1L
-)
-
-# Evaluate on validation set
-home_pred_val <- stats::predict(home_model$model,
-                                 xgboost::xgb.DMatrix(data = X_val))
-home_rmse <- sqrt(mean((val_data$home_goals - home_pred_val)^2))
-message(sprintf("  Val RMSE: %.3f", home_rmse))
-
-# 8. Fit Away Goals Model ----
-
-message("\n--- Away Goals Model ---")
-
-away_model <- fit_goals_xgb(
-  X = X_train,
-  y = train_data$away_goals,
-  nfolds = 5L,
-  nrounds = 500L,
-  early_stopping = 30L,
-  verbose = 1L
-)
-
-# Evaluate on validation set
-away_pred_val <- stats::predict(away_model$model,
-                                 xgboost::xgb.DMatrix(data = X_val))
-away_rmse <- sqrt(mean((val_data$away_goals - away_pred_val)^2))
-message(sprintf("  Val RMSE: %.3f", away_rmse))
-
-# 9. Baseline Comparison ----
-
-message("\n--- Baseline (League Average) ---")
-avg_home <- mean(train_data$home_goals)
-avg_away <- mean(train_data$away_goals)
-base_home_rmse <- sqrt(mean((val_data$home_goals - avg_home)^2))
-base_away_rmse <- sqrt(mean((val_data$away_goals - avg_away)^2))
-message(sprintf("  Avg home goals: %.2f, Avg away goals: %.2f", avg_home, avg_away))
-message(sprintf("  Baseline Home RMSE: %.3f, Away RMSE: %.3f", base_home_rmse, base_away_rmse))
-
-# 10. Save ----
+train_all <- as.data.frame(match_dataset[match_dataset$split == "train", ])
+val_all   <- as.data.frame(match_dataset[match_dataset$split == "val", ])
+is_intl_train <- match_is_international(train_all$league)
+is_intl_val   <- match_is_international(val_all$league)
 
 goals_models <- list(
-  home = home_model,
-  away = away_model,
+  pooled = fit_goals_segment("pooled", train_all, val_all),
+  international = fit_goals_segment("international",
+                                   train_all[is_intl_train, ],
+                                   val_all[is_intl_val, ]),
   feature_cols = feature_cols,
-  val_metrics = list(
-    home_rmse = home_rmse,
-    away_rmse = away_rmse,
-    baseline_home_rmse = base_home_rmse,
-    baseline_away_rmse = base_away_rmse
-  )
+  segments = c("pooled", "international")
 )
+
+# 8. Save ----
 
 saveRDS(goals_models, output_path)
 
-# 11. Summary ----
+# 9. Summary ----
 
 message("\n========================================")
-message("Goals models complete!")
+message("Goals models complete (pooled + international)!")
 message("========================================")
-message(sprintf("Home model: %d rounds, Val RMSE=%.3f (baseline %.3f)",
-                home_model$best_nrounds, home_rmse, base_home_rmse))
-message(sprintf("Away model: %d rounds, Val RMSE=%.3f (baseline %.3f)",
-                away_model$best_nrounds, away_rmse, base_away_rmse))
-message(sprintf("\nTop 5 features (home goals):"))
-if (nrow(home_model$importance) > 0) {
-  top5 <- head(home_model$importance, 5)
-  for (i in seq_len(nrow(top5))) {
-    message(sprintf("  %s: %.4f", top5$Feature[i], top5$Gain[i]))
-  }
+for (seg in goals_models$segments) {
+  vm <- goals_models[[seg]]$val_metrics
+  message(sprintf("  [%-13s] home RMSE=%.3f (base %.3f), away RMSE=%.3f (base %.3f)",
+                  seg, vm$home_rmse, vm$baseline_home_rmse,
+                  vm$away_rmse, vm$baseline_away_rmse))
 }
 message(sprintf("\nSaved to: %s", output_path))
