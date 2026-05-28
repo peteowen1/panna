@@ -361,6 +361,53 @@ if (any(missing_team)) {
 if (!"season_end_year" %in% names(results)) {
   results$season_end_year <- sapply(results$season, extract_season_end_year)
 }
+
+# 6b. Backfill missing home/away team_ids from opta_lineups.parquet ----
+#
+# The RAPM cache (01_raw_data.rds) provides historical matches with NA
+# home_team_id / away_team_id columns — when it was built, team_ids weren't
+# preserved. With cached matches making up most of the dataset, ~99% of
+# `results` rows have NA team_ids. Downstream:
+#   - the xG join (next block) is keyed by (match_id, team_id) so it
+#     misses every cache-loaded match → 0% join rate session-wide
+#   - rolling xG features in step 03 become all-NA → step 04 NA-fill (now
+#     narrowed) propagates NaN → the model trains on NaN xG for every
+#     match historically
+# Backfill from opta_lineups.parquet, which has team_ids for every match
+# we have a lineup for. This recovers ~99% coverage and lifts the xG join
+# from 0% to ~86% (the remaining 14% are matches in competitions the xG
+# model hasn't been run on yet — genuine NA, not a join failure).
+lineups_path <- "../pannadata/data/opta/opta_lineups.parquet"
+n_before_backfill <- sum(is.na(results$home_team_id) | is.na(results$away_team_id))
+if (n_before_backfill > 0L &&
+    file.exists(lineups_path) &&
+    requireNamespace("arrow", quietly = TRUE)) {
+  lu_all <- as.data.frame(arrow::read_parquet(
+    lineups_path, col_select = c("match_id", "team_id", "team_position")))
+  lu_dt <- data.table::as.data.table(lu_all)
+  # One team_id per (match_id, side). first() is safe because all lineup
+  # rows for a side of a match share the same team_id.
+  lu_dt <- lu_dt[, .(team_id = team_id[1L]),
+                  by = .(match_id, side = tolower(team_position))]
+  lu_home <- lu_dt[side == "home", .(match_id, home_tid = team_id)]
+  lu_away <- lu_dt[side == "away", .(match_id, away_tid = team_id)]
+  rm(lu_all, lu_dt); invisible(gc(verbose = FALSE))
+
+  rdt <- data.table::as.data.table(results)
+  rdt <- merge(rdt, lu_home, by = "match_id", all.x = TRUE)
+  rdt <- merge(rdt, lu_away, by = "match_id", all.x = TRUE)
+  rdt[is.na(home_team_id) & !is.na(home_tid), home_team_id := home_tid]
+  rdt[is.na(away_team_id) & !is.na(away_tid), away_team_id := away_tid]
+  rdt[, c("home_tid", "away_tid") := NULL]
+  results <- as.data.frame(rdt)
+
+  n_after_backfill <- sum(is.na(results$home_team_id) | is.na(results$away_team_id))
+  n_recovered <- n_before_backfill - n_after_backfill
+  message(sprintf("  Backfilled team_ids from opta_lineups: %d / %d previously-NA matches resolved (%.0f%%), %d still NA",
+                  n_recovered, n_before_backfill,
+                  100 * n_recovered / n_before_backfill, n_after_backfill))
+}
+
 # Match-level team xG from panna's own xG model (per-shot xG summed by team;
 # built by debug/keep/build_match_team_xg.R -> opta_match_xg.parquet). Opta's
 # feed carries no usable match xG, so without this the xG-rolling features in
@@ -376,6 +423,16 @@ if (file.exists(mxg_path) && requireNamespace("arrow", quietly = TRUE)) {
   n_xg <- sum(!is.na(results$home_xg) & !is.na(results$away_xg))
   message(sprintf("  Match xG (panna model) joined: %d/%d matches (%.0f%%)",
                   n_xg, nrow(results), 100 * n_xg / nrow(results)))
+  # Sanity gate: if the join rate is implausibly low (signalling a key-mismatch
+  # bug rather than just missing-coverage), surface it loudly. Healthy state
+  # after the team_id backfill above is ~86% (club matches covered; intl
+  # qualifiers not, which is fine). Anything <50% is structurally wrong.
+  pct <- 100 * n_xg / nrow(results)
+  if (pct < 50) {
+    warning(sprintf(
+      "Match xG join rate is %.0f%% — implausibly low. Either the xG parquet is empty, the team_id backfill failed, or the encoding has drifted between sources. Rolling xG features will be mostly NA, hollowing out a major predictor.",
+      pct), call. = FALSE, immediate. = TRUE)
+  }
 }
 
 # Compute result label
