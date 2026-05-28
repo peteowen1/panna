@@ -141,6 +141,8 @@ Stat ratings → PSR/OSR/DSR (smoothed skills via glmnet) ───────�
 - **`library()` not `requireNamespace()`** in parallel workers — PSOCK clusters need `library()` to attach packages to the search path
 - **`.get_col()` warns on missing columns** — memoized warnings via `.get_col_warned` env in `utils.R`
 - **Own goal xG override** — own goals use model EPV (not xG) because xG at `start_x=3` (near own goal) gives 0.97, which is nonsensical for a deflection
+- **Data location debugging — call `data_location_report()` first** — if `load_opta_*()` returns nothing for data you believe is on disk, run `data_location_report()` to see (a) where `opta_data_dir()` resolved to, (b) which consolidated `opta_*.parquet` files exist with row counts per league, (c) any consolidated-vs-per-season inconsistencies. The package has a fall-through so reads usually succeed even when sources disagree, but the report shows you what's actually being read. Three resolution chains can each fail silently: `pannadata_dir()` cwd-walks for `pannadata/data`; `list_opta_seasons('local')` unions per-season dirs + consolidated parquets; `load_opta_table()` prefers consolidated but falls through to per-season on 0-row return.
+- **`compute_match_elos()` time decay is opt-in** — pass `time_decay_halflife = N` (days) to scale K by `0.5 ^ ((max_date - match_date) / N)`. Default `NULL` = no decay (legacy behaviour). The v5 Elo optimization treated this as a tunable param and converged near "off" (~6500-day halflife), so it's not the default — but callers wanting recency weighting should set it (~720 days ≈ 0.7 weight at 1 year, matches the FIFA / SPI intuition).
 
 ## GitHub Actions
 
