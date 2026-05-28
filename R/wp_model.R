@@ -399,22 +399,52 @@ save_wp_model <- function(wp_model, path = NULL) {
 
 #' Load WP model
 #'
-#' @param path Directory to load from. If NULL, uses \code{pannadata/data/opta/models/}.
+#' Resolution order, matching load_epv_model() / load_xpass_model():
+#'   1. Explicit \code{path} (if supplied and the file exists)
+#'   2. pannamodels package (preferred — distributes wp_model via the
+#'      `epv` release tag, downloaded + cached on first call)
+#'   3. Local fallback at \code{pannadata/data/opta/models/wp_model.rds}
+#'
+#' @param path Directory to load from. If NULL, tries pannamodels first
+#'   then falls back to \code{pannadata/data/opta/models/}.
 #'
 #' @return WP model list (model + feature_names).
 #' @export
 load_wp_model <- function(path = NULL) {
-  if (is.null(path)) {
-    path <- file.path(opta_data_dir(), "models")
+  # 1. Explicit path wins if it exists
+  if (!is.null(path)) {
+    model_path <- file.path(path, "wp_model.rds")
+    if (file.exists(model_path)) {
+      cli::cli_alert_success("Loaded WP model from {model_path}")
+      return(readRDS(model_path))
+    }
   }
 
-  model_path <- file.path(path, "wp_model.rds")
-  if (!file.exists(model_path)) {
-    cli::cli_abort(c(
-      "WP model not found at {.file {model_path}}",
-      "i" = "Run {.file data-raw/epv/05_train_wp_model.R} to train the model."
-    ))
+  # 2. Try pannamodels (the canonical distribution)
+  if (requireNamespace("pannamodels", quietly = TRUE)) {
+    model <- tryCatch(
+      pannamodels::load_panna_model("wp_model", verbose = FALSE),
+      error = function(e) {
+        cli::cli_alert_info("pannamodels wp_model lookup failed: {e$message}. Trying local path.")
+        NULL
+      }
+    )
+    if (!is.null(model)) {
+      cli::cli_alert_success("Loaded WP model from pannamodels")
+      return(model)
+    }
   }
 
-  readRDS(model_path)
+  # 3. Local fallback
+  default_path <- file.path(opta_data_dir(), "models", "wp_model.rds")
+  if (file.exists(default_path)) {
+    cli::cli_alert_success("Loaded WP model from {default_path}")
+    return(readRDS(default_path))
+  }
+
+  cli::cli_abort(c(
+    "WP model not found.",
+    "i" = "Install pannamodels: devtools::install_github('peteowen1/pannamodels')",
+    "i" = "Or train locally: source('data-raw/epv/05_train_wp_model.R')"
+  ))
 }
