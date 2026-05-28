@@ -263,18 +263,22 @@ WC2026_REFERENCE_FACTS <- list(
   host_advantage_applied = list(
     fact = paste(
       "USA, Canada, Mexico should each appear with home_field = 1 in",
-      "their 3 group-stage matches. This was a known silent-failure mode",
-      "(host names hardcoded as strings — 2026-05-28); team_id-based",
+      "their 3 WC2026 group-stage matches. This was a known silent-failure",
+      "mode (host names hardcoded as strings — 2026-05-28); team_id-based",
       "lookup with stop()-on-missing was the fix."
     ),
     check_match_dataset = function(md) {
       md <- as.data.frame(md)
       wc_ids <- get0("WC2026_HOST_TEAM_IDS")
-      if (is.null(wc_ids)) return(TRUE)
-      hosts_home <- md[md$home_team_id %in% wc_ids &
-                         md$league == "WC", , drop = FALSE]
-      hosts_away <- md[md$away_team_id %in% wc_ids &
-                         md$league == "WC", , drop = FALSE]
+      season <- get0("WC2026_SEASON_LABEL")
+      if (is.null(wc_ids) || is.null(season)) return(TRUE)
+      # Scope to WC2026 specifically — historical WC matches (2014/2018/
+      # 2022) where USA/Canada/Mexico played as away in normal venues
+      # legitimately have home_field == 1 from the away team's
+      # perspective, which is NOT what this fact is checking.
+      wc26 <- md[md$league == "WC" & md$season == season, , drop = FALSE]
+      hosts_home <- wc26[wc26$home_team_id %in% wc_ids, , drop = FALSE]
+      hosts_away <- wc26[wc26$away_team_id %in% wc_ids, , drop = FALSE]
       all(hosts_home$home_field == 1L) && all(hosts_away$home_field == -1L)
     }
   )
