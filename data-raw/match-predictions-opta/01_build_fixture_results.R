@@ -70,7 +70,7 @@ if (is.null(results)) {
 
   for (league in leagues) {
     opta_league <- to_opta_league(league)
-    available_seasons <- tryCatch(list_opta_seasons(league), error = function(e) character(0))
+    available_seasons <- tryCatch(list_opta_seasons(league, source = "local"), error = function(e) character(0))
     if (length(available_seasons) == 0) next
 
     if (!is.null(seasons)) available_seasons <- intersect(available_seasons, seasons)

@@ -247,13 +247,29 @@ list_opta_seasons <- function(league, source = c("catalog", "remote", "local")) 
   opta_league <- to_opta_league(league)
 
   if (source == "local") {
-    league_dir <- file.path(opta_data_dir(), "player_stats", opta_league)
-    if (dir.exists(league_dir)) {
-      files <- list.files(league_dir, pattern = "\\.parquet$", full.names = FALSE)
-      seasons <- tools::file_path_sans_ext(files)
-      return(sort(seasons, decreasing = TRUE))
+    # Check multiple data-type directories in order: a competition has
+    # "seasons" if it has files in ANY of these. Previously this only
+    # checked player_stats/ — but RAPM-derived player_stats only exist for
+    # competitions that have been through the EPV/RAPM pipeline. Newly-
+    # added intl competitions (UEFA_WC_Qualifiers, UEFA_Nations_League,
+    # Intl_Friendlies, etc.) have lineups + fixtures + events on disk but
+    # no player_stats files, so list_opta_seasons returned 0 → step 01
+    # silently skipped the whole competition → Norway's 89 qualifying
+    # matches never entered the Elo iteration. Fall through the available
+    # data-type dirs so any one of them suffices to expose the season.
+    base <- opta_data_dir()
+    candidate_dirs <- c("player_stats", "lineups", "fixtures", "events")
+    for (sub in candidate_dirs) {
+      league_dir <- file.path(base, sub, opta_league)
+      if (dir.exists(league_dir)) {
+        files <- list.files(league_dir, pattern = "\\.parquet$", full.names = FALSE)
+        if (length(files) > 0) {
+          seasons <- tools::file_path_sans_ext(files)
+          return(sort(seasons, decreasing = TRUE))
+        }
+      }
     }
-    # Fall through to catalog if local dir doesn't exist
+    # Fall through to catalog if NO local dir under any data-type has files
     cli::cli_alert_info("No local data for {opta_league}, checking catalog...")
   }
 
