@@ -23,7 +23,7 @@
 #'   `panna`, `offense`, `defense` (and optionally `spm`).
 #' @param current_sey The season we want imputed rows for (e.g., 2026).
 #' @param decay_factor Per-year decay. Default 0.85 (15% decline per year
-#'   away from a player's last-rated season — accounts for both ageing and
+#'   away from a player's last-rated season -- accounts for both ageing and
 #'   uncertainty about their current form).
 #' @param max_years_back Cap how far back to look. Default 5 years.
 #'   Beyond that the decay is so heavy the imputation is near-zero anyway.
@@ -35,7 +35,7 @@ augment_ratings_with_history <- function(ratings, current_sey,
                                             max_years_back = 5L) {
   dt <- data.table::as.data.table(ratings)
 
-  ## Players already rated in current_sey — leave them alone
+  ## Players already rated in current_sey -- leave them alone
   curr_ids <- dt[season_end_year == current_sey &
                   !is.na(panna) & panna != 0, unique(player_id)]
 
@@ -56,7 +56,7 @@ augment_ratings_with_history <- function(ratings, current_sey,
   }
   ## Stamp as current_sey so downstream lookups find them
   most_recent[, season_end_year := current_sey]
-  ## Tag for diagnostics (won't break callers — extra column)
+  ## Tag for diagnostics (won't break callers -- extra column)
   most_recent[, imputed_from_history := TRUE]
   most_recent[, c("years_gap","decay") := NULL]
 
@@ -92,7 +92,7 @@ aggregate_lineup_ratings <- function(lineups, ratings, season_end_year,
   starters <- dt_lineups[is_starter == TRUE]
 
   # Honour optional lineup_weight column (0..1; sum across a side ~= 11).
-  # When absent, default to 1.0 so the non-override path stays unchanged —
+  # When absent, default to 1.0 so the non-override path stays unchanged --
   # 11 starters at weight 1 reproduces the previous sum/mean semantics.
   # Used by the WC2026 announced-squad override (step 02 / 02b) to pass
   # all 26 players weighted by expected minutes per match.
@@ -138,7 +138,7 @@ aggregate_lineup_ratings <- function(lineups, ratings, season_end_year,
                        "wpa_rating", "psv_rating",
                        "centrality")
   optional_cols <- intersect(known_optional, names(dt_ratings))
-  # Warn if any expected optional cols are NOT in dt_ratings — catches the
+  # Warn if any expected optional cols are NOT in dt_ratings -- catches the
   # pre-2026-05-19 silent-drop pattern where downstream `has_psr`/`has_epr`
   # checks in this function would always evaluate FALSE, so no team-level
   # PSR/EPR features ever got created. If we expect these columns to be
@@ -179,7 +179,7 @@ aggregate_lineup_ratings <- function(lineups, ratings, season_end_year,
   # Capture pre-imputation rated status BEFORE the imputation block below
   # rewrites NA panna with team-mean estimates. The post-imputation
   # `sum(panna != 0)` count was effectively "always 11" because almost every
-  # NA was filled with a non-zero shrunk-mean — making `n_rated_players`
+  # NA was filled with a non-zero shrunk-mean -- making `n_rated_players`
   # near-constant and the feature's name a lie. `was_rated` captures the
   # honest signal: did this player have a real current-or-previous-season
   # panna rating? (TRUE iff the join in the block above found one.)
@@ -187,25 +187,25 @@ aggregate_lineup_ratings <- function(lineups, ratings, season_end_year,
 
   # Coverage-shrunk team-mean imputation for unrated players
   #
-  # Why: a Brazil player without a panna rating (e.g. Brasileirão-based, not
+  # Why: a Brazil player without a panna rating (e.g. Brasileir\u00e3o-based, not
   # in our European-focused RAPM pipeline) used to get panna = 0, which
   # systematically depressed `home_sum_panna` for low-coverage countries.
   # Naive team-mean imputation overshoots in the opposite direction: Saudi
   # Arabia with only 1 rated player (a top star) would impute 25 others at
   # that star's panna, inflating the whole team.
   #
-  # Shrinkage formula: imputed = team_mean × coverage / (coverage + SHRINK_K)
+  # Shrinkage formula: imputed = team_mean * coverage / (coverage + SHRINK_K)
   #
   # - coverage = n_rated_starters / n_total_starters per team (across the
   #   season's matches passed in)
-  # - SHRINK_K = 0.3 — when coverage equals k, imputation gets half the
+  # - SHRINK_K = 0.3 -- when coverage equals k, imputation gets half the
   #   team mean (a Bayesian-flavoured shrinkage toward 0/replacement)
-  # - Brazil (cov ~0.7): imputed ≈ 0.70 × team_mean (mostly trust team mean)
-  # - Saudi  (cov ~0.04): imputed ≈ 0.12 × team_mean (mostly shrink to 0)
+  # - Brazil (cov ~0.7): imputed ~= 0.70 * team_mean (mostly trust team mean)
+  # - Saudi  (cov ~0.04): imputed ~= 0.12 * team_mean (mostly shrink to 0)
   # - Qatar  (cov 0):    imputed = 0 (final fallback below handles)
   ## Increased from 0.3 to 0.6: at 0.3, USA (50% coverage) imputed unrated
-  ## MLS players at 62% of team mean — selection bias because rated 13 are
-  ## all Europe-based stars. At 0.6, USA shrinks to 45% — more honest.
+  ## MLS players at 62% of team mean -- selection bias because rated 13 are
+  ## all Europe-based stars. At 0.6, USA shrinks to 45% -- more honest.
   SHRINK_K <- 0.6
   # All numeric rating columns get coverage-shrunk team-mean imputation:
   # core (panna/offense/defense/spm) AND optional value metrics (EPR/PSR/etc.).
@@ -250,7 +250,7 @@ aggregate_lineup_ratings <- function(lineups, ratings, season_end_year,
   # Aggregate per match-side. Weighted by `lineup_weight` so the WC2026
   # override (26-man squad, weights = expected_minutes/90 summing to ~11)
   # produces team features on the same numeric scale as the non-override
-  # path (11 starters × weight 1, also summing to 11).
+  # path (11 starters * weight 1, also summing to 11).
   #
   # max/min/stdev and n_rated stay UNWEIGHTED: they describe the squad
   # (best-player-in-the-team, spread), not pitch-time contribution.
@@ -285,7 +285,7 @@ aggregate_lineup_ratings <- function(lineups, ratings, season_end_year,
     fwd_idx <- pos_group == "fwd"
 
     # Weighted mean over a boolean mask. Returns 0 when the mask is empty,
-    # all values are NA, or total weight in the mask is 0 — matching the
+    # all values are NA, or total weight in the mask is 0 -- matching the
     # previous `safe_mean` semantics.
     wmean <- function(x, mask) {
       if (sum(mask) == 0 || all(is.na(x[mask]))) return(0)
@@ -296,7 +296,7 @@ aggregate_lineup_ratings <- function(lineups, ratings, season_end_year,
 
     # Value metric columns (included only when ALL bare-referenced columns
     # for that block are present). Earlier the EPR block bare-referenced
-    # epr_offensive / epr_defensive while only gating on `epr` — one column
+    # epr_offensive / epr_defensive while only gating on `epr` -- one column
     # trim upstream would crash the aggregator inside a data.table NSE block
     # with a useless error. Same logic for PSR (osr/dsr handled by per-block
     # if() guards below).
@@ -562,7 +562,7 @@ aggregate_lineup_skills <- function(lineups, skill_estimates,
 #' Initialize Team Elo Ratings
 #'
 #' Creates a named vector of initial Elo ratings for all teams.
-#' Filters NA team names defensively — they would otherwise create an
+#' Filters NA team names defensively -- they would otherwise create an
 #' NA-named entry that `NA %in% names(elos)` returns TRUE for, opening
 #' the door to NA cascades when bad upstream data sneaks through.
 #'
@@ -630,7 +630,7 @@ update_elo <- function(home_elo, away_elo, home_goals, away_goals,
 #' Returns BOTH per-match pre-match Elos (for joining onto the match
 #' dataset) AND the final post-iteration team-Elo state (for looking up
 #' the current Elo of teams in upcoming fixtures). Returning both is what
-#' prevents step 03 from having to duplicate the iteration — the previous
+#' prevents step 03 from having to duplicate the iteration -- the previous
 #' duplicate-iteration approach was missing the same NA guards as this
 #' function, which caused the 2026-05-28 NA-cascade bug where a single
 #' NA-team friendly poisoned every team's Elo via NA-named-lookup.
@@ -654,7 +654,7 @@ update_elo <- function(home_elo, away_elo, home_goals, away_goals,
 #'   single `initial_elo`. Requires `build_team_confederations()` to be able
 #'   to derive each team's confederation from `results`.
 #' @param use_venue_factor Logical (default FALSE for backwards compat). When
-#'   TRUE, `home_advantage` is scaled by `compute_venue_factor()` per match —
+#'   TRUE, `home_advantage` is scaled by `compute_venue_factor()` per match --
 #'   +1 for true home, 0 for neutral tournament, -1 when the designated
 #'   "home_team" is actually visiting the host country.
 #' @param time_decay_halflife Optional numeric (days, default NULL = disabled).
@@ -684,7 +684,7 @@ compute_match_elos <- function(results, k = 20, home_advantage = 65,
   # 0.5 ^ ((reference_date - match_date) / halflife) so older training
   # matches contribute exponentially less to the Elo trajectory than
   # recent ones. Useful when the model is expected to predict matches at
-  # the END of the data — older form should fade. Set decay_reference_date
+  # the END of the data -- older form should fade. Set decay_reference_date
   # to control "now"; defaults to max(match_date) in `results`.
   # Sort by date
   results <- results[order(results$match_date), ]
@@ -717,7 +717,7 @@ compute_match_elos <- function(results, k = 20, home_advantage = 65,
 
   # Per-match time-decay multiplier. Exponential decay relative to
   # `decay_reference_date` (default: most recent match in results). The
-  # decay scales K — older matches still update Elo, just by less — so
+  # decay scales K -- older matches still update Elo, just by less -- so
   # the long-run baseline is preserved but recent form dominates.
   # When time_decay_halflife is NULL or <= 0, every match gets 1.0 (no decay).
   decay_per_match <- if (!is.null(time_decay_halflife) &&
@@ -757,7 +757,7 @@ compute_match_elos <- function(results, k = 20, home_advantage = 65,
     ht <- results$home_team[i]
     at <- results$away_team[i]
 
-    # Skip rows with missing team names — they cannot be processed (no
+    # Skip rows with missing team names -- they cannot be processed (no
     # team to update). Records NA pre-match Elo for the row so the join
     # downstream sees the gap, but does NOT touch the elos vector.
     if (is.na(ht) || is.na(at)) {
@@ -772,7 +772,7 @@ compute_match_elos <- function(results, k = 20, home_advantage = 65,
 
     # Update only for played matches
     if (!is.na(results$home_goals[i]) && !is.na(results$away_goals[i])) {
-      # Effective K = base_K(match_type) × cross_conf_mult(team1, team2).
+      # Effective K = base_K(match_type) * cross_conf_mult(team1, team2).
       # The goal-difference multiplier is applied inside update_elo().
       # Only apply the cross-conf multiplier when it's actually != 1.0;
       # conf_lookup might be non-NULL purely for conf_priors init while
@@ -795,7 +795,7 @@ compute_match_elos <- function(results, k = 20, home_advantage = 65,
   # Mid-season-rename smoke test: this function keys Elo by team_name, so
   # if Opta ever renames a team mid-flow (e.g., "Rangers" -> "Rangers FC")
   # the iteration silently treats them as two distinct teams each starting
-  # at initial_elo. Surface low-match teams as a soft warning — domestic
+  # at initial_elo. Surface low-match teams as a soft warning -- domestic
   # teams should have tens of matches across the dataset; cup competitions
   # legitimately produce some low counts, so this is a hint rather than a
   # hard fail. Code-review item 16.
@@ -804,7 +804,7 @@ compute_match_elos <- function(results, k = 20, home_advantage = 65,
   low_match_teams <- names(match_counts)[match_counts < 10L]
   if (length(low_match_teams) > 10L) {
     cli::cli_inform(c(
-      "i" = "{length(low_match_teams)} team(s) with <10 matches in Elo iteration — possible split-identity from a mid-season rename. Investigate before publishing if any are domestic-league teams.",
+      "i" = "{length(low_match_teams)} team(s) with <10 matches in Elo iteration -- possible split-identity from a mid-season rename. Investigate before publishing if any are domestic-league teams.",
       "*" = "Sample: {paste(head(low_match_teams, 10), collapse = ', ')}..."
     ))
   }

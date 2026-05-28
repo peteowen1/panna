@@ -2,14 +2,14 @@
 #
 # `build_minutes_training_data()` does the full per-player rolling-window
 # computation across every player in the lineups dataset. That's fine for
-# training (one-shot ~5 min) but wasteful for prediction — we only need
+# training (one-shot ~5 min) but wasteful for prediction -- we only need
 # features for ~26 players in a single upcoming match.
 #
 # This module:
-#   1. `prepare_minutes_cache()` — one-time precomputation (cached to RDS)
-#   2. `query_minutes_features()` — fast lookup for any (player × date)
+#   1. `prepare_minutes_cache()` -- one-time precomputation (cached to RDS)
+#   2. `query_minutes_features()` -- fast lookup for any (player x date)
 #
-# Together they keep prediction cost at O(players × log(matches)) per call.
+# Together they keep prediction cost at O(players x log(matches)) per call.
 
 #' Prepare a cached lineups data object for fast minutes-feature queries
 #'
@@ -24,14 +24,14 @@
 #' @param cache_path Optional RDS file path. If supplied, saves the result.
 #' @param verbose Logical.
 #' @return A list with:
-#'   * `per_player_history` — keyed data.table per (player_id, date_int)
+#'   * `per_player_history` -- keyed data.table per (player_id, date_int)
 #'     with `mins_intl, mins_club, app_intl, start_intl, start_club, is_intl`
-#'   * `cumsum_lookup` — per-player precomputed cumulative-sum arrays for
+#'   * `cumsum_lookup` -- per-player precomputed cumulative-sum arrays for
 #'     fast rolling-window queries
-#'   * `modal_role` — modal non-Substitute role per player
-#'   * `player_panna` — panna ratings table (player_id × season_end_year)
-#'   * `team_rotation` — global rotation_idx per team
-#'   * `team_intl_count` — number of intl matches per team
+#'   * `modal_role` -- modal non-Substitute role per player
+#'   * `player_panna` -- panna ratings table (player_id x season_end_year)
+#'   * `team_rotation` -- global rotation_idx per team
+#'   * `team_intl_count` -- number of intl matches per team
 #' @export
 prepare_minutes_cache <- function(lineups,
                                     intl_comps,
@@ -152,7 +152,7 @@ prepare_minutes_cache <- function(lineups,
   cache
 }
 
-#' Helper — rolling-sum lookup for a single player as-of a date
+#' Helper -- rolling-sum lookup for a single player as-of a date
 #' @keywords internal
 .rolling_at <- function(date_int, cum_vec, as_of, window_days) {
   if (length(date_int) == 0L) return(0)
@@ -172,12 +172,12 @@ prepare_minutes_cache <- function(lineups,
 #' @param cache Output of `prepare_minutes_cache()`.
 #' @param player_ids Character vector of player_ids to predict for.
 #' @param team_name The country these players are playing for.
-#' @param as_of_date Date — the upcoming match date.
-#' @param tournament_match_num Integer — which game in their tournament run.
-#' @param days_rest_team Integer — days since this team's last intl match.
+#' @param as_of_date Date -- the upcoming match date.
+#' @param tournament_match_num Integer -- which game in their tournament run.
+#' @param days_rest_team Integer -- days since this team's last intl match.
 #'   If NULL, derived from cache.
-#' @param is_tournament Integer 0/1 — group-stage / knockout (1) vs qualifier (0).
-#' @param is_friendly Integer 0/1 — friendly (1) vs competitive (0). Default 0
+#' @param is_tournament Integer 0/1 -- group-stage / knockout (1) vs qualifier (0).
+#' @param is_friendly Integer 0/1 -- friendly (1) vs competitive (0). Default 0
 #'   for WC/qualifier predictions.
 #' @return Data.table with one row per player, columns matching the model's
 #'   `feature_cols`. Pass directly to `predict_minutes()`.
@@ -195,7 +195,7 @@ query_minutes_features <- function(cache,
 
   ## Find each player's cumsum data
   player_rows <- cache$cumsum_lookup[J(player_ids), nomatch = NA]
-  ## Players with no history → keep as zeros
+  ## Players with no history -> keep as zeros
   found <- !is.na(player_rows$cum_mins_intl)
 
   ## Compute the per-player rolling windows
@@ -246,7 +246,7 @@ query_minutes_features <- function(cache,
   out[, is_midb := as.integer(modal_role %in% c("DM","CM","LM","RM","CAM"))]
   out[, is_fwdb := as.integer(modal_role %in% c("LW","RW","CF","LF","RF"))]
 
-  ## Panna ratings — use season_end_year of the upcoming match
+  ## Panna ratings -- use season_end_year of the upcoming match
   sey <- if (data.table::month(as_of_date) >= 7L)
     data.table::year(as_of_date) + 1L else data.table::year(as_of_date)
   pp <- cache$player_panna[season_end_year == sey,

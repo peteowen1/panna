@@ -1,6 +1,6 @@
 # Player-ID canonicalization
 #
-# Some players appear with multiple Opta player_ids — typically a data-entry
+# Some players appear with multiple Opta player_ids -- typically a data-entry
 # artifact when matches are ingested from different sources or before/after
 # a transfer record gets reconciled. The dominant ID has the bulk of the
 # player's history; the alt-IDs are sparse fragments.
@@ -8,7 +8,7 @@
 # `build_player_id_canonical_map()` produces a safe lookup: alt_id -> main_id.
 # A merge fires ONLY when all three are true:
 #   1. Same accent-normalized name
-#   2. Alt has < `min_dominance_ratio` × main's appearance count
+#   2. Alt has < `min_dominance_ratio` * main's appearance count
 #   3. Their team sets overlap (so we don't merge two unrelated namesakes
 #      who happen to share a name)
 #
@@ -21,7 +21,7 @@
 #' @param lineups Data.table of lineups (full or filtered).
 #' @param min_dominance_ratio Numeric. Alt must have at most this fraction
 #'   of the main's appearance count to be a merge candidate. Default 0.05
-#'   (alt ≤ 5% of main). Catches data-entry errors (alt has 2-10 matches
+#'   (alt <= 5% of main). Catches data-entry errors (alt has 2-10 matches
 #'   vs main has hundreds) without merging mid-tier namesakes.
 #' @param require_team_overlap Logical. Require at least one common team
 #'   between alt and main. Default TRUE. Catches the "two Danilos played
@@ -39,7 +39,7 @@ build_player_id_canonical_map <- function(lineups,
   if (!requireNamespace("stringi", quietly = TRUE))
     stop("Package 'stringi' required for accent normalization.")
   lu_meta <- unique(lineups[, .(player_id, player_name, team_name)])
-  lu_meta[, name_norm := tolower(trimws(gsub("[̀-ͯ]", "",
+  lu_meta[, name_norm := tolower(trimws(gsub("[-\u036f]", "",
                                                 stringi::stri_trans_nfd(player_name))))]
 
   ## Appearance count per id

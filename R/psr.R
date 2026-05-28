@@ -15,13 +15,13 @@
 #'
 #' Returns the per-90 rate and efficiency columns used as PSR features.
 #' This matches the feature set used in \code{fit_spm_opta()} minus position
-#' dummies — the elastic net selects relevant features automatically.
+#' dummies -- the elastic net selects relevant features automatically.
 #'
 #' @return Character vector of column names
 #' @keywords internal
 .get_psr_skill_cols <- function() {
 
-  # Per-90 rate columns — outfield player actions only
+  # Per-90 rate columns -- outfield player actions only
   # GK/team-level stats (saves, attempts_conceded, etc.) moved to .get_gk_skill_cols()
   rate_cols <- c(
     "goals_p90", "shots_p90", "shots_on_target_p90", "shots_ibox_p90",
@@ -88,7 +88,7 @@
 #' @keywords internal
 .get_gk_skill_cols <- function() {
 
-  # GK action stats — things the keeper actually does
+  # GK action stats -- things the keeper actually does
   gk_action_cols <- c(
     "saves_p90", "saves_ibox_p90", "saves_obox_p90",
     "keeper_sweeper_p90", "gk_smother_p90",
@@ -102,7 +102,7 @@
     "keeper_throws_accuracy"
   )
 
-  # Distribution / passing — GKs contribute here meaningfully
+  # Distribution / passing -- GKs contribute here meaningfully
   distribution_cols <- c(
     "passes_p90", "passes_accurate_p90", "pass_accuracy",
     "long_balls_p90", "long_ball_accuracy",
@@ -192,7 +192,7 @@
     .resolve_lambda(sc, decay_params, eff_map)
   }, numeric(1))
 
-  # Position multipliers & grand means — compute once
+  # Position multipliers & grand means -- compute once
   pos_multipliers <- if (!is.null(decay_params$position_multipliers)) {
     decay_params$position_multipliers
   } else {
@@ -266,7 +266,7 @@
   # Pre-compute position-specific prior centers per player (constant across dates)
   player_pg <- player_pos$pos_group[match(all_player_ids, player_pos$player_id)]
 
-  # Rate stat priors: alpha0 matrix (n_players × n_rate_stats)
+  # Rate stat priors: alpha0 matrix (n_players x n_rate_stats)
   rate_alpha0 <- matrix(0, nrow = n_players, ncol = length(rate_stats))
   colnames(rate_alpha0) <- rate_stats
   for (ci in seq_along(rate_stats)) {
@@ -314,8 +314,8 @@
   eff_by_lambda <- split(eff_stats, stat_lambdas[eff_stats])
 
   # Initialize running sum accumulators per lambda group
-  # For rate stats: w_num (n_players × n_cols), w_den (n_players × 1)
-  # For eff stats: w_num and w_den per stat (n_players × 1 each)
+  # For rate stats: w_num (n_players x n_cols), w_den (n_players x 1)
+  # For eff stats: w_num and w_den per stat (n_players x 1 each)
 
   run_rate <- list()
   for (lam_key in names(rate_by_lambda)) {
@@ -337,7 +337,7 @@
 
   # Track cursor: which rows have been incorporated
   prev_date <- ref_dates[1]  # will be adjusted
-  cursor <- 0L  # index into dt — rows 1:cursor have been processed
+  cursor <- 0L  # index into dt -- rows 1:cursor have been processed
 
   # Extract vectors we'll index repeatedly (avoid repeated dt[[]] access)
   dt_dates <- dt$match_date
@@ -371,7 +371,7 @@
     results[[i]] <- tryCatch({
       new_cursor <- cursor_positions[i]
 
-      # Skip dates with no prior data (use NULL, not return() — we're in tryCatch)
+      # Skip dates with no prior data (use NULL, not return() -- we're in tryCatch)
       if (new_cursor == 0) {
         NULL
       } else {
@@ -1002,7 +1002,7 @@ compute_player_psr <- function(skills, center = TRUE,
     if (gk_psr_path != "") {
       gk_margin_coef <- utils::read.csv(gk_psr_path, stringsAsFactors = FALSE)
 
-      # Check if all betas are zero (placeholder — model not yet trained)
+      # Check if all betas are zero (placeholder -- model not yet trained)
       if (all(gk_margin_coef$beta == 0)) {
         cli::cli_inform(c(
           "i" = "GK PSR coefficients are placeholders (all zero).",
@@ -1021,7 +1021,7 @@ compute_player_psr <- function(skills, center = TRUE,
         results$gk <- calculate_psr(gk_skills, gk_margin_coef, center = center)
       }
     } else {
-      # No GK model at all — warn and assign zeros
+      # No GK model at all -- warn and assign zeros
       cli::cli_warn("GK coefficient files not found. GKs will have PSR = 0.")
       id_cols <- intersect(
         c("player_id", "player_name", "season_end_year", "primary_position",

@@ -13,7 +13,7 @@
 # players two coefficients (one per tier) so cross-league standouts like
 # Tavernier (huge in SCO, modest in UCL) get correctly differentiated.
 EPR_LEAGUE_TIERS <- list(
-  # 3-letter codes (game_logs `league` column) — top-5 + UCL + top intl tournaments
+  # 3-letter codes (game_logs `league` column) -- top-5 + UCL + top intl tournaments
   tier_1 = c("ENG", "ESP", "GER", "ITA", "FRA",   # EPL, La Liga, Bundesliga, Serie A, Ligue 1
               "UCL",                                 # Champions League
               "WC", "EURO"),                          # World Cup, UEFA Euros
@@ -142,7 +142,7 @@ calculate_epr <- function(player_game_epv, ref_date = NULL,
   # the same per-90 RELATIVE contribution in EPL.
   #
   # We compute one baseline per (league, season_end_year) from the same
-  # filtered data (no leakage — only matches before ref_date), then subtract
+  # filtered data (no leakage -- only matches before ref_date), then subtract
   # from each row's per-90 credit. Aggregation then sums "above-baseline"
   # contributions, which is league-neutral by construction.
   if (isTRUE(league_baseline) && "league" %in% names(dt) && !all(is.na(dt$league))) {
@@ -232,23 +232,23 @@ calculate_epr_batch <- function(player_game_epv, ref_dates, ...) {
 #
 # Reformulates EPR as a weighted ridge regression on per-game per-90 EPV:
 #
-#   y_player_game = β_player + α_league_season + γ * opp_def_rating + ε
+#   y_player_game = beta_player + alpha_league_season + gamma * opp_def_rating + epsilon
 #
-# with weights w = exp(-Δt/decay) * mins_frac. β_player IS the EPR.
+# with weights w = exp(-Deltat/decay) * mins_frac. beta_player IS the EPR.
 #
 # League-season FE and opponent-strength controls let the regression
 # disentangle player skill from league baseline and opponent quality.
-# β_player coefficients are penalized (ridge shrinkage = Bayesian prior);
+# beta_player coefficients are penalized (ridge shrinkage = Bayesian prior);
 # league and opponent terms are unpenalized (true fixed effects).
 #
-# This generalizes the Bayesian-mean calculate_epr() — when α_league and γ
-# are zero, β_player ≈ (decay-weighted mean - global mean of y) shrunk to 0.
+# This generalizes the Bayesian-mean calculate_epr() -- when alpha_league and gamma
+# are zero, beta_player ~= (decay-weighted mean - global mean of y) shrunk to 0.
 
 
 #' Calculate EPR via weighted ridge regression with league/opponent FE
 #'
 #' Per-(player, game) regression that simultaneously estimates per-player
-#' skill (β_player, returned as EPR) and league/opponent context effects.
+#' skill (beta_player, returned as EPR) and league/opponent context effects.
 #' Uses exponential time-decay weighting on observations.
 #'
 #' @param player_game_epv Per-game EPV data. Required columns:
@@ -257,7 +257,7 @@ calculate_epr_batch <- function(player_game_epv, ref_dates, ...) {
 #'   Recommended additional columns: \code{league} (or \code{competition}),
 #'   \code{season_end_year}, \code{opp_def_rating} (continuous opponent
 #'   defensive strength, e.g., from RAPM-derived team ratings).
-#' @param ref_date Snapshot date — only matches strictly before this are used.
+#' @param ref_date Snapshot date -- only matches strictly before this are used.
 #' @param decay Exponential decay constant in days for the time weight.
 #' @param alpha glmnet mixing parameter (0 = pure ridge, recommended).
 #' @param lambda Optional lambda. If NULL, uses the median of a 30-lambda
@@ -269,13 +269,13 @@ calculate_epr_batch <- function(player_game_epv, ref_dates, ...) {
 #' @return A data.table with one row per player: \code{player_id},
 #'   \code{player_name}, \code{epr}, \code{epr_offensive}, \code{epr_defensive},
 #'   \code{n_games}, \code{wt_games}.
-#' @param tier_interaction If TRUE (default), fit player × league-tier
-#'   interaction — i.e. each player gets up to two β coefficients, one for
+#' @param tier_interaction If TRUE (default), fit player * league-tier
+#'   interaction -- i.e. each player gets up to two beta coefficients, one for
 #'   tier-1 (top-5 + UCL + WC/EURO) and one for tier-2 (everything else).
 #'   This fixes cross-league standouts (Tavernier at Rangers, Veerman at
-#'   PSV) whose single-β was a compromise between their elite domestic
+#'   PSV) whose single-beta was a compromise between their elite domestic
 #'   per-90 and their modest UCL/UEL per-90. Set to FALSE for the legacy
-#'   "one β per player" behaviour. \strong{Ignored when
+#'   "one beta per player" behaviour. \strong{Ignored when
 #'   \code{league_offsets} is supplied}, since offsets supersede the
 #'   coarse two-tier split with continuous per-league calibration.
 #' @param league_offsets Optional data.table of per-league EPV calibration
@@ -283,7 +283,7 @@ calculate_epr_batch <- function(player_game_epv, ref_dates, ...) {
 #'   \code{league}, \code{offset_off}, \code{offset_def}. When supplied,
 #'   the per-row response is shifted to a UCL-equivalent scale via
 #'   \code{y_off <- y_off + offset_off[league]} (and likewise for defence)
-#'   before the regression runs, so \code{β_player} is directly comparable
+#'   before the regression runs, so \code{beta_player} is directly comparable
 #'   across leagues. Leagues not present in the table are treated with a
 #'   zero offset and a single warning is issued.
 #' @export
@@ -340,7 +340,7 @@ calculate_epr_regression <- function(player_game_epv,
   # NOTE: also tried opp_elo_n (cross-league opponent Elo) as a control
   # alongside opp_def_rating. It barely moved Eredivisie/Scottish stars
   # (Veerman, Tavernier) because their opponents are nearly all same-league
-  # (similar Elos → near-zero opp_elo_n contribution), but it disproportion-
+  # (similar Elos -> near-zero opp_elo_n contribution), but it disproportion-
   # ately hurt UCL-heavy players like Haaland whose games span a wide Elo
   # range. Reverted; opp_def_rating alone is the principled best.
   has_opp_elo <- FALSE
@@ -358,8 +358,8 @@ calculate_epr_regression <- function(player_game_epv,
   # When league_offsets is supplied, shift each row's per-90 EPV to a
   # cross-league-comparable scale: y' = y + offset[league], where
   # offset[league] = mean(UCL_y - league_y) over bridging players. After this
-  # shift, β_player is a UCL-equivalent rate, so the player-coefficient axis
-  # is the same across all leagues — replacing the coarse two-tier split.
+  # shift, beta_player is a UCL-equivalent rate, so the player-coefficient axis
+  # is the same across all leagues -- replacing the coarse two-tier split.
   if (!is.null(league_offsets)) {
     if (!has_league) {
       cli::cli_abort("league_offsets supplied but {.field league}/{.field competition} column missing from input")
@@ -388,7 +388,7 @@ calculate_epr_regression <- function(player_game_epv,
     dt[, y_def := y_def + .def_adj]
     dt[, c(".off_adj", ".def_adj") := NULL]
     if (isTRUE(tier_interaction)) {
-      if (isTRUE(verbose)) t_log("league_offsets supplied — disabling tier_interaction (offsets supersede)")
+      if (isTRUE(verbose)) t_log("league_offsets supplied -- disabling tier_interaction (offsets supersede)")
       tier_interaction <- FALSE
     }
   }
@@ -400,12 +400,12 @@ calculate_epr_regression <- function(player_game_epv,
   t_log(sprintf("rows=%d, players=%d, ref=%s, decay=%d",
                 n_obs, n_players, ref_date, decay))
 
-  # ---- Player tier classification (for player × tier interaction) ----
+  # ---- Player tier classification (for player * tier interaction) ----
   # Each row gets a tier label ("t1" / "t2") based on its league. The
-  # player-dummy block becomes player × tier instead of just player.
+  # player-dummy block becomes player * tier instead of just player.
   if (isTRUE(tier_interaction)) {
     if (!has_league) {
-      cli::cli_warn("tier_interaction=TRUE but no `league` column — disabling")
+      cli::cli_warn("tier_interaction=TRUE but no `league` column -- disabling")
       tier_interaction <- FALSE
     } else {
       dt[, tier := .epr_league_tier(.SD[[league_col]])]
@@ -415,7 +415,7 @@ calculate_epr_regression <- function(player_game_epv,
   # ---- Sparse design matrix: [players | league-seasons | opp_def] ----
   t0 <- Sys.time()
   if (isTRUE(tier_interaction)) {
-    # Player × tier interaction. Only build columns for (player, tier)
+    # Player * tier interaction. Only build columns for (player, tier)
     # combinations that actually appear, so players with no tier-1 games
     # don't get a phantom-anchored tier-1 estimate.
     pt_levels <- unique(dt[, .(player_id, tier)])
@@ -443,12 +443,12 @@ calculate_epr_regression <- function(player_game_epv,
 
   # Fixed-effects block.
   # Without league_offsets: per-(league, season) FE absorbs each league-season's
-  #   raw EPV baseline; β_player is "above league-season mean".
+  #   raw EPV baseline; beta_player is "above league-season mean".
   # With league_offsets:    we've already shifted y to a UCL-equivalent scale,
   #   so per-league FE would re-absorb the shift and cancel it. We therefore
   #   replace it with a season-only FE (captures annual EPV-rate drift across
   #   all leagues but does NOT re-absorb cross-league differences). The result
-  #   is β_player on a single, globally comparable UCL-equivalent scale.
+  #   is beta_player on a single, globally comparable UCL-equivalent scale.
   if (has_league && is.null(league_offsets)) {
     ls_keys <- sort(unique(paste0(dt[[league_col]], "_", dt$season_end_year)))
     ls_idx  <- match(paste0(dt[[league_col]], "_", dt$season_end_year), ls_keys)
@@ -489,7 +489,7 @@ calculate_epr_regression <- function(player_game_epv,
   # ---- Optional Bayesian prior via "phantom" zero-y rows ----
   # One phantom row per player-coef column. With tier interaction enabled,
   # this is one phantom row per (player, tier) combination that actually
-  # appears in the data — so players without tier-1 data don't get a
+  # appears in the data -- so players without tier-1 data don't get a
   # phantom-anchored tier-1 estimate.
   if (prior_strength > 0) {
     X_prior <- Matrix::sparseMatrix(i = seq_len(n_player_cols), j = seq_len(n_player_cols),
@@ -512,10 +512,10 @@ calculate_epr_regression <- function(player_game_epv,
                 as.numeric(Sys.time() - t0, units = "secs")))
 
   # ---- Fit ----
-  # Use a small explicit lambda — just enough to make the design matrix
+  # Use a small explicit lambda -- just enough to make the design matrix
   # numerically stable. The phantom-row prior (prior_strength) does the
   # actual Bayesian shrinkage. Stacking heavy ridge on top of that double-
-  # shrinks and compresses β_player ~10x below the raw EPV-p90 scale that
+  # shrinks and compresses beta_player ~10x below the raw EPV-p90 scale that
   # users (and the inthegame blog) expect.
   if (is.null(lambda)) lambda <- 1e-4
   t0 <- Sys.time()
@@ -606,7 +606,7 @@ calculate_epr_regression <- function(player_game_epv,
                   epr_t2, epr_offensive_t2, epr_defensive_t2, wt_games_tier_t2, n_games_tier_t2,
                   n_games, wt_games)]
   } else {
-    # ---- Legacy single-β output ----
+    # ---- Legacy single-beta output ----
     wt_by_player <- dt[, .(wt_games = sum(w, na.rm = TRUE),
                             n_games  = .N),
                          by = player_id]
@@ -635,6 +635,7 @@ calculate_epr_regression <- function(player_game_epv,
 #' @param ref_date Snapshot date (the "today" of the test).
 #' @param holdout_days Width of the hold-out window in days back from ref_date.
 #' @param decay_grid Numeric vector of decay values (days) to evaluate.
+#' @param verbose If TRUE (default), print per-candidate timing + score.
 #' @param ... Passed to calculate_epr_regression (e.g., alpha, prior_strength).
 #' @return A data.table with one row per decay candidate plus the chosen decay.
 #' @export
@@ -676,13 +677,13 @@ optimize_epr_decay <- function(player_game_epv,
       verbose = FALSE, ...
     )
 
-    # Predict holdout per-90 EPV: β_player + α_league + γ * opp_def
-    # We don't have α/γ exported, so re-compute by joining fit to holdout
-    # via player_id and applying simple "predicted = β_player" (league/opp
+    # Predict holdout per-90 EPV: beta_player + alpha_league + gamma * opp_def
+    # We don't have alpha/gamma exported, so re-compute by joining fit to holdout
+    # via player_id and applying simple "predicted = beta_player" (league/opp
     # contributions are zero-mean by construction with FE).
-    # NOTE: this is an approximation — proper holdout pred would also
-    # include the matched α_league_season + γ*opp_def for each holdout game.
-    # For decay-tuning purposes, ranking-by-MSE on β_player alone is
+    # NOTE: this is an approximation -- proper holdout pred would also
+    # include the matched alpha_league_season + gamma*opp_def for each holdout game.
+    # For decay-tuning purposes, ranking-by-MSE on beta_player alone is
     # adequate because league/opp terms are common across decay candidates.
     pred <- merge(holdout[, .(player_id, y_off, y_def, mins_frac)],
                    fit[, .(player_id, beta_off = epr_offensive,

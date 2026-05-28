@@ -6,12 +6,12 @@
 # every team into a single Bradley-Terry rating.
 #
 # But every feature the model uses is a TEAM-LEVEL property (squad panna/PSR/
-# EPR aggregates, team Elo, rolling form) — nothing is matchup-specific except
+# EPR aggregates, team Elo, rolling form) -- nothing is matchup-specific except
 # the home/away diffs and the venue flags. So any matchup A-vs-B can be
 # assembled from the two teams' feature vectors. There are only 48*47/2 = 1128
 # possible knockout matchups: we predict them ALL once with the full model and
 # store a lookup table. The simulator then gets full-fidelity knockout
-# probabilities at hash-lookup speed — no BT compression.
+# probabilities at hash-lookup speed -- no BT compression.
 
 
 #' @keywords internal
@@ -50,10 +50,10 @@
 #'
 #' @param match_dataset The step-04 match dataset (has every team's WC2026
 #'   feature rows).
-#' @param goals_models Step-05 goals models — with \code{$feature_cols}
+#' @param goals_models Step-05 goals models -- with \code{$feature_cols}
 #'   top-level and \code{$pooled} / \code{$international} sub-objects each
 #'   holding \code{$home} / \code{$away}.
-#' @param outcome_result Step-06 outcome models — with
+#' @param outcome_result Step-06 outcome models -- with
 #'   \code{$augmented_features} top-level and \code{$pooled} /
 #'   \code{$international} sub-objects each holding \code{$model}.
 #' @param season WC season string used to locate the team rows.
@@ -100,7 +100,7 @@ build_knockout_lookup <- function(match_dataset, goals_models, outcome_result,
   teams <- sort(unique(c(wc$home_team, wc$away_team)))
 
   # Paired home_/away_ columns only (these are team properties). home_field
-  # has no away_ partner — it is a match-level feature, handled separately.
+  # has no away_ partner -- it is a match-level feature, handled separately.
   home_cols <- grep("^home_", feature_cols, value = TRUE)
   home_cols <- home_cols[paste0("away_", sub("^home_", "", home_cols)) %in%
                            feature_cols]

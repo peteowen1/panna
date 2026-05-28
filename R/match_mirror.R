@@ -23,9 +23,9 @@
 #'
 #' Used in two places:
 #' \itemize{
-#'   \item Steps 05/06 — append \code{rbind(train, mirror_match_rows(train))}
+#'   \item Steps 05/06 -- append \code{rbind(train, mirror_match_rows(train))}
 #'         so the goals and outcome models train on both orientations.
-#'   \item Step 07 — predict each fixture in both orientations and average,
+#'   \item Step 07 -- predict each fixture in both orientations and average,
 #'         giving a prediction invariant to which team is listed as home.
 #' }
 #'

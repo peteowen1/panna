@@ -4,8 +4,8 @@
 # Knockouts: R32 -> R16 -> QF -> SF -> Final
 #
 # Match probabilities:
-#   * Group stage  — the cached full-model predictions for each known fixture.
-#   * Knockouts    — the full-model pairwise lookup (build_knockout_lookup).
+#   * Group stage  -- the cached full-model predictions for each known fixture.
+#   * Knockouts    -- the full-model pairwise lookup (build_knockout_lookup).
 #
 # "Run hot" momentum: each team carries a dynamic Elo through the tournament,
 # initialised from its pre-tournament Elo. After every simulated game both
@@ -23,7 +23,7 @@
 #'   `prob_D`, `prob_A`, `pred_home_goals`, `pred_away_goals` for all
 #'   group-stage fixtures.
 #' @param groups Data frame mapping `team` -> `group` (12 groups of 4).
-#' @param knockout Output of [build_knockout_lookup()] — a list with `probs`
+#' @param knockout Output of [build_knockout_lookup()] -- a list with `probs`
 #'   (pairwise knockout probabilities) and `team_elo` (named vector of
 #'   pre-tournament Elo, used as the run-hot baseline).
 #' @param n_sims Integer. Default 10000.

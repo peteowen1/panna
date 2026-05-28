@@ -306,7 +306,7 @@ fit_rapm_with_prior <- function(rapm_data, offense_prior, defense_prior,
   prior_vec <- rep(0, n_cols)
   names(prior_vec) <- col_names
 
-  # Fill in offense priors (vectorized O(n) instead of O(n²) loop)
+  # Fill in offense priors (vectorized O(n) instead of O(n^2) loop)
   off_cols <- paste0(player_ids, "_off")
   off_match_idx <- match(player_ids, names(offense_prior))
   off_valid <- !is.na(off_match_idx) & off_cols %in% col_names
@@ -315,7 +315,7 @@ fit_rapm_with_prior <- function(rapm_data, offense_prior, defense_prior,
   }
   off_matched <- sum(off_valid)
 
-  # Fill in defense priors (vectorized O(n) instead of O(n²) loop)
+  # Fill in defense priors (vectorized O(n) instead of O(n^2) loop)
   def_cols <- paste0(player_ids, "_def")
   def_match_idx <- match(player_ids, names(defense_prior))
   def_valid <- !is.na(def_match_idx) & def_cols %in% col_names

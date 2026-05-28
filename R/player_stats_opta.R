@@ -546,7 +546,7 @@ player_opta_xpass <- function(player = NULL,
 #' Opta Player Possession Chain Statistics
 #'
 #' Aggregate possession chain statistics from xMetrics data. Shows how
-#' players contribute to possession sequences — chain involvement,
+#' players contribute to possession sequences -- chain involvement,
 #' chain starts, and chain success rates.
 #'
 #' Requires xMetrics parquet files with chain columns (from pipeline with

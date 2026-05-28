@@ -9,7 +9,7 @@
 #' Use this whenever \code{load_opta_*()} returns nothing for data you believe
 #' is on disk, or to confirm that a sync landed in the place panna actually
 #' looks. The freshness skew between the consolidated parquet and per-season
-#' files is the most common silent failure — this surfaces it.
+#' files is the most common silent failure -- this surfaces it.
 #'
 #' @param leagues Optional character vector of Opta league codes (e.g.
 #'   \code{c("World_Cup", "UEFA_Euros")}) to spot-check. Default \code{NULL}
@@ -33,7 +33,7 @@ data_location_report <- function(leagues = NULL) {
 
   if (startsWith(pd, tools::R_user_dir("panna", "data"))) {
     cli::cli_alert_warning(c(
-      "pannadata_dir() fell through to R_user_dir() — no `pannadata/data` ",
+      "pannadata_dir() fell through to R_user_dir() -- no `pannadata/data` ",
       "near getwd(). Set PANNADATA_DIR env var or pannadata_dir('path') ",
       "explicitly if this isn't intentional."
     ))

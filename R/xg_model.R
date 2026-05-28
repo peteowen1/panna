@@ -618,7 +618,7 @@ derive_xa <- function(spadl_actions) {
   dt[, prev_action_id := data.table::shift(action_id, 1, type = "lag"), by = .(match_id, period_id)]
 
   # A key pass is a completed pass by same team immediately before a shot
-  # NAs arise from shift() on first action per match/period — replace with FALSE
+  # NAs arise from shift() on first action per match/period -- replace with FALSE
   shot_mask <- dt$action_type == "shot"
   key_pass_mask <- shot_mask &
     dt$prev_action_type == "pass" &

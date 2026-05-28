@@ -21,11 +21,15 @@ fit_minutes_model(
 
 \item{train_idx}{Logical vector identifying training rows (the rest are held out).}
 
+\item{nrounds_clf}{Max XGBoost rounds for the P(plays) classifier (stage 1).
+Default 600.}
+
+\item{nrounds_reg}{Max XGBoost rounds for the E\link{mins | plays} regressor
+(stage 2). Default 800.}
+
 \item{early_stopping}{Rounds without val improvement before stopping. Default 30.}
 
 \item{verbose}{Logical.}
-
-\item{nrounds}{Max XGBoost rounds. Default 600 for stage1, 800 for stage2.}
 }
 \value{
 List with \code{play_clf}, \code{mins_reg}, \code{feature_cols}, \code{eval}.

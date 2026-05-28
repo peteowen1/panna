@@ -1,7 +1,7 @@
 # Train + predict for the two-stage minutes-projection model.
 #
-# Stage 1: P(plays | in_lineup) — XGBoost binary classifier
-# Stage 2: E[minutes | plays]   — XGBoost regression
+# Stage 1: P(plays | in_lineup) -- XGBoost binary classifier
+# Stage 2: E[minutes | plays]   -- XGBoost regression
 # Combined: E[mins] = P(plays) * E[mins | plays]
 
 #' Fit the two-stage minutes model
@@ -9,7 +9,10 @@
 #' @param train Data.frame/data.table with features + `minutes_played` target.
 #' @param feature_cols Character vector of feature column names.
 #' @param train_idx Logical vector identifying training rows (the rest are held out).
-#' @param nrounds Max XGBoost rounds. Default 600 for stage1, 800 for stage2.
+#' @param nrounds_clf Max XGBoost rounds for the P(plays) classifier (stage 1).
+#'   Default 600.
+#' @param nrounds_reg Max XGBoost rounds for the E[mins | plays] regressor
+#'   (stage 2). Default 800.
 #' @param early_stopping Rounds without val improvement before stopping. Default 30.
 #' @param verbose Logical.
 #' @return List with `play_clf`, `mins_reg`, `feature_cols`, `eval`.
@@ -34,7 +37,7 @@ fit_minutes_model <- function(train, feature_cols, train_idx,
   yp_tr  <- y_plays[train_idx];            yp_te  <- y_plays[!train_idx]
 
   ## --- STAGE 1: P(plays) classifier --------------------------------------
-  if (verbose) cli::cli_alert_info("Stage 1: P(plays) classifier — {nrow(X_tr)} train, {nrow(X_te)} val")
+  if (verbose) cli::cli_alert_info("Stage 1: P(plays) classifier -- {nrow(X_tr)} train, {nrow(X_te)} val")
   d_tr <- xgboost::xgb.DMatrix(data = X_tr, label = yp_tr)
   d_te <- xgboost::xgb.DMatrix(data = X_te, label = yp_te)
   clf <- xgboost::xgb.train(

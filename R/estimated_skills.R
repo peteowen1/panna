@@ -71,7 +71,7 @@ get_default_decay_params <- function() {
 #'
 #' @param stat_name Name of the stat
 #' @param decay_params Decay parameter list
-#' @param is_efficiency Logical — is this an efficiency stat?
+#' @param is_efficiency Logical -- is this an efficiency stat?
 #' @return Numeric prior strength
 #' @keywords internal
 .resolve_prior_strength <- function(stat_name, decay_params, is_efficiency = FALSE) {
@@ -297,7 +297,7 @@ compute_position_multipliers <- function(match_stats, stat_cols = NULL) {
 #' The Beta prior is centered on the position mean with strength controlled
 #' by \code{prior_attempts}.
 #'
-#' Shrinkage toward position means happens naturally through the prior —
+#' Shrinkage toward position means happens naturally through the prior --
 #' players with little data stay close to the prior, while players with
 #' abundant data are driven by their observations.
 #'
@@ -336,7 +336,7 @@ estimate_player_skills <- function(match_stats, decay_params = NULL,
 
   dt <- data.table::as.data.table(match_stats)
 
-  # Filter by date BEFORE copying — subsetting creates a new data.table,
+  # Filter by date BEFORE copying -- subsetting creates a new data.table,
   # avoiding a full copy of the (potentially multi-GB) input
   if (!is.null(target_date)) {
     target_date <- as.Date(target_date)
@@ -348,7 +348,7 @@ estimate_player_skills <- function(match_stats, decay_params = NULL,
     dt <- data.table::copy(dt)
   }
 
-  # Now safe to mutate — dt is either a subset (new object) or an explicit copy
+  # Now safe to mutate -- dt is either a subset (new object) or an explicit copy
   if (!inherits(dt$match_date, "Date")) {
     dt[, match_date := as.Date(match_date)]
   }
@@ -428,7 +428,7 @@ estimate_player_skills <- function(match_stats, decay_params = NULL,
   }
 
   # --- Vectorized skill estimation via data.table grouped operations ---
-  # Instead of looping per player × per stat, process each stat as one
+  # Instead of looping per player x per stat, process each stat as one
   # grouped aggregation across all players (C-level data.table code)
 
   dt[, .mins_90 := data.table::fifelse(is.na(total_minutes), 0,
@@ -446,7 +446,7 @@ estimate_player_skills <- function(match_stats, decay_params = NULL,
   # per-row `exp(-lam * days_since)` call with a scalar multiplication:
   #   w = exp(lam * match_date) * exp(-lam * target_date)
   # This is identical algebraically but avoids re-evaluating ~530K exp() per
-  # snapshot date per lambda — the dominant cost when computing PSR across
+  # snapshot date per lambda -- the dominant cost when computing PSR across
   # hundreds of snapshot dates.
   stat_lambdas <- vapply(stat_cols, get_lambda, numeric(1))
   unique_lambdas <- unique(stat_lambdas)
@@ -1545,7 +1545,7 @@ player_skill_profile <- function(player_name, match_stats = NULL,
   all_skills[, clean_name := clean_player_name(pnames)]
   target_clean <- clean_player_name(target_player)
 
-  # Helper: strip accents for comparison (é → e, ü → u, etc.)
+  # Helper: strip accents for comparison (\u00e9 -> e, \u00fc -> u, etc.)
   strip_accents <- function(x) iconv(x, to = "ASCII//TRANSLIT")
 
   # Try exact clean match first
@@ -1556,7 +1556,7 @@ player_skill_profile <- function(player_name, match_stats = NULL,
     player_row <- all_skills[grepl(target_clean, clean_name, fixed = TRUE)]
   }
 
-  # If still no match, retry with accents stripped (e.g., "Mbappe" matches "Mbappé")
+  # If still no match, retry with accents stripped (e.g., "Mbappe" matches "Mbapp\u00e9")
   if (nrow(player_row) == 0) {
     ascii_target <- strip_accents(target_clean)
     ascii_names <- strip_accents(all_skills$clean_name)
@@ -1566,7 +1566,7 @@ player_skill_profile <- function(player_name, match_stats = NULL,
     if (length(idx) > 0) player_row <- all_skills[idx]
   }
 
-  # If still no match, try surname-based matching (e.g., "H.Kane" → match on "Kane")
+  # If still no match, try surname-based matching (e.g., "H.Kane" -> match on "Kane")
   if (nrow(player_row) == 0) {
     tokens <- strsplit(target_player, "[.\\s]+")[[1]]
     surname <- tokens[length(tokens)]

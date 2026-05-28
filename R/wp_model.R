@@ -73,10 +73,10 @@ create_wp_features <- function(spadl_with_epv, match_results = NULL,
   #
   #   margin_poss = possession_team_score - opponent_score  (sign follows poss)
   #   epv is already possession-POV (positive = possessor about to score)
-  #   xmargin = margin_poss + epv   (no sign flipping needed — both poss-POV)
+  #   xmargin = margin_poss + epv   (no sign flipping needed -- both poss-POV)
   #   wp_label = did possession_team win? (1 / 0.5 / 0)
   #
-  # Benefits: (1) no sym-flip needed — both home and away possession actions
+  # Benefits: (1) no sym-flip needed -- both home and away possession actions
   # naturally appear in training, (2) EPV and WP now share the same reference
   # frame, (3) home_advantage is a clean feature not a perspective question.
   dt[, margin_poss := data.table::fifelse(is_home == 1L,
@@ -136,7 +136,7 @@ create_wp_features <- function(spadl_with_epv, match_results = NULL,
   }
 
   # Select feature columns. score_diff (home-POV) and margin_poss (possession-POV)
-  # both surfaced — training uses xmargin, downstream may want score_diff for
+  # both surfaced -- training uses xmargin, downstream may want score_diff for
   # compatibility.
   feature_cols <- c("match_id", "team_id", "player_id", "player_name",
                      "action_type", "time_seconds", "period_id",
@@ -208,7 +208,7 @@ train_wp_model <- function(wp_features, nrounds = 500L, max_depth = 4L,
     cli::cli_abort("wp_features must contain {.val match_id} column (for match-grouped CV folds)")
   }
 
-  # xmargin (score_diff + signed EPV) replaces score_diff — collapses to a
+  # xmargin (score_diff + signed EPV) replaces score_diff -- collapses to a
   # single composite feature rather than asking the model to discover the
   # interaction. Kept score_diff out of the training set on purpose: xmargin
   # subsumes it when EPV=0, so keeping both would mostly be redundant.
@@ -242,7 +242,7 @@ train_wp_model <- function(wp_features, nrounds = 500L, max_depth = 4L,
 
   # Monotonicity constraint on xmargin: WP must be non-decreasing in xmargin.
   # Prevents the trees from producing wrong-direction splits (e.g. "higher
-  # xmargin → lower WP in some leaf"). Order matches feature_names.
+  # xmargin -> lower WP in some leaf"). Order matches feature_names.
   mono_vec <- rep(0L, length(feature_names))
   names(mono_vec) <- feature_names
   if ("xmargin" %in% feature_names) mono_vec["xmargin"] <- 1L
@@ -286,7 +286,7 @@ train_wp_model <- function(wp_features, nrounds = 500L, max_depth = 4L,
     verbose = 0
   )
 
-  cli::cli_alert_success("Trained WP model on {nrow(mat)} actions ({length(unique_matches)} matches) — optimal nrounds={optimal_nrounds}, CV logloss={round(best_logloss, 6)}")
+  cli::cli_alert_success("Trained WP model on {nrow(mat)} actions ({length(unique_matches)} matches) -- optimal nrounds={optimal_nrounds}, CV logloss={round(best_logloss, 6)}")
 
   list(
     model = model,

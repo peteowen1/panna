@@ -1,4 +1,4 @@
-# Directory resolution helpers — data-source-agnostic.
+# Directory resolution helpers -- data-source-agnostic.
 # Previously lived in scrape_fbref_utils.R (misleading name); extracted here
 # so they survive the FBref/understat archival sweep. opta_data_dir() in
 # opta_loaders.R depends on pannadata_dir(), so this MUST stay loaded.
@@ -16,7 +16,7 @@
 #'   \item \code{PANNADATA_DIR} environment variable
 #'   \item \code{../pannadata/data} relative to working directory (for the
 #'     pannaverse monorepo layout)
-#'   \item \code{tools::R_user_dir("panna", "data")} — OS-standard user data dir
+#'   \item \code{tools::R_user_dir("panna", "data")} -- OS-standard user data dir
 #' }
 #'
 #' OS-standard fallback paths:
@@ -70,7 +70,7 @@ pannadata_dir <- function(path = NULL) {
   }
 
   # 4. Default: R's standard user data directory. Warn so callers know they
-  # got the silent fallback — most local pipelines expect the workspace dir
+  # got the silent fallback -- most local pipelines expect the workspace dir
   # and this fallback signals a misconfigured environment.
   fallback <- tools::R_user_dir("panna", "data")
   if (!identical(getOption("panna.pannadata_dir.fallback_warned"), TRUE)) {

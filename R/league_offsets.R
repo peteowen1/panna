@@ -1,7 +1,7 @@
 # League quality offsets vs UCL group stage
 # ===========================================
 # For cross-league rating fairness: a player's per-90 EPV in the Eredivisie is
-# not directly comparable to their per-90 EPV in the Champions League — top
+# not directly comparable to their per-90 EPV in the Champions League -- top
 # domestic leagues have weaker average opponents so the same player produces
 # more per-90 EPV there. To put all leagues on a single "UCL-equivalent" scale
 # we estimate, for each league L, an empirical offset:
@@ -13,17 +13,17 @@
 #
 # Three estimators are used in cascade, picking the best-supported per league:
 #
-#   1. same-season   — same player, same season, both leagues  (cleanest, no
+#   1. same-season   -- same player, same season, both leagues  (cleanest, no
 #                      career-stage confound; needs European competition matches)
-#   2. career-direct — same player across career, both leagues (broader sample
-#                      but contaminated by career stage — younger in tier-2,
+#   2. career-direct -- same player across career, both leagues (broader sample
+#                      but contaminated by career stage -- younger in tier-2,
 #                      peak in tier-1)
-#   3. chained       — for leagues with no direct anchor bridge (e.g., BRA, ENG2)
+#   3. chained       -- for leagues with no direct anchor bridge (e.g., BRA, ENG2)
 #                      chain via an intermediate league L' that has both a
 #                      bridge to L and to the anchor: offset_L = (L' - L) + (anchor - L')
 #
 # Applied in calculate_epr_regression() by subtracting offset from each row's
-# y_off / y_def before fitting, so β_player is a single, globally comparable
+# y_off / y_def before fitting, so beta_player is a single, globally comparable
 # "UCL-equivalent per-90 EPV" number.
 
 
@@ -36,11 +36,11 @@
 #'
 #' Three estimators are tried per league, in priority order:
 #' \enumerate{
-#'   \item \code{"same-season"} — same player, same season, both leagues.
+#'   \item \code{"same-season"} -- same player, same season, both leagues.
 #'         Cleanest because it eliminates career-stage confounds.
-#'   \item \code{"career-direct"} — same player across career, both leagues.
+#'   \item \code{"career-direct"} -- same player across career, both leagues.
 #'         Broader coverage; some bias from career-stage effects.
-#'   \item \code{"chained"} — for leagues with no direct anchor bridge, chain
+#'   \item \code{"chained"} -- for leagues with no direct anchor bridge, chain
 #'         via an intermediate league with both bridges.
 #' }
 #'
@@ -301,7 +301,7 @@ compute_league_offsets <- function(game_logs,
   data.table::setorder(rec, offset_tot)
 
   if (isTRUE(verbose)) {
-    cat(sprintf("\n══ League offsets vs %s (ref_year=%d, half_life=%g) ══\n",
+    cat(sprintf("\n== League offsets vs %s (ref_year=%d, half_life=%g) ==\n",
                 anchor_league, ref_year, half_life))
     cat("offset_tot = anchor_y - league_y on per-90 EPV scale.\n")
     cat("Negative = league is structurally weaker (player y inflated there).\n\n")

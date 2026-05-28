@@ -13,7 +13,7 @@
 #' \code{\link{add_wp_vars}} so positive wpa always means "good for my team".
 #' When the next-action's player is on the OPPOSITE team (turnover, save,
 #' interception, opp shot), passing the receiver \code{(1 - actor_share) * wpa}
-#' unchanged would credit the receiver in the actor's team perspective — i.e.
+#' unchanged would credit the receiver in the actor's team perspective -- i.e.
 #' a goalkeeper saving a shot would inherit the shooter's negative WPA. We
 #' sign-flip on cross-team transitions so the receiver is credited in their
 #' own team's perspective (mirrors AFL pattern in
@@ -48,7 +48,7 @@ assign_wpa_credit <- function(spadl_with_wpa, actor_share = WPA_ACTOR_SHARE) {
     dt[, wpa_actor := data.table::fifelse(has_recv, actor_share * wpa, wpa)]
 
     # Cross-team sign flip on receiver credit. pos_team = +1 for same-team
-    # (legitimate pass completion), -1 for cross-team (turnover/save) — flips
+    # (legitimate pass completion), -1 for cross-team (turnover/save) -- flips
     # the receiver's portion back into their own team's perspective.
     if (has_receiver_team) {
       dt[, pos_team := data.table::fifelse(

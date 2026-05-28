@@ -17,7 +17,7 @@
 #'   sub_on_minute, sub_off_minute, competition.
 #' @param as_of Date. "Today" for the decay calculation. Default Sys.Date().
 #' @param lookback_days Integer. Only consider matches within this window.
-#'   Default 730 (2 years — covers WC qualifiers + most internationals).
+#'   Default 730 (2 years -- covers WC qualifiers + most internationals).
 #' @param half_life_days Numeric. Exponential decay half-life. Default 365.
 #'   Recent matches weight 2x more than matches a year ago.
 #' @param squad_size Integer. Cap the returned roster at this many. Default 26.
@@ -25,10 +25,10 @@
 #'   (WC, EURO, qualifiers, Copa, AFCON, Nations League, friendlies).
 #'   Default TRUE.
 #' @param min_recent_days Integer. Drop players with no appearances within
-#'   this window (relative to `as_of`). Default 540 (~18 months) — catches
+#'   this window (relative to `as_of`). Default 540 (~18 months) -- catches
 #'   players retired since the last major tournament (EURO/Copa) while still
 #'   keeping current squad members who had injury gaps.
-#' @param shrinkage_k Numeric. Bayesian pseudo-count: `effective_em = em ×
+#' @param shrinkage_k Numeric. Bayesian pseudo-count: `effective_em = em x
 #'   weight_total / (weight_total + k)`. Players with weak evidence get
 #'   shrunk toward zero. Default 3 (a player with 3 weighted caps gets
 #'   50% of raw EM; 20 weighted caps gets ~87%).
@@ -107,10 +107,10 @@ build_team_expected_minutes <- function(team,
   recent_cutoff <- as.Date(as_of) - min_recent_days
   agg_filtered <- agg[!is.infinite(as.numeric(last_played)) &
                       last_played >= recent_cutoff]
-  if (nrow(agg_filtered) >= 16L) {  # keep filter when ≥ realistic squad
+  if (nrow(agg_filtered) >= 16L) {  # keep filter when >= realistic squad
     agg <- agg_filtered
   } else {
-    ## sparse-data fallback — keep everyone but mark for diagnostics
+    ## sparse-data fallback -- keep everyone but mark for diagnostics
     attr(agg, "recency_filter_skipped") <- TRUE
   }
 
@@ -160,7 +160,7 @@ build_team_expected_minutes <- function(team,
 #' @param team_em Output of `build_team_expected_minutes()`.
 #' @param ratings Data frame with player_id + a numeric rating column.
 #' @param rating_col Name of the rating column. Default `"panna"`.
-#' @return Single numeric — `sum(rating * expected_minutes_norm) / 990`.
+#' @return Single numeric -- `sum(rating * expected_minutes_norm) / 990`.
 #'   Equivalent to "what's the average panna rating of who'll be on the pitch."
 #' @export
 weight_rating_by_minutes <- function(team_em, ratings, rating_col = "panna") {

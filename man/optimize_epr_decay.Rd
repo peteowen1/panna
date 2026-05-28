@@ -22,6 +22,8 @@ optimize_epr_decay(
 
 \item{decay_grid}{Numeric vector of decay values (days) to evaluate.}
 
+\item{verbose}{If TRUE (default), print per-candidate timing + score.}
+
 \item{...}{Passed to calculate_epr_regression (e.g., alpha, prior_strength).}
 }
 \value{

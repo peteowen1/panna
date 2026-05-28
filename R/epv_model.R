@@ -296,7 +296,7 @@ fit_epv_model <- function(features,
   }
 
 
-  # Get feature columns — check simple features first, then full
+  # Get feature columns -- check simple features first, then full
   simple_available <- intersect(EPV_SIMPLE_FEATURE_COLS, names(features))
   if (length(simple_available) >= length(EPV_SIMPLE_FEATURE_COLS)) {
     available_cols <- simple_available
@@ -635,7 +635,7 @@ calculate_action_epv <- function(spadl_actions, features = NULL, epv_model, xg_m
   # shot actions to have artificially LOW EPV because:
   #   - Most shots miss
   #   - After a miss, opponent often gets possession
-  #   - So model learns is_shot=1 → low P(team_scores_next)
+  #   - So model learns is_shot=1 -> low P(team_scores_next)
   #
   # FIX: Override shot EPV with xG, then calculate delta based on actual
   # outcome vs expectation:
@@ -667,7 +667,7 @@ calculate_action_epv <- function(spadl_actions, features = NULL, epv_model, xg_m
     cli::cli_alert_info("Estimated shot EPV from position for {n_shots} shots (no xG column)")
   }
 
-  # Restore own goals to model EPV — xG is meaningless for deflections.
+  # Restore own goals to model EPV -- xG is meaningless for deflections.
   # The xG model sees start_x=3 (near own goal) and predicts 0.97, but
   # that's the xG of a deliberate shot from 3m out, not a deflection.
   if ("is_own_goal" %in% names(dt)) {
@@ -1298,7 +1298,7 @@ calculate_action_type_epv <- function(spadl_with_epv) {
                        .(epv_dribbling = sum(get(credit_col), na.rm = TRUE)),
                        by = .(player_id, player_name)]
 
-  # Defending (aerials excluded — their value is captured through duel outcomes)
+  # Defending (aerials excluded -- their value is captured through duel outcomes)
   defending_epv <- dt[action_type %in% c("tackle", "interception", "clearance", "ball_recovery"),
                        .(epv_defending = sum(get(credit_col), na.rm = TRUE)),
                        by = .(player_id, player_name)]
@@ -1438,7 +1438,7 @@ aggregate_player_game_epv <- function(spadl_with_epv, lineups = NULL,
 
   # Action-type buckets. Keeper handling (pick-up/claim/punch) and aerial duels
   # are split into their own components so `epv_passing` means outfield passing
-  # and `epv_dribbling` means ground take-ons — without this split, GKs
+  # and `epv_dribbling` means ground take-ons -- without this split, GKs
   # dominated `epv_passing` and target strikers dominated `epv_dribbling` via
   # aerial wins. Keeper saves stay in `epv_defending` (they suppress opponent EPV).
   action_types <- list(
@@ -1463,7 +1463,7 @@ aggregate_player_game_epv <- function(spadl_with_epv, lineups = NULL,
 
   # Offensive = passing + shooting + dribbling + aerial + keeping + receiver.
   # Keeper and aerial credits stay in offense so the total is identical to the
-  # pre-split definition — only the breakdown is now more granular.
+  # pre-split definition -- only the breakdown is now more granular.
   # Defensive = defending + duel_blame (unchanged).
   player_epv[, `:=`(
     epv_offensive = epv_passing + epv_shooting + epv_dribbling + epv_aerial +

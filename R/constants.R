@@ -379,7 +379,7 @@ CHAIN_PROGRESSIVE_THRESHOLD <- 25
 #' as bad data. Opta data via SPADL conversion naturally has ~25% zero-xG
 #' splints, so the threshold is set higher than FBref.
 #' Used in \code{filter_bad_xg_data()}.
-#' Raised from 30 → 50 on 2026-04-18: with second-precision splint creation
+#' Raised from 30 -> 50 on 2026-04-18: with second-precision splint creation
 #' and 5-min boundary-merge minimum, the per-splint zero-xG baseline rose
 #' (shorter splints naturally have fewer shots). 50% only catches genuine
 #' bad-data league-seasons rather than penalising fine-grained splits.
@@ -392,7 +392,7 @@ ZERO_XG_THRESHOLD_OPTA <- 50L
 #'
 #' Maximum percentage of zero-xG splints allowed before a match is flagged.
 #' FBref data has fewer zero-xG splints than Opta, so threshold is lower.
-#' Kept for backward compatibility — FBref pipeline archived 2026-04-18,
+#' Kept for backward compatibility -- FBref pipeline archived 2026-04-18,
 #' Opta is the active data source.
 #'
 #' @format Integer value: 20
@@ -501,7 +501,7 @@ EPR_LOADING <- 1.0
 #'
 #' Competitions played between club teams. Used to split the match-prediction
 #' models into a domestic (club) model and an international (national-team)
-#' model — the two behave very differently (international prediction leans on
+#' model -- the two behave very differently (international prediction leans on
 #' Elo + recent form; club prediction leans on squad player-ratings).
 #' Any competition NOT in this list is treated as international.
 #'
@@ -509,7 +509,7 @@ EPR_LOADING <- 1.0
 #' competition name) but the rest as panna short codes ("ESP", "ITA", ...).
 #' Since the predictions pipeline passes SHORT CODES through (its `leagues`
 #' vector is "ENG", "ESP", ...), match_is_international("ENG") was returning
-#' TRUE — i.e., the entire English Premier League was being trained on the
+#' TRUE -- i.e., the entire English Premier League was being trained on the
 #' international-specialist model and receiving the international prediction
 #' blend. Replaced "EPL" with "ENG" and added BEL/BRA/AUS/TUN/CAFCL so any
 #' future addition of those leagues to the default set classifies correctly.
@@ -529,7 +529,7 @@ MATCH_CLUB_LEAGUES <- c(
 #' Classify competitions as international vs domestic
 #'
 #' @param league Character vector of competition codes.
-#' @return Logical vector — \code{TRUE} for international (national-team)
+#' @return Logical vector -- \code{TRUE} for international (national-team)
 #'   competitions, \code{FALSE} for domestic club competitions.
 #' @export
 match_is_international <- function(league) {
@@ -557,7 +557,7 @@ MATCH_INTL_BLEND_WEIGHT <- 0.5
 # =============================================================================
 # Centralised so a single Opta-side rename can't silently fan out into three
 # files (step 02 / 02b / 04 / 11 / 12) each treating it as a separate string
-# literal — which would turn off the WC override / empty the blog parquet
+# literal -- which would turn off the WC override / empty the blog parquet
 # without any warning.
 
 #' League code for the WC 2026 tournament
@@ -571,7 +571,7 @@ WC2026_SEASON_LABEL <- "2026 Canada-Mexico-USA"
 #' Opta team_ids of the three WC 2026 hosts (USA / Canada / Mexico)
 #'
 #' Keyed by team_id rather than name because Opta has already served at least
-#' one name variant for these teams ("USA" vs "United States" — see the
+#' one name variant for these teams ("USA" vs "United States" -- see the
 #' fixture-name normalisation block in 01_build_fixture_results.R). step 04
 #' asserts all three IDs resolve in the WC2026 fixture set before flagging
 #' host advantage.

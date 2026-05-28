@@ -4,7 +4,7 @@
 # silently zeroed for WC2026 fixtures, Norway stuck at initial Elo 1500
 # despite topping their qualifying group, EPL routed to the international
 # specialist model) were ALL invisible to unit tests because the functions
-# returned structurally-valid data — they were only caught by looking at
+# returned structurally-valid data -- they were only caught by looking at
 # the SEMANTIC VALUES in the output and comparing against "how should
 # football actually look?".
 #
@@ -102,12 +102,12 @@ assert_step_output <- function(data, step_name, expectations,
 # Each entry is a list with `fact` (human-readable rationale) and `check`
 # (a function returning TRUE iff the fact holds against the data passed).
 #
-# These are facts about how WC2026 actually works — not about how the
+# These are facts about how WC2026 actually works -- not about how the
 # code is implemented. They should remain true regardless of how the
 # pipeline is restructured. When a fact starts returning FALSE, either:
-#  (a) the pipeline has a regression — most common case, fix the code
-#  (b) the world changed — e.g., a host nation announced a name variant
-#      Opta now serves differently — update the fact and document why.
+#  (a) the pipeline has a regression -- most common case, fix the code
+#  (b) the world changed -- e.g., a host nation announced a name variant
+#      Opta now serves differently -- update the fact and document why.
 #
 # When adding a new fact, anchor it to a CONCRETE bug or domain-truth
 # that motivated it. "All teams have non-zero Elo" is too vague to add
@@ -115,7 +115,7 @@ assert_step_output <- function(data, step_name, expectations,
 # Group I with 24 points" is a specific falsifiable claim that traces to
 # an observed-in-the-world fact.
 
-#' WC2026 Reference Facts — Domain Assertions on Pipeline Outputs
+#' WC2026 Reference Facts -- Domain Assertions on Pipeline Outputs
 #'
 #' @format Named list of `list(fact, check_team_strength)` where
 #'   `fact` is a one-line rationale string and `check_team_strength` is a
@@ -128,7 +128,7 @@ WC2026_REFERENCE_FACTS <- list(
     fact = paste(
       "Norway topped UEFA WC Qualifying Group I with 24 points (8W-0D-2L,",
       "+25 GD), beating Italy + 8 others. Their team-strength Elo must",
-      "reflect this — anything near the 1500 initial means the intl",
+      "reflect this -- anything near the 1500 initial means the intl",
       "qualifier matches didn't reach the Elo iteration."
     ),
     check_team_strength = function(ts) {
@@ -153,7 +153,7 @@ WC2026_REFERENCE_FACTS <- list(
 
   no_team_has_zero_elo = list(
     fact = paste(
-      "Elo cannot legitimately be 0 — the system is bounded below by",
+      "Elo cannot legitimately be 0 -- the system is bounded below by",
       "~1000 in practice and would never produce an exact zero. Exact",
       "0 means an NA-fill happened somewhere downstream (the 2026-05-28",
       "step 04 NA-fill turned every poisoned NA Elo into 0)."
@@ -166,7 +166,7 @@ WC2026_REFERENCE_FACTS <- list(
 
   big_teams_have_above_average_elo = list(
     fact = paste(
-      "France, Germany, Brazil, Spain, Argentina — these teams should",
+      "France, Germany, Brazil, Spain, Argentina -- these teams should",
       "have well-above-average Elo (>1550) based on their international",
       "tournament + qualifier history. If any of them shows ~1500 or",
       "lower, the iteration was poisoned (the bug we caught 2026-05-28)."
@@ -201,7 +201,7 @@ WC2026_REFERENCE_FACTS <- list(
 
   psr_nonzero_for_european_squads = list(
     fact = paste(
-      "Same as EPR but for PSR — separate snapshot, separate join, but",
+      "Same as EPR but for PSR -- separate snapshot, separate join, but",
       "the same upstream player_id-drop bug zeroed both."
     ),
     check_team_strength = function(ts) {
@@ -217,7 +217,7 @@ WC2026_REFERENCE_FACTS <- list(
   top8_includes_six_of_eight_giants = list(
     fact = paste(
       "Of the eight perennial favourites (France, Germany, Brazil, Spain,",
-      "Netherlands, England, Portugal, Argentina) — at LEAST 6 should",
+      "Netherlands, England, Portugal, Argentina) -- at LEAST 6 should",
       "appear in the model's top-8 by champion probability. Fewer signals",
       "a major segmentation or feature bug (e.g., EPL mis-classified as",
       "intl, which happened 2026-05-28)."
@@ -236,7 +236,7 @@ WC2026_REFERENCE_FACTS <- list(
     fact = paste(
       "rank_epr, rank_psr columns should NOT have every team tied at 1.",
       "All-tied-at-1 happens when the underlying values are all equal",
-      "(typically all zero — e.g., the EPR-all-zero bug of 2026-05-28).",
+      "(typically all zero -- e.g., the EPR-all-zero bug of 2026-05-28).",
       "Detecting this catches the bug class at the published-table layer."
     ),
     check_team_strength = function(ts) {
@@ -250,7 +250,7 @@ WC2026_REFERENCE_FACTS <- list(
 
   champ_sums_to_100 = list(
     fact = paste(
-      "Champion probabilities across all 48 teams must sum to 100 ± 0.1.",
+      "Champion probabilities across all 48 teams must sum to 100 +/- 0.1.",
       "Any deviation indicates a sim arithmetic bug (lost tournaments,",
       "double-counted teams, etc.)."
     ),
@@ -264,7 +264,7 @@ WC2026_REFERENCE_FACTS <- list(
     fact = paste(
       "USA, Canada, Mexico should each appear with home_field = 1 in",
       "their 3 WC2026 group-stage matches. This was a known silent-failure",
-      "mode (host names hardcoded as strings — 2026-05-28); team_id-based",
+      "mode (host names hardcoded as strings -- 2026-05-28); team_id-based",
       "lookup with stop()-on-missing was the fix."
     ),
     check_match_dataset = function(md) {
@@ -272,7 +272,7 @@ WC2026_REFERENCE_FACTS <- list(
       wc_ids <- get0("WC2026_HOST_TEAM_IDS")
       season <- get0("WC2026_SEASON_LABEL")
       if (is.null(wc_ids) || is.null(season)) return(TRUE)
-      # Scope to WC2026 specifically — historical WC matches (2014/2018/
+      # Scope to WC2026 specifically -- historical WC matches (2014/2018/
       # 2022) where USA/Canada/Mexico played as away in normal venues
       # legitimately have home_field == 1 from the away team's
       # perspective, which is NOT what this fact is checking.

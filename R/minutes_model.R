@@ -2,8 +2,8 @@
 #
 # Given a player and a specific intl match (real or hypothetical), predict
 # their expected minutes played. Features are strictly lagged from the
-# match date — no leakage. Trains an XGBoost regression on every historical
-# (player × intl match) tuple in our Opta lineups data.
+# match date -- no leakage. Trains an XGBoost regression on every historical
+# (player x intl match) tuple in our Opta lineups data.
 
 #' Map raw Opta (position, side) pair to a 16-role taxonomy
 #'
@@ -71,7 +71,7 @@ classify_role <- function(position, side) {
 
 #' Build training dataset for the minutes-projection model
 #'
-#' For each (player_id × match) in the international competitions, computes
+#' For each (player_id x match) in the international competitions, computes
 #' backward-looking features as of the match date and pairs them with the
 #' realized `minutes_played` (the supervised target).
 #'
@@ -105,7 +105,7 @@ build_minutes_training_data <- function(lineups,
   lu[, start_intl := fifelse(is_intl & is_starter,        1L, 0L)]
   lu[, start_club := fifelse(!is_intl & is_starter,       1L, 0L)]
 
-  ## Drop players who never played intl — they don't show up in test/training
+  ## Drop players who never played intl -- they don't show up in test/training
   intl_players <- unique(lu[is_intl == TRUE & played_flag == 1L, player_id])
   lu <- lu[player_id %in% intl_players]
   if (verbose) cli::cli_alert_info("Tracking {length(intl_players)} players with intl history")
@@ -201,7 +201,7 @@ build_minutes_training_data <- function(lineups,
   tournament_comps <- c("AFCON", "AFC_Asian_Cup", "Copa_America", "UEFA_Euros",
                         "CONCACAF_Gold_Cup", "Gulf_Cup_of_Nations", "World_Cup")
   train[, is_tournament := as.integer(competition %in% tournament_comps)]
-  ## Friendly flag — managers rotate heavily, give debutants 45 min, sub
+  ## Friendly flag -- managers rotate heavily, give debutants 45 min, sub
   ## starters at the hour mark. Distinct minute distribution from competitive
   ## matches; explicit flag lets the model learn separate leaf weights.
   train[, is_friendly := as.integer(competition == "Intl_Friendlies")]
