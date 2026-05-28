@@ -322,6 +322,40 @@ if (missing_scores > 0) {
   results <- results[!is.na(results$home_goals) & !is.na(results$away_goals), ]
 }
 
+# 5c. Drop matches with missing team identification ----
+#
+# These are matches where ONE side has both team_name AND team_id missing
+# from the Opta feed (typically minnow international friendlies where the
+# scraper lost the opponent). They literally can't be processed downstream:
+#   - compute_match_elos can't update Elo without knowing both teams
+#   - the prior step 03 re-iteration was POISONING every other team's Elo
+#     through NA-name lookups in the elos named vector, cascading to
+#     France/Germany/Brazil all getting NA Elo and then 0 via step 04's
+#     NA-fill
+# Dropping at source surfaces the upstream scraper gap loudly (so it can
+# be reported to pannadata), and prevents the cascade. We don't impute
+# the missing team — there's nothing meaningful to impute.
+missing_team <- is.na(results$home_team) | is.na(results$away_team)
+if (any(missing_team)) {
+  bad <- results[missing_team, , drop = FALSE]
+  by_league <- table(bad$league)
+  message(sprintf("  WARNING: %d matches have NA home_team or away_team — DROPPING (Opta scraper gap, file a pannadata issue):",
+                  nrow(bad)))
+  for (lg in names(by_league)) {
+    message(sprintf("    %s: %d matches", lg, by_league[lg]))
+  }
+  # Show up to 5 examples so the user can see what's broken
+  example_n <- min(5, nrow(bad))
+  for (i in seq_len(example_n)) {
+    r <- bad[i, ]
+    message(sprintf("    e.g., %s [%s] '%s' vs '%s'",
+                    r$match_date, r$league,
+                    if (is.na(r$home_team)) "<NA>" else r$home_team,
+                    if (is.na(r$away_team)) "<NA>" else r$away_team))
+  }
+  results <- results[!missing_team, , drop = FALSE]
+}
+
 # 6. Ensure Required Columns ----
 
 if (!"season_end_year" %in% names(results)) {

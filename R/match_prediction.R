@@ -562,13 +562,17 @@ aggregate_lineup_skills <- function(lineups, skill_estimates,
 #' Initialize Team Elo Ratings
 #'
 #' Creates a named vector of initial Elo ratings for all teams.
+#' Filters NA team names defensively — they would otherwise create an
+#' NA-named entry that `NA %in% names(elos)` returns TRUE for, opening
+#' the door to NA cascades when bad upstream data sneaks through.
 #'
 #' @param teams Character vector of team names
 #' @param initial_elo Starting Elo rating (default 1500)
 #'
-#' @return Named numeric vector of Elo ratings
+#' @return Named numeric vector of Elo ratings (one entry per non-NA team)
 #' @export
 init_team_elos <- function(teams, initial_elo = 1500) {
+  teams <- teams[!is.na(teams)]
   elos <- rep(initial_elo, length(teams))
   names(elos) <- teams
   elos
@@ -623,7 +627,13 @@ update_elo <- function(home_elo, away_elo, home_goals, away_goals,
 #' Compute Elo Ratings for All Matches
 #'
 #' Iterates through matches chronologically and computes Elo ratings.
-#' Returns match-level Elo features (pre-match ratings for each team).
+#' Returns BOTH per-match pre-match Elos (for joining onto the match
+#' dataset) AND the final post-iteration team-Elo state (for looking up
+#' the current Elo of teams in upcoming fixtures). Returning both is what
+#' prevents step 03 from having to duplicate the iteration — the previous
+#' duplicate-iteration approach was missing the same NA guards as this
+#' function, which caused the 2026-05-28 NA-cascade bug where a single
+#' NA-team friendly poisoned every team's Elo via NA-named-lookup.
 #'
 #' @param results Data frame with match_date, home_team, away_team,
 #'   home_goals, away_goals columns, sorted by date
@@ -631,7 +641,11 @@ update_elo <- function(home_elo, away_elo, home_goals, away_goals,
 #' @param home_advantage Home advantage in Elo points (default 65)
 #' @param initial_elo Starting Elo (default 1500)
 #'
-#' @return Data frame with match_id, home_elo, away_elo, elo_diff columns
+#' @return A list with two elements:
+#'   - `per_match`: data frame with match_id, home_elo, away_elo, elo_diff
+#'     (pre-match Elo for each match in the input order)
+#'   - `final_elos`: named numeric vector of post-iteration team Elos,
+#'     for use with upcoming fixtures
 #' @export
 compute_match_elos <- function(results, k = 20, home_advantage = 65,
                                 initial_elo = 1500) {
@@ -639,8 +653,7 @@ compute_match_elos <- function(results, k = 20, home_advantage = 65,
   results <- results[order(results$match_date), ]
 
   all_teams <- unique(c(results$home_team, results$away_team))
-  all_teams <- all_teams[!is.na(all_teams)]
-  elos <- init_team_elos(all_teams, initial_elo)
+  elos <- init_team_elos(all_teams, initial_elo)  # filters NAs internally
 
   n <- nrow(results)
   home_elo_pre <- numeric(n)
@@ -650,7 +663,9 @@ compute_match_elos <- function(results, k = 20, home_advantage = 65,
     ht <- results$home_team[i]
     at <- results$away_team[i]
 
-    # Skip rows with missing team names to prevent NA propagation
+    # Skip rows with missing team names — they cannot be processed (no
+    # team to update). Records NA pre-match Elo for the row so the join
+    # downstream sees the gap, but does NOT touch the elos vector.
     if (is.na(ht) || is.na(at)) {
       home_elo_pre[i] <- NA_real_
       away_elo_pre[i] <- NA_real_
@@ -688,12 +703,15 @@ compute_match_elos <- function(results, k = 20, home_advantage = 65,
     ))
   }
 
-  data.frame(
-    match_id = results$match_id,
-    home_elo = home_elo_pre,
-    away_elo = away_elo_pre,
-    elo_diff = home_elo_pre - away_elo_pre,
-    stringsAsFactors = FALSE
+  list(
+    per_match = data.frame(
+      match_id = results$match_id,
+      home_elo = home_elo_pre,
+      away_elo = away_elo_pre,
+      elo_diff = home_elo_pre - away_elo_pre,
+      stringsAsFactors = FALSE
+    ),
+    final_elos = elos
   )
 }
 

@@ -151,6 +151,36 @@ WC2026_REFERENCE_FACTS <- list(
     }
   ),
 
+  no_team_has_zero_elo = list(
+    fact = paste(
+      "Elo cannot legitimately be 0 — the system is bounded below by",
+      "~1000 in practice and would never produce an exact zero. Exact",
+      "0 means an NA-fill happened somewhere downstream (the 2026-05-28",
+      "step 04 NA-fill turned every poisoned NA Elo into 0)."
+    ),
+    check_team_strength = function(ts) {
+      ts <- as.data.frame(ts)
+      !any(ts$elo == 0, na.rm = TRUE)
+    }
+  ),
+
+  big_teams_have_above_average_elo = list(
+    fact = paste(
+      "France, Germany, Brazil, Spain, Argentina — these teams should",
+      "have well-above-average Elo (>1550) based on their international",
+      "tournament + qualifier history. If any of them shows ~1500 or",
+      "lower, the iteration was poisoned (the bug we caught 2026-05-28)."
+    ),
+    check_team_strength = function(ts) {
+      ts <- as.data.frame(ts)
+      big <- c("France", "Germany", "Brazil", "Spain", "Argentina")
+      vals <- ts[ts$team %in% big, "elo"]
+      if (length(vals) == 0L) return(TRUE)
+      # At least 4 out of 5 (allow one degraded for some upstream issue)
+      sum(vals > 1550, na.rm = TRUE) >= 4L
+    }
+  ),
+
   epr_nonzero_for_european_squads = list(
     fact = paste(
       "European WC2026 teams (Germany, France, Spain, England, ...) all",

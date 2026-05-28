@@ -173,13 +173,38 @@ if (length(rolling_cols) > 0) {
   dataset$is_early_season <- 0L
 }
 
-# Fill remaining numeric NAs with 0. Skip the actual-result columns so
-# fixtures don't end up with home_goals == 0 (which silently looks like a
-# legitimate 0-0 result to any downstream code that forgets to filter by
-# match_status — a landmine that hasn't fired yet only because every
-# current consumer does filter).
-skip_zero_fill <- c("home_goals", "away_goals", "home_xg", "away_xg")
-for (col in setdiff(numeric_cols, skip_zero_fill)) {
+# Fill remaining numeric NAs with 0 — but VERY narrowly. The previous
+# "fill everything with 0" pattern silently hid real bugs (today's
+# Elo-NA-cascade ended at home_elo=0 in the published team_strength;
+# the EPR/PSR fixture join failure ended at sum_epr=0). Per feedback
+# 2026-05-28: do NOT substitute fake values for missing data. Let NAs
+# propagate so they're visible to the model (XGBoost handles NA natively
+# as a separate split direction) and to downstream consumers.
+#
+# Columns we DO 0-fill: the structural / engineered features where 0 is
+# a semantically valid default — e.g., a league dummy is 0 for matches
+# not in that league. Anything that represents a TEAM STRENGTH
+# measurement (panna, EPR, PSR, Elo, rolling form) must NOT be filled —
+# NA there means "we don't know", and we want that visible.
+skip_zero_fill <- c(
+  # Actual match outcomes — fixtures legitimately have these NA
+  "home_goals", "away_goals", "home_xg", "away_xg",
+  # Elo features — NA means the team wasn't in the played history
+  grep("^(home|away)_elo$|^elo_diff$", numeric_cols, value = TRUE),
+  # Team-aggregate ratings — NA means the join failed (visible signal)
+  grep("^(home|away)_(sum|avg|max|min|gk|stdev)_", numeric_cols, value = TRUE),
+  grep("_diff$", numeric_cols, value = TRUE),
+  grep("^(home|away)_sk_", numeric_cols, value = TRUE),
+  # Rolling form features — already imputed earlier with TRAIN-only means
+  # in the rolling-cols block above; this protects against NA leakage if
+  # a new rolling feature is added in future without that imputation.
+  grep("_last_\\d+$|days_since_last", numeric_cols, value = TRUE)
+)
+skip_zero_fill <- unique(skip_zero_fill)
+fill_cols <- setdiff(numeric_cols, skip_zero_fill)
+message(sprintf("  NA-filling %d structural numeric columns with 0; preserving NAs in %d value columns (Elo, ratings, rolling)",
+                length(fill_cols), length(skip_zero_fill)))
+for (col in fill_cols) {
   dataset[[col]][is.na(dataset[[col]])] <- 0
 }
 

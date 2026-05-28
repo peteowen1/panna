@@ -62,8 +62,12 @@ test_that("compute_match_elos returns correct structure", {
     away_goals = c(1, 1, 1, 0)
   )
 
-  elos <- compute_match_elos(results)
+  res <- compute_match_elos(results)
 
+  # New return shape: list(per_match, final_elos)
+  expect_true(is.list(res))
+  expect_true(all(c("per_match", "final_elos") %in% names(res)))
+  elos <- res$per_match
   expect_true(is.data.frame(elos))
   expect_equal(nrow(elos), 4)
   expect_true(all(c("match_id", "home_elo", "away_elo", "elo_diff") %in% names(elos)))
@@ -71,6 +75,9 @@ test_that("compute_match_elos returns correct structure", {
   # First match: all teams start at 1500
   expect_equal(elos$home_elo[1], 1500)
   expect_equal(elos$away_elo[1], 1500)
+
+  # final_elos covers exactly the unique teams in the input
+  expect_setequal(names(res$final_elos), c("Team A", "Team B", "Team C"))
 })
 
 
@@ -84,7 +91,7 @@ test_that("compute_match_elos handles NA goals (unplayed matches)", {
     away_goals = c(0, NA, 1)
   )
 
-  elos <- compute_match_elos(results)
+  elos <- compute_match_elos(results)$per_match
 
   # Match 2 has NA goals, so Elos shouldn't change between match 2 and 3's pre-match
   # Match 1 updates Elo; match 2 records but doesn't update; match 3 uses same pre-match Elo as match 2
@@ -102,11 +109,41 @@ test_that("compute_match_elos: pre-match Elo reflects prior results", {
     away_goals = c(0, 0)
   )
 
-  elos <- compute_match_elos(results)
+  elos <- compute_match_elos(results)$per_match
 
   # After a 3-0 home win, Team A's Elo for match 2 should be above 1500
   expect_true(elos$home_elo[2] > 1500)
   expect_true(elos$away_elo[2] < 1500)
+})
+
+
+test_that("compute_match_elos does NOT poison via NA team_name (regression test)", {
+  # This is the bug from 2026-05-28: a single match with NA team_name
+  # caused init_team_elos to have an NA-named entry, then the iteration's
+  # `NA %in% names(elos)` returned TRUE, then elos[NA] returned NA,
+  # which update_elo propagated to legitimate opponents. Cascaded so
+  # every team that ever played a poisoned opponent ended up with NA Elo.
+  results <- data.frame(
+    match_id = paste0("m", 1:4),
+    match_date = as.Date("2024-01-01") + c(0, 7, 14, 21),
+    home_team = c("France", NA,    "France", "France"),
+    away_team = c("Iceland", "Iceland", "Brazil", "Iceland"),
+    home_goals = c(2, 1, 1, 3),
+    away_goals = c(0, 0, 2, 1)
+  )
+  res <- compute_match_elos(results)
+  # France should have a real Elo, not NA
+  expect_false(is.na(res$final_elos["France"]))
+  expect_true(res$final_elos["France"] > 1500)
+  # Iceland too (it faced an NA-team in m2, but that should be skipped)
+  expect_false(is.na(res$final_elos["Iceland"]))
+})
+
+
+test_that("init_team_elos filters NA team names", {
+  e <- init_team_elos(c("A", "B", NA, "C"))
+  expect_setequal(names(e), c("A", "B", "C"))
+  expect_false(any(is.na(names(e))))
 })
 
 
@@ -312,7 +349,7 @@ test_that("compute_match_elos handles NA team names without corruption", {
     away_goals = c(1, 0, 0, 1)
   )
 
-  elos <- compute_match_elos(results)
+  elos <- compute_match_elos(results)$per_match
 
   # Row 2 should have NA Elos (NA team)
   expect_true(is.na(elos$home_elo[2]))
