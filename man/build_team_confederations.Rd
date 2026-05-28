@@ -11,7 +11,7 @@ build_team_confederations(played)
 columns. Typically \code{fixture_results[match_status == "Played", ]}.}
 }
 \value{
-Named character vector — names are team names, values are
+Named character vector -- names are team names, values are
 confederation codes ("UEFA", "CONMEBOL", "CAF", "AFC", "CONCACAF",
 or "OFC").
 }

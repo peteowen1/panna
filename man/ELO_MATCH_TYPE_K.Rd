@@ -13,6 +13,6 @@ ELO_MATCH_TYPE_K
 \description{
 Maps a league code to a base Elo K-factor. Values OPTIMIZED via grid
 search 2026-05-28 (see debug/optimize_elo_k_v2.R) using WC-weighted
-held-out Brier — 8.6\% improvement vs single-K baseline.
+held-out Brier -- 8.6\% improvement vs single-K baseline.
 }
 \keyword{internal}

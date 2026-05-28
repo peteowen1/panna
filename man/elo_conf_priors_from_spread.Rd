@@ -13,12 +13,12 @@ search over a single 1-dim parameter instead of 5-6 conf-specific Elos.
 }
 \details{
 Offset ratios (relative to spread):
-UEFA     = +1.0 × spread
-CONMEBOL = +1.0 × spread
-CONCACAF = -0.5 × spread
-CAF      = -0.5 × spread
-AFC      = -0.75 × spread
-OFC      = -1.5 × spread
+UEFA     = +1.0 x spread
+CONMEBOL = +1.0 x spread
+CONCACAF = -0.5 x spread
+CAF      = -0.5 x spread
+AFC      = -0.75 x spread
+OFC      = -1.5 x spread
 
 At spread = 100, that's UEFA=1600, CONMEBOL=1600, CONCACAF=1450,
 CAF=1450, AFC=1425, OFC=1350. At spread = 0, every confederation

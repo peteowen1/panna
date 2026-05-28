@@ -175,9 +175,9 @@ ELO_HOST_NAME_ALIASES <- c(
   "USA"                = "United States",
   "Korea Rep"          = "Korea Republic",
   "United States"      = "United States",
-  "Cote d'Ivoire"      = "Côte d\'Ivoire",
-  "Cote d Ivoire"      = "Côte d\'Ivoire",
-  "Côte d\'Ivoire" = "Côte d\'Ivoire"
+  "Cote d'Ivoire"      = "C\u00f4te d\'Ivoire",
+  "Cote d Ivoire"      = "C\u00f4te d\'Ivoire",
+  "C\u00f4te d\'Ivoire" = "C\u00f4te d\'Ivoire"
 )
 
 #' Extract Tournament Host(s) From a Season String

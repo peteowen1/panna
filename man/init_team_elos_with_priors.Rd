@@ -23,7 +23,7 @@ Default ELO_CONFEDERATION_PRIORS.}
 \item{initial_elo}{Fallback for teams whose conf is unknown.}
 }
 \value{
-Named numeric vector — same length as \code{teams} (after dropping
+Named numeric vector -- same length as \code{teams} (after dropping
 NA names).
 }
 \description{

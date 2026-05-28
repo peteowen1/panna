@@ -3,6 +3,14 @@
 \name{aggregate_lineup_ratings}
 \alias{aggregate_lineup_ratings}
 \title{Aggregate Player Ratings to Team Level}
+\usage{
+aggregate_lineup_ratings(
+  lineups,
+  ratings,
+  season_end_year,
+  prev_season_decay = 0.8
+)
+}
 \arguments{
 \item{lineups}{Data frame of match lineups with player_name, team_name,
 team_position (home/away), position, is_starter columns}

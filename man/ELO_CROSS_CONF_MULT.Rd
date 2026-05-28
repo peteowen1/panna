@@ -12,7 +12,7 @@ ELO_CROSS_CONF_MULT
 }
 \description{
 Multiply K by this factor when the two teams are from different
-confederations. Optimized to 1.5 (modest) — the conf priors below
+confederations. Optimized to 1.5 (modest) -- the conf priors below
 do most of the cross-pool calibration work, so the multiplier only
 needs to be moderate. 1.0 disables.
 }

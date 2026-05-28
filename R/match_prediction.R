@@ -9,24 +9,6 @@
 # Team Rating Aggregation
 # =============================================================================
 
-#' Aggregate Player Ratings to Team Level
-#'
-#' For a given match, takes the starting XI from lineups and joins to seasonal
-#' player ratings (xRAPM/SPM/RAPM). Computes team-level summary statistics
-#' including sum, mean, max, min, stdev, goalkeeper, and positional group averages.
-#'
-#' @param lineups Data frame of match lineups with player_name, team_name,
-#'   team_position (home/away), position, is_starter columns
-#' @param ratings Data frame of seasonal player ratings with player_name,
-#'   season_end_year, panna, offense, defense, spm columns
-#' @param season_end_year Numeric season end year for rating lookup
-#' @param prev_season_decay Decay factor for previous season fallback (default 0.8)
-#'
-#' @return Data frame with one row per match, team-level rating features
-#' @name aggregate_lineup_ratings
-#' @export
-NULL
-
 #' Augment a ratings table with time-decayed historical fallback
 #'
 #' For each player_id, finds their MOST recent non-zero rated season. If
@@ -82,6 +64,21 @@ augment_ratings_with_history <- function(ratings, current_sey,
   data.table::rbindlist(list(dt, most_recent), fill = TRUE, use.names = TRUE)
 }
 
+#' Aggregate Player Ratings to Team Level
+#'
+#' For a given match, takes the starting XI from lineups and joins to seasonal
+#' player ratings (xRAPM/SPM/RAPM). Computes team-level summary statistics
+#' including sum, mean, max, min, stdev, goalkeeper, and positional group averages.
+#'
+#' @param lineups Data frame of match lineups with player_name, team_name,
+#'   team_position (home/away), position, is_starter columns
+#' @param ratings Data frame of seasonal player ratings with player_name,
+#'   season_end_year, panna, offense, defense, spm columns
+#' @param season_end_year Numeric season end year for rating lookup
+#' @param prev_season_decay Decay factor for previous season fallback (default 0.8)
+#'
+#' @return Data frame with one row per match, team-level rating features
+#' @export
 aggregate_lineup_ratings <- function(lineups, ratings, season_end_year,
                                       prev_season_decay = 0.8) {
   dt_lineups <- data.table::as.data.table(lineups)
