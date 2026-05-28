@@ -357,9 +357,38 @@ if (any(missing_team)) {
 }
 
 # 6. Ensure Required Columns ----
-
+#
+# season_end_year MUST be populated for every row — the ratings join
+# in step 02 is keyed by (player_id, season_end_year), so any row with
+# NA/0 silently produces a row with all-NA ratings that the model then
+# trains on. Previously we only ran extraction when the column was
+# ABSENT (`if (!... %in% names(results))`), but after the cache+direct
+# combine the column EXISTS (from cache) with NAs for direct-load rows
+# — so extraction was skipped and step 04's NA-fill turned NAs into 0.
+# Result: 6.3% of training rows (every direct-loaded intl match) had
+# season_end_year = 0 and silently joined zero ratings.
 if (!"season_end_year" %in% names(results)) {
-  results$season_end_year <- sapply(results$season, extract_season_end_year)
+  results$season_end_year <- NA_real_
+}
+needs_extract <- is.na(results$season_end_year) | results$season_end_year == 0
+if (any(needs_extract)) {
+  results$season_end_year[needs_extract] <- vapply(
+    results$season[needs_extract], extract_season_end_year, numeric(1))
+  n_filled <- sum(needs_extract & !is.na(results$season_end_year))
+  message(sprintf("  season_end_year: extracted %d / %d previously missing values",
+                  n_filled, sum(needs_extract)))
+}
+
+# Hard-fail if any rows STILL have unparseable season_end_year — silently
+# leaving them would propagate to all-NA ratings.
+still_bad <- is.na(results$season_end_year) | results$season_end_year == 0
+if (any(still_bad)) {
+  bad_seasons <- unique(results$season[still_bad])
+  stop(sprintf(
+    "%d rows have unparseable season_end_year. Unique season strings: %s. Fix extract_season_end_year() in R/utils.R or filter these rows at the source.",
+    sum(still_bad),
+    paste(head(bad_seasons, 20), collapse = ", ")
+  ), call. = FALSE)
 }
 
 # 6b. Backfill missing home/away team_ids from opta_lineups.parquet ----
