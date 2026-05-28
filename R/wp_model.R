@@ -164,7 +164,7 @@ create_wp_features <- function(spadl_with_epv, match_results = NULL,
 #' from in-match game state features. Uses \code{WP_DRAW_VALUE} (0.5) for draws
 #' so the model predicts home's expected points fraction. Uses binary:logistic
 #' (cross-entropy with fractional labels) for consistency with torp's AFL WP
-#' training harness and natural [0,1] output via sigmoid.
+#' training harness and natural \verb{[0,1]} output via sigmoid.
 #'
 #' Two-step training (matches torp::train_live_wp_xgb.R):
 #'   1. 5-fold match-grouped xgb.cv with early_stopping_rounds=20 to find

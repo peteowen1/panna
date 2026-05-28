@@ -1,4 +1,4 @@
-# Elo calibration helpers — per-match-type K + cross-confederation multiplier.
+# Elo calibration helpers -- per-match-type K + cross-confederation multiplier.
 #
 # Motivation (2026-05-28): a single K=20 for all matches AND no
 # cross-confederation tether produced absurd outputs like Uzbekistan
@@ -27,12 +27,12 @@
 #'
 #' Maps a league code to a base Elo K-factor. Values OPTIMIZED via grid
 #' search 2026-05-28 (see debug/optimize_elo_k_v2.R) using WC-weighted
-#' held-out Brier — 8.6% improvement vs single-K baseline.
+#' held-out Brier -- 8.6% improvement vs single-K baseline.
 #'
 #' @format Named numeric vector: league code -> base K.
 #' @keywords internal
 ELO_MATCH_TYPE_K <- c(
-  # International tournaments — K=80 from optimization. High because
+  # International tournaments -- K=80 from optimization. High because
   # tournament outcomes are the most informative cross-confederation
   # signal we have for calibrating the pools against each other.
   WC     = 80,
@@ -42,7 +42,7 @@ ELO_MATCH_TYPE_K <- c(
   GOLD   = 80,
   ACUP   = 80,
   GULF   = 80,
-  # International qualifiers — K=25 from optimization. Lower than
+  # International qualifiers -- K=25 from optimization. Lower than
   # tournaments because they're within-confederation and the volume of
   # qualifier matches would otherwise drift pool Elos away from
   # cross-conf truth.
@@ -53,13 +53,13 @@ ELO_MATCH_TYPE_K <- c(
   EUROQ        = 25,
   AFCONQ       = 25,
   ACUPQ        = 25,
-  # Nations League — kept at 20 (semi-competitive, within-conf)
+  # Nations League -- kept at 20 (semi-competitive, within-conf)
   NL = 20,
-  # Friendlies — K=5 from optimization. Very low because friendlies are
+  # Friendlies -- K=5 from optimization. Very low because friendlies are
   # often understrength and the cross_conf_mult below (when on)
   # scales them up where they actually carry calibration info.
   INTL_FR = 5,
-  # Club leagues + continental cups — kept at K=20 (untouched by the
+  # Club leagues + continental cups -- kept at K=20 (untouched by the
   # intl optimization since they're a different world)
   ENG = 20, ENG2 = 20, ESP = 20, GER = 20, ITA = 20, FRA = 20,
   NED = 20, POR = 20, TUR = 20, SCO = 20, BEL = 20, BRA = 20,
@@ -74,7 +74,7 @@ ELO_DEFAULT_K <- 20
 #' Default cross-confederation K multiplier
 #'
 #' Multiply K by this factor when the two teams are from different
-#' confederations. Optimized to 1.5 (modest) — the conf priors below
+#' confederations. Optimized to 1.5 (modest) -- the conf priors below
 #' do most of the cross-pool calibration work, so the multiplier only
 #' needs to be moderate. 1.0 disables.
 #' @keywords internal
@@ -83,7 +83,7 @@ ELO_CROSS_CONF_MULT <- 1.5
 #' Confederation Initial-Elo Priors
 #'
 #' Per-confederation starting Elo. Without this, every team starts at
-#' 1500 and confederations only diverge via match results — but with
+#' 1500 and confederations only diverge via match results -- but with
 #' few cross-conf matches per year, that divergence is slow and stays
 #' biased toward whichever confederation has the most internal-pool
 #' matches (= AFC pool drifts up because they play each other a lot).
@@ -107,7 +107,7 @@ ELO_CONFEDERATION_PRIORS <- c(
   OFC      = 1200
 )
 # Values from optimizer (spread = 200; debug/optimize_elo_k_v2.R, 2026-05-28).
-# Spread 200 produced 8.6% lower WC-weighted Brier than no prior — the conf
+# Spread 200 produced 8.6% lower WC-weighted Brier than no prior -- the conf
 # priors carry most of the optimization gain.
 
 #' Default conf_spread used by step 03 (passed through compute_match_elos)
@@ -127,7 +127,7 @@ ELO_CONF_SPREAD <- 200
 #' @param conf_priors Named numeric vector (confederation -> initial Elo).
 #'   Default ELO_CONFEDERATION_PRIORS.
 #' @param initial_elo Fallback for teams whose conf is unknown.
-#' @return Named numeric vector — same length as `teams` (after dropping
+#' @return Named numeric vector -- same length as `teams` (after dropping
 #'   NA names).
 #' @keywords internal
 init_team_elos_with_priors <- function(teams, conf_lookup,
@@ -149,21 +149,21 @@ init_team_elos_with_priors <- function(teams, conf_lookup,
 # =============================================================================
 # Most tournament matches are at a host country, NOT at the designated
 # home_team's real stadium. Opta assigns one team as `home_team` per
-# match for scheduling — that team gets the +65 home advantage in
+# match for scheduling -- that team gets the +65 home advantage in
 # compute_match_elos even when the match is at a neutral venue or in
 # the OPPONENT's country (when the opponent is the host).
 #
 # venue_factor scales home_advantage per-match:
 #   +1   home_team is at home (domestic league, or tournament where they host)
 #    0   neutral (tournament match where neither team is host)
-#   -1   away_team is the host (rare — home_team is visiting host's country)
+#   -1   away_team is the host (rare -- home_team is visiting host's country)
 #
 # Hosts are extracted from the season string, which already encodes them:
-#   "2025 Morocco" → Morocco
-#   "2026 Canada-Mexico-USA" → Canada, Mexico, USA
-#   "2024 Germany" → Germany
-#   "Intl_Friendlies_2024" → no host (friendlies, treat as +1)
-#   "2024-2025" → no host (domestic, treat as +1)
+#   "2025 Morocco" -> Morocco
+#   "2026 Canada-Mexico-USA" -> Canada, Mexico, USA
+#   "2024 Germany" -> Germany
+#   "Intl_Friendlies_2024" -> no host (friendlies, treat as +1)
+#   "2024-2025" -> no host (domestic, treat as +1)
 
 #' Map Host-Name Aliases to Canonical Opta team_name
 #'
@@ -175,9 +175,9 @@ ELO_HOST_NAME_ALIASES <- c(
   "USA"                = "United States",
   "Korea Rep"          = "Korea Republic",
   "United States"      = "United States",
-  "Cote d'Ivoire"      = "Côte d'Ivoire",
-  "Cote d Ivoire"      = "Côte d'Ivoire",
-  "Côte d'Ivoire"     = "Côte d'Ivoire"
+  "Cote d'Ivoire"      = "Côte d\'Ivoire",
+  "Cote d Ivoire"      = "Côte d\'Ivoire",
+  "Côte d\'Ivoire" = "Côte d\'Ivoire"
 )
 
 #' Extract Tournament Host(s) From a Season String
@@ -188,9 +188,9 @@ ELO_HOST_NAME_ALIASES <- c(
 #' @keywords internal
 extract_tournament_hosts <- function(season) {
   if (is.na(season) || !nzchar(season)) return(character(0))
-  # Domestic season "YYYY-YYYY" → no host
+  # Domestic season "YYYY-YYYY" -> no host
   if (grepl("^\\d{4}-\\d{4}$", season)) return(character(0))
-  # Friendlies-style "Intl_Friendlies_YYYY" → no host
+  # Friendlies-style "Intl_Friendlies_YYYY" -> no host
   if (grepl("Friendlies", season, ignore.case = TRUE)) return(character(0))
   # Tournament: strip leading 4-digit year + whitespace
   rest <- trimws(sub("^\\d{4}\\s*", "", season))
@@ -251,15 +251,15 @@ compute_venue_factor <- function(home_team, away_team, league, season) {
   for (i in which(is_tournament)) {
     hosts <- host_lookup[[ls_keys[i]]]
     if (length(hosts) == 0L) {
-      vf[i] <- 0  # tournament season with no parseable host → assume neutral
+      vf[i] <- 0  # tournament season with no parseable host -> assume neutral
       next
     }
     home_is_host <- home_team[i] %in% hosts
     away_is_host <- away_team[i] %in% hosts
     vf[i] <- if (home_is_host && !away_is_host) 1
              else if (!home_is_host && away_is_host) -1
-             else if (home_is_host && away_is_host) 1  # both host — treat as home
-             else 0  # neither host — neutral
+             else if (home_is_host && away_is_host) 1  # both host -- treat as home
+             else 0  # neither host -- neutral
   }
   vf
 }
@@ -272,12 +272,12 @@ compute_venue_factor <- function(home_team, away_team, league, season) {
 #' search over a single 1-dim parameter instead of 5-6 conf-specific Elos.
 #'
 #' Offset ratios (relative to spread):
-#'   UEFA     = +1.0 × spread
-#'   CONMEBOL = +1.0 × spread
-#'   CONCACAF = -0.5 × spread
-#'   CAF      = -0.5 × spread
-#'   AFC      = -0.75 × spread
-#'   OFC      = -1.5 × spread
+#'   UEFA     = +1.0 x spread
+#'   CONMEBOL = +1.0 x spread
+#'   CONCACAF = -0.5 x spread
+#'   CAF      = -0.5 x spread
+#'   AFC      = -0.75 x spread
+#'   OFC      = -1.5 x spread
 #'
 #' At spread = 100, that's UEFA=1600, CONMEBOL=1600, CONCACAF=1450,
 #' CAF=1450, AFC=1425, OFC=1350. At spread = 0, every confederation
@@ -322,7 +322,7 @@ elo_match_k <- function(league, k_table = ELO_MATCH_TYPE_K,
 #'
 #' @param played Data frame with `league`, `home_team`, `away_team`
 #'   columns. Typically `fixture_results[match_status == "Played", ]`.
-#' @return Named character vector — names are team names, values are
+#' @return Named character vector -- names are team names, values are
 #'   confederation codes ("UEFA", "CONMEBOL", "CAF", "AFC", "CONCACAF",
 #'   or "OFC").
 #' @keywords internal
@@ -335,7 +335,7 @@ build_team_confederations <- function(played) {
     AFC      = c("WCQ_AFC", "ACUP", "ACUPQ", "GULF"),
     CONCACAF = c("GOLD"),
     OFC      = c()  # OFC has no codes in our data; New Zealand may
-                    # fall here unrecognised — handled by NA default
+                    # fall here unrecognised -- handled by NA default
   )
 
   # For each team, gather the set of confederations they've appeared in.
@@ -364,10 +364,7 @@ build_team_confederations <- function(played) {
 }
 
 
-# Null-coalesce operator for the rare case `team_conf_counts[[t]][[conf]]`
-# is NULL on first encounter.
-`%||%` <- function(a, b) if (is.null(a)) b else a
-
+# `%||%` is imported from rlang via panna-package.R (single source).
 
 #' Compute Cross-Confederation Multiplier for a Match
 #'

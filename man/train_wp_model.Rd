@@ -49,7 +49,7 @@ Fits an XGBoost model to predict match outcome (home win / draw / away win)
 from in-match game state features. Uses \code{WP_DRAW_VALUE} (0.5) for draws
 so the model predicts home's expected points fraction. Uses binary:logistic
 (cross-entropy with fractional labels) for consistency with torp's AFL WP
-training harness and natural \link{0,1} output via sigmoid.
+training harness and natural \verb{[0,1]} output via sigmoid.
 }
 \details{
 Two-step training (matches torp::train_live_wp_xgb.R):

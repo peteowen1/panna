@@ -156,5 +156,4 @@ data_location_report <- function(leagues = NULL) {
   ))
 }
 
-# Local infix for default-when-NULL (lighter than rlang::%||%, kept private)
-`%||%` <- function(x, y) if (is.null(x)) y else x
+# `%||%` is imported from rlang via panna-package.R (single source).

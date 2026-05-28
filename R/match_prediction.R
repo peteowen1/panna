@@ -23,7 +23,10 @@
 #' @param prev_season_decay Decay factor for previous season fallback (default 0.8)
 #'
 #' @return Data frame with one row per match, team-level rating features
+#' @name aggregate_lineup_ratings
 #' @export
+NULL
+
 #' Augment a ratings table with time-decayed historical fallback
 #'
 #' For each player_id, finds their MOST recent non-zero rated season. If
@@ -640,6 +643,31 @@ update_elo <- function(home_elo, away_elo, home_goals, away_goals,
 #' @param k K-factor (default 20)
 #' @param home_advantage Home advantage in Elo points (default 65)
 #' @param initial_elo Starting Elo (default 1500)
+#' @param k_table Optional named numeric vector mapping league codes to
+#'   per-match-type K values (e.g., `ELO_MATCH_TYPE_K`). When supplied,
+#'   `elo_match_k()` selects the K for each match by its league; otherwise
+#'   every match uses the single `k` argument.
+#' @param cross_conf_mult Numeric multiplier (default 1.0 = disabled) applied
+#'   to K when home and away teams are in different confederations. Lets the
+#'   model learn faster from cross-confederation matches that constrain the
+#'   relative ordering between confederation prior centers.
+#' @param conf_priors Optional named numeric vector of starting Elos per
+#'   confederation (e.g., `c(UEFA=1500, CONMEBOL=1500, ...)`). When supplied,
+#'   teams are initialized from their confederation's prior instead of the
+#'   single `initial_elo`. Requires `build_team_confederations()` to be able
+#'   to derive each team's confederation from `results`.
+#' @param use_venue_factor Logical (default FALSE for backwards compat). When
+#'   TRUE, `home_advantage` is scaled by `compute_venue_factor()` per match —
+#'   +1 for true home, 0 for neutral tournament, -1 when the designated
+#'   "home_team" is actually visiting the host country.
+#' @param time_decay_halflife Optional numeric (days, default NULL = disabled).
+#'   When set, scales K by `0.5 ^ ((reference_date - match_date) / halflife)`
+#'   so older matches contribute less to the Elo iteration. Useful for
+#'   recency-weighting; v5 optimization converged near "off" (~6500 days), so
+#'   not default but available for callers wanting FIFA/SPI-style recency.
+#' @param decay_reference_date Optional Date or date-coercible string used as
+#'   "now" for the decay calculation. Defaults to `max(match_date)` in
+#'   `results`.
 #'
 #' @return A list with two elements:
 #'   - `per_match`: data frame with match_id, home_elo, away_elo, elo_diff

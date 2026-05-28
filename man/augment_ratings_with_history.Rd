@@ -2,7 +2,7 @@
 % Please edit documentation in R/match_prediction.R
 \name{augment_ratings_with_history}
 \alias{augment_ratings_with_history}
-\title{Aggregate Player Ratings to Team Level}
+\title{Augment a ratings table with time-decayed historical fallback}
 \usage{
 augment_ratings_with_history(
   ratings,
@@ -23,22 +23,17 @@ uncertainty about their current form).}
 
 \item{max_years_back}{Cap how far back to look. Default 5 years.
 Beyond that the decay is so heavy the imputation is near-zero anyway.}
-
-\item{lineups}{Data frame of match lineups with player_name, team_name,
-team_position (home/away), position, is_starter columns}
-
-\item{season_end_year}{Numeric season end year for rating lookup}
-
-\item{prev_season_decay}{Decay factor for previous season fallback (default 0.8)}
 }
 \value{
-Data frame with one row per match, team-level rating features
-
 The input \code{ratings} with extra synthetic rows for \code{current_sey}
 covering players who weren't already rated there.
 }
 \description{
-For a given match, takes the starting XI from lineups and joins to seasonal
-player ratings (xRAPM/SPM/RAPM). Computes team-level summary statistics
-including sum, mean, max, min, stdev, goalkeeper, and positional group averages.
+For each player_id, finds their MOST recent non-zero rated season. If
+that season is older than \code{current_sey}, applies an exponential decay
+\code{decay_factor ^ years_gap} to the rating and emits a synthetic row
+under \code{current_sey}. This lets unrated-in-current-season players (who
+moved to a non-covered league like Saudi PL / MLS / Liga MX) still
+contribute a sensible non-zero panna estimate when their lineup is
+aggregated.
 }
