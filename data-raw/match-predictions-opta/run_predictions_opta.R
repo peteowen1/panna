@@ -18,11 +18,21 @@ devtools::load_all()
 # Use if (!exists(...)) so test scripts can override before sourcing
 
 # LEAGUES TO INCLUDE
+# International qualifiers + Nations League + friendlies added 2026-05-28
+# so the Elo iteration sees national-team form beyond just WC/EURO finals.
+# Previously, teams like Norway (whose entire 2026 qualifying campaign
+# happens in UEFA_WC_Qualifiers) sat at the 1500 initial Elo; the model
+# was making predictions on top of effectively zero national-team
+# strength evidence for most countries.
 if (!exists("leagues")) leagues <- c(
   "ENG", "ESP", "GER", "ITA", "FRA",       # Big 5
   "NED", "POR", "TUR", "ENG2", "SCO",      # Extended domestic
-  "UCL", "UEL", "UECL",                     # European comps
-  "WC", "EURO"                               # International
+  "UCL", "UEL", "UECL",                     # European club comps
+  # International tournaments
+  "WC", "EURO", "AFCON", "COPA", "GOLD", "ACUP", "GULF",
+  # International qualifiers + Nations League + friendlies
+  "WCQ_UEFA", "WCQ_CONMEBOL", "WCQ_CAF", "WCQ_AFC",
+  "EUROQ", "AFCONQ", "ACUPQ", "NL", "INTL_FR"
 )
 
 # SEASONS (NULL = all available, or specify like c("2024-2025"))

@@ -484,12 +484,32 @@ if (nrow(upcoming) > 0) {
           live_skills, skill_spm$defense_spm_glmnet, skill_spm$defense_spm_xgb
         )
 
-        # Build fixture-specific ratings table
+        # Build fixture-specific ratings table.
+        # CRITICAL: keep player_id from off_blend/def_blend. The previous code
+        # selected only (player_name, total_minutes, offense_spm), dropping
+        # player_id silently. The PSR + EPR joins below use `by = "player_id"`
+        # so they failed (caught by their tryCatch, warned once), leaving
+        # fixture_ratings with no PSR/EPR columns at all — which then
+        # propagated as 0 home_sum_psr / home_sum_epr for every fixture in
+        # step 04's NA-fill, hollowing out two model features for ALL
+        # upcoming-fixture predictions including WC2026. Also: joining
+        # off_blend × def_blend on player_name produced many-to-many
+        # duplicates (a single name shared across player_ids); join on
+        # player_id instead, dedupe, and pin relationship = "one-to-one" so
+        # a future schema drift can't silently reintroduce the row-inflation.
+        off_join_cols <- intersect(c("player_id", "player_name"), names(off_blend))
+        def_join_cols <- intersect(c("player_id", "player_name"), names(def_blend))
+        join_keys <- intersect(off_join_cols, def_join_cols)
         fixture_ratings <- off_blend %>%
-          select(player_name, total_minutes, offense_spm = spm) %>%
+          select(any_of(c("player_id", "player_name", "total_minutes")),
+                 offense_spm = spm) %>%
+          distinct(across(any_of(off_join_cols)), .keep_all = TRUE) %>%
           inner_join(
-            def_blend %>% select(player_name, defense_spm = spm),
-            by = "player_name"
+            def_blend %>%
+              select(any_of(c("player_id", "player_name")), defense_spm = spm) %>%
+              distinct(across(any_of(def_join_cols)), .keep_all = TRUE),
+            by = join_keys,
+            relationship = "one-to-one"
           ) %>%
           mutate(
             panna = offense_spm - defense_spm,
@@ -499,43 +519,66 @@ if (nrow(upcoming) > 0) {
             season_end_year = latest_sey
           )
 
-        # Add PSR/OSR/DSR from live skills
-        tryCatch({
-          live_psr <- compute_player_psr(live_skills, center = TRUE)
-          if (!is.null(live_psr) && nrow(live_psr) > 0) {
-            live_psr <- as.data.frame(live_psr)
-            psr_cols <- intersect(c("player_id", "psr", "osr", "dsr"), names(live_psr))
-            fixture_ratings <- fixture_ratings %>%
-              left_join(live_psr[, psr_cols], by = "player_id")
-            fixture_ratings$psr[is.na(fixture_ratings$psr)] <- 0
-            if ("osr" %in% names(fixture_ratings)) fixture_ratings$osr[is.na(fixture_ratings$osr)] <- 0
-            if ("dsr" %in% names(fixture_ratings)) fixture_ratings$dsr[is.na(fixture_ratings$dsr)] <- 0
-            message(sprintf("  Added PSR for %d fixture players", sum(fixture_ratings$psr != 0)))
-          }
-        }, error = function(e) {
-          warning(sprintf("Fixture PSR failed: %s", e$message), call. = FALSE)
-        })
+        # Add PSR/OSR/DSR from live skills.
+        #
+        # Pre-check preconditions explicitly rather than wrap the whole block
+        # in a catch-all tryCatch — the previous catch-all turned a real
+        # schema bug (player_id missing from fixture_ratings, see above) into
+        # a single one-line warning that scrolled by in 20+ other pipeline
+        # warnings, hollowing PSR for ALL fixtures for who-knows-how-long.
+        # Skip silently only when PSR data is genuinely absent; let any
+        # other failure mode propagate so it's caught in the next run.
+        live_psr <- compute_player_psr(live_skills, center = TRUE)
+        if (is.null(live_psr) || nrow(live_psr) == 0) {
+          message("  PSR skipped: compute_player_psr returned no rows")
+        } else if (!"player_id" %in% names(fixture_ratings)) {
+          warning("Fixture PSR skipped: fixture_ratings has no player_id ",
+                  "column (upstream select likely dropped it). Investigate ",
+                  "step 02's fixture-ratings construction.",
+                  call. = FALSE, immediate. = TRUE)
+        } else if (!"player_id" %in% names(live_psr)) {
+          warning("Fixture PSR skipped: live_psr has no player_id column. ",
+                  "Investigate compute_player_psr output.",
+                  call. = FALSE, immediate. = TRUE)
+        } else {
+          live_psr <- as.data.frame(live_psr)
+          psr_cols <- intersect(c("player_id", "psr", "osr", "dsr"), names(live_psr))
+          fixture_ratings <- fixture_ratings %>%
+            left_join(live_psr[, psr_cols], by = "player_id",
+                      relationship = "many-to-one")
+          fixture_ratings$psr[is.na(fixture_ratings$psr)] <- 0
+          if ("osr" %in% names(fixture_ratings)) fixture_ratings$osr[is.na(fixture_ratings$osr)] <- 0
+          if ("dsr" %in% names(fixture_ratings)) fixture_ratings$dsr[is.na(fixture_ratings$dsr)] <- 0
+          message(sprintf("  Added PSR for %d fixture players", sum(fixture_ratings$psr != 0)))
+        }
 
-        # Add EPR from the most recent weekly snapshot
-        tryCatch({
-          epr_path <- "../pannadata/data/opta/opta_epr_weekly.parquet"
-          if (file.exists(epr_path) && requireNamespace("arrow", quietly = TRUE)) {
-            epr_w <- as.data.frame(arrow::read_parquet(epr_path))
-            epr_w$snapshot_date <- as.Date(epr_w$snapshot_date)
-            latest <- max(epr_w$snapshot_date)
-            live_epr <- epr_w[epr_w$snapshot_date == latest,
-                                c("player_id", "epr", "epr_offensive", "epr_defensive")]
-            fixture_ratings <- fixture_ratings %>%
-              left_join(live_epr, by = "player_id")
-            for (c in c("epr", "epr_offensive", "epr_defensive")) {
-              fixture_ratings[[c]][is.na(fixture_ratings[[c]])] <- 0
-            }
-            message(sprintf("  Added EPR for %d fixture players (snapshot %s)",
-                            sum(fixture_ratings$epr != 0), latest))
+        # Add EPR from the most recent weekly snapshot.
+        # Same precondition-check pattern as PSR above — silent skip only on
+        # genuinely absent data, loud surface on schema mismatches.
+        epr_path <- "../pannadata/data/opta/opta_epr_weekly.parquet"
+        if (!file.exists(epr_path)) {
+          message(sprintf("  EPR skipped: %s not found", epr_path))
+        } else if (!requireNamespace("arrow", quietly = TRUE)) {
+          message("  EPR skipped: 'arrow' package not available")
+        } else if (!"player_id" %in% names(fixture_ratings)) {
+          warning("Fixture EPR skipped: fixture_ratings has no player_id ",
+                  "column. Investigate step 02's fixture-ratings construction.",
+                  call. = FALSE, immediate. = TRUE)
+        } else {
+          epr_w <- as.data.frame(arrow::read_parquet(epr_path))
+          epr_w$snapshot_date <- as.Date(epr_w$snapshot_date)
+          latest <- max(epr_w$snapshot_date)
+          live_epr <- epr_w[epr_w$snapshot_date == latest,
+                              c("player_id", "epr", "epr_offensive", "epr_defensive")]
+          fixture_ratings <- fixture_ratings %>%
+            left_join(live_epr, by = "player_id",
+                      relationship = "many-to-one")
+          for (c in c("epr", "epr_offensive", "epr_defensive")) {
+            fixture_ratings[[c]][is.na(fixture_ratings[[c]])] <- 0
           }
-        }, error = function(e) {
-          warning(sprintf("Fixture EPR failed: %s", e$message), call. = FALSE)
-        })
+          message(sprintf("  Added EPR for %d fixture players (snapshot %s)",
+                          sum(fixture_ratings$epr != 0), latest))
+        }
 
         message(sprintf("  Live skill ratings for %d players at %s",
                         nrow(fixture_ratings), fixture_date))

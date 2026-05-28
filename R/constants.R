@@ -505,10 +505,26 @@ EPR_LOADING <- 1.0
 #' Elo + recent form; club prediction leans on squad player-ratings).
 #' Any competition NOT in this list is treated as international.
 #'
-#' @format Character vector of competition codes.
+#' BUG-FIX 2026-05-28: previously this list contained "EPL" (the Opta-side
+#' competition name) but the rest as panna short codes ("ESP", "ITA", ...).
+#' Since the predictions pipeline passes SHORT CODES through (its `leagues`
+#' vector is "ENG", "ESP", ...), match_is_international("ENG") was returning
+#' TRUE — i.e., the entire English Premier League was being trained on the
+#' international-specialist model and receiving the international prediction
+#' blend. Replaced "EPL" with "ENG" and added BEL/BRA/AUS/TUN/CAFCL so any
+#' future addition of those leagues to the default set classifies correctly.
+#'
+#' @format Character vector of panna short codes (matches what flows through
+#'   fixture_results$league in step 01).
 #' @keywords internal
-MATCH_CLUB_LEAGUES <- c("EPL", "ENG2", "ESP", "ITA", "GER", "FRA", "NED",
-                        "POR", "TUR", "SCO", "UCL", "UEL", "UECL")
+MATCH_CLUB_LEAGUES <- c(
+  # Big 5
+  "ENG", "ESP", "ITA", "GER", "FRA",
+  # Extended domestic
+  "ENG2", "NED", "POR", "TUR", "SCO", "BEL", "BRA", "AUS", "TUN",
+  # Continental club competitions
+  "UCL", "UEL", "UECL", "CAFCL"
+)
 
 #' Classify competitions as international vs domestic
 #'

@@ -89,9 +89,29 @@ OPTA_LEAGUES <- c(
   UCL = "UCL",
   UEL = "UEL",
   UECL = "Conference_League",
-  # International
+  # International — tournaments
   WC = "World_Cup",
-  EURO = "UEFA_Euros"
+  EURO = "UEFA_Euros",
+  AFCON = "AFCON",
+  COPA = "Copa_America",
+  GOLD = "CONCACAF_Gold_Cup",
+  ACUP = "AFC_Asian_Cup",
+  GULF = "Gulf_Cup_of_Nations",
+  # International — qualifiers + standing competitions
+  # Without these, national-team Elo iteration only saw WC + Euros,
+  # leaving teams like Norway (who topped UEFA WC Qualifying Group I)
+  # stuck near the 1500 initial. Adding the qualifier comps lets Elo
+  # accumulate proper national-team form across an entire qualifying
+  # cycle (~30 matches per UEFA team in a typical cycle).
+  WCQ_UEFA     = "UEFA_WC_Qualifiers",
+  WCQ_CONMEBOL = "CONMEBOL_WC_Qualifiers",
+  WCQ_CAF      = "CAF_WC_Qualifiers",
+  WCQ_AFC      = "AFC_WC_Qualifiers",
+  EUROQ        = "UEFA_Euro_Qualifiers",
+  AFCONQ       = "AFCON_Qualifiers",
+  ACUPQ        = "Asian_Cup_Qualifiers",
+  NL           = "UEFA_Nations_League",
+  INTL_FR      = "Intl_Friendlies"
 )
 
 # Environment to store opta data path
