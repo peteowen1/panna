@@ -122,7 +122,15 @@ for (sey in sey_values) {
     tr <- aggregate_lineup_skills(lu_sey, skills)
     if (!is.null(tr) && nrow(tr) > 0) {
       all_skill_features[[as.character(sey)]] <- tr
-      message(sprintf("    SEY %d: %d matches with skill features", sey, nrow(tr)))
+      # Report per-season NA rate on a representative column so we can see
+      # at a glance when skill coverage was thin (early seasons have less
+      # because the underlying match_stats cache starts mid-2014).
+      rep_col <- intersect("home_sk_att_goals", names(tr))
+      na_rate <- if (length(rep_col) > 0L) {
+        sprintf("%.0f%% NA", 100 * mean(is.na(tr[[rep_col]])))
+      } else "n/a"
+      message(sprintf("    SEY %d: %d matches with skill features (%s on home_sk_att_goals)",
+                      sey, nrow(tr), na_rate))
     }
   }, error = function(e) {
     n_failed <<- n_failed + 1L

@@ -65,6 +65,24 @@ if (!is.null(team_skill_features) && nrow(team_skill_features) > 0) {
                   ncol(team_skill_features) - 1))
 }
 
+# has_sk_data indicator — explicit 0/1 flag for whether this match has
+# both-sides skill estimates available. XGBoost's NA-split-direction is
+# good but can be subtly miscalibrated when "this match has no skill data"
+# is conflated with "skill data exists but a particular feature is zero".
+# The indicator gives the model the explicit "this row's skill features
+# are meaningful vs not" signal alongside the NAs. ~13.5% of historical
+# matches (pre-2014, before the skill cache exists) have it as 0.
+if ("home_sk_att_goals" %in% names(dataset) &&
+    "away_sk_att_goals" %in% names(dataset)) {
+  dataset$has_sk_data <- as.integer(
+    !is.na(dataset$home_sk_att_goals) & !is.na(dataset$away_sk_att_goals))
+  message(sprintf("  has_sk_data: %d / %d rows (%.1f%%) have skill data on both sides",
+                  sum(dataset$has_sk_data), nrow(dataset),
+                  100 * mean(dataset$has_sk_data)))
+} else {
+  dataset$has_sk_data <- 0L
+}
+
 message(sprintf("  After joins: %d rows, %d columns", nrow(dataset), ncol(dataset)))
 
 # 6. Add Weather Features (optional) ----
