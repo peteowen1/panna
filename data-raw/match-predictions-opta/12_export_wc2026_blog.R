@@ -147,3 +147,11 @@ if (no_upload) {
 }
 
 message("\n=== WC 2026 blog export complete ===")
+
+# 7. Reference-fact validation ----
+# Run the WC2026_REFERENCE_FACTS library against the just-published
+# outputs. Each fact encodes a real-world claim (Norway topped UEFA
+# qualifying → Elo > 1550; top 8 by champ% should include >=6 perennial
+# favourites; etc.). When a fact fails, either the pipeline regressed
+# OR a fact itself is stale and needs updating — both worth attention.
+run_wc2026_reference_checks(cache_dir)

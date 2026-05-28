@@ -606,6 +606,44 @@ if (nrow(upcoming) > 0) {
 
 message(sprintf("\nTotal: %d matches with team ratings", nrow(team_ratings)))
 
+# 7b. End-of-step assertions ----
+#
+# Output validation that would have caught the EPR/PSR all-zero bug
+# (2026-05-28) the first time it ran. Pattern: when you fix a bug, ALSO
+# add the assertion that would have caught it. The assertion ships as
+# the falsifiable claim "this is what this step's output should look like."
+assert_step_output(
+  data.table::as.data.table(team_ratings),
+  "step 02",
+  list(
+    "row count plausible (>10k matches across all leagues+fixtures)" =
+      function(d) nrow(d) > 10000L,
+    "EPR + PSR columns populated (not all NA from a join failure)" =
+      function(d) {
+        cols <- intersect(c("home_sum_epr", "home_sum_psr",
+                             "away_sum_epr", "away_sum_psr"),
+                          names(d))
+        if (length(cols) == 0L) return(TRUE)
+        all(vapply(cols, function(c) sum(!is.na(d[[c]])) > 0.5 * nrow(d),
+                   logical(1)))
+      },
+    "WC2026 fixtures have nonzero sum_epr (catches the player_id-drop bug)" =
+      function(d) {
+        wc <- d[league == WC2026_LEAGUE & season == WC2026_SEASON_LABEL]
+        if (nrow(wc) == 0L) return(TRUE)  # no WC2026 fixtures yet
+        # At least 80% of WC2026 fixtures should have non-zero home_sum_epr
+        # (a few teams legitimately have no EPR coverage; total zero is the bug)
+        mean(wc$home_sum_epr != 0, na.rm = TRUE) > 0.8
+      },
+    "WC2026 fixtures have nonzero sum_psr" =
+      function(d) {
+        wc <- d[league == WC2026_LEAGUE & season == WC2026_SEASON_LABEL]
+        if (nrow(wc) == 0L) return(TRUE)
+        mean(wc$home_sum_psr != 0, na.rm = TRUE) > 0.8
+      }
+  )
+)
+
 # 8. Save ----
 
 saveRDS(team_ratings, output_path)
