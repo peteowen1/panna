@@ -53,22 +53,41 @@ if (use_rapm_cache) {
   results <- raw_data$results
   # Filter to requested leagues
   results <- results[results$league %in% leagues, ]
-  message(sprintf("  %d matches from RAPM cache (filtered to %s)",
-                  nrow(results), paste(leagues, collapse = ", ")))
+  message(sprintf("  %d matches from RAPM cache (covers %d / %d requested leagues)",
+                  nrow(results),
+                  length(unique(results$league)), length(leagues)))
   results$score_source <- "rapm_cache"  # will be overridden below where fixtures has scores
+  cached_leagues <- unique(results$league)
 } else {
   message("No RAPM cache found - loading from Opta data directly...")
   results <- NULL
+  cached_leagues <- character(0)
 }
 
-# 5. Load Results from Opta (if no cache) ----
+# 5. Load Results from Opta for any leagues not in the cache ----
+#
+# Previously this block was only entered when the RAPM cache was absent
+# entirely (`if (is.null(results))`). When the cache existed but didn't
+# cover all requested leagues (e.g., 14 newly-added intl competitions
+# whose RAPM hasn't been run), the missing leagues silently produced
+# zero played matches — fixtures iterated them but historical results
+# were stuck on the cache's pre-existing scope. Result: Norway's entire
+# UEFA WC qualifying campaign was invisible to the Elo iteration despite
+# the data being on disk.
+#
+# Fix: compute `missing_leagues` and direct-load just those. The cache
+# fast-path still applies to leagues it already covers.
 
-if (is.null(results)) {
-  message("\n=== Loading Opta Data ===\n")
+missing_leagues <- setdiff(leagues, cached_leagues)
+if (length(missing_leagues) > 0) {
+  message(sprintf("\n=== Loading %d league%s directly from Opta (not in RAPM cache): %s ===\n",
+                  length(missing_leagues),
+                  if (length(missing_leagues) == 1L) "" else "s",
+                  paste(missing_leagues, collapse = ", ")))
 
   all_results <- list()
 
-  for (league in leagues) {
+  for (league in missing_leagues) {
     opta_league <- to_opta_league(league)
     available_seasons <- tryCatch(list_opta_seasons(league, source = "local"), error = function(e) character(0))
     if (length(available_seasons) == 0) next
@@ -189,8 +208,20 @@ if (is.null(results)) {
     }
   }
 
-  results <- bind_rows(all_results)
-  message(sprintf("  Loaded %d matches from Opta", nrow(results)))
+  direct_results <- bind_rows(all_results)
+  message(sprintf("  Loaded %d matches from Opta direct (across %d leagues)",
+                  nrow(direct_results), length(unique(direct_results$league))))
+
+  # Combine cache results (if any) with direct-load results.
+  # Use bind_rows with fill semantics — direct-load may have columns the
+  # cache lacks (e.g., score_source = "fixtures" vs "rapm_cache").
+  if (!is.null(results) && nrow(results) > 0) {
+    results <- bind_rows(results, direct_results)
+  } else {
+    results <- direct_results
+  }
+  message(sprintf("  TOTAL matches available (cache + direct): %d across %d leagues",
+                  nrow(results), length(unique(results$league))))
 
   # Provenance summary. Any non-zero "events" count points at Opta's matchstats
   # endpoint lagging for recent matches — we're falling back to goal events
