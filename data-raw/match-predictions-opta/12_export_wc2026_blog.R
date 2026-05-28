@@ -109,12 +109,30 @@ write_parquet(strength, file.path(cache_dir, "wc2026_team_strength.parquet"))
 message(sprintf("  wc2026_team_strength.parquet: %d teams x %d categories",
                 nrow(strength), length(metric_cols) + 2L))
 
-# 6. Upload to blog-latest ----
+# 6. Save CSV companions for the small published tables ----
+# Per feedback 2026-05-28: small tables (<100KB / <10k rows) get a CSV
+# alongside the parquet for easy human inspection. The parquet remains
+# the format the blog reads programmatically; the CSV is the companion
+# you can `cat` or open in any editor without arrow installed.
+wc_parquets <- c("wc2026_predictions.parquet",
+                 "wc2026_simulation.parquet",
+                 "wc2026_groups.parquet",
+                 "wc2026_team_strength.parquet")
+for (p in wc_parquets) {
+  pp <- file.path(cache_dir, p)
+  cp <- sub("\\.parquet$", ".csv", pp)
+  write.csv(read_parquet(pp), cp, row.names = FALSE)
+}
+message(sprintf("  Wrote %d CSV companions for the small published tables.",
+                length(wc_parquets)))
 
-wc_files <- file.path(cache_dir, c("wc2026_predictions.parquet",
-                                   "wc2026_simulation.parquet",
-                                   "wc2026_groups.parquet",
-                                   "wc2026_team_strength.parquet"))
+# 7. Upload to blog-latest ----
+
+wc_files <- c(
+  file.path(cache_dir, wc_parquets),
+  # CSV companions uploaded alongside parquet
+  file.path(cache_dir, sub("\\.parquet$", ".csv", wc_parquets))
+)
 
 no_upload <- isTRUE(Sys.getenv("WC2026_NO_UPLOAD", "") == "1")
 gh_ok <- !is.null(tryCatch(system2("gh", "--version", stdout = TRUE,
@@ -143,12 +161,13 @@ if (no_upload) {
                    paste(res, collapse = "\n")))
     }
   }
-  message("  Uploaded 4 wc2026 files to blog-latest.")
+  message(sprintf("  Uploaded %d wc2026 files to blog-latest (parquet + CSV).",
+                  length(wc_files)))
 }
 
 message("\n=== WC 2026 blog export complete ===")
 
-# 7. Reference-fact validation ----
+# 8. Reference-fact validation ----
 # Run the WC2026_REFERENCE_FACTS library against the just-published
 # outputs. Each fact encodes a real-world claim (Norway topped UEFA
 # qualifying → Elo > 1550; top 8 by champ% should include >=6 perennial
