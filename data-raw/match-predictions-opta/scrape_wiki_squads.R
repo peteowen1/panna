@@ -67,17 +67,32 @@ for (ln in lines) {
     # section), but don't reset to NULL until we see a new team header.
     current <- NULL
   } else if (!is.null(current) && grepl("\\{\\{nat fs g player", ln)) {
-    # Extract name=[[…]] — may be a piped link [[Page|Display]]. Use
-    # perl + lazy quantifier; R's POSIX engine handles the `[^\\]]*`
-    # character class inconsistently and silently misses every line.
-    m <- regmatches(ln, regexpr("\\|name=\\[\\[(.*?)\\]\\]", ln, perl = TRUE))
-    if (length(m) == 1L) {
-      raw <- sub("^\\|name=\\[\\[", "", m)
+    # Two name-extraction passes:
+    #   (1) |name=[[Wiki Page|Display]]  -> players with a Wikipedia article
+    #   (2) |name=Plain Name             -> players without one (common for
+    #       low-EM call-ups from Cabo Verde / Haiti / Curaçao etc.)
+    # Pass 1 was the only one before; missing pass 2 silently dropped 3-8
+    # players per smaller-nation squad, which inflated the EM weight on the
+    # few resolved names and biased team strength low. Code-review item 15.
+    # Use perl + lazy quantifiers; R's POSIX engine handles the
+    # `[^\\]]*` character class inconsistently and silently misses lines.
+    raw <- NA_character_
+    m1 <- regmatches(ln, regexpr("\\|name=\\[\\[(.*?)\\]\\]", ln, perl = TRUE))
+    if (length(m1) == 1L) {
+      raw <- sub("^\\|name=\\[\\[", "", m1)
       raw <- sub("\\]\\]$", "", raw)
       if (grepl("|", raw, fixed = TRUE)) {
         parts <- strsplit(raw, "|", fixed = TRUE)[[1]]
         raw <- parts[length(parts)]
       }
+    } else {
+      # Pass 2: no double-brackets. Stop the name at the next `|` or `}}`.
+      m2 <- regmatches(ln, regexpr("\\|name=([^|}]+)", ln, perl = TRUE))
+      if (length(m2) == 1L) {
+        raw <- trimws(sub("^\\|name=", "", m2))
+      }
+    }
+    if (!is.na(raw) && nzchar(raw)) {
       parsed[[current]] <- c(parsed[[current]], raw)
     }
   }

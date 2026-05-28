@@ -255,17 +255,17 @@ if (nrow(upcoming) > 0) {
 
   # Get most recent lineup per team (last played match).
   #
-  # We supplement the RAPM-cache lineups with the full opta_lineups.parquet
-  # because the RAPM cache only contains domestic-league lineups + WC/EURO
-  # tournament rosters from 2014/2018 — so 93/377 international team_ids have
-  # NO rows there and fall back to make_dummy_lineup() (= all zeros across
-  # panna/PSR/EPR). Even teams that DID appear in WC 2014/2018 get stuck with
-  # decade-old squads (USA's "latest" lineup was the 2014 Tim Howard roster).
+  # Why supplement: the RAPM cache only contains domestic-league lineups +
+  # WC/EURO tournament rosters from 2014/2018, so many international
+  # team_ids would fall back to make_dummy_lineup() (= all zeros). Even
+  # teams that DID appear in WC 2014/2018 get stuck with decade-old squads
+  # (USA's "latest" lineup was the 2014 Tim Howard roster).
   #
-  # opta_lineups.parquet has 7.6M rows across all comps (qualifiers, AFCON,
-  # friendlies, Gold Cup, Nations League, etc.), so 92/93 of those missing
-  # team_ids get a real recent lineup. The ratings join (player_id ×
-  # season_end_year) still works — same Opta IDs throughout.
+  # opta_lineups.parquet has ~7.6M rows across all comps (qualifiers, AFCON,
+  # friendlies, Gold Cup, Nations League, CONMEBOL/UEFA/CAF WC quals, etc.).
+  # After supplementation, effectively every WC2026 team gets a real recent
+  # lineup. The ratings join (player_id × season_end_year) still works —
+  # same Opta IDs throughout.
   opta_lineups_path <- "../pannadata/data/opta/opta_lineups.parquet"
   if (file.exists(opta_lineups_path) && requireNamespace("arrow", quietly = TRUE)) {
     message(sprintf("  Supplementing fixture lineups from %s", opta_lineups_path))
@@ -323,29 +323,59 @@ if (nrow(upcoming) > 0) {
     s
   } else NULL
 
+  # Decide which WC2026 teams have an override eligible. A team is eligible
+  # iff it appears in ann_squads AND at least WC2026_OVERRIDE_MIN_RESOLVED
+  # of its players resolved to opta player_ids. Below that threshold the
+  # EM-weighted aggregation collapses (e.g., 1 resolved player at weight
+  # ~1/26 produces a near-zero sum_panna that masquerades as a real team
+  # rating). Fall back to latest_lineups in that case with a loud warning.
+  wc2026_eligible_ids <- character(0)
+  wc2026_too_thin <- character(0)
+  if (!is.null(ann_squads)) {
+    per_team_resolved <- as.data.frame(table(ann_squads$team_id))
+    names(per_team_resolved) <- c("team_id", "n_resolved")
+    wc2026_eligible_ids <- as.character(
+      per_team_resolved$team_id[per_team_resolved$n_resolved >= WC2026_OVERRIDE_MIN_RESOLVED]
+    )
+    wc2026_too_thin <- as.character(
+      per_team_resolved$team_id[per_team_resolved$n_resolved < WC2026_OVERRIDE_MIN_RESOLVED]
+    )
+    if (length(wc2026_too_thin) > 0) {
+      warning(sprintf(
+        "WC2026 override refused for %d team(s) with <%d resolved players (falling back to latest XI): %s",
+        length(wc2026_too_thin), WC2026_OVERRIDE_MIN_RESOLVED,
+        paste(wc2026_too_thin, collapse = ", ")
+      ), call. = FALSE, immediate. = TRUE)
+    }
+  }
+
   build_team_synthetic_lineup <- function(team_id, team_name, team_pos, m) {
     use_override <- !is.null(ann_squads) && !is.na(team_id) &&
-      isTRUE(!is.na(m$league) && m$league == "WC" &&
-             !is.na(m$season) && m$season == "2026 Canada-Mexico-USA") &&
-      team_id %in% ann_squads$team_id
+      isTRUE(!is.na(m$league) && m$league == WC2026_LEAGUE &&
+             !is.na(m$season) && m$season == WC2026_SEASON_LABEL) &&
+      team_id %in% wc2026_eligible_ids
     if (use_override) {
       ann <- ann_squads[ann_squads$team_id == team_id, , drop = FALSE]
       return(data.frame(
-        match_id      = m$match_id,
-        team_id       = team_id,
-        team_name     = team_name,
-        team_position = team_pos,
-        player_id     = ann$player_id,
-        player_name   = ann$player_name,
-        position      = ann$position,
-        is_starter    = TRUE,
-        lineup_weight = ann$lineup_weight,
+        match_id        = m$match_id,
+        team_id         = team_id,
+        team_name       = team_name,
+        team_position   = team_pos,
+        player_id       = ann$player_id,
+        player_name     = ann$player_name,
+        position        = ann$position,
+        is_starter      = TRUE,
+        is_starter_pred = if ("is_starter_pred" %in% names(ann)) ann$is_starter_pred else FALSE,
+        lineup_weight   = ann$lineup_weight,
         stringsAsFactors = FALSE
       ))
     }
     latest_lineups %>%
       filter(team_id == !!team_id) %>%
-      mutate(match_id = m$match_id, team_position = team_pos)
+      mutate(match_id = m$match_id, team_position = team_pos,
+             # Force team_name to the fixture-side value (avoids split-identity
+             # when latest_lineups carries an Opta name variant).
+             team_name = !!team_name)
   }
 
   # For each upcoming match, construct synthetic lineup rows
@@ -363,10 +393,14 @@ if (nrow(upcoming) > 0) {
     home_lu <- build_team_synthetic_lineup(htid, m$home_team, "home", m)
     away_lu <- build_team_synthetic_lineup(atid, m$away_team, "away", m)
 
-    if (!is.null(ann_squads) &&
-        isTRUE(!is.na(m$league) && m$league == "WC")) {
-      if (htid %in% ann_squads$team_id) n_wc_override <- n_wc_override + 1L
-      if (atid %in% ann_squads$team_id) n_wc_override <- n_wc_override + 1L
+    # Count override applications using the same eligibility condition as
+    # build_team_synthetic_lineup (was: any WC match, any season, no
+    # eligibility gate — overcounted WC2014/2018/2022 historical rows).
+    wc26_match <- isTRUE(!is.na(m$league) && m$league == WC2026_LEAGUE &&
+                          !is.na(m$season) && m$season == WC2026_SEASON_LABEL)
+    if (wc26_match) {
+      if (htid %in% wc2026_eligible_ids) n_wc_override <- n_wc_override + 1L
+      if (atid %in% wc2026_eligible_ids) n_wc_override <- n_wc_override + 1L
     }
 
     # Fallback to dummy lineup (replacement-level ratings) for unknown teams

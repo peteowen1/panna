@@ -108,10 +108,13 @@ if (nrow(fixtures) == 0) {
     orig <- predict_routed(X_fix[idx, , drop = FALSE], grp)
     mir  <- predict_routed(X_mir[idx, , drop = FALSE], grp)
     # In the mirrored orientation the original home team is the away team.
+    # H/A swap under mirroring and get averaged; draw doesn't swap, so the
+    # orig draw probability IS the symmetrised value (averaging it with
+    # itself is a no-op). Code-review item 17.
     pred_home_goals[idx] <- (orig$home_goals + mir$away_goals) / 2
     pred_away_goals[idx] <- (orig$away_goals + mir$home_goals) / 2
     probs[idx, 1] <- (orig$pH + mir$pA) / 2
-    probs[idx, 2] <- (orig$pD + mir$pD) / 2
+    probs[idx, 2] <- (orig$pD + mir$pD) / 2  # == orig$pD; left averaged for symmetry-of-form
     probs[idx, 3] <- (orig$pA + mir$pH) / 2
   }
 

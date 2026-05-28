@@ -176,6 +176,15 @@ aggregate_lineup_ratings <- function(lineups, ratings, season_end_year,
     }
   }
 
+  # Capture pre-imputation rated status BEFORE the imputation block below
+  # rewrites NA panna with team-mean estimates. The post-imputation
+  # `sum(panna != 0)` count was effectively "always 11" because almost every
+  # NA was filled with a non-zero shrunk-mean — making `n_rated_players`
+  # near-constant and the feature's name a lie. `was_rated` captures the
+  # honest signal: did this player have a real current-or-previous-season
+  # panna rating? (TRUE iff the join in the block above found one.)
+  starters[, was_rated := !is.na(panna)]
+
   # Coverage-shrunk team-mean imputation for unrated players
   #
   # Why: a Brazil player without a panna rating (e.g. Brasileirão-based, not
@@ -249,13 +258,26 @@ aggregate_lineup_ratings <- function(lineups, ratings, season_end_year,
     w <- lineup_weight
     w_sum <- sum(w, na.rm = TRUE)
 
-    n_rated <- sum(panna != 0)
+    # Honest pre-imputation count (see was_rated assignment above). The
+    # post-imputation `sum(panna != 0)` was ~always 11 and useless as a
+    # feature; this is what the column name promises.
+    n_rated <- if (exists("was_rated", inherits = FALSE)) sum(was_rated) else sum(panna != 0)
+    # Tie-break for GK pick: explicit ordering so the choice is
+    # deterministic and meaningful, not dependent on row order across two
+    # unrelated parquets. Priority:
+    #   1. is_starter_pred == TRUE  (announced-squad path marks the
+    #      predicted starter)
+    #   2. largest lineup_weight    (override: highest EM share)
+    #   3. largest panna            (final tie-break: best GK on paper)
     gk_idx <- which(pos_group == "gk")
-    # GK = the GK with the largest weight (most-likely starter). Falls back
-    # to the first GK row if all weights tie (e.g., non-override path where
-    # all weights are 1).
     gk_panna_val <- if (length(gk_idx) > 0) {
-      panna[gk_idx[which.max(w[gk_idx])]]
+      gk_priority <- if (exists("is_starter_pred", inherits = FALSE)) {
+        as.integer(is_starter_pred[gk_idx])
+      } else {
+        rep(0L, length(gk_idx))
+      }
+      gk_order <- order(-gk_priority, -w[gk_idx], -panna[gk_idx])
+      panna[gk_idx[gk_order[1L]]]
     } else 0
 
     def_idx <- pos_group == "def"
@@ -272,8 +294,13 @@ aggregate_lineup_ratings <- function(lineups, ratings, season_end_year,
       sum(w[mask] * x[mask], na.rm = TRUE) / wm
     }
 
-    # Value metric columns (included if present in ratings)
-    has_epr <- "epr" %in% names(.SD)
+    # Value metric columns (included only when ALL bare-referenced columns
+    # for that block are present). Earlier the EPR block bare-referenced
+    # epr_offensive / epr_defensive while only gating on `epr` — one column
+    # trim upstream would crash the aggregator inside a data.table NSE block
+    # with a useless error. Same logic for PSR (osr/dsr handled by per-block
+    # if() guards below).
+    has_epr <- all(c("epr", "epr_offensive", "epr_defensive") %in% names(.SD))
     has_wpa <- "wpa_rating" %in% names(.SD)
     has_psv <- "psv_rating" %in% names(.SD)
     has_psr <- "psr" %in% names(.SD)
@@ -642,6 +669,23 @@ compute_match_elos <- function(results, k = 20, home_advantage = 65,
       elos[ht] <- updated$new_home_elo
       elos[at] <- updated$new_away_elo
     }
+  }
+
+  # Mid-season-rename smoke test: this function keys Elo by team_name, so
+  # if Opta ever renames a team mid-flow (e.g., "Rangers" -> "Rangers FC")
+  # the iteration silently treats them as two distinct teams each starting
+  # at initial_elo. Surface low-match teams as a soft warning — domestic
+  # teams should have tens of matches across the dataset; cup competitions
+  # legitimately produce some low counts, so this is a hint rather than a
+  # hard fail. Code-review item 16.
+  match_counts <- sort(table(c(results$home_team[!is.na(results$home_team)],
+                                results$away_team[!is.na(results$away_team)])))
+  low_match_teams <- names(match_counts)[match_counts < 10L]
+  if (length(low_match_teams) > 10L) {
+    cli::cli_inform(c(
+      "i" = "{length(low_match_teams)} team(s) with <10 matches in Elo iteration — possible split-identity from a mid-season rename. Investigate before publishing if any are domestic-league teams.",
+      "*" = "Sample: {paste(head(low_match_teams, 10), collapse = ', ')}..."
+    ))
   }
 
   data.frame(

@@ -29,6 +29,7 @@ if (!exists("wc_sim_seed")) wc_sim_seed <- 2026L
 if (!exists("wc_sim_elo_k")) wc_sim_elo_k <- 20
 
 library(data.table)
+devtools::load_all()   # WC2026_LEAGUE / WC2026_SEASON_LABEL from R/constants.R
 
 # 2. Load inputs ----
 
@@ -42,7 +43,7 @@ match_dataset <- readRDS(file.path(cache_dir, "04_match_dataset.rds"))
 goals_models  <- readRDS(file.path(cache_dir, "05_goals_model.rds"))
 outcome_model <- readRDS(file.path(cache_dir, "06_outcome_model.rds"))
 
-wc <- preds[league == "WC" & season == "2026 Canada-Mexico-USA" &
+wc <- preds[league == WC2026_LEAGUE & season == WC2026_SEASON_LABEL &
               home_team != "" & away_team != ""]
 n_teams <- uniqueN(c(wc$home_team, wc$away_team))
 message(sprintf("Simulating WC2026 from %d group-stage predictions across %d teams",

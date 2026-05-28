@@ -106,8 +106,31 @@ if (length(unique(dataset$league)) >= 2) {
 numeric_cols <- names(dataset)[sapply(dataset, is.numeric)]
 rolling_cols <- grep("_last_\\d+$|days_since_last", numeric_cols, value = TRUE)
 
+# Identify train rows. Split assignment hasn't happened yet at this point in
+# the script — derive an equivalent here (held-out seasons get split labels
+# in section 8 below). Computing imputation statistics from TRAIN ONLY
+# prevents leakage of val/test/fixture distributions into the rolling-feature
+# NA-fill that the model then sees in training.
+imp_played    <- dataset$match_status == "Played"
+imp_sey_vals  <- sort(unique(dataset$season_end_year[imp_played]))
+imp_n_sey     <- length(imp_sey_vals)
+imp_train_sey <- if (imp_n_sey >= 3L) {
+  imp_sey_vals[seq_len(imp_n_sey - 2L)]
+} else if (imp_n_sey == 2L) {
+  imp_sey_vals[1L]
+} else {
+  imp_sey_vals
+}
+imp_train_idx <- imp_played & dataset$season_end_year %in% imp_train_sey
+message(sprintf("  Imputation stats computed from %d train rows (split-leakage-free)",
+                sum(imp_train_idx)))
+
 if (length(rolling_cols) > 0) {
-  # Create is_early_season flag: TRUE if ANY rolling feature is NA
+  # is_early_season MUST be computed BEFORE the imputation block below —
+  # otherwise every row has non-NA rolling features and the flag is
+  # always 0. Computed here, the flag captures the pre-imputed state so
+  # the model learns to discount imputed rolling values for these rows.
+  # Code-review item 22.
   ## (force data.frame indexing — rolling_features merge may return data.table)
   dataset$is_early_season <- as.integer(
     rowSums(is.na(as.data.frame(dataset)[, rolling_cols, drop = FALSE])) > 0
@@ -118,21 +141,31 @@ if (length(rolling_cols) > 0) {
                     early_count, 100 * early_count / nrow(dataset)))
   }
 
-  # Fill NAs with league-specific means for rolling features
+  # Fill NAs with TRAIN-only league-specific means for rolling features.
+  # Previously the per-league mean was computed across the full dataset
+  # (train + val + test + fixture), leaking held-out distribution into the
+  # fill values the model saw during training. Effect on published metrics
+  # was small (imputed values are constant per league, not row-specific),
+  # but the leak was real. Fall back to train-only global mean if a league
+  # has no train rows, then to 0.
   for (col in rolling_cols) {
     na_idx <- is.na(dataset[[col]])
     if (any(na_idx)) {
+      col_train <- dataset[[col]][imp_train_idx]
       for (lg in unique(dataset$league)) {
-        lg_idx <- dataset$league == lg & na_idx
-        lg_mean <- mean(dataset[[col]][dataset$league == lg & !na_idx], na.rm = TRUE)
+        lg_train_mask <- imp_train_idx & dataset$league == lg & !is.na(dataset[[col]])
+        lg_mean <- if (any(lg_train_mask)) mean(dataset[[col]][lg_train_mask], na.rm = TRUE) else NA_real_
         if (!is.na(lg_mean)) {
-          dataset[[col]][lg_idx] <- lg_mean
+          dataset[[col]][na_idx & dataset$league == lg] <- lg_mean
         }
       }
-      # Remaining NAs get global mean
+      # Remaining NAs get train-only global mean
       still_na <- is.na(dataset[[col]])
       if (any(still_na)) {
-        dataset[[col]][still_na] <- mean(dataset[[col]], na.rm = TRUE)
+        global_mean <- mean(col_train, na.rm = TRUE)
+        if (!is.na(global_mean)) {
+          dataset[[col]][still_na] <- global_mean
+        }
       }
     }
   }
@@ -140,8 +173,13 @@ if (length(rolling_cols) > 0) {
   dataset$is_early_season <- 0L
 }
 
-# Fill remaining numeric NAs with 0
-for (col in numeric_cols) {
+# Fill remaining numeric NAs with 0. Skip the actual-result columns so
+# fixtures don't end up with home_goals == 0 (which silently looks like a
+# legitimate 0-0 result to any downstream code that forgets to filter by
+# match_status — a landmine that hasn't fired yet only because every
+# current consumer does filter).
+skip_zero_fill <- c("home_goals", "away_goals", "home_xg", "away_xg")
+for (col in setdiff(numeric_cols, skip_zero_fill)) {
   dataset[[col]][is.na(dataset[[col]])] <- 0
 }
 
@@ -232,11 +270,31 @@ match_dataset$home_field <- ifelse(
 # non-neutral. The hosts are in different groups so no host-vs-host group
 # game exists. (Home-advantage magnitude is the model's learned home_field
 # effect, calibrated from club football — a reasonable proxy for host edge.)
-wc26_hosts <- c("United States", "Canada", "Mexico")
-is_wc26 <- match_dataset$league == "WC" &
-  match_dataset$season == "2026 Canada-Mexico-USA"
-host_is_home <- is_wc26 & match_dataset$home_team %in% wc26_hosts
-host_is_away <- is_wc26 & match_dataset$away_team %in% wc26_hosts
+#
+# Key by team_id (not name) because Opta has already served at least one
+# variant for these teams ("USA" vs "United States" — see the fixture-name
+# normalisation block in 01_build_fixture_results.R). Assert all three host
+# IDs resolve in the WC2026 fixture set before applying the flag — silent
+# host-name drift would otherwise zero the host advantage and quietly tank
+# the US/Canada/Mexico projections.
+is_wc26 <- match_dataset$league == WC2026_LEAGUE &
+  match_dataset$season == WC2026_SEASON_LABEL
+if (any(is_wc26)) {
+  wc26_ids_seen <- unique(c(
+    match_dataset$home_team_id[is_wc26],
+    match_dataset$away_team_id[is_wc26]
+  ))
+  hosts_missing <- setdiff(WC2026_HOST_TEAM_IDS, wc26_ids_seen)
+  if (length(hosts_missing) > 0) {
+    stop(sprintf(
+      "WC2026 host team_id(s) missing from fixture set: %s. Has Opta renamed a host? Refusing to publish without host-advantage flags.",
+      paste(names(WC2026_HOST_TEAM_IDS)[match(hosts_missing, WC2026_HOST_TEAM_IDS)],
+            collapse = ", ")
+    ), call. = FALSE)
+  }
+}
+host_is_home <- is_wc26 & match_dataset$home_team_id %in% WC2026_HOST_TEAM_IDS
+host_is_away <- is_wc26 & match_dataset$away_team_id %in% WC2026_HOST_TEAM_IDS
 match_dataset$is_neutral_venue[host_is_home | host_is_away] <- 0L
 match_dataset$home_field[host_is_home] <- 1L
 match_dataset$home_field[host_is_away] <- -1L

@@ -20,9 +20,10 @@
 if (!exists("cache_dir")) cache_dir <- file.path("data-raw", "cache-predictions-opta")
 repo <- "peteowen1/pannadata"
 tag  <- "blog-latest"
-wc_season <- "2026 Canada-Mexico-USA"
 
 suppressPackageStartupMessages({ library(data.table); library(arrow) })
+devtools::load_all()   # WC2026_LEAGUE / WC2026_SEASON_LABEL from R/constants.R
+wc_season <- WC2026_SEASON_LABEL
 
 message("\n=== Exporting WC 2026 blog data ===\n")
 
@@ -32,7 +33,7 @@ team_group <- stats::setNames(groups$group, groups$team)
 # 2. Match predictions ----
 
 preds <- as.data.table(readRDS(file.path(cache_dir, "07_predictions.rds")))
-wc_pred <- preds[league == "WC" & season == wc_season &
+wc_pred <- preds[league == WC2026_LEAGUE & season == wc_season &
                    home_team != "" & away_team != ""]
 wc_pred <- wc_pred[, .(
   match_date,
@@ -72,7 +73,7 @@ message(sprintf("  wc2026_groups.parquet: %d team-rows", nrow(grp)))
 # team properties). BT strength + champion probability come from the sim.
 
 md <- as.data.frame(readRDS(file.path(cache_dir, "04_match_dataset.rds")))
-wc <- md[md$league == "WC" & md$season == wc_season &
+wc <- md[md$league == WC2026_LEAGUE & md$season == wc_season &
            md$home_team != "" & md$away_team != "", ]
 teams <- sort(unique(c(wc$home_team, wc$away_team)))
 

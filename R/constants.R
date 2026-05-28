@@ -534,3 +534,44 @@ match_is_international <- function(league) {
 #' @format Numeric value: 0.5
 #' @keywords internal
 MATCH_INTL_BLEND_WEIGHT <- 0.5
+
+
+# =============================================================================
+# WC 2026 Tournament Constants
+# =============================================================================
+# Centralised so a single Opta-side rename can't silently fan out into three
+# files (step 02 / 02b / 04 / 11 / 12) each treating it as a separate string
+# literal — which would turn off the WC override / empty the blog parquet
+# without any warning.
+
+#' League code for the WC 2026 tournament
+#' @keywords internal
+WC2026_LEAGUE <- "WC"
+
+#' Season label for the WC 2026 tournament (as it appears in Opta fixtures)
+#' @keywords internal
+WC2026_SEASON_LABEL <- "2026 Canada-Mexico-USA"
+
+#' Opta team_ids of the three WC 2026 hosts (USA / Canada / Mexico)
+#'
+#' Keyed by team_id rather than name because Opta has already served at least
+#' one name variant for these teams ("USA" vs "United States" — see the
+#' fixture-name normalisation block in 01_build_fixture_results.R). step 04
+#' asserts all three IDs resolve in the WC2026 fixture set before flagging
+#' host advantage.
+#' @keywords internal
+WC2026_HOST_TEAM_IDS <- c(
+  USA    = "9vh2u1p4ppm597tjfahst2m3n",
+  Canada = "eg7vduna0h3vis1wd47s41za7",
+  Mexico = "4vofb84dzb5fyc81n2ssws6ah"
+)
+
+#' Minimum resolved announced-squad players required to apply the override
+#'
+#' If fewer than this many of a team's announced-squad names resolve to
+#' Opta player_ids, the override is refused and the team falls back to the
+#' most-recent intl XI. Prevents the silent "near-empty synthetic team"
+#' failure mode where the override fires with 1-2 resolved players and the
+#' EM-weighted aggregation collapses to ~zero sum_panna.
+#' @keywords internal
+WC2026_OVERRIDE_MIN_RESOLVED <- 11L

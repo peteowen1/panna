@@ -135,13 +135,20 @@ message(sprintf("  Baseline log loss: %.4f (improvement: %.1f%%)",
                 naive_logloss, 100 * (1 - test_logloss / naive_logloss)))
 message(sprintf("  Baseline accuracy: %.1f%%", 100 * naive_accuracy))
 
-# Elo-only baseline
+# Elo-only baseline. Use train-set H/D/A base rates rather than the
+# hardcoded 0.72 / 0.26 from earlier seasons — when the train mix shifts
+# (more international fixtures, more low-scoring leagues), hardcoded
+# constants make the published "model beats Elo by X" comparison misleading.
+# Code-review item 19.
+base_decisive_rate <- 1 - as.numeric(train_dist["1"])  # 1 = Draw label
 elo_home_prob <- 1 / (1 + 10^(-test_data$elo_diff / 400))
-elo_probs <- cbind(elo_home_prob * 0.72, rep(0.26, length(elo_home_prob)),
-                   (1 - elo_home_prob) * 0.72)
+elo_probs <- cbind(elo_home_prob * base_decisive_rate,
+                   rep(1 - base_decisive_rate, length(elo_home_prob)),
+                   (1 - elo_home_prob) * base_decisive_rate)
 elo_probs <- elo_probs / rowSums(elo_probs)  # Normalize
 elo_logloss <- compute_multiclass_logloss(y_test, elo_probs)
-message(sprintf("  Elo-only log loss: %.4f", elo_logloss))
+message(sprintf("  Elo-only log loss: %.4f (base decisive rate from train = %.3f)",
+                elo_logloss, base_decisive_rate))
 
 # 7. Calibration ----
 

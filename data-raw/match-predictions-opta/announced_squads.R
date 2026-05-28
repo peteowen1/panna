@@ -230,18 +230,13 @@ WC2026_ANNOUNCED_SQUADS <- list(
     "Alexander Bernhardsson", "Anthony Elanga", "Viktor Gyokeres",
     "Alexander Isak", "Gustaf Nilsson", "Benjamin Nygren"),
 
-  Senegal = c(
-    # Wikipedia shows 28 (Senegal trims to 26 by FIFA's June 2 deadline).
-    # Kept as 26 here — the 2 likely-cut names (Bamba Dieng, Cherif Ndiaye)
-    # are the two low-EM forwards crowding an already deep front three.
-    "Edouard Mendy", "Mory Diaw", "Yehvann Diouf",
-    "Krepin Diatta", "Antoine Mendy", "Kalidou Koulibaly",
-    "El Hadji Malick Diouf", "Mamadou Sarr", "Moussa Niakhate",
-    "Moustapha Mbow", "Abdoulaye Seck", "Ismail Jakobs", "Ilay Camara",
-    "Idrissa Gana Gueye", "Pape Gueye", "Lamine Camara", "Habib Diarra",
-    "Pathe Ciss", "Pape Matar Sarr", "Bara Sapoko Ndiaye",
-    "Sadio Mane", "Ismaila Sarr", "Iliman Ndiaye", "Assane Diao",
-    "Ibrahim Mbaye", "Nicolas Jackson"),
+  # Senegal removed from the hardcoded list 2026-05-28 (code-review item 12).
+  # Wikipedia shows 28 (preliminary). Hand-trimming to a guessed 26 was an
+  # editorial call ("the 2 likely-cut names are Bamba Dieng, Cherif Ndiaye")
+  # that bypassed the scraper's safety net — the whole reason the FIFA-range
+  # (23-26) gate in scrape_wiki_squads.R exists is to mark oversized squads
+  # PRELIMINARY and route them through the derived-squad path. Re-add only
+  # when the federation publishes the official 26-man squad.
 
   # ----- Announcement wave 4 (cross-checked vs Wikipedia 2026-05-28) -----
   # 8 finalized squads Wikipedia had that I missed in earlier ESPN passes.
