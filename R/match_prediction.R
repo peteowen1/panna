@@ -651,7 +651,16 @@ compute_match_elos <- function(results, k = 20, home_advantage = 65,
                                 initial_elo = 1500,
                                 k_table = NULL,
                                 cross_conf_mult = 1.0,
-                                conf_priors = NULL) {
+                                conf_priors = NULL,
+                                use_venue_factor = FALSE,
+                                time_decay_halflife = NULL,
+                                decay_reference_date = NULL) {
+  # time_decay_halflife (days, NULL = disabled): when set, scale K by
+  # 0.5 ^ ((reference_date - match_date) / halflife) so older training
+  # matches contribute exponentially less to the Elo trajectory than
+  # recent ones. Useful when the model is expected to predict matches at
+  # the END of the data — older form should fade. Set decay_reference_date
+  # to control "now"; defaults to max(match_date) in `results`.
   # Sort by date
   results <- results[order(results$match_date), ]
 
@@ -679,6 +688,40 @@ compute_match_elos <- function(results, k = 20, home_advantage = 65,
     elo_match_k(results$league, k_table = k_table, default = k)
   } else {
     rep(k, nrow(results))
+  }
+
+  # Per-match time-decay multiplier. Exponential decay relative to
+  # `decay_reference_date` (default: most recent match in results). The
+  # decay scales K — older matches still update Elo, just by less — so
+  # the long-run baseline is preserved but recent form dominates.
+  # When time_decay_halflife is NULL or <= 0, every match gets 1.0 (no decay).
+  decay_per_match <- if (!is.null(time_decay_halflife) &&
+                          is.finite(time_decay_halflife) &&
+                          time_decay_halflife > 0) {
+    dts <- suppressWarnings(as.Date(sub("Z$", "", results$match_date)))
+    ref_dt <- if (!is.null(decay_reference_date)) {
+      as.Date(decay_reference_date)
+    } else {
+      max(dts, na.rm = TRUE)
+    }
+    days_back <- pmax(0, as.numeric(ref_dt - dts))
+    0.5 ^ (days_back / time_decay_halflife)
+  } else {
+    rep(1.0, nrow(results))
+  }
+
+  # Per-match venue factor: scales home_advantage per match. See
+  # compute_venue_factor() docs. When use_venue_factor=FALSE (default for
+  # backwards compat), every match gets +1 (= old behaviour). When TRUE,
+  # tournament matches at neutral venues get 0 and host-country matches
+  # for visitors get -1, fixing the bias where Opta's arbitrary "home_team"
+  # designation was getting +65 advantage on actually-neutral matches.
+  venue_factor <- if (isTRUE(use_venue_factor) &&
+                      all(c("league", "season") %in% names(results))) {
+    compute_venue_factor(results$home_team, results$away_team,
+                          results$league, results$season)
+  } else {
+    rep(1, nrow(results))
   }
 
   n <- nrow(results)
@@ -709,14 +752,16 @@ compute_match_elos <- function(results, k = 20, home_advantage = 65,
       # Only apply the cross-conf multiplier when it's actually != 1.0;
       # conf_lookup might be non-NULL purely for conf_priors init while
       # cross_conf_mult=1.0 (disabled).
-      k_eff <- base_k_per_match[i]
+      k_eff <- base_k_per_match[i] * decay_per_match[i]
       if (!is.null(conf_lookup) && cross_conf_mult != 1.0) {
         k_eff <- k_eff * cross_conf_multiplier(ht, at, conf_lookup,
                                                 mult = cross_conf_mult)
       }
+      # Effective home_advantage scales by venue_factor (+1/0/-1).
+      ha_eff <- home_advantage * venue_factor[i]
       updated <- update_elo(elos[ht], elos[at],
                             results$home_goals[i], results$away_goals[i],
-                            k = k_eff, home_advantage = home_advantage)
+                            k = k_eff, home_advantage = ha_eff)
       elos[ht] <- updated$new_home_elo
       elos[at] <- updated$new_away_elo
     }

@@ -247,29 +247,68 @@ list_opta_seasons <- function(league, source = c("catalog", "remote", "local")) 
   opta_league <- to_opta_league(league)
 
   if (source == "local") {
-    # Check multiple data-type directories in order: a competition has
-    # "seasons" if it has files in ANY of these. Previously this only
-    # checked player_stats/ — but RAPM-derived player_stats only exist for
-    # competitions that have been through the EPV/RAPM pipeline. Newly-
-    # added intl competitions (UEFA_WC_Qualifiers, UEFA_Nations_League,
-    # Intl_Friendlies, etc.) have lineups + fixtures + events on disk but
-    # no player_stats files, so list_opta_seasons returned 0 → step 01
-    # silently skipped the whole competition → Norway's 89 qualifying
-    # matches never entered the Elo iteration. Fall through the available
-    # data-type dirs so any one of them suffices to expose the season.
+    # Union seasons across every per-season data-type dir AND every top-level
+    # consolidated parquet. Previously this only checked player_stats/ and
+    # then fell through one dir at a time, returning on the first hit. That
+    # was wrong twice over:
+    #   * Newly-added intl comps (UEFA_WC_Qualifiers, NL, Intl_Friendlies)
+    #     have lineups+fixtures+events on disk but no player_stats files —
+    #     so a single-dir-first walk missed them.
+    #   * After a release sync, the consolidated opta_*.parquet contain
+    #     comp+season pairs that may NOT yet exist as per-season files
+    #     locally (the release only ships consolidated). The single-dir
+    #     walk never consulted the consolidated parquets, so freshly-synced
+    #     tournaments (e.g. WC 2022 Qatar arriving in opta_lineups.parquet)
+    #     were invisible to list_opta_seasons until manually materialized.
+    # Union all sources so any single one suffices.
     base <- opta_data_dir()
+    seasons <- character(0)
+
     candidate_dirs <- c("player_stats", "lineups", "fixtures", "events")
     for (sub in candidate_dirs) {
       league_dir <- file.path(base, sub, opta_league)
       if (dir.exists(league_dir)) {
         files <- list.files(league_dir, pattern = "\\.parquet$", full.names = FALSE)
         if (length(files) > 0) {
-          seasons <- tools::file_path_sans_ext(files)
-          return(sort(seasons, decreasing = TRUE))
+          seasons <- union(seasons, tools::file_path_sans_ext(files))
         }
       }
     }
-    # Fall through to catalog if NO local dir under any data-type has files
+
+    # Also query the consolidated parquets for season values not yet
+    # materialized as per-season files (typical after `pb_download_source()`
+    # of just the consolidated parquet).
+    for (tbl in c("lineups", "fixtures", "player_stats", "events")) {
+      consolidated <- file.path(base, sprintf("opta_%s.parquet", tbl))
+      if (file.exists(consolidated)) {
+        # Explicit connect+disconnect inside the tryCatch — no on.exit, since
+        # on.exit registered inside tryCatch executes at the ENCLOSING function
+        # scope, not at the tryCatch scope, so multiple loop iterations would
+        # stack up disconnect calls against stale handles ("already closed"
+        # warnings on function return).
+        cons_seasons <- tryCatch({
+          conn_ls <- DBI::dbConnect(duckdb::duckdb())
+          path_q <- normalizePath(consolidated, winslash = "/", mustWork = TRUE)
+          sql <- sprintf(
+            "SELECT DISTINCT season FROM '%s' WHERE competition = '%s' AND season IS NOT NULL",
+            path_q, opta_league
+          )
+          rs <- DBI::dbGetQuery(conn_ls, sql)
+          DBI::dbDisconnect(conn_ls, shutdown = TRUE)
+          as.character(rs$season)
+        }, error = function(e) character(0))
+        if (length(cons_seasons) > 0) {
+          seasons <- union(seasons, cons_seasons)
+        }
+      }
+    }
+
+    if (length(seasons) > 0) {
+      return(sort(seasons, decreasing = TRUE))
+    }
+
+    # Fall through to catalog if NO local source — per-season or consolidated —
+    # exposed any season for this league.
     cli::cli_alert_info("No local data for {opta_league}, checking catalog...")
   }
 
@@ -808,7 +847,16 @@ load_opta_table <- function(table_type, league, season, columns,
     NULL
   }
 
+  # Track which branch produced the SQL — needed so that when the
+  # consolidated parquet returns 0 rows for a (comp, season) pair, we can
+  # transparently fall through to the per-season file if one exists. This
+  # handles the freshness skew you get when only the consolidated parquet
+  # was re-synced (or only per-season files were regenerated locally) and
+  # the two sources disagree about which (comp, season) pairs are present.
+  used_consolidated <- FALSE
+
   if (file.exists(consolidated_file)) {
+    used_consolidated <- TRUE
     # Use consolidated file with WHERE clause
     parquet_path <- normalizePath(consolidated_file, winslash = "/", mustWork = TRUE)
 
@@ -907,7 +955,33 @@ load_opta_table <- function(table_type, league, season, columns,
     cli::cli_abort("DuckDB query failed: {e$message}")
   })
 
-  # If season was requested but got 0 rows, show available seasons
+  # If season was requested but got 0 rows AND we read from the consolidated
+  # parquet, try the per-season file before erroring. Consolidated parquets
+  # can be stale relative to per-season files (e.g. after a partial sync) —
+  # falling through lets recently-materialized per-season data work even when
+  # the consolidated file hasn't been re-uploaded.
+  if (nrow(result) == 0 && !is.null(season) && used_consolidated) {
+    per_season_path <- file.path(base_dir, table_type, opta_league,
+                                  paste0(season, ".parquet"))
+    if (file.exists(per_season_path)) {
+      cli::cli_alert_info(
+        "Consolidated {table_type} has no rows for {opta_league} {.val {season}} — falling through to per-season file."
+      )
+      per_path_q <- normalizePath(per_season_path, winslash = "/", mustWork = TRUE)
+      col_sql <- if (!is.null(columns)) {
+        paste(validate_sql_columns(columns), collapse = ", ")
+      } else {
+        "*"
+      }
+      sql2 <- sprintf("SELECT %s FROM read_parquet('%s', union_by_name=true)",
+                       col_sql, per_path_q)
+      result <- tryCatch(DBI::dbGetQuery(conn, sql2),
+                          error = function(e) result)
+    }
+  }
+
+  # If season was requested but got 0 rows (and either no per-season fallback
+  # existed, or it also returned nothing), show available seasons.
   if (nrow(result) == 0 && !is.null(season)) {
     avail <- suggest_opta_seasons(opta_league, table_type, base_dir)
     msg <- "No data found for {opta_league} season {.val {season}}."

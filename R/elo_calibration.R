@@ -144,6 +144,127 @@ init_team_elos_with_priors <- function(teams, conf_lookup,
   elos
 }
 
+# =============================================================================
+# Tournament Host Extraction + Venue Factor
+# =============================================================================
+# Most tournament matches are at a host country, NOT at the designated
+# home_team's real stadium. Opta assigns one team as `home_team` per
+# match for scheduling — that team gets the +65 home advantage in
+# compute_match_elos even when the match is at a neutral venue or in
+# the OPPONENT's country (when the opponent is the host).
+#
+# venue_factor scales home_advantage per-match:
+#   +1   home_team is at home (domestic league, or tournament where they host)
+#    0   neutral (tournament match where neither team is host)
+#   -1   away_team is the host (rare — home_team is visiting host's country)
+#
+# Hosts are extracted from the season string, which already encodes them:
+#   "2025 Morocco" → Morocco
+#   "2026 Canada-Mexico-USA" → Canada, Mexico, USA
+#   "2024 Germany" → Germany
+#   "Intl_Friendlies_2024" → no host (friendlies, treat as +1)
+#   "2024-2025" → no host (domestic, treat as +1)
+
+#' Map Host-Name Aliases to Canonical Opta team_name
+#'
+#' Tournament season strings encode the host country (e.g., "2024 USA")
+#' but the host may appear under a different spelling in opta_lineups
+#' (here "United States"). This map normalises common aliases.
+#' @keywords internal
+ELO_HOST_NAME_ALIASES <- c(
+  "USA"                = "United States",
+  "Korea Rep"          = "Korea Republic",
+  "United States"      = "United States",
+  "Cote d'Ivoire"      = "Côte d'Ivoire",
+  "Cote d Ivoire"      = "Côte d'Ivoire",
+  "Côte d'Ivoire"     = "Côte d'Ivoire"
+)
+
+#' Extract Tournament Host(s) From a Season String
+#'
+#' @param season Single season string.
+#' @return Character vector of host team names (Opta-canonical). Empty
+#'   character() if season has no host concept (domestic / friendlies).
+#' @keywords internal
+extract_tournament_hosts <- function(season) {
+  if (is.na(season) || !nzchar(season)) return(character(0))
+  # Domestic season "YYYY-YYYY" → no host
+  if (grepl("^\\d{4}-\\d{4}$", season)) return(character(0))
+  # Friendlies-style "Intl_Friendlies_YYYY" → no host
+  if (grepl("Friendlies", season, ignore.case = TRUE)) return(character(0))
+  # Tournament: strip leading 4-digit year + whitespace
+  rest <- trimws(sub("^\\d{4}\\s*", "", season))
+  if (!nzchar(rest)) return(character(0))
+
+  hosts <- if (grepl(" - ", rest, fixed = TRUE)) {
+    # Multi-host with " - " separator: "2019 USA - Costa Rica - Jamaica"
+    trimws(strsplit(rest, " - ", fixed = TRUE)[[1]])
+  } else if (grepl("-", rest, fixed = TRUE) && !grepl("'", rest)) {
+    # Multi-host with "-" separator (no spaces): "Canada-Mexico-USA"
+    # Skip if there's an apostrophe (Cote d'Ivoire etc.)
+    parts <- trimws(strsplit(rest, "-", fixed = TRUE)[[1]])
+    if (length(parts) > 1L && all(nchar(parts) > 1L)) parts else rest
+  } else {
+    rest
+  }
+
+  # Normalize via alias map
+  ifelse(hosts %in% names(ELO_HOST_NAME_ALIASES),
+         unname(ELO_HOST_NAME_ALIASES[hosts]),
+         hosts)
+}
+
+#' Compute Per-Match Venue Factor
+#'
+#' Returns a numeric vector (+1 / 0 / -1) matching the length of
+#' `home_team`/`away_team`. See file header for the convention.
+#'
+#' Domestic leagues + UCL/UEL/UECL: always +1 (home team at home).
+#' Qualifiers (WCQ_* / EUROQ / AFCONQ / ACUPQ) + Nations League: +1
+#' (these are scheduled home/away at real stadiums).
+#' Intl_Friendlies: default +1 (we don't know venue; friendlies are
+#' usually at the home_team's stadium but can be neutral).
+#' Tournament matches: parse host from season; +1 if home_team is host,
+#' -1 if away_team is host, 0 if neither.
+#'
+#' @param home_team,away_team,league,season Vectors of equal length.
+#' @return Numeric vector of -1 / 0 / +1.
+#' @keywords internal
+compute_venue_factor <- function(home_team, away_team, league, season) {
+  n <- length(home_team)
+  vf <- rep(1, n)  # default: home_team at real home
+
+  tournament_leagues <- c("WC", "EURO", "AFCON", "COPA", "GOLD",
+                          "ACUP", "GULF", "Club_World_Cup", "UEFA_Super_Cup")
+  is_tournament <- league %in% tournament_leagues
+  if (!any(is_tournament)) return(vf)
+
+  # For tournament matches: extract hosts once per unique (league, season)
+  ls_keys <- paste(league, season, sep = "||")
+  unique_keys <- unique(ls_keys[is_tournament])
+  host_lookup <- setNames(vector("list", length(unique_keys)), unique_keys)
+  for (k in unique_keys) {
+    s <- sub("^.+\\|\\|", "", k)
+    host_lookup[[k]] <- extract_tournament_hosts(s)
+  }
+
+  for (i in which(is_tournament)) {
+    hosts <- host_lookup[[ls_keys[i]]]
+    if (length(hosts) == 0L) {
+      vf[i] <- 0  # tournament season with no parseable host → assume neutral
+      next
+    }
+    home_is_host <- home_team[i] %in% hosts
+    away_is_host <- away_team[i] %in% hosts
+    vf[i] <- if (home_is_host && !away_is_host) 1
+             else if (!home_is_host && away_is_host) -1
+             else if (home_is_host && away_is_host) 1  # both host — treat as home
+             else 0  # neither host — neutral
+  }
+  vf
+}
+
+
 #' Scale Confederation Priors by a Single Spread Parameter
 #'
 #' Given a "spread" value, returns confederation priors centered on
