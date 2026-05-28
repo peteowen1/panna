@@ -24,8 +24,8 @@ fit_minutes_model(
 \item{nrounds_clf}{Max XGBoost rounds for the P(plays) classifier (stage 1).
 Default 600.}
 
-\item{nrounds_reg}{Max XGBoost rounds for the E\link{mins | plays} regressor
-(stage 2). Default 800.}
+\item{nrounds_reg}{Max XGBoost rounds for the \verb{E[mins | plays]}
+regressor (stage 2). Default 800.}
 
 \item{early_stopping}{Rounds without val improvement before stopping. Default 30.}
 

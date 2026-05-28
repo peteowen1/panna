@@ -11,8 +11,8 @@
 #' @param train_idx Logical vector identifying training rows (the rest are held out).
 #' @param nrounds_clf Max XGBoost rounds for the P(plays) classifier (stage 1).
 #'   Default 600.
-#' @param nrounds_reg Max XGBoost rounds for the E[mins | plays] regressor
-#'   (stage 2). Default 800.
+#' @param nrounds_reg Max XGBoost rounds for the \verb{E[mins | plays]}
+#'   regressor (stage 2). Default 800.
 #' @param early_stopping Rounds without val improvement before stopping. Default 30.
 #' @param verbose Logical.
 #' @return List with `play_clf`, `mins_reg`, `feature_cols`, `eval`.
