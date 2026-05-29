@@ -22,16 +22,16 @@ query_minutes_features(
 
 \item{team_name}{The country these players are playing for.}
 
-\item{as_of_date}{Date — the upcoming match date.}
+\item{as_of_date}{Date -- the upcoming match date.}
 
-\item{tournament_match_num}{Integer — which game in their tournament run.}
+\item{tournament_match_num}{Integer -- which game in their tournament run.}
 
-\item{days_rest_team}{Integer — days since this team's last intl match.
+\item{days_rest_team}{Integer -- days since this team's last intl match.
 If NULL, derived from cache.}
 
-\item{is_tournament}{Integer 0/1 — group-stage / knockout (1) vs qualifier (0).}
+\item{is_tournament}{Integer 0/1 -- group-stage / knockout (1) vs qualifier (0).}
 
-\item{is_friendly}{Integer 0/1 — friendly (1) vs competitive (0). Default 0
+\item{is_friendly}{Integer 0/1 -- friendly (1) vs competitive (0). Default 0
 for WC/qualifier predictions.}
 }
 \value{

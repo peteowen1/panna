@@ -29,7 +29,7 @@ A data.table with features + \code{minutes_played} target. The vector
 of training feature column names is in \code{attr(result, "feature_cols")}.
 }
 \description{
-For each (player_id × match) in the international competitions, computes
+For each (player_id x match) in the international competitions, computes
 backward-looking features as of the match date and pairs them with the
 realized \code{minutes_played} (the supervised target).
 }

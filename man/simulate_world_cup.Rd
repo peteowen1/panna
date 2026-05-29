@@ -20,7 +20,7 @@ group-stage fixtures.}
 
 \item{groups}{Data frame mapping \code{team} -> \code{group} (12 groups of 4).}
 
-\item{knockout}{Output of \code{\link[=build_knockout_lookup]{build_knockout_lookup()}} — a list with \code{probs}
+\item{knockout}{Output of \code{\link[=build_knockout_lookup]{build_knockout_lookup()}} -- a list with \code{probs}
 (pairwise knockout probabilities) and \code{team_elo} (named vector of
 pre-tournament Elo, used as the run-hot baseline).}
 

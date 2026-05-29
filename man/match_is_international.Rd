@@ -10,7 +10,7 @@ match_is_international(league)
 \item{league}{Character vector of competition codes.}
 }
 \value{
-Logical vector — \code{TRUE} for international (national-team)
+Logical vector -- \code{TRUE} for international (national-team)
 competitions, \code{FALSE} for domestic club competitions.
 }
 \description{

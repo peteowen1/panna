@@ -35,7 +35,7 @@ where applicable.
 }
 \examples{
 \dontrun{
-compare_players(c("Salah", "Mbappé", "Haaland"))
+compare_players(c("Salah", "Mbapp\u00e9", "Haaland"))
 compare_players(c("B. Saka", "Lamine Yamal"), league = "ESP", season = "2025-2026")
 compare_players(c("V. van Dijk", "W. Saliba"), league = "ENG", season = "2024-2025")
 }

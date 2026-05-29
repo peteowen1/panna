@@ -22,7 +22,7 @@ Resolution order (first match wins):
 \item \code{PANNADATA_DIR} environment variable
 \item \code{../pannadata/data} relative to working directory (for the
 pannaverse monorepo layout)
-\item \code{tools::R_user_dir("panna", "data")} — OS-standard user data dir
+\item \code{tools::R_user_dir("panna", "data")} -- OS-standard user data dir
 }
 
 OS-standard fallback paths:

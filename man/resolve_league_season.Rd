@@ -29,7 +29,7 @@ Continental club comps (UCL/UEL/UECL) share the "YYYY-YYYY" format with
 domestic leagues and are returned as-is. International tournaments (WC,
 EURO) use "YYYY Country" (or bare "YYYY" for pan-European EURO 2020);
 this helper maps a tournament played in summer YYYY onto the domestic
-season ending in YYYY (e.g. WC 2014 Brazil → "2013-2014").
+season ending in YYYY (e.g. WC 2014 Brazil -> "2013-2014").
 }
 \details{
 Returns \code{NULL} when there is no tournament in the given year so
@@ -37,10 +37,10 @@ callers can skip gracefully.
 }
 \examples{
 \dontrun{
-resolve_league_season("ENG",  "2013-2014")  # → "2013-2014"
-resolve_league_season("UCL",  "2013-2014")  # → "2013-2014"
-resolve_league_season("WC",   "2013-2014")  # → "2014 Brazil"
-resolve_league_season("EURO", "2019-2020")  # → "2020" (pan-European)
-resolve_league_season("WC",   "2018-2019")  # → NULL (no WC that year)
+resolve_league_season("ENG",  "2013-2014")  # -> "2013-2014"
+resolve_league_season("UCL",  "2013-2014")  # -> "2013-2014"
+resolve_league_season("WC",   "2013-2014")  # -> "2014 Brazil"
+resolve_league_season("EURO", "2019-2020")  # -> "2020" (pan-European)
+resolve_league_season("WC",   "2018-2019")  # -> NULL (no WC that year)
 }
 }

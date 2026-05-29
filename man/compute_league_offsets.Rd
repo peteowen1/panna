@@ -85,11 +85,11 @@ Estimates an additive offset for each league L of the form
 \details{
 Three estimators are tried per league, in priority order:
 \enumerate{
-\item \code{"same-season"} — same player, same season, both leagues.
+\item \code{"same-season"} -- same player, same season, both leagues.
 Cleanest because it eliminates career-stage confounds.
-\item \code{"career-direct"} — same player across career, both leagues.
+\item \code{"career-direct"} -- same player across career, both leagues.
 Broader coverage; some bias from career-stage effects.
-\item \code{"chained"} — for leagues with no direct anchor bridge, chain
+\item \code{"chained"} -- for leagues with no direct anchor bridge, chain
 via an intermediate league with both bridges.
 }
 }

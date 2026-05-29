@@ -31,7 +31,7 @@ Cross-team note: WPA is sign-flipped per actor's team in
 \code{\link{add_wp_vars}} so positive wpa always means "good for my team".
 When the next-action's player is on the OPPOSITE team (turnover, save,
 interception, opp shot), passing the receiver \code{(1 - actor_share) * wpa}
-unchanged would credit the receiver in the actor's team perspective — i.e.
+unchanged would credit the receiver in the actor's team perspective -- i.e.
 a goalkeeper saving a shot would inherit the shooter's negative WPA. We
 sign-flip on cross-team transitions so the receiver is credited in their
 own team's perspective (mirrors AFL pattern in

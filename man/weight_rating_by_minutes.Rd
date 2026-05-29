@@ -14,7 +14,7 @@ weight_rating_by_minutes(team_em, ratings, rating_col = "panna")
 \item{rating_col}{Name of the rating column. Default \code{"panna"}.}
 }
 \value{
-Single numeric — \code{sum(rating * expected_minutes_norm) / 990}.
+Single numeric -- \code{sum(rating * expected_minutes_norm) / 990}.
 Equivalent to "what's the average panna rating of who'll be on the pitch."
 }
 \description{

@@ -652,6 +652,151 @@ load_opta_fixtures <- function(league, season = NULL, columns = NULL,
 }
 
 
+#' Check events_consolidated Coverage vs Played Fixtures
+#'
+#' Counts unique match_ids in \code{events_consolidated/events_<comp>.parquet}
+#' (what the EPV pipeline reads) and compares to the number of played
+#' fixtures from \code{opta_fixtures.parquet} (the canonical source of
+#' truth for which matches actually occurred) for a given league-season.
+#' Surfaces the gap as data so callers (step 10b in the predictions
+#' pipeline) can refuse to silently ship game_logs that miss matches.
+#'
+#' Background: the events_consolidated build step in pannadata's daily
+#' scraper occasionally produces a per-comp parquet that's short of the
+#' actual match count — observed during the 2026-05-29 audit where
+#' \code{events_Championship.parquet} on \code{opta-latest} had only
+#' 265 of 557 played Championship 2025-2026 matches, causing the blog
+#' Value tab to cap at GP=24 instead of 46. Without an explicit check,
+#' step 10b silently produced game_logs covering only the events it
+#' could see.
+#'
+#' @param league panna league code (e.g. "EPL", "ENG2", "TUR")
+#' @param season Season string (e.g. "2025-2026")
+#' @param source One of "remote" (default) or "local" — where to read from.
+#'
+#' @return Invisibly: list with
+#'   \itemize{
+#'     \item \code{league}, \code{season}: identifiers
+#'     \item \code{n_played}: distinct played fixtures
+#'     \item \code{n_events}: distinct match_ids in events_consolidated
+#'     \item \code{gap}: \code{n_played - n_events}
+#'     \item \code{missing_match_ids}: vector of match_ids in fixtures but
+#'       not in events (length == gap)
+#'   }
+#'
+#' @export
+check_events_coverage <- function(league, season,
+                                    source = c("remote", "local")) {
+  source <- match.arg(source)
+
+  # Played fixtures (truth)
+  fx <- tryCatch(
+    load_opta_fixtures(league, season = season, status = "Played",
+                        source = source, columns = c("match_id")),
+    error = function(e) data.frame(match_id = character(0))
+  )
+  # Events (what EPV pipeline can see)
+  ev <- tryCatch(
+    load_opta_match_events(league, season = season,
+                            source = source, columns = c("match_id")),
+    error = function(e) data.frame(match_id = character(0))
+  )
+
+  played_ids <- unique(fx$match_id)
+  event_ids  <- unique(ev$match_id)
+  missing    <- setdiff(played_ids, event_ids)
+
+  invisible(list(
+    league   = league,
+    season   = season,
+    n_played = length(played_ids),
+    n_events = length(event_ids),
+    gap      = length(missing),
+    missing_match_ids = missing
+  ))
+}
+
+
+#' Assert Events Coverage Across Multiple Leagues
+#'
+#' Runs \code{check_events_coverage()} for each (league, season) pair and
+#' decides whether to proceed. Emits a per-league summary; aborts loudly
+#' if any league's gap exceeds \code{abort_threshold}, otherwise emits
+#' warnings for gaps above \code{warn_threshold}.
+#'
+#' Intended as a guard at the top of pipeline steps that consume events
+#' (step 10b export_game_logs, step 10c export_equity). Catches the
+#' "events_consolidated is short" pattern BEFORE producing incomplete
+#' game_logs that get silently shipped to blog-latest.
+#'
+#' @param league_seasons Either a character vector of league codes (all
+#'   checked against the same \code{season} argument) OR a list of
+#'   \code{list(league=..., season=...)} pairs.
+#' @param season Default season if \code{league_seasons} is a vector.
+#' @param warn_threshold Per-league gap above which to warn. Default 5.
+#' @param abort_threshold Per-league gap above which to abort. Default
+#'   \code{Inf} (warn-only). Set to a numeric (e.g. 20) to make the
+#'   pipeline refuse to continue.
+#' @param source One of "remote" or "local".
+#'
+#' @return Invisibly: list with per-league reports + summary stats.
+#' @export
+assert_events_coverage <- function(league_seasons, season = NULL,
+                                     warn_threshold = 5L,
+                                     abort_threshold = Inf,
+                                     source = c("remote", "local")) {
+  source <- match.arg(source)
+
+  # Normalize input to list(list(league, season), ...)
+  if (is.character(league_seasons)) {
+    if (is.null(season)) {
+      stop("`season` must be supplied when `league_seasons` is a character vector.")
+    }
+    ls_list <- lapply(league_seasons, function(lg) list(league = lg, season = season))
+  } else {
+    ls_list <- league_seasons
+  }
+
+  cli::cli_h2("Events coverage check ({length(ls_list)} league-seasons)")
+
+  reports <- lapply(ls_list, function(p) {
+    r <- check_events_coverage(p$league, p$season, source = source)
+    if (r$gap > warn_threshold) {
+      cli::cli_alert_warning(
+        "{r$league} {r$season}: events_consolidated covers {r$n_events} / {r$n_played} played matches (gap={r$gap})"
+      )
+    } else {
+      cli::cli_alert_success(
+        "{r$league} {r$season}: {r$n_events} / {r$n_played} ({r$gap} gap)"
+      )
+    }
+    r
+  })
+
+  gaps <- vapply(reports, function(r) r$gap, integer(1))
+  total_gap <- sum(gaps)
+  max_gap <- max(gaps)
+
+  cli::cli_text("Total gap across all leagues: {total_gap} matches; worst single league: {max_gap}")
+
+  bad <- reports[gaps > abort_threshold]
+  if (length(bad) > 0L) {
+    msgs <- vapply(bad, function(r) {
+      sprintf("  %s %s: missing %d / %d matches (e.g. %s)",
+              r$league, r$season, r$gap, r$n_played,
+              paste(head(r$missing_match_ids, 3), collapse = ", "))
+    }, character(1))
+    cli::cli_abort(c(
+      "Refusing to proceed: {length(bad)} league(s) exceed events-coverage abort threshold ({abort_threshold}):",
+      stats::setNames(msgs, rep(" ", length(msgs))),
+      "i" = "Re-scrape the affected leagues with force_rescrape=true to rebuild events_consolidated."
+    ))
+  }
+
+  invisible(list(reports = reports, total_gap = total_gap, max_gap = max_gap))
+}
+
+
 #' Load All Opta Data for Big 5 Leagues
 #'
 #' Convenience function to load Opta stats for all Big 5 European leagues.

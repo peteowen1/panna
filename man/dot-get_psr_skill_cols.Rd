@@ -12,6 +12,6 @@ Character vector of column names
 \description{
 Returns the per-90 rate and efficiency columns used as PSR features.
 This matches the feature set used in \code{fit_spm_opta()} minus position
-dummies — the elastic net selects relevant features automatically.
+dummies -- the elastic net selects relevant features automatically.
 }
 \keyword{internal}

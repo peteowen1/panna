@@ -17,11 +17,11 @@ build_knockout_lookup(
 \item{match_dataset}{The step-04 match dataset (has every team's WC2026
 feature rows).}
 
-\item{goals_models}{Step-05 goals models — with \code{$feature_cols}
+\item{goals_models}{Step-05 goals models -- with \code{$feature_cols}
 top-level and \code{$pooled} / \code{$international} sub-objects each
 holding \code{$home} / \code{$away}.}
 
-\item{outcome_result}{Step-06 outcome models — with
+\item{outcome_result}{Step-06 outcome models -- with
 \code{$augmented_features} top-level and \code{$pooled} /
 \code{$international} sub-objects each holding \code{$model}.}
 

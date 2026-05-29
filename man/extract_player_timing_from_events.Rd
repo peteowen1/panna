@@ -22,7 +22,7 @@ Extract Per-Player On/Off Times from Raw Opta Match Events
 }
 \details{
 Derives \code{on_minute} and \code{off_minute} for every player in every match
-directly from Opta event data — no reliance on lineup minute counts.
+directly from Opta event data -- no reliance on lineup minute counts.
 Uses second-level precision throughout.
 
 Sources:

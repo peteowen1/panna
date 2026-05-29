@@ -7,7 +7,7 @@
 player_value(player = NULL, season = NULL, source = c("local", "remote"))
 }
 \arguments{
-\item{player}{Character string — player name (partial match,
+\item{player}{Character string -- player name (partial match,
 case-insensitive). E.g., \code{"Salah"}, \code{"H. Kane"}.}
 
 \item{season}{Season filter (e.g., \code{"2024-2025"}). If NULL, uses
