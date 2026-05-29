@@ -82,19 +82,67 @@ if (nrow(seasonal_xrapm) == 0) {
   stop(sprintf("No xRAPM data for season_end_year = %d. Check the ratings cache.", latest_season))
 }
 
-# Join and compute ranks/percentiles.
-# Sign convention for the published file: POSITIVE = good for both offense
-# and defense (matches torpverse, NBA RAPM, and consumer intuition).
-# Internally the model treats `defense` as "additive contribution to opponent
-# xG" where negative = good defender. We flip the sign here so the blog shows
-# `defense` as "defensive value added (xG suppression per 90)" — positive = good.
-# `panna` is unchanged because panna = offense - defense_internal = offense + defense_published.
+# OVERRIDE total_minutes from the authoritative source (opta_player_stats).
+# The xRAPM/skills caches have an upstream bug (see panna issue for Salah
+# 2026 showing 511 min in release cache 06_seasonal_ratings.rds when the
+# truth is 3058 min across 43 matches). total_minutes is a simple sum, not
+# a model output — derive it from per-match data directly rather than
+# trusting cache provenance.
+ps_path <- file.path(opta_data_dir(), "opta_player_stats.parquet")
+if (!file.exists(ps_path)) {
+  stop(sprintf("opta_player_stats.parquet missing at %s — required to derive total_minutes",
+               ps_path), call. = FALSE)
+}
+ps <- as.data.frame(arrow::read_parquet(ps_path,
+  col_select = c("player_id","season","minsPlayed")))
+latest_season_str <- sprintf("%d-%d", latest_season - 1, latest_season)
+ps_minutes <- ps %>%
+  filter(season == latest_season_str, !is.na(player_id)) %>%
+  group_by(player_id) %>%
+  summarise(total_minutes_real = sum(minsPlayed, na.rm = TRUE),
+            .groups = "drop")
+message(sprintf("  Derived total_minutes for %d players from %s (season %s)",
+                nrow(ps_minutes), basename(ps_path), latest_season_str))
+
+# Join + compute ranks. Sign convention for the published file: POSITIVE =
+# good for both offense and defense (matches torpverse, NBA RAPM, and
+# consumer intuition). Internally the model treats `defense` as "additive
+# contribution to opponent xG" where negative = good defender; we flip the
+# sign here so the blog shows `defense` as "defensive value added (xG
+# suppression per 90)" — positive = good. `panna` is unchanged because
+# panna = offense - defense_internal = offense + defense_published.
+#
+# Minimum-minutes threshold for the panna_rank leaderboard. Without this,
+# low-sample players (e.g., Salah at 500 cache-minutes-bug with xrapm=0.26)
+# top the leaderboard from a handful of hot games. 900 min ≈ 10 full games
+# = enough to estimate xrapm with reasonable confidence. Players below the
+# threshold still appear in the parquet but with NA panna_rank.
+MIN_MINUTES_FOR_RANK <- 900L
+
 panna_ratings <- seasonal_xrapm %>%
   left_join(seasonal_spm, by = dedup_key) %>%
-  mutate(
-    panna_rank = as.integer(rank(-xrapm, ties.method = "min")),
-    panna_percentile = round(100 * rank(xrapm, ties.method = "min") / n(), 1)
-  ) %>%
+  left_join(ps_minutes, by = "player_id") %>%
+  # Use the derived total_minutes; keep cache total_minutes as fallback
+  # for players with no opta_player_stats row this season (rare; intl-only
+  # players whose 2025-26 friendlies got filtered).
+  mutate(total_minutes = coalesce(total_minutes_real, total_minutes)) %>%
+  select(-total_minutes_real)
+
+# Rank within the qualified subset; assign NA to sub-threshold players
+qualified <- panna_ratings$total_minutes >= MIN_MINUTES_FOR_RANK
+panna_ratings$panna_rank <- NA_integer_
+panna_ratings$panna_percentile <- NA_real_
+if (sum(qualified) > 0) {
+  q_xrapm <- panna_ratings$xrapm[qualified]
+  panna_ratings$panna_rank[qualified] <-
+    as.integer(rank(-q_xrapm, ties.method = "min"))
+  panna_ratings$panna_percentile[qualified] <-
+    round(100 * rank(q_xrapm, ties.method = "min") / sum(qualified), 1)
+}
+message(sprintf("  Ranked %d players with total_minutes >= %d (of %d total)",
+                sum(qualified), MIN_MINUTES_FOR_RANK, nrow(panna_ratings)))
+
+panna_ratings <- panna_ratings %>%
   select(
     panna_rank,
     any_of("player_id"),
@@ -106,14 +154,37 @@ panna_ratings <- seasonal_xrapm %>%
     total_minutes,
     panna_percentile
   ) %>%
-  mutate(defense = -defense) %>%   # flip: positive = good defender
+  mutate(defense = -defense) %>%
   mutate(across(c(panna, offense, defense, spm_overall), ~round(.x, 4))) %>%
   arrange(panna_rank)
 
+# Validation guard: a top-50 ranked player with implausibly low minutes is
+# a strong signal the upstream cache is corrupted (skills/06_seasonal
+# repeatedly ships wrong total_minutes for some players). After the
+# total_minutes override above this should never trigger — keep the check
+# as belt-and-braces for future cache schema changes.
+top50 <- panna_ratings %>% filter(!is.na(panna_rank), panna_rank <= 50L)
+top50_bad <- top50 %>% filter(total_minutes < MIN_MINUTES_FOR_RANK)
+if (nrow(top50_bad) > 0L) {
+  stop(sprintf(
+    "%d top-50 panna_rank player(s) have total_minutes < %d after override — refusing to publish a leaderboard that surfaces low-sample players.\n  %s",
+    nrow(top50_bad), MIN_MINUTES_FOR_RANK,
+    paste(sprintf("  #%d %s (%.0f min)",
+                  top50_bad$panna_rank, top50_bad$player_name,
+                  top50_bad$total_minutes),
+          collapse = "\n")
+  ), call. = FALSE)
+}
+
 na_spm <- sum(is.na(panna_ratings$spm_overall))
 if (na_spm > 0) message(sprintf("  Note: %d players have no SPM rating (NA)", na_spm))
-message(sprintf("  Final ratings: %d players", nrow(panna_ratings)))
-message(sprintf("  Top player: %s (%.3f)", panna_ratings$player_name[1], panna_ratings$panna[1]))
+message(sprintf("  Final ratings: %d players (%d ranked)", nrow(panna_ratings),
+                sum(!is.na(panna_ratings$panna_rank))))
+top1 <- panna_ratings %>% filter(panna_rank == 1L)
+if (nrow(top1) > 0) {
+  message(sprintf("  Top player: %s (panna=%.3f, %.0f min)",
+                  top1$player_name, top1$panna, top1$total_minutes))
+}
 
 arrow::write_parquet(panna_ratings, ratings_output)
 message(sprintf("  Written: %s", ratings_output))

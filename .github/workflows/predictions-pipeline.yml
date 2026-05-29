@@ -75,7 +75,7 @@ jobs:
           for f in opta_player_stats.parquet opta_shots.parquet opta_shot_events.parquet \
                    opta_events.parquet opta_lineups.parquet opta_fixtures.parquet \
                    opta_skills.parquet opta_match_stats.parquet opta_xmetrics.parquet \
-                   opta_epr_weekly.parquet \
+                   opta_epr_weekly.parquet opta_match_xg.parquet \
                    opta-catalog.json; do
             if gh release download opta-latest --repo peteowen1/pannadata --pattern "$f" --dir "$OPTA_DIR" 2>/dev/null; then
               echo "  Downloaded $f"
