@@ -356,6 +356,37 @@ if (any(missing_team)) {
   results <- results[!missing_team, , drop = FALSE]
 }
 
+# 5c. Reconcile stale match_status from match_date + scores -----------------
+#
+# Upstream `opta_fixtures.parquet` carries stale `match_status` = "Fixture"
+# for many past-dated matches even after the actual scores have landed
+# (2026-05-29 audit: 1,750 such rows across all comps, 272 in EPL alone).
+# Confirmed root cause of panna#75: Arsenal showing 34 GP after EPL force-
+# rescrape because past-dated PL matches stayed status='Fixture' → step 07's
+# `status` column propagates that → simulator counts only status='played'
+# → understates per-team GP.
+#
+# Re-derive: a match is "Played" if match_date < today AND we have both
+# home and away scores. Everything else stays as upstream said.
+# This catches the stale-status case without changing the meaning of
+# legitimately-future fixtures or genuinely-missing-score matches.
+today_utc <- Sys.Date()
+md_parsed <- suppressWarnings(as.Date(substr(results$match_date, 1, 10)))
+has_scores <- !is.na(results$home_goals) & !is.na(results$away_goals)
+stale_fixture <- !is.na(md_parsed) & md_parsed < today_utc &
+                  has_scores & results$match_status == "Fixture"
+n_stale <- sum(stale_fixture, na.rm = TRUE)
+if (n_stale > 0L) {
+  message(sprintf(
+    "  Reconciled match_status: %d Fixture rows had past dates with scores -> Played (panna#75 stale-status fix)",
+    n_stale))
+  by_league <- table(results$league[stale_fixture])
+  for (lg in names(by_league)) {
+    message(sprintf("    %s: %d", lg, by_league[lg]))
+  }
+  results$match_status[stale_fixture] <- "Played"
+}
+
 # 6. Ensure Required Columns ----
 #
 # season_end_year MUST be populated for every row — the ratings join

@@ -234,6 +234,42 @@ message(sprintf("  %d predictions across %d leagues",
 message(sprintf("  Date range: %s to %s",
                 min(match_predictions$match_date), max(match_predictions$match_date)))
 
+# panna#75 validation — refuse to publish a corrupt match_predictions.parquet.
+# Two checks the published file failed today (2026-05-29 audit):
+#   1. Duplicate match_id rows: 1 match appearing >1× in the file. Caused
+#      Telstar v Sparta Rotterdam 2026-04-22 to appear 4× with different
+#      prob_H values; downstream simulator over-counts those matches.
+#   2. Stale status='fixture' on past-dated matches: 2,105 rows where the
+#      match_date is in the past but status='fixture'. Simulator counts
+#      only status='played' for GP; affected teams (Arsenal 34GP vs real
+#      38) understate the season.
+# Both are now reconciled upstream (step 01:5c stale-status fix; step 07
+# is per-match so should be 1:1), but keep these as belt-and-braces
+# publish guards so a future regression can't ship silently.
+mp_dt <- data.table::as.data.table(match_predictions)
+dup_ids <- mp_dt[, .N, by = .(match_id, season)][N > 1]
+if (nrow(dup_ids) > 0L) {
+  worst <- dup_ids[order(-N)][1:min(10L, nrow(dup_ids))]
+  stop(sprintf(
+    "match_predictions.parquet has %d duplicated (match_id, season) keys (max %d copies) — refusing to publish.\n%s",
+    nrow(dup_ids), max(dup_ids$N),
+    paste(sprintf("  %s / %s: %d copies", worst$match_id, worst$season, worst$N),
+          collapse = "\n")
+  ), call. = FALSE)
+}
+mp_dt[, md_date_check := suppressWarnings(as.Date(substr(match_date, 1, 10)))]
+stale_status <- mp_dt[status == "fixture" & !is.na(md_date_check) &
+                       md_date_check < Sys.Date()]
+if (nrow(stale_status) > 0L) {
+  by_lg <- stale_status[, .N, by = league][order(-N)]
+  stop(sprintf(
+    "match_predictions.parquet has %d rows with status='fixture' but match_date < today — refusing to publish (panna#75 stale-status regression).\nPer-league:\n%s",
+    nrow(stale_status),
+    paste(sprintf("  %s: %d", by_lg$league, by_lg$N), collapse = "\n")
+  ), call. = FALSE)
+}
+message(sprintf("  Validation passed: 0 duplicate (match_id, season), 0 stale-status rows"))
+
 arrow::write_parquet(match_predictions, predictions_output)
 message(sprintf("  Written: %s", predictions_output))
 
