@@ -7,11 +7,18 @@
 load_wp_model(path = NULL)
 }
 \arguments{
-\item{path}{Directory to load from. If NULL, uses \code{pannadata/data/opta/models/}.}
+\item{path}{Directory to load from. If NULL, tries pannamodels first
+then falls back to \code{pannadata/data/opta/models/}.}
 }
 \value{
 WP model list (model + feature_names).
 }
 \description{
-Load WP model
+Resolution order, matching load_epv_model() / load_xpass_model():
+\enumerate{
+\item Explicit \code{path} (if supplied and the file exists)
+\item pannamodels package (preferred — distributes wp_model via the
+\code{epv} release tag, downloaded + cached on first call)
+\item Local fallback at \code{pannadata/data/opta/models/wp_model.rds}
+}
 }
