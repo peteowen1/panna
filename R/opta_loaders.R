@@ -761,7 +761,24 @@ assert_events_coverage <- function(league_seasons, season = NULL,
 
   reports <- lapply(ls_list, function(p) {
     r <- check_events_coverage(p$league, p$season, source = source)
-    if (r$gap > warn_threshold) {
+    # Classify each report:
+    #   source_missing -- n_events == 0 AND n_played > 0: per-comp events
+    #     file isn't local yet (typical on a fresh GHA runner). The
+    #     downstream load_opta_match_events() will lazy-download via
+    #     piggyback, so this is NOT a coverage shortfall — skip the abort
+    #     check for this league.
+    #   partial_gap   -- 0 < n_events < n_played: REAL shortfall (the
+    #     2026-05-29 Championship 265/557 case). This is what we want to
+    #     catch and abort on.
+    #   ok            -- gap <= warn_threshold.
+    r$status <- if (r$n_events == 0L && r$n_played > 0L) "source_missing"
+                else if (r$gap > warn_threshold) "partial_gap"
+                else "ok"
+    if (r$status == "source_missing") {
+      cli::cli_alert_info(
+        "{r$league} {r$season}: source not local yet (lazy-loaded downstream)"
+      )
+    } else if (r$status == "partial_gap") {
       cli::cli_alert_warning(
         "{r$league} {r$season}: events_consolidated covers {r$n_events} / {r$n_played} played matches (gap={r$gap})"
       )
@@ -773,13 +790,19 @@ assert_events_coverage <- function(league_seasons, season = NULL,
     r
   })
 
-  gaps <- vapply(reports, function(r) r$gap, integer(1))
-  total_gap <- sum(gaps)
-  max_gap <- max(gaps)
+  partial_gaps <- vapply(reports, function(r) {
+    if (identical(r$status, "partial_gap")) r$gap else 0L
+  }, integer(1))
+  total_gap        <- sum(partial_gaps)
+  max_gap          <- if (length(partial_gaps) > 0L) max(partial_gaps) else 0L
+  n_source_missing <- sum(vapply(reports,
+    function(r) identical(r$status, "source_missing"), logical(1)))
 
-  cli::cli_text("Total gap across all leagues: {total_gap} matches; worst single league: {max_gap}")
+  cli::cli_text(
+    "Partial gap across {length(ls_list) - n_source_missing} downloadable league(s): {total_gap} matches; worst single: {max_gap}{if (n_source_missing > 0L) sprintf(' (+ %d source-missing skipped)', n_source_missing) else ''}"
+  )
 
-  bad <- reports[gaps > abort_threshold]
+  bad <- reports[partial_gaps > abort_threshold]
   if (length(bad) > 0L) {
     msgs <- vapply(bad, function(r) {
       sprintf("  %s %s: missing %d / %d matches (e.g. %s)",
@@ -793,7 +816,8 @@ assert_events_coverage <- function(league_seasons, season = NULL,
     ))
   }
 
-  invisible(list(reports = reports, total_gap = total_gap, max_gap = max_gap))
+  invisible(list(reports = reports, total_gap = total_gap, max_gap = max_gap,
+                  n_source_missing = n_source_missing))
 }
 
 
