@@ -559,15 +559,30 @@ for (league in leagues) {
       # through as an upcoming fixture.
       is_awarded <- fixtures$match_status == "Awarded" &
         !is.na(fixtures$home_score) & !is.na(fixtures$away_score)
-      if (any(is_awarded)) {
-        fixtures$home_goals[is_awarded] <- as.integer(fixtures$home_score[is_awarded])
-        fixtures$away_goals[is_awarded] <- as.integer(fixtures$away_score[is_awarded])
-        hg <- fixtures$home_goals[is_awarded]
-        ag <- fixtures$away_goals[is_awarded]
-        fixtures$result[is_awarded] <- ifelse(hg > ag, "H",
-                                       ifelse(hg == ag, "D", "A"))
-        fixtures$match_status[is_awarded] <- "Played"
+
+      # Same promotion path for "Fixture" status with scores AND past date.
+      # Opta sometimes lands the score after the match but never flips
+      # match_status from Fixture → Played (panna#75 last straggler: a single
+      # ENG row that survived §5c + §7b + §8a because home_score was populated
+      # on opta_fixtures even though match_status stayed Fixture). Treat such
+      # rows as Played at load time so home_goals/away_goals get populated and
+      # downstream stays consistent.
+      fx_dates <- suppressWarnings(as.Date(substr(fixtures$match_date, 1, 10)))
+      is_stale_fixture <- fixtures$match_status == "Fixture" &
+        !is.na(fixtures$home_score) & !is.na(fixtures$away_score) &
+        !is.na(fx_dates) & fx_dates < Sys.Date()
+
+      promote <- is_awarded | is_stale_fixture
+      if (any(promote)) {
+        fixtures$home_goals[promote] <- as.integer(fixtures$home_score[promote])
+        fixtures$away_goals[promote] <- as.integer(fixtures$away_score[promote])
+        hg <- fixtures$home_goals[promote]
+        ag <- fixtures$away_goals[promote]
+        fixtures$result[promote] <- ifelse(hg > ag, "H",
+                                    ifelse(hg == ag, "D", "A"))
+        fixtures$match_status[promote] <- "Played"
       }
+      is_awarded <- is_awarded & promote  # for the message below
 
       fixtures$is_neutral_venue <- as.integer(league %in% TOURNAMENT_LEAGUES)
       all_fixtures[[league]] <- fixtures
