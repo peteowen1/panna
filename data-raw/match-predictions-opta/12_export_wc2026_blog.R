@@ -125,7 +125,7 @@ for (m in names(metric_cols)) {
 # not something the published parquet should silently absorb. Per the
 # "no silent imputation" rule we publish the NAs as-is so the blog shows
 # them explicitly, but warn here so they get attention before the next run.
-na_cells <- which(is.na(as.matrix(strength[, ..(names(metric_cols))])),
+na_cells <- which(is.na(as.matrix(strength[, names(metric_cols), with = FALSE])),
                   arr.ind = TRUE)
 if (nrow(na_cells) > 0L) {
   na_summary <- data.table(
