@@ -683,6 +683,39 @@ if (!is.null(fixtures_df)) {
 
 fixture_results <- fixture_results[order(fixture_results$match_date), ]
 
+# 8b. Dedup match_id ----
+#
+# §5 + §7 are independent loads (played-side from RAPM-cache+direct, fixture-
+# side from opta_fixtures.parquet `status IN (Fixture, Postponed, Awarded)`).
+# A past-dated match can land in BOTH paths when opta_fixtures.parquet
+# carries stale `match_status='Fixture'` (1,750 such rows audited 2026-05-29
+# in current opta_fixtures.parquet, 272 in EPL alone): the played-load picks
+# it up via lineups, §5c reconciles its status to "Played"; meanwhile §7's
+# load_opta_fixtures(status="Fixture") ALSO returns it (the underlying file
+# still says Fixture). The §8 bind_rows then gives one row per source.
+# Downstream step 04's left_join multiplies the 2x → 16x copies in
+# match_predictions.parquet (panna#75 in published output).
+#
+# Resolve by keeping the PLAYED copy of any dup — it has real scores and
+# the model needs actual results, not the stale-Fixture placeholder.
+dt <- data.table::as.data.table(fixture_results)
+dt[, .panna_dup_priority := data.table::fcase(
+  match_status == "Played",                  1L,
+  match_status %in% c("Awarded","Postponed"), 2L,
+  default                                  = 3L)]
+data.table::setorder(dt, match_id, .panna_dup_priority, match_date)
+n_before_dedup <- nrow(dt)
+dt <- dt[, .SD[1L], by = match_id]
+n_dropped <- n_before_dedup - nrow(dt)
+dt[, .panna_dup_priority := NULL]
+if (n_dropped > 0L) {
+  by_lg <- dt[, list()]  # placeholder
+  message(sprintf("  Deduped fixture_results: dropped %d duplicate-match_id rows (kept Played/Awarded copies). panna#75 root cause: stale match_status='Fixture' in opta_fixtures.parquet caused §5 + §7 to both pick up the same past-dated match.",
+                  n_dropped))
+}
+fixture_results <- as.data.frame(dt)
+fixture_results <- fixture_results[order(fixture_results$match_date), ]
+
 # 9. Save ----
 
 saveRDS(fixture_results, output_path)
