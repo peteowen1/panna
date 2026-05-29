@@ -344,39 +344,50 @@ add_wp_vars <- function(wp_features, wp_model) {
   dt <- data.table::as.data.table(wp_features)
 
   # The WP model (retrained 2026-05-19, commit b20b6b3) predicts
-  # P(possession team wins). To take meaningful deltas ACROSS events
-  # where possession switches, normalize to a single perspective first
-  # (home POV). Otherwise wp at t = P(team_A wins) and wp at t+1 =
-  # P(team_B wins) are different quantities; the raw delta blows up by
-  # ~0.7 every possession switch, inflating per-match |WPA| sums 20-30x
-  # (the 2026-05-29 WPA-scale regression that surfaced in the blog).
-  dt[, wp_poss := predict_wp(wp_model, dt)]
-  dt[, wp := data.table::fifelse(is_home == 1L, wp_poss, 1 - wp_poss)]
+  # P(possession team wins) — so `wp` at event t is always from the
+  # acting team's POV. WPA = how the acting-team-at-t's win probability
+  # changed by the next event.
+  #
+  # Two cases:
+  #   (a) Same team still in possession at t+1 -> `wp_next` is from the
+  #       same POV, so direct delta is correct: wpa = wp_next - wp
+  #   (b) Possession switched at t+1 -> `wp_next` is P(other team wins),
+  #       so from acting-team-at-t's POV the post-event probability is
+  #       (1 - wp_next), giving wpa = (1 - wp_next) - wp
+  #
+  # This mirrors torp's add_variables.R lines 122-124 which uses the same
+  # possession-POV pattern. The PRE-2026-05-29 implementation used raw
+  # `wp_next - wp` deltas (case-a only), which silently produced ~0.7
+  # WPA swings every possession switch -> 30x season-WPA inflation when
+  # the new possession-POV model went live with step 10b on 2026-05-29.
+  dt[, wp := predict_wp(wp_model, dt)]
 
-  # WPA = change in (home-POV) WP from this action to the next
-  dt[, wp_next := data.table::shift(wp, type = "lead"), by = match_id]
+  dt[, wp_next       := data.table::shift(wp, type = "lead"),      by = match_id]
+  dt[, team_id_next  := data.table::shift(team_id, type = "lead"), by = match_id]
 
-  # Last action in match: WPA based on final outcome. wp_label is also
-  # possession-POV (1 if possession team won the match) — convert to home-POV
-  # via the same is_home flip.
+  # Last action in match: fall back to wp_label (also possession-POV;
+  # 1 if acting team won the match). team_id_next defaults to current
+  # team_id so the case-a (same-team) branch applies cleanly.
   if ("wp_label" %in% names(dt)) {
-    dt[is.na(wp_next),
-       wp_next := data.table::fifelse(is_home == 1L, wp_label, 1 - wp_label)]
+    dt[is.na(wp_next),      wp_next      := wp_label]
   } else {
-    dt[is.na(wp_next), wp_next := wp]  # no change for last action
+    dt[is.na(wp_next),      wp_next      := wp]  # no change at end
   }
+  dt[is.na(team_id_next), team_id_next := team_id]
 
-  # WPA from home team perspective (delta of two home-POV quantities — safe)
-  dt[, wpa_home := wp_next - wp]
-
-  # Adjust sign for acting team: home team gets positive, away gets negative
-  dt[, wpa := data.table::fifelse(is_home == 1L, wpa_home, -wpa_home)]
+  # WPA from the acting-team-at-t's perspective.
+  # Positive = good for the team that acted at event t.
+  dt[, wpa := data.table::fifelse(
+    team_id_next == team_id,
+    wp_next - wp,
+    (1 - wp_next) - wp
+  )]
 
   # Center WPA per match so it sums to zero (removes WP model calibration bias)
   dt[, wpa := wpa - mean(wpa, na.rm = TRUE), by = match_id]
 
   # Clean up internal columns
-  dt[, c("wp_poss", "wp_next", "wpa_home") := NULL]
+  dt[, c("wp_next", "team_id_next") := NULL]
 
   dt
 }
