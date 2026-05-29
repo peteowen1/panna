@@ -53,14 +53,23 @@ if (!is.null(team_skill_features)) {
 
 # 5. Join All Features ----
 
+# panna#75 root cause: GHA-only dup bug in published match_predictions.parquet
+# (max 16 copies per match_id with varying predictions). Local caches all
+# 0-dup; reproduced only in workflow runs against fresh opta-latest data.
+# Each left_join is supposed to be 1:1 by match_id — if any input has dup
+# match_id keys, the join multiplies and propagates 16× copies downstream.
+# `relationship = "one-to-one"` (dplyr ≥ 1.1) HARD-ERRORS naming the side
+# that has duplicates, surfacing the upstream cache regression instead of
+# silently multiplying. Step 10's publish guard catches the symptom too
+# but that's downstream of model fitting — failing at step 04 saves ~6 min.
 dataset <- fixture_results %>%
-  left_join(team_ratings, by = "match_id") %>%
-  left_join(rolling_features, by = "match_id")
+  left_join(team_ratings, by = "match_id", relationship = "one-to-one") %>%
+  left_join(rolling_features, by = "match_id", relationship = "one-to-one")
 
 # Merge team skill features if available
 if (!is.null(team_skill_features) && nrow(team_skill_features) > 0) {
   dataset <- dataset %>%
-    left_join(team_skill_features, by = "match_id")
+    left_join(team_skill_features, by = "match_id", relationship = "one-to-one")
   message(sprintf("  Merged team skill features (%d new columns)",
                   ncol(team_skill_features) - 1))
 }
