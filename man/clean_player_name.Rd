@@ -20,8 +20,8 @@ Uses memoization to cache unique names for O(1) lookup on repeated values.
 }
 \examples{
 \dontrun{
-clean_player_name(c("Kylian Mbappé", "kylian mbappé", "KYLIAN MBAPPÉ"))
-# All return "kylianmbappé"
+clean_player_name(c("Kylian Mbapp\u00e9", "kylian mbapp\u00e9", "KYLIAN MBAPP\u00c9"))
+# All return "kylianmbapp\u00e9"
 }
 }
 \keyword{internal}

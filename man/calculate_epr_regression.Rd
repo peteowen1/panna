@@ -24,7 +24,7 @@ Recommended additional columns: \code{league} (or \code{competition}),
 \code{season_end_year}, \code{opp_def_rating} (continuous opponent
 defensive strength, e.g., from RAPM-derived team ratings).}
 
-\item{ref_date}{Snapshot date — only matches strictly before this are used.}
+\item{ref_date}{Snapshot date -- only matches strictly before this are used.}
 
 \item{decay}{Exponential decay constant in days for the time weight.}
 
@@ -37,13 +37,13 @@ path (good for ridge with sensible default shrinkage).}
 players toward 0. Implemented by adding "phantom" zero-y rows weighted
 by \code{prior_strength} for each player. Set to 0 to disable.}
 
-\item{tier_interaction}{If TRUE (default), fit player × league-tier
-interaction — i.e. each player gets up to two β coefficients, one for
+\item{tier_interaction}{If TRUE (default), fit player * league-tier
+interaction -- i.e. each player gets up to two beta coefficients, one for
 tier-1 (top-5 + UCL + WC/EURO) and one for tier-2 (everything else).
 This fixes cross-league standouts (Tavernier at Rangers, Veerman at
-PSV) whose single-β was a compromise between their elite domestic
+PSV) whose single-beta was a compromise between their elite domestic
 per-90 and their modest UCL/UEL per-90. Set to FALSE for the legacy
-"one β per player" behaviour. \strong{Ignored when
+"one beta per player" behaviour. \strong{Ignored when
 \code{league_offsets} is supplied}, since offsets supersede the
 coarse two-tier split with continuous per-league calibration.}
 
@@ -52,7 +52,7 @@ offsets from \code{\link{compute_league_offsets}}. Must have columns
 \code{league}, \code{offset_off}, \code{offset_def}. When supplied,
 the per-row response is shifted to a UCL-equivalent scale via
 \code{y_off <- y_off + offset_off[league]} (and likewise for defence)
-before the regression runs, so \code{β_player} is directly comparable
+before the regression runs, so \code{beta_player} is directly comparable
 across leagues. Leagues not present in the table are treated with a
 zero offset and a single warning is issued.}
 
@@ -65,6 +65,6 @@ A data.table with one row per player: \code{player_id},
 }
 \description{
 Per-(player, game) regression that simultaneously estimates per-player
-skill (β_player, returned as EPR) and league/opponent context effects.
+skill (beta_player, returned as EPR) and league/opponent context effects.
 Uses exponential time-decay weighting on observations.
 }

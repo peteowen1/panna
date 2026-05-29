@@ -19,7 +19,7 @@ download_opta_catalog(
 If the local file is older than this (mtime-based), it's treated as
 stale and re-downloaded. Default 6 hours, override globally via
 \code{options(panna.opta_catalog_ttl_hours = N)}. Set \code{Inf} to
-disable the TTL (legacy behavior — trust local forever).}
+disable the TTL (legacy behavior -- trust local forever).}
 }
 \value{
 List with catalog data (competitions, panna_aliases).

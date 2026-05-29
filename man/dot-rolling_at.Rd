@@ -2,11 +2,11 @@
 % Please edit documentation in R/minutes_query.R
 \name{.rolling_at}
 \alias{.rolling_at}
-\title{Helper — rolling-sum lookup for a single player as-of a date}
+\title{Helper -- rolling-sum lookup for a single player as-of a date}
 \usage{
 .rolling_at(date_int, cum_vec, as_of, window_days)
 }
 \description{
-Helper — rolling-sum lookup for a single player as-of a date
+Helper -- rolling-sum lookup for a single player as-of a date
 }
 \keyword{internal}

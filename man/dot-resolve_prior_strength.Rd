@@ -11,7 +11,7 @@
 
 \item{decay_params}{Decay parameter list}
 
-\item{is_efficiency}{Logical — is this an efficiency stat?}
+\item{is_efficiency}{Logical -- is this an efficiency stat?}
 }
 \value{
 Numeric prior strength

@@ -27,14 +27,14 @@ prepare_minutes_cache(
 \value{
 A list with:
 \itemize{
-\item \code{per_player_history} — keyed data.table per (player_id, date_int)
+\item \code{per_player_history} -- keyed data.table per (player_id, date_int)
 with \verb{mins_intl, mins_club, app_intl, start_intl, start_club, is_intl}
-\item \code{cumsum_lookup} — per-player precomputed cumulative-sum arrays for
+\item \code{cumsum_lookup} -- per-player precomputed cumulative-sum arrays for
 fast rolling-window queries
-\item \code{modal_role} — modal non-Substitute role per player
-\item \code{player_panna} — panna ratings table (player_id × season_end_year)
-\item \code{team_rotation} — global rotation_idx per team
-\item \code{team_intl_count} — number of intl matches per team
+\item \code{modal_role} -- modal non-Substitute role per player
+\item \code{player_panna} -- panna ratings table (player_id x season_end_year)
+\item \code{team_rotation} -- global rotation_idx per team
+\item \code{team_intl_count} -- number of intl matches per team
 }
 }
 \description{

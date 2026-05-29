@@ -18,7 +18,7 @@ augment_ratings_with_history(
 \item{current_sey}{The season we want imputed rows for (e.g., 2026).}
 
 \item{decay_factor}{Per-year decay. Default 0.85 (15\% decline per year
-away from a player's last-rated season — accounts for both ageing and
+away from a player's last-rated season -- accounts for both ageing and
 uncertainty about their current form).}
 
 \item{max_years_back}{Cap how far back to look. Default 5 years.

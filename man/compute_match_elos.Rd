@@ -44,7 +44,7 @@ single \code{initial_elo}. Requires \code{build_team_confederations()} to be abl
 to derive each team's confederation from \code{results}.}
 
 \item{use_venue_factor}{Logical (default FALSE for backwards compat). When
-TRUE, \code{home_advantage} is scaled by \code{compute_venue_factor()} per match —
+TRUE, \code{home_advantage} is scaled by \code{compute_venue_factor()} per match --
 +1 for true home, 0 for neutral tournament, -1 when the designated
 "home_team" is actually visiting the host country.}
 
@@ -72,7 +72,7 @@ Iterates through matches chronologically and computes Elo ratings.
 Returns BOTH per-match pre-match Elos (for joining onto the match
 dataset) AND the final post-iteration team-Elo state (for looking up
 the current Elo of teams in upcoming fixtures). Returning both is what
-prevents step 03 from having to duplicate the iteration — the previous
+prevents step 03 from having to duplicate the iteration -- the previous
 duplicate-iteration approach was missing the same NA guards as this
 function, which caused the 2026-05-28 NA-cascade bug where a single
 NA-team friendly poisoned every team's Elo via NA-named-lookup.

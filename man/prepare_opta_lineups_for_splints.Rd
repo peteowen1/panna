@@ -30,7 +30,7 @@ When \code{player_timing} is supplied (chain-derived from
 on/off times for any (match_id, player_id) pair present in the timing table.
 Chain timing is preferred because Opta lineups record \code{minutes_played = 90}
 for unsubstituted finishers regardless of stoppage time, and round sub
-minutes to integers — chains carry second-level precision and the real
+minutes to integers -- chains carry second-level precision and the real
 final-whistle time.
 }
 \keyword{internal}

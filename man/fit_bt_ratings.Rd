@@ -31,7 +31,7 @@ A list with:
 \description{
 Given match-level W/D/L probabilities (from the prediction pipeline), fit a
 single strength rating per team. Uses the Davidson (1970) extension that
-folds draws into Bradley-Terry: \verb{P(draw) ∝ ν·exp((r_i+r_j)/2)}.
+folds draws into Bradley-Terry: \verb{P(draw) prop nu.exp((r_i+r_j)/2)}.
 }
 \details{
 Optimisation: minimise cross-entropy between predicted probs and BT-implied

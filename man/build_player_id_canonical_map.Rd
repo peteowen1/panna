@@ -15,7 +15,7 @@ build_player_id_canonical_map(
 
 \item{min_dominance_ratio}{Numeric. Alt must have at most this fraction
 of the main's appearance count to be a merge candidate. Default 0.05
-(alt ≤ 5\% of main). Catches data-entry errors (alt has 2-10 matches
+(alt <= 5\% of main). Catches data-entry errors (alt has 2-10 matches
 vs main has hundreds) without merging mid-tier namesakes.}
 
 \item{require_team_overlap}{Logical. Require at least one common team

@@ -3,7 +3,7 @@
 \docType{data}
 \name{WC2026_REFERENCE_FACTS}
 \alias{WC2026_REFERENCE_FACTS}
-\title{WC2026 Reference Facts — Domain Assertions on Pipeline Outputs}
+\title{WC2026 Reference Facts -- Domain Assertions on Pipeline Outputs}
 \format{
 Named list of \code{list(fact, check_team_strength)} where
 \code{fact} is a one-line rationale string and \code{check_team_strength} is a
@@ -14,6 +14,6 @@ iff the fact holds.
 WC2026_REFERENCE_FACTS
 }
 \description{
-WC2026 Reference Facts — Domain Assertions on Pipeline Outputs
+WC2026 Reference Facts -- Domain Assertions on Pipeline Outputs
 }
 \keyword{internal}

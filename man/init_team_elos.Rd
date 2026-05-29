@@ -16,7 +16,7 @@ Named numeric vector of Elo ratings (one entry per non-NA team)
 }
 \description{
 Creates a named vector of initial Elo ratings for all teams.
-Filters NA team names defensively — they would otherwise create an
+Filters NA team names defensively -- they would otherwise create an
 NA-named entry that \code{NA \%in\% names(elos)} returns TRUE for, opening
 the door to NA cascades when bad upstream data sneaks through.
 }

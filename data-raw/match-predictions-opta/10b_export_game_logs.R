@@ -133,6 +133,32 @@ if (!is.null(seasonal_results) && !is.null(seasonal_results$seasonal_spm)) {
   message(sprintf("\n########## SEASON %s ##########", season))
   all_game_logs <- list()
 
+  # --- Pre-flight: events_consolidated coverage check (panna#NN) -----------
+  # The EPV pipeline reads from events_consolidated/events_<comp>.parquet.
+  # If pannadata's scraper produced a short file (observed 2026-05-29 for
+  # Championship: 265 / 557 matches), step 10b would silently produce
+  # game_logs that miss matches and the blog Value tab gets stuck. Refuse
+  # to continue when ANY blog league is missing more than abort_threshold
+  # matches vs its played fixtures. warn_threshold is the noisy-but-OK band.
+  ls_pairs <- lapply(blog_leagues, function(lg) {
+    lg_season <- resolve_league_season(lg, season,
+                                         tournament_leagues = intl_tournaments)
+    if (is.null(lg_season)) return(NULL)
+    list(league = lg, season = lg_season)
+  })
+  ls_pairs <- Filter(Negate(is.null), ls_pairs)
+  if (length(ls_pairs) > 0L) {
+    abort_thresh <- if (exists("events_coverage_abort_threshold", inherits = FALSE)) {
+      events_coverage_abort_threshold
+    } else {
+      20L  # default: tolerate 20 missing per league, abort beyond
+    }
+    assert_events_coverage(ls_pairs,
+                            warn_threshold = 5L,
+                            abort_threshold = abort_thresh,
+                            source = "local")
+  }
+
   for (league in blog_leagues) {
     tryCatch({
       league_season <- resolve_league_season(league, season,

@@ -26,7 +26,7 @@ sub_on_minute, sub_off_minute, competition.}
 \item{as_of}{Date. "Today" for the decay calculation. Default Sys.Date().}
 
 \item{lookback_days}{Integer. Only consider matches within this window.
-Default 730 (2 years — covers WC qualifiers + most internationals).}
+Default 730 (2 years -- covers WC qualifiers + most internationals).}
 
 \item{half_life_days}{Numeric. Exponential decay half-life. Default 365.
 Recent matches weight 2x more than matches a year ago.}
@@ -38,11 +38,11 @@ Recent matches weight 2x more than matches a year ago.}
 Default TRUE.}
 
 \item{min_recent_days}{Integer. Drop players with no appearances within
-this window (relative to \code{as_of}). Default 540 (~18 months) — catches
+this window (relative to \code{as_of}). Default 540 (~18 months) -- catches
 players retired since the last major tournament (EURO/Copa) while still
 keeping current squad members who had injury gaps.}
 
-\item{shrinkage_k}{Numeric. Bayesian pseudo-count: \verb{effective_em = em × weight_total / (weight_total + k)}. Players with weak evidence get
+\item{shrinkage_k}{Numeric. Bayesian pseudo-count: \verb{effective_em = em x weight_total / (weight_total + k)}. Players with weak evidence get
 shrunk toward zero. Default 3 (a player with 3 weighted caps gets
 50\% of raw EM; 20 weighted caps gets ~87\%).}
 }
