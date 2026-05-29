@@ -111,34 +111,52 @@ if (is.data.frame(seasonal_data)) {
     }
   }
 
-  # Merge EPR/EPR_offensive/EPR_defensive from weekly snapshots if available.
+  # Merge EPR/EPR_offensive/EPR_defensive from weekly snapshots.
   # We take the LATEST snapshot whose snapshot_date falls within (or just
   # before) each season_end_year (June 30 of that season). This treats EPR
   # as a season-level rating for the prediction model — same staleness
   # contract as PSR.
-  epr_path <- "../pannadata/data/opta/opta_epr_weekly.parquet"
-  if (file.exists(epr_path) && requireNamespace("arrow", quietly = TRUE)) {
-    epr_w <- as.data.frame(arrow::read_parquet(epr_path))
-    epr_w$snapshot_date <- as.Date(epr_w$snapshot_date)
-    epr_w$snapshot_season_end_year <- ifelse(
-      as.integer(format(epr_w$snapshot_date, "%m")) >= 7L,
-      as.integer(format(epr_w$snapshot_date, "%Y")) + 1L,
-      as.integer(format(epr_w$snapshot_date, "%Y"))
-    )
-    # Latest snapshot per (player_id, season)
-    epr_dt <- data.table::as.data.table(epr_w)
-    data.table::setorder(epr_dt, player_id, snapshot_season_end_year, -snapshot_date)
-    epr_seasonal <- epr_dt[, .SD[1L],
-                            by = .(player_id, season_end_year = snapshot_season_end_year),
-                            .SDcols = c("epr", "epr_offensive", "epr_defensive")]
-    ratings <- merge(ratings, as.data.frame(epr_seasonal),
-                      by = c("player_id", "season_end_year"), all.x = TRUE)
-    for (c in c("epr", "epr_offensive", "epr_defensive")) {
-      ratings[[c]][is.na(ratings[[c]])] <- 0
-    }
-    message(sprintf("  Merged EPR for %d player-seasons",
-                    sum(ratings$epr != 0)))
+  #
+  # Path resolution via opta_data_dir() — works locally (resolves to
+  # ../pannadata/data/opta) AND on GHA (resolves to PANNADATA_DIR/opta).
+  # Previous hardcoded "../pannadata/data/opta/..." silently returned FALSE
+  # on GHA where pannadata is staged at $RUNNER_TEMP/pannadata/opta without
+  # the "data/" segment, so the EPR merge was skipped and downstream
+  # wc2026_team_strength.parquet shipped with epr=NA for all 48 WC teams.
+  # 2026-05-29 incident.
+  epr_path <- file.path(opta_data_dir(), "opta_epr_weekly.parquet")
+  if (!file.exists(epr_path)) {
+    stop(sprintf(
+      "EPR weekly snapshots not found at %s — required for fixture-side EPR. ",
+      epr_path),
+      "On GHA: add opta_epr_weekly.parquet to the predictions-pipeline.yml ",
+      "download list. Locally: run the EPR weekly pipeline first.",
+      call. = FALSE)
   }
+  if (!requireNamespace("arrow", quietly = TRUE)) {
+    stop("arrow package not available — required to read opta_epr_weekly.parquet",
+         call. = FALSE)
+  }
+  epr_w <- as.data.frame(arrow::read_parquet(epr_path))
+  epr_w$snapshot_date <- as.Date(epr_w$snapshot_date)
+  epr_w$snapshot_season_end_year <- ifelse(
+    as.integer(format(epr_w$snapshot_date, "%m")) >= 7L,
+    as.integer(format(epr_w$snapshot_date, "%Y")) + 1L,
+    as.integer(format(epr_w$snapshot_date, "%Y"))
+  )
+  # Latest snapshot per (player_id, season)
+  epr_dt <- data.table::as.data.table(epr_w)
+  data.table::setorder(epr_dt, player_id, snapshot_season_end_year, -snapshot_date)
+  epr_seasonal <- epr_dt[, .SD[1L],
+                          by = .(player_id, season_end_year = snapshot_season_end_year),
+                          .SDcols = c("epr", "epr_offensive", "epr_defensive")]
+  ratings <- merge(ratings, as.data.frame(epr_seasonal),
+                    by = c("player_id", "season_end_year"), all.x = TRUE)
+  for (c in c("epr", "epr_offensive", "epr_defensive")) {
+    ratings[[c]][is.na(ratings[[c]])] <- 0
+  }
+  message(sprintf("  Merged EPR for %d player-seasons",
+                  sum(ratings$epr != 0)))
 
   # Merge centrality scores if available
   centrality_path <- file.path("data-raw", "cache-opta", "07b_centrality.rds")

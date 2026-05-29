@@ -120,24 +120,33 @@ for (m in names(metric_cols)) {
                                 base = metric_cols[[m]]), 4)
 }
 
-# Surface any NAs loudly — these are real data gaps that need fixing
-# upstream (missing match_dataset column, missing team-season row, etc.),
-# not something the published parquet should silently absorb. Per the
-# "no silent imputation" rule we publish the NAs as-is so the blog shows
-# them explicitly, but warn here so they get attention before the next run.
+# HARD STOP if any critical metric is NA for any WC team. The previous
+# warning-only pattern shipped wc2026_team_strength.parquet with epr = NA
+# for all 48 teams (5pm 2026-05-29: root cause was step 02 silently
+# skipping the EPR merge on GHA due to a relative-path bug — fix landed,
+# but adding the stop here as a second layer of defense so the next
+# silent-skip elsewhere can't ship to the blog).
+#
+# Per [[feedback-no-silent-imputation]]: missing values in a published
+# rating must HALT, not be silently published. If you genuinely want to
+# ship partial data (e.g., a metric truly doesn't apply to intl tournaments),
+# remove that metric from metric_cols rather than papering over the NA.
 na_cells <- which(is.na(as.matrix(strength[, names(metric_cols), with = FALSE])),
                   arr.ind = TRUE)
 if (nrow(na_cells) > 0L) {
   na_summary <- data.table(
     team   = strength$team[na_cells[, "row"]],
     metric = names(metric_cols)[na_cells[, "col"]]
-  )[order(team, metric)]
-  warning(sprintf(
-    "wc2026_team_strength has %d NA cells across %d team(s) — investigate match_dataset for missing columns or unmapped teams.\n  %s",
-    nrow(na_cells), uniqueN(na_summary$team),
+  )[order(metric, team)]
+  per_metric <- na_summary[, .N, by = metric][order(-N)]
+  stop(sprintf(
+    "wc2026_team_strength has %d NA cells across %d team(s) and %d metric(s) — refusing to publish a partial rating table.\n\nPer-metric NA counts:\n%s\n\nFull list:\n  %s\n\nFix the upstream missing-data root cause (likely step 02 EPR/PSR merge or step 03/04 column drift) before re-running step 12. To exclude a metric that's expected to be NA for intl, remove it from metric_cols in this script.",
+    nrow(na_cells), uniqueN(na_summary$team), nrow(per_metric),
+    paste(sprintf("  %s: %d / 48", per_metric$metric, per_metric$N),
+          collapse = "\n"),
     paste(sprintf("%s/%s", na_summary$team, na_summary$metric),
           collapse = ", ")
-  ), call. = FALSE, immediate. = TRUE)
+  ), call. = FALSE)
 }
 
 # Published convention: defence as positive = good (internal model has
