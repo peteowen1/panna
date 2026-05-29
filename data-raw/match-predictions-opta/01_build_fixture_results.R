@@ -407,6 +407,16 @@ if (any(still_bad)) {
 # from 0% to ~86% (the remaining 14% are matches in competitions the xG
 # model hasn't been run on yet — genuine NA, not a join failure).
 lineups_path <- "../pannadata/data/opta/opta_lineups.parquet"
+# RAPM cache (cache-opta/01_raw_data.rds) explicitly drops home_team_id +
+# away_team_id at save time (see data-raw/player-ratings-opta/01_load_opta_
+# data.R line 397). When step 01 here reads that cache, the columns are
+# ABSENT — not NA. is.na(NULL) returns logical(0), sum() of which is 0,
+# so the backfill loop was silently skipped, leaving the xG join key as
+# `paste(match_id, NULL)` = bare match_id → 0% join rate against
+# `paste(match_id, team_id)` keys in opta_match_xg.parquet. Initialize the
+# columns to NA when absent so the backfill loop actually runs.
+if (!"home_team_id" %in% names(results)) results$home_team_id <- NA_character_
+if (!"away_team_id" %in% names(results)) results$away_team_id <- NA_character_
 n_before_backfill <- sum(is.na(results$home_team_id) | is.na(results$away_team_id))
 if (n_before_backfill > 0L &&
     file.exists(lineups_path) &&

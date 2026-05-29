@@ -795,16 +795,23 @@ compute_match_elos <- function(results, k = 20, home_advantage = 65,
   # Mid-season-rename smoke test: this function keys Elo by team_name, so
   # if Opta ever renames a team mid-flow (e.g., "Rangers" -> "Rangers FC")
   # the iteration silently treats them as two distinct teams each starting
-  # at initial_elo. Surface low-match teams as a soft warning -- domestic
-  # teams should have tens of matches across the dataset; cup competitions
-  # legitimately produce some low counts, so this is a hint rather than a
-  # hard fail. Code-review item 16.
+  # at initial_elo. Surface very-low-match teams as a soft warning.
+  #
+  # Threshold tuning (was <10L, observed 2026-05-29 audit fired on ~215
+  # legitimate UCL/UEL/UECL qualifying-round clubs that are eliminated in
+  # rounds 1-3 and play 2-8 total matches in our entire dataset — pure
+  # noise). Genuine renames manifest as 1-3 appearances for what should be
+  # a full-season team, so a <3L threshold catches the real signal without
+  # the noise floor from minor-confederation qualifying clubs. The
+  # team_id-based collision detection in 01_build_fixture_results.R (lines
+  # 583+) is the authoritative source for confirmed renames; this is just
+  # a secondary smoke test downstream of that fix.
   match_counts <- sort(table(c(results$home_team[!is.na(results$home_team)],
                                 results$away_team[!is.na(results$away_team)])))
-  low_match_teams <- names(match_counts)[match_counts < 10L]
+  low_match_teams <- names(match_counts)[match_counts < 3L]
   if (length(low_match_teams) > 10L) {
     cli::cli_inform(c(
-      "i" = "{length(low_match_teams)} team(s) with <10 matches in Elo iteration -- possible split-identity from a mid-season rename. Investigate before publishing if any are domestic-league teams.",
+      "i" = "{length(low_match_teams)} team(s) with <3 matches in Elo iteration -- possible split-identity from a mid-season rename. Investigate before publishing if any are domestic-league teams.",
       "*" = "Sample: {paste(head(low_match_teams, 10), collapse = ', ')}..."
     ))
   }
