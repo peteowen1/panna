@@ -716,6 +716,28 @@ if (!is.null(fixtures_df)) {
 
 fixture_results <- fixture_results[order(fixture_results$match_date), ]
 
+# 8a. Final status reconciliation across COMBINED set ----
+#
+# §5c reconciles match_status on the played-load `results` only. Some past-
+# dated matches with scores arrive via §7's fixture-load (opta_fixtures has
+# stale match_status='Fixture' on them) and never pass through §5c. Catch
+# them here on the merged fixture_results: same rule (past date + scores ⇒
+# "Played"), applies to every row regardless of which path loaded it.
+# Audited 2026-05-29: 1 EPL row was slipping through with just §5c after
+# §7b dropped the no-scores ones.
+md_combined <- suppressWarnings(as.Date(substr(fixture_results$match_date, 1, 10)))
+has_scores_combined <- !is.na(fixture_results$home_goals) &
+                       !is.na(fixture_results$away_goals)
+stale_combined <- !is.na(md_combined) & md_combined < Sys.Date() &
+                  has_scores_combined &
+                  fixture_results$match_status == "Fixture"
+n_stale_combined <- sum(stale_combined, na.rm = TRUE)
+if (n_stale_combined > 0L) {
+  message(sprintf("  Final status reconcile: %d combined-set rows had past dates with scores -> Played",
+                  n_stale_combined))
+  fixture_results$match_status[stale_combined] <- "Played"
+}
+
 # 8b. Dedup match_id ----
 #
 # §5 + §7 are independent loads (played-side from RAPM-cache+direct, fixture-
