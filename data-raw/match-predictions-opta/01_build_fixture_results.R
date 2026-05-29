@@ -730,7 +730,7 @@ has_scores_combined <- !is.na(fixture_results$home_goals) &
                        !is.na(fixture_results$away_goals)
 stale_combined <- !is.na(md_combined) & md_combined < Sys.Date() &
                   has_scores_combined &
-                  fixture_results$match_status == "Fixture"
+                  fixture_results$match_status != "Played"
 n_stale_combined <- sum(stale_combined, na.rm = TRUE)
 if (n_stale_combined > 0L) {
   message(sprintf("  Final status reconcile: %d combined-set rows had past dates with scores -> Played",
