@@ -368,7 +368,7 @@ predict_wp <- function(wp_model, wp_features) {
 #'   feature columns the model was trained on). Must include
 #'   \code{wp_label} for the last-action fallback.
 #' @param wp_model Trained WP model from \code{\link{train_wp_model}}.
-#'   Predictions are clamped to [0, 1] by \code{\link{predict_wp}}.
+#'   Predictions are clamped to \code{[0, 1]} by \code{\link{predict_wp}}.
 #'
 #' @return The input data.table with added \code{wp} (possession-POV
 #'   probability) and \code{wpa} (acting-team-POV delta) columns.
@@ -377,10 +377,9 @@ predict_wp <- function(wp_model, wp_features) {
 add_wp_vars <- function(wp_features, wp_model) {
   dt <- data.table::as.data.table(wp_features)
 
-  # The WP model (retrained 2026-05-19, commit b20b6b3) predicts
-  # P(possession team wins) — so `wp` at event t is always from the
-  # acting team's POV. WPA = how the acting-team-at-t's win probability
-  # changed by the next event.
+  # The WP model predicts P(possession team wins) — so `wp` at event t
+  # is always from the acting team's POV. WPA = how the acting-team-at-t's
+  # win probability changed by the next event.
   #
   # Two cases:
   #   (a) Same team still in possession at t+1 -> `wp_next` is from the

@@ -393,28 +393,23 @@ if (any(still_bad)) {
 
 # 6b. Backfill missing home/away team_ids from opta_lineups.parquet ----
 #
-# The RAPM cache (01_raw_data.rds) provides historical matches with NA
-# home_team_id / away_team_id columns — when it was built, team_ids weren't
-# preserved. With cached matches making up most of the dataset, ~99% of
-# `results` rows have NA team_ids. Downstream:
-#   - the xG join (next block) is keyed by (match_id, team_id) so it
-#     misses every cache-loaded match → 0% join rate session-wide
-#   - rolling xG features in step 03 become all-NA → step 04 NA-fill (now
-#     narrowed) propagates NaN → the model trains on NaN xG for every
-#     match historically
-# Backfill from opta_lineups.parquet, which has team_ids for every match
-# we have a lineup for. This recovers ~99% coverage and lifts the xG join
-# from 0% to ~86% (the remaining 14% are matches in competitions the xG
-# model hasn't been run on yet — genuine NA, not a join failure).
-lineups_path <- "../pannadata/data/opta/opta_lineups.parquet"
 # RAPM cache (cache-opta/01_raw_data.rds) explicitly drops home_team_id +
-# away_team_id at save time (see data-raw/player-ratings-opta/01_load_opta_
-# data.R line 397). When step 01 here reads that cache, the columns are
-# ABSENT — not NA. is.na(NULL) returns logical(0), sum() of which is 0,
-# so the backfill loop was silently skipped, leaving the xG join key as
-# `paste(match_id, NULL)` = bare match_id → 0% join rate against
-# `paste(match_id, team_id)` keys in opta_match_xg.parquet. Initialize the
-# columns to NA when absent so the backfill loop actually runs.
+# away_team_id columns at save time — the upstream `01_load_opta_data.R`
+# in the player-ratings-opta pipeline uses `select(-home_team_id, -away_team_id)`
+# before writing the cache. When step 01 here reads it, the columns are
+# ABSENT (not NA). Two latent bugs flow from that:
+#   1. `is.na(NULL)` returns `logical(0)`, sum=0 → the backfill block below
+#      gets silently skipped, leaving team_ids missing entirely.
+#   2. The xG join further down keys by paste(match_id, team_id); with the
+#      team_ids missing, `paste(match_id, NULL)` drops the NULL and produces
+#      bare match_ids that don't match the compound keys in opta_match_xg.parquet
+#      → 0% join rate session-wide → step 03 rolling xG features all-NA →
+#      step 04 NA-fill propagates NaN → the model trains on NaN xG history.
+# Fix: init columns to NA if absent so the backfill loop sees them. Backfill
+# from opta_lineups.parquet (which always has team_ids) recovers ~99% coverage
+# and restores the xG join to ~86% (the remaining 14% are matches in comps
+# the xG model hasn't run on yet — legitimate NA, not a join failure).
+lineups_path <- "../pannadata/data/opta/opta_lineups.parquet"
 if (!"home_team_id" %in% names(results)) results$home_team_id <- NA_character_
 if (!"away_team_id" %in% names(results)) results$away_team_id <- NA_character_
 n_before_backfill <- sum(is.na(results$home_team_id) | is.na(results$away_team_id))

@@ -128,6 +128,37 @@ if (!is.null(seasonal_results) && !is.null(seasonal_results$seasonal_spm)) {
 # and 10c_export_equity can share it. intl_tournaments list above controls
 # which leagues go through the tournament-year remapping.
 
+# Typed "skip this league" signal. Using a condition class (caught by
+# `tryCatch(..., panna_skip_league = handler)`) instead of a magic message
+# string — class dispatch is robust against message drift and clearly
+# distinguishes intentional skips from real errors in the outer handler.
+skip_league_cond <- function(reason) {
+  structure(
+    class = c("panna_skip_league", "error", "condition"),
+    list(message = sprintf("skip_league: %s", reason),
+         reason  = reason)
+  )
+}
+
+# Minimum columns build_player_game_ratings() must emit before a league's
+# frame can be added to the season output. Catches drift in the builder's
+# schema before we ship a malformed parquet to the blog.
+.required_game_log_cols <- c(
+  "player_id", "team_id", "match_id",
+  "minutes_played", "panna_value", "panna_value_p90"
+)
+
+validate_game_log_schema <- function(dt, league, season) {
+  missing <- setdiff(.required_game_log_cols, names(dt))
+  if (length(missing) > 0L) {
+    stop(sprintf(
+      "[%s %s] game_ratings missing required columns: %s",
+      league, season, paste(missing, collapse = ", ")
+    ), call. = FALSE)
+  }
+  invisible(dt)
+}
+
 # Process a single season: returns path to written parquet, or NULL on failure.
 .process_season <- function(season) {
   message(sprintf("\n########## SEASON %s ##########", season))
@@ -165,7 +196,7 @@ if (!is.null(seasonal_results) && !is.null(seasonal_results$seasonal_spm)) {
                                                tournament_leagues = intl_tournaments)
       if (is.null(league_season)) {
         message(sprintf("\n  Skipping %s %s — no tournament this year", league, season))
-        stop("__skip_league__")
+        stop(skip_league_cond("no tournament this year"))
       }
       label <- if (identical(league_season, season)) league else
                sprintf("%s (%s)", league, league_season)
@@ -176,9 +207,9 @@ if (!is.null(seasonal_results) && !is.null(seasonal_results$seasonal_spm)) {
 
       if (is.null(events) || nrow(events) < 100) {
         message(sprintf("    Skipping %s — insufficient data", league))
-        # Signal a skip via a tagged error caught by the outer handler.
+        # Signal a skip via a typed condition caught by the outer handler.
         # `return()` here would exit .process_season, aborting remaining leagues.
-        stop("__skip_league__")
+        stop(skip_league_cond("insufficient data"))
       }
 
       n_matches <- length(unique(events$match_id))
@@ -282,6 +313,8 @@ if (!is.null(seasonal_results) && !is.null(seasonal_results$seasonal_spm)) {
       game_ratings[, league := league]
       game_ratings[, season := season]
 
+      validate_game_log_schema(game_ratings, league, season)
+
       all_game_logs[[league]] <- game_ratings
       message(sprintf("    Final: %d player-games", nrow(game_ratings)))
 
@@ -291,10 +324,12 @@ if (!is.null(seasonal_results) && !is.null(seasonal_results$seasonal_spm)) {
          player_game_wpa, player_game_psv, game_ratings)
       gc(verbose = FALSE)
 
-    }, error = function(e) {
-      # Tagged skip from the "insufficient data" branch — already messaged.
-      if (identical(e$message, "__skip_league__")) return(invisible(NULL))
-
+    },
+    panna_skip_league = function(e) {
+      # Intentional skip — already messaged at the source.
+      invisible(NULL)
+    },
+    error = function(e) {
       is_data_error <- inherits(e, "panna_data_not_found") ||
         grepl("^No data found for|^No .+ data available", e$message)
       if (is_data_error) {

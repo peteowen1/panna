@@ -65,6 +65,31 @@ message(sprintf("  Alias (action_equity.parquet) → %s", current_season_alias))
 epv_model   <- load_epv_model()
 xpass_model <- load_xpass_model()
 
+# Typed "skip this league" signal. Caught in the per-league tryCatch via
+# `panna_skip_league =` handler; replaces a magic-string match on e$message.
+skip_league_cond <- function(reason) {
+  structure(
+    class = c("panna_skip_league", "error", "condition"),
+    list(message = sprintf("skip_league: %s", reason),
+         reason  = reason)
+  )
+}
+
+# Minimum columns the slim equity lookup must emit. Catches drift in the
+# SPADL credit assignment before we ship a malformed parquet.
+.required_equity_cols <- c("match_id", "event_id", "equity")
+
+validate_equity_schema <- function(dt, league, season) {
+  missing <- setdiff(.required_equity_cols, names(dt))
+  if (length(missing) > 0L) {
+    stop(sprintf(
+      "[%s %s] equity missing required columns: %s",
+      league, season, paste(missing, collapse = ", ")
+    ), call. = FALSE)
+  }
+  invisible(dt)
+}
+
 # 3. Per-season processing ----
 
 .process_equity_season <- function(season) {
@@ -77,7 +102,7 @@ xpass_model <- load_xpass_model()
                                               tournament_leagues = intl_tournaments)
       if (is.null(league_season)) {
         message(sprintf("  Skipping %s %s — no tournament this year", league, season))
-        stop("__skip_league__")
+        stop(skip_league_cond("no tournament this year"))
       }
       label <- if (identical(league_season, season)) league else
                sprintf("%s (%s)", league, league_season)
@@ -86,7 +111,7 @@ xpass_model <- load_xpass_model()
       events <- load_opta_match_events(league, season = league_season)
       if (is.null(events) || nrow(events) < 100) {
         message(sprintf("    Skipping %s — insufficient data", league))
-        stop("__skip_league__")
+        stop(skip_league_cond("insufficient data"))
       }
 
       n_matches <- length(unique(events$match_id))
@@ -115,6 +140,8 @@ xpass_model <- load_xpass_model()
       )]
       equity <- equity[!is.na(event_id) & event_id != ""]
 
+      validate_equity_schema(equity, league, season)
+
       season_equity[[league]] <- equity
       message(sprintf("    %d matches, %d actions with equity",
                       n_matches, nrow(equity)))
@@ -123,8 +150,12 @@ xpass_model <- load_xpass_model()
          spadl_epv, spadl_credit, dt, equity)
       gc(verbose = FALSE)
 
-    }, error = function(e) {
-      if (identical(e$message, "__skip_league__")) return(invisible(NULL))
+    },
+    panna_skip_league = function(e) {
+      # Intentional skip — already messaged at the source.
+      invisible(NULL)
+    },
+    error = function(e) {
       # Tight match on typed errors + explicit data-absence phrasings.
       # Generic "not found" is too broad — it matches unrelated column lookup
       # bugs, silently swallowing real errors as if they were missing data.
