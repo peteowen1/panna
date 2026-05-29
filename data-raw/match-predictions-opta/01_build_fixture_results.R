@@ -618,8 +618,19 @@ if (!is.null(fixtures_df) && nrow(fixtures_df) > 0L) {
   } else {
     FALSE
   }
+  # Any non-Played status with past date + no scores is "stuck":
+  #   "Fixture"   — Opta forgot to update status
+  #   "Postponed" — match was postponed but never rescheduled in our data
+  #                 (e.g., panna#75 last straggler: Man City vs Crystal Palace
+  #                 EPL 2026-05-22 marked Postponed indefinitely with no
+  #                 reschedule date, scores never landed)
+  #   "Awarded"   — handled above by promotion path with scores; the no-score
+  #                 case here is some odd edge state
+  # Either way, including these in the fixtures pool poisons the simulator:
+  # the match won't actually be played, but the projector treats it as
+  # remaining-games-to-simulate.
   stuck <- !is.na(fx_dates) & fx_dates < Sys.Date() &
-           fixtures_df$match_status == "Fixture" & !fx_has_score
+           fixtures_df$match_status != "Played" & !fx_has_score
   n_stuck <- sum(stuck, na.rm = TRUE)
   if (n_stuck > 0L) {
     by_lg <- table(fixtures_df$league[stuck])
