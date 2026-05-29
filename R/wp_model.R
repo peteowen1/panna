@@ -343,20 +343,30 @@ predict_wp <- function(wp_model, wp_features) {
 add_wp_vars <- function(wp_features, wp_model) {
   dt <- data.table::as.data.table(wp_features)
 
-  # Predict WP at each action (home team perspective)
-  dt[, wp := predict_wp(wp_model, dt)]
+  # The WP model (retrained 2026-05-19, commit b20b6b3) predicts
+  # P(possession team wins). To take meaningful deltas ACROSS events
+  # where possession switches, normalize to a single perspective first
+  # (home POV). Otherwise wp at t = P(team_A wins) and wp at t+1 =
+  # P(team_B wins) are different quantities; the raw delta blows up by
+  # ~0.7 every possession switch, inflating per-match |WPA| sums 20-30x
+  # (the 2026-05-29 WPA-scale regression that surfaced in the blog).
+  dt[, wp_poss := predict_wp(wp_model, dt)]
+  dt[, wp := data.table::fifelse(is_home == 1L, wp_poss, 1 - wp_poss)]
 
-  # WPA = change in WP from this action to the next
+  # WPA = change in (home-POV) WP from this action to the next
   dt[, wp_next := data.table::shift(wp, type = "lead"), by = match_id]
 
-  # Last action in match: WPA based on final outcome
+  # Last action in match: WPA based on final outcome. wp_label is also
+  # possession-POV (1 if possession team won the match) — convert to home-POV
+  # via the same is_home flip.
   if ("wp_label" %in% names(dt)) {
-    dt[is.na(wp_next), wp_next := wp_label]
+    dt[is.na(wp_next),
+       wp_next := data.table::fifelse(is_home == 1L, wp_label, 1 - wp_label)]
   } else {
     dt[is.na(wp_next), wp_next := wp]  # no change for last action
   }
 
-  # WPA from home team perspective
+  # WPA from home team perspective (delta of two home-POV quantities — safe)
   dt[, wpa_home := wp_next - wp]
 
   # Adjust sign for acting team: home team gets positive, away gets negative
@@ -365,8 +375,8 @@ add_wp_vars <- function(wp_features, wp_model) {
   # Center WPA per match so it sums to zero (removes WP model calibration bias)
   dt[, wpa := wpa - mean(wpa, na.rm = TRUE), by = match_id]
 
-  # Clean up
-  dt[, c("wp_next", "wpa_home") := NULL]
+  # Clean up internal columns
+  dt[, c("wp_poss", "wp_next", "wpa_home") := NULL]
 
   dt
 }
