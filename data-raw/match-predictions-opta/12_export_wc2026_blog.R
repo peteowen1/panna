@@ -27,7 +27,19 @@ wc_season <- WC2026_SEASON_LABEL
 
 message("\n=== Exporting WC 2026 blog data ===\n")
 
-groups <- as.data.table(readRDS(file.path(cache_dir, "wc2026_groups.rds")))
+# WC group assignments — same fallback as 11_simulate_wc2026.R: prefer the
+# cache RDS (lets devs override for what-if scenarios), fall back to the
+# inst/extdata package asset on a clean checkout / GHA runner.
+groups_cache_rds <- file.path(cache_dir, "wc2026_groups.rds")
+groups_pkg_csv   <- system.file("extdata", "wc2026_groups.csv", package = "panna")
+groups <- if (file.exists(groups_cache_rds)) {
+  as.data.table(readRDS(groups_cache_rds))
+} else if (nzchar(groups_pkg_csv) && file.exists(groups_pkg_csv)) {
+  data.table::fread(groups_pkg_csv)
+} else {
+  stop("wc2026_groups not found: neither ", groups_cache_rds,
+       " nor inst/extdata/wc2026_groups.csv is available")
+}
 team_group <- stats::setNames(groups$group, groups$team)
 
 # 2. Match predictions ----
