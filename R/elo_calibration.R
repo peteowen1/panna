@@ -25,40 +25,55 @@
 
 #' Match-type K Lookup
 #'
-#' Maps a league code to a base Elo K-factor. Values OPTIMIZED via grid
-#' search 2026-05-28 (see debug/optimize_elo_k_v2.R) using WC-weighted
-#' held-out Brier -- 8.6% improvement vs single-K baseline.
+#' Maps a league code to a base Elo K-factor.
+#'
+#' Values OPTIMIZED via DEoptim v6 2026-05-29 using 3-fold CV with
+#' 3-way logloss + Davidson draw model + venue factor + tunable decay.
+#' v6 = v5 retrained on the expanded intl corpus (post-2026-05-29
+#' scrapes: AFCON 2023 Cote d'Ivoire, AFC/CAF/CONMEBOL WCQ historical
+#' cycles 2002-2014, etc., ~4,000 intl matches total). Decay halflife
+#' converged at 7000 days (essentially "off" -- recent matches don't
+#' need extra weight; the data set itself has enough recent signal).
+#' Best CV-mean logloss = 0.9782 (vs v4 seed 1.0135, -3.49%).
+#'
+#' Earlier v3/v4 values (pre-expanded corpus) were WC=94, continental=110,
+#' qualifier=55, friendly=5. v6 dropped WC + continental K substantially
+#' (44, 50) and raised qualifier slightly (59) -- with WC 2022 + the
+#' extra qualifier cycles in the training set, individual matches need
+#' to move Elos less because the prior is better-anchored.
 #'
 #' @format Named numeric vector: league code -> base K.
 #' @keywords internal
 ELO_MATCH_TYPE_K <- c(
-  # International tournaments -- K=80 from optimization. High because
-  # tournament outcomes are the most informative cross-confederation
-  # signal we have for calibrating the pools against each other.
-  WC     = 80,
-  EURO   = 80,
-  AFCON  = 80,
-  COPA   = 80,
-  GOLD   = 80,
-  ACUP   = 80,
-  GULF   = 80,
-  # International qualifiers -- K=25 from optimization. Lower than
-  # tournaments because they're within-confederation and the volume of
-  # qualifier matches would otherwise drift pool Elos away from
-  # cross-conf truth.
-  WCQ_UEFA     = 25,
-  WCQ_CONMEBOL = 25,
-  WCQ_CAF      = 25,
-  WCQ_AFC      = 25,
-  EUROQ        = 25,
-  AFCONQ       = 25,
-  ACUPQ        = 25,
+  # International tournaments -- v6: K_wc=44, K_continental=50.
+  # Lower than v3 (80) because the expanded training set (WC 2022 +
+  # AFCON 2023 + many more qualifier cycles) reduces how much each
+  # individual tournament match should move the Elo trajectory.
+  WC     = 44,
+  EURO   = 50,
+  AFCON  = 50,
+  COPA   = 50,
+  GOLD   = 50,
+  ACUP   = 50,
+  GULF   = 50,
+  # International qualifiers -- v6: K=59 (up slightly from v3's 25).
+  # Increased because v6 has many more qualifier cycles in training (full
+  # 2014/2010/2006 cycles for AFC/CAF/CONMEBOL after the May 29 scrape)
+  # giving the optimizer more signal that qualifier results carry weight.
+  WCQ_UEFA     = 59,
+  WCQ_CONMEBOL = 59,
+  WCQ_CAF      = 59,
+  WCQ_AFC      = 59,
+  EUROQ        = 59,
+  AFCONQ       = 59,
+  ACUPQ        = 59,
   # Nations League -- kept at 20 (semi-competitive, within-conf)
   NL = 20,
-  # Friendlies -- K=5 from optimization. Very low because friendlies are
-  # often understrength and the cross_conf_mult below (when on)
-  # scales them up where they actually carry calibration info.
-  INTL_FR = 5,
+  # Friendlies -- v6: K=15. Higher than v3's 5 -- friendlies between
+  # high-strength teams (often the only cross-conf signal between WCs)
+  # turn out to carry calibration value once the cross_conf multiplier
+  # scales them up.
+  INTL_FR = 15,
   # Club leagues + continental cups -- kept at K=20 (untouched by the
   # intl optimization since they're a different world)
   ENG = 20, ENG2 = 20, ESP = 20, GER = 20, ITA = 20, FRA = 20,
@@ -74,11 +89,13 @@ ELO_DEFAULT_K <- 20
 #' Default cross-confederation K multiplier
 #'
 #' Multiply K by this factor when the two teams are from different
-#' confederations. Optimized to 1.5 (modest) -- the conf priors below
-#' do most of the cross-pool calibration work, so the multiplier only
-#' needs to be moderate. 1.0 disables.
+#' confederations. v6 optimized to 2.49 (was 1.5 in v3, 2.49 in v5/v6) --
+#' cross-confederation matches are rare but high-information signal for
+#' calibrating pools against each other; multiplying their K up means
+#' the rare WC / friendly cross-conf matches drive most of the
+#' confederation-vs-confederation Elo divergence. 1.0 disables.
 #' @keywords internal
-ELO_CROSS_CONF_MULT <- 1.5
+ELO_CROSS_CONF_MULT <- 2.49
 
 #' Confederation Initial-Elo Priors
 #'
@@ -89,30 +106,39 @@ ELO_CROSS_CONF_MULT <- 1.5
 #' matches (= AFC pool drifts up because they play each other a lot).
 #'
 #' Confederation priors give each pool a sensible starting position
-#' informed by historical World Cup performance. The values below are
-#' starting defaults; the optimizer in debug/optimize_elo_k.R tunes a
-#' single `conf_spread` parameter that scales these offsets up or down.
-#'
-#' Anchor: 1500 (mean). Spread default reflects rough relative strength
-#' across confederations as of recent WCs.
+#' informed by historical World Cup performance. v6 values come directly
+#' from the DEoptim optimization (no parametric spread anymore -- each
+#' delta is tuned independently).
 #'
 #' @format Named numeric vector mapping confederation -> initial Elo.
 #' @keywords internal
 ELO_CONFEDERATION_PRIORS <- c(
-  UEFA     = 1700,
-  CONMEBOL = 1700,
-  CONCACAF = 1400,
-  CAF      = 1400,
-  AFC      = 1350,
-  OFC      = 1200
+  UEFA     = 1500,  # anchor
+  CONMEBOL = 1519,  # v6 delta +19
+  CONCACAF = 1471,  # v6 delta -29
+  CAF      = 1331,  # v6 delta -169 (CAF much weaker than UEFA per cross-conf record)
+  AFC      = 963,   # v6 delta -537 (AFC pool dominates own matches, weak cross-conf)
+  OFC      = 1082   # v6 delta -418
 )
-# Values from optimizer (spread = 200; debug/optimize_elo_k_v2.R, 2026-05-28).
-# Spread 200 produced 8.6% lower WC-weighted Brier than no prior -- the conf
-# priors carry most of the optimization gain.
+# Values from DEoptim v6, 2026-05-29 (debug/optimize_elo_deoptim_v6.R).
+# Improvement: -3.49% logloss vs v4 seed. v3's spread=200 framing
+# (legacy) is replaced by independent per-conf deltas.
 
-#' Default conf_spread used by step 03 (passed through compute_match_elos)
+#' Default conf_spread (LEGACY; not used by v6+ optimizer which tunes
+#' per-conf deltas independently). Kept for backwards-compat with the
+#' parametric `elo_conf_priors_from_spread()` helper which v6 step 03
+#' no longer calls. New callers should use `ELO_CONFEDERATION_PRIORS`
+#' directly.
 #' @keywords internal
 ELO_CONF_SPREAD <- 200
+
+#' Optimized home-advantage value (Elo points; v6 = 88, v3 = 65)
+#' @keywords internal
+ELO_HOME_ADV <- 88
+
+#' Optimized Davidson draw parameter (v6 = 0.89)
+#' @keywords internal
+ELO_DAVIDSON_NU <- 0.89
 
 #' Build Initial-Elo Vector With Confederation Priors
 #'
