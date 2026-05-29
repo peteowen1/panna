@@ -262,6 +262,13 @@ stale_status <- mp_dt[status == "fixture" & !is.na(md_date_check) &
                        md_date_check < Sys.Date()]
 if (nrow(stale_status) > 0L) {
   by_lg <- stale_status[, .N, by = league][order(-N)]
+  # Dump every offending row with all available columns so we can fix the
+  # root cause instead of playing whack-a-mole on the publish guard.
+  cat("\n=== Stale-status rows surviving step 01 defenses ===\n")
+  print(stale_status[, .(match_id, match_date, league, season, home_team,
+                          away_team, status, prob_H, prob_D, prob_A)])
+  cat("\nFull columns of first offender:\n")
+  str(as.list(stale_status[1L]))
   stop(sprintf(
     "match_predictions.parquet has %d rows with status='fixture' but match_date < today — refusing to publish (panna#75 stale-status regression).\nPer-league:\n%s",
     nrow(stale_status),
