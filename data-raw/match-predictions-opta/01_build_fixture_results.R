@@ -584,6 +584,39 @@ for (league in leagues) {
 
 fixtures_df <- if (length(all_fixtures) > 0) bind_rows(all_fixtures) else NULL
 
+# 7b. Drop past-dated stale-status fixtures ----------------------------------
+#
+# opta_fixtures.parquet's match_status='Fixture' lags reality: many matches
+# whose actual date has passed (and have no scores in the fixtures endpoint)
+# still carry status=Fixture. §7 above loads ALL Fixture-status rows; this
+# block drops the ones whose match_date is already in the past AND that have
+# no scores. They're stuck-status records — neither played nor upcoming.
+# Without this drop, they propagate as `status='fixture'` rows in
+# match_predictions.parquet and the simulator counts the underlying matches
+# as "remaining to play" (Arsenal/Fulham 34 GP symptom). Audited 2026-05-29:
+# this dropped 181 rows after §5c reconciled the playable ones to "Played".
+if (!is.null(fixtures_df) && nrow(fixtures_df) > 0L) {
+  fx_dates <- suppressWarnings(as.Date(substr(fixtures_df$match_date, 1, 10)))
+  fx_has_score <- if ("home_score" %in% names(fixtures_df) &&
+                       "away_score" %in% names(fixtures_df)) {
+    !is.na(fixtures_df$home_score) & !is.na(fixtures_df$away_score)
+  } else {
+    FALSE
+  }
+  stuck <- !is.na(fx_dates) & fx_dates < Sys.Date() &
+           fixtures_df$match_status == "Fixture" & !fx_has_score
+  n_stuck <- sum(stuck, na.rm = TRUE)
+  if (n_stuck > 0L) {
+    by_lg <- table(fixtures_df$league[stuck])
+    message(sprintf("  Dropped %d stuck-Fixture rows (past date + no scores; panna#75 step 01 §7b):",
+                    n_stuck))
+    for (lg in names(by_lg)) {
+      message(sprintf("    %s: %d", lg, by_lg[lg]))
+    }
+    fixtures_df <- fixtures_df[!stuck, , drop = FALSE]
+  }
+}
+
 # 8. Combine ----
 
 # Ensure consistent columns
