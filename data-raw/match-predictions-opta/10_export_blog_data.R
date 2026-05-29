@@ -317,24 +317,49 @@ if (!file.exists(fixture_results_path)) {
                              integer(1)),
            diff = total_fixtures - expected)
 
-  schedule_gaps <- team_totals %>% filter(diff != 0L)
-  if (nrow(schedule_gaps) > 0) {
-    # Warn, don't block. Root cause is an UPSTREAM data gap (Opta scraper
-    # missing fixtures) — panna can't fix it, only surface it. The sim still
-    # runs against what fixtures exist, producing projections over the wrong
-    # number of remaining games for affected teams. Blog will publish with
-    # the gap flagged. Hard-fail would cause all domestic leagues to go dark
-    # over a transient scraper issue in one league.
-    message(sprintf("  SCHEDULE GAP — %d team(s) have wrong total fixtures (played + upcoming):",
-                    nrow(schedule_gaps)))
-    for (i in seq_len(nrow(schedule_gaps))) {
-      r <- schedule_gaps[i, ]
+  # Split into two cases:
+  #   diff <  0 → real signal (team missing fixtures, probable Opta scraper gap)
+  #   diff >  0 → benign overcount (playoff fixtures included under the league
+  #               code). ENG2 has EFL playoffs (semi legs + Wembley final =
+  #               up to +3 for the finalists, +2 for semi losers); NED has
+  #               European-spot playoffs (up to +2 for finalists, +1 for semi
+  #               losers). Audited 2026-05-29 via debug/keep/schedule_gap_audit.R
+  #               — all 8 ENG2/NED overcounts that day matched the playoff
+  #               bracket exactly, only the 2 FRA Nantes/Toulouse undercounts
+  #               were genuine scraper misses.
+  missing_fixtures <- team_totals %>% filter(diff < 0L)
+  extra_fixtures   <- team_totals %>% filter(diff > 0L)
+
+  if (nrow(missing_fixtures) > 0) {
+    # Real upstream gap. Warn loudly — but don't block: the sim still runs
+    # against what fixtures exist, just over the wrong remaining-games count
+    # for affected teams. Hard-fail would dark all domestic leagues over a
+    # transient one-league scraper issue.
+    message(sprintf("  SCHEDULE GAP — %d team(s) MISSING fixtures (likely Opta scraper gap):",
+                    nrow(missing_fixtures)))
+    for (i in seq_len(nrow(missing_fixtures))) {
+      r <- missing_fixtures[i, ]
       message(sprintf("    %s %s: %d fixtures (expected %d, diff %+d)",
                       r$league, r$team, r$total_fixtures, r$expected, r$diff))
     }
-    warning(sprintf("%d team(s) have incomplete fixture lists — likely an upstream Opta scraper gap (see pannadata scripts/opta/scrape_opta.py date windows). Sim projections for affected teams will be over the wrong number of remaining games. Investigate before relying on these projections.",
-                    nrow(schedule_gaps)), call. = FALSE, immediate. = TRUE)
-  } else if (nrow(team_totals) > 0) {
+    warning(sprintf("%d team(s) MISSING fixtures vs expected — likely upstream Opta scraper gap. See pannadata scripts/opta/scrape_opta.py date windows.",
+                    nrow(missing_fixtures)), call. = FALSE, immediate. = TRUE)
+  }
+  if (nrow(extra_fixtures) > 0) {
+    # Calm informational message only — these are almost always playoffs.
+    # Log the per-team detail so the playoff fingerprint is visible
+    # (ENG2: 4 teams +2/+3 = semis+final; NED: similar pattern), but don't
+    # raise a warning that triggers GHA's red annotation.
+    message(sprintf("  EXTRA FIXTURES — %d team(s) have MORE than expected (playoff bracket, harmless):",
+                    nrow(extra_fixtures)))
+    for (i in seq_len(nrow(extra_fixtures))) {
+      r <- extra_fixtures[i, ]
+      message(sprintf("    %s %s: %d fixtures (base %d, diff %+d)",
+                      r$league, r$team, r$total_fixtures, r$expected, r$diff))
+    }
+  }
+  if (nrow(missing_fixtures) == 0L && nrow(extra_fixtures) == 0L &&
+      nrow(team_totals) > 0) {
     message(sprintf("  Schedule completeness OK across %d teams in %d domestic leagues (all equal expected)",
                     nrow(team_totals), length(unique(team_totals$league))))
   }
