@@ -14,9 +14,9 @@ devtools::load_all()
 cache_dir <- file.path("data-raw", "cache-predictions-opta")
 output_path <- file.path(cache_dir, "03_rolling_features.rds")
 
-ELO_K <- 20
-ELO_HOME_ADV <- 65
-ELO_INITIAL <- 1500
+ELO_K <- 20                    # fallback for any league NOT in ELO_MATCH_TYPE_K
+ELO_HOME_ADV <- 88             # v6 optimized (was 65 pre-2026-05-29; package constant in R/elo_calibration.R)
+ELO_INITIAL <- 1500            # fallback when a team has no confederation in conf_priors
 ROLLING_WINDOWS <- c(5L, 10L, 20L)
 
 # 3. Check Cache ----
@@ -47,14 +47,28 @@ elo_result <- compute_match_elos(
   k = ELO_K,
   home_advantage = ELO_HOME_ADV,
   initial_elo = ELO_INITIAL,
-  # Optimized 2026-05-28: per-match-type K (tournaments 80, qualifiers
-  # 25, friendlies 5, club 20) + cross-conf multiplier 1.5 + per-
-  # confederation prior with conf_spread=200. WC-weighted Brier improved
-  # 8.6% vs single-K=20 baseline. The conf priors are what fixed the
-  # Norway < Uzbekistan cross-pool isolation issue.
-  k_table         = ELO_MATCH_TYPE_K,
-  cross_conf_mult = ELO_CROSS_CONF_MULT,
-  conf_priors     = elo_conf_priors_from_spread(ELO_CONF_SPREAD)
+  # v6 OPTIMIZED 2026-05-29 (DEoptim, 3-fold CV, 3-way logloss + Davidson
+  # draw + venue factor) on the expanded intl corpus (WC 2022 Qatar +
+  # AFCON 2023 + many historical WCQ cycles for AFC/CAF/CONMEBOL).
+  # Best CV-mean logloss = 0.9782, -3.49% vs v4 seed. Decay halflife
+  # converged to ~7000d (effectively off; the expanded recent-data
+  # set carries enough signal without explicit weighting).
+  #
+  # Major changes vs v3/v4:
+  #   - K_wc dropped from 94 to 44 (better prior reduces per-match swing)
+  #   - K_continental dropped from 110 to 50
+  #   - K_qualifier raised from 25 to 59 (more qualifier data = more signal)
+  #   - K_friendly raised from 5 to 15
+  #   - cross_conf_mult raised from 1.5 to 2.49 (rare but high-info matches)
+  #   - home_advantage raised from 65 to 88
+  #   - conf priors switched from parametric spread to per-conf deltas
+  #   - use_venue_factor=TRUE (was FALSE) — neutral tournament matches now
+  #     correctly get 0 home advantage instead of arbitrary +HA to whichever
+  #     team Opta listed as "home"
+  k_table          = ELO_MATCH_TYPE_K,
+  cross_conf_mult  = ELO_CROSS_CONF_MULT,
+  conf_priors      = ELO_CONFEDERATION_PRIORS,
+  use_venue_factor = TRUE
 )
 elo_features <- elo_result$per_match
 final_elos <- elo_result$final_elos
