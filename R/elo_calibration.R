@@ -36,11 +36,14 @@
 #' need extra weight; the data set itself has enough recent signal).
 #' Best CV-mean logloss = 0.9782 (vs v4 seed 1.0135, -3.49%).
 #'
-#' Earlier v3/v4 values (pre-expanded corpus) were WC=94, continental=110,
-#' qualifier=55, friendly=5. v6 dropped WC + continental K substantially
-#' (44, 50) and raised qualifier slightly (59) -- with WC 2022 + the
-#' extra qualifier cycles in the training set, individual matches need
-#' to move Elos less because the prior is better-anchored.
+#' Pre-2026-05-29 values (in this file: WC=80, continental=80, qualifier=25,
+#' friendly=5). v6 dropped WC + continental K substantially (80 -> 44 / 50)
+#' and raised qualifier (25 -> 59) -- with WC 2022 + the extra qualifier
+#' cycles in the training set, individual matches need to move Elos less
+#' because the prior is better-anchored. Note: the 94/110/55 numbers that
+#' appeared in some v3/v4 intermediate DEoptim seed comments are from
+#' optimizer trial points, not from the production constants ever shipped
+#' in this file.
 #'
 #' @format Named numeric vector: league code -> base K.
 #' @keywords internal

@@ -319,6 +319,20 @@ predict_wp <- function(wp_model, wp_features) {
 
   preds <- predict(wp_model$model, mat)
 
+  # The clamp below silently turns out-of-range values into 0 or 1, which
+  # would hide a future model regression (e.g. accidentally saved with
+  # binary:logitraw / objective swapped to score-margin, etc.). Warn when
+  # >0.1% of predictions are substantially outside [0, 1] -- that signals
+  # the model is not producing probabilities anymore.
+  out_of_range_frac <- mean(preds < -0.01 | preds > 1.01)
+  if (out_of_range_frac > 0.001) {
+    cli::cli_warn(c(
+      "{round(100 * out_of_range_frac, 2)}% of WP predictions are outside [0, 1] ",
+      "({round(min(preds), 2)} to {round(max(preds), 2)}). Model may be returning ",
+      "logits or some other scale rather than probabilities. Inspect ",
+      "{.code wp_model$model$params$objective} -- expected {.val binary:logistic}."
+    ))
+  }
   # Clamp to [0, 1]
   pmax(pmin(preds, 1), 0)
 }
@@ -326,18 +340,38 @@ predict_wp <- function(wp_model, wp_features) {
 
 #' Add win probability and WPA to SPADL data
 #'
-#' Adds \code{wp} (win probability at each action from home perspective) and
-#' \code{wpa} (win probability added by each action, sign-adjusted for the
-#' acting team) columns.
+#' Adds \code{wp} (model's possession-POV win probability at each action
+#' — P(team that performed the action wins the match)) and \code{wpa}
+#' (change in the acting team's win probability between the current and
+#' the next event) columns.
 #'
-#' WPA is computed as the change in win probability caused by each action.
-#' For home team actions: \code{wpa = wp_after - wp_before}.
-#' For away team actions: \code{wpa = (1 - wp_after) - (1 - wp_before) = wp_before - wp_after}.
+#' WPA delta accounts for possession switches:
+#' \itemize{
+#'   \item Same team in possession at t+1 (\code{team_id_next == team_id}):
+#'     \code{wpa = wp_next - wp} — both values are P(same team wins)
+#'   \item Possession switched at t+1: \code{wp_next} is P(other team wins),
+#'     so from the t-team's POV the post-event probability is
+#'     \code{(1 - wp_next)}, giving \code{wpa = (1 - wp_next) - wp}
+#' }
 #'
-#' @param wp_features SPADL features with WP model features.
+#' Pre-2026-05-29 implementation took raw \code{wp_next - wp} deltas
+#' which silently inflated WPA ~30x once the model was retrained to
+#' possession-POV (see \code{C:/dev/pannaverse/panna/debug/demo_wpa_logic.R}
+#' for a worked example). Mirrors torpverse's \code{add_variables.R}
+#' case_when on \code{team_id_next} vs \code{team_id_mdl}.
+#'
+#' WPA is centered per-match (\code{wpa - mean(wpa, na.rm=TRUE)} by
+#' \code{match_id}) to remove model-calibration bias.
+#'
+#' @param wp_features SPADL features with WP model features
+#'   (\code{match_id}, \code{team_id}, \code{is_home}, plus the
+#'   feature columns the model was trained on). Must include
+#'   \code{wp_label} for the last-action fallback.
 #' @param wp_model Trained WP model from \code{\link{train_wp_model}}.
+#'   Predictions are clamped to [0, 1] by \code{\link{predict_wp}}.
 #'
-#' @return The input data.table with added \code{wp} and \code{wpa} columns.
+#' @return The input data.table with added \code{wp} (possession-POV
+#'   probability) and \code{wpa} (acting-team-POV delta) columns.
 #'
 #' @export
 add_wp_vars <- function(wp_features, wp_model) {
@@ -432,13 +466,21 @@ save_wp_model <- function(wp_model, path = NULL) {
 #' @return WP model list (model + feature_names).
 #' @export
 load_wp_model <- function(path = NULL) {
-  # 1. Explicit path wins if it exists
+  # 1. Explicit path: hard requirement if supplied. A caller passing
+  # `path = "/my/training/output"` because they want THAT model is silently
+  # ignored if we fall through to pannamodels — wrong UX. Abort if the
+  # caller's explicit path doesn't exist rather than substituting a
+  # different model.
   if (!is.null(path)) {
     model_path <- file.path(path, "wp_model.rds")
-    if (file.exists(model_path)) {
-      cli::cli_alert_success("Loaded WP model from {model_path}")
-      return(readRDS(model_path))
+    if (!file.exists(model_path)) {
+      cli::cli_abort(c(
+        "WP model not found at explicit path: {.file {model_path}}",
+        "i" = "Drop the {.arg path} argument to fall back to pannamodels + local."
+      ))
     }
+    cli::cli_alert_success("Loaded WP model from {model_path}")
+    return(readRDS(model_path))
   }
 
   # 2. Try pannamodels (the canonical distribution)

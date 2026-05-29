@@ -594,7 +594,7 @@ init_team_elos <- function(teams, initial_elo = 1500) {
 #' @return Named list with new_home_elo, new_away_elo
 #' @export
 update_elo <- function(home_elo, away_elo, home_goals, away_goals,
-                        k = 20, home_advantage = 65) {
+                        k = 20, home_advantage = 88) {
   stopifnot(length(home_goals) == 1, length(away_goals) == 1)
 
   # Expected scores
@@ -672,7 +672,7 @@ update_elo <- function(home_elo, away_elo, home_goals, away_goals,
 #'   - `final_elos`: named numeric vector of post-iteration team Elos,
 #'     for use with upcoming fixtures
 #' @export
-compute_match_elos <- function(results, k = 20, home_advantage = 65,
+compute_match_elos <- function(results, k = 20, home_advantage = 88,
                                 initial_elo = 1500,
                                 k_table = NULL,
                                 cross_conf_mult = 1.0,

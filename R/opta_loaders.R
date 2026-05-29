@@ -689,18 +689,37 @@ check_events_coverage <- function(league, season,
                                     source = c("remote", "local")) {
   source <- match.arg(source)
 
-  # Played fixtures (truth)
-  fx <- tryCatch(
+  # Narrow error catching: only swallow file-not-found / season-not-in-
+  # catalog conditions (= legitimate "source not local yet"). Re-raise
+  # corruption / DuckDB / network errors so the caller can distinguish
+  # silent "data not here" from "data here but broken". Pre-fix, any
+  # tryCatch error collapsed to n_events=0 which got reclassified by
+  # assert_events_coverage() as source_missing and skipped — masking
+  # corrupt-parquet failures as "no problem, lazy-load handles it."
+  is_missing_source_err <- function(e) {
+    msg <- conditionMessage(e)
+    grepl("No data found|not found|cannot find|does not exist|No such file",
+           msg, ignore.case = TRUE)
+  }
+
+  load_or_rethrow <- function(loader) {
+    tryCatch(loader(), error = function(e) {
+      if (is_missing_source_err(e)) {
+        return(data.frame(match_id = character(0)))
+      }
+      # Re-raise so the caller knows this is a REAL load failure, not
+      # just "file not local yet". assert_events_coverage() can classify
+      # it as load_error vs the legitimate source_missing pattern.
+      stop(e)
+    })
+  }
+
+  fx <- load_or_rethrow(function()
     load_opta_fixtures(league, season = season, status = "Played",
-                        source = source, columns = c("match_id")),
-    error = function(e) data.frame(match_id = character(0))
-  )
-  # Events (what EPV pipeline can see)
-  ev <- tryCatch(
+                        source = source, columns = c("match_id")))
+  ev <- load_or_rethrow(function()
     load_opta_match_events(league, season = season,
-                            source = source, columns = c("match_id")),
-    error = function(e) data.frame(match_id = character(0))
-  )
+                            source = source, columns = c("match_id")))
 
   played_ids <- unique(fx$match_id)
   event_ids  <- unique(ev$match_id)
