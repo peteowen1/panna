@@ -409,13 +409,22 @@ if (any(still_bad)) {
 # from opta_lineups.parquet (which always has team_ids) recovers ~99% coverage
 # and restores the xG join to ~86% (the remaining 14% are matches in comps
 # the xG model hasn't run on yet — legitimate NA, not a join failure).
-lineups_path <- "../pannadata/data/opta/opta_lineups.parquet"
+lineups_path <- file.path(opta_data_dir(), "opta_lineups.parquet")
 if (!"home_team_id" %in% names(results)) results$home_team_id <- NA_character_
 if (!"away_team_id" %in% names(results)) results$away_team_id <- NA_character_
 n_before_backfill <- sum(is.na(results$home_team_id) | is.na(results$away_team_id))
-if (n_before_backfill > 0L &&
-    file.exists(lineups_path) &&
-    requireNamespace("arrow", quietly = TRUE)) {
+# Hard-fail if backfill is needed but the file is missing — silent skip
+# previously hid the GHA path bug and produced NaN xG features downstream.
+if (n_before_backfill > 0L && !file.exists(lineups_path)) {
+  stop(sprintf(
+    "%d rows need team_id backfill but %s is missing. Without backfill, ",
+    n_before_backfill, lineups_path),
+    "compound match_id keys won't match opta_match_xg.parquet and the xG ",
+    "rolling features in step 03 collapse to NaN. ",
+    "On GHA: confirm opta_lineups.parquet is in predictions-pipeline.yml.",
+    call. = FALSE)
+}
+if (n_before_backfill > 0L && requireNamespace("arrow", quietly = TRUE)) {
   lu_all <- as.data.frame(arrow::read_parquet(
     lineups_path, col_select = c("match_id", "team_id", "team_position")))
   lu_dt <- data.table::as.data.table(lu_all)
@@ -448,7 +457,18 @@ if (n_before_backfill > 0L &&
 # step 03 collapse to a constant.
 results$home_xg <- NA_real_
 results$away_xg <- NA_real_
-mxg_path <- "../pannadata/data/opta/opta_match_xg.parquet"
+mxg_path <- file.path(opta_data_dir(), "opta_match_xg.parquet")
+if (!file.exists(mxg_path)) {
+  # Loud warning rather than hard-fail: this file isn't yet published to
+  # opta-latest (see TODO 2026-05-29). When it is, this warning will
+  # disappear and xG-rolling features will populate properly. Until then
+  # the step continues with NA xG, but operator gets a clear signal.
+  warning(sprintf(
+    "opta_match_xg.parquet missing at %s — xG-rolling features in step 03 will be all-NA. ",
+    mxg_path),
+    "Upload the file to opta-latest + add to predictions-pipeline.yml ",
+    "download list to fix.", call. = FALSE, immediate. = TRUE)
+}
 if (file.exists(mxg_path) && requireNamespace("arrow", quietly = TRUE)) {
   mxg <- as.data.frame(arrow::read_parquet(mxg_path))
   xg_lookup <- stats::setNames(mxg$xg, paste(mxg$match_id, mxg$team_id))
