@@ -34,11 +34,24 @@ devtools::load_all()   # WC2026_LEAGUE / WC2026_SEASON_LABEL from R/constants.R
 # 2. Load inputs ----
 
 preds_path  <- file.path(cache_dir, "07_predictions.rds")
-groups_path <- file.path(cache_dir, "wc2026_groups.rds")
-stopifnot(file.exists(preds_path), file.exists(groups_path))
+stopifnot(file.exists(preds_path))
 
-preds        <- as.data.table(readRDS(preds_path))
-groups       <- as.data.table(readRDS(groups_path))
+# WC group assignments — try the cache first (lets devs override locally for
+# what-if scenarios), then fall back to the package asset shipped at
+# inst/extdata/wc2026_groups.csv. The CSV is the source of truth (human-
+# editable, version-controlled); the legacy cache RDS is a dev convenience.
+groups_cache_rds <- file.path(cache_dir, "wc2026_groups.rds")
+groups_pkg_csv   <- system.file("extdata", "wc2026_groups.csv", package = "panna")
+groups <- if (file.exists(groups_cache_rds)) {
+  as.data.table(readRDS(groups_cache_rds))
+} else if (nzchar(groups_pkg_csv) && file.exists(groups_pkg_csv)) {
+  data.table::fread(groups_pkg_csv)
+} else {
+  stop("wc2026_groups not found: neither ", groups_cache_rds,
+       " nor inst/extdata/wc2026_groups.csv is available")
+}
+
+preds <- as.data.table(readRDS(preds_path))
 match_dataset <- readRDS(file.path(cache_dir, "04_match_dataset.rds"))
 goals_models  <- readRDS(file.path(cache_dir, "05_goals_model.rds"))
 outcome_model <- readRDS(file.path(cache_dir, "06_outcome_model.rds"))
