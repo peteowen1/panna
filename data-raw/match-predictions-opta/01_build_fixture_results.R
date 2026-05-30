@@ -142,14 +142,28 @@ if (length(missing_leagues) > 0) {
           filter(event_type == "goal") %>%
           count(match_id, team_id, name = "goals")
 
+        # "Match had events scraped" = match_id appears in `events` at all
+        # (any event_type). For these match_ids, NA goal_counts after the
+        # left_join below means "team scored 0", not "team's goals unknown".
+        # WITHOUT this, a 1-0 win produces home_goals_ev=1 and away_goals_ev=NA
+        # (the losing team has no goal events), score_source stays NA, the
+        # whole match drops at the no_score filter. pannadata#49 root cause:
+        # Arsenal had 5 EPL wins-to-nil with NA away_goals_ev → dropped from
+        # results → Arsenal stuck at 33 GP instead of 38.
+        events_scraped_mids <- unique(events$match_id)
+
         home_goals_ev <- match_info %>%
           select(match_id, home_team_id) %>%
           left_join(goal_counts, by = c("match_id", "home_team_id" = "team_id")) %>%
+          mutate(goals = ifelse(match_id %in% events_scraped_mids & is.na(goals),
+                                 0L, goals)) %>%
           select(match_id, home_goals_ev = goals)
 
         away_goals_ev <- match_info %>%
           select(match_id, away_team_id) %>%
           left_join(goal_counts, by = c("match_id", "away_team_id" = "team_id")) %>%
+          mutate(goals = ifelse(match_id %in% events_scraped_mids & is.na(goals),
+                                 0L, goals)) %>%
           select(match_id, away_goals_ev = goals)
 
         match_results <- match_info %>%
