@@ -4,6 +4,21 @@
 # Loads lineups and events to construct match results with goals and xG.
 # Also loads fixture data for upcoming matches. Reuses cached RAPM pipeline
 # data when available.
+#
+# Section index (panna#75 stale-status / dup reconciliation chain):
+#   §5     played-load via RAPM cache + direct-load (events fallback)
+#   §5b    fixture-source score override for played rows
+#   §5c    reconcile match_status: past-date + scores + (Fixture | NA) → Played
+#   §7     fixture-load via opta_fixtures (status IN Fixture/Postponed/Awarded)
+#          PLUS promote: past + scores + Fixture → Played (catches Opta lag)
+#   §7b    drop stuck rows: past + non-Played + no scores
+#          (panna#75 — these are matches Opta never resolved either way)
+#   §8a    final combined-set status reconcile: past + scores + non-Played → Played
+#          (safety net for direct-loaded rows with NA match_status)
+#   §8b    dedup by match_id, prefer Played > Awarded/Postponed > Fixture
+#          (panna#75 — §5 and §7 both load the same match if it's
+#          stale-Fixture; this collapses the redundancy)
+# Layers are non-overlapping and each catches a distinct survivor.
 
 # 1. Setup ----
 
@@ -588,6 +603,8 @@ for (league in leagues) {
         !is.na(fx_dates) & fx_dates < Sys.Date()
 
       promote <- is_awarded | is_stale_fixture
+      n_awarded <- sum(is_awarded, na.rm = TRUE)
+      n_stale_promoted <- sum(is_stale_fixture, na.rm = TRUE)
       if (any(promote)) {
         fixtures$home_goals[promote] <- as.integer(fixtures$home_score[promote])
         fixtures$away_goals[promote] <- as.integer(fixtures$away_score[promote])
@@ -597,15 +614,13 @@ for (league in leagues) {
                                     ifelse(hg == ag, "D", "A"))
         fixtures$match_status[promote] <- "Played"
       }
-      is_awarded <- is_awarded & promote  # for the message below
 
       fixtures$is_neutral_venue <- as.integer(league %in% TOURNAMENT_LEAGUES)
       all_fixtures[[league]] <- fixtures
       n_fix <- sum(fixtures$match_status == "Fixture")
       n_ppd <- sum(fixtures$match_status == "Postponed")
-      n_awd <- sum(is_awarded)
-      message(sprintf("  %s %s: %d Fixture + %d Postponed + %d Awarded(->Played)",
-                      league, current_season, n_fix, n_ppd, n_awd))
+      message(sprintf("  %s %s: %d Fixture + %d Postponed + %d Awarded(->Played) + %d stale-Fixture-with-scores(->Played)",
+                      league, current_season, n_fix, n_ppd, n_awarded, n_stale_promoted))
     }
   }, error = function(e) {
     message(sprintf("  No fixtures for %s: %s", league, e$message))
@@ -805,7 +820,6 @@ dt <- dt[, .SD[1L], by = match_id]
 n_dropped <- n_before_dedup - nrow(dt)
 dt[, .panna_dup_priority := NULL]
 if (n_dropped > 0L) {
-  by_lg <- dt[, list()]  # placeholder
   message(sprintf("  Deduped fixture_results: dropped %d duplicate-match_id rows (kept Played/Awarded copies). panna#75 root cause: stale match_status='Fixture' in opta_fixtures.parquet caused §5 + §7 to both pick up the same past-dated match.",
                   n_dropped))
 }

@@ -152,11 +152,17 @@ if (is.data.frame(seasonal_data)) {
                           .SDcols = c("epr", "epr_offensive", "epr_defensive")]
   ratings <- merge(ratings, as.data.frame(epr_seasonal),
                     by = c("player_id", "season_end_year"), all.x = TRUE)
+  # TODO(panna#74): NA→0 imputation here violates the no-silent-imputation
+  # rule but preserves downstream aggregate_lineup_ratings behaviour for
+  # this PR. Proper fix is a meaningful per-tier prior (or just letting NA
+  # propagate if the aggregator handles it). Surface count loudly for now
+  # so the imputation is visible.
+  n_na_epr <- sum(is.na(ratings$epr))
   for (c in c("epr", "epr_offensive", "epr_defensive")) {
     ratings[[c]][is.na(ratings[[c]])] <- 0
   }
-  message(sprintf("  Merged EPR for %d player-seasons",
-                  sum(ratings$epr != 0)))
+  message(sprintf("  Merged EPR for %d player-seasons (%d had NA → imputed to 0; see panna#74)",
+                  sum(ratings$epr != 0), n_na_epr))
 
   # Merge centrality scores if available
   centrality_path <- file.path("data-raw", "cache-opta", "07b_centrality.rds")
