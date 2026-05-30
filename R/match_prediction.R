@@ -797,15 +797,17 @@ compute_match_elos <- function(results, k = 20, home_advantage = 88,
   # the iteration silently treats them as two distinct teams each starting
   # at initial_elo. Surface very-low-match teams as a soft warning.
   #
-  # Threshold tuning (was <10L, observed 2026-05-29 audit fired on ~215
-  # legitimate UCL/UEL/UECL qualifying-round clubs that are eliminated in
-  # rounds 1-3 and play 2-8 total matches in our entire dataset — pure
-  # noise). Genuine renames manifest as 1-3 appearances for what should be
-  # a full-season team, so a <3L threshold catches the real signal without
-  # the noise floor from minor-confederation qualifying clubs. The
-  # team_id-based collision detection in 01_build_fixture_results.R (lines
-  # 583+) is the authoritative source for confirmed renames; this is just
-  # a secondary smoke test downstream of that fix.
+  # Threshold tuned to <3L from the prior <10L: at <10L the warning fired
+  # on ~215 legitimate UCL/UEL/UECL qualifying-round clubs eliminated in
+  # rounds 1-3 (pure noise — 2-8 matches in the entire dataset window is
+  # their physical max). At <3L the noise floor is intl qualifying one-offs
+  # + small national teams (Cayman Islands, Aruba) only. Audited 2026-05-29
+  # via debug/keep/split_identity_audit.R: zero domestic-league teams trigger
+  # the warning; the team_id canonicalization block in
+  # 01_build_fixture_results.R ("Normalize fixture team names to the variant
+  # Opta uses in its lineup feed") shows zero team_ids with multiple name
+  # variants. The smoke test here is a secondary check; the 01 normalization
+  # is the real defense.
   match_counts <- sort(table(c(results$home_team[!is.na(results$home_team)],
                                 results$away_team[!is.na(results$away_team)])))
   low_match_teams <- names(match_counts)[match_counts < 3L]

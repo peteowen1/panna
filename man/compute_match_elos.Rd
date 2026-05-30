@@ -7,7 +7,7 @@
 compute_match_elos(
   results,
   k = 20,
-  home_advantage = 65,
+  home_advantage = 88,
   initial_elo = 1500,
   k_table = NULL,
   cross_conf_mult = 1,

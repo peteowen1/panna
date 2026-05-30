@@ -10,7 +10,7 @@ update_elo(
   home_goals,
   away_goals,
   k = 20,
-  home_advantage = 65
+  home_advantage = 88
 )
 }
 \arguments{

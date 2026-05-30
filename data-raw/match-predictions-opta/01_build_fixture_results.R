@@ -4,6 +4,21 @@
 # Loads lineups and events to construct match results with goals and xG.
 # Also loads fixture data for upcoming matches. Reuses cached RAPM pipeline
 # data when available.
+#
+# Section index (panna#75 stale-status / dup reconciliation chain):
+#   §5     played-load via RAPM cache + direct-load (events fallback)
+#   §5b    fixture-source score override for played rows
+#   §5c    reconcile match_status: past-date + scores + (Fixture | NA) → Played
+#   §7     fixture-load via opta_fixtures (status IN Fixture/Postponed/Awarded)
+#          PLUS promote: past + scores + Fixture → Played (catches Opta lag)
+#   §7b    drop stuck rows: past + non-Played + no scores
+#          (panna#75 — these are matches Opta never resolved either way)
+#   §8a    final combined-set status reconcile: past + scores + non-Played → Played
+#          (safety net for direct-loaded rows with NA match_status)
+#   §8b    dedup by match_id, prefer Played > Awarded/Postponed > Fixture
+#          (panna#75 — §5 and §7 both load the same match if it's
+#          stale-Fixture; this collapses the redundancy)
+# Layers are non-overlapping and each catches a distinct survivor.
 
 # 1. Setup ----
 
@@ -142,14 +157,28 @@ if (length(missing_leagues) > 0) {
           filter(event_type == "goal") %>%
           count(match_id, team_id, name = "goals")
 
+        # "Match had events scraped" = match_id appears in `events` at all
+        # (any event_type). For these match_ids, NA goal_counts after the
+        # left_join below means "team scored 0", not "team's goals unknown".
+        # WITHOUT this, a 1-0 win produces home_goals_ev=1 and away_goals_ev=NA
+        # (the losing team has no goal events), score_source stays NA, the
+        # whole match drops at the no_score filter. pannadata#49 root cause:
+        # Arsenal had 5 EPL wins-to-nil with NA away_goals_ev → dropped from
+        # results → Arsenal stuck at 33 GP instead of 38.
+        events_scraped_mids <- unique(events$match_id)
+
         home_goals_ev <- match_info %>%
           select(match_id, home_team_id) %>%
           left_join(goal_counts, by = c("match_id", "home_team_id" = "team_id")) %>%
+          mutate(goals = ifelse(match_id %in% events_scraped_mids & is.na(goals),
+                                 0L, goals)) %>%
           select(match_id, home_goals_ev = goals)
 
         away_goals_ev <- match_info %>%
           select(match_id, away_team_id) %>%
           left_join(goal_counts, by = c("match_id", "away_team_id" = "team_id")) %>%
+          mutate(goals = ifelse(match_id %in% events_scraped_mids & is.na(goals),
+                                 0L, goals)) %>%
           select(match_id, away_goals_ev = goals)
 
         match_results <- match_info %>%
@@ -356,6 +385,38 @@ if (any(missing_team)) {
   results <- results[!missing_team, , drop = FALSE]
 }
 
+# 5c. Reconcile stale match_status from match_date + scores -----------------
+#
+# Upstream `opta_fixtures.parquet` carries stale `match_status` = "Fixture"
+# for many past-dated matches even after the actual scores have landed
+# (2026-05-29 audit: 1,750 such rows across all comps, 272 in EPL alone).
+# Confirmed root cause of panna#75: Arsenal showing 34 GP after EPL force-
+# rescrape because past-dated PL matches stayed status='Fixture' → step 07's
+# `status` column propagates that → simulator counts only status='played'
+# → understates per-team GP.
+#
+# Re-derive: a match is "Played" if match_date < today AND we have both
+# home and away scores. Everything else stays as upstream said.
+# This catches the stale-status case without changing the meaning of
+# legitimately-future fixtures or genuinely-missing-score matches.
+today_utc <- Sys.Date()
+md_parsed <- suppressWarnings(as.Date(substr(results$match_date, 1, 10)))
+has_scores <- !is.na(results$home_goals) & !is.na(results$away_goals)
+stale_fixture <- !is.na(md_parsed) & md_parsed < today_utc &
+                  has_scores &
+                  (is.na(results$match_status) | results$match_status != "Played")
+n_stale <- sum(stale_fixture, na.rm = TRUE)
+if (n_stale > 0L) {
+  message(sprintf(
+    "  Reconciled match_status: %d Fixture rows had past dates with scores -> Played (panna#75 stale-status fix)",
+    n_stale))
+  by_league <- table(results$league[stale_fixture])
+  for (lg in names(by_league)) {
+    message(sprintf("    %s: %d", lg, by_league[lg]))
+  }
+  results$match_status[stale_fixture] <- "Played"
+}
+
 # 6. Ensure Required Columns ----
 #
 # season_end_year MUST be populated for every row — the ratings join
@@ -393,34 +454,38 @@ if (any(still_bad)) {
 
 # 6b. Backfill missing home/away team_ids from opta_lineups.parquet ----
 #
-# The RAPM cache (01_raw_data.rds) provides historical matches with NA
-# home_team_id / away_team_id columns — when it was built, team_ids weren't
-# preserved. With cached matches making up most of the dataset, ~99% of
-# `results` rows have NA team_ids. Downstream:
-#   - the xG join (next block) is keyed by (match_id, team_id) so it
-#     misses every cache-loaded match → 0% join rate session-wide
-#   - rolling xG features in step 03 become all-NA → step 04 NA-fill (now
-#     narrowed) propagates NaN → the model trains on NaN xG for every
-#     match historically
-# Backfill from opta_lineups.parquet, which has team_ids for every match
-# we have a lineup for. This recovers ~99% coverage and lifts the xG join
-# from 0% to ~86% (the remaining 14% are matches in competitions the xG
-# model hasn't been run on yet — genuine NA, not a join failure).
-lineups_path <- "../pannadata/data/opta/opta_lineups.parquet"
 # RAPM cache (cache-opta/01_raw_data.rds) explicitly drops home_team_id +
-# away_team_id at save time (see data-raw/player-ratings-opta/01_load_opta_
-# data.R line 397). When step 01 here reads that cache, the columns are
-# ABSENT — not NA. is.na(NULL) returns logical(0), sum() of which is 0,
-# so the backfill loop was silently skipped, leaving the xG join key as
-# `paste(match_id, NULL)` = bare match_id → 0% join rate against
-# `paste(match_id, team_id)` keys in opta_match_xg.parquet. Initialize the
-# columns to NA when absent so the backfill loop actually runs.
+# away_team_id columns at save time — the upstream `01_load_opta_data.R`
+# in the player-ratings-opta pipeline uses `select(-home_team_id, -away_team_id)`
+# before writing the cache. When step 01 here reads it, the columns are
+# ABSENT (not NA). Two latent bugs flow from that:
+#   1. `is.na(NULL)` returns `logical(0)`, sum=0 → the backfill block below
+#      gets silently skipped, leaving team_ids missing entirely.
+#   2. The xG join further down keys by paste(match_id, team_id); with the
+#      team_ids missing, `paste(match_id, NULL)` drops the NULL and produces
+#      bare match_ids that don't match the compound keys in opta_match_xg.parquet
+#      → 0% join rate session-wide → step 03 rolling xG features all-NA →
+#      step 04 NA-fill propagates NaN → the model trains on NaN xG history.
+# Fix: init columns to NA if absent so the backfill loop sees them. Backfill
+# from opta_lineups.parquet (which always has team_ids) recovers ~99% coverage
+# and restores the xG join to ~86% (the remaining 14% are matches in comps
+# the xG model hasn't run on yet — legitimate NA, not a join failure).
+lineups_path <- file.path(opta_data_dir(), "opta_lineups.parquet")
 if (!"home_team_id" %in% names(results)) results$home_team_id <- NA_character_
 if (!"away_team_id" %in% names(results)) results$away_team_id <- NA_character_
 n_before_backfill <- sum(is.na(results$home_team_id) | is.na(results$away_team_id))
-if (n_before_backfill > 0L &&
-    file.exists(lineups_path) &&
-    requireNamespace("arrow", quietly = TRUE)) {
+# Hard-fail if backfill is needed but the file is missing — silent skip
+# previously hid the GHA path bug and produced NaN xG features downstream.
+if (n_before_backfill > 0L && !file.exists(lineups_path)) {
+  stop(sprintf(
+    "%d rows need team_id backfill but %s is missing. Without backfill, ",
+    n_before_backfill, lineups_path),
+    "compound match_id keys won't match opta_match_xg.parquet and the xG ",
+    "rolling features in step 03 collapse to NaN. ",
+    "On GHA: confirm opta_lineups.parquet is in predictions-pipeline.yml.",
+    call. = FALSE)
+}
+if (n_before_backfill > 0L && requireNamespace("arrow", quietly = TRUE)) {
   lu_all <- as.data.frame(arrow::read_parquet(
     lineups_path, col_select = c("match_id", "team_id", "team_position")))
   lu_dt <- data.table::as.data.table(lu_all)
@@ -453,7 +518,18 @@ if (n_before_backfill > 0L &&
 # step 03 collapse to a constant.
 results$home_xg <- NA_real_
 results$away_xg <- NA_real_
-mxg_path <- "../pannadata/data/opta/opta_match_xg.parquet"
+mxg_path <- file.path(opta_data_dir(), "opta_match_xg.parquet")
+if (!file.exists(mxg_path)) {
+  # Loud warning rather than hard-fail: this file isn't yet published to
+  # opta-latest (see TODO 2026-05-29). When it is, this warning will
+  # disappear and xG-rolling features will populate properly. Until then
+  # the step continues with NA xG, but operator gets a clear signal.
+  warning(sprintf(
+    "opta_match_xg.parquet missing at %s — xG-rolling features in step 03 will be all-NA. ",
+    mxg_path),
+    "Upload the file to opta-latest + add to predictions-pipeline.yml ",
+    "download list to fix.", call. = FALSE, immediate. = TRUE)
+}
 if (file.exists(mxg_path) && requireNamespace("arrow", quietly = TRUE)) {
   mxg <- as.data.frame(arrow::read_parquet(mxg_path))
   xg_lookup <- stats::setNames(mxg$xg, paste(mxg$match_id, mxg$team_id))
@@ -513,23 +589,38 @@ for (league in leagues) {
       # through as an upcoming fixture.
       is_awarded <- fixtures$match_status == "Awarded" &
         !is.na(fixtures$home_score) & !is.na(fixtures$away_score)
-      if (any(is_awarded)) {
-        fixtures$home_goals[is_awarded] <- as.integer(fixtures$home_score[is_awarded])
-        fixtures$away_goals[is_awarded] <- as.integer(fixtures$away_score[is_awarded])
-        hg <- fixtures$home_goals[is_awarded]
-        ag <- fixtures$away_goals[is_awarded]
-        fixtures$result[is_awarded] <- ifelse(hg > ag, "H",
-                                       ifelse(hg == ag, "D", "A"))
-        fixtures$match_status[is_awarded] <- "Played"
+
+      # Same promotion path for "Fixture" status with scores AND past date.
+      # Opta sometimes lands the score after the match but never flips
+      # match_status from Fixture → Played (panna#75 last straggler: a single
+      # ENG row that survived §5c + §7b + §8a because home_score was populated
+      # on opta_fixtures even though match_status stayed Fixture). Treat such
+      # rows as Played at load time so home_goals/away_goals get populated and
+      # downstream stays consistent.
+      fx_dates <- suppressWarnings(as.Date(substr(fixtures$match_date, 1, 10)))
+      is_stale_fixture <- fixtures$match_status == "Fixture" &
+        !is.na(fixtures$home_score) & !is.na(fixtures$away_score) &
+        !is.na(fx_dates) & fx_dates < Sys.Date()
+
+      promote <- is_awarded | is_stale_fixture
+      n_awarded <- sum(is_awarded, na.rm = TRUE)
+      n_stale_promoted <- sum(is_stale_fixture, na.rm = TRUE)
+      if (any(promote)) {
+        fixtures$home_goals[promote] <- as.integer(fixtures$home_score[promote])
+        fixtures$away_goals[promote] <- as.integer(fixtures$away_score[promote])
+        hg <- fixtures$home_goals[promote]
+        ag <- fixtures$away_goals[promote]
+        fixtures$result[promote] <- ifelse(hg > ag, "H",
+                                    ifelse(hg == ag, "D", "A"))
+        fixtures$match_status[promote] <- "Played"
       }
 
       fixtures$is_neutral_venue <- as.integer(league %in% TOURNAMENT_LEAGUES)
       all_fixtures[[league]] <- fixtures
       n_fix <- sum(fixtures$match_status == "Fixture")
       n_ppd <- sum(fixtures$match_status == "Postponed")
-      n_awd <- sum(is_awarded)
-      message(sprintf("  %s %s: %d Fixture + %d Postponed + %d Awarded(->Played)",
-                      league, current_season, n_fix, n_ppd, n_awd))
+      message(sprintf("  %s %s: %d Fixture + %d Postponed + %d Awarded(->Played) + %d stale-Fixture-with-scores(->Played)",
+                      league, current_season, n_fix, n_ppd, n_awarded, n_stale_promoted))
     }
   }, error = function(e) {
     message(sprintf("  No fixtures for %s: %s", league, e$message))
@@ -537,6 +628,50 @@ for (league in leagues) {
 }
 
 fixtures_df <- if (length(all_fixtures) > 0) bind_rows(all_fixtures) else NULL
+
+# 7b. Drop past-dated stale-status fixtures ----------------------------------
+#
+# opta_fixtures.parquet's match_status='Fixture' lags reality: many matches
+# whose actual date has passed (and have no scores in the fixtures endpoint)
+# still carry status=Fixture. §7 above loads ALL Fixture-status rows; this
+# block drops the ones whose match_date is already in the past AND that have
+# no scores. They're stuck-status records — neither played nor upcoming.
+# Without this drop, they propagate as `status='fixture'` rows in
+# match_predictions.parquet and the simulator counts the underlying matches
+# as "remaining to play" (Arsenal/Fulham 34 GP symptom). Audited 2026-05-29:
+# this dropped 181 rows after §5c reconciled the playable ones to "Played".
+if (!is.null(fixtures_df) && nrow(fixtures_df) > 0L) {
+  fx_dates <- suppressWarnings(as.Date(substr(fixtures_df$match_date, 1, 10)))
+  fx_has_score <- if ("home_score" %in% names(fixtures_df) &&
+                       "away_score" %in% names(fixtures_df)) {
+    !is.na(fixtures_df$home_score) & !is.na(fixtures_df$away_score)
+  } else {
+    FALSE
+  }
+  # Any non-Played status with past date + no scores is "stuck":
+  #   "Fixture"   — Opta forgot to update status
+  #   "Postponed" — match was postponed but never rescheduled in our data
+  #                 (e.g., panna#75 last straggler: Man City vs Crystal Palace
+  #                 EPL 2026-05-22 marked Postponed indefinitely with no
+  #                 reschedule date, scores never landed)
+  #   "Awarded"   — handled above by promotion path with scores; the no-score
+  #                 case here is some odd edge state
+  # Either way, including these in the fixtures pool poisons the simulator:
+  # the match won't actually be played, but the projector treats it as
+  # remaining-games-to-simulate.
+  stuck <- !is.na(fx_dates) & fx_dates < Sys.Date() &
+           fixtures_df$match_status != "Played" & !fx_has_score
+  n_stuck <- sum(stuck, na.rm = TRUE)
+  if (n_stuck > 0L) {
+    by_lg <- table(fixtures_df$league[stuck])
+    message(sprintf("  Dropped %d stuck-Fixture rows (past date + no scores; panna#75 step 01 §7b):",
+                    n_stuck))
+    for (lg in names(by_lg)) {
+      message(sprintf("    %s: %d", lg, by_lg[lg]))
+    }
+    fixtures_df <- fixtures_df[!stuck, , drop = FALSE]
+  }
+}
 
 # 8. Combine ----
 
@@ -635,6 +770,60 @@ if (!is.null(fixtures_df)) {
   fixture_results <- results_clean
 }
 
+fixture_results <- fixture_results[order(fixture_results$match_date), ]
+
+# 8a. Final status reconciliation across COMBINED set ----
+#
+# §5c reconciles match_status on the played-load `results` only. Some past-
+# dated matches with scores arrive via §7's fixture-load (opta_fixtures has
+# stale match_status='Fixture' on them) and never pass through §5c. Catch
+# them here on the merged fixture_results: same rule (past date + scores ⇒
+# "Played"), applies to every row regardless of which path loaded it.
+# Audited 2026-05-29: 1 EPL row was slipping through with just §5c after
+# §7b dropped the no-scores ones.
+md_combined <- suppressWarnings(as.Date(substr(fixture_results$match_date, 1, 10)))
+has_scores_combined <- !is.na(fixture_results$home_goals) &
+                       !is.na(fixture_results$away_goals)
+stale_combined <- !is.na(md_combined) & md_combined < Sys.Date() &
+                  has_scores_combined &
+                  fixture_results$match_status != "Played"
+n_stale_combined <- sum(stale_combined, na.rm = TRUE)
+if (n_stale_combined > 0L) {
+  message(sprintf("  Final status reconcile: %d combined-set rows had past dates with scores -> Played",
+                  n_stale_combined))
+  fixture_results$match_status[stale_combined] <- "Played"
+}
+
+# 8b. Dedup match_id ----
+#
+# §5 + §7 are independent loads (played-side from RAPM-cache+direct, fixture-
+# side from opta_fixtures.parquet `status IN (Fixture, Postponed, Awarded)`).
+# A past-dated match can land in BOTH paths when opta_fixtures.parquet
+# carries stale `match_status='Fixture'` (1,750 such rows audited 2026-05-29
+# in current opta_fixtures.parquet, 272 in EPL alone): the played-load picks
+# it up via lineups, §5c reconciles its status to "Played"; meanwhile §7's
+# load_opta_fixtures(status="Fixture") ALSO returns it (the underlying file
+# still says Fixture). The §8 bind_rows then gives one row per source.
+# Downstream step 04's left_join multiplies the 2x → 16x copies in
+# match_predictions.parquet (panna#75 in published output).
+#
+# Resolve by keeping the PLAYED copy of any dup — it has real scores and
+# the model needs actual results, not the stale-Fixture placeholder.
+dt <- data.table::as.data.table(fixture_results)
+dt[, .panna_dup_priority := data.table::fcase(
+  match_status == "Played",                  1L,
+  match_status %in% c("Awarded","Postponed"), 2L,
+  default                                  = 3L)]
+data.table::setorder(dt, match_id, .panna_dup_priority, match_date)
+n_before_dedup <- nrow(dt)
+dt <- dt[, .SD[1L], by = match_id]
+n_dropped <- n_before_dedup - nrow(dt)
+dt[, .panna_dup_priority := NULL]
+if (n_dropped > 0L) {
+  message(sprintf("  Deduped fixture_results: dropped %d duplicate-match_id rows (kept Played/Awarded copies). panna#75 root cause: stale match_status='Fixture' in opta_fixtures.parquet caused §5 + §7 to both pick up the same past-dated match.",
+                  n_dropped))
+}
+fixture_results <- as.data.frame(dt)
 fixture_results <- fixture_results[order(fixture_results$match_date), ]
 
 # 9. Save ----

@@ -53,14 +53,48 @@ if (!is.null(team_skill_features)) {
 
 # 5. Join All Features ----
 
+# panna#75 root cause: GHA-only dup bug in published match_predictions.parquet
+# (max 16 copies per match_id with varying predictions). Local caches all
+# 0-dup; reproduced only in workflow runs against fresh opta-latest data.
+# Each left_join is supposed to be 1:1 by match_id — if any input has dup
+# match_id keys, the join multiplies and propagates 16× copies downstream.
+#
+# Step 1: explicit pre-join duplicate detection that NAMES the offender.
+# Step 2: `relationship = "one-to-one"` belt-and-braces in case the check
+# above missed something.
+.assert_unique_match_id <- function(df, label) {
+  df_dt <- data.table::as.data.table(df)
+  if (!"match_id" %in% names(df_dt)) {
+    stop(sprintf("%s missing match_id column entirely", label), call. = FALSE)
+  }
+  dup_counts <- df_dt[, .N, by = match_id][N > 1L]
+  if (nrow(dup_counts) > 0L) {
+    worst <- dup_counts[order(-N)][1:min(5L, nrow(dup_counts))]
+    stop(sprintf(
+      "%s has %d duplicated match_id keys (max %d copies). Step 04's left_join requires 1:1 cardinality. Top offenders:\n%s",
+      label, nrow(dup_counts), max(dup_counts$N),
+      paste(sprintf("  %s: %d copies", worst$match_id, worst$N),
+            collapse = "\n")
+    ), call. = FALSE)
+  }
+  invisible(NULL)
+}
+.assert_unique_match_id(fixture_results,   "fixture_results (step 01)")
+.assert_unique_match_id(team_ratings,      "team_ratings (step 02)")
+.assert_unique_match_id(rolling_features,  "rolling_features (step 03)")
+if (!is.null(team_skill_features)) {
+  .assert_unique_match_id(team_skill_features,
+                           "team_skill_features (step 02b)")
+}
+
 dataset <- fixture_results %>%
-  left_join(team_ratings, by = "match_id") %>%
-  left_join(rolling_features, by = "match_id")
+  left_join(team_ratings, by = "match_id", relationship = "one-to-one") %>%
+  left_join(rolling_features, by = "match_id", relationship = "one-to-one")
 
 # Merge team skill features if available
 if (!is.null(team_skill_features) && nrow(team_skill_features) > 0) {
   dataset <- dataset %>%
-    left_join(team_skill_features, by = "match_id")
+    left_join(team_skill_features, by = "match_id", relationship = "one-to-one")
   message(sprintf("  Merged team skill features (%d new columns)",
                   ncol(team_skill_features) - 1))
 }

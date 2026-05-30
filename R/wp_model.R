@@ -363,24 +363,37 @@ predict_wp <- function(wp_model, wp_features) {
 #' WPA is centered per-match (\code{wpa - mean(wpa, na.rm=TRUE)} by
 #' \code{match_id}) to remove model-calibration bias.
 #'
-#' @param wp_features SPADL features with WP model features
-#'   (\code{match_id}, \code{team_id}, \code{is_home}, plus the
-#'   feature columns the model was trained on). Must include
-#'   \code{wp_label} for the last-action fallback.
+#' @param wp_features SPADL features with WP model features. MUST contain:
+#'   \itemize{
+#'     \item \code{match_id} — match identifier for centering + shift bounds
+#'     \item \code{team_id} — acting team (load-bearing for the WPA POV pivot
+#'       on \code{team_id_next})
+#'     \item \code{is_home} — POV indicator (currently unused but reserved)
+#'     \item \code{wp_label} — last-action fallback target
+#'     \item plus the feature columns the model was trained on
+#'   }
+#'   Missing \code{team_id} silently produces wrong WPA via the
+#'   case_when on \code{team_id_next == team_id} — see WPA scale regression
+#'   retro at \code{CLAUDE_TODO_WPA_SCALE_REGRESSION.md}.
 #' @param wp_model Trained WP model from \code{\link{train_wp_model}}.
-#'   Predictions are clamped to [0, 1] by \code{\link{predict_wp}}.
+#'   Predictions are clamped to \code{[0, 1]} by \code{\link{predict_wp}}.
 #'
 #' @return The input data.table with added \code{wp} (possession-POV
 #'   probability) and \code{wpa} (acting-team-POV delta) columns.
 #'
 #' @export
 add_wp_vars <- function(wp_features, wp_model) {
+  required <- c("match_id", "team_id", "is_home", "wp_label")
+  missing <- setdiff(required, names(wp_features))
+  if (length(missing) > 0L) {
+    stop(sprintf("add_wp_vars: wp_features missing required column(s): %s",
+                 paste(missing, collapse = ", ")), call. = FALSE)
+  }
   dt <- data.table::as.data.table(wp_features)
 
-  # The WP model (retrained 2026-05-19, commit b20b6b3) predicts
-  # P(possession team wins) — so `wp` at event t is always from the
-  # acting team's POV. WPA = how the acting-team-at-t's win probability
-  # changed by the next event.
+  # The WP model predicts P(possession team wins) — so `wp` at event t
+  # is always from the acting team's POV. WPA = how the acting-team-at-t's
+  # win probability changed by the next event.
   #
   # Two cases:
   #   (a) Same team still in possession at t+1 -> `wp_next` is from the

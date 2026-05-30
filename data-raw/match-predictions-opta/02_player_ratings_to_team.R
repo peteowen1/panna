@@ -111,34 +111,58 @@ if (is.data.frame(seasonal_data)) {
     }
   }
 
-  # Merge EPR/EPR_offensive/EPR_defensive from weekly snapshots if available.
+  # Merge EPR/EPR_offensive/EPR_defensive from weekly snapshots.
   # We take the LATEST snapshot whose snapshot_date falls within (or just
   # before) each season_end_year (June 30 of that season). This treats EPR
   # as a season-level rating for the prediction model — same staleness
   # contract as PSR.
-  epr_path <- "../pannadata/data/opta/opta_epr_weekly.parquet"
-  if (file.exists(epr_path) && requireNamespace("arrow", quietly = TRUE)) {
-    epr_w <- as.data.frame(arrow::read_parquet(epr_path))
-    epr_w$snapshot_date <- as.Date(epr_w$snapshot_date)
-    epr_w$snapshot_season_end_year <- ifelse(
-      as.integer(format(epr_w$snapshot_date, "%m")) >= 7L,
-      as.integer(format(epr_w$snapshot_date, "%Y")) + 1L,
-      as.integer(format(epr_w$snapshot_date, "%Y"))
-    )
-    # Latest snapshot per (player_id, season)
-    epr_dt <- data.table::as.data.table(epr_w)
-    data.table::setorder(epr_dt, player_id, snapshot_season_end_year, -snapshot_date)
-    epr_seasonal <- epr_dt[, .SD[1L],
-                            by = .(player_id, season_end_year = snapshot_season_end_year),
-                            .SDcols = c("epr", "epr_offensive", "epr_defensive")]
-    ratings <- merge(ratings, as.data.frame(epr_seasonal),
-                      by = c("player_id", "season_end_year"), all.x = TRUE)
-    for (c in c("epr", "epr_offensive", "epr_defensive")) {
-      ratings[[c]][is.na(ratings[[c]])] <- 0
-    }
-    message(sprintf("  Merged EPR for %d player-seasons",
-                    sum(ratings$epr != 0)))
+  #
+  # Path resolution via opta_data_dir() — works locally (resolves to
+  # ../pannadata/data/opta) AND on GHA (resolves to PANNADATA_DIR/opta).
+  # Previous hardcoded "../pannadata/data/opta/..." silently returned FALSE
+  # on GHA where pannadata is staged at $RUNNER_TEMP/pannadata/opta without
+  # the "data/" segment, so the EPR merge was skipped and downstream
+  # wc2026_team_strength.parquet shipped with epr=NA for all 48 WC teams.
+  # 2026-05-29 incident.
+  epr_path <- file.path(opta_data_dir(), "opta_epr_weekly.parquet")
+  if (!file.exists(epr_path)) {
+    stop(sprintf(
+      "EPR weekly snapshots not found at %s — required for fixture-side EPR. ",
+      epr_path),
+      "On GHA: add opta_epr_weekly.parquet to the predictions-pipeline.yml ",
+      "download list. Locally: run the EPR weekly pipeline first.",
+      call. = FALSE)
   }
+  if (!requireNamespace("arrow", quietly = TRUE)) {
+    stop("arrow package not available — required to read opta_epr_weekly.parquet",
+         call. = FALSE)
+  }
+  epr_w <- as.data.frame(arrow::read_parquet(epr_path))
+  epr_w$snapshot_date <- as.Date(epr_w$snapshot_date)
+  epr_w$snapshot_season_end_year <- ifelse(
+    as.integer(format(epr_w$snapshot_date, "%m")) >= 7L,
+    as.integer(format(epr_w$snapshot_date, "%Y")) + 1L,
+    as.integer(format(epr_w$snapshot_date, "%Y"))
+  )
+  # Latest snapshot per (player_id, season)
+  epr_dt <- data.table::as.data.table(epr_w)
+  data.table::setorder(epr_dt, player_id, snapshot_season_end_year, -snapshot_date)
+  epr_seasonal <- epr_dt[, .SD[1L],
+                          by = .(player_id, season_end_year = snapshot_season_end_year),
+                          .SDcols = c("epr", "epr_offensive", "epr_defensive")]
+  ratings <- merge(ratings, as.data.frame(epr_seasonal),
+                    by = c("player_id", "season_end_year"), all.x = TRUE)
+  # TODO(panna#74): NA→0 imputation here violates the no-silent-imputation
+  # rule but preserves downstream aggregate_lineup_ratings behaviour for
+  # this PR. Proper fix is a meaningful per-tier prior (or just letting NA
+  # propagate if the aggregator handles it). Surface count loudly for now
+  # so the imputation is visible.
+  n_na_epr <- sum(is.na(ratings$epr))
+  for (c in c("epr", "epr_offensive", "epr_defensive")) {
+    ratings[[c]][is.na(ratings[[c]])] <- 0
+  }
+  message(sprintf("  Merged EPR for %d player-seasons (%d had NA → imputed to 0; see panna#74)",
+                  sum(ratings$epr != 0), n_na_epr))
 
   # Merge centrality scores if available
   centrality_path <- file.path("data-raw", "cache-opta", "07b_centrality.rds")
@@ -266,35 +290,50 @@ if (nrow(upcoming) > 0) {
   # After supplementation, effectively every WC2026 team gets a real recent
   # lineup. The ratings join (player_id × season_end_year) still works —
   # same Opta IDs throughout.
-  opta_lineups_path <- "../pannadata/data/opta/opta_lineups.parquet"
-  if (file.exists(opta_lineups_path) && requireNamespace("arrow", quietly = TRUE)) {
-    message(sprintf("  Supplementing fixture lineups from %s", opta_lineups_path))
-    opta_all <- as.data.frame(arrow::read_parquet(opta_lineups_path))
-    opta_all$match_date <- as.Date(sub("Z$", "", opta_all$match_date))
-    # Same is_starter filter; harmonise columns to match RAPM cache schema
-    opta_all <- opta_all[opta_all$is_starter == TRUE & !is.na(opta_all$team_id), ]
-    # Normalize RAPM-cache match_date to Date (cache stores as character)
-    lineups$match_date <- as.Date(sub("Z$", "", as.character(lineups$match_date)))
-    # Combine: prefer opta_all (broader coverage), fall back to RAPM cache rows
-    common_cols <- intersect(names(opta_all), names(lineups))
-    combined_lu <- dplyr::bind_rows(
-      opta_all[, common_cols, drop = FALSE],
-      lineups[lineups$is_starter == TRUE, common_cols, drop = FALSE]
-    )
-    rm(opta_all); gc(verbose = FALSE)
-    latest_lineups <- combined_lu %>%
-      filter(!is.na(team_id)) %>%
-      group_by(team_id) %>%
-      filter(match_date == max(match_date)) %>%
-      ungroup()
-    rm(combined_lu)
-  } else {
-    latest_lineups <- lineups %>%
-      filter(is_starter) %>%
-      group_by(team_id) %>%
-      filter(match_date == max(match_date)) %>%
-      ungroup()
+  # Path via opta_data_dir() — works local + GHA. Previous hardcoded
+  # "../pannadata/data/opta/..." silently fell through to the RAPM-cache
+  # fallback on GHA (since the file isn't at that relative path under the
+  # runner's wd), giving most WC2026 teams either decade-old WC 2014/2018
+  # squads or all-zero make_dummy_lineup() rows. That fed zero/empty
+  # player_ids into the EPR merge → epr=NA for all 48 WC teams.
+  # Hard-fail rather than fall through: the RAPM-cache fallback is OK for
+  # club leagues but actively broken for WC fixtures, so allowing it to
+  # silently kick in is the bug.
+  opta_lineups_path <- file.path(opta_data_dir(), "opta_lineups.parquet")
+  if (!file.exists(opta_lineups_path)) {
+    stop(sprintf(
+      "opta_lineups.parquet not found at %s — required for fixture lineup ",
+      opta_lineups_path),
+      "supplementation. Without it WC2026 teams get all-zero dummy lineups ",
+      "and downstream EPR/PSR/Elo aggregations are nonsense for intl fixtures. ",
+      "On GHA: confirm opta_lineups.parquet is in predictions-pipeline.yml ",
+      "download list.",
+      call. = FALSE)
   }
+  if (!requireNamespace("arrow", quietly = TRUE)) {
+    stop("arrow package not available — required to read opta_lineups.parquet",
+         call. = FALSE)
+  }
+  message(sprintf("  Supplementing fixture lineups from %s", opta_lineups_path))
+  opta_all <- as.data.frame(arrow::read_parquet(opta_lineups_path))
+  opta_all$match_date <- as.Date(sub("Z$", "", opta_all$match_date))
+  # Same is_starter filter; harmonise columns to match RAPM cache schema
+  opta_all <- opta_all[opta_all$is_starter == TRUE & !is.na(opta_all$team_id), ]
+  # Normalize RAPM-cache match_date to Date (cache stores as character)
+  lineups$match_date <- as.Date(sub("Z$", "", as.character(lineups$match_date)))
+  # Combine: prefer opta_all (broader coverage), fall back to RAPM cache rows
+  common_cols <- intersect(names(opta_all), names(lineups))
+  combined_lu <- dplyr::bind_rows(
+    opta_all[, common_cols, drop = FALSE],
+    lineups[lineups$is_starter == TRUE, common_cols, drop = FALSE]
+  )
+  rm(opta_all); gc(verbose = FALSE)
+  latest_lineups <- combined_lu %>%
+    filter(!is.na(team_id)) %>%
+    group_by(team_id) %>%
+    filter(match_date == max(match_date)) %>%
+    ungroup()
+  rm(combined_lu)
   rm(lineups); gc(verbose = FALSE)
 
   # make_dummy_lineup() is defined in R/match_prediction.R
@@ -553,13 +592,23 @@ if (nrow(upcoming) > 0) {
         }
 
         # Add EPR from the most recent weekly snapshot.
-        # Same precondition-check pattern as PSR above — silent skip only on
-        # genuinely absent data, loud surface on schema mismatches.
-        epr_path <- "../pannadata/data/opta/opta_epr_weekly.parquet"
+        # Path via opta_data_dir() — works local + GHA. Previously used a
+        # hardcoded "../pannadata/data/opta/..." that silently returned FALSE
+        # on GHA and skipped the entire merge, shipping wc2026 fixtures with
+        # NA EPR. This is the FIXTURE-side fix; the played-side at line ~120
+        # was fixed in a00f679. Don't trust silent skip patterns on required
+        # inputs — EPR is required for WC2026 fixtures.
+        epr_path <- file.path(opta_data_dir(), "opta_epr_weekly.parquet")
         if (!file.exists(epr_path)) {
-          message(sprintf("  EPR skipped: %s not found", epr_path))
+          stop(sprintf(
+            "Fixture EPR file not found at %s — required for WC2026 fixtures. ",
+            epr_path),
+            "On GHA: check that opta_epr_weekly.parquet is in the predictions-",
+            "pipeline.yml download list. Locally: run the EPR weekly pipeline.",
+            call. = FALSE)
         } else if (!requireNamespace("arrow", quietly = TRUE)) {
-          message("  EPR skipped: 'arrow' package not available")
+          stop("arrow package not available — required to read opta_epr_weekly.parquet",
+               call. = FALSE)
         } else if (!"player_id" %in% names(fixture_ratings)) {
           warning("Fixture EPR skipped: fixture_ratings has no player_id ",
                   "column. Investigate step 02's fixture-ratings construction.",

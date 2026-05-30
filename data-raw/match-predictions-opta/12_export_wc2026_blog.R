@@ -27,7 +27,19 @@ wc_season <- WC2026_SEASON_LABEL
 
 message("\n=== Exporting WC 2026 blog data ===\n")
 
-groups <- as.data.table(readRDS(file.path(cache_dir, "wc2026_groups.rds")))
+# WC group assignments — same fallback as 11_simulate_wc2026.R: prefer the
+# cache RDS (lets devs override for what-if scenarios), fall back to the
+# inst/extdata package asset on a clean checkout / GHA runner.
+groups_cache_rds <- file.path(cache_dir, "wc2026_groups.rds")
+groups_pkg_csv   <- system.file("extdata", "wc2026_groups.csv", package = "panna")
+groups <- if (file.exists(groups_cache_rds)) {
+  as.data.table(readRDS(groups_cache_rds))
+} else if (nzchar(groups_pkg_csv) && file.exists(groups_pkg_csv)) {
+  data.table::fread(groups_pkg_csv)
+} else {
+  stop("wc2026_groups not found: neither ", groups_cache_rds,
+       " nor inst/extdata/wc2026_groups.csv is available")
+}
 team_group <- stats::setNames(groups$group, groups$team)
 
 # 2. Match predictions ----
@@ -74,24 +86,69 @@ message(sprintf("  wc2026_groups.parquet: %d team-rows", nrow(grp)))
 
 md <- as.data.frame(readRDS(file.path(cache_dir, "04_match_dataset.rds")))
 wc <- md[md$league == WC2026_LEAGUE & md$season == wc_season &
-           md$home_team != "" & md$away_team != "", ]
+           !is.na(md$home_team) & md$home_team != "" &
+           !is.na(md$away_team) & md$away_team != "", ]
 teams <- sort(unique(c(wc$home_team, wc$away_team)))
 
 # metric -> (home column, away column) in the match dataset
 metric_cols <- c(panna = "sum_panna", offense = "sum_offense",
                  defense = "sum_defense", epr = "sum_epr",
                  psr = "sum_psr", elo = "elo")
+# Return NA (not numeric(0)) on missing data so vapply(numeric(1)) doesn't
+# abort the whole export. The error then surfaces as visible NAs in the
+# published parquet and the warning below, rather than killing step 12.
+# Causes can include: a column genuinely missing from match_dataset (step
+# 02b/03 schema drift), a team appearing in `teams` without a matching row
+# (despite the filter — defensive belt-and-braces), or NA in a single cell.
 team_metric <- function(tm, base) {
-  hr <- wc[wc$home_team == tm, ]
-  if (nrow(hr) > 0) return(as.numeric(hr[[paste0("home_", base)]][1]))
-  ar <- wc[wc$away_team == tm, ]
-  as.numeric(ar[[paste0("away_", base)]][1])
+  pick <- function(rows, col) {
+    if (!col %in% names(rows) || nrow(rows) == 0L) return(NA_real_)
+    v <- rows[[col]][1]
+    if (length(v) == 0L) NA_real_ else as.numeric(v)
+  }
+  hr <- wc[!is.na(wc$home_team) & wc$home_team == tm, ]
+  if (nrow(hr) > 0) {
+    val <- pick(hr, paste0("home_", base))
+    if (!is.na(val)) return(val)
+  }
+  ar <- wc[!is.na(wc$away_team) & wc$away_team == tm, ]
+  pick(ar, paste0("away_", base))
 }
 strength <- data.table(team = teams, group = unname(team_group[teams]))
 for (m in names(metric_cols)) {
   strength[[m]] <- round(vapply(teams, team_metric, numeric(1),
                                 base = metric_cols[[m]]), 4)
 }
+
+# HARD STOP if any critical metric is NA for any WC team. The previous
+# warning-only pattern shipped wc2026_team_strength.parquet with epr = NA
+# for all 48 teams (5pm 2026-05-29: root cause was step 02 silently
+# skipping the EPR merge on GHA due to a relative-path bug — fix landed,
+# but adding the stop here as a second layer of defense so the next
+# silent-skip elsewhere can't ship to the blog).
+#
+# Per [[feedback-no-silent-imputation]]: missing values in a published
+# rating must HALT, not be silently published. If you genuinely want to
+# ship partial data (e.g., a metric truly doesn't apply to intl tournaments),
+# remove that metric from metric_cols rather than papering over the NA.
+na_cells <- which(is.na(as.matrix(strength[, names(metric_cols), with = FALSE])),
+                  arr.ind = TRUE)
+if (nrow(na_cells) > 0L) {
+  na_summary <- data.table(
+    team   = strength$team[na_cells[, "row"]],
+    metric = names(metric_cols)[na_cells[, "col"]]
+  )[order(metric, team)]
+  per_metric <- na_summary[, .N, by = metric][order(-N)]
+  stop(sprintf(
+    "wc2026_team_strength has %d NA cells across %d team(s) and %d metric(s) — refusing to publish a partial rating table.\n\nPer-metric NA counts:\n%s\n\nFull list:\n  %s\n\nFix the upstream missing-data root cause (likely step 02 EPR/PSR merge or step 03/04 column drift) before re-running step 12. To exclude a metric that's expected to be NA for intl, remove it from metric_cols in this script.",
+    nrow(na_cells), uniqueN(na_summary$team), nrow(per_metric),
+    paste(sprintf("  %s: %d / 48", per_metric$metric, per_metric$N),
+          collapse = "\n"),
+    paste(sprintf("%s/%s", na_summary$team, na_summary$metric),
+          collapse = ", ")
+  ), call. = FALSE)
+}
+
 # Published convention: defence as positive = good (internal model has
 # negative = good, since defense is "xG added to the opponent").
 strength[, defense := -defense]

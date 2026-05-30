@@ -75,6 +75,7 @@ jobs:
           for f in opta_player_stats.parquet opta_shots.parquet opta_shot_events.parquet \
                    opta_events.parquet opta_lineups.parquet opta_fixtures.parquet \
                    opta_skills.parquet opta_match_stats.parquet opta_xmetrics.parquet \
+                   opta_epr_weekly.parquet opta_match_xg.parquet \
                    opta-catalog.json; do
             if gh release download opta-latest --repo peteowen1/pannadata --pattern "$f" --dir "$OPTA_DIR" 2>/dev/null; then
               echo "  Downloaded $f"
@@ -88,7 +89,7 @@ jobs:
 
           # Validate required files
           MISSING=0
-          for f in opta_lineups.parquet opta_fixtures.parquet opta_player_stats.parquet opta-catalog.json; do
+          for f in opta_lineups.parquet opta_fixtures.parquet opta_player_stats.parquet opta_epr_weekly.parquet opta-catalog.json; do
             if [ ! -f "$OPTA_DIR/$f" ]; then
               echo "FATAL: Required file $f was not downloaded"
               MISSING=$((MISSING + 1))
@@ -190,7 +191,14 @@ jobs:
               # game_logs.parquet / action_equity.parquet on blog-latest don't
               # drift behind the box-score data. See panna#71.
               step_10b_export_game_logs      = TRUE,
-              step_10c_export_equity         = TRUE
+              step_10c_export_equity         = TRUE,
+              # WC2026 simulation + blog export. Refresh weekly with the rest
+              # of the predictions chain so the WC tab tracks the latest match
+              # outcomes (esp. during the qualifier finals window). Disable in
+              # run_predictions_opta.R defaults so dev runs stay snappy; the
+              # workflow opts in here as the production schedule.
+              step_11_simulate_wc2026        = TRUE,
+              step_12_export_wc2026_blog     = TRUE
             )
 
             source('data-raw/match-predictions-opta/run_predictions_opta.R', chdir = FALSE)

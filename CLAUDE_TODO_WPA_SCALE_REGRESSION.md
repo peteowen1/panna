@@ -1,5 +1,9 @@
 # WPA scale regression — `wp_model.rds` producing values ~30× too large
 
+> **STATUS: RESOLVED 2026-05-29** (commits 52efcea + 6b41750). Retained
+> as a retro because the original "Suspect" section guessed wrong and
+> the actual cause is worth recording. See "Actual root cause" below.
+
 > Filed from an inthegame-blog session 2026-05-29. Surfaced after the
 > panna catch-up run that fixed the step-10b cadence (panna#71) shipped
 > the new pannamodels-backed `wp_model.rds` (pannamodels e78ce0f).
@@ -27,33 +31,45 @@ EPV columns in the same parquet (`epv_total`, `epv_total_adj`, `epv_offensive_ad
 
 `psv` / `osv` / `dsv` also look correct.
 
-## Suspect
+## Suspect (original — WRONG, see "Actual root cause" below)
 
 The wp_model.rds asset uploaded to pannamodels (`epv` release, 123 KB, registered as `wp_model` in `.EPV_MODELS` via pannamodels e78ce0f) is producing output on the wrong scale relative to the old local `wp_model.rds` that the pipeline used pre-pannamodels.
 
-Most likely:
+Most likely *(none of these turned out to be correct)*:
 
-1. **Logit-vs-probability output**: if the new model emits logits (typically [-5, +5] range for football scenarios) instead of probabilities ([0, 1]), each `wp_after - wp_before` per-event delta inflates by roughly the magnitude of `4 × |dlogit/dp|` at p≈0.5 (i.e. ~10×) and much more at extreme p. Sum over ~100 events per match gives the per-match WPAs of ±5+ we're observing.
-2. **Different training target**: e.g. score-margin model instead of win-binary.
-3. **Feature pipeline mismatch**: if features fed to the model at inference don't match what the model was trained on, predictions can be wildly miscalibrated in either direction.
+1. ~~**Logit-vs-probability output**: if the new model emits logits…~~ — Disproven: `range(predict_wp(m, sample))` was already inside `[0, 1]`. The model was correctly emitting probabilities.
+2. ~~**Different training target**~~ — Disproven: target was still win-binary.
+3. ~~**Feature pipeline mismatch**~~ — Disproven: features matched.
 
-## Diagnostic checklist
+## Actual root cause (resolved 2026-05-29)
 
-```r
-# 1. Load the asset that pannamodels just shipped
-m <- pannamodels::load_epv_model("wp_model")
-class(m)              # expected: a glm / xgboost / mlr3 wrapper / ...
-m$params              # if xgboost, look at "objective"
+**The model was retrained to a possession-team POV (commit b20b6b3, 2026-05-19) — it predicts `P(team in possession wins)`. The consumer code in `add_wp_vars()` was still computing `wp_after - wp_before` as if both numbers were on the same fixed POV (home).**
 
-# 2. Pump a handful of typical pre-event states through it
-sample_feats <- # ... pull a few rows of features that step_10b would feed
-preds <- predict(m, sample_feats)
-range(preds)          # expected: [0, 1]; if [-5, +5] -> logits, wrap in plogis()
-```
+When possession changes between consecutive events, `wp_next` is from a *different team's* POV than `wp`. Subtracting them produces a delta that crosses the POV boundary — for a near-coin-flip game, a possession switch flips `wp` from e.g. 0.50 (home POV) to 0.50 (away POV), but the model's possession-POV output for the next event might be 0.50 (still ~coin flip) from the *new* possessor's side. Mixing POVs makes the per-event delta swing ±0.5 on most events instead of the ±0.001–0.05 a true WPA should show. Summed over ~100 events/match, that's the 30× inflation we observed.
 
-If `range(preds)` extends outside [0, 1]:
-- Wrap output in `plogis()` (or `1 / (1 + exp(-x))`) wherever step_10b consumes the WP predictions.
-- OR retrain the model with `objective = "binary:logistic"` (xgboost) / `family = binomial(link = "logit")` (glm) so it natively emits probabilities.
+EPV columns were unaffected because the EPV model is trained from the perspective of the acting team natively, and `assign_epv_credit()` was always written for that convention.
+
+## Fix
+
+Two stages, both shipped 2026-05-29:
+
+1. **52efcea (interim)** — convert possession-POV → home-POV inside `add_wp_vars` before computing the delta. Correct math, but ugly: it converts to a fixed POV just to immediately re-pivot per actor downstream.
+2. **6b41750 (final)** — adopt torpverse's `add_variables.R` convention: keep everything in possession (acting-team) POV throughout, and compute the delta as
+   ```r
+   data.table::fcase(
+     team_id_next == team_id, wp_next - wp,            # same team continues
+     default = (1 - wp_next) - wp                       # possession flipped
+   )
+   ```
+   This matches the WP model's training POV and removes the conversion step entirely. `wpa` is then naturally on the acting-team POV, which is what `assign_wpa_credit()` expects.
+
+A worked example (OLD vs INTERIM vs FINAL on the same three-event sequence) is preserved at `debug/demo_wpa_logic.R` for posterity.
+
+## Lessons
+
+- **Always check the POV convention of any model that emits a per-event probability before consuming its deltas.** "Probabilities" alone don't tell you which side they're from.
+- The logit-vs-probability hypothesis was tempting because of the rough magnitude match, but a simple `range(preds)` check on a sample would have disproven it in seconds — that diagnostic *was* available; it just wasn't run before patching. Run the cheap diagnostic first.
+- When porting a torpverse pattern (the WP model retraining was a port from torp's possession-POV WP), check both the model definition *and* its consumer; a half-port leaves a coordinate-system mismatch that compiles cleanly and produces visually-plausible-but-wrong output.
 
 ## Sanity-check on output
 

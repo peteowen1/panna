@@ -127,14 +127,6 @@ ELO_CONFEDERATION_PRIORS <- c(
 # Improvement: -3.49% logloss vs v4 seed. v3's spread=200 framing
 # (legacy) is replaced by independent per-conf deltas.
 
-#' Default conf_spread (LEGACY; not used by v6+ optimizer which tunes
-#' per-conf deltas independently). Kept for backwards-compat with the
-#' parametric `elo_conf_priors_from_spread()` helper which v6 step 03
-#' no longer calls. New callers should use `ELO_CONFEDERATION_PRIORS`
-#' directly.
-#' @keywords internal
-ELO_CONF_SPREAD <- 200
-
 #' Optimized home-advantage value (Elo points; v6 = 88, v3 = 65)
 #' @keywords internal
 ELO_HOME_ADV <- 88
@@ -291,32 +283,6 @@ compute_venue_factor <- function(home_team, away_team, league, season) {
              else 0  # neither host -- neutral
   }
   vf
-}
-
-
-#' Scale Confederation Priors by a Single Spread Parameter
-#'
-#' Given a "spread" value, returns confederation priors centered on
-#' 1500 with offsets proportional to `spread`. Used by the optimizer to
-#' search over a single 1-dim parameter instead of 5-6 conf-specific Elos.
-#'
-#' Offset ratios (relative to spread):
-#'   UEFA     = +1.0 x spread
-#'   CONMEBOL = +1.0 x spread
-#'   CONCACAF = -0.5 x spread
-#'   CAF      = -0.5 x spread
-#'   AFC      = -0.75 x spread
-#'   OFC      = -1.5 x spread
-#'
-#' At spread = 100, that's UEFA=1600, CONMEBOL=1600, CONCACAF=1450,
-#' CAF=1450, AFC=1425, OFC=1350. At spread = 0, every confederation
-#' starts at 1500 (no prior).
-#'
-#' @keywords internal
-elo_conf_priors_from_spread <- function(spread) {
-  ratios <- c(UEFA = 1.0, CONMEBOL = 1.0, CONCACAF = -0.5,
-              CAF = -0.5, AFC = -0.75, OFC = -1.5)
-  1500 + spread * ratios
 }
 
 

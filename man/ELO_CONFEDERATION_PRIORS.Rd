@@ -19,11 +19,8 @@ matches (= AFC pool drifts up because they play each other a lot).
 }
 \details{
 Confederation priors give each pool a sensible starting position
-informed by historical World Cup performance. The values below are
-starting defaults; the optimizer in debug/optimize_elo_k.R tunes a
-single \code{conf_spread} parameter that scales these offsets up or down.
-
-Anchor: 1500 (mean). Spread default reflects rough relative strength
-across confederations as of recent WCs.
+informed by historical World Cup performance. v6 values come directly
+from the DEoptim optimization (no parametric spread anymore -- each
+delta is tuned independently).
 }
 \keyword{internal}

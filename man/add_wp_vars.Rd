@@ -7,20 +7,40 @@
 add_wp_vars(wp_features, wp_model)
 }
 \arguments{
-\item{wp_features}{SPADL features with WP model features.}
+\item{wp_features}{SPADL features with WP model features
+(\code{match_id}, \code{team_id}, \code{is_home}, plus the
+feature columns the model was trained on). Must include
+\code{wp_label} for the last-action fallback.}
 
-\item{wp_model}{Trained WP model from \code{\link{train_wp_model}}.}
+\item{wp_model}{Trained WP model from \code{\link{train_wp_model}}.
+Predictions are clamped to \code{[0, 1]} by \code{\link{predict_wp}}.}
 }
 \value{
-The input data.table with added \code{wp} and \code{wpa} columns.
+The input data.table with added \code{wp} (possession-POV
+probability) and \code{wpa} (acting-team-POV delta) columns.
 }
 \description{
-Adds \code{wp} (win probability at each action from home perspective) and
-\code{wpa} (win probability added by each action, sign-adjusted for the
-acting team) columns.
+Adds \code{wp} (model's possession-POV win probability at each action
+— P(team that performed the action wins the match)) and \code{wpa}
+(change in the acting team's win probability between the current and
+the next event) columns.
 }
 \details{
-WPA is computed as the change in win probability caused by each action.
-For home team actions: \code{wpa = wp_after - wp_before}.
-For away team actions: \code{wpa = (1 - wp_after) - (1 - wp_before) = wp_before - wp_after}.
+WPA delta accounts for possession switches:
+\itemize{
+\item Same team in possession at t+1 (\code{team_id_next == team_id}):
+\code{wpa = wp_next - wp} — both values are P(same team wins)
+\item Possession switched at t+1: \code{wp_next} is P(other team wins),
+so from the t-team's POV the post-event probability is
+\code{(1 - wp_next)}, giving \code{wpa = (1 - wp_next) - wp}
+}
+
+Pre-2026-05-29 implementation took raw \code{wp_next - wp} deltas
+which silently inflated WPA ~30x once the model was retrained to
+possession-POV (see \code{C:/dev/pannaverse/panna/debug/demo_wpa_logic.R}
+for a worked example). Mirrors torpverse's \code{add_variables.R}
+case_when on \code{team_id_next} vs \code{team_id_mdl}.
+
+WPA is centered per-match (\code{wpa - mean(wpa, na.rm=TRUE)} by
+\code{match_id}) to remove model-calibration bias.
 }
