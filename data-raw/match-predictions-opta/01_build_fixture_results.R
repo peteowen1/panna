@@ -374,7 +374,8 @@ today_utc <- Sys.Date()
 md_parsed <- suppressWarnings(as.Date(substr(results$match_date, 1, 10)))
 has_scores <- !is.na(results$home_goals) & !is.na(results$away_goals)
 stale_fixture <- !is.na(md_parsed) & md_parsed < today_utc &
-                  has_scores & results$match_status == "Fixture"
+                  has_scores &
+                  (is.na(results$match_status) | results$match_status != "Played")
 n_stale <- sum(stale_fixture, na.rm = TRUE)
 if (n_stale > 0L) {
   message(sprintf(
