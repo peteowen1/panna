@@ -7,10 +7,18 @@
 add_wp_vars(wp_features, wp_model)
 }
 \arguments{
-\item{wp_features}{SPADL features with WP model features
-(\code{match_id}, \code{team_id}, \code{is_home}, plus the
-feature columns the model was trained on). Must include
-\code{wp_label} for the last-action fallback.}
+\item{wp_features}{SPADL features with WP model features. MUST contain:
+\itemize{
+\item \code{match_id} — match identifier for centering + shift bounds
+\item \code{team_id} — acting team (load-bearing for the WPA POV pivot
+on \code{team_id_next})
+\item \code{is_home} — POV indicator (currently unused but reserved)
+\item \code{wp_label} — last-action fallback target
+\item plus the feature columns the model was trained on
+}
+Missing \code{team_id} silently produces wrong WPA via the
+case_when on \code{team_id_next == team_id} — see WPA scale regression
+retro at \code{CLAUDE_TODO_WPA_SCALE_REGRESSION.md}.}
 
 \item{wp_model}{Trained WP model from \code{\link{train_wp_model}}.
 Predictions are clamped to \code{[0, 1]} by \code{\link{predict_wp}}.}

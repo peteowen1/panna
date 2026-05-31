@@ -34,9 +34,17 @@ devtools::load_all()
     cli::cli_abort("Lineups must have team_position or is_home column")
   }
 
-  goals <- dt_events[type_id == 16L]
-  if (nrow(goals) == 0 && "type_name" %in% names(dt_events)) {
-    goals <- dt_events[grepl("[Gg]oal", type_name) & !grepl("[Oo]wn", type_name)]
+  # Exclude penalty-shootout goals (period_id >= 5): a match decided on pens is
+  # a draw in open play, so shootout conversions must not produce a win/loss
+  # label for what was actually a drawn match.
+  reg_events <- if ("period_id" %in% names(dt_events)) {
+    dt_events[!is_shootout_period(period_id)]
+  } else {
+    dt_events
+  }
+  goals <- reg_events[type_id == 16L]
+  if (nrow(goals) == 0 && "type_name" %in% names(reg_events)) {
+    goals <- reg_events[grepl("[Gg]oal", type_name) & !grepl("[Oo]wn", type_name)]
   }
 
   goal_counts <- goals[, .N, by = .(match_id, team_id)]
@@ -52,7 +60,20 @@ devtools::load_all()
 # 1. Configuration
 # ============================================================================
 
-LEAGUES <- if (exists("leagues")) leagues else c("ENG", "ESP", "GER", "ITA", "FRA")
+# Default training scope MUST include the cup + continental competitions —
+# they are the ONLY source of extra-time game states (domestic leagues never
+# go to ET). Training on Big-5 leagues alone yields ZERO extra-time rows, so
+# the is_extra_time feature + 120-min time denominator would have nothing to
+# learn from and ET matches would still be mis-scored. The cups below carry
+# ~470k ET actions across these seasons (DFB-Pokal/Copa del Rey/FA Cup are the
+# richest). Domestic Big-5 still supply the bulk of regulation signal.
+LEAGUES <- if (exists("leagues")) leagues else c(
+  # Domestic (regulation signal)
+  "ENG", "ESP", "GER", "ITA", "FRA",
+  # Continental + domestic cups (extra-time + shootout signal)
+  "UCL", "UEL", "UECL", "FA_Cup", "League_Cup", "Copa_del_Rey",
+  "Coppa_Italia", "DFB_Pokal", "Coupe_de_France", "KNVB_Beker"
+)
 SEASONS <- if (exists("seasons")) seasons else c("2020-2021", "2021-2022",
                                                    "2022-2023", "2023-2024")
 
