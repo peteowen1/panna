@@ -13,6 +13,10 @@ on:
         description: 'Also train WP model (steps 05-06)'
         type: boolean
         default: false
+      publish_wp:
+        description: 'Publish trained WP model to pannamodels epv release (the store predictions reads). REVIEW the model first — default off.'
+        type: boolean
+        default: false
       export_xmetrics:
         description: 'Export xMetrics parquets (steps 03-04)'
         type: boolean
@@ -26,6 +30,12 @@ env:
   # don't retrain WP.
   EXPORT_XMETRICS: ${{ (inputs.export_xmetrics == true || github.event_name == 'schedule') && 'true' || 'false' }}
   TRAIN_WP: ${{ inputs.train_wp == true && 'true' || 'false' }}
+  # Gated publish: the trained WP model is ALWAYS staged to the pannadata
+  # `models` release, but only promoted to the pannamodels `epv` release (the
+  # store load_wp_model() / the predictions pipeline actually read) when this
+  # is explicitly set. This is the "review before pannamodels upload" gate —
+  # never true on schedule.
+  PUBLISH_WP: ${{ inputs.publish_wp == true && 'true' || 'false' }}
 
 jobs:
   epv-pipeline:
@@ -199,12 +209,42 @@ jobs:
             exit 1
           fi
 
-          if [ "$TRAIN_WP" = "true" ] && [ -f "$CACHE_DIR/wp_model.rds" ]; then
-            if gh release upload models "$CACHE_DIR/wp_model.rds" --repo peteowen1/pannadata --clobber; then
-              echo "  Uploaded wp_model.rds"
-            else
-              echo "::error::Failed to upload wp_model.rds to models release"
+          if [ "$TRAIN_WP" = "true" ]; then
+            # 05_train_wp_model.R saves via save_wp_model() to
+            # opta_data_dir()/models — NOT $CACHE_DIR like the xg/epv/xpass
+            # models. opta_data_dir() resolved to $PANNADATA_DIR/opta on the
+            # runner, so the WP model lands here. (A prior version of this step
+            # looked in $CACHE_DIR and silently skipped the upload every run —
+            # the model trained but never shipped.)
+            WP_MODEL="${{ runner.temp }}/pannadata/opta/models/wp_model.rds"
+            if [ ! -f "$WP_MODEL" ]; then
+              echo "::error::TRAIN_WP=true but no wp_model.rds at $WP_MODEL — training did not save the model."
               exit 1
+            fi
+
+            # Stage to pannadata `models` (parity with the other models; NOT the
+            # store the predictions pipeline reads).
+            if gh release upload models "$WP_MODEL" --repo peteowen1/pannadata --clobber; then
+              echo "  Staged wp_model.rds -> pannadata/models"
+            else
+              echo "::error::Failed to upload wp_model.rds to pannadata models release"
+              exit 1
+            fi
+
+            # PROMOTE to pannamodels `epv` — the release load_wp_model() pulls
+            # from (via the pannamodels package) and therefore what the
+            # predictions pipeline + blog actually consume. Gated on PUBLISH_WP
+            # so a retrain alone never overwrites the live model without review.
+            if [ "$PUBLISH_WP" = "true" ]; then
+              if gh release upload epv "$WP_MODEL" --repo peteowen1/pannamodels --clobber; then
+                echo "  Published wp_model.rds -> pannamodels/epv (LIVE store)"
+              else
+                echo "::error::Failed to publish wp_model.rds to pannamodels epv release"
+                exit 1
+              fi
+            else
+              echo "::notice::PUBLISH_WP=false — wp_model.rds staged to pannadata/models only."
+              echo "::notice::Predictions still read the OLD model from pannamodels/epv until you re-run with publish_wp=true."
             fi
           fi
 
