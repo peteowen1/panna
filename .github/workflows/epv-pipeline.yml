@@ -17,6 +17,10 @@ on:
         description: 'Publish trained WP model to pannamodels epv release (the store predictions reads). REVIEW the model first — default off.'
         type: boolean
         default: false
+      wp_only:
+        description: 'Train ONLY the WP model — skip the EPV/xMetrics retrain. Much faster (~20min vs ~120). The WP model does not consume EPV, so this is lossless for a WP retrain. Implies train_wp.'
+        type: boolean
+        default: false
       export_xmetrics:
         description: 'Export xMetrics parquets (steps 03-04)'
         type: boolean
@@ -28,8 +32,16 @@ env:
   # Coerce inputs (boolean on workflow_dispatch, empty on schedule) to a
   # string we can compare uniformly. Schedule defaults: export xmetrics,
   # don't retrain WP.
-  EXPORT_XMETRICS: ${{ (inputs.export_xmetrics == true || github.event_name == 'schedule') && 'true' || 'false' }}
-  TRAIN_WP: ${{ inputs.train_wp == true && 'true' || 'false' }}
+  # wp_only short-circuits the EPV/xMetrics retrain. The WP model is built from
+  # raw possession chains (create_wp_features takes no EPV input — see
+  # R/wp_model.R), so retraining EPV/xg/xpass to reach the WP step is pure waste
+  # AND now pushes the combined job past the 120-min timeout. wp_only skips
+  # steps 01/03/04 and runs only WP train + upload (~20 min total).
+  WP_ONLY: ${{ inputs.wp_only == true && 'true' || 'false' }}
+  # wp_only forces the EPV/xMetrics steps off regardless of their own inputs.
+  EXPORT_XMETRICS: ${{ (inputs.export_xmetrics == true || github.event_name == 'schedule') && inputs.wp_only != true && 'true' || 'false' }}
+  # wp_only implies train_wp (no point skipping EPV if you don't train WP).
+  TRAIN_WP: ${{ (inputs.train_wp == true || inputs.wp_only == true) && 'true' || 'false' }}
   # Gated publish: the trained WP model is ALWAYS staged to the pannadata
   # `models` release, but only promoted to the pannamodels `epv` release (the
   # store load_wp_model() / the predictions pipeline actually read) when this
@@ -124,6 +136,7 @@ jobs:
           fi
 
       - name: Train EPV models
+        if: ${{ env.WP_ONLY != 'true' }}
         env:
           PANNADATA_DIR: ${{ runner.temp }}/pannadata
         run: |
@@ -191,22 +204,29 @@ jobs:
           CACHE_DIR="data-raw/cache/epv"
           UPLOADED=0
 
-          for f in xg_model.rds xpass_model.rds epv_model.rds; do
-            if [ -f "$CACHE_DIR/$f" ]; then
-              if gh release upload models "$CACHE_DIR/$f" --repo peteowen1/pannadata --clobber; then
-                echo "  Uploaded $f"
-                UPLOADED=$((UPLOADED + 1))
+          # In wp_only mode the EPV/xg/xpass models are not retrained (steps
+          # 01/03/04 were skipped), so they won't be in CACHE_DIR and must not
+          # be uploaded or counted — the WP block below is the only upload.
+          if [ "$WP_ONLY" != "true" ]; then
+            for f in xg_model.rds xpass_model.rds epv_model.rds; do
+              if [ -f "$CACHE_DIR/$f" ]; then
+                if gh release upload models "$CACHE_DIR/$f" --repo peteowen1/pannadata --clobber; then
+                  echo "  Uploaded $f"
+                  UPLOADED=$((UPLOADED + 1))
+                else
+                  echo "::error::Failed to upload $f to models release (does the release exist?)"
+                  exit 1
+                fi
               else
-                echo "::error::Failed to upload $f to models release (does the release exist?)"
-                exit 1
+                echo "::warning::Model file $f not found in $CACHE_DIR"
               fi
-            else
-              echo "::warning::Model file $f not found in $CACHE_DIR"
+            done
+            if [ "$UPLOADED" -eq 0 ]; then
+              echo "::error::No model files were produced. Training may have failed."
+              exit 1
             fi
-          done
-          if [ "$UPLOADED" -eq 0 ]; then
-            echo "::error::No model files were produced. Training may have failed."
-            exit 1
+          else
+            echo "wp_only mode — skipping xg/xpass/epv upload (not retrained)."
           fi
 
           if [ "$TRAIN_WP" = "true" ]; then
