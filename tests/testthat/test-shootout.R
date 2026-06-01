@@ -126,3 +126,35 @@ test_that("score_shootout_kicks handles empty input", {
 test_that("score_shootout_kicks errors without required columns", {
   expect_error(score_shootout_kicks(data.frame(foo=1)), "team_id")
 })
+
+test_that("keeper-saved miss splits WPA between taker and keeper", {
+  # A's first kick is SAVED (type_id 15). Default keeper_save_share = 0.5.
+  saved <- score_shootout_kicks(
+    data.frame(team_id = "A", scored = 0L, type_id = 15L))
+  # taker keeps half the (negative) WPA; keeper gets the positive other half.
+  expect_lt(saved$shootout_wpa[1], 0)
+  expect_gt(saved$keeper_wpa[1], 0)
+  expect_equal(saved$shootout_wpa[1], -saved$keeper_wpa[1], tolerance = 1e-12)
+
+  # An OFF-TARGET miss (skied = 13) is all on the taker, no keeper credit.
+  skied <- score_shootout_kicks(
+    data.frame(team_id = "A", scored = 0L, type_id = 13L))
+  expect_lt(skied$shootout_wpa[1], 0)
+  expect_equal(skied$keeper_wpa[1], 0, tolerance = 1e-12)
+
+  # keeper_save_share = 0 reproduces all-taker blame (old behaviour).
+  none <- score_shootout_kicks(
+    data.frame(team_id = "A", scored = 0L, type_id = 15L), keeper_save_share = 0)
+  expect_equal(none$keeper_wpa[1], 0, tolerance = 1e-12)
+
+  # total WPA is conserved: taker + keeper share == the full kick swing.
+  full <- score_shootout_kicks(
+    data.frame(team_id = "A", scored = 0L, type_id = 13L))$shootout_wpa[1]
+  expect_equal(saved$shootout_wpa[1] - saved$keeper_wpa[1], full, tolerance = 1e-12)
+})
+
+test_that("no type_id column -> all misses all-taker, keeper_wpa all zero", {
+  out <- score_shootout_kicks(data.frame(team_id = c("A","B"), scored = c(0L,0L)))
+  expect_true("keeper_wpa" %in% names(out))
+  expect_equal(out$keeper_wpa, c(0, 0), tolerance = 1e-12)
+})

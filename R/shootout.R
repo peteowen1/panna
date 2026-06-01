@@ -118,41 +118,61 @@ shootout_win_prob <- function(p_a = PENALTY_SHOOTOUT_CONVERSION,
 #' sudden-death kick (~±0.4) would swamp a whole match of open-play events
 #' (~±0.05 each).
 #'
+#' Taker vs keeper attribution: a missed kick's negative WPA is split by HOW it
+#' missed. A keeper-SAVED miss (\code{type_id == 15}) is partly the keeper's
+#' doing, so \code{keeper_save_share} of the (negative) WPA is re-credited as a
+#' POSITIVE \code{keeper_wpa} for the opposing team's keeper, and the taker
+#' keeps the rest. An off-target miss (skied/post, \code{type_id} 13/14) is all
+#' on the taker — no keeper involvement. Scored kicks and the taker portion stay
+#' in \code{shootout_wpa}. If \code{type_id} is absent, every miss is treated as
+#' all-taker (the simple default) and \code{keeper_wpa} is all zero.
+#'
 #' @param kicks A data.frame/data.table of one match's shootout kicks, already
 #'   filtered to shot-outcome events (\code{type_id} in 16/15/14/13) in
 #'   \code{period_id >= 5}, with columns \code{team_id}, \code{scored}
-#'   (1 = goal), and pre-sorted into the order the kicks were taken. The team
-#'   of the first row is treated as the first kicker ("A").
+#'   (1 = goal), optionally \code{type_id} (to split saved misses), and
+#'   pre-sorted into the order the kicks were taken. The team of the first row
+#'   is treated as the first kicker ("A").
 #' @param p_a,p_b Per-kick conversion rates. Default
 #'   \code{PENALTY_SHOOTOUT_CONVERSION} (0.75) for both.
+#' @param keeper_save_share Fraction of a SAVED miss's WPA attributed to the
+#'   saving keeper (re-credited positively to the defending team). Default 0.5.
+#'   Set 0 to keep all blame on the taker (old behaviour).
 #' @param n_regulation Regulation kicks per team. Default 5.
 #'
 #' @return The input as a data.table with added columns:
 #'   \describe{
 #'     \item{wp_first_kicker}{P(first-kicking team wins) AFTER this kick}
-#'     \item{shootout_wpa}{WPA credited to this kick's team (+ = helped kicker)}
+#'     \item{shootout_wpa}{WPA credited to the TAKER's team (+ = helped taker).
+#'       For a saved miss, this is reduced by the keeper's share.}
+#'     \item{keeper_wpa}{Positive WPA credited to the SAVING keeper's team on a
+#'       saved miss (\code{type_id == 15}); 0 otherwise. Belongs to the team
+#'       that did NOT take the kick.}
 #'   }
 #' @export
 score_shootout_kicks <- function(kicks,
                                  p_a = PENALTY_SHOOTOUT_CONVERSION,
                                  p_b = PENALTY_SHOOTOUT_CONVERSION,
+                                 keeper_save_share = 0.5,
                                  n_regulation = 5L) {
   dt <- data.table::as.data.table(kicks)
   if (nrow(dt) == 0L) {
-    dt[, c("wp_first_kicker", "shootout_wpa") := numeric(0)]
+    dt[, c("wp_first_kicker", "shootout_wpa", "keeper_wpa") := numeric(0)]
     return(dt[])
   }
   if (!all(c("team_id", "scored") %in% names(dt))) {
     cli::cli_abort("{.arg kicks} must have {.val team_id} and {.val scored} columns")
   }
+  has_type <- "type_id" %in% names(dt)
 
   first_team <- dt$team_id[1]
   is_a <- dt$team_id == first_team
 
   ka <- kb <- sa <- sb <- 0L
-  wp_after <- numeric(nrow(dt))
-  prev_wp  <- shootout_win_prob(p_a, p_b, 0L, 0L, 0L, 0L, n_regulation)  # 0.5 at equal p
-  wpa      <- numeric(nrow(dt))
+  wp_after   <- numeric(nrow(dt))
+  taker_wpa  <- numeric(nrow(dt))
+  keeper_wpa <- numeric(nrow(dt))
+  prev_wp    <- shootout_win_prob(p_a, p_b, 0L, 0L, 0L, 0L, n_regulation)  # 0.5 at equal p
 
   for (i in seq_len(nrow(dt))) {
     scored_i <- as.integer(dt$scored[i])
@@ -163,13 +183,25 @@ score_shootout_kicks <- function(kicks,
     wp_after[i] <- w
 
     # WPA from the KICKER's perspective. w is always P(A wins); the change in
-    # P(A wins) is A's WPA, and B's WPA is the negation (zero-sum).
+    # P(A wins) is A's WPA, and the taker's WPA is signed to their own team.
     delta_a <- w - prev_wp
-    wpa[i]  <- if (is_a[i]) delta_a else -delta_a
+    kicker_wpa <- if (is_a[i]) delta_a else -delta_a
     prev_wp <- w
+
+    # Split a keeper-saved miss: type_id 15 = saved. The save is good for the
+    # DEFENDING team, so keeper_save_share of the (negative) taker WPA is moved
+    # out as a positive keeper_wpa for the other team; the taker keeps the rest.
+    saved <- has_type && scored_i == 0L && dt$type_id[i] == 15L
+    if (saved) {
+      keeper_wpa[i] <- -keeper_save_share * kicker_wpa   # -(neg) = positive
+      taker_wpa[i]  <- (1 - keeper_save_share) * kicker_wpa
+    } else {
+      taker_wpa[i]  <- kicker_wpa
+    }
   }
 
   dt[, wp_first_kicker := wp_after]
-  dt[, shootout_wpa := wpa]
+  dt[, shootout_wpa := taker_wpa]
+  dt[, keeper_wpa := keeper_wpa]
   dt[]
 }
