@@ -99,3 +99,77 @@ shootout_win_prob <- function(p_a = PENALTY_SHOOTOUT_CONVERSION,
     "i" = "In sudden death the two kick counts differ by at most 1."
   ))
 }
+
+
+#' Per-kick win probability and WPA for one shootout
+#'
+#' Scores every kick of a single penalty shootout: the live win probability
+#' after each kick (from \code{\link{shootout_win_prob}}) and the WPA that kick
+#' produced — the change in the kicking team's win probability, credited to the
+#' kicker. This is purely successive differences of the win-prob function; no
+#' separate model.
+#'
+#' WPA sign convention: positive = the kick helped the KICKER's team. A scored
+#' kick is a small positive (a 0.75 conversion is largely "priced in"); a miss
+#' is a larger negative (the surprising outcome moves WP more). Sudden-death
+#' kicks swing far harder (±0.3-0.4) than early regulation kicks (±0.05).
+#'
+#' Keep shootout WPA in its OWN column — never add it to open-play WPA. A single
+#' sudden-death kick (~±0.4) would swamp a whole match of open-play events
+#' (~±0.05 each).
+#'
+#' @param kicks A data.frame/data.table of one match's shootout kicks, already
+#'   filtered to shot-outcome events (\code{type_id} in 16/15/14/13) in
+#'   \code{period_id >= 5}, with columns \code{team_id}, \code{scored}
+#'   (1 = goal), and pre-sorted into the order the kicks were taken. The team
+#'   of the first row is treated as the first kicker ("A").
+#' @param p_a,p_b Per-kick conversion rates. Default
+#'   \code{PENALTY_SHOOTOUT_CONVERSION} (0.75) for both.
+#' @param n_regulation Regulation kicks per team. Default 5.
+#'
+#' @return The input as a data.table with added columns:
+#'   \describe{
+#'     \item{wp_first_kicker}{P(first-kicking team wins) AFTER this kick}
+#'     \item{shootout_wpa}{WPA credited to this kick's team (+ = helped kicker)}
+#'   }
+#' @export
+score_shootout_kicks <- function(kicks,
+                                 p_a = PENALTY_SHOOTOUT_CONVERSION,
+                                 p_b = PENALTY_SHOOTOUT_CONVERSION,
+                                 n_regulation = 5L) {
+  dt <- data.table::as.data.table(kicks)
+  if (nrow(dt) == 0L) {
+    dt[, c("wp_first_kicker", "shootout_wpa") := numeric(0)]
+    return(dt[])
+  }
+  if (!all(c("team_id", "scored") %in% names(dt))) {
+    cli::cli_abort("{.arg kicks} must have {.val team_id} and {.val scored} columns")
+  }
+
+  first_team <- dt$team_id[1]
+  is_a <- dt$team_id == first_team
+
+  ka <- kb <- sa <- sb <- 0L
+  wp_after <- numeric(nrow(dt))
+  prev_wp  <- shootout_win_prob(p_a, p_b, 0L, 0L, 0L, 0L, n_regulation)  # 0.5 at equal p
+  wpa      <- numeric(nrow(dt))
+
+  for (i in seq_len(nrow(dt))) {
+    scored_i <- as.integer(dt$scored[i])
+    if (is_a[i]) { ka <- ka + 1L; sa <- sa + scored_i }
+    else         { kb <- kb + 1L; sb <- sb + scored_i }
+
+    w <- shootout_win_prob(p_a, p_b, sa, sb, ka, kb, n_regulation)  # P(A wins) after kick
+    wp_after[i] <- w
+
+    # WPA from the KICKER's perspective. w is always P(A wins); the change in
+    # P(A wins) is A's WPA, and B's WPA is the negation (zero-sum).
+    delta_a <- w - prev_wp
+    wpa[i]  <- if (is_a[i]) delta_a else -delta_a
+    prev_wp <- w
+  }
+
+  dt[, wp_first_kicker := wp_after]
+  dt[, shootout_wpa := wpa]
+  dt[]
+}

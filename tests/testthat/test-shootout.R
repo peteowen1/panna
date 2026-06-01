@@ -84,3 +84,45 @@ test_that("malformed sudden-death state errors loudly", {
     shootout_win_prob(kicks_a = 8L, kicks_b = 5L, n_regulation = 5L),
     "Malformed sudden-death")
 })
+
+# --- per-kick scoring (score_shootout_kicks) ---------------------------------
+
+test_that("score_shootout_kicks adds wp + wpa and is consistent with win prob", {
+  # A scores, B misses, A scores, B misses -> A leads 2-0 after 2 rounds.
+  kicks <- data.frame(
+    team_id = c("A","B","A","B"),
+    scored  = c(1L, 0L, 1L, 0L),
+    stringsAsFactors = FALSE
+  )
+  out <- score_shootout_kicks(kicks)
+  expect_true(all(c("wp_first_kicker", "shootout_wpa") %in% names(out)))
+  expect_equal(nrow(out), 4L)
+  # WP after each kick must equal a direct win-prob call at that state.
+  expect_equal(out$wp_first_kicker[1],
+               shootout_win_prob(score_a=1,score_b=0,kicks_a=1,kicks_b=0), tolerance=1e-12)
+  expect_equal(out$wp_first_kicker[3],
+               shootout_win_prob(score_a=2,score_b=0,kicks_a=2,kicks_b=1), tolerance=1e-12)
+  # All WP in [0,1].
+  expect_true(all(out$wp_first_kicker >= 0 & out$wp_first_kicker <= 1))
+})
+
+test_that("scoring a kick helps the kicker, missing hurts (sign convention)", {
+  # A's first kick: GOAL should be positive WPA for A; MISS should be negative.
+  goal <- score_shootout_kicks(data.frame(team_id="A", scored=1L))
+  miss <- score_shootout_kicks(data.frame(team_id="A", scored=0L))
+  expect_gt(goal$shootout_wpa[1], 0)
+  expect_lt(miss$shootout_wpa[1], 0)
+  # A missing its kick is B's gain -> if next row is B, B's WPA sign mirrors.
+  seq <- score_shootout_kicks(data.frame(team_id=c("A","B"), scored=c(0L,1L)))
+  expect_lt(seq$shootout_wpa[1], 0)   # A missed -> bad for A
+  expect_gt(seq$shootout_wpa[2], 0)   # B scored -> good for B
+})
+
+test_that("score_shootout_kicks handles empty input", {
+  out <- score_shootout_kicks(data.frame(team_id=character(0), scored=integer(0)))
+  expect_equal(nrow(out), 0L)
+})
+
+test_that("score_shootout_kicks errors without required columns", {
+  expect_error(score_shootout_kicks(data.frame(foo=1)), "team_id")
+})
