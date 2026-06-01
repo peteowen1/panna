@@ -158,3 +158,67 @@ test_that("no type_id column -> all misses all-taker, keeper_wpa all zero", {
   expect_true("keeper_wpa" %in% names(out))
   expect_equal(out$keeper_wpa, c(0, 0), tolerance = 1e-12)
 })
+
+# --- per-player aggregation (aggregate_shootout_wpa) -------------------------
+
+test_that("aggregate_shootout_wpa resolves keeper saves to the GK via lineups", {
+  # One match: team A takes 2 kicks (1 scored, 1 SAVED by B's keeper);
+  # team B takes 1 kick (scored). 5-kick regulation but tiny for the test.
+  kicks <- data.frame(
+    match_id  = rep("m1", 3),
+    team_id   = c("A", "B", "A"),
+    player_id = c("takerA1", "takerB1", "takerA2"),
+    player_name = c("Taker A1", "Taker B1", "Taker A2"),
+    scored    = c(1L, 1L, 0L),
+    type_id   = c(16L, 16L, 15L),   # A2's kick is SAVED
+    minute    = c(120L, 120L, 121L), second = c(0L, 10L, 0L),
+    stringsAsFactors = FALSE
+  )
+  lineups <- data.frame(
+    match_id = rep("m1", 4),
+    team_id  = c("A","A","B","B"),
+    player_id = c("takerA1","gkA","takerB1","gkB"),
+    player_name = c("Taker A1","Keeper A","Taker B1","Keeper B"),
+    position = c("Striker","Goalkeeper","Striker","Goalkeeper"),
+    minutes_played = c(120, 120, 120, 120),
+    stringsAsFactors = FALSE
+  )
+  agg <- aggregate_shootout_wpa(kicks, lineups)
+  # B's keeper (gkB) saved A2's kick -> should hold positive keeper_wpa.
+  gkb <- agg[player_id == "gkB"]
+  expect_equal(nrow(gkb), 1L)
+  expect_gt(gkb$keeper_wpa, 0)
+  expect_equal(gkb$kicks_taken, 0L)
+  # The saved taker (takerA2) carries negative taker WPA, no keeper credit.
+  a2 <- agg[player_id == "takerA2"]
+  expect_lt(a2$taker_wpa, 0)
+  expect_equal(a2$keeper_wpa, 0, tolerance = 1e-12)
+})
+
+test_that("aggregate_shootout_wpa drops blank player_id kicks", {
+  kicks <- data.frame(
+    match_id = c("m1","m1"), team_id = c("A","B"),
+    player_id = c("", "realB"), player_name = c("", "Real B"),
+    scored = c(1L, 1L), type_id = c(16L, 16L),
+    minute = c(120L,120L), second = c(0L,5L), stringsAsFactors = FALSE)
+  expect_warning(agg <- aggregate_shootout_wpa(kicks), "missing player_id")
+  expect_false("" %in% agg$player_id)
+})
+
+test_that("aggregate_shootout_wpa without lineups warns + omits keeper attribution", {
+  kicks <- data.frame(
+    match_id = "m1", team_id = c("A","B","A"),
+    player_id = c("a1","b1","a2"), player_name = c("A1","B1","A2"),
+    scored = c(1L,1L,0L), type_id = c(16L,16L,15L),
+    minute = c(120L,120L,121L), second = c(0L,5L,0L), stringsAsFactors = FALSE)
+  expect_warning(agg <- aggregate_shootout_wpa(kicks, lineups = NULL),
+                 "could not be|No lineups")
+  expect_equal(sum(agg$keeper_wpa), 0, tolerance = 1e-12)  # unattributed, omitted
+})
+
+test_that("aggregate_shootout_wpa handles empty input", {
+  agg <- aggregate_shootout_wpa(
+    data.frame(match_id=character(0), team_id=character(0),
+               player_id=character(0), scored=integer(0)))
+  expect_equal(nrow(agg), 0L)
+})

@@ -205,3 +205,134 @@ score_shootout_kicks <- function(kicks,
   dt[, keeper_wpa := keeper_wpa]
   dt[]
 }
+
+
+#' Aggregate shootout WPA per player across matches
+#'
+#' Runs \code{\link{score_shootout_kicks}} on every match's shootout kicks, then
+#' rolls the result up to one row per player, combining their TAKER WPA (own
+#' kicks) with their KEEPER WPA (saves they made facing the other team's kicks).
+#'
+#' Keeper resolution: a saved kick's \code{keeper_wpa} belongs to the defending
+#' team but the shot event names only the taker. We resolve the specific keeper
+#' by joining \code{lineups} — the opposing team's goalkeeper in that match (the
+#' \code{position == "Goalkeeper"} player who was on the pitch at the shootout;
+#' if a match lists several, the one with the most minutes, i.e. the end-of-match
+#' keeper who actually faced the kicks). If no lineups are supplied, keeper WPA
+#' is still summed at team level but cannot be attributed to a player and is
+#' dropped from the per-player total (reported separately as
+#' \code{unattributed_keeper_wpa}).
+#'
+#' @param kicks_all A data.frame/data.table of shootout kicks across one or more
+#'   matches: shot-outcome events (\code{type_id} 16/15/14/13, \code{period_id
+#'   >= 5}) with \code{match_id}, \code{team_id}, \code{player_id},
+#'   \code{player_name}, \code{scored}, and orderable \code{minute}/\code{second}
+#'   (or pre-sorted within match).
+#' @param lineups Optional lineup table with \code{match_id}, \code{team_id},
+#'   \code{player_id}, \code{player_name}, \code{position},
+#'   \code{minutes_played} — used to resolve the saving keeper per match.
+#' @param keeper_save_share Passed to \code{\link{score_shootout_kicks}}.
+#'   Default 0.5.
+#' @param n_regulation Regulation kicks per team. Default 5.
+#'
+#' @return A data.table, one row per player, with: \code{player_id},
+#'   \code{player_name}, \code{kicks_taken}, \code{kicks_scored},
+#'   \code{taker_wpa} (sum over own kicks), \code{keeper_wpa} (sum over saves
+#'   made), \code{shootout_wpa_total} (\code{taker_wpa + keeper_wpa}).
+#' @export
+aggregate_shootout_wpa <- function(kicks_all, lineups = NULL,
+                                   keeper_save_share = 0.5,
+                                   n_regulation = 5L) {
+  dt <- data.table::as.data.table(kicks_all)
+  req <- c("match_id", "team_id", "player_id", "scored")
+  if (!all(req %in% names(dt))) {
+    cli::cli_abort("{.arg kicks_all} must contain: {.val {req}}")
+  }
+  if (nrow(dt) == 0L) {
+    return(data.table::data.table(
+      player_id = character(0), player_name = character(0),
+      kicks_taken = integer(0), kicks_scored = integer(0),
+      taker_wpa = numeric(0), keeper_wpa = numeric(0),
+      shootout_wpa_total = numeric(0)))
+  }
+  if (!"player_name" %in% names(dt)) dt[, player_name := player_id]
+
+  # Drop kicks with no resolvable taker (blank/NA player_id) — a data gap, not
+  # a player; ranking it would put a phantom at the top of the leaderboard.
+  n_before <- nrow(dt)
+  dt <- dt[!is.na(player_id) & player_id != ""]
+  if (nrow(dt) < n_before) {
+    cli::cli_warn("Dropped {n_before - nrow(dt)} shootout kick(s) with missing player_id.")
+  }
+  if (nrow(dt) == 0L) {
+    return(data.table::data.table(
+      player_id = character(0), player_name = character(0),
+      kicks_taken = integer(0), kicks_scored = integer(0),
+      taker_wpa = numeric(0), keeper_wpa = numeric(0),
+      shootout_wpa_total = numeric(0)))
+  }
+
+  # Order within each match if time columns are present.
+  ord <- intersect(c("period_id", "minute", "second", "event_id"), names(dt))
+  if (length(ord) > 0) data.table::setorderv(dt, c("match_id", ord))
+
+  # Score each match's kicks.
+  scored <- dt[, score_shootout_kicks(.SD, keeper_save_share = keeper_save_share,
+                                      n_regulation = n_regulation),
+               by = match_id]
+
+  # --- Taker WPA: sum each player's own kicks ---
+  taker <- scored[, .(kicks_taken = .N,
+                      kicks_scored = sum(scored, na.rm = TRUE),
+                      taker_wpa = sum(shootout_wpa, na.rm = TRUE)),
+                  by = .(player_id, player_name)]
+
+  # --- Keeper WPA: per (match, defending team), resolve to the keeper ---
+  saves <- scored[keeper_wpa != 0]
+  keeper_tbl <- data.table::data.table(
+    player_id = character(0), player_name = character(0), keeper_wpa = numeric(0))
+  unattributed <- 0
+  if (nrow(saves) > 0) {
+    # Defending team = the team that did NOT take the saved kick.
+    def <- saves[, .(keeper_wpa = sum(keeper_wpa)), by = .(match_id, kicker_team = team_id)]
+    if (!is.null(lineups)) {
+      lu <- data.table::as.data.table(lineups)
+      gks <- lu[position == "Goalkeeper",
+                .(player_id, player_name, minutes_played), by = .(match_id, team_id)]
+      # one keeper per (match, team): the one who played the most minutes
+      data.table::setorder(gks, match_id, team_id, -minutes_played)
+      gks <- gks[, .SD[1], by = .(match_id, team_id)]
+      # join: defending team in match -> its keeper
+      def <- merge(def, gks, by.x = c("match_id", "kicker_team"),
+                   by.y = c("match_id", "team_id"),
+                   all.x = TRUE)
+      # NB: kicker_team is the TAKER's team; the keeper is the OTHER team's GK.
+      # Re-resolve: we need the keeper of the team that did NOT kick. Build a
+      # per-match team->gk map and pick the non-kicking team.
+      def[, player_id := NULL][, player_name := NULL][, minutes_played := NULL]
+      teams_per_match <- gks[, .(match_id, team_id, player_id, player_name)]
+      def <- merge(def, teams_per_match, by = "match_id", allow.cartesian = TRUE)
+      def <- def[team_id != kicker_team]   # keeper's team != taker's team
+      keeper_tbl <- def[, .(keeper_wpa = sum(keeper_wpa)), by = .(player_id, player_name)]
+    } else {
+      unattributed <- sum(def$keeper_wpa)
+    }
+  }
+
+  # --- Combine taker + keeper per player ---
+  out <- merge(taker, keeper_tbl, by = c("player_id", "player_name"), all = TRUE)
+  out[is.na(kicks_taken), kicks_taken := 0L]
+  out[is.na(kicks_scored), kicks_scored := 0L]
+  out[is.na(taker_wpa), taker_wpa := 0]
+  out[is.na(keeper_wpa), keeper_wpa := 0]
+  out[, shootout_wpa_total := taker_wpa + keeper_wpa]
+  data.table::setorder(out, -shootout_wpa_total)
+
+  if (unattributed != 0) {
+    attr(out, "unattributed_keeper_wpa") <- unattributed
+    cli::cli_warn(c(
+      "No lineups supplied: {round(unattributed, 3)} of keeper WPA could not be ",
+      "attributed to a player and is omitted from per-player totals."))
+  }
+  out[]
+}
