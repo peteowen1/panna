@@ -316,6 +316,20 @@ convert_opta_to_spadl <- function(opta_events, normalize_direction = FALSE) {
     cli::cli_alert_info("Filtered {format(n_non_gameplay, big.mark=',')} non-gameplay events (ball out, deleted, cards, subs, etc.)")
   }
 
+  # Drop penalty-shootout events (period_id >= 5). Shootout kicks are recorded
+  # as goals/shots at minute 120 but are not open play — leaving them in would
+  # credit EPV/WPA for shootout conversions and (via the WP time feature, which
+  # reads them as time_remaining == 0) massively inflate per-event win-prob
+  # swings. A match decided on penalties is treated as a draw in open play.
+  if ("period_id" %in% names(dt)) {
+    n_before_so <- nrow(dt)
+    dt <- dt[!is_shootout_period(period_id)]
+    n_shootout <- n_before_so - nrow(dt)
+    if (n_shootout > 0) {
+      cli::cli_alert_info("Filtered {format(n_shootout, big.mark=',')} penalty-shootout events (period_id >= 5)")
+    }
+  }
+
   if (has_end_x) {
     dt[, end_x_new := end_x]
   } else {

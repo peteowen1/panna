@@ -109,6 +109,11 @@ if (!is.null(seasonal_results) && !is.null(seasonal_results$seasonal_spm)) {
     away_team_id = team_id[tolower(team_position) == "away"][1]
   ), by = match_id]
   dt_events <- data.table::as.data.table(events)
+  # Exclude penalty-shootout goals (period_id >= 5) — a pens match is a draw in
+  # open play, so shootout conversions must not inflate the match score.
+  if ("period_id" %in% names(dt_events)) {
+    dt_events <- dt_events[!is_shootout_period(period_id)]
+  }
   goals <- dt_events[type_id == 16L]
   goal_counts <- goals[, .N, by = .(match_id, team_id)]
   match_teams[goal_counts, home_goals := i.N, on = .(match_id, home_team_id = team_id)]

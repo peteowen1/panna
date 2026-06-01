@@ -36,9 +36,17 @@ devtools::load_all()
     cli::cli_abort("Lineups must have team_position or is_home column")
   }
 
-  goals <- dt_events[type_id == 16L]
-  if (nrow(goals) == 0 && "type_name" %in% names(dt_events)) {
-    goals <- dt_events[grepl("[Gg]oal", type_name) & !grepl("[Oo]wn", type_name)]
+  # Exclude penalty-shootout goals (period_id >= 5): a match decided on pens is
+  # a draw in open play, so shootout conversions must not count toward the score
+  # that produces the WP win/draw/loss label.
+  reg_events <- if ("period_id" %in% names(dt_events)) {
+    dt_events[!is_shootout_period(period_id)]
+  } else {
+    dt_events
+  }
+  goals <- reg_events[type_id == 16L]
+  if (nrow(goals) == 0 && "type_name" %in% names(reg_events)) {
+    goals <- reg_events[grepl("[Gg]oal", type_name) & !grepl("[Oo]wn", type_name)]
   }
 
   goal_counts <- goals[, .N, by = .(match_id, team_id)]

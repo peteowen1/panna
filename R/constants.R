@@ -345,6 +345,21 @@ EPV_OPP_PRIOR_GAMES <- 2
 #' PENALTY_XG
 PENALTY_XG <- 0.76
 
+#' Empirical penalty-shootout conversion rate
+#'
+#' Per-kick conversion probability in a penalty shootout, measured from local
+#' Opta data: 900 goals / 1200 shootout kicks = 0.75 across 116 shootouts
+#' (cross-validates the literature consensus of ~0.75-0.76). Distinct from
+#' \code{PENALTY_XG} (in-run penalty xG): shootout kicks are a different,
+#' higher-pressure context, even though the rates happen to be close. Default
+#' conversion rate for \code{\link{shootout_win_prob}}.
+#'
+#' @format Numeric value: 0.75
+#' @export
+#' @examples
+#' PENALTY_SHOOTOUT_CONVERSION
+PENALTY_SHOOTOUT_CONVERSION <- 0.75
+
 
 # =============================================================================
 # Chain Analytics Constants
@@ -473,6 +488,59 @@ WP_DRAW_VALUE <- 0.5
 #' @format Numeric value: 0.5
 #' @keywords internal
 WPA_ACTOR_SHARE <- 0.5
+
+#' Regulation seconds (90 minutes)
+#'
+#' Duration of regulation time in seconds. Win-probability time features use
+#' this denominator for matches that did NOT reach extra time.
+#'
+#' @format Numeric value: 5400
+#' @keywords internal
+REGULATION_SECONDS <- 5400
+
+#' Extra-time seconds (120 minutes)
+#'
+#' Duration including two 15-minute extra-time periods, in seconds. WP time
+#' features use this denominator only for matches that actually reached extra
+#' time — a fixed 5400 cap clamps every ET action to time_remaining == 0,
+#' telling the model the match is over for the full 30 min of ET and inflating
+#' per-event WPA in knockout matches.
+#'
+#' @format Numeric value: 7200
+#' @keywords internal
+EXTRA_TIME_SECONDS <- 7200
+
+#' Opta match period identifiers
+#'
+#' Opta F24 `period_id`: 1 = first half, 2 = second half (regulation);
+#' 3 = first half extra time, 4 = second half extra time; >= 5 = penalty
+#' shootout. Confirmed against UCL 2025-2026 PSG-Arsenal (match
+#' 6sb5ga83yrll15624x1z0gwt0, 2026-05-30): the minute clock runs continuously
+#' across periods (ET actions are minute 90-120, not reset), and shootout
+#' kicks are stamped at minute 120 under period_id 5.
+#'
+#' @format Integer vectors
+#' @keywords internal
+OPTA_REGULATION_PERIODS <- c(1L, 2L)
+#' @rdname OPTA_REGULATION_PERIODS
+#' @keywords internal
+OPTA_EXTRA_TIME_PERIODS <- c(3L, 4L)
+
+#' Test whether period_id values are penalty-shootout periods
+#'
+#' Shootout kicks are recorded as goals (\code{type_id == 16}) at minute 120 but
+#' are not open play: they must be excluded from match scores, SPADL, EPV and
+#' WPA. A match decided on penalties is a draw in open play (its WP label is
+#' 0.5). Any \code{period_id >= 5} is treated as shootout — no legitimate
+#' open-play period exceeds 4 (covers the standard 5 and a stray 16 some feeds
+#' emit).
+#'
+#' @param period_id Integer vector of Opta period identifiers.
+#' @return Logical vector, \code{TRUE} where the period is a shootout period.
+#' @export
+is_shootout_period <- function(period_id) {
+  !is.na(period_id) & period_id >= 5L
+}
 
 
 # =============================================================================

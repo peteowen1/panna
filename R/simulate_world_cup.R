@@ -265,7 +265,14 @@ play_knockout_round <- function(bracket, WIN, DRAW, LAM,
       winners[i] <- ta
     } else if (u[i] < ps[1] + ps[2]) {
       g2 <- g1                                   # draw -> ET/penalties
-      winners[i] <- if (coin[i] < 0.5) ta else tb
+      # Drawn knockout -> penalty shootout. shootout_win_prob() with equal
+      # conversion rates is exactly 0.5 (a fair shootout has no structural
+      # first-kicker edge), so this is behaviourally identical to the prior
+      # bare coin flip — but it names the mechanism and is the single hook to
+      # later pass team-specific conversion rates (taker/keeper quality) for
+      # non-50/50 shootout odds. ta took the (notional) first kick.
+      p_so <- shootout_win_prob()                # P(ta wins) = 0.5 at equal p
+      winners[i] <- if (coin[i] < p_so) ta else tb
     } else {
       if (g2 <= g1) g2 <- g1 + 1L
       winners[i] <- tb

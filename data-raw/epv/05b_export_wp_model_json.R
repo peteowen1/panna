@@ -115,8 +115,14 @@ envelope <- list(
   feature_names = wp$feature_names,
   nrounds = length(trees_nested),
   trees = trees_nested,
-  # Training-time scaling context for the worker's feature engineering:
-  time_scaling = list(match_seconds_cap = 5400L),
+  # Training-time scaling context for the worker's feature engineering.
+  # time_remaining now uses a PER-MATCH denominator: regulation_seconds for
+  # matches that ended in 90 min, extra_time_seconds for matches that reached
+  # ET (2026-05-31 ET/shootout WPA fix). The worker must pick the denominator
+  # per match the same way create_wp_features() does — a single fixed cap is no
+  # longer correct for ET matches. is_extra_time is now also a model feature.
+  time_scaling = list(regulation_seconds = REGULATION_SECONDS,
+                      extra_time_seconds = EXTRA_TIME_SECONDS),
   exported_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%S%z")
 )
 
@@ -155,22 +161,32 @@ if (!have_branch) {
 
 # Walk one tree manually and compare to xgb predict on a hand-made feature vector
 # at a "middle of match, level game" state — home WP should be close to 0.55.
-mk_feat <- function(time_remaining = 0.5, score_diff = 0L, xg_diff = 0,
-                    red_card_diff = 0L, is_home = 1L, is_second_half = 0L) {
-  data.frame(time_remaining = time_remaining, score_diff = score_diff,
+# Columns MUST match train_wp_model()'s feature_names exactly (the model is
+# scored via scenarios[, wp$feature_names]): time_remaining, xmargin, xg_diff,
+# red_card_diff, is_home, is_second_half, is_extra_time. `xmargin` is the
+# score+EPV composite the model trains on (NOT score_diff — that was an older
+# name); `is_extra_time` was added 2026-05-31 with the ET/shootout WPA fix.
+mk_feat <- function(time_remaining = 0.5, xmargin = 0, xg_diff = 0,
+                    red_card_diff = 0L, is_home = 1L, is_second_half = 0L,
+                    is_extra_time = 0L) {
+  data.frame(time_remaining = time_remaining, xmargin = xmargin,
              xg_diff = xg_diff, red_card_diff = red_card_diff,
-             is_home = is_home, is_second_half = is_second_half)
+             is_home = is_home, is_second_half = is_second_half,
+             is_extra_time = is_extra_time)
 }
 
 neutral <- mk_feat()
-home_lead_late <- mk_feat(time_remaining = 0.1, score_diff = 1L,
+home_lead_late <- mk_feat(time_remaining = 0.1, xmargin = 1,
                           is_second_half = 1L)
-away_lead_late <- mk_feat(time_remaining = 0.1, score_diff = -1L,
+away_lead_late <- mk_feat(time_remaining = 0.1, xmargin = -1,
                           is_second_half = 1L)
-away_lead_early <- mk_feat(time_remaining = 0.8, score_diff = -1L)
+away_lead_early <- mk_feat(time_remaining = 0.8, xmargin = -1)
+# An ET scenario: level game deep into extra time, little time left.
+et_level_late <- mk_feat(time_remaining = 0.05, xmargin = 0,
+                         is_second_half = 1L, is_extra_time = 1L)
 
-scenarios <- rbind(neutral, home_lead_late, away_lead_late, away_lead_early)
-scenarios$label <- c("neutral", "home_lead_late", "away_lead_late", "away_lead_early")
+scenarios <- rbind(neutral, home_lead_late, away_lead_late, away_lead_early, et_level_late)
+scenarios$label <- c("neutral", "home_lead_late", "away_lead_late", "away_lead_early", "et_level_late")
 
 pred_scalar <- predict(wp$model, as.matrix(scenarios[, wp$feature_names]))
 cli_h2("In-R predict() scenario sanity")
@@ -222,8 +238,9 @@ base_score <- tryCatch({
   } else {
     # Back-compat: derive empirically — predict a row with zero-everything and
     # subtract the manual tree sum from the R prediction.
-    z <- mk_feat(time_remaining = 0, score_diff = 0L, xg_diff = 0,
-                 red_card_diff = 0L, is_home = 0L, is_second_half = 0L)
+    z <- mk_feat(time_remaining = 0, xmargin = 0, xg_diff = 0,
+                 red_card_diff = 0L, is_home = 0L, is_second_half = 0L,
+                 is_extra_time = 0L)
     zpred <- predict(wp$model, as.matrix(z[, wp$feature_names]))
     zwalk <- predict_manual(reloaded$trees, as.list(z[, wp$feature_names]))
     as.numeric(zpred - zwalk)

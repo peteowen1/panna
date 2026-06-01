@@ -51,9 +51,59 @@ create_wp_features <- function(spadl_with_epv, match_results = NULL,
   dt[, is_home := as.integer(team_id == home_team_id)]
 
   # --- Time features ---
-  # Total match seconds: 90 min = 5400 sec (we cap at this)
-  dt[, time_remaining := pmax(0, (5400 - time_seconds)) / 5400]
-  dt[, time_elapsed_frac := pmin(time_seconds / 5400, 1)]
+  # ⚠ LIVE-USE / LEAKAGE NOTE: match_reached_et below is computed over the WHOLE
+  # match (by = match_id), so a regulation action "knows" the match will later
+  # reach ET. This is a deliberate, benign lookahead for RETROSPECTIVE WPA:
+  #   (1) WPA = wp(t+1) - wp(t) is a delta and the per-match-constant denominator
+  #       cancels between the two events; (2) the denominator is identical for
+  #       every row of a match, so there is NO within-match discontinuity (a
+  #       per-EVENT denominator WOULD create one — see below); (3) add_wp_vars()
+  #       centers WPA per match, removing any residual offset. WPA is always
+  #       computed on COMPLETED matches, so match_reached_et is genuinely known.
+  # This model is therefore NOT safe for LIVE in-progress win probability — you
+  # cannot know match_reached_et mid-match, so reusing it for a live ticker would
+  # cause train/serve skew. panna's live match prediction is a separate
+  # team-level model; do not repurpose this one for live WP without making the
+  # denominator causal (5400 until an ET period actually starts).
+  #
+  # Two extra-time concepts live here and MUST NOT be confused — mixing them
+  # silently reintroduces a WPA-inflation bug:
+  #
+  #   match_reached_et  PER-MATCH  (same for every row of a match) — did this
+  #                     match go to ET at all? Drives the time DENOMINATOR.
+  #   is_extra_time     PER-EVENT  (per row) — is THIS action in an ET period?
+  #                     The model FEATURE.
+  #
+  # They differ within one match: a regulation pass in a match that later went
+  # to ET has match_reached_et == TRUE but is_extra_time == 0.
+  #
+  # The denominator is decided PER MATCH on purpose. A fixed 5400 cap would
+  # clamp every ET action to time_remaining == 0 — telling the model the match
+  # is over for the full 30 min of ET, making each ET swing read as
+  # near-decisive (the PSG-Arsenal WPA-inflation symptom). Widening to 7200 for
+  # ALL matches instead leaves a regulation full-time whistle at 0.25,
+  # deflating real late-game WPA. Per-match avoids both.
+  #
+  # ⚠ Do NOT swap in is_extra_time here: a per-EVENT denominator would give
+  # regulation rows 5400 and ET rows 7200 WITHIN THE SAME MATCH, producing a
+  # discontinuous jump in time_remaining at the 90' boundary (~0.01 -> 0.25) —
+  # a fake WPA spike at exactly the moment knockouts are decided.
+  #
+  # Shootout events (period_id >= 5) are dropped upstream in
+  # convert_opta_to_spadl(), so they never reach here.
+  dt[, match_reached_et := any(period_id %in% OPTA_EXTRA_TIME_PERIODS), by = match_id]
+  dt[, match_seconds := data.table::fifelse(match_reached_et,
+                                            EXTRA_TIME_SECONDS, REGULATION_SECONDS)]
+  dt[, time_remaining := pmax(0, (match_seconds - time_seconds)) / match_seconds]
+  dt[, time_elapsed_frac := pmin(time_seconds / match_seconds, 1)]
+  # Per-event ET indicator (the model feature): 1 for periods 3-4, else 0. Lets
+  # the model learn ET-specific dynamics (every chance suddenly decisive,
+  # fatigue) rather than extrapolating the regulation curve.
+  dt[, is_extra_time := as.integer(period_id %in% OPTA_EXTRA_TIME_PERIODS)]
+  # Drop the per-match scratch columns so they can't leak downstream and be
+  # mistaken for the per-event feature. time_remaining/time_elapsed_frac/
+  # is_extra_time carry all the signal the model needs from here.
+  dt[, c("match_reached_et", "match_seconds") := NULL]
 
   # --- Score state ---
   # Detect goals: action_type == "shot" & result == "success" in SPADL
@@ -143,7 +193,7 @@ create_wp_features <- function(spadl_with_epv, match_results = NULL,
                      "time_remaining", "time_elapsed_frac",
                      "score_diff", "margin_poss", "xmargin",
                      "xg_diff", "red_card_diff",
-                     "is_home", "is_second_half", "is_goal")
+                     "is_home", "is_second_half", "is_extra_time", "is_goal")
   if ("wp_label" %in% names(dt)) feature_cols <- c(feature_cols, "wp_label")
 
   # Keep additional columns needed for WPA computation
@@ -213,7 +263,8 @@ train_wp_model <- function(wp_features, nrounds = 500L, max_depth = 4L,
   # interaction. Kept score_diff out of the training set on purpose: xmargin
   # subsumes it when EPV=0, so keeping both would mostly be redundant.
   feature_names <- c("time_remaining", "xmargin", "xg_diff",
-                      "red_card_diff", "is_home", "is_second_half")
+                      "red_card_diff", "is_home", "is_second_half",
+                      "is_extra_time")
   feature_names <- intersect(feature_names, names(dt))
 
   # Filter to valid rows (non-NA label)
