@@ -192,6 +192,11 @@ jobs:
               # drift behind the box-score data. See panna#71.
               step_10b_export_game_logs      = TRUE,
               step_10c_export_equity         = TRUE,
+              # Per-player penalty-shootout WPA -> shootout_wpa.parquet on
+              # blog-latest (pannadata build-blog-data passes it to R2 as
+              # football/shootout-wpa.parquet). Cheap (thin data) and additive;
+              # absent for seasons with no shootouts in blog comps.
+              step_10d_export_shootout_wpa   = TRUE,
               # WC2026 simulation + blog export. Refresh weekly with the rest
               # of the predictions chain so the WC tab tracks the latest match
               # outcomes (esp. during the qualifier finals window). Disable in
