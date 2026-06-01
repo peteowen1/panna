@@ -345,6 +345,21 @@ EPV_OPP_PRIOR_GAMES <- 2
 #' PENALTY_XG
 PENALTY_XG <- 0.76
 
+#' Empirical penalty-shootout conversion rate
+#'
+#' Per-kick conversion probability in a penalty shootout, measured from local
+#' Opta data: 900 goals / 1200 shootout kicks = 0.75 across 116 shootouts
+#' (cross-validates the literature consensus of ~0.75-0.76). Distinct from
+#' \code{PENALTY_XG} (in-run penalty xG): shootout kicks are a different,
+#' higher-pressure context, even though the rates happen to be close. Default
+#' conversion rate for \code{\link{shootout_win_prob}}.
+#'
+#' @format Numeric value: 0.75
+#' @export
+#' @examples
+#' PENALTY_SHOOTOUT_CONVERSION
+PENALTY_SHOOTOUT_CONVERSION <- 0.75
+
 
 # =============================================================================
 # Chain Analytics Constants
