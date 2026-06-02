@@ -1,17 +1,22 @@
 # 10c_export_equity.R
-# Export per-action EPV credit (equity) for the blog match-events page
+# Export per-action EPV credit for the blog match-events page
 #
 # Produces action_equity_<season>.parquet — one parquet per season — with a
-# slim lookup of (match_id, event_id, equity) for every SPADL action. The
-# pannadata chain builder joins this onto chain parquets as the `equity`
+# slim lookup of (match_id, event_id, epv_credit) for every SPADL action. The
+# pannadata chain builder joins this onto chain parquets as the `epv_credit`
 # column for per-action visualisation.
+#
+# The column is `epv_credit` (renamed from `equity` 2026-06-03): it holds
+# per-action player CREDIT (sum it; never diff it), distinct from the worker's
+# `equity` field which is an EPV STATE. The old name collided with that state
+# meaning. The file name (action_equity.parquet) is unchanged.
 #
 # Default: current season only (weekly predictions pipeline). For historical
 # backfill, set `equity_seasons <- c("2015-2016", ..., "2025-2026")` before
 # sourcing — see 10c_backfill_action_equity.R.
 #
 # Pipeline per season:
-#   events → SPADL (cached) → chains → EPV → credit → (match_id, event_id, equity)
+#   events → SPADL (cached) → chains → EPV → credit → (match_id, event_id, epv_credit)
 #
 # Cup competitions (UCL/UEL/UECL and WC/EURO where available) are included
 # via resolve_league_season(), matching 10b_export_game_logs.R.
@@ -77,7 +82,7 @@ skip_league_cond <- function(reason) {
 
 # Minimum columns the slim equity lookup must emit. Catches drift in the
 # SPADL credit assignment before we ship a malformed parquet.
-.required_equity_cols <- c("match_id", "event_id", "equity")
+.required_equity_cols <- c("match_id", "event_id", "epv_credit")
 
 validate_equity_schema <- function(dt, league, season) {
   missing <- setdiff(.required_equity_cols, names(dt))
@@ -134,9 +139,9 @@ validate_equity_schema <- function(dt, league, season) {
       # (synthetic SPADL actions like merged duels).
       dt <- data.table::as.data.table(spadl_credit)
       equity <- dt[, .(
-        match_id = match_id,
-        event_id = original_event_id,
-        equity   = round(player_credit, 4)
+        match_id   = match_id,
+        event_id   = original_event_id,
+        epv_credit = round(player_credit, 4)   # per-action credit (sum, don't diff)
       )]
       equity <- equity[!is.na(event_id) & event_id != ""]
 
