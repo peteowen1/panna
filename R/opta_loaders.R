@@ -710,10 +710,15 @@ load_opta_eventless_ids <- function(league, season = NULL,
   if (is.null(reg) || nrow(reg) == 0L || !"match_id" %in% names(reg)) {
     return(character(0))
   }
+  # NA-safe filtering: `TRUE & NA` is NA, and `match_id[NA]` injects an NA into
+  # the result — which would silently UNDER-subtract the event-less set and turn
+  # a genuinely-excluded match back into a false coverage gap. Force NA -> FALSE.
   keep <- rep(TRUE, nrow(reg))
-  if ("competition" %in% names(reg)) keep <- keep & reg$competition == opta_league
+  if ("competition" %in% names(reg)) {
+    keep <- keep & !is.na(reg$competition) & reg$competition == opta_league
+  }
   if (!is.null(season) && "season" %in% names(reg)) {
-    keep <- keep & reg$season == season
+    keep <- keep & !is.na(reg$season) & reg$season == season
   }
   unique(as.character(reg$match_id[keep]))
 }
