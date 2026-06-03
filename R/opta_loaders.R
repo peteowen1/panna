@@ -652,6 +652,73 @@ load_opta_fixtures <- function(league, season = NULL, columns = NULL,
 }
 
 
+#' Load the event-less match_id registry
+#'
+#' Returns match_ids that Opta has player_stats for but provides NO event feed
+#' for (e.g. cup qualifier rounds), as recorded by pannadata's
+#' \code{rebuild_events.py} into \code{event_less_match_ids.parquet} on the
+#' \code{opta-latest} release. \code{check_events_coverage()} subtracts these
+#' from the expected-events denominator so genuinely event-less matches don't
+#' register as a coverage shortfall (an unsatisfiable gate for the continental
+#' cups). Degrades gracefully: if the registry asset/file is absent (it won't
+#' exist until the first rebuild has run), returns \code{character(0)} and the
+#' coverage check falls back to its stricter all-player_stats denominator.
+#'
+#' @param league panna league code (filtered to its Opta competition).
+#' @param season Optional season label filter.
+#' @param source "remote" (download from opta-latest) or "local".
+#' @return Character vector of event-less match_ids (possibly empty).
+#' @keywords internal
+load_opta_eventless_ids <- function(league, season = NULL,
+                                     source = c("remote", "local")) {
+  source <- match.arg(source)
+  if (!requireNamespace("arrow", quietly = TRUE)) return(character(0))
+  opta_league <- to_opta_league(league)
+  file_name   <- "event_less_match_ids.parquet"
+
+  path <- NULL
+  if (source == "local") {
+    cand <- file.path(opta_data_dir(), file_name)
+    if (file.exists(cand)) path <- cand
+  } else {
+    if (!requireNamespace("piggyback", quietly = TRUE)) return(character(0))
+    cache_key <- "eventless_peteowen1/pannadata_opta-latest"
+    if (exists(cache_key, envir = .opta_remote_env)) {
+      cached <- get(cache_key, envir = .opta_remote_env)
+      if (file.exists(cached)) path <- cached
+    }
+    if (is.null(path)) {
+      temp_dir <- file.path(tempdir(), "opta_eventless")
+      dir.create(temp_dir, showWarnings = FALSE, recursive = TRUE)
+      ok <- tryCatch({
+        piggyback::pb_download(file = file_name, repo = "peteowen1/pannadata",
+                               tag = "opta-latest", dest = temp_dir,
+                               overwrite = TRUE)
+        TRUE
+      }, error = function(e) FALSE)
+      cand <- file.path(temp_dir, file_name)
+      if (isTRUE(ok) && file.exists(cand)) {
+        path <- cand
+        assign(cache_key, cand, envir = .opta_remote_env)
+      }
+    }
+  }
+  if (is.null(path)) return(character(0))  # registry not available yet
+
+  reg <- tryCatch(as.data.frame(arrow::read_parquet(path)),
+                  error = function(e) NULL)
+  if (is.null(reg) || nrow(reg) == 0L || !"match_id" %in% names(reg)) {
+    return(character(0))
+  }
+  keep <- rep(TRUE, nrow(reg))
+  if ("competition" %in% names(reg)) keep <- keep & reg$competition == opta_league
+  if (!is.null(season) && "season" %in% names(reg)) {
+    keep <- keep & reg$season == season
+  }
+  unique(as.character(reg$match_id[keep]))
+}
+
+
 #' Check events_consolidated Coverage vs Played Fixtures
 #'
 #' Counts unique match_ids in \code{events_consolidated/events_<comp>.parquet}
@@ -674,14 +741,29 @@ load_opta_fixtures <- function(league, season = NULL, columns = NULL,
 #' @param season Season string (e.g. "2025-2026")
 #' @param source One of "remote" (default) or "local" — where to read from.
 #'
+#' The gap is measured against the EXPECTED-events universe, not raw played
+#' fixtures: matches Opta actually covers (player_stats) minus those confirmed
+#' event-less in the registry (\code{\link{load_opta_eventless_ids}}). This
+#' stops the continental cups (whose played fixtures include qualifier rounds
+#' Opta provides no event feed for) from tripping an unsatisfiable gate, while
+#' still catching a genuine shortfall like the Championship case above.
+#'
+#' @param league panna league code (e.g. "EPL", "ENG2", "TUR")
+#' @param season Season string (e.g. "2025-2026")
+#' @param source One of "remote" (default) or "local" — where to read from.
+#'
 #' @return Invisibly: list with
 #'   \itemize{
 #'     \item \code{league}, \code{season}: identifiers
-#'     \item \code{n_played}: distinct played fixtures
+#'     \item \code{n_played}: distinct played fixtures (context)
+#'     \item \code{n_player_stats}: distinct matches Opta covers (the universe)
+#'     \item \code{n_eventless}: registry matches excluded (no Opta event feed)
+#'     \item \code{n_expected}: \code{n_player_stats - n_eventless} — matches
+#'       that should have events
 #'     \item \code{n_events}: distinct match_ids in events_consolidated
-#'     \item \code{gap}: \code{n_played - n_events}
-#'     \item \code{missing_match_ids}: vector of match_ids in fixtures but
-#'       not in events (length == gap)
+#'     \item \code{gap}: expected matches missing from events
+#'     \item \code{missing_match_ids}: vector of expected match_ids not in
+#'       events (length == gap)
 #'   }
 #'
 #' @export
@@ -717,20 +799,38 @@ check_events_coverage <- function(league, season,
   fx <- load_or_rethrow(function()
     load_opta_fixtures(league, season = season, status = "Played",
                         source = source, columns = c("match_id")))
+  ps <- load_or_rethrow(function()
+    load_opta_stats(league, season = season,
+                     source = source, columns = c("match_id")))
   ev <- load_or_rethrow(function()
     load_opta_match_events(league, season = season,
                             source = source, columns = c("match_id")))
 
-  played_ids <- unique(fx$match_id)
-  event_ids  <- unique(ev$match_id)
-  missing    <- setdiff(played_ids, event_ids)
+  played_ids    <- unique(fx$match_id)
+  ps_ids        <- unique(ps$match_id)
+  event_ids     <- unique(ev$match_id)
+  eventless_ids <- load_opta_eventless_ids(league, season = season, source = source)
+
+  # The "should have events" universe is the matches Opta actually covers
+  # (player_stats), minus those confirmed event-less (no Opta event feed —
+  # e.g. cup qualifiers). This drops two classes of unsatisfiable matches that
+  # a naive played-fixtures denominator wrongly counted as gaps: (a) played
+  # fixtures Opta has no data for at all (absent from player_stats), and (b)
+  # matches Opta has stats but no events for (the registry). Falls back to
+  # played fixtures when player_stats isn't available (source not local yet).
+  universe_ids <- if (length(ps_ids) > 0L) ps_ids else played_ids
+  expected_ids <- setdiff(universe_ids, eventless_ids)
+  missing      <- setdiff(expected_ids, event_ids)
 
   invisible(list(
-    league   = league,
-    season   = season,
-    n_played = length(played_ids),
-    n_events = length(event_ids),
-    gap      = length(missing),
+    league         = league,
+    season         = season,
+    n_played       = length(played_ids),
+    n_player_stats = length(ps_ids),
+    n_eventless    = length(eventless_ids),
+    n_expected     = length(expected_ids),
+    n_events       = length(event_ids),
+    gap            = length(missing),
     missing_match_ids = missing
   ))
 }
@@ -781,29 +881,31 @@ assert_events_coverage <- function(league_seasons, season = NULL,
   reports <- lapply(ls_list, function(p) {
     r <- check_events_coverage(p$league, p$season, source = source)
     # Classify each report:
-    #   source_missing -- n_events == 0 AND n_played > 0: per-comp events
-    #     file isn't local yet (typical on a fresh GHA runner). The
-    #     downstream load_opta_match_events() will lazy-download via
-    #     piggyback, so this is NOT a coverage shortfall — skip the abort
-    #     check for this league.
-    #   partial_gap   -- 0 < n_events < n_played: REAL shortfall (the
-    #     2026-05-29 Championship 265/557 case). This is what we want to
-    #     catch and abort on.
+    #   source_missing -- n_events == 0 AND the universe is non-empty: per-comp
+    #     events file isn't local yet (typical on a fresh GHA runner). The
+    #     downstream load_opta_match_events() will lazy-download via piggyback,
+    #     so this is NOT a coverage shortfall — skip the abort check.
+    #   partial_gap   -- gap > warn_threshold against the EXPECTED-events
+    #     universe (player_stats minus the event-less registry). Catches a real
+    #     shortfall (the 2026-05-29 Championship 265/557 case) without flagging
+    #     the cup qualifiers Opta provides no event feed for.
     #   ok            -- gap <= warn_threshold.
-    r$status <- if (r$n_events == 0L && r$n_played > 0L) "source_missing"
+    has_universe <- r$n_played > 0L || r$n_player_stats > 0L
+    r$status <- if (r$n_events == 0L && has_universe) "source_missing"
                 else if (r$gap > warn_threshold) "partial_gap"
                 else "ok"
+    elx <- if (r$n_eventless > 0L) sprintf("; %d event-less excluded", r$n_eventless) else ""
     if (r$status == "source_missing") {
       cli::cli_alert_info(
         "{r$league} {r$season}: source not local yet (lazy-loaded downstream)"
       )
     } else if (r$status == "partial_gap") {
       cli::cli_alert_warning(
-        "{r$league} {r$season}: events_consolidated covers {r$n_events} / {r$n_played} played matches (gap={r$gap})"
+        "{r$league} {r$season}: events cover {r$n_events} / {r$n_expected} expected matches (gap={r$gap}{elx})"
       )
     } else {
       cli::cli_alert_success(
-        "{r$league} {r$season}: {r$n_events} / {r$n_played} ({r$gap} gap)"
+        "{r$league} {r$season}: {r$n_events} / {r$n_expected} expected ({r$gap} gap{elx})"
       )
     }
     r
@@ -824,14 +926,14 @@ assert_events_coverage <- function(league_seasons, season = NULL,
   bad <- reports[partial_gaps > abort_threshold]
   if (length(bad) > 0L) {
     msgs <- vapply(bad, function(r) {
-      sprintf("  %s %s: missing %d / %d matches (e.g. %s)",
-              r$league, r$season, r$gap, r$n_played,
-              paste(head(r$missing_match_ids, 3), collapse = ", "))
+      sprintf("  %s %s: missing %d of %d expected (events %d; %d event-less excluded; e.g. %s)",
+              r$league, r$season, r$gap, r$n_expected, r$n_events,
+              r$n_eventless, paste(head(r$missing_match_ids, 3), collapse = ", "))
     }, character(1))
     cli::cli_abort(c(
       "Refusing to proceed: {length(bad)} league(s) exceed events-coverage abort threshold ({abort_threshold}):",
       stats::setNames(msgs, rep(" ", length(msgs))),
-      "i" = "Re-scrape the affected leagues with force_rescrape=true to rebuild events_consolidated."
+      "i" = "Backfill the affected comps with pannadata's rebuild-events.yml (records event-less matches to the registry); do NOT rely on force_rescrape."
     ))
   }
 

@@ -17,11 +17,15 @@ check_events_coverage(league, season, source = c("remote", "local"))
 Invisibly: list with
 \itemize{
 \item \code{league}, \code{season}: identifiers
-\item \code{n_played}: distinct played fixtures
+\item \code{n_played}: distinct played fixtures (context)
+\item \code{n_player_stats}: distinct matches Opta covers (the universe)
+\item \code{n_eventless}: registry matches excluded (no Opta event feed)
+\item \code{n_expected}: \code{n_player_stats - n_eventless} — matches
+that should have events
 \item \code{n_events}: distinct match_ids in events_consolidated
-\item \code{gap}: \code{n_played - n_events}
-\item \code{missing_match_ids}: vector of match_ids in fixtures but
-not in events (length == gap)
+\item \code{gap}: expected matches missing from events
+\item \code{missing_match_ids}: vector of expected match_ids not in
+events (length == gap)
 }
 }
 \description{
