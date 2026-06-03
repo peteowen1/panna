@@ -164,6 +164,65 @@ validate_game_log_schema <- function(dt, league, season) {
   invisible(dt)
 }
 
+# Pull fresh per-league events (+ consolidated fixtures) from opta-latest into
+# the LOCAL data dir. The pre-flight coverage guard below runs against
+# source="local", but on a dev box that local copy can lag the daily cloud
+# scrape by days — tripping the abort even though opta-latest (and the
+# pipeline's own remote event loads on line ~210) are complete. Refreshing the
+# short leagues closes that gap so the re-check sees current data; a genuine
+# abort is then reserved for the case that matters — the CLOUD itself is short.
+.refresh_local_events <- function(leagues, repo = "peteowen1/pannadata",
+                                   tag = "opta-latest") {
+  if (!requireNamespace("piggyback", quietly = TRUE)) {
+    warning("piggyback not installed — cannot auto-refresh local events; ",
+            "falling through to the guard with existing local files.",
+            call. = FALSE)
+    return(invisible(character(0)))
+  }
+  events_dir <- file.path(opta_data_dir(), "events_consolidated")
+  dir.create(events_dir, showWarnings = FALSE, recursive = TRUE)
+
+  refreshed <- character(0)
+  for (lg in unique(leagues)) {
+    file_name <- sprintf("events_%s.parquet", to_opta_league(lg))
+    ok <- tryCatch({
+      piggyback::pb_download(file = file_name, repo = repo, tag = tag,
+                             dest = events_dir, overwrite = TRUE)
+      TRUE
+    }, error = function(e) {
+      warning(sprintf("Auto-refresh: failed to pull %s — %s",
+                      file_name, e$message), call. = FALSE)
+      FALSE
+    })
+    if (ok) {
+      message(sprintf("    Refreshed %s", file_name))
+      refreshed <- c(refreshed, lg)
+    }
+  }
+
+  # Refresh the consolidated singles the coverage guard's denominator reads:
+  #   opta_fixtures.parquet      — played-match context
+  #   opta_player_stats.parquet  — the "should have events" universe
+  #   event_less_match_ids.parquet — matches Opta has no event feed for
+  # so the local hard re-check compares fresh events against a fresh, coherent
+  # denominator (a stale player_stats would mis-size the expected set).
+  for (single in c("opta_fixtures.parquet", "opta_player_stats.parquet",
+                   "event_less_match_ids.parquet")) {
+    tryCatch({
+      piggyback::pb_download(file = single, repo = repo, tag = tag,
+                             dest = opta_data_dir(), overwrite = TRUE)
+      message(sprintf("    Refreshed %s", single))
+    }, error = function(e) {
+      # The registry won't exist until the first rebuild has run — a miss
+      # there is benign (coverage falls back to the stricter denominator).
+      warning(sprintf("Auto-refresh: failed to pull %s — %s",
+                      single, e$message), call. = FALSE)
+    })
+  }
+
+  invisible(refreshed)
+}
+
 # Process a single season: returns path to written parquet, or NULL on failure.
 .process_season <- function(season) {
   message(sprintf("\n########## SEASON %s ##########", season))
@@ -189,6 +248,41 @@ validate_game_log_schema <- function(dt, league, season) {
     } else {
       20L  # default: tolerate 20 missing per league, abort beyond
     }
+
+    # Auto-refresh stale local events before the hard guard. Default ON: the
+    # cloud (opta-latest) is the source of truth and this step's own event
+    # loads are remote, so a lagging local copy shouldn't block the run. Set
+    # `auto_refresh_stale_events <- FALSE` before sourcing to keep the legacy
+    # "abort on stale local" behaviour (e.g. a deliberately offline run).
+    auto_refresh <- if (exists("auto_refresh_stale_events", inherits = FALSE)) {
+      isTRUE(auto_refresh_stale_events)
+    } else {
+      TRUE
+    }
+
+    if (isTRUE(auto_refresh)) {
+      # Warn-only probe (abort_threshold = Inf never aborts): returns the
+      # per-league reports so we can see which LOCAL files are short. A
+      # "source_missing" league (0 local events, lazy-loaded remotely
+      # downstream) is intentionally NOT refreshed — only real partial gaps.
+      probe <- assert_events_coverage(ls_pairs, warn_threshold = 5L,
+                                       abort_threshold = Inf, source = "local")
+      short_leagues <- unique(vapply(
+        Filter(function(r) identical(r$status, "partial_gap"), probe$reports),
+        function(r) r$league, character(1)
+      ))
+      if (length(short_leagues) > 0L) {
+        message(sprintf(
+          "\n  Auto-refresh: %d league(s) have stale/short local events — pulling fresh from opta-latest:\n    %s",
+          length(short_leagues), paste(short_leagues, collapse = ", ")
+        ))
+        .refresh_local_events(short_leagues)
+      }
+    }
+
+    # Hard guard. After an auto-refresh this aborts ONLY if the cloud itself is
+    # genuinely short (the case worth stopping for); on a normal dev box the
+    # refresh closes the gap and this passes.
     assert_events_coverage(ls_pairs,
                             warn_threshold = 5L,
                             abort_threshold = abort_thresh,
