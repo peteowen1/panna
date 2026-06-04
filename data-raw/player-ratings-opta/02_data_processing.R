@@ -65,7 +65,17 @@ if (!exists("processed_data")) {
   processed_data$opta_stats <- raw_opta_data$stats
   processed_data$opta_xmetrics <- raw_opta_data$xmetrics
 
+  # Combined file WITHOUT the multi-GB events blob. Every consumer of
+  # 02_processed_data.rds -- RAPM steps 05-08, the skills pipeline, analysis
+  # scripts -- uses opta_stats/opta_xmetrics/lineups/results; NONE read $events
+  # (verified). Loading the events for nothing OOM'd step 05 (SPM) at 15.9GB
+  # just to grab two small tables. Events live only in the per-league slices
+  # below (step 03's input). Detach for the save, reattach for the slice write.
+  .events_keep <- processed_data$events
+  processed_data$events <- NULL
   saveRDS(processed_data, processed_data_path)
+  processed_data$events <- .events_keep
+  rm(.events_keep); gc(verbose = FALSE)
 }
 
 # 3b. Per-league processed slices (splint-creation memory fix) ----

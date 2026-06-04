@@ -176,11 +176,13 @@ if (!exists("MIN_SPLINT_DURATION", inherits = FALSE)) MIN_SPLINT_DURATION <- 5
       length(list.files(leagues_dir, pattern = "\\.rds$")) > 0) {
     .build_splints_from_league_dir(leagues_dir, splint_chunks_dir, MIN_SPLINT_DURATION)
   } else {
-    message("  (per-league slices absent -- legacy full-load path)")
-    pd <- readRDS(processed_data_path)
-    out <- .build_splints_streaming(pd, splint_chunks_dir, MIN_SPLINT_DURATION)
-    rm(pd); gc(verbose = FALSE)
-    out
+    # The combined 02_processed_data.rds no longer carries events (step 02
+    # drops them to keep steps 05-08 from OOMing), so the per-league slices are
+    # now the ONLY events source for splint creation. If they're missing, fail
+    # loudly rather than silently build degraded, event-less splints.
+    stop("Per-league processed slices not found in '", leagues_dir,
+         "'. Re-run step 02 (e.g. force_rebuild_from=2) to regenerate them.",
+         call. = FALSE)
   }
 }
 
