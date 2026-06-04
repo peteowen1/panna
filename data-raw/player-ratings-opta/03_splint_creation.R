@@ -114,30 +114,88 @@ if (!exists("MIN_SPLINT_DURATION", inherits = FALSE)) MIN_SPLINT_DURATION <- 5
   combined
 }
 
+# Build splints by reading the per-league processed slices written by step 02,
+# ONE league resident at a time. Identical output to .build_splints_streaming()
+# (same combined splints), but it never loads the full multi-GB processed_data
+# -- the splint_creation OOM fix. Peak RAM = one league's slice + the (small,
+# aggregated) splint chunks, instead of all ~62.8K matches' raw events at once.
+.build_splints_from_league_dir <- function(leagues_dir, chunks_dir,
+                                            min_splint_duration) {
+  league_files <- list.files(leagues_dir, pattern = "\\.rds$", full.names = TRUE)
+  message(sprintf(
+    "Streaming splint creation from %d per-league files (1 league resident at a time)",
+    length(league_files)))
+
+  unlink(chunks_dir, recursive = TRUE, force = TRUE)
+  dir.create(chunks_dir, recursive = TRUE)
+
+  for (i in seq_along(league_files)) {
+    chunk_data <- readRDS(league_files[i])
+    lg <- if (!is.null(chunk_data$results) && "league" %in% names(chunk_data$results)) {
+      chunk_data$results$league[1]
+    } else tools::file_path_sans_ext(basename(league_files[i]))
+    message(sprintf("  League %d/%d: %s (%d matches)", i, length(league_files), lg,
+                    length(unique(chunk_data$results$match_id))))
+    league_splints <- create_all_splints(
+      chunk_data, include_goals = TRUE, verbose = FALSE,
+      chunk_by = "none", min_splint_duration = min_splint_duration)
+    saveRDS(league_splints, file.path(chunks_dir, sprintf("chunk_%03d.rds", i)))
+    rm(chunk_data, league_splints); gc(verbose = FALSE)
+  }
+
+  # Combine per-league chunks (same incremental accumulation as the legacy path).
+  message("  Combining per-league chunks...")
+  chunk_files <- list.files(chunks_dir, pattern = "\\.rds$", full.names = TRUE)
+  splints_list    <- vector("list", length(chunk_files))
+  players_list    <- vector("list", length(chunk_files))
+  match_info_list <- vector("list", length(chunk_files))
+  for (i in seq_along(chunk_files)) {
+    one <- readRDS(chunk_files[i])
+    splints_list[[i]]    <- one$splints
+    players_list[[i]]    <- one$players
+    match_info_list[[i]] <- one$match_info
+    rm(one)
+  }
+  combined <- list(
+    splints    = as.data.frame(data.table::rbindlist(splints_list, fill = TRUE, use.names = TRUE)),
+    players    = as.data.frame(data.table::rbindlist(players_list, fill = TRUE, use.names = TRUE)),
+    match_info = as.data.frame(data.table::rbindlist(match_info_list, fill = TRUE, use.names = TRUE))
+  )
+  rm(splints_list, players_list, match_info_list); gc(verbose = FALSE)
+  unlink(chunks_dir, recursive = TRUE, force = TRUE)
+  message(sprintf("Created %d splints from per-league slices", nrow(combined$splints)))
+  combined
+}
+
+# Build splints, preferring the per-league disk stream (step 02 slices) to keep
+# memory bounded; fall back to the legacy full-load streaming only if the
+# per-league slices aren't present (e.g. a resume that skipped step 02).
+.create_splints <- function() {
+  leagues_dir <- file.path(cache_dir, "02_processed_leagues")
+  if (dir.exists(leagues_dir) &&
+      length(list.files(leagues_dir, pattern = "\\.rds$")) > 0) {
+    .build_splints_from_league_dir(leagues_dir, splint_chunks_dir, MIN_SPLINT_DURATION)
+  } else {
+    message("  (per-league slices absent -- legacy full-load path)")
+    pd <- readRDS(processed_data_path)
+    out <- .build_splints_streaming(pd, splint_chunks_dir, MIN_SPLINT_DURATION)
+    rm(pd); gc(verbose = FALSE)
+    out
+  }
+}
+
 splint_chunks_dir <- file.path(cache_dir, "03_splint_chunks")
 
-if (file.exists(splint_data_path)) {
-  processed_mtime <- file.mtime(processed_data_path)
-  splint_mtime <- file.mtime(splint_data_path)
-
-  if (splint_mtime > processed_mtime) {
-    message("=== Skipping splint creation (cache is up to date) ===")
-    splint_data <- readRDS(splint_data_path)
-  } else {
-    message("=== Processed data is newer - recreating splints (streaming) ===")
-    processed_data <- readRDS(processed_data_path)
-    splint_data <- .build_splints_streaming(processed_data, splint_chunks_dir,
-                                             MIN_SPLINT_DURATION)
-    saveRDS(splint_data, splint_data_path)
-    rm(processed_data); gc(verbose = FALSE)
-  }
+if (file.exists(splint_data_path) &&
+    file.mtime(splint_data_path) > file.mtime(processed_data_path)) {
+  message("=== Skipping splint creation (cache is up to date) ===")
+  splint_data <- readRDS(splint_data_path)
 } else {
-  message("=== Creating splints (streaming) ===")
-  processed_data <- readRDS(processed_data_path)
-  splint_data <- .build_splints_streaming(processed_data, splint_chunks_dir,
-                                           MIN_SPLINT_DURATION)
+  message(if (file.exists(splint_data_path))
+            "=== Processed data is newer - recreating splints ==="
+          else "=== Creating splints ===")
+  splint_data <- .create_splints()
   saveRDS(splint_data, splint_data_path)
-  rm(processed_data); gc(verbose = FALSE)
 }
 
 # Validate splint output

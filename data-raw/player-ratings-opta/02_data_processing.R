@@ -68,6 +68,41 @@ if (!exists("processed_data")) {
   saveRDS(processed_data, processed_data_path)
 }
 
+# 3b. Per-league processed slices (splint-creation memory fix) ----
+# Step 03 builds splints league-by-league. Writing the slices HERE -- where
+# processed_data is already resident -- lets step 03 read ONE league at a time
+# from disk instead of loading the full multi-GB, events-heavy blob and copying
+# it per league, which OOM'd the 16GB runner in splint_creation. The combined
+# 02_processed_data.rds above is still written (steps 05-08 read it). Rewritten
+# only when missing or older than the processed_data cache.
+leagues_dir <- file.path(cache_dir, "02_processed_leagues")
+.done_marker <- file.path(leagues_dir, "_done.txt")
+.slices_stale <- !file.exists(.done_marker) ||
+  file.mtime(.done_marker) < file.mtime(processed_data_path)
+if ("league" %in% names(processed_data$results) && isTRUE(.slices_stale)) {
+  message("=== Writing per-league processed slices (streaming splint input) ===")
+  unlink(leagues_dir, recursive = TRUE, force = TRUE)
+  dir.create(leagues_dir, recursive = TRUE)
+  .lgs <- unique(processed_data$results$league)
+  for (.lg in .lgs) {
+    .mids <- processed_data$results$match_id[processed_data$results$league == .lg]
+    .slice <- list(
+      lineups       = processed_data$lineups[processed_data$lineups$match_id %in% .mids, , drop = FALSE],
+      shooting      = processed_data$shooting[processed_data$shooting$match_id %in% .mids, , drop = FALSE],
+      results       = processed_data$results[processed_data$results$match_id %in% .mids, , drop = FALSE],
+      events        = if (!is.null(processed_data$events))
+                        processed_data$events[processed_data$events$match_id %in% .mids, , drop = FALSE] else NULL,
+      stats_summary = if (!is.null(processed_data$stats_summary))
+                        processed_data$stats_summary[processed_data$stats_summary$match_id %in% .mids, , drop = FALSE] else NULL
+    )
+    saveRDS(.slice, file.path(leagues_dir,
+                              paste0(gsub("[^A-Za-z0-9_-]", "_", .lg), ".rds")))
+    rm(.slice); gc(verbose = FALSE)
+  }
+  writeLines(as.character(.lgs), .done_marker)
+  message(sprintf("  Wrote %d per-league slices to %s", length(.lgs), leagues_dir))
+}
+
 # 4. Summary Statistics ----
 
 cat("\n=== Processed Data Summary ===\n")
