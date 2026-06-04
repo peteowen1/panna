@@ -93,8 +93,15 @@ run_step_opta <- function(step_name, step_num, code_block) {
       stop("callr is required to run pipeline steps in isolation.", call. = FALSE)
     }
     callr::r(
-      function(code_block, cfg_path) {
+      function(code_block, cfg_path, utils_path) {
         if (file.exists(cfg_path)) list2env(readRDS(cfg_path), envir = globalenv())
+        # Re-source the shared pipeline helpers INSIDE the child. The subprocess
+        # inherits none of the orchestrator's lexically-defined functions:
+        # load_all() attaches only the package (R/), and .write_pipeline_config()
+        # ships data, not functions. Steps that call save_cache_with_meta() /
+        # validate_step_output() (01, 03, 04, 07) would otherwise die with
+        # "could not find function" at their save -- after doing all the work.
+        if (file.exists(utils_path)) source(utils_path)
         code_block()
         # Discard the step's return value: steps communicate via the on-disk
         # cache, so returning it is pure waste -- and callr serializes the
@@ -104,7 +111,8 @@ run_step_opta <- function(step_name, step_num, code_block) {
         invisible(NULL)
       },
       args = list(code_block = code_block,
-                  cfg_path = file.path("data-raw", "cache-opta", ".pipeline_config.rds")),
+                  cfg_path = file.path("data-raw", "cache-opta", ".pipeline_config.rds"),
+                  utils_path = file.path("data-raw", "pipeline_utils.R")),
       wd = getwd(), show = TRUE, spinner = FALSE
     )
     invisible(NULL)
