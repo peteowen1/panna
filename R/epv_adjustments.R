@@ -172,10 +172,17 @@ adjust_epv_for_opponents <- function(player_match,
   teams_per_match <- match_teams[, .N, by = match_id]
   bad_matches <- teams_per_match[N != 2]$match_id
   if (length(bad_matches) > 0) {
-    cli::cli_warn("{length(bad_matches)} match(es) have != 2 teams - excluding from opponent adjustment")
+    cli::cli_warn(paste0("{length(bad_matches)} match(es) have != 2 teams - ",
+                          "kept with no opponent adjustment (per-player values intact)"))
+    # Remove them from the opponent model only (rev(team_id) needs exactly 2
+    # teams). Do NOT remove from `dt`: a team-id data quirk -- e.g. a club whose
+    # players are split across two Opta team_ids, yielding 3 "teams" -- must not
+    # DELETE the match from the per-game output (the 2026-06 Championship 536/557
+    # case: 21 backfilled matches had 3 team_ids and silently vanished from the
+    # blog Value tab). These rows fall through the opponent join below with a NA
+    # adjustment, zeroed at the end.
     team_match <- team_match[!match_id %in% bad_matches]
     match_teams <- match_teams[!match_id %in% bad_matches]
-    dt <- dt[!match_id %in% bad_matches]
   }
   match_teams[, opp_team_id := rev(team_id), by = match_id]
   team_match <- match_teams[, .(match_id, team_id, opp_team_id)][
@@ -224,6 +231,12 @@ adjust_epv_for_opponents <- function(player_match,
 
   dt[, mins_share := minutes_played / pmax(team_total_mins, 1)]
   dt[, player_opp_adj := opp_adjustment * mins_share]
+
+  # Matches excluded from the opponent model (!= 2 teams, above) fall through
+  # the right-join with NA adjustment -- they get no opponent boost but stay in
+  # the output. Zero them so downstream sums (epv_total_adj += player_opp_adj)
+  # don't NA-poison the whole row.
+  dt[is.na(player_opp_adj), player_opp_adj := 0]
 
   # Clean up
   dt[, c("team_total_mins", "mins_share") := NULL]
