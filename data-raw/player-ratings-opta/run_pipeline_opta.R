@@ -96,6 +96,12 @@ run_step_opta <- function(step_name, step_num, code_block) {
       function(code_block, cfg_path) {
         if (file.exists(cfg_path)) list2env(readRDS(cfg_path), envir = globalenv())
         code_block()
+        # Discard the step's return value: steps communicate via the on-disk
+        # cache, so returning it is pure waste -- and callr serializes the
+        # return back across the process boundary, which at step 01's ~14.9GB
+        # peak (a multi-GB raw_opta_data) tipped the subprocess over. Return
+        # NULL so callr ships nothing back.
+        invisible(NULL)
       },
       args = list(code_block = code_block,
                   cfg_path = file.path("data-raw", "cache-opta", ".pipeline_config.rds")),
