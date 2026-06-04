@@ -293,12 +293,20 @@ for (league in leagues) {
 
 message("\n=== Combining Data ===\n")
 
-combined_lineups <- bind_rows(all_lineups)
-combined_events <- bind_rows(all_events)
-combined_stats <- bind_rows(all_stats)
+# Free each accumulator list IMMEDIATELY after combining it. Otherwise the
+# all_* lists (~8GB across 20 leagues) stay resident alongside the combined_*
+# frames (~8GB) through the results table + save, peaking ~15GB and OOMing the
+# 16GB runner. The combined data is only ~8GB; the duplication was the problem.
+combined_lineups <- bind_rows(all_lineups);            rm(all_lineups)
+combined_events  <- bind_rows(all_events);             rm(all_events)
+combined_stats   <- bind_rows(all_stats);              rm(all_stats)
 combined_xmetrics <- if (length(all_xmetrics) > 0) bind_rows(all_xmetrics) else NULL
+rm(all_xmetrics)
 combined_shots <- if (length(all_shots_from_spadl) > 0) bind_rows(all_shots_from_spadl) else NULL
+rm(all_shots_from_spadl)
 combined_match_xg <- if (length(all_match_xg) > 0) bind_rows(all_match_xg) else NULL
+rm(all_match_xg)
+gc(verbose = FALSE)
 
 # Data scale validation: catch partial/empty loads early
 if (nrow(combined_lineups) == 0) {
@@ -410,6 +418,7 @@ if (!is.null(combined_match_xg)) {
 # to set exact period boundaries. Matches with no markers get NA and the
 # splint pipeline falls back to last-event time.
 combined_period_ends <- if (length(all_period_ends) > 0) bind_rows(all_period_ends) else NULL
+rm(all_period_ends)
 if (!is.null(combined_period_ends) && nrow(combined_period_ends) > 0) {
   results <- results %>%
     left_join(combined_period_ends, by = "match_id")
@@ -423,6 +432,7 @@ if (!is.null(combined_period_ends) && nrow(combined_period_ends) > 0) {
 # This becomes the authoritative source of on_minute/off_minute for splint
 # creation; lineups are kept only for player_name + metadata.
 combined_player_timing <- if (length(all_player_timing) > 0) bind_rows(all_player_timing) else NULL
+rm(all_player_timing)
 if (!is.null(combined_player_timing) && nrow(combined_player_timing) > 0) {
   message(sprintf("  Chain-derived player timing rows: %d (across %d matches)",
                   nrow(combined_player_timing),
