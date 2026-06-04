@@ -67,14 +67,43 @@ if (!exists("force_rebuild_from")) force_rebuild_from <- NULL
 
 source("data-raw/pipeline_utils.R")
 
-# Wrapper that passes run_steps from the pipeline environment.
-# Forces a full GC after each step so the next step starts with clean memory.
-# Without this, R's lazy GC leaves the previous step's local-frame variables
-# (combined_lineups, raw_opta_data, processed_data, etc.) holding multi-GB of
-# unreachable-but-allocated heap, which pushes step 3's readRDS over the
-# 7GB ceiling on standard ubuntu-latest runners.
+# Each step runs in its OWN fresh R subprocess (via callr) so memory is fully
+# released to the OS between steps. gc() alone is not enough: R does not return
+# freed heap to the OS, so the single-session pipeline accumulated the
+# high-water mark of the heaviest step (~10GB) as a permanent baseline and
+# OOM'd step 05 on the 16GB runner -- even though the heaviest SINGLE step
+# (RAPM) peaks at only ~12.6GB. Steps communicate solely through the on-disk
+# cache, so isolation is safe; the orchestrator process itself stays tiny, and
+# max memory = one subprocess's peak instead of the cumulative sum.
+#
+# Config (leagues, run_steps, force_rebuild_from, ...) is snapshotted to disk
+# once and reloaded into each subprocess's globalenv before its code runs.
+.write_pipeline_config <- function() {
+  nms <- setdiff(ls(globalenv()),
+                 c("step_results", "pipeline_failed", "pipeline_start"))
+  nms <- nms[!vapply(nms, function(n) is.function(get(n, envir = globalenv())),
+                     logical(1))]
+  saveRDS(mget(nms, envir = globalenv()),
+          file.path(cache_dir, ".pipeline_config.rds"))
+}
+
 run_step_opta <- function(step_name, step_num, code_block) {
-  result <- run_step(step_name, step_num, code_block, run_steps)
+  isolated <- function() {
+    if (!requireNamespace("callr", quietly = TRUE)) {
+      stop("callr is required to run pipeline steps in isolation.", call. = FALSE)
+    }
+    callr::r(
+      function(code_block, cfg_path) {
+        if (file.exists(cfg_path)) list2env(readRDS(cfg_path), envir = globalenv())
+        code_block()
+      },
+      args = list(code_block = code_block,
+                  cfg_path = file.path("data-raw", "cache-opta", ".pipeline_config.rds")),
+      wd = getwd(), show = TRUE, spinner = FALSE
+    )
+    invisible(NULL)
+  }
+  result <- run_step(step_name, step_num, isolated, run_steps)
   gc(verbose = FALSE, full = TRUE)
   result
 }
@@ -92,6 +121,10 @@ handle_force_rebuild(force_rebuild_from, cache_dir)
 pipeline_start <- Sys.time()
 step_results <- list()
 pipeline_failed <- FALSE
+
+# Snapshot config for the isolated step subprocesses (after all config + the
+# force-rebuild handling above, before any step runs).
+.write_pipeline_config()
 
 # Wrapper that updates pipeline_failed in parent env
 check_step <- function(step_num, step_name) {

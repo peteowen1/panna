@@ -97,6 +97,7 @@ jobs:
           cache-version: 1
           extra-packages: |
             any::devtools
+            any::callr
             any::piggyback
             any::arrow
             any::dplyr
