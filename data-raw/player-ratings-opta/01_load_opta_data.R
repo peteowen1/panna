@@ -86,15 +86,31 @@ for (league in leagues) {
 
   message(sprintf("\n--- %s (%s): %d seasons ---", league, opta_league, length(available_seasons)))
 
+  # OPT #1: Load each table ONCE for the whole league (all seasons) instead of
+  # once per (league, season). The old per-season loads opened a fresh DuckDB
+  # connection and re-scanned the consolidated parquet ~250x total (5 tables x
+  # ~250 league-seasons); loading per-league cuts that ~12x. Each frame carries
+  # a `season` column (the WHERE filter the per-season path used), so we slice
+  # by season in R below. Frames are freed at the end of the league iteration.
+  .slice_season <- function(df, s) {
+    if (is.null(df) || !"season" %in% names(df)) return(df)
+    df[df$season == s, , drop = FALSE]
+  }
+  lg_lineups      <- tryCatch(load_opta_lineups(league, season = NULL, source = "local"), error = function(e) NULL)
+  lg_events       <- tryCatch(load_opta_events(league, season = NULL, source = "local"),  error = function(e) NULL)
+  lg_stats        <- tryCatch(load_opta_stats(league, season = NULL, source = "local"),   error = function(e) NULL)
+  lg_xmetrics     <- if (use_xmetrics_features) tryCatch(load_opta_xmetrics(league, season = NULL), error = function(e) NULL) else NULL
+  lg_match_events <- tryCatch(load_opta_match_events(league, season = NULL), error = function(e) NULL)
+
   for (season in available_seasons) {
     label <- paste(league, season)
     message(sprintf("  Loading %s...", label))
 
     tryCatch({
-      # Load standard Opta data
-      lineups <- load_opta_lineups(league, season = season, source = "local")
-      events <- load_opta_events(league, season = season, source = "local")
-      stats <- load_opta_stats(league, season = season, source = "local")
+      # OPT #1: slice the per-league frames by season (was: per-season loads).
+      lineups <- .slice_season(lg_lineups, season)
+      events  <- .slice_season(lg_events, season)
+      stats   <- .slice_season(lg_stats, season)
 
       if (is.null(lineups) || nrow(lineups) == 0) {
         message(sprintf("    Skipping %s: no lineup data", label))
@@ -112,12 +128,9 @@ for (league in leagues) {
       all_events[[label]] <- events
       all_stats[[label]] <- stats
 
-      # Load xMetrics if enabled
+      # Load xMetrics if enabled (OPT #1: slice the per-league frame)
       if (use_xmetrics_features) {
-        xmetrics <- tryCatch(
-          load_opta_xmetrics(league, season = season),
-          error = function(e) NULL
-        )
+        xmetrics <- .slice_season(lg_xmetrics, season)
         if (!is.null(xmetrics) && nrow(xmetrics) > 0) {
           xmetrics$league <- league
           xmetrics$season <- season
@@ -134,10 +147,7 @@ for (league in leagues) {
       # source = "local" would only work if the workflow reorganised them
       # into the hierarchical layout `load_opta_table` expects. Remote pulls
       # each per-league file once via piggyback and caches it per R session.
-      raw_events <- tryCatch(
-        load_opta_match_events(league, season = season),
-        error = function(e) NULL
-      )
+      raw_events <- .slice_season(lg_match_events, season)  # OPT #1: slice per-league
 
       if (is.null(raw_events) || nrow(raw_events) == 0) {
         message(sprintf("    No raw events for %s — skipping shot scoring", label))
@@ -287,6 +297,10 @@ for (league in leagues) {
       message(sprintf("    ERROR in %s: %s", label, e$message))
     })
   }
+
+  # OPT #1: free this league's full-season frames before the next league.
+  rm(lg_lineups, lg_events, lg_stats, lg_xmetrics, lg_match_events)
+  gc(verbose = FALSE)
 }
 
 # 6. Combine All Data ----
@@ -297,14 +311,22 @@ message("\n=== Combining Data ===\n")
 # all_* lists (~8GB across 20 leagues) stay resident alongside the combined_*
 # frames (~8GB) through the results table + save, peaking ~15GB and OOMing the
 # 16GB runner. The combined data is only ~8GB; the duplication was the problem.
-combined_lineups <- bind_rows(all_lineups);            rm(all_lineups)
-combined_events  <- bind_rows(all_events);             rm(all_events)
-combined_stats   <- bind_rows(all_stats);              rm(all_stats)
-combined_xmetrics <- if (length(all_xmetrics) > 0) bind_rows(all_xmetrics) else NULL
+# data.table::rbindlist instead of dplyr::bind_rows -- rbindlist combines the
+# per-league-season frames with far less copying than bind_rows (the stats
+# table alone is 2.4M x 288 cols), then as.data.frame() restores the exact
+# data.frame output type the rest of step 01 + step 02 expect. Output is
+# identical; this is purely a memory/speed win on the combine.
+combined_lineups <- as.data.frame(data.table::rbindlist(all_lineups, fill = TRUE, use.names = TRUE))
+rm(all_lineups)
+combined_events  <- as.data.frame(data.table::rbindlist(all_events, fill = TRUE, use.names = TRUE))
+rm(all_events)
+combined_stats   <- as.data.frame(data.table::rbindlist(all_stats, fill = TRUE, use.names = TRUE))
+rm(all_stats)
+combined_xmetrics <- if (length(all_xmetrics) > 0) as.data.frame(data.table::rbindlist(all_xmetrics, fill = TRUE, use.names = TRUE)) else NULL
 rm(all_xmetrics)
-combined_shots <- if (length(all_shots_from_spadl) > 0) bind_rows(all_shots_from_spadl) else NULL
+combined_shots <- if (length(all_shots_from_spadl) > 0) as.data.frame(data.table::rbindlist(all_shots_from_spadl, fill = TRUE, use.names = TRUE)) else NULL
 rm(all_shots_from_spadl)
-combined_match_xg <- if (length(all_match_xg) > 0) bind_rows(all_match_xg) else NULL
+combined_match_xg <- if (length(all_match_xg) > 0) as.data.frame(data.table::rbindlist(all_match_xg, fill = TRUE, use.names = TRUE)) else NULL
 rm(all_match_xg)
 gc(verbose = FALSE)
 
@@ -352,24 +374,25 @@ message(sprintf("  Match xG: %s matches",
 
 message("\n=== Creating Results Table ===\n")
 
-# Build match info from lineups (home/away teams)
-match_info <- combined_lineups %>%
-  filter(is_starter) %>%
-  group_by(match_id, league, season) %>%
-  summarise(
-    home_team = first(team_name[tolower(team_position) == "home"]),
-    away_team = first(team_name[tolower(team_position) == "away"]),
-    match_date = first(match_date),
-    home_team_id = first(team_id[tolower(team_position) == "home"]),
-    away_team_id = first(team_id[tolower(team_position) == "away"]),
-    .groups = "drop"
-  )
+# Build match info from lineups (home/away teams). OPT #5: data.table aggregation
+# on the 2.4M-row lineups (was dplyr group_by/summarise). `keyby` sorts groups to
+# match dplyr's sorted output; `x[cond][1]` == dplyr `first(x[cond])`.
+match_info <- as.data.frame(
+  data.table::as.data.table(combined_lineups)[is_starter == TRUE, .(
+    home_team    = team_name[tolower(team_position) == "home"][1],
+    away_team    = team_name[tolower(team_position) == "away"][1],
+    match_date   = match_date[1],
+    home_team_id = team_id[tolower(team_position) == "home"][1],
+    away_team_id = team_id[tolower(team_position) == "away"][1]
+  ), keyby = .(match_id, league, season)]
+)
 
-# Derive match scores from goal events
-goal_counts <- combined_events %>%
-  filter(event_type == "goal") %>%
-  group_by(match_id, team_id) %>%
-  summarise(goals = n(), .groups = "drop")
+# Derive match scores from goal events. OPT #5: data.table aggregation on the
+# ~1M-row events table (was dplyr group_by/summarise).
+goal_counts <- as.data.frame(
+  data.table::as.data.table(combined_events)[event_type == "goal",
+    .(goals = .N), keyby = .(match_id, team_id)]
+)
 
 # Drop matches that exist in lineups but have no events at all. This is a
 # scraper-gap case — Opta publishes lineups ahead of events, so the match
@@ -417,7 +440,7 @@ if (!is.null(combined_match_xg)) {
 # Splint creation reads first_half_end_time / match_end_time from results
 # to set exact period boundaries. Matches with no markers get NA and the
 # splint pipeline falls back to last-event time.
-combined_period_ends <- if (length(all_period_ends) > 0) bind_rows(all_period_ends) else NULL
+combined_period_ends <- if (length(all_period_ends) > 0) as.data.frame(data.table::rbindlist(all_period_ends, fill = TRUE, use.names = TRUE)) else NULL
 rm(all_period_ends)
 if (!is.null(combined_period_ends) && nrow(combined_period_ends) > 0) {
   results <- results %>%
@@ -431,7 +454,7 @@ if (!is.null(combined_period_ends) && nrow(combined_period_ends) > 0) {
 # Combine chain-derived player timing across all leagues/seasons.
 # This becomes the authoritative source of on_minute/off_minute for splint
 # creation; lineups are kept only for player_name + metadata.
-combined_player_timing <- if (length(all_player_timing) > 0) bind_rows(all_player_timing) else NULL
+combined_player_timing <- if (length(all_player_timing) > 0) as.data.frame(data.table::rbindlist(all_player_timing, fill = TRUE, use.names = TRUE)) else NULL
 rm(all_player_timing)
 if (!is.null(combined_player_timing) && nrow(combined_player_timing) > 0) {
   message(sprintf("  Chain-derived player timing rows: %d (across %d matches)",
