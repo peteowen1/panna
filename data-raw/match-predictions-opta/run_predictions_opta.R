@@ -117,6 +117,22 @@ pred_cache_files <- list(
 clear_cache_files(force_rebuild_from, cache_dir, pred_cache_files, max_step = 10)
 force_rebuild <- !is.null(force_rebuild_from) && force_rebuild_from >= 1
 
+# The per-league SPADL cache (SPADL_CACHE_DIR = data-raw/cache/epv/spadl) is a
+# SEPARATE store that clear_cache_files() above does NOT touch. Steps 10b/10c
+# consume it via get_or_build_spadl(). A stale SPADL built before an events
+# backfill silently caps coverage even after the events grow (the 2026-06
+# Championship 536/557 case: cloud events were 557 but a 536-match cached SPADL
+# survived). Any forced rebuild re-runs 10b/10c, so drop the SPADL cache too —
+# get_or_build_spadl() then rebuilds it from current events.
+if (!is.null(force_rebuild_from)) {
+  spadl_files <- list.files(SPADL_CACHE_DIR, pattern = "\\.rds$", full.names = TRUE)
+  if (length(spadl_files) > 0) {
+    unlink(spadl_files)
+    message(sprintf("Cleared %d SPADL cache file(s) from %s (forced rebuild)",
+                    length(spadl_files), SPADL_CACHE_DIR))
+  }
+}
+
 pipeline_start <- Sys.time()
 step_results <- list()
 pipeline_failed <- FALSE
