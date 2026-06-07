@@ -83,12 +83,24 @@ OPTA_LEAGUES <- c(
   BRA = "Brazilian_Serie_A",
   AUS = "A_League",
   TUN = "Tunisian_Ligue_1",
+  # Americas / Asia domestic
+  MLS = "MLS",
+  MEX = "Liga_MX",
+  ARG = "Argentine_Liga_Profesional",
+  SAU = "Saudi_League",
   # African club
   CAFCL = "CAF_CL",
   # European comps
   UCL = "UCL",
   UEL = "UEL",
   UECL = "Conference_League",
+  # Americas / Asia club bridges (cross-league connectivity)
+  LIB = "CONMEBOL_Libertadores",
+  SUD = "CONMEBOL_Sudamericana",
+  CCC = "Concacaf_Champions_Cup",
+  LGC = "Leagues_Cup",
+  ACLE = "AFC_Champions_League_Elite",
+  CWC = "Club_World_Cup",
   # International -- tournaments
   WC = "World_Cup",
   EURO = "UEFA_Euros",

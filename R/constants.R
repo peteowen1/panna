@@ -590,8 +590,11 @@ MATCH_CLUB_LEAGUES <- c(
   "ENG", "ESP", "ITA", "GER", "FRA",
   # Extended domestic
   "ENG2", "NED", "POR", "TUR", "SCO", "BEL", "BRA", "AUS", "TUN",
+  # Americas / Asia domestic
+  "MLS", "MEX", "ARG", "SAU",
   # Continental club competitions
-  "UCL", "UEL", "UECL", "CAFCL"
+  "UCL", "UEL", "UECL", "CAFCL",
+  "LIB", "SUD", "CCC", "LGC", "ACLE", "CWC"
 )
 
 #' Classify competitions as international vs domestic
