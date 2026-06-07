@@ -33,8 +33,12 @@ jobs:
     # raw events (~35 min for ~51K matches × 15 leagues). Previous 60-min
     # cap killed step 03 with steps 04-09 still to run. Empirical breakdown:
     # setup 3min + step01 35min + step02 4min + step03 8min + step04 ~12min
-    # + steps05-09 ~10min ≈ 72 min. 120 leaves comfortable headroom.
-    timeout-minutes: 120
+    # + steps05-09 ~10min ≈ 72 min.
+    # 2026-06: bumped 120 -> 350 for the new-league integration — ~10 extra comps
+    # (MLS/Liga MX/Argentina/Saudi + 6 bridges) added ~28K matches (~+55%), so
+    # step 01 SPADL build + step 04 RAPM CV scale up substantially. 350 is under
+    # GitHub's 360-min hosted-runner hard cap.
+    timeout-minutes: 350
 
     permissions:
       contents: write
