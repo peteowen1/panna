@@ -55,13 +55,36 @@ xg_model <- load_xg_model()
 
 message("\n=== Loading Opta Data ===\n")
 
-all_lineups <- list()
-all_events <- list()
-all_stats <- list()
+# Memory: stage the 5 large tables (lineups/events/stats/xmetrics/shots) to disk
+# per league-season rather than accumulating them in RAM. The old all_* lists held
+# ~8GB across 20 leagues AND coexisted with the ~8GB combined_* frames during the
+# combine, peaking ~15GB and OOMing the 16GB runner once the new leagues (~+40%
+# rows) landed. Staging keeps loop-peak to one league and combine-peak to one
+# table at a time. The small per-match tables (period ends / timing / match xG)
+# stay in RAM — they're negligible.
+stage_dir <- file.path(cache_dir, "01_staging")
+unlink(stage_dir, recursive = TRUE, force = TRUE)
+.BIG_TABLES <- c("lineups", "events", "stats", "xmetrics", "shots")
+for (.t in .BIG_TABLES) dir.create(file.path(stage_dir, .t), recursive = TRUE, showWarnings = FALSE)
+.stage_label <- function(label) gsub("[^A-Za-z0-9]+", "_", label)
+.stage_write <- function(df, tbl, label) {
+  if (is.null(df) || nrow(df) == 0) return(invisible(NULL))
+  arrow::write_parquet(df, file.path(stage_dir, tbl, paste0(.stage_label(label), ".parquet")))
+}
+# Combine one staged table: read its per-league-season parquets and rbindlist with
+# fill=TRUE (identical to the old in-RAM combine), freeing the read list right
+# after. Peak = one table (not all five) since the others sit on disk.
+.combine_staged <- function(tbl) {
+  files <- list.files(file.path(stage_dir, tbl), pattern = "\\.parquet$", full.names = TRUE)
+  if (length(files) == 0) return(NULL)
+  parts <- lapply(files, function(f) as.data.frame(arrow::read_parquet(f)))
+  out <- as.data.frame(data.table::rbindlist(parts, fill = TRUE, use.names = TRUE))
+  rm(parts); gc(verbose = FALSE)
+  out
+}
+
 all_period_ends <- list()  # exact second-precision period boundaries (Opta type_id == 30)
 all_player_timing <- list()  # per-(match, player) on/off times derived from chains
-all_xmetrics <- list()
-all_shots_from_spadl <- list()
 all_match_xg <- list()
 
 for (league in leagues) {
@@ -124,9 +147,9 @@ for (league in leagues) {
       stats$league <- league
       stats$season <- season
 
-      all_lineups[[label]] <- lineups
-      all_events[[label]] <- events
-      all_stats[[label]] <- stats
+      .stage_write(lineups, "lineups", label)
+      .stage_write(events, "events", label)
+      .stage_write(stats, "stats", label)
 
       # Load xMetrics if enabled (OPT #1: slice the per-league frame)
       if (use_xmetrics_features) {
@@ -134,7 +157,7 @@ for (league in leagues) {
         if (!is.null(xmetrics) && nrow(xmetrics) > 0) {
           xmetrics$league <- league
           xmetrics$season <- season
-          all_xmetrics[[label]] <- xmetrics
+          .stage_write(xmetrics, "xmetrics", label)
         }
       }
 
@@ -242,7 +265,7 @@ for (league in leagues) {
         shots_df <- extract_shots_from_spadl(spadl, lineups)
         shots_df$league <- league
         shots_df$season <- season
-        all_shots_from_spadl[[label]] <- shots_df
+        .stage_write(shots_df, "shots", label)
 
         # Compute match-level xG
         # Non-penalty xG per team per match
@@ -294,7 +317,11 @@ for (league in leagues) {
       }
 
     }, error = function(e) {
-      message(sprintf("    ERROR in %s: %s", label, e$message))
+      # Log the failing call too: ~49 league-seasons hit "non-character argument"
+      # in the 2026-06 rerun and got silently dropped (no xG -> RAPM drops them).
+      # conditionCall pinpoints which function so we can fix the root cause.
+      cc <- tryCatch(deparse(conditionCall(e))[1], error = function(...) "<no call>")
+      message(sprintf("    ERROR in %s: %s  [call: %s]", label, conditionMessage(e), cc))
     })
   }
 
@@ -316,22 +343,20 @@ message("\n=== Combining Data ===\n")
 # table alone is 2.4M x 288 cols), then as.data.frame() restores the exact
 # data.frame output type the rest of step 01 + step 02 expect. Output is
 # identical; this is purely a memory/speed win on the combine.
-combined_lineups <- as.data.frame(data.table::rbindlist(all_lineups, fill = TRUE, use.names = TRUE))
-rm(all_lineups)
-combined_events  <- as.data.frame(data.table::rbindlist(all_events, fill = TRUE, use.names = TRUE))
-rm(all_events)
-combined_stats   <- as.data.frame(data.table::rbindlist(all_stats, fill = TRUE, use.names = TRUE))
-rm(all_stats)
-combined_xmetrics <- if (length(all_xmetrics) > 0) as.data.frame(data.table::rbindlist(all_xmetrics, fill = TRUE, use.names = TRUE)) else NULL
-rm(all_xmetrics)
-combined_shots <- if (length(all_shots_from_spadl) > 0) as.data.frame(data.table::rbindlist(all_shots_from_spadl, fill = TRUE, use.names = TRUE)) else NULL
-rm(all_shots_from_spadl)
+# Combine each big table from disk staging, one at a time (peak = one table).
+combined_lineups  <- .combine_staged("lineups")
+combined_events   <- .combine_staged("events")
+combined_stats    <- .combine_staged("stats")
+combined_xmetrics <- .combine_staged("xmetrics")
+combined_shots    <- .combine_staged("shots")
+# match_xg stayed in RAM (small, one row per match)
 combined_match_xg <- if (length(all_match_xg) > 0) as.data.frame(data.table::rbindlist(all_match_xg, fill = TRUE, use.names = TRUE)) else NULL
 rm(all_match_xg)
+unlink(stage_dir, recursive = TRUE, force = TRUE)  # free disk staging
 gc(verbose = FALSE)
 
 # Data scale validation: catch partial/empty loads early
-if (nrow(combined_lineups) == 0) {
+if (is.null(combined_lineups) || nrow(combined_lineups) == 0) {
   stop("No lineup data loaded for any league-season. Check data availability and source paths.")
 }
 
