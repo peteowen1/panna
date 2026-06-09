@@ -122,6 +122,7 @@ for (t in prelim_teams) message(sprintf("    [%s] %d", t, length(parsed[[t]])))
 # spelling with Opta.
 wiki_to_opta <- c(
   "Bosnia and Herzegovina" = "Bosnia-Herzegovina",
+  "Czech Republic"         = "Czechia",
   "South Korea"            = "Korea Republic",
   "Ivory Coast"            = "Côte d'Ivoire",
   "Cape Verde"             = "Cabo Verde",

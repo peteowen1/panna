@@ -13,8 +13,19 @@ devtools::load_all()
 # 2. Configuration ----
 
 cache_dir <- file.path("data-raw", "cache-skills")
-min_minutes <- if (exists("min_minutes_spm")) min_minutes_spm else 450
+# Skills are a CONTINUOUS career trait, not season-gated — see
+# CLAUDE_TODO_CONTINUOUS_SKILLS.md. The per-season minutes gate (`min_minutes`,
+# formerly 450) was a publishing filter that dropped players with rich career
+# history but low current-season minutes (e.g. F. Chiesa). We now gate ONLY on
+# CAREER sample via `min_career_w90` (decay-weighted 90s, applied below), which is
+# self-limiting for the long-retired. min_minutes = 0 keeps the "played at least
+# once this season" snapshot membership without a minutes floor.
+# NOTE: `min_weighted_90s` is NOT an inclusion gate — it's the estimator's
+# regression threshold (shrinkage is handled by the Bayesian prior; see
+# estimate_player_skills docs). The real inclusion gate is `min_career_w90`.
+min_minutes <- if (exists("min_minutes_spm")) min_minutes_spm else 0
 min_weighted_90s <- if (exists("min_weighted_90s")) min_weighted_90s else 5
+min_career_w90 <- if (exists("min_career_w90")) min_career_w90 else 3
 use_xmetrics_features <- if (exists("use_xmetrics_features")) use_xmetrics_features else TRUE
 
 # 3. Load Data ----
@@ -65,6 +76,17 @@ skill_features <- aggregate_skills_for_spm(
 if (is.null(skill_features) || nrow(skill_features) == 0) {
   stop("aggregate_skills_for_spm() returned no results. Check min_minutes threshold and data availability.")
 }
+
+# Career-sample inclusion gate (continuous-skills design). With the per-season
+# minutes floor removed, this is the ONLY gate: keep player-seasons whose
+# decay-weighted career sample clears min_career_w90, dropping thin-sample noise
+# (estimates near the prior). Self-limiting — a player's weighted_90s decays
+# below the threshold a few years after they stop playing. Coverage 80% -> 85.6%.
+skill_features <- data.table::as.data.table(skill_features)
+n_pre <- nrow(skill_features)
+skill_features <- skill_features[weighted_90s >= min_career_w90]
+cat(sprintf("Career-sample gate (weighted_90s >= %s): kept %d of %d player-seasons (dropped %d thin-sample)\n",
+            min_career_w90, nrow(skill_features), n_pre, n_pre - nrow(skill_features)))
 
 cat(sprintf("Skill-based features: %d player-seasons\n", nrow(skill_features)))
 cat(sprintf("Unique players: %d\n", data.table::uniqueN(skill_features$player_id)))

@@ -21,8 +21,10 @@ if (!exists("leagues")) leagues <- c(
   "BRA",                                    # Brazilian Serie A
   "AUS",                                    # A-League (Australian)
   "TUN",                                    # Tunisian Ligue 1
+  "MLS", "MEX", "ARG", "SAU",               # Americas / Asia domestic
   "CAFCL",                                  # CAF Champions League (African club)
   "UCL", "UEL", "UECL",                     # European comps
+  "LIB", "SUD", "CCC", "LGC", "ACLE", "CWC", # Americas/Asia club bridges (connectivity)
   "WC", "EURO"                               # International
 )
 

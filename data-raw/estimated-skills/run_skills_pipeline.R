@@ -15,16 +15,32 @@ devtools::load_all()
 # 2. Configuration ----
 # Use if (!exists(...)) so test scripts can override before sourcing
 
+# Must match run_pipeline_opta.R's league set so skills coverage tracks the
+# rated pool — otherwise box-score stats (opta_skills.parquet) miss whole
+# competitions the model rates (A_League/CAF_CL/Belgian/etc.).
 if (!exists("leagues")) leagues <- c(
-  "ENG", "ESP", "GER", "ITA", "FRA",
-  "NED", "POR", "TUR", "ENG2", "SCO",
-  "UCL", "UEL", "UECL",
-  "WC", "EURO"
+  "ENG", "ESP", "GER", "ITA", "FRA",       # Big 5
+  "NED", "POR", "TUR", "ENG2", "SCO",      # Extended European domestic
+  "BEL",                                    # Belgian First Division
+  "BRA",                                    # Brazilian Serie A
+  "AUS",                                    # A-League (Australian)
+  "TUN",                                    # Tunisian Ligue 1
+  "CAFCL",                                  # CAF Champions League (African club)
+  "UCL", "UEL", "UECL",                     # European comps
+  "WC", "EURO"                               # International
 )
 
 if (!exists("seasons")) seasons <- NULL
 if (!exists("min_season")) min_season <- "2013-2014"
 if (!exists("use_xmetrics_features")) use_xmetrics_features <- TRUE
+
+# Skills = continuous career trait, NOT season-gated (CLAUDE_TODO_CONTINUOUS_SKILLS.md).
+# Gate on CAREER sample (decay-weighted weighted_90s), not per-season minutes:
+# drops the old 450-min publishing filter that hid players with rich history but
+# low current-season minutes (e.g. F. Chiesa). Consumed by step 02 (feeds
+# skill-SPM/PSR + export). Coverage of the rated pool: 80% -> 85.6%.
+if (!exists("min_minutes_spm")) min_minutes_spm <- 0     # per-season minutes floor removed (was 450)
+if (!exists("min_career_w90")) min_career_w90 <- 3       # career-sample INCLUSION gate (decay-weighted 90s)
 
 # Which steps to run
 if (!exists("n_cores")) n_cores <- 1  # Parallel cores for optimization
@@ -52,7 +68,8 @@ if (!exists("run_steps")) {
     step_06_seasonal_skill_ratings = start_num <= 6,
     step_07_train_psr_model        = start_num <= 7,
     step_08_export_skills          = start_num <= 8,
-    step_08b_export_psr_weekly     = start_num <= 8.5
+    step_08b_export_psr_weekly     = start_num <= 8.5,
+    step_09_career_panna           = start_num <= 9
   )
 }
 
@@ -87,7 +104,8 @@ skills_cache_files <- list(
   "6" = c("06_seasonal_ratings.rds", "seasonal_skill_xrapm.csv"),
   "7" = "07_psr_model.rds",
   "8" = character(0),
-  "8b" = character(0)
+  "8b" = character(0),
+  "9" = character(0)
 )
 clear_cache_files(force_rebuild_from, cache_dir, skills_cache_files, max_step = 8)
 
@@ -196,6 +214,13 @@ step_results[[9]] <- run_skills_step("export_skills", 8, function() {
 
 step_results[[10]] <- run_skills_step("export_psr_weekly", "8b", function() {
   source("data-raw/estimated-skills/08b_export_psr_weekly.R", local = TRUE)
+})
+
+# Career-trait Panna (decay-weighted multi-season xRAPM) — needs cache-opta splints +
+# the step-03 skill-SPM, so it runs last. Uploads career_panna.parquet to ratings-data
+# when upload_career_panna <- TRUE (CI sets it). See CLAUDE_TODO_CAREER_PANNA.md.
+step_results[[11]] <- run_skills_step("career_panna", 9, function() {
+  source("data-raw/estimated-skills/09_career_panna.R", local = TRUE)
 })
 
 # 15. Summary ----

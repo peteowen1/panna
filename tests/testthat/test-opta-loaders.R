@@ -40,7 +40,10 @@ test_that("to_opta_league errors on invalid format", {
 test_that("to_opta_league warns on unknown but valid-looking codes when catalog unavailable", {
   # Mock catalog as unavailable to test offline fallback path
   local_mocked_bindings(download_opta_catalog = function(...) stop("offline"))
-  expect_warning(to_opta_league("MLS"), "not in hardcoded mappings")
+  # Deliberately-unmapped code: matches the valid-code regex but isn't in
+  # OPTA_LEAGUES. (Was "MLS" until MLS was added as a real league — don't use a
+  # real code here, or this test re-breaks when that league gets mapped.)
+  expect_warning(to_opta_league("ZZ_Unmapped_League"), "not in hardcoded mappings")
 })
 
 
