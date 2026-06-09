@@ -1858,6 +1858,13 @@ extract_player_timing_from_events <- function(match_events) {
   parse_one_formation <- function(qj, mid, tid) {
     parsed <- tryCatch(jsonlite::fromJSON(qj), error = function(e) NULL)
     if (is.null(parsed) || !"30" %in% names(parsed) || !"131" %in% names(parsed)) return(NULL)
+    # Some older-season formation events (e.g. EPL 2014-2015, Serie A 2013-2014)
+    # carry qualifier "30"/"131" as a JSON null, which fromJSON returns as a
+    # named NULL element -- the `%in% names()` check above passes but the value
+    # is not a character scalar, so strsplit() errors with "non-character
+    # argument". Treat these as having no usable squad list (starters then fall
+    # back to lineup-derived timing) rather than aborting the whole season.
+    if (!is.character(parsed[["30"]]) || !is.character(parsed[["131"]])) return(NULL)
     ids <- trimws(strsplit(parsed[["30"]], ",")[[1]])
     pos <- suppressWarnings(as.integer(trimws(strsplit(parsed[["131"]], ",")[[1]])))
     n <- min(length(ids), length(pos))
