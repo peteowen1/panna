@@ -68,7 +68,8 @@ if (!exists("run_steps")) {
     step_06_seasonal_skill_ratings = start_num <= 6,
     step_07_train_psr_model        = start_num <= 7,
     step_08_export_skills          = start_num <= 8,
-    step_08b_export_psr_weekly     = start_num <= 8.5
+    step_08b_export_psr_weekly     = start_num <= 8.5,
+    step_09_career_panna           = start_num <= 9
   )
 }
 
@@ -103,7 +104,8 @@ skills_cache_files <- list(
   "6" = c("06_seasonal_ratings.rds", "seasonal_skill_xrapm.csv"),
   "7" = "07_psr_model.rds",
   "8" = character(0),
-  "8b" = character(0)
+  "8b" = character(0),
+  "9" = character(0)
 )
 clear_cache_files(force_rebuild_from, cache_dir, skills_cache_files, max_step = 8)
 
@@ -212,6 +214,13 @@ step_results[[9]] <- run_skills_step("export_skills", 8, function() {
 
 step_results[[10]] <- run_skills_step("export_psr_weekly", "8b", function() {
   source("data-raw/estimated-skills/08b_export_psr_weekly.R", local = TRUE)
+})
+
+# Career-trait Panna (decay-weighted multi-season xRAPM) — needs cache-opta splints +
+# the step-03 skill-SPM, so it runs last. Uploads career_panna.parquet to ratings-data
+# when upload_career_panna <- TRUE (CI sets it). See CLAUDE_TODO_CAREER_PANNA.md.
+step_results[[11]] <- run_skills_step("career_panna", 9, function() {
+  source("data-raw/estimated-skills/09_career_panna.R", local = TRUE)
 })
 
 # 15. Summary ----
