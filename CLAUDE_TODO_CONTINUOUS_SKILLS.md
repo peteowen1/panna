@@ -162,10 +162,17 @@ the existing cache (`debug/validate_continuous_skills.R`, `debug/analyze_w90_gat
 
 **Blog verify (#4) — PASS:** `inthegame-blog/football/cards.qmd:488/493/495` already takes
 the latest-season row per player and derives totals as `*_p90 × weighted_90s` (primary;
-`total_minutes/90` only as fallback). No blog change needed for the derivation. Two notes:
-the card deck is separately gated at `total_minutes >= 600` (`cards.qmd:47`) — the real
-binding constraint on card candidates, independent of skills; and `cards.qmd:497` has a
-now-stale "~66%" comment.
+`total_minutes/90` only as fallback). No blog change needed for the derivation.
+
+**Deck-filter decision (Pete, 2026-06-09): KEEP the season-minutes filter.** The card deck
+is gated at `total_minutes >= 600` (`cards.qmd:47`). This stays on a *season-minutes* basis,
+NOT career `weighted_90s` — because the default game is a "this season" view, so deck
+membership (who's a card) is correctly a season/production question. The career trait only
+governs the *stat values* on each card. A future "career/all-time mode" could swap the deck
+filter to `weighted_90s`; the default does not. The un-gate still helps this deck: it closes
+the ratings-minutes vs skills-feed-minutes mismatch (e.g. Chiesa — 637 RAPM mins clears the
+600 deck filter, but 345 skills-feed mins missed the old 450 skills gate → blank card; now
+fixed). Only remaining blog nit: the stale "~66%" comment at `cards.qmd:497`.
 
 **Still pending:** full skills re-run `01–08` + **PSR fit sanity check** (the un-gate
 enlarges the training set — the one thing to verify before shipping), the weekly **(3a/3b)**
