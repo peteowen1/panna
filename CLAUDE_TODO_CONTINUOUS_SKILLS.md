@@ -126,9 +126,12 @@ filter needed. The career-sample gate *is* the activity gate, on a smooth ramp.
 
 ### Implementation sketch (order)
 
-1. `02_estimate_skills.R` — drop `min_minutes` (set `min_minutes = 0` / remove the gate in
-   `aggregate_skills_for_spm`); set `min_weighted_90s = 3`. This un-gates the season-keyed
-   skill features feeding `03`/`04`/`07` and the current `08` export.
+1. `02_estimate_skills.R` — drop `min_minutes` (= 0) AND add an explicit
+   `weighted_90s >= min_career_w90` inclusion gate. ⚠ **`min_weighted_90s` is NOT a gate**
+   — its docstring says "Not used for shrinkage (handled by Bayesian prior)" (it's the
+   estimator's regression threshold). Dropping `min_minutes` alone leaves NO inclusion
+   filter, so `w90=0.04` noise leaks in. The real gate is a post-aggregation
+   `skill_features[weighted_90s >= min_career_w90]` with `min_career_w90 = 3`.
 2. New/extended export for **(3a)** — emit the single latest-date full-skill snapshot the
    blog reads (could be a thin addition to `08`, evaluating `estimate_player_skills` at
    `Sys.Date()` with `w90≥3`).
@@ -136,6 +139,37 @@ filter needed. The career-sample gate *is* the activity gate, on a smooth ramp.
 4. Re-run skills `01–08` (manual — no scheduled CI; see verify section) and re-publish.
 5. Blog-side: point the card game at the current-skills snapshot; confirm `*_p90 ×
    weighted_90s` totals (#4).
+
+### Implemented + validated 2026-06-09 (step 1 done; 2–5 pending)
+
+Step 1 shipped to the working tree (`run_skills_pipeline.R` config + `02_estimate_skills.R`:
+`min_minutes_spm = 0`, new `min_career_w90 = 3` gate). Validated non-destructively against
+the existing cache (`debug/validate_continuous_skills.R`, `debug/analyze_w90_gate.R`):
+
+| gate | latest-season players | rated-pool coverage |
+|---|---|---|
+| old 450-min | 5,365 | 80.0% |
+| **w90 ≥ 3 (chosen)** | **5,963** | **85.6%** |
+| w90 ≥ 5 | 5,071 | 74.2% (worse than today) |
+| w90 ≥ 0 (no gate) | 8,867 | 100% but full of `w90≈0.04` noise |
+
+- **Corrected number: 80% → 85.6%** (not the earlier 89% — that estimate counted *any*
+  prior row, including thin-sample noise; the principled `w90≥3` career gate is 85.6% and
+  every covered player has a real decay-weighted sample).
+- F. Chiesa returns: 2026 row, `weighted_90s = 5.27`, `goals_p90 = 0.35` (season minutes
+  were 345 — under the old 450 gate; that's why he'd vanished).
+- `w90 ≥ 5` is *worse* than today (74%), confirming `3` is the right threshold.
+
+**Blog verify (#4) — PASS:** `inthegame-blog/football/cards.qmd:488/493/495` already takes
+the latest-season row per player and derives totals as `*_p90 × weighted_90s` (primary;
+`total_minutes/90` only as fallback). No blog change needed for the derivation. Two notes:
+the card deck is separately gated at `total_minutes >= 600` (`cards.qmd:47`) — the real
+binding constraint on card candidates, independent of skills; and `cards.qmd:497` has a
+now-stale "~66%" comment.
+
+**Still pending:** full skills re-run `01–08` + **PSR fit sanity check** (the un-gate
+enlarges the training set — the one thing to verify before shipping), the weekly **(3a/3b)**
+exports, and re-publish to `opta-latest`.
 
 ## Non-goals
 

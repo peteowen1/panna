@@ -34,6 +34,14 @@ if (!exists("seasons")) seasons <- NULL
 if (!exists("min_season")) min_season <- "2013-2014"
 if (!exists("use_xmetrics_features")) use_xmetrics_features <- TRUE
 
+# Skills = continuous career trait, NOT season-gated (CLAUDE_TODO_CONTINUOUS_SKILLS.md).
+# Gate on CAREER sample (decay-weighted weighted_90s), not per-season minutes:
+# drops the old 450-min publishing filter that hid players with rich history but
+# low current-season minutes (e.g. F. Chiesa). Consumed by step 02 (feeds
+# skill-SPM/PSR + export). Coverage of the rated pool: 80% -> 85.6%.
+if (!exists("min_minutes_spm")) min_minutes_spm <- 0     # per-season minutes floor removed (was 450)
+if (!exists("min_career_w90")) min_career_w90 <- 3       # career-sample INCLUSION gate (decay-weighted 90s)
+
 # Which steps to run
 if (!exists("n_cores")) n_cores <- 1  # Parallel cores for optimization
 
