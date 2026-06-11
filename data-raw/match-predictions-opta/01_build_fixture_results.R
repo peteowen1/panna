@@ -751,6 +751,17 @@ if (!is.null(fixtures_df)) {
     n_away_renamed <- sum(!is.na(new_away) & (is.na(fixtures_clean$away_team) | new_away != fixtures_clean$away_team))
     unresolved_away <- sum(has_away_id & is.na(new_away))
     fixtures_clean$away_team <- ifelse(is.na(new_away), fixtures_clean$away_team, unname(new_away))
+
+    # Info trend line for the excluded population: expected baseline is the
+    # TBD placeholders (64 = 32 WC2026 knockout fixtures x 2 sides while the
+    # tournament is upcoming). A jump here means the scraper started emitting
+    # blank ids for real fixtures — catch it at step 01, not as quietly
+    # degraded predictions at step 07.
+    n_blank_ids <- sum(!has_home_id) + sum(!has_away_id)
+    if (n_blank_ids > 0) {
+      message(sprintf("  %d fixture team-id slots blank (TBD placeholders: WC2026 knockouts, unresolved cup ties)",
+                      n_blank_ids))
+    }
   }
 
   # Always-on diagnostic: distinguishes "rename block ran correctly" from
