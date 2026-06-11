@@ -240,7 +240,64 @@ if (!is.null(sq_psr)) squad_out <- merge(squad_out, sq_psr, by = "player_id", al
 if (!is.null(sq_epr)) squad_out <- merge(squad_out, sq_epr, by = "player_id", all.x = TRUE)
 for (col in c("psr", "epr")) if (!col %in% names(squad_out)) squad_out[[col]] <- NA_real_
 
+# Authoritative club per player: latest CLUB (non-international) appearance
+# in opta_lineups across every scraped competition — covers Saudi/MLS/
+# Liga MX/Argentina squads the ratings join can't reach (blog previously
+# shimmed these from Wikidata, stale ~40% of the time). club_last_seen lets
+# the blog grey out genuinely stale clubs (transfers, retirements).
+lu_club_path <- file.path(opta_data_dir(), "opta_lineups.parquet")
+if (file.exists(lu_club_path)) {
+  # build_team_expected_minutes()'s international list MINUS UEFA_Super_Cup
+  # (that's a club fixture — its appearances should count as club evidence
+  # here; harmless there because EM pre-filters to the national team's rows).
+  intl_comps <- c("World_Cup", "UEFA_WC_Qualifiers", "UEFA_Euros",
+                  "UEFA_Euro_Qualifiers", "UEFA_Nations_League",
+                  "Copa_America", "AFCON", "AFCON_Qualifiers",
+                  "CONCACAF_Gold_Cup", "AFC_Asian_Cup", "AFC_WC_Qualifiers",
+                  "Asian_Cup_Qualifiers", "Gulf_Cup_of_Nations",
+                  "CAF_WC_Qualifiers", "CONMEBOL_WC_Qualifiers",
+                  "Intl_Friendlies")
+  lu_club <- as.data.table(read_parquet(
+    lu_club_path,
+    col_select = c("player_id", "team_name", "match_date", "competition")))
+  lu_club <- lu_club[!competition %in% intl_comps &
+                     player_id %in% squad_out$player_id]
+  lu_club[, match_date := as.Date(substr(match_date, 1, 10))]
+  setorder(lu_club, player_id, -match_date)
+  club_latest <- lu_club[, .SD[1L], by = player_id][
+    , .(player_id, club_name = team_name, club_last_seen = match_date)]
+  squad_out <- merge(squad_out, club_latest, by = "player_id", all.x = TRUE)
+  n_club <- sum(!is.na(squad_out$club_name))
+  message(sprintf("  club_name resolved for %d/%d squad players (latest club appearance)",
+                  n_club, nrow(squad_out)))
+  # Loudness guards: a player_id-format or date-format drift upstream would
+  # otherwise ship 0 clubs (or arbitrary "latest" picks) behind a green run.
+  # Normal coverage is ~97%; a few unscraped-league players are expected.
+  if (n_club < 0.8 * nrow(squad_out)) {
+    warning(sprintf(paste(
+      "club_name coverage is %d/%d (<80%%) — check player_id/competition",
+      "drift between announced squads and opta_lineups"),
+      n_club, nrow(squad_out)), call. = FALSE, immediate. = TRUE)
+  }
+  if (any(!is.na(squad_out$club_name) & is.na(squad_out$club_last_seen))) {
+    warning("club_name present with NA club_last_seen — match_date parse drift in opta_lineups",
+            call. = FALSE, immediate. = TRUE)
+  }
+  # Tripwire for an international comp missing from the exclusion blacklist:
+  # the symptom is a national team reported as someone's club.
+  nat_as_club <- intersect(unique(squad_out$club_name), groups$team)
+  if (length(nat_as_club) > 0L) {
+    warning("national team(s) resolved as club_name (intl_comps blacklist miss?): ",
+            paste(nat_as_club, collapse = ", "), call. = FALSE, immediate. = TRUE)
+  }
+} else {
+  squad_out[, `:=`(club_name = NA_character_, club_last_seen = as.Date(NA))]
+  warning("opta_lineups.parquet not found — wc2026_squads.parquet ships without club_name",
+          call. = FALSE, immediate. = TRUE)
+}
+
 setcolorder(squad_out, c("team", "group", "player_id", "player_name", "position",
+                         "club_name", "club_last_seen",
                          "expected_minutes_norm", "is_starter_pred",
                          "panna", "offense", "defense", "epr", "psr", "total_minutes"))
 setorder(squad_out, team, -expected_minutes_norm)
@@ -257,9 +314,17 @@ wc_parquets <- c("wc2026_predictions.parquet",
                  "wc2026_simulation.parquet",
                  "wc2026_groups.parquet",
                  "wc2026_team_strength.parquet",
-                 "wc2026_squads.parquet")
+                 "wc2026_squads.parquet",
+                 "wc2026_knockout_probs.parquet")
 for (p in wc_parquets) {
   pp <- file.path(cache_dir, p)
+  if (!file.exists(pp)) {
+    # knockout_probs is written by step 11, the rest by this step — a
+    # standalone step-12 run against a pre-2026-06-11 cache lacks it.
+    warning(p, " not in cache — skipping its CSV companion and upload",
+            call. = FALSE, immediate. = TRUE)
+    next
+  }
   cp <- sub("\\.parquet$", ".csv", pp)
   write.csv(read_parquet(pp), cp, row.names = FALSE)
 }
@@ -273,6 +338,9 @@ wc_files <- c(
   # CSV companions uploaded alongside parquet
   file.path(cache_dir, sub("\\.parquet$", ".csv", wc_parquets))
 )
+# Drop entries skipped above (warned already) so one absent optional file
+# doesn't stop() the whole upload mid-loop.
+wc_files <- wc_files[file.exists(wc_files)]
 
 no_upload <- isTRUE(Sys.getenv("WC2026_NO_UPLOAD", "") == "1")
 gh_ok <- !is.null(tryCatch(system2("gh", "--version", stdout = TRUE,

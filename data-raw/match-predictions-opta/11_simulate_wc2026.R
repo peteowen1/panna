@@ -93,6 +93,14 @@ knockout <- build_knockout_lookup(
   verbose        = TRUE
 )
 
+# Publish the full pairwise lookup (1,128 pairs) — the blog's in-browser
+# simulator uses it for real knockout-tie probabilities instead of a
+# logistic approximation. Step 12 uploads it to blog-latest.
+arrow::write_parquet(
+  as.data.frame(knockout$probs)[, c("t1", "t2", "p_t1", "p_draw", "p_t2",
+                                    "lambda_t1", "lambda_t2")],
+  file.path(cache_dir, "wc2026_knockout_probs.parquet"))
+
 # 4. Bradley-Terry ratings — diagnostic only ----
 # No longer used by the simulator; kept as a published team-strength summary
 # (wc2026_team_full_ranks.R consumes wc2026_bt_ratings.parquet).
