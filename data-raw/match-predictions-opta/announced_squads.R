@@ -355,6 +355,24 @@ keys_for_name <- function(name) {
   unique(c(n, last, last2))
 }
 
+# Tiered keys for the announced-name -> Opta resolution, MOST to LEAST
+# specific: full normalized name, first-initial + surname (matches Opta's
+# abbreviated "L. Martínez" style), penultimate + surname, bare surname.
+# NA pads tiers that don't exist for short names.
+tier_keys <- function(name) {
+  n <- norm_name(name)
+  toks <- strsplit(n, " ")[[1]]
+  if (length(toks) == 0L) return(rep(NA_character_, 4L))
+  sur <- toks[length(toks)]
+  init_sur <- paste(substr(toks[1L], 1L, 1L), sur)
+  last2 <- if (length(toks) >= 2L) {
+    paste(toks[length(toks) - 1L], sur)
+  } else {
+    NA_character_
+  }
+  c(n, init_sur, last2, sur)
+}
+
 # 3. Per-team resolver ----
 
 #' Resolve one team's announced squad to Opta player_ids
@@ -389,41 +407,86 @@ resolve_team_announced_squad <- function(team, ann_names, lineups,
     ))
   }
 
-  # Build candidate (player_id -> set-of-keys) dict from Opta-side names.
-  # When multiple player_ids share a key (e.g., a junior + senior namesake),
-  # we'll prefer the one with the most recent appearance later.
-  opta_unique <- unique(lineups[, .(player_id, player_name)])
-  opta_keys <- lapply(opta_unique$player_name, keys_for_name)
-  names(opta_keys) <- opta_unique$player_id
+  # Wikipedia occasionally lists the same player twice per team (original
+  # squad + replacement note); keep the first occurrence.
+  ann_in <- ann_names
+  ann_names <- unique(ann_names)
+  if (length(ann_names) < length(ann_in)) {
+    warning(sprintf("[%s] %d duplicate announced name(s) dropped", team,
+                    length(ann_in) - length(ann_names)),
+            call. = FALSE, immediate. = TRUE)
+  }
+
+  # Per-id key sets from all Opta name variants of that id.
+  opta_key_sets <- tapply(
+    lineups$player_name, lineups$player_id,
+    function(nms) {
+      ks <- unlist(lapply(unique(nms), tier_keys), use.names = FALSE)
+      unique(ks[!is.na(ks)])
+    })
 
   # Last-appearance lookup for ambiguity tie-breaking
   last_seen <- lineups[, .(last_date = max(as.Date(sub("Z$", "", match_date)))),
                        by = player_id]
+  last_date_of <- stats::setNames(last_seen$last_date, last_seen$player_id)
 
-  resolved <- vector("list", length(ann_names))
-  for (i in seq_along(ann_names)) {
-    nm <- ann_names[i]
-    ann_keys <- keys_for_name(nm)
-    # Match: any overlap between announced keys and an opta player's keys
-    hits <- vapply(opta_keys, function(k) length(intersect(k, ann_keys)) > 0L,
-                   logical(1L))
-    cand_ids <- names(opta_keys)[hits]
-    pid <- if (length(cand_ids) == 0L) {
-      NA_character_
-    } else if (length(cand_ids) == 1L) {
-      cand_ids
-    } else {
-      # Multiple hits — pick most-recently-seen
-      tb <- last_seen[player_id %in% cand_ids]
-      data.table::setorder(tb, -last_date)
-      tb$player_id[1L]
+  # Tiered resolution with a per-team claimed-id set. Each tier (full name,
+  # initial+surname, penult+surname, surname) is processed to a fixed point:
+  # names whose tier key matches exactly one UNCLAIMED id bind first; among
+  # names with several candidates, one binding per pass (the name whose best
+  # candidate appeared most recently) so candidates re-derive after every
+  # claim. An id can be claimed once, so distinct announced namesakes spread
+  # across distinct Opta ids instead of stacking on the most recent one
+  # (pre-2026-06-11 bug: Lautaro/Lisandro/Emiliano Martínez all resolved to
+  # one id — 43 duplicate (team, player_id) keys tournament-wide, with the
+  # duplicated minutes inflating those teams' minute-weighted ratings).
+  ann_tiers <- lapply(ann_names, tier_keys)
+  resolved_id <- rep(NA_character_, length(ann_names))
+  claimed <- character(0)
+
+  for (tier in 1:4) {
+    repeat {
+      open <- which(is.na(resolved_id))
+      if (length(open) == 0L) break
+      cand_list <- lapply(open, function(i) {
+        key <- ann_tiers[[i]][tier]
+        if (is.na(key)) return(character(0))
+        hits <- vapply(opta_key_sets, function(k) key %in% k, logical(1L))
+        setdiff(names(opta_key_sets)[hits], claimed)
+      })
+      n_cand <- lengths(cand_list)
+      if (all(n_cand == 0L)) break
+      singles <- which(n_cand == 1L)
+      if (length(singles) > 0L) {
+        for (s in singles) {
+          pid <- cand_list[[s]][1L]
+          if (!(pid %in% claimed)) {
+            resolved_id[open[s]] <- pid
+            claimed <- c(claimed, pid)
+          }
+        }
+      } else {
+        # Only multi-candidate names left at this tier: bind the single
+        # best (most recent) pairing, then re-derive.
+        multi <- which(n_cand > 1L)
+        best_i <- multi[1L]; best_pid <- NA_character_; best_d <- as.Date(NA)
+        for (m in multi) {
+          cd <- last_date_of[cand_list[[m]]]
+          top <- which.max(cd)
+          if (is.na(best_d) || cd[top] > best_d) {
+            best_i <- m; best_pid <- cand_list[[m]][top]; best_d <- cd[top]
+          }
+        }
+        resolved_id[open[best_i]] <- best_pid
+        claimed <- c(claimed, best_pid)
+      }
     }
-    resolved[[i]] <- data.table::data.table(
-      announced_name = nm,
-      player_id = pid
-    )
   }
-  out <- data.table::rbindlist(resolved)
+
+  out <- data.table::data.table(
+    announced_name = ann_names,
+    player_id = resolved_id
+  )
 
   # Compute expected minutes for matched players; pull in modal position.
   matched_pids <- out[!is.na(player_id), player_id]
@@ -597,8 +660,26 @@ build_wc2026_announced_squads <- function(
       as_of = as_of
     )
     one[, source := "announced"]
+    n_res <- sum(!is.na(one$player_id))
+    n_unres <- length(squads[[team]]) - n_res
+    if (n_res < WC2026_OVERRIDE_MIN_RESOLVED && isTRUE(include_derived)) {
+      # Too few announced names resolved to Opta ids (transliteration-heavy
+      # squads: Saudi Arabia 6/26, etc.). Step 02 would refuse the override
+      # at this count and fall back to the unweighted last-played XI, so
+      # ship the EM-weighted derived history pool instead — Opta-native ids,
+      # no name matching involved.
+      d <- resolve_derived_squad(team, lu_t[!is.na(team_id), team_id][1L],
+                                  lu_t, as_of)
+      if (nrow(d) >= WC2026_OVERRIDE_MIN_RESOLVED) {
+        message(sprintf(
+          "  [%s] only %d / %d announced names resolved (<%d) — using derived history pool (%d players)",
+          team, n_res, length(squads[[team]]), WC2026_OVERRIDE_MIN_RESOLVED,
+          nrow(d)))
+        out_parts[[team]] <- d
+        next
+      }
+    }
     out_parts[[team]] <- one
-    n_unres <- sum(is.na(one$player_id))
     if (n_unres > 0L) {
       message(sprintf("  [%s] %d / %d announced players unresolved",
                       team, n_unres, length(squads[[team]])))
@@ -648,8 +729,10 @@ build_wc2026_announced_squads <- function(
   arrow::write_parquet(out, out_path)
   message(sprintf("Wrote %d rows: %d announced (%d teams) + %d derived (%d teams) -> %s",
                   nrow(out),
-                  sum(out$source == "announced"), length(squads),
-                  sum(out$source == "derived"), length(derived_parts),
+                  sum(out$source == "announced"),
+                  data.table::uniqueN(out[source == "announced", team_name]),
+                  sum(out$source == "derived"),
+                  data.table::uniqueN(out[source == "derived", team_name]),
                   out_path))
   invisible(out)
 }
