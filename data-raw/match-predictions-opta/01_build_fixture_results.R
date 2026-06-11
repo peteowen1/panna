@@ -737,15 +737,31 @@ if (!is.null(fixtures_df)) {
   unresolved_away <- 0L
   if (nrow(team_name_map) > 0) {
     home_lookup <- setNames(team_name_map$team_name, team_name_map$team_id)
+    # Empty-string team_ids are TBD placeholders (e.g. the 32 WC2026 knockout
+    # fixtures, cup finals before semis resolve) — not split-identity risks,
+    # so keep them out of the unresolved counts below.
+    has_home_id <- !is.na(fixtures_clean$home_team_id) & nzchar(fixtures_clean$home_team_id)
+    has_away_id <- !is.na(fixtures_clean$away_team_id) & nzchar(fixtures_clean$away_team_id)
     new_home <- home_lookup[as.character(fixtures_clean$home_team_id)]
     n_home_renamed <- sum(!is.na(new_home) & (is.na(fixtures_clean$home_team) | new_home != fixtures_clean$home_team))
-    unresolved_home <- sum(!is.na(fixtures_clean$home_team_id) & is.na(new_home))
+    unresolved_home <- sum(has_home_id & is.na(new_home))
     fixtures_clean$home_team <- ifelse(is.na(new_home), fixtures_clean$home_team, unname(new_home))
 
     new_away <- home_lookup[as.character(fixtures_clean$away_team_id)]
     n_away_renamed <- sum(!is.na(new_away) & (is.na(fixtures_clean$away_team) | new_away != fixtures_clean$away_team))
-    unresolved_away <- sum(!is.na(fixtures_clean$away_team_id) & is.na(new_away))
+    unresolved_away <- sum(has_away_id & is.na(new_away))
     fixtures_clean$away_team <- ifelse(is.na(new_away), fixtures_clean$away_team, unname(new_away))
+
+    # Info trend line for the excluded population: expected baseline is the
+    # TBD placeholders (64 = 32 WC2026 knockout fixtures x 2 sides while the
+    # tournament is upcoming). A jump here means the scraper started emitting
+    # blank ids for real fixtures — catch it at step 01, not as quietly
+    # degraded predictions at step 07.
+    n_blank_ids <- sum(!has_home_id) + sum(!has_away_id)
+    if (n_blank_ids > 0) {
+      message(sprintf("  %d fixture team-id slots blank (TBD placeholders: WC2026 knockouts, unresolved cup ties)",
+                      n_blank_ids))
+    }
   }
 
   # Always-on diagnostic: distinguishes "rename block ran correctly" from
