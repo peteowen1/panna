@@ -122,6 +122,7 @@ Stat ratings → PSR/OSR/DSR (smoothed skills via glmnet) ───────�
 - **Player IDs**: Opta pipeline uses real alphanumeric Opta IDs (e.g., `5ilkkfbsss0bxd6ttdlqg0uz9`) throughout. FBref uses FBref player IDs.
 - **Config override pattern**: `run_pipeline_opta.R` uses `if (!exists(...))` so test scripts can set variables before sourcing.
 - **Tournament seasons**: Use "YYYY Country" format (e.g., "2018 Russia"), not "YYYY-YYYY".
+- **Season subsetting: ALWAYS select by `extract_season_end_year()`, never by exact `"YYYY-YYYY"` string match.** Three label formats share one end year: "2025-2026" (European), "2026" (calendar-year leagues — MLS/Argentina/Brazil), "2026 Canada-Mexico-USA" (tournaments). The exact-match-then-fallback-if-empty pattern is a trap: the European labels always match, so the fallback never fires and calendar-league rows are silently dropped. This exact bug excluded MLS/ARG/BRA from every season's SPM build until 2026-06-12 (`07_seasonal_ratings.R`, the blog's 25% missing-SPM gap).
 - **Position taxonomy**: Prefer the 16-role classification (GK/CB/LB/RB/LWB/RWB/DM/CM/LM/RM/CAM/LW/RW/CF/LF/RF) over the legacy 4-bucket GK/DEF/MID/FWD when adding features, aggregations, or display labels. Canonical mapper: `classify_role(position, position_side)` in `R/minutes_model.R`. Empirical 10+ min spread between roles inside the same broad bucket (e.g. CB averages 87 min, LB 86, AM 80, ST-Right 77). Refactor old broad-bucket usage opportunistically.
 
 ## Gotchas
@@ -154,7 +155,7 @@ Stat ratings → PSR/OSR/DSR (smoothed skills via glmnet) ───────�
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
 | `R-CMD-check.yaml` | Push to `dev`, PRs to `main` | Package checks |
-| `opta-pipeline.yml` | Manual dispatch | Opta RAPM/SPM on GHA, auto-uploads caches |
+| `opta-pipeline.yml` | Manual dispatch | Opta RAPM/SPM on GHA, auto-uploads caches. ⚠ OOMs the 16GB hosted runner since the 2026-06 4-league expansion (panna#87) — run the pipeline locally (needs ~25GB+ RAM) until fixed; the scrape-complete auto-trigger was removed for this reason |
 | `pkgdown.yaml` | Push | Documentation site |
 | `predictions-pipeline.yml` | Wed 8 AM UTC / manual / `opta-scrape-complete` dispatch | Weekly match predictions. Runs steps 1-10c + 11 (WC2026 sim) + 12 (WC2026 blog export). Triggers `predictions-complete` repository_dispatch on `pannadata` to refresh blog data. Note: WC2026 sim defaults to FALSE in `run_predictions_opta.R` but the workflow enables it in its `run_steps` override. |
 | `psr-weekly-snapshot.yml` | Weekly snapshot / manual | PSR weekly snapshot generation |

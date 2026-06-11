@@ -29,10 +29,23 @@ tag <- "blog-latest"
 #   (3) intl_tournament — WC / EURO use "YYYY Country"; map a summer
 #                         tournament to the domestic season ending that year.
 domestic_leagues  <- c("ENG", "ESP", "GER", "ITA", "FRA",
-                        "NED", "POR", "SCO", "TUR", "ENG2")
+                        "NED", "POR", "SCO", "TUR", "ENG2",
+                        "MEX", "SAU")          # added 2026-06-11 ("YYYY-YYYY" labels)
+# Calendar-year season labels ("2026" not "2025-2026") — resolved through the
+# same year-prefix matching as the intl tournaments ("2025-2026" -> "2026").
+calendar_leagues  <- c("MLS", "ARG")
 continental_cups  <- c("UCL", "UEL", "UECL")
 intl_tournaments  <- c("WC", "EURO")
-blog_leagues      <- c(domestic_leagues, continental_cups, intl_tournaments)
+# Leagues whose season label is resolved by year prefix rather than passed through
+season_label_leagues <- c(intl_tournaments, calendar_leagues)
+# Override guard: backfill runs can process a league subset. CAUTION — the
+# per-season output parquet contains ONLY the processed leagues, so a subset
+# run must set upload_game_logs <- FALSE and merge into the existing
+# game_logs_<season>.parquet files instead of clobbering them.
+if (!exists("blog_leagues", inherits = FALSE)) {
+  blog_leagues    <- c(domestic_leagues, calendar_leagues,
+                       continental_cups, intl_tournaments)
+}
 
 # Seasons to export. Vector (new) or scalar `game_log_season` (back-compat).
 if (!exists("game_log_seasons", inherits = FALSE)) {
@@ -237,7 +250,7 @@ validate_game_log_schema <- function(dt, league, season) {
   # matches vs its played fixtures. warn_threshold is the noisy-but-OK band.
   ls_pairs <- lapply(blog_leagues, function(lg) {
     lg_season <- resolve_league_season(lg, season,
-                                         tournament_leagues = intl_tournaments)
+                                         tournament_leagues = season_label_leagues)
     if (is.null(lg_season)) return(NULL)
     list(league = lg, season = lg_season)
   })
@@ -292,7 +305,7 @@ validate_game_log_schema <- function(dt, league, season) {
   for (league in blog_leagues) {
     tryCatch({
       league_season <- resolve_league_season(league, season,
-                                               tournament_leagues = intl_tournaments)
+                                               tournament_leagues = season_label_leagues)
       if (is.null(league_season)) {
         message(sprintf("\n  Skipping %s %s — no tournament this year", league, season))
         stop(skip_league_cond("no tournament this year"))
