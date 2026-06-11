@@ -154,7 +154,7 @@ Stat ratings → PSR/OSR/DSR (smoothed skills via glmnet) ───────�
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
 | `R-CMD-check.yaml` | Push to `dev`, PRs to `main` | Package checks |
-| `opta-pipeline.yml` | Manual dispatch | Opta RAPM/SPM on GHA, auto-uploads caches |
+| `opta-pipeline.yml` | Manual dispatch | Opta RAPM/SPM on GHA, auto-uploads caches. ⚠ OOMs the 16GB hosted runner since the 2026-06 4-league expansion (panna#87) — run the pipeline locally (needs ~25GB+ RAM) until fixed; the scrape-complete auto-trigger was removed for this reason |
 | `pkgdown.yaml` | Push | Documentation site |
 | `predictions-pipeline.yml` | Wed 8 AM UTC / manual / `opta-scrape-complete` dispatch | Weekly match predictions. Runs steps 1-10c + 11 (WC2026 sim) + 12 (WC2026 blog export). Triggers `predictions-complete` repository_dispatch on `pannadata` to refresh blog data. Note: WC2026 sim defaults to FALSE in `run_predictions_opta.R` but the workflow enables it in its `run_steps` override. |
 | `psr-weekly-snapshot.yml` | Weekly snapshot / manual | PSR weekly snapshot generation |
