@@ -122,6 +122,7 @@ Stat ratings → PSR/OSR/DSR (smoothed skills via glmnet) ───────�
 - **Player IDs**: Opta pipeline uses real alphanumeric Opta IDs (e.g., `5ilkkfbsss0bxd6ttdlqg0uz9`) throughout. FBref uses FBref player IDs.
 - **Config override pattern**: `run_pipeline_opta.R` uses `if (!exists(...))` so test scripts can set variables before sourcing.
 - **Tournament seasons**: Use "YYYY Country" format (e.g., "2018 Russia"), not "YYYY-YYYY".
+- **Season subsetting: ALWAYS select by `extract_season_end_year()`, never by exact `"YYYY-YYYY"` string match.** Three label formats share one end year: "2025-2026" (European), "2026" (calendar-year leagues — MLS/Argentina/Brazil), "2026 Canada-Mexico-USA" (tournaments). The exact-match-then-fallback-if-empty pattern is a trap: the European labels always match, so the fallback never fires and calendar-league rows are silently dropped. This exact bug excluded MLS/ARG/BRA from every season's SPM build until 2026-06-12 (`07_seasonal_ratings.R`, the blog's 25% missing-SPM gap).
 - **Position taxonomy**: Prefer the 16-role classification (GK/CB/LB/RB/LWB/RWB/DM/CM/LM/RM/CAM/LW/RW/CF/LF/RF) over the legacy 4-bucket GK/DEF/MID/FWD when adding features, aggregations, or display labels. Canonical mapper: `classify_role(position, position_side)` in `R/minutes_model.R`. Empirical 10+ min spread between roles inside the same broad bucket (e.g. CB averages 87 min, LB 86, AM 80, ST-Right 77). Refactor old broad-bucket usage opportunistically.
 
 ## Gotchas
