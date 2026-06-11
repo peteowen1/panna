@@ -240,7 +240,41 @@ if (!is.null(sq_psr)) squad_out <- merge(squad_out, sq_psr, by = "player_id", al
 if (!is.null(sq_epr)) squad_out <- merge(squad_out, sq_epr, by = "player_id", all.x = TRUE)
 for (col in c("psr", "epr")) if (!col %in% names(squad_out)) squad_out[[col]] <- NA_real_
 
+# Authoritative club per player: latest CLUB (non-international) appearance
+# in opta_lineups across every scraped competition — covers Saudi/MLS/
+# Liga MX/Argentina squads the ratings join can't reach (blog previously
+# shimmed these from Wikidata, stale ~40% of the time). club_last_seen lets
+# the blog grey out genuinely stale clubs (transfers, retirements).
+lu_club_path <- file.path(opta_data_dir(), "opta_lineups.parquet")
+if (file.exists(lu_club_path)) {
+  # Same international-competition list as build_team_expected_minutes()
+  intl_comps <- c("World_Cup", "UEFA_WC_Qualifiers", "UEFA_Euros",
+                  "UEFA_Euro_Qualifiers", "UEFA_Nations_League",
+                  "Copa_America", "AFCON", "AFCON_Qualifiers",
+                  "CONCACAF_Gold_Cup", "AFC_Asian_Cup", "AFC_WC_Qualifiers",
+                  "Asian_Cup_Qualifiers", "Gulf_Cup_of_Nations",
+                  "CAF_WC_Qualifiers", "CONMEBOL_WC_Qualifiers",
+                  "Intl_Friendlies")
+  lu_club <- as.data.table(read_parquet(
+    lu_club_path,
+    col_select = c("player_id", "team_name", "match_date", "competition")))
+  lu_club <- lu_club[!competition %in% intl_comps &
+                     player_id %in% squad_out$player_id]
+  lu_club[, match_date := as.Date(substr(match_date, 1, 10))]
+  setorder(lu_club, player_id, -match_date)
+  club_latest <- lu_club[, .SD[1L], by = player_id][
+    , .(player_id, club_name = team_name, club_last_seen = match_date)]
+  squad_out <- merge(squad_out, club_latest, by = "player_id", all.x = TRUE)
+  message(sprintf("  club_name resolved for %d/%d squad players (latest club appearance)",
+                  sum(!is.na(squad_out$club_name)), nrow(squad_out)))
+} else {
+  squad_out[, `:=`(club_name = NA_character_, club_last_seen = as.Date(NA))]
+  warning("opta_lineups.parquet not found — wc2026_squads.parquet ships without club_name",
+          call. = FALSE, immediate. = TRUE)
+}
+
 setcolorder(squad_out, c("team", "group", "player_id", "player_name", "position",
+                         "club_name", "club_last_seen",
                          "expected_minutes_norm", "is_starter_pred",
                          "panna", "offense", "defense", "epr", "psr", "total_minutes"))
 setorder(squad_out, team, -expected_minutes_norm)
@@ -257,7 +291,8 @@ wc_parquets <- c("wc2026_predictions.parquet",
                  "wc2026_simulation.parquet",
                  "wc2026_groups.parquet",
                  "wc2026_team_strength.parquet",
-                 "wc2026_squads.parquet")
+                 "wc2026_squads.parquet",
+                 "wc2026_knockout_probs.parquet")
 for (p in wc_parquets) {
   pp <- file.path(cache_dir, p)
   cp <- sub("\\.parquet$", ".csv", pp)
