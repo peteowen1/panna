@@ -9,7 +9,7 @@ simulate_world_cup(
   groups,
   knockout,
   n_sims = 10000L,
-  elo_k = 40,
+  elo_k = 20,
   bracket = c("fifa2026", "random"),
   verbose = TRUE
 )
@@ -29,7 +29,8 @@ pre-tournament Elo, used as the run-hot baseline).}
 
 \item{n_sims}{Integer. Default 10000.}
 
-\item{elo_k}{Run-hot Elo K-factor (default 40; 0 disables momentum).}
+\item{elo_k}{Run-hot Elo K-factor (default 20, matching the production
+pipeline in 11_simulate_wc2026.R; 0 disables momentum).}
 
 \item{bracket}{\code{"fifa2026"} (default) plays the knockouts on the official
 2026 bracket (matches 73-104) with FIFA's third-place slot eligibility;

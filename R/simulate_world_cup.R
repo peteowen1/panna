@@ -182,7 +182,8 @@ rank_group_h2h <- function(p, d, f, tbk, m_a, m_b, g_a, g_b) {
 #'   (pairwise knockout probabilities) and `team_elo` (named vector of
 #'   pre-tournament Elo, used as the run-hot baseline).
 #' @param n_sims Integer. Default 10000.
-#' @param elo_k Run-hot Elo K-factor (default 40; 0 disables momentum).
+#' @param elo_k Run-hot Elo K-factor (default 20, matching the production
+#'   pipeline in 11_simulate_wc2026.R; 0 disables momentum).
 #' @param bracket `"fifa2026"` (default) plays the knockouts on the official
 #'   2026 bracket (matches 73-104) with FIFA's third-place slot eligibility;
 #'   `"random"` reshuffles the round of 32 each sim (the pre-2026-06-11
@@ -197,7 +198,7 @@ rank_group_h2h <- function(p, d, f, tbk, m_a, m_b, g_a, g_b) {
 #' @export
 simulate_world_cup <- function(predictions, groups, knockout,
                                 n_sims = 10000L,
-                                elo_k = 40,
+                                elo_k = 20,
                                 bracket = c("fifa2026", "random"),
                                 verbose = TRUE) {
 
