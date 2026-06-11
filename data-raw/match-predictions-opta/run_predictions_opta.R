@@ -48,6 +48,7 @@ if (!exists("use_skill_ratings")) use_skill_ratings <- TRUE
 if (!exists("run_steps")) {
   run_steps <- list(
     step_01_build_fixture_results    = TRUE,
+    step_01b_refresh_wc2026_squads   = FALSE,  # Opt-in: rebuild announced-squads EM from Wikipedia (GHA enables)
     step_02_player_ratings_to_team   = TRUE,
     step_02b_team_skill_features     = TRUE,   # Team-level skill aggregations
     step_03_team_rolling_features    = TRUE,
@@ -157,6 +158,16 @@ step_results[[1]] <- run_pred_step("build_fixture_results", 1, function() {
   source("data-raw/match-predictions-opta/01_build_fixture_results.R", local = TRUE)
 })
 check_pred_critical(step_results[[1]])
+
+# 5b. Step 1b: Refresh WC2026 Announced Squads ----
+# Runs after step 01 because the derived-squad path reads
+# 01_fixture_results.rds for the WC2026 team list.
+
+step_results[["1b"]] <- run_pred_step("refresh_wc2026_squads", "1b", function() {
+  source("data-raw/match-predictions-opta/01b_refresh_wc2026_squads.R", local = TRUE)
+})
+# 1b is non-critical — 01b itself falls back to the predictions-cache copy,
+# and step 02 falls back to last-XI weighting if the parquet is absent.
 
 # 6. Step 2: Player Ratings to Team ----
 

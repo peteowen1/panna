@@ -548,14 +548,16 @@ resolve_derived_squad <- function(team, team_id_in, lineups,
 
 #' Build the wc2026_announced_squads parquet
 #'
-#' @param opta_lineups_path Path to opta_lineups.parquet (default points at
-#'   the sister `pannadata` checkout, matching step 02's convention).
+#' @param opta_lineups_path Path to opta_lineups.parquet. Default resolves
+#'   via `opta_data_dir()` so it works both locally (sister `pannadata`
+#'   checkout) and on GHA (workflow points opta_data_dir at the downloaded
+#'   release data) — same fix pattern as step 02's EPR path.
 #' @param out_path Output parquet path.
 #' @param squads Named list of announced squads. Defaults to the master
 #'   list in this file.
 #' @param as_of `Date` for the EM decay. Default `2026-06-11` (WC kickoff).
 build_wc2026_announced_squads <- function(
-    opta_lineups_path = "../pannadata/data/opta/opta_lineups.parquet",
+    opta_lineups_path = file.path(opta_data_dir(), "opta_lineups.parquet"),
     fixture_results_path = file.path("data-raw", "cache-predictions-opta",
                                        "01_fixture_results.rds"),
     out_path = file.path("data-raw", "cache-predictions-opta",
