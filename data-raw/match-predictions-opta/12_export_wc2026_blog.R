@@ -4,11 +4,12 @@
 # pulls wc2026_*.parquet into blog/ and the R2 step ships them to
 # inthegame-data/football/.
 #
-# Produces four parquet files:
+# Produces five parquet files:
 #   wc2026_predictions.parquet    — 72 group-stage match predictions (H/D/A + xG)
 #   wc2026_simulation.parquet     — per-team round + champion probabilities
 #   wc2026_groups.parquet         — per-team group-finish probabilities
 #   wc2026_team_strength.parquet  — per-team strength across rating categories
+#   wc2026_squads.parquet         — per-player squad rows with ratings
 #
 # Inputs (all produced upstream by steps 07 + 11):
 #   07_predictions.rds, 04_match_dataset.rds, wc2026_groups.rds,
@@ -166,6 +167,63 @@ write_parquet(strength, file.path(cache_dir, "wc2026_team_strength.parquet"))
 message(sprintf("  wc2026_team_strength.parquet: %d teams x %d categories",
                 nrow(strength), length(metric_cols) + 2L))
 
+# 5b. Squad rows with player ratings ----
+# One row per squad player: announced/derived squad membership (step 02's
+# announced_squads cache) joined to the latest-season player ratings. Feeds
+# the blog's world-cup-team.qmd squad table. Ratings stay NA when a player
+# has no rated club minutes (smaller leagues) — the blog renders a dash;
+# per [[feedback-no-silent-imputation]] we do NOT zero-fill here (the 0s in
+# step 02 exist for the team aggregator, not for published per-player rows).
+
+squads_path <- file.path(cache_dir, "wc2026_announced_squads.parquet")
+if (!file.exists(squads_path)) {
+  stop("wc2026_announced_squads.parquet not found in ", cache_dir,
+       " — run announced_squads.R (step 02) first.")
+}
+squads <- as.data.table(read_parquet(squads_path))
+
+# Latest-season per-player ratings: same source preference as step 02
+# (skill-based first, raw-stat fallback).
+sq_skill_path <- file.path("data-raw", "cache-skills", "06_seasonal_ratings.rds")
+sq_raw_path   <- file.path("data-raw", "cache-opta", "07_seasonal_ratings.rds")
+sq_seasonal <- if (file.exists(sq_skill_path)) readRDS(sq_skill_path) else readRDS(sq_raw_path)
+
+sq_xrapm <- as.data.table(sq_seasonal$seasonal_xrapm)
+sq_xrapm <- sq_xrapm[order(player_id, -season_end_year), .SD[1L], by = player_id,
+                     .SDcols = intersect(c("xrapm", "offense", "defense", "total_minutes"),
+                                         names(sq_xrapm))]
+setnames(sq_xrapm, "xrapm", "panna", skip_absent = TRUE)
+
+sq_psr <- if (!is.null(sq_seasonal$seasonal_psr) && nrow(sq_seasonal$seasonal_psr) > 0) {
+  p <- as.data.table(sq_seasonal$seasonal_psr)
+  p[order(player_id, -season_end_year), .SD[1L], by = player_id, .SDcols = "psr"]
+} else NULL
+
+sq_epr <- {
+  ep <- file.path(opta_data_dir(), "opta_epr_weekly.parquet")
+  if (file.exists(ep)) {
+    e <- as.data.table(read_parquet(ep))
+    e[, snapshot_date := as.Date(snapshot_date)]
+    e[order(player_id, -snapshot_date), .SD[1L], by = player_id, .SDcols = "epr"]
+  } else NULL
+}
+
+squad_out <- squads[, .(team = team_name, player_id, player_name, position,
+                        expected_minutes_norm, is_starter_pred)]
+squad_out[, group := unname(team_group[team])]
+squad_out <- merge(squad_out, sq_xrapm, by = "player_id", all.x = TRUE)
+if (!is.null(sq_psr)) squad_out <- merge(squad_out, sq_psr, by = "player_id", all.x = TRUE)
+if (!is.null(sq_epr)) squad_out <- merge(squad_out, sq_epr, by = "player_id", all.x = TRUE)
+for (col in c("psr", "epr")) if (!col %in% names(squad_out)) squad_out[[col]] <- NA_real_
+
+setcolorder(squad_out, c("team", "group", "player_id", "player_name", "position",
+                         "expected_minutes_norm", "is_starter_pred",
+                         "panna", "offense", "defense", "epr", "psr", "total_minutes"))
+setorder(squad_out, team, -expected_minutes_norm)
+write_parquet(squad_out, file.path(cache_dir, "wc2026_squads.parquet"))
+message(sprintf("  wc2026_squads.parquet: %d players across %d squads (%d with panna ratings)",
+                nrow(squad_out), uniqueN(squad_out$team), sum(!is.na(squad_out$panna))))
+
 # 6. Save CSV companions for the small published tables ----
 # Per feedback 2026-05-28: small tables (<100KB / <10k rows) get a CSV
 # alongside the parquet for easy human inspection. The parquet remains
@@ -174,7 +232,8 @@ message(sprintf("  wc2026_team_strength.parquet: %d teams x %d categories",
 wc_parquets <- c("wc2026_predictions.parquet",
                  "wc2026_simulation.parquet",
                  "wc2026_groups.parquet",
-                 "wc2026_team_strength.parquet")
+                 "wc2026_team_strength.parquet",
+                 "wc2026_squads.parquet")
 for (p in wc_parquets) {
   pp <- file.path(cache_dir, p)
   cp <- sub("\\.parquet$", ".csv", pp)
