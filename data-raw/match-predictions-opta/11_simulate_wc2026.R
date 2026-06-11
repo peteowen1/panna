@@ -76,8 +76,26 @@ knockout <- build_knockout_lookup(
 # 4. Bradley-Terry ratings — diagnostic only ----
 # No longer used by the simulator; kept as a published team-strength summary
 # (wc2026_team_full_ranks.R consumes wc2026_bt_ratings.parquet).
+#
+# Fit on the FULL 1128-pair knockout lookup, not the 72 group fixtures: with
+# group fixtures only, each team is compared solely against its 3 group
+# rivals, so the comparison graph is 12 disconnected components and
+# cross-group rating levels are optimizer artifacts (a dominant team in a
+# weak group floats to #1 — the "Switzerland tops BT" bug, blog #269). The
+# lookup compares every team with every other team through the same blended
+# match model, making the graph fully connected and the ratings globally
+# comparable. Lookup probs are orientation-averaged; host home_field is
+# baked into pairings involving USA/CAN/MEX, which is intentional — BT now
+# reads as "expected strength at THIS tournament".
 
-bt <- fit_bt_ratings(as.data.frame(wc), neutral = TRUE, verbose = TRUE)
+bt_pairs <- data.frame(
+  home_team = knockout$probs$t1,
+  away_team = knockout$probs$t2,
+  prob_H    = knockout$probs$p_t1,
+  prob_D    = knockout$probs$p_draw,
+  prob_A    = knockout$probs$p_t2
+)
+bt <- fit_bt_ratings(bt_pairs, neutral = TRUE, verbose = TRUE)
 bt_with_groups <- as.data.table(merge(bt$ratings, groups, by = "team"))
 setorder(bt_with_groups, rank)
 arrow::write_parquet(bt_with_groups,
