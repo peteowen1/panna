@@ -181,6 +181,11 @@ if (!file.exists(squads_path)) {
        " — run announced_squads.R (step 02) first.")
 }
 squads <- as.data.table(read_parquet(squads_path))
+# The announced-squads cache can carry the same player twice (announced +
+# derived source rows). One row per (team, player): keep the highest
+# expected-minutes row.
+setorder(squads, team_name, player_id, -expected_minutes_norm)
+squads <- unique(squads, by = c("team_name", "player_id"))
 
 # Latest-season per-player ratings: same source preference as step 02
 # (skill-based first, raw-stat fallback).
