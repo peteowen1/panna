@@ -20,11 +20,17 @@ devtools::load_all()
 
 # 1. Configuration ----
 
-LEAGUES <- c(
+# Config override pattern: debug/test scripts can set LEAGUES before sourcing
+# (e.g. to score only newly-added leagues against existing SPADL caches).
+if (!exists("LEAGUES", inherits = FALSE)) LEAGUES <- c(
   # Big 5
   "ENG", "ESP", "GER", "ITA", "FRA",
   # Extended domestic
   "NED", "POR", "TUR", "ENG2", "SCO",
+  # Americas / Asia domestic (added 2026-06-11; events backfilled to 2013-14)
+  "MLS", "MEX", "ARG", "SAU",
+  # Club-comp bridges (cross-league connectivity for offsets)
+  "LIB", "SUD", "CCC", "LGC", "ACLE", "CWC",
   # European comps
   "UCL", "UEL", "UECL",
   # International
