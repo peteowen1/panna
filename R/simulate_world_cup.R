@@ -25,7 +25,7 @@
 # Performance: teams are referenced by integer index throughout the hot loop
 # (no name hashing); per-sim randomness is drawn in blocks; the knockout
 # lookup is an integer-indexed matrix; the third-place slot allocation is a
-# precomputed 4096-row bitmask-keyed matrix (495 rows populated — one per
+# precomputed 4096-row bitmask-keyed matrix (495 rows populated -- one per
 # C(12,8) combination of qualified groups).
 
 ## --- FIFA 2026 bracket constants -------------------------------------------
@@ -192,7 +192,7 @@ rank_group_h2h <- function(p, d, f, tbk, m_a, m_b, g_a, g_b) {
 #'
 #' @return A list with `summary` (per-team round probabilities),
 #'   `group_table` (group-position probabilities), `n_sims`, `elo_k`, and
-#'   `bracket` (the bracket actually used — `"random"` if the fifa2026
+#'   `bracket` (the bracket actually used -- `"random"` if the fifa2026
 #'   fallback fired).
 #' @export
 simulate_world_cup <- function(predictions, groups, knockout,
@@ -238,7 +238,7 @@ simulate_world_cup <- function(predictions, groups, knockout,
   }
   if (length(elo_missing) > 0L) {
     warning("no pre-tournament Elo for: ", paste(elo_missing, collapse = ", "),
-            " — median Elo imputed; check team spelling in `groups` vs ",
+            " -- median Elo imputed; check team spelling in `groups` vs ",
             "knockout$team_elo", call. = FALSE)
   }
 
@@ -266,7 +266,7 @@ simulate_world_cup <- function(predictions, groups, knockout,
   if (length(unmatched) > 0L) {
     stop("teams in `groups` missing from knockout$probs: ",
          paste(unmatched, collapse = ", "),
-         " — check spelling in wc2026_groups.csv against prediction team names")
+         " -- check spelling in wc2026_groups.csv against prediction team names")
   }
 
   ## --- 3. Group fixtures as flat integer-indexed vectors -----------------
@@ -527,7 +527,7 @@ play_knockout_round <- function(bracket, WIN, DRAW, LAM,
       # Drawn knockout -> penalty shootout. shootout_win_prob() with equal
       # conversion rates is exactly 0.5 (a fair shootout has no structural
       # first-kicker edge), so this is behaviourally identical to the prior
-      # bare coin flip — but it names the mechanism and is the single hook to
+      # bare coin flip -- but it names the mechanism and is the single hook to
       # later pass team-specific conversion rates (taker/keeper quality) for
       # non-50/50 shootout odds. ta took the (notional) first kick.
       p_so <- shootout_win_prob()                # P(ta wins) = 0.5 at equal p

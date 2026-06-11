@@ -42,7 +42,7 @@ not contain exactly groups A-L of 4 teams each.}
 \value{
 A list with \code{summary} (per-team round probabilities),
 \code{group_table} (group-position probabilities), \code{n_sims}, \code{elo_k}, and
-\code{bracket} (the bracket actually used — \code{"random"} if the fifa2026
+\code{bracket} (the bracket actually used -- \code{"random"} if the fifa2026
 fallback fired).
 }
 \description{
