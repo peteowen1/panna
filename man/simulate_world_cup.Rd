@@ -10,6 +10,7 @@ simulate_world_cup(
   knockout,
   n_sims = 10000L,
   elo_k = 40,
+  bracket = c("fifa2026", "random"),
   verbose = TRUE
 )
 }
@@ -18,7 +19,9 @@ simulate_world_cup(
 \code{prob_D}, \code{prob_A}, \code{pred_home_goals}, \code{pred_away_goals} for all
 group-stage fixtures.}
 
-\item{groups}{Data frame mapping \code{team} -> \code{group} (12 groups of 4).}
+\item{groups}{Data frame mapping \code{team} -> \code{group} (12 groups of 4).
+Group letters must match the official draw when
+\code{bracket = "fifa2026"} -- the letters determine knockout paths.}
 
 \item{knockout}{Output of \code{\link[=build_knockout_lookup]{build_knockout_lookup()}} -- a list with \code{probs}
 (pairwise knockout probabilities) and \code{team_elo} (named vector of
@@ -26,13 +29,21 @@ pre-tournament Elo, used as the run-hot baseline).}
 
 \item{n_sims}{Integer. Default 10000.}
 
-\item{elo_k}{Run-hot Elo K-factor (default 20; 0 disables momentum).}
+\item{elo_k}{Run-hot Elo K-factor (default 40; 0 disables momentum).}
+
+\item{bracket}{\code{"fifa2026"} (default) plays the knockouts on the official
+2026 bracket (matches 73-104) with FIFA's third-place slot eligibility;
+\code{"random"} reshuffles the round of 32 each sim (the pre-2026-06-11
+behaviour). Falls back to \code{"random"} with a warning if \code{groups} does
+not contain exactly groups A-L of 4 teams each.}
 
 \item{verbose}{Logical. Print progress. Default TRUE.}
 }
 \value{
 A list with \code{summary} (per-team round probabilities),
-\code{group_table} (group-position probabilities), \code{n_sims}, \code{elo_k}.
+\code{group_table} (group-position probabilities), \code{n_sims}, \code{elo_k}, and
+\code{bracket} (the bracket actually used -- \code{"random"} if the fifa2026
+fallback fired).
 }
 \description{
 Simulate a 48-team World Cup

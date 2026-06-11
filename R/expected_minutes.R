@@ -78,6 +78,13 @@ build_team_expected_minutes <- function(team,
   lu[, weight := 2 ^ (-days_ago / half_life_days)]
 
   ## --- 3. Per-player aggregation ---------------------------------------
+  ## Canonicalise the display name per player_id first: Opta feeds mix name
+  ## variants for the same id across seasons ("L. Martínez" vs "Lautaro
+  ## Martínez"). Aggregating by (player_id, player_name) would split such a
+  ## player's appearance evidence into separate rows, each separately shrunk
+  ## toward zero — keep the most recent variant for everything.
+  lu[, player_name := player_name[which.max(as.numeric(match_date))],
+     by = player_id]
   ## Clip minutes to sane range
   lu[, mins_clip := pmin(pmax(minutes_played, 0L), 95L)]
   lu[, played    := mins_clip > 0L]
@@ -111,7 +118,9 @@ build_team_expected_minutes <- function(team,
     agg <- agg_filtered
   } else {
     ## sparse-data fallback -- keep everyone but mark for diagnostics
-    attr(agg, "recency_filter_skipped") <- TRUE
+    ## (setattr, not attr<-: attr<- copies the data.table and the next :=
+    ## then throws the "shallow copy" warning)
+    data.table::setattr(agg, "recency_filter_skipped", TRUE)
   }
 
   ## --- 4. Compute probabilities and conditional means ------------------

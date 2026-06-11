@@ -361,6 +361,16 @@ if (nrow(upcoming) > 0) {
                     mean(s$lineup_weight)))
     s
   } else NULL
+  if (is.null(ann_squads)) {
+    # This silent skip shipped last-XI-weighted WC2026 ratings from every
+    # GHA run before 2026-06-11 — never let it happen quietly again.
+    warning(sprintf(paste(
+      "WC2026 announced-squad override NOT loaded (%s) — any WC2026",
+      "fixtures in this run will use last-played-XI weighting"),
+      if (!file.exists(ann_squads_path)) paste0("missing ", ann_squads_path)
+      else "arrow package unavailable"),
+      call. = FALSE, immediate. = TRUE)
+  }
 
   # Decide which WC2026 teams have an override eligible. A team is eligible
   # iff it appears in ann_squads AND at least WC2026_OVERRIDE_MIN_RESOLVED

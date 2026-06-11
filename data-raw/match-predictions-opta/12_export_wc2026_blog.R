@@ -34,8 +34,27 @@ message("\n=== Exporting WC 2026 blog data ===\n")
 groups_cache_rds <- file.path(cache_dir, "wc2026_groups.rds")
 groups_pkg_csv   <- system.file("extdata", "wc2026_groups.csv", package = "panna")
 groups <- if (file.exists(groups_cache_rds)) {
-  as.data.table(readRDS(groups_cache_rds))
+  g <- as.data.table(readRDS(groups_cache_rds))
+  message("  wc2026 groups: cache RDS (", groups_cache_rds, ")")
+  # Same stale-shadow guard as 11_simulate_wc2026.R — group letters are
+  # published to the blog and drive the FIFA bracket; warn on divergence.
+  if (nzchar(groups_pkg_csv) && file.exists(groups_pkg_csv)) {
+    csv_g <- data.table::fread(groups_pkg_csv)
+    chk <- merge(g[, .(team, group_rds = group)],
+                 csv_g[, .(team, group_csv = group)], by = "team", all = TRUE)
+    bad <- chk[is.na(group_rds) | is.na(group_csv) | group_rds != group_csv]
+    if (nrow(bad) > 0L) {
+      warning(sprintf(paste(
+        "wc2026_groups.rds cache DISAGREES with inst/extdata/wc2026_groups.csv",
+        "for %d team(s): %s — delete the stale RDS unless this is a",
+        "deliberate what-if run"),
+        nrow(bad), paste(bad$team, collapse = ", ")),
+        call. = FALSE, immediate. = TRUE)
+    }
+  }
+  g
 } else if (nzchar(groups_pkg_csv) && file.exists(groups_pkg_csv)) {
+  message("  wc2026 groups: package CSV (inst/extdata/wc2026_groups.csv)")
   data.table::fread(groups_pkg_csv)
 } else {
   stop("wc2026_groups not found: neither ", groups_cache_rds,

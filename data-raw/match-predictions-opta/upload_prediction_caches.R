@@ -30,6 +30,11 @@ cache_files <- list(
   list(
     path = file.path("data-raw", "cache-skills", "03_skill_spm.rds"),
     desc = "SPM model for skill-based predictions"
+  ),
+  list(
+    path = file.path("data-raw", "cache-predictions-opta",
+                     "wc2026_announced_squads.parquet"),
+    desc = "WC2026 announced-squads EM (fallback for pipeline step 01b)"
   )
 )
 
