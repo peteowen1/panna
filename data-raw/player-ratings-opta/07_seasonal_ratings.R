@@ -93,20 +93,20 @@ fit_season_ratings_opta <- function(splint_data, opta_stats, season,
   # Filter Opta stats to this season
   # Handle both standard ("2024-2025") and tournament ("2018 Russia") season formats
   season_str <- paste0(season - 1, "-", season)
-  season_opta_stats <- opta_stats[opta_stats$season == season_str, ]
-
-  # If no match with standard format, try matching by extracted end year
-  if (nrow(season_opta_stats) == 0) {
-    end_years <- sapply(unique(opta_stats$season), extract_season_end_year)
-    matching_seasons <- names(end_years)[end_years == season]
-    if (length(matching_seasons) > 1) {
-      cat(sprintf("  Note: %d seasons match end year %d: %s\n",
-                  length(matching_seasons), season, paste(matching_seasons, collapse = ", ")))
-    }
-    if (length(matching_seasons) > 0) {
-      season_opta_stats <- opta_stats[opta_stats$season %in% matching_seasons, ]
-    }
+  # Select by extracted end year, not exact "YYYY-YYYY" match: calendar-year
+  # leagues (MLS/Argentina/Brazil, label "2026") and tournaments ("2026
+  # Canada-Mexico-USA") share an end year with the European "2025-2026"
+  # season. The old exact-match-then-fallback logic only reached the
+  # fallback when the standard format matched NOTHING — so calendar-league
+  # stats were silently excluded from every season's SPM build (the blog's
+  # 25% missing-SPM gap, found 2026-06-12).
+  end_years <- sapply(unique(opta_stats$season), extract_season_end_year)
+  matching_seasons <- names(end_years)[end_years == season]
+  if (length(matching_seasons) > 1) {
+    cat(sprintf("  Note: %d seasons match end year %d: %s\n",
+                length(matching_seasons), season, paste(matching_seasons, collapse = ", ")))
   }
+  season_opta_stats <- opta_stats[opta_stats$season %in% matching_seasons, ]
 
   cat(sprintf("  Season Opta stats rows: %d\n", nrow(season_opta_stats)))
 
@@ -125,15 +125,11 @@ fit_season_ratings_opta <- function(splint_data, opta_stats, season,
 
   # Enrich with xMetrics if available (SPM models may require these features)
   if (!is.null(opta_xmetrics) && nrow(opta_xmetrics) > 0) {
-    season_xm <- opta_xmetrics[opta_xmetrics$season == season_str, ]
-    # Fallback: match by extracted end year for tournament formats
-    if (nrow(season_xm) == 0) {
-      xm_end_years <- sapply(unique(opta_xmetrics$season), extract_season_end_year)
-      xm_matching <- names(xm_end_years)[xm_end_years == season]
-      if (length(xm_matching) > 0) {
-        season_xm <- opta_xmetrics[opta_xmetrics$season %in% xm_matching, ]
-      }
-    }
+    # End-year matching for the same reason as the stats subset above —
+    # calendar-year league labels never equal the "YYYY-YYYY" season_str.
+    xm_end_years <- sapply(unique(opta_xmetrics$season), extract_season_end_year)
+    xm_matching <- names(xm_end_years)[xm_end_years == season]
+    season_xm <- opta_xmetrics[opta_xmetrics$season %in% xm_matching, ]
     if (nrow(season_xm) > 0) {
       xm_agg <- season_xm %>%
         group_by(player_id) %>%
