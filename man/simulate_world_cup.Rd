@@ -29,7 +29,7 @@ pre-tournament Elo, used as the run-hot baseline).}
 
 \item{n_sims}{Integer. Default 10000.}
 
-\item{elo_k}{Run-hot Elo K-factor (default 20; 0 disables momentum).}
+\item{elo_k}{Run-hot Elo K-factor (default 40; 0 disables momentum).}
 
 \item{bracket}{\code{"fifa2026"} (default) plays the knockouts on the official
 2026 bracket (matches 73-104) with FIFA's third-place slot eligibility;
@@ -41,7 +41,9 @@ not contain exactly groups A-L of 4 teams each.}
 }
 \value{
 A list with \code{summary} (per-team round probabilities),
-\code{group_table} (group-position probabilities), \code{n_sims}, \code{elo_k}.
+\code{group_table} (group-position probabilities), \code{n_sims}, \code{elo_k}, and
+\code{bracket} (the bracket actually used — \code{"random"} if the fifa2026
+fallback fired).
 }
 \description{
 Simulate a 48-team World Cup

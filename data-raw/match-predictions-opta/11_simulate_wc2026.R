@@ -43,8 +43,28 @@ stopifnot(file.exists(preds_path))
 groups_cache_rds <- file.path(cache_dir, "wc2026_groups.rds")
 groups_pkg_csv   <- system.file("extdata", "wc2026_groups.csv", package = "panna")
 groups <- if (file.exists(groups_cache_rds)) {
-  as.data.table(readRDS(groups_cache_rds))
+  g <- as.data.table(readRDS(groups_cache_rds))
+  message("  wc2026 groups: cache RDS (", groups_cache_rds, ")")
+  # Group letters drive the FIFA 2026 knockout bracket, so a stale RDS
+  # silently shadowing the corrected CSV produces wrong knockout paths
+  # with no structural symptom (still 12 groups A-L of 4). Compare loudly.
+  if (nzchar(groups_pkg_csv) && file.exists(groups_pkg_csv)) {
+    csv_g <- data.table::fread(groups_pkg_csv)
+    chk <- merge(g[, .(team, group_rds = group)],
+                 csv_g[, .(team, group_csv = group)], by = "team", all = TRUE)
+    bad <- chk[is.na(group_rds) | is.na(group_csv) | group_rds != group_csv]
+    if (nrow(bad) > 0L) {
+      warning(sprintf(paste(
+        "wc2026_groups.rds cache DISAGREES with inst/extdata/wc2026_groups.csv",
+        "for %d team(s): %s — delete the stale RDS unless this is a",
+        "deliberate what-if run"),
+        nrow(bad), paste(bad$team, collapse = ", ")),
+        call. = FALSE, immediate. = TRUE)
+    }
+  }
+  g
 } else if (nzchar(groups_pkg_csv) && file.exists(groups_pkg_csv)) {
+  message("  wc2026 groups: package CSV (inst/extdata/wc2026_groups.csv)")
   data.table::fread(groups_pkg_csv)
 } else {
   stop("wc2026_groups not found: neither ", groups_cache_rds,

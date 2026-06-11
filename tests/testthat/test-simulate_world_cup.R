@@ -125,3 +125,40 @@ test_that("non-standard groups fall back to the random bracket with a warning", 
   )
   expect_equal(sim$bracket, "random")
 })
+
+test_that("group ranking applies GD before GF", {
+  # Equal points everywhere; team 2 has the better GD, team 1 the better GF.
+  # GD must dominate — swapping -d and -f in the order() call would rank
+  # team 1 first. No (p, d, f) cluster is fully tied, so head-to-head never
+  # fires and the ordering comes purely from the points > GD > GF cascade.
+  p <- c(4L, 4L, 4L, 4L)
+  d <- c(1L, 2L, -1L, -2L)
+  f <- c(5L, 2L, 4L, 0L)
+  m_a <- c(1L, 1L, 1L, 2L, 2L, 3L)
+  m_b <- c(2L, 3L, 4L, 3L, 4L, 4L)
+  g0  <- integer(6)
+  for (k in 1:25) {
+    ord <- panna:::rank_group_h2h(p, d, f, stats::runif(4), m_a, m_b, g0, g0)
+    expect_equal(ord, c(2L, 1L, 3L, 4L))
+  }
+})
+
+test_that("3-way head-to-head tie cascades through h2h GD then h2h GF", {
+  # Teams 1-3 fully tied on overall points/GD/GF (cluster of three).
+  # Mutual results: 1 beats 2 3-0, 2 beats 3 2-0, 3 beats 1 1-0 — a cycle,
+  # so h2h points tie at 3 each and ranking falls to h2h GD:
+  #   team 1: +3 -1 = +2, team 2: -3 +2 = -1, team 3: -2 +1 = -1.
+  # Teams 2 and 3 then tie on h2h GD and split on h2h GF (2 vs 1).
+  # tbk is set adversarially (team 3 best draw) to prove the random
+  # tiebreak is NOT what decides.
+  p <- c(6L, 6L, 6L, 0L)
+  d <- c(2L, 2L, 2L, -6L)
+  f <- c(5L, 5L, 5L, 1L)
+  m_a <- c(1L, 2L, 3L, 1L, 2L, 3L)
+  m_b <- c(2L, 3L, 1L, 4L, 4L, 4L)
+  g_a <- c(3L, 2L, 1L, 1L, 1L, 1L)
+  g_b <- c(0L, 0L, 0L, 0L, 0L, 0L)
+  tbk <- c(0.9, 0.8, 0.1, 0.5)
+  ord <- panna:::rank_group_h2h(p, d, f, tbk, m_a, m_b, g_a, g_b)
+  expect_equal(ord, c(1L, 2L, 3L, 4L))
+})

@@ -2,7 +2,8 @@
 #
 # Group stage: 12 groups of 4, top 2 + 8 best 3rd-placed -> Round of 32
 # Knockouts: R32 -> R16 -> QF -> SF -> Final, on the OFFICIAL FIFA 2026
-# bracket (matches 73-104): fixed slots for group winners/runners-up, the
+# bracket (matches 73-102 + final 104; the bronze final M103 is not
+# simulated): fixed slots for group winners/runners-up, the
 # eight best thirds allocated to their designated winner-slots subject to
 # FIFA's per-slot group-eligibility lists.
 #
@@ -24,7 +25,8 @@
 # Performance: teams are referenced by integer index throughout the hot loop
 # (no name hashing); per-sim randomness is drawn in blocks; the knockout
 # lookup is an integer-indexed matrix; the third-place slot allocation is a
-# precomputed 495-row lookup keyed by the bitmask of qualified groups.
+# precomputed 4096-row bitmask-keyed matrix (495 rows populated — one per
+# C(12,8) combination of qualified groups).
 
 ## --- FIFA 2026 bracket constants -------------------------------------------
 ## Round of 32 ties in match order 73..88 (Wikipedia, "2026 FIFA World Cup
@@ -180,7 +182,7 @@ rank_group_h2h <- function(p, d, f, tbk, m_a, m_b, g_a, g_b) {
 #'   (pairwise knockout probabilities) and `team_elo` (named vector of
 #'   pre-tournament Elo, used as the run-hot baseline).
 #' @param n_sims Integer. Default 10000.
-#' @param elo_k Run-hot Elo K-factor (default 20; 0 disables momentum).
+#' @param elo_k Run-hot Elo K-factor (default 40; 0 disables momentum).
 #' @param bracket `"fifa2026"` (default) plays the knockouts on the official
 #'   2026 bracket (matches 73-104) with FIFA's third-place slot eligibility;
 #'   `"random"` reshuffles the round of 32 each sim (the pre-2026-06-11
@@ -189,7 +191,9 @@ rank_group_h2h <- function(p, d, f, tbk, m_a, m_b, g_a, g_b) {
 #' @param verbose Logical. Print progress. Default TRUE.
 #'
 #' @return A list with `summary` (per-team round probabilities),
-#'   `group_table` (group-position probabilities), `n_sims`, `elo_k`.
+#'   `group_table` (group-position probabilities), `n_sims`, `elo_k`, and
+#'   `bracket` (the bracket actually used — `"random"` if the fifa2026
+#'   fallback fired).
 #' @export
 simulate_world_cup <- function(predictions, groups, knockout,
                                 n_sims = 10000L,
@@ -223,9 +227,19 @@ simulate_world_cup <- function(predictions, groups, knockout,
   ## Pre-tournament Elo as a plain numeric vector, integer-indexed.
   elo_base <- numeric(n_teams)
   med_elo  <- stats::median(knockout$team_elo, na.rm = TRUE)
+  elo_missing <- character(0)
   for (k in seq_len(n_teams)) {
     e <- knockout$team_elo[[all_teams[k]]]
-    elo_base[k] <- if (is.null(e) || is.na(e)) med_elo else e
+    if (is.null(e) || is.na(e)) {
+      elo_missing <- c(elo_missing, all_teams[k])
+      e <- med_elo
+    }
+    elo_base[k] <- e
+  }
+  if (length(elo_missing) > 0L) {
+    warning("no pre-tournament Elo for: ", paste(elo_missing, collapse = ", "),
+            " — median Elo imputed; check team spelling in `groups` vs ",
+            "knockout$team_elo", call. = FALSE)
   }
 
   ## --- 2. Knockout probability matrices (integer-indexed) ----------------
@@ -244,6 +258,16 @@ simulate_world_cup <- function(predictions, groups, knockout,
   DRAW[cbind(tj[ok], ti[ok])] <- kp$p_draw[ok]
   LAM[cbind(ti[ok], tj[ok])]  <- kp$lambda_t1[ok]
   LAM[cbind(tj[ok], ti[ok])]  <- kp$lambda_t2[ok]
+
+  ## Validate up front: a team absent from the pairwise lookup leaves NA in
+  ## WIN, which would otherwise crash the hot loop thousands of iterations
+  ## later with an undiagnosable "missing value where TRUE/FALSE needed".
+  unmatched <- setdiff(all_teams, unique(c(kp$t1, kp$t2)))
+  if (length(unmatched) > 0L) {
+    stop("teams in `groups` missing from knockout$probs: ",
+         paste(unmatched, collapse = ", "),
+         " — check spelling in wc2026_groups.csv against prediction team names")
+  }
 
   ## --- 3. Group fixtures as flat integer-indexed vectors -----------------
   ## All 72 group matches, ordered group-by-group so processing them in order

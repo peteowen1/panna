@@ -6,15 +6,18 @@
 #
 # Output:
 #   data-raw/cache-predictions-opta/wc2026_announced_squads.parquet
-#     columns: team_name, team_id, player_id, player_name, position,
-#              expected_minutes_norm, is_starter_pred
+#     columns: team_name, team_id, player_id, player_name, announced_name,
+#              position, expected_minutes_norm, is_starter_pred, source
 #
 # Source it stand-alone to (re)build the parquet:
 #   cd panna && Rscript data-raw/match-predictions-opta/announced_squads.R
 #
 # Keys in WC2026_ANNOUNCED_SQUADS must match Opta `team_name` exactly
 # (e.g. "United States", not "USA"; "Korea Republic", not "South Korea").
-# As of 2026-05-27, 17 of 48 teams have published a final 26.
+# NOTE: since 2026-06-11 the GHA pipeline bypasses this hand-curated list —
+# step 01b scrapes the final squads from Wikipedia (scrape_wiki_squads.R)
+# and passes them to build_wc2026_announced_squads(squads = ...). The list
+# below is the default only for stand-alone local runs.
 
 # 1. Master squad list ----
 
@@ -378,13 +381,16 @@ tier_keys <- function(name) {
 #' Resolve one team's announced squad to Opta player_ids
 #'
 #' Looks each announced name up in `lineups` (already filtered to the team
-#' and to international competitions). Falls back to surname / last-two
-#' tokens when the full name doesn't match (handles diacritic / cultural
-#' variants like "K. De Bruyne" vs "Kevin De Bruyne").
+#' and to international competitions) through four key tiers of decreasing
+#' specificity: full normalised name -> first-initial + surname (handles
+#' "K. De Bruyne" vs "Kevin De Bruyne") -> last-two tokens -> bare surname.
+#' Each Opta player_id can be claimed by at most one announced name; see
+#' the claimed-set comment in the body for the per-pass binding rules.
 #'
-#' Returns a data.table with one row per announced player; unresolved
-#' players still appear but with NA player_id (the pipeline can log /
-#' shrink them, same as any unrated player).
+#' Returns a data.table with one row per *unique* announced name (duplicate
+#' input names are dropped with a warning); unresolved players still appear
+#' but with NA player_id (the pipeline can log / shrink them, same as any
+#' unrated player).
 #'
 #' @param team Opta `team_name`.
 #' @param ann_names Character vector of announced player names (length 23-26).

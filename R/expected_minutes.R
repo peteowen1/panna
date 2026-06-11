@@ -118,7 +118,9 @@ build_team_expected_minutes <- function(team,
     agg <- agg_filtered
   } else {
     ## sparse-data fallback -- keep everyone but mark for diagnostics
-    attr(agg, "recency_filter_skipped") <- TRUE
+    ## (setattr, not attr<-: attr<- copies the data.table and the next :=
+    ## then throws the "shallow copy" warning)
+    data.table::setattr(agg, "recency_filter_skipped", TRUE)
   }
 
   ## --- 4. Compute probabilities and conditional means ------------------

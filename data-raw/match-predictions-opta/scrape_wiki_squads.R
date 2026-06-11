@@ -115,6 +115,18 @@ message(sprintf("  PRELIMINARY (>26 or <23): %d teams (will be derived from opta
                 length(prelim_teams)))
 for (t in prelim_teams) message(sprintf("    [%s] %d", t, length(parsed[[t]])))
 
+# All 48 squads have been final on this page since 2026-06-04. A markup
+# change can make a 200 response parse "successfully" into few or zero
+# team sections, which would silently flip every team to derived pools
+# (and a later upload would poison the predictions-cache fallback copy).
+# Fail hard instead — step 01b's tryCatch turns this into the
+# last-known-good release fallback, which is the designed recovery path.
+if (length(final_teams) < 40L) {
+  stop(sprintf(
+    "Wikipedia squads parse looks broken: only %d FINAL team-sections (expected ~48)",
+    length(final_teams)))
+}
+
 # 4. Wikipedia -> Opta team-name mapping --------------------------------
 # Wikipedia uses common English names; opta_lineups uses different
 # variants for a handful of teams. Keys = Wikipedia name, values = Opta
