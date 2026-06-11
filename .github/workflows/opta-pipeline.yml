@@ -19,8 +19,13 @@ on:
         description: 'Start from step N (1-9). Downloads intermediate caches from predictions-cache release. Default 1 = full run.'
         type: number
         required: false
-  repository_dispatch:
-    types: [opta-scrape-complete]
+  # repository_dispatch trigger removed 2026-06-11 (panna#87): the pipeline
+  # OOMs the 16GB hosted runner deterministically since the 4-league
+  # expansion, so the daily opta-scrape-complete dispatch burned ~1-3
+  # runner-hours per day on guaranteed failures. Manual-only until the
+  # memory profile fits 16GB again (or the job moves to a larger runner).
+  # repository_dispatch:
+  #   types: [opta-scrape-complete]
 
 env:
   GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
