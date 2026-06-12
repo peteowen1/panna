@@ -463,6 +463,7 @@ simulate_world_cup <- function(predictions, groups, knockout,
   summary_df <- data.frame(
     team    = all_teams,
     group   = unname(team_group[all_teams]),
+    p_R32   = round(reach[, 1] / n_sims * 100, 1),
     p_R16   = round(reach[, 2] / n_sims * 100, 1),
     p_QF    = round(reach[, 3] / n_sims * 100, 1),
     p_SF    = round(reach[, 4] / n_sims * 100, 1),
