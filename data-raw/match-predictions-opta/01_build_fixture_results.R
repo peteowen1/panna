@@ -571,8 +571,16 @@ for (league in leagues) {
   current_season <- available_seasons[1]
 
   tryCatch({
+    # "Playing" + "Played" included so in-play and finished-but-not-yet-
+    # event-scraped matches don't VANISH from the dataset: §5 only sees
+    # matches with local events, so a match whose opta_fixtures status
+    # flipped past "Fixture" before the next event scrape used to fall
+    # between the two sources entirely (2026-06-12: Korea Republic-Czechia
+    # disappeared from every blog export for the FT→scrape window). Played
+    # rows with scores promote below; event-backed §5 copies still win the
+    # §8b dedup via the xG-aware priority.
     fixtures <- load_opta_fixtures(league, season = current_season,
-                                   status = c("Fixture", "Postponed", "Awarded"),
+                                   status = c("Fixture", "Postponed", "Awarded", "Playing", "Played"),
                                    source = "local")
     if (!is.null(fixtures) && nrow(fixtures) > 0) {
       fixtures$league <- league
@@ -602,7 +610,14 @@ for (league in leagues) {
         !is.na(fixtures$home_score) & !is.na(fixtures$away_score) &
         !is.na(fx_dates) & fx_dates < Sys.Date()
 
-      promote <- is_awarded | is_stale_fixture
+      # Played-from-fixtures (no local events yet — the FT→scrape window):
+      # scores are final, populate goals/result like the other promotions.
+      # "Playing" rows stay un-promoted and flow through as upcoming fixtures
+      # (the live feed carries their running score; the model still predicts).
+      is_played_fx <- fixtures$match_status == "Played" &
+        !is.na(fixtures$home_score) & !is.na(fixtures$away_score)
+
+      promote <- is_awarded | is_stale_fixture | is_played_fx
       n_awarded <- sum(is_awarded, na.rm = TRUE)
       n_stale_promoted <- sum(is_stale_fixture, na.rm = TRUE)
       if (any(promote)) {
@@ -824,12 +839,16 @@ if (n_stale_combined > 0L) {
 # match_predictions.parquet (panna#75 in published output).
 #
 # Resolve by keeping the PLAYED copy of any dup — it has real scores and
-# the model needs actual results, not the stale-Fixture placeholder.
+# the model needs actual results, not the stale-Fixture placeholder. Among
+# Played copies, the EVENT-BACKED one (§5, carries xG) beats the §7
+# fixtures-file copy (scores only, no events yet) — without the xG tiebreak
+# the .SD[1L] pick between two Played rows was arbitrary.
 dt <- data.table::as.data.table(fixture_results)
 dt[, .panna_dup_priority := data.table::fcase(
-  match_status == "Played",                  1L,
-  match_status %in% c("Awarded","Postponed"), 2L,
-  default                                  = 3L)]
+  match_status == "Played" & !is.na(home_xg), 1L,
+  match_status == "Played",                   2L,
+  match_status %in% c("Awarded","Postponed"), 3L,
+  default                                   = 4L)]
 data.table::setorder(dt, match_id, .panna_dup_priority, match_date)
 n_before_dedup <- nrow(dt)
 dt <- dt[, .SD[1L], by = match_id]
