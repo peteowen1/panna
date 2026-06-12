@@ -41,6 +41,7 @@ pkgdown::build_site()
 | **Data Loaders** | `data_loaders.R`, `opta_loaders.R` | Load from local parquet or GitHub Releases |
 | **Player Stats** | `player_stats_opta.R` (active); `player_stats_fbref.R`, `player_stats_understat.R` (deprecated) | Aggregate player-level statistics |
 | **Match Prediction** | `match_prediction.R` | Team-level features + XGBoost match outcome model |
+| **Expected Minutes** | `expected_minutes.R` (production); `minutes_model.R`, `minutes_model_train.R`, `minutes_query.R` (XGBoost, benched) | National-team minutes projection: decay-weighted heuristic with tournament boost + p_start Beta prior |
 | **Scraping** (deprecated) | `scrape_fbref_*.R`, `scrape_understat*.R` | Web scraping utilities — archival candidates |
 | **Data Processing** | `data_processing.R`, `possession_chains.R` | Transformations, possession chain analysis |
 | **Utilities** | `utils.R`, `constants.R`, `globals.R`, `piggyback.R` | Helpers, NSE declarations, GitHub Releases I/O |
@@ -114,7 +115,7 @@ Stat ratings → PSR/OSR/DSR (smoothed skills via glmnet) ───────�
 
 ### Tests (tests/testthat/)
 
-36 test files covering loaders, models, pipelines, scraping, value metrics. Shared fixtures in `helper-fixtures.R`. Uses testthat edition 3.
+41 test files covering loaders, models, pipelines, scraping, value metrics. Shared fixtures in `helper-fixtures.R`. Uses testthat edition 3.
 
 ## Key Conventions
 
@@ -127,6 +128,9 @@ Stat ratings → PSR/OSR/DSR (smoothed skills via glmnet) ───────�
 
 ## Gotchas
 
+- **WC expected-minutes tuning lives in `announced_squads.R`** — the `WC2026_EM_*` constants (tournament_boost = 5, prob_prior_k = 1, tournament_start) feed both the announced and derived squad resolvers. Values come from a WC2022 backtest (96 team-matches, game-2+; harness in `debug/wc_minutes_test/backtest_wc2022.R`): boost 5 cuts minutes MAE 21.0→19.2, XI-hit peaks at boost 3–5 and degrades by 8 (chases dead-rubber rotations). Don't raise `prob_prior_k`: the Beta prior monotonically worsens aggregate MAE — k=1 exists only to damp single-cap `p_start = 1.00` pathologies.
+- **The XGBoost minutes model is benched, deliberately** — `minutes_model*.R`/`minutes_query.R` are feature-complete (incl. `p_start_decay`, within-tournament accumulators, prev-team-match involvement, training/query parity tests) but LOSE to the tuned heuristic on the WC2022 holdout (22.4 vs 19.6 MAE, XI-hit tie). Don't wire it into the pipeline without re-running `debug/wc_minutes_test/train_eval_xgb.R` and beating the heuristic; its top features are the heuristic's own signals, so it mostly adds variance.
+- **`is.na()` on a data.table list-column is FALSE for NULL elements** — after a keyed join with `nomatch = NA`, unmatched rows fill list-columns with NULL, so `!is.na(dt$list_col)` does NOT detect them (crashed `query_minutes_features()` for unknown player_ids). Test emptiness: `vapply(col, function(v) !is.null(v) && length(v) > 0, logical(1))`.
 - **Splint creation uses second precision** — `extract_period_end_times()` reads Opta `type_id == 30` markers from raw match events to set exact period boundaries; `create_splint_boundaries_fast()` uses `events$minute + events$added_time` (where `added_time = second/60`) for sub/goal/red-card boundaries. The historical `+ 0.5` buffer is gone. Sub boundaries from lineups (`extract_sub_events`) are minute-precision and only used as a fallback when events have no subs (otherwise we'd duplicate near-boundaries).
 - **Published `defense` is sign-flipped to positive=good** in `10_export_blog_data.R` for blog consumption; internal model retains negative=good convention. `panna_ratings.parquet` shows `defense` as "defensive value added" (xG suppression per 90).
 - **Replacement Level filter at export** — `10_export_blog_data.R` drops `player_id == "replacement"` rows before publishing. The synthetic row is a model artifact (game-state confound, picks up uncontrolled variance from league-season fixed effects), not a coherent player rating.
