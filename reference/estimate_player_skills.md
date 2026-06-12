@@ -80,6 +80,6 @@ back-calculated from `proportion * attempts`, then decay-weighted. The
 Beta prior is centered on the position mean with strength controlled by
 `prior_attempts`.
 
-Shrinkage toward position means happens naturally through the prior —
+Shrinkage toward position means happens naturally through the prior –
 players with little data stay close to the prior, while players with
 abundant data are driven by their observations.

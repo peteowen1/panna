@@ -16,7 +16,8 @@ calculate_epr(
   prior_games = EPR_PRIOR_GAMES,
   prior_rate_off = EPR_PRIOR_RATE_OFF,
   prior_rate_def = EPR_PRIOR_RATE_DEF,
-  loading = EPR_LOADING
+  loading = EPR_LOADING,
+  league_baseline = TRUE
 )
 ```
 
@@ -57,6 +58,15 @@ calculate_epr(
 - loading:
 
   Loading factor applied to observed data (default `EPR_LOADING`).
+
+- league_baseline:
+
+  Logical. If TRUE (default) and the input has a `league` column,
+  per-(league, season) baseline EPV credit is subtracted from each row's
+  per-90 credit before the decay-weighted aggregation. This makes EPR
+  cross-league comparable: a player dominating in a weaker league is
+  judged relative to that league's baseline rather than the global one.
+  Set to FALSE to restore pre-baseline behaviour.
 
 ## Value
 

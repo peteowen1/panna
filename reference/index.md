@@ -228,6 +228,19 @@ Win probability model and WPA credit assignment
 - [`aggregate_player_game_wpa()`](https://peteowen1.github.io/panna/reference/aggregate_player_game_wpa.md)
   : Aggregate player WPA per game
 
+## Penalty Shootouts
+
+Shootout detection, scoring, and WPA aggregation
+
+- [`is_shootout_period()`](https://peteowen1.github.io/panna/reference/is_shootout_period.md)
+  : Test whether period_id values are penalty-shootout periods
+- [`score_shootout_kicks()`](https://peteowen1.github.io/panna/reference/score_shootout_kicks.md)
+  : Per-kick win probability and WPA for one shootout
+- [`shootout_win_prob()`](https://peteowen1.github.io/panna/reference/shootout_win_prob.md)
+  : Penalty-shootout win probability (exact, binomial)
+- [`aggregate_shootout_wpa()`](https://peteowen1.github.io/panna/reference/aggregate_shootout_wpa.md)
+  : Aggregate shootout WPA per player across matches
+
 ## EPR (Expected Points Rating)
 
 Decay-weighted Bayesian EPV ratings
@@ -236,6 +249,10 @@ Decay-weighted Bayesian EPV ratings
   : Calculate EPR (Expected Points Rating) from per-game EPV
 - [`calculate_epr_batch()`](https://peteowen1.github.io/panna/reference/calculate_epr_batch.md)
   : Calculate EPR at multiple dates (batch version)
+- [`calculate_epr_regression()`](https://peteowen1.github.io/panna/reference/calculate_epr_regression.md)
+  : Calculate EPR via weighted ridge regression with league/opponent FE
+- [`optimize_epr_decay()`](https://peteowen1.github.io/panna/reference/optimize_epr_decay.md)
+  : Optimise EPR decay via hold-out prediction MSE
 - [`aggregate_player_game_epv()`](https://peteowen1.github.io/panna/reference/aggregate_player_game_epv.md)
   : Aggregate Player EPV Per Game
 - [`build_player_game_ratings()`](https://peteowen1.github.io/panna/reference/build_player_game_ratings.md)
@@ -285,6 +302,8 @@ XGBoost Poisson/multinomial match outcome prediction
   : Aggregate Player Ratings to Team Level
 - [`aggregate_lineup_skills()`](https://peteowen1.github.io/panna/reference/aggregate_lineup_skills.md)
   : Aggregate Player Skills to Team-Level Features
+- [`augment_ratings_with_history()`](https://peteowen1.github.io/panna/reference/augment_ratings_with_history.md)
+  : Augment a ratings table with time-decayed historical fallback
 - [`init_team_elos()`](https://peteowen1.github.io/panna/reference/init_team_elos.md)
   : Initialize Team Elo Ratings
 - [`update_elo()`](https://peteowen1.github.io/panna/reference/update_elo.md)
@@ -304,12 +323,57 @@ XGBoost Poisson/multinomial match outcome prediction
 - [`calibration_table()`](https://peteowen1.github.io/panna/reference/calibration_table.md)
   : Create Calibration Table
 
+## Expected Minutes Model
+
+Player role classification and expected-minutes prediction for lineups
+
+- [`classify_role()`](https://peteowen1.github.io/panna/reference/classify_role.md)
+  : Map raw Opta (position, side) pair to a 16-role taxonomy
+- [`build_minutes_training_data()`](https://peteowen1.github.io/panna/reference/build_minutes_training_data.md)
+  : Build training dataset for the minutes-projection model
+- [`fit_minutes_model()`](https://peteowen1.github.io/panna/reference/fit_minutes_model.md)
+  : Fit the two-stage minutes model
+- [`predict_minutes()`](https://peteowen1.github.io/panna/reference/predict_minutes.md)
+  : Predict minutes for new rows (must have same feature columns as
+  training)
+- [`prepare_minutes_cache()`](https://peteowen1.github.io/panna/reference/prepare_minutes_cache.md)
+  : Prepare a cached lineups data object for fast minutes-feature
+  queries
+- [`query_minutes_features()`](https://peteowen1.github.io/panna/reference/query_minutes_features.md)
+  : Compute minutes-model features for a specific list of players at a
+  date
+- [`build_team_expected_minutes()`](https://peteowen1.github.io/panna/reference/build_team_expected_minutes.md)
+  : Build expected-minutes profile for a national team
+- [`weight_rating_by_minutes()`](https://peteowen1.github.io/panna/reference/weight_rating_by_minutes.md)
+  : Build a minutes-weighted team rating
+
 ## Season Simulation
 
 Monte Carlo season projection
 
 - [`simulate_season()`](https://peteowen1.github.io/panna/reference/simulate_season.md)
   : Simulate Season
+
+## World Cup 2026 Simulation
+
+Bradley-Terry team ratings and knockout tournament simulation
+
+- [`fit_bt_ratings()`](https://peteowen1.github.io/panna/reference/fit_bt_ratings.md)
+  : Fit Bradley-Terry-Davidson team ratings
+- [`bt_match_prob()`](https://peteowen1.github.io/panna/reference/bt_match_prob.md)
+  : Convert BT ratings to a match probability
+- [`compute_league_offsets()`](https://peteowen1.github.io/panna/reference/compute_league_offsets.md)
+  : Compute per-league per-90 EPV offsets vs an anchor league
+- [`mirror_match_rows()`](https://peteowen1.github.io/panna/reference/mirror_match_rows.md)
+  : Mirror match rows (swap home/away perspective)
+- [`match_is_international()`](https://peteowen1.github.io/panna/reference/match_is_international.md)
+  : Classify competitions as international vs domestic
+- [`build_knockout_lookup()`](https://peteowen1.github.io/panna/reference/build_knockout_lookup.md)
+  : Build the full-model knockout matchup lookup
+- [`simulate_world_cup()`](https://peteowen1.github.io/panna/reference/simulate_world_cup.md)
+  : Simulate a 48-team World Cup
+- [`run_wc2026_reference_checks()`](https://peteowen1.github.io/panna/reference/run_wc2026_reference_checks.md)
+  : Run the WC2026 Reference Facts Against Pipeline Outputs
 
 ## Weather
 
@@ -405,6 +469,18 @@ Local and remote cache operations
   : Get or set pannadata directory
 - [`opta_data_dir()`](https://peteowen1.github.io/panna/reference/opta_data_dir.md)
   : Get or Set Opta Data Directory
+- [`data_location_report()`](https://peteowen1.github.io/panna/reference/data_location_report.md)
+  : Report Where Local Opta Data Is Coming From
+
+## Player ID Canonicalisation
+
+Map duplicate Opta player IDs to canonical identities
+
+- [`build_player_id_canonical_map()`](https://peteowen1.github.io/panna/reference/build_player_id_canonical_map.md)
+  : Build a player_id -\> canonical_id lookup
+- [`apply_canonical_player_ids()`](https://peteowen1.github.io/panna/reference/apply_canonical_player_ids.md)
+  : Apply canonical-id mapping to a data.table that has a player_id
+  column
 
 ## Utilities
 
@@ -448,6 +524,12 @@ Model and data validation
   : Validate xG Model Performance
 - [`validate_panna_ratings()`](https://peteowen1.github.io/panna/reference/validate_panna_ratings.md)
   : Validate panna ratings
+- [`assert_events_coverage()`](https://peteowen1.github.io/panna/reference/assert_events_coverage.md)
+  : Assert Events Coverage Across Multiple Leagues
+- [`check_events_coverage()`](https://peteowen1.github.io/panna/reference/check_events_coverage.md)
+  : Check events_consolidated Coverage vs Played Fixtures
+- [`assert_step_output()`](https://peteowen1.github.io/panna/reference/assert_step_output.md)
+  : Assert Pipeline Output Against Named Expectations
 
 ## Analysis & Reporting
 
@@ -490,6 +572,8 @@ Package-wide constants and thresholds
   : Default minimum shots for finishing modifier calculation
 - [`MIN_WEIGHT_DURATION`](https://peteowen1.github.io/panna/reference/MIN_WEIGHT_DURATION.md)
   : Minimum weight threshold for duration-based weighting
+- [`PENALTY_SHOOTOUT_CONVERSION`](https://peteowen1.github.io/panna/reference/PENALTY_SHOOTOUT_CONVERSION.md)
+  : Empirical penalty-shootout conversion rate
 - [`PENALTY_XG`](https://peteowen1.github.io/panna/reference/PENALTY_XG.md)
   : Default penalty kick xG value
 - [`PLAYERS_PER_TEAM`](https://peteowen1.github.io/panna/reference/PLAYERS_PER_TEAM.md)

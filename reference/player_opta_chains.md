@@ -1,7 +1,7 @@
 # Opta Player Possession Chain Statistics
 
 Aggregate possession chain statistics from xMetrics data. Shows how
-players contribute to possession sequences — chain involvement, chain
+players contribute to possession sequences – chain involvement, chain
 starts, and chain success rates.
 
 ## Usage

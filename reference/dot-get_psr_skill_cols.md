@@ -3,7 +3,7 @@
 Returns the per-90 rate and efficiency columns used as PSR features.
 This matches the feature set used in
 [`fit_spm_opta()`](https://peteowen1.github.io/panna/reference/fit_spm_opta.md)
-minus position dummies — the elastic net selects relevant features
+minus position dummies – the elastic net selects relevant features
 automatically.
 
 ## Usage

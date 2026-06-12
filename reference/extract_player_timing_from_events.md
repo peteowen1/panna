@@ -26,7 +26,7 @@ required columns.
 ## Details
 
 Derives `on_minute` and `off_minute` for every player in every match
-directly from Opta event data — no reliance on lineup minute counts.
+directly from Opta event data – no reliance on lineup minute counts.
 Uses second-level precision throughout.
 
 Sources:

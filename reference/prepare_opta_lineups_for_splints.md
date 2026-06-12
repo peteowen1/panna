@@ -39,4 +39,4 @@ it OVERRIDES the lineup-derived on/off times for any (match_id,
 player_id) pair present in the timing table. Chain timing is preferred
 because Opta lineups record `minutes_played = 90` for unsubstituted
 finishers regardless of stoppage time, and round sub minutes to integers
-— chains carry second-level precision and the real final-whistle time.
+– chains carry second-level precision and the real final-whistle time.

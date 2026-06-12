@@ -20,7 +20,7 @@ Looks up per-stat override, then falls back to rate/efficiency default.
 
 - is_efficiency:
 
-  Logical — is this an efficiency stat?
+  Logical – is this an efficiency stat?
 
 ## Value
 

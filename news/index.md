@@ -1,5 +1,74 @@
 # Changelog
 
+## panna 0.3.1 (dev)
+
+### EPR rebuild — regression-based + league/opponent FE
+
+- **[`calculate_epr_regression()`](https://peteowen1.github.io/panna/reference/calculate_epr_regression.md)**
+  in `player_ratings_epv.R` — new weighted ridge regression for EPR:
+  `epv_p90 ~ β_player + α_league_season + γ × opp_def_rating + ε` with
+  `exp(-Δt/decay) × mins/90` weights. Player coefficients are
+  L2-penalized (Bayesian shrinkage), league-season and opponent terms
+  are unpenalized fixed effects. Returns β_player as the new EPR.
+- **[`optimize_epr_decay()`](https://peteowen1.github.io/panna/reference/optimize_epr_decay.md)**
+  — held-out MSE grid search for the decay parameter. Empirical winner:
+  900 days. All candidates within 0.001% of each other, so decay turns
+  out to be near-irrelevant.
+- **opp_def_rating** sourced from
+  `cache-opta/team_season_strength.parquet` (minute-weighted aggregation
+  of player panna/offense/defense per team-season). Drives most of the
+  league-bias correction.
+- WC sim impact: Türkiye dropped
+  [\#2](https://github.com/peteowen1/panna/issues/2) →
+  [\#5](https://github.com/peteowen1/panna/issues/5) on team mw_epr;
+  Croatia [\#4](https://github.com/peteowen1/panna/issues/4) →
+  [\#12](https://github.com/peteowen1/panna/issues/12); Morocco
+  [\#9](https://github.com/peteowen1/panna/issues/9) →
+  [\#13](https://github.com/peteowen1/panna/issues/13). Top-20
+  individual EPR (Mbappé, Kane, Veerman, Tavernier, Kimmich, Olise,
+  Yamal, etc.) is now uniformly elite players.
+
+### aggregate_lineup_ratings — silent value-metric drop fix
+
+- **Bug**: the `rating_cols` filter in `R/match_prediction.R` only kept
+  `panna/offense/defense/spm` from input ratings, silently dropping any
+  value-metric columns (`psr/osr/dsr`,
+  `epr/epr_offensive/epr_defensive`, `wpa_rating`, `psv_rating`,
+  `centrality`) before the function’s own `has_psr`/`has_epr` checks
+  could see them. Result: `sum_psr`/`sum_epr`/etc. were never created in
+  team-level features.
+- **Fix**: `rating_cols` now uses
+  `intersect(known_optional, names(dt_ratings))` to carry through any
+  present value-metric columns. Coverage-shrunk team-mean imputation
+  extended to those columns so missing-data teams
+  (Mexico/Korea/Canada/USA) aren’t biased low on sum_epr.
+- **Diagnostic**: opt-in warning when expected optional columns are
+  missing — set `options(panna.verbose_ratings = TRUE)`.
+
+### PSR — league-season FE in skill→xG regression
+
+- `07_train_psr_model.R` adds unpenalized league-season FE columns to
+  the team-aggregated skill regression. PSR betas are now estimated
+  controlling for league baseline, making cross-league rankings
+  comparable. Türkiye correctly drops to mid-pack on PSR.
+- Tried team-season FE first (over-corrected — team strength is partly
+  caused by player skill, stripped elite players of their contribution
+  to their teams). League-season FE is the right granularity.
+
+### Pipeline robustness
+
+- Data.table NSE fixes in
+  `data-raw/match-predictions-opta/05_fit_goals_model.R`,
+  `06_fit_outcome_model.R`, `07_predict_fixtures.R`,
+  `08_evaluate_model.R` — wrapped filtered subsets in
+  [`as.data.frame()`](https://rdrr.io/r/base/as.data.frame.html) so
+  `train_data[, feature_cols, drop = FALSE]` works when input is a
+  data.table.
+- Brazilian Serie A EPR coverage extension via standalone
+  `debug/keep/build_bra_game_logs.R` (Brazilian seasons use single-year
+  format that 10b_export_game_logs.R can’t handle directly). Brazil EPR
+  coverage 84.6% → 96.2% post-fix.
+
 ## panna 0.3.0
 
 Value metrics infrastructure, pipeline hardening, and match prediction

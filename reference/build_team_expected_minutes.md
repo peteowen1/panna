@@ -1,0 +1,108 @@
+# Build expected-minutes profile for a national team
+
+Build expected-minutes profile for a national team
+
+## Usage
+
+``` r
+build_team_expected_minutes(
+  team,
+  lineups,
+  as_of = Sys.Date(),
+  lookback_days = 730L,
+  half_life_days = 365,
+  squad_size = 26L,
+  international_only = TRUE,
+  min_recent_days = 540L,
+  shrinkage_k = 3,
+  prob_prior_k = 1,
+  tournament_boost = 1,
+  tournament_comps = "World_Cup",
+  tournament_start = NULL
+)
+```
+
+## Arguments
+
+- team:
+
+  Character. National team name (matches `team_name` in lineups).
+
+- lineups:
+
+  Data.table of lineups with columns: team_name, match_id, match_date,
+  player_id, player_name, position, is_starter, minutes_played,
+  sub_on_minute, sub_off_minute, competition.
+
+- as_of:
+
+  Date. "Today" for the decay calculation. Default Sys.Date().
+
+- lookback_days:
+
+  Integer. Only consider matches within this window. Default 730 (2
+  years – covers WC qualifiers + most internationals).
+
+- half_life_days:
+
+  Numeric. Exponential decay half-life. Default 365. Recent matches
+  weight 2x more than matches a year ago.
+
+- squad_size:
+
+  Integer. Cap the returned roster at this many. Default 26.
+
+- international_only:
+
+  Logical. Restrict to international competitions (WC, EURO, qualifiers,
+  Copa, AFCON, Nations League, friendlies). Default TRUE.
+
+- min_recent_days:
+
+  Integer. Drop players with no appearances within this window (relative
+  to `as_of`). Default 540 (~18 months) – catches players retired since
+  the last major tournament (EURO/Copa) while still keeping current
+  squad members who had injury gaps.
+
+- shrinkage_k:
+
+  Numeric. Bayesian pseudo-count:
+  `effective_em = em x weight_total / (weight_total + k)`. Players with
+  weak evidence get shrunk toward zero. Default 3 (a player with 3
+  weighted caps gets 50% of raw EM; 20 weighted caps gets ~87%).
+
+- prob_prior_k:
+
+  Numeric. Beta-prior pseudo-count for the start/sub probabilities:
+  `p_start = (weight_start + k x base) / (weight_total + k)` where
+  `base` is the squad-wide decay-weighted start rate. Stops a single-cap
+  player getting `p_start = 1.00` (and then having it halve after one
+  omission). Default 1 — the WC2022 backtest showed raw frequencies are
+  already well calibrated in aggregate (higher k monotonically worsens
+  minutes MAE), so the prior is kept just strong enough to damp the
+  thin-history pathologies. Set 0 for legacy raw frequencies.
+
+- tournament_boost:
+
+  Numeric. Weight multiplier applied to matches in `tournament_comps`
+  on/after `tournament_start` — lets in-tournament selections outweigh
+  equally-recent qualifiers/friendlies. Default 1 (no boost). Only
+  applied when `tournament_start` is supplied.
+
+- tournament_comps:
+
+  Character vector of competition codes the boost applies to. Default
+  `"World_Cup"`.
+
+- tournament_start:
+
+  Date. First day of the current tournament; the boost applies to
+  `tournament_comps` matches on/after this date only (so a previous WC
+  four years back is not boosted). Default NULL = off.
+
+## Value
+
+Data frame with one row per likely-squad player and columns: player_id,
+player_name, position, n_caps_weighted, p_start, mins_when_start,
+p_sub_given_bench, mins_when_sub, expected_minutes, pct_team_minutes
+(sums to ~100 across the squad).

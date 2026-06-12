@@ -30,7 +30,7 @@ download_opta_catalog(
   older than this (mtime-based), it's treated as stale and
   re-downloaded. Default 6 hours, override globally via
   `options(panna.opta_catalog_ttl_hours = N)`. Set `Inf` to disable the
-  TTL (legacy behavior — trust local forever).
+  TTL (legacy behavior – trust local forever).
 
 ## Value
 

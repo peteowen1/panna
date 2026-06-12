@@ -29,7 +29,7 @@ Resolution order (first match wins):
 3.  `../pannadata/data` relative to working directory (for the
     pannaverse monorepo layout)
 
-4.  `tools::R_user_dir("panna", "data")` — OS-standard user data dir
+4.  `tools::R_user_dir("panna", "data")` – OS-standard user data dir
 
 OS-standard fallback paths:
 
@@ -44,6 +44,7 @@ OS-standard fallback paths:
 ``` r
 # Get current path
 pannadata_dir()
+#> ! pannadata_dir() falling through to /home/runner/.local/share/R/panna (no `pannadata/data` near /home/runner/work/panna/panna/docs/reference, no PANNADATA_DIR env var). If you meant to use a workspace clone, set PANNADATA_DIR or call `pannadata_dir('path/to/pannadata/data')` once.
 #> [1] "/home/runner/.local/share/R/panna"
 
 # Set custom path

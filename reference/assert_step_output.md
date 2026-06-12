@@ -1,0 +1,58 @@
+# Assert Pipeline Output Against Named Expectations
+
+Runs a list of named boolean checks against a data frame (or any object)
+and reports any failures via cli::cli_warn or stop, depending on
+`severity`. Each check is a function that takes the data and returns
+TRUE if the expectation holds, FALSE otherwise. Errors thrown inside a
+check are treated as failures (not propagated).
+
+## Usage
+
+``` r
+assert_step_output(
+  data,
+  step_name,
+  expectations,
+  severity = c("warn", "abort")
+)
+```
+
+## Arguments
+
+- data:
+
+  Pipeline output to validate (data frame, list, anything).
+
+- step_name:
+
+  Short identifier for the step being validated; appears in failure
+  messages.
+
+- expectations:
+
+  Named list of single-argument functions returning logical(1). Names
+  describe what the check asserts; they appear in failure messages.
+
+- severity:
+
+  One of "warn" (default; cli::cli_warn) or "abort" (stop). Use "abort"
+  for invariants that mean the pipeline output is unsafe to publish;
+  "warn" for soft signals that should be visible but not block.
+
+## Value
+
+Invisibly returns a character vector of failed check names (length 0
+means all passed).
+
+## Examples
+
+``` r
+if (FALSE) { # \dontrun{
+assert_step_output(team_ratings, "step 02", list(
+  "WC2026 fixtures have nonzero EPR" = function(d)
+    all(d[league == "WC" & season == WC2026_SEASON_LABEL,
+          home_sum_epr] != 0),
+  "row count plausible" = function(d) nrow(d) > 10000L
+))
+} # }
+```

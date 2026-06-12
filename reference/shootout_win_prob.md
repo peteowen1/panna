@@ -1,0 +1,68 @@
+# Penalty-shootout win probability (exact, binomial)
+
+Computes \\P(\text{team A wins the shootout})\\ exactly, from the start
+of the shootout or from any mid-shootout state. No simulation: the
+regulation phase is two independent binomials over the kicks each team
+has left, and a level result after regulation is resolved by the
+sudden-death geometric series.
+
+## Usage
+
+``` r
+shootout_win_prob(
+  p_a = PENALTY_SHOOTOUT_CONVERSION,
+  p_b = PENALTY_SHOOTOUT_CONVERSION,
+  score_a = 0L,
+  score_b = 0L,
+  kicks_a = 0L,
+  kicks_b = 0L,
+  n_regulation = 5L
+)
+```
+
+## Arguments
+
+- p_a, p_b:
+
+  Per-kick conversion probability for team A (first kicker) and team B.
+  Default `PENALTY_SHOOTOUT_CONVERSION` (0.75, the empirical rate) for
+  both. Pass team-specific rates to get non-50/50 odds.
+
+- score_a, score_b:
+
+  Kicks each team has already scored. Default 0.
+
+- kicks_a, kicks_b:
+
+  Kicks each team has already taken. Default 0.
+
+- n_regulation:
+
+  Kicks per team in the regulation phase. Default 5.
+
+## Value
+
+Numeric scalar in `[0, 1]`: P(team A wins).
+
+## Details
+
+Early termination (stopping kicks once the result is locked) never
+changes the winner, so it needs no special handling — \\P(\text{A scores
+more of its remaining kicks})\\ already accounts for it.
+
+Note: with equal conversion rates this returns exactly `0.5` — a fair
+shootout has no structural first-kicker advantage. The empirical
+~55-60\\ first-kicker edge is a behavioural (scoreboard-pressure) effect
+that an i.i.d. per-kick model deliberately does not encode.
+
+## Examples
+
+``` r
+shootout_win_prob()                       # 0.5 (equal skill, start)
+#> [1] 0.5
+shootout_win_prob(p_a = 0.80, p_b = 0.70) # team A favoured
+#> [1] 0.6731129
+# Live WP after A has scored its 1st kick and B is about to take its 1st:
+shootout_win_prob(score_a = 1, score_b = 0, kicks_a = 1, kicks_b = 0)
+#> [1] 0.5696678
+```

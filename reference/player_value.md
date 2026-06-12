@@ -14,7 +14,7 @@ player_value(player = NULL, season = NULL, source = c("local", "remote"))
 
 - player:
 
-  Character string — player name (partial match, case-insensitive).
+  Character string – player name (partial match, case-insensitive).
   E.g., `"Salah"`, `"H. Kane"`.
 
 - season:
