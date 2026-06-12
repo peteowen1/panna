@@ -12,7 +12,8 @@ query_minutes_features(
   tournament_match_num = 1L,
   days_rest_team = NULL,
   is_tournament = 1L,
-  is_friendly = 0L
+  is_friendly = 0L,
+  tournament_start = NULL
 )
 }
 \arguments{
@@ -33,6 +34,12 @@ If NULL, derived from cache.}
 
 \item{is_friendly}{Integer 0/1 -- friendly (1) vs competitive (0). Default 0
 for WC/qualifier predictions.}
+
+\item{tournament_start}{Date. First day of the current tournament. When
+supplied, \code{tourn_mins_sofar} / \code{tourn_starts_sofar} accumulate the
+player's intl minutes/starts in \verb{[tournament_start, as_of_date)};
+otherwise they are 0 (matches the training convention where
+non-tournament rows are zeroed).}
 }
 \value{
 Data.table with one row per player, columns matching the model's

@@ -82,7 +82,10 @@ message(sprintf("  wc2026_predictions.parquet: %d fixtures", nrow(wc_pred)))
 # 3. Simulation — per-team round/champion probabilities ----
 
 sim <- as.data.table(read_parquet(file.path(cache_dir, "wc2026_simulation.parquet"), mmap = FALSE))
-sim <- sim[, .(team, group, p_R16, p_QF, p_SF, p_final, p_champ)]
+# p_R32 (top-2 + best-thirds reach, tracked by simulate_world_cup since
+# 2026-06-12) is intersect-guarded so a stale upstream parquet still exports.
+sim_cols <- intersect(c("team", "group", "p_R32", "p_R16", "p_QF", "p_SF", "p_final", "p_champ"), names(sim))
+sim <- sim[, ..sim_cols]
 setorder(sim, -p_champ)
 write_parquet(sim, file.path(cache_dir, "wc2026_simulation.parquet"))
 message(sprintf("  wc2026_simulation.parquet: %d teams", nrow(sim)))
