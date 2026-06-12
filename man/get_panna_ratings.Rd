@@ -17,11 +17,8 @@ Extracts the final panna ratings from a fitted panna model object.
 Requires a model fitted with \code{\link{fit_panna_model}}.
 }
 \details{
-To generate ratings, run one of the pipeline scripts:
-\itemize{
-\item Opta (15 leagues): \code{source("data-raw/player-ratings-opta/run_pipeline_opta.R")}
-\item FBref (Big 5): \code{source("data-raw/player-ratings-fbref/run_pipeline.R")}
-}
+To generate ratings, run the Opta pipeline script:
+\code{source("data-raw/player-ratings-opta/run_pipeline_opta.R")}
 }
 \examples{
 \dontrun{

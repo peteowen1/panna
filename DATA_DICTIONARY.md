@@ -4,7 +4,7 @@ This document describes all data structures used in the panna pipelines.
 
 ## Pipeline Overview
 
-### Opta RAPM/SPM Pipeline (Primary) — `data-raw/player-ratings-opta/`
+### Opta RAPM/SPM Pipeline — `data-raw/player-ratings-opta/`
 
 ```
 01_load_opta_data.R       ->  cache-opta/01_opta_data.rds
@@ -19,7 +19,9 @@ This document describes all data structures used in the panna pipelines.
 09_export_ratings.R       ->  seasonal_xrapm.parquet, seasonal_spm.parquet
 ```
 
-### FBref RAPM/SPM Pipeline (Secondary) — `data-raw/player-ratings-fbref/`
+### FBref RAPM/SPM Pipeline (ARCHIVED) — `archive/data-raw/player-ratings-fbref/`
+
+> **Archived 2026-04** (commit 43ea7fd): the FBref pipeline is retired — Opta is the only active data source. Steps listed for historical reference; the scripts live under `archive/` and are not maintained.
 
 ```
 01_load_pannadata.R       ->  cache/01_raw_data.rds
@@ -77,7 +79,9 @@ This document describes all data structures used in the panna pipelines.
 
 ---
 
-## FBref Pipeline Data Structures
+## FBref Pipeline Data Structures (ARCHIVED)
+
+> **The FBref pipeline is retired** (archived 2026-04, commit 43ea7fd). These schema tables are kept for reading older pannadata releases that still use them — the pipeline itself no longer runs.
 
 The FBref pipeline shares the same RAPM/SPM methodology as Opta but uses FBref data.
 

@@ -2,7 +2,7 @@
 
 Player rating system for football using RAPM + SPM methodology. This is the primary development workspace in the pannaverse ecosystem.
 
-**Active data source: Opta only.** FBref/Understat modules and pipelines are deprecated and slated for archival — do not extend them.
+**Active data source: Opta only.** The FBref/Understat archival sweep is done (2026-06): their R sources, loaders, and the `player-ratings-fbref/` pipeline were removed from this package. Only `pannadata` retains disabled scraper code for reference.
 
 ## Development Commands
 
@@ -38,11 +38,10 @@ pkgdown::build_site()
 | **Skills** | `estimated_skills.R`, `skill_optimization.R` | Per-stat skill estimation with Bayesian shrinkage |
 | **xMetrics** | `xg_model.R`, `xpass_model.R`, `epv_model.R`, `epv_features.R` | xG/xA/xPass/EPV from SPADL events |
 | **SPADL** | `spadl_conversion.R` | Opta events -> SPADL action format |
-| **Data Loaders** | `data_loaders.R`, `opta_loaders.R` | Load from local parquet or GitHub Releases |
-| **Player Stats** | `player_stats_opta.R` (active); `player_stats_fbref.R`, `player_stats_understat.R` (deprecated) | Aggregate player-level statistics |
-| **Match Prediction** | `match_prediction.R` | Team-level features + XGBoost match outcome model |
+| **Data Loaders** | `opta_loaders.R`, `dirs.R`, `data_location_report.R` | Load from local parquet or GitHub Releases; data-source-agnostic dir resolution; load diagnostics |
+| **Player Stats** | `player_stats_opta.R` | Aggregate player-level statistics |
+| **Match Prediction** | `match_prediction.R`, `match_mirror.R` | Team-level features + XGBoost match outcome model; orientation-symmetric match rows |
 | **Expected Minutes** | `expected_minutes.R` (production); `minutes_model.R`, `minutes_model_train.R`, `minutes_query.R` (XGBoost, benched) | National-team minutes projection: decay-weighted heuristic with tournament boost + p_start Beta prior |
-| **Scraping** (deprecated) | `scrape_fbref_*.R`, `scrape_understat*.R` | Web scraping utilities — archival candidates |
 | **Data Processing** | `data_processing.R`, `possession_chains.R` | Transformations, possession chain analysis |
 | **Utilities** | `utils.R`, `constants.R`, `globals.R`, `piggyback.R` | Helpers, NSE declarations, GitHub Releases I/O |
 | **PSR/PSV** | `psr.R` | Player Skill Rating (smoothed) + Player Stat Value (per-game) with O/D decomposition |
@@ -50,13 +49,18 @@ pkgdown::build_site()
 | **EPR** | `player_ratings_epv.R` | Expected Points Rating. Legacy `calculate_epr()` = decay-weighted Bayesian mean; modern `calculate_epr_regression()` = weighted ridge with league-season FE + opp_def_rating control (2026-05-19, the production version used in `debug/keep/build_epr_weekly.R`) |
 | **Skill Config** | `skill_config.R` | Soccer stat rating definitions, position map, hyperparameters |
 | **Game Ratings** | `player_game_ratings.R` | Unified per-game output: EPV + WPA + PSV → panna_value |
+| **Career RAPM** | `career_rapm.R` | Career-trait Panna: decay-weighted multi-season xRAPM (365d half-life) |
+| **WC Simulation** | `simulate_world_cup.R`, `knockout_model.R`, `shootout.R` | 48-team WC 2026 tournament simulator; full-model knockout match probabilities; penalty-shootout win probability |
+| **Team Ratings** | `team_rating.R`, `elo_calibration.R`, `league_offsets.R` | Bradley-Terry team rating; Elo calibration (per-match-type K + cross-confederation multiplier); league quality offsets vs UCL group stage |
+| **EPV Adjustments** | `epv_adjustments.R` | EPV position centering and opponent adjustment |
+| **Player IDs** | `player_id_canonical.R` | Player-ID canonicalization |
+| **Pipeline Validation** | `pipeline_validation.R` | Domain-truth assertions on pipeline outputs |
 | **Centrality** | `centrality.R` | Network centrality metrics for player influence |
 | **Simulation** | `simulate.R` | Match simulation engine |
 | **Pitch Plot** | `pitch_plot.R` | Football pitch visualization |
 | **Attribution** | `player_attribution.R` | Player contribution attribution |
 | **Weather** | `weather.R` | Weather data integration |
 | **Comparison** | `compare_players.R` | Player comparison utilities |
-| **Competitions** (deprecated) | `fbref_competitions.R`, `understat_competitions.R` | League/competition metadata lookups |
 | **Package** | `panna-package.R` | Package-level roxygen docs |
 
 ### Pipelines (data-raw/)
@@ -67,7 +71,6 @@ Run order matters — later pipelines depend on earlier ones.
 |----------|-----------|-------------|------------|
 | **EPV/xMetrics** | `epv/` | `03_calculate_player_xmetrics.R` | Pre-trained models via `pannamodels::load_panna_model()` |
 | **Opta RAPM/SPM** ⭐ | `player-ratings-opta/` | `run_pipeline_opta.R` | xMetrics output |
-| **FBref RAPM/SPM** (deprecated) | `player-ratings-fbref/` | `run_pipeline.R` | pannadata FBref data — archival candidate |
 | **Skills** | `estimated-skills/` | `run_skills_pipeline.R` | Opta RAPM output (cache-opta/) |
 | **Predictions** | `match-predictions-opta/` | `run_predictions_opta.R` | Opta RAPM + Skills output |
 | **Blog Export** | `match-predictions-opta/` | Steps 10b + 10c (opt-in) | EPV/WPA/PSV models + match events |
@@ -164,7 +167,6 @@ Stat ratings → PSR/OSR/DSR (smoothed skills via glmnet) ───────�
 | `predictions-pipeline.yml` | Wed 8 AM UTC / manual / `opta-scrape-complete` dispatch | Weekly match predictions. Runs steps 1-10c + 11 (WC2026 sim) + 12 (WC2026 blog export). Triggers `predictions-complete` repository_dispatch on `pannadata` to refresh blog data. Note: WC2026 sim defaults to FALSE in `run_predictions_opta.R` but the workflow enables it in its `run_steps` override. |
 | `psr-weekly-snapshot.yml` | Weekly snapshot / manual | PSR weekly snapshot generation |
 | `epv-pipeline.yml` | Manual dispatch | EPV model training pipeline |
-| `ratings-pipeline.yml.disabled` | (disabled) | FBref RAPM/SPM — superseded by Opta pipeline |
 
 ## Dependencies
 
