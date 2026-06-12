@@ -32,6 +32,24 @@
 #'   weight_total / (weight_total + k)`. Players with weak evidence get
 #'   shrunk toward zero. Default 3 (a player with 3 weighted caps gets
 #'   50% of raw EM; 20 weighted caps gets ~87%).
+#' @param prob_prior_k Numeric. Beta-prior pseudo-count for the start/sub
+#'   probabilities: `p_start = (weight_start + k x base) / (weight_total + k)`
+#'   where `base` is the squad-wide decay-weighted start rate. Stops a
+#'   single-cap player getting `p_start = 1.00` (and then having it halve
+#'   after one omission). Default 1 — the WC2022 backtest showed raw
+#'   frequencies are already well calibrated in aggregate (higher k
+#'   monotonically worsens minutes MAE), so the prior is kept just strong
+#'   enough to damp the thin-history pathologies. Set 0 for legacy raw
+#'   frequencies.
+#' @param tournament_boost Numeric. Weight multiplier applied to matches in
+#'   `tournament_comps` on/after `tournament_start` — lets in-tournament
+#'   selections outweigh equally-recent qualifiers/friendlies. Default 1
+#'   (no boost). Only applied when `tournament_start` is supplied.
+#' @param tournament_comps Character vector of competition codes the boost
+#'   applies to. Default `"World_Cup"`.
+#' @param tournament_start Date. First day of the current tournament; the
+#'   boost applies to `tournament_comps` matches on/after this date only
+#'   (so a previous WC four years back is not boosted). Default NULL = off.
 #' @return Data frame with one row per likely-squad player and columns:
 #'   player_id, player_name, position, n_caps_weighted, p_start,
 #'   mins_when_start, p_sub_given_bench, mins_when_sub, expected_minutes,
@@ -45,7 +63,11 @@ build_team_expected_minutes <- function(team,
                                          squad_size = 26L,
                                          international_only = TRUE,
                                          min_recent_days = 540L,
-                                         shrinkage_k = 3) {
+                                         shrinkage_k = 3,
+                                         prob_prior_k = 1,
+                                         tournament_boost = 1,
+                                         tournament_comps = "World_Cup",
+                                         tournament_start = NULL) {
   if (!data.table::is.data.table(lineups)) lineups <- data.table::as.data.table(lineups)
 
   intl_comps <- c("World_Cup", "UEFA_WC_Qualifiers", "UEFA_Euros",
@@ -76,6 +98,12 @@ build_team_expected_minutes <- function(team,
   ## --- 2. Decay weight per match ----------------------------------------
   days_ago <- as.numeric(as.Date(as_of) - lu$match_date)
   lu[, weight := 2 ^ (-days_ago / half_life_days)]
+  if (!is.null(tournament_start) && tournament_boost != 1 &&
+      "competition" %in% names(lu)) {
+    lu[competition %in% tournament_comps &
+         match_date >= as.Date(tournament_start),
+       weight := weight * tournament_boost]
+  }
 
   ## --- 3. Per-player aggregation ---------------------------------------
   ## Canonicalise the display name per player_id first: Opta feeds mix name
@@ -124,8 +152,24 @@ build_team_expected_minutes <- function(team,
   }
 
   ## --- 4. Compute probabilities and conditional means ------------------
-  agg[, p_start := weight_start / weight_total]
-  agg[, p_sub_given_bench := ifelse(weight_bench > 0, weight_sub_on / weight_bench, 0)]
+  ## Beta prior centred on the squad-wide decay-weighted base rates. A
+  ## one-cap starter gets p_start = (1 + k*base)/(1 + k) ~ 0.6, not 1.00 —
+  ## and one omission then moves it ~0.1, not 0.5. prob_prior_k = 0
+  ## reproduces the raw frequencies.
+  base_start <- sum(agg$weight_start) / sum(agg$weight_total)
+  base_sub <- if (sum(agg$weight_bench) > 0) {
+    sum(agg$weight_sub_on) / sum(agg$weight_bench)
+  } else {
+    0
+  }
+  agg[, p_start := (weight_start + prob_prior_k * base_start) /
+        (weight_total + prob_prior_k)]
+  agg[, p_sub_given_bench := (weight_sub_on + prob_prior_k * base_sub) /
+        (weight_bench + prob_prior_k)]
+  if (prob_prior_k == 0) {
+    ## avoid 0/0 NaN for players with no bench evidence under the legacy path
+    agg[weight_bench == 0, p_sub_given_bench := 0]
+  }
   agg[, mins_when_start := ifelse(weight_start > 0, mins_start_w / weight_start, 0)]
   agg[, mins_when_sub   := ifelse(weight_sub_on > 0, mins_sub_w / weight_sub_on, 0)]
 

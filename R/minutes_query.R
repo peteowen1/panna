@@ -133,6 +133,11 @@ prepare_minutes_cache <- function(lineups,
                        .(last_intl_date = max(match_date)), by = team_name]
   setkey(team_last_intl, team_name)
 
+  ## --- All intl match dates per team (for prev-team-match features) ----
+  team_intl_dates <- lu[is_intl == TRUE,
+                        .(dates = list(sort(unique(date_int)))), by = team_name]
+  setkey(team_intl_dates, team_name)
+
   cache <- list(
     cumsum_lookup   = cumsum_lookup,
     modal_role      = modal_role,
@@ -140,6 +145,8 @@ prepare_minutes_cache <- function(lineups,
     team_rotation   = team_rotation,
     team_intl_count = team_intl_count,
     team_last_intl  = team_last_intl,
+    team_intl_dates = team_intl_dates,
+    base_start_rate = mean(lu$is_starter[lu$is_intl], na.rm = TRUE),
     intl_comps      = intl_comps,
     n_players       = length(intl_players),
     prepared_at     = Sys.time()
@@ -179,6 +186,11 @@ prepare_minutes_cache <- function(lineups,
 #' @param is_tournament Integer 0/1 -- group-stage / knockout (1) vs qualifier (0).
 #' @param is_friendly Integer 0/1 -- friendly (1) vs competitive (0). Default 0
 #'   for WC/qualifier predictions.
+#' @param tournament_start Date. First day of the current tournament. When
+#'   supplied, `tourn_mins_sofar` / `tourn_starts_sofar` accumulate the
+#'   player's intl minutes/starts in `[tournament_start, as_of_date)`;
+#'   otherwise they are 0 (matches the training convention where
+#'   non-tournament rows are zeroed).
 #' @return Data.table with one row per player, columns matching the model's
 #'   `feature_cols`. Pass directly to `predict_minutes()`.
 #' @export
@@ -189,14 +201,34 @@ query_minutes_features <- function(cache,
                                      tournament_match_num = 1L,
                                      days_rest_team = NULL,
                                      is_tournament = 1L,
-                                     is_friendly = 0L) {
+                                     is_friendly = 0L,
+                                     tournament_start = NULL) {
   as_of_date <- as.Date(as_of_date)
   as_of_int  <- as.integer(as_of_date)
+  tourn_int  <- if (is.null(tournament_start))
+    NA_integer_ else as.integer(as.Date(tournament_start))
+
+  ## Team's previous intl match strictly before as_of (for the
+  ## started_prev_team_match / mins_prev_team_match features).
+  ## Caches built before these fields existed degrade to feature = 0 /
+  ## base rate 0.5 rather than erroring.
+  base_sr <- if (is.null(cache$base_start_rate)) 0.5 else cache$base_start_rate
+  prev_team_int <- NA_integer_
+  if (!is.null(cache$team_intl_dates)) {
+    tdates <- cache$team_intl_dates[team_name, on = "team_name", dates]
+    if (length(tdates) == 1L && !is.null(tdates[[1]])) {
+      past <- tdates[[1]][tdates[[1]] < as_of_int]
+      if (length(past)) prev_team_int <- past[length(past)]
+    }
+  }
 
   ## Find each player's cumsum data
   player_rows <- cache$cumsum_lookup[J(player_ids), nomatch = NA]
-  ## Players with no history -> keep as zeros
-  found <- !is.na(player_rows$cum_mins_intl)
+  ## Players with no history -> keep as zeros. Unmatched rows surface as
+  ## NULL list-column elements (is.na() on those is FALSE), so test for
+  ## emptiness, not NA-ness.
+  found <- vapply(player_rows$cum_mins_intl,
+                  function(v) !is.null(v) && length(v) > 0, logical(1))
 
   ## Compute the per-player rolling windows
   out <- data.table::data.table(player_id = player_ids)
@@ -206,6 +238,9 @@ query_minutes_features <- function(cache,
   out[, days_since_last_intl := 999L]
   out[, days_since_last_club := 999L]
   out[, career_intl_apps := 0]
+  out[, caps_decay := 0]; out[, p_start_decay := base_sr]
+  out[, tourn_mins_sofar := 0]; out[, tourn_starts_sofar := 0]
+  out[, started_prev_team_match := 0L]; out[, mins_prev_team_match := 0]
 
   for (i in which(found)) {
     di <- player_rows$date_int[[i]]
@@ -233,6 +268,34 @@ query_minutes_features <- function(cache,
 
     ## Career intl apps strictly before this date
     out$career_intl_apps[i] <- ca_i[sum(di < as_of_int) + 1L]
+
+    ## Per-row values recovered from the cumulative vectors
+    mins_intl_rows  <- diff(cm_i)
+    start_intl_rows <- diff(cs_i)
+
+    ## Decay-weighted intl start rate with Beta prior (mirrors
+    ## build_minutes_training_data: 365d half-life, k = 3, squad base rate)
+    w <- ifelse(di < as_of_int & intl_flag,
+                0.5 ^ ((as_of_int - di) / 365), 0)
+    out$caps_decay[i] <- sum(w)
+    out$p_start_decay[i] <- (sum(w * start_intl_rows) + 3 * base_sr) /
+      (sum(w) + 3)
+
+    ## Within-current-tournament accumulation
+    if (!is.na(tourn_int)) {
+      in_t <- intl_flag & di >= tourn_int & di < as_of_int
+      out$tourn_mins_sofar[i]   <- sum(mins_intl_rows[in_t])
+      out$tourn_starts_sofar[i] <- sum(start_intl_rows[in_t])
+    }
+
+    ## Involvement in the team's previous intl match
+    if (!is.na(prev_team_int)) {
+      idx <- which(di == prev_team_int & intl_flag)
+      if (length(idx)) {
+        out$started_prev_team_match[i] <- start_intl_rows[idx[1L]]
+        out$mins_prev_team_match[i]    <- mins_intl_rows[idx[1L]]
+      }
+    }
   }
 
   ## Modal role
@@ -246,12 +309,18 @@ query_minutes_features <- function(cache,
   out[, is_midb := as.integer(modal_role %in% c("DM","CM","LM","RM","CAM"))]
   out[, is_fwdb := as.integer(modal_role %in% c("LW","RW","CF","LF","RF"))]
 
-  ## Panna ratings -- use season_end_year of the upcoming match
+  ## Panna ratings -- use season_end_year of the upcoming match. The cache
+  ## stores a zero-column table when no ratings file was available; degrade
+  ## to all-zero ratings instead of erroring on the season subset.
   sey <- if (data.table::month(as_of_date) >= 7L)
     data.table::year(as_of_date) + 1L else data.table::year(as_of_date)
-  pp <- cache$player_panna[season_end_year == sey,
-                            .(player_id, panna, p_off, p_def)]
-  out <- merge(out, pp, by = "player_id", all.x = TRUE)
+  if (nrow(cache$player_panna) > 0L) {
+    pp <- cache$player_panna[season_end_year == sey,
+                              .(player_id, panna, p_off, p_def)]
+    out <- merge(out, pp, by = "player_id", all.x = TRUE)
+  } else {
+    out[, `:=`(panna = NA_real_, p_off = NA_real_, p_def = NA_real_)]
+  }
   for (col in c("panna", "p_off", "p_def"))
     out[is.na(get(col)), (col) := 0]
 

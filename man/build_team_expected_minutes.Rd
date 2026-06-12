@@ -13,7 +13,11 @@ build_team_expected_minutes(
   squad_size = 26L,
   international_only = TRUE,
   min_recent_days = 540L,
-  shrinkage_k = 3
+  shrinkage_k = 3,
+  prob_prior_k = 1,
+  tournament_boost = 1,
+  tournament_comps = "World_Cup",
+  tournament_start = NULL
 )
 }
 \arguments{
@@ -45,6 +49,28 @@ keeping current squad members who had injury gaps.}
 \item{shrinkage_k}{Numeric. Bayesian pseudo-count: \verb{effective_em = em x weight_total / (weight_total + k)}. Players with weak evidence get
 shrunk toward zero. Default 3 (a player with 3 weighted caps gets
 50\% of raw EM; 20 weighted caps gets ~87\%).}
+
+\item{prob_prior_k}{Numeric. Beta-prior pseudo-count for the start/sub
+probabilities: \verb{p_start = (weight_start + k x base) / (weight_total + k)}
+where \code{base} is the squad-wide decay-weighted start rate. Stops a
+single-cap player getting \code{p_start = 1.00} (and then having it halve
+after one omission). Default 1 — the WC2022 backtest showed raw
+frequencies are already well calibrated in aggregate (higher k
+monotonically worsens minutes MAE), so the prior is kept just strong
+enough to damp the thin-history pathologies. Set 0 for legacy raw
+frequencies.}
+
+\item{tournament_boost}{Numeric. Weight multiplier applied to matches in
+\code{tournament_comps} on/after \code{tournament_start} — lets in-tournament
+selections outweigh equally-recent qualifiers/friendlies. Default 1
+(no boost). Only applied when \code{tournament_start} is supplied.}
+
+\item{tournament_comps}{Character vector of competition codes the boost
+applies to. Default \code{"World_Cup"}.}
+
+\item{tournament_start}{Date. First day of the current tournament; the
+boost applies to \code{tournament_comps} matches on/after this date only
+(so a previous WC four years back is not boosted). Default NULL = off.}
 }
 \value{
 Data frame with one row per likely-squad player and columns:

@@ -53,6 +53,25 @@ classify_role <- function(position, side) {
   out
 }
 
+#' Decay-weighted strictly-past sum for one ordered series
+#'
+#' `S_i = sum_{j < i} value_j * 0.5 ^ ((date_i - date_j) / half_life)` via the
+#' incremental recurrence `S_i = (S_{i-1} + value_{i-1}) * q ^ (date_i -
+#' date_{i-1})`, so it runs in O(n) per player.
+#' @keywords internal
+.decay_past_sum <- function(value, date_int, half_life) {
+  n <- length(value)
+  out <- numeric(n)
+  if (n < 2L) return(out)
+  q <- 0.5 ^ (1 / half_life)
+  s <- 0
+  for (i in 2:n) {
+    s <- (s + value[i - 1L]) * q ^ (date_int[i] - date_int[i - 1L])
+    out[i] <- s
+  }
+  out
+}
+
 #' Compute strictly-past rolling-sum within a window for one ordered series
 #' @keywords internal
 .rolling_past_sum <- function(value, date_int, window_days) {
@@ -141,6 +160,15 @@ build_minutes_training_data <- function(lineups,
   ## Career intl caps strictly before current row
   lu[, career_intl_apps := cumsum(app_intl) - app_intl, by = player_id]
 
+  ## Decay-weighted (365d half-life) intl start rate with a Beta prior --
+  ## the expected-minutes heuristic's core signal, stacked in as a feature.
+  ## Denominator counts every intl LINEUP row (bench included), matching
+  ## build_team_expected_minutes()'s weight_total.
+  lu[, caps_decay   := .decay_past_sum(as.numeric(is_intl), date_int, 365), by = player_id]
+  lu[, starts_decay := .decay_past_sum(as.numeric(start_intl), date_int, 365), by = player_id]
+  base_start <- mean(lu$is_starter[lu$is_intl], na.rm = TRUE)
+  lu[, p_start_decay := (starts_decay + 3 * base_start) / (caps_decay + 3)]
+
   ## --- 3. Filter to intl rows (training set) ----------------------------
   train <- lu[is_intl == TRUE]
   if (verbose) cli::cli_alert_info("{nrow(train)} intl player-match rows in training")
@@ -208,6 +236,37 @@ build_minutes_training_data <- function(lineups,
   setorder(train, team_name, competition, season, match_date)
   train[, tournament_match_num := seq_len(.N), by = .(team_name, competition, season)]
 
+  ## --- 7b. Within-current-tournament accumulation ------------------------
+  ## Minutes/starts already banked in THIS tournament instance (player x
+  ## team x competition x season, strictly before the current match). The
+  ## WC2022 backtest showed in-tournament selections are the strongest
+  ## predictor of the next game's XI -- these give the model that signal
+  ## directly instead of diluted through the 30/180d windows.
+  setorder(train, player_id, team_name, competition, season, match_date)
+  train[, tourn_mins_sofar :=
+          cumsum(as.numeric(minutes_played)) - as.numeric(minutes_played),
+        by = .(player_id, team_name, competition, season)]
+  train[, tourn_starts_sofar :=
+          cumsum(as.integer(is_starter)) - as.integer(is_starter),
+        by = .(player_id, team_name, competition, season)]
+  train[is_tournament == 0L, `:=`(tourn_mins_sofar = 0, tourn_starts_sofar = 0L)]
+
+  ## --- 7c. Player's involvement in the team's previous intl match --------
+  team_seq <- unique(train[, .(team_name, match_id, match_date)])
+  setorder(team_seq, team_name, match_date)
+  team_seq[, prev_match_id := shift(match_id), by = team_name]
+  train <- merge(train, team_seq[, .(team_name, match_id, prev_match_id)],
+                 by = c("team_name", "match_id"), all.x = TRUE)
+  prev_lu <- train[, .(team_name, prev_match_id = match_id, player_id,
+                       started_prev_team_match = as.integer(is_starter),
+                       mins_prev_team_match = minutes_played)]
+  train <- merge(train, prev_lu,
+                 by = c("team_name", "prev_match_id", "player_id"),
+                 all.x = TRUE)
+  ## Absent from the previous matchday squad (or no previous match) -> 0
+  train[is.na(started_prev_team_match), started_prev_team_match := 0L]
+  train[is.na(mins_prev_team_match), mins_prev_team_match := 0L]
+
   ## --- 8. Team rotation index -------------------------------------------
   starters <- train[is_starter == TRUE,
                     .(team_name, match_id, match_date, player_id)]
@@ -247,9 +306,11 @@ build_minutes_training_data <- function(lineups,
     "intl_apps_180d", "intl_starts_180d",
     "club_mins_30d", "club_mins_90d", "club_starts_90d",
     "days_since_last_intl", "days_since_last_club",
-    "career_intl_apps",
+    "career_intl_apps", "caps_decay", "p_start_decay",
     "days_rest_team",
     "is_tournament", "is_friendly", "tournament_match_num",
+    "tourn_mins_sofar", "tourn_starts_sofar",
+    "started_prev_team_match", "mins_prev_team_match",
     "rotation_idx", "team_intl_count"
   )
   feature_cols <- intersect(feature_cols, names(train))

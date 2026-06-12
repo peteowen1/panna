@@ -21,6 +21,18 @@
 
 # 1. Master squad list ----
 
+# Expected-minutes params shared by the announced + derived resolvers.
+# Values chosen by the WC2022 backtest (debug/wc_minutes_test/
+# backtest_wc2022.R): tournament games get a weight multiplier so
+# in-tournament selections overtake qualifiers/friendlies as the group
+# stage progresses; prob_prior_k is the Beta prior on p_start.
+# Backtest (WC2022, 96 team-matches game-2+): boost 1->5 cuts EM MAE
+# 21.0->19.2 and lifts XI-hit 8.5->8.9/11; prior_k=1 damps single-cap
+# p_start pathologies for ~0.4 MAE, prior_k=3 costs 1.2 (too much).
+WC2026_EM_TOURNAMENT_BOOST <- 5
+WC2026_EM_PROB_PRIOR_K     <- 1
+WC2026_EM_TOURNAMENT_START <- as.Date("2026-06-11")
+
 WC2026_ANNOUNCED_SQUADS <- list(
 
   # ----- Announcement wave 1 (pre 2026-05-12): existing in cross-check -----
@@ -503,7 +515,10 @@ resolve_team_announced_squad <- function(team, ann_names, lineups,
       lineups = lu_matched,
       as_of = as_of,
       lookback_days = 1095L,
-      squad_size = length(matched_pids)
+      squad_size = length(matched_pids),
+      prob_prior_k = WC2026_EM_PROB_PRIOR_K,
+      tournament_boost = WC2026_EM_TOURNAMENT_BOOST,
+      tournament_start = WC2026_EM_TOURNAMENT_START
     )
     if (nrow(em) > 0L) {
       em_dt <- data.table::as.data.table(em)
@@ -583,7 +598,10 @@ resolve_derived_squad <- function(team, team_id_in, lineups,
     lineups       = lineups,
     as_of         = as_of,
     lookback_days = 1095L,
-    squad_size    = 26L
+    squad_size    = 26L,
+    prob_prior_k = WC2026_EM_PROB_PRIOR_K,
+    tournament_boost = WC2026_EM_TOURNAMENT_BOOST,
+    tournament_start = WC2026_EM_TOURNAMENT_START
   )
   if (nrow(em) == 0L) {
     return(data.table::data.table(
