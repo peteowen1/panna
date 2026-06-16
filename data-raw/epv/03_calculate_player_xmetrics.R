@@ -70,9 +70,14 @@ for (league in LEAGUES) {
   opta_league <- to_opta_league(league)
   seasons <- tryCatch(list_opta_seasons(league), error = function(e) character(0))
   if (length(seasons) > 0) {
-    # Filter to START_SEASON onwards (works for both "2024-2025" and "2018 Russia" formats)
+    # Filter to START_SEASON onwards by END YEAR — never a lexical string
+    # compare: calendar/tournament labels ("2026", "2018 Russia") sort wrong
+    # against "2013-2014" and silently drop valid seasons (panna/CLAUDE.md
+    # "Season subsetting"; 01_train uses the same extract_season_end_year path).
     if (exists("START_SEASON") && !is.null(START_SEASON)) {
-      seasons <- seasons[seasons >= START_SEASON]
+      floor_yr <- extract_season_end_year(START_SEASON)
+      ey <- vapply(seasons, extract_season_end_year, numeric(1))
+      seasons <- seasons[!is.na(ey) & ey >= floor_yr]
     }
     if (length(seasons) > 0) {
       league_seasons[[league]] <- seasons
@@ -150,15 +155,24 @@ for (league in names(league_seasons)) {
       # original_event_id inside add_xgot_to_spadl. Skips cleanly if the model
       # or the goalmouth columns aren't available yet.
       if (!is.null(xgot_model)) {
+        # Distinguish a genuine load error (warn with the cause) from coords
+        # being legitimately absent — don't report a corrupt parquet as
+        # "missing coords".
         shot_ev <- tryCatch(
           load_opta_shot_events(league, season = season, source = "local"),
-          error = function(e) NULL
+          error = function(e) {
+            cli_alert_warning("  xGOT: shot_events failed to load for {label}: {e$message}")
+            NULL
+          }
         )
-        gm_cols <- c("match_id", "event_id", "type_id", "goalmouth_y", "goalmouth_z")
-        if (!is.null(shot_ev) && all(gm_cols %in% names(shot_ev))) {
+        req_cols <- c("match_id", "event_id", "type_id", "goalmouth_y", "goalmouth_z")
+        if (!is.null(shot_ev) && all(req_cols %in% names(shot_ev))) {
+          # Pass `situation` too (when present) — add_xgot_to_spadl needs it to
+          # match training features and avoid set-piece train/serve skew.
+          lk_cols <- c(req_cols, intersect("situation", names(shot_ev)))
           spadl <- add_xgot_to_spadl(spadl, xgot_model,
-                                     as.data.frame(shot_ev)[, gm_cols])
-        } else {
+                                     as.data.frame(shot_ev)[, lk_cols])
+        } else if (!is.null(shot_ev)) {
           cli_alert_warning("  Skipping xGOT for {label}: shot_events lack goalmouth coords (run backfill + re-upload)")
         }
       }

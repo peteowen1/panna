@@ -55,3 +55,63 @@ test_that("aggregate_player_xmetrics emits a consistent finishing decomposition"
   expect_equal(r$targeting, -0.1)               # off-target miss: 0 - 0.1
   expect_equal(r$placement_added, r$xgot_placement + r$targeting)
 })
+
+test_that("aggregate_player_xmetrics excludes penalties from the xGOT decomposition", {
+  spadl <- data.frame(
+    match_id = "m1", player_id = "A", player_name = "Pl A", team_id = "T",
+    action_type = "shot",
+    result = c("success", "success"),
+    opta_type_id = c(16L, 16L),                 # both goals
+    xg   = c(0.2, 0.76), xgot = c(0.7, 0.9),
+    shot_on_target = c(TRUE, TRUE),
+    is_penalty = c(0L, 1L),                     # second shot is a penalty
+    stringsAsFactors = FALSE
+  )
+  lineups <- data.frame(
+    match_id = "m1", player_id = "A", player_name = "Pl A", team_id = "T",
+    minutes_played = 90, team_name = "Team", stringsAsFactors = FALSE
+  )
+  r <- suppressMessages(aggregate_player_xmetrics(spadl, lineups))
+  expect_equal(r$shots, 2)            # both shots still count in box-score
+  expect_equal(r$goals, 2)
+  expect_equal(r$n_xgot_shots, 1)     # only the non-penalty shot
+  expect_equal(r$xgot_placement, 0.5) # (0.7-0.2) — penalty excluded
+  expect_equal(r$xgot, 0.7)
+})
+
+test_that("predict_xgot aborts when a model feature column is missing", {
+  fake <- list(panna_metadata = list(
+    feature_cols = c("gm_y", "gm_z", "dist_to_near_post", "dist_to_top_corner")))
+  df <- data.frame(gm_y = 50, gm_z = 5, dist_to_near_post = 4)  # missing dist_to_top_corner
+  expect_error(predict_xgot(fake, df), "missing feature")
+})
+
+test_that("add_xgot_to_spadl assigns xgot correctly (realign, 0/NA matrix, own-goal, dedup)", {
+  # Mock the model prediction so we test the assignment logic deterministically.
+  testthat::local_mocked_bindings(
+    predict_xgot = function(xgot_model, shot_features) rep(0.5, nrow(shot_features))
+  )
+  spadl <- data.frame(
+    match_id = "m", original_event_id = 1:6, action_type = "shot",
+    start_x = c(85, 85, 85, 85, 3, 85),         # event 5 = own-goal origin (x < 50)
+    start_y = 50, bodypart = "foot_right", stringsAsFactors = FALSE
+  )
+  # lookup: shuffled order, event 1 DUPLICATED (dedup test), events 4 & 6 absent
+  lookup <- data.frame(
+    match_id = "m",
+    event_id = c(3, 1, 2, 5, 1),
+    type_id  = c(16L, 16L, 15L, 16L, 16L),      # goal/goal/saved/goal/(dup)
+    goalmouth_y = c(50, 51, NA, 50, 51),        # event 2 on-target but NO coords
+    goalmouth_z = c(5, 3, NA, 5, 3),
+    situation = "OpenPlay", stringsAsFactors = FALSE
+  )
+  r <- suppressWarnings(suppressMessages(add_xgot_to_spadl(spadl, list(), lookup)))
+  expect_equal(nrow(r), 6)                       # dedup -> no row inflation/crash
+  expect_equal(r$xgot[1], 0.5)                   # on-target + coords -> pred
+  expect_true(is.na(r$xgot[2]))                  # on-target, no coords -> NA
+  expect_equal(r$xgot[3], 0.5)                   # on-target + coords -> pred
+  expect_true(is.na(r$xgot[4]))                  # unmatched -> NA
+  expect_true(is.na(r$xgot[5]))                  # own-goal (type 16, x<50) -> NA
+  expect_true(is.na(r$xgot[6]))                  # unmatched -> NA
+  expect_equal(r$shot_on_target, c(TRUE, TRUE, TRUE, NA, TRUE, NA))
+})

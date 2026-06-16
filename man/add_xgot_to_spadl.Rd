@@ -14,16 +14,17 @@ add_xgot_to_spadl(spadl_actions, xgot_model, goalmouth_lookup)
 
 \item{goalmouth_lookup}{Data frame keyed by (\code{match_id},
 \code{event_id}) with \code{type_id}, \code{goalmouth_y},
-\code{goalmouth_z} for shot events — e.g. from match_events /
-opta_shot_events. (Opta q102/103 live in match_events qualifier_json, so
-no backfill is needed to build this on the inference path.)}
+\code{goalmouth_z}, and \code{situation} for shot events - e.g. from
+match_events / opta_shot_events. \code{situation} is required to avoid
+train/serve skew (the model trained on real situations); without it,
+set-piece/corner/free-kick shots are scored as open-play.}
 }
 \value{
 SPADL actions with an \code{xgot} column added.
 }
 \description{
 Adds post-shot xG to shot actions. xGOT is defined only for ON-TARGET
-shots, so this needs the goal-mouth crossing point, which SPADL drops —
+shots, so this needs the goal-mouth crossing point, which SPADL drops -
 it is joined back from \code{goalmouth_lookup} via the preserved
 \code{original_event_id}. Assignment:
 on-target + coords    -> model prediction
