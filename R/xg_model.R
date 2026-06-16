@@ -702,13 +702,32 @@ aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0) {
     }
     shooting <- shots_dt[, .(
       shots = .N,
-      shots_on_target = sum(opta_type_id %in% c(13L, 16L), na.rm = TRUE),
+      # On-target = Attempt Saved (15) + Goal (16) per OPTA_TYPE_NAMES; 13 is
+      # a Miss (was incorrectly counted here — verified vs goal-mouth data).
+      shots_on_target = sum(opta_type_id %in% c(15L, 16L), na.rm = TRUE),
       goals = sum(result == "success", na.rm = TRUE),
       penalty_goals = sum(result == "success" & is_penalty == 1L, na.rm = TRUE),
       xg = sum(xg, na.rm = TRUE),
       npxg = sum(data.table::fifelse(is.na(is_penalty) | is_penalty == 0L, xg, 0), na.rm = TRUE)
     ), by = .(player_id, player_name, team_id)]
     shooting[, npgoals := goals - penalty_goals]
+
+    # --- xGOT / placement decomposition (only if add_xgot_to_spadl ran) ---
+    # Non-penalty shots only (mirrors npxg). Per shot: off-target xgot = 0
+    # (delta = -xg), on-target xgot = model pred, missing-coord on-target = NA
+    # (dropped by na.rm, never imputed). placement_added is the zero-sum
+    # shooter skill; xgot_placement is the stable "finds-corners" component.
+    if (all(c("xgot", "shot_on_target") %in% names(shots_dt))) {
+      np <- shots_dt[is.na(is_penalty) | is_penalty == 0L]
+      xgot_agg <- np[, .(
+        xgot = sum(xgot, na.rm = TRUE),
+        placement_added = sum(xgot - xg, na.rm = TRUE),
+        xgot_placement = sum(data.table::fifelse(
+          shot_on_target %in% TRUE, xgot - xg, 0), na.rm = TRUE)
+      ), by = .(player_id, player_name, team_id)]
+      xgot_agg[, targeting := placement_added - xgot_placement]
+      shooting <- xgot_agg[shooting, on = c("player_id", "player_name", "team_id")]
+    }
   } else {
     shooting <- data.table::data.table(
       player_id = character(), player_name = character(), team_id = character(),
@@ -768,7 +787,8 @@ aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0) {
   num_cols <- c("shots", "shots_on_target", "goals", "penalty_goals", "npgoals",
                 "xg", "npxg", "key_passes", "assists", "xa",
                 "passes_attempted", "passes_completed", "sum_xpass",
-                "xpass_overperformance", "xpass_avg")
+                "xpass_overperformance", "xpass_avg",
+                "xgot", "placement_added", "xgot_placement", "targeting")
   for (col in num_cols) {
     if (col %in% names(result)) {
       data.table::set(result, which(is.na(result[[col]])), col, 0)
@@ -807,6 +827,17 @@ aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0) {
     xa_per90 = round(xa / minutes * 90, 2),
     xpass_overperformance_per90 = round(xpass_overperformance / minutes * 90, 2)
   )]
+
+  # xGOT-derived (only if the columns were produced upstream)
+  if ("placement_added" %in% names(result)) {
+    result[, `:=`(
+      goals_minus_xgot = goals - xgot,            # keeper/luck residual
+      placement_added_per90 = round(placement_added / minutes * 90, 3)
+    )]
+    data.table::set(result, which(is.infinite(result[["placement_added_per90"]]) |
+                                  is.nan(result[["placement_added_per90"]])),
+                    "placement_added_per90", 0)
+  }
 
   # Chain derived stats (only if chain data present)
   if ("chains_involved" %in% names(result)) {

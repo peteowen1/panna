@@ -57,8 +57,9 @@ cli_h2("Step 1: Load Trained Models")
 
 xg_model <- load_xg_model()
 xpass_model <- load_xpass_model()
+xgot_model <- load_xgot_model()   # NULL until goalmouth-enabled model ships
 
-cli_alert_success("Models loaded")
+cli_alert_success("Models loaded{if (is.null(xgot_model)) ' (xGOT unavailable — skipping post-shot xG)' else ''}")
 
 # 3. Discover Available Seasons ----
 
@@ -142,6 +143,24 @@ for (league in names(league_seasons)) {
       if (sum(penalty_idx) > 0) {
         spadl$xg[penalty_idx] <- PENALTY_XG
         cli_alert_info("  Set {sum(penalty_idx)} penalties to xG={PENALTY_XG}")
+      }
+
+      # 4d-bis. Add xGOT (post-shot xG) to on-target shots. Goal-mouth coords
+      # come from shot_events (backfilled, locale-safe); joined onto SPADL by
+      # original_event_id inside add_xgot_to_spadl. Skips cleanly if the model
+      # or the goalmouth columns aren't available yet.
+      if (!is.null(xgot_model)) {
+        shot_ev <- tryCatch(
+          load_opta_shot_events(league, season = season, source = "local"),
+          error = function(e) NULL
+        )
+        gm_cols <- c("match_id", "event_id", "type_id", "goalmouth_y", "goalmouth_z")
+        if (!is.null(shot_ev) && all(gm_cols %in% names(shot_ev))) {
+          spadl <- add_xgot_to_spadl(spadl, xgot_model,
+                                     as.data.frame(shot_ev)[, gm_cols])
+        } else {
+          cli_alert_warning("  Skipping xGOT for {label}: shot_events lack goalmouth coords (run backfill + re-upload)")
+        }
       }
 
       # 4e. Add xPass to passes

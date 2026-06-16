@@ -282,6 +282,24 @@ xg_model <- fit_xg_model(shot_features,
 cli_alert_success("xG Model: best iter={xg_model$best_nrounds}, logloss={round(xg_model$best_logloss, 4)}")
 saveRDS(xg_model, file.path(CACHE_DIR, "xg_model.rds"))
 
+# 5b. Train xGOT (post-shot xG) Model ----
+# Needs goalmouth_y/z on `shots` (Opta q102/103). Present once pannadata's
+# updated scraper + backfill_goalmouth.py have shipped them to opta-latest;
+# skip cleanly otherwise so the xG/xPass/EPV pipeline is never blocked.
+cli_h2("Step 4b: Train xGOT Model")
+if (all(c("goalmouth_y", "goalmouth_z") %in% names(shots))) {
+  xgot_features <- prepare_shots_for_xgot(shots)
+  xgot_model <- fit_xgot_model(xgot_features,
+                               nrounds = XGB_PARAMS$nrounds,
+                               early_stopping_rounds = XGB_PARAMS$early_stopping_rounds,
+                               verbose = XGB_PARAMS$verbose)
+  cli_alert_success("xGOT Model: best iter={xgot_model$best_nrounds}, logloss={round(xgot_model$best_logloss, 4)}")
+  saveRDS(xgot_model, file.path(CACHE_DIR, "xgot_model.rds"))
+} else {
+  xgot_model <- NULL
+  cli_alert_warning("Skipping xGOT: `shots` lacks goalmouth_y/z — run pannadata backfill_goalmouth.py and re-upload opta_shot_events.parquet to opta-latest.")
+}
+
 # 6. Train xPass Model ----
 
 cli_h2("Step 5: Train xPass Model")
@@ -332,9 +350,11 @@ saveRDS(xg_model, file.path(pannadata_models, "xg_model.rds"))
 saveRDS(xpass_model, file.path(pannadata_models, "xpass_model.rds"))
 saveRDS(epv_model, file.path(pannadata_models, epv_method_file))
 saveRDS(epv_model, file.path(pannadata_models, "epv_model.rds"))
+if (!is.null(xgot_model)) saveRDS(xgot_model, file.path(pannadata_models, "xgot_model.rds"))
 
 cli_alert_success("Models saved to {pannadata_models}/")
 cli_alert_info("  - xg_model.rds")
+if (!is.null(xgot_model)) cli_alert_info("  - xgot_model.rds")
 cli_alert_info("  - xpass_model.rds")
 cli_alert_info("  - {epv_method_file} + epv_model.rds (default)")
 
