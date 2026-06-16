@@ -49,7 +49,7 @@ XGOT_ON_TARGET_TYPE_IDS <- c(15L, 16L)
 #'   height band:               low(<5)=0.386  mid(5-12)=0.284  high(12-20)=0.056  top(>20)=0.287
 #' Note the height effect is U-SHAPED (mid-height = keeper's easy reach = worst;
 #' both low-and-tucked and top-corner convert well). XGBoost handles
-#' non-linearity, so RAW gm_y/gm_z already let it find the corners — but
+#' non-linearity, so RAW gm_y/gm_z already let it find the corners - but
 #' engineered features (distance-to-near-post, height) sharpen it on limited
 #' data and make feature-importance readable.
 #'
@@ -59,7 +59,7 @@ XGOT_ON_TARGET_TYPE_IDS <- c(15L, 16L)
 #' @param gm_y,gm_z Numeric vectors of goal-mouth y (horizontal) and z
 #'   (height) coordinates. May contain NA (off-target / missing).
 #' @return data.frame of placement features, one row per shot. Column names
-#'   become model features — keep them descriptive (e.g. dist_to_near_post).
+#'   become model features - keep them descriptive (e.g. dist_to_near_post).
 #' @keywords internal
 .create_placement_features <- function(gm_y, gm_z) {
   # Horizontal distance to the nearer post (small = tucked by a post). The
@@ -70,10 +70,10 @@ XGOT_ON_TARGET_TYPE_IDS <- c(15L, 16L)
 
   # "Finding the top corner" = near a post AND near the bar. One feature so a
   # single split can isolate the unsaveable region. y- and z-units differ, so
-  # this is an index, not a metric distance — fine for tree splits.
+  # this is an index, not a metric distance - fine for tree splits.
   # (We deliberately do NOT expose `dist_below_bar = 38 - gm_z` as its own
   # feature: it is a perfect linear transform of gm_z, so trees gain nothing
-  # from it — importance analysis confirmed it only siphoned gain from gm_z.)
+  # from it - importance analysis confirmed it only siphoned gain from gm_z.)
   dist_to_top_corner <- sqrt(dist_to_near_post^2 + (GOAL_CROSSBAR_Z - gm_z)^2)
 
   data.frame(
@@ -129,10 +129,10 @@ prepare_shots_for_xgot <- function(shot_events,
   }
 
   # Surface, never impute: on-target shots that still lack placement are a
-  # data gap, not a 0 — drop them from TRAINING with a loud count.
+  # data gap, not a 0 - drop them from TRAINING with a loud count.
   has_gm <- !is.na(shot_events$goalmouth_y) & !is.na(shot_events$goalmouth_z)
   if (any(!has_gm)) {
-    cli::cli_warn("{sum(!has_gm)} on-target shot{?s} missing goalmouth coords — dropped from training (not imputed).")
+    cli::cli_warn("{sum(!has_gm)} on-target shot{?s} missing goalmouth coords - dropped from training (not imputed).")
     shot_events <- shot_events[has_gm, , drop = FALSE]
   }
   if (nrow(shot_events) == 0) {
@@ -206,7 +206,7 @@ fit_xgot_model <- function(shot_features,
   feature_cols <- c(base_cols, placement_cols)
   available_features <- intersect(feature_cols, names(shot_features))
   if (length(intersect(placement_cols, available_features)) == 0) {
-    cli::cli_abort("No placement features present — did .create_placement_features() run?")
+    cli::cli_abort("No placement features present - did .create_placement_features() run?")
   }
   cli::cli_alert_info("Fitting xGOT with {length(available_features)} features ({length(placement_cols)} placement) on {nrow(shot_features)} shots...")
 
@@ -283,7 +283,7 @@ predict_xgot <- function(xgot_model, shot_features) {
 #' Add xGOT to SPADL Actions
 #'
 #' Adds post-shot xG to shot actions. xGOT is defined only for ON-TARGET
-#' shots, so this needs the goal-mouth crossing point, which SPADL drops —
+#' shots, so this needs the goal-mouth crossing point, which SPADL drops -
 #' it is joined back from \code{goalmouth_lookup} via the preserved
 #' \code{original_event_id}. Assignment:
 #'   on-target + coords    -> model prediction
@@ -296,7 +296,7 @@ predict_xgot <- function(xgot_model, shot_features) {
 #' @param xgot_model Fitted xGOT model.
 #' @param goalmouth_lookup Data frame keyed by (\code{match_id},
 #'   \code{event_id}) with \code{type_id}, \code{goalmouth_y},
-#'   \code{goalmouth_z} for shot events — e.g. from match_events /
+#'   \code{goalmouth_z} for shot events - e.g. from match_events /
 #'   opta_shot_events. (Opta q102/103 live in match_events qualifier_json, so
 #'   no backfill is needed to build this on the inference path.)
 #' @return SPADL actions with an \code{xgot} column added.
