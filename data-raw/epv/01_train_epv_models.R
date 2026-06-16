@@ -17,11 +17,16 @@ devtools::load_all()
 if (!exists("LEAGUES")) LEAGUES <- names(OPTA_LEAGUES)
 if (!exists("SEASONS")) SEASONS <- c("2020-2021", "2021-2022", "2022-2023", "2023-2024")
 
-# Tournament seasons use "YYYY Country" format (not "YYYY-YYYY")
-TOURNAMENT_SEASONS <- list(
-  WC   = c("2014 Brazil", "2018 Russia"),
-  EURO = c("2016 France", "2024 Germany")
-)
+# Season window. We DISCOVER each league's actual local seasons (any label
+# format) and keep those whose END YEAR >= the floor below — never assume the
+# domestic "YYYY-YYYY" format. Tournament/qualifier/calendar leagues use other
+# labels ("2018 Russia", "2026", ...); hardcoding SEASONS for them queried
+# non-existent keys and tripped the >50% load guard (101/172 phantom failures,
+# 2026-06). Floor defaults to the earliest end year in SEASONS so existing
+# overrides (set SEASONS before sourcing) keep working; or set it directly.
+if (!exists("MIN_SEASON_END_YEAR")) {
+  MIN_SEASON_END_YEAR <- min(vapply(SEASONS, extract_season_end_year, numeric(1)))
+}
 
 # EPV method: "goal" (multinomial) or "xg" (regression on signed next-shot xG)
 EPV_METHOD <- "xg"
@@ -39,7 +44,7 @@ dir.create(CACHE_DIR, recursive = TRUE, showWarnings = FALSE)
 
 cli_h1("EPV Model Training Pipeline")
 cli_alert_info("Leagues: {paste(LEAGUES, collapse = ', ')}")
-cli_alert_info("Seasons: {paste(SEASONS, collapse = ', ')}")
+cli_alert_info("Season window: end year >= {MIN_SEASON_END_YEAR} (discovered per league)")
 
 # 2. Load Data, Build Chains, Create Labels (per-chunk to fit in 7GB) ----
 #
@@ -84,15 +89,27 @@ loaded_leagues <- character(0)
 failed_keys <- character(0)
 iter_count <- 0L
 
-# Build league → season list (domestic use SEASONS, tournaments use TOURNAMENT_SEASONS)
+# Build league → season list by DISCOVERING what's actually present locally
+# (handles every label format), keeping seasons in the end-year window. Filter
+# by extract_season_end_year, NEVER an exact "YYYY-YYYY" match — calendar and
+# tournament labels differ and would be silently dropped (the SPM build hit
+# this exact trap; see panna/CLAUDE.md "Season subsetting").
 league_seasons <- list()
 for (league in LEAGUES) {
-  if (league %in% names(TOURNAMENT_SEASONS)) {
-    league_seasons[[league]] <- TOURNAMENT_SEASONS[[league]]
-  } else {
-    league_seasons[[league]] <- SEASONS
+  avail <- tryCatch(list_opta_seasons(league, source = "local"),
+                    error = function(e) character(0))
+  if (length(avail)) {
+    ey <- vapply(avail, extract_season_end_year, numeric(1))
+    avail <- avail[!is.na(ey) & ey >= MIN_SEASON_END_YEAR]
   }
+  if (length(avail)) league_seasons[[league]] <- sort(avail)
 }
+LEAGUES <- names(league_seasons)  # drop leagues with no local data in-window
+if (length(LEAGUES) == 0L) {
+  cli_abort(c("No leagues with local data in the season window (end year >= {MIN_SEASON_END_YEAR}).",
+              "i" = "Check the Download Opta event data step populated data/opta/."))
+}
+cli_alert_info("Discovered {length(LEAGUES)} leagues, {sum(lengths(league_seasons))} league-seasons (end year >= {MIN_SEASON_END_YEAR})")
 
 for (league in LEAGUES) {
   for (season in league_seasons[[league]]) {
