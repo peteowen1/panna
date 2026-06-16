@@ -44,7 +44,7 @@ XGOT_ON_TARGET_TYPE_IDS <- c(15L, 16L)
 #' feature(s) the xGOT model learns from. This is the heart of the model: how
 #' you encode "where in the frame" decides what the tree can discover.
 #'
-#' The empirical signal from EPL 2024-25 on-target shots (your data):
+#' The empirical signal from EPL 2024-25 on-target shots (illustrative):
 #'   distance to nearest post:  hug-post(<1)=0.358  near=0.248  mid=0.106  central=0.069
 #'   height band:               low(<5)=0.386  mid(5-12)=0.284  high(12-20)=0.056  top(>20)=0.287
 #' Note the height effect is U-SHAPED (mid-height = keeper's easy reach = worst;
@@ -150,7 +150,7 @@ prepare_shots_for_xgot <- function(shot_events,
     bodypart = bodypart, situation = situation, is_big_chance = big_chance
   )
 
-  # Placement features (your contribution).
+  # Placement features.
   placement <- .create_placement_features(shot_events$goalmouth_y, shot_events$goalmouth_z)
   features <- cbind(features, placement)
 
@@ -296,9 +296,10 @@ predict_xgot <- function(xgot_model, shot_features) {
 #' @param xgot_model Fitted xGOT model.
 #' @param goalmouth_lookup Data frame keyed by (\code{match_id},
 #'   \code{event_id}) with \code{type_id}, \code{goalmouth_y},
-#'   \code{goalmouth_z} for shot events - e.g. from match_events /
-#'   opta_shot_events. (Opta q102/103 live in match_events qualifier_json, so
-#'   no backfill is needed to build this on the inference path.)
+#'   \code{goalmouth_z}, and \code{situation} for shot events - e.g. from
+#'   match_events / opta_shot_events. \code{situation} is required to avoid
+#'   train/serve skew (the model trained on real situations); without it,
+#'   set-piece/corner/free-kick shots are scored as open-play.
 #' @return SPADL actions with an \code{xgot} column added.
 #' @keywords internal
 add_xgot_to_spadl <- function(spadl_actions, xgot_model, goalmouth_lookup) {
@@ -319,16 +320,31 @@ add_xgot_to_spadl <- function(spadl_actions, xgot_model, goalmouth_lookup) {
     event_id = shots$original_event_id,
     stringsAsFactors = FALSE
   )
-  lk <- goalmouth_lookup[, c("match_id", "event_id", "type_id",
-                             "goalmouth_y", "goalmouth_z")]
+  # `situation` is needed to match training features (open/set-piece/corner/
+  # free-kick); warn loudly if absent rather than silently skew predictions.
+  have_situation <- "situation" %in% names(goalmouth_lookup)
+  if (!have_situation) {
+    cli::cli_warn("goalmouth_lookup lacks `situation` - set-piece shots will be scored as open-play (train/serve skew).")
+  }
+  lk_cols <- c("match_id", "event_id", "type_id", "goalmouth_y", "goalmouth_z",
+               if (have_situation) "situation")
+  lk <- goalmouth_lookup[, lk_cols, drop = FALSE]
+  # De-dup on the join key: a duplicated (match_id, event_id) would let merge()
+  # inflate rows and misalign coords to the wrong shot (silent wrong xGOT).
+  lk <- lk[!duplicated(lk[, c("match_id", "event_id")]), , drop = FALSE]
+
   joined <- merge(key, lk, by = c("match_id", "event_id"),
                   all.x = TRUE, sort = FALSE)
   # merge() may reorder; realign to shots order via a stable key match.
   ord <- match(paste(key$match_id, key$event_id),
                paste(joined$match_id, joined$event_id))
   joined <- joined[ord, ]
+  stopifnot(nrow(joined) == nrow(key))   # 1:1 invariant (guaranteed by de-dup)
 
-  on_target <- joined$type_id %in% XGOT_ON_TARGET_TYPE_IDS
+  # NA-preserving: `%in%` collapses a missing type_id (unmatched shot) to
+  # FALSE, which would mislabel it off-target (xgot=0) instead of unknown (NA).
+  on_target <- ifelse(is.na(joined$type_id), NA,
+                      joined$type_id %in% XGOT_ON_TARGET_TYPE_IDS)
   has_gm <- !is.na(joined$goalmouth_y) & !is.na(joined$goalmouth_z)
   predable <- on_target & has_gm
   predable[is.na(predable)] <- FALSE
@@ -339,20 +355,29 @@ add_xgot_to_spadl <- function(spadl_actions, xgot_model, goalmouth_lookup) {
   if (any(predable)) {
     is_big_chance <- if ("is_big_chance" %in% names(shots)) as.integer(shots$is_big_chance[predable]) else 0L
     bodypart <- if ("bodypart" %in% names(shots)) shots$bodypart[predable] else NULL
+    # Real situation (not NULL) so set-piece/corner/FK shots match training.
+    situation <- if (have_situation) joined$situation[predable] else NULL
     base <- .create_shot_features(
       x = shots$start_x[predable], y = shots$start_y[predable],
-      bodypart = bodypart, situation = NULL, is_big_chance = is_big_chance
+      bodypart = bodypart, situation = situation, is_big_chance = is_big_chance
     )
     plc <- .create_placement_features(joined$goalmouth_y[predable], joined$goalmouth_z[predable])
     xgot_vec[predable] <- predict_xgot(xgot_model, cbind(base, plc))
   }
+
+  # Own-goal guard: an own goal is logged type 16 at the scorer's own end
+  # (start_x < 50). Its goal-mouth placement is meaningless for the shooter ->
+  # NA, mirroring enrich_shots_xgot.R + the own-goal xG convention (CLAUDE.md).
+  is_og <- joined$type_id == 16L & !is.na(shots$start_x) & shots$start_x < 50
+  is_og[is.na(is_og)] <- FALSE
+  xgot_vec[is_og] <- NA_real_
 
   spadl_actions$xgot[shot_idx] <- xgot_vec
   spadl_actions$shot_on_target[shot_idx] <- on_target  # TRUE/FALSE/NA per raw type_id
   n_pred <- sum(predable)
   n_na_ot <- sum(on_target & !has_gm, na.rm = TRUE)
   cli::cli_alert_success(
-    "Added xGOT to {length(shot_idx)} shots ({n_pred} on-target scored, {n_na_ot} on-target missing coords -> NA, rest off-target -> 0)"
+    "Added xGOT to {length(shot_idx)} shots ({n_pred} scored, {n_na_ot} on-target no-coords -> NA, {sum(is_og)} own-goal -> NA, rest off-target -> 0)"
   )
   spadl_actions
 }

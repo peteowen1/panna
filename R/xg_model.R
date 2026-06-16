@@ -720,12 +720,17 @@ aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0) {
     if (all(c("xgot", "shot_on_target") %in% names(shots_dt))) {
       np <- shots_dt[is.na(is_penalty) | is_penalty == 0L]
       xgot_agg <- np[, .(
+        n_xgot_shots = sum(!is.na(xgot)),   # shots with a defined xGOT (off-target 0s count; missing-coord NAs don't)
         xgot = sum(xgot, na.rm = TRUE),
         placement_added = sum(xgot - xg, na.rm = TRUE),
         xgot_placement = sum(data.table::fifelse(
           shot_on_target %in% TRUE, xgot - xg, 0), na.rm = TRUE)
       ), by = .(player_id, player_name, team_id)]
       xgot_agg[, targeting := placement_added - xgot_placement]
+      # No usable xGOT signal (all non-pen shots missing coords) -> the na.rm
+      # sums collapse to a fake 0; surface as NA, never impute (CLAUDE.md rule).
+      xgot_agg[n_xgot_shots == 0L,
+               c("xgot", "placement_added", "xgot_placement", "targeting") := NA_real_]
       shooting <- xgot_agg[shooting, on = c("player_id", "player_name", "team_id")]
     }
   } else {
@@ -784,11 +789,15 @@ aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0) {
   if (length(i_cols) > 0) result[, (i_cols) := NULL]
 
   # Fill NAs with 0
+  # NOTE: the xGOT decomposition columns (xgot/placement_added/xgot_placement/
+  # targeting) are deliberately NOT in this NA->0 fill — for them a 0 is a
+  # meaningful value ("placed exactly at xG"), so a player with no xGOT data
+  # must stay NA, not be imputed to 0 (CLAUDE.md no-silent-impute rule). Only
+  # the coverage count n_xgot_shots is filled (0 = genuinely no such shots).
   num_cols <- c("shots", "shots_on_target", "goals", "penalty_goals", "npgoals",
                 "xg", "npxg", "key_passes", "assists", "xa",
                 "passes_attempted", "passes_completed", "sum_xpass",
-                "xpass_overperformance", "xpass_avg",
-                "xgot", "placement_added", "xgot_placement", "targeting")
+                "xpass_overperformance", "xpass_avg", "n_xgot_shots")
   for (col in num_cols) {
     if (col %in% names(result)) {
       data.table::set(result, which(is.na(result[[col]])), col, 0)
