@@ -152,6 +152,25 @@ jobs:
             source('data-raw/epv/01_train_epv_models.R')
           "
 
+      - name: Upload models (immediately after training)
+        # Publish the freshly-trained models right after training so a slow or
+        # cancelled xMetrics step (below) can never skip publishing — that
+        # fragility left xgot_model unpublished on 2026-06-16. The final
+        # "Upload trained models" step re-uploads (--clobber, idempotent) and
+        # handles the WP model.
+        if: ${{ env.WP_ONLY != 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+        run: |
+          set -euo pipefail
+          CACHE_DIR="data-raw/cache/epv"
+          for f in xg_model.rds xgot_model.rds xpass_model.rds epv_model.rds; do
+            if [ -f "$CACHE_DIR/$f" ]; then
+              gh release upload models "$CACHE_DIR/$f" --repo peteowen1/pannadata --clobber \
+                && echo "  Uploaded $f (early)"
+            fi
+          done
+
       - name: Calculate player xMetrics
         if: ${{ env.EXPORT_XMETRICS == 'true' }}
         env:
