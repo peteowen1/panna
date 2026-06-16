@@ -109,7 +109,9 @@ if (length(LEAGUES) == 0L) {
   cli_abort(c("No leagues with local data in the season window (end year >= {MIN_SEASON_END_YEAR}).",
               "i" = "Check the Download Opta event data step populated data/opta/."))
 }
-cli_alert_info("Discovered {length(LEAGUES)} leagues, {sum(lengths(league_seasons))} league-seasons (end year >= {MIN_SEASON_END_YEAR})")
+n_total <- sum(lengths(league_seasons))
+t_load_start <- Sys.time()
+cli_alert_info("Discovered {length(LEAGUES)} leagues, {n_total} league-seasons (end year >= {MIN_SEASON_END_YEAR})")
 
 for (league in LEAGUES) {
   for (season in league_seasons[[league]]) {
@@ -154,7 +156,10 @@ for (league in LEAGUES) {
       total_chains <- total_chains + nrow(outcomes_chunk)
       loaded_leagues <- union(loaded_leagues, league)
 
-      cli_alert_success("  {key}: {format(nrow(events), big.mark=',')} events -> {format(nrow(labeled_chunk), big.mark=',')} labeled actions, {format(nrow(outcomes_chunk), big.mark=',')} chains -> {basename(chunk_path)}")
+      # Progress + live ETA so a long run is legible in the (browser) log.
+      el_min <- as.numeric(difftime(Sys.time(), t_load_start, units = "mins"))
+      eta_min <- if (iter_count > 0) el_min / iter_count * (n_total - iter_count) else NA_real_
+      cli_alert_success("  [{iter_count}/{n_total}] {key}: {format(nrow(events), big.mark=',')} events -> {format(nrow(labeled_chunk), big.mark=',')} actions ({round(el_min, 1)}m in, ~{round(eta_min, 1)}m left)")
 
       rm(labeled_chunk, outcomes_chunk, events, shot_events, lineups)
       # Full gc every 5 iterations to bound long-running heap creep
@@ -174,6 +179,7 @@ n_leagues_loaded <- length(loaded_leagues)
 rm(all_shots, all_lineups); gc(verbose = FALSE, full = TRUE)
 
 n_chunks <- length(list.files(LABELED_CHUNKS_DIR, pattern = "^chunk_.*\\.parquet$"))
+cli_alert_success("Load+chain phase: {n_chunks} chunks in {round(as.numeric(difftime(Sys.time(), t_load_start, units='mins')), 1)} min ({length(failed_keys)}/{iter_count} failed)")
 cli_alert_success("Total: {format(total_events, big.mark=',')} events -> {format(total_actions, big.mark=',')} labeled actions, {format(total_chains, big.mark=',')} chains from {n_leagues_loaded} leagues across {n_chunks} chunks")
 
 # Loud failure if no chunks were produced — every (league, season) skipped.
@@ -289,14 +295,14 @@ cli_alert_success("Sampled — epv: {format(nrow(epv_features), big.mark=',')} r
 # 5. Train xG Model ----
 
 cli_h2("Step 4: Train xG Model")
-
+t0 <- Sys.time()
 shot_features <- prepare_shots_for_xg(shots)
 xg_model <- fit_xg_model(shot_features,
                           nrounds = XGB_PARAMS$nrounds,
                           early_stopping_rounds = XGB_PARAMS$early_stopping_rounds,
                           verbose = XGB_PARAMS$verbose)
 
-cli_alert_success("xG Model: best iter={xg_model$best_nrounds}, logloss={round(xg_model$best_logloss, 4)}")
+cli_alert_success("xG Model: best iter={xg_model$best_nrounds}, logloss={round(xg_model$best_logloss, 4)} [{round(as.numeric(difftime(Sys.time(), t0, units='mins')), 1)}m]")
 saveRDS(xg_model, file.path(CACHE_DIR, "xg_model.rds"))
 
 # 5b. Train xGOT (post-shot xG) Model ----
@@ -305,12 +311,13 @@ saveRDS(xg_model, file.path(CACHE_DIR, "xg_model.rds"))
 # skip cleanly otherwise so the xG/xPass/EPV pipeline is never blocked.
 cli_h2("Step 4b: Train xGOT Model")
 if (all(c("goalmouth_y", "goalmouth_z") %in% names(shots))) {
+  t0 <- Sys.time()
   xgot_features <- prepare_shots_for_xgot(shots)
   xgot_model <- fit_xgot_model(xgot_features,
                                nrounds = XGB_PARAMS$nrounds,
                                early_stopping_rounds = XGB_PARAMS$early_stopping_rounds,
                                verbose = XGB_PARAMS$verbose)
-  cli_alert_success("xGOT Model: best iter={xgot_model$best_nrounds}, logloss={round(xgot_model$best_logloss, 4)}")
+  cli_alert_success("xGOT Model: best iter={xgot_model$best_nrounds}, logloss={round(xgot_model$best_logloss, 4)} [{round(as.numeric(difftime(Sys.time(), t0, units='mins')), 1)}m]")
   saveRDS(xgot_model, file.path(CACHE_DIR, "xgot_model.rds"))
 } else {
   xgot_model <- NULL
@@ -320,7 +327,7 @@ if (all(c("goalmouth_y", "goalmouth_z") %in% names(shots))) {
 # 6. Train xPass Model ----
 
 cli_h2("Step 5: Train xPass Model")
-
+t0 <- Sys.time()
 # pass_features was generated and sampled per-chunk in Step 2 to bound peak
 # memory. Subsampling here would be redundant.
 xpass_model <- fit_xpass_model(pass_features,
@@ -328,13 +335,13 @@ xpass_model <- fit_xpass_model(pass_features,
                                 early_stopping_rounds = XGB_PARAMS$early_stopping_rounds,
                                 verbose = XGB_PARAMS$verbose)
 
-cli_alert_success("xPass Model: best iter={xpass_model$best_nrounds}, logloss={round(xpass_model$best_logloss, 4)}")
+cli_alert_success("xPass Model: best iter={xpass_model$best_nrounds}, logloss={round(xpass_model$best_logloss, 4)} [{round(as.numeric(difftime(Sys.time(), t0, units='mins')), 1)}m]")
 saveRDS(xpass_model, file.path(CACHE_DIR, "xpass_model.rds"))
 
 # 7. Train EPV Model (simple features with league) ----
 
 cli_h2("Step 6: Train EPV Model (simple features)")
-
+t0 <- Sys.time()
 # epv_features and spadl_labeled were generated and aligned-sampled per-chunk
 # in Step 2 to bound peak memory. Subsampling here would be redundant.
 epv_model <- fit_epv_model(epv_features, spadl_labeled,
@@ -347,7 +354,7 @@ epv_model <- fit_epv_model(epv_features, spadl_labeled,
 epv_model$panna_metadata$feature_mode <- "simple"
 
 metric_name <- if (EPV_METHOD == "goal") "mlogloss" else "rmse"
-cli_alert_success("EPV Model: best iter={epv_model$best_nrounds}, {metric_name}={round(epv_model$best_metric, 4)}")
+cli_alert_success("EPV Model: best iter={epv_model$best_nrounds}, {metric_name}={round(epv_model$best_metric, 4)} [{round(as.numeric(difftime(Sys.time(), t0, units='mins')), 1)}m]")
 cli_alert_info("  Trained on {n_leagues_loaded} leagues, {format(epv_model$panna_metadata$n_actions, big.mark=',')} actions")
 # Save with method suffix (epv_model_goal.rds or epv_model_xg.rds)
 epv_method_file <- paste0("epv_model_", EPV_METHOD, ".rds")
