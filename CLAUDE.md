@@ -36,7 +36,7 @@ pkgdown::build_site()
 | **SPM** | `spm_model.R`, `spm_opta.R`, `feature_engineering.R` | Statistical Plus-Minus (XGBoost-based prior for RAPM) |
 | **Panna Rating** | `panna_rating.R`, `offensive_defensive.R` | Final combined rating = xRAPM with SPM prior |
 | **Skills** | `estimated_skills.R`, `skill_optimization.R` | Per-stat skill estimation with Bayesian shrinkage |
-| **xMetrics** | `xg_model.R`, `xpass_model.R`, `epv_model.R`, `epv_features.R` | xG/xA/xPass/EPV from SPADL events |
+| **xMetrics** | `xg_model.R`, `xgot_model.R`, `xpass_model.R`, `epv_model.R`, `epv_features.R` | xG/xGOT/xA/xPass/EPV from SPADL events |
 | **SPADL** | `spadl_conversion.R` | Opta events -> SPADL action format |
 | **Data Loaders** | `opta_loaders.R`, `dirs.R`, `data_location_report.R` | Load from local parquet or GitHub Releases; data-source-agnostic dir resolution; load diagnostics |
 | **Player Stats** | `player_stats_opta.R` | Aggregate player-level statistics |
@@ -140,6 +140,7 @@ Stat ratings → PSR/OSR/DSR (smoothed skills via glmnet) ───────�
 - **`exists("sample_n")` collides with dplyr** — `dplyr::sample_n()` is exported, so `if (!exists("sample_n")) sample_n <- 500` skips the default and `sample_n` resolves to the dplyr function. Use `exists(x, inherits = FALSE)` (and optionally `is.function(get(x))`) for config guards in pipeline scripts.
 - **data.table NSE bare-symbol subsetting fails** — `psr_data[, psr_cols]` throws `j is a single symbol but column name 'psr_cols' is not found` when `psr_data` is a data.table and `psr_cols` is a character vector. Coerce with `as.data.frame()` before subsetting (or use `..psr_cols` / `with = FALSE`).
 - **SPADL has no `is_penalty` column** — detect from raw Opta qualifier 9, match to SPADL via composite key (match_id + player_id + minute)
+- **Opta shot type_ids: 13=Miss, 14=Post, 15=Attempt Saved, 16=Goal** (per `OPTA_TYPE_NAMES` / DATA_DICTIONARY, confirmed vs goal-mouth data). On-target = `c(15L, 16L)`. These were **swapped (13↔15)** in several places until 2026-06 — the swap mislabelled `shots_on_target` (counted misses) and mis-gated GK save credit in `assign_epv_credit()` (credited misses, not saves). xGOT/placement (`xgot_model.R`) and `aggregate_player_xmetrics()`'s decomposition depend on this being correct.
 - **SPADL preserves `original_event_id`** — maps SPADL actions back to Opta event IDs (used by equity export for blog chain join)
 - **Inline `Rscript -e` segfaults** — always write to `debug/` and run with `Rscript debug/script.R`
 - **`setwd()` in Rscript segfaults** — `cd panna` in bash, then `Rscript debug/script.R`
