@@ -210,7 +210,11 @@ jobs:
               # run_predictions_opta.R defaults so dev runs stay snappy; the
               # workflow opts in here as the production schedule.
               step_11_simulate_wc2026        = TRUE,
-              step_12_export_wc2026_blog     = TRUE
+              step_12_export_wc2026_blog     = TRUE,
+              # Archive a dated minutes snapshot + diff to the
+              # wc2026-minutes-history release so group-stage drift is tracked
+              # (blog-latest clobbers, so it retains no history of its own).
+              step_12b_snapshot_wc_minutes   = TRUE
             )
 
             source('data-raw/match-predictions-opta/run_predictions_opta.R', chdir = FALSE)
