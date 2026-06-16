@@ -800,3 +800,41 @@ utils::globalVariables(c(
   "second_num",
   "minute_num"
 ))
+
+# xGOT / expected-minutes / EPR-career / shootout NSE columns (added 2026-06-16
+# to clear R CMD check "undefined global functions or variables" warnings, which
+# fail the build under error_on = "warning"). globalVariables accumulates across
+# calls, so this is a separate block to keep the diff readable.
+utils::globalVariables(c(
+  "..rcols", ".def_adj", ".is_q", ".off_adj", "J", "a_mins", "a_n", "a_w",
+  "anchor", "app_intl", "b_w", "base_def", "base_off", "beta_def", "beta_off",
+  "bw", "canonical_id", "caps_decay", "career_intl_apps", "club_mins_30d",
+  "club_mins_90d", "club_starts_90d", "coverage", "d_mins", "d_n", "date_int",
+  "dates", "days_rest_team", "days_since_last_club", "days_since_last_intl",
+  "decay", "em_raw", "epr_defensive_t1", "epr_defensive_t2", "epr_offensive_t1",
+  "epr_offensive_t2", "epr_t1", "epr_t2", "expected_minutes",
+  "expected_minutes_norm", "holdout_wmse", "i.away_goals", "i.home_goals",
+  "i.match_date", "imputed_from_history", "intl_apps_180d", "intl_mins_180d",
+  "intl_mins_30d", "intl_mins_540d", "intl_starts_180d", "is_best", "is_defb",
+  "is_extra_time", "is_friendly", "is_fwdb", "is_gkb", "is_intl", "is_midb",
+  "is_starter_pred", "is_tournament", "j_idx", "keeper_wpa", "key",
+  "kicker_team", "kicks_scored", "kicks_taken", "last_intl_date", "last_played",
+  "lineup_weight", "margin_poss", "match_reached_et", "match_seconds",
+  "match_year", "mdate", "mean_y_def", "mean_y_off", "mean_y_tot", "method",
+  "mins_clip", "mins_club", "mins_intl", "mins_prev_team_match", "mins_start_w",
+  "mins_sub_w", "mins_when_start", "mins_when_sub", "modal_role", "mse_total",
+  "n_appear", "n_apps", "n_caps_weighted", "n_games_tier_t1", "n_games_tier_t2",
+  "n_obs", "n_start", "name_norm", "offset_def", "offset_off", "offset_tot",
+  "p_def", "p_off", "p_start", "p_start_decay", "p_sub_given_bench",
+  "pct_team_minutes", "placement_added", "played", "played_flag", "pos_team",
+  "position_side", "prev_club_dateint", "prev_intl_dateint", "prev_match_id",
+  "priority", "pt_j", "pt_key", "role", "rotation_idx", "season_weight",
+  "shootout_wpa", "shootout_wpa_total", "shot_on_target", "shrink_w",
+  "start_club", "start_intl", "started_prev_team_match", "starts_decay", "sw",
+  "t1", "t2", "taker_wpa", "targeting", "team_id_next", "team_intl_count",
+  "team_n_rated", "team_n_total", "teams", "tier", "tot_w", "total_mins",
+  "tourn_mins_sofar", "tourn_starts_sofar", "tournament_match_num", "w",
+  "was_rated", "weight", "weight_bench", "weight_start", "weight_sub_on",
+  "weight_total", "wp_first_kicker", "wt_games_tier_t1", "wt_games_tier_t2",
+  "xgot", "xgot_placement", "xmargin", "y_def", "y_off", "y_tot", "years_gap"
+))

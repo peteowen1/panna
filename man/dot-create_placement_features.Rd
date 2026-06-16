@@ -2,7 +2,7 @@
 % Please edit documentation in R/xgot_model.R
 \name{.create_placement_features}
 \alias{.create_placement_features}
-\title{Create goal-mouth placement features  \link{YOUR CONTRIBUTION}}
+\title{Create goal-mouth placement features}
 \usage{
 .create_placement_features(gm_y, gm_z)
 }

@@ -38,7 +38,7 @@ XGOT_MIN_SEASON_END_YEAR <- 2021L
 XGOT_ON_TARGET_TYPE_IDS <- c(15L, 16L)
 
 
-#' Create goal-mouth placement features  [YOUR CONTRIBUTION]
+#' Create goal-mouth placement features
 #'
 #' Turns the raw goal-mouth crossing point (goalmouth_y, goalmouth_z) into the
 #' feature(s) the xGOT model learns from. This is the heart of the model: how
