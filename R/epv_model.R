@@ -835,16 +835,16 @@ assign_epv_credit <- function(spadl_with_epv, xpass_model = NULL) {
   }
 
   # Handle failed shots by type (requires opta_type_id from SPADL conversion)
-  # - Type 13 (Saved): Give defender/GK credit for the save
+  # - Type 13 (Missed): No receiver credit (off target)
   # - Type 14 (Post): No receiver credit (hit woodwork)
-  # - Type 15 (Missed): No receiver credit (off target)
+  # - Type 15 (Saved): Give defender/GK credit for the save
   if ("opta_type_id" %in% names(dt)) {
 
-    # For saved shots (type 13), give defender/GK credit for the save
+    # For saved shots (type 15), give defender/GK credit for the save
     # Only apply if receiver is on DIFFERENT team (excludes rebounds where shooter takes next action)
     saved_shot_idx <- which(dt$action_type == "shot" &
                             dt$result == "fail" &
-                            dt$opta_type_id == 13 &
+                            dt$opta_type_id == 15 &
                             !is.na(dt$receiver_player_id) &
                             !is.na(dt$receiver_team_id) &
                             dt$team_id != dt$receiver_team_id)  # Receiver on opposing team
@@ -864,12 +864,12 @@ assign_epv_credit <- function(spadl_with_epv, xpass_model = NULL) {
       cli::cli_alert_info("Applied save credit to {n_saved} saved shots")
     }
 
-    # For missed shots (type 15) and posts (type 14), no receiver credit
+    # For missed shots (type 13) and posts (type 14), no receiver credit
     # The shot missed the target entirely, so no defender made a save
     # Override any turnover logic that may have been applied
     missed_shot_idx <- which(dt$action_type == "shot" &
                               dt$result == "fail" &
-                              dt$opta_type_id %in% c(14, 15))  # Post or Missed
+                              dt$opta_type_id %in% c(13, 14))  # Missed or Post
 
     if (length(missed_shot_idx) > 0) {
       # Shooter takes full blame, no defender credit

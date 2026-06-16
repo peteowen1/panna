@@ -141,9 +141,9 @@ prepare_shots_for_xg <- function(shot_events) {
 
   # Shot type from type_id (if available)
   if ("type_id" %in% names(shot_events)) {
-    features$shot_saved <- as.integer(shot_events$type_id == 13)
+    features$shot_miss <- as.integer(shot_events$type_id == 13)
     features$shot_post <- as.integer(shot_events$type_id == 14)
-    features$shot_miss <- as.integer(shot_events$type_id == 15)
+    features$shot_saved <- as.integer(shot_events$type_id == 15)
   }
 
   # Target variable

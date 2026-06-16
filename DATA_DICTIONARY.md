@@ -473,7 +473,7 @@ Individual shots with x/y coordinates.
 | y | numeric | Y coordinate (0-100, center at 50) |
 | outcome | integer | 1=on target, 0=off target |
 | is_goal | logical | Shot resulted in goal |
-| type_id | integer | 13=saved, 14=post, 15=miss, 16=goal |
+| type_id | integer | 13=miss, 14=post, 15=saved, 16=goal |
 | body_part | character | Head, LeftFoot, RightFoot |
 | situation | character | OpenPlay, SetPiece, Corner, Penalty |
 | big_chance | logical | Big chance indicator |

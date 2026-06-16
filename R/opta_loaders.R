@@ -469,7 +469,7 @@ load_opta_shots <- function(league, season = NULL, columns = NULL,
 #'     \item x, y: Shot coordinates (0-100 scale)
 #'     \item outcome: 1=on target, 0=off target
 #'     \item is_goal: Whether shot resulted in goal
-#'     \item type_id: 13=saved, 14=post, 15=miss, 16=goal
+#'     \item type_id: 13=miss, 14=post, 15=saved, 16=goal
 #'     \item body_part: Head, LeftFoot, RightFoot
 #'     \item situation: OpenPlay, SetPiece, Corner, Penalty
 #'     \item big_chance: TRUE if big chance

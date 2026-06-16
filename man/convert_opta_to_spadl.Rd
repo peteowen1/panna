@@ -29,7 +29,7 @@ Data frame in SPADL format with columns:
 \item end_x, end_y: Ending coordinates (0-100)
 \item action_type: Standardized action type
 \item action_type_id: Numeric action type code
-\item opta_type_id: Original Opta type_id (e.g., 13=saved, 15=missed, 16=goal)
+\item opta_type_id: Original Opta type_id (e.g., 13=miss, 15=saved, 16=goal)
 \item result: "success" or "fail"
 \item bodypart: "foot", "head", or "other"
 \item receiver_player_id: Player who receives/intercepts (from next action)
