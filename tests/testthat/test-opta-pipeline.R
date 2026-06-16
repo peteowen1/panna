@@ -106,7 +106,7 @@ test_that("prepare_opta_shots_for_splints correctly uses goals as xG proxy", {
     y = c(40, 50, 45, 55),
     outcome = c(0, 1, 0, 1),
     is_goal = c(FALSE, TRUE, FALSE, TRUE),
-    type_id = c(15, 16, 15, 16),  # 15=miss, 16=goal
+    type_id = c(15, 16, 15, 16),  # 15=saved, 16=goal
     situation = c("OpenPlay", "OpenPlay", "Penalty", "OpenPlay"),
     stringsAsFactors = FALSE
   )

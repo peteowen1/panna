@@ -8,11 +8,10 @@
 *.tar.gz
 *.Rcheck/
 
-# Cache directory (large data files)
+# Cache directories (large data files) — glob covers ad-hoc suffixed caches
+# like cache-predictions-opta-newgl/ from one-off backfills
 data-raw/cache/
-data-raw/cache-opta/
-data-raw/cache-skills/
-data-raw/cache-predictions-opta/
+data-raw/cache-*/
 data-raw/debug/
 data-raw/archive/
 data/

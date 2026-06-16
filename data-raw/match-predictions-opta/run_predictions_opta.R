@@ -63,7 +63,8 @@ if (!exists("run_steps")) {
     step_10c_export_equity           = FALSE,  # Opt-in: export per-action EPV equity
     step_10d_export_shootout_wpa     = FALSE,  # Opt-in: export per-player penalty-shootout WPA
     step_11_simulate_wc2026          = FALSE,  # Opt-in: simulate the 2026 World Cup
-    step_12_export_wc2026_blog       = FALSE   # Opt-in: export WC2026 blog data
+    step_12_export_wc2026_blog       = FALSE,  # Opt-in: export WC2026 blog data
+    step_12b_snapshot_wc_minutes     = FALSE   # Opt-in: archive dated minutes snapshot + diff
   )
 }
 
@@ -263,6 +264,15 @@ step_results[[11]] <- run_pred_step("simulate_wc2026", 11, function() {
 
 step_results[[12]] <- run_pred_step("export_wc2026_blog", 12, function() {
   source("data-raw/match-predictions-opta/12_export_wc2026_blog.R", local = TRUE)
+})
+
+# 14f. Step 12b: Snapshot WC 2026 Minutes ----
+# Archive a dated copy of wc2026_squads.parquet to the wc2026-minutes-history
+# release and diff it against the previous snapshot (group-stage drift tracking).
+# Runs after step 12, which writes the squads file this reads.
+
+step_results[["12b"]] <- run_pred_step("snapshot_wc_minutes", "12b", function() {
+  source("data-raw/match-predictions-opta/12b_snapshot_wc_minutes.R", local = TRUE)
 })
 
 # 15. Summary ----

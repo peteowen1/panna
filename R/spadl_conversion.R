@@ -23,10 +23,10 @@ OPTA_ACTION_MAP <- list(
   # Interceptions (type_id = 8)
 
   interception = 8L,
-  # Shots (type_id = 13-16)
-  shot_saved = 13L,
+  # Shots (type_id = 13-16) — per Opta: 13=Miss, 14=Post, 15=Attempt Saved
+  shot_miss = 13L,
   shot_post = 14L,
-  shot_miss = 15L,
+  shot_saved = 15L,
   goal = 16L,
   # Aerial duels (type_id = 44)
   aerial = 44L,
@@ -242,7 +242,7 @@ get_or_build_spadl <- function(events, league, season,
 #'     \item end_x, end_y: Ending coordinates (0-100)
 #'     \item action_type: Standardized action type
 #'     \item action_type_id: Numeric action type code
-#'     \item opta_type_id: Original Opta type_id (e.g., 13=saved, 15=missed, 16=goal)
+#'     \item opta_type_id: Original Opta type_id (e.g., 13=miss, 15=saved, 16=goal)
 #'     \item result: "success" or "fail"
 #'     \item bodypart: "foot", "head", or "other"
 #'     \item receiver_player_id: Player who receives/intercepts (from next action)

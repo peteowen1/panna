@@ -208,7 +208,7 @@ jobs:
           # 01/03/04 were skipped), so they won't be in CACHE_DIR and must not
           # be uploaded or counted — the WP block below is the only upload.
           if [ "$WP_ONLY" != "true" ]; then
-            for f in xg_model.rds xpass_model.rds epv_model.rds; do
+            for f in xg_model.rds xgot_model.rds xpass_model.rds epv_model.rds; do
               if [ -f "$CACHE_DIR/$f" ]; then
                 if gh release upload models "$CACHE_DIR/$f" --repo peteowen1/pannadata --clobber; then
                   echo "  Uploaded $f"
