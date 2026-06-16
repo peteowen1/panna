@@ -87,7 +87,13 @@ suppressPackageStartupMessages({ library(data.table); library(arrow) })
           prev <- as.data.table(read_parquet(prev_local))
           message(sprintf("  Prior snapshot: %s (%d players)", prev_name, nrow(prev)))
         } else {
-          message("  Could not download prior snapshot ", prev_name, " — diff skipped")
+          # Distinct from "no prior snapshot exists" (informational, below): a
+          # prior snapshot IS listed on the release but the fetch failed, so we
+          # silently lose tonight's drift diff — the whole point of this step.
+          # Surface it as a real warning, not a soft message.
+          warning("Could not download prior snapshot ", prev_name,
+                  " (listed on the release but fetch failed) — drift diff skipped this run",
+                  call. = FALSE, immediate. = TRUE)
         }
       } else {
         message("  No prior dated snapshot before ", today, " — baseline only, no diff")
@@ -103,6 +109,11 @@ suppressPackageStartupMessages({ library(data.table); library(arrow) })
     diff_name  <- sprintf("wc2026_minutes_diff_%s.csv", today)
     diff_local <- file.path(cache_dir, diff_name)
 
+    # is_starter_pred is intersect-guarded where the snapshot is built, so a
+    # prior/current snapshot may legitimately lack it — default to NA so the
+    # XI-change diff degrades gracefully instead of erroring on a missing column.
+    if (!"is_starter_pred" %in% names(prev)) prev[, is_starter_pred := NA]
+    if (!"is_starter_pred" %in% names(curr)) curr[, is_starter_pred := NA]
     pc <- prev[, c(key_cols, em_col, "is_starter_pred"), with = FALSE]
     setnames(pc, c(em_col, "is_starter_pred"), c("em_prev", "starter_prev"))
     cc <- curr[, c(key_cols, "player_name", "position", em_col, "is_starter_pred"),
@@ -143,9 +154,15 @@ suppressPackageStartupMessages({ library(data.table); library(arrow) })
   if (gh_ok && !no_upload) {
     rel <- gh_run(c("release", "view", tag, "--repo", repo))
     if (gh_failed(rel)) {
-      gh_run(c("release", "create", tag, "--repo", repo,
+      crt <- gh_run(c("release", "create", tag, "--repo", repo,
                "--title", shQuote("WC2026 Minutes History"),
                "--notes", shQuote("Dated snapshots of wc2026 expected minutes for drift tracking.")))
+      # Check create directly: if it fails (perms/race/network) every upload
+      # below fails too, so surface the root cause once rather than N confusing
+      # per-file upload warnings.
+      if (gh_failed(crt))
+        warning("Failed to create the ", tag, " release: ", paste(crt, collapse = "\n"),
+                call. = FALSE, immediate. = TRUE)
     }
     for (f in c(snap_local, diff_files)) {
       res <- gh_run(c("release", "upload", tag, shQuote(f), "--repo", repo, "--clobber"))
