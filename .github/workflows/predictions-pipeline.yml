@@ -214,7 +214,11 @@ jobs:
               # Archive a dated minutes snapshot + diff to the
               # wc2026-minutes-history release so group-stage drift is tracked
               # (blog-latest clobbers, so it retains no history of its own).
-              step_12b_snapshot_wc_minutes   = TRUE
+              step_12b_snapshot_wc_minutes   = TRUE,
+              # Same pattern for team strength: dated ELO + champion-odds
+              # snapshots to wc2026-strength-history so tournament rating drift
+              # is tracked going forward (no replay needed next time).
+              step_12c_snapshot_wc_strength  = TRUE
             )
 
             source('data-raw/match-predictions-opta/run_predictions_opta.R', chdir = FALSE)
