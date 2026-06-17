@@ -102,10 +102,22 @@ setorder(grp, group, -win_group)
 write_parquet(grp, file.path(cache_dir, "wc2026_groups.parquet"))
 message(sprintf("  wc2026_groups.parquet: %d team-rows", nrow(grp)))
 
-# 5. Team strength across rating categories ----
-# Squad-aggregate metrics are pulled straight from the WC2026 rows of the
-# match dataset (each team's home_* values equal its away_* values — they are
-# team properties). BT strength + champion probability come from the sim.
+# 5. Squad player ratings + team strength ----
+# Team strength is the MINUTES-WEIGHTED SUM of the player ratings shown in
+# wc2026_squads.parquet: team_metric = Σ_squad (expected_minutes_norm / 90) *
+# player_metric. So a team's rating literally equals the weighted sum of its
+# displayed players and reconciles by construction.
+#
+# We deliberately do NOT reuse the match-dataset home_sum_* features here. Those
+# carry the PREDICTION-MODEL versions of the ratings — date-specific live SPM for
+# panna, and WC-population-centered live PSR (step 02's date-specific path centers
+# over only the upcoming WC players, not the league). Those are correct for the
+# XGBoost match model (which uses home-away diffs, so the centering constant
+# cancels) but are a DIFFERENT estimator than the season xRAPM / league-centered
+# seasonal PSR the blog displays per player — which made the old team PSR collapse
+# to ~0 for all but the deepest squads. elo stays a match-dataset team property
+# (not squad-derived). BT strength + champ prob come from the sim. See METRICS.md
+# §14 and the step-02 WC-centering note.
 
 md <- as.data.frame(readRDS(file.path(cache_dir, "04_match_dataset.rds")))
 wc <- md[md$league == WC2026_LEAGUE & md$season == wc_season &
@@ -113,16 +125,8 @@ wc <- md[md$league == WC2026_LEAGUE & md$season == wc_season &
            !is.na(md$away_team) & md$away_team != "", ]
 teams <- sort(unique(c(wc$home_team, wc$away_team)))
 
-# metric -> (home column, away column) in the match dataset
-metric_cols <- c(panna = "sum_panna", offense = "sum_offense",
-                 defense = "sum_defense", epr = "sum_epr",
-                 psr = "sum_psr", elo = "elo")
-# Return NA (not numeric(0)) on missing data so vapply(numeric(1)) doesn't
-# abort the whole export. The error then surfaces as visible NAs in the
-# published parquet and the warning below, rather than killing step 12.
-# Causes can include: a column genuinely missing from match_dataset (step
-# 02b/03 schema drift), a team appearing in `teams` without a matching row
-# (despite the filter — defensive belt-and-braces), or NA in a single cell.
+# elo is a team property in the match dataset: pull home_elo (fall back away_elo).
+# Returns NA (not numeric(0)) on missing data so the guard below can surface it.
 team_metric <- function(tm, base) {
   pick <- function(rows, col) {
     if (!col %in% names(rows) || nrow(rows) == 0L) return(NA_real_)
@@ -137,100 +141,20 @@ team_metric <- function(tm, base) {
   ar <- wc[!is.na(wc$away_team) & wc$away_team == tm, ]
   pick(ar, paste0("away_", base))
 }
-strength <- data.table(team = teams, group = unname(team_group[teams]))
-for (m in names(metric_cols)) {
-  strength[[m]] <- round(vapply(teams, team_metric, numeric(1),
-                                base = metric_cols[[m]]), 4)
-}
 
-# HARD STOP if any critical metric is NA for any WC team. The previous
-# warning-only pattern shipped wc2026_team_strength.parquet with epr = NA
-# for all 48 teams (5pm 2026-05-29: root cause was step 02 silently
-# skipping the EPR merge on GHA due to a relative-path bug — fix landed,
-# but adding the stop here as a second layer of defense so the next
-# silent-skip elsewhere can't ship to the blog).
-#
-# Per [[feedback-no-silent-imputation]]: missing values in a published
-# rating must HALT, not be silently published. If you genuinely want to
-# ship partial data (e.g., a metric truly doesn't apply to intl tournaments),
-# remove that metric from metric_cols rather than papering over the NA.
-na_cells <- which(is.na(as.matrix(strength[, names(metric_cols), with = FALSE])),
-                  arr.ind = TRUE)
-if (nrow(na_cells) > 0L) {
-  na_summary <- data.table(
-    team   = strength$team[na_cells[, "row"]],
-    metric = names(metric_cols)[na_cells[, "col"]]
-  )[order(metric, team)]
-  per_metric <- na_summary[, .N, by = metric][order(-N)]
-  stop(sprintf(
-    "wc2026_team_strength has %d NA cells across %d team(s) and %d metric(s) — refusing to publish a partial rating table.\n\nPer-metric NA counts:\n%s\n\nFull list:\n  %s\n\nFix the upstream missing-data root cause (likely step 02 EPR/PSR merge or step 03/04 column drift) before re-running step 12. To exclude a metric that's expected to be NA for intl, remove it from metric_cols in this script.",
-    nrow(na_cells), uniqueN(na_summary$team), nrow(per_metric),
-    paste(sprintf("  %s: %d / 48", per_metric$metric, per_metric$N),
-          collapse = "\n"),
-    paste(sprintf("%s/%s", na_summary$team, na_summary$metric),
-          collapse = ", ")
-  ), call. = FALSE)
-}
-
-# Published convention: defence as positive = good (internal model has
-# negative = good, since defense is "xG added to the opponent").
-strength[, defense := -defense]
-
-bt <- as.data.table(read_parquet(file.path(cache_dir, "wc2026_bt_ratings.parquet")))
-strength <- merge(strength, bt[, .(team, bt = rating)], by = "team", all.x = TRUE)
-strength <- merge(strength, sim[, .(team, p_champ)], by = "team", all.x = TRUE)
-
-# Per-category rank (1 = strongest). Defence already flipped so higher = better.
-for (m in c("panna", "offense", "defense", "epr", "psr", "elo", "bt", "p_champ")) {
-  strength[[paste0("rank_", m)]] <- frank(-strength[[m]], ties.method = "min")
-}
-
-# Tiento: composite team rating — computed HERE (pannaverse) instead of on ITG
-# (was inthegame-blog/football/wc-maps.js::computeTeamRating). A z-blend of the
-# headline metrics. The weights in TIENTO_WEIGHTS below are DATA-DRIVEN, not
-# hand-set: a ridge (alpha=0 cv.glmnet) of historical goal margin on the
-# standardized metric diffs, negative coefs clamped to 0 and renormalized to
-# sum 1 (derivation kept in data-raw/debug/keep/_tiento_weights.R). panna + Elo
-# carry most of the signal, EPR less, PSR drops out (its ridge coef came out
-# negative — redundant given the others). Each metric is z-scored across the
-# 48 teams (NA -> 0), then weighted-summed. ITG reads this `tiento` column
-# directly instead of recomputing the blend in the browser.
-TIENTO_WEIGHTS <- c(panna = 0.47, epr = 0.17, elo = 0.36, psr = 0.00)
-.z_score <- function(v) {
-  m <- mean(v, na.rm = TRUE); s <- stats::sd(v, na.rm = TRUE)
-  if (is.na(s) || s == 0) rep(0, length(v)) else ifelse(is.na(v), 0, (v - m) / s)
-}
-strength[, tiento := rowSums(sapply(names(TIENTO_WEIGHTS),
-                  function(col) TIENTO_WEIGHTS[[col]] * .z_score(strength[[col]])))]
-strength[, rank_tiento := frank(-tiento, ties.method = "min")]
-
-setorder(strength, -p_champ)
-write_parquet(strength, file.path(cache_dir, "wc2026_team_strength.parquet"))
-message(sprintf("  wc2026_team_strength.parquet: %d teams x %d categories",
-                nrow(strength), length(metric_cols) + 2L))
-
-# 5b. Squad rows with player ratings ----
-# One row per squad player: announced/derived squad membership (step 02's
-# announced_squads cache) joined to the latest-season player ratings. Feeds
-# the blog's world-cup-team.qmd squad table. Ratings stay NA when a player
-# has no rated club minutes (smaller leagues) — the blog renders a dash;
-# per [[feedback-no-silent-imputation]] we do NOT zero-fill here (the 0s in
-# step 02 exist for the team aggregator, not for published per-player rows).
-
+# --- Squad player ratings: latest-season xRAPM (-> panna) + league-centered
+# seasonal PSR + latest weekly EPR. SAME source the per-player squad table
+# publishes below (section 5c reuses squad_out), so team == Σ(players shown). ---
 squads_path <- file.path(cache_dir, "wc2026_announced_squads.parquet")
 if (!file.exists(squads_path)) {
   stop("wc2026_announced_squads.parquet not found in ", cache_dir,
        " — run announced_squads.R (step 02) first.")
 }
 squads <- as.data.table(read_parquet(squads_path))
-# The announced-squads cache can carry the same player twice (announced +
-# derived source rows). One row per (team, player): keep the highest
-# expected-minutes row.
+# Dedup: one row per (team, player), keep the highest expected-minutes source row.
 setorder(squads, team_name, player_id, -expected_minutes_norm)
 squads <- unique(squads, by = c("team_name", "player_id"))
 
-# Latest-season per-player ratings: same source preference as step 02
-# (skill-based first, raw-stat fallback).
 sq_skill_path <- file.path("data-raw", "cache-skills", "06_seasonal_ratings.rds")
 sq_raw_path   <- file.path("data-raw", "cache-opta", "07_seasonal_ratings.rds")
 sq_seasonal <- if (file.exists(sq_skill_path)) readRDS(sq_skill_path) else readRDS(sq_raw_path)
@@ -261,7 +185,100 @@ squad_out[, group := unname(team_group[team])]
 squad_out <- merge(squad_out, sq_xrapm, by = "player_id", all.x = TRUE)
 if (!is.null(sq_psr)) squad_out <- merge(squad_out, sq_psr, by = "player_id", all.x = TRUE)
 if (!is.null(sq_epr)) squad_out <- merge(squad_out, sq_epr, by = "player_id", all.x = TRUE)
-for (col in c("psr", "epr")) if (!col %in% names(squad_out)) squad_out[[col]] <- NA_real_
+for (col in c("panna", "offense", "defense", "epr", "psr", "total_minutes"))
+  if (!col %in% names(squad_out)) squad_out[[col]] <- NA_real_
+
+# --- Team strength = Σ_squad (expected_minutes_norm / 90) * player_metric.
+# NA (unrated player) contributes 0 to the sum but stays in the squad headcount. ---
+.wsum <- function(x, w) sum(w * data.table::fifelse(is.na(x), 0, x))
+agg <- squad_out[, {
+  w <- expected_minutes_norm / 90
+  list(panna   = .wsum(panna,   w),
+       offense = .wsum(offense, w),
+       defense = .wsum(defense, w),
+       epr     = .wsum(epr,     w),
+       psr     = .wsum(psr,     w),
+       squad_n = .N,
+       n_rated = sum(!is.na(panna)))
+}, by = team]
+
+strength <- data.table(team = teams, group = unname(team_group[teams]))
+strength <- merge(strength, agg[, .(team, panna, offense, defense, epr, psr)],
+                  by = "team", all.x = TRUE)
+strength[, elo := vapply(teams, team_metric, numeric(1), base = "elo")]
+for (m in c("panna", "offense", "defense", "epr", "psr", "elo"))
+  strength[[m]] <- round(strength[[m]], 4)
+
+# HARD STOP guards. Per [[feedback-no-silent-imputation]] a published rating must
+# HALT on a structural failure, not ship partial/zeroed data. Two failure modes:
+#   1. elo missing for a team — match-dataset property absent (name drift / no row).
+#   2. a team has NO squad aggregate — its name didn't match the announced-squad
+#      team_name, or it has no announced squad (would leave panna NA after the join).
+# Plus a wholesale-zero tripwire: now that the aggregate sums NA->0, a squad
+# rating-join failure surfaces as a metric that is 0 for (nearly) every team
+# rather than the old all-NA symptom — catch that too.
+elo_na <- strength$team[is.na(strength$elo)]
+if (length(elo_na) > 0L) {
+  stop(sprintf("wc2026_team_strength: elo missing for %d team(s): %s — match-dataset name drift or missing WC row.",
+               length(elo_na), paste(elo_na, collapse = ", ")), call. = FALSE)
+}
+squad_missing <- strength$team[is.na(strength$panna)]
+if (length(squad_missing) > 0L) {
+  stop(sprintf("wc2026_team_strength: no squad aggregate for %d team(s): %s — announced-squad team_name mismatch vs the match dataset, or a missing announced squad. Fix the name mapping (or announced_squads.R) before publishing.",
+               length(squad_missing), paste(squad_missing, collapse = ", ")), call. = FALSE)
+}
+for (mt in c("panna", "epr", "psr")) {
+  nz <- mean(strength[[mt]] != 0, na.rm = TRUE)
+  if (nz < 0.5) {
+    stop(sprintf("wc2026_team_strength: %s is zero for %.0f%% of teams — likely a squad rating-join failure (check seasonal_%s in cache-skills/06 or cache-opta/07, and the player_id join). Refusing to publish.",
+                 mt, 100 * (1 - nz), mt), call. = FALSE)
+  }
+}
+
+# Published convention: defence as positive = good (internal model has
+# negative = good, since defense is "xG added to the opponent").
+strength[, defense := -defense]
+
+bt <- as.data.table(read_parquet(file.path(cache_dir, "wc2026_bt_ratings.parquet")))
+strength <- merge(strength, bt[, .(team, bt = rating)], by = "team", all.x = TRUE)
+strength <- merge(strength, sim[, .(team, p_champ)], by = "team", all.x = TRUE)
+
+# Per-category rank (1 = strongest). Defence already flipped so higher = better.
+for (m in c("panna", "offense", "defense", "epr", "psr", "elo", "bt", "p_champ")) {
+  strength[[paste0("rank_", m)]] <- frank(-strength[[m]], ties.method = "min")
+}
+
+# Tiento: composite team rating — computed HERE (pannaverse) instead of on ITG
+# (was inthegame-blog/football/wc-maps.js::computeTeamRating). A z-blend of the
+# headline metrics. Weights are HAND-SET — a deliberate, fairly even spread that
+# keeps a small PSR contribution. For reference, a ridge (alpha=0 cv.glmnet) of
+# historical goal margin on the standardized metric diffs suggested a more
+# panna/Elo-heavy split (panna 0.47 / elo 0.36 / epr 0.17 / psr 0.00, PSR
+# dropping out on a negative coef; derivation in data-raw/debug/keep/_tiento_weights.R),
+# but these chosen weights trade some of that for balance. Each metric is
+# z-scored across the 48 teams (NA -> 0), then weighted-summed. ITG reads this
+# `tiento` column directly instead of recomputing the blend in the browser.
+TIENTO_WEIGHTS <- c(panna = 0.40, epr = 0.20, elo = 0.30, psr = 0.10)
+.z_score <- function(v) {
+  m <- mean(v, na.rm = TRUE); s <- stats::sd(v, na.rm = TRUE)
+  if (is.na(s) || s == 0) rep(0, length(v)) else ifelse(is.na(v), 0, (v - m) / s)
+}
+strength[, tiento := rowSums(sapply(names(TIENTO_WEIGHTS),
+                  function(col) TIENTO_WEIGHTS[[col]] * .z_score(strength[[col]])))]
+strength[, rank_tiento := frank(-tiento, ties.method = "min")]
+
+setorder(strength, -p_champ)
+write_parquet(strength, file.path(cache_dir, "wc2026_team_strength.parquet"))
+message(sprintf("  wc2026_team_strength.parquet: %d teams (panna/offense/defense/epr/psr = squad minutes-weighted; elo/bt/p_champ + tiento)",
+                nrow(strength)))
+
+# 5c. Squad rows with player ratings ----
+# squad_out (one row per squad player, joined to latest-season xRAPM + league-
+# centered seasonal PSR + latest weekly EPR) was already built in section 5 — the
+# team strength above is its minutes-weighted aggregate. Here we add the
+# authoritative club, set column order, and publish. Ratings stay NA when a
+# player has no rated club minutes (smaller leagues) — the blog renders a dash;
+# per [[feedback-no-silent-imputation]] we do NOT zero-fill the per-player rows.
 
 # Authoritative club per player: latest CLUB (non-international) appearance
 # in opta_lineups across every scraped competition — covers Saudi/MLS/

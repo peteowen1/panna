@@ -577,6 +577,23 @@ if (nrow(upcoming) > 0) {
         # warnings, hollowing PSR for ALL fixtures for who-knows-how-long.
         # Skip silently only when PSR data is genuinely absent; let any
         # other failure mode propagate so it's caught in the next run.
+        #
+        # TODO(psr-centering): calculate_psr() centers by subtracting
+        # mean(psr_raw) over WHATEVER population it's handed (psr.R:604, named
+        # `league_mean` but really mean(input)). `live_skills` here is filtered
+        # to ONLY the upcoming-fixture players (match_stats subset at line ~486),
+        # so this PSR is centered over that subset, not the league — for WC2026
+        # that means "above the average WORLD CUP player," not "above league."
+        # MODEL-SAFE: the match model consumes psr_diff = home - away, so the
+        # per-batch centering constant cancels and predictions are unaffected.
+        # But it makes any DIRECT use of fixture-side PSR (or a per-team sum)
+        # mis-centered vs the league-centered seasonal PSR the blog publishes.
+        # The WC2026 team-strength export (12_export_wc2026_blog.R) was switched
+        # 2026-06-17 to aggregate the league-centered SEASONAL PSR from the squad
+        # table instead of these fixture sums, sidestepping it. Proper fix:
+        # center over the full league population (pass an unfiltered reference,
+        # or subtract a precomputed per-position league mean) rather than the
+        # filtered upcoming set. No retrain needed (diffs cancel).
         live_psr <- compute_player_psr(live_skills, center = TRUE)
         if (is.null(live_psr) || nrow(live_psr) == 0) {
           message("  PSR skipped: compute_player_psr returned no rows")
