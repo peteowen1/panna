@@ -589,37 +589,69 @@ init_team_elos <- function(teams, initial_elo = 1500) {
 #' @param home_goals Goals scored by home team
 #' @param away_goals Goals scored by away team
 #' @param k K-factor controlling update magnitude (default 20)
-#' @param home_advantage Home advantage in Elo points (default 65)
+#' @param home_advantage Home advantage in Elo points (default 88)
+#' @param update_mode "outcome" (default) = W/D/L surprise x goal-difference
+#'   multiplier, the v6 production form. "margin_sqrt" = update toward a blended
+#'   goals/xG margin, sqrt-dampened (the xG-Elo form).
+#' @param home_xg,away_xg Expected goals per team (margin_sqrt mode only). When
+#'   either is NA the target falls back to actual goal difference (~35% of
+#'   matches have no shot data, so xG is unavailable for them).
+#' @param margin_slope Expected goal-margin per 400 Elo of gap, used as the
+#'   reference the result is judged against (margin_sqrt mode). Default 1.66.
+#' @param blend_w Weight on actual goal diff vs xG diff in the target margin:
+#'   perf = blend_w*GD + (1-blend_w)*xGD (margin_sqrt mode). Default 0.5.
 #'
 #' @return Named list with new_home_elo, new_away_elo
 #' @export
 update_elo <- function(home_elo, away_elo, home_goals, away_goals,
-                        k = 20, home_advantage = 88) {
+                        k = 20, home_advantage = 88,
+                        update_mode = c("outcome", "margin_sqrt"),
+                        home_xg = NA_real_, away_xg = NA_real_,
+                        margin_slope = 1.66, blend_w = 0.5) {
   stopifnot(length(home_goals) == 1, length(away_goals) == 1)
+  update_mode <- match.arg(update_mode)
 
-  # Expected scores
+  # Elo gap (already includes any home-advantage / venue adjustment passed in).
   diff <- (home_elo + home_advantage - away_elo) / 400
-  exp_home <- 1 / (1 + 10^(-diff))
-  exp_away <- 1 - exp_home
 
-
-  # Actual scores (1 = win, 0.5 = draw, 0 = loss)
-  if (home_goals > away_goals) {
-    actual_home <- 1
-  } else if (home_goals == away_goals) {
-    actual_home <- 0.5
-  } else {
-    actual_home <- 0
+  if (update_mode == "outcome") {
+    exp_home <- 1 / (1 + 10^(-diff))
+    exp_away <- 1 - exp_home
+    # Actual scores (1 = win, 0.5 = draw, 0 = loss)
+    if (home_goals > away_goals) {
+      actual_home <- 1
+    } else if (home_goals == away_goals) {
+      actual_home <- 0.5
+    } else {
+      actual_home <- 0
+    }
+    actual_away <- 1 - actual_home
+    # Goal difference multiplier (rewards larger margins)
+    goal_diff <- abs(home_goals - away_goals)
+    gd_mult <- log(goal_diff + 1) + 1
+    return(list(
+      new_home_elo = home_elo + k * gd_mult * (actual_home - exp_home),
+      new_away_elo = away_elo + k * gd_mult * (actual_away - exp_away)
+    ))
   }
-  actual_away <- 1 - actual_home
 
-  # Goal difference multiplier (rewards larger margins)
-  goal_diff <- abs(home_goals - away_goals)
-  gd_mult <- log(goal_diff + 1) + 1
-
+  # margin_sqrt: update toward a blended "true score" margin. perf_margin blends
+  # actual goal diff with xG diff (xG carries the bulk of the signal — less noisy
+  # per match), falling back to goal diff alone where xG is missing. The surprise
+  # (perf_margin - expected_margin) is sqrt-dampened so a blowout or a mis-scraped
+  # scoreline can't detonate the rating; expected_margin scales with the Elo gap.
+  gd <- home_goals - away_goals
+  perf_margin <- if (!is.na(home_xg) && !is.na(away_xg)) {
+    blend_w * gd + (1 - blend_w) * (home_xg - away_xg)
+  } else {
+    gd
+  }
+  dev <- perf_margin - margin_slope * diff
+  u <- sign(dev) * sqrt(abs(dev))
+  # Zero-sum: u is odd in the home POV, so away moves by exactly -u.
   list(
-    new_home_elo = home_elo + k * gd_mult * (actual_home - exp_home),
-    new_away_elo = away_elo + k * gd_mult * (actual_away - exp_away)
+    new_home_elo = home_elo + k * u,
+    new_away_elo = away_elo - k * u
   )
 }
 
@@ -666,6 +698,13 @@ update_elo <- function(home_elo, away_elo, home_goals, away_goals,
 #'   "now" for the decay calculation. Defaults to `max(match_date)` in
 #'   `results`.
 #'
+#' @param update_mode Passed to [update_elo()]: "outcome" (default) or
+#'   "margin_sqrt" (the xG-Elo form). When "margin_sqrt" and `results` carries
+#'   `home_xg`/`away_xg` columns, the update targets a blended goals/xG margin
+#'   (goal-diff fallback per row where xG is NA).
+#' @param blend_w,margin_slope Passed to [update_elo()] in margin_sqrt mode
+#'   (weight on goals vs xG, and expected-margin-per-400-Elo).
+#'
 #' @return A list with two elements:
 #'   - `per_match`: data frame with match_id, home_elo, away_elo, elo_diff
 #'     (pre-match Elo for each match in the input order)
@@ -679,7 +718,13 @@ compute_match_elos <- function(results, k = 20, home_advantage = 88,
                                 conf_priors = NULL,
                                 use_venue_factor = FALSE,
                                 time_decay_halflife = NULL,
-                                decay_reference_date = NULL) {
+                                decay_reference_date = NULL,
+                                update_mode = c("outcome", "margin_sqrt"),
+                                blend_w = 0.5, margin_slope = 1.66) {
+  update_mode <- match.arg(update_mode)
+  # margin_sqrt can use per-match xG when results carries it; else falls back to
+  # goal diff inside update_elo(). Detect the columns once.
+  has_xg_cols <- all(c("home_xg", "away_xg") %in% names(results))
   # time_decay_halflife (days, NULL = disabled): when set, scale K by
   # 0.5 ^ ((reference_date - match_date) / halflife) so older training
   # matches contribute exponentially less to the Elo trajectory than
@@ -786,7 +831,11 @@ compute_match_elos <- function(results, k = 20, home_advantage = 88,
       ha_eff <- home_advantage * venue_factor[i]
       updated <- update_elo(elos[ht], elos[at],
                             results$home_goals[i], results$away_goals[i],
-                            k = k_eff, home_advantage = ha_eff)
+                            k = k_eff, home_advantage = ha_eff,
+                            update_mode = update_mode,
+                            home_xg = if (has_xg_cols) results$home_xg[i] else NA_real_,
+                            away_xg = if (has_xg_cols) results$away_xg[i] else NA_real_,
+                            margin_slope = margin_slope, blend_w = blend_w)
       elos[ht] <- updated$new_home_elo
       elos[at] <- updated$new_away_elo
     }

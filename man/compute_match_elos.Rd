@@ -14,7 +14,10 @@ compute_match_elos(
   conf_priors = NULL,
   use_venue_factor = FALSE,
   time_decay_halflife = NULL,
-  decay_reference_date = NULL
+  decay_reference_date = NULL,
+  update_mode = c("outcome", "margin_sqrt"),
+  blend_w = 0.5,
+  margin_slope = 1.66
 )
 }
 \arguments{
@@ -57,6 +60,14 @@ not default but available for callers wanting FIFA/SPI-style recency.}
 \item{decay_reference_date}{Optional Date or date-coercible string used as
 "now" for the decay calculation. Defaults to \code{max(match_date)} in
 \code{results}.}
+
+\item{update_mode}{Passed to \code{\link[=update_elo]{update_elo()}}: "outcome" (default) or
+"margin_sqrt" (the xG-Elo form). When "margin_sqrt" and \code{results} carries
+\code{home_xg}/\code{away_xg} columns, the update targets a blended goals/xG margin
+(goal-diff fallback per row where xG is NA).}
+
+\item{blend_w, margin_slope}{Passed to \code{\link[=update_elo]{update_elo()}} in margin_sqrt mode
+(weight on goals vs xG, and expected-margin-per-400-Elo).}
 }
 \value{
 A list with two elements:

@@ -184,6 +184,26 @@ strength <- merge(strength, sim[, .(team, p_champ)], by = "team", all.x = TRUE)
 for (m in c("panna", "offense", "defense", "epr", "psr", "elo", "bt", "p_champ")) {
   strength[[paste0("rank_", m)]] <- frank(-strength[[m]], ties.method = "min")
 }
+
+# Tiento: composite team rating — computed HERE (pannaverse) instead of on ITG
+# (was inthegame-blog/football/wc-maps.js::computeTeamRating). A z-blend of the
+# headline metrics. The weights in TIENTO_WEIGHTS below are DATA-DRIVEN, not
+# hand-set: a ridge (alpha=0 cv.glmnet) of historical goal margin on the
+# standardized metric diffs, negative coefs clamped to 0 and renormalized to
+# sum 1 (derivation kept in data-raw/debug/keep/_tiento_weights.R). panna + Elo
+# carry most of the signal, EPR less, PSR drops out (its ridge coef came out
+# negative — redundant given the others). Each metric is z-scored across the
+# 48 teams (NA -> 0), then weighted-summed. ITG reads this `tiento` column
+# directly instead of recomputing the blend in the browser.
+TIENTO_WEIGHTS <- c(panna = 0.47, epr = 0.17, elo = 0.36, psr = 0.00)
+.z_score <- function(v) {
+  m <- mean(v, na.rm = TRUE); s <- stats::sd(v, na.rm = TRUE)
+  if (is.na(s) || s == 0) rep(0, length(v)) else ifelse(is.na(v), 0, (v - m) / s)
+}
+strength[, tiento := rowSums(sapply(names(TIENTO_WEIGHTS),
+                  function(col) TIENTO_WEIGHTS[[col]] * .z_score(strength[[col]])))]
+strength[, rank_tiento := frank(-tiento, ties.method = "min")]
+
 setorder(strength, -p_champ)
 write_parquet(strength, file.path(cache_dir, "wc2026_team_strength.parquet"))
 message(sprintf("  wc2026_team_strength.parquet: %d teams x %d categories",

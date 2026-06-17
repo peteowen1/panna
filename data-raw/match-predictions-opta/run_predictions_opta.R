@@ -64,7 +64,8 @@ if (!exists("run_steps")) {
     step_10d_export_shootout_wpa     = FALSE,  # Opt-in: export per-player penalty-shootout WPA
     step_11_simulate_wc2026          = FALSE,  # Opt-in: simulate the 2026 World Cup
     step_12_export_wc2026_blog       = FALSE,  # Opt-in: export WC2026 blog data
-    step_12b_snapshot_wc_minutes     = FALSE   # Opt-in: archive dated minutes snapshot + diff
+    step_12b_snapshot_wc_minutes     = FALSE,  # Opt-in: archive dated minutes snapshot + diff
+    step_12c_snapshot_wc_strength    = FALSE   # Opt-in: archive dated team-strength (ELO+p_champ) snapshot + diff
   )
 }
 
@@ -273,6 +274,16 @@ step_results[[12]] <- run_pred_step("export_wc2026_blog", 12, function() {
 
 step_results[["12b"]] <- run_pred_step("snapshot_wc_minutes", "12b", function() {
   source("data-raw/match-predictions-opta/12b_snapshot_wc_minutes.R", local = TRUE)
+})
+
+# 14g. Step 12c: Snapshot WC 2026 Team Strength ----
+# Archive a dated copy of wc2026_team_strength.parquet (ELO + p_champ + ratings)
+# to the wc2026-strength-history release and diff it against the previous
+# snapshot (tournament ELO/champion-odds drift tracking). Runs after step 12,
+# which writes the team_strength file this reads.
+
+step_results[["12c"]] <- run_pred_step("snapshot_wc_strength", "12c", function() {
+  source("data-raw/match-predictions-opta/12c_snapshot_wc_strength.R", local = TRUE)
 })
 
 # 15. Summary ----
