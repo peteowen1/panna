@@ -51,6 +51,37 @@ test_that("update_elo remains zero-sum across many scenarios", {
   }
 })
 
+test_that("update_elo margin_sqrt mode is zero-sum", {
+  result <- update_elo(1500, 1500, home_goals = 2, away_goals = 0,
+                       update_mode = "margin_sqrt", home_xg = 1.8, away_xg = 0.4)
+  expect_equal(result$new_home_elo + result$new_away_elo, 3000, tolerance = 1e-10)
+})
+
+test_that("update_elo margin_sqrt: a heavy favourite who draws LOSES Elo", {
+  # Home far stronger -> expected to win by a margin; a 0-0 is a big
+  # underperformance, so home Elo drops (the Spain-0-0 behaviour the margin
+  # form exists to capture; a pure-outcome draw would barely move).
+  result <- update_elo(2000, 1400, home_goals = 0, away_goals = 0,
+                       update_mode = "margin_sqrt", margin_slope = 1.66)
+  expect_true(result$new_home_elo < 2000)
+})
+
+test_that("update_elo margin_sqrt: NA xG falls back to goal diff; xG flatters less", {
+  fallback <- update_elo(1500, 1500, 2, 0, update_mode = "margin_sqrt")  # xG NA -> GD
+  # A 2-0 with weak xG (a lucky scoreline) should move home LESS than the
+  # goal-diff-only update, because the blended margin is smaller.
+  low_xg <- update_elo(1500, 1500, 2, 0, update_mode = "margin_sqrt",
+                       home_xg = 0.8, away_xg = 0.6)
+  expect_true(low_xg$new_home_elo < fallback$new_home_elo)
+  expect_true(fallback$new_home_elo > 1500)  # still a win, still rises
+})
+
+test_that("update_elo defaults to outcome mode (back-compat)", {
+  default_mode <- update_elo(1600, 1400, 2, 1)
+  explicit     <- update_elo(1600, 1400, 2, 1, update_mode = "outcome")
+  expect_equal(default_mode$new_home_elo, explicit$new_home_elo)
+})
+
 
 test_that("compute_match_elos returns correct structure", {
   results <- data.frame(
