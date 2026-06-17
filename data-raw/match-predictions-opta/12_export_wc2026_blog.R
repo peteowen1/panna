@@ -187,11 +187,12 @@ for (m in c("panna", "offense", "defense", "epr", "psr", "elo", "bt", "p_champ")
 
 # Tiento: composite team rating — computed HERE (pannaverse) instead of on ITG
 # (was inthegame-blog/football/wc-maps.js::computeTeamRating). A z-blend of the
-# headline metrics; weights are DATA-DRIVEN, not hand-set: a ridge of goal margin
-# on the standardized metric diffs (debug/_tiento_weights.R) gives panna 0.47 /
-# elo 0.36 / epr 0.17 / psr 0.00 — panna + Elo carry the signal, EPR less, and
-# PSR is redundant given the others (negative ridge coef -> dropped). The XGBoost
-# prediction model corroborates the ordering. Each metric is z-scored across the
+# headline metrics. The weights in TIENTO_WEIGHTS below are DATA-DRIVEN, not
+# hand-set: a ridge (alpha=0 cv.glmnet) of historical goal margin on the
+# standardized metric diffs, negative coefs clamped to 0 and renormalized to
+# sum 1 (derivation kept in data-raw/debug/keep/_tiento_weights.R). panna + Elo
+# carry most of the signal, EPR less, PSR drops out (its ridge coef came out
+# negative — redundant given the others). Each metric is z-scored across the
 # 48 teams (NA -> 0), then weighted-summed. ITG reads this `tiento` column
 # directly instead of recomputing the blend in the browser.
 TIENTO_WEIGHTS <- c(panna = 0.47, epr = 0.17, elo = 0.36, psr = 0.00)
