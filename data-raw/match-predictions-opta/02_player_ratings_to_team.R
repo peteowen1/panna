@@ -187,6 +187,53 @@ if (is.data.frame(seasonal_data)) {
 rm(seasonal_data); gc(verbose = FALSE)
 message(sprintf("  Ratings: %d player-seasons", nrow(ratings)))
 
+# --- As-of-date career-Panna override (leak-free; replaces season-S xRAPM) ----
+# Above, ratings$panna/offense/defense hold the SEASON-S xRAPM aggregate, which
+# (a) includes the very matches being predicted (in-season leakage) and (b) is a
+# DIFFERENT estimator from the career trait served on upcoming fixtures (live SPM
+# in the date-specific path below / career_panna.parquet). Replace them with the
+# leak-free as-of-date career trait: for each season_end_year S, use the
+# career-Panna snapshot taken just BEFORE S's first match, so no match in S is in
+# that snapshot's training data. Activates only when career_panna_asof.parquet is
+# present (built by skills step 09b); otherwise the (leaky) season xRAPM is kept
+# with a loud warning. See ASOF_CAREER_PANNA_PLAN.md / panna#74.
+asof_path <- file.path(opta_data_dir(), "career_panna_asof.parquet")
+if (file.exists(asof_path) && requireNamespace("arrow", quietly = TRUE)) {
+  asof <- data.table::as.data.table(arrow::read_parquet(asof_path))
+  asof[, ref_date := as.Date(ref_date)]
+  snap_dates <- sort(unique(asof$ref_date))
+
+  # Season start = earliest played match_date per season_end_year.
+  s0 <- data.table::as.data.table(played)[
+    !is.na(match_date), .(s0 = min(as.Date(match_date))), by = season_end_year]
+  # Latest snapshot STRICTLY before each season's first match (leak-free).
+  idx <- findInterval(s0$s0 - 1L, snap_dates)   # 0 = no snapshot before season start
+  ref_for <- rep(as.Date(NA), nrow(s0))
+  ref_for[idx > 0] <- snap_dates[idx[idx > 0]]
+  s0[, asof_ref := ref_for]
+
+  rt <- data.table::as.data.table(ratings)
+  rt[s0, asof_ref := i.asof_ref, on = "season_end_year"]
+  av <- asof[, .(player_id, asof_ref = ref_date,
+                 ap = panna, ao = panna_offense, ad = panna_defense)]
+  rt[av, on = c("player_id", "asof_ref"), `:=`(ap = i.ap, ao = i.ao, ad = i.ad)]
+  n_match <- sum(!is.na(rt$ap))
+  # Override unconditionally: unmatched players become NA (no leaky season-xRAPM
+  # fallback), letting aggregate_lineup_ratings' shrinkage imputation handle them.
+  rt[, `:=`(panna = ap, offense = ao, defense = ad)]
+  rt[, c("asof_ref", "ap", "ao", "ad") := NULL]
+  ratings <- as.data.frame(rt)
+  message(sprintf(paste0("  As-of career-Panna: overrode panna/offense/defense for ",
+                         "%d/%d player-seasons across %d snapshots (leak-free)"),
+                  n_match, nrow(ratings), length(snap_dates)))
+} else {
+  warning("career_panna_asof.parquet not found at ", asof_path,
+          " — falling back to SEASON xRAPM for the model's panna feature ",
+          "(in-season leakage + train/serve estimator mismatch). Build skills ",
+          "step 09b and add the file to the predictions-pipeline download.",
+          call. = FALSE, immediate. = TRUE)
+}
+
 # Validate required columns
 required_rating_cols <- c("season_end_year", "panna", "offense", "defense", "spm")
 missing <- setdiff(required_rating_cols, names(ratings))
@@ -561,12 +608,45 @@ if (nrow(upcoming) > 0) {
             relationship = "one-to-one"
           ) %>%
           mutate(
-            panna = offense_spm - defense_spm,
             offense = offense_spm,
             defense = defense_spm,
-            spm = panna,
+            spm = offense_spm - defense_spm,    # SPM estimate stays the `spm` feature
+            panna = offense_spm - defense_spm,  # provisional SPM fallback; overridden below
             season_end_year = latest_sey
           )
+
+        # panna/offense/defense for UPCOMING fixtures must be the career-trait RATING
+        # (decay-weighted multi-season xRAPM) — the same estimator (and scale) as the
+        # played-side TRAINING feature (season-xRAPM aggregation), NOT live SPM.
+        # Measured 2026-06-17: the SPM serve was compressed to ~half the training panna
+        # sd and mean-pinned to ~average, so the model's #1 feature (panna_diff, ~0.23
+        # gain) was muted for upcoming fixtures → over-flat WC odds. Convention verified
+        # identical (career panna = panna_offense - panna_defense = xRAPM off-def = the
+        # SPM line above), so the override is sign-safe. Fall back to the SPM value for
+        # players with no career-panna rating; `spm` keeps the SPM estimate so panna !=
+        # spm (matching the played-side feature structure). career_panna.parquet is on
+        # pannadata's ratings-data release (in the predictions-pipeline download list).
+        cp_path_fx <- file.path(opta_data_dir(), "career_panna.parquet")
+        if (file.exists(cp_path_fx) && requireNamespace("arrow", quietly = TRUE)) {
+          cp_fx <- as.data.frame(arrow::read_parquet(cp_path_fx))[
+            , c("player_id", "panna", "panna_offense", "panna_defense")]
+          names(cp_fx) <- c("player_id", ".cp_panna", ".cp_off", ".cp_def")
+          n_match <- sum(fixture_ratings$player_id %in% cp_fx$player_id)
+          fixture_ratings <- fixture_ratings %>%
+            left_join(cp_fx, by = "player_id") %>%
+            mutate(
+              panna   = dplyr::coalesce(.cp_panna, panna),
+              offense = dplyr::coalesce(.cp_off,   offense),
+              defense = dplyr::coalesce(.cp_def,   defense)
+            ) %>%
+            select(-.cp_panna, -.cp_off, -.cp_def)
+          message(sprintf("  Upcoming-fixture panna: career-trait rating used (%d/%d players matched career_panna)",
+                          n_match, nrow(fixture_ratings)))
+        } else {
+          warning("career_panna.parquet not found — upcoming-fixture panna falls back to live SPM ",
+                  "(known train/serve scale skew on the model's #1 feature). Add career_panna to the ",
+                  "predictions-pipeline download list.", call. = FALSE, immediate. = TRUE)
+        }
 
         # Add PSR/OSR/DSR from live skills.
         #

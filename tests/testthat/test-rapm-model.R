@@ -221,6 +221,77 @@ test_that("RAPM ratings sum to approximately zero", {
 })
 
 
+test_that("fit_rapm fixed_lambda skips CV and returns same-shape ratings", {
+  skip_if_not_installed("glmnet")
+
+  rapm_data <- create_test_rapm_data(n_splints = 30, n_players = 15)
+  model <- fit_rapm(rapm_data, alpha = 0, fixed_lambda = 0.05, parallel = FALSE)
+
+  # Fixed path fits glmnet directly (no cross-validation object)
+  expect_true(inherits(model, "glmnet"))
+  expect_false(inherits(model, "cv.glmnet"))
+
+  # Compatibility shim: downstream reads model$lambda.min
+  expect_equal(model$lambda.min, 0.05)
+  expect_equal(model$lambda.1se, 0.05)
+  expect_true("panna_metadata" %in% names(model))
+
+  # extract_rapm_ratings works unchanged on the fixed-lambda fit
+  ratings <- extract_rapm_ratings(model)
+  expect_true(is.data.frame(ratings))
+  expect_equal(nrow(ratings), 15)
+  expect_true(all(c("player_id", "rapm", "offense", "defense") %in% names(ratings)))
+  expect_true(all(is.finite(ratings$rapm)))
+})
+
+
+test_that("fit_rapm_with_prior fixed_lambda works and extracts ratings", {
+  skip_if_not_installed("glmnet")
+
+  set.seed(42)
+  offense_prior <- stats::setNames(rnorm(15, 0, 0.5), rapm_data_basic$player_ids)
+  defense_prior <- stats::setNames(rnorm(15, 0, 0.3), rapm_data_basic$player_ids)
+
+  model <- fit_rapm_with_prior(
+    rapm_data_basic,
+    offense_prior = offense_prior,
+    defense_prior = defense_prior,
+    alpha = 0,
+    fixed_lambda = 0.05
+  )
+
+  expect_true(inherits(model, "glmnet"))
+  expect_equal(model$lambda.min, 0.05)
+  expect_equal(model$panna_metadata$type, "xrapm")
+  expect_true(model$panna_metadata$used_prior)
+
+  ratings <- extract_xrapm_ratings(model)
+  expect_equal(nrow(ratings), 15)
+  expect_true(all(is.finite(ratings$xrapm)))
+})
+
+
+test_that("fixed_lambda larger lambda shrinks ratings toward the prior", {
+  skip_if_not_installed("glmnet")
+
+  set.seed(7)
+  offense_prior <- stats::setNames(rnorm(15, 0, 0.5), rapm_data_basic$player_ids)
+  defense_prior <- stats::setNames(rnorm(15, 0, 0.3), rapm_data_basic$player_ids)
+
+  small_lam <- fit_rapm_with_prior(rapm_data_basic, offense_prior, defense_prior,
+                                   alpha = 0, fixed_lambda = 0.01)
+  large_lam <- fit_rapm_with_prior(rapm_data_basic, offense_prior, defense_prior,
+                                   alpha = 0, fixed_lambda = 1.0)
+
+  # Deviation from prior (gamma) should be smaller under heavier penalty.
+  dev_small <- extract_xrapm_ratings(small_lam)
+  dev_large <- extract_xrapm_ratings(large_lam)
+  rss_small <- sum(dev_small$off_deviation^2 + dev_small$def_deviation^2)
+  rss_large <- sum(dev_large$off_deviation^2 + dev_large$def_deviation^2)
+  expect_lt(rss_large, rss_small)
+})
+
+
 test_that("fit_rapm handles use_weights parameter", {
   skip_if_not_installed("glmnet")
 
