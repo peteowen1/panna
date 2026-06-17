@@ -113,8 +113,8 @@ message(sprintf("  wc2026_groups.parquet: %d team-rows", nrow(grp)))
 # panna, and WC-population-centered live PSR (step 02's date-specific path centers
 # over only the upcoming WC players, not the league). Those are correct for the
 # XGBoost match model (which uses home-away diffs, so the centering constant
-# cancels) but are a DIFFERENT estimator than the season xRAPM / league-centered
-# seasonal PSR the blog displays per player — which made the old team PSR collapse
+# cancels) but are a DIFFERENT estimator than the career-trait panna / league-
+# centered seasonal PSR the blog displays per player — which made the old team PSR collapse
 # to ~0 for all but the deepest squads. elo stays a match-dataset team property
 # (not squad-derived). BT strength + champ prob come from the sim. See METRICS.md
 # §14 and the step-02 WC-centering note.
@@ -142,9 +142,10 @@ team_metric <- function(tm, base) {
   pick(ar, paste0("away_", base))
 }
 
-# --- Squad player ratings: latest-season xRAPM (-> panna) + league-centered
-# seasonal PSR + latest weekly EPR. SAME source the per-player squad table
-# publishes below (section 5c reuses squad_out), so team == Σ(players shown). ---
+# --- Squad player ratings: career-trait panna + league-centered seasonal PSR +
+# latest weekly EPR — all point-in-time player RATINGS (not season aggregates).
+# SAME source the per-player squad table publishes below (section 5c reuses
+# squad_out), so team == Σ(players shown). ---
 squads_path <- file.path(cache_dir, "wc2026_announced_squads.parquet")
 if (!file.exists(squads_path)) {
   stop("wc2026_announced_squads.parquet not found in ", cache_dir,
@@ -159,11 +160,22 @@ sq_skill_path <- file.path("data-raw", "cache-skills", "06_seasonal_ratings.rds"
 sq_raw_path   <- file.path("data-raw", "cache-opta", "07_seasonal_ratings.rds")
 sq_seasonal <- if (file.exists(sq_skill_path)) readRDS(sq_skill_path) else readRDS(sq_raw_path)
 
-sq_xrapm <- as.data.table(sq_seasonal$seasonal_xrapm)
-sq_xrapm <- sq_xrapm[order(player_id, -season_end_year), .SD[1L], by = player_id,
-                     .SDcols = intersect(c("xrapm", "offense", "defense", "total_minutes"),
-                                         names(sq_xrapm))]
-setnames(sq_xrapm, "xrapm", "panna", skip_absent = TRUE)
+# panna = the career-trait RATING (decay-weighted multi-season xRAPM, point-in-time
+# "best guess of next game") — the SAME `panna` the main blog ratings publish since
+# 2026-06-09. NOT the single-season xRAPM (that's a season aggregate, a different
+# quantity that used to be mislabeled `panna`). Source: career_panna.parquet
+# (estimated-skills/09_career_panna.R via fit_career_rapm), on pannadata's
+# ratings-data release. offense/defense = the career-trait decomposition
+# (panna_offense/panna_defense; internal negative=good, flipped at display below).
+cp_path <- file.path(opta_data_dir(), "career_panna.parquet")
+if (!file.exists(cp_path)) {
+  stop("career_panna.parquet not found at ", cp_path, " — the WC squad panna IS the ",
+       "career trait, not season xRAPM. Add it to the predictions-pipeline download ",
+       "list (pannadata ratings-data release) or run estimated-skills/09_career_panna.R.",
+       call. = FALSE)
+}
+sq_panna <- as.data.table(read_parquet(cp_path))[
+  , .(player_id, panna, offense = panna_offense, defense = panna_defense, total_minutes)]
 
 sq_psr <- if (!is.null(sq_seasonal$seasonal_psr) && nrow(sq_seasonal$seasonal_psr) > 0) {
   p <- as.data.table(sq_seasonal$seasonal_psr)
@@ -182,7 +194,7 @@ sq_epr <- {
 squad_out <- squads[, .(team = team_name, player_id, player_name, position,
                         expected_minutes_norm, is_starter_pred)]
 squad_out[, group := unname(team_group[team])]
-squad_out <- merge(squad_out, sq_xrapm, by = "player_id", all.x = TRUE)
+squad_out <- merge(squad_out, sq_panna, by = "player_id", all.x = TRUE)
 if (!is.null(sq_psr)) squad_out <- merge(squad_out, sq_psr, by = "player_id", all.x = TRUE)
 if (!is.null(sq_epr)) squad_out <- merge(squad_out, sq_epr, by = "player_id", all.x = TRUE)
 for (col in c("panna", "offense", "defense", "epr", "psr", "total_minutes"))
@@ -273,7 +285,7 @@ message(sprintf("  wc2026_team_strength.parquet: %d teams (panna/offense/defense
                 nrow(strength)))
 
 # 5c. Squad rows with player ratings ----
-# squad_out (one row per squad player, joined to latest-season xRAPM + league-
+# squad_out (one row per squad player, joined to career-trait panna + league-
 # centered seasonal PSR + latest weekly EPR) was already built in section 5 — the
 # team strength above is its minutes-weighted aggregate. Here we add the
 # authoritative club, set column order, and publish. Ratings stay NA when a
