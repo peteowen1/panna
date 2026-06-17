@@ -10,7 +10,12 @@ update_elo(
   home_goals,
   away_goals,
   k = 20,
-  home_advantage = 88
+  home_advantage = 88,
+  update_mode = c("outcome", "margin_sqrt"),
+  home_xg = NA_real_,
+  away_xg = NA_real_,
+  margin_slope = 1.66,
+  blend_w = 0.5
 )
 }
 \arguments{
@@ -24,7 +29,21 @@ update_elo(
 
 \item{k}{K-factor controlling update magnitude (default 20)}
 
-\item{home_advantage}{Home advantage in Elo points (default 65)}
+\item{home_advantage}{Home advantage in Elo points (default 88)}
+
+\item{update_mode}{"outcome" (default) = W/D/L surprise x goal-difference
+multiplier, the v6 production form. "margin_sqrt" = update toward a blended
+goals/xG margin, sqrt-dampened (the xG-Elo form).}
+
+\item{home_xg, away_xg}{Expected goals per team (margin_sqrt mode only). When
+either is NA the target falls back to actual goal difference (~35\% of
+matches have no shot data, so xG is unavailable for them).}
+
+\item{margin_slope}{Expected goal-margin per 400 Elo of gap, used as the
+reference the result is judged against (margin_sqrt mode). Default 1.66.}
+
+\item{blend_w}{Weight on actual goal diff vs xG diff in the target margin:
+perf = blend_w*GD + (1-blend_w)*xGD (margin_sqrt mode). Default 0.5.}
 }
 \value{
 Named list with new_home_elo, new_away_elo
