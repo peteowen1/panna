@@ -84,12 +84,22 @@ jobs:
             fi
           done
 
+          # Career-trait panna (the real `panna` RATING — decay-weighted multi-season
+          # xRAPM) lives on the ratings-data release, not opta-latest. Step 12 joins it
+          # for the WC squad/team-strength so they show the trait, not season xRAPM.
+          echo "Downloading career_panna.parquet from ratings-data..."
+          if gh release download ratings-data --repo peteowen1/pannadata --pattern career_panna.parquet --dir "$OPTA_DIR" 2>/dev/null; then
+            echo "  Downloaded career_panna.parquet"
+          else
+            echo "  Skipped career_panna.parquet (not found on ratings-data)"
+          fi
+
           echo "Opta data downloaded to $OPTA_DIR"
           ls -lh "$OPTA_DIR"
 
           # Validate required files
           MISSING=0
-          for f in opta_lineups.parquet opta_fixtures.parquet opta_player_stats.parquet opta_epr_weekly.parquet opta-catalog.json; do
+          for f in opta_lineups.parquet opta_fixtures.parquet opta_player_stats.parquet opta_epr_weekly.parquet career_panna.parquet opta-catalog.json; do
             if [ ! -f "$OPTA_DIR/$f" ]; then
               echo "FATAL: Required file $f was not downloaded"
               MISSING=$((MISSING + 1))
