@@ -28,6 +28,13 @@
 #' @param nfolds CV folds for the ridge fit.
 #' @param offense_prior,defense_prior Optional named (by \code{player_id}) prior
 #'   vectors that override \code{skill_spm}.
+#' @param fixed_lambda Optional single ridge lambda (skips \code{cv.glmnet}).
+#'   Default \code{NULL} = cross-validated.
+#' @param lambda_formula Optional \code{function(n_obs)} returning a lambda; used
+#'   only when \code{fixed_lambda} is \code{NULL}. The as-of-date snapshot build
+#'   passes the sample-size formula (\code{16.67 * n_obs^-0.58}) so each reference
+#'   date gets a sample-appropriate lambda without re-running CV. \code{n_obs} is
+#'   the count of valid (finite) splint observations actually fed to the fit.
 #'
 #' @return List with \code{model} (the xRAPM fit), \code{ratings} (data.table:
 #'   \code{player_id, player_name, panna, panna_offense, panna_defense,
@@ -36,7 +43,8 @@
 fit_career_rapm <- function(splint_data, match_dates, skill_spm = NULL,
                             halflife_days = 365, reference_date = NULL,
                             min_minutes = 200, nfolds = 5,
-                            offense_prior = NULL, defense_prior = NULL) {
+                            offense_prior = NULL, defense_prior = NULL,
+                            fixed_lambda = NULL, lambda_formula = NULL) {
   stopifnot(is.list(splint_data), !is.null(splint_data$splints), halflife_days > 0)
 
   md <- data.table::as.data.table(match_dates)
@@ -74,11 +82,19 @@ fit_career_rapm <- function(splint_data, match_dates, skill_spm = NULL,
     defense_prior <- stats::setNames(dr$defense_spm, dr$player_id)
   }
 
-  # 4. Fit career xRAPM = Panna.
+  # 4. Fit career xRAPM = Panna. Derive lambda from the sample-size formula when
+  #    requested (and no explicit fixed_lambda), using the actual valid-obs count.
+  if (is.null(fixed_lambda) && !is.null(lambda_formula)) {
+    n_obs <- sum(!is.na(rapm_data$y) & is.finite(rapm_data$y))
+    fixed_lambda <- lambda_formula(n_obs)
+    cli::cli_alert_info(
+      "Fixed lambda from formula: n_obs={n_obs} -> lambda={round(fixed_lambda, 5)}")
+  }
   model <- fit_rapm_with_prior(rapm_data, offense_prior = offense_prior,
                                defense_prior = defense_prior, alpha = 0,
                                nfolds = nfolds, use_weights = TRUE,
-                               penalize_covariates = FALSE)
+                               penalize_covariates = FALSE,
+                               fixed_lambda = fixed_lambda)
 
   ratings <- data.table::as.data.table(extract_xrapm_ratings(model))
   data.table::setnames(ratings, c("xrapm", "offense", "defense"),

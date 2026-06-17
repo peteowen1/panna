@@ -2,6 +2,36 @@
 #
 # Fits Regularized Adjusted Plus-Minus models using ridge regression.
 
+#' Fit glmnet at a single pre-specified lambda (skips cross-validation)
+#'
+#' Used by the as-of-date career-Panna build, where the optimal lambda is
+#' supplied by a sample-size formula (\code{lambda = 16.67 * n_obs^-0.58}) rather
+#' than re-run via \code{cv.glmnet} for every reference date. Returns a
+#' \code{glmnet} object augmented with \code{$lambda.min}/\code{$lambda.1se} set to
+#' \code{fixed_lambda}, so downstream extractors (which read \code{model$lambda.min}
+#' and \code{coef(model, s = lambda)}) work unchanged.
+#'
+#' A short decreasing lambda path is fit for warm-start numerical stability, then
+#' coefficients are taken at \code{fixed_lambda} (which is in the path, so the
+#' returned coefficients are the exact fitted point, not an interpolation).
+#'
+#' @keywords internal
+#' @noRd
+.glmnet_fixed_lambda <- function(x, y, weights, alpha, standardize,
+                                 penalty_factor, fixed_lambda) {
+  stopifnot(length(fixed_lambda) == 1, fixed_lambda > 0)
+  lambda_path <- sort(unique(fixed_lambda * c(8, 4, 2, 1)), decreasing = TRUE)
+  fit <- glmnet::glmnet(
+    x = x, y = y, weights = weights, alpha = alpha,
+    standardize = standardize, penalty.factor = penalty_factor,
+    lambda = lambda_path
+  )
+  # Compatibility shim: downstream reads model$lambda.min / model$lambda.1se.
+  fit$lambda.min <- fixed_lambda
+  fit$lambda.1se <- fixed_lambda
+  fit
+}
+
 #' Fit RAPM model
 #'
 #' Fits ridge regression on the design matrix with:
@@ -19,13 +49,19 @@
 #' @param penalize_covariates Whether to penalize covariate coefficients
 #' @param parallel Whether to use parallel processing for CV folds
 #' @param n_cores Number of cores (default: half of available)
+#' @param fixed_lambda Optional single lambda value. When supplied, skips
+#'   \code{cv.glmnet} and fits at this lambda directly (see
+#'   \code{.glmnet_fixed_lambda}). Default \code{NULL} = cross-validated (current
+#'   behaviour). Used by the as-of-date career-Panna build to avoid re-running CV
+#'   for every reference date.
 #'
 #' @return Fitted model with metadata
 #' @export
 fit_rapm <- function(rapm_data, alpha = 0, nfolds = 10,
                          use_weights = TRUE, standardize = FALSE,
                          penalize_covariates = FALSE,
-                         parallel = TRUE, n_cores = NULL) {
+                         parallel = TRUE, n_cores = NULL,
+                         fixed_lambda = NULL) {
   # Validate input structure
   if (!is.list(rapm_data)) {
     cli::cli_abort(c(
@@ -71,8 +107,9 @@ fit_rapm <- function(rapm_data, alpha = 0, nfolds = 10,
   progress_msg(sprintf("Fitting RAPM: %d observations, %d columns",
                        length(y), ncol(X)))
 
-  # Set up parallel processing
-  if (parallel) {
+  # Set up parallel processing (only relevant for the cv.glmnet fold loop;
+  # the fixed-lambda path fits a single model, so skip the backend setup).
+  if (parallel && is.null(fixed_lambda)) {
     .check_suggests("parallel", "Parallel RAPM fitting requires parallel.")
     .check_suggests("doParallel", "Parallel RAPM fitting requires doParallel.")
     if (is.null(n_cores)) {
@@ -98,19 +135,24 @@ fit_rapm <- function(rapm_data, alpha = 0, nfolds = 10,
     penalty_factor <- rep(1, ncol(X))
   }
 
-  # Fit cross-validated ridge regression
-  cv_fit <- glmnet::cv.glmnet(
-    x = X,
-    y = y,
-    weights = weights,
-    alpha = alpha,
-    standardize = standardize,
-    nfolds = nfolds,
-    type.measure = "mse",
-    penalty.factor = penalty_factor,
-    trace.it = if (interactive()) 1 else 0,
-    parallel = parallel
-  )
+  # Fit ridge regression: cross-validated, or at a single supplied lambda.
+  if (is.null(fixed_lambda)) {
+    cv_fit <- glmnet::cv.glmnet(
+      x = X,
+      y = y,
+      weights = weights,
+      alpha = alpha,
+      standardize = standardize,
+      nfolds = nfolds,
+      type.measure = "mse",
+      penalty.factor = penalty_factor,
+      trace.it = if (interactive()) 1 else 0,
+      parallel = parallel
+    )
+  } else {
+    cv_fit <- .glmnet_fixed_lambda(X, y, weights, alpha, standardize,
+                                   penalty_factor, fixed_lambda)
+  }
 
   # Add metadata
   target_type <- if (!is.null(rapm_data$target_type)) rapm_data$target_type else "xg"
@@ -129,10 +171,15 @@ fit_rapm <- function(rapm_data, alpha = 0, nfolds = 10,
   )
 
   target_desc <- if (target_type == "xg") "xG-based" else "Goals-based"
-  progress_msg(sprintf("RAPM fit complete (%s). Lambda.min: %.4f, R^2: %.3f",
-                       target_desc, cv_fit$lambda.min,
-                       1 - cv_fit$cvm[cv_fit$lambda == cv_fit$lambda.min] /
-                         var(y)))
+  if (is.null(fixed_lambda)) {
+    progress_msg(sprintf("RAPM fit complete (%s). Lambda.min: %.4f, R^2: %.3f",
+                         target_desc, cv_fit$lambda.min,
+                         1 - cv_fit$cvm[cv_fit$lambda == cv_fit$lambda.min] /
+                           var(y)))
+  } else {
+    progress_msg(sprintf("RAPM fit complete (%s). Fixed lambda: %.4f (no CV)",
+                         target_desc, fixed_lambda))
+  }
 
   cv_fit
 }
@@ -251,6 +298,10 @@ get_covariate_effects <- function(model, lambda = "min") {
 #' @param nfolds Number of CV folds
 #' @param use_weights Whether to use splint duration weights
 #' @param penalize_covariates Whether to penalize covariate coefficients
+#' @param fixed_lambda Optional single lambda value. When supplied, skips
+#'   \code{cv.glmnet} and fits at this lambda directly (see
+#'   \code{.glmnet_fixed_lambda}). Default \code{NULL} = cross-validated (current
+#'   behaviour). Used by the as-of-date career-Panna build.
 #'
 #' @return Fitted model with prior adjustment metadata
 #'
@@ -262,7 +313,8 @@ get_covariate_effects <- function(model, lambda = "min") {
 fit_rapm_with_prior <- function(rapm_data, offense_prior, defense_prior,
                                  alpha = 0, nfolds = 10,
                                  use_weights = TRUE,
-                                 penalize_covariates = FALSE) {
+                                 penalize_covariates = FALSE,
+                                 fixed_lambda = NULL) {
   # Validate input structure (matching fit_rapm())
   if (!is.list(rapm_data)) {
     cli::cli_abort(c(
@@ -345,18 +397,24 @@ fit_rapm_with_prior <- function(rapm_data, offense_prior, defense_prior,
     penalty_factor <- rep(1, n_cols)
   }
 
-  # Fit cross-validated ridge regression on adjusted response
-  cv_fit <- glmnet::cv.glmnet(
-    x = X,
-    y = y_adjusted,
-    weights = weights,
-    alpha = alpha,
-    standardize = FALSE,
-    nfolds = nfolds,
-    type.measure = "mse",
-    penalty.factor = penalty_factor,
-    trace.it = if (interactive()) 1 else 0
-  )
+  # Fit ridge on adjusted response: cross-validated, or at a single supplied lambda.
+  if (is.null(fixed_lambda)) {
+    cv_fit <- glmnet::cv.glmnet(
+      x = X,
+      y = y_adjusted,
+      weights = weights,
+      alpha = alpha,
+      standardize = FALSE,
+      nfolds = nfolds,
+      type.measure = "mse",
+      penalty.factor = penalty_factor,
+      trace.it = if (interactive()) 1 else 0
+    )
+  } else {
+    cv_fit <- .glmnet_fixed_lambda(X, y_adjusted, weights, alpha,
+                                   standardize = FALSE, penalty_factor,
+                                   fixed_lambda)
+  }
 
   # Store metadata including prior information
   cv_fit$panna_metadata <- list(
