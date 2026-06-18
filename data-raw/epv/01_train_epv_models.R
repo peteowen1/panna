@@ -38,6 +38,14 @@ XGB_PARAMS <- list(
   verbose = 0
 )
 
+# xGOT gets its OWN higher nrounds ceiling. With early stopping (50 rounds), a
+# high ceiling is safe — it just lets CV find its own optimum instead of being
+# capped. xGOT trains on far fewer rows (on-target shots only) and was hitting
+# the shared 1000-round cap (best_nrounds=1000, early-stopping never fired), so
+# it had more convergence to give. Kept separate so we don't balloon the much
+# larger xg/xpass/EPV fits.
+XGOT_NROUNDS <- 3000L
+
 # Output directory
 CACHE_DIR <- "data-raw/cache/epv"
 dir.create(CACHE_DIR, recursive = TRUE, showWarnings = FALSE)
@@ -314,7 +322,7 @@ if (all(c("goalmouth_y", "goalmouth_z") %in% names(shots))) {
   t0 <- Sys.time()
   xgot_features <- prepare_shots_for_xgot(shots)
   xgot_model <- fit_xgot_model(xgot_features,
-                               nrounds = XGB_PARAMS$nrounds,
+                               nrounds = XGOT_NROUNDS,  # own higher ceiling; early-stopping governs
                                early_stopping_rounds = XGB_PARAMS$early_stopping_rounds,
                                verbose = XGB_PARAMS$verbose)
   cli_alert_success("xGOT Model: best iter={xgot_model$best_nrounds}, logloss={round(xgot_model$best_logloss, 4)} [{round(as.numeric(difftime(Sys.time(), t0, units='mins')), 1)}m]")
