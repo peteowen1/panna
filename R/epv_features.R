@@ -209,6 +209,8 @@ create_epv_features <- function(spadl_actions, n_prev = 3) {
 EPV_SIMPLE_FEATURE_COLS <- c(
   "start_x", "start_y", "distance_to_goal", "angle_to_goal",
   "dx", "dy", "time_remaining", "is_extra_time",
+  # PROTOTYPE (next retrain cycle): per-half sawtooth time — see create_epv_features_simple().
+  "time_in_half_remaining",
   "prev_x", "prev_y", "prev_dx", "prev_dy",
   "same_team_prev", "action_cat", "result_success",
   "league_id"
@@ -283,6 +285,30 @@ create_epv_features_simple <- function(spadl_actions, league = NULL) {
   # WP model's is_extra_time feature so the model can learn ET-specific dynamics.
   dt[, is_extra_time := as.integer(period_id %in% OPTA_EXTRA_TIME_PERIODS)]
   dt[, c("match_reached_et", "match_seconds") := NULL]
+
+  # PROTOTYPE (next retrain cycle — requires retrain + lockstep worker update to
+  # ship): time remaining in the CURRENT half (sawtooth — 1 at each kickoff, 0 at
+  # each whistle). Whole-match time_remaining above ramps only toward FULL time,
+  # so at 45' it sits at ~0.5 (mid-range) and the end-of-FIRST-half wind-down is
+  # invisible to it. Empirically (labeled-chunk check 2026-06-18) next-shot value
+  # drops ~40% in 1st-half stoppage — a real signal the per-match clock misses.
+  # Resets per period so both 45' and 90' whistles register. Regulation halves =
+  # REGULATION_SECONDS/2 (2700s); ET halves = (EXTRA_TIME_SECONDS-REGULATION)/2
+  # (900s). Stoppage time clamps to 0 (in-half elapsed > nominal half length).
+  .reg_half <- REGULATION_SECONDS / 2
+  .et_half  <- (EXTRA_TIME_SECONDS - REGULATION_SECONDS) / 2
+  dt[, .half_start := data.table::fcase(
+    period_id == 1L, 0,
+    period_id == 2L, .reg_half,
+    period_id == 3L, REGULATION_SECONDS,
+    period_id == 4L, REGULATION_SECONDS + .et_half,
+    default = 0)]
+  dt[, .half_len := data.table::fcase(
+    period_id %in% c(1L, 2L), .reg_half,
+    period_id %in% OPTA_EXTRA_TIME_PERIODS, .et_half,
+    default = .reg_half)]
+  dt[, time_in_half_remaining := 1 - pmin(pmax((time_seconds - .half_start) / .half_len, 0), 1)]
+  dt[, c(".half_start", ".half_len") := NULL]
 
   # Previous action context
   dt[, prev_x := shift(start_x, 1, type = "lag"), by = .(match_id, period_id)]

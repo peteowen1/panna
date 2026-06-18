@@ -188,10 +188,30 @@ create_wp_features <- function(spadl_with_epv, match_results = NULL,
   # the model learn ET-specific dynamics (every chance suddenly decisive,
   # fatigue) rather than extrapolating the regulation curve.
   dt[, is_extra_time := as.integer(period_id %in% OPTA_EXTRA_TIME_PERIODS)]
+  # PROTOTYPE (next retrain cycle — requires retrain + lockstep worker update):
+  # time remaining in the CURRENT half (sawtooth — 1 at each kickoff, 0 at each
+  # whistle). Whole-match time_remaining ramps only toward full time, so the
+  # end-of-FIRST-half wind-down (empirically a ~40% next-shot-value dip in 1H
+  # stoppage) is invisible to it at 45' (where it sits at ~0.5). Resets per
+  # period. Regulation halves = REGULATION_SECONDS/2; ET halves = half the ET
+  # span. Stoppage clamps to 0. Mirrors epv_features.R::create_epv_features_simple.
+  .reg_half <- REGULATION_SECONDS / 2
+  .et_half  <- (EXTRA_TIME_SECONDS - REGULATION_SECONDS) / 2
+  dt[, .half_start := data.table::fcase(
+    period_id == 1L, 0,
+    period_id == 2L, .reg_half,
+    period_id == 3L, REGULATION_SECONDS,
+    period_id == 4L, REGULATION_SECONDS + .et_half,
+    default = 0)]
+  dt[, .half_len := data.table::fcase(
+    period_id %in% c(1L, 2L), .reg_half,
+    period_id %in% OPTA_EXTRA_TIME_PERIODS, .et_half,
+    default = .reg_half)]
+  dt[, time_in_half_remaining := 1 - pmin(pmax((time_seconds - .half_start) / .half_len, 0), 1)]
   # Drop the per-match scratch columns so they can't leak downstream and be
   # mistaken for the per-event feature. time_remaining/time_elapsed_frac/
   # is_extra_time carry all the signal the model needs from here.
-  dt[, c("match_reached_et", "match_seconds") := NULL]
+  dt[, c("match_reached_et", "match_seconds", ".half_start", ".half_len") := NULL]
 
   # --- Score state ---
   # Detect goals: action_type == "shot" & result == "success" in SPADL
@@ -284,6 +304,7 @@ create_wp_features <- function(spadl_with_epv, match_results = NULL,
   feature_cols <- c("match_id", "team_id", "player_id", "player_name",
                      "action_type", "time_seconds", "period_id",
                      "time_remaining", "time_elapsed_frac",
+                     "time_in_half_remaining",  # PROTOTYPE (next cycle)
                      "score_diff", "margin_poss", "xmargin", "epv",
                      "xg_diff", "red_card_diff",
                      "is_home", "is_second_half", "is_extra_time", "is_goal")
@@ -361,7 +382,8 @@ train_wp_model <- function(wp_features, nrounds = 500L, max_depth = 4L,
   # composite, so the trees never split inside the sub-1.0 epv band and live
   # threat never moves WP. A separate epv feature lets the model split the
   # threat band on its own. (intersect() drops it if upstream had no epv.)
-  feature_names <- c("time_remaining", "xmargin", "epv", "xg_diff",
+  feature_names <- c("time_remaining", "time_in_half_remaining",  # latter: PROTOTYPE (next cycle)
+                      "xmargin", "epv", "xg_diff",
                       "red_card_diff", "is_home", "is_second_half",
                       "is_extra_time")
   feature_names <- intersect(feature_names, names(dt))
