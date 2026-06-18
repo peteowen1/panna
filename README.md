@@ -44,13 +44,11 @@ player_stats <- player_opta_summary(
 
 ## Data Sources
 
-The package supports three football data providers:
+The package uses Opta as its sole data provider:
 
 | Source | Coverage | xG Model | Unique Features |
 |--------|----------|----------|-----------------|
 | Opta | 15 leagues (2013+) | SPADL + XGBoost | 263 columns, progressive carries, event-level data |
-| Understat | Big 5 + Russia | Understat | xGChain, xGBuildup |
-| FBref | Big 5 leagues + cups | StatsBomb | Comprehensive passing stats |
 
 ### League Codes
 
@@ -74,16 +72,6 @@ The package supports three football data providers:
 | World Cup | WC | 2018 Russia |
 | Euros | EURO | 2024 Germany |
 
-#### FBref Leagues
-
-| League | Panna Code | Season Format |
-|--------|------------|---------------|
-| Premier League | ENG | 2024-2025 |
-| La Liga | ESP | 2024-2025 |
-| Bundesliga | GER | 2024-2025 |
-| Serie A | ITA | 2024-2025 |
-| Ligue 1 | FRA | 2024-2025 |
-
 ## Key Functions
 
 ### Data Loading
@@ -99,16 +87,6 @@ load_opta_xmetrics(league, season)     # Pre-computed xG/xA/xPass metrics
 load_opta_shot_events(league, season)  # Individual shots with coordinates
 load_opta_events(league, season)       # Goals, cards, substitutions
 load_opta_big5(season)                 # All Big 5 leagues at once
-
-# Understat data
-load_understat_roster(league, season)
-load_understat_shots(league, season)
-
-# FBref data (via pannadata)
-load_summary(league, season)
-load_passing(league, season)
-load_defense(league, season)
-load_shots()
 ```
 
 ### Player Statistics
@@ -122,11 +100,6 @@ player_opta_possession(leagues, seasons, min_minutes)
 player_opta_keeper(leagues, seasons, min_minutes)
 player_opta_shots(leagues, seasons, min_minutes)
 player_opta_setpiece(leagues, seasons, min_minutes)
-
-# Understat/FBref aggregated stats
-player_understat_summary(leagues, seasons, min_minutes)
-player_fbref_summary(leagues, seasons, min_minutes)
-player_fbref_passing(leagues, seasons, min_minutes)
 ```
 
 ### Rating Pipeline

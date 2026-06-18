@@ -26,8 +26,8 @@ set.seed(42)
 
 ## Step 1: Create Synthetic Match Data
 
-In production, you would load data with `load_summary()`, `load_metadata()`, etc.
-Here we generate synthetic match data that mirrors the structure of processed FBref data.
+In production, you would load data with `load_opta_stats()`, `load_opta_match_events()`, etc.
+Here we generate synthetic match data that mirrors the structure of processed Opta data.
 
 ```{r synthetic-data}
 n_matches <- 12

@@ -258,5 +258,5 @@ RAPM doesn't know player positions. A midfielder and striker with identical line
 ## Next Steps
 
 - [Getting Started](getting-started.html) - Installation and data loading
-- [Data Sources](data-sources.html) - FBref vs Opta vs Understat
+- [Data Sources](data-sources.html) - Opta league codes, season formats, and loaders
 - [Data Dictionary](../DATA_DICTIONARY.md) - Column definitions at each pipeline stage
