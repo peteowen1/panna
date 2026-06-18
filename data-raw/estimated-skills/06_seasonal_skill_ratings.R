@@ -306,6 +306,87 @@ seasonal_rapm <- bind_rows(lapply(seasonal_ratings_list, `[[`, "rapm"))
 seasonal_xrapm <- bind_rows(lapply(seasonal_ratings_list, `[[`, "xrapm"))
 seasonal_psr <- bind_rows(Filter(Negate(is.null), lapply(seasonal_ratings_list, `[[`, "psr")))
 
+# 6b. Override total_minutes with box-score minutes (panna#74) ----
+#
+# The `total_minutes` carried through the seasonal tables above is SPLINT-derived
+# (sum of RAPM splint `duration`), so it tracks splint-cache completeness, not
+# minutes actually played — e.g. Salah surfaced 511.5 / 3110.65 instead of the
+# true ~3058. Override it with box-score minutes (sum of `minsPlayed`) from the
+# consolidated opta_player_stats.parquet, keeping the splint value only as a
+# fallback for players absent from player_stats (never silently zero anyone).
+
+cat("\n=== Overriding total_minutes with box-score minutes (panna#74) ===\n")
+
+# Read the consolidated opta_player_stats.parquet (the same file the loaders use,
+# resolved via the package's own accessor). Pull only the 3 needed columns so we
+# don't materialise the ~200-column box-score table.
+ps_path <- download_opta_release_file("opta_player_stats.parquet", source = "local")
+ps_conn <- DBI::dbConnect(duckdb::duckdb())
+opta_player_stats <- tryCatch(
+  DBI::dbGetQuery(ps_conn, sprintf(
+    "SELECT player_id, season, minsPlayed FROM '%s'",
+    normalizePath(ps_path, winslash = "/", mustWork = TRUE))),
+  finally = DBI::dbDisconnect(ps_conn, shutdown = TRUE)
+)
+
+# Season-label trap guard: NEVER match exact "YYYY-YYYY" strings. Three label
+# formats share one end year ("2025-2026" European, "2026" calendar leagues,
+# "2026 Canada-Mexico-USA" tournaments); exact-string matching silently drops
+# the calendar-league + tournament rows. Always derive end year via the helper.
+box_minutes <- opta_player_stats %>%
+  mutate(season_end_year = vapply(season, extract_season_end_year, numeric(1))) %>%
+  filter(!is.na(season_end_year), !is.na(player_id)) %>%
+  group_by(player_id, season_end_year) %>%
+  summarise(box_minutes = sum(minsPlayed, na.rm = TRUE), .groups = "drop")
+
+cat(sprintf("Box-minutes table: %d player-seasons from %d player_stats rows\n",
+            nrow(box_minutes), nrow(opta_player_stats)))
+
+rm(opta_player_stats); gc(verbose = FALSE)
+
+# Left-join box minutes and prefer them; splint-derived value remains as fallback.
+.override_minutes <- function(tbl) {
+  if (is.null(tbl) || nrow(tbl) == 0) return(tbl)
+  tbl %>%
+    left_join(box_minutes, by = c("player_id", "season_end_year")) %>%
+    mutate(total_minutes = coalesce(box_minutes, total_minutes)) %>%
+    select(-box_minutes)
+}
+
+seasonal_xrapm <- .override_minutes(seasonal_xrapm)
+seasonal_spm   <- .override_minutes(seasonal_spm)
+seasonal_rapm  <- .override_minutes(seasonal_rapm)
+
+n_matched <- seasonal_xrapm %>%
+  inner_join(box_minutes, by = c("player_id", "season_end_year")) %>%
+  nrow()
+cat(sprintf("xRAPM player-seasons with box-minute override: %d / %d (rest keep splint fallback)\n",
+            n_matched, nrow(seasonal_xrapm)))
+
+# Hard-stop sanity check: catch a regression like the 511.5 bug. Any top-50
+# (by xRAPM) player with < 900 total minutes after the override is a red flag —
+# top-rated regulars play far more than 10 full matches in a season.
+top50_low_minutes <- seasonal_xrapm %>%
+  group_by(season_end_year) %>%
+  arrange(desc(xrapm)) %>%
+  slice_head(n = 50) %>%
+  ungroup() %>%
+  filter(total_minutes < 900) %>%
+  arrange(total_minutes)
+
+if (nrow(top50_low_minutes) > 0) {
+  print(top50_low_minutes %>%
+          select(season_end_year, player_id, player_name, xrapm, total_minutes) %>%
+          head(20))
+  stop(sprintf(
+    paste0("total_minutes sanity check FAILED: %d top-50-by-xRAPM player-season(s) ",
+           "have < 900 minutes after box-minute override. This looks like the ",
+           "splint-minutes regression (panna#74). Investigate before saving."),
+    nrow(top50_low_minutes)
+  ))
+}
+cat("total_minutes sanity check passed (no top-50 player-season under 900 minutes)\n")
+
 cat(sprintf("\n=== Combined Results ===\n"))
 cat(sprintf("Seasons processed: %d\n", length(seasonal_ratings_list)))
 cat(sprintf("Seasonal SPM:  %d player-seasons, %d unique players\n",
