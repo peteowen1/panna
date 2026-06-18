@@ -208,7 +208,7 @@ create_epv_features <- function(spadl_actions, n_prev = 3) {
 # Simple feature column names (single source of truth)
 EPV_SIMPLE_FEATURE_COLS <- c(
   "start_x", "start_y", "distance_to_goal", "angle_to_goal",
-  "dx", "dy", "time_remaining",
+  "dx", "dy", "time_remaining", "is_extra_time",
   "prev_x", "prev_y", "prev_dx", "prev_dy",
   "same_team_prev", "action_cat", "result_success",
   "league_id"
@@ -231,8 +231,9 @@ EPV_LEAGUE_MAP <- c(
 
 #' Create Simple EPV Features
 #'
-#' Builds a 15-feature set for EPV prediction: spatial location,
-#' movement, time remaining, previous action context, action type, result,
+#' Builds a 16-feature set for EPV prediction: spatial location,
+#' movement, time remaining (per-match regulation/ET denominator, #94),
+#' extra-time indicator, previous action context, action type, result,
 #' and league identity. Designed for the xG-method simple model which
 #' prioritises spatial signal while allowing league-specific adjustments.
 #'
@@ -240,7 +241,7 @@ EPV_LEAGUE_MAP <- c(
 #' @param league League code (e.g., "ENG"). If NULL, uses \code{league} column
 #'   from spadl_actions if present, otherwise defaults to 0 (unknown).
 #'
-#' @return Data frame with 15 EPV features plus match_id and action_id
+#' @return Data frame with 16 EPV features plus match_id and action_id
 #' @keywords internal
 create_epv_features_simple <- function(spadl_actions, league = NULL) {
   if (is.null(spadl_actions) || nrow(spadl_actions) == 0) {
@@ -261,8 +262,27 @@ create_epv_features_simple <- function(spadl_actions, league = NULL) {
   dt[, dx := end_x - start_x]
   dt[, dy := end_y - start_y]
 
-  # Time remaining in half (1 = start, 0 = end)
-  dt[, time_remaining := 1 - pmin(time_seconds / (45 * 60), 1)]
+  # Time remaining in match (1 = kickoff, 0 = full time).
+  # Issue #94: Opta time_seconds = minute*60 + second is match-CUMULATIVE (the
+  # clock runs 45->90+ across the break and into ET, not reset per half), so the
+  # old flat 45*60 = 2700 denominator clamped EVERY second-half and ET event to
+  # time_remaining == 0 — the model was time-blind for the entire 2nd half/ET.
+  # Fix mirrors the already-shipped WP per-match denominator (wp_model.R ~L94):
+  # decide per match_id whether the match reached extra time (any period 3/4) and
+  # use EXTRA_TIME_SECONDS (7200) if so, else REGULATION_SECONDS (5400). Decided
+  # PER MATCH on purpose — a per-EVENT cap would make time_remaining jump at the
+  # 90' boundary (regulation rows 5400 vs ET rows 7200 in the same match);
+  # is_extra_time below carries the ET signal instead. Shootout actions
+  # (period_id >= 5) are dropped upstream in convert_opta_to_spadl().
+  dt[, match_reached_et := any(period_id %in% OPTA_EXTRA_TIME_PERIODS), by = match_id]
+  dt[, match_seconds := data.table::fifelse(match_reached_et,
+                                            EXTRA_TIME_SECONDS, REGULATION_SECONDS)]
+  dt[, time_remaining := 1 - pmin(time_seconds / match_seconds, 1)]
+  # Per-event ET indicator (model feature): 1 for periods 3-4, else 0. Without
+  # it, a flat regulation denominator would re-clamp ET events to ~0; mirrors the
+  # WP model's is_extra_time feature so the model can learn ET-specific dynamics.
+  dt[, is_extra_time := as.integer(period_id %in% OPTA_EXTRA_TIME_PERIODS)]
+  dt[, c("match_reached_et", "match_seconds") := NULL]
 
   # Previous action context
   dt[, prev_x := shift(start_x, 1, type = "lag"), by = .(match_id, period_id)]

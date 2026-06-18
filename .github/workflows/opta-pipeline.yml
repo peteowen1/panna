@@ -30,6 +30,12 @@ on:
 env:
   GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
   R_KEEP_PKG_SOURCE: yes
+  # panna#87 OOM mitigation (option A): skip cv.glmnet in steps 04/06 and fit at
+  # the closed-form lambda = 16.67 * n_obs^-0.58. CV does 11 dense refits per call
+  # (10 folds + final); the back-to-back RAPM/xRAPM fits are what OOM the 16GB
+  # runner. We keep the free ubuntu-latest runner (runs-on unchanged) and rely on
+  # this flag instead. Any non-empty value enables it.
+  OPTA_FIXED_LAMBDA: '1'
 
 jobs:
   opta-pipeline:

@@ -14,6 +14,16 @@ cache_dir <- file.path("data-raw", "cache-opta")
 xrapm_lambda <- "min"
 cat(sprintf("Using lambda = %s for xRAPM\n", xrapm_lambda))
 
+# panna#87 OOM mitigation (option A): env-gated CV skip. When OPTA_FIXED_LAMBDA
+# is set (any non-empty value), skip cv.glmnet in fit_rapm_with_prior() and fit
+# at the closed-form lambda = 16.67 * n_obs^-0.58. Default (unset) keeps CV.
+use_fixed_lambda <- nzchar(Sys.getenv("OPTA_FIXED_LAMBDA"))
+# Sample-size lambda formula (same as data-raw/estimated-skills/09b_career_panna_asof.R).
+lambda_formula <- function(n) 16.67 * n^(-0.58)
+# n_obs for a fit = count of valid (non-NA, finite) responses, matching the
+# count fit_rapm_with_prior() uses internally.
+.n_obs_valid <- function(rd) sum(!is.na(rd$y) & is.finite(rd$y))
+
 # 2. Load Data ----
 
 cat("\n=== Loading Data ===\n")
@@ -65,14 +75,22 @@ cat("\n=== Fitting xRAPM Model ===\n")
 
 rapm_data <- rapm_results$rapm_data
 
+# panna#87: fixed-lambda mode skips CV (the 11-refit memory spike); else CV.
+xrapm_fixed_lambda <- if (use_fixed_lambda) lambda_formula(.n_obs_valid(rapm_data)) else NULL
+if (use_fixed_lambda) {
+  cli::cli_alert_info(
+    "xRAPM fixed-lambda mode (CV skipped), lambda={round(xrapm_fixed_lambda, 5)} (n_obs={.n_obs_valid(rapm_data)})")
+}
+
 xrapm_model <- fit_rapm_with_prior(
   rapm_data,
   offense_prior = offense_prior,
   defense_prior = defense_prior,
   alpha = 0,
-  nfolds = 10,
+  nfolds = 5,          # panna#87: 10 -> 5 to halve the CV memory/time spike
   use_weights = TRUE,
-  penalize_covariates = FALSE
+  penalize_covariates = FALSE,
+  fixed_lambda = xrapm_fixed_lambda  # panna#87: NULL = CV (default), else closed-form
 )
 
 # Free memory
@@ -231,10 +249,18 @@ if (use_multi_target && file.exists(multi_rapm_path) && file.exists(multi_spm_pa
         }
       }
 
+      # panna#87: per-target fixed lambda from that target's own n_obs.
+      tgt_fixed_lambda <- if (use_fixed_lambda) lambda_formula(.n_obs_valid(rapm_data_tgt)) else NULL
+      if (use_fixed_lambda) {
+        cli::cli_alert_info(
+          "xRAPM[{tgt}] fixed-lambda mode (CV skipped), lambda={round(tgt_fixed_lambda, 5)} (n_obs={.n_obs_valid(rapm_data_tgt)})")
+      }
+
       xrapm_model_tgt <- fit_rapm_with_prior(
         rapm_data_tgt,
         offense_prior = off_prior_aligned,
-        defense_prior = def_prior_aligned
+        defense_prior = def_prior_aligned,
+        fixed_lambda = tgt_fixed_lambda  # panna#87
       )
 
       xrapm_ratings_tgt <- extract_rapm_ratings(xrapm_model_tgt)

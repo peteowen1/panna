@@ -88,6 +88,21 @@ cli_h1("Train Win Probability Model")
 
 cli_h2("Step 1: Load SPADL + match results")
 
+# #92: the standalone `epv` feature (live in-possession threat) is now part of
+# the WP model. spadl_chains carry no EPV (EPV is computed downstream of chains
+# in the prediction pipeline), so enrich the chains here with per-action EPV
+# before building WP features -- otherwise the new `epv` feature would train on
+# all-NA and stay dead. xpass_model is not needed (we only want the `epv`
+# column, not credit assignment).
+# Prefer the EPV model from THIS pipeline run (01_train_epv_models.R writes it to
+# data-raw/cache/epv/) so WP's #92 epv feature trains against the same EPV model
+# the run produced — not the older published pannamodels copy. Falls through to
+# pannamodels automatically if the local cache file is absent.
+epv_model <- tryCatch(load_epv_model(path = "data-raw/cache/epv"), error = function(e) {
+  cli_alert_warning("Could not load EPV model ({e$message}); training WITHOUT the #92 epv feature.")
+  NULL
+})
+
 all_wp_features <- list()
 
 for (league in LEAGUES) {
@@ -100,6 +115,18 @@ for (league in LEAGUES) {
 
       spadl <- convert_opta_to_spadl(events)
       spadl_chains <- create_possession_chains(spadl)
+
+      # #92: attach per-action EPV so create_wp_features surfaces the standalone
+      # `epv` feature (and a non-degenerate xmargin) rather than the
+      # margin_poss-only fallback.
+      if (!is.null(epv_model)) {
+        spadl_chains <- calculate_action_epv(spadl_chains, features = NULL,
+                                             epv_model, league = league)
+      }
+
+      # #93: re-derive red cards from raw events (type_id 17 + qual 33/14) and
+      # flag them onto the chains so red_card_diff becomes a live feature.
+      spadl_chains <- add_red_card_to_chains(spadl_chains, events)
 
       match_results <- .build_match_results_from_events(events, lineups)
       rm(events); gc(verbose = FALSE)

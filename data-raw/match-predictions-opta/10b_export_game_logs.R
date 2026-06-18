@@ -381,7 +381,25 @@ validate_game_log_schema <- function(dt, league, season) {
       # --- WPA path ---
       player_game_wpa <- tryCatch({
         match_results <- .build_match_results(events, lineups)
-        wp_feat       <- create_wp_features(spadl_chains, match_results)
+
+        # #92: surface the standalone live-threat `epv` feature. spadl_chains
+        # carry no EPV, but spadl_epv (computed above) does -- join it back on
+        # the within-match action key so create_wp_features sees a real `epv`
+        # column (and a non-degenerate xmargin) instead of the margin_poss-only
+        # fallback.
+        wp_chains <- spadl_chains
+        if (all(c("match_id", "action_id", "epv") %in% names(spadl_epv))) {
+          wp_chains <- data.table::as.data.table(data.table::copy(spadl_chains))
+          epv_lookup <- data.table::as.data.table(spadl_epv)[
+            , .(match_id, action_id, epv)]
+          wp_chains[epv_lookup, epv := i.epv, on = c("match_id", "action_id")]
+        }
+
+        # #93: re-derive red cards from raw events and flag them onto the chains
+        # so red_card_diff stops being a dead constant 0.
+        wp_chains     <- add_red_card_to_chains(wp_chains, events)
+
+        wp_feat       <- create_wp_features(wp_chains, match_results)
         spadl_wpa     <- add_wp_vars(wp_feat, wp_model)
         spadl_wpa     <- assign_wpa_credit(spadl_wpa)
         pgw           <- aggregate_player_game_wpa(spadl_wpa, lineups)

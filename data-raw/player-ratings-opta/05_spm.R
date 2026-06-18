@@ -169,7 +169,7 @@ cat("\n=== Fitting Opta Elastic Net SPM ===\n")
 spm_glmnet <- fit_spm_opta(
   spm_train_data,
   alpha = 0.5,
-  nfolds = 10,
+  nfolds = 5,          # panna#87: 10 -> 5 to reduce CV memory/time
   weight_by_minutes = TRUE,
   weight_transform = "sqrt"
 )
@@ -177,7 +177,7 @@ spm_glmnet <- fit_spm_opta(
 cat("\n=== Fitting XGBoost SPM ===\n")
 spm_xgb <- fit_spm_xgb(
   spm_train_data,
-  nfolds = 10,
+  nfolds = 5,          # panna#87: 10 -> 5
   max_depth = 4,
   eta = 0.02,
   subsample = 0.8,
@@ -306,7 +306,7 @@ offense_spm_glmnet <- fit_spm_model(
   offense_train,
   predictor_cols = offense_cols,
   alpha = 0.5,
-  nfolds = 10,
+  nfolds = 5,          # panna#87: 10 -> 5
   weight_by_minutes = TRUE
 )
 
@@ -314,7 +314,7 @@ cat("\n--- Offense XGBoost ---\n")
 offense_spm_xgb <- fit_spm_xgb(
   offense_train,
   predictor_cols = offense_cols,
-  nfolds = 10,
+  nfolds = 5,          # panna#87: 10 -> 5
   max_depth = 4,
   eta = 0.02,
   nrounds = 1000,
@@ -405,7 +405,7 @@ defense_spm_glmnet <- fit_spm_model(
   defense_train,
   predictor_cols = defense_cols,
   alpha = 0.5,
-  nfolds = 10,
+  nfolds = 5,          # panna#87: 10 -> 5
   weight_by_minutes = TRUE,
   lower_limits = def_lower,
   upper_limits = def_upper
@@ -415,7 +415,7 @@ cat("\n--- Defense XGBoost ---\n")
 defense_spm_xgb <- fit_spm_xgb(
   defense_train,
   predictor_cols = defense_cols,
-  nfolds = 10,
+  nfolds = 5,          # panna#87: 10 -> 5
   max_depth = 4,
   eta = 0.02,
   nrounds = 1000,

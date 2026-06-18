@@ -42,6 +42,56 @@ if (nrow(fixtures) == 0) {
   # 5. Prepare Feature Matrix ----
 
   X_fix <- as.matrix(fixtures[, feature_cols, drop = FALSE])
+
+  # --- issue #85 detection guard (no-silent-imputation rule) ----------------
+  # Step 04 deliberately PRESERVES NAs in team-strength features (Elo, team
+  # rating aggregates, their diffs) so a failed strength join stays visible.
+  # The zero-fill below is required for train/serve PARITY — the models were
+  # trained on zero-filled matrices, so removing the fill would create a
+  # train/serve skew. But a blanket fill silently turns a fixture whose
+  # strength features fully failed to join into an all-zero row with a
+  # confident-looking prediction and no warning.
+  #
+  # Guard: BEFORE filling, measure per-fixture the fraction of NA cells over
+  # the STRENGTH-feature subset of feature_cols (identified the SAME WAY step
+  # 04 does in its `skip_zero_fill` block — team-aggregate ratings + Elo +
+  # their diffs; we exclude rolling-form cols, which step 04 already imputes,
+  # and the home/away_goals/xg outcome cols, which are legitimately NA for
+  # unplayed fixtures). Loudly warn on any fixture above the threshold and
+  # SOFT-flag it (degraded_features) so downstream steps can grey it out —
+  # publish + flag, not a hard drop. The zero-fill itself is kept intact.
+  strength_feature_cols <- unique(c(
+    grep("^(home|away)_elo$|^elo_diff$", feature_cols, value = TRUE),
+    grep("^(home|away)_(sum|avg|max|min|gk|stdev)_", feature_cols, value = TRUE),
+    grep("^(home|away)_sk_", feature_cols, value = TRUE),
+    grep("_diff$", feature_cols, value = TRUE)
+  ))
+  DEGRADED_NA_THRESHOLD <- 0.25
+  if (length(strength_feature_cols) > 0) {
+    Xs <- X_fix[, strength_feature_cols, drop = FALSE]
+    strength_na_frac <- rowMeans(is.na(Xs))
+  } else {
+    strength_na_frac <- rep(0, nrow(X_fix))
+  }
+  degraded_features <- strength_na_frac > DEGRADED_NA_THRESHOLD
+  if (any(degraded_features)) {
+    deg_idx <- which(degraded_features)
+    warning(sprintf(
+      "issue #85: %d fixture(s) have >%.0f%% of strength features missing (failed join). Predictions are published but flagged degraded:\n%s",
+      length(deg_idx), 100 * DEGRADED_NA_THRESHOLD,
+      paste(sprintf("  %s: %s vs %s (%.0f%% strength NA)",
+                    fixtures$match_id[deg_idx],
+                    fixtures$home_team[deg_idx], fixtures$away_team[deg_idx],
+                    100 * strength_na_frac[deg_idx]),
+            collapse = "\n")
+    ), call. = FALSE)
+  } else {
+    message(sprintf("  Strength-feature join OK: 0 fixtures above the %.0f%% NA degraded threshold (issue #85 guard)",
+                    100 * DEGRADED_NA_THRESHOLD))
+  }
+  # --- end issue #85 guard --------------------------------------------------
+
+  # Zero-fill kept INTACT for train/serve parity (step 04 trained on this).
   X_fix[is.na(X_fix)] <- 0
 
   # Helper: run a segment's goals + outcome models on a feature matrix.
@@ -134,6 +184,10 @@ if (nrow(fixtures) == 0) {
     prob_A = round(probs[, 3], 3),
     predicted_result = c("H", "D", "A")[apply(probs, 1, which.max)],
     status = ifelse(fixtures$split == "fixture", "fixture", "played"),
+    # issue #85: soft flag for fixtures whose strength features largely failed
+    # to join (zero-filled for parity, but the prediction is unreliable).
+    # Downstream blog steps should grey these out rather than drop them.
+    degraded_features = degraded_features,
     stringsAsFactors = FALSE
   )
 

@@ -12,6 +12,19 @@ devtools::load_all()
 
 cache_dir <- file.path("data-raw", "cache-opta")
 
+# panna#87 OOM mitigation (option A): env-gated CV skip. When OPTA_FIXED_LAMBDA
+# is set (any non-empty value, e.g. "1" in the GHA workflow), skip cv.glmnet and
+# fit each RAPM at the closed-form lambda = 16.67 * n_obs^-0.58 (R^2=0.96 vs
+# lambda.min). cv.glmnet does 10 folds + a final fit = 11 dense refits per call,
+# and this step runs ~4 such fits back-to-back — the spike that OOMs the 16GB
+# runner. Default (unset) keeps the current cross-validated behaviour unchanged.
+use_fixed_lambda <- nzchar(Sys.getenv("OPTA_FIXED_LAMBDA"))
+# Sample-size lambda formula (same as data-raw/estimated-skills/09b_career_panna_asof.R).
+lambda_formula <- function(n) 16.67 * n^(-0.58)
+# n_obs for a fit = count of valid (non-NA, finite) responses, matching the
+# count fit_rapm()/fit_rapm_with_prior() use internally.
+.n_obs_valid <- function(rd) sum(!is.na(rd$y) & is.finite(rd$y))
+
 # 2. Load Splint Data ----
 
 cat("\n=== Loading Splint Data ===\n")
@@ -71,15 +84,23 @@ if (!is.null(rapm_data$seasons)) {
 
 cat("\n=== Fitting RAPM Model ===\n")
 
+# panna#87: fixed-lambda mode skips CV (the 11-refit memory spike); else CV.
+base_fixed_lambda <- if (use_fixed_lambda) lambda_formula(.n_obs_valid(rapm_data)) else NULL
+if (use_fixed_lambda) {
+  cli::cli_alert_info(
+    "RAPM fixed-lambda mode (CV skipped), lambda={round(base_fixed_lambda, 5)} (n_obs={.n_obs_valid(rapm_data)})")
+}
+
 model <- fit_rapm(
   rapm_data,
   alpha = 0,           # Ridge regression
-  nfolds = 10,
+  nfolds = 5,          # panna#87: 10 -> 5 to halve the CV memory/time spike
   use_weights = TRUE,
   penalize_covariates = FALSE,
-  parallel = FALSE     # avoid 2x memory amplification from doParallel
+  parallel = FALSE,    # avoid 2x memory amplification from doParallel
                        # workers — OOM-killed step 4 on 7GB GHA runners
                        # at 664K obs x 38K cols on the v5 attempt.
+  fixed_lambda = base_fixed_lambda  # panna#87: NULL = CV (default), else closed-form
 )
 
 # 5. Covariate Effects ----
@@ -153,13 +174,21 @@ if (use_multi_target) {
           include_covariates = TRUE
         )
 
+        # panna#87: per-target fixed lambda from that target's own n_obs.
+        tgt_fixed_lambda <- if (use_fixed_lambda) lambda_formula(.n_obs_valid(rapm_data_tgt)) else NULL
+        if (use_fixed_lambda) {
+          cli::cli_alert_info(
+            "RAPM[{tgt}] fixed-lambda mode (CV skipped), lambda={round(tgt_fixed_lambda, 5)} (n_obs={.n_obs_valid(rapm_data_tgt)})")
+        }
+
         model_tgt <- fit_rapm(
           rapm_data_tgt,
           alpha = 0,
-          nfolds = 10,
+          nfolds = 5,        # panna#87: 10 -> 5
           use_weights = TRUE,
           penalize_covariates = FALSE,
-          parallel = FALSE  # same reason as base RAPM above
+          parallel = FALSE,  # same reason as base RAPM above
+          fixed_lambda = tgt_fixed_lambda  # panna#87
         )
 
         ratings_tgt <- extract_rapm_ratings(model_tgt)
