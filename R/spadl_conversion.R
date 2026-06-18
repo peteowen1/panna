@@ -69,14 +69,36 @@ OPTA_BODYPART_QUALIFIERS <- list(
   left_foot = 36L
 )
 
-# Opta type_id to human-readable name mapping
-# Used to add opta_type_name column for debugging/analysis
+# Opta F24 event type_id -> human-readable name. SINGLE source of truth for the
+# descriptive `opta_type_name` column. Reconciled 2026-06-18 against the public
+# Opta F24 spec (statsperform.com/opta-event-definitions; tomh05/football-scores;
+# znstrider/opta_event_ids_and_names) AND validated against our own feed's event
+# distribution + median pitch location (x: 0 = own goal line, 100 = opp goal).
+# The SPADL action mapping (map_opta_action_type) keys off type_id, NOT these
+# names, so corrections here are display-only and safe.
+# "(verify)" = our feed conflicts with the public spec (e.g. non-located where the
+# spec implies a located action) — confirm vs the official Opta doc before relying
+# on it. "Unknown" = absent from all our spec sources.
+#
+# FLAGGED follow-ups (NOT changed here — model-affecting):
+#   * 74 "Blocked Pass" (a DEFENDER blocking a pass) is dropped via
+#     OPTA_NON_GAMEPLAY_TYPES (was mislabelled "Injury Clearance"). It is the
+#     DEFENSIVE companion of the opponent's failed pass (qualifier 233 links them),
+#     so dropping it avoids double-counting the ball event — BUT it means the
+#     blocker gets no defensive credit. ~77k/league. Decide vs panna#104.
+#   * 67 "50/50" (was "Offside") is likewise a contest that's dropped — same
+#     defensive-credit consideration.
+#   * 54 "Smother" is a keeper action (own goalmouth, x~9) but
+#     map_opta_action_type() maps it to `ball_touch`; really a possession-settling
+#     keeper action (cf. keeper_claim). See panna#104.
+#   * non-located admin types 22/24/25/39/71/75/79/81 are NOT in
+#     OPTA_NON_GAMEPLAY_TYPES, so they fall through to SPADL as `other`.
 OPTA_TYPE_NAMES <- c(
   "1" = "Pass",
   "2" = "Offside Pass",
   "3" = "Take On",
   "4" = "Foul",
-  "5" = "Ball Out",
+  "5" = "Ball Out",                       # Opta "Out"
   "6" = "Corner Awarded",
   "7" = "Tackle",
   "8" = "Interception",
@@ -86,44 +108,68 @@ OPTA_TYPE_NAMES <- c(
   "12" = "Clearance",
   "13" = "Miss",
   "14" = "Post",
-  "15" = "Attempt Saved",
+  "15" = "Attempt Saved",                 # incl. defender-blocked shots (qualifier 82)
   "16" = "Goal",
   "17" = "Card",
   "18" = "Player Off",
   "19" = "Player On",
-  "27" = "Start",
-  "28" = "End",
-  "30" = "End 1H",
-  "32" = "Start 2H",
+  "20" = "Player Retired",
+  "21" = "Player Returns",
+  "22" = "Player Becomes Goalkeeper",
+  "23" = "Goalkeeper Becomes Player",
+  "24" = "Condition Change",
+  "25" = "Official Change",
+  "27" = "Start Delay",                   # was "Start" (WRONG)
+  "28" = "End Delay",                     # was "End" (WRONG)
+  "30" = "End",                           # was "End 1H"; period end (read by extract_period_end_times)
+  "32" = "Start",                         # was "Start 2H"; period start
   "34" = "Team Set Up",
   "35" = "Position Change",
   "36" = "Jersey Change",
   "37" = "Collection End",
+  "38" = "Temp Goal",
+  "39" = "Temp Attempt",
   "40" = "Formation Change",
   "41" = "Punch",
   "42" = "Good Skill",
   "43" = "Deleted Event",
   "44" = "Aerial",
   "45" = "Challenge",
+  "47" = "Rescinded Card",
   "49" = "Ball Recovery",
-  "50" = "Blocked Pass",
-  "51" = "Delay of Play",
+  "50" = "Dispossessed",                  # was "Blocked Pass" (WRONG); maps to action `dispossessed`, x~64
+  "51" = "Error",                         # was "Delay of Play" (WRONG); defensive mistake, x~18
   "52" = "Keeper Pick-up",
-  "53" = "Chance Missed",
-  "54" = "Ball Touch",
-
-  "55" = "Temp Goal",
-  "56" = "Resume Play",
-  "57" = "Contentious Decision",
+  "53" = "Cross Not Claimed",             # was "Chance Missed" (WRONG); keeper, own goalmouth x~5
+  "54" = "Smother",                       # was "Ball Touch" (WRONG); keeper, own goalmouth x~9 (see FLAG)
+  "55" = "Offside Provoked",              # was "Temp Goal" (WRONG)
+  "56" = "Shield Ball Opp",               # was "Resume Play" (WRONG) (our feed: non-located)
+  "57" = "Foul Throw-in",                 # was "Contentious Decision" (WRONG) (our feed: non-located)
+  "58" = "Penalty Faced",                 # keeper; carries penalty qualifier 9
+  "59" = "Keeper Sweeper",                # (the name was wrongly at 77)
+  "60" = "Chance Missed",                 # (a copy was wrongly at 80)
   "61" = "Ball Touch",
-  "67" = "Offside",
-  "68" = "Offside Provoked",
-  "70" = "Shield Ball",
-  "74" = "Injury Clearance",
-  "77" = "Keeper Sweeper",
-  "80" = "Chance Missed",
-  "83" = "Att One on One",
-  "84" = "Unknown"
+  "63" = "Temp Save",
+  "64" = "Resume",
+  "65" = "Contentious Referee Decision",
+  "66" = "Possession Data",
+  "67" = "50/50",                         # was "Offside" (WRONG); midfield contests, x~50, 55k
+  "68" = "Referee Drop Ball",             # was "Offside Provoked" (WRONG) (verify - our feed mostly non-located)
+  "69" = "Failed To Block",
+  "70" = "Injury Time Announcement",      # was "Shield Ball" (WRONG); non-located marker
+  "71" = "Coach Setup",                   # was "Unknown"
+  "72" = "Caught Offside",
+  "73" = "Other Ball Contact",
+  "74" = "Blocked Pass",                  # was "Injury Clearance" (WRONG); defender blocks a pass, x~44 (see FLAG)
+  # ids 75+ are NOT in the public F24 references; named from our feed where the
+  # evidence is clear, else left Unknown. Confirm vs the official Opta spec.
+  "75" = "Unknown",                       # n~508 corpus-wide; non-located
+  "76" = "Unknown",                       # n~56; NOT in any public ref nor prior dict
+  "79" = "Unknown",                       # n~10.3k; non-located
+  "80" = "Unknown",                       # n~89k; was "Chance Missed" (that is 60); located x~12 (verify)
+  "81" = "Unknown",                       # n~15.7k; located x~64 (verify)
+  "83" = "Att One on One",                # n~798k; maps to take_on; located x~39 (verify - not in public sources)
+  "84" = "Unknown"                        # n~10.8k; non-located; carries rich qualifiers
 )
 
 # Non-gameplay event type_ids to filter out
@@ -150,9 +196,9 @@ OPTA_NON_GAMEPLAY_TYPES <- c(
   55L,  # Temp Goal - temporary marker
   56L,  # Resume Play - marker
   57L,  # Contentious Decision - ref decision
-  67L,  # Offside - play is dead
-  68L,  # Offside Provoked - defensive trap
-  74L,  # Injury Clearance - stoppage
+  67L,  # 50/50 - contest (was mislabelled "Offside"); dropped like Challenge (45) - see FLAG
+  68L,  # Referee Drop Ball (was mislabelled "Offside Provoked")
+  74L,  # Blocked Pass - defensive mirror of the opponent's failed pass (was mislabelled "Injury Clearance") - see FLAG
   80L,  # Chance Missed - redundant with shot data
   53L,  # Chance Missed (alternate) - redundant with shot data
   # Unknown/rare types with no clear gameplay contribution
@@ -549,7 +595,8 @@ map_opta_action_type <- function(type_id, qualifiers = NULL) {
   action_type[type_id == 11L] <- "keeper_claim"  # Claim (GK catches cross)
   action_type[type_id == 41L] <- "keeper_punch"
   action_type[type_id == 52L] <- "keeper_pick_up"
-  # Note: Type 53 is "Chance Missed" not keeper_claim - don't map it
+  # Note: Type 53 is "Cross Not Claimed" (keeper FAILED to claim a cross), NOT a
+  # successful keeper_claim (type 11) - don't map it.
 
   # 1v1 situations and skill moves (similar to take_on)
   action_type[type_id == 42L] <- "take_on"       # Good Skill
