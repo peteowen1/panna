@@ -13,6 +13,94 @@
 # Feature engineering
 # ============================================================================
 
+#' Attach a per-action red_card flag to possession chains (#93)
+#'
+#' SPADL carries only on-ball gameplay actions, so card events (Opta
+#' \code{type_id == 17}) are filtered out in \code{convert_opta_to_spadl()} and
+#' never reach the possession chains. As a result the red-card block in
+#' \code{\link{create_wp_features}} (\code{if ("red_card" \%in\% names(dt))})
+#' always took its else branch and \code{red_card_diff} was a constant 0 -- a
+#' dead feature. This helper re-derives red cards from the RAW events and joins
+#' a 0/1 \code{red_card} column onto the chains so that block activates.
+#'
+#' Detection mirrors \code{extract_player_timing_from_events()} in
+#' \code{splint_creation.R}: \code{type_id == 17} (Card) carrying qualifier 33
+#' (straight red) or 14 (second yellow). The earliest such card per
+#' (match, team) is taken, and the flag is set on the single chain action of
+#' the carded team nearest that card's time (matching the SPADL clock,
+#' \code{time_seconds = minute*60 + second}). One flagged action per red card is
+#' exactly what \code{create_wp_features}' \code{cumsum()} logic expects.
+#'
+#' @param chains Possession chains (output of \code{create_possession_chains()}).
+#'   Must contain \code{match_id}, \code{team_id}, \code{time_seconds},
+#'   \code{period_id}.
+#' @param events Raw Opta match events with \code{match_id}, \code{type_id},
+#'   \code{team_id}, \code{minute}, \code{qualifier_json} (and optionally
+#'   \code{second}, \code{period_id}).
+#'
+#' @return \code{chains} with an integer \code{red_card} column (1 on the action
+#'   nearest each carded team's red-card time, else 0). If no reds are detected
+#'   (or required columns are missing) every row gets \code{red_card = 0}, which
+#'   reproduces the previous constant-0 behaviour for that match.
+#'
+#' @export
+add_red_card_to_chains <- function(chains, events) {
+  dt <- data.table::as.data.table(chains)
+  # Default: no reds. Keeps callers simple -- create_wp_features then computes
+  # red_card_diff == 0 for these matches (same as before, but now data-driven).
+  dt[, red_card := 0L]
+
+  ev <- data.table::as.data.table(events)
+  needed <- c("match_id", "type_id", "team_id", "minute", "qualifier_json")
+  if (length(setdiff(needed, names(ev))) > 0L) {
+    cli::cli_warn(c(
+      "add_red_card_to_chains: raw events missing {.field {setdiff(needed, names(ev))}} ",
+      "- red_card left at 0 (red_card_diff stays the dead constant)."
+    ))
+    return(dt[])
+  }
+
+  # Card events only (type_id 17). Same red/second-yellow qualifier test as
+  # splint_creation.R::extract_player_timing_from_events / detect_red_in_qj.
+  cards <- ev[type_id == 17L]
+  if (nrow(cards) == 0L) return(dt[])
+
+  detect_red_in_qj <- function(qj) {
+    if (is.na(qj)) return(FALSE)
+    parsed <- tryCatch(jsonlite::fromJSON(qj), error = function(e) NULL)
+    if (is.null(parsed)) return(FALSE)
+    any(c("33", "14") %in% names(parsed))
+  }
+  cards[, is_red := vapply(qualifier_json, detect_red_in_qj, logical(1))]
+  reds <- cards[is_red == TRUE]
+  if (nrow(reds) == 0L) return(dt[])
+
+  # Card time on the SPADL clock: time_seconds = minute*60 + second.
+  reds[, card_time := as.numeric(minute) * 60 +
+         (if ("second" %in% names(reds)) as.numeric(second) else 0)]
+  # Earliest red per (match, team) -- a team's first dismissal is the one that
+  # changes the man-count game state.
+  reds <- reds[!is.na(card_time),
+               .(card_time = min(card_time, na.rm = TRUE)),
+               by = .(match_id, team_id)]
+  if (nrow(reds) == 0L) return(dt[])
+
+  dt[, .row_id := .I]
+  # For each carded (match, team), flag the team's chain action nearest the
+  # card time. nearest = smallest |time_seconds - card_time|.
+  flag_rows <- integer(0)
+  for (i in seq_len(nrow(reds))) {
+    cand <- dt[match_id == reds$match_id[i] & team_id == reds$team_id[i]]
+    if (nrow(cand) == 0L) next
+    j <- which.min(abs(cand$time_seconds - reds$card_time[i]))
+    flag_rows <- c(flag_rows, cand$.row_id[j])
+  }
+  if (length(flag_rows) > 0L) dt[.row_id %in% flag_rows, red_card := 1L]
+  dt[, .row_id := NULL]
+  dt[]
+}
+
+
 #' Create win probability features from SPADL actions
 #'
 #' Builds the game-state feature set at each action for WP model training
@@ -188,10 +276,15 @@ create_wp_features <- function(spadl_with_epv, match_results = NULL,
   # Select feature columns. score_diff (home-POV) and margin_poss (possession-POV)
   # both surfaced -- training uses xmargin, downstream may want score_diff for
   # compatibility.
+  # #92: keep standalone `epv` (the fractional in-possession threat) alongside
+  # `xmargin`. xmargin = margin_poss + epv is dominated by the integer
+  # margin_poss, so trees never split inside the epv band -> live threat never
+  # moves WP. Surfacing epv as its own feature lets the model split the threat
+  # band independently. epv may be absent (warned upstream); intersect drops it.
   feature_cols <- c("match_id", "team_id", "player_id", "player_name",
                      "action_type", "time_seconds", "period_id",
                      "time_remaining", "time_elapsed_frac",
-                     "score_diff", "margin_poss", "xmargin",
+                     "score_diff", "margin_poss", "xmargin", "epv",
                      "xg_diff", "red_card_diff",
                      "is_home", "is_second_half", "is_extra_time", "is_goal")
   if ("wp_label" %in% names(dt)) feature_cols <- c(feature_cols, "wp_label")
@@ -262,7 +355,13 @@ train_wp_model <- function(wp_features, nrounds = 500L, max_depth = 4L,
   # single composite feature rather than asking the model to discover the
   # interaction. Kept score_diff out of the training set on purpose: xmargin
   # subsumes it when EPV=0, so keeping both would mostly be redundant.
-  feature_names <- c("time_remaining", "xmargin", "xg_diff",
+  #
+  # #92: `epv` is added as a STANDALONE feature alongside `xmargin`. xmargin's
+  # fractional EPV component is dead -- the integer margin_poss dominates the
+  # composite, so the trees never split inside the sub-1.0 epv band and live
+  # threat never moves WP. A separate epv feature lets the model split the
+  # threat band on its own. (intersect() drops it if upstream had no epv.)
+  feature_names <- c("time_remaining", "xmargin", "epv", "xg_diff",
                       "red_card_diff", "is_home", "is_second_half",
                       "is_extra_time")
   feature_names <- intersect(feature_names, names(dt))
@@ -297,6 +396,9 @@ train_wp_model <- function(wp_features, nrounds = 500L, max_depth = 4L,
   mono_vec <- rep(0L, length(feature_names))
   names(mono_vec) <- feature_names
   if ("xmargin" %in% feature_names) mono_vec["xmargin"] <- 1L
+  # #92: more in-possession threat must not LOWER the possessor's WP, matching
+  # xmargin's +1 sign (both are possession-POV: positive = possessor advantage).
+  if ("epv" %in% feature_names) mono_vec["epv"] <- 1L
   mono_str <- paste0("(", paste(mono_vec, collapse = ","), ")")
 
   params <- list(
