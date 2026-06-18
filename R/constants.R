@@ -335,15 +335,18 @@ EPV_OPP_PRIOR_GAMES <- 2
 
 #' Default penalty kick xG value
 #'
-#' xG override for penalty kicks. Based on historical penalty
-#' conversion rates (~76%). Used when xG model is trained without
-#' penalties.
+#' xG override for penalty kicks, applied in `add_xg_to_spadl()` to shots flagged
+#' `is_penalty` (Opta qualifier 9). The xG model is trained with penalties
+#' excluded (`exclude_penalties = TRUE`), so without this override a penalty
+#' scores like a contested ~12m open-play shot (~0.23). Empirical: ENG 2021-24 =
+#' 251/306 = 0.82 (thin, seasonal range 0.74-0.90); long-run top-flight ~0.78.
+#' 0.80 is a robust central value.
 #'
-#' @format Numeric value: 0.76
+#' @format Numeric value: 0.80
 #' @export
 #' @examples
 #' PENALTY_XG
-PENALTY_XG <- 0.76
+PENALTY_XG <- 0.80
 
 #' Empirical penalty-shootout conversion rate
 #'

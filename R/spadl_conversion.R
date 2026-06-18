@@ -505,7 +505,7 @@ convert_opta_to_spadl <- function(opta_events, normalize_direction = FALSE) {
                   "opponent_player_id", "opponent_player_name")
 
   # Include qualifier-derived columns if available
-  optional_cols <- c("is_own_goal", "is_big_chance")
+  optional_cols <- c("is_own_goal", "is_big_chance", "is_penalty")
   available_optional <- optional_cols[optional_cols %in% names(dt)]
   result_cols <- c(base_cols, available_optional)
   dt <- dt[, ..result_cols]
@@ -554,7 +554,8 @@ parse_opta_qualifiers <- function(dt) {
     is_right_foot = valid & grepl('[{,]"72":', qjson),
     is_left_foot = valid & grepl('[{,]"36":', qjson),
     is_big_chance = valid & grepl('[{,]"214":', qjson),
-    is_own_goal = valid & grepl('[{,]"28":', qjson)
+    is_own_goal = valid & grepl('[{,]"28":', qjson),
+    is_penalty = valid & grepl('[{,]"9":', qjson)   # qualifier 9 = penalty
   )]
 
   dt[, qualifiers_parsed := TRUE]

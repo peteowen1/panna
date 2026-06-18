@@ -284,10 +284,22 @@ create_wp_features <- function(spadl_with_epv, match_results = NULL,
   # margin_poss, so trees never split inside the epv band -> live threat never
   # moves WP. Surfacing epv as its own feature lets the model split the threat
   # band independently. epv may be absent (warned upstream); intersect drops it.
+  # Time-damped game-state features: the WP response to lead/threat should scale
+  # with how much of the game has elapsed (a 1-goal lead at min 5 is worth far
+  # less than at min 85). Validated 2026-06-19 (Big-5, held-out): at the shallow
+  # depth-2 WP config these REPLACE raw xmargin/epv and cut early-game
+  # overconfidence ~3x (ECE 0.0096 -> 0.0070) with no discrimination loss.
+  # Additive here (raw forms retained); the trainer chooses which set to use.
+  if (all(c("xmargin", "time_elapsed_frac") %in% names(dt)))
+    dt[, xmargin_x_time := xmargin * time_elapsed_frac]
+  if (all(c("epv", "time_elapsed_frac") %in% names(dt)))
+    dt[, epv_x_time := epv * time_elapsed_frac]
+
   feature_cols <- c("match_id", "team_id", "player_id", "player_name",
                      "action_type", "time_seconds", "period_id",
                      "time_remaining", "time_elapsed_frac",
                      "score_diff", "margin_poss", "xmargin", "epv",
+                     "xmargin_x_time", "epv_x_time",
                      "xg_diff", "red_card_diff",
                      "is_home", "is_second_half", "is_extra_time", "is_goal")
   if ("wp_label" %in% names(dt)) feature_cols <- c(feature_cols, "wp_label")
@@ -339,7 +351,8 @@ create_wp_features <- function(spadl_with_epv, match_results = NULL,
 #'
 #' @export
 train_wp_model <- function(wp_features, nrounds = 500L, max_depth = 4L,
-                            eta = 0.05, nfolds = 5L,
+                            eta = 0.05, nfolds = 5L, min_child_weight = 50L,
+                            feature_names = NULL, objective = "binary:logistic",
                             early_stopping_rounds = 20L, seed = 42L, ...) {
   if (!requireNamespace("xgboost", quietly = TRUE)) {
     cli::cli_abort("Package {.pkg xgboost} required for WP model training")
@@ -364,10 +377,15 @@ train_wp_model <- function(wp_features, nrounds = 500L, max_depth = 4L,
   # composite, so the trees never split inside the sub-1.0 epv band and live
   # threat never moves WP. A separate epv feature lets the model split the
   # threat band on its own. (intersect() drops it if upstream had no epv.)
-  feature_names <- c("time_remaining",
-                      "xmargin", "epv", "xg_diff",
-                      "red_card_diff", "is_home", "is_second_half",
-                      "is_extra_time")
+  # Default = the #92 base set. Pass `feature_names` to use the depth-2 time-
+  # interacted set: replace xmargin/epv with xmargin_x_time/epv_x_time (validated
+  # 2026-06-19 best calibration + gentlest slope).
+  if (is.null(feature_names)) {
+    feature_names <- c("time_remaining",
+                        "xmargin", "epv", "xg_diff",
+                        "red_card_diff", "is_home", "is_second_half",
+                        "is_extra_time")
+  }
   feature_names <- intersect(feature_names, names(dt))
 
   # Filter to valid rows (non-NA label)
@@ -399,22 +417,26 @@ train_wp_model <- function(wp_features, nrounds = 500L, max_depth = 4L,
   # xmargin -> lower WP in some leaf"). Order matches feature_names.
   mono_vec <- rep(0L, length(feature_names))
   names(mono_vec) <- feature_names
-  if ("xmargin" %in% feature_names) mono_vec["xmargin"] <- 1L
-  # #92: more in-possession threat must not LOWER the possessor's WP, matching
-  # xmargin's +1 sign (both are possession-POV: positive = possessor advantage).
-  if ("epv" %in% feature_names) mono_vec["epv"] <- 1L
+  # +1 on all game-state features (raw or time-interacted): more lead / more
+  # in-possession threat must not LOWER the possessor's WP (all possession-POV).
+  for (f in c("xmargin", "epv", "xmargin_x_time", "epv_x_time"))
+    if (f %in% feature_names) mono_vec[f] <- 1L
   mono_str <- paste0("(", paste(mono_vec, collapse = ","), ")")
 
+  # reg:squarederror minimises Brier (a proper calibration-rewarding rule) and
+  # validated ~38% lower ECE than binary:logistic for WP (2026-06-19); it can
+  # predict slightly outside [0,1], so SERVING must clamp. CV metric follows.
+  eval_metric <- if (grepl("squarederror", objective)) "rmse" else "logloss"
   params <- list(
     booster = "gbtree",
-    objective = "binary:logistic",
-    eval_metric = "logloss",
+    objective = objective,
+    eval_metric = eval_metric,
     tree_method = "hist",
     max_depth = max_depth,
     eta = eta,
     subsample = 0.8,
     colsample_bytree = 0.8,
-    min_child_weight = 50,
+    min_child_weight = min_child_weight,
     monotone_constraints = mono_str,
     ...
   )
@@ -431,8 +453,9 @@ train_wp_model <- function(wp_features, nrounds = 500L, max_depth = 4L,
     verbose = 1
   )
 
-  optimal_nrounds <- which.min(cv_result$evaluation_log$test_logloss_mean)
-  best_logloss <- min(cv_result$evaluation_log$test_logloss_mean)
+  metric_col <- paste0("test_", eval_metric, "_mean")
+  optimal_nrounds <- which.min(cv_result$evaluation_log[[metric_col]])
+  best_logloss <- min(cv_result$evaluation_log[[metric_col]])
   cli::cli_alert_info("Optimal nrounds: {optimal_nrounds}, CV logloss: {round(best_logloss, 6)}")
 
   set.seed(seed)

@@ -463,7 +463,21 @@ add_xg_to_spadl <- function(spadl_actions, xg_model) {
   # Add to SPADL
   spadl_actions$xg[shot_idx] <- xg_pred
 
-  cli::cli_alert_success("Added xG to {sum(shot_idx)} shots (mean xG: {round(mean(xg_pred), 3)})")
+  # Penalty override: the xG model is trained with exclude_penalties = TRUE, so it
+  # scores a penalty like a contested ~12m open-play shot (~0.23) instead of the
+  # empirical conversion rate. Force penalties to a fixed value (carried via the
+  # qualifier-9 is_penalty flag, propagated through SPADL). EPV uses epv := xg on
+  # shots, so this also corrects the displayed penalty EPV.
+  if ("is_penalty" %in% names(spadl_actions)) {
+    pen_idx <- shot_idx & (spadl_actions$is_penalty %in% TRUE)   # %in% TRUE is NA-safe
+    n_pen <- sum(pen_idx)
+    if (n_pen > 0) {
+      spadl_actions$xg[pen_idx] <- PENALTY_XG
+      cli::cli_alert_info("Overrode {n_pen} penalt{?y/ies} to xG = {PENALTY_XG}")
+    }
+  }
+
+  cli::cli_alert_success("Added xG to {sum(shot_idx)} shots (mean xG: {round(mean(spadl_actions$xg[shot_idx]), 3)})")
 
   spadl_actions
 }

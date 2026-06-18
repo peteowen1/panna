@@ -206,13 +206,20 @@ create_epv_features <- function(spadl_actions, n_prev = 3) {
 
 
 # Simple feature column names (single source of truth)
+# PRE-ACTION STATE ONLY. `dx`/`dy` (end-displacement) and `result_success` were
+# dropped 2026-06-18: they leak the action's OUTCOME into what is meant to be the
+# state-BEFORE value (see epv_model.R:611 "EPV measures state BEFORE action"). The
+# contamination inflated e.g. a corner delivery to ~0.20 (the model "knew" it
+# succeeded into the box) when the pre-action corner *state* is ~0.07. EPV = the
+# value of the position you are in, not what the action achieved; the action's
+# credit comes from epv_delta = lead(epv) - epv. Prototype A/B (7.45M actions):
+# ordering fixed (box 0.095 > corner 0.071, was inverted 0.125 < 0.197),
+# held-out RMSE unchanged (0.1943 vs 0.1936).
 EPV_SIMPLE_FEATURE_COLS <- c(
   "start_x", "start_y", "distance_to_goal", "angle_to_goal",
-  "dx", "dy", "time_remaining", "is_extra_time",
-  # PROTOTYPE (next retrain cycle): per-half sawtooth time — see create_epv_features_simple().
-  "time_in_half_remaining",
+  "time_remaining", "is_extra_time", "time_in_half_remaining",
   "prev_x", "prev_y", "prev_dx", "prev_dy",
-  "same_team_prev", "action_cat", "result_success",
+  "same_team_prev", "action_cat",
   "league_id"
 )
 
@@ -233,11 +240,12 @@ EPV_LEAGUE_MAP <- c(
 
 #' Create Simple EPV Features
 #'
-#' Builds a 16-feature set for EPV prediction: spatial location,
-#' movement, time remaining (per-match regulation/ET denominator, #94),
-#' extra-time indicator, previous action context, action type, result,
-#' and league identity. Designed for the xG-method simple model which
-#' prioritises spatial signal while allowing league-specific adjustments.
+#' Builds a 14-feature PRE-ACTION STATE set for EPV prediction: spatial location,
+#' time remaining (per-match regulation/ET denominator, #94), extra-time
+#' indicator, previous-action (arrival) context, action type, and league
+#' identity. Outcome features (end-displacement dx/dy, result_success) are
+#' deliberately excluded so EPV is the value of the state BEFORE the action,
+#' not what the action achieved (the action's value = lead(epv) - epv).
 #'
 #' @param spadl_actions SPADL actions data frame
 #' @param league League code (e.g., "ENG"). If NULL, uses \code{league} column
