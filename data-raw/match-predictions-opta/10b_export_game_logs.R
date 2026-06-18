@@ -412,9 +412,9 @@ validate_game_log_schema <- function(dt, league, season) {
 
       # --- PSV path ---
       player_game_psv <- NULL
+      league_match_ids <- unique(events$match_id)
       if (has_match_stats) {
         tryCatch({
-          league_match_ids <- unique(events$match_id)
           league_stats <- all_match_stats[all_match_stats$match_id %in% league_match_ids, ]
           if (nrow(league_stats) > 0) {
             player_game_psv <- compute_player_psv(league_stats, min_adjust = FALSE, center = TRUE)
@@ -422,6 +422,60 @@ validate_game_log_schema <- function(dt, league, season) {
           }
         }, error = function(e) {
           warning(sprintf("PSV failed for %s %s: %s",
+                          league, season, e$message), call. = FALSE)
+        })
+      }
+
+      # pannadata#74: the skills cache (cache-skills/01_match_stats.rds) is built
+      # by a SEPARATE skills-pipeline run and can lag the predictions pipeline —
+      # for World Cup it has no current WC box-score rows, so the path above
+      # yields 0 PSV/OSV/DSV for every WC player-game. When the cache gives no
+      # PSV for ANY of this league's matches, compute PSV inline from the league's
+      # own box scores (load_opta_stats → compute_match_level_opta_stats →
+      # compute_player_psv), exactly the transform the skills pipeline applies in
+      # 01_compute_match_stats.R. center = TRUE centers over the INPUT population
+      # (here: this tournament's players, i.e. "vs the average WC player") — the
+      # documented per-population semantics (panna/CLAUDE.md), preserved here.
+      cache_covered_ids <- if (!is.null(player_game_psv) &&
+                               "match_id" %in% names(player_game_psv)) {
+        unique(player_game_psv$match_id)
+      } else {
+        character(0)
+      }
+      if (length(setdiff(league_match_ids, cache_covered_ids)) > 0L) {
+        tryCatch({
+          box_stats <- load_opta_stats(league, season = league_season)
+          if (!is.null(box_stats) && nrow(box_stats) > 0) {
+            box_dt <- data.table::as.data.table(box_stats)
+            box_dt <- box_dt[match_id %in% league_match_ids]
+            # Only fill matches the cache path missed — never clobber cache rows.
+            if (length(cache_covered_ids) > 0L) {
+              box_dt <- box_dt[!match_id %in% cache_covered_ids]
+            }
+            if (nrow(box_dt) > 0L) {
+              box_dt[, league := league]
+              box_dt[, season := league_season]
+              match_level <- compute_match_level_opta_stats(box_dt, min_minutes = 10)
+              if (!is.null(match_level) && nrow(match_level) > 0L) {
+                inline_psv <- compute_player_psv(match_level, min_adjust = FALSE,
+                                                 center = TRUE)
+                player_game_psv <- data.table::rbindlist(
+                  list(player_game_psv, inline_psv), fill = TRUE, use.names = TRUE
+                )
+                message(sprintf("    PSV (inline box scores, #74): +%d player-games",
+                                nrow(inline_psv)))
+              }
+            }
+          } else {
+            # Surface, don't fabricate: leave PSV NA for the uncovered matches.
+            warning(sprintf(
+              "PSV gap for %s %s (#74): %d match(es) absent from skills cache AND no box scores from load_opta_stats — PSV left NA",
+              league, season,
+              length(setdiff(league_match_ids, cache_covered_ids))
+            ), call. = FALSE)
+          }
+        }, error = function(e) {
+          warning(sprintf("Inline PSV (#74) failed for %s %s: %s",
                           league, season, e$message), call. = FALSE)
         })
       }
