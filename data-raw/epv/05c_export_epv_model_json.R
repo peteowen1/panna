@@ -13,9 +13,11 @@ devtools::load_all()
 
 cli_h1("Export EPV model to JSON")
 
-model_dir <- file.path(opta_data_dir(), "models")
-rds_path <- file.path(model_dir, "epv_model.rds")
-json_path <- file.path(model_dir, "epv_model.json")
+# Default: published model. Set `epv_model_path` / `epv_json_out_dir` to stage a candidate.
+out_dir <- if (exists("epv_json_out_dir")) epv_json_out_dir else file.path(opta_data_dir(), "models")
+dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+rds_path <- if (exists("epv_model_path")) epv_model_path else file.path(opta_data_dir(), "models", "epv_model.rds")
+json_path <- file.path(out_dir, "epv_model.json")
 
 if (!file.exists(rds_path)) cli_abort("Missing RDS: {rds_path}")
 obj <- readRDS(rds_path)

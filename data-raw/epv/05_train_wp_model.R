@@ -77,7 +77,8 @@ LEAGUES <- if (exists("leagues")) leagues else c(
 SEASONS <- if (exists("seasons")) seasons else c("2020-2021", "2021-2022",
                                                    "2022-2023", "2023-2024")
 
-MODEL_DIR <- file.path(opta_data_dir(), "models")
+# Allow a custom output dir so variant retrains don't clobber the published model.
+MODEL_DIR <- if (exists("model_dir")) model_dir else file.path(opta_data_dir(), "models")
 dir.create(MODEL_DIR, recursive = TRUE, showWarnings = FALSE)
 
 cli_h1("Train Win Probability Model")
@@ -98,7 +99,10 @@ cli_h2("Step 1: Load SPADL + match results")
 # data-raw/cache/epv/) so WP's #92 epv feature trains against the same EPV model
 # the run produced — not the older published pannamodels copy. Falls through to
 # pannamodels automatically if the local cache file is absent.
-epv_model <- tryCatch(load_epv_model(path = "data-raw/cache/epv"), error = function(e) {
+epv_model <- if (exists("epv_model_override")) {
+  cli_alert_info("Using injected EPV model override (feature_cols: {length(epv_model_override$panna_metadata$feature_cols)})")
+  epv_model_override
+} else tryCatch(load_epv_model(path = "data-raw/cache/epv"), error = function(e) {
   cli_alert_warning("Could not load EPV model ({e$message}); training WITHOUT the #92 epv feature.")
   NULL
 })
@@ -160,7 +164,16 @@ cli_h2("Step 2: Train XGBoost WP Model")
 # Match AFL v3 training harness: eta=0.1, max_depth=4, 5-fold match-grouped CV,
 # early_stopping_rounds=20. nrounds=500 is the cap — early stopping typically
 # halts well before that (AFL v3 stopped at 172).
-wp_model <- train_wp_model(wp_data, nrounds = 500L, max_depth = 4L, eta = 0.1)
+# Config-guarded so a driver can opt into the depth-2 time-interacted config
+# (validated 2026-06-19). Defaults preserve the #92 production behaviour.
+.wp_max_depth <- if (exists("wp_max_depth")) wp_max_depth else 4L
+.wp_eta       <- if (exists("wp_eta")) wp_eta else 0.1
+.wp_mcw       <- if (exists("wp_min_child_weight")) wp_min_child_weight else 50L
+.wp_feats     <- if (exists("wp_feature_names")) wp_feature_names else NULL
+.wp_obj       <- if (exists("wp_objective")) wp_objective else "binary:logistic"
+wp_model <- train_wp_model(wp_data, nrounds = 500L, max_depth = .wp_max_depth,
+                           eta = .wp_eta, min_child_weight = .wp_mcw,
+                           feature_names = .wp_feats, objective = .wp_obj)
 rm(wp_data); gc(verbose = FALSE)
 
 # ============================================================================

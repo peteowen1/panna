@@ -48,9 +48,49 @@ create_possession_chains <- function(spadl_actions) {
   # Sort by match, period, time
   data.table::setorder(dt, match_id, period_id, time_seconds, action_id)
 
-  # Create lagged values for chain break detection
-  # Using separate statements to avoid potential issues
-  dt[, prev_team_id := shift(team_id, 1, type = "lag", fill = NA_character_), by = match_id]
+  # Keeper-rebound transparency (pannadata#76).
+  # A keeper save/punch (a DEFLECTION) carries the DEFENDING team's team_id, so a
+  # shot → save → rebound sequence flips attacking → defending → attacking and
+  # the raw team-change rule below would split ONE possession into THREE chains
+  # (the 1-event save mislabelled a turnover). Treat these actions as transparent
+  # to possession tracking: they must neither force a new chain on the team-change
+  # clause NOR advance the running "previous team". We do this by computing an
+  # *effective* team that is NA on keeper-rebound rows and LOCF-filled with the
+  # prior attacker's team within each match — so keeper rows inherit the
+  # attacker's team (no spurious split) and the NEXT action compares against the
+  # attacker, not the keeper. If the original attacker regains the ball the chain
+  # continues; if the defending team genuinely wins it, their next non-keeper
+  # action still has team_id != prev_team and triggers a real split, preserving
+  # turnovers.
+  # SET CHOSEN FROM DATA (2026-06-18): only deflections that leave the ball live.
+  #   keeper_save  ~50% of occurrences are stranded 1-event chains, 100% preceded
+  #                by a shot -> genuine rebound/contest. FOLD.
+  #   keeper_punch ~50% stranded, 98% preceded by a cross/pass -> contest. FOLD.
+  #   keeper_claim only 4% stranded -> a clean CATCH is a real change of
+  #                possession (the keeper's team keeps it 96% of the time), so it
+  #                is NOT folded — folding it would mis-attribute the catch to the
+  #                attacking chain. EXCLUDED.
+  #   keeper_pick_up (1%) likewise a settled GK possession. EXCLUDED.
+  # Also narrower than the blog-side build_chains_ci (which folds Opta type 50 /
+  # SPADL `dispossessed`) — that's a genuine turnover, not a GK deflection, and
+  # folding it would corrupt the EPV training labels. See pannadata#<contest> for
+  # the broader contest-vs-possession idea (outcome/qualifier-driven).
+  keeper_rebound_types <- c("keeper_save", "keeper_punch")
+  dt[, effective_team_id := team_id]
+  dt[action_type %in% keeper_rebound_types, effective_team_id := NA_character_]
+  # Carry the last non-keeper team forward within each match (character-safe
+  # LOCF — data.table::nafill() does not accept character vectors on all
+  # versions). cummax() over the non-NA mask points each row at the most recent
+  # populated value; rows before any populated value (e.g. a match opening on a
+  # keeper rebound) stay NA and are handled by the first-action break below.
+  dt[, effective_team_id := {
+    filled_idx <- cummax((!is.na(effective_team_id)) * seq_len(.N))
+    fifelse(filled_idx == 0L, NA_character_, effective_team_id[filled_idx])
+  }, by = match_id]
+  # Compare each row against the carried-forward attacker team. Keeper-rebound
+  # rows now match the prior attacker (so they don't start a chain); genuine
+  # opponent actions still differ and split.
+  dt[, prev_team_id := shift(effective_team_id, 1, type = "lag", fill = NA_character_), by = match_id]
   dt[, prev_period_id := shift(period_id, 1, type = "lag", fill = NA_integer_), by = match_id]
   dt[, prev_time := shift(time_seconds, 1, type = "lag", fill = NA_real_), by = match_id]
   dt[, prev_action_type := shift(action_type, 1, type = "lag", fill = NA_character_), by = match_id]
@@ -64,9 +104,13 @@ create_possession_chains <- function(spadl_actions) {
   # 4. After a goal (shot with success)
   # 5. After a foul
   # 6. Time gap > 30 seconds
+  # Team-change comparison uses effective_team_id (keeper-rebound rows inherit
+  # the prior attacker's team via LOCF above) so a save/claim/punch/block does
+  # not split the attacking possession — only a genuine opponent action does
+  # (pannadata#76).
   dt[, chain_break := (
     is.na(prev_team_id) |                                    # First action in match
-    (!is.na(prev_team_id) & team_id != prev_team_id) |       # Team change
+    (!is.na(prev_team_id) & effective_team_id != prev_team_id) | # Team change
     (!is.na(prev_period_id) & period_id != prev_period_id) | # Period change
     (prev_action_type == "shot" & prev_result == "success") | # After goal
     (prev_action_type == "foul") |                           # After foul
@@ -87,8 +131,8 @@ create_possession_chains <- function(spadl_actions) {
   dt[, chain_start_time := time_seconds[1], by = .(match_id, chain_id)]
 
   # Cleanup temporary columns
-  dt[, c("prev_team_id", "prev_period_id", "prev_time", "prev_action_type",
-         "prev_result", "chain_break") := NULL]
+  dt[, c("effective_team_id", "prev_team_id", "prev_period_id", "prev_time",
+         "prev_action_type", "prev_result", "chain_break") := NULL]
 
   n_chains <- dt[, data.table::uniqueN(paste(match_id, chain_id))]
   n_matches <- dt[, data.table::uniqueN(match_id)]

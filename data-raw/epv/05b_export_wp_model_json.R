@@ -29,7 +29,8 @@ cli_h1("Export WP model to JSON")
 # 1. Load model
 # ------------------------------------------------------------------------------
 
-wp <- load_wp_model()  # default path: pannadata/data/opta/models/wp_model.rds
+# Default: published model. Set `wp_model_path` to export a candidate instead.
+wp <- if (exists("wp_model_path")) readRDS(wp_model_path) else load_wp_model()
 
 stopifnot(!is.null(wp$model), !is.null(wp$feature_names))
 
@@ -46,7 +47,8 @@ cli_alert_info("best_iteration = {best_iter %||% 'unset'}; best_ntreelimit = {be
 # 2. Export trees as JSON
 # ------------------------------------------------------------------------------
 
-out_dir <- file.path(opta_data_dir(), "models")
+out_dir <- if (exists("wp_json_out_dir")) wp_json_out_dir else file.path(opta_data_dir(), "models")
+dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 json_path <- file.path(out_dir, "wp_model.json")
 
 # xgb.save with dump_format="json" writes the booster's internal trees in the
@@ -169,10 +171,18 @@ if (!have_branch) {
 # fix; `epv` is the standalone in-possession threat feature added 2026-06-18
 # (#92 — surfaced separately from xmargin so the trees can split the sub-1.0
 # threat band).
+# Emits a SUPERSET of features (base + the depth-2 time-interacted forms
+# xmargin_x_time/epv_x_time) so `scenarios[, wp$feature_names]` works for either
+# the base model OR the time-interacted one. time_elapsed_frac defaults to the
+# complement of time_remaining (good enough for these sanity scenarios).
 mk_feat <- function(time_remaining = 0.5, xmargin = 0, epv = 0, xg_diff = 0,
                     red_card_diff = 0L, is_home = 1L, is_second_half = 0L,
-                    is_extra_time = 0L) {
+                    is_extra_time = 0L, time_elapsed_frac = NULL) {
+  if (is.null(time_elapsed_frac)) time_elapsed_frac <- 1 - time_remaining
   data.frame(time_remaining = time_remaining, xmargin = xmargin, epv = epv,
+             time_elapsed_frac = time_elapsed_frac,
+             xmargin_x_time = xmargin * time_elapsed_frac,
+             epv_x_time = epv * time_elapsed_frac,
              xg_diff = xg_diff, red_card_diff = red_card_diff,
              is_home = is_home, is_second_half = is_second_half,
              is_extra_time = is_extra_time)

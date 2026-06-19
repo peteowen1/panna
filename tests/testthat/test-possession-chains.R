@@ -83,6 +83,45 @@ test_that("create_possession_chains assigns chain_id correctly", {
 })
 
 
+test_that("keeper rebound stays in one chain but real turnover splits (pannadata#76)", {
+  # shot (A) -> keeper_save (B, the GK's defending team) -> rebound pass (A)
+  # must stay ONE chain: the save is transparent to possession tracking.
+  rebound <- data.frame(
+    match_id = rep("m1", 4),
+    action_id = 1:4,
+    period_id = rep(1L, 4),
+    time_seconds = c(10, 11, 12, 14),
+    team_id = c("A", "A", "B", "A"),   # save carries defending team B
+    player_id = c("p1", "p2", "gk", "p3"),
+    player_name = c("P1", "P2", "GK", "P3"),
+    action_type = c("pass", "shot", "keeper_save", "pass"),
+    result = c("success", "fail", "fail", "success"),
+    start_x = c(80, 88, 5, 70),
+    start_y = c(50, 48, 50, 52),
+    end_x = c(88, 100, 5, 80),
+    end_y = c(48, 50, 50, 50),
+    bodypart = rep("foot_right", 4),
+    xg = c(0, 0.4, 0, 0),
+    stringsAsFactors = FALSE
+  )
+  res <- create_possession_chains(rebound)
+  # All four actions belong to a single chain (no split on the save or rebound)
+  expect_equal(length(unique(res$chain_id)), 1)
+
+  # Now: shot (A) -> keeper_save (B) -> defending-team clearance (B) MUST split.
+  turnover <- rebound
+  turnover$team_id[4] <- "B"
+  turnover$player_id[4] <- "p4"
+  turnover$action_type[4] <- "clearance"
+  res2 <- create_possession_chains(turnover)
+  # Two chains: A's attack (incl. transparent save) then B's possession.
+  expect_equal(length(unique(res2$chain_id)), 2)
+  # The clearance is the start of the second chain (the genuine turnover).
+  expect_equal(res2$chain_id[res2$action_type == "clearance"],
+               max(res2$chain_id))
+})
+
+
 test_that("classify_chain_outcomes identifies goals and shots", {
   spadl <- create_test_spadl()
   chains <- create_possession_chains(spadl)

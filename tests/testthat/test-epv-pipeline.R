@@ -545,13 +545,17 @@ test_that("calculate_action_epv produces bounded EPV values", {
 # Tests for simple EPV features with league encoding (epv_features.R)
 # =============================================================================
 
-test_that("create_epv_features_simple produces 16 features with league_id", {
+test_that("create_epv_features_simple produces 14 pre-action-state features with league_id", {
   spadl <- create_mock_spadl_actions(n_actions = 20, n_matches = 1)
 
   result <- panna:::create_epv_features_simple(spadl, league = "ENG")
 
-  expect_equal(ncol(result), 16 + 2)  # 16 features (is_extra_time added #94) + match_id + action_id
+  # 14 state-only features (+ match_id + action_id). Outcome features dx/dy/
+  # result_success were dropped 2026-06-19 (frame-of-reference fix: EPV is the
+  # value of the state BEFORE the action, not what the action achieved).
+  expect_equal(ncol(result), 14 + 2)
   expect_true("league_id" %in% names(result))
+  expect_false(any(c("dx", "dy", "result_success") %in% names(result)))
   expect_equal(unique(result$league_id), 1L)  # ENG = 1
 })
 

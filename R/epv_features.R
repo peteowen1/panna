@@ -206,11 +206,20 @@ create_epv_features <- function(spadl_actions, n_prev = 3) {
 
 
 # Simple feature column names (single source of truth)
+# PRE-ACTION STATE ONLY. `dx`/`dy` (end-displacement) and `result_success` were
+# dropped 2026-06-18: they leak the action's OUTCOME into what is meant to be the
+# state-BEFORE value (see epv_model.R:611 "EPV measures state BEFORE action"). The
+# contamination inflated e.g. a corner delivery to ~0.20 (the model "knew" it
+# succeeded into the box) when the pre-action corner *state* is ~0.07. EPV = the
+# value of the position you are in, not what the action achieved; the action's
+# credit comes from epv_delta = lead(epv) - epv. Prototype A/B (7.45M actions):
+# ordering fixed (box 0.095 > corner 0.071, was inverted 0.125 < 0.197),
+# held-out RMSE unchanged (0.1943 vs 0.1936).
 EPV_SIMPLE_FEATURE_COLS <- c(
   "start_x", "start_y", "distance_to_goal", "angle_to_goal",
-  "dx", "dy", "time_remaining", "is_extra_time",
+  "time_remaining", "is_extra_time", "time_in_half_remaining",
   "prev_x", "prev_y", "prev_dx", "prev_dy",
-  "same_team_prev", "action_cat", "result_success",
+  "same_team_prev", "action_cat",
   "league_id"
 )
 
@@ -231,11 +240,12 @@ EPV_LEAGUE_MAP <- c(
 
 #' Create Simple EPV Features
 #'
-#' Builds a 16-feature set for EPV prediction: spatial location,
-#' movement, time remaining (per-match regulation/ET denominator, #94),
-#' extra-time indicator, previous action context, action type, result,
-#' and league identity. Designed for the xG-method simple model which
-#' prioritises spatial signal while allowing league-specific adjustments.
+#' Builds a 14-feature PRE-ACTION STATE set for EPV prediction: spatial location,
+#' time remaining (per-match regulation/ET denominator, #94), extra-time
+#' indicator, previous-action (arrival) context, action type, and league
+#' identity. Outcome features (end-displacement dx/dy, result_success) are
+#' deliberately excluded so EPV is the value of the state BEFORE the action,
+#' not what the action achieved (the action's value = lead(epv) - epv).
 #'
 #' @param spadl_actions SPADL actions data frame
 #' @param league League code (e.g., "ENG"). If NULL, uses \code{league} column
@@ -283,6 +293,30 @@ create_epv_features_simple <- function(spadl_actions, league = NULL) {
   # WP model's is_extra_time feature so the model can learn ET-specific dynamics.
   dt[, is_extra_time := as.integer(period_id %in% OPTA_EXTRA_TIME_PERIODS)]
   dt[, c("match_reached_et", "match_seconds") := NULL]
+
+  # PROTOTYPE (next retrain cycle — requires retrain + lockstep worker update to
+  # ship): time remaining in the CURRENT half (sawtooth — 1 at each kickoff, 0 at
+  # each whistle). Whole-match time_remaining above ramps only toward FULL time,
+  # so at 45' it sits at ~0.5 (mid-range) and the end-of-FIRST-half wind-down is
+  # invisible to it. Empirically (labeled-chunk check 2026-06-18) next-shot value
+  # drops ~40% in 1st-half stoppage — a real signal the per-match clock misses.
+  # Resets per period so both 45' and 90' whistles register. Regulation halves =
+  # REGULATION_SECONDS/2 (2700s); ET halves = (EXTRA_TIME_SECONDS-REGULATION)/2
+  # (900s). Stoppage time clamps to 0 (in-half elapsed > nominal half length).
+  .reg_half <- REGULATION_SECONDS / 2
+  .et_half  <- (EXTRA_TIME_SECONDS - REGULATION_SECONDS) / 2
+  dt[, .half_start := data.table::fcase(
+    period_id == 1L, 0,
+    period_id == 2L, .reg_half,
+    period_id == 3L, REGULATION_SECONDS,
+    period_id == 4L, REGULATION_SECONDS + .et_half,
+    default = 0)]
+  dt[, .half_len := data.table::fcase(
+    period_id %in% c(1L, 2L), .reg_half,
+    period_id %in% OPTA_EXTRA_TIME_PERIODS, .et_half,
+    default = .reg_half)]
+  dt[, time_in_half_remaining := 1 - pmin(pmax((time_seconds - .half_start) / .half_len, 0), 1)]
+  dt[, c(".half_start", ".half_len") := NULL]
 
   # Previous action context
   dt[, prev_x := shift(start_x, 1, type = "lag"), by = .(match_id, period_id)]
