@@ -380,7 +380,12 @@ resolve_league_season <- function(league, domestic_season,
   if (is.na(t_year)) return(NULL)
 
   avail <- tryCatch(list_opta_seasons(league), error = function(e) character(0))
-  # Match "YYYY" (bare, for EURO 2020) or "YYYY Something" (e.g. "2014 Brazil")
+  # Exact label first — handles split-season "YYYY-YYYY" leagues (e.g. the
+  # Argentine Superliga 2016-2017..2020-2021) where the available label IS the
+  # domestic season. Year-prefix matching alone misses these (it looks for the
+  # ending year as a prefix, which a "2016-2017" label never satisfies).
+  if (domestic_season %in% avail) return(domestic_season)
+  # Else match "YYYY" (bare, for EURO 2020) or "YYYY Something" (e.g. "2014 Brazil")
   matching <- avail[grepl(paste0("^", t_year, "( |$)"), avail)]
   if (length(matching) == 0) NULL else matching[1]
 }
