@@ -67,7 +67,10 @@ message(sprintf("  Alias (action_equity.parquet) → %s", current_season_alias))
 
 # 2. Load models (once across all seasons) ----
 
-epv_model   <- load_epv_model()
+# EPV override (set by a driver to score with a candidate model, e.g. after a
+# model swap when the published model may be stale in the local pannamodels
+# cache). Mirrors 10b_export_game_logs.R.
+epv_model   <- if (exists("epv_model_override")) epv_model_override else load_epv_model()
 xpass_model <- load_xpass_model()
 
 # Typed "skip this league" signal. Caught in the per-league tryCatch via
