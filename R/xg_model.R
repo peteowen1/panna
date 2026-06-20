@@ -680,8 +680,14 @@ derive_xa <- function(spadl_actions) {
 #' @param spadl SPADL actions data frame with xg, xa, xpass columns.
 #' @param lineups Lineup data from load_opta_lineups() for minutes played.
 #' @param min_minutes Minimum minutes for inclusion (default 0, no filter).
+#' @param by_match Logical. If \code{TRUE}, aggregate to one row per player per
+#'   \emph{match} (keys include \code{match_id}); if \code{FALSE} (default),
+#'   one row per player across the supplied SPADL (season-level, the form
+#'   consumed by player-ratings / blog / compare_players). The per-match form
+#'   feeds the skills pipeline's xG join (one row per player-match).
 #'
-#' @return Data frame with one row per player containing:
+#' @return Data frame with one row per player (or player-match if
+#'   \code{by_match}) containing:
 #'   \itemize{
 #'     \item \strong{Identity}: player_id, player_name, team_name, minutes
 #'     \item \strong{Shooting}: shots, goals, xg, npxg, goals_minus_xg, xg_per90
@@ -691,9 +697,18 @@ derive_xa <- function(spadl_actions) {
 #'   }
 #'
 #' @export
-aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0) {
+aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0,
+                                       by_match = FALSE) {
   dt <- data.table::as.data.table(spadl)
   lineup_dt <- data.table::as.data.table(lineups)
+
+  # Grouping / join keys. by_match adds match_id so every component aggregates
+  # per player-match instead of per player. join_keys (no player_name) are used
+  # for the data.table merges to avoid duplicate-name columns.
+  grp <- if (by_match) c("player_id", "player_name", "team_id", "match_id")
+         else c("player_id", "player_name", "team_id")
+  join_keys <- if (by_match) c("player_id", "team_id", "match_id")
+               else c("player_id", "team_id")
 
   # Filter SPADL to only (match_id, player_id) pairs with valid lineup minutes
   # This ensures passes/shots/assists are counted from the same matches as minutes
@@ -714,6 +729,13 @@ aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0) {
     if (!"is_penalty" %in% names(shots_dt)) {
       shots_dt[, is_penalty := 0L]
     }
+    # In-box flag from shot coordinates (Opta 0-100 SPADL frame); same 18-yard
+    # box definition used by epv_features.R / spadl_conversion.R::is_in_penalty_area.
+    if (all(c("start_x", "start_y") %in% names(shots_dt))) {
+      shots_dt[, in_box := start_x > 83 & start_y > 21 & start_y < 79]
+    } else {
+      shots_dt[, in_box := NA]
+    }
     shooting <- shots_dt[, .(
       shots = .N,
       # On-target = Attempt Saved (15) + Goal (16) per OPTA_TYPE_NAMES; 13 is
@@ -722,9 +744,20 @@ aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0) {
       goals = sum(result == "success", na.rm = TRUE),
       penalty_goals = sum(result == "success" & is_penalty == 1L, na.rm = TRUE),
       xg = sum(xg, na.rm = TRUE),
-      npxg = sum(data.table::fifelse(is.na(is_penalty) | is_penalty == 0L, xg, 0), na.rm = TRUE)
-    ), by = .(player_id, player_name, team_id)]
+      npxg = sum(data.table::fifelse(is.na(is_penalty) | is_penalty == 0L, xg, 0), na.rm = TRUE),
+      # Zonal xG (bucket existing per-shot xG by shot location — no model change)
+      # and zonal goals, for volume-correct finishing over-performance features.
+      ibox_goals = sum(result == "success" & in_box %in% TRUE, na.rm = TRUE),
+      ibox_xg = sum(data.table::fifelse(in_box %in% TRUE, xg, 0), na.rm = TRUE),
+      obox_goals = sum(result == "success" & in_box %in% FALSE, na.rm = TRUE),
+      obox_xg = sum(data.table::fifelse(in_box %in% FALSE, xg, 0), na.rm = TRUE)
+    ), by = grp]
     shooting[, npgoals := goals - penalty_goals]
+    # Finishing over-performance (volume of goals above expectation, additive —
+    # replaces scale-free ratios like ibox_goal_rate). Penalty-free overall.
+    shooting[, npg_minus_npxg := (goals - penalty_goals) - npxg]
+    shooting[, ibox_g_minus_xg := ibox_goals - ibox_xg]
+    shooting[, obox_g_minus_xg := obox_goals - obox_xg]
 
     # --- xGOT / placement decomposition (only if add_xgot_to_spadl ran) ---
     # Non-penalty shots only (mirrors npxg). Per shot: off-target xgot = 0
@@ -739,19 +772,23 @@ aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0) {
         placement_added = sum(xgot - xg, na.rm = TRUE),
         xgot_placement = sum(data.table::fifelse(
           shot_on_target %in% TRUE, xgot - xg, 0), na.rm = TRUE)
-      ), by = .(player_id, player_name, team_id)]
+      ), by = grp]
       xgot_agg[, targeting := placement_added - xgot_placement]
       # No usable xGOT signal (all non-pen shots missing coords) -> the na.rm
       # sums collapse to a fake 0; surface as NA, never impute (CLAUDE.md rule).
       xgot_agg[n_xgot_shots == 0L,
                c("xgot", "placement_added", "xgot_placement", "targeting") := NA_real_]
-      shooting <- xgot_agg[shooting, on = c("player_id", "player_name", "team_id")]
+      shooting <- xgot_agg[shooting, on = grp]
     }
   } else {
     shooting <- data.table::data.table(
       player_id = character(), player_name = character(), team_id = character(),
       shots = integer(), shots_on_target = integer(), goals = integer(),
-      penalty_goals = integer(), xg = numeric(), npxg = numeric(), npgoals = integer()
+      penalty_goals = integer(), xg = numeric(), npxg = numeric(),
+      ibox_goals = integer(), ibox_xg = numeric(),
+      obox_goals = integer(), obox_xg = numeric(), npgoals = integer(),
+      npg_minus_npxg = numeric(), ibox_g_minus_xg = numeric(),
+      obox_g_minus_xg = numeric()
     )
   }
 
@@ -762,7 +799,7 @@ aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0) {
       key_passes = sum(is_key_pass, na.rm = TRUE),
       assists = sum(is_assist, na.rm = TRUE),
       xa = sum(xa, na.rm = TRUE)
-    ), by = .(player_id, player_name, team_id)]
+    ), by = grp]
   } else {
     assisting <- data.table::data.table(
       player_id = character(), player_name = character(), team_id = character(),
@@ -776,7 +813,7 @@ aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0) {
       passes_attempted = .N,
       passes_completed = sum(result == "success", na.rm = TRUE),
       sum_xpass = sum(xpass, na.rm = TRUE)
-    ), by = .(player_id, player_name, team_id)]
+    ), by = grp]
     passing[, xpass_overperformance := passes_completed - sum_xpass]
     passing[, xpass_avg := sum_xpass / passes_attempted]
   } else {
@@ -791,12 +828,20 @@ aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0) {
   minutes_df <- lineup_dt[, .(
     minutes = sum(minutes_played, na.rm = TRUE),
     team_name = team_name[1]
-  ), by = .(player_id, player_name, team_id)]
+  ), by = grp]
+
+  # Defensive: an empty-component fallback (no shots / no passes in the whole
+  # SPADL) lacks match_id, which would break the per-match join. Add it back.
+  if (by_match) {
+    for (cmp in list(shooting, assisting, passing)) {
+      if (!"match_id" %in% names(cmp)) cmp[, match_id := character()]
+    }
+  }
 
   # --- Merge all (join on player_id + team_id to avoid Cartesian product for transfers) ---
-  result <- shooting[minutes_df, on = c("player_id", "team_id")]
-  result <- assisting[result, on = c("player_id", "team_id")]
-  result <- passing[result, on = c("player_id", "team_id")]
+  result <- shooting[minutes_df, on = join_keys]
+  result <- assisting[result, on = join_keys]
+  result <- passing[result, on = join_keys]
 
   # Drop duplicate player_name columns from data.table joins
   i_cols <- grep("^i\\.", names(result), value = TRUE)
@@ -829,9 +874,9 @@ aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0) {
         chain_outcome == "goal"]),
       chain_starts = sum(action_in_chain == 1L, na.rm = TRUE),
       chain_xg = sum(xg[action_type == "shot"], na.rm = TRUE)
-    ), by = .(player_id, team_id)]
+    ), by = if (by_match) c("player_id", "team_id", "match_id") else c("player_id", "team_id")]
 
-    result <- chain_dt[result, on = c("player_id", "team_id")]
+    result <- chain_dt[result, on = join_keys]
 
     # Fill NAs with 0 for players with no chain data
     chain_cols <- c("chains_involved", "chain_actions", "successful_chains",

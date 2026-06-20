@@ -681,13 +681,18 @@ calculate_psr_components <- function(skills, coef_df, osr_coef_df, dsr_coef_df,
 #'   PSV = contribution above average that round. Default \code{TRUE}.
 #' @param exclude_efficiency Logical. Exclude efficiency/ratio stats from PSV
 #'   calculation. Default \code{TRUE}.
+#' @param scale_to_minutes Logical. If TRUE, multiply the (per-90) PSV by
+#'   \code{minutes_played / 90} so the result is additive over a player's
+#'   games (like EPV), rather than a per-90 rate. Default \code{FALSE}
+#'   (per-90, the form consumed by the multi-target RAPM and skills pipeline).
 #'
 #' @return A data.table with identifier columns plus \code{psv_raw} and
 #'   \code{psv}.
 #'
 #' @export
 calculate_psv <- function(player_match_stats, coef_df, min_adjust = TRUE,
-                           center = TRUE, exclude_efficiency = TRUE) {
+                           center = TRUE, exclude_efficiency = TRUE,
+                           scale_to_minutes = FALSE) {
   dt <- data.table::as.data.table(player_match_stats)
 
   if (!all(c("stat_name", "beta") %in% names(coef_df))) {
@@ -732,7 +737,11 @@ calculate_psv <- function(player_match_stats, coef_df, min_adjust = TRUE,
   mat <- as.matrix(dt[, stat_cols, with = FALSE])
   mat[is.na(mat)] <- 0
 
-  # Minutes-adjust: divide counts by minutes/90 to get per-90 rates
+  # Minutes-adjust: divide counts by minutes/90 to get per-90 rates.
+  # Efficiency/ratio stats (e.g. ibox_goal_rate, pass_accuracy) are already
+  # rates, not additive counts — dividing them by minutes/90 is meaningless,
+  # so exempt them from the per-90 scaling. (Matters only when efficiency stats
+  # are kept, i.e. exclude_efficiency = FALSE; otherwise they aren't in `mat`.)
   if (min_adjust) {
     mins_col <- if ("minutes_played" %in% names(dt)) "minutes_played"
                 else if ("total_minutes" %in% names(dt)) "total_minutes"
@@ -740,7 +749,10 @@ calculate_psv <- function(player_match_stats, coef_df, min_adjust = TRUE,
     if (!is.null(mins_col)) {
       mins <- as.numeric(dt[[mins_col]])
       mins[is.na(mins) | mins <= 0] <- 90  # default to 90 for missing
-      mat <- mat / (mins / 90)
+      ratio_mask <- stat_cols %in% .get_psr_efficiency_cols()
+      if (any(!ratio_mask)) {
+        mat[, !ratio_mask] <- mat[, !ratio_mask, drop = FALSE] / (mins / 90)
+      }
     }
   }
 
@@ -762,6 +774,27 @@ calculate_psv <- function(player_match_stats, coef_df, min_adjust = TRUE,
     }
   } else {
     dt[, psv := psv_raw]
+  }
+
+  # Scale per-90 value to the player's actual minutes so PSV is additive
+  # (like EPV): a 90-min game keeps its per-90 value, a cameo gets a fraction.
+  # Summing across games is then meaningful; consumers can divide by
+  # total_minutes/90 to recover the per-90 rate. Preserves osv + dsv = psv
+  # (both components scaled by the same per-row factor).
+  if (scale_to_minutes) {
+    mins_col <- if ("minutes_played" %in% names(dt)) "minutes_played"
+                else if ("total_minutes" %in% names(dt)) "total_minutes"
+                else NULL
+    if (is.null(mins_col)) {
+      cli::cli_warn(
+        "scale_to_minutes = TRUE but no minutes column found; PSV left per-90"
+      )
+    } else {
+      scale_fac <- as.numeric(dt[[mins_col]]) / 90
+      scale_fac[is.na(scale_fac) | scale_fac < 0] <- 0
+      dt[, psv_raw := psv_raw * scale_fac]
+      dt[, psv := psv * scale_fac]
+    }
   }
 
   id_cols <- intersect(
@@ -793,13 +826,20 @@ calculate_psv <- function(player_match_stats, coef_df, min_adjust = TRUE,
 #' @export
 calculate_psv_components <- function(player_match_stats, coef_df, osr_coef_df,
                                       dsr_coef_df, min_adjust = TRUE,
-                                      center = TRUE) {
+                                      center = TRUE, scale_to_minutes = FALSE,
+                                      exclude_efficiency = TRUE) {
   psv_result <- calculate_psv(player_match_stats, coef_df,
-                               min_adjust = min_adjust, center = center)
+                               min_adjust = min_adjust, center = center,
+                               scale_to_minutes = scale_to_minutes,
+                               exclude_efficiency = exclude_efficiency)
   osv_result <- calculate_psv(player_match_stats, osr_coef_df,
-                               min_adjust = min_adjust, center = center)
+                               min_adjust = min_adjust, center = center,
+                               scale_to_minutes = scale_to_minutes,
+                               exclude_efficiency = exclude_efficiency)
   dsv_result <- calculate_psv(player_match_stats, dsr_coef_df,
-                               min_adjust = min_adjust, center = center)
+                               min_adjust = min_adjust, center = center,
+                               scale_to_minutes = scale_to_minutes,
+                               exclude_efficiency = exclude_efficiency)
 
   # Additive shift so osv + dsv = psv
   raw_osv <- osv_result$psv
@@ -822,13 +862,22 @@ calculate_psv_components <- function(player_match_stats, coef_df, osr_coef_df,
 #'   match).
 #' @param min_adjust Logical. Minutes-adjust raw counts. Default \code{TRUE}.
 #' @param center Logical. Center within each round. Default \code{TRUE}.
+#' @param scale_to_minutes Logical. Multiply the per-90 PSV by
+#'   \code{minutes_played / 90} so values are additive over games (like EPV).
+#'   Default \code{FALSE}. See \code{\link{calculate_psv}}.
+#' @param exclude_efficiency Logical. Exclude efficiency/ratio stats. Default
+#'   \code{TRUE}. Set \code{FALSE} to score with the full trained coefficient
+#'   vector (the form used for the displayed blog PSV). See
+#'   \code{\link{calculate_psv}}.
 #' @param target One of \code{"xg"} (default) or \code{"goals"}.
 #'
 #' @return A data.table with \code{psv}, \code{osv}, \code{dsv} columns.
 #'
 #' @export
 compute_player_psv <- function(player_match_stats, min_adjust = TRUE,
-                                center = TRUE, target = c("xg", "goals")) {
+                                center = TRUE, target = c("xg", "goals"),
+                                scale_to_minutes = FALSE,
+                                exclude_efficiency = TRUE) {
   target <- match.arg(target)
   margin_coef <- load_psr_coefficients("margin", target = target)
 
@@ -842,11 +891,15 @@ compute_player_psv <- function(player_match_stats, min_adjust = TRUE,
     osr_coef <- utils::read.csv(osr_path, stringsAsFactors = FALSE)
     dsr_coef <- utils::read.csv(dsr_path, stringsAsFactors = FALSE)
     calculate_psv_components(player_match_stats, margin_coef, osr_coef, dsr_coef,
-                              min_adjust = min_adjust, center = center)
+                              min_adjust = min_adjust, center = center,
+                              scale_to_minutes = scale_to_minutes,
+                              exclude_efficiency = exclude_efficiency)
   } else {
     cli::cli_inform("OSR/DSR coefficient files not found -- computing PSV only")
     calculate_psv(player_match_stats, margin_coef,
-                   min_adjust = min_adjust, center = center)
+                   min_adjust = min_adjust, center = center,
+                   scale_to_minutes = scale_to_minutes,
+                   exclude_efficiency = exclude_efficiency)
   }
 }
 

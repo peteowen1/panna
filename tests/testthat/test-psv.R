@@ -167,6 +167,58 @@ test_that("calculate_psv_components ensures osv + dsv = psv", {
   expect_equal(result$osv + result$dsv, result$psv)
 })
 
+test_that("calculate_psv scale_to_minutes makes PSV additive over minutes", {
+  stats <- data.frame(
+    player_id = c("p1", "p2"),
+    player_name = c("Starter", "Cameo"),
+    match_id = c("m1", "m1"),
+    goals_p90 = c(2, 2),
+    minutes_played = c(90, 45),
+    stringsAsFactors = FALSE
+  )
+
+  coef_df <- data.frame(
+    stat_name = "goals_p90",
+    beta = 1.0,
+    stringsAsFactors = FALSE
+  )
+
+  # Per-90 (default): identical rate regardless of minutes
+  per90 <- calculate_psv(stats, coef_df, min_adjust = FALSE, center = FALSE,
+                          scale_to_minutes = FALSE)
+  expect_equal(per90$psv[per90$player_id == "p1"], 2)
+  expect_equal(per90$psv[per90$player_id == "p2"], 2)
+
+  # Minutes-scaled: value at the level of minutes played (per90 * mins/90)
+  scaled <- calculate_psv(stats, coef_df, min_adjust = FALSE, center = FALSE,
+                           scale_to_minutes = TRUE)
+  expect_equal(scaled$psv[scaled$player_id == "p1"], 2 * (90 / 90))  # 2
+  expect_equal(scaled$psv[scaled$player_id == "p2"], 2 * (45 / 90))  # 1
+})
+
+test_that("scale_to_minutes preserves osv + dsv = psv", {
+  stats <- data.frame(
+    player_id = c("p1", "p2"),
+    player_name = c("Alice", "Bob"),
+    match_id = c("m1", "m1"),
+    goals_p90 = c(2, 1),
+    tackles_p90 = c(1, 4),
+    minutes_played = c(80, 30),
+    stringsAsFactors = FALSE
+  )
+  margin_coef <- data.frame(stat_name = c("goals_p90", "tackles_p90"),
+                            beta = c(0.5, 0.1), stringsAsFactors = FALSE)
+  osr_coef <- data.frame(stat_name = c("goals_p90", "tackles_p90"),
+                         beta = c(0.6, 0.0), stringsAsFactors = FALSE)
+  dsr_coef <- data.frame(stat_name = c("goals_p90", "tackles_p90"),
+                         beta = c(0.0, 0.15), stringsAsFactors = FALSE)
+
+  result <- calculate_psv_components(stats, margin_coef, osr_coef, dsr_coef,
+                                      min_adjust = FALSE, center = FALSE,
+                                      scale_to_minutes = TRUE)
+  expect_equal(result$osv + result$dsv, result$psv)
+})
+
 test_that("calculate_psv handles zero coefficients gracefully", {
   stats <- data.frame(
     player_id = "p1",
