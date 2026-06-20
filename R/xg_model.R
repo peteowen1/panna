@@ -865,6 +865,9 @@ aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0,
 
   # --- Chain stats (optional, only if chain_id exists in SPADL) ---
   if ("chain_id" %in% names(dt)) {
+    # data.table rejects an inline if/else in `by=`; assign the keys first.
+    chain_grp <- if (by_match) c("player_id", "team_id", "match_id")
+                 else c("player_id", "team_id")
     chain_dt <- dt[, .(
       chains_involved = data.table::uniqueN(paste(match_id, chain_id)),
       chain_actions = .N,
@@ -874,7 +877,7 @@ aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0,
         chain_outcome == "goal"]),
       chain_starts = sum(action_in_chain == 1L, na.rm = TRUE),
       chain_xg = sum(xg[action_type == "shot"], na.rm = TRUE)
-    ), by = if (by_match) c("player_id", "team_id", "match_id") else c("player_id", "team_id")]
+    ), by = chain_grp]
 
     result <- chain_dt[result, on = join_keys]
 

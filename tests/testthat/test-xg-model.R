@@ -306,6 +306,31 @@ test_that("aggregate_player_xmetrics by_match keys per player-match", {
   expect_equal(perm["m2"]$ibox_g_minus_xg, 1 - 0.50)
 })
 
+test_that("by_match works with chain columns present (chain `by=` regression)", {
+  # Regression for the chain aggregation using an inline if/else in `by=`, which
+  # data.table rejects. Only fires when chain_id is present (real SPADL), so the
+  # earlier tests (no chain cols) missed it — this one carries chain columns.
+  spadl <- data.frame(
+    match_id = c("m1", "m1", "m2"), action_id = 1:3, period_id = 1L,
+    team_id = "t1", player_id = "p1", player_name = "A",
+    action_type = "shot", result = c("success", "fail", "success"),
+    bodypart = "foot_right",
+    start_x = 90, start_y = 50, end_x = 100, end_y = 50,
+    xg = c(0.3, 0.1, 0.5), is_penalty = 0L, opta_type_id = c(16L, 13L, 16L),
+    time_seconds = 600,
+    chain_id = c(1L, 1L, 1L), chain_outcome = c("goal", "goal", "goal"),
+    action_in_chain = c(1L, 2L, 1L),
+    stringsAsFactors = FALSE
+  )
+  lineups <- data.frame(
+    match_id = c("m1", "m2"), team_id = "t1", team_name = "T",
+    player_id = "p1", player_name = "A", position = "CF",
+    minutes_played = 90, stringsAsFactors = FALSE
+  )
+  expect_no_error(aggregate_player_xmetrics(spadl, lineups, by_match = TRUE))
+  expect_no_error(aggregate_player_xmetrics(spadl, lineups, by_match = FALSE))
+})
+
 test_that("keeper GSAA = expected goals faced - goals conceded (cross-team)", {
   # m1: t1 takes 2 shots (1 goal), t2 takes 1 shot (1 goal)
   spadl <- data.frame(
