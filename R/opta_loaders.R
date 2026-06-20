@@ -380,9 +380,17 @@ resolve_league_season <- function(league, domestic_season,
   if (is.na(t_year)) return(NULL)
 
   avail <- tryCatch(list_opta_seasons(league), error = function(e) character(0))
-  # Match "YYYY" (bare, for EURO 2020) or "YYYY Something" (e.g. "2014 Brazil")
+  # Year-prefix match FIRST — the calendar/main season for the year: "2021"
+  # (calendar leagues), "2014 Brazil" / "2020" (tournaments). This is the season
+  # that should own the slot.
   matching <- avail[grepl(paste0("^", t_year, "( |$)"), avail)]
-  if (length(matching) == 0) NULL else matching[1]
+  if (length(matching) > 0) return(matching[1])
+  # Exact split-season label as FALLBACK — recovers "YYYY-YYYY" labels that have
+  # no calendar equivalent (e.g. Argentine Superliga 2016-2017..2019-2020), WITHOUT
+  # stealing the year-2021 slot from the calendar "2021" Primera (vs Superliga
+  # "2020-2021"). Year-prefix matching alone misses these split labels entirely.
+  if (domestic_season %in% avail) return(domestic_season)
+  NULL
 }
 
 

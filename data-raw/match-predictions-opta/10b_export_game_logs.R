@@ -35,7 +35,7 @@ domestic_leagues  <- c("ENG", "ESP", "GER", "ITA", "FRA",
 # same year-prefix matching as the intl tournaments ("2025-2026" -> "2026").
 calendar_leagues  <- c("MLS", "ARG")
 continental_cups  <- c("UCL", "UEL", "UECL")
-intl_tournaments  <- c("WC", "EURO")
+intl_tournaments  <- c("WC", "EURO", "AFCON", "Copa_America")
 # Leagues whose season label is resolved by year prefix rather than passed through
 season_label_leagues <- c(intl_tournaments, calendar_leagues)
 # Override guard: backfill runs can process a league subset. CAUTION — the
@@ -81,9 +81,12 @@ message(sprintf("  Alias (game_logs.parquet) → %s", current_season_alias))
 
 # 2. Load shared resources (once across all seasons) ----
 
-epv_model   <- load_epv_model()
+# Model overrides (set by a driver to score with candidate models, e.g. for the
+# worker gate-fixture regen). EPV override is required when the package's
+# EPV_SIMPLE_FEATURE_COLS contract has changed (14-feature clean model).
+epv_model   <- if (exists("epv_model_override")) epv_model_override else load_epv_model()
 xpass_model <- load_xpass_model()
-wp_model    <- load_wp_model()
+wp_model    <- if (exists("wp_model_override")) wp_model_override else load_wp_model()
 
 match_stats_path <- file.path("data-raw", "cache-skills", "01_match_stats.rds")
 has_match_stats  <- file.exists(match_stats_path)
@@ -256,8 +259,12 @@ validate_game_log_schema <- function(dt, league, season) {
   })
   ls_pairs <- Filter(Negate(is.null), ls_pairs)
   if (length(ls_pairs) > 0L) {
-    abort_thresh <- if (exists("events_coverage_abort_threshold", inherits = FALSE)) {
-      events_coverage_abort_threshold
+    # Read from globalenv explicitly: this guard runs INSIDE .process_season, so
+    # `inherits = FALSE` against the local frame can never see a driver's global
+    # setting (the config is staged in globalenv by the backfill/driver scripts).
+    abort_thresh <- if (exists("events_coverage_abort_threshold",
+                               envir = globalenv(), inherits = FALSE)) {
+      get("events_coverage_abort_threshold", envir = globalenv())
     } else {
       20L  # default: tolerate 20 missing per league, abort beyond
     }
@@ -267,8 +274,9 @@ validate_game_log_schema <- function(dt, league, season) {
     # loads are remote, so a lagging local copy shouldn't block the run. Set
     # `auto_refresh_stale_events <- FALSE` before sourcing to keep the legacy
     # "abort on stale local" behaviour (e.g. a deliberately offline run).
-    auto_refresh <- if (exists("auto_refresh_stale_events", inherits = FALSE)) {
-      isTRUE(auto_refresh_stale_events)
+    auto_refresh <- if (exists("auto_refresh_stale_events",
+                               envir = globalenv(), inherits = FALSE)) {
+      isTRUE(get("auto_refresh_stale_events", envir = globalenv()))
     } else {
       TRUE
     }
@@ -316,6 +324,13 @@ validate_game_log_schema <- function(dt, league, season) {
 
       events  <- load_opta_match_events(league, season = league_season)
       lineups <- load_opta_lineups(league, season = league_season)
+      # Optional: restrict to specific match_ids (worker gate-fixture regen — only
+      # the 2 reference matches need rebuilding, not the whole league-season).
+      if (exists("target_match_ids")) {
+        events  <- events[events$match_id %in% target_match_ids, ]
+        lineups <- lineups[lineups$match_id %in% target_match_ids, ]
+        if (nrow(events) == 0) stop(skip_league_cond("no target matches in this league-season"))
+      }
 
       if (is.null(events) || nrow(events) < 100) {
         message(sprintf("    Skipping %s — insufficient data", league))
