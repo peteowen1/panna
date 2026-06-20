@@ -227,7 +227,11 @@ for (league in names(league_seasons)) {
 cli_h2("Step 4: Summary")
 
 if (length(all_results) > 0) {
-  combined <- do.call(rbind, all_results)
+  # rbindlist(fill=TRUE): leagues differ in columns now (gsaa / placement_added
+  # are only present where keepers/xGOT exist), so do.call(rbind) errors on
+  # mismatched ncol. fill=TRUE unions columns; as.data.frame keeps the
+  # downstream data.frame-style indexing below working.
+  combined <- as.data.frame(data.table::rbindlist(all_results, fill = TRUE))
 
   cli_alert_success("Processed {length(all_results)} league-seasons, {nrow(combined)} total player-seasons")
 
