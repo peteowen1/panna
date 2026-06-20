@@ -107,8 +107,6 @@ soccer_stat_rating_definitions <- function() {
 
     # --- Efficiency stats (Beta-Binomial) ---
     .srd("shot_accuracy", "efficiency", "offensive"),
-    .srd("goals_per_shot", "efficiency", "offensive"),
-    .srd("big_chance_conversion", "efficiency", "offensive"),
     .srd("pass_accuracy", "efficiency", "offensive"),
     .srd("final_third_pass_acc", "efficiency", "offensive"),
     .srd("long_ball_accuracy", "efficiency", "offensive"),
@@ -120,14 +118,10 @@ soccer_stat_rating_definitions <- function() {
     .srd("duel_success", "efficiency", "general"),
     .srd("aerial_success", "efficiency", "general"),
     .srd("bad_touch_rate", "efficiency", "general"),
-    .srd("headed_goal_rate", "efficiency", "offensive"),
     .srd("flick_on_accuracy", "efficiency", "general"),
     .srd("keeper_sweeper_accuracy", "efficiency", "goalkeeper"),
     .srd("back_zone_pass_accuracy", "efficiency", "defensive"),
     .srd("chipped_pass_accuracy", "efficiency", "offensive"),
-    .srd("ibox_goal_rate", "efficiency", "offensive"),
-    .srd("obox_goal_rate", "efficiency", "offensive"),
-    .srd("penalty_conversion", "efficiency", "offensive"),
     .srd("long_pass_own_to_opp_accuracy", "efficiency", "offensive"),
     .srd("fifty_fifty_success", "efficiency", "general"),
     .srd("poss_lost_ctrl_per_touch", "efficiency", "general"),
@@ -137,7 +131,12 @@ soccer_stat_rating_definitions <- function() {
     .srd("xg_per90", "rate", "xmetrics"),
     .srd("npxg_per90", "rate", "xmetrics"),
     .srd("xa_per90_xmetrics", "rate", "xmetrics"),
-    .srd("xpass_overperformance_per90_xmetrics", "rate", "xmetrics")
+    .srd("xpass_overperformance_per90_xmetrics", "rate", "xmetrics"),
+    # Finishing over-performance (goals above xG, per-90): signed continuous,
+    # treated as rate stats (Gaussian shrink toward ~0 — finishing is noisy).
+    .srd("npg_minus_npxg_per90", "rate", "xmetrics"),
+    .srd("ibox_g_minus_xg_per90", "rate", "xmetrics"),
+    .srd("obox_g_minus_xg_per90", "rate", "xmetrics")
   )
 
   defs$pos_adjusted <- TRUE

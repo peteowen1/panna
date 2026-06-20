@@ -434,7 +434,7 @@ validate_game_log_schema <- function(dt, league, season) {
           if (nrow(league_stats) > 0) {
             player_game_psv <- compute_player_psv(league_stats, min_adjust = FALSE,
                                                   center = TRUE, scale_to_minutes = TRUE,
-                                                  exclude_efficiency = FALSE)
+                                                  exclude_efficiency = FALSE, target = "blend")
             message(sprintf("    PSV: %d player-games", nrow(player_game_psv)))
           }
         }, error = function(e) {
@@ -476,7 +476,7 @@ validate_game_log_schema <- function(dt, league, season) {
               if (!is.null(match_level) && nrow(match_level) > 0L) {
                 inline_psv <- compute_player_psv(match_level, min_adjust = FALSE,
                                                  center = TRUE, scale_to_minutes = TRUE,
-                                                 exclude_efficiency = FALSE)
+                                                 exclude_efficiency = FALSE, target = "blend")
                 player_game_psv <- data.table::rbindlist(
                   list(player_game_psv, inline_psv), fill = TRUE, use.names = TRUE
                 )

@@ -52,26 +52,33 @@
     "unsuccessful_touch_p90", "overrun_p90", "flick_on_p90"
   )
 
-  # Efficiency/proportion columns
+  # Efficiency/proportion columns.
+  # NOTE: the low-volume *finishing* ratios (goals_per_shot, big_chance_conversion,
+  # headed_goal_rate, ibox_goal_rate, obox_goal_rate, penalty_conversion) were
+  # REMOVED — a per-game ratio is scale-free (1/1 == 10/10) and discards volume.
+  # They are replaced by the xG over-performance counts in xmetrics_cols below
+  # (npg_minus_npxg_per90 etc.). High-volume accuracy ratios stay (large
+  # denominators → the scale defect doesn't bite; glmnet shrinks any redundancy).
   efficiency_cols <- c(
-    "shot_accuracy", "goals_per_shot", "pass_accuracy",
+    "shot_accuracy", "pass_accuracy",
     "tackle_success", "duel_success", "aerial_success",
-    "big_chance_conversion", "final_third_pass_acc",
+    "final_third_pass_acc",
     "long_ball_accuracy", "cross_accuracy",
     "fwd_zone_pass_accuracy", "open_play_pass_accuracy",
     "crosses_open_play_accuracy", "bad_touch_rate",
     "errors_total_p90",
-    "headed_goal_rate", "flick_on_accuracy",
+    "flick_on_accuracy",
     "back_zone_pass_accuracy", "chipped_pass_accuracy",
-    "ibox_goal_rate", "obox_goal_rate",
-    "penalty_conversion", "long_pass_own_to_opp_accuracy",
+    "long_pass_own_to_opp_accuracy",
     "fifty_fifty_success", "poss_lost_ctrl_per_touch"
   )
 
-  # xMetrics columns (if available)
+  # xMetrics columns (if available). Finishing over-performance (goals above xG,
+  # volume-correct & additive) replaces the removed finishing ratios.
   xmetrics_cols <- c(
     "xg_per90", "npxg_per90", "xa_per90_xmetrics",
-    "xpass_overperformance_per90_xmetrics"
+    "xpass_overperformance_per90_xmetrics",
+    "npg_minus_npxg_per90", "ibox_g_minus_xg_per90", "obox_g_minus_xg_per90"
   )
 
   c(rate_cols, efficiency_cols, xmetrics_cols)
@@ -869,27 +876,26 @@ calculate_psv_components <- function(player_match_stats, coef_df, osr_coef_df,
 #'   \code{TRUE}. Set \code{FALSE} to score with the full trained coefficient
 #'   vector (the form used for the displayed blog PSV). See
 #'   \code{\link{calculate_psv}}.
-#' @param target One of \code{"xg"} (default) or \code{"goals"}.
+#' @param target One of \code{"xg"} (default, xG differential), \code{"goals"}
+#'   (goal differential), or \code{"blend"} (alpha*xG + (1-alpha)*goals — the
+#'   displayed value model; falls back to \code{"xg"} until the blend is
+#'   trained).
 #'
 #' @return A data.table with \code{psv}, \code{osv}, \code{dsv} columns.
 #'
 #' @export
 compute_player_psv <- function(player_match_stats, min_adjust = TRUE,
-                                center = TRUE, target = c("xg", "goals"),
+                                center = TRUE, target = c("xg", "goals", "blend"),
                                 scale_to_minutes = FALSE,
                                 exclude_efficiency = TRUE) {
   target <- match.arg(target)
   margin_coef <- load_psr_coefficients("margin", target = target)
+  osr_coef <- tryCatch(load_psr_coefficients("offense", target = target),
+                       error = function(e) NULL)
+  dsr_coef <- tryCatch(load_psr_coefficients("defense", target = target),
+                       error = function(e) NULL)
 
-  prefix <- if (target == "goals") "gd_" else ""
-  osr_path <- system.file("extdata", paste0(prefix, "osr_coefficients.csv"),
-                           package = "panna")
-  dsr_path <- system.file("extdata", paste0(prefix, "dsr_coefficients.csv"),
-                           package = "panna")
-
-  if (osr_path != "" && dsr_path != "") {
-    osr_coef <- utils::read.csv(osr_path, stringsAsFactors = FALSE)
-    dsr_coef <- utils::read.csv(dsr_path, stringsAsFactors = FALSE)
+  if (!is.null(osr_coef) && !is.null(dsr_coef)) {
     calculate_psv_components(player_match_stats, margin_coef, osr_coef, dsr_coef,
                               min_adjust = min_adjust, center = center,
                               scale_to_minutes = scale_to_minutes,
@@ -946,8 +952,9 @@ compute_player_psv <- function(player_match_stats, min_adjust = TRUE,
 #' \code{inst/extdata} directory.
 #'
 #' @param type One of \code{"margin"}, \code{"offense"}, or \code{"defense"}.
-#' @param target One of \code{"xg"} (default, xG differential) or
-#'   \code{"goals"} (goal differential).
+#' @param target One of \code{"xg"} (default, xG differential), \code{"goals"}
+#'   (goal differential), or \code{"blend"} (alpha*xG + (1-alpha)*goals; falls
+#'   back to \code{"xg"} if the blend files are not yet generated).
 #' @param model One of \code{"outfield"} (default) or \code{"gk"} (goalkeeper
 #'   sub-model, trained on goal differential).
 #'
@@ -956,7 +963,7 @@ compute_player_psv <- function(player_match_stats, min_adjust = TRUE,
 #'
 #' @keywords internal
 load_psr_coefficients <- function(type = c("margin", "offense", "defense"),
-                                   target = c("xg", "goals"),
+                                   target = c("xg", "goals", "blend"),
                                    model = c("outfield", "gk")) {
   type <- match.arg(type)
   target <- match.arg(target)
@@ -966,16 +973,24 @@ load_psr_coefficients <- function(type = c("margin", "offense", "defense"),
     # GK sub-model always uses goal diff target
     prefix <- "gk_"
   } else {
-    prefix <- if (target == "goals") "gd_" else ""
+    prefix <- switch(target, goals = "gd_", blend = "blend_", "")
   }
 
-  filename <- switch(type,
-    margin  = paste0(prefix, "psr_coefficients.csv"),
-    offense = paste0(prefix, "osr_coefficients.csv"),
-    defense = paste0(prefix, "dsr_coefficients.csv")
-  )
-
+  stub <- switch(type, margin = "psr", offense = "osr", defense = "dsr")
+  filename <- paste0(prefix, stub, "_coefficients.csv")
   path <- system.file("extdata", filename, package = "panna")
+
+  # Graceful fallback: the blend_ models are generated by a retrain; until then
+  # fall back to the xG ("") set so callers (e.g. the blog export) keep working.
+  if (path == "" && prefix == "blend_") {
+    cli::cli_warn(c(
+      "Blended coefficient file not found: {.file {filename}}",
+      "i" = "Falling back to xG coefficients. Re-run 07_train_psr_model.R to generate the blend."
+    ))
+    filename <- paste0(stub, "_coefficients.csv")
+    path <- system.file("extdata", filename, package = "panna")
+  }
+
   if (path == "") {
     cli::cli_abort(c(
       "PSR coefficient file not found: {.file {filename}}",

@@ -4,7 +4,7 @@
 \alias{aggregate_player_xmetrics}
 \title{Aggregate Player-Level xG/xA/xPass Metrics}
 \usage{
-aggregate_player_xmetrics(spadl, lineups, min_minutes = 0)
+aggregate_player_xmetrics(spadl, lineups, min_minutes = 0, by_match = FALSE)
 }
 \arguments{
 \item{spadl}{SPADL actions data frame with xg, xa, xpass columns.}
@@ -12,9 +12,16 @@ aggregate_player_xmetrics(spadl, lineups, min_minutes = 0)
 \item{lineups}{Lineup data from load_opta_lineups() for minutes played.}
 
 \item{min_minutes}{Minimum minutes for inclusion (default 0, no filter).}
+
+\item{by_match}{Logical. If \code{TRUE}, aggregate to one row per player per
+\emph{match} (keys include \code{match_id}); if \code{FALSE} (default),
+one row per player across the supplied SPADL (season-level, the form
+consumed by player-ratings / blog / compare_players). The per-match form
+feeds the skills pipeline's xG join (one row per player-match).}
 }
 \value{
-Data frame with one row per player containing:
+Data frame with one row per player (or player-match if
+\code{by_match}) containing:
 \itemize{
 \item \strong{Identity}: player_id, player_name, team_name, minutes
 \item \strong{Shooting}: shots, goals, xg, npxg, goals_minus_xg, xg_per90

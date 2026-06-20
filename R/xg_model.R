@@ -889,11 +889,18 @@ aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0,
   }
 
   # --- Derived stats ---
+  # Per-90 forms keep these on the same scale as the box-score *_p90 features the
+  # PSR/PSV model trains on (PSV's scale_to_minutes restores additivity at output).
   result[, `:=`(
     goals_minus_xg = goals - xg,
     xg_per90 = round(xg / minutes * 90, 2),
+    npxg_per90 = round(npxg / minutes * 90, 2),
     xa_per90 = round(xa / minutes * 90, 2),
-    xpass_overperformance_per90 = round(xpass_overperformance / minutes * 90, 2)
+    xpass_overperformance_per90 = round(xpass_overperformance / minutes * 90, 2),
+    # Finishing over-performance (volume of goals above xG), per-90
+    npg_minus_npxg_per90 = round(npg_minus_npxg / minutes * 90, 3),
+    ibox_g_minus_xg_per90 = round(ibox_g_minus_xg / minutes * 90, 3),
+    obox_g_minus_xg_per90 = round(obox_g_minus_xg / minutes * 90, 3)
   )]
 
   # xGOT-derived (only if the columns were produced upstream)

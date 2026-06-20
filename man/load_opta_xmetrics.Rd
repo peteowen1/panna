@@ -8,7 +8,8 @@ load_opta_xmetrics(
   league,
   season = NULL,
   columns = NULL,
-  source = c("remote", "local")
+  source = c("remote", "local"),
+  by_match = FALSE
 )
 }
 \arguments{
@@ -20,6 +21,11 @@ load_opta_xmetrics(
 
 \item{source}{Data source: "remote" (default, from GitHub Releases) or
 "local" (pipeline-generated files).}
+
+\item{by_match}{Logical. If \code{TRUE}, load the per-player-match artifact
+(\code{xmetrics_bymatch/}, one row per player-match keyed by
+\code{match_id}) instead of the season-level aggregate. Default
+\code{FALSE}.}
 }
 \value{
 Data frame with player xmetrics including xg, npxg, xa, xpass stats.

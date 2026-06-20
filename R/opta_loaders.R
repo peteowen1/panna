@@ -1866,6 +1866,10 @@ query_remote_opta_match_events <- function(opta_league, season = NULL,
 #' @param columns Optional character vector of columns to select.
 #' @param source Data source: "remote" (default, from GitHub Releases) or
 #'   "local" (pipeline-generated files).
+#' @param by_match Logical. If \code{TRUE}, load the per-player-match artifact
+#'   (\code{xmetrics_bymatch/}, one row per player-match keyed by
+#'   \code{match_id}) instead of the season-level aggregate. Default
+#'   \code{FALSE}.
 #'
 #' @return Data frame with player xmetrics including xg, npxg, xa, xpass stats.
 #'
@@ -1879,18 +1883,24 @@ query_remote_opta_match_events <- function(opta_league, season = NULL,
 #' head(epl_xm[order(-epl_xm$xg), c("player_name", "team_name", "xg", "goals")])
 #' }
 load_opta_xmetrics <- function(league, season = NULL, columns = NULL,
-                                source = c("remote", "local")) {
+                                source = c("remote", "local"),
+                                by_match = FALSE) {
   source <- match.arg(source)
   opta_league <- to_opta_league(league)
 
-  # Remote: use consolidated opta_xmetrics.parquet from GitHub Releases
+  # by_match selects the per-player-match artifact (one row per player-match,
+  # keyed by match_id) instead of the season-level aggregate. Used by the skills
+  # pipeline's xG join; produced alongside the season file by 03.
+  subdir <- if (by_match) "xmetrics_bymatch" else "xmetrics"
+
+  # Remote: use consolidated parquet from GitHub Releases
   if (source == "remote") {
-    return(query_remote_opta_parquet("xmetrics", opta_league, season,
+    return(query_remote_opta_parquet(subdir, opta_league, season,
                                       columns = columns))
   }
 
   # Local: pipeline-generated per-league/season files
-  xmetrics_dir <- file.path(opta_data_dir(), "xmetrics", opta_league)
+  xmetrics_dir <- file.path(opta_data_dir(), subdir, opta_league)
 
   if (!is.null(season)) {
     parquet_path <- file.path(xmetrics_dir, paste0(season, ".parquet"))

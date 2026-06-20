@@ -46,25 +46,27 @@ against real data + coefficients:
 
 Messi WC2026 hat-trick: PSV **−0.37 → +0.36** (Tier 1 alone).
 
-### 🔨 Remaining (the wiring + retrain)
-1. **Loader** for per-match xmetrics (`xmetrics_bymatch/`) — mirror
-   `load_opta_xmetrics()` / `.load_opta_xmetrics_data()` in `R/opta_loaders.R`.
-2. **Real join** into `match_stats` replacing the stub at
-   `02_estimate_skills.R:55` — join `xmetrics_bymatch` by `(player_id, match_id)`;
-   add per-90 derivations (`ibox_g_minus_xg_per90`, etc.). This finally puts xG
-   in the model.
-3. **GK GSAA** aggregation (`xG_faced − goals_conceded`): attribute opponent
-   shot xG to the keeper (new aggregation; uses existing per-shot xg / xGOT).
-4. **Feature lists**: add over-performance cols to `.get_psr_skill_cols()` +
-   `R/skill_config.R`; GSAA to `.get_gk_skill_cols()`. Remove the 6 finishing
-   ratios from `efficiency_cols`; **sync the hardcoded `success_cols`** at
-   `R/spm_opta.R:598` (duplicate of the efficiency list — desync trap).
-5. **Blended target**: `07_train_psr_model.R` lines ~739–762 — single model on
-   `α·xg_diff + (1−α)·goal_diff` (param `psv_target_alpha`, default 0.6);
-   write coefficient CSVs.
-6. **Retrain** (local, ~2–3h, 20–25 GB — OOMs CI): skills pipeline steps 01→07
-   (`run_skills_pipeline.R`). Then regenerate game-logs (10b) + verify Messi on
-   the retrained model.
+### ✅ Wiring done (batch 2)
+1. **Loader** — `load_opta_xmetrics(..., by_match = TRUE)` reads
+   `xmetrics_bymatch/`. `R/opta_loaders.R`.
+2. **Real join** — `02_estimate_skills.R` §5 now joins `xmetrics_bymatch` by
+   `(player_id, match_id)`; per-90 over-performance derivations added in
+   `aggregate_player_xmetrics`. Replaces the stub → **xG is in the model**.
+4. **Feature lists** — over-performance cols added to `.get_psr_skill_cols()` +
+   `R/skill_config.R`; 6 finishing ratios removed from both. (`spm_opta`
+   `success_cols` left as-is: finishing ratios are still *computed*, only dropped
+   from PSR/PSV features — SPM unaffected.)
+5. **Blended target** — `07_train_psr_model.R` trains a 3rd `blend_` set on
+   `α·xg_diff + (1−α)·goal_diff` (`psv_blend_alpha`, default 0.6). `target="blend"`
+   wired through `load_psr_coefficients`/`compute_player_psv` (graceful fallback
+   to xG until trained); export uses it.
+
+### 🔨 Remaining
+3. **GK GSAA** — `save_percentage → xG_faced − goals_conceded` (attribute
+   opponent shot xGOT to the keeper). New aggregation + `.get_gk_skill_cols()`.
+6. **Retrain** (local, ~2–3h, 20–25 GB — OOMs CI): **re-run
+   `03_calculate_player_xmetrics.R` first** (generates `xmetrics_bymatch/`), then
+   skills pipeline steps 01→07. Regenerate game-logs (10b) + verify Messi.
 7. Optional: α backtest before locking the default.
 
 ## Notes / gotchas

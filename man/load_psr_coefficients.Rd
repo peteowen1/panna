@@ -6,15 +6,16 @@
 \usage{
 load_psr_coefficients(
   type = c("margin", "offense", "defense"),
-  target = c("xg", "goals"),
+  target = c("xg", "goals", "blend"),
   model = c("outfield", "gk")
 )
 }
 \arguments{
 \item{type}{One of \code{"margin"}, \code{"offense"}, or \code{"defense"}.}
 
-\item{target}{One of \code{"xg"} (default, xG differential) or
-\code{"goals"} (goal differential).}
+\item{target}{One of \code{"xg"} (default, xG differential), \code{"goals"}
+(goal differential), or \code{"blend"} (alpha*xG + (1-alpha)*goals; falls
+back to \code{"xg"} if the blend files are not yet generated).}
 
 \item{model}{One of \code{"outfield"} (default) or \code{"gk"} (goalkeeper
 sub-model, trained on goal differential).}

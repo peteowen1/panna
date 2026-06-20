@@ -8,7 +8,7 @@ compute_player_psv(
   player_match_stats,
   min_adjust = TRUE,
   center = TRUE,
-  target = c("xg", "goals"),
+  target = c("xg", "goals", "blend"),
   scale_to_minutes = FALSE,
   exclude_efficiency = TRUE
 )
@@ -21,7 +21,10 @@ match).}
 
 \item{center}{Logical. Center within each round. Default \code{TRUE}.}
 
-\item{target}{One of \code{"xg"} (default) or \code{"goals"}.}
+\item{target}{One of \code{"xg"} (default, xG differential), \code{"goals"}
+(goal differential), or \code{"blend"} (alpha*xG + (1-alpha)*goals — the
+displayed value model; falls back to \code{"xg"} until the blend is
+trained).}
 
 \item{scale_to_minutes}{Logical. Multiply the per-90 PSV by
 \code{minutes_played / 90} so values are additive over games (like EPV).

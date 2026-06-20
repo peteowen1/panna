@@ -747,6 +747,31 @@ if (has_xg) {
     label  = "xG",
     X = X_xg_train, w = w_xg, fids = fold_xg, X_test = X_xg_test
   )
+
+  # Blended-target models (for the DISPLAYED value PSV): alpha*xG + (1-alpha)*goals,
+  # on the same rows/design as the xG model. xG-diff is stable/predictive; goal-diff
+  # rewards finishing — the blend credits finishing without pure-goal noise. The ""
+  # (xG) and gd_ sets above stay as-is for the RAPM target / other consumers.
+  a <- if (exists("psv_blend_alpha")) psv_blend_alpha else 0.6
+  cat(sprintf("\n=== Training blended-target models (alpha=%.2f xG / %.2f goals) ===\n",
+              a, 1 - a))
+  blend_models <- train_and_save(
+    y_margin = a * train_data$xg_diff[train_rows][xg_in_train] +
+               (1 - a) * train_data$goal_diff[train_rows][xg_in_train],
+    y_off    = a * train_data$home_xg[train_rows][xg_in_train] +
+               (1 - a) * train_data$home_goals[train_rows][xg_in_train],
+    y_def    = a * train_data$away_xg[train_rows][xg_in_train] +
+               (1 - a) * train_data$away_goals[train_rows][xg_in_train],
+    y_margin_test = a * train_data$xg_diff[test_rows][xg_in_test] +
+                    (1 - a) * train_data$goal_diff[test_rows][xg_in_test],
+    y_off_test    = a * train_data$home_xg[test_rows][xg_in_test] +
+                    (1 - a) * train_data$home_goals[test_rows][xg_in_test],
+    y_def_test    = a * train_data$away_xg[test_rows][xg_in_test] +
+                    (1 - a) * train_data$away_goals[test_rows][xg_in_test],
+    prefix = "blend_",
+    label  = sprintf("Blend a=%.2f", a),
+    X = X_xg_train, w = w_xg, fids = fold_xg, X_test = X_xg_test
+  )
 }
 
 # 16. Train Goal Diff Models (Secondary) ----
