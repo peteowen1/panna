@@ -728,6 +728,153 @@ pb_download_source <- function(source_type = c("fbref", "understat", "opta", "al
 }
 
 
+#' Incrementally download release assets that are missing or stale
+#'
+#' Syncs a GitHub release to a local directory by downloading only the assets
+#' that are **missing**, a **different size**, or **updated more recently** on
+#' the release than the local copy. Avoids re-pulling the full multi-GB dataset
+#' when only a few consolidated files changed (e.g. the daily Opta scrape
+#' refreshes ~10 of ~125 assets). Unlike \code{\link{pb_download_source}} it does
+#' not require a tarball asset — it operates on the individual release files.
+#'
+#' @param dest Destination directory (default: the Opta data dir,
+#'   \code{opta_data_dir()}). Files are written flat into this directory,
+#'   matching the consolidated layout the loaders read.
+#' @param repo GitHub repository in "owner/repo" format.
+#' @param tag Release tag (default \code{"opta-latest"}).
+#' @param pattern Optional regex on asset names to restrict the sync
+#'   (e.g. \code{"^events_|^opta_"}). \code{NULL} considers all assets.
+#' @param check_timestamp Logical. If \code{TRUE}, also re-download assets whose
+#'   release timestamp is newer than the local file even when the size matches
+#'   (stricter; catches same-size content changes but re-pulls files that were
+#'   merely re-uploaded). Default \code{FALSE} — size + presence only, which is
+#'   the efficient "what actually changed" sync for these append-growing files.
+#' @param force Re-download every matching asset regardless of local state.
+#' @param dry_run Report what would be downloaded without downloading.
+#' @param verbose Print per-file status.
+#'
+#' @return Invisibly, a data.frame with one row per asset: \code{file_name},
+#'   \code{action} ("download"/"skip"), \code{reason}, and \code{size}.
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' # See what's out of date without downloading
+#' pb_download_opta(dry_run = TRUE)
+#'
+#' # Pull only the changed consolidated files
+#' pb_download_opta()
+#'
+#' # Just the event files
+#' pb_download_opta(pattern = "^events_")
+#' }
+pb_download_opta <- function(dest = NULL,
+                              repo = "peteowen1/pannadata",
+                              tag = "opta-latest",
+                              pattern = NULL,
+                              check_timestamp = FALSE,
+                              force = FALSE,
+                              dry_run = FALSE,
+                              verbose = TRUE) {
+  if (!requireNamespace("piggyback", quietly = TRUE)) {
+    cli::cli_abort("Package 'piggyback' is required. Install with: install.packages('piggyback')")
+  }
+  if (is.null(dest)) dest <- opta_data_dir()
+  if (!dir.exists(dest)) dir.create(dest, recursive = TRUE)
+
+  assets <- piggyback::pb_list(repo = repo, tag = tag)
+  if (is.null(assets) || nrow(assets) == 0) {
+    cli::cli_abort("No assets found in the {.val {tag}} release of {repo}.")
+  }
+  if (!is.null(pattern)) {
+    assets <- assets[grepl(pattern, assets$file_name), , drop = FALSE]
+  }
+  if (nrow(assets) == 0) {
+    cli::cli_alert_info("No assets match pattern {.val {pattern}}.")
+    return(invisible(assets))
+  }
+
+  has_time <- "timestamp" %in% names(assets)
+
+  # Decide per asset: download if missing / size-changed / remote-newer.
+  res <- data.frame(
+    file_name = assets$file_name,
+    size = assets$size,
+    action = "skip", reason = "up-to-date",
+    stringsAsFactors = FALSE
+  )
+  for (i in seq_len(nrow(assets))) {
+    lp <- file.path(dest, assets$file_name[i])
+    if (force) {
+      res$action[i] <- "download"; res$reason[i] <- "force"; next
+    }
+    if (!file.exists(lp)) {
+      res$action[i] <- "download"; res$reason[i] <- "missing"; next
+    }
+    fi <- file.info(lp)
+    rsize <- assets$size[i]
+    if (!is.na(rsize) && !is.na(fi$size) && fi$size != rsize) {
+      res$action[i] <- "download"; res$reason[i] <- "size-changed"; next
+    }
+    if (check_timestamp && has_time && !is.na(assets$timestamp[i]) &&
+        as.numeric(assets$timestamp[i]) > as.numeric(fi$mtime)) {
+      res$action[i] <- "download"; res$reason[i] <- "remote-newer"
+    }
+  }
+
+  to_get <- res$file_name[res$action == "download"]
+  dl_mb <- sum(res$size[res$action == "download"], na.rm = TRUE) / (1024 * 1024)
+  if (verbose) {
+    cli::cli_alert_info(
+      "{tag}: {length(to_get)} to download ({sprintf('%.1f', dl_mb)} MB), {sum(res$action=='skip')} up to date")
+  }
+
+  if (dry_run) {
+    if (length(to_get) > 0 && verbose) {
+      for (f in to_get) cli::cli_text("  {.file {f}} ({res$reason[res$file_name==f]})")
+    }
+    return(invisible(res))
+  }
+
+  failed <- character(0)
+  for (f in to_get) {
+    if (verbose) {
+      cli::cli_alert("Downloading {.file {f}} ({res$reason[res$file_name==f]})...")
+    }
+    rsize <- assets$size[assets$file_name == f][1]
+    ok <- tryCatch({
+      suppressWarnings(piggyback::pb_download(
+        file = f, repo = repo, tag = tag, dest = dest,
+        overwrite = TRUE, show_progress = verbose))
+      lp <- file.path(dest, f)
+      # Verify it actually landed at the expected size — piggyback can warn
+      # "not found in repo" without erroring, so trust the file, not the return.
+      file.exists(lp) && (is.na(rsize) || abs(file.size(lp) - rsize) <= 1)
+    }, error = function(e) FALSE)
+    if (!ok) {
+      failed <- c(failed, f)
+      res$action[res$file_name == f] <- "failed"
+    }
+  }
+
+  n_ok <- length(to_get) - length(failed)
+  if (length(failed) > 0) {
+    cli::cli_warn(c(
+      "Synced {n_ok}/{length(to_get)} file{?s}; {length(failed)} failed to download.",
+      "x" = "Not retrieved: {.file {failed}}",
+      "i" = "These assets may be missing from the release or unfetchable via piggyback; try {.code gh release download {tag}}."
+    ))
+  } else if (verbose) {
+    if (length(to_get) > 0) {
+      cli::cli_alert_success("Synced {n_ok} file{?s} ({sprintf('%.1f', dl_mb)} MB) to {.path {dest}}")
+    } else {
+      cli::cli_alert_success("Already up to date.")
+    }
+  }
+  invisible(res)
+}
+
+
 #' List releases by source type
 #'
 #' Shows available releases for different data sources.
