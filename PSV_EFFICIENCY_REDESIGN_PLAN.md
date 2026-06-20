@@ -61,13 +61,20 @@ Messi WC2026 hat-trick: PSV **−0.37 → +0.36** (Tier 1 alone).
    wired through `load_psr_coefficients`/`compute_player_psv` (graceful fallback
    to xG until trained); export uses it.
 
-### 🔨 Remaining
-3. **GK GSAA** — `save_percentage → xG_faced − goals_conceded` (attribute
-   opponent shot xGOT to the keeper). New aggregation + `.get_gk_skill_cols()`.
-6. **Retrain** (local, ~2–3h, 20–25 GB — OOMs CI): **re-run
-   `03_calculate_player_xmetrics.R` first** (generates `xmetrics_bymatch/`), then
-   skills pipeline steps 01→07. Regenerate game-logs (10b) + verify Messi.
+### ✅ GK GSAA done (batch 3)
+3. **GK GSAA** — `.compute_keeper_gsaa()` (cross-team: opponent shot xGOT →
+   conceding team's keeper; expected goals faced − goals conceded). Flows through
+   `aggregate_player_xmetrics`; `gsaa_per90` replaces `save_percentage` in
+   `.get_gk_skill_cols()` + `skill_config.R` + the step-02 join. Unit-tested.
+
+### 🔨 Remaining — the retrain only
+6. **Retrain** (local, ~2–3 h, 20–25 GB — OOMs CI): **re-run
+   `03_calculate_player_xmetrics.R` first** (generates `xmetrics_bymatch/` incl.
+   gsaa), then skills pipeline steps 01→07. Regenerate game-logs (10b) + verify
+   Messi (outfield) and a keeper on the retrained blend model.
 7. Optional: α backtest before locking the default.
+
+All code is in place; the retrain is the only remaining step to make it live.
 
 ## Notes / gotchas
 - `match_stats` carries `match_id` (join key OK).

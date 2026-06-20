@@ -305,3 +305,39 @@ test_that("aggregate_player_xmetrics by_match keys per player-match", {
   expect_equal(perm["m1"]$ibox_g_minus_xg, 1 - 0.30)
   expect_equal(perm["m2"]$ibox_g_minus_xg, 1 - 0.50)
 })
+
+test_that("keeper GSAA = expected goals faced - goals conceded (cross-team)", {
+  # m1: t1 takes 2 shots (1 goal), t2 takes 1 shot (1 goal)
+  spadl <- data.frame(
+    match_id = "m1", action_id = 1:3, period_id = 1L,
+    action_type = "shot",
+    team_id = c("t1", "t1", "t2"),
+    player_id = c("s1", "s1", "s2"), player_name = c("S1", "S1", "S2"),
+    xg = c(0.35, 0.25, 0.55), xgot = c(0.40, 0.30, 0.60),
+    result = c("success", "fail", "success"),
+    is_penalty = 0L, opta_type_id = c(16L, 13L, 16L),
+    start_x = 90, start_y = 50, end_x = 100, end_y = 50, time_seconds = 600,
+    stringsAsFactors = FALSE
+  )
+  lineups <- data.frame(
+    match_id = "m1",
+    player_id = c("kA", "kB", "s1", "s2"),
+    player_name = c("KeepA", "KeepB", "S1", "S2"),
+    team_id = c("t1", "t2", "t1", "t2"),
+    position = c("GK", "Goalkeeper", "CF", "CF"),
+    minutes_played = 90, stringsAsFactors = FALSE
+  )
+  g <- panna:::.compute_keeper_gsaa(spadl, lineups, by_match = TRUE)
+  g <- data.table::as.data.table(g); data.table::setkey(g, player_id)
+  # KeepA (t1) faces t2's single shot xgot 0.60, conceded 1 -> 0.60 - 1
+  expect_equal(g["kA"]$gsaa, 0.60 - 1)
+  # KeepB (t2) faces t1's shots xgot 0.40 + 0.30 = 0.70, conceded 1 -> 0.70 - 1
+  expect_equal(g["kB"]$gsaa, 0.70 - 1)
+
+  # And it flows through aggregate_player_xmetrics onto the keeper rows
+  agg <- data.table::as.data.table(
+    aggregate_player_xmetrics(spadl, lineups, by_match = TRUE))
+  data.table::setkey(agg, player_id)
+  expect_equal(agg["kA"]$gsaa, 0.60 - 1)
+  expect_equal(agg["kB"]$gsaa, 0.70 - 1)
+})

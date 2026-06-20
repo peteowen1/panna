@@ -71,7 +71,8 @@ if (use_xmetrics_features) {
     xpass_overperformance_per90 = "xpass_overperformance_per90_xmetrics",
     npg_minus_npxg_per90 = "npg_minus_npxg_per90",
     ibox_g_minus_xg_per90 = "ibox_g_minus_xg_per90",
-    obox_g_minus_xg_per90 = "obox_g_minus_xg_per90"
+    obox_g_minus_xg_per90 = "obox_g_minus_xg_per90",
+    gsaa_per90 = "gsaa_per90"
   )
 
   if (!all(c("league", "season", "match_id", "player_id") %in% names(match_stats))) {

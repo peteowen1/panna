@@ -125,7 +125,6 @@ soccer_stat_rating_definitions <- function() {
     .srd("long_pass_own_to_opp_accuracy", "efficiency", "offensive"),
     .srd("fifty_fifty_success", "efficiency", "general"),
     .srd("poss_lost_ctrl_per_touch", "efficiency", "general"),
-    .srd("save_percentage", "efficiency", "goalkeeper"),
 
     # --- xMetrics rate stats ---
     .srd("xg_per90", "rate", "xmetrics"),
@@ -136,7 +135,9 @@ soccer_stat_rating_definitions <- function() {
     # treated as rate stats (Gaussian shrink toward ~0 — finishing is noisy).
     .srd("npg_minus_npxg_per90", "rate", "xmetrics"),
     .srd("ibox_g_minus_xg_per90", "rate", "xmetrics"),
-    .srd("obox_g_minus_xg_per90", "rate", "xmetrics")
+    .srd("obox_g_minus_xg_per90", "rate", "xmetrics"),
+    # Keeper shot-stopping above expected (GSAA per 90): replaces save_percentage.
+    .srd("gsaa_per90", "rate", "goalkeeper")
   )
 
   defs$pos_adjusted <- TRUE

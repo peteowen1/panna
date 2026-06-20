@@ -95,17 +95,20 @@
 #' @keywords internal
 .get_gk_skill_cols <- function() {
 
-  # GK action stats -- things the keeper actually does
+  # GK action stats -- things the keeper actually does.
+  # gsaa_per90 = shot-stopping above expected (expected goals faced - goals
+  # conceded, per 90); a volume-correct value that replaces save_percentage.
   gk_action_cols <- c(
     "saves_p90", "saves_ibox_p90", "saves_obox_p90",
     "keeper_sweeper_p90", "gk_smother_p90",
     "high_claim_p90", "good_high_claim_p90",
-    "punches_p90", "keeper_throws_p90", "keeper_pickup_p90"
+    "punches_p90", "keeper_throws_p90", "keeper_pickup_p90",
+    "gsaa_per90"
   )
 
-  # GK efficiency stats
+  # GK efficiency stats (save_percentage removed -> replaced by gsaa_per90 above)
   gk_efficiency_cols <- c(
-    "save_percentage", "keeper_sweeper_accuracy",
+    "keeper_sweeper_accuracy",
     "keeper_throws_accuracy"
   )
 

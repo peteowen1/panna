@@ -940,6 +940,20 @@ aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0,
 
   # Filter by min_minutes
 
+  # --- Keeper shot-stopping (GSAA = expected goals faced - goals conceded) ---
+  # Cross-team: opponent shots are attributed to the conceding team's keeper.
+  # Replaces save_percentage (a scale-free ratio) with a volume-correct value.
+  gsaa <- tryCatch(.compute_keeper_gsaa(spadl, lineup_dt, by_match = by_match),
+                   error = function(e) NULL)
+  if (!is.null(gsaa) && nrow(gsaa) > 0) {
+    gk_cols <- intersect(c("gsaa", "gsaa_per90", "xgot_faced", "goals_conceded"),
+                         names(gsaa))
+    result <- gsaa[, c(join_keys, gk_cols), with = FALSE][result, on = join_keys]
+    for (col in gk_cols) {
+      data.table::set(result, which(is.na(result[[col]])), col, 0)
+    }
+  }
+
   if (min_minutes > 0) {
     result <- result[minutes >= min_minutes]
   }
@@ -950,6 +964,77 @@ aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0,
   cli::cli_alert_success("Aggregated xmetrics for {nrow(result)} players")
 
   as.data.frame(result)
+}
+
+
+#' Compute keeper shot-stopping (GSAA) from SPADL + lineups
+#'
+#' Goals Saved Above Average = expected goals faced - goals conceded, attributed
+#' to the conceding team's primary keeper. "Expected goals faced" uses post-shot
+#' xGOT when available (what the keeper actually had to stop), else pre-shot xG.
+#' Positive = saved more than expected. Replaces the scale-free save_percentage.
+#'
+#' @param spadl SPADL actions with xg (and optionally xgot), result, team_id.
+#' @param lineups Lineups with position, team_id, match_id, minutes_played.
+#' @param by_match Logical. One row per keeper-match if TRUE, else per keeper.
+#' @return data.table keyed by player_id(+team_id[,match_id]) with gsaa,
+#'   gsaa_per90, xgot_faced, goals_conceded; or NULL if not computable.
+#' @keywords internal
+.compute_keeper_gsaa <- function(spadl, lineups, by_match = FALSE) {
+  dt <- data.table::as.data.table(spadl)
+  lu <- data.table::as.data.table(lineups)
+  if (!all(c("match_id", "team_id", "action_type", "result") %in% names(dt))) return(NULL)
+  if (!"position" %in% names(lu) || !"minutes_played" %in% names(lu)) return(NULL)
+
+  shots <- dt[action_type == "shot"]
+  if (nrow(shots) == 0) return(NULL)
+  has_xgot <- "xgot" %in% names(shots)
+
+  match_teams <- unique(lu[!is.na(team_id), .(match_id, team_id)])
+  st <- shots[, .(
+    match_id, shooter_team = team_id, xg = xg,
+    xgot = if (has_xgot) xgot else NA_real_,
+    is_goal = result == "success"
+  )]
+  # attach every shot to the OTHER team in its match -> the conceding team
+  conc <- match_teams[st, on = "match_id", allow.cartesian = TRUE]
+  conc <- conc[!is.na(team_id) & team_id != shooter_team]
+  if (nrow(conc) == 0) return(NULL)
+
+  conceded <- conc[, .(
+    xg_faced = sum(xg, na.rm = TRUE),
+    xgot_faced = sum(xgot, na.rm = TRUE),
+    goals_conceded = sum(is_goal, na.rm = TRUE),
+    n_xgot = sum(!is.na(xgot))
+  ), by = .(match_id, team_id)]
+  # expected goals faced: post-shot xGOT if any defined, else pre-shot xG
+  conceded[, exp_faced := data.table::fifelse(n_xgot > 0L, xgot_faced, xg_faced)]
+  conceded[, gsaa := exp_faced - goals_conceded]
+
+  # primary keeper per (match_id, team_id): GK with most minutes
+  gks <- lu[grepl("GK|Goalkeeper", position, ignore.case = TRUE) &
+            !is.na(minutes_played) & minutes_played > 0]
+  if (nrow(gks) == 0) return(NULL)
+  data.table::setorder(gks, match_id, team_id, -minutes_played)
+  primary <- gks[, .(player_id = player_id[1], gk_minutes = minutes_played[1]),
+                 by = .(match_id, team_id)]
+
+  km <- primary[conceded, on = c("match_id", "team_id")]
+  km <- km[!is.na(player_id)]
+  if (nrow(km) == 0) return(NULL)
+
+  if (by_match) {
+    km[, gsaa_per90 := round(gsaa / pmax(gk_minutes, 1) * 90, 3)]
+    km[, .(player_id, team_id, match_id, gsaa,
+           gsaa_per90, xgot_faced = exp_faced, goals_conceded)]
+  } else {
+    km[, .(gsaa = sum(gsaa, na.rm = TRUE),
+           xgot_faced = sum(exp_faced, na.rm = TRUE),
+           goals_conceded = sum(goals_conceded, na.rm = TRUE),
+           gsaa_per90 = round(sum(gsaa, na.rm = TRUE) /
+                              pmax(sum(gk_minutes), 1) * 90, 3)),
+       by = .(player_id, team_id)]
+  }
 }
 
 
