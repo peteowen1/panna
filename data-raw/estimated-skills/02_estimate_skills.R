@@ -72,6 +72,7 @@ if (use_xmetrics_features) {
     npg_minus_npxg_per90 = "npg_minus_npxg_per90",
     ibox_g_minus_xg_per90 = "ibox_g_minus_xg_per90",
     obox_g_minus_xg_per90 = "obox_g_minus_xg_per90",
+    placement_added_per90 = "placement_added_per90",  # xGOT - xG: placement skill
     gsaa_per90 = "gsaa_per90"
   )
 

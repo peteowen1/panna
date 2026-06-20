@@ -78,7 +78,8 @@
   xmetrics_cols <- c(
     "xg_per90", "npxg_per90", "xa_per90_xmetrics",
     "xpass_overperformance_per90_xmetrics",
-    "npg_minus_npxg_per90", "ibox_g_minus_xg_per90", "obox_g_minus_xg_per90"
+    "npg_minus_npxg_per90", "ibox_g_minus_xg_per90", "obox_g_minus_xg_per90",
+    "placement_added_per90"
   )
 
   c(rate_cols, efficiency_cols, xmetrics_cols)

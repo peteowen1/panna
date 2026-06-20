@@ -136,6 +136,9 @@ soccer_stat_rating_definitions <- function() {
     .srd("npg_minus_npxg_per90", "rate", "xmetrics"),
     .srd("ibox_g_minus_xg_per90", "rate", "xmetrics"),
     .srd("obox_g_minus_xg_per90", "rate", "xmetrics"),
+    # Placement skill: how much better than pre-shot xG the shot was placed
+    # (xGOT - xG, per 90). Repeatable shooter trait, unlike the luck residual.
+    .srd("placement_added_per90", "rate", "xmetrics"),
     # Keeper shot-stopping above expected (GSAA per 90): replaces save_percentage.
     .srd("gsaa_per90", "rate", "goalkeeper")
   )
