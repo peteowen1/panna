@@ -1473,12 +1473,17 @@ aggregate_player_game_epv <- function(spadl_with_epv, lineups = NULL,
   #     clearances are defensive. Unknown-location aerials default to defensive.
   # The displayed epv_aerial / epv_keeping columns stay as TOTALS; only the
   # offensive/defensive roll-up splits them.
-  aerial_att <- dt[action_type == "aerial" & start_x > 67, .(
-    epv_aerial_att = sum(get(credit_col), na.rm = TRUE)
-  ), by = .(player_id, match_id)]
-  player_epv <- merge(player_epv, aerial_att, by = c("player_id", "match_id"),
-                       all.x = TRUE)
-  player_epv[is.na(epv_aerial_att), epv_aerial_att := 0]
+  if ("start_x" %in% names(dt)) {
+    aerial_att <- dt[action_type == "aerial" & start_x > 67, .(
+      epv_aerial_att = sum(get(credit_col), na.rm = TRUE)
+    ), by = .(player_id, match_id)]
+    player_epv <- merge(player_epv, aerial_att, by = c("player_id", "match_id"),
+                         all.x = TRUE)
+    player_epv[is.na(epv_aerial_att), epv_aerial_att := 0]
+  } else {
+    # No location available -> all aerials default to defensive (epv_aerial_att=0).
+    player_epv[, epv_aerial_att := 0]
+  }
 
   player_epv[, `:=`(
     epv_offensive = epv_passing + epv_shooting + epv_dribbling +

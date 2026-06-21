@@ -8,6 +8,7 @@ NULL
 # Add column names as they are used in package functions
 
 utils::globalVariables(c(
+  "epv_aerial_att",
   # All column names are snake_case (via janitor::clean_names)
 
   # Match data columns
