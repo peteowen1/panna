@@ -505,6 +505,29 @@ validate_game_log_schema <- function(dt, league, season) {
         player_game_psv = player_game_psv
       )
 
+      # --- Display: finishing luck (goals - xGOT) + placement skill ---
+      # "Unlucky striker" signal: a player who placed shots well (high xGOT) but
+      # didn't score reads negative. Pulled from the per-match xMetrics; display
+      # only (not a value-blend input). NA-safe left join by (player_id, match_id).
+      tryCatch({
+        xg_disp <- data.table::as.data.table(
+          load_opta_xmetrics(league, season = league_season,
+                             source = "local", by_match = TRUE))
+        disp_cols <- intersect(c("goals_minus_xgot", "placement_added", "xgot"),
+                               names(xg_disp))
+        if (length(disp_cols) > 0 && all(c("player_id", "match_id") %in% names(xg_disp))) {
+          xg_disp <- unique(xg_disp[, c("player_id", "match_id", disp_cols), with = FALSE],
+                            by = c("player_id", "match_id"))
+          game_ratings[, match_id := as.character(match_id)]
+          xg_disp[, match_id := as.character(match_id)]
+          game_ratings <- merge(game_ratings, xg_disp,
+                                by = c("player_id", "match_id"), all.x = TRUE)
+        }
+      }, error = function(e) {
+        warning(sprintf("xGOT display cols join failed for %s %s: %s",
+                        league, season, e$message), call. = FALSE)
+      })
+
       # match_date from lineups
       dt_lineups <- data.table::as.data.table(lineups)
       if ("match_date" %in% names(dt_lineups)) {

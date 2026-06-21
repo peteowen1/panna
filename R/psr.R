@@ -901,24 +901,41 @@ compute_player_psv <- function(player_match_stats, min_adjust = TRUE,
                                 scale_to_minutes = FALSE,
                                 exclude_efficiency = TRUE) {
   target <- match.arg(target)
-  margin_coef <- load_psr_coefficients("margin", target = target)
-  osr_coef <- tryCatch(load_psr_coefficients("offense", target = target),
-                       error = function(e) NULL)
-  dsr_coef <- tryCatch(load_psr_coefficients("defense", target = target),
-                       error = function(e) NULL)
+  dt <- data.table::as.data.table(player_match_stats)
 
-  if (!is.null(osr_coef) && !is.null(dsr_coef)) {
-    calculate_psv_components(player_match_stats, margin_coef, osr_coef, dsr_coef,
-                              min_adjust = min_adjust, center = center,
-                              scale_to_minutes = scale_to_minutes,
-                              exclude_efficiency = exclude_efficiency)
-  } else {
-    cli::cli_inform("OSR/DSR coefficient files not found -- computing PSV only")
-    calculate_psv(player_match_stats, margin_coef,
-                   min_adjust = min_adjust, center = center,
-                   scale_to_minutes = scale_to_minutes,
-                   exclude_efficiency = exclude_efficiency)
+  # Route keepers through the GK sub-model (which carries gsaa_per90 and GK
+  # features), outfield through the target model — mirroring compute_player_psr.
+  # Without this, keepers are scored as bad outfielders (no GK shot-stopping
+  # credit). Splitting also centers GKs vs GKs and outfield vs outfield.
+  pos_col <- if ("primary_position" %in% names(dt)) "primary_position"
+             else if ("position" %in% names(dt)) "position" else NULL
+  is_gk <- if (!is.null(pos_col)) {
+    grepl("GK|Goalkeeper", dt[[pos_col]], ignore.case = TRUE)
+  } else rep(FALSE, nrow(dt))
+  is_gk[is.na(is_gk)] <- FALSE
+
+  .score <- function(sub, tgt, model) {
+    margin <- load_psr_coefficients("margin", target = tgt, model = model)
+    osr <- tryCatch(load_psr_coefficients("offense", target = tgt, model = model),
+                    error = function(e) NULL)
+    dsr <- tryCatch(load_psr_coefficients("defense", target = tgt, model = model),
+                    error = function(e) NULL)
+    if (!is.null(osr) && !is.null(dsr)) {
+      calculate_psv_components(sub, margin, osr, dsr, min_adjust = min_adjust,
+        center = center, scale_to_minutes = scale_to_minutes,
+        exclude_efficiency = exclude_efficiency)
+    } else {
+      cli::cli_inform("OSR/DSR coefficient files not found -- computing PSV only")
+      calculate_psv(sub, margin, min_adjust = min_adjust, center = center,
+        scale_to_minutes = scale_to_minutes, exclude_efficiency = exclude_efficiency)
+    }
   }
+
+  parts <- list()
+  if (any(!is_gk)) parts$outfield <- .score(dt[!is_gk], target, "outfield")
+  # GK sub-model is trained on goal-diff regardless of the outfield target.
+  if (any(is_gk))  parts$gk <- .score(dt[is_gk], "goals", "gk")
+  data.table::rbindlist(parts, fill = TRUE, use.names = TRUE)
 }
 
 
