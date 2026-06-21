@@ -624,6 +624,7 @@ validate_game_log_schema <- function(dt, league, season) {
       "epv_keeping", "epv_defending",
       "wpa_total", "wpa_as_actor", "wpa_as_receiver",
       "psv", "osv", "dsv",
+      "goals_minus_xgot", "placement_added", "xgot",
       "panna_value_p90"),
     names(game_logs)
   )
