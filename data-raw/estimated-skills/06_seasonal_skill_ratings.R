@@ -385,15 +385,25 @@ top50_low_minutes <- seasonal_xrapm %>%
 # rows) and splint (only 1-3 matches captured) — so legit stars show 90-270 min
 # there; that's a known data limitation, not a regression. Warn on old, stop on
 # recent.
-recent_floor <- suppressWarnings(max(seasonal_xrapm$season_end_year, na.rm = TRUE)) - 3
-old_bad    <- top50_low_minutes %>% filter(season_end_year <  recent_floor)
-recent_bad <- top50_low_minutes %>% filter(season_end_year >= recent_floor)
+current_season <- suppressWarnings(max(seasonal_xrapm$season_end_year, na.rm = TRUE))
+recent_floor <- current_season - 3
+# The 900-min "full season" expectation only holds for COMPLETED non-tournament
+# seasons. Exempt: (a) old seasons (chronically incomplete minutes), and (b) the
+# CURRENT/in-progress season — which in a World Cup year (e.g. 2026) is also a
+# tournament where top performers legitimately have ~270-630 min (a few matches).
+# A real splint-minutes regression corrupts MANY established players in COMPLETED
+# recent seasons; that's the only case that hard-stops.
+old_bad     <- top50_low_minutes %>% filter(season_end_year <  recent_floor)
+current_bad <- top50_low_minutes %>% filter(season_end_year == current_season)
+recent_bad  <- top50_low_minutes %>%
+  filter(season_end_year >= recent_floor & season_end_year < current_season)
 
-if (nrow(old_bad) > 0) {
+if (nrow(old_bad) > 0 || nrow(current_bad) > 0) {
   warning(sprintf(paste0(
-    "%d OLD-season (pre-%g) top-50-by-xRAPM player-season(s) have < 900 min — ",
-    "known incomplete old-season minutes (box + splint), not a regression. ",
-    "Not blocking."), nrow(old_bad), recent_floor), call. = FALSE)
+    "%d old-season + %d current-season (%g) top-50-by-xRAPM player-season(s) ",
+    "have < 900 min — known incomplete (old data gaps / in-progress or tournament ",
+    "season), not a regression. Not blocking."),
+    nrow(old_bad), nrow(current_bad), current_season), call. = FALSE)
 }
 if (nrow(recent_bad) > 0) {
   print(recent_bad %>%
