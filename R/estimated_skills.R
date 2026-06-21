@@ -182,9 +182,8 @@ compute_position_multipliers <- function(match_stats, stat_cols = NULL) {
   dt <- .resolve_positions(dt)
 
   if (is.null(stat_cols)) {
-    p90_cols <- grep("_p90$", names(dt), value = TRUE)
-    eff_cols <- intersect(names(.classify_skill_stats()), names(dt))
-    stat_cols <- c(p90_cols, eff_cols)
+    # Shared detector — catches _p90 AND _per90 (xMetrics over-perf) + registered.
+    stat_cols <- .detect_skill_stat_cols(dt)
   }
   stat_cols <- intersect(stat_cols, names(dt))
 
@@ -360,10 +359,10 @@ estimate_player_skills <- function(match_stats, decay_params = NULL,
 
   # Auto-detect stat columns
   if (is.null(stat_cols)) {
-    p90_cols <- grep("_p90$", names(dt), value = TRUE)
-    efficiency_stats <- names(.classify_skill_stats())
-    eff_cols <- intersect(efficiency_stats, names(dt))
-    stat_cols <- c(p90_cols, eff_cols)
+    # Shared detector — catches _p90 AND _per90 (xMetrics over-perf) + registered.
+    # This is the path that produces 02_skill_features (→ PSR serving); the old
+    # _p90$-only grep dropped every over-perf column so PSR was xMetrics-blind.
+    stat_cols <- .detect_skill_stat_cols(dt)
   }
 
   stat_cols <- intersect(stat_cols, names(dt))
@@ -1346,11 +1345,11 @@ adjust_match_stats_for_context <- function(match_stats, elo_ratings = NULL,
                                                               "ENG", "ESP", "GER", "ITA", "FRA")) {
   dt <- data.table::copy(data.table::as.data.table(match_stats))
 
-  # Identify stat columns to adjust (per-90 rates and efficiency stats)
-  p90_cols <- grep("_p90$", names(dt), value = TRUE)
+  # Identify stat columns to adjust (per-90 rates only — efficiency ratios are
+  # less affected by context). Catch _per90 (xMetrics over-perf) too, not just _p90.
+  p90_cols <- grep("_p90$|_per90$", names(dt), value = TRUE)
   eff_stats <- names(.classify_skill_stats())
   eff_cols <- intersect(eff_stats, names(dt))
-  # Only adjust per-90 rates (efficiency stats are ratios, less affected by context)
   stat_cols <- p90_cols
 
   if (length(stat_cols) == 0) {

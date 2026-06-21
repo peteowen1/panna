@@ -156,6 +156,32 @@
 #' @return Named list of data.tables (one per ref_date), keyed by date string.
 #'   Each table has one row per player with skill columns.
 #'
+#' Canonical stat-column detector — ONE source of truth
+#'
+#' Returns the modelled stat columns present in \code{dt}: per-90 rates
+#' (\code{_p90} AND \code{_per90} — the xMetrics over-performance rates), the
+#' efficiency/ratio stats from \code{.classify_skill_stats()}, and the
+#' registered PSR/GK skill-col lists (catches \code{_xmetrics}-suffixed cols).
+#'
+#' Why this exists: the same `grep("_p90$")` detection was duplicated across
+#' \code{.estimate_prematch_skills_batch} (psr.R), \code{estimate_player_skills},
+#' \code{compute_position_multipliers}, and \code{adjust_match_stats_for_context}
+#' (estimated_skills.R). The `_p90$`-only pattern silently dropped EVERY
+#' `_per90` xMetrics column — and fixing one copy left the others broken (the
+#' train/serve skew we hit twice). All detectors now route through here so a new
+#' feature can't be dropped by one divergent copy.
+#'
+#' @param dt data.frame/data.table of match stats.
+#' @return Character vector of stat column names present in \code{dt}.
+#' @keywords internal
+.detect_skill_stat_cols <- function(dt) {
+  nm <- names(dt)
+  p90 <- grep("_p90$|_per90$", nm, value = TRUE)
+  eff <- intersect(names(.classify_skill_stats()), nm)
+  registered <- intersect(c(.get_psr_skill_cols(), .get_gk_skill_cols()), nm)
+  unique(intersect(c(p90, eff, registered), nm))
+}
+
 #' @keywords internal
 .estimate_prematch_skills_batch <- function(match_stats, ref_dates,
                                             decay_params = NULL,
@@ -187,19 +213,11 @@
   }, by = player_id]
   player_names <- dt[, .(player_name = player_name[1]), by = player_id]
 
-  # Auto-detect stat columns.
-  # NB: the grep must catch BOTH `_p90` (box-score rates) and `_per90` (xMetrics
-  # rates: xg_per90, npg_minus_npxg_per90, gsaa_per90, ...). The original
-  # `_p90$`-only pattern silently skipped every xMetrics column — which is why
-  # xg_per90 had been specified in .get_psr_skill_cols() but never received a
-  # coefficient. We also explicitly include the registered skill-col lists so
-  # `_xmetrics`-suffixed cols (xa_per90_xmetrics, xpass_overperformance_per90_
-  # xmetrics) are picked up too. All gated by what's actually in `dt`.
+  # Auto-detect stat columns via the ONE shared detector (catches _p90 AND
+  # _per90 xMetrics rates + registered skill cols). See .detect_skill_stat_cols.
   eff_map <- .classify_skill_stats()
-  p90_cols <- grep("_p90$|_per90$", names(dt), value = TRUE)
-  eff_cols <- intersect(names(eff_map), names(dt))
-  registered <- intersect(c(.get_psr_skill_cols(), .get_gk_skill_cols()), names(dt))
-  stat_cols <- unique(intersect(c(p90_cols, eff_cols, registered), names(dt)))
+  stat_cols <- .detect_skill_stat_cols(dt)
+  eff_cols <- intersect(names(eff_map), names(dt))  # subset needing denominators
 
   if (length(stat_cols) == 0) {
     cli::cli_warn("No stat columns found in match_stats.")
