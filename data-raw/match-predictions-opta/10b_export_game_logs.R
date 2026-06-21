@@ -432,6 +432,10 @@ validate_game_log_schema <- function(dt, league, season) {
         tryCatch({
           league_stats <- all_match_stats[all_match_stats$match_id %in% league_match_ids, ]
           if (nrow(league_stats) > 0) {
+            # Enrich with per-match xMetrics BEFORE scoring — the blend model was
+            # trained WITH over-performance/gsaa features (step 7), so serving on
+            # box-score-only stats is a train/serve skew (finishing under-credited).
+            league_stats <- enrich_match_stats_with_xmetrics(league_stats, verbose = FALSE)
             player_game_psv <- compute_player_psv(league_stats, min_adjust = FALSE,
                                                   center = TRUE, scale_to_minutes = TRUE,
                                                   exclude_efficiency = FALSE, target = "blend")
@@ -474,6 +478,8 @@ validate_game_log_schema <- function(dt, league, season) {
               box_dt[, season := league_season]
               match_level <- compute_match_level_opta_stats(box_dt, min_minutes = 10)
               if (!is.null(match_level) && nrow(match_level) > 0L) {
+                # Enrich BEFORE scoring (train/serve parity — see note above).
+                match_level <- enrich_match_stats_with_xmetrics(match_level, verbose = FALSE)
                 inline_psv <- compute_player_psv(match_level, min_adjust = FALSE,
                                                  center = TRUE, scale_to_minutes = TRUE,
                                                  exclude_efficiency = FALSE, target = "blend")
