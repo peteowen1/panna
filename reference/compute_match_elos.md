@@ -22,7 +22,10 @@ compute_match_elos(
   conf_priors = NULL,
   use_venue_factor = FALSE,
   time_decay_halflife = NULL,
-  decay_reference_date = NULL
+  decay_reference_date = NULL,
+  update_mode = c("outcome", "margin_sqrt"),
+  blend_w = 0.5,
+  margin_slope = 1.66
 )
 ```
 
@@ -89,6 +92,22 @@ compute_match_elos(
 
   Optional Date or date-coercible string used as "now" for the decay
   calculation. Defaults to `max(match_date)` in `results`.
+
+- update_mode:
+
+  Passed to
+  [`update_elo()`](https://peteowen1.github.io/panna/reference/update_elo.md):
+  "outcome" (default) or "margin_sqrt" (the xG-Elo form). When
+  "margin_sqrt" and `results` carries `home_xg`/`away_xg` columns, the
+  update targets a blended goals/xG margin (goal-diff fallback per row
+  where xG is NA).
+
+- blend_w, margin_slope:
+
+  Passed to
+  [`update_elo()`](https://peteowen1.github.io/panna/reference/update_elo.md)
+  in margin_sqrt mode (weight on goals vs xG, and
+  expected-margin-per-400-Elo).
 
 ## Value
 

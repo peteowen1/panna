@@ -57,7 +57,7 @@ Data frame of shot events with columns:
 
 - is_goal: Whether shot resulted in goal
 
-- type_id: 13=saved, 14=post, 15=miss, 16=goal
+- type_id: 13=miss, 14=post, 15=saved, 16=goal
 
 - body_part: Head, LeftFoot, RightFoot
 

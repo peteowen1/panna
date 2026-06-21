@@ -17,5 +17,5 @@ Numeric value: 0.76
 
 ``` r
 PENALTY_XG
-#> [1] 0.76
+#> [1] 0.8
 ```

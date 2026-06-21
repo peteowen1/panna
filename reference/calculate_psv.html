@@ -58,7 +58,8 @@ ratings.</p>
 <span>  <span class="va">coef_df</span>,</span>
 <span>  min_adjust <span class="op">=</span> <span class="cn">TRUE</span>,</span>
 <span>  center <span class="op">=</span> <span class="cn">TRUE</span>,</span>
-<span>  exclude_efficiency <span class="op">=</span> <span class="cn">TRUE</span></span>
+<span>  exclude_efficiency <span class="op">=</span> <span class="cn">TRUE</span>,</span>
+<span>  scale_to_minutes <span class="op">=</span> <span class="cn">FALSE</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -90,6 +91,13 @@ PSV = contribution above average that round. Default <code>TRUE</code>.</p></dd>
 <dt id="arg-exclude-efficiency">exclude_efficiency<a class="anchor" aria-label="anchor" href="#arg-exclude-efficiency"></a></dt>
 <dd><p>Logical. Exclude efficiency/ratio stats from PSV
 calculation. Default <code>TRUE</code>.</p></dd>
+
+
+<dt id="arg-scale-to-minutes">scale_to_minutes<a class="anchor" aria-label="anchor" href="#arg-scale-to-minutes"></a></dt>
+<dd><p>Logical. If TRUE, multiply the (per-90) PSV by
+<code>minutes_played / 90</code> so the result is additive over a player's
+games (like EPV), rather than a per-90 rate. Default <code>FALSE</code>
+(per-90, the form consumed by the multi-target RAPM and skills pipeline).</p></dd>
 
 </dl></div>
     <div class="section level2">

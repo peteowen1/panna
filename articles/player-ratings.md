@@ -250,7 +250,7 @@ differ.
   Installation and data loading
 - [Data
   Sources](https://peteowen1.github.io/panna/articles/data-sources.md) -
-  FBref vs Opta vs Understat
+  Opta league codes, season formats, and loaders
 - [Data
   Dictionary](https://peteowen1.github.io/panna/DATA_DICTIONARY.md) -
   Column definitions at each pipeline stage

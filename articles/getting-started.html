@@ -94,17 +94,8 @@ locally first:</p>
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/peteowen1/panna" class="external-link">panna</a></span><span class="op">)</span></span>
 <span></span>
-<span><span class="co"># Download Opta data (primary source, recommended)</span></span>
-<span><span class="fu"><a href="../reference/pb_download_source.html">pb_download_source</a></span><span class="op">(</span><span class="st">"opta"</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Download Understat data</span></span>
-<span><span class="fu"><a href="../reference/pb_download_source.html">pb_download_source</a></span><span class="op">(</span><span class="st">"understat"</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Download FBref data</span></span>
-<span><span class="fu"><a href="../reference/pb_download_source.html">pb_download_source</a></span><span class="op">(</span><span class="st">"fbref"</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Or download everything</span></span>
-<span><span class="fu"><a href="../reference/pb_download_source.html">pb_download_source</a></span><span class="op">(</span><span class="st">"all"</span><span class="op">)</span></span></code></pre></div>
+<span><span class="co"># Download Opta data (the project's sole data source)</span></span>
+<span><span class="fu"><a href="../reference/pb_download_source.html">pb_download_source</a></span><span class="op">(</span><span class="st">"opta"</span><span class="op">)</span></span></code></pre></div>
 <p>Data is cached locally after download, so you only need to do this
 once (or when updating to get new matches).</p>
 </div>
@@ -114,9 +105,9 @@ once (or when updating to get new matches).</p>
 <div class="section level3">
 <h3 id="opta-data">Opta Data<a class="anchor" aria-label="anchor" href="#opta-data"></a>
 </h3>
-<p>Opta is the primary data source with 263 columns per player across 15
-leagues. It powers the full RAPM/SPM pipeline, EPV, xMetrics, estimated
-skills, and match predictions.</p>
+<p>Opta is the package’s data source, with 263 columns per player across
+15 leagues. It powers the full RAPM/SPM pipeline, EPV, xMetrics,
+estimated skills, and match predictions.</p>
 <div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># Load Opta player stats</span></span>
 <span><span class="va">opta_stats</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/load_opta_stats.html">load_opta_stats</a></span><span class="op">(</span><span class="st">"EPL"</span>, <span class="st">"2024-2025"</span><span class="op">)</span></span>
@@ -132,35 +123,6 @@ skills, and match predictions.</p>
 <span><span class="va">lineups</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/load_opta_lineups.html">load_opta_lineups</a></span><span class="op">(</span><span class="st">"EPL"</span>, <span class="st">"2024-2025"</span><span class="op">)</span>             <span class="co"># Lineup data</span></span>
 <span><span class="va">fixtures</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/load_opta_fixtures.html">load_opta_fixtures</a></span><span class="op">(</span><span class="st">"EPL"</span><span class="op">)</span>                        <span class="co"># Fixtures/results</span></span>
 <span><span class="va">xmetrics</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/load_opta_xmetrics.html">load_opta_xmetrics</a></span><span class="op">(</span><span class="st">"EPL"</span>, <span class="st">"2024-2025"</span><span class="op">)</span>           <span class="co"># Pre-computed xG/xA/xPass</span></span></code></pre></div>
-</div>
-<div class="section level3">
-<h3 id="understat-data">Understat Data<a class="anchor" aria-label="anchor" href="#understat-data"></a>
-</h3>
-<p>Understat includes xGChain and xGBuildup metrics not available
-elsewhere.</p>
-<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="co"># Load player roster with xGChain, xGBuildup</span></span>
-<span><span class="va">roster</span> <span class="op">&lt;-</span> <span class="fu">load_understat_roster</span><span class="op">(</span><span class="st">"EPL"</span>, <span class="st">"2024"</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Load shot-level data</span></span>
-<span><span class="va">shots</span> <span class="op">&lt;-</span> <span class="fu">load_understat_shots</span><span class="op">(</span><span class="st">"EPL"</span>, <span class="st">"2024"</span><span class="op">)</span></span></code></pre></div>
-<p>Note: Understat uses single-year seasons (e.g., “2024” for
-2024-25).</p>
-</div>
-<div class="section level3">
-<h3 id="fbref-data">FBref Data<a class="anchor" aria-label="anchor" href="#fbref-data"></a>
-</h3>
-<p>FBref provides comprehensive statistics with StatsBomb xG values.</p>
-<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="co"># Load summary stats for a league/season</span></span>
-<span><span class="va">summary</span> <span class="op">&lt;-</span> <span class="fu">load_summary</span><span class="op">(</span><span class="st">"ENG"</span>, <span class="st">"2024-2025"</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Other table types</span></span>
-<span><span class="va">passing</span> <span class="op">&lt;-</span> <span class="fu">load_passing</span><span class="op">(</span><span class="st">"ENG"</span>, <span class="st">"2024-2025"</span><span class="op">)</span></span>
-<span><span class="va">defense</span> <span class="op">&lt;-</span> <span class="fu">load_defense</span><span class="op">(</span><span class="st">"ENG"</span>, <span class="st">"2024-2025"</span><span class="op">)</span></span>
-<span><span class="va">possession</span> <span class="op">&lt;-</span> <span class="fu">load_possession</span><span class="op">(</span><span class="st">"ENG"</span>, <span class="st">"2024-2025"</span><span class="op">)</span></span>
-<span><span class="va">shots</span> <span class="op">&lt;-</span> <span class="fu">load_shots</span><span class="op">(</span><span class="op">)</span>  <span class="co"># All leagues/seasons</span></span>
-<span><span class="va">metadata</span> <span class="op">&lt;-</span> <span class="fu">load_metadata</span><span class="op">(</span><span class="st">"ENG"</span>, <span class="st">"2024-2025"</span><span class="op">)</span></span></code></pre></div>
 </div>
 </div>
 <div class="section level2">
@@ -255,64 +217,21 @@ elsewhere.</p>
 </table>
 </div>
 <div class="section level3">
-<h3 id="fbrefunderstat-codes">FBref/Understat Codes<a class="anchor" aria-label="anchor" href="#fbrefunderstat-codes"></a>
-</h3>
-<table class="table">
-<thead><tr class="header">
-<th>League</th>
-<th>Panna/FBref</th>
-<th>Understat</th>
-</tr></thead>
-<tbody>
-<tr class="odd">
-<td>Premier League</td>
-<td>ENG</td>
-<td>EPL</td>
-</tr>
-<tr class="even">
-<td>La Liga</td>
-<td>ESP</td>
-<td>La_Liga</td>
-</tr>
-<tr class="odd">
-<td>Bundesliga</td>
-<td>GER</td>
-<td>Bundesliga</td>
-</tr>
-<tr class="even">
-<td>Serie A</td>
-<td>ITA</td>
-<td>Serie_A</td>
-</tr>
-<tr class="odd">
-<td>Ligue 1</td>
-<td>FRA</td>
-<td>Ligue_1</td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="section level3">
 <h3 id="season-formats">Season Formats<a class="anchor" aria-label="anchor" href="#season-formats"></a>
 </h3>
 <table class="table">
 <thead><tr class="header">
-<th>Source</th>
+<th>Type</th>
 <th>Format</th>
 <th>Example</th>
 </tr></thead>
 <tbody>
 <tr class="odd">
-<td>Opta/FBref</td>
+<td>Domestic leagues</td>
 <td>YYYY-YYYY</td>
 <td>“2024-2025”</td>
 </tr>
 <tr class="even">
-<td>Understat</td>
-<td>YYYY</td>
-<td>“2024”</td>
-</tr>
-<tr class="odd">
 <td>Tournaments</td>
 <td>YYYY Country</td>
 <td>“2018 Russia”</td>
@@ -326,39 +245,29 @@ elsewhere.</p>
 </h2>
 <p>The package provides convenience functions for aggregated player
 statistics:</p>
-<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="co"># Opta aggregated stats</span></span>
+<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="co"># Opta aggregated summary stats</span></span>
 <span><span class="va">opta_players</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/player_opta_summary.html">player_opta_summary</a></span><span class="op">(</span></span>
 <span>  leagues <span class="op">=</span> <span class="st">"EPL"</span>,</span>
-<span>  seasons <span class="op">=</span> <span class="st">"2024-2025"</span>,</span>
-<span>  min_minutes <span class="op">=</span> <span class="fl">900</span></span>
-<span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Understat aggregated stats</span></span>
-<span><span class="va">understat_players</span> <span class="op">&lt;-</span> <span class="fu">player_understat_summary</span><span class="op">(</span></span>
-<span>  leagues <span class="op">=</span> <span class="st">"EPL"</span>,</span>
-<span>  seasons <span class="op">=</span> <span class="st">"2024"</span>,</span>
-<span>  min_minutes <span class="op">=</span> <span class="fl">900</span></span>
-<span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># FBref aggregated stats</span></span>
-<span><span class="va">players_summary</span> <span class="op">&lt;-</span> <span class="fu">player_fbref_summary</span><span class="op">(</span></span>
-<span>  leagues <span class="op">=</span> <span class="st">"ENG"</span>,</span>
 <span>  seasons <span class="op">=</span> <span class="st">"2024-2025"</span>,</span>
 <span>  min_minutes <span class="op">=</span> <span class="fl">900</span>  <span class="co"># Filter for players with 900+ minutes</span></span>
 <span><span class="op">)</span></span>
 <span></span>
-<span><span class="va">players_passing</span> <span class="op">&lt;-</span> <span class="fu">player_fbref_passing</span><span class="op">(</span></span>
-<span>  leagues <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"ENG"</span>, <span class="st">"ESP"</span><span class="op">)</span>,  <span class="co"># Multiple leagues</span></span>
-<span>seasons <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"2023-2024"</span>, <span class="st">"2024-2025"</span><span class="op">)</span>,  <span class="co"># Multiple seasons</span></span>
+<span><span class="co"># Other aggregated stat tables (same arguments)</span></span>
+<span><span class="va">players_passing</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/player_opta_passing.html">player_opta_passing</a></span><span class="op">(</span></span>
+<span>  leagues <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"EPL"</span>, <span class="st">"La_Liga"</span><span class="op">)</span>,               <span class="co"># Multiple leagues</span></span>
+<span>  seasons <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"2023-2024"</span>, <span class="st">"2024-2025"</span><span class="op">)</span>,       <span class="co"># Multiple seasons</span></span>
 <span>  min_minutes <span class="op">=</span> <span class="fl">1800</span></span>
-<span><span class="op">)</span></span></code></pre></div>
+<span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">players_defense</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/player_opta_defense.html">player_opta_defense</a></span><span class="op">(</span>leagues <span class="op">=</span> <span class="st">"EPL"</span>, seasons <span class="op">=</span> <span class="st">"2024-2025"</span><span class="op">)</span></span>
+<span><span class="va">players_shots</span>   <span class="op">&lt;-</span> <span class="fu"><a href="../reference/player_opta_shots.html">player_opta_shots</a></span><span class="op">(</span>leagues <span class="op">=</span> <span class="st">"EPL"</span>, seasons <span class="op">=</span> <span class="st">"2024-2025"</span><span class="op">)</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="working-with-multiple-leagues">Working with Multiple Leagues<a class="anchor" aria-label="anchor" href="#working-with-multiple-leagues"></a>
 </h2>
 <p>Many functions accept vectors of leagues and seasons:</p>
-<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># Load Big 5 Opta stats</span></span>
 <span><span class="va">big5_opta</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/load_opta_big5.html">load_opta_big5</a></span><span class="op">(</span><span class="st">"2024-2025"</span><span class="op">)</span></span>
 <span></span>
@@ -399,8 +308,8 @@ RAPM/SPM pipeline first.</p>
 <a href="player-ratings.html">Player Ratings</a> - Learn about RAPM
 and SPM methodology</li>
 <li>
-<a href="data-sources.html">Data Sources</a> - Detailed comparison
-of Opta, Understat, and FBref</li>
+<a href="data-sources.html">Data Sources</a> - Opta league codes,
+season formats, and loaders</li>
 <li>
 <a href="../DATA_DICTIONARY.html">Data Dictionary</a> - Column
 definitions</li>

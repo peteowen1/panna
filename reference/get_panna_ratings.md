@@ -23,13 +23,8 @@ Data frame with player panna ratings.
 
 ## Details
 
-To generate ratings, run one of the pipeline scripts:
-
-- Opta (15 leagues):
-  `source("data-raw/player-ratings-opta/run_pipeline_opta.R")`
-
-- FBref (Big 5):
-  `source("data-raw/player-ratings-fbref/run_pipeline.R")`
+To generate ratings, run the Opta pipeline script:
+`source("data-raw/player-ratings-opta/run_pipeline_opta.R")`
 
 ## Examples
 

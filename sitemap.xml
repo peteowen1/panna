@@ -11,8 +11,10 @@
 <url><loc>https://peteowen1.github.io/panna/ENHANCEMENTS.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/LICENSE-text.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/LICENSE.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/MODELS.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/OPTA_PIPELINE_INVESTIGATION.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/OPTA_REFERENCE.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/PSV_EFFICIENCY_REDESIGN_PLAN.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/articles/data-sources.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/articles/getting-started.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/articles/index.html</loc></url>
@@ -81,10 +83,12 @@
 <url><loc>https://peteowen1.github.io/panna/reference/add_empty_weather_cols.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/add_next_chain_outcome.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/add_possession_velocity.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/add_red_card_to_chains.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/add_value_metrics_to_splints.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/add_weather_features.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/add_wp_vars.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/add_xg_to_spadl.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/add_xgot_to_spadl.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/add_xpass_to_spadl.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/adjust_epv_for_opponents.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/adjust_epv_for_position.html</loc></url>
@@ -221,9 +225,12 @@
 <url><loc>https://peteowen1.github.io/panna/reference/dot-check_suggests.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-classify_skill_stats.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-clean_numeric_na.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/dot-compute_keeper_gsaa.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-count_events.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/dot-create_placement_features.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-create_shot_features.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-decay_past_sum.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/dot-detect_skill_stat_cols.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-ensure_player_id.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-epr_league_tier.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-estimate_prematch_skills_batch.html</loc></url>
@@ -244,6 +251,7 @@
 <url><loc>https://peteowen1.github.io/panna/reference/dot-get_psr_skill_cols.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-get_summary_col_mapping.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-rename_opta_columns.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/dot-report_model_provenance.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-resolve_lambda.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-resolve_positions.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-resolve_prior_strength.html</loc></url>
@@ -258,6 +266,7 @@
 <url><loc>https://peteowen1.github.io/panna/reference/elo_match_k.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/elo_shift_probs.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/elo_update_pair.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/enrich_match_stats_with_xmetrics.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/ensure_column.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/estimate_player_skills.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/estimate_player_skills_at_date.html</loc></url>
@@ -299,6 +308,7 @@
 <url><loc>https://peteowen1.github.io/panna/reference/fit_spm_opta_target.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/fit_spm_xgb.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/fit_xg_model.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/fit_xgot_model.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/fit_xpass_model.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/format_duration.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/generate_panna_report.html</loc></url>
@@ -354,6 +364,7 @@
 <url><loc>https://peteowen1.github.io/panna/reference/load_psr_coefficients.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/load_wp_model.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/load_xg_model.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/load_xgot_model.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/load_xpass_model.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/map_opta_action_type.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/map_opta_bodypart.html</loc></url>
@@ -409,6 +420,7 @@
 <url><loc>https://peteowen1.github.io/panna/reference/predict_minutes.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/predict_wp.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/predict_xg.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/predict_xgot.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/predict_xpass.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/prepare_minutes_cache.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/prepare_od_scatter_data.html</loc></url>
@@ -419,6 +431,7 @@
 <url><loc>https://peteowen1.github.io/panna/reference/prepare_passes_for_xpass_minimal.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/prepare_rapm_data.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/prepare_shots_for_xg.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/prepare_shots_for_xgot.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/prepare_spm_regression_data.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/process_advanced_stats.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/process_all_data.html</loc></url>

@@ -3,8 +3,10 @@
 Player rating system for football using RAPM + SPM methodology. This is
 the primary development workspace in the pannaverse ecosystem.
 
-**Active data source: Opta only.** FBref/Understat modules and pipelines
-are deprecated and slated for archival — do not extend them.
+**Active data source: Opta only.** The FBref/Understat archival sweep is
+done (2026-06): their R sources, loaders, and the
+`player-ratings-fbref/` pipeline were removed from this package. Only
+`pannadata` retains disabled scraper code for reference.
 
 ## Development Commands
 
@@ -33,47 +35,51 @@ use `devtools::load_all("panna")` from pannaverse root.
 
 ### R Source Files (R/)
 
-| Module                        | Key Files                                                                                       | Purpose                                                                                                                                                                                                                                                                                                                                                                                                      |
-|-------------------------------|-------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **RAPM**                      | `rapm_matrix.R`, `rapm_model.R`, `splint_creation.R`                                            | Regularized Adjusted Plus-Minus via glmnet                                                                                                                                                                                                                                                                                                                                                                   |
-| **SPM**                       | `spm_model.R`, `spm_opta.R`, `feature_engineering.R`                                            | Statistical Plus-Minus (XGBoost-based prior for RAPM)                                                                                                                                                                                                                                                                                                                                                        |
-| **Panna Rating**              | `panna_rating.R`, `offensive_defensive.R`                                                       | Final combined rating = xRAPM with SPM prior                                                                                                                                                                                                                                                                                                                                                                 |
-| **Skills**                    | `estimated_skills.R`, `skill_optimization.R`                                                    | Per-stat skill estimation with Bayesian shrinkage                                                                                                                                                                                                                                                                                                                                                            |
-| **xMetrics**                  | `xg_model.R`, `xpass_model.R`, `epv_model.R`, `epv_features.R`                                  | xG/xA/xPass/EPV from SPADL events                                                                                                                                                                                                                                                                                                                                                                            |
-| **SPADL**                     | `spadl_conversion.R`                                                                            | Opta events -\> SPADL action format                                                                                                                                                                                                                                                                                                                                                                          |
-| **Data Loaders**              | `data_loaders.R`, `opta_loaders.R`                                                              | Load from local parquet or GitHub Releases                                                                                                                                                                                                                                                                                                                                                                   |
-| **Player Stats**              | `player_stats_opta.R` (active); `player_stats_fbref.R`, `player_stats_understat.R` (deprecated) | Aggregate player-level statistics                                                                                                                                                                                                                                                                                                                                                                            |
-| **Match Prediction**          | `match_prediction.R`                                                                            | Team-level features + XGBoost match outcome model                                                                                                                                                                                                                                                                                                                                                            |
-| **Scraping** (deprecated)     | `scrape_fbref_*.R`, `scrape_understat*.R`                                                       | Web scraping utilities — archival candidates                                                                                                                                                                                                                                                                                                                                                                 |
-| **Data Processing**           | `data_processing.R`, `possession_chains.R`                                                      | Transformations, possession chain analysis                                                                                                                                                                                                                                                                                                                                                                   |
-| **Utilities**                 | `utils.R`, `constants.R`, `globals.R`, `piggyback.R`                                            | Helpers, NSE declarations, GitHub Releases I/O                                                                                                                                                                                                                                                                                                                                                               |
-| **PSR/PSV**                   | `psr.R`                                                                                         | Player Skill Rating (smoothed) + Player Stat Value (per-game) with O/D decomposition                                                                                                                                                                                                                                                                                                                         |
-| **WPA**                       | `wp_model.R`, `wp_credit.R`                                                                     | Win probability model (3-class: home/draw/away) and WPA credit assignment                                                                                                                                                                                                                                                                                                                                    |
-| **EPR**                       | `player_ratings_epv.R`                                                                          | Expected Points Rating. Legacy [`calculate_epr()`](https://peteowen1.github.io/panna/reference/calculate_epr.md) = decay-weighted Bayesian mean; modern [`calculate_epr_regression()`](https://peteowen1.github.io/panna/reference/calculate_epr_regression.md) = weighted ridge with league-season FE + opp_def_rating control (2026-05-19, the production version used in `debug/keep/build_epr_weekly.R`) |
-| **Skill Config**              | `skill_config.R`                                                                                | Soccer stat rating definitions, position map, hyperparameters                                                                                                                                                                                                                                                                                                                                                |
-| **Game Ratings**              | `player_game_ratings.R`                                                                         | Unified per-game output: EPV + WPA + PSV → panna_value                                                                                                                                                                                                                                                                                                                                                       |
-| **Centrality**                | `centrality.R`                                                                                  | Network centrality metrics for player influence                                                                                                                                                                                                                                                                                                                                                              |
-| **Simulation**                | `simulate.R`                                                                                    | Match simulation engine                                                                                                                                                                                                                                                                                                                                                                                      |
-| **Pitch Plot**                | `pitch_plot.R`                                                                                  | Football pitch visualization                                                                                                                                                                                                                                                                                                                                                                                 |
-| **Attribution**               | `player_attribution.R`                                                                          | Player contribution attribution                                                                                                                                                                                                                                                                                                                                                                              |
-| **Weather**                   | `weather.R`                                                                                     | Weather data integration                                                                                                                                                                                                                                                                                                                                                                                     |
-| **Comparison**                | `compare_players.R`                                                                             | Player comparison utilities                                                                                                                                                                                                                                                                                                                                                                                  |
-| **Competitions** (deprecated) | `fbref_competitions.R`, `understat_competitions.R`                                              | League/competition metadata lookups                                                                                                                                                                                                                                                                                                                                                                          |
-| **Package**                   | `panna-package.R`                                                                               | Package-level roxygen docs                                                                                                                                                                                                                                                                                                                                                                                   |
+| Module                  | Key Files                                                                                                           | Purpose                                                                                                                                                                                                                                                                                                                                                                                                      |
+|-------------------------|---------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **RAPM**                | `rapm_matrix.R`, `rapm_model.R`, `splint_creation.R`                                                                | Regularized Adjusted Plus-Minus via glmnet                                                                                                                                                                                                                                                                                                                                                                   |
+| **SPM**                 | `spm_model.R`, `spm_opta.R`, `feature_engineering.R`                                                                | Statistical Plus-Minus (XGBoost-based prior for RAPM)                                                                                                                                                                                                                                                                                                                                                        |
+| **Panna Rating**        | `panna_rating.R`, `offensive_defensive.R`                                                                           | Final combined rating = xRAPM with SPM prior                                                                                                                                                                                                                                                                                                                                                                 |
+| **Skills**              | `estimated_skills.R`, `skill_optimization.R`                                                                        | Per-stat skill estimation with Bayesian shrinkage                                                                                                                                                                                                                                                                                                                                                            |
+| **xMetrics**            | `xg_model.R`, `xgot_model.R`, `xpass_model.R`, `epv_model.R`, `epv_features.R`                                      | xG/xGOT/xA/xPass/EPV from SPADL events                                                                                                                                                                                                                                                                                                                                                                       |
+| **SPADL**               | `spadl_conversion.R`                                                                                                | Opta events -\> SPADL action format                                                                                                                                                                                                                                                                                                                                                                          |
+| **Data Loaders**        | `opta_loaders.R`, `dirs.R`, `data_location_report.R`                                                                | Load from local parquet or GitHub Releases; data-source-agnostic dir resolution; load diagnostics                                                                                                                                                                                                                                                                                                            |
+| **Player Stats**        | `player_stats_opta.R`                                                                                               | Aggregate player-level statistics                                                                                                                                                                                                                                                                                                                                                                            |
+| **Match Prediction**    | `match_prediction.R`, `match_mirror.R`                                                                              | Team-level features + XGBoost match outcome model; orientation-symmetric match rows                                                                                                                                                                                                                                                                                                                          |
+| **Expected Minutes**    | `expected_minutes.R` (production); `minutes_model.R`, `minutes_model_train.R`, `minutes_query.R` (XGBoost, benched) | National-team minutes projection: decay-weighted heuristic with tournament boost + p_start Beta prior                                                                                                                                                                                                                                                                                                        |
+| **Data Processing**     | `data_processing.R`, `possession_chains.R`                                                                          | Transformations, possession chain analysis                                                                                                                                                                                                                                                                                                                                                                   |
+| **Utilities**           | `utils.R`, `constants.R`, `globals.R`, `piggyback.R`                                                                | Helpers, NSE declarations, GitHub Releases I/O                                                                                                                                                                                                                                                                                                                                                               |
+| **PSR/PSV**             | `psr.R`                                                                                                             | Player Skill Rating (smoothed) + Player Stat Value (per-game) with O/D decomposition                                                                                                                                                                                                                                                                                                                         |
+| **WPA**                 | `wp_model.R`, `wp_credit.R`                                                                                         | Win probability model (3-class: home/draw/away) and WPA credit assignment                                                                                                                                                                                                                                                                                                                                    |
+| **EPR**                 | `player_ratings_epv.R`                                                                                              | Expected Points Rating. Legacy [`calculate_epr()`](https://peteowen1.github.io/panna/reference/calculate_epr.md) = decay-weighted Bayesian mean; modern [`calculate_epr_regression()`](https://peteowen1.github.io/panna/reference/calculate_epr_regression.md) = weighted ridge with league-season FE + opp_def_rating control (2026-05-19, the production version used in `debug/keep/build_epr_weekly.R`) |
+| **Skill Config**        | `skill_config.R`                                                                                                    | Soccer stat rating definitions, position map, hyperparameters                                                                                                                                                                                                                                                                                                                                                |
+| **Game Ratings**        | `player_game_ratings.R`                                                                                             | Unified per-game output: EPV + WPA + PSV → panna_value                                                                                                                                                                                                                                                                                                                                                       |
+| **Career RAPM**         | `career_rapm.R`                                                                                                     | Career-trait Panna: decay-weighted multi-season xRAPM (365d half-life)                                                                                                                                                                                                                                                                                                                                       |
+| **WC Simulation**       | `simulate_world_cup.R`, `knockout_model.R`, `shootout.R`                                                            | 48-team WC 2026 tournament simulator; full-model knockout match probabilities; penalty-shootout win probability                                                                                                                                                                                                                                                                                              |
+| **Team Ratings**        | `team_rating.R`, `elo_calibration.R`, `league_offsets.R`                                                            | Bradley-Terry team rating; Elo calibration (per-match-type K + cross-confederation multiplier); league quality offsets vs UCL group stage                                                                                                                                                                                                                                                                    |
+| **EPV Adjustments**     | `epv_adjustments.R`                                                                                                 | EPV position centering and opponent adjustment                                                                                                                                                                                                                                                                                                                                                               |
+| **Player IDs**          | `player_id_canonical.R`                                                                                             | Player-ID canonicalization                                                                                                                                                                                                                                                                                                                                                                                   |
+| **Pipeline Validation** | `pipeline_validation.R`                                                                                             | Domain-truth assertions on pipeline outputs                                                                                                                                                                                                                                                                                                                                                                  |
+| **Centrality**          | `centrality.R`                                                                                                      | Network centrality metrics for player influence                                                                                                                                                                                                                                                                                                                                                              |
+| **Simulation**          | `simulate.R`                                                                                                        | Match simulation engine                                                                                                                                                                                                                                                                                                                                                                                      |
+| **Pitch Plot**          | `pitch_plot.R`                                                                                                      | Football pitch visualization                                                                                                                                                                                                                                                                                                                                                                                 |
+| **Attribution**         | `player_attribution.R`                                                                                              | Player contribution attribution                                                                                                                                                                                                                                                                                                                                                                              |
+| **Weather**             | `weather.R`                                                                                                         | Weather data integration                                                                                                                                                                                                                                                                                                                                                                                     |
+| **Comparison**          | `compare_players.R`                                                                                                 | Player comparison utilities                                                                                                                                                                                                                                                                                                                                                                                  |
+| **Package**             | `panna-package.R`                                                                                                   | Package-level roxygen docs                                                                                                                                                                                                                                                                                                                                                                                   |
 
 ### Pipelines (data-raw/)
 
 Run order matters — later pipelines depend on earlier ones.
 
-| Pipeline                        | Directory                 | Entry Point                             | Depends On                                                                                                |
-|---------------------------------|---------------------------|-----------------------------------------|-----------------------------------------------------------------------------------------------------------|
-| **EPV/xMetrics**                | `epv/`                    | `03_calculate_player_xmetrics.R`        | Pre-trained models via `pannamodels::load_panna_model()`                                                  |
-| **Opta RAPM/SPM** ⭐            | `player-ratings-opta/`    | `run_pipeline_opta.R`                   | xMetrics output                                                                                           |
-| **FBref RAPM/SPM** (deprecated) | `player-ratings-fbref/`   | `run_pipeline.R`                        | pannadata FBref data — archival candidate                                                                 |
-| **Skills**                      | `estimated-skills/`       | `run_skills_pipeline.R`                 | Opta RAPM output (cache-opta/)                                                                            |
-| **Predictions**                 | `match-predictions-opta/` | `run_predictions_opta.R`                | Opta RAPM + Skills output                                                                                 |
-| **Blog Export**                 | `match-predictions-opta/` | Steps 10b + 10c (opt-in)                | EPV/WPA/PSV models + match events                                                                         |
-| **WC 2026 Sim**                 | `match-predictions-opta/` | Step 11 (opt-in) `11_simulate_wc2026.R` | 07_predictions + hand-curated `wc2026_groups.rds`. Outputs BT ratings, champion probs, group expectations |
+| Pipeline             | Directory                 | Entry Point                             | Depends On                                                                                                |
+|----------------------|---------------------------|-----------------------------------------|-----------------------------------------------------------------------------------------------------------|
+| **EPV/xMetrics**     | `epv/`                    | `03_calculate_player_xmetrics.R`        | Pre-trained models via `pannamodels::load_panna_model()`                                                  |
+| **Opta RAPM/SPM** ⭐ | `player-ratings-opta/`    | `run_pipeline_opta.R`                   | xMetrics output                                                                                           |
+| **Skills**           | `estimated-skills/`       | `run_skills_pipeline.R`                 | Opta RAPM output (cache-opta/)                                                                            |
+| **Predictions**      | `match-predictions-opta/` | `run_predictions_opta.R`                | Opta RAPM + Skills output                                                                                 |
+| **Blog Export**      | `match-predictions-opta/` | Steps 10b + 10c (opt-in)                | EPV/WPA/PSV models + match events                                                                         |
+| **WC 2026 Sim**      | `match-predictions-opta/` | Step 11 (opt-in) `11_simulate_wc2026.R` | 07_predictions + hand-curated `wc2026_groups.rds`. Outputs BT ratings, champion probs, group expectations |
 
 **Pipeline scripts are numbered** (01, 02, …) and run sequentially
 within each pipeline. The `run_*.R` entry points source them in order.
@@ -145,7 +151,7 @@ held-out MSE) -
 
 ### Tests (tests/testthat/)
 
-36 test files covering loaders, models, pipelines, scraping, value
+41 test files covering loaders, models, pipelines, scraping, value
 metrics. Shared fixtures in `helper-fixtures.R`. Uses testthat edition
 3.
 
@@ -180,6 +186,119 @@ metrics. Shared fixtures in `helper-fixtures.R`. Uses testthat edition
 
 ## Gotchas
 
+- **Skill-estimator stat-column detection must catch `_per90`, not just
+  `_p90`** —
+  [`.estimate_prematch_skills_batch()`](https://peteowen1.github.io/panna/reference/dot-estimate_prematch_skills_batch.md)
+  (psr.R) auto-detects which columns to estimate via
+  `grep("_p90$|_per90$", names(dt))` **plus** a union with
+  [`.get_psr_skill_cols()`](https://peteowen1.github.io/panna/reference/dot-get_psr_skill_cols.md)/[`.get_gk_skill_cols()`](https://peteowen1.github.io/panna/reference/dot-get_gk_skill_cols.md).
+  The original `_p90$`-only pattern silently skipped every xMetrics
+  column (`xg_per90`, `npg_minus_npxg_per90`, `gsaa_per90`, …) — so they
+  were listed in the feature set but **never estimated, never got a
+  coefficient**. This is why `xg_per90` had been in
+  [`.get_psr_skill_cols()`](https://peteowen1.github.io/panna/reference/dot-get_psr_skill_cols.md)
+  for ages yet had a 0-row coefficient: xG had never actually trained
+  into the value model. When adding a feature, confirm its name matches
+  the grep OR is in the registered skill-col lists, and that it appears
+  in the trained coefficient CSV after a retrain.
+- **PSV/PSR coefficient training (step 7) reads box-only
+  `01_match_stats` — it needs the xG join too, on BOTH the outfield and
+  GK paths.** `07_train_psr_model.R` reads the box-score
+  `cache-skills/01_match_stats.rds` and estimates skills itself; the
+  per-match xG join that lives in step 2 does NOT carry over. Without an
+  explicit join the coefficients omit
+  `xg_per90`/over-performance/`gsaa`. Use the shared
+  [`enrich_match_stats_with_xmetrics()`](https://peteowen1.github.io/panna/reference/enrich_match_stats_with_xmetrics.md)
+  helper (R/opta_loaders.R) — step 2, step 7 outfield, AND step 7’s
+  separate GK extraction (`ms_dt_gk <- readRDS(...)`) each call it, so
+  training and skill-ratings see the identical feature set. The helper
+  takes `fail_if_missing_frac` (pipeline callers pass 0.6) so a
+  total/\>60% bymatch gap STOPS instead of silently training an xG-blind
+  model. Source artifact: `xmetrics_bymatch/` from
+  `03_calculate_player_xmetrics.R`
+  (`aggregate_player_xmetrics(by_match = TRUE)`); load via
+  `load_opta_xmetrics(by_match = TRUE)`.
+- **[`compute_player_psv()`](https://peteowen1.github.io/panna/reference/compute_player_psv.md)
+  routes keepers through the GK sub-model — like
+  [`compute_player_psr()`](https://peteowen1.github.io/panna/reference/compute_player_psr.md).**
+  It splits `is_gk` (grepl GK/Goalkeeper on
+  `primary_position`/`position`), scores keepers with the `gk_`
+  coefficients (which carry `gsaa_per90`) and outfield with the target
+  model, then `rbindlist`s. Without the split, keepers are scored as bad
+  outfielders (all-negative DSV, no shot-stopping credit). NB the split
+  also centers GKs-vs-GKs and outfield-vs-outfield, and **does not
+  preserve input row order** (outfield rows then GK rows) — fine for 10b
+  which merges by `player_id`, but don’t assume order is kept.
+- **PSV `target = "blend"` is the DISPLAYED value model; the RAPM target
+  stays xG.** `07` trains a third `blend_*` coefficient set on
+  `α·xg_diff + (1−α)·goal_diff` (`psv_blend_alpha`, default 0.6) so the
+  blog PSV credits finishing without pure-goal noise; the unprefixed
+  (xG) and `gd_` sets are unchanged for the RAPM `psvf90` target / other
+  consumers. `load_psr_coefficients(target="blend")` falls back to the
+  xG set with a warning if the blend CSVs aren’t present. The export
+  (10b) uses
+  `target="blend", exclude_efficiency=FALSE, scale_to_minutes=TRUE`.
+- **Finishing is represented as xG OVER-PERFORMANCE counts, not
+  ratios.** The scale-free finishing ratios (`ibox_goal_rate`,
+  `goals_per_shot`, `big_chance_conversion`, `headed_goal_rate`,
+  `penalty_conversion`) were REMOVED from
+  `efficiency_cols`/`skill_config` (1/1 == 10/10 discards volume) and
+  replaced by additive over-performance per-90 features:
+  `npg_minus_npxg_per90`, `ibox_g_minus_xg_per90`,
+  `obox_g_minus_xg_per90` (zonal: bucket existing per-shot xG by the
+  in-box rule `start_x>83 & start_y∈(21,79)` — NO xG-model retrain
+  needed) + `placement_added_per90` (xGOT−xG skill). Keeper GSAA
+  (`gsaa_per90` = xGOT-faced − goals-conceded, cross-team attribution in
+  [`.compute_keeper_gsaa()`](https://peteowen1.github.io/panna/reference/dot-compute_keeper_gsaa.md))
+  replaced `save_percentage`. High-volume accuracy ratios
+  (pass/duel/aerial) are KEPT — large denominators, glmnet shrinks
+  redundancy. When changing the efficiency list, also check the
+  duplicated hardcoded `success_cols` in `spm_opta.R`.
+- **Box-minute override: `coalesce(na_if(box_minutes, 0), splint)`, not
+  `coalesce(box_minutes, splint)`.** In `06_seasonal_skill_ratings.R`,
+  some players have anomalous 0-minute box rows in old seasons (Alaba
+  2014: 55 rows summing to 0 min) while their splints have real minutes.
+  Plain `coalesce` only falls back on NA, so a 0 silently overrides a
+  valid splint value and zeroes out a top-50 player. The `total_minutes`
+  sanity hard-stop is scoped to RECENT seasons (`>= max−3`) — old-season
+  minutes are chronically incomplete (both box and splint capture only
+  1–3 matches), a known data limitation, not a regression.
+- **[`pb_download_opta()`](https://peteowen1.github.io/panna/reference/pb_download_opta.md)
+  is the incremental Opta data sync** (R/piggyback.R) — there’s no
+  tarball on `opta-latest` anymore (just individual consolidated
+  parquets), so `pb_download_source("opta")` can’t refresh a stale local
+  copy.
+  [`pb_download_opta()`](https://peteowen1.github.io/panna/reference/pb_download_opta.md)
+  lists release assets and downloads only those missing or size-changed
+  (timestamp check opt-in), verifying each landed at the expected size
+  (piggyback’s `pb_list` can include phantom assets `gh` doesn’t have —
+  those now report failed, not silently “synced”).
+  `pb_download_opta(dry_run=TRUE)` previews.
+- **WC expected-minutes tuning lives in `announced_squads.R`** — the
+  `WC2026_EM_*` constants (tournament_boost = 5, prob_prior_k = 1,
+  tournament_start) feed both the announced and derived squad resolvers.
+  Values come from a WC2022 backtest (96 team-matches, game-2+; harness
+  in `debug/wc_minutes_test/backtest_wc2022.R`): boost 5 cuts minutes
+  MAE 21.0→19.2, XI-hit peaks at boost 3–5 and degrades by 8 (chases
+  dead-rubber rotations). Don’t raise `prob_prior_k`: the Beta prior
+  monotonically worsens aggregate MAE — k=1 exists only to damp
+  single-cap `p_start = 1.00` pathologies.
+- **The XGBoost minutes model is benched, deliberately** —
+  `minutes_model*.R`/`minutes_query.R` are feature-complete
+  (incl. `p_start_decay`, within-tournament accumulators,
+  prev-team-match involvement, training/query parity tests) but LOSE to
+  the tuned heuristic on the WC2022 holdout (22.4 vs 19.6 MAE, XI-hit
+  tie). Don’t wire it into the pipeline without re-running
+  `debug/wc_minutes_test/train_eval_xgb.R` and beating the heuristic;
+  its top features are the heuristic’s own signals, so it mostly adds
+  variance.
+- **[`is.na()`](https://rdrr.io/r/base/NA.html) on a data.table
+  list-column is FALSE for NULL elements** — after a keyed join with
+  `nomatch = NA`, unmatched rows fill list-columns with NULL, so
+  `!is.na(dt$list_col)` does NOT detect them (crashed
+  [`query_minutes_features()`](https://peteowen1.github.io/panna/reference/query_minutes_features.md)
+  for unknown player_ids). Test emptiness:
+  `vapply(col, function(v) !is.null(v) && length(v) > 0, logical(1))`.
 - **Splint creation uses second precision** —
   [`extract_period_end_times()`](https://peteowen1.github.io/panna/reference/extract_period_end_times.md)
   reads Opta `type_id == 30` markers from raw match events to set exact
@@ -215,6 +334,15 @@ metrics. Shared fixtures in `helper-fixtures.R`. Uses testthat edition
   subsetting (or use `..psr_cols` / `with = FALSE`).
 - **SPADL has no `is_penalty` column** — detect from raw Opta qualifier
   9, match to SPADL via composite key (match_id + player_id + minute)
+- **Opta shot type_ids: 13=Miss, 14=Post, 15=Attempt Saved, 16=Goal**
+  (per `OPTA_TYPE_NAMES` / DATA_DICTIONARY, confirmed vs goal-mouth
+  data). On-target = `c(15L, 16L)`. These were **swapped (13↔︎15)** in
+  several places until 2026-06 — the swap mislabelled `shots_on_target`
+  (counted misses) and mis-gated GK save credit in
+  [`assign_epv_credit()`](https://peteowen1.github.io/panna/reference/assign_epv_credit.md)
+  (credited misses, not saves). xGOT/placement (`xgot_model.R`) and
+  [`aggregate_player_xmetrics()`](https://peteowen1.github.io/panna/reference/aggregate_player_xmetrics.md)’s
+  decomposition depend on this being correct.
 - **SPADL preserves `original_event_id`** — maps SPADL actions back to
   Opta event IDs (used by equity export for blog chain join)
 - **Inline `Rscript -e` segfaults** — always write to `debug/` and run
@@ -329,18 +457,147 @@ metrics. Shared fixtures in `helper-fixtures.R`. Uses testthat edition
   error one CI cycle later. Before pushing a fix that touches a shared
   input path, `grep -rn "wc2026_groups.rds" data-raw/` (or whatever the
   path is) and patch all callers in the same commit.
+- **`panna` = the career TRAIT, not season xRAPM.** Since 2026-06-09
+  `panna` means the career-trait rating (decay-weighted multi-season
+  xRAPM, point-in-time “best guess of next game”) from
+  `career_panna.parquet` (`estimated-skills/09_career_panna.R` →
+  `fit_career_rapm`). Single-season `xrapm` is a season aggregate
+  (stat-ish), a DIFFERENT quantity. Legacy code still relabels season
+  xRAPM as `panna` in places — `08_panna_ratings.R:36` (`panna = xrapm`)
+  and the model’s feature pipeline (`02_player_ratings_to_team.R:77`, so
+  the model feature `home_sum_panna` is really aggregated season xRAPM /
+  live SPM, not the career trait). When something says “panna,” check
+  whether it’s the trait (`career_panna.parquet`) or a season-xRAPM
+  relabel.
+- **Two different rating estimators: played-side vs upcoming-fixture
+  (model) vs display.** `02_player_ratings_to_team.R` builds the model’s
+  team features via *different* sources by row: PLAYED matches use the
+  seasonal `ratings` table (season xRAPM relabeled `panna`,
+  league-centered seasonal PSR); UPCOMING fixtures use a date-specific
+  path (~line 560): `panna = offense_spm − defense_spm` (live **SPM**)
+  and `compute_player_psr(live_skills, center=TRUE)`
+  (WC-population-centered). So the model’s `panna` feature is neither
+  the career trait nor consistent train-vs-serve. Fine for the XGBoost
+  match model (consumes home−away diffs, so per-batch shifts cancel),
+  but do NOT reuse the match-dataset `home_sum_*` features as a
+  *display* rating. The WC2026 team-strength export
+  (`12_export_wc2026_blog.R` §5) instead aggregates the displayed squad
+  **traits** — career-trait `panna` + league-centered seasonal PSR +
+  weekly EPR — minutes-weighted, so team == Σ(players shown). See
+  METRICS.md §14.
+- **`fit_career_rapm(reference_date=D)` does NOT filter splints by date
+  — it only decays.** It uses D for recency weighting only
+  (`age = D − match_date`, `decay = 0.5^(age/halflife)`). A match AFTER
+  D gets negative age → `decay = 0.5^(negative) > 1` → **up-weighted,
+  not excluded**. For a leak-free as-of-date fit you MUST filter
+  `splint_data$splints` (and `$match_info`) to `match_date <= D` BEFORE
+  calling it. Verified: as-of-2020 (filtered) returns 2020-era stars (De
+  Bruyne/Salah/Müller); unfiltered would leak 2021–2026 results.
+  (Residual: the `skill_spm` shrinkage prior is still as-of-now — a
+  second-order leak via the prior only.) Bonus tuning result: across
+  as-of-date fits, `cv.glmnet` lambda.min ≈ **16.67·n_obs^−0.58 (≈
+  1/√n_obs, R²=0.96)** — so an as-of-date pipeline can skip CV and
+  compute λ from the observation count, adapting to each window’s sample
+  size (`fit_rapm`/`fit_rapm_with_prior` take a `fixed_lambda`;
+  `fit_career_rapm` takes a `lambda_formula(n_obs)` callback). NB
+  validated against *pruned* (\>8yr dropped) fits this formula
+  over-predicts λ ~30% in the recent high-`n` regime (2024–26) while
+  staying good for unpruned — kept it anyway: over-reg is conservative
+  (shrinks toward the skill prior) and immaterial (flat ridge optimum +
+  wash gate). The monthly as-of build
+  (`estimated-skills/09b_career_panna_asof.R`) logs `n_obs`+λ per
+  snapshot to track.
+- **`calculate_psr(center=TRUE)` centers over the INPUT population, not
+  the league.** `psr.R:604` subtracts `mean(psr_raw)` of whatever rows
+  it’s handed — the variable is *named* `league_mean` but it’s just
+  `mean(input)`. The canonical exports (seasonal `06`, weekly `08b`,
+  game-logs `10b`) pass the full league, so they’re genuinely
+  league-centered (this is what ITG/the blog displays). But step 02’s
+  upcoming-fixture path pre-filters `match_stats` to only the upcoming
+  players (~line 486), so its PSR is centered over that subset — for
+  WC2026, “above the average World Cup player,” which collapses team PSR
+  toward 0 for all but the deepest squads. Model-safe (diffs cancel the
+  constant, no retrain needed); flagged `TODO(psr-centering)`. If you
+  ever consume fixture-side PSR directly (not as a diff), re-center over
+  the league first.
+- **[`load_epv_model()`](https://peteowen1.github.io/panna/reference/load_epv_model.md)
+  (no `path`) prefers the PUBLISHED model, not the same-run cache.** Its
+  resolution order is explicit `path` →
+  `pannamodels::load_panna_model("epv_model")` → local pannadata
+  fallback — none of which is `01_train_epv_models.R`’s output at
+  `data-raw/cache/epv/epv_model.rds`. So `05_train_wp_model.R` (which
+  derives the WP `epv` feature via
+  [`calculate_action_epv()`](https://peteowen1.github.io/panna/reference/calculate_action_epv.md))
+  was training against the *previously published* EPV model, not the one
+  just trained in the same pipeline run — a silent EPV-version skew
+  between the WP `epv` feature and the shipped EPV model. Fixed
+  2026-06-18 by passing `load_epv_model(path = "data-raw/cache/epv")`
+  (it falls through to pannamodels if the cache file is absent, so
+  non-pipeline callers are unaffected). When wiring any new step that
+  consumes the EPV model inside the EPV/predictions pipeline, pass the
+  cache path explicitly.
+- **Game-logs rebuilds MUST set `epv_model_override` +
+  `wp_model_override` — see `MODELS.md`.** The bare default loaders
+  ([`load_epv_model()`](https://peteowen1.github.io/panna/reference/load_epv_model.md)/[`load_wp_model()`](https://peteowen1.github.io/panna/reference/load_wp_model.md)
+  with no path) return the OLD pre-overhaul models from
+  `pannadata/data/opta/models/*.rds`, NOT the post-overhaul clean
+  models. A standalone 11-season game-logs rebuild that omitted the
+  overrides shipped inflated EPV (Messi 3.65 vs correct 2.49;
+  match-total EPV ~20 vs ~3-4; every player positive, no negatives) —
+  the clean models are
+  `data-raw/cache/epv/epv_model_xg_clean_full.rds` +
+  `data-raw/cache/epv/wp_final_d2repl_reg/wp_model.rds` (the exact set
+  `_run_gamelogs_gt.R` uses — that script is the canonical recipe).
+  Loaders now print the resolved file + **modification date** and warn
+  if \>14 days old (`.report_model_provenance`) so a stale fallback is
+  visible in the log — but the real fix is to pin via overrides.
+  `MODELS.md` (panna root) is the source-of-truth for every model
+  loader, its silent fallback chain, and the canonical version.
+- **EPV offensive/defensive split is presentational —
+  `offensive + defensive == epv_total` ALWAYS.** Re-bucketing an action
+  type between OFF/DEF never changes a player’s headline
+  `epv_total`/`epv_total_adj` or ranking. The split (in
+  `aggregate_player_game_epv`): OFF = passing + shooting + dribbling +
+  attacking-third aerials (`start_x>67`) + receiver; DEF = defending
+  (tackle/interception/clearance/recovery/save/foul/dispossessed) +
+  **keeper handling** (pickup/claim/punch) + mid/defensive-third
+  aerials + duel_blame. Keeper handling and defensive headers are
+  DEFENSIVE (they end opponent attacks); only the per-action-type
+  display components (EPV PASS/SHOT/…/GK) are raw totals.
+  `epv_total_adj` (EPV ADJ) = position-centered total + opponent adj;
+  OFF/DEF adj are position-centered only (opp adj folded into total
+  only, exposed as `opp_adj`).
+- **EPV feature-contract changes require a model+code lockstep** —
+  `EPV_SIMPLE_FEATURE_COLS` (the EPV model’s input contract) is shared
+  between the *published* model (trained on exactly those columns) and
+  the package code that *emits* them (`create_epv_features_simple`, plus
+  `create_wp_features` for the WP `epv`-interacted features). If they
+  drift, the pipeline scores with mismatched features and silently
+  produces garbage. So when you change the contract, the published model
+  (pannamodels `epv` release + the worker’s R2 JSON) and the merged
+  package code must move **together** — publish the retrained model and
+  merge the code back-to-back. 2026-06-19 clean-EPV/d2-repl-WP swap is
+  the worked example: publish-first breaks the WP path (new WP needs
+  interacted features only new code emits); merge-first breaks the EPV
+  path (old published model wants 17 features new code stops emitting).
+  The window is safe only because the pipeline runs Wed/manual. Local
+  pipeline runs that must NOT wait for the published model can pass
+  `epv_model_override` / `wp_model_override` (10b/10c) to score with a
+  candidate `.rds` directly — see the
+  [`load_epv_model()`](https://peteowen1.github.io/panna/reference/load_epv_model.md)
+  published-vs-cache gotcha above and the pannamodels cache-staleness
+  gotcha.
 
 ## GitHub Actions
 
-| Workflow                        | Trigger                                                 | Purpose                                                                                                                                                                                                                                                                                                  |
-|---------------------------------|---------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `R-CMD-check.yaml`              | Push to `dev`, PRs to `main`                            | Package checks                                                                                                                                                                                                                                                                                           |
-| `opta-pipeline.yml`             | Manual dispatch                                         | Opta RAPM/SPM on GHA, auto-uploads caches. ⚠ OOMs the 16GB hosted runner since the 2026-06 4-league expansion (panna#87) — run the pipeline locally (needs ~25GB+ RAM) until fixed; the scrape-complete auto-trigger was removed for this reason                                                         |
-| `pkgdown.yaml`                  | Push                                                    | Documentation site                                                                                                                                                                                                                                                                                       |
-| `predictions-pipeline.yml`      | Wed 8 AM UTC / manual / `opta-scrape-complete` dispatch | Weekly match predictions. Runs steps 1-10c + 11 (WC2026 sim) + 12 (WC2026 blog export). Triggers `predictions-complete` repository_dispatch on `pannadata` to refresh blog data. Note: WC2026 sim defaults to FALSE in `run_predictions_opta.R` but the workflow enables it in its `run_steps` override. |
-| `psr-weekly-snapshot.yml`       | Weekly snapshot / manual                                | PSR weekly snapshot generation                                                                                                                                                                                                                                                                           |
-| `epv-pipeline.yml`              | Manual dispatch                                         | EPV model training pipeline                                                                                                                                                                                                                                                                              |
-| `ratings-pipeline.yml.disabled` | (disabled)                                              | FBref RAPM/SPM — superseded by Opta pipeline                                                                                                                                                                                                                                                             |
+| Workflow                   | Trigger                                                 | Purpose                                                                                                                                                                                                                                                                                                  |
+|----------------------------|---------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `R-CMD-check.yaml`         | Push to `dev`, PRs to `main`                            | Package checks                                                                                                                                                                                                                                                                                           |
+| `opta-pipeline.yml`        | Manual dispatch                                         | Opta RAPM/SPM on GHA, auto-uploads caches. ⚠ OOMs the 16GB hosted runner since the 2026-06 4-league expansion (panna#87) — run the pipeline locally (needs ~25GB+ RAM) until fixed; the scrape-complete auto-trigger was removed for this reason                                                         |
+| `pkgdown.yaml`             | Push                                                    | Documentation site                                                                                                                                                                                                                                                                                       |
+| `predictions-pipeline.yml` | Wed 8 AM UTC / manual / `opta-scrape-complete` dispatch | Weekly match predictions. Runs steps 1-10c + 11 (WC2026 sim) + 12 (WC2026 blog export). Triggers `predictions-complete` repository_dispatch on `pannadata` to refresh blog data. Note: WC2026 sim defaults to FALSE in `run_predictions_opta.R` but the workflow enables it in its `run_steps` override. |
+| `psr-weekly-snapshot.yml`  | Weekly snapshot / manual                                | PSR weekly snapshot generation                                                                                                                                                                                                                                                                           |
+| `epv-pipeline.yml`         | Manual dispatch                                         | EPV model training pipeline                                                                                                                                                                                                                                                                              |
 
 ## Dependencies
 

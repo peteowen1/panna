@@ -149,6 +149,8 @@ Possession chain analysis and pitch visualization
 
 - [`create_possession_chains()`](https://peteowen1.github.io/panna/reference/create_possession_chains.md)
   : Create Possession Chains from SPADL Actions
+- [`add_red_card_to_chains()`](https://peteowen1.github.io/panna/reference/add_red_card_to_chains.md)
+  : Attach a per-action red_card flag to possession chains (#93)
 - [`summarize_match_chains()`](https://peteowen1.github.io/panna/reference/summarize_match_chains.md)
   : Summarize Match-Level Possession Chains
 - [`summarize_player_chains()`](https://peteowen1.github.io/panna/reference/summarize_player_chains.md)
@@ -194,8 +196,17 @@ Action-level player valuation from Opta event data
   : Load Pre-trained xG Model
 - [`validate_xg_model()`](https://peteowen1.github.io/panna/reference/validate_xg_model.md)
   : Validate xG Model Performance
+- [`fit_xgot_model()`](https://peteowen1.github.io/panna/reference/fit_xgot_model.md)
+  : Fit xGOT model using XGBoost
+- [`predict_xgot()`](https://peteowen1.github.io/panna/reference/predict_xgot.md)
+  : Predict xGOT for prepared shot features
+- [`load_xgot_model()`](https://peteowen1.github.io/panna/reference/load_xgot_model.md)
+  : Load Pre-trained xGOT Model
 - [`aggregate_player_xmetrics()`](https://peteowen1.github.io/panna/reference/aggregate_player_xmetrics.md)
   : Aggregate Player-Level xG/xA/xPass Metrics
+- [`enrich_match_stats_with_xmetrics()`](https://peteowen1.github.io/panna/reference/enrich_match_stats_with_xmetrics.md)
+  : Enrich per-match stats with per-match xMetrics (xG +
+  finishing/keeper value)
 - [`fit_xpass_model()`](https://peteowen1.github.io/panna/reference/fit_xpass_model.md)
   : Fit xPass Model using XGBoost
 - [`predict_xpass()`](https://peteowen1.github.io/panna/reference/predict_xpass.md)

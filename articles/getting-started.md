@@ -24,17 +24,8 @@ repeated access, download data locally first:
 ``` r
 library(panna)
 
-# Download Opta data (primary source, recommended)
+# Download Opta data (the project's sole data source)
 pb_download_source("opta")
-
-# Download Understat data
-pb_download_source("understat")
-
-# Download FBref data
-pb_download_source("fbref")
-
-# Or download everything
-pb_download_source("all")
 ```
 
 Data is cached locally after download, so you only need to do this once
@@ -44,7 +35,7 @@ Data is cached locally after download, so you only need to do this once
 
 ### Opta Data
 
-Opta is the primary data source with 263 columns per player across 15
+Opta is the package’s data source, with 263 columns per player across 15
 leagues. It powers the full RAPM/SPM pipeline, EPV, xMetrics, estimated
 skills, and match predictions.
 
@@ -63,37 +54,6 @@ match_events <- load_opta_match_events("EPL", "2024-2025")  # All events with x/
 lineups <- load_opta_lineups("EPL", "2024-2025")             # Lineup data
 fixtures <- load_opta_fixtures("EPL")                        # Fixtures/results
 xmetrics <- load_opta_xmetrics("EPL", "2024-2025")           # Pre-computed xG/xA/xPass
-```
-
-### Understat Data
-
-Understat includes xGChain and xGBuildup metrics not available
-elsewhere.
-
-``` r
-# Load player roster with xGChain, xGBuildup
-roster <- load_understat_roster("EPL", "2024")
-
-# Load shot-level data
-shots <- load_understat_shots("EPL", "2024")
-```
-
-Note: Understat uses single-year seasons (e.g., “2024” for 2024-25).
-
-### FBref Data
-
-FBref provides comprehensive statistics with StatsBomb xG values.
-
-``` r
-# Load summary stats for a league/season
-summary <- load_summary("ENG", "2024-2025")
-
-# Other table types
-passing <- load_passing("ENG", "2024-2025")
-defense <- load_defense("ENG", "2024-2025")
-possession <- load_possession("ENG", "2024-2025")
-shots <- load_shots()  # All leagues/seasons
-metadata <- load_metadata("ENG", "2024-2025")
 ```
 
 ## League and Season Codes
@@ -118,23 +78,12 @@ metadata <- load_metadata("ENG", "2024-2025")
 | World Cup            | WC         | 2018 Russia   |
 | Euros                | EURO       | 2024 Germany  |
 
-### FBref/Understat Codes
-
-| League         | Panna/FBref | Understat  |
-|----------------|-------------|------------|
-| Premier League | ENG         | EPL        |
-| La Liga        | ESP         | La_Liga    |
-| Bundesliga     | GER         | Bundesliga |
-| Serie A        | ITA         | Serie_A    |
-| Ligue 1        | FRA         | Ligue_1    |
-
 ### Season Formats
 
-| Source      | Format       | Example       |
-|-------------|--------------|---------------|
-| Opta/FBref  | YYYY-YYYY    | “2024-2025”   |
-| Understat   | YYYY         | “2024”        |
-| Tournaments | YYYY Country | “2018 Russia” |
+| Type             | Format       | Example       |
+|------------------|--------------|---------------|
+| Domestic leagues | YYYY-YYYY    | “2024-2025”   |
+| Tournaments      | YYYY Country | “2018 Russia” |
 
 ## Aggregated Player Statistics
 
@@ -142,32 +91,22 @@ The package provides convenience functions for aggregated player
 statistics:
 
 ``` r
-# Opta aggregated stats
+# Opta aggregated summary stats
 opta_players <- player_opta_summary(
   leagues = "EPL",
-  seasons = "2024-2025",
-  min_minutes = 900
-)
-
-# Understat aggregated stats
-understat_players <- player_understat_summary(
-  leagues = "EPL",
-  seasons = "2024",
-  min_minutes = 900
-)
-
-# FBref aggregated stats
-players_summary <- player_fbref_summary(
-  leagues = "ENG",
   seasons = "2024-2025",
   min_minutes = 900  # Filter for players with 900+ minutes
 )
 
-players_passing <- player_fbref_passing(
-  leagues = c("ENG", "ESP"),  # Multiple leagues
-seasons = c("2023-2024", "2024-2025"),  # Multiple seasons
+# Other aggregated stat tables (same arguments)
+players_passing <- player_opta_passing(
+  leagues = c("EPL", "La_Liga"),               # Multiple leagues
+  seasons = c("2023-2024", "2024-2025"),       # Multiple seasons
   min_minutes = 1800
 )
+
+players_defense <- player_opta_defense(leagues = "EPL", seasons = "2024-2025")
+players_shots   <- player_opta_shots(leagues = "EPL", seasons = "2024-2025")
 ```
 
 ## Working with Multiple Leagues
@@ -213,7 +152,7 @@ RAPM/SPM pipeline first.
   Learn about RAPM and SPM methodology
 - [Data
   Sources](https://peteowen1.github.io/panna/articles/data-sources.md) -
-  Detailed comparison of Opta, Understat, and FBref
+  Opta league codes, season formats, and loaders
 - [Data
   Dictionary](https://peteowen1.github.io/panna/DATA_DICTIONARY.md) -
   Column definitions

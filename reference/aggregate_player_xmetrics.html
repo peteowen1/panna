@@ -47,7 +47,7 @@ Produces shooting, assisting, and passing metrics per player.</p>
 
     <div class="section level2">
     <h2 id="ref-usage">Usage<a class="anchor" aria-label="anchor" href="#ref-usage"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">aggregate_player_xmetrics</span><span class="op">(</span><span class="va">spadl</span>, <span class="va">lineups</span>, min_minutes <span class="op">=</span> <span class="fl">0</span><span class="op">)</span></span></code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">aggregate_player_xmetrics</span><span class="op">(</span><span class="va">spadl</span>, <span class="va">lineups</span>, min_minutes <span class="op">=</span> <span class="fl">0</span>, by_match <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span></code></pre></div>
     </div>
 
     <div class="section level2">
@@ -65,10 +65,19 @@ Produces shooting, assisting, and passing metrics per player.</p>
 <dt id="arg-min-minutes">min_minutes<a class="anchor" aria-label="anchor" href="#arg-min-minutes"></a></dt>
 <dd><p>Minimum minutes for inclusion (default 0, no filter).</p></dd>
 
+
+<dt id="arg-by-match">by_match<a class="anchor" aria-label="anchor" href="#arg-by-match"></a></dt>
+<dd><p>Logical. If <code>TRUE</code>, aggregate to one row per player per
+<em>match</em> (keys include <code>match_id</code>); if <code>FALSE</code> (default),
+one row per player across the supplied SPADL (season-level, the form
+consumed by player-ratings / blog / compare_players). The per-match form
+feeds the skills pipeline's xG join (one row per player-match).</p></dd>
+
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
-    <p>Data frame with one row per player containing:</p><ul><li><p><strong>Identity</strong>: player_id, player_name, team_name, minutes</p></li>
+    <p>Data frame with one row per player (or player-match if
+<code>by_match</code>) containing:</p><ul><li><p><strong>Identity</strong>: player_id, player_name, team_name, minutes</p></li>
 <li><p><strong>Shooting</strong>: shots, goals, xg, npxg, goals_minus_xg, xg_per90</p></li>
 <li><p><strong>Assisting</strong>: key_passes, assists, xa, xa_per90</p></li>
 <li><p><strong>Passing</strong>: passes_attempted, passes_completed, sum_xpass,

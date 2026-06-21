@@ -8,7 +8,7 @@ Loads pre-trained PSR coefficient CSV files from the package's
 ``` r
 load_psr_coefficients(
   type = c("margin", "offense", "defense"),
-  target = c("xg", "goals"),
+  target = c("xg", "goals", "blend"),
   model = c("outfield", "gk")
 )
 ```
@@ -21,8 +21,9 @@ load_psr_coefficients(
 
 - target:
 
-  One of `"xg"` (default, xG differential) or `"goals"` (goal
-  differential).
+  One of `"xg"` (default, xG differential), `"goals"` (goal
+  differential), or `"blend"` (alpha\*xG + (1-alpha)\*goals; falls back
+  to `"xg"` if the blend files are not yet generated).
 
 - model:
 

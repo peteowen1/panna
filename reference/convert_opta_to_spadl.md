@@ -53,8 +53,7 @@ Data frame in SPADL format with columns:
 
 - action_type_id: Numeric action type code
 
-- opta_type_id: Original Opta type_id (e.g., 13=saved, 15=missed,
-  16=goal)
+- opta_type_id: Original Opta type_id (e.g., 13=miss, 15=saved, 16=goal)
 
 - result: "success" or "fail"
 

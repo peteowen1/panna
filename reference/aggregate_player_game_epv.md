@@ -51,12 +51,14 @@ A data.table with one row per player per match:
 
 - epv_offensive:
 
-  Offensive EPV = passing + shooting + dribbling + aerial + keeping +
-  receiver credit
+  Offensive EPV = passing + shooting + dribbling + attacking-third
+  aerials + receiver credit
 
 - epv_defensive:
 
-  Defensive EPV = defending + duel_blame
+  Defensive EPV = defending + keeping + mid/defensive aerials +
+  duel_blame (keeper handling and defensive headers are defensive).
+  offensive + defensive == epv_total always.
 
 - epv_as_actor, epv_as_receiver, epv_duel_blame:
 

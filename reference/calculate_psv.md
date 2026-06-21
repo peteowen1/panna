@@ -14,7 +14,8 @@ calculate_psv(
   coef_df,
   min_adjust = TRUE,
   center = TRUE,
-  exclude_efficiency = TRUE
+  exclude_efficiency = TRUE,
+  scale_to_minutes = FALSE
 )
 ```
 
@@ -45,6 +46,13 @@ calculate_psv(
 
   Logical. Exclude efficiency/ratio stats from PSV calculation. Default
   `TRUE`.
+
+- scale_to_minutes:
+
+  Logical. If TRUE, multiply the (per-90) PSV by `minutes_played / 90`
+  so the result is additive over a player's games (like EPV), rather
+  than a per-90 rate. Default `FALSE` (per-90, the form consumed by the
+  multi-target RAPM and skills pipeline).
 
 ## Value
 

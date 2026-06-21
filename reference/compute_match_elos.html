@@ -75,7 +75,10 @@ NA-team friendly poisoned every team's Elo via NA-named-lookup.</p>
 <span>  conf_priors <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  use_venue_factor <span class="op">=</span> <span class="cn">FALSE</span>,</span>
 <span>  time_decay_halflife <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  decay_reference_date <span class="op">=</span> <span class="cn">NULL</span></span>
+<span>  decay_reference_date <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  update_mode <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"outcome"</span>, <span class="st">"margin_sqrt"</span><span class="op">)</span>,</span>
+<span>  blend_w <span class="op">=</span> <span class="fl">0.5</span>,</span>
+<span>  margin_slope <span class="op">=</span> <span class="fl">1.66</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -141,6 +144,18 @@ not default but available for callers wanting FIFA/SPI-style recency.</p></dd>
 <dd><p>Optional Date or date-coercible string used as
 "now" for the decay calculation. Defaults to <code>max(match_date)</code> in
 <code>results</code>.</p></dd>
+
+
+<dt id="arg-update-mode">update_mode<a class="anchor" aria-label="anchor" href="#arg-update-mode"></a></dt>
+<dd><p>Passed to <code><a href="update_elo.html">update_elo()</a></code>: "outcome" (default) or
+"margin_sqrt" (the xG-Elo form). When "margin_sqrt" and <code>results</code> carries
+<code>home_xg</code>/<code>away_xg</code> columns, the update targets a blended goals/xG margin
+(goal-diff fallback per row where xG is NA).</p></dd>
+
+
+<dt id="arg-blend-w-margin-slope">blend_w, margin_slope<a class="anchor" aria-label="anchor" href="#arg-blend-w-margin-slope"></a></dt>
+<dd><p>Passed to <code><a href="update_elo.html">update_elo()</a></code> in margin_sqrt mode
+(weight on goals vs xG, and expected-margin-per-400-Elo).</p></dd>
 
 </dl></div>
     <div class="section level2">

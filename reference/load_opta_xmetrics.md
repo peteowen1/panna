@@ -12,7 +12,8 @@ load_opta_xmetrics(
   league,
   season = NULL,
   columns = NULL,
-  source = c("remote", "local")
+  source = c("remote", "local"),
+  by_match = FALSE
 )
 ```
 
@@ -34,6 +35,12 @@ load_opta_xmetrics(
 
   Data source: "remote" (default, from GitHub Releases) or "local"
   (pipeline-generated files).
+
+- by_match:
+
+  Logical. If `TRUE`, load the per-player-match artifact
+  (`xmetrics_bymatch/`, one row per player-match keyed by `match_id`)
+  instead of the season-level aggregate. Default `FALSE`.
 
 ## Value
 

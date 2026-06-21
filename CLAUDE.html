@@ -40,7 +40,7 @@
 <div id="claudemd--panna-r-package" class="section level1">
 
 <p>Player rating system for football using RAPM + SPM methodology. This is the primary development workspace in the pannaverse ecosystem.</p>
-<p><strong>Active data source: Opta only.</strong> FBref/Understat modules and pipelines are deprecated and slated for archival — do not extend them.</p>
+<p><strong>Active data source: Opta only.</strong> The FBref/Understat archival sweep is done (2026-06): their R sources, loaders, and the <code>player-ratings-fbref/</code> pipeline were removed from this package. Only <code>pannadata</code> retains disabled scraper code for reference.</p>
 <div class="section level2">
 <h2 id="development-commands">Development Commands<a class="anchor" aria-label="anchor" href="#development-commands"></a></h2>
 <div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
@@ -90,30 +90,29 @@
 <td>Per-stat skill estimation with Bayesian shrinkage</td>
 </tr><tr class="odd"><td><strong>xMetrics</strong></td>
 <td>
-<code>xg_model.R</code>, <code>xpass_model.R</code>, <code>epv_model.R</code>, <code>epv_features.R</code>
+<code>xg_model.R</code>, <code>xgot_model.R</code>, <code>xpass_model.R</code>, <code>epv_model.R</code>, <code>epv_features.R</code>
 </td>
-<td>xG/xA/xPass/EPV from SPADL events</td>
+<td>xG/xGOT/xA/xPass/EPV from SPADL events</td>
 </tr><tr class="even"><td><strong>SPADL</strong></td>
 <td><code>spadl_conversion.R</code></td>
 <td>Opta events -&gt; SPADL action format</td>
 </tr><tr class="odd"><td><strong>Data Loaders</strong></td>
 <td>
-<code>data_loaders.R</code>, <code>opta_loaders.R</code>
+<code>opta_loaders.R</code>, <code>dirs.R</code>, <code>data_location_report.R</code>
 </td>
-<td>Load from local parquet or GitHub Releases</td>
+<td>Load from local parquet or GitHub Releases; data-source-agnostic dir resolution; load diagnostics</td>
 </tr><tr class="even"><td><strong>Player Stats</strong></td>
-<td>
-<code>player_stats_opta.R</code> (active); <code>player_stats_fbref.R</code>, <code>player_stats_understat.R</code> (deprecated)</td>
+<td><code>player_stats_opta.R</code></td>
 <td>Aggregate player-level statistics</td>
 </tr><tr class="odd"><td><strong>Match Prediction</strong></td>
-<td><code>match_prediction.R</code></td>
-<td>Team-level features + XGBoost match outcome model</td>
-</tr><tr class="even"><td>
-<strong>Scraping</strong> (deprecated)</td>
 <td>
-<code>scrape_fbref_*.R</code>, <code>scrape_understat*.R</code>
+<code>match_prediction.R</code>, <code>match_mirror.R</code>
 </td>
-<td>Web scraping utilities — archival candidates</td>
+<td>Team-level features + XGBoost match outcome model; orientation-symmetric match rows</td>
+</tr><tr class="even"><td><strong>Expected Minutes</strong></td>
+<td>
+<code>expected_minutes.R</code> (production); <code>minutes_model.R</code>, <code>minutes_model_train.R</code>, <code>minutes_query.R</code> (XGBoost, benched)</td>
+<td>National-team minutes projection: decay-weighted heuristic with tournament boost + p_start Beta prior</td>
 </tr><tr class="odd"><td><strong>Data Processing</strong></td>
 <td>
 <code>data_processing.R</code>, <code>possession_chains.R</code>
@@ -141,6 +140,28 @@
 </tr><tr class="odd"><td><strong>Game Ratings</strong></td>
 <td><code>player_game_ratings.R</code></td>
 <td>Unified per-game output: EPV + WPA + PSV → panna_value</td>
+</tr><tr class="even"><td><strong>Career RAPM</strong></td>
+<td><code>career_rapm.R</code></td>
+<td>Career-trait Panna: decay-weighted multi-season xRAPM (365d half-life)</td>
+</tr><tr class="odd"><td><strong>WC Simulation</strong></td>
+<td>
+<code>simulate_world_cup.R</code>, <code>knockout_model.R</code>, <code>shootout.R</code>
+</td>
+<td>48-team WC 2026 tournament simulator; full-model knockout match probabilities; penalty-shootout win probability</td>
+</tr><tr class="even"><td><strong>Team Ratings</strong></td>
+<td>
+<code>team_rating.R</code>, <code>elo_calibration.R</code>, <code>league_offsets.R</code>
+</td>
+<td>Bradley-Terry team rating; Elo calibration (per-match-type K + cross-confederation multiplier); league quality offsets vs UCL group stage</td>
+</tr><tr class="odd"><td><strong>EPV Adjustments</strong></td>
+<td><code>epv_adjustments.R</code></td>
+<td>EPV position centering and opponent adjustment</td>
+</tr><tr class="even"><td><strong>Player IDs</strong></td>
+<td><code>player_id_canonical.R</code></td>
+<td>Player-ID canonicalization</td>
+</tr><tr class="odd"><td><strong>Pipeline Validation</strong></td>
+<td><code>pipeline_validation.R</code></td>
+<td>Domain-truth assertions on pipeline outputs</td>
 </tr><tr class="even"><td><strong>Centrality</strong></td>
 <td><code>centrality.R</code></td>
 <td>Network centrality metrics for player influence</td>
@@ -159,13 +180,7 @@
 </tr><tr class="odd"><td><strong>Comparison</strong></td>
 <td><code>compare_players.R</code></td>
 <td>Player comparison utilities</td>
-</tr><tr class="even"><td>
-<strong>Competitions</strong> (deprecated)</td>
-<td>
-<code>fbref_competitions.R</code>, <code>understat_competitions.R</code>
-</td>
-<td>League/competition metadata lookups</td>
-</tr><tr class="odd"><td><strong>Package</strong></td>
+</tr><tr class="even"><td><strong>Package</strong></td>
 <td><code>panna-package.R</code></td>
 <td>Package-level roxygen docs</td>
 </tr></tbody></table></div>
@@ -186,24 +201,19 @@
 <td><code>player-ratings-opta/</code></td>
 <td><code>run_pipeline_opta.R</code></td>
 <td>xMetrics output</td>
-</tr><tr class="odd"><td>
-<strong>FBref RAPM/SPM</strong> (deprecated)</td>
-<td><code>player-ratings-fbref/</code></td>
-<td><code>run_pipeline.R</code></td>
-<td>pannadata FBref data — archival candidate</td>
-</tr><tr class="even"><td><strong>Skills</strong></td>
+</tr><tr class="odd"><td><strong>Skills</strong></td>
 <td><code>estimated-skills/</code></td>
 <td><code>run_skills_pipeline.R</code></td>
 <td>Opta RAPM output (cache-opta/)</td>
-</tr><tr class="odd"><td><strong>Predictions</strong></td>
+</tr><tr class="even"><td><strong>Predictions</strong></td>
 <td><code>match-predictions-opta/</code></td>
 <td><code>run_predictions_opta.R</code></td>
 <td>Opta RAPM + Skills output</td>
-</tr><tr class="even"><td><strong>Blog Export</strong></td>
+</tr><tr class="odd"><td><strong>Blog Export</strong></td>
 <td><code>match-predictions-opta/</code></td>
 <td>Steps 10b + 10c (opt-in)</td>
 <td>EPV/WPA/PSV models + match events</td>
-</tr><tr class="odd"><td><strong>WC 2026 Sim</strong></td>
+</tr><tr class="even"><td><strong>WC 2026 Sim</strong></td>
 <td><code>match-predictions-opta/</code></td>
 <td>Step 11 (opt-in) <code>11_simulate_wc2026.R</code>
 </td>
@@ -248,7 +258,7 @@ Stat ratings → PSR/OSR/DSR (smoothed skills via glmnet) ───────�
 </div>
 <div class="section level3">
 <h3 id="tests-teststestthat">Tests (tests/testthat/)<a class="anchor" aria-label="anchor" href="#tests-teststestthat"></a></h3>
-<p>36 test files covering loaders, models, pipelines, scraping, value metrics. Shared fixtures in <code>helper-fixtures.R</code>. Uses testthat edition 3.</p>
+<p>41 test files covering loaders, models, pipelines, scraping, value metrics. Shared fixtures in <code>helper-fixtures.R</code>. Uses testthat edition 3.</p>
 </div>
 </div>
 <div class="section level2">
@@ -269,6 +279,26 @@ Stat ratings → PSR/OSR/DSR (smoothed skills via glmnet) ───────�
 <div class="section level2">
 <h2 id="gotchas">Gotchas<a class="anchor" aria-label="anchor" href="#gotchas"></a></h2>
 <ul><li>
+<strong>Skill-estimator stat-column detection must catch <code>_per90</code>, not just <code>_p90</code></strong> — <code><a href="reference/dot-estimate_prematch_skills_batch.html">.estimate_prematch_skills_batch()</a></code> (psr.R) auto-detects which columns to estimate via <code>grep("_p90$|_per90$", names(dt))</code> <strong>plus</strong> a union with <code><a href="reference/dot-get_psr_skill_cols.html">.get_psr_skill_cols()</a></code>/<code><a href="reference/dot-get_gk_skill_cols.html">.get_gk_skill_cols()</a></code>. The original <code>_p90$</code>-only pattern silently skipped every xMetrics column (<code>xg_per90</code>, <code>npg_minus_npxg_per90</code>, <code>gsaa_per90</code>, …) — so they were listed in the feature set but <strong>never estimated, never got a coefficient</strong>. This is why <code>xg_per90</code> had been in <code><a href="reference/dot-get_psr_skill_cols.html">.get_psr_skill_cols()</a></code> for ages yet had a 0-row coefficient: xG had never actually trained into the value model. When adding a feature, confirm its name matches the grep OR is in the registered skill-col lists, and that it appears in the trained coefficient CSV after a retrain.</li>
+<li>
+<strong>PSV/PSR coefficient training (step 7) reads box-only <code>01_match_stats</code> — it needs the xG join too, on BOTH the outfield and GK paths.</strong> <code>07_train_psr_model.R</code> reads the box-score <code>cache-skills/01_match_stats.rds</code> and estimates skills itself; the per-match xG join that lives in step 2 does NOT carry over. Without an explicit join the coefficients omit <code>xg_per90</code>/over-performance/<code>gsaa</code>. Use the shared <code><a href="reference/enrich_match_stats_with_xmetrics.html">enrich_match_stats_with_xmetrics()</a></code> helper (R/opta_loaders.R) — step 2, step 7 outfield, AND step 7’s separate GK extraction (<code>ms_dt_gk &lt;- readRDS(...)</code>) each call it, so training and skill-ratings see the identical feature set. The helper takes <code>fail_if_missing_frac</code> (pipeline callers pass 0.6) so a total/&gt;60% bymatch gap STOPS instead of silently training an xG-blind model. Source artifact: <code>xmetrics_bymatch/</code> from <code>03_calculate_player_xmetrics.R</code> (<code>aggregate_player_xmetrics(by_match = TRUE)</code>); load via <code>load_opta_xmetrics(by_match = TRUE)</code>.</li>
+<li>
+<strong><code><a href="reference/compute_player_psv.html">compute_player_psv()</a></code> routes keepers through the GK sub-model — like <code><a href="reference/compute_player_psr.html">compute_player_psr()</a></code>.</strong> It splits <code>is_gk</code> (grepl GK/Goalkeeper on <code>primary_position</code>/<code>position</code>), scores keepers with the <code>gk_</code> coefficients (which carry <code>gsaa_per90</code>) and outfield with the target model, then <code>rbindlist</code>s. Without the split, keepers are scored as bad outfielders (all-negative DSV, no shot-stopping credit). NB the split also centers GKs-vs-GKs and outfield-vs-outfield, and <strong>does not preserve input row order</strong> (outfield rows then GK rows) — fine for 10b which merges by <code>player_id</code>, but don’t assume order is kept.</li>
+<li>
+<strong>PSV <code>target = "blend"</code> is the DISPLAYED value model; the RAPM target stays xG.</strong> <code>07</code> trains a third <code>blend_*</code> coefficient set on <code>α·xg_diff + (1−α)·goal_diff</code> (<code>psv_blend_alpha</code>, default 0.6) so the blog PSV credits finishing without pure-goal noise; the unprefixed (xG) and <code>gd_</code> sets are unchanged for the RAPM <code>psvf90</code> target / other consumers. <code>load_psr_coefficients(target="blend")</code> falls back to the xG set with a warning if the blend CSVs aren’t present. The export (10b) uses <code>target="blend", exclude_efficiency=FALSE, scale_to_minutes=TRUE</code>.</li>
+<li>
+<strong>Finishing is represented as xG OVER-PERFORMANCE counts, not ratios.</strong> The scale-free finishing ratios (<code>ibox_goal_rate</code>, <code>goals_per_shot</code>, <code>big_chance_conversion</code>, <code>headed_goal_rate</code>, <code>penalty_conversion</code>) were REMOVED from <code>efficiency_cols</code>/<code>skill_config</code> (1/1 == 10/10 discards volume) and replaced by additive over-performance per-90 features: <code>npg_minus_npxg_per90</code>, <code>ibox_g_minus_xg_per90</code>, <code>obox_g_minus_xg_per90</code> (zonal: bucket existing per-shot xG by the in-box rule <code>start_x&gt;83 &amp; start_y∈(21,79)</code> — NO xG-model retrain needed) + <code>placement_added_per90</code> (xGOT−xG skill). Keeper GSAA (<code>gsaa_per90</code> = xGOT-faced − goals-conceded, cross-team attribution in <code><a href="reference/dot-compute_keeper_gsaa.html">.compute_keeper_gsaa()</a></code>) replaced <code>save_percentage</code>. High-volume accuracy ratios (pass/duel/aerial) are KEPT — large denominators, glmnet shrinks redundancy. When changing the efficiency list, also check the duplicated hardcoded <code>success_cols</code> in <code>spm_opta.R</code>.</li>
+<li>
+<strong>Box-minute override: <code>coalesce(na_if(box_minutes, 0), splint)</code>, not <code>coalesce(box_minutes, splint)</code>.</strong> In <code>06_seasonal_skill_ratings.R</code>, some players have anomalous 0-minute box rows in old seasons (Alaba 2014: 55 rows summing to 0 min) while their splints have real minutes. Plain <code>coalesce</code> only falls back on NA, so a 0 silently overrides a valid splint value and zeroes out a top-50 player. The <code>total_minutes</code> sanity hard-stop is scoped to RECENT seasons (<code>&gt;= max−3</code>) — old-season minutes are chronically incomplete (both box and splint capture only 1–3 matches), a known data limitation, not a regression.</li>
+<li>
+<strong><code><a href="reference/pb_download_opta.html">pb_download_opta()</a></code> is the incremental Opta data sync</strong> (R/piggyback.R) — there’s no tarball on <code>opta-latest</code> anymore (just individual consolidated parquets), so <code>pb_download_source("opta")</code> can’t refresh a stale local copy. <code><a href="reference/pb_download_opta.html">pb_download_opta()</a></code> lists release assets and downloads only those missing or size-changed (timestamp check opt-in), verifying each landed at the expected size (piggyback’s <code>pb_list</code> can include phantom assets <code>gh</code> doesn’t have — those now report failed, not silently “synced”). <code>pb_download_opta(dry_run=TRUE)</code> previews.</li>
+<li>
+<strong>WC expected-minutes tuning lives in <code>announced_squads.R</code></strong> — the <code>WC2026_EM_*</code> constants (tournament_boost = 5, prob_prior_k = 1, tournament_start) feed both the announced and derived squad resolvers. Values come from a WC2022 backtest (96 team-matches, game-2+; harness in <code>debug/wc_minutes_test/backtest_wc2022.R</code>): boost 5 cuts minutes MAE 21.0→19.2, XI-hit peaks at boost 3–5 and degrades by 8 (chases dead-rubber rotations). Don’t raise <code>prob_prior_k</code>: the Beta prior monotonically worsens aggregate MAE — k=1 exists only to damp single-cap <code>p_start = 1.00</code> pathologies.</li>
+<li>
+<strong>The XGBoost minutes model is benched, deliberately</strong> — <code>minutes_model*.R</code>/<code>minutes_query.R</code> are feature-complete (incl. <code>p_start_decay</code>, within-tournament accumulators, prev-team-match involvement, training/query parity tests) but LOSE to the tuned heuristic on the WC2022 holdout (22.4 vs 19.6 MAE, XI-hit tie). Don’t wire it into the pipeline without re-running <code>debug/wc_minutes_test/train_eval_xgb.R</code> and beating the heuristic; its top features are the heuristic’s own signals, so it mostly adds variance.</li>
+<li>
+<strong><code><a href="https://rdrr.io/r/base/NA.html" class="external-link">is.na()</a></code> on a data.table list-column is FALSE for NULL elements</strong> — after a keyed join with <code>nomatch = NA</code>, unmatched rows fill list-columns with NULL, so <code>!is.na(dt$list_col)</code> does NOT detect them (crashed <code><a href="reference/query_minutes_features.html">query_minutes_features()</a></code> for unknown player_ids). Test emptiness: <code>vapply(col, function(v) !is.null(v) &amp;&amp; length(v) &gt; 0, logical(1))</code>.</li>
+<li>
 <strong>Splint creation uses second precision</strong> — <code><a href="reference/extract_period_end_times.html">extract_period_end_times()</a></code> reads Opta <code>type_id == 30</code> markers from raw match events to set exact period boundaries; <code><a href="reference/create_splint_boundaries_fast.html">create_splint_boundaries_fast()</a></code> uses <code>events$minute + events$added_time</code> (where <code>added_time = second/60</code>) for sub/goal/red-card boundaries. The historical <code>+ 0.5</code> buffer is gone. Sub boundaries from lineups (<code>extract_sub_events</code>) are minute-precision and only used as a fallback when events have no subs (otherwise we’d duplicate near-boundaries).</li>
 <li>
 <strong>Published <code>defense</code> is sign-flipped to positive=good</strong> in <code>10_export_blog_data.R</code> for blog consumption; internal model retains negative=good convention. <code>panna_ratings.parquet</code> shows <code>defense</code> as “defensive value added” (xG suppression per 90).</li>
@@ -280,6 +310,8 @@ Stat ratings → PSR/OSR/DSR (smoothed skills via glmnet) ───────�
 <strong>data.table NSE bare-symbol subsetting fails</strong> — <code>psr_data[, psr_cols]</code> throws <code>j is a single symbol but column name 'psr_cols' is not found</code> when <code>psr_data</code> is a data.table and <code>psr_cols</code> is a character vector. Coerce with <code><a href="https://rdrr.io/r/base/as.data.frame.html" class="external-link">as.data.frame()</a></code> before subsetting (or use <code>..psr_cols</code> / <code>with = FALSE</code>).</li>
 <li>
 <strong>SPADL has no <code>is_penalty</code> column</strong> — detect from raw Opta qualifier 9, match to SPADL via composite key (match_id + player_id + minute)</li>
+<li>
+<strong>Opta shot type_ids: 13=Miss, 14=Post, 15=Attempt Saved, 16=Goal</strong> (per <code>OPTA_TYPE_NAMES</code> / DATA_DICTIONARY, confirmed vs goal-mouth data). On-target = <code>c(15L, 16L)</code>. These were <strong>swapped (13↔︎15)</strong> in several places until 2026-06 — the swap mislabelled <code>shots_on_target</code> (counted misses) and mis-gated GK save credit in <code><a href="reference/assign_epv_credit.html">assign_epv_credit()</a></code> (credited misses, not saves). xGOT/placement (<code>xgot_model.R</code>) and <code><a href="reference/aggregate_player_xmetrics.html">aggregate_player_xmetrics()</a></code>’s decomposition depend on this being correct.</li>
 <li>
 <strong>SPADL preserves <code>original_event_id</code></strong> — maps SPADL actions back to Opta event IDs (used by equity export for blog chain join)</li>
 <li>
@@ -315,6 +347,22 @@ Stat ratings → PSR/OSR/DSR (smoothed skills via glmnet) ───────�
 <strong><code><a href="reference/check_events_coverage.html">check_events_coverage()</a></code> gap is measured against EXPECTED events, not played fixtures</strong> — <code>gap = |player_stats_match_ids − event_less_registry − event_ids|</code>. Two classes of match that can never have events are excluded from the denominator: (a) played fixtures Opta has no data for at all (absent from <code>opta_player_stats.parquet</code>), and (b) matches Opta has stats but no event feed for — the <strong>event-less registry</strong> (<code>event_less_match_ids.parquet</code> on <code>opta-latest</code>, written by pannadata’s <code>rebuild_events.py</code>, loaded via internal <code><a href="reference/load_opta_eventless_ids.html">load_opta_eventless_ids()</a></code>). This was added 2026-06-03 because UEL/UECL played fixtures include qualifier rounds Opta only box-scores: a naive played-fixtures gate flagged UEL 217/239 (gap 22) and UECL 163/261 (gap 98) as unsatisfiable failures. With the registry, both → gap 0. The gate still catches a genuine domestic shortfall (the Championship 265/557 case) because those matches DO have events and aren’t event-less. Registry absent (pre-first-rebuild) ⇒ falls back to the stricter all-player_stats denominator.</li>
 <li>
 <strong>When patching a hardcoded path in one pipeline script, grep for the same path across sister scripts</strong> — pipeline steps that share inputs often duplicate the path expression instead of factoring it. 2026-05-29 incident: fixed <code>readRDS(file.path(cache_dir, "wc2026_groups.rds"))</code> in <code>11_simulate_wc2026.R</code> with a <code><a href="https://rdrr.io/r/base/system.file.html" class="external-link">system.file()</a></code> fallback for the GHA runner, but <code>12_export_wc2026_blog.R</code> had the exact same line and was missed. Step 11 passed, step 12 failed with the identical error one CI cycle later. Before pushing a fix that touches a shared input path, <code>grep -rn "wc2026_groups.rds" data-raw/</code> (or whatever the path is) and patch all callers in the same commit.</li>
+<li>
+<strong><code>panna</code> = the career TRAIT, not season xRAPM.</strong> Since 2026-06-09 <code>panna</code> means the career-trait rating (decay-weighted multi-season xRAPM, point-in-time “best guess of next game”) from <code>career_panna.parquet</code> (<code>estimated-skills/09_career_panna.R</code> → <code>fit_career_rapm</code>). Single-season <code>xrapm</code> is a season aggregate (stat-ish), a DIFFERENT quantity. Legacy code still relabels season xRAPM as <code>panna</code> in places — <code>08_panna_ratings.R:36</code> (<code>panna = xrapm</code>) and the model’s feature pipeline (<code>02_player_ratings_to_team.R:77</code>, so the model feature <code>home_sum_panna</code> is really aggregated season xRAPM / live SPM, not the career trait). When something says “panna,” check whether it’s the trait (<code>career_panna.parquet</code>) or a season-xRAPM relabel.</li>
+<li>
+<strong>Two different rating estimators: played-side vs upcoming-fixture (model) vs display.</strong> <code>02_player_ratings_to_team.R</code> builds the model’s team features via <em>different</em> sources by row: PLAYED matches use the seasonal <code>ratings</code> table (season xRAPM relabeled <code>panna</code>, league-centered seasonal PSR); UPCOMING fixtures use a date-specific path (~line 560): <code>panna = offense_spm − defense_spm</code> (live <strong>SPM</strong>) and <code>compute_player_psr(live_skills, center=TRUE)</code> (WC-population-centered). So the model’s <code>panna</code> feature is neither the career trait nor consistent train-vs-serve. Fine for the XGBoost match model (consumes home−away diffs, so per-batch shifts cancel), but do NOT reuse the match-dataset <code>home_sum_*</code> features as a <em>display</em> rating. The WC2026 team-strength export (<code>12_export_wc2026_blog.R</code> §5) instead aggregates the displayed squad <strong>traits</strong> — career-trait <code>panna</code> + league-centered seasonal PSR + weekly EPR — minutes-weighted, so team == Σ(players shown). See METRICS.md §14.</li>
+<li>
+<strong><code>fit_career_rapm(reference_date=D)</code> does NOT filter splints by date — it only decays.</strong> It uses D for recency weighting only (<code>age = D − match_date</code>, <code>decay = 0.5^(age/halflife)</code>). A match AFTER D gets negative age → <code>decay = 0.5^(negative) &gt; 1</code> → <strong>up-weighted, not excluded</strong>. For a leak-free as-of-date fit you MUST filter <code>splint_data$splints</code> (and <code>$match_info</code>) to <code>match_date &lt;= D</code> BEFORE calling it. Verified: as-of-2020 (filtered) returns 2020-era stars (De Bruyne/Salah/Müller); unfiltered would leak 2021–2026 results. (Residual: the <code>skill_spm</code> shrinkage prior is still as-of-now — a second-order leak via the prior only.) Bonus tuning result: across as-of-date fits, <code>cv.glmnet</code> lambda.min ≈ <strong>16.67·n_obs^−0.58 (≈ 1/√n_obs, R²=0.96)</strong> — so an as-of-date pipeline can skip CV and compute λ from the observation count, adapting to each window’s sample size (<code>fit_rapm</code>/<code>fit_rapm_with_prior</code> take a <code>fixed_lambda</code>; <code>fit_career_rapm</code> takes a <code>lambda_formula(n_obs)</code> callback). NB validated against <em>pruned</em> (&gt;8yr dropped) fits this formula over-predicts λ ~30% in the recent high-<code>n</code> regime (2024–26) while staying good for unpruned — kept it anyway: over-reg is conservative (shrinks toward the skill prior) and immaterial (flat ridge optimum + wash gate). The monthly as-of build (<code>estimated-skills/09b_career_panna_asof.R</code>) logs <code>n_obs</code>+λ per snapshot to track.</li>
+<li>
+<strong><code>calculate_psr(center=TRUE)</code> centers over the INPUT population, not the league.</strong> <code>psr.R:604</code> subtracts <code>mean(psr_raw)</code> of whatever rows it’s handed — the variable is <em>named</em> <code>league_mean</code> but it’s just <code>mean(input)</code>. The canonical exports (seasonal <code>06</code>, weekly <code>08b</code>, game-logs <code>10b</code>) pass the full league, so they’re genuinely league-centered (this is what ITG/the blog displays). But step 02’s upcoming-fixture path pre-filters <code>match_stats</code> to only the upcoming players (~line 486), so its PSR is centered over that subset — for WC2026, “above the average World Cup player,” which collapses team PSR toward 0 for all but the deepest squads. Model-safe (diffs cancel the constant, no retrain needed); flagged <code>TODO(psr-centering)</code>. If you ever consume fixture-side PSR directly (not as a diff), re-center over the league first.</li>
+<li>
+<strong><code><a href="reference/load_epv_model.html">load_epv_model()</a></code> (no <code>path</code>) prefers the PUBLISHED model, not the same-run cache.</strong> Its resolution order is explicit <code>path</code> → <code>pannamodels::load_panna_model("epv_model")</code> → local pannadata fallback — none of which is <code>01_train_epv_models.R</code>’s output at <code>data-raw/cache/epv/epv_model.rds</code>. So <code>05_train_wp_model.R</code> (which derives the WP <code>epv</code> feature via <code><a href="reference/calculate_action_epv.html">calculate_action_epv()</a></code>) was training against the <em>previously published</em> EPV model, not the one just trained in the same pipeline run — a silent EPV-version skew between the WP <code>epv</code> feature and the shipped EPV model. Fixed 2026-06-18 by passing <code>load_epv_model(path = "data-raw/cache/epv")</code> (it falls through to pannamodels if the cache file is absent, so non-pipeline callers are unaffected). When wiring any new step that consumes the EPV model inside the EPV/predictions pipeline, pass the cache path explicitly.</li>
+<li>
+<strong>Game-logs rebuilds MUST set <code>epv_model_override</code> + <code>wp_model_override</code> — see <code>MODELS.md</code>.</strong> The bare default loaders (<code><a href="reference/load_epv_model.html">load_epv_model()</a></code>/<code><a href="reference/load_wp_model.html">load_wp_model()</a></code> with no path) return the OLD pre-overhaul models from <code>pannadata/data/opta/models/*.rds</code>, NOT the post-overhaul clean models. A standalone 11-season game-logs rebuild that omitted the overrides shipped inflated EPV (Messi 3.65 vs correct 2.49; match-total EPV ~20 vs ~3-4; every player positive, no negatives) — the clean models are <code>data-raw/cache/epv/epv_model_xg_clean_full.rds</code> + <code>data-raw/cache/epv/wp_final_d2repl_reg/wp_model.rds</code> (the exact set <code>_run_gamelogs_gt.R</code> uses — that script is the canonical recipe). Loaders now print the resolved file + <strong>modification date</strong> and warn if &gt;14 days old (<code>.report_model_provenance</code>) so a stale fallback is visible in the log — but the real fix is to pin via overrides. <code>MODELS.md</code> (panna root) is the source-of-truth for every model loader, its silent fallback chain, and the canonical version.</li>
+<li>
+<strong>EPV offensive/defensive split is presentational — <code>offensive + defensive == epv_total</code> ALWAYS.</strong> Re-bucketing an action type between OFF/DEF never changes a player’s headline <code>epv_total</code>/<code>epv_total_adj</code> or ranking. The split (in <code>aggregate_player_game_epv</code>): OFF = passing + shooting + dribbling + attacking-third aerials (<code>start_x&gt;67</code>) + receiver; DEF = defending (tackle/interception/clearance/recovery/save/foul/dispossessed) + <strong>keeper handling</strong> (pickup/claim/punch) + mid/defensive-third aerials + duel_blame. Keeper handling and defensive headers are DEFENSIVE (they end opponent attacks); only the per-action-type display components (EPV PASS/SHOT/…/GK) are raw totals. <code>epv_total_adj</code> (EPV ADJ) = position-centered total + opponent adj; OFF/DEF adj are position-centered only (opp adj folded into total only, exposed as <code>opp_adj</code>).</li>
+<li>
+<strong>EPV feature-contract changes require a model+code lockstep</strong> — <code>EPV_SIMPLE_FEATURE_COLS</code> (the EPV model’s input contract) is shared between the <em>published</em> model (trained on exactly those columns) and the package code that <em>emits</em> them (<code>create_epv_features_simple</code>, plus <code>create_wp_features</code> for the WP <code>epv</code>-interacted features). If they drift, the pipeline scores with mismatched features and silently produces garbage. So when you change the contract, the published model (pannamodels <code>epv</code> release + the worker’s R2 JSON) and the merged package code must move <strong>together</strong> — publish the retrained model and merge the code back-to-back. 2026-06-19 clean-EPV/d2-repl-WP swap is the worked example: publish-first breaks the WP path (new WP needs interacted features only new code emits); merge-first breaks the EPV path (old published model wants 17 features new code stops emitting). The window is safe only because the pipeline runs Wed/manual. Local pipeline runs that must NOT wait for the published model can pass <code>epv_model_override</code> / <code>wp_model_override</code> (10b/10c) to score with a candidate <code>.rds</code> directly — see the <code><a href="reference/load_epv_model.html">load_epv_model()</a></code> published-vs-cache gotcha above and the pannamodels cache-staleness gotcha.</li>
 </ul></div>
 <div class="section level2">
 <h2 id="github-actions">GitHub Actions<a class="anchor" aria-label="anchor" href="#github-actions"></a></h2>
@@ -340,9 +388,6 @@ Stat ratings → PSR/OSR/DSR (smoothed skills via glmnet) ───────�
 </tr><tr class="even"><td><code>epv-pipeline.yml</code></td>
 <td>Manual dispatch</td>
 <td>EPV model training pipeline</td>
-</tr><tr class="odd"><td><code>ratings-pipeline.yml.disabled</code></td>
-<td>(disabled)</td>
-<td>FBref RAPM/SPM — superseded by Opta pipeline</td>
 </tr></tbody></table></div>
 <div class="section level2">
 <h2 id="dependencies">Dependencies<a class="anchor" aria-label="anchor" href="#dependencies"></a></h2>

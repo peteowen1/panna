@@ -43,8 +43,8 @@
 <div class="section level2">
 <h2 id="pipeline-overview">Pipeline Overview<a class="anchor" aria-label="anchor" href="#pipeline-overview"></a></h2>
 <div class="section level3">
-<h3 id="opta-rapmspm-pipeline-primary--data-rawplayer-ratings-opta">Opta RAPM/SPM Pipeline (Primary) — <code>data-raw/player-ratings-opta/</code>
-<a class="anchor" aria-label="anchor" href="#opta-rapmspm-pipeline-primary--data-rawplayer-ratings-opta"></a></h3>
+<h3 id="opta-rapmspm-pipeline--data-rawplayer-ratings-opta">Opta RAPM/SPM Pipeline — <code>data-raw/player-ratings-opta/</code>
+<a class="anchor" aria-label="anchor" href="#opta-rapmspm-pipeline--data-rawplayer-ratings-opta"></a></h3>
 <pre><code>01_load_opta_data.R       -&gt;  cache-opta/01_opta_data.rds
 02_data_processing.R      -&gt;  cache-opta/02_processed_data.rds
 03_splint_creation.R      -&gt;  cache-opta/03_splints.rds
@@ -57,8 +57,11 @@
 09_export_ratings.R       -&gt;  seasonal_xrapm.parquet, seasonal_spm.parquet</code></pre>
 </div>
 <div class="section level3">
-<h3 id="fbref-rapmspm-pipeline-secondary--data-rawplayer-ratings-fbref">FBref RAPM/SPM Pipeline (Secondary) — <code>data-raw/player-ratings-fbref/</code>
-<a class="anchor" aria-label="anchor" href="#fbref-rapmspm-pipeline-secondary--data-rawplayer-ratings-fbref"></a></h3>
+<h3 id="fbref-rapmspm-pipeline-archived--archivedata-rawplayer-ratings-fbref">FBref RAPM/SPM Pipeline (ARCHIVED) — <code>archive/data-raw/player-ratings-fbref/</code>
+<a class="anchor" aria-label="anchor" href="#fbref-rapmspm-pipeline-archived--archivedata-rawplayer-ratings-fbref"></a></h3>
+<blockquote>
+<p><strong>Archived 2026-04</strong> (commit 43ea7fd): the FBref pipeline is retired — Opta is the only active data source. Steps listed for historical reference; the scripts live under <code>archive/</code> and are not maintained.</p>
+</blockquote>
 <pre><code>01_load_pannadata.R       -&gt;  cache/01_raw_data.rds
 02_data_processing.R      -&gt;  cache/02_processed_data.rds
 03_splint_creation.R      -&gt;  cache/03_splints.rds
@@ -110,7 +113,10 @@
 <hr></div>
 </div>
 <div class="section level2">
-<h2 id="fbref-pipeline-data-structures">FBref Pipeline Data Structures<a class="anchor" aria-label="anchor" href="#fbref-pipeline-data-structures"></a></h2>
+<h2 id="fbref-pipeline-data-structures-archived">FBref Pipeline Data Structures (ARCHIVED)<a class="anchor" aria-label="anchor" href="#fbref-pipeline-data-structures-archived"></a></h2>
+<blockquote>
+<p><strong>The FBref pipeline is retired</strong> (archived 2026-04, commit 43ea7fd). These schema tables are kept for reading older pannadata releases that still use them — the pipeline itself no longer runs.</p>
+</blockquote>
 <p>The FBref pipeline shares the same RAPM/SPM methodology as Opta but uses FBref data.</p>
 <div class="section level3">
 <h3 id="id_01_raw_datards">01_raw_data.rds<a class="anchor" aria-label="anchor" href="#id_01_raw_datards"></a></h3>
@@ -1001,7 +1007,7 @@
 <td>Shot resulted in goal</td>
 </tr><tr class="even"><td>type_id</td>
 <td>integer</td>
-<td>13=saved, 14=post, 15=miss, 16=goal</td>
+<td>13=miss, 14=post, 15=saved, 16=goal</td>
 </tr><tr class="odd"><td>body_part</td>
 <td>character</td>
 <td>Head, LeftFoot, RightFoot</td>
