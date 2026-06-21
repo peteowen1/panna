@@ -62,59 +62,9 @@ if (file.exists(decay_params_path)) {
 # would collide with box-score names.
 
 if (use_xmetrics_features) {
-  match_stats <- data.table::as.data.table(match_stats)
-
-  # xmetrics per-90 columns to attach (source name -> match_stats name)
-  xm_map <- c(
-    xg_per90 = "xg_per90", npxg_per90 = "npxg_per90",
-    xa_per90 = "xa_per90_xmetrics",
-    xpass_overperformance_per90 = "xpass_overperformance_per90_xmetrics",
-    npg_minus_npxg_per90 = "npg_minus_npxg_per90",
-    ibox_g_minus_xg_per90 = "ibox_g_minus_xg_per90",
-    obox_g_minus_xg_per90 = "obox_g_minus_xg_per90",
-    placement_added_per90 = "placement_added_per90",  # xGOT - xG: placement skill
-    gsaa_per90 = "gsaa_per90"
-  )
-
-  if (!all(c("league", "season", "match_id", "player_id") %in% names(match_stats))) {
-    warning("match_stats missing league/season/match_id/player_id — skipping xMetrics join",
-            call. = FALSE)
-  } else {
-    ls_pairs <- unique(match_stats[, .(league, season)])
-    cat(sprintf("  Joining per-match xMetrics over %d league-seasons...\n", nrow(ls_pairs)))
-
-    xm_list <- vector("list", nrow(ls_pairs))
-    n_missing <- 0L
-    for (i in seq_len(nrow(ls_pairs))) {
-      lg <- ls_pairs$league[i]; sn <- ls_pairs$season[i]
-      xm_list[[i]] <- tryCatch({
-        x <- data.table::as.data.table(
-          load_opta_xmetrics(lg, season = sn, source = "local", by_match = TRUE))
-        keep <- intersect(c("player_id", "match_id", names(xm_map)), names(x))
-        x[, ..keep]
-      }, error = function(e) { n_missing <<- n_missing + 1L; NULL })
-    }
-    xm <- data.table::rbindlist(Filter(Negate(is.null), xm_list), fill = TRUE)
-
-    if (nrow(xm) == 0) {
-      warning(sprintf(paste0(
-        "No per-match xMetrics found (xmetrics_bymatch/ absent for all %d league-seasons). ",
-        "Re-run data-raw/epv/03_calculate_player_xmetrics.R to generate them. ",
-        "Proceeding WITHOUT xG features."), nrow(ls_pairs)), call. = FALSE)
-    } else {
-      # rename source -> target, then left-join onto match_stats
-      old <- intersect(names(xm_map), names(xm))
-      data.table::setnames(xm, old, unname(xm_map[old]))
-      xm <- unique(xm, by = c("player_id", "match_id"))
-      match_stats <- merge(match_stats, xm, by = c("player_id", "match_id"),
-                           all.x = TRUE)
-      added <- intersect(unname(xm_map), names(match_stats))
-      # Over-performance / xG are genuine 0 for players with no shots that match
-      for (col in added) data.table::set(match_stats, which(is.na(match_stats[[col]])), col, 0)
-      cat(sprintf("  xMetrics joined: %d cols (%s); %d/%d league-seasons missing bymatch files\n",
-                  length(added), paste(added, collapse = ", "), n_missing, nrow(ls_pairs)))
-    }
-  }
+  # Per-match xG join (shared helper — step 7 uses the same so coefficients and
+  # skill ratings see the identical feature set).
+  match_stats <- enrich_match_stats_with_xmetrics(match_stats)
 }
 
 # 6. Estimate Skills ----

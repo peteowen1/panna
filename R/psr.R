@@ -187,11 +187,19 @@
   }, by = player_id]
   player_names <- dt[, .(player_name = player_name[1]), by = player_id]
 
-  # Auto-detect stat columns
+  # Auto-detect stat columns.
+  # NB: the grep must catch BOTH `_p90` (box-score rates) and `_per90` (xMetrics
+  # rates: xg_per90, npg_minus_npxg_per90, gsaa_per90, ...). The original
+  # `_p90$`-only pattern silently skipped every xMetrics column — which is why
+  # xg_per90 had been specified in .get_psr_skill_cols() but never received a
+  # coefficient. We also explicitly include the registered skill-col lists so
+  # `_xmetrics`-suffixed cols (xa_per90_xmetrics, xpass_overperformance_per90_
+  # xmetrics) are picked up too. All gated by what's actually in `dt`.
   eff_map <- .classify_skill_stats()
-  p90_cols <- grep("_p90$", names(dt), value = TRUE)
+  p90_cols <- grep("_p90$|_per90$", names(dt), value = TRUE)
   eff_cols <- intersect(names(eff_map), names(dt))
-  stat_cols <- intersect(c(p90_cols, eff_cols), names(dt))
+  registered <- intersect(c(.get_psr_skill_cols(), .get_gk_skill_cols()), names(dt))
+  stat_cols <- unique(intersect(c(p90_cols, eff_cols, registered), names(dt)))
 
   if (length(stat_cols) == 0) {
     cli::cli_warn("No stat columns found in match_stats.")

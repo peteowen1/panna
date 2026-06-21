@@ -86,6 +86,16 @@ gc(verbose = FALSE)
 cat(sprintf("Match stats: %s player-match rows x %d cols\n",
             format(nrow(match_stats), big.mark = ","), ncol(match_stats)))
 
+# Join per-match xG / over-performance / GSAA so the trained coefficients see the
+# redesign features. CRITICAL: step 7 reads the box-score 01_match_stats (not
+# step 2's enriched output), so without this join the coefficients would omit
+# xg_per90 / npg_minus_npxg / placement_added / gsaa entirely. Uses the same
+# shared helper as step 2 → identical feature set for training and skill ratings.
+if (!exists("use_xmetrics_features") || isTRUE(use_xmetrics_features)) {
+  match_stats <- enrich_match_stats_with_xmetrics(match_stats)
+  cat(sprintf("After xMetrics join: %d cols\n", ncol(match_stats)))
+}
+
 # Load optimized decay params (if available)
 decay_params_path <- file.path(cache_dir, "02b_decay_params.rds")
 if (file.exists(decay_params_path)) {
@@ -856,6 +866,12 @@ gk_skill_keep_cols <- character(0)
 {
   cat("Loading match stats for GK feature extraction...\n")
   ms_dt_gk <- data.table::as.data.table(readRDS(ms_path))
+  # Same xMetrics join as the outfield path — without it the GK skill estimation
+  # never sees gsaa_per90 (keeper shot-stopping), so it can't reach the GK
+  # coefficients. Uses the shared helper for an identical feature set.
+  if (!exists("use_xmetrics_features") || isTRUE(use_xmetrics_features)) {
+    ms_dt_gk <- enrich_match_stats_with_xmetrics(ms_dt_gk)
+  }
   ms_dt_gk[, match_date := as.Date(match_date)]
   if (!"season_end_year" %in% names(ms_dt_gk)) {
     ms_dt_gk[, season_end_year := data.table::fifelse(
