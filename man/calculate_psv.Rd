@@ -9,7 +9,8 @@ calculate_psv(
   coef_df,
   min_adjust = TRUE,
   center = TRUE,
-  exclude_efficiency = TRUE
+  exclude_efficiency = TRUE,
+  scale_to_minutes = FALSE
 )
 }
 \arguments{
@@ -28,6 +29,11 @@ PSV = contribution above average that round. Default \code{TRUE}.}
 
 \item{exclude_efficiency}{Logical. Exclude efficiency/ratio stats from PSV
 calculation. Default \code{TRUE}.}
+
+\item{scale_to_minutes}{Logical. If TRUE, multiply the (per-90) PSV by
+\code{minutes_played / 90} so the result is additive over a player's
+games (like EPV), rather than a per-90 rate. Default \code{FALSE}
+(per-90, the form consumed by the multi-target RAPM and skills pipeline).}
 }
 \value{
 A data.table with identifier columns plus \code{psv_raw} and

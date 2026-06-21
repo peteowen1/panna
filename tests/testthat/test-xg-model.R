@@ -237,3 +237,133 @@ test_that("aggregate_player_xmetrics computes per-player stats", {
   expect_true(nrow(result) >= 2)
   expect_true("xg" %in% names(result) || "total_xg" %in% names(result))
 })
+
+test_that("aggregate_player_xmetrics computes zonal finishing over-performance", {
+  # 3 shots for one player: 2 in-box (x>83, y in (21,79)), 1 out-box.
+  spadl <- data.frame(
+    match_id = rep("m1", 3), action_id = 1:3, period_id = rep(1L, 3),
+    team_id = rep("t1", 3), player_id = rep("p1", 3), player_name = rep("A", 3),
+    action_type = rep("shot", 3),
+    result = c("success", "success", "fail"),  # 2 in-box goals, 0 out-box goals
+    bodypart = rep("foot_right", 3),
+    start_x = c(90, 88, 70),    # in, in, out
+    start_y = c(50, 45, 50),
+    end_x = c(100, 100, 80), end_y = rep(50, 3),
+    xg = c(0.30, 0.40, 0.05),
+    is_penalty = c(0L, 0L, 0L),
+    opta_type_id = c(16L, 16L, 13L),
+    time_seconds = c(600, 1200, 1800),
+    stringsAsFactors = FALSE
+  )
+  lineups <- data.frame(
+    match_id = "m1", team_id = "t1", team_name = "Team A",
+    player_id = "p1", player_name = "A", minutes_played = 90,
+    stringsAsFactors = FALSE
+  )
+  r <- data.table::as.data.table(
+    aggregate_player_xmetrics(spadl, lineups, min_minutes = 0))
+
+  expect_equal(r$ibox_goals, 2L)
+  expect_equal(r$ibox_xg, 0.70)
+  expect_equal(r$ibox_g_minus_xg, 1.30)
+  expect_equal(r$obox_goals, 0L)
+  expect_equal(r$obox_xg, 0.05)
+  expect_equal(r$obox_g_minus_xg, -0.05)
+  # overall non-penalty finishing over-performance
+  expect_equal(r$npg_minus_npxg, 2 - 0.75)
+})
+
+test_that("aggregate_player_xmetrics by_match keys per player-match", {
+  # Same player, two matches: m1 (1 in-box goal, xg 0.3), m2 (1 in-box goal, xg 0.5)
+  spadl <- data.frame(
+    match_id = c("m1", "m2"), action_id = 1:2, period_id = c(1L, 1L),
+    team_id = c("t1", "t1"), player_id = c("p1", "p1"), player_name = c("A", "A"),
+    action_type = c("shot", "shot"), result = c("success", "success"),
+    bodypart = c("foot_right", "foot_right"),
+    start_x = c(90, 90), start_y = c(50, 50), end_x = c(100, 100), end_y = c(50, 50),
+    xg = c(0.30, 0.50), is_penalty = c(0L, 0L), opta_type_id = c(16L, 16L),
+    time_seconds = c(600, 600), stringsAsFactors = FALSE
+  )
+  lineups <- data.frame(
+    match_id = c("m1", "m2"), team_id = c("t1", "t1"), team_name = c("T", "T"),
+    player_id = c("p1", "p1"), player_name = c("A", "A"),
+    minutes_played = c(90, 90), stringsAsFactors = FALSE
+  )
+
+  # Season-level (default): one row, summed across both matches
+  season <- data.table::as.data.table(aggregate_player_xmetrics(spadl, lineups))
+  expect_equal(nrow(season), 1L)
+  expect_equal(season$goals, 2L)
+  expect_equal(season$ibox_xg, 0.80)
+
+  # Per-match: one row per (player, match)
+  perm <- data.table::as.data.table(
+    aggregate_player_xmetrics(spadl, lineups, by_match = TRUE))
+  expect_equal(nrow(perm), 2L)
+  expect_true("match_id" %in% names(perm))
+  setkey(perm, match_id)
+  expect_equal(perm["m1"]$ibox_g_minus_xg, 1 - 0.30)
+  expect_equal(perm["m2"]$ibox_g_minus_xg, 1 - 0.50)
+})
+
+test_that("by_match works with chain columns present (chain `by=` regression)", {
+  # Regression for the chain aggregation using an inline if/else in `by=`, which
+  # data.table rejects. Only fires when chain_id is present (real SPADL), so the
+  # earlier tests (no chain cols) missed it — this one carries chain columns.
+  spadl <- data.frame(
+    match_id = c("m1", "m1", "m2"), action_id = 1:3, period_id = 1L,
+    team_id = "t1", player_id = "p1", player_name = "A",
+    action_type = "shot", result = c("success", "fail", "success"),
+    bodypart = "foot_right",
+    start_x = 90, start_y = 50, end_x = 100, end_y = 50,
+    xg = c(0.3, 0.1, 0.5), is_penalty = 0L, opta_type_id = c(16L, 13L, 16L),
+    time_seconds = 600,
+    chain_id = c(1L, 1L, 1L), chain_outcome = c("goal", "goal", "goal"),
+    action_in_chain = c(1L, 2L, 1L),
+    stringsAsFactors = FALSE
+  )
+  lineups <- data.frame(
+    match_id = c("m1", "m2"), team_id = "t1", team_name = "T",
+    player_id = "p1", player_name = "A", position = "CF",
+    minutes_played = 90, stringsAsFactors = FALSE
+  )
+  expect_no_error(aggregate_player_xmetrics(spadl, lineups, by_match = TRUE))
+  expect_no_error(aggregate_player_xmetrics(spadl, lineups, by_match = FALSE))
+})
+
+test_that("keeper GSAA = expected goals faced - goals conceded (cross-team)", {
+  # m1: t1 takes 2 shots (1 goal), t2 takes 1 shot (1 goal)
+  spadl <- data.frame(
+    match_id = "m1", action_id = 1:3, period_id = 1L,
+    action_type = "shot",
+    team_id = c("t1", "t1", "t2"),
+    player_id = c("s1", "s1", "s2"), player_name = c("S1", "S1", "S2"),
+    xg = c(0.35, 0.25, 0.55), xgot = c(0.40, 0.30, 0.60),
+    result = c("success", "fail", "success"),
+    is_penalty = 0L, opta_type_id = c(16L, 13L, 16L),
+    start_x = 90, start_y = 50, end_x = 100, end_y = 50, time_seconds = 600,
+    stringsAsFactors = FALSE
+  )
+  lineups <- data.frame(
+    match_id = "m1",
+    player_id = c("kA", "kB", "s1", "s2"),
+    player_name = c("KeepA", "KeepB", "S1", "S2"),
+    team_id = c("t1", "t2", "t1", "t2"),
+    team_name = c("T1", "T2", "T1", "T2"),
+    position = c("GK", "Goalkeeper", "CF", "CF"),
+    minutes_played = 90, stringsAsFactors = FALSE
+  )
+  g <- panna:::.compute_keeper_gsaa(spadl, lineups, by_match = TRUE)
+  g <- data.table::as.data.table(g); data.table::setkey(g, player_id)
+  # KeepA (t1) faces t2's single shot xgot 0.60, conceded 1 -> 0.60 - 1
+  expect_equal(g["kA"]$gsaa, 0.60 - 1)
+  # KeepB (t2) faces t1's shots xgot 0.40 + 0.30 = 0.70, conceded 1 -> 0.70 - 1
+  expect_equal(g["kB"]$gsaa, 0.70 - 1)
+
+  # And it flows through aggregate_player_xmetrics onto the keeper rows
+  agg <- data.table::as.data.table(
+    aggregate_player_xmetrics(spadl, lineups, by_match = TRUE))
+  data.table::setkey(agg, player_id)
+  expect_equal(agg["kA"]$gsaa, 0.60 - 1)
+  expect_equal(agg["kB"]$gsaa, 0.70 - 1)
+})

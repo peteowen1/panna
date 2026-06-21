@@ -53,13 +53,18 @@ if (file.exists(decay_params_path)) {
 }
 
 # 5. Enrich with xMetrics ----
+#
+# Join per-MATCH xG / finishing over-performance onto match_stats by
+# (player_id, match_id). This is the real join that the old stub never did —
+# without it the value model has no xG at all. Source: xmetrics_bymatch/
+# (produced by 03_calculate_player_xmetrics.R via aggregate_player_xmetrics(
+# by_match = TRUE)). Columns are renamed with an _xmetrics suffix where they
+# would collide with box-score names.
 
 if (use_xmetrics_features) {
-  xm_cols <- c("xg_per90", "npxg_per90", "xa_per90_xmetrics",
-                "xpass_overperformance_per90_xmetrics")
-  existing_xm <- intersect(xm_cols, names(match_stats))
-  cat(sprintf("  xMetrics columns present: %s\n",
-              if (length(existing_xm) > 0) paste(existing_xm, collapse = ", ") else "none (should come from step 01)"))
+  # Per-match xG join (shared helper — step 7 uses the same so coefficients and
+  # skill ratings see the identical feature set).
+  match_stats <- enrich_match_stats_with_xmetrics(match_stats, fail_if_missing_frac = 0.6)
 }
 
 # 6. Estimate Skills ----

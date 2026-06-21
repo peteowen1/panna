@@ -52,26 +52,34 @@
     "unsuccessful_touch_p90", "overrun_p90", "flick_on_p90"
   )
 
-  # Efficiency/proportion columns
+  # Efficiency/proportion columns.
+  # NOTE: the low-volume *finishing* ratios (goals_per_shot, big_chance_conversion,
+  # headed_goal_rate, ibox_goal_rate, obox_goal_rate, penalty_conversion) were
+  # REMOVED — a per-game ratio is scale-free (1/1 == 10/10) and discards volume.
+  # They are replaced by the xG over-performance counts in xmetrics_cols below
+  # (npg_minus_npxg_per90 etc.). High-volume accuracy ratios stay (large
+  # denominators → the scale defect doesn't bite; glmnet shrinks any redundancy).
   efficiency_cols <- c(
-    "shot_accuracy", "goals_per_shot", "pass_accuracy",
+    "shot_accuracy", "pass_accuracy",
     "tackle_success", "duel_success", "aerial_success",
-    "big_chance_conversion", "final_third_pass_acc",
+    "final_third_pass_acc",
     "long_ball_accuracy", "cross_accuracy",
     "fwd_zone_pass_accuracy", "open_play_pass_accuracy",
     "crosses_open_play_accuracy", "bad_touch_rate",
     "errors_total_p90",
-    "headed_goal_rate", "flick_on_accuracy",
+    "flick_on_accuracy",
     "back_zone_pass_accuracy", "chipped_pass_accuracy",
-    "ibox_goal_rate", "obox_goal_rate",
-    "penalty_conversion", "long_pass_own_to_opp_accuracy",
+    "long_pass_own_to_opp_accuracy",
     "fifty_fifty_success", "poss_lost_ctrl_per_touch"
   )
 
-  # xMetrics columns (if available)
+  # xMetrics columns (if available). Finishing over-performance (goals above xG,
+  # volume-correct & additive) replaces the removed finishing ratios.
   xmetrics_cols <- c(
     "xg_per90", "npxg_per90", "xa_per90_xmetrics",
-    "xpass_overperformance_per90_xmetrics"
+    "xpass_overperformance_per90_xmetrics",
+    "npg_minus_npxg_per90", "ibox_g_minus_xg_per90", "obox_g_minus_xg_per90",
+    "placement_added_per90"
   )
 
   c(rate_cols, efficiency_cols, xmetrics_cols)
@@ -88,17 +96,20 @@
 #' @keywords internal
 .get_gk_skill_cols <- function() {
 
-  # GK action stats -- things the keeper actually does
+  # GK action stats -- things the keeper actually does.
+  # gsaa_per90 = shot-stopping above expected (expected goals faced - goals
+  # conceded, per 90); a volume-correct value that replaces save_percentage.
   gk_action_cols <- c(
     "saves_p90", "saves_ibox_p90", "saves_obox_p90",
     "keeper_sweeper_p90", "gk_smother_p90",
     "high_claim_p90", "good_high_claim_p90",
-    "punches_p90", "keeper_throws_p90", "keeper_pickup_p90"
+    "punches_p90", "keeper_throws_p90", "keeper_pickup_p90",
+    "gsaa_per90"
   )
 
-  # GK efficiency stats
+  # GK efficiency stats (save_percentage removed -> replaced by gsaa_per90 above)
   gk_efficiency_cols <- c(
-    "save_percentage", "keeper_sweeper_accuracy",
+    "keeper_sweeper_accuracy",
     "keeper_throws_accuracy"
   )
 
@@ -176,11 +187,19 @@
   }, by = player_id]
   player_names <- dt[, .(player_name = player_name[1]), by = player_id]
 
-  # Auto-detect stat columns
+  # Auto-detect stat columns.
+  # NB: the grep must catch BOTH `_p90` (box-score rates) and `_per90` (xMetrics
+  # rates: xg_per90, npg_minus_npxg_per90, gsaa_per90, ...). The original
+  # `_p90$`-only pattern silently skipped every xMetrics column — which is why
+  # xg_per90 had been specified in .get_psr_skill_cols() but never received a
+  # coefficient. We also explicitly include the registered skill-col lists so
+  # `_xmetrics`-suffixed cols (xa_per90_xmetrics, xpass_overperformance_per90_
+  # xmetrics) are picked up too. All gated by what's actually in `dt`.
   eff_map <- .classify_skill_stats()
-  p90_cols <- grep("_p90$", names(dt), value = TRUE)
+  p90_cols <- grep("_p90$|_per90$", names(dt), value = TRUE)
   eff_cols <- intersect(names(eff_map), names(dt))
-  stat_cols <- intersect(c(p90_cols, eff_cols), names(dt))
+  registered <- intersect(c(.get_psr_skill_cols(), .get_gk_skill_cols()), names(dt))
+  stat_cols <- unique(intersect(c(p90_cols, eff_cols, registered), names(dt)))
 
   if (length(stat_cols) == 0) {
     cli::cli_warn("No stat columns found in match_stats.")
@@ -681,13 +700,18 @@ calculate_psr_components <- function(skills, coef_df, osr_coef_df, dsr_coef_df,
 #'   PSV = contribution above average that round. Default \code{TRUE}.
 #' @param exclude_efficiency Logical. Exclude efficiency/ratio stats from PSV
 #'   calculation. Default \code{TRUE}.
+#' @param scale_to_minutes Logical. If TRUE, multiply the (per-90) PSV by
+#'   \code{minutes_played / 90} so the result is additive over a player's
+#'   games (like EPV), rather than a per-90 rate. Default \code{FALSE}
+#'   (per-90, the form consumed by the multi-target RAPM and skills pipeline).
 #'
 #' @return A data.table with identifier columns plus \code{psv_raw} and
 #'   \code{psv}.
 #'
 #' @export
 calculate_psv <- function(player_match_stats, coef_df, min_adjust = TRUE,
-                           center = TRUE, exclude_efficiency = TRUE) {
+                           center = TRUE, exclude_efficiency = TRUE,
+                           scale_to_minutes = FALSE) {
   dt <- data.table::as.data.table(player_match_stats)
 
   if (!all(c("stat_name", "beta") %in% names(coef_df))) {
@@ -732,7 +756,11 @@ calculate_psv <- function(player_match_stats, coef_df, min_adjust = TRUE,
   mat <- as.matrix(dt[, stat_cols, with = FALSE])
   mat[is.na(mat)] <- 0
 
-  # Minutes-adjust: divide counts by minutes/90 to get per-90 rates
+  # Minutes-adjust: divide counts by minutes/90 to get per-90 rates.
+  # Efficiency/ratio stats (e.g. ibox_goal_rate, pass_accuracy) are already
+  # rates, not additive counts — dividing them by minutes/90 is meaningless,
+  # so exempt them from the per-90 scaling. (Matters only when efficiency stats
+  # are kept, i.e. exclude_efficiency = FALSE; otherwise they aren't in `mat`.)
   if (min_adjust) {
     mins_col <- if ("minutes_played" %in% names(dt)) "minutes_played"
                 else if ("total_minutes" %in% names(dt)) "total_minutes"
@@ -740,7 +768,10 @@ calculate_psv <- function(player_match_stats, coef_df, min_adjust = TRUE,
     if (!is.null(mins_col)) {
       mins <- as.numeric(dt[[mins_col]])
       mins[is.na(mins) | mins <= 0] <- 90  # default to 90 for missing
-      mat <- mat / (mins / 90)
+      ratio_mask <- stat_cols %in% .get_psr_efficiency_cols()
+      if (any(!ratio_mask)) {
+        mat[, !ratio_mask] <- mat[, !ratio_mask, drop = FALSE] / (mins / 90)
+      }
     }
   }
 
@@ -762,6 +793,27 @@ calculate_psv <- function(player_match_stats, coef_df, min_adjust = TRUE,
     }
   } else {
     dt[, psv := psv_raw]
+  }
+
+  # Scale per-90 value to the player's actual minutes so PSV is additive
+  # (like EPV): a 90-min game keeps its per-90 value, a cameo gets a fraction.
+  # Summing across games is then meaningful; consumers can divide by
+  # total_minutes/90 to recover the per-90 rate. Preserves osv + dsv = psv
+  # (both components scaled by the same per-row factor).
+  if (scale_to_minutes) {
+    mins_col <- if ("minutes_played" %in% names(dt)) "minutes_played"
+                else if ("total_minutes" %in% names(dt)) "total_minutes"
+                else NULL
+    if (is.null(mins_col)) {
+      cli::cli_warn(
+        "scale_to_minutes = TRUE but no minutes column found; PSV left per-90"
+      )
+    } else {
+      scale_fac <- as.numeric(dt[[mins_col]]) / 90
+      scale_fac[is.na(scale_fac) | scale_fac < 0] <- 0
+      dt[, psv_raw := psv_raw * scale_fac]
+      dt[, psv := psv * scale_fac]
+    }
   }
 
   id_cols <- intersect(
@@ -793,13 +845,20 @@ calculate_psv <- function(player_match_stats, coef_df, min_adjust = TRUE,
 #' @export
 calculate_psv_components <- function(player_match_stats, coef_df, osr_coef_df,
                                       dsr_coef_df, min_adjust = TRUE,
-                                      center = TRUE) {
+                                      center = TRUE, scale_to_minutes = FALSE,
+                                      exclude_efficiency = TRUE) {
   psv_result <- calculate_psv(player_match_stats, coef_df,
-                               min_adjust = min_adjust, center = center)
+                               min_adjust = min_adjust, center = center,
+                               scale_to_minutes = scale_to_minutes,
+                               exclude_efficiency = exclude_efficiency)
   osv_result <- calculate_psv(player_match_stats, osr_coef_df,
-                               min_adjust = min_adjust, center = center)
+                               min_adjust = min_adjust, center = center,
+                               scale_to_minutes = scale_to_minutes,
+                               exclude_efficiency = exclude_efficiency)
   dsv_result <- calculate_psv(player_match_stats, dsr_coef_df,
-                               min_adjust = min_adjust, center = center)
+                               min_adjust = min_adjust, center = center,
+                               scale_to_minutes = scale_to_minutes,
+                               exclude_efficiency = exclude_efficiency)
 
   # Additive shift so osv + dsv = psv
   raw_osv <- osv_result$psv
@@ -822,32 +881,61 @@ calculate_psv_components <- function(player_match_stats, coef_df, osr_coef_df,
 #'   match).
 #' @param min_adjust Logical. Minutes-adjust raw counts. Default \code{TRUE}.
 #' @param center Logical. Center within each round. Default \code{TRUE}.
-#' @param target One of \code{"xg"} (default) or \code{"goals"}.
+#' @param scale_to_minutes Logical. Multiply the per-90 PSV by
+#'   \code{minutes_played / 90} so values are additive over games (like EPV).
+#'   Default \code{FALSE}. See \code{\link{calculate_psv}}.
+#' @param exclude_efficiency Logical. Exclude efficiency/ratio stats. Default
+#'   \code{TRUE}. Set \code{FALSE} to score with the full trained coefficient
+#'   vector (the form used for the displayed blog PSV). See
+#'   \code{\link{calculate_psv}}.
+#' @param target One of \code{"xg"} (default, xG differential), \code{"goals"}
+#'   (goal differential), or \code{"blend"} (alpha*xG + (1-alpha)*goals — the
+#'   displayed value model; falls back to \code{"xg"} until the blend is
+#'   trained).
 #'
 #' @return A data.table with \code{psv}, \code{osv}, \code{dsv} columns.
 #'
 #' @export
 compute_player_psv <- function(player_match_stats, min_adjust = TRUE,
-                                center = TRUE, target = c("xg", "goals")) {
+                                center = TRUE, target = c("xg", "goals", "blend"),
+                                scale_to_minutes = FALSE,
+                                exclude_efficiency = TRUE) {
   target <- match.arg(target)
-  margin_coef <- load_psr_coefficients("margin", target = target)
+  dt <- data.table::as.data.table(player_match_stats)
 
-  prefix <- if (target == "goals") "gd_" else ""
-  osr_path <- system.file("extdata", paste0(prefix, "osr_coefficients.csv"),
-                           package = "panna")
-  dsr_path <- system.file("extdata", paste0(prefix, "dsr_coefficients.csv"),
-                           package = "panna")
+  # Route keepers through the GK sub-model (which carries gsaa_per90 and GK
+  # features), outfield through the target model — mirroring compute_player_psr.
+  # Without this, keepers are scored as bad outfielders (no GK shot-stopping
+  # credit). Splitting also centers GKs vs GKs and outfield vs outfield.
+  pos_col <- if ("primary_position" %in% names(dt)) "primary_position"
+             else if ("position" %in% names(dt)) "position" else NULL
+  is_gk <- if (!is.null(pos_col)) {
+    grepl("GK|Goalkeeper", dt[[pos_col]], ignore.case = TRUE)
+  } else rep(FALSE, nrow(dt))
+  is_gk[is.na(is_gk)] <- FALSE
 
-  if (osr_path != "" && dsr_path != "") {
-    osr_coef <- utils::read.csv(osr_path, stringsAsFactors = FALSE)
-    dsr_coef <- utils::read.csv(dsr_path, stringsAsFactors = FALSE)
-    calculate_psv_components(player_match_stats, margin_coef, osr_coef, dsr_coef,
-                              min_adjust = min_adjust, center = center)
-  } else {
-    cli::cli_inform("OSR/DSR coefficient files not found -- computing PSV only")
-    calculate_psv(player_match_stats, margin_coef,
-                   min_adjust = min_adjust, center = center)
+  .score <- function(sub, tgt, model) {
+    margin <- load_psr_coefficients("margin", target = tgt, model = model)
+    osr <- tryCatch(load_psr_coefficients("offense", target = tgt, model = model),
+                    error = function(e) NULL)
+    dsr <- tryCatch(load_psr_coefficients("defense", target = tgt, model = model),
+                    error = function(e) NULL)
+    if (!is.null(osr) && !is.null(dsr)) {
+      calculate_psv_components(sub, margin, osr, dsr, min_adjust = min_adjust,
+        center = center, scale_to_minutes = scale_to_minutes,
+        exclude_efficiency = exclude_efficiency)
+    } else {
+      cli::cli_inform("OSR/DSR coefficient files not found -- computing PSV only")
+      calculate_psv(sub, margin, min_adjust = min_adjust, center = center,
+        scale_to_minutes = scale_to_minutes, exclude_efficiency = exclude_efficiency)
+    }
   }
+
+  parts <- list()
+  if (any(!is_gk)) parts$outfield <- .score(dt[!is_gk], target, "outfield")
+  # GK sub-model is trained on goal-diff regardless of the outfield target.
+  if (any(is_gk))  parts$gk <- .score(dt[is_gk], "goals", "gk")
+  data.table::rbindlist(parts, fill = TRUE, use.names = TRUE)
 }
 
 
@@ -872,7 +960,7 @@ compute_player_psv <- function(player_match_stats, min_adjust = TRUE,
     "long_ball_accuracy", "cross_accuracy",
     "fwd_zone_pass_accuracy", "open_play_pass_accuracy",
     "crosses_open_play_accuracy", "bad_touch_rate",
-    "keeper_sweeper_accuracy", "errors_total_p90",
+    "keeper_sweeper_accuracy", "keeper_throws_accuracy", "errors_total_p90",
     "headed_goal_rate", "flick_on_accuracy",
     "back_zone_pass_accuracy", "chipped_pass_accuracy",
     "ibox_goal_rate", "obox_goal_rate",
@@ -893,8 +981,9 @@ compute_player_psv <- function(player_match_stats, min_adjust = TRUE,
 #' \code{inst/extdata} directory.
 #'
 #' @param type One of \code{"margin"}, \code{"offense"}, or \code{"defense"}.
-#' @param target One of \code{"xg"} (default, xG differential) or
-#'   \code{"goals"} (goal differential).
+#' @param target One of \code{"xg"} (default, xG differential), \code{"goals"}
+#'   (goal differential), or \code{"blend"} (alpha*xG + (1-alpha)*goals; falls
+#'   back to \code{"xg"} if the blend files are not yet generated).
 #' @param model One of \code{"outfield"} (default) or \code{"gk"} (goalkeeper
 #'   sub-model, trained on goal differential).
 #'
@@ -903,7 +992,7 @@ compute_player_psv <- function(player_match_stats, min_adjust = TRUE,
 #'
 #' @keywords internal
 load_psr_coefficients <- function(type = c("margin", "offense", "defense"),
-                                   target = c("xg", "goals"),
+                                   target = c("xg", "goals", "blend"),
                                    model = c("outfield", "gk")) {
   type <- match.arg(type)
   target <- match.arg(target)
@@ -913,16 +1002,24 @@ load_psr_coefficients <- function(type = c("margin", "offense", "defense"),
     # GK sub-model always uses goal diff target
     prefix <- "gk_"
   } else {
-    prefix <- if (target == "goals") "gd_" else ""
+    prefix <- switch(target, goals = "gd_", blend = "blend_", "")
   }
 
-  filename <- switch(type,
-    margin  = paste0(prefix, "psr_coefficients.csv"),
-    offense = paste0(prefix, "osr_coefficients.csv"),
-    defense = paste0(prefix, "dsr_coefficients.csv")
-  )
-
+  stub <- switch(type, margin = "psr", offense = "osr", defense = "dsr")
+  filename <- paste0(prefix, stub, "_coefficients.csv")
   path <- system.file("extdata", filename, package = "panna")
+
+  # Graceful fallback: the blend_ models are generated by a retrain; until then
+  # fall back to the xG ("") set so callers (e.g. the blog export) keep working.
+  if (path == "" && prefix == "blend_") {
+    cli::cli_warn(c(
+      "Blended coefficient file not found: {.file {filename}}",
+      "i" = "Falling back to xG coefficients. Re-run 07_train_psr_model.R to generate the blend."
+    ))
+    filename <- paste0(stub, "_coefficients.csv")
+    path <- system.file("extdata", filename, package = "panna")
+  }
+
   if (path == "") {
     cli::cli_abort(c(
       "PSR coefficient file not found: {.file {filename}}",

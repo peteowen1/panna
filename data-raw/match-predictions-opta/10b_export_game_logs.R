@@ -432,7 +432,9 @@ validate_game_log_schema <- function(dt, league, season) {
         tryCatch({
           league_stats <- all_match_stats[all_match_stats$match_id %in% league_match_ids, ]
           if (nrow(league_stats) > 0) {
-            player_game_psv <- compute_player_psv(league_stats, min_adjust = FALSE, center = TRUE)
+            player_game_psv <- compute_player_psv(league_stats, min_adjust = FALSE,
+                                                  center = TRUE, scale_to_minutes = TRUE,
+                                                  exclude_efficiency = FALSE, target = "blend")
             message(sprintf("    PSV: %d player-games", nrow(player_game_psv)))
           }
         }, error = function(e) {
@@ -473,7 +475,8 @@ validate_game_log_schema <- function(dt, league, season) {
               match_level <- compute_match_level_opta_stats(box_dt, min_minutes = 10)
               if (!is.null(match_level) && nrow(match_level) > 0L) {
                 inline_psv <- compute_player_psv(match_level, min_adjust = FALSE,
-                                                 center = TRUE)
+                                                 center = TRUE, scale_to_minutes = TRUE,
+                                                 exclude_efficiency = FALSE, target = "blend")
                 player_game_psv <- data.table::rbindlist(
                   list(player_game_psv, inline_psv), fill = TRUE, use.names = TRUE
                 )
@@ -501,6 +504,29 @@ validate_game_log_schema <- function(dt, league, season) {
         player_game_wpa = player_game_wpa,
         player_game_psv = player_game_psv
       )
+
+      # --- Display: finishing luck (goals - xGOT) + placement skill ---
+      # "Unlucky striker" signal: a player who placed shots well (high xGOT) but
+      # didn't score reads negative. Pulled from the per-match xMetrics; display
+      # only (not a value-blend input). NA-safe left join by (player_id, match_id).
+      tryCatch({
+        xg_disp <- data.table::as.data.table(
+          load_opta_xmetrics(league, season = league_season,
+                             source = "local", by_match = TRUE))
+        disp_cols <- intersect(c("goals_minus_xgot", "placement_added", "xgot"),
+                               names(xg_disp))
+        if (length(disp_cols) > 0 && all(c("player_id", "match_id") %in% names(xg_disp))) {
+          xg_disp <- unique(xg_disp[, c("player_id", "match_id", disp_cols), with = FALSE],
+                            by = c("player_id", "match_id"))
+          game_ratings[, match_id := as.character(match_id)]
+          xg_disp[, match_id := as.character(match_id)]
+          game_ratings <- merge(game_ratings, xg_disp,
+                                by = c("player_id", "match_id"), all.x = TRUE)
+        }
+      }, error = function(e) {
+        warning(sprintf("xGOT display cols join failed for %s %s: %s",
+                        league, season, e$message), call. = FALSE)
+      })
 
       # match_date from lineups
       dt_lineups <- data.table::as.data.table(lineups)
@@ -598,6 +624,7 @@ validate_game_log_schema <- function(dt, league, season) {
       "epv_keeping", "epv_defending",
       "wpa_total", "wpa_as_actor", "wpa_as_receiver",
       "psv", "osv", "dsv",
+      "goals_minus_xgot", "placement_added", "xgot",
       "panna_value_p90"),
     names(game_logs)
   )

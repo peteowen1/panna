@@ -193,14 +193,27 @@ for (league in names(league_seasons)) {
       player_metrics$league <- league
       player_metrics$season <- season
 
-      # 4j. Save as parquet
+      # 4j. Save season-level as parquet (existing consumers: ratings/blog/compare)
       output_dir <- file.path(opta_data_dir(), "xmetrics", opta_league)
       dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
       output_file <- file.path(output_dir, paste0(season, ".parquet"))
       arrow::write_parquet(player_metrics, output_file)
 
+      # 4j-ii. Per-match xmetrics (by_match) — one row per player-match — for the
+      # skills-model xG join (puts xg/npxg + finishing over-performance into
+      # match_stats). Separate artifact; leaves the season-level product above
+      # untouched.
+      player_metrics_bymatch <- aggregate_player_xmetrics(
+        spadl, lineups, min_minutes = MIN_MINUTES, by_match = TRUE)
+      player_metrics_bymatch$league <- league
+      player_metrics_bymatch$season <- season
+      bymatch_dir <- file.path(opta_data_dir(), "xmetrics_bymatch", opta_league)
+      dir.create(bymatch_dir, recursive = TRUE, showWarnings = FALSE)
+      arrow::write_parquet(player_metrics_bymatch,
+                           file.path(bymatch_dir, paste0(season, ".parquet")))
+
       all_results[[label]] <- player_metrics
-      cli_alert_success("  {label}: {nrow(player_metrics)} players saved")
+      cli_alert_success("  {label}: {nrow(player_metrics)} players ({nrow(player_metrics_bymatch)} player-matches) saved")
 
     }, error = function(e) {
       errors[[label]] <<- e$message
@@ -214,7 +227,11 @@ for (league in names(league_seasons)) {
 cli_h2("Step 4: Summary")
 
 if (length(all_results) > 0) {
-  combined <- do.call(rbind, all_results)
+  # rbindlist(fill=TRUE): leagues differ in columns now (gsaa / placement_added
+  # are only present where keepers/xGOT exist), so do.call(rbind) errors on
+  # mismatched ncol. fill=TRUE unions columns; as.data.frame keeps the
+  # downstream data.frame-style indexing below working.
+  combined <- as.data.frame(data.table::rbindlist(all_results, fill = TRUE))
 
   cli_alert_success("Processed {length(all_results)} league-seasons, {nrow(combined)} total player-seasons")
 

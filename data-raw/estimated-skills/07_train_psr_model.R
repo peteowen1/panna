@@ -86,6 +86,16 @@ gc(verbose = FALSE)
 cat(sprintf("Match stats: %s player-match rows x %d cols\n",
             format(nrow(match_stats), big.mark = ","), ncol(match_stats)))
 
+# Join per-match xG / over-performance / GSAA so the trained coefficients see the
+# redesign features. CRITICAL: step 7 reads the box-score 01_match_stats (not
+# step 2's enriched output), so without this join the coefficients would omit
+# xg_per90 / npg_minus_npxg / placement_added / gsaa entirely. Uses the same
+# shared helper as step 2 → identical feature set for training and skill ratings.
+if (!exists("use_xmetrics_features") || isTRUE(use_xmetrics_features)) {
+  match_stats <- enrich_match_stats_with_xmetrics(match_stats, fail_if_missing_frac = 0.6)
+  cat(sprintf("After xMetrics join: %d cols\n", ncol(match_stats)))
+}
+
 # Load optimized decay params (if available)
 decay_params_path <- file.path(cache_dir, "02b_decay_params.rds")
 if (file.exists(decay_params_path)) {
@@ -747,6 +757,31 @@ if (has_xg) {
     label  = "xG",
     X = X_xg_train, w = w_xg, fids = fold_xg, X_test = X_xg_test
   )
+
+  # Blended-target models (for the DISPLAYED value PSV): alpha*xG + (1-alpha)*goals,
+  # on the same rows/design as the xG model. xG-diff is stable/predictive; goal-diff
+  # rewards finishing — the blend credits finishing without pure-goal noise. The ""
+  # (xG) and gd_ sets above stay as-is for the RAPM target / other consumers.
+  a <- if (exists("psv_blend_alpha")) psv_blend_alpha else 0.6
+  cat(sprintf("\n=== Training blended-target models (alpha=%.2f xG / %.2f goals) ===\n",
+              a, 1 - a))
+  blend_models <- train_and_save(
+    y_margin = a * train_data$xg_diff[train_rows][xg_in_train] +
+               (1 - a) * train_data$goal_diff[train_rows][xg_in_train],
+    y_off    = a * train_data$home_xg[train_rows][xg_in_train] +
+               (1 - a) * train_data$home_goals[train_rows][xg_in_train],
+    y_def    = a * train_data$away_xg[train_rows][xg_in_train] +
+               (1 - a) * train_data$away_goals[train_rows][xg_in_train],
+    y_margin_test = a * train_data$xg_diff[test_rows][xg_in_test] +
+                    (1 - a) * train_data$goal_diff[test_rows][xg_in_test],
+    y_off_test    = a * train_data$home_xg[test_rows][xg_in_test] +
+                    (1 - a) * train_data$home_goals[test_rows][xg_in_test],
+    y_def_test    = a * train_data$away_xg[test_rows][xg_in_test] +
+                    (1 - a) * train_data$away_goals[test_rows][xg_in_test],
+    prefix = "blend_",
+    label  = sprintf("Blend a=%.2f", a),
+    X = X_xg_train, w = w_xg, fids = fold_xg, X_test = X_xg_test
+  )
 }
 
 # 16. Train Goal Diff Models (Secondary) ----
@@ -831,6 +866,12 @@ gk_skill_keep_cols <- character(0)
 {
   cat("Loading match stats for GK feature extraction...\n")
   ms_dt_gk <- data.table::as.data.table(readRDS(ms_path))
+  # Same xMetrics join as the outfield path — without it the GK skill estimation
+  # never sees gsaa_per90 (keeper shot-stopping), so it can't reach the GK
+  # coefficients. Uses the shared helper for an identical feature set.
+  if (!exists("use_xmetrics_features") || isTRUE(use_xmetrics_features)) {
+    ms_dt_gk <- enrich_match_stats_with_xmetrics(ms_dt_gk, fail_if_missing_frac = 0.6)
+  }
   ms_dt_gk[, match_date := as.Date(match_date)]
   if (!"season_end_year" %in% names(ms_dt_gk)) {
     ms_dt_gk[, season_end_year := data.table::fifelse(

@@ -354,3 +354,33 @@ test_that("download_opta_catalog accepts fresh local file within TTL", {
   result <- download_opta_catalog(max_age_hours = 6)
   expect_equal(unlist(result$competitions$EPL$seasons), "2024-2025")
 })
+
+test_that("enrich_match_stats_with_xmetrics surfaces gaps and fail-fasts", {
+  # Missing join keys -> returns input unchanged with a warning (no silent drop).
+  ms_nokey <- data.frame(player_id = "p1", goals_p90 = 1, stringsAsFactors = FALSE)
+  expect_warning(
+    out <- enrich_match_stats_with_xmetrics(ms_nokey, verbose = FALSE),
+    "missing league/season/match_id/player_id"
+  )
+  expect_equal(nrow(out), 1L)
+
+  # A league-season with no local xmetrics_bymatch file => total miss. With a
+  # finite fail_if_missing_frac the helper must STOP rather than silently train
+  # an xG-blind model (the regression this guard prevents). Library default
+  # (Inf) only warns.
+  ms <- data.frame(
+    player_id = "p1", player_name = "P", match_id = "m1",
+    league = "__nonexistent_league__", season = "1900-1901",
+    goals_p90 = 1, stringsAsFactors = FALSE
+  )
+  expect_error(
+    suppressWarnings(
+      enrich_match_stats_with_xmetrics(ms, verbose = FALSE,
+                                       fail_if_missing_frac = 0.5)),
+    "Refusing to proceed|No per-match xMetrics"
+  )
+  # Inf default: warns and returns unchanged (no xG columns added).
+  out2 <- suppressWarnings(
+    enrich_match_stats_with_xmetrics(ms, verbose = FALSE))
+  expect_false("xg_per90" %in% names(out2))
+})

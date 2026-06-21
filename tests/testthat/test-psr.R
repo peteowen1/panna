@@ -428,6 +428,33 @@ test_that(".estimate_prematch_skills_batch returns named list of data.tables", {
   expect_true(all(names(result) %in% as.character(as.Date(dates))))
 })
 
+test_that(".estimate_prematch_skills_batch detects _per90 (xMetrics) stat columns", {
+  # Regression: the stat-column auto-detect used grep("_p90$") which does NOT
+  # match `_per90` — so xg_per90 and every xMetrics over-performance feature was
+  # specified in .get_psr_skill_cols() but never estimated/trained. The fix
+  # greps `_p90$|_per90$` plus the registered skill-col union. This test pins it.
+  ms <- make_psr_test_data(n_players = 3, n_matches = 6)
+  set.seed(7)
+  # Add an xMetrics-style _per90 column (signed, like over-performance)
+  ms$xg_per90 <- runif(nrow(ms), 0, 1)
+  ms$npg_minus_npxg_per90 <- rnorm(nrow(ms))
+
+  result <- panna:::.estimate_prematch_skills_batch(
+    ms, ref_dates = c("2024-02-01", "2024-03-01"),
+    min_weighted_90s = 0, verbose = FALSE
+  )
+
+  # The estimator must have produced a smoothed estimate for the _per90 columns.
+  non_empty <- Filter(function(d) nrow(d) > 0, result)
+  expect_true(length(non_empty) > 0)
+  sk <- non_empty[[1]]
+  expect_true("xg_per90" %in% names(sk))
+  expect_true("npg_minus_npxg_per90" %in% names(sk))
+  # And the estimate is a real number (was silently absent before the fix)
+  expect_true(is.numeric(sk$xg_per90))
+  expect_false(all(is.na(sk$xg_per90)))
+})
+
 test_that(".estimate_prematch_skills_batch with single date matches estimate_player_skills", {
   ms <- make_psr_test_data(n_players = 3, n_matches = 5)
   ref_date <- as.Date("2024-02-15")

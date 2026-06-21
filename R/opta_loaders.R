@@ -1866,6 +1866,10 @@ query_remote_opta_match_events <- function(opta_league, season = NULL,
 #' @param columns Optional character vector of columns to select.
 #' @param source Data source: "remote" (default, from GitHub Releases) or
 #'   "local" (pipeline-generated files).
+#' @param by_match Logical. If \code{TRUE}, load the per-player-match artifact
+#'   (\code{xmetrics_bymatch/}, one row per player-match keyed by
+#'   \code{match_id}) instead of the season-level aggregate. Default
+#'   \code{FALSE}.
 #'
 #' @return Data frame with player xmetrics including xg, npxg, xa, xpass stats.
 #'
@@ -1879,18 +1883,24 @@ query_remote_opta_match_events <- function(opta_league, season = NULL,
 #' head(epl_xm[order(-epl_xm$xg), c("player_name", "team_name", "xg", "goals")])
 #' }
 load_opta_xmetrics <- function(league, season = NULL, columns = NULL,
-                                source = c("remote", "local")) {
+                                source = c("remote", "local"),
+                                by_match = FALSE) {
   source <- match.arg(source)
   opta_league <- to_opta_league(league)
 
-  # Remote: use consolidated opta_xmetrics.parquet from GitHub Releases
+  # by_match selects the per-player-match artifact (one row per player-match,
+  # keyed by match_id) instead of the season-level aggregate. Used by the skills
+  # pipeline's xG join; produced alongside the season file by 03.
+  subdir <- if (by_match) "xmetrics_bymatch" else "xmetrics"
+
+  # Remote: use consolidated parquet from GitHub Releases
   if (source == "remote") {
-    return(query_remote_opta_parquet("xmetrics", opta_league, season,
+    return(query_remote_opta_parquet(subdir, opta_league, season,
                                       columns = columns))
   }
 
   # Local: pipeline-generated per-league/season files
-  xmetrics_dir <- file.path(opta_data_dir(), "xmetrics", opta_league)
+  xmetrics_dir <- file.path(opta_data_dir(), subdir, opta_league)
 
   if (!is.null(season)) {
     parquet_path <- file.path(xmetrics_dir, paste0(season, ".parquet"))
@@ -1937,6 +1947,116 @@ load_opta_xmetrics <- function(league, season = NULL, columns = NULL,
 
   cli::cli_alert_success("Loaded {format(nrow(result), big.mark=',')} rows ({ncol(result)} columns)")
   result
+}
+
+
+#' Enrich per-match stats with per-match xMetrics (xG + finishing/keeper value)
+#'
+#' Left-joins per-player-match xG and the redesign's over-performance features
+#' (npg/ibox/obox \code{g_minus_xg}, \code{placement_added}, keeper \code{gsaa},
+#' plus \code{xg_per90}/\code{npxg_per90}/xA/xPass) onto a box-score
+#' \code{match_stats} table by \code{(player_id, match_id)}, sourcing the
+#' per-match \code{xmetrics_bymatch/} artifact via
+#' \code{\link{load_opta_xmetrics}(by_match = TRUE)}. Shared by the skills
+#' estimation (step 2) and the PSR/PSV coefficient training (step 7) so both
+#' see the identical feature set (avoids the train/serve drift of a duplicated
+#' inline join).
+#'
+#' @param match_stats data.table/data.frame with \code{league}, \code{season},
+#'   \code{match_id}, \code{player_id}.
+#' @param verbose Print join diagnostics. Default \code{TRUE}.
+#' @param fail_if_missing_frac Numeric in \code{[0, 1]}. If the fraction of
+#'   league-seasons whose \code{xmetrics_bymatch/} file fails to load exceeds
+#'   this, \code{stop()} instead of silently training on a partly-xG-blind
+#'   dataset. Default \code{Inf} (library-safe: never fails). Pipeline callers
+#'   that require the features (skills step 2, PSR step 7) should pass a finite
+#'   value (e.g. \code{0.5}). A total miss (no files at all) always errors when
+#'   this is finite, regardless of the fraction.
+#'
+#' @return \code{match_stats} (as data.table) with the xMetrics columns added
+#'   (NA-filled to 0 for player-matches with no shots). Returns input unchanged
+#'   (with a warning) if key columns are missing or no bymatch files are found
+#'   and \code{fail_if_missing_frac} is \code{Inf}.
+#' @export
+enrich_match_stats_with_xmetrics <- function(match_stats, verbose = TRUE,
+                                              fail_if_missing_frac = Inf) {
+  match_stats <- data.table::as.data.table(match_stats)
+
+  # source xmetrics column -> match_stats column (suffix where names collide)
+  xm_map <- c(
+    xg_per90 = "xg_per90", npxg_per90 = "npxg_per90",
+    xa_per90 = "xa_per90_xmetrics",
+    xpass_overperformance_per90 = "xpass_overperformance_per90_xmetrics",
+    npg_minus_npxg_per90 = "npg_minus_npxg_per90",
+    ibox_g_minus_xg_per90 = "ibox_g_minus_xg_per90",
+    obox_g_minus_xg_per90 = "obox_g_minus_xg_per90",
+    placement_added_per90 = "placement_added_per90",
+    gsaa_per90 = "gsaa_per90"
+  )
+
+  if (!all(c("league", "season", "match_id", "player_id") %in% names(match_stats))) {
+    warning("match_stats missing league/season/match_id/player_id — skipping xMetrics join",
+            call. = FALSE)
+    return(match_stats)
+  }
+
+  ls_pairs <- unique(match_stats[, .(league, season)])
+  if (verbose) cat(sprintf("  Joining per-match xMetrics over %d league-seasons...\n",
+                           nrow(ls_pairs)))
+
+  xm_list <- vector("list", nrow(ls_pairs))
+  n_missing <- 0L
+  for (i in seq_len(nrow(ls_pairs))) {
+    lg <- ls_pairs$league[i]; sn <- ls_pairs$season[i]
+    xm_list[[i]] <- tryCatch({
+      x <- data.table::as.data.table(
+        load_opta_xmetrics(lg, season = sn, source = "local", by_match = TRUE))
+      keep <- intersect(c("player_id", "match_id", names(xm_map)), names(x))
+      x[, ..keep]
+    }, error = function(e) { n_missing <<- n_missing + 1L; NULL })
+  }
+  xm <- data.table::rbindlist(Filter(Negate(is.null), xm_list), fill = TRUE)
+
+  miss_frac <- n_missing / nrow(ls_pairs)
+
+  if (nrow(xm) == 0) {
+    msg <- sprintf(paste0(
+      "No per-match xMetrics found (xmetrics_bymatch/ absent for all %d league-seasons). ",
+      "Re-run data-raw/epv/03_calculate_player_xmetrics.R."), nrow(ls_pairs))
+    # A total miss is fatal whenever the caller demanded the features (finite
+    # fail_if_missing_frac) — training xG-blind silently is the bug this exists
+    # to prevent. Library-default (Inf) warns and proceeds.
+    if (is.finite(fail_if_missing_frac)) {
+      stop(msg, " Refusing to proceed (fail_if_missing_frac is set).", call. = FALSE)
+    }
+    warning(msg, " Proceeding WITHOUT xG features.", call. = FALSE)
+    return(match_stats)
+  }
+
+  # Partial gap: a `cat` would vanish under verbose=FALSE / in pipeline logs, and
+  # NA->0-filling unmatched rows makes "file missing" indistinguishable from
+  # "player took no shots". Surface it as a warning, and fail when it's too wide.
+  if (n_missing > 0L) {
+    gapmsg <- sprintf("xMetrics bymatch missing for %d/%d league-seasons (%.0f%%).",
+                      n_missing, nrow(ls_pairs), 100 * miss_frac)
+    if (miss_frac > fail_if_missing_frac) {
+      stop(gapmsg, " Exceeds fail_if_missing_frac=", fail_if_missing_frac,
+           "; re-run 03_calculate_player_xmetrics.R.", call. = FALSE)
+    }
+    warning(gapmsg, " Affected player-matches get xMetrics = 0.", call. = FALSE)
+  }
+
+  old <- intersect(names(xm_map), names(xm))
+  data.table::setnames(xm, old, unname(xm_map[old]))
+  xm <- unique(xm, by = c("player_id", "match_id"))
+  match_stats <- merge(match_stats, xm, by = c("player_id", "match_id"), all.x = TRUE)
+  added <- intersect(unname(xm_map), names(match_stats))
+  for (col in added) {
+    data.table::set(match_stats, which(is.na(match_stats[[col]])), col, 0)
+  }
+  if (verbose) cat(sprintf("  xMetrics joined: %d cols (%s); %d/%d league-seasons missing bymatch\n",
+                           length(added), paste(added, collapse = ", "), n_missing, nrow(ls_pairs)))
+  match_stats
 }
 
 
