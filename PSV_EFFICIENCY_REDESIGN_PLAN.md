@@ -1,5 +1,15 @@
 # PSV / PSR Efficiency Redesign — Implementation Plan
 
+> ✅ **SHIPPED 2026-06-21.** panna PR #107 merged to `main`; 11 seasons
+> (2015-16 → 2025-26) rebuilt on the trained blend model and live on R2.
+> Messi WC2026 hat-trick PSV **−0.37 → +0.18**; keepers route through the GK
+> model (GSAA); finishing-aware PSV (attackers top the Value tab); new display
+> stats `goals_minus_xgot`/`placement_added` (blog PR inthegame-blog#332).
+> Pre-2015 seasons stay on the old model (no xGOT data exists that far back).
+> The deep gotchas (`_per90` regex, step-7 xG join, GK routing, box-minute
+> override, blend target) are now in `CLAUDE.md`. This doc is the historical
+> record of how it was built.
+
 Tracks the redesign triggered by **pannadata #79** (WC Value tab: per-90 PSV not
 summable; Messi hat-trick reads negative PSV). Two root causes, both confirmed
 against real data + coefficients:
