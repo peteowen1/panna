@@ -485,6 +485,24 @@ predict_epv_probs <- function(model, features) {
   feature_cols <- model$panna_metadata$feature_cols
   method <- model$method %||% "goal"  # Default to goal for backwards compatibility
 
+  # --- Feature-contract guard (the "can't silently revert to the wrong model") ---
+  # A simple-mode EPV model whose feature_cols differ from what the current code
+  # emits (EPV_SIMPLE_FEATURE_COLS) is a VERSION MISMATCH — e.g. the pre-overhaul
+  # 17-feature model (dx/dy/result_success) loaded against 14-feature code. The
+  # 0-fill below would then silently score every action with those features = 0,
+  # producing garbage (this shipped inflated EPV 2026-06-21). Refuse to score.
+  if (identical(model$panna_metadata$feature_mode %||% NA_character_, "simple")) {
+    extra <- setdiff(feature_cols, EPV_SIMPLE_FEATURE_COLS)
+    if (length(extra) > 0) {
+      cli::cli_abort(c(
+        "EPV model feature-contract MISMATCH — refusing to score with a stale/wrong model.",
+        "x" = "Model expects {length(feature_cols)} features incl. {.val {extra}} the current code does NOT emit.",
+        "i" = "Code emits {length(EPV_SIMPLE_FEATURE_COLS)} (EPV_SIMPLE_FEATURE_COLS) -- this looks like the pre-overhaul model.",
+        "i" = "Use the clean model: pass {.code epv_model_override} or republish the clean model as default (see MODELS.md)."
+      ))
+    }
+  }
+
   # Convert to data.table for fast column operations
   dt <- data.table::as.data.table(features)
 
