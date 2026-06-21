@@ -672,7 +672,7 @@ load_wp_model <- function(path = NULL) {
         "i" = "Drop the {.arg path} argument to fall back to pannamodels + local."
       ))
     }
-    cli::cli_alert_success("Loaded WP model from {model_path}")
+    .report_model_provenance("WP", model_path, "explicit path")
     return(readRDS(model_path))
   }
 
@@ -686,7 +686,7 @@ load_wp_model <- function(path = NULL) {
       }
     )
     if (!is.null(model)) {
-      cli::cli_alert_success("Loaded WP model from pannamodels")
+      .report_model_provenance("WP", NULL, "pannamodels package")
       return(model)
     }
   }
@@ -694,7 +694,7 @@ load_wp_model <- function(path = NULL) {
   # 3. Local fallback
   default_path <- file.path(opta_data_dir(), "models", "wp_model.rds")
   if (file.exists(default_path)) {
-    cli::cli_alert_success("Loaded WP model from {default_path}")
+    .report_model_provenance("WP", default_path, "local pannadata fallback")
     return(readRDS(default_path))
   }
 

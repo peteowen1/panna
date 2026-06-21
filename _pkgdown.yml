@@ -116,6 +116,7 @@ reference:
   desc: Possession chain analysis and pitch visualization
   contents:
   - create_possession_chains
+  - add_red_card_to_chains
   - summarize_match_chains
   - summarize_player_chains
   - draw_pitch
@@ -140,7 +141,11 @@ reference:
   - save_xg_model
   - load_xg_model
   - validate_xg_model
+  - fit_xgot_model
+  - predict_xgot
+  - load_xgot_model
   - aggregate_player_xmetrics
+  - enrich_match_stats_with_xmetrics
   - fit_xpass_model
   - predict_xpass
   - save_xpass_model

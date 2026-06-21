@@ -53,6 +53,10 @@ match_stats <- data.table::as.data.table(readRDS(ms_path))
 if (!inherits(match_stats$match_date, "Date")) {
   match_stats[, match_date := as.Date(match_date)]
 }
+# Enrich with per-match xMetrics so the weekly PSR snapshots see the xG
+# over-performance / gsaa skill features (same as steps 2/7). Without this the
+# snapshot loop estimates skills from box-score-only stats and PSR is xG-blind.
+match_stats <- enrich_match_stats_with_xmetrics(match_stats, verbose = FALSE)
 gc(verbose = FALSE)
 cat(sprintf("  Rows: %s | Date range: %s to %s\n",
             format(nrow(match_stats), big.mark = ","),
