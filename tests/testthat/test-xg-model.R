@@ -349,6 +349,7 @@ test_that("keeper GSAA = expected goals faced - goals conceded (cross-team)", {
     player_id = c("kA", "kB", "s1", "s2"),
     player_name = c("KeepA", "KeepB", "S1", "S2"),
     team_id = c("t1", "t2", "t1", "t2"),
+    team_name = c("T1", "T2", "T1", "T2"),
     position = c("GK", "Goalkeeper", "CF", "CF"),
     minutes_played = 90, stringsAsFactors = FALSE
   )

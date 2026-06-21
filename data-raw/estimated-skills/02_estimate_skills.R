@@ -64,7 +64,7 @@ if (file.exists(decay_params_path)) {
 if (use_xmetrics_features) {
   # Per-match xG join (shared helper — step 7 uses the same so coefficients and
   # skill ratings see the identical feature set).
-  match_stats <- enrich_match_stats_with_xmetrics(match_stats)
+  match_stats <- enrich_match_stats_with_xmetrics(match_stats, fail_if_missing_frac = 0.6)
 }
 
 # 6. Estimate Skills ----

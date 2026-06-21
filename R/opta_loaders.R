@@ -1965,12 +1965,21 @@ load_opta_xmetrics <- function(league, season = NULL, columns = NULL,
 #' @param match_stats data.table/data.frame with \code{league}, \code{season},
 #'   \code{match_id}, \code{player_id}.
 #' @param verbose Print join diagnostics. Default \code{TRUE}.
+#' @param fail_if_missing_frac Numeric in \code{[0, 1]}. If the fraction of
+#'   league-seasons whose \code{xmetrics_bymatch/} file fails to load exceeds
+#'   this, \code{stop()} instead of silently training on a partly-xG-blind
+#'   dataset. Default \code{Inf} (library-safe: never fails). Pipeline callers
+#'   that require the features (skills step 2, PSR step 7) should pass a finite
+#'   value (e.g. \code{0.5}). A total miss (no files at all) always errors when
+#'   this is finite, regardless of the fraction.
 #'
 #' @return \code{match_stats} (as data.table) with the xMetrics columns added
 #'   (NA-filled to 0 for player-matches with no shots). Returns input unchanged
-#'   (with a warning) if key columns are missing or no bymatch files are found.
+#'   (with a warning) if key columns are missing or no bymatch files are found
+#'   and \code{fail_if_missing_frac} is \code{Inf}.
 #' @export
-enrich_match_stats_with_xmetrics <- function(match_stats, verbose = TRUE) {
+enrich_match_stats_with_xmetrics <- function(match_stats, verbose = TRUE,
+                                              fail_if_missing_frac = Inf) {
   match_stats <- data.table::as.data.table(match_stats)
 
   # source xmetrics column -> match_stats column (suffix where names collide)
@@ -2008,12 +2017,33 @@ enrich_match_stats_with_xmetrics <- function(match_stats, verbose = TRUE) {
   }
   xm <- data.table::rbindlist(Filter(Negate(is.null), xm_list), fill = TRUE)
 
+  miss_frac <- n_missing / nrow(ls_pairs)
+
   if (nrow(xm) == 0) {
-    warning(sprintf(paste0(
+    msg <- sprintf(paste0(
       "No per-match xMetrics found (xmetrics_bymatch/ absent for all %d league-seasons). ",
-      "Re-run data-raw/epv/03_calculate_player_xmetrics.R. Proceeding WITHOUT xG features."),
-      nrow(ls_pairs)), call. = FALSE)
+      "Re-run data-raw/epv/03_calculate_player_xmetrics.R."), nrow(ls_pairs))
+    # A total miss is fatal whenever the caller demanded the features (finite
+    # fail_if_missing_frac) — training xG-blind silently is the bug this exists
+    # to prevent. Library-default (Inf) warns and proceeds.
+    if (is.finite(fail_if_missing_frac)) {
+      stop(msg, " Refusing to proceed (fail_if_missing_frac is set).", call. = FALSE)
+    }
+    warning(msg, " Proceeding WITHOUT xG features.", call. = FALSE)
     return(match_stats)
+  }
+
+  # Partial gap: a `cat` would vanish under verbose=FALSE / in pipeline logs, and
+  # NA->0-filling unmatched rows makes "file missing" indistinguishable from
+  # "player took no shots". Surface it as a warning, and fail when it's too wide.
+  if (n_missing > 0L) {
+    gapmsg <- sprintf("xMetrics bymatch missing for %d/%d league-seasons (%.0f%%).",
+                      n_missing, nrow(ls_pairs), 100 * miss_frac)
+    if (miss_frac > fail_if_missing_frac) {
+      stop(gapmsg, " Exceeds fail_if_missing_frac=", fail_if_missing_frac,
+           "; re-run 03_calculate_player_xmetrics.R.", call. = FALSE)
+    }
+    warning(gapmsg, " Affected player-matches get xMetrics = 0.", call. = FALSE)
   }
 
   old <- intersect(names(xm_map), names(xm))

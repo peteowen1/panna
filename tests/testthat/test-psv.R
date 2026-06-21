@@ -255,3 +255,49 @@ test_that("calculate_psv errors on no matching columns", {
 
   expect_error(calculate_psv(stats, coef_df), "No matching stat columns")
 })
+
+test_that("compute_player_psv routes keepers through the GK model (gsaa drives DSV)", {
+  # Regression: compute_player_psv had NO test and originally applied the
+  # outfield model to everyone — keepers scored as bad outfielders, no GSAA
+  # credit. It now splits GK vs outfield and scores keepers with the gk_ model
+  # (gsaa_per90 loads on GK defensive value, +0.025). This pins both that the
+  # split happens and that a mixed frame keeps every row.
+  gk <- data.frame(
+    player_id = paste0("gk", 1:4),
+    player_name = paste0("Keeper", 1:4),
+    match_id = paste0("m", 1:4),
+    primary_position = "GK",
+    total_minutes = 90,
+    saves_p90 = 3,                       # identical GK action stat
+    gsaa_per90 = c(2, 2, -2, -2),        # only GSAA varies
+    stringsAsFactors = FALSE
+  )
+  outfield <- data.frame(
+    player_id = "of1", player_name = "Striker", match_id = "m5",
+    primary_position = "Striker", total_minutes = 90,
+    # stats with non-zero outfield coefficients (goals_p90 is zeroed by glmnet —
+    # finishing enters via over-performance, so use shot-volume stats here)
+    shots_p90 = 3, shots_obox_p90 = 1, pen_area_entries_p90 = 4,
+    saves_p90 = 0, gsaa_per90 = 0,
+    stringsAsFactors = FALSE
+  )
+  dt <- data.table::rbindlist(list(gk, outfield), fill = TRUE)
+
+  res <- data.table::as.data.table(
+    suppressWarnings(compute_player_psv(
+      dt, min_adjust = FALSE, center = TRUE,
+      scale_to_minutes = FALSE, exclude_efficiency = FALSE, target = "blend")))
+
+  # Mixed frame: every row preserved (outfield + GK both scored, none dropped)
+  expect_equal(nrow(res), 5L)
+  expect_true(all(c("psv", "osv", "dsv") %in% names(res)))
+  expect_false(any(is.na(res$dsv)))
+
+  # GSAA routed to GK defensive value: high-GSAA keepers out-score low-GSAA ones.
+  # (Only possible if keepers went through the gk_ model — the outfield DSR has
+  # no gsaa coefficient.)
+  res[, is_high_gsaa := player_id %in% c("gk1", "gk2")]
+  gk_rows <- res[grepl("^gk", player_id)]
+  expect_gt(mean(gk_rows[is_high_gsaa == TRUE]$dsv),
+            mean(gk_rows[is_high_gsaa == FALSE]$dsv))
+})

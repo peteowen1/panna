@@ -4,18 +4,31 @@
 \alias{enrich_match_stats_with_xmetrics}
 \title{Enrich per-match stats with per-match xMetrics (xG + finishing/keeper value)}
 \usage{
-enrich_match_stats_with_xmetrics(match_stats, verbose = TRUE)
+enrich_match_stats_with_xmetrics(
+  match_stats,
+  verbose = TRUE,
+  fail_if_missing_frac = Inf
+)
 }
 \arguments{
 \item{match_stats}{data.table/data.frame with \code{league}, \code{season},
 \code{match_id}, \code{player_id}.}
 
 \item{verbose}{Print join diagnostics. Default \code{TRUE}.}
+
+\item{fail_if_missing_frac}{Numeric in \code{[0, 1]}. If the fraction of
+league-seasons whose \code{xmetrics_bymatch/} file fails to load exceeds
+this, \code{stop()} instead of silently training on a partly-xG-blind
+dataset. Default \code{Inf} (library-safe: never fails). Pipeline callers
+that require the features (skills step 2, PSR step 7) should pass a finite
+value (e.g. \code{0.5}). A total miss (no files at all) always errors when
+this is finite, regardless of the fraction.}
 }
 \value{
 \code{match_stats} (as data.table) with the xMetrics columns added
 (NA-filled to 0 for player-matches with no shots). Returns input unchanged
-(with a warning) if key columns are missing or no bymatch files are found.
+(with a warning) if key columns are missing or no bymatch files are found
+and \code{fail_if_missing_frac} is \code{Inf}.
 }
 \description{
 Left-joins per-player-match xG and the redesign's over-performance features
