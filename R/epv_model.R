@@ -1343,8 +1343,10 @@ calculate_action_type_epv <- function(spadl_with_epv) {
 #'     \item{n_actions}{Number of SPADL actions by this player in this match}
 #'     \item{epv_total}{Total EPV = actor + receiver + duel_blame}
 #'     \item{epv_offensive}{Offensive EPV = passing + shooting + dribbling +
-#'       aerial + keeping + receiver credit}
-#'     \item{epv_defensive}{Defensive EPV = defending + duel_blame}
+#'       attacking-third aerials + receiver credit}
+#'     \item{epv_defensive}{Defensive EPV = defending + keeping + mid/defensive
+#'       aerials + duel_blame (keeper handling and defensive headers are
+#'       defensive). offensive + defensive == epv_total always.}
 #'     \item{epv_as_actor, epv_as_receiver, epv_duel_blame}{Credit source breakdown}
 #'     \item{epv_passing}{Outfield passing + ball touches}
 #'     \item{epv_shooting}{Shot credit (xG-weighted)}
@@ -1461,15 +1463,30 @@ aggregate_player_game_epv <- function(spadl_with_epv, lineups = NULL,
     player_epv[is.na(get(col_name)), (col_name) := 0]
   }
 
-  # Offensive = passing + shooting + dribbling + aerial + keeping + receiver.
-  # Keeper and aerial credits stay in offense so the total is identical to the
-  # pre-split definition -- only the breakdown is now more granular.
-  # Defensive = defending + duel_blame (unchanged).
+  # Offensive vs defensive roll-up. The split is presentational only —
+  # offensive + defensive == epv_total regardless of bucketing — so re-bucketing
+  # never changes a player's headline EPV / EPV(ADJ).
+  #   - Keeper handling (pick-up/claim/punch) is DEFENSIVE: it ends opponent
+  #     attacks, consistent with keeper_save already being in epv_defending.
+  #   - Aerials are SPLIT by pitch location: attacking-third wins (flick-ons,
+  #     headers toward goal, start_x > 67) are offensive; mid/defensive-third
+  #     clearances are defensive. Unknown-location aerials default to defensive.
+  # The displayed epv_aerial / epv_keeping columns stay as TOTALS; only the
+  # offensive/defensive roll-up splits them.
+  aerial_att <- dt[action_type == "aerial" & start_x > 67, .(
+    epv_aerial_att = sum(get(credit_col), na.rm = TRUE)
+  ), by = .(player_id, match_id)]
+  player_epv <- merge(player_epv, aerial_att, by = c("player_id", "match_id"),
+                       all.x = TRUE)
+  player_epv[is.na(epv_aerial_att), epv_aerial_att := 0]
+
   player_epv[, `:=`(
-    epv_offensive = epv_passing + epv_shooting + epv_dribbling + epv_aerial +
-                    epv_keeping + epv_as_receiver,
-    epv_defensive = epv_defending + epv_duel_blame
+    epv_offensive = epv_passing + epv_shooting + epv_dribbling +
+                    epv_aerial_att + epv_as_receiver,
+    epv_defensive = epv_defending + epv_keeping +
+                    (epv_aerial - epv_aerial_att) + epv_duel_blame
   )]
+  player_epv[, epv_aerial_att := NULL]  # internal split helper, not exported
 
   # --- Join lineups for minutes and per-90 ---
   if (!is.null(lineups) && "minutes_played" %in% names(lineups)) {
@@ -1562,6 +1579,45 @@ save_epv_model <- function(epv_model, path = NULL) {
 #'
 #' Loads pre-trained EPV model from disk.
 #'
+#' Report which model file was loaded, with date + staleness warning
+#'
+#' The model-loader fallback chains (explicit path → pannamodels → local) used to
+#' announce only the source, not the file DATE — so a silent fallback to a stale
+#' model (the 2026-06-21 inflated-EPV incident) looked identical to a correct
+#' load in the logs. This always prints the resolved file's modification date and
+#' WARNS if it's older than \code{max_age_days}, so a stale model is visible.
+#'
+#' @param model_label e.g. "EPV", "WP".
+#' @param model_path Resolved file path, or NULL for package-provided models.
+#' @param source Human label for where it came from.
+#' @param max_age_days Warn above this age (default 14).
+#' @keywords internal
+.report_model_provenance <- function(model_label, model_path, source,
+                                     max_age_days = 14) {
+  if (is.null(model_path) || !file.exists(model_path)) {
+    cli::cli_alert_success(
+      "Loaded {model_label} model from {source} (date unknown -- pass an explicit path/override to pin the version)")
+    return(invisible())
+  }
+  mtime <- file.info(model_path)$mtime
+  age <- as.numeric(difftime(Sys.time(), mtime, units = "days"))
+  line <- sprintf("Loaded %s model from %s [%s, modified %s, %.0f days old]",
+                  model_label, basename(model_path), source,
+                  format(mtime, "%Y-%m-%d"), age)
+  if (isTRUE(age > max_age_days)) {
+    cli::cli_warn(c(
+      line,
+      "!" = paste("This model is >{round(max_age_days)} days old — confirm it's the",
+                  "intended (latest) version. For game-logs, pass",
+                  "{.code epv_model_override}/{.code wp_model_override} to pin the",
+                  "post-overhaul models (see MODELS.md).")
+    ))
+  } else {
+    cli::cli_alert_success(line)
+  }
+  invisible()
+}
+
 #' @param path Directory containing model. If NULL, uses pannadata/data/opta/models/
 #'
 #' @return EPV model
@@ -1571,7 +1627,7 @@ load_epv_model <- function(path = NULL) {
   if (!is.null(path)) {
     model_path <- file.path(path, "epv_model.rds")
     if (file.exists(model_path)) {
-      cli::cli_alert_success("Loaded EPV model from {model_path}")
+      .report_model_provenance("EPV", model_path, "explicit path")
       return(readRDS(model_path))
     }
   }
@@ -1586,7 +1642,7 @@ load_epv_model <- function(path = NULL) {
       }
     )
     if (!is.null(model)) {
-      cli::cli_alert_success("Loaded EPV model from pannamodels")
+      .report_model_provenance("EPV", NULL, "pannamodels package")
       return(model)
     }
   }
@@ -1594,7 +1650,7 @@ load_epv_model <- function(path = NULL) {
   # Fall back to local pannadata path
   default_path <- file.path(opta_data_dir(), "models", "epv_model.rds")
   if (file.exists(default_path)) {
-    cli::cli_alert_success("Loaded EPV model from {default_path}")
+    .report_model_provenance("EPV", default_path, "local pannadata fallback")
     return(readRDS(default_path))
   }
 

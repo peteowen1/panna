@@ -28,8 +28,10 @@ A data.table with one row per player per match:
 \item{n_actions}{Number of SPADL actions by this player in this match}
 \item{epv_total}{Total EPV = actor + receiver + duel_blame}
 \item{epv_offensive}{Offensive EPV = passing + shooting + dribbling +
-aerial + keeping + receiver credit}
-\item{epv_defensive}{Defensive EPV = defending + duel_blame}
+attacking-third aerials + receiver credit}
+\item{epv_defensive}{Defensive EPV = defending + keeping + mid/defensive
+aerials + duel_blame (keeper handling and defensive headers are
+defensive). offensive + defensive == epv_total always.}
 \item{epv_as_actor, epv_as_receiver, epv_duel_blame}{Credit source breakdown}
 \item{epv_passing}{Outfield passing + ball touches}
 \item{epv_shooting}{Shot credit (xG-weighted)}
