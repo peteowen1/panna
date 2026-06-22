@@ -279,6 +279,57 @@ data.table::setorder(match_stats, match_date)
 match_date_vec <- match_stats$match_date  # cached for binary search
 cat(sprintf("  match_stats sorted by date\n"))
 
+# --- Cross-league PSR offsets (transfer-graph calibration) ----
+# PSR is built from box-score rates that barely vary by league, so strong
+# players in weakly-connected leagues post inflated PSR. Step 06 estimates a
+# per-league additive offset from player transfers (Big-5 anchored) and saves
+# it; we load that table and add it so the weekly snapshots use the IDENTICAL
+# calibration the seasonal/WC PSR uses. To look up each player's offset we
+# attach their "current" league as of the snapshot date (max-minutes competition
+# in the trailing window, falling back to all-time-before-d).
+psr_offsets_path <- file.path(cache_dir, "psr_league_offsets.parquet")
+psr_offsets <- if (file.exists(psr_offsets_path)) {
+  arrow::read_parquet(psr_offsets_path)
+} else NULL
+psr_lg_col <- if ("competition" %in% names(match_stats)) "competition" else
+              if ("league" %in% names(match_stats)) "league" else NULL
+psr_apply_offsets <- !is.null(psr_offsets) && !is.null(psr_lg_col) &&
+                     "total_minutes" %in% names(match_stats)
+if (psr_apply_offsets) {
+  pl_src <- match_stats[!is.na(get(psr_lg_col)),
+                        .(player_id, .lg = get(psr_lg_col),
+                          match_date, total_minutes)]
+  PSR_LEAGUE_WINDOW_DAYS <- 365L
+  # Primary league as of date d: max-minutes competition in the trailing
+  # window, else max-minutes competition all-time before d.
+  .primary_league_asof <- function(d) {
+    hist <- pl_src[match_date < d]
+    if (!nrow(hist)) return(NULL)
+    .pick <- function(x) {
+      if (!nrow(x)) return(NULL)
+      a <- x[, .(m = sum(total_minutes, na.rm = TRUE)), by = .(player_id, .lg)]
+      data.table::setorder(a, player_id, -m)
+      a[, .(league = .lg[1L]), by = player_id]
+    }
+    recent <- .pick(hist[match_date >= d - PSR_LEAGUE_WINDOW_DAYS])
+    allt   <- .pick(hist)
+    if (is.null(allt)) return(recent)
+    if (is.null(recent)) return(allt)
+    # Prefer the trailing-window league; fall back to all-time for players
+    # with no minutes in the window (injured/returning).
+    out <- merge(allt, recent, by = "player_id", all.x = TRUE,
+                 suffixes = c("_all", "_recent"))
+    out[, league := data.table::fifelse(is.na(league_recent),
+                                        league_all, league_recent)]
+    out[, .(player_id, league)]
+  }
+  cat(sprintf("  PSR league offsets loaded (%d leagues); primary-league source built (%s, %d-day window)\n",
+              nrow(psr_offsets), psr_lg_col, PSR_LEAGUE_WINDOW_DAYS))
+} else {
+  cat(sprintf("  NOTE: PSR league offsets %s -> not applied\n",
+              if (is.null(psr_offsets)) "not found (run step 06 first)" else "disabled (no competition/minutes)"))
+}
+
 # Position multipliers from full dataset
 pos_mults_precomp <- compute_position_multipliers(match_stats, stat_cols_all)
 cat(sprintf("  Position multipliers computed\n"))
@@ -446,6 +497,19 @@ for (i in seq_along(snapshot_dates)) {
     }
   )
   if (is.null(psr) || nrow(psr) == 0) { rm(skills, psr); next }
+
+  # Cross-league calibration: attach the player's current league (as of d) and
+  # add the transfer-graph offset so weak-league players aren't ranked globally.
+  if (psr_apply_offsets) {
+    psr <- data.table::as.data.table(psr)
+    if ("league" %in% names(psr)) psr[, league := NULL]
+    pl_d <- .primary_league_asof(d)
+    if (!is.null(pl_d)) {
+      psr <- merge(psr, pl_d, by = "player_id", all.x = TRUE)
+      psr <- apply_psr_league_offsets(psr, psr_offsets)
+      psr[, league := NULL]
+    }
+  }
 
   psr[, snapshot_date := d]
   psr_slim <- psr[, .(snapshot_date, player_id, player_name,

@@ -30,11 +30,12 @@ tag <- "blog-latest"
 #                         tournament to the domestic season ending that year.
 domestic_leagues  <- c("ENG", "ESP", "GER", "ITA", "FRA",
                         "NED", "POR", "SCO", "TUR", "ENG2",
-                        "MEX", "SAU")          # added 2026-06-11 ("YYYY-YYYY" labels)
+                        "MEX", "SAU",          # added 2026-06-11 ("YYYY-YYYY" labels)
+                        "AUS", "BEL")          # added 2026-06-22 (A-League, Belgian — "YYYY-YYYY")
 # Calendar-year season labels ("2026" not "2025-2026") — resolved through the
 # same year-prefix matching as the intl tournaments ("2025-2026" -> "2026").
-calendar_leagues  <- c("MLS", "ARG")
-continental_cups  <- c("UCL", "UEL", "UECL")
+calendar_leagues  <- c("MLS", "ARG", "BRA")    # BRA added 2026-06-22 (calendar-year)
+continental_cups  <- c("UCL", "UEL", "UECL", "CAFCL")  # CAFCL added 2026-06-22 ("YYYY-YYYY")
 intl_tournaments  <- c("WC", "EURO", "AFCON", "Copa_America")
 # Leagues whose season label is resolved by year prefix rather than passed through
 season_label_leagues <- c(intl_tournaments, calendar_leagues)
@@ -68,6 +69,12 @@ if (!exists("upload_game_logs", inherits = FALSE)) upload_game_logs <- TRUE
 # parquets were already built in parallel workers and this invocation only
 # needs to do the alias + upload step in a single main-process pass).
 if (!exists("build_game_logs", inherits = FALSE)) build_game_logs <- TRUE
+
+# Subset-league backfill: MERGE the processed leagues into each existing
+# game_logs_<season>.parquet instead of clobbering it. Set TRUE when running a
+# league SUBSET (e.g. adding AUS/BEL/BRA/CAFCL) so the other leagues' rows for
+# that season are preserved. Idempotent (drops + re-appends the rebuilt leagues).
+if (!exists("merge_subset_leagues", inherits = FALSE)) merge_subset_leagues <- FALSE
 
 # Alias toggle — mirror the most-recent processed season to game_logs.parquet
 # (the blog chain builder's name-pinned download). Default TRUE for weekly
@@ -646,7 +653,31 @@ validate_game_log_schema <- function(dt, league, season) {
   data.table::setorder(game_logs, league, match_date, match_id, -panna)
 
   out_path <- file.path(cache_dir, sprintf("game_logs_%s.parquet", season))
-  arrow::write_parquet(game_logs, out_path)
+  # Subset-league backfill: merge into the existing per-season file rather than
+  # clobbering it (which would delete every other league's rows for the season).
+  # Idempotent: drop existing rows for the leagues we just rebuilt, then append.
+  if (isTRUE(merge_subset_leagues) && file.exists(out_path)) {
+    existing <- data.table::as.data.table(arrow::read_parquet(out_path))
+    # Release arrow's memory-mapped file handle before we overwrite the same
+    # path — Windows error 1224 ("user-mapped section open") otherwise.
+    gc()
+    rebuilt <- unique(game_logs$league)
+    kept <- existing[!league %in% rebuilt]
+    n_kept <- nrow(kept)
+    n_dropped <- nrow(existing) - n_kept
+    game_logs <- data.table::rbindlist(list(kept, game_logs), fill = TRUE, use.names = TRUE)
+    data.table::setorder(game_logs, league, match_date, match_id, -panna)
+    rm(existing, kept); gc()
+    message(sprintf("  [%s] Merge: kept %d existing rows (replaced %d for %s), total %d",
+                    season, n_kept, n_dropped, paste(rebuilt, collapse = ","),
+                    nrow(game_logs)))
+  }
+  # Write atomically via a temp file then replace, so a write failure can never
+  # corrupt the existing per-season parquet (which holds every other league).
+  out_tmp <- paste0(out_path, ".tmp")
+  arrow::write_parquet(game_logs, out_tmp)
+  if (file.exists(out_path)) file.remove(out_path)
+  file.rename(out_tmp, out_path)
   message(sprintf("  [%s] Written: %s (%.1f MB, %d rows × %d cols)",
                   season, out_path,
                   file.size(out_path) / (1024 * 1024),

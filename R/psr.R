@@ -1155,6 +1155,107 @@ compute_player_psr <- function(skills, center = TRUE,
 
 
 # ============================================================================
+# Cross-league PSR calibration (transfer-graph offsets)
+# ============================================================================
+
+#' Estimate cross-league PSR offsets from the per-game PSV network
+#'
+#' PSR is computed from box-score skill rates, which vary little across leagues,
+#' so a strong player in a weak league posts an inflated PSR. This computes a
+#' per-league additive offset to neutralize that, using PSR's own per-game
+#' analogue — \strong{PSV} — through the same-season co-occurrence network
+#' (\code{\link{build_league_network}}): every same-season pairing a player
+#' straddles (domestic + continental + international) is solved jointly via a
+#' player-season fixed effect. Because PSV is PSR's own per-game value, the
+#' resulting offset is on the right scale and is applied to PSR directly (no
+#' cross-metric rescaling). Each metric league-adjusts with its own signal —
+#' EPR uses the EPV network, PSR uses the PSV network, Panna needs none (RAPM
+#' already controls opponents).
+#'
+#' Game-log league codes (e.g. \code{ENG}, \code{AUS}) are mapped to the
+#' displayed competition names (\code{EPL}, \code{A_League}) via
+#' \code{\link{to_opta_league}} so the result joins straight onto the seasonal
+#' PSR table.
+#'
+#' @param game_logs Per-game data with \code{player_id}, \code{league},
+#'   \code{total_minutes}, \code{psv}, and \code{season}/\code{season_end_year}
+#'   (the rbinded \code{game_logs_*.parquet} files).
+#' @param big5 Big-5 anchor league codes (game-log 3-letter form). Default the
+#'   five majors.
+#' @param shrink_k Small-N shrinkage passed to \code{build_league_network}
+#'   (default 3 — gentle).
+#' @param verbose Print the offset table. Default TRUE.
+#'
+#' @return A data.table with columns \code{league} (display competition name),
+#'   \code{offset} (add to PSR), and \code{n_bridge}.
+#'
+#' @seealso \code{\link{build_league_network}}, \code{\link{apply_psr_league_offsets}}
+#' @export
+compute_psr_league_offsets <- function(game_logs,
+                                       big5 = c("ENG", "ESP", "GER", "ITA", "FRA"),
+                                       shrink_k = 3, verbose = FALSE) {
+  net <- build_league_network(game_logs, value_col = "psv", big5 = big5,
+                              shrink_k = shrink_k, verbose = FALSE)
+  # Map game-log league codes -> displayed competition names (EPL, A_League, ...)
+  net[, comp := vapply(league, function(L)
+    tryCatch(to_opta_league(L), error = function(e) L), character(1))]
+  out <- net[, .(league = comp, offset = round(offset, 4), n_bridge)]
+  if (isTRUE(verbose)) {
+    cat("\n== PSR league offsets (PSV network, Big-5-equivalent) ==\n")
+    cat("offset is ADDED to psr; negative = league inflates PSR.\n")
+    print(out[order(offset)])
+  }
+  out[]
+}
+
+
+#' Apply cross-league PSR offsets to a PSR table
+#'
+#' Adds the per-league offset from \code{\link{compute_psr_league_offsets}} to
+#' each row's \code{psr}, putting weak-league players on a Big-5-equivalent
+#' scale. If \code{osr}/\code{dsr} are present, the offset is split evenly so the
+#' \code{osr + dsr = psr} identity is preserved.
+#'
+#' @param psr_dt A data.table/data.frame with a \code{league} column and a
+#'   \code{psr} column (optionally \code{osr}, \code{dsr}).
+#' @param offsets Offset table from \code{compute_psr_league_offsets} (columns
+#'   \code{league}, \code{offset}).
+#' @param verbose Report how many rows / leagues were adjusted. Default FALSE.
+#'
+#' @return \code{psr_dt} (as data.table) with \code{psr} (and \code{osr},
+#'   \code{dsr}) shifted, plus a \code{psr_league_offset} column recording the
+#'   applied value. Rows whose league has no offset are unchanged (offset 0).
+#'
+#' @seealso \code{\link{compute_psr_league_offsets}}
+#' @export
+apply_psr_league_offsets <- function(psr_dt, offsets, verbose = FALSE) {
+  dt <- data.table::as.data.table(psr_dt)
+  if (!"league" %in% names(dt) && "competition" %in% names(dt)) {
+    dt[, league := competition]
+  }
+  if (!"league" %in% names(dt)) {
+    cli::cli_warn("apply_psr_league_offsets: no {.field league} column; returning unchanged.")
+    dt[, psr_league_offset := 0]
+    return(dt[])
+  }
+  off <- data.table::as.data.table(offsets)[, .(league, .off = offset)]
+  dt <- merge(dt, off, by = "league", all.x = TRUE, sort = FALSE)
+  dt[is.na(.off), .off := 0]
+  dt[, psr := psr + .off]
+  if (all(c("osr", "dsr") %in% names(dt))) {
+    dt[, osr := osr + .off / 2]
+    dt[, dsr := dsr + .off / 2]
+  }
+  data.table::setnames(dt, ".off", "psr_league_offset")
+  if (isTRUE(verbose)) {
+    n_adj <- dt[psr_league_offset != 0, .N]
+    cli::cli_inform("Applied PSR league offsets to {n_adj} of {nrow(dt)} rows.")
+  }
+  dt[]
+}
+
+
+# ============================================================================
 # Convenience wrapper: player_psr()
 # ============================================================================
 
