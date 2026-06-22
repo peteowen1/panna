@@ -312,3 +312,110 @@ compute_league_offsets <- function(game_logs,
   }
   rec[]
 }
+
+
+#' Estimate per-league strength from the full same-season co-occurrence network
+#'
+#' A connected, all-bridges alternative to \code{\link{compute_league_offsets}}.
+#' Instead of bridging every league only to a single anchor (UCL), it uses
+#' \strong{every} same-season pairing a player straddles — domestic league,
+#' continental cup (UCL/UEL), and international tournament (WC/Euro/Copa) — and
+#' solves the whole graph at once via a player-season fixed effect.
+#'
+#' Concretely it regresses each player-season-league per-90 \code{value_col} on
+#' league dummies plus a player-season fixed effect (implemented as a
+#' within-player-season demeaning). The fixed effect absorbs each player's
+#' overall level, so the league coefficient is the \emph{within-player-season}
+#' league effect — i.e. how much more value a player generates in that league
+#' than in their other competitions that season ("league ease"). The returned
+#' \code{offset} is the negation (the amount to ADD to a player's value to put
+#' them on a league-neutral, Big-5-equivalent scale).
+#'
+#' Versus \code{compute_league_offsets} this (a) multiplies the effective bridge
+#' count (UCL goes from a lone anchor to thousands of bridges), (b) connects
+#' isolated leagues through the international web (an A-League player who played
+#' the World Cup links A-League into the graph without ever touching UCL), and
+#' (c) is metric-agnostic — run it on \code{psv} to league-adjust PSR, on
+#' \code{epv_total} for EPR, etc. Each metric gets its own table on its own scale.
+#'
+#' @param game_logs Per-game data.frame/data.table with \code{player_id},
+#'   \code{league}, \code{total_minutes}, the \code{value_col}, and either
+#'   \code{season} ("YYYY-YYYY"/"YYYY") or \code{season_end_year}.
+#' @param value_col Per-game value column to league-adjust (e.g. \code{"psv"},
+#'   \code{"epv_total"}). Default \code{"psv"}.
+#' @param big5 League codes whose mean is the zero anchor. Default the five
+#'   major European leagues (game-log 3-letter codes).
+#' @param min_mins Minimum minutes in a (player, season, league) cell for it to
+#'   count as a bridge endpoint. Default 270 (≈3 full games).
+#' @param shrink_k Small-sample shrinkage: each league's offset is multiplied by
+#'   \code{n_bridge / (n_bridge + shrink_k)} so a thin-N league can't over-swing.
+#'   Default 3 (gentle — only meaningfully damps n < ~10). Set 0 to disable.
+#' @param verbose Print the table. Default TRUE.
+#'
+#' @return A data.table: \code{league}, \code{strength} (raw league-ease
+#'   coefficient), \code{offset} (\code{= -strength * shrink}, add to value to
+#'   neutralize), \code{n_bridge} (multi-league player-seasons touching it).
+#'
+#' @seealso \code{\link{compute_league_offsets}}, \code{\link{compute_psr_league_offsets}}
+#' @export
+build_league_network <- function(game_logs, value_col = "psv",
+                                 big5 = c("ENG", "ESP", "GER", "ITA", "FRA"),
+                                 min_mins = 270, shrink_k = 3, verbose = TRUE) {
+  dt <- data.table::as.data.table(game_logs)
+  if (!value_col %in% names(dt)) {
+    cli::cli_abort("build_league_network: value column {.field {value_col}} not found")
+  }
+  if (!"season_end_year" %in% names(dt)) {
+    if ("season" %in% names(dt)) {
+      dt[, season_end_year := as.integer(sub(".*-", "", as.character(season)))]
+    } else if ("match_date" %in% names(dt)) {
+      d <- as.Date(sub("Z$", "", as.character(dt$match_date)))
+      dt[, season_end_year := data.table::fifelse(
+        data.table::month(d) >= 7L, data.table::year(d) + 1L, data.table::year(d))]
+    } else {
+      cli::cli_abort("build_league_network: need season / season_end_year / match_date")
+    }
+  }
+  v <- dt[[value_col]]
+  pc <- dt[!is.na(v) & !is.na(league),
+           .(val = sum(.SD[[1]], na.rm = TRUE) / pmax(sum(total_minutes, na.rm = TRUE) / 90, 1),
+             mins = sum(total_minutes, na.rm = TRUE)),
+           by = .(player_id, season_end_year, league), .SDcols = value_col]
+  pc <- pc[mins >= min_mins]
+  pc[, ps := paste(player_id, season_end_year)]
+  pc[, nlg := .N, by = ps]
+  multi <- pc[nlg >= 2L]                       # player-seasons spanning >=2 leagues
+  if (nrow(multi) < 10L) {
+    cli::cli_warn("build_league_network: too few multi-league player-seasons; returning zero offsets.")
+    lvls <- sort(unique(pc$league))
+    return(data.table::data.table(league = lvls, strength = 0, offset = 0, n_bridge = 0L))
+  }
+  multi[, w := mins]
+  multi[, val_dm := val - stats::weighted.mean(val, w), by = ps]   # FE: demean value
+  lvls <- sort(unique(multi$league))
+  X <- vapply(lvls, function(L) as.numeric(multi$league == L), numeric(nrow(multi)))
+  Xdm <- X
+  for (j in seq_along(lvls)) {                  # FE: demean each league-incidence column
+    multi[, .xj := X[, j]]
+    multi[, .xjdm := .xj - stats::weighted.mean(.xj, w), by = ps]
+    Xdm[, j] <- multi$.xjdm
+  }
+  fit <- stats::lm.wfit(Xdm, multi$val_dm, multi$w)
+  beta <- fit$coefficients
+  names(beta) <- lvls
+  beta[is.na(beta)] <- 0
+  beta <- beta - mean(beta[intersect(big5, lvls)], na.rm = TRUE)   # anchor: Big-5 mean = 0
+  nL <- multi[, .(n_bridge = .N), by = league]
+  out <- data.table::data.table(league = lvls, strength = as.numeric(beta))
+  out <- merge(out, nL, by = "league", all.x = TRUE)
+  out[is.na(n_bridge), n_bridge := 0L]
+  out[, offset := -strength * (n_bridge / (n_bridge + shrink_k))]  # discount, small-N shrunk
+  data.table::setorder(out, offset)
+  if (isTRUE(verbose)) {
+    cat(sprintf("\n== League network strength on '%s' (Big-5=0; %d bridges, shrink_k=%g) ==\n",
+                value_col, nrow(multi), shrink_k))
+    cat("offset = add to a player's value to neutralize league (negative = weaker league).\n")
+    print(out[, .(league, n_bridge, offset = round(offset, 3))])
+  }
+  out[]
+}

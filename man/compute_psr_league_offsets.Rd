@@ -2,66 +2,51 @@
 % Please edit documentation in R/psr.R
 \name{compute_psr_league_offsets}
 \alias{compute_psr_league_offsets}
-\title{Estimate cross-league PSR offsets from player transfers}
+\title{Estimate cross-league PSR offsets from the per-game PSV network}
 \usage{
 compute_psr_league_offsets(
-  psr_panel,
-  big5 = c("EPL", "La_Liga", "Bundesliga", "Serie_A", "Ligue_1"),
-  max_season_gap = 2L,
-  half_life = 3,
-  ridge_frac = 0.001,
-  verbose = TRUE
+  game_logs,
+  big5 = c("ENG", "ESP", "GER", "ITA", "FRA"),
+  shrink_k = 3,
+  verbose = FALSE
 )
 }
 \arguments{
-\item{psr_panel}{A data.frame/data.table with one row per player-season:
-\code{player_id}, \code{season_end_year}, \code{league} (or
-\code{competition}), \code{psr}, and a minutes weight
-(\code{total_minutes} or \code{weighted_90s}).}
+\item{game_logs}{Per-game data with \code{player_id}, \code{league},
+\code{total_minutes}, \code{psv}, and \code{season}/\code{season_end_year}
+(the rbinded \code{game_logs_*.parquet} files).}
 
-\item{big5}{Character vector of league labels treated as the (pooled) anchor
-at offset 0. Default the five major European leagues.}
+\item{big5}{Big-5 anchor league codes (game-log 3-letter form). Default the
+five majors.}
 
-\item{max_season_gap}{Maximum gap (seasons) between the two stints of a
-transition; \code{2} allows a single gap year (injury/loan). Default 2.}
-
-\item{half_life}{Recency half-life (years) for weighting transitions toward
-the present. Default 3.}
-
-\item{ridge_frac}{Ridge penalty as a fraction of the mean transition weight,
-to keep weakly-connected leagues stable (shrinks them toward 0). Default
-\code{1e-3}.}
+\item{shrink_k}{Small-N shrinkage passed to \code{build_league_network}
+(default 3 — gentle).}
 
 \item{verbose}{Print the offset table. Default TRUE.}
 }
 \value{
-A data.table with columns \code{league}, \code{offset} (add to PSR),
-\code{ease} (\code{-offset}), \code{n_bridge} (distinct bridging players),
-and \code{method}. Big-5 rows have \code{offset = 0}.
+A data.table with columns \code{league} (display competition name),
+\code{offset} (add to PSR), and \code{n_bridge}.
 }
 \description{
-PSR is computed from box-score skill rates, which barely vary across leagues
-(a midfielder completes ~80\% of passes in the A-League and the EPL alike), so
-a strong player in a weak league posts an inflated PSR. The leagues where this
-bites (A-League, Brazil, MLS, ...) are barely connected to the rest of
-football by match results, so Elo / opponent-strength controls (which power
-EPR and Panna) cannot reach them. The ONE thing that does connect them is
-\strong{player transfers}.
+PSR is computed from box-score skill rates, which vary little across leagues,
+so a strong player in a weak league posts an inflated PSR. This computes a
+per-league additive offset to neutralize that, using PSR's own per-game
+analogue — \strong{PSV} — through the same-season co-occurrence network
+(\code{\link{build_league_network}}): every same-season pairing a player
+straddles (domestic + continental + international) is solved jointly via a
+player-season fixed effect. Because PSV is PSR's own per-game value, the
+resulting offset is on the right scale and is applied to PSR directly (no
+cross-metric rescaling). Each metric league-adjusts with its own signal —
+EPR uses the EPV network, PSR uses the PSV network, Panna needs none (RAPM
+already controls opponents).
 }
 \details{
-This estimates a per-league additive offset on the PSR scale from
-\emph{adjacent-season} same-player league changes. For a player who is in
-league A in season \eqn{t} and league B in \eqn{t+1},
-\deqn{\Delta = \mathrm{PSR}_{t+1} - \mathrm{PSR}_t \approx \mathrm{ease}_B - \mathrm{ease}_A,}
-because over one season the player's true skill barely changes, so the
-difference isolates the league-ease gap (the career-stage confound that
-contaminates career-aggregate bridges is removed by the one-season window).
-Stacking all transitions gives a linear system solved by weighted ridge with
-the Big-5 pool anchored to 0. The result is added to a player's PSR
-(\code{offset < 0} for inflated weak leagues) to put everyone on a
-Big-5-equivalent scale. This is the PSR analogue of
-\code{\link{compute_league_offsets}} (which does the same for EPV).
+Game-log league codes (e.g. \code{ENG}, \code{AUS}) are mapped to the
+displayed competition names (\code{EPL}, \code{A_League}) via
+\code{\link{to_opta_league}} so the result joins straight onto the seasonal
+PSR table.
 }
 \seealso{
-\code{\link{apply_psr_league_offsets}}, \code{\link{compute_league_offsets}}
+\code{\link{build_league_network}}, \code{\link{apply_psr_league_offsets}}
 }

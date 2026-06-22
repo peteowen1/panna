@@ -37,11 +37,12 @@ spm_results <- readRDS(file.path(cache_dir, "03_skill_spm.rds"))
 cat("Splints:", nrow(splint_data$splints), "\n")
 cat("Skill feature rows:", nrow(skill_features), "\n")
 
-# Primary league per player-season -- for the post-loop cross-league PSR
-# calibration (transfer-graph offsets in section 6c). PSR skills are season-
-# AGGREGATED (one row per player-season, no per-game league), so we attach the
-# league where the player logged the most minutes that season. Kept as a
-# standalone lookup so it survives the skill_features rm() before section 6c.
+# Primary league per player-season -- used in section 6c to ATTACH each player's
+# league to the seasonal PSR table so the network league offsets can be joined
+# (the offsets themselves are estimated from per-game game logs, not this).
+# Seasonal PSR is one row per player-season with no per-game league, so we take
+# the league where the player logged the most minutes. Kept as a standalone
+# lookup so it survives the skill_features rm() before section 6c.
 psr_primary_league <- local({
   ms <- data.table::as.data.table(readRDS(file.path(cache_dir, "01_match_stats.rds")))
   lg_col <- if ("competition" %in% names(ms)) "competition" else
@@ -475,29 +476,42 @@ if (nrow(seasonal_psr) > 0) {
 # PSR is built from box-score rates that barely vary by league, so strong
 # players in weakly-connected leagues (A-League, Brazil, MLS, ...) post inflated
 # PSR. Those leagues can't be reached by Elo / opponent controls (no shared
-# matches) -- but PLAYER TRANSFERS connect them. compute_psr_league_offsets()
-# estimates a per-league additive offset from adjacent-season transfers (Big-5
-# anchored) and we add it so PSR is on a Big-5-equivalent scale. The offset
-# table is saved so step 08b (weekly snapshots) applies the identical offsets.
+# matches) -- but each metric's own per-game value, pooled over the full
+# same-season co-occurrence network, does. compute_psr_league_offsets() runs
+# build_league_network() on per-game PSV (PSR's own analogue, so no rescaling)
+# and we ADD the offset so PSR is on a Big-5-equivalent scale. The offset table
+# is saved so step 08b (weekly snapshots) applies the identical offsets.
+# Game logs come from the predictions pipeline (cache-predictions-opta); if
+# absent (fresh clone, predictions not yet run) we skip — offsets are stable, so
+# a one-cycle lag is fine.
 if (nrow(seasonal_psr) > 0 && !is.null(psr_primary_league)) {
-  cat("\n=== Cross-league PSR offsets (transfer-graph calibration) ===\n")
-  psr_dt <- data.table::as.data.table(seasonal_psr)
-  if ("league" %in% names(psr_dt)) psr_dt[, league := NULL]
-  psr_dt <- merge(psr_dt, psr_primary_league,
-                  by = c("player_id", "season_end_year"), all.x = TRUE)
+  cat("\n=== Cross-league PSR offsets (PSV same-season network) ===\n")
+  gl_dir <- file.path("data-raw", "cache-predictions-opta")
+  gl_files <- list.files(gl_dir, pattern = "^game_logs_20.*\\.parquet$", full.names = TRUE)
+  psr_offsets <- if (length(gl_files) == 0) {
+    warning("No game_logs_*.parquet found; PSR league offsets skipped ",
+            "(run the predictions pipeline first).", call. = FALSE); NULL
+  } else tryCatch({
+    gl <- data.table::rbindlist(lapply(gl_files, function(f) {
+      d <- arrow::read_parquet(f)
+      d[, intersect(c("player_id","season","league","total_minutes","psv"), names(d)), with = FALSE]
+    }), use.names = TRUE, fill = TRUE)
+    compute_psr_league_offsets(gl, verbose = TRUE)
+  }, error = function(e) {
+    warning("PSR offset estimation failed: ", e$message, call. = FALSE); NULL
+  })
 
-  psr_offsets <- tryCatch(
-    compute_psr_league_offsets(psr_dt, verbose = TRUE),
-    error = function(e) {
-      warning("PSR offset estimation failed: ", e$message, call. = FALSE); NULL
-    }
-  )
-  if (!is.null(psr_offsets)) {
+  if (!is.null(psr_offsets) && nrow(psr_offsets) > 0) {
     off_path <- file.path(cache_dir, "psr_league_offsets.parquet")
     arrow::write_parquet(psr_offsets, off_path)
     write.csv(psr_offsets, sub("\\.parquet$", ".csv", off_path), row.names = FALSE)
     cat(sprintf("  Saved offsets: %s (%d leagues)\n",
                 basename(off_path), nrow(psr_offsets)))
+    # Attach each player-season's primary league, then add the offset (full).
+    psr_dt <- data.table::as.data.table(seasonal_psr)
+    if ("league" %in% names(psr_dt)) psr_dt[, league := NULL]
+    psr_dt <- merge(psr_dt, psr_primary_league,
+                    by = c("player_id", "season_end_year"), all.x = TRUE)
     psr_dt <- apply_psr_league_offsets(psr_dt, psr_offsets, verbose = TRUE)
     psr_dt[, league := NULL]  # don't leak league into the saved seasonal table
     seasonal_psr <- as.data.frame(psr_dt)

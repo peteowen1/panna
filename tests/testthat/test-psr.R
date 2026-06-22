@@ -355,39 +355,40 @@ test_that("calculate_psr_components decomposition holds across seeds", {
 
 
 # =============================================================================
-# compute_psr_league_offsets() / apply_psr_league_offsets()
+# build_league_network() / compute_psr_league_offsets() / apply_psr_league_offsets()
 # =============================================================================
 
-# Helper: a player-season panel with a clean weak->strong transfer signal.
-make_offset_panel <- function() {
-  data.table::data.table(
-    player_id = c("a","a", "b","b", "c","c", "d","d", "e","e"),
-    season_end_year = rep(c(2024L, 2025L), 5),
-    # a,b,c move WEAK -> a Big-5 league; d,e stay/anchor in Big-5
-    league = c("WEAK","EPL", "WEAK","La_Liga", "WEAK","Serie_A",
-               "EPL","EPL", "La_Liga","Bundesliga"),
-    psr = c(0.30,0.10, 0.28,0.09, 0.26,0.08, 0.12,0.11, 0.10,0.09),
-    total_minutes = rep(2000, 10)
-  )
+# Helper: per-game logs where players co-occur in a WEAK league + ENG the SAME
+# season, posting higher per-90 value in WEAK (so WEAK is "easy").
+make_game_logs <- function(n = 6) {
+  withr::with_seed(7, {
+    data.table::rbindlist(lapply(seq_len(n), function(i) data.table::data.table(
+      player_id = paste0("p", i), season = "2025-2026",
+      league = c("WEAK", "ENG"), total_minutes = c(900, 900),
+      # val = sum(psv)/(min/90): psv 3.0 -> 0.30/90, psv 1.0 -> 0.10/90
+      psv = c(3.0, 1.0) + stats::rnorm(2, 0, 0.05)
+    )))
+  })
 }
 
-test_that("compute_psr_league_offsets anchors Big-5 at 0 and makes weak leagues negative", {
-  o <- compute_psr_league_offsets(make_offset_panel(), verbose = FALSE)
-  expect_true(all(c("league", "offset", "ease", "n_bridge", "method") %in% names(o)))
-  # Big-5 leagues are the anchor: exactly 0
-  expect_equal(o[league == "EPL"]$offset, 0)
-  expect_equal(o[league == "La_Liga"]$offset, 0)
-  # WEAK inflates PSR -> offset is negative (subtracts the inflation)
+test_that("build_league_network anchors Big-5 at 0 and flags the easy league", {
+  o <- build_league_network(make_game_logs(), value_col = "psv",
+                            big5 = "ENG", verbose = FALSE)
+  expect_true(all(c("league", "strength", "offset", "n_bridge") %in% names(o)))
+  expect_equal(o[league == "ENG"]$offset, 0, tolerance = 1e-9)   # anchor
+  # WEAK posts ~0.20 more per-90 -> positive strength -> NEGATIVE offset
+  expect_gt(o[league == "WEAK"]$strength, 0)
   expect_lt(o[league == "WEAK"]$offset, 0)
-  # The weak->Big5 gap is ~ -0.19 (psr drops ~0.2 across the move)
-  expect_lt(o[league == "WEAK"]$offset, -0.1)
+  expect_equal(o[league == "WEAK"]$n_bridge, 6L)
 })
 
-test_that("compute_psr_league_offsets accepts a competition column", {
-  p <- make_offset_panel()
-  data.table::setnames(p, "league", "competition")
-  o <- compute_psr_league_offsets(p, verbose = FALSE)
+test_that("compute_psr_league_offsets maps codes to display names + WEAK negative", {
+  o <- compute_psr_league_offsets(make_game_logs(), big5 = "ENG", verbose = FALSE)
+  expect_true(all(c("league", "offset", "n_bridge") %in% names(o)))
   expect_lt(o[league == "WEAK"]$offset, 0)
+  # ENG code is mapped to its displayed competition name (EPL)
+  expect_true("EPL" %in% o$league)
+  expect_false("ENG" %in% o$league)
 })
 
 test_that("apply_psr_league_offsets adds offset and preserves osr+dsr=psr", {
