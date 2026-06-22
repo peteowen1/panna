@@ -367,7 +367,12 @@ build_league_network <- function(game_logs, value_col = "psv",
   }
   if (!"season_end_year" %in% names(dt)) {
     if ("season" %in% names(dt)) {
-      dt[, season_end_year := as.integer(sub(".*-", "", as.character(season)))]
+      # extract_season_end_year handles all three label formats incl. tournament
+      # "YYYY Country" — a plain sub("-") regex turns "2026 Canada-Mexico-USA"
+      # into NA, which would collapse every tournament into one NA season and
+      # break the international bridges (WC etc.) this estimator relies on.
+      dt[, season_end_year := vapply(as.character(season),
+                                     extract_season_end_year, numeric(1))]
     } else if ("match_date" %in% names(dt)) {
       d <- as.Date(sub("Z$", "", as.character(dt$match_date)))
       dt[, season_end_year := data.table::fifelse(
@@ -404,7 +409,12 @@ build_league_network <- function(game_logs, value_col = "psv",
   beta <- fit$coefficients
   names(beta) <- lvls
   beta[is.na(beta)] <- 0
-  beta <- beta - mean(beta[intersect(big5, lvls)], na.rm = TRUE)   # anchor: Big-5 mean = 0
+  anchor <- mean(beta[intersect(big5, lvls)], na.rm = TRUE)        # anchor: Big-5 mean = 0
+  if (!is.finite(anchor)) {                                        # no Big-5 in the bridges
+    cli::cli_warn("build_league_network: no Big-5 anchor league among the bridges; leaving offsets unanchored.")
+    anchor <- 0
+  }
+  beta <- beta - anchor
   nL <- multi[, .(n_bridge = .N), by = league]
   out <- data.table::data.table(league = lvls, strength = as.numeric(beta))
   out <- merge(out, nL, by = "league", all.x = TRUE)
