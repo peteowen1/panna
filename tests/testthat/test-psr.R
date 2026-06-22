@@ -355,6 +355,64 @@ test_that("calculate_psr_components decomposition holds across seeds", {
 
 
 # =============================================================================
+# compute_psr_league_offsets() / apply_psr_league_offsets()
+# =============================================================================
+
+# Helper: a player-season panel with a clean weak->strong transfer signal.
+make_offset_panel <- function() {
+  data.table::data.table(
+    player_id = c("a","a", "b","b", "c","c", "d","d", "e","e"),
+    season_end_year = rep(c(2024L, 2025L), 5),
+    # a,b,c move WEAK -> a Big-5 league; d,e stay/anchor in Big-5
+    league = c("WEAK","EPL", "WEAK","La_Liga", "WEAK","Serie_A",
+               "EPL","EPL", "La_Liga","Bundesliga"),
+    psr = c(0.30,0.10, 0.28,0.09, 0.26,0.08, 0.12,0.11, 0.10,0.09),
+    total_minutes = rep(2000, 10)
+  )
+}
+
+test_that("compute_psr_league_offsets anchors Big-5 at 0 and makes weak leagues negative", {
+  o <- compute_psr_league_offsets(make_offset_panel(), verbose = FALSE)
+  expect_true(all(c("league", "offset", "ease", "n_bridge", "method") %in% names(o)))
+  # Big-5 leagues are the anchor: exactly 0
+  expect_equal(o[league == "EPL"]$offset, 0)
+  expect_equal(o[league == "La_Liga"]$offset, 0)
+  # WEAK inflates PSR -> offset is negative (subtracts the inflation)
+  expect_lt(o[league == "WEAK"]$offset, 0)
+  # The weak->Big5 gap is ~ -0.19 (psr drops ~0.2 across the move)
+  expect_lt(o[league == "WEAK"]$offset, -0.1)
+})
+
+test_that("compute_psr_league_offsets accepts a competition column", {
+  p <- make_offset_panel()
+  data.table::setnames(p, "league", "competition")
+  o <- compute_psr_league_offsets(p, verbose = FALSE)
+  expect_lt(o[league == "WEAK"]$offset, 0)
+})
+
+test_that("apply_psr_league_offsets adds offset and preserves osr+dsr=psr", {
+  offs <- data.table::data.table(league = c("WEAK", "EPL"), offset = c(-0.18, 0))
+  dt <- data.table::data.table(
+    player_id = c("x", "y"), league = c("WEAK", "EPL"),
+    psr = c(0.25, 0.25), osr = c(0.15, 0.15), dsr = c(0.10, 0.10)
+  )
+  out <- apply_psr_league_offsets(dt, offs)
+  expect_true("psr_league_offset" %in% names(out))
+  expect_equal(out[league == "WEAK"]$psr, 0.25 - 0.18, tolerance = 1e-9)
+  expect_equal(out[league == "EPL"]$psr, 0.25)             # anchor unchanged
+  expect_equal(out$osr + out$dsr, out$psr, tolerance = 1e-9)  # identity preserved
+})
+
+test_that("apply_psr_league_offsets leaves unknown leagues unchanged (offset 0)", {
+  offs <- data.table::data.table(league = "WEAK", offset = -0.18)
+  dt <- data.table::data.table(player_id = "z", league = "UNKNOWN_LG", psr = 0.2)
+  out <- apply_psr_league_offsets(dt, offs)
+  expect_equal(out$psr, 0.2)
+  expect_equal(out$psr_league_offset, 0)
+})
+
+
+# =============================================================================
 # load_psr_coefficients()
 # =============================================================================
 

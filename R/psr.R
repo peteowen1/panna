@@ -1155,6 +1155,182 @@ compute_player_psr <- function(skills, center = TRUE,
 
 
 # ============================================================================
+# Cross-league PSR calibration (transfer-graph offsets)
+# ============================================================================
+
+#' Estimate cross-league PSR offsets from player transfers
+#'
+#' PSR is computed from box-score skill rates, which barely vary across leagues
+#' (a midfielder completes ~80% of passes in the A-League and the EPL alike), so
+#' a strong player in a weak league posts an inflated PSR. The leagues where this
+#' bites (A-League, Brazil, MLS, ...) are barely connected to the rest of
+#' football by match results, so Elo / opponent-strength controls (which power
+#' EPR and Panna) cannot reach them. The ONE thing that does connect them is
+#' \strong{player transfers}.
+#'
+#' This estimates a per-league additive offset on the PSR scale from
+#' \emph{adjacent-season} same-player league changes. For a player who is in
+#' league A in season \eqn{t} and league B in \eqn{t+1},
+#' \deqn{\Delta = \mathrm{PSR}_{t+1} - \mathrm{PSR}_t \approx \mathrm{ease}_B - \mathrm{ease}_A,}
+#' because over one season the player's true skill barely changes, so the
+#' difference isolates the league-ease gap (the career-stage confound that
+#' contaminates career-aggregate bridges is removed by the one-season window).
+#' Stacking all transitions gives a linear system solved by weighted ridge with
+#' the Big-5 pool anchored to 0. The result is added to a player's PSR
+#' (\code{offset < 0} for inflated weak leagues) to put everyone on a
+#' Big-5-equivalent scale. This is the PSR analogue of
+#' \code{\link{compute_league_offsets}} (which does the same for EPV).
+#'
+#' @param psr_panel A data.frame/data.table with one row per player-season:
+#'   \code{player_id}, \code{season_end_year}, \code{league} (or
+#'   \code{competition}), \code{psr}, and a minutes weight
+#'   (\code{total_minutes} or \code{weighted_90s}).
+#' @param big5 Character vector of league labels treated as the (pooled) anchor
+#'   at offset 0. Default the five major European leagues.
+#' @param max_season_gap Maximum gap (seasons) between the two stints of a
+#'   transition; \code{2} allows a single gap year (injury/loan). Default 2.
+#' @param half_life Recency half-life (years) for weighting transitions toward
+#'   the present. Default 3.
+#' @param ridge_frac Ridge penalty as a fraction of the mean transition weight,
+#'   to keep weakly-connected leagues stable (shrinks them toward 0). Default
+#'   \code{1e-3}.
+#' @param verbose Print the offset table. Default TRUE.
+#'
+#' @return A data.table with columns \code{league}, \code{offset} (add to PSR),
+#'   \code{ease} (\code{-offset}), \code{n_bridge} (distinct bridging players),
+#'   and \code{method}. Big-5 rows have \code{offset = 0}.
+#'
+#' @seealso \code{\link{apply_psr_league_offsets}}, \code{\link{compute_league_offsets}}
+#' @export
+compute_psr_league_offsets <- function(psr_panel,
+                                       big5 = c("EPL", "La_Liga", "Bundesliga",
+                                                "Serie_A", "Ligue_1"),
+                                       max_season_gap = 2L,
+                                       half_life = 3,
+                                       ridge_frac = 1e-3,
+                                       verbose = TRUE) {
+  d <- data.table::as.data.table(psr_panel)
+  if (!"league" %in% names(d) && "competition" %in% names(d)) {
+    data.table::setnames(d, "competition", "league")
+  }
+  req <- c("player_id", "season_end_year", "league", "psr")
+  miss <- setdiff(req, names(d))
+  if (length(miss)) {
+    cli::cli_abort("compute_psr_league_offsets: missing columns {.field {miss}}")
+  }
+  d <- d[!is.na(league) & !is.na(psr) & !is.na(season_end_year)]
+  wcol <- if ("total_minutes" %in% names(d)) "total_minutes"
+          else if ("weighted_90s" %in% names(d)) "weighted_90s" else NULL
+  d[, .mins := if (is.null(wcol)) 90 else pmax(as.numeric(get(wcol)), 1)]
+
+  d[, node := data.table::fifelse(league %in% big5, "BIG5", league)]
+  # One row per (player, season, node): pick the node with the most minutes that
+  # season (player already has a single primary league per season upstream, but
+  # be defensive).
+  d <- d[, .(psr = stats::weighted.mean(psr, w = .mins, na.rm = TRUE),
+             mins = sum(.mins, na.rm = TRUE)),
+         by = .(player_id, season_end_year, node)]
+
+  # --- adjacent-season transitions per player ---
+  data.table::setorder(d, player_id, season_end_year)
+  d[, `:=`(nxt_node = data.table::shift(node, -1L),
+           nxt_season = data.table::shift(season_end_year, -1L),
+           nxt_psr = data.table::shift(psr, -1L),
+           nxt_mins = data.table::shift(mins, -1L)), by = player_id]
+  tr <- d[!is.na(nxt_node) & nxt_node != node &
+            (nxt_season - season_end_year) <= max_season_gap]
+  if (nrow(tr) < 1) {
+    cli::cli_warn("No cross-league transitions found; returning zero offsets.")
+    lgs <- unique(c(psr_panel$league, psr_panel$competition))
+    return(data.table::data.table(league = lgs[!is.na(lgs)], offset = 0,
+                                  ease = 0, n_bridge = 0L, method = "none"))
+  }
+  tr[, delta := nxt_psr - psr]                      # ~ ease(to) - ease(from)
+  ref_year <- max(d$season_end_year, na.rm = TRUE) + 1L
+  tr[, w := pmin(mins, nxt_mins) * 2 ^ (-(ref_year - nxt_season) / half_life)]
+
+  # --- weighted ridge solve: ease_L with BIG5 fixed at 0 ---
+  lvls <- setdiff(sort(unique(c(tr$node, tr$nxt_node))), "BIG5")
+  idx <- stats::setNames(seq_along(lvls), lvls)
+  M <- matrix(0, nrow = nrow(tr), ncol = length(lvls))
+  from <- tr$node; to <- tr$nxt_node
+  for (r in seq_len(nrow(tr))) {
+    if (to[r]   != "BIG5") M[r, idx[[to[r]]]]   <- M[r, idx[[to[r]]]]   + 1
+    if (from[r] != "BIG5") M[r, idx[[from[r]]]] <- M[r, idx[[from[r]]]] - 1
+  }
+  W <- tr$w
+  lambda <- ridge_frac * sum(W) / length(lvls)
+  ease <- as.numeric(solve(t(M) %*% (W * M) + lambda * diag(length(lvls)),
+                           t(M) %*% (W * tr$delta)))
+  names(ease) <- lvls
+
+  nbridge <- vapply(lvls, function(L)
+    data.table::uniqueN(tr[node == L | nxt_node == L]$player_id), integer(1))
+  out <- data.table::data.table(
+    league = lvls, offset = -ease, ease = ease,
+    n_bridge = nbridge, method = "transfer-graph")
+  out <- data.table::rbindlist(list(out, data.table::data.table(
+    league = big5, offset = 0, ease = 0, n_bridge = NA_integer_,
+    method = "anchor")), fill = TRUE)
+  data.table::setorder(out, offset)
+
+  if (isTRUE(verbose)) {
+    cat(sprintf("\n== PSR league offsets (Big-5-equivalent; %d transitions) ==\n",
+                nrow(tr)))
+    cat("offset is ADDED to psr; negative = league inflates PSR.\n")
+    print(out[, .(league, method, n_bridge, offset = round(offset, 4))])
+  }
+  out[]
+}
+
+
+#' Apply cross-league PSR offsets to a PSR table
+#'
+#' Adds the per-league offset from \code{\link{compute_psr_league_offsets}} to
+#' each row's \code{psr}, putting weak-league players on a Big-5-equivalent
+#' scale. If \code{osr}/\code{dsr} are present, the offset is split evenly so the
+#' \code{osr + dsr = psr} identity is preserved.
+#'
+#' @param psr_dt A data.table/data.frame with a \code{league} column and a
+#'   \code{psr} column (optionally \code{osr}, \code{dsr}).
+#' @param offsets Offset table from \code{compute_psr_league_offsets} (columns
+#'   \code{league}, \code{offset}).
+#' @param verbose Report how many rows / leagues were adjusted. Default FALSE.
+#'
+#' @return \code{psr_dt} (as data.table) with \code{psr} (and \code{osr},
+#'   \code{dsr}) shifted, plus a \code{psr_league_offset} column recording the
+#'   applied value. Rows whose league has no offset are unchanged (offset 0).
+#'
+#' @seealso \code{\link{compute_psr_league_offsets}}
+#' @export
+apply_psr_league_offsets <- function(psr_dt, offsets, verbose = FALSE) {
+  dt <- data.table::as.data.table(psr_dt)
+  if (!"league" %in% names(dt) && "competition" %in% names(dt)) {
+    dt[, league := competition]
+  }
+  if (!"league" %in% names(dt)) {
+    cli::cli_warn("apply_psr_league_offsets: no {.field league} column; returning unchanged.")
+    dt[, psr_league_offset := 0]
+    return(dt[])
+  }
+  off <- data.table::as.data.table(offsets)[, .(league, .off = offset)]
+  dt <- merge(dt, off, by = "league", all.x = TRUE, sort = FALSE)
+  dt[is.na(.off), .off := 0]
+  dt[, psr := psr + .off]
+  if (all(c("osr", "dsr") %in% names(dt))) {
+    dt[, osr := osr + .off / 2]
+    dt[, dsr := dsr + .off / 2]
+  }
+  data.table::setnames(dt, ".off", "psr_league_offset")
+  if (isTRUE(verbose)) {
+    n_adj <- dt[psr_league_offset != 0, .N]
+    cli::cli_inform("Applied PSR league offsets to {n_adj} of {nrow(dt)} rows.")
+  }
+  dt[]
+}
+
+
+# ============================================================================
 # Convenience wrapper: player_psr()
 # ============================================================================
 
