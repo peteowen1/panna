@@ -88,12 +88,15 @@ jobs:
           echo "  $(ls "$CACHE_PRED"/game_logs_*.parquet | wc -l) game_logs files"
 
           echo "== team_season_strength (predictions-cache) =="
-          if gh release download predictions-cache --repo peteowen1/pannadata \
-               --pattern "team_season_strength.parquet" --dir "$CACHE_OPTA" 2>/dev/null; then
-            echo "  downloaded (opp_def_rating control available)"
-          else
-            echo "::warning::team_season_strength.parquet not found — opp_def_rating falls back to 0 (degraded EPR)"
-          fi
+          # REQUIRED, not best-effort: without it opp_def_rating zeroes out for
+          # EVERY row (EPR loses its opponent-strength control across all history)
+          # — a silent degraded publish. Fail loud instead (feedback: never use a
+          # constant fallback to hide a missing input). It's built by
+          # sketch_team_strength.R; if this asset ages out, re-run that + republish
+          # to predictions-cache (the opta-pipeline only uploads it on local runs).
+          gh release download predictions-cache --repo peteowen1/pannadata \
+            --pattern "team_season_strength.parquet" --dir "$CACHE_OPTA"
+          echo "  downloaded (opp_def_rating control available)"
 
           echo "== opta_lineups (opta-latest) =="
           gh release download opta-latest --repo peteowen1/pannadata \
@@ -107,9 +110,10 @@ jobs:
             echo "  not found — FIRST RUN, full rebuild (~25 min)"
           fi
 
-          # Validate the must-haves (lineups + at least one game-log season)
+          # Validate the must-haves (lineups + game logs + opponent-strength)
           MISSING=0
           [ -f "$PD_OPTA/opta_lineups.parquet" ] || { echo "FATAL: opta_lineups.parquet missing"; MISSING=1; }
+          [ -f "$CACHE_OPTA/team_season_strength.parquet" ] || { echo "FATAL: team_season_strength.parquet missing (opp_def_rating would zero out)"; MISSING=1; }
           ls "$CACHE_PRED"/game_logs_*.parquet >/dev/null 2>&1 || { echo "FATAL: no game_logs_*.parquet"; MISSING=1; }
           [ "$MISSING" -eq 0 ] || exit 1
 

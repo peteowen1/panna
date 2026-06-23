@@ -22,8 +22,13 @@
 ##
 ## Inputs: per-season game_logs.parquet files + opta_lineups (for opponents)
 ##         + cache-opta/team_season_strength.parquet (for opp_def_rating)
-##         + cache-predictions-opta/league_offsets.parquet (cross-league cal)
 ## Output: opta_epr_weekly.parquet — one row per (player_id × snapshot_date)
+##
+## NOTE on league offsets: cache-predictions-opta/league_offsets.parquet is
+## BUILT IN-RUN if missing (not a required input) via the LEGACY single-anchor
+## compute_league_offsets(). PSR was re-architected to the build_league_network()
+## PSV/EPV co-occurrence network (2026-06); migrating EPR to the same network is
+## known FUTURE WORK — until then EPR's league calibration uses the older method.
 
 suppressPackageStartupMessages({
   library(data.table); library(arrow); library(Matrix); library(glmnet)
