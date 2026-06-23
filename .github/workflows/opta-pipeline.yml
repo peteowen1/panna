@@ -322,7 +322,13 @@ jobs:
                    05_spm.rds \
                    06_xrapm.rds \
                    07_seasonal_ratings.rds 07_seasonal_ratings.rds.meta.json \
-                   08_panna.rds; do
+                   08_panna.rds \
+                   team_season_strength.parquet; do
+            # team_season_strength.parquet is produced by sketch_team_strength.R
+            # (not a numbered RAPM step), so it's only present on LOCAL runs where
+            # the operator ran that script after the pipeline. The `-f` guard below
+            # skips it on cloud runs where it's absent. It feeds opp_def_rating in
+            # build_epr_weekly (epr-weekly-snapshot.yml downloads it from here).
             if [ -f "$CACHE_DIR/$f" ]; then
               gh release upload predictions-cache "$CACHE_DIR/$f" \
                 --repo peteowen1/pannadata --clobber

@@ -1,0 +1,154 @@
+name: Weekly EPR Snapshot
+
+# Builds opta_epr_weekly.parquet (~780 MB) — per-(player, snapshot_date) EPR via
+# calculate_epr_regression(). Mirrors psr-weekly-snapshot.yml. Split into its own
+# workflow (not the predictions pipeline) for the same reason PSR was: it's a
+# heavy, self-contained snapshot build that shouldn't redden the daily chain.
+#
+# Cadence: WEEKLY. EPR uses a 900-day decay, so a single match barely moves it —
+# daily would be wasted compute. This closes the gap where opta_epr_weekly had
+# NO automated rebuild and went ~3.5 weeks stale (May 29 -> Jun 23 2026).
+#
+# build_epr_weekly.R is INCREMENTAL (2026-06-23): it reuses snapshots older than
+# a 28-day buffer from the existing release parquet and recomputes only the
+# recent window — ~3 min vs ~25 min full rebuild, output verified bit-identical.
+# A full rebuild happens only on the first run (no existing parquet to download)
+# or when EPR_FORCE_FULL_REBUILD=1 is set (e.g. after a method/offset change).
+
+on:
+  schedule:
+    # Wednesday 11 AM UTC — after the daily scrape/predictions chain and the
+    # 10 AM PSR snapshot, so it reads the freshest current-season game logs.
+    - cron: '0 11 * * 3'
+  workflow_dispatch:
+    inputs:
+      force_full_rebuild:
+        description: 'Recompute every snapshot (slow ~25 min) instead of incremental'
+        type: boolean
+        default: false
+
+env:
+  GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
+  R_KEEP_PKG_SOURCE: yes
+
+jobs:
+  epr-snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.5.0'
+          use-public-rspm: true
+
+      - name: Setup R dependencies
+        uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          cache-version: 2
+          extra-packages: |
+            any::devtools
+            any::piggyback
+            any::arrow
+            any::data.table
+            any::Matrix
+            any::glmnet
+            any::cli
+          needs: |
+            devtools
+
+      - name: Download inputs
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+        run: |
+          # build_epr_weekly.R uses hardcoded RELATIVE paths (cwd = repo root):
+          #   data-raw/cache-predictions-opta/game_logs_*.parquet  (per-season logs)
+          #   data-raw/cache-opta/team_season_strength.parquet      (opp_def_rating)
+          #   ../pannadata/data/opta/opta_lineups.parquet           (opponents)
+          #   ../pannadata/data/opta/opta_epr_weekly.parquet        (existing, for incremental)
+          CACHE_PRED="data-raw/cache-predictions-opta"
+          CACHE_OPTA="data-raw/cache-opta"
+          PD_OPTA="../pannadata/data/opta"
+          mkdir -p "$CACHE_PRED" "$CACHE_OPTA" "$PD_OPTA"
+
+          echo "== per-season game logs (blog-latest) =="
+          # Matches game_logs_<season>.parquet only (not the game_logs.parquet alias,
+          # which build_epr_weekly's ^game_logs_.* pattern excludes anyway).
+          gh release download blog-latest --repo peteowen1/pannadata \
+            --pattern "game_logs_*.parquet" --dir "$CACHE_PRED"
+          echo "  $(ls "$CACHE_PRED"/game_logs_*.parquet | wc -l) game_logs files"
+
+          echo "== team_season_strength (predictions-cache) =="
+          # REQUIRED, not best-effort: without it opp_def_rating zeroes out for
+          # EVERY row (EPR loses its opponent-strength control across all history)
+          # — a silent degraded publish. Fail loud instead (feedback: never use a
+          # constant fallback to hide a missing input). It's built by
+          # sketch_team_strength.R; if this asset ages out, re-run that + republish
+          # to predictions-cache (the opta-pipeline only uploads it on local runs).
+          gh release download predictions-cache --repo peteowen1/pannadata \
+            --pattern "team_season_strength.parquet" --dir "$CACHE_OPTA"
+          echo "  downloaded (opp_def_rating control available)"
+
+          echo "== opta_lineups (opta-latest) =="
+          gh release download opta-latest --repo peteowen1/pannadata \
+            --pattern "opta_lineups.parquet" --dir "$PD_OPTA"
+
+          echo "== existing opta_epr_weekly for incremental reuse (opta-latest) =="
+          if gh release download opta-latest --repo peteowen1/pannadata \
+               --pattern "opta_epr_weekly.parquet" --dir "$PD_OPTA" 2>/dev/null; then
+            echo "  downloaded — incremental run (recompute recent snapshots only)"
+          else
+            echo "  not found — FIRST RUN, full rebuild (~25 min)"
+          fi
+
+          # Validate the must-haves (lineups + game logs + opponent-strength)
+          MISSING=0
+          [ -f "$PD_OPTA/opta_lineups.parquet" ] || { echo "FATAL: opta_lineups.parquet missing"; MISSING=1; }
+          [ -f "$CACHE_OPTA/team_season_strength.parquet" ] || { echo "FATAL: team_season_strength.parquet missing (opp_def_rating would zero out)"; MISSING=1; }
+          ls "$CACHE_PRED"/game_logs_*.parquet >/dev/null 2>&1 || { echo "FATAL: no game_logs_*.parquet"; MISSING=1; }
+          [ "$MISSING" -eq 0 ] || exit 1
+
+      - name: Build weekly EPR snapshots
+        env:
+          EPR_FORCE_FULL_REBUILD: ${{ inputs.force_full_rebuild == true && '1' || '' }}
+          GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
+        run: |
+          Rscript data-raw/match-predictions-opta/build_epr_weekly.R
+
+      - name: Upload to opta-latest
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+        run: |
+          OUT="../pannadata/data/opta/opta_epr_weekly.parquet"
+          if [ ! -f "$OUT" ]; then
+            echo "FATAL: $OUT not produced — nothing to upload"
+            exit 1
+          fi
+          gh release upload opta-latest "$OUT" --repo peteowen1/pannadata --clobber
+          echo "Uploaded opta_epr_weekly.parquet to opta-latest"
+
+      - name: Snapshot summary
+        if: always()
+        run: |
+          echo "## Weekly EPR Snapshot" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Date:** $(date +'%Y-%m-%d %H:%M UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "**Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Mode:** ${{ inputs.force_full_rebuild == true && 'full rebuild' || 'incremental' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          OUT="../pannadata/data/opta/opta_epr_weekly.parquet"
+          if [ -f "$OUT" ]; then
+            echo "**Output:** opta_epr_weekly.parquet ($(ls -lh "$OUT" | awk '{print $5}'))" >> $GITHUB_STEP_SUMMARY
+            echo "**Upload:** opta-latest release" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**Status:** FAILED (no output parquet)" >> $GITHUB_STEP_SUMMARY
+          fi
