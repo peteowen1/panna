@@ -15,20 +15,21 @@
 ##     epv_p90 ~ β_player + α_league_season + γ × opp_def_rating
 ## with exponential time-decay weights. β_player is the EPR.
 ##
-## Cross-league calibration: each row's y_off / y_def is shifted by a per-
-## league additive offset (see debug/keep/build_league_offsets.R and
-## ?compute_league_offsets) so β_player is on a single UCL-equivalent per-90
-## scale — replacing the coarse player × tier interaction.
+## Cross-league calibration: each row's y_off / y_def is shifted by a per-league
+## additive offset so β_player is on a single Big-5-equivalent per-90 scale —
+## replacing the coarse player × tier interaction. The offset is estimated by the
+## co-occurrence network (see section 3b + the note below), NOT applied at the end
+## like PSR's — it shifts the regression inputs, so changing it requires a FULL
+## snapshot rebuild (EPR_FORCE_FULL_REBUILD), not a cheap additive re-apply.
 ##
 ## Inputs: per-season game_logs.parquet files + opta_lineups (for opponents)
 ##         + cache-opta/team_season_strength.parquet (for opp_def_rating)
 ## Output: opta_epr_weekly.parquet — one row per (player_id × snapshot_date)
 ##
-## NOTE on league offsets: cache-predictions-opta/league_offsets.parquet is
-## BUILT IN-RUN if missing (not a required input) via the LEGACY single-anchor
-## compute_league_offsets(). PSR was re-architected to the build_league_network()
-## PSV/EPV co-occurrence network (2026-06); migrating EPR to the same network is
-## known FUTURE WORK — until then EPR's league calibration uses the older method.
+## League offsets are computed IN-RUN (no cached input) via build_league_network()
+## — the same same-season co-occurrence estimator PSR uses — run on offensive and
+## defensive EPV (see section 3b). Migrated 2026-06-23 off the legacy
+## compute_league_offsets() (which over-swung on thin-bridge leagues like MLS).
 
 suppressPackageStartupMessages({
   library(data.table); library(arrow); library(Matrix); library(glmnet)
@@ -102,23 +103,34 @@ t_log(sprintf("opp_def_rating join in %.1fs: %d rows fallback to 0 (%.1f%%)",
               as.numeric(Sys.time()-t0, units="secs"),
               n_na, 100*n_na/nrow(gl)))
 
-## --- 3b. Load (or build) per-league EPV calibration offsets ---
-## Offsets shift each row's per-90 EPV to a UCL-equivalent scale, replacing
-## the coarse player × tier_1/tier_2 split with continuous per-league
-## calibration. See debug/keep/build_league_offsets.R for the methodology.
-offsets_path <- file.path(cache_dir, "league_offsets.parquet")
-if (!file.exists(offsets_path)) {
-  t_log("league_offsets.parquet missing — building from current game_logs")
-  league_offsets <- compute_league_offsets(gl, verbose = TRUE)
-  write_parquet(league_offsets, offsets_path)
-} else {
-  league_offsets <- as.data.table(read_parquet(offsets_path))
-  t_log(sprintf("Loaded %s (%d leagues)", offsets_path, nrow(league_offsets)))
-  print(league_offsets[, .(league, method, n_obs,
-                             offset_off = round(offset_off, 3),
-                             offset_def = round(offset_def, 3),
-                             offset_tot = round(offset_tot, 3))])
-}
+## --- 3b. Per-league EPV calibration offsets (co-occurrence NETWORK) ---
+## Offsets shift each row's per-90 EPV to a Big-5-equivalent scale so β_player
+## is comparable across leagues. Estimated with build_league_network() — the
+## SAME same-season co-occurrence estimator PSR uses (PSR <- PSV network) — run
+## separately on offensive and defensive EPV to produce offset_off / offset_def.
+##
+## This replaces the legacy UCL-anchored compute_league_offsets(), which
+## over-swung on thin-bridge leagues (e.g. MLS -0.346 vs network -0.102 — it was
+## burying the entire league, suppressing Messi/Evander/etc.; CAFCL -0.169 from a
+## 7-player chain). The network pools every same-season pairing a player straddles
+## (domestic + continental + international), so it is robust on thin bridges and
+## anchors Big-5 = 0. Validated 2026-06-23: cor(old,new)=0.86, mean|ΔEPR|=0.0018,
+## changes concentrated on MLS (+~0.06, the correction); Big-5/elite unchanged.
+## build_league_network needs `total_minutes`; gl renamed it to minutes_played.
+gl[, total_minutes := minutes_played]
+off_net <- build_league_network(gl, value_col = "epv_offensive", verbose = FALSE)
+def_net <- build_league_network(gl, value_col = "epv_defensive", verbose = FALSE)
+league_offsets <- merge(off_net[, .(league, offset_off = offset)],
+                        def_net[, .(league, offset_def = offset)],
+                        by = "league", all = TRUE)
+league_offsets[is.na(offset_off), offset_off := 0]
+league_offsets[is.na(offset_def), offset_def := 0]
+league_offsets[, offset_tot := offset_off + offset_def]
+t_log(sprintf("EPV-network league offsets: %d leagues (Big-5-anchored)", nrow(league_offsets)))
+print(league_offsets[order(offset_tot), .(league,
+                       offset_off = round(offset_off, 3),
+                       offset_def = round(offset_def, 3),
+                       offset_tot = round(offset_tot, 3))])
 
 ## --- 4. Define snapshot dates (full history, weekly) ---
 ## Weekly snapshots across the whole game_logs history. Step 02 of the match-
