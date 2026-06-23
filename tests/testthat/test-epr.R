@@ -151,3 +151,36 @@ test_that("calculate_epr_batch produces multiple dates", {
   epr_late <- result$epr[result$ref_date == "2024-07-01"]
   expect_false(identical(epr_early, epr_late))
 })
+
+# ---------------------------------------------------------------------------
+# apply_epr_league_offsets() — end-add cross-league calibration (PSR-consistent)
+# ---------------------------------------------------------------------------
+
+test_that("apply_epr_league_offsets end-adds off/def and preserves epr = off + def", {
+  offs <- data.table::data.table(
+    league = c("WEAK", "EPL"),
+    offset_off = c(-0.08, 0), offset_def = c(-0.02, 0)
+  )
+  dt <- data.table::data.table(
+    player_id = c("x", "y"), league = c("WEAK", "EPL"),
+    epr_offensive = c(0.05, 0.05), epr_defensive = c(0.01, 0.01)
+  )
+  dt[, epr := epr_offensive + epr_defensive]
+  out <- apply_epr_league_offsets(dt, offs)
+  expect_true("epr_league_offset" %in% names(out))
+  expect_equal(out[league == "WEAK"]$epr_offensive, 0.05 - 0.08, tolerance = 1e-9)
+  expect_equal(out[league == "WEAK"]$epr_defensive, 0.01 - 0.02, tolerance = 1e-9)
+  expect_equal(out[league == "WEAK"]$epr, (0.05 - 0.08) + (0.01 - 0.02), tolerance = 1e-9)
+  expect_equal(out[league == "EPL"]$epr, 0.06)                         # anchor unchanged
+  expect_equal(out$epr, out$epr_offensive + out$epr_defensive, tolerance = 1e-9)  # identity
+  expect_equal(out[league == "WEAK"]$epr_league_offset, -0.10, tolerance = 1e-9)
+})
+
+test_that("apply_epr_league_offsets leaves unknown leagues unchanged (offset 0)", {
+  offs <- data.table::data.table(league = "WEAK", offset_off = -0.08, offset_def = -0.02)
+  dt <- data.table::data.table(player_id = "z", league = "UNKNOWN_LG",
+                               epr_offensive = 0.04, epr_defensive = 0.01, epr = 0.05)
+  out <- apply_epr_league_offsets(dt, offs)
+  expect_equal(out$epr, 0.05)
+  expect_equal(out$epr_league_offset, 0)
+})

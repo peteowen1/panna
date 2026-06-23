@@ -15,12 +15,14 @@
 ##     epv_p90 ~ β_player + α_league_season + γ × opp_def_rating
 ## with exponential time-decay weights. β_player is the EPR.
 ##
-## Cross-league calibration: each row's y_off / y_def is shifted by a per-league
-## additive offset so β_player is on a single Big-5-equivalent per-90 scale —
-## replacing the coarse player × tier interaction. The offset is estimated by the
-## co-occurrence network (see section 3b + the note below), NOT applied at the end
-## like PSR's — it shifts the regression inputs, so changing it requires a FULL
-## snapshot rebuild (EPR_FORCE_FULL_REBUILD), not a cheap additive re-apply.
+## Cross-league calibration: the regression keeps the league-season FE (β_player
+## is "above league-season mean"), then a per-league network offset is END-ADDED
+## (apply_epr_league_offsets) to place each league on a single Big-5-equivalent
+## scale — consistent with PSR, and at full strength (not discounted by per-player
+## ridge shrinkage). See section 3b. Because the offset is now additive, a future
+## offset-ONLY change is a cheap re-apply; but THIS migration changes the whole
+## application (FE kept, tier off, end-add) so it needs one full rebuild
+## (EPR_FORCE_FULL_REBUILD=1) to re-fit every snapshot.
 ##
 ## Inputs: per-season game_logs.parquet files + opta_lineups (for opponents)
 ##         + cache-opta/team_season_strength.parquet (for opp_def_rating)
@@ -103,20 +105,40 @@ t_log(sprintf("opp_def_rating join in %.1fs: %d rows fallback to 0 (%.1f%%)",
               as.numeric(Sys.time()-t0, units="secs"),
               n_na, 100*n_na/nrow(gl)))
 
-## --- 3b. Per-league EPV calibration offsets (co-occurrence NETWORK) ---
-## Offsets shift each row's per-90 EPV to a Big-5-equivalent scale so β_player
-## is comparable across leagues. Estimated with build_league_network() — the
-## SAME same-season co-occurrence estimator PSR uses (PSR <- PSV network) — run
-## separately on offensive and defensive EPV to produce offset_off / offset_def.
+## --- 3b. Per-league EPV calibration offsets (co-occurrence NETWORK, END-ADD) ---
+## Estimated with build_league_network() — the SAME same-season co-occurrence
+## estimator PSR uses (PSR <- PSV network) — run separately on offensive and
+## defensive EPV to produce offset_off / offset_def, Big-5-anchored.
 ##
-## This replaces the legacy UCL-anchored compute_league_offsets(), which
-## over-swung on thin-bridge leagues (e.g. MLS -0.346 vs network -0.102 — it was
-## burying the entire league, suppressing Messi/Evander/etc.; CAFCL -0.169 from a
-## 7-player chain). The network pools every same-season pairing a player straddles
-## (domestic + continental + international), so it is robust on thin bridges and
-## anchors Big-5 = 0. Validated 2026-06-23: cor(old,new)=0.86, mean|ΔEPR|=0.0018,
-## changes concentrated on MLS (+~0.06, the correction); Big-5/elite unchanged.
-## build_league_network needs `total_minutes`; gl renamed it to minutes_played.
+## APPLICATION = END-ADD, consistent with PSR (apply_psr_league_offsets): we run
+## calculate_epr_regression with the league-season FE KEPT (league_offsets=NULL),
+## so β_player is "above its league-season mean", then ADD offset_off/offset_def
+## to epr_off/epr_def per player's as-of-date primary league (apply_epr_league_
+## offsets). We do NOT shift y inside the regression: the offset is a LEAGUE-level
+## quantity and must apply at full strength, not be discounted by each player's
+## ridge shrinkage (which shifting-y-then-shrinking-β does — it pulls low-sample
+## weak-league players back toward the GLOBAL mean, defeating the purpose). End-add
+## shrinks each player toward their own LEAGUE prior — correct, and additive so an
+## offset-only change is a cheap re-apply (no full rebuild), like PSR.
+##
+## Replaces the legacy UCL-anchored compute_league_offsets(), which over-swung on
+## thin-bridge leagues (MLS -0.346 vs network -0.102, burying the whole league;
+## CAFCL -0.169 from a 7-player chain). build_league_network needs `total_minutes`;
+## gl renamed it to minutes_played.
+##
+## FLAT vs quality-aware — settled empirically (2026-06-23, same-season mover study,
+## ~10.6k EPV / 10.5k PSV movers, harmonic-mean-of-minutes weights):
+##   * The dramatic "elites get discounted less" signal was ~90% regression-to-the-
+##     mean artifact (regressing weak-strong on strong). Gone under a clean proxy.
+##   * Mean inflation is rock-solid (+0.041 EPV) -> the flat offset MAGNITUDE is right.
+##   * Gap-controlled independent-proxy slope = +0.15 (EPV, real flat-track-bully:
+##     elites inflate weak-league EPV MORE) but small (~0.03 across the quality
+##     range) and points toward discounting elites *more* -> flat is conservative,
+##     not harsh. PSR slope ~0 (flat). So a FLAT offset is the right, non-overfit call.
+## FUTURE POLISH (documented, low priority): (a) optional gentle flat-track-bully
+## tilt for EPR (+~0.03 to top-quality); (b) rescale offsets ~1.1-1.2x — the gap
+## coefficient was 1.10 (EPV)/1.20 (PSV), i.e. the network mildly under-estimates
+## the true league gap.
 gl[, total_minutes := minutes_played]
 off_net <- build_league_network(gl, value_col = "epv_offensive", verbose = FALSE)
 def_net <- build_league_network(gl, value_col = "epv_defensive", verbose = FALSE)
@@ -126,11 +148,33 @@ league_offsets <- merge(off_net[, .(league, offset_off = offset)],
 league_offsets[is.na(offset_off), offset_off := 0]
 league_offsets[is.na(offset_def), offset_def := 0]
 league_offsets[, offset_tot := offset_off + offset_def]
-t_log(sprintf("EPV-network league offsets: %d leagues (Big-5-anchored)", nrow(league_offsets)))
+t_log(sprintf("EPV-network league offsets: %d leagues (Big-5-anchored, end-add)", nrow(league_offsets)))
 print(league_offsets[order(offset_tot), .(league,
                        offset_off = round(offset_off, 3),
                        offset_def = round(offset_def, 3),
                        offset_tot = round(offset_tot, 3))])
+
+## Per-player as-of-date primary league (max-minutes league in a trailing window,
+## fallback all-time-before-d) — the key for end-add, mirroring 08b's PSR path.
+PL_WINDOW_DAYS <- 365L
+pl_src <- gl[!is.na(league), .(player_id, .lg = league, match_date, mins = minutes_played)]
+.primary_league_asof <- function(d) {
+  hist <- pl_src[match_date < d]
+  if (!nrow(hist)) return(NULL)
+  .pick <- function(x) {
+    if (!nrow(x)) return(NULL)
+    a <- x[, .(m = sum(mins, na.rm = TRUE)), by = .(player_id, .lg)]
+    setorder(a, player_id, -m)
+    a[, .(league = .lg[1L]), by = player_id]
+  }
+  recent <- .pick(hist[match_date >= d - PL_WINDOW_DAYS])
+  allt   <- .pick(hist)
+  if (is.null(allt)) return(recent)
+  if (is.null(recent)) return(allt)
+  out <- merge(allt, recent, by = "player_id", all.x = TRUE, suffixes = c("_all", "_recent"))
+  out[, league := fifelse(is.na(league_recent), league_all, league_recent)]
+  out[, .(player_id, league)]
+}
 
 ## --- 4. Define snapshot dates (full history, weekly) ---
 ## Weekly snapshots across the whole game_logs history. Step 02 of the match-
@@ -190,13 +234,23 @@ t0 <- Sys.time()
 all_snaps <- vector("list", length(snapshots))
 for (i in seq_along(snapshots)) {
   d <- snapshots[i]
+  # FE-mode (league_offsets = NULL keeps the league-season FE; tier off, since
+  # the network offset replaces the coarse tier interaction). β_player is then
+  # "above league-season mean"; we end-add the network offset below.
   res <- calculate_epr_regression(
     gl, ref_date = d, decay = DECAY,
     prior_strength = PRIOR_STRENGTH, alpha = ALPHA,
-    league_offsets = league_offsets,
+    tier_interaction = FALSE, league_offsets = NULL,
     verbose = FALSE
   )
   if (nrow(res) > 0) {
+    res <- as.data.table(res)
+    pl_d <- .primary_league_asof(d)            # attach as-of-date primary league
+    if (!is.null(pl_d)) {
+      res <- merge(res, pl_d, by = "player_id", all.x = TRUE)
+      res <- apply_epr_league_offsets(res, league_offsets)   # end-add (full strength)
+      res[, c("league", "epr_league_offset") := NULL]        # keep the slim schema
+    }
     res[, snapshot_date := d]
     all_snaps[[i]] <- res
   }
