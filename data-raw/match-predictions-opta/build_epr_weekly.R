@@ -154,26 +154,33 @@ print(league_offsets[order(offset_tot), .(league,
                        offset_def = round(offset_def, 3),
                        offset_tot = round(offset_tot, 3))])
 
-## Per-player as-of-date primary league (max-minutes league in a trailing window,
-## fallback all-time-before-d) — the key for end-add, mirroring 08b's PSR path.
-PL_WINDOW_DAYS <- 365L
-pl_src <- gl[!is.na(league), .(player_id, .lg = league, match_date, mins = minutes_played)]
-.primary_league_asof <- function(d) {
-  hist <- pl_src[match_date < d]
+## Per-player as-of-date DECAY-WEIGHTED BLEND of league offsets.
+## Each game contributes its league's offset, weighted the SAME way the regression
+## weights it (decay = 900d × minutes), then end-added outside the regression so it
+## survives at full strength (an in-regression per-game y-shift gets washed out by
+## the ridge — tested: MLS mean -0.003 vs -0.10). This is game-level adjustment
+## realized at full strength, and it handles mid-season movers correctly (e.g. a
+## 60% MLS / 40% EPL window gets a blended discount, not the single primary league).
+##
+## Efficiency: w_g = exp(-(d - md_g)/decay)·min_g; the exp(-d/decay) factor is
+## common to numerator and denominator so it CANCELS in the blend ratio. We
+## precompute the per-game factor gfac = exp((md_g - max_md)/decay)·min_g once
+## (max-date-shifted for numerical safety), and each snapshot is just a weighted
+## sum over games before d. NA-offset leagues contribute offset 0.
+DECAY_BLEND_DAYS <- 900L                      # match the EPR-regression decay
+glb <- merge(gl[!is.na(league), .(player_id, league, match_date, minutes_played)],
+             league_offsets[, .(league, offset_off, offset_def)], by = "league", all.x = TRUE)
+glb[is.na(offset_off), offset_off := 0]
+glb[is.na(offset_def), offset_def := 0]
+.maxmd <- as.numeric(max(glb$match_date))
+glb[, gfac := exp((as.numeric(match_date) - .maxmd) / DECAY_BLEND_DAYS) * minutes_played]
+glb[, c("woff", "wdef") := .(gfac * offset_off, gfac * offset_def)]
+data.table::setkey(glb, match_date)
+.blend_offset_asof <- function(d) {
+  hist <- glb[match_date < d]
   if (!nrow(hist)) return(NULL)
-  .pick <- function(x) {
-    if (!nrow(x)) return(NULL)
-    a <- x[, .(m = sum(mins, na.rm = TRUE)), by = .(player_id, .lg)]
-    setorder(a, player_id, -m)
-    a[, .(league = .lg[1L]), by = player_id]
-  }
-  recent <- .pick(hist[match_date >= d - PL_WINDOW_DAYS])
-  allt   <- .pick(hist)
-  if (is.null(allt)) return(recent)
-  if (is.null(recent)) return(allt)
-  out <- merge(allt, recent, by = "player_id", all.x = TRUE, suffixes = c("_all", "_recent"))
-  out[, league := fifelse(is.na(league_recent), league_all, league_recent)]
-  out[, .(player_id, league)]
+  hist[, .(offset_off = sum(woff) / sum(gfac),
+           offset_def = sum(wdef) / sum(gfac)), by = player_id]
 }
 
 ## --- 4. Define snapshot dates (full history, weekly) ---
@@ -245,11 +252,15 @@ for (i in seq_along(snapshots)) {
   )
   if (nrow(res) > 0) {
     res <- as.data.table(res)
-    pl_d <- .primary_league_asof(d)            # attach as-of-date primary league
-    if (!is.null(pl_d)) {
-      res <- merge(res, pl_d, by = "player_id", all.x = TRUE)
-      res <- apply_epr_league_offsets(res, league_offsets)   # end-add (full strength)
-      res[, c("league", "epr_league_offset") := NULL]        # keep the slim schema
+    bl <- .blend_offset_asof(d)                # decay-weighted blend offset per player
+    if (!is.null(bl)) {
+      res <- merge(res, bl, by = "player_id", all.x = TRUE)
+      res[is.na(offset_off), offset_off := 0]
+      res[is.na(offset_def), offset_def := 0]
+      res[, epr_offensive := epr_offensive + offset_off]     # end-add (full strength)
+      res[, epr_defensive := epr_defensive + offset_def]
+      res[, epr := epr_offensive + epr_defensive]            # preserve epr = off + def
+      res[, c("offset_off", "offset_def") := NULL]           # keep the slim schema
     }
     res[, snapshot_date := d]
     all_snaps[[i]] <- res
