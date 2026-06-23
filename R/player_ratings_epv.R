@@ -625,6 +625,76 @@ calculate_epr_regression <- function(player_game_epv,
 }
 
 
+#' Apply cross-league EPV offsets to an EPR table (end-add, PSR-consistent)
+#'
+#' Adds the per-league network offset to each row's \code{epr_offensive} /
+#' \code{epr_defensive} (and recomputes \code{epr = epr_offensive +
+#' epr_defensive}), placing league-season-centred EPR on a single Big-5-equivalent
+#' scale. This is the EPR analogue of \code{\link{apply_psr_league_offsets}}:
+#' run \code{\link{calculate_epr_regression}} with the league-season FE kept and
+#' \code{league_offsets = NULL} (so \eqn{\beta_{player}} is "above league-season
+#' mean"), then add the offset HERE.
+#'
+#' Why end-add rather than shifting \eqn{y} inside the regression: the offset is
+#' a league-LEVEL quantity (estimated from the whole co-occurrence network), so it
+#' should be applied at full strength, not discounted by each player's ridge
+#' shrinkage. Shifting \eqn{y} and shrinking \eqn{\beta} toward 0 pulls low-sample
+#' weak-league players back toward the GLOBAL mean — the opposite of the intent.
+#' Keeping the FE then end-adding shrinks each player toward their own LEAGUE
+#' prior, which is the correct behaviour (and matches PSR + unlocks the additive
+#' fast-path for offset-only changes).
+#'
+#' @param epr_dt A data.table/data.frame with a \code{league} column and
+#'   \code{epr_offensive}/\code{epr_defensive} (and optionally \code{epr}).
+#' @param offsets Offset table with columns \code{league}, \code{offset_off},
+#'   \code{offset_def} (e.g. from \code{build_league_network()} on offensive and
+#'   defensive EPV).
+#' @param verbose Report how many rows were adjusted. Default FALSE.
+#'
+#' @return \code{epr_dt} (as data.table) with \code{epr_offensive}/
+#'   \code{epr_defensive}/\code{epr} shifted, plus an \code{epr_league_offset}
+#'   column recording the applied total. Rows whose league has no offset are
+#'   unchanged (offset 0).
+#'
+#' @seealso \code{\link{apply_psr_league_offsets}}, \code{\link{build_league_network}}
+#' @export
+apply_epr_league_offsets <- function(epr_dt, offsets, verbose = FALSE) {
+  dt <- data.table::as.data.table(epr_dt)
+  if (!"league" %in% names(dt) && "competition" %in% names(dt)) {
+    dt[, league := competition]
+  }
+  if (!"league" %in% names(dt)) {
+    cli::cli_warn("apply_epr_league_offsets: no {.field league} column; returning unchanged.")
+    dt[, epr_league_offset := 0]
+    return(dt[])
+  }
+  off <- data.table::as.data.table(offsets)
+  needed <- c("league", "offset_off", "offset_def")
+  miss <- setdiff(needed, names(off))
+  if (length(miss)) {
+    cli::cli_abort("offsets missing required columns: {.field {miss}}")
+  }
+  off <- off[, .(league, .ooff = offset_off, .odef = offset_def)]
+  dt <- merge(dt, off, by = "league", all.x = TRUE, sort = FALSE)
+  dt[is.na(.ooff), .ooff := 0]
+  dt[is.na(.odef), .odef := 0]
+  if ("epr_offensive" %in% names(dt)) dt[, epr_offensive := epr_offensive + .ooff]
+  if ("epr_defensive" %in% names(dt)) dt[, epr_defensive := epr_defensive + .odef]
+  if (all(c("epr_offensive", "epr_defensive") %in% names(dt))) {
+    dt[, epr := epr_offensive + epr_defensive]   # preserve epr = off + def
+  } else if ("epr" %in% names(dt)) {
+    dt[, epr := epr + .ooff + .odef]
+  }
+  dt[, epr_league_offset := .ooff + .odef]
+  dt[, c(".ooff", ".odef") := NULL]
+  if (isTRUE(verbose)) {
+    n_adj <- dt[epr_league_offset != 0, .N]
+    cli::cli_inform("Applied EPR league offsets to {n_adj} of {nrow(dt)} rows.")
+  }
+  dt[]
+}
+
+
 #' Optimise EPR decay via hold-out prediction MSE
 #'
 #' Grid-search the decay parameter for \code{calculate_epr_regression()} by

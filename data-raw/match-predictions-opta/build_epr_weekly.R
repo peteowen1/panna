@@ -15,20 +15,23 @@
 ##     epv_p90 ~ β_player + α_league_season + γ × opp_def_rating
 ## with exponential time-decay weights. β_player is the EPR.
 ##
-## Cross-league calibration: each row's y_off / y_def is shifted by a per-
-## league additive offset (see debug/keep/build_league_offsets.R and
-## ?compute_league_offsets) so β_player is on a single UCL-equivalent per-90
-## scale — replacing the coarse player × tier interaction.
+## Cross-league calibration: the regression keeps the league-season FE (β_player
+## is "above league-season mean"), then a per-league network offset is END-ADDED
+## (apply_epr_league_offsets) to place each league on a single Big-5-equivalent
+## scale — consistent with PSR, and at full strength (not discounted by per-player
+## ridge shrinkage). See section 3b. Because the offset is now additive, a future
+## offset-ONLY change is a cheap re-apply; but THIS migration changes the whole
+## application (FE kept, tier off, end-add) so it needs one full rebuild
+## (EPR_FORCE_FULL_REBUILD=1) to re-fit every snapshot.
 ##
 ## Inputs: per-season game_logs.parquet files + opta_lineups (for opponents)
 ##         + cache-opta/team_season_strength.parquet (for opp_def_rating)
 ## Output: opta_epr_weekly.parquet — one row per (player_id × snapshot_date)
 ##
-## NOTE on league offsets: cache-predictions-opta/league_offsets.parquet is
-## BUILT IN-RUN if missing (not a required input) via the LEGACY single-anchor
-## compute_league_offsets(). PSR was re-architected to the build_league_network()
-## PSV/EPV co-occurrence network (2026-06); migrating EPR to the same network is
-## known FUTURE WORK — until then EPR's league calibration uses the older method.
+## League offsets are computed IN-RUN (no cached input) via build_league_network()
+## — the same same-season co-occurrence estimator PSR uses — run on offensive and
+## defensive EPV (see section 3b). Migrated 2026-06-23 off the legacy
+## compute_league_offsets() (which over-swung on thin-bridge leagues like MLS).
 
 suppressPackageStartupMessages({
   library(data.table); library(arrow); library(Matrix); library(glmnet)
@@ -102,22 +105,82 @@ t_log(sprintf("opp_def_rating join in %.1fs: %d rows fallback to 0 (%.1f%%)",
               as.numeric(Sys.time()-t0, units="secs"),
               n_na, 100*n_na/nrow(gl)))
 
-## --- 3b. Load (or build) per-league EPV calibration offsets ---
-## Offsets shift each row's per-90 EPV to a UCL-equivalent scale, replacing
-## the coarse player × tier_1/tier_2 split with continuous per-league
-## calibration. See debug/keep/build_league_offsets.R for the methodology.
-offsets_path <- file.path(cache_dir, "league_offsets.parquet")
-if (!file.exists(offsets_path)) {
-  t_log("league_offsets.parquet missing — building from current game_logs")
-  league_offsets <- compute_league_offsets(gl, verbose = TRUE)
-  write_parquet(league_offsets, offsets_path)
-} else {
-  league_offsets <- as.data.table(read_parquet(offsets_path))
-  t_log(sprintf("Loaded %s (%d leagues)", offsets_path, nrow(league_offsets)))
-  print(league_offsets[, .(league, method, n_obs,
-                             offset_off = round(offset_off, 3),
-                             offset_def = round(offset_def, 3),
-                             offset_tot = round(offset_tot, 3))])
+## --- 3b. Per-league EPV calibration offsets (co-occurrence NETWORK, END-ADD) ---
+## Estimated with build_league_network() — the SAME same-season co-occurrence
+## estimator PSR uses (PSR <- PSV network) — run separately on offensive and
+## defensive EPV to produce offset_off / offset_def, Big-5-anchored.
+##
+## APPLICATION = END-ADD, consistent with PSR (apply_psr_league_offsets): we run
+## calculate_epr_regression with the league-season FE KEPT (league_offsets=NULL),
+## so β_player is "above its league-season mean", then ADD offset_off/offset_def
+## to epr_off/epr_def per player's as-of-date primary league (apply_epr_league_
+## offsets). We do NOT shift y inside the regression: the offset is a LEAGUE-level
+## quantity and must apply at full strength, not be discounted by each player's
+## ridge shrinkage (which shifting-y-then-shrinking-β does — it pulls low-sample
+## weak-league players back toward the GLOBAL mean, defeating the purpose). End-add
+## shrinks each player toward their own LEAGUE prior — correct, and additive so an
+## offset-only change is a cheap re-apply (no full rebuild), like PSR.
+##
+## Replaces the legacy UCL-anchored compute_league_offsets(), which over-swung on
+## thin-bridge leagues (MLS -0.346 vs network -0.102, burying the whole league;
+## CAFCL -0.169 from a 7-player chain). build_league_network needs `total_minutes`;
+## gl renamed it to minutes_played.
+##
+## FLAT vs quality-aware — settled empirically (2026-06-23, same-season mover study,
+## ~10.6k EPV / 10.5k PSV movers, harmonic-mean-of-minutes weights):
+##   * The dramatic "elites get discounted less" signal was ~90% regression-to-the-
+##     mean artifact (regressing weak-strong on strong). Gone under a clean proxy.
+##   * Mean inflation is rock-solid (+0.041 EPV) -> the flat offset MAGNITUDE is right.
+##   * Gap-controlled independent-proxy slope = +0.15 (EPV, real flat-track-bully:
+##     elites inflate weak-league EPV MORE) but small (~0.03 across the quality
+##     range) and points toward discounting elites *more* -> flat is conservative,
+##     not harsh. PSR slope ~0 (flat). So a FLAT offset is the right, non-overfit call.
+## FUTURE POLISH (documented, low priority): (a) optional gentle flat-track-bully
+## tilt for EPR (+~0.03 to top-quality); (b) rescale offsets ~1.1-1.2x — the gap
+## coefficient was 1.10 (EPV)/1.20 (PSV), i.e. the network mildly under-estimates
+## the true league gap.
+gl[, total_minutes := minutes_played]
+off_net <- build_league_network(gl, value_col = "epv_offensive", verbose = FALSE)
+def_net <- build_league_network(gl, value_col = "epv_defensive", verbose = FALSE)
+league_offsets <- merge(off_net[, .(league, offset_off = offset)],
+                        def_net[, .(league, offset_def = offset)],
+                        by = "league", all = TRUE)
+league_offsets[is.na(offset_off), offset_off := 0]
+league_offsets[is.na(offset_def), offset_def := 0]
+league_offsets[, offset_tot := offset_off + offset_def]
+t_log(sprintf("EPV-network league offsets: %d leagues (Big-5-anchored, end-add)", nrow(league_offsets)))
+print(league_offsets[order(offset_tot), .(league,
+                       offset_off = round(offset_off, 3),
+                       offset_def = round(offset_def, 3),
+                       offset_tot = round(offset_tot, 3))])
+
+## Per-player as-of-date DECAY-WEIGHTED BLEND of league offsets.
+## Each game contributes its league's offset, weighted the SAME way the regression
+## weights it (decay = 900d × minutes), then end-added outside the regression so it
+## survives at full strength (an in-regression per-game y-shift gets washed out by
+## the ridge — tested: MLS mean -0.003 vs -0.10). This is game-level adjustment
+## realized at full strength, and it handles mid-season movers correctly (e.g. a
+## 60% MLS / 40% EPL window gets a blended discount, not the single primary league).
+##
+## Efficiency: w_g = exp(-(d - md_g)/decay)·min_g; the exp(-d/decay) factor is
+## common to numerator and denominator so it CANCELS in the blend ratio. We
+## precompute the per-game factor gfac = exp((md_g - max_md)/decay)·min_g once
+## (max-date-shifted for numerical safety), and each snapshot is just a weighted
+## sum over games before d. NA-offset leagues contribute offset 0.
+DECAY_BLEND_DAYS <- 900L                      # match the EPR-regression decay
+glb <- merge(gl[!is.na(league), .(player_id, league, match_date, minutes_played)],
+             league_offsets[, .(league, offset_off, offset_def)], by = "league", all.x = TRUE)
+glb[is.na(offset_off), offset_off := 0]
+glb[is.na(offset_def), offset_def := 0]
+.maxmd <- as.numeric(max(glb$match_date))
+glb[, gfac := exp((as.numeric(match_date) - .maxmd) / DECAY_BLEND_DAYS) * minutes_played]
+glb[, c("woff", "wdef") := .(gfac * offset_off, gfac * offset_def)]
+data.table::setkey(glb, match_date)
+.blend_offset_asof <- function(d) {
+  hist <- glb[match_date < d]
+  if (!nrow(hist)) return(NULL)
+  hist[, .(offset_off = sum(woff) / sum(gfac),
+           offset_def = sum(wdef) / sum(gfac)), by = player_id]
 }
 
 ## --- 4. Define snapshot dates (full history, weekly) ---
@@ -178,13 +241,27 @@ t0 <- Sys.time()
 all_snaps <- vector("list", length(snapshots))
 for (i in seq_along(snapshots)) {
   d <- snapshots[i]
+  # FE-mode (league_offsets = NULL keeps the league-season FE; tier off, since
+  # the network offset replaces the coarse tier interaction). β_player is then
+  # "above league-season mean"; we end-add the network offset below.
   res <- calculate_epr_regression(
     gl, ref_date = d, decay = DECAY,
     prior_strength = PRIOR_STRENGTH, alpha = ALPHA,
-    league_offsets = league_offsets,
+    tier_interaction = FALSE, league_offsets = NULL,
     verbose = FALSE
   )
   if (nrow(res) > 0) {
+    res <- as.data.table(res)
+    bl <- .blend_offset_asof(d)                # decay-weighted blend offset per player
+    if (!is.null(bl)) {
+      res <- merge(res, bl, by = "player_id", all.x = TRUE)
+      res[is.na(offset_off), offset_off := 0]
+      res[is.na(offset_def), offset_def := 0]
+      res[, epr_offensive := epr_offensive + offset_off]     # end-add (full strength)
+      res[, epr_defensive := epr_defensive + offset_def]
+      res[, epr := epr_offensive + epr_defensive]            # preserve epr = off + def
+      res[, c("offset_off", "offset_def") := NULL]           # keep the slim schema
+    }
     res[, snapshot_date := d]
     all_snaps[[i]] <- res
   }
