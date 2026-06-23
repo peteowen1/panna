@@ -296,35 +296,34 @@ psr_lg_col <- if ("competition" %in% names(match_stats)) "competition" else
 psr_apply_offsets <- !is.null(psr_offsets) && !is.null(psr_lg_col) &&
                      "total_minutes" %in% names(match_stats)
 if (psr_apply_offsets) {
+  # DECAY-WEIGHTED BLEND of league offsets (not a single primary league): each
+  # game contributes its league's offset, weighted by PSR's OWN skill recency
+  # (decay_params$rate, ~231-day half-life) so the blend matches how the smoothed
+  # skills weight games. End-added per player below. This handles mid-season
+  # movers correctly (a 60/40 split gets a blended discount, converging as the
+  # window fills) instead of snapping to the single max-minutes league. Mirrors
+  # the EPR decay-blend; PSR uses its shorter decay, not EPR's 900d.
   pl_src <- match_stats[!is.na(get(psr_lg_col)),
                         .(player_id, .lg = get(psr_lg_col),
                           match_date, total_minutes)]
-  PSR_LEAGUE_WINDOW_DAYS <- 365L
-  # Primary league as of date d: max-minutes competition in the trailing
-  # window, else max-minutes competition all-time before d.
-  .primary_league_asof <- function(d) {
-    hist <- pl_src[match_date < d]
+  PSR_BLEND_LAMBDA <- decay_params$rate          # per-day; ~231d half-life
+  blend_src <- merge(pl_src,
+                     data.table::as.data.table(psr_offsets)[, .(.lg = league, .off = offset)],
+                     by = ".lg", all.x = TRUE)
+  blend_src[is.na(.off), .off := 0]              # leagues without an offset contribute 0
+  .maxmd_psr <- as.numeric(max(blend_src$match_date))
+  # gfac = exp(-lambda*(d - md))*mins; the exp(-lambda*d) common factor cancels in
+  # the blend ratio, so precompute the max-date-shifted per-game weight once.
+  blend_src[, gfac := exp(-PSR_BLEND_LAMBDA * (.maxmd_psr - as.numeric(match_date))) * total_minutes]
+  blend_src[, woff := gfac * .off]
+  data.table::setkey(blend_src, match_date)
+  .blend_offset_asof <- function(d) {
+    hist <- blend_src[match_date < d]
     if (!nrow(hist)) return(NULL)
-    .pick <- function(x) {
-      if (!nrow(x)) return(NULL)
-      a <- x[, .(m = sum(total_minutes, na.rm = TRUE)), by = .(player_id, .lg)]
-      data.table::setorder(a, player_id, -m)
-      a[, .(league = .lg[1L]), by = player_id]
-    }
-    recent <- .pick(hist[match_date >= d - PSR_LEAGUE_WINDOW_DAYS])
-    allt   <- .pick(hist)
-    if (is.null(allt)) return(recent)
-    if (is.null(recent)) return(allt)
-    # Prefer the trailing-window league; fall back to all-time for players
-    # with no minutes in the window (injured/returning).
-    out <- merge(allt, recent, by = "player_id", all.x = TRUE,
-                 suffixes = c("_all", "_recent"))
-    out[, league := data.table::fifelse(is.na(league_recent),
-                                        league_all, league_recent)]
-    out[, .(player_id, league)]
+    hist[, .(.boff = sum(woff) / sum(gfac)), by = player_id]
   }
-  cat(sprintf("  PSR league offsets loaded (%d leagues); primary-league source built (%s, %d-day window)\n",
-              nrow(psr_offsets), psr_lg_col, PSR_LEAGUE_WINDOW_DAYS))
+  cat(sprintf("  PSR league offsets loaded (%d leagues); decay-weighted blend built (%s, lambda=%.4f ~ %d-day half-life)\n",
+              nrow(psr_offsets), psr_lg_col, PSR_BLEND_LAMBDA, round(log(2) / PSR_BLEND_LAMBDA)))
 } else {
   cat(sprintf("  NOTE: PSR league offsets %s -> not applied\n",
               if (is.null(psr_offsets)) "not found (run step 06 first)" else "disabled (no competition/minutes)"))
@@ -498,16 +497,21 @@ for (i in seq_along(snapshot_dates)) {
   )
   if (is.null(psr) || nrow(psr) == 0) { rm(skills, psr); next }
 
-  # Cross-league calibration: attach the player's current league (as of d) and
-  # add the transfer-graph offset so weak-league players aren't ranked globally.
+  # Cross-league calibration: end-add the decay-weighted blend of league offsets
+  # (full strength, split osr/dsr to preserve osr+dsr=psr) so weak-league players
+  # aren't ranked globally and mid-season movers blend across leagues.
   if (psr_apply_offsets) {
     psr <- data.table::as.data.table(psr)
-    if ("league" %in% names(psr)) psr[, league := NULL]
-    pl_d <- .primary_league_asof(d)
-    if (!is.null(pl_d)) {
-      psr <- merge(psr, pl_d, by = "player_id", all.x = TRUE)
-      psr <- apply_psr_league_offsets(psr, psr_offsets)
-      psr[, league := NULL]
+    bl <- .blend_offset_asof(d)
+    if (!is.null(bl)) {
+      psr <- merge(psr, bl, by = "player_id", all.x = TRUE)
+      psr[is.na(.boff), .boff := 0]
+      psr[, psr := psr + .boff]
+      if (all(c("osr", "dsr") %in% names(psr))) {
+        psr[, osr := osr + .boff / 2]
+        psr[, dsr := dsr + .boff / 2]
+      }
+      psr[, .boff := NULL]
     }
   }
 
