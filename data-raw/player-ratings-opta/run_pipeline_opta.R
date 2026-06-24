@@ -13,20 +13,9 @@ devtools::load_all()
 # 2. Configuration ----
 # Use if (!exists(...)) so test scripts can override before sourcing
 
-# LEAGUES TO INCLUDE
-if (!exists("leagues")) leagues <- c(
-  "ENG", "ESP", "GER", "ITA", "FRA",       # Big 5
-  "NED", "POR", "TUR", "ENG2", "SCO",      # Extended European domestic
-  "BEL",                                    # Belgian First Division
-  "BRA",                                    # Brazilian Serie A
-  "AUS",                                    # A-League (Australian)
-  "TUN",                                    # Tunisian Ligue 1
-  "MLS", "MEX", "ARG", "SAU",               # Americas / Asia domestic
-  "CAFCL",                                  # CAF Champions League (African club)
-  "UCL", "UEL", "UECL",                     # European comps
-  "LIB", "SUD", "CCC", "LGC", "ACLE", "CWC", # Americas/Asia club bridges (connectivity)
-  "WC", "EURO"                               # International
-)
+# LEAGUES TO INCLUDE — canonical rating/display set (PANNA_RATING_LEAGUES) +
+# bridge comps for cross-league connectivity. Shared with step 03 / skills / 10b.
+if (!exists("leagues")) leagues <- c(PANNA_RATING_LEAGUES, PANNA_BRIDGE_LEAGUES)
 
 # SEASONS (NULL = all available, or specify like c("2024-2025"))
 # For incremental rebuilds, set to the changed season(s):

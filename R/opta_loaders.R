@@ -1991,7 +1991,13 @@ enrich_match_stats_with_xmetrics <- function(match_stats, verbose = TRUE,
     ibox_g_minus_xg_per90 = "ibox_g_minus_xg_per90",
     obox_g_minus_xg_per90 = "obox_g_minus_xg_per90",
     placement_added_per90 = "placement_added_per90",
-    gsaa_per90 = "gsaa_per90"
+    gsaa_per90 = "gsaa_per90",
+    # Above-expected physical-duel counts (xDuel, 5 contests) — replace *_success ratios
+    aerial_woe_per90 = "aerial_woe_per90",
+    aerial_poss_woe_per90 = "aerial_poss_woe_per90",
+    takeon_woe_per90 = "takeon_woe_per90",
+    tackle_poss_woe_per90 = "tackle_poss_woe_per90",
+    containment_woe_per90 = "containment_woe_per90"
   )
 
   if (!all(c("league", "season", "match_id", "player_id") %in% names(match_stats))) {

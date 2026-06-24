@@ -28,15 +28,13 @@ tag <- "blog-latest"
 #   (2) continental    — UCL / UEL / UECL use "YYYY-YYYY" too
 #   (3) intl_tournament — WC / EURO use "YYYY Country"; map a summer
 #                         tournament to the domestic season ending that year.
-domestic_leagues  <- c("ENG", "ESP", "GER", "ITA", "FRA",
-                        "NED", "POR", "SCO", "TUR", "ENG2",
-                        "MEX", "SAU",          # added 2026-06-11 ("YYYY-YYYY" labels)
-                        "AUS", "BEL")          # added 2026-06-22 (A-League, Belgian — "YYYY-YYYY")
-# Calendar-year season labels ("2026" not "2025-2026") — resolved through the
-# same year-prefix matching as the intl tournaments ("2025-2026" -> "2026").
-calendar_leagues  <- c("MLS", "ARG", "BRA")    # BRA added 2026-06-22 (calendar-year)
-continental_cups  <- c("UCL", "UEL", "UECL", "CAFCL")  # CAFCL added 2026-06-22 ("YYYY-YYYY")
-intl_tournaments  <- c("WC", "EURO", "AFCON", "Copa_America")
+# Groups come from the shared canonical constant (constants.R: PANNA_LEAGUE_GROUPS),
+# so step 03 / skills / RAPM / 10b can't drift. Grouping drives season-label
+# resolution: domestic = "YYYY-YYYY"; calendar = "YYYY"; intl = "YYYY Country".
+domestic_leagues  <- PANNA_LEAGUE_GROUPS$domestic
+calendar_leagues  <- PANNA_LEAGUE_GROUPS$calendar    # calendar-year season labels
+continental_cups  <- PANNA_LEAGUE_GROUPS$continental
+intl_tournaments  <- PANNA_LEAGUE_GROUPS$intl
 # Leagues whose season label is resolved by year prefix rather than passed through
 season_label_leagues <- c(intl_tournaments, calendar_leagues)
 # Override guard: backfill runs can process a league subset. CAUTION — the

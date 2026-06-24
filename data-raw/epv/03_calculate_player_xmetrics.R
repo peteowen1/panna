@@ -22,20 +22,11 @@ devtools::load_all()
 
 # Config override pattern: debug/test scripts can set LEAGUES before sourcing
 # (e.g. to score only newly-added leagues against existing SPADL caches).
-if (!exists("LEAGUES", inherits = FALSE)) LEAGUES <- c(
-  # Big 5
-  "ENG", "ESP", "GER", "ITA", "FRA",
-  # Extended domestic
-  "NED", "POR", "TUR", "ENG2", "SCO",
-  # Americas / Asia domestic (added 2026-06-11; events backfilled to 2013-14)
-  "MLS", "MEX", "ARG", "SAU",
-  # Club-comp bridges (cross-league connectivity for offsets)
-  "LIB", "SUD", "CCC", "LGC", "ACLE", "CWC",
-  # European comps
-  "UCL", "UEL", "UECL",
-  # International
-  "WC", "EURO"
-)
+# Canonical rating/display set (PANNA_RATING_LEAGUES) + bridge comps for
+# cross-league offset connectivity. Shared with skills/PSR, RAPM and 10b.
+if (!exists("LEAGUES", inherits = FALSE)) {
+  LEAGUES <- c(PANNA_RATING_LEAGUES, PANNA_BRIDGE_LEAGUES)
+}
 
 # Only process seasons from 2013-2014 onwards (2014+ data)
 START_SEASON <- "2013-2014"
@@ -58,8 +49,13 @@ cli_h2("Step 1: Load Trained Models")
 xg_model <- load_xg_model()
 xpass_model <- load_xpass_model()
 xgot_model <- load_xgot_model()   # NULL until goalmouth-enabled model ships
+# xDuel: expected duel/aerial/tackle win prob → "duels won above expected" features
+# (replace the *_success ratios in PSR/PSV). NULL until 01b_train_duel_model.R run.
+duel_model <- tryCatch(load_duel_model(), error = function(e) {
+  cli_alert_warning("xDuel model unavailable — skipping duel-above-expected: {e$message}"); NULL
+})
 
-cli_alert_success("Models loaded{if (is.null(xgot_model)) ' (xGOT unavailable — skipping post-shot xG)' else ''}")
+cli_alert_success("Models loaded{if (is.null(xgot_model)) ' (xGOT unavailable — skipping post-shot xG)' else ''}{if (is.null(duel_model)) ' (xDuel unavailable)' else ''}")
 
 # 3. Discover Available Seasons ----
 
@@ -207,6 +203,43 @@ for (league in names(league_seasons)) {
         spadl, lineups, min_minutes = MIN_MINUTES, by_match = TRUE)
       player_metrics_bymatch$league <- league
       player_metrics_bymatch$season <- season
+
+      # 4j-iii. Duels/aerials/tackles won above expected (xDuel). Computed from
+      # RAW events (both contest participants survive, unlike post-merge SPADL),
+      # joined per (player_id, match_id), divided by that row's minutes. These
+      # per-90 above-expected counts replace the *_success ratios in PSR/PSV.
+      if (!is.null(duel_model)) {
+        # Five contests (R/duel_model.R): aerial_win, aerial_poss, takeon (attacker),
+        # tackle_poss, containment (defender). Each -> a per-90 above-expected count.
+        .duel_woe_cols <- c("aerial_woe", "aerial_poss_woe", "takeon_woe",
+                            "tackle_poss_woe", "containment_woe")
+        .attach_duel_woe <- function(pm, by_match) {
+          woe <- tryCatch(compute_duel_woe(events, duel_model, by_match = by_match),
+                          error = function(e) { cli_alert_warning("  duel WOE failed for {label}: {e$message}"); NULL })
+          if (is.null(woe) || nrow(woe) == 0) {
+            for (p90 in paste0(.duel_woe_cols, "_per90")) pm[[p90]] <- 0
+            return(pm)
+          }
+          key <- intersect(c("player_id", "team_id", "match_id"), names(woe))
+          have <- intersect(.duel_woe_cols, names(woe))
+          dt <- data.table::as.data.table(pm)
+          dt <- woe[, c(key, have), with = FALSE][dt, on = key]
+          for (wc in .duel_woe_cols) {
+            p90 <- paste0(wc, "_per90")
+            base <- if (wc %in% names(dt)) dt[[wc]] else rep(NA_real_, nrow(dt))
+            val <- data.table::fifelse(!is.na(base) & dt$minutes > 0,
+                                       round(base / dt$minutes * 90, 3), 0)
+            val[is.na(val)] <- 0
+            data.table::set(dt, j = p90, value = val)
+            if (wc %in% names(dt)) data.table::set(dt, which(is.na(dt[[wc]])), wc, 0)
+          }
+          as.data.frame(dt)
+        }
+        player_metrics_bymatch <- .attach_duel_woe(player_metrics_bymatch, by_match = TRUE)
+        player_metrics      <- .attach_duel_woe(player_metrics,      by_match = FALSE)
+        arrow::write_parquet(player_metrics, output_file)  # rewrite season-level with WOE
+      }
+
       bymatch_dir <- file.path(opta_data_dir(), "xmetrics_bymatch", opta_league)
       dir.create(bymatch_dir, recursive = TRUE, showWarnings = FALSE)
       arrow::write_parquet(player_metrics_bymatch,
