@@ -33,6 +33,10 @@ if (coef_xg == "" && coef_gd == "") {
   stop("PSR coefficients not found. Run step 07 (07_train_psr_model.R) first.")
 }
 psr_target <- if (coef_xg != "") "xg" else "goals"
+# Within-position normalization (per-role skill means); display-only, BPM-style.
+.psr_position_means <- if (exists("position_normalize") && !isTRUE(position_normalize)) {
+  NULL
+} else load_position_role_means()
 if (psr_target == "goals") {
   cat("Note: xG coefficients not found, using goal-diff PSR instead.\n")
   cat("Re-run step 07 after fixing splint xG columns for xG-based PSR.\n\n")
@@ -489,7 +493,8 @@ for (i in seq_along(snapshot_dates)) {
   if (is.null(skills) || nrow(skills) == 0) { rm(skills); next }
 
   psr <- tryCatch(
-    compute_player_psr(skills, center = TRUE, target = psr_target),
+    compute_player_psr(skills, center = TRUE, target = psr_target,
+                       position_means = .psr_position_means),
     error = function(e) {
       cat(sprintf("  WARN: PSR failed for %s: %s\n", d, e$message))
       NULL

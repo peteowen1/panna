@@ -60,6 +60,14 @@ game_log_seasons <- as.character(game_log_seasons)
 # game_logs.parquet so the blog workflow's name-pinned download still works.
 current_season_alias <- sort(game_log_seasons, decreasing = TRUE)[1]
 
+# Within-position normalization (per-role skill means) for the displayed PSV —
+# values a player vs their role (BPM-style). Set position_normalize <- FALSE to
+# disable. The match-stats path supplies `position`, mapped to the broad bucket
+# by .player_role; the RAPM psvf90 target is untouched.
+.psv_position_means <- if (exists("position_normalize") && !isTRUE(position_normalize)) {
+  NULL
+} else load_position_role_means()
+
 # Upload toggle — set FALSE during local dev to skip the GH release push.
 if (!exists("upload_game_logs", inherits = FALSE)) upload_game_logs <- TRUE
 
@@ -443,7 +451,8 @@ validate_game_log_schema <- function(dt, league, season) {
             league_stats <- enrich_match_stats_with_xmetrics(league_stats, verbose = FALSE)
             player_game_psv <- compute_player_psv(league_stats, min_adjust = FALSE,
                                                   center = TRUE, scale_to_minutes = TRUE,
-                                                  exclude_efficiency = FALSE, target = "blend")
+                                                  exclude_efficiency = FALSE, target = "blend",
+                                                  position_means = .psv_position_means)
             message(sprintf("    PSV: %d player-games", nrow(player_game_psv)))
           }
         }, error = function(e) {
@@ -487,7 +496,8 @@ validate_game_log_schema <- function(dt, league, season) {
                 match_level <- enrich_match_stats_with_xmetrics(match_level, verbose = FALSE)
                 inline_psv <- compute_player_psv(match_level, min_adjust = FALSE,
                                                  center = TRUE, scale_to_minutes = TRUE,
-                                                 exclude_efficiency = FALSE, target = "blend")
+                                                 exclude_efficiency = FALSE, target = "blend",
+                                                 position_means = .psv_position_means)
                 player_game_psv <- data.table::rbindlist(
                   list(player_game_psv, inline_psv), fill = TRUE, use.names = TRUE
                 )

@@ -894,56 +894,138 @@ calculate_psv_components <- function(player_match_stats, coef_df, osr_coef_df,
 # position-normalized PSV aligns with career-panna (RAPM) far better than base
 # (Spearman 0.38 -> 0.62), and lifts the elite scorers RAPM rates 90-100th pct.
 
-#' Player role for within-position normalization
+# Collapse the 16-role classify_role() output to the broad GK/DEF/MID/FWD bucket.
+.role16_to_broad <- function(r) {
+  data.table::fcase(
+    r == "GK", "GK",
+    r %in% c("CB", "LB", "RB", "LWB", "RWB"), "DEF",
+    r %in% c("DM", "CM", "LM", "RM", "CAM"), "MID",
+    r %in% c("LW", "RW", "CF", "LF", "RF"), "FWD",
+    default = "OTHER")
+}
+
+#' Player role for within-position normalization (broad GK/DEF/MID/FWD bucket)
 #'
-#' 16-role taxonomy via \code{classify_role()} when \code{position} +
-#' \code{position_side} are present (matches the means artifact); else falls back
-#' to \code{primary_position} / \code{position}. Blank/NA -> "OTHER".
+#' Broad buckets align with career-panna (RAPM) as well as the finer 16-role
+#' (Spearman 0.613 vs 0.615) without needing a \code{position_side} the PSR skills
+#' tables lack. PREFERS \code{classify_role()} -> broad when \code{position} +
+#' \code{position_side} are present (PSV match-stats + the means artifact): it
+#' recognizes far more position strings than the legacy \code{.simplify_position},
+#' shrinking the "OTHER" bucket (0.613 vs 0.595). Falls back to the modal
+#' \code{primary_position} (PSR skills, also broad) / \code{pos_group}. Both
+#' branches emit the same GK/DEF/MID/FWD labels, so artifact keys are consistent
+#' across paths. Anything outside GK/DEF/MID/FWD -> "OTHER".
 #' @keywords internal
 .player_role <- function(dt) {
   r <- NULL
   if (all(c("position", "position_side") %in% names(dt))) {
-    r <- tryCatch(classify_role(dt$position, dt$position_side), error = function(e) NULL)
+    r16 <- tryCatch(as.character(classify_role(dt$position, dt$position_side)),
+                    error = function(e) NULL)
+    if (!is.null(r16)) r <- .role16_to_broad(r16)
   }
   if (is.null(r) && "primary_position" %in% names(dt)) r <- as.character(dt$primary_position)
-  if (is.null(r) && "position" %in% names(dt)) r <- as.character(dt$position)
+  if (is.null(r) && "pos_group" %in% names(dt)) r <- as.character(dt$pos_group)
   if (is.null(r)) return(rep("OTHER", nrow(dt)))
-  r[is.na(r) | r == ""] <- "OTHER"
+  r <- toupper(r)
+  r[is.na(r) | !r %in% c("GK", "DEF", "MID", "FWD")] <- "OTHER"
   r
 }
 
-#' Per-role mean of each skill feature (the within-position baseline)
-#'
-#' @param player_stats Player-level (per-match or seasonal) skill table with a
-#'   position column and the skill feature columns.
-#' @param skill_cols Character vector of skill feature names to summarise.
-#' @return data.table with columns \code{role}, \code{stat_name}, \code{mean}.
-#' @keywords internal
-compute_position_role_means <- function(player_stats, skill_cols) {
-  dt <- data.table::as.data.table(player_stats)
-  dt[, .role := .player_role(dt)]
-  cols <- intersect(skill_cols, names(dt))
-  m <- dt[, lapply(.SD, function(v) mean(v, na.rm = TRUE)), by = .role, .SDcols = cols]
-  long <- data.table::melt(m, id.vars = ".role", variable.name = "stat_name",
-                           value.name = "mean", variable.factor = FALSE)
-  data.table::setnames(long, ".role", "role")
-  long[]
+# Season-end-year for each row (era key). Prefers an explicit season_end_year
+# column; else derives from `season` via extract_season_end_year (computed on the
+# unique labels for speed). NA where neither is available.
+.season_end_year_col <- function(dt) {
+  if ("season_end_year" %in% names(dt)) return(suppressWarnings(as.integer(dt$season_end_year)))
+  if ("season" %in% names(dt)) {
+    us <- unique(as.character(dt$season))
+    m <- vapply(us, function(s) suppressWarnings(extract_season_end_year(s)), numeric(1))
+    return(as.integer(m[as.character(dt$season)]))
+  }
+  rep(NA_integer_, nrow(dt))
 }
 
-# Subtract per-role skill means before scoring (no-op when position_means NULL).
+#' Per-(era, role) mean of each skill feature (the within-position baseline)
+#'
+#' Position stat-profiles drift across eras, so means are computed PER
+#' season-end-year x role (cells with >= \code{min_n} player-matches), plus a
+#' role-overall fallback row (\code{season_end_year = NA}) for thin/missing cells.
+#' Scoring (\code{.position_normalize_skills}) looks up the player-season's era,
+#' falling back to the role-overall mean — so both current and historical
+#' game-logs get an era-appropriate baseline.
+#'
+#' @param player_stats Player-level skill table with position, season (or
+#'   season_end_year) and the skill feature columns.
+#' @param skill_cols Skill feature names to summarise.
+#' @param min_n Minimum player-matches for a per-(season, role) cell to be kept.
+#' @return data.table(season_end_year, role, stat_name, mean); rows with
+#'   \code{season_end_year = NA} are the role-overall fallback.
+#' @keywords internal
+compute_position_role_means <- function(player_stats, skill_cols, min_n = 200L) {
+  dt <- data.table::as.data.table(player_stats)
+  dt[, .role := .player_role(dt)]
+  dt[, .sey := .season_end_year_col(dt)]
+  cols <- intersect(skill_cols, names(dt))
+
+  # Per (season, role) cells with enough data.
+  by_se <- dt[!is.na(.sey),
+              c(list(.n = .N), lapply(.SD, function(v) mean(v, na.rm = TRUE))),
+              by = .(season_end_year = .sey, role = .role), .SDcols = cols]
+  by_se <- by_se[.n >= min_n]
+  by_se[, .n := NULL]
+  long_se <- data.table::melt(by_se, id.vars = c("season_end_year", "role"),
+                              variable.name = "stat_name", value.name = "mean",
+                              variable.factor = FALSE)
+
+  # Role-overall fallback (all eras pooled) for thin/missing (season, role) cells.
+  by_role <- dt[, lapply(.SD, function(v) mean(v, na.rm = TRUE)),
+                by = .(role = .role), .SDcols = cols]
+  long_role <- data.table::melt(by_role, id.vars = "role", variable.name = "stat_name",
+                                value.name = "mean", variable.factor = FALSE)
+  long_role[, season_end_year := NA_integer_]
+
+  data.table::rbindlist(list(long_se, long_role), use.names = TRUE)[]
+}
+
+#' Load the bundled within-position normalization artifact
+#'
+#' Per-role skill means built by \code{07b_build_position_means.R}. Pass the
+#' result as \code{position_means} to \code{compute_player_psv}/
+#' \code{compute_player_psr} to enable BPM-style within-position scoring.
+#' @return data.table(role, stat_name, mean), or NULL if the artifact is absent.
+#' @keywords internal
+load_position_role_means <- function() {
+  p <- system.file("extdata", "position_role_means.csv", package = "panna")
+  if (p == "" || !file.exists(p)) {
+    cli::cli_warn("position_role_means.csv not found — position normalization disabled")
+    return(NULL)
+  }
+  data.table::fread(p)
+}
+
+# Subtract the per-(era, role) skill mean before scoring (no-op when
+# position_means NULL). Looks up the player-season's era; falls back to the
+# role-overall mean (season_end_year = NA) when the (season, role) cell is absent.
 .position_normalize_skills <- function(dt, position_means) {
   if (is.null(position_means) || nrow(position_means) == 0) return(dt)
   pm <- data.table::as.data.table(position_means)
-  dt[, .role := .player_role(dt)]
+  has_era <- "season_end_year" %in% names(pm)
+  role <- .player_role(dt)
+  sey <- if (has_era) .season_end_year_col(dt) else rep(NA_integer_, nrow(dt))
   stats <- intersect(unique(as.character(pm$stat_name)), names(dt))
   for (s in stats) {
     lk <- pm[stat_name == s]
-    mvec <- lk$mean; names(mvec) <- lk$role
-    sub <- mvec[dt$.role]
+    if (has_era) {
+      se_lk <- lk[!is.na(season_end_year)]
+      sub <- se_lk$mean[match(paste(sey, role), paste(se_lk$season_end_year, se_lk$role))]
+      ro_lk <- lk[is.na(season_end_year)]
+      fb <- ro_lk$mean[match(role, ro_lk$role)]
+      sub[is.na(sub)] <- fb[is.na(sub)]
+    } else {
+      sub <- lk$mean[match(role, lk$role)]
+    }
     sub[is.na(sub)] <- 0
     dt[, (s) := get(s) - sub]
   }
-  dt[, .role := NULL]
   dt[]
 }
 
