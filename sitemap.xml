@@ -108,6 +108,8 @@
 <url><loc>https://peteowen1.github.io/panna/reference/aggregate_skills_for_spm.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/apply_bayesian_padding.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/apply_canonical_player_ids.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/apply_epr_league_offsets.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/apply_psr_league_offsets.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/assert_events_coverage.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/assert_step_output.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/assign_epv_credit.html</loc></url>
@@ -120,6 +122,7 @@
 <url><loc>https://peteowen1.github.io/panna/reference/batch_player_attribution.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/bt_match_prob.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/build_knockout_lookup.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/build_league_network.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/build_minutes_training_data.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/build_player_adjacency.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/build_player_game_ratings.html</loc></url>
@@ -181,6 +184,7 @@
 <url><loc>https://peteowen1.github.io/panna/reference/compute_player_psr.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/compute_player_psv.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/compute_position_multipliers.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/compute_psr_league_offsets.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/compute_team_rolling_features.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/compute_venue_factor.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/convert_opta_to_spadl.html</loc></url>

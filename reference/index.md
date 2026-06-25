@@ -386,6 +386,21 @@ Bradley-Terry team ratings and knockout tournament simulation
 - [`run_wc2026_reference_checks()`](https://peteowen1.github.io/panna/reference/run_wc2026_reference_checks.md)
   : Run the WC2026 Reference Facts Against Pipeline Outputs
 
+## Cross-League Offsets
+
+Per-league PSR/EPR calibration via the same-season co-occurrence network
+
+- [`build_league_network()`](https://peteowen1.github.io/panna/reference/build_league_network.md)
+  : Estimate per-league strength from the full same-season co-occurrence
+  network
+- [`compute_psr_league_offsets()`](https://peteowen1.github.io/panna/reference/compute_psr_league_offsets.md)
+  : Estimate cross-league PSR offsets from the per-game PSV network
+- [`apply_psr_league_offsets()`](https://peteowen1.github.io/panna/reference/apply_psr_league_offsets.md)
+  : Apply cross-league PSR offsets to a PSR table
+- [`apply_epr_league_offsets()`](https://peteowen1.github.io/panna/reference/apply_epr_league_offsets.md)
+  : Apply cross-league EPV offsets to an EPR table (end-add,
+  PSR-consistent)
+
 ## Weather
 
 Open-Meteo weather data for match conditions
