@@ -47,17 +47,21 @@ test_that(".get_psr_skill_cols returns a character vector", {
   expect_true(length(cols) > 0)
 })
 
-test_that(".get_psr_skill_cols includes rate, efficiency, and xmetrics columns", {
+test_that(".get_psr_skill_cols includes rate, above-expected, and xmetrics columns", {
   cols <- panna:::.get_psr_skill_cols()
 
   # Rate columns end with _p90
   rate_cols <- grep("_p90$", cols, value = TRUE)
   expect_true(length(rate_cols) > 0)
 
-  # Efficiency columns (known examples from the function)
-  expect_true("pass_accuracy" %in% cols)
-  expect_true("shot_accuracy" %in% cols)
-  expect_true("duel_success" %in% cols)
+  # Above-expected duel features: the 5 xDuel WOE counts replaced the old
+  # duel/aerial/tackle success RATIOS in panna#116 (ratios discarded volume).
+  expect_true("aerial_woe_per90" %in% cols)
+  expect_true("takeon_woe_per90" %in% cols)
+  expect_true("containment_woe_per90" %in% cols)
+
+  # Finishing over-performance replaced the scale-free finishing ratios.
+  expect_true("npg_minus_npxg_per90" %in% cols)
 
   # xMetrics columns
   expect_true("xg_per90" %in% cols)
