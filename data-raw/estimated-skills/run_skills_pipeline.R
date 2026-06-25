@@ -18,17 +18,8 @@ devtools::load_all()
 # Must match run_pipeline_opta.R's league set so skills coverage tracks the
 # rated pool — otherwise box-score stats (opta_skills.parquet) miss whole
 # competitions the model rates (A_League/CAF_CL/Belgian/etc.).
-if (!exists("leagues")) leagues <- c(
-  "ENG", "ESP", "GER", "ITA", "FRA",       # Big 5
-  "NED", "POR", "TUR", "ENG2", "SCO",      # Extended European domestic
-  "BEL",                                    # Belgian First Division
-  "BRA",                                    # Brazilian Serie A
-  "AUS",                                    # A-League (Australian)
-  "TUN",                                    # Tunisian Ligue 1
-  "CAFCL",                                  # CAF Champions League (African club)
-  "UCL", "UEL", "UECL",                     # European comps
-  "WC", "EURO"                               # International
-)
+# Canonical rating/display set, shared with step 03 / RAPM / 10b (constants.R).
+if (!exists("leagues")) leagues <- PANNA_RATING_LEAGUES
 
 if (!exists("seasons")) seasons <- NULL
 if (!exists("min_season")) min_season <- "2013-2014"

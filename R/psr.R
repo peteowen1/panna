@@ -52,37 +52,32 @@
     "unsuccessful_touch_p90", "overrun_p90", "flick_on_p90"
   )
 
-  # Efficiency/proportion columns.
-  # NOTE: the low-volume *finishing* ratios (goals_per_shot, big_chance_conversion,
-  # headed_goal_rate, ibox_goal_rate, obox_goal_rate, penalty_conversion) were
-  # REMOVED — a per-game ratio is scale-free (1/1 == 10/10) and discards volume.
-  # They are replaced by the xG over-performance counts in xmetrics_cols below
-  # (npg_minus_npxg_per90 etc.). High-volume accuracy ratios stay (large
-  # denominators → the scale defect doesn't bite; glmnet shrinks any redundancy).
-  efficiency_cols <- c(
-    "shot_accuracy", "pass_accuracy",
-    "tackle_success", "duel_success", "aerial_success",
-    "final_third_pass_acc",
-    "long_ball_accuracy", "cross_accuracy",
-    "fwd_zone_pass_accuracy", "open_play_pass_accuracy",
-    "crosses_open_play_accuracy", "bad_touch_rate",
-    "errors_total_p90",
-    "flick_on_accuracy",
-    "back_zone_pass_accuracy", "chipped_pass_accuracy",
-    "long_pass_own_to_opp_accuracy",
-    "fifty_fifty_success", "poss_lost_ctrl_per_touch"
-  )
+  # NO RATIOS. Every scale-free accuracy/success ratio (pass_accuracy,
+  # duel_success, aerial_success, tackle_success, shot_accuracy, the zone-pass
+  # accuracies, bad_touch_rate, …) has been REMOVED — a per-game ratio gives
+  # 1/1 == 10/10, discarding volume, and on small live denominators it saturates
+  # at 0/1. Each is replaced by a volume-correct ABOVE-EXPECTED count or the
+  # additive raw counts already in rate_cols:
+  #   • passing accuracy   → xpass_overperformance_per90 (completions above xPass)
+  #   • shooting/finishing → npg_minus_npxg / ibox/obox_g_minus_xg / placement_added
+  #   • aerial/duel/tackle → 5 xDuel above-expected counts: aerial_woe (win header),
+  #     aerial_poss_woe (keep ball after header), takeon_woe (beat man), tackle_poss_woe
+  #     (win ball when tackling), containment_woe (stop a dribbler). See duel_model.R.
+  #   • touches/turnovers  → unsuccessful_touch_p90, overrun_p90, dispossessed_p90
+  # See PSV_EFFICIENCY_REDESIGN_PLAN.md + PLAYER_BASED_SUCCESS_MODELS_IDEA.md.
 
-  # xMetrics columns (if available). Finishing over-performance (goals above xG,
-  # volume-correct & additive) replaces the removed finishing ratios.
+  # xMetrics / above-expected columns (if available). All additive & volume-correct.
   xmetrics_cols <- c(
     "xg_per90", "npxg_per90", "xa_per90_xmetrics",
     "xpass_overperformance_per90_xmetrics",
     "npg_minus_npxg_per90", "ibox_g_minus_xg_per90", "obox_g_minus_xg_per90",
-    "placement_added_per90"
+    "placement_added_per90",
+    # Above-expected physical-duel counts (5 xDuel contests; replace *_success ratios)
+    "aerial_woe_per90", "aerial_poss_woe_per90", "takeon_woe_per90",
+    "tackle_poss_woe_per90", "containment_woe_per90"
   )
 
-  c(rate_cols, efficiency_cols, xmetrics_cols)
+  c(rate_cols, xmetrics_cols)
 }
 
 
@@ -107,28 +102,26 @@
     "gsaa_per90"
   )
 
-  # GK efficiency stats (save_percentage removed -> replaced by gsaa_per90 above)
-  gk_efficiency_cols <- c(
-    "keeper_sweeper_accuracy",
-    "keeper_throws_accuracy"
-  )
+  # NO RATIOS (same policy as outfield). save_percentage → gsaa_per90 (above);
+  # keeper_sweeper_accuracy / keeper_throws_accuracy / pass_accuracy /
+  # long_ball_accuracy / long_pass_own_to_opp_accuracy / aerial_success all
+  # REMOVED in favour of the additive per-90 counts below + GSAA.
 
-  # Distribution / passing -- GKs contribute here meaningfully
+  # Distribution / passing -- GKs contribute here meaningfully (additive counts)
   distribution_cols <- c(
-    "passes_p90", "passes_accurate_p90", "pass_accuracy",
-    "long_balls_p90", "long_ball_accuracy",
-    "long_pass_own_to_opp_accuracy",
+    "passes_p90", "passes_accurate_p90",
+    "long_balls_p90",
     "goals_conceded_p90"
   )
 
-  # Shared outfield stats that GKs also accumulate
+  # Shared outfield stats that GKs also accumulate (additive counts only)
   shared_cols <- c(
     "clearances_p90", "aerial_won_p90", "aerial_lost_p90",
-    "aerial_success", "touches_p90",
+    "touches_p90",
     "error_lead_to_shot_p90", "error_lead_to_goal_p90"
   )
 
-  c(gk_action_cols, gk_efficiency_cols, distribution_cols, shared_cols)
+  c(gk_action_cols, distribution_cols, shared_cols)
 }
 
 
@@ -890,6 +883,153 @@ calculate_psv_components <- function(player_match_stats, coef_df, osr_coef_df,
 }
 
 
+# ============================================================================
+# Within-position normalization (BPM-style "evaluate in-role")
+# ============================================================================
+# The PSR/PSV coefficients are trained TEAM-level (home vs away aggregated
+# skills -> match xGD), so the betas reward possession/passing volume. Applied to
+# an INDIVIDUAL, a pure #9 is then judged against midfielder passing norms and
+# buried (Haaland OSV ~0). Subtracting the player's POSITION mean from each skill
+# before scoring evaluates them vs their role (VORP/BPM-style). Validated 2026-06:
+# position-normalized PSV aligns with career-panna (RAPM) far better than base
+# (Spearman 0.38 -> 0.62), and lifts the elite scorers RAPM rates 90-100th pct.
+
+# Collapse the 16-role classify_role() output to the broad GK/DEF/MID/FWD bucket.
+.role16_to_broad <- function(r) {
+  data.table::fcase(
+    r == "GK", "GK",
+    r %in% c("CB", "LB", "RB", "LWB", "RWB"), "DEF",
+    r %in% c("DM", "CM", "LM", "RM", "CAM"), "MID",
+    r %in% c("LW", "RW", "CF", "LF", "RF"), "FWD",
+    default = "OTHER")
+}
+
+#' Player role for within-position normalization (broad GK/DEF/MID/FWD bucket)
+#'
+#' Broad buckets align with career-panna (RAPM) as well as the finer 16-role
+#' (Spearman 0.613 vs 0.615) without needing a \code{position_side} the PSR skills
+#' tables lack. PREFERS \code{classify_role()} -> broad when \code{position} +
+#' \code{position_side} are present (PSV match-stats + the means artifact): it
+#' recognizes far more position strings than the legacy \code{.simplify_position},
+#' shrinking the "OTHER" bucket (0.613 vs 0.595). Falls back to the modal
+#' \code{primary_position} (PSR skills, also broad) / \code{pos_group}. Both
+#' branches emit the same GK/DEF/MID/FWD labels, so artifact keys are consistent
+#' across paths. Anything outside GK/DEF/MID/FWD -> "OTHER".
+#' @keywords internal
+.player_role <- function(dt) {
+  r <- NULL
+  if (all(c("position", "position_side") %in% names(dt))) {
+    r16 <- tryCatch(as.character(classify_role(dt$position, dt$position_side)),
+                    error = function(e) NULL)
+    if (!is.null(r16)) r <- .role16_to_broad(r16)
+  }
+  if (is.null(r) && "primary_position" %in% names(dt)) r <- as.character(dt$primary_position)
+  if (is.null(r) && "pos_group" %in% names(dt)) r <- as.character(dt$pos_group)
+  if (is.null(r)) return(rep("OTHER", nrow(dt)))
+  r <- toupper(r)
+  r[is.na(r) | !r %in% c("GK", "DEF", "MID", "FWD")] <- "OTHER"
+  r
+}
+
+# Season-end-year for each row (era key). Prefers an explicit season_end_year
+# column; else derives from `season` via extract_season_end_year (computed on the
+# unique labels for speed). NA where neither is available.
+.season_end_year_col <- function(dt) {
+  if ("season_end_year" %in% names(dt)) return(suppressWarnings(as.integer(dt$season_end_year)))
+  if ("season" %in% names(dt)) {
+    us <- unique(as.character(dt$season))
+    m <- vapply(us, function(s) suppressWarnings(extract_season_end_year(s)), numeric(1))
+    return(as.integer(m[as.character(dt$season)]))
+  }
+  rep(NA_integer_, nrow(dt))
+}
+
+#' Per-(era, role) mean of each skill feature (the within-position baseline)
+#'
+#' Position stat-profiles drift across eras, so means are computed PER
+#' season-end-year x role (cells with >= \code{min_n} player-matches), plus a
+#' role-overall fallback row (\code{season_end_year = NA}) for thin/missing cells.
+#' Scoring (\code{.position_normalize_skills}) looks up the player-season's era,
+#' falling back to the role-overall mean — so both current and historical
+#' game-logs get an era-appropriate baseline.
+#'
+#' @param player_stats Player-level skill table with position, season (or
+#'   season_end_year) and the skill feature columns.
+#' @param skill_cols Skill feature names to summarise.
+#' @param min_n Minimum player-matches for a per-(season, role) cell to be kept.
+#' @return data.table(season_end_year, role, stat_name, mean); rows with
+#'   \code{season_end_year = NA} are the role-overall fallback.
+#' @keywords internal
+compute_position_role_means <- function(player_stats, skill_cols, min_n = 200L) {
+  dt <- data.table::as.data.table(player_stats)
+  dt[, .role := .player_role(dt)]
+  dt[, .sey := .season_end_year_col(dt)]
+  cols <- intersect(skill_cols, names(dt))
+
+  # Per (season, role) cells with enough data.
+  by_se <- dt[!is.na(.sey),
+              c(list(.n = .N), lapply(.SD, function(v) mean(v, na.rm = TRUE))),
+              by = .(season_end_year = .sey, role = .role), .SDcols = cols]
+  by_se <- by_se[.n >= min_n]
+  by_se[, .n := NULL]
+  long_se <- data.table::melt(by_se, id.vars = c("season_end_year", "role"),
+                              variable.name = "stat_name", value.name = "mean",
+                              variable.factor = FALSE)
+
+  # Role-overall fallback (all eras pooled) for thin/missing (season, role) cells.
+  by_role <- dt[, lapply(.SD, function(v) mean(v, na.rm = TRUE)),
+                by = .(role = .role), .SDcols = cols]
+  long_role <- data.table::melt(by_role, id.vars = "role", variable.name = "stat_name",
+                                value.name = "mean", variable.factor = FALSE)
+  long_role[, season_end_year := NA_integer_]
+
+  data.table::rbindlist(list(long_se, long_role), use.names = TRUE)[]
+}
+
+#' Load the bundled within-position normalization artifact
+#'
+#' Per-role skill means built by \code{07b_build_position_means.R}. Pass the
+#' result as \code{position_means} to \code{compute_player_psv}/
+#' \code{compute_player_psr} to enable BPM-style within-position scoring.
+#' @return data.table(role, stat_name, mean), or NULL if the artifact is absent.
+#' @keywords internal
+load_position_role_means <- function() {
+  p <- system.file("extdata", "position_role_means.csv", package = "panna")
+  if (p == "" || !file.exists(p)) {
+    cli::cli_warn("position_role_means.csv not found — position normalization disabled")
+    return(NULL)
+  }
+  data.table::fread(p)
+}
+
+# Subtract the per-(era, role) skill mean before scoring (no-op when
+# position_means NULL). Looks up the player-season's era; falls back to the
+# role-overall mean (season_end_year = NA) when the (season, role) cell is absent.
+.position_normalize_skills <- function(dt, position_means) {
+  if (is.null(position_means) || nrow(position_means) == 0) return(dt)
+  pm <- data.table::as.data.table(position_means)
+  has_era <- "season_end_year" %in% names(pm)
+  role <- .player_role(dt)
+  sey <- if (has_era) .season_end_year_col(dt) else rep(NA_integer_, nrow(dt))
+  stats <- intersect(unique(as.character(pm$stat_name)), names(dt))
+  for (s in stats) {
+    lk <- pm[stat_name == s]
+    if (has_era) {
+      se_lk <- lk[!is.na(season_end_year)]
+      sub <- se_lk$mean[match(paste(sey, role), paste(se_lk$season_end_year, se_lk$role))]
+      ro_lk <- lk[is.na(season_end_year)]
+      fb <- ro_lk$mean[match(role, ro_lk$role)]
+      sub[is.na(sub)] <- fb[is.na(sub)]
+    } else {
+      sub <- lk$mean[match(role, lk$role)]
+    }
+    sub[is.na(sub)] <- 0
+    dt[, (s) := get(s) - sub]
+  }
+  dt[]
+}
+
+
 #' Compute PSV from bundled coefficient files
 #'
 #' Convenience wrapper that loads pre-trained coefficients and calls
@@ -917,9 +1057,11 @@ calculate_psv_components <- function(player_match_stats, coef_df, osr_coef_df,
 compute_player_psv <- function(player_match_stats, min_adjust = TRUE,
                                 center = TRUE, target = c("xg", "goals", "blend"),
                                 scale_to_minutes = FALSE,
-                                exclude_efficiency = TRUE) {
+                                exclude_efficiency = TRUE,
+                                position_means = NULL) {
   target <- match.arg(target)
   dt <- data.table::as.data.table(player_match_stats)
+  dt <- .position_normalize_skills(dt, position_means)
 
   # Route keepers through the GK sub-model (which carries gsaa_per90 and GK
   # features), outfield through the target model — mirroring compute_player_psr.
@@ -1069,9 +1211,11 @@ load_psr_coefficients <- function(type = c("margin", "offense", "defense"),
 #'
 #' @keywords internal
 compute_player_psr <- function(skills, center = TRUE,
-                                target = c("xg", "goals")) {
+                                target = c("xg", "goals"),
+                                position_means = NULL) {
   target <- match.arg(target)
   dt <- data.table::as.data.table(skills)
+  dt <- .position_normalize_skills(dt, position_means)
 
   # Split GKs from outfield players
   is_gk <- dt$primary_position == "GK"

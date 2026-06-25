@@ -33,6 +33,10 @@ if (coef_xg == "" && coef_gd == "") {
   stop("PSR coefficients not found. Run step 07 (07_train_psr_model.R) first.")
 }
 psr_target <- if (coef_xg != "") "xg" else "goals"
+# Within-position normalization (per-role skill means); display-only, BPM-style.
+.psr_position_means <- if (exists("position_normalize") && !isTRUE(position_normalize)) {
+  NULL
+} else load_position_role_means()
 if (psr_target == "goals") {
   cat("Note: xG coefficients not found, using goal-diff PSR instead.\n")
   cat("Re-run step 07 after fixing splint xG columns for xG-based PSR.\n\n")
@@ -269,9 +273,17 @@ if (!is.null(keep_existing) && nrow(keep_existing) > 0) {
 cat("\n=== Pre-Computing Shared Priors ===\n")
 
 # Auto-detect stat columns the same way estimate_player_skills() does
-p90_cols   <- grep("_p90$", names(match_stats), value = TRUE)
+# Detect skill columns the SAME way the package estimator does. MUST catch
+# `_per90` (the xG / finishing over-performance xMetrics + the 5 duel WOE), not
+# just `_p90`, and union the registered PSR/GK skill lists. The old `_p90$`-only
+# grep silently dropped every `_per90` feature from the weekly PSR — they were in
+# the coefficient set but never estimated here. See psr.R
+# .estimate_prematch_skills_batch (same `_p90$|_per90$` + skill-col union).
+p90_cols   <- grep("_p90$|_per90$", names(match_stats), value = TRUE)
 eff_cols   <- intersect(names(.classify_skill_stats()), names(match_stats))
-stat_cols_all <- intersect(c(p90_cols, eff_cols), names(match_stats))
+reg_cols   <- tryCatch(union(.get_psr_skill_cols(), .get_gk_skill_cols()),
+                       error = function(e) character(0))
+stat_cols_all <- intersect(unique(c(p90_cols, eff_cols, reg_cols)), names(match_stats))
 cat(sprintf("  Stat columns detected: %d\n", length(stat_cols_all)))
 
 # Pre-sort by date so each date filter is a fast prefix scan
@@ -489,7 +501,8 @@ for (i in seq_along(snapshot_dates)) {
   if (is.null(skills) || nrow(skills) == 0) { rm(skills); next }
 
   psr <- tryCatch(
-    compute_player_psr(skills, center = TRUE, target = psr_target),
+    compute_player_psr(skills, center = TRUE, target = psr_target,
+                       position_means = .psr_position_means),
     error = function(e) {
       cat(sprintf("  WARN: PSR failed for %s: %s\n", d, e$message))
       NULL
@@ -661,16 +674,24 @@ cat("\n=== Uploading to GitHub Release ===\n")
 repo <- "peteowen1/pannadata"
 tag  <- "opta-latest"
 
-if (!requireNamespace("piggyback", quietly = TRUE)) {
-  stop("Package 'piggyback' required for upload.")
-}
+# Upload toggle — set upload_psr <- FALSE before sourcing to generate the parquet
+# locally for validation WITHOUT publishing to the live release (mirrors 10b's
+# upload_game_logs). Default TRUE preserves the scheduled-workflow behaviour.
+if (!exists("upload_psr", inherits = FALSE)) upload_psr <- TRUE
 
-tryCatch({
-  piggyback::pb_upload(file = out_path, repo = repo, tag = tag, overwrite = TRUE)
-  cat(sprintf("  Uploaded opta_psr_weekly.parquet to %s (%s)\n", repo, tag))
-}, error = function(e) {
-  stop(sprintf("Upload failed: %s. Weekly PSR not published.", e$message))
-})
+if (!isTRUE(upload_psr)) {
+  cat(sprintf("\n  upload_psr = FALSE — wrote %s locally, NOT publishing.\n", out_path))
+} else {
+  if (!requireNamespace("piggyback", quietly = TRUE)) {
+    stop("Package 'piggyback' required for upload.")
+  }
+  tryCatch({
+    piggyback::pb_upload(file = out_path, repo = repo, tag = tag, overwrite = TRUE)
+    cat(sprintf("  Uploaded opta_psr_weekly.parquet to %s (%s)\n", repo, tag))
+  }, error = function(e) {
+    stop(sprintf("Upload failed: %s. Weekly PSR not published.", e$message))
+  })
+}
 
 cat("\n=== COMPLETE ===\n")
 cat(sprintf("  opta_psr_weekly.parquet uploaded (%s MB, %d dates)\n",

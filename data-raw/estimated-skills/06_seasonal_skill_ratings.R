@@ -19,6 +19,13 @@ seasonal_lambda <- "min"
 
 cat(sprintf("Using lambda = %s for seasonal ratings\n", seasonal_lambda))
 
+# Within-position normalization artifact (per-role skill means). Loaded once;
+# passed to compute_player_psr so PSR values a player vs their role. Set
+# position_normalize <- FALSE before sourcing to disable.
+.psr_position_means <- if (exists("position_normalize") && !isTRUE(position_normalize)) {
+  NULL
+} else load_position_role_means()
+
 # extract_season_end_year() is defined in R/utils.R
 
 # 3. Load Data ----
@@ -255,7 +262,10 @@ fit_season_skill_ratings <- function(splint_data, skill_features, season,
   # Cross-league calibration (transfer-graph offsets) is applied AFTER the loop,
   # once the full multi-season panel exists -- see "Cross-league PSR offsets".
   seasonal_psr <- tryCatch({
-    psr_result <- compute_player_psr(season_skills, center = TRUE)
+    # Within-position normalization (BPM-style): value a player vs their role,
+    # not vs all outfielders. Display-only (the RAPM psvf90 target is untouched).
+    psr_result <- compute_player_psr(season_skills, center = TRUE,
+                                     position_means = .psr_position_means)
     if (!is.null(psr_result) && nrow(psr_result) > 0) {
       psr_result$season_end_year <- season
       cat(sprintf("  Seasonal PSR ratings: %d players\n", nrow(psr_result)))

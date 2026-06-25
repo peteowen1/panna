@@ -28,15 +28,13 @@ tag <- "blog-latest"
 #   (2) continental    — UCL / UEL / UECL use "YYYY-YYYY" too
 #   (3) intl_tournament — WC / EURO use "YYYY Country"; map a summer
 #                         tournament to the domestic season ending that year.
-domestic_leagues  <- c("ENG", "ESP", "GER", "ITA", "FRA",
-                        "NED", "POR", "SCO", "TUR", "ENG2",
-                        "MEX", "SAU",          # added 2026-06-11 ("YYYY-YYYY" labels)
-                        "AUS", "BEL")          # added 2026-06-22 (A-League, Belgian — "YYYY-YYYY")
-# Calendar-year season labels ("2026" not "2025-2026") — resolved through the
-# same year-prefix matching as the intl tournaments ("2025-2026" -> "2026").
-calendar_leagues  <- c("MLS", "ARG", "BRA")    # BRA added 2026-06-22 (calendar-year)
-continental_cups  <- c("UCL", "UEL", "UECL", "CAFCL")  # CAFCL added 2026-06-22 ("YYYY-YYYY")
-intl_tournaments  <- c("WC", "EURO", "AFCON", "Copa_America")
+# Groups come from the shared canonical constant (constants.R: PANNA_LEAGUE_GROUPS),
+# so step 03 / skills / RAPM / 10b can't drift. Grouping drives season-label
+# resolution: domestic = "YYYY-YYYY"; calendar = "YYYY"; intl = "YYYY Country".
+domestic_leagues  <- PANNA_LEAGUE_GROUPS$domestic
+calendar_leagues  <- PANNA_LEAGUE_GROUPS$calendar    # calendar-year season labels
+continental_cups  <- PANNA_LEAGUE_GROUPS$continental
+intl_tournaments  <- PANNA_LEAGUE_GROUPS$intl
 # Leagues whose season label is resolved by year prefix rather than passed through
 season_label_leagues <- c(intl_tournaments, calendar_leagues)
 # Override guard: backfill runs can process a league subset. CAUTION — the
@@ -61,6 +59,14 @@ game_log_seasons <- as.character(game_log_seasons)
 # The "current" season (most recent in the vector) is mirrored to
 # game_logs.parquet so the blog workflow's name-pinned download still works.
 current_season_alias <- sort(game_log_seasons, decreasing = TRUE)[1]
+
+# Within-position normalization (per-role skill means) for the displayed PSV —
+# values a player vs their role (BPM-style). Set position_normalize <- FALSE to
+# disable. The match-stats path supplies `position`, mapped to the broad bucket
+# by .player_role; the RAPM psvf90 target is untouched.
+.psv_position_means <- if (exists("position_normalize") && !isTRUE(position_normalize)) {
+  NULL
+} else load_position_role_means()
 
 # Upload toggle — set FALSE during local dev to skip the GH release push.
 if (!exists("upload_game_logs", inherits = FALSE)) upload_game_logs <- TRUE
@@ -445,7 +451,8 @@ validate_game_log_schema <- function(dt, league, season) {
             league_stats <- enrich_match_stats_with_xmetrics(league_stats, verbose = FALSE)
             player_game_psv <- compute_player_psv(league_stats, min_adjust = FALSE,
                                                   center = TRUE, scale_to_minutes = TRUE,
-                                                  exclude_efficiency = FALSE, target = "blend")
+                                                  exclude_efficiency = FALSE, target = "blend",
+                                                  position_means = .psv_position_means)
             message(sprintf("    PSV: %d player-games", nrow(player_game_psv)))
           }
         }, error = function(e) {
@@ -489,7 +496,8 @@ validate_game_log_schema <- function(dt, league, season) {
                 match_level <- enrich_match_stats_with_xmetrics(match_level, verbose = FALSE)
                 inline_psv <- compute_player_psv(match_level, min_adjust = FALSE,
                                                  center = TRUE, scale_to_minutes = TRUE,
-                                                 exclude_efficiency = FALSE, target = "blend")
+                                                 exclude_efficiency = FALSE, target = "blend",
+                                                 position_means = .psv_position_means)
                 player_game_psv <- data.table::rbindlist(
                   list(player_game_psv, inline_psv), fill = TRUE, use.names = TRUE
                 )

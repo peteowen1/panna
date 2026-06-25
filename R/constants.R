@@ -610,6 +610,33 @@ match_is_international <- function(league) {
   !(league %in% MATCH_CLUB_LEAGUES)
 }
 
+#' Canonical "rating/display" league set (shared across pipelines)
+#'
+#' Single source of truth for the competitions the pipelines RATE and DISPLAY,
+#' so the EPV/xMetrics (step 03), skills/PSR, RAPM/panna and blog (10b) pipelines
+#' cannot silently drift apart (the 2026-06 audit found four different lists).
+#' Grouped by season-label convention because 10b resolves labels per group
+#' ("YYYY-YYYY" domestic vs calendar "YYYY" vs tournament "YYYY Country").
+#' \code{PANNA_RATING_LEAGUES} is the flat union (25 comps). Bridge comps live
+#' in \code{PANNA_BRIDGE_LEAGUES} (offset/RAPM connectivity only, never displayed)
+#' and are added ON TOP in step 03 / RAPM.
+#' @keywords internal
+PANNA_LEAGUE_GROUPS <- list(
+  domestic    = c("ENG", "ESP", "GER", "ITA", "FRA", "NED", "POR", "SCO",
+                  "TUR", "ENG2", "BEL", "MEX", "SAU", "AUS"),
+  calendar    = c("MLS", "ARG", "BRA"),
+  continental = c("UCL", "UEL", "UECL", "CAFCL"),
+  intl        = c("WC", "EURO", "AFCON", "Copa_America")
+)
+
+#' @rdname PANNA_LEAGUE_GROUPS
+#' @keywords internal
+PANNA_RATING_LEAGUES <- unlist(PANNA_LEAGUE_GROUPS, use.names = FALSE)
+
+#' @rdname PANNA_LEAGUE_GROUPS
+#' @keywords internal
+PANNA_BRIDGE_LEAGUES <- c("LIB", "SUD", "CCC", "LGC", "ACLE", "CWC")
+
 #' International blend weight
 #'
 #' Weight on the international-specialist model when predicting international
