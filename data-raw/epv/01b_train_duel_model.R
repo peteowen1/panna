@@ -45,7 +45,7 @@ cli::cli_alert_info("Building duel features from {length(have)} leagues (one at 
 acc <- NULL
 for (fn in have) {
   ev <- tryCatch(
-    as.data.table(arrow::read_parquet(file.path(opta_dir, fn), col_select = all_of(need_cols))),
+    as.data.table(arrow::read_parquet(file.path(opta_dir, fn), col_select = need_cols)),
     error = function(e) NULL)
   if (is.null(ev) || nrow(ev) == 0) { cli::cli_alert_warning("  skip {fn}"); next }
   cli::cli_alert_info("  {fn}: {format(nrow(ev), big.mark=',')} events")

@@ -169,7 +169,7 @@ NULL
 }
 
 # Containment (defender): anchor on each take-on, attribute to the opponent who made
-# the stop in an adjacent row (±2 rows, ±2s, mirror location, opposite team).
+# the stop in a nearby row (±4 rows, ±3s, mirror location |x_to+x_def-100|<20, opposite team).
 .prep_containment <- function(dt) {
   n <- nrow(dt)
   is_to <- dt$type_id == .DUEL_TAKEON_TYPE & !is.na(dt$x) & !is.na(dt$y) &
