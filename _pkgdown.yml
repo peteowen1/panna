@@ -246,6 +246,14 @@ reference:
   - simulate_world_cup
   - run_wc2026_reference_checks
 
+- title: Cross-League Offsets
+  desc: Per-league PSR/EPR calibration via the same-season co-occurrence network
+  contents:
+  - build_league_network
+  - compute_psr_league_offsets
+  - apply_psr_league_offsets
+  - apply_epr_league_offsets
+
 - title: Weather
   desc: Open-Meteo weather data for match conditions
   contents:
