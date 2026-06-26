@@ -673,6 +673,26 @@ metrics. Shared fixtures in `helper-fixtures.R`. Uses testthat edition
   candidate `.rds` directly — see the `load_epv_model()`
   published-vs-cache gotcha above and the pannamodels cache-staleness
   gotcha.
+- **Changing `@export`s? Run `devtools::document()` AND reconcile
+  `_pkgdown.yml` in the SAME commit.** The roxygen → `NAMESPACE`/`man/`
+  → `_pkgdown.yml` chain drifts silently if you add/remove/rename
+  exported functions without re-documenting. Two distinct failure modes,
+  both deferred until a *later* push surfaces them all at once: (a) a
+  new `@export` whose `man/*.Rd` is never committed isn’t actually
+  exported in the *installed* package — `load_all` sees it but the cloud
+  pipeline calling `panna::fn` on the installed build fails (this nearly
+  broke the duel-WOE pipeline — 7 functions exported only via
+  load_all); (b) `_pkgdown.yml` lists a topic whose `.Rd` was
+  added/removed → the **pkgdown** job dies with
+  `"N topics missing from index"` or `"must be a known topic name"`. The
+  2026-06-25 duel/offset merge ate THREE pkgdown red-mains in a row
+  (offset fns un-indexed → duel fns un-indexed → a stale
+  `load_epv_model` ref whose `.Rd` had been deleted). R-CMD-check
+  passing does NOT catch (b) — pkgdown is a separate workflow
+  (push-to-main only, so you can’t pre-verify it on a PR). Checklist
+  when exports change: `devtools::document()`, add every new exported fn
+  to a `_pkgdown.yml` reference section (or `@keywords internal` to drop
+  it), and remove entries for any deleted topic.
 
 ## GitHub Actions
 
