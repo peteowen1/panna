@@ -16,6 +16,9 @@ train_wp_model(
   max_depth = 4L,
   eta = 0.05,
   nfolds = 5L,
+  min_child_weight = 50L,
+  feature_names = NULL,
+  objective = "binary:logistic",
   early_stopping_rounds = 20L,
   seed = 42L,
   ...

@@ -57,7 +57,8 @@ box score statistics as a Bayesian prior.</p>
 <span>  alpha <span class="op">=</span> <span class="fl">0</span>,</span>
 <span>  nfolds <span class="op">=</span> <span class="fl">10</span>,</span>
 <span>  use_weights <span class="op">=</span> <span class="cn">TRUE</span>,</span>
-<span>  penalize_covariates <span class="op">=</span> <span class="cn">FALSE</span></span>
+<span>  penalize_covariates <span class="op">=</span> <span class="cn">FALSE</span>,</span>
+<span>  fixed_lambda <span class="op">=</span> <span class="cn">NULL</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -91,6 +92,13 @@ box score statistics as a Bayesian prior.</p>
 
 <dt id="arg-penalize-covariates">penalize_covariates<a class="anchor" aria-label="anchor" href="#arg-penalize-covariates"></a></dt>
 <dd><p>Whether to penalize covariate coefficients</p></dd>
+
+
+<dt id="arg-fixed-lambda">fixed_lambda<a class="anchor" aria-label="anchor" href="#arg-fixed-lambda"></a></dt>
+<dd><p>Optional single lambda value. When supplied, skips
+<code>cv.glmnet</code> and fits at this lambda directly (see
+<code>.glmnet_fixed_lambda</code>). Default <code>NULL</code> = cross-validated (current
+behaviour). Used by the as-of-date career-Panna build.</p></dd>
 
 </dl></div>
     <div class="section level2">

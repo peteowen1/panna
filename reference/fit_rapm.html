@@ -64,7 +64,8 @@ Covariates: gd, gf, ga, avg_min, is_home
 <span>  standardize <span class="op">=</span> <span class="cn">FALSE</span>,</span>
 <span>  penalize_covariates <span class="op">=</span> <span class="cn">FALSE</span>,</span>
 <span>  parallel <span class="op">=</span> <span class="cn">TRUE</span>,</span>
-<span>  n_cores <span class="op">=</span> <span class="cn">NULL</span></span>
+<span>  n_cores <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  fixed_lambda <span class="op">=</span> <span class="cn">NULL</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -102,6 +103,14 @@ Covariates: gd, gf, ga, avg_min, is_home
 
 <dt id="arg-n-cores">n_cores<a class="anchor" aria-label="anchor" href="#arg-n-cores"></a></dt>
 <dd><p>Number of cores (default: half of available)</p></dd>
+
+
+<dt id="arg-fixed-lambda">fixed_lambda<a class="anchor" aria-label="anchor" href="#arg-fixed-lambda"></a></dt>
+<dd><p>Optional single lambda value. When supplied, skips
+<code>cv.glmnet</code> and fits at this lambda directly (see
+<code>.glmnet_fixed_lambda</code>). Default <code>NULL</code> = cross-validated (current
+behaviour). Used by the as-of-date career-Panna build to avoid re-running CV
+for every reference date.</p></dd>
 
 </dl></div>
     <div class="section level2">

@@ -8,7 +8,12 @@ features) and outfield players through the standard xG-based model.
 ## Usage
 
 ``` r
-compute_player_psr(skills, center = TRUE, target = c("xg", "goals"))
+compute_player_psr(
+  skills,
+  center = TRUE,
+  target = c("xg", "goals"),
+  position_means = NULL
+)
 ```
 
 ## Arguments

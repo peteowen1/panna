@@ -19,7 +19,8 @@ fit_rapm(
   standardize = FALSE,
   penalize_covariates = FALSE,
   parallel = TRUE,
-  n_cores = NULL
+  n_cores = NULL,
+  fixed_lambda = NULL
 )
 ```
 
@@ -56,6 +57,13 @@ fit_rapm(
 - n_cores:
 
   Number of cores (default: half of available)
+
+- fixed_lambda:
+
+  Optional single lambda value. When supplied, skips `cv.glmnet` and
+  fits at this lambda directly (see `.glmnet_fixed_lambda`). Default
+  `NULL` = cross-validated (current behaviour). Used by the as-of-date
+  career-Panna build to avoid re-running CV for every reference date.
 
 ## Value
 

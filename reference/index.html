@@ -596,13 +596,6 @@
 
         <dt>
 
-          <code><a href="load_epv_model.html">load_epv_model()</a></code>
-
-        </dt>
-        <dd>Load EPV Model</dd>
-
-        <dt>
-
           <code><a href="pb_download_epv_models.html">pb_download_epv_models()</a></code>
 
         </dt>
@@ -1225,6 +1218,64 @@
 
         </dt>
         <dd>Run the WC2026 Reference Facts Against Pipeline Outputs</dd>
+      </dl></div><div class="section level2">
+      <h2 id="xduel-models">xDuel Models<a class="anchor" aria-label="anchor" href="#xduel-models"></a></h2>
+
+      <div class="section-desc"><p>Player-agnostic contextual win-probability for physical contests (aerial/take-on/tackle/containment) — the above-expected duel features that replaced the success ratios in PSR/PSV</p></div>
+
+      <dl></dl></div><div class="section level2">
+
+
+
+
+      <dl><dt>
+
+          <code><a href="prepare_duels_from_events.html">prepare_duels_from_events()</a></code>
+
+        </dt>
+        <dd>Prepare one duel contest from raw (per-league) events</dd>
+
+        <dt>
+
+          <code><a href="compute_all_duel_preps.html">compute_all_duel_preps()</a></code>
+
+        </dt>
+        <dd>Build the per-contest feature tables for one league's events (memory-safe)</dd>
+
+        <dt>
+
+          <code><a href="fit_duel_model.html">fit_duel_model()</a></code>
+
+        </dt>
+        <dd>Fit the xDuel models (five contest sub-models)</dd>
+
+        <dt>
+
+          <code><a href="predict_duel.html">predict_duel()</a></code>
+
+        </dt>
+        <dd>Predict a duel contest win probability</dd>
+
+        <dt>
+
+          <code><a href="compute_duel_woe.html">compute_duel_woe()</a></code>
+
+        </dt>
+        <dd>Aggregate duels-above-expected per player (optionally per match)</dd>
+
+        <dt>
+
+          <code><a href="load_duel_model.html">load_duel_model()</a></code>
+
+        </dt>
+        <dd>Load the pre-trained xDuel model</dd>
+
+        <dt>
+
+          <code><a href="save_duel_model.html">save_duel_model()</a></code>
+
+        </dt>
+        <dd>Save the xDuel model</dd>
       </dl></div><div class="section level2">
       <h2 id="cross-league-offsets">Cross-League Offsets<a class="anchor" aria-label="anchor" href="#cross-league-offsets"></a></h2>
 

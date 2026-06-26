@@ -58,6 +58,7 @@
 <url><loc>https://peteowen1.github.io/panna/reference/MIN_WEIGHT_DURATION.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/OPTA_REGULATION_PERIODS.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/PANNA_EPR_WEIGHT.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/PANNA_LEAGUE_GROUPS.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/PANNA_PSR_WEIGHT.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/PENALTY_SHOOTOUT_CONVERSION.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/PENALTY_XG.html</loc></url>
@@ -177,6 +178,8 @@
 <url><loc>https://peteowen1.github.io/panna/reference/compare_panna_rapm_spm.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/compare_players.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/compare_spm_features.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/compute_all_duel_preps.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/compute_duel_woe.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/compute_league_offsets.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/compute_match_elos.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/compute_match_level_opta_stats.html</loc></url>
@@ -184,6 +187,7 @@
 <url><loc>https://peteowen1.github.io/panna/reference/compute_player_psr.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/compute_player_psv.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/compute_position_multipliers.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/compute_position_role_means.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/compute_psr_league_offsets.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/compute_team_rolling_features.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/compute_venue_factor.html</loc></url>
@@ -231,13 +235,13 @@
 <url><loc>https://peteowen1.github.io/panna/reference/dot-clean_numeric_na.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-compute_keeper_gsaa.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-count_events.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/dot-create_duel_features.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-create_placement_features.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-create_shot_features.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-decay_past_sum.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-detect_skill_stat_cols.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-ensure_player_id.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-epr_league_tier.html</loc></url>
-<url><loc>https://peteowen1.github.io/panna/reference/dot-estimate_prematch_skills_batch.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-find_next_event.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-find_next_event_with_value.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-fit_xgb_model.html</loc></url>
@@ -254,6 +258,7 @@
 <url><loc>https://peteowen1.github.io/panna/reference/dot-get_psr_efficiency_cols.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-get_psr_skill_cols.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-get_summary_col_mapping.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/dot-player_role.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-rename_opta_columns.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-report_model_provenance.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-resolve_lambda.html</loc></url>
@@ -298,6 +303,7 @@
 <url><loc>https://peteowen1.github.io/panna/reference/find_components.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/fit_bt_ratings.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/fit_career_rapm.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/fit_duel_model.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/fit_epv_conceding_model.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/fit_epv_model.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/fit_epv_scoring_model.html</loc></url>
@@ -349,7 +355,7 @@
 <url><loc>https://peteowen1.github.io/panna/reference/label_actions_with_outcomes.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/list_opta_leagues.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/list_opta_seasons.html</loc></url>
-<url><loc>https://peteowen1.github.io/panna/reference/load_epv_model.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/load_duel_model.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/load_opta_big5.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/load_opta_eventless_ids.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/load_opta_events.html</loc></url>
@@ -364,6 +370,7 @@
 <url><loc>https://peteowen1.github.io/panna/reference/load_opta_stats.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/load_opta_table.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/load_opta_xmetrics.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/load_position_role_means.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/load_predictions.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/load_psr_coefficients.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/load_wp_model.html</loc></url>
@@ -419,6 +426,7 @@
 <url><loc>https://peteowen1.github.io/panna/reference/plot_chain.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/plot_match_chains.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/pmap_chr2.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/predict_duel.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/predict_epv_probs.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/predict_match.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/predict_minutes.html</loc></url>
@@ -426,6 +434,7 @@
 <url><loc>https://peteowen1.github.io/panna/reference/predict_xg.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/predict_xgot.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/predict_xpass.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/prepare_duels_from_events.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/prepare_minutes_cache.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/prepare_od_scatter_data.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/prepare_opta_events_for_splints.html</loc></url>
@@ -453,6 +462,7 @@
 <url><loc>https://peteowen1.github.io/panna/reference/resolve_league_season.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/run_wc2026_reference_checks.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/safe_divide.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/save_duel_model.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/save_epv_model.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/save_wp_model.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/save_xg_model.html</loc></url>

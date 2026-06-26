@@ -12,7 +12,8 @@ compute_player_psv(
   center = TRUE,
   target = c("xg", "goals", "blend"),
   scale_to_minutes = FALSE,
-  exclude_efficiency = TRUE
+  exclude_efficiency = TRUE,
+  position_means = NULL
 )
 ```
 

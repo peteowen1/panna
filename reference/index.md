@@ -180,8 +180,6 @@ Action-level player valuation from Opta event data
   : Aggregate Player EPV Metrics
 - [`save_epv_model()`](https://peteowen1.github.io/panna/reference/save_epv_model.md)
   : Save EPV Model
-- [`load_epv_model()`](https://peteowen1.github.io/panna/reference/load_epv_model.md)
-  : Load EPV Model
 - [`pb_download_epv_models()`](https://peteowen1.github.io/panna/reference/pb_download_epv_models.md)
   : Download EPV Models from GitHub Releases
 - [`validate_epv_model()`](https://peteowen1.github.io/panna/reference/validate_epv_model.md)
@@ -385,6 +383,28 @@ Bradley-Terry team ratings and knockout tournament simulation
   : Simulate a 48-team World Cup
 - [`run_wc2026_reference_checks()`](https://peteowen1.github.io/panna/reference/run_wc2026_reference_checks.md)
   : Run the WC2026 Reference Facts Against Pipeline Outputs
+
+## xDuel Models
+
+Player-agnostic contextual win-probability for physical contests
+(aerial/take-on/tackle/containment) — the above-expected duel features
+that replaced the success ratios in PSR/PSV
+
+- [`prepare_duels_from_events()`](https://peteowen1.github.io/panna/reference/prepare_duels_from_events.md)
+  : Prepare one duel contest from raw (per-league) events
+- [`compute_all_duel_preps()`](https://peteowen1.github.io/panna/reference/compute_all_duel_preps.md)
+  : Build the per-contest feature tables for one league's events
+  (memory-safe)
+- [`fit_duel_model()`](https://peteowen1.github.io/panna/reference/fit_duel_model.md)
+  : Fit the xDuel models (five contest sub-models)
+- [`predict_duel()`](https://peteowen1.github.io/panna/reference/predict_duel.md)
+  : Predict a duel contest win probability
+- [`compute_duel_woe()`](https://peteowen1.github.io/panna/reference/compute_duel_woe.md)
+  : Aggregate duels-above-expected per player (optionally per match)
+- [`load_duel_model()`](https://peteowen1.github.io/panna/reference/load_duel_model.md)
+  : Load the pre-trained xDuel model
+- [`save_duel_model()`](https://peteowen1.github.io/panna/reference/save_duel_model.md)
+  : Save the xDuel model
 
 ## Cross-League Offsets
 

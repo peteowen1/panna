@@ -14,7 +14,8 @@ fit_rapm_with_prior(
   alpha = 0,
   nfolds = 10,
   use_weights = TRUE,
-  penalize_covariates = FALSE
+  penalize_covariates = FALSE,
+  fixed_lambda = NULL
 )
 ```
 
@@ -47,6 +48,13 @@ fit_rapm_with_prior(
 - penalize_covariates:
 
   Whether to penalize covariate coefficients
+
+- fixed_lambda:
+
+  Optional single lambda value. When supplied, skips `cv.glmnet` and
+  fits at this lambda directly (see `.glmnet_fixed_lambda`). Default
+  `NULL` = cross-validated (current behaviour). Used by the as-of-date
+  career-Panna build.
 
 ## Value
 

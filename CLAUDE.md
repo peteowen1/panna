@@ -187,10 +187,9 @@ metrics. Shared fixtures in `helper-fixtures.R`. Uses testthat edition
 ## Gotchas
 
 - **Skill-estimator stat-column detection must catch `_per90`, not just
-  `_p90`** —
-  [`.estimate_prematch_skills_batch()`](https://peteowen1.github.io/panna/reference/dot-estimate_prematch_skills_batch.md)
-  (psr.R) auto-detects which columns to estimate via
-  `grep("_p90$|_per90$", names(dt))` **plus** a union with
+  `_p90`** — `.estimate_prematch_skills_batch()` (psr.R) auto-detects
+  which columns to estimate via `grep("_p90$|_per90$", names(dt))`
+  **plus** a union with
   [`.get_psr_skill_cols()`](https://peteowen1.github.io/panna/reference/dot-get_psr_skill_cols.md)/[`.get_gk_skill_cols()`](https://peteowen1.github.io/panna/reference/dot-get_gk_skill_cols.md).
   The original `_p90$`-only pattern silently skipped every xMetrics
   column (`xg_per90`, `npg_minus_npxg_per90`, `gsaa_per90`, …) — so they
@@ -609,9 +608,8 @@ metrics. Shared fixtures in `helper-fixtures.R`. Uses testthat edition
   under-estimates the true gap; (b) low-minutes leaderboard noise
   (e.g. a 2.4-nineties player in the top-5) is a SEPARATE minutes-filter
   issue at display/export, NOT a league-offset problem.
-- **[`load_epv_model()`](https://peteowen1.github.io/panna/reference/load_epv_model.md)
-  (no `path`) prefers the PUBLISHED model, not the same-run cache.** Its
-  resolution order is explicit `path` →
+- **`load_epv_model()` (no `path`) prefers the PUBLISHED model, not the
+  same-run cache.** Its resolution order is explicit `path` →
   `pannamodels::load_panna_model("epv_model")` → local pannadata
   fallback — none of which is `01_train_epv_models.R`’s output at
   `data-raw/cache/epv/epv_model.rds`. So `05_train_wp_model.R` (which
@@ -627,7 +625,7 @@ metrics. Shared fixtures in `helper-fixtures.R`. Uses testthat edition
   cache path explicitly.
 - **Game-logs rebuilds MUST set `epv_model_override` +
   `wp_model_override` — see `MODELS.md`.** The bare default loaders
-  ([`load_epv_model()`](https://peteowen1.github.io/panna/reference/load_epv_model.md)/[`load_wp_model()`](https://peteowen1.github.io/panna/reference/load_wp_model.md)
+  (`load_epv_model()`/[`load_wp_model()`](https://peteowen1.github.io/panna/reference/load_wp_model.md)
   with no path) return the OLD pre-overhaul models from
   `pannadata/data/opta/models/*.rds`, NOT the post-overhaul clean
   models. A standalone 11-season game-logs rebuild that omitted the
@@ -672,8 +670,7 @@ metrics. Shared fixtures in `helper-fixtures.R`. Uses testthat edition
   The window is safe only because the pipeline runs Wed/manual. Local
   pipeline runs that must NOT wait for the published model can pass
   `epv_model_override` / `wp_model_override` (10b/10c) to score with a
-  candidate `.rds` directly — see the
-  [`load_epv_model()`](https://peteowen1.github.io/panna/reference/load_epv_model.md)
+  candidate `.rds` directly — see the `load_epv_model()`
   published-vs-cache gotcha above and the pannamodels cache-staleness
   gotcha.
 

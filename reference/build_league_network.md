@@ -16,6 +16,7 @@ build_league_network(
   big5 = c("ENG", "ESP", "GER", "ITA", "FRA"),
   min_mins = 270,
   shrink_k = 3,
+  bucket_years = 1L,
   verbose = TRUE
 )
 ```
@@ -49,6 +50,17 @@ build_league_network(
   `n_bridge / (n_bridge + shrink_k)` so a thin-N league can't
   over-swing. Default 3 (gentle — only meaningfully damps n \< ~10). Set
   0 to disable.
+
+- bucket_years:
+
+  Bridge window in years. `1` (default) connects only leagues a player
+  straddles within the *same* season_end_year (the original same-season
+  network). `2`+ groups seasons into fixed N-year buckets so leagues
+  straddled across adjacent seasons (e.g. a mid-career transfer) also
+  bridge — this multiplies the bridge count for leagues with little
+  same-season co-occurrence (no UCL: Argentina/Saudi/MLS) and widens
+  their offsets, while well-connected leagues are ~unchanged. Fixed
+  bins, so a transfer crossing a bin boundary isn't bridged.
 
 - verbose:
 

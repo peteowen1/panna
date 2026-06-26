@@ -19,7 +19,9 @@ fit_career_rapm(
   min_minutes = 200,
   nfolds = 5,
   offense_prior = NULL,
-  defense_prior = NULL
+  defense_prior = NULL,
+  fixed_lambda = NULL,
+  lambda_formula = NULL
 )
 ```
 
@@ -67,6 +69,19 @@ fit_career_rapm(
 
   Optional named (by `player_id`) prior vectors that override
   `skill_spm`.
+
+- fixed_lambda:
+
+  Optional single ridge lambda (skips `cv.glmnet`). Default `NULL` =
+  cross-validated.
+
+- lambda_formula:
+
+  Optional `function(n_obs)` returning a lambda; used only when
+  `fixed_lambda` is `NULL`. The as-of-date snapshot build passes the
+  sample-size formula (`16.67 * n_obs^-0.58`) so each reference date
+  gets a sample-appropriate lambda without re-running CV. `n_obs` is the
+  count of valid (finite) splint observations actually fed to the fit.
 
 ## Value
 

@@ -21,17 +21,17 @@ discover.
 ## Value
 
 data.frame of placement features, one row per shot. Column names become
-model features — keep them descriptive (e.g. dist_to_near_post).
+model features - keep them descriptive (e.g. dist_to_near_post).
 
 ## Details
 
-The empirical signal from EPL 2024-25 on-target shots (your data):
+The empirical signal from EPL 2024-25 on-target shots (illustrative):
 distance to nearest post: hug-post(\<1)=0.358 near=0.248 mid=0.106
 central=0.069 height band: low(\<5)=0.386 mid(5-12)=0.284
 high(12-20)=0.056 top(\>20)=0.287 Note the height effect is U-SHAPED
 (mid-height = keeper's easy reach = worst; both low-and-tucked and
 top-corner convert well). XGBoost handles non-linearity, so RAW
-gm_y/gm_z already let it find the corners — but engineered features
+gm_y/gm_z already let it find the corners - but engineered features
 (distance-to-near-post, height) sharpen it on limited data and make
 feature-importance readable.
 

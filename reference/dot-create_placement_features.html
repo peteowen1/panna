@@ -65,16 +65,16 @@ you encode "where in the frame" decides what the tree can discover.</p>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
     <p>data.frame of placement features, one row per shot. Column names
-become model features — keep them descriptive (e.g. dist_to_near_post).</p>
+become model features - keep them descriptive (e.g. dist_to_near_post).</p>
     </div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
-    <p>The empirical signal from EPL 2024-25 on-target shots (your data):
+    <p>The empirical signal from EPL 2024-25 on-target shots (illustrative):
 distance to nearest post:  hug-post(&lt;1)=0.358  near=0.248  mid=0.106  central=0.069
 height band:               low(&lt;5)=0.386  mid(5-12)=0.284  high(12-20)=0.056  top(&gt;20)=0.287
 Note the height effect is U-SHAPED (mid-height = keeper's easy reach = worst;
 both low-and-tucked and top-corner convert well). XGBoost handles
-non-linearity, so RAW gm_y/gm_z already let it find the corners — but
+non-linearity, so RAW gm_y/gm_z already let it find the corners - but
 engineered features (distance-to-near-post, height) sharpen it on limited
 data and make feature-importance readable.</p>
 <p>Geometry constants available: GOAL_POST_Y_LEFT (45.2), GOAL_POST_Y_RIGHT
