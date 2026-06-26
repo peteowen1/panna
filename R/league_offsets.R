@@ -350,6 +350,14 @@ compute_league_offsets <- function(game_logs,
 #' @param shrink_k Small-sample shrinkage: each league's offset is multiplied by
 #'   \code{n_bridge / (n_bridge + shrink_k)} so a thin-N league can't over-swing.
 #'   Default 3 (gentle — only meaningfully damps n < ~10). Set 0 to disable.
+#' @param bucket_years Bridge window in years. \code{1} (default) connects only
+#'   leagues a player straddles within the \emph{same} season_end_year (the
+#'   original same-season network). \code{2}+ groups seasons into fixed N-year
+#'   buckets so leagues straddled across adjacent seasons (e.g. a mid-career
+#'   transfer) also bridge — this multiplies the bridge count for leagues with
+#'   little same-season co-occurrence (no UCL: Argentina/Saudi/MLS) and widens
+#'   their offsets, while well-connected leagues are ~unchanged. Fixed bins, so
+#'   a transfer crossing a bin boundary isn't bridged.
 #' @param verbose Print the table. Default TRUE.
 #'
 #' @return A data.table: \code{league}, \code{strength} (raw league-ease
@@ -360,7 +368,8 @@ compute_league_offsets <- function(game_logs,
 #' @export
 build_league_network <- function(game_logs, value_col = "psv",
                                  big5 = c("ENG", "ESP", "GER", "ITA", "FRA"),
-                                 min_mins = 270, shrink_k = 3, verbose = TRUE) {
+                                 min_mins = 270, shrink_k = 3, bucket_years = 1L,
+                                 verbose = TRUE) {
   dt <- data.table::as.data.table(game_logs)
   if (!value_col %in% names(dt)) {
     cli::cli_abort("build_league_network: value column {.field {value_col}} not found")
@@ -387,9 +396,19 @@ build_league_network <- function(game_logs, value_col = "psv",
              mins = sum(total_minutes, na.rm = TRUE)),
            by = .(player_id, season_end_year, league), .SDcols = value_col]
   pc <- pc[mins >= min_mins]
-  pc[, ps := paste(player_id, season_end_year)]
-  pc[, nlg := .N, by = ps]
-  multi <- pc[nlg >= 2L]                       # player-seasons spanning >=2 leagues
+  # Bridge window. bucket_years=1 keys on the exact season_end_year (same-season
+  # straddlers only — the original network). bucket_years>1 groups into fixed
+  # N-year bins so adjacent-season league pairs also bridge. nlg counts DISTINCT
+  # leagues (not rows) so a player who stays in one league across the bucket
+  # isn't miscounted as a bridge; with bucket_years=1 this equals the prior .N.
+  if (bucket_years <= 1L) {
+    pc[, bkt := season_end_year]
+  } else {
+    pc[, bkt := (season_end_year %/% bucket_years) * bucket_years]
+  }
+  pc[, ps := paste(player_id, bkt)]
+  pc[, nlg := data.table::uniqueN(league), by = ps]
+  multi <- pc[nlg >= 2L]                       # player-buckets spanning >=2 leagues
   if (nrow(multi) < 10L) {
     cli::cli_warn("build_league_network: too few multi-league player-seasons; returning zero offsets.")
     lvls <- sort(unique(pc$league))
@@ -422,8 +441,8 @@ build_league_network <- function(game_logs, value_col = "psv",
   out[, offset := -strength * (n_bridge / (n_bridge + shrink_k))]  # discount, small-N shrunk
   data.table::setorder(out, offset)
   if (isTRUE(verbose)) {
-    cat(sprintf("\n== League network strength on '%s' (Big-5=0; %d bridges, shrink_k=%g) ==\n",
-                value_col, nrow(multi), shrink_k))
+    cat(sprintf("\n== League network strength on '%s' (Big-5=0; %d bridges, shrink_k=%g, bucket_years=%d) ==\n",
+                value_col, nrow(multi), shrink_k, bucket_years))
     cat("offset = add to a player's value to neutralize league (negative = weaker league).\n")
     print(out[, .(league, n_bridge, offset = round(offset, 3))])
   }

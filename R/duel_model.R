@@ -247,8 +247,7 @@ compute_all_duel_preps <- function(events) {
                                early_stopping_rounds, verbose) {
   feature_cols <- intersect(.DUEL_FEATURE_COLS, names(features))
   cli::cli_alert_info(
-    "Fitting x{label} model ({length(feature_cols)} feats) on ",
-    "{format(nrow(features), big.mark=',')} contests..."
+    "Fitting x{label} model ({length(feature_cols)} feats) on {format(nrow(features), big.mark=',')} contests..."
   )
   X <- as.matrix(as.data.frame(features)[, feature_cols, drop = FALSE])
   y <- features$won
@@ -308,7 +307,7 @@ fit_duel_model <- function(prepped, nfolds = 5, max_depth = 5, eta = 0.1,
       type = "duel_model", feature_cols = .DUEL_FEATURE_COLS,
       contests = names(.DUEL_CONTESTS),
       win_rates = vapply(names(labels),
-                         function(c) if (!is.null(models[[c]])) models[[c]]$win_rate else NA_real_,
+                         function(cst) if (!is.null(models[[cst]])) models[[cst]]$win_rate else NA_real_,
                          numeric(1))
     )
   ))

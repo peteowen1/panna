@@ -923,7 +923,13 @@ calculate_psv_components <- function(player_match_stats, coef_df, osr_coef_df,
                     error = function(e) NULL)
     if (!is.null(r16)) r <- .role16_to_broad(r16)
   }
-  if (is.null(r) && "primary_position" %in% names(dt)) r <- as.character(dt$primary_position)
+  if (is.null(r) && "primary_position" %in% names(dt)) {
+    # primary_position is usually already broad (GK/DEF/MID/FWD), but route a
+    # fine-grained label (CB/LB/DM/...) through the broad mapper so it degrades to
+    # its bucket instead of collapsing the whole population to OTHER at line ~930.
+    pp <- toupper(as.character(dt$primary_position))
+    r <- data.table::fifelse(pp %in% c("GK", "DEF", "MID", "FWD"), pp, .role16_to_broad(pp))
+  }
   if (is.null(r) && "pos_group" %in% names(dt)) r <- as.character(dt$pos_group)
   if (is.null(r)) return(rep("OTHER", nrow(dt)))
   r <- toupper(r)
@@ -1011,7 +1017,19 @@ load_position_role_means <- function() {
   has_era <- "season_end_year" %in% names(pm)
   role <- .player_role(dt)
   sey <- if (has_era) .season_end_year_col(dt) else rep(NA_integer_, nrow(dt))
-  stats <- intersect(unique(as.character(pm$stat_name)), names(dt))
+  pm_stats <- unique(as.character(pm$stat_name))
+  stats <- intersect(pm_stats, names(dt))
+  # Lockstep guard: a skill feature present in the data but ABSENT from the means
+  # artifact is silently NOT normalized (defeats the BPM adjustment for it). Warn
+  # so a stale position_role_means.csv (added a feature, forgot 07b) is visible.
+  skill_in_dt <- intersect(union(.get_psr_skill_cols(), .get_gk_skill_cols()), names(dt))
+  unnorm <- setdiff(skill_in_dt, pm_stats)
+  if (length(unnorm)) {
+    cli::cli_warn(c(
+      "position normalization: {length(unnorm)} skill column(s) absent from position_role_means.csv -- NOT normalized.",
+      "i" = "Rebuild via 07b_build_position_means.R after adding features: {paste(unnorm, collapse = ', ')}"
+    ))
+  }
   for (s in stats) {
     lk <- pm[stat_name == s]
     if (has_era) {
@@ -1328,6 +1346,10 @@ compute_player_psr <- function(skills, center = TRUE,
 #'   five majors.
 #' @param shrink_k Small-N shrinkage passed to \code{build_league_network}
 #'   (default 3 — gentle).
+#' @param bucket_years Bridge window passed to \code{build_league_network}.
+#'   Default 1 (same-season network — current production). Set 2 to also bridge
+#'   leagues straddled across adjacent seasons, which widens under-connected
+#'   leagues (Argentina/Saudi/MLS) while leaving well-connected ones ~unchanged.
 #' @param verbose Print the offset table. Default TRUE.
 #'
 #' @return A data.table with columns \code{league} (display competition name),
@@ -1337,9 +1359,11 @@ compute_player_psr <- function(skills, center = TRUE,
 #' @export
 compute_psr_league_offsets <- function(game_logs,
                                        big5 = c("ENG", "ESP", "GER", "ITA", "FRA"),
-                                       shrink_k = 3, verbose = FALSE) {
+                                       shrink_k = 3, bucket_years = 1L,
+                                       verbose = FALSE) {
   net <- build_league_network(game_logs, value_col = "psv", big5 = big5,
-                              shrink_k = shrink_k, verbose = FALSE)
+                              shrink_k = shrink_k, bucket_years = bucket_years,
+                              verbose = FALSE)
   # Map game-log league codes -> displayed competition names (EPL, A_League, ...)
   net[, comp := vapply(league, function(L)
     tryCatch(to_opta_league(L), error = function(e) L), character(1))]

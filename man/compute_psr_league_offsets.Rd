@@ -8,6 +8,7 @@ compute_psr_league_offsets(
   game_logs,
   big5 = c("ENG", "ESP", "GER", "ITA", "FRA"),
   shrink_k = 3,
+  bucket_years = 1L,
   verbose = FALSE
 )
 }
@@ -21,6 +22,11 @@ five majors.}
 
 \item{shrink_k}{Small-N shrinkage passed to \code{build_league_network}
 (default 3 — gentle).}
+
+\item{bucket_years}{Bridge window passed to \code{build_league_network}.
+Default 1 (same-season network — current production). Set 2 to also bridge
+leagues straddled across adjacent seasons, which widens under-connected
+leagues (Argentina/Saudi/MLS) while leaving well-connected ones ~unchanged.}
 
 \item{verbose}{Print the offset table. Default TRUE.}
 }

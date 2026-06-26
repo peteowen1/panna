@@ -4,7 +4,12 @@
 \alias{compute_player_psr}
 \title{Compute PSR from skills using bundled coefficients}
 \usage{
-compute_player_psr(skills, center = TRUE, target = c("xg", "goals"))
+compute_player_psr(
+  skills,
+  center = TRUE,
+  target = c("xg", "goals"),
+  position_means = NULL
+)
 }
 \arguments{
 \item{skills}{Player skill data (output of \code{estimate_player_skills()}
