@@ -52,7 +52,21 @@ xgot_model <- load_xgot_model()   # NULL until goalmouth-enabled model ships
 # xDuel: expected duel/aerial/tackle win prob → "duels won above expected" features
 # (replace the *_success ratios in PSR/PSV). NULL until 01b_train_duel_model.R run.
 duel_model <- tryCatch(load_duel_model(), error = function(e) {
-  cli_alert_warning("xDuel model unavailable — skipping duel-above-expected: {e$message}"); NULL
+  msg <- conditionMessage(e)
+  # The xDuel WOE features REPLACED the *_success ratios in PSR/PSV, so a missing
+  # model silently retrains the displayed ratings without them. Distinguish two
+  # cases: a fresh bootstrap (01b not yet run) is legitimate; a production run
+  # losing the model (pannamodels publish lag) is not.
+  if (nzchar(Sys.getenv("PANNA_DUEL_REQUIRED"))) {
+    cli::cli_abort(c(
+      "xDuel model required (PANNA_DUEL_REQUIRED set) but not loadable: {msg}",
+      "i" = "Publish duel_model.rds to pannamodels, or unset PANNA_DUEL_REQUIRED to bootstrap without duel features."
+    ))
+  }
+  # Bootstrap/dev: loud, never silent — surface as a CI warning too.
+  cli::cli_alert_danger("xDuel model UNAVAILABLE — PSR/PSV will train WITHOUT duel-above-expected features: {msg}")
+  cat("::warning::xDuel model unavailable — the 5 duel WOE features will be ABSENT from this xMetrics run\n")
+  NULL
 })
 
 cli_alert_success("Models loaded{if (is.null(xgot_model)) ' (xGOT unavailable — skipping post-shot xG)' else ''}{if (is.null(duel_model)) ' (xDuel unavailable)' else ''}")
@@ -215,7 +229,14 @@ for (league in names(league_seasons)) {
                             "tackle_poss_woe", "containment_woe")
         .attach_duel_woe <- function(pm, by_match) {
           woe <- tryCatch(compute_duel_woe(events, duel_model, by_match = by_match),
-                          error = function(e) { cli_alert_warning("  duel WOE failed for {label}: {e$message}"); NULL })
+                          error = function(e) {
+                            # A real compute error (the model loaded, this league threw) is
+                            # concerning — loud + CI-visible. A benign empty league (no error,
+                            # nrow 0) falls through silently below, which is correct.
+                            cli_alert_danger("  duel WOE FAILED for {label} — features zero-filled: {e$message}")
+                            cat(sprintf("::warning::duel WOE compute failed for %s\n", label))
+                            NULL
+                          })
           if (is.null(woe) || nrow(woe) == 0) {
             for (p90 in paste0(.duel_woe_cols, "_per90")) pm[[p90]] <- 0
             return(pm)
