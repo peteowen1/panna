@@ -11,7 +11,8 @@ fit_rapm_with_prior(
   alpha = 0,
   nfolds = 10,
   use_weights = TRUE,
-  penalize_covariates = FALSE
+  penalize_covariates = FALSE,
+  fixed_lambda = NULL
 )
 }
 \arguments{
@@ -28,6 +29,11 @@ fit_rapm_with_prior(
 \item{use_weights}{Whether to use splint duration weights}
 
 \item{penalize_covariates}{Whether to penalize covariate coefficients}
+
+\item{fixed_lambda}{Optional single lambda value. When supplied, skips
+\code{cv.glmnet} and fits at this lambda directly (see
+\code{.glmnet_fixed_lambda}). Default \code{NULL} = cross-validated (current
+behaviour). Used by the as-of-date career-Panna build.}
 }
 \value{
 Fitted model with prior adjustment metadata

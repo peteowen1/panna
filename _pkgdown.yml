@@ -246,6 +246,17 @@ reference:
   - simulate_world_cup
   - run_wc2026_reference_checks
 
+- title: xDuel Models
+  desc: Player-agnostic contextual win-probability for physical contests (aerial/take-on/tackle/containment) — the above-expected duel features that replaced the success ratios in PSR/PSV
+  contents:
+  - prepare_duels_from_events
+  - compute_all_duel_preps
+  - fit_duel_model
+  - predict_duel
+  - compute_duel_woe
+  - load_duel_model
+  - save_duel_model
+
 - title: Cross-League Offsets
   desc: Per-league PSR/EPR calibration via the same-season co-occurrence network
   contents:

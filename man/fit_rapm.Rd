@@ -12,7 +12,8 @@ fit_rapm(
   standardize = FALSE,
   penalize_covariates = FALSE,
   parallel = TRUE,
-  n_cores = NULL
+  n_cores = NULL,
+  fixed_lambda = NULL
 )
 }
 \arguments{
@@ -31,6 +32,12 @@ fit_rapm(
 \item{parallel}{Whether to use parallel processing for CV folds}
 
 \item{n_cores}{Number of cores (default: half of available)}
+
+\item{fixed_lambda}{Optional single lambda value. When supplied, skips
+\code{cv.glmnet} and fits at this lambda directly (see
+\code{.glmnet_fixed_lambda}). Default \code{NULL} = cross-validated (current
+behaviour). Used by the as-of-date career-Panna build to avoid re-running CV
+for every reference date.}
 }
 \value{
 Fitted model with metadata
