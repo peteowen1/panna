@@ -40,3 +40,6 @@ tmpclaude-*
 debug/
 _ul*
 .obsidian/
+
+# Transient local-run logs (underscore-prefixed Rscript run output)
+_*.log
