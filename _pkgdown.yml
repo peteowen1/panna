@@ -133,7 +133,6 @@ reference:
   - assign_epv_credit
   - aggregate_player_epv
   - save_epv_model
-  - load_epv_model
   - pb_download_epv_models
   - validate_epv_model
   - fit_xg_model
