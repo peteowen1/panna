@@ -495,7 +495,7 @@ if (nrow(seasonal_psr) > 0) {
 # absent (fresh clone, predictions not yet run) we skip — offsets are stable, so
 # a one-cycle lag is fine.
 if (nrow(seasonal_psr) > 0 && !is.null(psr_primary_league)) {
-  cat("\n=== Cross-league PSR offsets (PSV same-season network) ===\n")
+  cat("\n=== Cross-league PSR offsets (PSV 2-year-bucket network) ===\n")
   gl_dir <- file.path("data-raw", "cache-predictions-opta")
   gl_files <- list.files(gl_dir, pattern = "^game_logs_20.*\\.parquet$", full.names = TRUE)
   psr_offsets <- if (length(gl_files) == 0) {
@@ -506,7 +506,12 @@ if (nrow(seasonal_psr) > 0 && !is.null(psr_primary_league)) {
       d <- arrow::read_parquet(f)
       d[, intersect(c("player_id","season","league","total_minutes","psv"), names(d)), with = FALSE]
     }), use.names = TRUE, fill = TRUE)
-    compute_psr_league_offsets(gl, verbose = TRUE)
+    # bucket_years=2: bridge leagues a player straddles across adjacent seasons,
+    # not only within one season. Fixes the same-season network's connectivity
+    # starvation for leagues with no UCL co-occurrence (Argentina/Saudi/MLS),
+    # widening their offsets toward the mover/EPV evidence; well-connected leagues
+    # are ~unchanged (overall spread ~constant, bridges +50%).
+    compute_psr_league_offsets(gl, bucket_years = 2L, verbose = TRUE)
   }, error = function(e) {
     warning("PSR offset estimation failed: ", e$message, call. = FALSE); NULL
   })

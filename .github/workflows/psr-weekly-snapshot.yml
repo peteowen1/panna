@@ -95,7 +95,7 @@ jobs:
           mkdir -p "$CACHE_SKILLS"
 
           echo "Downloading skill caches..."
-          for f in 01_match_stats.rds 02b_decay_params.rds 03_skill_spm.rds; do
+          for f in 01_match_stats.rds 02b_decay_params.rds 03_skill_spm.rds psr_league_offsets.parquet; do
             if gh release download predictions-cache --repo peteowen1/pannadata \
                  --pattern "$f" --dir "$CACHE_SKILLS" 2>/dev/null; then
               echo "  Downloaded $f"
@@ -105,11 +105,19 @@ jobs:
           done
 
           echo ""
-          ls -lh "$CACHE_SKILLS"/*.rds 2>/dev/null || echo "  No skill caches"
+          ls -lh "$CACHE_SKILLS"/*.rds "$CACHE_SKILLS"/*.parquet 2>/dev/null || echo "  No skill caches"
 
-          # Validate prerequisite for step 8b
+          # Validate prerequisites for step 8b
           if [ ! -f "$CACHE_SKILLS/01_match_stats.rds" ] && [ ! -f "$CACHE_SKILLS/01_match_stats_slim.rds" ]; then
             echo "FATAL: 01_match_stats(_slim).rds required for PSR snapshot"
+            exit 1
+          fi
+          # Offsets are REQUIRED: every GHA weekly run until 2026-07-04 silently
+          # built offset-free snapshots (offsets were never downloaded), mixing
+          # conventions in the released parquet. 8b also hard-fails via
+          # psr_require_offsets, but fail here first with a clearer message.
+          if [ ! -f "$CACHE_SKILLS/psr_league_offsets.parquet" ]; then
+            echo "FATAL: psr_league_offsets.parquet required (upload via upload_prediction_caches.R)"
             exit 1
           fi
 
@@ -117,6 +125,10 @@ jobs:
         env:
           PANNADATA_DIR: ${{ runner.temp }}/pannadata
           GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
+          # Hard-fail 8b if offsets can't be applied (env var, NOT an R flag:
+          # 08b is sourced inside a step closure where globalenv flags are
+          # invisible — same delivery pattern as PSR_FORCE_FULL_REBUILD).
+          PSR_REQUIRE_OFFSETS: "1"
         run: |
           cat > /tmp/run_psr_weekly.R << 'EOF'
           pannadata_path <- Sys.getenv("PANNADATA_DIR", "../pannadata/data")

@@ -82,13 +82,31 @@ cat("\n=== Defining Snapshot Dates ===\n")
 
 today       <- Sys.Date()
 min_history <- min(match_stats$match_date) + 365L  # Need 1yr history minimum
-cutoff_weekly <- today - 2L * 365L                  # 2 years back = weekly
 
-# Weekly for last 2 years, monthly (every 4 weeks) before that
-recent_weekly  <- seq(cutoff_weekly, today, by = "7 days")
-older_monthly  <- seq(min_history, cutoff_weekly - 1L, by = "28 days")
-snapshot_dates <- sort(unique(c(older_monthly, recent_weekly)))
+# FIXED-EPOCH grid (run-date-invariant). The old grid was anchored to `today`
+# (seq(today - 730, today, by = 7)), so runs on different weekdays generated
+# DIFFERENT date grids: the incremental's `snapshot_dates %in% keep_existing`
+# never matched ("Dates to recompute: 235 (down from 235)" in the 2026-07-01
+# GHA log), every run recomputed the full grid, and the released parquet
+# accumulated interleaved near-duplicate dates from each anchor (4.06M -> 5.15M
+# kept rows in one week). Anchoring weekly dates to a constant Monday and
+# monthly dates to the same epoch makes the grid identical across runs, so the
+# incremental actually skips covered dates.
+GRID_EPOCH <- as.Date("2000-01-03")                       # a Monday, pre-data
+grid_today <- GRID_EPOCH + (as.integer(today - GRID_EPOCH) %/% 7L) * 7L
+cutoff_weekly <- grid_today - 728L                        # 104 weeks, grid-aligned
+
+# Weekly for last 2 years, monthly (every 4 weeks) before that. `today` itself
+# is appended as the ONE deliberate off-grid date so the newest snapshot is
+# never stale (a Wednesday cron would otherwise publish Monday's state): it is
+# recomputed every run and dropped from keep_existing by the grid filter below,
+# so exactly one off-grid date (the current run's) ever exists in the parquet.
+recent_weekly  <- seq(cutoff_weekly, grid_today, by = "7 days")
+older_monthly  <- seq(GRID_EPOCH, cutoff_weekly - 1L, by = "28 days")
+snapshot_dates <- sort(unique(c(older_monthly, recent_weekly, today)))
 snapshot_dates <- snapshot_dates[snapshot_dates >= min_history]
+on_grid <- function(d) (as.integer(d - GRID_EPOCH) %% 7L == 0L) |
+                       (as.integer(d - GRID_EPOCH) %% 28L == 0L)
 
 cat(sprintf("  Total snapshot dates: %d (%s to %s)\n",
             length(snapshot_dates),
@@ -185,8 +203,16 @@ if (!is.null(existing_parquet) && "snapshot_date" %in% names(existing_parquet) &
       "intentionally.", call. = FALSE)
   } else {
     existing_dates <- sort(unique(existing_dt$snapshot_date))
-    # Keep rows strictly older than the recompute buffer
-    keep_existing <- existing_dt[snapshot_date < recompute_cutoff]
+    # Keep rows strictly older than the recompute buffer, AND only rows ON the
+    # fixed grid: the bug-era parquet accumulated interleaved off-grid dates
+    # (today-anchored grids from different run weekdays, offset-free GHA
+    # recomputes, per-run `today` singletons). Off-grid rows are purged here so
+    # legacy pollution drains instead of being carried forward verbatim.
+    keep_existing <- existing_dt[snapshot_date < recompute_cutoff & on_grid(snapshot_date)]
+    n_purged <- nrow(existing_dt[snapshot_date < recompute_cutoff]) - nrow(keep_existing)
+    if (n_purged > 0)
+      message(sprintf("  Purged %s off-grid legacy rows from keep_existing",
+                      format(n_purged, big.mark = ",")))
     # Skip target snapshot_dates already covered by keep_existing
     already_covered <- snapshot_dates %in% keep_existing$snapshot_date
     snapshot_dates <- snapshot_dates[!already_covered]
@@ -355,6 +381,21 @@ if (psr_apply_offsets) {
 } else {
   cat(sprintf("  NOTE: PSR league offsets %s -> not applied\n",
               if (is.null(psr_offsets)) "not found (run step 06 first)" else "disabled (no competition/minutes)"))
+  # Building offset-free snapshots and uploading them MIXES conventions in the
+  # released parquet (this silently happened on every GHA weekly run until
+  # 2026-07-04 — psr_league_offsets.parquet was never downloaded to the runner).
+  # Publishing callers must set PSR_REQUIRE_OFFSETS=1 (the workflow does) so a
+  # missing/inapplicable offsets table fails the run instead of degrading it.
+  # ENV VAR, not an R flag: 08b is sourced via source(local = TRUE) inside
+  # run_skills_pipeline's step closure, so a globalenv flag with
+  # exists(inherits = FALSE) is invisible here — same pattern as
+  # PSR_FORCE_FULL_REBUILD. The R flag is still honoured for direct sourcing.
+  if (nzchar(Sys.getenv("PSR_REQUIRE_OFFSETS")) ||
+      (exists("psr_require_offsets") && isTRUE(psr_require_offsets))) {
+    stop("PSR league offsets required (PSR_REQUIRE_OFFSETS/psr_require_offsets) but not ",
+         "available - refusing to build an offset-free weekly parquet over the released one.",
+         call. = FALSE)
+  }
 }
 
 # Position multipliers from full dataset
