@@ -224,6 +224,22 @@ if (length(snapshot_dates) == 0) {
   snapshot_dates <- today
 }
 
+# SMOKE TEST: recompute only the most recent N snapshot date(s) for a fast top-20
+# sanity check before the full multi-hour rebuild. Set psr_smoke_n before sourcing.
+# Overrides the incremental result deliberately — which BREAKS the incremental
+# invariant (dates >= recompute_cutoff are neither kept nor recomputed), so the
+# resulting parquet is missing snapshots and must NEVER upload: force upload_psr
+# off rather than trusting the caller to remember (a forgotten flag would clobber
+# the released opta_psr_weekly.parquet with weeks of missing history).
+if (exists("psr_smoke_n", inherits = FALSE) && psr_smoke_n > 0) {
+  full_dates <- sort(unique(c(older_monthly, recent_weekly)))
+  full_dates <- full_dates[full_dates >= min_history]
+  snapshot_dates <- utils::tail(full_dates, psr_smoke_n)
+  upload_psr <- FALSE
+  cat(sprintf("  SMOKE: limiting to %d most-recent snapshot date(s): %s (upload_psr forced FALSE)\n",
+              length(snapshot_dates), paste(snapshot_dates, collapse = ", ")))
+}
+
 # 4b. Stream existing rows to disk to free RAM before the snapshot loop ----
 #
 # keep_existing is a 7-8M row data.table (~500MB). It's only consumed at the
@@ -666,6 +682,17 @@ out_path <- file.path(opta_dir, "opta_psr_weekly.parquet")
 arrow::write_parquet(as.data.frame(weekly_psr), out_path)
 mb <- round(file.info(out_path)$size / 1024^2, 1)
 cat(sprintf("  Written: %s (%s MB)\n", out_path, mb))
+
+if (exists("psr_smoke_n", inherits = FALSE) && psr_smoke_n > 0) {
+  wp <- data.table::as.data.table(weekly_psr)
+  dl <- max(wp$snapshot_date)
+  tt <- wp[snapshot_date == dl & weighted_90s >= 8][order(-psr)]
+  cat(sprintf("\n=== SMOKE: TOP 20 PSR @ %s  (min 8 nineties, %d qualifying) ===\n",
+              as.character(dl), nrow(tt)))
+  print(utils::head(tt[, .(player_name, primary_position,
+                           psr = round(psr, 3), osr = round(osr, 3),
+                           dsr = round(dsr, 3), n90 = round(weighted_90s, 1))], 20))
+}
 
 # 8. Upload to GitHub Release ----
 

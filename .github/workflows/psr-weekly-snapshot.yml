@@ -9,6 +9,11 @@ on:
     # Wednesday 10 AM UTC — 2 hours after Predictions Pipeline cron
     - cron: '0 10 * * 3'
   workflow_dispatch:
+    inputs:
+      allow_subset_drop:
+        description: 'Allow a live_subset league to drop from psv_live_constants.csv (tournament legitimately ended)'
+        type: boolean
+        default: false
 
 env:
   GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
@@ -123,6 +128,73 @@ jobs:
           source("data-raw/estimated-skills/run_skills_pipeline.R")
           EOF
           Rscript /tmp/run_psr_weekly.R
+
+      # panna#123: refresh the live-PSV centering constants weekly so C_pop
+      # tracks the season as it accumulates (and tournament leagues like the WC
+      # appear/disappear with their windows). Runs AFTER the 8b export so a
+      # constants failure can't block the PSR snapshot upload. 07c needs only
+      # cache-skills/01_match_stats.rds + the coefficient CSVs in the checkout —
+      # it deliberately does NOT enrich with xMetrics (see the note in 07c), so
+      # no xmetrics_bymatch download is required. 07c hard-fails (no upload,
+      # last good CSV stays on the bus) if an expected live-subset league is
+      # missing from its output. The CSV is published to pannadata's blog-latest
+      # release (data bus). NB: TODAY the blog's coefficient build
+      # (build-stat-value-coefficients.mjs) still reads the LOCAL panna checkout
+      # — wiring it to consume this blog-latest copy is inthegame-blog#371;
+      # until that lands this upload keeps the bus fresh but has no consumer.
+      # Cross-repo lockstep guard: 07c's LIVE_OBSERVABLE_FEATURES is a hand
+      # transcription of what the blog's live scorer can build; the review
+      # already caught it mis-transcribed once. Recompute the set from the
+      # blog's actual stat-value.js and fail the cron loudly on drift.
+      - name: Check live-feature lockstep vs blog stat-value.js
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+        run: |
+          gh api repos/peteowen1/inthegame-blog/contents/football/stat-value.js \
+            --jq '.content' | base64 -d > /tmp/stat-value.js
+          STAT_VALUE_JS=/tmp/stat-value.js Rscript data-raw/estimated-skills/07c_check_live_features.R
+
+      - name: Rebuild live-PSV centering constants (07c)
+        env:
+          PANNADATA_DIR: ${{ runner.temp }}/pannadata
+          GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          ALLOW_SUBSET_DROP: ${{ inputs.allow_subset_drop && 'true' || 'false' }}
+        run: |
+          cat > /tmp/run_07c.R << 'EOF'
+          pannadata_path <- Sys.getenv("PANNADATA_DIR", "../pannadata/data")
+          opta_path <- file.path(pannadata_path, "opta")
+          devtools::load_all()
+          pannadata_dir(pannadata_path)
+          opta_data_dir(opta_path)
+          source("data-raw/estimated-skills/07c_build_live_psv_constants.R")
+          EOF
+          Rscript /tmp/run_07c.R
+
+          # Disappearance guard: a live_subset league present in the PUBLISHED CSV
+          # must not silently vanish from the new one. 07c's own gate covers
+          # failures it can see (fetch/enrich/scoring); this closes the remaining
+          # hole (e.g. resolve_league_season wrongly returning NULL mid-tournament
+          # -> league "legitimately" skipped -> green upload without it). A real
+          # drop happens once, at season rollover after a tournament ends —
+          # re-run with allow_subset_drop=true for that.
+          mkdir -p /tmp/prev_csv
+          gh release download blog-latest --repo peteowen1/pannadata \
+            --pattern psv_live_constants.csv --dir /tmp/prev_csv || true
+          if [ -f /tmp/prev_csv/psv_live_constants.csv ]; then
+            prev=$(awk -F, 'NR>1 && $NF=="TRUE" {print $1}' /tmp/prev_csv/psv_live_constants.csv | sort -u)
+            new=$(awk -F, 'NR>1 && $NF=="TRUE" {print $1}' inst/extdata/psv_live_constants.csv | sort -u)
+            dropped=$(comm -23 <(echo "$prev") <(echo "$new") | grep -v '^$' || true)
+            if [ -n "$dropped" ] && [ "${ALLOW_SUBSET_DROP}" != "true" ]; then
+              echo "FATAL: live_subset league(s) dropped from constants CSV: $dropped"
+              echo "If the tournament legitimately ended (season rollover), re-run with allow_subset_drop=true."
+              exit 1
+            fi
+          fi
+
+          echo "Uploading psv_live_constants.csv to pannadata blog-latest..."
+          gh release upload blog-latest inst/extdata/psv_live_constants.csv \
+            --repo peteowen1/pannadata --clobber
 
       - name: Snapshot summary
         if: always()

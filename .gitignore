@@ -43,3 +43,6 @@ _ul*
 
 # Transient local-run logs (underscore-prefixed Rscript run output)
 _*.log
+
+# One-off scratch pipeline runners (session drivers, regenerable)
+data-raw/**/_run_*.R
