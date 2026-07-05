@@ -16,6 +16,32 @@
 library(arrow)
 devtools::load_all()
 
+# Diagnostic instrumentation for panna#128: two GHA runs were killed with
+# "runner has received a shutdown signal" (OOM signature) at the same point,
+# right after PSR league offsets load, even after narrowing
+# compute_position_multipliers()'s copy — so the actual spike is somewhere
+# else in this section. Logs R's own gc() total plus the process's real RSS
+# (/proc/self/status, Linux-only — silently NA elsewhere) at each checkpoint
+# so the next run pinpoints it instead of another blind guess. Remove once
+# panna#128 is confirmed fixed.
+.log_mem <- function(label) {
+  gc_info <- gc(verbose = FALSE, full = TRUE)
+  gc_mb <- sum(gc_info[, 2])
+  rss_mb <- tryCatch({
+    status <- readLines("/proc/self/status")
+    line <- grep("^VmRSS:", status, value = TRUE)
+    if (length(line) == 0) return(NA_real_)
+    as.numeric(regmatches(line, regexpr("[0-9]+", line))) / 1024
+  }, error = function(e) NA_real_)
+  cat(sprintf("  [mem] %-35s R gc=%.0fMB  RSS=%.0fMB\n", label, gc_mb, rss_mb))
+}
+.mem_total_mb <- tryCatch({
+  status <- readLines("/proc/meminfo")
+  line <- grep("^MemTotal:", status, value = TRUE)
+  as.numeric(regmatches(line, regexpr("[0-9]+", line))) / 1024
+}, error = function(e) NA_real_)
+cat(sprintf("  [mem] runner MemTotal: %.0fMB\n", .mem_total_mb))
+
 cache_dir <- file.path("data-raw", "cache-skills")
 opta_dir  <- opta_data_dir()
 dir.create(opta_dir, showWarnings = FALSE, recursive = TRUE)
@@ -52,8 +78,10 @@ if (!file.exists(ms_path)) {
 # 3. Load Data ----
 
 cat("=== Loading Data ===\n")
+.log_mem("script start (before any load)")
 cat(sprintf("  Match stats: %s\n", basename(ms_path)))
 match_stats <- data.table::as.data.table(readRDS(ms_path))
+.log_mem("after readRDS match_stats")
 if (!inherits(match_stats$match_date, "Date")) {
   match_stats[, match_date := as.Date(match_date)]
 }
@@ -69,9 +97,13 @@ if (!inherits(match_stats$match_date, "Date")) {
 # (code review finding on panna#126's first draft — fixing the source is the
 # actual bug; fail-fast hardening needs retry logic first, tracked separately).
 xm_source <- if (identical(Sys.getenv("XMETRICS_SOURCE"), "remote")) "remote" else "local"
+.log_mem("before xmetrics enrich")
 match_stats <- enrich_match_stats_with_xmetrics(match_stats, verbose = FALSE,
                                                 source = xm_source)
 gc(verbose = FALSE)
+cat(sprintf("  match_stats now %d columns wide after enrich (source=%s)\n",
+            ncol(match_stats), xm_source))
+.log_mem("after xmetrics enrich")
 cat(sprintf("  Rows: %s | Date range: %s to %s\n",
             format(nrow(match_stats), big.mark = ","),
             min(match_stats$match_date),
@@ -313,6 +345,7 @@ if (!is.null(keep_existing) && nrow(keep_existing) > 0) {
                   format(nrow(keep_existing), big.mark = ","),
                   format(utils::object.size(keep_existing), units = "auto")))
 }
+.log_mem("after keep_existing built")
 
 # 5. Pre-Compute Shared Data (position multipliers + prior centers) ----
 #
@@ -336,12 +369,15 @@ eff_cols   <- intersect(names(.classify_skill_stats()), names(match_stats))
 reg_cols   <- tryCatch(union(.get_psr_skill_cols(), .get_gk_skill_cols()),
                        error = function(e) character(0))
 stat_cols_all <- intersect(unique(c(p90_cols, eff_cols, reg_cols)), names(match_stats))
-cat(sprintf("  Stat columns detected: %d\n", length(stat_cols_all)))
+cat(sprintf("  Stat columns detected: %d of %d total match_stats columns\n",
+            length(stat_cols_all), ncol(match_stats)))
+.log_mem("after stat col detection")
 
 # Pre-sort by date so each date filter is a fast prefix scan
 data.table::setorder(match_stats, match_date)
 match_date_vec <- match_stats$match_date  # cached for binary search
 cat(sprintf("  match_stats sorted by date\n"))
+.log_mem("after sort")
 
 # --- Cross-league PSR offsets (transfer-graph calibration) ----
 # PSR is built from box-score rates that barely vary by league, so strong
@@ -388,6 +424,7 @@ if (psr_apply_offsets) {
   }
   cat(sprintf("  PSR league offsets loaded (%d leagues); decay-weighted blend built (%s, lambda=%.4f ~ %d-day half-life)\n",
               nrow(psr_offsets), psr_lg_col, PSR_BLEND_LAMBDA, round(log(2) / PSR_BLEND_LAMBDA)))
+  .log_mem("after offsets blend built")
 } else {
   cat(sprintf("  NOTE: PSR league offsets %s -> not applied\n",
               if (is.null(psr_offsets)) "not found (run step 06 first)" else "disabled (no competition/minutes)"))
@@ -408,9 +445,11 @@ if (psr_apply_offsets) {
   }
 }
 
+.log_mem("before position multipliers")
 # Position multipliers from full dataset
 pos_mults_precomp <- compute_position_multipliers(match_stats, stat_cols_all)
 cat(sprintf("  Position multipliers computed\n"))
+.log_mem("after position multipliers")
 
 # Prior centers (minutes-weighted global mean per stat) from full dataset
 wts_all   <- as.numeric(match_stats$total_minutes)
@@ -422,6 +461,7 @@ prior_centers_precomp <- vapply(stat_cols_all, function(sc) {
   if (total_wt > 0) sum(v * wts_all) / total_wt else 0
 }, numeric(1))
 cat(sprintf("  Prior centers computed\n\n"))
+.log_mem("after prior centers")
 
 # Augment decay_params with pre-computed values so estimate_player_skills()
 # skips recomputing these inside each loop iteration
