@@ -351,7 +351,13 @@ estimate_player_skills <- function(match_stats, decay_params = NULL,
   if (compute_ci) rating_names <- TRUE
   if (is.null(decay_params)) decay_params <- get_default_decay_params()
 
-  dt <- data.table::as.data.table(match_stats)
+  # panna#128: as.data.table() on an ALREADY-valid data.table performs a full
+  # deep copy regardless (confirmed empirically — see compute_position_
+  # multipliers()) — called once per snapshot date in 08b's weekly loop, so
+  # this alone defeated the filter-before-copy optimization the comment below
+  # describes. The two branches below already produce an independent copy
+  # (bracket-filter or explicit copy()), so skipping it here is safe.
+  dt <- if (data.table::is.data.table(match_stats)) match_stats else data.table::as.data.table(match_stats)
 
   # Filter by date BEFORE copying -- subsetting creates a new data.table,
   # avoiding a full copy of the (potentially multi-GB) input
