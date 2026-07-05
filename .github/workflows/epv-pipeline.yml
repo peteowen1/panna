@@ -21,6 +21,10 @@ on:
         description: 'Train ONLY the WP model — skip the EPV/xMetrics retrain. Much faster (~20min vs ~120). The WP model does not consume EPV, so this is lossless for a WP retrain. Implies train_wp.'
         type: boolean
         default: false
+      xmetrics_only:
+        description: 'Skip the EPV/xG/xPass model retrain — just (re)calculate + export xMetrics (steps 03/04/04b) using the CURRENTLY PUBLISHED models. Much faster than a full retrain (no ~120min training) and scores against the reviewed/live model instead of an untested fresh one. Implies export_xmetrics=true.'
+        type: boolean
+        default: false
       export_xmetrics:
         description: 'Export xMetrics parquets (steps 03-04)'
         type: boolean
@@ -38,8 +42,16 @@ env:
   # AND now pushes the combined job past the 120-min timeout. wp_only skips
   # steps 01/03/04 and runs only WP train + upload (~20 min total).
   WP_ONLY: ${{ inputs.wp_only == true && 'true' || 'false' }}
-  # wp_only forces the EPV/xMetrics steps off regardless of their own inputs.
-  EXPORT_XMETRICS: ${{ (inputs.export_xmetrics == true || github.event_name == 'schedule') && inputs.wp_only != true && 'true' || 'false' }}
+  # xmetrics_only skips step 01 (retrain) but still runs 03/04/04b — those
+  # scripts' loaders (load_xg_model() etc.) default to the PUBLISHED model via
+  # pannamodels when no fresh local training just happened, so this scores
+  # against the reviewed/live model, not an unvetted retrain (panna#126 — found
+  # while populating opta_xmetrics_bymatch.parquet for the first time without
+  # paying for a full ~120min retrain just to get xMetrics refreshed).
+  XMETRICS_ONLY: ${{ inputs.xmetrics_only == true && 'true' || 'false' }}
+  # wp_only/xmetrics_only force the EPV/xMetrics retrain steps off regardless
+  # of their own inputs; xmetrics_only forces xMetrics export ON.
+  EXPORT_XMETRICS: ${{ (inputs.export_xmetrics == true || inputs.xmetrics_only == true || github.event_name == 'schedule') && inputs.wp_only != true && 'true' || 'false' }}
   # wp_only implies train_wp (no point skipping EPV if you don't train WP).
   TRAIN_WP: ${{ (inputs.train_wp == true || inputs.wp_only == true) && 'true' || 'false' }}
   # Gated publish: the trained WP model is ALWAYS staged to the pannadata
@@ -136,7 +148,7 @@ jobs:
           fi
 
       - name: Train EPV models
-        if: ${{ env.WP_ONLY != 'true' }}
+        if: ${{ env.WP_ONLY != 'true' && env.XMETRICS_ONLY != 'true' }}
         env:
           PANNADATA_DIR: ${{ runner.temp }}/pannadata
         run: |
@@ -158,7 +170,7 @@ jobs:
         # fragility left xgot_model unpublished on 2026-06-16. The final
         # "Upload trained models" step re-uploads (--clobber, idempotent) and
         # handles the WP model.
-        if: ${{ env.WP_ONLY != 'true' }}
+        if: ${{ env.WP_ONLY != 'true' && env.XMETRICS_ONLY != 'true' }}
         env:
           GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
         run: |
@@ -235,10 +247,12 @@ jobs:
           CACHE_DIR="data-raw/cache/epv"
           UPLOADED=0
 
-          # In wp_only mode the EPV/xg/xpass models are not retrained (steps
-          # 01/03/04 were skipped), so they won't be in CACHE_DIR and must not
-          # be uploaded or counted — the WP block below is the only upload.
-          if [ "$WP_ONLY" != "true" ]; then
+          # In wp_only/xmetrics_only mode the EPV/xg/xpass models are not
+          # retrained (step 01 was skipped), so they won't be in CACHE_DIR and
+          # must not be uploaded or counted — the WP block below (wp_only) or
+          # the xMetrics export step (xmetrics_only) already handled the
+          # actual output for those modes.
+          if [ "$WP_ONLY" != "true" ] && [ "$XMETRICS_ONLY" != "true" ]; then
             for f in xg_model.rds xgot_model.rds xpass_model.rds epv_model.rds; do
               if [ -f "$CACHE_DIR/$f" ]; then
                 if gh release upload models "$CACHE_DIR/$f" --repo peteowen1/pannadata --clobber; then
@@ -257,7 +271,7 @@ jobs:
               exit 1
             fi
           else
-            echo "wp_only mode — skipping xg/xpass/epv upload (not retrained)."
+            echo "wp_only/xmetrics_only mode — skipping xg/xpass/epv upload (not retrained)."
           fi
 
           if [ "$TRAIN_WP" = "true" ]; then
