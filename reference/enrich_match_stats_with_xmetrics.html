@@ -71,7 +71,8 @@ inline join).</p>
     <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">enrich_match_stats_with_xmetrics</span><span class="op">(</span></span>
 <span>  <span class="va">match_stats</span>,</span>
 <span>  verbose <span class="op">=</span> <span class="cn">TRUE</span>,</span>
-<span>  fail_if_missing_frac <span class="op">=</span> <span class="cn">Inf</span></span>
+<span>  fail_if_missing_frac <span class="op">=</span> <span class="cn">Inf</span>,</span>
+<span>  source <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"local"</span>, <span class="st">"remote"</span><span class="op">)</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -96,6 +97,15 @@ dataset. Default <code>Inf</code> (library-safe: never fails). Pipeline callers
 that require the features (skills step 2, PSR step 7) should pass a finite
 value (e.g. <code>0.5</code>). A total miss (no files at all) always errors when
 this is finite, regardless of the fraction.</p></dd>
+
+
+<dt id="arg-source">source<a class="anchor" aria-label="anchor" href="#arg-source"></a></dt>
+<dd><p>Where to load <code>xmetrics_bymatch</code> from: <code>"local"</code>
+(default, pipeline-generated per-league/season files under
+<code><a href="opta_data_dir.html">opta_data_dir()</a></code>) or <code>"remote"</code> (the consolidated
+<code>opta_xmetrics_bymatch.parquet</code> on the <code>opta-latest</code> release —
+the only option that works on a GHA runner, which never has the local
+per-league/season tree; see <code><a href="load_opta_xmetrics.html">load_opta_xmetrics</a></code>).</p></dd>
 
 </dl></div>
     <div class="section level2">

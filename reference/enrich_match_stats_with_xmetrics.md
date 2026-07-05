@@ -16,7 +16,8 @@ train/serve drift of a duplicated inline join).
 enrich_match_stats_with_xmetrics(
   match_stats,
   verbose = TRUE,
-  fail_if_missing_frac = Inf
+  fail_if_missing_frac = Inf,
+  source = c("local", "remote")
 )
 ```
 
@@ -41,6 +42,16 @@ enrich_match_stats_with_xmetrics(
   2, PSR step 7) should pass a finite value (e.g. `0.5`). A total miss
   (no files at all) always errors when this is finite, regardless of the
   fraction.
+
+- source:
+
+  Where to load `xmetrics_bymatch` from: `"local"` (default,
+  pipeline-generated per-league/season files under
+  [`opta_data_dir()`](https://peteowen1.github.io/panna/reference/opta_data_dir.md))
+  or `"remote"` (the consolidated `opta_xmetrics_bymatch.parquet` on the
+  `opta-latest` release — the only option that works on a GHA runner,
+  which never has the local per-league/season tree; see
+  [`load_opta_xmetrics`](https://peteowen1.github.io/panna/reference/load_opta_xmetrics.md)).
 
 ## Value
 
