@@ -693,6 +693,63 @@ metrics. Shared fixtures in `helper-fixtures.R`. Uses testthat edition
   when exports change: `devtools::document()`, add every new exported fn
   to a `_pkgdown.yml` reference section (or `@keywords internal` to drop
   it), and remove entries for any deleted topic.
+- **Three data.table anti-patterns cause multi-GB RSS growth that R’s
+  own [`gc()`](https://rdrr.io/r/base/gc.html) cannot see — this is what
+  OOM-killed `psr-weekly-snapshot.yml` (panna#128, 2026-07-05), and it’s
+  generic enough to bite any pipeline script.**
+  [`gc()`](https://rdrr.io/r/base/gc.html) only tracks R-managed heap;
+  none of these show up in its total, only in OS-level RSS
+  (`/proc/self/status`’s `VmRSS` on the GHA Linux runner). (1)
+  **`get(varname)` inside `dt[i, j]`** breaks the fast column-reference
+  path — one line left ~5.4GB unreclaimed on a table whose actual output
+  was ~60MB. Fix: extract via `dt[[varname]]` into a plain vector first,
+  filter/select using that vector, never
+  [`get()`](https://rdrr.io/r/base/get.html) inside `[`. (2)
+  **[`data.table::as.data.table()`](https://rdrr.io/pkg/data.table/man/as.data.table.html)
+  on an ALREADY-valid data.table performs a full deep copy regardless**
+  — it is NOT the identity/no-op shortcut it looks like (confirmed via
+  [`data.table::address()`](https://rdrr.io/pkg/data.table/man/address.html)
+  before/after: different address every time). Found at 7+ call sites in
+  `R/estimated_skills.R` alone. Guard with
+  `if (!is.data.table(x)) x <- as.data.table(x)`; if the caller’s
+  contract needs an independent copy anyway (e.g. before a `:=`), use
+  `copy(if (is.data.table(x)) x else as.data.table(x))` — copies exactly
+  once instead of `copy(as.data.table(x))`’s double-copy. (3) **A
+  bracket-filter on a very wide table is expensive even when it’s not a
+  bug** — `dt[md < target_date]` on 400+ columns produces an
+  almost-full-size copy whenever most rows still pass (recent target
+  dates → most history qualifies). Narrow to only the columns actually
+  read, ONCE, upstream of any per-iteration filtering, via
+  `[[`-extraction (not bracket-select) — but trace *every* downstream
+  column dependency first (`08b_export_psr_weekly.R`’s narrowing almost
+  shipped without the 31 box-score denominator columns
+  `.compute_denominator()` needs for efficiency-ratio stats, since those
+  aren’t in the “obvious” stat-column set) and verify old-vs-narrowed
+  output is byte-identical before deploying, not just by code review.
+  Diagnostic method that actually worked: add a cheap RSS-logging
+  checkpoint at every suspected boundary, redeploy to GHA, read the log,
+  narrow the search window, repeat — reasoning about data.table
+  internals from first principles produced two confidently-wrong
+  theories (stale `.internal.selfref` after
+  [`readRDS()`](https://rdrr.io/r/base/readRDS.html); 300× duplicate
+  remote-fetch calls) before the log evidence forced the real answer.
+- **`git diff main...HEAD` (or any review tool that shells out to it)
+  silently uses your LOCAL `main` branch ref, which can be arbitrarily
+  stale even if `origin/main` is current.** A local `main` left 252
+  commits behind `origin/main` made a code-review workflow analyze a
+  5-week-old, 203-file diff instead of the actual ~3-file PR — the
+  review’s findings were entirely for the wrong target.
+  `git fetch origin main:main` (or `git checkout main && git pull`)
+  before trusting any `main...HEAD`-based diff or review in this repo.
+- **A squash-merged `dev`→`main` PR leaves `dev` and `main` sharing a
+  stale merge-base**, so the *next* `dev`→`main` PR shows ALL of `dev`’s
+  cumulative history as the diff (not just the new commits) and
+  spurious-conflicts on lines already merged via the squash. Hit this
+  twice in one session (panna#127→#129, then \#129→#130). Fix:
+  `git merge origin/main --no-edit` locally on `dev` *before*
+  opening/updating the next PR — the conflicts are near-always trivial
+  (one side added nothing where the other added a line), resolve in
+  favor of `dev`’s newer content, push, then the PR merges cleanly.
 
 ## GitHub Actions
 
