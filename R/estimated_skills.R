@@ -195,8 +195,24 @@ compute_position_multipliers <- function(match_stats, stat_cols = NULL) {
   # over after the offsets/full-sync fix grew 01_match_stats.rds ~215MB->326MB).
   needed_cols <- intersect(unique(c("player_id", "position", "total_minutes", stat_cols)),
                            names(match_stats))
+  # TEMPORARY diagnostic for panna#128 — remove once root-caused. Same RSS
+  # probe as 08b's .log_mem(), inlined here (package code, no cross-file dep).
+  .pm_mem <- function(label) {
+    gc(verbose = FALSE, full = TRUE)
+    rss_mb <- suppressWarnings(tryCatch({
+      status <- readLines("/proc/self/status")
+      line <- grep("^VmRSS:", status, value = TRUE)
+      if (length(line) == 0) return(NA_real_)
+      as.numeric(regmatches(line, regexpr("[0-9]+", line))) / 1024
+    }, error = function(e) NA_real_))
+    cat(sprintf("  [pm-mem] %-30s RSS=%.0fMB\n", label, rss_mb))
+  }
+  .pm_mem(sprintf("compute_position_multipliers start (needed_cols=%d of %d)",
+                  length(needed_cols), ncol(match_stats)))
   dt <- data.table::copy(match_stats[, ..needed_cols])
+  .pm_mem("after copy(match_stats[, ..needed_cols])")
   dt <- .resolve_positions(dt)
+  .pm_mem("after .resolve_positions")
 
   pos_groups <- c("GK", "DEF", "MID", "FWD")
   multipliers <- list()
@@ -231,6 +247,7 @@ compute_position_multipliers <- function(match_stats, stat_cols = NULL) {
     multipliers[[sc]] <- pos_mults
   }
 
+  .pm_mem("after stat_cols loop (function end)")
   multipliers
 }
 
