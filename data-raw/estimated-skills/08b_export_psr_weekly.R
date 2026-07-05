@@ -81,7 +81,20 @@ cat("=== Loading Data ===\n")
 .log_mem("script start (before any load)")
 cat(sprintf("  Match stats: %s\n", basename(ms_path)))
 match_stats <- data.table::as.data.table(readRDS(ms_path))
-.log_mem("after readRDS match_stats")
+# panna#128 ROOT CAUSE: a data.table loaded via readRDS() carries a stale
+# .internal.selfref (serialization doesn't preserve it) — data.table's own
+# runtime message confirms this exactly ("Please remember to always setDT()
+# immediately after loading"). Left unfixed, the FIRST `[.data.table]`/`:=`
+# operation that notices silently takes a full deep copy to repair it —
+# unpredictably, wherever that first touch happens to fall later in the
+# script. On this table that's a ~6GB copy (421 cols x 1.9M rows), and it
+# was landing well into Pre-Computing Shared Priors, on top of match_stats +
+# keep_existing + offsets prep already in memory — tipping the 16GB GHA
+# runner over. setDT() fixes it HERE for ~0 cost (confirmed empirically:
+# instant, not a copy) while memory is cheapest, instead of paying an
+# unpredictable ~6GB tax later.
+data.table::setDT(match_stats)
+.log_mem("after readRDS + setDT match_stats")
 if (!inherits(match_stats$match_date, "Date")) {
   match_stats[, match_date := as.Date(match_date)]
 }
