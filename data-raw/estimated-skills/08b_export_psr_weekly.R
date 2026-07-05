@@ -16,32 +16,6 @@
 library(arrow)
 devtools::load_all()
 
-# Diagnostic instrumentation for panna#128: two GHA runs were killed with
-# "runner has received a shutdown signal" (OOM signature) at the same point,
-# right after PSR league offsets load, even after narrowing
-# compute_position_multipliers()'s copy — so the actual spike is somewhere
-# else in this section. Logs R's own gc() total plus the process's real RSS
-# (/proc/self/status, Linux-only — silently NA elsewhere) at each checkpoint
-# so the next run pinpoints it instead of another blind guess. Remove once
-# panna#128 is confirmed fixed.
-.log_mem <- function(label) {
-  gc_info <- gc(verbose = FALSE, full = TRUE)
-  gc_mb <- sum(gc_info[, 2])
-  rss_mb <- tryCatch({
-    status <- readLines("/proc/self/status")
-    line <- grep("^VmRSS:", status, value = TRUE)
-    if (length(line) == 0) return(NA_real_)
-    as.numeric(regmatches(line, regexpr("[0-9]+", line))) / 1024
-  }, error = function(e) NA_real_)
-  cat(sprintf("  [mem] %-35s R gc=%.0fMB  RSS=%.0fMB\n", label, gc_mb, rss_mb))
-}
-.mem_total_mb <- tryCatch({
-  status <- readLines("/proc/meminfo")
-  line <- grep("^MemTotal:", status, value = TRUE)
-  as.numeric(regmatches(line, regexpr("[0-9]+", line))) / 1024
-}, error = function(e) NA_real_)
-cat(sprintf("  [mem] runner MemTotal: %.0fMB\n", .mem_total_mb))
-
 cache_dir <- file.path("data-raw", "cache-skills")
 opta_dir  <- opta_data_dir()
 dir.create(opta_dir, showWarnings = FALSE, recursive = TRUE)
@@ -78,23 +52,20 @@ if (!file.exists(ms_path)) {
 # 3. Load Data ----
 
 cat("=== Loading Data ===\n")
-.log_mem("script start (before any load)")
 cat(sprintf("  Match stats: %s\n", basename(ms_path)))
-match_stats <- data.table::as.data.table(readRDS(ms_path))
-# panna#128 ROOT CAUSE: a data.table loaded via readRDS() carries a stale
-# .internal.selfref (serialization doesn't preserve it) — data.table's own
-# runtime message confirms this exactly ("Please remember to always setDT()
-# immediately after loading"). Left unfixed, the FIRST `[.data.table]`/`:=`
-# operation that notices silently takes a full deep copy to repair it —
-# unpredictably, wherever that first touch happens to fall later in the
-# script. On this table that's a ~6GB copy (421 cols x 1.9M rows), and it
-# was landing well into Pre-Computing Shared Priors, on top of match_stats +
-# keep_existing + offsets prep already in memory — tipping the 16GB GHA
-# runner over. setDT() fixes it HERE for ~0 cost (confirmed empirically:
-# instant, not a copy) while memory is cheapest, instead of paying an
-# unpredictable ~6GB tax later.
+# panna#128 TRUE ROOT CAUSE: data.table::as.data.table() on an ALREADY-valid
+# data.table performs a FULL DEEP COPY regardless — confirmed empirically
+# (different object address after the call, ~4-11s locally on this table).
+# It is NOT the identity/no-op shortcut it looks like. 01_match_stats.rds is
+# already a data.table, so wrapping readRDS()'s result in as.data.table()
+# here was a wasted ~6GB copy on every run — landing right when memory is
+# cheapest, but an IDENTICAL wasted copy inside compute_position_multipliers()
+# later (same anti-pattern, same table) is what actually tipped the 16GB GHA
+# runner over (see the guard added there). setDT() (unlike as.data.table())
+# genuinely is a cheap in-place fix for the stale .internal.selfref readRDS()
+# leaves behind — confirmed empirically at ~0.00s, not a copy.
+match_stats <- readRDS(ms_path)
 data.table::setDT(match_stats)
-.log_mem("after readRDS + setDT match_stats")
 if (!inherits(match_stats$match_date, "Date")) {
   match_stats[, match_date := as.Date(match_date)]
 }
@@ -110,13 +81,9 @@ if (!inherits(match_stats$match_date, "Date")) {
 # (code review finding on panna#126's first draft — fixing the source is the
 # actual bug; fail-fast hardening needs retry logic first, tracked separately).
 xm_source <- if (identical(Sys.getenv("XMETRICS_SOURCE"), "remote")) "remote" else "local"
-.log_mem("before xmetrics enrich")
 match_stats <- enrich_match_stats_with_xmetrics(match_stats, verbose = FALSE,
                                                 source = xm_source)
 gc(verbose = FALSE)
-cat(sprintf("  match_stats now %d columns wide after enrich (source=%s)\n",
-            ncol(match_stats), xm_source))
-.log_mem("after xmetrics enrich")
 cat(sprintf("  Rows: %s | Date range: %s to %s\n",
             format(nrow(match_stats), big.mark = ","),
             min(match_stats$match_date),
@@ -358,7 +325,6 @@ if (!is.null(keep_existing) && nrow(keep_existing) > 0) {
                   format(nrow(keep_existing), big.mark = ","),
                   format(utils::object.size(keep_existing), units = "auto")))
 }
-.log_mem("after keep_existing built")
 
 # 5. Pre-Compute Shared Data (position multipliers + prior centers) ----
 #
@@ -382,15 +348,12 @@ eff_cols   <- intersect(names(.classify_skill_stats()), names(match_stats))
 reg_cols   <- tryCatch(union(.get_psr_skill_cols(), .get_gk_skill_cols()),
                        error = function(e) character(0))
 stat_cols_all <- intersect(unique(c(p90_cols, eff_cols, reg_cols)), names(match_stats))
-cat(sprintf("  Stat columns detected: %d of %d total match_stats columns\n",
-            length(stat_cols_all), ncol(match_stats)))
-.log_mem("after stat col detection")
+cat(sprintf("  Stat columns detected: %d\n", length(stat_cols_all)))
 
 # Pre-sort by date so each date filter is a fast prefix scan
 data.table::setorder(match_stats, match_date)
 match_date_vec <- match_stats$match_date  # cached for binary search
 cat(sprintf("  match_stats sorted by date\n"))
-.log_mem("after sort")
 
 # --- Cross-league PSR offsets (transfer-graph calibration) ----
 # PSR is built from box-score rates that barely vary by league, so strong
@@ -428,21 +391,17 @@ if (psr_apply_offsets) {
   pl_src <- match_stats[.lg_keep, .(player_id, match_date, total_minutes)]
   pl_src[, .lg := .lg_vec[.lg_keep]]
   rm(.lg_vec, .lg_keep)
-  .log_mem(sprintf("after pl_src (%s rows)", format(nrow(pl_src), big.mark=",")))
   PSR_BLEND_LAMBDA <- decay_params$rate          # per-day; ~231d half-life
   blend_src <- merge(pl_src,
                      data.table::as.data.table(psr_offsets)[, .(.lg = league, .off = offset)],
                      by = ".lg", all.x = TRUE)
-  .log_mem(sprintf("after blend_src merge (%s rows)", format(nrow(blend_src), big.mark=",")))
   blend_src[is.na(.off), .off := 0]              # leagues without an offset contribute 0
   .maxmd_psr <- as.numeric(max(blend_src$match_date))
   # gfac = exp(-lambda*(d - md))*mins; the exp(-lambda*d) common factor cancels in
   # the blend ratio, so precompute the max-date-shifted per-game weight once.
   blend_src[, gfac := exp(-PSR_BLEND_LAMBDA * (.maxmd_psr - as.numeric(match_date))) * total_minutes]
   blend_src[, woff := gfac * .off]
-  .log_mem("after gfac/woff computed")
   data.table::setkey(blend_src, match_date)
-  .log_mem("after setkey blend_src")
   .blend_offset_asof <- function(d) {
     hist <- blend_src[match_date < d]
     if (!nrow(hist)) return(NULL)
@@ -450,7 +409,6 @@ if (psr_apply_offsets) {
   }
   cat(sprintf("  PSR league offsets loaded (%d leagues); decay-weighted blend built (%s, lambda=%.4f ~ %d-day half-life)\n",
               nrow(psr_offsets), psr_lg_col, PSR_BLEND_LAMBDA, round(log(2) / PSR_BLEND_LAMBDA)))
-  .log_mem("after offsets blend built")
 } else {
   cat(sprintf("  NOTE: PSR league offsets %s -> not applied\n",
               if (is.null(psr_offsets)) "not found (run step 06 first)" else "disabled (no competition/minutes)"))
@@ -471,11 +429,9 @@ if (psr_apply_offsets) {
   }
 }
 
-.log_mem("before position multipliers")
 # Position multipliers from full dataset
 pos_mults_precomp <- compute_position_multipliers(match_stats, stat_cols_all)
 cat(sprintf("  Position multipliers computed\n"))
-.log_mem("after position multipliers")
 
 # Prior centers (minutes-weighted global mean per stat) from full dataset
 wts_all   <- as.numeric(match_stats$total_minutes)
@@ -487,7 +443,6 @@ prior_centers_precomp <- vapply(stat_cols_all, function(sc) {
   if (total_wt > 0) sum(v * wts_all) / total_wt else 0
 }, numeric(1))
 cat(sprintf("  Prior centers computed\n\n"))
-.log_mem("after prior centers")
 
 # Augment decay_params with pre-computed values so estimate_player_skills()
 # skips recomputing these inside each loop iteration

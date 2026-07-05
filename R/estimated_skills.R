@@ -178,19 +178,14 @@ get_default_decay_params <- function() {
 #'
 #' @export
 compute_position_multipliers <- function(match_stats, stat_cols = NULL) {
-  .pm_mem0 <- function(label) {
-    gc(verbose = FALSE, full = TRUE)
-    rss_mb <- suppressWarnings(tryCatch({
-      status <- readLines("/proc/self/status")
-      line <- grep("^VmRSS:", status, value = TRUE)
-      if (length(line) == 0) return(NA_real_)
-      as.numeric(regmatches(line, regexpr("[0-9]+", line))) / 1024
-    }, error = function(e) NA_real_))
-    cat(sprintf("  [pm-mem0] %-30s RSS=%.0fMB\n", label, rss_mb))
+  # panna#128: data.table::as.data.table() on an ALREADY-valid data.table
+  # performs a FULL DEEP COPY regardless of whether one is needed — confirmed
+  # empirically (different object address after the call). Guard it so the
+  # (expected, dominant) already-a-data.table case skips the wasted copy;
+  # non-data.table input still converts exactly as before.
+  if (!data.table::is.data.table(match_stats)) {
+    match_stats <- data.table::as.data.table(match_stats)
   }
-  .pm_mem0("function entry, before any code")
-  match_stats <- data.table::as.data.table(match_stats)
-  .pm_mem0("after as.data.table(match_stats)")
 
   if (is.null(stat_cols)) {
     # Shared detector — catches _p90 AND _per90 (xMetrics over-perf) + registered.
@@ -198,7 +193,6 @@ compute_position_multipliers <- function(match_stats, stat_cols = NULL) {
     stat_cols <- .detect_skill_stat_cols(match_stats)
   }
   stat_cols <- intersect(stat_cols, names(match_stats))
-  .pm_mem0("after intersect(stat_cols, names())")
 
   # Copy only the columns this function actually touches. match_stats can carry
   # 100+ unrelated box-score/metadata columns (weekly PSR's caller passes the
@@ -208,25 +202,8 @@ compute_position_multipliers <- function(match_stats, stat_cols = NULL) {
   # over after the offsets/full-sync fix grew 01_match_stats.rds ~215MB->326MB).
   needed_cols <- intersect(unique(c("player_id", "position", "total_minutes", stat_cols)),
                            names(match_stats))
-  .pm_mem0("after needed_cols intersect")
-  # TEMPORARY diagnostic for panna#128 — remove once root-caused. Same RSS
-  # probe as 08b's .log_mem(), inlined here (package code, no cross-file dep).
-  .pm_mem <- function(label) {
-    gc(verbose = FALSE, full = TRUE)
-    rss_mb <- suppressWarnings(tryCatch({
-      status <- readLines("/proc/self/status")
-      line <- grep("^VmRSS:", status, value = TRUE)
-      if (length(line) == 0) return(NA_real_)
-      as.numeric(regmatches(line, regexpr("[0-9]+", line))) / 1024
-    }, error = function(e) NA_real_))
-    cat(sprintf("  [pm-mem] %-30s RSS=%.0fMB\n", label, rss_mb))
-  }
-  .pm_mem(sprintf("compute_position_multipliers start (needed_cols=%d of %d)",
-                  length(needed_cols), ncol(match_stats)))
   dt <- data.table::copy(match_stats[, ..needed_cols])
-  .pm_mem("after copy(match_stats[, ..needed_cols])")
   dt <- .resolve_positions(dt)
-  .pm_mem("after .resolve_positions")
 
   pos_groups <- c("GK", "DEF", "MID", "FWD")
   multipliers <- list()
@@ -261,7 +238,6 @@ compute_position_multipliers <- function(match_stats, stat_cols = NULL) {
     multipliers[[sc]] <- pos_mults
   }
 
-  .pm_mem("after stat_cols loop (function end)")
   multipliers
 }
 
