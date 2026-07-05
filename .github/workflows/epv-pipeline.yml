@@ -186,6 +186,11 @@ jobs:
 
             source('data-raw/epv/03_calculate_player_xmetrics.R')
             source('data-raw/epv/04_export_xmetrics.R')
+            # panna#126: consolidate + upload the per-match artifact too, so
+            # GHA weekly/game-logs runs can enrich_match_stats_with_xmetrics(
+            # source = 'remote') instead of silently building xG-blind
+            # snapshots (they have no local xmetrics_bymatch/ tree).
+            source('data-raw/epv/04b_export_xmetrics_bymatch.R')
           "
 
           # Fail here if the export silently no-op'd. Without this guard,
@@ -197,6 +202,13 @@ jobs:
             exit 1
           fi
           echo "✓ $XMETRICS_FILE produced ($(stat -c%s "$XMETRICS_FILE") bytes)"
+
+          XMETRICS_BYMATCH_FILE=data-raw/cache/epv/opta_xmetrics_bymatch.parquet
+          if [ ! -f "$XMETRICS_BYMATCH_FILE" ]; then
+            echo "::error::EXPORT_XMETRICS=true but $XMETRICS_BYMATCH_FILE was not produced"
+            exit 1
+          fi
+          echo "✓ $XMETRICS_BYMATCH_FILE produced ($(stat -c%s "$XMETRICS_BYMATCH_FILE") bytes)"
 
       - name: Train WP model
         if: ${{ env.TRAIN_WP == 'true' }}

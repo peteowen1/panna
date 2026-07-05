@@ -23,6 +23,14 @@ if (!dir.exists(cache_dir)) dir.create(cache_dir, recursive = TRUE)
 repo <- "peteowen1/pannadata"
 tag <- "blog-latest"
 
+# panna#126: GHA has no local xmetrics_bymatch/ tree, so the two
+# enrich_match_stats_with_xmetrics() calls below must read the consolidated
+# opta_xmetrics_bymatch.parquet from opta-latest instead — else game logs are
+# scored xG-blind (finishing over-performance / gsaa silently absent). Env var
+# (predictions-pipeline.yml sets XMETRICS_SOURCE=remote), not an R flag —
+# local pipeline runs default to the pipeline-generated local files.
+xm_source <- if (identical(Sys.getenv("XMETRICS_SOURCE"), "remote")) "remote" else "local"
+
 # Leagues to include in the per-match blog export. Three categories:
 #   (1) domestic       — iterate with the export season ("YYYY-YYYY")
 #   (2) continental    — UCL / UEL / UECL use "YYYY-YYYY" too
@@ -448,7 +456,9 @@ validate_game_log_schema <- function(dt, league, season) {
             # Enrich with per-match xMetrics BEFORE scoring — the blend model was
             # trained WITH over-performance/gsaa features (step 7), so serving on
             # box-score-only stats is a train/serve skew (finishing under-credited).
-            league_stats <- enrich_match_stats_with_xmetrics(league_stats, verbose = FALSE)
+            league_stats <- enrich_match_stats_with_xmetrics(league_stats, verbose = FALSE,
+                                                             fail_if_missing_frac = 0.6,
+                                                             source = xm_source)
             player_game_psv <- compute_player_psv(league_stats, min_adjust = FALSE,
                                                   center = TRUE, scale_to_minutes = TRUE,
                                                   exclude_efficiency = FALSE, target = "blend",
@@ -493,7 +503,9 @@ validate_game_log_schema <- function(dt, league, season) {
               match_level <- compute_match_level_opta_stats(box_dt, min_minutes = 10)
               if (!is.null(match_level) && nrow(match_level) > 0L) {
                 # Enrich BEFORE scoring (train/serve parity — see note above).
-                match_level <- enrich_match_stats_with_xmetrics(match_level, verbose = FALSE)
+                match_level <- enrich_match_stats_with_xmetrics(match_level, verbose = FALSE,
+                                                                fail_if_missing_frac = 0.6,
+                                                                source = xm_source)
                 inline_psv <- compute_player_psv(match_level, min_adjust = FALSE,
                                                  center = TRUE, scale_to_minutes = TRUE,
                                                  exclude_efficiency = FALSE, target = "blend",

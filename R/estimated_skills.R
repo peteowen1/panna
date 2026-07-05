@@ -178,14 +178,25 @@ get_default_decay_params <- function() {
 #'
 #' @export
 compute_position_multipliers <- function(match_stats, stat_cols = NULL) {
-  dt <- data.table::copy(data.table::as.data.table(match_stats))
-  dt <- .resolve_positions(dt)
+  match_stats <- data.table::as.data.table(match_stats)
 
   if (is.null(stat_cols)) {
     # Shared detector — catches _p90 AND _per90 (xMetrics over-perf) + registered.
-    stat_cols <- .detect_skill_stat_cols(dt)
+    # Only needs names(), so safe to run on the full table before subsetting.
+    stat_cols <- .detect_skill_stat_cols(match_stats)
   }
-  stat_cols <- intersect(stat_cols, names(dt))
+  stat_cols <- intersect(stat_cols, names(match_stats))
+
+  # Copy only the columns this function actually touches. match_stats can carry
+  # 100+ unrelated box-score/metadata columns (weekly PSR's caller passes the
+  # full table); copying all of them here just to tag pos_group doubles peak
+  # memory for no benefit and OOMs the 16GB GHA runner once the dataset grows
+  # (panna#128 — the copy plus the caller's own keep_existing buffer tipped it
+  # over after the offsets/full-sync fix grew 01_match_stats.rds ~215MB->326MB).
+  needed_cols <- intersect(unique(c("player_id", "position", "total_minutes", stat_cols)),
+                           names(match_stats))
+  dt <- data.table::copy(match_stats[, ..needed_cols])
+  dt <- .resolve_positions(dt)
 
   pos_groups <- c("GK", "DEF", "MID", "FWD")
   multipliers <- list()

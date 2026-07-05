@@ -129,6 +129,9 @@ jobs:
           # 08b is sourced inside a step closure where globalenv flags are
           # invisible — same delivery pattern as PSR_FORCE_FULL_REBUILD).
           PSR_REQUIRE_OFFSETS: "1"
+          # GHA has no local xmetrics_bymatch/ tree (panna#126) — read the
+          # consolidated opta_xmetrics_bymatch.parquet from opta-latest instead.
+          XMETRICS_SOURCE: remote
         run: |
           cat > /tmp/run_psr_weekly.R << 'EOF'
           pannadata_path <- Sys.getenv("PANNADATA_DIR", "../pannadata/data")
