@@ -403,9 +403,18 @@ if (psr_apply_offsets) {
   # movers correctly (a 60/40 split gets a blended discount, converging as the
   # window fills) instead of snapping to the single max-minutes league. Mirrors
   # the EPR decay-blend; PSR uses its shorter decay, not EPR's 900d.
-  pl_src <- match_stats[!is.na(get(psr_lg_col)),
-                        .(player_id, .lg = get(psr_lg_col),
-                          match_date, total_minutes)]
+  # panna#128: get(psr_lg_col) evaluated INSIDE the data.table [i, j] call
+  # (as this used to read) breaks data.table's fast column-reference path —
+  # confirmed empirically on GHA: this single line left ~5.4GB of RSS the OS
+  # never reclaimed even though R's own gc() showed the resulting pl_src was
+  # genuinely tiny (~60MB, exactly right for a 4-col x 1.9M-row table).
+  # Extracting the column ONCE via `[[` first avoids whatever fallback path
+  # get()-in-`[` was triggering.
+  .lg_vec <- match_stats[[psr_lg_col]]
+  .lg_keep <- !is.na(.lg_vec)
+  pl_src <- match_stats[.lg_keep, .(player_id, match_date, total_minutes)]
+  pl_src[, .lg := .lg_vec[.lg_keep]]
+  rm(.lg_vec, .lg_keep)
   .log_mem(sprintf("after pl_src (%s rows)", format(nrow(pl_src), big.mark=",")))
   PSR_BLEND_LAMBDA <- decay_params$rate          # per-day; ~231d half-life
   blend_src <- merge(pl_src,
