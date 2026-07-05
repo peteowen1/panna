@@ -53,7 +53,19 @@ if (!file.exists(ms_path)) {
 
 cat("=== Loading Data ===\n")
 cat(sprintf("  Match stats: %s\n", basename(ms_path)))
-match_stats <- data.table::as.data.table(readRDS(ms_path))
+# panna#128 TRUE ROOT CAUSE: data.table::as.data.table() on an ALREADY-valid
+# data.table performs a FULL DEEP COPY regardless — confirmed empirically
+# (different object address after the call, ~4-11s locally on this table).
+# It is NOT the identity/no-op shortcut it looks like. 01_match_stats.rds is
+# already a data.table, so wrapping readRDS()'s result in as.data.table()
+# here was a wasted ~6GB copy on every run — landing right when memory is
+# cheapest, but an IDENTICAL wasted copy inside compute_position_multipliers()
+# later (same anti-pattern, same table) is what actually tipped the 16GB GHA
+# runner over (see the guard added there). setDT() (unlike as.data.table())
+# genuinely is a cheap in-place fix for the stale .internal.selfref readRDS()
+# leaves behind — confirmed empirically at ~0.00s, not a copy.
+match_stats <- readRDS(ms_path)
+data.table::setDT(match_stats)
 if (!inherits(match_stats$match_date, "Date")) {
   match_stats[, match_date := as.Date(match_date)]
 }
@@ -338,6 +350,32 @@ reg_cols   <- tryCatch(union(.get_psr_skill_cols(), .get_gk_skill_cols()),
 stat_cols_all <- intersect(unique(c(p90_cols, eff_cols, reg_cols)), names(match_stats))
 cat(sprintf("  Stat columns detected: %d\n", length(stat_cols_all)))
 
+# panna#128: narrow match_stats ONCE to only the columns anything downstream
+# actually reads. 01_match_stats.rds carries 400+ box-score/metadata columns;
+# estimate_player_skills() only ever touches player_id/player_name/match_date/
+# position/total_minutes/stat_cols, but ALSO looks up denominator columns for
+# efficiency-ratio stats (e.g. shots for shot_accuracy) via .compute_denominator()
+# — those are real box-score columns, not derived, so they must be kept too.
+# Every downstream operation (setorder, the offsets pl_src extraction, the
+# per-date loop's own `dt[md < target_date]` filter inside
+# estimate_player_skills) was paying to touch/copy/reorder all 400+ columns
+# when it only ever needed ~165 — the compounding cost behind the OOM.
+# Verified locally: narrowed vs full-width match_stats produce IDENTICAL
+# skill estimates (data-raw/debug/_run_verify_narrow_equivalence.R). Built via
+# `[[` (not bracket-select) — same safe pattern as the pl_src fix below.
+.psr_lg_col_early <- if ("competition" %in% names(match_stats)) "competition" else
+                     if ("league" %in% names(match_stats)) "league" else NULL
+.denom_cols_all <- unique(unlist(strsplit(unlist(.classify_skill_stats()), "\\+")))
+needed_cols_loop <- unique(c("player_id", "player_name", "match_date", "position",
+                             "total_minutes", .psr_lg_col_early, stat_cols_all,
+                             .denom_cols_all))
+needed_cols_loop <- intersect(needed_cols_loop, names(match_stats))
+match_stats <- data.table::setDT(stats::setNames(
+  lapply(needed_cols_loop, function(cc) match_stats[[cc]]),
+  needed_cols_loop
+))
+cat(sprintf("  Narrowed match_stats to %d columns for the snapshot loop\n", ncol(match_stats)))
+
 # Pre-sort by date so each date filter is a fast prefix scan
 data.table::setorder(match_stats, match_date)
 match_date_vec <- match_stats$match_date  # cached for binary search
@@ -367,9 +405,18 @@ if (psr_apply_offsets) {
   # movers correctly (a 60/40 split gets a blended discount, converging as the
   # window fills) instead of snapping to the single max-minutes league. Mirrors
   # the EPR decay-blend; PSR uses its shorter decay, not EPR's 900d.
-  pl_src <- match_stats[!is.na(get(psr_lg_col)),
-                        .(player_id, .lg = get(psr_lg_col),
-                          match_date, total_minutes)]
+  # panna#128: get(psr_lg_col) evaluated INSIDE the data.table [i, j] call
+  # (as this used to read) breaks data.table's fast column-reference path —
+  # confirmed empirically on GHA: this single line left ~5.4GB of RSS the OS
+  # never reclaimed even though R's own gc() showed the resulting pl_src was
+  # genuinely tiny (~60MB, exactly right for a 4-col x 1.9M-row table).
+  # Extracting the column ONCE via `[[` first avoids whatever fallback path
+  # get()-in-`[` was triggering.
+  .lg_vec <- match_stats[[psr_lg_col]]
+  .lg_keep <- !is.na(.lg_vec)
+  pl_src <- match_stats[.lg_keep, .(player_id, match_date, total_minutes)]
+  pl_src[, .lg := .lg_vec[.lg_keep]]
+  rm(.lg_vec, .lg_keep)
   PSR_BLEND_LAMBDA <- decay_params$rate          # per-day; ~231d half-life
   blend_src <- merge(pl_src,
                      data.table::as.data.table(psr_offsets)[, .(.lg = league, .off = offset)],
