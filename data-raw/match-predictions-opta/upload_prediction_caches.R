@@ -32,6 +32,11 @@ cache_files <- list(
     desc = "SPM model for skill-based predictions"
   ),
   list(
+    path = file.path("data-raw", "cache-skills", "psr_league_offsets.parquet"),
+    desc = "PSR cross-league offsets (REQUIRED by GHA 8b - offset-free builds mix conventions)",
+    required = TRUE
+  ),
+  list(
     path = file.path("data-raw", "cache-predictions-opta",
                      "wc2026_announced_squads.parquet"),
     desc = "WC2026 announced-squads EM (fallback for pipeline step 01b)"
@@ -69,6 +74,17 @@ for (i in seq_along(cache_files)) {
 }
 
 if (!all(existing)) {
+  # A REQUIRED file silently skipped leaves the operator believing caches are
+  # fresh while every weekly cron hard-fails on the missing asset (the offsets
+  # parquet gates psr-weekly-snapshot.yml since 2026-07-04). Stop instead.
+  required_missing <- vapply(cache_files[!existing],
+                             function(f) isTRUE(f$required), logical(1))
+  if (any(required_missing)) {
+    stop(sprintf("REQUIRED cache file(s) missing: %s. Run the producing step first.",
+                 paste(vapply(cache_files[!existing][required_missing],
+                              `[[`, character(1), "path"), collapse = ", ")),
+         call. = FALSE)
+  }
   missing_descs <- vapply(cache_files[!existing], `[[`, character(1), "desc")
   warning(sprintf("Missing files will be skipped: %s",
                   paste(missing_descs, collapse = ", ")),
