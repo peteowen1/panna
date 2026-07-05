@@ -6,7 +6,8 @@
 # file via query_remote_opta_parquet("xmetrics_bymatch", ...) — without it,
 # GHA runners (which never have the local per-league/season tree, only
 # whatever 01-02 downloaded) silently build xG-blind weekly PSR snapshots and
-# game logs. Mirrors 04_export_xmetrics.R exactly, one directory over.
+# game logs. Shares its consolidate/upload logic with 04_export_xmetrics.R via
+# _xmetrics_export_common.R.
 #
 # Run from panna directory: Rscript data-raw/epv/04b_export_xmetrics_bymatch.R
 #
@@ -20,95 +21,13 @@
 library(cli)
 library(arrow)
 devtools::load_all()
+source("data-raw/epv/_xmetrics_export_common.R")
 
 cli_h1("Export per-match xMetrics to GitHub Releases")
 
-# 1. Consolidate all xmetrics_bymatch into one parquet ----
-
 cli_h2("Step 1: Consolidate xmetrics_bymatch")
-
-xmetrics_root <- file.path(opta_data_dir(), "xmetrics_bymatch")
-if (!dir.exists(xmetrics_root)) {
-  cli_abort(c(
-    "No xmetrics_bymatch directory found at {.path {xmetrics_root}}.",
-    "i" = "Run 03_calculate_player_xmetrics.R first."
-  ))
-}
-
-parquet_files <- list.files(xmetrics_root, pattern = "\\.parquet$",
-                            recursive = TRUE, full.names = TRUE)
-cli_alert_info("Found {length(parquet_files)} xmetrics_bymatch parquet files")
-
-if (length(parquet_files) == 0) {
-  cli_abort("No parquet files found under {.path {xmetrics_root}}")
-}
-
-# Read and bind all files
-all_data <- lapply(parquet_files, function(f) {
-  tryCatch(arrow::read_parquet(f), error = function(e) {
-    cli_warn("Failed to read {.path {f}}: {conditionMessage(e)}")
-    NULL
-  })
-})
-combined <- do.call(rbind, Filter(Negate(is.null), all_data))
-
-cli_alert_success("Combined {format(nrow(combined), big.mark=',')} rows from {length(parquet_files)} files")
-
-# Add competition column (Opta league name) for remote query compatibility
-# query_remote_opta_parquet() filters on 'competition' using Opta league names
-if ("league" %in% names(combined) && !"competition" %in% names(combined)) {
-  combined$competition <- vapply(combined$league, function(lg) {
-    tryCatch(to_opta_league(lg), error = function(e) lg)
-  }, character(1))
-  cli_alert_info("Added 'competition' column from league codes")
-}
-
-# 2. Write consolidated parquet ----
-
-cli_h2("Step 2: Write consolidated parquet")
-
-# Written into the repo cache (not tempdir()) so the workflow's post-step
-# guard can see the file on disk — see the identical fix + note in
-# 04_export_xmetrics.R (panna#126).
-cache_dir <- file.path("data-raw", "cache", "epv")
-dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE)
-output_file <- file.path(cache_dir, "opta_xmetrics_bymatch.parquet")
-arrow::write_parquet(combined, output_file)
-file_size <- file.size(output_file) / (1024 * 1024)
-cli_alert_success("Written {.path opta_xmetrics_bymatch.parquet} ({round(file_size, 1)} MB)")
-
-# 3. Upload to GitHub Releases ----
-
-cli_h2("Step 3: Upload to GitHub Releases")
-
-repo <- "peteowen1/pannadata"
-tag <- "opta-latest"
-
-if (!requireNamespace("piggyback", quietly = TRUE)) {
-  cli_abort("Package 'piggyback' is required. Install with: install.packages('piggyback')")
-}
-
-# Ensure release exists
-tryCatch({
-  piggyback::pb_list(repo = repo, tag = tag)
-}, error = function(e) {
-  cli_alert_info("Creating new release: {tag}")
-  piggyback::pb_new_release(repo = repo, tag = tag)
-  Sys.sleep(3)
-})
-
-cli_alert_info("Uploading to {repo} ({tag})...")
-piggyback::pb_upload(
-  file = output_file,
-  repo = repo,
-  tag = tag,
-  name = "opta_xmetrics_bymatch.parquet",
-  overwrite = TRUE
-)
-
-cli_alert_success("Upload complete!")
-
-# 4. Summary ----
+combined <- export_consolidated_xmetrics("xmetrics_bymatch", "opta_xmetrics_bymatch.parquet",
+                                          "player-matches")
 
 cli_h2("Summary")
 

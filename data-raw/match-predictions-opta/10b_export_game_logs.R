@@ -456,8 +456,11 @@ validate_game_log_schema <- function(dt, league, season) {
             # Enrich with per-match xMetrics BEFORE scoring — the blend model was
             # trained WITH over-performance/gsaa features (step 7), so serving on
             # box-score-only stats is a train/serve skew (finishing under-credited).
+            # fail_if_missing_frac left at the library default (Inf, warn-only) —
+            # this whole block is per-league tryCatch'd anyway, but a hard stop()
+            # here would still convert "PSV present but box-score-only" into
+            # "PSV entirely NA for this league" on any local/remote gap.
             league_stats <- enrich_match_stats_with_xmetrics(league_stats, verbose = FALSE,
-                                                             fail_if_missing_frac = 0.6,
                                                              source = xm_source)
             player_game_psv <- compute_player_psv(league_stats, min_adjust = FALSE,
                                                   center = TRUE, scale_to_minutes = TRUE,
@@ -503,8 +506,9 @@ validate_game_log_schema <- function(dt, league, season) {
               match_level <- compute_match_level_opta_stats(box_dt, min_minutes = 10)
               if (!is.null(match_level) && nrow(match_level) > 0L) {
                 # Enrich BEFORE scoring (train/serve parity — see note above).
+                # fail_if_missing_frac left at the library default — see the
+                # matching note on the cache-path enrich call above.
                 match_level <- enrich_match_stats_with_xmetrics(match_level, verbose = FALSE,
-                                                                fail_if_missing_frac = 0.6,
                                                                 source = xm_source)
                 inline_psv <- compute_player_psv(match_level, min_adjust = FALSE,
                                                  center = TRUE, scale_to_minutes = TRUE,
