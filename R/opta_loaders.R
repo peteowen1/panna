@@ -1972,6 +1972,12 @@ load_opta_xmetrics <- function(league, season = NULL, columns = NULL,
 #'   that require the features (skills step 2, PSR step 7) should pass a finite
 #'   value (e.g. \code{0.5}). A total miss (no files at all) always errors when
 #'   this is finite, regardless of the fraction.
+#' @param source Where to load \code{xmetrics_bymatch} from: \code{"local"}
+#'   (default, pipeline-generated per-league/season files under
+#'   \code{opta_data_dir()}) or \code{"remote"} (the consolidated
+#'   \code{opta_xmetrics_bymatch.parquet} on the \code{opta-latest} release —
+#'   the only option that works on a GHA runner, which never has the local
+#'   per-league/season tree; see \code{\link{load_opta_xmetrics}}).
 #'
 #' @return \code{match_stats} (as data.table) with the xMetrics columns added
 #'   (NA-filled to 0 for player-matches with no shots). Returns input unchanged
@@ -1979,7 +1985,9 @@ load_opta_xmetrics <- function(league, season = NULL, columns = NULL,
 #'   and \code{fail_if_missing_frac} is \code{Inf}.
 #' @export
 enrich_match_stats_with_xmetrics <- function(match_stats, verbose = TRUE,
-                                              fail_if_missing_frac = Inf) {
+                                              fail_if_missing_frac = Inf,
+                                              source = c("local", "remote")) {
+  source <- match.arg(source)
   match_stats <- data.table::as.data.table(match_stats)
 
   # source xmetrics column -> match_stats column (suffix where names collide)
@@ -2016,7 +2024,7 @@ enrich_match_stats_with_xmetrics <- function(match_stats, verbose = TRUE,
     lg <- ls_pairs$league[i]; sn <- ls_pairs$season[i]
     xm_list[[i]] <- tryCatch({
       x <- data.table::as.data.table(
-        load_opta_xmetrics(lg, season = sn, source = "local", by_match = TRUE))
+        load_opta_xmetrics(lg, season = sn, source = source, by_match = TRUE))
       keep <- intersect(c("player_id", "match_id", names(xm_map)), names(x))
       x[, ..keep]
     }, error = function(e) { n_missing <<- n_missing + 1L; NULL })
@@ -2026,9 +2034,16 @@ enrich_match_stats_with_xmetrics <- function(match_stats, verbose = TRUE,
   miss_frac <- n_missing / nrow(ls_pairs)
 
   if (nrow(xm) == 0) {
-    msg <- sprintf(paste0(
-      "No per-match xMetrics found (xmetrics_bymatch/ absent for all %d league-seasons). ",
-      "Re-run data-raw/epv/03_calculate_player_xmetrics.R."), nrow(ls_pairs))
+    msg <- if (source == "remote") {
+      sprintf(paste0(
+        "No per-match xMetrics found (opta_xmetrics_bymatch.parquet missing/empty for all ",
+        "%d league-seasons on opta-latest). Re-run data-raw/epv/04b_export_xmetrics_bymatch.R."),
+        nrow(ls_pairs))
+    } else {
+      sprintf(paste0(
+        "No per-match xMetrics found (xmetrics_bymatch/ absent for all %d league-seasons). ",
+        "Re-run data-raw/epv/03_calculate_player_xmetrics.R."), nrow(ls_pairs))
+    }
     # A total miss is fatal whenever the caller demanded the features (finite
     # fail_if_missing_frac) — training xG-blind silently is the bug this exists
     # to prevent. Library-default (Inf) warns and proceeds.

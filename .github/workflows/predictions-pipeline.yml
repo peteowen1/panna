@@ -165,6 +165,10 @@ jobs:
           GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
           INPUT_FORCE_REBUILD: ${{ inputs.force_rebuild }}
           INPUT_FORCE_REBUILD_FROM: ${{ inputs.force_rebuild_from }}
+          # GHA has no local xmetrics_bymatch/ tree (panna#126) — 10b's PSV
+          # enrich calls read the consolidated opta_xmetrics_bymatch.parquet
+          # from opta-latest instead.
+          XMETRICS_SOURCE: remote
         run: |
           Rscript -e "
             # Point panna at downloaded Opta data

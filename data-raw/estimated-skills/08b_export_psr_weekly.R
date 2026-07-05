@@ -59,8 +59,18 @@ if (!inherits(match_stats$match_date, "Date")) {
 }
 # Enrich with per-match xMetrics so the weekly PSR snapshots see the xG
 # over-performance / gsaa skill features (same as steps 2/7). Without this the
-# snapshot loop estimates skills from box-score-only stats and PSR is xG-blind.
-match_stats <- enrich_match_stats_with_xmetrics(match_stats, verbose = FALSE)
+# snapshot loop estimates skills from box-score-only stats and PSR is xG-blind
+# (panna#126). ENV VAR not an R flag — same source(local=TRUE) scoping gotcha
+# as PSR_REQUIRE_OFFSETS/PSR_FORCE_FULL_REBUILD. GHA sets XMETRICS_SOURCE=remote
+# (no local xmetrics_bymatch/ tree); local pipeline runs default to "local".
+# fail_if_missing_frac deliberately left at the library default (Inf, warn-only):
+# a transient piggyback/network hiccup on the remote path would otherwise abort
+# the ENTIRE weekly snapshot rather than just degrading this run to box-score-only
+# (code review finding on panna#126's first draft — fixing the source is the
+# actual bug; fail-fast hardening needs retry logic first, tracked separately).
+xm_source <- if (identical(Sys.getenv("XMETRICS_SOURCE"), "remote")) "remote" else "local"
+match_stats <- enrich_match_stats_with_xmetrics(match_stats, verbose = FALSE,
+                                                source = xm_source)
 gc(verbose = FALSE)
 cat(sprintf("  Rows: %s | Date range: %s to %s\n",
             format(nrow(match_stats), big.mark = ","),

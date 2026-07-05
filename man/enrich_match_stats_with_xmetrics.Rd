@@ -7,7 +7,8 @@
 enrich_match_stats_with_xmetrics(
   match_stats,
   verbose = TRUE,
-  fail_if_missing_frac = Inf
+  fail_if_missing_frac = Inf,
+  source = c("local", "remote")
 )
 }
 \arguments{
@@ -23,6 +24,13 @@ dataset. Default \code{Inf} (library-safe: never fails). Pipeline callers
 that require the features (skills step 2, PSR step 7) should pass a finite
 value (e.g. \code{0.5}). A total miss (no files at all) always errors when
 this is finite, regardless of the fraction.}
+
+\item{source}{Where to load \code{xmetrics_bymatch} from: \code{"local"}
+(default, pipeline-generated per-league/season files under
+\code{opta_data_dir()}) or \code{"remote"} (the consolidated
+\code{opta_xmetrics_bymatch.parquet} on the \code{opta-latest} release —
+the only option that works on a GHA runner, which never has the local
+per-league/season tree; see \code{\link{load_opta_xmetrics}}).}
 }
 \value{
 \code{match_stats} (as data.table) with the xMetrics columns added
