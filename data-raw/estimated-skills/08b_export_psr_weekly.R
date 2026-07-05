@@ -406,17 +406,21 @@ if (psr_apply_offsets) {
   pl_src <- match_stats[!is.na(get(psr_lg_col)),
                         .(player_id, .lg = get(psr_lg_col),
                           match_date, total_minutes)]
+  .log_mem(sprintf("after pl_src (%s rows)", format(nrow(pl_src), big.mark=",")))
   PSR_BLEND_LAMBDA <- decay_params$rate          # per-day; ~231d half-life
   blend_src <- merge(pl_src,
                      data.table::as.data.table(psr_offsets)[, .(.lg = league, .off = offset)],
                      by = ".lg", all.x = TRUE)
+  .log_mem(sprintf("after blend_src merge (%s rows)", format(nrow(blend_src), big.mark=",")))
   blend_src[is.na(.off), .off := 0]              # leagues without an offset contribute 0
   .maxmd_psr <- as.numeric(max(blend_src$match_date))
   # gfac = exp(-lambda*(d - md))*mins; the exp(-lambda*d) common factor cancels in
   # the blend ratio, so precompute the max-date-shifted per-game weight once.
   blend_src[, gfac := exp(-PSR_BLEND_LAMBDA * (.maxmd_psr - as.numeric(match_date))) * total_minutes]
   blend_src[, woff := gfac * .off]
+  .log_mem("after gfac/woff computed")
   data.table::setkey(blend_src, match_date)
+  .log_mem("after setkey blend_src")
   .blend_offset_asof <- function(d) {
     hist <- blend_src[match_date < d]
     if (!nrow(hist)) return(NULL)

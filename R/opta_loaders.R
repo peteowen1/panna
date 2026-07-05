@@ -2015,21 +2015,44 @@ enrich_match_stats_with_xmetrics <- function(match_stats, verbose = TRUE,
   }
 
   ls_pairs <- unique(match_stats[, .(league, season)])
-  if (verbose) cat(sprintf("  Joining per-match xMetrics over %d league-seasons...\n",
-                           nrow(ls_pairs)))
 
-  xm_list <- vector("list", nrow(ls_pairs))
-  n_missing <- 0L
-  for (i in seq_len(nrow(ls_pairs))) {
-    lg <- ls_pairs$league[i]; sn <- ls_pairs$season[i]
-    xm_list[[i]] <- tryCatch({
+  if (source == "remote") {
+    # opta_xmetrics_bymatch.parquet is ONE consolidated file on opta-latest —
+    # querying it once per (league, season) pair (the local-mode loop below)
+    # means N rounds of DuckDB connect/query/disconnect against the SAME
+    # cached file. On a real weekly match_stats table (~300 league-season
+    # pairs) this left several GB of RSS the GHA runner never reclaimed —
+    # gc()-invisible memory that OOM-killed the run well before its own
+    # heavy lifting even started (panna#128). One query instead.
+    if (verbose) cat("  Fetching consolidated xMetrics (remote, one query)...\n")
+    xm <- tryCatch({
       x <- data.table::as.data.table(
-        load_opta_xmetrics(lg, season = sn, source = source, by_match = TRUE))
+        query_remote_opta_parquet("xmetrics_bymatch", opta_league = NULL, season = NULL))
       keep <- intersect(c("player_id", "match_id", names(xm_map)), names(x))
       x[, ..keep]
-    }, error = function(e) { n_missing <<- n_missing + 1L; NULL })
+    }, error = function(e) NULL)
+    if (is.null(xm)) {
+      xm <- data.table::data.table()
+      n_missing <- nrow(ls_pairs)
+    } else {
+      n_missing <- 0L
+    }
+  } else {
+    if (verbose) cat(sprintf("  Joining per-match xMetrics over %d league-seasons...\n",
+                             nrow(ls_pairs)))
+    xm_list <- vector("list", nrow(ls_pairs))
+    n_missing <- 0L
+    for (i in seq_len(nrow(ls_pairs))) {
+      lg <- ls_pairs$league[i]; sn <- ls_pairs$season[i]
+      xm_list[[i]] <- tryCatch({
+        x <- data.table::as.data.table(
+          load_opta_xmetrics(lg, season = sn, source = source, by_match = TRUE))
+        keep <- intersect(c("player_id", "match_id", names(xm_map)), names(x))
+        x[, ..keep]
+      }, error = function(e) { n_missing <<- n_missing + 1L; NULL })
+    }
+    xm <- data.table::rbindlist(Filter(Negate(is.null), xm_list), fill = TRUE)
   }
-  xm <- data.table::rbindlist(Filter(Negate(is.null), xm_list), fill = TRUE)
 
   miss_frac <- n_missing / nrow(ls_pairs)
 
