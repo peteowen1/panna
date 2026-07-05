@@ -350,6 +350,32 @@ reg_cols   <- tryCatch(union(.get_psr_skill_cols(), .get_gk_skill_cols()),
 stat_cols_all <- intersect(unique(c(p90_cols, eff_cols, reg_cols)), names(match_stats))
 cat(sprintf("  Stat columns detected: %d\n", length(stat_cols_all)))
 
+# panna#128: narrow match_stats ONCE to only the columns anything downstream
+# actually reads. 01_match_stats.rds carries 400+ box-score/metadata columns;
+# estimate_player_skills() only ever touches player_id/player_name/match_date/
+# position/total_minutes/stat_cols, but ALSO looks up denominator columns for
+# efficiency-ratio stats (e.g. shots for shot_accuracy) via .compute_denominator()
+# — those are real box-score columns, not derived, so they must be kept too.
+# Every downstream operation (setorder, the offsets pl_src extraction, the
+# per-date loop's own `dt[md < target_date]` filter inside
+# estimate_player_skills) was paying to touch/copy/reorder all 400+ columns
+# when it only ever needed ~165 — the compounding cost behind the OOM.
+# Verified locally: narrowed vs full-width match_stats produce IDENTICAL
+# skill estimates (data-raw/debug/_run_verify_narrow_equivalence.R). Built via
+# `[[` (not bracket-select) — same safe pattern as the pl_src fix below.
+.psr_lg_col_early <- if ("competition" %in% names(match_stats)) "competition" else
+                     if ("league" %in% names(match_stats)) "league" else NULL
+.denom_cols_all <- unique(unlist(strsplit(unlist(.classify_skill_stats()), "\\+")))
+needed_cols_loop <- unique(c("player_id", "player_name", "match_date", "position",
+                             "total_minutes", .psr_lg_col_early, stat_cols_all,
+                             .denom_cols_all))
+needed_cols_loop <- intersect(needed_cols_loop, names(match_stats))
+match_stats <- data.table::setDT(stats::setNames(
+  lapply(needed_cols_loop, function(cc) match_stats[[cc]]),
+  needed_cols_loop
+))
+cat(sprintf("  Narrowed match_stats to %d columns for the snapshot loop\n", ncol(match_stats)))
+
 # Pre-sort by date so each date filter is a fast prefix scan
 data.table::setorder(match_stats, match_date)
 match_date_vec <- match_stats$match_date  # cached for binary search

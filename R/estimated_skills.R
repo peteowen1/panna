@@ -673,7 +673,12 @@ estimate_player_skills <- function(match_stats, decay_params = NULL,
 inspect_skill <- function(stat_name, match_stats, decay_params = NULL,
                            target_date = Sys.Date()) {
   if (is.null(decay_params)) decay_params <- get_default_decay_params()
-  dt <- data.table::copy(data.table::as.data.table(match_stats))
+  # panna#128: as.data.table() on an already-valid data.table copies
+  # regardless, so copy(as.data.table(x)) was copying twice — copy exactly
+  # once, whichever branch is needed.
+  dt <- data.table::copy(
+    if (data.table::is.data.table(match_stats)) match_stats
+    else data.table::as.data.table(match_stats))
   if (!inherits(dt$match_date, "Date")) dt[, match_date := as.Date(match_date)]
 
   target_date <- as.Date(target_date)
@@ -857,7 +862,11 @@ aggregate_skills_for_spm <- function(match_stats, decay_params = NULL,
                                       min_weighted_90s = 5) {
   if (is.null(decay_params)) decay_params <- get_default_decay_params()
 
-  dt <- data.table::copy(data.table::as.data.table(match_stats))
+  # panna#128: as.data.table() on an already-valid data.table copies
+  # regardless, so copy(as.data.table(x)) was copying twice.
+  dt <- data.table::copy(
+    if (data.table::is.data.table(match_stats)) match_stats
+    else data.table::as.data.table(match_stats))
   if (!inherits(dt$match_date, "Date")) {
     dt[, match_date := as.Date(match_date)]
   }
@@ -996,7 +1005,9 @@ aggregate_skills_for_spm <- function(match_stats, decay_params = NULL,
 estimate_player_skills_at_date <- function(match_stats, decay_params = NULL,
                                             player_ids = NULL, date = Sys.Date(),
                                             min_weighted_90s = 5) {
-  dt <- data.table::as.data.table(match_stats)
+  # panna#128: as.data.table() on an already-valid data.table copies
+  # regardless; the filters below already produce an independent object.
+  dt <- if (data.table::is.data.table(match_stats)) match_stats else data.table::as.data.table(match_stats)
 
   # Filter to requested players if specified
   if (!is.null(player_ids)) {
@@ -1051,7 +1062,11 @@ backtest_skill_predictions <- function(match_stats, decay_params = NULL,
                                         sample_n = NULL, seed = 42) {
   if (is.null(decay_params)) decay_params <- get_default_decay_params()
 
-  dt <- data.table::copy(data.table::as.data.table(match_stats))
+  # panna#128: as.data.table() on an already-valid data.table copies
+  # regardless, so copy(as.data.table(x)) was copying twice.
+  dt <- data.table::copy(
+    if (data.table::is.data.table(match_stats)) match_stats
+    else data.table::as.data.table(match_stats))
   if (!inherits(dt$match_date, "Date")) dt[, match_date := as.Date(match_date)]
   data.table::setorder(dt, player_id, match_date)
 
@@ -1367,7 +1382,12 @@ adjust_match_stats_for_context <- function(match_stats, elo_ratings = NULL,
                                             big5_leagues = c("EPL", "La_Liga", "Bundesliga",
                                                               "Serie_A", "Ligue_1",
                                                               "ENG", "ESP", "GER", "ITA", "FRA")) {
-  dt <- data.table::copy(data.table::as.data.table(match_stats))
+  # panna#128: as.data.table() on an already-valid data.table copies
+  # regardless, so copy(as.data.table(x)) was copying twice. Still copies
+  # exactly once, matching this function's documented "returns a copy" contract.
+  dt <- data.table::copy(
+    if (data.table::is.data.table(match_stats)) match_stats
+    else data.table::as.data.table(match_stats))
 
   # Identify stat columns to adjust (per-90 rates only — efficiency ratios are
   # less affected by context). Catch _per90 (xMetrics over-perf) too, not just _p90.
@@ -1546,7 +1566,10 @@ player_skill_profile <- function(player_name, match_stats = NULL,
       }
     )
   } else {
-    dt <- data.table::as.data.table(match_stats)
+    # panna#128: as.data.table() on an already-valid data.table copies
+    # regardless; estimate_player_skills() below has its own guard too, so
+    # this was a doubly-redundant copy.
+    dt <- if (data.table::is.data.table(match_stats)) match_stats else data.table::as.data.table(match_stats)
     all_skills <- estimate_player_skills(
       match_stats = dt,
       decay_params = decay_params,
