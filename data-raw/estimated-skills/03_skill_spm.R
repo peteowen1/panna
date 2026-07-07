@@ -187,9 +187,11 @@ offense_cols <- c(
   "att_fastbreak_p90", "shot_fastbreak_p90",
   "crosses_p90", "crosses_open_play_p90", "forward_pass_p90",
   "was_fouled_p90", "penalty_won_p90",
-  "shot_accuracy", "goals_per_shot", "big_chance_conversion",
+  # Conversion ratios with above-expected replacements removed 2026-07-07
+  # (mirrors step 05; volume-blind ratios rewarded 1/1 == 10/10)
+  "shot_accuracy",
   "fwd_zone_pass_accuracy", "open_play_pass_accuracy", "crosses_open_play_accuracy",
-  "att_ibox_goal_p90", "att_obox_goal_p90", "ibox_goal_rate", "penalty_conversion",
+  "att_ibox_goal_p90", "att_obox_goal_p90",
   "chipped_pass_p90", "chipped_pass_accuracy",
   "att_rf_total_p90", "att_lf_total_p90"
 )
@@ -197,6 +199,11 @@ offense_cols <- c(
 if ("xg_per90" %in% names(spm_train_data)) {
   offense_cols <- c(offense_cols, "xg_per90", "npxg_per90", "xa_per90_xmetrics")
 }
+offense_cols <- c(offense_cols, intersect(
+  c("npg_minus_npxg_per90", "ibox_g_minus_xg_per90", "obox_g_minus_xg_per90",
+    "placement_added_per90", "takeon_woe_per90", "aerial_woe_per90"),
+  names(spm_train_data)
+))
 
 offense_cols <- intersect(offense_cols, names(spm_train_data))
 
@@ -224,11 +231,13 @@ defense_cols <- c(
   "ball_recovery_p90", "poss_won_def3rd_p90", "poss_won_mid3rd_p90",
   "fouls_p90", "penalty_conceded_p90",
   "error_lead_to_shot_p90", "error_lead_to_goal_p90", "errors_total_p90",
-  "tackle_success", "aerial_success",
+  # tackle_success/aerial_success removed 2026-07-07 -> defensive WOE below
   "poss_lost_ctrl_p90", "poss_lost_ctrl_per_touch",
   "fifty_fifty_p90", "fifty_fifty_won_p90", "fifty_fifty_success",
   "back_zone_pass_p90", "back_zone_pass_accuracy",
-  "long_pass_own_to_opp_p90", "long_pass_own_to_opp_accuracy"
+  "long_pass_own_to_opp_p90", "long_pass_own_to_opp_accuracy",
+  "tackle_poss_woe_per90", "containment_woe_per90",
+  "aerial_woe_per90", "aerial_poss_woe_per90", "gsaa_per90"
 )
 
 defense_cols <- intersect(defense_cols, names(spm_train_data))
@@ -245,7 +254,8 @@ defense_good_features <- c(
   "last_man_tackle_p90", "six_yard_block_p90", "clearance_off_line_p90",
   "aerial_won_p90",
   "ball_recovery_p90", "poss_won_def3rd_p90", "poss_won_mid3rd_p90",
-  "tackle_success", "aerial_success",
+  "tackle_poss_woe_per90", "containment_woe_per90",
+  "aerial_woe_per90", "aerial_poss_woe_per90", "gsaa_per90",
   "fifty_fifty_won_p90", "fifty_fifty_success",
   "back_zone_pass_accuracy"
 )

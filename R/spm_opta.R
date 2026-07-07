@@ -589,28 +589,33 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
 #' # Fit Opta SPM
 #' opta_spm <- fit_spm_opta(spm_data)
 #' }
-fit_spm_opta <- function(data, alpha = 0.5, nfolds = 10,
-                          weight_by_minutes = TRUE, weight_transform = "sqrt") {
-  # Use all per-90 rate columns as predictors. Catch BOTH suffix spellings:
-  # box-score rates are `_p90`, xMetrics model outputs are `_per90` — the old
-  # `_p90$`-only grep silently excluded every xMetrics feature (xg_per90,
-  # npxg_per90, the duel WOE counts, finishing over-performance, gsaa), so
-  # step 05's "Enrich with xMetrics Features" join was dead code at fit time.
-  # Same trap that made PSR xMetrics-blind (see panna/CLAUDE.md).
+#' Canonical SPM-Opta predictor selection
+#'
+#' The ONE place the Opta SPM feature set is defined, shared by
+#' \code{fit_spm_opta()} (glmnet half) and passed explicitly to
+#' \code{fit_spm_xgb()} by \code{05_spm.R} (XGBoost half) so the two halves
+#' of the shipped 50/50 blend can never train on divergent feature sets —
+#' the failure mode behind the "SPM was xG-blind" bug, where the enrichment
+#' join was dead code because the fit-time grep didn't match the joined
+#' column names.
+#'
+#' Selection: all per-90 rates, BOTH suffix spellings (`_p90` box-score,
+#' `_per90` xMetrics model outputs) + the `_xmetrics`-suffixed pair + the
+#' kept efficiency ratios + position dummies. The ratios with a direct
+#' above-expected replacement were REMOVED (mirrors the PSR/PSV redesign,
+#' panna#116): duel/aerial/tackle success -> the five *_woe_per90 counts;
+#' goals_per_shot / big_chance_conversion / headed_goal_rate /
+#' ibox/obox_goal_rate / penalty_conversion -> the finishing over-performance
+#' family (scale-free ratios discard volume: 1/1 == 10/10). Ratios WITHOUT a
+#' modeled replacement (zone pass accuracies, bad touches, 50/50s, possession
+#' control) are kept.
+#'
+#' @param data Data frame of candidate features
+#' @return Character vector of predictor column names present in `data`
+#' @keywords internal
+.spm_opta_predictor_cols <- function(data) {
   predictor_cols <- names(data)[grepl("_p90$|_per90$", names(data))]
-  # xMetrics columns with a disambiguating suffix (joined by 05_spm.R)
   xm_suffixed <- c("xa_per90_xmetrics", "xpass_overperformance_per90_xmetrics")
-  predictor_cols <- unique(c(predictor_cols, intersect(xm_suffixed, names(data))))
-
-  # Success/efficiency ratio columns. The ratios with a direct above-expected
-  # replacement were REMOVED (mirrors the PSR/PSV redesign, panna#116): duel/
-  # aerial/tackle success -> the five *_woe_per90 counts; goals_per_shot /
-  # big_chance_conversion / headed_goal_rate / ibox_goal_rate / obox_goal_rate /
-  # penalty_conversion -> npg_minus_npxg_per90 + ibox/obox over-perf +
-  # placement_added_per90 (scale-free ratios discard volume: 1/1 == 10/10).
-  # Ratios WITHOUT a modeled replacement (zone pass accuracies, bad touches,
-  # 50/50s, possession control) are kept — dropping them un-replaced would
-  # lose real signal, and the elastic net handles the collinearity.
   success_cols <- c("shot_accuracy", "pass_accuracy",
                     "final_third_pass_acc",
                     "long_ball_accuracy", "cross_accuracy",
@@ -621,13 +626,33 @@ fit_spm_opta <- function(data, alpha = 0.5, nfolds = 10,
                     "back_zone_pass_accuracy", "chipped_pass_accuracy",
                     "long_pass_own_to_opp_accuracy",
                     "fifty_fifty_success", "poss_lost_ctrl_per_touch")
-  success_cols <- intersect(success_cols, names(data))
-  predictor_cols <- unique(c(predictor_cols, success_cols))
-
-  # Add position dummies if available
   pos_cols <- c("is_gk", "is_df", "is_mf", "is_fw")
-  pos_cols <- intersect(pos_cols, names(data))
-  predictor_cols <- c(predictor_cols, pos_cols)
+  unique(c(predictor_cols,
+           intersect(c(xm_suffixed, success_cols, pos_cols), names(data))))
+}
+
+fit_spm_opta <- function(data, alpha = 0.5, nfolds = 10,
+                          weight_by_minutes = TRUE, weight_transform = "sqrt") {
+  predictor_cols <- .spm_opta_predictor_cols(data)
+
+  # NA-safety for the widened `_per90` selection: fit_spm_model() keeps only
+  # complete.cases rows, so an un-imputed NA xMetrics column would silently
+  # DROP those players from training (05_spm.R imputes its own join, but
+  # other callers — e.g. the skills-pipeline SPM — may not). For
+  # above-expected metrics 0 IS the population mean by construction, and for
+  # xg/xa-style volumes NA means "no SPADL coverage" = no modeled volume, so
+  # 0 is the meaningful imputation for both. Surfaced, never silent.
+  per90_cols <- predictor_cols[grepl("_per90(_xmetrics)?$", predictor_cols)]
+  na_counts <- vapply(per90_cols, function(cc) sum(is.na(data[[cc]])), integer(1))
+  if (any(na_counts > 0)) {
+    progress_msg(sprintf(
+      "Imputing 0 (population mean / no-coverage) for NAs in %d _per90 columns (max %d rows): %s",
+      sum(na_counts > 0), max(na_counts),
+      paste(utils::head(names(na_counts)[na_counts > 0], 5), collapse = ", ")))
+    for (cc in names(na_counts)[na_counts > 0]) {
+      data[[cc]][is.na(data[[cc]])] <- 0
+    }
+  }
 
   progress_msg(sprintf("Fitting Opta SPM with %d features", length(predictor_cols)))
 
