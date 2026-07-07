@@ -46,7 +46,7 @@ pkgdown::build_site()
 | **Utilities** | `utils.R`, `constants.R`, `globals.R`, `piggyback.R` | Helpers, NSE declarations, GitHub Releases I/O |
 | **PSR/PSV** | `psr.R` | Player Skill Rating (smoothed) + Player Stat Value (per-game) with O/D decomposition |
 | **WPA** | `wp_model.R`, `wp_credit.R` | Win probability model (3-class: home/draw/away) and WPA credit assignment |
-| **EPR** | `player_ratings_epv.R` | Expected Points Rating. Legacy `calculate_epr()` = decay-weighted Bayesian mean; modern `calculate_epr_regression()` = weighted ridge with league-season FE + opp_def_rating control (2026-05-19, the production version used in `data-raw/match-predictions-opta/build_epr_weekly.R` — incremental, run weekly by `epr-weekly-snapshot.yml`; moved out of gitignored `debug/keep/` 2026-06-23 so CI can run it) |
+| **EPR** | `player_ratings_epv.R` | Expected Possession Rating. Legacy `calculate_epr()` = decay-weighted Bayesian mean; modern `calculate_epr_regression()` = weighted ridge with league-season FE + opp_def_rating control (2026-05-19, the production version used in `data-raw/match-predictions-opta/build_epr_weekly.R` — incremental, run weekly by `epr-weekly-snapshot.yml`; moved out of gitignored `debug/keep/` 2026-06-23 so CI can run it) |
 | **Skill Config** | `skill_config.R` | Soccer stat rating definitions, position map, hyperparameters |
 | **Game Ratings** | `player_game_ratings.R` | Unified per-game output: EPV + WPA + PSV → panna_value |
 | **Career RAPM** | `career_rapm.R` | Career-trait Panna: decay-weighted multi-season xRAPM (365d half-life) |

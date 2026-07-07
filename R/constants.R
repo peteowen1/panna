@@ -547,7 +547,7 @@ is_shootout_period <- function(period_id) {
 
 
 # =============================================================================
-# EPR (Expected Points Rating) Constants
+# EPR (Expected Possession Rating) Constants
 # =============================================================================
 
 #' @keywords internal

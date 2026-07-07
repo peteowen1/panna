@@ -171,7 +171,7 @@ reference:
   - shootout_win_prob
   - aggregate_shootout_wpa
 
-- title: EPR (Expected Points Rating)
+- title: EPR (Expected Possession Rating)
   desc: Decay-weighted Bayesian EPV ratings
   contents:
   - calculate_epr

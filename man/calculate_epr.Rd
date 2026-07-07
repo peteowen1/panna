@@ -2,7 +2,7 @@
 % Please edit documentation in R/player_ratings_epv.R
 \name{calculate_epr}
 \alias{calculate_epr}
-\title{Calculate EPR (Expected Points Rating) from per-game EPV}
+\title{Calculate EPR (Expected Possession Rating) from per-game EPV}
 \usage{
 calculate_epr(
   player_game_epv,
