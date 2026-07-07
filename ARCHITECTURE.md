@@ -101,7 +101,7 @@ PSR Model (glmnet on skills) ──> PSR / OSR / DSR (season-level)
 PSV / OSV / DSV (per-game)       PSR coefficients applied per match
     |
     v
-build_player_game_ratings() merges EPV + WPA + PSV ──> panna_value (per game)
+build_player_game_ratings() merges EPV + WPA + PSV ──> piero_value (per game)
 ```
 
 ### Key Relationships

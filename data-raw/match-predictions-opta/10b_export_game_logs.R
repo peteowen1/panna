@@ -685,6 +685,14 @@ validate_game_log_schema <- function(dt, league, season) {
     # Release arrow's memory-mapped file handle before we overwrite the same
     # path — Windows error 1224 ("user-mapped section open") otherwise.
     gc()
+    # Transition shim (2026-07-07 panna_value -> piero_value rename): a
+    # pre-rename per-season parquet carries panna_value_p90; without the
+    # rename the rbindlist(fill=TRUE) below would ship BOTH columns each
+    # half-NA (mixed schema) instead of one complete piero_value_p90.
+    if ("panna_value_p90" %in% names(existing) &&
+        !"piero_value_p90" %in% names(existing)) {
+      data.table::setnames(existing, "panna_value_p90", "piero_value_p90")
+    }
     rebuilt <- unique(game_logs$league)
     kept <- existing[!league %in% rebuilt]
     n_kept <- nrow(kept)

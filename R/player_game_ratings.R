@@ -205,10 +205,12 @@ aggregate_season_ratings <- function(game_ratings, season_col = "season") {
 #' @return A list with:
 #'   \describe{
 #'     \item{player_name}{Matched player name}
-#'     \item{summary}{One-row data.table with season totals and per-90 rates}
-#'     \item{game_log}{Per-game data.table (if available) with EPV/WPA/PSV
-#'       per match}
-#'     \item{ratings}{Named list: epr, psr, piero_value}
+#'     \item{summary}{data.table of season totals and per-90 rates across
+#'       EPV / WPA / PSV metric families}
+#'     \item{game_log_epv}{Per-game EPV data.table (or NULL if unavailable)}
+#'     \item{game_log_wpa}{Per-game WPA data.table (or NULL)}
+#'     \item{game_log_psv}{Per-game PSV data.table (or NULL)}
+#'     \item{epr}{EPR result (or NULL)}
 #'   }
 #'
 #' @export
