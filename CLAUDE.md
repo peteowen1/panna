@@ -48,7 +48,7 @@ pkgdown::build_site()
 | **WPA** | `wp_model.R`, `wp_credit.R` | Win probability model (3-class: home/draw/away) and WPA credit assignment |
 | **EPR** | `player_ratings_epv.R` | Expected Possession Rating. Legacy `calculate_epr()` = decay-weighted Bayesian mean; modern `calculate_epr_regression()` = weighted ridge with league-season FE + opp_def_rating control (2026-05-19, the production version used in `data-raw/match-predictions-opta/build_epr_weekly.R` — incremental, run weekly by `epr-weekly-snapshot.yml`; moved out of gitignored `debug/keep/` 2026-06-23 so CI can run it) |
 | **Skill Config** | `skill_config.R` | Soccer stat rating definitions, position map, hyperparameters |
-| **Game Ratings** | `player_game_ratings.R` | Unified per-game output: EPV + WPA + PSV → panna_value |
+| **Game Ratings** | `player_game_ratings.R` | Unified per-game output: EPV + WPA + PSV → piero_value |
 | **Career RAPM** | `career_rapm.R` | Career-trait Panna: decay-weighted multi-season xRAPM (365d half-life) |
 | **WC Simulation** | `simulate_world_cup.R`, `knockout_model.R`, `shootout.R` | 48-team WC 2026 tournament simulator; full-model knockout match probabilities; penalty-shootout win probability |
 | **Team Ratings** | `team_rating.R`, `elo_calibration.R`, `league_offsets.R` | Bradley-Terry team rating; Elo calibration (per-match-type K + cross-confederation multiplier); league quality offsets vs UCL group stage |
@@ -94,7 +94,7 @@ Two-path rating system (mirrors torpverse TORP pattern):
 
 ```
 SPADL actions → EPV credits → per-game EPV → EPR (decay-weighted) ──┐
-                     └→ WP model → WPA → per-game WPA               ├→ panna_value (50/50 blend)
+                     └→ WP model → WPA → per-game WPA               ├→ piero_value (50/50 blend)
 Box-score stats → PSV/OSV/DSV (per-game via glmnet coefficients)     │
 Stat ratings → PSR/OSR/DSR (smoothed skills via glmnet) ────────────┘
      └→ Multi-target RAPM (xG, EPV, WPA, PSV as response variables)
@@ -108,7 +108,7 @@ Stat ratings → PSR/OSR/DSR (smoothed skills via glmnet) ───────�
 - `assign_wpa_credit()` → `aggregate_player_game_wpa()` — WPA credit split and per-game aggregation
 - `calculate_epr()` / `calculate_epr_batch()` — Legacy: Bayesian-shrunk EPV ratings with decay
 - `calculate_epr_regression()` / `optimize_epr_decay()` — Production: weighted ridge with player + league-season FE + opp_def_rating control. Inputs require `opp_def_rating` column joined from `cache-opta/team_season_strength.parquet`. β_player IS the EPR. Decay parameter near-irrelevant for prediction (chosen 900 days via held-out MSE)
-- `build_player_game_ratings()` — Merges EPV + WPA + PSV → `panna_value`
+- `build_player_game_ratings()` — Merges EPV + WPA + PSV → `piero_value`
 - `add_value_metrics_to_splints()` — Joins per-game values to RAPM splints for multi-target
 - `fit_spm_opta_target()` — SPM with custom target column (for multi-target RAPM)
 

@@ -23,7 +23,7 @@ A list with:
 \item{summary}{One-row data.table with season totals and per-90 rates}
 \item{game_log}{Per-game data.table (if available) with EPV/WPA/PSV
 per match}
-\item{ratings}{Named list: epr, psr, panna_value}
+\item{ratings}{Named list: epr, psr, piero_value}
 }
 }
 \description{

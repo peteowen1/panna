@@ -9,7 +9,7 @@
 #' Build unified player game ratings
 #'
 #' Merges per-game EPV, WPA, and PSV into a single data.table with one row
-#' per player per match. Computes a combined \code{panna_value} blending
+#' per player per match. Computes a combined \code{piero_value} blending
 #' EPV and PSV contributions.
 #'
 #' @param player_game_epv Per-game EPV from \code{\link{aggregate_player_game_epv}}.
@@ -17,9 +17,9 @@
 #'   Optional; WPA columns are NA if not provided.
 #' @param player_game_psv Per-game PSV from \code{\link{calculate_psv_components}}.
 #'   Optional; PSV columns are NA if not provided.
-#' @param epv_weight Weight for EPV in combined panna_value (default
+#' @param epv_weight Weight for EPV in combined piero_value (default
 #'   \code{PANNA_EPR_WEIGHT}).
-#' @param psv_weight Weight for PSV in combined panna_value (default
+#' @param psv_weight Weight for PSV in combined piero_value (default
 #'   \code{PANNA_PSR_WEIGHT}).
 #'
 #' @return A data.table with one row per player per match:
@@ -35,9 +35,9 @@
 #'     \item{wpa_total, wpa_as_actor, wpa_as_receiver}{WPA components}
 #'     \item{wpa_p90}{WPA per 90 minutes}
 #'     \item{psv, osv, dsv}{Player Stat Value with O/D decomposition}
-#'     \item{panna_value}{Combined: \code{epv_weight * epv_total_adj +
+#'     \item{piero_value}{Combined: \code{epv_weight * epv_total_adj +
 #'       psv_weight * psv} (falls back to \code{epv_total} if no adj columns).}
-#'     \item{panna_value_p90}{Combined per 90 minutes}
+#'     \item{piero_value_p90}{Combined per 90 minutes}
 #'   }
 #'
 #' @export
@@ -49,7 +49,7 @@ build_player_game_ratings <- function(player_game_epv,
   result <- data.table::as.data.table(player_game_epv)
 
   # Select core EPV columns. Adjusted variants (position + opponent) are
-  # carried through when present so panna_value can prefer them over raw EPV.
+  # carried through when present so piero_value can prefer them over raw EPV.
   epv_cols <- intersect(
     c("player_id", "player_name", "team_id", "match_id",
       "minutes_played", "position", "n_actions",
@@ -99,7 +99,7 @@ build_player_game_ratings <- function(player_game_epv,
                      all.x = TRUE)
   }
 
-  # --- Combined panna_value ---
+  # --- Combined piero_value ---
   # Prefer fully-adjusted EPV (position-centered + opponent-adjusted) when
   # available. Falls back to raw epv_total if adjustments weren't applied
   # upstream (e.g. missing position or match_date).
@@ -112,12 +112,12 @@ build_player_game_ratings <- function(player_game_epv,
     data.table::fifelse(is.na(result$psv), 0, result$psv)
   } else 0
 
-  result[, panna_value := epv_weight * epv_val + psv_weight * psv_val]
+  result[, piero_value := epv_weight * epv_val + psv_weight * psv_val]
 
-  # Per-90 panna_value
+  # Per-90 piero_value
   if ("minutes_played" %in% names(result)) {
     mins_safe <- pmax(result$minutes_played, 1, na.rm = TRUE)
-    result[, panna_value_p90 := panna_value / (mins_safe / 90)]
+    result[, piero_value_p90 := piero_value / (mins_safe / 90)]
   }
 
   # Track which metrics were computed (before NA fill masks the difference)
@@ -130,7 +130,7 @@ build_player_game_ratings <- function(player_game_epv,
     data.table::set(result, which(is.na(result[[col]])), col, 0)
   }
 
-  data.table::setorder(result, match_id, -panna_value)
+  data.table::setorder(result, match_id, -piero_value)
   result[]
 }
 
@@ -158,7 +158,7 @@ aggregate_season_ratings <- function(game_ratings, season_col = "season") {
   # Value metric columns to aggregate
   value_cols <- intersect(
     c("epv_total", "epv_offensive", "epv_defensive",
-      "wpa_total", "psv", "osv", "dsv", "panna_value"),
+      "wpa_total", "psv", "osv", "dsv", "piero_value"),
     names(dt)
   )
 
@@ -180,7 +180,7 @@ aggregate_season_ratings <- function(game_ratings, season_col = "season") {
                      value = result[[col]] / (mins_safe / 90))
   }
 
-  data.table::setorder(result, -panna_value)
+  data.table::setorder(result, -piero_value)
   result[]
 }
 
@@ -208,7 +208,7 @@ aggregate_season_ratings <- function(game_ratings, season_col = "season") {
 #'     \item{summary}{One-row data.table with season totals and per-90 rates}
 #'     \item{game_log}{Per-game data.table (if available) with EPV/WPA/PSV
 #'       per match}
-#'     \item{ratings}{Named list: epr, psr, panna_value}
+#'     \item{ratings}{Named list: epr, psr, piero_value}
 #'   }
 #'
 #' @export

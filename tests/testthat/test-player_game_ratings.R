@@ -37,16 +37,16 @@ test_that("build_player_game_ratings merges EPV, WPA, PSV", {
   expect_true("epv_total" %in% names(result))
   expect_true("wpa_total" %in% names(result))
   expect_true("psv" %in% names(result))
-  expect_true("panna_value" %in% names(result))
+  expect_true("piero_value" %in% names(result))
 
-  # panna_value is a weighted combination of EPV and PSV using package constants
+  # piero_value is a weighted combination of EPV and PSV using package constants
   alice <- result[result$player_id == "p1", ]
-  expect_equal(alice$panna_value,
+  expect_equal(alice$piero_value,
                PANNA_EPR_WEIGHT * 0.5 + PANNA_PSR_WEIGHT * 0.6)
 
-  # Higher EPV+PSV player should have higher panna_value
+  # Higher EPV+PSV player should have higher piero_value
   bob <- result[result$player_id == "p2", ]
-  expect_gt(alice$panna_value, bob$panna_value)
+  expect_gt(alice$piero_value, bob$piero_value)
 })
 
 test_that("build_player_game_ratings works without WPA/PSV", {
@@ -65,12 +65,12 @@ test_that("build_player_game_ratings works without WPA/PSV", {
   result <- build_player_game_ratings(epv)
 
   expect_equal(nrow(result), 1)
-  expect_true("panna_value" %in% names(result))
-  # No PSV → panna_value uses EPV only (PSV defaults to 0)
-  expect_equal(result$panna_value, PANNA_EPR_WEIGHT * 0.5)
+  expect_true("piero_value" %in% names(result))
+  # No PSV → piero_value uses EPV only (PSV defaults to 0)
+  expect_equal(result$piero_value, PANNA_EPR_WEIGHT * 0.5)
 })
 
-test_that("build_player_game_ratings computes panna_value_p90", {
+test_that("build_player_game_ratings computes piero_value_p90", {
   epv <- data.frame(
     player_id = "p1",
     player_name = "Alice",
@@ -85,9 +85,9 @@ test_that("build_player_game_ratings computes panna_value_p90", {
 
   result <- build_player_game_ratings(epv)
 
-  expect_true("panna_value_p90" %in% names(result))
+  expect_true("piero_value_p90" %in% names(result))
   # p90 should be double the raw value for a 45-min appearance
-  expect_equal(result$panna_value_p90, result$panna_value / (45 / 90))
+  expect_equal(result$piero_value_p90, result$piero_value / (45 / 90))
 })
 
 test_that("build_player_game_ratings custom weights override defaults", {
@@ -106,7 +106,7 @@ test_that("build_player_game_ratings custom weights override defaults", {
   # Custom weights should be respected
   result <- build_player_game_ratings(epv, player_game_psv = psv,
                                        epv_weight = 0.7, psv_weight = 0.3)
-  expect_equal(result$panna_value, 0.7 * 1.0 + 0.3 * 2.0)
+  expect_equal(result$piero_value, 0.7 * 1.0 + 0.3 * 2.0)
 })
 
 test_that("blend weight constants sum to 1", {
@@ -123,7 +123,7 @@ test_that("aggregate_season_ratings sums and averages correctly", {
     season = rep("2024", 3),
     minutes_played = c(90, 45, 90),
     epv_total = c(0.5, 0.3, 0.4),
-    panna_value = c(0.4, 0.2, 0.3),
+    piero_value = c(0.4, 0.2, 0.3),
     stringsAsFactors = FALSE
   )
 
@@ -133,7 +133,7 @@ test_that("aggregate_season_ratings sums and averages correctly", {
   expect_equal(result$n_games, 3)
   expect_equal(result$total_minutes, 225)
   expect_equal(result$epv_total, 1.2)  # 0.5 + 0.3 + 0.4
-  expect_equal(result$panna_value, 0.9)  # 0.4 + 0.2 + 0.3
+  expect_equal(result$piero_value, 0.9)  # 0.4 + 0.2 + 0.3
 
   # Per-90: 1.2 / (225/90) = 0.48
   expect_equal(result$epv_total_p90, 1.2 / (225 / 90))
