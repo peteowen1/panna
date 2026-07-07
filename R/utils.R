@@ -462,6 +462,55 @@ progress_msg <- function(msg, verbose = TRUE) {
 }
 
 
+#' Log OS-level memory (RSS) alongside R's own heap at a checkpoint
+#'
+#' The panna#128 and #133 OOM hunts both hinged on the same observation:
+#' \code{gc()} only tracks the R-managed heap, while the failures showed up
+#' only in OS-level resident set size (VmRSS) — and both hunts reinvented this
+#' checkpoint inline. Drop \code{.log_rss("after step 3")} at suspected
+#' boundaries in a pipeline script, deploy, and read the log; the RSS-vs-heap
+#' gap localizes hidden-copy growth that heap numbers cannot see.
+#'
+#' RSS sources, in order: \code{/proc/self/status} (Linux — the GHA runner,
+#' the platform that matters), \code{ps -o rss=} (macOS/other unix), else
+#' \code{NA} (Windows has no cheap equivalent without adding a dependency;
+#' the R-heap number still prints).
+#'
+#' @param label Checkpoint label included in the log line.
+#' @param verbose Whether to print (same contract as \code{progress_msg}).
+#' @return The RSS in MB (invisibly), \code{NA} if unavailable.
+#' @keywords internal
+.log_rss <- function(label = "", verbose = TRUE) {
+  # Collect BEFORE sampling RSS so both numbers describe the same
+  # post-collection state — sampling RSS first would inflate it with
+  # not-yet-collected garbage and fabricate a phantom "hidden copy" gap,
+  # the exact wrong-trail failure mode this helper exists to prevent.
+  heap_mb <- sum(gc(verbose = FALSE)[, 2])
+  rss_mb <- NA_real_
+  if (file.exists("/proc/self/status")) {
+    line <- grep("^VmRSS:", readLines("/proc/self/status"), value = TRUE)
+    if (length(line) == 1L) {
+      rss_mb <- suppressWarnings(as.numeric(gsub("[^0-9]", "", line))) / 1024
+    }
+  } else if (.Platform$OS.type == "unix") {
+    out <- suppressWarnings(tryCatch(
+      system2("ps", c("-o", "rss=", "-p", Sys.getpid()), stdout = TRUE, stderr = FALSE),
+      error = function(e) character(0)
+    ))
+    if (length(out) >= 1L) {
+      rss_mb <- suppressWarnings(as.numeric(trimws(out[1]))) / 1024
+    }
+  }
+  progress_msg(sprintf(
+    "[rss] %s: RSS=%s MB | R heap=%.0f MB",
+    label,
+    if (is.na(rss_mb)) "NA" else sprintf("%.0f", rss_mb),
+    heap_mb
+  ), verbose = verbose)
+  invisible(rss_mb)
+}
+
+
 #' Find first matching column from candidates
 #'
 #' Returns the first column name that exists in the data frame.

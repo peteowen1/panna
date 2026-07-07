@@ -191,3 +191,117 @@ test_that("clear_cache_files handles lettered steps", {
   expect_false(file.exists(file.path(tmp, "step2b.rds")))
   expect_false(file.exists(file.path(tmp, "step3.rds")))
 })
+
+
+# ===========================================================================
+# save_cache_with_meta — growth tripwire (panna#128/#133)
+# ===========================================================================
+
+test_that("save_cache_with_meta records n_rows and size_bytes in the sidecar", {
+  tmp <- tempfile("growth_test_")
+  dir.create(tmp)
+  on.exit(unlink(tmp, recursive = TRUE))
+  path <- file.path(tmp, "cache.rds")
+
+  save_cache_with_meta(data.frame(x = 1:100), path, pipeline = "test")
+
+  meta <- jsonlite::fromJSON(paste0(path, ".meta.json"))
+  expect_equal(meta$n_rows, 100)
+  expect_true(is.numeric(meta$size_bytes) && meta$size_bytes > 0)
+  expect_equal(meta$pipeline, "test")
+})
+
+test_that("save_cache_with_meta warns when rows grow past growth_warn_frac", {
+  tmp <- tempfile("growth_test_")
+  dir.create(tmp)
+  on.exit(unlink(tmp, recursive = TRUE))
+  path <- file.path(tmp, "cache.rds")
+
+  save_cache_with_meta(data.frame(x = 1:100), path, pipeline = "test")
+  # +58% rows — the panna#127 -> #133 incident shape
+  expect_warning(
+    save_cache_with_meta(data.frame(x = 1:158), path, pipeline = "test"),
+    "\\[growth\\].*rows"
+  )
+  # Sidecar now reflects the new size, so re-saving the SAME data is quiet
+  expect_no_warning(
+    save_cache_with_meta(data.frame(x = 1:158), path, pipeline = "test")
+  )
+})
+
+test_that("save_cache_with_meta stays quiet under the threshold and when disabled", {
+  tmp <- tempfile("growth_test_")
+  dir.create(tmp)
+  on.exit(unlink(tmp, recursive = TRUE))
+  path <- file.path(tmp, "cache.rds")
+
+  save_cache_with_meta(data.frame(x = 1:100), path, pipeline = "test")
+  # +10% < 20% threshold -> no warning
+  expect_no_warning(
+    save_cache_with_meta(data.frame(x = 1:110), path, pipeline = "test")
+  )
+  # Huge growth but tripwire disabled -> no warning
+  expect_no_warning(
+    save_cache_with_meta(data.frame(x = 1:1000), path, pipeline = "test",
+                         growth_warn_frac = NULL)
+  )
+})
+
+test_that("save_cache_with_meta tolerates valid-JSON-but-wrong-shape sidecars", {
+  # Review finding (panna#135): tryCatch only guarded PARSE errors. A sidecar
+  # that parses to a bare atomic ("123") crashed on prev_meta$n_rows, and an
+  # array n_rows crashed inside the || chain — both AFTER the RDS write,
+  # failing the very step the advisory tripwire must never block.
+  tmp <- tempfile("growth_test_")
+  dir.create(tmp)
+  on.exit(unlink(tmp, recursive = TRUE))
+  path <- file.path(tmp, "cache.rds")
+
+  # Bare atomic sidecar (valid JSON, not an object)
+  writeLines("123", paste0(path, ".meta.json"))
+  expect_no_error(save_cache_with_meta(data.frame(x = 1:50), path))
+
+  # Array n_rows (valid JSON object, non-scalar field)
+  writeLines('{"n_rows": [100, 200], "size_bytes": 10}', paste0(path, ".meta.json"))
+  expect_no_error(save_cache_with_meta(data.frame(x = 1:50), path))
+
+  # After surviving both, the sidecar is healthy again
+  meta <- jsonlite::fromJSON(paste0(path, ".meta.json"))
+  expect_equal(meta$n_rows, 50)
+})
+
+test_that("read_meta_sidecar returns NULL for missing/corrupt/non-list sidecars", {
+  tmp <- tempfile("meta_test_")
+  dir.create(tmp)
+  on.exit(unlink(tmp, recursive = TRUE))
+  p <- file.path(tmp, "x.meta.json")
+
+  expect_null(read_meta_sidecar(p))                    # missing
+  writeLines("not json{", p)
+  expect_null(read_meta_sidecar(p))                    # corrupt
+  writeLines("123", p)
+  expect_null(read_meta_sidecar(p))                    # bare atomic
+  writeLines('{"n_rows": 5}', p)
+  expect_equal(read_meta_sidecar(p)$n_rows, 5)         # healthy
+})
+
+test_that("save_cache_with_meta tolerates a corrupt or legacy sidecar", {
+  tmp <- tempfile("growth_test_")
+  dir.create(tmp)
+  on.exit(unlink(tmp, recursive = TRUE))
+  path <- file.path(tmp, "cache.rds")
+
+  # Corrupt sidecar: growth check silently skipped, save still works
+  writeLines("not json{", paste0(path, ".meta.json"))
+  expect_no_warning(save_cache_with_meta(data.frame(x = 1:50), path))
+
+  # Legacy sidecar without size_bytes (pre-tripwire format): rows still checked
+  meta <- jsonlite::fromJSON(paste0(path, ".meta.json"))
+  meta$size_bytes <- NULL
+  meta$n_rows <- 10
+  writeLines(jsonlite::toJSON(meta, auto_unbox = TRUE), paste0(path, ".meta.json"))
+  expect_warning(
+    save_cache_with_meta(data.frame(x = 1:50), path),
+    "\\[growth\\].*rows"
+  )
+})

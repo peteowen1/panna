@@ -73,7 +73,16 @@ if (!exists("processed_data")) {
   # below (step 03's input). Detach for the save, reattach for the slice write.
   .events_keep <- processed_data$events
   processed_data$events <- NULL
-  saveRDS(processed_data, processed_data_path)
+  # Growth tripwire (panna#128/#133): this cache is in the same incident class
+  # as cache-skills/01_match_stats.rds — grown by full-sync/league expansion,
+  # looped over by opta steps 05-08 + skills step 05. Standalone-source guard:
+  # the run_pipeline_opta callr child re-sources pipeline_utils, but a direct
+  # source() of this step outside the runner would otherwise die at the save.
+  if (!exists("save_cache_with_meta", mode = "function")) {
+    source(file.path("data-raw", "pipeline_utils.R"))
+  }
+  save_cache_with_meta(processed_data, processed_data_path,
+                       pipeline = "player-ratings-opta")
   processed_data$events <- .events_keep
   rm(.events_keep); gc(verbose = FALSE)
 }

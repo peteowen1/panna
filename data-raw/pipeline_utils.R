@@ -63,6 +63,15 @@ run_step <- function(step_name, step_num, code_block, run_steps,
                 duration_secs = 0, duration_formatted = "0.0 seconds"))
   }
 
+  # RSS checkpoint at every step boundary (panna#128/#133): OS-level memory
+  # next to R's heap, so a growth-driven cliff is visible in the log of the
+  # run that hits it. .log_rss is a panna internal — present when the pipeline
+  # runs under devtools::load_all() (all runners do); guarded for standalone
+  # sourcing without the package.
+  if (exists(".log_rss", mode = "function")) {
+    .log_rss(sprintf("step %s (%s) start", step_label, step_name))
+  }
+
   start_time <- Sys.time()
   result <- tryCatch(
     withCallingHandlers({
@@ -84,6 +93,10 @@ run_step <- function(step_name, step_num, code_block, run_steps,
     error = function(e) "FAILED"
   )
   end_time <- Sys.time()
+
+  if (exists(".log_rss", mode = "function")) {
+    .log_rss(sprintf("step %s (%s) end [%s]", step_label, step_name, result))
+  }
 
   duration <- difftime(end_time, start_time, units = "secs")
 
@@ -290,16 +303,53 @@ validate_step_output <- function(data = NULL, cache_path = NULL,
 }
 
 
+#' Read a .meta.json sidecar, tolerating absence, corruption, and bad shape
+#'
+#' The single sidecar reader for pipeline code. A sidecar is advisory
+#' metadata — a partial write, disk hiccup, or hand edit must never take down
+#' the pipeline that touches it. Returns NULL unless the file exists, parses
+#' as JSON, and is a named list (guards the '$ operator is invalid for atomic
+#' vectors' crash when a mangled sidecar parses to a bare value).
+#'
+#' @param meta_path Path to the .meta.json file (NOT the .rds it describes)
+#' @return Named list, or NULL if missing/corrupt/wrong shape
+read_meta_sidecar <- function(meta_path) {
+  if (!file.exists(meta_path)) return(NULL)
+  meta <- tryCatch(jsonlite::fromJSON(meta_path), error = function(e) NULL)
+  if (!is.list(meta)) return(NULL)
+  meta
+}
+
+
 #' Save cache file with metadata sidecar
 #'
 #' Saves an RDS file and writes a .meta.json sidecar with timestamp,
-#' row count, and pipeline name. Consuming pipelines can use
+#' row count, file size, and pipeline name. Consuming pipelines can use
 #' \code{load_cache_with_meta()} to validate freshness.
+#'
+#' Growth tripwire (panna#128/#133): both GHA OOM incidents were DATA GROWTH
+#' crossing a memory cliff days after the causing change merged — the row
+#' counts were even in the logs, but nothing compared them run-over-run. When
+#' overwriting an existing cache that has a sidecar, this warns loudly if
+#' rows or bytes grew beyond \code{growth_warn_frac}, so the cliff shows up
+#' in the log of the run that CREATES the growth, not the OOM three days
+#' later. The warning is advisory (never blocks): legitimate growth (new
+#' league, backfill) is expected — the point is that it's SEEN, and every
+#' pipeline that loops over the grown cache gets audited (see the wide-loop
+#' gotcha in CLAUDE.md).
 #'
 #' @param data Object to save (typically a data frame or list)
 #' @param path Path for the RDS file
 #' @param pipeline Character name of the producing pipeline
-save_cache_with_meta <- function(data, path, pipeline = "unknown") {
+#' @param growth_warn_frac Warn when rows or file size grow by more than this
+#'   fraction vs the previous sidecar (default 0.2 = +20%). NULL disables.
+save_cache_with_meta <- function(data, path, pipeline = "unknown",
+                                 growth_warn_frac = 0.2) {
+  # Read the PREVIOUS sidecar before the file is replaced — it is the
+  # run-over-run history the growth check compares against.
+  meta_path <- paste0(path, ".meta.json")
+  prev_meta <- read_meta_sidecar(meta_path)
+
   # Atomic write: save to temp file then rename (prevents partial reads)
   tmp_path <- paste0(path, ".tmp")
   saveRDS(data, tmp_path)
@@ -316,14 +366,42 @@ save_cache_with_meta <- function(data, path, pipeline = "unknown") {
               dfs <- Filter(is.data.frame, data)
               if (length(dfs) > 0) nrow(dfs[[1]]) else NA
             } else NA
+  size_bytes <- file.size(path)
+
+  if (!is.null(growth_warn_frac) && !is.null(prev_meta)) {
+    check_growth <- function(new_val, old_val, unit) {
+      # Scalar-guard BOTH sides: a mangled sidecar can carry an array n_rows
+      # ("n_rows": [100, 200]) and a list output can make new_val non-scalar —
+      # either would error inside the || chain and BLOCK the save this check
+      # is documented never to block.
+      if (is.null(old_val) || length(old_val) != 1L || !is.numeric(old_val) ||
+          is.na(old_val) || old_val <= 0 ||
+          is.null(new_val) || length(new_val) != 1L || !is.numeric(new_val) ||
+          is.na(new_val)) return(invisible(NULL))
+      frac <- new_val / old_val - 1
+      if (frac > growth_warn_frac) {
+        warning(sprintf(
+          paste0("[growth] %s grew %+.0f%% in %s (%s -> %s, written %s). ",
+                 "Memory-cliff risk: audit EVERY pipeline that loops over ",
+                 "this cache (wide-loop gotcha, panna#128/#133)."),
+          basename(path), 100 * frac, unit,
+          format(old_val, big.mark = ","), format(new_val, big.mark = ","),
+          if (!is.null(prev_meta$written_at)) prev_meta$written_at else "unknown"
+        ), call. = FALSE, immediate. = TRUE)
+      }
+      invisible(NULL)
+    }
+    check_growth(n_rows, prev_meta$n_rows, "rows")
+    check_growth(size_bytes, prev_meta$size_bytes, "bytes")
+  }
 
   meta <- list(
     written_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%S%z"),
     pipeline = pipeline,
     n_rows = n_rows,
+    size_bytes = size_bytes,
     file = basename(path)
   )
-  meta_path <- paste0(path, ".meta.json")
   writeLines(jsonlite::toJSON(meta, auto_unbox = TRUE, pretty = TRUE), meta_path)
   invisible(path)
 }
@@ -347,8 +425,8 @@ load_cache_with_meta <- function(path, max_age_hours = 168,
   }
 
   meta_path <- paste0(path, ".meta.json")
-  if (file.exists(meta_path)) {
-    meta <- jsonlite::fromJSON(meta_path)
+  meta <- read_meta_sidecar(meta_path)
+  if (!is.null(meta)) {
 
     if (!is.null(max_age_hours) && !is.null(meta$written_at)) {
       written <- as.POSIXct(meta$written_at, format = "%Y-%m-%dT%H:%M:%S%z")

@@ -15,6 +15,14 @@ devtools::load_all()
 cache_dir <- file.path("data-raw", "cache-skills")
 if (!dir.exists(cache_dir)) dir.create(cache_dir, recursive = TRUE)
 
+# The final save uses save_cache_with_meta() (growth tripwire); when this step
+# is sourced standalone (outside run_skills_pipeline.R) pipeline_utils.R isn't
+# loaded yet — source it here or the save dies AFTER the expensive multi-league
+# compute, losing the whole result.
+if (!exists("save_cache_with_meta", mode = "function")) {
+  source(file.path("data-raw", "pipeline_utils.R"))
+}
+
 # Canonical rating/display set, shared with step 03 / RAPM / 10b (constants.R).
 leagues <- if (exists("leagues")) leagues else PANNA_RATING_LEAGUES
 
@@ -238,6 +246,9 @@ if (isTRUE(apply_context_adjustments)) {
 
 # 7. Save ----
 
-saveRDS(match_stats, cache_path)
+# save_cache_with_meta's sidecar powers the growth tripwire: this exact file
+# growing 1.2M -> 1.9M rows (panna#127 full-sync) OOMed two downstream
+# pipelines days later (panna#128, #133) with no warning at generation time.
+save_cache_with_meta(match_stats, cache_path, pipeline = "estimated-skills")
 saveRDS(current_config, config_path)
 message(sprintf("\nSaved to: %s", cache_path))
