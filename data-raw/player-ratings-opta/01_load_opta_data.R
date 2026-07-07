@@ -83,9 +83,46 @@ for (.t in .BIG_TABLES) dir.create(file.path(stage_dir, .t), recursive = TRUE, s
 .combine_staged <- function(tbl) {
   files <- list.files(file.path(stage_dir, tbl), pattern = "\\.parquet$", full.names = TRUE)
   if (length(files) == 0) return(NULL)
-  parts <- lapply(files, function(f) as.data.frame(arrow::read_parquet(f)))
-  out <- data.table::rbindlist(parts, fill = TRUE, use.names = TRUE)
-  rm(parts)
+  # panna#87 round 2 (attempt-2 flight recorder: the stats combine alone jumped
+  # RSS 5GB -> 15,035MB in 15s and died at exit 143; the June cache measures
+  # stats at 7.5GB in RAM, so even the 2x rbindlist floor cannot fit). This is
+  # a 1x combine that preserves rbindlist(fill=TRUE) semantics EXACTLY:
+  #   1. Build a 0-row schema-union TEMPLATE with rbindlist itself over
+  #      zero-row heads of every file (arrow pushdown makes head(0) free) —
+  #      so column set, order, and type promotion are identical to the old
+  #      full rbindlist by construction.
+  #   2. Allocate the full all-NA result ONCE by NA-indexing the template
+  #      (correct types, 1x the table).
+  #   3. Assign each file's rows into place with data.table::set(), freeing
+  #      each chunk as it lands. Peak = result + one chunk, not parts + result.
+  # File order = row order (same as before); columns absent in a chunk stay
+  # NA (= fill=TRUE); a chunk's narrower type upward-coerces into the
+  # template's promoted type (same result as rbindlist's promotion).
+  template <- data.table::rbindlist(
+    lapply(files, function(f) {
+      dplyr::collect(utils::head(arrow::open_dataset(f), 0))
+    }),
+    fill = TRUE, use.names = TRUE
+  )
+  n_per_file <- vapply(files, function(f) {
+    ds <- arrow::open_dataset(f)
+    as.integer(ds$num_rows)
+  }, integer(1))
+  n_total <- sum(n_per_file)
+  out <- template[rep(NA_integer_, n_total)]
+  pos <- 1L
+  for (k in seq_along(files)) {
+    n_k <- n_per_file[k]
+    if (n_k == 0L) next
+    chunk <- arrow::read_parquet(files[k])
+    idx <- seq.int(pos, pos + n_k - 1L)
+    for (cc in intersect(names(chunk), names(out))) {
+      data.table::set(out, i = idx, j = cc, value = chunk[[cc]])
+    }
+    pos <- pos + n_k
+    rm(chunk)
+    if (k %% 20L == 0L) gc(verbose = FALSE)
+  }
   data.table::setDF(out)
   unlink(file.path(stage_dir, tbl), recursive = TRUE, force = TRUE)
   gc(verbose = FALSE)
