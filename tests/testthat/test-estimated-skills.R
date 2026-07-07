@@ -319,3 +319,69 @@ test_that("estimate_player_skills handles zero grand_mean stats with shrinkage",
   # Should still be finite (no NaN from 0/0)
   expect_true(is.finite(b_skill))
 })
+
+# =============================================================================
+# .compute_snapshot_loop_columns() — panna#128 regression coverage
+# =============================================================================
+# 08b_export_psr_weekly.R narrows match_stats from 400+ columns to only what
+# the snapshot loop reads (the fix behind the panna#128 OOM). The exact risk
+# flagged when that fix shipped: a naive narrow-to-stat-cols-only would
+# silently drop the raw box-score denominator columns .compute_denominator()
+# needs for efficiency-ratio stats (e.g. "shots" for "shot_accuracy") — they
+# aren't themselves in stat_cols, so they're easy to miss by hand. These
+# tests guard that specifically, independent of any real match_stats fixture.
+
+test_that(".compute_snapshot_loop_columns keeps denominator columns even when not in stat_cols", {
+  # "shot_accuracy" (an efficiency-ratio stat) is requested via stat_cols;
+  # its denominator "shots" (per .classify_skill_stats()) is NOT requested
+  # directly, but must still survive since compute_denominator() needs it.
+  available <- c("player_id", "player_name", "match_date", "position",
+                "total_minutes", "shot_accuracy", "shots", "irrelevant_col")
+
+  kept <- .compute_snapshot_loop_columns(
+    available_cols = available,
+    stat_cols = "shot_accuracy",
+    extra_cols = c("player_id", "player_name", "match_date", "position", "total_minutes")
+  )
+
+  expect_true("shots" %in% kept)
+  expect_true("shot_accuracy" %in% kept)
+  expect_false("irrelevant_col" %in% kept)
+})
+
+test_that(".compute_snapshot_loop_columns handles a multi-part denominator spec", {
+  # save_percentage's denom_spec is "saves+goals_conceded" (a sum of two
+  # columns) — both parts must be kept, not just one.
+  available <- c("player_id", "save_percentage", "saves", "goals_conceded", "unused")
+
+  kept <- .compute_snapshot_loop_columns(
+    available_cols = available,
+    stat_cols = "save_percentage",
+    extra_cols = "player_id"
+  )
+
+  expect_true(all(c("saves", "goals_conceded") %in% kept))
+  expect_false("unused" %in% kept)
+})
+
+test_that(".compute_snapshot_loop_columns intersects with available_cols (never invents columns)", {
+  kept <- .compute_snapshot_loop_columns(
+    available_cols = c("player_id", "goals_p90"),
+    stat_cols = c("goals_p90", "assists_p90"),  # assists_p90 not available
+    extra_cols = c("player_id", "match_date")   # match_date not available
+  )
+
+  expect_setequal(kept, c("player_id", "goals_p90"))
+})
+
+test_that(".compute_snapshot_loop_columns drops NA/NULL extra_cols (optional league column)", {
+  # 08b passes psr_lg_col as an extra_col, which can be NULL/NA when neither
+  # "competition" nor "league" is present in match_stats.
+  kept <- .compute_snapshot_loop_columns(
+    available_cols = c("player_id", "goals_p90"),
+    stat_cols = "goals_p90",
+    extra_cols = c("player_id", NA)
+  )
+
+  expect_setequal(kept, c("player_id", "goals_p90"))
+})

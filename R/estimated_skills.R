@@ -294,6 +294,39 @@ compute_position_multipliers <- function(match_stats, stat_cols = NULL) {
 }
 
 
+#' Compute the column set a per-date skill snapshot loop actually needs
+#'
+#' Extracted from \code{08b_export_psr_weekly.R} (panna#128) so the
+#' column-narrowing logic that fixed the weekly-snapshot OOM is unit-testable
+#' rather than living inline. \code{match_stats} caches carry 400+ box-score/
+#' metadata columns; \code{estimate_player_skills()} only reads
+#' \code{stat_cols} plus identity columns, but ALSO looks up raw denominator
+#' columns for efficiency-ratio stats (e.g. \code{shots} for
+#' \code{shot_accuracy}) via \code{.compute_denominator()} — those aren't
+#' themselves in \code{stat_cols} and are easy to silently drop when narrowing
+#' by hand (this exact risk is why the fix ships with this test-covered
+#' helper instead of inline column-list construction).
+#'
+#' @param available_cols Character vector — the full set of columns present
+#'   in the source match_stats table (typically \code{names(match_stats)}).
+#' @param stat_cols Character vector of stat columns the caller intends to
+#'   estimate (e.g. \code{stat_cols_all} in 08b).
+#' @param extra_cols Character vector of additional identity/context columns
+#'   to always keep (e.g. \code{player_id}, \code{match_date}). \code{NA}/
+#'   \code{NULL} entries are dropped so callers can pass an optional column
+#'   (like a possibly-absent league column) unconditionally.
+#' @return Character vector of column names to keep, intersected with
+#'   \code{available_cols} — safe to pass straight to a \code{[[}-based
+#'   narrowing construction.
+#' @keywords internal
+.compute_snapshot_loop_columns <- function(available_cols, stat_cols, extra_cols = character(0)) {
+  extra_cols <- extra_cols[!is.na(extra_cols)]
+  denom_cols_all <- unique(unlist(strsplit(unlist(.classify_skill_stats()), "\\+")))
+  needed <- unique(c(extra_cols, stat_cols, denom_cols_all))
+  intersect(needed, available_cols)
+}
+
+
 # ============================================================================
 # Core skill estimation
 # ============================================================================
