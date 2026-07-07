@@ -607,7 +607,7 @@ List with seasonal aggregations of RAPM/SPM/xRAPM ratings.
 ## Value Metrics Data Structures
 
 Two-path system: EPV (action-level) + PSV (box-score-level) →
-`panna_value`.
+`piero_value`.
 
 ### Per-Game EPV (`aggregate_player_game_epv()`)
 
@@ -673,8 +673,8 @@ Merges EPV + WPA + PSV into unified per-game output.
 | epv_total       | numeric   | EPV credit                      |
 | wpa_total       | numeric   | WPA credit                      |
 | psv             | numeric   | Player Stat Value               |
-| panna_value     | numeric   | **Combined: 50% EPV + 50% PSV** |
-| panna_value_p90 | numeric   | panna_value per 90              |
+| piero_value     | numeric   | **Combined: 50% EPV + 50% PSV** |
+| piero_value_p90 | numeric   | piero_value per 90              |
 
 ------------------------------------------------------------------------
 

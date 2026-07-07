@@ -37,12 +37,21 @@ A list with:
 
 - summary:
 
-  One-row data.table with season totals and per-90 rates
+  data.table of season totals and per-90 rates across EPV / WPA / PSV
+  metric families
 
-- game_log:
+- game_log_epv:
 
-  Per-game data.table (if available) with EPV/WPA/PSV per match
+  Per-game EPV data.table (or NULL if unavailable)
 
-- ratings:
+- game_log_wpa:
 
-  Named list: epr, psr, panna_value
+  Per-game WPA data.table (or NULL)
+
+- game_log_psv:
+
+  Per-game PSV data.table (or NULL)
+
+- epr:
+
+  EPR result (or NULL)

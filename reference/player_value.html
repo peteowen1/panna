@@ -78,14 +78,20 @@ the most recent available season.</p></dd>
 <dd><p>Matched player name</p></dd>
 
 <dt>summary</dt>
-<dd><p>One-row data.table with season totals and per-90 rates</p></dd>
+<dd><p>data.table of season totals and per-90 rates across
+EPV / WPA / PSV metric families</p></dd>
 
-<dt>game_log</dt>
-<dd><p>Per-game data.table (if available) with EPV/WPA/PSV
-per match</p></dd>
+<dt>game_log_epv</dt>
+<dd><p>Per-game EPV data.table (or NULL if unavailable)</p></dd>
 
-<dt>ratings</dt>
-<dd><p>Named list: epr, psr, panna_value</p></dd>
+<dt>game_log_wpa</dt>
+<dd><p>Per-game WPA data.table (or NULL)</p></dd>
+
+<dt>game_log_psv</dt>
+<dd><p>Per-game PSV data.table (or NULL)</p></dd>
+
+<dt>epr</dt>
+<dd><p>EPR result (or NULL)</p></dd>
 
 
 </dl></div>

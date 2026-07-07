@@ -1,7 +1,7 @@
 # Build unified player game ratings
 
 Merges per-game EPV, WPA, and PSV into a single data.table with one row
-per player per match. Computes a combined `panna_value` blending EPV and
+per player per match. Computes a combined `piero_value` blending EPV and
 PSV contributions.
 
 ## Usage
@@ -37,11 +37,11 @@ build_player_game_ratings(
 
 - epv_weight:
 
-  Weight for EPV in combined panna_value (default `PANNA_EPR_WEIGHT`).
+  Weight for EPV in combined piero_value (default `PANNA_EPR_WEIGHT`).
 
 - psv_weight:
 
-  Weight for PSV in combined panna_value (default `PANNA_PSR_WEIGHT`).
+  Weight for PSV in combined piero_value (default `PANNA_PSR_WEIGHT`).
 
 ## Value
 
@@ -84,11 +84,11 @@ A data.table with one row per player per match:
 
   Player Stat Value with O/D decomposition
 
-- panna_value:
+- piero_value:
 
   Combined: `epv_weight * epv_total_adj + psv_weight * psv` (falls back
   to `epv_total` if no adj columns).
 
-- panna_value_p90:
+- piero_value_p90:
 
   Combined per 90 minutes

@@ -250,12 +250,12 @@ Shootout detection, scoring, and WPA aggregation
 - [`aggregate_shootout_wpa()`](https://peteowen1.github.io/panna/reference/aggregate_shootout_wpa.md)
   : Aggregate shootout WPA per player across matches
 
-## EPR (Expected Points Rating)
+## EPR (Expected Possession Rating)
 
 Decay-weighted Bayesian EPV ratings
 
 - [`calculate_epr()`](https://peteowen1.github.io/panna/reference/calculate_epr.md)
-  : Calculate EPR (Expected Points Rating) from per-game EPV
+  : Calculate EPR (Expected Possession Rating) from per-game EPV
 - [`calculate_epr_batch()`](https://peteowen1.github.io/panna/reference/calculate_epr_batch.md)
   : Calculate EPR at multiple dates (batch version)
 - [`calculate_epr_regression()`](https://peteowen1.github.io/panna/reference/calculate_epr_regression.md)

@@ -1,4 +1,4 @@
-# Calculate EPR (Expected Points Rating) from per-game EPV
+# Calculate EPR (Expected Possession Rating) from per-game EPV
 
 For each player, applies exponential time-decay to their per-game EPV
 values and computes a Bayesian-shrunk rating estimate. Players with

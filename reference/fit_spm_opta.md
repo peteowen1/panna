@@ -1,7 +1,10 @@
 # Fit SPM model using Opta features
 
 Fits an elastic net model predicting RAPM from Opta box score
-statistics. Uses Opta-specific per-90 features for prediction.
+statistics. Feature selection is delegated to
+[`.spm_opta_predictor_cols()`](https://peteowen1.github.io/panna/reference/dot-spm_opta_predictor_cols.md)
+— the canonical Opta-SPM feature set shared with the XGBoost half of the
+blend.
 
 ## Usage
 
