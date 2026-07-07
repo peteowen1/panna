@@ -564,31 +564,6 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
 }
 
 
-#' Fit SPM model using Opta features
-#'
-#' Fits an elastic net model predicting RAPM from Opta box score statistics.
-#' Uses Opta-specific per-90 features for prediction.
-#'
-#' @param data Data frame from aggregate_opta_stats joined with RAPM ratings
-#' @param alpha Elastic net mixing (0=ridge, 1=lasso, default 0.5)
-#' @param nfolds Number of CV folds (default 10)
-#' @param weight_by_minutes Whether to weight by minutes (default TRUE)
-#' @param weight_transform Transform for weighting: "sqrt", "linear", "log"
-#'
-#' @return Fitted glmnet model with metadata
-#' @export
-#' @examples
-#' \dontrun{
-#' # Aggregate Opta stats
-#' opta_features <- aggregate_opta_stats(opta_stats)
-#'
-#' # Join with RAPM
-#' spm_data <- opta_features |>
-#'   inner_join(rapm_ratings |> select(player_id, rapm), by = "player_id")
-#'
-#' # Fit Opta SPM
-#' opta_spm <- fit_spm_opta(spm_data)
-#' }
 #' Canonical SPM-Opta predictor selection
 #'
 #' The ONE place the Opta SPM feature set is defined, shared by
@@ -631,6 +606,32 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
            intersect(c(xm_suffixed, success_cols, pos_cols), names(data))))
 }
 
+#' Fit SPM model using Opta features
+#'
+#' Fits an elastic net model predicting RAPM from Opta box score statistics.
+#' Feature selection is delegated to \code{.spm_opta_predictor_cols()} — the
+#' canonical Opta-SPM feature set shared with the XGBoost half of the blend.
+#'
+#' @param data Data frame from aggregate_opta_stats joined with RAPM ratings
+#' @param alpha Elastic net mixing (0=ridge, 1=lasso, default 0.5)
+#' @param nfolds Number of CV folds (default 10)
+#' @param weight_by_minutes Whether to weight by minutes (default TRUE)
+#' @param weight_transform Transform for weighting: "sqrt", "linear", "log"
+#'
+#' @return Fitted glmnet model with metadata
+#' @export
+#' @examples
+#' \dontrun{
+#' # Aggregate Opta stats
+#' opta_features <- aggregate_opta_stats(opta_stats)
+#'
+#' # Join with RAPM
+#' spm_data <- opta_features |>
+#'   inner_join(rapm_ratings |> select(player_id, rapm), by = "player_id")
+#'
+#' # Fit Opta SPM
+#' opta_spm <- fit_spm_opta(spm_data)
+#' }
 fit_spm_opta <- function(data, alpha = 0.5, nfolds = 10,
                           weight_by_minutes = TRUE, weight_transform = "sqrt") {
   predictor_cols <- .spm_opta_predictor_cols(data)

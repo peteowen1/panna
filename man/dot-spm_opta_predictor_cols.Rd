@@ -2,28 +2,35 @@
 % Please edit documentation in R/spm_opta.R
 \name{.spm_opta_predictor_cols}
 \alias{.spm_opta_predictor_cols}
-\title{Fit SPM model using Opta features}
+\title{Canonical SPM-Opta predictor selection}
 \usage{
 .spm_opta_predictor_cols(data)
 }
 \arguments{
 \item{data}{Data frame of candidate features}
-
-\item{alpha}{Elastic net mixing (0=ridge, 1=lasso, default 0.5)}
-
-\item{nfolds}{Number of CV folds (default 10)}
-
-\item{weight_by_minutes}{Whether to weight by minutes (default TRUE)}
-
-\item{weight_transform}{Transform for weighting: "sqrt", "linear", "log"}
 }
 \value{
-Fitted glmnet model with metadata
-
 Character vector of predictor column names present in \code{data}
 }
 \description{
-Fits an elastic net model predicting RAPM from Opta box score statistics.
-Uses Opta-specific per-90 features for prediction.
+The ONE place the Opta SPM feature set is defined, shared by
+\code{fit_spm_opta()} (glmnet half) and passed explicitly to
+\code{fit_spm_xgb()} by \code{05_spm.R} (XGBoost half) so the two halves
+of the shipped 50/50 blend can never train on divergent feature sets —
+the failure mode behind the "SPM was xG-blind" bug, where the enrichment
+join was dead code because the fit-time grep didn't match the joined
+column names.
+}
+\details{
+Selection: all per-90 rates, BOTH suffix spellings (\verb{_p90} box-score,
+\verb{_per90} xMetrics model outputs) + the \verb{_xmetrics}-suffixed pair + the
+kept efficiency ratios + position dummies. The ratios with a direct
+above-expected replacement were REMOVED (mirrors the PSR/PSV redesign,
+panna#116): duel/aerial/tackle success -> the five *_woe_per90 counts;
+goals_per_shot / big_chance_conversion / headed_goal_rate /
+ibox/obox_goal_rate / penalty_conversion -> the finishing over-performance
+family (scale-free ratios discard volume: 1/1 == 10/10). Ratios WITHOUT a
+modeled replacement (zone pass accuracies, bad touches, 50/50s, possession
+control) are kept.
 }
 \keyword{internal}
