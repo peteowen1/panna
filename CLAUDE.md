@@ -726,13 +726,20 @@ metrics. Shared fixtures in `helper-fixtures.R`. Uses testthat edition
   `.compute_denominator()` needs for efficiency-ratio stats, since those
   aren’t in the “obvious” stat-column set) and verify old-vs-narrowed
   output is byte-identical before deploying, not just by code review.
-  Diagnostic method that actually worked: add a cheap RSS-logging
-  checkpoint at every suspected boundary, redeploy to GHA, read the log,
-  narrow the search window, repeat — reasoning about data.table
-  internals from first principles produced two confidently-wrong
-  theories (stale `.internal.selfref` after
-  [`readRDS()`](https://rdrr.io/r/base/readRDS.html); 300× duplicate
-  remote-fetch calls) before the log evidence forced the real answer.
+  Second confirmed site: the predictions pipeline’s
+  `02b_team_skill_features.R` per-season skill loop OOMed the same way
+  once \#127’s full-sync grew `01_match_stats.rds` ~1.2M→1.9M rows
+  (predictions-pipeline failures 2026-07-05/06) — narrowed with the same
+  [`.compute_snapshot_loop_columns()`](https://peteowen1.github.io/panna/reference/dot-compute_snapshot_loop_columns.md)
+  helper. When a shared cache grows, audit EVERY pipeline that loops
+  over it, not just the one that crashed first. Diagnostic method that
+  actually worked: add a cheap RSS-logging checkpoint at every suspected
+  boundary, redeploy to GHA, read the log, narrow the search window,
+  repeat — reasoning about data.table internals from first principles
+  produced two confidently-wrong theories (stale `.internal.selfref`
+  after [`readRDS()`](https://rdrr.io/r/base/readRDS.html); 300×
+  duplicate remote-fetch calls) before the log evidence forced the real
+  answer.
 - **`git diff main...HEAD` (or any review tool that shells out to it)
   silently uses your LOCAL `main` branch ref, which can be arbitrarily
   stale even if `origin/main` is current.** A local `main` left 252
