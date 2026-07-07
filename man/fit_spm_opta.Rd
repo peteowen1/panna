@@ -28,7 +28,8 @@ Fitted glmnet model with metadata
 }
 \description{
 Fits an elastic net model predicting RAPM from Opta box score statistics.
-Uses Opta-specific per-90 features for prediction.
+Feature selection is delegated to \code{.spm_opta_predictor_cols()} — the
+canonical Opta-SPM feature set shared with the XGBoost half of the blend.
 }
 \examples{
 \dontrun{

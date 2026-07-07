@@ -21,10 +21,10 @@ Optional; WPA columns are NA if not provided.}
 \item{player_game_psv}{Per-game PSV from \code{\link{calculate_psv_components}}.
 Optional; PSV columns are NA if not provided.}
 
-\item{epv_weight}{Weight for EPV in combined panna_value (default
+\item{epv_weight}{Weight for EPV in combined piero_value (default
 \code{PANNA_EPR_WEIGHT}).}
 
-\item{psv_weight}{Weight for PSV in combined panna_value (default
+\item{psv_weight}{Weight for PSV in combined piero_value (default
 \code{PANNA_PSR_WEIGHT}).}
 }
 \value{
@@ -41,13 +41,13 @@ includes the opponent-strength adjustment.}
 \item{wpa_total, wpa_as_actor, wpa_as_receiver}{WPA components}
 \item{wpa_p90}{WPA per 90 minutes}
 \item{psv, osv, dsv}{Player Stat Value with O/D decomposition}
-\item{panna_value}{Combined: \code{epv_weight * epv_total_adj +
+\item{piero_value}{Combined: \code{epv_weight * epv_total_adj +
       psv_weight * psv} (falls back to \code{epv_total} if no adj columns).}
-\item{panna_value_p90}{Combined per 90 minutes}
+\item{piero_value_p90}{Combined per 90 minutes}
 }
 }
 \description{
 Merges per-game EPV, WPA, and PSV into a single data.table with one row
-per player per match. Computes a combined \code{panna_value} blending
+per player per match. Computes a combined \code{piero_value} blending
 EPV and PSV contributions.
 }

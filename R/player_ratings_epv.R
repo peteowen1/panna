@@ -1,4 +1,4 @@
-# EPR: Expected Points Rating from EPV
+# EPR: Expected Possession Rating from EPV
 # ======================================
 # Bayesian-shrinkage rating that smooths per-game EPV values with exponential
 # decay weighting to predict next-match EPV contribution.
@@ -43,7 +43,7 @@ EPR_LEAGUE_TIERS <- list(
 # Core EPR calculation
 # ============================================================================
 
-#' Calculate EPR (Expected Points Rating) from per-game EPV
+#' Calculate EPR (Expected Possession Rating) from per-game EPV
 #'
 #' For each player, applies exponential time-decay to their per-game EPV
 #' values and computes a Bayesian-shrunk rating estimate. Players with

@@ -786,9 +786,14 @@ fit_spm_xgb <- function(data, predictor_cols = NULL, nfolds = 10,
     cli::cli_abort("Package {.pkg xgboost} is required. Install with: {.code install.packages('xgboost')}")
   }
 
-  # Default predictors: per-90 stats
+  # Default predictors: per-90 stats — BOTH suffix spellings (`_p90` box-score,
+  # `_per90` xMetrics), matching fit_spm_opta's detector. The old `_p90$`-only
+  # default left the XGBoost half of the 50/50 SPM blend xMetrics-blind even
+  # after the glmnet half was fixed (panna 2026-07-07 review finding). NB
+  # 05_spm.R now passes predictor_cols explicitly for exact glmnet/xgb parity;
+  # this default is the safety net for other callers.
   if (is.null(predictor_cols)) {
-    predictor_cols <- names(data)[grepl("_p90$", names(data))]
+    predictor_cols <- names(data)[grepl("_p90$|_per90$", names(data))]
     if (length(predictor_cols) == 0) {
       predictor_cols <- names(data)[grepl("_p100$", names(data))]
     }

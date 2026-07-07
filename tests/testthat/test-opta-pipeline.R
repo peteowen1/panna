@@ -342,6 +342,48 @@ test_that("fit_spm_opta fits model with correct features", {
   expect_gt(p90_features, 0)
 })
 
+test_that("fit_spm_opta includes _per90 xMetrics features and excludes replaced ratios", {
+  # Regression for the "SPM was xG-blind" bug (2026-07-07): the predictor grep
+  # was `_p90$`-only, so joined `_per90` xMetrics columns were listed in logs
+  # but never trained on. Guard: (a) _per90 columns enter predictor_cols,
+  # (b) removed conversion/duel ratios stay out, (c) NA _per90 values are
+  # imputed (not silently row-dropped by complete.cases).
+  set.seed(42)
+  n <- 60
+  mock_data <- data.frame(
+    player_id = paste0("p", 1:n),
+    total_minutes = runif(n, 500, 3000),
+    goals_p90 = runif(n, 0, 0.8),
+    shots_p90 = runif(n, 0, 4),
+    tackles_p90 = runif(n, 0, 4),
+    # xMetrics-style _per90 features, one with NAs (partial coverage)
+    xg_per90 = runif(n, 0, 0.7),
+    aerial_woe_per90 = c(rnorm(n - 10, 0, 0.3), rep(NA_real_, 10)),
+    xa_per90_xmetrics = runif(n, 0, 0.4),
+    # Replaced ratios — must NOT be selected
+    goals_per_shot = runif(n, 0, 0.5),
+    tackle_success = runif(n, 0.3, 0.8),
+    aerial_success = runif(n, 0.3, 0.8),
+    big_chance_conversion = runif(n, 0, 1),
+    # Kept ratio — must be selected
+    pass_accuracy = runif(n, 0.6, 0.9),
+    rapm = rnorm(n, 0, 0.5),
+    stringsAsFactors = FALSE
+  )
+  mock_data$rapm <- mock_data$rapm + 0.5 * scale(mock_data$xg_per90)
+
+  cols <- .spm_opta_predictor_cols(mock_data)
+  expect_true(all(c("xg_per90", "aerial_woe_per90", "xa_per90_xmetrics",
+                    "pass_accuracy") %in% cols))
+  expect_false(any(c("goals_per_shot", "tackle_success", "aerial_success",
+                     "big_chance_conversion") %in% cols))
+
+  model <- suppressMessages(fit_spm_opta(mock_data, nfolds = 3))
+  expect_setequal(model$panna_metadata$predictor_cols, cols)
+  # NA _per90 rows imputed, not dropped: all n players trained
+  expect_equal(model$panna_metadata$n_observations, n)
+})
+
 # ============================================================================
 # COUNT HELPER FUNCTION TESTS
 # ============================================================================

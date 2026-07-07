@@ -14,7 +14,7 @@
 #   EPV : SPADL → EPV model → credit assignment → aggregate_player_game_epv()
 #   WPA : SPADL → WP model  → credit assignment → aggregate_player_game_wpa()
 #   PSV : match stats → compute_player_psv()
-#   Merged via build_player_game_ratings() → panna_value (50/50 EPV + PSV)
+#   Merged via build_player_game_ratings() → piero_value (50/50 EPV + PSV)
 
 # 1. Configuration ----
 
@@ -187,7 +187,7 @@ skip_league_cond <- function(reason) {
 # schema before we ship a malformed parquet to the blog.
 .required_game_log_cols <- c(
   "player_id", "team_id", "match_id",
-  "minutes_played", "panna_value", "panna_value_p90"
+  "minutes_played", "piero_value", "piero_value_p90"
 )
 
 validate_game_log_schema <- function(dt, league, season) {
@@ -623,7 +623,7 @@ validate_game_log_schema <- function(dt, league, season) {
   # Rename columns to match blog expectations
   data.table::setnames(
     game_logs,
-    old = c("panna_value", "epv_offensive", "epv_defensive", "minutes_played"),
+    old = c("piero_value", "epv_offensive", "epv_defensive", "minutes_played"),
     new = c("panna", "offense", "defense", "total_minutes"),
     skip_absent = TRUE
   )
@@ -662,7 +662,7 @@ validate_game_log_schema <- function(dt, league, season) {
       "wpa_total", "wpa_as_actor", "wpa_as_receiver",
       "psv", "osv", "dsv",
       "goals_minus_xgot", "placement_added", "xgot",
-      "panna_value_p90"),
+      "piero_value_p90"),
     names(game_logs)
   )
   game_logs <- game_logs[, ..blog_cols]
@@ -685,6 +685,14 @@ validate_game_log_schema <- function(dt, league, season) {
     # Release arrow's memory-mapped file handle before we overwrite the same
     # path — Windows error 1224 ("user-mapped section open") otherwise.
     gc()
+    # Transition shim (2026-07-07 panna_value -> piero_value rename): a
+    # pre-rename per-season parquet carries panna_value_p90; without the
+    # rename the rbindlist(fill=TRUE) below would ship BOTH columns each
+    # half-NA (mixed schema) instead of one complete piero_value_p90.
+    if ("panna_value_p90" %in% names(existing) &&
+        !"piero_value_p90" %in% names(existing)) {
+      data.table::setnames(existing, "panna_value_p90", "piero_value_p90")
+    }
     rebuilt <- unique(game_logs$league)
     kept <- existing[!league %in% rebuilt]
     n_kept <- nrow(kept)

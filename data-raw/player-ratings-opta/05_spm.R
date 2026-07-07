@@ -61,7 +61,33 @@ if (use_xmetrics_features && !is.null(opta_xmetrics)) {
   xmetrics <- opta_xmetrics
   cat("xMetrics rows:", nrow(xmetrics), "\n")
 
-  # Aggregate xMetrics to player level (may span multiple seasons)
+  # Above-expected totals to carry alongside xg/npxg/xa (SPM modernization,
+  # mirrors the PSR/PSV feature redesign): the five duel WOE counts, finishing
+  # over-performance, placement skill, keeper GSAA. Intersected with what this
+  # xmetrics vintage actually carries — older opta_xmetrics.parquet builds
+  # (pre duel-WOE integration) lack them, and the enrichment degrades to the
+  # original xg/npxg/xa/xpass set.
+  xm_extra_totals <- intersect(
+    c("aerial_woe", "aerial_poss_woe", "takeon_woe",
+      "tackle_poss_woe", "containment_woe",
+      "npg_minus_npxg", "ibox_g_minus_xg", "obox_g_minus_xg",
+      "placement_added", "gsaa"),
+    names(xmetrics)
+  )
+  if (length(xm_extra_totals) > 0) {
+    cat(sprintf("  Above-expected totals present: %s\n",
+                paste(xm_extra_totals, collapse = ", ")))
+  } else {
+    cat("  NOTE: no above-expected columns in this opta_xmetrics vintage — refresh via epv-pipeline xmetrics_only\n")
+  }
+
+  # Aggregate xMetrics to player level (may span multiple seasons).
+  # For the above-expected columns, the per-90 denominator is the player's
+  # COVERED minutes (season-rows where that column is non-NA), not all
+  # xmetrics minutes — older vintages/leagues lack the columns after the
+  # rbindlist fill, and an all-minutes denominator would dilute a 10-season
+  # veteran with 2 covered seasons ~5x toward 0 (2026-07-07 review finding).
+  # xg/npxg/xa don't need this: uncovered seasons have no xmetrics row at all.
   xmetrics_agg <- xmetrics %>%
     group_by(player_id) %>%
     summarise(
@@ -70,6 +96,10 @@ if (use_xmetrics_features && !is.null(opta_xmetrics)) {
       xa_total = sum(xa, na.rm = TRUE),
       xmetrics_minutes = sum(minutes, na.rm = TRUE),
       xpass_overperformance_total = sum(xpass_overperformance, na.rm = TRUE),
+      across(all_of(xm_extra_totals), ~ sum(.x, na.rm = TRUE),
+             .names = "{.col}_total"),
+      across(all_of(xm_extra_totals), ~ sum(minutes[!is.na(.x)], na.rm = TRUE),
+             .names = "{.col}_covmins"),
       .groups = "drop"
     ) %>%
     filter(xmetrics_minutes > 0) %>%
@@ -79,18 +109,30 @@ if (use_xmetrics_features && !is.null(opta_xmetrics)) {
       xa_per90_xmetrics = xa_total / xmetrics_minutes * 90,
       xpass_overperformance_per90_xmetrics = xpass_overperformance_total / xmetrics_minutes * 90
     )
+  for (tot in xm_extra_totals) {
+    covmins <- xmetrics_agg[[paste0(tot, "_covmins")]]
+    xmetrics_agg[[paste0(tot, "_per90")]] <-
+      ifelse(covmins > 0,
+             xmetrics_agg[[paste0(tot, "_total")]] / covmins * 90,
+             0)  # zero coverage -> population mean (0 for above-expected)
+  }
 
-  # Join to player_stats
+  # Join to player_stats. recycle0 makes paste0 propagate zero-length inputs
+  # (default paste0(character(0), x) returns x — the bogus-column-name trap).
+  xm_cols <- c("xg_per90", "npxg_per90", "xa_per90_xmetrics",
+               "xpass_overperformance_per90_xmetrics",
+               paste0(xm_extra_totals, "_per90", recycle0 = TRUE))
   before_cols <- ncol(player_stats)
   player_stats <- player_stats %>%
     left_join(
-      xmetrics_agg %>% select(player_id, xg_per90, npxg_per90,
-                               xa_per90_xmetrics, xpass_overperformance_per90_xmetrics),
+      xmetrics_agg %>% select(all_of(c("player_id", xm_cols))),
       by = "player_id"
     )
 
-  # Fill NAs with 0 for players without xMetrics (no SPADL data = no modeled output)
-  xm_cols <- c("xg_per90", "npxg_per90", "xa_per90_xmetrics", "xpass_overperformance_per90_xmetrics")
+  # Fill NAs with 0 for players without xMetrics. For xg/npxg/xa this means
+  # "no SPADL coverage = no modeled volume"; for the above-expected columns 0
+  # IS the population mean (they're mean-zero by construction), so 0 = an
+  # average player — a meaningful imputation, not a silent constant fallback.
   n_imputed <- sum(rowSums(is.na(player_stats[, xm_cols, drop = FALSE])) > 0)
   for (col in xm_cols) {
     player_stats[[col]][is.na(player_stats[[col]])] <- 0
@@ -177,6 +219,10 @@ spm_glmnet <- fit_spm_opta(
 cat("\n=== Fitting XGBoost SPM ===\n")
 spm_xgb <- fit_spm_xgb(
   spm_train_data,
+  # Exact feature parity with the glmnet half: fit_spm_xgb's own default grep
+  # was `_p90$`-only, which kept the XGB half of the 50/50 blend xMetrics-blind
+  # even after fit_spm_opta's detector was fixed (2026-07-07 review finding).
+  predictor_cols = panna:::.spm_opta_predictor_cols(spm_train_data),
   nfolds = 5,          # panna#87: 10 -> 5
   max_depth = 4,
   eta = 0.02,
@@ -270,25 +316,34 @@ offense_cols <- c(
   "was_fouled_p90", "penalty_won_p90",
   # Touch quality
   "unsuccessful_touch_p90", "overrun_p90",
-  # Efficiency
-  "shot_accuracy", "goals_per_shot", "big_chance_conversion",
+  # Efficiency (conversion ratios with above-expected replacements removed
+  # 2026-07-07 — see the xMetrics block below; volume-blind ratios rewarded
+  # 1/1 == 10/10)
+  "shot_accuracy",
   "fwd_zone_pass_accuracy", "open_play_pass_accuracy",
   "crosses_open_play_accuracy",
   # Round 2: shot location and penalties
   "att_ibox_goal_p90", "att_obox_goal_p90",
   "att_ibox_target_p90", "att_obox_target_p90",
   "hit_woodwork_p90", "att_pen_goal_p90",
-  "ibox_goal_rate", "penalty_conversion",
   # Round 2: passing detail
   "chipped_pass_p90", "chipped_pass_accuracy",
   # Round 2: foot preference
   "att_rf_total_p90", "att_lf_total_p90"
 )
 
-# Add xMetrics offense features if available
+# Add xMetrics offense features if available — includes the above-expected
+# replacements for the removed conversion ratios (finishing over-performance,
+# placement, offensive duel WOE); intersect keeps this schema-defensive for
+# older xmetrics vintages.
 if ("xg_per90" %in% names(spm_train_data)) {
   offense_cols <- c(offense_cols, "xg_per90", "npxg_per90", "xa_per90_xmetrics")
 }
+offense_cols <- c(offense_cols, intersect(
+  c("npg_minus_npxg_per90", "ibox_g_minus_xg_per90", "obox_g_minus_xg_per90",
+    "placement_added_per90", "takeon_woe_per90", "aerial_woe_per90"),
+  names(spm_train_data)
+))
 
 # Add chain features to offense if available
 chain_offense <- c("chains_p90", "chain_shot_pct", "chain_goal_pct",
@@ -347,9 +402,8 @@ defense_cols <- c(
   "error_lead_to_shot_p90", "error_lead_to_goal_p90", "errors_total_p90",
   # Touch quality
   "unsuccessful_touch_p90",
-  # Efficiency
-  "tackle_success", "aerial_success",
-  # Round 2: possession control and duels
+  # Round 2: possession control and duels (tackle_success/aerial_success
+  # removed 2026-07-07 — replaced by the defensive WOE counts below)
   "poss_lost_ctrl_p90", "poss_lost_ctrl_per_touch",
   "fifty_fifty_p90", "fifty_fifty_won_p90", "fifty_fifty_success",
   # Round 2: penalty conceded
@@ -359,6 +413,14 @@ defense_cols <- c(
   # Round 2: long pass own-to-opp
   "long_pass_own_to_opp_p90", "long_pass_own_to_opp_accuracy"
 )
+
+# Above-expected defensive replacements (schema-defensive for older vintages):
+# tackle/containment/aerial WOE + keeper GSAA.
+defense_cols <- c(defense_cols, intersect(
+  c("tackle_poss_woe_per90", "containment_woe_per90",
+    "aerial_woe_per90", "aerial_poss_woe_per90", "gsaa_per90"),
+  names(spm_train_data)
+))
 
 # Add chain features to defense if available (chain starts reflect build-up from back)
 chain_defense <- c("chains_p90", "chain_starts_p90", "avg_actions_per_chain")
@@ -386,7 +448,9 @@ defense_good_features <- c(
   "last_man_tackle_p90", "six_yard_block_p90", "clearance_off_line_p90",
   "aerial_won_p90",
   "ball_recovery_p90", "poss_won_def3rd_p90", "poss_won_mid3rd_p90",
-  "tackle_success", "aerial_success",
+  # Above-expected defensive counts (replaced tackle_success/aerial_success)
+  "tackle_poss_woe_per90", "containment_woe_per90",
+  "aerial_woe_per90", "aerial_poss_woe_per90", "gsaa_per90",
   "fifty_fifty_won_p90", "fifty_fifty_success",
   "back_zone_pass_accuracy"
 )
@@ -551,7 +615,11 @@ if (use_multi_target && file.exists(multi_rapm_path)) {
 
       # Fit SPM
       spm_model <- fit_spm_opta(spm_data)
-      spm_ratings <- calculate_spm_ratings(spm_model, player_stats)
+      # Args are (player_features, spm_model) — they were REVERSED here since
+      # inception, so every per-target call threw inside the tryCatch and
+      # 05_spm_multi.rds was silently never written (2026-07-07 review
+      # finding; compare the correct call in the base-SPM section).
+      spm_ratings <- calculate_spm_ratings(player_stats, spm_model)
 
       multi_spm_results[[tgt]] <- list(
         model = spm_model,

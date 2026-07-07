@@ -665,8 +665,8 @@ utils::globalVariables(c(
   "epv_defensive_adj",
 
   # Unified player game ratings
-  "panna_value",
-  "panna_value_p90",
+  "piero_value",
+  "piero_value_p90",
 
   # stat_rating columns
   "ci_alpha",
