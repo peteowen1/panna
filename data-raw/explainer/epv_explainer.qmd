@@ -1,0 +1,550 @@
+---
+title: "How the panna EPV model works"
+subtitle: "From raw football events to 'who actually added value?'"
+author: "Pete Owen"
+date: today
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    code-fold: true
+    code-summary: "Show the code"
+    theme: cosmo
+    fig-width: 9
+    fig-height: 5.5
+    embed-resources: true
+execute:
+  warning: false
+  message: false
+---
+
+::: {.callout-note}
+## The one-paragraph version
+
+Every moment a team has the ball is worth something — a throw-in deep in your
+own half is worth almost nothing, the ball at a striker's feet in the box is
+worth a lot. **EPV (Expected Possession Value)** puts a number on that worth at
+every instant, using a machine-learning model trained on millions of actions.
+Every pass, dribble, duel and shot *changes* that number, and the change is
+credited to the players involved. Sum the credits over a season and you get a
+measure of who actually adds value — and *how* they add it.
+:::
+
+```{mermaid}
+%%| fig-cap: "The pipeline at a glance."
+flowchart LR
+  A["Opta event feeds<br/>(daily scrape)"] --> B["SPADL actions<br/>(standardised language)"]
+  B --> C["Possession chains<br/>+ outcome labels"]
+  C --> D["XGBoost EPV model<br/>(value every action)"]
+  D --> E["Credit assignment<br/>(who caused the change?)"]
+  E --> F["Player value profiles<br/>(season aggregates)"]
+```
+
+```{r}
+#| label: setup
+#| output: false
+devtools::load_all("../..", quiet = TRUE)   # the panna package
+suppressPackageStartupMessages({
+  library(data.table)
+  library(ggplot2)
+})
+theme_set(theme_minimal(base_size = 12))
+
+# One real match, frozen as a test fixture: West Ham 3-0 Leeds, 2026-05-24
+fixtures <- "../../tests/testthat/fixtures"
+events  <- as.data.table(arrow::read_parquet(file.path(fixtures, "opta_match_events_epl.parquet")))
+labeled <- as.data.table(arrow::read_parquet(file.path(fixtures, "spadl_labeled_epl.parquet")))
+```
+
+# Step 1 — The raw data
+
+Everything starts with **Opta event feeds**: a row for every touch in a match,
+with a type code, pitch coordinates, an outcome flag and a timestamp. A scraper
+runs every morning on GitHub Actions, pulls the latest matches for ~100
+competitions and publishes them as parquet files. One Premier League season is
+roughly **650,000 events across 380 matches**.
+
+This whole document uses a single real match — **West Ham 3–0 Leeds
+(24 May 2026)** — which arrives as `r nrow(events)` raw event rows.
+Here is what the machine actually sees (these rows are West Ham's first goal):
+
+```{r}
+#| label: tbl-raw
+#| tbl-cap: "Raw Opta events around a goal. type_id 16 = goal, 1 = pass."
+goal_idx <- which(events$type_id == 16)[1]
+knitr::kable(
+  events[(goal_idx - 3):goal_idx,
+         .(type_id, minute, second, player_name, x, y, outcome)],
+  digits = 1
+)
+```
+
+Cryptic type codes, coordinates as percentages, no sense of what an action *led
+to*. Not something you can model directly — first it needs a common language.
+
+One quirk worth knowing before any pitch plot: coordinates run 0–100 as
+percentages of the pitch, and they are **team-relative** — every team's actions
+are recorded as if attacking toward x = 100. You can see it in the table above:
+the defender's clearance sits at x ≈ 5 while the attacker's pass next to it is
+at x ≈ 95 — the *same patch of grass*, described from two perspectives. It also
+means every pitch plot in this document reads left → right no matter who has
+the ball.
+
+# Step 2 — A standard language for actions (SPADL)
+
+We convert raw events to **SPADL** (Soccer Player Action Description Language):
+one row per *deliberate on-ball action*, with a readable action type, start and
+end coordinates, the result, and who was involved — including the opponent in
+duels. Referee bookkeeping (cards, subs, stoppages) is filtered out, and the
+two halves of a contested duel are merged into a single winner-vs-loser row.
+
+```{r}
+#| label: tbl-spadl
+#| tbl-cap: "The same goal, now as SPADL actions. The last column is the target the model will learn (more in Step 3): the xG of the next shot in the half, signed + if your own team takes it, − if the opponent does."
+spadl_cols <- c("action_id", "time_seconds", "player_name", "action_type",
+                "start_x", "start_y", "end_x", "end_y", "result", "bodypart",
+                "next_xg_label")
+goal_action <- labeled[action_type == "shot" & result == "success"][1]
+knitr::kable(
+  labeled[action_id %between% c(goal_action$action_id - 3, goal_action$action_id),
+          ..spadl_cols],
+  digits = c(0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 3)
+)
+```
+
+Notice the sign of `next_xg_label` flipping between the two teams' actions in
+the build-up: the same upcoming shot is *good news* for one side and *bad news*
+for the other.
+
+The `r nrow(events)` raw events become `r nrow(labeled)` SPADL actions.
+Actions are then grouped into **possession chains** — an unbroken spell of one
+team having the ball, which ends when the ball is turned over, goes out of
+play, or someone shoots. This match had `r uniqueN(labeled$chain_id)` chains, of
+which `r uniqueN(labeled[chain_outcome == "goal"]$chain_id)` ended in a goal
+(it finished 3–0, so that's a good sign).
+
+```{r}
+#| label: fig-chain
+#| fig-cap: "Each numbered label is one action in the chain: who did it and what it was. Arrows show where the ball travelled; everything attacks left to right."
+goal_chains <- labeled[chain_outcome == "goal", .N, by = chain_id][order(-N)]
+best_chain <- goal_chains$chain_id[1]
+
+chain_steps <- labeled[chain_id == best_chain][order(action_id)]
+chain_steps[, step := .I]
+chain_steps[, minute := floor(time_seconds / 60) + fifelse(period_id == 2L, 45L, 0L)]
+scorer <- chain_steps[.N, player_name]
+
+plot_chain(labeled, target_match_id = labeled$match_id[1],
+           target_chain_id = best_chain) +
+  ggrepel::geom_text_repel(
+    data = chain_steps,
+    aes(start_x, start_y,
+        label = sprintf("%d. %s\n%s", step, player_name, action_type)),
+    size = 3.2, fontface = "bold", lineheight = 0.95,
+    box.padding = 0.7, point.padding = 0.4,
+    min.segment.length = 0, seed = 42
+  ) +
+  labs(
+    title = sprintf("West Ham's goal, finished by %s (%d′)",
+                    scorer, chain_steps[.N, minute]),
+    subtitle = sprintf(
+      "One possession chain: %d actions from winning the ball to scoring",
+      nrow(chain_steps))
+  )
+```
+
+# Step 3 — Putting a value on every action
+
+Here is the core idea. For every action we ask the model:
+
+> *Given where the ball is, what just happened, and how much time is left —
+> how much shot danger is coming next, and for which team?*
+
+Formally, the **target** the model learns is the expected-goals (xG) value of
+the **next shot in the half**, signed: positive if your team takes it, negative
+if the opponent does, zero if nobody shoots again. Because xG is a probability,
+the target lives between **−1 and +1** — though in practice the extremes are
+unreachable (a penalty is ~0.79, the very best chances ~0.9) and most actions
+sit near zero. Train that on millions of actions and the prediction becomes
+the EPV: the value of possession *right now*.
+
+The unit, throughout everything that follows, is **goals**. A typical action
+carries an EPV of about 0.02 — two hundredths of a goal of upcoming shot
+danger — while possession in the heart of the box is worth 0.2–0.3. The
+*changes* are smaller still: even an excellent line-breaking pass adds a few
+hundredths of a goal. That's the right intuition for this whole framework —
+single actions are tiny, and players separate themselves by stacking thousands
+of them.
+
+```{r}
+#| label: epv-calc
+#| output: false
+epv_model   <- load_epv_model()
+xg_model    <- load_xg_model()
+xpass_model <- load_xpass_model()
+
+valued   <- calculate_action_epv(labeled, epv_model = epv_model,
+                                 xg_model = xg_model, league = "EPL")
+credited <- as.data.table(assign_epv_credit(valued, xpass_model = xpass_model))
+```
+
+```{r}
+#| label: fig-epv-pitch
+#| fig-cap: "Every action in the match, coloured by its EPV. Value is low everywhere except the final third — and explodes near the box."
+pitch_dt <- credited[!is.na(epv)]
+draw_pitch() +
+  geom_point(data = pitch_dt,
+             aes(x = start_x, y = start_y, colour = pmin(epv, 0.3)),
+             size = 1.6, alpha = 0.7) +
+  scale_colour_viridis_c(option = "inferno", name = "EPV") +
+  labs(title = "Where is possession worth something?",
+       subtitle = "All actions attack left → right")
+```
+
+What the model cares about is not the value itself but the **change** each
+action causes — `epv_delta`. A pass that breaks a defensive line jumps the EPV
+up; a sloppy touch that leads to a turnover sends it negative. Watch the value
+climb through the goal chain from @fig-chain:
+
+```{r}
+#| label: fig-epv-timeline
+#| fig-cap: "EPV through the goal chain: each action moves the number until the shot cashes it in."
+chain_dt <- credited[chain_id == best_chain][order(action_id)]
+chain_dt[, step := .I]
+ggplot(chain_dt, aes(step, epv)) +
+  geom_step(linewidth = 0.9, colour = "grey40") +
+  geom_point(aes(colour = action_type), size = 3) +
+  geom_text(aes(label = player_name), angle = 35, hjust = -0.05,
+            vjust = -0.6, size = 3) +
+  scale_x_continuous(breaks = chain_dt$step, labels = chain_dt$action_type,
+                     expand = expansion(mult = c(0.05, 0.18))) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.25))) +
+  labs(x = NULL, y = "EPV (expected next-shot xG, signed)") +
+  theme(axis.text.x = element_text(angle = 35, hjust = 1),
+        legend.position = "none")
+```
+
+# The model itself
+
+There is deliberately no deep learning here — the model is an **XGBoost
+gradient-boosted tree regressor**, trained on ~5 million actions sampled across
+every league we rate. It sees 15 features per action:
+
+```{r}
+#| label: tbl-features
+#| tbl-cap: "The 15 features the EPV model sees for every action."
+features <- data.frame(
+  Feature = c("start_x, start_y", "distance_to_goal", "angle_to_goal",
+              "dx, dy", "time_remaining", "prev_x, prev_y",
+              "prev_dx, prev_dy", "same_team_prev", "action_cat",
+              "result_success", "league_id"),
+  `Plain English` = c(
+    "Where on the pitch the action starts",
+    "How far from the goal",
+    "How wide the goal looks from here",
+    "How far the ball travels (direction matters)",
+    "Seconds left in the half",
+    "Where the previous action happened",
+    "How the previous action moved the ball",
+    "Did my team also have the previous touch?",
+    "What kind of action this is (pass / dribble / shot / ...)",
+    "Did the action succeed?",
+    "Which league we are in (a Premier League box touch ≠ a League Two one)"
+  ),
+  check.names = FALSE
+)
+knitr::kable(features)
+```
+
+And what it actually leans on, from the trained model:
+
+```{r}
+#| label: fig-importance
+#| fig-cap: "Feature importance from the production model: location dominates, exactly as football intuition says it should."
+imp <- xgboost::xgb.importance(model = epv_model$model)
+ggplot(as.data.table(imp)[order(Gain)][, Feature := factor(Feature, levels = Feature)],
+       aes(Gain, Feature)) +
+  geom_col(fill = "#2c7fb8") +
+  labs(x = "Share of model gain", y = NULL)
+```
+
+::: {.callout-tip}
+## Why "next shot xG" and not "next goal"?
+
+Goals are rare (about 3 per match) and noisy — a model trained on them mostly
+learns luck. Shots happen ~25 times a match and their xG is a well-calibrated
+danger measure, so the signal per action is ~10x richer. This is the same trick
+the analytics community uses everywhere: model the *process*, not the outcome.
+:::
+
+::: {.callout-important}
+## Isn't `result_success` cheating? (the leakage question)
+
+Seeing the *outcome* of an action in the feature list looks suspicious — isn't
+that information from the future? It isn't, because of the order things happen
+in. Leakage means using information that arrives **after the thing you're
+predicting**. Here the timeline is:
+
+> action happens → **its result resolves** → ... play continues ... →
+> **the next shot** (the target)
+
+The result of the current action is settled *before* the target exists, so the
+model is allowed to know it. What it's really doing is defining the game state
+properly: a pass *completed* into the box and the same pass *intercepted* are
+two completely different situations, and the EPV must differ — that difference
+is exactly what generates the negative `epv_delta` that blames the player who
+lost the ball. Strip the result out and a turnover would look identical to a
+line-breaking pass, and credit assignment would fall apart. (This is the same
+design as the academic VAEP framework, which values the state *after* each
+action.)
+
+What **would** be leakage: features like "did this possession chain end in a
+goal" or anything derived from the next shot itself — those live on the label
+side of the data and never enter the feature matrix. One related subtlety:
+shots don't even use the model's prediction — a shot's EPV is set directly to
+its xG, so the model never gets to peek at whether a shot became a goal.
+:::
+
+# Step 4 — Giving the value to players
+
+An EPV change has to be *earned by someone*. There are four credit rules, and
+each one is below, caught in the act in this match — the row marked **→** is
+the action the rule applies to, with the action before and after for context.
+
+```{r}
+#| label: credit-helper
+# Show an action with its neighbours, numeric columns rounded
+show_window <- function(idx, cols) {
+  rows <- seq(max(idx - 1L, 1L), min(idx + 1L, nrow(credited)))
+  win <- credited[rows, ..cols]
+  num <- names(win)[vapply(win, is.numeric, logical(1))]
+  win[, (num) := lapply(.SD, round, 3), .SDcols = num]
+  win[, ` ` := data.table::fifelse(rows == idx, "→", "")]
+  data.table::setcolorder(win, " ")
+  win
+}
+```
+
+**Normal actions** — the acting player simply keeps the full `epv_delta` their
+action caused. Here, the match's most valuable completed pass:
+
+```{r}
+#| label: tbl-credit-normal
+#| tbl-cap: "player_credit equals epv_delta — nothing to share."
+cand <- credited[, which(action_type == "pass" & result == "success" &
+                           possession_change == FALSE & !is.na(epv_delta))]
+i_normal <- cand[which.max(credited$epv_delta[cand])]
+knitr::kable(show_window(i_normal,
+  c("player_name", "action_type", "result", "epv", "epv_delta", "player_credit")))
+```
+
+**Turnovers** — when possession flips, the `epv_delta` is negative for the team
+that had the ball. Blame is split: half to the player who lost it
+(`player_credit`), and the mirror image to the opponent who won it
+(`receiver_credit`). Why exactly half? Because event data can't tell us whether
+the moment was the passer's mistake or the defender's brilliance — with no way
+to know, an even split is the honest default. The match's costliest giveaway:
+
+```{r}
+#| label: tbl-credit-turnover
+#| tbl-cap: "Blame shared between the player losing the ball and the opponent gaining it."
+cand <- credited[, which(possession_change == TRUE & epv_delta < 0 &
+                           receiver_credit > 0)]
+i_turn <- cand[which.min(credited$epv_delta[cand])]
+knitr::kable(show_window(i_turn,
+  c("player_name", "action_type", "result", "epv_delta",
+    "player_credit", "receiver_player_name", "receiver_credit")))
+```
+
+**Duels** — aerials and take-on-vs-tackle contests are merged into one row, and
+credit is zero-sum: the winner (`player_credit`) gains exactly what the loser
+(`opponent_credit`) loses. The match's biggest aerial win:
+
+```{r}
+#| label: tbl-credit-duel
+#| tbl-cap: "Zero-sum: winner's gain + loser's loss = 0."
+cand <- credited[, which(action_type == "aerial" & !is.na(opponent_credit))]
+i_duel <- cand[which.max(abs(credited$player_credit[cand]))]
+knitr::kable(show_window(i_duel,
+  c("player_name", "action_type", "result", "player_credit",
+    "opponent_player_name", "opponent_credit")))
+```
+
+**Saved shots** — the shooter keeps the value of having created the attempt;
+the keeper earns separate credit for taking it away (`receiver_credit`). The
+biggest save of the match:
+
+```{r}
+#| label: tbl-credit-save
+#| tbl-cap: "The shooter is not punished for a good attempt; the keeper is rewarded for stopping it."
+cand <- credited[, which(opta_type_id == 15 & receiver_credit > 0)]
+i_save <- cand[which.max(credited$receiver_credit[cand])]
+knitr::kable(show_window(i_save,
+  c("player_name", "action_type", "result", "epv_delta",
+    "player_credit", "receiver_player_name", "receiver_credit")))
+```
+
+The goal chain again, now with credit attached:
+
+```{r}
+#| label: tbl-credit
+#| tbl-cap: "Per-action EPV credit for the goal chain. The scorer cashes in the biggest jump, but the build-up passes earn real value too."
+knitr::kable(
+  chain_dt[, .(player_name, action_type, result,
+               epv = round(epv, 3), epv_delta = round(epv_delta, 3),
+               player_credit = round(player_credit, 3))]
+)
+```
+
+# Step 5 — A season of credit: player value profiles
+
+Run that over every action of a season, sum by player and action type,
+normalise per 90 minutes — and each player gets a *profile* of where their
+value comes from.
+
+Two of the areas below never appeared in the SPADL action list, because they
+come from the credit *channels* rather than the action itself:
+**possession_won** is the receiver-side credit from the turnover rule — being
+the player who claims the ball when the opponent gives it away — and
+**shot_stop** is the save/block credit from the saved-shot rule. The units are
+still goals: a shooting value of 0.12 per 90 means roughly 0.12 goals of shot
+danger added per match through shooting.
+
+```{r}
+#| label: load-season
+season_path <- "../../debug/player_value_by_area_EPL_2025-2026.parquet"
+has_season <- file.exists(season_path)
+```
+
+```{r}
+#| label: fig-profiles
+#| eval: !expr has_season
+#| fig-cap: "Two very different ways to be valuable. Haaland's value is concentrated in shooting; Van Dijk's comes from what he does with the ball, not his (famously good) aerial duels — defensive-half aerials just don't swing EPV much."
+vba <- as.data.table(arrow::read_parquet(season_path))
+two <- vba[player_name %in% c("E. Haaland", "V. van Dijk")]
+
+# union of each player's top-7 areas, shown in ONE shared order (and shared
+# x scale) so the two profiles can be compared row by row
+top_areas <- unique(two[order(-credit_p90), head(.SD, 7), by = player_name]$area)
+two <- two[area %in% top_areas]
+area_order <- two[, .(total = sum(credit_p90)), by = area][order(total), area]
+two[, area := factor(area, levels = area_order)]
+
+ggplot(two, aes(credit_p90, area, fill = player_name)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~player_name) +
+  scale_fill_manual(values = c("#6CABDD", "#C8102E")) +
+  labs(x = "EPV credit per 90 minutes", y = NULL,
+       title = "Where does each player's value come from? (EPL 2025-26)",
+       subtitle = "Same areas, same order, same scale — read across to compare")
+```
+
+```{r}
+#| label: tbl-leaders
+#| eval: !expr has_season
+#| tbl-cap: "Area leaders, EPL 2025-26 (900+ minutes): shooting value vs aerial value. Different skills, different players — which is the whole point."
+qual <- vba[minutes >= 900]
+leaders <- rbind(
+  qual[area == "shot"][order(-credit_p90)][1:5][, skill := "Shooting"],
+  qual[area == "aerial"][order(-credit_p90)][1:5][, skill := "Aerial duels"]
+)
+knitr::kable(
+  leaders[, .(skill, player_name, minutes, n_actions,
+              credit_p90 = round(credit_p90, 3))]
+)
+```
+
+# The questions you should be asking
+
+Two of the best ones — *why next-shot xG instead of goals* and *isn't
+`result_success` leakage* — are answered up in the model section. Here are the
+others, click to expand.
+
+::: {.callout-note collapse="true"}
+## How do you know the model is any good?
+
+Three layers. First, standard ML hygiene: it's trained with 5-fold
+cross-validation and early stopping, so it's always judged on actions it never
+saw. Second, sanity: its predictions reproduce things we know are true (the
+feature-importance chart and the pitch heatmap both recover football's
+geography of danger without being told it). Third — and really the one that
+matters — the downstream test: ratings built from these numbers feed a match
+prediction model whose forecasts are scored against real results every week.
+A value model that didn't measure real value would wash out there. Any single
+action's EPV is noisy; the reliability comes from averaging thousands of them.
+:::
+
+::: {.callout-note collapse="true"}
+## Does the model know the score?
+
+No — look back at the feature list: clock yes, score no. That's deliberate. A
+team 3–0 up stops attacking, and if the model conditioned on score, players in
+blowouts would have their actions systematically re-valued by context they
+don't control. Keeping EPV score-blind makes it a measure of the *action*;
+score and clock pressure are handled by a separate win-probability model (WPA),
+and the two views are blended later. The honest cost: EPV can't tell a
+meaningful 88th-minute pass from a garbage-time one — that's exactly the gap
+WPA exists to fill.
+:::
+
+::: {.callout-note collapse="true"}
+## Couldn't a striker farm value by shooting from anywhere?
+
+No — shooting is valued against the situation the shot came *from*. A shot's
+EPV is its xG, so blasting one from 30 yards (xG ≈ 0.03) out of a possession
+worth 0.10 *destroys* value, and a miss hands the full negative delta to the
+shooter as blame. The shooting leaderboard rewards shot **selection and
+finishing position**, not volume. If anything the punishment is the thing to
+watch: speculative shooters sit *below* quieter players who only shoot from
+good spots.
+:::
+
+::: {.callout-note collapse="true"}
+## Why XGBoost and not a neural network?
+
+Because the data is 15 tabular features by a few million rows, and on tabular
+data gradient-boosted trees are still the thing to beat. The practical wins
+matter too: it retrains in minutes on a free CI runner every week, needs no
+GPU, and gives interpretable feature importances. Deep learning earns its
+complexity with *tracking* data — 22 players' coordinates 25 times a second —
+which is a different (and much more expensive) data world than event feeds.
+:::
+
+::: {.callout-note collapse="true"}
+## What can the model not see at all?
+
+Everything off the ball. Event data records ~1,250 touches per match and
+nothing else: no runs that drag defenders away, no marking, no positioning
+that makes the dangerous pass never get attempted. Two mitigations are baked
+in. Defensive on-ball actions get a deliberate 1.5× credit boost, because
+defence is structurally under-represented in touch data — a great tackle often
+appears in the data as *the attacker's* turnover. And the headline panna
+rating doesn't rely on EPV alone: it blends in RAPM, a plus-minus model that
+infers off-ball impact from how the score moves while a player is on the
+pitch. EPV tells you what a player did with the ball; RAPM catches what
+happened *because they were there*.
+:::
+
+# Where this goes next
+
+Per-action EPV credit is the *foundation*, not the finished rating. Downstream,
+the same numbers feed:
+
+- **EPR** — a regression that turns game-level EPV into a stable player
+  rating, controlling for league strength and opponent quality;
+- **WPA** — the same credit idea applied to *win probability* instead of shot
+  danger, so late-game moments weigh what they should;
+- **panna** — the headline rating, which blends these with a plus-minus model
+  (RAPM) that catches everything off-ball that event data can't see.
+
+All of it published weekly, automatically, from the same pipeline you just
+walked through.
+
+::: {.callout-note collapse="true"}
+## Reproducing this document
+
+Everything here runs from the panna repo: the single-match data is a committed
+test fixture, the models download themselves on first use, and the season
+table comes from `debug/player_value_by_area.R`. Render with
+`quarto render data-raw/explainer/epv_explainer.qmd` from the `panna/` root.
+:::
