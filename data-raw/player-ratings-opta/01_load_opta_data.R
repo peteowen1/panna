@@ -74,12 +74,24 @@ for (.t in .BIG_TABLES) dir.create(file.path(stage_dir, .t), recursive = TRUE, s
 # Combine one staged table: read its per-league-season parquets and rbindlist with
 # fill=TRUE (identical to the old in-RAM combine), freeing the read list right
 # after. Peak = one table (not all five) since the others sit on disk.
+# panna#87 flight-recorder fix (run 28881348258 died 68 seconds into
+# "Combining Data" with 9.8GB free): the old form held THREE copies of the
+# table at peak — `parts` + the rbindlist result + `as.data.frame(<data.table>)`,
+# which is a FULL DEEP COPY (the hidden-copy gotcha in CLAUDE.md). setDF()
+# converts in place (zero copy), cutting peak to the ~2x rbindlist floor, and
+# each table's staged files are deleted right after combining.
 .combine_staged <- function(tbl) {
   files <- list.files(file.path(stage_dir, tbl), pattern = "\\.parquet$", full.names = TRUE)
   if (length(files) == 0) return(NULL)
   parts <- lapply(files, function(f) as.data.frame(arrow::read_parquet(f)))
-  out <- as.data.frame(data.table::rbindlist(parts, fill = TRUE, use.names = TRUE))
-  rm(parts); gc(verbose = FALSE)
+  out <- data.table::rbindlist(parts, fill = TRUE, use.names = TRUE)
+  rm(parts)
+  data.table::setDF(out)
+  unlink(file.path(stage_dir, tbl), recursive = TRUE, force = TRUE)
+  gc(verbose = FALSE)
+  if (exists(".log_rss", mode = "function")) {
+    .log_rss(sprintf("combined %s (%s rows)", tbl, format(nrow(out), big.mark = ",")))
+  }
   out
 }
 
@@ -343,16 +355,24 @@ message("\n=== Combining Data ===\n")
 # table alone is 2.4M x 288 cols), then as.data.frame() restores the exact
 # data.frame output type the rest of step 01 + step 02 expect. Output is
 # identical; this is purely a memory/speed win on the combine.
-# Combine each big table from disk staging, one at a time (peak = one table).
-combined_lineups  <- .combine_staged("lineups")
+# Combine each big table from disk staging, one at a time (peak = one table's
+# ~2x rbindlist floor on top of the already-combined frames). Order matters:
+# combine the BIGGEST tables FIRST while baseline RAM is lowest — every
+# combined frame stays resident, so a big table combined last pays its 2x
+# transient on top of everything already combined. match_xg (small, in-RAM)
+# goes first so the all_* accumulator frees before the heavy lifting.
+combined_match_xg <- if (length(all_match_xg) > 0) {
+  mx <- data.table::rbindlist(all_match_xg, fill = TRUE, use.names = TRUE)
+  data.table::setDF(mx)
+  mx
+} else NULL
+rm(all_match_xg); gc(verbose = FALSE)
+combined_stats    <- .combine_staged("stats")     # widest (~288 cols) first
 combined_events   <- .combine_staged("events")
-combined_stats    <- .combine_staged("stats")
+combined_lineups  <- .combine_staged("lineups")
 combined_xmetrics <- .combine_staged("xmetrics")
 combined_shots    <- .combine_staged("shots")
-# match_xg stayed in RAM (small, one row per match)
-combined_match_xg <- if (length(all_match_xg) > 0) as.data.frame(data.table::rbindlist(all_match_xg, fill = TRUE, use.names = TRUE)) else NULL
-rm(all_match_xg)
-unlink(stage_dir, recursive = TRUE, force = TRUE)  # free disk staging
+unlink(stage_dir, recursive = TRUE, force = TRUE)  # free any remaining staging
 gc(verbose = FALSE)
 
 # Data scale validation: catch partial/empty loads early
