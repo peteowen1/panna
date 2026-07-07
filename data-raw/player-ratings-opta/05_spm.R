@@ -61,6 +61,26 @@ if (use_xmetrics_features && !is.null(opta_xmetrics)) {
   xmetrics <- opta_xmetrics
   cat("xMetrics rows:", nrow(xmetrics), "\n")
 
+  # Above-expected totals to carry alongside xg/npxg/xa (SPM modernization,
+  # mirrors the PSR/PSV feature redesign): the five duel WOE counts, finishing
+  # over-performance, placement skill, keeper GSAA. Intersected with what this
+  # xmetrics vintage actually carries — older opta_xmetrics.parquet builds
+  # (pre duel-WOE integration) lack them, and the enrichment degrades to the
+  # original xg/npxg/xa/xpass set.
+  xm_extra_totals <- intersect(
+    c("aerial_woe", "aerial_poss_woe", "takeon_woe",
+      "tackle_poss_woe", "containment_woe",
+      "npg_minus_npxg", "ibox_g_minus_xg", "obox_g_minus_xg",
+      "placement_added", "gsaa"),
+    names(xmetrics)
+  )
+  if (length(xm_extra_totals) > 0) {
+    cat(sprintf("  Above-expected totals present: %s\n",
+                paste(xm_extra_totals, collapse = ", ")))
+  } else {
+    cat("  NOTE: no above-expected columns in this opta_xmetrics vintage — refresh via epv-pipeline xmetrics_only\n")
+  }
+
   # Aggregate xMetrics to player level (may span multiple seasons)
   xmetrics_agg <- xmetrics %>%
     group_by(player_id) %>%
@@ -70,6 +90,8 @@ if (use_xmetrics_features && !is.null(opta_xmetrics)) {
       xa_total = sum(xa, na.rm = TRUE),
       xmetrics_minutes = sum(minutes, na.rm = TRUE),
       xpass_overperformance_total = sum(xpass_overperformance, na.rm = TRUE),
+      across(all_of(xm_extra_totals), ~ sum(.x, na.rm = TRUE),
+             .names = "{.col}_total"),
       .groups = "drop"
     ) %>%
     filter(xmetrics_minutes > 0) %>%
@@ -79,18 +101,31 @@ if (use_xmetrics_features && !is.null(opta_xmetrics)) {
       xa_per90_xmetrics = xa_total / xmetrics_minutes * 90,
       xpass_overperformance_per90_xmetrics = xpass_overperformance_total / xmetrics_minutes * 90
     )
+  for (tot in xm_extra_totals) {
+    xmetrics_agg[[paste0(tot, "_per90")]] <-
+      xmetrics_agg[[paste0(tot, "_total")]] / xmetrics_agg$xmetrics_minutes * 90
+  }
 
-  # Join to player_stats
+  # Join to player_stats. NB paste0(character(0), "_per90") returns "_per90"
+  # (paste0 treats zero-length as "", it does NOT propagate emptiness) — guard
+  # with length() or an empty xm_extra_totals injects a bogus column name.
+  xm_extra_per90 <- if (length(xm_extra_totals) > 0) {
+    paste0(xm_extra_totals, "_per90")
+  } else character(0)
+  xm_cols <- c("xg_per90", "npxg_per90", "xa_per90_xmetrics",
+               "xpass_overperformance_per90_xmetrics",
+               xm_extra_per90)
   before_cols <- ncol(player_stats)
   player_stats <- player_stats %>%
     left_join(
-      xmetrics_agg %>% select(player_id, xg_per90, npxg_per90,
-                               xa_per90_xmetrics, xpass_overperformance_per90_xmetrics),
+      xmetrics_agg %>% select(all_of(c("player_id", xm_cols))),
       by = "player_id"
     )
 
-  # Fill NAs with 0 for players without xMetrics (no SPADL data = no modeled output)
-  xm_cols <- c("xg_per90", "npxg_per90", "xa_per90_xmetrics", "xpass_overperformance_per90_xmetrics")
+  # Fill NAs with 0 for players without xMetrics. For xg/npxg/xa this means
+  # "no SPADL coverage = no modeled volume"; for the above-expected columns 0
+  # IS the population mean (they're mean-zero by construction), so 0 = an
+  # average player — a meaningful imputation, not a silent constant fallback.
   n_imputed <- sum(rowSums(is.na(player_stats[, xm_cols, drop = FALSE])) > 0)
   for (col in xm_cols) {
     player_stats[[col]][is.na(player_stats[[col]])] <- 0

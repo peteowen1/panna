@@ -591,25 +591,38 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
 #' }
 fit_spm_opta <- function(data, alpha = 0.5, nfolds = 10,
                           weight_by_minutes = TRUE, weight_transform = "sqrt") {
-  # Use all _p90 columns as predictors
-  predictor_cols <- names(data)[grepl("_p90$", names(data))]
+  # Use all per-90 rate columns as predictors. Catch BOTH suffix spellings:
+  # box-score rates are `_p90`, xMetrics model outputs are `_per90` — the old
+  # `_p90$`-only grep silently excluded every xMetrics feature (xg_per90,
+  # npxg_per90, the duel WOE counts, finishing over-performance, gsaa), so
+  # step 05's "Enrich with xMetrics Features" join was dead code at fit time.
+  # Same trap that made PSR xMetrics-blind (see panna/CLAUDE.md).
+  predictor_cols <- names(data)[grepl("_p90$|_per90$", names(data))]
+  # xMetrics columns with a disambiguating suffix (joined by 05_spm.R)
+  xm_suffixed <- c("xa_per90_xmetrics", "xpass_overperformance_per90_xmetrics")
+  predictor_cols <- unique(c(predictor_cols, intersect(xm_suffixed, names(data))))
 
-  # Add success rate columns
-  success_cols <- c("shot_accuracy", "goals_per_shot", "pass_accuracy",
-                    "tackle_success", "duel_success", "aerial_success",
-                    "big_chance_conversion", "final_third_pass_acc",
+  # Success/efficiency ratio columns. The ratios with a direct above-expected
+  # replacement were REMOVED (mirrors the PSR/PSV redesign, panna#116): duel/
+  # aerial/tackle success -> the five *_woe_per90 counts; goals_per_shot /
+  # big_chance_conversion / headed_goal_rate / ibox_goal_rate / obox_goal_rate /
+  # penalty_conversion -> npg_minus_npxg_per90 + ibox/obox over-perf +
+  # placement_added_per90 (scale-free ratios discard volume: 1/1 == 10/10).
+  # Ratios WITHOUT a modeled replacement (zone pass accuracies, bad touches,
+  # 50/50s, possession control) are kept — dropping them un-replaced would
+  # lose real signal, and the elastic net handles the collinearity.
+  success_cols <- c("shot_accuracy", "pass_accuracy",
+                    "final_third_pass_acc",
                     "long_ball_accuracy", "cross_accuracy",
                     "fwd_zone_pass_accuracy", "open_play_pass_accuracy",
                     "crosses_open_play_accuracy", "bad_touch_rate",
                     "keeper_sweeper_accuracy", "errors_total_p90",
-                    "headed_goal_rate", "flick_on_accuracy",
-                    # Round 2
+                    "flick_on_accuracy",
                     "back_zone_pass_accuracy", "chipped_pass_accuracy",
-                    "ibox_goal_rate", "obox_goal_rate",
-                    "penalty_conversion", "long_pass_own_to_opp_accuracy",
+                    "long_pass_own_to_opp_accuracy",
                     "fifty_fifty_success", "poss_lost_ctrl_per_touch")
   success_cols <- intersect(success_cols, names(data))
-  predictor_cols <- c(predictor_cols, success_cols)
+  predictor_cols <- unique(c(predictor_cols, success_cols))
 
   # Add position dummies if available
   pos_cols <- c("is_gk", "is_df", "is_mf", "is_fw")
