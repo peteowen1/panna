@@ -151,6 +151,8 @@ Stat ratings → PSR/OSR/DSR (smoothed skills via glmnet) ───────�
 - **SPADL preserves `original_event_id`** — maps SPADL actions back to Opta event IDs (used by equity export for blog chain join)
 - **Inline `Rscript -e` segfaults** — always write to `debug/` and run with `Rscript debug/script.R`
 - **`setwd()` in Rscript segfaults** — `cd panna` in bash, then `Rscript debug/script.R`
+- **`Rscript path/that/does/not/exist.R` can SEGFAULT (exit 139) instead of printing "cannot open file"** — seen when running `Rscript data-raw/debug/x.R` from the pannaverse ROOT instead of `panna/` (the wrong-cwd trap's nastiest symptom: it looks like a crash in your code, not a bad path). If an Rscript run dies instantly with 139 and zero output, check `pwd` FIRST.
+- **`paste0(character(0), "_suffix")` returns `"_suffix"`, NOT `character(0)`** — paste0 treats a zero-length argument as `""` rather than propagating emptiness (unlike arithmetic recycling). Building column names from a possibly-empty vector without a `length()` guard injects a bogus bare-suffix name that later crashes `all_of()` selects (bit 05_spm.R's xmetrics enrichment, 2026-07-07).
 - **data.table NSE shadowing** — function params named after columns (e.g., `player_name`) shadow the column inside `[...]`. Rename param to `target_player` or capture early.
 - **Opta lineups have no score columns** — derive match scores by counting goal events
 - **`filter_bad_xg_data` threshold** — use 30% for Opta (25% zero-xG splints is normal with SPADL)
