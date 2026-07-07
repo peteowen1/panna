@@ -89,6 +89,31 @@ if (file.exists(rapm_cache)) {
 message(sprintf("  Played matches: %d", nrow(played)))
 message(sprintf("  Match stats rows: %d", nrow(match_stats)))
 
+# panna#128 pattern (second site): the per-SEY loop below hands match_stats to
+# estimate_player_skills(), whose date bracket-filter copies a nearly
+# full-width table every iteration — and 01_match_stats.rds carries 400+
+# box-score/metadata columns while skill estimation only reads identity +
+# stat + denominator columns. After the #127 full-sync fix grew the cache
+# ~1.2M -> ~1.9M rows, those wide per-season copies OOM-killed the 16GB GHA
+# predict job (runs 2026-07-05/06). Narrow ONCE here via [[-extraction (a
+# bracket-select would itself copy the wide table); the fixtures path further
+# down inherits the narrow table. Column references are shared, not copied,
+# so this is near-free; the dropped columns free at the next gc().
+stat_cols_02b <- .detect_skill_stat_cols(match_stats)
+needed_cols_02b <- .compute_snapshot_loop_columns(
+  available_cols = names(match_stats),
+  stat_cols = stat_cols_02b,
+  extra_cols = c("player_id", "player_name", "match_date", "position",
+                 "total_minutes")
+)
+match_stats <- data.table::setDT(stats::setNames(
+  lapply(needed_cols_02b, function(cc) match_stats[[cc]]),
+  needed_cols_02b
+))
+gc(verbose = FALSE)
+message(sprintf("  Narrowed match_stats to %d columns for the skill loops",
+                ncol(match_stats)))
+
 # 6. Compute Seasonal Skill Estimates ----
 
 # Instead of computing per-match-date (very expensive), compute per season end
