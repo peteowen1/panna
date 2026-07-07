@@ -353,3 +353,26 @@ test_that("extract_season_end_year handles standard and tournament formats", {
   expect_equal(extract_season_end_year("2018 Russia"), 2018)
   expect_true(is.na(extract_season_end_year("garbage")))
 })
+
+
+# ===========================================================================
+# .log_rss — OS-level memory checkpoint (panna#128/#133 diagnostic)
+# ===========================================================================
+
+test_that(".log_rss prints a checkpoint line and returns RSS invisibly", {
+  msgs <- capture_messages(res <- withVisible(.log_rss("unit-test")))
+  expect_false(res$visible)
+  # Numeric MB on Linux/mac, NA_real_ on Windows — both are valid returns
+  expect_true(is.numeric(res$value) || is.na(res$value))
+  expect_true(any(grepl("[rss] unit-test:", msgs, fixed = TRUE)))
+  expect_true(any(grepl("R heap=", msgs)))
+  # On the platform that matters (GHA Linux), RSS must be a real number
+  if (file.exists("/proc/self/status")) {
+    expect_true(is.finite(res$value) && res$value > 0)
+  }
+})
+
+test_that(".log_rss respects verbose = FALSE", {
+  msgs <- capture_messages(.log_rss("quiet", verbose = FALSE))
+  expect_length(msgs, 0)
+})

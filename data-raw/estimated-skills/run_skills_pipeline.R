@@ -115,11 +115,13 @@ if (needs_opta_cache) {
       paste(missing, collapse = ", ")
     ))
   }
-  # Check freshness of Opta caches (warn if >2 weeks old)
+  # Check freshness of Opta caches (warn if >2 weeks old). read_meta_sidecar
+  # tolerates corrupt/mangled sidecars (returns NULL) — a bad sidecar must not
+  # kill the startup check when the .rds itself is fine.
   for (f in required_files) {
     meta_path <- paste0(file.path(opta_cache, f), ".meta.json")
-    if (file.exists(meta_path)) {
-      meta <- jsonlite::fromJSON(meta_path)
+    meta <- read_meta_sidecar(meta_path)
+    if (!is.null(meta)) {
       if (!is.null(meta$written_at)) {
         written <- as.POSIXct(meta$written_at, format = "%Y-%m-%dT%H:%M:%S%z")
         age_days <- as.numeric(difftime(Sys.time(), written, units = "days"))

@@ -46,3 +46,4 @@ _*.log
 
 # One-off scratch pipeline runners (session drivers, regenerable)
 data-raw/**/_run_*.R
+data-raw/explainer/*.html

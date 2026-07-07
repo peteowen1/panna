@@ -2,10 +2,12 @@ name: EPV/WPA Model Training
 
 on:
   schedule:
-    # Weekly Sunday 18:00 UTC. Refreshes xg/xpass/epv models +
-    # opta_xmetrics.parquet that the Opta RAPM/SPM Pipeline depends on.
+    # Weekly Sunday 18:00 UTC. Refreshes opta_xmetrics.parquet (which the
+    # Opta RAPM/SPM Pipeline's freshness gate depends on) by scoring with the
+    # currently PUBLISHED models — xmetrics_only, no retrain (see the
+    # XMETRICS_ONLY env comment; the retrain never fit the 120-min timeout).
     # `inputs.*` are empty on schedule events, so the env block below
-    # supplies explicit defaults (export_xmetrics=true, train_wp=false).
+    # supplies explicit defaults.
     - cron: '0 18 * * 0'
   workflow_dispatch:
     inputs:
@@ -48,7 +50,15 @@ env:
   # against the reviewed/live model, not an unvetted retrain (panna#126 — found
   # while populating opta_xmetrics_bymatch.parquet for the first time without
   # paying for a full ~120min retrain just to get xMetrics refreshed).
-  XMETRICS_ONLY: ${{ inputs.xmetrics_only == true && 'true' || 'false' }}
+  # Scheduled runs are xmetrics_only BY DESIGN: the weekly job's operational
+  # product is a fresh opta_xmetrics.parquet (the Opta RAPM pipeline's
+  # freshness gate depends on it), and it should score against the REVIEWED
+  # published models, not an unattended fresh retrain. The full retrain +
+  # export never fit the 120-min timeout anyway — every scheduled run from
+  # 2026-06-15 to 07-05 was timeout-cancelled mid step 03, which silently
+  # starved the RAPM gate (26-day-old xmetrics by 07-07). Retrains remain
+  # manual-dispatch.
+  XMETRICS_ONLY: ${{ (inputs.xmetrics_only == true || github.event_name == 'schedule') && 'true' || 'false' }}
   # wp_only/xmetrics_only force the EPV/xMetrics retrain steps off regardless
   # of their own inputs; xmetrics_only forces xMetrics export ON.
   EXPORT_XMETRICS: ${{ (inputs.export_xmetrics == true || inputs.xmetrics_only == true || github.event_name == 'schedule') && inputs.wp_only != true && 'true' || 'false' }}
