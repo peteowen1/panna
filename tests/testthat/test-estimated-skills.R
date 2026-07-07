@@ -374,6 +374,35 @@ test_that(".compute_snapshot_loop_columns intersects with available_cols (never 
   expect_setequal(kept, c("player_id", "goals_p90"))
 })
 
+test_that("estimate_player_skills narrows wide input internally without changing output or mutating the caller", {
+  # panna#133: the narrowing moved inside estimate_player_skills() so every
+  # looping caller (02b predictions, aggregate_skills_for_spm) is protected
+  # without a per-script narrowing block. Guard both properties: (a) junk
+  # metadata columns don't change the result, (b) the caller's data.table is
+  # not mutated (the [[-extraction rebuild aliases columns, and all writes
+  # happen after the filter/copy makes dt independent).
+  ms <- make_test_match_stats(n_players = 4, n_matches = 8)
+  ms_wide <- data.table::as.data.table(ms)
+  for (j in 1:25) data.table::set(ms_wide, j = paste0("junk_", j), value = rnorm(nrow(ms_wide)))
+  names_before <- c(names(ms_wide))  # c() detaches from the table's internal vector
+
+  params <- get_default_decay_params()
+  stat_cols <- c("goals_p90", "tackles_won_p90", "pass_accuracy")
+
+  res_narrow <- estimate_player_skills(data.table::as.data.table(ms), decay_params = params,
+                                        stat_cols = stat_cols)
+  res_wide <- estimate_player_skills(ms_wide, decay_params = params,
+                                      stat_cols = stat_cols)
+
+  data.table::setcolorder(res_wide, names(res_narrow))
+  data.table::setorder(res_narrow, player_id)
+  data.table::setorder(res_wide, player_id)
+  expect_equal(as.data.frame(res_wide), as.data.frame(res_narrow))
+
+  # Caller's table untouched: same columns, no temp/pos_group columns leaked
+  expect_identical(names(ms_wide), names_before)
+})
+
 test_that(".compute_snapshot_loop_columns drops NA/NULL extra_cols (optional league column)", {
   # 08b passes psr_lg_col as an extra_col, which can be NULL/NA when neither
   # "competition" nor "league" is present in match_stats.

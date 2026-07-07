@@ -392,6 +392,41 @@ estimate_player_skills <- function(match_stats, decay_params = NULL,
   # (bracket-filter or explicit copy()), so skipping it here is safe.
   dt <- if (data.table::is.data.table(match_stats)) match_stats else data.table::as.data.table(match_stats)
 
+  # Auto-detect stat columns BEFORE narrowing/filtering (names-only, cheap).
+  if (is.null(stat_cols)) {
+    # Shared detector — catches _p90 AND _per90 (xMetrics over-perf) + registered.
+    # This is the path that produces 02_skill_features (→ PSR serving); the old
+    # _p90$-only grep dropped every over-perf column so PSR was xMetrics-blind.
+    stat_cols <- .detect_skill_stat_cols(dt)
+  }
+
+  stat_cols <- intersect(stat_cols, names(dt))
+  if (length(stat_cols) == 0) {
+    cli::cli_warn("No stat columns found in match_stats.")
+    return(NULL)
+  }
+
+  # panna#128/#133: narrow to only the columns this function reads BEFORE the
+  # row filter below. match_stats caches carry 400+ box-score/metadata columns;
+  # the date bracket-filter (or the no-target copy()) otherwise duplicates a
+  # nearly full-width table on every call — in a per-season/per-snapshot loop
+  # that OOM-killed two GHA pipelines (08b weekly PSR in #128, predictions 02b
+  # in #133). Doing it here protects every caller transparently instead of
+  # relying on each looping script to remember the narrowing block. The
+  # [[-extraction rebuild aliases columns (copies nothing); the filter/copy
+  # right after makes dt fully independent of the caller's table.
+  needed_cols <- .compute_snapshot_loop_columns(
+    available_cols = names(dt),
+    stat_cols = stat_cols,
+    extra_cols = c("player_id", "player_name", "match_date", "position",
+                   "total_minutes",
+                   unlist(decay_params$precomputed_match_exp, use.names = FALSE))
+  )
+  if (length(needed_cols) < ncol(dt)) {
+    dt <- data.table::setDT(stats::setNames(
+      lapply(needed_cols, function(cc) dt[[cc]]), needed_cols))
+  }
+
   # Filter by date BEFORE copying -- subsetting creates a new data.table,
   # avoiding a full copy of the (potentially multi-GB) input
   if (!is.null(target_date)) {
@@ -411,20 +446,6 @@ estimate_player_skills <- function(match_stats, decay_params = NULL,
 
   if (nrow(dt) == 0) {
     cli::cli_warn("No match data available before target_date.")
-    return(NULL)
-  }
-
-  # Auto-detect stat columns
-  if (is.null(stat_cols)) {
-    # Shared detector — catches _p90 AND _per90 (xMetrics over-perf) + registered.
-    # This is the path that produces 02_skill_features (→ PSR serving); the old
-    # _p90$-only grep dropped every over-perf column so PSR was xMetrics-blind.
-    stat_cols <- .detect_skill_stat_cols(dt)
-  }
-
-  stat_cols <- intersect(stat_cols, names(dt))
-  if (length(stat_cols) == 0) {
-    cli::cli_warn("No stat columns found in match_stats.")
     return(NULL)
   }
 
