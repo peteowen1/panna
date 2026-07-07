@@ -365,11 +365,12 @@ cat(sprintf("  Stat columns detected: %d\n", length(stat_cols_all)))
 # `[[` (not bracket-select) — same safe pattern as the pl_src fix below.
 .psr_lg_col_early <- if ("competition" %in% names(match_stats)) "competition" else
                      if ("league" %in% names(match_stats)) "league" else NULL
-.denom_cols_all <- unique(unlist(strsplit(unlist(.classify_skill_stats()), "\\+")))
-needed_cols_loop <- unique(c("player_id", "player_name", "match_date", "position",
-                             "total_minutes", .psr_lg_col_early, stat_cols_all,
-                             .denom_cols_all))
-needed_cols_loop <- intersect(needed_cols_loop, names(match_stats))
+needed_cols_loop <- .compute_snapshot_loop_columns(
+  available_cols = names(match_stats),
+  stat_cols = stat_cols_all,
+  extra_cols = c("player_id", "player_name", "match_date", "position",
+                "total_minutes", .psr_lg_col_early)
+)
 match_stats <- data.table::setDT(stats::setNames(
   lapply(needed_cols_loop, function(cc) match_stats[[cc]]),
   needed_cols_loop
