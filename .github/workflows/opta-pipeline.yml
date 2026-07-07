@@ -246,18 +246,70 @@ jobs:
           INPUT_FORCE_REBUILD: ${{ inputs.force_rebuild }}
           INPUT_FORCE_REBUILD_FROM: ${{ inputs.force_rebuild_from }}
           INPUT_START_STEP: ${{ inputs.start_step }}
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          HB_UPLOAD_CACHES: ${{ inputs.upload_caches }}
         run: |
           # --- memory tracer (diagnostic, no pipeline logic) -----------------
-          # The pipeline dies intermittently with "runner received a shutdown
-          # signal" during the xRAPM glmnet fit — a message that carries no OOM
-          # trace. Sample RAM every 20s straight to the step log (the log
-          # survives a runner kill; an uploaded artifact would not). Grep [MEM]
-          # in a failed run to see if memory was near the ceiling at death.
+          # Sample RAM every 20s to the step log AND pipeline.log (so the
+          # external heartbeat below can relay it). NB the 2026-07-07 OOM kill
+          # was hard enough that GitHub never persisted the step log at all —
+          # the step log alone is NOT a reliable flight recorder on this job.
+          touch pipeline.log
           ( while true; do
-              echo "[MEM] $(date -u +%H:%M:%S) $(free -m | awk '/^Mem:/{print "used="$3"MB avail="$7"MB total="$2"MB"}')"
+              echo "[MEM] $(date -u +%H:%M:%S) $(free -m | awk '/^Mem:/{print "used="$3"MB avail="$7"MB total="$2"MB"}')" | tee -a pipeline.log
               sleep 20
             done ) &
           MEM_TRACER_PID=$!
+
+          # --- external heartbeat (panna#87 flight recorder) ------------------
+          # Stream progress somewhere that SURVIVES runner death: one
+          # self-updating comment on issue #87 (memory + last step/RSS markers
+          # + log tail, PATCHed every ~90s), and upload each completed step
+          # cache to the predictions-cache release as it appears so a mid-step
+          # kill still allows a start_step resume (the end-of-job upload step
+          # never runs after a hard kill).
+          HB_ID=$(gh api "repos/$GITHUB_REPOSITORY/issues/87/comments" \
+                  -f body="[#87 live heartbeat] run $GITHUB_RUN_ID initializing..." \
+                  --jq .id 2>/dev/null || echo "")
+          echo "Heartbeat comment id: ${HB_ID:-none}"
+          ( CACHE_DIR="data-raw/cache-opta"
+            declare -A SENT
+            while true; do
+              sleep 90
+              {
+                echo "**[#87 live heartbeat] run ${GITHUB_RUN_ID} — last update $(date -u +%H:%M:%S)Z** (comment self-updates while the run is alive; if this timestamp is stale and the run is dead, the lines below are the flight recorder)"
+                echo '```'
+                free -m | awk '/^Mem:/{print "MEM used="$3"MB avail="$7"MB total="$2"MB"}'
+                echo '--- last step / RSS / MEM markers ---'
+                grep -E "\[rss\]|\[MEM\]|Step [0-9]" pipeline.log | tail -10
+                echo '--- raw log tail ---'
+                tail -6 pipeline.log
+                echo '```'
+              } > hb_body.txt
+              if [ -n "$HB_ID" ]; then
+                gh api --method PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$HB_ID" \
+                  -f body="$(cat hb_body.txt)" >/dev/null 2>&1 || true
+              fi
+              # Upload completed step caches as they stabilize (size unchanged
+              # across a 5s recheck = not mid-write).
+              if [ "$HB_UPLOAD_CACHES" != "false" ] && [ -d "$CACHE_DIR" ]; then
+                for f in "$CACHE_DIR"/0*.rds; do
+                  [ -f "$f" ] || continue
+                  base=$(basename "$f")
+                  if [ -z "${SENT[$base]:-}" ]; then
+                    sz=$(stat -c %s "$f"); sleep 5; sz2=$(stat -c %s "$f")
+                    if [ "$sz" = "$sz2" ] && [ "$sz" -gt 0 ]; then
+                      if gh release upload predictions-cache "$f" \
+                           --repo peteowen1/pannadata --clobber >/dev/null 2>&1; then
+                        SENT[$base]=1
+                        echo "[HB] uploaded completed cache $base ($sz bytes)" | tee -a pipeline.log
+                      fi
+                    fi
+                  fi
+                done
+              fi
+            done ) &
+          HB_PID=$!
           # -------------------------------------------------------------------
 
           RSCRIPT_EXIT=0
@@ -292,9 +344,22 @@ jobs:
 
             source('data-raw/player-ratings-opta/run_pipeline_opta.R', chdir = FALSE)
             if (isTRUE(pipeline_failed)) quit(status = 1)
-          " || RSCRIPT_EXIT=$?
+          " 2>&1 | tee -a pipeline.log
+          RSCRIPT_EXIT=${PIPESTATUS[0]}
 
-          kill "$MEM_TRACER_PID" 2>/dev/null || true
+          kill "$MEM_TRACER_PID" "$HB_PID" 2>/dev/null || true
+          # Final heartbeat update so the comment records the terminal state.
+          if [ -n "$HB_ID" ]; then
+            {
+              echo "**[#87 heartbeat FINAL] run ${GITHUB_RUN_ID} — Rscript exited $RSCRIPT_EXIT at $(date -u +%H:%M:%S)Z**"
+              echo '```'
+              grep -E "\[rss\]|\[MEM\]|Step [0-9]" pipeline.log | tail -12
+              tail -8 pipeline.log
+              echo '```'
+            } > hb_body.txt
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$HB_ID" \
+              -f body="$(cat hb_body.txt)" >/dev/null 2>&1 || true
+          fi
           exit "$RSCRIPT_EXIT"
 
       - name: Upload caches to predictions-cache release
