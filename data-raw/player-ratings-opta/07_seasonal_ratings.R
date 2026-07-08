@@ -137,7 +137,14 @@ fit_season_ratings_opta <- function(splint_data, opta_stats, season,
 
   cat(sprintf("  Players with aggregated stats: %d\n", nrow(season_player_stats)))
 
-  # Enrich with xMetrics if available (SPM models may require these features)
+  # Enrich with xMetrics if available (SPM models may require these features).
+  # panna#87: uses the SAME .aggregate_xmetrics_for_spm() as 05_spm.R (shared
+  # in R/spm_opta.R) — this block used to be an independent, near-identical
+  # copy that never got the WOE/finishing columns added to the other, which
+  # is exactly why every one of 14 seasons failed with "undefined columns
+  # selected" the moment the fitted SPM model's predictor_cols grew to
+  # include them.
+  season_xm <- NULL
   if (!is.null(opta_xmetrics) && nrow(opta_xmetrics) > 0) {
     # End-year matching for the same reason as the stats subset above —
     # calendar-year league labels never equal the "YYYY-YYYY" season_str.
@@ -145,33 +152,11 @@ fit_season_ratings_opta <- function(splint_data, opta_stats, season,
     xm_matching <- names(xm_end_years)[xm_end_years == season]
     season_xm <- opta_xmetrics[opta_xmetrics$season %in% xm_matching, ]
     if (nrow(season_xm) > 0) {
-      xm_agg <- season_xm %>%
-        group_by(player_id) %>%
-        summarise(
-          xg_total = sum(xg, na.rm = TRUE),
-          npxg_total = sum(npxg, na.rm = TRUE),
-          xa_total = sum(xa, na.rm = TRUE),
-          xmetrics_minutes = sum(minutes, na.rm = TRUE),
-          xpass_overperformance_total = sum(xpass_overperformance, na.rm = TRUE),
-          .groups = "drop"
-        ) %>%
-        filter(xmetrics_minutes > 0) %>%
-        mutate(
-          xg_per90 = xg_total / xmetrics_minutes * 90,
-          npxg_per90 = npxg_total / xmetrics_minutes * 90,
-          xa_per90_xmetrics = xa_total / xmetrics_minutes * 90,
-          xpass_overperformance_per90_xmetrics = xpass_overperformance_total / xmetrics_minutes * 90
-        )
-
+      xm_agg <- .aggregate_xmetrics_for_spm(season_xm)
       season_player_stats <- season_player_stats %>%
-        left_join(
-          xm_agg %>% select(player_id, xg_per90, npxg_per90,
-                             xa_per90_xmetrics, xpass_overperformance_per90_xmetrics),
-          by = "player_id"
-        )
-
-      xm_cols <- c("xg_per90", "npxg_per90", "xa_per90_xmetrics", "xpass_overperformance_per90_xmetrics")
-      for (col in xm_cols) {
+        left_join(xm_agg, by = "player_id")
+      for (col in intersect(names(xm_agg), names(season_player_stats))) {
+        if (col == "player_id") next
         season_player_stats[[col]][is.na(season_player_stats[[col]])] <- 0
       }
     }
@@ -220,11 +205,15 @@ fit_season_ratings_opta <- function(splint_data, opta_stats, season,
     }
   }
 
-  # Ensure xMetrics and chain columns exist (even if no data) for SPM model compatibility
-  xm_cols <- c("xg_per90", "npxg_per90", "xa_per90_xmetrics", "xpass_overperformance_per90_xmetrics")
+  # Ensure xMetrics and chain columns exist (even if no data) for SPM model
+  # compatibility. panna#87: uses the CANONICAL full column list
+  # (.spm_xmetrics_per90_cols(), shared with 05_spm.R) rather than a
+  # hand-maintained subset — a thin season whose xmetrics coverage misses
+  # some above-expected columns still gets every column the fitted model's
+  # predictor_cols can reference, defaulted to 0 (population mean).
   chain_feat_cols <- c("chains_p90", "chain_shot_pct", "chain_goal_pct",
                        "chain_starts_p90", "avg_actions_per_chain", "chain_xg_p90")
-  for (col in c(xm_cols, chain_feat_cols)) {
+  for (col in c(.spm_xmetrics_per90_cols(), chain_feat_cols)) {
     if (!col %in% names(season_player_stats)) {
       season_player_stats[[col]] <- 0
     }
