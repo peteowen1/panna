@@ -678,6 +678,7 @@ prepare_rapm_data <- function(splint_data, min_minutes = 90,
   }
 
   # League-season cell means (when both available)
+  ls_sparse <- NULL
   if (use_cell_means) {
     splint_leagues <- splint_data$splints$league[
       match(rapm_data$row_data$splint_id, splint_data$splints$splint_id)
@@ -697,20 +698,39 @@ prepare_rapm_data <- function(splint_data, min_minutes = 90,
     if (length(unique_ls) > 1) {
       progress_msg(sprintf("Adding %d league-season dummies (ref: %s)",
                            length(unique_ls) - 1, unique_ls[1]))
-      for (ls in unique_ls[-1]) {
-        col_name <- paste0("ls_", gsub(" ", "_", ls))
-        covariate_list[[col_name]] <- as.numeric(league_season == ls)
-      }
+      # panna#87 (attempt-3 flight recorder): each dummy built as a dense
+      # 1.23M-element double (~10MB) put ~3GB in covariate_list, and the dense
+      # do.call(cbind) below doubled it (~6GB transient) — for columns that
+      # are >99.5% zeros. Build ONE sparse matrix directly instead (~50MB):
+      # identical columns, names, and order to the old per-level loop.
+      keep <- !is.na(league_season) & league_season != unique_ls[1]
+      ls_sparse <- Matrix::sparseMatrix(
+        i = which(keep),
+        j = match(league_season[keep], unique_ls[-1]),
+        x = 1,
+        dims = c(length(league_season), length(unique_ls) - 1L),
+        dimnames = list(NULL, paste0("ls_", gsub(" ", "_", unique_ls[-1])))
+      )
     }
   }
 
-  # Combine into covariate matrix
-  if (length(covariate_list) > 0) {
-    X_covariates <- do.call(cbind, covariate_list)
-    colnames(X_covariates) <- names(covariate_list)
+  # Combine into covariate matrix. Dense base covariates (a handful of
+  # columns) are converted to sparse at cbind time; the league-season block
+  # is already sparse. X_full stays a sparse Matrix exactly as before — only
+  # the dense intermediates are gone.
+  if (length(covariate_list) > 0 || !is.null(ls_sparse)) {
+    X_dense <- if (length(covariate_list) > 0) {
+      m <- do.call(cbind, covariate_list)
+      colnames(m) <- names(covariate_list)
+      m
+    } else NULL
 
-    rapm_data$X_full <- cbind(rapm_data$X_players, X_covariates)
-    rapm_data$covariate_names <- colnames(X_covariates)
+    parts <- list(rapm_data$X_players)
+    if (!is.null(X_dense)) parts <- c(parts, list(Matrix::Matrix(X_dense, sparse = TRUE)))
+    if (!is.null(ls_sparse)) parts <- c(parts, list(ls_sparse))
+    rapm_data$X_full <- do.call(cbind, parts)
+    rapm_data$covariate_names <- c(colnames(X_dense), colnames(ls_sparse))
+    rm(parts, X_dense)
   } else {
     rapm_data$X_full <- rapm_data$X_players
     rapm_data$covariate_names <- character(0)
