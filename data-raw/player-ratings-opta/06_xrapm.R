@@ -79,12 +79,14 @@ rapm_data <- rapm_results$rapm_data
 # closed-form value, CV picks lambda.min from the data (the formula alone
 # misplaced lambda ~4x at 2026-07 scale; see 04_rapm.R for the validation
 # numbers and debug/validate_lambda_formula_at_scale.R for the harness).
-xrapm_lambda_seq <- if (use_fixed_lambda) {
-  lambda_formula(.n_obs_valid(rapm_data)) * 2^seq(3, -3, by = -0.5)
-} else NULL
+# NB precompute glue values: cli >= 3.4 treats {.foo(...)} as inline markup
+# and errors (see 04_rapm.R — the step-4 killer across three runs).
+n_obs_x <- .n_obs_valid(rapm_data)
+lam_center_x <- lambda_formula(n_obs_x)
+xrapm_lambda_seq <- if (use_fixed_lambda) lam_center_x * 2^seq(3, -3, by = -0.5) else NULL
 if (use_fixed_lambda) {
   cli::cli_alert_info(
-    "xRAPM mini-CV grid centered on {round(lambda_formula(.n_obs_valid(rapm_data)), 5)} (n_obs={.n_obs_valid(rapm_data)})")
+    "xRAPM mini-CV grid centered on {round(lam_center_x, 5)} (n_obs={n_obs_x})")
 }
 
 xrapm_model <- fit_rapm_with_prior(
@@ -259,12 +261,12 @@ if (use_multi_target && file.exists(multi_rapm_path) && file.exists(multi_spm_pa
 
       # panna#87: per-target mini-CV grid centered on that target's own
       # closed-form lambda.
-      tgt_lambda_seq <- if (use_fixed_lambda) {
-        lambda_formula(.n_obs_valid(rapm_data_tgt)) * 2^seq(3, -3, by = -0.5)
-      } else NULL
+      n_obs_xt <- .n_obs_valid(rapm_data_tgt)
+      lam_center_xt <- lambda_formula(n_obs_xt)
+      tgt_lambda_seq <- if (use_fixed_lambda) lam_center_xt * 2^seq(3, -3, by = -0.5) else NULL
       if (use_fixed_lambda) {
         cli::cli_alert_info(
-          "xRAPM[{tgt}] mini-CV grid centered on {round(lambda_formula(.n_obs_valid(rapm_data_tgt)), 5)} (n_obs={.n_obs_valid(rapm_data_tgt)})")
+          "xRAPM[{tgt}] mini-CV grid centered on {round(lam_center_xt, 5)} (n_obs={n_obs_xt})")
       }
 
       xrapm_model_tgt <- fit_rapm_with_prior(

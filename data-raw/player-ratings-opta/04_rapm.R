@@ -93,12 +93,17 @@ cat("\n=== Fitting RAPM Model ===\n")
 # The June OOM came from the default 100-lambda path x 10 folds, not CV per
 # se. Formula's only job now: center the grid (proven to land the optimum
 # interior). Validation harness: debug/validate_lambda_formula_at_scale.R.
-base_lambda_seq <- if (use_fixed_lambda) {
-  lambda_formula(.n_obs_valid(rapm_data)) * 2^seq(3, -3, by = -0.5)
-} else NULL
+# NB precompute glue values into plain variables: cli >= 3.4 treats a brace
+# expression starting with a dot (e.g. {.n_obs_valid(x)}) as inline MARKUP
+# and ERRORS ("Invalid cli literal: starts with a dot") — this exact line was
+# the silent step-4 killer in runs 28890193113/28919371826/28920002141, only
+# reached once the combine OOM was fixed.
+n_obs_base <- .n_obs_valid(rapm_data)
+lam_center_base <- lambda_formula(n_obs_base)
+base_lambda_seq <- if (use_fixed_lambda) lam_center_base * 2^seq(3, -3, by = -0.5) else NULL
 if (use_fixed_lambda) {
   cli::cli_alert_info(
-    "RAPM mini-CV mode: 13-point lambda grid centered on {round(lambda_formula(.n_obs_valid(rapm_data)), 5)} (n_obs={.n_obs_valid(rapm_data)})")
+    "RAPM mini-CV mode: 13-point lambda grid centered on {round(lam_center_base, 5)} (n_obs={n_obs_base})")
 }
 
 model <- fit_rapm(
@@ -189,12 +194,12 @@ if (use_multi_target) {
 
         # panna#87: per-target mini-CV grid centered on that target's own
         # closed-form lambda (see the base-fit comment).
-        tgt_lambda_seq <- if (use_fixed_lambda) {
-          lambda_formula(.n_obs_valid(rapm_data_tgt)) * 2^seq(3, -3, by = -0.5)
-        } else NULL
+        n_obs_tgt <- .n_obs_valid(rapm_data_tgt)
+        lam_center_tgt <- lambda_formula(n_obs_tgt)
+        tgt_lambda_seq <- if (use_fixed_lambda) lam_center_tgt * 2^seq(3, -3, by = -0.5) else NULL
         if (use_fixed_lambda) {
           cli::cli_alert_info(
-            "RAPM[{tgt}] mini-CV grid centered on {round(lambda_formula(.n_obs_valid(rapm_data_tgt)), 5)} (n_obs={.n_obs_valid(rapm_data_tgt)})")
+            "RAPM[{tgt}] mini-CV grid centered on {round(lam_center_tgt, 5)} (n_obs={n_obs_tgt})")
         }
 
         model_tgt <- fit_rapm(
