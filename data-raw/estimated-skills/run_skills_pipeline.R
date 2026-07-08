@@ -228,3 +228,9 @@ message("  - pannadata/data/opta/opta_skills.parquet (uploaded to GitHub)")
 message("  - pannadata/data/opta/opta_psr_weekly.parquet (uploaded to GitHub)")
 
 message("\nDone!")
+
+# Propagate step failures to CI: Rscript must exit non-zero or GHA stays green
+# while steps fail (pipeline_failed was previously set but never checked).
+if (pipeline_failed && !interactive()) {
+  quit(save = "no", status = 1)
+}
