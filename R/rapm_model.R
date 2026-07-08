@@ -54,6 +54,12 @@
 #'   \code{.glmnet_fixed_lambda}). Default \code{NULL} = cross-validated (current
 #'   behaviour). Used by the as-of-date career-Panna build to avoid re-running CV
 #'   for every reference date.
+#' @param lambda_seq Optional explicit lambda sequence for \code{cv.glmnet}
+#'   (its \code{lambda} argument). The panna#87 cloud path passes a short
+#'   grid bracketing the closed-form lambda (e.g. \code{lam * 2^seq(3, -3,
+#'   0.5)}) so lambda is chosen BY CV from the data — adapting to sample
+#'   size, weights, and design — at a fraction of the default 100-lambda
+#'   path's time/memory. Ignored when \code{fixed_lambda} is supplied.
 #'
 #' @return Fitted model with metadata
 #' @export
@@ -61,7 +67,7 @@ fit_rapm <- function(rapm_data, alpha = 0, nfolds = 10,
                          use_weights = TRUE, standardize = FALSE,
                          penalize_covariates = FALSE,
                          parallel = TRUE, n_cores = NULL,
-                         fixed_lambda = NULL) {
+                         fixed_lambda = NULL, lambda_seq = NULL) {
   # Validate input structure
   if (!is.list(rapm_data)) {
     cli::cli_abort(c(
@@ -144,6 +150,7 @@ fit_rapm <- function(rapm_data, alpha = 0, nfolds = 10,
       alpha = alpha,
       standardize = standardize,
       nfolds = nfolds,
+      lambda = lambda_seq,
       type.measure = "mse",
       penalty.factor = penalty_factor,
       trace.it = if (interactive()) 1 else 0,
@@ -302,6 +309,10 @@ get_covariate_effects <- function(model, lambda = "min") {
 #'   \code{cv.glmnet} and fits at this lambda directly (see
 #'   \code{.glmnet_fixed_lambda}). Default \code{NULL} = cross-validated (current
 #'   behaviour). Used by the as-of-date career-Panna build.
+#' @param lambda_seq Optional explicit lambda sequence for \code{cv.glmnet}
+#'   (see \code{\link{fit_rapm}}); the panna#87 cloud path passes a short
+#'   grid bracketing the closed-form lambda. Ignored when
+#'   \code{fixed_lambda} is supplied.
 #'
 #' @return Fitted model with prior adjustment metadata
 #'
@@ -314,7 +325,7 @@ fit_rapm_with_prior <- function(rapm_data, offense_prior, defense_prior,
                                  alpha = 0, nfolds = 10,
                                  use_weights = TRUE,
                                  penalize_covariates = FALSE,
-                                 fixed_lambda = NULL) {
+                                 fixed_lambda = NULL, lambda_seq = NULL) {
   # Validate input structure (matching fit_rapm())
   if (!is.list(rapm_data)) {
     cli::cli_abort(c(
@@ -406,6 +417,7 @@ fit_rapm_with_prior <- function(rapm_data, offense_prior, defense_prior,
       alpha = alpha,
       standardize = FALSE,
       nfolds = nfolds,
+      lambda = lambda_seq,
       type.measure = "mse",
       penalty.factor = penalty_factor,
       trace.it = if (interactive()) 1 else 0

@@ -75,11 +75,16 @@ cat("\n=== Fitting xRAPM Model ===\n")
 
 rapm_data <- rapm_results$rapm_data
 
-# panna#87: fixed-lambda mode skips CV (the 11-refit memory spike); else CV.
-xrapm_fixed_lambda <- if (use_fixed_lambda) lambda_formula(.n_obs_valid(rapm_data)) else NULL
+# panna#87: bracketed mini-CV — a short lambda grid centered on the
+# closed-form value, CV picks lambda.min from the data (the formula alone
+# misplaced lambda ~4x at 2026-07 scale; see 04_rapm.R for the validation
+# numbers and debug/validate_lambda_formula_at_scale.R for the harness).
+xrapm_lambda_seq <- if (use_fixed_lambda) {
+  lambda_formula(.n_obs_valid(rapm_data)) * 2^seq(3, -3, by = -0.5)
+} else NULL
 if (use_fixed_lambda) {
   cli::cli_alert_info(
-    "xRAPM fixed-lambda mode (CV skipped), lambda={round(xrapm_fixed_lambda, 5)} (n_obs={.n_obs_valid(rapm_data)})")
+    "xRAPM mini-CV grid centered on {round(lambda_formula(.n_obs_valid(rapm_data)), 5)} (n_obs={.n_obs_valid(rapm_data)})")
 }
 
 xrapm_model <- fit_rapm_with_prior(
@@ -90,8 +95,11 @@ xrapm_model <- fit_rapm_with_prior(
   nfolds = 5,          # panna#87: 10 -> 5 to halve the CV memory/time spike
   use_weights = TRUE,
   penalize_covariates = FALSE,
-  fixed_lambda = xrapm_fixed_lambda  # panna#87: NULL = CV (default), else closed-form
+  lambda_seq = xrapm_lambda_seq  # panna#87: NULL = default CV path, else mini-CV grid
 )
+if (use_fixed_lambda) {
+  cli::cli_alert_info("xRAPM mini-CV picked lambda.min={signif(xrapm_model$lambda.min, 4)}")
+}
 
 # Free memory
 rm(rapm_data); gc(verbose = FALSE)
@@ -249,18 +257,22 @@ if (use_multi_target && file.exists(multi_rapm_path) && file.exists(multi_spm_pa
         }
       }
 
-      # panna#87: per-target fixed lambda from that target's own n_obs.
-      tgt_fixed_lambda <- if (use_fixed_lambda) lambda_formula(.n_obs_valid(rapm_data_tgt)) else NULL
+      # panna#87: per-target mini-CV grid centered on that target's own
+      # closed-form lambda.
+      tgt_lambda_seq <- if (use_fixed_lambda) {
+        lambda_formula(.n_obs_valid(rapm_data_tgt)) * 2^seq(3, -3, by = -0.5)
+      } else NULL
       if (use_fixed_lambda) {
         cli::cli_alert_info(
-          "xRAPM[{tgt}] fixed-lambda mode (CV skipped), lambda={round(tgt_fixed_lambda, 5)} (n_obs={.n_obs_valid(rapm_data_tgt)})")
+          "xRAPM[{tgt}] mini-CV grid centered on {round(lambda_formula(.n_obs_valid(rapm_data_tgt)), 5)} (n_obs={.n_obs_valid(rapm_data_tgt)})")
       }
 
       xrapm_model_tgt <- fit_rapm_with_prior(
         rapm_data_tgt,
         offense_prior = off_prior_aligned,
         defense_prior = def_prior_aligned,
-        fixed_lambda = tgt_fixed_lambda  # panna#87
+        nfolds = 5,                    # panna#87
+        lambda_seq = tgt_lambda_seq    # panna#87
       )
 
       xrapm_ratings_tgt <- extract_rapm_ratings(xrapm_model_tgt)

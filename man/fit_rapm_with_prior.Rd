@@ -12,7 +12,8 @@ fit_rapm_with_prior(
   nfolds = 10,
   use_weights = TRUE,
   penalize_covariates = FALSE,
-  fixed_lambda = NULL
+  fixed_lambda = NULL,
+  lambda_seq = NULL
 )
 }
 \arguments{
@@ -34,6 +35,11 @@ fit_rapm_with_prior(
 \code{cv.glmnet} and fits at this lambda directly (see
 \code{.glmnet_fixed_lambda}). Default \code{NULL} = cross-validated (current
 behaviour). Used by the as-of-date career-Panna build.}
+
+\item{lambda_seq}{Optional explicit lambda sequence for \code{cv.glmnet}
+(see \code{\link{fit_rapm}}); the panna#87 cloud path passes a short
+grid bracketing the closed-form lambda. Ignored when
+\code{fixed_lambda} is supplied.}
 }
 \value{
 Fitted model with prior adjustment metadata

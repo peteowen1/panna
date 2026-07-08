@@ -294,122 +294,82 @@ add_value_metrics_to_splints <- function(splint_data, player_game_epv = NULL,
   valid_splint_ids <- valid_splints$splint_id
   splint_to_idx <- stats::setNames(seq_along(valid_splint_ids), valid_splint_ids)
 
-  players_valid <- players[players$splint_id %in% valid_splint_ids, ]
-  players_valid$splint_idx <- splint_to_idx[players_valid$splint_id]
+  # panna#87 (attempt-4 flight recorder): the old implementation subset the
+  # FULL ~17M-row appearances table into four data.frame copies — dragging an
+  # unused 17M-element player_name character column through each — plus
+  # stats::aggregate on the replacement rows and a do.call(rbind) over eight
+  # triplet data.frames; step 4 sat at 12.3GB before any fit. Same triplets,
+  # same matrix, built from narrow mostly-integer vectors instead.
+  splint_idx <- unname(splint_to_idx[players$splint_id])
+  keep <- !is.na(splint_idx)
+  splint_idx <- as.integer(splint_idx[keep])
+  pid <- players$player_id[keep]
+  is_home <- players$is_home[keep]
+  has_share <- "share" %in% names(players)
+  share <- if (has_share) as.numeric(players$share[keep]) else rep(1, length(pid))
 
-  players_valid$is_regular <- players_valid$player_id %in% player_ids
-  players_valid$is_replacement <- players_valid$player_id %in% replacement_player_ids
-  players_valid$player_col <- player_idx[players_valid$player_id]
-
-  # Validate: regular players must have valid column indices
-  regular_with_na <- players_valid$is_regular & is.na(players_valid$player_col)
+  player_col <- unname(player_idx[pid])
+  is_regular_name <- pid %in% player_ids
+  # Validate: regular players must have valid column indices (legacy guard)
+  regular_with_na <- is_regular_name & is.na(player_col)
   if (any(regular_with_na)) {
-    bad_ids <- unique(players_valid$player_id[regular_with_na])
+    bad_ids <- unique(pid[regular_with_na])
     cli::cli_warn("Found regular players with NA column indices: {paste(head(bad_ids, 5), collapse = ', ')}")
-    players_valid$is_regular[regular_with_na] <- FALSE
   }
+  is_regular <- is_regular_name & !is.na(player_col)
+  is_replacement <- pid %in% replacement_player_ids
+  rm(pid, is_regular_name, regular_with_na)
 
-  home_regular <- players_valid[players_valid$is_home & players_valid$is_regular, ]
-  away_regular <- players_valid[!players_valid$is_home & players_valid$is_regular, ]
-  home_replacement <- players_valid[players_valid$is_home & players_valid$is_replacement, ]
-  away_replacement <- players_valid[!players_valid$is_home & players_valid$is_replacement, ]
+  # -- Regular-player triplets: all four old blocks (home/away x off/def)
+  #    from the same vectors. Offense row = 2s-1 for home (home attacking),
+  #    2s for away; defense row is the opposite row of the pair. --
+  r <- which(is_regular)
+  rs <- splint_idx[r]
+  rc <- as.integer(player_col[r])
+  rx <- share[r]
+  rh <- is_home[r]
+  i_off <- 2L * rs - ifelse(rh, 1L, 0L)
+  i_def <- 2L * rs - ifelse(rh, 0L, 1L)
+  trip_i <- c(i_off, i_def)
+  trip_j <- c(rc, rc + n_players + 1L)
+  trip_x <- c(rx, rx)
+  rm(r, rs, rc, rx, rh, i_off, i_def)
 
-  # Cell value: fractional share of splint that this player was on the field.
-  # If the players table doesn't carry `share` (legacy/FBref data), default
-  # to 1.0 (binary present/absent -- backwards compatible).
-  share_or_one <- function(df) {
-    if (!is.null(df) && "share" %in% names(df)) df$share else rep(1, nrow(df))
-  }
-
-  triplets <- list()
-
-  # Home players on offense (home attacking)
-  if (nrow(home_regular) > 0) {
-    triplets$home_off <- data.frame(
-      i = 2 * home_regular$splint_idx - 1,
-      j = home_regular$player_col,
-      x = share_or_one(home_regular)
-    )
-  }
-
-  # Home players on defense (away attacking)
-  if (nrow(home_regular) > 0) {
-    triplets$home_def <- data.frame(
-      i = 2 * home_regular$splint_idx,
-      j = home_regular$player_col + n_players + 1,
-      x = share_or_one(home_regular)
-    )
-  }
-
-  # Away players on offense (away attacking)
-  if (nrow(away_regular) > 0) {
-    triplets$away_off <- data.frame(
-      i = 2 * away_regular$splint_idx,
-      j = away_regular$player_col,
-      x = share_or_one(away_regular)
-    )
-  }
-
-  # Away players on defense (home attacking)
-  if (nrow(away_regular) > 0) {
-    triplets$away_def <- data.frame(
-      i = 2 * away_regular$splint_idx - 1,
-      j = away_regular$player_col + n_players + 1,
-      x = share_or_one(away_regular)
-    )
-  }
-
-  # Replacement aggregation: sum shares of all replacement players in a splint.
-  # If three replacements cover 30% / 40% / 20% of a splint, the replacement
-  # column gets x = 0.9 for that row. Binary fallback (no share col) gives 1.
-  agg_replacement_share <- function(df) {
-    if (nrow(df) == 0) return(NULL)
-    if ("share" %in% names(df)) {
-      ag <- stats::aggregate(df$share, by = list(splint_idx = df$splint_idx), sum)
-      names(ag)[2] <- "share_sum"
-      ag
+  # -- Replacement triplets: sum of replacement shares per (splint, side).
+  #    share-less legacy data keeps the old binary fallback (1 per splint,
+  #    NOT the count). rowsum() replaces stats::aggregate (same sums, a
+  #    fraction of the memory). --
+  repl_block <- function(side_mask) {
+    m <- is_replacement & side_mask
+    if (!any(m)) return(NULL)
+    if (has_share) {
+      s <- rowsum(share[m], group = splint_idx[m])
+      list(sidx = as.integer(rownames(s)), x = as.numeric(s))
     } else {
-      data.frame(splint_idx = unique(df$splint_idx), share_sum = 1)
+      u <- sort(unique(splint_idx[m]))
+      list(sidx = u, x = rep(1, length(u)))
     }
   }
-
-  # Replacement on offense (home attacking with home replacement)
-  if (nrow(home_replacement) > 0) {
-    ag <- agg_replacement_share(home_replacement)
-    triplets$home_repl_off <- data.frame(
-      i = 2 * ag$splint_idx - 1, j = replacement_off_col, x = ag$share_sum
-    )
+  home_repl <- repl_block(is_home)
+  away_repl <- repl_block(!is_home)
+  if (!is.null(home_repl)) {
+    # offense while home attacking (2s-1); defense on the away-attacking row (2s)
+    trip_i <- c(trip_i, 2L * home_repl$sidx - 1L, 2L * home_repl$sidx)
+    trip_j <- c(trip_j, rep(replacement_off_col, length(home_repl$sidx)),
+                rep(replacement_def_col, length(home_repl$sidx)))
+    trip_x <- c(trip_x, home_repl$x, home_repl$x)
   }
-
-  # Replacement on offense (away attacking with away replacement)
-  if (nrow(away_replacement) > 0) {
-    ag <- agg_replacement_share(away_replacement)
-    triplets$away_repl_off <- data.frame(
-      i = 2 * ag$splint_idx, j = replacement_off_col, x = ag$share_sum
-    )
+  if (!is.null(away_repl)) {
+    # offense while away attacking (2s); defense on the home-attacking row (2s-1)
+    trip_i <- c(trip_i, 2L * away_repl$sidx, 2L * away_repl$sidx - 1L)
+    trip_j <- c(trip_j, rep(replacement_off_col, length(away_repl$sidx)),
+                rep(replacement_def_col, length(away_repl$sidx)))
+    trip_x <- c(trip_x, away_repl$x, away_repl$x)
   }
-
-  # Replacement on defense (home attacking with away replacement)
-  if (nrow(away_replacement) > 0) {
-    ag <- agg_replacement_share(away_replacement)
-    triplets$away_repl_def <- data.frame(
-      i = 2 * ag$splint_idx - 1, j = replacement_def_col, x = ag$share_sum
-    )
-  }
-
-  # Replacement on defense (away attacking with home replacement)
-  if (nrow(home_replacement) > 0) {
-    ag <- agg_replacement_share(home_replacement)
-    triplets$home_repl_def <- data.frame(
-      i = 2 * ag$splint_idx, j = replacement_def_col, x = ag$share_sum
-    )
-  }
-
-  all_triplets <- do.call(rbind, triplets)
 
   replacement_off_appearances <- sum(
-    if (nrow(home_replacement) > 0) length(unique(home_replacement$splint_idx)) else 0,
-    if (nrow(away_replacement) > 0) length(unique(away_replacement$splint_idx)) else 0
+    if (!is.null(home_repl)) length(home_repl$sidx) else 0,
+    if (!is.null(away_repl)) length(away_repl$sidx) else 0
   )
   replacement_def_appearances <- replacement_off_appearances
 
@@ -417,12 +377,14 @@ add_value_metrics_to_splints <- function(splint_data, player_game_epv = NULL,
                        replacement_off_appearances, replacement_def_appearances))
 
   X_players <- Matrix::sparseMatrix(
-    i = all_triplets$i,
-    j = all_triplets$j,
-    x = all_triplets$x,
+    i = trip_i,
+    j = trip_j,
+    x = trip_x,
     dims = c(n_rows, n_player_cols),
     dimnames = list(NULL, col_names)
   )
+  rm(trip_i, trip_j, trip_x, splint_idx, share, is_home, player_col,
+     is_regular, is_replacement)
 
   list(
     X_players = X_players,
