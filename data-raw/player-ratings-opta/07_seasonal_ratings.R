@@ -373,6 +373,13 @@ seasonal_ratings_list <- lapply(seasons, function(season) {
       min_minutes_rapm = 200
     )
   }, error = function(e) {
+    # panna#87: R buffers warning() into a terse "There were N warnings"
+    # summary by default, hiding the actual message. cat() to stderr prints
+    # immediately regardless of the warning options, so a run that silently
+    # returns 0 processed seasons (as happened in run 28921623204 — all 14
+    # seasons failed with no visible cause) shows its real error inline.
+    cat(sprintf("\n[season %d ERROR]: %s\n", season, conditionMessage(e)))
+    cat(sprintf("[season %d CALL]: %s\n", season, deparse(conditionCall(e))))
     warning(sprintf("Failed to process season %d: %s", season, e$message))
     NULL
   })
