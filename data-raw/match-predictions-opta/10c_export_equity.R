@@ -28,11 +28,20 @@ if (!dir.exists(cache_dir)) dir.create(cache_dir, recursive = TRUE)
 repo <- "peteowen1/pannadata"
 tag <- "blog-latest"
 
-domestic_leagues  <- c("ENG", "ESP", "GER", "ITA", "FRA",
-                        "NED", "POR", "SCO", "TUR", "ENG2")
-continental_cups  <- c("UCL", "UEL", "UECL")
-intl_tournaments  <- c("WC", "EURO")
-blog_leagues      <- c(domestic_leagues, continental_cups, intl_tournaments)
+# Groups come from the shared canonical constant (constants.R: PANNA_LEAGUE_GROUPS),
+# so this can't drift from 10b_export_game_logs.R's league set (H-DRIFT,
+# 2026-07-08 review — this list previously hardcoded 10 domestic leagues and
+# no calendar leagues, missing MLS/ARG/BRA/SAU/AUS/CAFCL that 10b covers).
+domestic_leagues  <- PANNA_LEAGUE_GROUPS$domestic
+calendar_leagues  <- PANNA_LEAGUE_GROUPS$calendar    # calendar-year season labels
+continental_cups  <- PANNA_LEAGUE_GROUPS$continental
+intl_tournaments  <- PANNA_LEAGUE_GROUPS$intl
+# Leagues whose season label is resolved by year prefix rather than passed through
+season_label_leagues <- c(intl_tournaments, calendar_leagues)
+if (!exists("blog_leagues", inherits = FALSE)) {
+  blog_leagues    <- c(domestic_leagues, calendar_leagues,
+                       continental_cups, intl_tournaments)
+}
 
 # Seasons to export. Vector (new) or scalar `game_log_season` (back-compat
 # with the previous single-season behavior).
@@ -107,7 +116,7 @@ validate_equity_schema <- function(dt, league, season) {
   for (league in blog_leagues) {
     tryCatch({
       league_season <- resolve_league_season(league, season,
-                                              tournament_leagues = intl_tournaments)
+                                              tournament_leagues = season_label_leagues)
       if (is.null(league_season)) {
         message(sprintf("  Skipping %s %s — no tournament this year", league, season))
         stop(skip_league_cond("no tournament this year"))

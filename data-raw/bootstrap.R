@@ -39,11 +39,15 @@ message(paste(rep("=", 60), collapse = ""))
 if (what %in% c("all", "opta")) {
   message("\n[1/3] Downloading Opta data from GitHub Releases...")
   tryCatch({
-    pb_download_source("opta")
+    # pb_download_source("opta") requires an "opta-parquet.tar.gz" archive
+    # asset that no longer exists on opta-latest (individual consolidated
+    # parquets only) -- pb_download_opta() is the incremental sync and works
+    # from an empty directory too, so it doubles as the fresh-clone puller.
+    pb_download_opta(dest = file.path(pannadata_path, "data", "opta"))
     message("  OK: Opta data downloaded")
   }, error = function(e) {
     message(sprintf("  WARN: Failed to download Opta data: %s", e$message))
-    message("  You can retry with: panna::pb_download_source('opta')")
+    message("  You can retry with: panna::pb_download_opta()")
   })
 }
 

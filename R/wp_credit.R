@@ -109,7 +109,12 @@ aggregate_player_game_wpa <- function(spadl_with_wpa, lineups = NULL,
   actor_agg <- dt[, .(
     wpa_as_actor = sum(wpa_actor, na.rm = TRUE),
     n_wpa_actions = sum(wpa != 0, na.rm = TRUE),
-    max_wpa = if (.N > 0) wpa[which.max(abs(wpa))] else 0
+    # which.max(abs(wpa)) on an all-NA group returns integer(0), so
+    # wpa[which.max(...)] is length-0 there -- inconsistent with the length-1
+    # result from every other group and errors data.table's j (L2, 2026-07-08
+    # review). Guard on all-NA explicitly rather than relying on .N > 0
+    # (which is always TRUE for a non-empty group regardless of NAs).
+    max_wpa = if (all(is.na(wpa))) 0 else wpa[which.max(abs(wpa))]
   ), by = .(player_id, player_name, team_id, match_id)]
 
   # --- Receiver WPA per player per match ---

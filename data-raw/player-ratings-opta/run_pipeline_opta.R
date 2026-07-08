@@ -15,27 +15,27 @@ devtools::load_all()
 
 # LEAGUES TO INCLUDE — canonical rating/display set (PANNA_RATING_LEAGUES) +
 # bridge comps for cross-league connectivity. Shared with step 03 / skills / 10b.
-if (!exists("leagues")) leagues <- c(PANNA_RATING_LEAGUES, PANNA_BRIDGE_LEAGUES)
+if (!exists("leagues", inherits = FALSE)) leagues <- c(PANNA_RATING_LEAGUES, PANNA_BRIDGE_LEAGUES)
 
 # SEASONS (NULL = all available, or specify like c("2024-2025"))
 # For incremental rebuilds, set to the changed season(s):
 #   seasons <- c("2025-2026")  # Only rebuild current season
 # Note: Steps 04+ (RAPM/SPM/xRAPM) run on ALL data regardless,
 # since RAPM is cross-season by design. Only steps 01-03 benefit.
-if (!exists("seasons")) seasons <- NULL
+if (!exists("seasons", inherits = FALSE)) seasons <- NULL
 
 # MINIMUM SEASON (skip data before this season, NULL = no filter)
-if (!exists("min_season")) min_season <- "2013-2014"
+if (!exists("min_season", inherits = FALSE)) min_season <- "2013-2014"
 
 # ENRICH SPM WITH xMETRICS FEATURES (xG/xA/xPass per-90)
-if (!exists("use_xmetrics_features")) use_xmetrics_features <- TRUE
+if (!exists("use_xmetrics_features", inherits = FALSE)) use_xmetrics_features <- TRUE
 
 # START FROM STEP (skip earlier steps that are already cached)
 # Set before sourcing: start_step <- 3  # resume from splints
-if (!exists("start_step")) start_step <- 1
+if (!exists("start_step", inherits = FALSE)) start_step <- 1
 
 # WHICH STEPS TO RUN (auto-populated from start_step)
-if (!exists("run_steps")) {
+if (!exists("run_steps", inherits = FALSE)) {
   run_steps <- list(
     step_01_load_data        = start_step <= 1,
     step_02_data_processing  = start_step <= 2,
@@ -52,7 +52,7 @@ if (!exists("run_steps")) {
 # FORCE REBUILD FROM STEP
 # Set to a step number to clear cache and rebuild from that step onwards
 # NULL = normal run (use cache), 1 = full refresh
-if (!exists("force_rebuild_from")) force_rebuild_from <- NULL
+if (!exists("force_rebuild_from", inherits = FALSE)) force_rebuild_from <- NULL
 
 # 3. Helper Functions ----
 

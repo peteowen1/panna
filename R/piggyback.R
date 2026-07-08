@@ -983,6 +983,15 @@ pb_download_predictions <- function(repo = "peteowen1/pannadata",
 
   dir.create(dest, showWarnings = FALSE, recursive = TRUE)
 
+  parquet_path <- file.path(dest, "predictions.parquet")
+
+  # Pre-delete the existing file: piggyback::pb_download() can warn "not
+  # found in repo" without erroring (documented at pb_download_source() for
+  # the sibling tarball path), which would otherwise leave a stale
+  # predictions.parquet in place and pass the file.exists() check below as
+  # if the download had succeeded.
+  if (file.exists(parquet_path)) unlink(parquet_path)
+
   cli::cli_alert_info("Downloading predictions from {repo} ({tag})...")
 
   tryCatch({
@@ -1001,9 +1010,16 @@ pb_download_predictions <- function(repo = "peteowen1/pannadata",
     ))
   })
 
-  parquet_path <- file.path(dest, "predictions.parquet")
   if (!file.exists(parquet_path)) {
     cli::cli_abort("Download failed - predictions.parquet not found after download.")
+  }
+
+  if (isFALSE(validate_parquet_file(parquet_path))) {
+    unlink(parquet_path)
+    cli::cli_abort(c(
+      "Downloaded predictions.parquet is corrupt (bad magic bytes).",
+      "i" = "The corrupt file has been removed. Please re-run to re-download."
+    ))
   }
 
   size_mb <- round(file.info(parquet_path)$size / (1024 * 1024), 2)

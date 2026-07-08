@@ -364,7 +364,10 @@ player_value <- function(player = NULL, season = NULL,
       player_epv[, minutes_played := 90]
     }
     epr_result <- tryCatch(
-      calculate_epr(player_epv, ref_date = Sys.Date()),
+      # Single-player input: league_baseline=TRUE would compute the "league"
+      # baseline from this one player's own rows and self-center EPR toward
+      # 0 rather than against the real league (L4, 2026-07-08 review).
+      calculate_epr(player_epv, ref_date = Sys.Date(), league_baseline = FALSE),
       error = function(e) NULL
     )
   }
