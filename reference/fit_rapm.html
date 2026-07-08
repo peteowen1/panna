@@ -65,7 +65,8 @@ Covariates: gd, gf, ga, avg_min, is_home
 <span>  penalize_covariates <span class="op">=</span> <span class="cn">FALSE</span>,</span>
 <span>  parallel <span class="op">=</span> <span class="cn">TRUE</span>,</span>
 <span>  n_cores <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  fixed_lambda <span class="op">=</span> <span class="cn">NULL</span></span>
+<span>  fixed_lambda <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  lambda_seq <span class="op">=</span> <span class="cn">NULL</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -112,6 +113,15 @@ Covariates: gd, gf, ga, avg_min, is_home
 behaviour). Used by the as-of-date career-Panna build to avoid re-running CV
 for every reference date.</p></dd>
 
+
+<dt id="arg-lambda-seq">lambda_seq<a class="anchor" aria-label="anchor" href="#arg-lambda-seq"></a></dt>
+<dd><p>Optional explicit lambda sequence for <code>cv.glmnet</code>
+(its <code>lambda</code> argument). The panna#87 cloud path passes a short
+grid bracketing the closed-form lambda (e.g. <code>lam * 2^seq(3, -3,
+  0.5)</code>) so lambda is chosen BY CV from the data — adapting to sample
+size, weights, and design — at a fraction of the default 100-lambda
+path's time/memory. Ignored when <code>fixed_lambda</code> is supplied.</p></dd>
+
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
@@ -131,7 +141,7 @@ for every reference date.</p></dd>
 </div>
 
 <div class="pkgdown-footer-right">
-  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.0.</p>
+  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.1.</p>
 </div>
 
     </footer></div>

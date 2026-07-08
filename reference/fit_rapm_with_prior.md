@@ -15,7 +15,8 @@ fit_rapm_with_prior(
   nfolds = 10,
   use_weights = TRUE,
   penalize_covariates = FALSE,
-  fixed_lambda = NULL
+  fixed_lambda = NULL,
+  lambda_seq = NULL
 )
 ```
 
@@ -55,6 +56,13 @@ fit_rapm_with_prior(
   fits at this lambda directly (see `.glmnet_fixed_lambda`). Default
   `NULL` = cross-validated (current behaviour). Used by the as-of-date
   career-Panna build.
+
+- lambda_seq:
+
+  Optional explicit lambda sequence for `cv.glmnet` (see
+  [`fit_rapm`](https://peteowen1.github.io/panna/reference/fit_rapm.md));
+  the panna#87 cloud path passes a short grid bracketing the closed-form
+  lambda. Ignored when `fixed_lambda` is supplied.
 
 ## Value
 

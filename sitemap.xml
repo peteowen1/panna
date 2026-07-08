@@ -225,6 +225,7 @@
 <url><loc>https://peteowen1.github.io/panna/reference/dot-aggregate_opta_player_stats.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-aggregate_player_minutes.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-aggregate_stat_table.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/dot-aggregate_xmetrics_for_spm.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-build_rapm_row_data.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-build_rapm_sparse_matrix.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-calculate_derived_features.html</loc></url>
@@ -272,6 +273,7 @@
 <url><loc>https://peteowen1.github.io/panna/reference/dot-safe_col.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-simplify_position.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-spm_opta_predictor_cols.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/dot-spm_xmetrics_per90_cols.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-srd.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/download_opta_catalog.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/download_opta_release_file.html</loc></url>
