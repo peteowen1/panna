@@ -17,23 +17,26 @@ use_xmetrics_features <- if (exists("use_xmetrics_features")) use_xmetrics_featu
 
 cat("\n=== Loading Data ===\n")
 
-processed_data <- readRDS(file.path(cache_dir, "02_processed_data.rds"))
-rapm_results <- readRDS(file.path(cache_dir, "04_rapm.rds"))
+# panna#87: opta_stats/opta_xmetrics live in their OWN file (02_opta_stats.rds)
+# as of the step-02 split — NEVER read the monolithic 02_processed_data.rds
+# here. readRDS() must deserialize an object's entire graph before returning
+# any of it, so this step used to pay for lineups/shooting/results/
+# stats_summary too just to reach these two fields — confirmed live: this
+# exact load left only ~110MB of 16GB free (run 28920296396), one step
+# after the identical load OOM'd outright (07_seasonal_ratings, run
+# 28921032951). Loading the narrow file directly removes that risk instead
+# of merely narrowing faster after the fact.
+opta_stats_bundle <- readRDS(file.path(cache_dir, "02_opta_stats.rds"))
+opta_stats <- opta_stats_bundle$opta_stats
+opta_xmetrics <- opta_stats_bundle$opta_xmetrics
+rm(opta_stats_bundle); gc(verbose = FALSE)
 
+rapm_results <- readRDS(file.path(cache_dir, "04_rapm.rds"))
 rapm_ratings <- rapm_results$ratings
 # Free memory — rapm_results contains the full sparse design matrix
 # (~664K x 38K), much bigger than just the ratings we need.
 rm(rapm_results); gc(verbose = FALSE)
 cat("Players with RAPM ratings:", nrow(rapm_ratings), "\n")
-
-# Extract just the bits of processed_data we need (opta_stats and
-# opta_xmetrics), then drop processed_data immediately. Holding the full
-# processed_data list (~3-5 GB with lineups + events + shooting) alongside
-# data.table aggregations of opta_stats (~1.3 GB) was OOM-killing step 5
-# on standard 7 GB GHA runners.
-opta_stats <- processed_data$opta_stats
-opta_xmetrics <- processed_data$opta_xmetrics
-rm(processed_data); gc(verbose = FALSE, full = TRUE)
 
 # 3. Aggregate Opta Player Statistics ----
 

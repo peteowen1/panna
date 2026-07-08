@@ -209,7 +209,11 @@ jobs:
           # Step N consumes step (N-1)'s output (and earlier).
           declare -a NEEDED=()
           if [ "$INPUT_START_STEP" -ge 2 ]; then NEEDED+=(01_raw_data.rds 01_config.rds); fi
-          if [ "$INPUT_START_STEP" -ge 3 ]; then NEEDED+=(02_processed_data.rds); fi
+          # panna#87: 02_opta_stats.rds (opta_stats/opta_xmetrics, split out
+          # of 02_processed_data.rds so steps 5/7 never deserialize
+          # lineups/shooting/results alongside it) is needed at the same
+          # tier as 02_processed_data.rds -- both are step 2's output.
+          if [ "$INPUT_START_STEP" -ge 3 ]; then NEEDED+=(02_processed_data.rds 02_opta_stats.rds); fi
           if [ "$INPUT_START_STEP" -ge 4 ]; then NEEDED+=(03_splints.rds); fi
           if [ "$INPUT_START_STEP" -ge 5 ]; then NEEDED+=(04_rapm.rds); fi
           if [ "$INPUT_START_STEP" -ge 6 ]; then NEEDED+=(05_spm.rds); fi
@@ -381,7 +385,7 @@ jobs:
           echo "Uploading any per-step caches that were produced..."
           UPLOADED=0
           for f in 01_raw_data.rds 01_config.rds \
-                   02_processed_data.rds \
+                   02_processed_data.rds 02_opta_stats.rds \
                    03_splints.rds \
                    04_rapm.rds 04_rapm_multi.rds \
                    05_spm.rds \

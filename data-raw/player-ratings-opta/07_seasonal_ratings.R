@@ -22,20 +22,19 @@ cat("\n=== Loading Data ===\n")
 
 splint_data <- readRDS(file.path(cache_dir, "03_splints.rds"))
 
-# panna#87: 02_processed_data.rds holds ALL of step 01/02's big tables
-# (stats, xmetrics, lineups, shooting, match_xg) — everything except events,
-# which 02_data_processing.R already strips before saving. This step only
-# ever reads $opta_stats/$opta_xmetrics (previously extracted 320+ lines
-# down, after the xG-quality report + season loop had already run with the
-# FULL object resident). 05_spm.R hit this identical anti-pattern first and
-# fixed it ("Extract just the bits ... then drop processed_data immediately
-# ... was OOM-killing step 5") — that fix was never mirrored here. Narrow at
-# load time so the unused lineups/shooting/match_xg tables never coexist
-# with the season-loop's own allocations.
-processed_data <- readRDS(file.path(cache_dir, "02_processed_data.rds"))
-opta_stats <- processed_data$opta_stats
-opta_xmetrics <- processed_data$opta_xmetrics
-rm(processed_data); gc(verbose = FALSE)
+# panna#87: opta_stats/opta_xmetrics live in their OWN file (02_opta_stats.rds)
+# as of the step-02 split. Narrowing AFTER loading the monolithic
+# 02_processed_data.rds was insufficient — readRDS() must deserialize the
+# WHOLE object graph (stats + xmetrics + lineups + shooting + results +
+# stats_summary) before returning anything, so the peak happened inside the
+# readRDS() call itself. Confirmed live: this step OOM'd during "=== Loading
+# Data ===" (run 28921032951) one step after 05_spm's identical load left
+# only ~110MB of 16GB free (run 28920296396). Loading the narrow file
+# directly removes the peak instead of shrinking what's kept after it.
+opta_stats_bundle <- readRDS(file.path(cache_dir, "02_opta_stats.rds"))
+opta_stats <- opta_stats_bundle$opta_stats
+opta_xmetrics <- opta_stats_bundle$opta_xmetrics
+rm(opta_stats_bundle); gc(verbose = FALSE)
 
 spm_results <- readRDS(file.path(cache_dir, "05_spm.rds"))
 
