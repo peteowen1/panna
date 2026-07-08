@@ -21,7 +21,22 @@ cat(sprintf("Using lambda = %s for seasonal ratings\n", seasonal_lambda))
 cat("\n=== Loading Data ===\n")
 
 splint_data <- readRDS(file.path(cache_dir, "03_splints.rds"))
+
+# panna#87: 02_processed_data.rds holds ALL of step 01/02's big tables
+# (stats, xmetrics, lineups, shooting, match_xg) — everything except events,
+# which 02_data_processing.R already strips before saving. This step only
+# ever reads $opta_stats/$opta_xmetrics (previously extracted 320+ lines
+# down, after the xG-quality report + season loop had already run with the
+# FULL object resident). 05_spm.R hit this identical anti-pattern first and
+# fixed it ("Extract just the bits ... then drop processed_data immediately
+# ... was OOM-killing step 5") — that fix was never mirrored here. Narrow at
+# load time so the unused lineups/shooting/match_xg tables never coexist
+# with the season-loop's own allocations.
 processed_data <- readRDS(file.path(cache_dir, "02_processed_data.rds"))
+opta_stats <- processed_data$opta_stats
+opta_xmetrics <- processed_data$opta_xmetrics
+rm(processed_data); gc(verbose = FALSE)
+
 spm_results <- readRDS(file.path(cache_dir, "05_spm.rds"))
 
 cat("Splints:", nrow(splint_data$splints), "\n")
@@ -341,11 +356,8 @@ cat("\n=== Processing All Seasons ===\n")
 cat(sprintf("Processing %d seasons: %s\n",
             length(seasons), paste(seasons, collapse = ", ")))
 
-opta_stats <- processed_data$opta_stats
-opta_xmetrics <- processed_data$opta_xmetrics
-
-# Free memory
-rm(processed_data); gc(verbose = FALSE)
+# opta_stats/opta_xmetrics already extracted at load time (panna#87) —
+# processed_data itself was freed right after.
 
 seasonal_ratings_list <- lapply(seasons, function(season) {
   tryCatch({
