@@ -21,6 +21,7 @@ cat(sprintf("Using lambda = %s for seasonal ratings\n", seasonal_lambda))
 cat("\n=== Loading Data ===\n")
 
 splint_data <- readRDS(file.path(cache_dir, "03_splints.rds"))
+if (exists(".log_rss", mode = "function")) .log_rss("after loading 03_splints.rds")
 
 # panna#87: opta_stats/opta_xmetrics live in their OWN file (02_opta_stats.rds)
 # as of the step-02 split. Narrowing AFTER loading the monolithic
@@ -35,8 +36,14 @@ opta_stats_bundle <- readRDS(file.path(cache_dir, "02_opta_stats.rds"))
 opta_stats <- opta_stats_bundle$opta_stats
 opta_xmetrics <- opta_stats_bundle$opta_xmetrics
 rm(opta_stats_bundle); gc(verbose = FALSE)
+if (exists(".log_rss", mode = "function")) {
+  .log_rss(sprintf("after loading 02_opta_stats.rds (%s stats rows, %s xmetrics rows)",
+                   format(nrow(opta_stats), big.mark = ","),
+                   format(if (!is.null(opta_xmetrics)) nrow(opta_xmetrics) else 0L, big.mark = ",")))
+}
 
 spm_results <- readRDS(file.path(cache_dir, "05_spm.rds"))
+if (exists(".log_rss", mode = "function")) .log_rss("after loading 05_spm.rds")
 
 cat("Splints:", nrow(splint_data$splints), "\n")
 cat("Player-splint records:", nrow(splint_data$players), "\n")
@@ -44,6 +51,7 @@ cat("Player-splint records:", nrow(splint_data$players), "\n")
 # Filter bad xG data (higher threshold for SPADL-derived xG)
 filter_result <- filter_bad_xg_data(splint_data, zero_xg_threshold = ZERO_XG_THRESHOLD_OPTA, verbose = TRUE)
 splint_data <- filter_result$splint_data
+if (exists(".log_rss", mode = "function")) .log_rss("after filter_bad_xg_data")
 
 seasons <- sort(unique(splint_data$splints$season_end_year))
 cat("\nAvailable seasons:", paste(seasons, collapse = ", "), "\n")
@@ -373,21 +381,30 @@ cat(sprintf("Processing %d seasons: %s\n",
 # rows" from the remaining pool each iteration can't drop or duplicate
 # anything.
 cat("\n=== Processing All Seasons (shrinking-source loop) ===\n")
+if (exists(".log_rss", mode = "function")) .log_rss("before shrinking-loop setup")
 remaining_splints <- splint_data$splints
 remaining_players <- splint_data$players
 remaining_stats <- opta_stats
 remaining_xm <- opta_xmetrics
 match_info_shared <- splint_data$match_info
+if (exists(".log_rss", mode = "function")) .log_rss("after remaining_* bindings (should be ~free, no copy)")
 stats_end_years <- sapply(unique(opta_stats$season), extract_season_end_year)
 xm_end_years <- if (!is.null(opta_xmetrics) && nrow(opta_xmetrics) > 0) {
   sapply(unique(opta_xmetrics$season), extract_season_end_year)
 } else NULL
+if (exists(".log_rss", mode = "function")) .log_rss("after end-year lookups")
 rm(splint_data, opta_stats, opta_xmetrics); gc(verbose = FALSE)
+if (exists(".log_rss", mode = "function")) .log_rss("after rm(splint_data, opta_stats, opta_xmetrics) + gc")
 
 seasonal_ratings_list <- vector("list", length(seasons))
 names(seasonal_ratings_list) <- as.character(seasons)
 for (season in seasons) {
   key <- as.character(season)
+  if (exists(".log_rss", mode = "function")) {
+    .log_rss(sprintf("season %d start (remaining_stats %s rows, remaining_players %s rows)",
+                     season, format(nrow(remaining_stats), big.mark = ","),
+                     format(nrow(remaining_players), big.mark = ",")))
+  }
 
   is_this_season <- remaining_splints$season_end_year == season
   s_splints <- remaining_splints[is_this_season, ]
