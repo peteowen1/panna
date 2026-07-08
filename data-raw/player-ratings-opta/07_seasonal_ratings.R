@@ -380,55 +380,52 @@ cat(sprintf("Processing %d seasons: %s\n",
 # row matches exactly one season_end_year), so removing "this season's
 # rows" from the remaining pool each iteration can't drop or duplicate
 # anything.
-cat("\n=== Processing All Seasons (shrinking-source loop) ===\n")
-if (exists(".log_rss", mode = "function")) .log_rss("before shrinking-loop setup")
-remaining_splints <- splint_data$splints
-remaining_players <- splint_data$players
-remaining_stats <- opta_stats
-remaining_xm <- opta_xmetrics
-match_info_shared <- splint_data$match_info
-if (exists(".log_rss", mode = "function")) .log_rss("after remaining_* bindings (should be ~free, no copy)")
+cat("\n=== Processing All Seasons ===\n")
+if (exists(".log_rss", mode = "function")) .log_rss("before season loop")
+# panna#87: earlier attempts tried to SHRINK the resident pool by removing
+# each season's rows via `x[!mask, ]` after extracting them. That's a false
+# economy — removing ~1/14th of a table means COPYING THE OTHER ~13/14ths,
+# every iteration, with a transient 2x-of-current-size spike each time
+# (confirmed live, run 28927833569: RSS held flat at 9.5GB through all the
+# setup/binding/rm steps — proving those are genuinely free — then jumped
+# +6.3GB on the very FIRST, SMALLEST season the instant the remove-by-copy
+# pattern ran). A full one-time pre-split (tried earlier, run 28926373982)
+# is equally wrong the other way: it needs the original AND all 14 splits
+# resident simultaneously, a ~2x-of-EVERYTHING spike that died even faster.
+# Filtering EACH season directly from the UNTOUCHED original tables (no
+# removal, no pre-split) costs only O(that season's own row count) per
+# iteration — the same approach the pipeline used for years before tonight,
+# now combined with the two real fixes from this session (shared SPM
+# xMetrics enrichment; RSS checkpoints for visibility). The tradeoff this
+# accepts: opta_stats/splint_data$players stay resident for the whole loop
+# (confirmed ~9.5GB baseline at current scale) — if that alone doesn't
+# leave enough headroom for the biggest season's fit, the runner has
+# genuinely outgrown 16GB and needs a size bump, not a cleverer loop.
 stats_end_years <- sapply(unique(opta_stats$season), extract_season_end_year)
 xm_end_years <- if (!is.null(opta_xmetrics) && nrow(opta_xmetrics) > 0) {
   sapply(unique(opta_xmetrics$season), extract_season_end_year)
 } else NULL
-if (exists(".log_rss", mode = "function")) .log_rss("after end-year lookups")
-rm(splint_data, opta_stats, opta_xmetrics); gc(verbose = FALSE)
-if (exists(".log_rss", mode = "function")) .log_rss("after rm(splint_data, opta_stats, opta_xmetrics) + gc")
 
 seasonal_ratings_list <- vector("list", length(seasons))
 names(seasonal_ratings_list) <- as.character(seasons)
 for (season in seasons) {
   key <- as.character(season)
-  if (exists(".log_rss", mode = "function")) {
-    .log_rss(sprintf("season %d start (remaining_stats %s rows, remaining_players %s rows)",
-                     season, format(nrow(remaining_stats), big.mark = ","),
-                     format(nrow(remaining_players), big.mark = ",")))
-  }
+  if (exists(".log_rss", mode = "function")) .log_rss(sprintf("season %d start", season))
 
-  is_this_season <- remaining_splints$season_end_year == season
-  s_splints <- remaining_splints[is_this_season, ]
-  remaining_splints <- remaining_splints[!is_this_season, ]
-
-  is_this_player <- remaining_players$splint_id %in% s_splints$splint_id
-  s_players <- remaining_players[is_this_player, ]
-  remaining_players <- remaining_players[!is_this_player, ]
+  s_splints <- splint_data$splints[splint_data$splints$season_end_year == season, ]
+  s_players <- splint_data$players[splint_data$players$splint_id %in% s_splints$splint_id, ]
 
   s_stats_seasons <- names(stats_end_years)[stats_end_years == season]
-  is_this_stats <- remaining_stats$season %in% s_stats_seasons
-  s_stats <- remaining_stats[is_this_stats, ]
-  remaining_stats <- remaining_stats[!is_this_stats, ]
+  s_stats <- opta_stats[opta_stats$season %in% s_stats_seasons, ]
 
   s_xm <- NULL
   if (!is.null(xm_end_years)) {
     xm_matching <- names(xm_end_years)[xm_end_years == season]
-    is_this_xm <- remaining_xm$season %in% xm_matching
-    s_xm <- remaining_xm[is_this_xm, ]
-    remaining_xm <- remaining_xm[!is_this_xm, ]
+    s_xm <- opta_xmetrics[opta_xmetrics$season %in% xm_matching, ]
   }
 
   bundle_splint_data <- list(splints = s_splints, players = s_players,
-                             match_info = match_info_shared)
+                             match_info = splint_data$match_info)
 
   seasonal_ratings_list[[key]] <- tryCatch({
     fit_season_ratings_opta(
@@ -458,7 +455,7 @@ for (season in seasons) {
   rm(s_splints, s_players, s_stats, s_xm, bundle_splint_data)
   gc(verbose = FALSE)
 }
-rm(remaining_splints, remaining_players, remaining_stats, remaining_xm, match_info_shared)
+rm(splint_data, opta_stats, opta_xmetrics)
 gc(verbose = FALSE)
 
 seasonal_ratings_list <- Filter(Negate(is.null), seasonal_ratings_list)
