@@ -347,17 +347,59 @@ cat(sprintf("Processing %d seasons: %s\n",
 # opta_stats/opta_xmetrics already extracted at load time (panna#87) —
 # processed_data itself was freed right after.
 
-seasonal_ratings_list <- lapply(seasons, function(season) {
-  tryCatch({
+# panna#87: pre-split by season BEFORE looping, then free the full-history
+# tables. Confirmed live (run 28925567800, post the "undefined columns"
+# fix): seasons succeeded individually and grew progressively slower, then
+# the process was killed (exit 143) partway through — splint_data$players
+# (~1.2GB+ at June scale, bigger now) and opta_stats (~7.5GB+) stayed fully
+# resident for ALL 14 iterations, previously freed only after the loop
+# ended. fit_season_ratings_opta's own filtering logic (season-end-year
+# matching, calendar-league handling) is UNTOUCHED and re-runs per bundle —
+# it's a no-op on an already-single-season subset, so behavior is identical
+# to before; only the memory profile changes. Each bundle is cleared from
+# `season_bundles` right after its season is processed, so the resident
+# baseline SHRINKS across the loop instead of staying constant — which
+# matters because later seasons (more leagues) are the biggest.
+cat("\n=== Pre-splitting by season ===\n")
+stats_end_years <- sapply(unique(opta_stats$season), extract_season_end_year)
+xm_end_years <- if (!is.null(opta_xmetrics) && nrow(opta_xmetrics) > 0) {
+  sapply(unique(opta_xmetrics$season), extract_season_end_year)
+} else NULL
+
+season_bundles <- lapply(seasons, function(s) {
+  s_splints <- splint_data$splints[splint_data$splints$season_end_year == s, ]
+  s_players <- splint_data$players[splint_data$players$splint_id %in% s_splints$splint_id, ]
+  s_stats_seasons <- names(stats_end_years)[stats_end_years == s]
+  s_xm <- if (!is.null(xm_end_years)) {
+    xm_matching <- names(xm_end_years)[xm_end_years == s]
+    opta_xmetrics[opta_xmetrics$season %in% xm_matching, ]
+  } else NULL
+  list(
+    splint_data = list(splints = s_splints, players = s_players,
+                       match_info = splint_data$match_info),
+    opta_stats = opta_stats[opta_stats$season %in% s_stats_seasons, ],
+    opta_xmetrics = s_xm
+  )
+})
+names(season_bundles) <- as.character(seasons)
+rm(splint_data, opta_stats, opta_xmetrics); gc(verbose = FALSE)
+cat(sprintf("  Split into %d season bundles; full-history tables freed\n", length(season_bundles)))
+
+seasonal_ratings_list <- vector("list", length(seasons))
+names(seasonal_ratings_list) <- as.character(seasons)
+for (season in seasons) {
+  key <- as.character(season)
+  bundle <- season_bundles[[key]]
+  seasonal_ratings_list[[key]] <- tryCatch({
     fit_season_ratings_opta(
-      splint_data = splint_data,
-      opta_stats = opta_stats,
+      splint_data = bundle$splint_data,
+      opta_stats = bundle$opta_stats,
       season = season,
       offense_spm_glmnet = offense_spm_glmnet,
       offense_spm_xgb = offense_spm_xgb,
       defense_spm_glmnet = defense_spm_glmnet,
       defense_spm_xgb = defense_spm_xgb,
-      opta_xmetrics = opta_xmetrics,
+      opta_xmetrics = bundle$opta_xmetrics,
       min_minutes_spm = 200,
       min_minutes_rapm = 200
     )
@@ -372,12 +414,16 @@ seasonal_ratings_list <- lapply(seasons, function(season) {
     warning(sprintf("Failed to process season %d: %s", season, e$message))
     NULL
   })
-})
+  # Free this season's bundle immediately — season_bundles shrinks as the
+  # loop progresses, keeping the resident baseline low even as later
+  # (bigger) seasons need more per-iteration headroom.
+  season_bundles[[key]] <- NULL
+  bundle <- NULL
+  gc(verbose = FALSE)
+}
+rm(season_bundles); gc(verbose = FALSE)
 
 seasonal_ratings_list <- Filter(Negate(is.null), seasonal_ratings_list)
-
-# Free memory
-rm(splint_data, opta_stats, opta_xmetrics); gc(verbose = FALSE)
 
 seasonal_spm <- bind_rows(lapply(seasonal_ratings_list, `[[`, "spm"))
 seasonal_rapm <- bind_rows(lapply(seasonal_ratings_list, `[[`, "rapm"))
