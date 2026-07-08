@@ -84,11 +84,26 @@ if (!is.null(rapm_data$seasons)) {
 
 cat("\n=== Fitting RAPM Model ===\n")
 
-# panna#87: fixed-lambda mode skips CV (the 11-refit memory spike); else CV.
-base_fixed_lambda <- if (use_fixed_lambda) lambda_formula(.n_obs_valid(rapm_data)) else NULL
+# panna#87: bracketed mini-CV. The closed-form lambda (career-fit calibration)
+# was validated at current scale on 2026-07-08 and misplaces lambda ~4x
+# (cv lambda.min 0.00122 vs formula 0.00489; player-coef cor 0.925, top-50
+# overlap 34/50 — material for a published rating). But a SHORT 13-point CV
+# grid bracketing the formula costs ~1 min and picks lambda FROM THE DATA —
+# adapting to sample size, weights (n_eff/n_obs = 0.62 here), and design.
+# The June OOM came from the default 100-lambda path x 10 folds, not CV per
+# se. Formula's only job now: center the grid (proven to land the optimum
+# interior). Validation harness: debug/validate_lambda_formula_at_scale.R.
+# NB precompute glue values into plain variables: cli >= 3.4 treats a brace
+# expression starting with a dot (e.g. {.n_obs_valid(x)}) as inline MARKUP
+# and ERRORS ("Invalid cli literal: starts with a dot") — this exact line was
+# the silent step-4 killer in runs 28890193113/28919371826/28920002141, only
+# reached once the combine OOM was fixed.
+n_obs_base <- .n_obs_valid(rapm_data)
+lam_center_base <- lambda_formula(n_obs_base)
+base_lambda_seq <- if (use_fixed_lambda) lam_center_base * 2^seq(3, -3, by = -0.5) else NULL
 if (use_fixed_lambda) {
   cli::cli_alert_info(
-    "RAPM fixed-lambda mode (CV skipped), lambda={round(base_fixed_lambda, 5)} (n_obs={.n_obs_valid(rapm_data)})")
+    "RAPM mini-CV mode: 13-point lambda grid centered on {round(lam_center_base, 5)} (n_obs={n_obs_base})")
 }
 
 model <- fit_rapm(
@@ -100,8 +115,11 @@ model <- fit_rapm(
   parallel = FALSE,    # avoid 2x memory amplification from doParallel
                        # workers — OOM-killed step 4 on 7GB GHA runners
                        # at 664K obs x 38K cols on the v5 attempt.
-  fixed_lambda = base_fixed_lambda  # panna#87: NULL = CV (default), else closed-form
+  lambda_seq = base_lambda_seq  # panna#87: NULL = default CV path, else mini-CV grid
 )
+if (use_fixed_lambda) {
+  cli::cli_alert_info("RAPM mini-CV picked lambda.min={signif(model$lambda.min, 4)}")
+}
 
 # 5. Covariate Effects ----
 
@@ -174,11 +192,14 @@ if (use_multi_target) {
           include_covariates = TRUE
         )
 
-        # panna#87: per-target fixed lambda from that target's own n_obs.
-        tgt_fixed_lambda <- if (use_fixed_lambda) lambda_formula(.n_obs_valid(rapm_data_tgt)) else NULL
+        # panna#87: per-target mini-CV grid centered on that target's own
+        # closed-form lambda (see the base-fit comment).
+        n_obs_tgt <- .n_obs_valid(rapm_data_tgt)
+        lam_center_tgt <- lambda_formula(n_obs_tgt)
+        tgt_lambda_seq <- if (use_fixed_lambda) lam_center_tgt * 2^seq(3, -3, by = -0.5) else NULL
         if (use_fixed_lambda) {
           cli::cli_alert_info(
-            "RAPM[{tgt}] fixed-lambda mode (CV skipped), lambda={round(tgt_fixed_lambda, 5)} (n_obs={.n_obs_valid(rapm_data_tgt)})")
+            "RAPM[{tgt}] mini-CV grid centered on {round(lam_center_tgt, 5)} (n_obs={n_obs_tgt})")
         }
 
         model_tgt <- fit_rapm(
@@ -188,7 +209,7 @@ if (use_multi_target) {
           use_weights = TRUE,
           penalize_covariates = FALSE,
           parallel = FALSE,  # same reason as base RAPM above
-          fixed_lambda = tgt_fixed_lambda  # panna#87
+          lambda_seq = tgt_lambda_seq  # panna#87
         )
 
         ratings_tgt <- extract_rapm_ratings(model_tgt)

@@ -13,7 +13,8 @@ fit_rapm(
   penalize_covariates = FALSE,
   parallel = TRUE,
   n_cores = NULL,
-  fixed_lambda = NULL
+  fixed_lambda = NULL,
+  lambda_seq = NULL
 )
 }
 \arguments{
@@ -38,6 +39,13 @@ fit_rapm(
 \code{.glmnet_fixed_lambda}). Default \code{NULL} = cross-validated (current
 behaviour). Used by the as-of-date career-Panna build to avoid re-running CV
 for every reference date.}
+
+\item{lambda_seq}{Optional explicit lambda sequence for \code{cv.glmnet}
+(its \code{lambda} argument). The panna#87 cloud path passes a short
+grid bracketing the closed-form lambda (e.g. \code{lam * 2^seq(3, -3,
+  0.5)}) so lambda is chosen BY CV from the data — adapting to sample
+size, weights, and design — at a fraction of the default 100-lambda
+path's time/memory. Ignored when \code{fixed_lambda} is supplied.}
 }
 \value{
 Fitted model with metadata

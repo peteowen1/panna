@@ -564,6 +564,106 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
 }
 
 
+#' Canonical list of above-expected xMetrics columns SPM enrichment can produce
+#'
+#' The full set of \verb{*_per90} column names \code{.aggregate_xmetrics_for_spm()}
+#' MAY produce, independent of which are derivable from a given xmetrics
+#' vintage. Callers that need to guarantee a fixed column set on the output
+#' data frame (e.g. so a model's \code{predictor_cols} always resolves,
+#' even for a season/subset with zero coverage of some columns) should
+#' ensure exactly this list exists, defaulting missing ones to 0 — see
+#' \code{.spm_opta_predictor_cols()} for why 0 is the correct fallback
+#' (population mean for mean-zero above-expected metrics).
+#'
+#' @return Character vector of canonical `*_per90` column names
+#' @keywords internal
+.spm_xmetrics_per90_cols <- function() {
+  c("xg_per90", "npxg_per90", "xa_per90_xmetrics",
+    "xpass_overperformance_per90_xmetrics",
+    "aerial_woe_per90", "aerial_poss_woe_per90", "takeon_woe_per90",
+    "tackle_poss_woe_per90", "containment_woe_per90",
+    "npg_minus_npxg_per90", "ibox_g_minus_xg_per90", "obox_g_minus_xg_per90",
+    "placement_added_per90", "gsaa_per90")
+}
+
+
+#' Aggregate an xMetrics table to player-level per-90 SPM features
+#'
+#' THE ONE implementation of "given an xmetrics table (any subset — full
+#' history or a single season), compute player-level per-90 above-expected
+#' features for SPM enrichment." Extracted 2026-07-08 (panna#87) after this
+#' exact logic was independently duplicated in \code{05_spm.R} (all-history
+#' SPM fit) and \code{07_seasonal_ratings.R} (per-season SPM breakdown) —
+#' the second script's copy never got the xDuel WOE / finishing
+#' over-performance columns added to the first, so a season-level
+#' \code{calculate_spm_ratings()} call errored with "undefined columns
+#' selected" the moment the fitted model's \code{predictor_cols} included
+#' any of them (every one of 14 seasons failed identically on the first
+#' cloud run after the SPM modernization shipped). One implementation
+#' closes the class of bug, not just this instance.
+#'
+#' @param xmetrics Data frame with (at least) \code{player_id}, \code{minutes},
+#'   \code{xg}, \code{npxg}, \code{xa}, \code{xpass_overperformance}, plus
+#'   whichever above-expected columns this vintage carries (schema-defensive
+#'   — the five xDuel WOE columns, finishing over-performance, placement,
+#'   gsaa; see \code{.spm_xmetrics_per90_cols()}).
+#' @return Data frame keyed by \code{player_id} with whichever of
+#'   \code{.spm_xmetrics_per90_cols()} are derivable from \code{xmetrics}
+#'   (fewer columns for an older vintage or a thin season/subset — the
+#'   caller ensures the full canonical set exists before modeling).
+#' @keywords internal
+.aggregate_xmetrics_for_spm <- function(xmetrics) {
+  xm_extra_totals <- intersect(
+    c("aerial_woe", "aerial_poss_woe", "takeon_woe",
+      "tackle_poss_woe", "containment_woe",
+      "npg_minus_npxg", "ibox_g_minus_xg", "obox_g_minus_xg",
+      "placement_added", "gsaa"),
+    names(xmetrics)
+  )
+
+  # Per-90 denominator for the above-expected columns is the player's COVERED
+  # minutes (rows where that column is non-NA), not all xmetrics minutes —
+  # an all-minutes denominator dilutes a player with partial coverage toward
+  # 0 (panna#87 review finding). xg/npxg/xa don't need this: uncovered rows
+  # have no xmetrics row at all.
+  xmetrics_agg <- xmetrics %>%
+    dplyr::group_by(player_id) %>%
+    dplyr::summarise(
+      xg_total = sum(xg, na.rm = TRUE),
+      npxg_total = sum(npxg, na.rm = TRUE),
+      xa_total = sum(xa, na.rm = TRUE),
+      xmetrics_minutes = sum(minutes, na.rm = TRUE),
+      xpass_overperformance_total = sum(xpass_overperformance, na.rm = TRUE),
+      dplyr::across(dplyr::all_of(xm_extra_totals), ~ sum(.x, na.rm = TRUE),
+                    .names = "{.col}_total"),
+      dplyr::across(dplyr::all_of(xm_extra_totals), ~ sum(minutes[!is.na(.x)], na.rm = TRUE),
+                    .names = "{.col}_covmins"),
+      .groups = "drop"
+    ) %>%
+    dplyr::filter(xmetrics_minutes > 0) %>%
+    dplyr::mutate(
+      xg_per90 = xg_total / xmetrics_minutes * 90,
+      npxg_per90 = npxg_total / xmetrics_minutes * 90,
+      xa_per90_xmetrics = xa_total / xmetrics_minutes * 90,
+      xpass_overperformance_per90_xmetrics = xpass_overperformance_total / xmetrics_minutes * 90
+    )
+  for (tot in xm_extra_totals) {
+    covmins <- xmetrics_agg[[paste0(tot, "_covmins")]]
+    xmetrics_agg[[paste0(tot, "_per90")]] <-
+      ifelse(covmins > 0,
+             xmetrics_agg[[paste0(tot, "_total")]] / covmins * 90,
+             0)  # zero coverage -> population mean (0 for above-expected)
+  }
+
+  # recycle0 makes paste0 propagate zero-length inputs (default
+  # paste0(character(0), x) returns x — the bogus-column-name trap).
+  xm_cols <- c("xg_per90", "npxg_per90", "xa_per90_xmetrics",
+               "xpass_overperformance_per90_xmetrics",
+               paste0(xm_extra_totals, "_per90", recycle0 = TRUE))
+  xmetrics_agg %>% dplyr::select(dplyr::all_of(c("player_id", xm_cols)))
+}
+
+
 #' Canonical SPM-Opta predictor selection
 #'
 #' The ONE place the Opta SPM feature set is defined, shared by

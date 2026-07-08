@@ -231,7 +231,7 @@ clear_cache_files <- function(force_rebuild_from, cache_dir, cache_files, max_st
 handle_force_rebuild <- function(force_rebuild_from, cache_dir, max_step = 9) {
   opta_cache_files <- list(
     "1" = c("01_raw_data.rds", "01_config.rds"),
-    "2" = "02_processed_data.rds",
+    "2" = c("02_processed_data.rds", "02_opta_stats.rds"),  # panna#87: split cache
     "3" = "03_splints.rds",
     "4" = "04_rapm.rds",
     "5" = "05_spm.rds",

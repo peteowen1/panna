@@ -21,8 +21,29 @@ cat(sprintf("Using lambda = %s for seasonal ratings\n", seasonal_lambda))
 cat("\n=== Loading Data ===\n")
 
 splint_data <- readRDS(file.path(cache_dir, "03_splints.rds"))
-processed_data <- readRDS(file.path(cache_dir, "02_processed_data.rds"))
+if (exists(".log_rss", mode = "function")) .log_rss("after loading 03_splints.rds")
+
+# panna#87: opta_stats/opta_xmetrics live in their OWN file (02_opta_stats.rds)
+# as of the step-02 split. Narrowing AFTER loading the monolithic
+# 02_processed_data.rds was insufficient — readRDS() must deserialize the
+# WHOLE object graph (stats + xmetrics + lineups + shooting + results +
+# stats_summary) before returning anything, so the peak happened inside the
+# readRDS() call itself. Confirmed live: this step OOM'd during "=== Loading
+# Data ===" (run 28921032951) one step after 05_spm's identical load left
+# only ~110MB of 16GB free (run 28920296396). Loading the narrow file
+# directly removes the peak instead of shrinking what's kept after it.
+opta_stats_bundle <- readRDS(file.path(cache_dir, "02_opta_stats.rds"))
+opta_stats <- opta_stats_bundle$opta_stats
+opta_xmetrics <- opta_stats_bundle$opta_xmetrics
+rm(opta_stats_bundle); gc(verbose = FALSE)
+if (exists(".log_rss", mode = "function")) {
+  .log_rss(sprintf("after loading 02_opta_stats.rds (%s stats rows, %s xmetrics rows)",
+                   format(nrow(opta_stats), big.mark = ","),
+                   format(if (!is.null(opta_xmetrics)) nrow(opta_xmetrics) else 0L, big.mark = ",")))
+}
+
 spm_results <- readRDS(file.path(cache_dir, "05_spm.rds"))
+if (exists(".log_rss", mode = "function")) .log_rss("after loading 05_spm.rds")
 
 cat("Splints:", nrow(splint_data$splints), "\n")
 cat("Player-splint records:", nrow(splint_data$players), "\n")
@@ -30,6 +51,7 @@ cat("Player-splint records:", nrow(splint_data$players), "\n")
 # Filter bad xG data (higher threshold for SPADL-derived xG)
 filter_result <- filter_bad_xg_data(splint_data, zero_xg_threshold = ZERO_XG_THRESHOLD_OPTA, verbose = TRUE)
 splint_data <- filter_result$splint_data
+if (exists(".log_rss", mode = "function")) .log_rss("after filter_bad_xg_data")
 
 seasons <- sort(unique(splint_data$splints$season_end_year))
 cat("\nAvailable seasons:", paste(seasons, collapse = ", "), "\n")
@@ -123,7 +145,14 @@ fit_season_ratings_opta <- function(splint_data, opta_stats, season,
 
   cat(sprintf("  Players with aggregated stats: %d\n", nrow(season_player_stats)))
 
-  # Enrich with xMetrics if available (SPM models may require these features)
+  # Enrich with xMetrics if available (SPM models may require these features).
+  # panna#87: uses the SAME .aggregate_xmetrics_for_spm() as 05_spm.R (shared
+  # in R/spm_opta.R) — this block used to be an independent, near-identical
+  # copy that never got the WOE/finishing columns added to the other, which
+  # is exactly why every one of 14 seasons failed with "undefined columns
+  # selected" the moment the fitted SPM model's predictor_cols grew to
+  # include them.
+  season_xm <- NULL
   if (!is.null(opta_xmetrics) && nrow(opta_xmetrics) > 0) {
     # End-year matching for the same reason as the stats subset above —
     # calendar-year league labels never equal the "YYYY-YYYY" season_str.
@@ -131,33 +160,11 @@ fit_season_ratings_opta <- function(splint_data, opta_stats, season,
     xm_matching <- names(xm_end_years)[xm_end_years == season]
     season_xm <- opta_xmetrics[opta_xmetrics$season %in% xm_matching, ]
     if (nrow(season_xm) > 0) {
-      xm_agg <- season_xm %>%
-        group_by(player_id) %>%
-        summarise(
-          xg_total = sum(xg, na.rm = TRUE),
-          npxg_total = sum(npxg, na.rm = TRUE),
-          xa_total = sum(xa, na.rm = TRUE),
-          xmetrics_minutes = sum(minutes, na.rm = TRUE),
-          xpass_overperformance_total = sum(xpass_overperformance, na.rm = TRUE),
-          .groups = "drop"
-        ) %>%
-        filter(xmetrics_minutes > 0) %>%
-        mutate(
-          xg_per90 = xg_total / xmetrics_minutes * 90,
-          npxg_per90 = npxg_total / xmetrics_minutes * 90,
-          xa_per90_xmetrics = xa_total / xmetrics_minutes * 90,
-          xpass_overperformance_per90_xmetrics = xpass_overperformance_total / xmetrics_minutes * 90
-        )
-
+      xm_agg <- .aggregate_xmetrics_for_spm(season_xm)
       season_player_stats <- season_player_stats %>%
-        left_join(
-          xm_agg %>% select(player_id, xg_per90, npxg_per90,
-                             xa_per90_xmetrics, xpass_overperformance_per90_xmetrics),
-          by = "player_id"
-        )
-
-      xm_cols <- c("xg_per90", "npxg_per90", "xa_per90_xmetrics", "xpass_overperformance_per90_xmetrics")
-      for (col in xm_cols) {
+        left_join(xm_agg, by = "player_id")
+      for (col in intersect(names(xm_agg), names(season_player_stats))) {
+        if (col == "player_id") next
         season_player_stats[[col]][is.na(season_player_stats[[col]])] <- 0
       }
     }
@@ -206,11 +213,15 @@ fit_season_ratings_opta <- function(splint_data, opta_stats, season,
     }
   }
 
-  # Ensure xMetrics and chain columns exist (even if no data) for SPM model compatibility
-  xm_cols <- c("xg_per90", "npxg_per90", "xa_per90_xmetrics", "xpass_overperformance_per90_xmetrics")
+  # Ensure xMetrics and chain columns exist (even if no data) for SPM model
+  # compatibility. panna#87: uses the CANONICAL full column list
+  # (.spm_xmetrics_per90_cols(), shared with 05_spm.R) rather than a
+  # hand-maintained subset — a thin season whose xmetrics coverage misses
+  # some above-expected columns still gets every column the fitted model's
+  # predictor_cols can reference, defaulted to 0 (population mean).
   chain_feat_cols <- c("chains_p90", "chain_shot_pct", "chain_goal_pct",
                        "chain_starts_p90", "avg_actions_per_chain", "chain_xg_p90")
-  for (col in c(xm_cols, chain_feat_cols)) {
+  for (col in c(.spm_xmetrics_per90_cols(), chain_feat_cols)) {
     if (!col %in% names(season_player_stats)) {
       season_player_stats[[col]] <- 0
     }
@@ -341,36 +352,113 @@ cat("\n=== Processing All Seasons ===\n")
 cat(sprintf("Processing %d seasons: %s\n",
             length(seasons), paste(seasons, collapse = ", ")))
 
-opta_stats <- processed_data$opta_stats
-opta_xmetrics <- processed_data$opta_xmetrics
+# opta_stats/opta_xmetrics already extracted at load time (panna#87) —
+# processed_data itself was freed right after.
 
-# Free memory
-rm(processed_data); gc(verbose = FALSE)
+# panna#87: extract-and-SHRINK loop. Confirmed live in two stages:
+# (1) run 28925567800 (post "undefined columns" fix): seasons succeeded
+#     individually and grew progressively slower, then killed (exit 143)
+#     partway through — splint_data$players (~1.2GB+ at June scale, bigger
+#     now) and opta_stats (~7.5GB+) stayed fully resident for ALL 14
+#     iterations, previously freed only after the loop ended.
+# (2) A "pre-split everything into bundles, then rm() the originals" fix
+#     died EVEN FASTER (before any season even started) — building a
+#     complete second copy (the bundles) while the originals were still
+#     resident briefly needs ~2x peak, which alone exceeds 16GB at this
+#     scale. Building all bundles first doesn't work; must shrink the
+#     ORIGINAL tables as each season is extracted, so the extraction
+#     transient is bounded by ONE season's slice, never the full dataset
+#     twice over.
+#
+# fit_season_ratings_opta's own filtering logic (season-end-year matching,
+# calendar-league handling) is UNTOUCHED — pre-filtering to a single
+# season, then having the function re-filter that already-single-season
+# subset, is a provable no-op (verified: season 2013's SPM/RAPM/xRAPM
+# output is bit-for-bit identical old-style vs this style,
+# data-raw/debug/repro_bundle_equivalence.R). Seasons are DISJOINT
+# partitions of each source table by construction (a splint/stats/xmetrics
+# row matches exactly one season_end_year), so removing "this season's
+# rows" from the remaining pool each iteration can't drop or duplicate
+# anything.
+cat("\n=== Processing All Seasons ===\n")
+if (exists(".log_rss", mode = "function")) .log_rss("before season loop")
+# panna#87: earlier attempts tried to SHRINK the resident pool by removing
+# each season's rows via `x[!mask, ]` after extracting them. That's a false
+# economy — removing ~1/14th of a table means COPYING THE OTHER ~13/14ths,
+# every iteration, with a transient 2x-of-current-size spike each time
+# (confirmed live, run 28927833569: RSS held flat at 9.5GB through all the
+# setup/binding/rm steps — proving those are genuinely free — then jumped
+# +6.3GB on the very FIRST, SMALLEST season the instant the remove-by-copy
+# pattern ran). A full one-time pre-split (tried earlier, run 28926373982)
+# is equally wrong the other way: it needs the original AND all 14 splits
+# resident simultaneously, a ~2x-of-EVERYTHING spike that died even faster.
+# Filtering EACH season directly from the UNTOUCHED original tables (no
+# removal, no pre-split) costs only O(that season's own row count) per
+# iteration — the same approach the pipeline used for years before tonight,
+# now combined with the two real fixes from this session (shared SPM
+# xMetrics enrichment; RSS checkpoints for visibility). The tradeoff this
+# accepts: opta_stats/splint_data$players stay resident for the whole loop
+# (confirmed ~9.5GB baseline at current scale) — if that alone doesn't
+# leave enough headroom for the biggest season's fit, the runner has
+# genuinely outgrown 16GB and needs a size bump, not a cleverer loop.
+stats_end_years <- sapply(unique(opta_stats$season), extract_season_end_year)
+xm_end_years <- if (!is.null(opta_xmetrics) && nrow(opta_xmetrics) > 0) {
+  sapply(unique(opta_xmetrics$season), extract_season_end_year)
+} else NULL
 
-seasonal_ratings_list <- lapply(seasons, function(season) {
-  tryCatch({
+seasonal_ratings_list <- vector("list", length(seasons))
+names(seasonal_ratings_list) <- as.character(seasons)
+for (season in seasons) {
+  key <- as.character(season)
+  if (exists(".log_rss", mode = "function")) .log_rss(sprintf("season %d start", season))
+
+  s_splints <- splint_data$splints[splint_data$splints$season_end_year == season, ]
+  s_players <- splint_data$players[splint_data$players$splint_id %in% s_splints$splint_id, ]
+
+  s_stats_seasons <- names(stats_end_years)[stats_end_years == season]
+  s_stats <- opta_stats[opta_stats$season %in% s_stats_seasons, ]
+
+  s_xm <- NULL
+  if (!is.null(xm_end_years)) {
+    xm_matching <- names(xm_end_years)[xm_end_years == season]
+    s_xm <- opta_xmetrics[opta_xmetrics$season %in% xm_matching, ]
+  }
+
+  bundle_splint_data <- list(splints = s_splints, players = s_players,
+                             match_info = splint_data$match_info)
+
+  seasonal_ratings_list[[key]] <- tryCatch({
     fit_season_ratings_opta(
-      splint_data = splint_data,
-      opta_stats = opta_stats,
+      splint_data = bundle_splint_data,
+      opta_stats = s_stats,
       season = season,
       offense_spm_glmnet = offense_spm_glmnet,
       offense_spm_xgb = offense_spm_xgb,
       defense_spm_glmnet = defense_spm_glmnet,
       defense_spm_xgb = defense_spm_xgb,
-      opta_xmetrics = opta_xmetrics,
+      opta_xmetrics = s_xm,
       min_minutes_spm = 200,
       min_minutes_rapm = 200
     )
   }, error = function(e) {
+    # panna#87: R buffers warning() into a terse "There were N warnings"
+    # summary by default, hiding the actual message. cat() to stderr prints
+    # immediately regardless of the warning options, so a run that silently
+    # returns 0 processed seasons (as happened in run 28921623204 — all 14
+    # seasons failed with no visible cause) shows its real error inline.
+    cat(sprintf("\n[season %d ERROR]: %s\n", season, conditionMessage(e)))
+    cat(sprintf("[season %d CALL]: %s\n", season, deparse(conditionCall(e))))
     warning(sprintf("Failed to process season %d: %s", season, e$message))
     NULL
   })
-})
+
+  rm(s_splints, s_players, s_stats, s_xm, bundle_splint_data)
+  gc(verbose = FALSE)
+}
+rm(splint_data, opta_stats, opta_xmetrics)
+gc(verbose = FALSE)
 
 seasonal_ratings_list <- Filter(Negate(is.null), seasonal_ratings_list)
-
-# Free memory
-rm(splint_data, opta_stats, opta_xmetrics); gc(verbose = FALSE)
 
 seasonal_spm <- bind_rows(lapply(seasonal_ratings_list, `[[`, "spm"))
 seasonal_rapm <- bind_rows(lapply(seasonal_ratings_list, `[[`, "rapm"))

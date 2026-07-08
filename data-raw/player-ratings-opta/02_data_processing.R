@@ -61,26 +61,43 @@ if (!exists("processed_data")) {
       mutate(season_end_year = vapply(season, extract_season_end_year, numeric(1)))
   }
 
-  # Store raw stats for SPM (Step 05)
-  processed_data$opta_stats <- raw_opta_data$stats
-  processed_data$opta_xmetrics <- raw_opta_data$xmetrics
+  # panna#87: opta_stats/opta_xmetrics saved to their OWN file, never attached
+  # to processed_data. opta_stats alone measured ~7.5GB in RAM at June scale
+  # (dense ~3.5M x 287 numeric) -- readRDS() must deserialize an object's
+  # ENTIRE graph before returning ANY of it, so bundling stats/xmetrics inside
+  # the same list as lineups/shooting/results/stats_summary made the file's
+  # readRDS() peak (not just post-load usage) require the sum of ALL of them
+  # at once. This was true regardless of how quickly a consumer narrowed
+  # AFTER loading -- confirmed live: step 05 (SPM) survived its own
+  # processed_data load with only ~110MB free out of 16GB (2026-07-08, run
+  # 28920296396), and step 07 (which loads the identical file) OOM'd inside
+  # readRDS() itself, before any narrowing code could even run (run
+  # 28921032951). Steps 05/07 need ONLY opta_stats/opta_xmetrics; steps
+  # 03/06/08 and the skills pipeline need ONLY lineups/shooting/results/
+  # stats_summary (confirmed: grep shows no production script reads
+  # processed_data$opta_stats or $opta_xmetrics) -- so this is a real split,
+  # not a workaround.
+  if (!exists("save_cache_with_meta", mode = "function")) {
+    source(file.path("data-raw", "pipeline_utils.R"))
+  }
+  opta_stats_path <- file.path(cache_dir, "02_opta_stats.rds")
+  save_cache_with_meta(
+    list(opta_stats = raw_opta_data$stats, opta_xmetrics = raw_opta_data$xmetrics),
+    opta_stats_path, pipeline = "player-ratings-opta"
+  )
 
-  # Combined file WITHOUT the multi-GB events blob. Every consumer of
-  # 02_processed_data.rds -- RAPM steps 05-08, the skills pipeline, analysis
-  # scripts -- uses opta_stats/opta_xmetrics/lineups/results; NONE read $events
-  # (verified). Loading the events for nothing OOM'd step 05 (SPM) at 15.9GB
-  # just to grab two small tables. Events live only in the per-league slices
-  # below (step 03's input). Detach for the save, reattach for the slice write.
+  # Combined file WITHOUT the multi-GB events blob (and, as of panna#87,
+  # without opta_stats/opta_xmetrics -- see above). Consumers: RAPM steps
+  # 03/06/08, the skills pipeline. NONE read $events (verified) -- loading
+  # events for nothing OOM'd step 05 (SPM) at 15.9GB just to grab two small
+  # tables, back when stats/xmetrics were still bundled in here too. Events
+  # live only in the per-league slices below (step 03's input). Detach for
+  # the save, reattach for the slice write.
   .events_keep <- processed_data$events
   processed_data$events <- NULL
   # Growth tripwire (panna#128/#133): this cache is in the same incident class
   # as cache-skills/01_match_stats.rds — grown by full-sync/league expansion,
-  # looped over by opta steps 05-08 + skills step 05. Standalone-source guard:
-  # the run_pipeline_opta callr child re-sources pipeline_utils, but a direct
-  # source() of this step outside the runner would otherwise die at the save.
-  if (!exists("save_cache_with_meta", mode = "function")) {
-    source(file.path("data-raw", "pipeline_utils.R"))
-  }
+  # looped over by opta steps 03/06/08 + skills pipeline.
   save_cache_with_meta(processed_data, processed_data_path,
                        pipeline = "player-ratings-opta")
   processed_data$events <- .events_keep

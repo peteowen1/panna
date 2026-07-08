@@ -74,12 +74,61 @@ for (.t in .BIG_TABLES) dir.create(file.path(stage_dir, .t), recursive = TRUE, s
 # Combine one staged table: read its per-league-season parquets and rbindlist with
 # fill=TRUE (identical to the old in-RAM combine), freeing the read list right
 # after. Peak = one table (not all five) since the others sit on disk.
+# panna#87 flight-recorder fix (run 28881348258 died 68 seconds into
+# "Combining Data" with 9.8GB free): the old form held THREE copies of the
+# table at peak — `parts` + the rbindlist result + `as.data.frame(<data.table>)`,
+# which is a FULL DEEP COPY (the hidden-copy gotcha in CLAUDE.md). setDF()
+# converts in place (zero copy), cutting peak to the ~2x rbindlist floor, and
+# each table's staged files are deleted right after combining.
 .combine_staged <- function(tbl) {
   files <- list.files(file.path(stage_dir, tbl), pattern = "\\.parquet$", full.names = TRUE)
   if (length(files) == 0) return(NULL)
-  parts <- lapply(files, function(f) as.data.frame(arrow::read_parquet(f)))
-  out <- as.data.frame(data.table::rbindlist(parts, fill = TRUE, use.names = TRUE))
-  rm(parts); gc(verbose = FALSE)
+  # panna#87 round 2 (attempt-2 flight recorder: the stats combine alone jumped
+  # RSS 5GB -> 15,035MB in 15s and died at exit 143; the June cache measures
+  # stats at 7.5GB in RAM, so even the 2x rbindlist floor cannot fit). This is
+  # a 1x combine that preserves rbindlist(fill=TRUE) semantics EXACTLY:
+  #   1. Build a 0-row schema-union TEMPLATE with rbindlist itself over
+  #      zero-row heads of every file (arrow pushdown makes head(0) free) —
+  #      so column set, order, and type promotion are identical to the old
+  #      full rbindlist by construction.
+  #   2. Allocate the full all-NA result ONCE by NA-indexing the template
+  #      (correct types, 1x the table).
+  #   3. Assign each file's rows into place with data.table::set(), freeing
+  #      each chunk as it lands. Peak = result + one chunk, not parts + result.
+  # File order = row order (same as before); columns absent in a chunk stay
+  # NA (= fill=TRUE); a chunk's narrower type upward-coerces into the
+  # template's promoted type (same result as rbindlist's promotion).
+  template <- data.table::rbindlist(
+    lapply(files, function(f) {
+      dplyr::collect(utils::head(arrow::open_dataset(f), 0))
+    }),
+    fill = TRUE, use.names = TRUE
+  )
+  n_per_file <- vapply(files, function(f) {
+    ds <- arrow::open_dataset(f)
+    as.integer(ds$num_rows)
+  }, integer(1))
+  n_total <- sum(n_per_file)
+  out <- template[rep(NA_integer_, n_total)]
+  pos <- 1L
+  for (k in seq_along(files)) {
+    n_k <- n_per_file[k]
+    if (n_k == 0L) next
+    chunk <- arrow::read_parquet(files[k])
+    idx <- seq.int(pos, pos + n_k - 1L)
+    for (cc in intersect(names(chunk), names(out))) {
+      data.table::set(out, i = idx, j = cc, value = chunk[[cc]])
+    }
+    pos <- pos + n_k
+    rm(chunk)
+    if (k %% 20L == 0L) gc(verbose = FALSE)
+  }
+  data.table::setDF(out)
+  unlink(file.path(stage_dir, tbl), recursive = TRUE, force = TRUE)
+  gc(verbose = FALSE)
+  if (exists(".log_rss", mode = "function")) {
+    .log_rss(sprintf("combined %s (%s rows)", tbl, format(nrow(out), big.mark = ",")))
+  }
   out
 }
 
@@ -343,16 +392,24 @@ message("\n=== Combining Data ===\n")
 # table alone is 2.4M x 288 cols), then as.data.frame() restores the exact
 # data.frame output type the rest of step 01 + step 02 expect. Output is
 # identical; this is purely a memory/speed win on the combine.
-# Combine each big table from disk staging, one at a time (peak = one table).
-combined_lineups  <- .combine_staged("lineups")
+# Combine each big table from disk staging, one at a time (peak = one table's
+# ~2x rbindlist floor on top of the already-combined frames). Order matters:
+# combine the BIGGEST tables FIRST while baseline RAM is lowest — every
+# combined frame stays resident, so a big table combined last pays its 2x
+# transient on top of everything already combined. match_xg (small, in-RAM)
+# goes first so the all_* accumulator frees before the heavy lifting.
+combined_match_xg <- if (length(all_match_xg) > 0) {
+  mx <- data.table::rbindlist(all_match_xg, fill = TRUE, use.names = TRUE)
+  data.table::setDF(mx)
+  mx
+} else NULL
+rm(all_match_xg); gc(verbose = FALSE)
+combined_stats    <- .combine_staged("stats")     # widest (~288 cols) first
 combined_events   <- .combine_staged("events")
-combined_stats    <- .combine_staged("stats")
+combined_lineups  <- .combine_staged("lineups")
 combined_xmetrics <- .combine_staged("xmetrics")
 combined_shots    <- .combine_staged("shots")
-# match_xg stayed in RAM (small, one row per match)
-combined_match_xg <- if (length(all_match_xg) > 0) as.data.frame(data.table::rbindlist(all_match_xg, fill = TRUE, use.names = TRUE)) else NULL
-rm(all_match_xg)
-unlink(stage_dir, recursive = TRUE, force = TRUE)  # free disk staging
+unlink(stage_dir, recursive = TRUE, force = TRUE)  # free any remaining staging
 gc(verbose = FALSE)
 
 # Data scale validation: catch partial/empty loads early

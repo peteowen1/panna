@@ -17,23 +17,26 @@ use_xmetrics_features <- if (exists("use_xmetrics_features")) use_xmetrics_featu
 
 cat("\n=== Loading Data ===\n")
 
-processed_data <- readRDS(file.path(cache_dir, "02_processed_data.rds"))
-rapm_results <- readRDS(file.path(cache_dir, "04_rapm.rds"))
+# panna#87: opta_stats/opta_xmetrics live in their OWN file (02_opta_stats.rds)
+# as of the step-02 split — NEVER read the monolithic 02_processed_data.rds
+# here. readRDS() must deserialize an object's entire graph before returning
+# any of it, so this step used to pay for lineups/shooting/results/
+# stats_summary too just to reach these two fields — confirmed live: this
+# exact load left only ~110MB of 16GB free (run 28920296396), one step
+# after the identical load OOM'd outright (07_seasonal_ratings, run
+# 28921032951). Loading the narrow file directly removes that risk instead
+# of merely narrowing faster after the fact.
+opta_stats_bundle <- readRDS(file.path(cache_dir, "02_opta_stats.rds"))
+opta_stats <- opta_stats_bundle$opta_stats
+opta_xmetrics <- opta_stats_bundle$opta_xmetrics
+rm(opta_stats_bundle); gc(verbose = FALSE)
 
+rapm_results <- readRDS(file.path(cache_dir, "04_rapm.rds"))
 rapm_ratings <- rapm_results$ratings
 # Free memory — rapm_results contains the full sparse design matrix
 # (~664K x 38K), much bigger than just the ratings we need.
 rm(rapm_results); gc(verbose = FALSE)
 cat("Players with RAPM ratings:", nrow(rapm_ratings), "\n")
-
-# Extract just the bits of processed_data we need (opta_stats and
-# opta_xmetrics), then drop processed_data immediately. Holding the full
-# processed_data list (~3-5 GB with lineups + events + shooting) alongside
-# data.table aggregations of opta_stats (~1.3 GB) was OOM-killing step 5
-# on standard 7 GB GHA runners.
-opta_stats <- processed_data$opta_stats
-opta_xmetrics <- processed_data$opta_xmetrics
-rm(processed_data); gc(verbose = FALSE, full = TRUE)
 
 # 3. Aggregate Opta Player Statistics ----
 
@@ -61,73 +64,33 @@ if (use_xmetrics_features && !is.null(opta_xmetrics)) {
   xmetrics <- opta_xmetrics
   cat("xMetrics rows:", nrow(xmetrics), "\n")
 
-  # Above-expected totals to carry alongside xg/npxg/xa (SPM modernization,
-  # mirrors the PSR/PSV feature redesign): the five duel WOE counts, finishing
-  # over-performance, placement skill, keeper GSAA. Intersected with what this
-  # xmetrics vintage actually carries — older opta_xmetrics.parquet builds
-  # (pre duel-WOE integration) lack them, and the enrichment degrades to the
-  # original xg/npxg/xa/xpass set.
-  xm_extra_totals <- intersect(
-    c("aerial_woe", "aerial_poss_woe", "takeon_woe",
-      "tackle_poss_woe", "containment_woe",
-      "npg_minus_npxg", "ibox_g_minus_xg", "obox_g_minus_xg",
-      "placement_added", "gsaa"),
-    names(xmetrics)
-  )
-  if (length(xm_extra_totals) > 0) {
-    cat(sprintf("  Above-expected totals present: %s\n",
-                paste(xm_extra_totals, collapse = ", ")))
+  # panna#87: aggregation logic now lives in ONE place, .aggregate_xmetrics_for_spm()
+  # (R/spm_opta.R) — shared with 07_seasonal_ratings.R's per-season SPM
+  # breakdown. This exact duplication (this block vs. a near-identical but
+  # never-updated copy in 07) was the root cause of every one of 14 seasons
+  # failing with "undefined columns selected" the first time the fitted
+  # model's predictor_cols grew to include the new WOE/finishing columns.
+  xmetrics_agg <- .aggregate_xmetrics_for_spm(xmetrics)
+  xm_base_cols <- c("xg_per90", "npxg_per90", "xa_per90_xmetrics",
+                    "xpass_overperformance_per90_xmetrics")
+  xm_extra_present <- setdiff(names(xmetrics_agg), c("player_id", xm_base_cols))
+  if (length(xm_extra_present) > 0) {
+    cat(sprintf("  Above-expected columns present: %s\n",
+                paste(xm_extra_present, collapse = ", ")))
   } else {
     cat("  NOTE: no above-expected columns in this opta_xmetrics vintage — refresh via epv-pipeline xmetrics_only\n")
   }
 
-  # Aggregate xMetrics to player level (may span multiple seasons).
-  # For the above-expected columns, the per-90 denominator is the player's
-  # COVERED minutes (season-rows where that column is non-NA), not all
-  # xmetrics minutes — older vintages/leagues lack the columns after the
-  # rbindlist fill, and an all-minutes denominator would dilute a 10-season
-  # veteran with 2 covered seasons ~5x toward 0 (2026-07-07 review finding).
-  # xg/npxg/xa don't need this: uncovered seasons have no xmetrics row at all.
-  xmetrics_agg <- xmetrics %>%
-    group_by(player_id) %>%
-    summarise(
-      xg_total = sum(xg, na.rm = TRUE),
-      npxg_total = sum(npxg, na.rm = TRUE),
-      xa_total = sum(xa, na.rm = TRUE),
-      xmetrics_minutes = sum(minutes, na.rm = TRUE),
-      xpass_overperformance_total = sum(xpass_overperformance, na.rm = TRUE),
-      across(all_of(xm_extra_totals), ~ sum(.x, na.rm = TRUE),
-             .names = "{.col}_total"),
-      across(all_of(xm_extra_totals), ~ sum(minutes[!is.na(.x)], na.rm = TRUE),
-             .names = "{.col}_covmins"),
-      .groups = "drop"
-    ) %>%
-    filter(xmetrics_minutes > 0) %>%
-    mutate(
-      xg_per90 = xg_total / xmetrics_minutes * 90,
-      npxg_per90 = npxg_total / xmetrics_minutes * 90,
-      xa_per90_xmetrics = xa_total / xmetrics_minutes * 90,
-      xpass_overperformance_per90_xmetrics = xpass_overperformance_total / xmetrics_minutes * 90
-    )
-  for (tot in xm_extra_totals) {
-    covmins <- xmetrics_agg[[paste0(tot, "_covmins")]]
-    xmetrics_agg[[paste0(tot, "_per90")]] <-
-      ifelse(covmins > 0,
-             xmetrics_agg[[paste0(tot, "_total")]] / covmins * 90,
-             0)  # zero coverage -> population mean (0 for above-expected)
-  }
-
-  # Join to player_stats. recycle0 makes paste0 propagate zero-length inputs
-  # (default paste0(character(0), x) returns x — the bogus-column-name trap).
-  xm_cols <- c("xg_per90", "npxg_per90", "xa_per90_xmetrics",
-               "xpass_overperformance_per90_xmetrics",
-               paste0(xm_extra_totals, "_per90", recycle0 = TRUE))
+  # Guarantee the FULL canonical column set exists (0-filled) so
+  # calculate_spm_ratings() never fails on a missing predictor column,
+  # regardless of which columns this xmetrics vintage actually carried.
+  xm_cols <- .spm_xmetrics_per90_cols()
   before_cols <- ncol(player_stats)
   player_stats <- player_stats %>%
-    left_join(
-      xmetrics_agg %>% select(all_of(c("player_id", xm_cols))),
-      by = "player_id"
-    )
+    left_join(xmetrics_agg, by = "player_id")
+  for (col in setdiff(xm_cols, names(player_stats))) {
+    player_stats[[col]] <- NA_real_
+  }
 
   # Fill NAs with 0 for players without xMetrics. For xg/npxg/xa this means
   # "no SPADL coverage = no modeled volume"; for the above-expected columns 0
