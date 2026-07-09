@@ -22,14 +22,15 @@ if (!dir.exists(cache_dir)) dir.create(cache_dir, recursive = TRUE)
 repo <- "peteowen1/pannadata"
 tag  <- "blog-latest"
 
-# Only cup/continental/international comps ever have shootouts; domestic leagues
-# never do. Listing the full blog set is harmless (no-shootout leagues just
-# contribute zero kicks) but we scope to the ones that can to save load time.
-shootout_leagues <- c("UCL", "UEL", "UECL", "WC", "EURO")
+# Only cup/continental/international comps ever have shootouts; domestic and
+# calendar-year leagues never do. Continental/intl groups sourced from the
+# shared canonical constant (constants.R: PANNA_LEAGUE_GROUPS) so this can't
+# drift from 10b/10c's league set (H-DRIFT, 2026-07-08 review) -- the old
+# hand-list missed CAFCL/AFCON/Copa_America, which DO have shootouts.
+continental_cups <- PANNA_LEAGUE_GROUPS$continental
+intl_tournaments <- PANNA_LEAGUE_GROUPS$intl
 domestic_cups    <- character(0)  # add domestic cups here if/when scraped to blog
-blog_leagues     <- c(shootout_leagues, domestic_cups)
-
-intl_tournaments <- c("WC", "EURO")
+blog_leagues     <- c(continental_cups, intl_tournaments, domestic_cups)
 
 if (!exists("shootout_season", inherits = FALSE)) shootout_season <- "2025-2026"
 if (!exists("upload_shootout_wpa", inherits = FALSE)) upload_shootout_wpa <- TRUE

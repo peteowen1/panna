@@ -24,7 +24,7 @@ devtools::load_all()
 # happens in UEFA_WC_Qualifiers) sat at the 1500 initial Elo; the model
 # was making predictions on top of effectively zero national-team
 # strength evidence for most countries.
-if (!exists("leagues")) leagues <- c(
+if (!exists("leagues", inherits = FALSE)) leagues <- c(
   "ENG", "ESP", "GER", "ITA", "FRA",       # Big 5
   "NED", "POR", "TUR", "ENG2", "SCO",      # Extended domestic
   "UCL", "UEL", "UECL",                     # European club comps
@@ -36,16 +36,16 @@ if (!exists("leagues")) leagues <- c(
 )
 
 # SEASONS (NULL = all available, or specify like c("2024-2025"))
-if (!exists("seasons")) seasons <- NULL
+if (!exists("seasons", inherits = FALSE)) seasons <- NULL
 
 # MINIMUM SEASON (skip data before this season)
-if (!exists("min_season")) min_season <- "2013-2014"
+if (!exists("min_season", inherits = FALSE)) min_season <- "2013-2014"
 
 # USE SKILL-BASED RATINGS (from estimated skills pipeline)
-if (!exists("use_skill_ratings")) use_skill_ratings <- TRUE
+if (!exists("use_skill_ratings", inherits = FALSE)) use_skill_ratings <- TRUE
 
 # WHICH STEPS TO RUN
-if (!exists("run_steps")) {
+if (!exists("run_steps", inherits = FALSE)) {
   run_steps <- list(
     step_01_build_fixture_results    = TRUE,
     step_01b_refresh_wc2026_squads   = FALSE,  # Opt-in: rebuild announced-squads EM from Wikipedia (GHA enables)
@@ -72,7 +72,7 @@ if (!exists("run_steps")) {
 # FORCE REBUILD FROM STEP
 # Set to a step number to clear cache and rebuild from that step onwards
 # NULL = normal run (use cache), 1 = full refresh
-if (!exists("force_rebuild_from")) force_rebuild_from <- NULL
+if (!exists("force_rebuild_from", inherits = FALSE)) force_rebuild_from <- NULL
 
 # 3. Shared Pipeline Utilities ----
 

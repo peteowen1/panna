@@ -15,6 +15,10 @@ on:
         type: boolean
         default: false
 
+concurrency:
+  group: panna-release-writer
+  cancel-in-progress: false
+
 env:
   GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
   R_KEEP_PKG_SOURCE: yes
@@ -140,6 +144,23 @@ jobs:
           pannadata_dir(pannadata_path)
           opta_data_dir(opta_path)
           start_step <- "8b"
+          # Run ONLY 8b: start_step="8b" (8.5) alone also enables step 09
+          # (career_panna, 8.5 <= 9), which lacks its cache-opta prerequisites
+          # here and failed silently every week. Preset run_steps explicitly
+          # (run_skills_pipeline.R only builds it if it doesn't exist).
+          run_steps <- list(
+            step_01_compute_match_stats    = FALSE,
+            step_02_estimate_skills        = FALSE,
+            step_02b_optimize_params       = FALSE,
+            step_03_skill_spm              = FALSE,
+            step_04_skill_xrapm            = FALSE,
+            step_05_skill_panna_ratings    = FALSE,
+            step_06_seasonal_skill_ratings = FALSE,
+            step_07_train_psr_model        = FALSE,
+            step_08_export_skills          = FALSE,
+            step_08b_export_psr_weekly     = TRUE,
+            step_09_career_panna           = FALSE
+          )
           source("data-raw/estimated-skills/run_skills_pipeline.R")
           EOF
           Rscript /tmp/run_psr_weekly.R

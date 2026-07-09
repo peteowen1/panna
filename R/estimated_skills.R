@@ -1129,19 +1129,16 @@ backtest_skill_predictions <- function(match_stats, decay_params = NULL,
   default_prior_90s <- decay_params$prior_90s %||% 2
   default_prior_attempts <- decay_params$prior_attempts %||% 50
 
-  # Default stats to evaluate
+  # Default stats to evaluate. Sourced from the canonical skill-col registries
+  # (psr.R: .get_psr_skill_cols() / .get_gk_skill_cols()) instead of a
+  # hand-maintained list -- the previous hardcoded default still named
+  # ratios removed from the skill set (tackle_success, duel_success,
+  # aerial_success, save_percentage, shot_accuracy, pass_accuracy) and had
+  # none of their WOE/over-performance replacements, so a caller relying on
+  # the default silently backtested a stat set the trained coefficients no
+  # longer match (M-PSRCOLS, 2026-07-08 review).
   if (is.null(stat_cols)) {
-    stat_cols <- c(
-      "goals_p90", "shots_p90", "shots_on_target_p90", "assists_p90",
-      "key_passes_p90", "big_chance_created_p90", "touches_opp_box_p90",
-      "passes_p90", "final_third_passes_p90", "fwd_zone_pass_p90",
-      "tackles_won_p90", "interceptions_p90", "clearances_p90",
-      "ball_recovery_p90", "aerial_won_p90", "duel_won_p90",
-      "fouls_p90", "was_fouled_p90", "dispossessed_p90",
-      "saves_p90", "goals_conceded_p90",
-      "shot_accuracy", "pass_accuracy", "tackle_success",
-      "duel_success", "aerial_success", "save_percentage"
-    )
+    stat_cols <- union(.get_psr_skill_cols(), .get_gk_skill_cols())
   }
   stat_cols <- intersect(stat_cols, names(dt))
 
