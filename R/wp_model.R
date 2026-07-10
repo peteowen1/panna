@@ -101,6 +101,92 @@ add_red_card_to_chains <- function(chains, events) {
 }
 
 
+#' Build final match results (goal counts) from raw Opta events
+#'
+#' Derives \code{home_goals}/\code{away_goals} per match by counting type-16
+#' (Goal) events, for use as WP model training labels.
+#'
+#' Opta logs an own goal as a type-16 event attributed to the OWN-SCORER's
+#' team (qualifier 28 -- see \code{OPTA_REFERENCE.md} and the \code{is_own_goal}
+#' convention in \code{\link{parse_opta_qualifiers}}/\code{convert_opta_to_spadl}).
+#' The scoreboard credit belongs to the OPPOSING team, so own-goal events are
+#' flipped to the other team in the match before tallying -- otherwise every
+#' own-goal match produces an inverted scoreline and win/draw/loss label
+#' (H2-OG-WP). This was previously duplicated (and buggy) in
+#' \code{data-raw/epv/05_train_wp_model.R} and
+#' \code{data-raw/epv/06_calculate_wpa.R}; both now call this shared helper.
+#'
+#' @param events Raw Opta match events with \code{match_id}, \code{type_id},
+#'   \code{team_id}, and (for own-goal detection) \code{qualifier_json} or
+#'   \code{type_name}.
+#' @param lineups Opta lineups with \code{team_position} or \code{is_home}, to
+#'   determine the home/away team per match.
+#'
+#' @return A data.frame with \code{match_id}, \code{home_team_id},
+#'   \code{away_team_id}, \code{home_goals}, \code{away_goals}.
+#' @keywords internal
+.build_match_results_from_events <- function(events, lineups) {
+  dt_events <- data.table::as.data.table(events)
+  dt_lineups <- data.table::as.data.table(lineups)
+
+  if ("team_position" %in% names(dt_lineups)) {
+    match_teams <- dt_lineups[, .(
+      home_team_id = team_id[tolower(team_position) == "home"][1],
+      away_team_id = team_id[tolower(team_position) == "away"][1]
+    ), by = match_id]
+  } else if ("is_home" %in% names(dt_lineups)) {
+    match_teams <- dt_lineups[, .(
+      home_team_id = team_id[is_home == 1L][1],
+      away_team_id = team_id[is_home == 0L][1]
+    ), by = match_id]
+  } else {
+    cli::cli_abort("Lineups must have team_position or is_home column")
+  }
+
+  # Exclude penalty-shootout goals (period_id >= 5): a match decided on pens is
+  # a draw in open play, so shootout conversions must not produce a win/loss
+  # label for what was actually a drawn match.
+  reg_events <- if ("period_id" %in% names(dt_events)) {
+    dt_events[!is_shootout_period(period_id)]
+  } else {
+    dt_events
+  }
+  goals <- reg_events[type_id == 16L]
+  if (nrow(goals) == 0 && "type_name" %in% names(reg_events)) {
+    goals <- reg_events[grepl("[Gg]oal", type_name) & !grepl("[Oo]wn", type_name)]
+  }
+
+  # Own-goal flip (H2-OG-WP). Anchor the qualifier-28 regex the same way
+  # parse_opta_qualifiers() does (`[{,]"28":`) so a value like `"55":"28"`
+  # can't false-positive. Falls back to the type_name "Own" marker, then to
+  # "no own goals detected" if neither column is present.
+  if ("qualifier_json" %in% names(goals)) {
+    goals[, is_own_goal := !is.na(qualifier_json) & nchar(qualifier_json) > 2 &
+            grepl('[{,]"28":', qualifier_json)]
+  } else if ("type_name" %in% names(goals)) {
+    goals[, is_own_goal := grepl("[Oo]wn", type_name)]
+  } else {
+    goals[, is_own_goal := FALSE]
+  }
+
+  goals[match_teams, `:=`(.home_team_id = i.home_team_id, .away_team_id = i.away_team_id),
+        on = "match_id"]
+  goals[, .scoring_team_id := data.table::fifelse(
+    is_own_goal,
+    data.table::fifelse(team_id == .home_team_id, .away_team_id, .home_team_id),
+    team_id
+  )]
+
+  goal_counts <- goals[, .N, by = .(match_id, team_id = .scoring_team_id)]
+  match_teams[goal_counts, home_goals := i.N, on = .(match_id, home_team_id = team_id)]
+  match_teams[goal_counts, away_goals := i.N, on = .(match_id, away_team_id = team_id)]
+  match_teams[is.na(home_goals), home_goals := 0L]
+  match_teams[is.na(away_goals), away_goals := 0L]
+
+  as.data.frame(match_teams)
+}
+
+
 #' Create win probability features from SPADL actions
 #'
 #' Builds the game-state feature set at each action for WP model training
@@ -200,9 +286,25 @@ create_wp_features <- function(spadl_with_epv, match_results = NULL,
   # Detect goals: action_type == "shot" & result == "success" in SPADL
   dt[, is_goal := as.integer(action_type == "shot" & result == "success")]
 
+  # Opta logs an own goal (qualifier 28 -> is_own_goal, parsed in
+  # parse_opta_qualifiers()/convert_opta_to_spadl()) under the OWN-SCORER's
+  # team, but the scoreboard credit belongs to the OPPOSING team. Flip is_home
+  # for goal attribution only (is_home itself, used elsewhere as a
+  # possession/team feature, is untouched) -- otherwise every own-goal match
+  # has the goal on the wrong side of score_diff/margin_poss/xmargin
+  # (H2-OG-WP). Missing is_own_goal (e.g. a stale cached SPADL) falls back to
+  # crediting the scoring player's own team and warns loudly.
+  if (!"is_own_goal" %in% names(dt)) {
+    cli::cli_warn("is_own_goal column not found - WP score state cannot flip own-goal attribution (H2-OG-WP)")
+    dt[, is_own_goal := FALSE]
+  }
+  dt[, goal_credit_is_home := data.table::fifelse(
+    as.logical(is_own_goal) %in% TRUE, is_home == 0L, is_home == 1L
+  )]
+
   # Cumulative goals per team per match
-  dt[, home_goal := as.integer(is_goal == 1L & is_home == 1L)]
-  dt[, away_goal := as.integer(is_goal == 1L & is_home == 0L)]
+  dt[, home_goal := as.integer(is_goal == 1L & goal_credit_is_home)]
+  dt[, away_goal := as.integer(is_goal == 1L & !goal_credit_is_home)]
   dt[, cum_home_goals := cumsum(home_goal) - home_goal, by = match_id]
   dt[, cum_away_goals := cumsum(away_goal) - away_goal, by = match_id]
   dt[, score_diff := cum_home_goals - cum_away_goals]  # from home perspective

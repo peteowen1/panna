@@ -12,49 +12,10 @@
 library(cli)
 devtools::load_all()
 
-# ============================================================================
-# Internal helper (defined before use)
-# ============================================================================
-
-.build_match_results_from_events <- function(events, lineups) {
-  dt_events <- data.table::as.data.table(events)
-  dt_lineups <- data.table::as.data.table(lineups)
-
-  if ("team_position" %in% names(dt_lineups)) {
-    match_teams <- dt_lineups[, .(
-      home_team_id = team_id[tolower(team_position) == "home"][1],
-      away_team_id = team_id[tolower(team_position) == "away"][1]
-    ), by = match_id]
-  } else if ("is_home" %in% names(dt_lineups)) {
-    match_teams <- dt_lineups[, .(
-      home_team_id = team_id[is_home == 1L][1],
-      away_team_id = team_id[is_home == 0L][1]
-    ), by = match_id]
-  } else {
-    cli::cli_abort("Lineups must have team_position or is_home column")
-  }
-
-  # Exclude penalty-shootout goals (period_id >= 5): a match decided on pens is
-  # a draw in open play, so shootout conversions must not produce a win/loss
-  # label for what was actually a drawn match.
-  reg_events <- if ("period_id" %in% names(dt_events)) {
-    dt_events[!is_shootout_period(period_id)]
-  } else {
-    dt_events
-  }
-  goals <- reg_events[type_id == 16L]
-  if (nrow(goals) == 0 && "type_name" %in% names(reg_events)) {
-    goals <- reg_events[grepl("[Gg]oal", type_name) & !grepl("[Oo]wn", type_name)]
-  }
-
-  goal_counts <- goals[, .N, by = .(match_id, team_id)]
-  match_teams[goal_counts, home_goals := i.N, on = .(match_id, home_team_id = team_id)]
-  match_teams[goal_counts, away_goals := i.N, on = .(match_id, away_team_id = team_id)]
-  match_teams[is.na(home_goals), home_goals := 0L]
-  match_teams[is.na(away_goals), away_goals := 0L]
-
-  as.data.frame(match_teams)
-}
+# .build_match_results_from_events() (own-goal-aware match result/label
+# builder, H2-OG-WP) now lives in R/wp_model.R as a shared internal helper --
+# see roxygen there. Previously duplicated inline in this script and in
+# 06_calculate_wpa.R.
 
 # ============================================================================
 # 1. Configuration
