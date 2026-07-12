@@ -338,7 +338,7 @@ list_opta_seasons <- function(league, source = c("catalog", "remote", "local")) 
     "No data found for league: {.val {league}}",
     "i" = "If the catalog failed to load, check your internet connection.",
     "i" = "Use {.fn list_opta_leagues} to see available competitions."
-  ))
+  ), class = "vb_error_absent")
 }
 
 
@@ -804,9 +804,22 @@ check_events_coverage <- function(league, season,
   # assert_events_coverage() as source_missing and skipped — masking
   # corrupt-parquet failures as "no problem, lazy-load handles it."
   is_missing_source_err <- function(e) {
+    # Prefer the typed condition class the loaders themselves now signal
+    # (load_opta_table()'s "No data found for .../Opta data not found ..."
+    # sites raise class vb_error_absent -- see R/versebus.R's error
+    # taxonomy). Fall back to an ANCHORED message check only for older/
+    # untyped callers -- panna H-GATE (2026-07-08 review): the previous
+    # unanchored pattern ("not found|does not exist|...") also matched
+    # DuckDB binder-error text (`column "x" does not exist`) and corrupt-
+    # file IO errors, silently reclassifying REAL load failures as
+    # source_missing and swallowing them into an empty data.frame.
+    if (inherits(e, "vb_error_absent")) return(TRUE)
+    if (any(class(e) %in% c("vb_error_transient", "vb_error_integrity", "vb_error_stale"))) {
+      return(FALSE)
+    }
     msg <- conditionMessage(e)
-    grepl("No data found|not found|cannot find|does not exist|No such file",
-           msg, ignore.case = TRUE)
+    grepl("^No data found for|^Opta data not found|not found in repo",
+          msg, ignore.case = TRUE)
   }
 
   load_or_rethrow <- function(loader) {
@@ -1221,13 +1234,13 @@ load_opta_table <- function(table_type, league, season, columns,
             "No data found for {opta_league} season {.val {season}}.",
             "i" = "Available seasons: {paste(avail, collapse = ', ')}",
             "i" = "Note: leagues use {.val 2024-2025} format, tournaments use {.val {c('2024', '2024 Germany')}} format."
-          ))
+          ), class = "vb_error_absent")
         } else {
           cli::cli_abort(c(
             "Opta data not found for {opta_league}.",
             "i" = "Run {.code pb_download_opta()} to download the latest data.",
             "i" = "Or use {.code source = 'remote'} to load directly from GitHub."
-          ))
+          ), class = "vb_error_absent")
         }
       }
       parquet_pattern <- sprintf("'%s'", normalizePath(parquet_path, winslash = "/", mustWork = TRUE))
@@ -1238,7 +1251,7 @@ load_opta_table <- function(table_type, league, season, columns,
           "Opta data not found.",
           "i" = "Run {.code pb_download_opta()} to download the latest data.",
           "i" = "Or use {.code source = 'remote'} to load directly from GitHub."
-        ))
+        ), class = "vb_error_absent")
       }
       parquet_pattern <- sprintf("'%s/*.parquet'", normalizePath(league_dir, winslash = "/", mustWork = TRUE))
     }
@@ -1265,8 +1278,14 @@ load_opta_table <- function(table_type, league, season, columns,
       cli::cli_abort(c(
         "Parquet file is corrupt for {opta_league} {table_type}.",
         "i" = "Try {.code source = 'remote'} or re-download with {.fn pb_download_opta}."
-      ))
+      ), class = "vb_error_integrity")
     }
+    # Binder errors (e.g. `column "x" does not exist`) and other DuckDB
+    # failures are REAL load failures, not "data not here yet" -- left
+    # unclassed (not vb_error_absent) so they propagate as errors instead of
+    # being reclassified as source_missing by callers like
+    # check_events_coverage()'s is_missing_source_err() (panna H-GATE,
+    # 2026-07-08 review).
     cli::cli_abort("DuckDB query failed: {e$message}")
   })
 
@@ -1305,7 +1324,7 @@ load_opta_table <- function(table_type, league, season, columns,
       hints <- c(hints, "i" = "Available seasons: {paste(avail, collapse = ', ')}")
     }
     hints <- c(hints, "i" = "Note: leagues use {.val 2024-2025} format, tournaments use {.val {c('2024', '2024 Germany')}} format.")
-    cli::cli_abort(c(msg, hints))
+    cli::cli_abort(c(msg, hints), class = "vb_error_absent")
   }
 
   cli::cli_alert_success("Loaded {format(nrow(result), big.mark=',')} rows ({ncol(result)} columns)")
