@@ -26,6 +26,23 @@
   temp_dir <- tempdir()
   local_path <- file.path(temp_dir, file_name)
 
+  # Size-verify against the live asset list before the caller extracts it
+  # (panna M-ARCH-INT, 2026-07-08 review): archive downloads (pb_download_data,
+  # pb_download_parquet, pb_download_source's tar.gz) never checked this, so a
+  # truncated tar.gz/zip could extract a silent subset with no error until
+  # some file inside it turned out missing later. Generalizes the size check
+  # pb_download_opta() already does for individual parquet assets. Best-effort:
+  # if the listing itself fails, skip verification rather than block a
+  # download that might otherwise succeed.
+  expected_size <- tryCatch({
+    assets <- piggyback::pb_list(repo = repo, tag = tag)
+    if (!is.null(assets) && file_name %in% assets$file_name) {
+      assets$size[assets$file_name == file_name][1]
+    } else {
+      NA_real_
+    }
+  }, error = function(e) NA_real_)
+
   tryCatch({
     piggyback::pb_download(
       file = file_name,
@@ -45,6 +62,18 @@
 
   if (!file.exists(local_path)) {
     cli::cli_abort("Download failed - {.file {file_name}} not found in release.")
+  }
+
+  if (!is.na(expected_size)) {
+    actual_size <- file.size(local_path)
+    if (!isTRUE(all.equal(as.numeric(actual_size), as.numeric(expected_size)))) {
+      unlink(local_path)
+      cli::cli_abort(c(
+        "Downloaded {label} is truncated/corrupt.",
+        "x" = "Size {actual_size} bytes != listed {expected_size} bytes on the release.",
+        "i" = "Re-run to re-download; the partial file has been removed."
+      ), class = "vb_error_integrity")
+    }
   }
 
   local_path
@@ -985,42 +1014,21 @@ pb_download_predictions <- function(repo = "peteowen1/pannadata",
 
   parquet_path <- file.path(dest, "predictions.parquet")
 
-  # Pre-delete the existing file: piggyback::pb_download() can warn "not
-  # found in repo" without erroring (documented at pb_download_source() for
-  # the sibling tarball path), which would otherwise leave a stale
-  # predictions.parquet in place and pass the file.exists() check below as
-  # if the download had succeeded.
-  if (file.exists(parquet_path)) unlink(parquet_path)
-
   cli::cli_alert_info("Downloading predictions from {repo} ({tag})...")
 
-  tryCatch({
-    piggyback::pb_download(
-      file = "predictions.parquet",
-      repo = repo,
-      tag = tag,
-      dest = dest,
-      overwrite = TRUE
-    )
-  }, error = function(e) {
-    cli::cli_abort(c(
-      "Failed to download predictions.parquet from {repo} ({tag})",
-      "x" = e$message,
-      "i" = "Make sure the predictions-latest release exists."
-    ))
-  })
-
-  if (!file.exists(parquet_path)) {
-    cli::cli_abort("Download failed - predictions.parquet not found after download.")
-  }
-
-  if (isFALSE(validate_parquet_file(parquet_path))) {
-    unlink(parquet_path)
-    cli::cli_abort(c(
-      "Downloaded predictions.parquet is corrupt (bad magic bytes).",
-      "i" = "The corrupt file has been removed. Please re-run to re-download."
-    ))
-  }
+  # Routed through vb_download() (panna H-STALE, 2026-07-08 review): downloads
+  # to a tempfile in dest's own directory, verifies parquet magic bytes + the
+  # tag's bus_manifest.json sha256 (when one exists; legacy mode falls back to
+  # size vs the live asset list), THEN atomically renames into place. A
+  # pre-existing predictions.parquet is NEVER served as a silent fallback on
+  # failure -- the typed vb_error (absent/transient/integrity) propagates
+  # instead. The old implementation pre-deleted dest, then called
+  # piggyback::pb_download() straight into it: piggyback can warn "not found
+  # in repo" WITHOUT erroring, so a failed re-download used to leave dest
+  # simply absent (file.exists() below would then also fail) rather than
+  # raising a typed, retryable error the caller could dispatch on -- and
+  # there was no verification at all when a manifest existed.
+  vb_download(repo, tag, "predictions.parquet", parquet_path)
 
   size_mb <- round(file.info(parquet_path)$size / (1024 * 1024), 2)
   cli::cli_alert_success("Downloaded predictions.parquet ({size_mb} MB)")
