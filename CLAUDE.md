@@ -116,9 +116,9 @@ Stat ratings → PSR/OSR/DSR (smoothed skills via glmnet) ───────�
 
 Deep/verse-level docs (reviews, plans, incidents, reference material, backlog TODOs) live one level
 up at `pannaverse/docs/{reviews,plans,incidents,reference,backlog}/`, not in this repo — see
-`pannaverse/HOME.md` for the index. This repo keeps only README, CLAUDE, NEWS, LICENSE,
+`pannaverse/docs/HOME.md` for the index. This repo keeps only README, CLAUDE, NEWS, LICENSE,
 cran-comments, DATA_DICTIONARY, DATA_ISSUES, MODELS, OPTA_REFERENCE, and ARCHITECTURE at its root.
-`pannaverse/NEXT-STEPS.md` and `pannaverse/DECISIONS.md` are the living queue/decision-log — update
+`pannaverse/docs/NEXT-STEPS.md` and `pannaverse/docs/DECISIONS.md` are the living queue/decision-log — update
 them at the end of a session. Reviews under `docs/reviews/` are immutable once written (append
 addenda, don't rewrite historical prose). New idea/TODO files belong in `pannaverse/docs/backlog/`,
 not at this repo's root.
