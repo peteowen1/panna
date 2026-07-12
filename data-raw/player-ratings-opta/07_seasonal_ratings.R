@@ -580,14 +580,25 @@ write.csv(
 # Multi-target seasonal ratings ----
 # If multi-target xRAPM results exist, save seasonal ratings for each target
 
+# D6 (FABLE-PRIOR-FIX-PLAN.md): experimental gate, default FALSE -- see
+# 04_rapm.R for rationale (inherits = FALSE for the same dplyr-collision
+# reason as other pipeline config guards). Unlike 04/05/06, this section had
+# no gate at all before -- it ran unconditionally whenever 06_xrapm_multi.rds
+# happened to exist on disk.
+run_multi_target <- if (exists("run_multi_target", inherits = FALSE)) run_multi_target else FALSE
 multi_xrapm_path <- file.path(cache_dir, "06_xrapm_multi.rds")
-if (file.exists(multi_xrapm_path)) {
+if (run_multi_target && file.exists(multi_xrapm_path)) {
   cat("\n=== Multi-Target Seasonal Ratings ===\n")
   multi_xrapm <- readRDS(multi_xrapm_path)
 
   for (tgt in names(multi_xrapm)) {
     ratings_tgt <- multi_xrapm[[tgt]]$ratings
     if (!is.null(ratings_tgt) && nrow(ratings_tgt) > 0) {
+      # D5 tripwire: abort loudly before writing anything the panna#87
+      # heartbeat glob could upload, if this target's fit shows a known
+      # degenerate-output signature.
+      .check_degenerate_multi_target(ratings_tgt, tgt)
+
       saveRDS(ratings_tgt, file.path(cache_dir, sprintf("07_seasonal_%s.rds", tgt)))
       cat(sprintf("  Saved %s seasonal ratings: %d players\n", toupper(tgt), nrow(ratings_tgt)))
     }

@@ -387,6 +387,28 @@ fit_rapm_with_prior <- function(rapm_data, offense_prior, defense_prior,
   }
   def_matched <- sum(def_valid)
 
+  # D4 guard (FABLE-PRIOR-FIX-PLAN.md): a SUPPLIED prior that matches zero
+  # players is always a bug -- e.g. an unnamed vector (the 06_xrapm.R
+  # multi-target L3 bug: match(player_ids, names(offense_prior)) can only
+  # succeed if offense_prior is named by player_id) -- never a legitimate
+  # all-zero fallback. Distinguish that from an EXPLICIT no-prior request
+  # (offense_prior/defense_prior passed as NULL), which is not an error: the
+  # fit degrades gracefully to a zero prior, same as before this guard.
+  if (!is.null(offense_prior) && off_matched == 0) {
+    cli::cli_abort(c(
+      "xRAPM: {.arg offense_prior} was supplied but matched 0 of {length(player_ids)} players.",
+      "x" = "A supplied-but-unmatched prior is always a bug, never a valid zero-prior fallback.",
+      "i" = "Pass {.code offense_prior = NULL} for an explicit no-prior fit, or verify the prior vector is named by {.field player_id} (see {.fn build_prior_vector})."
+    ))
+  }
+  if (!is.null(defense_prior) && def_matched == 0) {
+    cli::cli_abort(c(
+      "xRAPM: {.arg defense_prior} was supplied but matched 0 of {length(player_ids)} players.",
+      "x" = "A supplied-but-unmatched prior is always a bug, never a valid zero-prior fallback.",
+      "i" = "Pass {.code defense_prior = NULL} for an explicit no-prior fit, or verify the prior vector is named by {.field player_id} (see {.fn build_prior_vector})."
+    ))
+  }
+
   progress_msg(sprintf("xRAPM: matched %d offense priors, %d defense priors",
                        off_matched, def_matched))
 
@@ -522,6 +544,66 @@ extract_xrapm_ratings <- function(model, lambda = "min") {
   ratings <- ratings[order(-ratings$xrapm), ]
 
   ratings
+}
+
+
+#' Abort if a multi-target RAPM/xRAPM fit shows a known degenerate-output signature
+#'
+#' D5 write-time tripwire (FABLE-PRIOR-FIX-PLAN.md): guards go before every
+#' \code{saveRDS()} of a multi-target (EPV/WPA/PSV) artifact, because the
+#' panna#87 heartbeat upload globs \code{0*.rds} and would publish whatever
+#' exists. Catches two signatures confirmed via live evidence sweep on the
+#' current cache vintage: (1) all-shrunk-to-zero coefficients (EPV, measured
+#' sd ~ 6e-6 -- the whole-match-proration bug means the target cannot vary
+#' within a lineup) and (2) mechanically mirrored offense/defense coefficients
+#' from a near-zero-sum target (WPA, measured cor ~ -0.949 -- the O/D split is
+#' unidentified by construction). A breach aborts loudly rather than silently
+#' writing a degenerate artifact; base/xG sections are unaffected because this
+#' is only called from multi-target code paths.
+#'
+#' @param ratings Data frame with (at least) numeric \code{offense}/
+#'   \code{defense} columns, as returned by \code{extract_rapm_ratings()} /
+#'   \code{extract_xrapm_ratings()}.
+#' @param target_label Character, used only in the abort message (e.g. \code{"epv"}).
+#' @param sd_threshold Minimum sd() for offense/defense coefficients (default
+#'   \code{1e-4}, per D5).
+#' @param cor_threshold Maximum \code{abs(cor(offense, defense))} (default
+#'   \code{0.9}, per D5).
+#'
+#' @return Invisibly \code{TRUE} if no tripwire fired.
+#' @keywords internal
+#' @noRd
+.check_degenerate_multi_target <- function(ratings, target_label,
+                                           sd_threshold = 1e-4,
+                                           cor_threshold = 0.9) {
+  if (!is.data.frame(ratings) || !all(c("offense", "defense") %in% names(ratings))) {
+    cli::cli_abort(c(
+      "Multi-target tripwire for {.val {target_label}}: {.arg ratings} must be a data frame with {.field offense}/{.field defense} columns.",
+      "x" = "Got {.cls {class(ratings)}} with columns {.field {names(ratings)}}."
+    ))
+  }
+
+  sd_off <- stats::sd(ratings$offense, na.rm = TRUE)
+  sd_def <- stats::sd(ratings$defense, na.rm = TRUE)
+  if (!is.finite(sd_off) || sd_off <= sd_threshold ||
+      !is.finite(sd_def) || sd_def <= sd_threshold) {
+    cli::cli_abort(c(
+      "Degenerate multi-target RAPM output for {.val {target_label}}: coefficients are all-shrunk.",
+      "x" = "sd(offense) = {signif(sd_off, 3)}, sd(defense) = {signif(sd_def, 3)} (threshold {sd_threshold}).",
+      "i" = "See FABLE-PRIOR-FIX-PLAN.md D5/C1 -- this artifact will NOT be written."
+    ))
+  }
+
+  cor_od <- stats::cor(ratings$offense, ratings$defense, use = "complete.obs")
+  if (is.finite(cor_od) && abs(cor_od) >= cor_threshold) {
+    cli::cli_abort(c(
+      "Degenerate multi-target RAPM output for {.val {target_label}}: offense/defense are mirrored.",
+      "x" = "abs(cor(offense, defense)) = {signif(abs(cor_od), 3)} (threshold {cor_threshold}).",
+      "i" = "See FABLE-PRIOR-FIX-PLAN.md D5/C1 -- this artifact will NOT be written."
+    ))
+  }
+
+  invisible(TRUE)
 }
 
 

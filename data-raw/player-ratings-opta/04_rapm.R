@@ -160,9 +160,13 @@ cat("Saved to cache-opta/04_rapm.rds\n")
 # 8. Multi-Target RAPM (optional) ----
 # Fit RAPM on additional value metric targets if available on splints
 
-use_multi_target <- if (exists("use_multi_target")) use_multi_target else TRUE
+# D6 (FABLE-PRIOR-FIX-PLAN.md): experimental gate, default FALSE -- the cloud
+# pipeline never runs the multi-target (EPV/WPA/PSV) section until promotion.
+# inherits = FALSE so a same-named object from an enclosing/parent scope
+# (e.g. dplyr::sample_n-style collision) can't silently flip this on.
+run_multi_target <- if (exists("run_multi_target", inherits = FALSE)) run_multi_target else FALSE
 
-if (use_multi_target) {
+if (run_multi_target) {
   # Reload splints (freed earlier)
   splint_data <- readRDS(file.path(cache_dir, "03_splints.rds"))
 
@@ -230,6 +234,13 @@ if (use_multi_target) {
     }
 
     if (length(multi_target_results) > 0) {
+      # D5 tripwire: abort loudly before writing anything the panna#87
+      # heartbeat glob could upload, if any target's fit shows a known
+      # degenerate-output signature (all-shrunk coefs / mirrored O-D).
+      for (tgt in names(multi_target_results)) {
+        .check_degenerate_multi_target(multi_target_results[[tgt]]$ratings, tgt)
+      }
+
       saveRDS(multi_target_results, file.path(cache_dir, "04_rapm_multi.rds"))
       cat("\nSaved multi-target RAPM to cache-opta/04_rapm_multi.rds\n")
     }
