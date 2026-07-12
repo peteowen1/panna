@@ -529,6 +529,15 @@ seasonal_results <- list(
     spm_player_seasons = nrow(seasonal_spm),
     rapm_player_seasons = nrow(seasonal_rapm),
     xrapm_player_seasons = nrow(seasonal_xrapm),
+    # FABLE-ASOF-EXPERIMENTS.md sec 3: SPM weights (05_spm.R) are fit on
+    # seasons 2013-present, i.e. every season's prior sees seasons AFTER it
+    # too -- these ratings are a retrospective "how good was X given
+    # everything we know now" view, NOT point-in-time. Measured hindsight
+    # inflation on the next-season backtest: +0.003 Pearson (small; the
+    # xRAPM > prior > raw ordering is not an artifact of it). Point-in-time
+    # consumers should use career_panna_asof.parquet (expanding-window SPM
+    # weights, sec 4) instead of this table.
+    weights_vintage = "retrospective",
     created = Sys.time()
   )
 )

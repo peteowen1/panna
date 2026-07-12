@@ -89,7 +89,7 @@ skills_cache_files <- list(
   "1" = c("01_match_stats.rds", "01_config.rds"),
   "2" = "02_skill_features.rds",
   "2b" = "02b_decay_params.rds",
-  "3" = "03_skill_spm.rds",
+  "3" = c("03_skill_spm.rds", "03_skill_spm_asof.rds"),
   "4" = "04_skill_xrapm.rds",
   "5" = c("05_skill_panna.rds", "skill_panna_ratings.csv"),
   "6" = c("06_seasonal_ratings.rds", "seasonal_skill_xrapm.csv"),

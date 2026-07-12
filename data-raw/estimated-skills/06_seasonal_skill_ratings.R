@@ -620,6 +620,10 @@ seasonal_results <- list(
     spm_player_seasons = nrow(seasonal_spm),
     rapm_player_seasons = nrow(seasonal_rapm),
     xrapm_player_seasons = nrow(seasonal_xrapm),
+    # See the matching note in player-ratings-opta/07_seasonal_ratings.R --
+    # step 03's skill-SPM (used here) is likewise fit through the present.
+    # career_panna_asof.parquet (09b) is the point-in-time equivalent.
+    weights_vintage = "retrospective",
     created = Sys.time()
   )
 )
