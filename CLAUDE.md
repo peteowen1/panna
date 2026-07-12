@@ -72,14 +72,14 @@ use `devtools::load_all("panna")` from pannaverse root.
 
 Run order matters — later pipelines depend on earlier ones.
 
-| Pipeline             | Directory                 | Entry Point                             | Depends On                                                                                                |
-|----------------------|---------------------------|-----------------------------------------|-----------------------------------------------------------------------------------------------------------|
-| **EPV/xMetrics**     | `epv/`                    | `03_calculate_player_xmetrics.R`        | Pre-trained models via `pannamodels::load_panna_model()`                                                  |
-| **Opta RAPM/SPM** ⭐ | `player-ratings-opta/`    | `run_pipeline_opta.R`                   | xMetrics output                                                                                           |
-| **Skills**           | `estimated-skills/`       | `run_skills_pipeline.R`                 | Opta RAPM output (cache-opta/)                                                                            |
-| **Predictions**      | `match-predictions-opta/` | `run_predictions_opta.R`                | Opta RAPM + Skills output                                                                                 |
-| **Blog Export**      | `match-predictions-opta/` | Steps 10b + 10c (opt-in)                | EPV/WPA/PSV models + match events                                                                         |
-| **WC 2026 Sim**      | `match-predictions-opta/` | Step 11 (opt-in) `11_simulate_wc2026.R` | 07_predictions + hand-curated `wc2026_groups.rds`. Outputs BT ratings, champion probs, group expectations |
+| Pipeline             | Directory                 | Entry Point                             | Depends On                                                                                                            |
+|----------------------|---------------------------|-----------------------------------------|-----------------------------------------------------------------------------------------------------------------------|
+| **EPV/xMetrics**     | `epv/`                    | `03_calculate_player_xmetrics.R`        | Pre-trained models via [`pannamodels::load_panna_model()`](https://rdrr.io/pkg/pannamodels/man/load_panna_model.html) |
+| **Opta RAPM/SPM** ⭐ | `player-ratings-opta/`    | `run_pipeline_opta.R`                   | xMetrics output                                                                                                       |
+| **Skills**           | `estimated-skills/`       | `run_skills_pipeline.R`                 | Opta RAPM output (cache-opta/)                                                                                        |
+| **Predictions**      | `match-predictions-opta/` | `run_predictions_opta.R`                | Opta RAPM + Skills output                                                                                             |
+| **Blog Export**      | `match-predictions-opta/` | Steps 10b + 10c (opt-in)                | EPV/WPA/PSV models + match events                                                                                     |
+| **WC 2026 Sim**      | `match-predictions-opta/` | Step 11 (opt-in) `11_simulate_wc2026.R` | 07_predictions + hand-curated `wc2026_groups.rds`. Outputs BT ratings, champion probs, group expectations             |
 
 **Pipeline scripts are numbered** (01, 02, …) and run sequentially
 within each pipeline. The `run_*.R` entry points source them in order.
