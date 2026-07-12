@@ -65,7 +65,8 @@ if (!exists("run_steps", inherits = FALSE)) {
     step_11_simulate_wc2026          = FALSE,  # Opt-in: simulate the 2026 World Cup
     step_12_export_wc2026_blog       = FALSE,  # Opt-in: export WC2026 blog data
     step_12b_snapshot_wc_minutes     = FALSE,  # Opt-in: archive dated minutes snapshot + diff
-    step_12c_snapshot_wc_strength    = FALSE   # Opt-in: archive dated team-strength (ELO+p_champ) snapshot + diff
+    step_12c_snapshot_wc_strength    = FALSE,  # Opt-in: archive dated team-strength (ELO+p_champ) snapshot + diff
+    step_13_publish_release_data     = FALSE   # Opt-in: single gated publish of predictions-latest + blog-latest (PA5/H-TORN)
   )
 }
 
@@ -139,6 +140,18 @@ if (!is.null(force_rebuild_from)) {
 pipeline_start <- Sys.time()
 step_results <- list()
 pipeline_failed <- FALSE
+
+# Publish-candidate accumulator for step 13 (ECOSYSTEM-FIX-PLAN.md PA5 /
+# panna H-TORN). Steps 09/10/10b/10c/10d/12 write LOCAL outputs only and
+# register the files they want published THIS run here (respecting each
+# step's own "did I actually rewrite this" logic, e.g. 10b/10c's
+# mirror_alias) via `publish_files$<tag> <<- c(publish_files$<tag>, ...)` --
+# superassignment finds this pre-declared global binding by walking up the
+# enclosing scope from each step's `source(..., local = TRUE)` frame. Step 13
+# is the ONE place either tag actually gets uploaded, via vb_publish()
+# (hash -> upload -> verify -> manifest LAST), so predictions-latest and
+# blog-latest either both advance together this run or neither does.
+publish_files <- list(predictions_latest = character(0), blog_latest = character(0))
 
 message("\n")
 message(paste(rep("#", 70), collapse = ""))
@@ -284,6 +297,18 @@ step_results[["12b"]] <- run_pred_step("snapshot_wc_minutes", "12b", function() 
 
 step_results[["12c"]] <- run_pred_step("snapshot_wc_strength", "12c", function() {
   source("data-raw/match-predictions-opta/12c_snapshot_wc_strength.R", local = TRUE)
+})
+
+# 14h. Step 13: Publish predictions-latest + blog-latest (gated, manifest-last) ----
+# Runs after every build step so publish_files is fully populated. A failure
+# here (e.g. one tag's vb_publish aborting) is caught by run_pred_step() like
+# any other step -- it sets pipeline_failed, the workflow's
+# `quit(status = 1)` stops the job, and the "Trigger blog data build"
+# workflow step (gated `if: success()`) never fires a predictions-complete
+# dispatch against a torn release.
+
+step_results[[13]] <- run_pred_step("publish_release_data", 13, function() {
+  source("data-raw/match-predictions-opta/13_publish_release_data.R", local = TRUE)
 })
 
 # 15. Summary ----

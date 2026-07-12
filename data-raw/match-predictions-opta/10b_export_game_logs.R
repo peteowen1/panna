@@ -763,43 +763,30 @@ if (isTRUE(mirror_alias) && file.exists(alias_src)) {
   message("\n  Skipping alias mirror (mirror_alias = FALSE) — keeping existing game_logs.parquet")
 }
 
-# 6. Upload to GitHub Releases ----
+# 6. Register for step-13 publish (PA5/H-TORN: no upload here) ----
 
 if (isTRUE(upload_game_logs)) {
-  message("\n=== Uploading game logs to GitHub ===\n")
-
-  gh_check <- tryCatch(
-    system2("gh", "--version", stdout = TRUE, stderr = TRUE),
-    error = function(e) NULL
-  )
-  if (is.null(gh_check)) {
-    stop("'gh' CLI is not installed or not on PATH.")
-  }
-
-  # Only include the alias file in the upload when we actually rewrote it —
-  # otherwise a partial historical re-backfill would overwrite the current-
-  # season alias on the release with a stale copy.
+  # Only include the alias file when we actually rewrote it -- otherwise a
+  # partial historical re-backfill would overwrite the current-season alias
+  # on the release with a stale copy. (Publish itself now happens once, for
+  # every registered blog-latest file across all build steps, in
+  # 13_publish_release_data.R.)
   candidates <- if (isTRUE(mirror_alias)) {
     unique(c(unlist(season_paths), alias_path))
   } else {
     unlist(season_paths)
   }
-  files_to_upload <- candidates[file.exists(candidates)]
+  files_to_publish <- candidates[file.exists(candidates)]
 
-  for (f in files_to_upload) {
-    message(sprintf("  Uploading %s...", basename(f)))
-    result <- system2(
-      "gh", c("release", "upload", tag, shQuote(f),
-              "--repo", repo, "--clobber"),
-      stdout = TRUE, stderr = TRUE
-    )
-    if (!is.null(attr(result, "status")) && attr(result, "status") != 0) {
-      stop(sprintf("Failed to upload %s: %s",
-                   basename(f), paste(result, collapse = "\n")))
-    }
+  if (exists("publish_files", envir = .GlobalEnv)) {
+    publish_files$blog_latest <<- c(publish_files$blog_latest, files_to_publish)
+    message(sprintf("\n  Registered %d file(s) for blog-latest publish (step 13)",
+                    length(files_to_publish)))
+  } else {
+    message("\n  (standalone run -- not registered for step-13 publish)")
   }
 } else {
-  message("\n(upload_game_logs = FALSE — skipping GH release push)")
+  message("\n(upload_game_logs = FALSE — not registering for publish)")
 }
 
 # 7. Summary ----

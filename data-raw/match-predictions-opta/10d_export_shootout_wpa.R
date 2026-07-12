@@ -108,21 +108,16 @@ utils::write.csv(agg, csv_path, row.names = FALSE)
 message(sprintf("\n  Written: %s (%d rows) + CSV", out_path, nrow(agg)))
 
 if (isTRUE(upload_shootout_wpa)) {
-  gh_check <- tryCatch(system2("gh", "--version", stdout = TRUE, stderr = TRUE),
-                       error = function(e) NULL)
-  if (is.null(gh_check)) stop("'gh' CLI not installed / not on PATH.")
-  for (f in c(out_path, csv_path)) {
-    message(sprintf("  Uploading %s...", basename(f)))
-    result <- system2("gh", c("release", "upload", tag, shQuote(f),
-                              "--repo", repo, "--clobber"),
-                      stdout = TRUE, stderr = TRUE)
-    if (!is.null(attr(result, "status")) && attr(result, "status") != 0) {
-      stop(sprintf("Failed to upload %s: %s", basename(f), paste(result, collapse = "\n")))
-    }
+  # PA5/H-TORN: no upload here -- register for the single gated publish in
+  # 13_publish_release_data.R.
+  if (exists("publish_files", envir = .GlobalEnv)) {
+    publish_files$blog_latest <<- c(publish_files$blog_latest, out_path, csv_path)
+    message(sprintf("\n  Registered shootout_wpa.parquet + .csv for blog-latest publish (step 13)"))
+  } else {
+    message("\n  (standalone run -- not registered for step-13 publish)")
   }
-  message(sprintf("  Uploaded to %s release on %s", tag, repo))
 } else {
-  message("\n  (upload_shootout_wpa = FALSE — skipping GH release push)")
+  message("\n  (upload_shootout_wpa = FALSE — not registering for publish)")
 }
 
 message("\n=== Shootout WPA export complete ===")
