@@ -98,7 +98,7 @@ Stat ratings → PSR/OSR/DSR (smoothed skills via glmnet) ───────�
 - **Replacement Level filter at export** — `10_export_blog_data.R` drops `player_id == "replacement"` rows before publishing. The synthetic row is a model artifact (game-state confound, picks up uncontrolled variance from league-season fixed effects), not a coherent player rating.
 - **`.get_col()` warns on missing columns** — memoized warnings via `.get_col_warned` env in `utils.R`
 - **`compute_match_elos()` time decay is opt-in** — pass `time_decay_halflife = N` (days) to scale K by `0.5 ^ ((max_date - match_date) / N)`. Default `NULL` = no decay (legacy behaviour). The v5 Elo optimization treated this as a tunable param and converged near "off" (~6500-day halflife), so it's not the default — but callers wanting recency weighting should set it (~720 days ≈ 0.7 weight at 1 year, matches the FIFA / SPI intuition).
-- **WP model is possession-team POV, not home POV** — since retraining 2026-05-19 the WP model predicts `P(team_in_possession wins)`. `add_wp_vars()` is torp-style: `wpa = fcase(team_id_next == team_id, wp_next - wp, default = (1 - wp_next) - wp)`. **Never** consume `wp` as a fixed-POV (home) probability and subtract neighbouring rows — possession changes flip POV and the delta gets ~30× inflated. The retro of this exact bug is at `panna/CLAUDE_TODO_WPA_SCALE_REGRESSION.md`. Sanity bounds: per-event |WPA| ≤ 0.05 typically, per-match max ~0.5-1.0 (goal-causing events in close games), per-season top players ±5-10.
+- **WP model is possession-team POV, not home POV** — since retraining 2026-05-19 the WP model predicts `P(team_in_possession wins)`. `add_wp_vars()` is torp-style: `wpa = fcase(team_id_next == team_id, wp_next - wp, default = (1 - wp_next) - wp)`. **Never** consume `wp` as a fixed-POV (home) probability and subtract neighbouring rows — possession changes flip POV and the delta gets ~30× inflated. The retro of this exact bug is at `pannaverse/docs/backlog/CLAUDE_TODO_WPA_SCALE_REGRESSION.md` (moved from this repo's root — verse docs live one level up, see pannaverse `CLAUDE.md`). Sanity bounds: per-event |WPA| ≤ 0.05 typically, per-match max ~0.5-1.0 (goal-causing events in close games), per-season top players ±5-10.
 - **Pipeline-script skip signal is a typed condition, not a magic string** — 10b/10c export scripts use `skip_league_cond("reason")` defined inline; outer `tryCatch(..., panna_skip_league = handler, error = ...)` dispatches on class. If you add a new league-iterating step, mirror that pattern (and the `.required_*_cols` + `validate_*_schema()` helper) rather than `stop("__skip_xxx__")` + `if (identical(e$message, ...))`. Class dispatch is robust to message drift.
 
 ## GitHub Actions
@@ -111,4 +111,15 @@ Stat ratings → PSR/OSR/DSR (smoothed skills via glmnet) ───────�
 | `predictions-pipeline.yml` | Wed 8 AM UTC / manual / `opta-scrape-complete` dispatch | Weekly match predictions. Runs steps 1-10c + 11 (WC2026 sim) + 12 (WC2026 blog export). Triggers `predictions-complete` repository_dispatch on `pannadata` to refresh blog data. Note: WC2026 sim defaults to FALSE in `run_predictions_opta.R` but the workflow enables it in its `run_steps` override. |
 | `psr-weekly-snapshot.yml` | Weekly snapshot / manual | PSR weekly snapshot generation |
 | `epv-pipeline.yml` | Manual dispatch | EPV model training pipeline |
+
+## Documentation convention
+
+Deep/verse-level docs (reviews, plans, incidents, reference material, backlog TODOs) live one level
+up at `pannaverse/docs/{reviews,plans,incidents,reference,backlog}/`, not in this repo — see
+`pannaverse/HOME.md` for the index. This repo keeps only README, CLAUDE, NEWS, LICENSE,
+cran-comments, DATA_DICTIONARY, DATA_ISSUES, MODELS, OPTA_REFERENCE, and ARCHITECTURE at its root.
+`pannaverse/NEXT-STEPS.md` and `pannaverse/DECISIONS.md` are the living queue/decision-log — update
+them at the end of a session. Reviews under `docs/reviews/` are immutable once written (append
+addenda, don't rewrite historical prose). New idea/TODO files belong in `pannaverse/docs/backlog/`,
+not at this repo's root.
 
