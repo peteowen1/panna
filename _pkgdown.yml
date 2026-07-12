@@ -397,3 +397,8 @@ reference:
   - fit_epv_scoring_model
   - fit_epv_conceding_model
   - assign_pass_credit
+
+- title: Internal / Developer
+  desc: "Internal data-bus utilities accessible via panna::: for release publish/download integrity (ECOSYSTEM-FIX-PLAN.md versebus pattern)"
+  contents:
+  - starts_with("vb_")
