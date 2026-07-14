@@ -1,12 +1,16 @@
 # pipeline_utils.R
-# Shared helper functions for ALL pipeline runners (Opta, FBref, Skills, Predictions)
+# Shared helper functions for ALL pipeline runners (Opta, Skills, Predictions)
 #
 # Source this file from any run_*.R pipeline script to get:
 #   run_step()              - execute a step with timing, error handling, and traceback
+#   run_pipeline_step()     - run_step() wrapper that propagates FAILED to pipeline_failed
 #   check_critical_step()   - halt downstream steps on failure
+#   print_pipeline_banner() - print a pipeline's boxed start-of-run banner
 #   print_pipeline_summary() - print a formatted step summary table
 #   handle_force_rebuild()  - clear cache files for a given pipeline
 #   clear_cache_files()     - generic cache clearing with lettered step support
+#   resolve_blog_leagues()  - canonical domestic/calendar/continental/intl league groups
+#   run_backfill()          - shared season-backfill driver (serial or parallel)
 
 #' Run a named pipeline step with timing and error handling
 #'
@@ -144,6 +148,54 @@ check_critical_step <- function(result_or_num, step_name = NULL, step_results = 
     return(TRUE)
   }
   FALSE
+}
+
+
+#' Run a pipeline step, propagating failure to the caller's pipeline_failed flag
+#'
+#' Thin wrapper around run_step() shared by run_predictions_opta.R (formerly
+#' its own run_pred_step()) and run_skills_pipeline.R (formerly run_skills_step())
+#' — both bodies were identical. Reads `run_steps` and `pipeline_failed` as free
+#' variables from the caller's scope (globalenv, since every run_*.R sources
+#' this file at top level) exactly like the two original wrappers did, so
+#' moving them here is a pure dedup, not a behavior change.
+#'
+#' run_pipeline_opta.R's run_step_opta() is intentionally NOT folded into this:
+#' it wraps each step in its own callr subprocess for memory isolation between
+#' steps (panna#87/#128), a real behavioral difference, not incidental
+#' duplication.
+#'
+#' @param step_name,step_num,code_block See run_step().
+#' @return The step result list from run_step()
+run_pipeline_step <- function(step_name, step_num, code_block) {
+  result <- run_step(step_name, step_num, code_block, run_steps, pipeline_failed)
+  if (!is.null(result) && identical(result$status, "FAILED")) {
+    pipeline_failed <<- TRUE
+  }
+  result
+}
+
+
+#' Print a pipeline's boxed start-of-run banner
+#'
+#' Common "####...####" banner printed by each run_*.R entry point before its
+#' steps begin. Each pipeline passes its own already-formatted config lines
+#' so the printed content is unchanged from before extraction.
+#'
+#' @param title Character banner title (e.g. "OPTA PANNA RATINGS PIPELINE")
+#' @param config_lines Character vector of already-formatted config lines
+#'   (e.g. "Leagues: ENG, ESP, ..."), printed one per line prefixed "#   ".
+print_pipeline_banner <- function(title, config_lines) {
+  message("\n")
+  message(paste(rep("#", 70), collapse = ""))
+  message("#")
+  message(sprintf("#   %s", title))
+  message("#")
+  for (line in config_lines) {
+    message(sprintf("#   %s", line))
+  }
+  message("#")
+  message(paste(rep("#", 70), collapse = ""))
 }
 
 
@@ -481,4 +533,168 @@ retry_with_backoff <- function(fn, max_retries = 3L, initial_delay_secs = 5,
   }
   stop(sprintf("%s failed after %d attempts: %s",
                label, max_retries + 1L, conditionMessage(last_error)), call. = FALSE)
+}
+
+
+#' Resolve the canonical blog-league groupings
+#'
+#' Single source for the domestic/calendar/continental/intl league grouping
+#' consumed by the blog export scripts (10b_export_game_logs.R,
+#' 10c_export_equity.R, 10d_export_shootout_wpa.R). All groups come from the
+#' shared canonical constant PANNA_LEAGUE_GROUPS (R/constants.R) so the three
+#' exports can't drift from each other — this list previously drifted once
+#' (H-DRIFT, 2026-07-08 review: 10c hardcoded 10 domestic leagues and no
+#' calendar leagues, missing MLS/ARG/BRA/SAU/AUS/CAFCL that 10b covered).
+#'
+#' @return Named list:
+#'   \item{domestic_leagues}{PANNA_LEAGUE_GROUPS$domestic}
+#'   \item{calendar_leagues}{PANNA_LEAGUE_GROUPS$calendar (calendar-year season labels)}
+#'   \item{continental_cups}{PANNA_LEAGUE_GROUPS$continental}
+#'   \item{intl_tournaments}{PANNA_LEAGUE_GROUPS$intl}
+#'   \item{season_label_leagues}{intl_tournaments + calendar_leagues — leagues
+#'     whose season label is resolved by year prefix rather than passed through}
+#'   \item{blog_leagues}{the full default export set: domestic + calendar +
+#'     continental + intl}
+resolve_blog_leagues <- function() {
+  domestic_leagues  <- PANNA_LEAGUE_GROUPS$domestic
+  calendar_leagues  <- PANNA_LEAGUE_GROUPS$calendar
+  continental_cups  <- PANNA_LEAGUE_GROUPS$continental
+  intl_tournaments  <- PANNA_LEAGUE_GROUPS$intl
+  season_label_leagues <- c(intl_tournaments, calendar_leagues)
+  blog_leagues <- c(domestic_leagues, calendar_leagues, continental_cups, intl_tournaments)
+
+  list(
+    domestic_leagues = domestic_leagues,
+    calendar_leagues = calendar_leagues,
+    continental_cups = continental_cups,
+    intl_tournaments = intl_tournaments,
+    season_label_leagues = season_label_leagues,
+    blog_leagues = blog_leagues
+  )
+}
+
+
+#' Shared season-backfill driver for the blog export scripts
+#'
+#' 10b_backfill_game_logs.R and 10c_backfill_action_equity.R were structural
+#' clones (season filter, cache-exists check, serial/parallel future_lapply
+#' dispatch, upload pass; only variable/file names differed). This is the
+#' shared body; the two backfill scripts are thin config wrappers that supply
+#' the varying pieces (the global variable names their export script reads,
+#' the output filename pattern, and any extra per-worker globals).
+#'
+#' @param export_script Path to the export script to source (e.g.
+#'   "data-raw/match-predictions-opta/10b_export_game_logs.R")
+#' @param seasons Character vector of candidate seasons to build
+#' @param seasons_var Name of the global variable the export script reads for
+#'   its season list (e.g. "game_log_seasons" / "equity_seasons")
+#' @param upload_var Name of the export script's upload-toggle global (e.g.
+#'   "upload_game_logs" / "upload_equity")
+#' @param build_var Name of the export script's build-toggle global (e.g.
+#'   "build_game_logs" / "build_equity") — set FALSE for the upload-only pass
+#' @param out_pattern sprintf pattern for the per-season output filename
+#'   (e.g. "game_logs_%s.parquet")
+#' @param cache_dir Cache directory holding the per-season output files
+#' @param force_rebuild If FALSE (default), skip seasons whose output already exists
+#' @param upload Whether the export script should upload its output
+#' @param parallel_workers Number of `future` workers; 1 = serial (default)
+#' @param extra_worker_globals Named list of extra globals to assign in each
+#'   parallel worker before sourcing (e.g. list(use_skill_ratings = TRUE) for
+#'   10b; empty for 10c)
+#' @param label Human-readable label for log messages (e.g. "Backfill" /
+#'   "Equity backfill")
+#' @return Invisibly, the elapsed time in minutes (or NULL if nothing to build)
+run_backfill <- function(export_script, seasons, seasons_var, upload_var, build_var,
+                         out_pattern, cache_dir, force_rebuild = FALSE,
+                         upload = TRUE, parallel_workers = 1L,
+                         extra_worker_globals = list(), label = "Backfill") {
+  if (!dir.exists(cache_dir)) dir.create(cache_dir, recursive = TRUE)
+
+  # Skip seasons whose output already exists, unless force_rebuild.
+  if (!isTRUE(force_rebuild)) {
+    existing <- vapply(seasons, function(s) {
+      file.exists(file.path(cache_dir, sprintf(out_pattern, s)))
+    }, logical(1))
+    if (any(existing)) {
+      message(sprintf("Skipping already-built seasons: %s",
+                      paste(seasons[existing], collapse = ", ")))
+      message("  (set force_rebuild <- TRUE to rebuild)")
+      seasons <- seasons[!existing]
+    }
+  }
+
+  if (length(seasons) == 0) {
+    message("\nAll seasons already built. Nothing to do.")
+    return(invisible(NULL))
+  }
+
+  message(sprintf("\n=== %s plan ===", label))
+  message(sprintf("  Seasons: %s", paste(seasons, collapse = ", ")))
+  message(sprintf("  Upload:  %s", if (isTRUE(upload)) "yes" else "no (dry run)"))
+  message(sprintf("  Workers: %d", parallel_workers))
+  message(sprintf("  Cache dir: %s", cache_dir))
+
+  # Narrow the caller's own global (seasons_var) to the filtered set BEFORE
+  # any sourcing — both the serial source() below and the parallel branch's
+  # upload-only second pass read seasons straight from this global. Also bind
+  # cache_dir so the export script sees it regardless of whether the calling
+  # wrapper script already set it as a top-level global.
+  ge <- globalenv()
+  assign(seasons_var, seasons, envir = ge)
+  assign(upload_var, upload, envir = ge)
+  assign("cache_dir", cache_dir, envir = ge)
+
+  t0 <- Sys.time()
+
+  if (parallel_workers <= 1L) {
+    source(export_script, local = FALSE)
+  } else {
+    if (!requireNamespace("future", quietly = TRUE) ||
+        !requireNamespace("future.apply", quietly = TRUE)) {
+      stop("parallel_workers > 1 requires both `future` and `future.apply`. ",
+           "Install with: install.packages(c('future', 'future.apply'))")
+    }
+    message(sprintf("\n  Parallel mode: %d workers (multisession)", parallel_workers))
+
+    future::plan(future::multisession, workers = parallel_workers)
+    on.exit(future::plan(future::sequential), add = TRUE)
+
+    # Each worker is a fresh R session inheriting none of the orchestrator's
+    # state — stage overrides in ITS globalenv before sourcing with
+    # local = FALSE (which evaluates in globalenv).
+    worker_wd <- getwd()
+    .run_one_season <- function(s) {
+      setwd(worker_wd)
+      suppressMessages(devtools::load_all(".", quiet = TRUE))
+      wge <- globalenv()
+      assign(seasons_var, s, envir = wge)
+      assign(upload_var, FALSE, envir = wge)
+      assign(build_var, TRUE, envir = wge)
+      for (nm in names(extra_worker_globals)) {
+        assign(nm, extra_worker_globals[[nm]], envir = wge)
+      }
+      assign("cache_dir", cache_dir, envir = wge)
+      source(export_script, local = FALSE)
+      p <- file.path(wge$cache_dir, sprintf(out_pattern, s))
+      if (file.exists(p)) p else NULL
+    }
+
+    built <- future.apply::future_lapply(seasons, .run_one_season, future.seed = NULL)
+    built <- Filter(Negate(is.null), built)
+    message(sprintf("\n  Parallel build complete: %d/%d seasons produced",
+                    length(built), length(seasons)))
+
+    # Second pass — upload only, in main process. seasons_var is left as the
+    # filtered request list (not narrowed to `built`): a season that failed to
+    # build simply won't have a file, and the export script's upload-only mode
+    # only picks up files that exist.
+    if (isTRUE(upload) && length(built) > 0) {
+      assign(build_var, FALSE, envir = ge)
+      source(export_script, local = FALSE)
+    }
+  }
+
+  elapsed <- round(as.numeric(difftime(Sys.time(), t0, units = "mins")), 1)
+  message(sprintf("\n%s complete in %.1f min", label, elapsed))
+  invisible(elapsed)
 }
