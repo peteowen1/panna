@@ -16,7 +16,7 @@ fit_spm_model(
 )
 }
 \arguments{
-\item{data}{Data frame from prepare_spm_regression_data or aggregate_player_stats
+\item{data}{Data frame from prepare_spm_regression_data or aggregate_opta_stats
 joined with RAPM ratings}
 
 \item{predictor_cols}{Character vector of predictor column names}
