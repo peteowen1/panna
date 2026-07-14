@@ -29,8 +29,7 @@
 #'   Beyond that the decay is so heavy the imputation is near-zero anyway.
 #' @return The input `ratings` with extra synthetic rows for `current_sey`
 #'   covering players who weren't already rated there.
-#' @family match prediction
-#' @export
+#' @keywords internal
 augment_ratings_with_history <- function(ratings, current_sey,
                                             decay_factor = 0.85,
                                             max_years_back = 5L) {

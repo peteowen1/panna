@@ -32,8 +32,7 @@
 #' @param data Data frame
 #'
 #' @return Data frame with snake_case column names
-#' @family utilities
-#' @export
+#' @keywords internal
 clean_column_names <- function(data) {
   if (is.null(data) || !is.data.frame(data)) {
     return(data)

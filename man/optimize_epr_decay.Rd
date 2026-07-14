@@ -34,15 +34,4 @@ Grid-search the decay parameter for \code{calculate_epr_regression()} by
 fitting on history before a hold-out window and measuring weighted MSE
 on next-game per-90 EPV in that window.
 }
-\seealso{
-Other epr: 
-\code{\link{PANNA_EPR_WEIGHT}},
-\code{\link{PANNA_PSR_WEIGHT}},
-\code{\link{aggregate_player_game_epv}()},
-\code{\link{build_player_game_ratings}()},
-\code{\link{calculate_epr}()},
-\code{\link{calculate_epr_batch}()},
-\code{\link{calculate_epr_regression}()},
-\code{\link{player_value}()}
-}
-\concept{epr}
+\keyword{internal}

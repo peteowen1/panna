@@ -786,8 +786,7 @@ fit_spm_opta <- function(data, alpha = 0.5, nfolds = 10,
 #'
 #' @return Fitted SPM model (same as \code{fit_spm_opta}).
 #'
-#' @family spm opta
-#' @export
+#' @keywords internal
 fit_spm_opta_target <- function(data, target_col = "rapm", ...) {
   dt <- data.table::as.data.table(data)
 

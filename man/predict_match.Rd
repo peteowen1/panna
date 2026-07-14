@@ -34,7 +34,6 @@ expected goals for a set of matches.
 Other match prediction: 
 \code{\link{aggregate_lineup_ratings}()},
 \code{\link{aggregate_lineup_skills}()},
-\code{\link{augment_ratings_with_history}()},
 \code{\link{calibration_table}()},
 \code{\link{compute_match_elos}()},
 \code{\link{compute_multiclass_logloss}()},

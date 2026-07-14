@@ -26,7 +26,6 @@ safe_divide(10, 0, default = NA_real_)
 }
 \seealso{
 Other utilities: 
-\code{\link{clean_column_names}()},
 \code{\link{per_90}()},
 \code{\link{validate_dataframe}()},
 \code{\link{validate_seasons}()}

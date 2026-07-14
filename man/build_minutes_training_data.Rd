@@ -33,14 +33,4 @@ For each (player_id x match) in the international competitions, computes
 backward-looking features as of the match date and pairs them with the
 realized \code{minutes_played} (the supervised target).
 }
-\seealso{
-Other expected minutes: 
-\code{\link{build_team_expected_minutes}()},
-\code{\link{classify_role}()},
-\code{\link{fit_minutes_model}()},
-\code{\link{predict_minutes}()},
-\code{\link{prepare_minutes_cache}()},
-\code{\link{query_minutes_features}()},
-\code{\link{weight_rating_by_minutes}()}
-}
-\concept{expected minutes}
+\keyword{internal}

@@ -492,8 +492,7 @@ load_xpass_model <- function(path = NULL) {
 #' @param path Path to save. If NULL, saves to pannadata/opta/models/
 #'
 #' @return Invisibly returns the path
-#' @family epv
-#' @export
+#' @keywords internal
 #' @examples
 #' \dontrun{
 #' xpass_model <- fit_xpass_model(pass_features)

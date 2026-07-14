@@ -156,11 +156,6 @@ reference:
   contents:
   - has_concept("cache management")
 
-- title: Player ID Canonicalisation
-  desc: Map duplicate Opta player IDs to canonical identities
-  contents:
-  - has_concept("player id canonicalisation")
-
 - title: Utilities
   desc: Helper functions
   contents:

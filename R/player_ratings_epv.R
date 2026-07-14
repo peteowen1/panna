@@ -712,8 +712,7 @@ apply_epr_league_offsets <- function(epr_dt, offsets, verbose = FALSE) {
 #' @param verbose If TRUE (default), print per-candidate timing + score.
 #' @param ... Passed to calculate_epr_regression (e.g., alpha, prior_strength).
 #' @return A data.table with one row per decay candidate plus the chosen decay.
-#' @family epr
-#' @export
+#' @keywords internal
 optimize_epr_decay <- function(player_game_epv,
                                 ref_date,
                                 holdout_days = 60L,

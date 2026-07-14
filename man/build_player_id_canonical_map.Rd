@@ -30,8 +30,4 @@ dominant ids).
 \description{
 Build a player_id -> canonical_id lookup
 }
-\seealso{
-Other player id canonicalisation: 
-\code{\link{apply_canonical_player_ids}()}
-}
-\concept{player id canonicalisation}
+\keyword{internal}

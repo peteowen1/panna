@@ -75,7 +75,6 @@ Other epr:
 \code{\link{build_player_game_ratings}()},
 \code{\link{calculate_epr_batch}()},
 \code{\link{calculate_epr_regression}()},
-\code{\link{optimize_epr_decay}()},
 \code{\link{player_value}()}
 }
 \concept{epr}

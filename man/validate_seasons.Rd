@@ -28,7 +28,6 @@ validate_seasons("2013-2014", min_year = 2013, source_name = "Opta")
 }
 \seealso{
 Other utilities: 
-\code{\link{clean_column_names}()},
 \code{\link{per_90}()},
 \code{\link{safe_divide}()},
 \code{\link{validate_dataframe}()}

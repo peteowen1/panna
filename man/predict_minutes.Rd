@@ -19,12 +19,9 @@ Predict minutes for new rows (must have same feature columns as training)
 }
 \seealso{
 Other expected minutes: 
-\code{\link{build_minutes_training_data}()},
 \code{\link{build_team_expected_minutes}()},
 \code{\link{classify_role}()},
-\code{\link{fit_minutes_model}()},
 \code{\link{prepare_minutes_cache}()},
-\code{\link{query_minutes_features}()},
-\code{\link{weight_rating_by_minutes}()}
+\code{\link{query_minutes_features}()}
 }
 \concept{expected minutes}

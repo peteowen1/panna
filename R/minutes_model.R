@@ -103,8 +103,7 @@ classify_role <- function(position, side) {
 #' @param verbose Logical.
 #' @return A data.table with features + `minutes_played` target. The vector
 #'   of training feature column names is in `attr(result, "feature_cols")`.
-#' @family expected minutes
-#' @export
+#' @keywords internal
 build_minutes_training_data <- function(lineups,
                                           intl_comps,
                                           ratings_path = "data-raw/cache-opta/07_seasonal_ratings.rds",

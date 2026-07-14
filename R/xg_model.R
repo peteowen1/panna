@@ -537,8 +537,7 @@ load_xg_model <- function(path = NULL) {
 #' @param path Path to save model. If NULL, saves to pannadata/opta/models/
 #'
 #' @return Invisibly returns the path
-#' @family epv
-#' @export
+#' @keywords internal
 save_xg_model <- function(xg_model, path = NULL) {
   if (is.null(path)) {
     model_dir <- file.path(opta_data_dir(), "models")

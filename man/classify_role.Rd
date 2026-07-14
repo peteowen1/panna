@@ -23,12 +23,9 @@ more often than CBs; AMs come off twice as often as CBs).
 }
 \seealso{
 Other expected minutes: 
-\code{\link{build_minutes_training_data}()},
 \code{\link{build_team_expected_minutes}()},
-\code{\link{fit_minutes_model}()},
 \code{\link{predict_minutes}()},
 \code{\link{prepare_minutes_cache}()},
-\code{\link{query_minutes_features}()},
-\code{\link{weight_rating_by_minutes}()}
+\code{\link{query_minutes_features}()}
 }
 \concept{expected minutes}

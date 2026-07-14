@@ -23,7 +23,6 @@ Other epr:
 \code{\link{calculate_epr}()},
 \code{\link{calculate_epr_batch}()},
 \code{\link{calculate_epr_regression}()},
-\code{\link{optimize_epr_decay}()},
 \code{\link{player_value}()}
 }
 \concept{epr}

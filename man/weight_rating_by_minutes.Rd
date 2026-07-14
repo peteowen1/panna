@@ -20,14 +20,4 @@ Equivalent to "what's the average panna rating of who'll be on the pitch."
 \description{
 Build a minutes-weighted team rating
 }
-\seealso{
-Other expected minutes: 
-\code{\link{build_minutes_training_data}()},
-\code{\link{build_team_expected_minutes}()},
-\code{\link{classify_role}()},
-\code{\link{fit_minutes_model}()},
-\code{\link{predict_minutes}()},
-\code{\link{prepare_minutes_cache}()},
-\code{\link{query_minutes_features}()}
-}
-\concept{expected minutes}
+\keyword{internal}

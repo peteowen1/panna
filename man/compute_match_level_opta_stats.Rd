@@ -40,7 +40,6 @@ match_stats <- compute_match_level_opta_stats(opta_stats)
 }
 \seealso{
 Other spm opta: 
-\code{\link{fit_spm_opta}()},
-\code{\link{fit_spm_opta_target}()}
+\code{\link{fit_spm_opta}()}
 }
 \concept{spm opta}

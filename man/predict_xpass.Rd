@@ -42,8 +42,6 @@ Other epv:
 \code{\link{pb_download_epv_models}()},
 \code{\link{predict_xg}()},
 \code{\link{predict_xgot}()},
-\code{\link{save_epv_model}()},
-\code{\link{save_xg_model}()},
-\code{\link{save_xpass_model}()}
+\code{\link{save_epv_model}()}
 }
 \concept{epv}

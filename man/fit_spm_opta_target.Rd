@@ -25,9 +25,4 @@ SPM on any target column (not just the default \code{rapm}). Useful for
 multi-target RAPM where each value metric (EPV, WPA, PSV) has its own
 RAPM rating that needs an SPM predictor.
 }
-\seealso{
-Other spm opta: 
-\code{\link{compute_match_level_opta_stats}()},
-\code{\link{fit_spm_opta}()}
-}
-\concept{spm opta}
+\keyword{internal}
