@@ -142,9 +142,8 @@ validate_min_minutes <- function(min_minutes) {
 
 #' Clean player name for matching
 #'
-#' Creates a minimal normalized version of player name for fuzzy matching.
-#' Unlike standardize_player_names() which preserves readable format,
-#' this creates a key: lowercase with all whitespace removed.
+#' Creates a minimal normalized version of player name for fuzzy matching:
+#' lowercase with all whitespace removed (a matching key, not a display form).
 #' Uses memoization to cache unique names for O(1) lookup on repeated values.
 #'
 #' @param names Character vector of player names
@@ -544,93 +543,6 @@ format_duration <- function(secs) {
     assign(col, TRUE, envir = .get_col_warned)
   }
   rep(0, nrow(df))
-}
-
-
-#' HTTP GET with exponential backoff retry
-#'
-#' Wraps httr::GET with automatic retry on transient failures (5xx errors,
-#' connection timeouts). Does NOT retry on rate limiting (429) or blocking (403)
-#' as those require different handling.
-#'
-#' @param url URL to fetch
-#' @param max_retries Maximum number of retry attempts (default 3)
-#' @param base_delay Initial delay in seconds before first retry (default 1)
-#' @param max_delay Maximum delay between retries in seconds (default 30)
-#' @param ... Additional arguments passed to httr::GET (headers, timeout, handle)
-#'
-#' @return httr response object, or NULL with attributes on permanent failure
-#' @keywords internal
-fetch_with_retry <- function(url, max_retries = 3, base_delay = 1, max_delay = 30, ...) {
-  .check_suggests("httr", "HTTP requests require httr.")
-  attempt <- 0
-
-  while (attempt <= max_retries) {
-    # Try the request
-    response <- tryCatch(
-      httr::GET(url, ...),
-      error = function(e) {
-        list(error = TRUE, message = conditionMessage(e))
-      }
-    )
-
-    # Handle connection errors
-    if (is.list(response) && isTRUE(response$error)) {
-      attempt <- attempt + 1
-      if (attempt <= max_retries) {
-        delay <- min(base_delay * (2^(attempt - 1)), max_delay)
-        cli::cli_alert_warning(
-          "Connection error: {response$message}. Retrying in {delay}s ({attempt}/{max_retries})"
-        )
-        Sys.sleep(delay)
-        next
-      } else {
-        cli::cli_alert_danger("Connection failed after {max_retries} retries")
-        return(structure(list(), class = "fetch_error",
-                         connection_error = TRUE, error_message = response$message))
-      }
-    }
-
-    status <- httr::status_code(response)
-
-    # Permanent failures - don't retry
-    # Use structure() to create NULL with attributes (attr() on NULL fails)
-    if (status == 429) {
-      return(structure(list(), class = "fetch_error", rate_limited = TRUE))
-    }
-
-    if (status == 403) {
-      return(structure(list(), class = "fetch_error", blocked = TRUE))
-    }
-
-    if (status == 404) {
-      return(structure(list(), class = "fetch_error", not_found = TRUE))
-    }
-
-    # Success
-    if (status >= 200 && status < 300) {
-      return(response)
-    }
-
-    # Transient failures (5xx) - retry with backoff
-    if (status >= 500 && status < 600) {
-      attempt <- attempt + 1
-      if (attempt <= max_retries) {
-        delay <- min(base_delay * (2^(attempt - 1)), max_delay)
-        cli::cli_alert_warning(
-          "Server error {status}. Retrying in {delay}s ({attempt}/{max_retries})"
-        )
-        Sys.sleep(delay)
-        next
-      }
-    }
-
-    # Other errors - don't retry
-    return(structure(list(), class = "fetch_error", http_error = TRUE, status_code = status))
-  }
-
-  # Should not reach here, but handle anyway
-  return(structure(list(), class = "fetch_error", max_retries_exceeded = TRUE))
 }
 
 
