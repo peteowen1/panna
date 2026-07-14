@@ -406,17 +406,6 @@ CHAIN_PROGRESSIVE_THRESHOLD <- 25
 #' @keywords internal
 ZERO_XG_THRESHOLD_OPTA <- 50L
 
-#' Zero-xG threshold for FBref pipeline data quality filter (DEPRECATED)
-#'
-#' Maximum percentage of zero-xG splints allowed before a match is flagged.
-#' FBref data has fewer zero-xG splints than Opta, so threshold is lower.
-#' Kept for backward compatibility -- FBref pipeline archived 2026-04-18,
-#' Opta is the active data source.
-#'
-#' @format Integer value: 20
-#' @keywords internal
-ZERO_XG_THRESHOLD_FBREF <- 20L
-
 #' Minimum minutes for RAPM model fitting
 #'
 #' Minimum total minutes a player needs across all matches to be included

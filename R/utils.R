@@ -138,34 +138,6 @@ validate_min_minutes <- function(min_minutes) {
 }
 
 
-#' Standardize player names
-#'
-#' Cleans and standardizes player names for consistent matching across datasets.
-#' Uses memoization to cache unique names for O(1) lookup on repeated values.
-#'
-#' @param names Character vector of player names
-#'
-#' @return Character vector of standardized names
-#' @keywords internal
-standardize_player_names <- function(names) {
-  # Memoization: process unique names once, then lookup
-  unique_names <- unique(names)
-
-  # Fast vectorized implementation (avoids slow tools::toTitleCase)
-  cleaned <- trimws(unique_names)
-  # Remove extra whitespace first
-  cleaned <- gsub("\\s+", " ", cleaned)
-  # Remove common suffixes
-  cleaned <- gsub("\\s+(Jr\\.|Sr\\.|II|III|IV)$", "", cleaned)
-  # Title case with full Unicode support (handles \u00d8degaard, M\u00fcller, etc.)
-  cleaned <- stringi::stri_trans_totitle(cleaned)
-
-  # Build lookup and return via O(1) match
-  lookup <- setNames(cleaned, unique_names)
-  unname(lookup[names])
-}
-
-
 #' Clean player name for matching
 #'
 #' Creates a minimal normalized version of player name for fuzzy matching.
@@ -203,83 +175,6 @@ clean_player_name <- function(names) {
 }
 
 
-#' Extract FBref player ID from href
-#'
-#' Extracts the 8-character hex ID from an FBref player URL.
-#' Example: "/players/d080ed5e/Kylian-Mbappe" -> "d080ed5e"
-#'
-#' Note: player_href is extracted during FBref scraping and used in
-#' data processing to derive player IDs.
-#'
-#' @param hrefs Character vector of FBref player hrefs
-#'
-#' @return Character vector of 8-char hex IDs (NA if not found)
-#' @keywords internal
-#'
-#' @examples
-#' \dontrun{
-#' extract_fbref_player_id("/players/d080ed5e/Kylian-Mbappe")
-#' # Returns "d080ed5e"
-#' }
-extract_fbref_player_id <- function(hrefs) {
-  # Extract 8-char hex ID from /players/xxxxxxxx/... pattern
-  ids <- gsub(".*/players/([a-f0-9]{8})/.*", "\\1", hrefs)
-  # Return NA for hrefs that don't match the pattern
-  ids[!grepl("^[a-f0-9]{8}$", ids)] <- NA_character_
-  ids
-}
-
-
-#' Standardize team names
-#'
-#' Cleans and standardizes team names for consistent matching.
-#' Uses vectorized lookup for speed on large datasets.
-#'
-#' @param names Character vector of team names
-#'
-#' @return Character vector of standardized names
-#' @keywords internal
-standardize_team_names <- function(names) {
- names <- trimws(names)
-
- # Common team name standardizations (lookup table)
- # Keys are variants, values are canonical names
- lookup_from <- c(
-   "Manchester Utd", "Man Utd", "Man United",
-   "Man City",
-   "Tottenham", "Spurs",
-   "Wolves", "Wolverhampton",
-   "Brighton", "Brighton and Hove Albion",
-   "West Ham",
-   "Newcastle",
-   "Nott'ham Forest", "Nottingham",
-   "Sheffield Utd",
-   "Leeds",
-   "Leicester"
- )
- lookup_to <- c(
-   "Manchester United", "Manchester United", "Manchester United",
-   "Manchester City",
-   "Tottenham Hotspur", "Tottenham Hotspur",
-   "Wolverhampton Wanderers", "Wolverhampton Wanderers",
-   "Brighton & Hove Albion", "Brighton & Hove Albion",
-   "West Ham United",
-   "Newcastle United",
-   "Nottingham Forest", "Nottingham Forest",
-   "Sheffield United",
-   "Leeds United",
-   "Leicester City"
- )
-
- # Vectorized lookup using match() - O(n) instead of O(n*m)
- idx <- match(names, lookup_from)
- needs_replace <- !is.na(idx)
- names[needs_replace] <- lookup_to[idx[needs_replace]]
-
- names
-}
-
-
 #' Create unique match ID
 #'
 #' Generates a unique identifier for a match based on season, date, and teams.
@@ -293,32 +188,6 @@ standardize_team_names <- function(names) {
 #' @keywords internal
 create_match_id <- function(season, date, home_team, away_team) {
   paste(season, format(as.Date(date), "%Y%m%d"), home_team, away_team, sep = "_")
-}
-
-
-#' Create unique player ID
-#'
-#' Generates a unique identifier for a player based on name and team.
-#' Note: This is a simple implementation; FBref player URLs are more reliable.
-#'
-#' @param player_name Player name
-#' @param fbref_id Optional FBref player ID (preferred if available
-#'
-#' @return Character vector of player IDs
-#' @keywords internal
-create_player_id <- function(player_name, fbref_id = NULL) {
-  # Fallback: clean name
-  id <- tolower(player_name)
-  id <- gsub("[^a-z0-9]", "_", id)
-  id <- gsub("_+", "_", id)
-  id <- gsub("^_|_$", "", id)
-
-  # Use fbref_id where available (element-wise)
-  if (!is.null(fbref_id)) {
-    has_id <- !is.na(fbref_id) & nzchar(fbref_id)
-    id[has_id] <- fbref_id[has_id]
-  }
-  id
 }
 
 
@@ -384,54 +253,6 @@ validate_dataframe <- function(data, required_cols = NULL, arg_name = "data", mi
   }
 
   invisible(TRUE)
-}
-
-
-#' Check and report data completeness
-#'
-#' Validates data quality and reports missing values.
-#'
-#' @param data Data frame to validate
-#' @param required_cols Character vector of required column names
-#' @param warn Logical, whether to print warnings for missing data
-#'
-#' @return List with validation results
-#' @keywords internal
-validate_data_completeness <- function(data, required_cols = NULL, warn = TRUE) {
-  result <- list(
-    n_rows = nrow(data),
-    n_cols = ncol(data),
-    missing_cols = character(0),
-    na_summary = list()
-  )
-
-  # Check required columns
-  if (!is.null(required_cols)) {
-    missing <- setdiff(required_cols, names(data))
-    if (length(missing) > 0) {
-      result$missing_cols <- missing
-      if (warn) {
-        cli::cli_warn("Missing required columns: {paste(missing, collapse = ', ')}")
-      }
-    }
-  }
-
-  # Check NA values
-  na_counts <- sapply(data, function(x) sum(is.na(x)))
-  na_pcts <- if (nrow(data) > 0) round(na_counts / nrow(data) * 100, 1) else rep(0, length(na_counts))
-  result$na_summary <- data.frame(
-    column = names(na_counts),
-    na_count = na_counts,
-    na_pct = na_pcts,
-    row.names = NULL
-  )
-
-  if (warn && any(na_pcts > 20)) {
-    high_na <- names(na_pcts)[na_pcts > 20]
-    cli::cli_warn("Columns with >20% missing: {paste(high_na, collapse = ', ')}")
-  }
-
-  result
 }
 
 
@@ -508,21 +329,6 @@ progress_msg <- function(msg, verbose = TRUE) {
     heap_mb
   ), verbose = verbose)
   invisible(rss_mb)
-}
-
-
-#' Find first matching column from candidates
-#'
-#' Returns the first column name that exists in the data frame.
-#'
-#' @param data Data frame to search
-#' @param candidates Character vector of column names to try (in priority order)
-#'
-#' @return First matching column name, or NULL if none found
-#' @keywords internal
-find_column <- function(data, candidates) {
-  matches <- intersect(candidates, names(data))
-  if (length(matches) == 0) NULL else matches[1]
 }
 
 
@@ -737,148 +543,6 @@ format_duration <- function(secs) {
 }
 
 
-#' Ensure column exists with default
-#'
-#' Creates a column if it doesn't exist, optionally deriving from another column.
-#'
-#' @param data Data frame
-#' @param col_name Name of column to ensure
-#' @param default Default value or function to derive value
-#' @param source_col Optional source column for pattern matching
-#' @param pattern Regex pattern to match in source column
-#'
-#' @return Data frame with column ensured
-#' @keywords internal
-ensure_column <- function(data, col_name, default = FALSE, source_col = NULL, pattern = NULL) {
-  if (col_name %in% names(data)) {
-    return(data)
-  }
-
-  if (!is.null(source_col) && !is.null(pattern) && source_col %in% names(data)) {
-    data[[col_name]] <- grepl(pattern, data[[source_col]], ignore.case = TRUE)
-  } else {
-    data[[col_name]] <- default
-  }
-
-  data
-}
-
-
-#' Rename columns using a mapping
-#'
-#' Renames columns in a data frame based on a named vector mapping.
-#' The mapping format is: c(new_name1 = "old_name1", new_name2 = "old_name2")
-#'
-#' @param data Data frame
-#' @param mapping Named character vector where names are new column names
-#'   and values are existing column names to rename
-#'
-#' @return Data frame with renamed columns
-#' @keywords internal
-#'
-#' @examples
-#' \dontrun{
-#' df <- data.frame(a = 1, b = 2)
-#' rename_columns(df, c(x = "a", y = "b"))
-#' }
-rename_columns <- function(data, mapping) {
-  old_names <- unname(mapping)
-  new_names <- names(mapping)
-  # Only rename columns that exist in data
-  present <- old_names %in% names(data)
-  if (any(present)) {
-    idx <- match(old_names[present], names(data))
-    names(data)[idx] <- new_names[present]
-  }
-  data
-}
-
-
-#' Aggregate player statistics with optional team grouping
-#'
-#' Common aggregation pattern for player stats functions. Aggregates columns
-#' by player (and optionally team), adding most frequent team when not grouping by team.
-#'
-#' @param data Data frame with player-level data
-#' @param agg_cols Named list where names are output column names and values are
-#'   expressions to aggregate (as strings or column names)
-#' @param by_team Logical. If TRUE, group by player and team. If FALSE, group by
-#'   player only and add most frequent team.
-#' @param player_col Name of player column (default "player")
-#' @param team_col Name of team column (default "team")
-#'
-#' @return Aggregated data frame with player, team, and aggregated columns
-#' @keywords internal
-#'
-#' @examples
-#' \dontrun{
-#' # Aggregate goals and assists
-#' aggregate_player_data(
-#'   data = match_data,
-#'   agg_cols = list(matches = "1", goals = "gls", assists = "ast"),
-#'   by_team = FALSE
-#' )
-#' }
-aggregate_player_data <- function(data, agg_cols, by_team = FALSE,
-                                   player_col = "player", team_col = "team") {
-  if (is.null(data) || nrow(data) == 0) {
-    return(data.frame())
-  }
-
-  # Build data.table with columns to aggregate
-  dt <- data.table::data.table(.player = data[[player_col]])
-  if (by_team && team_col %in% names(data)) {
-    dt[, .team := data[[team_col]]]
-  }
-
-  for (col_name in names(agg_cols)) {
-    col_expr <- agg_cols[[col_name]]
-    if (col_expr == "1") {
-      dt[, (col_name) := 1L]
-    } else if (col_expr %in% names(data)) {
-      dt[, (col_name) := as.numeric(data[[col_expr]])]
-    } else {
-      cli::cli_warn(c(
-        "Column {.val {col_expr}} not found in data.",
-        "i" = "Pre-compute derived columns before passing to {.fn aggregate_player_data}."
-      ))
-      dt[, (col_name) := 0]
-    }
-  }
-
-  # Aggregate using data.table
-  agg_col_names <- names(agg_cols)
-  by_cols <- if (by_team && ".team" %in% names(dt)) c(".player", ".team") else ".player"
-
-  result <- dt[, lapply(.SD, function(x) sum(x, na.rm = TRUE)),
-               by = by_cols, .SDcols = agg_col_names]
-
-  # Rename grouping columns back
-  data.table::setnames(result, ".player", player_col)
-  if (".team" %in% names(result)) {
-    data.table::setnames(result, ".team", team_col)
-  }
-
-  # Add most frequent team if not grouping by team
-  if (!by_team && team_col %in% names(data)) {
-    team_dt <- data.table::data.table(
-      .player = data[[player_col]],
-      .team = data[[team_col]]
-    )
-    team_mode <- team_dt[, {
-      valid <- .team[!is.na(.team)]
-      if (length(valid) == 0) list(.team = NA_character_)
-      else list(.team = names(which.max(table(valid))))
-    }, by = .player]
-    data.table::setnames(team_mode, c(".player", ".team"), c(player_col, team_col))
-    result <- team_mode[result, on = player_col]
-  }
-
-  data.table::setDF(result)
-  result
-}
-
-
 #' HTTP GET with exponential backoff retry
 #'
 #' Wraps httr::GET with automatic retry on transient failures (5xx errors,
@@ -1044,73 +708,3 @@ build_where_clause <- function(filters, prefix = TRUE) {
   }
 }
 
-
-#' Standardize data frame column names using a mapping
-#'
-#' Renames columns in a data frame or data.table if alternative names exist.
-#' This handles common variations in column naming across different data sources.
-#' For data.table objects, uses setnames() for efficient in-place renaming.
-#'
-#' @param data Data frame or data.table to standardize
-#' @param col_map Named list where names are canonical column names and
-#'   values are character vectors of alternative names to look for.
-#'
-#' @return Data frame/data.table with standardized column names
-#' @keywords internal
-standardize_data_columns <- function(data, col_map) {
-  if (is.null(data) || !is.data.frame(data)) {
-    return(data)
-  }
-
-  is_dt <- inherits(data, "data.table")
-  current_names <- names(data)
-
-  for (canonical_name in names(col_map)) {
-    # Skip if canonical name already exists
-    if (canonical_name %in% current_names) {
-      next
-    }
-
-    # Look for alternatives
-    alternatives <- col_map[[canonical_name]]
-    for (alt_name in alternatives) {
-      if (alt_name %in% current_names) {
-        # Found an alternative, rename it
-        if (is_dt) {
-          data.table::setnames(data, alt_name, canonical_name)
-        } else {
-          names(data)[names(data) == alt_name] <- canonical_name
-        }
-        current_names <- names(data)  # Update for next iteration
-        break
-      }
-    }
-  }
-
-  data
-}
-
-
-#' Default column mapping for FBref/Opta data
-#'
-#' Standard column name variations encountered across different data sources.
-#'
-#' @return Named list of canonical column names to alternatives
-#' @keywords internal
-#'
-#' @examples
-#' \dontrun{
-#' col_map <- default_column_map()
-#' names(col_map)
-#' }
-default_column_map <- function() {
-  list(
-    team = c("squad", "team_name"),
-    player_name = c("player"),
-    minutes = c("min", "mins_played", "minsPlayed"),
-    position = c("pos"),
-    player_id = c("playerId"),
-    team_id = c("teamId"),
-    match_id = c("matchId")
-  )
-}
