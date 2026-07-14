@@ -13,7 +13,7 @@ create_all_splints(
 )
 }
 \arguments{
-\item{processed_data}{List of processed data from process_all_data}
+\item{processed_data}{List of processed data from create_opta_processed_data}
 
 \item{include_goals}{Whether to create splints at goal times}
 

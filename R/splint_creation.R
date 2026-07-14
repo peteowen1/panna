@@ -345,7 +345,7 @@ extract_sub_events <- function(lineups) {
 #' Generates splint data for an entire dataset.
 #' Uses data.table for fast pre-splitting by match_id.
 #'
-#' @param processed_data List of processed data from process_all_data
+#' @param processed_data List of processed data from create_opta_processed_data
 #' @param include_goals Whether to create splints at goal times
 #' @param verbose Print progress messages
 #' @param chunk_by Chunking strategy for memory efficiency. `"league"` (default)
