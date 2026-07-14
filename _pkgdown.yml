@@ -74,7 +74,6 @@ reference:
 - title: SPM Pipeline
   desc: Statistical Plus-Minus model
   contents:
-  - aggregate_player_stats
   - fit_spm_model
   - fit_spm_xgb
   - calculate_spm_ratings
@@ -302,18 +301,9 @@ reference:
 - title: Data Distribution
   desc: GitHub Releases upload/download
   contents:
-  - pb_download_source
-  - pb_download_data
-  - pb_download_parquet
   - pb_download_opta
   - pb_download_predictions
-  - pb_upload_source
-  - pb_upload_data
-  - pb_upload_parquet
-  - pb_sync_data
-  - pb_list_data
   - pb_list_sources
-  - pb_status
   - load_predictions
 
 - title: Cache Management
@@ -390,13 +380,6 @@ reference:
   - TOUCHES_PER_SEQUENCE
   - XG_MAX
   - XG_MIN
-
-- title: Deprecated
-  desc: Deprecated functions (use alternatives instead)
-  contents:
-  - fit_epv_scoring_model
-  - fit_epv_conceding_model
-  - assign_pass_credit
 
 - title: Internal / Developer
   desc: "Internal data-bus utilities accessible via panna::: for release publish/download integrity (ECOSYSTEM-FIX-PLAN.md versebus pattern)"
