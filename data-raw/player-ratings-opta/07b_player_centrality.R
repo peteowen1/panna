@@ -1,6 +1,11 @@
 # 07b_player_centrality.R
 # Calculate network centrality scores for rated players
 #
+# DELIBERATELY OPT-IN / MANUAL: not run by any workflow. Its cache
+# (cache-opta/07b_centrality.rds) is optionally consumed by predictions step
+# 02 (02_player_ratings_to_team.R) if present -- centrality features are 0 in
+# cloud runs by design (decision 2026-07-14).
+#
 # Runs after step 07 (seasonal ratings) to compute opponent quality
 # adjustment scores. Centrality can be used as:
 # - A multiplier on RAPM/SPM ratings (quality-adjusted rating)
