@@ -45,10 +45,10 @@ pb_download_opta(force = TRUE)
 ```
 
 It works from an empty directory too, so it's also the fresh-clone puller --
-`data-raw/bootstrap.R` calls it directly. This matters because the older
-`pb_download_source("opta")` path requires an `opta-parquet.tar.gz` archive
-asset that no longer exists on `opta-latest` (only individual consolidated
-parquets remain); `pb_download_opta()` is the one that actually works.
+`data-raw/bootstrap.R` calls it directly. (An older tarball-based downloader
+was removed in 2026-07: `opta-latest` no longer carries an archive asset, only
+individual consolidated parquets, so incremental per-asset sync is the only
+path that works.)
 
 ```{r bootstrap-fresh-clone}
 # Rscript data-raw/bootstrap.R            # Opta data + models + caches
