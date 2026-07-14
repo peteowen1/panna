@@ -21,3 +21,14 @@ Named vector with \code{prob_H}, \code{prob_D}, \code{prob_A}.
 \description{
 Convert BT ratings to a match probability
 }
+\seealso{
+Other world cup simulation: 
+\code{\link{build_knockout_lookup}()},
+\code{\link{compute_league_offsets}()},
+\code{\link{fit_bt_ratings}()},
+\code{\link{match_is_international}()},
+\code{\link{mirror_match_rows}()},
+\code{\link{run_wc2026_reference_checks}()},
+\code{\link{simulate_world_cup}()}
+}
+\concept{world cup simulation}

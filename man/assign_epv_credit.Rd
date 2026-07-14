@@ -26,3 +26,26 @@ splits the value between the player who lost the ball and who gained it.
 For merged duels (Aerials, Take On vs Tackle), assigns zero-sum credit
 where winner gain = loser loss.
 }
+\seealso{
+Other epv: 
+\code{\link{aggregate_player_xmetrics}()},
+\code{\link{convert_opta_to_spadl}()},
+\code{\link{enrich_match_stats_with_xmetrics}()},
+\code{\link{fit_epv_model}()},
+\code{\link{fit_xg_model}()},
+\code{\link{fit_xgot_model}()},
+\code{\link{fit_xpass_model}()},
+\code{\link{get_or_build_spadl}()},
+\code{\link{load_epv_model}()},
+\code{\link{load_xg_model}()},
+\code{\link{load_xgot_model}()},
+\code{\link{load_xpass_model}()},
+\code{\link{pb_download_epv_models}()},
+\code{\link{predict_xg}()},
+\code{\link{predict_xgot}()},
+\code{\link{predict_xpass}()},
+\code{\link{save_epv_model}()},
+\code{\link{save_xg_model}()},
+\code{\link{save_xpass_model}()}
+}
+\concept{epv}

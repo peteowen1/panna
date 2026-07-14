@@ -159,6 +159,7 @@ prepare_passes_for_xpass <- function(spadl_actions) {
 #'
 #' @return List with fitted model and metadata
 #'
+#' @family epv
 #' @export
 #' @examples
 #' \dontrun{
@@ -293,6 +294,7 @@ fit_xpass_model <- function(pass_features,
 #'
 #' @return Vector of xPass predictions (probabilities)
 #'
+#' @family epv
 #' @export
 #' @examples
 #' \dontrun{
@@ -437,6 +439,7 @@ split_pass_credit <- function(pass_value, xpass) {
 #' @param path Path to model RDS file. If NULL, uses default location.
 #'
 #' @return Fitted xPass model
+#' @family epv
 #' @export
 #' @examples
 #' \dontrun{
@@ -489,6 +492,7 @@ load_xpass_model <- function(path = NULL) {
 #' @param path Path to save. If NULL, saves to pannadata/opta/models/
 #'
 #' @return Invisibly returns the path
+#' @family epv
 #' @export
 #' @examples
 #' \dontrun{

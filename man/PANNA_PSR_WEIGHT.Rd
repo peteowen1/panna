@@ -13,4 +13,16 @@ PANNA_PSR_WEIGHT
 \description{
 PSR weight in combined Panna Value rating
 }
+\seealso{
+Other epr: 
+\code{\link{PANNA_EPR_WEIGHT}},
+\code{\link{aggregate_player_game_epv}()},
+\code{\link{build_player_game_ratings}()},
+\code{\link{calculate_epr}()},
+\code{\link{calculate_epr_batch}()},
+\code{\link{calculate_epr_regression}()},
+\code{\link{optimize_epr_decay}()},
+\code{\link{player_value}()}
+}
+\concept{epr}
 \keyword{datasets}

@@ -86,6 +86,7 @@ EPR_LEAGUE_TIERS <- list(
 #'   in a weaker league is judged relative to that league's baseline rather
 #'   than the global one. Set to FALSE to restore pre-baseline behaviour.
 #'
+#' @family epr
 #' @export
 calculate_epr <- function(player_game_epv, ref_date = NULL,
                            decay_offensive = EPR_DECAY_OFFENSIVE,
@@ -209,6 +210,7 @@ calculate_epr <- function(player_game_epv, ref_date = NULL,
 #' @return A data.table with columns from \code{calculate_epr} plus
 #'   \code{ref_date}.
 #'
+#' @family epr
 #' @export
 calculate_epr_batch <- function(player_game_epv, ref_dates, ...) {
   ref_dates <- sort(as.Date(ref_dates))
@@ -286,6 +288,7 @@ calculate_epr_batch <- function(player_game_epv, ref_dates, ...) {
 #'   before the regression runs, so \code{beta_player} is directly comparable
 #'   across leagues. Leagues not present in the table are treated with a
 #'   zero offset and a single warning is issued.
+#' @family epr
 #' @export
 calculate_epr_regression <- function(player_game_epv,
                                        ref_date = NULL,
@@ -657,6 +660,7 @@ calculate_epr_regression <- function(player_game_epv,
 #'   unchanged (offset 0).
 #'
 #' @seealso \code{\link{apply_psr_league_offsets}}, \code{\link{build_league_network}}
+#' @family league offsets
 #' @export
 apply_epr_league_offsets <- function(epr_dt, offsets, verbose = FALSE) {
   dt <- data.table::as.data.table(epr_dt)
@@ -708,6 +712,7 @@ apply_epr_league_offsets <- function(epr_dt, offsets, verbose = FALSE) {
 #' @param verbose If TRUE (default), print per-candidate timing + score.
 #' @param ... Passed to calculate_epr_regression (e.g., alpha, prior_strength).
 #' @return A data.table with one row per decay candidate plus the chosen decay.
+#' @family epr
 #' @export
 optimize_epr_decay <- function(player_game_epv,
                                 ref_date,

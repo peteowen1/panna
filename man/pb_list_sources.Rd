@@ -20,3 +20,10 @@ Shows available releases for different data sources.
 pb_list_sources()
 }
 }
+\seealso{
+Other data distribution: 
+\code{\link{load_predictions}()},
+\code{\link{pb_download_opta}()},
+\code{\link{pb_download_predictions}()}
+}
+\concept{data distribution}

@@ -22,3 +22,14 @@ Resolution order, matching load_epv_model() / load_xpass_model():
 \item Local fallback at \code{pannadata/data/opta/models/wp_model.rds}
 }
 }
+\seealso{
+Other win probability: 
+\code{\link{add_wp_vars}()},
+\code{\link{aggregate_player_game_wpa}()},
+\code{\link{assign_wpa_credit}()},
+\code{\link{create_wp_features}()},
+\code{\link{predict_wp}()},
+\code{\link{save_wp_model}()},
+\code{\link{train_wp_model}()}
+}
+\concept{win probability}

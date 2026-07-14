@@ -37,3 +37,14 @@ folds draws into Bradley-Terry: \verb{P(draw) prop nu.exp((r_i+r_j)/2)}.
 Optimisation: minimise cross-entropy between predicted probs and BT-implied
 probs via L-BFGS-B. Ratings are centered to mean zero for interpretability.
 }
+\seealso{
+Other world cup simulation: 
+\code{\link{bt_match_prob}()},
+\code{\link{build_knockout_lookup}()},
+\code{\link{compute_league_offsets}()},
+\code{\link{match_is_international}()},
+\code{\link{mirror_match_rows}()},
+\code{\link{run_wc2026_reference_checks}()},
+\code{\link{simulate_world_cup}()}
+}
+\concept{world cup simulation}

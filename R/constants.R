@@ -13,6 +13,7 @@
 #' Used for per-90 rate calculations.
 #'
 #' @format Integer value: 90
+#' @family constants
 #' @export
 #' @examples
 #' MINUTES_PER_MATCH
@@ -23,6 +24,7 @@ MINUTES_PER_MATCH <- 90L
 #' Number of players per team in a standard football lineup.
 #'
 #' @format Integer value: 11
+#' @family constants
 #' @export
 #' @examples
 #' PLAYERS_PER_TEAM
@@ -34,6 +36,7 @@ PLAYERS_PER_TEAM <- 11L
 #' first-half stoppage time events.
 #'
 #' @format Integer value: 45
+#' @family constants
 #' @export
 #' @examples
 #' HALFTIME_MINUTE
@@ -51,6 +54,7 @@ HALFTIME_MINUTE <- 45L
 #' threshold are grouped into a "replacement" pool.
 #'
 #' @format Integer value: 90
+#' @family constants
 #' @export
 #' @examples
 #' MIN_MINUTES_RAPM
@@ -63,6 +67,7 @@ MIN_MINUTES_RAPM <- 90L
 #' stats need more sample size for stability.
 #'
 #' @format Integer value: 450
+#' @family constants
 #' @export
 #' @examples
 #' MIN_MINUTES_SPM
@@ -74,6 +79,7 @@ MIN_MINUTES_SPM <- 450L
 #' for SPM prediction and Panna rating calculation.
 #'
 #' @format Integer value: 180
+#' @family constants
 #' @export
 #' @examples
 #' MIN_MINUTES_FEATURES
@@ -86,6 +92,7 @@ MIN_MINUTES_FEATURES <- 180L
 #' toward population mean.
 #'
 #' @format Integer value: 10
+#' @family constants
 #' @export
 #' @examples
 #' MIN_GAMES_FOR_PADDING
@@ -97,6 +104,7 @@ MIN_GAMES_FOR_PADDING <- 10L
 #' modifier calculated. Players with fewer shots get default modifier.
 #'
 #' @format Integer value: 20
+#' @family constants
 #' @export
 #' @examples
 #' MIN_SHOTS_FOR_FINISHING
@@ -109,6 +117,7 @@ MIN_SHOTS_FOR_FINISHING <- 20L
 #' as the minimum.
 #'
 #' @format Numeric value: 0.01
+#' @family constants
 #' @export
 #' @examples
 #' MIN_WEIGHT_DURATION
@@ -127,6 +136,7 @@ MIN_WEIGHT_DURATION <- 0.01
 #' This shrinks extreme values toward 1.0.
 #'
 #' @format Integer value: 5
+#' @family constants
 #' @export
 #' @examples
 #' BETA_PRIOR_ALPHA
@@ -138,6 +148,7 @@ BETA_PRIOR_ALPHA <- 5L
 #' hypothesis tests throughout the package.
 #'
 #' @format Numeric value: 0.95
+#' @family constants
 #' @export
 #' @examples
 #' CONFIDENCE_LEVEL
@@ -155,6 +166,7 @@ CONFIDENCE_LEVEL <- 0.95
 #' from total touches. Used in per-100-sequences rate calculations.
 #'
 #' @format Integer value: 5
+#' @family constants
 #' @export
 #' @examples
 #' TOUCHES_PER_SEQUENCE
@@ -166,6 +178,7 @@ TOUCHES_PER_SEQUENCE <- 5L
 #' this many sequences per match regardless of touch count.
 #'
 #' @format Integer value: 20
+#' @family constants
 #' @export
 #' @examples
 #' MIN_SEQUENCES_PER_MATCH
@@ -183,6 +196,7 @@ MIN_SEQUENCES_PER_MATCH <- 20L
 #' and overly confident predictions of 0 probability.
 #'
 #' @format Numeric value: 0.01
+#' @family constants
 #' @export
 #' @examples
 #' XG_MIN
@@ -194,6 +208,7 @@ XG_MIN <- 0.01
 #' Even penalty kicks and open-net chances rarely exceed this threshold.
 #'
 #' @format Numeric value: 0.75
+#' @family constants
 #' @export
 #' @examples
 #' XG_MAX
@@ -210,6 +225,7 @@ XG_MAX <- 0.75
 #' a new possession chain is started.
 #'
 #' @format Integer value: 30
+#' @family constants
 #' @export
 #' @examples
 #' CHAIN_TIME_GAP_SECONDS
@@ -226,6 +242,7 @@ CHAIN_TIME_GAP_SECONDS <- 30L
 #' Minimum x coordinate for the attacking six-yard box on a 0-100 pitch.
 #'
 #' @format Numeric value: 94
+#' @family constants
 #' @export
 #' @examples
 #' SIX_YARD_X_MIN
@@ -236,6 +253,7 @@ SIX_YARD_X_MIN <- 94
 #' Lower y boundary of the six-yard box on a 0-100 pitch.
 #'
 #' @format Numeric value: 37
+#' @family constants
 #' @export
 #' @examples
 #' SIX_YARD_Y_MIN
@@ -246,6 +264,7 @@ SIX_YARD_Y_MIN <- 37
 #' Upper y boundary of the six-yard box on a 0-100 pitch.
 #'
 #' @format Numeric value: 63
+#' @family constants
 #' @export
 #' @examples
 #' SIX_YARD_Y_MAX
@@ -343,6 +362,7 @@ EPV_OPP_PRIOR_GAMES <- 2
 #' 0.80 is a robust central value.
 #'
 #' @format Numeric value: 0.80
+#' @family constants
 #' @export
 #' @examples
 #' PENALTY_XG
@@ -358,6 +378,7 @@ PENALTY_XG <- 0.80
 #' conversion rate for \code{\link{shootout_win_prob}}.
 #'
 #' @format Numeric value: 0.75
+#' @family constants
 #' @export
 #' @examples
 #' PENALTY_SHOOTOUT_CONVERSION
@@ -451,12 +472,14 @@ SPADL_CACHE_DIR <- "data-raw/cache/epv/spadl"
 #' Analogous to torpverse's \code{TORP_EPR_WEIGHT = 0.5}.
 #'
 #' @format Numeric value: 0.5
+#' @family epr
 #' @export
 PANNA_EPR_WEIGHT <- 0.5
 
 #' PSR weight in combined Panna Value rating
 #'
 #' @format Numeric value: 0.5
+#' @family epr
 #' @export
 PANNA_PSR_WEIGHT <- 0.5
 
@@ -529,6 +552,7 @@ OPTA_EXTRA_TIME_PERIODS <- c(3L, 4L)
 #'
 #' @param period_id Integer vector of Opta period identifiers.
 #' @return Logical vector, \code{TRUE} where the period is a shootout period.
+#' @family penalty shootouts
 #' @export
 is_shootout_period <- function(period_id) {
   !is.na(period_id) & period_id >= 5L
@@ -594,6 +618,7 @@ MATCH_CLUB_LEAGUES <- c(
 #' @param league Character vector of competition codes.
 #' @return Logical vector -- \code{TRUE} for international (national-team)
 #'   competitions, \code{FALSE} for domestic club competitions.
+#' @family world cup simulation
 #' @export
 match_is_international <- function(league) {
   !(league %in% MATCH_CLUB_LEAGUES)

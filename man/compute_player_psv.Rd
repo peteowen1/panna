@@ -35,6 +35,10 @@ Default \code{FALSE}. See \code{\link{calculate_psv}}.}
 \code{TRUE}. Set \code{FALSE} to score with the full trained coefficient
 vector (the form used for the displayed blog PSV). See
 \code{\link{calculate_psv}}.}
+
+\item{position_means}{Optional pre-computed position-mean lookup table used
+to center skill columns before scoring (see \code{\link{compute_player_psr}}).
+If \code{NULL}, no cross-position centering is applied.}
 }
 \value{
 A data.table with \code{psv}, \code{osv}, \code{dsv} columns.
@@ -43,3 +47,16 @@ A data.table with \code{psv}, \code{osv}, \code{dsv} columns.
 Convenience wrapper that loads pre-trained coefficients and calls
 \code{\link{calculate_psv_components}}.
 }
+\seealso{
+Other psr: 
+\code{\link{calculate_psr}()},
+\code{\link{calculate_psv}()},
+\code{\link{calculate_psv_components}()},
+\code{\link{default_stat_rating_params}()},
+\code{\link{load_opta_psr_weekly}()},
+\code{\link{player_psr}()},
+\code{\link{soccer_position_map}()},
+\code{\link{soccer_stat_rating_definitions}()},
+\code{\link{stat_rating_names}()}
+}
+\concept{psr}

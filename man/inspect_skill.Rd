@@ -28,3 +28,14 @@ Shows the full Bayesian decomposition for every player: raw totals,
 career average, prior center, prior weight, decay-weighted evidence,
 and the final skill estimate.
 }
+\seealso{
+Other estimated skills: 
+\code{\link{adjust_match_stats_for_context}()},
+\code{\link{backtest_skill_predictions}()},
+\code{\link{compute_position_multipliers}()},
+\code{\link{estimate_player_skills}()},
+\code{\link{estimate_player_skills_at_date}()},
+\code{\link{get_default_decay_params}()},
+\code{\link{player_skill_profile}()}
+}
+\concept{estimated skills}

@@ -55,4 +55,10 @@ PSR table.
 }
 \seealso{
 \code{\link{build_league_network}}, \code{\link{apply_psr_league_offsets}}
+
+Other league offsets: 
+\code{\link{apply_epr_league_offsets}()},
+\code{\link{apply_psr_league_offsets}()},
+\code{\link{build_league_network}()}
 }
+\concept{league offsets}

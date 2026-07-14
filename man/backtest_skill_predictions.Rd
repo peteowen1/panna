@@ -42,3 +42,14 @@ using all prior matches (with decay weighting), then compares to actual
 performance. This is equivalent to computing weekly skill estimates and
 evaluating how well they predict the next match.
 }
+\seealso{
+Other estimated skills: 
+\code{\link{adjust_match_stats_for_context}()},
+\code{\link{compute_position_multipliers}()},
+\code{\link{estimate_player_skills}()},
+\code{\link{estimate_player_skills_at_date}()},
+\code{\link{get_default_decay_params}()},
+\code{\link{inspect_skill}()},
+\code{\link{player_skill_profile}()}
+}
+\concept{estimated skills}

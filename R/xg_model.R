@@ -186,6 +186,7 @@ prepare_shots_for_xg <- function(shot_events) {
 #'     \item panna_metadata: Model metadata
 #'   }
 #'
+#' @family epv
 #' @export
 #' @examples
 #' \dontrun{
@@ -386,6 +387,7 @@ calculate_xg_calibration <- function(actual, predicted, n_bins = 10) {
 #'
 #' @return Vector of xG predictions (probabilities)
 #'
+#' @family epv
 #' @export
 #' @examples
 #' \dontrun{
@@ -490,6 +492,7 @@ add_xg_to_spadl <- function(spadl_actions, xg_model) {
 #' @param path Path to model RDS file. If NULL, attempts to download from releases.
 #'
 #' @return Fitted xG model
+#' @family epv
 #' @export
 load_xg_model <- function(path = NULL) {
   if (!is.null(path) && file.exists(path)) {
@@ -534,6 +537,7 @@ load_xg_model <- function(path = NULL) {
 #' @param path Path to save model. If NULL, saves to pannadata/opta/models/
 #'
 #' @return Invisibly returns the path
+#' @family epv
 #' @export
 save_xg_model <- function(xg_model, path = NULL) {
   if (is.null(path)) {
@@ -696,6 +700,7 @@ derive_xa <- function(spadl_actions) {
 #'       xpass_overperformance, xpass_avg
 #'   }
 #'
+#' @family epv
 #' @export
 aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0,
                                        by_match = FALSE) {
@@ -980,8 +985,9 @@ aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0,
 #' @param spadl SPADL actions with xg (and optionally xgot), result, team_id.
 #' @param lineups Lineups with position, team_id, match_id, minutes_played.
 #' @param by_match Logical. One row per keeper-match if TRUE, else per keeper.
-#' @return data.table keyed by player_id(+team_id[,match_id]) with gsaa,
-#'   gsaa_per90, xgot_faced, goals_conceded; or NULL if not computable.
+#' @return data.table keyed by `player_id` + `team_id` (and `match_id` when
+#'   `by_match = TRUE`) with gsaa, gsaa_per90, xgot_faced, goals_conceded; or
+#'   NULL if not computable.
 #' @keywords internal
 .compute_keeper_gsaa <- function(spadl, lineups, by_match = FALSE) {
   dt <- data.table::as.data.table(spadl)

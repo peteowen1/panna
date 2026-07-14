@@ -66,3 +66,10 @@ on the taker — no keeper involvement. Scored kicks and the taker portion stay
 in \code{shootout_wpa}. If \code{type_id} is absent, every miss is treated as
 all-taker (the simple default) and \code{keeper_wpa} is all zero.
 }
+\seealso{
+Other penalty shootouts: 
+\code{\link{aggregate_shootout_wpa}()},
+\code{\link{is_shootout_period}()},
+\code{\link{shootout_win_prob}()}
+}
+\concept{penalty shootouts}

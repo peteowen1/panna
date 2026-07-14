@@ -93,3 +93,14 @@ Broader coverage; some bias from career-stage effects.
 via an intermediate league with both bridges.
 }
 }
+\seealso{
+Other world cup simulation: 
+\code{\link{bt_match_prob}()},
+\code{\link{build_knockout_lookup}()},
+\code{\link{fit_bt_ratings}()},
+\code{\link{match_is_international}()},
+\code{\link{mirror_match_rows}()},
+\code{\link{run_wc2026_reference_checks}()},
+\code{\link{simulate_world_cup}()}
+}
+\concept{world cup simulation}

@@ -31,3 +31,16 @@ aggregates key skills to team level. Produces granular skill features
 (e.g., team average shooting skill, team average tackling skill) that
 give the XGBoost model richer signal beyond a single panna rating.
 }
+\seealso{
+Other match prediction: 
+\code{\link{aggregate_lineup_ratings}()},
+\code{\link{augment_ratings_with_history}()},
+\code{\link{calibration_table}()},
+\code{\link{compute_match_elos}()},
+\code{\link{compute_multiclass_logloss}()},
+\code{\link{compute_team_rolling_features}()},
+\code{\link{init_team_elos}()},
+\code{\link{predict_match}()},
+\code{\link{update_elo}()}
+}
+\concept{match prediction}

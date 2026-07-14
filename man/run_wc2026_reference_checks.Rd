@@ -27,3 +27,14 @@ the failures + the human-readable fact that motivated each check.
 Designed to be called at the end of the predictions pipeline (after
 step 12). Returns the number of failed checks invisibly.
 }
+\seealso{
+Other world cup simulation: 
+\code{\link{bt_match_prob}()},
+\code{\link{build_knockout_lookup}()},
+\code{\link{compute_league_offsets}()},
+\code{\link{fit_bt_ratings}()},
+\code{\link{match_is_international}()},
+\code{\link{mirror_match_rows}()},
+\code{\link{simulate_world_cup}()}
+}
+\concept{world cup simulation}

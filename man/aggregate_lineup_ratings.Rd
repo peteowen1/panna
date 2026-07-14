@@ -30,3 +30,16 @@ For a given match, takes the starting XI from lineups and joins to seasonal
 player ratings (xRAPM/SPM/RAPM). Computes team-level summary statistics
 including sum, mean, max, min, stdev, goalkeeper, and positional group averages.
 }
+\seealso{
+Other match prediction: 
+\code{\link{aggregate_lineup_skills}()},
+\code{\link{augment_ratings_with_history}()},
+\code{\link{calibration_table}()},
+\code{\link{compute_match_elos}()},
+\code{\link{compute_multiclass_logloss}()},
+\code{\link{compute_team_rolling_features}()},
+\code{\link{init_team_elos}()},
+\code{\link{predict_match}()},
+\code{\link{update_elo}()}
+}
+\concept{match prediction}

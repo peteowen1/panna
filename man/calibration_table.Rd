@@ -19,3 +19,16 @@ Data frame with bin midpoints, predicted and actual probabilities
 \description{
 Groups predictions into bins and compares predicted vs actual probabilities.
 }
+\seealso{
+Other match prediction: 
+\code{\link{aggregate_lineup_ratings}()},
+\code{\link{aggregate_lineup_skills}()},
+\code{\link{augment_ratings_with_history}()},
+\code{\link{compute_match_elos}()},
+\code{\link{compute_multiclass_logloss}()},
+\code{\link{compute_team_rolling_features}()},
+\code{\link{init_team_elos}()},
+\code{\link{predict_match}()},
+\code{\link{update_elo}()}
+}
+\concept{match prediction}

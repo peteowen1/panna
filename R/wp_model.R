@@ -43,6 +43,7 @@
 #'   (or required columns are missing) every row gets \code{red_card = 0}, which
 #'   reproduces the previous constant-0 behaviour for that match.
 #'
+#' @family possession chains
 #' @export
 add_red_card_to_chains <- function(chains, events) {
   dt <- data.table::as.data.table(chains)
@@ -204,6 +205,7 @@ add_red_card_to_chains <- function(chains, events) {
 #' @return A data.table with one row per action, containing WP features
 #'   and optionally training labels.
 #'
+#' @family win probability
 #' @export
 create_wp_features <- function(spadl_with_epv, match_results = NULL,
                                 home_teams = NULL) {
@@ -438,6 +440,19 @@ create_wp_features <- function(spadl_with_epv, match_results = NULL,
 #' @param max_depth Maximum tree depth (default 4).
 #' @param eta Learning rate (default 0.05).
 #' @param nfolds Number of CV folds (default 5).
+#' @param min_child_weight Minimum sum of instance weight needed in a leaf
+#'   (default 50; higher values regularize against overfitting to rare
+#'   game states).
+#' @param feature_names Character vector of feature columns to train on. If
+#'   \code{NULL} (default), uses the base set (\code{time_remaining},
+#'   \code{xmargin}, \code{epv}, \code{xg_diff}, \code{red_card_diff},
+#'   \code{is_home}, \code{is_second_half}, \code{is_extra_time}). Pass the
+#'   depth-2 time-interacted set (\code{xmargin_x_time}/\code{epv_x_time} in
+#'   place of \code{xmargin}/\code{epv}) to use the validated best-calibration
+#'   configuration. Missing columns are silently dropped via \code{intersect()}.
+#' @param objective xgboost objective (default \code{"binary:logistic"}).
+#'   \code{"reg:squarederror"} minimizes Brier score directly (lower ECE) but
+#'   can predict slightly outside \verb{[0,1]}, so downstream serving must clamp.
 #' @param early_stopping_rounds Stop CV if logloss hasn't improved in this
 #'   many rounds (default 20).
 #' @param seed Random seed for reproducibility (default 42).
@@ -451,6 +466,7 @@ create_wp_features <- function(spadl_with_epv, match_results = NULL,
 #'     \item{optimal_nrounds}{The nrounds selected by early stopping}
 #'   }
 #'
+#' @family win probability
 #' @export
 train_wp_model <- function(wp_features, nrounds = 500L, max_depth = 4L,
                             eta = 0.05, nfolds = 5L, min_child_weight = 50L,
@@ -589,6 +605,7 @@ train_wp_model <- function(wp_features, nrounds = 500L, max_depth = 4L,
 #' @return Numeric vector of win probabilities (home team perspective),
 #'   same length as \code{nrow(wp_features)}.
 #'
+#' @family win probability
 #' @export
 predict_wp <- function(wp_model, wp_features) {
   if (!requireNamespace("xgboost", quietly = TRUE)) {
@@ -663,6 +680,7 @@ predict_wp <- function(wp_model, wp_features) {
 #' @return The input data.table with added \code{wp} (possession-POV
 #'   probability) and \code{wpa} (acting-team-POV delta) columns.
 #'
+#' @family win probability
 #' @export
 add_wp_vars <- function(wp_features, wp_model) {
   required <- c("match_id", "team_id", "is_home", "wp_label")
@@ -732,6 +750,7 @@ add_wp_vars <- function(wp_features, wp_model) {
 #' @param path Directory to save. If NULL, uses \code{pannadata/data/opta/models/}.
 #'
 #' @return Invisibly returns the file path.
+#' @family win probability
 #' @export
 save_wp_model <- function(wp_model, path = NULL) {
   if (is.null(path)) {
@@ -759,6 +778,7 @@ save_wp_model <- function(wp_model, path = NULL) {
 #'   then falls back to \code{pannadata/data/opta/models/}.
 #'
 #' @return WP model list (model + feature_names).
+#' @family win probability
 #' @export
 load_wp_model <- function(path = NULL) {
   # 1. Explicit path: hard requirement if supplied. A caller passing

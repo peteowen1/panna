@@ -41,6 +41,7 @@ VERSEBUS_VERSION <- "1.0.0"
 #' @param e a condition object
 #' @return one of "absent", "transient"
 #' @keywords internal
+#' @family versebus
 #' @export
 vb_classify_error <- function(e) {
   cls <- class(e)
@@ -57,6 +58,7 @@ vb_classify_error <- function(e) {
 
 #' sha256 of a file
 #' @keywords internal
+#' @family versebus
 #' @export
 vb_sha256 <- function(path) {
   if (!file.exists(path)) {
@@ -68,6 +70,7 @@ vb_sha256 <- function(path) {
 #' Build one manifest asset entry for a local file
 #' @param rows optional row count for tabular assets (NULL for models etc.)
 #' @keywords internal
+#' @family versebus
 #' @export
 vb_asset_entry <- function(path, rows = NULL) {
   list(
@@ -80,6 +83,7 @@ vb_asset_entry <- function(path, rows = NULL) {
 
 #' Producer identity block for the manifest (GHA env or local)
 #' @keywords internal
+#' @family versebus
 #' @export
 vb_producer_info <- function() {
   list(
@@ -93,6 +97,7 @@ vb_producer_info <- function() {
 #' Write a bus_manifest.json to `path`
 #' @param entries list of vb_asset_entry() results (the FULL tag contents)
 #' @keywords internal
+#' @family versebus
 #' @export
 vb_write_manifest <- function(entries, tag, path, producer = vb_producer_info(),
                               notes = "") {
@@ -118,6 +123,7 @@ vb_write_manifest <- function(entries, tag, path, producer = vb_producer_info(),
 #' tempdir() and renaming across devices is not. On any write failure the
 #' destination is left untouched.
 #' @keywords internal
+#' @family versebus
 #' @export
 vb_atomic_write <- function(write_fn, dest) {
   tmp <- tempfile(pattern = paste0(".vb_", basename(dest), "_"),
@@ -142,6 +148,7 @@ vb_atomic_write <- function(write_fn, dest) {
 #' one. Shrinkage beyond `floor` means the "existing" read was partial or the
 #' merge dropped history — abort rather than wipe.
 #' @keywords internal
+#' @family versebus
 #' @export
 vb_guard_accumulate <- function(existing_df, combined_df, floor = 0.9) {
   n_old <- nrow(existing_df)
@@ -163,6 +170,7 @@ vb_guard_accumulate <- function(existing_df, combined_df, floor = 0.9) {
 #' `vb_error_absent`; anything else raises `vb_error_transient`.
 #' @return data.frame(name, size, updated_at, id)
 #' @keywords internal
+#' @family versebus
 #' @export
 vb_list_assets <- function(repo, tag) {
   r <- .vb_split_repo(repo)
@@ -196,6 +204,7 @@ vb_list_assets <- function(repo, tag) {
 #' THE mandatory guard before any "start fresh / overwrite full-history"
 #' branch.
 #' @keywords internal
+#' @family versebus
 #' @export
 vb_confirm_absent <- function(repo, tag, name) {
   assets <- tryCatch(vb_list_assets(repo, tag), error = function(e) {
@@ -212,6 +221,7 @@ vb_confirm_absent <- function(repo, tag, name) {
 #' manifest on the tag and it now looks absent (piggyback delete-then-upload
 #' window), retry once after 10 s before declaring legacy mode.
 #' @keywords internal
+#' @family versebus
 #' @export
 vb_read_manifest <- function(repo, tag, required = FALSE) {
   key <- paste0(repo, "@", tag)
@@ -252,6 +262,7 @@ vb_read_manifest <- function(repo, tag, required = FALSE) {
 
 #' Previous manifest or NULL on first publish (transient errors propagate)
 #' @keywords internal
+#' @family versebus
 #' @export
 vb_read_prev_manifest <- function(repo, tag) {
   tryCatch(vb_read_manifest(repo, tag, required = FALSE), error = function(e) {
@@ -297,6 +308,7 @@ vb_read_prev_manifest <- function(repo, tag) {
 #' @param max_age optional difftime; manifest older than this raises
 #'   `vb_error_stale`
 #' @keywords internal
+#' @family versebus
 #' @export
 vb_download <- function(repo, tag, name, dest,
                         manifest = NULL,
@@ -380,6 +392,7 @@ vb_download <- function(repo, tag, name, dest,
 
 #' Cache validity = sidecar sha matches the manifest entry
 #' @keywords internal
+#' @family versebus
 #' @export
 vb_cache_validate <- function(local_path, manifest_entry) {
   if (is.null(manifest_entry)) return(FALSE)
@@ -397,6 +410,7 @@ vb_cache_validate <- function(local_path, manifest_entry) {
 
 #' Current generation for a tag (manifest, else max asset updated_at)
 #' @keywords internal
+#' @family versebus
 #' @export
 vb_generation <- function(repo, tag) {
   m <- vb_read_prev_manifest(repo, tag)
@@ -422,6 +436,7 @@ vb_generation <- function(repo, tag) {
 #' @param min_row_frac optional floor vs previous manifest rows (e.g. 0.9)
 #' @param dry_run build + return the manifest without uploading anything
 #' @keywords internal
+#' @family versebus
 #' @export
 vb_publish <- function(paths, repo, tag,
                        rows = NULL,

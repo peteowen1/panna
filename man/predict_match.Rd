@@ -30,3 +30,16 @@ Data frame with pred_home_goals, pred_away_goals, prob_H, prob_D, prob_A
 Given fitted goals and outcome models, predicts P(H), P(D), P(A) and
 expected goals for a set of matches.
 }
+\seealso{
+Other match prediction: 
+\code{\link{aggregate_lineup_ratings}()},
+\code{\link{aggregate_lineup_skills}()},
+\code{\link{augment_ratings_with_history}()},
+\code{\link{calibration_table}()},
+\code{\link{compute_match_elos}()},
+\code{\link{compute_multiclass_logloss}()},
+\code{\link{compute_team_rolling_features}()},
+\code{\link{init_team_elos}()},
+\code{\link{update_elo}()}
+}
+\concept{match prediction}

@@ -32,6 +32,7 @@
 #' @param data Data frame
 #'
 #' @return Data frame with snake_case column names
+#' @family utilities
 #' @export
 clean_column_names <- function(data) {
   if (is.null(data) || !is.data.frame(data)) {
@@ -48,6 +49,7 @@ clean_column_names <- function(data) {
 #' @param default Value to return when denominator is zero (default: 0)
 #'
 #' @return x / y, with Inf/NaN from division-by-zero replaced by default. Input NAs are preserved.
+#' @family utilities
 #' @export
 #'
 #' @examples
@@ -75,6 +77,7 @@ safe_divide <- function(x, y, default = 0) {
 #' @param source_name Name of the data source for error messages (default "FBref")
 #'
 #' @return TRUE if valid, otherwise throws an error
+#' @family utilities
 #' @export
 #'
 #' @examples
@@ -202,6 +205,7 @@ create_match_id <- function(season, date, home_team, away_team) {
 #' @param min_rows Minimum number of rows required (default 1)
 #'
 #' @return TRUE invisibly if valid, otherwise throws an error
+#' @family utilities
 #' @export
 #'
 #' @examples
@@ -262,6 +266,7 @@ validate_dataframe <- function(data, required_cols = NULL, arg_name = "data", mi
 #' @param minutes Minutes played
 #'
 #' @return Statistic per 90 minutes
+#' @family utilities
 #' @export
 per_90 <- function(stat, minutes) {
   safe_divide(stat * 90, minutes, default = 0)

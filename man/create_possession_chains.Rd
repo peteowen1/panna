@@ -33,3 +33,8 @@ chains <- create_possession_chains(spadl)
 head(chains[, c("match_id", "chain_id", "action_type", "team_id")])
 }
 }
+\seealso{
+Other possession chains: 
+\code{\link{add_red_card_to_chains}()}
+}
+\concept{possession chains}

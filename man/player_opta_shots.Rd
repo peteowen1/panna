@@ -33,3 +33,17 @@ Data frame with shooting statistics.
 Aggregate shooting statistics from Opta data. Includes shot volume,
 shot locations, finishing by body part, and big chances.
 }
+\seealso{
+Other player statistics: 
+\code{\link{compare_players}()},
+\code{\link{player_opta_chains}()},
+\code{\link{player_opta_defense}()},
+\code{\link{player_opta_keeper}()},
+\code{\link{player_opta_passing}()},
+\code{\link{player_opta_possession}()},
+\code{\link{player_opta_setpiece}()},
+\code{\link{player_opta_summary}()},
+\code{\link{player_opta_xg}()},
+\code{\link{player_opta_xpass}()}
+}
+\concept{player statistics}

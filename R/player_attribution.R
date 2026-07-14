@@ -31,6 +31,7 @@
 #'   - `contribution`: `full_pred - ablated_pred` (positive = helps team)
 #'   - `pct_contribution`: Contribution as percentage of total
 #'
+#' @family player attribution
 #' @export
 #'
 #' @examples
@@ -107,6 +108,7 @@ calculate_player_attribution <- function(match_features,
 #' @param baseline_value Numeric. Ablation baseline. Default 0.
 #'
 #' @return Data frame with per-feature average contributions across matches
+#' @family player attribution
 #' @export
 batch_player_attribution <- function(match_features_list,
                                       predict_fn,

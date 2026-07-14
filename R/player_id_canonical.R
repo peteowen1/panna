@@ -29,6 +29,7 @@
 #' @return Data.table with columns `player_id` (every observed id) and
 #'   `canonical_id` (its main mapping; equals `player_id` for non-merged
 #'   dominant ids).
+#' @family player id canonicalisation
 #' @export
 build_player_id_canonical_map <- function(lineups,
                                             min_dominance_ratio = 0.05,
@@ -92,6 +93,7 @@ build_player_id_canonical_map <- function(lineups,
 #' @param dt Data.table with a player_id column.
 #' @param canon Output of `build_player_id_canonical_map()`.
 #' @return The input dt with `player_id` rewritten to canonical.
+#' @family player id canonicalisation
 #' @export
 apply_canonical_player_ids <- function(dt, canon) {
   if (!data.table::is.data.table(dt)) dt <- data.table::as.data.table(dt)

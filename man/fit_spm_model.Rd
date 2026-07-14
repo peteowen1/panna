@@ -49,3 +49,10 @@ Fits an elastic net model predicting RAPM from box score statistics.
 Weights observations by minutes played (sqrt transform) by default to reduce
 influence of noisy low-minute players whose RAPM and per-90 stats are unreliable.
 }
+\seealso{
+Other spm: 
+\code{\link{calculate_spm_ratings}()},
+\code{\link{calculate_spm_ratings_xgb}()},
+\code{\link{get_spm_feature_importance}()}
+}
+\concept{spm}

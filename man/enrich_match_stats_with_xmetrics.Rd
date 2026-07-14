@@ -49,3 +49,26 @@ estimation (step 2) and the PSR/PSV coefficient training (step 7) so both
 see the identical feature set (avoids the train/serve drift of a duplicated
 inline join).
 }
+\seealso{
+Other epv: 
+\code{\link{aggregate_player_xmetrics}()},
+\code{\link{assign_epv_credit}()},
+\code{\link{convert_opta_to_spadl}()},
+\code{\link{fit_epv_model}()},
+\code{\link{fit_xg_model}()},
+\code{\link{fit_xgot_model}()},
+\code{\link{fit_xpass_model}()},
+\code{\link{get_or_build_spadl}()},
+\code{\link{load_epv_model}()},
+\code{\link{load_xg_model}()},
+\code{\link{load_xgot_model}()},
+\code{\link{load_xpass_model}()},
+\code{\link{pb_download_epv_models}()},
+\code{\link{predict_xg}()},
+\code{\link{predict_xgot}()},
+\code{\link{predict_xpass}()},
+\code{\link{save_epv_model}()},
+\code{\link{save_xg_model}()},
+\code{\link{save_xpass_model}()}
+}
+\concept{epv}

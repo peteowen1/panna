@@ -67,3 +67,15 @@ values and computes a Bayesian-shrunk rating estimate. Players with
 little data are shrunk toward the prior rate (slightly below zero for
 offense, zero for defense).
 }
+\seealso{
+Other epr: 
+\code{\link{PANNA_EPR_WEIGHT}},
+\code{\link{PANNA_PSR_WEIGHT}},
+\code{\link{aggregate_player_game_epv}()},
+\code{\link{build_player_game_ratings}()},
+\code{\link{calculate_epr_batch}()},
+\code{\link{calculate_epr_regression}()},
+\code{\link{optimize_epr_decay}()},
+\code{\link{player_value}()}
+}
+\concept{epr}

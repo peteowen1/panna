@@ -18,6 +18,7 @@
 #' @return Data frame with one row per player and columns grouped by category:
 #'   identity, shooting, creating, passing, chains, defending, possession.
 #'
+#' @family player statistics
 #' @export
 #' @examples
 #' \dontrun{

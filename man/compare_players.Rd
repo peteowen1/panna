@@ -40,3 +40,17 @@ compare_players(c("B. Saka", "Lamine Yamal"), league = "ESP", season = "2025-202
 compare_players(c("V. van Dijk", "W. Saliba"), league = "ENG", season = "2024-2025")
 }
 }
+\seealso{
+Other player statistics: 
+\code{\link{player_opta_chains}()},
+\code{\link{player_opta_defense}()},
+\code{\link{player_opta_keeper}()},
+\code{\link{player_opta_passing}()},
+\code{\link{player_opta_possession}()},
+\code{\link{player_opta_setpiece}()},
+\code{\link{player_opta_shots}()},
+\code{\link{player_opta_summary}()},
+\code{\link{player_opta_xg}()},
+\code{\link{player_opta_xpass}()}
+}
+\concept{player statistics}

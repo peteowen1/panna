@@ -36,3 +36,17 @@ save_pct, goals_against_per90, shots_conceded_per90, clean_sheet_pct
 \description{
 Aggregate goalkeeper statistics from Opta data.
 }
+\seealso{
+Other player statistics: 
+\code{\link{compare_players}()},
+\code{\link{player_opta_chains}()},
+\code{\link{player_opta_defense}()},
+\code{\link{player_opta_passing}()},
+\code{\link{player_opta_possession}()},
+\code{\link{player_opta_setpiece}()},
+\code{\link{player_opta_shots}()},
+\code{\link{player_opta_summary}()},
+\code{\link{player_opta_xg}()},
+\code{\link{player_opta_xpass}()}
+}
+\concept{player statistics}

@@ -18,6 +18,7 @@
 #' @return Invisibly returns a list of the gathered facts so the report can
 #'   also be consumed programmatically. The function's main value is the
 #'   printed output.
+#' @family cache management
 #' @export
 data_location_report <- function(leagues = NULL) {
   cli::cli_h1("panna data location report")

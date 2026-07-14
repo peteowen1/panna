@@ -37,3 +37,14 @@ List with \code{play_clf}, \code{mins_reg}, \code{feature_cols}, \code{eval}.
 \description{
 Fit the two-stage minutes model
 }
+\seealso{
+Other expected minutes: 
+\code{\link{build_minutes_training_data}()},
+\code{\link{build_team_expected_minutes}()},
+\code{\link{classify_role}()},
+\code{\link{predict_minutes}()},
+\code{\link{prepare_minutes_cache}()},
+\code{\link{query_minutes_features}()},
+\code{\link{weight_rating_by_minutes}()}
+}
+\concept{expected minutes}

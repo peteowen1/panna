@@ -74,4 +74,10 @@ the World Cup links A-League into the graph without ever touching UCL), and
 }
 \seealso{
 \code{\link{compute_league_offsets}}, \code{\link{compute_psr_league_offsets}}
+
+Other league offsets: 
+\code{\link{apply_epr_league_offsets}()},
+\code{\link{apply_psr_league_offsets}()},
+\code{\link{compute_psr_league_offsets}()}
 }
+\concept{league offsets}

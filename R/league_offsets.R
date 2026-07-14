@@ -85,6 +85,7 @@
 #'     \item{offset_off, offset_def, offset_tot}{Per-90 EPV offsets on the
 #'                                                 anchor-equivalent scale.}
 #'   }
+#' @family world cup simulation
 #' @export
 compute_league_offsets <- function(game_logs,
                                      ref_year = NULL,
@@ -365,6 +366,7 @@ compute_league_offsets <- function(game_logs,
 #'   neutralize), \code{n_bridge} (multi-league player-seasons touching it).
 #'
 #' @seealso \code{\link{compute_league_offsets}}, \code{\link{compute_psr_league_offsets}}
+#' @family league offsets
 #' @export
 build_league_network <- function(game_logs, value_col = "psv",
                                  big5 = c("ENG", "ESP", "GER", "ITA", "FRA"),

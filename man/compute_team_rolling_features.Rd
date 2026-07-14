@@ -19,3 +19,16 @@ Data frame with match_id and rolling features for home/away
 Calculates rolling averages of team performance metrics using strictly
 lagged windows (no data leakage). Uses data.table frollmean + shift.
 }
+\seealso{
+Other match prediction: 
+\code{\link{aggregate_lineup_ratings}()},
+\code{\link{aggregate_lineup_skills}()},
+\code{\link{augment_ratings_with_history}()},
+\code{\link{calibration_table}()},
+\code{\link{compute_match_elos}()},
+\code{\link{compute_multiclass_logloss}()},
+\code{\link{init_team_elos}()},
+\code{\link{predict_match}()},
+\code{\link{update_elo}()}
+}
+\concept{match prediction}

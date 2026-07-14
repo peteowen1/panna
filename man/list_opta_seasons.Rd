@@ -25,3 +25,9 @@ list_opta_seasons("ENG")
 list_opta_seasons("EPL", source = "local")
 }
 }
+\seealso{
+Other competition metadata: 
+\code{\link{list_opta_leagues}()},
+\code{\link{resolve_league_season}()}
+}
+\concept{competition metadata}

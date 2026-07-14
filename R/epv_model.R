@@ -273,6 +273,7 @@ estimate_simple_xg <- function(x, y) {
 #'
 #' @return Fitted EPV model with metadata
 #'
+#' @family epv
 #' @export
 fit_epv_model <- function(features,
                            labels,
@@ -782,6 +783,7 @@ calculate_action_epv <- function(spadl_actions, features = NULL, epv_model, xg_m
 #'     \item xpass: Pass completion probability (for passes)
 #'   }
 #'
+#' @family epv
 #' @export
 assign_epv_credit <- function(spadl_with_epv, xpass_model = NULL) {
   cli::cli_alert_info("Assigning EPV credit...")
@@ -1378,6 +1380,7 @@ calculate_action_type_epv <- function(spadl_with_epv) {
 #'     \item{epv_adj}{Position-centered EPV (if \code{position_center = TRUE})}
 #'   }
 #'
+#' @family epr
 #' @export
 aggregate_player_game_epv <- function(spadl_with_epv, lineups = NULL,
                                        position_center = FALSE) {
@@ -1582,6 +1585,7 @@ aggregate_player_game_epv <- function(spadl_with_epv, lineups = NULL,
 #' @param path Directory to save model. If NULL, uses pannadata/data/opta/models/
 #'
 #' @return Invisibly returns path
+#' @family epv
 #' @export
 save_epv_model <- function(epv_model, path = NULL) {
   if (is.null(path)) {
@@ -1598,10 +1602,6 @@ save_epv_model <- function(epv_model, path = NULL) {
 }
 
 
-#' Load EPV Model
-#'
-#' Loads pre-trained EPV model from disk.
-#'
 #' Report which model file was loaded, with date + staleness warning
 #'
 #' The model-loader fallback chains (explicit path → pannamodels → local) used to
@@ -1641,9 +1641,17 @@ save_epv_model <- function(epv_model, path = NULL) {
   invisible()
 }
 
+#' Load EPV Model
+#'
+#' Loads a pre-trained EPV model, trying an explicit path first, then the
+#' \code{pannamodels} package, then falling back to the local pannadata models
+#' directory. Reports the resolved source and file date via
+#' \code{\link{.report_model_provenance}}.
+#'
 #' @param path Directory containing model. If NULL, uses pannadata/data/opta/models/
 #'
 #' @return EPV model
+#' @family epv
 #' @export
 load_epv_model <- function(path = NULL) {
   # Try explicit path first
@@ -1694,6 +1702,7 @@ load_epv_model <- function(path = NULL) {
 #' @param dest Destination directory. If NULL, uses pannadata/data/opta/models/
 #'
 #' @return Invisibly returns path to models
+#' @family epv
 #' @export
 pb_download_epv_models <- function(repo = "peteowen1/pannadata",
                                     tag = "epv-models",

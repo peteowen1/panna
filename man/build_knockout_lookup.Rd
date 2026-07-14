@@ -58,3 +58,14 @@ World Cup matchups are international, so each matchup is predicted
 as a blend of the pooled and international-specialist models
 (\code{MATCH_INTL_BLEND_WEIGHT} on the specialist).
 }
+\seealso{
+Other world cup simulation: 
+\code{\link{bt_match_prob}()},
+\code{\link{compute_league_offsets}()},
+\code{\link{fit_bt_ratings}()},
+\code{\link{match_is_international}()},
+\code{\link{mirror_match_rows}()},
+\code{\link{run_wc2026_reference_checks}()},
+\code{\link{simulate_world_cup}()}
+}
+\concept{world cup simulation}

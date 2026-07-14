@@ -17,3 +17,11 @@ Statistic per 90 minutes
 \description{
 Calculate minutes per 90
 }
+\seealso{
+Other utilities: 
+\code{\link{clean_column_names}()},
+\code{\link{safe_divide}()},
+\code{\link{validate_dataframe}()},
+\code{\link{validate_seasons}()}
+}
+\concept{utilities}

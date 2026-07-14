@@ -146,6 +146,7 @@ get_source_archive_name <- function(source_type) {
 #'
 #' @return Invisibly, a data.frame with one row per asset: \code{file_name},
 #'   \code{action} ("download"/"skip"), \code{reason}, and \code{size}.
+#' @family data distribution
 #' @export
 #'
 #' @examples
@@ -273,6 +274,7 @@ pb_download_opta <- function(dest = NULL,
 #' @param repo GitHub repository in "owner/repo" format
 #'
 #' @return Data frame with release information by source
+#' @family data distribution
 #' @export
 #'
 #' @examples
@@ -348,6 +350,7 @@ pb_list_sources <- function(repo = "peteowen1/pannadata") {
 #' @param dest Destination directory. If NULL, uses pannadata_dir()/predictions.
 #'
 #' @return Invisibly returns the path to the downloaded file.
+#' @family data distribution
 #' @export
 #'
 #' @examples
@@ -408,6 +411,7 @@ pb_download_predictions <- function(repo = "peteowen1/pannadata",
 #' @param filter_future If TRUE, returns only matches with match_date >= today.
 #'
 #' @return Data frame of match predictions.
+#' @family data distribution
 #' @export
 #'
 #' @examples

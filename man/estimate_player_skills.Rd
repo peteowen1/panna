@@ -66,3 +66,14 @@ Shrinkage toward position means happens naturally through the prior --
 players with little data stay close to the prior, while players with
 abundant data are driven by their observations.
 }
+\seealso{
+Other estimated skills: 
+\code{\link{adjust_match_stats_for_context}()},
+\code{\link{backtest_skill_predictions}()},
+\code{\link{compute_position_multipliers}()},
+\code{\link{estimate_player_skills_at_date}()},
+\code{\link{get_default_decay_params}()},
+\code{\link{inspect_skill}()},
+\code{\link{player_skill_profile}()}
+}
+\concept{estimated skills}

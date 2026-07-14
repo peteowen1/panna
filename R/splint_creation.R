@@ -357,6 +357,7 @@ extract_sub_events <- function(lineups) {
 #'   full-time) are always kept. Set to 0 to disable merging entirely.
 #'
 #' @return List with combined splint data
+#' @family rapm
 #' @export
 create_all_splints <- function(processed_data, include_goals = TRUE, verbose = TRUE,
                                 chunk_by = c("league", "none"),
@@ -1441,6 +1442,7 @@ create_opta_processed_data <- function(opta_lineups, opta_events = NULL,
 #'   `is_starter`, `on_minute`, `off_minute`. Bench players who never came on
 #'   are omitted. Returns empty data frame if input is empty or missing
 #'   required columns.
+#' @family rapm
 #' @export
 extract_player_timing_from_events <- function(match_events) {
   empty <- data.frame(
@@ -1556,6 +1558,7 @@ extract_player_timing_from_events <- function(match_events) {
 #'   `match_id`, `type_id`, `period_id`, `minute`, and (optionally) `second`.
 #' @return Data frame with columns `match_id`, `first_half_end_time`,
 #'   `match_end_time`. Matches without markers are omitted.
+#' @family rapm
 #' @export
 extract_period_end_times <- function(match_events) {
   if (is.null(match_events) || nrow(match_events) == 0) {

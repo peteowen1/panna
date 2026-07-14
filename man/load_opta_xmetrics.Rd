@@ -44,3 +44,17 @@ epl_xm <- load_opta_xmetrics("ENG", season = "2024-2025")
 head(epl_xm[order(-epl_xm$xg), c("player_name", "team_name", "xg", "goals")])
 }
 }
+\seealso{
+Other opta loaders: 
+\code{\link{load_opta_big5}()},
+\code{\link{load_opta_events}()},
+\code{\link{load_opta_fixtures}()},
+\code{\link{load_opta_lineups}()},
+\code{\link{load_opta_match_events}()},
+\code{\link{load_opta_match_stats}()},
+\code{\link{load_opta_shot_events}()},
+\code{\link{load_opta_shots}()},
+\code{\link{load_opta_skills}()},
+\code{\link{load_opta_stats}()}
+}
+\concept{opta loaders}

@@ -18,3 +18,9 @@ Data frame with player ratings including deviation from prior
 Extracts player ratings from a model fit with SPM prior.
 The final coefficient is gamma + prior, where gamma is the deviation.
 }
+\seealso{
+Other panna ratings: 
+\code{\link{add_value_metrics_to_splints}()},
+\code{\link{aggregate_season_ratings}()}
+}
+\concept{panna ratings}

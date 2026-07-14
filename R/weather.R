@@ -170,6 +170,7 @@ fetch_weather <- function(lat, lon, start_date, end_date) {
 #' @return The input data frame with added weather columns:
 #'   `temp_avg`, `precipitation_total`, `wind_avg`, `humidity_avg`,
 #'   `is_rain`, `log_precip`, `log_wind`
+#' @family weather
 #' @export
 add_weather_features <- function(matches, venue_col = "venue",
                                   date_col = "date",

@@ -15,3 +15,11 @@ Data frame with snake_case column names
 \description{
 Applies janitor::clean_names() to standardize all column names.
 }
+\seealso{
+Other utilities: 
+\code{\link{per_90}()},
+\code{\link{safe_divide}()},
+\code{\link{validate_dataframe}()},
+\code{\link{validate_seasons}()}
+}
+\concept{utilities}

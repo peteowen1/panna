@@ -138,6 +138,7 @@ OPTA_LEAGUES <- c(
 #'
 #' @return Character path to Opta data directory.
 #'
+#' @family cache management
 #' @export
 #' @examples
 #' \dontrun{
@@ -247,6 +248,7 @@ to_opta_league <- function(league) {
 #'
 #' @return Character vector of available seasons.
 #'
+#' @family competition metadata
 #' @export
 #' @examples
 #' \dontrun{
@@ -362,6 +364,7 @@ list_opta_seasons <- function(league, source = c("catalog", "remote", "local")) 
 #'
 #' @return Season string to pass to \code{load_opta_*()}, or \code{NULL} if
 #'   no matching tournament exists for the given year.
+#' @family competition metadata
 #' @export
 #' @examples
 #' \dontrun{
@@ -409,6 +412,7 @@ resolve_league_season <- function(league, domestic_season,
 #'
 #' @return Data frame of player statistics.
 #'
+#' @family opta loaders
 #' @export
 #' @examples
 #' \dontrun{
@@ -443,6 +447,7 @@ load_opta_stats <- function(league, season = NULL, columns = NULL,
 #'
 #' @return Data frame of shot statistics.
 #'
+#' @family opta loaders
 #' @export
 #' @examples
 #' \dontrun{
@@ -483,6 +488,7 @@ load_opta_shots <- function(league, season = NULL, columns = NULL,
 #'     \item big_chance: TRUE if big chance
 #'   }
 #'
+#' @family opta loaders
 #' @export
 #' @examples
 #' \dontrun{
@@ -520,6 +526,7 @@ load_opta_shot_events <- function(league, season = NULL, columns = NULL,
 #'     \item assist_player_id, assist_player_name: Assister (for goals)
 #'   }
 #'
+#' @family opta loaders
 #' @export
 #' @examples
 #' \dontrun{
@@ -560,6 +567,7 @@ load_opta_events <- function(league, season = NULL, columns = NULL,
 #'     \item qualifier_json: Full qualifiers as JSON string for advanced analysis
 #'   }
 #'
+#' @family opta loaders
 #' @export
 #' @examples
 #' \dontrun{
@@ -609,6 +617,7 @@ load_opta_match_events <- function(league, season = NULL, columns = NULL,
 #'     \item sub_off_minute: Minute substituted off (0 if played full match)
 #'   }
 #'
+#' @family opta loaders
 #' @export
 #' @examples
 #' \dontrun{
@@ -649,6 +658,7 @@ load_opta_lineups <- function(league, season = NULL, columns = NULL,
 #'     \item season: Season identifier
 #'   }
 #'
+#' @family opta loaders
 #' @export
 #' @examples
 #' \dontrun{
@@ -791,6 +801,7 @@ load_opta_eventless_ids <- function(league, season = NULL,
 #'       events (length == gap)
 #'   }
 #'
+#' @family validation
 #' @export
 check_events_coverage <- function(league, season,
                                     source = c("remote", "local")) {
@@ -897,6 +908,7 @@ check_events_coverage <- function(league, season,
 #' @param source One of "remote" or "local".
 #'
 #' @return Invisibly: list with per-league reports + summary stats.
+#' @family validation
 #' @export
 assert_events_coverage <- function(league_seasons, season = NULL,
                                      warn_threshold = 5L,
@@ -990,6 +1002,7 @@ assert_events_coverage <- function(league_seasons, season = NULL,
 #'
 #' @return Data frame with league column added.
 #'
+#' @family opta loaders
 #' @export
 #' @examples
 #' \dontrun{
@@ -1523,6 +1536,7 @@ download_opta_catalog <- function(repo = "peteowen1/pannadata",
 #' @return Data frame with columns: code, name, country, type, tier,
 #'   n_seasons, n_matches, panna_alias.
 #'
+#' @family competition metadata
 #' @export
 #' @examples
 #' \dontrun{
@@ -1892,6 +1906,7 @@ query_remote_opta_match_events <- function(opta_league, season = NULL,
 #'
 #' @return Data frame with player xmetrics including xg, npxg, xa, xpass stats.
 #'
+#' @family opta loaders
 #' @export
 #' @examples
 #' \dontrun{
@@ -2002,6 +2017,7 @@ load_opta_xmetrics <- function(league, season = NULL, columns = NULL,
 #'   (NA-filled to 0 for player-matches with no shots). Returns input unchanged
 #'   (with a warning) if key columns are missing or no bymatch files are found
 #'   and \code{fail_if_missing_frac} is \code{Inf}.
+#' @family epv
 #' @export
 enrich_match_stats_with_xmetrics <- function(match_stats, verbose = TRUE,
                                               fail_if_missing_frac = Inf,
@@ -2142,6 +2158,7 @@ enrich_match_stats_with_xmetrics <- function(match_stats, verbose = TRUE,
 #'   \code{primary_position}), and context columns (\code{season_end_year},
 #'   \code{weighted_90s}, \code{total_minutes}).
 #'
+#' @family opta loaders
 #' @export
 #' @examples
 #' \dontrun{
@@ -2229,6 +2246,7 @@ load_opta_skills <- function(season = NULL, columns = NULL,
 #'   with \code{_p90} suffixes, \code{player_id}, \code{player_name},
 #'   \code{match_date}, \code{total_minutes}, etc.
 #'
+#' @family opta loaders
 #' @export
 #' @examples
 #' \dontrun{
@@ -2317,6 +2335,7 @@ load_opta_match_stats <- function(season = NULL, columns = NULL,
 #'   \code{player_name}, \code{primary_position}, \code{psr}, \code{osr},
 #'   \code{dsr}, \code{weighted_90s}.
 #'
+#' @family psr
 #' @export
 #' @examples
 #' \dontrun{

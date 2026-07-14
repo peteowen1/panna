@@ -48,3 +48,14 @@ Data.table with one row per player, columns matching the model's
 \description{
 Compute minutes-model features for a specific list of players at a date
 }
+\seealso{
+Other expected minutes: 
+\code{\link{build_minutes_training_data}()},
+\code{\link{build_team_expected_minutes}()},
+\code{\link{classify_role}()},
+\code{\link{fit_minutes_model}()},
+\code{\link{predict_minutes}()},
+\code{\link{prepare_minutes_cache}()},
+\code{\link{weight_rating_by_minutes}()}
+}
+\concept{expected minutes}

@@ -42,3 +42,14 @@ Runs the global / per-team / per-player passes once and caches the
 intermediate data structures needed by \code{query_minutes_features()}.
 Re-run only when the underlying lineups parquet changes.
 }
+\seealso{
+Other expected minutes: 
+\code{\link{build_minutes_training_data}()},
+\code{\link{build_team_expected_minutes}()},
+\code{\link{classify_role}()},
+\code{\link{fit_minutes_model}()},
+\code{\link{predict_minutes}()},
+\code{\link{query_minutes_features}()},
+\code{\link{weight_rating_by_minutes}()}
+}
+\concept{expected minutes}

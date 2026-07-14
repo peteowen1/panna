@@ -171,6 +171,7 @@ prepare_spm_regression_data <- function(player_features, rapm_ratings) {
 #'   `NULL` (default) = unconstrained.
 #'
 #' @return Fitted glmnet model with metadata
+#' @family spm
 #' @export
 fit_spm_model <- function(data, predictor_cols = NULL, alpha = 0.5, nfolds = 10,
                           weight_by_minutes = TRUE, weight_transform = "sqrt",
@@ -486,6 +487,7 @@ fit_spm_xgb <- function(data, predictor_cols = NULL, nfolds = 10,
 #' @param spm_xgb_model Fitted XGBoost SPM model from fit_spm_xgb
 #'
 #' @return Data frame with SPM ratings
+#' @family spm
 #' @export
 calculate_spm_ratings_xgb <- function(player_features, spm_xgb_model) {
   predictor_cols <- spm_xgb_model$panna_metadata$predictor_cols
@@ -573,6 +575,7 @@ extract_spm_coefficients <- function(model, lambda = "min") {
 #' @param lambda Which lambda to use
 #'
 #' @return Data frame with SPM ratings
+#' @family spm
 #' @export
 calculate_spm_ratings <- function(player_features, spm_model, lambda = "min") {
   predictor_cols <- spm_model$panna_metadata$predictor_cols
@@ -763,6 +766,7 @@ validate_spm_prediction <- function(spm_ratings, rapm_ratings,
 #' @param lambda Which lambda to use
 #'
 #' @return Data frame of top features by absolute coefficient
+#' @family spm
 #' @export
 get_spm_feature_importance <- function(model, n = 10, lambda = "min") {
   coefs <- extract_spm_coefficients(model, lambda)

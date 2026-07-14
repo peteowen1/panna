@@ -401,6 +401,7 @@
 #'     \item Derived efficiency columns (same names as aggregate_opta_stats output)
 #'   }
 #'
+#' @family spm opta
 #' @export
 #' @examples
 #' \dontrun{
@@ -719,6 +720,7 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
 #' @param weight_transform Transform for weighting: "sqrt", "linear", "log"
 #'
 #' @return Fitted glmnet model with metadata
+#' @family spm opta
 #' @export
 #' @examples
 #' \dontrun{
@@ -784,6 +786,7 @@ fit_spm_opta <- function(data, alpha = 0.5, nfolds = 10,
 #'
 #' @return Fitted SPM model (same as \code{fit_spm_opta}).
 #'
+#' @family spm opta
 #' @export
 fit_spm_opta_target <- function(data, target_col = "rapm", ...) {
   dt <- data.table::as.data.table(data)
@@ -923,13 +926,16 @@ fit_spm_opta_target <- function(data, target_col = "rapm", ...) {
 }
 
 
-#' Compare FBref and Opta SPM feature importance
+#' Compare SPM feature importance between two models
 #'
-#' Compares which features are most important in FBref vs Opta SPM models.
-#' Useful for understanding which data source captures different aspects of play.
+#' Compares which features are most important between two fitted SPM models
+#' (e.g. different seasons, targets, or feature sets). Useful for understanding
+#' which features drive each model's ratings.
 #'
-#' @param fbref_model Fitted SPM model from FBref data
-#' @param opta_model Fitted SPM model from Opta data
+#' @param fbref_model Fitted SPM model to compare (labeled "FBref" in the
+#'   output's `source` column for historical reasons; any fitted SPM model works)
+#' @param opta_model Fitted SPM model to compare against (labeled "Opta" in
+#'   the output's `source` column)
 #' @param n Number of top features to compare (default 20)
 #'
 #' @return Data frame comparing feature importance

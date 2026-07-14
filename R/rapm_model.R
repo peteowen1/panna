@@ -62,6 +62,7 @@
 #'   path's time/memory. Ignored when \code{fixed_lambda} is supplied.
 #'
 #' @return Fitted model with metadata
+#' @family rapm
 #' @export
 fit_rapm <- function(rapm_data, alpha = 0, nfolds = 10,
                          use_weights = TRUE, standardize = FALSE,
@@ -201,6 +202,7 @@ fit_rapm <- function(rapm_data, alpha = 0, nfolds = 10,
 #' @param lambda Which lambda to use ("min" or "1se")
 #'
 #' @return Data frame with player ratings
+#' @family rapm
 #' @export
 extract_rapm_ratings <- function(model, lambda = "min") {
   # Get lambda value
@@ -316,6 +318,7 @@ get_covariate_effects <- function(model, lambda = "min") {
 #'
 #' @return Fitted model with prior adjustment metadata
 #'
+#' @family rapm
 #' @export
 fit_rapm_with_prior <- function(rapm_data, offense_prior, defense_prior,
                                  alpha = 0, nfolds = 10,
@@ -480,6 +483,7 @@ fit_rapm_with_prior <- function(rapm_data, offense_prior, defense_prior,
 #' @param lambda Which lambda to use ("min" or "1se")
 #'
 #' @return Data frame with player ratings including deviation from prior
+#' @family panna ratings
 #' @export
 extract_xrapm_ratings <- function(model, lambda = "min") {
   # Get lambda value

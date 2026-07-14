@@ -180,6 +180,7 @@ prepare_shots_for_xgot <- function(shot_events,
 #' @param exclude_penalties Exclude penalties from training (default TRUE).
 #' @inheritParams fit_xg_model
 #' @return List with model, cv_result, importance, calibration, panna_metadata.
+#' @family epv
 #' @export
 fit_xgot_model <- function(shot_features,
                            exclude_penalties = TRUE,
@@ -265,6 +266,7 @@ fit_xgot_model <- function(shot_features,
 #' @param xgot_model Fitted model from fit_xgot_model().
 #' @param shot_features Data frame with the model's feature columns.
 #' @return Numeric vector of xGOT predictions.
+#' @family epv
 #' @export
 predict_xgot <- function(xgot_model, shot_features) {
   feature_cols <- xgot_model$panna_metadata$feature_cols
@@ -388,6 +390,7 @@ add_xgot_to_spadl <- function(spadl_actions, xgot_model, goalmouth_lookup) {
 #' @param path Optional path to a model RDS. If NULL, tries pannamodels then
 #'   the local pannadata models dir (mirrors load_xg_model()).
 #' @return Fitted xGOT model, or NULL if unavailable.
+#' @family epv
 #' @export
 load_xgot_model <- function(path = NULL) {
   if (!is.null(path) && file.exists(path)) {

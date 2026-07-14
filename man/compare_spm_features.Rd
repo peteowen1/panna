@@ -2,14 +2,16 @@
 % Please edit documentation in R/spm_opta.R
 \name{compare_spm_features}
 \alias{compare_spm_features}
-\title{Compare FBref and Opta SPM feature importance}
+\title{Compare SPM feature importance between two models}
 \usage{
 compare_spm_features(fbref_model, opta_model, n = 20)
 }
 \arguments{
-\item{fbref_model}{Fitted SPM model from FBref data}
+\item{fbref_model}{Fitted SPM model to compare (labeled "FBref" in the
+output's \code{source} column for historical reasons; any fitted SPM model works)}
 
-\item{opta_model}{Fitted SPM model from Opta data}
+\item{opta_model}{Fitted SPM model to compare against (labeled "Opta" in
+the output's \code{source} column)}
 
 \item{n}{Number of top features to compare (default 20)}
 }
@@ -17,7 +19,8 @@ compare_spm_features(fbref_model, opta_model, n = 20)
 Data frame comparing feature importance
 }
 \description{
-Compares which features are most important in FBref vs Opta SPM models.
-Useful for understanding which data source captures different aspects of play.
+Compares which features are most important between two fitted SPM models
+(e.g. different seasons, targets, or feature sets). Useful for understanding
+which features drive each model's ratings.
 }
 \keyword{internal}

@@ -52,3 +52,14 @@ case_when on \code{team_id_next} vs \code{team_id_mdl}.
 WPA is centered per-match (\code{wpa - mean(wpa, na.rm=TRUE)} by
 \code{match_id}) to remove model-calibration bias.
 }
+\seealso{
+Other win probability: 
+\code{\link{aggregate_player_game_wpa}()},
+\code{\link{assign_wpa_credit}()},
+\code{\link{create_wp_features}()},
+\code{\link{load_wp_model}()},
+\code{\link{predict_wp}()},
+\code{\link{save_wp_model}()},
+\code{\link{train_wp_model}()}
+}
+\concept{win probability}

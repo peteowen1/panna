@@ -33,6 +33,7 @@
 #'       equivalent attempts. Higher = more shrinkage. Default 50.}
 #'   }
 #'
+#' @family estimated skills
 #' @export
 #' @examples
 #' params <- get_default_decay_params()
@@ -176,6 +177,7 @@ get_default_decay_params <- function() {
 #' @return A named list where each element is a named numeric vector of length 4
 #'   (GK, DEF, MID, FWD) giving the multiplier for that stat and position.
 #'
+#' @family estimated skills
 #' @export
 compute_position_multipliers <- function(match_stats, stat_cols = NULL) {
   # panna#128: data.table::as.data.table() on an ALREADY-valid data.table
@@ -376,6 +378,7 @@ compute_position_multipliers <- function(match_stats, stat_cols = NULL) {
 #'   and add \code{_rating_lower} / \code{_rating_upper} columns. Implies
 #'   \code{rating_names = TRUE}. Default \code{FALSE}.
 #'
+#' @family estimated skills
 #' @export
 estimate_player_skills <- function(match_stats, decay_params = NULL,
                                     target_date = NULL, min_weighted_90s = 5,
@@ -723,6 +726,7 @@ estimate_player_skills <- function(match_stats, decay_params = NULL,
 #' @param target_date Date to estimate skills as of. Default today.
 #' @return A data.table sorted by skill estimate (descending), one row per player.
 #'
+#' @family estimated skills
 #' @export
 inspect_skill <- function(stat_name, match_stats, decay_params = NULL,
                            target_date = Sys.Date()) {
@@ -1055,6 +1059,7 @@ aggregate_skills_for_spm <- function(match_stats, decay_params = NULL,
 #'
 #' @return A data.table with one row per player containing skill estimates.
 #'
+#' @family estimated skills
 #' @export
 estimate_player_skills_at_date <- function(match_stats, decay_params = NULL,
                                             player_ids = NULL, date = Sys.Date(),
@@ -1110,6 +1115,7 @@ estimate_player_skills_at_date <- function(match_stats, decay_params = NULL,
 #'       improvement vs simple average, improvement vs last match}
 #'   }
 #'
+#' @family estimated skills
 #' @export
 backtest_skill_predictions <- function(match_stats, decay_params = NULL,
                                         stat_cols = NULL, min_history = 5,
@@ -1425,6 +1431,7 @@ backtest_skill_predictions <- function(match_stats, decay_params = NULL,
 #'
 #' @return A copy of the input data.table with stat columns adjusted.
 #'
+#' @family estimated skills
 #' @export
 adjust_match_stats_for_context <- function(match_stats, elo_ratings = NULL,
                                             adjust_opponent = TRUE,
@@ -1569,6 +1576,7 @@ adjust_match_stats_for_context <- function(match_stats, elo_ratings = NULL,
 #' @return A data.table with columns: category, stat, type, skill, raw_avg,
 #'   league_avg, league_pct, pos_avg, pos_pct, n90, w90, attempts, w_attempts.
 #'
+#' @family estimated skills
 #' @export
 player_skill_profile <- function(player_name, match_stats = NULL,
                                   decay_params = NULL, date = Sys.Date(),

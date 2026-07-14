@@ -39,342 +39,149 @@ reference:
 - title: Data Loading - Opta
   desc: Load Opta player statistics (263 columns, 15 leagues)
   contents:
-  - load_opta_stats
-  - load_opta_shots
-  - load_opta_match_events
-  - load_opta_lineups
-  - load_opta_fixtures
-  - load_opta_xmetrics
-  - load_opta_shot_events
-  - load_opta_events
-  - load_opta_big5
-  - load_opta_skills
-  - load_opta_match_stats
+  - has_concept("opta loaders")
 
 - title: Player Statistics
   desc: Aggregated player statistics by source
   contents:
-  - player_opta_summary
-  - player_opta_passing
-  - player_opta_defense
-  - player_opta_possession
-  - player_opta_keeper
-  - player_opta_shots
-  - player_opta_setpiece
-  - player_opta_xg
-  - player_opta_xpass
-  - player_opta_chains
-  - compare_players
+  - has_concept("player statistics")
 
 - title: RAPM Pipeline
   desc: Regularized Adjusted Plus-Minus model
   contents:
-  - create_all_splints
-  - create_rapm_design_matrix
-  - fit_rapm
-  - fit_rapm_with_prior
-  - extract_rapm_ratings
-  - extract_period_end_times
-  - extract_player_timing_from_events
+  - has_concept("rapm")
 
 - title: SPM Pipeline
   desc: Statistical Plus-Minus model
   contents:
-  - fit_spm_model
-  - fit_spm_xgb
-  - calculate_spm_ratings
-  - calculate_spm_ratings_xgb
-  - get_spm_feature_importance
+  - has_concept("spm")
 
 - title: SPM Pipeline - Opta
   desc: Opta-specific SPM model with 80+ features
   contents:
-  - aggregate_opta_stats
-  - compute_match_level_opta_stats
-  - fit_spm_opta
-  - fit_spm_opta_target
-  - compare_spm_features
+  - has_concept("spm opta")
 
 - title: Panna Ratings
   desc: Combined RAPM + SPM ratings
   contents:
-  - extract_xrapm_ratings
-  - aggregate_season_ratings
-  - add_value_metrics_to_splints
-
-- title: Offensive/Defensive Analysis
-  desc: Rating decomposition and analysis
-  contents:
-  - split_od_contributions
-  - calculate_od_panna
-  - categorize_player_profile
-  - get_top_offensive
-  - get_top_defensive
-  - visualize_od_scatter
+  - has_concept("panna ratings")
 
 - title: Possession Chain Analytics
-  desc: Possession chain analysis and pitch visualization
+  desc: Possession chain construction and aggregation
   contents:
-  - create_possession_chains
-  - add_red_card_to_chains
-  - summarize_match_chains
-  - summarize_player_chains
-  - draw_pitch
-  - plot_chain
-  - plot_match_chains
+  - has_concept("possession chains")
 
 - title: EPV (Expected Possession Value)
   desc: Action-level player valuation from Opta event data
   contents:
-  - convert_opta_to_spadl
-  - get_or_build_spadl
-  - fit_epv_model
-  - calculate_action_epv
-  - assign_epv_credit
-  - aggregate_player_epv
-  - save_epv_model
-  - pb_download_epv_models
-  - validate_epv_model
-  - fit_xg_model
-  - predict_xg
-  - save_xg_model
-  - load_xg_model
-  - validate_xg_model
-  - fit_xgot_model
-  - predict_xgot
-  - load_xgot_model
-  - aggregate_player_xmetrics
-  - enrich_match_stats_with_xmetrics
-  - fit_xpass_model
-  - predict_xpass
-  - save_xpass_model
-  - load_xpass_model
-  - split_pass_credit
+  - has_concept("epv")
 
 - title: Win Probability (WPA)
   desc: Win probability model and WPA credit assignment
   contents:
-  - create_wp_features
-  - train_wp_model
-  - load_wp_model
-  - save_wp_model
-  - predict_wp
-  - add_wp_vars
-  - assign_wpa_credit
-  - aggregate_player_game_wpa
+  - has_concept("win probability")
 
 - title: Penalty Shootouts
   desc: Shootout detection, scoring, and WPA aggregation
   contents:
-  - is_shootout_period
-  - score_shootout_kicks
-  - shootout_win_prob
-  - aggregate_shootout_wpa
+  - has_concept("penalty shootouts")
 
 - title: EPR (Expected Possession Rating)
   desc: Decay-weighted Bayesian EPV ratings
   contents:
-  - calculate_epr
-  - calculate_epr_batch
-  - calculate_epr_regression
-  - optimize_epr_decay
-  - aggregate_player_game_epv
-  - build_player_game_ratings
-  - player_value
-  - PANNA_EPR_WEIGHT
-  - PANNA_PSR_WEIGHT
+  - has_concept("epr")
 
 - title: Estimated Skills
   desc: Bayesian decay-weighted skill estimation with position-specific priors
   contents:
-  - estimate_player_skills
-  - estimate_player_skills_at_date
-  - player_skill_profile
-  - inspect_skill
-  - aggregate_skills_for_spm
-  - backtest_skill_predictions
-  - adjust_match_stats_for_context
-  - get_default_decay_params
-  - compute_position_multipliers
-  - optimize_all_priors
-  - optimize_stat_prior
-  - get_stat_tiers
+  - has_concept("estimated skills")
 
 - title: Match Prediction
   desc: XGBoost Poisson/multinomial match outcome prediction
   contents:
-  - aggregate_lineup_ratings
-  - aggregate_lineup_skills
-  - augment_ratings_with_history
-  - init_team_elos
-  - update_elo
-  - compute_match_elos
-  - compute_team_rolling_features
-  - fit_goals_xgb
-  - fit_outcome_xgb
-  - predict_match
-  - compute_multiclass_logloss
-  - calibration_table
+  - has_concept("match prediction")
 
 - title: Expected Minutes Model
   desc: Player role classification and expected-minutes prediction for lineups
   contents:
-  - classify_role
-  - build_minutes_training_data
-  - fit_minutes_model
-  - predict_minutes
-  - prepare_minutes_cache
-  - query_minutes_features
-  - build_team_expected_minutes
-  - weight_rating_by_minutes
+  - has_concept("expected minutes")
 
 - title: Season Simulation
   desc: Monte Carlo season projection
   contents:
-  - simulate_season
+  - has_concept("season simulation")
 
 - title: World Cup 2026 Simulation
   desc: Bradley-Terry team ratings and knockout tournament simulation
   contents:
-  - fit_bt_ratings
-  - bt_match_prob
-  - compute_league_offsets
-  - mirror_match_rows
-  - match_is_international
-  - build_knockout_lookup
-  - simulate_world_cup
-  - run_wc2026_reference_checks
+  - has_concept("world cup simulation")
 
 - title: xDuel Models
   desc: Player-agnostic contextual win-probability for physical contests (aerial/take-on/tackle/containment) — the above-expected duel features that replaced the success ratios in PSR/PSV
   contents:
-  - prepare_duels_from_events
-  - compute_all_duel_preps
-  - fit_duel_model
-  - predict_duel
-  - compute_duel_woe
-  - load_duel_model
-  - save_duel_model
+  - has_concept("xduel")
 
 - title: Cross-League Offsets
   desc: Per-league PSR/EPR calibration via the same-season co-occurrence network
   contents:
-  - build_league_network
-  - compute_psr_league_offsets
-  - apply_psr_league_offsets
-  - apply_epr_league_offsets
+  - has_concept("league offsets")
 
 - title: Weather
   desc: Open-Meteo weather data for match conditions
   contents:
-  - add_weather_features
+  - has_concept("weather")
 
 - title: Network Centrality
   desc: Opponent quality adjustment via network analysis
   contents:
-  - calculate_player_centrality
+  - has_concept("centrality")
 
 - title: Player Attribution
   desc: Zero-ablation player impact measurement
   contents:
-  - calculate_player_attribution
-  - batch_player_attribution
+  - has_concept("player attribution")
 
 - title: Player Skill Rating (PSR) & Stat Value (PSV)
   desc: Composite player skill and per-game stat value metrics
   contents:
-  - calculate_psr
-  - player_psr
-  - load_opta_psr_weekly
-  - calculate_psv
-  - calculate_psv_components
-  - compute_player_psv
-  - default_stat_rating_params
-  - soccer_stat_rating_definitions
-  - soccer_position_map
-  - stat_rating_names
-
-- title: Feature Engineering
-  desc: Advanced feature creation
-  contents:
-  - create_player_feature_matrix
+  - has_concept("psr")
 
 - title: Data Distribution
   desc: GitHub Releases upload/download
   contents:
-  - pb_download_opta
-  - pb_download_predictions
-  - pb_list_sources
-  - load_predictions
+  - has_concept("data distribution")
 
 - title: Cache Management
   desc: Local and remote cache operations
   contents:
-  - pannadata_dir
-  - opta_data_dir
-  - data_location_report
+  - has_concept("cache management")
 
 - title: Player ID Canonicalisation
   desc: Map duplicate Opta player IDs to canonical identities
   contents:
-  - build_player_id_canonical_map
-  - apply_canonical_player_ids
+  - has_concept("player id canonicalisation")
 
 - title: Utilities
   desc: Helper functions
   contents:
-  - clean_column_names
-  - safe_divide
-  - per_90
-  - validate_seasons
-  - validate_dataframe
+  - has_concept("utilities")
 
 - title: Competition Metadata
   desc: League and competition information
   contents:
-  - list_opta_seasons
-  - list_opta_leagues
-  - get_opta_columns
-  - resolve_league_season
+  - has_concept("competition metadata")
 
 - title: Validation
   desc: Model and data validation
   contents:
-  - validate_spm_prediction
-  - validate_epv_model
-  - validate_xg_model
-  - assert_events_coverage
-  - check_events_coverage
-  - assert_step_output
+  - has_concept("validation")
 
 - title: Constants
   desc: Package-wide constants and thresholds
   contents:
-  - BETA_PRIOR_ALPHA
-  - CHAIN_FINAL_THIRD_X
-  - CHAIN_PROGRESSIVE_THRESHOLD
-  - CHAIN_TIME_GAP_SECONDS
-  - CONFIDENCE_LEVEL
-  - HALFTIME_MINUTE
-  - MINUTES_PER_MATCH
-  - MIN_GAMES_FOR_PADDING
-  - MIN_MINUTES_FEATURES
-  - MIN_MINUTES_RAPM
-  - MIN_MINUTES_SPM
-  - MIN_SEQUENCES_PER_MATCH
-  - MIN_SHOTS_FOR_FINISHING
-  - MIN_WEIGHT_DURATION
-  - PENALTY_SHOOTOUT_CONVERSION
-  - PENALTY_XG
-  - PLAYERS_PER_TEAM
-  - SIX_YARD_X_MIN
-  - SIX_YARD_Y_MAX
-  - SIX_YARD_Y_MIN
-  - TOUCHES_PER_SEQUENCE
-  - XG_MAX
-  - XG_MIN
+  - has_concept("constants")
 
 - title: Internal / Developer
   desc: "Internal data-bus utilities accessible via panna::: for release publish/download integrity (ECOSYSTEM-FIX-PLAN.md versebus pattern)"
   contents:
-  - starts_with("vb_")
+  - has_concept("versebus")
