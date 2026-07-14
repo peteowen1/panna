@@ -1,5 +1,5 @@
 # pipeline_utils.R
-# Shared helper functions for ALL pipeline runners (Opta, FBref, Skills, Predictions)
+# Shared helper functions for ALL pipeline runners (Opta, Skills, Predictions)
 #
 # Source this file from any run_*.R pipeline script to get:
 #   run_step()              - execute a step with timing, error handling, and traceback
