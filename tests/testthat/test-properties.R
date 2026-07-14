@@ -297,66 +297,6 @@ test_that("SPADL conversion: time ordering within periods", {
 })
 
 
-# ============================================================================
-# Property Tests: Panna Rating Decomposition
-# ============================================================================
-
-test_that("panna rating: panna == spm_prior + deviation", {
-  skip_if_not_installed("glmnet")
-
-  for (seed in c(42, 200, 888)) {
-    withr::with_seed(seed, {
-      rapm_data <- generate_random_rapm_data(n_splints = 40, n_players = 20)
-
-      # Create mock SPM ratings
-      spm_ratings <- data.frame(
-        player_id = rapm_data$player_ids,
-        spm = rnorm(rapm_data$n_players, 0, 0.3),
-        stringsAsFactors = FALSE
-      )
-
-      result <- calculate_panna_rating(rapm_data, spm_ratings, lambda_prior = 1)
-      ratings <- result$ratings
-
-      # Property: panna = spm_prior + deviation (exact decomposition)
-      expect_equal(ratings$panna, ratings$spm_prior + ratings$deviation,
-                   tolerance = 1e-10,
-                   info = paste("seed:", seed, "- panna must equal spm_prior + deviation"))
-
-      # Property: all rating columns are numeric
-      expect_true(is.numeric(ratings$panna), info = "panna must be numeric")
-      expect_true(is.numeric(ratings$spm_prior), info = "spm_prior must be numeric")
-      expect_true(is.numeric(ratings$deviation), info = "deviation must be numeric")
-    })
-  }
-})
-
-
-test_that("panna rating: stronger lambda shrinks deviation toward zero", {
-  skip_if_not_installed("glmnet")
-
-  withr::with_seed(42, {
-    rapm_data <- generate_random_rapm_data(n_splints = 50, n_players = 20)
-
-    spm_ratings <- data.frame(
-      player_id = rapm_data$player_ids,
-      spm = rnorm(rapm_data$n_players, 0, 0.3),
-      stringsAsFactors = FALSE
-    )
-
-    # Fit with small vs large lambda
-    result_small <- calculate_panna_rating(rapm_data, spm_ratings, lambda_prior = 0.01)
-    result_large <- calculate_panna_rating(rapm_data, spm_ratings, lambda_prior = 100)
-
-    # Property: larger lambda produces smaller deviations (more shrinkage)
-    mean_dev_small <- mean(abs(result_small$ratings$deviation))
-    mean_dev_large <- mean(abs(result_large$ratings$deviation))
-
-    expect_true(mean_dev_large < mean_dev_small,
-                info = "Larger lambda should shrink deviations more toward zero")
-  })
-})
-
 
 # ============================================================================
 # Property Tests: SPM Model

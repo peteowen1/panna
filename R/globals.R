@@ -89,7 +89,6 @@ utils::globalVariables(c(
   "panna",
   "o_panna",
   "d_panna",
-  "spm_prior",
   "deviation",
   "coefficient",
 

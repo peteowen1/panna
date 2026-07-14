@@ -56,8 +56,3 @@ For the O/D design matrix:
 \item defense_prior: SPM-predicted defensive contribution
 }
 }
-\seealso{
-\code{\link[=calculate_panna_rating]{calculate_panna_rating()}} for a simpler single-lambda variant
-that takes a scalar \code{lambda_prior} and combined SPM vector. This function
-is the production path used in the multi-league pipeline.
-}

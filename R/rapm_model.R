@@ -316,10 +316,6 @@ get_covariate_effects <- function(model, lambda = "min") {
 #'
 #' @return Fitted model with prior adjustment metadata
 #'
-#' @seealso [calculate_panna_rating()] for a simpler single-lambda variant
-#'   that takes a scalar `lambda_prior` and combined SPM vector. This function
-#'   is the production path used in the multi-league pipeline.
-#'
 #' @export
 fit_rapm_with_prior <- function(rapm_data, offense_prior, defense_prior,
                                  alpha = 0, nfolds = 10,

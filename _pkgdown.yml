@@ -98,12 +98,7 @@ reference:
 - title: Panna Ratings
   desc: Combined RAPM + SPM ratings
   contents:
-  - fit_panna_model
-  - calculate_panna_rating
-  - get_panna_ratings
   - extract_xrapm_ratings
-  - rank_players_panna
-  - validate_panna_ratings
   - aggregate_season_ratings
   - add_value_metrics_to_splints
 
@@ -345,20 +340,12 @@ reference:
 - title: Validation
   desc: Model and data validation
   contents:
-  - validate_predictive_power
   - validate_spm_prediction
   - validate_epv_model
   - validate_xg_model
-  - validate_panna_ratings
   - assert_events_coverage
   - check_events_coverage
   - assert_step_output
-
-- title: Analysis & Reporting
-  desc: Analysis helpers and reporting
-  contents:
-  - compare_panna_rapm_spm
-  - generate_panna_report
 
 - title: Constants
   desc: Package-wide constants and thresholds
