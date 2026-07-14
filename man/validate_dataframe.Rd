@@ -34,3 +34,10 @@ validate_dataframe(data.frame(), c("player_name"))
 validate_dataframe(df, c("nonexistent_col"))
 }
 }
+\seealso{
+Other utilities: 
+\code{\link{per_90}()},
+\code{\link{safe_divide}()},
+\code{\link{validate_seasons}()}
+}
+\concept{utilities}

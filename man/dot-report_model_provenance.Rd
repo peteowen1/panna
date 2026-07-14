@@ -2,7 +2,7 @@
 % Please edit documentation in R/epv_model.R
 \name{.report_model_provenance}
 \alias{.report_model_provenance}
-\title{Load EPV Model}
+\title{Report which model file was loaded, with date + staleness warning}
 \usage{
 .report_model_provenance(model_label, model_path, source, max_age_days = 14)
 }
@@ -16,11 +16,6 @@
 \item{max_age_days}{Warn above this age (default 14).}
 }
 \description{
-Loads pre-trained EPV model from disk.
-}
-\details{
-Report which model file was loaded, with date + staleness warning
-
 The model-loader fallback chains (explicit path → pannamodels → local) used to
 announce only the source, not the file DATE — so a silent fallback to a stale
 model (the 2026-06-21 inflated-EPV incident) looked identical to a correct

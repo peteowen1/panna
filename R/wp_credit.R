@@ -32,6 +32,7 @@
 #'       sign-flipped on cross-team transitions}
 #'   }
 #'
+#' @family win probability
 #' @export
 assign_wpa_credit <- function(spadl_with_wpa, actor_share = WPA_ACTOR_SHARE) {
   dt <- data.table::as.data.table(spadl_with_wpa)
@@ -96,6 +97,7 @@ assign_wpa_credit <- function(spadl_with_wpa, actor_share = WPA_ACTOR_SHARE) {
 #'     \item{wpa_adj}{Position-centered WPA (if position_center = TRUE)}
 #'   }
 #'
+#' @family win probability
 #' @export
 aggregate_player_game_wpa <- function(spadl_with_wpa, lineups = NULL,
                                        position_center = FALSE) {

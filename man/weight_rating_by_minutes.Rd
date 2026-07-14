@@ -20,3 +20,4 @@ Equivalent to "what's the average panna rating of who'll be on the pitch."
 \description{
 Build a minutes-weighted team rating
 }
+\keyword{internal}

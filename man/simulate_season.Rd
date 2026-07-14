@@ -62,3 +62,4 @@ result <- simulate_season(preds, completed, n_sims = 1000)
 result$table
 }
 }
+\concept{season simulation}

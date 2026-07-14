@@ -2,35 +2,23 @@
 % Please edit documentation in R/psr.R
 \name{.detect_skill_stat_cols}
 \alias{.detect_skill_stat_cols}
-\title{Estimate pre-match skills at multiple dates (incremental batch version)}
+\title{Canonical stat-column detector — ONE source of truth}
 \usage{
 .detect_skill_stat_cols(dt)
 }
 \arguments{
 \item{dt}{data.frame/data.table of match stats.}
-
-\item{match_stats}{Match-level stats (output of
-\code{compute_match_level_opta_stats}).}
-
-\item{ref_dates}{Character or Date vector of dates to estimate skills at.}
-
-\item{decay_params}{Decay parameters (default: \code{get_default_decay_params()}).}
-
-\item{min_weighted_90s}{Minimum weighted 90s for inclusion (default 3).}
-
-\item{verbose}{Print progress (default TRUE).}
 }
 \value{
-Named list of data.tables (one per ref_date), keyed by date string.
-Each table has one row per player with skill columns.
-
-Canonical stat-column detector — ONE source of truth
-
+Character vector of stat column names present in \code{dt}.
+}
+\description{
 Returns the modelled stat columns present in \code{dt}: per-90 rates
 (\code{_p90} AND \code{_per90} — the xMetrics over-performance rates), the
 efficiency/ratio stats from \code{.classify_skill_stats()}, and the
 registered PSR/GK skill-col lists (catches \code{_xmetrics}-suffixed cols).
-
+}
+\details{
 Why this exists: the same \code{grep("_p90$")} detection was duplicated across
 \code{.estimate_prematch_skills_batch} (psr.R), \code{estimate_player_skills},
 \code{compute_position_multipliers}, and \code{adjust_match_stats_for_context}
@@ -38,17 +26,5 @@ Why this exists: the same \code{grep("_p90$")} detection was duplicated across
 \verb{_per90} xMetrics column — and fixing one copy left the others broken (the
 train/serve skew we hit twice). All detectors now route through here so a new
 feature can't be dropped by one divergent copy.
-
-Character vector of stat column names present in \code{dt}.
-}
-\description{
-Highly optimized for sequential date estimation. Instead of re-processing
-all historical data at each date, maintains running cumulative sums that
-are decayed forward and incrementally updated with new observations.
-Uses \code{rowsum()} (C-level) for grouped matrix sums.
-}
-\details{
-Complexity: O(N + D * new_rows_per_date) instead of O(N * D).
-For typical data (~1M rows, 659 dates), this is ~100-300x faster.
 }
 \keyword{internal}

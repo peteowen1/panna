@@ -195,6 +195,7 @@ rank_group_h2h <- function(p, d, f, tbk, m_a, m_b, g_a, g_b) {
 #'   `group_table` (group-position probabilities), `n_sims`, `elo_k`, and
 #'   `bracket` (the bracket actually used -- `"random"` if the fifa2026
 #'   fallback fired).
+#' @family world cup simulation
 #' @export
 simulate_world_cup <- function(predictions, groups, knockout,
                                 n_sims = 10000L,

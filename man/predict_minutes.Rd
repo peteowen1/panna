@@ -17,3 +17,11 @@ Numeric vector of expected minutes per row.
 \description{
 Predict minutes for new rows (must have same feature columns as training)
 }
+\seealso{
+Other expected minutes: 
+\code{\link{build_team_expected_minutes}()},
+\code{\link{classify_role}()},
+\code{\link{prepare_minutes_cache}()},
+\code{\link{query_minutes_features}()}
+}
+\concept{expected minutes}

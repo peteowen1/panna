@@ -20,3 +20,10 @@ WPA. A match decided on penalties is a draw in open play (its WP label is
 open-play period exceeds 4 (covers the standard 5 and a stray 16 some feeds
 emit).
 }
+\seealso{
+Other penalty shootouts: 
+\code{\link{aggregate_shootout_wpa}()},
+\code{\link{score_shootout_kicks}()},
+\code{\link{shootout_win_prob}()}
+}
+\concept{penalty shootouts}

@@ -33,3 +33,17 @@ Data frame with set piece statistics.
 Aggregate set piece statistics from Opta data. Includes corners,
 free kicks, penalties, and set piece involvement.
 }
+\seealso{
+Other player statistics: 
+\code{\link{compare_players}()},
+\code{\link{player_opta_chains}()},
+\code{\link{player_opta_defense}()},
+\code{\link{player_opta_keeper}()},
+\code{\link{player_opta_passing}()},
+\code{\link{player_opta_possession}()},
+\code{\link{player_opta_shots}()},
+\code{\link{player_opta_summary}()},
+\code{\link{player_opta_xg}()},
+\code{\link{player_opta_xpass}()}
+}
+\concept{player statistics}

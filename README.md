@@ -4,20 +4,21 @@
 [![Lifecycle: experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
 <!-- badges: end -->
 
-Player ratings for football (soccer) using RAPM+SPM methodology. Calculates player impact on team performance by combining lineup-based analysis with box score predictions.
+Player ratings for football (soccer), built on Opta event and box-score data. Full documentation site: <https://peteowen1.github.io/panna/>.
 
 ## Overview
 
-**panna** implements a three-stage rating system:
+panna produces two families of numbers (see `vignette("player-ratings")` for the full map):
 
-1. **RAPM** (Regularized Adjusted Plus-Minus) - Measures player impact from lineup data using ridge regression on "splints" (time segments with constant lineups)
-2. **SPM** (Statistical Plus-Minus) - Predicts RAPM from box score statistics using elastic net
-3. **Panna Rating** - Combines RAPM with SPM as a Bayesian prior for more stable ratings
+- **Ratings** -- forward-looking skill estimates: `panna` (career trait, decay-weighted
+  xRAPM), season xRAPM, EPR, PSR, and per-stat estimated skills.
+- **Production** -- what actually happened: per-action EPV and WPA, per-game PSV, rolled
+  up into `piero_value` (per match).
 
-Ratings are split into offensive and defensive components:
-- **Offense**: Positive = helps create xG (good)
-- **Defense**: Negative = prevents xG (good)
-- **Overall**: `panna = offense - defense`
+**Piero**, the headline blog rating, is a z-scored blend of `panna` (0.5) / EPR (0.3) /
+PSR (0.2). RAPM (ridge regression on lineup "splints") and SPM (an XGBoost box-score
+prior) are the estimators underneath xRAPM/panna; see `vignette("pipeline-walkthrough")`
+("Pipeline Anatomy") for how each number is actually computed.
 
 ## Installation
 
@@ -31,15 +32,15 @@ devtools::install_github("peteowen1/panna")
 ```r
 library(panna)
 
-# Load Opta player statistics (loads from GitHub automatically)
-opta_stats <- load_opta_stats("EPL", "2024-2025")
+# Latest PSR (Player Skill Rating) leaderboard -- downloads a small
+# pre-computed snapshot, no local pipeline run required
+player_psr(n = 10)
 
-# Get aggregated player stats
-player_stats <- player_opta_summary(
- leagues = "EPL",
- seasons = "2024-2025",
- min_minutes = 900
-)
+# Look up a player's estimated-skill profile
+player_skill_profile("Lionel Messi")
+
+# Load raw Opta player statistics (loads from GitHub automatically)
+opta_stats <- load_opta_stats("EPL", "2024-2025")
 ```
 
 ## Data Sources
@@ -92,92 +93,45 @@ load_opta_big5(season)                 # All Big 5 leagues at once
 ### Player Statistics
 
 ```r
-# Opta aggregated stats
-player_opta_summary(leagues, seasons, min_minutes)
-player_opta_passing(leagues, seasons, min_minutes)
-player_opta_defense(leagues, seasons, min_minutes)
-player_opta_possession(leagues, seasons, min_minutes)
-player_opta_keeper(leagues, seasons, min_minutes)
-player_opta_shots(leagues, seasons, min_minutes)
-player_opta_setpiece(leagues, seasons, min_minutes)
+# Opta aggregated stats -- same argument shape across the whole family
+player_opta_summary(player = NULL, league, season, min_minutes = 450)
+player_opta_passing(player = NULL, league, season, min_minutes = 450)
+player_opta_defense(player = NULL, league, season, min_minutes = 450)
+player_opta_possession(player = NULL, league, season, min_minutes = 450)
+player_opta_keeper(player = NULL, league, season, min_minutes = 450)
+player_opta_shots(player = NULL, league, season, min_minutes = 450)
+player_opta_setpiece(player = NULL, league, season, min_minutes = 450)
+
+compare_players(c("Salah", "Haaland"))  # side-by-side across all of the above
 ```
 
-### Rating Pipeline
+### Ratings and Predictions
 
 ```r
-# Create splints from match data
-splints <- create_all_splints(processed_data)
+player_psr(player = "Salah")             # PSR leaderboard / single-player lookup
+player_skill_profile("Kylian Mbappe")    # per-stat skill profile with percentiles
+player_value("Kane")                     # per-match EPV/WPA/PSV value profile (needs local pipeline cache)
 
-# Build RAPM design matrix
-rapm_data <- create_rapm_design_matrix(splints)
-
-# Fit RAPM model
-rapm_results <- fit_rapm(rapm_data)
-
-# Extract ratings
-ratings <- extract_panna_ratings(rapm_results)
+preds <- load_predictions(source = "remote")
+fit_bt_ratings(preds)                    # back out a single team-strength number
 ```
 
-### Advanced Features
-
-#### EPV (Expected Possession Value)
-
-Action-level player valuation from Opta event data with x/y coordinates:
-
-```r
-# Convert Opta events to SPADL format
-spadl <- convert_opta_to_spadl(match_events)
-
-# Train/load models
-xg_model <- load_xg_model()
-epv_model <- load_epv_model()
-
-# Build features and calculate action-level EPV
-features <- create_epv_features(spadl)
-epv_values <- calculate_action_epv(spadl, features, epv_model, xg_model)
-player_epv <- aggregate_player_epv(epv_values)
-```
-
-#### Estimated Skills
-
-Bayesian decay-weighted skill estimation with position-specific priors:
-
-```r
-# Estimate player skills from historical match data
-skills <- estimate_player_skills(player_stats, decay_params)
-
-# Get a player's skill profile with percentiles
-profile <- player_skill_profile("Bukayo Saka", skills = skills)
-
-# Estimate skills at a specific date (for predictions)
-date_skills <- estimate_player_skills_at_date(player_stats, date = "2025-01-15")
-```
-
-#### Match Predictions
-
-XGBoost Poisson/multinomial models for match outcome prediction:
-
-```r
-# Compute team Elo ratings
-elos <- compute_match_elos(match_results)
-
-# Compute rolling form features
-rolling <- compute_team_rolling_features(match_results)
-
-# Fit prediction models
-goals_model <- fit_goals_xgb(training_data)
-outcome_model <- fit_outcome_xgb(training_data)
-
-# Predict a fixture
-prediction <- predict_match(fixture, goals_model, outcome_model)
-```
+For how these are computed, see `vignette("pipeline-walkthrough")` ("Pipeline
+Anatomy"); for match prediction and World Cup simulation, see
+`vignette("match-prediction")`; for downloading/publishing the underlying
+data, see `vignette("data-bus")`.
 
 ## Documentation
 
+Full site: <https://peteowen1.github.io/panna/>
+
 - [Getting Started](articles/getting-started.html) - Installation and basic usage
-- [Player Ratings](articles/player-ratings.html) - RAPM and SPM methodology
-- [Data Sources](articles/data-sources.html) - Choosing the right data source
-- [Data Dictionary](DATA_DICTIONARY.md) - Column definitions for pipeline stages
+- [Player Ratings](articles/player-ratings.html) - EPR, PSR, panna, and the Piero composite
+- [Pipeline Anatomy](articles/pipeline-walkthrough.html) - how ratings and predictions are computed
+- [Match Prediction and Tournament Simulation](articles/match-prediction.html) - reading and simulating match outcomes
+- [Data Access and Publishing](articles/data-bus.html) - downloading and publishing pipeline data
+- [Data Sources](articles/data-sources.html) - choosing the right data source
+- [Data Dictionary](DATA_DICTIONARY.md) - column definitions for pipeline stages
 
 ## Related Packages
 

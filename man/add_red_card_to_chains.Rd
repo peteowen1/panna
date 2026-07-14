@@ -39,3 +39,8 @@ the carded team nearest that card's time (matching the SPADL clock,
 \code{time_seconds = minute*60 + second}). One flagged action per red card is
 exactly what \code{create_wp_features}' \code{cumsum()} logic expects.
 }
+\seealso{
+Other possession chains: 
+\code{\link{create_possession_chains}()}
+}
+\concept{possession chains}

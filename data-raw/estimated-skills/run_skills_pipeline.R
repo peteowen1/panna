@@ -70,15 +70,6 @@ if (!exists("force_rebuild_from")) force_rebuild_from <- NULL
 
 source("data-raw/pipeline_utils.R")
 
-# Wrapper that passes run_steps and pipeline_failed from this scope
-run_skills_step <- function(step_name, step_num, code_block) {
-  result <- run_step(step_name, step_num, code_block, run_steps, pipeline_failed)
-  if (!is.null(result) && identical(result$status, "FAILED")) {
-    pipeline_failed <<- TRUE
-  }
-  result
-}
-
 # 4. Initialize ----
 
 cache_dir <- file.path("data-raw", "cache-skills")
@@ -137,82 +128,77 @@ pipeline_start <- Sys.time()
 step_results <- list()
 pipeline_failed <- FALSE
 
-message("\n")
-message(paste(rep("#", 70), collapse = ""))
-message("#")
-message("#   ESTIMATED SKILLS PIPELINE")
-message("#")
-message(sprintf("#   Leagues: %s", paste(leagues, collapse = ", ")))
-message(sprintf("#   Seasons: %s", if (is.null(seasons)) "All available" else paste(seasons, collapse = ", ")))
-message(sprintf("#   Min season: %s", if (is.null(min_season)) "None" else min_season))
-message(sprintf("#   Start from step: %s", start_step))
-message("#")
-message(paste(rep("#", 70), collapse = ""))
+print_pipeline_banner("ESTIMATED SKILLS PIPELINE", c(
+  sprintf("Leagues: %s", paste(leagues, collapse = ", ")),
+  sprintf("Seasons: %s", if (is.null(seasons)) "All available" else paste(seasons, collapse = ", ")),
+  sprintf("Min season: %s", if (is.null(min_season)) "None" else min_season),
+  sprintf("Start from step: %s", start_step)
+))
 
 # 5. Step 1: Compute Match-Level Stats ----
 
-step_results[[1]] <- run_skills_step("compute_match_stats", 1, function() {
+step_results[[1]] <- run_pipeline_step("compute_match_stats", 1, function() {
   source("data-raw/estimated-skills/01_compute_match_stats.R", local = TRUE)
 })
 
 # 6. Step 2: Estimate Skills ----
 
-step_results[[2]] <- run_skills_step("estimate_skills", 2, function() {
+step_results[[2]] <- run_pipeline_step("estimate_skills", 2, function() {
   source("data-raw/estimated-skills/02_estimate_skills.R", local = TRUE)
 })
 
 # 7. Step 2b: Optimize Params (optional) ----
 
-step_results[[3]] <- run_skills_step("optimize_params", "2b", function() {
+step_results[[3]] <- run_pipeline_step("optimize_params", "2b", function() {
   source("data-raw/estimated-skills/02b_optimize_params.R", local = TRUE)
 })
 
 # 8. Step 3: Skill SPM ----
 
-step_results[[4]] <- run_skills_step("skill_spm", 3, function() {
+step_results[[4]] <- run_pipeline_step("skill_spm", 3, function() {
   source("data-raw/estimated-skills/03_skill_spm.R", local = TRUE)
 })
 
 # 9. Step 4: Skill xRAPM ----
 
-step_results[[5]] <- run_skills_step("skill_xrapm", 4, function() {
+step_results[[5]] <- run_pipeline_step("skill_xrapm", 4, function() {
   source("data-raw/estimated-skills/04_skill_xrapm.R", local = TRUE)
 })
 
 # 10. Step 5: Skill Panna Ratings ----
 
-step_results[[6]] <- run_skills_step("skill_panna_ratings", 5, function() {
+step_results[[6]] <- run_pipeline_step("skill_panna_ratings", 5, function() {
   source("data-raw/estimated-skills/05_skill_panna_ratings.R", local = TRUE)
 })
 
 # 11. Step 6: Seasonal Skill Ratings ----
 
-step_results[[7]] <- run_skills_step("seasonal_skill_ratings", 6, function() {
+step_results[[7]] <- run_pipeline_step("seasonal_skill_ratings", 6, function() {
   source("data-raw/estimated-skills/06_seasonal_skill_ratings.R", local = TRUE)
 })
 
 # 12. Step 7: Train PSR Model ----
 
-step_results[[8]] <- run_skills_step("train_psr_model", 7, function() {
+step_results[[8]] <- run_pipeline_step("train_psr_model", 7, function() {
   source("data-raw/estimated-skills/07_train_psr_model.R", local = TRUE)
 })
 
 # 13. Step 8: Export Skills ----
 
-step_results[[9]] <- run_skills_step("export_skills", 8, function() {
+step_results[[9]] <- run_pipeline_step("export_skills", 8, function() {
   source("data-raw/estimated-skills/08_export_skills.R", local = TRUE)
 })
 
 # 14. Step 8b: Export Weekly PSR Snapshots ----
 
-step_results[[10]] <- run_skills_step("export_psr_weekly", "8b", function() {
+step_results[[10]] <- run_pipeline_step("export_psr_weekly", "8b", function() {
   source("data-raw/estimated-skills/08b_export_psr_weekly.R", local = TRUE)
 })
 
 # Career-trait Panna (decay-weighted multi-season xRAPM) — needs cache-opta splints +
 # the step-03 skill-SPM, so it runs last. Uploads career_panna.parquet to ratings-data
 # when upload_career_panna <- TRUE (CI sets it). See CLAUDE_TODO_CAREER_PANNA.md.
-step_results[[11]] <- run_skills_step("career_panna", 9, function() {
+step_results[[11]] <- run_pipeline_step("career_panna", 9, function() {
   source("data-raw/estimated-skills/09_career_panna.R", local = TRUE)
 })
 

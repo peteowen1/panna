@@ -17,3 +17,4 @@ Invisibly returns the path
 \description{
 Saves trained xG model to RDS file.
 }
+\keyword{internal}

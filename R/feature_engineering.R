@@ -149,12 +149,6 @@ apply_bayesian_padding <- function(player_stats, stat_cols, min_games = 10,
 #'
 #' @return Data frame with all player features
 #' @keywords internal
-#' @examples
-#' \dontrun{
-#' processed_data <- process_all_data("ENG", "2024-2025")
-#' features <- create_player_feature_matrix(processed_data, min_minutes = 180)
-#' head(features)
-#' }
 create_player_feature_matrix <- function(processed_data, min_minutes = 180) {
   # Get summary stats
   stats <- processed_data$stats_summary

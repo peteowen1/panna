@@ -29,3 +29,9 @@ is on disk, or to confirm that a sync landed in the place panna actually
 looks. The freshness skew between the consolidated parquet and per-season
 files is the most common silent failure -- this surfaces it.
 }
+\seealso{
+Other cache management: 
+\code{\link{opta_data_dir}()},
+\code{\link{pannadata_dir}()}
+}
+\concept{cache management}

@@ -52,3 +52,8 @@ rating_cols <- c("home_panna_sum", "away_panna_sum",
 attr <- calculate_player_attribution(features, predict_fn, rating_cols)
 }
 }
+\seealso{
+Other player attribution: 
+\code{\link{batch_player_attribution}()}
+}
+\concept{player attribution}

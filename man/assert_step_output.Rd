@@ -47,3 +47,9 @@ assert_step_output(team_ratings, "step 02", list(
 ))
 }
 }
+\seealso{
+Other validation: 
+\code{\link{assert_events_coverage}()},
+\code{\link{check_events_coverage}()}
+}
+\concept{validation}

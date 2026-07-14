@@ -17,3 +17,10 @@ Data frame with SPM ratings
 \description{
 Calculate SPM ratings using XGBoost model
 }
+\seealso{
+Other spm: 
+\code{\link{calculate_spm_ratings}()},
+\code{\link{fit_spm_model}()},
+\code{\link{get_spm_feature_importance}()}
+}
+\concept{spm}

@@ -30,3 +30,10 @@ preds <- load_predictions(source = "remote", filter_future = TRUE)
 preds <- load_predictions(source = "local")
 }
 }
+\seealso{
+Other data distribution: 
+\code{\link{pb_download_opta}()},
+\code{\link{pb_download_predictions}()},
+\code{\link{pb_list_sources}()}
+}
+\concept{data distribution}

@@ -40,3 +40,13 @@ Why this beats lineups: Opta records \code{minutes_played = 90} for unsubstitute
 finishers regardless of stoppage time, and rounds sub timing to whole minutes.
 Chains carry the real second-precision times.
 }
+\seealso{
+Other rapm: 
+\code{\link{create_all_splints}()},
+\code{\link{create_rapm_design_matrix}()},
+\code{\link{extract_period_end_times}()},
+\code{\link{extract_rapm_ratings}()},
+\code{\link{fit_rapm}()},
+\code{\link{fit_rapm_with_prior}()}
+}
+\concept{rapm}

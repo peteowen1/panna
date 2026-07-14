@@ -51,3 +51,10 @@ shootout_win_prob(p_a = 0.80, p_b = 0.70) # team A favoured
 # Live WP after A has scored its 1st kick and B is about to take its 1st:
 shootout_win_prob(score_a = 1, score_b = 0, kicks_a = 1, kicks_b = 0)
 }
+\seealso{
+Other penalty shootouts: 
+\code{\link{aggregate_shootout_wpa}()},
+\code{\link{is_shootout_period}()},
+\code{\link{score_shootout_kicks}()}
+}
+\concept{penalty shootouts}

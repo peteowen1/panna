@@ -29,7 +29,7 @@
 #'   Beyond that the decay is so heavy the imputation is near-zero anyway.
 #' @return The input `ratings` with extra synthetic rows for `current_sey`
 #'   covering players who weren't already rated there.
-#' @export
+#' @keywords internal
 augment_ratings_with_history <- function(ratings, current_sey,
                                             decay_factor = 0.85,
                                             max_years_back = 5L) {
@@ -78,6 +78,7 @@ augment_ratings_with_history <- function(ratings, current_sey,
 #' @param prev_season_decay Decay factor for previous season fallback (default 0.8)
 #'
 #' @return Data frame with one row per match, team-level rating features
+#' @family match prediction
 #' @export
 aggregate_lineup_ratings <- function(lineups, ratings, season_end_year,
                                       prev_season_decay = 0.8) {
@@ -437,6 +438,7 @@ aggregate_lineup_ratings <- function(lineups, ratings, season_end_year,
 #' @param defensive_stats Character vector of defensive skill columns to aggregate
 #'
 #' @return Data frame with one row per match, team-level skill features
+#' @family match prediction
 #' @export
 aggregate_lineup_skills <- function(lineups, skill_estimates,
                                      attacking_stats = NULL,
@@ -570,6 +572,7 @@ aggregate_lineup_skills <- function(lineups, skill_estimates,
 #' @param initial_elo Starting Elo rating (default 1500)
 #'
 #' @return Named numeric vector of Elo ratings (one entry per non-NA team)
+#' @family match prediction
 #' @export
 init_team_elos <- function(teams, initial_elo = 1500) {
   teams <- teams[!is.na(teams)]
@@ -602,6 +605,7 @@ init_team_elos <- function(teams, initial_elo = 1500) {
 #'   perf = blend_w*GD + (1-blend_w)*xGD (margin_sqrt mode). Default 0.5.
 #'
 #' @return Named list with new_home_elo, new_away_elo
+#' @family match prediction
 #' @export
 update_elo <- function(home_elo, away_elo, home_goals, away_goals,
                         k = 20, home_advantage = 88,
@@ -710,6 +714,7 @@ update_elo <- function(home_elo, away_elo, home_goals, away_goals,
 #'     (pre-match Elo for each match in the input order)
 #'   - `final_elos`: named numeric vector of post-iteration team Elos,
 #'     for use with upcoming fixtures
+#' @family match prediction
 #' @export
 compute_match_elos <- function(results, k = 20, home_advantage = 88,
                                 initial_elo = 1500,
@@ -909,6 +914,7 @@ make_dummy_lineup <- function(match_id, team_id, team_name, team_position) {
 #' @param windows Rolling window sizes (default c(5, 10, 20))
 #'
 #' @return Data frame with match_id and rolling features for home/away
+#' @family match prediction
 #' @export
 compute_team_rolling_features <- function(results, windows = c(5L, 10L, 20L)) {
   dt <- data.table::as.data.table(results)
@@ -1150,6 +1156,7 @@ fit_outcome_xgb <- function(X, y, nfolds = 5L, params = NULL,
 #' @param X_outcome Feature matrix for outcome model (without goal predictions)
 #'
 #' @return Data frame with pred_home_goals, pred_away_goals, prob_H, prob_D, prob_A
+#' @family match prediction
 #' @export
 predict_match <- function(goals_home_model, goals_away_model, outcome_model,
                            X_goals, X_outcome) {
@@ -1209,6 +1216,7 @@ predict_match <- function(goals_home_model, goals_away_model, outcome_model,
 #' @param eps Clipping epsilon to avoid log(0) (default 1e-15)
 #'
 #' @return Scalar log loss value
+#' @family match prediction
 #' @export
 compute_multiclass_logloss <- function(y_true, prob_matrix, eps = 1e-15) {
   stopifnot(all(y_true %in% 0:2))
@@ -1229,6 +1237,7 @@ compute_multiclass_logloss <- function(y_true, prob_matrix, eps = 1e-15) {
 #' @param n_bins Number of calibration bins (default 10)
 #'
 #' @return Data frame with bin midpoints, predicted and actual probabilities
+#' @family match prediction
 #' @export
 calibration_table <- function(y_true, prob_matrix, n_bins = 10L) {
   results <- list()

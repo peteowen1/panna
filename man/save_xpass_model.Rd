@@ -24,3 +24,4 @@ save_xpass_model(xpass_model)
 save_xpass_model(xpass_model, path = "models/my_xpass_model.rds")
 }
 }
+\keyword{internal}

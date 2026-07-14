@@ -20,3 +20,9 @@ summed totals and minutes-weighted per-90 averages.
 Summarizes per-game ratings to one row per player per season, with
 total and per-90 averages for all value metrics.
 }
+\seealso{
+Other panna ratings: 
+\code{\link{add_value_metrics_to_splints}()},
+\code{\link{extract_xrapm_ratings}()}
+}
+\concept{panna ratings}

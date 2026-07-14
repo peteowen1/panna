@@ -17,11 +17,4 @@ Data frame with all player features
 \description{
 Builds the complete feature matrix for SPM model.
 }
-\examples{
-\dontrun{
-processed_data <- process_all_data("ENG", "2024-2025")
-features <- create_player_feature_matrix(processed_data, min_minutes = 180)
-head(features)
-}
-}
 \keyword{internal}

@@ -36,6 +36,7 @@
 #' @param n_regulation Kicks per team in the regulation phase. Default 5.
 #'
 #' @return Numeric scalar in \code{[0, 1]}: P(team A wins).
+#' @family penalty shootouts
 #' @export
 #' @examples
 #' shootout_win_prob()                       # 0.5 (equal skill, start)
@@ -149,6 +150,7 @@ shootout_win_prob <- function(p_a = PENALTY_SHOOTOUT_CONVERSION,
 #'       saved miss (\code{type_id == 15}); 0 otherwise. Belongs to the team
 #'       that did NOT take the kick.}
 #'   }
+#' @family penalty shootouts
 #' @export
 score_shootout_kicks <- function(kicks,
                                  p_a = PENALTY_SHOOTOUT_CONVERSION,
@@ -239,6 +241,7 @@ score_shootout_kicks <- function(kicks,
 #'   \code{player_name}, \code{kicks_taken}, \code{kicks_scored},
 #'   \code{taker_wpa} (sum over own kicks), \code{keeper_wpa} (sum over saves
 #'   made), \code{shootout_wpa_total} (\code{taker_wpa + keeper_wpa}).
+#' @family penalty shootouts
 #' @export
 aggregate_shootout_wpa <- function(kicks_all, lineups = NULL,
                                    keeper_save_share = 0.5,

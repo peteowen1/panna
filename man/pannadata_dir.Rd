@@ -39,3 +39,9 @@ pannadata_dir()
 # Set custom path
 pannadata_dir("~/my/football/data")
 }
+\seealso{
+Other cache management: 
+\code{\link{data_location_report}()},
+\code{\link{opta_data_dir}()}
+}
+\concept{cache management}

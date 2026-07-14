@@ -21,6 +21,12 @@ if (!"panna" %in% (.packages())) {
   }
 }
 
+# run_backfill() lives in pipeline_utils.R — source it if this is running
+# standalone (outside run_predictions_opta.R, which sources it already).
+if (!exists("run_backfill", mode = "function")) {
+  source(file.path("data-raw", "pipeline_utils.R"))
+}
+
 # Override-safe config (same pattern as 10b_backfill_game_logs.R).
 if (!exists("equity_seasons", inherits = FALSE)) {
   equity_seasons <- c(
@@ -35,76 +41,20 @@ if (!exists("upload_equity", inherits = FALSE))    upload_equity <- TRUE
 if (!exists("parallel_workers", inherits = FALSE)) parallel_workers <- 1L
 
 cache_dir <- file.path("data-raw", "cache-predictions-opta")
-if (!dir.exists(cache_dir)) dir.create(cache_dir, recursive = TRUE)
 
-# 2. Filter already-built ----
+# 2. Delegate to the shared backfill driver (pipeline_utils.R) ----
 
-if (!isTRUE(force_rebuild)) {
-  existing <- vapply(equity_seasons, function(s) {
-    file.exists(file.path(cache_dir, sprintf("action_equity_%s.parquet", s)))
-  }, logical(1))
-  if (any(existing)) {
-    message(sprintf("Skipping already-built seasons: %s",
-                    paste(equity_seasons[existing], collapse = ", ")))
-    message("  (set force_rebuild <- TRUE to rebuild)")
-    equity_seasons <- equity_seasons[!existing]
-  }
-}
-
-if (length(equity_seasons) == 0) {
-  message("\nAll seasons already built. Nothing to do.")
-  return(invisible(NULL))
-}
-
-message(sprintf("\n=== Equity backfill plan ==="))
-message(sprintf("  Seasons: %s", paste(equity_seasons, collapse = ", ")))
-message(sprintf("  Upload:  %s", if (isTRUE(upload_equity)) "yes" else "no (dry run)"))
-message(sprintf("  Workers: %d", parallel_workers))
-
-# 3. Delegate to 10c ----
-
-t0 <- Sys.time()
-
-if (parallel_workers <= 1L) {
-  source("data-raw/match-predictions-opta/10c_export_equity.R", local = FALSE)
-} else {
-  if (!requireNamespace("future", quietly = TRUE) ||
-      !requireNamespace("future.apply", quietly = TRUE)) {
-    stop("parallel_workers > 1 requires `future` + `future.apply`. ",
-         "Install with: install.packages(c('future', 'future.apply'))")
-  }
-  message(sprintf("\n  Parallel mode: %d workers (multisession)", parallel_workers))
-
-  future::plan(future::multisession, workers = parallel_workers)
-  on.exit(future::plan(future::sequential), add = TRUE)
-
-  worker_wd <- getwd()
-  .run_one_equity_season <- function(s) {
-    setwd(worker_wd)
-    suppressMessages(devtools::load_all(".", quiet = TRUE))
-    ge <- globalenv()
-    assign("equity_seasons", s,     envir = ge)
-    assign("upload_equity",  FALSE, envir = ge)
-    assign("build_equity",   TRUE,  envir = ge)
-    assign("cache_dir",
-           file.path("data-raw", "cache-predictions-opta"),
-           envir = ge)
-    source("data-raw/match-predictions-opta/10c_export_equity.R", local = FALSE)
-    p <- file.path(ge$cache_dir, sprintf("action_equity_%s.parquet", s))
-    if (file.exists(p)) p else NULL
-  }
-
-  built <- future.apply::future_lapply(equity_seasons, .run_one_equity_season,
-                                        future.seed = NULL)
-  built <- Filter(Negate(is.null), built)
-  message(sprintf("\n  Parallel build complete: %d/%d seasons produced",
-                  length(built), length(equity_seasons)))
-
-  if (isTRUE(upload_equity) && length(built) > 0) {
-    build_equity <- FALSE
-    source("data-raw/match-predictions-opta/10c_export_equity.R", local = FALSE)
-  }
-}
-
-elapsed <- round(as.numeric(difftime(Sys.time(), t0, units = "mins")), 1)
-message(sprintf("\nEquity backfill complete in %.1f min", elapsed))
+run_backfill(
+  export_script    = "data-raw/match-predictions-opta/10c_export_equity.R",
+  seasons          = equity_seasons,
+  seasons_var      = "equity_seasons",
+  upload_var       = "upload_equity",
+  build_var        = "build_equity",
+  out_pattern      = "action_equity_%s.parquet",
+  cache_dir        = cache_dir,
+  force_rebuild    = force_rebuild,
+  upload           = upload_equity,
+  parallel_workers = parallel_workers,
+  extra_worker_globals = list(),
+  label            = "Equity backfill"
+)

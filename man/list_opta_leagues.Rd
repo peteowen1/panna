@@ -41,3 +41,9 @@ list_opta_leagues(type = "cup")
 list_opta_leagues(source = "local")
 }
 }
+\seealso{
+Other competition metadata: 
+\code{\link{list_opta_seasons}()},
+\code{\link{resolve_league_season}()}
+}
+\concept{competition metadata}

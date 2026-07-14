@@ -68,3 +68,14 @@ Per-(player, game) regression that simultaneously estimates per-player
 skill (beta_player, returned as EPR) and league/opponent context effects.
 Uses exponential time-decay weighting on observations.
 }
+\seealso{
+Other epr: 
+\code{\link{PANNA_EPR_WEIGHT}},
+\code{\link{PANNA_PSR_WEIGHT}},
+\code{\link{aggregate_player_game_epv}()},
+\code{\link{build_player_game_ratings}()},
+\code{\link{calculate_epr}()},
+\code{\link{calculate_epr_batch}()},
+\code{\link{player_value}()}
+}
+\concept{epr}

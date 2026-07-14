@@ -20,3 +20,15 @@ Filters NA team names defensively -- they would otherwise create an
 NA-named entry that \code{NA \%in\% names(elos)} returns TRUE for, opening
 the door to NA cascades when bad upstream data sneaks through.
 }
+\seealso{
+Other match prediction: 
+\code{\link{aggregate_lineup_ratings}()},
+\code{\link{aggregate_lineup_skills}()},
+\code{\link{calibration_table}()},
+\code{\link{compute_match_elos}()},
+\code{\link{compute_multiclass_logloss}()},
+\code{\link{compute_team_rolling_features}()},
+\code{\link{predict_match}()},
+\code{\link{update_elo}()}
+}
+\concept{match prediction}

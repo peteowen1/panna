@@ -38,3 +38,14 @@ Produces one row per player per match with total WPA, actor WPA, and
 receiver WPA. Optionally computes per-90 rates and position-centered
 values.
 }
+\seealso{
+Other win probability: 
+\code{\link{add_wp_vars}()},
+\code{\link{assign_wpa_credit}()},
+\code{\link{create_wp_features}()},
+\code{\link{load_wp_model}()},
+\code{\link{predict_wp}()},
+\code{\link{save_wp_model}()},
+\code{\link{train_wp_model}()}
+}
+\concept{win probability}

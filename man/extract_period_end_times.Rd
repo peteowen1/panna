@@ -21,3 +21,13 @@ events that carry second-level timing. This function extracts the maximum
 can use the real period boundaries instead of guessing with a +0.5 buffer
 off the last gameplay event.
 }
+\seealso{
+Other rapm: 
+\code{\link{create_all_splints}()},
+\code{\link{create_rapm_design_matrix}()},
+\code{\link{extract_player_timing_from_events}()},
+\code{\link{extract_rapm_ratings}()},
+\code{\link{fit_rapm}()},
+\code{\link{fit_rapm_with_prior}()}
+}
+\concept{rapm}

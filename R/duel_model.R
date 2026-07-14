@@ -218,6 +218,7 @@ NULL
 #' @param contest One of `aerial_win`, `aerial_poss`, `takeon`, `tackle_poss`,
 #'   `containment`.
 #' @return data.table of features + `won`, keyed columns retained.
+#' @family xduel
 #' @export
 prepare_duels_from_events <- function(events, contest = names(.DUEL_CONTESTS)) {
   contest <- match.arg(contest)
@@ -232,6 +233,7 @@ prepare_duels_from_events <- function(events, contest = names(.DUEL_CONTESTS)) {
 #' caller can loop leagues and discard raw events between iterations.
 #' @param events Full per-league Opta events.
 #' @return Named list of five finalized feature tables.
+#' @family xduel
 #' @export
 compute_all_duel_preps <- function(events) {
   dt <- .order_events(events)
@@ -282,6 +284,7 @@ compute_all_duel_preps <- function(events) {
 #' @param nfolds,max_depth,eta,subsample,colsample_bytree,nrounds,early_stopping_rounds,verbose
 #'   XGBoost controls.
 #' @return List of class \code{duel_model} with the five sub-models + metadata.
+#' @family xduel
 #' @export
 fit_duel_model <- function(prepped, nfolds = 5, max_depth = 5, eta = 0.1,
                            subsample = 0.8, colsample_bytree = 0.8,
@@ -329,6 +332,7 @@ fit_duel_model <- function(prepped, nfolds = 5, max_depth = 5, eta = 0.1,
 #' @param features data.table of features (from \code{prepare_duels_from_events}).
 #' @param contest One of the five contest names.
 #' @return Numeric vector of P(win).
+#' @family xduel
 #' @export
 predict_duel <- function(duel_model, features, contest = names(.DUEL_CONTESTS)) {
   contest <- match.arg(contest)
@@ -348,6 +352,7 @@ predict_duel <- function(duel_model, features, contest = names(.DUEL_CONTESTS)) 
 #' @return data.table keyed by player (team, match) with `<prefix>_won/_exp/_woe`
 #'   for prefixes aerial, aerial_poss, takeon, tackle_poss, containment.
 #'   Per-90 normalisation is applied by the caller (which holds minutes).
+#' @family xduel
 #' @export
 compute_duel_woe <- function(events, duel_model, by_match = FALSE) {
   key <- if (by_match) c("player_id", "team_id", "match_id") else c("player_id", "team_id")
@@ -380,6 +385,7 @@ compute_duel_woe <- function(events, duel_model, by_match = FALSE) {
 #' Load the pre-trained xDuel model
 #' @param path Optional explicit path. Falls back to pannamodels, then local.
 #' @return Fitted xDuel model.
+#' @family xduel
 #' @export
 load_duel_model <- function(path = NULL) {
   if (!is.null(path) && file.exists(path)) {
@@ -403,6 +409,7 @@ load_duel_model <- function(path = NULL) {
 #' @param duel_model Fitted model.
 #' @param path Optional path. Defaults to pannadata opta/models/duel_model.rds.
 #' @return Invisibly, the path.
+#' @family xduel
 #' @export
 save_duel_model <- function(duel_model, path = NULL) {
   if (is.null(path)) {

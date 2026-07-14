@@ -1,6 +1,6 @@
 # Tests for piggyback.R
-# Covers: .pb_download_file, pb_download_source, get_source_tag,
-#         get_source_archive_name, clear_remote_cache
+# Covers: .pb_download_file, get_source_tag, get_source_archive_name,
+#         pb_list_sources, pb_download_predictions
 
 # ===========================================================================
 # get_source_tag / get_source_archive_name
@@ -87,56 +87,6 @@ test_that(".pb_download_file rejects a truncated download when the release lists
     class = "vb_error_integrity"
   )
   expect_false(file.exists(file.path(tempdir(), "test.rds")))
-})
-
-
-# ===========================================================================
-# pb_download_source
-# ===========================================================================
-
-test_that("pb_download_source validates source_type", {
-  expect_error(pb_download_source("invalid"), "should be one of")
-})
-
-test_that("pb_download_source calls .pb_download_file and extracts", {
-  skip_if_not_installed("piggyback")
-
-  # Create a real tar.gz archive for the mock to "download"
-  tmp_src <- tempfile("source_test_")
-  dir.create(file.path(tmp_src, "opta"), recursive = TRUE)
-  writeLines("mock", file.path(tmp_src, "opta", "test.parquet"))
-  tar_file <- tempfile(fileext = ".tar.gz")
-  tar(tar_file, files = "opta", compression = "gzip",
-      extra_flags = paste("-C", shQuote(tmp_src)))
-  on.exit(unlink(c(tmp_src, tar_file), recursive = TRUE))
-
-  local_mocked_bindings(
-    pb_list = function(repo, tag) NULL,
-    pb_download = function(file, repo, tag, dest, overwrite, show_progress) {
-      file.copy(tar_file, file.path(dest, file))
-    },
-    .package = "piggyback"
-  )
-
-  dest <- tempfile("dest_")
-  dir.create(dest)
-  on.exit(unlink(dest, recursive = TRUE), add = TRUE)
-
-  suppressMessages(
-    result <- pb_download_source("opta", dest = dest, verbose = FALSE)
-  )
-
-  expect_equal(result, dest)
-})
-
-
-# ===========================================================================
-# pb_status
-# ===========================================================================
-
-test_that("pb_status function exists and accepts repo parameter", {
-  expect_true(is.function(pb_status))
-  expect_true("repo" %in% names(formals(pb_status)))
 })
 
 

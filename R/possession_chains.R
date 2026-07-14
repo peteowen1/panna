@@ -25,6 +25,7 @@ NULL
 #'
 #' @return Data frame with chain assignments added
 #'
+#' @family possession chains
 #' @export
 #' @examples
 #' \dontrun{

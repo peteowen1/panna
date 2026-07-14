@@ -19,3 +19,13 @@ Numeric vector of P(win).
 \description{
 Predict a duel contest win probability
 }
+\seealso{
+Other xduel: 
+\code{\link{compute_all_duel_preps}()},
+\code{\link{compute_duel_woe}()},
+\code{\link{fit_duel_model}()},
+\code{\link{load_duel_model}()},
+\code{\link{prepare_duels_from_events}()},
+\code{\link{save_duel_model}()}
+}
+\concept{xduel}

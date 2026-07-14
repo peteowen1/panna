@@ -19,3 +19,4 @@ Replaces \code{player_id} with the canonical mapping in-place. Useful before
 joining lineups to ratings, where the same person should map to a single
 xRAPM row regardless of which alt-id their match used.
 }
+\keyword{internal}

@@ -129,26 +129,6 @@
 # Batch pre-match skill estimation
 # ============================================================================
 
-#' Estimate pre-match skills at multiple dates (incremental batch version)
-#'
-#' Highly optimized for sequential date estimation. Instead of re-processing
-#' all historical data at each date, maintains running cumulative sums that
-#' are decayed forward and incrementally updated with new observations.
-#' Uses \code{rowsum()} (C-level) for grouped matrix sums.
-#'
-#' Complexity: O(N + D * new_rows_per_date) instead of O(N * D).
-#' For typical data (~1M rows, 659 dates), this is ~100-300x faster.
-#'
-#' @param match_stats Match-level stats (output of
-#'   \code{compute_match_level_opta_stats}).
-#' @param ref_dates Character or Date vector of dates to estimate skills at.
-#' @param decay_params Decay parameters (default: \code{get_default_decay_params()}).
-#' @param min_weighted_90s Minimum weighted 90s for inclusion (default 3).
-#' @param verbose Print progress (default TRUE).
-#'
-#' @return Named list of data.tables (one per ref_date), keyed by date string.
-#'   Each table has one row per player with skill columns.
-#'
 #' Canonical stat-column detector — ONE source of truth
 #'
 #' Returns the modelled stat columns present in \code{dt}: per-90 rates
@@ -175,6 +155,25 @@
   unique(intersect(c(p90, eff, registered), nm))
 }
 
+#' Estimate pre-match skills at multiple dates (incremental batch version)
+#'
+#' Highly optimized for sequential date estimation. Instead of re-processing
+#' all historical data at each date, maintains running cumulative sums that
+#' are decayed forward and incrementally updated with new observations.
+#' Uses \code{rowsum()} (C-level) for grouped matrix sums.
+#'
+#' Complexity: O(N + D * new_rows_per_date) instead of O(N * D).
+#' For typical data (~1M rows, 659 dates), this is ~100-300x faster.
+#'
+#' @param match_stats Match-level stats (output of
+#'   \code{compute_match_level_opta_stats}).
+#' @param ref_dates Character or Date vector of dates to estimate skills at.
+#' @param decay_params Decay parameters (default: \code{get_default_decay_params()}).
+#' @param min_weighted_90s Minimum weighted 90s for inclusion (default 3).
+#' @param verbose Print progress (default TRUE).
+#'
+#' @return Named list of data.tables (one per ref_date), keyed by date string.
+#'   Each table has one row per player with skill columns.
 #' @keywords internal
 .estimate_prematch_skills_batch <- function(match_stats, ref_dates,
                                             decay_params = NULL,
@@ -580,6 +579,7 @@
 #'
 #' @return A data.table with identity columns plus \code{psr_raw} and \code{psr}.
 #'
+#' @family psr
 #' @export
 calculate_psr <- function(skills, coef_df, center = TRUE) {
   dt <- data.table::as.data.table(skills)
@@ -719,6 +719,7 @@ calculate_psr_components <- function(skills, coef_df, osr_coef_df, dsr_coef_df,
 #' @return A data.table with identifier columns plus \code{psv_raw} and
 #'   \code{psv}.
 #'
+#' @family psr
 #' @export
 calculate_psv <- function(player_match_stats, coef_df, min_adjust = TRUE,
                            center = TRUE, exclude_efficiency = TRUE,
@@ -853,6 +854,7 @@ calculate_psv <- function(player_match_stats, coef_df, min_adjust = TRUE,
 #' @return A data.table with identifier columns plus \code{psv_raw},
 #'   \code{psv}, \code{osv}, \code{dsv}.
 #'
+#' @family psr
 #' @export
 calculate_psv_components <- function(player_match_stats, coef_df, osr_coef_df,
                                       dsr_coef_df, min_adjust = TRUE,
@@ -1068,9 +1070,13 @@ load_position_role_means <- function() {
 #'   (goal differential), or \code{"blend"} (alpha*xG + (1-alpha)*goals — the
 #'   displayed value model; falls back to \code{"xg"} until the blend is
 #'   trained).
+#' @param position_means Optional pre-computed position-mean lookup table used
+#'   to center skill columns before scoring (see \code{\link{compute_player_psr}}).
+#'   If \code{NULL}, no cross-position centering is applied.
 #'
 #' @return A data.table with \code{psv}, \code{osv}, \code{dsv} columns.
 #'
+#' @family psr
 #' @export
 compute_player_psv <- function(player_match_stats, min_adjust = TRUE,
                                 center = TRUE, target = c("xg", "goals", "blend"),
@@ -1224,6 +1230,9 @@ load_psr_coefficients <- function(type = c("margin", "offense", "defense"),
 #' @param center Logical. Center PSR around position-group mean (default TRUE).
 #' @param target One of \code{"xg"} (default) or \code{"goals"} for the
 #'   outfield model. GK model always uses goal differential.
+#' @param position_means Optional pre-computed position-mean lookup table used
+#'   to center skill columns before scoring (see \code{\link{compute_player_psv}}).
+#'   If \code{NULL}, no cross-position centering is applied.
 #'
 #' @return A data.table with \code{psr}, \code{osr}, \code{dsr} columns.
 #'
@@ -1356,6 +1365,7 @@ compute_player_psr <- function(skills, center = TRUE,
 #'   \code{offset} (add to PSR), and \code{n_bridge}.
 #'
 #' @seealso \code{\link{build_league_network}}, \code{\link{apply_psr_league_offsets}}
+#' @family league offsets
 #' @export
 compute_psr_league_offsets <- function(game_logs,
                                        big5 = c("ENG", "ESP", "GER", "ITA", "FRA"),
@@ -1395,6 +1405,7 @@ compute_psr_league_offsets <- function(game_logs,
 #'   applied value. Rows whose league has no offset are unchanged (offset 0).
 #'
 #' @seealso \code{\link{compute_psr_league_offsets}}
+#' @family league offsets
 #' @export
 apply_psr_league_offsets <- function(psr_dt, offsets, verbose = FALSE) {
   dt <- data.table::as.data.table(psr_dt)
@@ -1449,6 +1460,7 @@ apply_psr_league_offsets <- function(psr_dt, offsets, verbose = FALSE) {
 #'   \code{primary_position}, \code{psr}, \code{osr}, \code{dsr},
 #'   \code{weighted_90s}.
 #'
+#' @family psr
 #' @export
 #'
 #' @examples

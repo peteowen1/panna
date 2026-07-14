@@ -44,3 +44,8 @@ spm_data <- opta_features |>
 opta_spm <- fit_spm_opta(spm_data)
 }
 }
+\seealso{
+Other spm opta: 
+\code{\link{compute_match_level_opta_stats}()}
+}
+\concept{spm opta}

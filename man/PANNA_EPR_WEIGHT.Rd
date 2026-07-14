@@ -15,4 +15,15 @@ Fraction of the combined rating attributed to EPR (play-by-play EPV-based).
 The remaining \code{1 - PANNA_EPR_WEIGHT} goes to PSR (stat-based).
 Analogous to torpverse's \code{TORP_EPR_WEIGHT = 0.5}.
 }
+\seealso{
+Other epr: 
+\code{\link{PANNA_PSR_WEIGHT}},
+\code{\link{aggregate_player_game_epv}()},
+\code{\link{build_player_game_ratings}()},
+\code{\link{calculate_epr}()},
+\code{\link{calculate_epr_batch}()},
+\code{\link{calculate_epr_regression}()},
+\code{\link{player_value}()}
+}
+\concept{epr}
 \keyword{datasets}

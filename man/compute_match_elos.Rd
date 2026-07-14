@@ -88,3 +88,15 @@ duplicate-iteration approach was missing the same NA guards as this
 function, which caused the 2026-05-28 NA-cascade bug where a single
 NA-team friendly poisoned every team's Elo via NA-named-lookup.
 }
+\seealso{
+Other match prediction: 
+\code{\link{aggregate_lineup_ratings}()},
+\code{\link{aggregate_lineup_skills}()},
+\code{\link{calibration_table}()},
+\code{\link{compute_multiclass_logloss}()},
+\code{\link{compute_team_rolling_features}()},
+\code{\link{init_team_elos}()},
+\code{\link{predict_match}()},
+\code{\link{update_elo}()}
+}
+\concept{match prediction}

@@ -227,6 +227,7 @@ OPTA_NON_GAMEPLAY_TYPES <- c(
 #' @param force_rebuild If \code{TRUE}, rebuild and overwrite the cache.
 #'
 #' @return Data frame in SPADL format, identical to \code{convert_opta_to_spadl()}.
+#' @family epv
 #' @export
 get_or_build_spadl <- function(events, league, season,
                                 cache_dir = SPADL_CACHE_DIR,
@@ -297,6 +298,7 @@ get_or_build_spadl <- function(events, league, season,
 #'     \item possession_change: TRUE if next action is by opponent team
 #'   }
 #'
+#' @family epv
 #' @export
 #' @examples
 #' \dontrun{

@@ -1,5 +1,5 @@
 # Integration tests for the full Panna pipeline
-# Tests: processed_data -> splints -> RAPM -> SPM -> Panna ratings
+# Tests: processed_data -> splints -> RAPM -> SPM
 
 
 # Shared fixtures: create_synthetic_processed_data() and
@@ -7,10 +7,10 @@
 
 
 # =============================================================================
-# Integration Test 1: Full pipeline (splints -> RAPM -> SPM -> Panna)
+# Integration Test 1: Full pipeline (splints -> RAPM -> SPM)
 # =============================================================================
 
-test_that("full pipeline: processed_data -> splints -> RAPM -> SPM -> Panna", {
+test_that("full pipeline: processed_data -> splints -> RAPM -> SPM", {
   skip_if_not_installed("glmnet")
 
   # Step 1: Create synthetic processed data
@@ -88,23 +88,6 @@ test_that("full pipeline: processed_data -> splints -> RAPM -> SPM -> Panna", {
   spm_ratings <- calculate_spm_ratings(player_features, spm_model)
   expect_true("spm" %in% names(spm_ratings))
   expect_true(all(is.finite(spm_ratings$spm)))
-
-  # Step 6: Calculate Panna ratings (RAPM + SPM prior)
-  panna_result <- calculate_panna_rating(
-    rapm_data = rapm_data,
-    spm_ratings = spm_ratings,
-    lambda_prior = 1
-  )
-
-  expect_true(is.list(panna_result))
-  expect_true("ratings" %in% names(panna_result))
-
-  panna_ratings <- panna_result$ratings
-  expect_true(is.data.frame(panna_ratings))
-  expect_true("panna" %in% names(panna_ratings))
-  expect_true("player_id" %in% names(panna_ratings))
-  expect_true(nrow(panna_ratings) > 0)
-  expect_true(all(is.finite(panna_ratings$panna)))
 })
 
 
@@ -275,20 +258,9 @@ test_that("pipeline handles partial player overlap between RAPM and SPM", {
   spm_model <- fit_spm_model(spm_train, alpha = 0.5, nfolds = 3)
   spm_ratings <- calculate_spm_ratings(player_features, spm_model)
 
-  # Panna should still work - unmatched players get 0 SPM prior
-  panna_result <- calculate_panna_rating(
-    rapm_data = rapm_data,
-    spm_ratings = spm_ratings,
-    lambda_prior = 1
-  )
-
-  expect_true(nrow(panna_result$ratings) > 0)
-  expect_true(all(is.finite(panna_result$ratings$panna)))
-
-  # Should have ratings for all player columns in the design matrix
-  # (one row per _off/_def column, not per unique player)
-  X <- if (!is.null(rapm_data$X_full)) rapm_data$X_full else rapm_data$X
-  expect_equal(nrow(panna_result$ratings), ncol(X))
+  # SPM still produces valid ratings for the overlapping players
+  expect_true(nrow(spm_ratings) > 0)
+  expect_true(all(is.finite(spm_ratings$spm)))
 })
 
 

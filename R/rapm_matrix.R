@@ -30,6 +30,7 @@
 #'   \code{splints} data.frame: \code{epv_home/epv_away},
 #'   \code{wpa_home/wpa_away}, \code{psv_home/psv_away}.
 #'
+#' @family panna ratings
 #' @export
 add_value_metrics_to_splints <- function(splint_data, player_game_epv = NULL,
                                           player_game_wpa = NULL,
@@ -424,6 +425,7 @@ add_value_metrics_to_splints <- function(splint_data, player_game_epv = NULL,
 #'   secondary filter rarely fires.
 #'
 #' @return List with design matrix components
+#' @family rapm
 #' @export
 create_rapm_design_matrix <- function(splint_data, min_minutes = 90,
                                        target_type = c("xg", "goals", "epv",

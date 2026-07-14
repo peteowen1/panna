@@ -23,3 +23,13 @@ Above-expected analogue of the old accuracy ratios: for each of the five
 contests, contests won minus summed context win-probability (volume-correct,
 additive — the \code{npg_minus_npxg} pattern for physical duels).
 }
+\seealso{
+Other xduel: 
+\code{\link{compute_all_duel_preps}()},
+\code{\link{fit_duel_model}()},
+\code{\link{load_duel_model}()},
+\code{\link{predict_duel}()},
+\code{\link{prepare_duels_from_events}()},
+\code{\link{save_duel_model}()}
+}
+\concept{xduel}

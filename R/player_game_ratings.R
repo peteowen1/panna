@@ -40,6 +40,7 @@
 #'     \item{piero_value_p90}{Combined per 90 minutes}
 #'   }
 #'
+#' @family epr
 #' @export
 build_player_game_ratings <- function(player_game_epv,
                                        player_game_wpa = NULL,
@@ -147,6 +148,7 @@ build_player_game_ratings <- function(player_game_epv,
 #' @return A data.table with one row per player (per season), containing
 #'   summed totals and minutes-weighted per-90 averages.
 #'
+#' @family panna ratings
 #' @export
 aggregate_season_ratings <- function(game_ratings, season_col = "season") {
 
@@ -213,6 +215,7 @@ aggregate_season_ratings <- function(game_ratings, season_col = "season") {
 #'     \item{epr}{EPR result (or NULL)}
 #'   }
 #'
+#' @family epr
 #' @export
 player_value <- function(player = NULL, season = NULL,
                           source = c("local", "remote")) {

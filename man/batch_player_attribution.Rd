@@ -27,3 +27,8 @@ Data frame with per-feature average contributions across matches
 Runs zero-ablation attribution for multiple matches and aggregates
 player-level contributions.
 }
+\seealso{
+Other player attribution: 
+\code{\link{calculate_player_attribution}()}
+}
+\concept{player attribution}

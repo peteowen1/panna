@@ -81,3 +81,11 @@ pct_team_minutes (sums to ~100 across the squad).
 \description{
 Build expected-minutes profile for a national team
 }
+\seealso{
+Other expected minutes: 
+\code{\link{classify_role}()},
+\code{\link{predict_minutes}()},
+\code{\link{prepare_minutes_cache}()},
+\code{\link{query_minutes_features}()}
+}
+\concept{expected minutes}

@@ -44,3 +44,9 @@ resolve_league_season("EURO", "2019-2020")  # -> "2020" (pan-European)
 resolve_league_season("WC",   "2018-2019")  # -> NULL (no WC that year)
 }
 }
+\seealso{
+Other competition metadata: 
+\code{\link{list_opta_leagues}()},
+\code{\link{list_opta_seasons}()}
+}
+\concept{competition metadata}

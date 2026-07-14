@@ -15,3 +15,4 @@ Data frame with snake_case column names
 \description{
 Applies janitor::clean_names() to standardize all column names.
 }
+\keyword{internal}

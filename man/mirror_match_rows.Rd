@@ -32,3 +32,14 @@ so the goals and outcome models train on both orientations.
 giving a prediction invariant to which team is listed as home.
 }
 }
+\seealso{
+Other world cup simulation: 
+\code{\link{bt_match_prob}()},
+\code{\link{build_knockout_lookup}()},
+\code{\link{compute_league_offsets}()},
+\code{\link{fit_bt_ratings}()},
+\code{\link{match_is_international}()},
+\code{\link{run_wc2026_reference_checks}()},
+\code{\link{simulate_world_cup}()}
+}
+\concept{world cup simulation}

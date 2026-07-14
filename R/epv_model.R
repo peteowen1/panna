@@ -273,6 +273,7 @@ estimate_simple_xg <- function(x, y) {
 #'
 #' @return Fitted EPV model with metadata
 #'
+#' @family epv
 #' @export
 fit_epv_model <- function(features,
                            labels,
@@ -782,6 +783,7 @@ calculate_action_epv <- function(spadl_actions, features = NULL, epv_model, xg_m
 #'     \item xpass: Pass completion probability (for passes)
 #'   }
 #'
+#' @family epv
 #' @export
 assign_epv_credit <- function(spadl_with_epv, xpass_model = NULL) {
   cli::cli_alert_info("Assigning EPV credit...")
@@ -1378,6 +1380,7 @@ calculate_action_type_epv <- function(spadl_with_epv) {
 #'     \item{epv_adj}{Position-centered EPV (if \code{position_center = TRUE})}
 #'   }
 #'
+#' @family epr
 #' @export
 aggregate_player_game_epv <- function(spadl_with_epv, lineups = NULL,
                                        position_center = FALSE) {
@@ -1582,6 +1585,7 @@ aggregate_player_game_epv <- function(spadl_with_epv, lineups = NULL,
 #' @param path Directory to save model. If NULL, uses pannadata/data/opta/models/
 #'
 #' @return Invisibly returns path
+#' @family epv
 #' @export
 save_epv_model <- function(epv_model, path = NULL) {
   if (is.null(path)) {
@@ -1598,10 +1602,6 @@ save_epv_model <- function(epv_model, path = NULL) {
 }
 
 
-#' Load EPV Model
-#'
-#' Loads pre-trained EPV model from disk.
-#'
 #' Report which model file was loaded, with date + staleness warning
 #'
 #' The model-loader fallback chains (explicit path → pannamodels → local) used to
@@ -1641,9 +1641,17 @@ save_epv_model <- function(epv_model, path = NULL) {
   invisible()
 }
 
+#' Load EPV Model
+#'
+#' Loads a pre-trained EPV model, trying an explicit path first, then the
+#' \code{pannamodels} package, then falling back to the local pannadata models
+#' directory. Reports the resolved source and file date via
+#' \code{\link{.report_model_provenance}}.
+#'
 #' @param path Directory containing model. If NULL, uses pannadata/data/opta/models/
 #'
 #' @return EPV model
+#' @family epv
 #' @export
 load_epv_model <- function(path = NULL) {
   # Try explicit path first
@@ -1694,6 +1702,7 @@ load_epv_model <- function(path = NULL) {
 #' @param dest Destination directory. If NULL, uses pannadata/data/opta/models/
 #'
 #' @return Invisibly returns path to models
+#' @family epv
 #' @export
 pb_download_epv_models <- function(repo = "peteowen1/pannadata",
                                     tag = "epv-models",
@@ -1792,112 +1801,4 @@ validate_epv_model <- function(spadl_with_epv) {
   ))
 
   results
-}
-
-
-# =============================================================================
-# LEGACY COMPATIBILITY (deprecated, scheduled for removal in v0.3.0)
-# =============================================================================
-
-#' Deprecated: Fit EPV Scoring Model
-#'
-#' @description
-#' `r lifecycle::badge("deprecated")`
-#'
-#' This function is deprecated. Please use [fit_epv_model()] instead.
-#' The unified EPV model now handles both scoring and conceding predictions
-#' using a multinomial approach.
-#'
-#' @param ... Arguments passed to [fit_epv_model()]
-#'
-#' @return An EPV model object
-#' @seealso [fit_epv_model()]
-#' @keywords internal
-fit_epv_scoring_model <- function(...) {
-  cli::cli_warn(c(
-    "!" = "{.fn fit_epv_scoring_model} is deprecated as of panna 0.1.0.",
-    "i" = "Please use {.fn fit_epv_model} instead.",
-    "i" = "This function will be removed in panna 0.3.0."
-  ))
-  fit_epv_model(...)
-}
-
-#' Deprecated: Fit EPV Conceding Model
-#'
-#' @description
-#' `r lifecycle::badge("deprecated")`
-#'
-#' This function is deprecated. Please use [fit_epv_model()] instead.
-#' The unified EPV model now handles both scoring and conceding predictions
-#' using a multinomial approach.
-#'
-#' @param ... Arguments passed to [fit_epv_model()]
-#'
-#' @return An EPV model object
-#' @seealso [fit_epv_model()]
-#' @keywords internal
-fit_epv_conceding_model <- function(...) {
-  cli::cli_warn(c(
-    "!" = "{.fn fit_epv_conceding_model} is deprecated as of panna 0.1.0.",
-    "i" = "Please use {.fn fit_epv_model} instead.",
-    "i" = "This function will be removed in panna 0.3.0."
-  ))
-  fit_epv_model(...)
-}
-
-#' Deprecated: Create EPV Labels (Legacy Format)
-#'
-#' @description
-#' `r lifecycle::badge("deprecated")`
-#'
-#' Creates labels in the old format for backward compatibility.
-#' Use [create_next_goal_labels()] for the current approach.
-#'
-#' @param spadl_actions SPADL actions
-#'
-#' @return Data frame with scores_this_possession and concedes_next_possession
-#' @seealso [create_next_goal_labels()]
-#' @keywords internal
-create_epv_labels_legacy <- function(spadl_actions) {
-  cli::cli_alert_info("Creating EPV labels (legacy format)...")
-
-  dt <- data.table::as.data.table(spadl_actions)
-
-  # Extract from chain outcome columns if available
-  if ("chain_ends_in_goal" %in% names(dt)) {
-    dt[, scores_this_possession := as.integer(chain_ends_in_goal)]
-  } else {
-    dt[, scores_this_possession := 0L]
-  }
-
-  if ("opponent_scores_next" %in% names(dt)) {
-    dt[, concedes_next_possession := as.integer(opponent_scores_next)]
-  } else {
-    dt[, concedes_next_possession := 0L]
-  }
-
-  as.data.frame(dt[, .(match_id, action_id, scores_this_possession, concedes_next_possession)])
-}
-
-#' Deprecated: Assign Pass Credit
-#'
-#' @description
-#' `r lifecycle::badge("deprecated")`
-#'
-#' Legacy function for backward compatibility.
-#' Use [assign_epv_credit()] instead for proper EPV credit assignment.
-#'
-#' @param spadl_with_epv SPADL with EPV
-#' @param xpass_model xPass model
-#'
-#' @return SPADL with credit columns
-#' @seealso [assign_epv_credit()]
-#' @keywords internal
-assign_pass_credit <- function(spadl_with_epv, xpass_model) {
-  cli::cli_warn(c(
-    "!" = "{.fn assign_pass_credit} is deprecated as of panna 0.1.0.",
-    "i" = "Please use {.fn assign_epv_credit} instead.",
-    "i" = "This function will be removed in panna 0.3.0."
-  ))
-  assign_epv_credit(spadl_with_epv, xpass_model)
 }

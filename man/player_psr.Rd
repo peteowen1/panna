@@ -56,3 +56,16 @@ player_psr(date = "2026-03-18", player = "Salah")
 player_psr(position = "MID")
 }
 }
+\seealso{
+Other psr: 
+\code{\link{calculate_psr}()},
+\code{\link{calculate_psv}()},
+\code{\link{calculate_psv_components}()},
+\code{\link{compute_player_psv}()},
+\code{\link{default_stat_rating_params}()},
+\code{\link{load_opta_psr_weekly}()},
+\code{\link{soccer_position_map}()},
+\code{\link{soccer_stat_rating_definitions}()},
+\code{\link{stat_rating_names}()}
+}
+\concept{psr}

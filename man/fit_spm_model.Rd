@@ -16,7 +16,7 @@ fit_spm_model(
 )
 }
 \arguments{
-\item{data}{Data frame from prepare_spm_regression_data or aggregate_player_stats
+\item{data}{Data frame from prepare_spm_regression_data or aggregate_opta_stats
 joined with RAPM ratings}
 
 \item{predictor_cols}{Character vector of predictor column names}
@@ -49,3 +49,10 @@ Fits an elastic net model predicting RAPM from box score statistics.
 Weights observations by minutes played (sqrt transform) by default to reduce
 influence of noisy low-minute players whose RAPM and per-90 stats are unreliable.
 }
+\seealso{
+Other spm: 
+\code{\link{calculate_spm_ratings}()},
+\code{\link{calculate_spm_ratings_xgb}()},
+\code{\link{get_spm_feature_importance}()}
+}
+\concept{spm}

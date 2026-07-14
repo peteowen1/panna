@@ -19,3 +19,10 @@ Data frame of top features by absolute coefficient
 \description{
 Identifies the most important features in the SPM model.
 }
+\seealso{
+Other spm: 
+\code{\link{calculate_spm_ratings}()},
+\code{\link{calculate_spm_ratings_xgb}()},
+\code{\link{fit_spm_model}()}
+}
+\concept{spm}

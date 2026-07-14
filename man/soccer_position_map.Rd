@@ -14,3 +14,16 @@ values are group labels.
 Maps detailed positions to the four broad groups used for position-specific
 priors: GK, DEF, MID, FWD.
 }
+\seealso{
+Other psr: 
+\code{\link{calculate_psr}()},
+\code{\link{calculate_psv}()},
+\code{\link{calculate_psv_components}()},
+\code{\link{compute_player_psv}()},
+\code{\link{default_stat_rating_params}()},
+\code{\link{load_opta_psr_weekly}()},
+\code{\link{player_psr}()},
+\code{\link{soccer_stat_rating_definitions}()},
+\code{\link{stat_rating_names}()}
+}
+\concept{psr}

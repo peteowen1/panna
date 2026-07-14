@@ -46,3 +46,9 @@ Value tab to cap at GP=24 instead of 46. Without an explicit check,
 step 10b silently produced game_logs covering only the events it
 could see.
 }
+\seealso{
+Other validation: 
+\code{\link{assert_events_coverage}()},
+\code{\link{assert_step_output}()}
+}
+\concept{validation}

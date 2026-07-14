@@ -140,20 +140,15 @@ check_step <- function(step_num, step_name) {
   FALSE
 }
 
-message("\n")
-message(paste(rep("#", 70), collapse = ""))
-message("#")
-message("#   OPTA PANNA RATINGS PIPELINE")
-message("#")
-message(sprintf("#   Leagues: %s", paste(leagues, collapse = ", ")))
-message(sprintf("#   Seasons: %s", if (is.null(seasons)) "All available" else paste(seasons, collapse = ", ")))
-message(sprintf("#   Min season: %s", if (is.null(min_season)) "None" else min_season))
-message(sprintf("#   xMetrics enrichment: %s", use_xmetrics_features))
-message(sprintf("#   Start from step: %d", start_step))
-message(sprintf("#   Force rebuild from: %s",
-                if (is.null(force_rebuild_from)) "None (use cache)" else force_rebuild_from))
-message("#")
-message(paste(rep("#", 70), collapse = ""))
+print_pipeline_banner("OPTA PANNA RATINGS PIPELINE", c(
+  sprintf("Leagues: %s", paste(leagues, collapse = ", ")),
+  sprintf("Seasons: %s", if (is.null(seasons)) "All available" else paste(seasons, collapse = ", ")),
+  sprintf("Min season: %s", if (is.null(min_season)) "None" else min_season),
+  sprintf("xMetrics enrichment: %s", use_xmetrics_features),
+  sprintf("Start from step: %d", start_step),
+  sprintf("Force rebuild from: %s",
+          if (is.null(force_rebuild_from)) "None (use cache)" else force_rebuild_from)
+))
 
 # 5. Step 1: Load Opta Data ----
 

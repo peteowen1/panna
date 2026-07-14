@@ -54,6 +54,7 @@
 #'   player_id, player_name, position, n_caps_weighted, p_start,
 #'   mins_when_start, p_sub_given_bench, mins_when_sub, expected_minutes,
 #'   pct_team_minutes (sums to ~100 across the squad).
+#' @family expected minutes
 #' @export
 build_team_expected_minutes <- function(team,
                                          lineups,
@@ -215,7 +216,7 @@ build_team_expected_minutes <- function(team,
 #' @param rating_col Name of the rating column. Default `"panna"`.
 #' @return Single numeric -- `sum(rating * expected_minutes_norm) / 990`.
 #'   Equivalent to "what's the average panna rating of who'll be on the pitch."
-#' @export
+#' @keywords internal
 weight_rating_by_minutes <- function(team_em, ratings, rating_col = "panna") {
   if (nrow(team_em) == 0) return(NA_real_)
   ratings <- as.data.frame(ratings)
