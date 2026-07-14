@@ -18,6 +18,14 @@
 
 # 1. Configuration ----
 
+# When sourced standalone (outside run_predictions_opta.R) pipeline_utils.R
+# isn't loaded yet — source it here so resolve_blog_leagues() is available
+# regardless of entry point (direct Rscript, 10b_backfill_game_logs.R, or the
+# full pipeline).
+if (!exists("resolve_blog_leagues", mode = "function")) {
+  source(file.path("data-raw", "pipeline_utils.R"))
+}
+
 if (!exists("cache_dir")) cache_dir <- file.path("data-raw", "cache-predictions-opta")
 if (!dir.exists(cache_dir)) dir.create(cache_dir, recursive = TRUE)
 repo <- "peteowen1/pannadata"
@@ -36,22 +44,23 @@ xm_source <- if (identical(Sys.getenv("XMETRICS_SOURCE"), "remote")) "remote" el
 #   (2) continental    — UCL / UEL / UECL use "YYYY-YYYY" too
 #   (3) intl_tournament — WC / EURO use "YYYY Country"; map a summer
 #                         tournament to the domestic season ending that year.
-# Groups come from the shared canonical constant (constants.R: PANNA_LEAGUE_GROUPS),
-# so step 03 / skills / RAPM / 10b can't drift. Grouping drives season-label
-# resolution: domestic = "YYYY-YYYY"; calendar = "YYYY"; intl = "YYYY Country".
-domestic_leagues  <- PANNA_LEAGUE_GROUPS$domestic
-calendar_leagues  <- PANNA_LEAGUE_GROUPS$calendar    # calendar-year season labels
-continental_cups  <- PANNA_LEAGUE_GROUPS$continental
-intl_tournaments  <- PANNA_LEAGUE_GROUPS$intl
+# Groups come from resolve_blog_leagues() (pipeline_utils.R), backed by the
+# shared canonical constant (constants.R: PANNA_LEAGUE_GROUPS), so step 03 /
+# skills / RAPM / 10b can't drift. Grouping drives season-label resolution:
+# domestic = "YYYY-YYYY"; calendar = "YYYY"; intl = "YYYY Country".
+.blog_league_groups <- resolve_blog_leagues()
+domestic_leagues    <- .blog_league_groups$domestic_leagues
+calendar_leagues    <- .blog_league_groups$calendar_leagues    # calendar-year season labels
+continental_cups    <- .blog_league_groups$continental_cups
+intl_tournaments    <- .blog_league_groups$intl_tournaments
 # Leagues whose season label is resolved by year prefix rather than passed through
-season_label_leagues <- c(intl_tournaments, calendar_leagues)
+season_label_leagues <- .blog_league_groups$season_label_leagues
 # Override guard: backfill runs can process a league subset. CAUTION — the
 # per-season output parquet contains ONLY the processed leagues, so a subset
 # run must set upload_game_logs <- FALSE and merge into the existing
 # game_logs_<season>.parquet files instead of clobbering them.
 if (!exists("blog_leagues", inherits = FALSE)) {
-  blog_leagues    <- c(domestic_leagues, calendar_leagues,
-                       continental_cups, intl_tournaments)
+  blog_leagues <- .blog_league_groups$blog_leagues
 }
 
 # Seasons to export. Vector (new) or scalar `game_log_season` (back-compat).

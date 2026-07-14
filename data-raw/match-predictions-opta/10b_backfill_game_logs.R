@@ -23,6 +23,12 @@ if (!"panna" %in% (.packages())) {
   }
 }
 
+# run_backfill() lives in pipeline_utils.R — source it if this is running
+# standalone (outside run_predictions_opta.R, which sources it already).
+if (!exists("run_backfill", mode = "function")) {
+  source(file.path("data-raw", "pipeline_utils.R"))
+}
+
 # Seasons to backfill (2015-2016 onwards — matches xMetrics coverage).
 # Override-safe: callers can set `game_log_seasons` before sourcing.
 if (!exists("game_log_seasons", inherits = FALSE)) {
@@ -52,94 +58,25 @@ if (!exists("parallel_workers", inherits = FALSE)) parallel_workers <- 1L
 
 # Paths
 cache_dir <- file.path("data-raw", "cache-predictions-opta")
-if (!dir.exists(cache_dir)) dir.create(cache_dir, recursive = TRUE)
 
-# 2. Filter out already-built seasons ----
-
-if (!isTRUE(force_rebuild)) {
-  existing <- vapply(game_log_seasons, function(s) {
-    file.exists(file.path(cache_dir, sprintf("game_logs_%s.parquet", s)))
-  }, logical(1))
-  if (any(existing)) {
-    message(sprintf("Skipping already-built seasons: %s",
-                    paste(game_log_seasons[existing], collapse = ", ")))
-    message("  (set force_rebuild <- TRUE to rebuild)")
-    game_log_seasons <- game_log_seasons[!existing]
-  }
-}
-
-if (length(game_log_seasons) == 0) {
-  message("\nAll seasons already built. Nothing to do.")
-  message("Set force_rebuild <- TRUE at the top of this script to rebuild.")
-  return(invisible(NULL))
-}
-
-message(sprintf("\n=== Backfill plan ==="))
-message(sprintf("  Seasons to build: %s", paste(game_log_seasons, collapse = ", ")))
-message(sprintf("  Upload: %s", if (isTRUE(upload_game_logs)) "yes" else "no (dry run)"))
-message(sprintf("  Cache dir: %s", cache_dir))
-
-# 3. Delegate to 10b ----
+# 2. Delegate to the shared backfill driver (pipeline_utils.R) ----
 #
-# Two paths:
+# Two paths inside run_backfill():
 #   parallel_workers == 1  → single source of 10b (original behavior)
 #   parallel_workers >  1  → workers build per-season in parallel (no upload),
 #                            then main does a single alias + upload pass
 
-t0 <- Sys.time()
-
-if (parallel_workers <= 1L) {
-  source("data-raw/match-predictions-opta/10b_export_game_logs.R", local = FALSE)
-} else {
-  if (!requireNamespace("future", quietly = TRUE) ||
-      !requireNamespace("future.apply", quietly = TRUE)) {
-    stop("parallel_workers > 1 requires both `future` and `future.apply`. ",
-         "Install with: install.packages(c('future', 'future.apply'))")
-  }
-  message(sprintf("\n  Parallel mode: %d workers (multisession)", parallel_workers))
-
-  future::plan(future::multisession, workers = parallel_workers)
-  on.exit(future::plan(future::sequential), add = TRUE)
-
-  # Each worker is a fresh R session. 10b's config-guard pattern uses
-  # `exists(..., inherits = FALSE)` which only checks the evaluation env —
-  # so we must stage overrides in globalenv BEFORE sourcing with
-  # local = FALSE (which evaluates in globalenv).
-  worker_wd <- getwd()
-  .run_one_season <- function(s) {
-    setwd(worker_wd)  # workers may inherit a different cwd
-    suppressMessages(devtools::load_all(".", quiet = TRUE))
-    ge <- globalenv()
-    assign("game_log_seasons",  s,     envir = ge)
-    assign("upload_game_logs",  FALSE, envir = ge)
-    assign("build_game_logs",   TRUE,  envir = ge)
-    assign("use_skill_ratings", TRUE,  envir = ge)
-    assign("cache_dir",
-           file.path("data-raw", "cache-predictions-opta"),
-           envir = ge)
-    source("data-raw/match-predictions-opta/10b_export_game_logs.R",
-           local = FALSE)
-    p <- file.path(ge$cache_dir, sprintf("game_logs_%s.parquet", s))
-    if (file.exists(p)) p else NULL
-  }
-
-  built <- future.apply::future_lapply(
-    game_log_seasons, .run_one_season,
-    future.seed = NULL
-  )
-  built <- Filter(Negate(is.null), built)
-  message(sprintf("\n  Parallel build complete: %d/%d seasons produced",
-                  length(built), length(game_log_seasons)))
-
-  # Second pass — upload only, in main process.
-  if (isTRUE(upload_game_logs) && length(built) > 0) {
-    build_game_logs  <- FALSE
-    # Keep game_log_seasons restricted to those we built so alias picks the
-    # right "current" season.
-    source("data-raw/match-predictions-opta/10b_export_game_logs.R",
-           local = FALSE)
-  }
-}
-
-elapsed <- round(as.numeric(difftime(Sys.time(), t0, units = "mins")), 1)
-message(sprintf("\nBackfill complete in %.1f min", elapsed))
+run_backfill(
+  export_script    = "data-raw/match-predictions-opta/10b_export_game_logs.R",
+  seasons          = game_log_seasons,
+  seasons_var      = "game_log_seasons",
+  upload_var       = "upload_game_logs",
+  build_var        = "build_game_logs",
+  out_pattern      = "game_logs_%s.parquet",
+  cache_dir        = cache_dir,
+  force_rebuild    = force_rebuild,
+  upload           = upload_game_logs,
+  parallel_workers = parallel_workers,
+  extra_worker_globals = list(use_skill_ratings = use_skill_ratings),
+  label            = "Backfill"
+)
