@@ -53,14 +53,14 @@ data_location_report <- function(leagues = NULL) {
     }
     size_mb <- file.info(p)$size / 1024^2
     info <- tryCatch({
-      conn <- DBI::dbConnect(duckdb::duckdb())
-      path_q <- normalizePath(p, winslash = "/", mustWork = TRUE)
-      pairs <- DBI::dbGetQuery(conn, sprintf(
-        "SELECT competition, COUNT(DISTINCT season) AS n_seasons FROM '%s' GROUP BY competition ORDER BY competition",
-        path_q
-      ))
-      DBI::dbDisconnect(conn, shutdown = TRUE)
-      list(n_pairs = sum(pairs$n_seasons), pairs = pairs)
+      .with_duckdb(function(conn) {
+        path_q <- normalizePath(p, winslash = "/", mustWork = TRUE)
+        pairs <- DBI::dbGetQuery(conn, sprintf(
+          "SELECT competition, COUNT(DISTINCT season) AS n_seasons FROM '%s' GROUP BY competition ORDER BY competition",
+          path_q
+        ))
+        list(n_pairs = sum(pairs$n_seasons), pairs = pairs)
+      })
     }, error = function(e) list(n_pairs = NA, pairs = NULL,
                                   err = conditionMessage(e)))
     consolidated_summary[[tbl]] <- info
@@ -113,15 +113,15 @@ data_location_report <- function(leagues = NULL) {
       # Consolidated seasons (use lineups as canonical)
       cons_seasons <- if (file.exists(file.path(od, "opta_lineups.parquet"))) {
         tryCatch({
-          conn <- DBI::dbConnect(duckdb::duckdb())
-          rs <- DBI::dbGetQuery(conn, sprintf(
-            "SELECT DISTINCT season FROM '%s' WHERE competition = '%s'",
-            normalizePath(file.path(od, "opta_lineups.parquet"),
-                           winslash = "/", mustWork = TRUE),
-            lg
-          ))
-          DBI::dbDisconnect(conn, shutdown = TRUE)
-          sort(as.character(rs$season))
+          .with_duckdb(function(conn) {
+            rs <- DBI::dbGetQuery(conn, sprintf(
+              "SELECT DISTINCT season FROM '%s' WHERE competition = '%s'",
+              normalizePath(file.path(od, "opta_lineups.parquet"),
+                             winslash = "/", mustWork = TRUE),
+              lg
+            ))
+            sort(as.character(rs$season))
+          })
         }, error = function(e) character(0))
       } else character(0)
       # Per-season union (canonical: lineups)

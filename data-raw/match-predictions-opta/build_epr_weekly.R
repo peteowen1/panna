@@ -28,6 +28,11 @@
 ##         + cache-opta/team_season_strength.parquet (for opp_def_rating)
 ## Output: opta_epr_weekly.parquet — one row per (player_id × snapshot_date)
 ##
+## Publish: this script now uploads the parquet to opta-latest itself via
+## vb_publish() (section 6b) -- epr-weekly-snapshot.yml no longer has a
+## separate `gh release upload` step. Set upload_epr <- FALSE before sourcing
+## to skip publishing (e.g. local test runs).
+##
 ## League offsets are computed IN-RUN (no cached input) via build_league_network()
 ## — the same same-season co-occurrence estimator PSR uses — run on offensive and
 ## defensive EPV (see section 3b). Migrated 2026-06-23 off the legacy
@@ -307,6 +312,23 @@ t_log(sprintf("Output: %d rows across %d snapshots, %d unique players",
 write_parquet(epr_weekly, out_path)
 t_log(sprintf("Saved -> %s (%.1f MB)",
               out_path, file.size(out_path) / 1e6))
+
+## --- 6b. Publish to opta-latest (manifest-gated) ---
+## vb_publish() (R/versebus.R) replaces epr-weekly-snapshot.yml's separate
+## `gh release upload` step: hashes first, uploads with bounded retries,
+## verifies the live asset list, then writes bus_manifest.json last -- same
+## publish path as 08b_export_psr_weekly.R / 13_publish_release_data.R,
+## unified onto opta-latest (Pete's decision 2026-07-14). Upload toggle
+## mirrors 08b/10b's upload_psr/upload_game_logs -- set upload_epr <- FALSE
+## before sourcing to build the parquet locally without publishing.
+if (!exists("upload_epr", inherits = FALSE)) upload_epr <- TRUE
+if (!isTRUE(upload_epr)) {
+  t_log("upload_epr = FALSE -- wrote parquet locally, NOT publishing.")
+} else {
+  manifest <- vb_publish(out_path, repo = "peteowen1/pannadata", tag = "opta-latest",
+                         rows = c(opta_epr_weekly.parquet = nrow(epr_weekly)))
+  t_log(sprintf("Published -> opta-latest (generation %s)", manifest$generation))
+}
 
 ## --- 6. Latest snapshot sanity check ---
 latest <- max(epr_weekly$snapshot_date)

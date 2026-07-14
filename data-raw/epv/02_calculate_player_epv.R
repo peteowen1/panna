@@ -1,6 +1,11 @@
 # 02_calculate_player_epv.R
 # Calculate player-level EPV metrics using trained models
 #
+# DELIBERATELY OPT-IN / MANUAL: feeds the multi-target RAPM cache path in
+# 03_splint_creation.R (player_game_epv), which never fires in CI -- the
+# per-game value caches this step produces don't exist there (decision
+# 2026-07-14).
+#
 # Run from panna directory: Rscript data-raw/epv/02_calculate_player_epv.R
 #
 # Requires:
