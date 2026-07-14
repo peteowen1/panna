@@ -122,23 +122,16 @@ jobs:
           [ "$MISSING" -eq 0 ] || exit 1
 
       - name: Build weekly EPR snapshots
+        # build_epr_weekly.R now publishes opta_epr_weekly.parquet to opta-latest
+        # itself via vb_publish() (manifest-gated) -- see section 6b of the
+        # script. The separate `gh release upload` step this workflow used to
+        # run here was removed as redundant (Pete's decision 2026-07-14,
+        # unifying pipeline uploads onto vb_publish).
         env:
           EPR_FORCE_FULL_REBUILD: ${{ inputs.force_full_rebuild == true && '1' || '' }}
           GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
         run: |
           Rscript data-raw/match-predictions-opta/build_epr_weekly.R
-
-      - name: Upload to opta-latest
-        env:
-          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
-        run: |
-          OUT="../pannadata/data/opta/opta_epr_weekly.parquet"
-          if [ ! -f "$OUT" ]; then
-            echo "FATAL: $OUT not produced — nothing to upload"
-            exit 1
-          fi
-          gh release upload opta-latest "$OUT" --repo peteowen1/pannadata --clobber
-          echo "Uploaded opta_epr_weekly.parquet to opta-latest"
 
       - name: Snapshot summary
         if: always()
