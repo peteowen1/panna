@@ -13,10 +13,14 @@ navbar:
       menu:
       - text: Getting Started
         href: articles/getting-started.html
-      - text: Pipeline Walkthrough
-        href: articles/pipeline-walkthrough.html
-      - text: Player Ratings Methodology
+      - text: Player Ratings (EPR, PSR, Panna, Piero)
         href: articles/player-ratings.html
+      - text: Pipeline Anatomy
+        href: articles/pipeline-walkthrough.html
+      - text: Match Prediction and Tournament Simulation
+        href: articles/match-prediction.html
+      - text: Data Access and Publishing
+        href: articles/data-bus.html
       - text: Data Sources Guide
         href: articles/data-sources.html
 
@@ -25,8 +29,10 @@ articles:
   navbar: ~
   contents:
   - getting-started
-  - pipeline-walkthrough
   - player-ratings
+  - pipeline-walkthrough
+  - match-prediction
+  - data-bus
   - data-sources
 
 reference:
