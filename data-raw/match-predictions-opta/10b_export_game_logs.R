@@ -558,7 +558,7 @@ validate_game_log_schema <- function(dt, league, season) {
       tryCatch({
         xg_disp <- data.table::as.data.table(
           load_opta_xmetrics(league, season = league_season,
-                             source = "local", by_match = TRUE))
+                             source = xm_source, by_match = TRUE))
         disp_cols <- intersect(c("goals_minus_xgot", "placement_added", "xgot"),
                                names(xg_disp))
         if (length(disp_cols) > 0 && all(c("player_id", "match_id") %in% names(xg_disp))) {
