@@ -521,25 +521,35 @@ if (nrow(upcoming) > 0) {
   decay_params_path <- file.path(skill_cache_dir, "02b_decay_params.rds")
   skill_spm_path <- file.path(skill_cache_dir, "03_skill_spm.rds")
 
-  if (isTRUE(use_skill_ratings) && file.exists(match_stats_path) &&
-      file.exists(skill_spm_path)) {
+  # Only load match history for players in upcoming lineups (memory optimization).
+  # Computed BEFORE the isTRUE(use_skill_ratings) gate below so an empty result
+  # (e.g. all upcoming fixtures are TBD knockout slots with no resolved teams --
+  # confirmed root cause of 2026-07-16 dev OOM crashes 3 days before the WC
+  # final) short-circuits before ever touching match_stats.rds (1.9M rows x
+  # 421 cols, ~5.9GB). The old code loaded match_stats unconditionally, found
+  # nothing to filter FOR (0 upcoming players), and silently fell through to
+  # processing the ENTIRE unfiltered table -- exactly backwards from the
+  # "nothing to estimate" case it should have been. fixture_ratings staying
+  # NULL is the pipeline's own designed fallback (falls back to `ratings`,
+  # see fixture_rat <- if (!is.null(fixture_ratings)) fixture_ratings else
+  # ratings below), so skipping here is behaviorally identical to what the
+  # old code intended when it checked length(upcoming_player_ids) > 0.
+  upcoming_player_ids <- unique(unlist(lapply(upcoming_lineups, function(x) x$player_id)))
+  if (isTRUE(use_skill_ratings) && length(upcoming_player_ids) == 0) {
+    message("  No players in upcoming lineups (all fixtures TBD?) — skipping live skill estimate, using seasonal fallback")
+  }
+
+  if (isTRUE(use_skill_ratings) && length(upcoming_player_ids) > 0 &&
+      file.exists(match_stats_path) && file.exists(skill_spm_path)) {
     tryCatch({
       message("  Computing date-specific skill estimates for fixtures...")
 
-      # Only load match history for players in upcoming lineups (memory optimization)
-      upcoming_player_ids <- unique(unlist(lapply(upcoming_lineups, function(x) x$player_id)))
-      message(sprintf("  upcoming_player_ids: %d (%s)", length(upcoming_player_ids),
-                      paste(head(upcoming_player_ids, 3), collapse = ", ")))
       match_stats <- readRDS(match_stats_path)
-      message(sprintf("  match_stats loaded: %d rows, has player_id col: %s",
-                      nrow(match_stats), "player_id" %in% names(match_stats)))
-      if (length(upcoming_player_ids) > 0 && "player_id" %in% names(match_stats)) {
+      if ("player_id" %in% names(match_stats)) {
         match_stats <- match_stats[match_stats$player_id %in% upcoming_player_ids, ]
-        message(sprintf("  Filtered match_stats to %d players (%d rows)",
-                        length(upcoming_player_ids), nrow(match_stats)))
-      } else {
-        message("  SKIPPED match_stats filter (empty upcoming_player_ids or missing player_id col) -- using FULL table")
       }
+      message(sprintf("  Filtered match_stats to %d players (%d rows)",
+                      length(upcoming_player_ids), nrow(match_stats)))
 
       decay_params <- if (file.exists(decay_params_path)) readRDS(decay_params_path) else NULL
       skill_spm <- readRDS(skill_spm_path)
