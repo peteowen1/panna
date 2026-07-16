@@ -25,7 +25,7 @@
 #'
 #' Detection mirrors \code{extract_player_timing_from_events()} in
 #' \code{splint_creation.R}: \code{type_id == 17} (Card) carrying qualifier 33
-#' (straight red) or 14 (second yellow). The earliest such card per
+#' (straight red) or 32 (second yellow). The earliest such card per
 #' (match, team) is taken, and the flag is set on the single chain action of
 #' the carded team nearest that card's time (matching the SPADL clock,
 #' \code{time_seconds = minute*60 + second}). One flagged action per red card is
@@ -70,7 +70,7 @@ add_red_card_to_chains <- function(chains, events) {
     if (is.na(qj)) return(FALSE)
     parsed <- tryCatch(jsonlite::fromJSON(qj), error = function(e) NULL)
     if (is.null(parsed)) return(FALSE)
-    any(c("33", "14") %in% names(parsed))
+    any(c("33", "32") %in% names(parsed))
   }
   cards[, is_red := vapply(qualifier_json, detect_red_in_qj, logical(1))]
   reds <- cards[is_red == TRUE]

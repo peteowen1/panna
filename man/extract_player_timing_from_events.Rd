@@ -31,7 +31,7 @@ Sources:
 qualifier 131 = position number (1-11 = starter, 0 = bench).
 \item Sub on: \code{type_id == 19} (Player On).
 \item Sub off: \code{type_id == 18} (Player Off).
-\item Red card off: \code{type_id == 17} (Card) with qualifier 33 (red) or 14 (second yellow).
+\item Red card off: \code{type_id == 17} (Card) with qualifier 33 (straight red) or 32 (second yellow).
 \item Match end: \code{type_id == 30} with \code{period_id == 2} (used as default off_minute
 for finishers who never came off).
 }

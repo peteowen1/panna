@@ -199,6 +199,58 @@ test_that("create_wp_features errors without home_teams or match_results", {
   expect_error(create_wp_features(spadl), "must be provided")
 })
 
+test_that("add_red_card_to_chains flags a straight red (qualifier 33)", {
+  chains <- data.frame(
+    match_id = "m1", team_id = c("t1", "t1", "t2"),
+    time_seconds = c(100, 2500, 2600), stringsAsFactors = FALSE
+  )
+  events <- data.frame(
+    match_id = "m1", type_id = 17L, team_id = "t1", minute = 41L,
+    qualifier_json = '{"33":null}', stringsAsFactors = FALSE
+  )
+
+  result <- add_red_card_to_chains(chains, events)
+
+  # Card at 41*60 = 2460s -- nearest t1 action is time_seconds 2500.
+  expect_equal(result$red_card, c(0L, 1L, 0L))
+})
+
+test_that("add_red_card_to_chains flags a second-yellow dismissal (qualifier 32) (panna#141)", {
+  # This is the case the pre-fix `c("33", "14")` check silently missed: a
+  # second-yellow send-off carries qualifier 32, never 14. Before the fix, a
+  # second-yellow player was never flagged red here, leaving red_card_diff at
+  # its dead-constant 0 for ~45% of real red-card matches.
+  chains <- data.frame(
+    match_id = "m1", team_id = c("t1", "t1", "t2"),
+    time_seconds = c(100, 4500, 4600), stringsAsFactors = FALSE
+  )
+  events <- data.frame(
+    match_id = "m1", type_id = 17L, team_id = "t1", minute = 75L,
+    qualifier_json = '{"32":null}', stringsAsFactors = FALSE
+  )
+
+  result <- add_red_card_to_chains(chains, events)
+
+  # Card at 75*60 = 4500s -- nearest t1 action is time_seconds 4500.
+  expect_equal(result$red_card, c(0L, 1L, 0L))
+})
+
+test_that("add_red_card_to_chains does not treat qualifier 14 alone as a red card", {
+  # Qualifier 14 never appears on real red-card events (panna#141) -- a card
+  # event carrying only 14 (neither 33 nor 32) must NOT be flagged red.
+  chains <- data.frame(
+    match_id = "m1", team_id = "t1", time_seconds = 100, stringsAsFactors = FALSE
+  )
+  events <- data.frame(
+    match_id = "m1", type_id = 17L, team_id = "t1", minute = 10L,
+    qualifier_json = '{"14":null}', stringsAsFactors = FALSE
+  )
+
+  result <- add_red_card_to_chains(chains, events)
+
+  expect_equal(result$red_card, 0L)
+})
+
 
 # Tests for wp_credit.R
 

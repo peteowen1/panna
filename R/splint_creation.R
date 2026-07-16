@@ -1427,7 +1427,7 @@ create_opta_processed_data <- function(opta_lineups, opta_events = NULL,
 #'   qualifier 131 = position number (1-11 = starter, 0 = bench).
 #' - Sub on: `type_id == 19` (Player On).
 #' - Sub off: `type_id == 18` (Player Off).
-#' - Red card off: `type_id == 17` (Card) with qualifier 33 (red) or 14 (second yellow).
+#' - Red card off: `type_id == 17` (Card) with qualifier 33 (straight red) or 32 (second yellow).
 #' - Match end: `type_id == 30` with `period_id == 2` (used as default off_minute
 #'   for finishers who never came off).
 #'
@@ -1508,14 +1508,14 @@ extract_player_timing_from_events <- function(match_events) {
   sub_ons  <- subs[type_id == 19L, .(match_id, player_id, on_event_time = sub_time)]
   sub_offs <- subs[type_id == 18L, .(match_id, player_id, off_event_time = sub_time)]
 
-  # 4) Red cards (type_id 17 + qualifier 33 or 14)
+  # 4) Red cards (type_id 17 + qualifier 33 straight red or 32 second yellow)
   cards <- dt[type_id == 17L, .(match_id, team_id, player_id, qualifier_json,
                                   card_time = eff_minute)]
   detect_red_in_qj <- function(qj) {
     if (is.na(qj)) return(FALSE)
     parsed <- tryCatch(jsonlite::fromJSON(qj), error = function(e) NULL)
     if (is.null(parsed)) return(FALSE)
-    any(c("33", "14") %in% names(parsed))
+    any(c("33", "32") %in% names(parsed))
   }
   if (nrow(cards) > 0) {
     cards[, is_red := vapply(qualifier_json, detect_red_in_qj, logical(1))]
