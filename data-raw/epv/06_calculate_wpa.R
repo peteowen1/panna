@@ -73,6 +73,67 @@ for (league in LEAGUES) {
       # Assign credit between actor and receiver
       spadl_wpa <- assign_wpa_credit(spadl_wpa)
 
+      # Persist a slim per-action, home-perspective net WP-delta stream for
+      # the multi-target RAPM per-splint attribution path
+      # (FABLE-PRIOR-FIX-PLAN.md D2/Step 2).
+      #
+      # F2 (review): `wpa` (add_wp_vars(), R/wp_model.R:725-734) is the
+      # acting-team-POV delta AFTER per-match mean-centering (`wpa := wpa -
+      # mean(wpa), by = match_id` -- removes WP-model calibration bias).
+      # Folding that CENTERED value into home-POV via a per-row sign flip
+      # gives the match's centering constant `m` OPPOSITE signs on home vs
+      # away rows: summing over a match, home-acting rows contribute `-m *
+      # n_home` and away-acting rows contribute `+m * n_away`, a net bias of
+      # `m * (n_away - n_home)` that does not cancel unless the match has an
+      # exactly equal number of home- and away-acting rows. Per-splint sums
+      # of the persisted stream would then carry a bias proportional to
+      # home/away action-count imbalance -- not the exact zero-sum quantity
+      # D2's single net WPA-RAPM column requires.
+      #
+      # Fix: recompute the UNCENTERED per-action delta directly from `wp`
+      # (the raw, uncentered per-row win probability -- untouched by
+      # centering) and `team_id`, reproducing add_wp_vars()'s exact
+      # pre-centering formula (R/wp_model.R:710-731), including its
+      # end-of-match fallback (last action: wp_next -> wp_label, or wp
+      # itself if wp_label is absent; team_id_next -> team_id, so the
+      # same-team branch applies). add_wp_vars() itself drops `wp_next` /
+      # `team_id_next` before returning, so they are rebuilt here from `wp`
+      # -- row order is unchanged since assign_wpa_credit() does not reorder,
+      # so the by-match_id lead-shift reproduces the same next-action pairing
+      # add_wp_vars() used. The sign flip on the UNCENTERED delta is then
+      # exact: there is only one P(home wins) value at each instant, so a
+      # change in it is mechanically the equal-and-opposite change in
+      # P(away wins) -- independent of any centering constant.
+      wpa_raw_dt <- data.table::copy(spadl_wpa)
+      wpa_raw_dt[, wp_next_raw := data.table::shift(wp, type = "lead"), by = match_id]
+      wpa_raw_dt[, team_id_next_raw := data.table::shift(team_id, type = "lead"), by = match_id]
+      if ("wp_label" %in% names(wpa_raw_dt)) {
+        wpa_raw_dt[is.na(wp_next_raw), wp_next_raw := wp_label]
+      } else {
+        wpa_raw_dt[is.na(wp_next_raw), wp_next_raw := wp]
+      }
+      wpa_raw_dt[is.na(team_id_next_raw), team_id_next_raw := team_id]
+      wpa_raw_dt[, wpa_raw := data.table::fifelse(
+        team_id_next_raw == team_id,
+        wp_next_raw - wp,
+        (1 - wp_next_raw) - wp
+      )]
+
+      wpa_home_dt <- wpa_raw_dt[, .(
+        match_id, period_id, time_seconds,
+        wp_delta_home = data.table::fifelse(is_home == 1L, wpa_raw, -wpa_raw)
+      )]
+      # C1: filter rows with NA in the delta or its inputs before writing --
+      # mirrors the EPV stream's explicit !is.na() inclusion filters.
+      wpa_home_dt <- wpa_home_dt[!is.na(wp_delta_home)]
+      rm(wpa_raw_dt)
+
+      wpa_home_file <- file.path(OUTPUT_DIR,
+                                  sprintf("match_action_wpa_%s_%s.parquet", league, season))
+      arrow::write_parquet(wpa_home_dt, wpa_home_file)
+      cli_alert_info("  {nrow(wpa_home_dt)} home-perspective WPA rows -> {wpa_home_file}")
+      rm(wpa_home_dt)
+
       # Write per-action WPA for chain enrichment by pannadata's
       # build_chains_ci.R. Mirrors the per-season action_equity_*.parquet
       # pattern from 10c_export_equity.R, but sharded per (league, season)
