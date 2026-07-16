@@ -521,37 +521,47 @@ vb_publish <- function(paths, repo, tag,
   verify_delays <- c(2, 5, 10, 20, 30, 30)
   missing <- character(0)
   mismatched <- character(0)
-  mismatch_detail <- character(0)
+  verify_detail <- character(0)
   for (verify_attempt in seq_along(c(verify_delays, NA))) {
     listed <- vb_list_assets(repo, tag)
     missing <- character(0)
     mismatched <- character(0)
-    mismatch_detail <- character(0)
+    verify_detail <- character(0)
     for (e in entries) {
       row <- listed[listed$name == e$name, , drop = FALSE]
       if (nrow(row) == 0L) {
         missing <- c(missing, e$name)
+        verify_detail <- c(verify_detail, sprintf("%s: missing from listing", e$name))
       } else if (!isTRUE(all.equal(row$size[1L], e$bytes))) {
         mismatched <- c(mismatched, e$name)
-        mismatch_detail <- c(mismatch_detail,
+        verify_detail <- c(verify_detail,
           sprintf("%s: live=%s local=%s", e$name, row$size[1L], e$bytes))
       }
     }
     if (length(missing) == 0L && length(mismatched) == 0L) break
     if (verify_attempt <= length(verify_delays)) {
+      # Build the detail text as a plain variable and reference it via {}
+      # rather than splicing raw asset names/values in as their own msg
+      # vector element -- cli glue-templates every element of a cli_*() msg,
+      # so a literal '{'/'}' in an asset name would otherwise be evaluated
+      # as R code instead of printed (the same class of bug as the
+      # "cli glue-literal crash" this codebase has hit before).
+      detail_text <- paste(verify_detail, collapse = "; ")
       cli::cli_alert_warning(
-        "Post-upload verify race (attempt {verify_attempt}/{length(verify_delays)}): {paste(mismatch_detail, collapse = '; ')} -- retrying in {verify_delays[verify_attempt]}s")
+        "Post-upload verify race (attempt {verify_attempt}/{length(verify_delays)}): {detail_text} -- retrying in {verify_delays[verify_attempt]}s")
       Sys.sleep(verify_delays[verify_attempt])
     }
   }
-  if (length(missing) > 0L) {
-    .vb_abort("Post-upload verify: {.val {missing}} missing from {repo}@{tag}",
-              "vb_error_transient")
-  }
-  if (length(mismatched) > 0L) {
-    .vb_abort(c("Post-upload verify: size mismatch at {repo}@{tag} (persisted after retries)",
-               "x" = paste(mismatch_detail, collapse = "; ")),
-              "vb_error_integrity")
+  if (length(missing) > 0L || length(mismatched) > 0L) {
+    # Report BOTH failure kinds together -- reporting only the first
+    # (missing before mismatched) would silently drop the byte-delta detail
+    # for a genuinely corrupted asset whenever a DIFFERENT asset in the same
+    # publish is also missing.
+    detail_text <- paste(verify_detail, collapse = "; ")
+    subclass <- if (length(mismatched) > 0L) "vb_error_integrity" else "vb_error_transient"
+    .vb_abort(c("Post-upload verify failed at {repo}@{tag} (persisted after retries)",
+               "x" = "{detail_text}"),
+              subclass)
   }
 
   # 6. Manifest last (merge for partial publishes), with one retry.

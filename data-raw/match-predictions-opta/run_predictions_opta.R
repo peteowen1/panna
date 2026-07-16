@@ -109,8 +109,14 @@ check_pred_critical <- function(result) {
                                      ".step_isolated_config.rds")
 
 .write_pred_isolated_config <- function() {
+  # publish_files is a cross-step `<<-` accumulator (declared at top level,
+  # written by steps 09/10/10b/10c/10d/12, read by step 13) -- excluded here
+  # even though steps 2/2b don't currently write to it, so a future edit
+  # that adds a publish_files write to either isolated step fails loudly
+  # (object not found in the child) instead of silently losing the write
+  # across the subprocess boundary.
   nms <- setdiff(ls(globalenv()),
-                 c("step_results", "pipeline_failed", "pipeline_start"))
+                 c("step_results", "pipeline_failed", "pipeline_start", "publish_files"))
   nms <- nms[!vapply(nms, function(n) is.function(get(n, envir = globalenv())),
                      logical(1))]
   saveRDS(mget(nms, envir = globalenv()), .pred_isolated_cfg_path)

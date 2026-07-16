@@ -534,7 +534,16 @@ if (nrow(upcoming) > 0) {
   # see fixture_rat <- if (!is.null(fixture_ratings)) fixture_ratings else
   # ratings below), so skipping here is behaviorally identical to what the
   # old code intended when it checked length(upcoming_player_ids) > 0.
-  upcoming_player_ids <- unique(unlist(lapply(upcoming_lineups, function(x) x$player_id)))
+  # Wrapped in its own tryCatch (rather than left to error uncaught) so this
+  # still degrades to the seasonal fallback below, matching the safety net
+  # the surrounding block already provides for every other failure mode here.
+  upcoming_player_ids <- tryCatch(
+    unique(unlist(lapply(upcoming_lineups, function(x) x$player_id))),
+    error = function(e) {
+      warning(sprintf("Could not compute upcoming_player_ids: %s (using seasonal fallback)",
+                      conditionMessage(e)), call. = FALSE)
+      character(0)
+    })
   if (isTRUE(use_skill_ratings) && length(upcoming_player_ids) == 0) {
     message("  No players in upcoming lineups (all fixtures TBD?) — skipping live skill estimate, using seasonal fallback")
   }
@@ -547,9 +556,12 @@ if (nrow(upcoming) > 0) {
       match_stats <- readRDS(match_stats_path)
       if ("player_id" %in% names(match_stats)) {
         match_stats <- match_stats[match_stats$player_id %in% upcoming_player_ids, ]
+        message(sprintf("  Filtered match_stats to %d players (%d rows)",
+                        length(upcoming_player_ids), nrow(match_stats)))
+      } else {
+        message(sprintf("  match_stats has no player_id column — using FULL table (%d rows), NOT filtered",
+                        nrow(match_stats)))
       }
-      message(sprintf("  Filtered match_stats to %d players (%d rows)",
-                      length(upcoming_player_ids), nrow(match_stats)))
 
       decay_params <- if (file.exists(decay_params_path)) readRDS(decay_params_path) else NULL
       skill_spm <- readRDS(skill_spm_path)
