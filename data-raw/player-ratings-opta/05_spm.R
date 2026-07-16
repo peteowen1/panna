@@ -546,10 +546,13 @@ cat("Saved to cache-opta/05_spm.rds\n")
 # 14. Multi-Target SPM (optional) ----
 # Fit SPM predicting each value metric RAPM if multi-target results exist
 
-use_multi_target <- if (exists("use_multi_target")) use_multi_target else TRUE
+# D6 (FABLE-PRIOR-FIX-PLAN.md): experimental gate, default FALSE -- see
+# 04_rapm.R for rationale (inherits = FALSE for the same dplyr-collision
+# reason as other pipeline config guards).
+run_multi_target <- if (exists("run_multi_target", inherits = FALSE)) run_multi_target else FALSE
 multi_rapm_path <- file.path(cache_dir, "04_rapm_multi.rds")
 
-if (use_multi_target && file.exists(multi_rapm_path)) {
+if (run_multi_target && file.exists(multi_rapm_path)) {
   cat("\n=== Multi-Target SPM ===\n")
   multi_rapm <- readRDS(multi_rapm_path)
 

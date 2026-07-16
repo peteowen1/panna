@@ -72,6 +72,7 @@
 #'       \code{c(p_t1, p_draw, p_t2, lambda_t1, lambda_t2)} for O(1) access.}
 #'     \item{team_elo}{named numeric vector of each team's pre-tournament Elo.}
 #'   }
+#' @family world cup simulation
 #' @export
 build_knockout_lookup <- function(match_dataset, goals_models, outcome_result,
                                     season = "2026 Canada-Mexico-USA",

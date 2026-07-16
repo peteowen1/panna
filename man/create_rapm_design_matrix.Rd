@@ -42,3 +42,13 @@ Creates the design matrix with 2 rows per splint (one per team perspective):
 \item Replacement columns: replacement_off, replacement_def for low-minute players
 }
 }
+\seealso{
+Other rapm: 
+\code{\link{create_all_splints}()},
+\code{\link{extract_period_end_times}()},
+\code{\link{extract_player_timing_from_events}()},
+\code{\link{extract_rapm_ratings}()},
+\code{\link{fit_rapm}()},
+\code{\link{fit_rapm_with_prior}()}
+}
+\concept{rapm}

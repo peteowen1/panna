@@ -13,14 +13,21 @@
 # on pruned snapshots in data-raw/debug/_validate_lambda_pruned.R) instead of re-running
 # cv.glmnet for every date.
 #
-# Inputs: cache-opta/03_splints.rds, cache-skills/03_skill_spm.rds, opta_fixtures.parquet.
+# Inputs: cache-opta/03_splints.rds, cache-skills/03_skill_spm.rds (fallback/burn-in),
+# cache-skills/03_skill_spm_asof.rds (expanding-window, preferred), opta_fixtures.parquet.
 # Output: career_panna_asof.parquet (player_id, ref_date, panna, panna_offense,
 # panna_defense, total_minutes), optionally uploaded to the ratings-data release.
 #
-# PRIOR caveat: skill_spm is the as-of-now career-trait prior (a second-order leak via
-# the shrinkage target only; the first-order result-leak — the match being in the
-# training splints — is removed by the date filter). A future weekly build can re-fit
-# the prior as-of-date too.
+# PRIOR caveat (RESOLVED 2026-07 — FABLE-ASOF-EXPERIMENTS.md sec 4, the promotion of this
+# file's own header caveat that H3 called for): skill_spm used to be the as-of-NOW
+# career-trait prior for every snapshot — a second-order leak via the shrinkage target
+# (the first-order result-leak, the match being in the training splints, was already
+# removed by the date filter above). Each snapshot now picks the expanding-window
+# skill-SPM for its own reference year (03_skill_spm.R section 12 / R/spm_asof.R:
+# fit_expanding_skill_spm(), trained ONLY on seasons before that year) when
+# 03_skill_spm_asof.rds is present, closing that second-order leak too. Falls back to
+# the all-history skill_spm (hindsight) with a loud warning if the as-of file is
+# missing, so an older/partial cache degrades visibly rather than silently.
 
 library(arrow)
 library(data.table)
@@ -56,6 +63,40 @@ cat("\n=== Loading inputs ===\n")
 sd <- readRDS(splints_path)
 sd <- filter_bad_xg_data(sd, zero_xg_threshold = ZERO_XG_THRESHOLD_OPTA, verbose = FALSE)$splint_data
 skill_spm <- readRDS(spm_path)
+
+# Expanding-window skill-SPM (FABLE-ASOF-EXPERIMENTS.md sec 4): a list keyed
+# by cutoff year, each trained ONLY on seasons before that year. Optional —
+# older/partial caches (or a fresh clone that hasn't run 03_skill_spm.R's
+# asof section) fall back to the all-history `skill_spm` above, loudly.
+skill_spm_asof_path <- if (exists("skill_spm_asof_path", inherits = FALSE)) skill_spm_asof_path else
+  file.path(cache_skills, "03_skill_spm_asof.rds")
+skill_spm_asof <- if (file.exists(skill_spm_asof_path)) readRDS(skill_spm_asof_path) else NULL
+if (is.null(skill_spm_asof) || length(skill_spm_asof) == 0) {
+  warning(paste(
+    "No expanding-window skill-SPM found at", skill_spm_asof_path, "-- every",
+    "snapshot will use the ALL-HISTORY (hindsight-contaminated) skill_spm prior.",
+    "Run 03_skill_spm.R's asof section first for point-in-time weights",
+    "(FABLE-ASOF-EXPERIMENTS.md sec 4)."), call. = FALSE)
+  asof_years <- integer(0)
+} else {
+  asof_years <- sort(as.integer(names(skill_spm_asof)))
+  cat(sprintf("  expanding-window skill-SPM: %d cutoff years available (%d-%d)\n",
+              length(asof_years), min(asof_years), max(asof_years)))
+}
+
+# Pick the as-of skill-SPM for reference date D: the model trained on seasons
+# strictly before season_end_year(D) -- an honest, point-in-time prior. Dates
+# before the earliest available cutoff year use that earliest model
+# (first-K burn-in, sec 4) rather than the all-history fit; only falls back
+# to the hindsight `skill_spm` if the asof list is entirely missing.
+.pick_skill_spm_asof <- function(D) {
+  if (length(asof_years) == 0) return(skill_spm)
+  ref_year <- .season_end_year_for_date(D)
+  candidates <- asof_years[asof_years <= ref_year]
+  chosen <- if (length(candidates) > 0) max(candidates) else min(asof_years)
+  skill_spm_asof[[as.character(chosen)]]
+}
+
 fx <- as.data.table(read_parquet(fx_path))[, .(match_id, match_date = as.Date(match_date))][!is.na(match_date)]
 # Bound the grid by SPLINT coverage (the RAPM era ~2015+), NOT the full fixtures
 # history — opta_fixtures contains historical matches back to ~2000 that have no
@@ -105,9 +146,10 @@ for (i in seq_along(ref_dates)) {
   if (!is.null(sd$match_info) && "match_id" %in% names(sd$match_info))
     sd2$match_info <- sd$match_info[sd$match_info$match_id %in% keep, , drop = FALSE]
 
+  snapshot_skill_spm <- .pick_skill_spm_asof(D)
   t0 <- Sys.time()
   res <- tryCatch(
-    fit_career_rapm(sd2, fx, skill_spm = skill_spm, halflife_days = halflife,
+    fit_career_rapm(sd2, fx, skill_spm = snapshot_skill_spm, halflife_days = halflife,
                     reference_date = D, min_minutes = MIN_MINUTES_RAPM_FIT,
                     lambda_formula = lambda_formula),
     error = function(e) { message("  FIT FAILED ", D, ": ", conditionMessage(e)); NULL })
@@ -116,9 +158,10 @@ for (i in seq_along(ref_dates)) {
   r <- as.data.table(res$ratings)[
     , .(player_id, ref_date = D, panna, panna_offense, panna_defense, total_minutes)]
   out[[as.character(D)]] <- r
-  cat(sprintf("[%d/%d] %s: %d players (%d matches), %.1f min\n",
-              i, length(ref_dates), as.character(D), nrow(r),
-              length(keep), as.numeric(difftime(Sys.time(), t0, units = "mins"))))
+  cat(sprintf("[%d/%d] %s: %d players (%d matches), skill_spm cutoff_year=%s, %.1f min\n",
+              i, length(ref_dates), as.character(D), nrow(r), length(keep),
+              if (length(asof_years) > 0) snapshot_skill_spm$cutoff_year %||% "?" else "all-history",
+              as.numeric(difftime(Sys.time(), t0, units = "mins"))))
 }
 
 if (!length(out)) { cat("\nNothing new to write (all dates already done).\n"); quit(save = "no") }

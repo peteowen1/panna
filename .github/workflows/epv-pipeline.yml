@@ -311,10 +311,72 @@ jobs:
             # predictions pipeline + blog actually consume. Gated on PUBLISH_WP
             # so a retrain alone never overwrites the live model without review.
             if [ "$PUBLISH_WP" = "true" ]; then
-              if gh release upload epv "$WP_MODEL" --repo peteowen1/pannamodels --clobber; then
+              # versebus manifest-last publish (ECOSYSTEM-FIX-PLAN.md WIRING A /
+              # §1 pattern): a bare --clobber upload here is a non-atomic write
+              # with no commit record -- pannamodels' consumer-side sha check
+              # (R/load_model.R .get_bus_manifest(), landed in M5) can only
+              # verify freshness if bus_manifest.json actually reflects what's
+              # on the release. Gate: upload -> verify (size vs the live asset
+              # list) -> bus_manifest.json LAST, carrying forward any other
+              # assets already committed on this tag (xg/xgot/xpass/epv/duel
+              # models published outside this workflow are left as
+              # uncommitted-but-present if this is the tag's first manifest --
+              # legacy mode covers them, per §1.2). set -euo pipefail (top of
+              # this step) means any failure here aborts BEFORE the manifest
+              # upload, so consumers keep seeing the last consistent snapshot.
+              EPV_REPO="peteowen1/pannamodels"
+              EPV_TAG="epv"
+
+              if gh release upload "$EPV_TAG" "$WP_MODEL" --repo "$EPV_REPO" --clobber; then
                 echo "  Published wp_model.rds -> pannamodels/epv (LIVE store)"
               else
                 echo "::error::Failed to publish wp_model.rds to pannamodels epv release"
+                exit 1
+              fi
+
+              WP_BYTES=$(stat -c%s "$WP_MODEL")
+              LIVE_BYTES=$(gh release view "$EPV_TAG" --repo "$EPV_REPO" --json assets \
+                --jq '.assets[] | select(.name=="wp_model.rds") | .size')
+              if [ "$LIVE_BYTES" != "$WP_BYTES" ]; then
+                echo "::error::Post-upload verify failed: wp_model.rds live size $LIVE_BYTES != local $WP_BYTES"
+                exit 1
+              fi
+
+              WP_SHA=$(sha256sum "$WP_MODEL" | cut -d' ' -f1)
+              MANIFEST_TMP=$(mktemp -d)
+              if gh release download "$EPV_TAG" --repo "$EPV_REPO" \
+                   --pattern "bus_manifest.json" --dir "$MANIFEST_TMP" 2>/dev/null; then
+                PREV_MANIFEST="$MANIFEST_TMP/bus_manifest.json"
+              else
+                PREV_MANIFEST=""
+              fi
+
+              GENERATION="$(date -u +%Y%m%dT%H%M%SZ)-r${{ github.run_id }}"
+              PRODUCED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+              NEW_ENTRY=$(jq -n --arg name "wp_model.rds" --arg sha "$WP_SHA" \
+                --argjson bytes "$WP_BYTES" \
+                '{name: $name, sha256: $sha, bytes: $bytes, rows: null}')
+
+              if [ -n "$PREV_MANIFEST" ] && [ -f "$PREV_MANIFEST" ]; then
+                MERGED_ASSETS=$(jq --argjson new "$NEW_ENTRY" \
+                  '[.assets[] | select(.name != "wp_model.rds")] + [$new]' \
+                  "$PREV_MANIFEST")
+              else
+                MERGED_ASSETS=$(jq -n --argjson new "$NEW_ENTRY" '[$new]')
+              fi
+
+              jq -n --arg tag "$EPV_TAG" --arg gen "$GENERATION" --arg produced "$PRODUCED_AT" \
+                --arg repo "peteowen1/panna" --arg workflow "epv-pipeline.yml" \
+                --arg run_id "${{ github.run_id }}" --arg run_attempt "${{ github.run_attempt }}" \
+                --argjson assets "$MERGED_ASSETS" \
+                '{schema_version: 1, tag: $tag, generation: $gen, produced_at_utc: $produced,
+                  producer: {repo: $repo, workflow: $workflow, run_id: $run_id, run_attempt: $run_attempt},
+                  assets: $assets, notes: ""}' > "$MANIFEST_TMP/bus_manifest.json"
+
+              if gh release upload "$EPV_TAG" "$MANIFEST_TMP/bus_manifest.json" --repo "$EPV_REPO" --clobber; then
+                echo "  Updated bus_manifest.json on pannamodels/epv (generation $GENERATION)"
+              else
+                echo "::error::Failed to upload bus_manifest.json to pannamodels epv release"
                 exit 1
               fi
             else

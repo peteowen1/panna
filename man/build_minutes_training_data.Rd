@@ -33,3 +33,4 @@ For each (player_id x match) in the international competitions, computes
 backward-looking features as of the match date and pairs them with the
 realized \code{minutes_played} (the supervised target).
 }
+\keyword{internal}

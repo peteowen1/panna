@@ -31,6 +31,22 @@ typically halts well before).}
 
 \item{nfolds}{Number of CV folds (default 5).}
 
+\item{min_child_weight}{Minimum sum of instance weight needed in a leaf
+(default 50; higher values regularize against overfitting to rare
+game states).}
+
+\item{feature_names}{Character vector of feature columns to train on. If
+\code{NULL} (default), uses the base set (\code{time_remaining},
+\code{xmargin}, \code{epv}, \code{xg_diff}, \code{red_card_diff},
+\code{is_home}, \code{is_second_half}, \code{is_extra_time}). Pass the
+depth-2 time-interacted set (\code{xmargin_x_time}/\code{epv_x_time} in
+place of \code{xmargin}/\code{epv}) to use the validated best-calibration
+configuration. Missing columns are silently dropped via \code{intersect()}.}
+
+\item{objective}{xgboost objective (default \code{"binary:logistic"}).
+\code{"reg:squarederror"} minimizes Brier score directly (lower ECE) but
+can predict slightly outside \verb{[0,1]}, so downstream serving must clamp.}
+
 \item{early_stopping_rounds}{Stop CV if logloss hasn't improved in this
 many rounds (default 20).}
 
@@ -62,3 +78,14 @@ optimal nrounds
 \item Final xgb.train at the optimal round on all data
 }
 }
+\seealso{
+Other win probability: 
+\code{\link{add_wp_vars}()},
+\code{\link{aggregate_player_game_wpa}()},
+\code{\link{assign_wpa_credit}()},
+\code{\link{create_wp_features}()},
+\code{\link{load_wp_model}()},
+\code{\link{predict_wp}()},
+\code{\link{save_wp_model}()}
+}
+\concept{win probability}

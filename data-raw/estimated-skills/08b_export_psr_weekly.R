@@ -808,15 +808,15 @@ if (!exists("upload_psr", inherits = FALSE)) upload_psr <- TRUE
 if (!isTRUE(upload_psr)) {
   cat(sprintf("\n  upload_psr = FALSE — wrote %s locally, NOT publishing.\n", out_path))
 } else {
-  if (!requireNamespace("piggyback", quietly = TRUE)) {
-    stop("Package 'piggyback' required for upload.")
-  }
-  tryCatch({
-    piggyback::pb_upload(file = out_path, repo = repo, tag = tag, overwrite = TRUE)
-    cat(sprintf("  Uploaded opta_psr_weekly.parquet to %s (%s)\n", repo, tag))
-  }, error = function(e) {
-    stop(sprintf("Upload failed: %s. Weekly PSR not published.", e$message))
-  })
+  # vb_publish() (R/versebus.R) replaces the old direct piggyback::pb_upload():
+  # hashes first, uploads with bounded retries, verifies the live asset list,
+  # then writes bus_manifest.json last -- same manifest-gated publish path as
+  # 13_publish_release_data.R / 09_export_ratings.R, unified onto opta-latest
+  # (Pete's decision 2026-07-14).
+  manifest <- vb_publish(out_path, repo = repo, tag = tag,
+                         rows = c(opta_psr_weekly.parquet = nrow(weekly_psr)))
+  cat(sprintf("  Uploaded opta_psr_weekly.parquet to %s (%s), generation %s\n",
+              repo, tag, manifest$generation))
 }
 
 cat("\n=== COMPLETE ===\n")

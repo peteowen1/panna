@@ -5,6 +5,13 @@
 # ratings-data release on peteowen1/pannadata. Downstream, build-blog-data.yml
 # picks these up to produce panna_ratings.parquet for inthegame.
 
+# Both xRAPM and SPM are uploaded together via vb_publish() (ECOSYSTEM-FIX-PLAN.md
+# PA6 / panna M-RATINGS-PAIR): the old two-independent-pb_upload-calls version
+# could publish a version-skewed pair on ratings-data if the second upload
+# failed after the first succeeded. vb_publish hashes both files first,
+# uploads them, and gates bus_manifest.json on BOTH succeeding -- either both
+# land or neither does, and consumers keep seeing the last consistent pair.
+
 # 1. Setup ----
 
 if (!requireNamespace("piggyback", quietly = TRUE)) {
@@ -49,47 +56,37 @@ if (!release_ok) {
   Sys.sleep(3)
 }
 
-# 4. Upload files ----
+# 4. Upload files (both-or-neither via vb_publish) ----
 
-upload_failures <- character(0)
+if (is.null(seasonal_results$seasonal_spm)) {
+  stop("seasonal_spm not found in cache - re-run step 7 to generate both rating types")
+}
 
-# Upload seasonal_xrapm.parquet
-tf_xrapm <- tempfile(fileext = ".parquet")
+# vb_publish() uploads each path under its OWN basename() (no rename param),
+# so the temp files must already be named seasonal_xrapm.parquet /
+# seasonal_spm.parquet -- a plain tempfile(fileext=".parquet") would upload
+# under a random name instead of the one consumers expect.
+tf_dir   <- tempfile("ratings_export_")
+dir.create(tf_dir)
+tf_xrapm <- file.path(tf_dir, "seasonal_xrapm.parquet")
+tf_spm   <- file.path(tf_dir, "seasonal_spm.parquet")
 arrow::write_parquet(seasonal_results$seasonal_xrapm, tf_xrapm)
-tryCatch({
-  retry_with_backoff(function() {
-    piggyback::pb_upload(tf_xrapm, repo = repo, tag = tag,
-                         name = "seasonal_xrapm.parquet", overwrite = TRUE)
-  }, label = "upload seasonal_xrapm.parquet")
-  message(sprintf("Uploaded seasonal_xrapm.parquet (%d rows)",
-                  nrow(seasonal_results$seasonal_xrapm)))
-}, error = function(e) {
-  upload_failures <<- c(upload_failures, "seasonal_xrapm.parquet")
-  warning(sprintf("Upload of seasonal_xrapm.parquet failed: %s", e$message), call. = FALSE)
-})
-unlink(tf_xrapm)
+arrow::write_parquet(seasonal_results$seasonal_spm, tf_spm)
 
-# Upload seasonal_spm.parquet
-if (!is.null(seasonal_results$seasonal_spm)) {
-  tf_spm <- tempfile(fileext = ".parquet")
-  arrow::write_parquet(seasonal_results$seasonal_spm, tf_spm)
-  tryCatch({
-    retry_with_backoff(function() {
-      piggyback::pb_upload(tf_spm, repo = repo, tag = tag,
-                           name = "seasonal_spm.parquet", overwrite = TRUE)
-    }, label = "upload seasonal_spm.parquet")
-    message(sprintf("Uploaded seasonal_spm.parquet (%d rows)",
-                    nrow(seasonal_results$seasonal_spm)))
-  }, error = function(e) {
-    upload_failures <<- c(upload_failures, "seasonal_spm.parquet")
-    warning(sprintf("Upload of seasonal_spm.parquet failed: %s", e$message), call. = FALSE)
-  })
-  unlink(tf_spm)
-} else {
-  warning("seasonal_spm not found in cache - re-run step 7 to generate both rating types")
-}
+# vb_publish hashes both files, uploads them, verifies the live asset list,
+# and only then writes bus_manifest.json -- any single upload failure aborts
+# BEFORE the manifest, so ratings-data never advertises a version-skewed
+# xRAPM/SPM pair (panna M-RATINGS-PAIR).
+manifest <- vb_publish(
+  c(tf_xrapm, tf_spm),
+  repo = repo, tag = tag,
+  rows = c(
+    seasonal_xrapm.parquet = nrow(seasonal_results$seasonal_xrapm),
+    seasonal_spm.parquet   = nrow(seasonal_results$seasonal_spm)
+  )
+)
+unlink(tf_dir, recursive = TRUE)
 
-if (length(upload_failures) > 0) {
-  stop(sprintf("Failed to upload %d file(s): %s",
-               length(upload_failures), paste(upload_failures, collapse = ", ")))
-}
+message(sprintf("Uploaded seasonal_xrapm.parquet (%d rows) + seasonal_spm.parquet (%d rows) — generation %s",
+                nrow(seasonal_results$seasonal_xrapm), nrow(seasonal_results$seasonal_spm),
+                manifest$generation))

@@ -16,7 +16,7 @@
 #' @param early_stopping Rounds without val improvement before stopping. Default 30.
 #' @param verbose Logical.
 #' @return List with `play_clf`, `mins_reg`, `feature_cols`, `eval`.
-#' @export
+#' @keywords internal
 fit_minutes_model <- function(train, feature_cols, train_idx,
                                 nrounds_clf = 600L, nrounds_reg = 800L,
                                 early_stopping = 30L,
@@ -120,6 +120,7 @@ fit_minutes_model <- function(train, feature_cols, train_idx,
 #' @param model Output of `fit_minutes_model()`.
 #' @param newdata Data.frame with feature columns.
 #' @return Numeric vector of expected minutes per row.
+#' @family expected minutes
 #' @export
 predict_minutes <- function(model, newdata) {
   X <- as.matrix(as.data.frame(newdata)[, model$feature_cols, drop = FALSE])

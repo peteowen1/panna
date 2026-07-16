@@ -49,3 +49,14 @@ fallback fired).
 \description{
 Simulate a 48-team World Cup
 }
+\seealso{
+Other world cup simulation: 
+\code{\link{bt_match_prob}()},
+\code{\link{build_knockout_lookup}()},
+\code{\link{compute_league_offsets}()},
+\code{\link{fit_bt_ratings}()},
+\code{\link{match_is_international}()},
+\code{\link{mirror_match_rows}()},
+\code{\link{run_wc2026_reference_checks}()}
+}
+\concept{world cup simulation}

@@ -32,6 +32,7 @@
 #'   * `player_panna` -- panna ratings table (player_id x season_end_year)
 #'   * `team_rotation` -- global rotation_idx per team
 #'   * `team_intl_count` -- number of intl matches per team
+#' @family expected minutes
 #' @export
 prepare_minutes_cache <- function(lineups,
                                     intl_comps,
@@ -193,6 +194,7 @@ prepare_minutes_cache <- function(lineups,
 #'   non-tournament rows are zeroed).
 #' @return Data.table with one row per player, columns matching the model's
 #'   `feature_cols`. Pass directly to `predict_minutes()`.
+#' @family expected minutes
 #' @export
 query_minutes_features <- function(cache,
                                      player_ids,

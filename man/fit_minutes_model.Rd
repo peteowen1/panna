@@ -37,3 +37,4 @@ List with \code{play_clf}, \code{mins_reg}, \code{feature_cols}, \code{eval}.
 \description{
 Fit the two-stage minutes model
 }
+\keyword{internal}

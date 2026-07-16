@@ -33,9 +33,14 @@ a 0/1 \code{red_card} column onto the chains so that block activates.
 \details{
 Detection mirrors \code{extract_player_timing_from_events()} in
 \code{splint_creation.R}: \code{type_id == 17} (Card) carrying qualifier 33
-(straight red) or 14 (second yellow). The earliest such card per
+(straight red) or 32 (second yellow). The earliest such card per
 (match, team) is taken, and the flag is set on the single chain action of
 the carded team nearest that card's time (matching the SPADL clock,
 \code{time_seconds = minute*60 + second}). One flagged action per red card is
 exactly what \code{create_wp_features}' \code{cumsum()} logic expects.
 }
+\seealso{
+Other possession chains: 
+\code{\link{create_possession_chains}()}
+}
+\concept{possession chains}

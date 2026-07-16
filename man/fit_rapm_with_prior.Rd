@@ -57,7 +57,12 @@ For the O/D design matrix:
 }
 }
 \seealso{
-\code{\link[=calculate_panna_rating]{calculate_panna_rating()}} for a simpler single-lambda variant
-that takes a scalar \code{lambda_prior} and combined SPM vector. This function
-is the production path used in the multi-league pipeline.
+Other rapm: 
+\code{\link{create_all_splints}()},
+\code{\link{create_rapm_design_matrix}()},
+\code{\link{extract_period_end_times}()},
+\code{\link{extract_player_timing_from_events}()},
+\code{\link{extract_rapm_ratings}()},
+\code{\link{fit_rapm}()}
 }
+\concept{rapm}

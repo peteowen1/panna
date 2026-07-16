@@ -30,3 +30,14 @@ Half-life = ln(2) / lambda. Higher lambda = faster decay = more recency bias.
 params <- get_default_decay_params()
 # Half-life in days: log(2) / params$rate
 }
+\seealso{
+Other estimated skills: 
+\code{\link{adjust_match_stats_for_context}()},
+\code{\link{backtest_skill_predictions}()},
+\code{\link{compute_position_multipliers}()},
+\code{\link{estimate_player_skills}()},
+\code{\link{estimate_player_skills_at_date}()},
+\code{\link{inspect_skill}()},
+\code{\link{player_skill_profile}()}
+}
+\concept{estimated skills}

@@ -36,8 +36,9 @@ Data is stored in GitHub Releases. Most `load_*()` functions default to `source 
 ```{r download, eval = FALSE}
 library(panna)
 
-# Download Opta data (the project's sole data source)
-pb_download_source("opta")
+# Download Opta data (the project's sole data source) -- incremental sync,
+# also works from an empty directory on a fresh clone
+pb_download_opta()
 ```
 
 Data is cached locally after download, so you only need to do this once (or when updating to get new matches).
@@ -136,14 +137,17 @@ multi_league <- data.table::rbindlist(lapply(
 
 Beyond basic data loading and player statistics, panna includes several advanced analytical pipelines:
 
-- **EPV (Expected Possession Value)**: Action-level player valuation from Opta event data with x/y coordinates. See `?calculate_action_epv`.
+- **EPV (Expected Possession Value)**: Action-level player valuation from Opta event data with x/y coordinates. See `vignette("player-ratings")` and `?assign_epv_credit`.
 - **Estimated Skills**: Bayesian decay-weighted skill estimation with position-specific priors and context adjustments. See `?estimate_player_skills` and `?player_skill_profile`.
-- **Match Predictions**: XGBoost Poisson/multinomial models for match outcome prediction using Elo, rolling form, and team-level skill features. See `?predict_match`.
+- **Match Predictions**: XGBoost Poisson/multinomial models for match outcome prediction using Elo, rolling form, and team-level skill features. See `vignette("match-prediction")` and `?predict_match`.
 
-These pipelines are built on top of Opta data and require running the RAPM/SPM pipeline first.
+These pipelines are built on top of Opta data and require running the RAPM/SPM pipeline first -- see `vignette("pipeline-walkthrough")` for the full map.
 
 ## Next Steps
 
-- [Player Ratings](player-ratings.html) - Learn about RAPM and SPM methodology
+- [Player Ratings](player-ratings.html) - EPR, PSR, panna, and the Piero composite
+- [Pipeline Anatomy](pipeline-walkthrough.html) - how ratings and predictions are computed
+- [Match Prediction and Tournament Simulation](match-prediction.html) - reading and simulating match outcomes
+- [Data Access and Publishing](data-bus.html) - downloading and publishing pipeline data
 - [Data Sources](data-sources.html) - Opta league codes, season formats, and loaders
 - [Data Dictionary](../DATA_DICTIONARY.md) - Column definitions

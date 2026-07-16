@@ -33,3 +33,14 @@ Returns a summary of all value metrics for a player: EPR (from per-game
 EPV), PSR (from estimated skills), per-game EPV/WPA/PSV averages, and
 the combined panna value. Loads from cached pipeline output.
 }
+\seealso{
+Other epr: 
+\code{\link{PANNA_EPR_WEIGHT}},
+\code{\link{PANNA_PSR_WEIGHT}},
+\code{\link{aggregate_player_game_epv}()},
+\code{\link{build_player_game_ratings}()},
+\code{\link{calculate_epr}()},
+\code{\link{calculate_epr_batch}()},
+\code{\link{calculate_epr_regression}()}
+}
+\concept{epr}

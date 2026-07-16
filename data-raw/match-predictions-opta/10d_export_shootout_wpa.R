@@ -17,18 +17,27 @@ library(cli)
 devtools::load_all()
 
 # 1. Configuration ----
+
+# resolve_blog_leagues() isn't loaded until pipeline_utils.R is sourced —
+# guard so this runs standalone (Rscript) as well as via the full pipeline.
+if (!exists("resolve_blog_leagues", mode = "function")) {
+  source(file.path("data-raw", "pipeline_utils.R"))
+}
+
 if (!exists("cache_dir")) cache_dir <- file.path("data-raw", "cache-predictions-opta")
 if (!dir.exists(cache_dir)) dir.create(cache_dir, recursive = TRUE)
 repo <- "peteowen1/pannadata"
 tag  <- "blog-latest"
 
 # Only cup/continental/international comps ever have shootouts; domestic and
-# calendar-year leagues never do. Continental/intl groups sourced from the
-# shared canonical constant (constants.R: PANNA_LEAGUE_GROUPS) so this can't
-# drift from 10b/10c's league set (H-DRIFT, 2026-07-08 review) -- the old
-# hand-list missed CAFCL/AFCON/Copa_America, which DO have shootouts.
-continental_cups <- PANNA_LEAGUE_GROUPS$continental
-intl_tournaments <- PANNA_LEAGUE_GROUPS$intl
+# calendar-year leagues never do. Continental/intl groups come from
+# resolve_blog_leagues() (pipeline_utils.R), backed by the shared canonical
+# constant (constants.R: PANNA_LEAGUE_GROUPS) so this can't drift from
+# 10b/10c's league set (H-DRIFT, 2026-07-08 review) -- the old hand-list
+# missed CAFCL/AFCON/Copa_America, which DO have shootouts.
+.blog_league_groups <- resolve_blog_leagues()
+continental_cups <- .blog_league_groups$continental_cups
+intl_tournaments <- .blog_league_groups$intl_tournaments
 domestic_cups    <- character(0)  # add domestic cups here if/when scraped to blog
 blog_leagues     <- c(continental_cups, intl_tournaments, domestic_cups)
 
@@ -108,21 +117,16 @@ utils::write.csv(agg, csv_path, row.names = FALSE)
 message(sprintf("\n  Written: %s (%d rows) + CSV", out_path, nrow(agg)))
 
 if (isTRUE(upload_shootout_wpa)) {
-  gh_check <- tryCatch(system2("gh", "--version", stdout = TRUE, stderr = TRUE),
-                       error = function(e) NULL)
-  if (is.null(gh_check)) stop("'gh' CLI not installed / not on PATH.")
-  for (f in c(out_path, csv_path)) {
-    message(sprintf("  Uploading %s...", basename(f)))
-    result <- system2("gh", c("release", "upload", tag, shQuote(f),
-                              "--repo", repo, "--clobber"),
-                      stdout = TRUE, stderr = TRUE)
-    if (!is.null(attr(result, "status")) && attr(result, "status") != 0) {
-      stop(sprintf("Failed to upload %s: %s", basename(f), paste(result, collapse = "\n")))
-    }
+  # PA5/H-TORN: no upload here -- register for the single gated publish in
+  # 13_publish_release_data.R.
+  if (exists("publish_files", envir = .GlobalEnv)) {
+    publish_files$blog_latest <<- c(publish_files$blog_latest, out_path, csv_path)
+    message(sprintf("\n  Registered shootout_wpa.parquet + .csv for blog-latest publish (step 13)"))
+  } else {
+    message("\n  (standalone run -- not registered for step-13 publish)")
   }
-  message(sprintf("  Uploaded to %s release on %s", tag, repo))
 } else {
-  message("\n  (upload_shootout_wpa = FALSE — skipping GH release push)")
+  message("\n  (upload_shootout_wpa = FALSE — not registering for publish)")
 }
 
 message("\n=== Shootout WPA export complete ===")

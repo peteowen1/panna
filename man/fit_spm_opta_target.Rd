@@ -25,3 +25,4 @@ SPM on any target column (not just the default \code{rapm}). Useful for
 multi-target RAPM where each value metric (EPV, WPA, PSV) has its own
 RAPM rating that needs an SPM predictor.
 }
+\keyword{internal}

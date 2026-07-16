@@ -21,3 +21,16 @@ Returns a data.frame describing all stats used in the skill estimation and
 PSR/PSV pipelines. Each stat has a type (rate or efficiency), category
 (offensive, defensive, goalkeeper, xmetrics), and metadata about adjustment.
 }
+\seealso{
+Other psr: 
+\code{\link{calculate_psr}()},
+\code{\link{calculate_psv}()},
+\code{\link{calculate_psv_components}()},
+\code{\link{compute_player_psv}()},
+\code{\link{default_stat_rating_params}()},
+\code{\link{load_opta_psr_weekly}()},
+\code{\link{player_psr}()},
+\code{\link{soccer_position_map}()},
+\code{\link{stat_rating_names}()}
+}
+\concept{psr}

@@ -34,3 +34,4 @@ Grid-search the decay parameter for \code{calculate_epr_regression()} by
 fitting on history before a hold-out window and measuring weighted MSE
 on next-game per-90 EPV in that window.
 }
+\keyword{internal}

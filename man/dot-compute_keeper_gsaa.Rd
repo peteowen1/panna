@@ -14,8 +14,9 @@
 \item{by_match}{Logical. One row per keeper-match if TRUE, else per keeper.}
 }
 \value{
-data.table keyed by player_id(+team_id\link{,match_id}) with gsaa,
-gsaa_per90, xgot_faced, goals_conceded; or NULL if not computable.
+data.table keyed by \code{player_id} + \code{team_id} (and \code{match_id} when
+\code{by_match = TRUE}) with gsaa, gsaa_per90, xgot_faced, goals_conceded; or
+NULL if not computable.
 }
 \description{
 Goals Saved Above Average = expected goals faced - goals conceded, attributed

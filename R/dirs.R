@@ -29,6 +29,7 @@
 #' @param path Optional new path to set. If NULL, returns current path.
 #'
 #' @return Current pannadata directory path (invisibly when setting)
+#' @family cache management
 #' @export
 #'
 #' @examples

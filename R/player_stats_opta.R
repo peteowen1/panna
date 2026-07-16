@@ -133,6 +133,7 @@
 #'
 #' @return Data frame with player summary statistics.
 #'
+#' @family player statistics
 #' @export
 #'
 #' @examples
@@ -177,6 +178,7 @@ player_opta_summary <- function(player = NULL,
 #'
 #' @return Data frame with player passing statistics.
 #'
+#' @family player statistics
 #' @export
 player_opta_passing <- function(player = NULL,
                                  league = NULL,
@@ -221,6 +223,7 @@ player_opta_passing <- function(player = NULL,
 #'
 #' @return Data frame with player defensive statistics.
 #'
+#' @family player statistics
 #' @export
 player_opta_defense <- function(player = NULL,
                                  league = NULL,
@@ -266,6 +269,7 @@ player_opta_defense <- function(player = NULL,
 #'
 #' @return Data frame with player possession statistics.
 #'
+#' @family player statistics
 #' @export
 player_opta_possession <- function(player = NULL,
                                     league = NULL,
@@ -312,6 +316,7 @@ player_opta_possession <- function(player = NULL,
 #'   high_claims, punches, big_chance_saves, shots_conceded,
 #'   save_pct, goals_against_per90, shots_conceded_per90, clean_sheet_pct
 #'
+#' @family player statistics
 #' @export
 player_opta_keeper <- function(player = NULL,
                                 league = NULL,
@@ -376,6 +381,7 @@ player_opta_keeper <- function(player = NULL,
 #'
 #' @return Data frame with shooting statistics.
 #'
+#' @family player statistics
 #' @export
 player_opta_shots <- function(player = NULL,
                                league = NULL,
@@ -438,6 +444,7 @@ player_opta_shots <- function(player = NULL,
 #'
 #' @return Data frame with xG/xA statistics per player.
 #'
+#' @family player statistics
 #' @export
 #'
 #' @examples
@@ -497,6 +504,7 @@ player_opta_xg <- function(player = NULL,
 #'
 #' @return Data frame with xPass statistics per player.
 #'
+#' @family player statistics
 #' @export
 #'
 #' @examples
@@ -556,6 +564,7 @@ player_opta_xpass <- function(player = NULL,
 #'
 #' @return Data frame with chain statistics per player.
 #'
+#' @family player statistics
 #' @export
 #'
 #' @examples
@@ -623,6 +632,7 @@ player_opta_chains <- function(player = NULL,
 #'
 #' @return Data frame with set piece statistics.
 #'
+#' @family player statistics
 #' @export
 player_opta_setpiece <- function(player = NULL,
                                   league = NULL,

@@ -35,19 +35,6 @@ test_that("validate_seasons respects min_year and source_name", {
   expect_error(validate_seasons("2012-2013", min_year = 2013, source_name = "Opta"), "Opta")
 })
 
-test_that("standardize_player_names cleans names", {
-  expect_equal(
-    standardize_player_names("  MOHAMED SALAH  "),
-    "Mohamed Salah"
-  )
-})
-
-test_that("standardize_team_names maps common variations", {
-  expect_equal(standardize_team_names("Man Utd"), "Manchester United")
-  expect_equal(standardize_team_names("Spurs"), "Tottenham Hotspur")
-  expect_equal(standardize_team_names("Wolves"), "Wolverhampton Wanderers")
-})
-
 test_that("create_match_id creates unique identifiers", {
   id <- create_match_id("2023-2024", "2024-01-01", "Arsenal", "Liverpool")
   expect_type(id, "character")
@@ -84,27 +71,6 @@ test_that("clean_player_name normalizes case and whitespace", {
   # Handles vectors
   result <- clean_player_name(c("Lionel Messi", "lionel messi"))
   expect_equal(result[1], result[2])
-})
-
-test_that("extract_fbref_player_id extracts 8-char hex ID", {
-  # Valid FBref hrefs
-  expect_equal(
-    extract_fbref_player_id("/players/d080ed5e/Kylian-Mbappe"),
-    "d080ed5e"
-  )
-  expect_equal(
-    extract_fbref_player_id("/players/abc12345/Some-Player"),
-    "abc12345"
-  )
-
-  # Invalid hrefs return NA
-  expect_true(is.na(extract_fbref_player_id("/some/other/path")))
-  expect_true(is.na(extract_fbref_player_id("not-a-url")))
-
-  # Handles vectors
-  hrefs <- c("/players/d080ed5e/Player1", "/players/abc12345/Player2")
-  result <- extract_fbref_player_id(hrefs)
-  expect_equal(result, c("d080ed5e", "abc12345"))
 })
 
 
@@ -191,92 +157,6 @@ test_that("build_where_clause handles multi-value IN clause", {
   expect_match(result, "'ESP'")
 })
 
-
-# =============================================================================
-# Tests for standardize_data_columns()
-# =============================================================================
-
-test_that("standardize_data_columns renames columns correctly", {
-  df <- data.frame(squad = "Arsenal", min = 90, player = "Saka")
-  result <- standardize_data_columns(df, list(
-    team = c("squad"),
-    minutes = c("min"),
-    player_name = c("player")
-  ))
-
-  expect_true("team" %in% names(result))
-  expect_true("minutes" %in% names(result))
-  expect_true("player_name" %in% names(result))
-  expect_false("squad" %in% names(result))
-  expect_false("min" %in% names(result))
-  expect_false("player" %in% names(result))
-})
-
-test_that("standardize_data_columns preserves existing canonical names", {
-  df <- data.frame(team = "Arsenal", squad = "should_be_ignored")
-  result <- standardize_data_columns(df, list(
-    team = c("squad", "team_name")
-  ))
-
-  expect_true("team" %in% names(result))
-  expect_true("squad" %in% names(result))  # Not renamed, team already exists
-  expect_equal(result$team, "Arsenal")
-})
-
-test_that("standardize_data_columns handles multiple alternatives", {
-  # First alternative found
-  df1 <- data.frame(squad = "Arsenal")
-  result1 <- standardize_data_columns(df1, list(team = c("squad", "team_name")))
-  expect_true("team" %in% names(result1))
-
-  # Second alternative found
-  df2 <- data.frame(team_name = "Chelsea")
-  result2 <- standardize_data_columns(df2, list(team = c("squad", "team_name")))
-  expect_true("team" %in% names(result2))
-})
-
-test_that("standardize_data_columns handles NULL and non-dataframe input", {
-  expect_null(standardize_data_columns(NULL, list(team = "squad")))
-  expect_equal(standardize_data_columns("not a df", list(team = "squad")), "not a df")
-})
-
-test_that("standardize_data_columns works with data.table", {
-  skip_if_not_installed("data.table")
-
-  dt <- data.table::data.table(squad = "Arsenal", min = 90)
-  result <- standardize_data_columns(dt, list(
-    team = c("squad"),
-    minutes = c("min")
-  ))
-
-  expect_true("team" %in% names(result))
-  expect_true("minutes" %in% names(result))
-  expect_s3_class(result, "data.table")
-})
-
-
-# =============================================================================
-# Tests for default_column_map()
-# =============================================================================
-
-test_that("default_column_map returns expected structure", {
-  map <- default_column_map()
-
-  expect_type(map, "list")
-  expect_true("team" %in% names(map))
-  expect_true("player_name" %in% names(map))
-  expect_true("minutes" %in% names(map))
-  expect_true("position" %in% names(map))
-})
-
-test_that("default_column_map contains common variations", {
-  map <- default_column_map()
-
-  expect_true("squad" %in% map$team)
-  expect_true("player" %in% map$player_name)
-  expect_true("min" %in% map$minutes)
-  expect_true("pos" %in% map$position)
-})
 
 
 # =============================================================================

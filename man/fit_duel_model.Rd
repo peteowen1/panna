@@ -28,3 +28,13 @@ List of class \code{duel_model} with the five sub-models + metadata.
 \description{
 Fit the xDuel models (five contest sub-models)
 }
+\seealso{
+Other xduel: 
+\code{\link{compute_all_duel_preps}()},
+\code{\link{compute_duel_woe}()},
+\code{\link{load_duel_model}()},
+\code{\link{predict_duel}()},
+\code{\link{prepare_duels_from_events}()},
+\code{\link{save_duel_model}()}
+}
+\concept{xduel}

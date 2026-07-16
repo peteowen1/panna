@@ -357,11 +357,19 @@ write_parquet(squad_out, file.path(cache_dir, "wc2026_squads.parquet"))
 message(sprintf("  wc2026_squads.parquet: %d players across %d squads (%d with panna ratings)",
                 nrow(squad_out), uniqueN(squad_out$team), sum(!is.na(squad_out$panna))))
 
-# 6. Save CSV companions for the small published tables ----
+# 6. Stamp shared build_id + save CSV companions for the small published tables ----
 # Per feedback 2026-05-28: small tables (<100KB / <10k rows) get a CSV
 # alongside the parquet for easy human inspection. The parquet remains
 # the format the blog reads programmatically; the CSV is the companion
 # you can `cat` or open in any editor without arrow installed.
+#
+# build_id (ECOSYSTEM-FIX-PLAN.md WIRING B / ITG F-H13): one generation stamp
+# per export run, written identically into all six wc2026_*.parquet files
+# here -- including wc2026_knockout_probs.parquet, which step 11 wrote
+# earlier. The blog's detectMixedBuild() (wc-live-sim.js) already consumes
+# this column when present to detect a torn mix of vintages; kept additive --
+# no reader currently requires it.
+.build_id_val <- .vb_generation_stamp()
 wc_parquets <- c("wc2026_predictions.parquet",
                  "wc2026_simulation.parquet",
                  "wc2026_groups.parquet",
@@ -373,56 +381,39 @@ for (p in wc_parquets) {
   if (!file.exists(pp)) {
     # knockout_probs is written by step 11, the rest by this step — a
     # standalone step-12 run against a pre-2026-06-11 cache lacks it.
-    warning(p, " not in cache — skipping its CSV companion and upload",
+    warning(p, " not in cache — skipping its CSV companion and build_id stamp",
             call. = FALSE, immediate. = TRUE)
     next
   }
+  dt <- as.data.table(read_parquet(pp))
+  dt[, build_id := .build_id_val]
+  write_parquet(dt, pp)
   cp <- sub("\\.parquet$", ".csv", pp)
-  write.csv(read_parquet(pp), cp, row.names = FALSE)
+  write.csv(dt, cp, row.names = FALSE)
 }
-message(sprintf("  Wrote %d CSV companions for the small published tables.",
-                length(wc_parquets)))
+message(sprintf("  Wrote %d CSV companions + stamped build_id=%s on the small published tables.",
+                length(wc_parquets), .build_id_val))
 
-# 7. Upload to blog-latest ----
+# 7. Register for step-13 publish (PA5/H-TORN: no upload here) ----
 
 wc_files <- c(
   file.path(cache_dir, wc_parquets),
-  # CSV companions uploaded alongside parquet
+  # CSV companions published alongside parquet
   file.path(cache_dir, sub("\\.parquet$", ".csv", wc_parquets))
 )
 # Drop entries skipped above (warned already) so one absent optional file
-# doesn't stop() the whole upload mid-loop.
+# doesn't stop() the whole registration.
 wc_files <- wc_files[file.exists(wc_files)]
 
 no_upload <- isTRUE(Sys.getenv("WC2026_NO_UPLOAD", "") == "1")
-gh_ok <- !is.null(tryCatch(system2("gh", "--version", stdout = TRUE,
-                                    stderr = TRUE), error = function(e) NULL))
 if (no_upload) {
-  message("  WC2026_NO_UPLOAD=1 — files written locally, skipping upload")
-} else if (!gh_ok) {
-  message("  gh CLI not available — files written locally, skipping upload")
-} else {
-  rel <- system2("gh", c("release", "view", tag, "--repo", repo),
-                  stdout = TRUE, stderr = TRUE)
-  if (!is.null(attr(rel, "status")) && attr(rel, "status") != 0) {
-    system2("gh", c("release", "create", tag, "--repo", repo,
-                     "--title", shQuote("Blog Data (Latest)"),
-                     "--notes", shQuote("Blog data.")),
-            stdout = TRUE, stderr = TRUE)
-  }
-  for (f in wc_files) {
-    message(sprintf("  Uploading %s (%.1f KB)...", basename(f),
-                    file.size(f) / 1024))
-    res <- system2("gh", c("release", "upload", tag, shQuote(f),
-                            "--repo", repo, "--clobber"),
-                   stdout = TRUE, stderr = TRUE)
-    if (!is.null(attr(res, "status")) && attr(res, "status") != 0) {
-      stop(sprintf("Failed to upload %s: %s", basename(f),
-                   paste(res, collapse = "\n")))
-    }
-  }
-  message(sprintf("  Uploaded %d wc2026 files to blog-latest (parquet + CSV).",
+  message("  WC2026_NO_UPLOAD=1 — files written locally, not registering for publish")
+} else if (exists("publish_files", envir = .GlobalEnv)) {
+  publish_files$blog_latest <<- c(publish_files$blog_latest, wc_files)
+  message(sprintf("  Registered %d wc2026 file(s) for blog-latest publish (step 13, parquet + CSV).",
                   length(wc_files)))
+} else {
+  message("  (standalone run -- not registered for step-13 publish)")
 }
 
 message("\n=== WC 2026 blog export complete ===")

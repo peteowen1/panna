@@ -25,3 +25,9 @@ opta_data_dir()
 opta_data_dir("C:/path/to/pannadata/data/opta")
 }
 }
+\seealso{
+Other cache management: 
+\code{\link{data_location_report}()},
+\code{\link{pannadata_dir}()}
+}
+\concept{cache management}

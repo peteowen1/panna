@@ -401,6 +401,7 @@
 #'     \item Derived efficiency columns (same names as aggregate_opta_stats output)
 #'   }
 #'
+#' @family spm opta
 #' @export
 #' @examples
 #' \dontrun{
@@ -719,6 +720,7 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
 #' @param weight_transform Transform for weighting: "sqrt", "linear", "log"
 #'
 #' @return Fitted glmnet model with metadata
+#' @family spm opta
 #' @export
 #' @examples
 #' \dontrun{
@@ -784,7 +786,7 @@ fit_spm_opta <- function(data, alpha = 0.5, nfolds = 10,
 #'
 #' @return Fitted SPM model (same as \code{fit_spm_opta}).
 #'
-#' @export
+#' @keywords internal
 fit_spm_opta_target <- function(data, target_col = "rapm", ...) {
   dt <- data.table::as.data.table(data)
 
@@ -806,13 +808,133 @@ fit_spm_opta_target <- function(data, target_col = "rapm", ...) {
 }
 
 
-#' Compare FBref and Opta SPM feature importance
+# ============================================================================
+# Skill-based SPM (estimated-skills pipeline) O/D column sets
+# ============================================================================
+
+#' Canonical offense predictor columns for the SKILL-based SPM
 #'
-#' Compares which features are most important in FBref vs Opta SPM models.
-#' Useful for understanding which data source captures different aspects of play.
+#' Skill-SPM (`estimated-skills/03_skill_spm.R`, and the expanding-window
+#' as-of variant in `R/spm_asof.R`) trains on decay-weighted skill features
+#' rather than raw box-score aggregates, so its offense/defense hand-curated
+#' column lists are a DIFFERENT (smaller) set than the box-score SPM's
+#' (`05_spm.R` / `.spm_opta_predictor_cols()`) -- some raw box columns (e.g.
+#' `hit_woodwork_p90`, `att_pen_goal_p90`) aren't carried as skill features.
+#' Extracted to ONE place so the all-history fit (`03_skill_spm.R` section
+#' 10) and the expanding-window per-year fits (`fit_expanding_skill_spm()`)
+#' can never drift apart -- hand-copied O/D feature lists are a recurring
+#' drift bug in this repo (see `.spm_opta_predictor_cols()`'s own history).
 #'
-#' @param fbref_model Fitted SPM model from FBref data
-#' @param opta_model Fitted SPM model from Opta data
+#' @param data Data frame of candidate features (e.g. `spm_train_data`)
+#' @return Character vector of offense predictor columns present in `data`
+#' @keywords internal
+.skill_spm_offense_cols <- function(data) {
+  offense_cols <- c(
+    "goals_p90", "shots_p90", "shots_on_target_p90",
+    "big_chance_scored_p90", "big_chance_created_p90",
+    "att_openplay_p90", "att_headed_p90", "att_one_on_one_p90",
+    "assists_p90", "key_passes_p90", "through_balls_p90", "total_att_assist_p90",
+    "touches_opp_box_p90", "pen_area_entries_p90", "final_third_entries_p90",
+    "final_third_passes_p90", "fwd_zone_pass_p90", "open_play_pass_p90",
+    "att_fastbreak_p90", "shot_fastbreak_p90",
+    "crosses_p90", "crosses_open_play_p90", "forward_pass_p90",
+    "was_fouled_p90", "penalty_won_p90",
+    # Conversion ratios with above-expected replacements removed 2026-07-07
+    # (mirrors 05_spm.R; volume-blind ratios rewarded 1/1 == 10/10)
+    "shot_accuracy",
+    "fwd_zone_pass_accuracy", "open_play_pass_accuracy", "crosses_open_play_accuracy",
+    "att_ibox_goal_p90", "att_obox_goal_p90",
+    "chipped_pass_p90", "chipped_pass_accuracy",
+    "att_rf_total_p90", "att_lf_total_p90"
+  )
+  if ("xg_per90" %in% names(data)) {
+    offense_cols <- c(offense_cols, "xg_per90", "npxg_per90", "xa_per90_xmetrics")
+  }
+  offense_cols <- c(offense_cols, intersect(
+    c("npg_minus_npxg_per90", "ibox_g_minus_xg_per90", "obox_g_minus_xg_per90",
+      "placement_added_per90", "takeon_woe_per90", "aerial_woe_per90"),
+    names(data)
+  ))
+  intersect(offense_cols, names(data))
+}
+
+
+#' Canonical defense predictor columns for the SKILL-based SPM
+#'
+#' See `.skill_spm_offense_cols()` for why this is a separate (smaller) set
+#' from the box-score SPM's defense columns.
+#'
+#' @param data Data frame of candidate features
+#' @return Character vector of defense predictor columns present in `data`
+#' @keywords internal
+.skill_spm_defense_cols <- function(data) {
+  defense_cols <- c(
+    "tackles_p90", "tackles_won_p90",
+    "interceptions_p90", "interceptions_won_p90",
+    "clearances_p90", "clearances_effective_p90",
+    "blocks_p90", "blocked_passes_p90",
+    "last_man_tackle_p90", "six_yard_block_p90", "clearance_off_line_p90",
+    "aerial_won_p90", "aerial_lost_p90",
+    "ball_recovery_p90", "poss_won_def3rd_p90", "poss_won_mid3rd_p90",
+    "fouls_p90", "penalty_conceded_p90",
+    "error_lead_to_shot_p90", "error_lead_to_goal_p90", "errors_total_p90",
+    # tackle_success/aerial_success removed 2026-07-07 -> defensive WOE below
+    "poss_lost_ctrl_p90", "poss_lost_ctrl_per_touch",
+    "fifty_fifty_p90", "fifty_fifty_won_p90", "fifty_fifty_success",
+    "back_zone_pass_p90", "back_zone_pass_accuracy",
+    "long_pass_own_to_opp_p90", "long_pass_own_to_opp_accuracy",
+    "tackle_poss_woe_per90", "containment_woe_per90",
+    "aerial_woe_per90", "aerial_poss_woe_per90", "gsaa_per90"
+  )
+  intersect(defense_cols, names(data))
+}
+
+
+#' Sign-constraint feature lists for the SKILL-based SPM defense model
+#'
+#' In the negative-is-good defense convention, "good defense" features must
+#' get a non-positive SPM coefficient (more = better defender) and
+#' "bad defense" features a non-negative one. Mirrors `05_spm.R`'s
+#' `defense_good_features`/`defense_bad_features` for the box-score SPM,
+#' restricted to the skill-SPM's smaller feature set.
+#'
+#' @return List with `good` and `bad` character vectors of feature names.
+#' @keywords internal
+.skill_spm_defense_constraints <- function() {
+  list(
+    good = c(
+      "tackles_p90", "tackles_won_p90",
+      "interceptions_p90", "interceptions_won_p90",
+      "clearances_p90", "clearances_effective_p90",
+      "blocks_p90", "blocked_passes_p90",
+      "last_man_tackle_p90", "six_yard_block_p90", "clearance_off_line_p90",
+      "aerial_won_p90",
+      "ball_recovery_p90", "poss_won_def3rd_p90", "poss_won_mid3rd_p90",
+      "tackle_poss_woe_per90", "containment_woe_per90",
+      "aerial_woe_per90", "aerial_poss_woe_per90", "gsaa_per90",
+      "fifty_fifty_won_p90", "fifty_fifty_success",
+      "back_zone_pass_accuracy"
+    ),
+    bad = c(
+      "fouls_p90", "penalty_conceded_p90",
+      "error_lead_to_shot_p90", "error_lead_to_goal_p90", "errors_total_p90",
+      "aerial_lost_p90",
+      "poss_lost_ctrl_p90", "poss_lost_ctrl_per_touch"
+    )
+  )
+}
+
+
+#' Compare SPM feature importance between two models
+#'
+#' Compares which features are most important between two fitted SPM models
+#' (e.g. different seasons, targets, or feature sets). Useful for understanding
+#' which features drive each model's ratings.
+#'
+#' @param fbref_model Fitted SPM model to compare (labeled "FBref" in the
+#'   output's `source` column for historical reasons; any fitted SPM model works)
+#' @param opta_model Fitted SPM model to compare against (labeled "Opta" in
+#'   the output's `source` column)
 #' @param n Number of top features to compare (default 20)
 #'
 #' @return Data frame comparing feature importance

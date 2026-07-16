@@ -17,3 +17,14 @@ Invisibly returns the file path.
 \description{
 Save WP model
 }
+\seealso{
+Other win probability: 
+\code{\link{add_wp_vars}()},
+\code{\link{aggregate_player_game_wpa}()},
+\code{\link{assign_wpa_credit}()},
+\code{\link{create_wp_features}()},
+\code{\link{load_wp_model}()},
+\code{\link{predict_wp}()},
+\code{\link{train_wp_model}()}
+}
+\concept{win probability}

@@ -32,3 +32,14 @@ Computes current skill vectors for specified players at a given date.
 Useful for match prediction where you need skill estimates for upcoming
 fixtures rather than end-of-season snapshots.
 }
+\seealso{
+Other estimated skills: 
+\code{\link{adjust_match_stats_for_context}()},
+\code{\link{backtest_skill_predictions}()},
+\code{\link{compute_position_multipliers}()},
+\code{\link{estimate_player_skills}()},
+\code{\link{get_default_decay_params}()},
+\code{\link{inspect_skill}()},
+\code{\link{player_skill_profile}()}
+}
+\concept{estimated skills}

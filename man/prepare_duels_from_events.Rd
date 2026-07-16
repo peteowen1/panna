@@ -20,3 +20,13 @@ data.table of features + \code{won}, keyed columns retained.
 \description{
 Prepare one duel contest from raw (per-league) events
 }
+\seealso{
+Other xduel: 
+\code{\link{compute_all_duel_preps}()},
+\code{\link{compute_duel_woe}()},
+\code{\link{fit_duel_model}()},
+\code{\link{load_duel_model}()},
+\code{\link{predict_duel}()},
+\code{\link{save_duel_model}()}
+}
+\concept{xduel}

@@ -16,3 +16,13 @@ Named list of five finalized feature tables.
 Orders the event stream ONCE and extracts all five (small) contest tables, so a
 caller can loop leagues and discard raw events between iterations.
 }
+\seealso{
+Other xduel: 
+\code{\link{compute_duel_woe}()},
+\code{\link{fit_duel_model}()},
+\code{\link{load_duel_model}()},
+\code{\link{predict_duel}()},
+\code{\link{prepare_duels_from_events}()},
+\code{\link{save_duel_model}()}
+}
+\concept{xduel}

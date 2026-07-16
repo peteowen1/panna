@@ -42,3 +42,9 @@ Intended as a guard at the top of pipeline steps that consume events
 "events_consolidated is short" pattern BEFORE producing incomplete
 game_logs that get silently shipped to blog-latest.
 }
+\seealso{
+Other validation: 
+\code{\link{assert_step_output}()},
+\code{\link{check_events_coverage}()}
+}
+\concept{validation}

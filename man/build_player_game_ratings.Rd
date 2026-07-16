@@ -51,3 +51,14 @@ Merges per-game EPV, WPA, and PSV into a single data.table with one row
 per player per match. Computes a combined \code{piero_value} blending
 EPV and PSV contributions.
 }
+\seealso{
+Other epr: 
+\code{\link{PANNA_EPR_WEIGHT}},
+\code{\link{PANNA_PSR_WEIGHT}},
+\code{\link{aggregate_player_game_epv}()},
+\code{\link{calculate_epr}()},
+\code{\link{calculate_epr_batch}()},
+\code{\link{calculate_epr_regression}()},
+\code{\link{player_value}()}
+}
+\concept{epr}

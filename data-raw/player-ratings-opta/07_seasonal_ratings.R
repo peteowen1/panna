@@ -42,6 +42,72 @@ if (exists(".log_rss", mode = "function")) {
                    format(if (!is.null(opta_xmetrics)) nrow(opta_xmetrics) else 0L, big.mark = ",")))
 }
 
+# panna#109: narrow opta_stats/opta_xmetrics to only the columns actually
+# read downstream, BEFORE the 14-season loop. opta_stats stays fully
+# resident for the WHOLE loop by design (see the "extract-and-SHRINK"
+# comment block further down) -- at ~288 raw columns x 3.46M rows it alone
+# is ~9.2GB in R heap, and RSS creeps 14.1 -> 14.5 -> 15.9GB across seasons
+# on top of that baseline, dying at season 2021 (9 of 14) with 15.9/16GB
+# used (run 28928510924). This was named as unscoped follow-up work in the
+# #87 wrap-up comment. Keep-list compiled from actual readers, not guessed
+# (a prior narrowing pass elsewhere in this codebase almost shipped without
+# denominator columns a downstream calc needed -- see
+# C:/dev/.claude/rules/r-datatable-gotchas.md item 3):
+#   - aggregate_opta_stats() (R/spm_opta.R) sums EVERY raw Opta column named
+#     in .get_opta_col_mapping() via .SDcols (that mapping IS this file's
+#     own dependency list -- calling it directly means this narrowing can
+#     never drift from what the aggregator reads), keys by player_id, reads
+#     player_name (canonical modal name, unconditional) and position
+#     (primary-position mode, conditional on the column existing).
+#   - aggregate_opta_stats()'s uniqueN(match_id) reads match_id via bare
+#     data.table NSE.
+#   - This file's own season filtering (the top-level "Filter Opta stats to
+#     this season" subset in fit_season_ratings_opta(), and the season-loop
+#     s_stats/s_xm subsets below) reads `season` directly on both tables.
+#   - .aggregate_xmetrics_for_spm() (R/spm_opta.R) reads player_id, xg,
+#     npxg, xa, minutes, xpass_overperformance, plus whichever of the
+#     above-expected WOE/finishing/gsaa columns this xmetrics vintage
+#     carries (intersect()-guarded there, so listing all of them here is
+#     safe even for older vintages missing some).
+#   - This file's own chain-feature enrichment (both the season-loop copy
+#     and fit_season_ratings_opta()'s copy) reads player_id, minutes,
+#     chains_involved, chain_actions, successful_chains, chain_goals,
+#     chain_starts, chain_xg from opta_xmetrics.
+# Validated old-vs-narrowed single-season output with all.equal() before
+# this landed on GHA (docs/plans/FABLE-QUEUE-2026-07-16-PLAN.md WS-3).
+opta_stats_wide_ncol <- ncol(opta_stats)
+opta_stats_keep_cols <- intersect(
+  c("season", "player_id", "player_name", "match_id", "position",
+    unname(.get_opta_col_mapping())),
+  names(opta_stats)
+)
+opta_stats_wide <- opta_stats
+opta_stats <- opta_stats_wide[opta_stats_keep_cols]
+rm(opta_stats_wide)
+
+opta_xmetrics_wide_ncol <- if (!is.null(opta_xmetrics)) ncol(opta_xmetrics) else 0L
+if (!is.null(opta_xmetrics) && nrow(opta_xmetrics) > 0) {
+  opta_xmetrics_keep_cols <- intersect(
+    c("season", "player_id", "minutes", "xg", "npxg", "xa",
+      "xpass_overperformance", "aerial_woe", "aerial_poss_woe", "takeon_woe",
+      "tackle_poss_woe", "containment_woe", "npg_minus_npxg",
+      "ibox_g_minus_xg", "obox_g_minus_xg", "placement_added", "gsaa",
+      "chains_involved", "chain_actions", "successful_chains",
+      "chain_goals", "chain_starts", "chain_xg"),
+    names(opta_xmetrics)
+  )
+  opta_xmetrics_wide <- opta_xmetrics
+  opta_xmetrics <- opta_xmetrics_wide[opta_xmetrics_keep_cols]
+  rm(opta_xmetrics_wide)
+}
+gc(verbose = FALSE)
+if (exists(".log_rss", mode = "function")) {
+  .log_rss(sprintf(
+    "after narrowing opta_stats (%d -> %d cols) / opta_xmetrics (%d -> %d cols)",
+    opta_stats_wide_ncol, ncol(opta_stats),
+    opta_xmetrics_wide_ncol, if (!is.null(opta_xmetrics)) ncol(opta_xmetrics) else 0L))
+}
+
 spm_results <- readRDS(file.path(cache_dir, "05_spm.rds"))
 if (exists(".log_rss", mode = "function")) .log_rss("after loading 05_spm.rds")
 
@@ -529,6 +595,15 @@ seasonal_results <- list(
     spm_player_seasons = nrow(seasonal_spm),
     rapm_player_seasons = nrow(seasonal_rapm),
     xrapm_player_seasons = nrow(seasonal_xrapm),
+    # FABLE-ASOF-EXPERIMENTS.md sec 3: SPM weights (05_spm.R) are fit on
+    # seasons 2013-present, i.e. every season's prior sees seasons AFTER it
+    # too -- these ratings are a retrospective "how good was X given
+    # everything we know now" view, NOT point-in-time. Measured hindsight
+    # inflation on the next-season backtest: +0.003 Pearson (small; the
+    # xRAPM > prior > raw ordering is not an artifact of it). Point-in-time
+    # consumers should use career_panna_asof.parquet (expanding-window SPM
+    # weights, sec 4) instead of this table.
+    weights_vintage = "retrospective",
     created = Sys.time()
   )
 )
@@ -571,14 +646,25 @@ write.csv(
 # Multi-target seasonal ratings ----
 # If multi-target xRAPM results exist, save seasonal ratings for each target
 
+# D6 (FABLE-PRIOR-FIX-PLAN.md): experimental gate, default FALSE -- see
+# 04_rapm.R for rationale (inherits = FALSE for the same dplyr-collision
+# reason as other pipeline config guards). Unlike 04/05/06, this section had
+# no gate at all before -- it ran unconditionally whenever 06_xrapm_multi.rds
+# happened to exist on disk.
+run_multi_target <- if (exists("run_multi_target", inherits = FALSE)) run_multi_target else FALSE
 multi_xrapm_path <- file.path(cache_dir, "06_xrapm_multi.rds")
-if (file.exists(multi_xrapm_path)) {
+if (run_multi_target && file.exists(multi_xrapm_path)) {
   cat("\n=== Multi-Target Seasonal Ratings ===\n")
   multi_xrapm <- readRDS(multi_xrapm_path)
 
   for (tgt in names(multi_xrapm)) {
     ratings_tgt <- multi_xrapm[[tgt]]$ratings
     if (!is.null(ratings_tgt) && nrow(ratings_tgt) > 0) {
+      # D5 tripwire: abort loudly before writing anything the panna#87
+      # heartbeat glob could upload, if this target's fit shows a known
+      # degenerate-output signature.
+      .check_degenerate_multi_target(ratings_tgt, tgt)
+
       saveRDS(ratings_tgt, file.path(cache_dir, sprintf("07_seasonal_%s.rds", tgt)))
       cat(sprintf("  Saved %s seasonal ratings: %d players\n", toupper(tgt), nrow(ratings_tgt)))
     }

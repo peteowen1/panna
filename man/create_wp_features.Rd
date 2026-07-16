@@ -26,3 +26,14 @@ Builds the game-state feature set at each action for WP model training
 and prediction. Features capture score state, expected goals state,
 time remaining, and team strength indicators.
 }
+\seealso{
+Other win probability: 
+\code{\link{add_wp_vars}()},
+\code{\link{aggregate_player_game_wpa}()},
+\code{\link{assign_wpa_credit}()},
+\code{\link{load_wp_model}()},
+\code{\link{predict_wp}()},
+\code{\link{save_wp_model}()},
+\code{\link{train_wp_model}()}
+}
+\concept{win probability}

@@ -34,6 +34,7 @@
 #'   present are transformed.
 #' @return A data.frame of identical shape and column order with the
 #'   home/away perspective swapped.
+#' @family world cup simulation
 #' @export
 mirror_match_rows <- function(df) {
   df  <- as.data.frame(df)

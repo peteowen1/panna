@@ -177,35 +177,14 @@ cat("\n=== Fitting Separate Offense/Defense SPM ===\n")
 # Offense
 offense_train <- spm_train_data %>% mutate(rapm = offense)
 
-offense_cols <- c(
-  "goals_p90", "shots_p90", "shots_on_target_p90", "shots_ibox_p90",
-  "big_chance_scored_p90", "big_chance_created_p90",
-  "att_openplay_p90", "att_headed_p90", "att_one_on_one_p90",
-  "assists_p90", "key_passes_p90", "through_balls_p90", "total_att_assist_p90",
-  "touches_opp_box_p90", "pen_area_entries_p90", "final_third_entries_p90",
-  "final_third_passes_p90", "fwd_zone_pass_p90", "open_play_pass_p90",
-  "att_fastbreak_p90", "shot_fastbreak_p90",
-  "crosses_p90", "crosses_open_play_p90", "forward_pass_p90",
-  "was_fouled_p90", "penalty_won_p90",
-  # Conversion ratios with above-expected replacements removed 2026-07-07
-  # (mirrors step 05; volume-blind ratios rewarded 1/1 == 10/10)
-  "shot_accuracy",
-  "fwd_zone_pass_accuracy", "open_play_pass_accuracy", "crosses_open_play_accuracy",
-  "att_ibox_goal_p90", "att_obox_goal_p90",
-  "chipped_pass_p90", "chipped_pass_accuracy",
-  "att_rf_total_p90", "att_lf_total_p90"
-)
-
-if ("xg_per90" %in% names(spm_train_data)) {
-  offense_cols <- c(offense_cols, "xg_per90", "npxg_per90", "xa_per90_xmetrics")
-}
-offense_cols <- c(offense_cols, intersect(
-  c("npg_minus_npxg_per90", "ibox_g_minus_xg_per90", "obox_g_minus_xg_per90",
-    "placement_added_per90", "takeon_woe_per90", "aerial_woe_per90"),
-  names(spm_train_data)
-))
-
-offense_cols <- intersect(offense_cols, names(spm_train_data))
+# Column sets + defense sign constraints live in ONE place (R/spm_opta.R:
+# .skill_spm_offense_cols() / .skill_spm_defense_cols() /
+# .skill_spm_defense_constraints()) shared with the expanding-window as-of
+# fit (R/spm_asof.R's fit_expanding_skill_spm(), FABLE-ASOF-EXPERIMENTS.md
+# sec 4) so the two can never drift apart — hand-copied O/D feature lists
+# are a recurring drift bug in this repo (see .spm_opta_predictor_cols()'s
+# own history in the psr-skills.md gotcha).
+offense_cols <- .skill_spm_offense_cols(spm_train_data)
 
 cat("\n--- Offense Elastic Net ---\n")
 offense_spm_glmnet <- fit_spm_model(offense_train, predictor_cols = offense_cols,
@@ -221,52 +200,15 @@ offense_spm_xgb <- fit_spm_xgb(offense_train, predictor_cols = offense_cols,
 # Defense
 defense_train <- spm_train_data %>% mutate(rapm = defense)
 
-defense_cols <- c(
-  "tackles_p90", "tackles_won_p90",
-  "interceptions_p90", "interceptions_won_p90",
-  "clearances_p90", "clearances_effective_p90",
-  "blocks_p90", "blocked_passes_p90",
-  "last_man_tackle_p90", "six_yard_block_p90", "clearance_off_line_p90",
-  "aerial_won_p90", "aerial_lost_p90",
-  "ball_recovery_p90", "poss_won_def3rd_p90", "poss_won_mid3rd_p90",
-  "fouls_p90", "penalty_conceded_p90",
-  "error_lead_to_shot_p90", "error_lead_to_goal_p90", "errors_total_p90",
-  # tackle_success/aerial_success removed 2026-07-07 -> defensive WOE below
-  "poss_lost_ctrl_p90", "poss_lost_ctrl_per_touch",
-  "fifty_fifty_p90", "fifty_fifty_won_p90", "fifty_fifty_success",
-  "back_zone_pass_p90", "back_zone_pass_accuracy",
-  "long_pass_own_to_opp_p90", "long_pass_own_to_opp_accuracy",
-  "tackle_poss_woe_per90", "containment_woe_per90",
-  "aerial_woe_per90", "aerial_poss_woe_per90", "gsaa_per90"
-)
-
-defense_cols <- intersect(defense_cols, names(spm_train_data))
+defense_cols <- .skill_spm_defense_cols(spm_train_data)
 
 cat("\n--- Defense Elastic Net ---\n")
 # Directional sign constraints — same logic as Opta SPM step 05.
 # In the negative-good defense convention, "good defense" features must have
 # coef <= 0 (more = better defender). "Bad defense" features get coef >= 0.
-defense_good_features <- c(
-  "tackles_p90", "tackles_won_p90",
-  "interceptions_p90", "interceptions_won_p90",
-  "clearances_p90", "clearances_effective_p90",
-  "blocks_p90", "blocked_passes_p90",
-  "last_man_tackle_p90", "six_yard_block_p90", "clearance_off_line_p90",
-  "aerial_won_p90",
-  "ball_recovery_p90", "poss_won_def3rd_p90", "poss_won_mid3rd_p90",
-  "tackle_poss_woe_per90", "containment_woe_per90",
-  "aerial_woe_per90", "aerial_poss_woe_per90", "gsaa_per90",
-  "fifty_fifty_won_p90", "fifty_fifty_success",
-  "back_zone_pass_accuracy"
-)
-defense_bad_features <- c(
-  "fouls_p90", "penalty_conceded_p90",
-  "error_lead_to_shot_p90", "error_lead_to_goal_p90", "errors_total_p90",
-  "aerial_lost_p90",
-  "poss_lost_ctrl_p90", "poss_lost_ctrl_per_touch"
-)
-def_lower <- setNames(rep(0, length(defense_bad_features)),  defense_bad_features)
-def_upper <- setNames(rep(0, length(defense_good_features)), defense_good_features)
+defense_constraints <- .skill_spm_defense_constraints()
+def_lower <- setNames(rep(0, length(defense_constraints$bad)),  defense_constraints$bad)
+def_upper <- setNames(rep(0, length(defense_constraints$good)), defense_constraints$good)
 
 defense_spm_glmnet <- fit_spm_model(defense_train, predictor_cols = defense_cols,
                                      alpha = 0.5, nfolds = 10, weight_by_minutes = TRUE,
@@ -328,5 +270,92 @@ spm_results <- list(
 
 saveRDS(spm_results, file.path(cache_dir, "03_skill_spm.rds"))
 cat("Saved to cache-skills/03_skill_spm.rds\n")
+
+# 12. Expanding-Window Skill-SPM (as-of consumers) ----
+#
+# FABLE-ASOF-EXPERIMENTS.md sec 4: the all-history fit above is trained on
+# skill features + pooled RAPM through the PRESENT -- hindsight for anything
+# claiming point-in-time semantics. This section builds ONE skill-SPM weight
+# set per reference year Y, trained ONLY on seasons < Y (features AND the
+# pooled RAPM target it's fit against), for 09b_career_panna_asof.R to select
+# by snapshot date. Sibling artifact (03_skill_spm_asof.rds) — leaves
+# 03_skill_spm.rds and every consumer of it (steps 04-09, all retrospective
+# seasonal/career outputs) untouched; sec 3 found those only need relabeling.
+#
+# Resumable + checkpointed after every year: completed years are cached and
+# never refit ("freezing", sec 4 point 3) — a regular pipeline run only fits
+# whatever new season just completed (~6-7 min, measured). The one-time
+# historical backfill (~13 years) is ~1.5h — run standalone, not as part of
+# the scheduled GHA skills pipeline.
+
+build_skill_spm_asof <- if (exists("build_skill_spm_asof")) build_skill_spm_asof else TRUE
+
+if (build_skill_spm_asof) {
+  cat("\n=== Expanding-Window Skill-SPM (as-of consumers) ===\n")
+
+  skill_spm_asof_path <- if (exists("skill_spm_asof_path")) skill_spm_asof_path else
+    file.path(cache_dir, "03_skill_spm_asof.rds")
+  asof_resume <- if (exists("asof_resume")) asof_resume else TRUE
+  asof_nfolds <- if (exists("asof_nfolds")) asof_nfolds else 5
+  asof_lambda_formula <- if (exists("asof_lambda_formula")) asof_lambda_formula else
+    function(n) 16.67 * n^(-0.58)
+
+  all_years <- sort(unique(skill_features$season_end_year))
+  # The earliest year has no prior seasons to train on — skip it. 09b's
+  # burn-in for pre-coverage dates falls back to the earliest year that DOES
+  # get a model here (sec 4: "pool ... labeled retrospective, or accept
+  # noisier early weights").
+  reference_years <- if (exists("asof_reference_years")) asof_reference_years else all_years[-1]
+
+  skill_spm_asof <- list()
+  if (isTRUE(asof_resume) && file.exists(skill_spm_asof_path)) {
+    skill_spm_asof <- readRDS(skill_spm_asof_path)
+    cat(sprintf("  resume: %d cutoff-year models already in %s\n",
+                length(skill_spm_asof), basename(skill_spm_asof_path)))
+  }
+
+  todo_years <- reference_years[!as.character(reference_years) %in% names(skill_spm_asof)]
+  cat(sprintf("  %d cutoff years to fit: %s\n", length(todo_years),
+              paste(todo_years, collapse = ", ")))
+
+  if (length(todo_years) > 0) {
+    r4 <- readRDS(file.path(opta_cache_dir, "04_rapm.rds"))
+    pooled_rapm_data <- r4$rapm_data
+    rm(r4); gc(verbose = FALSE)
+
+    splints03 <- readRDS(file.path(opta_cache_dir, "03_splints.rds"))
+    splint_season_map <- splints03$splints[, c("splint_id", "season_end_year")]
+    rm(splints03); gc(verbose = FALSE)
+
+    for (Y in todo_years) {
+      cat(sprintf("\n--- cutoff_year %d (train on seasons < %d) ---\n", Y, Y))
+      t0 <- Sys.time()
+
+      pooled_fit <- fit_expanding_pooled_rapm(
+        pooled_rapm_data, splint_season_map, cutoff_year = Y,
+        lambda_formula = asof_lambda_formula, nfolds = asof_nfolds, seed = 20260710L
+      )
+      if (is.null(pooled_fit)) next
+
+      skill_fit <- fit_expanding_skill_spm(
+        skill_features, pooled_fit$ratings, cutoff_year = Y, nfolds = asof_nfolds
+      )
+      if (is.null(skill_fit)) next
+
+      skill_spm_asof[[as.character(Y)]] <- skill_fit
+      saveRDS(skill_spm_asof, skill_spm_asof_path)  # checkpoint after every year
+      cat(sprintf("  cutoff_year %d done in %.1f min (n_train=%d, pooled n_obs=%d, lambda.min=%.5f)\n",
+                  Y, as.numeric(difftime(Sys.time(), t0, units = "mins")),
+                  skill_fit$n_train, pooled_fit$n_obs, pooled_fit$lambda_min))
+      gc(verbose = FALSE)
+    }
+    rm(pooled_rapm_data, splint_season_map); gc(verbose = FALSE)
+  }
+
+  cat(sprintf("\nSaved %d expanding-window skill-SPM models to %s\n",
+              length(skill_spm_asof), basename(skill_spm_asof_path)))
+} else {
+  cat("\n(skipping expanding-window skill-SPM — build_skill_spm_asof = FALSE)\n")
+}
 
 cat("\n=== COMPLETE ===\n")

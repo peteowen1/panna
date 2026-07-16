@@ -30,6 +30,7 @@
 #'
 #' @return Data frame with player_id, centrality (0-1), unique_opponents,
 #'   matches_played, component_id, component_size
+#' @family centrality
 #' @export
 #'
 #' @examples

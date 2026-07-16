@@ -4,7 +4,6 @@
 # Internal function aliases (not exported)
 calculate_action_epv <- panna:::calculate_action_epv
 aggregate_player_epv <- panna:::aggregate_player_epv
-fit_epv_scoring_model <- panna:::fit_epv_scoring_model
 
 # =============================================================================
 # Helper functions for creating mock data
@@ -836,64 +835,3 @@ test_that("validate_epv_model computes metrics", {
   expect_type(result, "list")
 })
 
-
-# =============================================================================
-# Tests for deprecated functions
-# =============================================================================
-
-test_that("deprecated EPV functions emit warnings", {
-  skip_if_not_installed("xgboost")
-
-  # Create features with all expected columns
-  n <- 100
-  features <- data.frame(
-    match_id = rep("match_1", n),
-    action_id = 1:n,
-    x = runif(n, 0, 100),
-    y = runif(n, 0, 100),
-    distance_to_goal = runif(n, 0, 120),
-    angle_to_goal = runif(n, 0, 1),
-    zone_id = sample(1:9, n, replace = TRUE),
-    in_penalty_area = sample(0:1, n, replace = TRUE),
-    in_final_third = sample(0:1, n, replace = TRUE),
-    in_own_third = sample(0:1, n, replace = TRUE),
-    in_mid_third = sample(0:1, n, replace = TRUE),
-    y_left = sample(0:1, n, replace = TRUE),
-    y_center = sample(0:1, n, replace = TRUE),
-    y_right = sample(0:1, n, replace = TRUE),
-    dx = rnorm(n, 5, 10),
-    dy = rnorm(n, 0, 5),
-    move_distance = runif(n, 0, 50),
-    dist_delta = rnorm(n, 0, 20),
-    result_success = sample(0:1, n, replace = TRUE),
-    is_foot = sample(0:1, n, replace = TRUE),
-    is_head = sample(0:1, n, replace = TRUE),
-    is_pass = sample(0:1, n, replace = TRUE),
-    is_shot = sample(0:1, n, replace = TRUE),
-    is_take_on = sample(0:1, n, replace = TRUE),
-    is_tackle = sample(0:1, n, replace = TRUE),
-    is_interception = sample(0:1, n, replace = TRUE),
-    is_clearance = sample(0:1, n, replace = TRUE),
-    is_aerial = sample(0:1, n, replace = TRUE),
-    is_foul = sample(0:1, n, replace = TRUE),
-    is_ball_recovery = sample(0:1, n, replace = TRUE),
-    seconds_since_chain_start = runif(n, 0, 60),
-    action_in_chain = sample(1:10, n, replace = TRUE),
-    time_normalized = runif(n, 0, 1),
-    period_id = sample(1:2, n, replace = TRUE),
-    next_goal_label = sample(c(0, 1, 2), n, replace = TRUE),
-    stringsAsFactors = FALSE
-  )
-
-  # fit_epv_scoring_model should warn
-  expect_warning(
-    fit_epv_scoring_model(
-      features = features,
-      labels = features,
-      nrounds = 5,
-      early_stopping_rounds = 3,
-      verbose = 0
-    ),
-    "deprecated"
-  )
-})

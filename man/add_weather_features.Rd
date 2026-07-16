@@ -30,3 +30,4 @@ The input data frame with added weather columns:
 Joins weather data to a match data frame. Fetches weather for each
 unique venue+date combination, then merges back.
 }
+\concept{weather}

@@ -28,4 +28,10 @@ scale. If \code{osr}/\code{dsr} are present, the offset is split evenly so the
 }
 \seealso{
 \code{\link{compute_psr_league_offsets}}
+
+Other league offsets: 
+\code{\link{apply_epr_league_offsets}()},
+\code{\link{build_league_network}()},
+\code{\link{compute_psr_league_offsets}()}
 }
+\concept{league offsets}

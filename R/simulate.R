@@ -27,6 +27,7 @@
 #'     \item `simulations`: Raw simulation results (n_sims x n_teams matrix of points)
 #'     \item `positions`: Position frequency matrix (n_teams x n_teams)
 #'   }
+#' @family season simulation
 #' @export
 #'
 #' @examples

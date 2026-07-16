@@ -21,3 +21,14 @@ A data.table with columns from \code{calculate_epr} plus
 Efficiently computes EPR ratings at multiple reference dates using the
 cumsum trick for O(N + D * players) instead of O(N * D) complexity.
 }
+\seealso{
+Other epr: 
+\code{\link{PANNA_EPR_WEIGHT}},
+\code{\link{PANNA_PSR_WEIGHT}},
+\code{\link{aggregate_player_game_epv}()},
+\code{\link{build_player_game_ratings}()},
+\code{\link{calculate_epr}()},
+\code{\link{calculate_epr_regression}()},
+\code{\link{player_value}()}
+}
+\concept{epr}

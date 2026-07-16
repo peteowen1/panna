@@ -50,3 +50,16 @@ Stats are minutes-adjusted (divided by \code{minutes_played / 90}) to get
 per-90 rates, then optionally standardized using training SDs from the
 coefficient file. Efficiency stats (ratios) are excluded from PSV by default.
 }
+\seealso{
+Other psr: 
+\code{\link{calculate_psr}()},
+\code{\link{calculate_psv_components}()},
+\code{\link{compute_player_psv}()},
+\code{\link{default_stat_rating_params}()},
+\code{\link{load_opta_psr_weekly}()},
+\code{\link{player_psr}()},
+\code{\link{soccer_position_map}()},
+\code{\link{soccer_stat_rating_definitions}()},
+\code{\link{stat_rating_names}()}
+}
+\concept{psr}

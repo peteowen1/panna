@@ -8,52 +8,6 @@
 # Helpers: Random Data Generators
 # ============================================================================
 
-# Generate random events for a single match
-generate_random_events <- function(n_goals = NULL, n_subs = NULL, n_reds = 0) {
-  if (is.null(n_goals)) n_goals <- sample(0:5, 1)
-  if (is.null(n_subs)) n_subs <- sample(3:6, 1)
-
-  rows <- list()
-
-  if (n_goals > 0) {
-    rows[[length(rows) + 1]] <- data.frame(
-      minute = sort(sample(1:90, n_goals, replace = TRUE)),
-      is_goal = TRUE, is_sub = FALSE, is_red_card = FALSE,
-      is_home = sample(c(TRUE, FALSE), n_goals, replace = TRUE),
-      stringsAsFactors = FALSE
-    )
-  }
-
-  if (n_subs > 0) {
-    rows[[length(rows) + 1]] <- data.frame(
-      minute = sort(sample(45:85, n_subs, replace = TRUE)),
-      is_goal = FALSE, is_sub = TRUE, is_red_card = FALSE,
-      is_home = sample(c(TRUE, FALSE), n_subs, replace = TRUE),
-      stringsAsFactors = FALSE
-    )
-  }
-
-  if (n_reds > 0) {
-    rows[[length(rows) + 1]] <- data.frame(
-      minute = sort(sample(10:80, n_reds, replace = TRUE)),
-      is_goal = FALSE, is_sub = FALSE, is_red_card = TRUE,
-      is_home = sample(c(TRUE, FALSE), n_reds, replace = TRUE),
-      stringsAsFactors = FALSE
-    )
-  }
-
-  if (length(rows) == 0) {
-    return(data.frame(
-      minute = integer(0), is_goal = logical(0),
-      is_sub = logical(0), is_red_card = logical(0),
-      is_home = logical(0), stringsAsFactors = FALSE
-    ))
-  }
-
-  do.call(rbind, rows)
-}
-
-
 # Generate random RAPM design matrix data
 generate_random_rapm_data <- function(n_splints = NULL, n_players = NULL) {
   if (is.null(n_splints)) n_splints <- sample(20:80, 1)
@@ -157,88 +111,6 @@ generate_random_opta_events <- function(n_events = NULL) {
     stringsAsFactors = FALSE
   )
 }
-
-
-# ============================================================================
-# Property Tests: Splint Boundaries
-# ============================================================================
-
-test_that("splint boundaries: ordering and continuity hold for random events", {
-  for (seed in c(1, 42, 123, 999, 2024)) {
-    withr::with_seed(seed, {
-      events <- generate_random_events()
-      boundaries <- create_splint_boundaries(events)
-
-      # Property 1: start < end for every splint
-      expect_true(all(boundaries$start_minute < boundaries$end_minute),
-                  info = paste("seed:", seed, "- start must be < end"))
-
-      # Property 2: no gaps - end[i] == start[i+1]
-      if (nrow(boundaries) > 1) {
-        for (i in seq_len(nrow(boundaries) - 1)) {
-          expect_equal(boundaries$end_minute[i], boundaries$start_minute[i + 1],
-                       info = paste("seed:", seed, "- gap between splints", i, "and", i + 1))
-        }
-      }
-
-      # Property 3: first splint starts at 0
-      expect_equal(boundaries$start_minute[1], 0,
-                   info = paste("seed:", seed, "- must start at 0"))
-
-      # Property 4: all durations positive
-      expect_true(all(boundaries$duration > 0),
-                  info = paste("seed:", seed, "- durations must be positive"))
-
-      # Property 5: splint_num is sequential 1:n
-      expect_equal(boundaries$splint_num, seq_len(nrow(boundaries)),
-                   info = paste("seed:", seed, "- splint_num must be sequential"))
-    })
-  }
-})
-
-
-test_that("splint boundaries: goal accounting is consistent", {
-  for (seed in c(7, 55, 200, 777)) {
-    withr::with_seed(seed, {
-      n_goals <- sample(1:5, 1)
-      events <- generate_random_events(n_goals = n_goals, n_subs = 3, n_reds = 0)
-      boundaries <- create_splint_boundaries(events)
-
-      # Property: total goals across splints equals total goals in events
-      total_home_goals <- sum(boundaries$goals_home)
-      total_away_goals <- sum(boundaries$goals_away)
-      expected_home <- sum(events$is_goal & events$is_home)
-      expected_away <- sum(events$is_goal & !events$is_home)
-
-      expect_equal(total_home_goals, expected_home,
-                   info = paste("seed:", seed, "- home goals must sum correctly"))
-      expect_equal(total_away_goals, expected_away,
-                   info = paste("seed:", seed, "- away goals must sum correctly"))
-    })
-  }
-})
-
-
-test_that("splint boundaries: player counts respect red cards", {
-  for (seed in c(10, 50, 300)) {
-    withr::with_seed(seed, {
-      events <- generate_random_events(n_goals = 1, n_subs = 2, n_reds = sample(1:2, 1))
-      boundaries <- create_splint_boundaries(events)
-
-      # Property: player counts = 11 - cumulative red cards
-      expect_true(all(boundaries$n_players_home == 11 - boundaries$red_home),
-                  info = paste("seed:", seed, "- home players = 11 - reds"))
-      expect_true(all(boundaries$n_players_away == 11 - boundaries$red_away),
-                  info = paste("seed:", seed, "- away players = 11 - reds"))
-
-      # Property: player counts between 9 and 11
-      expect_true(all(boundaries$n_players_home >= 9 & boundaries$n_players_home <= 11),
-                  info = paste("seed:", seed, "- home player count in valid range"))
-      expect_true(all(boundaries$n_players_away >= 9 & boundaries$n_players_away <= 11),
-                  info = paste("seed:", seed, "- away player count in valid range"))
-    })
-  }
-})
 
 
 # ============================================================================
@@ -424,66 +296,6 @@ test_that("SPADL conversion: time ordering within periods", {
   })
 })
 
-
-# ============================================================================
-# Property Tests: Panna Rating Decomposition
-# ============================================================================
-
-test_that("panna rating: panna == spm_prior + deviation", {
-  skip_if_not_installed("glmnet")
-
-  for (seed in c(42, 200, 888)) {
-    withr::with_seed(seed, {
-      rapm_data <- generate_random_rapm_data(n_splints = 40, n_players = 20)
-
-      # Create mock SPM ratings
-      spm_ratings <- data.frame(
-        player_id = rapm_data$player_ids,
-        spm = rnorm(rapm_data$n_players, 0, 0.3),
-        stringsAsFactors = FALSE
-      )
-
-      result <- calculate_panna_rating(rapm_data, spm_ratings, lambda_prior = 1)
-      ratings <- result$ratings
-
-      # Property: panna = spm_prior + deviation (exact decomposition)
-      expect_equal(ratings$panna, ratings$spm_prior + ratings$deviation,
-                   tolerance = 1e-10,
-                   info = paste("seed:", seed, "- panna must equal spm_prior + deviation"))
-
-      # Property: all rating columns are numeric
-      expect_true(is.numeric(ratings$panna), info = "panna must be numeric")
-      expect_true(is.numeric(ratings$spm_prior), info = "spm_prior must be numeric")
-      expect_true(is.numeric(ratings$deviation), info = "deviation must be numeric")
-    })
-  }
-})
-
-
-test_that("panna rating: stronger lambda shrinks deviation toward zero", {
-  skip_if_not_installed("glmnet")
-
-  withr::with_seed(42, {
-    rapm_data <- generate_random_rapm_data(n_splints = 50, n_players = 20)
-
-    spm_ratings <- data.frame(
-      player_id = rapm_data$player_ids,
-      spm = rnorm(rapm_data$n_players, 0, 0.3),
-      stringsAsFactors = FALSE
-    )
-
-    # Fit with small vs large lambda
-    result_small <- calculate_panna_rating(rapm_data, spm_ratings, lambda_prior = 0.01)
-    result_large <- calculate_panna_rating(rapm_data, spm_ratings, lambda_prior = 100)
-
-    # Property: larger lambda produces smaller deviations (more shrinkage)
-    mean_dev_small <- mean(abs(result_small$ratings$deviation))
-    mean_dev_large <- mean(abs(result_large$ratings$deviation))
-
-    expect_true(mean_dev_large < mean_dev_small,
-                info = "Larger lambda should shrink deviations more toward zero")
-  })
-})
 
 
 # ============================================================================

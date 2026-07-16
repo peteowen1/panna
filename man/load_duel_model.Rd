@@ -15,3 +15,13 @@ Fitted xDuel model.
 \description{
 Load the pre-trained xDuel model
 }
+\seealso{
+Other xduel: 
+\code{\link{compute_all_duel_preps}()},
+\code{\link{compute_duel_woe}()},
+\code{\link{fit_duel_model}()},
+\code{\link{predict_duel}()},
+\code{\link{prepare_duels_from_events}()},
+\code{\link{save_duel_model}()}
+}
+\concept{xduel}

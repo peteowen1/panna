@@ -16,6 +16,7 @@
 #' @return Character vector of role codes:
 #'   GK, CB, LB, RB, LWB, RWB, DM, CM, LM, RM, CAM, LW, RW, CF, LF, RF
 #'   (or `"UNK"` for blanks / "Substitute" / unrecognized).
+#' @family expected minutes
 #' @export
 classify_role <- function(position, side) {
   pos <- ifelse(is.na(position), "", as.character(position))
@@ -102,7 +103,7 @@ classify_role <- function(position, side) {
 #' @param verbose Logical.
 #' @return A data.table with features + `minutes_played` target. The vector
 #'   of training feature column names is in `attr(result, "feature_cols")`.
-#' @export
+#' @keywords internal
 build_minutes_training_data <- function(lineups,
                                           intl_comps,
                                           ratings_path = "data-raw/cache-opta/07_seasonal_ratings.rds",

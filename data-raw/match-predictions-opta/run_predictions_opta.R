@@ -65,7 +65,8 @@ if (!exists("run_steps", inherits = FALSE)) {
     step_11_simulate_wc2026          = FALSE,  # Opt-in: simulate the 2026 World Cup
     step_12_export_wc2026_blog       = FALSE,  # Opt-in: export WC2026 blog data
     step_12b_snapshot_wc_minutes     = FALSE,  # Opt-in: archive dated minutes snapshot + diff
-    step_12c_snapshot_wc_strength    = FALSE   # Opt-in: archive dated team-strength (ELO+p_champ) snapshot + diff
+    step_12c_snapshot_wc_strength    = FALSE,  # Opt-in: archive dated team-strength (ELO+p_champ) snapshot + diff
+    step_13_publish_release_data     = FALSE   # Opt-in: single gated publish of predictions-latest + blog-latest (PA5/H-TORN)
   )
 }
 
@@ -78,20 +79,89 @@ if (!exists("force_rebuild_from", inherits = FALSE)) force_rebuild_from <- NULL
 
 source("data-raw/pipeline_utils.R")
 
-# Wrapper that passes run_steps and pipeline_failed from this scope
-run_pred_step <- function(step_name, step_num, code_block) {
-  result <- run_step(step_name, step_num, code_block, run_steps, pipeline_failed)
-  if (!is.null(result) && identical(result$status, "FAILED")) {
-    pipeline_failed <<- TRUE
-  }
-  result
-}
-
 # Critical step check: set pipeline_failed flag to skip downstream steps
 check_pred_critical <- function(result) {
   if (check_critical_step(result)) {
     pipeline_failed <<- TRUE
   }
+}
+
+# 3b. Isolated-step helper (steps 2/2b only) ----
+# Steps 2 (player_ratings_to_team) and 2b (team_skill_features) load
+# 01_match_stats.rds -- 1.9M rows x 421 cols, ~5.9GB in R heap -- just to
+# filter it down to the handful of players in upcoming fixtures. Confirmed
+# root cause of predictions-pipeline.yml dev failures 2026-07-16 (3/5
+# dispatches died with exit 143 / "operation was canceled" right after this
+# load; RSS checkpoint showed ~9.1GB heap BEFORE the skill-estimate
+# computation even starts). Unlike run_pipeline_opta.R, this pipeline runs
+# all steps in ONE shared session, so whatever these two steps allocate
+# becomes a permanent floor for every step after them too (step 2b alone
+# pushed a successful run from 2.7GB to 11.6GB that never came back down).
+# Isolate just these two in their own callr subprocess (same technique as
+# run_pipeline_opta.R's run_step_opta(), panna#87/#128) so their peak is
+# fully released to the OS on exit. Safe here because neither step writes
+# to publish_files or any other cross-step in-memory state -- both
+# communicate solely via their own .rds cache file. Do NOT reuse this for
+# steps that DO rely on in-memory state crossing step boundaries
+# (09/10/10b/10c/10d/12 all write to publish_files via `<<-`; step 13 reads
+# it -- none of that would survive a subprocess boundary).
+.pred_isolated_cfg_path <- file.path("data-raw", "cache-predictions-opta",
+                                     ".step_isolated_config.rds")
+
+.write_pred_isolated_config <- function() {
+  # publish_files is a cross-step `<<-` accumulator (declared at top level,
+  # written by steps 09/10/10b/10c/10d/12, read by step 13) -- excluded here
+  # even though steps 2/2b don't currently write to it, so a future edit
+  # that adds a publish_files write to either isolated step fails loudly
+  # (object not found in the child) instead of silently losing the write
+  # across the subprocess boundary.
+  nms <- setdiff(ls(globalenv()),
+                 c("step_results", "pipeline_failed", "pipeline_start", "publish_files"))
+  nms <- nms[!vapply(nms, function(n) is.function(get(n, envir = globalenv())),
+                     logical(1))]
+  saveRDS(mget(nms, envir = globalenv()), .pred_isolated_cfg_path)
+}
+
+run_pred_step_isolated <- function(step_name, step_num, code_block) {
+  .write_pred_isolated_config()
+  isolated <- function() {
+    if (!requireNamespace("callr", quietly = TRUE)) {
+      stop("callr is required to run this step in isolation.", call. = FALSE)
+    }
+    callr::r(
+      function(code_block, cfg_path, utils_path) {
+        if (file.exists(cfg_path)) list2env(readRDS(cfg_path), envir = globalenv())
+        if (file.exists(utils_path)) source(utils_path)
+        # The orchestrator (run_predictions_opta.R) does `library(dplyr);
+        # devtools::load_all()` once at its own top for the whole shared
+        # session; a fresh callr subprocess inherits neither. Individual
+        # step scripts inconsistently self-load their own deps --
+        # 02_player_ratings_to_team.R does both, 02b_team_skill_features.R
+        # does neither (confirmed 2026-07-16: 2b failed in isolation first
+        # with 'could not find function "bind_rows"', then again with
+        # 'could not find function ".detect_skill_stat_cols"', an internal
+        # panna function -- devtools::load_all() alone doesn't attach
+        # Imports like dplyr to the search path, and library(dplyr) alone
+        # doesn't give access to panna's own internals). Do both here,
+        # exactly mirroring the orchestrator's own setup, so isolated steps
+        # don't depend on which specific script they happen to be.
+        library(dplyr)
+        devtools::load_all(quiet = TRUE)
+        code_block()
+        invisible(NULL)
+      },
+      args = list(code_block = code_block, cfg_path = .pred_isolated_cfg_path,
+                  utils_path = file.path("data-raw", "pipeline_utils.R")),
+      wd = getwd(), show = TRUE, spinner = FALSE
+    )
+    invisible(NULL)
+  }
+  result <- run_step(step_name, step_num, isolated, run_steps, pipeline_failed)
+  if (!is.null(result) && identical(result$status, "FAILED")) {
+    pipeline_failed <<- TRUE
+  }
+  gc(verbose = FALSE, full = TRUE)
+  result
 }
 
 # 4. Initialize Pipeline ----
@@ -140,23 +210,30 @@ pipeline_start <- Sys.time()
 step_results <- list()
 pipeline_failed <- FALSE
 
-message("\n")
-message(paste(rep("#", 70), collapse = ""))
-message("#")
-message("#   OPTA MATCH PREDICTION PIPELINE")
-message("#")
-message(sprintf("#   Leagues: %s", paste(leagues, collapse = ", ")))
-message(sprintf("#   Seasons: %s", if (is.null(seasons)) "All available" else paste(seasons, collapse = ", ")))
-message(sprintf("#   Min season: %s", if (is.null(min_season)) "None" else min_season))
-message(sprintf("#   Skill ratings: %s", use_skill_ratings))
-message(sprintf("#   Force rebuild from: %s",
-                if (is.null(force_rebuild_from)) "None (use cache)" else force_rebuild_from))
-message("#")
-message(paste(rep("#", 70), collapse = ""))
+# Publish-candidate accumulator for step 13 (ECOSYSTEM-FIX-PLAN.md PA5 /
+# panna H-TORN). Steps 09/10/10b/10c/10d/12 write LOCAL outputs only and
+# register the files they want published THIS run here (respecting each
+# step's own "did I actually rewrite this" logic, e.g. 10b/10c's
+# mirror_alias) via `publish_files$<tag> <<- c(publish_files$<tag>, ...)` --
+# superassignment finds this pre-declared global binding by walking up the
+# enclosing scope from each step's `source(..., local = TRUE)` frame. Step 13
+# is the ONE place either tag actually gets uploaded, via vb_publish()
+# (hash -> upload -> verify -> manifest LAST), so predictions-latest and
+# blog-latest either both advance together this run or neither does.
+publish_files <- list(predictions_latest = character(0), blog_latest = character(0))
+
+print_pipeline_banner("OPTA MATCH PREDICTION PIPELINE", c(
+  sprintf("Leagues: %s", paste(leagues, collapse = ", ")),
+  sprintf("Seasons: %s", if (is.null(seasons)) "All available" else paste(seasons, collapse = ", ")),
+  sprintf("Min season: %s", if (is.null(min_season)) "None" else min_season),
+  sprintf("Skill ratings: %s", use_skill_ratings),
+  sprintf("Force rebuild from: %s",
+          if (is.null(force_rebuild_from)) "None (use cache)" else force_rebuild_from)
+))
 
 # 5. Step 1: Build Fixture Results ----
 
-step_results[[1]] <- run_pred_step("build_fixture_results", 1, function() {
+step_results[[1]] <- run_pipeline_step("build_fixture_results", 1, function() {
   source("data-raw/match-predictions-opta/01_build_fixture_results.R", local = TRUE)
 })
 check_pred_critical(step_results[[1]])
@@ -165,105 +242,110 @@ check_pred_critical(step_results[[1]])
 # Runs after step 01 because the derived-squad path reads
 # 01_fixture_results.rds for the WC2026 team list.
 
-step_results[["1b"]] <- run_pred_step("refresh_wc2026_squads", "1b", function() {
+step_results[["1b"]] <- run_pipeline_step("refresh_wc2026_squads", "1b", function() {
   source("data-raw/match-predictions-opta/01b_refresh_wc2026_squads.R", local = TRUE)
 })
 # 1b is non-critical — 01b itself falls back to the predictions-cache copy,
 # and step 02 falls back to last-XI weighting if the parquet is absent.
 
 # 6. Step 2: Player Ratings to Team ----
+# Isolated (see run_pred_step_isolated() above) -- loads the 5.9GB
+# match_stats cache and was the confirmed OOM source in this pipeline.
 
-step_results[[2]] <- run_pred_step("player_ratings_to_team", 2, function() {
+step_results[[2]] <- run_pred_step_isolated("player_ratings_to_team", 2, function() {
   source("data-raw/match-predictions-opta/02_player_ratings_to_team.R", local = TRUE)
 })
 check_pred_critical(step_results[[2]])
 
 # 6b. Step 2b: Team Skill Features ----
+# Isolated for the same reason -- the successful 2026-07-15 run showed RSS
+# jump from 2.7GB to 11.6GB across this one step, a floor the rest of the
+# pipeline then carried for the remaining ~10 steps.
 
-step_results[["2b"]] <- run_pred_step("team_skill_features", "2b", function() {
+step_results[["2b"]] <- run_pred_step_isolated("team_skill_features", "2b", function() {
   source("data-raw/match-predictions-opta/02b_team_skill_features.R", local = TRUE)
 })
 # 2b is optional — don't abort if it fails
 
 # 7. Step 3: Team Rolling Features ----
 
-step_results[[3]] <- run_pred_step("team_rolling_features", 3, function() {
+step_results[[3]] <- run_pipeline_step("team_rolling_features", 3, function() {
   source("data-raw/match-predictions-opta/03_team_rolling_features.R", local = TRUE)
 })
 check_pred_critical(step_results[[3]])
 
 # 8. Step 4: Build Match Dataset ----
 
-step_results[[4]] <- run_pred_step("build_match_dataset", 4, function() {
+step_results[[4]] <- run_pipeline_step("build_match_dataset", 4, function() {
   source("data-raw/match-predictions-opta/04_build_match_dataset.R", local = TRUE)
 })
 check_pred_critical(step_results[[4]])
 
 # 9. Step 5: Fit Goals Model ----
 
-step_results[[5]] <- run_pred_step("fit_goals_model", 5, function() {
+step_results[[5]] <- run_pipeline_step("fit_goals_model", 5, function() {
   source("data-raw/match-predictions-opta/05_fit_goals_model.R", local = TRUE)
 })
 check_pred_critical(step_results[[5]])
 
 # 10. Step 6: Fit Outcome Model ----
 
-step_results[[6]] <- run_pred_step("fit_outcome_model", 6, function() {
+step_results[[6]] <- run_pipeline_step("fit_outcome_model", 6, function() {
   source("data-raw/match-predictions-opta/06_fit_outcome_model.R", local = TRUE)
 })
 check_pred_critical(step_results[[6]])
 
 # 11. Step 7: Predict Fixtures ----
 
-step_results[[7]] <- run_pred_step("predict_fixtures", 7, function() {
+step_results[[7]] <- run_pipeline_step("predict_fixtures", 7, function() {
   source("data-raw/match-predictions-opta/07_predict_fixtures.R", local = TRUE)
 })
 
 # 12. Step 8: Evaluate Model ----
 
-step_results[[8]] <- run_pred_step("evaluate_model", 8, function() {
+step_results[[8]] <- run_pipeline_step("evaluate_model", 8, function() {
   source("data-raw/match-predictions-opta/08_evaluate_model.R", local = TRUE)
 })
 
 # 13. Step 9: Upload Predictions ----
 
-step_results[[9]] <- run_pred_step("upload_predictions", 9, function() {
+step_results[[9]] <- run_pipeline_step("upload_predictions", 9, function() {
   source("data-raw/match-predictions-opta/09_upload_predictions.R", local = TRUE)
 })
 
 # 14. Step 10: Export Blog Data ----
 
-step_results[[10]] <- run_pred_step("export_blog_data", 10, function() {
+step_results[[10]] <- run_pipeline_step("export_blog_data", 10, function() {
   source("data-raw/match-predictions-opta/10_export_blog_data.R", local = TRUE)
 })
 
 # 14b. Step 10b: Export Game Logs ----
 
-step_results[["10b"]] <- run_pred_step("export_game_logs", "10b", function() {
+step_results[["10b"]] <- run_pipeline_step("export_game_logs", "10b", function() {
   source("data-raw/match-predictions-opta/10b_export_game_logs.R", local = TRUE)
 })
 
 # 14c. Step 10c: Export Equity ----
 
-step_results[["10c"]] <- run_pred_step("export_equity", "10c", function() {
+step_results[["10c"]] <- run_pipeline_step("export_equity", "10c", function() {
   source("data-raw/match-predictions-opta/10c_export_equity.R", local = TRUE)
 })
 
 # 14c2. Step 10d: Export Shootout WPA ----
 
-step_results[["10d"]] <- run_pred_step("export_shootout_wpa", "10d", function() {
+step_results[["10d"]] <- run_pipeline_step("export_shootout_wpa", "10d", function() {
   source("data-raw/match-predictions-opta/10d_export_shootout_wpa.R", local = TRUE)
 })
 
 # 14d. Step 11: Simulate WC 2026 ----
 
-step_results[[11]] <- run_pred_step("simulate_wc2026", 11, function() {
+step_results[[11]] <- run_pipeline_step("simulate_wc2026", 11, function() {
   source("data-raw/match-predictions-opta/11_simulate_wc2026.R", local = TRUE)
 })
 
 # 14e. Step 12: Export WC 2026 Blog Data ----
 
-step_results[[12]] <- run_pred_step("export_wc2026_blog", 12, function() {
+step_results[[12]] <- run_pipeline_step("export_wc2026_blog", 12, function() {
   source("data-raw/match-predictions-opta/12_export_wc2026_blog.R", local = TRUE)
 })
 
@@ -272,7 +354,7 @@ step_results[[12]] <- run_pred_step("export_wc2026_blog", 12, function() {
 # release and diff it against the previous snapshot (group-stage drift tracking).
 # Runs after step 12, which writes the squads file this reads.
 
-step_results[["12b"]] <- run_pred_step("snapshot_wc_minutes", "12b", function() {
+step_results[["12b"]] <- run_pipeline_step("snapshot_wc_minutes", "12b", function() {
   source("data-raw/match-predictions-opta/12b_snapshot_wc_minutes.R", local = TRUE)
 })
 
@@ -282,8 +364,20 @@ step_results[["12b"]] <- run_pred_step("snapshot_wc_minutes", "12b", function() 
 # snapshot (tournament ELO/champion-odds drift tracking). Runs after step 12,
 # which writes the team_strength file this reads.
 
-step_results[["12c"]] <- run_pred_step("snapshot_wc_strength", "12c", function() {
+step_results[["12c"]] <- run_pipeline_step("snapshot_wc_strength", "12c", function() {
   source("data-raw/match-predictions-opta/12c_snapshot_wc_strength.R", local = TRUE)
+})
+
+# 14h. Step 13: Publish predictions-latest + blog-latest (gated, manifest-last) ----
+# Runs after every build step so publish_files is fully populated. A failure
+# here (e.g. one tag's vb_publish aborting) is caught by run_pipeline_step() like
+# any other step -- it sets pipeline_failed, the workflow's
+# `quit(status = 1)` stops the job, and the "Trigger blog data build"
+# workflow step (gated `if: success()`) never fires a predictions-complete
+# dispatch against a torn release.
+
+step_results[[13]] <- run_pipeline_step("publish_release_data", 13, function() {
+  source("data-raw/match-predictions-opta/13_publish_release_data.R", local = TRUE)
 })
 
 # 15. Summary ----

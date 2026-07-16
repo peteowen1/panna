@@ -18,7 +18,9 @@ data/
 
 # Claude Code (local settings)
 .claude/
-docs/CLAUDE.html
+
+# pkgdown output (rebuilt fresh by .github/workflows/pkgdown.yaml, deployed to gh-pages)
+docs/
 
 # IDE
 .vscode/

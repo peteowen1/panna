@@ -23,24 +23,33 @@
 
 # 1. Configuration ----
 
+# When sourced standalone (outside run_predictions_opta.R) pipeline_utils.R
+# isn't loaded yet — source it here so resolve_blog_leagues() is available
+# regardless of entry point (direct Rscript, 10c_backfill_action_equity.R, or
+# the full pipeline).
+if (!exists("resolve_blog_leagues", mode = "function")) {
+  source(file.path("data-raw", "pipeline_utils.R"))
+}
+
 if (!exists("cache_dir")) cache_dir <- file.path("data-raw", "cache-predictions-opta")
 if (!dir.exists(cache_dir)) dir.create(cache_dir, recursive = TRUE)
 repo <- "peteowen1/pannadata"
 tag <- "blog-latest"
 
-# Groups come from the shared canonical constant (constants.R: PANNA_LEAGUE_GROUPS),
-# so this can't drift from 10b_export_game_logs.R's league set (H-DRIFT,
-# 2026-07-08 review — this list previously hardcoded 10 domestic leagues and
-# no calendar leagues, missing MLS/ARG/BRA/SAU/AUS/CAFCL that 10b covers).
-domestic_leagues  <- PANNA_LEAGUE_GROUPS$domestic
-calendar_leagues  <- PANNA_LEAGUE_GROUPS$calendar    # calendar-year season labels
-continental_cups  <- PANNA_LEAGUE_GROUPS$continental
-intl_tournaments  <- PANNA_LEAGUE_GROUPS$intl
+# Groups come from resolve_blog_leagues() (pipeline_utils.R), backed by the
+# shared canonical constant (constants.R: PANNA_LEAGUE_GROUPS), so this can't
+# drift from 10b_export_game_logs.R's league set (H-DRIFT, 2026-07-08 review —
+# this list previously hardcoded 10 domestic leagues and no calendar leagues,
+# missing MLS/ARG/BRA/SAU/AUS/CAFCL that 10b covers).
+.blog_league_groups <- resolve_blog_leagues()
+domestic_leagues     <- .blog_league_groups$domestic_leagues
+calendar_leagues     <- .blog_league_groups$calendar_leagues    # calendar-year season labels
+continental_cups     <- .blog_league_groups$continental_cups
+intl_tournaments     <- .blog_league_groups$intl_tournaments
 # Leagues whose season label is resolved by year prefix rather than passed through
-season_label_leagues <- c(intl_tournaments, calendar_leagues)
+season_label_leagues <- .blog_league_groups$season_label_leagues
 if (!exists("blog_leagues", inherits = FALSE)) {
-  blog_leagues    <- c(domestic_leagues, calendar_leagues,
-                       continental_cups, intl_tournaments)
+  blog_leagues <- .blog_league_groups$blog_leagues
 }
 
 # Seasons to export. Vector (new) or scalar `game_log_season` (back-compat
@@ -68,6 +77,19 @@ if (!exists("build_equity", inherits = FALSE)) build_equity <- TRUE
 # Set FALSE when back-filling a non-current historical subset to avoid
 # clobbering the blog chain builder's current-season pointer.
 if (!exists("mirror_alias", inherits = FALSE)) mirror_alias <- TRUE
+
+# Subset-league backfill: MERGE the processed leagues into each existing
+# action_equity_<season>.parquet instead of clobbering it. Set TRUE when
+# running a league SUBSET (e.g. backfilling WC historical tournaments into an
+# era file that already holds other leagues' rows for that season). Mirrors
+# 10b_export_game_logs.R's merge_subset_leagues, but keyed on `match_id`
+# rather than `league` — this slim equity lookup (match_id, event_id,
+# epv_credit) carries no league column, and match_id is already unique per
+# match across every competition, so dropping existing rows whose match_id
+# belongs to the just-rebuilt league(s) and re-appending is equivalent and
+# needs no schema change. Idempotent (drops + re-appends the rebuilt
+# league's matches).
+if (!exists("merge_subset_leagues", inherits = FALSE)) merge_subset_leagues <- FALSE
 
 message(sprintf("\n=== Building Action Equity: %d season(s) ===",
                 length(equity_seasons)))
@@ -201,7 +223,31 @@ validate_equity_schema <- function(dt, league, season) {
                   season, nrow(action_equity), length(season_equity)))
 
   out_path <- file.path(cache_dir, sprintf("action_equity_%s.parquet", season))
-  arrow::write_parquet(action_equity, out_path)
+  # Subset-league backfill: merge into the existing per-season file rather
+  # than clobbering it (which would delete every other league's rows for the
+  # season). Idempotent: drop existing rows whose match_id belongs to the
+  # league(s) we just rebuilt, then append.
+  if (isTRUE(merge_subset_leagues) && file.exists(out_path)) {
+    existing <- data.table::as.data.table(arrow::read_parquet(out_path))
+    # Release arrow's memory-mapped file handle before overwriting the same
+    # path — Windows error 1224 ("user-mapped section open") otherwise.
+    gc()
+    rebuilt_match_ids <- unique(action_equity$match_id)
+    kept <- existing[!match_id %in% rebuilt_match_ids]
+    n_kept <- nrow(kept)
+    n_dropped <- nrow(existing) - n_kept
+    action_equity <- data.table::rbindlist(list(kept, action_equity), fill = TRUE, use.names = TRUE)
+    rm(existing, kept); gc()
+    message(sprintf("  [%s] Merge: kept %d existing rows (replaced %d matching rebuilt match_ids), total %d",
+                    season, n_kept, n_dropped, nrow(action_equity)))
+  }
+  # Write atomically via a temp file then replace, so a write failure can
+  # never corrupt the existing per-season parquet (which may hold every
+  # other league once merge_subset_leagues is used).
+  out_tmp <- paste0(out_path, ".tmp")
+  arrow::write_parquet(action_equity, out_tmp)
+  if (file.exists(out_path)) file.remove(out_path)
+  file.rename(out_tmp, out_path)
   message(sprintf("  [%s] Written: %s (%.1f MB)",
                   season, out_path, file.size(out_path) / (1024 * 1024)))
 
@@ -246,35 +292,22 @@ if (isTRUE(mirror_alias) && file.exists(alias_src)) {
   message("\n  Skipping alias mirror (mirror_alias = FALSE) — keeping existing action_equity.parquet")
 }
 
-# 6. Upload to GitHub Releases ----
+# 6. Register for step-13 publish (PA5/H-TORN: no upload here) ----
 
 if (isTRUE(upload_equity)) {
-  message("\n=== Uploading equity to GitHub ===\n")
-
-  gh_check <- tryCatch(
-    system2("gh", "--version", stdout = TRUE, stderr = TRUE),
-    error = function(e) NULL
-  )
-  if (is.null(gh_check)) {
-    stop("'gh' CLI is not installed or not on PATH.")
-  }
-
   candidates <- if (isTRUE(mirror_alias)) {
     unique(c(unlist(season_paths), alias_path))
   } else {
     unlist(season_paths)
   }
-  files_to_upload <- candidates[file.exists(candidates)]
+  files_to_publish <- candidates[file.exists(candidates)]
 
-  for (f in files_to_upload) {
-    message(sprintf("  Uploading %s...", basename(f)))
-    result <- system2("gh", c("release", "upload", tag, shQuote(f),
-                               "--repo", repo, "--clobber"),
-                      stdout = TRUE, stderr = TRUE)
-    if (!is.null(attr(result, "status")) && attr(result, "status") != 0) {
-      stop(sprintf("Failed to upload %s: %s", basename(f),
-                   paste(result, collapse = "\n")))
-    }
+  if (exists("publish_files", envir = .GlobalEnv)) {
+    publish_files$blog_latest <<- c(publish_files$blog_latest, files_to_publish)
+    message(sprintf("\n  Registered %d file(s) for blog-latest publish (step 13)",
+                    length(files_to_publish)))
+  } else {
+    message("\n  (standalone run -- not registered for step-13 publish)")
   }
 }
 

@@ -26,3 +26,10 @@ validate_seasons("2023-2024")
 validate_seasons(c("2022-2023", "2023-2024"))
 validate_seasons("2013-2014", min_year = 2013, source_name = "Opta")
 }
+\seealso{
+Other utilities: 
+\code{\link{per_90}()},
+\code{\link{safe_divide}()},
+\code{\link{validate_dataframe}()}
+}
+\concept{utilities}

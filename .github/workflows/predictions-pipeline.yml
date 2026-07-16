@@ -59,6 +59,7 @@ jobs:
           cache-version: 2
           extra-packages: |
             any::devtools
+            any::callr
             any::piggyback
             any::arrow
             any::dplyr
@@ -251,7 +252,12 @@ jobs:
               # Same pattern for team strength: dated ELO + champion-odds
               # snapshots to wc2026-strength-history so tournament rating drift
               # is tracked going forward (no replay needed next time).
-              step_12c_snapshot_wc_strength  = TRUE
+              step_12c_snapshot_wc_strength  = TRUE,
+              # Single gated publish of predictions-latest + blog-latest
+              # (ECOSYSTEM-FIX-PLAN.md PA5/H-TORN) -- steps 09/10/10b/10c/10d/12
+              # above now write LOCAL outputs only; this is the one place
+              # either tag actually gets uploaded, manifest-last per tag.
+              step_13_publish_release_data  = TRUE
             )
 
             source('data-raw/match-predictions-opta/run_predictions_opta.R', chdir = FALSE)

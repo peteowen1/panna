@@ -24,3 +24,10 @@ safe_divide(10, 2)
 safe_divide(10, 0)          # 0
 safe_divide(10, 0, default = NA_real_)
 }
+\seealso{
+Other utilities: 
+\code{\link{per_90}()},
+\code{\link{validate_dataframe}()},
+\code{\link{validate_seasons}()}
+}
+\concept{utilities}

@@ -30,6 +30,7 @@
 #'     \item `loss`: final cross-entropy loss
 #'     \item `converged`: optim convergence flag
 #'   }
+#' @family world cup simulation
 #' @export
 fit_bt_ratings <- function(predictions,
                            neutral = FALSE,
@@ -118,6 +119,7 @@ fit_bt_ratings <- function(predictions,
 #' @param home_adv Home-advantage param (log-odds). Pass 0 for neutral venue.
 #' @param nu Draw-frequency param.
 #' @return Named vector with `prob_H`, `prob_D`, `prob_A`.
+#' @family world cup simulation
 #' @export
 bt_match_prob <- function(r_home, r_away, home_adv = 0, nu = 0.5) {
   rh <- r_home + home_adv

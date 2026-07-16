@@ -637,85 +637,31 @@ if (!file.exists(fixture_results_path)) {
   standings_ok <- TRUE
 }
 
-# 5. Upload to GitHub Releases ----
+# 5. Summary (LOCAL ONLY -- no upload here) ----
+#
+# Historically this step uploaded straight to blog-latest via the gh CLI. Per
+# ECOSYSTEM-FIX-PLAN.md PA5 (panna H-TORN), all release publishing for this
+# pipeline now happens in ONE final gated step (13_publish_release_data.R),
+# so blog-latest and predictions-latest either both advance together or
+# neither does -- previously this step's independent upload could land ahead
+# of a later step (e.g. 10b, the OOM-prone one) failing mid-run, leaving the
+# release torn between vintages.
 
-message("\n=== Uploading to GitHub ===\n")
-
-# Check gh CLI is available
-gh_check <- tryCatch(
-  system2("gh", "--version", stdout = TRUE, stderr = TRUE),
-  error = function(e) NULL
-)
-if (is.null(gh_check)) {
-  stop("'gh' CLI is not installed or not on PATH. Install from https://cli.github.com/")
-}
-
-# Ensure release exists
-message(sprintf("  Checking release '%s' on %s...", tag, repo))
-
-release_check <- system2(
-  "gh", c("release", "view", tag, "--repo", repo),
-  stdout = TRUE, stderr = TRUE
-)
-release_status <- attr(release_check, "status")
-
-if (!is.null(release_status) && release_status != 0) {
-  stderr_text <- paste(release_check, collapse = "\n")
-
-  # Match "not found" specifically; treat everything else as an unexpected error
-  if (grepl("release not found|not found", stderr_text, ignore.case = TRUE)) {
-    message("  Release not found. Creating...")
-    create_result <- system2(
-      "gh", c("release", "create", tag,
-              "--repo", repo,
-              "--title", shQuote("Blog Data (Latest)"),
-              "--notes", shQuote("Player ratings and match predictions for the blog.")),
-      stdout = TRUE, stderr = TRUE
-    )
-    create_status <- attr(create_result, "status")
-    if (!is.null(create_status) && create_status != 0) {
-      stop(sprintf("Failed to create release '%s': %s",
-                   tag, paste(create_result, collapse = "\n")))
-    }
-  } else {
-    stop(sprintf("Failed to check release '%s': %s\nCheck network, auth (gh auth login), and repo name.",
-                 tag, stderr_text))
-  }
-}
-
-# Upload files
-upload_files <- c(ratings_output, predictions_output)
+publish_candidates <- c(ratings_output, predictions_output)
 if (exists("standings_ok") && isTRUE(standings_ok)) {
-  upload_files <- c(upload_files, standings_output)
+  publish_candidates <- c(publish_candidates, standings_output)
 }
-for (fpath in upload_files) {
-  fname <- basename(fpath)
-  size_mb <- round(file.size(fpath) / (1024 * 1024), 2)
-  message(sprintf("  Uploading %s (%.2f MB)...", fname, size_mb))
-  result <- system2(
-    "gh", c("release", "upload", tag, shQuote(fpath),
-            "--repo", repo, "--clobber"),
-    stdout = TRUE, stderr = TRUE
-  )
-  if (!is.null(attr(result, "status")) && attr(result, "status") != 0) {
-    stop(sprintf("Failed to upload %s: %s", fname, paste(result, collapse = "\n")))
-  }
+if (exists("publish_files", envir = .GlobalEnv)) {
+  publish_files$blog_latest <<- c(publish_files$blog_latest, publish_candidates)
+} else {
+  message("  (standalone run -- not registered for step-13 publish)")
 }
-
-# 6. Summary ----
 
 message("\n========================================")
-message("Blog data exported successfully!")
+message("Blog data built successfully (publish deferred to step 13)")
 message("========================================")
-message(sprintf("  Release: https://github.com/%s/releases/tag/%s", repo, tag))
 message(sprintf("  Ratings: %d players (season %d)", nrow(panna_ratings), latest_season))
 message(sprintf("  Predictions: %d matches", nrow(match_predictions)))
 if (exists("standings_ok") && isTRUE(standings_ok)) {
   message(sprintf("  Standings: %d teams", nrow(season_standings)))
-}
-message("\nBlog URLs:")
-message(sprintf("  https://github.com/%s/releases/download/%s/panna_ratings.parquet", repo, tag))
-message(sprintf("  https://github.com/%s/releases/download/%s/match_predictions.parquet", repo, tag))
-if (exists("standings_ok") && isTRUE(standings_ok)) {
-  message(sprintf("  https://github.com/%s/releases/download/%s/season_standings.parquet", repo, tag))
 }

@@ -224,11 +224,14 @@ cat("Saved to cache-opta/06_xrapm.rds\n")
 # 9. Multi-Target xRAPM (optional) ----
 # Fit xRAPM for value metric targets using their RAPM + SPM results
 
-use_multi_target <- if (exists("use_multi_target")) use_multi_target else TRUE
+# D6 (FABLE-PRIOR-FIX-PLAN.md): experimental gate, default FALSE -- see
+# 04_rapm.R for rationale (inherits = FALSE for the same dplyr-collision
+# reason as other pipeline config guards).
+run_multi_target <- if (exists("run_multi_target", inherits = FALSE)) run_multi_target else FALSE
 multi_rapm_path <- file.path(cache_dir, "04_rapm_multi.rds")
 multi_spm_path <- file.path(cache_dir, "05_spm_multi.rds")
 
-if (use_multi_target && file.exists(multi_rapm_path) && file.exists(multi_spm_path)) {
+if (run_multi_target && file.exists(multi_rapm_path) && file.exists(multi_spm_path)) {
   cat("\n=== Multi-Target xRAPM ===\n")
   multi_rapm <- readRDS(multi_rapm_path)
   multi_spm <- readRDS(multi_spm_path)
@@ -294,6 +297,16 @@ if (use_multi_target && file.exists(multi_rapm_path) && file.exists(multi_spm_pa
   }
 
   if (length(multi_xrapm_results) > 0) {
+    # D5 tripwire: abort loudly before writing anything the panna#87
+    # heartbeat glob could upload, if any target's fit shows a known
+    # degenerate-output signature. (D5 bullet 3, prior-match count > 0, is
+    # already enforced inside fit_rapm_with_prior() itself -- D4 -- which
+    # every target above goes through; a target that reached this point
+    # already cleared that guard.)
+    for (tgt in names(multi_xrapm_results)) {
+      .check_degenerate_multi_target(multi_xrapm_results[[tgt]]$ratings, tgt)
+    }
+
     saveRDS(multi_xrapm_results, file.path(cache_dir, "06_xrapm_multi.rds"))
     cat("\nSaved multi-target xRAPM to cache-opta/06_xrapm_multi.rds\n")
   }

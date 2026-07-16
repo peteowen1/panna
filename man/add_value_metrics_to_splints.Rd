@@ -38,3 +38,9 @@ by splint duration relative to total match minutes.
 This allows RAPM to be trained on EPV, WPA, or PSV as response variables
 alongside the default xG target.
 }
+\seealso{
+Other panna ratings: 
+\code{\link{aggregate_season_ratings}()},
+\code{\link{extract_xrapm_ratings}()}
+}
+\concept{panna ratings}

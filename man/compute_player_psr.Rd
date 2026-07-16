@@ -19,6 +19,10 @@ or \code{load_opta_skills()}).}
 
 \item{target}{One of \code{"xg"} (default) or \code{"goals"} for the
 outfield model. GK model always uses goal differential.}
+
+\item{position_means}{Optional pre-computed position-mean lookup table used
+to center skill columns before scoring (see \code{\link{compute_player_psv}}).
+If \code{NULL}, no cross-position centering is applied.}
 }
 \value{
 A data.table with \code{psr}, \code{osr}, \code{dsr} columns.

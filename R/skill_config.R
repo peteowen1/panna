@@ -19,6 +19,7 @@
 #'     \item{pos_adjusted}{Logical; TRUE if prior is position-specific}
 #'   }
 #'
+#' @family psr
 #' @export
 soccer_stat_rating_definitions <- function() {
   defs <- rbind(
@@ -168,6 +169,7 @@ soccer_stat_rating_definitions <- function() {
 #' @return A named character vector where names are position patterns and
 #'   values are group labels.
 #'
+#' @family psr
 #' @export
 soccer_position_map <- function() {
   c(
@@ -219,6 +221,7 @@ soccer_position_map <- function() {
 #'       default 50}
 #'   }
 #'
+#' @family psr
 #' @export
 default_stat_rating_params <- function() {
   get_default_decay_params()
@@ -236,6 +239,7 @@ default_stat_rating_params <- function() {
 #'
 #' @return Character vector of stat names.
 #'
+#' @family psr
 #' @export
 stat_rating_names <- function(type = NULL, category = NULL) {
   defs <- soccer_stat_rating_definitions()

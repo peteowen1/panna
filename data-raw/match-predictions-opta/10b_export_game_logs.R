@@ -18,6 +18,14 @@
 
 # 1. Configuration ----
 
+# When sourced standalone (outside run_predictions_opta.R) pipeline_utils.R
+# isn't loaded yet — source it here so resolve_blog_leagues() is available
+# regardless of entry point (direct Rscript, 10b_backfill_game_logs.R, or the
+# full pipeline).
+if (!exists("resolve_blog_leagues", mode = "function")) {
+  source(file.path("data-raw", "pipeline_utils.R"))
+}
+
 if (!exists("cache_dir")) cache_dir <- file.path("data-raw", "cache-predictions-opta")
 if (!dir.exists(cache_dir)) dir.create(cache_dir, recursive = TRUE)
 repo <- "peteowen1/pannadata"
@@ -36,22 +44,23 @@ xm_source <- if (identical(Sys.getenv("XMETRICS_SOURCE"), "remote")) "remote" el
 #   (2) continental    — UCL / UEL / UECL use "YYYY-YYYY" too
 #   (3) intl_tournament — WC / EURO use "YYYY Country"; map a summer
 #                         tournament to the domestic season ending that year.
-# Groups come from the shared canonical constant (constants.R: PANNA_LEAGUE_GROUPS),
-# so step 03 / skills / RAPM / 10b can't drift. Grouping drives season-label
-# resolution: domestic = "YYYY-YYYY"; calendar = "YYYY"; intl = "YYYY Country".
-domestic_leagues  <- PANNA_LEAGUE_GROUPS$domestic
-calendar_leagues  <- PANNA_LEAGUE_GROUPS$calendar    # calendar-year season labels
-continental_cups  <- PANNA_LEAGUE_GROUPS$continental
-intl_tournaments  <- PANNA_LEAGUE_GROUPS$intl
+# Groups come from resolve_blog_leagues() (pipeline_utils.R), backed by the
+# shared canonical constant (constants.R: PANNA_LEAGUE_GROUPS), so step 03 /
+# skills / RAPM / 10b can't drift. Grouping drives season-label resolution:
+# domestic = "YYYY-YYYY"; calendar = "YYYY"; intl = "YYYY Country".
+.blog_league_groups <- resolve_blog_leagues()
+domestic_leagues    <- .blog_league_groups$domestic_leagues
+calendar_leagues    <- .blog_league_groups$calendar_leagues    # calendar-year season labels
+continental_cups    <- .blog_league_groups$continental_cups
+intl_tournaments    <- .blog_league_groups$intl_tournaments
 # Leagues whose season label is resolved by year prefix rather than passed through
-season_label_leagues <- c(intl_tournaments, calendar_leagues)
+season_label_leagues <- .blog_league_groups$season_label_leagues
 # Override guard: backfill runs can process a league subset. CAUTION — the
 # per-season output parquet contains ONLY the processed leagues, so a subset
 # run must set upload_game_logs <- FALSE and merge into the existing
 # game_logs_<season>.parquet files instead of clobbering them.
 if (!exists("blog_leagues", inherits = FALSE)) {
-  blog_leagues    <- c(domestic_leagues, calendar_leagues,
-                       continental_cups, intl_tournaments)
+  blog_leagues <- .blog_league_groups$blog_leagues
 }
 
 # Seasons to export. Vector (new) or scalar `game_log_season` (back-compat).
@@ -549,7 +558,7 @@ validate_game_log_schema <- function(dt, league, season) {
       tryCatch({
         xg_disp <- data.table::as.data.table(
           load_opta_xmetrics(league, season = league_season,
-                             source = "local", by_match = TRUE))
+                             source = xm_source, by_match = TRUE))
         disp_cols <- intersect(c("goals_minus_xgot", "placement_added", "xgot"),
                                names(xg_disp))
         if (length(disp_cols) > 0 && all(c("player_id", "match_id") %in% names(xg_disp))) {
@@ -763,43 +772,30 @@ if (isTRUE(mirror_alias) && file.exists(alias_src)) {
   message("\n  Skipping alias mirror (mirror_alias = FALSE) — keeping existing game_logs.parquet")
 }
 
-# 6. Upload to GitHub Releases ----
+# 6. Register for step-13 publish (PA5/H-TORN: no upload here) ----
 
 if (isTRUE(upload_game_logs)) {
-  message("\n=== Uploading game logs to GitHub ===\n")
-
-  gh_check <- tryCatch(
-    system2("gh", "--version", stdout = TRUE, stderr = TRUE),
-    error = function(e) NULL
-  )
-  if (is.null(gh_check)) {
-    stop("'gh' CLI is not installed or not on PATH.")
-  }
-
-  # Only include the alias file in the upload when we actually rewrote it —
-  # otherwise a partial historical re-backfill would overwrite the current-
-  # season alias on the release with a stale copy.
+  # Only include the alias file when we actually rewrote it -- otherwise a
+  # partial historical re-backfill would overwrite the current-season alias
+  # on the release with a stale copy. (Publish itself now happens once, for
+  # every registered blog-latest file across all build steps, in
+  # 13_publish_release_data.R.)
   candidates <- if (isTRUE(mirror_alias)) {
     unique(c(unlist(season_paths), alias_path))
   } else {
     unlist(season_paths)
   }
-  files_to_upload <- candidates[file.exists(candidates)]
+  files_to_publish <- candidates[file.exists(candidates)]
 
-  for (f in files_to_upload) {
-    message(sprintf("  Uploading %s...", basename(f)))
-    result <- system2(
-      "gh", c("release", "upload", tag, shQuote(f),
-              "--repo", repo, "--clobber"),
-      stdout = TRUE, stderr = TRUE
-    )
-    if (!is.null(attr(result, "status")) && attr(result, "status") != 0) {
-      stop(sprintf("Failed to upload %s: %s",
-                   basename(f), paste(result, collapse = "\n")))
-    }
+  if (exists("publish_files", envir = .GlobalEnv)) {
+    publish_files$blog_latest <<- c(publish_files$blog_latest, files_to_publish)
+    message(sprintf("\n  Registered %d file(s) for blog-latest publish (step 13)",
+                    length(files_to_publish)))
+  } else {
+    message("\n  (standalone run -- not registered for step-13 publish)")
   }
 } else {
-  message("\n(upload_game_logs = FALSE — skipping GH release push)")
+  message("\n(upload_game_logs = FALSE — not registering for publish)")
 }
 
 # 7. Summary ----

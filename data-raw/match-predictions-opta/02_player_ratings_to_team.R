@@ -521,22 +521,51 @@ if (nrow(upcoming) > 0) {
   decay_params_path <- file.path(skill_cache_dir, "02b_decay_params.rds")
   skill_spm_path <- file.path(skill_cache_dir, "03_skill_spm.rds")
 
-  if (isTRUE(use_skill_ratings) && file.exists(match_stats_path) &&
-      file.exists(skill_spm_path)) {
+  # Only load match history for players in upcoming lineups (memory optimization).
+  # Computed BEFORE the isTRUE(use_skill_ratings) gate below so an empty result
+  # (e.g. all upcoming fixtures are TBD knockout slots with no resolved teams --
+  # confirmed root cause of 2026-07-16 dev OOM crashes 3 days before the WC
+  # final) short-circuits before ever touching match_stats.rds (1.9M rows x
+  # 421 cols, ~5.9GB). The old code loaded match_stats unconditionally, found
+  # nothing to filter FOR (0 upcoming players), and silently fell through to
+  # processing the ENTIRE unfiltered table -- exactly backwards from the
+  # "nothing to estimate" case it should have been. fixture_ratings staying
+  # NULL is the pipeline's own designed fallback (falls back to `ratings`,
+  # see fixture_rat <- if (!is.null(fixture_ratings)) fixture_ratings else
+  # ratings below), so skipping here is behaviorally identical to what the
+  # old code intended when it checked length(upcoming_player_ids) > 0.
+  # Wrapped in its own tryCatch (rather than left to error uncaught) so this
+  # still degrades to the seasonal fallback below, matching the safety net
+  # the surrounding block already provides for every other failure mode here.
+  upcoming_player_ids <- tryCatch(
+    unique(unlist(lapply(upcoming_lineups, function(x) x$player_id))),
+    error = function(e) {
+      warning(sprintf("Could not compute upcoming_player_ids: %s (using seasonal fallback)",
+                      conditionMessage(e)), call. = FALSE)
+      character(0)
+    })
+  if (isTRUE(use_skill_ratings) && length(upcoming_player_ids) == 0) {
+    message("  No players in upcoming lineups (all fixtures TBD?) — skipping live skill estimate, using seasonal fallback")
+  }
+
+  if (isTRUE(use_skill_ratings) && length(upcoming_player_ids) > 0 &&
+      file.exists(match_stats_path) && file.exists(skill_spm_path)) {
     tryCatch({
       message("  Computing date-specific skill estimates for fixtures...")
 
-      # Only load match history for players in upcoming lineups (memory optimization)
-      upcoming_player_ids <- unique(unlist(lapply(upcoming_lineups, function(x) x$player_id)))
       match_stats <- readRDS(match_stats_path)
-      if (length(upcoming_player_ids) > 0 && "player_id" %in% names(match_stats)) {
+      if ("player_id" %in% names(match_stats)) {
         match_stats <- match_stats[match_stats$player_id %in% upcoming_player_ids, ]
         message(sprintf("  Filtered match_stats to %d players (%d rows)",
                         length(upcoming_player_ids), nrow(match_stats)))
+      } else {
+        message(sprintf("  match_stats has no player_id column — using FULL table (%d rows), NOT filtered",
+                        nrow(match_stats)))
       }
 
       decay_params <- if (file.exists(decay_params_path)) readRDS(decay_params_path) else NULL
       skill_spm <- readRDS(skill_spm_path)
+      if (exists(".log_rss", mode = "function")) .log_rss("step 2 pre skill-estimate")
 
       # Compute skills at the earliest fixture date (close enough for all)
       fixture_date <- min(as.Date(upcoming$match_date), na.rm = TRUE)
@@ -545,6 +574,7 @@ if (nrow(upcoming) > 0) {
         decay_params = decay_params,
         date = fixture_date
       )
+      if (exists(".log_rss", mode = "function")) .log_rss("step 2 post skill-estimate")
       rm(match_stats, decay_params); gc(verbose = FALSE)
 
       if (!is.null(live_skills) && nrow(live_skills) > 0) {
@@ -579,6 +609,7 @@ if (nrow(upcoming) > 0) {
         def_blend <- calculate_spm_blend(
           live_skills, skill_spm$defense_spm_glmnet, skill_spm$defense_spm_xgb
         )
+        if (exists(".log_rss", mode = "function")) .log_rss("step 2 post spm-blend")
 
         # Build fixture-specific ratings table.
         # CRITICAL: keep player_id from off_blend/def_blend. The previous code

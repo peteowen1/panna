@@ -340,400 +340,12 @@ extract_sub_events <- function(lineups) {
 }
 
 
-#' Create splint boundaries
-#'
-#' Defines start and end times for each splint based on events and optionally shots.
-#' Splints are created at:
-#' - Start of match (minute 0)
-#' - Each goal
-#' - Each substitution
-#' - Each red card
-#' - Half time (minute 45)
-#' - End of match (dynamically calculated from stoppage time in events/shots)
-#'
-#' Uses continuous time where second-half events are offset by first-half stoppage.
-#' Example with 3 mins first-half stoppage and 11 mins second-half stoppage:
-#' - First half: 0 to 48 (45 + 3)
-#' - Second half: 48 to 104 (offset by 3, plus 90+11)
-#'
-#' Also tracks game state (cumulative goals, red cards, player counts) at each splint boundary.
-#'
-#' @param events Data frame of match events (with minute and optionally added_time columns)
-#' @param shots Data frame of shots (optional, with minute column for stoppage time)
-#' @param include_goals Logical, whether to create new splints at goals (default TRUE)
-#' @param include_halftime Logical, whether to create splint at halftime (default TRUE)
-#'
-#' @return Data frame of splint boundaries with game state
-#' @keywords internal
-create_splint_boundaries <- function(events, shots = NULL, include_goals = TRUE, include_halftime = TRUE) {
-  # Get first-half stoppage from both events and shots
-  events_stoppage <- get_first_half_stoppage(events)
-  shots_stoppage <- get_first_half_stoppage_from_shots(shots)
-  first_half_stoppage <- max(events_stoppage, shots_stoppage, na.rm = TRUE)
-
-  # Calculate dynamic match boundaries using both events and shots
-  match_end <- calculate_match_end(events, shots = shots, default_end = 91)
-  first_half_end <- calculate_first_half_end(events, shots = shots, default_end = 46)
-
-  # Start with match boundaries
-  boundaries <- c(0, match_end)
-
-  # Add halftime boundary (end of first half including stoppage)
-  if (include_halftime) {
-    boundaries <- c(boundaries, first_half_end)
-  }
-
-  # Track goals and red cards for game state
-  goal_events <- NULL
-  red_card_events <- NULL
-
-  # Helper to get effective minute from events (with first-half offset for second half)
-  get_effective_minutes <- function(df) {
-    if (is.null(df) || nrow(df) == 0) return(numeric(0))
-    added <- if ("added_time" %in% names(df)) df$added_time else rep(0L, nrow(df))
-    calculate_effective_minute(df$minute, added, first_half_stoppage)
-  }
-
-  # Only process events if we have data
-  if (!is.null(events) && nrow(events) > 0) {
-    # Add substitution times (using effective minutes)
-    if ("is_sub" %in% names(events)) {
-      sub_events <- events[events$is_sub, , drop = FALSE]
-      sub_times <- get_effective_minutes(sub_events)
-      boundaries <- c(boundaries, sub_times)
-    }
-
-    # Add goal times and track who scored
-    if (include_goals && "is_goal" %in% names(events)) {
-      goal_events <- events[events$is_goal, , drop = FALSE]
-      if (nrow(goal_events) > 0) {
-        goal_events$effective_minute <- get_effective_minutes(goal_events)
-        goal_events <- goal_events[order(goal_events$effective_minute), , drop = FALSE]
-        boundaries <- c(boundaries, goal_events$effective_minute)
-      }
-    }
-
-    # Add red card times and track which team
-    if ("is_red_card" %in% names(events)) {
-      red_card_events <- events[events$is_red_card, , drop = FALSE]
-      if (nrow(red_card_events) > 0) {
-        red_card_events$effective_minute <- get_effective_minutes(red_card_events)
-        red_card_events <- red_card_events[order(red_card_events$effective_minute), , drop = FALSE]
-        boundaries <- c(boundaries, red_card_events$effective_minute)
-      }
-    }
-  }
-
-  # Clean up
-  boundaries <- sort(unique(boundaries))
-  boundaries <- boundaries[!is.na(boundaries)]
-
-  # Create boundary data frame
-  n_splints <- length(boundaries) - 1
-
-  if (n_splints < 1) {
-    # No events, single splint for whole match
-    return(data.frame(
-      splint_num = 1,
-      start_minute = 0,
-      end_minute = match_end,
-      duration = match_end,
-      avg_min = match_end / 2,
-      gf_home = 0,
-      ga_home = 0,
-      goals_home = 0,
-      goals_away = 0,
-      red_home = 0,
-      red_away = 0,
-      n_players_home = 11,
-      n_players_away = 11
-    ))
-  }
-
-  # Calculate game state at each boundary (cumulative at start of each splint)
-  goal_counts <- count_events_before(goal_events, boundaries)
-  gf_home <- goal_counts$home
-  ga_home <- goal_counts$away
-
-  red_counts <- count_events_before(red_card_events, boundaries)
-  red_home <- red_counts$home
-  red_away <- red_counts$away
-
-  # Calculate per-splint goals (goals scored IN each splint)
-  goals_in_splint <- count_events_in_splint(goal_events, boundaries)
-  goals_home <- goals_in_splint$home
-  goals_away <- goals_in_splint$away
-
-  # Calculate player counts (11 minus red cards)
-  n_players_home <- 11 - red_home
-  n_players_away <- 11 - red_away
-
-  data.frame(
-    splint_num = seq_len(n_splints),
-    start_minute = boundaries[-length(boundaries)],
-    end_minute = boundaries[-1],
-    duration = diff(boundaries),
-    avg_min = (boundaries[-length(boundaries)] + boundaries[-1]) / 2,
-    gf_home = gf_home,
-    ga_home = ga_home,
-    goals_home = goals_home,
-    goals_away = goals_away,
-    red_home = red_home,
-    red_away = red_away,
-    n_players_home = n_players_home,
-    n_players_away = n_players_away
-  )
-}
-
-
-#' Assign players to splints
-#'
-#' Determines which players were on the pitch for each splint.
-#' Uses lineup minutes and substitution events to track when players
-#' were actually on the pitch.
-#'
-#' @param boundaries Data frame of splint boundaries
-#' @param lineups Data frame of match lineups
-#' @param events Data frame of match events (for substitutions)
-#' @param match_id Match identifier
-#'
-#' @return Data frame with player assignments per splint
-#' @keywords internal
-assign_players_to_splints <- function(boundaries, lineups, events, match_id) {
-  # Handle NULL or empty lineups
-  if (is.null(lineups) || nrow(lineups) == 0) {
-    return(data.frame(
-      match_id = character(0),
-      team = character(0),
-      is_home = logical(0),
-      player_name = character(0),
-      player_id = character(0),
-      splint_num = integer(0),
-      start_minute = numeric(0),
-      end_minute = numeric(0)
-    ))
-  }
-
-  # Get match lineups - only players who actually played
-  match_lineups <- lineups[lineups$match_id == match_id & lineups$minutes > 0, , drop = FALSE]
-
-  if (nrow(match_lineups) == 0) {
-    return(data.frame(
-      match_id = character(0),
-      team = character(0),
-      is_home = logical(0),
-      player_name = character(0),
-      player_id = character(0),
-      splint_num = integer(0),
-      start_minute = numeric(0),
-      end_minute = numeric(0)
-    ))
-  }
-
-  # Calculate on/off minutes for each player
-  # Starters: on at minute 0
-  # Subs: on at (match_end - minutes) approximately
-  # This is an approximation since we don't have exact sub timing
-  match_end <- max(boundaries$end_minute)
-  player_timing <- match_lineups
-  # Starters come on at minute 0, subs come on at (match_end - minutes_played)
-  player_timing$on_minute <- ifelse(player_timing$is_starter, 0, pmax(0, match_end - player_timing$minutes))
-  # Players who are subbed off: their off_minute = on_minute + minutes
-  player_timing$off_minute <- pmin(match_end, player_timing$on_minute + player_timing$minutes)
-  player_timing <- player_timing[, c("match_id", "team", "is_home", "player_name", "player_id", "on_minute", "off_minute"), drop = FALSE]
-
-  # For each splint, determine players on pitch
-  splint_players <- data.table::rbindlist(lapply(seq_len(nrow(boundaries)), function(i) {
-    start_min <- boundaries$start_minute[i]
-    end_min <- boundaries$end_minute[i]
-
-    # A player is on pitch if they:
-    # - Came on before or at the splint start (on_minute <= start_min)
-    # - Left after the splint start (off_minute > start_min)
-    on_pitch <- player_timing[player_timing$on_minute <= start_min &
-                                player_timing$off_minute > start_min, , drop = FALSE]
-    on_pitch <- on_pitch[, c("match_id", "team", "is_home", "player_name", "player_id"), drop = FALSE]
-
-    if (nrow(on_pitch) == 0) {
-      return(NULL)
-    }
-
-    on_pitch$splint_num <- i
-    on_pitch$start_minute <- start_min
-    on_pitch$end_minute <- end_min
-
-    on_pitch
-  }), fill = TRUE)
-
-  splint_players
-}
-
-
-#' Calculate splint-level xG differential
-#'
-#' Calculates the non-penalty xG differential for each splint.
-#'
-#' @param boundaries Data frame of splint boundaries
-#' @param shooting Processed shooting data
-#' @param match_id Match identifier
-#' @param home_team Name of the home team
-#' @param away_team Name of the away team
-#'
-#' @return Data frame with npxGD for each splint
-#' @keywords internal
-calculate_splint_npxgd <- function(boundaries, shooting, match_id,
-                                    home_team = NULL, away_team = NULL) {
-  # Handle NULL or empty shooting data
-  if (is.null(shooting) || nrow(shooting) == 0) {
-    return(data.frame(
-      splint_num = seq_len(nrow(boundaries)),
-      start_minute = boundaries$start_minute,
-      end_minute = boundaries$end_minute,
-      duration = boundaries$duration,
-      npxg_home = 0,
-      npxg_away = 0,
-      npxgd = 0,
-      npxgd_per_90 = 0
-    ))
-  }
-
-  match_shots <- shooting[shooting$match_id == match_id & !shooting$is_penalty, , drop = FALSE]
-
-  # Handle case with no shots
-  if (nrow(match_shots) == 0) {
-    return(data.frame(
-      splint_num = seq_len(nrow(boundaries)),
-      start_minute = boundaries$start_minute,
-      end_minute = boundaries$end_minute,
-      duration = boundaries$duration,
-      npxg_home = 0,
-      npxg_away = 0,
-      npxgd = 0,
-      npxgd_per_90 = 0
-    ))
-  }
-
-  # Assign shots to splints based on minute
-  splint_xg <- data.table::rbindlist(lapply(seq_len(nrow(boundaries)), function(i) {
-    start_min <- boundaries$start_minute[i]
-    end_min <- boundaries$end_minute[i]
-
-    splint_shots <- match_shots[match_shots$minute >= start_min &
-                                  match_shots$minute < end_min, , drop = FALSE]
-
-    # Calculate xG by team - properly identify home vs away
-    if (nrow(splint_shots) == 0) {
-      npxg_home <- 0
-      npxg_away <- 0
-    } else {
-      dt_shots <- data.table::as.data.table(splint_shots)
-      team_xg <- as.data.frame(dt_shots[, .(xg = sum(xg, na.rm = TRUE)), by = team])
-
-      # Match by team name if provided, otherwise use first/second as fallback
-      if (!is.null(home_team)) {
-        npxg_home <- sum(team_xg$xg[team_xg$team == home_team], na.rm = TRUE)
-        npxg_away <- sum(team_xg$xg[team_xg$team == away_team], na.rm = TRUE)
-      } else {
-        # Fallback to old behavior (less reliable)
-        npxg_home <- if (nrow(team_xg) >= 1) team_xg$xg[1] else 0
-        npxg_away <- if (nrow(team_xg) >= 2) team_xg$xg[2] else 0
-      }
-    }
-
-    data.frame(
-      splint_num = i,
-      start_minute = start_min,
-      end_minute = end_min,
-      duration = end_min - start_min,
-      npxg_home = npxg_home,
-      npxg_away = npxg_away
-    )
-  }), fill = TRUE)
-
-  splint_xg$npxgd <- splint_xg$npxg_home - splint_xg$npxg_away
-  splint_xg$npxgd_per_90 <- safe_divide(splint_xg$npxgd * 90, splint_xg$duration, default = 0)
-  splint_xg
-}
-
-
-#' Create splints for a single match
-#'
-#' Master function to create all splint data for one match.
-#'
-#' @param match_id Match identifier
-#' @param events Processed events data
-#' @param lineups Processed lineups data
-#' @param shooting Processed shooting data
-#' @param results Processed match results
-#' @param include_goals Whether to create splints at goal times
-#'
-#' @return List with splint data for the match
-#' @keywords internal
-create_match_splints <- function(match_id, events, lineups, shooting, results,
-                                  include_goals = TRUE) {
-  # Store match_id as local variable to avoid scoping issues
-  current_match_id <- match_id
-
-  # Get match info first (needed for home/away team identification)
-  # Include league and season_end_year if available (for multi-league)
-  info_cols <- c("match_id", "season", "home_team", "away_team")
-  if ("league" %in% names(results)) info_cols <- c(info_cols, "league")
-  if ("season_end_year" %in% names(results)) info_cols <- c(info_cols, "season_end_year")
-  if ("country" %in% names(results)) info_cols <- c(info_cols, "country")
-
-  match_info <- results[results$match_id == current_match_id, , drop = FALSE]
-  available_info_cols <- intersect(info_cols, names(match_info))
-  match_info <- match_info[, available_info_cols, drop = FALSE]
-
-  home_team <- if (nrow(match_info) > 0) match_info$home_team[1] else NULL
-  away_team <- if (nrow(match_info) > 0) match_info$away_team[1] else NULL
-
-  # Extract events for this match
-  match_events <- extract_match_events(events, current_match_id)
-
-  # Create splint boundaries
-  boundaries <- create_splint_boundaries(match_events, include_goals = include_goals)
-
-  # Add match_id to boundaries early
-  boundaries$match_id <- current_match_id
-
-  # Add league/season to boundaries if available
-  if ("league" %in% names(match_info) && nrow(match_info) > 0) {
-    boundaries$league <- match_info$league[1]
-  }
-  if ("season_end_year" %in% names(match_info) && nrow(match_info) > 0) {
-    boundaries$season_end_year <- match_info$season_end_year[1]
-  }
-  if ("country" %in% names(match_info) && nrow(match_info) > 0) {
-    boundaries$country <- match_info$country[1]
-  }
-
-  # Assign players to splints
-  players <- assign_players_to_splints(boundaries, lineups, events, current_match_id)
-
-  # Calculate xG for each splint - pass home/away teams for proper identification
-  xg_data <- calculate_splint_npxgd(boundaries, shooting, current_match_id,
-                                     home_team = home_team, away_team = away_team)
-
-  # Combine - match_id is already in boundaries
-  xg_cols <- xg_data[, c("splint_num", "npxg_home", "npxg_away", "npxgd", "npxgd_per_90"), with = FALSE]
-  splints <- xg_cols[boundaries, on = "splint_num"]
-
-  list(
-    match_id = current_match_id,
-    match_info = match_info,
-    splints = splints,
-    players = players
-  )
-}
-
-
 #' Create splints for all matches
 #'
 #' Generates splint data for an entire dataset.
 #' Uses data.table for fast pre-splitting by match_id.
 #'
-#' @param processed_data List of processed data from process_all_data
+#' @param processed_data List of processed data from create_opta_processed_data
 #' @param include_goals Whether to create splints at goal times
 #' @param verbose Print progress messages
 #' @param chunk_by Chunking strategy for memory efficiency. `"league"` (default)
@@ -745,6 +357,7 @@ create_match_splints <- function(match_id, events, lineups, shooting, results,
 #'   full-time) are always kept. Set to 0 to disable merging entirely.
 #'
 #' @return List with combined splint data
+#' @family rapm
 #' @export
 create_all_splints <- function(processed_data, include_goals = TRUE, verbose = TRUE,
                                 chunk_by = c("league", "none"),
@@ -1814,7 +1427,7 @@ create_opta_processed_data <- function(opta_lineups, opta_events = NULL,
 #'   qualifier 131 = position number (1-11 = starter, 0 = bench).
 #' - Sub on: `type_id == 19` (Player On).
 #' - Sub off: `type_id == 18` (Player Off).
-#' - Red card off: `type_id == 17` (Card) with qualifier 33 (red) or 14 (second yellow).
+#' - Red card off: `type_id == 17` (Card) with qualifier 33 (straight red) or 32 (second yellow).
 #' - Match end: `type_id == 30` with `period_id == 2` (used as default off_minute
 #'   for finishers who never came off).
 #'
@@ -1829,6 +1442,7 @@ create_opta_processed_data <- function(opta_lineups, opta_events = NULL,
 #'   `is_starter`, `on_minute`, `off_minute`. Bench players who never came on
 #'   are omitted. Returns empty data frame if input is empty or missing
 #'   required columns.
+#' @family rapm
 #' @export
 extract_player_timing_from_events <- function(match_events) {
   empty <- data.frame(
@@ -1894,14 +1508,14 @@ extract_player_timing_from_events <- function(match_events) {
   sub_ons  <- subs[type_id == 19L, .(match_id, player_id, on_event_time = sub_time)]
   sub_offs <- subs[type_id == 18L, .(match_id, player_id, off_event_time = sub_time)]
 
-  # 4) Red cards (type_id 17 + qualifier 33 or 14)
+  # 4) Red cards (type_id 17 + qualifier 33 straight red or 32 second yellow)
   cards <- dt[type_id == 17L, .(match_id, team_id, player_id, qualifier_json,
                                   card_time = eff_minute)]
   detect_red_in_qj <- function(qj) {
     if (is.na(qj)) return(FALSE)
     parsed <- tryCatch(jsonlite::fromJSON(qj), error = function(e) NULL)
     if (is.null(parsed)) return(FALSE)
-    any(c("33", "14") %in% names(parsed))
+    any(c("33", "32") %in% names(parsed))
   }
   if (nrow(cards) > 0) {
     cards[, is_red := vapply(qualifier_json, detect_red_in_qj, logical(1))]
@@ -1944,6 +1558,7 @@ extract_player_timing_from_events <- function(match_events) {
 #'   `match_id`, `type_id`, `period_id`, `minute`, and (optionally) `second`.
 #' @return Data frame with columns `match_id`, `first_half_end_time`,
 #'   `match_end_time`. Matches without markers are omitted.
+#' @family rapm
 #' @export
 extract_period_end_times <- function(match_events) {
   if (is.null(match_events) || nrow(match_events) == 0) {

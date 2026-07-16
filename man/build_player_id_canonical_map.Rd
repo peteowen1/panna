@@ -30,3 +30,4 @@ dominant ids).
 \description{
 Build a player_id -> canonical_id lookup
 }
+\keyword{internal}

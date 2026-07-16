@@ -49,3 +49,10 @@ is still summed at team level but cannot be attributed to a player and is
 dropped from the per-player total (reported separately as
 \code{unattributed_keeper_wpa}).
 }
+\seealso{
+Other penalty shootouts: 
+\code{\link{is_shootout_period}()},
+\code{\link{score_shootout_kicks}()},
+\code{\link{shootout_win_prob}()}
+}
+\concept{penalty shootouts}

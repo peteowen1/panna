@@ -39,6 +39,7 @@
 #'
 #' @return Invisibly returns a character vector of failed check names
 #'   (length 0 means all passed).
+#' @family validation
 #' @export
 #' @examples
 #' \dontrun{
@@ -300,6 +301,7 @@ WC2026_REFERENCE_FACTS <- list(
 #'   Defaults to the pipeline's standard location.
 #' @return Invisibly: the named list of failed checks (one element per
 #'   failed fact, value = the `fact` string).
+#' @family world cup simulation
 #' @export
 run_wc2026_reference_checks <- function(
   cache_dir = file.path("data-raw", "cache-predictions-opta")

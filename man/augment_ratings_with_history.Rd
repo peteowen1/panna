@@ -37,3 +37,4 @@ moved to a non-covered league like Saudi PL / MLS / Liga MX) still
 contribute a sensible non-zero panna estimate when their lineup is
 aggregated.
 }
+\keyword{internal}

@@ -23,13 +23,8 @@ utils::globalVariables(c(
   "away_team",
   "home_goals",
   "away_goals",
-  "home_score",
-  "away_score",
   "home_xg",
   "away_xg",
-  "home_x_g",
-  "away_x_g",
-  "fbref_id",
   "home_team_id",
   "away_team_id",
 
@@ -37,7 +32,6 @@ utils::globalVariables(c(
   "player",
   "player_id",
   "player_name",
-  "player_href",
   "team",
   "home_away",
   "is_home",
@@ -75,9 +69,6 @@ utils::globalVariables(c(
   "so_t",
   "xg",
   "npxg",
-  "xag",
-  "pk",
-  "crd_y",
   "crd_r",
   "touches",
   "tkl",
@@ -85,7 +76,6 @@ utils::globalVariables(c(
   "blocks",
 
   # Rate stat columns
-  "per_100_seq",
   "team_sequences",
   "estimated_sequences",
 
@@ -99,7 +89,6 @@ utils::globalVariables(c(
   "panna",
   "o_panna",
   "d_panna",
-  "spm_prior",
   "deviation",
   "coefficient",
 
@@ -107,7 +96,6 @@ utils::globalVariables(c(
   "n",
   "n_games",
   "total_minutes",
-  "row_num",
   "value",
   "name",
   "label",
@@ -118,14 +106,9 @@ utils::globalVariables(c(
   "off_minute",
 
   # Player stats function columns
-  "x1_3",
   "kp",
-  "ppa",
-  "crs_pa",
-  "tkl_w",
   "clr",
   "err",
-  "so_ta",
   "ga",
   "saves",
   "clean_sheet",
@@ -196,7 +179,6 @@ utils::globalVariables(c(
   "opponent_player_name",
 
   # merge_duel_rows helper columns
-  "is_duel",
   "next_match_id",
   "next_period_id",
   "next_time",
@@ -278,7 +260,6 @@ utils::globalVariables(c(
   "event_id",
   "expected_xg",
   "feature",
-  "goal_time",
   "has_shot",
   "has_goal",
   "is_headed_pass",
@@ -290,8 +271,6 @@ utils::globalVariables(c(
   "n_actions",
   "next_ends_in_goal",
   "next_goal_label",
-  "next_goal_team",
-  "next_shot_team",
   "next_shot_xg",
   "next_xg_label",
   "p_opponent_scores",
@@ -308,7 +287,6 @@ utils::globalVariables(c(
   "receiver_team_id",
   "result_success",
   "seconds_since_chain_start",
-  "shot_time",
   "shot_xg",
   "team_id",
   "time_first",
@@ -319,22 +297,15 @@ utils::globalVariables(c(
 
   # data.table join prefix columns (i. prefix)
   "i.action_id",
-  "i.end_minute",
   "i.kp_is_goal",
   "i.kp_xa",
   "i.match_id",
-  "i.period_id",
   "i.splint_num",
-  "i.start_minute",
-  "i.team_id",
 
   # data.table join prefix columns (x. prefix)
-  "x.goal_team",
   "x.is_home",
   "x.player_id",
   "x.player_name",
-  "x.shot_team",
-  "x.shot_xg",
   "x.team",
 
   # xmetrics (derive_xa / aggregate_player_xmetrics) columns
@@ -419,7 +390,6 @@ utils::globalVariables(c(
   "xg_for",
   "xg_against",
   "win",
-  "clean_sheet",
   "rest_diff",
   "elo_diff",
   "home_elo",
@@ -435,7 +405,6 @@ utils::globalVariables(c(
   "prob_H",
   "prob_D",
   "prob_A",
-  "predicted_result",
   "pred_mean",
   "actual_mean",
   "bin",
@@ -444,13 +413,7 @@ utils::globalVariables(c(
   "attempts",
 
   # data.table NSE from match_prediction.R
-  "..season_end_year",
   "..keep_cols",
-  "..roll_cols",
-  "panna_prev",
-  "offense_prev",
-  "defense_prev",
-  "spm_prev",
   "days_since_last",
   "home_days_since_last",
   "away_days_since_last",
@@ -565,14 +528,11 @@ utils::globalVariables(c(
   "key_chain_actions",
 
   # compare_players columns
-  "chain_xg",
   "shots",
   "assists",
   "key_passes",
 
   # aggregate_player_data internal columns
-  ".player",
-  ".team",
 
   # EPV label creation (.find_next_event helpers)
   "event_time",
@@ -586,8 +546,6 @@ utils::globalVariables(c(
   "psr",
   "osr",
   "dsr",
-  "match_season",
-  "team_goals",
   "n_players",
   "x.event_team",
   "x.extra_value",
@@ -623,9 +581,7 @@ utils::globalVariables(c(
   "score_diff",
   "xg_diff",
   "red_card_diff",
-  "is_home",
   "is_second_half",
-  "is_goal",
   "home_goal",
   "away_goal",
   "cum_home_goals",
@@ -638,15 +594,12 @@ utils::globalVariables(c(
   "away_red",
   "cum_home_reds",
   "cum_away_reds",
-  "home_team_id",
 
   # EPR columns (decay-weighted EPV ratings)
   "epr",
   "epr_offensive",
   "epr_defensive",
   "wt_games",
-  "n_games",
-  "days_since",
   "mins_frac",
   "w_off",
   "w_def",
@@ -699,9 +652,6 @@ utils::globalVariables(c(
   "has_wpa",
   "has_psv",
   "has_psr",
-  "psr",
-  "osr",
-  "dsr",
   "sum_psr",
   "sum_osr",
   "sum_dsr",
@@ -736,7 +686,6 @@ utils::globalVariables(c(
   "..psv_cols",
   "..feature_names",
   "i.home_team_id",
-  "i.wp_label",
   "i.match_duration",
   "red_card",
   "rapm_orig",

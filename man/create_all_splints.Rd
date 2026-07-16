@@ -13,7 +13,7 @@ create_all_splints(
 )
 }
 \arguments{
-\item{processed_data}{List of processed data from process_all_data}
+\item{processed_data}{List of processed data from create_opta_processed_data}
 
 \item{include_goals}{Whether to create splints at goal times}
 
@@ -35,3 +35,13 @@ List with combined splint data
 Generates splint data for an entire dataset.
 Uses data.table for fast pre-splitting by match_id.
 }
+\seealso{
+Other rapm: 
+\code{\link{create_rapm_design_matrix}()},
+\code{\link{extract_period_end_times}()},
+\code{\link{extract_player_timing_from_events}()},
+\code{\link{extract_rapm_ratings}()},
+\code{\link{fit_rapm}()},
+\code{\link{fit_rapm_with_prior}()}
+}
+\concept{rapm}

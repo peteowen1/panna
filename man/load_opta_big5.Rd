@@ -28,3 +28,17 @@ big5 <- load_opta_big5()
 big5_2122 <- load_opta_big5(season = "2021-2022")
 }
 }
+\seealso{
+Other opta loaders: 
+\code{\link{load_opta_events}()},
+\code{\link{load_opta_fixtures}()},
+\code{\link{load_opta_lineups}()},
+\code{\link{load_opta_match_events}()},
+\code{\link{load_opta_match_stats}()},
+\code{\link{load_opta_shot_events}()},
+\code{\link{load_opta_shots}()},
+\code{\link{load_opta_skills}()},
+\code{\link{load_opta_stats}()},
+\code{\link{load_opta_xmetrics}()}
+}
+\concept{opta loaders}

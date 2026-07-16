@@ -131,23 +131,37 @@ for (league in names(league_seasons)) {
         cli_alert_info("  Converted to SPADL ({format(nrow(spadl), big.mark=',')} actions)")
       }
 
-      # 4c. Detect penalties from raw events using match on player/minute
-      pen_keys <- paste(
-        events$match_id[events$type_id %in% c(13L, 14L, 15L, 16L) & grepl('"9"', events$qualifier_json)],
-        events$player_id[events$type_id %in% c(13L, 14L, 15L, 16L) & grepl('"9"', events$qualifier_json)],
-        events$minute[events$type_id %in% c(13L, 14L, 15L, 16L) & grepl('"9"', events$qualifier_json)],
-        sep = "_"
-      )
-      spadl$is_penalty <- 0L
-      spadl_shot_idx <- which(spadl$action_type == "shot")
-      if (length(pen_keys) > 0 && length(spadl_shot_idx) > 0) {
-        spadl_keys <- paste(
-          spadl$match_id[spadl_shot_idx],
-          spadl$player_id[spadl_shot_idx],
-          floor(spadl$time_seconds[spadl_shot_idx] / 60),
+      # 4c. Penalty detection (H2-PEN). SPADL already carries a correctly
+      # parsed is_penalty (qualifier 9, anchored regex `[{,]"9":` in
+      # parse_opta_qualifiers()/spadl_conversion.R) -- use it rather than
+      # re-deriving and overwriting it. The unanchored `'"9"'` match used here
+      # previously false-positived on qualifier VALUES (e.g. `"55":"9"`), not
+      # just qualifier keys.
+      if ("is_penalty" %in% names(spadl)) {
+        spadl$is_penalty <- as.integer(spadl$is_penalty)
+      } else {
+        # Fallback for stale cached SPADL RDS files predating the is_penalty
+        # column: re-derive from raw events using the same anchored pattern.
+        cli_alert_warning("  spadl$is_penalty missing (stale cache?) - deriving from raw events")
+        pen_evt_idx <- events$type_id %in% c(13L, 14L, 15L, 16L) &
+          grepl('[{,]"9":', events$qualifier_json)
+        pen_keys <- paste(
+          events$match_id[pen_evt_idx],
+          events$player_id[pen_evt_idx],
+          events$minute[pen_evt_idx],
           sep = "_"
         )
-        spadl$is_penalty[spadl_shot_idx[spadl_keys %in% pen_keys]] <- 1L
+        spadl$is_penalty <- 0L
+        spadl_shot_idx <- which(spadl$action_type == "shot")
+        if (length(pen_keys) > 0 && length(spadl_shot_idx) > 0) {
+          spadl_keys <- paste(
+            spadl$match_id[spadl_shot_idx],
+            spadl$player_id[spadl_shot_idx],
+            floor(spadl$time_seconds[spadl_shot_idx] / 60),
+            sep = "_"
+          )
+          spadl$is_penalty[spadl_shot_idx[spadl_keys %in% pen_keys]] <- 1L
+        }
       }
 
       # 4d. Add xG to shots

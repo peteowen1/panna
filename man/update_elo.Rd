@@ -52,3 +52,15 @@ Named list with new_home_elo, new_away_elo
 Updates Elo ratings for home and away teams based on match result.
 Uses standard Elo formula with configurable K-factor and home advantage.
 }
+\seealso{
+Other match prediction: 
+\code{\link{aggregate_lineup_ratings}()},
+\code{\link{aggregate_lineup_skills}()},
+\code{\link{calibration_table}()},
+\code{\link{compute_match_elos}()},
+\code{\link{compute_multiclass_logloss}()},
+\code{\link{compute_team_rolling_features}()},
+\code{\link{init_team_elos}()},
+\code{\link{predict_match}()}
+}
+\concept{match prediction}

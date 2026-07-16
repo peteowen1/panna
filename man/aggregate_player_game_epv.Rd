@@ -50,3 +50,14 @@ Like \code{\link{aggregate_player_epv}} but groups by \code{(player_id, match_id
 to produce one row per player per match. Includes offensive/defensive
 decomposition, per-90 rates, and optional position-centering.
 }
+\seealso{
+Other epr: 
+\code{\link{PANNA_EPR_WEIGHT}},
+\code{\link{PANNA_PSR_WEIGHT}},
+\code{\link{build_player_game_ratings}()},
+\code{\link{calculate_epr}()},
+\code{\link{calculate_epr_batch}()},
+\code{\link{calculate_epr_regression}()},
+\code{\link{player_value}()}
+}
+\concept{epr}

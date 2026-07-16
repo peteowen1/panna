@@ -43,4 +43,10 @@ fast-path for offset-only changes).
 }
 \seealso{
 \code{\link{apply_psr_league_offsets}}, \code{\link{build_league_network}}
+
+Other league offsets: 
+\code{\link{apply_psr_league_offsets}()},
+\code{\link{build_league_network}()},
+\code{\link{compute_psr_league_offsets}()}
 }
+\concept{league offsets}
