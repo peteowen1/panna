@@ -78,6 +78,19 @@ if (!exists("build_equity", inherits = FALSE)) build_equity <- TRUE
 # clobbering the blog chain builder's current-season pointer.
 if (!exists("mirror_alias", inherits = FALSE)) mirror_alias <- TRUE
 
+# Subset-league backfill: MERGE the processed leagues into each existing
+# action_equity_<season>.parquet instead of clobbering it. Set TRUE when
+# running a league SUBSET (e.g. backfilling WC historical tournaments into an
+# era file that already holds other leagues' rows for that season). Mirrors
+# 10b_export_game_logs.R's merge_subset_leagues, but keyed on `match_id`
+# rather than `league` — this slim equity lookup (match_id, event_id,
+# epv_credit) carries no league column, and match_id is already unique per
+# match across every competition, so dropping existing rows whose match_id
+# belongs to the just-rebuilt league(s) and re-appending is equivalent and
+# needs no schema change. Idempotent (drops + re-appends the rebuilt
+# league's matches).
+if (!exists("merge_subset_leagues", inherits = FALSE)) merge_subset_leagues <- FALSE
+
 message(sprintf("\n=== Building Action Equity: %d season(s) ===",
                 length(equity_seasons)))
 message(sprintf("  Seasons: %s", paste(equity_seasons, collapse = ", ")))
@@ -210,7 +223,31 @@ validate_equity_schema <- function(dt, league, season) {
                   season, nrow(action_equity), length(season_equity)))
 
   out_path <- file.path(cache_dir, sprintf("action_equity_%s.parquet", season))
-  arrow::write_parquet(action_equity, out_path)
+  # Subset-league backfill: merge into the existing per-season file rather
+  # than clobbering it (which would delete every other league's rows for the
+  # season). Idempotent: drop existing rows whose match_id belongs to the
+  # league(s) we just rebuilt, then append.
+  if (isTRUE(merge_subset_leagues) && file.exists(out_path)) {
+    existing <- data.table::as.data.table(arrow::read_parquet(out_path))
+    # Release arrow's memory-mapped file handle before overwriting the same
+    # path — Windows error 1224 ("user-mapped section open") otherwise.
+    gc()
+    rebuilt_match_ids <- unique(action_equity$match_id)
+    kept <- existing[!match_id %in% rebuilt_match_ids]
+    n_kept <- nrow(kept)
+    n_dropped <- nrow(existing) - n_kept
+    action_equity <- data.table::rbindlist(list(kept, action_equity), fill = TRUE, use.names = TRUE)
+    rm(existing, kept); gc()
+    message(sprintf("  [%s] Merge: kept %d existing rows (replaced %d matching rebuilt match_ids), total %d",
+                    season, n_kept, n_dropped, nrow(action_equity)))
+  }
+  # Write atomically via a temp file then replace, so a write failure can
+  # never corrupt the existing per-season parquet (which may hold every
+  # other league once merge_subset_leagues is used).
+  out_tmp <- paste0(out_path, ".tmp")
+  arrow::write_parquet(action_equity, out_tmp)
+  if (file.exists(out_path)) file.remove(out_path)
+  file.rename(out_tmp, out_path)
   message(sprintf("  [%s] Written: %s (%.1f MB)",
                   season, out_path, file.size(out_path) / (1024 * 1024)))
 
