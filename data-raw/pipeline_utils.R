@@ -82,8 +82,20 @@ run_step <- function(step_name, step_num, code_block, run_steps,
       code_block()
       "SUCCESS"
     }, error = function(e) {
-      # Capture traceback before stack unwinds
-      message(sprintf("ERROR: %s", e$message))
+      # Capture traceback before stack unwinds. e$message alone is only the
+      # TOP-level condition text -- for a wrapped/chained error (e.g. callr's
+      # callr_remote_error, which carries the subprocess's real error as a
+      # `parent` condition) that's just "in callr subprocess.", with the
+      # actual cause never printed anywhere. This is why WS-3 (panna#109's
+      # closing comment) and this session's step-2b callr failure were both
+      # undiagnosable from the GHA log alone. rlang::cnd_message(prefix=TRUE)
+      # walks the full parent chain; fall back to conditionMessage() if e
+      # isn't an rlang-style condition.
+      full_msg <- tryCatch(
+        rlang::cnd_message(e, prefix = TRUE),
+        error = function(e2) conditionMessage(e)
+      )
+      message(sprintf("ERROR: %s", full_msg))
       tb <- sys.calls()
       if (length(tb) > 2) {
         message("Traceback (most recent calls):")
