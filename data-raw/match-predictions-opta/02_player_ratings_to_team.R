@@ -528,11 +528,17 @@ if (nrow(upcoming) > 0) {
 
       # Only load match history for players in upcoming lineups (memory optimization)
       upcoming_player_ids <- unique(unlist(lapply(upcoming_lineups, function(x) x$player_id)))
+      message(sprintf("  upcoming_player_ids: %d (%s)", length(upcoming_player_ids),
+                      paste(head(upcoming_player_ids, 3), collapse = ", ")))
       match_stats <- readRDS(match_stats_path)
+      message(sprintf("  match_stats loaded: %d rows, has player_id col: %s",
+                      nrow(match_stats), "player_id" %in% names(match_stats)))
       if (length(upcoming_player_ids) > 0 && "player_id" %in% names(match_stats)) {
         match_stats <- match_stats[match_stats$player_id %in% upcoming_player_ids, ]
         message(sprintf("  Filtered match_stats to %d players (%d rows)",
                         length(upcoming_player_ids), nrow(match_stats)))
+      } else {
+        message("  SKIPPED match_stats filter (empty upcoming_player_ids or missing player_id col) -- using FULL table")
       }
 
       decay_params <- if (file.exists(decay_params_path)) readRDS(decay_params_path) else NULL
