@@ -19,6 +19,12 @@ opta_data_dir(path = NULL)
 
 Character path to Opta data directory.
 
+## See also
+
+Other cache management:
+[`data_location_report()`](https://peteowen1.github.io/panna/reference/data_location_report.md),
+[`pannadata_dir()`](https://peteowen1.github.io/panna/reference/pannadata_dir.md)
+
 ## Examples
 
 ``` r

@@ -21,8 +21,10 @@ calculate_psv_components."><meta property="og:image" content="https://peteowen1.
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><a class="dropdown-item" href="../articles/getting-started.html">Getting Started</a></li>
-    <li><a class="dropdown-item" href="../articles/pipeline-walkthrough.html">Pipeline Walkthrough</a></li>
-    <li><a class="dropdown-item" href="../articles/player-ratings.html">Player Ratings Methodology</a></li>
+    <li><a class="dropdown-item" href="../articles/player-ratings.html">Player Ratings (EPR, PSR, Panna, Piero)</a></li>
+    <li><a class="dropdown-item" href="../articles/pipeline-walkthrough.html">Pipeline Anatomy</a></li>
+    <li><a class="dropdown-item" href="../articles/match-prediction.html">Match Prediction and Tournament Simulation</a></li>
+    <li><a class="dropdown-item" href="../articles/data-bus.html">Data Access and Publishing</a></li>
     <li><a class="dropdown-item" href="../articles/data-sources.html">Data Sources Guide</a></li>
   </ul></li>
       </ul><ul class="navbar-nav"><li class="nav-item"><form class="form-inline" role="search">
@@ -94,10 +96,29 @@ Default <code>FALSE</code>. See <code><a href="calculate_psv.html">calculate_psv
 vector (the form used for the displayed blog PSV). See
 <code><a href="calculate_psv.html">calculate_psv</a></code>.</p></dd>
 
+
+<dt id="arg-position-means">position_means<a class="anchor" aria-label="anchor" href="#arg-position-means"></a></dt>
+<dd><p>Optional pre-computed position-mean lookup table used
+to center skill columns before scoring (see <code><a href="compute_player_psr.html">compute_player_psr</a></code>).
+If <code>NULL</code>, no cross-position centering is applied.</p></dd>
+
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
     <p>A data.table with <code>psv</code>, <code>osv</code>, <code>dsv</code> columns.</p>
+    </div>
+    <div class="section level2">
+    <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a></h2>
+    <div class="dont-index"><p>Other psr:
+<code><a href="calculate_psr.html">calculate_psr()</a></code>,
+<code><a href="calculate_psv.html">calculate_psv()</a></code>,
+<code><a href="calculate_psv_components.html">calculate_psv_components()</a></code>,
+<code><a href="default_stat_rating_params.html">default_stat_rating_params()</a></code>,
+<code><a href="load_opta_psr_weekly.html">load_opta_psr_weekly()</a></code>,
+<code><a href="player_psr.html">player_psr()</a></code>,
+<code><a href="soccer_position_map.html">soccer_position_map()</a></code>,
+<code><a href="soccer_stat_rating_definitions.html">soccer_stat_rating_definitions()</a></code>,
+<code><a href="stat_rating_names.html">stat_rating_names()</a></code></p></div>
     </div>
 
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

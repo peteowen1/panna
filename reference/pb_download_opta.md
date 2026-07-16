@@ -1,34 +1,16 @@
-# Download Opta Data to Local Directory
-
-Downloads consolidated Opta parquet files from GitHub releases to the
-local pannadata/data/opta/ directory. Match events are excluded (too
-large for a single file) - use
-`load_opta_match_events(source = "remote")` to load them on-demand from
-per-league release files.
+# Incrementally download release assets that are missing or stale
 
 Syncs a GitHub release to a local directory by downloading only the
 assets that are **missing**, a **different size**, or **updated more
 recently** on the release than the local copy. Avoids re-pulling the
 full multi-GB dataset when only a few consolidated files changed (e.g.
-the daily Opta scrape refreshes ~10 of ~125 assets). Unlike
-[`pb_download_source`](https://peteowen1.github.io/panna/reference/pb_download_source.md)
-it does not require a tarball asset — it operates on the individual
-release files.
+the daily Opta scrape refreshes ~10 of ~125 assets). Unlike the old
+tarball-based downloads, it does not require a tarball asset — it
+operates on the individual release files.
 
 ## Usage
 
 ``` r
-pb_download_opta(
-  dest = NULL,
-  repo = "peteowen1/pannadata",
-  tag = "opta-latest",
-  pattern = NULL,
-  check_timestamp = FALSE,
-  force = FALSE,
-  dry_run = FALSE,
-  verbose = TRUE
-)
-
 pb_download_opta(
   dest = NULL,
   repo = "peteowen1/pannadata",
@@ -85,21 +67,19 @@ pb_download_opta(
 
 ## Value
 
-Invisibly returns the path to the installed data.
-
 Invisibly, a data.frame with one row per asset: `file_name`, `action`
 ("download"/"skip"), `reason`, and `size`.
+
+## See also
+
+Other data distribution:
+[`load_predictions()`](https://peteowen1.github.io/panna/reference/load_predictions.md),
+[`pb_download_predictions()`](https://peteowen1.github.io/panna/reference/pb_download_predictions.md),
+[`pb_list_sources()`](https://peteowen1.github.io/panna/reference/pb_list_sources.md)
 
 ## Examples
 
 ``` r
-if (FALSE) { # \dontrun{
-# Download latest Opta data to pannadata/data/opta/
-pb_download_opta()
-
-# Then load with:
-load_opta_stats("ENG", season = "2024-2025")
-} # }
 if (FALSE) { # \dontrun{
 # See what's out of date without downloading
 pb_download_opta(dry_run = TRUE)

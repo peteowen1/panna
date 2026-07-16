@@ -1,8 +1,8 @@
-# Compare FBref and Opta SPM feature importance
+# Compare SPM feature importance between two models
 
-Compares which features are most important in FBref vs Opta SPM models.
-Useful for understanding which data source captures different aspects of
-play.
+Compares which features are most important between two fitted SPM models
+(e.g. different seasons, targets, or feature sets). Useful for
+understanding which features drive each model's ratings.
 
 ## Usage
 
@@ -14,11 +14,13 @@ compare_spm_features(fbref_model, opta_model, n = 20)
 
 - fbref_model:
 
-  Fitted SPM model from FBref data
+  Fitted SPM model to compare (labeled "FBref" in the output's `source`
+  column for historical reasons; any fitted SPM model works)
 
 - opta_model:
 
-  Fitted SPM model from Opta data
+  Fitted SPM model to compare against (labeled "Opta" in the output's
+  `source` column)
 
 - n:
 

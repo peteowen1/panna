@@ -50,3 +50,9 @@ data.frame: `epv_home/epv_away`, `wpa_home/wpa_away`,
 
 This allows RAPM to be trained on EPV, WPA, or PSV as response variables
 alongside the default xG target.
+
+## See also
+
+Other panna ratings:
+[`aggregate_season_ratings()`](https://peteowen1.github.io/panna/reference/aggregate_season_ratings.md),
+[`extract_xrapm_ratings()`](https://peteowen1.github.io/panna/reference/extract_xrapm_ratings.md)

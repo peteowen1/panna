@@ -24,6 +24,12 @@ list_opta_seasons(league, source = c("catalog", "remote", "local"))
 
 Character vector of available seasons.
 
+## See also
+
+Other competition metadata:
+[`list_opta_leagues()`](https://peteowen1.github.io/panna/reference/list_opta_leagues.md),
+[`resolve_league_season()`](https://peteowen1.github.io/panna/reference/resolve_league_season.md)
+
 ## Examples
 
 ``` r

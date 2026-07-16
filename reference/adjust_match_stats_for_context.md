@@ -65,3 +65,14 @@ Three adjustments are applied multiplicatively:
 
 3.  **League quality**: Cross-league normalization using Big 5 average
     as reference level.
+
+## See also
+
+Other estimated skills:
+[`backtest_skill_predictions()`](https://peteowen1.github.io/panna/reference/backtest_skill_predictions.md),
+[`compute_position_multipliers()`](https://peteowen1.github.io/panna/reference/compute_position_multipliers.md),
+[`estimate_player_skills()`](https://peteowen1.github.io/panna/reference/estimate_player_skills.md),
+[`estimate_player_skills_at_date()`](https://peteowen1.github.io/panna/reference/estimate_player_skills_at_date.md),
+[`get_default_decay_params()`](https://peteowen1.github.io/panna/reference/get_default_decay_params.md),
+[`inspect_skill()`](https://peteowen1.github.io/panna/reference/inspect_skill.md),
+[`player_skill_profile()`](https://peteowen1.github.io/panna/reference/player_skill_profile.md)

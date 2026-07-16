@@ -19,7 +19,7 @@ create_all_splints(
 
 - processed_data:
 
-  List of processed data from process_all_data
+  List of processed data from create_opta_processed_data
 
 - include_goals:
 
@@ -45,3 +45,13 @@ create_all_splints(
 ## Value
 
 List with combined splint data
+
+## See also
+
+Other rapm:
+[`create_rapm_design_matrix()`](https://peteowen1.github.io/panna/reference/create_rapm_design_matrix.md),
+[`extract_period_end_times()`](https://peteowen1.github.io/panna/reference/extract_period_end_times.md),
+[`extract_player_timing_from_events()`](https://peteowen1.github.io/panna/reference/extract_player_timing_from_events.md),
+[`extract_rapm_ratings()`](https://peteowen1.github.io/panna/reference/extract_rapm_ratings.md),
+[`fit_rapm()`](https://peteowen1.github.io/panna/reference/fit_rapm.md),
+[`fit_rapm_with_prior()`](https://peteowen1.github.io/panna/reference/fit_rapm_with_prior.md)

@@ -51,3 +51,14 @@ A list with:
 Optimisation: minimise cross-entropy between predicted probs and
 BT-implied probs via L-BFGS-B. Ratings are centered to mean zero for
 interpretability.
+
+## See also
+
+Other world cup simulation:
+[`bt_match_prob()`](https://peteowen1.github.io/panna/reference/bt_match_prob.md),
+[`build_knockout_lookup()`](https://peteowen1.github.io/panna/reference/build_knockout_lookup.md),
+[`compute_league_offsets()`](https://peteowen1.github.io/panna/reference/compute_league_offsets.md),
+[`match_is_international()`](https://peteowen1.github.io/panna/reference/match_is_international.md),
+[`mirror_match_rows()`](https://peteowen1.github.io/panna/reference/mirror_match_rows.md),
+[`run_wc2026_reference_checks()`](https://peteowen1.github.io/panna/reference/run_wc2026_reference_checks.md),
+[`simulate_world_cup()`](https://peteowen1.github.io/panna/reference/simulate_world_cup.md)

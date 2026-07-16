@@ -18,6 +18,13 @@ pb_list_sources(repo = "peteowen1/pannadata")
 
 Data frame with release information by source
 
+## See also
+
+Other data distribution:
+[`load_predictions()`](https://peteowen1.github.io/panna/reference/load_predictions.md),
+[`pb_download_opta()`](https://peteowen1.github.io/panna/reference/pb_download_opta.md),
+[`pb_download_predictions()`](https://peteowen1.github.io/panna/reference/pb_download_predictions.md)
+
 ## Examples
 
 ``` r

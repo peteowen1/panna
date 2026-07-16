@@ -58,3 +58,9 @@ actual match count — observed during the 2026-05-29 audit where
 played Championship 2025-2026 matches, causing the blog Value tab to cap
 at GP=24 instead of 46. Without an explicit check, step 10b silently
 produced game_logs covering only the events it could see.
+
+## See also
+
+Other validation:
+[`assert_events_coverage()`](https://peteowen1.github.io/panna/reference/assert_events_coverage.md),
+[`assert_step_output()`](https://peteowen1.github.io/panna/reference/assert_step_output.md)

@@ -44,6 +44,20 @@ compare_players(
 Data frame with one row per player and columns grouped by category:
 identity, shooting, creating, passing, chains, defending, possession.
 
+## See also
+
+Other player statistics:
+[`player_opta_chains()`](https://peteowen1.github.io/panna/reference/player_opta_chains.md),
+[`player_opta_defense()`](https://peteowen1.github.io/panna/reference/player_opta_defense.md),
+[`player_opta_keeper()`](https://peteowen1.github.io/panna/reference/player_opta_keeper.md),
+[`player_opta_passing()`](https://peteowen1.github.io/panna/reference/player_opta_passing.md),
+[`player_opta_possession()`](https://peteowen1.github.io/panna/reference/player_opta_possession.md),
+[`player_opta_setpiece()`](https://peteowen1.github.io/panna/reference/player_opta_setpiece.md),
+[`player_opta_shots()`](https://peteowen1.github.io/panna/reference/player_opta_shots.md),
+[`player_opta_summary()`](https://peteowen1.github.io/panna/reference/player_opta_summary.md),
+[`player_opta_xg()`](https://peteowen1.github.io/panna/reference/player_opta_xg.md),
+[`player_opta_xpass()`](https://peteowen1.github.io/panna/reference/player_opta_xpass.md)
+
 ## Examples
 
 ``` r

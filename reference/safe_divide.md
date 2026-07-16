@@ -27,6 +27,13 @@ safe_divide(x, y, default = 0)
 x / y, with Inf/NaN from division-by-zero replaced by default. Input NAs
 are preserved.
 
+## See also
+
+Other utilities:
+[`per_90()`](https://peteowen1.github.io/panna/reference/per_90.md),
+[`validate_dataframe()`](https://peteowen1.github.io/panna/reference/validate_dataframe.md),
+[`validate_seasons()`](https://peteowen1.github.io/panna/reference/validate_seasons.md)
+
 ## Examples
 
 ``` r

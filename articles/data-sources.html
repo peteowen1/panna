@@ -39,8 +39,10 @@
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
 <li><a class="dropdown-item" href="../articles/getting-started.html">Getting Started</a></li>
-    <li><a class="dropdown-item" href="../articles/pipeline-walkthrough.html">Pipeline Walkthrough</a></li>
-    <li><a class="dropdown-item" href="../articles/player-ratings.html">Player Ratings Methodology</a></li>
+    <li><a class="dropdown-item" href="../articles/player-ratings.html">Player Ratings (EPR, PSR, Panna, Piero)</a></li>
+    <li><a class="dropdown-item" href="../articles/pipeline-walkthrough.html">Pipeline Anatomy</a></li>
+    <li><a class="dropdown-item" href="../articles/match-prediction.html">Match Prediction and Tournament Simulation</a></li>
+    <li><a class="dropdown-item" href="../articles/data-bus.html">Data Access and Publishing</a></li>
     <li><a class="dropdown-item" href="../articles/data-sources.html">Data Sources Guide</a></li>
   </ul>
 </li>
@@ -188,8 +190,8 @@ the season end year rather than by an exact string match.</p>
 <div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/peteowen1/panna" class="external-link">panna</a></span><span class="op">)</span></span>
 <span></span>
-<span><span class="co"># Download (first time)</span></span>
-<span><span class="fu"><a href="../reference/pb_download_source.html">pb_download_source</a></span><span class="op">(</span><span class="st">"opta"</span><span class="op">)</span></span>
+<span><span class="co"># Download / sync (incremental, works from an empty dir too)</span></span>
+<span><span class="fu"><a href="../reference/pb_download_opta.html">pb_download_opta</a></span><span class="op">(</span><span class="op">)</span></span>
 <span></span>
 <span><span class="co"># Player match stats (263 columns)</span></span>
 <span><span class="va">stats</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/load_opta_stats.html">load_opta_stats</a></span><span class="op">(</span><span class="st">"EPL"</span>, <span class="st">"2024-2025"</span><span class="op">)</span></span>

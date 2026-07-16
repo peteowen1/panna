@@ -95,3 +95,8 @@ table on its own scale.
 
 [`compute_league_offsets`](https://peteowen1.github.io/panna/reference/compute_league_offsets.md),
 [`compute_psr_league_offsets`](https://peteowen1.github.io/panna/reference/compute_psr_league_offsets.md)
+
+Other league offsets:
+[`apply_epr_league_offsets()`](https://peteowen1.github.io/panna/reference/apply_epr_league_offsets.md),
+[`apply_psr_league_offsets()`](https://peteowen1.github.io/panna/reference/apply_psr_league_offsets.md),
+[`compute_psr_league_offsets()`](https://peteowen1.github.io/panna/reference/compute_psr_league_offsets.md)

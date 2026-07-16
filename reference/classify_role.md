@@ -25,3 +25,11 @@ classify_role(position, side)
 Character vector of role codes: GK, CB, LB, RB, LWB, RWB, DM, CM, LM,
 RM, CAM, LW, RW, CF, LF, RF (or `"UNK"` for blanks / "Substitute" /
 unrecognized).
+
+## See also
+
+Other expected minutes:
+[`build_team_expected_minutes()`](https://peteowen1.github.io/panna/reference/build_team_expected_minutes.md),
+[`predict_minutes()`](https://peteowen1.github.io/panna/reference/predict_minutes.md),
+[`prepare_minutes_cache()`](https://peteowen1.github.io/panna/reference/prepare_minutes_cache.md),
+[`query_minutes_features()`](https://peteowen1.github.io/panna/reference/query_minutes_features.md)

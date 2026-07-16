@@ -1,347 +1,215 @@
-# Pipeline Walkthrough
+# Pipeline Anatomy
 
-This vignette walks through the full panna rating pipeline using
-synthetic data. No external data downloads are required – everything
-runs self-contained.
+Every metric in
+[`vignette("player-ratings")`](https://peteowen1.github.io/panna/articles/player-ratings.md)
+is produced by one of four numbered pipelines under `data-raw/`. This
+vignette is a map: what each numbered step produces, where its cache
+lives, how the pipelines depend on each other, and how they’re scheduled
+in CI.
 
-## Setup
+## The wrong-cwd trap
+
+**Always run pipeline scripts from inside `panna/`, never from the
+`pannaverse/` root.** Every script uses relative cache paths
+(`data-raw/cache-opta/...`). Run one from the wrong directory and you
+get a stray `data-raw/cache/` tree at the pannaverse root that silently
+pollutes `git status` there – which is exactly the signal used to detect
+submodule pointer moves. If you ever see `data-raw/` or `opta/`
+directories at the pannaverse root, they’re regenerable junk from a
+wrong-cwd run; delete them.
 
 ``` r
+# WRONG -- run from pannaverse root
+# Rscript panna/data-raw/player-ratings-opta/run_pipeline_opta.R
+
+# RIGHT
+# cd panna
+# Rscript data-raw/player-ratings-opta/run_pipeline_opta.R
+```
+
+## The four pipelines
+
+### 1. Opta RAPM/SPM (`data-raw/player-ratings-opta/`, entry `run_pipeline_opta.R`)
+
+| Step | Script                    | Produces                                | Cache                                |
+|------|---------------------------|-----------------------------------------|--------------------------------------|
+| 01   | `01_load_opta_data.R`     | Raw events cache                        | `cache-opta/`                        |
+| 02   | `02_data_processing.R`    | Processed splint-ready data             | `cache-opta/`                        |
+| 03   | `03_splint_creation.R`    | Splint boundaries (chain-derived)       | `cache-opta/03_splints.rds`          |
+| 04   | `04_rapm.R`               | Seasonal RAPM (ridge/glmnet)            | `cache-opta/04_rapm.rds`             |
+| 05   | `05_spm.R`                | SPM model fit + predictions             | `cache-opta/`                        |
+| 06   | `06_xrapm.R`              | xRAPM (SPM-shrunk RAPM)                 | `cache-opta/`                        |
+| 07   | `07_seasonal_ratings.R`   | Combined seasonal ratings table         | `cache-opta/07_seasonal_ratings.rds` |
+| 07b  | `07b_player_centrality.R` | Network centrality metrics              | `cache-opta/`                        |
+| 08   | `08_panna_ratings.R`      | Final `panna` rating                    | `cache-opta/08_panna.rds`            |
+| 09   | `09_export_ratings.R`     | Uploads `seasonal_xrapm`/`seasonal_spm` | `ratings-data` release               |
+
+Prerequisite: pre-computed xMetrics (step 4 of the EPV pipeline, below).
+
+### 2. Estimated Skills (`data-raw/estimated-skills/`, entry `run_skills_pipeline.R`)
+
+| Step | Purpose                                | Cache                                        |
+|------|----------------------------------------|----------------------------------------------|
+| 00   | GK per-90 column prep                  | `cache-skills/`                              |
+| 01   | Compute match-level stats              | `cache-skills/01_match_stats.rds`            |
+| 02   | Estimate per-stat skills               | `cache-skills/`                              |
+| 02b  | Optimize decay/prior params            | `cache-skills/02b_decay_params.rds`          |
+| 03   | Skill-based SPM (incl. as-of variant)  | `cache-skills/03_skill_spm.rds`              |
+| 04   | Skill-based xRAPM                      | `cache-skills/`                              |
+| 05   | Skill-based panna ratings              | `cache-skills/`                              |
+| 06   | Seasonal skill ratings                 | `cache-skills/06_seasonal_ratings.rds`       |
+| 07   | Train PSR model                        | `cache-skills/`                              |
+| 07b  | Position/era mean tables               | `inst/extdata/`                              |
+| 07c  | Live-PSV centering constants           | `inst/extdata/psv_live_constants.csv`        |
+| 08   | Export skills                          | `opta_skills.parquet`                        |
+| 08b  | Export weekly PSR snapshots            | `opta_psr_weekly.parquet` (`opta-latest`)    |
+| 09   | Career panna trait                     | `career_panna.parquet` (`ratings-data`)      |
+| 09b  | Leak-free as-of career panna snapshots | `career_panna_asof.parquet` (`ratings-data`) |
+
+Prerequisite: `cache-opta/03_splints.rds` and `cache-opta/04_rapm.rds`
+from pipeline 1 – must run the Opta RAPM pipeline first.
+
+### 3. Match Predictions (`data-raw/match-predictions-opta/`, entry `run_predictions_opta.R`)
+
+| Step    | Script                                 | Produces                                                                                                                         |
+|---------|----------------------------------------|----------------------------------------------------------------------------------------------------------------------------------|
+| 01      | `01_build_fixture_results.R`           | Fixture/result base table                                                                                                        |
+| 01b     | `01b_refresh_wc2026_squads.R` (opt-in) | Rebuilds WC2026 announced-squad minutes                                                                                          |
+| 02      | `02_player_ratings_to_team.R`          | Team-aggregated player ratings                                                                                                   |
+| 02b     | `02b_team_skill_features.R`            | Team-level skill aggregates                                                                                                      |
+| 03      | `03_team_rolling_features.R`           | Rolling form + Elo features                                                                                                      |
+| 04      | `04_build_match_dataset.R`             | Full model-ready match dataset                                                                                                   |
+| 05      | `05_fit_goals_model.R`                 | XGBoost Poisson goals model                                                                                                      |
+| 06      | `06_fit_outcome_model.R`               | XGBoost multinomial outcome model                                                                                                |
+| 07      | `07_predict_fixtures.R`                | `predictions.parquet` (all matches, played + upcoming)                                                                           |
+| 08      | `08_evaluate_model.R`                  | Backtest metrics                                                                                                                 |
+| 09      | `09_upload_predictions.R` (opt-in)     | Validates predictions for step 13                                                                                                |
+| 10      | `10_export_blog_data.R` (opt-in)       | `panna_ratings.parquet`, `match_predictions.parquet`                                                                             |
+| 10b     | `10b_export_game_logs.R` (opt-in)      | `game_logs_*.parquet` (EPV+WPA+PSV+`piero_value`)                                                                                |
+| 10c     | `10c_export_equity.R` (opt-in)         | `action_equity_*.parquet` (per-action EPV credit)                                                                                |
+| 10d     | `10d_export_shootout_wpa.R` (opt-in)   | Per-player shootout WPA                                                                                                          |
+| 11      | `11_simulate_wc2026.R` (opt-in)        | WC2026 Monte Carlo simulation                                                                                                    |
+| 12      | `12_export_wc2026_blog.R` (opt-in)     | `wc2026_team_strength.parquet` (`tiento` column)                                                                                 |
+| 12b/12c | Snapshot scripts (opt-in)              | Dated minutes/strength history diffs                                                                                             |
+| 13      | `13_publish_release_data.R` (opt-in)   | Single gated [`vb_publish()`](https://peteowen1.github.io/panna/reference/vb_publish.md) of `predictions-latest` + `blog-latest` |
+
+Prerequisite: `cache-opta/07_seasonal_ratings.rds` (pipeline 1) and,
+when `use_skill_ratings = TRUE` (the default),
+`cache-skills/06_seasonal_ratings.rds` (pipeline 2).
+
+### 4. EPV / xMetrics (`data-raw/epv/`, run manually – no single entry point)
+
+| Step     | Script                                                   | Produces                                                                  |
+|----------|----------------------------------------------------------|---------------------------------------------------------------------------|
+| 01       | `01_train_epv_models.R`                                  | EPV model (XGBoost)                                                       |
+| 01b      | `01b_train_duel_model.R`                                 | xDuel WOE models                                                          |
+| 02       | `02_calculate_player_epv.R`                              | Per-player EPV                                                            |
+| 03       | `03_calculate_player_xmetrics.R`                         | xG/xA/xPass per player-match                                              |
+| 04 / 04b | `04_export_xmetrics.R` / `04b_export_xmetrics_bymatch.R` | `opta_xmetrics.parquet` / `opta_xmetrics_bymatch.parquet` (`opta-latest`) |
+| 05       | `05_train_wp_model.R`                                    | Win-probability model                                                     |
+| 06       | `06_calculate_wpa.R`                                     | Per-action WPA                                                            |
+
+This pipeline trains the models everything else depends on. Model
+training is iterating (see `../MODELS.md`); routine refreshes run
+`xmetrics_only` (score with the currently published model, no retrain).
+
+## How to run: `run_steps` and `force_rebuild_from`
+
+Every orchestrator (`run_pipeline_opta.R`, `run_skills_pipeline.R`,
+`run_predictions_opta.R`) follows the same override pattern: config
+variables are set with `if (!exists(...))` so a driver script can
+override them *before*
+[`source()`](https://rdrr.io/r/base/source.html)-ing the pipeline.
+
+``` r
+# From panna/:
+
+# Run only a subset of steps
+run_steps <- list(
+  step_01_load_data        = TRUE,
+  step_02_data_processing  = TRUE,
+  step_03_splint_creation  = FALSE,  # already cached, skip
+  step_04_rapm             = TRUE,
+  step_05_spm              = TRUE,
+  step_06_xrapm             = TRUE,
+  step_07_seasonal_ratings = TRUE,
+  step_08_panna_ratings    = TRUE,
+  step_09_export_ratings   = FALSE  # skip upload
+)
+source("data-raw/player-ratings-opta/run_pipeline_opta.R")
+```
+
+``` r
+# force_rebuild_from clears cache from a given step onward and re-runs it.
+# NULL (default) = use whatever is cached; a step number = full refresh
+# from there on.
+force_rebuild_from <- 4  # e.g. re-run RAPM onward after a splint fix
+source("data-raw/player-ratings-opta/run_pipeline_opta.R")
+```
+
+Simpler shortcut: `start_step <- 3` (before sourcing) auto-populates
+`run_steps` to skip everything before step 3.
+
+The Opta RAPM pipeline additionally runs each step in its own `callr`
+subprocess so memory is fully released between steps – the heaviest
+single step peaks at ~12.6GB, but a single R session accumulates the
+high-water mark of every step it has run, which previously OOM’d a 16GB
+CI runner even though no individual step needed that much.
+
+## Cache topology
+
+| Directory (inside `panna/`)        | Pipeline                         | Notable cross-pipeline reads                                                                          |
+|------------------------------------|----------------------------------|-------------------------------------------------------------------------------------------------------|
+| `data-raw/cache/`                  | EPV/xMetrics + SPADL conversions | –                                                                                                     |
+| `data-raw/cache-opta/`             | Opta RAPM/SPM (steps 01-09)      | Read by Skills pipeline (`03_splints.rds`, `04_rapm.rds`) and Predictions (`07_seasonal_ratings.rds`) |
+| `data-raw/cache-skills/`           | Estimated Skills                 | Read by Predictions (`06_seasonal_ratings.rds`, when `use_skill_ratings = TRUE`)                      |
+| `data-raw/cache-predictions-opta/` | Match Predictions                | Read by blog export steps (10/10b/10c/12)                                                             |
+
+All four are gitignored – they are pipeline intermediates, fully
+regenerable from source data plus the published models.
+
+## GitHub Actions mapping
+
+| Workflow                   | Trigger                                                                                                                                                                                                    | Runs                                                                                                                          |
+|----------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------|
+| `opta-pipeline.yml`        | Manual dispatch only                                                                                                                                                                                       | Opta RAPM/SPM pipeline. OOMs the 16GB hosted runner since the 2026-06 league expansion – run locally (~25GB+ RAM) until fixed |
+| `predictions-pipeline.yml` | Wed 8 AM UTC cron, plus a WC2026 finals-week daily backstop; also fired by `pannadata`’s daily Opta scrape via `repository_dispatch: opta-scrape-complete` (so it effectively runs daily, not just weekly) | Match Predictions pipeline, steps 1-13 as enabled                                                                             |
+| `psr-weekly-snapshot.yml`  | Wed 10 AM UTC                                                                                                                                                                                              | Skills step 8b (weekly PSR snapshot) + step 07c (live-PSV centering constants)                                                |
+| `epr-weekly-snapshot.yml`  | Wed 11 AM UTC                                                                                                                                                                                              | Incremental `opta_epr_weekly.parquet` rebuild                                                                                 |
+| `epv-pipeline.yml`         | Weekly Sunday 18:00 UTC                                                                                                                                                                                    | EPV/xMetrics pipeline in `xmetrics_only` mode (scores with the published model; manual dispatch needed for a real retrain)    |
+| `pkgdown.yaml`             | Push                                                                                                                                                                                                       | Rebuilds this documentation site                                                                                              |
+| `R-CMD-check.yaml`         | Push to `dev`, PRs to `main`                                                                                                                                                                               | Package checks                                                                                                                |
+
+## Fresh-clone bootstrap
+
+``` r
+# From panna/, one command pulls everything a fresh clone needs:
+# Rscript data-raw/bootstrap.R            # data + models + prediction caches
+# Rscript data-raw/bootstrap.R opta       # Opta data + models only
+# Rscript data-raw/bootstrap.R models     # models only
+# Rscript data-raw/bootstrap.R caches     # prediction caches only
+
 library(panna)
-set.seed(42)
+pb_download_opta()  # what bootstrap.R calls under the hood for Opta data
 ```
 
-## Step 1: Create Synthetic Match Data
+See
+[`vignette("data-bus")`](https://peteowen1.github.io/panna/articles/data-bus.md)
+for what
+[`pb_download_opta()`](https://peteowen1.github.io/panna/reference/pb_download_opta.md)
+actually does and how published outputs get back out to GitHub Releases.
 
-In production, you would load data with
-[`load_opta_stats()`](https://peteowen1.github.io/panna/reference/load_opta_stats.md),
-[`load_opta_match_events()`](https://peteowen1.github.io/panna/reference/load_opta_match_events.md),
-etc. Here we generate synthetic match data that mirrors the structure of
-processed Opta data.
+## Next steps
 
-``` r
-n_matches <- 12
-home_teams <- paste0("Team_", LETTERS[1:6])
-away_teams <- paste0("Team_", LETTERS[7:12])
-match_ids <- paste0("match_", seq_len(n_matches))
-
-# Match results with xG
-results <- data.frame(
-  match_id = match_ids,
-  home_team = rep(home_teams, length.out = n_matches),
-  away_team = rep(away_teams, length.out = n_matches),
-  home_score = sample(0:3, n_matches, replace = TRUE),
-  away_score = sample(0:3, n_matches, replace = TRUE),
-  home_xg = runif(n_matches, 0.5, 3),
-  away_xg = runif(n_matches, 0.5, 3),
-  stringsAsFactors = FALSE
-)
-
-# Player pool: 50 players split across teams
-all_player_ids <- paste0("player_", 1:50)
-all_player_names <- paste("Player", 1:50)
-
-# Generate lineups (11 starters per team per match)
-lineup_rows <- list()
-for (i in seq_len(n_matches)) {
-  home_idx <- sample(1:25, 11)
-  away_idx <- sample(26:50, 11)
-
-  for (j in seq_along(home_idx)) {
-    lineup_rows[[length(lineup_rows) + 1]] <- data.frame(
-      match_id = match_ids[i], player_id = all_player_ids[home_idx[j]],
-      player_name = all_player_names[home_idx[j]],
-      team = results$home_team[i], is_home = TRUE, is_starter = TRUE,
-      on_minute = 0, off_minute = 90, minutes = 90, stringsAsFactors = FALSE
-    )
-  }
-  for (j in seq_along(away_idx)) {
-    lineup_rows[[length(lineup_rows) + 1]] <- data.frame(
-      match_id = match_ids[i], player_id = all_player_ids[away_idx[j]],
-      player_name = all_player_names[away_idx[j]],
-      team = results$away_team[i], is_home = FALSE, is_starter = TRUE,
-      on_minute = 0, off_minute = 90, minutes = 90, stringsAsFactors = FALSE
-    )
-  }
-}
-lineups <- do.call(rbind, lineup_rows)
-
-# Generate shots with xG
-shot_rows <- list()
-for (i in seq_len(n_matches)) {
-  n_shots <- sample(15:25, 1)
-  match_lineups <- lineups[lineups$match_id == match_ids[i], ]
-  shot_players <- match_lineups[sample(nrow(match_lineups), n_shots, replace = TRUE), ]
-  shot_rows[[i]] <- data.frame(
-    match_id = rep(match_ids[i], n_shots),
-    minute = sort(sample(1:90, n_shots, replace = TRUE)),
-    player_id = shot_players$player_id,
-    player_name = shot_players$player_name,
-    team = shot_players$team, is_home = shot_players$is_home,
-    xg = pmin(runif(n_shots, 0.02, 0.5), 0.95),
-    is_goal = rbinom(n_shots, 1, 0.1) == 1,
-    is_penalty = FALSE, is_own_goal = FALSE, stringsAsFactors = FALSE
-  )
-}
-shooting <- do.call(rbind, shot_rows)
-
-# Generate events (goals + substitutions)
-event_rows <- list()
-for (i in seq_len(n_matches)) {
-  goals <- shooting[shooting$match_id == match_ids[i] & shooting$is_goal, ]
-  if (nrow(goals) > 0) {
-    event_rows[[length(event_rows) + 1]] <- data.frame(
-      match_id = rep(match_ids[i], nrow(goals)),
-      team = goals$team, is_home = goals$is_home, event_type = "goal",
-      minute = goals$minute, player_name = goals$player_name,
-      is_penalty = FALSE, is_own_goal = FALSE, is_red_card = FALSE,
-      stringsAsFactors = FALSE
-    )
-  }
-  # 2 substitutions per match
-  starters <- lineups[lineups$match_id == match_ids[i] & lineups$is_starter, ]
-  subs <- starters[sample(nrow(starters), 2), ]
-  event_rows[[length(event_rows) + 1]] <- data.frame(
-    match_id = rep(match_ids[i], 2),
-    team = subs$team, is_home = subs$is_home, event_type = "substitution",
-    minute = sample(50:75, 2), player_name = subs$player_name,
-    is_penalty = FALSE, is_own_goal = FALSE, is_red_card = FALSE,
-    stringsAsFactors = FALSE
-  )
-}
-events <- do.call(rbind, event_rows)
-
-processed_data <- list(
-  results = results, lineups = lineups, shooting = shooting,
-  events = events, stats_summary = NULL
-)
-
-cat(sprintf("Created %d matches with %d players\n", n_matches, length(all_player_ids)))
-#> Created 12 matches with 50 players
-```
-
-## Step 2: Create Splints
-
-Splints are time segments where the lineup is constant. Boundaries occur
-at goals, substitutions, red cards, and halftime. Each splint records
-the non-penalty xG differential (npxGD) that occurred during that
-segment.
-
-``` r
-splint_data <- create_all_splints(processed_data, verbose = FALSE)
-
-cat(sprintf("Splints: %d across %d matches\n",
-            nrow(splint_data$splints),
-            length(unique(splint_data$splints$match_id))))
-#> Splints: 66 across 12 matches
-cat(sprintf("Player-splint assignments: %d\n", nrow(splint_data$players)))
-#> Player-splint assignments: 1452
-
-# Example: first match's splints
-first_match <- splint_data$splints[splint_data$splints$match_id == "match_1", ]
-first_match[, c("splint_num", "start_minute", "end_minute", "duration")]
-#>   splint_num start_minute end_minute duration
-#> 1          1            0         46       46
-#> 2          2           46         64       18
-#> 3          3           64         74       10
-#> 4          4           74         91       17
-```
-
-## Step 3: Build RAPM Design Matrix
-
-The design matrix encodes which players were on the field during each
-splint. Each splint generates two rows: one from the home team’s
-attacking perspective, one from the away team’s. Player columns are
-split into offense and defense indicators.
-
-``` r
-rapm_data <- create_rapm_design_matrix(splint_data, min_minutes = 45)
-#> [18:54:27] Processing 66 splints...
-#> [18:54:27] Including 50 players (>= 45 minutes)
-#> [18:54:27] Replacement pool: 0 players (< 45 minutes)
-#> [18:54:27] Building row data (vectorized)...
-#> [18:54:27] Building sparse matrix (vectorized)...
-#> [18:54:27] Replacement appearances: 0 offense, 0 defense
-#> [18:54:27] Design matrix: 132 rows, 100 player columns (+2 replacement), 5 covariates
-
-# Add covariates to the player matrix for model fitting
-covariates <- cbind(
-  gd = rapm_data$row_data$gd,
-  is_home = as.numeric(rapm_data$row_data$home_away == "home"),
-  avg_min = rapm_data$row_data$avg_min
-)
-rapm_data$X <- cbind(rapm_data$X_players, covariates)
-rapm_data$covariate_names <- colnames(covariates)
-
-cat(sprintf("Design matrix: %d rows x %d columns\n",
-            nrow(rapm_data$X), ncol(rapm_data$X)))
-#> Design matrix: 132 rows x 105 columns
-cat(sprintf("Players included: %d (min 45 minutes)\n", rapm_data$n_players))
-#> Players included: 50 (min 45 minutes)
-cat(sprintf("Target: %s\n", rapm_data$target_name))
-#> Target: xgf90
-```
-
-## Step 4: Fit Base RAPM
-
-RAPM uses ridge regression (L2 penalty) to estimate each player’s
-offensive and defensive impact. Cross-validation selects the
-regularization strength.
-
-``` r
-rapm_model <- fit_rapm(rapm_data, parallel = FALSE, nfolds = 3)
-#> [18:54:27] Fitting RAPM: 132 observations, 105 columns
-#> [18:54:28] RAPM fit complete (xG-based). Lambda.min: 143.3328, R^2: 0.778
-rapm_ratings <- extract_rapm_ratings(rapm_model)
-
-cat(sprintf("RAPM ratings for %d players\n", nrow(rapm_ratings)))
-#> RAPM ratings for 51 players
-head(rapm_ratings[, c("player_name", "rapm", "offense", "defense", "total_minutes")])
-#>    player_name         rapm      offense       defense total_minutes
-#> 1    Player 10 1.256191e-37 9.957186e-38 -2.604723e-38           728
-#> 43   Player 30 1.093097e-37 1.002352e-38 -9.928621e-38           637
-#> 7    Player 22 1.091733e-37 5.773439e-38 -5.143896e-38           455
-#> 23    Player 7 1.090507e-37 7.151214e-38 -3.753852e-38           364
-#> 3    Player 23 9.459901e-38 1.447800e-37  5.018102e-38           455
-#> 8     Player 4 7.741443e-38 1.293767e-38 -6.447676e-38           546
-```
-
-The `rapm` column equals `offense - defense`. Positive offense means the
-player helps create xG; negative defense means the player prevents xG.
-
-``` r
-# Verify: rapm = offense - defense
-all.equal(rapm_ratings$rapm, rapm_ratings$offense - rapm_ratings$defense)
-#> [1] TRUE
-```
-
-## Step 5: Fit SPM Model
-
-SPM (Statistical Plus-Minus) predicts RAPM from box score statistics. It
-captures the relationship between traditional stats and on-field impact,
-providing a prior for players with limited RAPM sample size.
-
-``` r
-# Create synthetic per-90 statistics
-n_players <- nrow(rapm_ratings)
-player_features <- data.frame(
-  player_id = rapm_ratings$player_id,
-  player_name = rapm_ratings$player_name,
-  total_minutes = rapm_ratings$total_minutes,
-  n_matches = pmax(1, round(rapm_ratings$total_minutes / 90)),
-  goals_p90 = runif(n_players, 0, 0.6),
-  npxg_p90 = runif(n_players, 0, 0.5),
-  xa_p90 = runif(n_players, 0, 0.4),
-  tackles_p90 = runif(n_players, 0.5, 3.5),
-  interceptions_p90 = runif(n_players, 0.3, 2),
-  progressive_passes_p90 = runif(n_players, 1, 7),
-  rapm = rapm_ratings$rapm,
-  stringsAsFactors = FALSE
-)
-
-spm_model <- fit_spm_model(player_features, nfolds = 3)
-#> [18:54:28] Fitting SPM model with 6 predictors on 51 players
-#> [18:54:28]   Weighting by minutes (sqrt transform)
-#> [18:54:28] SPM fit complete. R-squared: 0.000 (weighted in-sample)
-spm_ratings <- calculate_spm_ratings(player_features, spm_model)
-
-cat(sprintf("SPM predictions for %d players\n", nrow(spm_ratings)))
-#> SPM predictions for 51 players
-head(spm_ratings[, c("player_name", "spm", "total_minutes")])
-#>   player_name           spm total_minutes
-#> 1   Player 10 -1.909488e-40           728
-#> 2   Player 30 -1.909488e-40           637
-#> 3   Player 22 -1.909488e-40           455
-#> 4    Player 7 -1.909488e-40           364
-#> 5   Player 23 -1.909488e-40           455
-#> 6    Player 4 -1.909488e-40           546
-```
-
-## Step 6: Calculate Panna Rating
-
-The final Panna rating combines RAPM with SPM as a Bayesian prior. This
-shrinks noisy RAPM estimates toward SPM predictions, providing more
-stable ratings.
-
-The formula: `panna = spm_prior + deviation`
-
-Where `deviation` is how much RAPM departs from the SPM prediction after
-regularization.
-
-``` r
-panna_result <- calculate_panna_rating(rapm_data, spm_ratings, lambda_prior = 1)
-#> [18:54:28] Fitting panna model with SPM prior...
-#> [18:54:28] Panna ratings calculated for 105 players
-panna_ratings <- panna_result$ratings
-
-cat(sprintf("Panna ratings for %d players\n", nrow(panna_ratings)))
-#> Panna ratings for 105 players
-head(panna_ratings[, c("player_name", "panna", "spm_prior", "deviation")])
-#>     player_name     panna spm_prior deviation
-#> 103        <NA> 0.6735080         0 0.6735080
-#> 104        <NA> 0.5447075         0 0.5447075
-#> 31         <NA> 0.3699956         0 0.3699956
-#> 64         <NA> 0.3416393         0 0.3416393
-#> 15         <NA> 0.3231784         0 0.3231784
-#> 54         <NA> 0.3196302         0 0.3196302
-```
-
-``` r
-# Verify: panna = spm_prior + deviation
-all.equal(panna_ratings$panna, panna_ratings$spm_prior + panna_ratings$deviation)
-#> [1] TRUE
-```
-
-## Step 7: Offensive/Defensive Decomposition
-
-Each player’s overall rating can be decomposed into offensive and
-defensive contributions, useful for understanding player profiles.
-
-``` r
-# Final rating summary
-summary_df <- data.frame(
-  player = panna_ratings$player_name,
-  panna = round(panna_ratings$panna, 3),
-  spm_prior = round(panna_ratings$spm_prior, 3),
-  deviation = round(panna_ratings$deviation, 3)
-)
-
-# Top 5 and bottom 5
-cat("Top 5 players:\n")
-#> Top 5 players:
-print(head(summary_df[order(-summary_df$panna), ], 5), row.names = FALSE)
-#>  player panna spm_prior deviation
-#>    <NA> 0.674         0     0.674
-#>    <NA> 0.545         0     0.545
-#>    <NA> 0.370         0     0.370
-#>    <NA> 0.342         0     0.342
-#>    <NA> 0.323         0     0.323
-
-cat("\nBottom 5 players:\n")
-#> 
-#> Bottom 5 players:
-print(tail(summary_df[order(-summary_df$panna), ], 5), row.names = FALSE)
-#>  player  panna spm_prior deviation
-#>    <NA> -0.238         0    -0.238
-#>    <NA> -0.242         0    -0.242
-#>    <NA> -0.257         0    -0.257
-#>    <NA> -0.258         0    -0.258
-#>    <NA> -0.264         0    -0.264
-```
-
-## Pipeline Summary
-
-The full pipeline:
-
-1.  **Data** – Load match results, lineups, shooting, and events
-2.  **Splints** – Divide matches into constant-lineup segments
-3.  **Design Matrix** – Encode player presence as sparse indicators
-4.  **RAPM** – Ridge regression to isolate player impact from lineup
-    context
-5.  **SPM** – Predict RAPM from box score stats (elastic net)
-6.  **Panna** – Combine RAPM + SPM with Bayesian shrinkage
-
-Key properties: - `rapm = offense - defense` (exact decomposition) -
-`panna = spm_prior + deviation` (exact decomposition) - Ratings are in
-units of xG per 90 minutes above/below average - Stronger regularization
-(`lambda_prior`) pulls panna closer to SPM
+- [Player
+  Ratings](https://peteowen1.github.io/panna/articles/player-ratings.md)
+  – what each pipeline’s output means
+- [Data Access and
+  Publishing](https://peteowen1.github.io/panna/articles/data-bus.md) –
+  download/publish mechanics
+- [Match Prediction and Tournament
+  Simulation](https://peteowen1.github.io/panna/articles/match-prediction.md)
+  – pipeline 3 in depth
+- [Data
+  Dictionary](https://peteowen1.github.io/panna/DATA_DICTIONARY.md) –
+  column definitions at each stage

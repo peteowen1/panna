@@ -37,3 +37,14 @@ inspect_skill(
 ## Value
 
 A data.table sorted by skill estimate (descending), one row per player.
+
+## See also
+
+Other estimated skills:
+[`adjust_match_stats_for_context()`](https://peteowen1.github.io/panna/reference/adjust_match_stats_for_context.md),
+[`backtest_skill_predictions()`](https://peteowen1.github.io/panna/reference/backtest_skill_predictions.md),
+[`compute_position_multipliers()`](https://peteowen1.github.io/panna/reference/compute_position_multipliers.md),
+[`estimate_player_skills()`](https://peteowen1.github.io/panna/reference/estimate_player_skills.md),
+[`estimate_player_skills_at_date()`](https://peteowen1.github.io/panna/reference/estimate_player_skills_at_date.md),
+[`get_default_decay_params()`](https://peteowen1.github.io/panna/reference/get_default_decay_params.md),
+[`player_skill_profile()`](https://peteowen1.github.io/panna/reference/player_skill_profile.md)

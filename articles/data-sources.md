@@ -80,8 +80,8 @@ end year rather than by an exact string match.
 ``` r
 library(panna)
 
-# Download (first time)
-pb_download_source("opta")
+# Download / sync (incremental, works from an empty dir too)
+pb_download_opta()
 
 # Player match stats (263 columns)
 stats <- load_opta_stats("EPL", "2024-2025")

@@ -22,3 +22,10 @@ is_shootout_period(period_id)
 ## Value
 
 Logical vector, `TRUE` where the period is a shootout period.
+
+## See also
+
+Other penalty shootouts:
+[`aggregate_shootout_wpa()`](https://peteowen1.github.io/panna/reference/aggregate_shootout_wpa.md),
+[`score_shootout_kicks()`](https://peteowen1.github.io/panna/reference/score_shootout_kicks.md),
+[`shootout_win_prob()`](https://peteowen1.github.io/panna/reference/shootout_win_prob.md)

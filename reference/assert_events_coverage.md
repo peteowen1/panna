@@ -54,3 +54,9 @@ Intended as a guard at the top of pipeline steps that consume events
 (step 10b export_game_logs, step 10c export_equity). Catches the
 "events_consolidated is short" pattern BEFORE producing incomplete
 game_logs that get silently shipped to blog-latest.
+
+## See also
+
+Other validation:
+[`assert_step_output()`](https://peteowen1.github.io/panna/reference/assert_step_output.md),
+[`check_events_coverage()`](https://peteowen1.github.io/panna/reference/check_events_coverage.md)

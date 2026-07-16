@@ -24,8 +24,9 @@ repeated access, download data locally first:
 ``` r
 library(panna)
 
-# Download Opta data (the project's sole data source)
-pb_download_source("opta")
+# Download Opta data (the project's sole data source) -- incremental sync,
+# also works from an empty directory on a fresh clone
+pb_download_opta()
 ```
 
 Data is cached locally after download, so you only need to do this once
@@ -131,7 +132,9 @@ advanced analytical pipelines:
 
 - **EPV (Expected Possession Value)**: Action-level player valuation
   from Opta event data with x/y coordinates. See
-  [`?calculate_action_epv`](https://peteowen1.github.io/panna/reference/calculate_action_epv.md).
+  [`vignette("player-ratings")`](https://peteowen1.github.io/panna/articles/player-ratings.md)
+  and
+  [`?assign_epv_credit`](https://peteowen1.github.io/panna/reference/assign_epv_credit.md).
 - **Estimated Skills**: Bayesian decay-weighted skill estimation with
   position-specific priors and context adjustments. See
   [`?estimate_player_skills`](https://peteowen1.github.io/panna/reference/estimate_player_skills.md)
@@ -140,16 +143,29 @@ advanced analytical pipelines:
 - **Match Predictions**: XGBoost Poisson/multinomial models for match
   outcome prediction using Elo, rolling form, and team-level skill
   features. See
+  [`vignette("match-prediction")`](https://peteowen1.github.io/panna/articles/match-prediction.md)
+  and
   [`?predict_match`](https://peteowen1.github.io/panna/reference/predict_match.md).
 
 These pipelines are built on top of Opta data and require running the
-RAPM/SPM pipeline first.
+RAPM/SPM pipeline first – see
+[`vignette("pipeline-walkthrough")`](https://peteowen1.github.io/panna/articles/pipeline-walkthrough.md)
+for the full map.
 
 ## Next Steps
 
 - [Player
   Ratings](https://peteowen1.github.io/panna/articles/player-ratings.md) -
-  Learn about RAPM and SPM methodology
+  EPR, PSR, panna, and the Piero composite
+- [Pipeline
+  Anatomy](https://peteowen1.github.io/panna/articles/pipeline-walkthrough.md) -
+  how ratings and predictions are computed
+- [Match Prediction and Tournament
+  Simulation](https://peteowen1.github.io/panna/articles/match-prediction.md) -
+  reading and simulating match outcomes
+- [Data Access and
+  Publishing](https://peteowen1.github.io/panna/articles/data-bus.md) -
+  downloading and publishing pipeline data
 - [Data
   Sources](https://peteowen1.github.io/panna/articles/data-sources.md) -
   Opta league codes, season formats, and loaders

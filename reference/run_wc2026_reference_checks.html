@@ -27,8 +27,10 @@ the failures + the human-readable fact that motivated each check."><meta propert
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><a class="dropdown-item" href="../articles/getting-started.html">Getting Started</a></li>
-    <li><a class="dropdown-item" href="../articles/pipeline-walkthrough.html">Pipeline Walkthrough</a></li>
-    <li><a class="dropdown-item" href="../articles/player-ratings.html">Player Ratings Methodology</a></li>
+    <li><a class="dropdown-item" href="../articles/player-ratings.html">Player Ratings (EPR, PSR, Panna, Piero)</a></li>
+    <li><a class="dropdown-item" href="../articles/pipeline-walkthrough.html">Pipeline Anatomy</a></li>
+    <li><a class="dropdown-item" href="../articles/match-prediction.html">Match Prediction and Tournament Simulation</a></li>
+    <li><a class="dropdown-item" href="../articles/data-bus.html">Data Access and Publishing</a></li>
     <li><a class="dropdown-item" href="../articles/data-sources.html">Data Sources Guide</a></li>
   </ul></li>
       </ul><ul class="navbar-nav"><li class="nav-item"><form class="form-inline" role="search">
@@ -79,6 +81,17 @@ failed fact, value = the <code>fact</code> string).</p>
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
     <p>Designed to be called at the end of the predictions pipeline (after
 step 12). Returns the number of failed checks invisibly.</p>
+    </div>
+    <div class="section level2">
+    <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a></h2>
+    <div class="dont-index"><p>Other world cup simulation:
+<code><a href="bt_match_prob.html">bt_match_prob()</a></code>,
+<code><a href="build_knockout_lookup.html">build_knockout_lookup()</a></code>,
+<code><a href="compute_league_offsets.html">compute_league_offsets()</a></code>,
+<code><a href="fit_bt_ratings.html">fit_bt_ratings()</a></code>,
+<code><a href="match_is_international.html">match_is_international()</a></code>,
+<code><a href="mirror_match_rows.html">mirror_match_rows()</a></code>,
+<code><a href="simulate_world_cup.html">simulate_world_cup()</a></code></p></div>
     </div>
 
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

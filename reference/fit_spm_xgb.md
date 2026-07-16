@@ -26,7 +26,7 @@ fit_spm_xgb(
 
 - data:
 
-  Data frame from prepare_spm_regression_data or aggregate_player_stats
+  Data frame from prepare_spm_regression_data or aggregate_opta_stats
   joined with RAPM ratings
 
 - predictor_cols:

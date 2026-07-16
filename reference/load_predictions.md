@@ -24,6 +24,13 @@ load_predictions(source = c("remote", "local"), filter_future = FALSE)
 
 Data frame of match predictions.
 
+## See also
+
+Other data distribution:
+[`pb_download_opta()`](https://peteowen1.github.io/panna/reference/pb_download_opta.md),
+[`pb_download_predictions()`](https://peteowen1.github.io/panna/reference/pb_download_predictions.md),
+[`pb_list_sources()`](https://peteowen1.github.io/panna/reference/pb_list_sources.md)
+
 ## Examples
 
 ``` r

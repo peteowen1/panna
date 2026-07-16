@@ -50,6 +50,27 @@ train_wp_model(
 
   Number of CV folds (default 5).
 
+- min_child_weight:
+
+  Minimum sum of instance weight needed in a leaf (default 50; higher
+  values regularize against overfitting to rare game states).
+
+- feature_names:
+
+  Character vector of feature columns to train on. If `NULL` (default),
+  uses the base set (`time_remaining`, `xmargin`, `epv`, `xg_diff`,
+  `red_card_diff`, `is_home`, `is_second_half`, `is_extra_time`). Pass
+  the depth-2 time-interacted set (`xmargin_x_time`/`epv_x_time` in
+  place of `xmargin`/`epv`) to use the validated best-calibration
+  configuration. Missing columns are silently dropped via
+  [`intersect()`](https://rdrr.io/r/base/sets.html).
+
+- objective:
+
+  xgboost objective (default `"binary:logistic"`). `"reg:squarederror"`
+  minimizes Brier score directly (lower ECE) but can predict slightly
+  outside `[0,1]`, so downstream serving must clamp.
+
 - early_stopping_rounds:
 
   Stop CV if logloss hasn't improved in this many rounds (default 20).
@@ -91,3 +112,14 @@ Two-step training (matches torp::train_live_wp_xgb.R):
     optimal nrounds
 
 2.  Final xgb.train at the optimal round on all data
+
+## See also
+
+Other win probability:
+[`add_wp_vars()`](https://peteowen1.github.io/panna/reference/add_wp_vars.md),
+[`aggregate_player_game_wpa()`](https://peteowen1.github.io/panna/reference/aggregate_player_game_wpa.md),
+[`assign_wpa_credit()`](https://peteowen1.github.io/panna/reference/assign_wpa_credit.md),
+[`create_wp_features()`](https://peteowen1.github.io/panna/reference/create_wp_features.md),
+[`load_wp_model()`](https://peteowen1.github.io/panna/reference/load_wp_model.md),
+[`predict_wp()`](https://peteowen1.github.io/panna/reference/predict_wp.md),
+[`save_wp_model()`](https://peteowen1.github.io/panna/reference/save_wp_model.md)

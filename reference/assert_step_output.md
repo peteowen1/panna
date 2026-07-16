@@ -44,6 +44,12 @@ assert_step_output(
 Invisibly returns a character vector of failed check names (length 0
 means all passed).
 
+## See also
+
+Other validation:
+[`assert_events_coverage()`](https://peteowen1.github.io/panna/reference/assert_events_coverage.md),
+[`check_events_coverage()`](https://peteowen1.github.io/panna/reference/check_events_coverage.md)
+
 ## Examples
 
 ``` r

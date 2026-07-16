@@ -33,6 +33,11 @@ A chain ends when:
 
 - Large time gap (\>30 seconds)
 
+## See also
+
+Other possession chains:
+[`add_red_card_to_chains()`](https://peteowen1.github.io/panna/reference/add_red_card_to_chains.md)
+
 ## Examples
 
 ``` r

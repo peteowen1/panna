@@ -65,6 +65,20 @@ Data frame of lineup data with columns:
 
 - sub_off_minute: Minute substituted off (0 if played full match)
 
+## See also
+
+Other opta loaders:
+[`load_opta_big5()`](https://peteowen1.github.io/panna/reference/load_opta_big5.md),
+[`load_opta_events()`](https://peteowen1.github.io/panna/reference/load_opta_events.md),
+[`load_opta_fixtures()`](https://peteowen1.github.io/panna/reference/load_opta_fixtures.md),
+[`load_opta_match_events()`](https://peteowen1.github.io/panna/reference/load_opta_match_events.md),
+[`load_opta_match_stats()`](https://peteowen1.github.io/panna/reference/load_opta_match_stats.md),
+[`load_opta_shot_events()`](https://peteowen1.github.io/panna/reference/load_opta_shot_events.md),
+[`load_opta_shots()`](https://peteowen1.github.io/panna/reference/load_opta_shots.md),
+[`load_opta_skills()`](https://peteowen1.github.io/panna/reference/load_opta_skills.md),
+[`load_opta_stats()`](https://peteowen1.github.io/panna/reference/load_opta_stats.md),
+[`load_opta_xmetrics()`](https://peteowen1.github.io/panna/reference/load_opta_xmetrics.md)
+
 ## Examples
 
 ``` r

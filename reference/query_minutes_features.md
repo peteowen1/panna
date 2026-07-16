@@ -68,3 +68,11 @@ query_minutes_features(
 Data.table with one row per player, columns matching the model's
 `feature_cols`. Pass directly to
 [`predict_minutes()`](https://peteowen1.github.io/panna/reference/predict_minutes.md).
+
+## See also
+
+Other expected minutes:
+[`build_team_expected_minutes()`](https://peteowen1.github.io/panna/reference/build_team_expected_minutes.md),
+[`classify_role()`](https://peteowen1.github.io/panna/reference/classify_role.md),
+[`predict_minutes()`](https://peteowen1.github.io/panna/reference/predict_minutes.md),
+[`prepare_minutes_cache()`](https://peteowen1.github.io/panna/reference/prepare_minutes_cache.md)

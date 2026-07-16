@@ -23,3 +23,11 @@ predict_minutes(model, newdata)
 ## Value
 
 Numeric vector of expected minutes per row.
+
+## See also
+
+Other expected minutes:
+[`build_team_expected_minutes()`](https://peteowen1.github.io/panna/reference/build_team_expected_minutes.md),
+[`classify_role()`](https://peteowen1.github.io/panna/reference/classify_role.md),
+[`prepare_minutes_cache()`](https://peteowen1.github.io/panna/reference/prepare_minutes_cache.md),
+[`query_minutes_features()`](https://peteowen1.github.io/panna/reference/query_minutes_features.md)

@@ -41,9 +41,14 @@ reproduces the previous constant-0 behaviour for that match.
 Detection mirrors
 [`extract_player_timing_from_events()`](https://peteowen1.github.io/panna/reference/extract_player_timing_from_events.md)
 in `splint_creation.R`: `type_id == 17` (Card) carrying qualifier 33
-(straight red) or 14 (second yellow). The earliest such card per (match,
+(straight red) or 32 (second yellow). The earliest such card per (match,
 team) is taken, and the flag is set on the single chain action of the
 carded team nearest that card's time (matching the SPADL clock,
 `time_seconds = minute*60 + second`). One flagged action per red card is
 exactly what `create_wp_features`'
 [`cumsum()`](https://rdrr.io/r/base/cumsum.html) logic expects.
+
+## See also
+
+Other possession chains:
+[`create_possession_chains()`](https://peteowen1.github.io/panna/reference/create_possession_chains.md)

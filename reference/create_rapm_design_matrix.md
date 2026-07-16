@@ -54,3 +54,13 @@ create_rapm_design_matrix(
 ## Value
 
 List with design matrix components
+
+## See also
+
+Other rapm:
+[`create_all_splints()`](https://peteowen1.github.io/panna/reference/create_all_splints.md),
+[`extract_period_end_times()`](https://peteowen1.github.io/panna/reference/extract_period_end_times.md),
+[`extract_player_timing_from_events()`](https://peteowen1.github.io/panna/reference/extract_player_timing_from_events.md),
+[`extract_rapm_ratings()`](https://peteowen1.github.io/panna/reference/extract_rapm_ratings.md),
+[`fit_rapm()`](https://peteowen1.github.io/panna/reference/fit_rapm.md),
+[`fit_rapm_with_prior()`](https://peteowen1.github.io/panna/reference/fit_rapm_with_prior.md)

@@ -55,6 +55,13 @@ shootout has no structural first-kicker advantage. The empirical
 ~55-60\\ first-kicker edge is a behavioural (scoreboard-pressure) effect
 that an i.i.d. per-kick model deliberately does not encode.
 
+## See also
+
+Other penalty shootouts:
+[`aggregate_shootout_wpa()`](https://peteowen1.github.io/panna/reference/aggregate_shootout_wpa.md),
+[`is_shootout_period()`](https://peteowen1.github.io/panna/reference/is_shootout_period.md),
+[`score_shootout_kicks()`](https://peteowen1.github.io/panna/reference/score_shootout_kicks.md)
+
 ## Examples
 
 ``` r

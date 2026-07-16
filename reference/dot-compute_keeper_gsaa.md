@@ -28,5 +28,6 @@ Replaces the scale-free save_percentage.
 
 ## Value
 
-data.table keyed by player_id(+team_id,match_id) with gsaa, gsaa_per90,
-xgot_faced, goals_conceded; or NULL if not computable.
+data.table keyed by `player_id` + `team_id` (and `match_id` when
+`by_match = TRUE`) with gsaa, gsaa_per90, xgot_faced, goals_conceded; or
+NULL if not computable.

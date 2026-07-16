@@ -63,3 +63,14 @@ simulate_world_cup(
 A list with `summary` (per-team round probabilities), `group_table`
 (group-position probabilities), `n_sims`, `elo_k`, and `bracket` (the
 bracket actually used – `"random"` if the fifa2026 fallback fired).
+
+## See also
+
+Other world cup simulation:
+[`bt_match_prob()`](https://peteowen1.github.io/panna/reference/bt_match_prob.md),
+[`build_knockout_lookup()`](https://peteowen1.github.io/panna/reference/build_knockout_lookup.md),
+[`compute_league_offsets()`](https://peteowen1.github.io/panna/reference/compute_league_offsets.md),
+[`fit_bt_ratings()`](https://peteowen1.github.io/panna/reference/fit_bt_ratings.md),
+[`match_is_international()`](https://peteowen1.github.io/panna/reference/match_is_international.md),
+[`mirror_match_rows()`](https://peteowen1.github.io/panna/reference/mirror_match_rows.md),
+[`run_wc2026_reference_checks()`](https://peteowen1.github.io/panna/reference/run_wc2026_reference_checks.md)

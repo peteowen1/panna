@@ -30,3 +30,13 @@ compute_duel_woe(events, duel_model, by_match = FALSE)
 data.table keyed by player (team, match) with `<prefix>_won/_exp/_woe`
 for prefixes aerial, aerial_poss, takeon, tackle_poss, containment.
 Per-90 normalisation is applied by the caller (which holds minutes).
+
+## See also
+
+Other xduel:
+[`compute_all_duel_preps()`](https://peteowen1.github.io/panna/reference/compute_all_duel_preps.md),
+[`fit_duel_model()`](https://peteowen1.github.io/panna/reference/fit_duel_model.md),
+[`load_duel_model()`](https://peteowen1.github.io/panna/reference/load_duel_model.md),
+[`predict_duel()`](https://peteowen1.github.io/panna/reference/predict_duel.md),
+[`prepare_duels_from_events()`](https://peteowen1.github.io/panna/reference/prepare_duels_from_events.md),
+[`save_duel_model()`](https://peteowen1.github.io/panna/reference/save_duel_model.md)

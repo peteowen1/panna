@@ -85,3 +85,10 @@ and the taker keeps the rest. An off-target miss (skied/post, `type_id`
 taker portion stay in `shootout_wpa`. If `type_id` is absent, every miss
 is treated as all-taker (the simple default) and `keeper_wpa` is all
 zero.
+
+## See also
+
+Other penalty shootouts:
+[`aggregate_shootout_wpa()`](https://peteowen1.github.io/panna/reference/aggregate_shootout_wpa.md),
+[`is_shootout_period()`](https://peteowen1.github.io/panna/reference/is_shootout_period.md),
+[`shootout_win_prob()`](https://peteowen1.github.io/panna/reference/shootout_win_prob.md)

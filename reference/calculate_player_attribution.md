@@ -52,6 +52,11 @@ Data frame with columns:
 
 - `pct_contribution`: Contribution as percentage of total
 
+## See also
+
+Other player attribution:
+[`batch_player_attribution()`](https://peteowen1.github.io/panna/reference/batch_player_attribution.md)
+
 ## Examples
 
 ``` r

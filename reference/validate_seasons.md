@@ -28,6 +28,13 @@ validate_seasons(seasons, min_year = 2017, source_name = "FBref")
 
 TRUE if valid, otherwise throws an error
 
+## See also
+
+Other utilities:
+[`per_90()`](https://peteowen1.github.io/panna/reference/per_90.md),
+[`safe_divide()`](https://peteowen1.github.io/panna/reference/safe_divide.md),
+[`validate_dataframe()`](https://peteowen1.github.io/panna/reference/validate_dataframe.md)
+
 ## Examples
 
 ``` r

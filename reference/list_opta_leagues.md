@@ -33,6 +33,12 @@ list_opta_leagues(
 Data frame with columns: code, name, country, type, tier, n_seasons,
 n_matches, panna_alias.
 
+## See also
+
+Other competition metadata:
+[`list_opta_seasons()`](https://peteowen1.github.io/panna/reference/list_opta_seasons.md),
+[`resolve_league_season()`](https://peteowen1.github.io/panna/reference/resolve_league_season.md)
+
 ## Examples
 
 ``` r

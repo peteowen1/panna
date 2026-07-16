@@ -1,9 +1,9 @@
 # Clean player name for matching
 
-Creates a minimal normalized version of player name for fuzzy matching.
-Unlike standardize_player_names() which preserves readable format, this
-creates a key: lowercase with all whitespace removed. Uses memoization
-to cache unique names for O(1) lookup on repeated values.
+Creates a minimal normalized version of player name for fuzzy matching:
+lowercase with all whitespace removed (a matching key, not a display
+form). Uses memoization to cache unique names for O(1) lookup on
+repeated values.
 
 ## Usage
 

@@ -56,3 +56,11 @@ A list with:
 - `team_rotation` – global rotation_idx per team
 
 - `team_intl_count` – number of intl matches per team
+
+## See also
+
+Other expected minutes:
+[`build_team_expected_minutes()`](https://peteowen1.github.io/panna/reference/build_team_expected_minutes.md),
+[`classify_role()`](https://peteowen1.github.io/panna/reference/classify_role.md),
+[`predict_minutes()`](https://peteowen1.github.io/panna/reference/predict_minutes.md),
+[`query_minutes_features()`](https://peteowen1.github.io/panna/reference/query_minutes_features.md)

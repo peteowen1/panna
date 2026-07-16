@@ -75,3 +75,14 @@ depend on listing order.
 World Cup matchups are international, so each matchup is predicted as a
 blend of the pooled and international-specialist models
 (`MATCH_INTL_BLEND_WEIGHT` on the specialist).
+
+## See also
+
+Other world cup simulation:
+[`bt_match_prob()`](https://peteowen1.github.io/panna/reference/bt_match_prob.md),
+[`compute_league_offsets()`](https://peteowen1.github.io/panna/reference/compute_league_offsets.md),
+[`fit_bt_ratings()`](https://peteowen1.github.io/panna/reference/fit_bt_ratings.md),
+[`match_is_international()`](https://peteowen1.github.io/panna/reference/match_is_international.md),
+[`mirror_match_rows()`](https://peteowen1.github.io/panna/reference/mirror_match_rows.md),
+[`run_wc2026_reference_checks()`](https://peteowen1.github.io/panna/reference/run_wc2026_reference_checks.md),
+[`simulate_world_cup()`](https://peteowen1.github.io/panna/reference/simulate_world_cup.md)

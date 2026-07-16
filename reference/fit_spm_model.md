@@ -24,7 +24,7 @@ fit_spm_model(
 
 - data:
 
-  Data frame from prepare_spm_regression_data or aggregate_player_stats
+  Data frame from prepare_spm_regression_data or aggregate_opta_stats
   joined with RAPM ratings
 
 - predictor_cols:
@@ -63,3 +63,10 @@ fit_spm_model(
 ## Value
 
 Fitted glmnet model with metadata
+
+## See also
+
+Other spm:
+[`calculate_spm_ratings()`](https://peteowen1.github.io/panna/reference/calculate_spm_ratings.md),
+[`calculate_spm_ratings_xgb()`](https://peteowen1.github.io/panna/reference/calculate_spm_ratings_xgb.md),
+[`get_spm_feature_importance()`](https://peteowen1.github.io/panna/reference/get_spm_feature_importance.md)

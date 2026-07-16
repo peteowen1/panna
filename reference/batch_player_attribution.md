@@ -35,3 +35,8 @@ batch_player_attribution(
 ## Value
 
 Data frame with per-feature average contributions across matches
+
+## See also
+
+Other player attribution:
+[`calculate_player_attribution()`](https://peteowen1.github.io/panna/reference/calculate_player_attribution.md)

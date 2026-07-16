@@ -41,6 +41,17 @@ Named list with elements:
 Half-life = ln(2) / lambda. Higher lambda = faster decay = more recency
 bias.
 
+## See also
+
+Other estimated skills:
+[`adjust_match_stats_for_context()`](https://peteowen1.github.io/panna/reference/adjust_match_stats_for_context.md),
+[`backtest_skill_predictions()`](https://peteowen1.github.io/panna/reference/backtest_skill_predictions.md),
+[`compute_position_multipliers()`](https://peteowen1.github.io/panna/reference/compute_position_multipliers.md),
+[`estimate_player_skills()`](https://peteowen1.github.io/panna/reference/estimate_player_skills.md),
+[`estimate_player_skills_at_date()`](https://peteowen1.github.io/panna/reference/estimate_player_skills_at_date.md),
+[`inspect_skill()`](https://peteowen1.github.io/panna/reference/inspect_skill.md),
+[`player_skill_profile()`](https://peteowen1.github.io/panna/reference/player_skill_profile.md)
+
 ## Examples
 
 ``` r

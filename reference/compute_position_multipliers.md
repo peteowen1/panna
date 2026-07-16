@@ -25,3 +25,14 @@ compute_position_multipliers(match_stats, stat_cols = NULL)
 
 A named list where each element is a named numeric vector of length 4
 (GK, DEF, MID, FWD) giving the multiplier for that stat and position.
+
+## See also
+
+Other estimated skills:
+[`adjust_match_stats_for_context()`](https://peteowen1.github.io/panna/reference/adjust_match_stats_for_context.md),
+[`backtest_skill_predictions()`](https://peteowen1.github.io/panna/reference/backtest_skill_predictions.md),
+[`estimate_player_skills()`](https://peteowen1.github.io/panna/reference/estimate_player_skills.md),
+[`estimate_player_skills_at_date()`](https://peteowen1.github.io/panna/reference/estimate_player_skills_at_date.md),
+[`get_default_decay_params()`](https://peteowen1.github.io/panna/reference/get_default_decay_params.md),
+[`inspect_skill()`](https://peteowen1.github.io/panna/reference/inspect_skill.md),
+[`player_skill_profile()`](https://peteowen1.github.io/panna/reference/player_skill_profile.md)

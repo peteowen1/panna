@@ -20,7 +20,7 @@ override to pin it.
 
 | Model              | Loader                                                                                  | Fallback chain                                 | Default resolves to             | Iterating?                                |
 |--------------------|-----------------------------------------------------------------------------------------|------------------------------------------------|---------------------------------|-------------------------------------------|
-| **EPV**            | `load_epv_model()`                                                                      | path → pannamodels → local                     | `pannadata/.../epv_model.rds`   | **YES** — overhauled 2026-06-19           |
+| **EPV**            | [`load_epv_model()`](https://peteowen1.github.io/panna/reference/load_epv_model.md)     | path → pannamodels → local                     | `pannadata/.../epv_model.rds`   | **YES** — overhauled 2026-06-19           |
 | **WP**             | [`load_wp_model()`](https://peteowen1.github.io/panna/reference/load_wp_model.md)       | path → pannamodels → local                     | `pannadata/.../wp_model.rds`    | **YES** — overhauled 2026-06-19           |
 | **xG**             | [`load_xg_model()`](https://peteowen1.github.io/panna/reference/load_xg_model.md)       | path → pannamodels → local                     | `pannadata/.../xg_model.rds`    | stable                                    |
 | **xGOT**           | [`load_xgot_model()`](https://peteowen1.github.io/panna/reference/load_xgot_model.md)   | path → pannamodels → local → **NULL**          | `pannadata/.../xgot_model.rds`  | stable (optional; returns NULL if absent) |

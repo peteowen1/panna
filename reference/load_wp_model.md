@@ -25,3 +25,14 @@ load_wp_model(path = NULL)
 ## Value
 
 WP model list (model + feature_names).
+
+## See also
+
+Other win probability:
+[`add_wp_vars()`](https://peteowen1.github.io/panna/reference/add_wp_vars.md),
+[`aggregate_player_game_wpa()`](https://peteowen1.github.io/panna/reference/aggregate_player_game_wpa.md),
+[`assign_wpa_credit()`](https://peteowen1.github.io/panna/reference/assign_wpa_credit.md),
+[`create_wp_features()`](https://peteowen1.github.io/panna/reference/create_wp_features.md),
+[`predict_wp()`](https://peteowen1.github.io/panna/reference/predict_wp.md),
+[`save_wp_model()`](https://peteowen1.github.io/panna/reference/save_wp_model.md),
+[`train_wp_model()`](https://peteowen1.github.io/panna/reference/train_wp_model.md)

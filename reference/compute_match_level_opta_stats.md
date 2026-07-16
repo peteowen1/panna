@@ -42,6 +42,11 @@ A data.table with one row per player-match containing:
 
 - Derived efficiency columns (same names as aggregate_opta_stats output)
 
+## See also
+
+Other spm opta:
+[`fit_spm_opta()`](https://peteowen1.github.io/panna/reference/fit_spm_opta.md)
+
 ## Examples
 
 ``` r

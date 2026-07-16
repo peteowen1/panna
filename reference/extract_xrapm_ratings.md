@@ -22,3 +22,9 @@ extract_xrapm_ratings(model, lambda = "min")
 ## Value
 
 Data frame with player ratings including deviation from prior
+
+## See also
+
+Other panna ratings:
+[`add_value_metrics_to_splints()`](https://peteowen1.github.io/panna/reference/add_value_metrics_to_splints.md),
+[`aggregate_season_ratings()`](https://peteowen1.github.io/panna/reference/aggregate_season_ratings.md)

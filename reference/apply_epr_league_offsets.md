@@ -57,3 +57,8 @@ offset-only changes).
 
 [`apply_psr_league_offsets`](https://peteowen1.github.io/panna/reference/apply_psr_league_offsets.md),
 [`build_league_network`](https://peteowen1.github.io/panna/reference/build_league_network.md)
+
+Other league offsets:
+[`apply_psr_league_offsets()`](https://peteowen1.github.io/panna/reference/apply_psr_league_offsets.md),
+[`build_league_network()`](https://peteowen1.github.io/panna/reference/build_league_network.md),
+[`compute_psr_league_offsets()`](https://peteowen1.github.io/panna/reference/compute_psr_league_offsets.md)

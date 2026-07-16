@@ -21,3 +21,10 @@ per_90(stat, minutes)
 ## Value
 
 Statistic per 90 minutes
+
+## See also
+
+Other utilities:
+[`safe_divide()`](https://peteowen1.github.io/panna/reference/safe_divide.md),
+[`validate_dataframe()`](https://peteowen1.github.io/panna/reference/validate_dataframe.md),
+[`validate_seasons()`](https://peteowen1.github.io/panna/reference/validate_seasons.md)

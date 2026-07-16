@@ -34,6 +34,13 @@ compute_player_psr(
   One of `"xg"` (default) or `"goals"` for the outfield model. GK model
   always uses goal differential.
 
+- position_means:
+
+  Optional pre-computed position-mean lookup table used to center skill
+  columns before scoring (see
+  [`compute_player_psv`](https://peteowen1.github.io/panna/reference/compute_player_psv.md)).
+  If `NULL`, no cross-position centering is applied.
+
 ## Value
 
 A data.table with `psr`, `osr`, `dsr` columns.

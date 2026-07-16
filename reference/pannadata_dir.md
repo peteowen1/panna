@@ -39,6 +39,12 @@ OS-standard fallback paths:
 
 - Linux: `~/.local/share/R/panna/data`
 
+## See also
+
+Other cache management:
+[`data_location_report()`](https://peteowen1.github.io/panna/reference/data_location_report.md),
+[`opta_data_dir()`](https://peteowen1.github.io/panna/reference/opta_data_dir.md)
+
 ## Examples
 
 ``` r

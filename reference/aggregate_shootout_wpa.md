@@ -60,3 +60,10 @@ the end-of-match keeper who actually faced the kicks). If no lineups are
 supplied, keeper WPA is still summed at team level but cannot be
 attributed to a player and is dropped from the per-player total
 (reported separately as `unattributed_keeper_wpa`).
+
+## See also
+
+Other penalty shootouts:
+[`is_shootout_period()`](https://peteowen1.github.io/panna/reference/is_shootout_period.md),
+[`score_shootout_kicks()`](https://peteowen1.github.io/panna/reference/score_shootout_kicks.md),
+[`shootout_win_prob()`](https://peteowen1.github.io/panna/reference/shootout_win_prob.md)

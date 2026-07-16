@@ -23,8 +23,10 @@ influence of noisy low-minute players whose RAPM and per-90 stats are unreliable
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><a class="dropdown-item" href="../articles/getting-started.html">Getting Started</a></li>
-    <li><a class="dropdown-item" href="../articles/pipeline-walkthrough.html">Pipeline Walkthrough</a></li>
-    <li><a class="dropdown-item" href="../articles/player-ratings.html">Player Ratings Methodology</a></li>
+    <li><a class="dropdown-item" href="../articles/player-ratings.html">Player Ratings (EPR, PSR, Panna, Piero)</a></li>
+    <li><a class="dropdown-item" href="../articles/pipeline-walkthrough.html">Pipeline Anatomy</a></li>
+    <li><a class="dropdown-item" href="../articles/match-prediction.html">Match Prediction and Tournament Simulation</a></li>
+    <li><a class="dropdown-item" href="../articles/data-bus.html">Data Access and Publishing</a></li>
     <li><a class="dropdown-item" href="../articles/data-sources.html">Data Sources Guide</a></li>
   </ul></li>
       </ul><ul class="navbar-nav"><li class="nav-item"><form class="form-inline" role="search">
@@ -67,7 +69,7 @@ influence of noisy low-minute players whose RAPM and per-90 stats are unreliable
 
 
 <dl><dt id="arg-data">data<a class="anchor" aria-label="anchor" href="#arg-data"></a></dt>
-<dd><p>Data frame from prepare_spm_regression_data or aggregate_player_stats
+<dd><p>Data frame from prepare_spm_regression_data or aggregate_opta_stats
 joined with RAPM ratings</p></dd>
 
 
@@ -108,6 +110,13 @@ enforce directional priors (e.g. negative defensive-tackle coefficient).
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
     <p>Fitted glmnet model with metadata</p>
+    </div>
+    <div class="section level2">
+    <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a></h2>
+    <div class="dont-index"><p>Other spm:
+<code><a href="calculate_spm_ratings.html">calculate_spm_ratings()</a></code>,
+<code><a href="calculate_spm_ratings_xgb.html">calculate_spm_ratings_xgb()</a></code>,
+<code><a href="get_spm_feature_importance.html">get_spm_feature_importance()</a></code></p></div>
     </div>
 
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

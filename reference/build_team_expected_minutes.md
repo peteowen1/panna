@@ -106,3 +106,11 @@ Data frame with one row per likely-squad player and columns: player_id,
 player_name, position, n_caps_weighted, p_start, mins_when_start,
 p_sub_given_bench, mins_when_sub, expected_minutes, pct_team_minutes
 (sums to ~100 across the squad).
+
+## See also
+
+Other expected minutes:
+[`classify_role()`](https://peteowen1.github.io/panna/reference/classify_role.md),
+[`predict_minutes()`](https://peteowen1.github.io/panna/reference/predict_minutes.md),
+[`prepare_minutes_cache()`](https://peteowen1.github.io/panna/reference/prepare_minutes_cache.md),
+[`query_minutes_features()`](https://peteowen1.github.io/panna/reference/query_minutes_features.md)

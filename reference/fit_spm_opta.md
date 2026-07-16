@@ -44,6 +44,11 @@ fit_spm_opta(
 
 Fitted glmnet model with metadata
 
+## See also
+
+Other spm opta:
+[`compute_match_level_opta_stats()`](https://peteowen1.github.io/panna/reference/compute_match_level_opta_stats.md)
+
 ## Examples
 
 ``` r

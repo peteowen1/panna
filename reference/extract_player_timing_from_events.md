@@ -39,8 +39,8 @@ Sources:
 
 - Sub off: `type_id == 18` (Player Off).
 
-- Red card off: `type_id == 17` (Card) with qualifier 33 (red) or 14
-  (second yellow).
+- Red card off: `type_id == 17` (Card) with qualifier 33 (straight red)
+  or 32 (second yellow).
 
 - Match end: `type_id == 30` with `period_id == 2` (used as default
   off_minute for finishers who never came off).
@@ -48,3 +48,13 @@ Sources:
 Why this beats lineups: Opta records `minutes_played = 90` for
 unsubstituted finishers regardless of stoppage time, and rounds sub
 timing to whole minutes. Chains carry the real second-precision times.
+
+## See also
+
+Other rapm:
+[`create_all_splints()`](https://peteowen1.github.io/panna/reference/create_all_splints.md),
+[`create_rapm_design_matrix()`](https://peteowen1.github.io/panna/reference/create_rapm_design_matrix.md),
+[`extract_period_end_times()`](https://peteowen1.github.io/panna/reference/extract_period_end_times.md),
+[`extract_rapm_ratings()`](https://peteowen1.github.io/panna/reference/extract_rapm_ratings.md),
+[`fit_rapm()`](https://peteowen1.github.io/panna/reference/fit_rapm.md),
+[`fit_rapm_with_prior()`](https://peteowen1.github.io/panna/reference/fit_rapm_with_prior.md)

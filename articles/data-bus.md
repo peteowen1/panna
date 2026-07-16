@@ -1,0 +1,161 @@
+# Data Access and Publishing
+
+GitHub Releases are the data transport layer of the whole pannaverse:
+raw Opta data, trained models, prediction caches, and every published
+rating all move between repos as release assets, not as files in git.
+This vignette covers pulling data down and, if you’re changing a
+pipeline, publishing it back out.
+
+## Downloading Opta data: `pb_download_opta()`
+
+[`pb_download_opta()`](https://peteowen1.github.io/panna/reference/pb_download_opta.md)
+is the canonical Opta puller – an **incremental sync**, not a one-shot
+tarball download. It compares local files against the `opta-latest`
+release asset list and only pulls what’s missing, size-changed, or
+(optionally) remote-newer:
+
+``` r
+library(panna)
+
+# See what's out of date without downloading anything
+pb_download_opta(dry_run = TRUE)
+
+# Pull only the changed consolidated files (safe to re-run daily)
+pb_download_opta()
+
+# Restrict to a subset of assets by name pattern
+pb_download_opta(pattern = "^events_")
+
+# Force a full re-download regardless of local state
+pb_download_opta(force = TRUE)
+```
+
+It works from an empty directory too, so it’s also the fresh-clone
+puller – `data-raw/bootstrap.R` calls it directly. (An older
+tarball-based downloader was removed in 2026-07: `opta-latest` no longer
+carries an archive asset, only individual consolidated parquets, so
+incremental per-asset sync is the only path that works.)
+
+``` r
+# Rscript data-raw/bootstrap.R            # Opta data + models + caches
+# Rscript data-raw/bootstrap.R opta       # Opta data + models only
+```
+
+Downloading match predictions and pre-trained models works the same way,
+with their own dedicated releases:
+
+``` r
+pb_download_predictions()   # predictions.parquet from predictions-latest
+pb_download_epv_models()    # xg_model.rds / xpass_model.rds / epv_model.rds
+```
+
+[`pb_download_epv_models()`](https://peteowen1.github.io/panna/reference/pb_download_epv_models.md)
+pulls only those three files (not the WP or xDuel models) from
+`repo = "peteowen1/pannadata"`, `tag = "epv-models"` by default – pass
+explicit `repo`/`tag` if you need a different model release. See
+`../MODELS.md` for the full model inventory, which loader resolves which
+file, and the silent-stale-fallback trap when a model source is missing.
+
+## The release-as-data-bus pattern
+
+Most releases live on `peteowen1/pannadata`; pre-trained models live on
+the separate `peteowen1/pannamodels` repo instead. The ones you’ll touch
+most:
+
+| Release tag              | Contents                                                                  | Written by                                         | Read by                                                                                                                                                                                        |
+|--------------------------|---------------------------------------------------------------------------|----------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `opta-latest`            | Consolidated Opta parquets + per-league events + xMetrics                 | Daily Opta scrape; `epv-pipeline.yml` for xMetrics | [`pb_download_opta()`](https://peteowen1.github.io/panna/reference/pb_download_opta.md), all `load_opta_*()` loaders                                                                           |
+| `epv` (on `pannamodels`) | `xg_model.rds`, `epv_model.rds`, `wp_model.rds`, `duel_model.rds`, etc.   | Manual, one-time per retrain                       | [`pb_download_epv_models()`](https://peteowen1.github.io/panna/reference/pb_download_epv_models.md), `load_*_model()` family                                                                   |
+| `predictions-cache`      | RAPM + Skills `.rds` caches                                               | `upload_prediction_caches.R`                       | Predictions pipeline (GHA)                                                                                                                                                                     |
+| `predictions-latest`     | `predictions.parquet`/`.csv`                                              | Predictions pipeline step 13                       | [`pb_download_predictions()`](https://peteowen1.github.io/panna/reference/pb_download_predictions.md), [`load_predictions()`](https://peteowen1.github.io/panna/reference/load_predictions.md) |
+| `blog-latest`            | `panna_ratings.parquet`, `game_logs_*.parquet`, `action_equity_*.parquet` | Predictions pipeline step 13                       | `build-blog-data.yml` -\> Cloudflare R2 -\> the blog                                                                                                                                           |
+| `ratings-data`           | `career_panna.parquet`, `career_panna_asof.parquet`                       | Skills pipeline steps 09/09b                       | Predictions pipeline (panna feature)                                                                                                                                                           |
+
+### The asset-updatedAt gotcha
+
+**A release’s `createdAt`/`publishedAt` reflects when the tag was first
+created, not when its assets were last uploaded.** Workflows reuse the
+same tag and re-upload files under it repeatedly, so a release can show
+as months old while the data inside is from this morning. Always check
+**asset-level** `updatedAt`, not the release page’s date. This is
+exactly what the `vb_*` introspection helpers do for you:
+
+``` r
+assets <- vb_list_assets("peteowen1/pannadata", "opta-latest")
+max(assets$updated_at)                                   # true freshness
+vb_generation("peteowen1/pannadata", "opta-latest")       # same idea, one call
+```
+
+## Publishing: `vb_publish()`
+
+If you change a pipeline step that produces a published artifact, you
+publish it with
+[`vb_publish()`](https://peteowen1.github.io/panna/reference/vb_publish.md)
+– a manifest-gated, hash-first upload that never leaves a release
+half-updated. The real call site, simplified from
+`data-raw/match-predictions-opta/13_publish_release_data.R`:
+
+``` r
+blog_files <- c("data-raw/cache-predictions-opta/panna_ratings.parquet",
+                "data-raw/cache-predictions-opta/match_predictions.parquet")
+
+manifest <- vb_publish(blog_files, repo = "peteowen1/pannadata", tag = "blog-latest")
+manifest$generation
+```
+
+Order of operations inside
+[`vb_publish()`](https://peteowen1.github.io/panna/reference/vb_publish.md):
+hash the files, upload with bounded retries collecting any failures,
+verify the live asset list, and only THEN write `bus_manifest.json` –
+last. If any upload fails, the manifest write never happens, so
+consumers keep seeing the last consistent snapshot instead of a torn mix
+of old-and-new files. Useful arguments:
+
+- `carry_forward = TRUE` (default) – merge with the previous manifest so
+  a partial publish (e.g. only game logs changed) still describes the
+  whole tag.
+- `min_row_frac` – optional floor vs. the previous manifest’s row
+  counts, to catch an accidentally-truncated export before it goes live.
+- `dry_run = TRUE` – build and return the manifest without uploading
+  anything.
+
+## Data conventions
+
+- **Parquet or CSV only** – never RDS for published data (RDS is fine
+  for local pipeline caches, which stay out of git entirely).
+- **Data and trained models never go into git** – everything above moves
+  through GitHub Releases, not commits.
+- **Small published tables (\<100KB / \<10k rows)** ship as parquet
+  *and* CSV; larger ones (game logs, action equity) ship parquet only.
+
+## Loading published data
+
+Once data is downloaded (or without downloading it at all – every loader
+defaults to `source = "remote"`), the `load_opta_*()` family is the read
+side:
+
+``` r
+stats    <- load_opta_stats("ENG", season = "2024-2025")
+skills   <- load_opta_skills()
+psr_wk   <- load_opta_psr_weekly(date = "2026-03-18")
+preds    <- load_predictions(source = "remote")
+```
+
+Under the hood, remote reads go through an internal column-pruned
+parquet reader so a call like
+`load_opta_stats("ENG", columns = c("player_name", "goals"))` only pulls
+the columns you asked for over the network rather than the full
+263-column table – you don’t call that reader directly, just pass
+`columns` to whichever `load_opta_*()` function you’re using.
+
+## Next steps
+
+- [Pipeline
+  Anatomy](https://peteowen1.github.io/panna/articles/pipeline-walkthrough.md)
+  – what produces each published artifact
+- [Player
+  Ratings](https://peteowen1.github.io/panna/articles/player-ratings.md)
+  – the metrics these artifacts contain
+- [Getting
+  Started](https://peteowen1.github.io/panna/articles/getting-started.md)
+  – installation and first data load

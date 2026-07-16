@@ -36,3 +36,9 @@ Use this whenever `load_opta_*()` returns nothing for data you believe
 is on disk, or to confirm that a sync landed in the place panna actually
 looks. The freshness skew between the consolidated parquet and
 per-season files is the most common silent failure – this surfaces it.
+
+## See also
+
+Other cache management:
+[`opta_data_dir()`](https://peteowen1.github.io/panna/reference/opta_data_dir.md),
+[`pannadata_dir()`](https://peteowen1.github.io/panna/reference/pannadata_dir.md)

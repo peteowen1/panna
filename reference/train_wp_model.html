@@ -27,8 +27,10 @@ training harness and natural [0,1] output via sigmoid."><meta property="og:image
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><a class="dropdown-item" href="../articles/getting-started.html">Getting Started</a></li>
-    <li><a class="dropdown-item" href="../articles/pipeline-walkthrough.html">Pipeline Walkthrough</a></li>
-    <li><a class="dropdown-item" href="../articles/player-ratings.html">Player Ratings Methodology</a></li>
+    <li><a class="dropdown-item" href="../articles/player-ratings.html">Player Ratings (EPR, PSR, Panna, Piero)</a></li>
+    <li><a class="dropdown-item" href="../articles/pipeline-walkthrough.html">Pipeline Anatomy</a></li>
+    <li><a class="dropdown-item" href="../articles/match-prediction.html">Match Prediction and Tournament Simulation</a></li>
+    <li><a class="dropdown-item" href="../articles/data-bus.html">Data Access and Publishing</a></li>
     <li><a class="dropdown-item" href="../articles/data-sources.html">Data Sources Guide</a></li>
   </ul></li>
       </ul><ul class="navbar-nav"><li class="nav-item"><form class="form-inline" role="search">
@@ -97,6 +99,28 @@ typically halts well before).</p></dd>
 <dd><p>Number of CV folds (default 5).</p></dd>
 
 
+<dt id="arg-min-child-weight">min_child_weight<a class="anchor" aria-label="anchor" href="#arg-min-child-weight"></a></dt>
+<dd><p>Minimum sum of instance weight needed in a leaf
+(default 50; higher values regularize against overfitting to rare
+game states).</p></dd>
+
+
+<dt id="arg-feature-names">feature_names<a class="anchor" aria-label="anchor" href="#arg-feature-names"></a></dt>
+<dd><p>Character vector of feature columns to train on. If
+<code>NULL</code> (default), uses the base set (<code>time_remaining</code>,
+<code>xmargin</code>, <code>epv</code>, <code>xg_diff</code>, <code>red_card_diff</code>,
+<code>is_home</code>, <code>is_second_half</code>, <code>is_extra_time</code>). Pass the
+depth-2 time-interacted set (<code>xmargin_x_time</code>/<code>epv_x_time</code> in
+place of <code>xmargin</code>/<code>epv</code>) to use the validated best-calibration
+configuration. Missing columns are silently dropped via <code><a href="https://rdrr.io/r/base/sets.html" class="external-link">intersect()</a></code>.</p></dd>
+
+
+<dt id="arg-objective">objective<a class="anchor" aria-label="anchor" href="#arg-objective"></a></dt>
+<dd><p>xgboost objective (default <code>"binary:logistic"</code>).
+<code>"reg:squarederror"</code> minimizes Brier score directly (lower ECE) but
+can predict slightly outside <code>[0,1]</code>, so downstream serving must clamp.</p></dd>
+
+
 <dt id="arg-early-stopping-rounds">early_stopping_rounds<a class="anchor" aria-label="anchor" href="#arg-early-stopping-rounds"></a></dt>
 <dd><p>Stop CV if logloss hasn't improved in this
 many rounds (default 20).</p></dd>
@@ -132,6 +156,17 @@ many rounds (default 20).</p></dd>
 optimal nrounds</p></li>
 <li><p>Final xgb.train at the optimal round on all data</p></li>
 </ol></div>
+    <div class="section level2">
+    <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a></h2>
+    <div class="dont-index"><p>Other win probability:
+<code><a href="add_wp_vars.html">add_wp_vars()</a></code>,
+<code><a href="aggregate_player_game_wpa.html">aggregate_player_game_wpa()</a></code>,
+<code><a href="assign_wpa_credit.html">assign_wpa_credit()</a></code>,
+<code><a href="create_wp_features.html">create_wp_features()</a></code>,
+<code><a href="load_wp_model.html">load_wp_model()</a></code>,
+<code><a href="predict_wp.html">predict_wp()</a></code>,
+<code><a href="save_wp_model.html">save_wp_model()</a></code></p></div>
+    </div>
 
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>

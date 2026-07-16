@@ -72,3 +72,14 @@ pre-computed skill estimates via
 [`load_opta_skills()`](https://peteowen1.github.io/panna/reference/load_opta_skills.md)
 (~2-3 MB download). This covers all 15 Opta leagues across all available
 seasons.
+
+## See also
+
+Other estimated skills:
+[`adjust_match_stats_for_context()`](https://peteowen1.github.io/panna/reference/adjust_match_stats_for_context.md),
+[`backtest_skill_predictions()`](https://peteowen1.github.io/panna/reference/backtest_skill_predictions.md),
+[`compute_position_multipliers()`](https://peteowen1.github.io/panna/reference/compute_position_multipliers.md),
+[`estimate_player_skills()`](https://peteowen1.github.io/panna/reference/estimate_player_skills.md),
+[`estimate_player_skills_at_date()`](https://peteowen1.github.io/panna/reference/estimate_player_skills_at_date.md),
+[`get_default_decay_params()`](https://peteowen1.github.io/panna/reference/get_default_decay_params.md),
+[`inspect_skill()`](https://peteowen1.github.io/panna/reference/inspect_skill.md)

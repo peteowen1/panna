@@ -70,3 +70,8 @@ so the result joins straight onto the seasonal PSR table.
 
 [`build_league_network`](https://peteowen1.github.io/panna/reference/build_league_network.md),
 [`apply_psr_league_offsets`](https://peteowen1.github.io/panna/reference/apply_psr_league_offsets.md)
+
+Other league offsets:
+[`apply_epr_league_offsets()`](https://peteowen1.github.io/panna/reference/apply_epr_league_offsets.md),
+[`apply_psr_league_offsets()`](https://peteowen1.github.io/panna/reference/apply_psr_league_offsets.md),
+[`build_league_network()`](https://peteowen1.github.io/panna/reference/build_league_network.md)

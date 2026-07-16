@@ -1,6 +1,11 @@
-# Load EPV Model
+# Report which model file was loaded, with date + staleness warning
 
-Loads pre-trained EPV model from disk.
+The model-loader fallback chains (explicit path → pannamodels → local)
+used to announce only the source, not the file DATE — so a silent
+fallback to a stale model (the 2026-06-21 inflated-EPV incident) looked
+identical to a correct load in the logs. This always prints the resolved
+file's modification date and WARNS if it's older than `max_age_days`, so
+a stale model is visible.
 
 ## Usage
 
@@ -25,14 +30,3 @@ Loads pre-trained EPV model from disk.
 - max_age_days:
 
   Warn above this age (default 14).
-
-## Details
-
-Report which model file was loaded, with date + staleness warning
-
-The model-loader fallback chains (explicit path → pannamodels → local)
-used to announce only the source, not the file DATE — so a silent
-fallback to a stale model (the 2026-06-21 inflated-EPV incident) looked
-identical to a correct load in the logs. This always prints the resolved
-file's modification date and WARNS if it's older than `max_age_days`, so
-a stale model is visible.

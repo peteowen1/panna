@@ -5,7 +5,7 @@
 <meta charset="utf-8">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-<title>Player Rating System for Football Using RAPM and SPM Methods • panna</title>
+<title>Player Rating System for Football Using RAPM, SPM, and EPV Methods • panna</title>
 <!-- favicons --><link rel="icon" type="image/png" sizes="96x96" href="favicon-96x96.png">
 <link rel="icon" type="”image/svg+xml”" href="favicon.svg">
 <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
@@ -15,9 +15,9 @@
 <link href="deps/bootstrap-5.3.8/bootstrap.min.css" rel="stylesheet">
 <script src="deps/bootstrap-5.3.8/bootstrap.bundle.min.js"></script><link href="deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet">
 <link href="deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet">
-<script src="deps/headroom-0.11.0/headroom.min.js"></script><script src="deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="deps/search-1.0.0/fuse.min.js"></script><script src="deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="pkgdown.js"></script><meta property="og:title" content="Player Rating System for Football Using RAPM and SPM Methods">
-<meta name="description" content="Implements player ratings for football (soccer) using Regularized Adjusted Plus-Minus (RAPM) combined with Statistical Plus-Minus (SPM) as a Bayesian prior. Analyses time segments with constant lineups (splints) to estimate each players contribution to expected goals (xG) differential. Provides offensive and defensive rating decomposition across multiple data sources including FBref, Opta, and Understat'.">
-<meta property="og:description" content="Implements player ratings for football (soccer) using Regularized Adjusted Plus-Minus (RAPM) combined with Statistical Plus-Minus (SPM) as a Bayesian prior. Analyses time segments with constant lineups (splints) to estimate each players contribution to expected goals (xG) differential. Provides offensive and defensive rating decomposition across multiple data sources including FBref, Opta, and Understat'.">
+<script src="deps/headroom-0.11.0/headroom.min.js"></script><script src="deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="deps/search-1.0.0/fuse.min.js"></script><script src="deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="pkgdown.js"></script><meta property="og:title" content="Player Rating System for Football Using RAPM, SPM, and EPV Methods">
+<meta name="description" content="Implements player ratings for football (soccer) from Opta event and tracking-adjacent data. Combines Regularized Adjusted Plus-Minus (RAPM) with Statistical Plus-Minus (SPM) as a Bayesian prior, analysing time segments with constant lineups (splints) to estimate each players contribution to expected goals (xG) differential. Action-level Expected Possession Value (EPV) and win probability added (WPA') models support decay-weighted rating composites (EPR, PSR, Panna, Piero) plus match prediction and tournament simulation.">
+<meta property="og:description" content="Implements player ratings for football (soccer) from Opta event and tracking-adjacent data. Combines Regularized Adjusted Plus-Minus (RAPM) with Statistical Plus-Minus (SPM) as a Bayesian prior, analysing time segments with constant lineups (splints) to estimate each players contribution to expected goals (xG) differential. Action-level Expected Possession Value (EPV) and win probability added (WPA') models support decay-weighted rating composites (EPR, PSR, Panna, Piero) plus match prediction and tournament simulation.">
 <meta property="og:image" content="https://peteowen1.github.io/panna/logo.png">
 </head>
 <body>
@@ -42,8 +42,10 @@
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
 <li><a class="dropdown-item" href="articles/getting-started.html">Getting Started</a></li>
-    <li><a class="dropdown-item" href="articles/pipeline-walkthrough.html">Pipeline Walkthrough</a></li>
-    <li><a class="dropdown-item" href="articles/player-ratings.html">Player Ratings Methodology</a></li>
+    <li><a class="dropdown-item" href="articles/player-ratings.html">Player Ratings (EPR, PSR, Panna, Piero)</a></li>
+    <li><a class="dropdown-item" href="articles/pipeline-walkthrough.html">Pipeline Anatomy</a></li>
+    <li><a class="dropdown-item" href="articles/match-prediction.html">Match Prediction and Tournament Simulation</a></li>
+    <li><a class="dropdown-item" href="articles/data-bus.html">Data Access and Publishing</a></li>
     <li><a class="dropdown-item" href="articles/data-sources.html">Data Sources Guide</a></li>
   </ul>
 </li>
@@ -67,20 +69,18 @@
 </div>
 <!-- badges: start -->
 
-<p>Player ratings for football (soccer) using RAPM+SPM methodology. Calculates player impact on team performance by combining lineup-based analysis with box score predictions.</p>
+<p>Player ratings for football (soccer), built on Opta event and box-score data. Full documentation site: <a href="https://peteowen1.github.io/panna/" class="uri">https://peteowen1.github.io/panna/</a>.</p>
 <div class="section level2">
 <h2 id="overview">Overview<a class="anchor" aria-label="anchor" href="#overview"></a>
 </h2>
-<p><strong>panna</strong> implements a three-stage rating system:</p>
-<ol style="list-style-type: decimal">
+<p>panna produces two families of numbers (see <code><a href="articles/player-ratings.html">vignette("player-ratings")</a></code> for the full map):</p>
+<ul>
 <li>
-<strong>RAPM</strong> (Regularized Adjusted Plus-Minus) - Measures player impact from lineup data using ridge regression on “splints” (time segments with constant lineups)</li>
+<strong>Ratings</strong> – forward-looking skill estimates: <code>panna</code> (career trait, decay-weighted xRAPM), season xRAPM, EPR, PSR, and per-stat estimated skills.</li>
 <li>
-<strong>SPM</strong> (Statistical Plus-Minus) - Predicts RAPM from box score statistics using elastic net</li>
-<li>
-<strong>Panna Rating</strong> - Combines RAPM with SPM as a Bayesian prior for more stable ratings</li>
-</ol>
-<p>Ratings are split into offensive and defensive components: - <strong>Offense</strong>: Positive = helps create xG (good) - <strong>Defense</strong>: Negative = prevents xG (good) - <strong>Overall</strong>: <code>panna = offense - defense</code></p>
+<strong>Production</strong> – what actually happened: per-action EPV and WPA, per-game PSV, rolled up into <code>piero_value</code> (per match).</li>
+</ul>
+<p><strong>Piero</strong>, the headline blog rating, is a z-scored blend of <code>panna</code> (0.5) / EPR (0.3) / PSR (0.2). RAPM (ridge regression on lineup “splints”) and SPM (an XGBoost box-score prior) are the estimators underneath xRAPM/panna; see <code><a href="articles/pipeline-walkthrough.html">vignette("pipeline-walkthrough")</a></code> (“Pipeline Anatomy”) for how each number is actually computed.</p>
 </div>
 <div class="section level2">
 <h2 id="installation">Installation<a class="anchor" aria-label="anchor" href="#installation"></a>
@@ -95,15 +95,15 @@
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/peteowen1/panna" class="external-link">panna</a></span><span class="op">)</span></span>
 <span></span>
-<span><span class="co"># Load Opta player statistics (loads from GitHub automatically)</span></span>
-<span><span class="va">opta_stats</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/load_opta_stats.html">load_opta_stats</a></span><span class="op">(</span><span class="st">"EPL"</span>, <span class="st">"2024-2025"</span><span class="op">)</span></span>
+<span><span class="co"># Latest PSR (Player Skill Rating) leaderboard -- downloads a small</span></span>
+<span><span class="co"># pre-computed snapshot, no local pipeline run required</span></span>
+<span><span class="fu"><a href="reference/player_psr.html">player_psr</a></span><span class="op">(</span>n <span class="op">=</span> <span class="fl">10</span><span class="op">)</span></span>
 <span></span>
-<span><span class="co"># Get aggregated player stats</span></span>
-<span><span class="va">player_stats</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/player_opta_summary.html">player_opta_summary</a></span><span class="op">(</span></span>
-<span> leagues <span class="op">=</span> <span class="st">"EPL"</span>,</span>
-<span> seasons <span class="op">=</span> <span class="st">"2024-2025"</span>,</span>
-<span> min_minutes <span class="op">=</span> <span class="fl">900</span></span>
-<span><span class="op">)</span></span></code></pre></div>
+<span><span class="co"># Look up a player's estimated-skill profile</span></span>
+<span><span class="fu"><a href="reference/player_skill_profile.html">player_skill_profile</a></span><span class="op">(</span><span class="st">"Lionel Messi"</span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># Load raw Opta player statistics (loads from GitHub automatically)</span></span>
+<span><span class="va">opta_stats</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/load_opta_stats.html">load_opta_stats</a></span><span class="op">(</span><span class="st">"EPL"</span>, <span class="st">"2024-2025"</span><span class="op">)</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="data-sources">Data Sources<a class="anchor" aria-label="anchor" href="#data-sources"></a>
@@ -244,97 +244,49 @@
 <h3 id="player-statistics">Player Statistics<a class="anchor" aria-label="anchor" href="#player-statistics"></a>
 </h3>
 <div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="co"># Opta aggregated stats</span></span>
-<span><span class="fu"><a href="reference/player_opta_summary.html">player_opta_summary</a></span><span class="op">(</span><span class="va">leagues</span>, <span class="va">seasons</span>, <span class="va">min_minutes</span><span class="op">)</span></span>
-<span><span class="fu"><a href="reference/player_opta_passing.html">player_opta_passing</a></span><span class="op">(</span><span class="va">leagues</span>, <span class="va">seasons</span>, <span class="va">min_minutes</span><span class="op">)</span></span>
-<span><span class="fu"><a href="reference/player_opta_defense.html">player_opta_defense</a></span><span class="op">(</span><span class="va">leagues</span>, <span class="va">seasons</span>, <span class="va">min_minutes</span><span class="op">)</span></span>
-<span><span class="fu"><a href="reference/player_opta_possession.html">player_opta_possession</a></span><span class="op">(</span><span class="va">leagues</span>, <span class="va">seasons</span>, <span class="va">min_minutes</span><span class="op">)</span></span>
-<span><span class="fu"><a href="reference/player_opta_keeper.html">player_opta_keeper</a></span><span class="op">(</span><span class="va">leagues</span>, <span class="va">seasons</span>, <span class="va">min_minutes</span><span class="op">)</span></span>
-<span><span class="fu"><a href="reference/player_opta_shots.html">player_opta_shots</a></span><span class="op">(</span><span class="va">leagues</span>, <span class="va">seasons</span>, <span class="va">min_minutes</span><span class="op">)</span></span>
-<span><span class="fu"><a href="reference/player_opta_setpiece.html">player_opta_setpiece</a></span><span class="op">(</span><span class="va">leagues</span>, <span class="va">seasons</span>, <span class="va">min_minutes</span><span class="op">)</span></span></code></pre></div>
+<code class="sourceCode R"><span><span class="co"># Opta aggregated stats -- same argument shape across the whole family</span></span>
+<span><span class="fu"><a href="reference/player_opta_summary.html">player_opta_summary</a></span><span class="op">(</span>player <span class="op">=</span> <span class="cn">NULL</span>, <span class="va">league</span>, <span class="va">season</span>, min_minutes <span class="op">=</span> <span class="fl">450</span><span class="op">)</span></span>
+<span><span class="fu"><a href="reference/player_opta_passing.html">player_opta_passing</a></span><span class="op">(</span>player <span class="op">=</span> <span class="cn">NULL</span>, <span class="va">league</span>, <span class="va">season</span>, min_minutes <span class="op">=</span> <span class="fl">450</span><span class="op">)</span></span>
+<span><span class="fu"><a href="reference/player_opta_defense.html">player_opta_defense</a></span><span class="op">(</span>player <span class="op">=</span> <span class="cn">NULL</span>, <span class="va">league</span>, <span class="va">season</span>, min_minutes <span class="op">=</span> <span class="fl">450</span><span class="op">)</span></span>
+<span><span class="fu"><a href="reference/player_opta_possession.html">player_opta_possession</a></span><span class="op">(</span>player <span class="op">=</span> <span class="cn">NULL</span>, <span class="va">league</span>, <span class="va">season</span>, min_minutes <span class="op">=</span> <span class="fl">450</span><span class="op">)</span></span>
+<span><span class="fu"><a href="reference/player_opta_keeper.html">player_opta_keeper</a></span><span class="op">(</span>player <span class="op">=</span> <span class="cn">NULL</span>, <span class="va">league</span>, <span class="va">season</span>, min_minutes <span class="op">=</span> <span class="fl">450</span><span class="op">)</span></span>
+<span><span class="fu"><a href="reference/player_opta_shots.html">player_opta_shots</a></span><span class="op">(</span>player <span class="op">=</span> <span class="cn">NULL</span>, <span class="va">league</span>, <span class="va">season</span>, min_minutes <span class="op">=</span> <span class="fl">450</span><span class="op">)</span></span>
+<span><span class="fu"><a href="reference/player_opta_setpiece.html">player_opta_setpiece</a></span><span class="op">(</span>player <span class="op">=</span> <span class="cn">NULL</span>, <span class="va">league</span>, <span class="va">season</span>, min_minutes <span class="op">=</span> <span class="fl">450</span><span class="op">)</span></span>
+<span></span>
+<span><span class="fu"><a href="reference/compare_players.html">compare_players</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"Salah"</span>, <span class="st">"Haaland"</span><span class="op">)</span><span class="op">)</span>  <span class="co"># side-by-side across all of the above</span></span></code></pre></div>
 </div>
 <div class="section level3">
-<h3 id="rating-pipeline">Rating Pipeline<a class="anchor" aria-label="anchor" href="#rating-pipeline"></a>
+<h3 id="ratings-and-predictions">Ratings and Predictions<a class="anchor" aria-label="anchor" href="#ratings-and-predictions"></a>
 </h3>
 <div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="co"># Create splints from match data</span></span>
-<span><span class="va">splints</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/create_all_splints.html">create_all_splints</a></span><span class="op">(</span><span class="va">processed_data</span><span class="op">)</span></span>
+<code class="sourceCode R"><span><span class="fu"><a href="reference/player_psr.html">player_psr</a></span><span class="op">(</span>player <span class="op">=</span> <span class="st">"Salah"</span><span class="op">)</span>             <span class="co"># PSR leaderboard / single-player lookup</span></span>
+<span><span class="fu"><a href="reference/player_skill_profile.html">player_skill_profile</a></span><span class="op">(</span><span class="st">"Kylian Mbappe"</span><span class="op">)</span>    <span class="co"># per-stat skill profile with percentiles</span></span>
+<span><span class="fu"><a href="reference/player_value.html">player_value</a></span><span class="op">(</span><span class="st">"Kane"</span><span class="op">)</span>                     <span class="co"># per-match EPV/WPA/PSV value profile (needs local pipeline cache)</span></span>
 <span></span>
-<span><span class="co"># Build RAPM design matrix</span></span>
-<span><span class="va">rapm_data</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/create_rapm_design_matrix.html">create_rapm_design_matrix</a></span><span class="op">(</span><span class="va">splints</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Fit RAPM model</span></span>
-<span><span class="va">rapm_results</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/fit_rapm.html">fit_rapm</a></span><span class="op">(</span><span class="va">rapm_data</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Extract ratings</span></span>
-<span><span class="va">ratings</span> <span class="op">&lt;-</span> <span class="fu">extract_panna_ratings</span><span class="op">(</span><span class="va">rapm_results</span><span class="op">)</span></span></code></pre></div>
-</div>
-<div class="section level3">
-<h3 id="advanced-features">Advanced Features<a class="anchor" aria-label="anchor" href="#advanced-features"></a>
-</h3>
-<div class="section level4">
-<h4 id="epv-expected-possession-value">EPV (Expected Possession Value)<a class="anchor" aria-label="anchor" href="#epv-expected-possession-value"></a>
-</h4>
-<p>Action-level player valuation from Opta event data with x/y coordinates:</p>
-<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="co"># Convert Opta events to SPADL format</span></span>
-<span><span class="va">spadl</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/convert_opta_to_spadl.html">convert_opta_to_spadl</a></span><span class="op">(</span><span class="va">match_events</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Train/load models</span></span>
-<span><span class="va">xg_model</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/load_xg_model.html">load_xg_model</a></span><span class="op">(</span><span class="op">)</span></span>
-<span><span class="va">epv_model</span> <span class="op">&lt;-</span> <span class="fu">load_epv_model</span><span class="op">(</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Build features and calculate action-level EPV</span></span>
-<span><span class="va">features</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/create_epv_features.html">create_epv_features</a></span><span class="op">(</span><span class="va">spadl</span><span class="op">)</span></span>
-<span><span class="va">epv_values</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/calculate_action_epv.html">calculate_action_epv</a></span><span class="op">(</span><span class="va">spadl</span>, <span class="va">features</span>, <span class="va">epv_model</span>, <span class="va">xg_model</span><span class="op">)</span></span>
-<span><span class="va">player_epv</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/aggregate_player_epv.html">aggregate_player_epv</a></span><span class="op">(</span><span class="va">epv_values</span><span class="op">)</span></span></code></pre></div>
-</div>
-<div class="section level4">
-<h4 id="estimated-skills">Estimated Skills<a class="anchor" aria-label="anchor" href="#estimated-skills"></a>
-</h4>
-<p>Bayesian decay-weighted skill estimation with position-specific priors:</p>
-<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="co"># Estimate player skills from historical match data</span></span>
-<span><span class="va">skills</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/estimate_player_skills.html">estimate_player_skills</a></span><span class="op">(</span><span class="va">player_stats</span>, <span class="va">decay_params</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Get a player's skill profile with percentiles</span></span>
-<span><span class="va">profile</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/player_skill_profile.html">player_skill_profile</a></span><span class="op">(</span><span class="st">"Bukayo Saka"</span>, skills <span class="op">=</span> <span class="va">skills</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Estimate skills at a specific date (for predictions)</span></span>
-<span><span class="va">date_skills</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/estimate_player_skills_at_date.html">estimate_player_skills_at_date</a></span><span class="op">(</span><span class="va">player_stats</span>, date <span class="op">=</span> <span class="st">"2025-01-15"</span><span class="op">)</span></span></code></pre></div>
-</div>
-<div class="section level4">
-<h4 id="match-predictions">Match Predictions<a class="anchor" aria-label="anchor" href="#match-predictions"></a>
-</h4>
-<p>XGBoost Poisson/multinomial models for match outcome prediction:</p>
-<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="co"># Compute team Elo ratings</span></span>
-<span><span class="va">elos</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/compute_match_elos.html">compute_match_elos</a></span><span class="op">(</span><span class="va">match_results</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Compute rolling form features</span></span>
-<span><span class="va">rolling</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/compute_team_rolling_features.html">compute_team_rolling_features</a></span><span class="op">(</span><span class="va">match_results</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Fit prediction models</span></span>
-<span><span class="va">goals_model</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/fit_goals_xgb.html">fit_goals_xgb</a></span><span class="op">(</span><span class="va">training_data</span><span class="op">)</span></span>
-<span><span class="va">outcome_model</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/fit_outcome_xgb.html">fit_outcome_xgb</a></span><span class="op">(</span><span class="va">training_data</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Predict a fixture</span></span>
-<span><span class="va">prediction</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/predict_match.html">predict_match</a></span><span class="op">(</span><span class="va">fixture</span>, <span class="va">goals_model</span>, <span class="va">outcome_model</span><span class="op">)</span></span></code></pre></div>
-</div>
+<span><span class="va">preds</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/load_predictions.html">load_predictions</a></span><span class="op">(</span>source <span class="op">=</span> <span class="st">"remote"</span><span class="op">)</span></span>
+<span><span class="fu"><a href="reference/fit_bt_ratings.html">fit_bt_ratings</a></span><span class="op">(</span><span class="va">preds</span><span class="op">)</span>                    <span class="co"># back out a single team-strength number</span></span></code></pre></div>
+<p>For how these are computed, see <code><a href="articles/pipeline-walkthrough.html">vignette("pipeline-walkthrough")</a></code> (“Pipeline Anatomy”); for match prediction and World Cup simulation, see <code><a href="articles/match-prediction.html">vignette("match-prediction")</a></code>; for downloading/publishing the underlying data, see <code><a href="articles/data-bus.html">vignette("data-bus")</a></code>.</p>
 </div>
 </div>
 <div class="section level2">
 <h2 id="documentation">Documentation<a class="anchor" aria-label="anchor" href="#documentation"></a>
 </h2>
+<p>Full site: <a href="https://peteowen1.github.io/panna/" class="uri">https://peteowen1.github.io/panna/</a></p>
 <ul>
 <li>
 <a href="articles/getting-started.html">Getting Started</a> - Installation and basic usage</li>
 <li>
-<a href="articles/player-ratings.html">Player Ratings</a> - RAPM and SPM methodology</li>
+<a href="articles/player-ratings.html">Player Ratings</a> - EPR, PSR, panna, and the Piero composite</li>
 <li>
-<a href="articles/data-sources.html">Data Sources</a> - Choosing the right data source</li>
+<a href="articles/pipeline-walkthrough.html">Pipeline Anatomy</a> - how ratings and predictions are computed</li>
 <li>
-<a href="DATA_DICTIONARY.html">Data Dictionary</a> - Column definitions for pipeline stages</li>
+<a href="articles/match-prediction.html">Match Prediction and Tournament Simulation</a> - reading and simulating match outcomes</li>
+<li>
+<a href="articles/data-bus.html">Data Access and Publishing</a> - downloading and publishing pipeline data</li>
+<li>
+<a href="articles/data-sources.html">Data Sources</a> - choosing the right data source</li>
+<li>
+<a href="DATA_DICTIONARY.html">Data Dictionary</a> - column definitions for pipeline stages</li>
 </ul>
 </div>
 <div class="section level2">

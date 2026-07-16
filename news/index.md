@@ -2,6 +2,61 @@
 
 ## panna 0.3.1 (dev)
 
+### Simplification campaign — dead code removal, vignette rewrite, API curation
+
+- **Opta-only cleanup**: removed the dead FBref/Understat processing
+  chain and the slow FBref splint path, the legacy piggyback tarball
+  download layer, deprecated EPV stubs, a duplicate
+  [`pb_download_opta()`](https://peteowen1.github.io/panna/reference/pb_download_opta.md),
+  and other dead `utils.R` helpers. `globals.R` pruned of
+  stale/duplicate entries.
+- **`panna_rating.R` (the RAPM+SPM glmnet blend) removed** — superseded
+  by the EPR/PSR/Panna/Piero composite system; no longer referenced
+  anywhere in the pipeline.
+- **Vignettes rewritten for the current system**: `getting-started`,
+  `player-ratings` (EPR/PSR/Panna/Piero), and `pipeline-walkthrough`
+  (now a “Pipeline Anatomy” reference) rewritten; two new vignettes
+  added, `match-prediction` (prediction reading + WC2026 tournament
+  simulation) and `data-bus` (downloading and publishing pipeline data).
+  README refreshed to match, dead-function examples removed.
+- **`data-raw/` extraction**: shared pipeline helpers (banner,
+  step-runner, blog leagues, backfill) factored into `pipeline_utils.R`.
+- **Reference index curation**: removed 30 phantom entries from
+  `_pkgdown.yml` (non-exported functions that still had a listed topic,
+  including the by-then-deleted `fit_panna_model` family) and the two
+  sections that emptied out as a result. Added `@family` tags to every
+  exported function mirroring the reference index’s section structure,
+  then converted each section’s `contents:` to `has_concept("<family>")`
+  so the index self-heals instead of drifting from `NAMESPACE`. Fixed
+  six roxygen defects that were producing `R CMD check` warnings
+  (missing titles, undocumented arguments, a malformed `\link{}`
+  cross-reference, a merged roxygen block that had bled one function’s
+  docs onto its neighbour).
+- **Conservative export prune**: un-exported 11 of 198 functions
+  (`apply_canonical_player_ids`, `augment_ratings_with_history`,
+  `build_minutes_training_data`, `build_player_id_canonical_map`,
+  `clean_column_names`, `fit_minutes_model`, `fit_spm_opta_target`,
+  `optimize_epr_decay`, `save_xg_model`, `save_xpass_model`,
+  `weight_rating_by_minutes`) — each had zero callers outside `R/` and
+  is internal-shaped plumbing (a builder, fitter, or low-level
+  converter); the console-facing API (player lookups, Opta loaders, the
+  data bus, prediction/simulation entry points, constants) is untouched.
+- **DESCRIPTION** Title/Description rewritten for the current Opta-only,
+  RAPM+SPM+EPV+WPA-based rating system (previously still described
+  FBref/ Understat as active sources).
+
+### `panna_value` → `piero_value` rename (2026-07-06, not previously recorded)
+
+- Renamed the `panna_value`/`panna_value_p90` columns produced by
+  [`build_player_game_ratings()`](https://peteowen1.github.io/panna/reference/build_player_game_ratings.md)
+  and
+  [`player_value()`](https://peteowen1.github.io/panna/reference/player_value.md)
+  to `piero_value`/ `piero_value_p90` (column names only — the
+  underlying 50/50 EPV+PSV per-match blend is unchanged). The old name
+  implied “per-match panna”, which the metric never was — single-game
+  RAPM is too noisy for panna to have a per-match twin. `piero_value` is
+  Piero’s value counterpart through the R↔︎V pairing (EPR↔︎EPV, PSR↔︎PSV).
+
 ### EPR rebuild — regression-based + league/opponent FE
 
 - **[`calculate_epr_regression()`](https://peteowen1.github.io/panna/reference/calculate_epr_regression.md)**
@@ -331,7 +386,5 @@ Initial release of the panna player rating system.
 ### Data Distribution
 
 - GitHub Releases integration via piggyback
-- [`pb_download_source()`](https://peteowen1.github.io/panna/reference/pb_download_source.md)
-  for data download
-- [`pb_upload_parquet()`](https://peteowen1.github.io/panna/reference/pb_upload_parquet.md)
-  for data upload
+- `pb_download_source()` for data download
+- `pb_upload_parquet()` for data upload

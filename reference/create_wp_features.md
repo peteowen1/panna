@@ -32,3 +32,14 @@ create_wp_features(spadl_with_epv, match_results = NULL, home_teams = NULL)
 
 A data.table with one row per action, containing WP features and
 optionally training labels.
+
+## See also
+
+Other win probability:
+[`add_wp_vars()`](https://peteowen1.github.io/panna/reference/add_wp_vars.md),
+[`aggregate_player_game_wpa()`](https://peteowen1.github.io/panna/reference/aggregate_player_game_wpa.md),
+[`assign_wpa_credit()`](https://peteowen1.github.io/panna/reference/assign_wpa_credit.md),
+[`load_wp_model()`](https://peteowen1.github.io/panna/reference/load_wp_model.md),
+[`predict_wp()`](https://peteowen1.github.io/panna/reference/predict_wp.md),
+[`save_wp_model()`](https://peteowen1.github.io/panna/reference/save_wp_model.md),
+[`train_wp_model()`](https://peteowen1.github.io/panna/reference/train_wp_model.md)

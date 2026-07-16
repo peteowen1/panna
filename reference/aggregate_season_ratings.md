@@ -25,3 +25,9 @@ aggregate_season_ratings(game_ratings, season_col = "season")
 
 A data.table with one row per player (per season), containing summed
 totals and minutes-weighted per-90 averages.
+
+## See also
+
+Other panna ratings:
+[`add_value_metrics_to_splints()`](https://peteowen1.github.io/panna/reference/add_value_metrics_to_splints.md),
+[`extract_xrapm_ratings()`](https://peteowen1.github.io/panna/reference/extract_xrapm_ratings.md)

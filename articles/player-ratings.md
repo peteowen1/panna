@@ -1,256 +1,153 @@
-# Player Ratings Methodology
+# Player Ratings: EPR, PSR, Panna and Piero
 
-This vignette explains the RAPM, SPM, and Panna rating methodologies
-used in the package.
+panna produces two families of player numbers, plus one headline
+composite that blends the rating family together. This vignette is a map
+of what each metric means and the fastest way to look one up; for how
+the numbers are actually computed, see
+[`vignette("pipeline-walkthrough")`](https://peteowen1.github.io/panna/articles/pipeline-walkthrough.md)
+(“Pipeline Anatomy”).
 
-## Overview
+## Two families: Ratings vs Production
 
-Panna ratings measure player impact on team performance using a
-three-stage approach:
+**Ratings** are forward-looking skill estimates – “how good is this
+player, independent of any one match”. **Production** metrics are
+backward-looking – “what did this player actually do in this game”. The
+mental model:
 
-1.  **RAPM** (Regularized Adjusted Plus-Minus) - Lineup-based impact
-    measurement
-2.  **SPM** (Statistical Plus-Minus) - Box score prediction of RAPM
-3.  **Panna** - RAPM with SPM as a Bayesian prior
+                                       +-> action EPV credit -> per-game EPV -> EPR --+
+                                       |                                              |
+        Opta events -> SPADL -> chains+-> action WP     -> per-game WPA --+           +-> Piero
+                                       |                                  +-> piero_value  (headline
+                         match stats ->+-> PSV (per-game box-score value)-+           |   composite)
+                                             |                                        |
+                                             +-> PSR (multi-season smoothed skill) ---+
+                                             |
+        RAPM splints -> RAPM (ridge) --------+-> SPM (XGBoost prior) -> xRAPM (season)
+                                                                           -> panna (career trait) -+
 
-All ratings are expressed as **xG per 90 minutes above/below average**.
+| Metric                 | Family                 | Question it answers                                                                                        | Produced by                                                                                                                                                                                           | Published as                                                                                                                       |
+|------------------------|------------------------|------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------|
+| `panna` (career trait) | Rating                 | Best point-in-time guess of the player’s next game (365-day decay-weighted xRAPM over all seasons at once) | `estimated-skills/09_career_panna.R`                                                                                                                                                                  | `career_panna.parquet` (`ratings-data` release)                                                                                    |
+| `xrapm` (season)       | Rating                 | This season’s on-field impact, SPM-shrunk                                                                  | `player-ratings-opta/06_xrapm.R`                                                                                                                                                                      | `seasonal_xrapm.csv`/parquet (`ratings-data`)                                                                                      |
+| EPR                    | Rating                 | Decay-weighted rating built from per-game EPV                                                              | [`calculate_epr_regression()`](https://peteowen1.github.io/panna/reference/calculate_epr_regression.md); weekly via `build_epr_weekly.R`                                                              | `opta_epr_weekly.parquet` (`opta-latest`)                                                                                          |
+| PSR (+ OSR/DSR)        | Rating                 | Multi-season smoothed box-score skill, cross-league offset adjusted                                        | [`calculate_psr()`](https://peteowen1.github.io/panna/reference/calculate_psr.md); weekly via `08b_export_psr_weekly.R`                                                                               | `opta_psr_weekly.parquet` (`opta-latest`) – query with [`player_psr()`](https://peteowen1.github.io/panna/reference/player_psr.md) |
+| Estimated skills       | Rating                 | Per-stat skill estimate (30+ stats) with percentiles                                                       | [`estimate_player_skills()`](https://peteowen1.github.io/panna/reference/estimate_player_skills.md)                                                                                                   | `opta_skills.parquet` – query with [`player_skill_profile()`](https://peteowen1.github.io/panna/reference/player_skill_profile.md) |
+| **Piero**              | Rating (composite)     | The headline blog rating – a blend of panna/EPR/PSR                                                        | `pannadata/scripts/build_blog_data.R` (outside this package)                                                                                                                                          | blog `panna_ratings.parquet`, column `piero`                                                                                       |
+| EPV                    | Production             | Value of *this action*: P(team scores the next goal)                                                       | [`assign_epv_credit()`](https://peteowen1.github.io/panna/reference/assign_epv_credit.md) / [`aggregate_player_game_epv()`](https://peteowen1.github.io/panna/reference/aggregate_player_game_epv.md) | `game_logs_*.parquet` (`blog-latest`)                                                                                              |
+| WPA                    | Production             | Win-probability credit for *this action*                                                                   | [`assign_wpa_credit()`](https://peteowen1.github.io/panna/reference/assign_wpa_credit.md) / [`aggregate_player_game_wpa()`](https://peteowen1.github.io/panna/reference/aggregate_player_game_wpa.md) | `game_logs_*.parquet`                                                                                                              |
+| PSV (+ OSV/DSV)        | Production             | Box-score-derived value for *this game*                                                                    | [`calculate_psv()`](https://peteowen1.github.io/panna/reference/calculate_psv.md) / [`compute_player_psv()`](https://peteowen1.github.io/panna/reference/compute_player_psv.md)                       | `game_logs_*.parquet` – query with [`player_value()`](https://peteowen1.github.io/panna/reference/player_value.md)                 |
+| **piero_value**        | Production (composite) | Combined per-match value added                                                                             | [`build_player_game_ratings()`](https://peteowen1.github.io/panna/reference/build_player_game_ratings.md)                                                                                             | `game_logs_*.parquet`, column `piero_value`                                                                                        |
 
-## Stage 1: RAPM (Regularized Adjusted Plus-Minus)
+Sign convention: internally, defense is stored *negative-is-good*
+(additive contribution to opponent xG); published/blog columns flip this
+so that positive always means “better”.
 
-### What is RAPM?
+## The Piero composite
 
-RAPM isolates individual player contributions by analyzing lineup
-combinations. It answers: “How much does having Player X on the field
-change the team’s expected goal differential?”
+Piero is the number shown as the main player rating on the blog. It is a
+z-scored blend of the three complementary rating estimators, rescaled
+back into panna’s own units:
 
-### Splints
+    piero = z(0.5 * z(panna) + 0.3 * z(epr) + 0.2 * z(psr)) * sd(panna) + mean(panna)
 
-RAPM uses “splints” - time segments where the lineup is constant. Splint
-boundaries are created at:
+The weights (panna 0.5 / EPR 0.3 / PSR 0.2) live in `PIERO_WEIGHTS`
+inside `pannadata/scripts/build_blog_data.R` – Piero itself is **not** a
+function exported from this package. panna supplies the three ingredient
+ratings (`panna`, EPR, PSR); the blend and publish step happen
+downstream in `pannadata`. The per-match twin follows the same idea but
+blends the *production* metrics instead:
+`piero_value = 0.5 * epv_total_adj + 0.5 * psv`, controlled by this
+package’s own `PANNA_EPR_WEIGHT` / `PANNA_PSR_WEIGHT` constants
+(0.5/0.5) inside
+[`build_player_game_ratings()`](https://peteowen1.github.io/panna/reference/build_player_game_ratings.md).
+There is no per-match twin of `panna` itself – single-game RAPM is too
+noisy to be useful, so the match-level “value added” side is EPV + PSV
+only.
 
-- Goals scored
-- Substitutions
-- Red cards
-- Halftime
+## Cookbook: look up a player
 
-Each splint has approximately 22 players (11 per team) and records the
-non-penalty xG differential (npxGD) during that segment.
-
-``` r
-library(panna)
-
-# After loading processed data...
-splints <- create_all_splints(processed_data)
-```
-
-### Design Matrix
-
-The RAPM model uses a sparse design matrix where:
-
-- **Rows**: 2 per splint (one from each team’s attacking perspective)
-- **Player columns**: `playerX_off` (offensive) and `playerX_def`
-  (defensive) indicators
-- **Covariates**: Goal difference, average minute, home/away, player
-  counts
-- **Target**: xG FOR per 90 minutes (`xgf90`)
-
-``` r
-# Build the design matrix
-rapm_data <- create_rapm_design_matrix(splints)
-
-# Components:
-# - X_players: Sparse player indicator matrix
-# - X_full: Player indicators + covariates
-# - y: Target variable (xgf90)
-# - weights: Splint duration / 90
-```
-
-### Ridge Regression
-
-RAPM uses ridge regression (L2 penalty) with cross-validated lambda to
-prevent overfitting:
-
-``` r
-# Fit the model
-rapm_results <- fit_rapm(rapm_data)
-
-# Extract player ratings
-ratings <- extract_panna_ratings(rapm_results)
-```
-
-### Offensive vs Defensive Ratings
-
-Each player gets two coefficients:
-
-- **Offense coefficient**: Player’s impact when their team is attacking
-  - Positive = helps create xG (good)
-  - Negative = hurts attack (bad)
-- **Defense coefficient**: Player’s impact when their team is defending
-  - Positive = allows xG against (bad)
-  - Negative = prevents xG (good)
-
-## Stage 2: SPM (Statistical Plus-Minus)
-
-### What is SPM?
-
-SPM predicts RAPM ratings from box score statistics. It answers: “What
-RAPM should we expect given a player’s traditional stats?”
-
-This serves two purposes:
-
-1.  Provides ratings for players with insufficient RAPM sample size
-2.  Acts as a prior to stabilize RAPM estimates
-
-### Model
-
-SPM uses elastic net regression to predict RAPM from aggregated per-90
-statistics:
-
-``` r
-# Aggregate box score stats to per-90 rates
-player_stats <- aggregate_player_stats(processed_data)
-
-# Fit SPM model
-spm_results <- fit_spm_model(player_stats, rapm_ratings)
-
-# Get SPM ratings for all players
-spm_ratings <- calculate_spm_ratings(spm_results, player_stats)
-```
-
-### Features Used
-
-SPM uses statistics like:
-
-- Goals, assists, xG, xA per 90
-- Pass completion rates
-- Tackles, interceptions, blocks per 90
-- Progressive passes and carries per 90
-- Aerial duel win rates
-
-## Stage 3: Panna Rating
-
-### Combining RAPM and SPM
-
-The final Panna rating uses SPM as a Bayesian prior for RAPM:
-
-``` r
-# Fit RAPM with SPM prior (xRAPM)
-xrapm_results <- fit_rapm_with_prior(rapm_data, spm_ratings)
-
-# Final ratings
-panna_ratings <- extract_panna_ratings(xrapm_results)
-```
-
-This approach:
-
-- Shrinks noisy RAPM estimates toward SPM predictions
-- Gives more weight to RAPM for players with more minutes
-- Provides stable ratings even for players with limited data
-
-### Final Rating Calculation
-
-    panna = offense - defense
-
-Where: - Higher offense = better (creates more xG) - Lower (more
-negative) defense = better (prevents xG) - Higher overall panna = better
-player
-
-## Interpreting Ratings
-
-### Example: Elite Forward
-
-    Player: Erling Haaland
-    Offense: +0.15
-    Defense: +0.02
-    Panna: +0.13
-
-Interpretation: - Creates +0.15 xG/90 above average when attacking -
-Allows +0.02 xG/90 when defending (slightly below average) - Overall
-impact: +0.13 xG/90
-
-### Example: Elite Defender
-
-    Player: Virgil van Dijk
-    Offense: -0.02
-    Defense: -0.10
-    Panna: +0.08
-
-Interpretation: - Creates -0.02 xG/90 on offense (average) - Prevents
-0.10 xG/90 on defense (excellent) - Overall impact: +0.08 xG/90
-
-### Scale Reference
-
-| Rating | Interpretation |
-|--------|----------------|
-| +0.15+ | Elite          |
-| +0.10  | Very good      |
-| +0.05  | Above average  |
-| 0.00   | Average        |
-| -0.05  | Below average  |
-| -0.10  | Poor           |
-
-## Running the Full Pipeline
-
-The complete rating pipeline:
+These are the functions you actually call interactively. All default to
+`source = "remote"`, so a fresh
+[`library(panna)`](https://github.com/peteowen1/panna) with no local
+pipeline run is enough – they download small pre-computed snapshots from
+GitHub Releases.
 
 ``` r
 library(panna)
 
-# 1. Load raw data
-raw_data <- load_all_data(leagues = "ENG", seasons = "2024-2025")
+# Latest PSR leaderboard (top 50 by default)
+player_psr()
 
-# 2. Process data
-processed_data <- process_raw_data(raw_data)
+# As of a specific date -- snaps to the nearest weekly snapshot at or before it
+player_psr(date = "2026-03-18")
 
-# 3. Create splints
-splints <- create_all_splints(processed_data)
+# Look up one player (partial, case-insensitive match)
+player_psr(date = "2026-03-18", player = "Salah")
 
-# 4. Build RAPM matrix
-rapm_data <- create_rapm_design_matrix(splints)
-
-# 5. Fit base RAPM
-rapm_results <- fit_rapm(rapm_data)
-
-# 6. Fit SPM
-spm_results <- fit_spm_model(processed_data, rapm_results)
-
-# 7. Fit xRAPM (RAPM with SPM prior)
-xrapm_results <- fit_rapm_with_prior(rapm_data, spm_results)
-
-# 8. Extract final ratings
-panna_ratings <- extract_panna_ratings(xrapm_results)
+# Top midfielders only
+player_psr(position = "MID")
 ```
 
-## Limitations
+``` r
+# Full per-stat skill profile with league/position percentiles.
+# Downloads ~2-3 MB of pre-computed skills + match stats on first call.
+player_skill_profile("Lionel Messi")
 
-### Sample Size
+# Skill profile as of a past date (still uses the downloaded data)
+player_skill_profile("Kylian Mbappe", date = "2025-06-01")
+```
 
-RAPM requires substantial playing time for reliable estimates.
-Recommended minimums:
+``` r
+# Per-match value profile: EPV/WPA/PSV totals + per-90 rates + an EPR
+# estimate. Requires LOCAL pipeline cache output (data-raw/cache/epv/players,
+# data-raw/cache-skills/player_game_psv.rds) -- this one is not a fresh-clone
+# one-liner, it reads files the RAPM/EPV pipelines leave behind.
+player_value("Salah")
+player_value("Kane", season = "2024-2025")
+```
 
-- **Exploratory analysis**: 450+ minutes
-- **Reliable estimates**: 900+ minutes
-- **Stable comparisons**: 1800+ minutes
+``` r
+# Raw/derived Opta box-score aggregates -- the player_opta_*() family.
+# All share the same argument shape: player, league, season, min_minutes.
+player_opta_summary(player = "Kane", league = "ENG", season = "2024-2025")
+player_opta_shots(player = "Haaland", league = "GER")
+player_opta_passing(league = "ESP", season = "2024-2025", min_minutes = 900)
 
-### Context Dependence
+# Side-by-side comparison across shooting/passing/defending/chains
+compare_players(c("Salah", "Mbappe", "Haaland"))
+```
 
-Ratings are relative to: - The players they shared the field with - The
-opponents they faced - The leagues/seasons included in the model
+## Where the numbers come from
 
-### Position Blindness
+Every metric above is produced by one of four numbered `data-raw/`
+pipelines (RAPM/SPM, Estimated Skills, Match Predictions, EPV/xMetrics)
+run from inside `panna/`. See
+[`vignette("pipeline-walkthrough")`](https://peteowen1.github.io/panna/articles/pipeline-walkthrough.md)
+(“Pipeline Anatomy”) for the step-by-step map, cache layout, and how to
+run a subset.
 
-RAPM doesn’t know player positions. A midfielder and striker with
-identical lineups would have identical ratings, even if their roles
-differ.
+Published artifacts flow **GitHub Releases -\> Cloudflare R2 -\> the
+`inthegame-blog` website**; see
+[`vignette("data-bus")`](https://peteowen1.github.io/panna/articles/data-bus.md)
+for how to pull them down or publish new ones yourself.
 
-## Next Steps
+## Next steps
 
+- [Pipeline
+  Anatomy](https://peteowen1.github.io/panna/articles/pipeline-walkthrough.md)
+  – how these numbers are computed
+- [Data Access and
+  Publishing](https://peteowen1.github.io/panna/articles/data-bus.md) –
+  downloading and publishing data
+- [Match Prediction and Tournament
+  Simulation](https://peteowen1.github.io/panna/articles/match-prediction.md)
+  – how ratings feed match predictions
 - [Getting
-  Started](https://peteowen1.github.io/panna/articles/getting-started.md) -
-  Installation and data loading
+  Started](https://peteowen1.github.io/panna/articles/getting-started.md)
+  – installation and data loading
 - [Data
-  Sources](https://peteowen1.github.io/panna/articles/data-sources.md) -
+  Sources](https://peteowen1.github.io/panna/articles/data-sources.md) –
   Opta league codes, season formats, and loaders
 - [Data
-  Dictionary](https://peteowen1.github.io/panna/DATA_DICTIONARY.md) -
-  Column definitions at each pipeline stage
+  Dictionary](https://peteowen1.github.io/panna/DATA_DICTIONARY.md) –
+  column definitions at each pipeline stage

@@ -61,6 +61,20 @@ Data frame of fixtures with columns:
 
 - season: Season identifier
 
+## See also
+
+Other opta loaders:
+[`load_opta_big5()`](https://peteowen1.github.io/panna/reference/load_opta_big5.md),
+[`load_opta_events()`](https://peteowen1.github.io/panna/reference/load_opta_events.md),
+[`load_opta_lineups()`](https://peteowen1.github.io/panna/reference/load_opta_lineups.md),
+[`load_opta_match_events()`](https://peteowen1.github.io/panna/reference/load_opta_match_events.md),
+[`load_opta_match_stats()`](https://peteowen1.github.io/panna/reference/load_opta_match_stats.md),
+[`load_opta_shot_events()`](https://peteowen1.github.io/panna/reference/load_opta_shot_events.md),
+[`load_opta_shots()`](https://peteowen1.github.io/panna/reference/load_opta_shots.md),
+[`load_opta_skills()`](https://peteowen1.github.io/panna/reference/load_opta_skills.md),
+[`load_opta_stats()`](https://peteowen1.github.io/panna/reference/load_opta_stats.md),
+[`load_opta_xmetrics()`](https://peteowen1.github.io/panna/reference/load_opta_xmetrics.md)
+
 ## Examples
 
 ``` r

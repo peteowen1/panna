@@ -35,3 +35,14 @@ Used in two places:
 
 - Step 07 – predict each fixture in both orientations and average,
   giving a prediction invariant to which team is listed as home.
+
+## See also
+
+Other world cup simulation:
+[`bt_match_prob()`](https://peteowen1.github.io/panna/reference/bt_match_prob.md),
+[`build_knockout_lookup()`](https://peteowen1.github.io/panna/reference/build_knockout_lookup.md),
+[`compute_league_offsets()`](https://peteowen1.github.io/panna/reference/compute_league_offsets.md),
+[`fit_bt_ratings()`](https://peteowen1.github.io/panna/reference/fit_bt_ratings.md),
+[`match_is_international()`](https://peteowen1.github.io/panna/reference/match_is_international.md),
+[`run_wc2026_reference_checks()`](https://peteowen1.github.io/panna/reference/run_wc2026_reference_checks.md),
+[`simulate_world_cup()`](https://peteowen1.github.io/panna/reference/simulate_world_cup.md)
