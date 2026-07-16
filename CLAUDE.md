@@ -106,7 +106,7 @@ Stat ratings → PSR/OSR/DSR (smoothed skills via glmnet) ───────�
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
 | `R-CMD-check.yaml` | Push to `dev`, PRs to `main` | Package checks |
-| `opta-pipeline.yml` | Manual dispatch | Opta RAPM/SPM on GHA, auto-uploads caches. ⚠ OOMs the 16GB hosted runner since the 2026-06 4-league expansion (panna#87) — run the pipeline locally (needs ~25GB+ RAM) until fixed; the scrape-complete auto-trigger was removed for this reason |
+| `opta-pipeline.yml` | Manual dispatch | Opta RAPM/SPM on GHA, auto-uploads caches. Fixed 2026-07-16 (panna#109): step 7 (`07_seasonal_ratings.R`) narrows `opta_stats`/`opta_xmetrics` to their read-list before the 14-season loop, keeping RSS flat (~14.1GB) instead of creeping to 15.9GB and OOMing at season 9/14 — verified green end-to-end via `-f start_step=7` resume-mode run (all 14 seasons, 12.1 min). The `opta-scrape-complete` auto-trigger stays removed (Pete's call, not re-enabled by this fix) — dispatch manually |
 | `pkgdown.yaml` | Push | Documentation site |
 | `predictions-pipeline.yml` | Wed 8 AM UTC / manual / `opta-scrape-complete` dispatch | Weekly match predictions. Runs steps 1-10c + 11 (WC2026 sim) + 12 (WC2026 blog export). Triggers `predictions-complete` repository_dispatch on `pannadata` to refresh blog data. Note: WC2026 sim defaults to FALSE in `run_predictions_opta.R` but the workflow enables it in its `run_steps` override. |
 | `psr-weekly-snapshot.yml` | Weekly snapshot / manual | PSR weekly snapshot generation |
