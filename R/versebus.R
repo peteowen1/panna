@@ -509,18 +509,40 @@ vb_publish <- function(paths, repo, tag,
               "vb_error_transient")
   }
 
-  # 5. Verify the live asset list agrees before committing.
-  listed <- vb_list_assets(repo, tag)
-  for (e in entries) {
-    row <- listed[listed$name == e$name, , drop = FALSE]
-    if (nrow(row) == 0L) {
-      .vb_abort("Post-upload verify: {.val {e$name}} missing from {repo}@{tag}",
-                "vb_error_transient")
+  # 5. Verify the live asset list agrees before committing. GitHub's release
+  # API can report a stale size immediately after upload (observed in
+  # production 2026-07-16: a 6-byte mismatch on predictions.parquet that was
+  # purely a listing race, not corruption) -- retry a few times before
+  # treating a mismatch as real.
+  verify_delays <- c(2, 5, 10)
+  missing <- character(0)
+  mismatched <- character(0)
+  for (verify_attempt in seq_along(c(verify_delays, NA))) {
+    listed <- vb_list_assets(repo, tag)
+    missing <- character(0)
+    mismatched <- character(0)
+    for (e in entries) {
+      row <- listed[listed$name == e$name, , drop = FALSE]
+      if (nrow(row) == 0L) {
+        missing <- c(missing, e$name)
+      } else if (!isTRUE(all.equal(row$size[1L], e$bytes))) {
+        mismatched <- c(mismatched, e$name)
+      }
     }
-    if (!isTRUE(all.equal(row$size[1L], e$bytes))) {
-      .vb_abort("Post-upload verify: {.val {e$name}} size {row$size[1L]} != local {e$bytes}",
-                "vb_error_integrity")
+    if (length(missing) == 0L && length(mismatched) == 0L) break
+    if (verify_attempt <= length(verify_delays)) {
+      cli::cli_alert_warning(
+        "Post-upload verify race (attempt {verify_attempt}/{length(verify_delays)}): retrying in {verify_delays[verify_attempt]}s")
+      Sys.sleep(verify_delays[verify_attempt])
     }
+  }
+  if (length(missing) > 0L) {
+    .vb_abort("Post-upload verify: {.val {missing}} missing from {repo}@{tag}",
+              "vb_error_transient")
+  }
+  if (length(mismatched) > 0L) {
+    .vb_abort("Post-upload verify: size mismatch for {.val {mismatched}} at {repo}@{tag} (persisted after retries)",
+              "vb_error_integrity")
   }
 
   # 6. Manifest last (merge for partial publishes), with one retry.
