@@ -537,6 +537,7 @@ if (nrow(upcoming) > 0) {
 
       decay_params <- if (file.exists(decay_params_path)) readRDS(decay_params_path) else NULL
       skill_spm <- readRDS(skill_spm_path)
+      if (exists(".log_rss", mode = "function")) .log_rss("step 2 pre skill-estimate")
 
       # Compute skills at the earliest fixture date (close enough for all)
       fixture_date <- min(as.Date(upcoming$match_date), na.rm = TRUE)
@@ -545,6 +546,7 @@ if (nrow(upcoming) > 0) {
         decay_params = decay_params,
         date = fixture_date
       )
+      if (exists(".log_rss", mode = "function")) .log_rss("step 2 post skill-estimate")
       rm(match_stats, decay_params); gc(verbose = FALSE)
 
       if (!is.null(live_skills) && nrow(live_skills) > 0) {
@@ -579,6 +581,7 @@ if (nrow(upcoming) > 0) {
         def_blend <- calculate_spm_blend(
           live_skills, skill_spm$defense_spm_glmnet, skill_spm$defense_spm_xgb
         )
+        if (exists(".log_rss", mode = "function")) .log_rss("step 2 post spm-blend")
 
         # Build fixture-specific ratings table.
         # CRITICAL: keep player_id from off_blend/def_blend. The previous code
