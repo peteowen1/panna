@@ -290,19 +290,75 @@ get_covariate_effects <- function(model, lambda = "min") {
 }
 
 
+#' Fill one suffix's slice of a RAPM prior vector, validating a supplied prior matched
+#'
+#' C4 shared helper (FABLE-PRIOR-FIX-PLAN.md): \code{fit_rapm_with_prior()}'s
+#' net branch and the two halves of its od branch (offense/defense) each
+#' fill one suffixed slice of \code{prior_vec} from a named \code{prior}
+#' vector and abort if a SUPPLIED prior matched 0 players -- previously
+#' duplicated three times (net/off/def), parametrized only by suffix, arg
+#' name, and message prefix. Preserves the exact abort text callers (and
+#' \code{test-rapm-tripwires.R}'s regex assertions) depend on.
+#'
+#' @param prior_vec The full prior vector being built (named by X column).
+#' @param col_names Column names of the design matrix X (confirms the
+#'   suffixed column actually exists before filling it).
+#' @param prior Named vector of per-player prior values (by player_id), or
+#'   \code{NULL} for an explicit no-prior request (not an error).
+#' @param player_ids Character vector of player IDs in rapm_data order.
+#' @param suffix Column suffix: \code{"_net"}, \code{"_off"}, or \code{"_def"}.
+#' @param arg_label Argument name for the abort message (\code{"offense_prior"}
+#'   or \code{"defense_prior"}).
+#' @param msg_prefix \code{"xRAPM"} (od mode) or \code{"xRAPM (net)"} (net
+#'   mode) -- matches the message text callers depended on before this
+#'   helper existed.
+#'
+#' @return List with the updated \code{prior_vec} and the match count.
+#' @keywords internal
+#' @noRd
+.fill_prior <- function(prior_vec, col_names, prior, player_ids, suffix,
+                         arg_label, msg_prefix) {
+  cols <- paste0(player_ids, suffix)
+  match_idx <- match(player_ids, names(prior))
+  valid <- !is.na(match_idx) & cols %in% col_names
+  if (any(valid)) {
+    prior_vec[cols[valid]] <- prior[player_ids[valid]]
+  }
+  matched <- sum(valid)
+
+  if (!is.null(prior) && matched == 0) {
+    cli::cli_abort(c(
+      "{msg_prefix}: {.arg {arg_label}} was supplied but matched 0 of {length(player_ids)} players.",
+      "x" = "A supplied-but-unmatched prior is always a bug, never a valid zero-prior fallback.",
+      "i" = "Pass {.code {arg_label} = NULL} for an explicit no-prior fit, or verify the prior vector is named by {.field player_id} (see {.fn build_prior_vector})."
+    ))
+  }
+
+  list(prior_vec = prior_vec, matched = matched)
+}
+
+
 #' Fit RAPM with SPM prior (xRAPM)
 #'
 #' Fits RAPM model shrinking toward SPM predictions instead of zero.
 #' This helps separate players who always appear together by using
 #' box score statistics as a Bayesian prior.
 #'
-#' For the O/D design matrix:
+#' For the O/D design matrix (\code{mode = "od"}, default):
 #' - offense_prior: SPM-predicted offensive contribution
 #' - defense_prior: SPM-predicted defensive contribution
 #'
+#' For the net design matrix (\code{mode = "net"}, FABLE-PRIOR-FIX-PLAN.md D2/D4
+#' -- e.g. WPA, whose off/def split is mechanically unidentified because the
+#' target is zero-sum): a single per-player column exists, so
+#' \code{offense_prior} alone carries the net SPM prior and
+#' \code{defense_prior} has no meaning and must be \code{NULL}.
+#'
 #' @param rapm_data List from prepare_rapm_data
-#' @param offense_prior Named vector of offensive SPM predictions (by player_id)
-#' @param defense_prior Named vector of defensive SPM predictions (by player_id)
+#' @param offense_prior Named vector of offensive SPM predictions (by
+#'   player_id). In \code{mode = "net"} this is the single net SPM prior.
+#' @param defense_prior Named vector of defensive SPM predictions (by
+#'   player_id). Must be \code{NULL} when \code{mode = "net"}.
 #' @param alpha Elastic net mixing parameter (0 = ridge)
 #' @param nfolds Number of CV folds
 #' @param use_weights Whether to use splint duration weights
@@ -315,6 +371,11 @@ get_covariate_effects <- function(model, lambda = "min") {
 #'   (see \code{\link{fit_rapm}}); the panna#87 cloud path passes a short
 #'   grid bracketing the closed-form lambda. Ignored when
 #'   \code{fixed_lambda} is supplied.
+#' @param mode Design matrix mode matching the \code{rapm_data} the caller
+#'   built. \code{"od"} (default) expects \verb{_off}/\verb{_def} player
+#'   columns. \code{"net"} expects the single-column-per-player
+#'   (\verb{_net}) design from \code{create_rapm_design_matrix(mode = "net")}
+#'   and requires \code{defense_prior = NULL} (FABLE-PRIOR-FIX-PLAN.md D2/D4).
 #'
 #' @return Fitted model with prior adjustment metadata
 #'
@@ -324,7 +385,22 @@ fit_rapm_with_prior <- function(rapm_data, offense_prior, defense_prior,
                                  alpha = 0, nfolds = 10,
                                  use_weights = TRUE,
                                  penalize_covariates = FALSE,
-                                 fixed_lambda = NULL, lambda_seq = NULL) {
+                                 fixed_lambda = NULL, lambda_seq = NULL,
+                                 mode = c("od", "net")) {
+  mode <- match.arg(mode)
+
+  # D2/D4 (FABLE-PRIOR-FIX-PLAN.md): net mode has a single per-player prior
+  # dimension -- offense_prior carries it, defense_prior has no meaning
+  # against a design with no offense/defense split and must be absent. This
+  # is a pure argument-shape check, independent of rapm_data.
+  if (mode == "net" && !is.null(defense_prior)) {
+    cli::cli_abort(c(
+      "xRAPM (net): {.arg defense_prior} must be {.code NULL} when {.code mode = \"net\"}.",
+      "x" = "Net mode fits a single signed per-player column (no offense/defense split); {.arg offense_prior} alone carries the net prior.",
+      "i" = "See FABLE-PRIOR-FIX-PLAN.md D2/D4."
+    ))
+  }
+
   # Validate input structure (matching fit_rapm())
   if (!is.list(rapm_data)) {
     cli::cli_abort(c(
@@ -339,6 +415,23 @@ fit_rapm_with_prior <- function(rapm_data, offense_prior, defense_prior,
     cli::cli_abort(c(
       "{.arg rapm_data} must contain 'X' (or 'X_full') and 'y'.",
       "i" = "Use {.fn create_rapm_design_matrix} to generate valid rapm_data."
+    ))
+  }
+
+  # F5 (FABLE-PRIOR-FIX-PLAN.md review): a caller-supplied `mode` that
+  # disagrees with the mode the design matrix was actually built with
+  # (rapm_data$mode, set by create_rapm_design_matrix()) previously fit
+  # silently with wrong metadata (e.g. calling mode = "net" priors against
+  # an "od" design would fill "_net" columns that don't exist in X, matching
+  # 0 players, and the D4 unmatched-prior guard above would catch a supplied
+  # prior -- but an explicit NULL prior would sail through with a completely
+  # mismatched panna_metadata$mode). Older rapm_data without a $mode element
+  # (pre-mode-parameter fixtures) skip this check -- unchanged behavior.
+  if (!is.null(rapm_data$mode) && rapm_data$mode != mode) {
+    cli::cli_abort(c(
+      "xRAPM: {.arg mode} ({.val {mode}}) does not match {.code rapm_data$mode} ({.val {rapm_data$mode}}).",
+      "x" = "The design matrix mode and the {.fn fit_rapm_with_prior} {.arg mode} argument must agree.",
+      "i" = "Pass {.code mode = \"{rapm_data$mode}\"} to match the design matrix, or rebuild {.arg rapm_data} with {.code mode = \"{mode}\"}."
     ))
   }
 
@@ -368,24 +461,6 @@ fit_rapm_with_prior <- function(rapm_data, offense_prior, defense_prior,
   prior_vec <- rep(0, n_cols)
   names(prior_vec) <- col_names
 
-  # Fill in offense priors (vectorized O(n) instead of O(n^2) loop)
-  off_cols <- paste0(player_ids, "_off")
-  off_match_idx <- match(player_ids, names(offense_prior))
-  off_valid <- !is.na(off_match_idx) & off_cols %in% col_names
-  if (any(off_valid)) {
-    prior_vec[off_cols[off_valid]] <- offense_prior[player_ids[off_valid]]
-  }
-  off_matched <- sum(off_valid)
-
-  # Fill in defense priors (vectorized O(n) instead of O(n^2) loop)
-  def_cols <- paste0(player_ids, "_def")
-  def_match_idx <- match(player_ids, names(defense_prior))
-  def_valid <- !is.na(def_match_idx) & def_cols %in% col_names
-  if (any(def_valid)) {
-    prior_vec[def_cols[def_valid]] <- defense_prior[player_ids[def_valid]]
-  }
-  def_matched <- sum(def_valid)
-
   # D4 guard (FABLE-PRIOR-FIX-PLAN.md): a SUPPLIED prior that matches zero
   # players is always a bug -- e.g. an unnamed vector (the 06_xrapm.R
   # multi-target L3 bug: match(player_ids, names(offense_prior)) can only
@@ -393,23 +468,35 @@ fit_rapm_with_prior <- function(rapm_data, offense_prior, defense_prior,
   # all-zero fallback. Distinguish that from an EXPLICIT no-prior request
   # (offense_prior/defense_prior passed as NULL), which is not an error: the
   # fit degrades gracefully to a zero prior, same as before this guard.
-  if (!is.null(offense_prior) && off_matched == 0) {
-    cli::cli_abort(c(
-      "xRAPM: {.arg offense_prior} was supplied but matched 0 of {length(player_ids)} players.",
-      "x" = "A supplied-but-unmatched prior is always a bug, never a valid zero-prior fallback.",
-      "i" = "Pass {.code offense_prior = NULL} for an explicit no-prior fit, or verify the prior vector is named by {.field player_id} (see {.fn build_prior_vector})."
-    ))
-  }
-  if (!is.null(defense_prior) && def_matched == 0) {
-    cli::cli_abort(c(
-      "xRAPM: {.arg defense_prior} was supplied but matched 0 of {length(player_ids)} players.",
-      "x" = "A supplied-but-unmatched prior is always a bug, never a valid zero-prior fallback.",
-      "i" = "Pass {.code defense_prior = NULL} for an explicit no-prior fit, or verify the prior vector is named by {.field player_id} (see {.fn build_prior_vector})."
-    ))
-  }
+  # C4: fill + validate via the shared .fill_prior() helper (previously
+  # duplicated three times: net/off/def).
+  if (mode == "net") {
+    # Single per-player column, no offense/defense split (D2). offense_prior
+    # carries the net prior; defense_prior is already guaranteed NULL above.
+    net_res <- .fill_prior(prior_vec, col_names, offense_prior, player_ids,
+                           suffix = "_net", arg_label = "offense_prior",
+                           msg_prefix = "xRAPM (net)")
+    prior_vec <- net_res$prior_vec
+    off_matched <- net_res$matched
+    def_matched <- 0L
 
-  progress_msg(sprintf("xRAPM: matched %d offense priors, %d defense priors",
-                       off_matched, def_matched))
+    progress_msg(sprintf("xRAPM (net): matched %d net priors", off_matched))
+  } else {
+    off_res <- .fill_prior(prior_vec, col_names, offense_prior, player_ids,
+                           suffix = "_off", arg_label = "offense_prior",
+                           msg_prefix = "xRAPM")
+    prior_vec <- off_res$prior_vec
+    off_matched <- off_res$matched
+
+    def_res <- .fill_prior(prior_vec, col_names, defense_prior, player_ids,
+                           suffix = "_def", arg_label = "defense_prior",
+                           msg_prefix = "xRAPM")
+    prior_vec <- def_res$prior_vec
+    def_matched <- def_res$matched
+
+    progress_msg(sprintf("xRAPM: matched %d offense priors, %d defense priors",
+                         off_matched, def_matched))
+  }
 
   # Transform: shrink toward prior instead of zero
   # Original: min ||y - X*beta||^2 + lambda*||beta - prior||^2
@@ -451,10 +538,11 @@ fit_rapm_with_prior <- function(rapm_data, offense_prior, defense_prior,
 
   # Store metadata including prior information
   cv_fit$panna_metadata <- list(
-    type = "xrapm",
+    type = if (mode == "net") "xrapm_net" else "xrapm",
+    mode = mode,
     alpha = alpha,
     n_observations = length(y_adjusted),
-    n_player_cols = rapm_data$n_players * 2,
+    n_player_cols = if (mode == "net") rapm_data$n_players else rapm_data$n_players * 2,
     n_covariates = length(covariate_names),
     lambda_min = cv_fit$lambda.min,
     lambda_1se = cv_fit$lambda.1se,
@@ -479,10 +567,25 @@ fit_rapm_with_prior <- function(rapm_data, offense_prior, defense_prior,
 #' Extracts player ratings from a model fit with SPM prior.
 #' The final coefficient is gamma + prior, where gamma is the deviation.
 #'
+#' F4 (FABLE-PRIOR-FIX-PLAN.md review): mode-aware via the model's stored
+#' metadata (\code{model$panna_metadata$mode}, or \code{type == "xrapm_net"}
+#' for older/hand-built metadata without a \code{mode} field). In
+#' \code{mode = "od"} (default), \code{xrapm = offense - defense} as before.
+#' In \code{mode = "net"}, there is no offense/defense split (D2) -- the
+#' single \verb{_net} coefficient per player IS the rating, and
+#' \code{offense}/\code{defense}/\code{off_deviation}/\code{def_deviation}/
+#' \code{off_prior}/\code{def_prior} are set \code{NA} (they have no meaning
+#' against a design with no offense/defense split). Aborts if the model's
+#' coefficient names don't actually match the declared mode -- indexing only
+#' \verb{_off}/\verb{_def} names on a net-mode fit previously returned
+#' silently all-NA ratings with no error (the bug this fixes).
+#'
 #' @param model Fitted xRAPM model from fit_rapm_with_prior
 #' @param lambda Which lambda to use ("min" or "1se")
 #'
-#' @return Data frame with player ratings including deviation from prior
+#' @return Data frame with player ratings including deviation from prior.
+#'   In \code{mode = "net"}, \code{offense}/\code{defense}/deviation/prior
+#'   columns are \code{NA} and \code{xrapm} holds the net coefficient.
 #' @family panna ratings
 #' @export
 extract_xrapm_ratings <- function(model, lambda = "min") {
@@ -507,32 +610,71 @@ extract_xrapm_ratings <- function(model, lambda = "min") {
   # Final coefficients: beta = gamma + prior
   beta_final <- gamma + prior_vec[col_names]
 
-  # Separate into offense and defense
   player_ids <- model$panna_metadata$player_ids
-  off_cols <- paste0(player_ids, "_off")
-  def_cols <- paste0(player_ids, "_def")
+  mode <- model$panna_metadata$mode
+  if (is.null(mode)) {
+    mode <- if (identical(model$panna_metadata$type, "xrapm_net")) "net" else "od"
+  }
 
-  off_coefs <- beta_final[off_cols]
-  def_coefs <- beta_final[def_cols]
-  off_gamma <- gamma[off_cols]
-  def_gamma <- gamma[def_cols]
-  off_prior <- prior_vec[off_cols]
-  def_prior <- prior_vec[def_cols]
+  if (mode == "net") {
+    net_cols <- paste0(player_ids, "_net")
+    if (!all(net_cols %in% names(beta_final))) {
+      missing_cols <- net_cols[!net_cols %in% names(beta_final)]
+      cli::cli_abort(c(
+        "extract_xrapm_ratings: model coefficients don't match the declared {.val net} mode.",
+        "x" = "Missing {length(missing_cols)} {.field _net} column{?s} (e.g. {.val {head(missing_cols, 3)}}).",
+        "i" = "Was this model actually fit with {.code mode = \"net\"} via {.fn fit_rapm_with_prior}?"
+      ))
+    }
 
-  # xRAPM rating = offense - defense
-  xrapm <- off_coefs - def_coefs
+    net_coefs <- beta_final[net_cols]
 
-  # Create results data frame
-  ratings <- data.frame(
-    player_id = player_ids,
-    xrapm = as.numeric(xrapm),
-    offense = as.numeric(off_coefs),
-    defense = as.numeric(def_coefs),
-    off_deviation = as.numeric(off_gamma),
-    def_deviation = as.numeric(def_gamma),
-    off_prior = as.numeric(off_prior),
-    def_prior = as.numeric(def_prior)
-  )
+    # Net mode has no offense/defense split (D2) -- the single _net
+    # coefficient per player IS the rating. offense/defense (and their
+    # deviation/prior) have no meaning here and are NA, per roxygen above.
+    ratings <- data.frame(
+      player_id = player_ids,
+      xrapm = as.numeric(net_coefs),
+      offense = NA_real_,
+      defense = NA_real_,
+      off_deviation = NA_real_,
+      def_deviation = NA_real_,
+      off_prior = NA_real_,
+      def_prior = NA_real_
+    )
+  } else {
+    off_cols <- paste0(player_ids, "_off")
+    def_cols <- paste0(player_ids, "_def")
+    if (!all(off_cols %in% names(beta_final)) || !all(def_cols %in% names(beta_final))) {
+      missing_cols <- c(off_cols, def_cols)[!c(off_cols, def_cols) %in% names(beta_final)]
+      cli::cli_abort(c(
+        "extract_xrapm_ratings: model coefficients don't match the declared {.val od} mode.",
+        "x" = "Missing {length(missing_cols)} {.field _off}/{.field _def} column{?s} (e.g. {.val {head(missing_cols, 3)}}).",
+        "i" = "Was this model actually fit with {.code mode = \"net\"}? Net-mode models have only {.field _net} columns."
+      ))
+    }
+
+    off_coefs <- beta_final[off_cols]
+    def_coefs <- beta_final[def_cols]
+    off_gamma <- gamma[off_cols]
+    def_gamma <- gamma[def_cols]
+    off_prior <- prior_vec[off_cols]
+    def_prior <- prior_vec[def_cols]
+
+    # xRAPM rating = offense - defense
+    xrapm <- off_coefs - def_coefs
+
+    ratings <- data.frame(
+      player_id = player_ids,
+      xrapm = as.numeric(xrapm),
+      offense = as.numeric(off_coefs),
+      defense = as.numeric(def_coefs),
+      off_deviation = as.numeric(off_gamma),
+      def_deviation = as.numeric(def_gamma),
+      off_prior = as.numeric(off_prior),
+      def_prior = as.numeric(def_prior)
+    )
+  }
 
   # Join with player mapping
   if (!is.null(model$panna_metadata$player_mapping)) {

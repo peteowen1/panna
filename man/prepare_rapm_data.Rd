@@ -10,7 +10,8 @@ prepare_rapm_data(
   target_type = c("xg", "goals", "epv", "wpa", "psv"),
   include_covariates = TRUE,
   include_league = NULL,
-  include_season = NULL
+  include_season = NULL,
+  mode = c("od", "net")
 )
 }
 \arguments{
@@ -27,6 +28,12 @@ PSV. Use "goals" when shots data unavailable.}
 \item{include_league}{Whether to include league dummies (for multi-league)}
 
 \item{include_season}{Whether to include season dummies}
+
+\item{mode}{Design matrix mode, passed through to
+\code{\link{create_rapm_design_matrix}}. \code{"od"} (default) is the
+production layout (byte-identical to before this parameter existed);
+\code{"net"} builds the single-column-per-player net design for
+zero-sum targets like WPA (FABLE-PRIOR-FIX-PLAN.md D2).}
 }
 \value{
 List with all model inputs

@@ -9,7 +9,8 @@
   valid_splints,
   player_ids,
   replacement_player_ids,
-  n_rows
+  n_rows,
+  mode = c("od", "net")
 )
 }
 \arguments{
@@ -22,6 +23,13 @@
 \item{replacement_player_ids}{Character vector of replacement player IDs}
 
 \item{n_rows}{Total rows in design matrix}
+
+\item{mode}{Design matrix mode. \code{"od"} (default) builds 2 columns per
+player (\verb{_off}/\verb{_def}) against 2 rows per splint -- the
+production xg/goals/epv layout, byte-identical to before this parameter
+existed. \code{"net"} builds 1 column per player (\verb{_net}) against 1
+row per splint, valued \code{+share} when the player's team is home and
+\code{-share} when away (FABLE-PRIOR-FIX-PLAN.md D2).}
 }
 \value{
 List with X_players (sparse matrix), col_names, n_player_cols,
@@ -29,6 +37,8 @@ replacement_off_appearances, replacement_def_appearances
 }
 \description{
 Constructs the sparse matrix encoding which players are on offense/defense
-in each row, including replacement-level columns.
+in each row (\code{"od"} mode, default), or a single signed home/away
+column per player (\code{"net"} mode) -- see \code{mode}. Includes
+replacement-level columns.
 }
 \keyword{internal}

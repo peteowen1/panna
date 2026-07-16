@@ -8,7 +8,8 @@ create_rapm_design_matrix(
   splint_data,
   min_minutes = 90,
   target_type = c("xg", "goals", "epv", "wpa", "psv"),
-  min_duration = 1
+  min_duration = 1,
+  mode = c("od", "net")
 )
 }
 \arguments{
@@ -29,6 +30,13 @@ Note: with chain-derived splint creation
 (\code{create_splint_boundaries_fast}, default \code{min_splint_duration = 5}),
 the upstream pipeline already enforces a 5-min minimum so this
 secondary filter rarely fires.}
+
+\item{mode}{Design matrix mode. \code{"od"} (default) is the production
+layout: 2 rows per splint, \verb{_off}/\verb{_def} player columns --
+byte-identical to before this parameter existed. \code{"net"} builds 1
+row per splint and 1 signed (\verb{_net}) column per player (+home,
+-away), for zero-sum targets like WPA where an offense/defense split is
+mechanically unidentified (FABLE-PRIOR-FIX-PLAN.md D2).}
 }
 \value{
 List with design matrix components

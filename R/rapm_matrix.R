@@ -179,14 +179,25 @@ add_value_metrics_to_splints <- function(splint_data, player_game_epv = NULL,
 #' Build RAPM row data from valid splints
 #'
 #' Creates 2 rows per splint (home attacking, away attacking) with game state
-#' covariates and target variable.
+#' covariates and target variable in \code{"od"} mode (default). In
+#' \code{"net"} mode, creates 1 row per splint (home-perspective target only)
+#' -- see \code{mode}.
 #'
 #' @param valid_splints Data frame of splints with duration > 0
 #' @param target_type One of "xg", "goals", "epv", "wpa", "psv", or "custom"
+#' @param mode Design matrix mode. \code{"od"} (default) creates 2 rows per
+#'   splint (one per team-attacking perspective), matched with separate
+#'   offense/defense player columns in \code{\link{.build_rapm_sparse_matrix}}
+#'   -- the production xg/goals/epv layout, byte-identical to before this
+#'   parameter existed. \code{"net"} creates 1 row per splint with the
+#'   home-perspective target only, for zero-sum targets like WPA where an
+#'   offense/defense split is mechanically unidentified (FABLE-PRIOR-FIX-PLAN.md
+#'   D2).
 #'
 #' @return List with row_data data.frame and target_per90_name string
 #' @keywords internal
-.build_rapm_row_data <- function(valid_splints, target_type) {
+.build_rapm_row_data <- function(valid_splints, target_type, mode = c("od", "net")) {
+  mode <- match.arg(mode)
   n_splints <- nrow(valid_splints)
 
   # Pre-compute game state columns with defaults
@@ -239,6 +250,65 @@ add_value_metrics_to_splints <- function(splint_data, player_game_epv = NULL,
     cli::cli_abort("Unknown target_type: {.val {target_type}}")
   }
 
+  if (mode == "net") {
+    # F3 (FABLE-PRIOR-FIX-PLAN.md review): net mode collapses home/away into
+    # ONE signed column and assumes the target is exactly zero-sum
+    # (target_home == -target_away). That's true for WPA (there is only one
+    # P(home wins), so a change in it is the exact equal-and-opposite change
+    # in P(away wins)) but NEVER true for xg/goals/epv (both teams
+    # accumulate their OWN threat independently) -- fitting those in net
+    # mode would silently discard half the signal with no error. Fail loud.
+    if (target_type != "wpa") {
+      cli::cli_abort(c(
+        "Net mode ({.code mode = \"net\"}) requires {.code target_type = \"wpa\"}.",
+        "x" = "Got {.val {target_type}}.",
+        "i" = "xg/goals/epv/psv are not zero-sum between home and away -- an offense/defense split is meaningful for them, so they must use {.code mode = \"od\"} (FABLE-PRIOR-FIX-PLAN.md D2)."
+      ))
+    }
+
+    # F3: zero-sum tripwire. Today's wpa_home/wpa_away splint columns are
+    # acting-POV per-team sums from add_value_metrics_to_splints() -- NOT
+    # guaranteed exact negatives of each other until Step 3 rewires them to
+    # the zero-sum home-POV WPA stream. Abort loudly rather than silently
+    # fitting net mode against a target that violates its own assumption.
+    zero_sum_resid <- target_home + target_away
+    tol <- 1e-8 * max(1, max(abs(target_home), na.rm = TRUE))
+    max_resid <- suppressWarnings(max(abs(zero_sum_resid), na.rm = TRUE))
+    if (!is.finite(max_resid) || max_resid > tol) {
+      cli::cli_abort(c(
+        "Net mode target is not zero-sum (target_home + target_away != 0).",
+        "x" = "max(abs(target_home + target_away)) = {signif(max_resid, 3)} (tolerance {signif(tol, 3)}).",
+        "i" = "Net mode requires the zero-sum home-POV WPA stream (FABLE-PRIOR-FIX-PLAN.md Step 3) -- the current splint columns don't satisfy it."
+      ))
+    }
+
+    # D2: one row per splint, home-perspective target only. away_target is
+    # computed above (for column validation / future use) but not needed
+    # here -- the target is exactly zero-sum by construction, so the home
+    # value alone carries the signal (FABLE-PRIOR-FIX-PLAN.md D2).
+    n_rows <- n_splints
+
+    row_data <- data.frame(
+      row_id = seq_len(n_rows),
+      splint_id = valid_splints$splint_id,
+      match_id = valid_splints$match_id,
+      target = target_home,
+      minutes = duration,
+      target_per_90 = ifelse(duration > 0, target_home * 90 / duration, 0),
+      gd = gf_home - ga_home,
+      gf = gf_home,
+      ga = ga_home,
+      avg_min = avg_min_val,
+      home_away = rep("home", n_splints),
+      n_offense = n_players_home,
+      n_defense = n_players_away
+    )
+
+    row_data$net_players <- row_data$n_offense - row_data$n_defense
+
+    return(list(row_data = row_data, target_per90_name = target_per90_name))
+  }
+
   n_rows <- n_splints * 2
 
   row_data <- data.frame(
@@ -269,28 +339,31 @@ add_value_metrics_to_splints <- function(splint_data, player_game_epv = NULL,
 #' Build sparse player matrix from triplets
 #'
 #' Constructs the sparse matrix encoding which players are on offense/defense
-#' in each row, including replacement-level columns.
+#' in each row (\code{"od"} mode, default), or a single signed home/away
+#' column per player (\code{"net"} mode) -- see \code{mode}. Includes
+#' replacement-level columns.
 #'
 #' @param players Data frame of player appearances
 #' @param valid_splints Data frame of valid splints
 #' @param player_ids Character vector of regular player IDs
 #' @param replacement_player_ids Character vector of replacement player IDs
 #' @param n_rows Total rows in design matrix
+#' @param mode Design matrix mode. \code{"od"} (default) builds 2 columns per
+#'   player (\verb{_off}/\verb{_def}) against 2 rows per splint -- the
+#'   production xg/goals/epv layout, byte-identical to before this parameter
+#'   existed. \code{"net"} builds 1 column per player (\verb{_net}) against 1
+#'   row per splint, valued \code{+share} when the player's team is home and
+#'   \code{-share} when away (FABLE-PRIOR-FIX-PLAN.md D2).
 #'
 #' @return List with X_players (sparse matrix), col_names, n_player_cols,
 #'   replacement_off_appearances, replacement_def_appearances
 #' @keywords internal
 .build_rapm_sparse_matrix <- function(players, valid_splints, player_ids,
-                                       replacement_player_ids, n_rows) {
+                                       replacement_player_ids, n_rows,
+                                       mode = c("od", "net")) {
+  mode <- match.arg(mode)
   n_players <- length(player_ids)
   player_idx <- stats::setNames(seq_along(player_ids), player_ids)
-
-  replacement_off_col <- n_players + 1
-  n_player_cols <- (n_players + 1) * 2
-  replacement_def_col <- n_player_cols
-
-  col_names <- c(paste0(player_ids, "_off"), "replacement_off",
-                 paste0(player_ids, "_def"), "replacement_def")
 
   valid_splint_ids <- valid_splints$splint_id
   splint_to_idx <- stats::setNames(seq_along(valid_splint_ids), valid_splint_ids)
@@ -321,6 +394,94 @@ add_value_metrics_to_splints <- function(splint_data, player_game_epv = NULL,
   is_replacement <- pid %in% replacement_player_ids
   rm(pid, is_regular_name, regular_with_na)
 
+  # C3: replacement-share aggregator, shared by both mode branches below (was
+  # defined twice verbatim, once per branch). Sums `share` (or counts
+  # appearances if no `share` column) per splint, for a given home/away mask.
+  # rowsum() replaces stats::aggregate (same sums, a fraction of the memory
+  # -- see the panna#87 flight-recorder note above).
+  repl_block <- function(side_mask) {
+    m <- is_replacement & side_mask
+    if (!any(m)) return(NULL)
+    if (has_share) {
+      s <- rowsum(share[m], group = splint_idx[m])
+      list(sidx = as.integer(rownames(s)), x = as.numeric(s))
+    } else {
+      u <- sort(unique(splint_idx[m]))
+      list(sidx = u, x = rep(1, length(u)))
+    }
+  }
+
+  if (mode == "net") {
+    # D2: one signed column per player (+share home, -share away); one
+    # replacement column combining both sides' net contribution per splint.
+    replacement_col <- n_players + 1L
+    n_player_cols <- n_players + 1L
+    col_names <- c(paste0(player_ids, "_net"), "replacement_net")
+
+    r <- which(is_regular)
+    rs <- splint_idx[r]
+    rc <- as.integer(player_col[r])
+    rx <- share[r]
+    rh <- is_home[r]
+    trip_i <- rs
+    trip_j <- rc
+    trip_x <- rx * ifelse(rh, 1, -1)
+    rm(r, rs, rc, rx, rh)
+
+    home_repl <- repl_block(is_home)
+    away_repl <- repl_block(!is_home)
+
+    h_sidx <- if (!is.null(home_repl)) home_repl$sidx else integer(0)
+    h_x    <- if (!is.null(home_repl)) home_repl$x else numeric(0)
+    a_sidx <- if (!is.null(away_repl)) away_repl$sidx else integer(0)
+    a_x    <- if (!is.null(away_repl)) away_repl$x else numeric(0)
+
+    # C3: combine home (+) and away (-) replacement contributions per splint
+    # via rowsum(), replacing the old manual match()/ifelse() merge -- same
+    # result (net_x per splint = sum of home shares minus sum of away
+    # shares), one aggregation instead of two index lookups.
+    combined_sidx <- c(h_sidx, a_sidx)
+    if (length(combined_sidx) > 0) {
+      combined_x <- c(h_x, -a_x)
+      net_sum <- rowsum(combined_x, group = combined_sidx)
+      all_sidx <- as.integer(rownames(net_sum))
+      net_x <- as.numeric(net_sum)
+      trip_i <- c(trip_i, all_sidx)
+      trip_j <- c(trip_j, rep(replacement_col, length(all_sidx)))
+      trip_x <- c(trip_x, net_x)
+    } else {
+      all_sidx <- integer(0)
+    }
+    replacement_appearances <- length(all_sidx)
+
+    progress_msg(sprintf("Replacement appearances (net): %d", replacement_appearances))
+
+    X_players <- Matrix::sparseMatrix(
+      i = trip_i,
+      j = trip_j,
+      x = trip_x,
+      dims = c(n_rows, n_player_cols),
+      dimnames = list(NULL, col_names)
+    )
+    rm(trip_i, trip_j, trip_x, splint_idx, share, is_home, player_col,
+       is_regular, is_replacement)
+
+    return(list(
+      X_players = X_players,
+      col_names = col_names,
+      n_player_cols = n_player_cols,
+      replacement_off_appearances = replacement_appearances,
+      replacement_def_appearances = replacement_appearances
+    ))
+  }
+
+  replacement_off_col <- n_players + 1
+  n_player_cols <- (n_players + 1) * 2
+  replacement_def_col <- n_player_cols
+
+  col_names <- c(paste0(player_ids, "_off"), "replacement_off",
+                 paste0(player_ids, "_def"), "replacement_def")
+
   # -- Regular-player triplets: all four old blocks (home/away x off/def)
   #    from the same vectors. Offense row = 2s-1 for home (home attacking),
   #    2s for away; defense row is the opposite row of the pair. --
@@ -338,19 +499,7 @@ add_value_metrics_to_splints <- function(splint_data, player_game_epv = NULL,
 
   # -- Replacement triplets: sum of replacement shares per (splint, side).
   #    share-less legacy data keeps the old binary fallback (1 per splint,
-  #    NOT the count). rowsum() replaces stats::aggregate (same sums, a
-  #    fraction of the memory). --
-  repl_block <- function(side_mask) {
-    m <- is_replacement & side_mask
-    if (!any(m)) return(NULL)
-    if (has_share) {
-      s <- rowsum(share[m], group = splint_idx[m])
-      list(sidx = as.integer(rownames(s)), x = as.numeric(s))
-    } else {
-      u <- sort(unique(splint_idx[m]))
-      list(sidx = u, x = rep(1, length(u)))
-    }
-  }
+  #    NOT the count). repl_block() defined once, above the mode branch (C3).
   home_repl <- repl_block(is_home)
   away_repl <- repl_block(!is_home)
   if (!is.null(home_repl)) {
@@ -423,6 +572,12 @@ add_value_metrics_to_splints <- function(splint_data, player_game_epv = NULL,
 #'   (\code{create_splint_boundaries_fast}, default \code{min_splint_duration = 5}),
 #'   the upstream pipeline already enforces a 5-min minimum so this
 #'   secondary filter rarely fires.
+#' @param mode Design matrix mode. \code{"od"} (default) is the production
+#'   layout: 2 rows per splint, \verb{_off}/\verb{_def} player columns --
+#'   byte-identical to before this parameter existed. \code{"net"} builds 1
+#'   row per splint and 1 signed (\verb{_net}) column per player (+home,
+#'   -away), for zero-sum targets like WPA where an offense/defense split is
+#'   mechanically unidentified (FABLE-PRIOR-FIX-PLAN.md D2).
 #'
 #' @return List with design matrix components
 #' @family rapm
@@ -430,8 +585,10 @@ add_value_metrics_to_splints <- function(splint_data, player_game_epv = NULL,
 create_rapm_design_matrix <- function(splint_data, min_minutes = 90,
                                        target_type = c("xg", "goals", "epv",
                                                         "wpa", "psv"),
-                                       min_duration = 1.0) {
+                                       min_duration = 1.0,
+                                       mode = c("od", "net")) {
   target_type <- match.arg(target_type)
+  mode <- match.arg(mode)
 
   # Validate splint_data structure
   if (!is.list(splint_data)) {
@@ -474,16 +631,17 @@ create_rapm_design_matrix <- function(splint_data, min_minutes = 90,
   # Step 1: Aggregate player minutes and split into regular/replacement
   pm <- .aggregate_player_minutes(players, splints, min_minutes)
 
-  # Step 2: Build row data (2 rows per splint with game state)
+  # Step 2: Build row data (2 rows per splint with game state; 1 in net mode)
   progress_msg("Building row data (vectorized)...")
-  rd <- .build_rapm_row_data(valid_splints, target_type)
+  rd <- .build_rapm_row_data(valid_splints, target_type, mode = mode)
   row_data <- rd$row_data
   n_rows <- nrow(row_data)
 
   # Step 3: Build sparse player matrix
   progress_msg("Building sparse matrix (vectorized)...")
   sm <- .build_rapm_sparse_matrix(
-    players, valid_splints, pm$player_ids, pm$replacement_player_ids, n_rows
+    players, valid_splints, pm$player_ids, pm$replacement_player_ids, n_rows,
+    mode = mode
   )
 
   # Weights based on duration. The historical 0.01 floor (pmax(.../90, 0.01))
@@ -494,8 +652,13 @@ create_rapm_design_matrix <- function(splint_data, min_minutes = 90,
   # (5/90 ~= 0.056). Dropping it for clarity.
   weights <- row_data$minutes / 90
 
-  progress_msg(sprintf("Design matrix: %d rows, %d player columns (+2 replacement), %d covariates",
-                       n_rows, pm$n_players * 2, 5))
+  if (mode == "net") {
+    progress_msg(sprintf("Design matrix: %d rows, %d player columns (+1 replacement), %d covariates",
+                         n_rows, pm$n_players, 5))
+  } else {
+    progress_msg(sprintf("Design matrix: %d rows, %d player columns (+2 replacement), %d covariates",
+                         n_rows, pm$n_players * 2, 5))
+  }
 
   # Build player mapping with replacement row
   replacement_minutes <- sum(pm$all_player_minutes$total_minutes[
@@ -523,6 +686,7 @@ create_rapm_design_matrix <- function(splint_data, min_minutes = 90,
     n_rows = n_rows,
     target_type = target_type,
     target_name = rd$target_per90_name,
+    mode = mode,
     replacement_player_ids = pm$replacement_player_ids,
     replacement_stats = list(
       n_players = length(pm$replacement_player_ids),
@@ -547,6 +711,11 @@ create_rapm_design_matrix <- function(splint_data, min_minutes = 90,
 #' @param include_covariates Whether to include game state covariates
 #' @param include_league Whether to include league dummies (for multi-league)
 #' @param include_season Whether to include season dummies
+#' @param mode Design matrix mode, passed through to
+#'   \code{\link{create_rapm_design_matrix}}. \code{"od"} (default) is the
+#'   production layout (byte-identical to before this parameter existed);
+#'   \code{"net"} builds the single-column-per-player net design for
+#'   zero-sum targets like WPA (FABLE-PRIOR-FIX-PLAN.md D2).
 #'
 #' @return List with all model inputs
 #' @keywords internal
@@ -555,8 +724,10 @@ prepare_rapm_data <- function(splint_data, min_minutes = 90,
                                                 "wpa", "psv"),
                                include_covariates = TRUE,
                                include_league = NULL,
-                               include_season = NULL) {
+                               include_season = NULL,
+                               mode = c("od", "net")) {
   target_type <- match.arg(target_type)
+  mode <- match.arg(mode)
 
   # Validate required columns exist for target type
   if (target_type == "goals") {
@@ -571,7 +742,8 @@ prepare_rapm_data <- function(splint_data, min_minutes = 90,
   }
 
   # Create base design matrix
-  rapm_data <- create_rapm_design_matrix(splint_data, min_minutes, target_type)
+  rapm_data <- create_rapm_design_matrix(splint_data, min_minutes, target_type,
+                                          mode = mode)
 
   covariate_list <- list()
 
@@ -579,7 +751,15 @@ prepare_rapm_data <- function(splint_data, min_minutes = 90,
     covariate_list$gd <- rapm_data$row_data$gd
     covariate_list$abs_goals <- rapm_data$row_data$gf + rapm_data$row_data$ga
     covariate_list$avg_min <- rapm_data$row_data$avg_min
-    covariate_list$is_home <- as.numeric(rapm_data$row_data$home_away == "home")
+    # F6 (FABLE-PRIOR-FIX-PLAN.md review): net mode has exactly 1 row per
+    # splint, always the home-perspective row (.build_rapm_row_data's net
+    # branch sets home_away = "home" for every row) -- so is_home would be an
+    # all-ones column: unpenalized (default penalize_covariates = FALSE) and
+    # perfectly collinear with the intercept. Only meaningful in od mode,
+    # where it alternates by row.
+    if (mode != "net") {
+      covariate_list$is_home <- as.numeric(rapm_data$row_data$home_away == "home")
+    }
 
     if ("n_offense" %in% names(rapm_data$row_data) &&
         "n_defense" %in% names(rapm_data$row_data)) {
@@ -700,11 +880,17 @@ prepare_rapm_data <- function(splint_data, min_minutes = 90,
     rapm_data$covariate_names <- character(0)
   }
 
-  # Summary stats
+  # Summary stats. Player-column count is 2x in "od" mode (_off/_def per
+  # player); 1x in "net" mode (single signed column per player).
+  n_player_cols <- if (identical(rapm_data$mode, "net")) {
+    rapm_data$n_players
+  } else {
+    rapm_data$n_players * 2
+  }
   rapm_data$summary <- list(
     n_rows = rapm_data$n_rows,
     n_players = rapm_data$n_players,
-    n_player_cols = rapm_data$n_players * 2,
+    n_player_cols = n_player_cols,
     n_covariates = length(rapm_data$covariate_names),
     total_matrix_cols = ncol(rapm_data$X_full),
     target_type = rapm_data$target_type,
@@ -714,7 +900,7 @@ prepare_rapm_data <- function(splint_data, min_minutes = 90,
   target_desc <- if (rapm_data$target_type == "xg") "xG-based" else "Goals-based"
   progress_msg(sprintf("RAPM data ready (%s): %d observations, %d players (%d columns), %d covariates",
                        target_desc, rapm_data$n_rows, rapm_data$n_players,
-                       rapm_data$n_players * 2, length(rapm_data$covariate_names)))
+                       n_player_cols, length(rapm_data$covariate_names)))
 
   rapm_data
 }
