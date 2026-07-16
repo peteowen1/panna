@@ -126,6 +126,14 @@ run_pred_step_isolated <- function(step_name, step_num, code_block) {
       function(code_block, cfg_path, utils_path) {
         if (file.exists(cfg_path)) list2env(readRDS(cfg_path), envir = globalenv())
         if (file.exists(utils_path)) source(utils_path)
+        # The orchestrator (run_predictions_opta.R) attaches dplyr once at
+        # its own top for the whole shared session; a fresh callr subprocess
+        # doesn't inherit that. 02_player_ratings_to_team.R happens to
+        # self-attach it, but 02b_team_skill_features.R doesn't (confirmed
+        # 2026-07-16: 2b failed in isolation with 'could not find function
+        # "bind_rows"') -- attach it here so isolated steps don't silently
+        # depend on which specific script they happen to be.
+        library(dplyr)
         code_block()
         invisible(NULL)
       },
