@@ -511,28 +511,36 @@ vb_publish <- function(paths, repo, tag,
 
   # 5. Verify the live asset list agrees before committing. GitHub's release
   # API can report a stale size immediately after upload (observed in
-  # production 2026-07-16: a 6-byte mismatch on predictions.parquet that was
-  # purely a listing race, not corruption) -- retry a few times before
-  # treating a mismatch as real.
-  verify_delays <- c(2, 5, 10)
+  # production 2026-07-16: a 6-byte mismatch on predictions.parquet that
+  # resolved within 2s -- pure listing race, not corruption). A LONGER stale
+  # window also observed same day/tag (predictions.parquet + predictions.csv
+  # BOTH still mismatched after 3 attempts / 17s total) -- widened budget to
+  # 6 attempts / ~95s total. Report actual byte deltas on final failure so a
+  # persistent (not just slow-to-settle) mismatch is diagnosable, since that
+  # would indicate real corruption rather than API lag.
+  verify_delays <- c(2, 5, 10, 20, 30, 30)
   missing <- character(0)
   mismatched <- character(0)
+  mismatch_detail <- character(0)
   for (verify_attempt in seq_along(c(verify_delays, NA))) {
     listed <- vb_list_assets(repo, tag)
     missing <- character(0)
     mismatched <- character(0)
+    mismatch_detail <- character(0)
     for (e in entries) {
       row <- listed[listed$name == e$name, , drop = FALSE]
       if (nrow(row) == 0L) {
         missing <- c(missing, e$name)
       } else if (!isTRUE(all.equal(row$size[1L], e$bytes))) {
         mismatched <- c(mismatched, e$name)
+        mismatch_detail <- c(mismatch_detail,
+          sprintf("%s: live=%s local=%s", e$name, row$size[1L], e$bytes))
       }
     }
     if (length(missing) == 0L && length(mismatched) == 0L) break
     if (verify_attempt <= length(verify_delays)) {
       cli::cli_alert_warning(
-        "Post-upload verify race (attempt {verify_attempt}/{length(verify_delays)}): retrying in {verify_delays[verify_attempt]}s")
+        "Post-upload verify race (attempt {verify_attempt}/{length(verify_delays)}): {paste(mismatch_detail, collapse = '; ')} -- retrying in {verify_delays[verify_attempt]}s")
       Sys.sleep(verify_delays[verify_attempt])
     }
   }
@@ -541,7 +549,8 @@ vb_publish <- function(paths, repo, tag,
               "vb_error_transient")
   }
   if (length(mismatched) > 0L) {
-    .vb_abort("Post-upload verify: size mismatch for {.val {mismatched}} at {repo}@{tag} (persisted after retries)",
+    .vb_abort(c("Post-upload verify: size mismatch at {repo}@{tag} (persisted after retries)",
+               "x" = paste(mismatch_detail, collapse = "; ")),
               "vb_error_integrity")
   }
 
