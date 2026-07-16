@@ -86,6 +86,63 @@ check_pred_critical <- function(result) {
   }
 }
 
+# 3b. Isolated-step helper (steps 2/2b only) ----
+# Steps 2 (player_ratings_to_team) and 2b (team_skill_features) load
+# 01_match_stats.rds -- 1.9M rows x 421 cols, ~5.9GB in R heap -- just to
+# filter it down to the handful of players in upcoming fixtures. Confirmed
+# root cause of predictions-pipeline.yml dev failures 2026-07-16 (3/5
+# dispatches died with exit 143 / "operation was canceled" right after this
+# load; RSS checkpoint showed ~9.1GB heap BEFORE the skill-estimate
+# computation even starts). Unlike run_pipeline_opta.R, this pipeline runs
+# all steps in ONE shared session, so whatever these two steps allocate
+# becomes a permanent floor for every step after them too (step 2b alone
+# pushed a successful run from 2.7GB to 11.6GB that never came back down).
+# Isolate just these two in their own callr subprocess (same technique as
+# run_pipeline_opta.R's run_step_opta(), panna#87/#128) so their peak is
+# fully released to the OS on exit. Safe here because neither step writes
+# to publish_files or any other cross-step in-memory state -- both
+# communicate solely via their own .rds cache file. Do NOT reuse this for
+# steps that DO rely on in-memory state crossing step boundaries
+# (09/10/10b/10c/10d/12 all write to publish_files via `<<-`; step 13 reads
+# it -- none of that would survive a subprocess boundary).
+.pred_isolated_cfg_path <- file.path("data-raw", "cache-predictions-opta",
+                                     ".step_isolated_config.rds")
+
+.write_pred_isolated_config <- function() {
+  nms <- setdiff(ls(globalenv()),
+                 c("step_results", "pipeline_failed", "pipeline_start"))
+  nms <- nms[!vapply(nms, function(n) is.function(get(n, envir = globalenv())),
+                     logical(1))]
+  saveRDS(mget(nms, envir = globalenv()), .pred_isolated_cfg_path)
+}
+
+run_pred_step_isolated <- function(step_name, step_num, code_block) {
+  .write_pred_isolated_config()
+  isolated <- function() {
+    if (!requireNamespace("callr", quietly = TRUE)) {
+      stop("callr is required to run this step in isolation.", call. = FALSE)
+    }
+    callr::r(
+      function(code_block, cfg_path, utils_path) {
+        if (file.exists(cfg_path)) list2env(readRDS(cfg_path), envir = globalenv())
+        if (file.exists(utils_path)) source(utils_path)
+        code_block()
+        invisible(NULL)
+      },
+      args = list(code_block = code_block, cfg_path = .pred_isolated_cfg_path,
+                  utils_path = file.path("data-raw", "pipeline_utils.R")),
+      wd = getwd(), show = TRUE, spinner = FALSE
+    )
+    invisible(NULL)
+  }
+  result <- run_step(step_name, step_num, isolated, run_steps, pipeline_failed)
+  if (!is.null(result) && identical(result$status, "FAILED")) {
+    pipeline_failed <<- TRUE
+  }
+  gc(verbose = FALSE, full = TRUE)
+  result
+}
+
 # 4. Initialize Pipeline ----
 
 cache_dir <- file.path("data-raw", "cache-predictions-opta")
@@ -171,15 +228,20 @@ step_results[["1b"]] <- run_pipeline_step("refresh_wc2026_squads", "1b", functio
 # and step 02 falls back to last-XI weighting if the parquet is absent.
 
 # 6. Step 2: Player Ratings to Team ----
+# Isolated (see run_pred_step_isolated() above) -- loads the 5.9GB
+# match_stats cache and was the confirmed OOM source in this pipeline.
 
-step_results[[2]] <- run_pipeline_step("player_ratings_to_team", 2, function() {
+step_results[[2]] <- run_pred_step_isolated("player_ratings_to_team", 2, function() {
   source("data-raw/match-predictions-opta/02_player_ratings_to_team.R", local = TRUE)
 })
 check_pred_critical(step_results[[2]])
 
 # 6b. Step 2b: Team Skill Features ----
+# Isolated for the same reason -- the successful 2026-07-15 run showed RSS
+# jump from 2.7GB to 11.6GB across this one step, a floor the rest of the
+# pipeline then carried for the remaining ~10 steps.
 
-step_results[["2b"]] <- run_pipeline_step("team_skill_features", "2b", function() {
+step_results[["2b"]] <- run_pred_step_isolated("team_skill_features", "2b", function() {
   source("data-raw/match-predictions-opta/02b_team_skill_features.R", local = TRUE)
 })
 # 2b is optional — don't abort if it fails
