@@ -554,6 +554,16 @@ if (nrow(upcoming) > 0) {
       message("  Computing date-specific skill estimates for fixtures...")
 
       match_stats <- readRDS(match_stats_path)
+      # Narrow columns BEFORE the row-filter (421 -> ~167 cols): the filter
+      # below copies whatever width it's handed, and everything downstream
+      # (estimate_player_skills_at_date and its internals) reads only the
+      # skill/identity/denominator set. 02b has narrowed since panna#133;
+      # this site was the remaining full-width load (~5.9GB resident for the
+      # whole step). Shared helper so the two sites can't drift again.
+      match_stats <- .narrow_match_stats_for_skills(match_stats)
+      gc(verbose = FALSE)
+      message(sprintf("  Narrowed match_stats to %d columns for skill estimation",
+                      ncol(match_stats)))
       if ("player_id" %in% names(match_stats)) {
         match_stats <- match_stats[match_stats$player_id %in% upcoming_player_ids, ]
         message(sprintf("  Filtered match_stats to %d players (%d rows)",

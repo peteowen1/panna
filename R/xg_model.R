@@ -322,7 +322,11 @@ fit_xg_model <- function(shot_features,
       n_goals = sum(y),
       goal_rate = mean(y),
       params = params,
-      exclude_penalties = exclude_penalties
+      exclude_penalties = exclude_penalties,
+      # Single source for the penalty override (panna#91): downstream consumers
+      # (pannadata enrich_shots_xg.R / build_shot_data.R, worker xg-model.json)
+      # read this from the artifact instead of hardcoding 0.80.
+      penalty_xg = PENALTY_XG
     )
   )
 
@@ -728,6 +732,18 @@ aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0,
 
   # --- Shooting stats ---
   shots_dt <- dt[action_type == "shot"]
+  # Own goals are logged as a "shot" (type-16 Goal, qualifier 28) attributed to
+  # the own-scorer's team, but represent zero shooting output by that player --
+  # exclude them from the shooter's shots/goals/xG family entirely (a stronger
+  # version of the is_penalty carve-out below, which keeps penalties in the raw
+  # totals and only excludes them from the non-penalty variants).
+  if ("is_own_goal" %in% names(shots_dt)) {
+    n_og <- sum(shots_dt$is_own_goal %in% TRUE)
+    if (n_og > 0) {
+      shots_dt <- shots_dt[!(is_own_goal %in% TRUE)]
+      cli::cli_alert_info("Excluded {n_og} own goal{?s} from shooter shooting stats")
+    }
+  }
   if (nrow(shots_dt) > 0) {
     # Handle is_penalty column potentially missing
     if (!"is_penalty" %in% names(shots_dt)) {
@@ -872,7 +888,22 @@ aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0,
     # data.table rejects an inline if/else in `by=`; assign the keys first.
     chain_grp <- if (by_match) c("player_id", "team_id", "match_id")
                  else c("player_id", "team_id")
-    chain_dt <- dt[, .(
+    chain_src <- dt
+    # Chain twin of the shooter own-goal exclusion above: the OG action
+    # carries the CONCEDING side's team_id, so its chain is a possession
+    # artifact of the team it hurt. Drop the OG rows and strip the chain's
+    # "goal" outcome so chain_goals/successful_chains/chain_xg (SPM input
+    # features via 05_spm.R) don't credit a concession as chain production.
+    if ("is_own_goal" %in% names(chain_src)) {
+      og_rows <- chain_src$is_own_goal %in% TRUE
+      if (any(og_rows)) {
+        og_chain_keys <- unique(paste(chain_src$match_id, chain_src$chain_id)[og_rows])
+        chain_src <- chain_src[!og_rows]
+        chain_src[paste(match_id, chain_id) %in% og_chain_keys & chain_outcome == "goal",
+                  chain_outcome := "own_goal"]
+      }
+    }
+    chain_dt <- chain_src[, .(
       chains_involved = data.table::uniqueN(paste(match_id, chain_id)),
       chain_actions = .N,
       successful_chains = data.table::uniqueN(paste(match_id, chain_id)[
@@ -997,16 +1028,25 @@ aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0,
   shots <- dt[action_type == "shot"]
   if (nrow(shots) == 0) return(NULL)
   has_xgot <- "xgot" %in% names(shots)
+  has_og <- "is_own_goal" %in% names(shots)
 
   match_teams <- unique(lu[!is.na(team_id), .(match_id, team_id)])
   st <- shots[, .(
     match_id, shooter_team = team_id, xg = xg,
     xgot = if (has_xgot) xgot else NA_real_,
-    is_goal = result == "success"
+    is_goal = result == "success",
+    is_own_goal = if (has_og) is_own_goal %in% TRUE else FALSE
   )]
-  # attach every shot to the OTHER team in its match -> the conceding team
+  # Own goals are logged with team_id = the own-scorer's team, which is
+  # already the CONCEDING side (unlike a normal shot, where team_id is the
+  # attacking side and the OTHER team concedes). Flip which team an own-goal
+  # shot is attached to so GSAA lands on the keeper who actually faced it,
+  # mirroring the own-goal flip in wp_model.R's
+  # .build_match_results_from_events().
   conc <- match_teams[st, on = "match_id", allow.cartesian = TRUE]
-  conc <- conc[!is.na(team_id) & team_id != shooter_team]
+  conc <- conc[!is.na(team_id) & data.table::fifelse(
+    is_own_goal, team_id == shooter_team, team_id != shooter_team
+  )]
   if (nrow(conc) == 0) return(NULL)
 
   conceded <- conc[, .(
@@ -1059,7 +1099,7 @@ aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0,
 #' @return Data frame with one row per shot containing:
 #'   \itemize{
 #'     \item match_id, minute, team, player_id, player_name
-#'     \item xg: Model-predicted xG (penalties overridden to 0.76)
+#'     \item xg: Model-predicted xG (penalties overridden to \code{PENALTY_XG})
 #'     \item is_goal: Whether the shot resulted in a goal
 #'     \item is_penalty: Whether the shot was a penalty
 #'   }

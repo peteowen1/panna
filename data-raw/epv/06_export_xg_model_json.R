@@ -12,6 +12,11 @@ if (!file.exists(rds)) stop("Missing xG model: ", rds)
 obj <- readRDS(rds)
 booster <- obj$model
 feature_names <- obj$panna_metadata$feature_cols
+penalty_xg <- obj$panna_metadata$penalty_xg
+if (is.null(penalty_xg)) {
+  stop("xg_model.rds panna_metadata lacks penalty_xg (pre-panna#91 artifact) — ",
+       "retrain via fit_xg_model() or patch the rds before exporting")
+}
 cat("features (", length(feature_names), "):", paste(feature_names, collapse = ", "), "\n")
 
 tmp <- tempfile(fileext = ".json")
@@ -33,6 +38,9 @@ envelope <- list(
   feature_names = feature_names,
   nrounds = length(trees),
   base_score = base_score,
+  # Canonical penalty-override value (== panna::PENALTY_XG via panna_metadata).
+  # The worker reads this instead of hardcoding it (panna#91).
+  penalty_xg = penalty_xg,
   trees = trees
 )
 write_json(envelope, out, auto_unbox = TRUE, digits = 10)

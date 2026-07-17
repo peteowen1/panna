@@ -329,6 +329,50 @@ compute_position_multipliers <- function(match_stats, stat_cols = NULL) {
 }
 
 
+#' Narrow a match_stats table to the columns skill estimation reads
+#'
+#' One-call wrapper around \code{.detect_skill_stat_cols()} +
+#' \code{.compute_snapshot_loop_columns()} + the \code{[[}-extraction
+#' construction (a bracket-select would copy the wide table; see the
+#' data.table narrowing gotchas). Exists so every pipeline site that loads
+#' \code{01_match_stats.rds} (predictions steps 02/02b) narrows through ONE
+#' shared code path — the 02/02b inline copies had already diverged once
+#' (02b narrowed since panna#133, 02 didn't), which kept step 02 at the full
+#' 421-column ~5.9GB footprint.
+#'
+#' Two registry-orphan columns are kept defensively: \code{keeper_throws_accuracy}
+#' (listed in \code{.get_psr_efficiency_cols()} but missing from the skill
+#' registries — a registry desync, not dead data) and \code{poss_won_att_ratio}
+#' (computed into the cache by \code{.calculate_opta_derived_features()} but
+#' matched by no detector). Dropping them belongs to a deliberate registry
+#' cleanup, not a narrowing pass.
+#'
+#' @param match_stats The full-width match_stats data.frame/data.table.
+#' @param extra_cols Identity/context columns to always keep. Default covers
+#'   the predictions-pipeline consumers (\code{estimate_player_skills()} and
+#'   its position/denominator internals).
+#' @return A narrowed data.table (column references shared with the input,
+#'   not copied — the dropped columns free at the next \code{gc()}).
+#' @keywords internal
+.narrow_match_stats_for_skills <- function(match_stats,
+                                           extra_cols = c("player_id", "player_name",
+                                                          "match_date", "position",
+                                                          "total_minutes")) {
+  stat_cols <- .detect_skill_stat_cols(match_stats)
+  needed <- .compute_snapshot_loop_columns(
+    available_cols = names(match_stats),
+    stat_cols = stat_cols,
+    extra_cols = extra_cols
+  )
+  needed <- union(needed, intersect(c("keeper_throws_accuracy", "poss_won_att_ratio"),
+                                    names(match_stats)))
+  data.table::setDT(stats::setNames(
+    lapply(needed, function(cc) match_stats[[cc]]),
+    needed
+  ))
+}
+
+
 # ============================================================================
 # Core skill estimation
 # ============================================================================

@@ -10,7 +10,7 @@
 library(dplyr)
 devtools::load_all()
 
-cache_dir <- file.path("data-raw", "cache-opta")
+if (!exists("cache_dir", inherits = FALSE)) cache_dir <- file.path("data-raw", "cache-opta")
 
 # panna#87 OOM mitigation (option A): env-gated CV skip. When OPTA_FIXED_LAMBDA
 # is set (any non-empty value, e.g. "1" in the GHA workflow), skip cv.glmnet and
@@ -161,7 +161,7 @@ cat("Saved to cache-opta/04_rapm.rds\n")
 # Fit RAPM on additional value metric targets if available on splints
 
 # D6 (FABLE-PRIOR-FIX-PLAN.md): experimental gate, default FALSE -- the cloud
-# pipeline never runs the multi-target (EPV/WPA/PSV) section until promotion.
+# pipeline never runs the multi-target (EPV/WPA) section until promotion.
 # inherits = FALSE so a same-named object from an enclosing/parent scope
 # (e.g. dplyr::sample_n-style collision) can't silently flip this on.
 run_multi_target <- if (exists("run_multi_target", inherits = FALSE)) run_multi_target else FALSE
@@ -170,7 +170,11 @@ if (run_multi_target) {
   # Reload splints (freed earlier)
   splint_data <- readRDS(file.path(cache_dir, "03_splints.rds"))
 
-  value_targets <- c("epv", "wpa", "psv")
+  # PSV removed from RAPM (FABLE-PRIOR-FIX-PLAN.md D3) -- no per-splint
+  # box-score count cache exists, and PSV already has its own standalone
+  # pipeline (R/psr.R). EPV/WPA now use true per-splint attribution (Step 3)
+  # instead of the whole-match-value x duration-proration join.
+  value_targets <- c("epv", "wpa")
   available_targets <- character(0)
   for (tgt in value_targets) {
     home_col <- paste0(tgt, "_home")
@@ -189,11 +193,27 @@ if (run_multi_target) {
       cat(sprintf("\n--- Fitting RAPM for target: %s ---\n", tgt))
 
       tryCatch({
+        # FABLE-PRIOR-FIX-PLAN.md D2/Step 5: WPA MUST use mode = "net", never
+        # "od". Empirically confirmed (not just the plan's -0.949 estimate on
+        # the old proration bug): fitting a truly zero-sum target (Step 3's
+        # per-splint WPA, wpa_home == -wpa_away exactly) in od mode drives
+        # offense/defense to cor = -1.0000 EXACTLY -- a ridge fit on a
+        # zero-sum target is symmetric under the (row, off/def, sign) swap,
+        # so the unique ridge-regularized solution is a fixed point of that
+        # symmetry (offense = -defense for every player). That would trip the
+        # Step-1 D5 tripwire below unconditionally for every WPA fit,
+        # aborting this whole script before ANY multi-target artifact (incl.
+        # epv, already fit) gets saved -- the .check_degenerate_multi_target()
+        # loop runs over every successfully-fit target before the one
+        # saveRDS() call, uncaught by this tryCatch. xg/goals/epv keep "od"
+        # (D1: not zero-sum between teams, an O/D split is meaningful).
+        tgt_mode <- if (tgt == "wpa") "net" else "od"
         rapm_data_tgt <- prepare_rapm_data(
           splint_data,
           min_minutes = MIN_MINUTES_RAPM_FIT,
           target_type = tgt,
-          include_covariates = TRUE
+          include_covariates = TRUE,
+          mode = tgt_mode
         )
 
         # panna#87: per-target mini-CV grid centered on that target's own

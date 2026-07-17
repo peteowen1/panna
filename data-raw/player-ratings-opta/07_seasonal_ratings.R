@@ -9,7 +9,7 @@
 library(dplyr)
 devtools::load_all()
 
-cache_dir <- file.path("data-raw", "cache-opta")
+if (!exists("cache_dir", inherits = FALSE)) cache_dir <- file.path("data-raw", "cache-opta")
 
 # extract_season_end_year() is defined in R/utils.R
 

@@ -41,7 +41,9 @@ opta_dir     <- file.path("..", "pannadata", "data", "opta")
 granularity <- if (exists("asof_granularity", inherits = FALSE)) asof_granularity else "monthly"  # "monthly"|"weekly"|"yearly"
 halflife    <- if (exists("panna_halflife_days", inherits = FALSE)) panna_halflife_days else 365L
 prune_years <- if (exists("asof_prune_years", inherits = FALSE)) asof_prune_years else 8L
-upload      <- if (exists("upload_career_panna_asof", inherits = FALSE)) upload_career_panna_asof else FALSE
+# Plain exists() — see 09_career_panna.R: inherits = FALSE can't see a
+# driver-set global through source(local = TRUE), silently skipping the upload.
+upload      <- if (exists("upload_career_panna_asof")) upload_career_panna_asof else FALSE
 resume      <- if (exists("asof_resume", inherits = FALSE)) asof_resume else TRUE
 
 # Sample-size lambda formula (validated on pruned data; see _validate_lambda_pruned.R).

@@ -10,7 +10,7 @@
 library(dplyr)
 devtools::load_all()
 
-cache_dir <- file.path("data-raw", "cache-opta")
+if (!exists("cache_dir", inherits = FALSE)) cache_dir <- file.path("data-raw", "cache-opta")
 use_xmetrics_features <- if (exists("use_xmetrics_features")) use_xmetrics_features else TRUE
 
 # 2. Load Data ----
@@ -249,6 +249,96 @@ cat("\n=== SPM Feature Importance (Top 20) ===\n")
 importance <- get_spm_feature_importance(spm_model, n = 20)
 print(importance)
 
+# F4 (FABLE-PRIOR-FIX-PLAN.md review): offense/defense SPM fit+blend, shared
+# by the base path (Sections 10-11 below) and the EPV multi-target branch
+# (Section 14) -- previously ~65 lines duplicated verbatim between the two.
+# Purely mechanical hoist: identical fit_spm_model()/fit_spm_xgb() calls,
+# hyperparameters, and CALL ORDER (offense EN -> offense XGB -> defense EN ->
+# defense XGB -> offense predict/blend -> defense predict/blend) as the
+# pre-hoist base path, so CV fold assignment / xgb random draws are
+# unaffected by the hoist.
+.fit_od_spm_blend <- function(offense_train, defense_train, offense_cols, defense_cols,
+                               def_lower, def_upper, player_stats) {
+  cat("\n--- Offense Elastic Net ---\n")
+  offense_spm_glmnet <- fit_spm_model(
+    offense_train,
+    predictor_cols = offense_cols,
+    alpha = 0.5,
+    nfolds = 5,          # panna#87: 10 -> 5
+    weight_by_minutes = TRUE
+  )
+
+  cat("\n--- Offense XGBoost ---\n")
+  offense_spm_xgb <- fit_spm_xgb(
+    offense_train,
+    predictor_cols = offense_cols,
+    nfolds = 5,          # panna#87: 10 -> 5
+    max_depth = 4,
+    eta = 0.02,
+    nrounds = 1000,
+    early_stopping_rounds = 20,
+    weight_by_minutes = TRUE,
+    weight_transform = "sqrt",
+    verbose = 0
+  )
+
+  cat("\n--- Defense Elastic Net ---\n")
+  defense_spm_glmnet <- fit_spm_model(
+    defense_train,
+    predictor_cols = defense_cols,
+    alpha = 0.5,
+    nfolds = 5,          # panna#87: 10 -> 5
+    weight_by_minutes = TRUE,
+    lower_limits = def_lower,
+    upper_limits = def_upper
+  )
+
+  cat("\n--- Defense XGBoost ---\n")
+  defense_spm_xgb <- fit_spm_xgb(
+    defense_train,
+    predictor_cols = defense_cols,
+    nfolds = 5,          # panna#87: 10 -> 5
+    max_depth = 4,
+    eta = 0.02,
+    nrounds = 1000,
+    early_stopping_rounds = 20,
+    weight_by_minutes = TRUE,
+    weight_transform = "sqrt",
+    verbose = 0
+  )
+
+  # Offense blend
+  offense_glmnet_pred <- calculate_spm_ratings(player_stats, offense_spm_glmnet)
+  offense_xgb_pred <- calculate_spm_ratings_xgb(player_stats, offense_spm_xgb)
+  offense_spm_ratings <- offense_glmnet_pred %>%
+    rename(offense_spm_glmnet = spm) %>%
+    inner_join(
+      offense_xgb_pred %>% select(player_id, offense_spm_xgb = spm),
+      by = "player_id"
+    ) %>%
+    mutate(offense_spm = 0.5 * offense_spm_glmnet + 0.5 * offense_spm_xgb)
+
+  # Defense blend
+  defense_glmnet_pred <- calculate_spm_ratings(player_stats, defense_spm_glmnet)
+  defense_xgb_pred <- calculate_spm_ratings_xgb(player_stats, defense_spm_xgb)
+  defense_spm_ratings <- defense_glmnet_pred %>%
+    rename(defense_spm_glmnet = spm) %>%
+    inner_join(
+      defense_xgb_pred %>% select(player_id, defense_spm_xgb = spm),
+      by = "player_id"
+    ) %>%
+    mutate(defense_spm = 0.5 * defense_spm_glmnet + 0.5 * defense_spm_xgb)
+
+  list(
+    offense_spm_glmnet = offense_spm_glmnet,
+    offense_spm_xgb = offense_spm_xgb,
+    defense_spm_glmnet = defense_spm_glmnet,
+    defense_spm_xgb = defense_spm_xgb,
+    offense_spm_ratings = offense_spm_ratings,
+    defense_spm_ratings = defense_spm_ratings
+  )
+}
+
 # 10. Separate Offense/Defense SPM ----
 
 cat("\n=== Fitting Separate Offense/Defense SPM ===\n")
@@ -318,29 +408,6 @@ if (length(chain_offense) > 0) {
 
 # Filter to available columns
 offense_cols <- intersect(offense_cols, names(spm_train_data))
-
-cat("\n--- Offense Elastic Net ---\n")
-offense_spm_glmnet <- fit_spm_model(
-  offense_train,
-  predictor_cols = offense_cols,
-  alpha = 0.5,
-  nfolds = 5,          # panna#87: 10 -> 5
-  weight_by_minutes = TRUE
-)
-
-cat("\n--- Offense XGBoost ---\n")
-offense_spm_xgb <- fit_spm_xgb(
-  offense_train,
-  predictor_cols = offense_cols,
-  nfolds = 5,          # panna#87: 10 -> 5
-  max_depth = 4,
-  eta = 0.02,
-  nrounds = 1000,
-  early_stopping_rounds = 20,
-  weight_by_minutes = TRUE,
-  weight_transform = "sqrt",
-  verbose = 0
-)
 
 # Defense training data
 defense_train <- spm_train_data %>%
@@ -428,63 +495,25 @@ defense_bad_features <- c(
 def_lower <- setNames(rep(0,    length(defense_bad_features)),  defense_bad_features)
 def_upper <- setNames(rep(0,    length(defense_good_features)), defense_good_features)
 
-defense_spm_glmnet <- fit_spm_model(
-  defense_train,
-  predictor_cols = defense_cols,
-  alpha = 0.5,
-  nfolds = 5,          # panna#87: 10 -> 5
-  weight_by_minutes = TRUE,
-  lower_limits = def_lower,
-  upper_limits = def_upper
-)
-
-cat("\n--- Defense XGBoost ---\n")
-defense_spm_xgb <- fit_spm_xgb(
-  defense_train,
-  predictor_cols = defense_cols,
-  nfolds = 5,          # panna#87: 10 -> 5
-  max_depth = 4,
-  eta = 0.02,
-  nrounds = 1000,
-  early_stopping_rounds = 20,
-  weight_by_minutes = TRUE,
-  weight_transform = "sqrt",
-  verbose = 0
-)
-
 # 11. Generate Blended O/D SPM Predictions ----
 
 cat("\n=== Generating Blended O/D SPM Predictions ===\n")
 
-# Offense blend
-offense_glmnet_pred <- calculate_spm_ratings(player_stats, offense_spm_glmnet)
-offense_xgb_pred <- calculate_spm_ratings_xgb(player_stats, offense_spm_xgb)
-
-offense_spm_ratings <- offense_glmnet_pred %>%
-  rename(offense_spm_glmnet = spm) %>%
-  inner_join(
-    offense_xgb_pred %>% select(player_id, offense_spm_xgb = spm),
-    by = "player_id"
-  ) %>%
-  mutate(offense_spm = 0.5 * offense_spm_glmnet + 0.5 * offense_spm_xgb)
-
-# Defense blend
-defense_glmnet_pred <- calculate_spm_ratings(player_stats, defense_spm_glmnet)
-defense_xgb_pred <- calculate_spm_ratings_xgb(player_stats, defense_spm_xgb)
-
-defense_spm_ratings <- defense_glmnet_pred %>%
-  rename(defense_spm_glmnet = spm) %>%
-  inner_join(
-    defense_xgb_pred %>% select(player_id, defense_spm_xgb = spm),
-    by = "player_id"
-  ) %>%
-  mutate(defense_spm = 0.5 * defense_spm_glmnet + 0.5 * defense_spm_xgb)
+# F4: fit + blend via the shared helper (defined above Section 10).
+od_fit <- .fit_od_spm_blend(offense_train, defense_train, offense_cols, defense_cols,
+                             def_lower, def_upper, player_stats)
+offense_spm_glmnet <- od_fit$offense_spm_glmnet
+offense_spm_xgb <- od_fit$offense_spm_xgb
+defense_spm_glmnet <- od_fit$defense_spm_glmnet
+defense_spm_xgb <- od_fit$defense_spm_xgb
+offense_spm_ratings <- od_fit$offense_spm_ratings
+defense_spm_ratings <- od_fit$defense_spm_ratings
+rm(od_fit)
 
 cat("Offense SPM predictions:", nrow(offense_spm_ratings), "\n")
 cat("Defense SPM predictions:", nrow(defense_spm_ratings), "\n")
 
 # Free memory
-rm(offense_glmnet_pred, offense_xgb_pred, defense_glmnet_pred, defense_xgb_pred)
 rm(offense_train, defense_train, spm_train_data); gc(verbose = FALSE)
 
 # 12. Combined SPM Ratings ----
@@ -570,28 +599,85 @@ if (run_multi_target && file.exists(multi_rapm_path)) {
         data.table::setnames(tgt_ratings, rapm_col, "rapm")
       }
 
-      # Prepare regression data: join player stats with RAPM ratings
-      spm_data <- prepare_spm_regression_data(player_stats, tgt_ratings)
+      if (tgt == "epv") {
+        # FABLE-PRIOR-FIX-PLAN.md Step 5 (fixes dead layer L1): EPV keeps the
+        # O/D split (D1: not zero-sum -- both teams accrue their own
+        # threat), so its SPM prior needs an offense/defense PAIR, exactly
+        # the base-path pattern above (section 10: two models + glmnet/xgb
+        # blend each) -- NOT the single combined fit this loop used to
+        # produce, which meant offense_spm/defense_spm never existed for
+        # EPV and 06_xrapm.R's O/D prior had nothing to align against.
+        if (!all(c("offense", "defense") %in% names(tgt_ratings))) {
+          cli::cli_abort("Multi-target SPM for {.val {tgt}}: RAPM ratings missing {.field offense}/{.field defense} columns (expected an O/D-mode base RAPM fit).")
+        }
 
-      if (nrow(spm_data) < 50) {
-        cat(sprintf("  Skipping %s: only %d players with both stats and RAPM\n",
-                    tgt, nrow(spm_data)))
-        next
+        spm_train_tgt <- player_stats %>%
+          inner_join(tgt_ratings %>% select(player_id, offense, defense), by = "player_id")
+
+        if (nrow(spm_train_tgt) < 50) {
+          cat(sprintf("  Skipping %s SPM: only %d players with both stats and RAPM\n",
+                      tgt, nrow(spm_train_tgt)))
+          next
+        }
+
+        offense_train_tgt <- spm_train_tgt %>% mutate(rapm = offense)
+        defense_train_tgt <- spm_train_tgt %>% mutate(rapm = defense)
+
+        # F4 (FABLE-PRIOR-FIX-PLAN.md review): same offense/defense
+        # fit+blend helper the base path (Sections 10-11 above) uses -- same
+        # directional sign constraints (def_lower/def_upper, keyed by
+        # feature name: RAPM defense uses negative=good, so genuinely
+        # defensive features must have non-positive coefficients), same
+        # predictor_cols, same call order.
+        od_fit_tgt <- .fit_od_spm_blend(offense_train_tgt, defense_train_tgt,
+                                         offense_cols, defense_cols,
+                                         def_lower, def_upper, player_stats)
+        offense_glmnet_tgt <- od_fit_tgt$offense_spm_glmnet
+        offense_xgb_tgt <- od_fit_tgt$offense_spm_xgb
+        defense_glmnet_tgt <- od_fit_tgt$defense_spm_glmnet
+        defense_xgb_tgt <- od_fit_tgt$defense_spm_xgb
+        offense_spm_ratings_tgt <- od_fit_tgt$offense_spm_ratings
+        defense_spm_ratings_tgt <- od_fit_tgt$defense_spm_ratings
+        rm(od_fit_tgt)
+
+        combined_spm_tgt <- offense_spm_ratings_tgt %>%
+          select(player_id, player_name, total_minutes, offense_spm) %>%
+          left_join(defense_spm_ratings_tgt %>% select(player_id, defense_spm), by = "player_id")
+
+        multi_spm_results[[tgt]] <- list(
+          offense_model_glmnet = offense_glmnet_tgt,
+          offense_model_xgb = offense_xgb_tgt,
+          defense_model_glmnet = defense_glmnet_tgt,
+          defense_model_xgb = defense_xgb_tgt,
+          ratings = combined_spm_tgt
+        )
+        cat(sprintf("  %s SPM (O/D pair): %d players rated\n", toupper(tgt), nrow(combined_spm_tgt)))
+
+      } else if (tgt == "wpa") {
+        # D2: WPA's off/def split is mechanically unidentified (near-zero-sum
+        # target -- confirmed exactly zero-sum since Step 3), so a single net
+        # SPM fit predicting the net base RAPM (`rapm`, from 04_rapm.R's
+        # mode = "net" fit for wpa) is correct BY DESIGN, not a gap to fix.
+        spm_data_tgt <- prepare_spm_regression_data(player_stats, tgt_ratings)
+
+        if (nrow(spm_data_tgt) < 50) {
+          cat(sprintf("  Skipping %s SPM: only %d players with both stats and RAPM\n",
+                      tgt, nrow(spm_data_tgt)))
+          next
+        }
+
+        spm_model_tgt <- fit_spm_opta(spm_data_tgt)
+        spm_ratings_tgt <- calculate_spm_ratings(player_stats, spm_model_tgt)
+
+        multi_spm_results[[tgt]] <- list(
+          model = spm_model_tgt,
+          ratings = spm_ratings_tgt
+        )
+        cat(sprintf("  %s SPM (net): %d players rated\n", toupper(tgt), nrow(spm_ratings_tgt)))
+
+      } else {
+        cli::cli_abort("Multi-target SPM: unknown target {.val {tgt}} (expected {.val epv} or {.val wpa}).")
       }
-
-      # Fit SPM
-      spm_model <- fit_spm_opta(spm_data)
-      # Args are (player_features, spm_model) — they were REVERSED here since
-      # inception, so every per-target call threw inside the tryCatch and
-      # 05_spm_multi.rds was silently never written (2026-07-07 review
-      # finding; compare the correct call in the base-SPM section).
-      spm_ratings <- calculate_spm_ratings(player_stats, spm_model)
-
-      multi_spm_results[[tgt]] <- list(
-        model = spm_model,
-        ratings = spm_ratings
-      )
-      cat(sprintf("  %s SPM: %d players rated\n", toupper(tgt), nrow(spm_ratings)))
 
     }, error = function(e) {
       cat(sprintf("  Skipping %s SPM: %s\n", tgt, e$message))

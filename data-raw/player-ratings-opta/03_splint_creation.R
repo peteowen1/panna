@@ -265,41 +265,77 @@ cat("npxgd_per_90 summary:\n")
 print(summary(splint_data$splints$npxgd_per_90))
 
 # 8. Add Value Metrics to Splints (optional) ----
-# If per-game EPV/WPA/PSV caches exist, add them to splints for multi-target RAPM
+# If per-action EPV/WPA streams (or a per-game PSV cache) exist, add them to
+# splints for multi-target RAPM.
 
 use_value_metrics <- if (exists("use_value_metrics")) use_value_metrics else TRUE
 
+# D6 (FABLE-PRIOR-FIX-PLAN.md): same experimental gate as 04-07. The EPV/WPA
+# per-action streams (Step 2) feed Step 3's true per-splint attribution
+# (add_value_metrics_to_splints()) -- when the pipeline operator has opted
+# into multi-target RAPM (run_multi_target <- TRUE), a missing stream parquet
+# is a pipeline bug, not an optional feature: abort loudly instead of
+# silently producing splints without epv_home/wpa_home (repo rule: no silent
+# fallback on missing required data). When FALSE (default), EPV/WPA are
+# skipped entirely -- matches the pre-Step-3 behaviour of the cloud pipeline,
+# which never ran the multi-target section anyway. inherits = FALSE so a
+# same-named object from an enclosing/parent scope can't silently flip this
+# on (same reasoning as the other pipeline config guards).
+run_multi_target <- if (exists("run_multi_target", inherits = FALSE)) run_multi_target else FALSE
+
 if (use_value_metrics) {
-  epv_cache_dir <- "data-raw/cache/epv/players"
+  epv_action_dir <- "data-raw/cache/epv/players"
 
-  # Load per-game EPV (if available)
-  epv_files <- list.files(epv_cache_dir, pattern = "^player_game_epv_", full.names = TRUE)
-  player_game_epv <- if (length(epv_files) > 0) {
-    cat("\n=== Adding per-game EPV to splints ===\n")
-    dt <- data.table::rbindlist(lapply(epv_files, readRDS), fill = TRUE)
-    if (nrow(dt) == 0) { cat("  Warning: EPV files loaded but 0 rows\n"); NULL } else dt
-  } else NULL
+  player_action_epv <- NULL
+  match_action_wpa <- NULL
 
-  # Load per-game WPA (if available)
-  wpa_files <- list.files(epv_cache_dir, pattern = "^player_game_wpa_", full.names = TRUE)
-  player_game_wpa <- if (length(wpa_files) > 0) {
-    cat("=== Adding per-game WPA to splints ===\n")
-    dt <- data.table::rbindlist(lapply(wpa_files, readRDS), fill = TRUE)
-    if (nrow(dt) == 0) { cat("  Warning: WPA files loaded but 0 rows\n"); NULL } else dt
-  } else NULL
+  if (run_multi_target) {
+    epv_action_files <- list.files(epv_action_dir, pattern = "^player_action_epv_.*\\.parquet$",
+                                    full.names = TRUE)
+    if (length(epv_action_files) == 0) {
+      cli::cli_abort(c(
+        "run_multi_target = TRUE but no {.file player_action_epv_*.parquet} files found in {.path {epv_action_dir}}.",
+        "i" = "Run data-raw/epv/02_calculate_player_epv.R first (FABLE-PRIOR-FIX-PLAN.md Step 2)."
+      ))
+    }
+    cat("\n=== Adding per-splint EPV to splints (Step 3 per-action attribution) ===\n")
+    player_action_epv <- data.table::rbindlist(
+      lapply(epv_action_files, arrow::read_parquet), fill = TRUE)
+    if (nrow(player_action_epv) == 0) {
+      cli::cli_abort("{.file player_action_epv_*.parquet} files found but contained 0 rows.")
+    }
 
-  # Load per-game PSV (if available from skills pipeline)
+    wpa_action_files <- list.files(epv_action_dir, pattern = "^match_action_wpa_.*\\.parquet$",
+                                    full.names = TRUE)
+    if (length(wpa_action_files) == 0) {
+      cli::cli_abort(c(
+        "run_multi_target = TRUE but no {.file match_action_wpa_*.parquet} files found in {.path {epv_action_dir}}.",
+        "i" = "Run data-raw/epv/06_calculate_wpa.R first (FABLE-PRIOR-FIX-PLAN.md Step 2)."
+      ))
+    }
+    cat("=== Adding per-splint WPA to splints (Step 3 per-action attribution) ===\n")
+    match_action_wpa <- data.table::rbindlist(
+      lapply(wpa_action_files, arrow::read_parquet), fill = TRUE)
+    if (nrow(match_action_wpa) == 0) {
+      cli::cli_abort("{.file match_action_wpa_*.parquet} files found but contained 0 rows.")
+    }
+  }
+
+  # Load per-game PSV (if available from skills pipeline). Unchanged by
+  # Step 3 (D3): PSV keeps the whole-match-value x duration-proration path
+  # inside add_value_metrics_to_splints() -- no per-splint box-score count
+  # cache exists, and PSV has its own standalone pipeline (R/psr.R).
   psv_cache <- file.path("data-raw", "cache-skills", "player_game_psv.rds")
   player_game_psv <- if (file.exists(psv_cache)) {
     cat("=== Adding per-game PSV to splints ===\n")
     readRDS(psv_cache)
   } else NULL
 
-  if (!is.null(player_game_epv) || !is.null(player_game_wpa) || !is.null(player_game_psv)) {
+  if (!is.null(player_action_epv) || !is.null(match_action_wpa) || !is.null(player_game_psv)) {
     splint_data <- add_value_metrics_to_splints(
       splint_data,
-      player_game_epv = player_game_epv,
-      player_game_wpa = player_game_wpa,
+      player_action_epv = player_action_epv,
+      match_action_wpa = match_action_wpa,
       player_game_psv = player_game_psv
     )
     # Re-save with value metrics
@@ -311,8 +347,8 @@ if (use_value_metrics) {
     if ("psv_home" %in% names(splint_data$splints)) added <- c(added, "PSV")
     cat(sprintf("Value metrics added to splints: %s\n", paste(added, collapse = ", ")))
   } else {
-    cat("\nNo per-game value metric caches found — skipping value metrics on splints.\n")
-    cat("Run EPV/WPA pipeline steps first to enable multi-target RAPM.\n")
+    cat("\nNo value metric sources found — skipping value metrics on splints.\n")
+    cat("Set run_multi_target <- TRUE and run the EPV/WPA pipeline steps first to enable multi-target RAPM.\n")
   }
 }
 

@@ -58,59 +58,26 @@ if (!exists("force_rebuild_from", inherits = FALSE)) force_rebuild_from <- NULL
 
 source("data-raw/pipeline_utils.R")
 
-# Each step runs in its OWN fresh R subprocess (via callr) so memory is fully
-# released to the OS between steps. gc() alone is not enough: R does not return
-# freed heap to the OS, so the single-session pipeline accumulated the
-# high-water mark of the heaviest step (~10GB) as a permanent baseline and
-# OOM'd step 05 on the 16GB runner -- even though the heaviest SINGLE step
-# (RAPM) peaks at only ~12.6GB. Steps communicate solely through the on-disk
-# cache, so isolation is safe; the orchestrator process itself stays tiny, and
-# max memory = one subprocess's peak instead of the cumulative sum.
+# Each step runs in its OWN fresh R subprocess via the shared
+# run_step_isolated() (pipeline_utils.R) — see its docs for the memory
+# rationale (panna#87/#128) and the child environment contract. Config is
+# snapshotted ONCE here (after all config + force-rebuild handling, before
+# any step) and reloaded into each subprocess's globalenv.
 #
-# Config (leagues, run_steps, force_rebuild_from, ...) is snapshotted to disk
-# once and reloaded into each subprocess's globalenv before its code runs.
+# NB since the 2026-07-17 dedup the child also does library(dplyr) +
+# devtools::load_all() unconditionally (previously only the predictions
+# pipeline's child did) — step scripts' own load_all headers are now
+# belt-and-braces, not load-bearing. That asymmetry was the WS-3 bug.
 .write_pipeline_config <- function() {
-  nms <- setdiff(ls(globalenv()),
-                 c("step_results", "pipeline_failed", "pipeline_start"))
-  nms <- nms[!vapply(nms, function(n) is.function(get(n, envir = globalenv())),
-                     logical(1))]
-  saveRDS(mget(nms, envir = globalenv()),
-          file.path(cache_dir, ".pipeline_config.rds"))
+  write_isolated_config(file.path(cache_dir, ".pipeline_config.rds"))
 }
 
 run_step_opta <- function(step_name, step_num, code_block) {
-  isolated <- function() {
-    if (!requireNamespace("callr", quietly = TRUE)) {
-      stop("callr is required to run pipeline steps in isolation.", call. = FALSE)
-    }
-    callr::r(
-      function(code_block, cfg_path, utils_path) {
-        if (file.exists(cfg_path)) list2env(readRDS(cfg_path), envir = globalenv())
-        # Re-source the shared pipeline helpers INSIDE the child. The subprocess
-        # inherits none of the orchestrator's lexically-defined functions:
-        # load_all() attaches only the package (R/), and .write_pipeline_config()
-        # ships data, not functions. Steps that call save_cache_with_meta() /
-        # validate_step_output() (01, 03, 04, 07) would otherwise die with
-        # "could not find function" at their save -- after doing all the work.
-        if (file.exists(utils_path)) source(utils_path)
-        code_block()
-        # Discard the step's return value: steps communicate via the on-disk
-        # cache, so returning it is pure waste -- and callr serializes the
-        # return back across the process boundary, which at step 01's ~14.9GB
-        # peak (a multi-GB raw_opta_data) tipped the subprocess over. Return
-        # NULL so callr ships nothing back.
-        invisible(NULL)
-      },
-      args = list(code_block = code_block,
-                  cfg_path = file.path("data-raw", "cache-opta", ".pipeline_config.rds"),
-                  utils_path = file.path("data-raw", "pipeline_utils.R")),
-      wd = getwd(), show = TRUE, spinner = FALSE
-    )
-    invisible(NULL)
-  }
-  result <- run_step(step_name, step_num, isolated, run_steps)
-  gc(verbose = FALSE, full = TRUE)
-  result
+  run_step_isolated(
+    step_name, step_num, code_block,
+    cfg_path = file.path("data-raw", "cache-opta", ".pipeline_config.rds"),
+    run_steps = run_steps
+  )
 }
 
 # 4. Initialize Pipeline ----
@@ -231,6 +198,11 @@ if (isTRUE(pipeline_failed)) {
   step_results[[9]] <- run_step_opta("export_ratings", 9, function() {
     source("data-raw/player-ratings-opta/09_export_ratings.R", local = TRUE)
   })
+  # Last step, but check_step still matters: it sets pipeline_failed, which the
+  # workflow's `if (isTRUE(pipeline_failed)) quit(status = 1)` reads — without
+  # this, a failed export prints FAILED in the summary yet the job stays green
+  # (exactly how ratings-data went silently stale 2026-06-11 → 2026-07-17).
+  check_step(9, "export_ratings")
 }
 
 # 14. Summary ----

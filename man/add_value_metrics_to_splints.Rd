@@ -6,37 +6,60 @@
 \usage{
 add_value_metrics_to_splints(
   splint_data,
-  player_game_epv = NULL,
-  player_game_wpa = NULL,
+  player_action_epv = NULL,
+  match_action_wpa = NULL,
   player_game_psv = NULL
 )
 }
 \arguments{
 \item{splint_data}{List with \code{splints} and \code{players} data.frames
-(from \code{create_all_splints()}).}
+(from \code{create_all_splints()}). \code{splints} must carry
+\code{start_minute} and \code{splint_id} when \code{player_action_epv}
+or \code{match_action_wpa} is supplied (the boundary cut needs them).}
 
-\item{player_game_epv}{Per-game EPV from \code{aggregate_player_game_epv()}.
-If NULL, EPV columns are not added.}
+\item{player_action_epv}{Per-action, per-credited-player EPV stream from
+\code{build_action_epv_credit()}
+(\code{data-raw/epv/02_calculate_player_epv.R}). Columns:
+\code{match_id}, \code{period_id}, \code{time_seconds}, \code{team_id},
+\code{player_id}, \code{credit}. If NULL, \code{epv_home}/\code{epv_away}
+are not added.}
 
-\item{player_game_wpa}{Per-game WPA from \code{aggregate_player_game_wpa()}.
-If NULL, WPA columns are not added.}
+\item{match_action_wpa}{Per-action, home-perspective, UNcentered WP-delta
+stream (\code{data-raw/epv/06_calculate_wpa.R}). Columns:
+\code{match_id}, \code{period_id}, \code{time_seconds},
+\code{wp_delta_home}. If NULL, \code{wpa_home}/\code{wpa_away} are not
+added.}
 
 \item{player_game_psv}{Per-game PSV from \code{calculate_psv()}.
 If NULL, PSV columns are not added.}
 }
 \value{
 The \code{splint_data} list with additional columns on the
-\code{splints} data.frame: \code{epv_home/epv_away},
-\code{wpa_home/wpa_away}, \code{psv_home/psv_away}.
+\code{splints} data.frame: \code{epv_home}/\code{epv_away} (per-splint
+sums -- NOT zero-sum, both teams accrue their own threat),
+\code{wpa_home}/\code{wpa_away} (per-splint sums, EXACTLY zero-sum by
+construction: \code{wpa_away = -wpa_home}), \code{psv_home}/\code{psv_away}
+(whole-match value prorated by splint duration).
 }
 \description{
-Joins per-game player value metrics (EPV, WPA, PSV) to splint data,
-aggregating to team-level totals within each splint. Values are prorated
-by splint duration relative to total match minutes.
+Joins per-splint player value metrics (EPV, WPA, PSV) to splint data.
 }
 \details{
-This allows RAPM to be trained on EPV, WPA, or PSV as response variables
-alongside the default xG target.
+EPV and WPA use TRUE per-splint attribution (FABLE-PRIOR-FIX-PLAN.md
+D1/D2, Step 3): the per-action credit streams from the EPV/WPA pipelines
+(Step 2) are cut at splint boundaries using the same \code{findInterval}
+convention as the xG shot attribution (\code{calculate_splint_npxgd_fast()},
+R/splint_creation.R) -- ties at a boundary timestamp go to the splint
+STARTING there, and actions at/after the last boundary attribute to the
+final splint. This replaces the old whole-match-value x
+duration-proration join, under which the target could not vary within a
+match (FABLE-PRIOR-FIX-PLAN.md C1: duration cancels exactly against the
+per-90 conversion, so \code{whole_match_value * 90 / match_duration} is
+constant for every splint of that match).
+
+PSV has no per-action stream (D3: it's a bottom-up box-score value with no
+per-splint count cache) and keeps the whole-match join + duration
+proration.
 }
 \seealso{
 Other panna ratings: 

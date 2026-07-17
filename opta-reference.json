@@ -1,0 +1,90 @@
+{
+  "_meta": {
+    "description": "Canonical Opta F24 type_id and qualifier_id reference for the panna ecosystem. Human-readable version: OPTA_REFERENCE.md in this same repo — read that first, this is its machine-readable companion.",
+    "generated": "2026-07-16",
+    "rule": "Nothing goes in here without a 'source' field citing either production code or an empirical cross-reference method. Never add a guessed value."
+  },
+  "type_id": {
+    "source": "R/spadl_conversion.R OPTA_TYPE_NAMES — corpus-validated, byte-verified against inthegame-blog's scripts/opta-event-types.json copy on 2026-07-16",
+    "values": {
+      "1": "Pass", "2": "Offside Pass", "3": "Take On", "4": "Foul",
+      "5": "Ball Out", "6": "Corner Awarded", "7": "Tackle", "8": "Interception",
+      "9": "Turnover", "10": "Save", "11": "Claim", "12": "Clearance",
+      "13": "Miss", "14": "Post", "15": "Attempt Saved", "16": "Goal",
+      "17": "Card", "18": "Player Off", "19": "Player On", "20": "Player Retired",
+      "21": "Player Returns", "22": "Player Becomes Goalkeeper",
+      "23": "Goalkeeper Becomes Player", "24": "Condition Change",
+      "25": "Official Change", "27": "Start Delay", "28": "End Delay",
+      "30": "End", "32": "Start", "34": "Team Set Up", "35": "Position Change",
+      "36": "Jersey Change", "37": "Collection End", "38": "Temp Goal",
+      "39": "Temp Attempt", "40": "Formation Change", "41": "Punch",
+      "42": "Good Skill", "43": "Deleted Event", "44": "Aerial", "45": "Challenge",
+      "47": "Rescinded Card", "49": "Ball Recovery", "50": "Dispossessed",
+      "51": "Error", "52": "Keeper Pick-up", "53": "Cross Not Claimed",
+      "54": "Smother", "55": "Offside Provoked", "56": "Shield Ball Opp",
+      "57": "Foul Throw-in", "58": "Penalty Faced", "59": "Keeper Sweeper",
+      "60": "Chance Missed", "61": "Ball Touch", "63": "Temp Save",
+      "64": "Resume", "65": "Contentious Referee Decision", "66": "Possession Data",
+      "67": "50/50", "68": "Referee Drop Ball", "69": "Failed To Block",
+      "70": "Injury Time Announcement", "71": "Coach Setup", "72": "Caught Offside",
+      "73": "Other Ball Contact", "74": "Blocked Pass", "83": "Att One on One"
+    },
+    "deliberately_omitted": {
+      "ids": [75, 76, 79, 80, 81, 84],
+      "reason": "Unknown per spadl_conversion.R's own header comment — not in any public F24 reference. Consumers should fall through to a raw-code display fallback for these, never guess a label."
+    }
+  },
+  "qualifier_id": {
+    "confirmed": {
+      "2": { "meaning": "Cross", "source": "R/spadl_conversion.R parse_opta_qualifiers" },
+      "4": { "meaning": "Through Ball", "source": "parse_opta_qualifiers" },
+      "9": { "meaning": "Penalty", "source": "parse_opta_qualifiers" },
+      "28": { "meaning": "Own Goal", "source": "parse_opta_qualifiers" },
+      "82": { "meaning": "Blocked shot", "source": "spadl_conversion.R:111 comment — flags a defender-blocked type-15 shot" },
+      "214": { "meaning": "Big Chance", "source": "parse_opta_qualifiers" },
+      "15": { "meaning": "Head (body part)", "source": "parse_opta_qualifiers; re-confirmed empirically 2026-07-16 (posRate 0.53 vs negRate 0.0002 on shot events split by attHdTotal ground truth)" },
+      "140": { "meaning": "End X", "source": "spadl_conversion.R + inthegame-blog worker, used throughout for pass/shot end coordinates" },
+      "141": { "meaning": "End Y", "source": "same as 140" },
+      "23": { "meaning": "Fast break (situation)", "source": "worker/src/index.js shot-situation qualifier handling" },
+      "22": { "meaning": "Shot situation family member (penalty/setpiece/corner/freekick group)", "source": "worker/src/index.js" },
+      "24": { "meaning": "Shot situation family member", "source": "worker/src/index.js" },
+      "25": { "meaning": "Shot situation family member", "source": "worker/src/index.js" },
+      "26": { "meaning": "Shot situation family member", "source": "worker/src/index.js" },
+      "31": {
+        "meaning": "Yellow card (base flag — present on every card event: plain yellow, second yellow, and straight red alike, so not a useful discriminator alone)",
+        "source": "worker/src/index.js card handling; re-confirmed empirically 2026-07-16 (100% on all three of redCard/secondYellow/plain-yellow groups, n=398 total)"
+      },
+      "32": {
+        "meaning": "Second yellow (i.e. this dismissal was via two yellows, not a straight red)",
+        "source": "Empirical, 2026-07-16: 100% of 41 secondYellow-positive players carry it on their type-17 card event, 0% of 265 plain-yellow players."
+      },
+      "33": {
+        "meaning": "Red card — but only catches straight reds, NOT second-yellow reds",
+        "confidence": "partial — 55.4% of 92 redCard-positive players carry it (the rest are the second-yellow subset, correctly flagged by q32 instead)",
+        "source": "worker/src/index.js card handling; empirically re-checked 2026-07-16"
+      },
+      "14": {
+        "meaning": "Last man (last-ditch defensive action) — on type_id 7 (Tackle) = lastManTackle stat; on type_id 12 (Clearance) = clearanceOffLine stat. Qualifiers are event-type-scoped: this has NOTHING to do with cards, despite panna's wp_model.R/splint_creation.R checking q14 alongside q33 on type_id 17 (Card) events under the assumption it also flags red cards — empirically, q14 never appears on any card event at all (0% across 92 redCard + 41 secondYellow + 265 plain-yellow players checked). That existing check is very likely dead/wrong and misses second-yellow reds (should probably check q32 instead) — filed as panna#141, not fixed here (retraining/revalidation implications).",
+        "source": "Empirical, 2026-07-16: events_World_Cup.parquet (2002-2026) vs opta_player_stats.parquet ground truth. Type-7: 100% of 60 sampled lastManTackle-positive players carry it, 0% of 74 negative. Type-12: 72% of 124 clearanceOffLine-positive players, 0% of 2814 plain-block negatives; independently corroborated by coordinates (clearance-off-line events average x=4.9, i.e. on the own goal line)."
+      },
+      "94": {
+        "meaning": "Outfielder block",
+        "source": "Empirical, 2026-07-16: restricted to type_id 10/74/69/12 events, 100% of 2281 outfielderBlock-positive players carry it vs 0.08% (6/7638) of negatives."
+      },
+      "168": {
+        "meaning": "Flick on",
+        "source": "Empirical, 2026-07-16: on type_id 1/44 events, 100% of 60 sampled totalFlickOn-positive players vs 0% of 104 negative."
+      },
+      "75": {
+        "meaning": "Won corners",
+        "confidence": "moderate — real ~12x lift, not a clean 100/0 split, attribution may need refinement before use",
+        "source": "Empirical, 2026-07-16: on type_id 6 events, 57% of 3383 wonCorners-positive players vs 4.6% of 2805 negatives."
+      }
+    },
+    "unconfirmed": {
+      "six_yard_block": "No qualifier found that discriminates sixYardBlock from a plain block (checked type_id 10/74/69/12, plus coordinates — six-yard-block events average x=13.6, statistically the same as plain blocks at x=13.8, unlike the cleanly-separated clearance-off-line events at x=4.9). Needs a different signal or wider search.",
+      "foot_side": "q15=Head is solid; left/right foot qualifier IDs are contested across sources in this ecosystem (36 vs 72 vs the old doc's unverified 73) and were not empirically re-checked this session.",
+      "coordinate_qualifiers_55_56_102_103_230_231": "Previously asserted as start/end coordinate qualifiers in an older version of OPTA_REFERENCE.md; conflicts with the confirmed 140/141 end-coordinate qualifiers actually used by production code. Not re-verified — treat as unconfirmed, not disproven."
+    }
+  }
+}

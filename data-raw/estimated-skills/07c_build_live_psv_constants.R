@@ -46,6 +46,16 @@ LIVE_SUBSET_LEAGUES <- c("WC")
 # balls, blocks (incl. blocked_passes: "No reliable event type derives
 # blockedPass"), errors, niche GK counts, and ALL xMetrics/WOE model outputs —
 # scores as 0 live.
+# panna#<blog-xmetrics-live>: 5 of the 12 xMetrics coefficient features became
+# live-observable when the blog's live scorer started deriving them itself
+# from the worker's live-scored per-shot xG (inthegame-blog
+# football/stat-value.js). The other 7 xMetrics features (+ xg_per90/
+# npxg_per90, which the blog does NOT derive this way) remain unobservable —
+# see the enrichment block below, which keeps these 5 real and drops the rest.
+LIVE_XMETRICS_FEATURES <- c(
+  "npg_minus_npxg_per90", "ibox_g_minus_xg_per90", "obox_g_minus_xg_per90",
+  "xa_per90_xmetrics", "gsaa_per90"
+)
 LIVE_OBSERVABLE_FEATURES <- c(
   # shooting
   "goals_p90", "shots_p90", "shots_on_target_p90", "shots_ibox_p90",
@@ -71,7 +81,9 @@ LIVE_OBSERVABLE_FEATURES <- c(
   "unsuccessful_touch_p90", "fouls_p90", "was_fouled_p90",
   # GK (thin block + event-derived: saves / punches / high claims)
   "saves_p90", "punches_p90", "high_claim_p90", "good_high_claim_p90",
-  "goals_conceded_p90"
+  "goals_conceded_p90",
+  # xMetrics (client-side aggregated from live-scored per-shot xG — see above)
+  LIVE_XMETRICS_FEATURES
 )
 
 pm <- load_position_role_means()
@@ -132,6 +144,36 @@ for (lg in INLINE_LEAGUES) {
   })
 }
 
+# panna#<blog-xmetrics-live>: enrich with REAL per-match xMetrics ONCE up front
+# (not per league-season, for efficiency) so both the `ex` and `rw` sides of
+# the K computation below see real values for LIVE_XMETRICS_FEATURES (the 5
+# the blog can now derive live) -- covers the inline-fetched rows above too.
+#
+# Every OTHER column enrich_match_stats_with_xmetrics() adds (xg_per90,
+# npxg_per90, and the 7 xMetrics features still NOT live: placement_added_per90,
+# xpass_overperformance_per90_xmetrics, aerial_woe_per90, aerial_poss_woe_per90,
+# takeon_woe_per90, tackle_poss_woe_per90, containment_woe_per90) is DROPPED
+# entirely rather than zeroed. This matters: position_role_means.csv (pm) DOES
+# carry per-role means for most of these (07b enriches fully before averaging),
+# so leaving them PRESENT-but-zero would make .position_normalize_skills
+# subtract that role mean from the literal 0 on the `ex` (exact, position_means
+# = pm) side ONLY -- injecting a role-specific, non-cancelling offset that `rw`
+# (position_means = NULL, never normalized) does not share. Dropping the column
+# instead excludes it from both the coefficient dot-product AND position
+# normalization on BOTH sides, reproducing the original "fully unenriched"
+# convention validated by debug/k_enrich_bias_check.R, now scoped to just the
+# still-not-live subset instead of all 12.
+.ms_cols_before <- names(ms)
+ms <- enrich_match_stats_with_xmetrics(ms, verbose = TRUE, source = "remote")
+.xm_new_cols  <- setdiff(names(ms), .ms_cols_before)
+.xm_drop_cols <- setdiff(.xm_new_cols, LIVE_XMETRICS_FEATURES)
+if (length(.xm_drop_cols) > 0L) ms[, (.xm_drop_cols) := NULL]
+cat(sprintf(
+  "[xmetrics] enriched ms with %d col(s): %s\n  keeping live-observable: %s\n  dropping (still not live): %s\n",
+  length(.xm_new_cols), paste(.xm_new_cols, collapse = ", "),
+  paste(intersect(.xm_new_cols, LIVE_XMETRICS_FEATURES), collapse = ", "),
+  paste(.xm_drop_cols, collapse = ", ")))
+
 # broad role per player-game (same classifier position-norm uses)
 ms[, role := .player_role(ms)]
 
@@ -176,15 +218,19 @@ for (s in recent) {
     if (nrow(blk) < 20L) next
     is_subset <- lg %in% LIVE_SUBSET_LEAGUES
     g <- tryCatch({
-      # DELIBERATELY NOT enriched with xMetrics (unlike 02/07/07b): the blog's
-      # live scorer can never compute xMetrics/WOE features (model outputs,
-      # excluded from the coefficients JSON) for ANY league, so the live raw
-      # score is xm-free — an enriched K would fold mean(xm_contrib) into the
-      # centering and over-subtract every club player by up to ~0.04 (measured:
-      # debug/k_enrich_bias_check.R; K_unenriched tracks the blog-truth
-      # K* = mean(raw_obs − enriched exact) within ±0.01, because the position
-      # norm absorbs the xm role-means on the exact side). Skipping enrichment
-      # also drops the xmetrics_bymatch dependency the GHA runner can't satisfy.
+      # `blk` (from `ms`) is now PARTIALLY enriched with xMetrics — see the
+      # enrichment block above `ms[, role := ...]`: LIVE_XMETRICS_FEATURES (5
+      # of 12) carry REAL per-match values on BOTH `ex` and `rw` below (the
+      # blog's live scorer now derives these itself — see the LIVE_XMETRICS_
+      # FEATURES comment above), while every other xMetrics column (xg_per90/
+      # npxg_per90 + the 7 still-not-live features) was DROPPED entirely, not
+      # zeroed, so it's excluded from both the coefficient dot-product and
+      # position normalization on both sides — the same "fully unenriched"
+      # convention this comment used to describe for all 12, now scoped to
+      # just the remaining not-live subset (measured bias from getting this
+      # wrong: debug/k_enrich_bias_check.R; K built on data missing xm entirely
+      # tracks the blog-truth K* = mean(raw_obs − enriched exact) within ±0.01,
+      # because the position norm absorbs the xm role-means on the exact side).
       ex <- as.data.table(score_one(blk, center = TRUE,  position_means = pm))
       rw_input <- if (is_subset) .zero_unobservable(blk) else blk
       rw <- as.data.table(score_one(rw_input, center = FALSE, position_means = NULL))

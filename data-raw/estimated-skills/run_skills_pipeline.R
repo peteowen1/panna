@@ -197,7 +197,8 @@ step_results[[10]] <- run_pipeline_step("export_psr_weekly", "8b", function() {
 
 # Career-trait Panna (decay-weighted multi-season xRAPM) — needs cache-opta splints +
 # the step-03 skill-SPM, so it runs last. Uploads career_panna.parquet to ratings-data
-# when upload_career_panna <- TRUE (CI sets it). See CLAUDE_TODO_CAREER_PANNA.md.
+# when a driver sets upload_career_panna <- TRUE before sourcing (no CI does this —
+# it's a manual/driver-script flag). See CLAUDE_TODO_CAREER_PANNA.md.
 step_results[[11]] <- run_pipeline_step("career_panna", 9, function() {
   source("data-raw/estimated-skills/09_career_panna.R", local = TRUE)
 })

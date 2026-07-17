@@ -110,6 +110,22 @@ jobs:
           needs: |
             devtools
 
+      - name: Fetch versebus.sh (pannadata data-bus helpers)
+        # Shared upload->verify->manifest-last trio (ECOSYSTEM-FIX-PLAN §1.4
+        # bash mirror) used by every models/epv release publish below. Fetched
+        # from pannadata@main — this workflow checks out panna only. Skipped
+        # when no step of this run uploads model artifacts (scheduled
+        # xmetrics_only runs), so the weekly cron gains no new failure mode.
+        if: ${{ env.XMETRICS_ONLY != 'true' || env.TRAIN_WP == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+        run: |
+          set -euo pipefail
+          gh api -H "Accept: application/vnd.github.raw" \
+            repos/peteowen1/pannadata/contents/scripts/versebus.sh > "$RUNNER_TEMP/versebus.sh"
+          bash -n "$RUNNER_TEMP/versebus.sh"
+          echo "Fetched versebus.sh ($(grep -m1 VERSEBUS_SH_VERSION "$RUNNER_TEMP/versebus.sh"))"
+
       - name: Download Opta event data
         env:
           GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
@@ -185,13 +201,35 @@ jobs:
           GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
         run: |
           set -euo pipefail
+          source "$RUNNER_TEMP/versebus.sh"
           CACHE_DIR="data-raw/cache/epv"
+          files=()
           for f in xg_model.rds xgot_model.rds xpass_model.rds epv_model.rds; do
-            if [ -f "$CACHE_DIR/$f" ]; then
-              gh release upload models "$CACHE_DIR/$f" --repo peteowen1/pannadata --clobber \
-                && echo "  Uploaded $f (early)"
-            fi
+            [ -f "$CACHE_DIR/$f" ] && files+=("$CACHE_DIR/$f")
           done
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No model files in $CACHE_DIR yet — nothing to upload early."
+            exit 0
+          fi
+          # versebus trio (P5-B): upload -> verify -> bus_manifest.json LAST,
+          # so a cancellation between this step and the final upload step
+          # leaves the models tag manifest-consistent, not torn.
+          # SOFT-FAIL by design: this step is opportunistic redundancy; the
+          # final "Upload trained models" step re-uploads everything
+          # (--clobber, idempotent) and is the authoritative hard-fail gate.
+          # A transient blip here must not kill the ~2h job before that
+          # retry. On any failure the manifest is skipped, so the tag's
+          # commit record never advertises a torn set.
+          out=$(vb_sh_upload_all "peteowen1/pannadata" "models" "${files[@]}")
+          echo "$out"
+          if grep -q '^FAIL' <<<"$out"; then
+            echo "::warning::Early model upload hit failures — the final upload step retries (--clobber); manifest not updated by this step."
+          elif ! vb_sh_verify "peteowen1/pannadata" "models" "${files[@]}"; then
+            echo "::warning::Early upload post-verify mismatch — the final upload step retries; manifest not updated by this step."
+          elif ! vb_sh_manifest_last "peteowen1/pannadata" "models" 0 \
+              "$RUNNER_TEMP/bus_manifest.json" "${files[@]}"; then
+            echo "::warning::Early bus_manifest.json update failed — the final upload step retries."
+          fi
 
       - name: Calculate player xMetrics
         if: ${{ env.EXPORT_XMETRICS == 'true' }}
@@ -255,7 +293,10 @@ jobs:
           set -euo pipefail
           echo "Uploading trained models to models release..."
           CACHE_DIR="data-raw/cache/epv"
-          UPLOADED=0
+          if [ -f "$RUNNER_TEMP/versebus.sh" ]; then
+            source "$RUNNER_TEMP/versebus.sh"
+          fi
+          files=()
 
           # In wp_only/xmetrics_only mode the EPV/xg/xpass models are not
           # retrained (step 01 was skipped), so they won't be in CACHE_DIR and
@@ -265,18 +306,12 @@ jobs:
           if [ "$WP_ONLY" != "true" ] && [ "$XMETRICS_ONLY" != "true" ]; then
             for f in xg_model.rds xgot_model.rds xpass_model.rds epv_model.rds; do
               if [ -f "$CACHE_DIR/$f" ]; then
-                if gh release upload models "$CACHE_DIR/$f" --repo peteowen1/pannadata --clobber; then
-                  echo "  Uploaded $f"
-                  UPLOADED=$((UPLOADED + 1))
-                else
-                  echo "::error::Failed to upload $f to models release (does the release exist?)"
-                  exit 1
-                fi
+                files+=("$CACHE_DIR/$f")
               else
                 echo "::warning::Model file $f not found in $CACHE_DIR"
               fi
             done
-            if [ "$UPLOADED" -eq 0 ]; then
+            if [ "${#files[@]}" -eq 0 ]; then
               echo "::error::No model files were produced. Training may have failed."
               exit 1
             fi
@@ -296,15 +331,30 @@ jobs:
               echo "::error::TRAIN_WP=true but no wp_model.rds at $WP_MODEL — training did not save the model."
               exit 1
             fi
-
-            # Stage to pannadata `models` (parity with the other models; NOT the
+            # Staged to pannadata `models` with the others (parity; NOT the
             # store the predictions pipeline reads).
-            if gh release upload models "$WP_MODEL" --repo peteowen1/pannadata --clobber; then
-              echo "  Staged wp_model.rds -> pannadata/models"
-            else
-              echo "::error::Failed to upload wp_model.rds to pannadata models release"
+            files+=("$WP_MODEL")
+          fi
+
+          # versebus trio for pannadata models (P5-B): upload -> verify ->
+          # bus_manifest.json LAST. vb_sh_manifest_last carries forward
+          # manifest entries for assets this run didn't touch, so a wp_only
+          # run's manifest still describes the whole tag. Any failure aborts
+          # (set -e) BEFORE the manifest upload, so strict consumers keep
+          # seeing the last consistent snapshot.
+          if [ "${#files[@]}" -gt 0 ]; then
+            out=$(vb_sh_upload_all "peteowen1/pannadata" "models" "${files[@]}")
+            echo "$out"
+            if grep -q '^FAIL' <<<"$out"; then
+              echo "::error::Model upload to pannadata models release failed (does the release exist?)"
               exit 1
             fi
+            vb_sh_verify "peteowen1/pannadata" "models" "${files[@]}"
+            vb_sh_manifest_last "peteowen1/pannadata" "models" 0 \
+              "$RUNNER_TEMP/bus_manifest.json" "${files[@]}"
+          fi
+
+          if [ "$TRAIN_WP" = "true" ]; then
 
             # PROMOTE to pannamodels `epv` — the release load_wp_model() pulls
             # from (via the pannamodels package) and therefore what the
@@ -316,69 +366,22 @@ jobs:
               # with no commit record -- pannamodels' consumer-side sha check
               # (R/load_model.R .get_bus_manifest(), landed in M5) can only
               # verify freshness if bus_manifest.json actually reflects what's
-              # on the release. Gate: upload -> verify (size vs the live asset
-              # list) -> bus_manifest.json LAST, carrying forward any other
-              # assets already committed on this tag (xg/xgot/xpass/epv/duel
-              # models published outside this workflow are left as
-              # uncommitted-but-present if this is the tag's first manifest --
-              # legacy mode covers them, per §1.2). set -euo pipefail (top of
-              # this step) means any failure here aborts BEFORE the manifest
-              # upload, so consumers keep seeing the last consistent snapshot.
-              EPV_REPO="peteowen1/pannamodels"
-              EPV_TAG="epv"
-
-              if gh release upload "$EPV_TAG" "$WP_MODEL" --repo "$EPV_REPO" --clobber; then
-                echo "  Published wp_model.rds -> pannamodels/epv (LIVE store)"
-              else
+              # on the release. The shared trio (versebus.sh, replacing this
+              # step's hand-rolled inline writer — P5-B 2026-07-17) gates:
+              # upload -> verify -> bus_manifest.json LAST, carrying forward
+              # entries for assets published outside this workflow. set -euo
+              # pipefail means any failure aborts BEFORE the manifest upload,
+              # so consumers keep seeing the last consistent snapshot.
+              out=$(vb_sh_upload_all "peteowen1/pannamodels" "epv" "$WP_MODEL")
+              echo "$out"
+              if grep -q '^FAIL' <<<"$out"; then
                 echo "::error::Failed to publish wp_model.rds to pannamodels epv release"
                 exit 1
               fi
-
-              WP_BYTES=$(stat -c%s "$WP_MODEL")
-              LIVE_BYTES=$(gh release view "$EPV_TAG" --repo "$EPV_REPO" --json assets \
-                --jq '.assets[] | select(.name=="wp_model.rds") | .size')
-              if [ "$LIVE_BYTES" != "$WP_BYTES" ]; then
-                echo "::error::Post-upload verify failed: wp_model.rds live size $LIVE_BYTES != local $WP_BYTES"
-                exit 1
-              fi
-
-              WP_SHA=$(sha256sum "$WP_MODEL" | cut -d' ' -f1)
-              MANIFEST_TMP=$(mktemp -d)
-              if gh release download "$EPV_TAG" --repo "$EPV_REPO" \
-                   --pattern "bus_manifest.json" --dir "$MANIFEST_TMP" 2>/dev/null; then
-                PREV_MANIFEST="$MANIFEST_TMP/bus_manifest.json"
-              else
-                PREV_MANIFEST=""
-              fi
-
-              GENERATION="$(date -u +%Y%m%dT%H%M%SZ)-r${{ github.run_id }}"
-              PRODUCED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-              NEW_ENTRY=$(jq -n --arg name "wp_model.rds" --arg sha "$WP_SHA" \
-                --argjson bytes "$WP_BYTES" \
-                '{name: $name, sha256: $sha, bytes: $bytes, rows: null}')
-
-              if [ -n "$PREV_MANIFEST" ] && [ -f "$PREV_MANIFEST" ]; then
-                MERGED_ASSETS=$(jq --argjson new "$NEW_ENTRY" \
-                  '[.assets[] | select(.name != "wp_model.rds")] + [$new]' \
-                  "$PREV_MANIFEST")
-              else
-                MERGED_ASSETS=$(jq -n --argjson new "$NEW_ENTRY" '[$new]')
-              fi
-
-              jq -n --arg tag "$EPV_TAG" --arg gen "$GENERATION" --arg produced "$PRODUCED_AT" \
-                --arg repo "peteowen1/panna" --arg workflow "epv-pipeline.yml" \
-                --arg run_id "${{ github.run_id }}" --arg run_attempt "${{ github.run_attempt }}" \
-                --argjson assets "$MERGED_ASSETS" \
-                '{schema_version: 1, tag: $tag, generation: $gen, produced_at_utc: $produced,
-                  producer: {repo: $repo, workflow: $workflow, run_id: $run_id, run_attempt: $run_attempt},
-                  assets: $assets, notes: ""}' > "$MANIFEST_TMP/bus_manifest.json"
-
-              if gh release upload "$EPV_TAG" "$MANIFEST_TMP/bus_manifest.json" --repo "$EPV_REPO" --clobber; then
-                echo "  Updated bus_manifest.json on pannamodels/epv (generation $GENERATION)"
-              else
-                echo "::error::Failed to upload bus_manifest.json to pannamodels epv release"
-                exit 1
-              fi
+              echo "  Published wp_model.rds -> pannamodels/epv (LIVE store)"
+              vb_sh_verify "peteowen1/pannamodels" "epv" "$WP_MODEL"
+              vb_sh_manifest_last "peteowen1/pannamodels" "epv" 0 \
+                "$RUNNER_TEMP/bus_manifest.json" "$WP_MODEL"
             else
               echo "::notice::PUBLISH_WP=false — wp_model.rds staged to pannadata/models only."
               echo "::notice::Predictions still read the OLD model from pannamodels/epv until you re-run with publish_wp=true."

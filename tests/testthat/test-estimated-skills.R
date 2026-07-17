@@ -364,6 +364,29 @@ test_that(".compute_snapshot_loop_columns handles a multi-part denominator spec"
   expect_false("unused" %in% kept)
 })
 
+test_that(".narrow_match_stats_for_skills keeps stats+denominators+orphans, drops metadata", {
+  # The shared narrowing entry point for every 01_match_stats.rds load site
+  # (predictions 02/02b). Guards: (a) dynamic stat detection + denominators
+  # survive, (b) the two registry-orphan columns are kept defensively,
+  # (c) pure metadata is dropped, (d) result is a data.table.
+  ms <- data.frame(
+    player_id = "p1", player_name = "P One", match_date = as.Date("2026-01-01"),
+    position = "Striker", total_minutes = 90,
+    goals_p90 = 0.5, shot_accuracy = 0.4, shots = 3,
+    keeper_throws_accuracy = 0.9, poss_won_att_ratio = 0.1,
+    match_id = "m1", team_name = "T", home_score = 2, attGoalLowCentre = 1
+  )
+  narrowed <- .narrow_match_stats_for_skills(ms)
+
+  expect_true(data.table::is.data.table(narrowed))
+  expect_true(all(c("player_id", "player_name", "match_date", "position",
+                    "total_minutes", "goals_p90", "shot_accuracy", "shots",
+                    "keeper_throws_accuracy", "poss_won_att_ratio") %in% names(narrowed)))
+  expect_false(any(c("match_id", "team_name", "home_score", "attGoalLowCentre")
+                   %in% names(narrowed)))
+  expect_equal(nrow(narrowed), nrow(ms))
+})
+
 test_that(".compute_snapshot_loop_columns intersects with available_cols (never invents columns)", {
   kept <- .compute_snapshot_loop_columns(
     available_cols = c("player_id", "goals_p90"),

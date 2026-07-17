@@ -12,11 +12,27 @@ extract_xrapm_ratings(model, lambda = "min")
 \item{lambda}{Which lambda to use ("min" or "1se")}
 }
 \value{
-Data frame with player ratings including deviation from prior
+Data frame with player ratings including deviation from prior.
+In \code{mode = "net"}, \code{offense}/\code{defense}/deviation/prior
+columns are \code{NA} and \code{xrapm} holds the net coefficient.
 }
 \description{
 Extracts player ratings from a model fit with SPM prior.
 The final coefficient is gamma + prior, where gamma is the deviation.
+}
+\details{
+F4 (FABLE-PRIOR-FIX-PLAN.md review): mode-aware via the model's stored
+metadata (\code{model$panna_metadata$mode}, or \code{type == "xrapm_net"}
+for older/hand-built metadata without a \code{mode} field). In
+\code{mode = "od"} (default), \code{xrapm = offense - defense} as before.
+In \code{mode = "net"}, there is no offense/defense split (D2) -- the
+single \verb{_net} coefficient per player IS the rating, and
+\code{offense}/\code{defense}/\code{off_deviation}/\code{def_deviation}/
+\code{off_prior}/\code{def_prior} are set \code{NA} (they have no meaning
+against a design with no offense/defense split). Aborts if the model's
+coefficient names don't actually match the declared mode -- indexing only
+\verb{_off}/\verb{_def} names on a net-mode fit previously returned
+silently all-NA ratings with no error (the bug this fixes).
 }
 \seealso{
 Other panna ratings: 

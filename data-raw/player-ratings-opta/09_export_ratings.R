@@ -14,6 +14,14 @@
 
 # 1. Setup ----
 
+# Attach panna for the bare vb_publish() call below. Every step script runs in
+# its own callr child (run_step_opta), which inherits NOTHING from the
+# orchestrator's load_all() — steps 01-08 all carry this same header. Missing
+# here since the callr isolation landed (panna#87): step 9 died with
+# 'could not find function "vb_publish"' on every cloud run after 2026-06-11,
+# masked by the swallowed-error bug until 2026-07-16 fixed the reporting.
+devtools::load_all()
+
 if (!requireNamespace("piggyback", quietly = TRUE)) {
   stop("Package 'piggyback' is required for export. Install with: install.packages('piggyback')")
 }

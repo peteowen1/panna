@@ -95,6 +95,8 @@ test_that("fit_xg_model trains a model with predictions in [0,1]", {
   expect_s3_class(model, "xg_model")
   expect_true(!is.null(model$model))
   expect_true(!is.null(model$panna_metadata$feature_cols))
+  # Artifact must carry the penalty override for downstream consumers (panna#91)
+  expect_identical(model$panna_metadata$penalty_xg, PENALTY_XG)
 
   # Predictions should be probabilities
   preds <- predict_xg(model, features)
@@ -366,4 +368,85 @@ test_that("keeper GSAA = expected goals faced - goals conceded (cross-team)", {
   data.table::setkey(agg, player_id)
   expect_equal(agg["kA"]$gsaa, 0.60 - 1)
   expect_equal(agg["kB"]$gsaa, 0.70 - 1)
+})
+
+test_that("aggregate_player_xmetrics excludes own goals from the scorer's shooting stats (panna#143)", {
+  # p1 takes one normal shot/goal (xg 0.30) and commits one own goal (xg 0.95,
+  # is_own_goal = TRUE). Only the normal shot should count toward shots/goals/xG,
+  # and the chain family (chain_goals/chain_xg — SPM inputs) must exclude the
+  # own-goal chain the same way.
+  spadl <- data.frame(
+    match_id = "m1", action_id = 1:2, period_id = 1L,
+    team_id = "t1", player_id = "p1", player_name = "A",
+    action_type = "shot",
+    result = c("success", "success"),
+    bodypart = "foot_right",
+    start_x = c(90, 3), start_y = c(50, 50),
+    end_x = c(100, 0), end_y = c(50, 50),
+    xg = c(0.30, 0.95),
+    is_penalty = 0L, is_own_goal = c(FALSE, TRUE),
+    opta_type_id = 16L,
+    time_seconds = c(600, 1200),
+    chain_id = c(1L, 2L),
+    chain_outcome = c("goal", "goal"),
+    action_in_chain = 1L,
+    stringsAsFactors = FALSE
+  )
+  lineups <- data.frame(
+    match_id = "m1", team_id = "t1", team_name = "Team A",
+    player_id = "p1", player_name = "A", minutes_played = 90,
+    stringsAsFactors = FALSE
+  )
+  r <- data.table::as.data.table(
+    aggregate_player_xmetrics(spadl, lineups, min_minutes = 0))
+
+  expect_equal(r$shots, 1L)
+  expect_equal(r$goals, 1L)
+  expect_equal(r$xg, 0.30)
+  expect_equal(r$npxg, 0.30)
+  expect_equal(r$npg_minus_npxg, 1 - 0.30)
+  # Chain family: the own-goal chain must not count as a goal chain nor
+  # contribute its degenerate xg to chain_xg.
+  expect_equal(r$chains_involved, 1L)
+  expect_equal(r$chain_goals, 1L)
+  expect_equal(r$successful_chains, 1L)
+  expect_equal(r$chain_xg, 0.30)
+})
+
+test_that(".compute_keeper_gsaa flips own-goal attribution to the conceding team's keeper (panna#143)", {
+  # m1: s1 (t1) scores a normal goal (xg 0.40) -> faced by t2's keeper.
+  # og1 (t1) commits an own goal (xg 0.95) -> team_id is already the
+  # conceding side, so it must be faced by t1's OWN keeper, not t2's.
+  spadl <- data.frame(
+    match_id = "m1", action_id = 1:2, period_id = 1L,
+    action_type = "shot",
+    team_id = c("t1", "t1"),
+    player_id = c("s1", "og1"), player_name = c("S1", "OG1"),
+    xg = c(0.40, 0.95),
+    result = c("success", "success"),
+    is_penalty = 0L, is_own_goal = c(FALSE, TRUE),
+    opta_type_id = 16L,
+    start_x = c(90, 3), start_y = 50, end_x = c(100, 0), end_y = 50,
+    time_seconds = c(600, 1200),
+    stringsAsFactors = FALSE
+  )
+  lineups <- data.frame(
+    match_id = "m1",
+    player_id = c("kA", "kB", "s1", "og1"),
+    player_name = c("KeepA", "KeepB", "S1", "OG1"),
+    team_id = c("t1", "t2", "t1", "t1"),
+    team_name = c("T1", "T2", "T1", "T1"),
+    position = c("GK", "Goalkeeper", "CF", "CB"),
+    minutes_played = 90, stringsAsFactors = FALSE
+  )
+  g <- panna:::.compute_keeper_gsaa(spadl, lineups, by_match = TRUE)
+  g <- data.table::as.data.table(g); data.table::setkey(g, player_id)
+
+  # kB (t2) faces only s1's normal shot: xg 0.40, conceded 1
+  expect_equal(g["kB"]$gsaa, 0.40 - 1)
+  expect_equal(g["kB"]$goals_conceded, 1)
+  # kA (t1) faces the own goal (flipped attribution): xg 0.95, conceded 1 --
+  # NOT bundled onto kB, which is what the unflipped code did.
+  expect_equal(g["kA"]$gsaa, 0.95 - 1)
+  expect_equal(g["kA"]$goals_conceded, 1)
 })

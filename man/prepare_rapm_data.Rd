@@ -7,10 +7,11 @@
 prepare_rapm_data(
   splint_data,
   min_minutes = 90,
-  target_type = c("xg", "goals", "epv", "wpa", "psv"),
+  target_type = c("xg", "goals", "epv", "wpa"),
   include_covariates = TRUE,
   include_league = NULL,
-  include_season = NULL
+  include_season = NULL,
+  mode = c("od", "net")
 )
 }
 \arguments{
@@ -19,14 +20,21 @@ prepare_rapm_data(
 \item{min_minutes}{Minimum minutes for player inclusion}
 
 \item{target_type}{Type of target variable: "xg" for non-penalty xG (default),
-"goals" for actual goals scored, "epv" for EPV, "wpa" for WPA, "psv" for
-PSV. Use "goals" when shots data unavailable.}
+"goals" for actual goals scored, "epv" for EPV, "wpa" for WPA. Use
+"goals" when shots data unavailable. PSV was removed from RAPM
+(FABLE-PRIOR-FIX-PLAN.md D3).}
 
 \item{include_covariates}{Whether to include game state covariates}
 
 \item{include_league}{Whether to include league dummies (for multi-league)}
 
 \item{include_season}{Whether to include season dummies}
+
+\item{mode}{Design matrix mode, passed through to
+\code{\link{create_rapm_design_matrix}}. \code{"od"} (default) is the
+production layout (byte-identical to before this parameter existed);
+\code{"net"} builds the single-column-per-player net design for
+zero-sum targets like WPA (FABLE-PRIOR-FIX-PLAN.md D2).}
 }
 \value{
 List with all model inputs

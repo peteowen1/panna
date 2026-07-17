@@ -1,42 +1,12 @@
 # Tests for multi-target RAPM extensions
-
-test_that("add_value_metrics_to_splints adds EPV columns", {
-  splints <- data.frame(
-    splint_id = c("s1", "s2"),
-    match_id = c("m1", "m1"),
-    duration = c(45, 45),
-    home_team_id = c("t1", "t1"),
-    stringsAsFactors = FALSE
-  )
-
-  players <- data.frame(
-    splint_id = c("s1", "s1", "s1", "s1", "s2", "s2", "s2", "s2"),
-    match_id = rep("m1", 8),
-    player_id = c("p1", "p2", "p3", "p4", "p1", "p2", "p3", "p4"),
-    team_id = c("t1", "t1", "t2", "t2", "t1", "t1", "t2", "t2"),
-    is_home = c(1L, 1L, 0L, 0L, 1L, 1L, 0L, 0L),
-    stringsAsFactors = FALSE
-  )
-
-  player_game_epv <- data.frame(
-    player_id = c("p1", "p2", "p3", "p4"),
-    match_id = rep("m1", 4),
-    epv_total = c(0.5, 0.3, -0.2, 0.1),
-    stringsAsFactors = FALSE
-  )
-
-  splint_data <- list(splints = splints, players = players)
-  result <- add_value_metrics_to_splints(splint_data, player_game_epv = player_game_epv)
-
-  expect_true("epv_home" %in% names(result$splints))
-  expect_true("epv_away" %in% names(result$splints))
-
-  # Splint s1: duration=45 out of match total 90, prorate=0.5
-  # Home EPV = (0.5 + 0.3) * 0.5 = 0.4
-  # Away EPV = (-0.2 + 0.1) * 0.5 = -0.05
-  expect_equal(result$splints$epv_home[1], 0.4)
-  expect_equal(result$splints$epv_away[1], -0.05)
-})
+#
+# NOTE: as of FABLE-PRIOR-FIX-PLAN.md Step 3, add_value_metrics_to_splints()
+# takes per-action EPV/WPA STREAMS (player_action_epv / match_action_wpa),
+# not whole-match-per-game values -- the old whole-match join +
+# duration-proration was the C1 degeneracy (target constant per 90 within a
+# match). Per-splint EPV/WPA attribution tests live in
+# test-splint-value-targets.R; the psv whole-match-proration path (D3:
+# unaffected by Step 3) is also covered there.
 
 test_that("add_value_metrics_to_splints handles NULL inputs", {
   splints <- data.frame(
@@ -100,9 +70,11 @@ test_that("create_rapm_design_matrix rejects invalid target types", {
 
 test_that("create_rapm_design_matrix formals include new target types", {
   # Verify new types are in the valid set by checking the function
-  # accepts them without match.arg error (will fail on structure instead)
+  # accepts them without match.arg error (will fail on structure instead).
+  # psv was removed from RAPM (FABLE-PRIOR-FIX-PLAN.md D3) -- see
+  # test-splint-value-targets.R for the psv-absence tests.
   valid_types <- as.character(formals(create_rapm_design_matrix)$target_type)[-1]
   expect_true("epv" %in% valid_types)
   expect_true("wpa" %in% valid_types)
-  expect_true("psv" %in% valid_types)
+  expect_false("psv" %in% valid_types)
 })

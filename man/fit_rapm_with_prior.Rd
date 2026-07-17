@@ -13,15 +13,18 @@ fit_rapm_with_prior(
   use_weights = TRUE,
   penalize_covariates = FALSE,
   fixed_lambda = NULL,
-  lambda_seq = NULL
+  lambda_seq = NULL,
+  mode = c("od", "net")
 )
 }
 \arguments{
 \item{rapm_data}{List from prepare_rapm_data}
 
-\item{offense_prior}{Named vector of offensive SPM predictions (by player_id)}
+\item{offense_prior}{Named vector of offensive SPM predictions (by
+player_id). In \code{mode = "net"} this is the single net SPM prior.}
 
-\item{defense_prior}{Named vector of defensive SPM predictions (by player_id)}
+\item{defense_prior}{Named vector of defensive SPM predictions (by
+player_id). Must be \code{NULL} when \code{mode = "net"}.}
 
 \item{alpha}{Elastic net mixing parameter (0 = ridge)}
 
@@ -40,6 +43,12 @@ behaviour). Used by the as-of-date career-Panna build.}
 (see \code{\link{fit_rapm}}); the panna#87 cloud path passes a short
 grid bracketing the closed-form lambda. Ignored when
 \code{fixed_lambda} is supplied.}
+
+\item{mode}{Design matrix mode matching the \code{rapm_data} the caller
+built. \code{"od"} (default) expects \verb{_off}/\verb{_def} player
+columns. \code{"net"} expects the single-column-per-player
+(\verb{_net}) design from \code{create_rapm_design_matrix(mode = "net")}
+and requires \code{defense_prior = NULL} (FABLE-PRIOR-FIX-PLAN.md D2/D4).}
 }
 \value{
 Fitted model with prior adjustment metadata
@@ -50,11 +59,17 @@ This helps separate players who always appear together by using
 box score statistics as a Bayesian prior.
 }
 \details{
-For the O/D design matrix:
+For the O/D design matrix (\code{mode = "od"}, default):
 \itemize{
 \item offense_prior: SPM-predicted offensive contribution
 \item defense_prior: SPM-predicted defensive contribution
 }
+
+For the net design matrix (\code{mode = "net"}, FABLE-PRIOR-FIX-PLAN.md D2/D4
+-- e.g. WPA, whose off/def split is mechanically unidentified because the
+target is zero-sum): a single per-player column exists, so
+\code{offense_prior} alone carries the net SPM prior and
+\code{defense_prior} has no meaning and must be \code{NULL}.
 }
 \seealso{
 Other rapm: 

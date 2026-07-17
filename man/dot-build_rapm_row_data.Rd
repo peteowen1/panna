@@ -4,18 +4,31 @@
 \alias{.build_rapm_row_data}
 \title{Build RAPM row data from valid splints}
 \usage{
-.build_rapm_row_data(valid_splints, target_type)
+.build_rapm_row_data(valid_splints, target_type, mode = c("od", "net"))
 }
 \arguments{
 \item{valid_splints}{Data frame of splints with duration > 0}
 
-\item{target_type}{One of "xg", "goals", "epv", "wpa", "psv", or "custom"}
+\item{target_type}{One of "xg", "goals", "epv", "wpa", or "custom". PSV
+was removed from RAPM (FABLE-PRIOR-FIX-PLAN.md D3) -- it has its own
+standalone pipeline (\code{calculate_psv()}).}
+
+\item{mode}{Design matrix mode. \code{"od"} (default) creates 2 rows per
+splint (one per team-attacking perspective), matched with separate
+offense/defense player columns in \code{\link{.build_rapm_sparse_matrix}}
+-- the production xg/goals/epv layout, byte-identical to before this
+parameter existed. \code{"net"} creates 1 row per splint with the
+home-perspective target only, for zero-sum targets like WPA where an
+offense/defense split is mechanically unidentified (FABLE-PRIOR-FIX-PLAN.md
+D2).}
 }
 \value{
 List with row_data data.frame and target_per90_name string
 }
 \description{
 Creates 2 rows per splint (home attacking, away attacking) with game state
-covariates and target variable.
+covariates and target variable in \code{"od"} mode (default). In
+\code{"net"} mode, creates 1 row per splint (home-perspective target only)
+-- see \code{mode}.
 }
 \keyword{internal}
