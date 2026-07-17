@@ -22,9 +22,10 @@ devtools::load_all()
 
 # 1. Configuration ----
 
-# Leagues and seasons to process
-LEAGUES <- c("ENG", "ESP", "GER", "ITA", "FRA")
-SEASONS <- c("2023-2024")
+# Leagues and seasons to process (overridable: set before sourcing, exists() pattern
+# per run_pipeline_opta.R convention)
+if (!exists("LEAGUES", inherits = FALSE)) LEAGUES <- c("ENG", "ESP", "GER", "ITA", "FRA")
+if (!exists("SEASONS", inherits = FALSE)) SEASONS <- c("2023-2024")
 
 # Minimum minutes for player output
 MIN_MINUTES <- 450
@@ -42,9 +43,15 @@ cli_h2("Step 1: Load Trained Models")
 
 xg_model <- readRDS(file.path(MODEL_DIR, "xg_model.rds"))
 xpass_model <- readRDS(file.path(MODEL_DIR, "xpass_model.rds"))
-epv_model <- readRDS(file.path(MODEL_DIR, "epv_model.rds"))
+# EPV model overridable (exists() pattern): the default epv_model.rds is the
+# pre-overhaul vintage whose feature contract no longer matches the package's
+# emitted features -- callers wanting the canonical clean model should set
+# EPV_MODEL_FILE <- file.path(MODEL_DIR, "epv_model_xg_clean_full.rds")
+# before sourcing (see .claude/rules/epv-wp-models.md + MODELS.md).
+if (!exists("EPV_MODEL_FILE", inherits = FALSE)) EPV_MODEL_FILE <- file.path(MODEL_DIR, "epv_model.rds")
+epv_model <- readRDS(EPV_MODEL_FILE)
 
-cli_alert_success("Models loaded (method: {epv_model$method})")
+cli_alert_success("Models loaded (method: {epv_model$method}, epv file: {EPV_MODEL_FILE})")
 
 # 2b. Helper: slim per-action EPV credit stream ----
 #

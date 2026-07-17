@@ -26,8 +26,8 @@ devtools::load_all()
 
 # 1. Configuration ----
 
-LEAGUES <- if (exists("leagues")) leagues else c("ENG", "ESP", "GER", "ITA", "FRA")
-SEASONS <- if (exists("seasons")) seasons else c("2023-2024")
+LEAGUES <- if (exists("leagues", inherits = FALSE)) leagues else c("ENG", "ESP", "GER", "ITA", "FRA")
+SEASONS <- if (exists("seasons", inherits = FALSE)) seasons else c("2023-2024")
 
 CACHE_DIR <- "data-raw/cache/epv"
 OUTPUT_DIR <- "data-raw/cache/epv/players"
@@ -41,6 +41,18 @@ cli_h2("Step 1: Load WP Model")
 
 wp_model <- load_wp_model()
 cli_alert_success("WP model loaded ({length(wp_model$feature_names)} features)")
+
+# EPV model for the WP `epv` feature — same resolution as 05_train_wp_model.R
+# (train/serve parity): local cache first, pannamodels fallback inside
+# load_epv_model(). NULL (with a warning) degrades to margin_poss-only
+# features, which the post-overhaul WP model should never score with.
+epv_model <- if (exists("epv_model_override", inherits = FALSE)) {
+  cli_alert_info("Using injected EPV model override")
+  epv_model_override
+} else tryCatch(load_epv_model(path = "data-raw/cache/epv"), error = function(e) {
+  cli_alert_warning("Could not load EPV model ({e$message}); WP features will lack the epv feature.")
+  NULL
+})
 
 # 3. Process each league/season ----
 
@@ -60,6 +72,17 @@ for (league in LEAGUES) {
       # Convert to SPADL
       spadl <- convert_opta_to_spadl(events)
       spadl_chains <- create_possession_chains(spadl)
+
+      # Train/serve parity with 05_train_wp_model.R (the retrained WP model's
+      # feature recipe): attach per-action EPV so create_wp_features surfaces
+      # the standalone `epv` feature (and a non-degenerate xmargin), and
+      # re-derive red cards so red_card_diff is live. Without these the
+      # post-overhaul model scores against degraded fallback features.
+      if (!is.null(epv_model)) {
+        spadl_chains <- calculate_action_epv(spadl_chains, features = NULL,
+                                             epv_model, league = league)
+      }
+      spadl_chains <- add_red_card_to_chains(spadl_chains, events)
 
       # Build match results
       match_results <- .build_match_results_from_events(events, lineups)
