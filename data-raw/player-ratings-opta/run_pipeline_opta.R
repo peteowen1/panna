@@ -231,6 +231,11 @@ if (isTRUE(pipeline_failed)) {
   step_results[[9]] <- run_step_opta("export_ratings", 9, function() {
     source("data-raw/player-ratings-opta/09_export_ratings.R", local = TRUE)
   })
+  # Last step, but check_step still matters: it sets pipeline_failed, which the
+  # workflow's `if (isTRUE(pipeline_failed)) quit(status = 1)` reads — without
+  # this, a failed export prints FAILED in the summary yet the job stays green
+  # (exactly how ratings-data went silently stale 2026-06-11 → 2026-07-17).
+  check_step(9, "export_ratings")
 }
 
 # 14. Summary ----
