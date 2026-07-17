@@ -4,6 +4,8 @@
 # Source this file from any run_*.R pipeline script to get:
 #   run_step()              - execute a step with timing, error handling, and traceback
 #   run_pipeline_step()     - run_step() wrapper that propagates FAILED to pipeline_failed
+#   write_isolated_config() - snapshot orchestrator globals for isolated subprocesses
+#   run_step_isolated()     - run_step() in a fresh callr subprocess (memory isolation)
 #   check_critical_step()   - halt downstream steps on failure
 #   print_pipeline_banner() - print a pipeline's boxed start-of-run banner
 #   print_pipeline_summary() - print a formatted step summary table
@@ -123,6 +125,82 @@ run_step <- function(step_name, step_num, code_block, run_steps,
     duration_secs = as.numeric(duration),
     duration_formatted = format_duration(as.numeric(duration))
   )
+}
+
+#' Snapshot orchestrator globals for isolated step subprocesses
+#'
+#' Saves every non-function object in globalenv() (config: leagues, run_steps,
+#' force_rebuild_from, ...) to cfg_path so run_step_isolated()'s child can
+#' rebuild the orchestrator's config environment. Orchestrator bookkeeping
+#' (step_results, pipeline_failed, pipeline_start) is always excluded; pass
+#' additional names via `exclude` for cross-step in-memory state that must NOT
+#' silently round-trip through a subprocess (e.g. predictions' publish_files
+#' `<<-` accumulator — excluding it makes a future in-child write fail loudly
+#' with "object not found" instead of being lost across the process boundary).
+#'
+#' @param cfg_path Where to save the .rds snapshot
+#' @param exclude Extra globalenv names to omit
+write_isolated_config <- function(cfg_path, exclude = character()) {
+  nms <- setdiff(ls(globalenv()),
+                 c("step_results", "pipeline_failed", "pipeline_start", exclude))
+  nms <- nms[!vapply(nms, function(n) is.function(get(n, envir = globalenv())),
+                     logical(1))]
+  saveRDS(mget(nms, envir = globalenv()), cfg_path)
+}
+
+#' Run a pipeline step in its own fresh callr subprocess
+#'
+#' Memory isolation (panna#87/#128): R never returns freed heap to the OS, so
+#' a single-session pipeline accumulates the high-water mark of its heaviest
+#' step as a permanent baseline. A fresh subprocess per step caps peak memory
+#' at one step's peak and releases it fully on exit. Steps must communicate
+#' solely through the on-disk cache — do NOT isolate steps that rely on
+#' in-memory state crossing step boundaries.
+#'
+#' The child inherits NOTHING from the orchestrator, so it rebuilds the
+#' environment explicitly, in order:
+#'   1. config snapshot (write_isolated_config) -> globalenv
+#'   2. source pipeline_utils.R (steps call save_cache_with_meta() etc.)
+#'   3. library(dplyr) + devtools::load_all() — BOTH, unconditionally: step
+#'      scripts self-load inconsistently, and relying on their headers is how
+#'      WS-3 happened (09_export_ratings.R had no load_all, so its bare
+#'      vb_publish() died in the child on every cloud run for 36 days).
+#'      load_all() alone doesn't attach Imports like dplyr to the search
+#'      path, and library(dplyr) alone doesn't expose panna internals
+#'      (confirmed 2026-07-16 via step-2b's paired failures).
+#'
+#' The step's return value is deliberately discarded: callr serializes
+#' returns across the process boundary, which at step 01's ~14.9GB peak
+#' tipped the subprocess over. Steps communicate via the cache; return NULL.
+#'
+#' @param step_name,step_num,run_steps,pipeline_failed As run_step()
+#' @param code_block Thunk, usually function() source("<step file>", local = TRUE)
+#' @param cfg_path Config snapshot path (written by the caller beforehand)
+#' @return run_step()'s result list
+run_step_isolated <- function(step_name, step_num, code_block, cfg_path,
+                              run_steps, pipeline_failed = FALSE) {
+  isolated <- function() {
+    if (!requireNamespace("callr", quietly = TRUE)) {
+      stop("callr is required to run pipeline steps in isolation.", call. = FALSE)
+    }
+    callr::r(
+      function(code_block, cfg_path, utils_path) {
+        if (file.exists(cfg_path)) list2env(readRDS(cfg_path), envir = globalenv())
+        if (file.exists(utils_path)) source(utils_path)
+        library(dplyr)
+        devtools::load_all(quiet = TRUE)
+        code_block()
+        invisible(NULL)
+      },
+      args = list(code_block = code_block, cfg_path = cfg_path,
+                  utils_path = file.path("data-raw", "pipeline_utils.R")),
+      wd = getwd(), show = TRUE, spinner = FALSE
+    )
+    invisible(NULL)
+  }
+  result <- run_step(step_name, step_num, isolated, run_steps, pipeline_failed)
+  gc(verbose = FALSE, full = TRUE)
+  result
 }
 
 

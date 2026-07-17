@@ -115,52 +115,22 @@ check_pred_critical <- function(result) {
   # that adds a publish_files write to either isolated step fails loudly
   # (object not found in the child) instead of silently losing the write
   # across the subprocess boundary.
-  nms <- setdiff(ls(globalenv()),
-                 c("step_results", "pipeline_failed", "pipeline_start", "publish_files"))
-  nms <- nms[!vapply(nms, function(n) is.function(get(n, envir = globalenv())),
-                     logical(1))]
-  saveRDS(mget(nms, envir = globalenv()), .pred_isolated_cfg_path)
+  write_isolated_config(.pred_isolated_cfg_path, exclude = "publish_files")
 }
 
+# Shared isolation core lives in pipeline_utils.R (run_step_isolated) since the
+# 2026-07-17 dedup — this wrapper adds the per-call config snapshot (this
+# pipeline mutates config between steps, unlike opta's once-up-front snapshot)
+# and the inline pipeline_failed propagation this orchestrator uses.
 run_pred_step_isolated <- function(step_name, step_num, code_block) {
   .write_pred_isolated_config()
-  isolated <- function() {
-    if (!requireNamespace("callr", quietly = TRUE)) {
-      stop("callr is required to run this step in isolation.", call. = FALSE)
-    }
-    callr::r(
-      function(code_block, cfg_path, utils_path) {
-        if (file.exists(cfg_path)) list2env(readRDS(cfg_path), envir = globalenv())
-        if (file.exists(utils_path)) source(utils_path)
-        # The orchestrator (run_predictions_opta.R) does `library(dplyr);
-        # devtools::load_all()` once at its own top for the whole shared
-        # session; a fresh callr subprocess inherits neither. Individual
-        # step scripts inconsistently self-load their own deps --
-        # 02_player_ratings_to_team.R does both, 02b_team_skill_features.R
-        # does neither (confirmed 2026-07-16: 2b failed in isolation first
-        # with 'could not find function "bind_rows"', then again with
-        # 'could not find function ".detect_skill_stat_cols"', an internal
-        # panna function -- devtools::load_all() alone doesn't attach
-        # Imports like dplyr to the search path, and library(dplyr) alone
-        # doesn't give access to panna's own internals). Do both here,
-        # exactly mirroring the orchestrator's own setup, so isolated steps
-        # don't depend on which specific script they happen to be.
-        library(dplyr)
-        devtools::load_all(quiet = TRUE)
-        code_block()
-        invisible(NULL)
-      },
-      args = list(code_block = code_block, cfg_path = .pred_isolated_cfg_path,
-                  utils_path = file.path("data-raw", "pipeline_utils.R")),
-      wd = getwd(), show = TRUE, spinner = FALSE
-    )
-    invisible(NULL)
-  }
-  result <- run_step(step_name, step_num, isolated, run_steps, pipeline_failed)
+  result <- run_step_isolated(step_name, step_num, code_block,
+                              cfg_path = .pred_isolated_cfg_path,
+                              run_steps = run_steps,
+                              pipeline_failed = pipeline_failed)
   if (!is.null(result) && identical(result$status, "FAILED")) {
     pipeline_failed <<- TRUE
   }
-  gc(verbose = FALSE, full = TRUE)
   result
 }
 
