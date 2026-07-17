@@ -20,7 +20,13 @@ cache_skills <- file.path("data-raw", "cache-skills")
 opta_dir     <- file.path("..", "pannadata", "data", "opta")
 
 halflife <- if (exists("panna_halflife_days")) panna_halflife_days else 365L
-upload   <- if (exists("upload_career_panna", inherits = FALSE)) upload_career_panna else FALSE
+# Plain exists() (walks up to the driver's globalenv), NOT inherits = FALSE:
+# when this script runs via run_pipeline_step(source(..., local = TRUE)) the
+# flag lives in globalenv but the script's frame is local, so inherits = FALSE
+# could never see it — the pipeline path silently skipped every upload
+# (found 2026-07-17; the inherits=FALSE guard is only for FUNCTION-name
+# collisions like the dplyr sample_n case, not config flags).
+upload   <- if (exists("upload_career_panna")) upload_career_panna else FALSE
 
 splints_path <- file.path(cache_opta, "03_splints.rds")
 spm_path     <- file.path(cache_skills, "03_skill_spm.rds")
