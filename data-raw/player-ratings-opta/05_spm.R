@@ -10,7 +10,7 @@
 library(dplyr)
 devtools::load_all()
 
-cache_dir <- file.path("data-raw", "cache-opta")
+if (!exists("cache_dir", inherits = FALSE)) cache_dir <- file.path("data-raw", "cache-opta")
 use_xmetrics_features <- if (exists("use_xmetrics_features")) use_xmetrics_features else TRUE
 
 # 2. Load Data ----

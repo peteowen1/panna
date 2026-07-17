@@ -10,7 +10,7 @@
 library(dplyr)
 devtools::load_all()
 
-cache_dir <- file.path("data-raw", "cache-opta")
+if (!exists("cache_dir", inherits = FALSE)) cache_dir <- file.path("data-raw", "cache-opta")
 
 # panna#87 OOM mitigation (option A): env-gated CV skip. When OPTA_FIXED_LAMBDA
 # is set (any non-empty value, e.g. "1" in the GHA workflow), skip cv.glmnet and
