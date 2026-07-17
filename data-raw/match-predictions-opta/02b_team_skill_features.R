@@ -99,17 +99,7 @@ message(sprintf("  Match stats rows: %d", nrow(match_stats)))
 # bracket-select would itself copy the wide table); the fixtures path further
 # down inherits the narrow table. Column references are shared, not copied,
 # so this is near-free; the dropped columns free at the next gc().
-stat_cols_02b <- .detect_skill_stat_cols(match_stats)
-needed_cols_02b <- .compute_snapshot_loop_columns(
-  available_cols = names(match_stats),
-  stat_cols = stat_cols_02b,
-  extra_cols = c("player_id", "player_name", "match_date", "position",
-                 "total_minutes")
-)
-match_stats <- data.table::setDT(stats::setNames(
-  lapply(needed_cols_02b, function(cc) match_stats[[cc]]),
-  needed_cols_02b
-))
+match_stats <- .narrow_match_stats_for_skills(match_stats)
 gc(verbose = FALSE)
 message(sprintf("  Narrowed match_stats to %d columns for the skill loops",
                 ncol(match_stats)))
