@@ -12,11 +12,26 @@ extract_rapm_ratings(model, lambda = "min")
 \item{lambda}{Which lambda to use ("min" or "1se")}
 }
 \value{
-Data frame with player ratings
+Data frame with player ratings. In \code{mode = "net"},
+\code{offense}/\code{defense} are \code{NA} and \code{rapm} holds the net
+coefficient.
 }
 \description{
-Calculates player ratings as offense_coef - defense_coef.
-Positive = good, negative = bad.
+Calculates player ratings as offense_coef - defense_coef (\code{mode = "od"},
+default). Positive = good, negative = bad.
+}
+\details{
+Mode-aware (FABLE-PRIOR-FIX-PLAN.md Step 5, mirroring
+\code{extract_xrapm_ratings()}'s F4 fix): a model fit against a \code{mode =
+"net"} design (\code{\link{create_rapm_design_matrix}}/\code{\link{prepare_rapm_data}})
+has only \verb{_net} coefficients -- there is no offense/defense split to
+extract (D2: the target is zero-sum by construction, so an od-style split is
+mechanically unidentified; confirmed empirically: fitting a true zero-sum
+target in \code{mode = "od"} drives \code{cor(offense, defense)} to exactly
+-1). In \code{mode = "net"}, \code{rapm} holds the single net coefficient and
+\code{offense}/\code{defense} are \code{NA}. Detected via
+\code{model$panna_metadata$mode} (defaults \code{"od"} for models fit before
+this field existed).
 }
 \seealso{
 Other rapm: 

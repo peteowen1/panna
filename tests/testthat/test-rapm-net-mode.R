@@ -625,3 +625,285 @@ test_that("extract_xrapm_ratings aborts if coefficients don't match the declared
 
   expect_error(extract_xrapm_ratings(model), "don't match")
 })
+
+
+# ===========================================================================
+# Step 5 (FABLE-PRIOR-FIX-PLAN.md): fit_rapm()/extract_rapm_ratings() (the
+# BASE, no-prior path) must also be mode-aware. 04_rapm.R's multi-target
+# section fits WPA's base RAPM (the SPM training target) with mode = "net" --
+# empirically confirmed necessary: fitting a true zero-sum target in mode =
+# "od" drives cor(offense, defense) to EXACTLY -1 (a ridge fit on a zero-sum
+# target is symmetric under the row/off-def/sign swap, so the unique
+# ridge-regularized solution is a fixed point of that symmetry), which would
+# trip the Step-1 D5 tripwire unconditionally and abort the whole script.
+# ===========================================================================
+
+test_that("fit_rapm stores mode in panna_metadata (net)", {
+  skip_if_not_installed("glmnet")
+  rapm_data <- .net_mode_fit_data()
+  rapm_data$mode <- "net"
+
+  model <- fit_rapm(rapm_data, alpha = 0, nfolds = 3, parallel = FALSE)
+
+  expect_equal(model$panna_metadata$mode, "net")
+  expect_equal(model$panna_metadata$n_player_cols, rapm_data$n_players)
+})
+
+test_that("fit_rapm defaults mode to \"od\" when rapm_data has no $mode element (regression guard)", {
+  skip_if_not_installed("glmnet")
+  set.seed(7)
+  n_players <- 10
+  player_ids <- paste0("odp2_", seq_len(n_players))
+  n_splints <- 20
+  n_rows <- n_splints * 2
+  X_players <- matrix(0, nrow = n_rows, ncol = n_players * 2)
+  for (i in seq_len(n_splints)) {
+    home_players <- sample(seq_len(n_players), 4)
+    away_players <- sample(setdiff(seq_len(n_players), home_players), 4)
+    row_home <- (i - 1) * 2 + 1
+    row_away <- (i - 1) * 2 + 2
+    for (p in home_players) X_players[row_home, p] <- 1
+    for (p in away_players) X_players[row_home, n_players + p] <- 1
+    for (p in away_players) X_players[row_away, p] <- 1
+    for (p in home_players) X_players[row_away, n_players + p] <- 1
+  }
+  covariates <- c("is_home")
+  X <- cbind(X_players, matrix(rep(c(1, 0), n_splints), nrow = n_rows))
+  colnames(X) <- c(paste0(player_ids, "_off"), paste0(player_ids, "_def"), covariates)
+  y <- rnorm(n_rows, mean = 1, sd = 0.4)
+  weights <- runif(n_rows, 5, 30)
+  player_mapping <- data.frame(
+    player_id = player_ids,
+    player_name = paste("OD2 Player", seq_len(n_players)),
+    total_minutes = sample(500:3000, n_players, replace = TRUE),
+    stringsAsFactors = FALSE
+  )
+  rapm_data <- list(
+    X = X, y = y, weights = weights, player_ids = player_ids,
+    player_mapping = player_mapping, covariate_cols = covariates,
+    covariate_names = covariates, n_players = n_players
+    # no $mode element -- older fixture shape
+  )
+
+  model <- fit_rapm(rapm_data, alpha = 0, nfolds = 3, parallel = FALSE)
+  expect_equal(model$panna_metadata$mode, "od")
+  expect_equal(model$panna_metadata$n_player_cols, n_players * 2)
+})
+
+test_that("extract_rapm_ratings net mode extracts _net coefficients, offense/defense NA", {
+  skip_if_not_installed("glmnet")
+  rapm_data <- .net_mode_fit_data()
+  rapm_data$mode <- "net"
+
+  model <- fit_rapm(rapm_data, alpha = 0, nfolds = 3, parallel = FALSE)
+  ratings <- extract_rapm_ratings(model)
+
+  expect_equal(nrow(ratings), rapm_data$n_players)
+  expect_setequal(ratings$player_id, rapm_data$player_ids)
+  expect_true(all(is.finite(ratings$rapm)))
+  expect_true(all(is.na(ratings$offense)))
+  expect_true(all(is.na(ratings$defense)))
+})
+
+test_that("extract_rapm_ratings od mode is unaffected by mode-awareness (regression guard)", {
+  skip_if_not_installed("glmnet")
+  # Self-contained od-mode fixture (not create_test_rapm_data() from
+  # test-rapm-model.R -- testthat does not share top-level helpers defined
+  # inside another test-*.R file across files, only tests/testthat/helper-*.R).
+  set.seed(7)
+  n_players <- 8
+  player_ids <- paste0("odp3_", seq_len(n_players))
+  n_splints <- 20
+  n_rows <- n_splints * 2
+  X_players <- matrix(0, nrow = n_rows, ncol = n_players * 2)
+  for (i in seq_len(n_splints)) {
+    home_players <- sample(seq_len(n_players), 3)
+    away_players <- sample(setdiff(seq_len(n_players), home_players), 3)
+    row_home <- (i - 1) * 2 + 1
+    row_away <- (i - 1) * 2 + 2
+    for (p in home_players) X_players[row_home, p] <- 1
+    for (p in away_players) X_players[row_home, n_players + p] <- 1
+    for (p in away_players) X_players[row_away, p] <- 1
+    for (p in home_players) X_players[row_away, n_players + p] <- 1
+  }
+  X <- cbind(X_players, matrix(rep(c(1, 0), n_splints), nrow = n_rows))
+  colnames(X) <- c(paste0(player_ids, "_off"), paste0(player_ids, "_def"), "is_home")
+  y <- rnorm(n_rows, mean = 1, sd = 0.4)
+  player_mapping <- data.frame(
+    player_id = player_ids,
+    player_name = paste("OD3 Player", seq_len(n_players)),
+    total_minutes = sample(500:3000, n_players, replace = TRUE),
+    stringsAsFactors = FALSE
+  )
+  rapm_data <- list(
+    X = X, y = y, weights = runif(n_rows, 5, 30), player_ids = player_ids,
+    player_mapping = player_mapping, covariate_cols = "is_home",
+    covariate_names = "is_home", n_players = n_players, mode = "od"
+  )
+
+  model <- fit_rapm(rapm_data, alpha = 0, nfolds = 3, parallel = FALSE)
+  ratings <- extract_rapm_ratings(model)
+
+  expect_false(any(is.na(ratings$offense)))
+  expect_false(any(is.na(ratings$defense)))
+  expect_equal(ratings$rapm, ratings$offense - ratings$defense)
+})
+
+test_that("extract_rapm_ratings aborts if coefficients don't match the declared mode", {
+  skip_if_not_installed("glmnet")
+  rapm_data <- .net_mode_fit_data()
+  rapm_data$mode <- "net"
+  model <- fit_rapm(rapm_data, alpha = 0, nfolds = 3, parallel = FALSE)
+
+  model$panna_metadata$mode <- "od"
+  expect_error(extract_rapm_ratings(model), "don't match")
+})
+
+test_that("od-mode ridge fit on a TRUE zero-sum target mirrors offense/defense hard enough to trip the D5 tripwire (empirical proof mode=\"net\" is required for WPA)", {
+  skip_if_not_installed("glmnet")
+  set.seed(123)
+  n_players <- 16
+  player_ids <- paste0("mirror_p", seq_len(n_players))
+  n_splints <- 60
+  n_rows <- n_splints * 2
+  X_players <- matrix(0, nrow = n_rows, ncol = n_players * 2)
+  target <- numeric(n_rows)
+  for (i in seq_len(n_splints)) {
+    home_players <- sample(seq_len(n_players), 5)
+    away_players <- sample(setdiff(seq_len(n_players), home_players), 5)
+    row_home <- (i - 1) * 2 + 1
+    row_away <- (i - 1) * 2 + 2
+    for (p in home_players) X_players[row_home, p] <- 1
+    for (p in away_players) X_players[row_home, n_players + p] <- 1
+    for (p in away_players) X_players[row_away, p] <- 1
+    for (p in home_players) X_players[row_away, n_players + p] <- 1
+    t_home <- rnorm(1, 0, 0.4)
+    target[row_home] <- t_home
+    target[row_away] <- -t_home  # exactly zero-sum, like WPA (D2)
+  }
+  X <- cbind(X_players, matrix(rep(c(1, 0), n_splints), nrow = n_rows))
+  colnames(X) <- c(paste0(player_ids, "_off"), paste0(player_ids, "_def"), "is_home")
+  player_mapping <- data.frame(
+    player_id = player_ids,
+    player_name = paste("Mirror Player", seq_len(n_players)),
+    total_minutes = sample(500:3000, n_players, replace = TRUE),
+    stringsAsFactors = FALSE
+  )
+  rapm_data <- list(
+    X = X, y = target, weights = runif(n_rows, 5, 30), player_ids = player_ids,
+    player_mapping = player_mapping, covariate_cols = "is_home",
+    covariate_names = "is_home", n_players = n_players, mode = "od"
+  )
+
+  model <- fit_rapm(rapm_data, alpha = 0, nfolds = 3, parallel = FALSE)
+  ratings <- extract_rapm_ratings(model)
+
+  # A ridge fit on a truly zero-sum target is symmetric under the
+  # (row, off/def role, target sign) swap, so its unique regularized solution
+  # is (very close to) a fixed point of that symmetry: offense = -defense for
+  # every player. Assert against the ACTUAL consequence -- this is exactly
+  # what would abort 04_rapm.R's multi-target WPA fit (D5's cor_threshold =
+  # 0.9) if it were left in mode = "od" instead of "net".
+  expect_gt(abs(cor(ratings$offense, ratings$defense)), 0.9)
+  expect_error(.check_degenerate_multi_target(ratings, "wpa"), "mirrored")
+})
+
+
+# ===========================================================================
+# Step 5 (FABLE-PRIOR-FIX-PLAN.md) end-to-end chain-wiring test: proves the
+# L2/L3 class of bug (a dead SPM prior silently never reaching
+# fit_rapm_with_prior()) cannot silently return. Synthetic splints with a
+# zero-sum WPA target -> prepare_rapm_data(mode = "net") ->
+# build_prior_vector()-built named net prior -> fit_rapm_with_prior(mode =
+# "net") -> extract_xrapm_ratings() returns non-NA xrapm AND the prior
+# demonstrably matched > 0 players (the exact quantity L2/L3 silently zeroed).
+# ===========================================================================
+
+.e2e_net_wpa_splint_data <- function(n_matches = 15, splints_per_match = 4, n_players = 16) {
+  set.seed(99)
+  player_ids <- paste0("e2e_p", seq_len(n_players))
+  splints_list <- list()
+  players_list <- list()
+  ctr <- 0L
+
+  for (m in seq_len(n_matches)) {
+    match_id <- paste0("e2e_m", m)
+    home_pool <- sample(player_ids, 6)
+    away_pool <- sample(setdiff(player_ids, home_pool), 6)
+    start_min <- 0
+    for (s in seq_len(splints_per_match)) {
+      ctr <- ctr + 1L
+      splint_id <- paste0("e2e_s", ctr)
+      dur <- runif(1, 5, 15)
+      end_min <- start_min + dur
+      wpa_home <- rnorm(1, 0, 0.02)
+
+      splints_list[[ctr]] <- data.frame(
+        splint_id = splint_id, match_id = match_id, duration = dur,
+        start_minute = start_min, end_minute = end_min,
+        gf_home = 0, ga_home = 0, avg_min = (start_min + end_min) / 2,
+        n_players_home = 11, n_players_away = 11,
+        wpa_home = wpa_home, wpa_away = -wpa_home,
+        stringsAsFactors = FALSE
+      )
+
+      home_players <- sample(home_pool, 4)
+      away_players <- sample(away_pool, 4)
+      players_list[[ctr]] <- rbind(
+        data.frame(splint_id = splint_id, match_id = match_id, player_id = home_players,
+                   player_name = home_players, is_home = 1L, stringsAsFactors = FALSE),
+        data.frame(splint_id = splint_id, match_id = match_id, player_id = away_players,
+                   player_name = away_players, is_home = 0L, stringsAsFactors = FALSE)
+      )
+      start_min <- end_min
+    }
+  }
+
+  list(splints = do.call(rbind, splints_list), players = do.call(rbind, players_list))
+}
+
+test_that("Step 5 end-to-end: build_prior_vector() priors demonstrably reach fit_rapm_with_prior (net mode, WPA)", {
+  skip_if_not_installed("glmnet")
+  splint_data <- .e2e_net_wpa_splint_data()
+
+  rapm_data <- prepare_rapm_data(splint_data, min_minutes = 10,
+                                 target_type = "wpa", include_covariates = TRUE,
+                                 mode = "net")
+
+  # A synthetic net-SPM prediction table, exactly the shape 05_spm.R's single
+  # net-SPM fit produces -- the input build_prior_vector() expects.
+  real_ids <- rapm_data$player_mapping$player_id[rapm_data$player_mapping$player_id != "replacement"]
+  spm_ratings <- data.frame(player_id = real_ids, stringsAsFactors = FALSE)
+  spm_ratings$spm <- stats::rnorm(nrow(spm_ratings), 0, 0.05)
+
+  net_prior <- build_prior_vector(
+    spm_data = spm_ratings, spm_col = "spm",
+    player_mapping = rapm_data$player_mapping
+  )
+
+  # The L2/L3 bug this proves fixed: the old bespoke `pid %in% names(player_map)`
+  # loop (player_map a data.frame -> names() are COLUMN names, never a
+  # player_id) matched 0 players; even patched, an unnamed aligned vector
+  # still matches 0 against fit_rapm_with_prior()'s match(player_ids,
+  # names(offense_prior)). A correctly-named build_prior_vector() output
+  # matches every regular player.
+  expect_gt(sum(net_prior != 0), 0)
+  expect_equal(sum(net_prior != 0), nrow(spm_ratings))
+
+  model <- fit_rapm_with_prior(rapm_data, offense_prior = net_prior,
+                               defense_prior = NULL, alpha = 0, nfolds = 3,
+                               mode = "net")
+  expect_equal(model$panna_metadata$type, "xrapm_net")
+
+  ratings <- extract_xrapm_ratings(model)
+  # n_players_total (not n_players): extract_xrapm_ratings() returns one row
+  # per rapm_data$player_ids entry, which includes the "replacement" pool row.
+  expect_equal(nrow(ratings), rapm_data$n_players_total)
+  expect_true(all(is.finite(ratings$xrapm)))
+  expect_true(all(is.na(ratings$offense)))
+  expect_true(all(is.na(ratings$defense)))
+
+  # The D5 tripwire this chain must survive without a false-positive abort
+  # (Step 5's net-mode-aware .check_degenerate_multi_target()).
+  expect_true(isTRUE(.check_degenerate_multi_target(ratings, "wpa")))
+})

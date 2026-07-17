@@ -93,6 +93,62 @@ test_that(".check_degenerate_multi_target aborts on malformed input", {
 
 
 # =============================================================================
+# D5 net-mode awareness (FABLE-PRIOR-FIX-PLAN.md Step 5): net-mode ratings
+# (extract_xrapm_ratings()/extract_rapm_ratings() mode = "net") have
+# offense/defense structurally NA -- there's no O/D split to check for
+# mirroring. Without this, a HEALTHY net-mode WPA fit would always trip the
+# "all-shrunk" abort (sd(NA) is NA, not finite) purely from its shape, not
+# from any real degeneracy -- exactly the compatibility gap flagged for
+# 06_xrapm.R / 07_seasonal_ratings.R once WPA fits net mode.
+# =============================================================================
+
+test_that(".check_degenerate_multi_target passes on healthy net-mode ratings (xrapm column)", {
+  set.seed(4)
+  ratings <- data.frame(
+    player_id = paste0("p", 1:20),
+    xrapm = rnorm(20, 0, 0.3),
+    offense = NA_real_,
+    defense = NA_real_
+  )
+  expect_true(isTRUE(.check_degenerate_multi_target(ratings, "wpa")))
+})
+
+test_that(".check_degenerate_multi_target aborts on all-shrunk net-mode ratings", {
+  ratings <- data.frame(
+    player_id = paste0("p", 1:20),
+    xrapm = 1e-6 + rnorm(20, 0, 1e-7),
+    offense = NA_real_,
+    defense = NA_real_
+  )
+  expect_error(.check_degenerate_multi_target(ratings, "wpa"), "all-shrunk")
+})
+
+test_that(".check_degenerate_multi_target net-mode detection also works via a plain 'rapm' column", {
+  # extract_rapm_ratings() (base, no-prior) net mode produces "rapm", not
+  # "xrapm" -- the 04_rapm.R base multi-target WPA fit.
+  set.seed(5)
+  ratings <- data.frame(
+    player_id = paste0("p", 1:20),
+    rapm = rnorm(20, 0, 0.3),
+    offense = NA_real_,
+    defense = NA_real_
+  )
+  expect_true(isTRUE(.check_degenerate_multi_target(ratings, "wpa")))
+})
+
+test_that(".check_degenerate_multi_target net-mode detection works via the target-suffixed rename (04_rapm.R's rapm_<tgt> pattern)", {
+  set.seed(6)
+  ratings <- data.frame(
+    player_id = paste0("p", 1:20),
+    rapm_wpa = rnorm(20, 0, 0.3),
+    offense = NA_real_,
+    defense = NA_real_
+  )
+  expect_true(isTRUE(.check_degenerate_multi_target(ratings, "wpa")))
+})
+
+
+# =============================================================================
 # D4: fit_rapm_with_prior() prior-match abort
 # =============================================================================
 

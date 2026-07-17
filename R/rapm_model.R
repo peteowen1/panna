@@ -164,12 +164,17 @@ fit_rapm <- function(rapm_data, alpha = 0, nfolds = 10,
 
   # Add metadata
   target_type <- if (!is.null(rapm_data$target_type)) rapm_data$target_type else "xg"
+  # FABLE-PRIOR-FIX-PLAN.md Step 5: mode carried through so extract_rapm_ratings()
+  # can be mode-aware (mirrors fit_rapm_with_prior()'s panna_metadata$mode).
+  # Defaults "od" for rapm_data built before the mode parameter existed.
+  fit_mode <- if (!is.null(rapm_data$mode)) rapm_data$mode else "od"
   cv_fit$panna_metadata <- list(
     type = "rapm",
     target_type = target_type,
+    mode = fit_mode,
     alpha = alpha,
     n_observations = length(y),
-    n_player_cols = rapm_data$n_players * 2,
+    n_player_cols = if (fit_mode == "net") rapm_data$n_players else rapm_data$n_players * 2,
     n_covariates = length(rapm_data$covariate_names),
     lambda_min = cv_fit$lambda.min,
     lambda_1se = cv_fit$lambda.1se,
@@ -195,13 +200,27 @@ fit_rapm <- function(rapm_data, alpha = 0, nfolds = 10,
 
 #' Extract RAPM ratings from fitted model
 #'
-#' Calculates player ratings as offense_coef - defense_coef.
-#' Positive = good, negative = bad.
+#' Calculates player ratings as offense_coef - defense_coef (\code{mode = "od"},
+#' default). Positive = good, negative = bad.
+#'
+#' Mode-aware (FABLE-PRIOR-FIX-PLAN.md Step 5, mirroring
+#' \code{extract_xrapm_ratings()}'s F4 fix): a model fit against a \code{mode =
+#' "net"} design (\code{\link{create_rapm_design_matrix}}/\code{\link{prepare_rapm_data}})
+#' has only \verb{_net} coefficients -- there is no offense/defense split to
+#' extract (D2: the target is zero-sum by construction, so an od-style split is
+#' mechanically unidentified; confirmed empirically: fitting a true zero-sum
+#' target in \code{mode = "od"} drives \code{cor(offense, defense)} to exactly
+#' -1). In \code{mode = "net"}, \code{rapm} holds the single net coefficient and
+#' \code{offense}/\code{defense} are \code{NA}. Detected via
+#' \code{model$panna_metadata$mode} (defaults \code{"od"} for models fit before
+#' this field existed).
 #'
 #' @param model Fitted RAPM model from fit_rapm
 #' @param lambda Which lambda to use ("min" or "1se")
 #'
-#' @return Data frame with player ratings
+#' @return Data frame with player ratings. In \code{mode = "net"},
+#'   \code{offense}/\code{defense} are \code{NA} and \code{rapm} holds the net
+#'   coefficient.
 #' @family rapm
 #' @export
 extract_rapm_ratings <- function(model, lambda = "min") {
@@ -224,25 +243,54 @@ extract_rapm_ratings <- function(model, lambda = "min") {
   player_ids <- model$panna_metadata$player_ids
   covariate_names <- model$panna_metadata$covariate_names
 
-  # Extract offense and defense coefficients
-  off_cols <- paste0(player_ids, "_off")
-  def_cols <- paste0(player_ids, "_def")
+  mode <- model$panna_metadata$mode
+  if (is.null(mode)) mode <- "od"
 
-  off_coefs <- all_coefs[off_cols]
-  def_coefs <- all_coefs[def_cols]
+  if (mode == "net") {
+    net_cols <- paste0(player_ids, "_net")
+    if (!all(net_cols %in% names(all_coefs))) {
+      missing_cols <- net_cols[!net_cols %in% names(all_coefs)]
+      cli::cli_abort(c(
+        "extract_rapm_ratings: model coefficients don't match the declared {.val net} mode.",
+        "x" = "Missing {length(missing_cols)} {.field _net} column{?s} (e.g. {.val {head(missing_cols, 3)}}).",
+        "i" = "Was this model actually fit with a {.code mode = \"net\"} design matrix?"
+      ))
+    }
 
-  # RAPM rating = offense - defense
-  # Positive offense = creates more xG (good)
-  # Positive defense = allows more xG (bad), so we subtract
-  rapm <- off_coefs - def_coefs
+    net_coefs <- all_coefs[net_cols]
+    ratings <- data.frame(
+      player_id = player_ids,
+      rapm = as.numeric(net_coefs),
+      offense = NA_real_,
+      defense = NA_real_
+    )
+  } else {
+    off_cols <- paste0(player_ids, "_off")
+    def_cols <- paste0(player_ids, "_def")
+    if (!all(off_cols %in% names(all_coefs)) || !all(def_cols %in% names(all_coefs))) {
+      missing_cols <- c(off_cols, def_cols)[!c(off_cols, def_cols) %in% names(all_coefs)]
+      cli::cli_abort(c(
+        "extract_rapm_ratings: model coefficients don't match the declared {.val od} mode.",
+        "x" = "Missing {length(missing_cols)} {.field _off}/{.field _def} column{?s} (e.g. {.val {head(missing_cols, 3)}}).",
+        "i" = "Was this model actually fit with {.code mode = \"net\"}? Net-mode models have only {.field _net} columns."
+      ))
+    }
 
-  # Create results data frame
-  ratings <- data.frame(
-    player_id = player_ids,
-    rapm = as.numeric(rapm),
-    offense = as.numeric(off_coefs),
-    defense = as.numeric(def_coefs)
-  )
+    off_coefs <- all_coefs[off_cols]
+    def_coefs <- all_coefs[def_cols]
+
+    # RAPM rating = offense - defense
+    # Positive offense = creates more xG (good)
+    # Positive defense = allows more xG (bad), so we subtract
+    rapm <- off_coefs - def_coefs
+
+    ratings <- data.frame(
+      player_id = player_ids,
+      rapm = as.numeric(rapm),
+      offense = as.numeric(off_coefs),
+      defense = as.numeric(def_coefs)
+    )
+  }
 
   # Join with player mapping
   if (!is.null(model$panna_metadata$player_mapping)) {
@@ -705,7 +753,9 @@ extract_xrapm_ratings <- function(model, lambda = "min") {
 #'
 #' @param ratings Data frame with (at least) numeric \code{offense}/
 #'   \code{defense} columns, as returned by \code{extract_rapm_ratings()} /
-#'   \code{extract_xrapm_ratings()}.
+#'   \code{extract_xrapm_ratings()}. Net-mode ratings (D2: \code{offense}/
+#'   \code{defense} entirely \code{NA} -- no O/D split exists) are also
+#'   accepted; see the net-mode branch below.
 #' @param target_label Character, used only in the abort message (e.g. \code{"epv"}).
 #' @param sd_threshold Minimum sd() for offense/defense coefficients (default
 #'   \code{1e-4}, per D5).
@@ -723,6 +773,37 @@ extract_xrapm_ratings <- function(model, lambda = "min") {
       "Multi-target tripwire for {.val {target_label}}: {.arg ratings} must be a data frame with {.field offense}/{.field defense} columns.",
       "x" = "Got {.cls {class(ratings)}} with columns {.field {names(ratings)}}."
     ))
+  }
+
+  # D5 "or net equivalent" (FABLE-PRIOR-FIX-PLAN.md): net-mode ratings
+  # (extract_xrapm_ratings()/extract_rapm_ratings() mode = "net", Step 5)
+  # have offense/defense structurally NA -- there is no O/D split to check
+  # for mirroring. Detect via all-NA offense/defense and check the spread of
+  # the actual rating column instead (xrapm from a prior-fit, rapm from a
+  # plain fit -- try both, plus the target-suffixed rename 04_rapm.R applies
+  # before this function is ever called on its own multi-target results).
+  is_net_mode <- nrow(ratings) > 0 && all(is.na(ratings$offense)) && all(is.na(ratings$defense))
+  if (is_net_mode) {
+    net_col_candidates <- c("xrapm", "rapm",
+                            paste0("xrapm_", target_label), paste0("rapm_", target_label))
+    net_col <- net_col_candidates[net_col_candidates %in% names(ratings)][1]
+    if (is.na(net_col)) {
+      cli::cli_abort(c(
+        "Multi-target tripwire for {.val {target_label}}: net-mode {.arg ratings} (all-NA offense/defense) must have an {.field xrapm} or {.field rapm} column.",
+        "x" = "Got columns {.field {names(ratings)}}."
+      ))
+    }
+
+    sd_net <- stats::sd(ratings[[net_col]], na.rm = TRUE)
+    if (!is.finite(sd_net) || sd_net <= sd_threshold) {
+      cli::cli_abort(c(
+        "Degenerate multi-target RAPM output for {.val {target_label}}: coefficients are all-shrunk.",
+        "x" = "sd({net_col}) = {signif(sd_net, 3)} (threshold {sd_threshold}).",
+        "i" = "See FABLE-PRIOR-FIX-PLAN.md D5/C1 -- this artifact will NOT be written."
+      ))
+    }
+
+    return(invisible(TRUE))
   }
 
   sd_off <- stats::sd(ratings$offense, na.rm = TRUE)
