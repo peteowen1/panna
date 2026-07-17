@@ -239,37 +239,36 @@ walk_tree <- function(node, feats) {
 predict_manual <- function(trees, feats) {
   s <- 0
   for (tr in trees) s <- s + walk_tree(tr, as.list(feats))
-  # xgboost reg:squarederror has base_score = 0.5 by default; without softmax,
-  # worker should add base_score too. Check booster config.
   s
 }
 
-# Pull base_score from booster config (API name varies by xgboost version)
-base_score <- tryCatch({
-  cfg_raw <- if (exists("xgb.config", where = asNamespace("xgboost"), inherits = FALSE)) {
-    xgboost::xgb.config(wp$model)
-  } else {
-    NULL
-  }
-  if (!is.null(cfg_raw) && is.character(cfg_raw)) {
-    cfg <- jsonlite::fromJSON(cfg_raw, simplifyDataFrame = FALSE, simplifyVector = FALSE)
-    as.numeric(cfg$learner$learner_model_param$base_score %||% 0.5)
-  } else {
-    # Back-compat: derive empirically — predict a row with zero-everything and
-    # subtract the manual tree sum from the R prediction.
-    z <- mk_feat(time_remaining = 0, xmargin = 0, xg_diff = 0,
-                 red_card_diff = 0L, is_home = 0L, is_second_half = 0L,
-                 is_extra_time = 0L)
-    zpred <- predict(wp$model, as.matrix(z[, wp$feature_names]))
-    zwalk <- predict_manual(reloaded$trees, as.list(z[, wp$feature_names]))
-    as.numeric(zpred - zwalk)
-  }
-}, error = function(e) 0.5)
-cli_alert_info("Booster base_score = {round(base_score, 5)}")
+# base_score is NOT re-derived here — reuse the value already extracted from
+# the booster config in step 3 (same `cfg`, same `base_score` variable). A
+# separate empirical re-derivation used to live in this section (predict a
+# zero-feature row, subtract the manual raw sum from R's predict()), but for
+# a binary:logistic booster predict() applies a sigmoid while the manual sum
+# is raw logit-space, so "zpred - zwalk" mixed probability-space and
+# logit-space and produced a bogus value (0.61295) that silently disagreed
+# with step 3's correct 0.5157 read off the same booster config's
+# learner_model_param$base_score. One extraction, reused everywhere, so the
+# two sections can't drift apart again.
+cli_alert_info("Booster base_score (reusing step 3 extraction) = {round(base_score, 5)}")
+
+logit <- function(p) log(p / (1 - p))
 
 for (i in seq_len(nrow(scenarios))) {
   feats <- as.list(scenarios[i, wp$feature_names])
-  manual <- predict_manual(reloaded$trees, feats) + base_score
+  raw_sum <- predict_manual(reloaded$trees, feats)
+  # binary:logistic booster: predict() = sigmoid(sum(leaves) + logit(base_score)).
+  # reg:squarederror (and anything else): predict() = sum(leaves) + base_score,
+  # no sigmoid. Comparing raw-sum-vs-predict() unconditionally (the old code)
+  # is correct only for the latter — every binary:logistic scenario mismatched
+  # by construction, not because the export was wrong.
+  manual <- if (identical(objective, "binary:logistic")) {
+    1 / (1 + exp(-(raw_sum + logit(base_score))))
+  } else {
+    raw_sum + base_score
+  }
   rpred  <- pred_scalar[i]
   ok <- abs(manual - rpred) < 1e-5
   cli_alert_info("{scenarios$label[i]}: R = {round(rpred, 5)}, manual = {round(manual, 5)}, diff = {signif(abs(manual - rpred), 3)} {ifelse(ok, '[OK]', '[MISMATCH]')}")
