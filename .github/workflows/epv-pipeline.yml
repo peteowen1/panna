@@ -227,7 +227,7 @@ jobs:
           elif ! vb_sh_verify "peteowen1/pannadata" "models" "${files[@]}"; then
             echo "::warning::Early upload post-verify mismatch — the final upload step retries; manifest not updated by this step."
           elif ! vb_sh_manifest_last "peteowen1/pannadata" "models" 0 \
-              "$RUNNER_TEMP/models_manifest.json" "${files[@]}"; then
+              "$RUNNER_TEMP/bus_manifest.json" "${files[@]}"; then
             echo "::warning::Early bus_manifest.json update failed — the final upload step retries."
           fi
 
@@ -351,7 +351,7 @@ jobs:
             fi
             vb_sh_verify "peteowen1/pannadata" "models" "${files[@]}"
             vb_sh_manifest_last "peteowen1/pannadata" "models" 0 \
-              "$RUNNER_TEMP/models_manifest.json" "${files[@]}"
+              "$RUNNER_TEMP/bus_manifest.json" "${files[@]}"
           fi
 
           if [ "$TRAIN_WP" = "true" ]; then
@@ -381,7 +381,7 @@ jobs:
               echo "  Published wp_model.rds -> pannamodels/epv (LIVE store)"
               vb_sh_verify "peteowen1/pannamodels" "epv" "$WP_MODEL"
               vb_sh_manifest_last "peteowen1/pannamodels" "epv" 0 \
-                "$RUNNER_TEMP/epv_manifest.json" "$WP_MODEL"
+                "$RUNNER_TEMP/bus_manifest.json" "$WP_MODEL"
             else
               echo "::notice::PUBLISH_WP=false — wp_model.rds staged to pannadata/models only."
               echo "::notice::Predictions still read the OLD model from pannamodels/epv until you re-run with publish_wp=true."
