@@ -16,7 +16,7 @@ extract_shots_from_spadl(spadl, lineups)
 Data frame with one row per shot containing:
 \itemize{
 \item match_id, minute, team, player_id, player_name
-\item xg: Model-predicted xG (penalties overridden to 0.76)
+\item xg: Model-predicted xG (penalties overridden to \code{PENALTY_XG})
 \item is_goal: Whether the shot resulted in a goal
 \item is_penalty: Whether the shot was a penalty
 }

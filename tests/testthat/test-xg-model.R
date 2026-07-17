@@ -95,6 +95,8 @@ test_that("fit_xg_model trains a model with predictions in [0,1]", {
   expect_s3_class(model, "xg_model")
   expect_true(!is.null(model$model))
   expect_true(!is.null(model$panna_metadata$feature_cols))
+  # Artifact must carry the penalty override for downstream consumers (panna#91)
+  expect_identical(model$panna_metadata$penalty_xg, PENALTY_XG)
 
   # Predictions should be probabilities
   preds <- predict_xg(model, features)

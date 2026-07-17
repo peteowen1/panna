@@ -322,7 +322,11 @@ fit_xg_model <- function(shot_features,
       n_goals = sum(y),
       goal_rate = mean(y),
       params = params,
-      exclude_penalties = exclude_penalties
+      exclude_penalties = exclude_penalties,
+      # Single source for the penalty override (panna#91): downstream consumers
+      # (pannadata enrich_shots_xg.R / build_shot_data.R, worker xg-model.json)
+      # read this from the artifact instead of hardcoding 0.80.
+      penalty_xg = PENALTY_XG
     )
   )
 
@@ -1059,7 +1063,7 @@ aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0,
 #' @return Data frame with one row per shot containing:
 #'   \itemize{
 #'     \item match_id, minute, team, player_id, player_name
-#'     \item xg: Model-predicted xG (penalties overridden to 0.76)
+#'     \item xg: Model-predicted xG (penalties overridden to \code{PENALTY_XG})
 #'     \item is_goal: Whether the shot resulted in a goal
 #'     \item is_penalty: Whether the shot was a penalty
 #'   }
