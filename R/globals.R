@@ -634,6 +634,15 @@ utils::globalVariables(c(
   "prorate",
   "val_home",
   "val_away",
+  "epv_home",
+  "epv_away",
+  "wpa_away",
+  "credit",
+  "action_minute",
+  "wp_delta_home",
+  "i.epv_home",
+  "i.epv_away",
+  "i.wpa_home",
 
   # Match prediction value metric columns
   "epr_diff",

@@ -10,106 +10,288 @@
 
 #' Add value metric columns to splints
 #'
-#' Joins per-game player value metrics (EPV, WPA, PSV) to splint data,
-#' aggregating to team-level totals within each splint. Values are prorated
-#' by splint duration relative to total match minutes.
+#' Joins per-splint player value metrics (EPV, WPA, PSV) to splint data.
 #'
-#' This allows RAPM to be trained on EPV, WPA, or PSV as response variables
-#' alongside the default xG target.
+#' EPV and WPA use TRUE per-splint attribution (FABLE-PRIOR-FIX-PLAN.md
+#' D1/D2, Step 3): the per-action credit streams from the EPV/WPA pipelines
+#' (Step 2) are cut at splint boundaries using the same \code{findInterval}
+#' convention as the xG shot attribution (\code{calculate_splint_npxgd_fast()},
+#' R/splint_creation.R) -- ties at a boundary timestamp go to the splint
+#' STARTING there, and actions at/after the last boundary attribute to the
+#' final splint. This replaces the old whole-match-value x
+#' duration-proration join, under which the target could not vary within a
+#' match (FABLE-PRIOR-FIX-PLAN.md C1: duration cancels exactly against the
+#' per-90 conversion, so \code{whole_match_value * 90 / match_duration} is
+#' constant for every splint of that match).
+#'
+#' PSV has no per-action stream (D3: it's a bottom-up box-score value with no
+#' per-splint count cache) and keeps the whole-match join + duration
+#' proration.
 #'
 #' @param splint_data List with \code{splints} and \code{players} data.frames
-#'   (from \code{create_all_splints()}).
-#' @param player_game_epv Per-game EPV from \code{aggregate_player_game_epv()}.
-#'   If NULL, EPV columns are not added.
-#' @param player_game_wpa Per-game WPA from \code{aggregate_player_game_wpa()}.
-#'   If NULL, WPA columns are not added.
+#'   (from \code{create_all_splints()}). \code{splints} must carry
+#'   \code{start_minute} and \code{splint_id} when \code{player_action_epv}
+#'   or \code{match_action_wpa} is supplied (the boundary cut needs them).
+#' @param player_action_epv Per-action, per-credited-player EPV stream from
+#'   \code{build_action_epv_credit()}
+#'   (\code{data-raw/epv/02_calculate_player_epv.R}). Columns:
+#'   \code{match_id}, \code{period_id}, \code{time_seconds}, \code{team_id},
+#'   \code{player_id}, \code{credit}. If NULL, \code{epv_home}/\code{epv_away}
+#'   are not added.
+#' @param match_action_wpa Per-action, home-perspective, UNcentered WP-delta
+#'   stream (\code{data-raw/epv/06_calculate_wpa.R}). Columns:
+#'   \code{match_id}, \code{period_id}, \code{time_seconds},
+#'   \code{wp_delta_home}. If NULL, \code{wpa_home}/\code{wpa_away} are not
+#'   added.
 #' @param player_game_psv Per-game PSV from \code{calculate_psv()}.
 #'   If NULL, PSV columns are not added.
 #'
 #' @return The \code{splint_data} list with additional columns on the
-#'   \code{splints} data.frame: \code{epv_home/epv_away},
-#'   \code{wpa_home/wpa_away}, \code{psv_home/psv_away}.
+#'   \code{splints} data.frame: \code{epv_home}/\code{epv_away} (per-splint
+#'   sums -- NOT zero-sum, both teams accrue their own threat),
+#'   \code{wpa_home}/\code{wpa_away} (per-splint sums, EXACTLY zero-sum by
+#'   construction: \code{wpa_away = -wpa_home}), \code{psv_home}/\code{psv_away}
+#'   (whole-match value prorated by splint duration).
 #'
 #' @family panna ratings
 #' @export
-add_value_metrics_to_splints <- function(splint_data, player_game_epv = NULL,
-                                          player_game_wpa = NULL,
+add_value_metrics_to_splints <- function(splint_data,
+                                          player_action_epv = NULL,
+                                          match_action_wpa = NULL,
                                           player_game_psv = NULL) {
   splints <- data.table::as.data.table(splint_data$splints)
   players <- data.table::as.data.table(splint_data$players)
 
-  # Total match duration per match (for prorating)
-  match_dur <- splints[, .(match_duration = sum(duration, na.rm = TRUE)),
-                        by = match_id]
-  splints[match_dur, match_duration := i.match_duration, on = "match_id"]
-  splints[, prorate := data.table::fifelse(
-    match_duration > 0, duration / match_duration, 0)]
+  need_boundaries <- !is.null(player_action_epv) || !is.null(match_action_wpa)
+  if (need_boundaries && nrow(splints) > 0 &&
+      (!"start_minute" %in% names(splints) || !"splint_id" %in% names(splints))) {
+    cli::cli_abort("splints must have {.val start_minute} and {.val splint_id} columns for per-splint EPV/WPA attribution.")
+  }
 
-  # Helper: join player values to splint players, sum per team, prorate
-  .add_metric <- function(splints, players, pgd, value_col, suffix) {
-    if (is.null(pgd)) return(splints)
-    pgd <- data.table::as.data.table(pgd)
+  # Per-match splint boundary lookup, shared by the EPV and WPA cuts below.
+  # Mirrors calculate_splint_npxgd_fast()'s
+  # findInterval(shot_minutes, boundaries$start_minute) +
+  # pmax(1L, pmin(n_splints, idx)) clamp EXACTLY (R/splint_creation.R), so
+  # every per-splint target (xg, epv, wpa) shares one attribution
+  # convention. Built as match_id-keyed lists (not one global findInterval)
+  # so the cut runs match-by-match without one match's boundaries leaking
+  # into another's actions; a stream match_id absent from `splints` (e.g.
+  # filtered upstream) simply attributes nowhere rather than guessing.
+  bd <- sid <- n_splints_by_match <- NULL
+  if (need_boundaries) {
+    bnd <- splints[, .(match_id = as.character(match_id), splint_id, start_minute)]
+    data.table::setorder(bnd, match_id, start_minute)
+    bnd_grp <- bnd[, .(start_minute_vec = list(start_minute),
+                        splint_id_vec = list(splint_id),
+                        n = .N), by = match_id]
+    bd  <- stats::setNames(bnd_grp$start_minute_vec, bnd_grp$match_id)
+    sid <- stats::setNames(bnd_grp$splint_id_vec, bnd_grp$match_id)
+    n_splints_by_match <- stats::setNames(bnd_grp$n, bnd_grp$match_id)
+  }
 
-    if (!value_col %in% names(pgd)) {
-      cli::cli_warn("Column {.val {value_col}} not found in player game data")
-      return(splints)
-    }
+  # Cuts a per-action stream (data.table with match_id + action_minute
+  # columns) at splint boundaries, adding a `splint_id` column -- NA for
+  # actions whose match_id has no splints in this splint_data.
+  .cut_to_splints <- function(dt) {
+    dt[, splint_id := {
+      mid <- .BY$match_id
+      b <- bd[[mid]]
+      if (is.null(b)) {
+        rep(NA_character_, .N)
+      } else {
+        idx <- findInterval(action_minute, b)
+        idx <- pmax(1L, pmin(n_splints_by_match[[mid]], idx))
+        sid[[mid]][idx]
+      }
+    }, by = match_id]
+    dt
+  }
 
-    # Join player game values to splint players
-    # Splint players may use "team" or "team_id" for team column
-    team_col <- if ("team_id" %in% names(players)) "team_id" else "team"
-    keep_cols <- intersect(c("splint_id", "match_id", "player_id", team_col, "is_home"),
-                            names(players))
-    player_vals <- merge(
-      players[, ..keep_cols],
-      pgd[, c("player_id", "match_id", value_col), with = FALSE],
-      by = c("player_id", "match_id"),
-      all.x = TRUE
-    )
-    player_vals[is.na(get(value_col)), (value_col) := 0]
-
-    # Sum per splint per team (is_home determines home/away)
-    if ("is_home" %in% names(player_vals)) {
-      team_totals <- player_vals[, .(
-        val_home = sum(get(value_col)[is_home == 1L], na.rm = TRUE),
-        val_away = sum(get(value_col)[is_home == 0L], na.rm = TRUE)
-      ), by = splint_id]
+  # ---- EPV: per-splint per-team sums (D1) ----
+  if (!is.null(player_action_epv)) {
+    # F3 (FABLE-PRIOR-FIX-PLAN.md review): as.data.table() on an
+    # already-valid data.table performs a full deep copy regardless of
+    # whether one is needed -- guard it. The column-narrow
+    # `[, required, with = FALSE]` below still returns an independent new
+    # table, so nothing downstream mutates the caller's object by reference.
+    epv_dt <- if (data.table::is.data.table(player_action_epv)) {
+      player_action_epv
     } else {
-      # Fallback: use home_team_id from splints
-      splint_home <- splints[, .(splint_id, home_team_id)]
-      player_vals[splint_home, home_team_id := i.home_team_id, on = "splint_id"]
-      team_totals <- player_vals[, .(
-        val_home = sum(get(value_col)[team_id == home_team_id], na.rm = TRUE),
-        val_away = sum(get(value_col)[team_id != home_team_id], na.rm = TRUE)
+      data.table::as.data.table(player_action_epv)
+    }
+    required <- c("match_id", "time_seconds", "player_id", "credit")
+    missing_cols <- setdiff(required, names(epv_dt))
+    if (length(missing_cols) > 0) {
+      cli::cli_abort("{.arg player_action_epv} missing column{?s}: {.field {missing_cols}}")
+    }
+    epv_dt <- epv_dt[, required, with = FALSE]
+    epv_dt[, match_id := as.character(match_id)]
+    epv_dt <- epv_dt[!is.na(match_id) & match_id %in% names(bd)]
+
+    splints[, epv_home := 0]
+    splints[, epv_away := 0]
+
+    if (nrow(epv_dt) > 0) {
+      epv_dt[, action_minute := time_seconds / 60]
+      epv_dt <- .cut_to_splints(epv_dt)
+      epv_dt <- epv_dt[!is.na(splint_id)]
+
+      # Side comes from the SPLINT PLAYERS table's is_home, joined on
+      # (match_id, player_id) -- not the stream's own team_id -- consistent
+      # with how every other per-player join in this file resolves sides,
+      # and it sidesteps any team_id namespace mismatch between the EPV
+      # pipeline's Opta IDs and the splint players table.
+      side_map <- unique(players[!is.na(is_home),
+                                  .(match_id = as.character(match_id), player_id, is_home)])
+      epv_dt[side_map, is_home := i.is_home, on = c("match_id", "player_id")]
+
+      # F1 (FABLE-PRIOR-FIX-PLAN.md review): a stream row whose (match_id,
+      # player_id) isn't in the splint players table' is_home lookup gets
+      # is_home = NA from the join above, and the aggregation below silently
+      # drops it via `!is.na(is_home)` -- discarding real EPV credit with no
+      # signal that anything was lost. Warn whenever any rows are unmatched;
+      # abort if the gap is large enough to indicate a real ID coverage
+      # problem (e.g. a player_id namespace mismatch between the EPV and
+      # splint pipelines) rather than incidental noise.
+      unmatched <- is.na(epv_dt$is_home)
+      n_unmatched <- sum(unmatched)
+      if (n_unmatched > 0) {
+        n_rows <- nrow(epv_dt)
+        n_players_unmatched <- data.table::uniqueN(epv_dt$player_id[unmatched])
+        total_abs_credit <- sum(abs(epv_dt$credit), na.rm = TRUE)
+        unmatched_abs_credit <- sum(abs(epv_dt$credit[unmatched]), na.rm = TRUE)
+        row_share <- n_unmatched / n_rows
+        credit_share <- if (total_abs_credit > 0) unmatched_abs_credit / total_abs_credit else 0
+
+        cli::cli_warn(c(
+          "add_value_metrics_to_splints (EPV): {n_unmatched} of {n_rows} stream row{?s} ({round(100 * row_share, 2)}%) have no matching (match_id, player_id) in the splint players table and will be dropped.",
+          "i" = "{n_players_unmatched} distinct player{?s}; {round(100 * credit_share, 2)}% of total |credit|."
+        ))
+
+        if (row_share > 0.01 || credit_share > 0.01) {
+          cli::cli_abort(c(
+            "add_value_metrics_to_splints (EPV): unmatched stream rows exceed the 1% coverage-gap threshold.",
+            "x" = "{round(100 * row_share, 2)}% of rows / {round(100 * credit_share, 2)}% of total |credit| unmatched.",
+            "i" = "The EPV stream and the splint players table have an ID coverage gap -- verify player_id namespaces agree between the EPV pipeline and splint creation before proceeding."
+          ))
+        }
+      }
+
+      epv_agg <- epv_dt[!is.na(is_home), .(
+        epv_home = sum(credit[is_home == 1L], na.rm = TRUE),
+        epv_away = sum(credit[is_home == 0L], na.rm = TRUE)
       ), by = splint_id]
+
+      if (nrow(epv_agg) > 0) {
+        splints[epv_agg, `:=`(epv_home = i.epv_home, epv_away = i.epv_away), on = "splint_id"]
+      }
+    }
+  }
+
+  # ---- WPA: per-splint home-POV sum, EXACTLY zero-sum (D2) ----
+  if (!is.null(match_action_wpa)) {
+    # F3: same as.data.table() deep-copy guard as the EPV branch above.
+    wpa_dt <- if (data.table::is.data.table(match_action_wpa)) {
+      match_action_wpa
+    } else {
+      data.table::as.data.table(match_action_wpa)
+    }
+    required <- c("match_id", "time_seconds", "wp_delta_home")
+    missing_cols <- setdiff(required, names(wpa_dt))
+    if (length(missing_cols) > 0) {
+      cli::cli_abort("{.arg match_action_wpa} missing column{?s}: {.field {missing_cols}}")
+    }
+    wpa_dt <- wpa_dt[, required, with = FALSE]
+    wpa_dt[, match_id := as.character(match_id)]
+    wpa_dt <- wpa_dt[!is.na(match_id) & match_id %in% names(bd)]
+
+    splints[, wpa_home := 0]
+
+    if (nrow(wpa_dt) > 0) {
+      wpa_dt[, action_minute := time_seconds / 60]
+      wpa_dt <- .cut_to_splints(wpa_dt)
+      wpa_dt <- wpa_dt[!is.na(splint_id)]
+
+      wpa_agg <- wpa_dt[, .(wpa_home = sum(wp_delta_home, na.rm = TRUE)), by = splint_id]
+      if (nrow(wpa_agg) > 0) {
+        splints[wpa_agg, wpa_home := i.wpa_home, on = "splint_id"]
+      }
     }
 
-    home_col <- paste0(suffix, "_home")
-    away_col <- paste0(suffix, "_away")
-    data.table::setnames(team_totals, c("val_home", "val_away"),
-                          c(home_col, away_col))
-
-    # Prorate by splint duration fraction
-    splints[team_totals, (home_col) := get(paste0("i.", home_col)) * prorate,
-            on = "splint_id"]
-    splints[team_totals, (away_col) := get(paste0("i.", away_col)) * prorate,
-            on = "splint_id"]
-    splints[is.na(get(home_col)), (home_col) := 0]
-    splints[is.na(get(away_col)), (away_col) := 0]
-
-    splints
+    # D2: exactly zero-sum by construction -- there is only one P(home
+    # wins), so a change in it is mechanically the equal-and-opposite change
+    # in P(away wins). Required by Step 4's net-mode zero-sum tripwire.
+    splints[, wpa_away := -wpa_home]
   }
 
-  splints <- .add_metric(splints, players, player_game_epv, "epv_total", "epv")
-  # Position-adjusted EPV (if available from adjust_epv_for_position)
-  if (!is.null(player_game_epv) && "epv_total_adj" %in% names(player_game_epv)) {
-    splints <- .add_metric(splints, players, player_game_epv, "epv_total_adj", "epv_adj")
-  }
-  splints <- .add_metric(splints, players, player_game_wpa, "wpa_total", "wpa")
-  splints <- .add_metric(splints, players, player_game_psv, "psv", "psv")
+  # ---- PSV: unchanged whole-match join + duration proration (D3: no
+  # per-splint box-score count cache exists) ----
+  if (!is.null(player_game_psv)) {
+    match_dur <- splints[, .(match_duration = sum(duration, na.rm = TRUE)),
+                          by = match_id]
+    splints[match_dur, match_duration := i.match_duration, on = "match_id"]
+    splints[, prorate := data.table::fifelse(
+      match_duration > 0, duration / match_duration, 0)]
 
-  # Clean up
-  splints[, c("match_duration", "prorate") := NULL]
+    # Helper: join player values to splint players, sum per team, prorate
+    .add_metric <- function(splints, players, pgd, value_col, suffix) {
+      if (is.null(pgd)) return(splints)
+      pgd <- data.table::as.data.table(pgd)
+
+      if (!value_col %in% names(pgd)) {
+        cli::cli_warn("Column {.val {value_col}} not found in player game data")
+        return(splints)
+      }
+
+      # Join player game values to splint players
+      # Splint players may use "team" or "team_id" for team column
+      team_col <- if ("team_id" %in% names(players)) "team_id" else "team"
+      keep_cols <- intersect(c("splint_id", "match_id", "player_id", team_col, "is_home"),
+                              names(players))
+      player_vals <- merge(
+        players[, ..keep_cols],
+        pgd[, c("player_id", "match_id", value_col), with = FALSE],
+        by = c("player_id", "match_id"),
+        all.x = TRUE
+      )
+      player_vals[is.na(get(value_col)), (value_col) := 0]
+
+      # Sum per splint per team (is_home determines home/away)
+      if ("is_home" %in% names(player_vals)) {
+        team_totals <- player_vals[, .(
+          val_home = sum(get(value_col)[is_home == 1L], na.rm = TRUE),
+          val_away = sum(get(value_col)[is_home == 0L], na.rm = TRUE)
+        ), by = splint_id]
+      } else {
+        # Fallback: use home_team_id from splints
+        splint_home <- splints[, .(splint_id, home_team_id)]
+        player_vals[splint_home, home_team_id := i.home_team_id, on = "splint_id"]
+        team_totals <- player_vals[, .(
+          val_home = sum(get(value_col)[team_id == home_team_id], na.rm = TRUE),
+          val_away = sum(get(value_col)[team_id != home_team_id], na.rm = TRUE)
+        ), by = splint_id]
+      }
+
+      home_col <- paste0(suffix, "_home")
+      away_col <- paste0(suffix, "_away")
+      data.table::setnames(team_totals, c("val_home", "val_away"),
+                            c(home_col, away_col))
+
+      # Prorate by splint duration fraction
+      splints[team_totals, (home_col) := get(paste0("i.", home_col)) * prorate,
+              on = "splint_id"]
+      splints[team_totals, (away_col) := get(paste0("i.", away_col)) * prorate,
+              on = "splint_id"]
+      splints[is.na(get(home_col)), (home_col) := 0]
+      splints[is.na(get(away_col)), (away_col) := 0]
+
+      splints
+    }
+
+    splints <- .add_metric(splints, players, player_game_psv, "psv", "psv")
+
+    splints[, c("match_duration", "prorate") := NULL]
+  }
 
   splint_data$splints <- as.data.frame(splints)
   splint_data
@@ -184,7 +366,9 @@ add_value_metrics_to_splints <- function(splint_data, player_game_epv = NULL,
 #' -- see \code{mode}.
 #'
 #' @param valid_splints Data frame of splints with duration > 0
-#' @param target_type One of "xg", "goals", "epv", "wpa", "psv", or "custom"
+#' @param target_type One of "xg", "goals", "epv", "wpa", or "custom". PSV
+#'   was removed from RAPM (FABLE-PRIOR-FIX-PLAN.md D3) -- it has its own
+#'   standalone pipeline (\code{calculate_psv()}).
 #' @param mode Design matrix mode. \code{"od"} (default) creates 2 rows per
 #'   splint (one per team-attacking perspective), matched with separate
 #'   offense/defense player columns in \code{\link{.build_rapm_sparse_matrix}}
@@ -226,8 +410,7 @@ add_value_metrics_to_splints <- function(splint_data, player_game_epv = NULL,
     xg   = list(home = "npxg_home",   away = "npxg_away",   name = "xgf90"),
     goals = list(home = "goals_home", away = "goals_away",  name = "gf90"),
     epv  = list(home = "epv_home",    away = "epv_away",    name = "epvf90"),
-    wpa  = list(home = "wpa_home",    away = "wpa_away",    name = "wpaf90"),
-    psv  = list(home = "psv_home",    away = "psv_away",    name = "psvf90")
+    wpa  = list(home = "wpa_home",    away = "wpa_away",    name = "wpaf90")
   )
 
   if (target_type %in% names(target_map)) {
@@ -262,7 +445,7 @@ add_value_metrics_to_splints <- function(splint_data, player_game_epv = NULL,
       cli::cli_abort(c(
         "Net mode ({.code mode = \"net\"}) requires {.code target_type = \"wpa\"}.",
         "x" = "Got {.val {target_type}}.",
-        "i" = "xg/goals/epv/psv are not zero-sum between home and away -- an offense/defense split is meaningful for them, so they must use {.code mode = \"od\"} (FABLE-PRIOR-FIX-PLAN.md D2)."
+        "i" = "xg/goals/epv are not zero-sum between home and away -- an offense/defense split is meaningful for them, so they must use {.code mode = \"od\"} (FABLE-PRIOR-FIX-PLAN.md D2)."
       ))
     }
 
@@ -562,9 +745,10 @@ add_value_metrics_to_splints <- function(splint_data, player_game_epv = NULL,
 #' @param min_minutes Minimum total minutes for player inclusion
 #' @param target_type Type of target variable: \code{"xg"} for non-penalty xG
 #'   (default), \code{"goals"} for actual goals, \code{"epv"} for Expected
-#'   Possession Value, \code{"wpa"} for Win Probability Added, \code{"psv"}
-#'   for Player Stat Value. Requires corresponding home/away columns on
-#'   splints (e.g., \code{epv_home}, \code{epv_away}).
+#'   Possession Value, \code{"wpa"} for Win Probability Added. Requires
+#'   corresponding home/away columns on splints (e.g., \code{epv_home},
+#'   \code{epv_away}). PSV was removed from RAPM (FABLE-PRIOR-FIX-PLAN.md D3)
+#'   -- it has its own standalone pipeline (\code{calculate_psv()}).
 #' @param min_duration Minimum splint duration in minutes (default 1.0).
 #'   Splints shorter than this are dropped to avoid per-90 inflation
 #'   artefacts on stoppage-time fragments. Set to 0 to keep all splints.
@@ -584,7 +768,7 @@ add_value_metrics_to_splints <- function(splint_data, player_game_epv = NULL,
 #' @export
 create_rapm_design_matrix <- function(splint_data, min_minutes = 90,
                                        target_type = c("xg", "goals", "epv",
-                                                        "wpa", "psv"),
+                                                        "wpa"),
                                        min_duration = 1.0,
                                        mode = c("od", "net")) {
   target_type <- match.arg(target_type)
@@ -706,8 +890,9 @@ create_rapm_design_matrix <- function(splint_data, min_minutes = 90,
 #' @param splint_data Combined splint data from create_all_splints
 #' @param min_minutes Minimum minutes for player inclusion
 #' @param target_type Type of target variable: "xg" for non-penalty xG (default),
-#'   "goals" for actual goals scored, "epv" for EPV, "wpa" for WPA, "psv" for
-#'   PSV. Use "goals" when shots data unavailable.
+#'   "goals" for actual goals scored, "epv" for EPV, "wpa" for WPA. Use
+#'   "goals" when shots data unavailable. PSV was removed from RAPM
+#'   (FABLE-PRIOR-FIX-PLAN.md D3).
 #' @param include_covariates Whether to include game state covariates
 #' @param include_league Whether to include league dummies (for multi-league)
 #' @param include_season Whether to include season dummies
@@ -721,7 +906,7 @@ create_rapm_design_matrix <- function(splint_data, min_minutes = 90,
 #' @keywords internal
 prepare_rapm_data <- function(splint_data, min_minutes = 90,
                                target_type = c("xg", "goals", "epv",
-                                                "wpa", "psv"),
+                                                "wpa"),
                                include_covariates = TRUE,
                                include_league = NULL,
                                include_season = NULL,

@@ -9,7 +9,9 @@
 \arguments{
 \item{valid_splints}{Data frame of splints with duration > 0}
 
-\item{target_type}{One of "xg", "goals", "epv", "wpa", "psv", or "custom"}
+\item{target_type}{One of "xg", "goals", "epv", "wpa", or "custom". PSV
+was removed from RAPM (FABLE-PRIOR-FIX-PLAN.md D3) -- it has its own
+standalone pipeline (\code{calculate_psv()}).}
 
 \item{mode}{Design matrix mode. \code{"od"} (default) creates 2 rows per
 splint (one per team-attacking perspective), matched with separate

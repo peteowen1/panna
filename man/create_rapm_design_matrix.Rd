@@ -7,7 +7,7 @@
 create_rapm_design_matrix(
   splint_data,
   min_minutes = 90,
-  target_type = c("xg", "goals", "epv", "wpa", "psv"),
+  target_type = c("xg", "goals", "epv", "wpa"),
   min_duration = 1,
   mode = c("od", "net")
 )
@@ -19,9 +19,10 @@ create_rapm_design_matrix(
 
 \item{target_type}{Type of target variable: \code{"xg"} for non-penalty xG
 (default), \code{"goals"} for actual goals, \code{"epv"} for Expected
-Possession Value, \code{"wpa"} for Win Probability Added, \code{"psv"}
-for Player Stat Value. Requires corresponding home/away columns on
-splints (e.g., \code{epv_home}, \code{epv_away}).}
+Possession Value, \code{"wpa"} for Win Probability Added. Requires
+corresponding home/away columns on splints (e.g., \code{epv_home},
+\code{epv_away}). PSV was removed from RAPM (FABLE-PRIOR-FIX-PLAN.md D3)
+-- it has its own standalone pipeline (\code{calculate_psv()}).}
 
 \item{min_duration}{Minimum splint duration in minutes (default 1.0).
 Splints shorter than this are dropped to avoid per-90 inflation
