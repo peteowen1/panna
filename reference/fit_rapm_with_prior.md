@@ -16,7 +16,8 @@ fit_rapm_with_prior(
   use_weights = TRUE,
   penalize_covariates = FALSE,
   fixed_lambda = NULL,
-  lambda_seq = NULL
+  lambda_seq = NULL,
+  mode = c("od", "net")
 )
 ```
 
@@ -28,11 +29,13 @@ fit_rapm_with_prior(
 
 - offense_prior:
 
-  Named vector of offensive SPM predictions (by player_id)
+  Named vector of offensive SPM predictions (by player_id). In
+  `mode = "net"` this is the single net SPM prior.
 
 - defense_prior:
 
-  Named vector of defensive SPM predictions (by player_id)
+  Named vector of defensive SPM predictions (by player_id). Must be
+  `NULL` when `mode = "net"`.
 
 - alpha:
 
@@ -64,17 +67,31 @@ fit_rapm_with_prior(
   the panna#87 cloud path passes a short grid bracketing the closed-form
   lambda. Ignored when `fixed_lambda` is supplied.
 
+- mode:
+
+  Design matrix mode matching the `rapm_data` the caller built. `"od"`
+  (default) expects `_off`/`_def` player columns. `"net"` expects the
+  single-column-per-player (`_net`) design from
+  `create_rapm_design_matrix(mode = "net")` and requires
+  `defense_prior = NULL` (FABLE-PRIOR-FIX-PLAN.md D2/D4).
+
 ## Value
 
 Fitted model with prior adjustment metadata
 
 ## Details
 
-For the O/D design matrix:
+For the O/D design matrix (`mode = "od"`, default):
 
 - offense_prior: SPM-predicted offensive contribution
 
 - defense_prior: SPM-predicted defensive contribution
+
+For the net design matrix (`mode = "net"`, FABLE-PRIOR-FIX-PLAN.md D2/D4
+– e.g. WPA, whose off/def split is mechanically unidentified because the
+target is zero-sum): a single per-player column exists, so
+`offense_prior` alone carries the net SPM prior and `defense_prior` has
+no meaning and must be `NULL`.
 
 ## See also
 

@@ -1,7 +1,9 @@
 # Build sparse player matrix from triplets
 
 Constructs the sparse matrix encoding which players are on
-offense/defense in each row, including replacement-level columns.
+offense/defense in each row (`"od"` mode, default), or a single signed
+home/away column per player (`"net"` mode) – see `mode`. Includes
+replacement-level columns.
 
 ## Usage
 
@@ -11,7 +13,8 @@ offense/defense in each row, including replacement-level columns.
   valid_splints,
   player_ids,
   replacement_player_ids,
-  n_rows
+  n_rows,
+  mode = c("od", "net")
 )
 ```
 
@@ -36,6 +39,15 @@ offense/defense in each row, including replacement-level columns.
 - n_rows:
 
   Total rows in design matrix
+
+- mode:
+
+  Design matrix mode. `"od"` (default) builds 2 columns per player
+  (`_off`/`_def`) against 2 rows per splint – the production
+  xg/goals/epv layout, byte-identical to before this parameter existed.
+  `"net"` builds 1 column per player (`_net`) against 1 row per splint,
+  valued `+share` when the player's team is home and `-share` when away
+  (FABLE-PRIOR-FIX-PLAN.md D2).
 
 ## Value
 

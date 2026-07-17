@@ -31,7 +31,7 @@ Data frame with one row per shot containing:
 
 - match_id, minute, team, player_id, player_name
 
-- xg: Model-predicted xG (penalties overridden to 0.76)
+- xg: Model-predicted xG (penalties overridden to `PENALTY_XG`)
 
 - is_goal: Whether the shot resulted in a goal
 

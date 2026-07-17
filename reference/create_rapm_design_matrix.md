@@ -19,8 +19,9 @@ perspective):
 create_rapm_design_matrix(
   splint_data,
   min_minutes = 90,
-  target_type = c("xg", "goals", "epv", "wpa", "psv"),
-  min_duration = 1
+  target_type = c("xg", "goals", "epv", "wpa"),
+  min_duration = 1,
+  mode = c("od", "net")
 )
 ```
 
@@ -38,9 +39,11 @@ create_rapm_design_matrix(
 
   Type of target variable: `"xg"` for non-penalty xG (default),
   `"goals"` for actual goals, `"epv"` for Expected Possession Value,
-  `"wpa"` for Win Probability Added, `"psv"` for Player Stat Value.
-  Requires corresponding home/away columns on splints (e.g., `epv_home`,
-  `epv_away`).
+  `"wpa"` for Win Probability Added. Requires corresponding home/away
+  columns on splints (e.g., `epv_home`, `epv_away`). PSV was removed
+  from RAPM (FABLE-PRIOR-FIX-PLAN.md D3) – it has its own standalone
+  pipeline
+  ([`calculate_psv()`](https://peteowen1.github.io/panna/reference/calculate_psv.md)).
 
 - min_duration:
 
@@ -50,6 +53,15 @@ create_rapm_design_matrix(
   splint creation (`create_splint_boundaries_fast`, default
   `min_splint_duration = 5`), the upstream pipeline already enforces a
   5-min minimum so this secondary filter rarely fires.
+
+- mode:
+
+  Design matrix mode. `"od"` (default) is the production layout: 2 rows
+  per splint, `_off`/`_def` player columns – byte-identical to before
+  this parameter existed. `"net"` builds 1 row per splint and 1 signed
+  (`_net`) column per player (+home, -away), for zero-sum targets like
+  WPA where an offense/defense split is mechanically unidentified
+  (FABLE-PRIOR-FIX-PLAN.md D2).
 
 ## Value
 

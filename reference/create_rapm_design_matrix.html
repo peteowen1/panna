@@ -64,8 +64,9 @@ Replacement columns: replacement_off, replacement_def for low-minute players
     <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">create_rapm_design_matrix</span><span class="op">(</span></span>
 <span>  <span class="va">splint_data</span>,</span>
 <span>  min_minutes <span class="op">=</span> <span class="fl">90</span>,</span>
-<span>  target_type <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"xg"</span>, <span class="st">"goals"</span>, <span class="st">"epv"</span>, <span class="st">"wpa"</span>, <span class="st">"psv"</span><span class="op">)</span>,</span>
-<span>  min_duration <span class="op">=</span> <span class="fl">1</span></span>
+<span>  target_type <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"xg"</span>, <span class="st">"goals"</span>, <span class="st">"epv"</span>, <span class="st">"wpa"</span><span class="op">)</span>,</span>
+<span>  min_duration <span class="op">=</span> <span class="fl">1</span>,</span>
+<span>  mode <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"od"</span>, <span class="st">"net"</span><span class="op">)</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -84,9 +85,10 @@ Replacement columns: replacement_off, replacement_def for low-minute players
 <dt id="arg-target-type">target_type<a class="anchor" aria-label="anchor" href="#arg-target-type"></a></dt>
 <dd><p>Type of target variable: <code>"xg"</code> for non-penalty xG
 (default), <code>"goals"</code> for actual goals, <code>"epv"</code> for Expected
-Possession Value, <code>"wpa"</code> for Win Probability Added, <code>"psv"</code>
-for Player Stat Value. Requires corresponding home/away columns on
-splints (e.g., <code>epv_home</code>, <code>epv_away</code>).</p></dd>
+Possession Value, <code>"wpa"</code> for Win Probability Added. Requires
+corresponding home/away columns on splints (e.g., <code>epv_home</code>,
+<code>epv_away</code>). PSV was removed from RAPM (FABLE-PRIOR-FIX-PLAN.md D3)
+– it has its own standalone pipeline (<code><a href="calculate_psv.html">calculate_psv()</a></code>).</p></dd>
 
 
 <dt id="arg-min-duration">min_duration<a class="anchor" aria-label="anchor" href="#arg-min-duration"></a></dt>
@@ -97,6 +99,15 @@ Note: with chain-derived splint creation
 (<code>create_splint_boundaries_fast</code>, default <code>min_splint_duration = 5</code>),
 the upstream pipeline already enforces a 5-min minimum so this
 secondary filter rarely fires.</p></dd>
+
+
+<dt id="arg-mode">mode<a class="anchor" aria-label="anchor" href="#arg-mode"></a></dt>
+<dd><p>Design matrix mode. <code>"od"</code> (default) is the production
+layout: 2 rows per splint, <code>_off</code>/<code>_def</code> player columns –
+byte-identical to before this parameter existed. <code>"net"</code> builds 1
+row per splint and 1 signed (<code>_net</code>) column per player (+home,
+-away), for zero-sum targets like WPA where an offense/defense split is
+mechanically unidentified (FABLE-PRIOR-FIX-PLAN.md D2).</p></dd>
 
 </dl></div>
     <div class="section level2">

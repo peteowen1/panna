@@ -1,16 +1,14 @@
 # Add value metric columns to splints
 
-Joins per-game player value metrics (EPV, WPA, PSV) to splint data,
-aggregating to team-level totals within each splint. Values are prorated
-by splint duration relative to total match minutes.
+Joins per-splint player value metrics (EPV, WPA, PSV) to splint data.
 
 ## Usage
 
 ``` r
 add_value_metrics_to_splints(
   splint_data,
-  player_game_epv = NULL,
-  player_game_wpa = NULL,
+  player_action_epv = NULL,
+  match_action_wpa = NULL,
   player_game_psv = NULL
 )
 ```
@@ -21,18 +19,24 @@ add_value_metrics_to_splints(
 
   List with `splints` and `players` data.frames (from
   [`create_all_splints()`](https://peteowen1.github.io/panna/reference/create_all_splints.md)).
+  `splints` must carry `start_minute` and `splint_id` when
+  `player_action_epv` or `match_action_wpa` is supplied (the boundary
+  cut needs them).
 
-- player_game_epv:
+- player_action_epv:
 
-  Per-game EPV from
-  [`aggregate_player_game_epv()`](https://peteowen1.github.io/panna/reference/aggregate_player_game_epv.md).
-  If NULL, EPV columns are not added.
+  Per-action, per-credited-player EPV stream from
+  `build_action_epv_credit()`
+  (`data-raw/epv/02_calculate_player_epv.R`). Columns: `match_id`,
+  `period_id`, `time_seconds`, `team_id`, `player_id`, `credit`. If
+  NULL, `epv_home`/`epv_away` are not added.
 
-- player_game_wpa:
+- match_action_wpa:
 
-  Per-game WPA from
-  [`aggregate_player_game_wpa()`](https://peteowen1.github.io/panna/reference/aggregate_player_game_wpa.md).
-  If NULL, WPA columns are not added.
+  Per-action, home-perspective, UNcentered WP-delta stream
+  (`data-raw/epv/06_calculate_wpa.R`). Columns: `match_id`, `period_id`,
+  `time_seconds`, `wp_delta_home`. If NULL, `wpa_home`/`wpa_away` are
+  not added.
 
 - player_game_psv:
 
@@ -43,13 +47,29 @@ add_value_metrics_to_splints(
 ## Value
 
 The `splint_data` list with additional columns on the `splints`
-data.frame: `epv_home/epv_away`, `wpa_home/wpa_away`,
-`psv_home/psv_away`.
+data.frame: `epv_home`/`epv_away` (per-splint sums – NOT zero-sum, both
+teams accrue their own threat), `wpa_home`/`wpa_away` (per-splint sums,
+EXACTLY zero-sum by construction: `wpa_away = -wpa_home`),
+`psv_home`/`psv_away` (whole-match value prorated by splint duration).
 
 ## Details
 
-This allows RAPM to be trained on EPV, WPA, or PSV as response variables
-alongside the default xG target.
+EPV and WPA use TRUE per-splint attribution (FABLE-PRIOR-FIX-PLAN.md
+D1/D2, Step 3): the per-action credit streams from the EPV/WPA pipelines
+(Step 2) are cut at splint boundaries using the same `findInterval`
+convention as the xG shot attribution
+([`calculate_splint_npxgd_fast()`](https://peteowen1.github.io/panna/reference/calculate_splint_npxgd_fast.md),
+R/splint_creation.R) – ties at a boundary timestamp go to the splint
+STARTING there, and actions at/after the last boundary attribute to the
+final splint. This replaces the old whole-match-value x
+duration-proration join, under which the target could not vary within a
+match (FABLE-PRIOR-FIX-PLAN.md C1: duration cancels exactly against the
+per-90 conversion, so `whole_match_value * 90 / match_duration` is
+constant for every splint of that match).
+
+PSV has no per-action stream (D3: it's a bottom-up box-score value with
+no per-splint count cache) and keeps the whole-match join + duration
+proration.
 
 ## See also
 

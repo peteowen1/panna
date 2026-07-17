@@ -66,7 +66,24 @@ The final coefficient is gamma + prior, where gamma is the deviation.</p>
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
-    <p>Data frame with player ratings including deviation from prior</p>
+    <p>Data frame with player ratings including deviation from prior.
+In <code>mode = "net"</code>, <code>offense</code>/<code>defense</code>/deviation/prior
+columns are <code>NA</code> and <code>xrapm</code> holds the net coefficient.</p>
+    </div>
+    <div class="section level2">
+    <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
+    <p>F4 (FABLE-PRIOR-FIX-PLAN.md review): mode-aware via the model's stored
+metadata (<code>model$panna_metadata$mode</code>, or <code>type == "xrapm_net"</code>
+for older/hand-built metadata without a <code>mode</code> field). In
+<code>mode = "od"</code> (default), <code>xrapm = offense - defense</code> as before.
+In <code>mode = "net"</code>, there is no offense/defense split (D2) – the
+single <code>_net</code> coefficient per player IS the rating, and
+<code>offense</code>/<code>defense</code>/<code>off_deviation</code>/<code>def_deviation</code>/
+<code>off_prior</code>/<code>def_prior</code> are set <code>NA</code> (they have no meaning
+against a design with no offense/defense split). Aborts if the model's
+coefficient names don't actually match the declared mode – indexing only
+<code>_off</code>/<code>_def</code> names on a net-mode fit previously returned
+silently all-NA ratings with no error (the bug this fixes).</p>
     </div>
     <div class="section level2">
     <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a></h2>

@@ -61,7 +61,8 @@ box score statistics as a Bayesian prior.</p>
 <span>  use_weights <span class="op">=</span> <span class="cn">TRUE</span>,</span>
 <span>  penalize_covariates <span class="op">=</span> <span class="cn">FALSE</span>,</span>
 <span>  fixed_lambda <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  lambda_seq <span class="op">=</span> <span class="cn">NULL</span></span>
+<span>  lambda_seq <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  mode <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"od"</span>, <span class="st">"net"</span><span class="op">)</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -74,11 +75,13 @@ box score statistics as a Bayesian prior.</p>
 
 
 <dt id="arg-offense-prior">offense_prior<a class="anchor" aria-label="anchor" href="#arg-offense-prior"></a></dt>
-<dd><p>Named vector of offensive SPM predictions (by player_id)</p></dd>
+<dd><p>Named vector of offensive SPM predictions (by
+player_id). In <code>mode = "net"</code> this is the single net SPM prior.</p></dd>
 
 
 <dt id="arg-defense-prior">defense_prior<a class="anchor" aria-label="anchor" href="#arg-defense-prior"></a></dt>
-<dd><p>Named vector of defensive SPM predictions (by player_id)</p></dd>
+<dd><p>Named vector of defensive SPM predictions (by
+player_id). Must be <code>NULL</code> when <code>mode = "net"</code>.</p></dd>
 
 
 <dt id="arg-alpha">alpha<a class="anchor" aria-label="anchor" href="#arg-alpha"></a></dt>
@@ -110,6 +113,14 @@ behaviour). Used by the as-of-date career-Panna build.</p></dd>
 grid bracketing the closed-form lambda. Ignored when
 <code>fixed_lambda</code> is supplied.</p></dd>
 
+
+<dt id="arg-mode">mode<a class="anchor" aria-label="anchor" href="#arg-mode"></a></dt>
+<dd><p>Design matrix mode matching the <code>rapm_data</code> the caller
+built. <code>"od"</code> (default) expects <code>_off</code>/<code>_def</code> player
+columns. <code>"net"</code> expects the single-column-per-player
+(<code>_net</code>) design from <code>create_rapm_design_matrix(mode = "net")</code>
+and requires <code>defense_prior = NULL</code> (FABLE-PRIOR-FIX-PLAN.md D2/D4).</p></dd>
+
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
@@ -117,9 +128,14 @@ grid bracketing the closed-form lambda. Ignored when
     </div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
-    <p>For the O/D design matrix:</p><ul><li><p>offense_prior: SPM-predicted offensive contribution</p></li>
+    <p>For the O/D design matrix (<code>mode = "od"</code>, default):</p><ul><li><p>offense_prior: SPM-predicted offensive contribution</p></li>
 <li><p>defense_prior: SPM-predicted defensive contribution</p></li>
-</ul></div>
+</ul><p>For the net design matrix (<code>mode = "net"</code>, FABLE-PRIOR-FIX-PLAN.md D2/D4
+– e.g. WPA, whose off/def split is mechanically unidentified because the
+target is zero-sum): a single per-player column exists, so
+<code>offense_prior</code> alone carries the net SPM prior and
+<code>defense_prior</code> has no meaning and must be <code>NULL</code>.</p>
+    </div>
     <div class="section level2">
     <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a></h2>
     <div class="dont-index"><p>Other rapm:
