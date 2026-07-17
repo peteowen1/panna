@@ -21,8 +21,17 @@ cli::cli_alert_info("Loaded match_stats: {format(nrow(ms), big.mark=',')} player
 ms <- enrich_match_stats_with_xmetrics(ms, verbose = TRUE, fail_if_missing_frac = 0.6)
 
 # Scored feature set = union of stat_names across all trained coefficient sets.
-sets <- c("blend_psr","blend_osr","blend_dsr","gk_blend_psr","gk_blend_osr","gk_blend_dsr",
+# GK sets are gk_{psr,osr,dsr} — NOT gk_blend_* (those files never existed; the
+# wrong names silently dropped every GK-only stat from this artifact until
+# panna#144, because of the file.exists() guard below).
+sets <- c("blend_psr","blend_osr","blend_dsr","gk_psr","gk_osr","gk_dsr",
           "psr","osr","dsr","gd_psr","gd_osr","gd_dsr")
+# Per-set scalar system.file: with a vector it silently DROPS missing entries
+# (no "" placeholder), which would misalign a vectorized file.exists check.
+missing_sets <- sets[!vapply(sets, function(p) {
+  nzchar(system.file("extdata", paste0(p, "_coefficients.csv"), package = "panna"))
+}, logical(1))]
+if (length(missing_sets)) cli::cli_abort("Coefficient set(s) not found (typo in `sets`?): {paste(missing_sets, collapse=', ')}")
 skill_cols <- unique(unlist(lapply(sets, function(p){
   f <- system.file("extdata", paste0(p, "_coefficients.csv"), package = "panna")
   if (file.exists(f)) utils::read.csv(f, stringsAsFactors = FALSE)$stat_name else character(0)
