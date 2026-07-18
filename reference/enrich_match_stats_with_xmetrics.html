@@ -115,7 +115,10 @@ per-league/season tree; see <code><a href="load_opta_xmetrics.html">load_opta_xm
     <p><code>match_stats</code> (as data.table) with the xMetrics columns added
 (NA-filled to 0 for player-matches with no shots). Returns input unchanged
 (with a warning) if key columns are missing or no bymatch files are found
-and <code>fail_if_missing_frac</code> is <code>Inf</code>.</p>
+and <code>fail_if_missing_frac</code> is <code>Inf</code>. NOTE: a data.table input
+is enriched <em>by reference</em> (no defensive copy — the copy alone was
+~6GB on 08b's table); always use the return value, and <code>copy()</code>
+first if you need the un-enriched original.</p>
     </div>
     <div class="section level2">
     <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a></h2>

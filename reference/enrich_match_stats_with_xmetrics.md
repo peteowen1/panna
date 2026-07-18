@@ -58,7 +58,10 @@ enrich_match_stats_with_xmetrics(
 `match_stats` (as data.table) with the xMetrics columns added (NA-filled
 to 0 for player-matches with no shots). Returns input unchanged (with a
 warning) if key columns are missing or no bymatch files are found and
-`fail_if_missing_frac` is `Inf`.
+`fail_if_missing_frac` is `Inf`. NOTE: a data.table input is enriched
+*by reference* (no defensive copy — the copy alone was ~6GB on 08b's
+table); always use the return value, and `copy()` first if you need the
+un-enriched original.
 
 ## See also
 
