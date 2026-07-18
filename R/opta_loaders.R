@@ -2021,14 +2021,24 @@ load_opta_xmetrics <- function(league, season = NULL, columns = NULL,
 #' @return \code{match_stats} (as data.table) with the xMetrics columns added
 #'   (NA-filled to 0 for player-matches with no shots). Returns input unchanged
 #'   (with a warning) if key columns are missing or no bymatch files are found
-#'   and \code{fail_if_missing_frac} is \code{Inf}.
+#'   and \code{fail_if_missing_frac} is \code{Inf}. NOTE: a data.table input
+#'   is enriched \emph{by reference} (no defensive copy — the copy alone was
+#'   ~6GB on 08b's table); always use the return value, and \code{copy()}
+#'   first if you need the un-enriched original.
 #' @family epv
 #' @export
 enrich_match_stats_with_xmetrics <- function(match_stats, verbose = TRUE,
                                               fail_if_missing_frac = Inf,
                                               source = c("local", "remote")) {
   source <- match.arg(source)
-  match_stats <- data.table::as.data.table(match_stats)
+  # as.data.table() on an already-valid data.table is a FULL deep copy (the
+  # panna#128 anti-pattern) — on 08b's ~6GB match_stats that copy alone was a
+  # third of the GHA runner. Guard it; a data.table input is enriched BY
+  # REFERENCE below (callers all reassign the return value, so this only
+  # drops the wasted copy).
+  if (!data.table::is.data.table(match_stats)) {
+    match_stats <- data.table::as.data.table(match_stats)
+  }
 
   # source xmetrics column -> match_stats column (suffix where names collide)
   xm_map <- c(
@@ -2065,10 +2075,28 @@ enrich_match_stats_with_xmetrics <- function(match_stats, verbose = TRUE,
     # gc()-invisible memory that OOM-killed the run well before its own
     # heavy lifting even started (panna#128). One query instead.
     if (verbose) cat("  Fetching consolidated xMetrics (remote, one query)...\n")
+    # Select ONLY the join keys + mapped columns at the duckdb layer: the
+    # consolidated bymatch parquet is ~3.3M rows x 70 columns, and the
+    # full-width load (plus the as.data.table() deep copy that followed it)
+    # was the transient that OOM-killed psr-weekly-snapshot on GHA on
+    # 2026-07-08/15 -- right on top of the ~6GB match_stats already resident.
+    # A narrow SELECT hard-fails on a vintage missing any named column
+    # (duckdb binder error), so fall back to the old full-width load there.
+    want <- c("player_id", "match_id", names(xm_map))
     xm <- tryCatch({
-      x <- data.table::as.data.table(
-        query_remote_opta_parquet("xmetrics_bymatch", opta_league = NULL, season = NULL))
-      keep <- intersect(c("player_id", "match_id", names(xm_map)), names(x))
+      x <- tryCatch(
+        query_remote_opta_parquet("xmetrics_bymatch", opta_league = NULL,
+                                  season = NULL, columns = want),
+        error = function(e) {
+          # Loud, not silent: if this fires every run (e.g. a renamed column
+          # made the narrow select permanently fail), the OOM-safety
+          # optimization has stopped working and logs must show it.
+          cli::cli_warn("Narrow xMetrics select failed ({conditionMessage(e)}); falling back to the full-width load (memory-heavy legacy path).")
+          query_remote_opta_parquet("xmetrics_bymatch", opta_league = NULL,
+                                    season = NULL)
+        })
+      data.table::setDT(x)
+      keep <- intersect(want, names(x))
       x[, ..keep]
     }, error = function(e) NULL)
     if (is.null(xm)) {
@@ -2133,7 +2161,38 @@ enrich_match_stats_with_xmetrics <- function(match_stats, verbose = TRUE,
   old <- intersect(names(xm_map), names(xm))
   data.table::setnames(xm, old, unname(xm_map[old]))
   xm <- unique(xm, by = c("player_id", "match_id"))
-  match_stats <- merge(match_stats, xm, by = c("player_id", "match_id"), all.x = TRUE)
+  # Bounded-memory join instead of merge()/join-assign: merge() allocates a
+  # full copy of match_stats (+6GB on 08b's table), and even a data.table
+  # `X[i, (cols) := mget(...)]` join-assign transiently peaked at ~28.5GB on
+  # these key cardinalities (measured 2026-07-18, unkeyed character bmerge
+  # over 1.9M x 3.3M rows) — both OOM a 16GB GHA runner. A hash match() on
+  # composite keys + per-column set() peaks at ~7GB for the same result;
+  # unmatched rows get NA here and 0 in the fill loop below. \r cannot occur
+  # in Opta alphanumeric ids, so the pasted key is collision-free.
+  added_cols <- setdiff(names(xm), c("player_id", "match_id"))
+  idx <- match(paste(match_stats$player_id, match_stats$match_id, sep = "\r"),
+               paste(xm$player_id, xm$match_id, sep = "\r"))
+  # Join-coverage tripwire (review catch): unlike merge(), match() cannot
+  # hard-fail on key type/format drift — a structural divergence (e.g. after
+  # a bymatch regen changes id types) yields all-NA idx, and the NA->0 fill
+  # below would silently ship an xG-blind feature set that
+  # fail_if_missing_frac (which only tracks missing FILES) cannot see.
+  # Healthy coverage is ~98% (measured 2026-07-18).
+  matched_frac <- if (length(idx)) mean(!is.na(idx)) else 0
+  if (nrow(xm) > 0 && matched_frac == 0) {
+    stop("xMetrics join matched 0 of ", length(idx), " match_stats rows despite ",
+         nrow(xm), " xmetrics rows - player_id/match_id key mismatch ",
+         "(type or format drift after a bymatch regen?)", call. = FALSE)
+  }
+  if (nrow(xm) > 0 && matched_frac < 0.5) {
+    warning(sprintf(paste0(
+      "xMetrics join matched only %.1f%% of match_stats rows (healthy is ~98%%) - ",
+      "investigate key drift; unmatched rows get xMetrics = 0."),
+      100 * matched_frac), call. = FALSE)
+  }
+  for (col in added_cols) {
+    data.table::set(match_stats, j = col, value = xm[[col]][idx])
+  }
   added <- intersect(unname(xm_map), names(match_stats))
   for (col in added) {
     data.table::set(match_stats, which(is.na(match_stats[[col]])), col, 0)
