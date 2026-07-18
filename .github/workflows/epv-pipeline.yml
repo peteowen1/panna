@@ -9,6 +9,19 @@ on:
     # `inputs.*` are empty on schedule events, so the env block below
     # supplies explicit defaults.
     - cron: '0 18 * * 0'
+  # panna#150: game_logs.parquet rebuilds on every scrape dispatch, but
+  # xmetrics_bymatch only rebuilt Sundays — every rebuild in between joined
+  # stale xmetrics and wrote NULL xGOT/GSAA for the newest matches (up to 6
+  # days, Pete-visible twice). Following the same scrape-complete dispatch
+  # predictions-pipeline uses keeps xmetrics ordered AFTER each scrape with
+  # no fixed-time racing; dispatch runs are xmetrics_only (same as schedule
+  # — see the env block). The Sunday cron stays as a backstop for days the
+  # scrape or its dispatch fails. Known residual: predictions listens to the
+  # SAME event with no cross-workflow ordering, so a predictions run that
+  # wins the race joins yesterday's xmetrics — ≤1 cycle stale (self-heals on
+  # the next trigger) vs up to 6 days before this fix.
+  repository_dispatch:
+    types: [opta-scrape-complete]
   workflow_dispatch:
     inputs:
       train_wp:
@@ -58,10 +71,13 @@ env:
   # 2026-06-15 to 07-05 was timeout-cancelled mid step 03, which silently
   # starved the RAPM gate (26-day-old xmetrics by 07-07). Retrains remain
   # manual-dispatch.
-  XMETRICS_ONLY: ${{ (inputs.xmetrics_only == true || github.event_name == 'schedule') && 'true' || 'false' }}
+  # repository_dispatch (opta-scrape-complete, panna#150) behaves exactly like
+  # schedule: xmetrics_only against the published models, daily after each
+  # scrape. inputs.* are empty on both event types.
+  XMETRICS_ONLY: ${{ (inputs.xmetrics_only == true || github.event_name == 'schedule' || github.event_name == 'repository_dispatch') && 'true' || 'false' }}
   # wp_only/xmetrics_only force the EPV/xMetrics retrain steps off regardless
   # of their own inputs; xmetrics_only forces xMetrics export ON.
-  EXPORT_XMETRICS: ${{ (inputs.export_xmetrics == true || inputs.xmetrics_only == true || github.event_name == 'schedule') && inputs.wp_only != true && 'true' || 'false' }}
+  EXPORT_XMETRICS: ${{ (inputs.export_xmetrics == true || inputs.xmetrics_only == true || github.event_name == 'schedule' || github.event_name == 'repository_dispatch') && inputs.wp_only != true && 'true' || 'false' }}
   # wp_only implies train_wp (no point skipping EPV if you don't train WP).
   TRAIN_WP: ${{ (inputs.train_wp == true || inputs.wp_only == true) && 'true' || 'false' }}
   # Gated publish: the trained WP model is ALWAYS staged to the pannadata
@@ -71,12 +87,28 @@ env:
   # never true on schedule.
   PUBLISH_WP: ${{ inputs.publish_wp == true && 'true' || 'false' }}
 
+# Self-serialize ONLY (Sunday cron vs the daily dispatch vs manual runs). A
+# deliberately SEPARATE group from panna-release-writer: GitHub keeps at most
+# ONE PENDING run per group (a newer pending run cancels the older one —
+# cancel-in-progress:false protects only RUNNING jobs), and this workflow now
+# fires on the same opta-scrape-complete dispatch as predictions-pipeline —
+# sharing that group would put both same-second runs in contention for one
+# pending slot and could silently cancel a day's predictions refresh (review
+# catch). No manifest race either: the xmetrics uploads here are plain
+# piggyback (not vb_publish), so they never touch bus_manifest.json.
+concurrency:
+  group: epv-pipeline
+  cancel-in-progress: false
+
 jobs:
   epv-pipeline:
     runs-on: ubuntu-latest
     # Per-chunk feature generation + xgboost training fits in ~75-90 min on a
     # 7GB runner; bumped from 90 to 120 to give headroom on slower runners.
-    timeout-minutes: 120
+    # 150 since the daily xmetrics_only runs (panna#150): the 2026-07-18
+    # manual dispatch took 112 min — 8 min of headroom on a 120 ceiling was
+    # begging for timeout-cancelled crons (the 2026-06 starvation pattern).
+    timeout-minutes: 150
 
     permissions:
       contents: write
