@@ -2161,12 +2161,20 @@ enrich_match_stats_with_xmetrics <- function(match_stats, verbose = TRUE,
   old <- intersect(names(xm_map), names(xm))
   data.table::setnames(xm, old, unname(xm_map[old]))
   xm <- unique(xm, by = c("player_id", "match_id"))
-  # Join-assign by reference instead of merge(): merge() allocates a full
-  # copy of match_stats (+6GB on 08b's table — the second half of the
-  # 2026-07-08/15 psr-weekly OOM alongside the full-width remote load).
+  # Bounded-memory join instead of merge()/join-assign: merge() allocates a
+  # full copy of match_stats (+6GB on 08b's table), and even a data.table
+  # `X[i, (cols) := mget(...)]` join-assign transiently peaked at ~28.5GB on
+  # these key cardinalities (measured 2026-07-18, unkeyed character bmerge
+  # over 1.9M x 3.3M rows) — both OOM a 16GB GHA runner. A hash match() on
+  # composite keys + per-column set() peaks at ~7GB for the same result;
+  # unmatched rows get NA here and 0 in the fill loop below. \r cannot occur
+  # in Opta alphanumeric ids, so the pasted key is collision-free.
   added_cols <- setdiff(names(xm), c("player_id", "match_id"))
-  match_stats[xm, on = c("player_id", "match_id"),
-              (added_cols) := mget(paste0("i.", added_cols))]
+  idx <- match(paste(match_stats$player_id, match_stats$match_id, sep = "\r"),
+               paste(xm$player_id, xm$match_id, sep = "\r"))
+  for (col in added_cols) {
+    data.table::set(match_stats, j = col, value = xm[[col]][idx])
+  }
   added <- intersect(unname(xm_map), names(match_stats))
   for (col in added) {
     data.table::set(match_stats, which(is.na(match_stats[[col]])), col, 0)
