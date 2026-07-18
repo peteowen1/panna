@@ -195,8 +195,8 @@ Stat ratings → PSR/OSR/DSR (smoothed skills via glmnet) ───────�
 <td>Weekly snapshot / manual</td>
 <td>PSR weekly snapshot generation</td>
 </tr><tr class="even"><td><code>epv-pipeline.yml</code></td>
-<td>Manual dispatch</td>
-<td>EPV model training pipeline</td>
+<td>Daily <code>opta-scrape-complete</code> dispatch + Sunday 18:00 cron (both xmetrics_only, published models) / manual dispatch for retrains</td>
+<td>EPV model training pipeline. Daily dispatch added 2026-07-18 (panna#150) so <code>opta_xmetrics_bymatch.parquet</code> follows every scrape — game-logs xGOT/GSAA no longer go NULL between Sundays. Own concurrency group (NOT panna-release-writer — pending-slot cancellation risk vs predictions’ same-event run)</td>
 </tr></tbody></table></div>
 <div class="section level2">
 <h2 id="documentation-convention">Documentation convention<a class="anchor" aria-label="anchor" href="#documentation-convention"></a></h2>
