@@ -110,7 +110,7 @@ Stat ratings → PSR/OSR/DSR (smoothed skills via glmnet) ───────�
 | `pkgdown.yaml` | Push | Documentation site |
 | `predictions-pipeline.yml` | Wed 8 AM UTC / manual / `opta-scrape-complete` dispatch | Weekly match predictions. Runs steps 1-10c + 11 (WC2026 sim) + 12 (WC2026 blog export). Triggers `predictions-complete` repository_dispatch on `pannadata` to refresh blog data. Note: WC2026 sim defaults to FALSE in `run_predictions_opta.R` but the workflow enables it in its `run_steps` override. |
 | `psr-weekly-snapshot.yml` | Weekly snapshot / manual | PSR weekly snapshot generation |
-| `epv-pipeline.yml` | Manual dispatch | EPV model training pipeline |
+| `epv-pipeline.yml` | Daily `opta-scrape-complete` dispatch + Sunday 18:00 cron (both xmetrics_only, published models) / manual dispatch for retrains | EPV model training pipeline. Daily dispatch added 2026-07-18 (panna#150) so `opta_xmetrics_bymatch.parquet` follows every scrape — game-logs xGOT/GSAA no longer go NULL between Sundays. Own concurrency group (NOT panna-release-writer — pending-slot cancellation risk vs predictions' same-event run) |
 
 ## Documentation convention
 
