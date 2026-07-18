@@ -36,7 +36,10 @@ per-league/season tree; see \code{\link{load_opta_xmetrics}}).}
 \code{match_stats} (as data.table) with the xMetrics columns added
 (NA-filled to 0 for player-matches with no shots). Returns input unchanged
 (with a warning) if key columns are missing or no bymatch files are found
-and \code{fail_if_missing_frac} is \code{Inf}.
+and \code{fail_if_missing_frac} is \code{Inf}. NOTE: a data.table input
+is enriched \emph{by reference} (no defensive copy — the copy alone was
+~6GB on 08b's table); always use the return value, and \code{copy()}
+first if you need the un-enriched original.
 }
 \description{
 Left-joins per-player-match xG and the redesign's over-performance features

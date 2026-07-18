@@ -2021,14 +2021,24 @@ load_opta_xmetrics <- function(league, season = NULL, columns = NULL,
 #' @return \code{match_stats} (as data.table) with the xMetrics columns added
 #'   (NA-filled to 0 for player-matches with no shots). Returns input unchanged
 #'   (with a warning) if key columns are missing or no bymatch files are found
-#'   and \code{fail_if_missing_frac} is \code{Inf}.
+#'   and \code{fail_if_missing_frac} is \code{Inf}. NOTE: a data.table input
+#'   is enriched \emph{by reference} (no defensive copy — the copy alone was
+#'   ~6GB on 08b's table); always use the return value, and \code{copy()}
+#'   first if you need the un-enriched original.
 #' @family epv
 #' @export
 enrich_match_stats_with_xmetrics <- function(match_stats, verbose = TRUE,
                                               fail_if_missing_frac = Inf,
                                               source = c("local", "remote")) {
   source <- match.arg(source)
-  match_stats <- data.table::as.data.table(match_stats)
+  # as.data.table() on an already-valid data.table is a FULL deep copy (the
+  # panna#128 anti-pattern) — on 08b's ~6GB match_stats that copy alone was a
+  # third of the GHA runner. Guard it; a data.table input is enriched BY
+  # REFERENCE below (callers all reassign the return value, so this only
+  # drops the wasted copy).
+  if (!data.table::is.data.table(match_stats)) {
+    match_stats <- data.table::as.data.table(match_stats)
+  }
 
   # source xmetrics column -> match_stats column (suffix where names collide)
   xm_map <- c(
@@ -2151,7 +2161,12 @@ enrich_match_stats_with_xmetrics <- function(match_stats, verbose = TRUE,
   old <- intersect(names(xm_map), names(xm))
   data.table::setnames(xm, old, unname(xm_map[old]))
   xm <- unique(xm, by = c("player_id", "match_id"))
-  match_stats <- merge(match_stats, xm, by = c("player_id", "match_id"), all.x = TRUE)
+  # Join-assign by reference instead of merge(): merge() allocates a full
+  # copy of match_stats (+6GB on 08b's table — the second half of the
+  # 2026-07-08/15 psr-weekly OOM alongside the full-width remote load).
+  added_cols <- setdiff(names(xm), c("player_id", "match_id"))
+  match_stats[xm, on = c("player_id", "match_id"),
+              (added_cols) := mget(paste0("i.", added_cols))]
   added <- intersect(unname(xm_map), names(match_stats))
   for (col in added) {
     data.table::set(match_stats, which(is.na(match_stats[[col]])), col, 0)
