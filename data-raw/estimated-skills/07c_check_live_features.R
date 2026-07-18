@@ -50,14 +50,22 @@ expected <- union(names(per90_map)[per90_map %in% derived], BLOCK_SUPPLIED)
 
 # --- 07c's transcribed list ----------------------------------------------------
 src <- readLines("data-raw/estimated-skills/07c_build_live_psv_constants.R", warn = FALSE)
-lst_start <- grep("^LIVE_OBSERVABLE_FEATURES <- c\\($", src)
-if (length(lst_start) != 1L) stop("could not locate LIVE_OBSERVABLE_FEATURES in 07c")
-lst_end <- lst_start + which(grepl("^\\)$", src[(lst_start + 1):length(src)]))[1]
-# eval() here is safe: it evaluates the c("...") literal from OUR OWN checked-in
+# eval() here is safe: it evaluates c("...") literals from OUR OWN checked-in
 # 07c script (same repo, same commit). The externally fetched stat-value.js is
 # only ever regex-parsed above, never evaluated.
-mine <- eval(parse(text = paste(sub("^LIVE_OBSERVABLE_FEATURES <- ", "",
-                                    paste(src[lst_start:lst_end], collapse = "\n")))))
+# LIVE_OBSERVABLE_FEATURES references LIVE_XMETRICS_FEATURES (7473e33), so
+# both assignments are extracted and evaluated in one environment — the old
+# single-assignment eval died with "object 'LIVE_XMETRICS_FEATURES' not found".
+lst_env <- new.env(parent = baseenv())
+.eval_07c_assign <- function(name) {
+  a_start <- grep(sprintf("^%s <- c\\($", name), src)
+  if (length(a_start) != 1L) stop(sprintf("could not locate %s in 07c", name))
+  a_end <- a_start + which(grepl("^\\)$", src[(a_start + 1):length(src)]))[1]
+  eval(parse(text = paste(src[a_start:a_end], collapse = "\n")), envir = lst_env)
+}
+.eval_07c_assign("LIVE_XMETRICS_FEATURES")
+.eval_07c_assign("LIVE_OBSERVABLE_FEATURES")
+mine <- lst_env$LIVE_OBSERVABLE_FEATURES
 
 # --- Compare, restricted to features that carry coefficients -------------------
 all_coef_stats <- unique(unlist(lapply(
