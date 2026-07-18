@@ -559,7 +559,14 @@ validate_game_log_schema <- function(dt, league, season) {
         xg_disp <- data.table::as.data.table(
           load_opta_xmetrics(league, season = league_season,
                              source = xm_source, by_match = TRUE))
-        disp_cols <- intersect(c("goals_minus_xgot", "placement_added", "xgot"),
+        # GSAA + duel WOE ride the same per-match xMetrics table as the trio —
+        # display-only columns for the blog's Defending/Duels tabs (requested
+        # 2026-07-18); intersect() keeps this NA-safe when a column is absent.
+        disp_cols <- intersect(c("goals_minus_xgot", "placement_added", "xgot",
+                                 "gsaa", "gsaa_per90", "xgot_faced", "goals_conceded",
+                                 "aerial_woe_per90", "aerial_poss_woe_per90",
+                                 "takeon_woe_per90", "tackle_poss_woe_per90",
+                                 "containment_woe_per90"),
                                names(xg_disp))
         if (length(disp_cols) > 0 && all(c("player_id", "match_id") %in% names(xg_disp))) {
           xg_disp <- unique(xg_disp[, c("player_id", "match_id", disp_cols), with = FALSE],
@@ -671,6 +678,9 @@ validate_game_log_schema <- function(dt, league, season) {
       "wpa_total", "wpa_as_actor", "wpa_as_receiver",
       "psv", "osv", "dsv",
       "goals_minus_xgot", "placement_added", "xgot",
+      "gsaa", "gsaa_per90", "xgot_faced", "goals_conceded",
+      "aerial_woe_per90", "aerial_poss_woe_per90",
+      "takeon_woe_per90", "tackle_poss_woe_per90", "containment_woe_per90",
       "piero_value_p90"),
     names(game_logs)
   )
