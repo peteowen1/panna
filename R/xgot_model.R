@@ -115,6 +115,20 @@ prepare_shots_for_xgot <- function(shot_events,
   on_target <- shot_events$type_id %in% XGOT_ON_TARGET_TYPE_IDS
   shot_events <- shot_events[on_target, , drop = FALSE]
 
+  # Drop own goals from TRAINING: they enter as guaranteed-goal rows with
+  # degenerate pre-shot features (the xG model learned exactly this pattern
+  # -- ~0.98 at own-end coords, see epv_model.R's own-goal override).
+  # opta_shot_events carries no qualifier-28 column, so detection here is
+  # positional (type-16 goal at the scorer's own end); acceptable for
+  # training exclusion where a false positive costs one row, unlike the
+  # serving path in add_xgot_to_spadl() which uses the SPADL is_own_goal
+  # marker (#148).
+  is_og <- shot_events$type_id == 16L & !is.na(shot_events$x) & shot_events$x < 50
+  if (any(is_og)) {
+    cli::cli_alert_info("Dropping {sum(is_og)} own goal{?s} from xGOT training.")
+    shot_events <- shot_events[!is_og, , drop = FALSE]
+  }
+
   # Complete-window gate (goalmouth coords reliable only from 2021-22+).
   if ("season" %in% names(shot_events)) {
     ey <- vapply(shot_events$season, extract_season_end_year, numeric(1))
@@ -367,11 +381,28 @@ add_xgot_to_spadl <- function(spadl_actions, xgot_model, goalmouth_lookup) {
     xgot_vec[predable] <- predict_xgot(xgot_model, cbind(base, plc))
   }
 
-  # Own-goal guard: an own goal is logged type 16 at the scorer's own end
-  # (start_x < 50). Its goal-mouth placement is meaningless for the shooter ->
-  # NA, mirroring enrich_shots_xgot.R + the own-goal xG convention (CLAUDE.md).
-  is_og <- joined$type_id == 16L & !is.na(shots$start_x) & shots$start_x < 50
-  is_og[is.na(is_og)] <- FALSE
+  # Own-goal guard: goal-mouth placement is meaningless for the "shooter" ->
+  # NA, mirroring the own-goal xG convention (CLAUDE.md). Prefer the explicit
+  # Opta qualifier-28 marker (optional SPADL column); the positional fallback
+  # (type-16 goal at the scorer's own end) only covers stale cached SPADL that
+  # predates the column -- it misreads a legitimate goal logged past halfway
+  # (#148).
+  pos_og <- joined$type_id == 16L & !is.na(shots$start_x) & shots$start_x < 50
+  pos_og[is.na(pos_og)] <- FALSE
+  if (!"is_own_goal" %in% names(shots)) {
+    cli::cli_warn("spadl_actions lacks is_own_goal - using positional own-goal fallback (type-16 goal at start_x < 50); rebuild the SPADL cache for qualifier-based detection.")
+    is_og <- pos_og
+  } else {
+    is_og <- shots$is_own_goal %in% TRUE
+    # rbindlist(fill=TRUE) over mixed-vintage SPADL chunks yields NA for rows
+    # from caches that predate the column -- fall back per-row there rather
+    # than silently treating NA as "not an own goal".
+    og_na <- is.na(shots$is_own_goal)
+    if (any(og_na)) {
+      cli::cli_warn("{sum(og_na)} shot{?s} carry NA is_own_goal (mixed-vintage SPADL cache?) - positional own-goal fallback applied to those rows.")
+      is_og <- is_og | (og_na & pos_og)
+    }
+  }
   xgot_vec[is_og] <- NA_real_
 
   spadl_actions$xgot[shot_idx] <- xgot_vec

@@ -33,6 +33,25 @@ test_that("prepare_shots_for_xgot keeps only on-target, 2021+, coord-bearing sho
   expect_true(all(c("gm_y", "dist_to_near_post", "is_goal") %in% names(feat)))
 })
 
+test_that("prepare_shots_for_xgot drops own goals (type-16 goal at own end) from training", {
+  shots <- data.frame(
+    match_id = "m", event_id = 1:3, player_id = "p", player_name = "P",
+    x = c(80, 5, 82), y = 50,
+    type_id = c(16L, 16L, 15L),        # goal, OWN goal (x=5), saved
+    is_goal = c(1L, 1L, 0L),
+    season  = "2024-2025",
+    goalmouth_y = c(50, 51, 49), goalmouth_z = c(10, 3, 12),
+    body_part = "RightFoot", situation = "OpenPlay", big_chance = 0L,
+    stringsAsFactors = FALSE
+  )
+  feat <- suppressMessages(suppressWarnings(prepare_shots_for_xgot(shots)))
+  expect_equal(nrow(feat), 2)                    # own goal excluded
+  expect_false(2L %in% feat$event_id)
+  expect_equal(attr(feat, "placement_cols"),
+               c("gm_y", "gm_z", "dist_to_near_post", "dist_to_top_corner"))
+  expect_true(all(c("gm_y", "dist_to_near_post", "is_goal") %in% names(feat)))
+})
+
 test_that("aggregate_player_xmetrics emits a consistent finishing decomposition", {
   spadl <- data.frame(
     match_id = "m1", player_id = "A", player_name = "Pl A", team_id = "T",
@@ -114,4 +133,52 @@ test_that("add_xgot_to_spadl assigns xgot correctly (realign, 0/NA matrix, own-g
   expect_true(is.na(r$xgot[5]))                  # own-goal (type 16, x<50) -> NA
   expect_true(is.na(r$xgot[6]))                  # unmatched -> NA
   expect_equal(r$shot_on_target, c(TRUE, TRUE, TRUE, NA, TRUE, NA))
+})
+
+test_that("add_xgot_to_spadl prefers the is_own_goal qualifier over position (#148)", {
+  testthat::local_mocked_bindings(
+    predict_xgot = function(xgot_model, shot_features) rep(0.5, nrow(shot_features))
+  )
+  spadl <- data.frame(
+    match_id = "m", original_event_id = 1:3, action_type = "shot",
+    start_x = c(30, 85, 55),                     # 1 = legit long-range goal
+    start_y = 50, bodypart = "foot_right",
+    is_own_goal = c(FALSE, FALSE, TRUE),         # 3 = own goal logged past halfway
+    stringsAsFactors = FALSE
+  )
+  lookup <- data.frame(
+    match_id = "m", event_id = 1:3, type_id = 16L,   # all goals
+    goalmouth_y = 50, goalmouth_z = 5,
+    situation = "OpenPlay", stringsAsFactors = FALSE
+  )
+  # Qualifier branch must not fire the missing-column fallback warning.
+  expect_no_warning(r <- suppressMessages(add_xgot_to_spadl(spadl, list(), lookup)))
+  expect_equal(r$xgot[1], 0.5)     # x<50 but NOT an own goal -> scored, not NA
+  expect_equal(r$xgot[2], 0.5)
+  expect_true(is.na(r$xgot[3]))    # own goal past halfway -> NA via qualifier
+})
+
+test_that("add_xgot_to_spadl falls back positionally for NA is_own_goal rows", {
+  testthat::local_mocked_bindings(
+    predict_xgot = function(xgot_model, shot_features) rep(0.5, nrow(shot_features))
+  )
+  # Mixed-vintage cache shape: rbindlist(fill=TRUE) leaves NA on old chunks.
+  spadl <- data.frame(
+    match_id = "m", original_event_id = 1:3, action_type = "shot",
+    start_x = c(3, 85, 85), start_y = 50, bodypart = "foot_right",
+    is_own_goal = c(NA, NA, FALSE),
+    stringsAsFactors = FALSE
+  )
+  lookup <- data.frame(
+    match_id = "m", event_id = 1:3, type_id = 16L,
+    goalmouth_y = 50, goalmouth_z = 5,
+    situation = "OpenPlay", stringsAsFactors = FALSE
+  )
+  expect_warning(
+    r <- suppressMessages(add_xgot_to_spadl(spadl, list(), lookup)),
+    "NA is_own_goal"
+  )
+  expect_true(is.na(r$xgot[1]))    # NA marker + own-end goal -> positional NA
+  expect_equal(r$xgot[2], 0.5)     # NA marker, normal goal -> scored
+  expect_equal(r$xgot[3], 0.5)     # populated FALSE -> scored
 })
