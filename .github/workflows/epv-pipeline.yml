@@ -103,12 +103,12 @@ concurrency:
 jobs:
   epv-pipeline:
     runs-on: ubuntu-latest
-    # Per-chunk feature generation + xgboost training fits in ~75-90 min on a
-    # 7GB runner; bumped from 90 to 120 to give headroom on slower runners.
-    # 150 since the daily xmetrics_only runs (panna#150): the 2026-07-18
-    # manual dispatch took 112 min — 8 min of headroom on a 120 ceiling was
-    # begging for timeout-cancelled crons (the 2026-06 starvation pattern).
-    timeout-minutes: 150
+    # Sized for BOTH paths (review catch — 150 covered only xmetrics_only):
+    # xmetrics_only runs took 112 min on 2026-07-18, and a full manual
+    # retrain = training (~75-90 min) + the same export tail ≈ 190-200 min.
+    # 210 keeps either path clear of the timeout-cancelled starvation
+    # pattern this file documents (2026-06-15..07-05).
+    timeout-minutes: 210
 
     permissions:
       contents: write
