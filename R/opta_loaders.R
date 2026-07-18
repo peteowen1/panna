@@ -2172,6 +2172,24 @@ enrich_match_stats_with_xmetrics <- function(match_stats, verbose = TRUE,
   added_cols <- setdiff(names(xm), c("player_id", "match_id"))
   idx <- match(paste(match_stats$player_id, match_stats$match_id, sep = "\r"),
                paste(xm$player_id, xm$match_id, sep = "\r"))
+  # Join-coverage tripwire (review catch): unlike merge(), match() cannot
+  # hard-fail on key type/format drift — a structural divergence (e.g. after
+  # a bymatch regen changes id types) yields all-NA idx, and the NA->0 fill
+  # below would silently ship an xG-blind feature set that
+  # fail_if_missing_frac (which only tracks missing FILES) cannot see.
+  # Healthy coverage is ~98% (measured 2026-07-18).
+  matched_frac <- if (length(idx)) mean(!is.na(idx)) else 0
+  if (nrow(xm) > 0 && matched_frac == 0) {
+    stop("xMetrics join matched 0 of ", length(idx), " match_stats rows despite ",
+         nrow(xm), " xmetrics rows - player_id/match_id key mismatch ",
+         "(type or format drift after a bymatch regen?)", call. = FALSE)
+  }
+  if (nrow(xm) > 0 && matched_frac < 0.5) {
+    warning(sprintf(paste0(
+      "xMetrics join matched only %.1f%% of match_stats rows (healthy is ~98%%) - ",
+      "investigate key drift; unmatched rows get xMetrics = 0."),
+      100 * matched_frac), call. = FALSE)
+  }
   for (col in added_cols) {
     data.table::set(match_stats, j = col, value = xm[[col]][idx])
   }

@@ -411,3 +411,45 @@ test_that("remote xMetrics enrichment narrow-selects, falling back full-width on
   expect_null(seen_cols[[2]])                        # fallback is full-width
   expect_equal(out$xg_per90, 0.5)                    # join still lands
 })
+
+test_that("remote xMetrics enrichment aligns a multi-row match() join (shuffled, partial)", {
+  # The hash-match join replaced merge() (OOM fix); a 1x1 case can't catch
+  # misalignment, so exercise unmatched rows + xm in a different row order.
+  ms <- data.frame(
+    player_id = c("p1", "p2", "p1"), player_name = "P",
+    match_id  = c("m1", "m1", "m2"),
+    league = "EPL", season = "2024-2025",
+    goals_p90 = 1, stringsAsFactors = FALSE
+  )
+  xm_remote <- data.frame(
+    player_id = c("p2", "p1"), match_id = c("m1", "m2"),
+    xg_per90 = c(0.7, 0.9), gsaa_per90 = c(NA_real_, 0.2),
+    stringsAsFactors = FALSE
+  )
+  testthat::local_mocked_bindings(
+    query_remote_opta_parquet = function(...) xm_remote
+  )
+  out <- enrich_match_stats_with_xmetrics(ms, verbose = FALSE, source = "remote")
+  expect_equal(out$xg_per90, c(0, 0.7, 0.9))   # row 1 unmatched -> 0; rows realigned
+  expect_equal(out$gsaa_per90, c(0, 0, 0.2))   # NA inside a matched row -> 0 too
+})
+
+test_that("remote xMetrics enrichment errors when the join matches zero rows", {
+  ms <- data.frame(
+    player_id = "p1", player_name = "P", match_id = "m1",
+    league = "EPL", season = "2024-2025",
+    goals_p90 = 1, stringsAsFactors = FALSE
+  )
+  # Key drift: xmetrics rows exist but share no (player_id, match_id) values.
+  xm_remote <- data.frame(
+    player_id = "999", match_id = "888", xg_per90 = 0.5,
+    stringsAsFactors = FALSE
+  )
+  testthat::local_mocked_bindings(
+    query_remote_opta_parquet = function(...) xm_remote
+  )
+  expect_error(
+    enrich_match_stats_with_xmetrics(ms, verbose = FALSE, source = "remote"),
+    "matched 0 of"
+  )
+})
