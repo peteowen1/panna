@@ -2065,10 +2065,28 @@ enrich_match_stats_with_xmetrics <- function(match_stats, verbose = TRUE,
     # gc()-invisible memory that OOM-killed the run well before its own
     # heavy lifting even started (panna#128). One query instead.
     if (verbose) cat("  Fetching consolidated xMetrics (remote, one query)...\n")
+    # Select ONLY the join keys + mapped columns at the duckdb layer: the
+    # consolidated bymatch parquet is ~3.3M rows x 70 columns, and the
+    # full-width load (plus the as.data.table() deep copy that followed it)
+    # was the transient that OOM-killed psr-weekly-snapshot on GHA on
+    # 2026-07-08/15 -- right on top of the ~6GB match_stats already resident.
+    # A narrow SELECT hard-fails on a vintage missing any named column
+    # (duckdb binder error), so fall back to the old full-width load there.
+    want <- c("player_id", "match_id", names(xm_map))
     xm <- tryCatch({
-      x <- data.table::as.data.table(
-        query_remote_opta_parquet("xmetrics_bymatch", opta_league = NULL, season = NULL))
-      keep <- intersect(c("player_id", "match_id", names(xm_map)), names(x))
+      x <- tryCatch(
+        query_remote_opta_parquet("xmetrics_bymatch", opta_league = NULL,
+                                  season = NULL, columns = want),
+        error = function(e) {
+          # Loud, not silent: if this fires every run (e.g. a renamed column
+          # made the narrow select permanently fail), the OOM-safety
+          # optimization has stopped working and logs must show it.
+          cli::cli_warn("Narrow xMetrics select failed ({conditionMessage(e)}); falling back to the full-width load (memory-heavy legacy path).")
+          query_remote_opta_parquet("xmetrics_bymatch", opta_league = NULL,
+                                    season = NULL)
+        })
+      data.table::setDT(x)
+      keep <- intersect(want, names(x))
       x[, ..keep]
     }, error = function(e) NULL)
     if (is.null(xm)) {
