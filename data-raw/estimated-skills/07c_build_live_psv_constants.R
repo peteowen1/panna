@@ -52,6 +52,8 @@ LIVE_SUBSET_LEAGUES <- c("WC")
 # football/stat-value.js). The other 7 xMetrics features (+ xg_per90/
 # npxg_per90, which the blog does NOT derive this way) remain unobservable —
 # see the enrichment block below, which keeps these 5 real and drops the rest.
+# panna#153: gsaa_per90 + xa_per90_xmetrics require inthegame-blog#447 (live
+# xGOT/per-shot xG) on blog main — CONFIRMED merged 2026-07-18, so both stay.
 LIVE_XMETRICS_FEATURES <- c(
   "npg_minus_npxg_per90", "ibox_g_minus_xg_per90", "obox_g_minus_xg_per90",
   "xa_per90_xmetrics", "gsaa_per90"
@@ -82,11 +84,29 @@ LIVE_OBSERVABLE_FEATURES <- c(
   # GK (thin block + event-derived: saves / punches / high claims)
   "saves_p90", "punches_p90", "high_claim_p90", "good_high_claim_p90",
   "goals_conceded_p90",
+  # panna#153: 10 more blog-derivable features found missing (stat-value.js
+  # 2026-07-18 audit). Each verified to carry a NONZERO blend/gk coefficient
+  # in at least one of margin(psr)/osr/dsr before adding (blocked_passes_p90 +
+  # turnover_p90 are zero on margin but nonzero on OSR, so they still shape the
+  # live OSV/DSV constants — omitting them would bias K_osr/K_dsr).
+  "att_headed_p90", "att_one_on_one_p90", "blocked_passes_p90", "turnover_p90",
+  "error_lead_to_shot_p90", "error_lead_to_goal_p90",
+  "saves_ibox_p90", "saves_obox_p90", "keeper_sweeper_p90", "gk_smother_p90",
   # xMetrics (client-side aggregated from live-scored per-shot xG — see above)
   LIVE_XMETRICS_FEATURES
 )
 
 pm <- load_position_role_means()
+# Reliability shrinkage (LIVE-PSV-UNBLOCK D1 v2, #158 Rec 2). Threaded into
+# BOTH the exact (ex) and raw (rw/rw_full) sides of score_one() below,
+# uniformly — lambda is a linear per-feature scaling of the standardized
+# contribution (not centering/position-norm), so applying it symmetrically
+# preserves the "K is constant within (league,role)" invariant the hard-fail
+# check below relies on (x cancels regardless of which lambdas are used, as
+# long as both sides use the SAME ones).
+.psv_reliability <- if (exists("psv_reliability_pricing") && !isTRUE(psv_reliability_pricing)) {
+  NULL
+} else load_psv_match_reliability()
 ms <- as.data.table(readRDS("data-raw/cache-skills/01_match_stats.rds"))
 
 # Keep the two most recent end-years (current + prior-as-prior), blog-ish leagues
@@ -177,10 +197,11 @@ cat(sprintf(
 # broad role per player-game (same classifier position-norm uses)
 ms[, role := .player_role(ms)]
 
-score_one <- function(d, center, position_means) {
+score_one <- function(d, center, position_means, reliability = .psv_reliability) {
   compute_player_psv(d, min_adjust = FALSE, center = center,
                      scale_to_minutes = FALSE, exclude_efficiency = FALSE,
-                     target = "blend", position_means = position_means)
+                     target = "blend", position_means = position_means,
+                     reliability = reliability)
 }
 
 # Compute K per (league, season): raw (no norm, no center) minus exactPSV

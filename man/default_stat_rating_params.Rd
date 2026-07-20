@@ -26,11 +26,13 @@ estimation pipeline. Can be customized per-stat via named overrides.
 }
 \seealso{
 Other psr: 
+\code{\link{PSV_RELIABILITY_GD_SCALE}},
 \code{\link{calculate_psr}()},
 \code{\link{calculate_psv}()},
 \code{\link{calculate_psv_components}()},
 \code{\link{compute_player_psv}()},
 \code{\link{load_opta_psr_weekly}()},
+\code{\link{load_psv_match_reliability}()},
 \code{\link{player_psr}()},
 \code{\link{soccer_position_map}()},
 \code{\link{soccer_stat_rating_definitions}()},

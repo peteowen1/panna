@@ -85,6 +85,13 @@ current_season_alias <- sort(game_log_seasons, decreasing = TRUE)[1]
   NULL
 } else load_position_role_means()
 
+# Reliability shrinkage (LIVE-PSV-UNBLOCK D1 v2, #158 Rec 2) — display-path
+# only. Set psv_reliability_pricing <- FALSE to disable shrinkage (e.g. if
+# psv_match_reliability.csv is stale/absent for a rebuild).
+.psv_reliability <- if (exists("psv_reliability_pricing") && !isTRUE(psv_reliability_pricing)) {
+  NULL
+} else load_psv_match_reliability()
+
 # Upload toggle — set FALSE during local dev to skip the GH release push.
 if (!exists("upload_game_logs", inherits = FALSE)) upload_game_logs <- TRUE
 
@@ -474,7 +481,8 @@ validate_game_log_schema <- function(dt, league, season) {
             player_game_psv <- compute_player_psv(league_stats, min_adjust = FALSE,
                                                   center = TRUE, scale_to_minutes = TRUE,
                                                   exclude_efficiency = FALSE, target = "blend",
-                                                  position_means = .psv_position_means)
+                                                  position_means = .psv_position_means,
+                                                  reliability = .psv_reliability)
             message(sprintf("    PSV: %d player-games", nrow(player_game_psv)))
           }
         }, error = function(e) {
@@ -522,7 +530,8 @@ validate_game_log_schema <- function(dt, league, season) {
                 inline_psv <- compute_player_psv(match_level, min_adjust = FALSE,
                                                  center = TRUE, scale_to_minutes = TRUE,
                                                  exclude_efficiency = FALSE, target = "blend",
-                                                 position_means = .psv_position_means)
+                                                 position_means = .psv_position_means,
+                                                 reliability = .psv_reliability)
                 player_game_psv <- data.table::rbindlist(
                   list(player_game_psv, inline_psv), fill = TRUE, use.names = TRUE
                 )

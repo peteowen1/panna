@@ -12,7 +12,8 @@ calculate_psv_components(
   min_adjust = TRUE,
   center = TRUE,
   scale_to_minutes = FALSE,
-  exclude_efficiency = TRUE
+  exclude_efficiency = TRUE,
+  reliability = NULL
 )
 }
 \arguments{
@@ -42,6 +43,11 @@ games (like EPV), rather than a per-90 rate. Default \code{FALSE}
 
 \item{exclude_efficiency}{Logical. Exclude efficiency/ratio stats from PSV
 calculation. Default \code{TRUE}.}
+
+\item{reliability}{Optional per-match reliability lookup, passed through
+to each of the three \code{\link{calculate_psv}} calls
+(margin/offense/defense) so all three components shrink stats on the
+same scale. See \code{\link{calculate_psv}}.}
 }
 \value{
 A data.table with identifier columns plus \code{psv_raw},
@@ -54,11 +60,13 @@ producing \code{psv}, \code{osv}, and \code{dsv} columns where
 }
 \seealso{
 Other psr: 
+\code{\link{PSV_RELIABILITY_GD_SCALE}},
 \code{\link{calculate_psr}()},
 \code{\link{calculate_psv}()},
 \code{\link{compute_player_psv}()},
 \code{\link{default_stat_rating_params}()},
 \code{\link{load_opta_psr_weekly}()},
+\code{\link{load_psv_match_reliability}()},
 \code{\link{player_psr}()},
 \code{\link{soccer_position_map}()},
 \code{\link{soccer_stat_rating_definitions}()},

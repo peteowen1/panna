@@ -301,3 +301,227 @@ test_that("compute_player_psv routes keepers through the GK model (gsaa drives D
   expect_gt(mean(gk_rows[is_high_gsaa == TRUE]$dsv),
             mean(gk_rows[is_high_gsaa == FALSE]$dsv))
 })
+
+
+# =============================================================================
+# reliability shrinkage (LIVE-PSV-UNBLOCK D1 v2, #158 Rec 2)
+# =============================================================================
+
+test_that("calculate_psv reliability=NULL is bit-identical to the pre-shrinkage path", {
+  stats <- data.frame(
+    player_id = "p1", player_name = "Alice", match_id = "m1",
+    goals_p90 = 2, minutes_played = 90, stringsAsFactors = FALSE
+  )
+  coef_df <- data.frame(
+    stat_name = "goals_p90", beta = 1.0, sd = 2.0, stringsAsFactors = FALSE
+  )
+
+  result <- calculate_psv(stats, coef_df, min_adjust = FALSE, center = FALSE)
+  # No reliability arg passed at all -- default NULL, standardized only: 2/2.0*1.0 = 1.0
+  expect_equal(result$psv, 1.0)
+
+  result_explicit_null <- calculate_psv(stats, coef_df, min_adjust = FALSE,
+                                         center = FALSE, reliability = NULL)
+  expect_identical(result$psv, result_explicit_null$psv)
+})
+
+test_that("calculate_psv reliability lambda scales the standardized contribution", {
+  stats <- data.frame(
+    player_id = "p1", player_name = "Alice", match_id = "m1",
+    goals_p90 = 2, minutes_played = 90, stringsAsFactors = FALSE
+  )
+  coef_df <- data.frame(
+    stat_name = "goals_p90", beta = 1.0, sd = 2.0, stringsAsFactors = FALSE
+  )
+  # Standardized (unshrunk) contribution: 2 / 2.0 * 1.0 = 1.0
+  base <- calculate_psv(stats, coef_df, min_adjust = FALSE, center = FALSE)
+  expect_equal(base$psv, 1.0)
+
+  # lambda = 1 -- shrinkage is a no-op, but supplying `reliability` at all
+  # (even with lambda = 1) turns on the GD-unit display scale -- NOT
+  # identical to the unscaled base anymore (LIVE-PSV-UNBLOCK D1-v2 FINAL).
+  lam1 <- calculate_psv(stats, coef_df, min_adjust = FALSE, center = FALSE,
+                         reliability = data.frame(stat_name = "goals_p90", lambda = 1.0))
+  expect_equal(lam1$psv, PSV_RELIABILITY_GD_SCALE * base$psv)
+
+  # lambda = 0.5 -- halves the (unscaled) contribution, then the scale is
+  # applied exactly once on top: 0.5 * PSV_RELIABILITY_GD_SCALE * base.
+  lam_half <- calculate_psv(stats, coef_df, min_adjust = FALSE, center = FALSE,
+                             reliability = data.frame(stat_name = "goals_p90", lambda = 0.5))
+  expect_equal(lam_half$psv, 0.5 * PSV_RELIABILITY_GD_SCALE * base$psv)
+
+  # lambda = 0 -- zeroes the contribution regardless of scale (0 * scale = 0)
+  lam0 <- calculate_psv(stats, coef_df, min_adjust = FALSE, center = FALSE,
+                         reliability = data.frame(stat_name = "goals_p90", lambda = 0))
+  expect_equal(lam0$psv, 0)
+})
+
+test_that("calculate_psv applies PSV_RELIABILITY_GD_SCALE exactly once", {
+  stats <- data.frame(
+    player_id = "p1", player_name = "Alice", match_id = "m1",
+    goals_p90 = 2, minutes_played = 90, stringsAsFactors = FALSE
+  )
+  coef_df <- data.frame(
+    stat_name = "goals_p90", beta = 1.0, sd = 2.0, stringsAsFactors = FALSE
+  )
+  # Unscaled/unshrunk standardized contribution: 2 / 2.0 * 1.0 = 1.0
+  base <- calculate_psv(stats, coef_df, min_adjust = FALSE, center = FALSE)
+  expect_equal(base$psv, 1.0)
+
+  result <- calculate_psv(stats, coef_df, min_adjust = FALSE, center = FALSE,
+                           reliability = data.frame(stat_name = "goals_p90", lambda = 0.5))
+  # A lambda = 0.5 feature contributes 0.5 * PSV_RELIABILITY_GD_SCALE * base --
+  # if the scale were applied twice (e.g. once per lambda multiply and again
+  # globally) this would instead be 0.5 * PSV_RELIABILITY_GD_SCALE^2 * base.
+  expect_equal(result$psv, 0.5 * PSV_RELIABILITY_GD_SCALE * base$psv)
+  once <- 0.5 * PSV_RELIABILITY_GD_SCALE * base$psv
+  twice <- 0.5 * PSV_RELIABILITY_GD_SCALE^2 * base$psv
+  expect_false(isTRUE(all.equal(result$psv, twice)))
+  expect_equal(result$psv, once)
+})
+
+test_that("load_psv_match_reliability returns a complete two-population artifact", {
+  rel <- load_psv_match_reliability()
+  expect_true(all(c("model", "stat_name", "lambda") %in% names(rel)))
+  expect_setequal(unique(rel$model), c("outfield", "gk"))
+  expect_true(all(rel$lambda >= 0 & rel$lambda <= 1, na.rm = TRUE))
+})
+
+test_that("calculate_psv reliability lookup is by stat_name, not row order", {
+  stats <- data.frame(
+    player_id = "p1", player_name = "Alice", match_id = "m1",
+    goals_p90 = 2, tackles_p90 = 4, minutes_played = 90, stringsAsFactors = FALSE
+  )
+  coef_df <- data.frame(
+    stat_name = c("goals_p90", "tackles_p90"), beta = c(1.0, 1.0),
+    sd = c(2.0, 4.0), stringsAsFactors = FALSE
+  )
+  # Rows deliberately in the REVERSE of coef_df/stat_cols order, with
+  # DIFFERENT lambdas so positional indexing would give a different answer.
+  reliability <- data.frame(
+    stat_name = c("tackles_p90", "goals_p90"), lambda = c(0.25, 1.0),
+    stringsAsFactors = FALSE
+  )
+
+  result <- calculate_psv(stats, coef_df, min_adjust = FALSE, center = FALSE,
+                           reliability = reliability)
+  # goals_p90: 2/2.0*1.0 * 1.0 = 1.0; tackles_p90: 4/4.0*1.0 * 0.25 = 0.25
+  # positional indexing would swap the lambdas and give 1*0.25 + 1*1.0 = 1.25 instead
+  # (then the GD-unit display scale applies once on top, since reliability is supplied)
+  expect_equal(result$psv, 1.25 * PSV_RELIABILITY_GD_SCALE)
+})
+
+test_that("calculate_psv falls back to lambda = 1 with a warning for stats absent from reliability", {
+  stats <- data.frame(
+    player_id = "p1", player_name = "Alice", match_id = "m1",
+    goals_p90 = 2, tackles_p90 = 4, minutes_played = 90, stringsAsFactors = FALSE
+  )
+  coef_df <- data.frame(
+    stat_name = c("goals_p90", "tackles_p90"), beta = c(1.0, 1.0),
+    sd = c(2.0, 4.0), stringsAsFactors = FALSE
+  )
+  # reliability only covers goals_p90 -- tackles_p90 must fall back to lambda = 1
+  reliability <- data.frame(stat_name = "goals_p90", lambda = 0.5, stringsAsFactors = FALSE)
+
+  expect_warning(
+    result <- calculate_psv(stats, coef_df, min_adjust = FALSE, center = FALSE,
+                             reliability = reliability),
+    "tackles_p90"
+  )
+  # goals_p90: 2/2.0*1.0*0.5 = 0.5; tackles_p90: 4/4.0*1.0*1.0 = 1.0 (lambda fallback)
+  # (then the GD-unit display scale applies once on top, since reliability is supplied)
+  expect_equal(result$psv, (0.5 + 1.0) * PSV_RELIABILITY_GD_SCALE)
+})
+
+test_that("calculate_psv falls back to lambda = 1 with a warning for NA lambda values", {
+  # A stat present in the table but with an NA lambda (e.g. too few players to
+  # estimate the variance decomposition) must be treated the same as absent.
+  stats <- data.frame(
+    player_id = "p1", player_name = "Alice", match_id = "m1",
+    goals_p90 = 2, minutes_played = 90, stringsAsFactors = FALSE
+  )
+  coef_df <- data.frame(
+    stat_name = "goals_p90", beta = 1.0, sd = 2.0, stringsAsFactors = FALSE
+  )
+  reliability <- data.frame(stat_name = "goals_p90", lambda = NA_real_,
+                             stringsAsFactors = FALSE)
+
+  expect_warning(
+    result <- calculate_psv(stats, coef_df, min_adjust = FALSE, center = FALSE,
+                             reliability = reliability),
+    "goals_p90"
+  )
+  # (the GD-unit display scale applies once on top, since reliability is supplied)
+  expect_equal(result$psv, 1.0 * PSV_RELIABILITY_GD_SCALE)
+})
+
+test_that("calculate_psv_components threads reliability through margin/osr/dsr", {
+  stats <- data.frame(
+    player_id = "p1", player_name = "Alice", match_id = "m1",
+    goals_p90 = 2, minutes_played = 90, stringsAsFactors = FALSE
+  )
+  margin_coef <- data.frame(stat_name = "goals_p90", beta = 1.0, sd = 2.0,
+                             stringsAsFactors = FALSE)
+  osr_coef <- data.frame(stat_name = "goals_p90", beta = 1.0, sd = 2.0,
+                          stringsAsFactors = FALSE)
+  dsr_coef <- data.frame(stat_name = "goals_p90", beta = 0.0, sd = 2.0,
+                          stringsAsFactors = FALSE)
+  reliability <- data.frame(stat_name = "goals_p90", lambda = 0.5,
+                             stringsAsFactors = FALSE)
+
+  result <- calculate_psv_components(stats, margin_coef, osr_coef, dsr_coef,
+                                      min_adjust = FALSE, center = FALSE,
+                                      reliability = reliability)
+  # margin/osr both shrunk by lambda = 0.5: 2/2.0*1.0*0.5 = 0.5, then the
+  # GD-unit display scale applies once on top (reliability is supplied).
+  expect_equal(result$psv, 0.5 * PSV_RELIABILITY_GD_SCALE)
+  # osv + dsv = psv still reconciles exactly under the scale: it's a linear
+  # multiplier applied identically inside each of the three calculate_psv
+  # calls (margin/osr/dsr), so it factors out of the additive delta shift.
+  expect_equal(result$osv + result$dsv, result$psv)
+})
+
+test_that("compute_player_psv routes reliability by model (outfield vs gk)", {
+  gk <- data.frame(
+    player_id = "gk1", player_name = "Keeper", match_id = "m1",
+    primary_position = "GK", total_minutes = 90,
+    saves_p90 = 3, gsaa_per90 = 2, stringsAsFactors = FALSE
+  )
+  outfield <- data.frame(
+    player_id = "of1", player_name = "Striker", match_id = "m2",
+    primary_position = "Striker", total_minutes = 90,
+    shots_p90 = 3, shots_obox_p90 = 1, pen_area_entries_p90 = 4,
+    saves_p90 = 0, gsaa_per90 = 0, stringsAsFactors = FALSE
+  )
+  dt <- data.table::rbindlist(list(gk, outfield), fill = TRUE)
+
+  # A deliberately extreme lambda for saves_p90 in the "gk" bucket only -- if
+  # compute_player_psv routed the wrong bucket to the keeper row, this would
+  # either error (unmatched stat) or leave the GK score unchanged.
+  reliability <- data.table::data.table(
+    model = c("gk", "outfield"),
+    stat_name = c("saves_p90", "saves_p90"),
+    lambda = c(0.1, 1.0)
+  )
+
+  res_no_rel <- data.table::as.data.table(suppressWarnings(compute_player_psv(
+    dt, min_adjust = FALSE, center = FALSE, scale_to_minutes = FALSE,
+    exclude_efficiency = FALSE, target = "blend")))
+  res_rel <- data.table::as.data.table(suppressWarnings(compute_player_psv(
+    dt, min_adjust = FALSE, center = FALSE, scale_to_minutes = FALSE,
+    exclude_efficiency = FALSE, target = "blend", reliability = reliability)))
+
+  gk_no_rel  <- res_no_rel[player_id == "gk1"]$psv
+  gk_rel     <- res_rel[player_id == "gk1"]$psv
+  of_no_rel  <- res_no_rel[player_id == "of1"]$psv
+  of_rel     <- res_rel[player_id == "of1"]$psv
+
+  # GK score shrinks when the gk-bucket lambda = 0.1 is applied.
+  expect_false(isTRUE(all.equal(gk_no_rel, gk_rel)))
+  # Outfield striker never has a nonzero saves_p90 coefficient, so an
+  # outfield-bucket lambda = 1.0 for saves_p90 leaves the SHRINKAGE unchanged
+  # (no stat of theirs is actually damped) -- but supplying `reliability` at
+  # all still turns on the GD-unit display scale (LIVE-PSV-UNBLOCK D1-v2
+  # FINAL), so of_rel is the scaled version of of_no_rel, not identical to it.
+  expect_equal(of_rel, of_no_rel * PSV_RELIABILITY_GD_SCALE)
+})
