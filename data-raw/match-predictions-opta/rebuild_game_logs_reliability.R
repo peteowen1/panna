@@ -199,6 +199,13 @@ message(sprintf("  Upload: %s", if (isTRUE(upload_game_logs)) "yes" else "no"))
     assign("use_skill_ratings", use_skill_ratings,                       envir = ge)
     assign("cache_dir",         cache_dir,                               envir = ge)
     assign("blog_leagues",      blog_leagues,                            envir = ge)
+    # Reprice runs re-process seasons whose PUBLISHED game-logs already ship
+    # partial coverage (POR/UEL/NED/BEL/TUR event gaps in 2010-2018 are genuine
+    # opta-latest holes — see panna#158 rebuild diagnosis, 2026-07-20). 10b's
+    # events-coverage abort (default 20 missing matches) would kill each such
+    # season wholesale, so disarm it here: this driver never REDUCES coverage,
+    # it reprices what exists. New-coverage builds must not copy this override.
+    assign("events_coverage_abort_threshold", Inf,                       envir = ge)
     source("data-raw/match-predictions-opta/10b_export_game_logs.R", local = FALSE)
     TRUE
   }, error = function(e) {
