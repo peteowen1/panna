@@ -54,8 +54,12 @@ LIVE_SUBSET_LEAGUES <- c("WC")
 # see the enrichment block below, which keeps these 5 real and drops the rest.
 # panna#153: gsaa_per90 + xa_per90_xmetrics require inthegame-blog#447 (live
 # xGOT/per-shot xG) on blog main — CONFIRMED merged 2026-07-18, so both stay.
+# ibox/obox_g_minus_xg_per90 dropped from the PSR/PSV family 2026-07-20 (see
+# .get_psr_skill_cols() in psr.R) — they are no longer scored, so they cannot be
+# live features either. The lockstep checker (07c_check_live_features.R) enforces
+# that this list stays a subset of the scored feature set.
 LIVE_XMETRICS_FEATURES <- c(
-  "npg_minus_npxg_per90", "ibox_g_minus_xg_per90", "obox_g_minus_xg_per90",
+  "npg_minus_npxg_per90",
   "xa_per90_xmetrics", "gsaa_per90"
 )
 LIVE_OBSERVABLE_FEATURES <- c(

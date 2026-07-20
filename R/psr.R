@@ -59,7 +59,7 @@
   # at 0/1. Each is replaced by a volume-correct ABOVE-EXPECTED count or the
   # additive raw counts already in rate_cols:
   #   • passing accuracy   → xpass_overperformance_per90 (completions above xPass)
-  #   • shooting/finishing → npg_minus_npxg / ibox/obox_g_minus_xg / placement_added
+  #   • shooting/finishing → npg_minus_npxg / placement_added
   #   • aerial/duel/tackle → 5 xDuel above-expected counts: aerial_woe (win header),
   #     aerial_poss_woe (keep ball after header), takeon_woe (beat man), tackle_poss_woe
   #     (win ball when tackling), containment_woe (stop a dribbler). See duel_model.R.
@@ -70,7 +70,22 @@
   xmetrics_cols <- c(
     "xg_per90", "npxg_per90", "xa_per90_xmetrics",
     "xpass_overperformance_per90_xmetrics",
-    "npg_minus_npxg_per90", "ibox_g_minus_xg_per90", "obox_g_minus_xg_per90",
+    # NB the ZONAL finishing split (ibox_g_minus_xg_per90 / obox_g_minus_xg_per90)
+    # was REMOVED 2026-07-20. Both are signed goals-minus-xG quantities that
+    # cancel under aggregation, so their training sds collapse (obox's stored sd
+    # was 0.0037 vs an actual season-grain 0.0281 — 7.5x too small, the sparsest
+    # feature trained on a population where it was mostly missing-filled-to-zero:
+    # 55/210 league-seasons lacked bymatch coverage at training time). PSV
+    # standardises by that stored sd, so at MATCH grain obox was amplified 44x
+    # (ibox 12x) while every other feature in the model sits at 0.2-3.6x. The
+    # result: obox alone drove 57% of DSV's spread via a collinearity-noise
+    # defensive beta, and the biggest values were all cameos (a 16-minute sub
+    # scoring from distance reads +5.19/90). Aggregate finishing signal is
+    # retained by npg_minus_npxg_per90 and placement_added_per90 (1.9x/1.1x,
+    # both well-behaved) — only the inside/outside-box SPLIT is gone.
+    # These remain in SPM (spm_opta.R), which scores at season grain where the
+    # scale transfer does not arise.
+    "npg_minus_npxg_per90",
     "placement_added_per90",
     # Above-expected physical-duel counts (5 xDuel contests; replace *_success ratios)
     "aerial_woe_per90", "aerial_poss_woe_per90", "takeon_woe_per90",
