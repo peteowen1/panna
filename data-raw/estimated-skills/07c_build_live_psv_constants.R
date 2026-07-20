@@ -104,9 +104,12 @@ pm <- load_position_role_means()
 # preserves the "K is constant within (league,role)" invariant the hard-fail
 # check below relies on (x cancels regardless of which lambdas are used, as
 # long as both sides use the SAME ones).
-.psv_reliability <- if (exists("psv_reliability_pricing") && !isTRUE(psv_reliability_pricing)) {
-  NULL
-} else load_psv_match_reliability()
+# Reliability-lambda retired from the display path (2026-07-20 audit, #158) —
+# default OFF, must match 10b's default so K calibrates against the same
+# pricing the game-logs ship with.
+.psv_reliability <- if (exists("psv_reliability_pricing") && isTRUE(psv_reliability_pricing)) {
+  load_psv_match_reliability()
+} else NULL
 ms <- as.data.table(readRDS("data-raw/cache-skills/01_match_stats.rds"))
 
 # Keep the two most recent end-years (current + prior-as-prior), blog-ish leagues

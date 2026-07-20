@@ -1,13 +1,13 @@
-# rebuild_game_logs_reliability.R
-# Wave-2 driver: full-history game-logs rebuild for LIVE-PSV-UNBLOCK D1-v2.
+# rebuild_game_logs_all_seasons.R
+# Full-history force-rebuild of the blog game-logs (all shipped seasons).
 #
-# Why this exists (pannaverse/docs/plans/LIVE-PSV-UNBLOCK-2026-07-20.md, D3):
-#   (a) PSV reliability shrinkage (per-feature lambda, wired into
-#       compute_player_psv()/calculate_psv() behind the `psv_reliability_pricing`
-#       guard in 10b_export_game_logs.R) repriced psv/osv/dsv — this changes
-#       every published season, not just the current one.
+# Why this exists (pannaverse/docs/plans/LIVE-PSV-UNBLOCK-2026-07-20.md):
+#   (a) restore/refresh psv/osv/dsv under the STANDARD skills-model pricing
+#       after the retired reliability-lambda display experiment (2026-07-20
+#       audit: lambda is a skill estimator, wrong family for per-game
+#       production display — kept opt-in for skill-side use only);
 #   (b) game-logs must pick up post-#143 xGOT-based GSAA.
-# D3 requires ONE rebuild covering ALL currently-shipped seasons before 07c
+# Run this ONE rebuild covering ALL currently-shipped seasons before 07c
 # regenerates psv_live_constants.csv against the republished logs (K-constant
 # calibration order matters — regenerating twice wastes a cycle).
 #
@@ -18,9 +18,8 @@
 # (see step 2) rather than a second hand-maintained season vector that would
 # drift from the first.
 #
-# Usage (from panna/, once gate #2 — the D1-v2 empirical check in the plan —
-# has passed):
-#   Rscript data-raw/match-predictions-opta/rebuild_game_logs_reliability.R
+# Usage (from panna/):
+#   Rscript data-raw/match-predictions-opta/rebuild_game_logs_all_seasons.R
 # `dry_run` defaults TRUE: prints the resolved (league, season) plan and does
 # NOT source 10b or write anything. Set `dry_run <- FALSE` before sourcing
 # (or edit the default below) to actually run the rebuild.
@@ -65,27 +64,15 @@ message(sprintf("EPV override: %s (mtime %s)", epv_override_path,
 message(sprintf("WP override:  %s (mtime %s)", wp_override_path,
                 format(file.info(wp_override_path)$mtime)))
 
-# --- Reliability shrinkage (D1-v2, #158 Rec 2) ---
-# 10b_export_game_logs.R's own guard defaults `psv_reliability_pricing` to ON
-# (it only disables when the global is explicitly set FALSE) — left unset
-# here on purpose so a missing/stale artifact surfaces via 10b's
-# load_psv_match_reliability() warning instead of this driver silently
-# masking it. We only fail fast if someone explicitly turned it off, since
-# shipping the reliability repricing is the entire point of this driver.
+# --- Pricing: STANDARD skills-model pricing (reliability-lambda retired from
+# the display path, 2026-07-20 audit — see plan doc). 10b defaults the
+# `psv_reliability_pricing` guard to OFF; leave it unset here. Setting it TRUE
+# in the session opts back into the lambda experiment (skill-side use only).
 if (exists("psv_reliability_pricing", inherits = FALSE) &&
-    !isTRUE(psv_reliability_pricing)) {
-  stop("psv_reliability_pricing is explicitly disabled in this session, but ",
-       "this driver exists to ship the D1-v2 reliability repricing. Unset it ",
-       "or set it TRUE before sourcing.")
+    isTRUE(psv_reliability_pricing)) {
+  message("NOTE: psv_reliability_pricing=TRUE — this run will apply the retired ",
+          "lambda display pricing. Only do this deliberately.")
 }
-.reliability_artifact <- system.file("extdata", "psv_match_reliability.csv", package = "panna")
-if (!nzchar(.reliability_artifact) || !file.exists(.reliability_artifact)) {
-  stop("psv_match_reliability.csv not found in the installed/loaded panna package. ",
-       "Wave 1 (07b_build_position_means.R) must have built it and the package ",
-       "must be re-loaded (devtools::load_all()) before this driver can run.")
-}
-message(sprintf("Reliability artifact: %s (mtime %s)", .reliability_artifact,
-                format(file.info(.reliability_artifact)$mtime)))
 
 # --- Leagues: canonical resolver (constants.R PANNA_LEAGUE_GROUPS), same
 # source 10b itself uses — never hand-maintain a parallel list. ---

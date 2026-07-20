@@ -85,12 +85,13 @@ current_season_alias <- sort(game_log_seasons, decreasing = TRUE)[1]
   NULL
 } else load_position_role_means()
 
-# Reliability shrinkage (LIVE-PSV-UNBLOCK D1 v2, #158 Rec 2) — display-path
-# only. Set psv_reliability_pricing <- FALSE to disable shrinkage (e.g. if
-# psv_match_reliability.csv is stale/absent for a rebuild).
-.psv_reliability <- if (exists("psv_reliability_pricing") && !isTRUE(psv_reliability_pricing)) {
-  NULL
-} else load_psv_match_reliability()
+# Reliability-lambda shrinkage is RETIRED from the display path (2026-07-20
+# audit, #158: lambda estimates skill, but per-game PSV is a production
+# metric — see LIVE-PSV-UNBLOCK plan doc). Default OFF; set
+# psv_reliability_pricing <- TRUE only for skill-side experiments.
+.psv_reliability <- if (exists("psv_reliability_pricing") && isTRUE(psv_reliability_pricing)) {
+  load_psv_match_reliability()
+} else NULL
 
 # Upload toggle — set FALSE during local dev to skip the GH release push.
 if (!exists("upload_game_logs", inherits = FALSE)) upload_game_logs <- TRUE
