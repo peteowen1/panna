@@ -13,7 +13,8 @@ calculate_psv_components(
   center = TRUE,
   scale_to_minutes = FALSE,
   exclude_efficiency = TRUE,
-  reliability = NULL
+  reliability = NULL,
+  center_weights = c("none", "minutes")
 )
 }
 \arguments{
@@ -48,6 +49,25 @@ calculation. Default \code{TRUE}.}
 to each of the three \code{\link{calculate_psv}} calls
 (margin/offense/defense) so all three components shrink stats on the
 same scale. See \code{\link{calculate_psv}}.}
+
+\item{center_weights}{One of \code{"none"} (default) or \code{"minutes"}.
+\code{"none"} centers on the plain row mean of \code{psv_raw} within each
+\code{(season, round)} group -- unchanged legacy behaviour, and the ONLY
+path the RAPM \code{psvf90} target and every other pre-existing caller
+use (bit-identical when this argument is left at its default).
+\code{"minutes"} centers on the minutes-weighted mean instead (weight =
+\code{minutes_played / 90}, or \code{total_minutes / 90} when that's the
+only minutes column present -- the same resolution \code{scale_to_minutes}
+uses). Combined with \code{scale_to_minutes = TRUE} this makes the
+round's SUMMED (minutes-scaled) PSV exactly 0: writing \eqn{w_i =
+  minutes_i/90} and \eqn{\bar{x}_w = \sum w_i x_i / \sum w_i} for the
+weighted mean of \code{psv_raw}, the scaled centered value is
+\eqn{w_i(x_i - \bar{x}_w)}, and \eqn{\sum_i w_i(x_i - \bar{x}_w) =
+  \sum_i w_i x_i - \bar{x}_w \sum_i w_i = 0} by construction. A group whose
+weights all resolve to 0 (e.g. every row's minutes missing/non-positive)
+falls back to the plain mean for that group so centering never divides by
+zero. Display path only (game-logs export) -- has no effect when
+\code{center = FALSE}.}
 }
 \value{
 A data.table with identifier columns plus \code{psv_raw},

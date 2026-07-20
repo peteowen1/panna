@@ -709,6 +709,24 @@ calculate_psr_components <- function(skills, coef_df, osr_coef_df, dsr_coef_df,
 #'   to get per-90 rates before applying coefficients. Default \code{TRUE}.
 #' @param center Logical. Center PSV within each matchday/round so
 #'   PSV = contribution above average that round. Default \code{TRUE}.
+#' @param center_weights One of \code{"none"} (default) or \code{"minutes"}.
+#'   \code{"none"} centers on the plain row mean of \code{psv_raw} within each
+#'   \code{(season, round)} group -- unchanged legacy behaviour, and the ONLY
+#'   path the RAPM \code{psvf90} target and every other pre-existing caller
+#'   use (bit-identical when this argument is left at its default).
+#'   \code{"minutes"} centers on the minutes-weighted mean instead (weight =
+#'   \code{minutes_played / 90}, or \code{total_minutes / 90} when that's the
+#'   only minutes column present -- the same resolution \code{scale_to_minutes}
+#'   uses). Combined with \code{scale_to_minutes = TRUE} this makes the
+#'   round's SUMMED (minutes-scaled) PSV exactly 0: writing \eqn{w_i =
+#'   minutes_i/90} and \eqn{\bar{x}_w = \sum w_i x_i / \sum w_i} for the
+#'   weighted mean of \code{psv_raw}, the scaled centered value is
+#'   \eqn{w_i(x_i - \bar{x}_w)}, and \eqn{\sum_i w_i(x_i - \bar{x}_w) =
+#'   \sum_i w_i x_i - \bar{x}_w \sum_i w_i = 0} by construction. A group whose
+#'   weights all resolve to 0 (e.g. every row's minutes missing/non-positive)
+#'   falls back to the plain mean for that group so centering never divides by
+#'   zero. Display path only (game-logs export) -- has no effect when
+#'   \code{center = FALSE}.
 #' @param exclude_efficiency Logical. Exclude efficiency/ratio stats from PSV
 #'   calculation. Default \code{TRUE}.
 #' @param scale_to_minutes Logical. If TRUE, multiply the (per-90) PSV by
@@ -746,7 +764,9 @@ calculate_psr_components <- function(skills, coef_df, osr_coef_df, dsr_coef_df,
 #' @export
 calculate_psv <- function(player_match_stats, coef_df, min_adjust = TRUE,
                            center = TRUE, exclude_efficiency = TRUE,
-                           scale_to_minutes = FALSE, reliability = NULL) {
+                           scale_to_minutes = FALSE, reliability = NULL,
+                           center_weights = c("none", "minutes")) {
+  center_weights <- match.arg(center_weights)
   dt <- data.table::as.data.table(player_match_stats)
 
   if (!all(c("stat_name", "beta") %in% names(coef_df))) {
@@ -851,7 +871,35 @@ calculate_psv <- function(player_match_stats, coef_df, min_adjust = TRUE,
 
   if (center) {
     group_cols <- intersect(c("season", "round"), names(dt))
-    if (length(group_cols) > 0) {
+    if (center_weights == "minutes") {
+      # Same minutes-column resolution as scale_to_minutes, so the weight
+      # used here is EXACTLY the per-row factor that later multiplies psv —
+      # that identity is what makes the post-scale group sum exactly 0.
+      w_mins_col <- if ("minutes_played" %in% names(dt)) "minutes_played"
+                    else if ("total_minutes" %in% names(dt)) "total_minutes"
+                    else NULL
+      if (is.null(w_mins_col)) {
+        cli::cli_warn(
+          "center_weights = \"minutes\" but no minutes column found; falling back to unweighted centering"
+        )
+        cw <- rep(1, nrow(dt))
+      } else {
+        cw <- as.numeric(dt[[w_mins_col]]) / 90
+        cw[is.na(cw) | cw < 0] <- 0
+      }
+      dt[, .psv_cw := cw]
+      .wmean <- function(x, w) {
+        wsum <- sum(w)
+        if (is.finite(wsum) && wsum > 0) sum(x * w, na.rm = TRUE) / wsum
+        else mean(x, na.rm = TRUE)
+      }
+      if (length(group_cols) > 0) {
+        dt[, psv := psv_raw - .wmean(psv_raw, .psv_cw), by = group_cols]
+      } else {
+        dt[, psv := psv_raw - .wmean(psv_raw, .psv_cw)]
+      }
+      dt[, .psv_cw := NULL]
+    } else if (length(group_cols) > 0) {
       dt[, psv := psv_raw - mean(psv_raw, na.rm = TRUE), by = group_cols]
     } else {
       dt[, psv := psv_raw - mean(psv_raw, na.rm = TRUE)]
@@ -917,24 +965,35 @@ calculate_psv_components <- function(player_match_stats, coef_df, osr_coef_df,
                                       dsr_coef_df, min_adjust = TRUE,
                                       center = TRUE, scale_to_minutes = FALSE,
                                       exclude_efficiency = TRUE,
-                                      reliability = NULL) {
+                                      reliability = NULL,
+                                      center_weights = c("none", "minutes")) {
+  center_weights <- match.arg(center_weights)
   psv_result <- calculate_psv(player_match_stats, coef_df,
                                min_adjust = min_adjust, center = center,
                                scale_to_minutes = scale_to_minutes,
                                exclude_efficiency = exclude_efficiency,
-                               reliability = reliability)
+                               reliability = reliability,
+                               center_weights = center_weights)
   osv_result <- calculate_psv(player_match_stats, osr_coef_df,
                                min_adjust = min_adjust, center = center,
                                scale_to_minutes = scale_to_minutes,
                                exclude_efficiency = exclude_efficiency,
-                               reliability = reliability)
+                               reliability = reliability,
+                               center_weights = center_weights)
   dsv_result <- calculate_psv(player_match_stats, dsr_coef_df,
                                min_adjust = min_adjust, center = center,
                                scale_to_minutes = scale_to_minutes,
                                exclude_efficiency = exclude_efficiency,
-                               reliability = reliability)
+                               reliability = reliability,
+                               center_weights = center_weights)
 
-  # Additive shift so osv + dsv = psv
+  # Additive shift so osv + dsv = psv. This is a per-row algebraic identity
+  # (delta is defined FROM the three already-computed psv columns), so it
+  # reconciles exactly regardless of which centering (plain or
+  # minutes-weighted) produced them -- the zero-sum property of the total
+  # psv does NOT automatically transfer to osv/dsv individually (their own
+  # weighted group means differ from the margin model's), which is expected:
+  # only the total psv is documented as zero-sum.
   raw_osv <- osv_result$psv
   raw_dsv <- dsv_result$psv
   delta <- (psv_result$psv - raw_osv - raw_dsv) / 2
@@ -1196,6 +1255,11 @@ load_psv_match_reliability <- function() {
 #'   \code{"outfield"}/\code{"gk"} subset for each scoring branch and passed
 #'   to \code{\link{calculate_psv_components}}/\code{\link{calculate_psv}}.
 #'   \code{NULL} (default) applies no shrinkage -- unchanged behaviour.
+#' @param center_weights One of \code{"none"} (default) or \code{"minutes"};
+#'   passed through to \code{\link{calculate_psv_components}}/
+#'   \code{\link{calculate_psv}} for BOTH the outfield and GK branches (each
+#'   sub-population is centered -- weighted or not -- separately, same as
+#'   today). See \code{\link{calculate_psv}} for the zero-sum property.
 #'
 #' @return A data.table with \code{psv}, \code{osv}, \code{dsv} columns.
 #'
@@ -1206,8 +1270,10 @@ compute_player_psv <- function(player_match_stats, min_adjust = TRUE,
                                 scale_to_minutes = FALSE,
                                 exclude_efficiency = TRUE,
                                 position_means = NULL,
-                                reliability = NULL) {
+                                reliability = NULL,
+                                center_weights = c("none", "minutes")) {
   target <- match.arg(target)
+  center_weights <- match.arg(center_weights)
   dt <- data.table::as.data.table(player_match_stats)
   dt <- .position_normalize_skills(dt, position_means)
 
@@ -1232,12 +1298,13 @@ compute_player_psv <- function(player_match_stats, min_adjust = TRUE,
     if (!is.null(osr) && !is.null(dsr)) {
       calculate_psv_components(sub, margin, osr, dsr, min_adjust = min_adjust,
         center = center, scale_to_minutes = scale_to_minutes,
-        exclude_efficiency = exclude_efficiency, reliability = rel)
+        exclude_efficiency = exclude_efficiency, reliability = rel,
+        center_weights = center_weights)
     } else {
       cli::cli_inform("OSR/DSR coefficient files not found -- computing PSV only")
       calculate_psv(sub, margin, min_adjust = min_adjust, center = center,
         scale_to_minutes = scale_to_minutes, exclude_efficiency = exclude_efficiency,
-        reliability = rel)
+        reliability = rel, center_weights = center_weights)
     }
   }
 

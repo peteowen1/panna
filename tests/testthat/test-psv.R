@@ -481,6 +481,182 @@ test_that("calculate_psv_components threads reliability through margin/osr/dsr",
   expect_equal(result$osv + result$dsv, result$psv)
 })
 
+# =============================================================================
+# minutes-weighted round centring (LIVE-PSV-UNBLOCK 2026-07-20, task 2)
+# =============================================================================
+
+test_that("center_weights = 'none' (default) is bit-identical to the pre-existing centering path", {
+  stats <- data.frame(
+    player_id = c("p1", "p2", "p3", "p4"),
+    player_name = c("A", "B", "C", "D"),
+    match_id = c("m1", "m1", "m2", "m2"),
+    season = c("2024", "2024", "2024", "2024"),
+    round = c(1, 1, 1, 1),
+    goals_p90 = c(2, 4, 10, 20),
+    minutes_played = c(90, 10, 90, 45),
+    stringsAsFactors = FALSE
+  )
+  coef_df <- data.frame(stat_name = "goals_p90", beta = 1.0, stringsAsFactors = FALSE)
+
+  no_arg <- calculate_psv(stats, coef_df, min_adjust = FALSE, center = TRUE)
+  explicit_none <- calculate_psv(stats, coef_df, min_adjust = FALSE, center = TRUE,
+                                  center_weights = "none")
+  expect_identical(no_arg$psv, explicit_none$psv)
+
+  # Plain row mean = mean(2, 4, 10, 20) = 9, unaffected by minutes_played
+  expect_equal(explicit_none$psv, c(2, 4, 10, 20) - 9)
+})
+
+test_that("center_weights = 'minutes' makes the minutes-scaled group sum exactly zero", {
+  stats <- data.frame(
+    player_id = c("p1", "p2", "p3", "p4", "p5"),
+    player_name = c("A", "B", "C", "D", "E"),
+    match_id = c("m1", "m1", "m2", "m2", "m3"),
+    season = c("2024", "2024", "2024", "2024", "2024"),
+    round = c(1, 1, 1, 1, 1),
+    goals_p90 = c(2, 4, 10, 1, 6),
+    minutes_played = c(90, 15, 60, 90, 30),  # deliberately lopsided
+    stringsAsFactors = FALSE
+  )
+  coef_df <- data.frame(stat_name = "goals_p90", beta = 1.0, stringsAsFactors = FALSE)
+
+  result <- calculate_psv(stats, coef_df, min_adjust = FALSE, center = TRUE,
+                           scale_to_minutes = TRUE, center_weights = "minutes")
+
+  # Sum of minutes-scaled psv within the round must be ~0 (float tolerance)
+  expect_equal(sum(result$psv), 0, tolerance = 1e-10)
+
+  # Cross-check against the closed-form weighted mean
+  w <- stats$minutes_played / 90
+  wmean <- sum(stats$goals_p90 * w) / sum(w)
+  expected <- (stats$goals_p90 - wmean) * w
+  expect_equal(result$psv, expected, tolerance = 1e-10)
+
+  # Plain (unweighted) centering on the SAME data does NOT zero-sum after
+  # scaling — demonstrates the property is specific to weighted centering.
+  unweighted <- calculate_psv(stats, coef_df, min_adjust = FALSE, center = TRUE,
+                               scale_to_minutes = TRUE, center_weights = "none")
+  expect_false(isTRUE(all.equal(sum(unweighted$psv), 0)))
+})
+
+test_that("center_weights = 'minutes' centers each (season, round) group independently", {
+  stats <- data.frame(
+    player_id = c("p1", "p2", "p3", "p4"),
+    player_name = c("A", "B", "C", "D"),
+    match_id = c("m1", "m1", "m2", "m2"),
+    season = c("2024", "2024", "2024", "2024"),
+    round = c(1, 1, 2, 2),
+    goals_p90 = c(2, 4, 10, 20),
+    minutes_played = c(90, 30, 60, 90),
+    stringsAsFactors = FALSE
+  )
+  coef_df <- data.frame(stat_name = "goals_p90", beta = 1.0, stringsAsFactors = FALSE)
+
+  result <- calculate_psv(stats, coef_df, min_adjust = FALSE, center = TRUE,
+                           scale_to_minutes = TRUE, center_weights = "minutes")
+
+  r1 <- result[result$round == 1, ]
+  r2 <- result[result$round == 2, ]
+  expect_equal(sum(r1$psv), 0, tolerance = 1e-10)
+  expect_equal(sum(r2$psv), 0, tolerance = 1e-10)
+})
+
+test_that("center_weights = 'minutes' falls back to the plain mean when all weights are zero", {
+  stats <- data.frame(
+    player_id = c("p1", "p2"),
+    player_name = c("A", "B"),
+    match_id = c("m1", "m1"),
+    season = c("2024", "2024"),
+    round = c(1, 1),
+    goals_p90 = c(2, 6),
+    minutes_played = c(0, NA),  # every row's weight resolves to 0
+    stringsAsFactors = FALSE
+  )
+  coef_df <- data.frame(stat_name = "goals_p90", beta = 1.0, stringsAsFactors = FALSE)
+
+  result <- calculate_psv(stats, coef_df, min_adjust = FALSE, center = TRUE,
+                           center_weights = "minutes")
+  # Falls back to plain mean = 4, no division-by-zero NaN
+  expect_false(any(is.na(result$psv)))
+  expect_equal(result$psv, c(2, 6) - 4)
+})
+
+test_that("center_weights = 'minutes' warns and no-ops the weighting when no minutes column exists", {
+  stats <- data.frame(
+    player_id = c("p1", "p2"),
+    player_name = c("A", "B"),
+    match_id = c("m1", "m1"),
+    season = c("2024", "2024"),
+    round = c(1, 1),
+    goals_p90 = c(2, 6),
+    stringsAsFactors = FALSE
+  )
+  coef_df <- data.frame(stat_name = "goals_p90", beta = 1.0, stringsAsFactors = FALSE)
+
+  expect_warning(
+    result <- calculate_psv(stats, coef_df, min_adjust = FALSE, center = TRUE,
+                             center_weights = "minutes"),
+    "no minutes column"
+  )
+  # Falls back to unweighted (equal-weight) centering, same as center_weights = "none"
+  baseline <- calculate_psv(stats, coef_df, min_adjust = FALSE, center = TRUE,
+                             center_weights = "none")
+  expect_equal(result$psv, baseline$psv)
+})
+
+test_that("calculate_psv_components preserves osv + dsv = psv under minutes-weighted centering", {
+  stats <- data.frame(
+    player_id = c("p1", "p2", "p3"),
+    player_name = c("Alice", "Bob", "Cara"),
+    match_id = c("m1", "m1", "m2"),
+    season = c("2024", "2024", "2024"),
+    round = c(1, 1, 1),
+    goals_p90 = c(2, 1, 5),
+    tackles_p90 = c(1, 4, 2),
+    minutes_played = c(80, 30, 90),
+    stringsAsFactors = FALSE
+  )
+  margin_coef <- data.frame(stat_name = c("goals_p90", "tackles_p90"),
+                            beta = c(0.5, 0.1), stringsAsFactors = FALSE)
+  osr_coef <- data.frame(stat_name = c("goals_p90", "tackles_p90"),
+                         beta = c(0.6, 0.0), stringsAsFactors = FALSE)
+  dsr_coef <- data.frame(stat_name = c("goals_p90", "tackles_p90"),
+                         beta = c(0.0, 0.15), stringsAsFactors = FALSE)
+
+  result <- calculate_psv_components(stats, margin_coef, osr_coef, dsr_coef,
+                                      min_adjust = FALSE, center = TRUE,
+                                      scale_to_minutes = TRUE,
+                                      center_weights = "minutes")
+  expect_equal(result$osv + result$dsv, result$psv, tolerance = 1e-10)
+  expect_equal(sum(result$psv), 0, tolerance = 1e-10)
+})
+
+test_that("compute_player_psv threads center_weights through the GK/outfield split", {
+  gk <- data.frame(
+    player_id = c("gk1", "gk2"), player_name = c("Keeper1", "Keeper2"),
+    match_id = c("m1", "m2"), primary_position = "GK",
+    total_minutes = c(90, 30), season = "2024", round = 1,
+    saves_p90 = c(3, 5), gsaa_per90 = c(1, -1), stringsAsFactors = FALSE
+  )
+  outfield <- data.frame(
+    player_id = c("of1", "of2"), player_name = c("Striker1", "Striker2"),
+    match_id = c("m3", "m4"), primary_position = "Striker",
+    total_minutes = c(90, 60), season = "2024", round = 1,
+    shots_p90 = c(3, 1), shots_obox_p90 = c(1, 0), pen_area_entries_p90 = c(4, 2),
+    saves_p90 = 0, gsaa_per90 = 0, stringsAsFactors = FALSE
+  )
+  dt <- data.table::rbindlist(list(gk, outfield), fill = TRUE)
+
+  res <- data.table::as.data.table(suppressWarnings(compute_player_psv(
+    dt, min_adjust = FALSE, center = TRUE, scale_to_minutes = TRUE,
+    exclude_efficiency = FALSE, target = "blend", center_weights = "minutes")))
+
+  # Each sub-population (GK, outfield) is centered — and therefore zero-sums —
+  # independently, same as the unweighted split already does today.
+  expect_equal(sum(res[grepl("^gk", player_id)]$psv), 0, tolerance = 1e-10)
+  expect_equal(sum(res[grepl("^of", player_id)]$psv), 0, tolerance = 1e-10)
+})
+
 test_that("compute_player_psv routes reliability by model (outfield vs gk)", {
   gk <- data.frame(
     player_id = "gk1", player_name = "Keeper", match_id = "m1",

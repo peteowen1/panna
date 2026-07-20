@@ -93,6 +93,24 @@ current_season_alias <- sort(game_log_seasons, decreasing = TRUE)[1]
   load_psv_match_reliability()
 } else NULL
 
+# Minutes-weighted round centring (LIVE-PSV-UNBLOCK 2026-07-20, task 2): the
+# default plain row-mean centering in calculate_psv() doesn't zero-sum once
+# scale_to_minutes multiplies by minutes/90 (a round with lopsided cameo
+# minutes drifts off 0). "minutes" weights the round mean by minutes/90 so
+# the SUMMED scaled psv is exactly 0 within (season, round) — see
+# calculate_psv(center_weights=)'s docs for the algebra. Set
+# psv_center_weights <- "none" before sourcing to fall back to the legacy
+# plain-mean centering.
+# envir=globalenv() (not bare inherits=FALSE): the pipeline driver sources this
+# via source(local=TRUE), so a driver-set global is invisible to a plain
+# inherits=FALSE lookup — the silent-skip bug from career_panna, 2026-07-17.
+.psv_center_weights <- if (exists("psv_center_weights", envir = globalenv(),
+                                  inherits = FALSE) &&
+                           identical(get("psv_center_weights", envir = globalenv()),
+                                     "none")) {
+  "none"
+} else "minutes"
+
 # Upload toggle — set FALSE during local dev to skip the GH release push.
 if (!exists("upload_game_logs", inherits = FALSE)) upload_game_logs <- TRUE
 
@@ -483,7 +501,8 @@ validate_game_log_schema <- function(dt, league, season) {
                                                   center = TRUE, scale_to_minutes = TRUE,
                                                   exclude_efficiency = FALSE, target = "blend",
                                                   position_means = .psv_position_means,
-                                                  reliability = .psv_reliability)
+                                                  reliability = .psv_reliability,
+                                                  center_weights = .psv_center_weights)
             message(sprintf("    PSV: %d player-games", nrow(player_game_psv)))
           }
         }, error = function(e) {
@@ -532,7 +551,8 @@ validate_game_log_schema <- function(dt, league, season) {
                                                  center = TRUE, scale_to_minutes = TRUE,
                                                  exclude_efficiency = FALSE, target = "blend",
                                                  position_means = .psv_position_means,
-                                                 reliability = .psv_reliability)
+                                                 reliability = .psv_reliability,
+                                                 center_weights = .psv_center_weights)
                 player_game_psv <- data.table::rbindlist(
                   list(player_game_psv, inline_psv), fill = TRUE, use.names = TRUE
                 )
@@ -654,6 +674,68 @@ validate_game_log_schema <- function(dt, league, season) {
     skip_absent = TRUE
   )
 
+  # --- Cross-league PSV calibration (LIVE-PSV-UNBLOCK 2026-07-20, task 3) ---
+  # PSV is a dot-product of box-score rates that barely vary by league (same
+  # reason PSR needs it — see league-offsets.md), so a Saudi/MLS dominator can
+  # outrank a Big-5 star on a cross-league sort. Reuse the SAME artifact 08b
+  # applies to PSR: compute_psr_league_offsets() runs build_league_network()
+  # on per-game PSV itself (the PSR analogue), so the offset is already on
+  # PSV's own per-90 scale — no cross-metric rescaling needed. Saved by step
+  # 06 (estimated-skills) to cache-skills/psr_league_offsets.parquet.
+  # DISPLAY-SIDE ONLY: applied here, after compute_player_psv() has already
+  # scored/centered every league — the RAPM psvf90 target and the per-league
+  # within-round centering above never see it. `psv` here is already
+  # minutes-scaled (scale_to_minutes = TRUE), so end-add
+  # offset * total_minutes / 90 (mirrors how scale_to_minutes itself turns a
+  # per-90 rate into a minutes-scaled one). Split evenly across osv/dsv,
+  # mirroring apply_psr_league_offsets()'s /2 split (osv + dsv = psv stays
+  # exact). Set psv_league_offset_pricing <- FALSE before sourcing to disable.
+  # envir=globalenv(): see the psv_center_weights guard above (source(local=TRUE)).
+  .psv_league_offset_pricing <- !exists("psv_league_offset_pricing",
+                                        envir = globalenv(), inherits = FALSE) ||
+    isTRUE(get("psv_league_offset_pricing", envir = globalenv()))
+  if (isTRUE(.psv_league_offset_pricing) && "psv" %in% names(game_logs)) {
+    psv_offsets_path <- file.path("data-raw", "cache-skills", "psr_league_offsets.parquet")
+    psv_offsets <- if (file.exists(psv_offsets_path)) {
+      arrow::read_parquet(psv_offsets_path)
+    } else NULL
+    if (is.null(psv_offsets)) {
+      message(sprintf(
+        "\n  [%s] NOTE: PSV league offsets not found (%s) — run estimated-skills step 06 first; game-logs PSV left league-relative",
+        season, psv_offsets_path))
+      game_logs[, psv_league_offset := 0]
+    } else {
+      off_dt <- data.table::as.data.table(psv_offsets)[, .(.comp = league, .off = offset)]
+      game_logs[, .comp := vapply(league, function(L)
+        tryCatch(to_opta_league(L), error = function(e) L), character(1))]
+      game_logs <- merge(game_logs, off_dt, by = ".comp", all.x = TRUE, sort = FALSE)
+
+      # Don't silently impute: report every league the offset artifact doesn't
+      # cover (it may not span every blog league) rather than pretend offset=0
+      # is a known value.
+      missing_leagues <- sort(unique(game_logs[is.na(.off)]$league))
+      if (length(missing_leagues) > 0L) {
+        message(sprintf(
+          "\n  [%s] NOTE: PSV league offsets missing for %d league(s) (offset=0): %s",
+          season, length(missing_leagues), paste(missing_leagues, collapse = ", ")))
+      }
+      game_logs[is.na(.off), .off := 0]
+
+      mins_scale <- as.numeric(game_logs$total_minutes) / 90
+      mins_scale[is.na(mins_scale) | mins_scale < 0] <- 0
+      game_logs[, psv_league_offset := .off * mins_scale]
+      game_logs[, psv := psv + psv_league_offset]
+      if (all(c("osv", "dsv") %in% names(game_logs))) {
+        game_logs[, osv := osv + psv_league_offset / 2]
+        game_logs[, dsv := dsv + psv_league_offset / 2]
+      }
+      game_logs[, c(".comp", ".off") := NULL]
+      n_adj <- game_logs[psv_league_offset != 0, .N]
+      message(sprintf("  [%s] PSV league offsets applied to %d/%d rows (%d leagues in artifact)",
+                      season, n_adj, nrow(game_logs), nrow(psv_offsets)))
+    }
+  }
+
   # SPM lookup (for this season's end year)
   if (!is.null(all_spm_dt)) {
     sy <- .season_end_year(season)
@@ -686,7 +768,7 @@ validate_game_log_schema <- function(dt, league, season) {
       "epv_passing", "epv_shooting", "epv_dribbling", "epv_aerial",
       "epv_keeping", "epv_defending",
       "wpa_total", "wpa_as_actor", "wpa_as_receiver",
-      "psv", "osv", "dsv",
+      "psv", "osv", "dsv", "psv_league_offset",
       "goals_minus_xgot", "placement_added", "xgot",
       "gsaa", "gsaa_per90", "xgot_faced", "goals_conceded",
       "aerial_woe_per90", "aerial_poss_woe_per90",

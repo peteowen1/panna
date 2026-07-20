@@ -12,7 +12,8 @@ compute_player_psv(
   scale_to_minutes = FALSE,
   exclude_efficiency = TRUE,
   position_means = NULL,
-  reliability = NULL
+  reliability = NULL,
+  center_weights = c("none", "minutes")
 )
 }
 \arguments{
@@ -47,6 +48,12 @@ If \code{NULL}, no cross-position centering is applied.}
 \code{"outfield"}/\code{"gk"} subset for each scoring branch and passed
 to \code{\link{calculate_psv_components}}/\code{\link{calculate_psv}}.
 \code{NULL} (default) applies no shrinkage -- unchanged behaviour.}
+
+\item{center_weights}{One of \code{"none"} (default) or \code{"minutes"};
+passed through to \code{\link{calculate_psv_components}}/
+\code{\link{calculate_psv}} for BOTH the outfield and GK branches (each
+sub-population is centered -- weighted or not -- separately, same as
+today). See \code{\link{calculate_psv}} for the zero-sum property.}
 }
 \value{
 A data.table with \code{psv}, \code{osv}, \code{dsv} columns.
