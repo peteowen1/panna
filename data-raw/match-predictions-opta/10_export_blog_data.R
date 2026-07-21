@@ -75,6 +75,33 @@ seasonal_spm <- seasonal_results$seasonal_spm %>%
   ungroup() %>%
   select(all_of(dedup_key), spm_overall = spm)
 
+# Filter raw (prior-free) RAPM to latest season, drop replacement-pool row,
+# deduplicate, and flip defense to positive = good — same export-boundary
+# conventions as xRAPM/SPM above (panna#165, transparency: publish the
+# un-shrunk signal xRAPM is built from, clearly labelled so it can't be
+# confused with `panna`/`xrapm`). No minimum-minutes filter — raw RAPM is
+# noisy for low-minute players BY DESIGN; total_minutes already rides along
+# on every row of panna_ratings so consumers can filter themselves.
+# Optional/defensive: seasonal_rapm is expected on every 07_seasonal_ratings
+# cache, but degrade to absent columns rather than hard-fail the whole blog
+# export if an older cache lacks it.
+if (!is.null(seasonal_results$seasonal_rapm) && nrow(seasonal_results$seasonal_rapm) > 0) {
+  seasonal_rapm_raw <- seasonal_results$seasonal_rapm %>%
+    filter(season_end_year == latest_season,
+           !player_id %in% c("replacement"),
+           !player_name %in% c("Replacement Level")) %>%
+    group_by(.data[[dedup_key]]) %>%
+    slice_max(total_minutes, n = 1, with_ties = FALSE) %>%
+    ungroup() %>%
+    transmute(!!dedup_key := .data[[dedup_key]],
+              rapm_raw = rapm, rapm_raw_offense = offense, rapm_raw_defense = -defense)
+  message(sprintf("  Raw RAPM players: %d", nrow(seasonal_rapm_raw)))
+} else {
+  warning("seasonal_rapm not found in ratings cache — rapm_raw columns will be absent from panna_ratings.parquet",
+          call. = FALSE, immediate. = TRUE)
+  seasonal_rapm_raw <- NULL
+}
+
 message(sprintf("  xRAPM players: %d (joined by %s)", nrow(seasonal_xrapm), dedup_key))
 message(sprintf("  SPM players: %d", nrow(seasonal_spm)))
 
@@ -128,6 +155,16 @@ panna_ratings <- seasonal_xrapm %>%
   mutate(total_minutes = coalesce(total_minutes_real, total_minutes)) %>%
   select(-total_minutes_real)
 
+# panna#165: join raw RAPM columns (NA-filled, schema-stable, when the
+# source cache lacks seasonal_rapm — see the warning above).
+if (!is.null(seasonal_rapm_raw)) {
+  panna_ratings <- panna_ratings %>% left_join(seasonal_rapm_raw, by = dedup_key)
+} else {
+  panna_ratings$rapm_raw <- NA_real_
+  panna_ratings$rapm_raw_offense <- NA_real_
+  panna_ratings$rapm_raw_defense <- NA_real_
+}
+
 # Rank within the qualified subset; assign NA to sub-threshold players
 qualified <- panna_ratings$total_minutes >= MIN_MINUTES_FOR_RANK
 panna_ratings$panna_rank <- NA_integer_
@@ -151,11 +188,15 @@ panna_ratings <- panna_ratings %>%
     offense,
     defense,
     spm_overall,
+    rapm_raw,
+    rapm_raw_offense,
+    rapm_raw_defense,
     total_minutes,
     panna_percentile
   ) %>%
   mutate(defense = -defense) %>%
-  mutate(across(c(panna, offense, defense, spm_overall), ~round(.x, 4))) %>%
+  mutate(across(c(panna, offense, defense, spm_overall,
+                  rapm_raw, rapm_raw_offense, rapm_raw_defense), ~round(.x, 4))) %>%
   arrange(panna_rank)
 
 # Validation guard: a top-50 ranked player with implausibly low minutes is

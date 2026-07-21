@@ -42,8 +42,76 @@ if (is.null(seasonal_results$seasonal_xrapm) || nrow(seasonal_results$seasonal_x
   stop("seasonal_xrapm is empty or NULL - cannot export. Check step 7 output.")
 }
 
+if (is.null(seasonal_results$seasonal_rapm) || nrow(seasonal_results$seasonal_rapm) == 0) {
+  stop("seasonal_rapm is empty or NULL - cannot export raw RAPM. Check step 7 output.")
+}
+
+rapm_file <- file.path(cache_dir, "04_rapm.rds")
+if (!file.exists(rapm_file)) {
+  stop("No pooled RAPM cache found (04_rapm.rds) - run step 4 first")
+}
+rapm_results <- readRDS(rapm_file)
+if (is.null(rapm_results$ratings) || nrow(rapm_results$ratings) == 0) {
+  stop("04_rapm.rds ratings is empty or NULL - cannot export pooled raw RAPM. Check step 4 output.")
+}
+
 repo <- "peteowen1/pannadata"
 tag <- "ratings-data"
+
+# 2b. Build Raw (Prior-Free) RAPM Exports ----
+#
+# panna#165 (Pete's transparency call): raw prior-free RAPM published
+# alongside the shrunk xRAPM, clearly labelled so readers can see the
+# un-shrunk signal the whole rating family is built on. Raw RAPM is noisy
+# for low-minute players BY DESIGN -- that's the transparency point -- so no
+# minimum-minutes filter is applied here; total_minutes rides along so
+# consumers can filter sensibly themselves.
+#
+# Two grains, two new files (mirrors the existing seasonal_xrapm/seasonal_spm
+# +  career_panna.parquet precedent of one file per grain rather than
+# cramming career-level rows into the per-season table):
+#   - seasonal_rapm_raw.parquet: one row per (player, season_end_year), from
+#     seasonal_rapm (07_seasonal_ratings.rds -- the per-season base RAPM fit,
+#     already cached alongside seasonal_xrapm/seasonal_spm).
+#   - pooled_rapm_raw.parquet: one row per player, from the pooled
+#     all-history base RAPM fit (04_rapm.rds$ratings -- a single ridge fit
+#     over every splint, no season split, no SPM prior).
+#
+# Export-boundary conventions mirror 10_export_blog_data.R exactly: drop the
+# synthetic player_id == "replacement" row (rapm_matrix.R's <200-min pool --
+# a model artifact, not a coherent player rating) and flip defense to
+# positive = good (internal convention is negative = good: additive
+# contribution to opponent xG). Column names are rapm_raw/rapm_raw_offense/
+# rapm_raw_defense so they can't be confused with xRAPM (`xrapm`) or the
+# career trait (`panna`).
+.drop_replacement_row <- function(df) {
+  df[!(df$player_id %in% "replacement" | df$player_name %in% "Replacement Level"), , drop = FALSE]
+}
+
+.raw_rapm_export <- function(df, extra_cols = character(0)) {
+  df <- .drop_replacement_row(df)
+  out <- data.frame(
+    player_id = df$player_id,
+    player_name = df$player_name,
+    rapm_raw = round(df$rapm, 4),
+    rapm_raw_offense = round(df$offense, 4),
+    rapm_raw_defense = round(-df$defense, 4),
+    total_minutes = df$total_minutes,
+    stringsAsFactors = FALSE
+  )
+  if (length(extra_cols) > 0) {
+    out <- cbind(df[, extra_cols, drop = FALSE], out)
+  }
+  out
+}
+
+seasonal_rapm_raw <- .raw_rapm_export(seasonal_results$seasonal_rapm, extra_cols = "season_end_year")
+pooled_rapm_raw <- .raw_rapm_export(rapm_results$ratings)
+
+message(sprintf("  Raw RAPM (seasonal): %d player-seasons (replacement row dropped)",
+                nrow(seasonal_rapm_raw)))
+message(sprintf("  Raw RAPM (pooled all-history): %d players (replacement row dropped)",
+                nrow(pooled_rapm_raw)))
 
 # 3. Ensure Release Exists ----
 
@@ -74,27 +142,37 @@ if (is.null(seasonal_results$seasonal_spm)) {
 # so the temp files must already be named seasonal_xrapm.parquet /
 # seasonal_spm.parquet -- a plain tempfile(fileext=".parquet") would upload
 # under a random name instead of the one consumers expect.
-tf_dir   <- tempfile("ratings_export_")
+tf_dir     <- tempfile("ratings_export_")
 dir.create(tf_dir)
-tf_xrapm <- file.path(tf_dir, "seasonal_xrapm.parquet")
-tf_spm   <- file.path(tf_dir, "seasonal_spm.parquet")
+tf_xrapm   <- file.path(tf_dir, "seasonal_xrapm.parquet")
+tf_spm     <- file.path(tf_dir, "seasonal_spm.parquet")
+tf_rapm    <- file.path(tf_dir, "seasonal_rapm_raw.parquet")
+tf_pooled  <- file.path(tf_dir, "pooled_rapm_raw.parquet")
 arrow::write_parquet(seasonal_results$seasonal_xrapm, tf_xrapm)
 arrow::write_parquet(seasonal_results$seasonal_spm, tf_spm)
+arrow::write_parquet(seasonal_rapm_raw, tf_rapm)
+arrow::write_parquet(pooled_rapm_raw, tf_pooled)
 
-# vb_publish hashes both files, uploads them, verifies the live asset list,
-# and only then writes bus_manifest.json -- any single upload failure aborts
-# BEFORE the manifest, so ratings-data never advertises a version-skewed
-# xRAPM/SPM pair (panna M-RATINGS-PAIR).
+# vb_publish hashes all four files, uploads them, verifies the live asset
+# list, and only then writes bus_manifest.json -- any single upload failure
+# aborts BEFORE the manifest, so ratings-data never advertises a
+# version-skewed set (panna M-RATINGS-PAIR, extended to the raw RAPM pair
+# added by panna#165 -- the raw and shrunk ratings should always advance
+# together too).
 manifest <- vb_publish(
-  c(tf_xrapm, tf_spm),
+  c(tf_xrapm, tf_spm, tf_rapm, tf_pooled),
   repo = repo, tag = tag,
   rows = c(
-    seasonal_xrapm.parquet = nrow(seasonal_results$seasonal_xrapm),
-    seasonal_spm.parquet   = nrow(seasonal_results$seasonal_spm)
+    seasonal_xrapm.parquet    = nrow(seasonal_results$seasonal_xrapm),
+    seasonal_spm.parquet      = nrow(seasonal_results$seasonal_spm),
+    seasonal_rapm_raw.parquet = nrow(seasonal_rapm_raw),
+    pooled_rapm_raw.parquet   = nrow(pooled_rapm_raw)
   )
 )
 unlink(tf_dir, recursive = TRUE)
 
-message(sprintf("Uploaded seasonal_xrapm.parquet (%d rows) + seasonal_spm.parquet (%d rows) — generation %s",
-                nrow(seasonal_results$seasonal_xrapm), nrow(seasonal_results$seasonal_spm),
-                manifest$generation))
+message(sprintf(
+  "Uploaded seasonal_xrapm.parquet (%d rows) + seasonal_spm.parquet (%d rows) + seasonal_rapm_raw.parquet (%d rows) + pooled_rapm_raw.parquet (%d rows) — generation %s",
+  nrow(seasonal_results$seasonal_xrapm), nrow(seasonal_results$seasonal_spm),
+  nrow(seasonal_rapm_raw), nrow(pooled_rapm_raw),
+  manifest$generation))

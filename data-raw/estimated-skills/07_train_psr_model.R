@@ -589,7 +589,8 @@ cat(sprintf("Combined matrix: %d rows x %d cols (%d FE + %d team-strength + %d s
 
 # 12. Train Model Helper ----
 
-train_model <- function(X, y, w, foldid, alpha_grid, model_name, pf = NULL) {
+train_model <- function(X, y, w, foldid, alpha_grid, model_name, pf = NULL,
+                         lower_limits = NULL, upper_limits = NULL) {
   cat(sprintf("\n--- Training %s model ---\n", model_name))
 
   best_alpha <- 0
@@ -608,6 +609,13 @@ train_model <- function(X, y, w, foldid, alpha_grid, model_name, pf = NULL) {
       nlambda = 30
     )
     if (!is.null(pf)) cv_args$penalty.factor <- pf
+    # Sign constraints (panna#159 item 3): -Inf/Inf vectors matching ncol(X),
+    # non-default entries pin known-direction stats (saves >=0, errors <=0
+    # toward value) so the elastic net can't select a spurious opposite sign
+    # under collinearity. Sign is scale-invariant (X columns are pre-divided
+    # by their training sd, a positive rescale), so 0 stays the correct bound.
+    if (!is.null(lower_limits)) cv_args$lower.limits <- lower_limits
+    if (!is.null(upper_limits)) cv_args$upper.limits <- upper_limits
 
     t0 <- Sys.time()
     fit <- tryCatch(
@@ -685,12 +693,21 @@ train_and_save <- function(y_margin, y_off, y_def, y_margin_test, y_off_test,
                             X = X_train_full, w = weights, fids = fold_ids,
                             skill_cols = skill_keep_cols, sds = train_sds,
                             test_mask = is_test, X_test = X_test_full,
-                            pf = penalty_factors, fe_count = n_fe + n_ts) {
+                            pf = penalty_factors, fe_count = n_fe + n_ts,
+                            margin_lower = NULL, margin_upper = NULL) {
   cat(sprintf("\n%s\n=== Training %s Models ===\n%s\n",
               paste(rep("=", 50), collapse = ""), label,
               paste(rep("=", 50), collapse = "")))
 
-  margin_m <- train_model(X, y_margin, w, fids, ALPHA_GRID, paste(label, "Margin"), pf = pf)
+  # Sign constraints (panna#159 item 3) apply ONLY to the margin model -- it is
+  # the one read as {prefix}psr_coefficients.csv, the coefficient set that
+  # directly drives PSR and PSV (calculate_psv() scores from margin; osv/dsv
+  # are reconciled from osr/dsr afterward). The offense/defense sub-models use
+  # a different symmetric-extraction algebra (home/away roles aren't the same
+  # "toward value" direction there), so we leave them unconstrained rather
+  # than guess a second sign convention.
+  margin_m <- train_model(X, y_margin, w, fids, ALPHA_GRID, paste(label, "Margin"), pf = pf,
+                           lower_limits = margin_lower, upper_limits = margin_upper)
   off_m    <- train_model(X, y_off,    w, fids, ALPHA_GRID, paste(label, "Offense"), pf = pf)
   def_m    <- train_model(X, y_def,    w, fids, ALPHA_GRID, paste(label, "Defense"), pf = pf)
 
@@ -730,6 +747,61 @@ train_and_save <- function(y_margin, y_off, y_def, y_margin_test, y_off_test,
   )
 }
 
+# 14b. Margin Sign-Constraint Helper (panna#159 item 3) ----
+#
+# Builds lower/upper limit vectors (glmnet's `lower.limits`/`upper.limits`,
+# -Inf/Inf = unconstrained) for the home_/away_ column pairs of stats whose
+# direction "toward value" is known a priori. The margin target is always
+# home_entity - away_entity (goal_diff, xg_diff, or the blend), so:
+#   - `positive_cols` (more of the stat = more value, e.g. saves): the HOME
+#     column's coefficient is pinned >= 0, the AWAY column's <= 0 (a better
+#     AWAY keeper suppresses HOME's side of the margin).
+#   - `negative_cols` (more of the stat = less value, e.g. errors/goals
+#     conceded/penalties conceded): HOME <= 0, AWAY >= 0.
+# Columns not in `all_colnames` (FE/team-strength controls, or a skill that
+# didn't survive to this feature set) are silently skipped.
+.build_margin_sign_limits <- function(all_colnames, positive_cols = character(0),
+                                       negative_cols = character(0)) {
+  lower <- rep(-Inf, length(all_colnames))
+  upper <- rep(Inf, length(all_colnames))
+  names(lower) <- names(upper) <- all_colnames
+
+  set_limit <- function(col, home_bound, away_bound) {
+    hc <- paste0("home_", col); ac <- paste0("away_", col)
+    if (hc %in% all_colnames) {
+      if (!is.na(home_bound["lower"])) lower[hc] <<- home_bound["lower"]
+      if (!is.na(home_bound["upper"])) upper[hc] <<- home_bound["upper"]
+    }
+    if (ac %in% all_colnames) {
+      if (!is.na(away_bound["lower"])) lower[ac] <<- away_bound["lower"]
+      if (!is.na(away_bound["upper"])) upper[ac] <<- away_bound["upper"]
+    }
+  }
+  for (col in positive_cols) {
+    set_limit(col, c(lower = 0, upper = NA), c(lower = NA, upper = 0))
+  }
+  for (col in negative_cols) {
+    set_limit(col, c(lower = NA, upper = 0), c(lower = 0, upper = NA))
+  }
+
+  list(lower = unname(lower), upper = unname(upper))
+}
+
+# Outfield siblings from panna#158 finding 3: positive-signed anomalies that
+# have no legitimate "more is better" reading (a penalty/error conceded is
+# never good). No outfield stat has a comparably unambiguous positive-only
+# direction, so `positive_cols` stays empty here.
+outfield_margin_negative_cols <- c(
+  "penalty_conceded_p90", "error_lead_to_shot_p90", "error_lead_to_goal_p90"
+)
+outfield_margin_limits <- .build_margin_sign_limits(
+  colnames(X_train_full),
+  negative_cols = intersect(outfield_margin_negative_cols, skill_keep_cols)
+)
+cat(sprintf("\nOutfield margin sign constraints: %d negative-direction cols (%s)\n",
+            length(intersect(outfield_margin_negative_cols, skill_keep_cols)),
+            paste(intersect(outfield_margin_negative_cols, skill_keep_cols), collapse = ", ")))
+
 # 15. Train xG Models (Primary) ----
 
 xg_models <- NULL
@@ -755,7 +827,8 @@ if (has_xg) {
     y_def_test    = train_data$away_xg[test_rows][xg_in_test],
     prefix = "",
     label  = "xG",
-    X = X_xg_train, w = w_xg, fids = fold_xg, X_test = X_xg_test
+    X = X_xg_train, w = w_xg, fids = fold_xg, X_test = X_xg_test,
+    margin_lower = outfield_margin_limits$lower, margin_upper = outfield_margin_limits$upper
   )
 
   # Blended-target models (for the DISPLAYED value PSV): alpha*xG + (1-alpha)*goals,
@@ -780,7 +853,8 @@ if (has_xg) {
                     (1 - a) * train_data$away_goals[test_rows][xg_in_test],
     prefix = "blend_",
     label  = sprintf("Blend a=%.2f", a),
-    X = X_xg_train, w = w_xg, fids = fold_xg, X_test = X_xg_test
+    X = X_xg_train, w = w_xg, fids = fold_xg, X_test = X_xg_test,
+    margin_lower = outfield_margin_limits$lower, margin_upper = outfield_margin_limits$upper
   )
 }
 
@@ -794,7 +868,8 @@ gd_models <- train_and_save(
   y_off_test = if (sum(is_test) > 0) train_data$home_goals[is_test] else numeric(0),
   y_def_test = if (sum(is_test) > 0) train_data$away_goals[is_test] else numeric(0),
   prefix = "gd_",
-  label = "Goal Diff"
+  label = "Goal Diff",
+  margin_lower = outfield_margin_limits$lower, margin_upper = outfield_margin_limits$upper
 )
 
 # 17. Validate: PSR for Latest Skills ----
@@ -841,9 +916,17 @@ if (!is.null(latest_skills) && nrow(latest_skills) > 0) {
 #   - Goal differential as target (not xG diff) — GK value is in the
 #     goals-saved-above-xG residual, which xG deliberately strips out
 #
-# Same architecture: team-aggregated GK skills → glmnet → coefficients.
-# Since outfield players have ~0 for GK stats (saves, claims, etc.),
-# the team sum is effectively just the GK's values.
+# Same architecture: team-aggregated GK skills → glmnet → coefficients, but
+# (panna#159) the team-sum is now computed over KEEPER ROWS ONLY, not the
+# whole match-day roster. .get_gk_skill_cols() includes 10 shared/
+# distribution stats (touches, passes, goals_conceded, clearances,
+# aerial_won/lost, errors) that every player on the pitch accumulates, not
+# just the keeper -- summing across all 11 players trained those features at
+# TEAM scale while compute_player_psr()/compute_player_psv() serve a single
+# keeper's per-90 rate. Restricting the sum to keeper rows (via the same
+# .detect_gk_rows() used at serve time) fixes the scale to match serving;
+# the GK-only stats (saves, claims, etc.) were already correctly keeper-scale
+# either way since outfield players are ~0 on them.
 
 cat("\n")
 cat(paste(rep("=", 50), collapse = ""), "\n")
@@ -908,10 +991,42 @@ gk_skill_keep_cols <- character(0)
                 length(gk_skill_keep_cols), length(gk_psr_cols)))
 
     if (length(gk_skill_keep_cols) >= 3) {
+      # Data-completeness gate (panna#159 scale fix, part 1): computed on the
+      # FULL roster BEFORE we filter gk_pm down to keeper rows below. This
+      # preserves the original semantics of MIN_PLAYERS_PER_TEAM ("was this
+      # match's player-stats data complete enough to trust?") independent of
+      # how many keeper rows survive the position filter -- see the note at
+      # the team-sum below for why the post-filter row count can no longer
+      # serve as that signal.
+      gk_full_roster_counts <- ms_dt_gk[, .(n_players_full = .N),
+                                          by = .(match_id, team_name, is_home)]
+
       # Join GK skills to player-matches (same chunked approach as section 7)
       gk_pm <- ms_dt_gk[, .(match_id, player_id, team_name, is_home,
-                              total_minutes, match_date)]
+                              total_minutes, match_date, position)]
       gk_pm[, skill_date := match_date_to_bin(match_date)]
+
+      # panna#159 scale fix: filter to keeper rows BEFORE the team-sum below.
+      # .get_gk_skill_cols() includes 10 shared/distribution stats (touches,
+      # passes, goals_conceded, clearances, aerial_won/lost, errors) that
+      # EVERY player accumulates, not just the keeper. Summing over the whole
+      # team made those features train at TEAM scale (touches_p90 sd ~79)
+      # while compute_player_psr()/compute_player_psv() serve a single
+      # keeper's per-90 rate (keeper_sweeper sd ~0.28 in the same coefficient
+      # CSV) -- a train/serve scale mismatch that produced accidental
+      # near-zero betas and sign oddities (saves_ibox -0.036, quiet-keeper >
+      # 11-save keeper). Restricting to keeper rows first makes the team-sum
+      # equal to (almost always exactly) the single keeper's own weighted
+      # stats, so every GK feature is keeper-scale in both training and
+      # serving. Uses the same GK-row detector `compute_player_psv()` uses at
+      # serve time (.detect_gk_rows(), psr.R) so train/serve routing can't
+      # drift apart.
+      n_gk_pm_before <- nrow(gk_pm)
+      gk_pm <- gk_pm[.detect_gk_rows(gk_pm)]
+      cat(sprintf("GK row filter: %s player-matches -> %s keeper rows (%.1f%%)\n",
+                  format(n_gk_pm_before, big.mark = ","),
+                  format(nrow(gk_pm), big.mark = ","),
+                  100 * nrow(gk_pm) / n_gk_pm_before))
 
       gk_skill_col_set <- c("player_id", gk_skill_keep_cols)
       gk_dates_done <- 0L
@@ -956,12 +1071,22 @@ gk_skill_keep_cols <- character(0)
         }
       }
 
+      # n_players here is now the number of KEEPER rows contributing to each
+      # team-match (almost always 1; occasionally 2 on an in-match keeper
+      # substitution) -- no longer a data-completeness signal, since gk_pm
+      # was filtered to keeper rows above. Any team-match without a keeper
+      # row simply has no group here, so it's already excluded.
       gk_team_skills <- gk_pm[, c(
         lapply(.SD, sum, na.rm = TRUE),
         list(n_players = .N)
       ), by = .(match_id, team_name, is_home), .SDcols = gk_skill_keep_cols]
 
-      gk_team_skills <- gk_team_skills[n_players >= MIN_PLAYERS_PER_TEAM]
+      # Completeness filter now uses the FULL-roster count (see
+      # gk_full_roster_counts above), not the post-filter keeper-row count.
+      gk_team_skills <- merge(gk_team_skills, gk_full_roster_counts,
+                                by = c("match_id", "team_name", "is_home"), all.x = TRUE)
+      gk_team_skills[is.na(n_players_full), n_players_full := 0L]
+      gk_team_skills <- gk_team_skills[n_players_full >= MIN_PLAYERS_PER_TEAM]
 
       # Home/away feature matrix
       gk_home <- data.table::copy(
@@ -1053,6 +1178,25 @@ gk_skill_keep_cols <- character(0)
                   nrow(gk_X_train_full), ncol(gk_X_train_full),
                   gk_n_fe, gk_n_ts, gk_n_skill))
 
+      # Sign constraints (panna#159 item 3): saves are unambiguously good
+      # shot-stopping, gsaa_per90 is shot-stopping ABOVE expected by
+      # definition, and the two error_lead_to_* / goals_conceded stats are
+      # unambiguously bad. No natural direction for the distribution/shared
+      # cols (passes, touches, clearances, aerials) -- those stay unpenalized
+      # by direction (only the elastic-net penalty applies).
+      gk_margin_positive_cols <- c("saves_p90", "saves_ibox_p90", "saves_obox_p90", "gsaa_per90")
+      gk_margin_negative_cols <- c("goals_conceded_p90", "error_lead_to_shot_p90", "error_lead_to_goal_p90")
+      gk_margin_limits <- .build_margin_sign_limits(
+        colnames(gk_X_train_full),
+        positive_cols = intersect(gk_margin_positive_cols, gk_skill_keep_cols),
+        negative_cols = intersect(gk_margin_negative_cols, gk_skill_keep_cols)
+      )
+      cat(sprintf("GK margin sign constraints: %d positive-direction (%s), %d negative-direction (%s)\n",
+                  length(intersect(gk_margin_positive_cols, gk_skill_keep_cols)),
+                  paste(intersect(gk_margin_positive_cols, gk_skill_keep_cols), collapse = ", "),
+                  length(intersect(gk_margin_negative_cols, gk_skill_keep_cols)),
+                  paste(intersect(gk_margin_negative_cols, gk_skill_keep_cols), collapse = ", ")))
+
       # Train GK models on GOAL DIFF (not xG diff)
       # GK value is in the goals-saved-above-xG residual
       gk_models <- tryCatch(
@@ -1069,7 +1213,8 @@ gk_skill_keep_cols <- character(0)
           skill_cols = gk_skill_keep_cols, sds = gk_train_sds,
           test_mask = gk_is_test,
           X_test = gk_X_test_full,
-          pf = gk_penalty_factors, fe_count = gk_n_fe + gk_n_ts
+          pf = gk_penalty_factors, fe_count = gk_n_fe + gk_n_ts,
+          margin_lower = gk_margin_limits$lower, margin_upper = gk_margin_limits$upper
         ),
         error = function(e) {
           cat(sprintf("GK model training failed: %s\n", e$message))
