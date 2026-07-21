@@ -3,9 +3,15 @@
 \name{.subset_rapm_data_expanding}
 \alias{.subset_rapm_data_expanding}
 \title{Row-subset a prepared pooled RAPM design to seasons strictly before a
-cutoff year, dropping resulting all-zero player columns}
+cutoff year (optionally also at-or-after a minimum year), dropping
+resulting all-zero player columns}
 \usage{
-.subset_rapm_data_expanding(rapm_data, splint_season_map, cutoff_year)
+.subset_rapm_data_expanding(
+  rapm_data,
+  splint_season_map,
+  cutoff_year,
+  min_year = NULL
+)
 }
 \arguments{
 \item{rapm_data}{The \code{rapm_data} list as produced by \code{prepare_rapm_data()}
@@ -16,6 +22,11 @@ cutoff year, dropping resulting all-zero player columns}
 \code{season_end_year} (e.g. \verb{03_splints.rds$splints[, c("splint_id", "season_end_year")]}).}
 
 \item{cutoff_year}{Integer; rows from seasons \verb{< cutoff_year} are kept.}
+
+\item{min_year}{Integer or \code{NULL} (default). When supplied, rows from
+seasons \verb{< min_year} are additionally dropped, bounding the window to
+\verb{min_year <= season_end_year < cutoff_year}. \code{NULL} keeps the original
+"seasons < cutoff_year" (expanding-window) behaviour.}
 }
 \value{
 A \code{rapm_data}-shaped list (row- and column-subset), suitable for
@@ -24,8 +35,12 @@ A \code{rapm_data}-shaped list (row- and column-subset), suitable for
 \description{
 Mirrors FABLE-ASOF-EXPERIMENTS.md sec 5.2 Step A, generalized from
 "exclude season S" (LOSO) to "keep seasons < cutoff_year" (expanding
-window). Season-only players and season-only league-season dummy columns
-become all-zero once their rows are dropped; both are removed here (kept
-off/def-symmetric per player) so the resulting design has no dead columns.
+window). BOX-SCORE-VALUE-SPM-REDESIGN.md sec 2.1 further generalizes this
+to a bounded window (\verb{min_year <= season_end_year < cutoff_year}) for the
+windowed prior-free RAPM target -- \code{min_year = NULL} (default) preserves
+the original expanding-window behaviour unchanged. Season-only players and
+season-only league-season dummy columns become all-zero once their rows
+are dropped; both are removed here (kept off/def-symmetric per player) so
+the resulting design has no dead columns.
 }
 \keyword{internal}
