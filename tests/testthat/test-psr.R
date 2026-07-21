@@ -66,6 +66,13 @@ test_that(".get_psr_skill_cols includes rate, above-expected, and xmetrics colum
   # xMetrics columns
   expect_true("xg_per90" %in% cols)
   expect_true("npxg_per90" %in% cols)
+
+  # Zonal finishing splits are BANNED from the PSR/PSV family (#162): their
+  # season-grain training sds collapse (obox 45.8x amplification at match
+  # grain), which is how obox's collinearity-noise defensive beta became the
+  # largest DSV driver. They remain SPM-only (season grain).
+  expect_false("ibox_g_minus_xg_per90" %in% cols)
+  expect_false("obox_g_minus_xg_per90" %in% cols)
 })
 
 test_that(".get_psr_skill_cols has no duplicates", {

@@ -114,6 +114,17 @@ pm <- load_position_role_means()
 .psv_reliability <- if (exists("psv_reliability_pricing") && isTRUE(psv_reliability_pricing)) {
   load_psv_match_reliability()
 } else NULL
+# Centering-weight convention must ALSO match 10b (same reasoning as
+# reliability above): 10b defaults center_weights = "minutes" (#162
+# minutes-weighted zero-sum centring), so the exact side of K must be
+# centered with the same weights or K is calibrated against a round mean the
+# shipped game-logs no longer use (bites exactly in lopsided-cameo rounds).
+.psv_center_weights <- if (exists("psv_center_weights", envir = globalenv(),
+                                  inherits = FALSE) &&
+                           identical(get("psv_center_weights", envir = globalenv()),
+                                     "none")) {
+  "none"
+} else "minutes"
 ms <- as.data.table(readRDS("data-raw/cache-skills/01_match_stats.rds"))
 
 # Keep the two most recent end-years (current + prior-as-prior), blog-ish leagues
@@ -208,7 +219,8 @@ score_one <- function(d, center, position_means, reliability = .psv_reliability)
   compute_player_psv(d, min_adjust = FALSE, center = center,
                      scale_to_minutes = FALSE, exclude_efficiency = FALSE,
                      target = "blend", position_means = position_means,
-                     reliability = reliability)
+                     reliability = reliability,
+                     center_weights = .psv_center_weights)
 }
 
 # Compute K per (league, season): raw (no norm, no center) minus exactPSV
