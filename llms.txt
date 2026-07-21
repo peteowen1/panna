@@ -533,6 +533,9 @@ Zero-ablation player impact measurement
 
 Composite player skill and per-game stat value metrics
 
+- [`PSV_RELIABILITY_GD_SCALE`](https://peteowen1.github.io/panna/reference/PSV_RELIABILITY_GD_SCALE.md)
+  : Reliability-shrunk PSV display scale ("expected GD contribution per
+  90")
 - [`calculate_psr()`](https://peteowen1.github.io/panna/reference/calculate_psr.md)
   : Calculate Player Skill Ratings (PSR)
 - [`calculate_psv()`](https://peteowen1.github.io/panna/reference/calculate_psv.md)
@@ -545,6 +548,8 @@ Composite player skill and per-game stat value metrics
   : Default stat rating hyperparameters
 - [`load_opta_psr_weekly()`](https://peteowen1.github.io/panna/reference/load_opta_psr_weekly.md)
   : Load pre-computed weekly PSR snapshots
+- [`load_psv_match_reliability()`](https://peteowen1.github.io/panna/reference/load_psv_match_reliability.md)
+  : Load the bundled per-match reliability artifact for PSV pricing
 - [`player_psr()`](https://peteowen1.github.io/panna/reference/player_psr.md)
   : Get Player Skill Ratings
 - [`soccer_position_map()`](https://peteowen1.github.io/panna/reference/soccer_position_map.md)

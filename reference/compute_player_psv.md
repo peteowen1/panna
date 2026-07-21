@@ -13,7 +13,9 @@ compute_player_psv(
   target = c("xg", "goals", "blend"),
   scale_to_minutes = FALSE,
   exclude_efficiency = TRUE,
-  position_means = NULL
+  position_means = NULL,
+  reliability = NULL,
+  center_weights = c("none", "minutes")
 )
 ```
 
@@ -58,6 +60,25 @@ compute_player_psv(
   [`compute_player_psr`](https://peteowen1.github.io/panna/reference/compute_player_psr.md)).
   If `NULL`, no cross-position centering is applied.
 
+- reliability:
+
+  Optional per-match reliability lookup table (see
+  [`load_psv_match_reliability`](https://peteowen1.github.io/panna/reference/load_psv_match_reliability.md)),
+  columns `model`, `stat_name`, `lambda`. Filtered to the
+  `"outfield"`/`"gk"` subset for each scoring branch and passed to
+  [`calculate_psv_components`](https://peteowen1.github.io/panna/reference/calculate_psv_components.md)/[`calculate_psv`](https://peteowen1.github.io/panna/reference/calculate_psv.md).
+  `NULL` (default) applies no shrinkage – unchanged behaviour.
+
+- center_weights:
+
+  One of `"none"` (default) or `"minutes"`; passed through to
+  [`calculate_psv_components`](https://peteowen1.github.io/panna/reference/calculate_psv_components.md)/
+  [`calculate_psv`](https://peteowen1.github.io/panna/reference/calculate_psv.md)
+  for BOTH the outfield and GK branches (each sub-population is centered
+  – weighted or not – separately, same as today). See
+  [`calculate_psv`](https://peteowen1.github.io/panna/reference/calculate_psv.md)
+  for the zero-sum property.
+
 ## Value
 
 A data.table with `psv`, `osv`, `dsv` columns.
@@ -65,11 +86,13 @@ A data.table with `psv`, `osv`, `dsv` columns.
 ## See also
 
 Other psr:
+[`PSV_RELIABILITY_GD_SCALE`](https://peteowen1.github.io/panna/reference/PSV_RELIABILITY_GD_SCALE.md),
 [`calculate_psr()`](https://peteowen1.github.io/panna/reference/calculate_psr.md),
 [`calculate_psv()`](https://peteowen1.github.io/panna/reference/calculate_psv.md),
 [`calculate_psv_components()`](https://peteowen1.github.io/panna/reference/calculate_psv_components.md),
 [`default_stat_rating_params()`](https://peteowen1.github.io/panna/reference/default_stat_rating_params.md),
 [`load_opta_psr_weekly()`](https://peteowen1.github.io/panna/reference/load_opta_psr_weekly.md),
+[`load_psv_match_reliability()`](https://peteowen1.github.io/panna/reference/load_psv_match_reliability.md),
 [`player_psr()`](https://peteowen1.github.io/panna/reference/player_psr.md),
 [`soccer_position_map()`](https://peteowen1.github.io/panna/reference/soccer_position_map.md),
 [`soccer_stat_rating_definitions()`](https://peteowen1.github.io/panna/reference/soccer_stat_rating_definitions.md),

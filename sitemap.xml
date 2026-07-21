@@ -57,6 +57,7 @@
 <url><loc>https://peteowen1.github.io/panna/reference/PENALTY_SHOOTOUT_CONVERSION.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/PENALTY_XG.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/PLAYERS_PER_TEAM.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/PSV_RELIABILITY_GD_SCALE.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/REGULATION_SECONDS.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/SIX_YARD_X_MIN.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/SIX_YARD_Y_MAX.html</loc></url>
@@ -347,6 +348,7 @@
 <url><loc>https://peteowen1.github.io/panna/reference/load_position_role_means.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/load_predictions.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/load_psr_coefficients.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/load_psv_match_reliability.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/load_wp_model.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/load_xg_model.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/load_xgot_model.html</loc></url>

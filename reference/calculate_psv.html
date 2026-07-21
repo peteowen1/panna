@@ -13,7 +13,7 @@ ratings.'><meta property="og:image" content="https://peteowen1.github.io/panna/l
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.1</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.6</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -61,7 +61,9 @@ ratings.</p>
 <span>  min_adjust <span class="op">=</span> <span class="cn">TRUE</span>,</span>
 <span>  center <span class="op">=</span> <span class="cn">TRUE</span>,</span>
 <span>  exclude_efficiency <span class="op">=</span> <span class="cn">TRUE</span>,</span>
-<span>  scale_to_minutes <span class="op">=</span> <span class="cn">FALSE</span></span>
+<span>  scale_to_minutes <span class="op">=</span> <span class="cn">FALSE</span>,</span>
+<span>  reliability <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  center_weights <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"none"</span>, <span class="st">"minutes"</span><span class="op">)</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -101,6 +103,53 @@ calculation. Default <code>TRUE</code>.</p></dd>
 games (like EPV), rather than a per-90 rate. Default <code>FALSE</code>
 (per-90, the form consumed by the multi-target RAPM and skills pipeline).</p></dd>
 
+
+<dt id="arg-reliability">reliability<a class="anchor" aria-label="anchor" href="#arg-reliability"></a></dt>
+<dd><p>Optional data.frame with columns <code>stat_name</code> and
+<code>lambda</code> (see <code><a href="load_psv_match_reliability.html">load_psv_match_reliability</a></code>),
+pre-filtered to a single population (<code>compute_player_psv</code> does this
+via <code>model</code>). When supplied, each standardized stat column is
+multiplied by that stat's <code>lambda</code> in <code>[0, 1]</code> – the
+reliability of a SINGLE match as evidence of persistent player skill
+(<code>Var_between / (Var_between + Var_within)</code> from a variance
+decomposition over players). Standardization always uses the
+coefficient file's <code>sd</code> (the scale betas are calibrated to); a v1
+design that instead swapped the standardization denominator for a
+per-match sd was rejected by the empirical gate (it re-weighted features
+by <code>sd_train/sd_match</code>, up to 38x, which AMPLIFIES rather than
+damps stable-scale features). Because <code>lambda &lt;= 1</code>, reliability
+shrinkage can only shrink a contribution, never amplify it. A stat
+present in <code>coef_df</code> but absent from <code>reliability</code> (or with an
+<code>NA</code> lambda, e.g. too few players to estimate) is left unshrunk
+(<code>lambda = 1</code>) with a <code><a href="https://cli.r-lib.org/reference/cli_abort.html" class="external-link">cli::cli_warn</a></code> naming it. Default
+<code>NULL</code> (no shrinkage, unchanged behaviour). When supplied (non-NULL,
+non-empty), <code>psv_raw</code>/<code>psv</code> are ALSO multiplied by
+<code><a href="PSV_RELIABILITY_GD_SCALE.html">PSV_RELIABILITY_GD_SCALE</a></code>, putting the result in "expected
+GD contribution per 90" units (see that constant's docs for the
+derivation) – the <code>reliability = NULL</code> path is unaffected and
+stays bit-identical to the pre-scale behaviour.</p></dd>
+
+
+<dt id="arg-center-weights">center_weights<a class="anchor" aria-label="anchor" href="#arg-center-weights"></a></dt>
+<dd><p>One of <code>"none"</code> (default) or <code>"minutes"</code>.
+<code>"none"</code> centers on the plain row mean of <code>psv_raw</code> within each
+<code>(season, round)</code> group – unchanged legacy behaviour, and the ONLY
+path the RAPM <code>psvf90</code> target and every other pre-existing caller
+use (bit-identical when this argument is left at its default).
+<code>"minutes"</code> centers on the minutes-weighted mean instead (weight =
+<code>minutes_played / 90</code>, or <code>total_minutes / 90</code> when that's the
+only minutes column present – the same resolution <code>scale_to_minutes</code>
+uses). Combined with <code>scale_to_minutes = TRUE</code> this makes the
+round's SUMMED (minutes-scaled) PSV exactly 0: writing \(w_i =
+  minutes_i/90\) and \(\bar{x}_w = \sum w_i x_i / \sum w_i\) for the
+weighted mean of <code>psv_raw</code>, the scaled centered value is
+\(w_i(x_i - \bar{x}_w)\), and \(\sum_i w_i(x_i - \bar{x}_w) =
+  \sum_i w_i x_i - \bar{x}_w \sum_i w_i = 0\) by construction. A group whose
+weights all resolve to 0 (e.g. every row's minutes missing/non-positive)
+falls back to the plain mean for that group so centering never divides by
+zero. Display path only (game-logs export) – has no effect when
+<code>center = FALSE</code>.</p></dd>
+
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
@@ -116,11 +165,13 @@ coefficient file. Efficiency stats (ratios) are excluded from PSV by default.</p
     <div class="section level2">
     <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a></h2>
     <div class="dont-index"><p>Other psr:
+<code><a href="PSV_RELIABILITY_GD_SCALE.html">PSV_RELIABILITY_GD_SCALE</a></code>,
 <code><a href="calculate_psr.html">calculate_psr()</a></code>,
 <code><a href="calculate_psv_components.html">calculate_psv_components()</a></code>,
 <code><a href="compute_player_psv.html">compute_player_psv()</a></code>,
 <code><a href="default_stat_rating_params.html">default_stat_rating_params()</a></code>,
 <code><a href="load_opta_psr_weekly.html">load_opta_psr_weekly()</a></code>,
+<code><a href="load_psv_match_reliability.html">load_psv_match_reliability()</a></code>,
 <code><a href="player_psr.html">player_psr()</a></code>,
 <code><a href="soccer_position_map.html">soccer_position_map()</a></code>,
 <code><a href="soccer_stat_rating_definitions.html">soccer_stat_rating_definitions()</a></code>,
