@@ -11,7 +11,9 @@ compute_player_psv(
   target = c("xg", "goals", "blend"),
   scale_to_minutes = FALSE,
   exclude_efficiency = TRUE,
-  position_means = NULL
+  position_means = NULL,
+  reliability = NULL,
+  center_weights = c("none", "minutes")
 )
 }
 \arguments{
@@ -39,6 +41,19 @@ vector (the form used for the displayed blog PSV). See
 \item{position_means}{Optional pre-computed position-mean lookup table used
 to center skill columns before scoring (see \code{\link{compute_player_psr}}).
 If \code{NULL}, no cross-position centering is applied.}
+
+\item{reliability}{Optional per-match reliability lookup table (see
+\code{\link{load_psv_match_reliability}}), columns \code{model},
+\code{stat_name}, \code{lambda}. Filtered to the
+\code{"outfield"}/\code{"gk"} subset for each scoring branch and passed
+to \code{\link{calculate_psv_components}}/\code{\link{calculate_psv}}.
+\code{NULL} (default) applies no shrinkage -- unchanged behaviour.}
+
+\item{center_weights}{One of \code{"none"} (default) or \code{"minutes"};
+passed through to \code{\link{calculate_psv_components}}/
+\code{\link{calculate_psv}} for BOTH the outfield and GK branches (each
+sub-population is centered -- weighted or not -- separately, same as
+today). See \code{\link{calculate_psv}} for the zero-sum property.}
 }
 \value{
 A data.table with \code{psv}, \code{osv}, \code{dsv} columns.
@@ -49,11 +64,13 @@ Convenience wrapper that loads pre-trained coefficients and calls
 }
 \seealso{
 Other psr: 
+\code{\link{PSV_RELIABILITY_GD_SCALE}},
 \code{\link{calculate_psr}()},
 \code{\link{calculate_psv}()},
 \code{\link{calculate_psv_components}()},
 \code{\link{default_stat_rating_params}()},
 \code{\link{load_opta_psr_weekly}()},
+\code{\link{load_psv_match_reliability}()},
 \code{\link{player_psr}()},
 \code{\link{soccer_position_map}()},
 \code{\link{soccer_stat_rating_definitions}()},

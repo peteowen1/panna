@@ -135,8 +135,9 @@ soccer_stat_rating_definitions <- function() {
     # Finishing over-performance (goals above xG, per-90): signed continuous,
     # treated as rate stats (Gaussian shrink toward ~0 — finishing is noisy).
     .srd("npg_minus_npxg_per90", "rate", "xmetrics"),
-    .srd("ibox_g_minus_xg_per90", "rate", "xmetrics"),
-    .srd("obox_g_minus_xg_per90", "rate", "xmetrics"),
+    # Zonal ibox/obox_g_minus_xg_per90 removed 2026-07-20 — degenerate training
+    # sds (obox 7.5x too small) made them explode at match grain. See the note
+    # in .get_psr_skill_cols() (psr.R).
     # Placement skill: how much better than pre-shot xG the shot was placed
     # (xGOT - xG, per 90). Repeatable shooter trait, unlike the luck residual.
     .srd("placement_added_per90", "rate", "xmetrics"),

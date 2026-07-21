@@ -10,7 +10,9 @@ calculate_psv(
   min_adjust = TRUE,
   center = TRUE,
   exclude_efficiency = TRUE,
-  scale_to_minutes = FALSE
+  scale_to_minutes = FALSE,
+  reliability = NULL,
+  center_weights = c("none", "minutes")
 )
 }
 \arguments{
@@ -34,6 +36,49 @@ calculation. Default \code{TRUE}.}
 \code{minutes_played / 90} so the result is additive over a player's
 games (like EPV), rather than a per-90 rate. Default \code{FALSE}
 (per-90, the form consumed by the multi-target RAPM and skills pipeline).}
+
+\item{reliability}{Optional data.frame with columns \code{stat_name} and
+\code{lambda} (see \code{\link{load_psv_match_reliability}}),
+pre-filtered to a single population (\code{compute_player_psv} does this
+via \code{model}). When supplied, each standardized stat column is
+multiplied by that stat's \code{lambda} in \code{[0, 1]} -- the
+reliability of a SINGLE match as evidence of persistent player skill
+(\code{Var_between / (Var_between + Var_within)} from a variance
+decomposition over players). Standardization always uses the
+coefficient file's \code{sd} (the scale betas are calibrated to); a v1
+design that instead swapped the standardization denominator for a
+per-match sd was rejected by the empirical gate (it re-weighted features
+by \code{sd_train/sd_match}, up to 38x, which AMPLIFIES rather than
+damps stable-scale features). Because \code{lambda <= 1}, reliability
+shrinkage can only shrink a contribution, never amplify it. A stat
+present in \code{coef_df} but absent from \code{reliability} (or with an
+\code{NA} lambda, e.g. too few players to estimate) is left unshrunk
+(\code{lambda = 1}) with a \code{cli::cli_warn} naming it. Default
+\code{NULL} (no shrinkage, unchanged behaviour). When supplied (non-NULL,
+non-empty), \code{psv_raw}/\code{psv} are ALSO multiplied by
+\code{\link{PSV_RELIABILITY_GD_SCALE}}, putting the result in "expected
+GD contribution per 90" units (see that constant's docs for the
+derivation) -- the \code{reliability = NULL} path is unaffected and
+stays bit-identical to the pre-scale behaviour.}
+
+\item{center_weights}{One of \code{"none"} (default) or \code{"minutes"}.
+\code{"none"} centers on the plain row mean of \code{psv_raw} within each
+\code{(season, round)} group -- unchanged legacy behaviour, and the ONLY
+path the RAPM \code{psvf90} target and every other pre-existing caller
+use (bit-identical when this argument is left at its default).
+\code{"minutes"} centers on the minutes-weighted mean instead (weight =
+\code{minutes_played / 90}, or \code{total_minutes / 90} when that's the
+only minutes column present -- the same resolution \code{scale_to_minutes}
+uses). Combined with \code{scale_to_minutes = TRUE} this makes the
+round's SUMMED (minutes-scaled) PSV exactly 0: writing \eqn{w_i =
+  minutes_i/90} and \eqn{\bar{x}_w = \sum w_i x_i / \sum w_i} for the
+weighted mean of \code{psv_raw}, the scaled centered value is
+\eqn{w_i(x_i - \bar{x}_w)}, and \eqn{\sum_i w_i(x_i - \bar{x}_w) =
+  \sum_i w_i x_i - \bar{x}_w \sum_i w_i = 0} by construction. A group whose
+weights all resolve to 0 (e.g. every row's minutes missing/non-positive)
+falls back to the plain mean for that group so centering never divides by
+zero. Display path only (game-logs export) -- has no effect when
+\code{center = FALSE}.}
 }
 \value{
 A data.table with identifier columns plus \code{psv_raw} and
@@ -52,11 +97,13 @@ coefficient file. Efficiency stats (ratios) are excluded from PSV by default.
 }
 \seealso{
 Other psr: 
+\code{\link{PSV_RELIABILITY_GD_SCALE}},
 \code{\link{calculate_psr}()},
 \code{\link{calculate_psv_components}()},
 \code{\link{compute_player_psv}()},
 \code{\link{default_stat_rating_params}()},
 \code{\link{load_opta_psr_weekly}()},
+\code{\link{load_psv_match_reliability}()},
 \code{\link{player_psr}()},
 \code{\link{soccer_position_map}()},
 \code{\link{soccer_stat_rating_definitions}()},

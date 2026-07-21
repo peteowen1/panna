@@ -504,8 +504,18 @@ if (nrow(seasonal_psr) > 0 && !is.null(psr_primary_league)) {
   } else tryCatch({
     gl <- data.table::rbindlist(lapply(gl_files, function(f) {
       d <- arrow::read_parquet(f)
-      d[, intersect(c("player_id","season","league","total_minutes","psv"), names(d)), with = FALSE]
+      d[, intersect(c("player_id","season","league","total_minutes","psv","psv_league_offset"), names(d)), with = FALSE]
     }), use.names = TRUE, fill = TRUE)
+    # 10b end-adds psv_league_offset INTO psv in these parquets (#162). The
+    # calibration must see the offset-free signal: feeding the adjusted psv
+    # back into build_league_network() makes each cycle estimate the residual
+    # of its own previous output (offset_N ~= true - offset_{N-1}), so the
+    # offsets oscillate/decay instead of converging. Parquets predating #162
+    # lack the column (rbindlist fills NA -> treated as 0).
+    if ("psv_league_offset" %in% names(gl)) {
+      gl[, psv := psv - data.table::fcoalesce(as.numeric(psv_league_offset), 0)]
+      gl[, psv_league_offset := NULL]
+    }
     # bucket_years=2: bridge leagues a player straddles across adjacent seasons,
     # not only within one season. Fixes the same-season network's connectivity
     # starvation for leagues with no UCL co-occurrence (Argentina/Saudi/MLS),

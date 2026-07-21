@@ -59,7 +59,7 @@
   # at 0/1. Each is replaced by a volume-correct ABOVE-EXPECTED count or the
   # additive raw counts already in rate_cols:
   #   • passing accuracy   → xpass_overperformance_per90 (completions above xPass)
-  #   • shooting/finishing → npg_minus_npxg / ibox/obox_g_minus_xg / placement_added
+  #   • shooting/finishing → npg_minus_npxg / placement_added
   #   • aerial/duel/tackle → 5 xDuel above-expected counts: aerial_woe (win header),
   #     aerial_poss_woe (keep ball after header), takeon_woe (beat man), tackle_poss_woe
   #     (win ball when tackling), containment_woe (stop a dribbler). See duel_model.R.
@@ -70,7 +70,22 @@
   xmetrics_cols <- c(
     "xg_per90", "npxg_per90", "xa_per90_xmetrics",
     "xpass_overperformance_per90_xmetrics",
-    "npg_minus_npxg_per90", "ibox_g_minus_xg_per90", "obox_g_minus_xg_per90",
+    # NB the ZONAL finishing split (ibox_g_minus_xg_per90 / obox_g_minus_xg_per90)
+    # was REMOVED 2026-07-20. Both are signed goals-minus-xG quantities that
+    # cancel under aggregation, so their training sds collapse (obox's stored sd
+    # was 0.0037 vs an actual season-grain 0.0281 — 7.5x too small, the sparsest
+    # feature trained on a population where it was mostly missing-filled-to-zero:
+    # 55/210 league-seasons lacked bymatch coverage at training time). PSV
+    # standardises by that stored sd, so at MATCH grain obox was amplified 44x
+    # (ibox 12x) while every other feature in the model sits at 0.2-3.6x. The
+    # result: obox alone drove 57% of DSV's spread via a collinearity-noise
+    # defensive beta, and the biggest values were all cameos (a 16-minute sub
+    # scoring from distance reads +5.19/90). Aggregate finishing signal is
+    # retained by npg_minus_npxg_per90 and placement_added_per90 (1.9x/1.1x,
+    # both well-behaved) — only the inside/outside-box SPLIT is gone.
+    # These remain in SPM (spm_opta.R), which scores at season grain where the
+    # scale transfer does not arise.
+    "npg_minus_npxg_per90",
     "placement_added_per90",
     # Above-expected physical-duel counts (5 xDuel contests; replace *_success ratios)
     "aerial_woe_per90", "aerial_poss_woe_per90", "takeon_woe_per90",
@@ -709,12 +724,53 @@ calculate_psr_components <- function(skills, coef_df, osr_coef_df, dsr_coef_df,
 #'   to get per-90 rates before applying coefficients. Default \code{TRUE}.
 #' @param center Logical. Center PSV within each matchday/round so
 #'   PSV = contribution above average that round. Default \code{TRUE}.
+#' @param center_weights One of \code{"none"} (default) or \code{"minutes"}.
+#'   \code{"none"} centers on the plain row mean of \code{psv_raw} within each
+#'   \code{(season, round)} group -- unchanged legacy behaviour, and the ONLY
+#'   path the RAPM \code{psvf90} target and every other pre-existing caller
+#'   use (bit-identical when this argument is left at its default).
+#'   \code{"minutes"} centers on the minutes-weighted mean instead (weight =
+#'   \code{minutes_played / 90}, or \code{total_minutes / 90} when that's the
+#'   only minutes column present -- the same resolution \code{scale_to_minutes}
+#'   uses). Combined with \code{scale_to_minutes = TRUE} this makes the
+#'   round's SUMMED (minutes-scaled) PSV exactly 0: writing \eqn{w_i =
+#'   minutes_i/90} and \eqn{\bar{x}_w = \sum w_i x_i / \sum w_i} for the
+#'   weighted mean of \code{psv_raw}, the scaled centered value is
+#'   \eqn{w_i(x_i - \bar{x}_w)}, and \eqn{\sum_i w_i(x_i - \bar{x}_w) =
+#'   \sum_i w_i x_i - \bar{x}_w \sum_i w_i = 0} by construction. A group whose
+#'   weights all resolve to 0 (e.g. every row's minutes missing/non-positive)
+#'   falls back to the plain mean for that group so centering never divides by
+#'   zero. Display path only (game-logs export) -- has no effect when
+#'   \code{center = FALSE}.
 #' @param exclude_efficiency Logical. Exclude efficiency/ratio stats from PSV
 #'   calculation. Default \code{TRUE}.
 #' @param scale_to_minutes Logical. If TRUE, multiply the (per-90) PSV by
 #'   \code{minutes_played / 90} so the result is additive over a player's
 #'   games (like EPV), rather than a per-90 rate. Default \code{FALSE}
 #'   (per-90, the form consumed by the multi-target RAPM and skills pipeline).
+#' @param reliability Optional data.frame with columns \code{stat_name} and
+#'   \code{lambda} (see \code{\link{load_psv_match_reliability}}),
+#'   pre-filtered to a single population (\code{compute_player_psv} does this
+#'   via \code{model}). When supplied, each standardized stat column is
+#'   multiplied by that stat's \code{lambda} in \code{[0, 1]} -- the
+#'   reliability of a SINGLE match as evidence of persistent player skill
+#'   (\code{Var_between / (Var_between + Var_within)} from a variance
+#'   decomposition over players). Standardization always uses the
+#'   coefficient file's \code{sd} (the scale betas are calibrated to); a v1
+#'   design that instead swapped the standardization denominator for a
+#'   per-match sd was rejected by the empirical gate (it re-weighted features
+#'   by \code{sd_train/sd_match}, up to 38x, which AMPLIFIES rather than
+#'   damps stable-scale features). Because \code{lambda <= 1}, reliability
+#'   shrinkage can only shrink a contribution, never amplify it. A stat
+#'   present in \code{coef_df} but absent from \code{reliability} (or with an
+#'   \code{NA} lambda, e.g. too few players to estimate) is left unshrunk
+#'   (\code{lambda = 1}) with a \code{cli::cli_warn} naming it. Default
+#'   \code{NULL} (no shrinkage, unchanged behaviour). When supplied (non-NULL,
+#'   non-empty), \code{psv_raw}/\code{psv} are ALSO multiplied by
+#'   \code{\link{PSV_RELIABILITY_GD_SCALE}}, putting the result in "expected
+#'   GD contribution per 90" units (see that constant's docs for the
+#'   derivation) -- the \code{reliability = NULL} path is unaffected and
+#'   stays bit-identical to the pre-scale behaviour.
 #'
 #' @return A data.table with identifier columns plus \code{psv_raw} and
 #'   \code{psv}.
@@ -723,7 +779,9 @@ calculate_psr_components <- function(skills, coef_df, osr_coef_df, dsr_coef_df,
 #' @export
 calculate_psv <- function(player_match_stats, coef_df, min_adjust = TRUE,
                            center = TRUE, exclude_efficiency = TRUE,
-                           scale_to_minutes = FALSE) {
+                           scale_to_minutes = FALSE, reliability = NULL,
+                           center_weights = c("none", "minutes")) {
+  center_weights <- match.arg(center_weights)
   dt <- data.table::as.data.table(player_match_stats)
 
   if (!all(c("stat_name", "beta") %in% names(coef_df))) {
@@ -787,18 +845,76 @@ calculate_psv <- function(player_match_stats, coef_df, min_adjust = TRUE,
     }
   }
 
-  # Standardize using SDs from coefficient file (same scale as PSR training)
+  # Standardize using SDs from the coefficient file (skill-estimate scale --
+  # the scale betas are calibrated to). Always coefficient sd; a v1 design
+  # that swapped this denominator for a per-match sd was rejected by the
+  # empirical gate (see @param reliability).
   if ("sd" %in% names(coef_df)) {
     sds <- coef_df$sd
     sds[sds == 0 | is.na(sds)] <- 1
     mat <- sweep(mat, 2, sds, "/")
   }
 
+  # Reliability shrinkage (LIVE-PSV-UNBLOCK D1 v2): multiply each
+  # (already-standardized) column by that stat's single-match reliability
+  # lambda in [0, 1] -- shrinks noisy/rare features, barely touches stable
+  # volume features, and can never amplify (lambda <= 1). Missing/NA lambda
+  # falls back to 1 (unshrunk) with a warning.
+  if (!is.null(reliability) && NROW(reliability) > 0) {
+    reliability <- data.table::as.data.table(reliability)
+    lambda_lookup <- stats::setNames(as.numeric(reliability$lambda), reliability$stat_name)
+    lambdas <- unname(lambda_lookup[stat_cols])
+    missing_lambda <- stat_cols[is.na(lambdas)]
+    if (length(missing_lambda) > 0) {
+      cli::cli_warn(c(
+        "reliability missing/NA for {length(missing_lambda)} stat(s); leaving unshrunk (lambda = 1): {paste(missing_lambda, collapse = ', ')}"
+      ))
+      lambdas[is.na(lambdas)] <- 1
+    }
+    mat <- sweep(mat, 2, lambdas, "*")
+  }
+
   dt[, psv_raw := as.numeric(mat %*% betas)]
+
+  # GD-unit display scale (LIVE-PSV-UNBLOCK D1-v2 FINAL): only applied on the
+  # reliability-shrinkage path, and applied exactly once here (before
+  # centering -- both orders are equivalent since scaling is linear, but this
+  # keeps `psv_raw` and `psv` on the same units). See PSV_RELIABILITY_GD_SCALE.
+  if (!is.null(reliability) && NROW(reliability) > 0) {
+    dt[, psv_raw := psv_raw * PSV_RELIABILITY_GD_SCALE]
+  }
 
   if (center) {
     group_cols <- intersect(c("season", "round"), names(dt))
-    if (length(group_cols) > 0) {
+    if (center_weights == "minutes") {
+      # Same minutes-column resolution as scale_to_minutes, so the weight
+      # used here is EXACTLY the per-row factor that later multiplies psv —
+      # that identity is what makes the post-scale group sum exactly 0.
+      w_mins_col <- if ("minutes_played" %in% names(dt)) "minutes_played"
+                    else if ("total_minutes" %in% names(dt)) "total_minutes"
+                    else NULL
+      if (is.null(w_mins_col)) {
+        cli::cli_warn(
+          "center_weights = \"minutes\" but no minutes column found; falling back to unweighted centering"
+        )
+        cw <- rep(1, nrow(dt))
+      } else {
+        cw <- as.numeric(dt[[w_mins_col]]) / 90
+        cw[is.na(cw) | cw < 0] <- 0
+      }
+      dt[, .psv_cw := cw]
+      .wmean <- function(x, w) {
+        wsum <- sum(w)
+        if (is.finite(wsum) && wsum > 0) sum(x * w, na.rm = TRUE) / wsum
+        else mean(x, na.rm = TRUE)
+      }
+      if (length(group_cols) > 0) {
+        dt[, psv := psv_raw - .wmean(psv_raw, .psv_cw), by = group_cols]
+      } else {
+        dt[, psv := psv_raw - .wmean(psv_raw, .psv_cw)]
+      }
+      dt[, .psv_cw := NULL]
+    } else if (length(group_cols) > 0) {
       dt[, psv := psv_raw - mean(psv_raw, na.rm = TRUE), by = group_cols]
     } else {
       dt[, psv := psv_raw - mean(psv_raw, na.rm = TRUE)]
@@ -850,6 +966,10 @@ calculate_psv <- function(player_match_stats, coef_df, min_adjust = TRUE,
 #'   (predicting goals scored / xG for).
 #' @param dsr_coef_df Coefficient data.frame for the defensive model
 #'   (predicting goals conceded / xG against).
+#' @param reliability Optional per-match reliability lookup, passed through
+#'   to each of the three \code{\link{calculate_psv}} calls
+#'   (margin/offense/defense) so all three components shrink stats on the
+#'   same scale. See \code{\link{calculate_psv}}.
 #'
 #' @return A data.table with identifier columns plus \code{psv_raw},
 #'   \code{psv}, \code{osv}, \code{dsv}.
@@ -859,21 +979,36 @@ calculate_psv <- function(player_match_stats, coef_df, min_adjust = TRUE,
 calculate_psv_components <- function(player_match_stats, coef_df, osr_coef_df,
                                       dsr_coef_df, min_adjust = TRUE,
                                       center = TRUE, scale_to_minutes = FALSE,
-                                      exclude_efficiency = TRUE) {
+                                      exclude_efficiency = TRUE,
+                                      reliability = NULL,
+                                      center_weights = c("none", "minutes")) {
+  center_weights <- match.arg(center_weights)
   psv_result <- calculate_psv(player_match_stats, coef_df,
                                min_adjust = min_adjust, center = center,
                                scale_to_minutes = scale_to_minutes,
-                               exclude_efficiency = exclude_efficiency)
+                               exclude_efficiency = exclude_efficiency,
+                               reliability = reliability,
+                               center_weights = center_weights)
   osv_result <- calculate_psv(player_match_stats, osr_coef_df,
                                min_adjust = min_adjust, center = center,
                                scale_to_minutes = scale_to_minutes,
-                               exclude_efficiency = exclude_efficiency)
+                               exclude_efficiency = exclude_efficiency,
+                               reliability = reliability,
+                               center_weights = center_weights)
   dsv_result <- calculate_psv(player_match_stats, dsr_coef_df,
                                min_adjust = min_adjust, center = center,
                                scale_to_minutes = scale_to_minutes,
-                               exclude_efficiency = exclude_efficiency)
+                               exclude_efficiency = exclude_efficiency,
+                               reliability = reliability,
+                               center_weights = center_weights)
 
-  # Additive shift so osv + dsv = psv
+  # Additive shift so osv + dsv = psv. This is a per-row algebraic identity
+  # (delta is defined FROM the three already-computed psv columns), so it
+  # reconciles exactly regardless of which centering (plain or
+  # minutes-weighted) produced them -- the zero-sum property of the total
+  # psv does NOT automatically transfer to osv/dsv individually (their own
+  # weighted group means differ from the margin model's), which is expected:
+  # only the total psv is documented as zero-sum.
   raw_osv <- osv_result$psv
   raw_dsv <- dsv_result$psv
   delta <- (psv_result$psv - raw_osv - raw_dsv) / 2
@@ -895,6 +1030,21 @@ calculate_psv_components <- function(player_match_stats, coef_df, osr_coef_df,
 # before scoring evaluates them vs their role (VORP/BPM-style). Validated 2026-06:
 # position-normalized PSV aligns with career-panna (RAPM) far better than base
 # (Spearman 0.38 -> 0.62), and lifts the elite scorers RAPM rates 90-100th pct.
+
+# GK detection shared by compute_player_psv() and the 07b sd_match build --
+# ONE source of truth so the two never drift (mirrors compute_player_psr's
+# primary_position == "GK" check, generalized to also accept a `position` col
+# for match-stats rows that lack primary_position).
+#' @keywords internal
+.detect_gk_rows <- function(dt) {
+  pos_col <- if ("primary_position" %in% names(dt)) "primary_position"
+             else if ("position" %in% names(dt)) "position" else NULL
+  is_gk <- if (!is.null(pos_col)) {
+    grepl("GK|Goalkeeper", dt[[pos_col]], ignore.case = TRUE)
+  } else rep(FALSE, nrow(dt))
+  is_gk[is.na(is_gk)] <- FALSE
+  is_gk
+}
 
 # Collapse the 16-role classify_role() output to the broad GK/DEF/MID/FWD bucket.
 .role16_to_broad <- function(r) {
@@ -1010,6 +1160,47 @@ load_position_role_means <- function() {
   data.table::fread(p)
 }
 
+#' Load the bundled per-match reliability artifact for PSV pricing
+#'
+#' Per-(model, stat) variance decomposition of the single-match per-90 rate
+#' over players, built by \code{07b_build_position_means.R} over the same
+#' enriched \code{match_stats} population as \code{position_role_means.csv}.
+#' \code{lambda = Var_between / (Var_between + Var_within)} in \code{[0, 1]}
+#' is the reliability of a single match as evidence of a persistent player
+#' level. Pass the result as \code{reliability} to
+#' \code{\link{compute_player_psv}}/\code{\link{calculate_psv_components}}/
+#' \code{\link{calculate_psv}} to shrink each stat's contribution by its
+#' lambda (LIVE-PSV-UNBLOCK D1 v2; supersedes the v1 sd-swap design, which
+#' the empirical gate rejected for amplifying stable-scale features).
+#'
+#' @return data.table(model, stat_name, n_players, n_player_matches,
+#'   sd_match, var_between, var_within, lambda), or NULL if the artifact is
+#'   absent.
+#' @family psr
+#' @export
+load_psv_match_reliability <- function() {
+  p <- system.file("extdata", "psv_match_reliability.csv", package = "panna")
+  if (p == "" || !file.exists(p)) {
+    cli::cli_warn("psv_match_reliability.csv not found — per-match PSV reliability shrinkage disabled")
+    return(NULL)
+  }
+  data.table::fread(p)
+}
+
+# Minutes-weighted sd of a single-match per-90 rate (weight = minutes/90),
+# mirroring 07_train_psr_model.R's minutes/90 aggregation weighting. Shared by
+# 07b_build_position_means.R (via devtools::load_all) so the sd_match artifact
+# and any future caller use the identical formula.
+#' @keywords internal
+.weighted_sd_match <- function(x, w) {
+  ok <- is.finite(x) & is.finite(w) & w > 0
+  x <- x[ok]; w <- w[ok]
+  n <- length(x)
+  if (n < 2 || sum(w) <= 0) return(c(sd_match = NA_real_, n = n))
+  wm <- sum(w * x) / sum(w)
+  c(sd_match = sqrt(sum(w * (x - wm)^2) / sum(w)), n = n)
+}
+
 # Subtract the per-(era, role) skill mean before scoring (no-op when
 # position_means NULL). Looks up the player-season's era; falls back to the
 # role-overall mean (season_end_year = NA) when the (season, role) cell is absent.
@@ -1073,6 +1264,17 @@ load_position_role_means <- function() {
 #' @param position_means Optional pre-computed position-mean lookup table used
 #'   to center skill columns before scoring (see \code{\link{compute_player_psr}}).
 #'   If \code{NULL}, no cross-position centering is applied.
+#' @param reliability Optional per-match reliability lookup table (see
+#'   \code{\link{load_psv_match_reliability}}), columns \code{model},
+#'   \code{stat_name}, \code{lambda}. Filtered to the
+#'   \code{"outfield"}/\code{"gk"} subset for each scoring branch and passed
+#'   to \code{\link{calculate_psv_components}}/\code{\link{calculate_psv}}.
+#'   \code{NULL} (default) applies no shrinkage -- unchanged behaviour.
+#' @param center_weights One of \code{"none"} (default) or \code{"minutes"};
+#'   passed through to \code{\link{calculate_psv_components}}/
+#'   \code{\link{calculate_psv}} for BOTH the outfield and GK branches (each
+#'   sub-population is centered -- weighted or not -- separately, same as
+#'   today). See \code{\link{calculate_psv}} for the zero-sum property.
 #'
 #' @return A data.table with \code{psv}, \code{osv}, \code{dsv} columns.
 #'
@@ -1082,8 +1284,11 @@ compute_player_psv <- function(player_match_stats, min_adjust = TRUE,
                                 center = TRUE, target = c("xg", "goals", "blend"),
                                 scale_to_minutes = FALSE,
                                 exclude_efficiency = TRUE,
-                                position_means = NULL) {
+                                position_means = NULL,
+                                reliability = NULL,
+                                center_weights = c("none", "minutes")) {
   target <- match.arg(target)
+  center_weights <- match.arg(center_weights)
   dt <- data.table::as.data.table(player_match_stats)
   dt <- .position_normalize_skills(dt, position_means)
 
@@ -1091,12 +1296,7 @@ compute_player_psv <- function(player_match_stats, min_adjust = TRUE,
   # features), outfield through the target model — mirroring compute_player_psr.
   # Without this, keepers are scored as bad outfielders (no GK shot-stopping
   # credit). Splitting also centers GKs vs GKs and outfield vs outfield.
-  pos_col <- if ("primary_position" %in% names(dt)) "primary_position"
-             else if ("position" %in% names(dt)) "position" else NULL
-  is_gk <- if (!is.null(pos_col)) {
-    grepl("GK|Goalkeeper", dt[[pos_col]], ignore.case = TRUE)
-  } else rep(FALSE, nrow(dt))
-  is_gk[is.na(is_gk)] <- FALSE
+  is_gk <- .detect_gk_rows(dt)
 
   .score <- function(sub, tgt, model) {
     margin <- load_psr_coefficients("margin", target = tgt, model = model)
@@ -1104,14 +1304,22 @@ compute_player_psv <- function(player_match_stats, min_adjust = TRUE,
                     error = function(e) NULL)
     dsr <- tryCatch(load_psr_coefficients("defense", target = tgt, model = model),
                     error = function(e) NULL)
+    rel <- NULL
+    if (!is.null(reliability) && NROW(reliability) > 0) {
+      reliability_dt <- data.table::as.data.table(reliability)
+      rsub <- reliability_dt[reliability_dt$model == model, ]
+      if (nrow(rsub) > 0) rel <- rsub
+    }
     if (!is.null(osr) && !is.null(dsr)) {
       calculate_psv_components(sub, margin, osr, dsr, min_adjust = min_adjust,
         center = center, scale_to_minutes = scale_to_minutes,
-        exclude_efficiency = exclude_efficiency)
+        exclude_efficiency = exclude_efficiency, reliability = rel,
+        center_weights = center_weights)
     } else {
       cli::cli_inform("OSR/DSR coefficient files not found -- computing PSV only")
       calculate_psv(sub, margin, min_adjust = min_adjust, center = center,
-        scale_to_minutes = scale_to_minutes, exclude_efficiency = exclude_efficiency)
+        scale_to_minutes = scale_to_minutes, exclude_efficiency = exclude_efficiency,
+        reliability = rel, center_weights = center_weights)
     }
   }
 
