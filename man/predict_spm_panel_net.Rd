@@ -2,8 +2,8 @@
 % Please edit documentation in R/spm_panel.R
 \name{predict_spm_panel_net}
 \alias{predict_spm_panel_net}
-\title{Score panel rows against a fitted offense/defense pair, summing to a net
-prediction}
+\title{Score panel rows against a fitted offense/defense pair, combining to a
+net prediction}
 \usage{
 predict_spm_panel_net(fits, newdata, lambda = c("min", "1se"))
 }
@@ -21,10 +21,16 @@ data.table(player_id, vintage_year (if present), pred_offense,
 pred_defense, pred_net).
 }
 \description{
-Mirrors 05_spm.R's O/D-then-combine pattern: \code{fit_spm_panel()} is fit
-separately per target (offense/defense have different sign constraints
-and, for a real RAPM O/D split, different underlying signal), and the net
-rating candidates/eval harnesses need is their sum.
+\code{fit_spm_panel()} is fit separately per target (offense/defense have
+different sign constraints and, for a real RAPM O/D split, different
+underlying signal). The targets are stored in the RAW internal
+convention (\code{defense_target} = contribution to opponent xG, positive =
+concedes more = bad), and net RAPM = offense - defense
+(\code{extract_rapm_ratings()}, R/rapm_model.R "RAPM rating = offense -
+defense") -- so the net prediction is \code{pred_offense - pred_defense}.
+(An earlier version summed the two, which flipped the defense half's
+contribution at eval time and tanked every candidate's next-window
+correlation -- caught in the 2026-07-22 full-panel bake-off.)
 }
 \seealso{
 Other spm panel: 
