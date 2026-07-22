@@ -30,9 +30,16 @@ override to pin it.
 ## Canonical (correct) models — the EPV/WP overhaul (2026-06-19)
 
 The “Rice over-reactivity” overhaul produced **clean** EPV+WP models.
-They are the production-correct versions but are **NOT** what the bare
-default loaders return (the local/pannadata copies are the older
-pre-overhaul ones). Pin them via overrides:
+Status of the stale-default warning as of 2026-07-21 (verified by md5
+during the explainer baseline sweep): **EPV is healed** —
+`pannadata/.../epv_model.rds` is now byte-identical to the canonical
+clean artifact, so the bare default is safe. **WP is still stale** — the
+bare default remains the pre-overhaul model (old feature set, no time
+interactions); the override below is still REQUIRED for WP. Also note:
+the WP artifact’s stored `cv_logloss` field is a misnomer — since the
+`reg:squarederror` objective switch it actually holds **CV RMSE**
+(confirmed against the training log); rename when the model is next
+retrained. Pin via overrides:
 
 ``` r
 epv_model_override <- readRDS("data-raw/cache/epv/epv_model_xg_clean_full.rds")  # 2026-06-19
