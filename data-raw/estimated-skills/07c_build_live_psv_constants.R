@@ -60,7 +60,12 @@ LIVE_SUBSET_LEAGUES <- c("WC")
 # that this list stays a subset of the scored feature set.
 LIVE_XMETRICS_FEATURES <- c(
   "npg_minus_npxg_per90",
-  "xa_per90_xmetrics", "gsaa_per90"
+  "xa_per90_xmetrics", "gsaa_per90",
+  # panna#153 round 2 (2026-07-22 lockstep re-check): xg_per90/npxg_per90
+  # newly blog-derivable (client now aggregates raw live-scored per-shot xG,
+  # not just the over-performance/xA/GSAA derivatives). Both nonzero on
+  # margin(blend_psr); npxg_per90 also nonzero on osr, xg_per90 on osr+dsr.
+  "xg_per90", "npxg_per90"
 )
 LIVE_OBSERVABLE_FEATURES <- c(
   # shooting
@@ -96,6 +101,18 @@ LIVE_OBSERVABLE_FEATURES <- c(
   "att_headed_p90", "att_one_on_one_p90", "blocked_passes_p90", "turnover_p90",
   "error_lead_to_shot_p90", "error_lead_to_goal_p90",
   "saves_ibox_p90", "saves_obox_p90", "keeper_sweeper_p90", "gk_smother_p90",
+  # panna#153 round 2 (2026-07-22 lockstep re-check): event-derived features
+  # found missing. clearance_off_line_p90 is zero on margin (blend_psr) but
+  # nonzero on osr/dsr -- same zero-on-margin pattern as blocked_passes_p90/
+  # turnover_p90 above, still shapes K_osr/K_dsr. last_man_tackle_p90 nonzero
+  # on margin + osr. penalty_conceded_p90 zero on margin, nonzero osr/dsr
+  # (same pattern). penalty_won_p90 nonzero on margin + osr + dsr. The first
+  # checker pass also flagged gsaa_per90/xa_per90_xmetrics as NOT derivable --
+  # a checker false positive (07c_check_live_features.R's add() regex missed
+  # add(pr.player_id,...)/add(gk,...) calls crediting a non-primary actor;
+  # fixed in that script, not a real gap here).
+  "clearance_off_line_p90", "last_man_tackle_p90",
+  "penalty_conceded_p90", "penalty_won_p90",
   # xMetrics (client-side aggregated from live-scored per-shot xG — see above)
   LIVE_XMETRICS_FEATURES
 )
@@ -185,10 +202,11 @@ for (lg in INLINE_LEAGUES) {
 # panna#<blog-xmetrics-live>: enrich with REAL per-match xMetrics ONCE up front
 # (not per league-season, for efficiency) so both the `ex` and `rw` sides of
 # the K computation below see real values for LIVE_XMETRICS_FEATURES (the 5
-# the blog can now derive live) -- covers the inline-fetched rows above too.
+# the blog can now derive live -- panna#153 round 2 added xg_per90/npxg_per90
+# to the original 3) -- covers the inline-fetched rows above too.
 #
-# Every OTHER column enrich_match_stats_with_xmetrics() adds (xg_per90,
-# npxg_per90, and the 7 xMetrics features still NOT live: placement_added_per90,
+# Every OTHER column enrich_match_stats_with_xmetrics() adds (the 7 xMetrics
+# features still NOT live: placement_added_per90,
 # xpass_overperformance_per90_xmetrics, aerial_woe_per90, aerial_poss_woe_per90,
 # takeon_woe_per90, tackle_poss_woe_per90, containment_woe_per90) is DROPPED
 # entirely rather than zeroed. This matters: position_role_means.csv (pm) DOES
