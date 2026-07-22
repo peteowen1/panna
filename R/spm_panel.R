@@ -859,3 +859,109 @@ predict_spm_panel_net <- function(fits, newdata, lambda = c("min", "1se")) {
   out[, pred_net := pred_offense - pred_defense]
   out
 }
+
+
+#' Fit the XGBoost half of the S6 panel SPM (player-grouped CV)
+#'
+#' The panel repeats players across vintages, so `fit_spm_xgb()`'s random
+#' `xgb.cv` folds would leak players between train/test and overfit the
+#' round count (the plan's R5 hazard). This fit builds its folds with
+#' `make_grouped_player_foldid()` (every player in exactly one fold,
+#' asserted) and mirrors `fit_spm_panel()`'s weighting/complete-case
+#' handling. Promoted to the package after three script copies
+#' (09c/13c/05_spm integration, 2026-07-22 Wave 4).
+#'
+#' @param panel Output of `build_spm_panel()` (or a `vintage_year`-subset).
+#' @param target `"offense"` or `"defense"` (fits `<target>_target`).
+#' @param predictor_cols Feature columns (default: canonical
+#'   `.spm_opta_predictor_cols(panel)`).
+#' @param weight_transform `"linear"` (S4a/S6 parity, default) or `"sqrt"`.
+#' @param nfolds,seed Grouped-CV config.
+#' @param max_depth,eta,subsample,colsample_bytree,nrounds,early_stopping_rounds
+#'   XGBoost knobs (defaults = the Wave-2-validated panel config, identical
+#'   to the 09c/13c bake-off scripts; NB production 05_spm.R's legacy
+#'   `fit_spm_xgb()` calls use eta=0.02/nrounds=1000 — different model,
+#'   different tuning).
+#' @return An `xgb.Booster` with `panna_metadata` (type "spm_panel_xgb",
+#'   target, predictor_cols, best_nrounds, cv_rmse).
+#' @family spm panel
+#' @export
+fit_spm_panel_xgb <- function(panel, target = c("offense", "defense"),
+                              predictor_cols = NULL,
+                              weight_transform = c("linear", "sqrt"),
+                              nfolds = 5, seed = 1,
+                              max_depth = 4, eta = 0.1, subsample = 0.8,
+                              colsample_bytree = 0.8, nrounds = 500,
+                              early_stopping_rounds = 20) {
+  target <- match.arg(target)
+  weight_transform <- match.arg(weight_transform)
+  if (!requireNamespace("xgboost", quietly = TRUE)) {
+    cli::cli_abort("Package {.pkg xgboost} is required.")
+  }
+  assert_prior_free_target(panel)
+  if (is.null(predictor_cols)) predictor_cols <- .spm_opta_predictor_cols(panel)
+
+  X <- as.matrix(as.data.frame(panel)[, predictor_cols, drop = FALSE])
+  y <- panel[[paste0(target, "_target")]]
+  mins <- panel$window_minutes
+  w <- switch(weight_transform, linear = mins, sqrt = sqrt(mins))
+  w <- w / mean(w, na.rm = TRUE)
+
+  ok <- stats::complete.cases(X, y)
+  X <- X[ok, , drop = FALSE]; y <- y[ok]; w <- w[ok]
+  pid <- as.character(panel$player_id[ok])
+  foldid <- make_grouped_player_foldid(pid, nfolds = nfolds, seed = seed)
+  assert_grouped_player_folds(foldid, pid)
+
+  params <- list(objective = "reg:squarederror", max_depth = max_depth,
+                 eta = eta, subsample = subsample,
+                 colsample_bytree = colsample_bytree, eval_metric = "rmse")
+  dtrain <- xgboost::xgb.DMatrix(data = X, label = y, weight = w)
+  cv <- xgboost::xgb.cv(params = params, data = dtrain, nrounds = nrounds,
+                        folds = split(seq_along(foldid), foldid),
+                        early_stopping_rounds = early_stopping_rounds,
+                        verbose = 0)
+  best_n <- cv$best_iteration
+  if (is.null(best_n) || length(best_n) == 0) {
+    best_n <- which.min(cv$evaluation_log$test_rmse_mean)
+  }
+  cv_rmse <- cv$evaluation_log$test_rmse_mean[best_n]
+  progress_msg(sprintf("fit_spm_panel_xgb (%s): best_nrounds=%d, CV RMSE=%.4f",
+                       target, best_n, cv_rmse))
+
+  model <- xgboost::xgb.train(params = params, data = dtrain, nrounds = best_n)
+  attr(model, "panna_metadata") <- list(
+    type = "spm_panel_xgb", target = target, predictor_cols = predictor_cols,
+    weight_transform = weight_transform, best_nrounds = best_n,
+    cv_rmse = cv_rmse, n_observations = nrow(X)
+  )
+  model
+}
+
+
+#' Score panel-shaped rows with a `fit_spm_panel_xgb()` model
+#'
+#' @param model A `fit_spm_panel_xgb()` result.
+#' @param newdata Panel-shaped data with the model's `predictor_cols`.
+#' @return data.table(player_id, vintage_year (if present), pred).
+#' @family spm panel
+#' @export
+predict_spm_panel_xgb <- function(model, newdata) {
+  meta <- attr(model, "panna_metadata")
+  if (is.null(meta) || !identical(meta$type, "spm_panel_xgb")) {
+    cli::cli_abort("predict_spm_panel_xgb: {.arg model} is not a fit_spm_panel_xgb() result.")
+  }
+  # 0-fill training-time columns absent from newdata — parity with
+  # predict_spm_panel(), so cross-vintage scoring against a schema-drifted
+  # source degrades the same way in both halves of the blend.
+  newdata <- data.table::as.data.table(newdata)
+  missing_cols <- setdiff(meta$predictor_cols, names(newdata))
+  for (col in missing_cols) newdata[[col]] <- 0
+  X <- as.matrix(as.data.frame(newdata)[, meta$predictor_cols, drop = FALSE])
+  out <- data.table::data.table(
+    player_id = newdata$player_id,
+    pred = as.numeric(stats::predict(model, xgboost::xgb.DMatrix(X)))
+  )
+  if ("vintage_year" %in% names(newdata)) out[, vintage_year := newdata$vintage_year]
+  out
+}

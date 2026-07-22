@@ -132,6 +132,22 @@ offense_spm_xgb <- spm_results$offense_spm_xgb
 defense_spm_glmnet <- spm_results$defense_spm_glmnet
 defense_spm_xgb <- spm_results$defense_spm_xgb
 
+# Wave 4 (D-W2, 2026-07-22): when 05_spm ran with the S6 panel override,
+# the seasonal xRAPM PRIOR comes from the career hybrid tables (S6 for
+# outfield, legacy for GK/off-panel) via build_prior_vector, replacing the
+# season-scored model prior — the same career-table shape the Wave-4 gate
+# (13c_prior_swap_gate.R) validated. The legacy models above still score
+# the seasonal_spm DISPLAY table (unchanged this cut; see panna#168).
+prior_tables <- NULL
+if (!is.null(spm_results$panel_s6)) {
+  prior_tables <- list(
+    offense = spm_results$offense_spm_ratings[, c("player_id", "offense_spm")],
+    defense = spm_results$defense_spm_ratings[, c("player_id", "defense_spm")]
+  )
+  cat(sprintf("Wave-4 S6 prior active: career hybrid tables (%d offense / %d defense rows)\n",
+              nrow(prior_tables$offense), nrow(prior_tables$defense)))
+}
+
 # Free memory
 rm(spm_results); gc(verbose = FALSE)
 
@@ -156,7 +172,8 @@ fit_season_ratings_opta <- function(splint_data, opta_stats, season,
                                      offense_spm_glmnet, offense_spm_xgb,
                                      defense_spm_glmnet, defense_spm_xgb,
                                      opta_xmetrics = NULL,
-                                     min_minutes_spm = 200, min_minutes_rapm = 200) {
+                                     min_minutes_spm = 200, min_minutes_rapm = 200,
+                                     prior_tables = NULL) {
   cat(sprintf("\n--- Season %d ---\n", season))
 
   # Filter splints to this season
@@ -367,14 +384,16 @@ fit_season_ratings_opta <- function(splint_data, opta_stats, season,
   # Build prior vectors for xRAPM
   player_mapping <- rapm_data$player_mapping
 
+  # Wave 4: career hybrid tables when supplied (S6 path); season-scored
+  # model prior otherwise (legacy path).
   offense_prior <- build_prior_vector(
-    spm_data = offense_spm_season,
+    spm_data = if (!is.null(prior_tables)) prior_tables$offense else offense_spm_season,
     spm_col = "offense_spm",
     player_mapping = player_mapping
   )
 
   defense_prior <- build_prior_vector(
-    spm_data = defense_spm_season,
+    spm_data = if (!is.null(prior_tables)) prior_tables$defense else defense_spm_season,
     spm_col = "defense_spm",
     player_mapping = player_mapping
   )
@@ -504,7 +523,8 @@ for (season in seasons) {
       defense_spm_xgb = defense_spm_xgb,
       opta_xmetrics = s_xm,
       min_minutes_spm = 200,
-      min_minutes_rapm = 200
+      min_minutes_rapm = 200,
+      prior_tables = prior_tables
     )
   }, error = function(e) {
     # panna#87: R buffers warning() into a terse "There were N warnings"

@@ -35,7 +35,9 @@ Other spm panel:
 \code{\link{build_spm_panel}()},
 \code{\link{classify_role_group}()},
 \code{\link{fit_spm_panel}()},
+\code{\link{fit_spm_panel_xgb}()},
 \code{\link{predict_spm_panel}()},
-\code{\link{predict_spm_panel_net}()}
+\code{\link{predict_spm_panel_net}()},
+\code{\link{predict_spm_panel_xgb}()}
 }
 \concept{spm panel}

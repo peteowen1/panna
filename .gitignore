@@ -49,3 +49,6 @@ _*.log
 # One-off scratch pipeline runners (session drivers, regenerable)
 data-raw/**/_run_*.R
 data-raw/explainer/*.html
+
+# SPM-redesign program: analysis RDS artifacts stay out of git (CSV reports are committed)
+data-raw/spm-redesign/*.rds
