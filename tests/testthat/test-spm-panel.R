@@ -248,6 +248,29 @@ test_that("fit_spm_panel respects defense sign constraints (tackles_p90 upper bo
 })
 
 
+test_that("predict_spm_panel_net combines as offense MINUS defense (raw internal convention)", {
+  skip_if_not_installed("glmnet")
+  # Net RAPM = offense - defense (extract_rapm_ratings, R/rapm_model.R:
+  # "RAPM rating = offense - defense"); defense_target is stored raw
+  # (positive = concedes more = bad), so the net combiner must subtract.
+  # Regression pin for the 2026-07-22 bake-off bug where a `+` here flipped
+  # the defense half's contribution for every candidate at eval time.
+  panel <- .panel_test_fit_data()
+  fits <- list(
+    offense = fit_spm_panel(panel, target = "offense", role_pooling = FALSE,
+                            sign_constraints = FALSE,
+                            predictor_cols = c("goals_p90", "touches_p90"),
+                            weight_transform = "sqrt", nfolds = 3, seed = 1),
+    defense = fit_spm_panel(panel, target = "defense", role_pooling = FALSE,
+                            sign_constraints = FALSE,
+                            predictor_cols = c("goals_p90", "touches_p90"),
+                            weight_transform = "sqrt", nfolds = 3, seed = 1)
+  )
+  out <- predict_spm_panel_net(fits, panel)
+  expect_equal(out$pred_net, out$pred_offense - out$pred_defense)
+})
+
+
 test_that("fit_spm_panel calls assert_prior_free_target and aborts on an unstamped panel", {
   skip_if_not_installed("glmnet")
   panel <- .panel_test_fit_data()

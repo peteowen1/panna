@@ -822,13 +822,19 @@ predict_spm_panel <- function(model, newdata, lambda = c("min", "1se")) {
 }
 
 
-#' Score panel rows against a fitted offense/defense pair, summing to a net
-#' prediction
+#' Score panel rows against a fitted offense/defense pair, combining to a
+#' net prediction
 #'
-#' Mirrors 05_spm.R's O/D-then-combine pattern: `fit_spm_panel()` is fit
-#' separately per target (offense/defense have different sign constraints
-#' and, for a real RAPM O/D split, different underlying signal), and the net
-#' rating candidates/eval harnesses need is their sum.
+#' `fit_spm_panel()` is fit separately per target (offense/defense have
+#' different sign constraints and, for a real RAPM O/D split, different
+#' underlying signal). The targets are stored in the RAW internal
+#' convention (`defense_target` = contribution to opponent xG, positive =
+#' concedes more = bad), and net RAPM = offense - defense
+#' (`extract_rapm_ratings()`, R/rapm_model.R "RAPM rating = offense -
+#' defense") -- so the net prediction is `pred_offense - pred_defense`.
+#' (An earlier version summed the two, which flipped the defense half's
+#' contribution at eval time and tanked every candidate's next-window
+#' correlation -- caught in the 2026-07-22 full-panel bake-off.)
 #'
 #' @param fits List with `offense` and `defense` elements, each a
 #'   `fit_spm_panel()` result (as produced by the candidate configs in
@@ -850,6 +856,6 @@ predict_spm_panel_net <- function(fits, newdata, lambda = c("min", "1se")) {
   data.table::setnames(def, "pred", "pred_defense")
   join_cols <- intersect(c("player_id", "vintage_year"), names(off))
   out <- merge(off, def[, c(join_cols, "pred_defense"), with = FALSE], by = join_cols)
-  out[, pred_net := pred_offense + pred_defense]
+  out[, pred_net := pred_offense - pred_defense]
   out
 }

@@ -190,7 +190,7 @@ eval_candidate_nextwindow <- function(panel, config, rapm_window_targets, s0_pre
     cli::cli_abort("eval_candidate_nextwindow: no vintage produced a pairs table (check eval_vintages / target coverage).")
   }
 
-  pooled_pairs <- data.table::rbindlist(pairs_list)
+  pooled_pairs <- data.table::rbindlist(pairs_list, idcol = "vintage")
   pooled_row <- pearson_row(pooled_pairs, "pooled")
   boot <- paired_bootstrap_delta(pooled_pairs$candidate, pooled_pairs$s0, pooled_pairs$target_next,
                                  n_boot = n_boot, seed = seed)
@@ -243,7 +243,12 @@ main <- function() {
     panel_vintages[panel_vintages < max(panel_vintages)]
   }
 
-  cli::cli_h1("SMOKE-SCALE NOTICE: numbers from this run mean nothing until the fresh 04_rapm.rds + regenerated window targets land (see task brief).")
+  # Input freshness (the Wave-1 smoke caveat is resolved -- targets were
+  # regenerated 2026-07-21 against the fresh step-04 -- but print mtimes so
+  # a rerun against stale caches is visible, not silent).
+  cli::cli_alert_info(sprintf(
+    "Input mtimes: panel=%s | window targets=%s",
+    format(file.mtime(panel_path)), format(file.mtime(file.path(cache_dir_04b, "rapm_window_targets.rds")))))
   cli::cli_alert_info(sprintf("Panel: %d rows, vintages [%s] | eval vintages: [%s]",
                               nrow(panel), paste(panel_vintages, collapse = ","),
                               paste(eval_vintages, collapse = ",")))
