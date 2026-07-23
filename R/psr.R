@@ -589,6 +589,27 @@
 #' @param coef_df A data.frame with columns \code{stat_name} and \code{beta}.
 #'   If an \code{sd} column is present, each skill is divided by its SD before
 #'   multiplying by beta (i.e. the coefficients are on the standardized scale).
+#'
+#'   \strong{\code{sd} is deliberately the TEAM-SUM standard deviation from
+#'   training, not a player-population sd (panna#167).} \code{07_train_psr_model.R}
+#'   regresses match outcome on team-summed skill features
+#'   (\eqn{X_{team,j} = \sum_{11 players} skill_j}), standardized by that sum's
+#'   own sd. Since \eqn{\partial X_{team,j} / \partial(\text{one player's raw
+#'   value}) = 1} exactly, the chain rule gives
+#'   \eqn{\partial(\text{predicted margin}) / \partial(\text{player's raw
+#'   value}_j) = \beta_j / sd_{team,j}} — which is exactly this function's
+#'   \code{raw\_value / sd * beta} formula. This is the mathematically correct
+#'   divisor for "marginal team-outcome effect of fielding a player with this
+#'   stat profile" (the metric's documented purpose — see DECISIONS.md
+#'   2026-07-20). Dividing by a player-population sd instead would answer a
+#'   different, undefined question with a beta that was never fit for that
+#'   scale, and was investigated and rejected as a "fix" — see panna#167 and
+#'   \code{pannaverse/docs/plans/FABLE-167-PSV-PSR-SD-INVESTIGATION.md} for the
+#'   full derivation, a face-validity audit (high-touch players like Busquets/
+#'   Kimmich/Casemiro score correctly despite their signature stats carrying
+#'   15-21x team-sum/player-sd ratios), and a collinearity diagnostic
+#'   confirming those extreme ratios track feature collinearity in the
+#'   team-sum training data, not a scale-mismatch defect.
 #' @param center Logical. If TRUE (default), subtract the league mean so
 #'   PSR = contribution above average player.
 #'
@@ -1245,6 +1266,11 @@ load_psv_match_reliability <- function() {
 #'
 #' Convenience wrapper that loads pre-trained coefficients and calls
 #' \code{\link{calculate_psv_components}}.
+#'
+#' The underlying coefficient CSVs' \code{sd} column is the TEAM-SUM training
+#' sd, not a player-population sd -- this is deliberate, not a bug. See
+#' \code{\link{calculate_psr}}'s \code{coef_df} docs for the full derivation
+#' (panna#167).
 #'
 #' @param player_match_stats Per-game player stats (one row per player per
 #'   match).
