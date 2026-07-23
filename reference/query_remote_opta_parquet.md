@@ -13,7 +13,9 @@ query_remote_opta_parquet(
   season = NULL,
   columns = NULL,
   repo = "peteowen1/pannadata",
-  tag = "opta-latest"
+  tag = "opta-latest",
+  max_retries = 2L,
+  retry_backoff_sec = 30
 )
 ```
 
