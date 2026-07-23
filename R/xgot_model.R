@@ -93,6 +93,10 @@ XGOT_ON_TARGET_TYPE_IDS <- c(15L, 16L)
 #'
 #' @param shot_events Data frame from load_opta_shot_events(); must include
 #'   goalmouth_y / goalmouth_z (run pannadata backfill_goalmouth.py first).
+#'   Should also include is_blocked (run pannadata
+#'   backfill_blocked_shots.py) to exclude blocked shots from on-target;
+#'   without it, blocked shots remain in training with placeholder
+#'   goalmouth coords (panna#176).
 #' @param min_season_end_year Earliest season end-year to keep (default 2021).
 #' @return Data frame of features + target is_goal, ready for fit_xgot_model().
 #' @keywords internal
@@ -111,8 +115,23 @@ prepare_shots_for_xgot <- function(shot_events,
     ))
   }
 
-  # On-target only.
+  # On-target only. type_id==15 ("Attempt Saved") is an umbrella Opta uses
+  # for BOTH real keeper saves and shots blocked by an outfield defender
+  # before reaching the goal frame -- a blocked shot never crosses the
+  # goal-line plane, so its goalmouth_y/z is a placeholder (typically the
+  # frame-height midpoint, ~98% of blocked shots land on goalmouth_z==19),
+  # not a real crossing point. Matches OPTA_REFERENCE.md's on-target
+  # formula: (type 15 & !q82) | type 16 (panna#176).
   on_target <- shot_events$type_id %in% XGOT_ON_TARGET_TYPE_IDS
+  if ("is_blocked" %in% names(shot_events)) {
+    is_blocked <- shot_events$is_blocked %in% TRUE
+    if (any(on_target & is_blocked)) {
+      cli::cli_alert_info("Excluding {sum(on_target & is_blocked)} blocked shot{?s} (q82) from xGOT on-target population.")
+    }
+    on_target <- on_target & !is_blocked
+  } else {
+    cli::cli_warn("shot_events lacks is_blocked -- blocked shots (Attempt Saved with q82) will remain in training with placeholder goalmouth coords; re-sync opta_shot_events.parquet for qualifier-based exclusion.")
+  }
   shot_events <- shot_events[on_target, , drop = FALSE]
 
   # Drop own goals from TRAINING: they enter as guaranteed-goal rows with
@@ -317,10 +336,13 @@ predict_xgot <- function(xgot_model, shot_features) {
 #' @param xgot_model Fitted xGOT model.
 #' @param goalmouth_lookup Data frame keyed by (\code{match_id},
 #'   \code{event_id}) with \code{type_id}, \code{goalmouth_y},
-#'   \code{goalmouth_z}, and \code{situation} for shot events - e.g. from
-#'   match_events / opta_shot_events. \code{situation} is required to avoid
-#'   train/serve skew (the model trained on real situations); without it,
-#'   set-piece/corner/free-kick shots are scored as open-play.
+#'   \code{goalmouth_z}, \code{situation}, and \code{is_blocked} for shot
+#'   events - e.g. from match_events / opta_shot_events. \code{situation} is
+#'   required to avoid train/serve skew (the model trained on real
+#'   situations); without it, set-piece/corner/free-kick shots are scored as
+#'   open-play. \code{is_blocked} excludes shots blocked by an outfield
+#'   defender (q82) from on-target, matching training (panna#176); without
+#'   it, blocked shots are scored as real on-target attempts.
 #' @return SPADL actions with an \code{xgot} column added.
 #' @keywords internal
 add_xgot_to_spadl <- function(spadl_actions, xgot_model, goalmouth_lookup) {
@@ -347,8 +369,13 @@ add_xgot_to_spadl <- function(spadl_actions, xgot_model, goalmouth_lookup) {
   if (!have_situation) {
     cli::cli_warn("goalmouth_lookup lacks `situation` - set-piece shots will be scored as open-play (train/serve skew).")
   }
+  have_is_blocked <- "is_blocked" %in% names(goalmouth_lookup)
+  if (!have_is_blocked) {
+    cli::cli_warn("goalmouth_lookup lacks `is_blocked` - blocked shots (Attempt Saved with q82) will be scored as real on-target attempts (train/serve skew, panna#176).")
+  }
   lk_cols <- c("match_id", "event_id", "type_id", "goalmouth_y", "goalmouth_z",
-               if (have_situation) "situation")
+               if (have_situation) "situation",
+               if (have_is_blocked) "is_blocked")
   lk <- goalmouth_lookup[, lk_cols, drop = FALSE]
   # De-dup on the join key: a duplicated (match_id, event_id) would let merge()
   # inflate rows and misalign coords to the wrong shot (silent wrong xGOT).
@@ -366,6 +393,12 @@ add_xgot_to_spadl <- function(spadl_actions, xgot_model, goalmouth_lookup) {
   # FALSE, which would mislabel it off-target (xgot=0) instead of unknown (NA).
   on_target <- ifelse(is.na(joined$type_id), NA,
                       joined$type_id %in% XGOT_ON_TARGET_TYPE_IDS)
+  # Blocked shots (q82) never crossed the goal-line plane -- exclude them the
+  # same way training does (panna#176). Matches OPTA_REFERENCE.md's on-target
+  # formula: (type 15 & !q82) | type 16.
+  if (have_is_blocked) {
+    on_target <- on_target & !(joined$is_blocked %in% TRUE)
+  }
   has_gm <- !is.na(joined$goalmouth_y) & !is.na(joined$goalmouth_z)
   predable <- on_target & has_gm
   predable[is.na(predable)] <- FALSE
@@ -411,7 +444,7 @@ add_xgot_to_spadl <- function(spadl_actions, xgot_model, goalmouth_lookup) {
   xgot_vec[is_og] <- NA_real_
 
   spadl_actions$xgot[shot_idx] <- xgot_vec
-  spadl_actions$shot_on_target[shot_idx] <- on_target  # TRUE/FALSE/NA per raw type_id
+  spadl_actions$shot_on_target[shot_idx] <- on_target  # TRUE/FALSE/NA per type_id, blocked shots excluded (panna#176)
   n_pred <- sum(predable)
   n_na_ot <- sum(on_target & !has_gm, na.rm = TRUE)
   cli::cli_alert_success(

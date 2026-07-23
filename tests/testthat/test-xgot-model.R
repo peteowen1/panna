@@ -52,6 +52,23 @@ test_that("prepare_shots_for_xgot drops own goals (type-16 goal at own end) from
   expect_true(all(c("gm_y", "dist_to_near_post", "is_goal") %in% names(feat)))
 })
 
+test_that("prepare_shots_for_xgot excludes blocked shots (q82) from training (#176)", {
+  shots <- data.frame(
+    match_id = "m", event_id = 1:3, player_id = "p", player_name = "P",
+    x = 80, y = 50,
+    type_id = c(15L, 15L, 16L),        # saved, BLOCKED (saved bucket), goal
+    is_goal = c(0L, 0L, 1L),
+    season  = "2024-2025",
+    goalmouth_y = c(49, 50, 51), goalmouth_z = c(12, 19, 3),  # row 2 = placeholder z
+    is_blocked = c(FALSE, TRUE, FALSE),
+    body_part = "RightFoot", situation = "OpenPlay", big_chance = 0L,
+    stringsAsFactors = FALSE
+  )
+  feat <- suppressMessages(suppressWarnings(prepare_shots_for_xgot(shots)))
+  expect_equal(nrow(feat), 2)          # blocked shot excluded
+  expect_false(2L %in% feat$event_id)
+})
+
 test_that("aggregate_player_xmetrics emits a consistent finishing decomposition", {
   spadl <- data.frame(
     match_id = "m1", player_id = "A", player_name = "Pl A", team_id = "T",
@@ -148,7 +165,7 @@ test_that("add_xgot_to_spadl prefers the is_own_goal qualifier over position (#1
   )
   lookup <- data.frame(
     match_id = "m", event_id = 1:3, type_id = 16L,   # all goals
-    goalmouth_y = 50, goalmouth_z = 5,
+    goalmouth_y = 50, goalmouth_z = 5, is_blocked = FALSE,
     situation = "OpenPlay", stringsAsFactors = FALSE
   )
   # Qualifier branch must not fire the missing-column fallback warning.
@@ -156,6 +173,27 @@ test_that("add_xgot_to_spadl prefers the is_own_goal qualifier over position (#1
   expect_equal(r$xgot[1], 0.5)     # x<50 but NOT an own goal -> scored, not NA
   expect_equal(r$xgot[2], 0.5)
   expect_true(is.na(r$xgot[3]))    # own goal past halfway -> NA via qualifier
+})
+
+test_that("add_xgot_to_spadl excludes blocked shots (q82) from on-target (#176)", {
+  testthat::local_mocked_bindings(
+    predict_xgot = function(xgot_model, shot_features) rep(0.5, nrow(shot_features))
+  )
+  spadl <- data.frame(
+    match_id = "m", original_event_id = 1:2, action_type = "shot",
+    start_x = 85, start_y = 50, bodypart = "foot_right",
+    stringsAsFactors = FALSE
+  )
+  lookup <- data.frame(
+    match_id = "m", event_id = 1:2, type_id = 15L,      # both "Attempt Saved"
+    goalmouth_y = c(49, 50), goalmouth_z = c(12, 19),   # 2 = placeholder z
+    is_blocked = c(FALSE, TRUE),
+    situation = "OpenPlay", stringsAsFactors = FALSE
+  )
+  r <- suppressWarnings(suppressMessages(add_xgot_to_spadl(spadl, list(), lookup)))
+  expect_equal(r$xgot[1], 0.5)          # real save -> scored
+  expect_equal(r$xgot[2], 0)            # blocked -> off-target, cannot score
+  expect_equal(r$shot_on_target, c(TRUE, FALSE))
 })
 
 test_that("add_xgot_to_spadl falls back positionally for NA is_own_goal rows", {
@@ -171,7 +209,7 @@ test_that("add_xgot_to_spadl falls back positionally for NA is_own_goal rows", {
   )
   lookup <- data.frame(
     match_id = "m", event_id = 1:3, type_id = 16L,
-    goalmouth_y = 50, goalmouth_z = 5,
+    goalmouth_y = 50, goalmouth_z = 5, is_blocked = FALSE,
     situation = "OpenPlay", stringsAsFactors = FALSE
   )
   expect_warning(
