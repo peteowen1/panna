@@ -127,6 +127,13 @@ today). See <code><a href="calculate_psv.html">calculate_psv</a></code> for the 
     <p>A data.table with <code>psv</code>, <code>osv</code>, <code>dsv</code> columns.</p>
     </div>
     <div class="section level2">
+    <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
+    <p>The underlying coefficient CSVs' <code>sd</code> column is the TEAM-SUM training
+sd, not a player-population sd – this is deliberate, not a bug. See
+<code><a href="calculate_psr.html">calculate_psr</a></code>'s <code>coef_df</code> docs for the full derivation
+(panna#167).</p>
+    </div>
+    <div class="section level2">
     <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a></h2>
     <div class="dont-index"><p>Other psr:
 <code><a href="PSV_RELIABILITY_GD_SCALE.html">PSV_RELIABILITY_GD_SCALE</a></code>,

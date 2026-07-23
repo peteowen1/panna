@@ -83,6 +83,13 @@ compute_player_psv(
 
 A data.table with `psv`, `osv`, `dsv` columns.
 
+## Details
+
+The underlying coefficient CSVs' `sd` column is the TEAM-SUM training
+sd, not a player-population sd – this is deliberate, not a bug. See
+[`calculate_psr`](https://peteowen1.github.io/panna/reference/calculate_psr.md)'s
+`coef_df` docs for the full derivation (panna#167).
+
 ## See also
 
 Other psr:
