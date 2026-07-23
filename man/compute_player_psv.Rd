@@ -62,6 +62,12 @@ A data.table with \code{psv}, \code{osv}, \code{dsv} columns.
 Convenience wrapper that loads pre-trained coefficients and calls
 \code{\link{calculate_psv_components}}.
 }
+\details{
+The underlying coefficient CSVs' \code{sd} column is the TEAM-SUM training
+sd, not a player-population sd -- this is deliberate, not a bug. See
+\code{\link{calculate_psr}}'s \code{coef_df} docs for the full derivation
+(panna#167).
+}
 \seealso{
 Other psr: 
 \code{\link{PSV_RELIABILITY_GD_SCALE}},
