@@ -315,7 +315,12 @@ if (n_sey >= 3) {
   played$split[seq(train_end + 1, val_end)] <- "val"
 }
 
-fixtures$split <- "fixture"
+# rep(), not a bare scalar assign -- a 0-row `fixtures` (e.g. an off-season
+# gap with no scheduled matches yet) recycles fine here but errors on
+# `fixtures$split <- "fixture"` ("replacement has 1 row, data has 0"), and
+# omitting the column entirely on the 0-row branch would break the rbind()
+# below (column mismatch).
+fixtures$split <- rep("fixture", nrow(fixtures))
 
 match_dataset <- rbind(played, fixtures)
 match_dataset <- match_dataset[order(match_dataset$match_date), ]

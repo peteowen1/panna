@@ -192,6 +192,29 @@ jobs:
             echo "Pipeline will run but may produce degraded results."
           fi
 
+      - name: Download SPM panel (Wave-4 S6 prior)
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+        run: |
+          # Step 05's S6 override (spm_use_panel, default TRUE) HARD-aborts
+          # without cache-opta/spm_panel.rds, and the panel cannot be built
+          # on this runner (needs the skills pipeline's 01_match_stats.rds).
+          # Download it unconditionally and fail FAST here rather than 40
+          # minutes into step 5. To refresh the panel: run
+          # data-raw/spm-redesign/04c_build_spm_panel.R locally after a
+          # skills-pipeline run, then
+          #   gh release upload predictions-cache data-raw/cache-opta/spm_panel.rds \
+          #     --repo peteowen1/pannadata --clobber
+          CACHE_DIR="data-raw/cache-opta"
+          mkdir -p "$CACHE_DIR"
+          if gh release download predictions-cache --repo peteowen1/pannadata \
+               --pattern "spm_panel.rds" --dir "$CACHE_DIR"; then
+            echo "Downloaded spm_panel.rds ($(stat -c %s "$CACHE_DIR/spm_panel.rds") bytes)"
+          else
+            echo "::error::spm_panel.rds not on predictions-cache — step 05's S6 prior would abort. Build it locally (04c) and upload, or dispatch with the legacy path by setting spm_use_panel FALSE in the driver."
+            exit 1
+          fi
+
       - name: Download intermediate caches (resume mode)
         if: inputs.start_step != '' && inputs.start_step != '1'
         env:
@@ -392,6 +415,7 @@ jobs:
                    06_xrapm.rds \
                    07_seasonal_ratings.rds 07_seasonal_ratings.rds.meta.json \
                    08_panna.rds \
+                   spm_panel.rds \
                    team_season_strength.parquet; do
             # team_season_strength.parquet is produced by sketch_team_strength.R
             # (not a numbered RAPM step), so it's only present on LOCAL runs where

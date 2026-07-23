@@ -38,7 +38,19 @@ fn_end <- grep("function eventToOpta", js)
 if (length(fn_start) != 1L || length(fn_end) != 1L || fn_end <= fn_start)
   stop("could not bound eventFeaturesFromRows in stat-value.js")
 body <- js[fn_start:(fn_end - 1L)]
-add_lines <- body[grepl("add\\(pid", body)]
+# panna#153 round 2: the literal "add(pid" filter missed calls that credit a
+# DIFFERENT player than the primary event actor -- add(pr.player_id, "xa", ...)
+# for the assist-passer, add(gk, "gsaa", ...) for the goalkeeper -- and calls
+# where the feature name isn't the literal 2nd token, e.g.
+# add(pid, inBox(...) ? "attemptsIbox" : "attemptsObox"). Broadened to any
+# line containing BOTH "add(" and a quote char; unrelated single-arg
+# Set/Array .add() calls elsewhere in the file (known.add(c),
+# _consumedFouls.add(group[gi]), avail.add(c)) carry no quoted string so
+# they're still excluded. Matches the file's own documented convention (see
+# getUnavailableFeatures' "MAINTENANCE CONTRACT" comment): every add() call
+# lives on its own line, and any quoted string on an add()-containing line is
+# a genuine derived feature name.
+add_lines <- body[grepl("add\\(", body) & grepl('"', body)]
 derived <- unique(unlist(regmatches(add_lines, gregexpr('"([A-Za-z0-9]+)"', add_lines))))
 derived <- gsub('"', "", derived)
 if (length(derived) < 20L)

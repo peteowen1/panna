@@ -35,6 +35,7 @@ this field existed).
 }
 \seealso{
 Other rapm: 
+\code{\link{assert_prior_free_target}()},
 \code{\link{create_all_splints}()},
 \code{\link{create_rapm_design_matrix}()},
 \code{\link{extract_period_end_times}()},

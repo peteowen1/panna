@@ -544,6 +544,128 @@ print(
   digits = 3
 )
 
+# 12b. S6 panel-SPM override (Wave 4, D-W2 2026-07-22) ----
+#
+# Pete's D-W2 promotion: the panel SPM (S4a glmnet + player-grouped-CV XGB,
+# per-target 50/50 blend, windowed prior-free target — see
+# pannaverse/docs/reviews/SPM-WAVE2-BAKEOFF-2026-07-22.md) replaces the
+# legacy career tables as the PRIOR source. Hybrid by design: outfield
+# players get S6 values (latest-vintage panel predictions); GK + players
+# absent from the panel keep the legacy values (#159 owns the GK design;
+# the panel is outfield-only). Legacy tables are preserved under *_legacy
+# keys; the seasonal-SPM DISPLAY path is unchanged this cut (follow-up
+# with panna#168's display calibration).
+#
+# spm_use_panel = FALSE skips the override (legacy behavior, loud notice).
+# Missing spm_panel.rds with the flag on is a HARD abort — no silent
+# fallback (the panel is built by data-raw/spm-redesign/04c from the
+# skills pipeline's 01_match_stats; rebuild it rather than shipping a
+# silently-legacy prior).
+#
+# BLAST RADIUS (deliberate, D-W2 "promote it"): every 05_spm.rds table
+# reader inherits the hybrid values — 06's career xRAPM AND therefore 08's
+# published panna composite change, not just the seasonal loop. The Wave-4
+# gate (13c) validated the per-season posterior; the career fit shares the
+# mechanism. Post-regen face-validity on 08's top list is the remaining
+# check. Also NB: the legacy sub-model columns (offense_spm_glmnet/xgb etc.
+# inside the *_ratings tables, where present) are NOT rescored — for
+# S6-covered players the blend invariant (0.5·glmnet+0.5·xgb == value) no
+# longer holds against those columns; consumers must read the value
+# columns, never re-derive them.
+
+spm_use_panel <- if (exists("spm_use_panel")) spm_use_panel else TRUE
+
+panel_s6 <- NULL
+offense_spm_ratings_legacy <- offense_spm_ratings
+defense_spm_ratings_legacy <- defense_spm_ratings
+spm_ratings_legacy <- spm_ratings
+
+if (isTRUE(spm_use_panel)) {
+  cat("\n=== S6 panel-SPM override (Wave 4) ===\n")
+  panel_path <- file.path(cache_dir, "spm_panel.rds")
+  if (!file.exists(panel_path)) {
+    cli::cli_abort(c(
+      "spm_use_panel = TRUE but {.file {panel_path}} is missing.",
+      "i" = "Build it with data-raw/spm-redesign/04c_build_spm_panel.R (needs the skills pipeline's 01_match_stats.rds), or set spm_use_panel <- FALSE to run legacy-only."
+    ))
+  }
+  panel_age_days <- as.numeric(difftime(Sys.time(), file.mtime(panel_path), units = "days"))
+  if (panel_age_days > 60) {
+    warning(sprintf("spm_panel.rds is %.0f days old — the S6 prior is a slow-moving career-window trait, but consider a rebuild (04c) after the next skills-pipeline run.", panel_age_days))
+  }
+
+  panel_bundle <- readRDS(panel_path)
+  s6_panel <- panel_bundle$panel
+  attr(s6_panel, "target_provenance") <- panel_bundle$target_provenance
+
+  # S4a config verbatim (05c_candidates.R): role pooling + sign constraints
+  # + LINEAR minutes weights (best glmnet candidate on every vintage).
+  s6_off_glmnet <- fit_spm_panel(s6_panel, target = "offense", role_pooling = TRUE,
+                                 sign_constraints = TRUE, weight_transform = "linear",
+                                 alpha = 0.5, deviation_penalty_mult = 5,
+                                 nfolds = 5, seed = 1)
+  s6_def_glmnet <- fit_spm_panel(s6_panel, target = "defense", role_pooling = TRUE,
+                                 sign_constraints = TRUE, weight_transform = "linear",
+                                 alpha = 0.5, deviation_penalty_mult = 5,
+                                 nfolds = 5, seed = 1)
+  s6_off_xgb <- fit_spm_panel_xgb(s6_panel, target = "offense", seed = 1)
+  s6_def_xgb <- fit_spm_panel_xgb(s6_panel, target = "defense", seed = 1)
+
+  s6_latest <- s6_panel[s6_panel$vintage_year == max(s6_panel$vintage_year), ]
+  s6_go <- predict_spm_panel(s6_off_glmnet, s6_latest)
+  s6_gd <- predict_spm_panel(s6_def_glmnet, s6_latest)
+  s6_xo <- predict_spm_panel_xgb(s6_off_xgb, s6_latest)
+  s6_xd <- predict_spm_panel_xgb(s6_def_xgb, s6_latest)
+  stopifnot(identical(s6_go$player_id, s6_xo$player_id),
+            identical(s6_gd$player_id, s6_xd$player_id))
+
+  s6_table <- data.frame(
+    player_id = s6_go$player_id,
+    offense_spm_s6 = 0.5 * s6_go$pred + 0.5 * s6_xo$pred,
+    defense_spm_s6 = 0.5 * s6_gd$pred + 0.5 * s6_xd$pred
+  )
+
+  # Hybrid tables: S6 where available, legacy elsewhere. Net = off − def
+  # (raw internal convention; see predict_spm_panel_net()).
+  offense_spm_ratings <- offense_spm_ratings %>%
+    left_join(s6_table %>% select(player_id, offense_spm_s6), by = "player_id") %>%
+    mutate(offense_spm = ifelse(!is.na(offense_spm_s6), offense_spm_s6, offense_spm)) %>%
+    select(-offense_spm_s6)
+  defense_spm_ratings <- defense_spm_ratings %>%
+    left_join(s6_table %>% select(player_id, defense_spm_s6), by = "player_id") %>%
+    mutate(defense_spm = ifelse(!is.na(defense_spm_s6), defense_spm_s6, defense_spm)) %>%
+    select(-defense_spm_s6)
+  spm_ratings <- spm_ratings %>%
+    left_join(s6_table, by = "player_id") %>%
+    mutate(spm = ifelse(!is.na(offense_spm_s6) & !is.na(defense_spm_s6),
+                        offense_spm_s6 - defense_spm_s6, spm)) %>%
+    select(-offense_spm_s6, -defense_spm_s6)
+
+  cat(sprintf("S6 override: %d players on S6 values, %d on legacy fallback (GK + off-panel)\n",
+              nrow(s6_table), nrow(offense_spm_ratings) - sum(offense_spm_ratings$player_id %in% s6_table$player_id)))
+
+  # Rebuild the combined table from the hybrid pieces so combined_ratings
+  # and the O/D tables can never disagree.
+  combined_spm <- spm_ratings %>%
+    select(player_id, player_name, total_minutes, spm) %>%
+    left_join(offense_spm_ratings %>% select(player_id, offense_spm), by = "player_id") %>%
+    left_join(defense_spm_ratings %>% select(player_id, defense_spm), by = "player_id") %>%
+    left_join(rapm_ratings %>% select(player_id, rapm, offense, defense), by = "player_id") %>%
+    arrange(desc(spm))
+
+  panel_s6 <- list(
+    offense_glmnet = s6_off_glmnet, defense_glmnet = s6_def_glmnet,
+    offense_xgb = s6_off_xgb, defense_xgb = s6_def_xgb,
+    latest_vintage = max(s6_panel$vintage_year),
+    n_override = nrow(s6_table),
+    panel_mtime = file.mtime(panel_path),
+    config = "S4a + grouped-CV xgb, 50/50 per-target blend (D-W2)"
+  )
+  rm(s6_panel, panel_bundle, s6_latest, s6_go, s6_gd, s6_xo, s6_xd); invisible(gc(verbose = FALSE))
+} else {
+  cat("\nNOTE: spm_use_panel = FALSE — legacy SPM tables serve as the prior (S6 override skipped).\n")
+}
+
 # 13. Save Results ----
 
 cat("\n=== Saving Results ===\n")
@@ -566,7 +688,13 @@ spm_results <- list(
     cv_rmse_glmnet = cv_rmse_glmnet,
     cv_rmse_xgb = cv_rmse_xgb,
     blend_weight = 0.5
-  )
+  ),
+  # Wave 4 (D-W2): S6 panel models + provenance; NULL when spm_use_panel
+  # was FALSE. Legacy tables preserved for debuggability/rollback.
+  panel_s6 = panel_s6,
+  spm_ratings_legacy = spm_ratings_legacy,
+  offense_spm_ratings_legacy = offense_spm_ratings_legacy,
+  defense_spm_ratings_legacy = defense_spm_ratings_legacy
 )
 
 saveRDS(spm_results, file.path(cache_dir, "05_spm.rds"))

@@ -53,6 +53,7 @@ Creates the design matrix with 2 rows per splint (one per team perspective):
 }
 \seealso{
 Other rapm: 
+\code{\link{assert_prior_free_target}()},
 \code{\link{create_all_splints}()},
 \code{\link{extract_period_end_times}()},
 \code{\link{extract_player_timing_from_events}()},

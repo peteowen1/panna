@@ -21,13 +21,18 @@
 
 
 #' Row-subset a prepared pooled RAPM design to seasons strictly before a
-#' cutoff year, dropping resulting all-zero player columns
+#' cutoff year (optionally also at-or-after a minimum year), dropping
+#' resulting all-zero player columns
 #'
 #' Mirrors FABLE-ASOF-EXPERIMENTS.md sec 5.2 Step A, generalized from
 #' "exclude season S" (LOSO) to "keep seasons < cutoff_year" (expanding
-#' window). Season-only players and season-only league-season dummy columns
-#' become all-zero once their rows are dropped; both are removed here (kept
-#' off/def-symmetric per player) so the resulting design has no dead columns.
+#' window). BOX-SCORE-VALUE-SPM-REDESIGN.md sec 2.1 further generalizes this
+#' to a bounded window (`min_year <= season_end_year < cutoff_year`) for the
+#' windowed prior-free RAPM target -- `min_year = NULL` (default) preserves
+#' the original expanding-window behaviour unchanged. Season-only players and
+#' season-only league-season dummy columns become all-zero once their rows
+#' are dropped; both are removed here (kept off/def-symmetric per player) so
+#' the resulting design has no dead columns.
 #'
 #' @param rapm_data The `rapm_data` list as produced by `prepare_rapm_data()`
 #'   / saved in `04_rapm.rds$rapm_data` (needs `X_full`, `y`, `weights`,
@@ -36,13 +41,21 @@
 #'   `season_end_year` (e.g. `03_splints.rds$splints[, c("splint_id",
 #'   "season_end_year")]`).
 #' @param cutoff_year Integer; rows from seasons `< cutoff_year` are kept.
+#' @param min_year Integer or `NULL` (default). When supplied, rows from
+#'   seasons `< min_year` are additionally dropped, bounding the window to
+#'   `min_year <= season_end_year < cutoff_year`. `NULL` keeps the original
+#'   "seasons < cutoff_year" (expanding-window) behaviour.
 #' @return A `rapm_data`-shaped list (row- and column-subset), suitable for
 #'   `fit_rapm()`.
 #' @keywords internal
-.subset_rapm_data_expanding <- function(rapm_data, splint_season_map, cutoff_year) {
+.subset_rapm_data_expanding <- function(rapm_data, splint_season_map, cutoff_year,
+                                        min_year = NULL) {
   ssm <- data.table::as.data.table(splint_season_map)
   row_season <- ssm$season_end_year[match(rapm_data$row_data$splint_id, ssm$splint_id)]
   keep_rows <- !is.na(row_season) & row_season < cutoff_year
+  if (!is.null(min_year)) {
+    keep_rows <- keep_rows & row_season >= min_year
+  }
 
   X <- rapm_data$X_full[keep_rows, , drop = FALSE]
   X <- methods::as(X, "CsparseMatrix")
@@ -91,6 +104,12 @@
 #' @param splint_season_map data.frame/data.table with `splint_id`,
 #'   `season_end_year`.
 #' @param cutoff_year Integer; only seasons `< cutoff_year` are used to train.
+#' @param min_year Integer or `NULL` (default). When supplied, bounds the
+#'   training window to `min_year <= season_end_year < cutoff_year` instead
+#'   of the full expanding history (BOX-SCORE-VALUE-SPM-REDESIGN.md sec 2.1's
+#'   windowed prior-free RAPM target, e.g. a 5-season window `min_year =
+#'   cutoff_year - 5`). Passed straight through to
+#'   `.subset_rapm_data_expanding()`.
 #' @param lambda_formula `function(n_obs)` giving the mini-CV grid center
 #'   (default the panna#87 sample-size formula, `16.67 * n_obs^-0.58`).
 #' @param nfolds CV folds (default 5, matching the production pooled fit).
@@ -98,13 +117,17 @@
 #'   reproducible per-cutoff-year fits. `NULL` = no explicit seed.
 #'
 #' @return List: `ratings` (data.frame player_id/rapm/offense/defense),
-#'   `lambda_min`, `n_obs`, `cutoff_year`. `NULL` (with a warning) if fewer
-#'   than 1000 valid observations remain (too few prior seasons).
+#'   `lambda_min`, `n_obs`, `cutoff_year`, `min_year` (the argument as
+#'   supplied, `NULL` for the unbounded expanding-window default). `NULL`
+#'   (with a warning) if fewer than 1000 valid observations remain (too few
+#'   prior seasons, or an empty/too-narrow window).
 #' @keywords internal
 fit_expanding_pooled_rapm <- function(rapm_data, splint_season_map, cutoff_year,
+                                      min_year = NULL,
                                       lambda_formula = function(n) 16.67 * n^(-0.58),
                                       nfolds = 5, seed = NULL) {
-  rapm_sub <- .subset_rapm_data_expanding(rapm_data, splint_season_map, cutoff_year)
+  rapm_sub <- .subset_rapm_data_expanding(rapm_data, splint_season_map, cutoff_year,
+                                          min_year = min_year)
   n_obs <- sum(!is.na(rapm_sub$y) & is.finite(rapm_sub$y))
   if (n_obs < 1000) {
     cli::cli_warn(paste0(
@@ -124,7 +147,8 @@ fit_expanding_pooled_rapm <- function(rapm_data, splint_season_map, cutoff_year,
     ratings = ratings[, c("player_id", "rapm", "offense", "defense")],
     lambda_min = model$lambda.min,
     n_obs = n_obs,
-    cutoff_year = cutoff_year
+    cutoff_year = cutoff_year,
+    min_year = min_year
   )
 }
 
@@ -245,4 +269,55 @@ fit_expanding_skill_spm <- function(skill_features, pooled_rapm_ratings, cutoff_
 #' @keywords internal
 .season_end_year_for_date <- function(date) {
   extract_season_end_year(extract_season_from_date(date))
+}
+
+
+#' Abort unless a target artifact is provenance-stamped prior-free RAPM
+#'
+#' Static circularity guard (BOX-SCORE-VALUE-SPM-REDESIGN.md sec 2.4.1):
+#' `fit_rapm_with_prior()` (`R/rapm_model.R:389`) shrinks toward an SPM
+#' prior, so xRAPM and career panna embed box-stat information -- regressing
+#' box features onto them (directly or via any downstream SPM panel target)
+#' would close the SPM -> prior -> posterior -> "prior-free" target loop.
+#' Any box-score value training entry point (e.g. the planned
+#' `fit_spm_panel()`) must call this on its target argument before fitting.
+#'
+#' Two accepted shapes: (1) a `04b_rapm_window_targets.R` vintage element (or
+#' the top-level list), stamped `target_provenance = "prior_free_rapm_window"`
+#' by that script and nowhere else; (2) a raw `fit_rapm()` model object
+#' (legacy path) whose `panna_metadata$type == "rapm"` with no `used_prior`
+#' field -- `fit_rapm_with_prior()` always sets `used_prior = TRUE`,
+#' `fit_rapm()` never sets it, so its absence is the discriminator. Anything
+#' else (including `type == "xrapm"`/`"xrapm_net"`, or no provenance at all)
+#' aborts.
+#'
+#' @param target The candidate target artifact -- a `04b` vintage list, the
+#'   top-level `04b` list, or a raw `fit_rapm()`/`fit_rapm_with_prior()`
+#'   model object.
+#' @return Invisibly `TRUE` if the target is accepted.
+#' @family rapm
+#' @export
+assert_prior_free_target <- function(target) {
+  provenance <- target$target_provenance %||% attr(target, "target_provenance")
+  provenance_ok <- isTRUE(provenance == "prior_free_rapm_window")
+
+  meta <- target$panna_metadata
+  legacy_ok <- !is.null(meta) && identical(meta$type, "rapm") && is.null(meta$used_prior)
+
+  if (!provenance_ok && !legacy_ok) {
+    got_provenance <- provenance %||% NA_character_
+    got_type <- if (!is.null(meta)) meta$type %||% NA_character_ else NA_character_
+    cli::cli_abort(c(
+      "assert_prior_free_target: target artifact is not a provenance-stamped prior-free RAPM.",
+      "x" = "Got target_provenance = {.val {got_provenance}}, panna_metadata$type = {.val {got_type}}.",
+      "i" = paste0(
+        "Box-score value targets must be fit_rapm() output stamped ",
+        "target_provenance = \"prior_free_rapm_window\" (04b_rapm_window_targets.R) ",
+        "-- xRAPM/career panna embed the SPM prior and are banned as targets. ",
+        "See BOX-SCORE-VALUE-SPM-REDESIGN.md sec 2.4."
+      )
+    ))
+  }
+
+  invisible(TRUE)
 }

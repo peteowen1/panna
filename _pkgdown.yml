@@ -61,6 +61,11 @@ reference:
   contents:
   - has_concept("spm opta")
 
+- title: SPM Panel (box-score-value redesign)
+  desc: Panel-training machinery for the windowed, role-pooled SPM redesign (Wave 2)
+  contents:
+  - has_concept("spm panel")
+
 - title: Panna Ratings
   desc: Combined RAPM + SPM ratings
   contents:
