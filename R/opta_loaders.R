@@ -1667,7 +1667,9 @@ list_opta_leagues <- function(type = NULL, tier = NULL,
 query_remote_opta_parquet <- function(table_type, opta_league, season = NULL,
                                        columns = NULL,
                                        repo = "peteowen1/pannadata",
-                                       tag = "opta-latest") {
+                                       tag = "opta-latest",
+                                       max_retries = 2L,
+                                       retry_backoff_sec = 30) {
 
   # match_events are stored as per-league files (too large for single consolidated file)
   if (table_type == "match_events") {
@@ -1675,6 +1677,34 @@ query_remote_opta_parquet <- function(table_type, opta_league, season = NULL,
                                            repo = repo, tag = tag))
   }
 
+  # panna#157: a same-second daily dispatch can have another producer
+  # mid-overwrite (plain piggyback delete-then-upload, non-atomic) on this
+  # exact asset while we're downloading/querying it -- the corrupt-file
+  # detection below already exists, but previously just aborted instead of
+  # retrying. Bounded retry turns a same-run transient race into a ~30-90s
+  # delay instead of a failed/degraded pipeline step; a non-corruption error
+  # (missing file, bad SQL, network outage) still fails immediately.
+  attempt <- 0L
+  repeat {
+    attempt <- attempt + 1L
+    out <- tryCatch(
+      .query_remote_opta_parquet_once(table_type, opta_league, season, columns, repo, tag),
+      error = function(e) e
+    )
+    if (!inherits(out, "error")) return(out)
+    is_corruption <- grepl("corrupt|magic bytes", conditionMessage(out), ignore.case = TRUE)
+    if (!is_corruption || attempt > max_retries) stop(out)
+    cli::cli_alert_warning(paste0(
+      "Retry {attempt}/{max_retries} for {table_type} after a corrupt/incomplete read ",
+      "(likely a concurrent overwrite on {repo}@{tag}) -- waiting {retry_backoff_sec}s."
+    ))
+    Sys.sleep(retry_backoff_sec)
+  }
+}
+
+#' @keywords internal
+.query_remote_opta_parquet_once <- function(table_type, opta_league, season,
+                                             columns, repo, tag) {
   if (!requireNamespace("piggyback", quietly = TRUE)) {
     cli::cli_abort("Package 'piggyback' is required for remote Opta loading.")
   }
