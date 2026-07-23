@@ -1,16 +1,24 @@
-# Row-subset a prepared pooled RAPM design to seasons strictly before a cutoff year, dropping resulting all-zero player columns
+# Row-subset a prepared pooled RAPM design to seasons strictly before a cutoff year (optionally also at-or-after a minimum year), dropping resulting all-zero player columns
 
 Mirrors FABLE-ASOF-EXPERIMENTS.md sec 5.2 Step A, generalized from
 "exclude season S" (LOSO) to "keep seasons \< cutoff_year" (expanding
-window). Season-only players and season-only league-season dummy columns
-become all-zero once their rows are dropped; both are removed here (kept
-off/def-symmetric per player) so the resulting design has no dead
-columns.
+window). BOX-SCORE-VALUE-SPM-REDESIGN.md sec 2.1 further generalizes
+this to a bounded window (`min_year <= season_end_year < cutoff_year`)
+for the windowed prior-free RAPM target – `min_year = NULL` (default)
+preserves the original expanding-window behaviour unchanged. Season-only
+players and season-only league-season dummy columns become all-zero once
+their rows are dropped; both are removed here (kept off/def-symmetric
+per player) so the resulting design has no dead columns.
 
 ## Usage
 
 ``` r
-.subset_rapm_data_expanding(rapm_data, splint_season_map, cutoff_year)
+.subset_rapm_data_expanding(
+  rapm_data,
+  splint_season_map,
+  cutoff_year,
+  min_year = NULL
+)
 ```
 
 ## Arguments
@@ -31,6 +39,13 @@ columns.
 - cutoff_year:
 
   Integer; rows from seasons `< cutoff_year` are kept.
+
+- min_year:
+
+  Integer or `NULL` (default). When supplied, rows from seasons
+  `< min_year` are additionally dropped, bounding the window to
+  `min_year <= season_end_year < cutoff_year`. `NULL` keeps the original
+  "seasons \< cutoff_year" (expanding-window) behaviour.
 
 ## Value
 

@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.6</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.8</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -222,6 +222,13 @@
 
       <dl><dt>
 
+          <code><a href="assert_prior_free_target.html">assert_prior_free_target()</a></code>
+
+        </dt>
+        <dd>Abort unless a target artifact is provenance-stamped prior-free RAPM</dd>
+
+        <dt>
+
           <code><a href="create_all_splints.html">create_all_splints()</a></code>
 
         </dt>
@@ -328,6 +335,85 @@
 
         </dt>
         <dd>Fit SPM model using Opta features</dd>
+      </dl></div><div class="section level2">
+      <h2 id="spm-panel-box-score-value-redesign-">SPM Panel (box-score-value redesign)<a class="anchor" aria-label="anchor" href="#spm-panel-box-score-value-redesign-"></a></h2>
+
+      <div class="section-desc"><p>Panel-training machinery for the windowed, role-pooled SPM redesign (Wave 2)</p></div>
+
+      <dl></dl></div><div class="section level2">
+
+
+
+
+      <dl><dt>
+
+          <code><a href="assert_asof_panel_window.html">assert_asof_panel_window()</a></code>
+
+        </dt>
+        <dd>Assert that an as-of training panel for eval vintage <code>Y</code> contains no rows from a LATER vintage</dd>
+
+        <dt>
+
+          <code><a href="assert_grouped_player_folds.html">assert_grouped_player_folds()</a></code>
+
+        </dt>
+        <dd>Assert that no player straddles more than one CV fold</dd>
+
+        <dt>
+
+          <code><a href="build_spm_panel.html">build_spm_panel()</a></code>
+
+        </dt>
+        <dd>Build the SPM training panel: one row per (player, vintage year)</dd>
+
+        <dt>
+
+          <code><a href="classify_role_group.html">classify_role_group()</a></code>
+
+        </dt>
+        <dd>Map a 16-role code (<code><a href="../reference/classify_role.html">classify_role()</a></code> output) to the plan's 6-group role taxonomy</dd>
+
+        <dt>
+
+          <code><a href="fit_spm_panel.html">fit_spm_panel()</a></code>
+
+        </dt>
+        <dd>Fit a role-pooled elastic-net SPM model on the panel, predicting the windowed prior-free RAPM target</dd>
+
+        <dt>
+
+          <code><a href="fit_spm_panel_xgb.html">fit_spm_panel_xgb()</a></code>
+
+        </dt>
+        <dd>Fit the XGBoost half of the S6 panel SPM (player-grouped CV)</dd>
+
+        <dt>
+
+          <code><a href="make_grouped_player_foldid.html">make_grouped_player_foldid()</a></code>
+
+        </dt>
+        <dd>Assign player-grouped CV fold ids: every row for a given <code>player_id</code> lands in the same fold</dd>
+
+        <dt>
+
+          <code><a href="predict_spm_panel.html">predict_spm_panel()</a></code>
+
+        </dt>
+        <dd>Score panel rows against a <code><a href="../reference/fit_spm_panel.html">fit_spm_panel()</a></code> model</dd>
+
+        <dt>
+
+          <code><a href="predict_spm_panel_net.html">predict_spm_panel_net()</a></code>
+
+        </dt>
+        <dd>Score panel rows against a fitted offense/defense pair, combining to a net prediction</dd>
+
+        <dt>
+
+          <code><a href="predict_spm_panel_xgb.html">predict_spm_panel_xgb()</a></code>
+
+        </dt>
+        <dd>Score panel-shaped rows with a <code><a href="../reference/fit_spm_panel_xgb.html">fit_spm_panel_xgb()</a></code> model</dd>
       </dl></div><div class="section level2">
       <h2 id="panna-ratings">Panna Ratings<a class="anchor" aria-label="anchor" href="#panna-ratings"></a></h2>
 

@@ -12,6 +12,7 @@ fit_expanding_pooled_rapm(
   rapm_data,
   splint_season_map,
   cutoff_year,
+  min_year = NULL,
   lambda_formula = function(n) 16.67 * n^(-0.58),
   nfolds = 5,
   seed = NULL
@@ -32,6 +33,15 @@ fit_expanding_pooled_rapm(
 
   Integer; only seasons `< cutoff_year` are used to train.
 
+- min_year:
+
+  Integer or `NULL` (default). When supplied, bounds the training window
+  to `min_year <= season_end_year < cutoff_year` instead of the full
+  expanding history (BOX-SCORE-VALUE-SPM-REDESIGN.md sec 2.1's windowed
+  prior-free RAPM target, e.g. a 5-season window
+  `min_year = cutoff_year - 5`). Passed straight through to
+  [`.subset_rapm_data_expanding()`](https://peteowen1.github.io/panna/reference/dot-subset_rapm_data_expanding.md).
+
 - lambda_formula:
 
   `function(n_obs)` giving the mini-CV grid center (default the panna#87
@@ -51,5 +61,7 @@ fit_expanding_pooled_rapm(
 ## Value
 
 List: `ratings` (data.frame player_id/rapm/offense/defense),
-`lambda_min`, `n_obs`, `cutoff_year`. `NULL` (with a warning) if fewer
-than 1000 valid observations remain (too few prior seasons).
+`lambda_min`, `n_obs`, `cutoff_year`, `min_year` (the argument as
+supplied, `NULL` for the unbounded expanding-window default). `NULL`
+(with a warning) if fewer than 1000 valid observations remain (too few
+prior seasons, or an empty/too-narrow window).

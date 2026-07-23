@@ -70,6 +70,7 @@ List with design matrix components
 ## See also
 
 Other rapm:
+[`assert_prior_free_target()`](https://peteowen1.github.io/panna/reference/assert_prior_free_target.md),
 [`create_all_splints()`](https://peteowen1.github.io/panna/reference/create_all_splints.md),
 [`extract_period_end_times()`](https://peteowen1.github.io/panna/reference/extract_period_end_times.md),
 [`extract_player_timing_from_events()`](https://peteowen1.github.io/panna/reference/extract_player_timing_from_events.md),

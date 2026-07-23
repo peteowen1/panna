@@ -58,6 +58,8 @@ Aggregated player statistics by source
 
 Regularized Adjusted Plus-Minus model
 
+- [`assert_prior_free_target()`](https://peteowen1.github.io/panna/reference/assert_prior_free_target.md)
+  : Abort unless a target artifact is provenance-stamped prior-free RAPM
 - [`create_all_splints()`](https://peteowen1.github.io/panna/reference/create_all_splints.md)
   : Create splints for all matches
 - [`create_rapm_design_matrix()`](https://peteowen1.github.io/panna/reference/create_rapm_design_matrix.md)
@@ -94,6 +96,61 @@ Opta-specific SPM model with 80+ features
   : Compute match-level Opta statistics with per-90 rates
 - [`fit_spm_opta()`](https://peteowen1.github.io/panna/reference/fit_spm_opta.md)
   : Fit SPM model using Opta features
+
+## SPM Panel (box-score-value redesign)
+
+Panel-training machinery for the windowed, role-pooled SPM redesign
+(Wave 2)
+
+- [`assert_asof_panel_window()`](https://peteowen1.github.io/panna/reference/assert_asof_panel_window.md)
+  :
+
+  Assert that an as-of training panel for eval vintage `Y` contains no
+  rows from a LATER vintage
+
+- [`assert_grouped_player_folds()`](https://peteowen1.github.io/panna/reference/assert_grouped_player_folds.md)
+  : Assert that no player straddles more than one CV fold
+
+- [`build_spm_panel()`](https://peteowen1.github.io/panna/reference/build_spm_panel.md)
+  : Build the SPM training panel: one row per (player, vintage year)
+
+- [`classify_role_group()`](https://peteowen1.github.io/panna/reference/classify_role_group.md)
+  :
+
+  Map a 16-role code
+  ([`classify_role()`](https://peteowen1.github.io/panna/reference/classify_role.md)
+  output) to the plan's 6-group role taxonomy
+
+- [`fit_spm_panel()`](https://peteowen1.github.io/panna/reference/fit_spm_panel.md)
+  : Fit a role-pooled elastic-net SPM model on the panel, predicting the
+  windowed prior-free RAPM target
+
+- [`fit_spm_panel_xgb()`](https://peteowen1.github.io/panna/reference/fit_spm_panel_xgb.md)
+  : Fit the XGBoost half of the S6 panel SPM (player-grouped CV)
+
+- [`make_grouped_player_foldid()`](https://peteowen1.github.io/panna/reference/make_grouped_player_foldid.md)
+  :
+
+  Assign player-grouped CV fold ids: every row for a given `player_id`
+  lands in the same fold
+
+- [`predict_spm_panel()`](https://peteowen1.github.io/panna/reference/predict_spm_panel.md)
+  :
+
+  Score panel rows against a
+  [`fit_spm_panel()`](https://peteowen1.github.io/panna/reference/fit_spm_panel.md)
+  model
+
+- [`predict_spm_panel_net()`](https://peteowen1.github.io/panna/reference/predict_spm_panel_net.md)
+  : Score panel rows against a fitted offense/defense pair, combining to
+  a net prediction
+
+- [`predict_spm_panel_xgb()`](https://peteowen1.github.io/panna/reference/predict_spm_panel_xgb.md)
+  :
+
+  Score panel-shaped rows with a
+  [`fit_spm_panel_xgb()`](https://peteowen1.github.io/panna/reference/fit_spm_panel_xgb.md)
+  model
 
 ## Panna Ratings
 

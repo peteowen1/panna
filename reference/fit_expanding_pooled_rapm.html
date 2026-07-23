@@ -13,7 +13,7 @@ recommended by FABLE-ASOF-EXPERIMENTS.md sec 4."><meta property="og:image" conte
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.6</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.8</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -59,6 +59,7 @@ recommended by FABLE-ASOF-EXPERIMENTS.md sec 4.</p>
 <span>  <span class="va">rapm_data</span>,</span>
 <span>  <span class="va">splint_season_map</span>,</span>
 <span>  <span class="va">cutoff_year</span>,</span>
+<span>  min_year <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  lambda_formula <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">n</span><span class="op">)</span> <span class="fl">16.67</span> <span class="op">*</span> <span class="va">n</span><span class="op">^</span><span class="op">(</span><span class="op">-</span><span class="fl">0.58</span><span class="op">)</span>,</span>
 <span>  nfolds <span class="op">=</span> <span class="fl">5</span>,</span>
 <span>  seed <span class="op">=</span> <span class="cn">NULL</span></span>
@@ -82,6 +83,14 @@ recommended by FABLE-ASOF-EXPERIMENTS.md sec 4.</p>
 <dd><p>Integer; only seasons <code>&lt; cutoff_year</code> are used to train.</p></dd>
 
 
+<dt id="arg-min-year">min_year<a class="anchor" aria-label="anchor" href="#arg-min-year"></a></dt>
+<dd><p>Integer or <code>NULL</code> (default). When supplied, bounds the
+training window to <code>min_year &lt;= season_end_year &lt; cutoff_year</code> instead
+of the full expanding history (BOX-SCORE-VALUE-SPM-REDESIGN.md sec 2.1's
+windowed prior-free RAPM target, e.g. a 5-season window <code>min_year = cutoff_year - 5</code>). Passed straight through to
+<code><a href="dot-subset_rapm_data_expanding.html">.subset_rapm_data_expanding()</a></code>.</p></dd>
+
+
 <dt id="arg-lambda-formula">lambda_formula<a class="anchor" aria-label="anchor" href="#arg-lambda-formula"></a></dt>
 <dd><p><code>function(n_obs)</code> giving the mini-CV grid center
 (default the panna#87 sample-size formula, <code>16.67 * n_obs^-0.58</code>).</p></dd>
@@ -99,8 +108,10 @@ reproducible per-cutoff-year fits. <code>NULL</code> = no explicit seed.</p></dd
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
     <p>List: <code>ratings</code> (data.frame player_id/rapm/offense/defense),
-<code>lambda_min</code>, <code>n_obs</code>, <code>cutoff_year</code>. <code>NULL</code> (with a warning) if fewer
-than 1000 valid observations remain (too few prior seasons).</p>
+<code>lambda_min</code>, <code>n_obs</code>, <code>cutoff_year</code>, <code>min_year</code> (the argument as
+supplied, <code>NULL</code> for the unbounded expanding-window default). <code>NULL</code>
+(with a warning) if fewer than 1000 valid observations remain (too few
+prior seasons, or an empty/too-narrow window).</p>
     </div>
 
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
