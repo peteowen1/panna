@@ -132,6 +132,21 @@ and a follow-up question: can a blocked shot's real location be recovered at all
   here as a recoverable signal for anyone who later wants a "how save-like was this block"
   feature elsewhere (e.g. EPV credit, a defensive-blocking rating).
 
+### Confirmed — empirically, 2026-07-23 (panna#175 / inthegame-blog#489)
+
+- **231** | **Goal-mouth y for Miss shots specifically** | q102 (goal-mouth y) is reliable for
+  on-target-ish shots (Post/Saved/Goal) but scatters far outside the goal frame for genuine
+  misses (median offset ~9 units vs the confirmed on-target range). q231 validated via a natural
+  experiment: Post-hit shots (type 14) MUST cross the line at the known post positions
+  (45.2/54.8) — sampled q231 values landed almost exactly there (45.0, 55.0). Confirmed at
+  production scale: on 3.27M shots, q231 for Miss shots has median=50.0, 1-99% range
+  43.8-56.1 (std 2.5) — tightly inside the frame, vs q102's own median=50.2, 1-99% range
+  2.2-98.3 (std 14.1) for the same population. `pannadata`'s scraper + `backfill_goalmouth.py`
+  now source Miss-shot `goalmouth_y` from q231 (falling back to q102 when q231 is absent, ~13-30%
+  of misses). **No working z/height (q103) replacement exists for misses** — q230 correlates
+  -0.33 with shot distance (a confidence/tracking-quality signature, not a coordinate), q147 is
+  too sparse (~13.5% presence) to rely on. That half remains genuinely open.
+
 ### Unconfirmed — do not guess, do the work first
 
 - **Six-yard block** (`sixYardBlock`): no qualifier found that discriminates it from a plain
@@ -154,10 +169,11 @@ and a follow-up question: can a blocked shot's real location be recovered at all
   (marked "implied", i.e. never actually checked); other code in this ecosystem has used both
   36 and 72 for foot-side at different points. Don't trust any of these without a dedicated
   empirical check the same way the four qualifiers above were confirmed.
-- **Zone/coordinate qualifiers 55/56/102/103/230/231**: the prior version of this doc listed
+- **Zone/coordinate qualifiers 55/56/102/103/230**: the prior version of this doc listed
   these as start/end coordinate qualifiers, but they conflict with 140/141 (confirmed above,
   and the qualifiers actually consumed by production code for end coordinates). Not re-verified
-  this session — treat the prior claims here as unverified, not wrong-but-unconfirmed.
+  this session — treat the prior claims here as unverified, not wrong-but-unconfirmed. (231's
+  specific role as a Miss-shot goal-mouth y-coordinate IS now confirmed — see above.)
 
 ### Outcome Field
 
