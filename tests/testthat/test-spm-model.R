@@ -138,6 +138,47 @@ test_that("extract_spm_coefficients returns feature weights", {
 })
 
 
+test_that("export_spm_coefficients_csv() round-trips to calculate_spm_ratings() (panna#173)", {
+  skip_if_not_installed("glmnet")
+
+  train_data <- create_test_spm_train_data(n_players = 50)
+  model <- fit_spm_model(train_data, alpha = 0.5, nfolds = 3)
+
+  out_path <- withr::local_tempfile(fileext = ".csv")
+  out <- export_spm_coefficients_csv(model, out_path)
+
+  # File written with the expected {stat_name, beta, sd} shape.
+  expect_true(file.exists(out_path))
+  expect_named(out, c("stat_name", "beta", "sd"))
+  expect_false("(Intercept)" %in% out$stat_name)
+  expect_true(all(out$beta != 0))  # zero-beta rows dropped
+  expect_true(all(out$sd == 1))    # no-op divisor -- see docs for why
+
+  coef_csv <- read.csv(out_path, stringsAsFactors = FALSE)
+
+  # The whole point of this export (panna#173): scoring a raw feature matrix
+  # with these coefficients (sd=1, no standardization) must reproduce
+  # calculate_spm_ratings()'s own predict()-based output exactly. This is
+  # what a live per-match blog scorer would do with the exported CSV.
+  official <- calculate_spm_ratings(train_data, model)
+
+  full_coefs <- extract_spm_coefficients(model, lambda = "min")
+  intercept <- unname(full_coefs["(Intercept)"])
+  mat <- as.matrix(train_data[, coef_csv$stat_name, drop = FALSE])
+  mat[is.na(mat)] <- 0
+  hand_scored <- as.numeric(mat %*% coef_csv$beta) + intercept
+
+  # calculate_spm_ratings() sorts by descending spm -- align by player_id,
+  # not row position, before comparing (a real mistake made validating this
+  # export manually against production data: comparing by position alone
+  # gave a spuriously low correlation purely from the row reordering).
+  hand_df <- data.frame(player_id = train_data$player_id, hand_scored = hand_scored)
+  merged <- merge(official[, c("player_id", "spm")], hand_df, by = "player_id")
+  expect_equal(nrow(merged), nrow(train_data))
+  expect_equal(merged$spm, merged$hand_scored, tolerance = 1e-10)
+})
+
+
 test_that("get_spm_feature_importance returns top features", {
   skip_if_not_installed("glmnet")
 
