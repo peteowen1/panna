@@ -118,12 +118,17 @@ prepare_shots_for_xgot <- function(shot_events,
   # Drop own goals from TRAINING: they enter as guaranteed-goal rows with
   # degenerate pre-shot features (the xG model learned exactly this pattern
   # -- ~0.98 at own-end coords, see epv_model.R's own-goal override).
-  # opta_shot_events carries no qualifier-28 column, so detection here is
-  # positional (type-16 goal at the scorer's own end); acceptable for
-  # training exclusion where a false positive costs one row, unlike the
-  # serving path in add_xgot_to_spadl() which uses the SPADL is_own_goal
-  # marker (#148).
-  is_og <- shot_events$type_id == 16L & !is.na(shot_events$x) & shot_events$x < 50
+  # pannadata#105: prefer the real Opta qualifier-28 marker (`is_own_goal`,
+  # scraped/backfilled onto opta_shot_events.parquet) over the positional
+  # type-16-at-x<50 heuristic -- same upgrade already made on the serving
+  # path in add_xgot_to_spadl() (#148). Positional fallback for any
+  # shot_events snapshot that predates the backfill.
+  if ("is_own_goal" %in% names(shot_events)) {
+    is_og <- shot_events$is_own_goal %in% TRUE
+  } else {
+    cli::cli_warn("shot_events lacks is_own_goal -- using positional own-goal fallback (type-16 goal at x < 50); re-sync opta_shot_events.parquet for qualifier-based detection.")
+    is_og <- shot_events$type_id == 16L & !is.na(shot_events$x) & shot_events$x < 50
+  }
   if (any(is_og)) {
     cli::cli_alert_info("Dropping {sum(is_og)} own goal{?s} from xGOT training.")
     shot_events <- shot_events[!is_og, , drop = FALSE]

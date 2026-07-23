@@ -106,6 +106,27 @@ prepare_shots_for_xg <- function(shot_events) {
     cli::cli_abort("Missing required columns: {paste(missing, collapse=', ')}")
   }
 
+  # Drop own goals from TRAINING: an own goal enters as a guaranteed-goal row
+  # at the scorer's own end, which the model reads as a point-blank chance
+  # and learns to predict ~0.98 there -- exactly the degenerate pattern
+  # `prepare_shots_for_xgot()` already excludes and epv_model.R's own-goal
+  # override compensates for at serving time. pannadata#105: prefer the real
+  # Opta qualifier-28 marker (`is_own_goal`) over a positional heuristic;
+  # positional fallback for any shot_events snapshot that predates the
+  # backfill.
+  if ("is_own_goal" %in% names(shot_events)) {
+    is_og <- shot_events$is_own_goal %in% TRUE
+  } else if ("type_id" %in% names(shot_events)) {
+    cli::cli_warn("shot_events lacks is_own_goal -- using positional own-goal fallback (type-16 goal at x < 50); re-sync opta_shot_events.parquet for qualifier-based detection.")
+    is_og <- shot_events$type_id == 16L & !is.na(shot_events$x) & shot_events$x < 50
+  } else {
+    is_og <- rep(FALSE, nrow(shot_events))
+  }
+  if (any(is_og)) {
+    cli::cli_alert_info("Dropping {sum(is_og)} own goal{?s} from xG training.")
+    shot_events <- shot_events[!is_og, , drop = FALSE]
+  }
+
   # Validate and clamp coordinate range
   n_oob <- sum(shot_events$x < 0 | shot_events$x > 100 |
                shot_events$y < 0 | shot_events$y > 100, na.rm = TRUE)
