@@ -104,6 +104,74 @@ not a subsample, unless noted.
 | **168**      | **Flick on**                               | On type 1/44 events: 100% of 60 sampled `totalFlickOn`-positive players, 0% of 104 negative.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | **75**       | **Won corners** (moderate confidence)      | On type-6 (Corner Awarded) events: 57% of 3383 `wonCorners`-positive players vs 4.6% of 2805 negatives — a real ~12x lift, but not a clean 100/0 split like the three above. Likely correct qualifier but attribution (who exactly gets the row) may need refinement before treating this as fully nailed down; don’t ship a derivation off this without a tighter re-check.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 
+### Confirmed — empirically, 2026-07-23 (panna#176)
+
+Method: EPL 2021-22 → 2025-26 `opta_shot_events.parquet` joined to
+`events_EPL.parquet` on `(match_id, event_id)`, `type_id==15` (“Attempt
+Saved”) shots cross-referenced against raw `qualifier_json`.
+Investigation prompted by the xGOT blocked-shot contamination fix
+(panna#176) and a follow-up question: can a blocked shot’s real location
+be recovered at all, given its own `goalmouth_y`/`goalmouth_z`
+(q102/103) is a meaningless placeholder (see `backfill_goalmouth.py`)?
+
+- **q82 (“Blocked shot”) has been flat and stable since at least
+  2011-12** — ~53-58% of every EPL season’s `type_id==15` shots carry
+  it, no trend, no step change. What DID change, starting mid-2019-20
+  and complete by 2020-21, is that Opta’s feed switched from omitting
+  q102/103 entirely for a blocked shot (true NA — pre-2020 goalmouth
+  coverage of ~45-48% tracks almost exactly the non-blocked share) to
+  always filling a value, including a meaningless placeholder
+  (`goalmouth_z==19`, the frame-height midpoint) for shots that
+  structurally have nothing to report. Full season-by-season table in
+  `backfill_goalmouth.py`’s docstring.
+- **A blocked shot’s REAL location IS recoverable — from a companion
+  event, not the shot itself.** Every blocked shot is immediately
+  followed (within the next 1-3 events, in raw event order) by a
+  separate `type_id==10` (“Save”) event, credited to the DEFENDING team,
+  carrying **q94** (“Outfielder block”, confirmed above) — this is Opta
+  crediting the specific defender who made the block, distinct from the
+  shooter’s own “Attempt Saved” row. That companion event’s `x`/`y` are
+  REAL coordinates (not a placeholder). Across every EPL 2024-25 blocked
+  shot: the companion `Save`+q94 event is findable 75.7% of the time
+  (n=2,201/2,907; the rest are scrambles/rebounds where a second shot or
+  corner intervenes before the Save event). Its `x` has genuine spread —
+  median 11.4, IQR 7.6-15.4, range 0.1-40.6 — NOT a degenerate constant.
+  13.0% sit at `x<=6` (effectively a last-ditch, goal-line/“basically a
+  save” block); 63% fall in the 5-20 range (a real defensive
+  intervention inside/around the box); the remaining 26% extend to
+  x=20-40 (blocks further out, in the run of play).
+- **This refines, but does not resolve, the “Six-yard block” item
+  below.** That earlier investigation checked `type_id==12` (Clearance)
+  events matched to the `sixYardBlock` STAT name specifically and found
+  no location signal there. This finding is a DIFFERENT, more directly
+  useful population — the `type_id==10`+q94 event Opta logs as the
+  direct counterpart to a blocked SHOT — and it does carry a real
+  signal. Not (yet) wired into any panna code; xGOT still correctly
+  excludes ALL blocked shots regardless of block distance (the shot
+  itself never reached the goal frame, so xGOT has nothing to score
+  there either way) — this is documented here as a recoverable signal
+  for anyone who later wants a “how save-like was this block” feature
+  elsewhere (e.g. EPV credit, a defensive-blocking rating).
+
+### Confirmed — empirically, 2026-07-23 (panna#175 / inthegame-blog#489)
+
+- **231** \| **Goal-mouth y for Miss shots specifically** \| q102
+  (goal-mouth y) is reliable for on-target-ish shots (Post/Saved/Goal)
+  but scatters far outside the goal frame for genuine misses (median
+  offset ~9 units vs the confirmed on-target range). q231 validated via
+  a natural experiment: Post-hit shots (type 14) MUST cross the line at
+  the known post positions (45.2/54.8) — sampled q231 values landed
+  almost exactly there (45.0, 55.0). Confirmed at production scale: on
+  3.27M shots, q231 for Miss shots has median=50.0, 1-99% range
+  43.8-56.1 (std 2.5) — tightly inside the frame, vs q102’s own
+  median=50.2, 1-99% range 2.2-98.3 (std 14.1) for the same population.
+  `pannadata`’s scraper + `backfill_goalmouth.py` now source Miss-shot
+  `goalmouth_y` from q231 (falling back to q102 when q231 is absent,
+  ~13-30% of misses). **No working z/height (q103) replacement exists
+  for misses** — q230 correlates -0.33 with shot distance (a
+  confidence/tracking-quality signature, not a coordinate), q147 is too
+  sparse (~13.5% presence) to rely on. That half remains genuinely open.
+
 ### Unconfirmed — do not guess, do the work first
 
 - **Six-yard block** (`sixYardBlock`): no qualifier found that
@@ -114,7 +182,20 @@ not a subsample, unless noted.
   contrast, are cleanly separated at x≈4.9). Whatever marks this stat,
   it isn’t in the qualifier set checked here. Needs either a wider
   qualifier search or a different signal entirely (a paired event? a
-  distinct sub-type of q94?).
+  distinct sub-type of q94?). See the 2026-07-23 entry above for a
+  related-but-distinct finding: the `sixYardBlock` STAT name
+  specifically remains unresolved, but a blocked SHOT’s real block
+  location is recoverable via its companion `type_id==10`+q94 event’s
+  own x/y.
+- **q14 (“Last man”) does not travel to domestic-league data.**
+  Re-checked 2026-07-23 on EPL: q14 has 0% presence on `type_id==12`
+  (Clearance) events across all 15 seasons (2011-12 → 2025-26),
+  confirmed via a raw qualifier-key dump on 2,000 sampled events (14
+  simply isn’t in the key set:
+  `{15,21,56,138,140,141,167,178,185,189,212,213,233,388,389,397}`). The
+  `clearanceOffLine` finding above was confirmed on World Cup data only
+  — treat it as competition-scoped, not general, until re-checked on
+  another domestic league.
 - **Left foot / right foot split**: q15=Head is solid (re-confirmed
   above), but the foot-side IDs are contested across sources — the prior
   version of this doc claimed 73=left foot (marked “implied”, i.e. never
@@ -122,12 +203,13 @@ not a subsample, unless noted.
   72 for foot-side at different points. Don’t trust any of these without
   a dedicated empirical check the same way the four qualifiers above
   were confirmed.
-- **Zone/coordinate qualifiers 55/56/102/103/230/231**: the prior
-  version of this doc listed these as start/end coordinate qualifiers,
-  but they conflict with 140/141 (confirmed above, and the qualifiers
-  actually consumed by production code for end coordinates). Not
-  re-verified this session — treat the prior claims here as unverified,
-  not wrong-but-unconfirmed.
+- **Zone/coordinate qualifiers 55/56/102/103/230**: the prior version of
+  this doc listed these as start/end coordinate qualifiers, but they
+  conflict with 140/141 (confirmed above, and the qualifiers actually
+  consumed by production code for end coordinates). Not re-verified this
+  session — treat the prior claims here as unverified, not
+  wrong-but-unconfirmed. (231’s specific role as a Miss-shot goal-mouth
+  y-coordinate IS now confirmed — see above.)
 
 ### Outcome Field
 
