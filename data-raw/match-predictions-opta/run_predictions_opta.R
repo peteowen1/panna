@@ -56,6 +56,7 @@ if (!exists("run_steps", inherits = FALSE)) {
     step_05_fit_goals_model          = TRUE,
     step_06_fit_outcome_model        = TRUE,
     step_07_predict_fixtures         = TRUE,
+    step_07b_snapshot_predictions    = FALSE,  # Opt-in: archive dated predictions.parquet snapshot (panna#178)
     step_08_evaluate_model           = TRUE,
     step_09_upload_predictions       = FALSE,  # Opt-in: upload to GitHub
     step_10_export_blog_data         = FALSE,  # Opt-in: export blog parquets
@@ -269,6 +270,15 @@ check_pred_critical(step_results[[6]])
 
 step_results[[7]] <- run_pipeline_step("predict_fixtures", 7, function() {
   source("data-raw/match-predictions-opta/07_predict_fixtures.R", local = TRUE)
+})
+
+# 11b. Step 7b: Snapshot Predictions ----
+# Archive a dated copy of predictions.parquet to the predictions-history
+# release (panna#178). Runs after step 7, which writes the cache file this
+# reads.
+
+step_results[["7b"]] <- run_pipeline_step("snapshot_predictions", "7b", function() {
+  source("data-raw/match-predictions-opta/07b_snapshot_predictions.R", local = TRUE)
 })
 
 # 12. Step 8: Evaluate Model ----

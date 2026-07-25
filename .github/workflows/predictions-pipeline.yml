@@ -222,6 +222,12 @@ jobs:
               step_05_fit_goals_model        = TRUE,
               step_06_fit_outcome_model      = TRUE,
               step_07_predict_fixtures       = TRUE,
+              # Archive a dated predictions.parquet snapshot to the
+              # predictions-history release (panna#178) so a future as-at
+              # replay of a club league/cup can use the ACTUAL predictions
+              # that existed on a given historical date, same pattern as
+              # 12b/12c below for WC2026 minutes/team-strength.
+              step_07b_snapshot_predictions  = TRUE,
               step_08_evaluate_model         = TRUE,
               step_09_upload_predictions     = TRUE,
               step_10_export_blog_data       = TRUE,
