@@ -14,10 +14,13 @@ add_xgot_to_spadl(spadl_actions, xgot_model, goalmouth_lookup)
 
 \item{goalmouth_lookup}{Data frame keyed by (\code{match_id},
 \code{event_id}) with \code{type_id}, \code{goalmouth_y},
-\code{goalmouth_z}, and \code{situation} for shot events - e.g. from
-match_events / opta_shot_events. \code{situation} is required to avoid
-train/serve skew (the model trained on real situations); without it,
-set-piece/corner/free-kick shots are scored as open-play.}
+\code{goalmouth_z}, \code{situation}, and \code{is_blocked} for shot
+events - e.g. from match_events / opta_shot_events. \code{situation} is
+required to avoid train/serve skew (the model trained on real
+situations); without it, set-piece/corner/free-kick shots are scored as
+open-play. \code{is_blocked} excludes shots blocked by an outfield
+defender (q82) from on-target, matching training (panna#176); without
+it, blocked shots are scored as real on-target attempts.}
 }
 \value{
 SPADL actions with an \code{xgot} column added.
