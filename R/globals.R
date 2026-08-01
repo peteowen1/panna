@@ -795,5 +795,10 @@ utils::globalVariables(c(
   "tourn_mins_sofar", "tourn_starts_sofar", "tournament_match_num", "w",
   "was_rated", "weight", "weight_bench", "weight_start", "weight_sub_on",
   "weight_total", "wp_first_kicker", "wt_games_tier_t1", "wt_games_tier_t2",
-  "xgot", "xgot_placement", "xmargin", "y_def", "y_off", "y_tot", "years_gap"
+  "xgot", "xgot_placement", "xmargin", "y_def", "y_off", "y_tot", "years_gap",
+
+  # SPM panel and spm_value NSE columns
+  "target", "is_deviation", "row_role", "role_group", "mins", "window_minutes",
+  "vintage_year", "pred_net", "pred_offense", "pred_defense", "off_glmnet",
+  "off_xgb", "def_glmnet", "def_xgb"
 ))
