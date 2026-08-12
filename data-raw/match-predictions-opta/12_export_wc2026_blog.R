@@ -4,12 +4,25 @@
 # pulls wc2026_*.parquet into blog/ and the R2 step ships them to
 # inthegame-data/football/.
 #
-# Produces five parquet files:
-#   wc2026_predictions.parquet    — 72 group-stage match predictions (H/D/A + xG)
-#   wc2026_simulation.parquet     — per-team round + champion probabilities
-#   wc2026_groups.parquet         — per-team group-finish probabilities
-#   wc2026_team_strength.parquet  — per-team strength across rating categories
-#   wc2026_squads.parquet         — per-player squad rows with ratings
+# Produces six parquet files here, plus wc2026_knockout_probs.parquet from
+# step 11, which this step stamps and publishes alongside them:
+#   wc2026_predictions.parquet       — every 2026 fixture, group AND knockout
+#                                      (H/D/A + xG). The knockout rows are
+#                                      placeholders the blog filters with
+#                                      wcMaps.cleanPredictions.
+#   wc_history_predictions.parquet   — the same, for ALL World Cups, carrying a
+#                                      season column. Separate on purpose: the
+#                                      blog's live sim consumes wc2026_
+#                                      predictions wholesale and must see 2026
+#                                      alone.
+#   wc2026_simulation.parquet        — per-team round + champion probabilities
+#   wc2026_groups.parquet            — per-team group-finish probabilities
+#   wc2026_team_strength.parquet     — per-team strength across rating categories
+#   wc2026_squads.parquet            — per-player squad rows with ratings
+#
+# Adding a file here is NOT enough for it to reach the blog: pannadata's
+# build-blog-data.yml pulls WC files from the release by an exhaustive name
+# list, so a new export must be added there too or it stops at the release.
 #
 # Inputs (all produced upstream by steps 07 + 11):
 #   07_predictions.rds, 04_match_dataset.rds, wc2026_groups.rds,
@@ -106,9 +119,11 @@ write_parquet(hist_pred, file.path(cache_dir, "wc_history_predictions.parquet"))
 message(sprintf("  wc_history_predictions.parquet: %d fixtures across %d tournament(s): %s",
                 nrow(hist_pred), uniqueN(hist_pred$season),
                 paste(sort(unique(hist_pred$season)), collapse = ", ")))
-# The 2026 rows here must be the same fixtures section 2 just published — if
-# these two disagree, one of the files is wrong and the blog would show two
-# different answers for the same tournament.
+# Guards CODE drift, not data: these two filters are hand-duplicated (section 2
+# adds `season == wc_season` and nothing else), so today this cannot fire — it is
+# true by construction off the same never-mutated `preds`. It earns its place by
+# failing loudly if someone later edits one of the two blocks and not the other,
+# which would have the blog showing two different answers for 2026.
 .n26 <- nrow(hist_pred[season == wc_season])
 if (.n26 != nrow(wc_pred)) {
   warning(sprintf(paste("wc_history_predictions has %d rows for %s but",
@@ -401,9 +416,9 @@ message(sprintf("  wc2026_squads.parquet: %d players across %d squads (%d with p
 # you can `cat` or open in any editor without arrow installed.
 #
 # build_id (ECOSYSTEM-FIX-PLAN.md WIRING B / ITG F-H13): one generation stamp
-# per export run, written identically into all six wc2026_*.parquet files
-# here -- including wc2026_knockout_probs.parquet, which step 11 wrote
-# earlier. The blog's detectMixedBuild() (wc-live-sim.js) already consumes
+# per export run, written identically into every file in wc_parquets below --
+# including wc2026_knockout_probs.parquet, which step 11 wrote earlier, and
+# wc_history_predictions.parquet, which is not wc2026_-prefixed. The blog's detectMixedBuild() (wc-live-sim.js) already consumes
 # this column when present to detect a torn mix of vintages; kept additive --
 # no reader currently requires it.
 .build_id_val <- .vb_generation_stamp()
