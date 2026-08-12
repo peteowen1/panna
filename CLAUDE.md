@@ -2,7 +2,7 @@
 
 Player rating system for football using RAPM + SPM methodology. This is the primary development workspace in the pannaverse ecosystem.
 
-**Active data source: Opta only.** The FBref/Understat archival sweep is done (2026-06): their R sources, loaders, and the `player-ratings-fbref/` pipeline were removed from this package. Only `pannadata` retains disabled scraper code for reference.
+**Active data source: Opta only.** The FBref/Understat archival sweep is complete (2026-06 code removal; 2026-07-14 scraper scripts deleted). Their R sources, loaders, and the `player-ratings-fbref/` pipeline were removed from this package, and the disabled scraper code in `pannadata/scripts/{fbref,understat}/` was also removed — git history is the archive.
 
 ## Development Commands
 

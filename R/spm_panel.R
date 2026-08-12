@@ -26,8 +26,8 @@
 #' Map a 16-role code (`classify_role()` output) to the plan's 6-group role
 #' taxonomy
 #'
-#' BOX-SCORE-VALUE-SPM-REDESIGN.md sec 3.1: GK, CB, FB/WB {LB,RB,LWB,RWB},
-#' DM/CM {DM,CM}, AM/Wide {CAM,LM,RM,LW,RW}, CF {CF,LF,RF}. Group codes are
+#' BOX-SCORE-VALUE-SPM-REDESIGN.md sec 3.1: GK, CB, FB/WB \{LB,RB,LWB,RWB\},
+#' DM/CM \{DM,CM\}, AM/Wide \{CAM,LM,RM,LW,RW\}, CF \{CF,LF,RF\}. Group codes are
 #' alphanumeric-only (no `/`) so they're safe to use inside design-matrix
 #' column names (`dev__<group>__<feature>`, see `.build_panel_design_matrix()`).
 #' `"UNK"` (blank/unrecognized `classify_role()` output) and any other

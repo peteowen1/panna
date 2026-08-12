@@ -15,8 +15,8 @@ Character vector of 6-group codes (\code{"GK"}, \code{"CB"}, \code{"FBWB"},
 \code{"DMCM"}, \code{"AMWIDE"}, \code{"CF"}), or \code{NA} for unmatched input.
 }
 \description{
-BOX-SCORE-VALUE-SPM-REDESIGN.md sec 3.1: GK, CB, FB/WB {LB,RB,LWB,RWB},
-DM/CM {DM,CM}, AM/Wide {CAM,LM,RM,LW,RW}, CF {CF,LF,RF}. Group codes are
+BOX-SCORE-VALUE-SPM-REDESIGN.md sec 3.1: GK, CB, FB/WB \{LB,RB,LWB,RWB\},
+DM/CM \{DM,CM\}, AM/Wide \{CAM,LM,RM,LW,RW\}, CF \{CF,LF,RF\}. Group codes are
 alphanumeric-only (no \code{/}) so they're safe to use inside design-matrix
 column names (\verb{dev__<group>__<feature>}, see \code{.build_panel_design_matrix()}).
 \code{"UNK"} (blank/unrecognized \code{classify_role()} output) and any other

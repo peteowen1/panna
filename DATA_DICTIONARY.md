@@ -578,7 +578,16 @@ List with seasonal aggregations of RAPM/SPM/xRAPM ratings.
 
 ## Value Metrics Data Structures
 
-Two-path system: EPV (action-level) + PSV (box-score-level) → `piero_value`.
+Two-path system: EPV (action-level) + PSV (results-priced box-score) + `spm_value` (context-priced box-score) → `piero_value`.
+
+### Single-Match SPM Value (`calculate_spm_value()`)
+
+| Column | Type | Description |
+|--------|------|-------------|
+| spm_value_off | numeric | Offensive context-priced SPM value for match line |
+| spm_value_def | numeric | Defensive context-priced SPM value for match line |
+| spm_value | numeric | Net context-priced SPM value (`spm_value_off + spm_value_def`) |
+| value_context_gap | numeric | Diagnostic gap quantity (`psv - spm_value`) |
 
 ### Per-Game EPV (`aggregate_player_game_epv()`)
 
