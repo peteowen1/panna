@@ -17,22 +17,4 @@ The cardinal versebus rule: when classification is uncertain, the answer is
 "transient" (abort), never "absent" (overwrite). Only a positively
 confirmed 404 on the tag/asset listing may classify as "absent".
 }
-\seealso{
-Other versebus: 
-\code{\link{vb_asset_entry}()},
-\code{\link{vb_atomic_write}()},
-\code{\link{vb_cache_validate}()},
-\code{\link{vb_confirm_absent}()},
-\code{\link{vb_download}()},
-\code{\link{vb_generation}()},
-\code{\link{vb_guard_accumulate}()},
-\code{\link{vb_list_assets}()},
-\code{\link{vb_producer_info}()},
-\code{\link{vb_publish}()},
-\code{\link{vb_read_manifest}()},
-\code{\link{vb_read_prev_manifest}()},
-\code{\link{vb_sha256}()},
-\code{\link{vb_write_manifest}()}
-}
-\concept{versebus}
 \keyword{internal}
