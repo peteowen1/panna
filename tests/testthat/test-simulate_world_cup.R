@@ -100,6 +100,84 @@ test_that("deterministic strengths produce the official bracket paths", {
   expect_equal(gt$pos3[gt$team == "T25"], 100)
 })
 
+test_that("scoreline tables sample the true conditional Poisson margin", {
+  # Guards the fix for the goal-difference bias: scorelines must come from the
+  # independent-Poisson joint pmf restricted to the drawn outcome's region,
+  # not from independent draws patched to agree. The old patching rule snapped
+  # wins to the smallest consistent margin (P(1-goal win) 0.70 vs a true 0.44)
+  # and made every draw the HOME team's Poisson draw doubled. Group GD is a
+  # FIFA tiebreak, so both biases reached the published advancement numbers.
+  l1 <- 1.8; l2 <- 1.1
+  sc <- panna:::build_scoreline_tables(l1, l2)
+
+  g <- 0:8
+  p1 <- c(stats::dpois(0:7, l1), 1 - sum(stats::dpois(0:7, l1)))
+  p2 <- c(stats::dpois(0:7, l2), 1 - sum(stats::dpois(0:7, l2)))
+  J  <- outer(p1, p2)
+  GD <- outer(g, g, "-")
+
+  draw_region <- function(cum, gg1, gg2, n) {
+    k <- findInterval(stats::runif(n), cum) + 1L
+    gg1[k] - gg2[k]
+  }
+  set.seed(11)
+  n <- 200000L
+  gd_w <- draw_region(sc$win_cum[, 1],  sc$win_g1,  sc$win_g2,  n)
+  gd_d <- draw_region(sc$draw_cum[, 1], sc$draw_g1, sc$draw_g2, n)
+  gd_l <- draw_region(sc$loss_cum[, 1], sc$loss_g1, sc$loss_g2, n)
+
+  # Regions are respected exactly -- a sampled scoreline can never contradict
+  # the outcome the model drew.
+  expect_true(all(gd_w > 0))
+  expect_true(all(gd_d == 0))
+  expect_true(all(gd_l < 0))
+
+  # And the margin within each region matches the analytic conditional mean.
+  expect_equal(mean(gd_w), sum(J[GD > 0] * GD[GD > 0]) / sum(J[GD > 0]),
+               tolerance = 0.02)
+  expect_equal(mean(gd_l), sum(J[GD < 0] * GD[GD < 0]) / sum(J[GD < 0]),
+               tolerance = 0.02)
+
+  # Draws use BOTH lambdas, not the home lambda twice.
+  lvl <- sc$draw_g1[findInterval(stats::runif(n), sc$draw_cum[, 1]) + 1L]
+  expect_equal(mean(lvl), sum(diag(J) * g) / sum(diag(J)), tolerance = 0.02)
+})
+
+test_that("build_scoreline_tables rejects unusable lambdas", {
+  expect_error(panna:::build_scoreline_tables(c(1.2, NA), c(1.0, 1.0)),
+               "must be finite")
+  expect_error(panna:::build_scoreline_tables(c(1.2, NaN), c(1.0, 1.0)),
+               "must be finite")
+  # is.na(Inf) is FALSE, so an anyNA() guard would let this through to dpois()
+  # and abort later with a misleading "no probability mass" message.
+  expect_error(panna:::build_scoreline_tables(c(1.2, Inf), c(1.0, 1.0)),
+               "must be finite")
+  expect_error(panna:::build_scoreline_tables(c(1.2, 1.1), 1.0),
+               "same length")
+})
+
+test_that("a knockout pair with no expected goals aborts by name", {
+  teams <- sprintf("U%02d", 1:48)
+  groups <- data.frame(group = rep(LETTERS[1:12], times = 4), team = teams,
+                       stringsAsFactors = FALSE)
+  prs <- t(utils::combn(teams, 2))
+  probs <- data.frame(t1 = prs[, 1], t2 = prs[, 2],
+                      p_t1 = 0.4, p_draw = 0.2, p_t2 = 0.4,
+                      lambda_t1 = 1.5, lambda_t2 = 1.2,
+                      stringsAsFactors = FALSE)
+  probs$lambda_t1[1] <- NA_real_          # U01 vs U02 has no expected goals
+  knockout <- list(probs = probs,
+                   team_elo = stats::setNames(rep(1500, 48), teams))
+  preds <- data.frame(home_team = character(0), away_team = character(0),
+                      prob_H = numeric(0), prob_D = numeric(0),
+                      prob_A = numeric(0), pred_home_goals = numeric(0),
+                      pred_away_goals = numeric(0))
+  expect_error(
+    simulate_world_cup(preds, groups, knockout, n_sims = 2L, verbose = FALSE),
+    "U01 vs U02"
+  )
+})
+
 test_that("non-standard groups fall back to the random bracket with a warning", {
   # 12 groups of 4 (the size the thirds logic requires) but lettered M-X,
   # so the FIFA bracket's A-L slot references cannot apply.

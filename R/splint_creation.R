@@ -1493,11 +1493,18 @@ extract_player_timing_from_events <- function(match_events) {
     data.table::data.table(match_id = character(), team_id = character(),
                            player_id = character(), position_num = integer())
   } else {
-    do.call(rbind, lapply(seq_len(nrow(formations)), function(i) {
-      parse_one_formation(formations$qualifier_json[i],
-                          formations$match_id[i],
-                          formations$team_id[i])
-    }))
+    # rbindlist, not do.call(rbind, .) -- this runs once per (match, team)
+    # across 20+ seasons, and rbind() dispatches data.frame method-by-method
+    # while rbindlist concatenates in one pass. It also drops the NULLs
+    # parse_one_formation() returns for unusable formation events natively.
+    data.table::rbindlist(
+      lapply(seq_len(nrow(formations)), function(i) {
+        parse_one_formation(formations$qualifier_json[i],
+                            formations$match_id[i],
+                            formations$team_id[i])
+      }),
+      use.names = TRUE, fill = FALSE
+    )
   }
   if (is.null(squad) || nrow(squad) == 0) return(empty)
   squad[, is_starter := position_num >= 1 & position_num <= 11]
@@ -1511,14 +1518,8 @@ extract_player_timing_from_events <- function(match_events) {
   # 4) Red cards (type_id 17 + qualifier 33 straight red or 32 second yellow)
   cards <- dt[type_id == 17L, .(match_id, team_id, player_id, qualifier_json,
                                   card_time = eff_minute)]
-  detect_red_in_qj <- function(qj) {
-    if (is.na(qj)) return(FALSE)
-    parsed <- tryCatch(jsonlite::fromJSON(qj), error = function(e) NULL)
-    if (is.null(parsed)) return(FALSE)
-    any(c("33", "32") %in% names(parsed))
-  }
   if (nrow(cards) > 0) {
-    cards[, is_red := vapply(qualifier_json, detect_red_in_qj, logical(1))]
+    cards[, is_red := vapply(qualifier_json, opta_qualifier_is_red, logical(1))]
     reds <- cards[is_red == TRUE, .(match_id, player_id, red_time = card_time)]
     # Take earliest red per (match, player) in case of duplicates
     reds <- reds[, .(red_time = min(red_time, na.rm = TRUE)), by = .(match_id, player_id)]

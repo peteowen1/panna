@@ -4,12 +4,14 @@
 \alias{get_epv_feature_cols}
 \title{Get EPV Model Feature Columns}
 \usage{
-get_epv_feature_cols(include_sequence = TRUE, n_prev = 3)
+get_epv_feature_cols(include_sequence = TRUE, n_prev = EPV_N_PREV)
 }
 \arguments{
 \item{include_sequence}{Whether to include sequence features (default TRUE)}
 
-\item{n_prev}{Number of previous actions for sequence features (default 3)}
+\item{n_prev}{Number of previous actions for sequence features (default
+\code{EPV_N_PREV}; must match whatever \code{create_epv_features()} was
+given, or the model asks for columns the builder never produced)}
 }
 \value{
 Character vector of feature column names

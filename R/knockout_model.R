@@ -16,6 +16,20 @@
 
 #' @keywords internal
 .ko_predict <- function(X, goals_models, outcome_result, augmented_features) {
+  # KEEP THIS. It is not a lazy fallback -- it is train/serve parity. The
+  # goals and outcome models are trained on zero-imputed matrices
+  # (data-raw/match-predictions-opta/05_fit_goals_model.R:68 and
+  # 06_fit_outcome_model.R:55,95 both do `X[is.na(X)] <- 0` before fitting),
+  # so XGBoost never sees a missing value in training and has no learned
+  # default direction to fall back on. Every serving path imputes the same
+  # way: 07_predict_fixtures.R (X_fix, X, X_mir) and 08_evaluate_model.R:42.
+  # Removing it here would make the knockout path the ONLY one feeding raw
+  # NAs to models that were never trained on them. It matters: in the step-04
+  # match dataset the WC rows this function predicts carry NAs across most
+  # feature-shaped columns, reaching 35% for away_xg (measured 2026-08-12 on
+  # cache-predictions-opta/04_*.rds). If you want native NA handling, drop the
+  # imputation in 05 and 06 and retrain -- changing it on the serving side
+  # alone is a bug.
   X[is.na(X)] <- 0
   d <- xgboost::xgb.DMatrix(data = X)
   hg <- stats::predict(goals_models$home$model, d)
@@ -23,15 +37,26 @@
   gf <- cbind(pred_home_goals = hg, pred_away_goals = ag,
               pred_goal_diff = hg - ag, pred_total_goals = hg + ag)
   Xo <- cbind(X, gf)
+  # `augmented_features` is defined as feature_cols + the four goal columns
+  # (06_fit_outcome_model.R:39), and Xo carries exactly those, so this set is
+  # structurally empty. A non-empty one means the goals and outcome models
+  # were fitted from different vintages of feature_cols. Zero-filling the gap
+  # used to hide that: predictions stayed plausible while N features silently
+  # read as 0. Fail instead -- the fix is to refit, not to pad.
   miss <- setdiff(augmented_features, colnames(Xo))
   if (length(miss)) {
-    Xo <- cbind(Xo, matrix(0, nrow(Xo), length(miss),
-                            dimnames = list(NULL, miss)))
+    cli::cli_abort(c(
+      "Goals and outcome models disagree on the feature set.",
+      "x" = "{length(miss)} of {length(augmented_features)} outcome-model feature{?s} absent from the goals-model matrix.",
+      "i" = "Missing: {.field {utils::head(miss, 10)}}{if (length(miss) > 10) ' ...' else ''}",
+      "i" = "Refit steps 05 and 06 from the same match dataset."
+    ))
   }
   Xo <- Xo[, augmented_features, drop = FALSE]
-  pr <- matrix(stats::predict(outcome_result$model$model,
-                               xgboost::xgb.DMatrix(data = Xo)),
-               ncol = 3, byrow = FALSE)
+  pr <- softprob_matrix(
+    stats::predict(outcome_result$model$model, xgboost::xgb.DMatrix(data = Xo)),
+    nrow(Xo)
+  )
   list(hg = hg, ag = ag, pH = pr[, 1], pD = pr[, 2], pA = pr[, 3])
 }
 
@@ -110,15 +135,36 @@ build_knockout_lookup <- function(match_dataset, goals_models, outcome_result,
   # --- per-team feature block (base-named) -------------------------------
   # A team's home_X value equals its away_X value (both are the team's own
   # aggregate). Extract from a home row; fall back to an away row.
+  # The "equals" above is an invariant, not a guarantee: we take row [1] of
+  # however many rows the team has, so if a team's aggregates ever varied
+  # across its own WC fixtures, this would silently pin the team to whichever
+  # row happened to sort first. Check it rather than trusting the comment.
+  first_row_block <- function(rows, cols, tm, side) {
+    blk <- vapply(cols, function(col) as.numeric(rows[[col]][1]), numeric(1))
+    if (nrow(rows) > 1L) {
+      varying <- cols[vapply(cols, function(col) {
+        v <- as.numeric(rows[[col]])
+        length(unique(v[!is.na(v)])) > 1L
+      }, logical(1))]
+      if (length(varying) > 0L) {
+        cli::cli_abort(c(
+          "Team {.val {tm}} has differing {side} feature values across its WC rows.",
+          "x" = "Varying: {.field {utils::head(varying, 8)}}{if (length(varying) > 8) ' ...' else ''}",
+          "i" = "The knockout lookup assumes a team's aggregates are constant across
+                 its own fixtures, so row order would decide the rating."
+        ))
+      }
+    }
+    blk
+  }
+
   team_block <- list()
   for (tm in teams) {
     hr <- wc[wc$home_team == tm, ]
-    if (nrow(hr) > 0) {
-      blk <- vapply(home_cols, function(c) as.numeric(hr[[c]][1]), numeric(1))
+    blk <- if (nrow(hr) > 0) {
+      first_row_block(hr, home_cols, tm, "home")
     } else {
-      ar <- wc[wc$away_team == tm, ]
-      blk <- vapply(paste0("away_", bases),
-                    function(c) as.numeric(ar[[c]][1]), numeric(1))
+      first_row_block(wc[wc$away_team == tm, ], paste0("away_", bases), tm, "away")
     }
     names(blk) <- bases
     team_block[[tm]] <- blk
@@ -145,14 +191,24 @@ build_knockout_lookup <- function(match_dataset, goals_models, outcome_result,
     sk_att_diff = "sk_att_composite", sk_def_diff = "sk_def_composite")
   diff_cols <- grep("(_diff$|^diff_)", feature_cols, value = TRUE)
   diff_base <- character(0)
-  for (d in diff_cols) {
-    base <- if (startsWith(d, "diff_")) sub("^diff_", "", d) else suffix_base[[d]]
-    if (is.null(base) || is.na(base) || !base %in% bases) {
-      cli::cli_abort(c(
-        "build_knockout_lookup: cannot resolve diff column {.field {d}}",
-        "i" = "resolved base {.val {base}} is not a team feature"))
+  for (dcol in diff_cols) {
+    # Single-bracket, NOT [[. `suffix_base` is a named character vector, so
+    # suffix_base[["unmapped_diff"]] throws "subscript out of bounds" before
+    # the guard below can run -- which is exactly the case the guard exists
+    # for (someone adds a *_diff feature and forgets the map entry). Single
+    # bracket yields NA instead, so the diagnostic actually fires.
+    dbase <- if (startsWith(dcol, "diff_")) {
+      sub("^diff_", "", dcol)
+    } else {
+      unname(suffix_base[dcol])
     }
-    diff_base[d] <- base
+    if (is.na(dbase) || !dbase %in% bases) {
+      cli::cli_abort(c(
+        "build_knockout_lookup: cannot resolve diff column {.field {dcol}}",
+        "i" = "resolved base {.val {dbase}} is not a team feature",
+        "i" = "Add {.field {dcol}} to the suffix_base map in R/knockout_model.R."))
+    }
+    diff_base[dcol] <- dbase
   }
 
   # --- assemble all 1128 matchup rows (t1 = alphabetically first) --------

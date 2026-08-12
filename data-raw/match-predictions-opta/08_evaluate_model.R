@@ -54,9 +54,26 @@ predict_pair <- function(X, gm, om) {
   ag <- stats::predict(gm$away$model, d)
   Xa <- cbind(X, pred_home_goals = hg, pred_away_goals = ag,
               pred_goal_diff = hg - ag, pred_total_goals = hg + ag)
+  # Same structural invariant as .ko_predict() and 07_predict_fixtures.R: Xa
+  # carries feature_cols + the four goal columns, which IS augmented_features
+  # (06_fit_outcome_model.R:39). Without this the bare subscript below still
+  # errors on a vintage mismatch, but with an opaque "undefined columns
+  # selected" that names neither the columns nor the cause.
+  miss <- setdiff(augmented_features, colnames(Xa))
+  if (length(miss) > 0) {
+    stop(sprintf(
+      paste0("Goals and outcome models disagree on the feature set: %d of %d ",
+             "outcome-model features absent from the goals-model matrix (%s%s). ",
+             "Refit steps 05 and 06 from the same match dataset."),
+      length(miss), length(augmented_features),
+      paste(utils::head(miss, 10), collapse = ", "),
+      if (length(miss) > 10) ", ..." else ""))
+  }
   Xa <- Xa[, augmented_features, drop = FALSE]
-  pr <- matrix(stats::predict(om$model$model, xgboost::xgb.DMatrix(data = Xa)),
-               ncol = 3, byrow = FALSE)
+  pr <- softprob_matrix(
+    stats::predict(om$model$model, xgboost::xgb.DMatrix(data = Xa)),
+    nrow(Xa)
+  )
   list(home_goals = hg, away_goals = ag, probs = pr)
 }
 w_intl <- MATCH_INTL_BLEND_WEIGHT
