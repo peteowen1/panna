@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.8</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.17</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -1198,7 +1198,25 @@
 </div>
 <div class="section level2">
 <h2 id="value-metrics-data-structures">Value Metrics Data Structures<a class="anchor" aria-label="anchor" href="#value-metrics-data-structures"></a></h2>
-<p>Two-path system: EPV (action-level) + PSV (box-score-level) → <code>piero_value</code>.</p>
+<p>Two-path system: EPV (action-level) + PSV (results-priced box-score) + <code>spm_value</code> (context-priced box-score) → <code>piero_value</code>.</p>
+<div class="section level3">
+<h3 id="single-match-spm-value-calculate_spm_value">Single-Match SPM Value (<code>calculate_spm_value()</code>)<a class="anchor" aria-label="anchor" href="#single-match-spm-value-calculate_spm_value"></a></h3>
+<table class="table"><colgroup><col width="29%"><col width="22%"><col width="48%"></colgroup><thead><tr class="header"><th>Column</th>
+<th>Type</th>
+<th>Description</th>
+</tr></thead><tbody><tr class="odd"><td>spm_value_off</td>
+<td>numeric</td>
+<td>Offensive context-priced SPM value for match line</td>
+</tr><tr class="even"><td>spm_value_def</td>
+<td>numeric</td>
+<td>Defensive context-priced SPM value for match line</td>
+</tr><tr class="odd"><td>spm_value</td>
+<td>numeric</td>
+<td>Net context-priced SPM value (<code>spm_value_off + spm_value_def</code>)</td>
+</tr><tr class="even"><td>value_context_gap</td>
+<td>numeric</td>
+<td>Diagnostic gap quantity (<code>psv - spm_value</code>)</td>
+</tr></tbody></table></div>
 <div class="section level3">
 <h3 id="per-game-epv-aggregate_player_game_epv">Per-Game EPV (<code>aggregate_player_game_epv()</code>)<a class="anchor" aria-label="anchor" href="#per-game-epv-aggregate_player_game_epv"></a></h3>
 <table class="table"><thead><tr class="header"><th>Column</th>

@@ -318,6 +318,17 @@ Panel-training machinery for the windowed, role-pooled SPM redesign
   [`fit_spm_panel_xgb()`](https://peteowen1.github.io/panna/reference/fit_spm_panel_xgb.md)
   model
 
+## SPM Value (box-score value, Wave 3)
+
+Per-match statistical value from box-score coefficients
+
+- [`calculate_spm_value()`](https://peteowen1.github.io/panna/reference/calculate_spm_value.md)
+  : Score single-match box-score stat lines with spm_value prices
+- [`calculate_value_context_gap()`](https://peteowen1.github.io/panna/reference/calculate_value_context_gap.md)
+  : Compute diagnostic value context gap (psv - spm_value)
+- [`load_spm_value_coefficients()`](https://peteowen1.github.io/panna/reference/load_spm_value_coefficients.md)
+  : Load shipping spm_value coefficients
+
 ## Panna Ratings
 
 Combined RAPM + SPM ratings
@@ -724,8 +735,56 @@ Package-wide constants and thresholds
 
 ## Internal / Developer
 
-Internal data-bus utilities accessible via panna::: for release
-publish/download integrity (ECOSYSTEM-FIX-PLAN.md versebus pattern)
+Data-bus utilities for release publish/download integrity
+(ECOSYSTEM-FIX-PLAN.md versebus pattern)
+
+- [`vb_asset_entry()`](https://peteowen1.github.io/panna/reference/vb_asset_entry.md)
+  : Build one manifest asset entry for a local file
+
+- [`vb_atomic_write()`](https://peteowen1.github.io/panna/reference/vb_atomic_write.md)
+  : Atomic local write: tempfile in dest's own dir, then rename
+
+- [`vb_cache_validate()`](https://peteowen1.github.io/panna/reference/vb_cache_validate.md)
+  : Cache validity = sidecar sha matches the manifest entry
+
+- [`vb_classify_error()`](https://peteowen1.github.io/panna/reference/vb_classify_error.md)
+  : Classify an error from a release/network operation
+
+- [`vb_confirm_absent()`](https://peteowen1.github.io/panna/reference/vb_confirm_absent.md)
+  : Positively confirm an asset is absent from a release
+
+- [`vb_download()`](https://peteowen1.github.io/panna/reference/vb_download.md)
+  : Verified, atomic release-asset download
+
+- [`vb_generation()`](https://peteowen1.github.io/panna/reference/vb_generation.md)
+  : Current generation for a tag (manifest, else max asset updated_at)
+
+- [`vb_guard_accumulate()`](https://peteowen1.github.io/panna/reference/vb_guard_accumulate.md)
+  : Row-count floor guard for read-modify-write upserts
+
+- [`vb_list_assets()`](https://peteowen1.github.io/panna/reference/vb_list_assets.md)
+  : List release assets (uncached, typed errors)
+
+- [`vb_producer_info()`](https://peteowen1.github.io/panna/reference/vb_producer_info.md)
+  : Producer identity block for the manifest (GHA env or local)
+
+- [`vb_publish()`](https://peteowen1.github.io/panna/reference/vb_publish.md)
+  : Manifest-last atomic publish (the versebus producer pattern)
+
+- [`vb_read_manifest()`](https://peteowen1.github.io/panna/reference/vb_read_manifest.md)
+  : Read a tag's bus_manifest.json (NULL + one-time warning when absent)
+
+- [`vb_read_prev_manifest()`](https://peteowen1.github.io/panna/reference/vb_read_prev_manifest.md)
+  : Previous manifest or NULL on first publish (transient errors
+  propagate)
+
+- [`vb_sha256()`](https://peteowen1.github.io/panna/reference/vb_sha256.md)
+  : sha256 of a file
+
+- [`vb_write_manifest()`](https://peteowen1.github.io/panna/reference/vb_write_manifest.md)
+  :
+
+  Write a bus_manifest.json to `path`
 
 # Articles
 

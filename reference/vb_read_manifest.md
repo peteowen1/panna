@@ -3,28 +3,15 @@
 Applies the momentary-absence rule: if this session has previously seen
 a manifest on the tag and it now looks absent (piggyback
 delete-then-upload window), retry once after 10 s before declaring
-legacy mode.
+legacy mode. A tag never having a manifest is always legacy mode, never
+an error – `required` is accepted for caller compatibility but does not
+abort on absence; a caller that needs to refuse an *uncommitted* asset
+checks the returned manifest itself (see
+[`vb_download()`](https://peteowen1.github.io/panna/reference/vb_download.md)'s
+own require_manifest handling).
 
 ## Usage
 
 ``` r
 vb_read_manifest(repo, tag, required = FALSE)
 ```
-
-## See also
-
-Other versebus:
-[`vb_asset_entry()`](https://peteowen1.github.io/panna/reference/vb_asset_entry.md),
-[`vb_atomic_write()`](https://peteowen1.github.io/panna/reference/vb_atomic_write.md),
-[`vb_cache_validate()`](https://peteowen1.github.io/panna/reference/vb_cache_validate.md),
-[`vb_classify_error()`](https://peteowen1.github.io/panna/reference/vb_classify_error.md),
-[`vb_confirm_absent()`](https://peteowen1.github.io/panna/reference/vb_confirm_absent.md),
-[`vb_download()`](https://peteowen1.github.io/panna/reference/vb_download.md),
-[`vb_generation()`](https://peteowen1.github.io/panna/reference/vb_generation.md),
-[`vb_guard_accumulate()`](https://peteowen1.github.io/panna/reference/vb_guard_accumulate.md),
-[`vb_list_assets()`](https://peteowen1.github.io/panna/reference/vb_list_assets.md),
-[`vb_producer_info()`](https://peteowen1.github.io/panna/reference/vb_producer_info.md),
-[`vb_publish()`](https://peteowen1.github.io/panna/reference/vb_publish.md),
-[`vb_read_prev_manifest()`](https://peteowen1.github.io/panna/reference/vb_read_prev_manifest.md),
-[`vb_sha256()`](https://peteowen1.github.io/panna/reference/vb_sha256.md),
-[`vb_write_manifest()`](https://peteowen1.github.io/panna/reference/vb_write_manifest.md)

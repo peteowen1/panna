@@ -6,7 +6,7 @@ shared constants to ensure consistency with create_epv_features().
 ## Usage
 
 ``` r
-get_epv_feature_cols(include_sequence = TRUE, n_prev = 3)
+get_epv_feature_cols(include_sequence = TRUE, n_prev = EPV_N_PREV)
 ```
 
 ## Arguments
@@ -17,7 +17,10 @@ get_epv_feature_cols(include_sequence = TRUE, n_prev = 3)
 
 - n_prev:
 
-  Number of previous actions for sequence features (default 3)
+  Number of previous actions for sequence features (default
+  `EPV_N_PREV`; must match whatever
+  [`create_epv_features()`](https://peteowen1.github.io/panna/reference/create_epv_features.md)
+  was given, or the model asks for columns the builder never produced)
 
 ## Value
 

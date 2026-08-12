@@ -11,7 +11,7 @@ placement features (.create_placement_features())."><meta property="og:image" co
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.8</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.17</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -64,7 +64,11 @@ placement features (.create_placement_features()).</p>
 
 <dl><dt id="arg-shot-events">shot_events<a class="anchor" aria-label="anchor" href="#arg-shot-events"></a></dt>
 <dd><p>Data frame from load_opta_shot_events(); must include
-goalmouth_y / goalmouth_z (run pannadata backfill_goalmouth.py first).</p></dd>
+goalmouth_y / goalmouth_z (run pannadata backfill_goalmouth.py first).
+Should also include is_blocked (run pannadata
+backfill_blocked_shots.py) to exclude blocked shots from on-target;
+without it, blocked shots remain in training with placeholder
+goalmouth coords (panna#176).</p></dd>
 
 
 <dt id="arg-min-season-end-year">min_season_end_year<a class="anchor" aria-label="anchor" href="#arg-min-season-end-year"></a></dt>

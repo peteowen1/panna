@@ -6,7 +6,7 @@ sequence context, and match situation. Optimized with data.table.
 ## Usage
 
 ``` r
-create_epv_features(spadl_actions, n_prev = 3)
+create_epv_features(spadl_actions, n_prev = EPV_N_PREV)
 ```
 
 ## Arguments
@@ -17,7 +17,8 @@ create_epv_features(spadl_actions, n_prev = 3)
 
 - n_prev:
 
-  Number of previous actions to include (default 3)
+  Number of previous actions to include (default `EPV_N_PREV`). Must be
+  a non-negative whole number.
 
 ## Value
 

@@ -3,12 +3,12 @@
 bytes; sha256 vs manifest when available, size vs asset list otherwise),
 then atomically renames into place and writes a &amp;lt;dest&amp;gt;.sha256 sidecar.
 ON ANY FAILURE the temp is deleted and a pre-existing dest is left
-untouched — but it is NEVER silently served as a fallback: the typed error
+untouched – but it is NEVER silently served as a fallback: the typed error
 propagates and the caller must opt in to &quot;serve stale + warn&quot; explicitly."><meta property="og:description" content="Downloads to a tempfile in dest's directory, verifies (parquet magic
 bytes; sha256 vs manifest when available, size vs asset list otherwise),
 then atomically renames into place and writes a &amp;lt;dest&amp;gt;.sha256 sidecar.
 ON ANY FAILURE the temp is deleted and a pre-existing dest is left
-untouched — but it is NEVER silently served as a fallback: the typed error
+untouched – but it is NEVER silently served as a fallback: the typed error
 propagates and the caller must opt in to &quot;serve stale + warn&quot; explicitly."><meta property="og:image" content="https://peteowen1.github.io/panna/logo.png"></head><body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
 
@@ -17,7 +17,7 @@ propagates and the caller must opt in to &quot;serve stale + warn&quot; explicit
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.8</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.17</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -55,7 +55,7 @@ propagates and the caller must opt in to &quot;serve stale + warn&quot; explicit
 bytes; sha256 vs manifest when available, size vs asset list otherwise),
 then atomically renames into place and writes a <code>&lt;dest&gt;.sha256</code> sidecar.
 ON ANY FAILURE the temp is deleted and a pre-existing <code>dest</code> is left
-untouched — but it is NEVER silently served as a fallback: the typed error
+untouched – but it is NEVER silently served as a fallback: the typed error
 propagates and the caller must opt in to "serve stale + warn" explicitly.</p>
     </div>
 
@@ -90,24 +90,6 @@ propagates and the caller must opt in to "serve stale + warn" explicitly.</p>
 <code>vb_error_stale</code></p></dd>
 
 </dl></div>
-    <div class="section level2">
-    <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a></h2>
-    <div class="dont-index"><p>Other versebus:
-<code><a href="vb_asset_entry.html">vb_asset_entry()</a></code>,
-<code><a href="vb_atomic_write.html">vb_atomic_write()</a></code>,
-<code><a href="vb_cache_validate.html">vb_cache_validate()</a></code>,
-<code><a href="vb_classify_error.html">vb_classify_error()</a></code>,
-<code><a href="vb_confirm_absent.html">vb_confirm_absent()</a></code>,
-<code><a href="vb_generation.html">vb_generation()</a></code>,
-<code><a href="vb_guard_accumulate.html">vb_guard_accumulate()</a></code>,
-<code><a href="vb_list_assets.html">vb_list_assets()</a></code>,
-<code><a href="vb_producer_info.html">vb_producer_info()</a></code>,
-<code><a href="vb_publish.html">vb_publish()</a></code>,
-<code><a href="vb_read_manifest.html">vb_read_manifest()</a></code>,
-<code><a href="vb_read_prev_manifest.html">vb_read_prev_manifest()</a></code>,
-<code><a href="vb_sha256.html">vb_sha256()</a></code>,
-<code><a href="vb_write_manifest.html">vb_write_manifest()</a></code></p></div>
-    </div>
 
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>

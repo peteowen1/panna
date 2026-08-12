@@ -18,7 +18,10 @@ prepare_shots_for_xgot(
 - shot_events:
 
   Data frame from load_opta_shot_events(); must include goalmouth_y /
-  goalmouth_z (run pannadata backfill_goalmouth.py first).
+  goalmouth_z (run pannadata backfill_goalmouth.py first). Should also
+  include is_blocked (run pannadata backfill_blocked_shots.py) to
+  exclude blocked shots from on-target; without it, blocked shots remain
+  in training with placeholder goalmouth coords (panna#176).
 
 - min_season_end_year:
 
