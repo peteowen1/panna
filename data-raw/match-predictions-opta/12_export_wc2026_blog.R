@@ -79,6 +79,43 @@ setorder(wc_pred, match_date, group)
 write_parquet(wc_pred, file.path(cache_dir, "wc2026_predictions.parquet"))
 message(sprintf("  wc2026_predictions.parquet: %d fixtures", nrow(wc_pred)))
 
+# 2b. Every World Cup, for as-at replay of past tournaments ----
+# Step 07 predicts ALL matches, played and upcoming (07_predict_fixtures.R:29),
+# so `preds` already holds 2014/2018/2022 alongside 2026. Same source as above,
+# without the season pin, and carrying `season` so a consumer can tell the
+# tournaments apart.
+#
+# DELIBERATELY A SEPARATE FILE, not a widened wc2026_predictions.parquet:
+# the blog's wc-live-sim.js consumes every row of that file with no season
+# filter, so adding three more tournaments to it would hand the live simulator
+# ~296 fixtures instead of 104 and break the 2026 sim on all nine WC pages.
+#
+# No `group` column: group membership for the older tournaments is not in this
+# pipeline (team_group above is 2026-only). The blog owns it, in
+# football/wc-history-groups.json — sourced from Wikipedia and cross-checked
+# against these very fixtures. Keeping it there avoids a second, drifting copy.
+hist_pred <- preds[league == WC2026_LEAGUE & home_team != "" & away_team != ""]
+hist_pred <- hist_pred[, .(
+  season, match_date, home_team, away_team,
+  prob_home  = prob_H, prob_draw = prob_D, prob_away = prob_A,
+  pred_home_goals, pred_away_goals,
+  predicted  = predicted_result
+)]
+setorder(hist_pred, season, match_date)
+write_parquet(hist_pred, file.path(cache_dir, "wc_history_predictions.parquet"))
+message(sprintf("  wc_history_predictions.parquet: %d fixtures across %d tournament(s): %s",
+                nrow(hist_pred), uniqueN(hist_pred$season),
+                paste(sort(unique(hist_pred$season)), collapse = ", ")))
+# The 2026 rows here must be the same fixtures section 2 just published — if
+# these two disagree, one of the files is wrong and the blog would show two
+# different answers for the same tournament.
+.n26 <- nrow(hist_pred[season == wc_season])
+if (.n26 != nrow(wc_pred)) {
+  warning(sprintf(paste("wc_history_predictions has %d rows for %s but",
+                        "wc2026_predictions has %d — these must match"),
+                  .n26, wc_season, nrow(wc_pred)), call. = FALSE, immediate. = TRUE)
+}
+
 # 3. Simulation — per-team round/champion probabilities ----
 
 sim <- as.data.table(read_parquet(file.path(cache_dir, "wc2026_simulation.parquet"), mmap = FALSE))
@@ -371,6 +408,7 @@ message(sprintf("  wc2026_squads.parquet: %d players across %d squads (%d with p
 # no reader currently requires it.
 .build_id_val <- .vb_generation_stamp()
 wc_parquets <- c("wc2026_predictions.parquet",
+                 "wc_history_predictions.parquet",
                  "wc2026_simulation.parquet",
                  "wc2026_groups.parquet",
                  "wc2026_team_strength.parquet",
