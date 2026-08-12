@@ -140,22 +140,50 @@ jobs:
 
           echo "Downloading prediction caches..."
 
-          # RAPM seasonal ratings
-          if gh release download predictions-cache --repo peteowen1/pannadata \
-               --pattern "07_seasonal_ratings.rds" --dir "$CACHE_OPTA" 2>/dev/null; then
-            echo "  Downloaded 07_seasonal_ratings.rds -> $CACHE_OPTA"
-          else
-            echo "  WARNING: 07_seasonal_ratings.rds not found"
-          fi
-
-          # Skills caches
-          for f in 06_seasonal_ratings.rds 01_match_stats.rds 02b_decay_params.rds 03_skill_spm.rds; do
-            if gh release download predictions-cache --repo peteowen1/pannadata \
-                 --pattern "$f" --dir "$CACHE_SKILLS" 2>/dev/null; then
-              echo "  Downloaded $f -> $CACHE_SKILLS"
-            else
-              echo "  WARNING: $f not found"
+          # Retry, because a missing asset here is usually transient. This
+          # workflow's `panna-release-writer` concurrency group serialises runs
+          # but does NOT stop the previous run from re-uploading release assets
+          # as this one starts, and `gh release upload --clobber` deletes before
+          # it uploads -- so there is a window where a perfectly healthy asset
+          # 404s. That is exactly what took down the 2026-08-12 09:16 scheduled
+          # run: 06_seasonal_ratings.rds missed its download by minutes.
+          fetch_cache() {              # $1 = file, $2 = dest dir, $3 = required|optional
+            f="$1"; dest="$2"; requirement="$3"
+            for attempt in 1 2 3; do
+              if gh release download predictions-cache --repo peteowen1/pannadata \
+                   --pattern "$f" --dir "$dest" 2>/dev/null; then
+                echo "  Downloaded $f -> $dest (attempt $attempt)"
+                return 0
+              fi
+              # `if`, not `[ ... ] && sleep`. Both survive `bash -e` here (a
+              # non-final command in an && list is exempt), but that exemption
+              # is subtle enough that the next person to add a line after it
+              # gets a surprise. Spell the branch out.
+              if [ "$attempt" -lt 3 ]; then
+                echo "  retry $attempt/3 for $f (likely a concurrent release publish)"
+                sleep 20
+              fi
+            done
+            if [ "$requirement" = "required" ]; then
+              echo "FATAL: required cache $f could not be downloaded after 3 attempts."
+              echo "  If a publish was mid-clobber, simply re-run this workflow."
+              return 1
             fi
+            echo "  WARNING: $f not found (optional)"
+            return 0
+          }
+
+          # 06_seasonal_ratings.rds is REQUIRED, not interchangeable with 07.
+          # Step 02 prefers it and falls back to cache-opta/07 on a mere R
+          # warning() -- but 07 carries raw-stat ratings with no seasonal_psr,
+          # so the fallback guarantees psr = 0 for every team. The pipeline then
+          # runs for ~35 more minutes before step 12's tripwire refuses to
+          # publish, blaming "a squad rating-join failure". Fail here instead,
+          # naming the actual missing file.
+          fetch_cache 06_seasonal_ratings.rds "$CACHE_SKILLS" required || exit 1
+          fetch_cache 07_seasonal_ratings.rds "$CACHE_OPTA" optional || exit 1
+          for f in 01_match_stats.rds 02b_decay_params.rds 03_skill_spm.rds; do
+            fetch_cache "$f" "$CACHE_SKILLS" optional || exit 1
           done
 
           echo ""
@@ -163,7 +191,9 @@ jobs:
           ls -lh "$CACHE_OPTA"/*.rds 2>/dev/null || echo "  No RAPM caches"
           ls -lh "$CACHE_SKILLS"/*.rds 2>/dev/null || echo "  No skill caches"
 
-          # Validate required cache (pipeline cannot run without seasonal ratings)
+          # Backstop: redundant while 06 is required above, kept so that
+          # relaxing that requirement cannot silently leave the pipeline with
+          # no seasonal ratings at all.
           if [ ! -f "$CACHE_OPTA/07_seasonal_ratings.rds" ] && [ ! -f "$CACHE_SKILLS/06_seasonal_ratings.rds" ]; then
             echo "FATAL: No seasonal ratings cache found. Run upload_prediction_caches.R first."
             exit 1
