@@ -31,6 +31,31 @@ EPV_ACTION_TYPES <- c("pass", "shot", "take_on", "tackle", "interception",
 # Action types included in sequence features
 EPV_SEQUENCE_ACTION_TYPES <- c("pass", "shot", "take_on", "tackle", "interception")
 
+# How many preceding actions the sequence features look back over. Single
+# source of truth: create_epv_features() builds them and get_epv_feature_cols()
+# names them, and the two MUST agree or the model asks for a feature set the
+# builder never produced. Previously both hardcoded 3 independently.
+EPV_N_PREV <- 3L
+
+#' Validate an n_prev argument (internal helper)
+#'
+#' Guards the sequence-feature lookback. The dangerous value is 0: the loops
+#' below used \code{1:n_prev}, and \code{1:0} is \code{c(1, 0)}, so asking for
+#' "no sequence features" instead produced a \code{_prev0} column set where
+#' \code{shift(x, 0)} is the identity -- i.e. the CURRENT action's outcome
+#' leaking in as a "previous action" feature. Target leakage, silently.
+#' @keywords internal
+.check_n_prev <- function(n_prev) {
+  if (!is.numeric(n_prev) || length(n_prev) != 1L || is.na(n_prev) ||
+      n_prev < 0 || n_prev != as.integer(n_prev)) {
+    cli::cli_abort(c(
+      "{.arg n_prev} must be a single non-negative whole number.",
+      "x" = "Got {.val {n_prev}}."
+    ))
+  }
+  invisible(as.integer(n_prev))
+}
+
 # Chain/context features
 EPV_CHAIN_FEATURES <- c("seconds_since_chain_start", "action_in_chain")
 EPV_CONTEXT_FEATURES <- c("time_normalized", "period_id")
@@ -42,16 +67,18 @@ EPV_CONTEXT_FEATURES <- c("time_normalized", "period_id")
 #' sequence context, and match situation. Optimized with data.table.
 #'
 #' @param spadl_actions SPADL actions with chain assignments
-#' @param n_prev Number of previous actions to include (default 3)
+#' @param n_prev Number of previous actions to include (default
+#'   \code{EPV_N_PREV}). Must be a non-negative whole number.
 #'
 #' @return Data frame with EPV features
 #'
 #' @keywords internal
-create_epv_features <- function(spadl_actions, n_prev = 3) {
+create_epv_features <- function(spadl_actions, n_prev = EPV_N_PREV) {
 
   if (is.null(spadl_actions) || nrow(spadl_actions) == 0) {
     cli::cli_abort("No SPADL actions provided for feature creation")
   }
+  .check_n_prev(n_prev)
 
  cli::cli_alert_info("Creating EPV features for {format(nrow(spadl_actions), big.mark=',')} actions...")
 
@@ -130,7 +157,7 @@ create_epv_features <- function(spadl_actions, n_prev = 3) {
   dt[is.na(action_type_num), action_type_num := 0L]
 
   # Pre-compute all lagged team_ids at once for same_team calculation
-  for (lag in 1:n_prev) {
+  for (lag in seq_len(n_prev)) {
     dt[, (paste0("team_id_prev", lag)) := shift(team_id, lag, type = "lag"), by = match_id]
   }
 
@@ -138,7 +165,7 @@ create_epv_features <- function(spadl_actions, n_prev = 3) {
   # This is much faster than multiple separate shift calls
   lag_cols_base <- c("result_success", "dx", "dy", "action_type_num")
 
-  for (lag in 1:n_prev) {
+  for (lag in seq_len(n_prev)) {
     suffix <- paste0("_prev", lag)
     new_cols <- paste0(lag_cols_base, suffix)
 
@@ -153,7 +180,7 @@ create_epv_features <- function(spadl_actions, n_prev = 3) {
 
   # One-hot encode previous action types (vectorized for all lags and types)
   atype_nums <- action_type_map[EPV_SEQUENCE_ACTION_TYPES]
-  for (lag in 1:n_prev) {
+  for (lag in seq_len(n_prev)) {
     suffix <- paste0("_prev", lag)
     action_num_col <- paste0("action_type_num", suffix)
     action_nums <- dt[[action_num_col]]
@@ -165,7 +192,7 @@ create_epv_features <- function(spadl_actions, n_prev = 3) {
   }
 
   # Cleanup temp team_id columns
-  for (lag in 1:n_prev) {
+  for (lag in seq_len(n_prev)) {
     dt[, (paste0("team_id_prev", lag)) := NULL]
   }
 
@@ -189,7 +216,8 @@ create_epv_features <- function(spadl_actions, n_prev = 3) {
   # CLEANUP
   # =========================================================================
   # Remove temporary columns
-  temp_cols <- c("action_type_num", paste0("action_type_num_prev", 1:n_prev))
+  temp_cols <- c("action_type_num",
+                 paste0("action_type_num_prev", seq_len(n_prev)))
   dt[, (temp_cols) := NULL]
 
   # Replace NAs with 0 for numeric columns using setnafill (much faster)
@@ -397,11 +425,14 @@ create_location_features <- function(x, y) {
 #' Uses shared constants to ensure consistency with create_epv_features().
 #'
 #' @param include_sequence Whether to include sequence features (default TRUE)
-#' @param n_prev Number of previous actions for sequence features (default 3)
+#' @param n_prev Number of previous actions for sequence features (default
+#'   \code{EPV_N_PREV}; must match whatever \code{create_epv_features()} was
+#'   given, or the model asks for columns the builder never produced)
 #'
 #' @return Character vector of feature column names
 #' @keywords internal
-get_epv_feature_cols <- function(include_sequence = TRUE, n_prev = 3) {
+get_epv_feature_cols <- function(include_sequence = TRUE, n_prev = EPV_N_PREV) {
+  .check_n_prev(n_prev)
   # Build from shared constants (single source of truth)
   cols <- c(
     EPV_LOCATION_FEATURES,
@@ -414,7 +445,7 @@ get_epv_feature_cols <- function(include_sequence = TRUE, n_prev = 3) {
 
   # Sequence features
   if (include_sequence) {
-    for (lag in 1:n_prev) {
+    for (lag in seq_len(n_prev)) {
       suffix <- paste0("_prev", lag)
       cols <- c(cols, paste0("result_success", suffix))
       cols <- c(cols, paste0("dx", suffix))

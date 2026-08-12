@@ -302,7 +302,8 @@ fit_epv_model <- function(features,
   if (length(simple_available) >= length(EPV_SIMPLE_FEATURE_COLS)) {
     available_cols <- simple_available
   } else {
-    feature_cols <- get_epv_feature_cols(include_sequence = TRUE, n_prev = 3)
+    feature_cols <- get_epv_feature_cols(include_sequence = TRUE,
+                                         n_prev = EPV_N_PREV)
     available_cols <- intersect(feature_cols, names(features))
   }
 

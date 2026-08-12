@@ -61,18 +61,13 @@ add_red_card_to_chains <- function(chains, events) {
     return(dt[])
   }
 
-  # Card events only (type_id 17). Same red/second-yellow qualifier test as
-  # splint_creation.R::extract_player_timing_from_events / detect_red_in_qj.
+  # Card events only (type_id 17). The dismissal test is shared with
+  # splint_creation.R via opta_qualifier_is_red() in utils.R -- these two must
+  # agree on who was sent off, or minutes-played and the WP man-count diverge.
   cards <- ev[type_id == 17L]
   if (nrow(cards) == 0L) return(dt[])
 
-  detect_red_in_qj <- function(qj) {
-    if (is.na(qj)) return(FALSE)
-    parsed <- tryCatch(jsonlite::fromJSON(qj), error = function(e) NULL)
-    if (is.null(parsed)) return(FALSE)
-    any(c("33", "32") %in% names(parsed))
-  }
-  cards[, is_red := vapply(qualifier_json, detect_red_in_qj, logical(1))]
+  cards[, is_red := vapply(qualifier_json, opta_qualifier_is_red, logical(1))]
   reds <- cards[is_red == TRUE]
   if (nrow(reds) == 0L) return(dt[])
 

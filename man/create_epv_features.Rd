@@ -4,12 +4,13 @@
 \alias{create_epv_features}
 \title{Create Game State Features for EPV}
 \usage{
-create_epv_features(spadl_actions, n_prev = 3)
+create_epv_features(spadl_actions, n_prev = EPV_N_PREV)
 }
 \arguments{
 \item{spadl_actions}{SPADL actions with chain assignments}
 
-\item{n_prev}{Number of previous actions to include (default 3)}
+\item{n_prev}{Number of previous actions to include (default
+\code{EPV_N_PREV}). Must be a non-negative whole number.}
 }
 \value{
 Data frame with EPV features
