@@ -26,9 +26,15 @@ test_that("missing or unparseable qualifier JSON is not a dismissal", {
 })
 
 test_that("both consumers call the shared helper, not a private copy", {
-  src <- c(readLines(test_path("..", "..", "R", "splint_creation.R"),
-                     warn = FALSE),
-           readLines(test_path("..", "..", "R", "wp_model.R"), warn = FALSE))
+  # Source-text guard, so it only means anything against the source tree
+  # (devtools::test()). Under R CMD check the package is installed and R/ is
+  # not shipped, so skip rather than fail on a missing file.
+  files <- file.path(test_path("..", "..", "R"),
+                     c("splint_creation.R", "wp_model.R"))
+  skip_if_not(all(file.exists(files)),
+              "source tree not available (running against an installed package)")
+
+  src <- unlist(lapply(files, readLines, warn = FALSE))
   expect_false(any(grepl("detect_red_in_qj\\s*<-\\s*function", src)),
                info = "a private red-card parser has reappeared")
   expect_true(sum(grepl("opta_qualifier_is_red", src)) >= 2)
