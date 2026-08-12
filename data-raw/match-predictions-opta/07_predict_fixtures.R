@@ -103,16 +103,26 @@ if (nrow(fixtures) == 0) {
     gf <- cbind(pred_home_goals = hg, pred_away_goals = ag,
                 pred_goal_diff = hg - ag, pred_total_goals = hg + ag)
     Xo <- cbind(X, gf)
+    # Structurally empty: augmented_features is feature_cols + the four goal
+    # columns (06_fit_outcome_model.R:39) and Xo carries exactly those. A gap
+    # means steps 05 and 06 were fitted from different feature_cols vintages.
+    # Zero-filling hid that -- predictions stayed plausible while N features
+    # silently read as 0. Same guard as R/knockout_model.R:.ko_predict().
     miss <- setdiff(augmented_features, colnames(Xo))
     if (length(miss) > 0) {
-      filler <- matrix(0, nrow = nrow(Xo), ncol = length(miss),
-                       dimnames = list(NULL, miss))
-      Xo <- cbind(Xo, filler)
+      stop(sprintf(
+        paste0("Goals and outcome models disagree on the feature set: %d of %d ",
+               "outcome-model features absent from the goals-model matrix (%s%s). ",
+               "Refit steps 05 and 06 from the same match dataset."),
+        length(miss), length(augmented_features),
+        paste(utils::head(miss, 10), collapse = ", "),
+        if (length(miss) > 10) ", ..." else ""))
     }
     Xo <- Xo[, augmented_features, drop = FALSE]
-    pr <- matrix(stats::predict(om_seg$model$model,
-                                 xgboost::xgb.DMatrix(data = Xo)),
-                 ncol = 3, byrow = FALSE)
+    pr <- softprob_matrix(
+      stats::predict(om_seg$model$model, xgboost::xgb.DMatrix(data = Xo)),
+      nrow(Xo)
+    )
     list(home_goals = hg, away_goals = ag,
          pH = pr[, 1], pD = pr[, 2], pA = pr[, 3])
   }

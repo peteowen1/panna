@@ -271,6 +271,25 @@ simulate_world_cup <- function(predictions, groups, knockout,
          " -- check spelling in wc2026_groups.csv against prediction team names")
   }
 
+  ## --- 2b. Conditional scoreline tables for every ordered knockout pair ---
+  ## Column for ordered pair (i, j) sits at i + (j - 1) * n_teams, matching
+  ## the column-major flattening of LAM.
+  lam_ij <- as.vector(pmax(0.2, LAM))          # LAM[i, j]
+  lam_ji <- as.vector(pmax(0.2, t(LAM)))       # LAM[j, i]
+  diag_at  <- seq_len(n_teams) + (seq_len(n_teams) - 1L) * n_teams
+  off_diag <- setdiff(seq_along(lam_ij), diag_at)
+  hole <- off_diag[is.na(lam_ij[off_diag]) | is.na(lam_ji[off_diag])]
+  if (length(hole) > 0L) {
+    hi <- ((hole - 1L) %% n_teams) + 1L
+    hj <- ((hole - 1L) %/% n_teams) + 1L
+    stop("no expected goals in knockout$probs for: ",
+         paste(unique(paste(all_teams[hi], "vs", all_teams[hj])), collapse = ", "))
+  }
+  ## A team never plays itself, so the diagonal is structurally unreachable --
+  ## fill it only so the table builder has finite input everywhere.
+  lam_ij[diag_at] <- 1; lam_ji[diag_at] <- 1
+  SC <- build_scoreline_tables(lam_ij, lam_ji)
+
   ## --- 3. Group fixtures as flat integer-indexed vectors -----------------
   ## All 72 group matches, ordered group-by-group so processing them in order
   ## preserves within-group sequence (needed for run-hot momentum) and so
@@ -308,6 +327,10 @@ simulate_world_cup <- function(predictions, groups, knockout,
       m_lam1[mc] <- max(0.2, l1); m_lam2[mc] <- max(0.2, l2)
     }
   }
+
+  ## Conditional scoreline tables for the 72 group fixtures (lambdas are
+  ## fixed per fixture, so this is built once outside the simulation loop).
+  sc_grp <- build_scoreline_tables(m_lam1, m_lam2)
 
   ## --- 3b. FIFA bracket setup (outside the hot loop) ---------------------
   if (bracket == "fifa2026") {
@@ -360,10 +383,11 @@ simulate_world_cup <- function(predictions, groups, knockout,
     elo_dyn <- elo_base
     pts <- integer(n_teams); gf <- integer(n_teams); ga <- integer(n_teams)
 
-    ## Group-stage randomness, drawn in blocks.
-    u_g    <- stats::runif(n_gm)
-    goals1 <- pmin(stats::rpois(n_gm, m_lam1), 8L)
-    goals2 <- pmin(stats::rpois(n_gm, m_lam2), 8L)
+    ## Group-stage randomness, drawn in blocks. Two uniforms per match: one
+    ## picks the outcome from the model's (drift-adjusted) W/D/L split, the
+    ## other picks the scoreline from within that outcome's region.
+    u_g        <- stats::runif(n_gm)
+    u_sc       <- stats::runif(n_gm)
     tb         <- stats::runif(n_teams)     # group tiebreaks (4 per group)
     third_rand <- stats::runif(n_groups)
 
@@ -373,16 +397,19 @@ simulate_world_cup <- function(predictions, groups, knockout,
       drift <- (elo_dyn[t1] - elo_base[t1]) - (elo_dyn[t2] - elo_base[t2])
       ps <- elo_shift_probs(m_p1[mi], m_pd[mi], m_p2[mi], drift)
 
-      g1 <- goals1[mi]; g2 <- goals2[mi]; u <- u_g[mi]
+      u <- u_g[mi]; us <- u_sc[mi]
       if (u < ps[1]) {
-        if (g1 <= g2) g1 <- g2 + 1L
+        k <- findInterval(us, sc_grp$win_cum[, mi]) + 1L
+        g1 <- sc_grp$win_g1[k]; g2 <- sc_grp$win_g2[k]
         pts[t1] <- pts[t1] + 3L
       } else if (u < ps[1] + ps[2]) {
-        if (g1 != g2) g2 <- g1
+        k <- findInterval(us, sc_grp$draw_cum[, mi]) + 1L
+        g1 <- sc_grp$draw_g1[k]; g2 <- sc_grp$draw_g2[k]
         pts[t1] <- pts[t1] + 1L
         pts[t2] <- pts[t2] + 1L
       } else {
-        if (g2 <= g1) g2 <- g1 + 1L
+        k <- findInterval(us, sc_grp$loss_cum[, mi]) + 1L
+        g1 <- sc_grp$loss_g1[k]; g2 <- sc_grp$loss_g2[k]
         pts[t2] <- pts[t2] + 3L
       }
       gf[t1] <- gf[t1] + g1; ga[t1] <- ga[t1] + g2
@@ -440,7 +467,7 @@ simulate_world_cup <- function(predictions, groups, knockout,
         }
       }
       for (rd in 2:6) {
-        kr <- play_knockout_round(br, WIN, DRAW, LAM,
+        kr <- play_knockout_round(br, WIN, DRAW, SC,
                                   elo_dyn, elo_base, elo_k)
         w <- kr$winners
         elo_dyn <- kr$elo_dyn
@@ -451,7 +478,7 @@ simulate_world_cup <- function(predictions, groups, knockout,
       ## Random reseeding (legacy behaviour).
       br <- sample(r32)
       for (rd in 2:6) {
-        kr <- play_knockout_round(br, WIN, DRAW, LAM,
+        kr <- play_knockout_round(br, WIN, DRAW, SC,
                                   elo_dyn, elo_base, elo_k)
         br <- kr$winners
         elo_dyn <- kr$elo_dyn
@@ -492,41 +519,125 @@ simulate_world_cup <- function(predictions, groups, knockout,
 }
 
 
+#' Build conditional scoreline samplers (internal helper)
+#'
+#' The simulator draws a match OUTCOME from the model's win/draw/loss split
+#' (after the run-hot Elo nudge), then needs a SCORELINE consistent with it.
+#' Drawing goals from independent Poissons and patching them to agree -- what
+#' this file did until 2026-08-12 -- biased goal difference in one direction:
+#' a win whose Poisson draw disagreed was snapped to the smallest consistent
+#' margin (\code{if (g1 <= g2) g1 <- g2 + 1L}), and a draw overwrote the away
+#' team's goals with the home team's (\code{g2 <- g1}), discarding the away
+#' lambda entirely. Group GD is a FIFA tiebreak and feeds the best-8
+#' third-place cut, so that bias landed in the published advancement numbers.
+#'
+#' Instead: sample from the independent-Poisson joint pmf restricted to the
+#' region the outcome selected, renormalised. The model's W/D/L probabilities
+#' are preserved exactly -- they still choose the region -- and the margin
+#' distribution within a region is the one the lambdas actually imply.
+#'
+#' @param lam1,lam2 Expected goals for side 1 and side 2, one entry per match.
+#'   Must be finite; callers are expected to floor them (the simulator uses
+#'   \code{pmax(0.2, .)}).
+#' @param max_goals Goal cap. Mass above it is lumped onto the cap, matching
+#'   the previous \code{pmin(rpois(), 8L)} behaviour.
+#'
+#' @return A list holding, for each outcome region (\code{win} = side 1 scores
+#'   more, \code{draw}, \code{loss}): \code{<region>_g1} / \code{<region>_g2},
+#'   the region's goal pairs (shared across matches), and \code{<region>_cum},
+#'   a cumulative-probability matrix with one column per match. Sample with
+#'   \code{findInterval(u, cum[, i]) + 1L} and index the goal-pair vectors.
+#' @keywords internal
+build_scoreline_tables <- function(lam1, lam2, max_goals = 8L) {
+  if (length(lam1) != length(lam2)) {
+    stop("build_scoreline_tables: lam1 and lam2 must be the same length")
+  }
+  if (anyNA(lam1) || anyNA(lam2)) {
+    stop("build_scoreline_tables: lambdas must be finite; got ",
+         sum(is.na(lam1)) + sum(is.na(lam2)), " NA")
+  }
+  n <- length(lam1)
+  goals <- 0:max_goals
+  ## Cell (g1, g2) ordering matches the column-major flattening of
+  ## outer(pmf1, pmf2): g1 varies fastest.
+  cell_g1 <- rep(goals, times = length(goals))
+  cell_g2 <- rep(goals, each  = length(goals))
+  region <- list(win  = which(cell_g1 >  cell_g2),
+                 draw = which(cell_g1 == cell_g2),
+                 loss = which(cell_g1 <  cell_g2))
+
+  ## Poisson pmf with the tail above `max_goals` lumped onto `max_goals`.
+  capped_pmf <- function(lam) {
+    body <- stats::dpois(goals[-length(goals)], lam)
+    c(body, 1 - sum(body))
+  }
+
+  out <- list()
+  for (rg in names(region)) {
+    idx <- region[[rg]]
+    out[[paste0(rg, "_g1")]]  <- cell_g1[idx]
+    out[[paste0(rg, "_g2")]]  <- cell_g2[idx]
+    out[[paste0(rg, "_cum")]] <- matrix(NA_real_, nrow = length(idx), ncol = n)
+  }
+  for (i in seq_len(n)) {
+    joint <- as.vector(outer(capped_pmf(lam1[i]), capped_pmf(lam2[i])))
+    for (rg in names(region)) {
+      w <- joint[region[[rg]]]
+      s <- sum(w)
+      if (!is.finite(s) || s <= 0) {
+        stop("build_scoreline_tables: match ", i, " has no probability mass ",
+             "for outcome '", rg, "' (lambdas ", lam1[i], ", ", lam2[i], ")")
+      }
+      cum <- cumsum(w) / s
+      ## Force the final entry to exactly 1 so a runif() draw in [0, 1) can
+      ## never make findInterval() index past the end of the region.
+      cum[length(cum)] <- 1
+      out[[paste0(rg, "_cum")]][, i] <- cum
+    }
+  }
+  out
+}
+
+
 #' Play one knockout round (internal helper)
 #'
 #' Resolves all ties in a round from the integer-indexed knockout matrices,
-#' applies the run-hot Elo nudge, simulates goals for the margin, and updates
-#' both teams' dynamic Elo. Round-level randomness is drawn in blocks. A
-#' 90-minute draw is decided by a coin flip (extra time / penalties) but
-#' counts as a draw for the Elo update.
+#' applies the run-hot Elo nudge, draws a scoreline conditional on the drawn
+#' outcome, and updates both teams' dynamic Elo. Round-level randomness is
+#' drawn in blocks. A 90-minute draw goes to a penalty shootout but counts as
+#' a draw for the Elo update.
+#'
+#' @param SC Scoreline tables from \code{build_scoreline_tables()}, with one
+#'   column per ordered pair at \code{i + (j - 1) * n_teams}.
 #' @keywords internal
-play_knockout_round <- function(bracket, WIN, DRAW, LAM,
+play_knockout_round <- function(bracket, WIN, DRAW, SC,
                                  elo_dyn, elo_base, elo_k) {
   n <- length(bracket)
   K <- n %/% 2L
+  n_teams <- nrow(WIN)
   a <- bracket[seq.int(1L, n, 2L)]
   b <- bracket[seq.int(2L, n, 2L)]
   ab <- cbind(a, b)
   ba <- cbind(b, a)
   p_a <- WIN[ab]; p_d <- DRAW[ab]; p_b <- WIN[ba]
-  lam_a <- LAM[ab]; lam_b <- LAM[ba]
 
   u    <- stats::runif(K)
   coin <- stats::runif(K)
-  g_a  <- pmin(stats::rpois(K, pmax(0.2, lam_a)), 8L)
-  g_b  <- pmin(stats::rpois(K, pmax(0.2, lam_b)), 8L)
+  u_sc <- stats::runif(K)
 
   winners <- integer(K)
   for (i in seq_len(K)) {
     ta <- a[i]; tb <- b[i]
+    ci <- ta + (tb - 1L) * n_teams               # SC column for (ta, tb)
     drift <- (elo_dyn[ta] - elo_base[ta]) - (elo_dyn[tb] - elo_base[tb])
     ps <- elo_shift_probs(p_a[i], p_d[i], p_b[i], drift)
-    g1 <- g_a[i]; g2 <- g_b[i]
     if (u[i] < ps[1]) {
-      if (g1 <= g2) g1 <- g2 + 1L
+      k <- findInterval(u_sc[i], SC$win_cum[, ci]) + 1L
+      g1 <- SC$win_g1[k]; g2 <- SC$win_g2[k]
       winners[i] <- ta
     } else if (u[i] < ps[1] + ps[2]) {
-      g2 <- g1                                   # draw -> ET/penalties
+      k <- findInterval(u_sc[i], SC$draw_cum[, ci]) + 1L
+      g1 <- SC$draw_g1[k]; g2 <- SC$draw_g2[k]   # draw -> ET/penalties
       # Drawn knockout -> penalty shootout. shootout_win_prob() with equal
       # conversion rates is exactly 0.5 (a fair shootout has no structural
       # first-kicker edge), so this is behaviourally identical to the prior
@@ -536,7 +647,8 @@ play_knockout_round <- function(bracket, WIN, DRAW, LAM,
       p_so <- shootout_win_prob()                # P(ta wins) = 0.5 at equal p
       winners[i] <- if (coin[i] < p_so) ta else tb
     } else {
-      if (g2 <= g1) g2 <- g1 + 1L
+      k <- findInterval(u_sc[i], SC$loss_cum[, ci]) + 1L
+      g1 <- SC$loss_g1[k]; g2 <- SC$loss_g2[k]
       winners[i] <- tb
     }
     eu <- elo_update_pair(elo_dyn[ta], elo_dyn[tb], g1, g2, elo_k)

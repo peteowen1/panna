@@ -1020,6 +1020,38 @@ compute_team_rolling_features <- function(results, windows = c(5L, 10L, 20L)) {
 }
 
 
+#' Reshape a multi:softprob prediction into one row per observation
+#'
+#' \code{xgboost >= 2.0} returns an \code{n x n_class} matrix from
+#' \code{predict()}; older versions return a flat, ROW-major vector. Reshaping
+#' the flat form with \code{byrow = FALSE} silently scrambles classes across
+#' observations, and the obvious guard does not catch it -- a column-major
+#' reshape of a row-major softprob vector can still produce rows that sum to
+#' 1. Every call site goes through this helper rather than reshaping inline,
+#' so there is one place where the xgboost return contract is interpreted.
+#'
+#' @param probs Raw \code{predict()} output from a \code{multi:softprob} model.
+#' @param n_rows Number of observations predicted.
+#' @param n_class Number of classes (default 3: home / draw / away).
+#'
+#' @return An \code{n_rows} x \code{n_class} numeric matrix.
+#' @keywords internal
+softprob_matrix <- function(probs, n_rows, n_class = 3L) {
+  m <- if (is.matrix(probs)) {
+    probs
+  } else {
+    matrix(probs, ncol = n_class, byrow = TRUE)
+  }
+  if (nrow(m) != n_rows || ncol(m) != n_class) {
+    cli::cli_abort(c(
+      "Unexpected probability matrix dimensions from the XGBoost outcome model.",
+      "x" = "Expected {n_rows} rows x {n_class} columns, got {nrow(m)} x {ncol(m)}."
+    ))
+  }
+  m
+}
+
+
 #' Fit XGBoost Model with Cross-Validation
 #'
 #' Shared helper for training XGBoost models with k-fold cross-validation
@@ -1181,18 +1213,7 @@ predict_match <- function(goals_home_model, goals_away_model, outcome_model,
   # Predict outcome probabilities
   d_outcome <- xgboost::xgb.DMatrix(data = X_full)
   probs <- stats::predict(outcome_model$model, d_outcome)
-  # xgboost >= 2.0 returns a matrix; older versions return a flat vector
-  if (is.matrix(probs)) {
-    prob_matrix <- probs
-  } else {
-    prob_matrix <- matrix(probs, ncol = 3, byrow = TRUE)
-  }
-  if (ncol(prob_matrix) != 3 || nrow(prob_matrix) != nrow(X_full)) {
-    cli::cli_abort(c(
-      "Unexpected probability matrix dimensions from XGBoost outcome model.",
-      "x" = "Expected {nrow(X_full)} rows x 3 columns, got {nrow(prob_matrix)} x {ncol(prob_matrix)}."
-    ))
-  }
+  prob_matrix <- softprob_matrix(probs, nrow(X_full))
 
   data.frame(
     pred_home_goals = pred_home_goals,

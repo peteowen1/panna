@@ -16,6 +16,18 @@
 
 #' @keywords internal
 .ko_predict <- function(X, goals_models, outcome_result, augmented_features) {
+  # KEEP THIS. It is not a lazy fallback -- it is train/serve parity. The
+  # goals and outcome models are trained on zero-imputed matrices
+  # (data-raw/match-predictions-opta/05_fit_goals_model.R:68 and
+  # 06_fit_outcome_model.R:55,95 both do `X[is.na(X)] <- 0` before fitting),
+  # so XGBoost never sees a missing value in training and has no learned
+  # default direction to fall back on. Every serving path imputes the same
+  # way: 07_predict_fixtures.R:95,99,131 and 08_evaluate_model.R:42.
+  # Removing it here would make the knockout path the ONLY one feeding raw
+  # NAs to models that were never trained on them. It matters: 112 of 177
+  # feature columns carry NAs in the WC rows this function predicts, at up to
+  # 35% (away_xg). If you want native NA handling, drop the imputation in 05
+  # and 06 and retrain -- changing it on the serving side alone is a bug.
   X[is.na(X)] <- 0
   d <- xgboost::xgb.DMatrix(data = X)
   hg <- stats::predict(goals_models$home$model, d)
@@ -23,15 +35,26 @@
   gf <- cbind(pred_home_goals = hg, pred_away_goals = ag,
               pred_goal_diff = hg - ag, pred_total_goals = hg + ag)
   Xo <- cbind(X, gf)
+  # `augmented_features` is defined as feature_cols + the four goal columns
+  # (06_fit_outcome_model.R:39), and Xo carries exactly those, so this set is
+  # structurally empty. A non-empty one means the goals and outcome models
+  # were fitted from different vintages of feature_cols. Zero-filling the gap
+  # used to hide that: predictions stayed plausible while N features silently
+  # read as 0. Fail instead -- the fix is to refit, not to pad.
   miss <- setdiff(augmented_features, colnames(Xo))
   if (length(miss)) {
-    Xo <- cbind(Xo, matrix(0, nrow(Xo), length(miss),
-                            dimnames = list(NULL, miss)))
+    cli::cli_abort(c(
+      "Goals and outcome models disagree on the feature set.",
+      "x" = "{length(miss)} of {length(augmented_features)} outcome-model feature{?s} absent from the goals-model matrix.",
+      "i" = "Missing: {.field {utils::head(miss, 10)}}{if (length(miss) > 10) ' ...' else ''}",
+      "i" = "Refit steps 05 and 06 from the same match dataset."
+    ))
   }
   Xo <- Xo[, augmented_features, drop = FALSE]
-  pr <- matrix(stats::predict(outcome_result$model$model,
-                               xgboost::xgb.DMatrix(data = Xo)),
-               ncol = 3, byrow = FALSE)
+  pr <- softprob_matrix(
+    stats::predict(outcome_result$model$model, xgboost::xgb.DMatrix(data = Xo)),
+    nrow(Xo)
+  )
   list(hg = hg, ag = ag, pH = pr[, 1], pD = pr[, 2], pA = pr[, 3])
 }
 

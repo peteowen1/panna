@@ -55,8 +55,10 @@ predict_pair <- function(X, gm, om) {
   Xa <- cbind(X, pred_home_goals = hg, pred_away_goals = ag,
               pred_goal_diff = hg - ag, pred_total_goals = hg + ag)
   Xa <- Xa[, augmented_features, drop = FALSE]
-  pr <- matrix(stats::predict(om$model$model, xgboost::xgb.DMatrix(data = Xa)),
-               ncol = 3, byrow = FALSE)
+  pr <- softprob_matrix(
+    stats::predict(om$model$model, xgboost::xgb.DMatrix(data = Xa)),
+    nrow(Xa)
+  )
   list(home_goals = hg, away_goals = ag, probs = pr)
 }
 w_intl <- MATCH_INTL_BLEND_WEIGHT
