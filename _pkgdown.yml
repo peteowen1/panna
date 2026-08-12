@@ -66,6 +66,16 @@ reference:
   contents:
   - has_concept("spm panel")
 
+# NOTE the underscore. R/spm_value.R tags these `@family spm_value`, which
+# becomes the concept "spm_value" -- it is NOT matched by has_concept("spm")
+# or has_concept("spm panel"). Without this section pkgdown aborts with
+# "3 topics missing from index", and because pkgdown only runs on push to
+# main, R-CMD-check on the PR cannot catch it.
+- title: SPM Value (box-score value, Wave 3)
+  desc: Per-match statistical value from box-score coefficients
+  contents:
+  - has_concept("spm_value")
+
 - title: Panna Ratings
   desc: Combined RAPM + SPM ratings
   contents:
@@ -181,7 +191,30 @@ reference:
   contents:
   - has_concept("constants")
 
+# Listed by name, NOT has_concept("versebus"). The canonical-resync of
+# versebus.R removed its `@family versebus` tags, so nothing in the SOURCE
+# carries that concept any more -- has_concept() only kept matching because
+# the committed man/vb_*.Rd still held \concept{versebus} from a document()
+# run predating the removal. The next `devtools::document()` (mandatory
+# whenever exports change) drops it from all 15 and pkgdown then fails with
+# "15 topics missing from index", on main, where it cannot be pre-verified.
+# Explicit names are immune to that. All 15 are exported, so pkgdown requires
+# every one to appear here.
 - title: Internal / Developer
-  desc: "Internal data-bus utilities accessible via panna::: for release publish/download integrity (ECOSYSTEM-FIX-PLAN.md versebus pattern)"
+  desc: "Data-bus utilities for release publish/download integrity (ECOSYSTEM-FIX-PLAN.md versebus pattern)"
   contents:
-  - has_concept("versebus")
+  - vb_asset_entry
+  - vb_atomic_write
+  - vb_cache_validate
+  - vb_classify_error
+  - vb_confirm_absent
+  - vb_download
+  - vb_generation
+  - vb_guard_accumulate
+  - vb_list_assets
+  - vb_producer_info
+  - vb_publish
+  - vb_read_manifest
+  - vb_read_prev_manifest
+  - vb_sha256
+  - vb_write_manifest

@@ -28,25 +28,7 @@ Downloads to a tempfile in \code{dest}'s directory, verifies (parquet magic
 bytes; sha256 vs manifest when available, size vs asset list otherwise),
 then atomically renames into place and writes a \verb{<dest>.sha256} sidecar.
 ON ANY FAILURE the temp is deleted and a pre-existing \code{dest} is left
-untouched — but it is NEVER silently served as a fallback: the typed error
+untouched -- but it is NEVER silently served as a fallback: the typed error
 propagates and the caller must opt in to "serve stale + warn" explicitly.
 }
-\seealso{
-Other versebus: 
-\code{\link{vb_asset_entry}()},
-\code{\link{vb_atomic_write}()},
-\code{\link{vb_cache_validate}()},
-\code{\link{vb_classify_error}()},
-\code{\link{vb_confirm_absent}()},
-\code{\link{vb_generation}()},
-\code{\link{vb_guard_accumulate}()},
-\code{\link{vb_list_assets}()},
-\code{\link{vb_producer_info}()},
-\code{\link{vb_publish}()},
-\code{\link{vb_read_manifest}()},
-\code{\link{vb_read_prev_manifest}()},
-\code{\link{vb_sha256}()},
-\code{\link{vb_write_manifest}()}
-}
-\concept{versebus}
 \keyword{internal}
