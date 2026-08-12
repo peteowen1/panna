@@ -1026,9 +1026,9 @@ compute_team_rolling_features <- function(results, windows = c(5L, 10L, 20L)) {
 #' \code{predict()}; older versions return a flat, ROW-major vector. Reshaping
 #' the flat form with \code{byrow = FALSE} silently scrambles classes across
 #' observations, and the obvious guard does not catch it -- a column-major
-#' reshape of a row-major softprob vector can still produce rows that sum to
-#' 1. Every call site goes through this helper rather than reshaping inline,
-#' so there is one place where the xgboost return contract is interpreted.
+#' reshape of a row-major softprob vector can still produce rows summing to
+#' one. Every call site goes through this helper rather than reshaping
+#' inline, so the xgboost return contract is interpreted in exactly one place.
 #'
 #' @param probs Raw \code{predict()} output from a \code{multi:softprob} model.
 #' @param n_rows Number of observations predicted.

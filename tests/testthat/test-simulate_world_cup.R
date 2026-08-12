@@ -146,6 +146,12 @@ test_that("scoreline tables sample the true conditional Poisson margin", {
 test_that("build_scoreline_tables rejects unusable lambdas", {
   expect_error(panna:::build_scoreline_tables(c(1.2, NA), c(1.0, 1.0)),
                "must be finite")
+  expect_error(panna:::build_scoreline_tables(c(1.2, NaN), c(1.0, 1.0)),
+               "must be finite")
+  # is.na(Inf) is FALSE, so an anyNA() guard would let this through to dpois()
+  # and abort later with a misleading "no probability mass" message.
+  expect_error(panna:::build_scoreline_tables(c(1.2, Inf), c(1.0, 1.0)),
+               "must be finite")
   expect_error(panna:::build_scoreline_tables(c(1.2, 1.1), 1.0),
                "same length")
 })

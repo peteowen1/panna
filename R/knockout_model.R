@@ -22,12 +22,14 @@
   # 06_fit_outcome_model.R:55,95 both do `X[is.na(X)] <- 0` before fitting),
   # so XGBoost never sees a missing value in training and has no learned
   # default direction to fall back on. Every serving path imputes the same
-  # way: 07_predict_fixtures.R:95,99,131 and 08_evaluate_model.R:42.
+  # way: 07_predict_fixtures.R (X_fix, X, X_mir) and 08_evaluate_model.R:42.
   # Removing it here would make the knockout path the ONLY one feeding raw
-  # NAs to models that were never trained on them. It matters: 112 of 177
-  # feature columns carry NAs in the WC rows this function predicts, at up to
-  # 35% (away_xg). If you want native NA handling, drop the imputation in 05
-  # and 06 and retrain -- changing it on the serving side alone is a bug.
+  # NAs to models that were never trained on them. It matters: in the step-04
+  # match dataset the WC rows this function predicts carry NAs across most
+  # feature-shaped columns, reaching 35% for away_xg (measured 2026-08-12 on
+  # cache-predictions-opta/04_*.rds). If you want native NA handling, drop the
+  # imputation in 05 and 06 and retrain -- changing it on the serving side
+  # alone is a bug.
   X[is.na(X)] <- 0
   d <- xgboost::xgb.DMatrix(data = X)
   hg <- stats::predict(goals_models$home$model, d)

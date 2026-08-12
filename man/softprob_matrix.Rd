@@ -21,10 +21,8 @@ An \code{n_rows} x \code{n_class} numeric matrix.
 \code{predict()}; older versions return a flat, ROW-major vector. Reshaping
 the flat form with \code{byrow = FALSE} silently scrambles classes across
 observations, and the obvious guard does not catch it -- a column-major
-reshape of a row-major softprob vector can still produce rows that sum to
-\enumerate{
-\item Every call site goes through this helper rather than reshaping inline,
-so there is one place where the xgboost return contract is interpreted.
-}
+reshape of a row-major softprob vector can still produce rows summing to
+one. Every call site goes through this helper rather than reshaping
+inline, so the xgboost return contract is interpreted in exactly one place.
 }
 \keyword{internal}

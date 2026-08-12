@@ -27,9 +27,11 @@ The simulator draws a match OUTCOME from the model's win/draw/loss split
 Drawing goals from independent Poissons and patching them to agree -- what
 this file did until 2026-08-12 -- biased goal difference in one direction:
 a win whose Poisson draw disagreed was snapped to the smallest consistent
-margin (\code{if (g1 <= g2) g1 <- g2 + 1L}), and a draw overwrote the away
-team's goals with the home team's (\code{g2 <- g1}), discarding the away
-lambda entirely. Group GD is a FIFA tiebreak and feeds the best-8
+margin (\code{if (g1 <= g2) g1 <- g2 + 1L}), and a draw overwrote side 2's
+goals with side 1's (\code{g2 <- g1}), discarding \code{lam2} entirely.
+(Sides here are the two teams as listed, \code{t1}/\code{t2} in the group
+loop and \code{ta}/\code{tb} in \code{play_knockout_round()} -- neither is
+a home/away designation.) Group GD is a FIFA tiebreak and feeds the best-8
 third-place cut, so that bias landed in the published advancement numbers.
 }
 \details{

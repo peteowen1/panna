@@ -526,9 +526,11 @@ simulate_world_cup <- function(predictions, groups, knockout,
 #' Drawing goals from independent Poissons and patching them to agree -- what
 #' this file did until 2026-08-12 -- biased goal difference in one direction:
 #' a win whose Poisson draw disagreed was snapped to the smallest consistent
-#' margin (\code{if (g1 <= g2) g1 <- g2 + 1L}), and a draw overwrote the away
-#' team's goals with the home team's (\code{g2 <- g1}), discarding the away
-#' lambda entirely. Group GD is a FIFA tiebreak and feeds the best-8
+#' margin (\code{if (g1 <= g2) g1 <- g2 + 1L}), and a draw overwrote side 2's
+#' goals with side 1's (\code{g2 <- g1}), discarding \code{lam2} entirely.
+#' (Sides here are the two teams as listed, \code{t1}/\code{t2} in the group
+#' loop and \code{ta}/\code{tb} in \code{play_knockout_round()} -- neither is
+#' a home/away designation.) Group GD is a FIFA tiebreak and feeds the best-8
 #' third-place cut, so that bias landed in the published advancement numbers.
 #'
 #' Instead: sample from the independent-Poisson joint pmf restricted to the
@@ -552,9 +554,13 @@ build_scoreline_tables <- function(lam1, lam2, max_goals = 8L) {
   if (length(lam1) != length(lam2)) {
     stop("build_scoreline_tables: lam1 and lam2 must be the same length")
   }
-  if (anyNA(lam1) || anyNA(lam2)) {
-    stop("build_scoreline_tables: lambdas must be finite; got ",
-         sum(is.na(lam1)) + sum(is.na(lam2)), " NA")
+  # is.finite(), not anyNA() -- is.na(Inf) is FALSE, so an anyNA() check would
+  # let an infinite lambda through to dpois() and surface as the much less
+  # helpful "no probability mass for outcome 'loss'" abort further down.
+  bad <- sum(!is.finite(lam1)) + sum(!is.finite(lam2))
+  if (bad > 0L) {
+    stop("build_scoreline_tables: lambdas must be finite; got ", bad,
+         " NA/NaN/Inf")
   }
   n <- length(lam1)
   goals <- 0:max_goals
