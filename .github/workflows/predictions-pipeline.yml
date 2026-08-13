@@ -4,11 +4,12 @@ on:
   schedule:
     # Wednesday 8 AM UTC — after Tuesday matches + overnight Opta scrape
     - cron: '0 8 * * 3'
-    # WC 2026 finals week (Jul 12-19): daily 9 AM UTC backstop in case the
-    # 05:00 scrape's opta-scrape-complete dispatch fails. Cron has no year
-    # field so this re-fires on these July dates every year - harmless
-    # (concurrency-queued, idempotent); remove after the 2026 final.
-    - cron: '0 9 12-19 7 *'
+    # Removed 2026-08-13: the WC 2026 finals-week backstop ('0 9 12-19 7 *',
+    # daily 9 AM UTC over Jul 12-19) covered the case where the 05:00 scrape's
+    # opta-scrape-complete dispatch failed during the tournament. Its own
+    # comment said "remove after the 2026 final"; the final was Jul 19 2026.
+    # Cron has no year field, so left in place it would have re-fired on those
+    # eight July dates every year from now on.
   workflow_dispatch:
     inputs:
       force_rebuild:
