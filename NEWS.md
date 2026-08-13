@@ -1,4 +1,4 @@
-# panna 0.3.1 (dev)
+# panna 0.3.20 (dev)
 
 ## Simplification campaign — dead code removal, vignette rewrite, API curation
 
