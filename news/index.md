@@ -1,5 +1,65 @@
 # Changelog
 
+## panna 0.3.21 (dev)
+
+### Skills join fixed — PSR/PSV were trained on half their weekly bins
+
+- **`07_train_psr_model.R`: the chunked skill join visited every second
+  weekly date.** `prematch_skills[[j]] <- NULL` deletes a list element
+  rather than blanking it, so the list shrank under the loop while
+  `names(prematch_skills)[j]` re-read it; past the halfway point the
+  lookup returned `NULL` and an
+  [`is.null()`](https://rdrr.io/r/base/NULL.html) guard swallowed it.
+  338 of 677 bins were skipped, their player-matches re-added with `NA`
+  skills and **imputed to 0**, then minute-weighted into team totals —
+  silently, with the loop reporting success. Live since `a317281`
+  (2026-03-17). Coverage is now 100.0% (1,885,239 / 1,885,715
+  player-matches). **All PSR/PSV/blend/goal-diff coefficients are
+  regenerated.** The GK path was never affected (it iterates
+  [`names()`](https://rdrr.io/r/base/names.html) directly) and its
+  coefficients are byte-identical.
+- The damage was **not** simple attenuation: zero-filling half the rows
+  changed which features the penalized fit *selected* (PSR exact-zero
+  betas 43 → 10, OSR 40 → 49). Anything derived from the old
+  coefficients must be refit, not rescaled.
+- **New tripwires**: abort if \>5% of weekly dates go unjoined, or if
+  \<95% of player-matches have skills. Both numbers were already
+  printed; nothing asserted on them.
+- Orphaned player-matches are now found by an anti-join on the
+  `(match_id, player_id)` **pair** rather than an OR of two independent
+  membership tests, which could only see a wholesale-absent match or
+  player.
+- `PSV_RELIABILITY_GD_SCALE` re-derived, 5.134 → **2.717**, and
+  `psv_live_constants.csv` rebuilt. The old value had been stale since
+  2026-07-21: two retrains changed the coefficients it is fit against
+  and neither re-derived it. Step 07 now names the artifacts it
+  invalidates, and 07d warns when its fitted slope drifts \>2% from the
+  shipped constant.
+
+### Correctness guards in the RAPM core
+
+- [`validate_parquet_file()`](https://peteowen1.github.io/panna/reference/validate_parquet_file.md)
+  returns `TRUE`/`FALSE`/**`NA`**, and `TRUE && NA` is `NA`, so
+  `if (NA)` **aborted** at three cache-read sites instead of falling
+  through to the re-download they were written for. Now
+  `isTRUE`/`isFALSE`; the `NA` case refetches without deleting a file it
+  could not validate.
+- The penalty factor is built positionally, assuming covariates occupy
+  the last columns — now asserted rather than assumed.
+  `covariate_names`/`covariate_cols` unified across
+  [`fit_rapm()`](https://peteowen1.github.io/panna/reference/fit_rapm.md)
+  and
+  [`fit_rapm_with_prior()`](https://peteowen1.github.io/panna/reference/fit_rapm_with_prior.md).
+- [`fit_rapm_with_prior()`](https://peteowen1.github.io/panna/reference/fit_rapm_with_prior.md)
+  gains `parallel`/`n_cores` (the production xRAPM path was the serial
+  one), aborts on a non-finite prior, and reports a weighted R²
+  denominator to match its weighted `cvm`.
+- All five `player_mapping` name-joins share one duplicate-guarded
+  helper; a duplicated `player_id` previously multiplied rating rows
+  silently.
+- [`.subset_rapm_data_expanding()`](https://peteowen1.github.io/panna/reference/dot-subset_rapm_data_expanding.md)
+  rejects a net-mode design instead of returning a vector of `NA`s.
+
 ## panna 0.3.20 (dev)
 
 ### Simplification campaign — dead code removal, vignette rewrite, API curation

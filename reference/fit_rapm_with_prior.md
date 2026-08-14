@@ -15,6 +15,8 @@ fit_rapm_with_prior(
   nfolds = 10,
   use_weights = TRUE,
   penalize_covariates = FALSE,
+  parallel = TRUE,
+  n_cores = NULL,
   fixed_lambda = NULL,
   lambda_seq = NULL,
   mode = c("od", "net")
@@ -52,6 +54,17 @@ fit_rapm_with_prior(
 - penalize_covariates:
 
   Whether to penalize covariate coefficients
+
+- parallel:
+
+  Whether to parallelize the `cv.glmnet` fold loop (matching
+  [`fit_rapm`](https://peteowen1.github.io/panna/reference/fit_rapm.md)).
+  Ignored when `fixed_lambda` is supplied (single fit, no CV).
+
+- n_cores:
+
+  Number of cores for parallel CV. Default `NULL` = half the detected
+  cores (capped at 2 under `R CMD check`).
 
 - fixed_lambda:
 

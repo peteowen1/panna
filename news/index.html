@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.20</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.21</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,6 +39,31 @@
       <small>Source: <a href="https://github.com/peteowen1/panna/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.21" id="panna-0321-dev">panna 0.3.21 (dev)<a class="anchor" aria-label="anchor" href="#panna-0321-dev"></a></h2>
+<div class="section level3">
+<h3 id="skills-join-fixed--psrpsv-were-trained-on-half-their-weekly-bins-0-3-21">Skills join fixed — PSR/PSV were trained on half their weekly bins<a class="anchor" aria-label="anchor" href="#skills-join-fixed--psrpsv-were-trained-on-half-their-weekly-bins-0-3-21"></a></h3>
+<ul><li>
+<strong><code>07_train_psr_model.R</code>: the chunked skill join visited every second weekly date.</strong> <code>prematch_skills[[j]] &lt;- NULL</code> deletes a list element rather than blanking it, so the list shrank under the loop while <code>names(prematch_skills)[j]</code> re-read it; past the halfway point the lookup returned <code>NULL</code> and an <code><a href="https://rdrr.io/r/base/NULL.html" class="external-link">is.null()</a></code> guard swallowed it. 338 of 677 bins were skipped, their player-matches re-added with <code>NA</code> skills and <strong>imputed to 0</strong>, then minute-weighted into team totals — silently, with the loop reporting success. Live since <code>a317281</code> (2026-03-17). Coverage is now 100.0% (1,885,239 / 1,885,715 player-matches). <strong>All PSR/PSV/blend/goal-diff coefficients are regenerated.</strong> The GK path was never affected (it iterates <code><a href="https://rdrr.io/r/base/names.html" class="external-link">names()</a></code> directly) and its coefficients are byte-identical.</li>
+<li>The damage was <strong>not</strong> simple attenuation: zero-filling half the rows changed which features the penalized fit <em>selected</em> (PSR exact-zero betas 43 → 10, OSR 40 → 49). Anything derived from the old coefficients must be refit, not rescaled.</li>
+<li>
+<strong>New tripwires</strong>: abort if &gt;5% of weekly dates go unjoined, or if &lt;95% of player-matches have skills. Both numbers were already printed; nothing asserted on them.</li>
+<li>Orphaned player-matches are now found by an anti-join on the <code>(match_id, player_id)</code> <strong>pair</strong> rather than an OR of two independent membership tests, which could only see a wholesale-absent match or player.</li>
+<li>
+<code>PSV_RELIABILITY_GD_SCALE</code> re-derived, 5.134 → <strong>2.717</strong>, and <code>psv_live_constants.csv</code> rebuilt. The old value had been stale since 2026-07-21: two retrains changed the coefficients it is fit against and neither re-derived it. Step 07 now names the artifacts it invalidates, and 07d warns when its fitted slope drifts &gt;2% from the shipped constant.</li>
+</ul></div>
+<div class="section level3">
+<h3 id="correctness-guards-in-the-rapm-core-0-3-21">Correctness guards in the RAPM core<a class="anchor" aria-label="anchor" href="#correctness-guards-in-the-rapm-core-0-3-21"></a></h3>
+<ul><li>
+<code><a href="../reference/validate_parquet_file.html">validate_parquet_file()</a></code> returns <code>TRUE</code>/<code>FALSE</code>/<strong><code>NA</code></strong>, and <code>TRUE &amp;&amp; NA</code> is <code>NA</code>, so <code>if (NA)</code> <strong>aborted</strong> at three cache-read sites instead of falling through to the re-download they were written for. Now <code>isTRUE</code>/<code>isFALSE</code>; the <code>NA</code> case refetches without deleting a file it could not validate.</li>
+<li>The penalty factor is built positionally, assuming covariates occupy the last columns — now asserted rather than assumed. <code>covariate_names</code>/<code>covariate_cols</code> unified across <code><a href="../reference/fit_rapm.html">fit_rapm()</a></code> and <code><a href="../reference/fit_rapm_with_prior.html">fit_rapm_with_prior()</a></code>.</li>
+<li>
+<code><a href="../reference/fit_rapm_with_prior.html">fit_rapm_with_prior()</a></code> gains <code>parallel</code>/<code>n_cores</code> (the production xRAPM path was the serial one), aborts on a non-finite prior, and reports a weighted R² denominator to match its weighted <code>cvm</code>.</li>
+<li>All five <code>player_mapping</code> name-joins share one duplicate-guarded helper; a duplicated <code>player_id</code> previously multiplied rating rows silently.</li>
+<li>
+<code><a href="../reference/dot-subset_rapm_data_expanding.html">.subset_rapm_data_expanding()</a></code> rejects a net-mode design instead of returning a vector of <code>NA</code>s.</li>
+</ul></div>
+</div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.20" id="panna-0320-dev">panna 0.3.20 (dev)<a class="anchor" aria-label="anchor" href="#panna-0320-dev"></a></h2>
 <div class="section level3">

@@ -11,7 +11,7 @@ box score statistics as a Bayesian prior."><meta property="og:image" content="ht
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.20</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.21</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -60,6 +60,8 @@ box score statistics as a Bayesian prior.</p>
 <span>  nfolds <span class="op">=</span> <span class="fl">10</span>,</span>
 <span>  use_weights <span class="op">=</span> <span class="cn">TRUE</span>,</span>
 <span>  penalize_covariates <span class="op">=</span> <span class="cn">FALSE</span>,</span>
+<span>  parallel <span class="op">=</span> <span class="cn">TRUE</span>,</span>
+<span>  n_cores <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  fixed_lambda <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  lambda_seq <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  mode <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"od"</span>, <span class="st">"net"</span><span class="op">)</span></span>
@@ -98,6 +100,17 @@ player_id). Must be <code>NULL</code> when <code>mode = "net"</code>.</p></dd>
 
 <dt id="arg-penalize-covariates">penalize_covariates<a class="anchor" aria-label="anchor" href="#arg-penalize-covariates"></a></dt>
 <dd><p>Whether to penalize covariate coefficients</p></dd>
+
+
+<dt id="arg-parallel">parallel<a class="anchor" aria-label="anchor" href="#arg-parallel"></a></dt>
+<dd><p>Whether to parallelize the <code>cv.glmnet</code> fold loop
+(matching <code><a href="fit_rapm.html">fit_rapm</a></code>). Ignored when <code>fixed_lambda</code> is
+supplied (single fit, no CV).</p></dd>
+
+
+<dt id="arg-n-cores">n_cores<a class="anchor" aria-label="anchor" href="#arg-n-cores"></a></dt>
+<dd><p>Number of cores for parallel CV. Default <code>NULL</code> = half
+the detected cores (capped at 2 under <code>R CMD check</code>).</p></dd>
 
 
 <dt id="arg-fixed-lambda">fixed_lambda<a class="anchor" aria-label="anchor" href="#arg-fixed-lambda"></a></dt>
