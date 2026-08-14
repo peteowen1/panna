@@ -487,22 +487,40 @@ PANNA_PSR_WEIGHT <- 0.5
 #'
 #' Multiplies the lambda-priced display PSV (\code{calculate_psv(reliability =
 #' )}) so its units become "expected goal-difference contribution per 90".
-#' Derived 2026-07-20 (LIVE-PSV-UNBLOCK D1-v2 FINAL) by regressing match goal
-#' difference on minutes-weighted team sums of lambda-priced player PSV
-#' (13,548 matches, R-squared = 0.31, t ~= 59) -- the slope makes summed
-#' player PSVs predict match GD with slope 1. ONE global constant for BOTH
-#' the outfield and GK populations: the GK-specific GD coefficient (c ~= 25,
-#' fit by the same regression as a separate GK term) was REJECTED as pricing
-#' the #159 team-context leak in the GK reliability artifact, not genuine
-#' keeper skill -- GKs use this same constant until #159 retrains. Re-derive
-#' via \code{data-raw/estimated-skills/07d_derive_psv_gd_scale.R} after any
-#' retrain of \code{psv_match_reliability.csv} (07b) or the PSR/PSV
-#' coefficients (07_train_psr_model.R), then update this value by hand.
+#' Re-derived 2026-08-14 (was 5.134) by regressing match goal difference on
+#' minutes-weighted team sums of lambda-priced player PSV: 13,548 matches,
+#' R-squared = 0.156, t(c_outfield) = 40.2 -- the slope makes summed player
+#' PSVs predict match GD with slope 1. The halving from 5.134 is expected and
+#' not a regression: the previous value was fit against PSR/PSV coefficients
+#' produced by the skills-join bug (half the weekly bins zero-imputed, fixed
+#' 2026-08-14), whose smaller summed PSVs needed a larger multiplier to reach
+#' the same GD.
 #'
-#' @format Numeric value: 5.134
+#' UNEXPLAINED, flagged rather than buried: R-squared on the same two-regressor
+#' spec FELL from 0.31 to 0.156 when the coefficients were corrected. Fixing a
+#' data bug should not halve explanatory power, and the obvious story does not
+#' work either -- a zeroed weekly bin zeroed BOTH teams, so it cancels out of a
+#' home-minus-away diff. The adopted slope itself is well determined
+#' (t = 40.2) and this constant only sets scale, not fit quality, so the value
+#' is safe to use; but if someone later depends on this regression's R-squared,
+#' investigate before trusting either number.
+#'
+#' ONE global constant for BOTH the outfield and GK populations: the
+#' GK-specific GD coefficient (c = 0.305 in this fit) is again REJECTED as
+#' pricing the #159 team-context leak in the GK reliability artifact, not
+#' genuine keeper skill -- GKs use this same constant until #159 retrains.
+#'
+#' Re-derive via \code{data-raw/estimated-skills/07d_derive_psv_gd_scale.R}
+#' after any retrain of \code{psv_match_reliability.csv} (07b) or the PSR/PSV
+#' coefficients (07_train_psr_model.R), then update this value by hand -- the
+#' script writes no file, it only prints the number. Note 07b reads neither the
+#' coefficients nor this constant, so a coefficient-only retrain does not
+#' require re-running it.
+#'
+#' @format Numeric value: 2.717
 #' @family psr
 #' @export
-PSV_RELIABILITY_GD_SCALE <- 5.134
+PSV_RELIABILITY_GD_SCALE <- 2.717
 
 
 # =============================================================================
