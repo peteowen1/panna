@@ -87,12 +87,8 @@ calculate_od_panna <- function(rapm_data, spm_ratings, lambda_prior = 1) {
     panna = o_panna + d_panna
   )
 
-  # Add player names
-  if (!is.null(rapm_data$player_mapping)) {
-    mapping <- data.table::as.data.table(rapm_data$player_mapping[, c("player_id", "player_name")])
-    ratings <- mapping[data.table::as.data.table(ratings), on = "player_id"]
-    data.table::setDF(ratings)
-  }
+  # Add player names (duplicate-guarded; see .join_player_mapping in rapm_model.R)
+  ratings <- .join_player_mapping(ratings, rapm_data$player_mapping)
 
   ratings <- ratings[order(-ratings$panna), ]
 

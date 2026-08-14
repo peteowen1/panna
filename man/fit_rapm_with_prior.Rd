@@ -12,6 +12,8 @@ fit_rapm_with_prior(
   nfolds = 10,
   use_weights = TRUE,
   penalize_covariates = FALSE,
+  parallel = TRUE,
+  n_cores = NULL,
   fixed_lambda = NULL,
   lambda_seq = NULL,
   mode = c("od", "net")
@@ -33,6 +35,13 @@ player_id). Must be \code{NULL} when \code{mode = "net"}.}
 \item{use_weights}{Whether to use splint duration weights}
 
 \item{penalize_covariates}{Whether to penalize covariate coefficients}
+
+\item{parallel}{Whether to parallelize the \code{cv.glmnet} fold loop
+(matching \code{\link{fit_rapm}}). Ignored when \code{fixed_lambda} is
+supplied (single fit, no CV).}
+
+\item{n_cores}{Number of cores for parallel CV. Default \code{NULL} = half
+the detected cores (capped at 2 under \code{R CMD check}).}
 
 \item{fixed_lambda}{Optional single lambda value. When supplied, skips
 \code{cv.glmnet} and fits at this lambda directly (see

@@ -114,11 +114,13 @@ data_location_report <- function(leagues = NULL) {
       cons_seasons <- if (file.exists(file.path(od, "opta_lineups.parquet"))) {
         tryCatch({
           .with_duckdb(function(conn) {
+            # Route the value through build_where_clause() so a label with an
+            # apostrophe is escaped rather than breaking the query.
             rs <- DBI::dbGetQuery(conn, sprintf(
-              "SELECT DISTINCT season FROM '%s' WHERE competition = '%s'",
+              "SELECT DISTINCT season FROM '%s' %s",
               normalizePath(file.path(od, "opta_lineups.parquet"),
                              winslash = "/", mustWork = TRUE),
-              lg
+              build_where_clause(list(competition = lg))
             ))
             sort(as.character(rs$season))
           })

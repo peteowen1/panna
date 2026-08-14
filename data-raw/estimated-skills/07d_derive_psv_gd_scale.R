@@ -233,6 +233,37 @@ cat(sprintf("\nc_outfield = %.4f  <- ADOPT as PSV_RELIABILITY_GD_SCALE (BOTH pop
 cat(sprintf("c_gk       = %.4f  <- REJECT (#159 team-context leak in GK reliability); GKs use c_outfield\n", c_gk))
 cat(sprintf("\n>>> PSV_RELIABILITY_GD_SCALE = %.3f -- update R/constants.R BY HAND <<<\n", round(c_outfield, 3)))
 
+## Staleness check against the SHIPPED constant. Not an abort: producing a new
+## number is the whole point of running this, so a divergence here is normal
+## immediately after a retrain. It is loud because the failure mode is silence
+## -- the shipped value sat at 5.134 from 2026-07-21 to 2026-08-14 (it should
+## have been ~4.888) because two coefficient retrains landed and nobody re-ran
+## this script. Nothing else in the pipeline reads the fitted slope back.
+shipped <- tryCatch(PSV_RELIABILITY_GD_SCALE, error = function(e) NA_real_)
+if (!is.finite(shipped)) {
+  # Say so rather than emitting nothing. A staleness check that quietly
+  # produces no output when it cannot run is the same silent-failure shape
+  # this whole changeset exists to remove -- absence of a warning would read
+  # as "the constant is fine".
+  cat("\nCOULD NOT CHECK STALENESS: PSV_RELIABILITY_GD_SCALE is not in scope",
+      "or is non-finite.\nCompare the fitted value above against R/constants.R",
+      "by hand.\n")
+} else {
+  drift <- abs(c_outfield - shipped) / shipped
+  if (drift > 0.02) {
+    cat(strrep("!", 78), "\n", sep = "")
+    cat(sprintf("STALE CONSTANT: shipped PSV_RELIABILITY_GD_SCALE = %.3f, freshly fitted = %.3f (%.1f%% drift).\n",
+                shipped, c_outfield, 100 * drift))
+    cat("Everything scored through calculate_psv(reliability=) is using the shipped value.\n")
+    cat("Edit R/constants.R to the fitted value, then re-run 07c so the live\n")
+    cat("PSV constants are rebuilt against the same scale.\n")
+    cat(strrep("!", 78), "\n", sep = "")
+  } else {
+    cat(sprintf("Shipped constant %.3f agrees with the fresh fit (%.1f%% drift) -- no edit needed.\n",
+                shipped, 100 * drift))
+  }
+}
+
 ## ---------------------------------------------------------------------------
 ## 8. Sanity: top-20 outfield / top-5 GK average per-90 under the adopted
 ##    scale, most recent complete season (season_end_year heuristic mirrors
