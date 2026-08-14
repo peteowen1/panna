@@ -502,14 +502,18 @@ PANNA_PSR_WEIGHT <- 0.5
 #' \preformatted{
 #'   coefficients                                c_outfield   R^2     t
 #'   2026-07-20 (pre f9c7e31/bd34465)                 5.134   0.31   ~59
-#'   86d3e9e (post-July retrains, pre join fix)       4.888   0.142  37.2
+#'   bd34465 (last pre-join-fix retrain)              4.888   0.142  37.2
 #'   7b34f51 (post join fix)                          2.717   0.156  40.2
 #' }
 #'
+#' (The middle row was measured from 86d3e9e's tree, which is not itself a
+#' retrain -- it carries bd34465's coefficients unchanged, since nothing
+#' between them touched inst/extdata. The vintage is bd34465's.)
+#'
 #' So the join fix moved fit quality UP (0.142 -> 0.156, t 37.2 -> 40.2), which
-#' is the expected direction for a data-bug fix; it halved the SLOPE because
-#' the corrected PSR effects are ~3x larger, so summed PSVs need a smaller
-#' multiplier to reach the same GD. The 54% relative R-squared drop happened in
+#' is the expected direction for a data-bug fix; it cut the SLOPE by ~44%
+#' (4.888 -> 2.717) because the corrected PSR effects are ~3x larger, so summed
+#' PSVs need a smaller multiplier to reach the same GD. The 54% relative R-squared drop happened in
 #' the 2026-07-21 retrains -- most plausibly f9c7e31, which removed the zonal
 #' finishing features that had been supplying large and partly spurious
 #' variance -- and went unnoticed for 3.5 weeks. That also means 5.134 was

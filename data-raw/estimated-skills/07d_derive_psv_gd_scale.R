@@ -240,7 +240,15 @@ cat(sprintf("\n>>> PSV_RELIABILITY_GD_SCALE = %.3f -- update R/constants.R BY HA
 ## have been ~4.888) because two coefficient retrains landed and nobody re-ran
 ## this script. Nothing else in the pipeline reads the fitted slope back.
 shipped <- tryCatch(PSV_RELIABILITY_GD_SCALE, error = function(e) NA_real_)
-if (is.finite(shipped)) {
+if (!is.finite(shipped)) {
+  # Say so rather than emitting nothing. A staleness check that quietly
+  # produces no output when it cannot run is the same silent-failure shape
+  # this whole changeset exists to remove -- absence of a warning would read
+  # as "the constant is fine".
+  cat("\nCOULD NOT CHECK STALENESS: PSV_RELIABILITY_GD_SCALE is not in scope",
+      "or is non-finite.\nCompare the fitted value above against R/constants.R",
+      "by hand.\n")
+} else {
   drift <- abs(c_outfield - shipped) / shipped
   if (drift > 0.02) {
     cat(strrep("!", 78), "\n", sep = "")
