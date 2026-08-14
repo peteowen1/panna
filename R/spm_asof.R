@@ -50,6 +50,19 @@
 #' @keywords internal
 .subset_rapm_data_expanding <- function(rapm_data, splint_season_map, cutoff_year,
                                         min_year = NULL) {
+  # od-only by construction: the column-pruning below is written against
+  # _off/_def pairs. Handed a mode = "net" design, match(paste0(pids, "_off"),
+  # cn) returns all-NA, pkeep becomes all-NA, and new_pids <- pids[pkeep]
+  # returns a same-length vector of NAs -- silent garbage rather than an
+  # error. Fail loudly instead.
+  if (identical(rapm_data$mode, "net")) {
+    cli::cli_abort(c(
+      "{.fn .subset_rapm_data_expanding} supports {.val od} designs only.",
+      "x" = "{.code rapm_data$mode} is {.val net} (single {.field _net} column per player).",
+      "i" = "The expanding-window column prune keeps {.field _off}/{.field _def} symmetric per player; there is no such pair in net mode."
+    ))
+  }
+
   ssm <- data.table::as.data.table(splint_season_map)
   row_season <- ssm$season_end_year[match(rapm_data$row_data$splint_id, ssm$splint_id)]
   keep_rows <- !is.na(row_season) & row_season < cutoff_year
@@ -88,7 +101,10 @@
     n_players = length(new_pids) - 1L,
     n_players_total = length(new_pids),
     covariate_names = new_cov,
-    target_type = rapm_data$target_type %||% "xg"
+    target_type = rapm_data$target_type %||% "xg",
+    # Carried explicitly so fit_rapm() records the right mode rather than
+    # falling back to its "od" default on a list that has no $mode.
+    mode = "od"
   )
 }
 

@@ -32,6 +32,53 @@
   fit
 }
 
+#' Resolve covariate names and assert they occupy the LAST columns of X
+#'
+#' Both \code{fit_rapm()} and \code{fit_rapm_with_prior()} build their penalty
+#' factor positionally as \code{c(rep(1, n_cols - n_cov), rep(0, n_cov))}. That
+#' is only correct because \code{prepare_rapm_data()} cbinds player columns
+#' first and covariates last (\code{rapm_matrix.R}, \code{do.call(cbind,
+#' parts)}). Nothing enforced it, so a design-matrix column reorder would
+#' silently penalize the covariates and leave player columns unpenalized --
+#' distorting every rating with no error anywhere.
+#'
+#' Also unifies the field name. \code{fit_rapm()} read only
+#' \code{$covariate_names} while \code{fit_rapm_with_prior()} fell back to
+#' \code{$covariate_cols}, so the same test-shaped \code{rapm_data} had its
+#' covariates penalized in one function and not the other.
+#'
+#' @param rapm_data The rapm_data list.
+#' @param X The design matrix actually being fit (post NA-row filtering).
+#' @return Character vector of covariate names (possibly empty).
+#' @keywords internal
+#' @noRd
+.resolve_covariate_names <- function(rapm_data, X) {
+  cov_names <- rapm_data$covariate_names %||% rapm_data$covariate_cols
+  if (is.null(cov_names)) return(character(0))
+  cov_names <- as.character(cov_names)
+  n_cov <- length(cov_names)
+  if (n_cov == 0) return(cov_names)
+
+  n_cols <- ncol(X)
+  if (n_cov > n_cols) {
+    cli::cli_abort(c(
+      "More covariates ({n_cov}) than design-matrix columns ({n_cols}).",
+      "i" = "{.code rapm_data} is inconsistent with its own {.field X}/{.field X_full}."
+    ))
+  }
+  tail_cols <- as.character(colnames(X)[seq.int(n_cols - n_cov + 1L, n_cols)])
+  if (!identical(tail_cols, cov_names)) {
+    cli::cli_abort(c(
+      "Covariates must occupy the last {n_cov} column{?s} of the design matrix.",
+      "x" = "Last column{?s} of {.field X}: {.field {tail_cols[seq_len(min(5L, n_cov))]}}.",
+      "i" = "Declared covariates: {.field {cov_names[seq_len(min(5L, n_cov))]}}.",
+      "i" = "The penalty factor is built positionally, so a reorder here would silently penalize the wrong columns."
+    ))
+  }
+  cov_names
+}
+
+
 #' Fit RAPM model
 #'
 #' Fits ridge regression on the design matrix with:
@@ -132,11 +179,13 @@ fit_rapm <- function(rapm_data, alpha = 0, nfolds = 10,
     on.exit(doParallel::stopImplicitCluster(), add = TRUE)
   }
 
-  # Penalty factor: don't penalize covariates if requested
-  # Covariates are always the last columns (cbind(X_players, X_covariates) in prepare_rapm_data)
-  if (!penalize_covariates && length(rapm_data$covariate_names) > 0) {
+  # Penalty factor: don't penalize covariates if requested. Covariates are the
+  # last columns (cbind(X_players, X_covariates) in prepare_rapm_data);
+  # .resolve_covariate_names() now ASSERTS that rather than assuming it.
+  covariate_names <- .resolve_covariate_names(rapm_data, X)
+  if (!penalize_covariates && length(covariate_names) > 0) {
     n_cols <- ncol(X)
-    n_cov <- length(rapm_data$covariate_names)
+    n_cov <- length(covariate_names)
     penalty_factor <- c(rep(1, n_cols - n_cov), rep(0, n_cov))
   } else {
     penalty_factor <- rep(1, ncol(X))
@@ -174,21 +223,33 @@ fit_rapm <- function(rapm_data, alpha = 0, nfolds = 10,
     mode = fit_mode,
     alpha = alpha,
     n_observations = length(y),
-    n_player_cols = if (fit_mode == "net") rapm_data$n_players else rapm_data$n_players * 2,
-    n_covariates = length(rapm_data$covariate_names),
+    # Count from player_ids, not n_players: player_ids includes the synthetic
+    # "replacement" column (rapm_matrix.R) which n_players excludes, so the
+    # old n_players-based count was off by 2 (od) / 1 (net).
+    n_player_cols = length(rapm_data$player_ids) * (if (fit_mode == "net") 1L else 2L),
+    n_covariates = length(covariate_names),
     lambda_min = cv_fit$lambda.min,
     lambda_1se = cv_fit$lambda.1se,
     player_mapping = rapm_data$player_mapping,
     player_ids = rapm_data$player_ids,
-    covariate_names = rapm_data$covariate_names
+    covariate_names = covariate_names
   )
 
   target_desc <- if (target_type == "xg") "xG-based" else "Goals-based"
   if (is.null(fixed_lambda)) {
+    # cvm is a weighted CV MSE when weights are used, so the R^2 denominator
+    # must be the weighted variance of y -- unweighted var(y) understates the
+    # denominator and overstates the printed fit quality.
+    var_y <- if (!is.null(weights)) {
+      mu_w <- stats::weighted.mean(y, weights)
+      sum(weights * (y - mu_w)^2) / sum(weights)
+    } else {
+      stats::var(y)
+    }
     progress_msg(sprintf("RAPM fit complete (%s). Lambda.min: %.4f, R^2: %.3f",
                          target_desc, cv_fit$lambda.min,
                          1 - cv_fit$cvm[cv_fit$lambda == cv_fit$lambda.min] /
-                           var(y)))
+                           var_y))
   } else {
     progress_msg(sprintf("RAPM fit complete (%s). Fixed lambda: %.4f (no CV)",
                          target_desc, fixed_lambda))
@@ -292,12 +353,11 @@ extract_rapm_ratings <- function(model, lambda = "min") {
     )
   }
 
-  # Join with player mapping
-  if (!is.null(model$panna_metadata$player_mapping)) {
-    mapping <- data.table::as.data.table(model$panna_metadata$player_mapping[, c("player_id", "player_name", "total_minutes")])
-    ratings <- mapping[data.table::as.data.table(ratings), on = "player_id"]
-    data.table::setDF(ratings)
-  }
+  # Join with player mapping (guards against duplicate player_id row-multiplication)
+  ratings <- .join_player_mapping(
+    ratings, model$panna_metadata$player_mapping,
+    cols = c("player_id", "player_name", "total_minutes")
+  )
 
   # Add covariate effects if available
   if (length(covariate_names) > 0) {
@@ -370,7 +430,20 @@ get_covariate_effects <- function(model, lambda = "min") {
   match_idx <- match(player_ids, names(prior))
   valid <- !is.na(match_idx) & cols %in% col_names
   if (any(valid)) {
-    prior_vec[cols[valid]] <- prior[player_ids[valid]]
+    vals <- prior[player_ids[valid]]
+    # A non-finite prior poisons the WHOLE fit, not just its own player: the
+    # caller forms y_adjusted <- y - X %*% prior_vec AFTER the NA-row filter,
+    # so one NA propagates to every row and surfaces as an opaque glmnet
+    # error about NA/NaN/Inf. Fail here, where we can name the players.
+    if (any(!is.finite(vals))) {
+      bad <- player_ids[valid][!is.finite(vals)]
+      cli::cli_abort(c(
+        "{msg_prefix}: {.arg {arg_label}} has {length(bad)} non-finite value{?s}.",
+        "x" = "e.g. {.val {bad[seq_len(min(5L, length(bad)))]}}.",
+        "i" = "The prior is subtracted from every row of the response, so a single NA/NaN/Inf makes the entire fit NA."
+      ))
+    }
+    prior_vec[cols[valid]] <- vals
   }
   matched <- sum(valid)
 
@@ -383,6 +456,30 @@ get_covariate_effects <- function(model, lambda = "min") {
   }
 
   list(prior_vec = prior_vec, matched = matched)
+}
+
+
+# Shared name-join for the extract_* functions: attaches player_name (and
+# optionally total_minutes) from the stored player_mapping. Aborts on a
+# duplicated player_id -- data.table's mapping[ratings] join would silently
+# multiply rating rows, and every caller trusts the row count.
+.join_player_mapping <- function(ratings, player_mapping,
+                                 cols = c("player_id", "player_name")) {
+  if (is.null(player_mapping)) {
+    return(ratings)
+  }
+  dup_ids <- unique(player_mapping$player_id[duplicated(player_mapping$player_id)])
+  if (length(dup_ids) > 0) {
+    cli::cli_abort(c(
+      "player_mapping has {length(dup_ids)} duplicated player_id{?s} (e.g. {.val {utils::head(dup_ids, 3)}}).",
+      "x" = "A duplicate would silently multiply rating rows in the name join.",
+      "i" = "Deduplicate the mapping upstream: one row per player_id."
+    ))
+  }
+  mapping <- data.table::as.data.table(player_mapping[, cols])
+  ratings <- mapping[data.table::as.data.table(ratings), on = "player_id"]
+  data.table::setDF(ratings)
+  ratings
 }
 
 
@@ -411,6 +508,11 @@ get_covariate_effects <- function(model, lambda = "min") {
 #' @param nfolds Number of CV folds
 #' @param use_weights Whether to use splint duration weights
 #' @param penalize_covariates Whether to penalize covariate coefficients
+#' @param parallel Whether to parallelize the \code{cv.glmnet} fold loop
+#'   (matching \code{\link{fit_rapm}}). Ignored when \code{fixed_lambda} is
+#'   supplied (single fit, no CV).
+#' @param n_cores Number of cores for parallel CV. Default \code{NULL} = half
+#'   the detected cores (capped at 2 under \code{R CMD check}).
 #' @param fixed_lambda Optional single lambda value. When supplied, skips
 #'   \code{cv.glmnet} and fits at this lambda directly (see
 #'   \code{.glmnet_fixed_lambda}). Default \code{NULL} = cross-validated (current
@@ -433,6 +535,7 @@ fit_rapm_with_prior <- function(rapm_data, offense_prior, defense_prior,
                                  alpha = 0, nfolds = 10,
                                  use_weights = TRUE,
                                  penalize_covariates = FALSE,
+                                 parallel = TRUE, n_cores = NULL,
                                  fixed_lambda = NULL, lambda_seq = NULL,
                                  mode = c("od", "net")) {
   mode <- match.arg(mode)
@@ -497,12 +600,11 @@ fit_rapm_with_prior <- function(rapm_data, offense_prior, defense_prior,
   # Get column names
   col_names <- colnames(X)
   player_ids <- rapm_data$player_ids
-  # Support both covariate_names (production) and covariate_cols (tests)
-  covariate_names <- if (!is.null(rapm_data$covariate_names)) {
-    rapm_data$covariate_names
-  } else {
-    rapm_data$covariate_cols
-  }
+  # Supports both covariate_names (production) and covariate_cols (tests), and
+  # asserts covariates really are the last columns -- the penalty factor below
+  # is built positionally. Shared with fit_rapm(), which previously read only
+  # $covariate_names and so penalized differently on the same input.
+  covariate_names <- .resolve_covariate_names(rapm_data, X)
 
   # Build full prior vector (including covariates = 0)
   n_cols <- ncol(X)
@@ -555,6 +657,25 @@ fit_rapm_with_prior <- function(rapm_data, offense_prior, defense_prior,
   progress_msg(sprintf("Fitting xRAPM: %d observations, %d columns",
                        length(y_adjusted), ncol(X)))
 
+  # Set up parallel processing, matching fit_rapm() -- this is the production
+  # xRAPM path and previously ran the CV fold loop serially. Only relevant
+  # for cv.glmnet; the fixed-lambda path fits a single model.
+  if (parallel && is.null(fixed_lambda)) {
+    .check_suggests("parallel", "Parallel RAPM fitting requires parallel.")
+    .check_suggests("doParallel", "Parallel RAPM fitting requires doParallel.")
+    if (is.null(n_cores)) {
+      n_cores <- max(1, floor(parallel::detectCores() / 2))
+    }
+    # Respect R CMD check limits (typically 2 cores max)
+    check_limit <- Sys.getenv("_R_CHECK_LIMIT_CORES_", "")
+    if (nzchar(check_limit) && check_limit == "TRUE") {
+      n_cores <- min(n_cores, 2L)
+    }
+    progress_msg(sprintf("Using %d cores for parallel CV", n_cores))
+    doParallel::registerDoParallel(cores = n_cores)
+    on.exit(doParallel::stopImplicitCluster(), add = TRUE)
+  }
+
   # Penalty factor: don't penalize covariates if requested
   # Covariates are always the last columns (cbind(X_players, X_covariates) in prepare_rapm_data)
   if (!penalize_covariates && length(covariate_names) > 0) {
@@ -576,7 +697,8 @@ fit_rapm_with_prior <- function(rapm_data, offense_prior, defense_prior,
       lambda = lambda_seq,
       type.measure = "mse",
       penalty.factor = penalty_factor,
-      trace.it = if (interactive()) 1 else 0
+      trace.it = if (interactive()) 1 else 0,
+      parallel = parallel
     )
   } else {
     cv_fit <- .glmnet_fixed_lambda(X, y_adjusted, weights, alpha,
@@ -590,7 +712,9 @@ fit_rapm_with_prior <- function(rapm_data, offense_prior, defense_prior,
     mode = mode,
     alpha = alpha,
     n_observations = length(y_adjusted),
-    n_player_cols = if (mode == "net") rapm_data$n_players else rapm_data$n_players * 2,
+    # See fit_rapm(): player_ids includes the synthetic "replacement" column,
+    # n_players doesn't -- count columns from player_ids.
+    n_player_cols = length(rapm_data$player_ids) * (if (mode == "net") 1L else 2L),
     n_covariates = length(covariate_names),
     lambda_min = cv_fit$lambda.min,
     lambda_1se = cv_fit$lambda.1se,
@@ -724,12 +848,11 @@ extract_xrapm_ratings <- function(model, lambda = "min") {
     )
   }
 
-  # Join with player mapping
-  if (!is.null(model$panna_metadata$player_mapping)) {
-    mapping <- data.table::as.data.table(model$panna_metadata$player_mapping[, c("player_id", "player_name", "total_minutes")])
-    ratings <- mapping[data.table::as.data.table(ratings), on = "player_id"]
-    data.table::setDF(ratings)
-  }
+  # Join with player mapping (guards against duplicate player_id row-multiplication)
+  ratings <- .join_player_mapping(
+    ratings, model$panna_metadata$player_mapping,
+    cols = c("player_id", "player_name", "total_minutes")
+  )
 
   ratings <- ratings[order(-ratings$xrapm), ]
 
@@ -869,12 +992,8 @@ extract_rapm_coefficients <- function(model, lambda = "min") {
     rapm = player_coefs
   )
 
-  # Join with player mapping if available
-  if (!is.null(model$panna_metadata$player_mapping)) {
-    mapping <- data.table::as.data.table(model$panna_metadata$player_mapping[, c("player_id", "player_name")])
-    ratings <- mapping[data.table::as.data.table(ratings), on = "player_id"]
-    data.table::setDF(ratings)
-  }
+  # Join with player mapping if available (duplicate-guarded)
+  ratings <- .join_player_mapping(ratings, model$panna_metadata$player_mapping)
 
   ratings <- ratings[order(-ratings$rapm), ]
 
@@ -915,12 +1034,8 @@ extract_od_rapm_coefficients <- function(model, lambda = "min") {
   ratings$rapm <- ratings$o_rapm - ratings$d_rapm
   ratings <- ratings[order(-ratings$rapm), ]
 
-  # Join with player mapping if available
-  if (!is.null(model$panna_metadata$player_mapping)) {
-    mapping <- data.table::as.data.table(model$panna_metadata$player_mapping[, c("player_id", "player_name")])
-    ratings <- mapping[data.table::as.data.table(ratings), on = "player_id"]
-    data.table::setDF(ratings)
-  }
+  # Join with player mapping if available (duplicate-guarded)
+  ratings <- .join_player_mapping(ratings, model$panna_metadata$player_mapping)
 
   ratings
 }

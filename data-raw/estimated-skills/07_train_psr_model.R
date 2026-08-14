@@ -315,11 +315,21 @@ skill_join_cols <- c("player_id", skill_keep_cols)
 matched_chunks <- vector("list", length(prematch_skills))
 dates_processed <- 0L
 
-for (j in seq_along(prematch_skills)) {
-  d <- names(prematch_skills)[j]
+# Iterate a SNAPSHOT of the names and free each slot BY NAME. `l[[j]] <- NULL`
+# deletes the element rather than blanking it, so the list shrinks under the
+# loop: with a live `names(prematch_skills)[j]`, iteration 2 read what was
+# originally element 3, every second weekly bin was skipped, and past the
+# halfway point the lookup returned NULL and was swallowed by the is.null()
+# guard below -- silently training on ~50% of the dates, with the skipped
+# player-matches re-added as NA and imputed to 0 further down. Deleting by
+# name still frees each slot (the memory point of the chunked join), but the
+# shift no longer matters because the key is not positional.
+skill_date_names <- names(prematch_skills)
+for (j in seq_along(skill_date_names)) {
+  d <- skill_date_names[j]
   sk <- prematch_skills[[d]]
   # Free this slot immediately after extracting
-  prematch_skills[[j]] <- NULL
+  prematch_skills[[d]] <- NULL
 
   if (is.null(sk) || nrow(sk) == 0) next
 
@@ -339,9 +349,33 @@ for (j in seq_along(prematch_skills)) {
 
   dates_processed <- dates_processed + 1L
   if (dates_processed %% 100 == 0) {
-    cat(sprintf("  Joined %d / %d dates\n", dates_processed, length(names(prematch_skills)) + dates_processed))
+    cat(sprintf("  Joined %d / %d dates\n", dates_processed, length(skill_date_names)))
     gc(verbose = FALSE)
   }
+}
+
+# Tripwire for the shrinking-list class of bug above (and for a batch estimator
+# that quietly returns mostly-empty dates): a large shortfall here does not
+# fail anything downstream -- the orphaned player-matches are re-added with NA
+# skills and imputed to 0, which silently corrupts every PSR/PSV coefficient
+# rather than erroring. Only dates with no matching player-matches
+# (`pm_subset` empty) legitimately go unprocessed, which is rare.
+#
+# Measured 2026-08-14 when this fired for real: zero-filling half the rows did
+# NOT simply shrink the coefficients. It changed which features the penalized
+# fit SELECTED (PSR exact-zero betas 43 -> 10, OSR 40 -> 49) and left old/new
+# standardized effects correlated at only 0.40/0.05/0.63. Do not assume a bad
+# run can be rescaled -- it has to be refit.
+skipped_frac <- 1 - dates_processed / length(skill_date_names)
+cat(sprintf("Dates joined: %d / %d (%.1f%% skipped)\n",
+            dates_processed, length(skill_date_names), 100 * skipped_frac))
+if (skipped_frac > 0.05) {
+  stop(sprintf(
+    paste0("Skill-join dropped %.1f%% of weekly dates (%d of %d joined). ",
+           "Expected <5%%. Training on this would silently zero-impute the ",
+           "orphaned player-matches and corrupt every PSR/PSV coefficient."),
+    100 * skipped_frac, dates_processed, length(skill_date_names)
+  ))
 }
 
 rm(prematch_skills)
@@ -351,9 +385,15 @@ pm_with_skills <- data.table::rbindlist(matched_chunks, fill = TRUE, use.names =
 rm(matched_chunks)
 gc(verbose = FALSE)
 
-# Add any player-matches that had no matching skill date (fill with NA)
-missing_matches <- player_match_ids[!match_id %in% pm_with_skills$match_id |
-                                     !player_id %in% pm_with_skills$player_id]
+# Add any player-matches that had no matching skill date (fill with NA).
+# Anti-join on the PAIR. The previous filter was an OR of two independent
+# membership tests, which only finds a row whose match_id or player_id is
+# absent *wholesale*; a genuinely missing (match_id, player_id) whose match and
+# player each appear elsewhere was invisible to it. That was survivable only
+# while whole dates went missing at once -- i.e. because of the loop bug fixed
+# above. Verified equivalent to the old filter for the whole-match-absent case,
+# so this does not change the current training set.
+missing_matches <- player_match_ids[!pm_with_skills, on = .(match_id, player_id)]
 if (nrow(missing_matches) > 0) {
   # These will get NA skills, which get imputed to 0 below
   pm_with_skills <- data.table::rbindlist(
@@ -365,9 +405,25 @@ gc(verbose = FALSE)
 
 n_with_skills <- sum(!is.na(pm_with_skills[[skill_keep_cols[1]]]))
 n_total <- nrow(pm_with_skills)
+skill_coverage <- n_with_skills / n_total
 cat(sprintf("Player-matches with skills: %d / %d (%.1f%%)\n",
-            n_with_skills, n_total, 100 * n_with_skills / n_total))
+            n_with_skills, n_total, 100 * skill_coverage))
 cat(sprintf("Dates processed: %d\n", dates_processed))
+
+# The row-level companion to the dates tripwire above. This is the line that
+# would have read ~50% for five months and never stopped anything: rows without
+# skills are imputed to 0 immediately below, so low coverage silently
+# attenuates every coefficient instead of failing. A healthy run is 100.0%
+# (2026-08-14: 1,885,239 / 1,885,715, i.e. 476 rows short), so a 95% floor is
+# far below anything legitimate and far above the 50% the bug produced.
+if (skill_coverage < 0.95) {
+  stop(sprintf(
+    paste0("Only %.1f%% of player-matches have skills (%d of %d). Expected ",
+           ">=95%%. The remainder are imputed to 0 below, which corrupts ",
+           "every PSR/PSV coefficient rather than erroring."),
+    100 * skill_coverage, n_with_skills, n_total
+  ))
+}
 
 # Impute missing skills with 0 (player has no prior data)
 for (col in skill_keep_cols) {

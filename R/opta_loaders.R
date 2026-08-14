@@ -339,9 +339,13 @@ list_opta_seasons <- function(league, source = c("catalog", "remote", "local")) 
         cons_seasons <- tryCatch({
           .with_duckdb(function(conn_ls) {
             path_q <- normalizePath(consolidated, winslash = "/", mustWork = TRUE)
+            # build_where_clause() escapes the value (a competition label with
+            # an apostrophe otherwise breaks the query); interpolating it
+            # directly bypassed that.
             sql <- sprintf(
-              "SELECT DISTINCT season FROM '%s' WHERE competition = '%s' AND season IS NOT NULL",
-              path_q, opta_league
+              "SELECT DISTINCT season FROM '%s' %s AND season IS NOT NULL",
+              path_q,
+              build_where_clause(list(competition = opta_league))
             )
             rs <- DBI::dbGetQuery(conn_ls, sql)
             as.character(rs$season)
@@ -1717,9 +1721,16 @@ query_remote_opta_parquet <- function(table_type, opta_league, season = NULL,
   parquet_path <- NULL
   if (exists(cache_key, envir = .opta_remote_env)) {
     cached_path <- get(cache_key, envir = .opta_remote_env)
-    if (file.exists(cached_path) && validate_parquet_file(cached_path)) {
+    # isTRUE/isFALSE, never a bare condition: validate_parquet_file() returns
+    # NA when validation could not be PERFORMED (locked file, permission
+    # denied), and `TRUE && NA` is NA -- a bare `if (NA)` aborts with "missing
+    # value where TRUE/FALSE needed" instead of falling through to the
+    # re-download this branch exists to provide. NA must also not delete the
+    # file (see validate_parquet_file()'s contract), so only isFALSE unlinks.
+    cache_valid <- validate_parquet_file(cached_path)
+    if (isTRUE(cache_valid)) {
       parquet_path <- cached_path
-    } else if (file.exists(cached_path)) {
+    } else if (isFALSE(cache_valid) && file.exists(cached_path)) {
       cli::cli_alert_warning("Cached {file_name} is corrupt (incomplete download?). Re-downloading...")
       unlink(cached_path)
       rm(list = cache_key, envir = .opta_remote_env)
@@ -1833,10 +1844,14 @@ query_remote_opta_match_events <- function(opta_league, season = NULL,
   # Check cache first (validate parquet is not corrupt)
   if (exists(cache_key, envir = .opta_remote_env)) {
     cached_path <- get(cache_key, envir = .opta_remote_env)
-    if (file.exists(cached_path) && validate_parquet_file(cached_path)) {
+    # isTRUE/isFALSE, never a bare condition -- see the note at the
+    # consolidated-parquet cache check above (NA = "could not validate",
+    # which must refetch without deleting, not abort).
+    cache_valid <- validate_parquet_file(cached_path)
+    if (isTRUE(cache_valid)) {
       parquet_path <- cached_path
     } else {
-      if (file.exists(cached_path)) {
+      if (isFALSE(cache_valid) && file.exists(cached_path)) {
         cli::cli_alert_warning("Cached events for {opta_league} is corrupt. Re-downloading...")
         unlink(cached_path)
       }
@@ -2520,9 +2535,13 @@ download_opta_release_file <- function(file_name,
 
   if (exists(cache_key, envir = .opta_remote_env)) {
     cached_path <- get(cache_key, envir = .opta_remote_env)
-    if (file.exists(cached_path) && validate_parquet_file(cached_path)) {
+    # isTRUE/isFALSE, never a bare condition -- see the note at the
+    # consolidated-parquet cache check above (NA = "could not validate",
+    # which must refetch without deleting, not abort).
+    cache_valid <- validate_parquet_file(cached_path)
+    if (isTRUE(cache_valid)) {
       return(cached_path)
-    } else if (file.exists(cached_path)) {
+    } else if (isFALSE(cache_valid) && file.exists(cached_path)) {
       cli::cli_alert_warning("Cached {file_name} is corrupt. Re-downloading...")
       unlink(cached_path)
       rm(list = cache_key, envir = .opta_remote_env)

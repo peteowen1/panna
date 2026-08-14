@@ -1,0 +1,6 @@
+# versebus.R is kept byte-identical across torp/panna/pannamodels, and its own
+# header documents the sync check as a plain `diff` between the copies. Under
+# core.autocrlf that diff reported every line as changed whenever two checkouts
+# disagreed on line endings, which made the check unusable. Pin it to LF so the
+# documented command compares content.
+R/versebus.R text eol=lf
