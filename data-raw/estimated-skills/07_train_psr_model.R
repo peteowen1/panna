@@ -1324,4 +1324,23 @@ psr_model_data <- list(
 saveRDS(psr_model_data, file.path(cache_dir, "07_psr_model.rds"))
 cat(sprintf("Saved to %s/07_psr_model.rds\n", cache_dir))
 
+# Retraining the coefficients invalidates everything calibrated against them,
+# and NOTHING downstream re-derives itself. This notice exists because the
+# 2026-07-21 retrains (f9c7e31, bd34465) both landed without it: the live PSV
+# pricing constants and PSV_RELIABILITY_GD_SCALE stayed calibrated to the
+# previous coefficients for 3.5 weeks, silently, because the only signal was a
+# line in a doc comment nobody re-read.
+cat("\n", strrep("=", 78), "\n", sep = "")
+cat("STALE DOWNSTREAM ARTIFACTS -- the coefficients just changed.\n")
+cat("These are calibrated against them and do NOT rebuild themselves:\n\n")
+cat("  1. Rscript data-raw/estimated-skills/07d_derive_psv_gd_scale.R\n")
+cat("     -> prints a new PSV_RELIABILITY_GD_SCALE; edit R/constants.R BY HAND.\n")
+cat("  2. Rscript data-raw/estimated-skills/07c_build_live_psv_constants.R\n")
+cat("     -> rewrites inst/extdata/psv_live_constants.csv (live PSV pricing).\n")
+cat("     Run AFTER 1, so the live constants use the updated scale.\n\n")
+cat("Then re-run 06 (seasonal ratings) -> 08b (weekly PSR) -> 10b/02, which\n")
+cat("consume the coefficients via load_psr_coefficients().\n")
+cat("07b is NOT in this chain -- it reads match stats, not coefficients.\n")
+cat(strrep("=", 78), "\n", sep = "")
+
 cat("\n=== COMPLETE ===\n")
