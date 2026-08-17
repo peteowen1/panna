@@ -52,6 +52,17 @@ published incomplete data. Neither was detectable from the logs.
   index to `which()`, since an unparseable label yields `NA` and `names(v)[NA]`
   injects an `NA` that then matches every `NA`-season row.
 
+## `opta_loaders.R` split into four files
+
+* At 2,635 lines it held four unrelated responsibilities. Now:
+  `opta_paths.R` (data directory, league-code translation, season discovery,
+  SQL/parquet helpers), `opta_coverage.R` (event-less registry + coverage gate),
+  `opta_remote.R` (catalog download/TTL cache, league listing, remote query
+  engine), and `opta_loaders.R` (the `load_opta_*()` family, 1,313 lines).
+* Pure move, mechanically verified: all 563 namespace objects present with
+  byte-identical function bodies before and after, `NAMESPACE` unchanged, and
+  the only `man/` churn is the `% Please edit documentation in R/...` line.
+
 ## Other
 
 * `versebus.R` (synced with canonical `torpverse/torp`, now `VERSEBUS_VERSION`
