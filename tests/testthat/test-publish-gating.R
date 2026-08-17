@@ -11,8 +11,34 @@
 # batched into which tag's vb_publish() call, and that a failure propagates
 # to the pipeline runner instead of being swallowed -- without waiting out
 # vb_publish's real retry/backoff delays.
+#
+# Every pipeline script sourced below opens with `devtools::load_all()` (steps
+# 01-13 all carry that header, so a step can be run standalone). Under
+# devtools::test() that call RELOADS THE PACKAGE NAMESPACE MID-SUITE, which:
+#   1. discards the local_mocked_bindings() installed by the very test doing
+#      the sourcing -- so `vb_publish` un-mocks itself partway through and the
+#      test errors; and
+#   2. replaces the package's session-state environments (.opta_env,
+#      .opta_remote_env, .vb_state, .get_col_warned) with fresh ones, breaking
+#      every test file that runs AFTER this one in the same session.
+# Confirmed by address: the .opta_remote_env binding is a different environment
+# before and after sourcing a script with that header. This was the source of
+# 13 order-dependent failures across four test files -- each of which passes in
+# isolation, which is exactly why it went unnoticed.
+#
+# The package is already loaded by the time testthat runs, so the script's own
+# load_all() is redundant here -- the same situation as the pipeline
+# orchestrator, which the script header explicitly anticipates. Stub it out.
+local_no_reload <- function(env = parent.frame()) {
+  testthat::local_mocked_bindings(
+    load_all = function(...) invisible(NULL),
+    .package = "devtools",
+    .env = env
+  )
+}
 
 test_that("13_publish_release_data.R calls vb_publish once per non-empty tag with the registered files", {
+  local_no_reload()
   dir <- withr::local_tempdir()
   pred_file <- file.path(dir, "predictions.parquet")
   blog1 <- file.path(dir, "panna_ratings.parquet")
@@ -47,6 +73,7 @@ test_that("13_publish_release_data.R calls vb_publish once per non-empty tag wit
 })
 
 test_that("13_publish_release_data.R: a blog-latest failure propagates without being swallowed, after predictions-latest was attempted", {
+  local_no_reload()
   dir <- withr::local_tempdir()
   pred_file <- file.path(dir, "predictions.parquet")
   blog1 <- file.path(dir, "panna_ratings.parquet")
@@ -89,15 +116,43 @@ test_that("13_publish_release_data.R: a blog-latest failure propagates without b
   expect_true("blog-latest" %in% attempted_tags)
 })
 
-test_that("09_export_ratings.R publishes xRAPM+SPM in ONE vb_publish call (M-RATINGS-PAIR)", {
+# Fixtures for 09_export_ratings.R. It reads TWO caches and publishes FOUR
+# files: seasonal_xrapm + seasonal_spm (the original M-RATINGS-PAIR) and, since
+# panna#165, seasonal_rapm_raw + pooled_rapm_raw, which must advance together
+# with them. The fixture below was stale at two of those four -- it supplied
+# only xrapm/spm, so the script aborted on `seasonal_rapm is empty or NULL`.
+# That abort was invisible because these tests were ALSO failing on the
+# namespace reload described at the top of this file; fixing that surfaced it.
+.pg_rapm_frame <- function(n = 2L, season = FALSE) {
+  df <- data.frame(
+    player_id = c("p1", "replacement")[seq_len(n)],
+    player_name = c("Player One", "Replacement Level")[seq_len(n)],
+    rapm = seq_len(n) / 10,
+    offense = seq_len(n) / 20,
+    defense = -seq_len(n) / 20,
+    total_minutes = 900 * seq_len(n),
+    stringsAsFactors = FALSE
+  )
+  if (season) df$season_end_year <- 2025L
+  df
+}
+
+.pg_write_ratings_caches <- function(cache_dir) {
+  saveRDS(list(
+    seasonal_xrapm = data.frame(player_id = "p1", xrapm = 0.1),
+    seasonal_spm   = data.frame(player_id = "p1", spm = 0.2),
+    seasonal_rapm  = .pg_rapm_frame(season = TRUE)
+  ), file.path(cache_dir, "07_seasonal_ratings.rds"))
+  saveRDS(list(ratings = .pg_rapm_frame()),
+          file.path(cache_dir, "04_rapm.rds"))
+}
+
+test_that("09_export_ratings.R publishes the whole ratings set in ONE vb_publish call (M-RATINGS-PAIR)", {
+  local_no_reload()
   skip_if_not_installed("arrow")
   dir <- withr::local_tempdir()
   cache_dir <- dir
-  seasonal_results <- list(
-    seasonal_xrapm = data.frame(player_id = "p1", xrapm = 0.1),
-    seasonal_spm   = data.frame(player_id = "p1", spm = 0.2)
-  )
-  saveRDS(seasonal_results, file.path(cache_dir, "07_seasonal_ratings.rds"))
+  .pg_write_ratings_caches(cache_dir)
 
   local_mocked_bindings(
     pb_list = function(repo, tag) data.frame(file_name = character(0)),
@@ -118,27 +173,31 @@ test_that("09_export_ratings.R publishes xRAPM+SPM in ONE vb_publish call (M-RAT
   skip_if_not(file.exists(script), "09_export_ratings.R not found")
   source(script, local = TRUE)
 
-  expect_length(captured_paths, 2)
-  expect_true(any(grepl("seasonal_xrapm\\.parquet$", captured_paths)))
-  expect_true(any(grepl("seasonal_spm\\.parquet$", captured_paths)))
+  # All four in ONE call -- the point of the invariant is that the shrunk and
+  # raw ratings can never advance independently of each other.
+  expect_length(captured_paths, 4)
+  for (f in c("seasonal_xrapm", "seasonal_spm",
+              "seasonal_rapm_raw", "pooled_rapm_raw")) {
+    expect_true(any(grepl(paste0(f, "\\.parquet$"), captured_paths)),
+                info = paste(f, "missing from the published set"))
+  }
 })
 
 test_that("09_export_ratings.R: a vb_publish failure aborts the script (both-or-neither)", {
+  local_no_reload()
   skip_if_not_installed("arrow")
   dir <- withr::local_tempdir()
   cache_dir <- dir
-  seasonal_results <- list(
-    seasonal_xrapm = data.frame(player_id = "p1", xrapm = 0.1),
-    seasonal_spm   = data.frame(player_id = "p1", spm = 0.2)
-  )
-  saveRDS(seasonal_results, file.path(cache_dir, "07_seasonal_ratings.rds"))
+  .pg_write_ratings_caches(cache_dir)
 
   local_mocked_bindings(
     pb_list = function(repo, tag) data.frame(file_name = character(0)),
     .package = "piggyback"
   )
+  reached_publish <- FALSE
   local_mocked_bindings(
     vb_publish = function(paths, repo, tag, ...) {
+      reached_publish <<- TRUE
       cli::cli_abort("simulated seasonal_spm upload failure",
                       class = "vb_error_transient")
     },
@@ -150,4 +209,8 @@ test_that("09_export_ratings.R: a vb_publish failure aborts the script (both-or-
   skip_if_not(file.exists(script), "09_export_ratings.R not found")
 
   expect_error(source(script, local = TRUE), class = "vb_error_transient")
+  # The error must come FROM vb_publish, not from the script aborting earlier
+  # on a missing input. Without this the test passes vacuously the moment a
+  # fixture goes stale -- which is exactly what happened here.
+  expect_true(reached_publish)
 })
