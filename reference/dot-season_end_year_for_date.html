@@ -13,7 +13,7 @@ straight to the season_end_year grain the expanding-window SPM models
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.21</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.23</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -63,12 +63,21 @@ straight to the <code>season_end_year</code> grain the expanding-window SPM mode
 
 
 <dl><dt id="arg-date">date<a class="anchor" aria-label="anchor" href="#arg-date"></a></dt>
-<dd><p>Date (or coercible)</p></dd>
+<dd><p>Date vector (or coercible)</p></dd>
 
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
-    <p>Integer season end year (e.g. 2026 for a date in season "2025-2026")</p>
+    <p>Numeric vector of season end years (e.g. 2026 for a date in season
+"2025-2026")</p>
+    </div>
+    <div class="section level2">
+    <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
+    <p>Vectorized over <code>date</code> since <code><a href="extract_season_end_year.html">extract_season_end_year()</a></code> was vectorized
+(2026-08-17). Before that this composition was a latent crash on any vector
+input: <code><a href="extract_season_from_date.html">extract_season_from_date()</a></code> is vectorized, so it handed a length-n
+character vector to a scalar-only helper whose <code>||</code> guard errors under
+R &gt;= 4.3.</p>
     </div>
 
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

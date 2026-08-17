@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.21</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.23</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,6 +39,64 @@
       <small>Source: <a href="https://github.com/peteowen1/panna/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.23" id="panna-0323-dev">panna 0.3.23 (dev)<a class="anchor" aria-label="anchor" href="#panna-0323-dev"></a></h2>
+<div class="section level3">
+<h3 id="the-flaky-test-failures-were-one-bug-hiding-two-more-0-3-23">The 13 “flaky” test failures were one bug, hiding two more<a class="anchor" aria-label="anchor" href="#the-flaky-test-failures-were-one-bug-hiding-two-more-0-3-23"></a></h3>
+<p>The suite had 13 failures across four files that each appeared to pass in isolation, so they read as flaky and had been left alone. They were neither flaky nor independent.</p>
+<ul><li>
+<strong>A test was reloading the package mid-suite.</strong> <code>test-publish-gating.R</code> <code><a href="https://rdrr.io/r/base/source.html" class="external-link">source()</a></code>s real pipeline scripts, and every numbered step opens with <code>devtools::load_all()</code> so it can run standalone. Under <code>devtools::test()</code> that reloads the namespace mid-run, which (a) discards the <code>local_mocked_bindings()</code> the sourcing test just installed — so <code>vb_publish</code> un-mocks itself partway through and the test errors on its own — and (b) swaps the package’s session-state environments (<code>.opta_env</code>, <code>.opta_remote_env</code>, <code>.vb_state</code>) for fresh ones, breaking every file that runs after it. Confirmed by address: <code>.opta_remote_env</code> is a different environment before and after. The package is already loaded when testthat runs, so the script’s own <code>load_all()</code> is redundant there; it is stubbed for the duration of those four tests. <strong>That alone fixed 11 of the 13.</strong>
+</li>
+<li>
+<strong><code>09_export_ratings.R</code> has published four files since panna#165</strong> — the raw RAPM pair must advance together with the shrunk pair — but the fixture still supplied two, so the script aborted on <code>seasonal_rapm is empty or NULL</code>. The M-RATINGS-PAIR invariant test had not been checking the current contract.</li>
+<li>
+<strong>The both-or-neither test asserted only an error <em>class</em></strong>, so it would have passed against any early abort — vacuous the moment a fixture went stale, which is exactly what had happened. It now asserts it reached <code>vb_publish</code>.</li>
+<li>The fixture’s synthetic <code>replacement</code> row exercised the export-boundary drop without asserting it; row counts are now captured inside the mock (the script unlinks its temp dir as soon as <code>vb_publish</code> returns) so the assertion fails if the drop regresses.</li>
+<li>Closed a second, non-failing leak: the two <code>download_opta_catalog</code> tests cleared the session cache on the way in but not out, leaving a one-league fixture catalog behind for later readers. A residual path still populates it indirectly from elsewhere in that file; it causes no failures today.</li>
+</ul><p><strong>723 tests, 0 failures.</strong> Bisected in the real <code>devtools::test()</code> harness — sequential <code>test_file()</code> does not reproduce it, which is part of why it survived.</p>
+</div>
+</div>
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.22" id="panna-0322-dev">panna 0.3.22 (dev)<a class="anchor" aria-label="anchor" href="#panna-0322-dev"></a></h2>
+<div class="section level3">
+<h3 id="pipeline-guards-partial-loads-and-skipped-steps-now-fail-instead-of-reporting-success-0-3-22">Pipeline guards: partial loads and skipped steps now fail instead of reporting success<a class="anchor" aria-label="anchor" href="#pipeline-guards-partial-loads-and-skipped-steps-now-fail-instead-of-reporting-success-0-3-22"></a></h3>
+<p>Both of these were cases where the pipeline finished, printed SUCCESS, and published incomplete data. Neither was detectable from the logs.</p>
+<ul><li>
+<strong><code>01_load_opta_data.R</code> now asserts league-season coverage.</strong> The per-season error handler logs and continues (deliberate — one bad league-season must not kill a 40-minute run), but nothing counted the losses: ~49 league-seasons died on <code>non-character argument</code> in the 2026-06 rerun and the run still reported success. The two end-of-step guards could not catch it — the league check passes when a single season per league survives, and the 100-match floor is three orders of magnitude below a real run. Outcomes are now counted separately: an <strong>exception</strong> is never legitimate and fails the step (<code>max_failed_league_seasons</code>, default 0), while <strong>missing upstream data</strong> (no lineups / no events / no SPADL) is listed and held to a coverage floor (<code>min_coverage_frac</code>, default 0.90). Both are overridable before sourcing.
+<ul><li>Coverage is measured on the <strong>shots/xG</strong> grain, not lineups. Lineups are staged before the raw-events and SPADL checks, so a season whose events failed still landed in <code>combined_lineups</code> and looked covered while carrying no xG — and that is reachable for a whole league at once, since <code><a href="../reference/load_opta_match_events.html">load_opta_match_events()</a></code> is a per-league call.</li>
+<li>
+<strong>League-level losses are tracked too.</strong> The season ledgers start inside the season loop, so a league dropped at the <code><a href="../reference/list_opta_seasons.html">list_opta_seasons()</a></code> step was in none of them — coverage computed 100% over the leagues that did run while a whole competition was missing. A listing <em>exception</em> now aborts (it was being swallowed into <code>character(0)</code>, making a corrupt catalog indistinguishable from “not scraped yet”); a league that legitimately lists zero seasons is reported in the summary.</li>
+</ul></li>
+<li>
+<strong><code>run_step()</code> aborts on a step key that isn’t in <code>run_steps</code>.</strong> It previously returned <code>DISABLED</code> — visually identical in the summary to a deliberate <code>FALSE</code>. Renaming a step at one of its two call sites, or a GHA <code>run_steps</code> override drifting after a rename, silently turned the step into a no-op. <code>print_pipeline_summary()</code> also now <strong>aborts</strong> on <code>run_steps</code> keys that no call site consumed (the reverse drift: a typo’d override). It warned at first, on the reasoning that failing after the work is done is pointless — but a key nothing consumes means the step it names never ran, so the output <em>is</em> incomplete, and <code><a href="https://rdrr.io/r/base/warning.html" class="external-link">warning()</a></code> sets no exit code in <code>Rscript</code>, leaving CI green. Set <code>allow_unconsumed_step_keys &lt;- TRUE</code> for a deliberately partial run. The guard found two already-stale local debug runners on its first run.</li>
+<li>
+<code>xg_model.R</code>: keeper GSAA now warns loudly whenever the GK columns don’t land, instead of silently dropping <code>gsaa</code>/<code>gsaa_per90</code>/<code>xgot_faced</code>/<code>goals_conceded</code> from the output — the GK PSR/PSV sub-model is built on <code>gsaa_per90</code>, so losing it scored every keeper with no shot-stopping credit. The warning is gated on “the join did not happen”, <strong>not</strong> on an exception being thrown: <code><a href="../reference/dot-compute_keeper_gsaa.html">.compute_keeper_gsaa()</a></code> has six ordinary <code>return(NULL)</code> early exits (missing columns, no shots, no keepers with minutes, …), and warning only in the <code>tryCatch</code> handler covered the rare path while leaving every common one silent. Keepers missing from the GSAA join are left <code>NA</code> rather than filled with 0; 0 is correct for an outfielder but fabricates “exactly league-average shot-stopping” for a keeper.</li>
+<li>
+<code><a href="../reference/load_opta_eventless_ids.html">load_opta_eventless_ids()</a></code> distinguishes a registry that doesn’t exist yet (quiet, normal) from one that exists and won’t parse or has lost its <code>match_id</code> column (warns). Both still return empty, but the second case is a corrupt download or upstream schema change and was indistinguishable before — and since the registry is <em>subtracted</em> from the coverage denominator, silently empty turns every legitimately event-less match into an apparent gap.</li>
+</ul></div>
+<div class="section level3">
+<h3 id="extract_season_end_year-is-vectorized-0-3-22">
+<code>extract_season_end_year()</code> is vectorized<a class="anchor" aria-label="anchor" href="#extract_season_end_year-is-vectorized-0-3-22"></a></h3>
+<ul><li>It was scalar-only: the <code>is.na(season) || !nzchar(season)</code> guard is a hard error on length &gt; 1 under R &gt;= 4.3, so every call site had to remember a <code><a href="https://rdrr.io/r/base/lapply.html" class="external-link">vapply()</a></code> wrapper, and one that didn’t was a crash rather than a wrong number — <code><a href="../reference/dot-season_end_year_for_date.html">.season_end_year_for_date()</a></code> passed a vectorized <code><a href="../reference/extract_season_from_date.html">extract_season_from_date()</a></code> result straight through. Scalar behaviour is unchanged (verified identical across 25 inputs including all three season label formats), so existing <code><a href="https://rdrr.io/r/base/lapply.html" class="external-link">vapply()</a></code> call sites keep working.</li>
+<li>
+<code>07_seasonal_ratings.R</code> / <code>01_load_opta_data.R</code>: replaced <code>sapply(unique(x), extract_season_end_year)</code> with a <code><a href="https://rdrr.io/r/stats/setNames.html" class="external-link">setNames()</a></code> lookup — <code>sapply</code> returns a <em>list</em> on empty input — and switched the season-matching index to <code><a href="https://rdrr.io/r/base/which.html" class="external-link">which()</a></code>, since an unparseable label yields <code>NA</code> and <code>names(v)[NA]</code> injects an <code>NA</code> that then matches every <code>NA</code>-season row.</li>
+</ul></div>
+<div class="section level3">
+<h3 id="opta_loadersr-split-into-four-files-0-3-22">
+<code>opta_loaders.R</code> split into four files<a class="anchor" aria-label="anchor" href="#opta_loadersr-split-into-four-files-0-3-22"></a></h3>
+<ul><li>At 2,635 lines it held four unrelated responsibilities. Now: <code>opta_paths.R</code> (data directory, league-code translation, season discovery, SQL/parquet helpers), <code>opta_coverage.R</code> (event-less registry + coverage gate), <code>opta_remote.R</code> (catalog download/TTL cache, league listing, remote query engine), and <code>opta_loaders.R</code> (the <code>load_opta_*()</code> family, 1,313 lines).</li>
+<li>Pure move, mechanically verified: all 563 namespace objects present with byte-identical function bodies before and after, <code>NAMESPACE</code> unchanged, and the only <code>man/</code> churn is the <code>% Please edit documentation in R/...</code> line.</li>
+</ul></div>
+<div class="section level3">
+<h3 id="other-0-3-22">Other<a class="anchor" aria-label="anchor" href="#other-0-3-22"></a></h3>
+<ul><li>
+<code>versebus.R</code> (synced with canonical <code>torpverse/torp</code>, now <code>VERSEBUS_VERSION</code> 1.1.0): <code><a href="../reference/vb_publish.html">vb_publish()</a></code> restores <code>piggyback_cache_duration</code> on exit instead of leaking it for the rest of the session; <code>.vb_generation_stamp()</code> no longer calls <code><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample()</a></code>, which advanced the caller’s RNG stream and silently changed the draws of any simulation seeded before a publish.</li>
+<li>
+<code>spm_panel.R</code>: per-90 rate columns are written with <code><a href="https://rdrr.io/pkg/data.table/man/assign.html" class="external-link">data.table::set()</a></code> rather than <code>[[&lt;-</code> (which forces a full copy), and zero-minute rows get <code>NA</code> rather than a fabricated 0. The <code>NA</code> still becomes 0 downstream via <code><a href="../reference/dot-clean_numeric_na.html">.clean_numeric_na()</a></code>, but now goes through that function’s counter, so the imputation is reported instead of invisible.</li>
+<li>
+<code>01_load_opta_data.R</code>: <code>events</code>/<code>stats</code> are guarded before use. When their league-level load failed they were <code>NULL</code>, and <code>events$league &lt;- league</code> coerces <code>NULL</code> into a <em>list</em>; the season was dropped only because <code>.stage_write()</code> then threw on a zero-length condition, at a misleading call site.</li>
+</ul></div>
+</div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.21" id="panna-0321-dev">panna 0.3.21 (dev)<a class="anchor" aria-label="anchor" href="#panna-0321-dev"></a></h2>
 <div class="section level3">

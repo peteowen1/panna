@@ -1,5 +1,181 @@
 # Changelog
 
+## panna 0.3.23 (dev)
+
+### The 13 “flaky” test failures were one bug, hiding two more
+
+The suite had 13 failures across four files that each appeared to pass
+in isolation, so they read as flaky and had been left alone. They were
+neither flaky nor independent.
+
+- **A test was reloading the package mid-suite.**
+  `test-publish-gating.R`
+  [`source()`](https://rdrr.io/r/base/source.html)s real pipeline
+  scripts, and every numbered step opens with `devtools::load_all()` so
+  it can run standalone. Under `devtools::test()` that reloads the
+  namespace mid-run, which (a) discards the `local_mocked_bindings()`
+  the sourcing test just installed — so `vb_publish` un-mocks itself
+  partway through and the test errors on its own — and (b) swaps the
+  package’s session-state environments (`.opta_env`, `.opta_remote_env`,
+  `.vb_state`) for fresh ones, breaking every file that runs after it.
+  Confirmed by address: `.opta_remote_env` is a different environment
+  before and after. The package is already loaded when testthat runs, so
+  the script’s own `load_all()` is redundant there; it is stubbed for
+  the duration of those four tests. **That alone fixed 11 of the 13.**
+- **`09_export_ratings.R` has published four files since panna#165** —
+  the raw RAPM pair must advance together with the shrunk pair — but the
+  fixture still supplied two, so the script aborted on
+  `seasonal_rapm is empty or NULL`. The M-RATINGS-PAIR invariant test
+  had not been checking the current contract.
+- **The both-or-neither test asserted only an error *class***, so it
+  would have passed against any early abort — vacuous the moment a
+  fixture went stale, which is exactly what had happened. It now asserts
+  it reached `vb_publish`.
+- The fixture’s synthetic `replacement` row exercised the
+  export-boundary drop without asserting it; row counts are now captured
+  inside the mock (the script unlinks its temp dir as soon as
+  `vb_publish` returns) so the assertion fails if the drop regresses.
+- Closed a second, non-failing leak: the two `download_opta_catalog`
+  tests cleared the session cache on the way in but not out, leaving a
+  one-league fixture catalog behind for later readers. A residual path
+  still populates it indirectly from elsewhere in that file; it causes
+  no failures today.
+
+**723 tests, 0 failures.** Bisected in the real `devtools::test()`
+harness — sequential `test_file()` does not reproduce it, which is part
+of why it survived.
+
+## panna 0.3.22 (dev)
+
+### Pipeline guards: partial loads and skipped steps now fail instead of reporting success
+
+Both of these were cases where the pipeline finished, printed SUCCESS,
+and published incomplete data. Neither was detectable from the logs.
+
+- **`01_load_opta_data.R` now asserts league-season coverage.** The
+  per-season error handler logs and continues (deliberate — one bad
+  league-season must not kill a 40-minute run), but nothing counted the
+  losses: ~49 league-seasons died on `non-character argument` in the
+  2026-06 rerun and the run still reported success. The two end-of-step
+  guards could not catch it — the league check passes when a single
+  season per league survives, and the 100-match floor is three orders of
+  magnitude below a real run. Outcomes are now counted separately: an
+  **exception** is never legitimate and fails the step
+  (`max_failed_league_seasons`, default 0), while **missing upstream
+  data** (no lineups / no events / no SPADL) is listed and held to a
+  coverage floor (`min_coverage_frac`, default 0.90). Both are
+  overridable before sourcing.
+  - Coverage is measured on the **shots/xG** grain, not lineups. Lineups
+    are staged before the raw-events and SPADL checks, so a season whose
+    events failed still landed in `combined_lineups` and looked covered
+    while carrying no xG — and that is reachable for a whole league at
+    once, since
+    [`load_opta_match_events()`](https://peteowen1.github.io/panna/reference/load_opta_match_events.md)
+    is a per-league call.
+  - **League-level losses are tracked too.** The season ledgers start
+    inside the season loop, so a league dropped at the
+    [`list_opta_seasons()`](https://peteowen1.github.io/panna/reference/list_opta_seasons.md)
+    step was in none of them — coverage computed 100% over the leagues
+    that did run while a whole competition was missing. A listing
+    *exception* now aborts (it was being swallowed into `character(0)`,
+    making a corrupt catalog indistinguishable from “not scraped yet”);
+    a league that legitimately lists zero seasons is reported in the
+    summary.
+- **`run_step()` aborts on a step key that isn’t in `run_steps`.** It
+  previously returned `DISABLED` — visually identical in the summary to
+  a deliberate `FALSE`. Renaming a step at one of its two call sites, or
+  a GHA `run_steps` override drifting after a rename, silently turned
+  the step into a no-op. `print_pipeline_summary()` also now **aborts**
+  on `run_steps` keys that no call site consumed (the reverse drift: a
+  typo’d override). It warned at first, on the reasoning that failing
+  after the work is done is pointless — but a key nothing consumes means
+  the step it names never ran, so the output *is* incomplete, and
+  [`warning()`](https://rdrr.io/r/base/warning.html) sets no exit code
+  in `Rscript`, leaving CI green. Set
+  `allow_unconsumed_step_keys <- TRUE` for a deliberately partial run.
+  The guard found two already-stale local debug runners on its first
+  run.
+- `xg_model.R`: keeper GSAA now warns loudly whenever the GK columns
+  don’t land, instead of silently dropping
+  `gsaa`/`gsaa_per90`/`xgot_faced`/`goals_conceded` from the output —
+  the GK PSR/PSV sub-model is built on `gsaa_per90`, so losing it scored
+  every keeper with no shot-stopping credit. The warning is gated on
+  “the join did not happen”, **not** on an exception being thrown:
+  [`.compute_keeper_gsaa()`](https://peteowen1.github.io/panna/reference/dot-compute_keeper_gsaa.md)
+  has six ordinary `return(NULL)` early exits (missing columns, no
+  shots, no keepers with minutes, …), and warning only in the `tryCatch`
+  handler covered the rare path while leaving every common one silent.
+  Keepers missing from the GSAA join are left `NA` rather than filled
+  with 0; 0 is correct for an outfielder but fabricates “exactly
+  league-average shot-stopping” for a keeper.
+- [`load_opta_eventless_ids()`](https://peteowen1.github.io/panna/reference/load_opta_eventless_ids.md)
+  distinguishes a registry that doesn’t exist yet (quiet, normal) from
+  one that exists and won’t parse or has lost its `match_id` column
+  (warns). Both still return empty, but the second case is a corrupt
+  download or upstream schema change and was indistinguishable before —
+  and since the registry is *subtracted* from the coverage denominator,
+  silently empty turns every legitimately event-less match into an
+  apparent gap.
+
+### `extract_season_end_year()` is vectorized
+
+- It was scalar-only: the `is.na(season) || !nzchar(season)` guard is a
+  hard error on length \> 1 under R \>= 4.3, so every call site had to
+  remember a [`vapply()`](https://rdrr.io/r/base/lapply.html) wrapper,
+  and one that didn’t was a crash rather than a wrong number —
+  [`.season_end_year_for_date()`](https://peteowen1.github.io/panna/reference/dot-season_end_year_for_date.md)
+  passed a vectorized
+  [`extract_season_from_date()`](https://peteowen1.github.io/panna/reference/extract_season_from_date.md)
+  result straight through. Scalar behaviour is unchanged (verified
+  identical across 25 inputs including all three season label formats),
+  so existing [`vapply()`](https://rdrr.io/r/base/lapply.html) call
+  sites keep working.
+- `07_seasonal_ratings.R` / `01_load_opta_data.R`: replaced
+  `sapply(unique(x), extract_season_end_year)` with a
+  [`setNames()`](https://rdrr.io/r/stats/setNames.html) lookup —
+  `sapply` returns a *list* on empty input — and switched the
+  season-matching index to
+  [`which()`](https://rdrr.io/r/base/which.html), since an unparseable
+  label yields `NA` and `names(v)[NA]` injects an `NA` that then matches
+  every `NA`-season row.
+
+### `opta_loaders.R` split into four files
+
+- At 2,635 lines it held four unrelated responsibilities. Now:
+  `opta_paths.R` (data directory, league-code translation, season
+  discovery, SQL/parquet helpers), `opta_coverage.R` (event-less
+  registry + coverage gate), `opta_remote.R` (catalog download/TTL
+  cache, league listing, remote query engine), and `opta_loaders.R` (the
+  `load_opta_*()` family, 1,313 lines).
+- Pure move, mechanically verified: all 563 namespace objects present
+  with byte-identical function bodies before and after, `NAMESPACE`
+  unchanged, and the only `man/` churn is the
+  `% Please edit documentation in R/...` line.
+
+### Other
+
+- `versebus.R` (synced with canonical `torpverse/torp`, now
+  `VERSEBUS_VERSION` 1.1.0):
+  [`vb_publish()`](https://peteowen1.github.io/panna/reference/vb_publish.md)
+  restores `piggyback_cache_duration` on exit instead of leaking it for
+  the rest of the session; `.vb_generation_stamp()` no longer calls
+  [`sample()`](https://rdrr.io/r/base/sample.html), which advanced the
+  caller’s RNG stream and silently changed the draws of any simulation
+  seeded before a publish.
+- `spm_panel.R`: per-90 rate columns are written with
+  [`data.table::set()`](https://rdrr.io/pkg/data.table/man/assign.html)
+  rather than `[[<-` (which forces a full copy), and zero-minute rows
+  get `NA` rather than a fabricated 0. The `NA` still becomes 0
+  downstream via
+  [`.clean_numeric_na()`](https://peteowen1.github.io/panna/reference/dot-clean_numeric_na.md),
+  but now goes through that function’s counter, so the imputation is
+  reported instead of invisible.
+- `01_load_opta_data.R`: `events`/`stats` are guarded before use. When
+  their league-level load failed they were `NULL`, and
+  `events$league <- league` coerces `NULL` into a *list*; the season was
+  dropped only because `.stage_write()` then threw on a zero-length
+  condition, at a misleading call site.
+
 ## panna 0.3.21 (dev)
 
 ### Skills join fixed — PSR/PSV were trained on half their weekly bins

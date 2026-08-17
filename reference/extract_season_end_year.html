@@ -9,7 +9,7 @@ tournament "YYYY Country" format (returns the year).'><meta property="og:image" 
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.21</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.23</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -57,12 +57,24 @@ tournament "YYYY Country" format (returns the year).</p>
 
 
 <dl><dt id="arg-season">season<a class="anchor" aria-label="anchor" href="#arg-season"></a></dt>
-<dd><p>Season string (e.g., "2023-2024" or "2018 Russia")</p></dd>
+<dd><p>Character vector of season strings (e.g., "2023-2024",
+"2018 Russia", "Intl_Friendlies_2024")</p></dd>
 
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
-    <p>Numeric end year, or NA_real_ if unparseable</p>
+    <p>Numeric vector of end years, <code>NA_real_</code> where unparseable</p>
+    </div>
+    <div class="section level2">
+    <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
+    <p>VECTORIZED over <code>season</code>. It was scalar-only until 2026-08-17: the opening
+guard was <code>if (is.na(season) || !nzchar(season))</code>, and <code>||</code> on a length &gt; 1
+argument is a hard error under R &gt;= 4.3. Every call site had to remember to
+wrap it in <code><a href="https://rdrr.io/r/base/lapply.html" class="external-link">vapply()</a></code>/<code><a href="https://rdrr.io/r/base/lapply.html" class="external-link">sapply()</a></code>, and one that didn't was a latent crash
+rather than a wrong number – <code><a href="dot-season_end_year_for_date.html">.season_end_year_for_date()</a></code> (R/spm_asof.R)
+passed <code><a href="extract_season_from_date.html">extract_season_from_date()</a></code> straight through. Scalar behaviour is
+unchanged, so existing <code>vapply(x, extract_season_end_year, numeric(1))</code> call
+sites keep working; new callers can pass the whole column.</p>
     </div>
 
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
