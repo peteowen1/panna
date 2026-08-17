@@ -1003,24 +1003,42 @@ aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0,
   # Cross-team: opponent shots are attributed to the conceding team's keeper.
   # Replaces save_percentage (a scale-free ratio) with a volume-correct value.
   #
-  # LOUD on failure, not silent. This used to be `error = function(e) NULL` with
-  # no warning: a broken GSAA computation dropped gsaa/gsaa_per90/xgot_faced/
-  # goals_conceded from the output ENTIRELY, and the only downstream signal was
-  # a memoized .get_col() warning buried in a 40-minute log. The GK PSR/PSV
-  # sub-model is built on gsaa_per90 -- losing it silently scores every keeper
-  # with no shot-stopping credit at all.
+  # LOUD whenever the GK columns don't land, not just when an exception was
+  # thrown. This used to be `error = function(e) NULL` with no warning: a broken
+  # GSAA computation dropped gsaa/gsaa_per90/xgot_faced/goals_conceded from the
+  # output ENTIRELY, and the only downstream signal was a memoized .get_col()
+  # warning buried in a 40-minute log. The GK PSR/PSV sub-model is built on
+  # gsaa_per90 -- losing it silently scores every keeper with no shot-stopping
+  # credit at all.
+  #
+  # The warning deliberately does NOT live in the error handler. Most of the
+  # ways this returns nothing are ordinary control flow, not exceptions:
+  # .compute_keeper_gsaa() has six `return(NULL)` early exits (missing
+  # spadl/lineup columns, no shots, no conceding-team match, no keepers in
+  # lineups, no matched keeper-matches). Warning only on `error` left every one
+  # of those producing the identical silent column-drop this guard exists to
+  # catch -- the rare path was covered and the common ones weren't. So the
+  # warning is gated on "the join block did not run", whatever the cause.
+  gsaa_err <- NULL
   gsaa <- tryCatch(
     .compute_keeper_gsaa(spadl, lineup_dt, by_match = by_match),
-    error = function(e) {
-      cli::cli_warn(c(
-        "Keeper GSAA computation failed: {conditionMessage(e)}",
-        "!" = "gsaa/gsaa_per90/xgot_faced/goals_conceded will be ABSENT from the output.",
-        "i" = "The GK PSR/PSV sub-model reads gsaa_per90 -- keepers will score
-               without shot-stopping credit until this is fixed."
-      ))
-      NULL
-    }
+    error = function(e) { gsaa_err <<- conditionMessage(e); NULL }
   )
+  if (is.null(gsaa) || nrow(gsaa) == 0) {
+    why <- if (!is.null(gsaa_err)) {
+      paste0("it errored: ", gsaa_err)
+    } else {
+      paste0("it returned no rows -- a precondition failed (spadl missing ",
+             "match_id/team_id/action_type/result, lineups missing position/",
+             "minutes_played, no shots, or no goalkeepers with minutes)")
+    }
+    cli::cli_warn(c(
+      "Keeper GSAA unavailable: {why}",
+      "!" = "gsaa/gsaa_per90/xgot_faced/goals_conceded are ABSENT from the output.",
+      "i" = "The GK PSR/PSV sub-model reads gsaa_per90 -- keepers will score
+             without shot-stopping credit until this is fixed."
+    ))
+  }
   if (!is.null(gsaa) && nrow(gsaa) > 0) {
     gk_cols <- intersect(c("gsaa", "gsaa_per90", "xgot_faced", "goals_conceded"),
                          names(gsaa))

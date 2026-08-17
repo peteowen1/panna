@@ -93,18 +93,35 @@ test_that("run_step does not run the code block for a missing key", {
   expect_false(ran)
 })
 
-test_that("print_pipeline_summary flags run_steps keys no step consumed", {
+test_that("print_pipeline_summary ABORTS on run_steps keys no step consumed", {
   # Reverse drift: a key nothing reads (typo'd GHA override, deleted step).
-  # Warned rather than aborted -- by summary time the work is already done.
+  # It aborts rather than warns because the step that key names never ran, so
+  # the pipeline's output is incomplete -- and a bare warning() sets no exit
+  # code in Rscript, leaving CI green.
   reset_step_key_registry()
   run_steps <- list(step_01_real = TRUE, step_99_ghost = TRUE)
 
   invisible(run_step("real", 1, function() "ok", run_steps))
 
-  expect_warning(
+  expect_error(
     print_pipeline_summary(list(), Sys.time(), "TEST", run_steps = run_steps),
     "step_99_ghost"
   )
+})
+
+test_that("allow_unconsumed_step_keys downgrades the drift abort to a warning", {
+  reset_step_key_registry()
+  run_steps <- list(step_01_real = TRUE, step_99_ghost = TRUE)
+  invisible(run_step("real", 1, function() "ok", run_steps))
+
+  withr::with_options(list(), {
+    assign("allow_unconsumed_step_keys", TRUE, envir = globalenv())
+    on.exit(rm("allow_unconsumed_step_keys", envir = globalenv()), add = TRUE)
+    expect_warning(
+      print_pipeline_summary(list(), Sys.time(), "TEST", run_steps = run_steps),
+      "step_99_ghost"
+    )
+  })
 })
 
 test_that("print_pipeline_summary is quiet when every key was consumed", {

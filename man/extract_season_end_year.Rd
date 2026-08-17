@@ -20,10 +20,11 @@ tournament "YYYY Country" format (returns the year).
 \details{
 VECTORIZED over \code{season}. It was scalar-only until 2026-08-17: the opening
 guard was \verb{if (is.na(season) || !nzchar(season))}, and \code{||} on a length > 1
-argument is a hard error under R >= 4.3. Every one of the ~40 call sites had
-to remember to wrap it in \code{vapply()}/\code{sapply()}, and one that didn't was a
-latent crash rather than a wrong number -- \code{.season_end_year_for_date()}
-(R/spm_asof.R) passed \code{extract_season_from_date()} straight through. Scalar
-behaviour is unchanged, so existing \code{vapply(x, extract_season_end_year, numeric(1))} call sites keep working; new callers can pass the whole column.
+argument is a hard error under R >= 4.3. Every call site had to remember to
+wrap it in \code{vapply()}/\code{sapply()}, and one that didn't was a latent crash
+rather than a wrong number -- \code{.season_end_year_for_date()} (R/spm_asof.R)
+passed \code{extract_season_from_date()} straight through. Scalar behaviour is
+unchanged, so existing \code{vapply(x, extract_season_end_year, numeric(1))} call
+sites keep working; new callers can pass the whole column.
 }
 \keyword{internal}

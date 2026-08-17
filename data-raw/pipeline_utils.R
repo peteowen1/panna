@@ -16,8 +16,14 @@
 
 # Step keys actually reached by run_step() this session. Populated by
 # run_step(), read by print_pipeline_summary() to flag run_steps entries that
-# no call site ever consumed. An environment (not a global vector) so the
-# isolated-subprocess path can't half-populate a copy.
+# no call site ever consumed.
+#
+# An environment rather than a plain vector for reference semantics: it is
+# mutated from inside run_step() without needing `<<-` and without any risk of
+# a caller's local `.step_keys_seen` shadowing the one being read later.
+# (Isolated steps are safe either way -- run_step() records the key in the
+# PARENT process, before code_block() spawns the callr child, so the child's
+# freshly-sourced copy of this file is simply never written to.)
 .step_keys_seen <- new.env(parent = emptyenv())
 
 #' Forget every recorded step key (call before re-running a pipeline in one session)
@@ -323,10 +329,18 @@ print_pipeline_banner <- function(title, config_lines) {
 
 #' Print pipeline summary table
 #'
+#' Also reconciles `run_steps` against the keys `run_step()` actually consumed
+#' and ABORTS on any key nothing asked for — see the inline comment on that
+#' check for why it fails rather than warns.
+#'
 #' @param step_results List of step result lists
 #' @param pipeline_start POSIXct start time
 #' @param pipeline_name Character name for the banner (e.g., "OPTA PIPELINE")
 #' @param col_width Column width for step name (default 30)
+#' @param run_steps Named list of `step_XX_name = TRUE/FALSE` flags, used for
+#'   the unconsumed-key check. Defaults to `run_steps` in the global
+#'   environment, which is where every `run_*.R` driver defines it; pass
+#'   explicitly when calling outside a driver (e.g. from tests).
 print_pipeline_summary <- function(step_results, pipeline_start,
                                    pipeline_name = "PIPELINE", col_width = 30,
                                    run_steps = NULL) {
@@ -355,14 +369,23 @@ print_pipeline_summary <- function(step_results, pipeline_start,
   # Reverse drift check: run_steps keys that no run_step() call ever consumed.
   # This is the only way to catch a typo'd override -- e.g. a workflow setting
   # `step_10b_export_gamelogs = TRUE` when the call site says
-  # `step_10b_export_game_logs`. The step stays FALSE, does nothing, and every
-  # other signal says the run succeeded.
+  # `step_10b_export_game_logs`. run_step()'s forward guard cannot see this
+  # case: it only fires when a CALL SITE names a key that isn't declared, not
+  # when a declared key is named by no call site.
   #
-  # Warned rather than stopped, unlike run_step()'s forward guard: by the time
-  # the summary prints, the pipeline has already done its work and possibly
-  # published. Failing here would turn a good run red after the fact without
-  # undoing anything. It lands in the summary block, which is the part of the
-  # log people actually read.
+  # This ABORTS. It was a warning() first, on the reasoning that by summary
+  # time the work is already done and failing would turn a good run red for
+  # nothing. That reasoning was wrong on its own terms: a run_steps key nothing
+  # consumes means the step it was meant to enable never ran, so the run's
+  # output IS incomplete -- it is not a good run. And a bare warning() sets no
+  # exit code in Rscript, so CI stays green and the loud banner below scrolls
+  # past in a 300-minute log, which is precisely the "prints SUCCESS while
+  # shipping incomplete data" failure this whole file is meant to end.
+  #
+  # The summary table above has already printed, so nothing diagnostic is lost;
+  # only trailing "Output files:" chatter is skipped. Set
+  # `allow_unconsumed_step_keys <- TRUE` before sourcing to downgrade to a
+  # warning for a deliberately partial run.
   if (!is.null(run_steps) && length(run_steps) > 0) {
     unconsumed <- setdiff(names(run_steps), ls(.step_keys_seen, all.names = TRUE))
     if (length(unconsumed) > 0) {
@@ -371,12 +394,22 @@ print_pipeline_summary <- function(step_results, pipeline_start,
                       length(unconsumed)))
       for (k in unconsumed) message(sprintf("!!   %s", k))
       message("!! A key nothing consumes is dead config -- typo, stale rename,")
-      message("!! or a step that was deleted. The flag had no effect either way.")
+      message("!! or a step that was deleted. The step it names did NOT run.")
       message(paste(rep("!", col_width + 20), collapse = ""))
-      warning(sprintf("run_steps keys never consumed: %s",
-                      paste(unconsumed, collapse = ", ")), call. = FALSE)
+      msg <- sprintf(
+        paste0("run_steps keys never consumed: %s. The steps they name did not ",
+               "run, so this pipeline's output is incomplete. Fix the key (or ",
+               "set allow_unconsumed_step_keys <- TRUE to proceed knowingly)."),
+        paste(unconsumed, collapse = ", "))
+      if (isTRUE(get0("allow_unconsumed_step_keys", envir = globalenv()))) {
+        warning(msg, call. = FALSE)
+      } else {
+        stop(msg, call. = FALSE)
+      }
     }
   }
+
+  invisible(NULL)
 }
 
 

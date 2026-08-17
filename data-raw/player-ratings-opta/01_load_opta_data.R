@@ -144,25 +144,60 @@ all_match_xg <- list()
 # survives, and the 100-match floor is three orders of magnitude below a real
 # run. So count every outcome explicitly and assert on the totals at the end.
 #
-# Three distinct outcomes, because they mean different things:
-#   attempted_ls - entered the season loop
-#   failed_ls    - threw an exception. NEVER legitimate; a bug or a schema break.
-#   skipped_ls   - missing upstream data (no lineups / no raw events / no SPADL).
-#                  CAN be legitimate (unscraped season, the permanently
-#                  event-less UECL tier-3 matches), so reported, not fatal.
+# Outcomes are tracked separately because they mean different things:
+#   attempted_ls   - entered the season loop
+#   failed_ls      - threw an exception. NEVER legitimate; a bug or schema break.
+#   skipped_ls     - missing upstream data (no lineups / no raw events / no
+#                    SPADL). CAN be legitimate (unscraped season, the
+#                    permanently event-less UECL tier-3 matches).
+#   failed_leagues - the league's season LISTING threw. Whole league lost.
+#   empty_leagues  - the league yielded zero seasons, before or after the
+#                    seasons/min_season filters. Whole league contributes
+#                    nothing.
+#
+# The two league-level ledgers exist because the season ledgers cannot see a
+# league that never reaches the season loop: a league dropped at the listing
+# step was absent from attempted_ls entirely, so `coverage` computed 100% over
+# the leagues that DID run and the assertion passed while a whole competition
+# was missing from RAPM.
 attempted_ls <- character(0)
 failed_ls <- character(0)
 skipped_ls <- character(0)
+failed_leagues <- character(0)
+empty_leagues <- character(0)
 .note_skip <- function(label, reason) {
   skipped_ls <<- c(skipped_ls, sprintf("%s (%s)", label, reason))
 }
 
 for (league in leagues) {
   opta_league <- to_opta_league(league)
-  available_seasons <- tryCatch(list_opta_seasons(league), error = function(e) character(0))
 
+  # Do NOT swallow a season-listing exception into character(0). A corrupt
+  # catalog, a filesystem error or a bad league mapping is a bug, and coercing
+  # it to "zero seasons" makes it indistinguishable from the legitimate
+  # "not scraped yet" case -- the whole league then disappears through the
+  # `next` below. That is the same principle applied inside the season loop
+  # (exceptions are never legitimate), which this call previously sat outside.
+  available_seasons <- tryCatch(list_opta_seasons(league), error = function(e) {
+    failed_leagues <<- c(failed_leagues,
+                         sprintf("%s (season listing failed: %s)", league,
+                                 conditionMessage(e)))
+    NULL
+  })
+  if (is.null(available_seasons)) {
+    message(sprintf("  ERROR listing seasons for %s -- league dropped", league))
+    next
+  }
+
+  # A league that contributes NOTHING must still be recorded. The ledger below
+  # only starts inside the season loop, so before this guard a league yielding
+  # zero seasons vanished from all three ledgers: not attempted, not skipped,
+  # not failed -- and therefore invisible to the coverage assertion, which
+  # computes 100% over the leagues that did run. A single mistyped league code
+  # or an unsynced directory silently dropped an entire competition from RAPM.
   if (length(available_seasons) == 0) {
     message(sprintf("  No seasons found for %s, skipping", league))
+    empty_leagues <- c(empty_leagues, sprintf("%s (no seasons listed)", league))
     next
   }
 
@@ -175,6 +210,15 @@ for (league in leagues) {
     min_year <- as.integer(substr(min_season, 1, 4))
     season_years <- as.integer(substr(available_seasons, 1, 4))
     available_seasons <- available_seasons[season_years >= min_year]
+  }
+
+  # The config filters above can also empty the set, and the season loop then
+  # simply never executes -- silent for the same reason. Requesting seasons a
+  # league doesn't have is usually a config mistake, so say so.
+  if (length(available_seasons) == 0) {
+    message(sprintf("  %s: no seasons left after seasons/min_season filter", league))
+    empty_leagues <- c(empty_leagues, sprintf("%s (filtered to zero seasons)", league))
+    next
   }
 
   message(sprintf("\n--- %s (%s): %d seasons ---", league, opta_league, length(available_seasons)))
@@ -210,10 +254,12 @@ for (league in leagues) {
       # their league-level load failed above, and `events$league <- league` on
       # a NULL COERCES IT INTO A LIST -- the frame silently becomes
       # list(league=, season=) and only blows up two lines later inside
-      # .stage_write(), where `nrow(NULL) == 0` makes the `if` condition
-      # zero-length. That threw, so nothing corrupt was ever written, but it
-      # surfaced as an unrelated error at a misleading call site. Fail here,
-      # named, instead of downstream by accident.
+      # .stage_write(): `nrow()` of that list is NULL, so `nrow(df) == 0` is
+      # logical(0), `FALSE || logical(0)` evaluates to NA (it does NOT error at
+      # the `||`), and it is `if (NA)` that throws "missing value where
+      # TRUE/FALSE needed". So nothing corrupt was ever written, but the failure
+      # surfaced as a confusing NA-condition error at a call site that has
+      # nothing to do with the real cause. Fail here, named, instead.
       if (is.null(lineups) || nrow(lineups) == 0) {
         message(sprintf("    Skipping %s: no lineup data", label))
         .note_skip(label, "no lineups")
@@ -497,22 +543,48 @@ max_failed_league_seasons <- if (exists("max_failed_league_seasons")) {
   max_failed_league_seasons
 } else 0L
 
-# Missing-data skips are only WARNED on, because they can be legitimate.
-# Threshold is on the fraction of attempted league-seasons that produced
-# lineups, which is the grain RAPM consumes.
+# Coverage is measured on SHOTS, not lineups. Lineups are staged before the
+# raw-events and SPADL checks run, so a season whose events or SPADL failed
+# still lands in combined_lineups and looked "loaded" -- while carrying no xG
+# at all. That is functionally identical to a load failure for RAPM's purposes
+# ("no xG -> RAPM drops them", per the exception handler above), and it is
+# reachable for an ENTIRE league in one go: lg_match_events is a per-league
+# load, so one 404 on that league's events asset sends every one of its seasons
+# down the "no raw events" skip path, tripping neither guard. Lineup coverage
+# is still computed and reported, but the floor is applied to the shots grain.
 min_coverage_frac <- if (exists("min_coverage_frac")) min_coverage_frac else 0.90
 
 n_attempted <- length(attempted_ls)
-loaded_ls <- unique(paste(combined_lineups$league, combined_lineups$season))
-n_loaded <- length(loaded_ls)
-coverage <- if (n_attempted > 0) n_loaded / n_attempted else NA_real_
+lineups_ls <- unique(paste(combined_lineups$league, combined_lineups$season))
+shots_ls <- if (!is.null(combined_shots) && nrow(combined_shots) > 0) {
+  unique(paste(combined_shots$league, combined_shots$season))
+} else character(0)
+n_lineups <- length(lineups_ls)
+n_shots <- length(shots_ls)
+coverage <- if (n_attempted > 0) n_shots / n_attempted else NA_real_
 
-message(sprintf("\n  League-season coverage: %d/%d loaded (%.1f%%), %d failed, %d skipped",
-                n_loaded, n_attempted, 100 * coverage,
-                length(failed_ls), length(skipped_ls)))
+message(sprintf(
+  "\n  League-season coverage: %d/%d with shots/xG (%.1f%%), %d with lineups, %d failed, %d skipped",
+  n_shots, n_attempted, 100 * coverage, n_lineups,
+  length(failed_ls), length(skipped_ls)))
 if (length(skipped_ls) > 0) {
   message("  Skipped (missing upstream data):")
   for (s in skipped_ls) message(sprintf("    - %s", s))
+}
+if (length(empty_leagues) > 0) {
+  message("  Leagues contributing nothing:")
+  for (s in empty_leagues) message(sprintf("    - %s", s))
+}
+
+# League-level listing failures are exceptions and are held to zero, same rule
+# as season-level ones -- a league lost here never reaches any season ledger.
+if (length(failed_leagues) > 0) {
+  stop(sprintf(
+    paste0("%d league(s) could not be listed at all:\n%s\n",
+           "The entire league is absent from RAPM. Fix the root cause."),
+    length(failed_leagues),
+    paste(sprintf("  - %s", failed_leagues), collapse = "\n")),
+    call. = FALSE)
 }
 
 if (length(failed_ls) > max_failed_league_seasons) {
@@ -533,11 +605,11 @@ if (n_attempted == 0L) {
 
 if (coverage < min_coverage_frac) {
   stop(sprintf(
-    paste0("Only %d/%d league-seasons (%.1f%%) produced lineups, below the ",
+    paste0("Only %d/%d league-seasons (%.1f%%) produced shots/xG, below the ",
            "%.0f%% floor.\nMissing: %s\n",
            "Set min_coverage_frac before sourcing if this is expected."),
-    n_loaded, n_attempted, 100 * coverage, 100 * min_coverage_frac,
-    paste(setdiff(attempted_ls, loaded_ls), collapse = ", ")),
+    n_shots, n_attempted, 100 * coverage, 100 * min_coverage_frac,
+    paste(setdiff(attempted_ls, shots_ls), collapse = ", ")),
     call. = FALSE)
 }
 

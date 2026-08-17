@@ -487,12 +487,12 @@ extract_season_end_year_from_match_id <- function(match_id) {
 #'
 #' VECTORIZED over `season`. It was scalar-only until 2026-08-17: the opening
 #' guard was `if (is.na(season) || !nzchar(season))`, and `||` on a length > 1
-#' argument is a hard error under R >= 4.3. Every one of the ~40 call sites had
-#' to remember to wrap it in `vapply()`/`sapply()`, and one that didn't was a
-#' latent crash rather than a wrong number -- `.season_end_year_for_date()`
-#' (R/spm_asof.R) passed `extract_season_from_date()` straight through. Scalar
-#' behaviour is unchanged, so existing `vapply(x, extract_season_end_year,
-#' numeric(1))` call sites keep working; new callers can pass the whole column.
+#' argument is a hard error under R >= 4.3. Every call site had to remember to
+#' wrap it in `vapply()`/`sapply()`, and one that didn't was a latent crash
+#' rather than a wrong number -- `.season_end_year_for_date()` (R/spm_asof.R)
+#' passed `extract_season_from_date()` straight through. Scalar behaviour is
+#' unchanged, so existing `vapply(x, extract_season_end_year, numeric(1))` call
+#' sites keep working; new callers can pass the whole column.
 #'
 #' @param season Character vector of season strings (e.g., "2023-2024",
 #'   "2018 Russia", "Intl_Friendlies_2024")

@@ -16,20 +16,40 @@ published incomplete data. Neither was detectable from the logs.
   (`max_failed_league_seasons`, default 0), while **missing upstream data**
   (no lineups / no events / no SPADL) is listed and held to a coverage floor
   (`min_coverage_frac`, default 0.90). Both are overridable before sourcing.
+  * Coverage is measured on the **shots/xG** grain, not lineups. Lineups are
+    staged before the raw-events and SPADL checks, so a season whose events
+    failed still landed in `combined_lineups` and looked covered while carrying
+    no xG — and that is reachable for a whole league at once, since
+    `load_opta_match_events()` is a per-league call.
+  * **League-level losses are tracked too.** The season ledgers start inside the
+    season loop, so a league dropped at the `list_opta_seasons()` step was in
+    none of them — coverage computed 100% over the leagues that did run while a
+    whole competition was missing. A listing *exception* now aborts (it was
+    being swallowed into `character(0)`, making a corrupt catalog
+    indistinguishable from "not scraped yet"); a league that legitimately lists
+    zero seasons is reported in the summary.
 * **`run_step()` aborts on a step key that isn't in `run_steps`.** It previously
   returned `DISABLED` — visually identical in the summary to a deliberate
   `FALSE`. Renaming a step at one of its two call sites, or a GHA `run_steps`
   override drifting after a rename, silently turned the step into a no-op.
-  `print_pipeline_summary()` also now reports `run_steps` keys that no call site
-  consumed (the reverse drift: a typo'd override), as a warning rather than an
-  abort, since by summary time the work is already done. The guard found two
-  already-stale local debug runners on its first run.
-* `xg_model.R`: a failed keeper-GSAA computation now warns loudly instead of
-  silently dropping `gsaa`/`gsaa_per90`/`xgot_faced`/`goals_conceded` from the
-  output — the GK PSR/PSV sub-model is built on `gsaa_per90`, so losing it
-  scored every keeper with no shot-stopping credit. Keepers missing from the
-  GSAA join are left `NA` rather than filled with 0; 0 is correct for an
-  outfielder but fabricates "exactly league-average shot-stopping" for a keeper.
+  `print_pipeline_summary()` also now **aborts** on `run_steps` keys that no
+  call site consumed (the reverse drift: a typo'd override). It warned at first,
+  on the reasoning that failing after the work is done is pointless — but a key
+  nothing consumes means the step it names never ran, so the output *is*
+  incomplete, and `warning()` sets no exit code in `Rscript`, leaving CI green.
+  Set `allow_unconsumed_step_keys <- TRUE` for a deliberately partial run. The
+  guard found two already-stale local debug runners on its first run.
+* `xg_model.R`: keeper GSAA now warns loudly whenever the GK columns don't land,
+  instead of silently dropping `gsaa`/`gsaa_per90`/`xgot_faced`/`goals_conceded`
+  from the output — the GK PSR/PSV sub-model is built on `gsaa_per90`, so losing
+  it scored every keeper with no shot-stopping credit. The warning is gated on
+  "the join did not happen", **not** on an exception being thrown:
+  `.compute_keeper_gsaa()` has six ordinary `return(NULL)` early exits (missing
+  columns, no shots, no keepers with minutes, …), and warning only in the
+  `tryCatch` handler covered the rare path while leaving every common one
+  silent. Keepers missing from the GSAA join are left `NA` rather than filled
+  with 0; 0 is correct for an outfielder but fabricates "exactly league-average
+  shot-stopping" for a keeper.
 * `load_opta_eventless_ids()` distinguishes a registry that doesn't exist yet
   (quiet, normal) from one that exists and won't parse or has lost its
   `match_id` column (warns). Both still return empty, but the second case is a
@@ -40,7 +60,7 @@ published incomplete data. Neither was detectable from the logs.
 ## `extract_season_end_year()` is vectorized
 
 * It was scalar-only: the `is.na(season) || !nzchar(season)` guard is a hard
-  error on length > 1 under R >= 4.3, so all ~40 call sites had to remember a
+  error on length > 1 under R >= 4.3, so every call site had to remember a
   `vapply()` wrapper, and one that didn't was a crash rather than a wrong
   number — `.season_end_year_for_date()` passed a vectorized
   `extract_season_from_date()` result straight through. Scalar behaviour is
