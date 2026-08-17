@@ -1002,14 +1002,80 @@ aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0,
   # --- Keeper shot-stopping (GSAA = expected goals faced - goals conceded) ---
   # Cross-team: opponent shots are attributed to the conceding team's keeper.
   # Replaces save_percentage (a scale-free ratio) with a volume-correct value.
-  gsaa <- tryCatch(.compute_keeper_gsaa(spadl, lineup_dt, by_match = by_match),
-                   error = function(e) NULL)
+  #
+  # LOUD whenever the GK columns don't land, not just when an exception was
+  # thrown. This used to be `error = function(e) NULL` with no warning: a broken
+  # GSAA computation dropped gsaa/gsaa_per90/xgot_faced/goals_conceded from the
+  # output ENTIRELY, and the only downstream signal was a memoized .get_col()
+  # warning buried in a 40-minute log. The GK PSR/PSV sub-model is built on
+  # gsaa_per90 -- losing it silently scores every keeper with no shot-stopping
+  # credit at all.
+  #
+  # The warning deliberately does NOT live in the error handler. Most of the
+  # ways this returns nothing are ordinary control flow, not exceptions:
+  # .compute_keeper_gsaa() has six `return(NULL)` early exits (missing
+  # spadl/lineup columns, no shots, no conceding-team match, no keepers in
+  # lineups, no matched keeper-matches). Warning only on `error` left every one
+  # of those producing the identical silent column-drop this guard exists to
+  # catch -- the rare path was covered and the common ones weren't. So the
+  # warning is gated on "the join block did not run", whatever the cause.
+  gsaa_err <- NULL
+  gsaa <- tryCatch(
+    .compute_keeper_gsaa(spadl, lineup_dt, by_match = by_match),
+    error = function(e) { gsaa_err <<- conditionMessage(e); NULL }
+  )
+  if (is.null(gsaa) || nrow(gsaa) == 0) {
+    why <- if (!is.null(gsaa_err)) {
+      paste0("it errored: ", gsaa_err)
+    } else {
+      paste0("it returned no rows -- a precondition failed (spadl missing ",
+             "match_id/team_id/action_type/result, lineups missing position/",
+             "minutes_played, no shots, or no goalkeepers with minutes)")
+    }
+    cli::cli_warn(c(
+      "Keeper GSAA unavailable: {why}",
+      "!" = "gsaa/gsaa_per90/xgot_faced/goals_conceded are ABSENT from the output.",
+      "i" = "The GK PSR/PSV sub-model reads gsaa_per90 -- keepers will score
+             without shot-stopping credit until this is fixed."
+    ))
+  }
   if (!is.null(gsaa) && nrow(gsaa) > 0) {
     gk_cols <- intersect(c("gsaa", "gsaa_per90", "xgot_faced", "goals_conceded"),
                          names(gsaa))
     result <- gsaa[, c(join_keys, gk_cols), with = FALSE][result, on = join_keys]
+
+    # Fill 0 for OUTFIELD players only. An outfielder faces no shots, so 0 GSAA
+    # is the true value. A KEEPER missing from the gsaa table is a different
+    # thing entirely -- 0 there is a fabricated "exactly league-average
+    # shot-stopping" rating, which is silent imputation of the kind that hides
+    # an upstream gap behind a plausible number. Leave those NA so the gap
+    # surfaces instead of scoring as average.
+    #
+    # Keeper identity comes from the LINEUPS, not from `result`: `result` is a
+    # per-player aggregate with no position column, so .detect_gk_rows() would
+    # return all-FALSE here and the split would be inert. Same GK predicate
+    # .compute_keeper_gsaa() uses, so the two agree by construction. When
+    # lineups carry no position at all, gk_ids is empty and every row is
+    # filled -- exactly the old behaviour, no regression.
+    lu_gk <- data.table::as.data.table(lineup_dt)
+    gk_ids <- if (all(c("position", "minutes_played", "player_id") %in% names(lu_gk))) {
+      unique(lu_gk[grepl("GK|Goalkeeper", position, ignore.case = TRUE) &
+                     !is.na(minutes_played) & minutes_played > 0, player_id])
+    } else character(0)
+
+    is_gk_row <- result$player_id %in% gk_ids
+    outfield_idx <- which(!is_gk_row)
     for (col in gk_cols) {
-      data.table::set(result, which(is.na(result[[col]])), col, 0)
+      data.table::set(result, intersect(outfield_idx, which(is.na(result[[col]]))),
+                      col, 0)
+    }
+    n_gk_missing <- sum(is_gk_row & is.na(result[[gk_cols[1]]]))
+    if (n_gk_missing > 0) {
+      cli::cli_warn(c(
+        "{n_gk_missing} goalkeeper row{?s} {?has/have} no GSAA record -- left as NA.",
+        "i" = "NA (not 0) so a missing keeper isn't scored as league-average
+               shot-stopping. Check the lineup/event join if this is unexpected."
+      ))
     }
   }
 

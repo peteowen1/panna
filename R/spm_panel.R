@@ -196,10 +196,32 @@ classify_role_group <- function(role) {
   ), by = player_id, .SDcols = c(raw_cols, xm_tot_cols)]
 
   if (length(xm_tot_cols) > 0) {
+    # data.table::set(), not `[[<-`: `[[<-` on a data.table invalidates its
+    # over-allocation and forces a full copy. set() is the idiom used 15 lines
+    # above when the __tot columns are created -- these two loops were
+    # inconsistent.
+    #
+    # NA, not 0, for zero-minute players (reachable: some players carry
+    # anomalous 0-minute box rows in old seasons). A rate is undefined without
+    # minutes; 0 asserts "this player did nothing per 90", a fabricated
+    # observation that then trains into the SPM panel as if measured. The NA
+    # still becomes 0 downstream -- .clean_numeric_na() at the end of this
+    # function does that -- but it goes through the counter there, so the
+    # imputation is reported (and warns above 5% of cells) instead of being
+    # invisible. Same value reaches the model; the difference is the audit
+    # trail.
+    # Deleting BY NAME over a snapshot vector (xm_tot_cols), never by position
+    # -- a loop that both iterates and deletes by index visits half its
+    # elements and reports success.
     for (tc in xm_tot_cols) {
       rate_col <- sub("__tot$", "", tc)
-      agg[[rate_col]] <- ifelse(agg$total_minutes > 0, agg[[tc]] / agg$total_minutes * 90, 0)
-      agg[[tc]] <- NULL
+      data.table::set(
+        agg, j = rate_col,
+        value = data.table::fifelse(agg$total_minutes > 0,
+                                    agg[[tc]] / agg$total_minutes * 90,
+                                    NA_real_)
+      )
+      data.table::set(agg, j = tc, value = NULL)
     }
   }
 

@@ -205,8 +205,13 @@ fit_season_ratings_opta <- function(splint_data, opta_stats, season,
   # fallback when the standard format matched NOTHING — so calendar-league
   # stats were silently excluded from every season's SPM build (the blog's
   # 25% missing-SPM gap, found 2026-06-12).
-  end_years <- sapply(unique(opta_stats$season), extract_season_end_year)
-  matching_seasons <- names(end_years)[end_years == season]
+  # setNames(vectorized_call, x) rather than sapply(x, f): sapply returns a
+  # LIST (not a numeric) when `x` is empty, and `which()` rather than a bare
+  # logical index because an unparseable season gives NA, and `names(v)[NA]`
+  # injects an NA into the result instead of dropping the row.
+  stats_seasons <- unique(opta_stats$season)
+  end_years <- stats::setNames(extract_season_end_year(stats_seasons), stats_seasons)
+  matching_seasons <- names(end_years)[which(end_years == season)]
   if (length(matching_seasons) > 1) {
     cat(sprintf("  Note: %d seasons match end year %d: %s\n",
                 length(matching_seasons), season, paste(matching_seasons, collapse = ", ")))
@@ -239,8 +244,9 @@ fit_season_ratings_opta <- function(splint_data, opta_stats, season,
   if (!is.null(opta_xmetrics) && nrow(opta_xmetrics) > 0) {
     # End-year matching for the same reason as the stats subset above —
     # calendar-year league labels never equal the "YYYY-YYYY" season_str.
-    xm_end_years <- sapply(unique(opta_xmetrics$season), extract_season_end_year)
-    xm_matching <- names(xm_end_years)[xm_end_years == season]
+    xm_seasons <- unique(opta_xmetrics$season)
+    xm_end_years <- stats::setNames(extract_season_end_year(xm_seasons), xm_seasons)
+    xm_matching <- names(xm_end_years)[which(xm_end_years == season)]
     season_xm <- opta_xmetrics[opta_xmetrics$season %in% xm_matching, ]
     if (nrow(season_xm) > 0) {
       xm_agg <- .aggregate_xmetrics_for_spm(season_xm)
@@ -486,9 +492,13 @@ if (exists(".log_rss", mode = "function")) .log_rss("before season loop")
 # (confirmed ~9.5GB baseline at current scale) — if that alone doesn't
 # leave enough headroom for the biggest season's fit, the runner has
 # genuinely outgrown 16GB and needs a size bump, not a cleverer loop.
-stats_end_years <- sapply(unique(opta_stats$season), extract_season_end_year)
+.season_end_year_map <- function(x) {
+  u <- unique(x)
+  stats::setNames(extract_season_end_year(u), u)
+}
+stats_end_years <- .season_end_year_map(opta_stats$season)
 xm_end_years <- if (!is.null(opta_xmetrics) && nrow(opta_xmetrics) > 0) {
-  sapply(unique(opta_xmetrics$season), extract_season_end_year)
+  .season_end_year_map(opta_xmetrics$season)
 } else NULL
 
 seasonal_ratings_list <- vector("list", length(seasons))
@@ -500,12 +510,15 @@ for (season in seasons) {
   s_splints <- splint_data$splints[splint_data$splints$season_end_year == season, ]
   s_players <- splint_data$players[splint_data$players$splint_id %in% s_splints$splint_id, ]
 
-  s_stats_seasons <- names(stats_end_years)[stats_end_years == season]
+  # which(), not a bare logical index: an unparseable season label yields NA,
+  # and names(v)[NA] returns an NA element, which then makes `%in%` match every
+  # row whose season is NA.
+  s_stats_seasons <- names(stats_end_years)[which(stats_end_years == season)]
   s_stats <- opta_stats[opta_stats$season %in% s_stats_seasons, ]
 
   s_xm <- NULL
   if (!is.null(xm_end_years)) {
-    xm_matching <- names(xm_end_years)[xm_end_years == season]
+    xm_matching <- names(xm_end_years)[which(xm_end_years == season)]
     s_xm <- opta_xmetrics[opta_xmetrics$season %in% xm_matching, ]
   }
 

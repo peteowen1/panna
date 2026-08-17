@@ -234,6 +234,50 @@ test_that("extract_season_end_year handles standard and tournament formats", {
   expect_true(is.na(extract_season_end_year("garbage")))
 })
 
+test_that("extract_season_end_year is vectorized", {
+  # Was scalar-only until 2026-08-17: the `is.na(season) || !nzchar(season)`
+  # guard is a hard error on length > 1 under R >= 4.3, so every one of the
+  # ~40 call sites had to remember a vapply() wrapper and one that forgot was
+  # a crash, not a wrong number.
+  expect_equal(
+    extract_season_end_year(c("2023-2024", "2018 Russia", "Intl_Friendlies_2024")),
+    c(2024, 2018, 2024)
+  )
+  # NA/empty entries must not poison their neighbours.
+  expect_equal(
+    extract_season_end_year(c("2023-2024", NA, "", "garbage", "2020")),
+    c(2024, NA, NA, NA, 2020)
+  )
+})
+
+test_that("extract_season_end_year is type-stable on empty input", {
+  # sapply(character(0), f) returns a LIST, which is how an empty season set
+  # turns a downstream comparison into an error instead of an empty result.
+  out <- extract_season_end_year(character(0))
+  expect_type(out, "double")
+  expect_length(out, 0)
+})
+
+test_that("extract_season_end_year covers all three label formats", {
+  # The three formats that share one end year -- the trap documented in
+  # panna/CLAUDE.md ("Season subsetting"): European "YYYY-YYYY", calendar-year
+  # leagues "YYYY", and tournaments "YYYY Country" must all map to 2026.
+  expect_equal(
+    extract_season_end_year(c("2025-2026", "2026", "2026 Canada-Mexico-USA")),
+    c(2026, 2026, 2026)
+  )
+  # Trailing-year format used by the intl-friendlies scrape.
+  expect_equal(extract_season_end_year("Intl_Friendlies_2026"), 2026)
+})
+
+test_that(".season_end_year_for_date accepts a vector of dates", {
+  # This composition passed a vectorized result straight into the scalar-only
+  # helper -- a latent crash for any multi-date caller.
+  out <- .season_end_year_for_date(as.Date(c("2025-09-01", "2026-03-01")))
+  expect_length(out, 2)
+  expect_true(all(is.finite(out)))
+})
+
 
 # ===========================================================================
 # .log_rss — OS-level memory checkpoint (panna#128/#133 diagnostic)

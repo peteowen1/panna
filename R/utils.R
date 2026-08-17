@@ -485,27 +485,54 @@ extract_season_end_year_from_match_id <- function(match_id) {
 #' Handles both "YYYY-YYYY" format (returns second year) and
 #' tournament "YYYY Country" format (returns the year).
 #'
-#' @param season Season string (e.g., "2023-2024" or "2018 Russia")
-#' @return Numeric end year, or NA_real_ if unparseable
+#' VECTORIZED over `season`. It was scalar-only until 2026-08-17: the opening
+#' guard was `if (is.na(season) || !nzchar(season))`, and `||` on a length > 1
+#' argument is a hard error under R >= 4.3. Every call site had to remember to
+#' wrap it in `vapply()`/`sapply()`, and one that didn't was a latent crash
+#' rather than a wrong number -- `.season_end_year_for_date()` (R/spm_asof.R)
+#' passed `extract_season_from_date()` straight through. Scalar behaviour is
+#' unchanged, so existing `vapply(x, extract_season_end_year, numeric(1))` call
+#' sites keep working; new callers can pass the whole column.
+#'
+#' @param season Character vector of season strings (e.g., "2023-2024",
+#'   "2018 Russia", "Intl_Friendlies_2024")
+#' @return Numeric vector of end years, `NA_real_` where unparseable
 #' @keywords internal
 extract_season_end_year <- function(season) {
-  if (is.na(season) || !nzchar(season)) return(NA_real_)
+  season <- as.character(season)
+  out <- rep(NA_real_, length(season))
+  if (length(season) == 0L) return(out)
+
+  usable <- !is.na(season) & nzchar(season)
+
   # Format 1: "2023-2024" -- domestic season, end year is the second
-  if (grepl("^\\d{4}-\\d{4}$", season)) {
-    return(as.numeric(substr(season, 6, 9)))
-  }
+  fmt1 <- usable & grepl("^\\d{4}-\\d{4}$", season)
+  out[fmt1] <- as.numeric(substr(season[fmt1], 6, 9))
+
   # Format 2: starts with a 4-digit year -- tournament name "2018 Russia",
-  # "2026 Canada-Mexico-USA"
-  year <- suppressWarnings(as.numeric(sub("^(\\d{4}).*", "\\1", season)))
-  if (!is.na(year)) return(year)
+  # "2026 Canada-Mexico-USA". `sub()` returns the subject unchanged when the
+  # anchored pattern doesn't match, so as.numeric() yields NA there and the
+  # row falls through to format 3 -- same dispatch the scalar version used.
+  fmt2 <- usable & !fmt1
+  if (any(fmt2)) {
+    out[fmt2] <- suppressWarnings(
+      as.numeric(sub("^(\\d{4}).*", "\\1", season[fmt2]))
+    )
+  }
+
   # Format 3: trailing 4-digit year -- "Intl_Friendlies_2024",
   # "Intl_Friendlies_2026". The intl-friendlies scrape uses this convention.
   # Take the LAST 4-digit number anywhere in the string; otherwise NA.
-  matches <- regmatches(season, gregexpr("\\d{4}", season))[[1]]
-  if (length(matches) > 0L) {
-    return(as.numeric(matches[length(matches)]))
+  fmt3 <- usable & is.na(out)
+  if (any(fmt3)) {
+    out[fmt3] <- vapply(
+      regmatches(season[fmt3], gregexpr("\\d{4}", season[fmt3])),
+      function(m) if (length(m) > 0L) as.numeric(m[length(m)]) else NA_real_,
+      numeric(1)
+    )
   }
-  NA_real_
+
+  out
 }
 
 

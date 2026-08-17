@@ -280,8 +280,15 @@ fit_expanding_skill_spm <- function(skill_features, pooled_rapm_ratings, cutoff_
 #' straight to the `season_end_year` grain the expanding-window SPM models
 #' (above) are keyed by, instead of re-deriving the Aug-July season boundary.
 #'
-#' @param date Date (or coercible)
-#' @return Integer season end year (e.g. 2026 for a date in season "2025-2026")
+#' Vectorized over `date` since `extract_season_end_year()` was vectorized
+#' (2026-08-17). Before that this composition was a latent crash on any vector
+#' input: `extract_season_from_date()` is vectorized, so it handed a length-n
+#' character vector to a scalar-only helper whose `||` guard errors under
+#' R >= 4.3.
+#'
+#' @param date Date vector (or coercible)
+#' @return Numeric vector of season end years (e.g. 2026 for a date in season
+#'   "2025-2026")
 #' @keywords internal
 .season_end_year_for_date <- function(date) {
   extract_season_end_year(extract_season_from_date(date))
