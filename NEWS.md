@@ -1,3 +1,43 @@
+# panna 0.3.23 (dev)
+
+## The 13 "flaky" test failures were one bug, hiding two more
+
+The suite had 13 failures across four files that each appeared to pass in
+isolation, so they read as flaky and had been left alone. They were neither
+flaky nor independent.
+
+* **A test was reloading the package mid-suite.** `test-publish-gating.R`
+  `source()`s real pipeline scripts, and every numbered step opens with
+  `devtools::load_all()` so it can run standalone. Under `devtools::test()` that
+  reloads the namespace mid-run, which (a) discards the
+  `local_mocked_bindings()` the sourcing test just installed — so `vb_publish`
+  un-mocks itself partway through and the test errors on its own — and (b)
+  swaps the package's session-state environments (`.opta_env`,
+  `.opta_remote_env`, `.vb_state`) for fresh ones, breaking every file that runs
+  after it. Confirmed by address: `.opta_remote_env` is a different environment
+  before and after. The package is already loaded when testthat runs, so the
+  script's own `load_all()` is redundant there; it is stubbed for the duration
+  of those four tests. **That alone fixed 11 of the 13.**
+* **`09_export_ratings.R` has published four files since panna#165** — the raw
+  RAPM pair must advance together with the shrunk pair — but the fixture still
+  supplied two, so the script aborted on `seasonal_rapm is empty or NULL`. The
+  M-RATINGS-PAIR invariant test had not been checking the current contract.
+* **The both-or-neither test asserted only an error _class_**, so it would have
+  passed against any early abort — vacuous the moment a fixture went stale,
+  which is exactly what had happened. It now asserts it reached `vb_publish`.
+* The fixture's synthetic `replacement` row exercised the export-boundary drop
+  without asserting it; row counts are now captured inside the mock (the script
+  unlinks its temp dir as soon as `vb_publish` returns) so the assertion fails
+  if the drop regresses.
+* Closed a second, non-failing leak: the two `download_opta_catalog` tests
+  cleared the session cache on the way in but not out, leaving a one-league
+  fixture catalog behind for later readers. A residual path still populates it
+  indirectly from elsewhere in that file; it causes no failures today.
+
+**723 tests, 0 failures.** Bisected in the real `devtools::test()` harness —
+sequential `test_file()` does not reproduce it, which is part of why it
+survived.
+
 # panna 0.3.22 (dev)
 
 ## Pipeline guards: partial loads and skipped steps now fail instead of reporting success

@@ -308,11 +308,21 @@ test_that("download_opta_catalog treats stale local file as expired", {
     .package = "piggyback"
   )
 
-  # Clear any session cache so the test is deterministic.
+  # Clear any session cache so the test is deterministic -- and clear it AGAIN
+  # on exit. download_opta_catalog() caches whatever it returns, so without the
+  # defer this test leaves a one-league FIXTURE catalog in the session cache for
+  # every later test that reads it (list_opta_seasons(), resolve_league_season(),
+  # ...). Clearing only on the way in makes the test deterministic for itself
+  # while quietly poisoning everything downstream.
   .opta_remote_env <- asNamespace("panna")$.opta_remote_env
   if (exists("opta_catalog", envir = .opta_remote_env)) {
     rm("opta_catalog", envir = .opta_remote_env)
   }
+  withr::defer({
+    if (exists("opta_catalog", envir = .opta_remote_env)) {
+      rm("opta_catalog", envir = .opta_remote_env)
+    }
+  })
 
   # TTL 6h: 48h-old local is stale → should return fresh catalog.
   result <- download_opta_catalog(max_age_hours = 6)
@@ -344,11 +354,17 @@ test_that("download_opta_catalog accepts fresh local file within TTL", {
     .package = "panna"
   )
 
-  # Clear cache so it's forced to hit the local-file path.
+  # Clear cache so it's forced to hit the local-file path -- and on exit too,
+  # so the fixture catalog this loads doesn't outlive the test (see above).
   .opta_remote_env <- asNamespace("panna")$.opta_remote_env
   if (exists("opta_catalog", envir = .opta_remote_env)) {
     rm("opta_catalog", envir = .opta_remote_env)
   }
+  withr::defer({
+    if (exists("opta_catalog", envir = .opta_remote_env)) {
+      rm("opta_catalog", envir = .opta_remote_env)
+    }
+  })
 
   # Would fail if the "download" path ran (no pb_download stub here).
   result <- download_opta_catalog(max_age_hours = 6)
