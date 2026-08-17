@@ -160,9 +160,14 @@ test_that("09_export_ratings.R publishes the whole ratings set in ONE vb_publish
   )
 
   captured_paths <- NULL
+  captured_rows <- NULL
   local_mocked_bindings(
     vb_publish = function(paths, repo, tag, ...) {
       captured_paths <<- paths
+      # Read row counts HERE, inside the mock: the script unlinks its temp dir
+      # as soon as vb_publish returns, so by assertion time the files are gone.
+      captured_rows <<- vapply(paths, function(p) nrow(arrow::read_parquet(p)),
+                               integer(1))
       list(generation = "test-gen")
     },
     .package = "panna"
@@ -181,6 +186,14 @@ test_that("09_export_ratings.R publishes the whole ratings set in ONE vb_publish
     expect_true(any(grepl(paste0(f, "\\.parquet$"), captured_paths)),
                 info = paste(f, "missing from the published set"))
   }
+
+  # The fixture feeds 2 rows to each raw export, one of them the synthetic
+  # `replacement` player the script drops at the export boundary. Assert the
+  # drop actually happened -- without this the replacement row is inert
+  # scenery, present in the fixture but verifying nothing.
+  raw_idx <- grep("(seasonal_rapm_raw|pooled_rapm_raw)\\.parquet$", captured_paths)
+  expect_length(raw_idx, 2)
+  expect_equal(unname(captured_rows[raw_idx]), c(1L, 1L))
 })
 
 test_that("09_export_ratings.R: a vb_publish failure aborts the script (both-or-neither)", {
