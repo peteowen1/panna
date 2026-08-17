@@ -30,6 +30,15 @@
 # load_all() is redundant here -- the same situation as the pipeline
 # orchestrator, which the script header explicitly anticipates. Stub it out.
 local_no_reload <- function(env = parent.frame()) {
+  # No-op when devtools is absent. It is not a dependency of this package, so
+  # it is NOT installed in the R CMD check environment, and mocking a binding
+  # in a package that cannot be loaded is a hard error rather than a skip.
+  # Nothing is lost by skipping the stub there: `data-raw/` is excluded from
+  # the built tarball, so the scripts these tests source do not exist under
+  # R CMD check and every one of them skips on the `file.exists(script)` guard
+  # below. The stub only ever matters for a local devtools::test() run, which
+  # is precisely where the mid-suite reload does its damage.
+  if (!requireNamespace("devtools", quietly = TRUE)) return(invisible(NULL))
   testthat::local_mocked_bindings(
     load_all = function(...) invisible(NULL),
     .package = "devtools",
