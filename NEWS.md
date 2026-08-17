@@ -1,5 +1,75 @@
 # panna 0.3.21 (dev)
 
+## Pipeline guards: partial loads and skipped steps now fail instead of reporting success
+
+Both of these were cases where the pipeline finished, printed SUCCESS, and
+published incomplete data. Neither was detectable from the logs.
+
+* **`01_load_opta_data.R` now asserts league-season coverage.** The per-season
+  error handler logs and continues (deliberate — one bad league-season must not
+  kill a 40-minute run), but nothing counted the losses: ~49 league-seasons died
+  on `non-character argument` in the 2026-06 rerun and the run still reported
+  success. The two end-of-step guards could not catch it — the league check
+  passes when a single season per league survives, and the 100-match floor is
+  three orders of magnitude below a real run. Outcomes are now counted
+  separately: an **exception** is never legitimate and fails the step
+  (`max_failed_league_seasons`, default 0), while **missing upstream data**
+  (no lineups / no events / no SPADL) is listed and held to a coverage floor
+  (`min_coverage_frac`, default 0.90). Both are overridable before sourcing.
+* **`run_step()` aborts on a step key that isn't in `run_steps`.** It previously
+  returned `DISABLED` — visually identical in the summary to a deliberate
+  `FALSE`. Renaming a step at one of its two call sites, or a GHA `run_steps`
+  override drifting after a rename, silently turned the step into a no-op.
+  `print_pipeline_summary()` also now reports `run_steps` keys that no call site
+  consumed (the reverse drift: a typo'd override), as a warning rather than an
+  abort, since by summary time the work is already done. The guard found two
+  already-stale local debug runners on its first run.
+* `xg_model.R`: a failed keeper-GSAA computation now warns loudly instead of
+  silently dropping `gsaa`/`gsaa_per90`/`xgot_faced`/`goals_conceded` from the
+  output — the GK PSR/PSV sub-model is built on `gsaa_per90`, so losing it
+  scored every keeper with no shot-stopping credit. Keepers missing from the
+  GSAA join are left `NA` rather than filled with 0; 0 is correct for an
+  outfielder but fabricates "exactly league-average shot-stopping" for a keeper.
+* `load_opta_eventless_ids()` distinguishes a registry that doesn't exist yet
+  (quiet, normal) from one that exists and won't parse or has lost its
+  `match_id` column (warns). Both still return empty, but the second case is a
+  corrupt download or upstream schema change and was indistinguishable before —
+  and since the registry is *subtracted* from the coverage denominator, silently
+  empty turns every legitimately event-less match into an apparent gap.
+
+## `extract_season_end_year()` is vectorized
+
+* It was scalar-only: the `is.na(season) || !nzchar(season)` guard is a hard
+  error on length > 1 under R >= 4.3, so all ~40 call sites had to remember a
+  `vapply()` wrapper, and one that didn't was a crash rather than a wrong
+  number — `.season_end_year_for_date()` passed a vectorized
+  `extract_season_from_date()` result straight through. Scalar behaviour is
+  unchanged (verified identical across 25 inputs including all three season
+  label formats), so existing `vapply()` call sites keep working.
+* `07_seasonal_ratings.R` / `01_load_opta_data.R`: replaced
+  `sapply(unique(x), extract_season_end_year)` with a `setNames()` lookup —
+  `sapply` returns a *list* on empty input — and switched the season-matching
+  index to `which()`, since an unparseable label yields `NA` and `names(v)[NA]`
+  injects an `NA` that then matches every `NA`-season row.
+
+## Other
+
+* `versebus.R` (synced with canonical `torpverse/torp`, now `VERSEBUS_VERSION`
+  1.1.0): `vb_publish()` restores `piggyback_cache_duration` on exit instead of
+  leaking it for the rest of the session; `.vb_generation_stamp()` no longer
+  calls `sample()`, which advanced the caller's RNG stream and silently changed
+  the draws of any simulation seeded before a publish.
+* `spm_panel.R`: per-90 rate columns are written with `data.table::set()` rather
+  than `[[<-` (which forces a full copy), and zero-minute rows get `NA` rather
+  than a fabricated 0. The `NA` still becomes 0 downstream via
+  `.clean_numeric_na()`, but now goes through that function's counter, so the
+  imputation is reported instead of invisible.
+* `01_load_opta_data.R`: `events`/`stats` are guarded before use. When their
+  league-level load failed they were `NULL`, and `events$league <- league`
+  coerces `NULL` into a *list*; the season was dropped only because
+  `.stage_write()` then threw on a zero-length condition, at a misleading call
+  site.
+
 ## Skills join fixed — PSR/PSV were trained on half their weekly bins
 
 * **`07_train_psr_model.R`: the chunked skill join visited every second weekly

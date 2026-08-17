@@ -14,6 +14,19 @@
 #   resolve_blog_leagues()  - canonical domestic/calendar/continental/intl league groups
 #   run_backfill()          - shared season-backfill driver (serial or parallel)
 
+# Step keys actually reached by run_step() this session. Populated by
+# run_step(), read by print_pipeline_summary() to flag run_steps entries that
+# no call site ever consumed. An environment (not a global vector) so the
+# isolated-subprocess path can't half-populate a copy.
+.step_keys_seen <- new.env(parent = emptyenv())
+
+#' Forget every recorded step key (call before re-running a pipeline in one session)
+#' @keywords internal
+reset_step_key_registry <- function() {
+  rm(list = ls(.step_keys_seen, all.names = TRUE), envir = .step_keys_seen)
+  invisible(NULL)
+}
+
 #' Run a named pipeline step with timing and error handling
 #'
 #' Wraps a code block in tryCatch, prints status banners, and records
@@ -43,6 +56,25 @@ run_step <- function(step_name, step_num, code_block, run_steps,
     padded <- sub("^(\\d)([a-z])", "0\\1\\2", step_label)
     step_key <- sprintf("step_%s_%s", padded, step_name)
   }
+
+  # A key that isn't in run_steps is a TYPO OR A RENAME, never an intentional
+  # disable. `run_steps[[missing]]` is NULL and `!isTRUE(NULL)` is TRUE, so
+  # before this guard such a step reported "DISABLED" -- visually identical in
+  # the summary to a deliberate FALSE. Rename a step at one of its two call
+  # sites, or let a GHA `run_steps` override drift after a rename, and the step
+  # silently never runs while the pipeline prints SUCCESS. Same shape as the
+  # 2026-08-14 half-the-bins bug: the failure mode is that it looks like it
+  # worked. Hard stop, and it fires before any work is done.
+  if (!step_key %in% names(run_steps)) {
+    stop(sprintf(
+      paste0("run_step: '%s' is not a key in run_steps -- typo or stale rename?\n",
+             "  Known keys: %s"),
+      step_key, paste(names(run_steps), collapse = ", ")), call. = FALSE)
+  }
+  # Record what was actually offered, so print_pipeline_summary() can report
+  # run_steps keys that NO call site consumed (the reverse drift: an override
+  # that sets a key nothing reads).
+  assign(step_key, TRUE, envir = .step_keys_seen)
 
   if (!isTRUE(run_steps[[step_key]])) {
     message(sprintf("\n[%s] Step %s: %s - SKIPPED",
@@ -296,7 +328,9 @@ print_pipeline_banner <- function(title, config_lines) {
 #' @param pipeline_name Character name for the banner (e.g., "OPTA PIPELINE")
 #' @param col_width Column width for step name (default 30)
 print_pipeline_summary <- function(step_results, pipeline_start,
-                                   pipeline_name = "PIPELINE", col_width = 30) {
+                                   pipeline_name = "PIPELINE", col_width = 30,
+                                   run_steps = NULL) {
+  if (is.null(run_steps)) run_steps <- get0("run_steps", envir = globalenv())
   pipeline_end <- Sys.time()
   total_duration <- difftime(pipeline_end, pipeline_start, units = "secs")
 
@@ -317,6 +351,32 @@ print_pipeline_summary <- function(step_results, pipeline_start,
 
   message(paste(rep("-", col_width + 20), collapse = ""))
   message(sprintf(fmt, "TOTAL", "", format_duration(as.numeric(total_duration))))
+
+  # Reverse drift check: run_steps keys that no run_step() call ever consumed.
+  # This is the only way to catch a typo'd override -- e.g. a workflow setting
+  # `step_10b_export_gamelogs = TRUE` when the call site says
+  # `step_10b_export_game_logs`. The step stays FALSE, does nothing, and every
+  # other signal says the run succeeded.
+  #
+  # Warned rather than stopped, unlike run_step()'s forward guard: by the time
+  # the summary prints, the pipeline has already done its work and possibly
+  # published. Failing here would turn a good run red after the fact without
+  # undoing anything. It lands in the summary block, which is the part of the
+  # log people actually read.
+  if (!is.null(run_steps) && length(run_steps) > 0) {
+    unconsumed <- setdiff(names(run_steps), ls(.step_keys_seen, all.names = TRUE))
+    if (length(unconsumed) > 0) {
+      message(paste(rep("!", col_width + 20), collapse = ""))
+      message(sprintf("!! %d run_steps key(s) matched NO step in this pipeline:",
+                      length(unconsumed)))
+      for (k in unconsumed) message(sprintf("!!   %s", k))
+      message("!! A key nothing consumes is dead config -- typo, stale rename,")
+      message("!! or a step that was deleted. The flag had no effect either way.")
+      message(paste(rep("!", col_width + 20), collapse = ""))
+      warning(sprintf("run_steps keys never consumed: %s",
+                      paste(unconsumed, collapse = ", ")), call. = FALSE)
+    }
+  }
 }
 
 

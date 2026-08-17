@@ -775,11 +775,37 @@ load_opta_eventless_ids <- function(league, season = NULL,
   }
   if (is.null(path)) return(character(0))  # registry not available yet
 
-  reg <- tryCatch(as.data.frame(arrow::read_parquet(path)),
-                  error = function(e) NULL)
-  if (is.null(reg) || nrow(reg) == 0L || !"match_id" %in% names(reg)) {
+  # "Not built yet" and "built but broken" are different answers and must not
+  # collapse into the same silent character(0). This registry is SUBTRACTED
+  # from the coverage denominator, so an empty return means "no match is
+  # event-less" -- which turns every genuinely-excluded match back into an
+  # apparent coverage gap. Absence is normal (pre-first-rebuild) and stays
+  # quiet; a file that exists and won't parse, or parses without `match_id`,
+  # is a corrupt/truncated download or a schema change, and says so.
+  reg <- tryCatch(
+    as.data.frame(arrow::read_parquet(path)),
+    error = function(e) {
+      cli::cli_warn(c(
+        "Event-less registry at {.path {path}} exists but could not be read:
+         {conditionMessage(e)}",
+        "!" = "Treating it as EMPTY -- event-less matches will be counted as
+               coverage gaps until this is resolved.",
+        "i" = "Usually a truncated download; delete the file and re-fetch."
+      ))
+      NULL
+    }
+  )
+  if (is.null(reg)) return(character(0))
+  if (!"match_id" %in% names(reg)) {
+    cli::cli_warn(c(
+      "Event-less registry at {.path {path}} has no {.field match_id} column
+       (columns: {.val {names(reg)}}) -- schema change upstream?",
+      "!" = "Treating it as EMPTY -- event-less matches will be counted as
+             coverage gaps."
+    ))
     return(character(0))
   }
+  if (nrow(reg) == 0L) return(character(0))  # genuinely empty registry
   # NA-safe filtering: `TRUE & NA` is NA, and `match_id[NA]` injects an NA into
   # the result — which would silently UNDER-subtract the event-less set and turn
   # a genuinely-excluded match back into a false coverage gap. Force NA -> FALSE.

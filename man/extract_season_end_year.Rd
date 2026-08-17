@@ -7,13 +7,23 @@
 extract_season_end_year(season)
 }
 \arguments{
-\item{season}{Season string (e.g., "2023-2024" or "2018 Russia")}
+\item{season}{Character vector of season strings (e.g., "2023-2024",
+"2018 Russia", "Intl_Friendlies_2024")}
 }
 \value{
-Numeric end year, or NA_real_ if unparseable
+Numeric vector of end years, \code{NA_real_} where unparseable
 }
 \description{
 Handles both "YYYY-YYYY" format (returns second year) and
 tournament "YYYY Country" format (returns the year).
+}
+\details{
+VECTORIZED over \code{season}. It was scalar-only until 2026-08-17: the opening
+guard was \verb{if (is.na(season) || !nzchar(season))}, and \code{||} on a length > 1
+argument is a hard error under R >= 4.3. Every one of the ~40 call sites had
+to remember to wrap it in \code{vapply()}/\code{sapply()}, and one that didn't was a
+latent crash rather than a wrong number -- \code{.season_end_year_for_date()}
+(R/spm_asof.R) passed \code{extract_season_from_date()} straight through. Scalar
+behaviour is unchanged, so existing \code{vapply(x, extract_season_end_year, numeric(1))} call sites keep working; new callers can pass the whole column.
 }
 \keyword{internal}
