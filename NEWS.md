@@ -1,4 +1,4 @@
-# panna 0.3.21 (dev)
+# panna 0.3.22 (dev)
 
 ## Pipeline guards: partial loads and skipped steps now fail instead of reporting success
 
@@ -100,6 +100,8 @@ published incomplete data. Neither was detectable from the logs.
   coerces `NULL` into a *list*; the season was dropped only because
   `.stage_write()` then threw on a zero-length condition, at a misleading call
   site.
+
+# panna 0.3.21 (dev)
 
 ## Skills join fixed — PSR/PSV were trained on half their weekly bins
 
