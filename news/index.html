@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.23</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.24</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -40,7 +40,15 @@
     </div>
 
     <div class="section level2">
-<h2 class="pkg-version" data-toc-text="0.3.23" id="panna-0323-dev">panna 0.3.23 (dev)<a class="anchor" aria-label="anchor" href="#panna-0323-dev"></a></h2>
+<h2 class="pkg-version" data-toc-text="0.3.24" id="panna-0324-dev">panna 0.3.24 (dev)<a class="anchor" aria-label="anchor" href="#panna-0324-dev"></a></h2>
+<div class="section level3">
+<h3 id="a-double-quote-in-a-workflow-comment-truncated-the-r-payload-0-3-24">A double quote in a workflow comment truncated the R payload<a class="anchor" aria-label="anchor" href="#a-double-quote-in-a-workflow-comment-truncated-the-r-payload-0-3-24"></a></h3>
+<p>The first run on <code>main</code> after the fix below died two minutes in with <code>Error: unexpected end of input</code>. A comment added to <code>predictions-pipeline.yml</code> read <code># so a log line reading "DISABLING steps 11/12/12b/12c"</code>. Workflows run R via <code>Rscript -e "&lt;payload&gt;"</code>, and the shell ends that string at the first unescaped <code>"</code> — so the payload the shell handed R was <strong>74 lines instead of 97</strong>, cut off mid-comment. Harmless in a <code>.R</code> file; fatal here.</p>
+<p>YAML validation passed, every <code>.R</code> file parsed, and the review missed it, because nothing checked the string the <em>shell</em> would build. <code>tests/testthat/test-workflow-r-payloads.R</code> now reconstructs each <code>Rscript -e</code> payload the way the shell does and parses it. Mutation-tested: reintroducing the quote reproduces the production error verbatim.</p>
+</div>
+</div>
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.23" id="panna-0323">panna 0.3.23<a class="anchor" aria-label="anchor" href="#panna-0323"></a></h2>
 <div class="section level3">
 <h3 id="the-world-cup-branch-no-longer-takes-the-daily-publish-down-with-it-0-3-23">The World Cup branch no longer takes the daily publish down with it<a class="anchor" aria-label="anchor" href="#the-world-cup-branch-no-longer-takes-the-daily-publish-down-with-it-0-3-23"></a></h3>
 <p>The Predictions Pipeline failed every day from 2026-08-13 to 2026-08-21 and published nothing for eight days. The predictions themselves were fine and sat in the cache the whole time.</p>
