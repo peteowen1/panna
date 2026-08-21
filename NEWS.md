@@ -1,4 +1,4 @@
-# panna 0.3.24 (dev)
+# panna 0.3.25 (dev)
 
 ## versebus: four silent-failure defects ported from bouncer's review (panna#187)
 
@@ -34,6 +34,33 @@ All four fixed in place per bouncer's `peteowen1/bouncer@86e2ebc`; each has a
 dedicated regression test in `tests/testthat/test-versebus.R`, mutation-tested
 by reverting the fix and confirming the test fails. `torpverse/torp/R/versebus.R`
 carries the same four defects (confirmed, not yet fixed) -- see panna#187.
+## Step 12 now checks step 11 finished, not just that its files exist
+
+Review of the change below found the existence check was not enough, and the
+gap is not theoretical. Step 11 writes `wc2026_bt_ratings.parquet` **before**
+`simulate_world_cup()` runs and `wc2026_simulation.parquet` /
+`wc2026_group_expectations.parquet` **after**. So a failure inside the
+simulation — a documented, previously-observed one — leaves a *fresh* BT file
+beside *stale* simulation files, with all three present. `file.exists()` on
+the three passes, section 5 merges the two vintages into one
+`wc2026_team_strength.parquet`, and step 13 publishes it. Step 11 has been
+non-fatal since panna#194, so "failed partway and carried on" is now routine
+rather than rare.
+
+* **Step 11 writes a commit marker.** It deletes `.wc11_outputs_complete` on
+  entry and rewrites it only after all three outputs are on disk. Step 12
+  requires it, so a partial run reads as "not ready" rather than "ready".
+* **`build_id` is only stamped on files the run actually wrote.**
+  `.vb_generation_stamp()` is wall-clock plus run id — a per-run stamp, not a
+  data vintage — so stamping a file the run did not rewrite asserts a
+  freshness that isn't there, and hands two genuinely different vintages the
+  same id. That is precisely the signal the blog's `detectMixedBuild()` reads
+  to spot a torn publish. Skipped outputs now keep the `build_id` they were
+  last published with, which is the honest answer: they *are* from an earlier
+  run. Post-tournament this means the World Cup pages will show a "mixed data
+  build" label, correctly — the predictions refresh while the simulation stays
+  frozen at the final.
+
 ## Step 12's blog export ran into the WC2026 liveness gate it should never have been in
 
 panna#194's WC2026 liveness gate (0.3.23 below) disabled steps 11/12/12b/12c
@@ -73,6 +100,8 @@ header-only CSV) even after the separate #191 fix restored WC2026 rows to
   not, including the case where only one of the three step-11 files is
   present (must still count as unavailable). Mutation-tested: forcing
   `.wc11_available` to always `TRUE` reproduces the pre-fix hard error.
+
+# panna 0.3.24
 
 ## A double quote in a workflow comment truncated the R payload
 

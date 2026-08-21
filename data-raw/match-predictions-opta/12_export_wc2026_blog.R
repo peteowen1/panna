@@ -150,10 +150,19 @@ if (.n26 != nrow(wc_pred)) {
 # step 11 last wrote -- harmless. This flag exists for the other case: a
 # cache that never ran step 11 at all (a fresh clone, or a standalone step-12
 # run before 2026-06-11), where these files are absent outright.
-.wc11_sim_path <- file.path(cache_dir, "wc2026_simulation.parquet")
-.wc11_grp_path <- file.path(cache_dir, "wc2026_group_expectations.parquet")
-.wc11_bt_path  <- file.path(cache_dir, "wc2026_bt_ratings.parquet")
-.wc11_available <- all(file.exists(c(.wc11_sim_path, .wc11_grp_path, .wc11_bt_path)))
+.wc11_paths <- file.path(cache_dir, c("wc2026_simulation.parquet",
+                                      "wc2026_group_expectations.parquet",
+                                      "wc2026_bt_ratings.parquet"))
+# Presence is NOT enough, and the difference is not theoretical. Step 11
+# writes wc2026_bt_ratings.parquet BEFORE simulate_world_cup() and the other
+# two AFTER, so a failure inside the simulation leaves a fresh bt file beside
+# stale sim files with all three present -- and section 5 below would merge
+# the two vintages into one published wc2026_team_strength.parquet. Step 11
+# has been non-fatal since panna#194, so that is a routine event, not a rare
+# one. Require step 11's commit marker, which it deletes on entry and writes
+# only after all three files are on disk.
+.wc11_marker <- file.path(cache_dir, ".wc11_outputs_complete")
+.wc11_available <- all(file.exists(.wc11_paths)) && file.exists(.wc11_marker)
 
 if (.wc11_available) {
   # 3. Simulation — per-team round/champion probabilities ----
@@ -435,7 +444,7 @@ if (.wc11_available) {
                   nrow(squad_out), uniqueN(squad_out$team), sum(!is.na(squad_out$panna))))
 } else {
   message(sprintf(paste0(
-    "\n[%s] Step 11 outputs not found in %s -- skipping simulation/groups/\n",
+    "\n[%s] No complete step-11 output set in %s -- skipping simulation/groups/\n",
     "  team-strength/squad exports (sections 3-5c: wc2026_simulation.parquet,\n",
     "  wc2026_groups.parquet, wc2026_team_strength.parquet,\n",
     "  wc2026_squads.parquet). Match predictions (section 2/2b) are\n",
@@ -457,13 +466,23 @@ if (.wc11_available) {
 # this column when present to detect a torn mix of vintages; kept additive --
 # no reader currently requires it.
 .build_id_val <- .vb_generation_stamp()
+# Only files THIS run produced. build_id is a per-run stamp
+# (.vb_generation_stamp() is wall-clock + run id, not a data vintage), so
+# stamping a file the run did not rewrite asserts a freshness that isn't
+# there -- and worse, hands two genuinely different vintages the same id,
+# erasing the signal the blog's detectMixedBuild() reads. When sections
+# 3-5c are skipped, their outputs keep whatever build_id they were last
+# published with, which is the honest answer: they ARE from an earlier run.
 wc_parquets <- c("wc2026_predictions.parquet",
-                 "wc_history_predictions.parquet",
-                 "wc2026_simulation.parquet",
-                 "wc2026_groups.parquet",
-                 "wc2026_team_strength.parquet",
-                 "wc2026_squads.parquet",
-                 "wc2026_knockout_probs.parquet")
+                 "wc_history_predictions.parquet")
+if (.wc11_available) {
+  wc_parquets <- c(wc_parquets,
+                   "wc2026_simulation.parquet",
+                   "wc2026_groups.parquet",
+                   "wc2026_team_strength.parquet",
+                   "wc2026_squads.parquet",
+                   "wc2026_knockout_probs.parquet")
+}
 for (p in wc_parquets) {
   pp <- file.path(cache_dir, p)
   if (!file.exists(pp)) {

@@ -111,3 +111,61 @@ test_that("step 12's .wc11_available flag requires all three step-11 outputs, no
   expect_false(file.exists(file.path(cache_dir, "wc2026_team_strength.parquet")))
   expect_false(file.exists(file.path(cache_dir, "wc2026_squads.parquet")))
 })
+
+
+test_that("all three step-11 files present but no commit marker is still 'not ready'", {
+  # The case file.exists() alone cannot see, and the one that actually bites.
+  # Step 11 writes wc2026_bt_ratings.parquet BEFORE simulate_world_cup() and
+  # the other two AFTER. If the simulation throws, the cache is left with a
+  # FRESH bt file beside STALE sim files -- all three present. Section 5 would
+  # then merge two vintages into one published wc2026_team_strength.parquet.
+  # Step 11 has been non-fatal since panna#194, so this is routine, not rare.
+  skip_if_not_installed("arrow")
+  local_no_reload()
+
+  script <- testthat::test_path("..", "..", "data-raw", "match-predictions-opta",
+                                "12_export_wc2026_blog.R")
+  skip_if_not(file.exists(script), "12_export_wc2026_blog.R not found")
+
+  cache_dir <- withr::local_tempdir()
+  saveRDS(.wc12_preds_fixture(), file.path(cache_dir, "07_predictions.rds"))
+  for (f in c("wc2026_simulation.parquet", "wc2026_group_expectations.parquet",
+              "wc2026_bt_ratings.parquet")) {
+    arrow::write_parquet(data.frame(team = "Mexico", p_champ = 0.01, rating = 1),
+                         file.path(cache_dir, f))
+  }
+  # No .wc11_outputs_complete marker: no single run produced this set.
+
+  expect_no_error(source(script, local = TRUE))
+  expect_true(file.exists(file.path(cache_dir, "wc2026_predictions.parquet")))
+  expect_false(file.exists(file.path(cache_dir, "wc2026_team_strength.parquet")))
+  expect_false(file.exists(file.path(cache_dir, "wc2026_squads.parquet")))
+})
+
+test_that("a skipped simulation is not re-stamped with this run's build_id", {
+  # build_id is a per-run stamp, not a data vintage. Stamping a file the run
+  # did not rewrite claims a freshness that isn't there, and gives two
+  # different vintages the same id -- which is exactly the signal the blog's
+  # detectMixedBuild() reads to spot a torn publish.
+  skip_if_not_installed("arrow")
+  local_no_reload()
+
+  script <- testthat::test_path("..", "..", "data-raw", "match-predictions-opta",
+                                "12_export_wc2026_blog.R")
+  skip_if_not(file.exists(script), "12_export_wc2026_blog.R not found")
+
+  cache_dir <- withr::local_tempdir()
+  saveRDS(.wc12_preds_fixture(), file.path(cache_dir, "07_predictions.rds"))
+  sim_path <- file.path(cache_dir, "wc2026_simulation.parquet")
+  arrow::write_parquet(data.frame(team = "Mexico", p_champ = 0.01,
+                                  build_id = "PRIOR-RUN"), sim_path)
+
+  expect_no_error(source(script, local = TRUE))
+
+  # Untouched: same build_id it went in with.
+  expect_identical(arrow::read_parquet(sim_path)$build_id, "PRIOR-RUN")
+  # And the files this run DID write carry a real stamp.
+  fresh <- arrow::read_parquet(file.path(cache_dir, "wc2026_predictions.parquet"))
+  expect_true("build_id" %in% names(fresh))
+  expect_false(any(fresh$build_id == "PRIOR-RUN"))
+})

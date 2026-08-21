@@ -113,6 +113,22 @@ if (nrow(wc) == 0L || isTRUE(n_remaining == 0L)) {
 # Every knockout tie is predicted with the same 170-feature goals + outcome
 # models as the group stage (no Bradley-Terry compression).
 
+# Commit marker for step 12 (panna#180 review). Step 11 writes its three
+# outputs at different points -- wc2026_bt_ratings.parquet BEFORE
+# simulate_world_cup() runs, wc2026_simulation.parquet and
+# wc2026_group_expectations.parquet after -- so a failure inside the
+# simulation leaves a FRESH bt file beside STALE sim files, all three
+# present. Step 12 used to gate on file.exists() across the three, which
+# passes in exactly that state and merges two vintages into one published
+# wc2026_team_strength.parquet.
+#
+# Step 11 is non-fatal since panna#194, so "failed partway" no longer stops
+# the pipeline -- it is a routine event. Hence a marker, deleted here and
+# rewritten only after all three files are on disk: its presence means one
+# run produced the complete set.
+.wc11_marker <- file.path(cache_dir, ".wc11_outputs_complete")
+unlink(.wc11_marker)
+
 knockout <- build_knockout_lookup(
   match_dataset  = match_dataset,
   goals_models   = goals_models,
@@ -177,6 +193,10 @@ arrow::write_parquet(sim$summary,
                        file.path(cache_dir, "wc2026_simulation.parquet"))
 arrow::write_parquet(sim$group_table,
                        file.path(cache_dir, "wc2026_group_expectations.parquet"))
+
+# All three outputs are now on disk from THIS run -- see the marker comment
+# above build_knockout_lookup(). Written last, deliberately.
+writeLines(format(Sys.time(), "%Y-%m-%dT%H:%M:%OS3Z", tz = "UTC"), .wc11_marker)
 
 cat("\n=== Top 16 by Champion probability ===\n")
 print(head(as.data.table(sim$summary), 16))
