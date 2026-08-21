@@ -1,5 +1,40 @@
 # panna 0.3.24 (dev)
 
+## versebus: four silent-failure defects ported from bouncer's review (panna#187)
+
+`R/versebus.R` was byte-identical to bouncer's pre-fix copy, so four defects
+found in a bouncer code review were live here at the same line numbers. All
+four turn a transient failure into a silently-accepted "everything is fine":
+
+* **`vb_read_manifest()`'s retry-once branch classified every error as
+  "confirmed absent"** instead of reusing `vb_classify_error()` like the
+  first attempt does. A network blip on the retry looked identical to the
+  manifest genuinely having been deleted, fell through to legacy mode, and
+  **disabled sha256 verification for every download on that tag for the rest
+  of the session** behind a one-time warning nobody would connect to the
+  cause.
+* **`vb_download()`'s `verify_by_size()` swallowed a failed asset listing**
+  and skipped the check entirely rather than distinguishing "listing worked,
+  asset not in it" (fine, nothing to check) from "the listing call itself
+  errored" (no check happened at all). This is the *only* integrity check on
+  an unmanifested tag -- the common case -- so a transient API failure meant
+  the file was moved into place and given a `.sha256` sidecar as though
+  verification had passed.
+* **`vb_publish()`'s cache-invalidation hook failed via bare
+  `try(..., silent = TRUE)`** -- the only failure path in this file with no
+  logging at all. A dead hook meant downstream consumers kept serving
+  pre-publish data indefinitely with nothing recording why.
+* **`vb_generation()` ran `max()` on `updated_at` with no `na.rm`.** One
+  unrelated asset missing a timestamp (which `vb_list_assets()` deliberately
+  tolerates as `NA` rather than failing the whole listing) silently turned
+  the entire generation into `NA`, indistinguishable from "no assets at
+  all". Latent today (no caller in this package yet).
+
+All four fixed in place per bouncer's `peteowen1/bouncer@86e2ebc`; each has a
+dedicated regression test in `tests/testthat/test-versebus.R`, mutation-tested
+by reverting the fix and confirming the test fails. `torpverse/torp/R/versebus.R`
+carries the same four defects (confirmed, not yet fixed) -- see panna#187.
+
 ## A double quote in a workflow comment truncated the R payload
 
 The first run on `main` after the fix below died two minutes in with
