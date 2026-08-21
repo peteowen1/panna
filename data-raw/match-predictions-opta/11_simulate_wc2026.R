@@ -82,6 +82,33 @@ n_teams <- uniqueN(c(wc$home_team, wc$away_team))
 message(sprintf("Simulating WC2026 from %d group-stage predictions across %d teams",
                 nrow(wc), n_teams))
 
+# Nothing left to simulate? Stop here, loudly.
+#
+# Post-final this script used to run to completion off zero rows -- fitting
+# Bradley-Terry ratings and reporting champion probabilities for a tournament
+# already won -- and reported SUCCESS. Then build_knockout_lookup()'s
+# constant-aggregates invariant (added 2026-08-12) started aborting on it
+# instead, with a message about Argentina's feature values that says nothing
+# about the real cause. Name the real cause.
+#
+# Call the SAME helper the driver's gate calls rather than recomputing the
+# count here. A local `sum(wc$status == "fixture")` looks equivalent and is
+# not: without `na.rm` a single NA status makes the sum NA, so
+# `isTRUE(NA == 0L)` is FALSE and this guard would fail OPEN exactly where the
+# gate fails closed. The helper also applies the same blank-team-name filter
+# `wc` uses above, so both sides agree about unresolved knockout placeholders.
+# Two checks that disagree about the same question are worse than one.
+n_remaining <- .wc2026_fixtures_remaining(cache_dir)
+if (nrow(wc) == 0L || isTRUE(n_remaining == 0L)) {
+  stop(sprintf(paste0(
+    "WC2026 has no unplayed fixtures in %s (%d WC row(s), %s still to play).\n",
+    "  The tournament is over -- there is nothing to simulate. Steps 11/12/12b/12c\n",
+    "  are for a live tournament only."),
+    preds_path, nrow(wc),
+    if (is.na(n_remaining)) "unknown how many" else as.character(n_remaining)),
+    call. = FALSE)
+}
+
 # 3. Full-model knockout matchup lookup ----
 # Every knockout tie is predicted with the same 170-feature goals + outcome
 # models as the group stage (no Bradley-Terry compression).

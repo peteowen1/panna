@@ -135,12 +135,58 @@ run_pred_step_isolated <- function(step_name, step_num, code_block) {
   result
 }
 
+# 3c. Non-fatal step helper (WC 2026 steps 11/12/12b/12c) ----
+# run_pipeline_step() sets pipeline_failed on ANY failure, which makes every
+# later step -- including step 13, the ONLY publish -- print
+# "SKIPPED (previous step failed)". That is right for the model chain: a torn
+# 07 must never reach predictions-latest. It is wrong for the World Cup
+# branch, which is a side output nothing else consumes.
+#
+# On 2026-08-13 step 11 aborted in build_knockout_lookup() and took step 13
+# with it. The predictions themselves were fine and sat in the cache for eight
+# days while the daily run reported FAILED and published nothing. Isolate the
+# blast radius: these steps still report FAILED in the summary and are still
+# visible in the log, they just don't gate the publish.
+#
+# Deliberately NOT applied to steps 09/10/10b/10c/10d: those register files in
+# publish_files, so half of one failing IS a reason to hold the release back.
+# Step 12 registers too, but only at its very end (12_export_wc2026_blog.R:465,
+# after every wc2026_*.parquet is written), so a mid-step failure registers
+# nothing and step 13 has nothing torn to publish.
+#
+# Non-fatal must not mean invisible. The workflow's exit code is driven by
+# `pipeline_failed`, so a WC step failing for a REAL reason (a bug, not "the
+# tournament ended") would otherwise leave a green tick and a job summary that
+# still claims blog data was uploaded -- a recurring failure nobody would see
+# without opening the raw log. Each failure is recorded to a marker file that
+# the workflow's summary step reads and turns into a GitHub warning
+# annotation. The run stays green on purpose; it just stops being silent.
+.NONFATAL_MARKER <- ".nonfatal_step_failures"
+
+run_pred_step_optional <- function(step_name, step_num, code_block) {
+  result <- run_step(step_name, step_num, code_block, run_steps, pipeline_failed)
+  if (!is.null(result) && identical(result$status, "FAILED")) {
+    message(sprintf(
+      "  NOTE: step %s is non-fatal -- the pipeline continues and step 13 still publishes.",
+      as.character(step_num)))
+    cat(sprintf("step %s (%s)
+", as.character(step_num), step_name),
+        file = file.path(cache_dir, .NONFATAL_MARKER), append = TRUE)
+  }
+  result
+}
+
 # 4. Initialize Pipeline ----
 
 cache_dir <- file.path("data-raw", "cache-predictions-opta")
 if (!dir.exists(cache_dir)) {
   dir.create(cache_dir, recursive = TRUE)
 }
+
+# Start each run with no non-fatal failures recorded. Cloud runs check out
+# fresh so this is a no-op there; locally the cache directory persists, and a
+# marker left over from yesterday would report a failure that did not happen.
+unlink(file.path(cache_dir, .NONFATAL_MARKER))
 
 # Handle force rebuild
 pred_cache_files <- list(
@@ -317,15 +363,73 @@ step_results[["10d"]] <- run_pipeline_step("export_shootout_wpa", "10d", functio
   source("data-raw/match-predictions-opta/10d_export_shootout_wpa.R", local = TRUE)
 })
 
-# 14d. Step 11: Simulate WC 2026 ----
+# 14c-bis. World Cup liveness gate (steps 11/12/12b/12c) ----
+# Steps 11-12c simulate a tournament that is still being played. Once the
+# final is done there is nothing left to simulate, and the WC branch does not
+# just become pointless -- it becomes wrong, then it becomes fatal:
+#
+#   * Pointless: step 11 filters predictions to WC2026 and, post-final, got
+#     zero rows. It went on to fit Bradley-Terry ratings and simulate 10,000
+#     tournaments off a knockout lookup alone, publishing champion odds for a
+#     finished competition. The log said "Simulating WC2026 from 0
+#     group-stage predictions across 0 teams" and the step reported SUCCESS.
+#   * Fatal: bda139d (2026-08-12) added an invariant check to
+#     build_knockout_lookup() -- a team's aggregates must be constant across
+#     its own WC rows, since the lookup reads row [1]. That holds while every
+#     WC row is an unplayed fixture carrying one as-of snapshot. Played rows
+#     carry per-match as-of aggregates, so from the next run (2026-08-13) it
+#     aborted on Argentina. The guard is correct; the branch should not have
+#     been running at all.
+#
+# Decide from the data, not the calendar: any WC2026 row still marked
+# "fixture" means matches remain. 07_predictions.rds is the right source --
+# small (~53k x 15), already written by step 7, and it carries the played /
+# fixture status directly. 04_match_dataset.rds would answer the same question
+# but is ~47MB, and this pipeline has a history of memory cliffs (panna#128).
+#
+# Known edge, accepted: unresolved knockout slots sit in the data as
+# blank-team placeholders with status "fixture", and neither this nor step 11
+# counts them (they cannot be simulated). So in a window where every resolved
+# match is played but the bracket has not filled in, this reads 0 and skips
+# the WC steps for those runs, resuming by itself once the draw lands. These steps are idempotent weekly refreshes, so a skipped
+# run costs a stale WC tab for a day -- against eight days of the whole
+# pipeline publishing nothing, which is what the alternative cost.
+.wc_steps <- c("step_11_simulate_wc2026", "step_12_export_wc2026_blog",
+               "step_12b_snapshot_wc_minutes", "step_12c_snapshot_wc_strength")
+if (any(vapply(.wc_steps, function(k) isTRUE(run_steps[[k]]), logical(1)))) {
+  .wc_remaining <- .wc2026_fixtures_remaining(cache_dir)
+  # Say what happened either way. Silently overriding a workflow's explicit
+  # TRUE is the same failure shape as the bug above: it looks like it worked.
+  if (is.na(.wc_remaining)) {
+    message(sprintf(
+      "\n[%s] WC2026 gate: cannot read %s -- leaving steps 11/12/12b/12c as configured.",
+      format(Sys.time(), "%H:%M:%S"),
+      file.path(cache_dir, "07_predictions.rds")))
+  } else if (.wc_remaining > 0L) {
+    message(sprintf(
+      "\n[%s] WC2026 gate: %d fixture(s) remaining -- steps 11/12/12b/12c will run.",
+      format(Sys.time(), "%H:%M:%S"), .wc_remaining))
+  } else {
+    message(sprintf(paste0(
+      "\n[%s] WC2026 gate: 0 unplayed WC2026 fixtures in 07_predictions.rds.\n",
+      "  The tournament is over -- DISABLING steps 11/12/12b/12c for this run.\n",
+      "  (Simulating a finished tournament produced champion odds off zero\n",
+      "  group-stage predictions, and aborts in build_knockout_lookup().)"),
+      format(Sys.time(), "%H:%M:%S")))
+    for (.k in .wc_steps) run_steps[[.k]] <- FALSE
+  }
+}
 
-step_results[[11]] <- run_pipeline_step("simulate_wc2026", 11, function() {
+# 14d. Step 11: Simulate WC 2026 ----
+# Non-fatal (run_pred_step_optional): a WC failure must never block step 13.
+
+step_results[[11]] <- run_pred_step_optional("simulate_wc2026", 11, function() {
   source("data-raw/match-predictions-opta/11_simulate_wc2026.R", local = TRUE)
 })
 
 # 14e. Step 12: Export WC 2026 Blog Data ----
 
-step_results[[12]] <- run_pipeline_step("export_wc2026_blog", 12, function() {
+step_results[[12]] <- run_pred_step_optional("export_wc2026_blog", 12, function() {
   source("data-raw/match-predictions-opta/12_export_wc2026_blog.R", local = TRUE)
 })
 
@@ -334,7 +438,7 @@ step_results[[12]] <- run_pipeline_step("export_wc2026_blog", 12, function() {
 # release and diff it against the previous snapshot (group-stage drift tracking).
 # Runs after step 12, which writes the squads file this reads.
 
-step_results[["12b"]] <- run_pipeline_step("snapshot_wc_minutes", "12b", function() {
+step_results[["12b"]] <- run_pred_step_optional("snapshot_wc_minutes", "12b", function() {
   source("data-raw/match-predictions-opta/12b_snapshot_wc_minutes.R", local = TRUE)
 })
 
@@ -344,7 +448,7 @@ step_results[["12b"]] <- run_pipeline_step("snapshot_wc_minutes", "12b", functio
 # snapshot (tournament ELO/champion-odds drift tracking). Runs after step 12,
 # which writes the team_strength file this reads.
 
-step_results[["12c"]] <- run_pipeline_step("snapshot_wc_strength", "12c", function() {
+step_results[["12c"]] <- run_pred_step_optional("snapshot_wc_strength", "12c", function() {
   source("data-raw/match-predictions-opta/12c_snapshot_wc_strength.R", local = TRUE)
 })
 

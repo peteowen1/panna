@@ -28,11 +28,46 @@ augmented_features <- outcome_result$augmented_features
 # 4. Select matches to predict ----
 # Predict ALL matches (played + fixtures) so the blog can show historical
 # predictions on Results view alongside upcoming fixtures.
-
-fixtures <- as.data.frame(match_dataset[match_dataset$split %in% c("fixture", "test", "train"), ])
+#
+# ALL four splits, "val" included. It was omitted here until 2026-08-21, and
+# because 04_build_match_dataset.R assigns "val" to a WHOLE season
+# (`played$split[played$season_end_year == val_sey] <- "val"`, not a row
+# sample), that silently dropped one entire season from every published
+# predictions file -- a different season each year as the dataset rolls
+# forward. Nothing failed; the row count stayed plausible.
+#
+# Predicting on val is not a leak: model quality is measured in
+# 08_evaluate_model.R on its own splits. Step 07 exists to publish a prediction
+# for every match, which is why "train" and "test" were already included.
+PREDICT_SPLITS <- c("fixture", "test", "val", "train")
+fixtures <- as.data.frame(match_dataset[match_dataset$split %in% PREDICT_SPLITS, ])
 n_upcoming <- sum(match_dataset$split == "fixture")
 n_played <- nrow(fixtures) - n_upcoming
 message(sprintf("  %d matches to predict (%d played + %d upcoming)", nrow(fixtures), n_played, n_upcoming))
+
+# Guard: every season with played matches must survive into the prediction set.
+# The bug above was invisible precisely because a missing season leaves a row
+# count that still looks reasonable -- so assert on seasons, not on rows.
+if ("season_end_year" %in% names(match_dataset)) {
+  seasons_in  <- sort(unique(match_dataset$season_end_year[match_dataset$split != "fixture"]))
+  seasons_out <- sort(unique(fixtures$season_end_year[fixtures$split != "fixture"]))
+  missing_seasons <- setdiff(seasons_in, seasons_out)
+  if (length(missing_seasons) > 0) {
+    stop(sprintf(
+      paste0("Prediction set is missing %d played season(s) present in the match dataset: %s.
+",
+             "  Splits selected: %s
+",
+             "  Splits in dataset: %s
+",
+             "  A split is being excluded -- see PREDICT_SPLITS above."),
+      length(missing_seasons), paste(missing_seasons, collapse = ", "),
+      paste(PREDICT_SPLITS, collapse = "/"),
+      paste(sort(unique(match_dataset$split)), collapse = "/")), call. = FALSE)
+  }
+  message(sprintf("  Season coverage OK: %d played season(s), none dropped by the split filter",
+                  length(seasons_in)))
+}
 
 if (nrow(fixtures) == 0) {
   message("  No upcoming fixtures found - skipping predictions.")

@@ -280,6 +280,14 @@ jobs:
               # outcomes (esp. during the qualifier finals window). Disable in
               # run_predictions_opta.R defaults so dev runs stay snappy; the
               # workflow opts in here as the production schedule.
+              #
+              # These four stay TRUE across tournaments. run_predictions_opta.R
+              # gates them at runtime on .wc2026_fixtures_remaining() and turns
+              # them off by itself once the final is played, saying so in the
+              # log -- so a log line reading "DISABLING steps 11/12/12b/12c"
+              # under a TRUE here is the gate working, not drift. They are also
+              # non-fatal now: before 2026-08-21 a step-11 abort set
+              # pipeline_failed and step 13 published nothing for eight days.
               step_11_simulate_wc2026        = TRUE,
               step_12_export_wc2026_blog     = TRUE,
               # Archive a dated minutes snapshot + diff to the
@@ -311,6 +319,24 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
 
           CACHE_DIR="data-raw/cache-predictions-opta"
+
+          # Steps 11/12/12b/12c (World Cup) are non-fatal by design -- see
+          # run_pred_step_optional() in run_predictions_opta.R. Non-fatal is
+          # not the same as fine: the job stays green, so without this the
+          # only trace of a WC step failing is a line in the raw log, and a
+          # recurring one would go unnoticed for weeks. Surface it as a
+          # warning annotation on the run page instead.
+          NONFATAL="$CACHE_DIR/.nonfatal_step_failures"
+          if [ -s "$NONFATAL" ]; then
+            FAILED=$(awk '{printf "%s%s", sep, $0; sep=", "} END {print ""}' "$NONFATAL")
+            echo "::warning title=Non-fatal pipeline step failed::$FAILED failed. The run is green because World Cup steps do not gate the publish, but this needs looking at."
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "> [!WARNING]" >> $GITHUB_STEP_SUMMARY
+            echo "> **Non-fatal step failure:** $FAILED" >> $GITHUB_STEP_SUMMARY
+            echo "> The publish went ahead (World Cup steps do not gate it), but check the log." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+
           if [ -f "$CACHE_DIR/predictions.parquet" ]; then
             echo "**Predictions:** uploaded to \`predictions-latest\` release" >> $GITHUB_STEP_SUMMARY
             echo "**Blog data:** uploaded to \`blog-latest\` release" >> $GITHUB_STEP_SUMMARY

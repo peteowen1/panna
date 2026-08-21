@@ -112,3 +112,101 @@ test_that(".ko_predict returns rows of normalised outcome probabilities", {
   expect_true(all(got$pH >= 0 & got$pH <= 1))
   expect_length(got$hg, nrow(X))
 })
+
+
+# .wc2026_fixtures_remaining() -- the liveness gate for pipeline steps
+# 11/12/12b/12c. Post-final the WC branch ran on zero group-stage predictions
+# and reported SUCCESS, then (once build_knockout_lookup() gained its
+# constant-aggregates invariant) aborted and took the publish step down with
+# it for eight days. This is the check that decides not to start.
+
+.wc_preds_fixture <- function(dir, rows) {
+  saveRDS(rows, file.path(dir, "07_predictions.rds"))
+  dir
+}
+
+.wc_row <- function(status, league = WC2026_LEAGUE,
+                    season = WC2026_SEASON_LABEL,
+                    home_team = "Argentina", away_team = "France") {
+  data.frame(league = league, season = season, status = status,
+             home_team = home_team, away_team = away_team,
+             stringsAsFactors = FALSE)
+}
+
+test_that(".wc2026_fixtures_remaining counts only unplayed WC 2026 rows", {
+  d <- withr::local_tempdir()
+  .wc_preds_fixture(d, rbind(
+    .wc_row("fixture"), .wc_row("fixture"), .wc_row("played"),
+    # other competitions and other seasons must not count
+    .wc_row("fixture", league = "EPL", season = "2026-2027"),
+    .wc_row("fixture", season = "2022 Qatar")))
+  expect_identical(.wc2026_fixtures_remaining(d), 2L)
+})
+
+test_that(".wc2026_fixtures_remaining returns 0 once the tournament is over", {
+  d <- withr::local_tempdir()
+  .wc_preds_fixture(d, rbind(.wc_row("played"), .wc_row("played")))
+  expect_identical(.wc2026_fixtures_remaining(d), 0L)
+})
+
+test_that(".wc2026_fixtures_remaining says NA rather than 0 when it cannot tell", {
+  # Absent cache and a schema without `status` are both "cannot tell". They
+  # must NOT collapse to 0 -- 0 disables the WC steps, and disabling them
+  # because a file is missing would hide a real breakage behind a tidy log.
+  empty <- withr::local_tempdir()
+  expect_identical(.wc2026_fixtures_remaining(empty), NA_integer_)
+
+  d <- withr::local_tempdir()
+  saveRDS(data.frame(league = WC2026_LEAGUE, season = WC2026_SEASON_LABEL),
+          file.path(d, "07_predictions.rds"))
+  expect_identical(.wc2026_fixtures_remaining(d), NA_integer_)
+})
+
+test_that(".wc2026_fixtures_remaining tolerates NA status values", {
+  d <- withr::local_tempdir()
+  .wc_preds_fixture(d, rbind(.wc_row("fixture"), .wc_row(NA_character_)))
+  expect_identical(.wc2026_fixtures_remaining(d), 1L)
+})
+
+test_that("WC rows with an all-NA status read as NA, not as a finished tournament", {
+  # The dangerous case: the column is present so the schema check passes, but
+  # every value is unusable. `sum(na.rm = TRUE)` over that is 0, and 0 means
+  # "tournament over" -- so a corrupt status column would disable the WC steps
+  # with a tidy log and no symptom.
+  d <- withr::local_tempdir()
+  .wc_preds_fixture(d, rbind(.wc_row(NA_character_), .wc_row(NA_character_)))
+  expect_identical(.wc2026_fixtures_remaining(d), NA_integer_)
+})
+
+test_that("unresolved knockout slots do not count as fixtures remaining", {
+  # The 32 WC2026 knockout fixtures sit in the data as blank-team placeholders
+  # with status "fixture" while the bracket is unresolved. 11_simulate_wc2026.R
+  # drops them, so counting them here would leave the WC steps enabled on a day
+  # step 11 has nothing to simulate.
+  d <- withr::local_tempdir()
+  .wc_preds_fixture(d, rbind(
+    .wc_row("played"),
+    .wc_row("fixture", home_team = "", away_team = ""),
+    .wc_row("fixture", home_team = "Brazil", away_team = "")))
+  expect_identical(.wc2026_fixtures_remaining(d), 0L)
+})
+
+test_that(".wc2026_fixtures_remaining needs team names to answer at all", {
+  d <- withr::local_tempdir()
+  saveRDS(data.frame(league = WC2026_LEAGUE, season = WC2026_SEASON_LABEL,
+                     status = "fixture", stringsAsFactors = FALSE),
+          file.path(d, "07_predictions.rds"))
+  expect_identical(.wc2026_fixtures_remaining(d), NA_integer_)
+})
+
+test_that("no WC 2026 rows at all is 0, not NA", {
+  # Distinct from the case above and genuinely 0: before the tournament is
+  # scheduled and after it is dissolved from the dataset there is nothing to
+  # simulate either way. Only WC rows that EXIST with unusable status are
+  # "cannot tell".
+  d <- withr::local_tempdir()
+  .wc_preds_fixture(d, rbind(
+    .wc_row("fixture", league = "EPL", season = "2026-2027"),
+    .wc_row(NA_character_, league = "EPL", season = "2026-2027")))
+  expect_identical(.wc2026_fixtures_remaining(d), 0L)
+})
