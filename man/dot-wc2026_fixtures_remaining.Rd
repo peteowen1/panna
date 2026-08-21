@@ -10,7 +10,8 @@
 \item{cache_dir}{Predictions cache directory (holds \verb{07_predictions.rds}).}
 }
 \value{
-Integer count of WC 2026 rows still marked \code{"fixture"}, or \code{NA_integer_}
+Integer count of WC 2026 rows still marked \code{"fixture"} and carrying
+both team names, or \code{NA_integer_}
 when the cache file is absent or lacks the columns to answer. \code{NA} means
 "cannot tell" and callers should leave their configuration alone rather
 than treating it as zero.

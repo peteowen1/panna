@@ -319,6 +319,24 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
 
           CACHE_DIR="data-raw/cache-predictions-opta"
+
+          # Steps 11/12/12b/12c (World Cup) are non-fatal by design -- see
+          # run_pred_step_optional() in run_predictions_opta.R. Non-fatal is
+          # not the same as fine: the job stays green, so without this the
+          # only trace of a WC step failing is a line in the raw log, and a
+          # recurring one would go unnoticed for weeks. Surface it as a
+          # warning annotation on the run page instead.
+          NONFATAL="$CACHE_DIR/.nonfatal_step_failures"
+          if [ -s "$NONFATAL" ]; then
+            FAILED=$(awk '{printf "%s%s", sep, $0; sep=", "} END {print ""}' "$NONFATAL")
+            echo "::warning title=Non-fatal pipeline step failed::$FAILED failed. The run is green because World Cup steps do not gate the publish, but this needs looking at."
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "> [!WARNING]" >> $GITHUB_STEP_SUMMARY
+            echo "> **Non-fatal step failure:** $FAILED" >> $GITHUB_STEP_SUMMARY
+            echo "> The publish went ahead (World Cup steps do not gate it), but check the log." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+
           if [ -f "$CACHE_DIR/predictions.parquet" ]; then
             echo "**Predictions:** uploaded to \`predictions-latest\` release" >> $GITHUB_STEP_SUMMARY
             echo "**Blog data:** uploaded to \`blog-latest\` release" >> $GITHUB_STEP_SUMMARY

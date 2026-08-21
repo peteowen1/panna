@@ -153,12 +153,25 @@ run_pred_step_isolated <- function(step_name, step_num, code_block) {
 # Step 12 registers too, but only at its very end (12_export_wc2026_blog.R:465,
 # after every wc2026_*.parquet is written), so a mid-step failure registers
 # nothing and step 13 has nothing torn to publish.
+#
+# Non-fatal must not mean invisible. The workflow's exit code is driven by
+# `pipeline_failed`, so a WC step failing for a REAL reason (a bug, not "the
+# tournament ended") would otherwise leave a green tick and a job summary that
+# still claims blog data was uploaded -- a recurring failure nobody would see
+# without opening the raw log. Each failure is recorded to a marker file that
+# the workflow's summary step reads and turns into a GitHub warning
+# annotation. The run stays green on purpose; it just stops being silent.
+.NONFATAL_MARKER <- ".nonfatal_step_failures"
+
 run_pred_step_optional <- function(step_name, step_num, code_block) {
   result <- run_step(step_name, step_num, code_block, run_steps, pipeline_failed)
   if (!is.null(result) && identical(result$status, "FAILED")) {
     message(sprintf(
       "  NOTE: step %s is non-fatal -- the pipeline continues and step 13 still publishes.",
       as.character(step_num)))
+    cat(sprintf("step %s (%s)
+", as.character(step_num), step_name),
+        file = file.path(cache_dir, .NONFATAL_MARKER), append = TRUE)
   }
   result
 }
@@ -169,6 +182,11 @@ cache_dir <- file.path("data-raw", "cache-predictions-opta")
 if (!dir.exists(cache_dir)) {
   dir.create(cache_dir, recursive = TRUE)
 }
+
+# Start each run with no non-fatal failures recorded. Cloud runs check out
+# fresh so this is a no-op there; locally the cache directory persists, and a
+# marker left over from yesterday would report a failure that did not happen.
+unlink(file.path(cache_dir, .NONFATAL_MARKER))
 
 # Handle force rebuild
 pred_cache_files <- list(
@@ -369,10 +387,11 @@ step_results[["10d"]] <- run_pipeline_step("export_shootout_wpa", "10d", functio
 # fixture status directly. 04_match_dataset.rds would answer the same question
 # but is ~47MB, and this pipeline has a history of memory cliffs (panna#128).
 #
-# Known edge, accepted: if a future tournament has a window where every group
-# match is played but the knockout draw has not been ingested as fixtures yet,
-# this reads 0 and skips the WC steps for those runs, resuming by itself once
-# the draw lands. These steps are idempotent weekly refreshes, so a skipped
+# Known edge, accepted: unresolved knockout slots sit in the data as
+# blank-team placeholders with status "fixture", and neither this nor step 11
+# counts them (they cannot be simulated). So in a window where every resolved
+# match is played but the bracket has not filled in, this reads 0 and skips
+# the WC steps for those runs, resuming by itself once the draw lands. These steps are idempotent weekly refreshes, so a skipped
 # run costs a stale WC tab for a day -- against eight days of the whole
 # pipeline publishing nothing, which is what the alternative cost.
 .wc_steps <- c("step_11_simulate_wc2026", "step_12_export_wc2026_blog",

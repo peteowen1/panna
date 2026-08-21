@@ -19,6 +19,18 @@ in the cache the whole time.
   when nothing is left to play. `11_simulate_wc2026.R` refuses to start on the
   same condition for standalone runs, naming the real cause instead of
   Argentina's feature values.
+* **`.wc2026_fixtures_remaining()` answers "cannot tell" rather than guessing.**
+  A missing cache, a missing column, and WC rows whose `status` is entirely NA
+  all return `NA_integer_`, which leaves the steps as configured. Only a real
+  count of zero disables them — `sum(na.rm = TRUE)` over a corrupt column would
+  have reported 0, i.e. "tournament over", and turned the branch off with a
+  tidy log and no symptom.
+* **Unresolved knockout slots do not count as fixtures remaining.** They sit in
+  the data as blank-team placeholders with status `"fixture"`, and
+  `11_simulate_wc2026.R` drops them from the set it simulates. Counting them in
+  the gate would have left the WC steps enabled on a day step 11 had nothing to
+  run. Step 11's standalone guard now calls the same helper instead of
+  recomputing its own count, so the two cannot drift apart again.
 * **A World Cup failure is no longer fatal to the pipeline.**
   `run_pipeline_step()` sets `pipeline_failed` on any failure, which makes
   every later step print "SKIPPED (previous step failed)" — including step 13,
@@ -28,6 +40,12 @@ in the cache the whole time.
   but the publish proceeds. Steps 09/10/10b/10c/10d keep the fatal treatment,
   because they register files in `publish_files` and half of one failing is a
   real reason to hold the release back.
+* **Non-fatal is not the same as invisible.** The workflow's exit code follows
+  `pipeline_failed`, so a WC step failing for a real reason — a bug, not "the
+  tournament ended" — would leave a green tick and a job summary still claiming
+  blog data was uploaded. Each non-fatal failure is now recorded to a marker
+  file that the workflow's summary step turns into a GitHub warning annotation.
+  The run stays green on purpose; it just stops being silent.
 
 
 ## The 13 "flaky" test failures were one bug, hiding two more

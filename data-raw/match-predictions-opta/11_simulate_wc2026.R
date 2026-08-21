@@ -91,9 +91,14 @@ message(sprintf("Simulating WC2026 from %d group-stage predictions across %d tea
 # instead, with a message about Argentina's feature values that says nothing
 # about the real cause. Name the real cause.
 #
-# run_predictions_opta.R gates steps 11/12/12b/12c on the same condition, so
-# in the pipeline this is unreachable; it is here for standalone runs.
-n_remaining <- if ("status" %in% names(wc)) sum(wc$status == "fixture") else NA_integer_
+# Call the SAME helper the driver's gate calls rather than recomputing the
+# count here. A local `sum(wc$status == "fixture")` looks equivalent and is
+# not: without `na.rm` a single NA status makes the sum NA, so
+# `isTRUE(NA == 0L)` is FALSE and this guard would fail OPEN exactly where the
+# gate fails closed. The helper also applies the same blank-team-name filter
+# `wc` uses above, so both sides agree about unresolved knockout placeholders.
+# Two checks that disagree about the same question are worse than one.
+n_remaining <- .wc2026_fixtures_remaining(cache_dir)
 if (nrow(wc) == 0L || isTRUE(n_remaining == 0L)) {
   stop(sprintf(paste0(
     "WC2026 has no unplayed fixtures in %s (%d WC row(s), %s still to play).\n",

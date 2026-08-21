@@ -288,7 +288,8 @@ build_knockout_lookup <- function(match_dataset, goals_models, outcome_result,
 #' memory cliffs (panna#128).
 #'
 #' @param cache_dir Predictions cache directory (holds `07_predictions.rds`).
-#' @return Integer count of WC 2026 rows still marked `"fixture"`, or `NA_integer_`
+#' @return Integer count of WC 2026 rows still marked `"fixture"` and carrying
+#'   both team names, or `NA_integer_`
 #'   when the cache file is absent or lacks the columns to answer. `NA` means
 #'   "cannot tell" and callers should leave their configuration alone rather
 #'   than treating it as zero.
@@ -297,8 +298,24 @@ build_knockout_lookup <- function(match_dataset, goals_models, outcome_result,
   preds_path <- file.path(cache_dir, "07_predictions.rds")
   if (!file.exists(preds_path)) return(NA_integer_)
   p <- readRDS(preds_path)
-  if (!all(c("league", "season", "status") %in% names(p))) return(NA_integer_)
-  sum(p$league == WC2026_LEAGUE & p$season == WC2026_SEASON_LABEL &
-        p$status == "fixture", na.rm = TRUE)
+  need <- c("league", "season", "status", "home_team", "away_team")
+  if (!all(need %in% names(p))) return(NA_integer_)
+  # Blank team names are TBD placeholders -- the 32 WC2026 knockout slots
+  # carry them, with status "fixture", while the bracket is unresolved
+  # (01_build_fixture_results.R:753-777). They must NOT count as fixtures
+  # remaining: 11_simulate_wc2026.R drops them from the set it simulates, so
+  # counting them here would leave the WC steps enabled on a day step 11 has
+  # nothing to run and aborts. Both sides of the gate ask the same question.
+  wc <- which(p$league == WC2026_LEAGUE & p$season == WC2026_SEASON_LABEL &
+                !is.na(p$home_team) & nzchar(p$home_team) &
+                !is.na(p$away_team) & nzchar(p$away_team))
+  # Zero WC rows is a real answer, not a gap: it is what both a finished and a
+  # not-yet-scheduled tournament look like, and neither has anything to
+  # simulate. But WC rows whose `status` is entirely NA is a corrupt column,
+  # and `sum(na.rm = TRUE)` would report that as 0 -- i.e. as "tournament
+  # over" -- disabling the WC steps with a tidy log and no symptom. Same shape
+  # as every other vacuous-count bug in this repo. Say "cannot tell" instead.
+  if (length(wc) > 0L && all(is.na(p$status[wc]))) return(NA_integer_)
+  sum(p$status[wc] == "fixture", na.rm = TRUE)
 }
 
