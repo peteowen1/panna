@@ -272,3 +272,33 @@ build_knockout_lookup <- function(match_dataset, goals_models, outcome_result,
   }
   list(probs = probs, lookup = lookup, team_elo = team_elo)
 }
+
+
+#' How many WC 2026 matches are still unplayed?
+#'
+#' Liveness test for the World Cup pipeline branch (steps 11/12/12b/12c in
+#' `run_predictions_opta.R`). Those steps simulate a tournament in progress;
+#' once the final is played there is nothing to simulate and
+#' [build_knockout_lookup()] aborts, because its constant-aggregates invariant
+#' only holds while every WC row is an unplayed fixture carrying a single
+#' as-of snapshot. Played rows carry per-match aggregates.
+#'
+#' Reads step 07's prediction cache rather than the step 04 match dataset:
+#' same answer, ~53k x 15 instead of ~47MB, in a pipeline with a history of
+#' memory cliffs (panna#128).
+#'
+#' @param cache_dir Predictions cache directory (holds `07_predictions.rds`).
+#' @return Integer count of WC 2026 rows still marked `"fixture"`, or `NA_integer_`
+#'   when the cache file is absent or lacks the columns to answer. `NA` means
+#'   "cannot tell" and callers should leave their configuration alone rather
+#'   than treating it as zero.
+#' @keywords internal
+.wc2026_fixtures_remaining <- function(cache_dir) {
+  preds_path <- file.path(cache_dir, "07_predictions.rds")
+  if (!file.exists(preds_path)) return(NA_integer_)
+  p <- readRDS(preds_path)
+  if (!all(c("league", "season", "status") %in% names(p))) return(NA_integer_)
+  sum(p$league == WC2026_LEAGUE & p$season == WC2026_SEASON_LABEL &
+        p$status == "fixture", na.rm = TRUE)
+}
+

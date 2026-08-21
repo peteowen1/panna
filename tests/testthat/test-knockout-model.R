@@ -112,3 +112,56 @@ test_that(".ko_predict returns rows of normalised outcome probabilities", {
   expect_true(all(got$pH >= 0 & got$pH <= 1))
   expect_length(got$hg, nrow(X))
 })
+
+
+# .wc2026_fixtures_remaining() -- the liveness gate for pipeline steps
+# 11/12/12b/12c. Post-final the WC branch ran on zero group-stage predictions
+# and reported SUCCESS, then (once build_knockout_lookup() gained its
+# constant-aggregates invariant) aborted and took the publish step down with
+# it for eight days. This is the check that decides not to start.
+
+.wc_preds_fixture <- function(dir, rows) {
+  saveRDS(rows, file.path(dir, "07_predictions.rds"))
+  dir
+}
+
+.wc_row <- function(status, league = WC2026_LEAGUE,
+                    season = WC2026_SEASON_LABEL) {
+  data.frame(league = league, season = season, status = status,
+             stringsAsFactors = FALSE)
+}
+
+test_that(".wc2026_fixtures_remaining counts only unplayed WC 2026 rows", {
+  d <- withr::local_tempdir()
+  .wc_preds_fixture(d, rbind(
+    .wc_row("fixture"), .wc_row("fixture"), .wc_row("played"),
+    # other competitions and other seasons must not count
+    .wc_row("fixture", league = "EPL", season = "2026-2027"),
+    .wc_row("fixture", season = "2022 Qatar")))
+  expect_identical(.wc2026_fixtures_remaining(d), 2L)
+})
+
+test_that(".wc2026_fixtures_remaining returns 0 once the tournament is over", {
+  d <- withr::local_tempdir()
+  .wc_preds_fixture(d, rbind(.wc_row("played"), .wc_row("played")))
+  expect_identical(.wc2026_fixtures_remaining(d), 0L)
+})
+
+test_that(".wc2026_fixtures_remaining says NA rather than 0 when it cannot tell", {
+  # Absent cache and a schema without `status` are both "cannot tell". They
+  # must NOT collapse to 0 -- 0 disables the WC steps, and disabling them
+  # because a file is missing would hide a real breakage behind a tidy log.
+  empty <- withr::local_tempdir()
+  expect_identical(.wc2026_fixtures_remaining(empty), NA_integer_)
+
+  d <- withr::local_tempdir()
+  saveRDS(data.frame(league = WC2026_LEAGUE, season = WC2026_SEASON_LABEL),
+          file.path(d, "07_predictions.rds"))
+  expect_identical(.wc2026_fixtures_remaining(d), NA_integer_)
+})
+
+test_that(".wc2026_fixtures_remaining tolerates NA status values", {
+  d <- withr::local_tempdir()
+  .wc_preds_fixture(d, rbind(.wc_row("fixture"), .wc_row(NA_character_)))
+  expect_identical(.wc2026_fixtures_remaining(d), 1L)
+})

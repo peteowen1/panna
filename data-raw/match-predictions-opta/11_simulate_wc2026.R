@@ -82,6 +82,28 @@ n_teams <- uniqueN(c(wc$home_team, wc$away_team))
 message(sprintf("Simulating WC2026 from %d group-stage predictions across %d teams",
                 nrow(wc), n_teams))
 
+# Nothing left to simulate? Stop here, loudly.
+#
+# Post-final this script used to run to completion off zero rows -- fitting
+# Bradley-Terry ratings and reporting champion probabilities for a tournament
+# already won -- and reported SUCCESS. Then build_knockout_lookup()'s
+# constant-aggregates invariant (added 2026-08-12) started aborting on it
+# instead, with a message about Argentina's feature values that says nothing
+# about the real cause. Name the real cause.
+#
+# run_predictions_opta.R gates steps 11/12/12b/12c on the same condition, so
+# in the pipeline this is unreachable; it is here for standalone runs.
+n_remaining <- if ("status" %in% names(wc)) sum(wc$status == "fixture") else NA_integer_
+if (nrow(wc) == 0L || isTRUE(n_remaining == 0L)) {
+  stop(sprintf(paste0(
+    "WC2026 has no unplayed fixtures in %s (%d WC row(s), %s still to play).\n",
+    "  The tournament is over -- there is nothing to simulate. Steps 11/12/12b/12c\n",
+    "  are for a live tournament only."),
+    preds_path, nrow(wc),
+    if (is.na(n_remaining)) "unknown how many" else as.character(n_remaining)),
+    call. = FALSE)
+}
+
 # 3. Full-model knockout matchup lookup ----
 # Every knockout tie is predicted with the same 170-feature goals + outcome
 # models as the group stage (no Bradley-Terry compression).
