@@ -13,13 +13,15 @@ four turn a transient failure into a silently-accepted "everything is fine":
   **disabled sha256 verification for every download on that tag for the rest
   of the session** behind a one-time warning nobody would connect to the
   cause.
-* **`vb_download()`'s `verify_by_size()` swallowed a failed asset listing**
-  and skipped the check entirely rather than distinguishing "listing worked,
-  asset not in it" (fine, nothing to check) from "the listing call itself
-  errored" (no check happened at all). This is the *only* integrity check on
-  an unmanifested tag -- the common case -- so a transient API failure meant
-  the file was moved into place and given a `.sha256` sidecar as though
-  verification had passed.
+* **`vb_download()`'s `verify_by_size()` swallowed a failed asset listing
+  silently.** It now warns, naming the file and saying it was accepted
+  *without* verification. It deliberately still accepts it: this function is
+  the sha-mismatch path's graceful degradation, and a stale manifest entry is
+  far more common than real corruption, so aborting on a transient API blip
+  would brick the asset until someone republished the manifest -- the exact
+  outcome that caller exists to prevent. bouncer shipped the aborting version,
+  its CI caught it, and it was reverted (`bouncerverse/bouncer@5edd3ac`,
+  2026-08-16) for this reason. Only the silence was a defect.
 * **`vb_publish()`'s cache-invalidation hook failed via bare
   `try(..., silent = TRUE)`** -- the only failure path in this file with no
   logging at all. A dead hook meant downstream consumers kept serving
