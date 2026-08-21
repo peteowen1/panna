@@ -34,6 +34,45 @@ All four fixed in place per bouncer's `peteowen1/bouncer@86e2ebc`; each has a
 dedicated regression test in `tests/testthat/test-versebus.R`, mutation-tested
 by reverting the fix and confirming the test fails. `torpverse/torp/R/versebus.R`
 carries the same four defects (confirmed, not yet fixed) -- see panna#187.
+## Step 12's blog export ran into the WC2026 liveness gate it should never have been in
+
+panna#194's WC2026 liveness gate (0.3.23 below) disabled steps 11/12/12b/12c
+together once the tournament was over. Step 12 should not have been on that
+list: it *exports*, it does not simulate. Its match-prediction exports
+(`wc2026_predictions.parquet`, `wc_history_predictions.parquet`) read only
+`07_predictions.rds` and are exactly as valid post-tournament as pre- — they
+are how the blog browses a *finished* World Cup — but with step 12 gated off,
+both files stayed frozen at their 2026-08-12 publish (0 rows / 140-byte
+header-only CSV) even after the separate #191 fix restored WC2026 rows to
+`07_predictions.rds`.
+
+* `run_predictions_opta.R` no longer includes `step_12_export_wc2026_blog` in
+  `.wc_steps` — step 12 now runs on every predictions-pipeline run,
+  regardless of tournament liveness. Steps 11, 12b and 12c stay gated (they
+  simulate, or snapshot a simulation in progress).
+* `12_export_wc2026_blog.R` computes `.wc11_available` from whether step 11's
+  three output files exist (`wc2026_simulation.parquet`,
+  `wc2026_group_expectations.parquet`, `wc2026_bt_ratings.parquet`) and gates
+  the sections that read them (3, 4, 5, 5c, and the reference-fact validation
+  in 8) on that flag instead of hard-erroring via a bare `read_parquet()`.
+  Sections 2/2b (match predictions) and the existing build_id-stamp/publish-
+  registration logic in 6/7 are unaffected — 6/7 already tolerated absent
+  files file-by-file. The four step-11-dependent sections are gated together
+  as one block, not independently, because section 5's team-strength numbers
+  and section 5c's per-player squad ratings are two views of one
+  "team == Sigma(squad)" invariant the blog relies on; refreshing one without
+  the other would break it.
+* Also fixed while adding a Windows-run test for this: the build_id-stamp
+  loop in section 6 read and immediately overwrote the same parquet path
+  without `mmap = FALSE`, which fails with a file-locking error on Windows
+  (section 3 already used `mmap = FALSE` for exactly this read-then-rewrite
+  pattern).
+* `tests/testthat/test-wc2026-export.R` sources the real step-12 script
+  against a fixture cache holding only `07_predictions.rds` and proves the
+  match-prediction exports are written and the step-11-dependent ones are
+  not, including the case where only one of the three step-11 files is
+  present (must still count as unavailable). Mutation-tested: forcing
+  `.wc11_available` to always `TRUE` reproduces the pre-fix hard error.
 
 ## A double quote in a workflow comment truncated the R payload
 
