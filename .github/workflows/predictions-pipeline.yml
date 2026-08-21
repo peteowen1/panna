@@ -284,7 +284,7 @@ jobs:
               # These four stay TRUE across tournaments. run_predictions_opta.R
               # gates them at runtime on .wc2026_fixtures_remaining() and turns
               # them off by itself once the final is played, saying so in the
-              # log -- so a log line reading "DISABLING steps 11/12/12b/12c"
+              # log -- so a log line reading DISABLING steps 11/12/12b/12c
               # under a TRUE here is the gate working, not drift. They are also
               # non-fatal now: before 2026-08-21 a step-11 abort set
               # pipeline_failed and step 13 published nothing for eight days.
