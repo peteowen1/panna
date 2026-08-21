@@ -363,10 +363,11 @@ step_results[["10d"]] <- run_pipeline_step("export_shootout_wpa", "10d", functio
   source("data-raw/match-predictions-opta/10d_export_shootout_wpa.R", local = TRUE)
 })
 
-# 14c-bis. World Cup liveness gate (steps 11/12/12b/12c) ----
-# Steps 11-12c simulate a tournament that is still being played. Once the
-# final is done there is nothing left to simulate, and the WC branch does not
-# just become pointless -- it becomes wrong, then it becomes fatal:
+# 14c-bis. World Cup liveness gate (steps 11/12b/12c) ----
+# Steps 11, 12b and 12c simulate/snapshot a tournament that is still being
+# played. Once the final is done there is nothing left to simulate, and the
+# WC branch does not just become pointless -- it becomes wrong, then it
+# becomes fatal:
 #
 #   * Pointless: step 11 filters predictions to WC2026 and, post-final, got
 #     zero rows. It went on to fit Bradley-Terry ratings and simulate 10,000
@@ -381,6 +382,17 @@ step_results[["10d"]] <- run_pipeline_step("export_shootout_wpa", "10d", functio
 #     aborted on Argentina. The guard is correct; the branch should not have
 #     been running at all.
 #
+# step 12 is deliberately NOT in this gate (it was, and that was the bug --
+# panna#194 review). Step 12 EXPORTS; it does not simulate. Half of it
+# (sections 2/2b of 12_export_wc2026_blog.R) reads only 07_predictions.rds
+# and is exactly as valid post-tournament as pre- -- wc2026_predictions.parquet
+# and wc_history_predictions.parquet are how the blog browses a FINISHED World
+# Cup. The other half reads step 11's outputs and stops running the moment
+# step 11 does (12_export_wc2026_blog.R gates those sections itself, on
+# whether wc2026_simulation.parquet et al. exist -- not on tournament
+# liveness), so disabling step 12 here bought no safety and cost the blog its
+# post-final match-history export.
+#
 # Decide from the data, not the calendar: any WC2026 row still marked
 # "fixture" means matches remain. 07_predictions.rds is the right source --
 # small (~53k x 15), already written by step 7, and it carries the played /
@@ -394,7 +406,7 @@ step_results[["10d"]] <- run_pipeline_step("export_shootout_wpa", "10d", functio
 # the WC steps for those runs, resuming by itself once the draw lands. These steps are idempotent weekly refreshes, so a skipped
 # run costs a stale WC tab for a day -- against eight days of the whole
 # pipeline publishing nothing, which is what the alternative cost.
-.wc_steps <- c("step_11_simulate_wc2026", "step_12_export_wc2026_blog",
+.wc_steps <- c("step_11_simulate_wc2026",
                "step_12b_snapshot_wc_minutes", "step_12c_snapshot_wc_strength")
 if (any(vapply(.wc_steps, function(k) isTRUE(run_steps[[k]]), logical(1)))) {
   .wc_remaining <- .wc2026_fixtures_remaining(cache_dir)
@@ -402,19 +414,21 @@ if (any(vapply(.wc_steps, function(k) isTRUE(run_steps[[k]]), logical(1)))) {
   # TRUE is the same failure shape as the bug above: it looks like it worked.
   if (is.na(.wc_remaining)) {
     message(sprintf(
-      "\n[%s] WC2026 gate: cannot read %s -- leaving steps 11/12/12b/12c as configured.",
+      "\n[%s] WC2026 gate: cannot read %s -- leaving steps 11/12b/12c as configured.",
       format(Sys.time(), "%H:%M:%S"),
       file.path(cache_dir, "07_predictions.rds")))
   } else if (.wc_remaining > 0L) {
     message(sprintf(
-      "\n[%s] WC2026 gate: %d fixture(s) remaining -- steps 11/12/12b/12c will run.",
+      "\n[%s] WC2026 gate: %d fixture(s) remaining -- steps 11/12b/12c will run.",
       format(Sys.time(), "%H:%M:%S"), .wc_remaining))
   } else {
     message(sprintf(paste0(
       "\n[%s] WC2026 gate: 0 unplayed WC2026 fixtures in 07_predictions.rds.\n",
-      "  The tournament is over -- DISABLING steps 11/12/12b/12c for this run.\n",
+      "  The tournament is over -- DISABLING steps 11/12b/12c for this run.\n",
       "  (Simulating a finished tournament produced champion odds off zero\n",
-      "  group-stage predictions, and aborts in build_knockout_lookup().)"),
+      "  group-stage predictions, and aborts in build_knockout_lookup().)\n",
+      "  Step 12 still runs -- it exports match history/predictions, not a\n",
+      "  simulation, and its own step-11-dependent sections self-skip."),
       format(Sys.time(), "%H:%M:%S")))
     for (.k in .wc_steps) run_steps[[.k]] <- FALSE
   }
