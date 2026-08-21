@@ -2,6 +2,60 @@
 
 ## panna 0.3.23 (dev)
 
+### The World Cup branch no longer takes the daily publish down with it
+
+The Predictions Pipeline failed every day from 2026-08-13 to 2026-08-21
+and published nothing for eight days. The predictions themselves were
+fine and sat in the cache the whole time.
+
+- **Steps 11/12/12b/12c are gated on the tournament still being live.**
+  They simulate a World Cup in progress. After the final, step 11 found
+  zero WC2026 rows and carried on anyway — fitting Bradley-Terry ratings
+  and reporting champion probabilities for a competition already won,
+  reporting SUCCESS. Then
+  [`build_knockout_lookup()`](https://peteowen1.github.io/panna/reference/build_knockout_lookup.md)
+  gained a correct invariant (a team’s aggregates must be constant
+  across its own WC rows, since the lookup reads row `[1]`) which holds
+  for unplayed fixtures carrying one as-of snapshot and fails for played
+  rows carrying per-match ones — so from the next run it aborted on
+  Argentina. `run_predictions_opta.R` now asks
+  [`.wc2026_fixtures_remaining()`](https://peteowen1.github.io/panna/reference/dot-wc2026_fixtures_remaining.md)
+  first and turns the four steps off, loudly, when nothing is left to
+  play. `11_simulate_wc2026.R` refuses to start on the same condition
+  for standalone runs, naming the real cause instead of Argentina’s
+  feature values.
+- **[`.wc2026_fixtures_remaining()`](https://peteowen1.github.io/panna/reference/dot-wc2026_fixtures_remaining.md)
+  answers “cannot tell” rather than guessing.** A missing cache, a
+  missing column, and WC rows whose `status` is entirely NA all return
+  `NA_integer_`, which leaves the steps as configured. Only a real count
+  of zero disables them — `sum(na.rm = TRUE)` over a corrupt column
+  would have reported 0, i.e. “tournament over”, and turned the branch
+  off with a tidy log and no symptom.
+- **Unresolved knockout slots do not count as fixtures remaining.** They
+  sit in the data as blank-team placeholders with status `"fixture"`,
+  and `11_simulate_wc2026.R` drops them from the set it simulates.
+  Counting them in the gate would have left the WC steps enabled on a
+  day step 11 had nothing to run. Step 11’s standalone guard now calls
+  the same helper instead of recomputing its own count, so the two
+  cannot drift apart again.
+- **A World Cup failure is no longer fatal to the pipeline.**
+  `run_pipeline_step()` sets `pipeline_failed` on any failure, which
+  makes every later step print “SKIPPED (previous step failed)” —
+  including step 13, the one and only publish. That is right for the
+  model chain and wrong for a side branch nothing else consumes. Steps
+  11/12/12b/12c now go through `run_pred_step_optional()`: still FAILED
+  in the summary, still in the log, but the publish proceeds. Steps
+  09/10/10b/10c/10d keep the fatal treatment, because they register
+  files in `publish_files` and half of one failing is a real reason to
+  hold the release back.
+- **Non-fatal is not the same as invisible.** The workflow’s exit code
+  follows `pipeline_failed`, so a WC step failing for a real reason — a
+  bug, not “the tournament ended” — would leave a green tick and a job
+  summary still claiming blog data was uploaded. Each non-fatal failure
+  is now recorded to a marker file that the workflow’s summary step
+  turns into a GitHub warning annotation. The run stays green on
+  purpose; it just stops being silent.
+
 ### The 13 “flaky” test failures were one bug, hiding two more
 
 The suite had 13 failures across four files that each appeared to pass
