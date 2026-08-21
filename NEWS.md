@@ -1,4 +1,22 @@
-# panna 0.3.23 (dev)
+# panna 0.3.24 (dev)
+
+## A double quote in a workflow comment truncated the R payload
+
+The first run on `main` after the fix below died two minutes in with
+`Error: unexpected end of input`. A comment added to
+`predictions-pipeline.yml` read `# so a log line reading "DISABLING steps
+11/12/12b/12c"`. Workflows run R via `Rscript -e "<payload>"`, and the shell
+ends that string at the first unescaped `"` — so the payload the shell handed
+R was **74 lines instead of 97**, cut off mid-comment. Harmless in a `.R`
+file; fatal here.
+
+YAML validation passed, every `.R` file parsed, and the review missed it,
+because nothing checked the string the *shell* would build.
+`tests/testthat/test-workflow-r-payloads.R` now reconstructs each
+`Rscript -e` payload the way the shell does and parses it. Mutation-tested:
+reintroducing the quote reproduces the production error verbatim.
+
+# panna 0.3.23
 
 ## The World Cup branch no longer takes the daily publish down with it
 
