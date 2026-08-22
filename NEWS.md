@@ -22,9 +22,18 @@ the actual goals, per fixture.
 * **It aborts if that regex matches nothing**, rather than writing a valid
   empty parquet and reporting SUCCESS — the "looks like it worked" shape this
   pipeline has been bitten by repeatedly.
-* Not the whole match dataset: ~170 columns × 58k rows is a large asset to
-  publish for a diagnostic, and the strength subset plus outcomes is what the
-  open questions actually need.
+* Not the whole match dataset. Measured on the first published build, that is
+  223 columns × 58,780 rows; the export carries 15 identity + 94 strength
+  columns at ~37MB. My pre-build estimate of "~40 strength columns, a few MB"
+  was wrong by roughly five times — the file is legitimately that size, and
+  compression barely moves it (snappy 46.1MB → zstd 43.5MB), so the columns
+  are real data rather than bloat.
+* **The derived `*_diff` columns are dropped**, which is the one deliberate
+  departure from mirroring the guard's set. Every one is exactly
+  `home_<base> - away_<base>` and both sides are exported — verified on the
+  published build at 100.0% of rows — so a consumer can recompute any of them.
+  That is worth ~7MB. It is safe only because they are derivable; the test
+  says so, and says that relaxing it to a non-derived column would be a bug.
 * **The step is non-fatal**, and the first version of it was not — a review
   finding. It sits between steps 5 and 6, so a fatal wrapper there sets
   `pipeline_failed` before steps 6, 7, 9, 10, 10b/c/d, 11–12c and 13, and

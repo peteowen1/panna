@@ -68,8 +68,16 @@ test_that("04b exports the strength features and the actuals, and nothing else",
   expect_equal(nrow(out), 40L)
   # Strength features: the whole point of the export.
   expect_true(all(c("home_sum_panna", "away_sum_panna", "home_elo", "away_elo",
-                    "elo_diff", "panna_diff", "home_avg_psr", "away_avg_psr")
-                  %in% names(out)))
+                    "home_avg_psr", "away_avg_psr") %in% names(out)))
+  # Derived differentials are deliberately dropped: every *_diff is exactly
+  # home_<base> - away_<base>, both sides are here, and a consumer can
+  # recompute it. Verified on the first published build (elo_diff ==
+  # home_elo - away_elo for 100.0% of 58,780 rows). This is the only
+  # departure from mirroring 07_predict_fixtures.R's guard set, and it is
+  # safe only because it is derivable -- if this assertion is ever relaxed to
+  # cover a NON-derived column, that is a bug, not a tidy-up.
+  expect_false(any(c("elo_diff", "panna_diff") %in% names(out)))
+  expect_true(all(c("home_elo", "away_elo") %in% names(out)))
   # Actuals: without these the export cannot be calibrated against outcomes,
   # which is most of why panna#192 wanted it.
   expect_true(all(c("home_goals", "away_goals") %in% names(out)))
