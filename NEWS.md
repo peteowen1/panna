@@ -22,9 +22,27 @@ the actual goals, per fixture.
 * **It aborts if that regex matches nothing**, rather than writing a valid
   empty parquet and reporting SUCCESS — the "looks like it worked" shape this
   pipeline has been bitten by repeatedly.
-* Not the whole match dataset: ~170 columns × 58k rows is a large asset to
-  publish for a diagnostic, and the strength subset plus outcomes is what the
-  open questions actually need.
+* Not the whole match dataset. Measured on the first published build, that is
+  223 columns × 58,780 rows; the export carries 15 identity + 94 strength
+  columns at ~37MB. My pre-build estimate of "~40 strength columns, a few MB"
+  was wrong by roughly five times — the file is legitimately that size, and
+  compression barely moves it (snappy 46.1MB → zstd 43.5MB), so the columns
+  are real data rather than bloat.
+* **Derived `*_diff` columns are dropped — but only the ones proved
+  recomputable.** The first attempt dropped all 14 on the strength of checking
+  one (`elo_diff == home_elo - away_elo`, 100% of 58,780 rows) and
+  generalising. Review caught that the generalisation was false: `rest_diff` is
+  `home_days_since_last - away_days_since_last`, and neither operand matches
+  the keep patterns, so dropping it destroyed the only record of rest in the
+  export — silently, which is the failure shape this file exists to help
+  investigate.
+
+  The step now *proves* derivability per column: for each candidate it looks
+  for a surviving `(home_X, away_X)` pair whose difference reproduces it on
+  real rows, and keeps anything that fails to match. No hand-maintained
+  base-name map (`panna_diff` → `sum_panna` is not mechanical), and it cannot
+  rot — a differential added upstream is proved or kept, never silently lost.
+  Against the published build: 13 proved and dropped, `rest_diff` kept.
 * **The step is non-fatal**, and the first version of it was not — a review
   finding. It sits between steps 5 and 6, so a fatal wrapper there sets
   `pipeline_failed` before steps 6, 7, 9, 10, 10b/c/d, 11–12c and 13, and

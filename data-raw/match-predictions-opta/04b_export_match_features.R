@@ -46,6 +46,44 @@ strength_cols <- unique(c(
 ))
 strength_cols <- intersect(strength_cols, names(md))
 
+# Drop the derived differentials -- but only the ones we can PROVE are
+# recomputable from columns that survive. The first version of this dropped
+# everything matching `_diff$` on the strength of checking one column
+# (elo_diff == home_elo - away_elo, 100% of 58,780 rows) and generalising.
+# That generalisation was false: `rest_diff` is
+# home_days_since_last - away_days_since_last, and neither operand matches the
+# keep patterns above, so dropping it destroyed the only record of rest in the
+# export -- silently, which is the failure shape this file exists to help
+# investigate.
+#
+# So prove it per column instead of asserting it. For each candidate, look for
+# a surviving (home_X, away_X) pair whose difference reproduces it on real
+# rows. Anything that fails to match is KEPT. This needs no hand-maintained
+# base-name map (panna_diff -> sum_panna is not mechanical) and it cannot rot:
+# a new differential added upstream is proved or kept, never silently lost.
+.diff_candidates <- grep("_diff$", strength_cols, value = TRUE)
+.bases <- unique(sub("^home_", "", grep("^home_", strength_cols, value = TRUE)))
+.probe <- utils::head(which(stats::complete.cases(md[, strength_cols, with = FALSE])), 500L)
+derived_cols <- character(0)
+for (dcol in .diff_candidates) {
+  if (!length(.probe)) break
+  dv <- as.numeric(md[[dcol]][.probe])
+  for (b in .bases) {
+    h <- paste0("home_", b); a <- paste0("away_", b)
+    if (!all(c(h, a) %in% strength_cols)) next
+    if (isTRUE(all.equal(dv, as.numeric(md[[h]][.probe]) - as.numeric(md[[a]][.probe]),
+                         tolerance = 1e-8))) {
+      derived_cols <- c(derived_cols, dcol); break
+    }
+  }
+}
+kept_diffs <- setdiff(.diff_candidates, derived_cols)
+if (length(kept_diffs) > 0) {
+  message(sprintf("  keeping %d differential(s) whose operands are NOT exported: %s",
+                  length(kept_diffs), paste(kept_diffs, collapse = ", ")))
+}
+strength_cols <- setdiff(strength_cols, derived_cols)
+
 id_cols <- intersect(c("match_id", "match_date", "league", "season",
                        "season_end_year", "split", "match_status",
                        "home_team", "away_team", "home_team_id", "away_team_id",
@@ -53,8 +91,8 @@ id_cols <- intersect(c("match_id", "match_date", "league", "season",
                      names(md))
 
 out <- md[, c(id_cols, strength_cols), with = FALSE]
-message(sprintf("  exporting %d identity + %d strength column(s)",
-                length(id_cols), length(strength_cols)))
+message(sprintf("  exporting %d identity + %d strength column(s) (%d derived *_diff dropped)",
+                length(id_cols), length(strength_cols), length(derived_cols)))
 
 # Assert the export is actually usable for the question it exists to answer:
 # a strength subset that came back empty would still write a valid parquet and
@@ -66,7 +104,9 @@ if (length(strength_cols) == 0L) {
 }
 
 out_path <- file.path(cache_dir, "match_features.parquet")
-arrow::write_parquet(out, out_path)
+# zstd over the snappy default: same data, round-trip identical, a few MB
+# smaller on a file this size.
+arrow::write_parquet(out, out_path, compression = "zstd")
 message(sprintf("  Written: %s (%d rows, %.1f MB)",
                 basename(out_path), nrow(out), file.size(out_path) / 1024^2))
 
