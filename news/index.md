@@ -1,6 +1,60 @@
 # Changelog
 
-## panna 0.3.26 (dev)
+## panna 0.3.28 (dev)
+
+### A missing events table no longer discards an entire season’s matches (panna#166)
+
+`01_build_fixture_results.R` loaded `events` before `fixtures` in its
+per- `(league, season)` loop, and the whole block is wrapped in a
+`tryCatch` that only [`message()`](https://rdrr.io/r/base/message.html)s
+on error. When the derived `opta_events.parquet` table is missing for
+one season,
+[`load_opta_events()`](https://peteowen1.github.io/panna/reference/load_opta_events.md)
+threw before
+[`load_opta_fixtures()`](https://peteowen1.github.io/panna/reference/load_opta_fixtures.md)
+was ever reached, and the outer handler silently dropped every match for
+that season — on every run.
+
+Confirmed live for AFCON “2021 Cameroon”: 52 fixtures and 2,320 lineup
+rows in the Opta data, 86,748 raw events in `events_AFCON.parquet`, but
+0 rows in the derived `opta_events.parquet` (the raw events were never
+derived into the smaller table — a pannadata-side gap, not a scrape
+failure or a label mismatch). Every one of those 52 matches vanished
+from the results dataset each time the predictions pipeline ran.
+
+`events` is a fallback — the code’s own comments call
+`opta_fixtures.parquet` the primary source for scores, used only when
+fixtures has no score for a match. So a `vb_error_absent` from
+[`load_opta_events()`](https://peteowen1.github.io/panna/reference/load_opta_events.md)
+(a genuinely missing table) is now caught locally and treated as zero
+events rather than as a fatal error for the season: fixtures-backed
+scores still resolve normally, and only matches with no score from
+*either* source still get dropped (as before, with the existing
+warning). A real load failure (any other error class) still aborts the
+season, as before. \## SPM coefficients now wired into the routine
+pipeline run (panna#173)
+
+[`export_spm_coefficients_csv()`](https://peteowen1.github.io/panna/reference/export_spm_coefficients_csv.md)
+and its `05b_export_spm_coefficients.R` caller
+(`inst/extdata/spm{,_osr,_dsr}_coefficients.csv`, same
+`{stat_name, beta, sd}` shape as `blend_{psr,osr,dsr}_coefficients.csv`)
+already existed but were never called from `run_pipeline_opta.R` — a
+completely standalone script nothing invoked. Added
+`step_05b_export_spm_coefficients` as a fractional step
+(`start_step <= 5.5`), same idiom as the skills pipeline’s
+`step_08b_export_psr_weekly`, running right after step 5 (SPM) since it
+only reads `cache-opta/05_spm.rds`, no refit. Not registered in a
+`publish_files` accumulator — neither is the PSR/OSR/DSR equivalent;
+these are committed package data under `inst/extdata`, not
+GitHub-Release-published pipeline output. `check_step()` in the driver
+was refactored from a `(step_num, step_name)` pair that happened to
+double as the `step_results` index to a single index argument, reading
+the true step number/name back off the stored result — inserting the
+fractional step had made those two values diverge for every step after
+it, which is exactly the kind of position-based mismatch that stays
+silent until a failure message prints the wrong number.
+
+## panna 0.3.26
 
 ### The match dataset is no longer invisible from outside a pipeline run
 

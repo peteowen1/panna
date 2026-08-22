@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.27</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.29</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -310,6 +310,9 @@ build_player_game_ratings() merges EPV + WPA + PSV ──&gt; piero_value (per g
   03_splint_creation.R    Segment matches into constant-lineup splints
   04_rapm.R               Base RAPM (ridge on xG differential)
   05_spm.R                Opta SPM (80+ features, blended elastic net + XGBoost)
+  05b_export_spm_coefficients.R  Export SPM glmnet coefficients to inst/extdata
+                          CSVs for live per-match blog scoring (panna#173) --
+                          fractional step, runs whenever step 5 does
   06_xrapm.R              xRAPM (RAPM shrunk toward SPM) + multi-target variant
   07_seasonal_ratings.R   Per-season decay-weighted rating snapshots
   08_panna_ratings.R      Final combined ratings (panna = xRAPM)
