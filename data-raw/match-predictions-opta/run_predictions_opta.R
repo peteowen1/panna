@@ -312,13 +312,23 @@ check_pred_critical(step_results[[5]])
 # describes -- the step-04 match dataset -- and the number should say what the
 # thing is, not when it happens to run.
 #
-# Non-critical by construction: it reads caches and writes one parquet, so a
-# failure here says nothing about the predictions themselves. It still uses
-# run_pipeline_step (fatal) rather than the optional wrapper, because unlike
-# the World Cup branch it registers a file for publish, and a half-written
-# diagnostic reaching predictions-latest is worse than a red run.
+# NON-FATAL, and the reasoning matters because the first version of this got it
+# wrong. It reads caches and writes one parquet, so a failure here says nothing
+# about the predictions -- but a fatal wrapper at THIS position sets
+# pipeline_failed before steps 6, 7, 9, 10, 10b/c/d, 11-12c and 13, so every
+# one of them prints "SKIPPED (previous step failed)" and nothing publishes at
+# all. Position is what makes fatal expensive here, not publish-safety: step 12
+# registers its files at the very end too, which is exactly why it is safe to
+# make non-fatal, and 4b registers at :83 after a successful write for the same
+# reason.
+#
+# The trigger would most likely be this step's OWN abort-on-empty-regex guard,
+# fired by a feature rename upstream. A correct guard taking the release down
+# with it is the 2026-08-13 outage repeated: build_knockout_lookup()'s
+# invariant was right, and it still cost eight days of publishing because a
+# side branch was allowed to be fatal.
 
-step_results[["4b"]] <- run_pipeline_step("export_match_features", "4b", function() {
+step_results[["4b"]] <- run_pred_step_optional("export_match_features", "4b", function() {
   source("data-raw/match-predictions-opta/04b_export_match_features.R", local = TRUE)
 })
 

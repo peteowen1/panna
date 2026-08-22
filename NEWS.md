@@ -25,6 +25,14 @@ the actual goals, per fixture.
 * Not the whole match dataset: ~170 columns × 58k rows is a large asset to
   publish for a diagnostic, and the strength subset plus outcomes is what the
   open questions actually need.
+* **The step is non-fatal**, and the first version of it was not — a review
+  finding. It sits between steps 5 and 6, so a fatal wrapper there sets
+  `pipeline_failed` before steps 6, 7, 9, 10, 10b/c/d, 11–12c and 13, and
+  nothing publishes at all. Position is what makes fatal expensive, not
+  publish-safety. The likely trigger would have been this step's own
+  abort-on-empty-regex guard, fired by a feature rename upstream: a correct
+  guard taking the release down with it is the 2026-08-13 outage exactly, so
+  reintroducing it the same day it was fixed would have been careless.
 
 # panna 0.3.25 (dev)
 
