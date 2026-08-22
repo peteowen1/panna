@@ -46,17 +46,42 @@ strength_cols <- unique(c(
 ))
 strength_cols <- intersect(strength_cols, names(md))
 
-# Drop the derived differentials. Every `*_diff` column is exactly
-# home_<base> - away_<base>, and both sides are already in the export --
-# verified on the first published build: elo_diff == home_elo - away_elo for
-# 100.0% of 58,780 rows. Carrying them costs ~7MB of an asset that is already
-# ~45MB and adds no information a consumer cannot recompute.
+# Drop the derived differentials -- but only the ones we can PROVE are
+# recomputable from columns that survive. The first version of this dropped
+# everything matching `_diff$` on the strength of checking one column
+# (elo_diff == home_elo - away_elo, 100% of 58,780 rows) and generalising.
+# That generalisation was false: `rest_diff` is
+# home_days_since_last - away_days_since_last, and neither operand matches the
+# keep patterns above, so dropping it destroyed the only record of rest in the
+# export -- silently, which is the failure shape this file exists to help
+# investigate.
 #
-# This is the ONE deliberate departure from mirroring 07_predict_fixtures.R's
-# guard set exactly. It is safe precisely because it is derivable: an
-# investigation that wants a diff can compute it, which is not true of anything
-# else here. Do not extend this to non-derived columns without the same proof.
-derived_cols <- grep("_diff$", strength_cols, value = TRUE)
+# So prove it per column instead of asserting it. For each candidate, look for
+# a surviving (home_X, away_X) pair whose difference reproduces it on real
+# rows. Anything that fails to match is KEPT. This needs no hand-maintained
+# base-name map (panna_diff -> sum_panna is not mechanical) and it cannot rot:
+# a new differential added upstream is proved or kept, never silently lost.
+.diff_candidates <- grep("_diff$", strength_cols, value = TRUE)
+.bases <- unique(sub("^home_", "", grep("^home_", strength_cols, value = TRUE)))
+.probe <- utils::head(which(stats::complete.cases(md[, strength_cols, with = FALSE])), 500L)
+derived_cols <- character(0)
+for (dcol in .diff_candidates) {
+  if (!length(.probe)) break
+  dv <- as.numeric(md[[dcol]][.probe])
+  for (b in .bases) {
+    h <- paste0("home_", b); a <- paste0("away_", b)
+    if (!all(c(h, a) %in% strength_cols)) next
+    if (isTRUE(all.equal(dv, as.numeric(md[[h]][.probe]) - as.numeric(md[[a]][.probe]),
+                         tolerance = 1e-8))) {
+      derived_cols <- c(derived_cols, dcol); break
+    }
+  }
+}
+kept_diffs <- setdiff(.diff_candidates, derived_cols)
+if (length(kept_diffs) > 0) {
+  message(sprintf("  keeping %d differential(s) whose operands are NOT exported: %s",
+                  length(kept_diffs), paste(kept_diffs, collapse = ", ")))
+}
 strength_cols <- setdiff(strength_cols, derived_cols)
 
 id_cols <- intersect(c("match_id", "match_date", "league", "season",

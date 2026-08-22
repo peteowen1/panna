@@ -28,12 +28,21 @@ the actual goals, per fixture.
   was wrong by roughly five times — the file is legitimately that size, and
   compression barely moves it (snappy 46.1MB → zstd 43.5MB), so the columns
   are real data rather than bloat.
-* **The derived `*_diff` columns are dropped**, which is the one deliberate
-  departure from mirroring the guard's set. Every one is exactly
-  `home_<base> - away_<base>` and both sides are exported — verified on the
-  published build at 100.0% of rows — so a consumer can recompute any of them.
-  That is worth ~7MB. It is safe only because they are derivable; the test
-  says so, and says that relaxing it to a non-derived column would be a bug.
+* **Derived `*_diff` columns are dropped — but only the ones proved
+  recomputable.** The first attempt dropped all 14 on the strength of checking
+  one (`elo_diff == home_elo - away_elo`, 100% of 58,780 rows) and
+  generalising. Review caught that the generalisation was false: `rest_diff` is
+  `home_days_since_last - away_days_since_last`, and neither operand matches
+  the keep patterns, so dropping it destroyed the only record of rest in the
+  export — silently, which is the failure shape this file exists to help
+  investigate.
+
+  The step now *proves* derivability per column: for each candidate it looks
+  for a surviving `(home_X, away_X)` pair whose difference reproduces it on
+  real rows, and keeps anything that fails to match. No hand-maintained
+  base-name map (`panna_diff` → `sum_panna` is not mechanical), and it cannot
+  rot — a differential added upstream is proved or kept, never silently lost.
+  Against the published build: 13 proved and dropped, `rest_diff` kept.
 * **The step is non-fatal**, and the first version of it was not — a review
   finding. It sits between steps 5 and 6, so a fatal wrapper there sets
   `pipeline_failed` before steps 6, 7, 9, 10, 10b/c/d, 11–12c and 13, and

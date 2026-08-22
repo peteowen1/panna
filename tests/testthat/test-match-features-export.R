@@ -24,12 +24,16 @@ local_no_reload <- function(env = parent.frame()) {
     home_elo = 1500, away_elo = 1400, elo_diff = 100, panna_diff = -1,
     home_avg_psr = 0.5, away_avg_psr = 0.4,
     diff_form = 0.1, some_other_col = 9,
+    # rest_diff-shaped: matches _diff$, but its operands are named so
+    # that no keep-pattern exports them. Dropping it would be lossy.
+    rest_diff = 3, home_days_since_last = 7, away_days_since_last = 4,
     stringsAsFactors = FALSE)
   saveRDS(md, file.path(dir, "04_match_dataset.rds"))
   saveRDS(list(feature_cols = c("home_sum_panna", "away_sum_panna", "home_elo",
                                 "away_elo", "elo_diff", "panna_diff",
                                 "home_avg_psr", "away_avg_psr", "diff_form",
-                                "some_other_col")),
+                                "some_other_col", "rest_diff",
+                                "home_days_since_last", "away_days_since_last")),
           file.path(dir, "05_goals_model.rds"))
   dir
 }
@@ -86,6 +90,27 @@ test_that("04b exports the strength features and the actuals, and nothing else",
   # A feature that is neither strength nor identity must not ride along --
   # otherwise this quietly becomes a full match-dataset dump.
   expect_false("some_other_col" %in% names(out))
+})
+
+test_that("a differential whose operands are NOT exported is kept, not dropped", {
+  # The bug this pins: dropping every `_diff$` column on the strength of
+  # checking one of them. rest_diff is home_days_since_last -
+  # away_days_since_last, and neither operand matches the keep patterns, so
+  # dropping it destroys the only record of rest in the export -- silently.
+  # Derivability has to be proved per column, not assumed from a sibling.
+  skip_if_not_installed("arrow")
+  local_no_reload()
+  d <- .mf_fixture(withr::local_tempdir())
+  on.exit(suppressWarnings(rm("publish_files", envir = globalenv())), add = TRUE)
+
+  .run_04b(d)
+  out <- arrow::read_parquet(file.path(d, "match_features.parquet"))
+
+  # Kept: not recomputable from anything that survives.
+  expect_true("rest_diff" %in% names(out))
+  # And still dropped: the ones that genuinely are recomputable.
+  expect_false("panna_diff" %in% names(out))
+  expect_true(all(c("home_sum_panna", "away_sum_panna") %in% names(out)))
 })
 
 test_that("04b registers exactly one file for publish, and only when asked", {
