@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.25</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.26</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,6 +39,21 @@
       <small>Source: <a href="https://github.com/peteowen1/panna/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.26" id="panna-0326-dev">panna 0.3.26 (dev)<a class="anchor" aria-label="anchor" href="#panna-0326-dev"></a></h2>
+<div class="section level3">
+<h3 id="the-match-dataset-is-no-longer-invisible-from-outside-a-pipeline-run-0-3-26">The match dataset is no longer invisible from outside a pipeline run<a class="anchor" aria-label="anchor" href="#the-match-dataset-is-no-longer-invisible-from-outside-a-pipeline-run-0-3-26"></a></h3>
+<p><code>04_match_dataset.rds</code> is built on the runner and thrown away. Nothing uploads it, so “what did the model actually see for this fixture?” has been unanswerable without a full local run — and step 02 loads a 5.9GB cache, so that is not a casual thing to do. Two investigations stalled on this in the same week, both saying so in as many words: <a href="https://github.com/peteowen1/panna/issues/190" class="external-link">#190</a> (“<code>04_match_dataset.rds</code> is a build artifact and is not available outside a pipeline run”) and <a href="https://github.com/peteowen1/panna/issues/192" class="external-link">#192</a> (“the published <code>predictions.parquet</code> does not [carry actuals], which is why this issue stops at the symptom”).</p>
+<p>New opt-in step <strong>4b</strong> writes <code>match_features.parquet</code> and registers it for <code>predictions-latest</code>: the identity columns, the team-strength features, and the actual goals, per fixture.</p>
+<ul><li>
+<strong>The strength subset is defined by the same regex <code>07_predict_fixtures.R</code> uses</strong> for its degraded-features guard, deliberately duplicated rather than reinvented. A diagnostic describing a different column set than the guard inspects would send the next investigation somewhere the guard never looks.</li>
+<li>
+<strong>It aborts if that regex matches nothing</strong>, rather than writing a valid empty parquet and reporting SUCCESS — the “looks like it worked” shape this pipeline has been bitten by repeatedly.</li>
+<li>Not the whole match dataset: ~170 columns × 58k rows is a large asset to publish for a diagnostic, and the strength subset plus outcomes is what the open questions actually need.</li>
+<li>
+<strong>The step is non-fatal</strong>, and the first version of it was not — a review finding. It sits between steps 5 and 6, so a fatal wrapper there sets <code>pipeline_failed</code> before steps 6, 7, 9, 10, 10b/c/d, 11–12c and 13, and nothing publishes at all. Position is what makes fatal expensive, not publish-safety. The likely trigger would have been this step’s own abort-on-empty-regex guard, fired by a feature rename upstream: a correct guard taking the release down with it is the 2026-08-13 outage exactly, so reintroducing it the same day it was fixed would have been careless.</li>
+</ul></div>
+</div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.25" id="panna-0325-dev">panna 0.3.25 (dev)<a class="anchor" aria-label="anchor" href="#panna-0325-dev"></a></h2>
 <div class="section level3">
