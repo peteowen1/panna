@@ -42,6 +42,11 @@ if (!exists("run_steps", inherits = FALSE)) {
     step_03_splint_creation  = start_step <= 3,
     step_04_rapm             = start_step <= 4,
     step_05_spm              = start_step <= 5,
+    # Fractional step (panna#173), same idiom as the skills pipeline's
+    # step_08b_export_psr_weekly = start_num <= 8.5: not a separate opt-in
+    # boolean, just gated by start_step like every other step here. Reads
+    # cache-opta/05_spm.rds (no refit), so it belongs right after step 5.
+    step_05b_export_spm_coefficients = start_step <= 5.5,
     step_06_xrapm            = start_step <= 6,
     step_07_seasonal_ratings = start_step <= 7,
     step_08_panna_ratings    = start_step <= 8,
@@ -98,9 +103,14 @@ pipeline_failed <- FALSE
 # force-rebuild handling above, before any step runs).
 .write_pipeline_config()
 
-# Wrapper that updates pipeline_failed in parent env
-check_step <- function(step_num, step_name) {
-  if (check_critical_step(step_num, step_name, step_results)) {
+# Wrapper that updates pipeline_failed in parent env. Takes the step_results
+# INDEX (append position), not the "true" step number/label -- those diverge
+# once a fractional step (5b) is inserted between numbered ones. Uses
+# check_critical_step()'s 1-arg form so the CRITICAL message reads the true
+# step/name off the stored result itself rather than trusting a second,
+# separately-typed literal to stay in sync with the index.
+check_step <- function(idx) {
+  if (check_critical_step(step_results[[idx]])) {
     pipeline_failed <<- TRUE
     return(TRUE)
   }
@@ -122,7 +132,7 @@ print_pipeline_banner("OPTA PANNA RATINGS PIPELINE", c(
 step_results[[1]] <- run_step_opta("load_data", 1, function() {
   source("data-raw/player-ratings-opta/01_load_opta_data.R", local = TRUE)
 })
-check_step(1, "load_data")
+check_step(1)
 
 # 6. Step 2: Data Processing ----
 
@@ -130,7 +140,7 @@ if (!isTRUE(pipeline_failed)) {
   step_results[[2]] <- run_step_opta("data_processing", 2, function() {
     source("data-raw/player-ratings-opta/02_data_processing.R", local = TRUE)
   })
-  check_step(2, "data_processing")
+  check_step(2)
 }
 
 # 7. Step 3: Splint Creation ----
@@ -139,7 +149,7 @@ if (!isTRUE(pipeline_failed)) {
   step_results[[3]] <- run_step_opta("splint_creation", 3, function() {
     source("data-raw/player-ratings-opta/03_splint_creation.R", local = TRUE)
   })
-  check_step(3, "splint_creation")
+  check_step(3)
 }
 
 # 8. Step 4: RAPM ----
@@ -148,7 +158,7 @@ if (!isTRUE(pipeline_failed)) {
   step_results[[4]] <- run_step_opta("rapm", 4, function() {
     source("data-raw/player-ratings-opta/04_rapm.R", local = TRUE)
   })
-  check_step(4, "rapm")
+  check_step(4)
 }
 
 # 9. Step 5: SPM ----
@@ -157,34 +167,51 @@ if (!isTRUE(pipeline_failed)) {
   step_results[[5]] <- run_step_opta("spm", 5, function() {
     source("data-raw/player-ratings-opta/05_spm.R", local = TRUE)
   })
-  check_step(5, "spm")
+  check_step(5)
+}
+
+# 9b. Step 5b: Export SPM Coefficients (panna#173) ----
+# Blog-parity export (see export_spm_coefficients_csv() in R/spm_model.R):
+# writes inst/extdata/spm{,_osr,_dsr}_coefficients.csv from the model step 5
+# just cached. Cheap (no refit), so — like the skills pipeline's PSR
+# coefficient write inside its step 7 — it just runs whenever step 5 does,
+# rather than living behind its own opt-in toggle. Not registered in a
+# publish_files accumulator: neither does the PSR/OSR/DSR equivalent (those
+# are committed package data under inst/extdata, not GitHub-Release-published
+# pipeline output).
+
+if (!isTRUE(pipeline_failed)) {
+  step_results[[6]] <- run_step_opta("export_spm_coefficients", "5b", function() {
+    source("data-raw/player-ratings-opta/05b_export_spm_coefficients.R", local = TRUE)
+  })
+  check_step(6)
 }
 
 # 10. Step 6: xRAPM ----
 
 if (!isTRUE(pipeline_failed)) {
-  step_results[[6]] <- run_step_opta("xrapm", 6, function() {
+  step_results[[7]] <- run_step_opta("xrapm", 6, function() {
     source("data-raw/player-ratings-opta/06_xrapm.R", local = TRUE)
   })
-  check_step(6, "xrapm")
+  check_step(7)
 }
 
 # 11. Step 7: Seasonal Ratings ----
 
 if (!isTRUE(pipeline_failed)) {
-  step_results[[7]] <- run_step_opta("seasonal_ratings", 7, function() {
+  step_results[[8]] <- run_step_opta("seasonal_ratings", 7, function() {
     source("data-raw/player-ratings-opta/07_seasonal_ratings.R", local = TRUE)
   })
-  check_step(7, "seasonal_ratings")
+  check_step(8)
 }
 
 # 12. Step 8: Final Ratings ----
 
 if (!isTRUE(pipeline_failed)) {
-  step_results[[8]] <- run_step_opta("panna_ratings", 8, function() {
+  step_results[[9]] <- run_step_opta("panna_ratings", 8, function() {
     source("data-raw/player-ratings-opta/08_panna_ratings.R", local = TRUE)
   })
-  check_step(8, "panna_ratings")
+  check_step(9)
 }
 
 # 13. Step 9: Export Ratings ----
@@ -192,17 +219,17 @@ if (!isTRUE(pipeline_failed)) {
 # Skip export if pipeline failed
 if (isTRUE(pipeline_failed)) {
   message("\nSkipping export: upstream step failed")
-  step_results[[9]] <- list(step = 9, name = "export_ratings", status = "SKIPPED",
+  step_results[[10]] <- list(step = 9, name = "export_ratings", status = "SKIPPED",
                             duration_secs = 0, duration_formatted = "0.0 seconds")
 } else {
-  step_results[[9]] <- run_step_opta("export_ratings", 9, function() {
+  step_results[[10]] <- run_step_opta("export_ratings", 9, function() {
     source("data-raw/player-ratings-opta/09_export_ratings.R", local = TRUE)
   })
   # Last step, but check_step still matters: it sets pipeline_failed, which the
   # workflow's `if (isTRUE(pipeline_failed)) quit(status = 1)` reads — without
   # this, a failed export prints FAILED in the summary yet the job stays green
   # (exactly how ratings-data went silently stale 2026-06-11 → 2026-07-17).
-  check_step(9, "export_ratings")
+  check_step(10)
 }
 
 # 14. Summary ----
