@@ -1,4 +1,4 @@
-# panna 0.3.26 (dev)
+# panna 0.3.28 (dev)
 
 ## A missing events table no longer discards an entire season's matches (panna#166)
 
@@ -42,6 +42,8 @@ index to a single index argument, reading the true step number/name back off
 the stored result — inserting the fractional step had made those two values
 diverge for every step after it, which is exactly the kind of position-based
 mismatch that stays silent until a failure message prints the wrong number.
+
+# panna 0.3.26
 
 ## The match dataset is no longer invisible from outside a pipeline run
 
