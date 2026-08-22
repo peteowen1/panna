@@ -114,7 +114,30 @@ if (length(missing_leagues) > 0) {
       label <- paste(league, season)
       tryCatch({
         lineups <- load_opta_lineups(league, season = season, source = "local")
-        events <- load_opta_events(league, season = season, source = "local")
+        # events is a FALLBACK (see "PRIMARY SOURCE" comment below) -- a
+        # missing events table (vb_error_absent) must not discard a season
+        # whose fixtures + lineups are present. panna#166: AFCON "2021
+        # Cameroon" has 52 fixtures and 2,320 lineup rows but 0 rows in the
+        # derived opta_events.parquet (raw events exist in bulk; they were
+        # never derived into the smaller table -- a pannadata-side gap, not
+        # a scrape failure). Pre-fix, this call threw before
+        # load_opta_fixtures() was reached, and the outer tryCatch (below)
+        # silently dropped the whole season on every run. A real load
+        # failure (any other error class) still aborts this season, as
+        # before.
+        events <- tryCatch(
+          load_opta_events(league, season = season, source = "local"),
+          error = function(e) {
+            if (inherits(e, "vb_error_absent")) {
+              message(sprintf(
+                "  NOTE %s: events table missing (%s) -- proceeding with fixtures-only scores",
+                label, conditionMessage(e)))
+              return(tibble::tibble(match_id = character(0), event_type = character(0),
+                                    team_id = character(0)))
+            }
+            stop(e)
+          }
+        )
         fixtures_all <- load_opta_fixtures(league, season = season, source = "local")
 
         if (is.null(lineups) || nrow(lineups) == 0) next

@@ -1,5 +1,30 @@
 # panna 0.3.26 (dev)
 
+## A missing events table no longer discards an entire season's matches (panna#166)
+
+`01_build_fixture_results.R` loaded `events` before `fixtures` in its per-
+`(league, season)` loop, and the whole block is wrapped in a `tryCatch` that
+only `message()`s on error. When the derived `opta_events.parquet` table is
+missing for one season, `load_opta_events()` threw before
+`load_opta_fixtures()` was ever reached, and the outer handler silently
+dropped every match for that season — on every run.
+
+Confirmed live for AFCON "2021 Cameroon": 52 fixtures and 2,320 lineup rows
+in the Opta data, 86,748 raw events in `events_AFCON.parquet`, but 0 rows in
+the derived `opta_events.parquet` (the raw events were never derived into the
+smaller table — a pannadata-side gap, not a scrape failure or a label
+mismatch). Every one of those 52 matches vanished from the results dataset
+each time the predictions pipeline ran.
+
+`events` is a fallback — the code's own comments call `opta_fixtures.parquet`
+the primary source for scores, used only when fixtures has no score for a
+match. So a `vb_error_absent` from `load_opta_events()` (a genuinely missing
+table) is now caught locally and treated as zero events rather than as a
+fatal error for the season: fixtures-backed scores still resolve normally,
+and only matches with no score from *either* source still get dropped (as
+before, with the existing warning). A real load failure (any other error
+class) still aborts the season, as before.
+
 ## The match dataset is no longer invisible from outside a pipeline run
 
 `04_match_dataset.rds` is built on the runner and thrown away. Nothing uploads
