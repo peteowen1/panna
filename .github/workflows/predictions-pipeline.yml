@@ -274,6 +274,12 @@ jobs:
               # blog-latest (pannadata build-blog-data passes it to R2 as
               # football/shootout-wpa.parquet). Cheap (thin data) and additive;
               # absent for seasons with no shootouts in blog comps.
+              # Publish the per-fixture strength features the models consume.
+              # 04_match_dataset.rds is built on the runner and discarded, so
+              # without this there is no way to ask what the model saw for a
+              # given fixture outside a live run -- panna#190 and panna#192 both
+              # stalled on exactly that. Small, additive, no existing consumer.
+              step_04b_export_match_features = TRUE,
               step_10d_export_shootout_wpa   = TRUE,
               # WC2026 simulation + blog export. Refresh weekly with the rest
               # of the predictions chain so the WC tab tracks the latest match

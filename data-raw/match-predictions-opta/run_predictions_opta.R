@@ -53,6 +53,7 @@ if (!exists("run_steps", inherits = FALSE)) {
     step_02b_team_skill_features     = TRUE,   # Team-level skill aggregations
     step_03_team_rolling_features    = TRUE,
     step_04_build_match_dataset      = TRUE,
+    step_04b_export_match_features   = FALSE,  # Opt-in: publish the strength features per fixture (diagnostic)
     step_05_fit_goals_model          = TRUE,
     step_06_fit_outcome_model        = TRUE,
     step_07_predict_fixtures         = TRUE,
@@ -304,6 +305,32 @@ step_results[[5]] <- run_pipeline_step("fit_goals_model", 5, function() {
   source("data-raw/match-predictions-opta/05_fit_goals_model.R", local = TRUE)
 })
 check_pred_critical(step_results[[5]])
+
+# 8b. Step 4b: Export Match Features (diagnostic) ----
+# Runs AFTER step 5, not after step 4, because it reads 05_goals_model.rds for
+# the authoritative feature_cols. Numbered 4b because that is the artifact it
+# describes -- the step-04 match dataset -- and the number should say what the
+# thing is, not when it happens to run.
+#
+# NON-FATAL, and the reasoning matters because the first version of this got it
+# wrong. It reads caches and writes one parquet, so a failure here says nothing
+# about the predictions -- but a fatal wrapper at THIS position sets
+# pipeline_failed before steps 6, 7, 9, 10, 10b/c/d, 11-12c and 13, so every
+# one of them prints "SKIPPED (previous step failed)" and nothing publishes at
+# all. Position is what makes fatal expensive here, not publish-safety: step 12
+# registers its files at the very end too, which is exactly why it is safe to
+# make non-fatal, and 4b registers at :83 after a successful write for the same
+# reason.
+#
+# The trigger would most likely be this step's OWN abort-on-empty-regex guard,
+# fired by a feature rename upstream. A correct guard taking the release down
+# with it is the 2026-08-13 outage repeated: build_knockout_lookup()'s
+# invariant was right, and it still cost eight days of publishing because a
+# side branch was allowed to be fatal.
+
+step_results[["4b"]] <- run_pred_step_optional("export_match_features", "4b", function() {
+  source("data-raw/match-predictions-opta/04b_export_match_features.R", local = TRUE)
+})
 
 # 10. Step 6: Fit Outcome Model ----
 

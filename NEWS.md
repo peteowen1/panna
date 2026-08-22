@@ -1,3 +1,39 @@
+# panna 0.3.26 (dev)
+
+## The match dataset is no longer invisible from outside a pipeline run
+
+`04_match_dataset.rds` is built on the runner and thrown away. Nothing uploads
+it, so "what did the model actually see for this fixture?" has been
+unanswerable without a full local run — and step 02 loads a 5.9GB cache, so
+that is not a casual thing to do. Two investigations stalled on this in the
+same week, both saying so in as many words: #190 ("`04_match_dataset.rds` is a
+build artifact and is not available outside a pipeline run") and #192 ("the
+published `predictions.parquet` does not [carry actuals], which is why this
+issue stops at the symptom").
+
+New opt-in step **4b** writes `match_features.parquet` and registers it for
+`predictions-latest`: the identity columns, the team-strength features, and
+the actual goals, per fixture.
+
+* **The strength subset is defined by the same regex `07_predict_fixtures.R`
+  uses** for its degraded-features guard, deliberately duplicated rather than
+  reinvented. A diagnostic describing a different column set than the guard
+  inspects would send the next investigation somewhere the guard never looks.
+* **It aborts if that regex matches nothing**, rather than writing a valid
+  empty parquet and reporting SUCCESS — the "looks like it worked" shape this
+  pipeline has been bitten by repeatedly.
+* Not the whole match dataset: ~170 columns × 58k rows is a large asset to
+  publish for a diagnostic, and the strength subset plus outcomes is what the
+  open questions actually need.
+* **The step is non-fatal**, and the first version of it was not — a review
+  finding. It sits between steps 5 and 6, so a fatal wrapper there sets
+  `pipeline_failed` before steps 6, 7, 9, 10, 10b/c/d, 11–12c and 13, and
+  nothing publishes at all. Position is what makes fatal expensive, not
+  publish-safety. The likely trigger would have been this step's own
+  abort-on-empty-regex guard, fired by a feature rename upstream: a correct
+  guard taking the release down with it is the 2026-08-13 outage exactly, so
+  reintroducing it the same day it was fixed would have been careless.
+
 # panna 0.3.25 (dev)
 
 ## versebus: four silent-failure defects ported from bouncer's review (panna#187)
