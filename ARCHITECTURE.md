@@ -136,6 +136,9 @@ data-raw/player-ratings-opta/
   03_splint_creation.R    Segment matches into constant-lineup splints
   04_rapm.R               Base RAPM (ridge on xG differential)
   05_spm.R                Opta SPM (80+ features, blended elastic net + XGBoost)
+  05b_export_spm_coefficients.R  Export SPM glmnet coefficients to inst/extdata
+                          CSVs for live per-match blog scoring (panna#173) --
+                          fractional step, runs whenever step 5 does
   06_xrapm.R              xRAPM (RAPM shrunk toward SPM) + multi-target variant
   07_seasonal_ratings.R   Per-season decay-weighted rating snapshots
   08_panna_ratings.R      Final combined ratings (panna = xRAPM)
