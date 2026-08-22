@@ -24,6 +24,24 @@ fatal error for the season: fixtures-backed scores still resolve normally,
 and only matches with no score from *either* source still get dropped (as
 before, with the existing warning). A real load failure (any other error
 class) still aborts the season, as before.
+## SPM coefficients now wired into the routine pipeline run (panna#173)
+
+`export_spm_coefficients_csv()` and its `05b_export_spm_coefficients.R`
+caller (`inst/extdata/spm{,_osr,_dsr}_coefficients.csv`, same `{stat_name,
+beta, sd}` shape as `blend_{psr,osr,dsr}_coefficients.csv`) already existed
+but were never called from `run_pipeline_opta.R` — a completely standalone
+script nothing invoked. Added `step_05b_export_spm_coefficients` as a
+fractional step (`start_step <= 5.5`), same idiom as the skills pipeline's
+`step_08b_export_psr_weekly`, running right after step 5 (SPM) since it only
+reads `cache-opta/05_spm.rds`, no refit. Not registered in a `publish_files`
+accumulator — neither is the PSR/OSR/DSR equivalent; these are committed
+package data under `inst/extdata`, not GitHub-Release-published pipeline
+output. `check_step()` in the driver was refactored from a
+`(step_num, step_name)` pair that happened to double as the `step_results`
+index to a single index argument, reading the true step number/name back off
+the stored result — inserting the fractional step had made those two values
+diverge for every step after it, which is exactly the kind of position-based
+mismatch that stays silent until a failure message prints the wrong number.
 
 ## The match dataset is no longer invisible from outside a pipeline run
 
