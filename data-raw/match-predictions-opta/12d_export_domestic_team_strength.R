@@ -121,12 +121,32 @@ message("\n=== Exporting domestic + cup team strength (Tiento, all clubs) ===\n"
     data.table::setorder(dt, team, -N, league)
     dt[, .SD[1L], by = team]
   }
+  # .pick_one() keeps only the highest-N (team, team_id) row per team, so a
+  # club with two DIFFERENT ids inside the SAME league (a mid-season Opta id
+  # change, or a partial team_id backfill in 01_fixture_results.rds) has its
+  # minority id silently discarded -- with no trace that it happened. That
+  # matters here specifically because the discarded id might be the one that
+  # actually resolves against opta_lineups.parquet's team_id, in which case
+  # a wrong-but-plausible-looking squad would be exactly as silent as the
+  # merge this whole step_id rework exists to catch. Log it before picking.
+  .log_split_ids <- function(dt, pool_label) {
+    split_id <- dt[, .(n_id = data.table::uniqueN(team_id)), by = .(team, league)][n_id > 1L]
+    if (nrow(split_id) > 0L) {
+      message(sprintf(
+        "  NOTE: %d team(s) have >1 team_id within one %s league (kept the most-frequent id): %s",
+        nrow(split_id), pool_label, paste(split_id$team, collapse = ", ")))
+    }
+  }
+  .log_split_ids(dom, "domestic")
+  .log_split_ids(cup, "cup")
+
   dom1 <- .pick_one(dom)
   cup1 <- .pick_one(cup)
 
   # uniqueN(league), not .N: now that the tally is split by team_id too, a
   # single club with two ids in ONE league would otherwise read as "matched >1
-  # domestic league" and print a note about a thing that did not happen.
+  # domestic league" and print a note about a thing that did not happen --
+  # that specific case is what .log_split_ids() above reports instead.
   multi_dom <- dom[, .(n_lg = data.table::uniqueN(league)), by = team][n_lg > 1L]
   if (nrow(multi_dom) > 0L) {
     message(sprintf(
@@ -440,18 +460,37 @@ sq_epr <- {
 
 teams <- team_league$team
 team_ids <- team_league$team_id
-name_fallback <- character(0)   # teams resolved by name because no id was available
+# Two DIFFERENT conditions land in a name-join fallback, and 01_fixture_results.R
+# (section 6b) already names the second one as worth a loud warning on its own:
+# a fixture team_id absent from opta_lineups' team_id set is "the silent
+# split-identity risk" -- a promoted team that hasn't played yet, about to
+# start producing a lineup variant once it does. Conflating it with "this team
+# simply has no team_id" would bury exactly the signal step 01 already flags.
+no_id <- character(0)          # tid is NA/empty -- no id on the fixture side at all
+unresolved_id <- character(0)  # tid is present but absent from opta_lineups' ids
 agg_rows <- vector("list", length(teams))
 for (i in seq_along(teams)) {
   tm  <- teams[i]
   tid <- team_ids[i]
-  if (!is.na(tid) && nzchar(tid) && tid %in% lu_known_ids) {
+  has_id <- !is.na(tid) && nzchar(tid)
+  if (has_id && tid %in% lu_known_ids) {
     lu_team <- lu_all[.(tid)]
+  } else if (has_id) {
+    # tid EXISTS but is not among opta_lineups' ids -- 01_fixture_results.R
+    # names this "the silent split-identity risk" and warns loudly on it for
+    # a reason: falling back to a name join here can silently match a
+    # DIFFERENT real club that happens to share this name, because only ONE
+    # id is present in that slice -- the structural >1-team_id guard below
+    # cannot see a single-id wrong match. Do NOT attempt the name join; treat
+    # this exactly like "no lineups for this club" (empty squad), which the
+    # min-squad guard is built to catch and refuse to publish.
+    lu_team <- lu_all[0L]
+    unresolved_id <- c(unresolved_id, tm)
   } else {
-    # No usable id: fall back to the old name join, but SAY SO. This is the
-    # path that silently merged clubs before, so it must never be invisible.
+    # No id at all: the name join is the only option, and it is the
+    # documented, intentional degrade path -- but still SAY SO.
     lu_team <- if (tm %in% lu_known_teams) lu_all[team_name == tm] else lu_all[0L]
-    name_fallback <- c(name_fallback, tm)
+    no_id <- c(no_id, tm)
   }
   # Structural, not a magic threshold: one row of this export is one club, so
   # its lineup slice must contain exactly one team_id. A size ceiling would
@@ -511,13 +550,24 @@ for (i in seq_along(teams)) {
 }
 agg <- data.table::rbindlist(agg_rows)
 
+n_fallback <- length(no_id) + length(unresolved_id)
 message(sprintf("  Squad join: %d/%d team(s) resolved by team_id",
-                length(teams) - length(name_fallback), length(teams)))
-if (length(name_fallback) > 0L) {
-  message(sprintf(paste("  NOTE: %d team(s) had no usable team_id and fell back to the",
+                length(teams) - n_fallback, length(teams)))
+if (length(no_id) > 0L) {
+  message(sprintf(paste("  NOTE: %d team(s) have no team_id at all and fell back to the",
                         "NAME join -- these are the only rows where distinct clubs",
                         "sharing a name could still merge: %s"),
-                  length(name_fallback), paste(name_fallback, collapse = ", ")))
+                  length(no_id), paste(no_id, collapse = ", ")))
+}
+if (length(unresolved_id) > 0L) {
+  message(sprintf(paste("  WARNING: %d team(s) have a team_id that does NOT appear in",
+                        "opta_lineups.parquet -- treated as having no lineups (squad_n=0)",
+                        "rather than risking a name-join match against a different club.",
+                        "This is 01_fixture_results.R's 'silent split-identity risk' (a",
+                        "team_id namespace drift between fixtures and lineups, not a",
+                        "missing id) -- expect the min-squad guard to abort on these unless",
+                        "opta_lineups.parquet is refreshed: %s"),
+                  length(unresolved_id), paste(unresolved_id, collapse = ", ")))
 }
 
 strength <- merge(team_league, agg, by = "team", all.x = TRUE)

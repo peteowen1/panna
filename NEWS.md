@@ -39,8 +39,21 @@ new guard is structural instead -- one row of the export is one club, so its
 lineup slice must contain exactly one `team_id` -- and cannot be fooled by a
 merge that happens to look plausible.
 
-Three regression tests cover the merge, the spelling mismatch, and the
-fallback path; all three were confirmed to fail with the fix reverted.
+Two rounds of review found the fallback path itself had a residual gap: a
+`team_id` present on the fixture side but absent from `opta_lineups.parquet`
+(a scrape-lag case `01_fixture_results.R` already calls "the silent
+split-identity risk") was falling back to a plain name join -- which could
+silently match a *different* real club sharing that name, since only one id
+is present in that slice and the multi-id structural guard can't see a
+single-id wrong match. Fixed by treating an unresolved (but present) id as
+"no lineups for this club" rather than attempting a name match, so it hits
+the min-squad guard instead of publishing quietly. A second gap -- `.pick_one()`
+silently discarding a team_id split within a single league, with no log line
+-- is now reported before it's collapsed.
+
+Four regression tests cover the merge, the spelling mismatch, the
+name-fallback path, and the unresolved-id case; all four were confirmed to
+fail with the fix reverted.
 
 Version heading realigned to `DESCRIPTION` (0.3.32); the intervening bumps
 came from the PR hook without their own NEWS sections.

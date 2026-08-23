@@ -711,3 +711,43 @@ test_that("the name-fallback path refuses to merge two clubs into one squad", {
   expect_error(.run_12d(cache_dir, opta_dir, skills_dir),
                "distinct clubs sharing a name")
 })
+
+
+test_that("an unresolved (present-but-unmatched) team_id does not fall back to a name match against a same-named club", {
+  # Code-review finding on the team_id fix: a team_id that EXISTS on the
+  # fixture side but is absent from opta_lineups.parquet (e.g. this club's
+  # matches haven't been scraped yet -- 01_fixture_results.R's own "silent
+  # split-identity risk") must NOT fall back to a plain team_name join. If it
+  # did, and another real club shares the name, the wrong club's players
+  # would be silently priced in -- and the >1-team_id structural guard cannot
+  # catch it, because only ONE id is present in that slice. The safe behavior
+  # is to treat it as squad_n = 0 and let the min-squad guard abort.
+  skip_if_not_installed("arrow")
+  local_no_reload()
+  cache_dir <- withr::local_tempdir()
+  opta_dir <- withr::local_tempdir()
+  skills_dir <- withr::local_tempdir()
+  .dts_full_fixture(cache_dir, opta_dir, skills_dir)
+  on.exit(suppressWarnings(rm("publish_files", envir = globalenv())), add = TRUE)
+
+  # Give TeamB a fixture-side id that opta_lineups has never heard of.
+  fr <- readRDS(file.path(cache_dir, "01_fixture_results.rds"))
+  fr$home_team_id[fr$home_team == "TeamB"] <- "id_TeamB_NOT_IN_LINEUPS"
+  fr$away_team_id[fr$away_team == "TeamB"] <- "id_TeamB_NOT_IN_LINEUPS"
+  saveRDS(fr, file.path(cache_dir, "01_fixture_results.rds"))
+
+  # A DIFFERENT real club that happens to share TeamB's name -- the trap a
+  # name-join fallback would fall into.
+  lu_path <- file.path(opta_dir, "opta_lineups.parquet")
+  lu <- as.data.frame(arrow::read_parquet(lu_path, mmap = FALSE))
+  intruder <- lu[lu$team_id == "id_TeamC", ]
+  intruder$team_id    <- "id_TeamB_IMPOSTOR"
+  intruder$team_name  <- "TeamB"
+  intruder$match_id   <- paste0(intruder$match_id, "_impostor")
+  intruder$player_id  <- paste0(intruder$player_id, "_impostor")
+  arrow::write_parquet(rbind(lu, intruder), lu_path)
+
+  # squad_n < MIN_PLAUSIBLE_SQUAD_N (3L in this harness) must abort, NOT
+  # silently publish the impostor's 4-player squad under TeamB.
+  expect_error(.run_12d(cache_dir, opta_dir, skills_dir), "found no lineups for them")
+})
