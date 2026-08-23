@@ -541,3 +541,51 @@ test_that("12d aborts rather than shipping a team with an impossible squad (inte
   expect_error(.run_12d(cache_dir, opta_dir, skills_dir, publish = FALSE),
               "broken team_name join")
 })
+
+
+# --- Elo-constant drift guard -----------------------------------------------
+# 12d re-derives final_elos by duplicating 03_team_rolling_features.R's
+# compute_match_elos() call, because step 3 keeps only the per-match features it
+# derives and never persists the team-state vector a relegated cohort needs.
+#
+# That duplication is unavoidable today, but "MUST be kept in sync by hand" is
+# exactly the instruction that does not get followed -- this repo has already
+# been bitten by a vendored file drifting, a header comment claiming coverage it
+# no longer had, and a `keep` vector nothing read. If step 3's constants are
+# retuned and 12d's literals are not, domestic Tiento silently uses a DIFFERENT
+# Elo from the one the predictions use, and nothing fails.
+#
+# So assert it instead of asking for it.
+
+test_that("12d's Elo literals still match 03_team_rolling_features.R", {
+  step3 <- testthat::test_path("..", "..", "data-raw", "match-predictions-opta",
+                               "03_team_rolling_features.R")
+  step12d <- testthat::test_path("..", "..", "data-raw", "match-predictions-opta",
+                                 "12d_export_domestic_team_strength.R")
+  skip_if_not(file.exists(step3) && file.exists(step12d), "pipeline scripts not present")
+
+  # regmatches rather than a sub() backreference: this file is written through
+  # shells that mangle backslash escapes, and a broken backreference silently
+  # returns a control character that compares unequal to everything -- which
+  # would make this guard fail for the wrong reason.
+  grab <- function(path, pattern) {
+    ln <- grep(pattern, readLines(path, warn = FALSE), value = TRUE)
+    if (!length(ln)) return(NA_character_)
+    m <- regmatches(ln[1], regexpr("[0-9]+", ln[1]))
+    if (!length(m)) NA_character_ else m
+  }
+
+  expect_identical(grab(step3, "^ELO_K[[:space:]]*<-"),        "20")
+  expect_identical(grab(step3, "^ELO_HOME_ADV[[:space:]]*<-"), "88")
+  expect_identical(grab(step3, "^ELO_INITIAL[[:space:]]*<-"),  "1500")
+
+  src <- readLines(step12d, warn = FALSE)
+  call_line <- grep("k = .*home_advantage = .*initial_elo = ", src, value = TRUE)
+  expect_length(call_line, 1L)
+  # If this fails, step 3 was retuned and 12d was not. Update 12d's literals to
+  # match -- do NOT relax this test. A mismatch means domestic Tiento is built
+  # from a different Elo than the predictions use.
+  expect_match(call_line, "k = 20", fixed = TRUE)
+  expect_match(call_line, "home_advantage = 88", fixed = TRUE)
+  expect_match(call_line, "initial_elo = 1500", fixed = TRUE)
+})
