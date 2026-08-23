@@ -44,9 +44,11 @@ if (!exists("domestic_codes")) {
 }
 if (!exists("cup_codes")) cup_codes <- PANNA_LEAGUE_GROUPS$continental
 if (!exists("as_of_domestic")) as_of_domestic <- Sys.Date()
-# Below this, a squad is not a small roster -- it is a broken team_name join
-# (announced_name mismatch, opta_lineups drift). 26-man cap makes even a
-# genuinely thin squad clear the bar comfortably.
+# Below this, a squad is not a small roster -- the squad join found nothing.
+# Since the join is keyed on team_id (section 4), that means opta_lineups has
+# no rows for this club at all, not a spelling mismatch: a club promoted from
+# a division panna does not scrape has an Elo seed but no players. 26-man cap
+# makes even a genuinely thin squad clear the bar comfortably.
 if (!exists("MIN_PLAUSIBLE_SQUAD_N")) MIN_PLAUSIBLE_SQUAD_N <- 5L
 
 TIENTO_WEIGHTS <- c(panna = 0.40, epr = 0.20, elo = 0.30, psr = 0.10)  # DO NOT re-fit; 12_export_wc2026_blog.R:359 is the one derivation
@@ -80,19 +82,32 @@ message("\n=== Exporting domestic + cup team strength (Tiento, all clubs) ===\n"
   scope <- c(domestic_codes, cup_codes)
   fr <- fr[league %in% scope]
   if (nrow(fr) == 0L) {
-    return(data.table::data.table(team = character(0), league = character(0),
+    return(data.table::data.table(team = character(0), team_id = character(0),
+                                   league = character(0),
                                    is_domestic_league = logical(0), cur_sey = numeric(0)))
   }
   cur_sey_by_league <- fr[, .(cur_sey = max(season_end_year, na.rm = TRUE)), by = league]
   fr <- merge(fr, cur_sey_by_league, by = "league")
   fr <- fr[season_end_year == cur_sey]
 
+  # team_id, not just team NAME. Opta reuses club names across competitions and
+  # countries: "Liverpool" is Liverpool FC, Liverpool FC Women (WSL) and
+  # Liverpool FC Montevideo; "Arsenal" is Arsenal FC, Arsenal WFC and Arsenal de
+  # Sarandi. Keying the squad join on the name merged all of them into one
+  # 168-player "Liverpool" (vs 69 real), about a quarter of it the women's
+  # squad -- see the id-keyed join in section 4. Step 01 backfills these ids
+  # (its section 6b), but tolerate their absence rather than dropping teams:
+  # a NA id falls back to the name join and is logged, never silently merged.
+  .id_col <- function(nm) if (nm %in% names(fr)) fr[[nm]] else NA_character_
   rows <- data.table::rbindlist(list(
-    fr[, .(team = home_team, league, cur_sey)],
-    fr[, .(team = away_team, league, cur_sey)]
+    fr[, .(team = home_team, team_id = .id_col("home_team_id"), league, cur_sey)],
+    fr[, .(team = away_team, team_id = .id_col("away_team_id"), league, cur_sey)]
   ))
   rows <- rows[!is.na(team) & nzchar(team)]
-  tally <- rows[, .N, by = .(team, league, cur_sey)]
+  rows[is.na(team_id) | !nzchar(team_id), team_id := NA_character_]
+  # Grouping by team_id as well splits a shared name into its real clubs; the
+  # modal-row pick below then keeps the one this league actually means.
+  tally <- rows[, .N, by = .(team, team_id, league, cur_sey)]
 
   is_dom_league <- tally$league %in% domestic_codes
   dom <- tally[is_dom_league]
@@ -106,10 +121,33 @@ message("\n=== Exporting domestic + cup team strength (Tiento, all clubs) ===\n"
     data.table::setorder(dt, team, -N, league)
     dt[, .SD[1L], by = team]
   }
+  # .pick_one() keeps only the highest-N (team, team_id) row per team, so a
+  # club with two DIFFERENT ids inside the SAME league (a mid-season Opta id
+  # change, or a partial team_id backfill in 01_fixture_results.rds) has its
+  # minority id silently discarded -- with no trace that it happened. That
+  # matters here specifically because the discarded id might be the one that
+  # actually resolves against opta_lineups.parquet's team_id, in which case
+  # a wrong-but-plausible-looking squad would be exactly as silent as the
+  # merge this whole step_id rework exists to catch. Log it before picking.
+  .log_split_ids <- function(dt, pool_label) {
+    split_id <- dt[, .(n_id = data.table::uniqueN(team_id)), by = .(team, league)][n_id > 1L]
+    if (nrow(split_id) > 0L) {
+      message(sprintf(
+        "  NOTE: %d team(s) have >1 team_id within one %s league (kept the most-frequent id): %s",
+        nrow(split_id), pool_label, paste(split_id$team, collapse = ", ")))
+    }
+  }
+  .log_split_ids(dom, "domestic")
+  .log_split_ids(cup, "cup")
+
   dom1 <- .pick_one(dom)
   cup1 <- .pick_one(cup)
 
-  multi_dom <- dom[, .N, by = team][N > 1L]
+  # uniqueN(league), not .N: now that the tally is split by team_id too, a
+  # single club with two ids in ONE league would otherwise read as "matched >1
+  # domestic league" and print a note about a thing that did not happen --
+  # that specific case is what .log_split_ids() above reports instead.
+  multi_dom <- dom[, .(n_lg = data.table::uniqueN(league)), by = team][n_lg > 1L]
   if (nrow(multi_dom) > 0L) {
     message(sprintf(
       "  NOTE: %d team(s) matched >1 domestic league this season (kept the most-frequent): %s",
@@ -121,8 +159,8 @@ message("\n=== Exporting domestic + cup team strength (Tiento, all clubs) ===\n"
   cup_only <- cup1[!team %in% dom_teams]
 
   out <- data.table::rbindlist(list(
-    dom1[, .(team, league, is_domestic_league = TRUE, cur_sey)],
-    cup_only[, .(team, league, is_domestic_league = FALSE, cur_sey)]
+    dom1[, .(team, team_id, league, is_domestic_league = TRUE, cur_sey)],
+    cup_only[, .(team, team_id, league, is_domestic_league = FALSE, cur_sey)]
   ))
   out
 }
@@ -282,7 +320,8 @@ message("\n=== Exporting domestic + cup team strength (Tiento, all clubs) ===\n"
   small_squads <- dt[squad_n < min_squad_n]
   if (nrow(small_squads) > 0L) {
     stop(sprintf(paste("domestic_team_strength: %d team(s) have implausibly small squads",
-                       "(<%d players -- broken team_name join, not a small squad): %s"),
+                       "(<%d players -- the team_id squad join found no lineups for them,",
+                       "not a genuinely small squad): %s"),
                  nrow(small_squads), min_squad_n,
                  paste(sprintf("%s(%d)", small_squads$team, small_squads$squad_n), collapse = ", ")),
          call. = FALSE)
@@ -376,10 +415,11 @@ if (!file.exists(lineups_path)) {
 }
 lu_all <- as.data.table(read_parquet(
   lineups_path,
-  col_select = c("team_name", "match_id", "match_date", "player_id",
+  col_select = c("team_id", "team_name", "match_id", "match_date", "player_id",
                 "player_name", "position", "is_starter", "minutes_played",
                 "competition")))
-data.table::setkey(lu_all, team_name)
+data.table::setkey(lu_all, team_id)
+lu_known_ids <- unique(lu_all$team_id)
 lu_known_teams <- unique(lu_all$team_name)
 
 cp_path <- file.path(opta_data_dir(), "career_panna.parquet")
@@ -419,10 +459,58 @@ sq_epr <- {
 .wsum <- function(x, w) sum(w * data.table::fifelse(is.na(x), 0, x))
 
 teams <- team_league$team
+team_ids <- team_league$team_id
+# Two DIFFERENT conditions land in a name-join fallback, and 01_fixture_results.R
+# (section 6b) already names the second one as worth a loud warning on its own:
+# a fixture team_id absent from opta_lineups' team_id set is "the silent
+# split-identity risk" -- a promoted team that hasn't played yet, about to
+# start producing a lineup variant once it does. Conflating it with "this team
+# simply has no team_id" would bury exactly the signal step 01 already flags.
+no_id <- character(0)          # tid is NA/empty -- no id on the fixture side at all
+unresolved_id <- character(0)  # tid is present but absent from opta_lineups' ids
 agg_rows <- vector("list", length(teams))
 for (i in seq_along(teams)) {
-  tm <- teams[i]
-  lu_team <- if (tm %in% lu_known_teams) lu_all[.(tm)] else lu_all[0L]
+  tm  <- teams[i]
+  tid <- team_ids[i]
+  has_id <- !is.na(tid) && nzchar(tid)
+  if (has_id && tid %in% lu_known_ids) {
+    lu_team <- lu_all[.(tid)]
+  } else if (has_id) {
+    # tid EXISTS but is not among opta_lineups' ids -- 01_fixture_results.R
+    # names this "the silent split-identity risk" and warns loudly on it for
+    # a reason: falling back to a name join here can silently match a
+    # DIFFERENT real club that happens to share this name, because only ONE
+    # id is present in that slice -- the structural >1-team_id guard below
+    # cannot see a single-id wrong match. Do NOT attempt the name join; treat
+    # this exactly like "no lineups for this club" (empty squad), which the
+    # min-squad guard is built to catch and refuse to publish.
+    lu_team <- lu_all[0L]
+    unresolved_id <- c(unresolved_id, tm)
+  } else {
+    # No id at all: the name join is the only option, and it is the
+    # documented, intentional degrade path -- but still SAY SO.
+    lu_team <- if (tm %in% lu_known_teams) lu_all[team_name == tm] else lu_all[0L]
+    no_id <- c(no_id, tm)
+  }
+  # Structural, not a magic threshold: one row of this export is one club, so
+  # its lineup slice must contain exactly one team_id. A size ceiling would
+  # have to guess where a real squad ends and a merged one begins; this cannot
+  # be fooled by a merge that happens to look plausible.
+  if (nrow(lu_team) > 0L && data.table::uniqueN(lu_team$team_id) > 1L) {
+    stop(sprintf(paste("domestic_team_strength: squad slice for %s covers %d distinct",
+                       "team_id(s) (%s) -- distinct clubs sharing a name have been",
+                       "merged into one squad. Refusing to publish."),
+                 tm, data.table::uniqueN(lu_team$team_id),
+                 paste(utils::head(unique(lu_team$team_id), 4L), collapse = ", ")),
+         call. = FALSE)
+  }
+  # The NAME to filter on comes from the lineups slice, not from the fixture
+  # side. build_team_expected_minutes() does `lineups[team_name == team]`
+  # internally, and the two sources spell clubs differently -- fixtures say
+  # "Le Mans FC" and "SV 07 Elversberg" where lineups say "Le Mans" and
+  # "Elversberg". Passing the fixture spelling emptied both squads to 0
+  # players, which is what the min-squad guard caught on the 2026-08-23 run.
+  em_team <- if (nrow(lu_team) > 0L) lu_team$team_name[1L] else tm
   # lookback_days = 1095L, NOT the 730L library default. announced_squads.R
   # passes 1095 at both of its build_team_expected_minutes() call sites, so
   # taking the default here would have quietly made domestic Tiento mean
@@ -432,7 +520,7 @@ for (i in seq_along(teams)) {
   # bar, which matters most for exactly the thin-history clubs this step
   # handles specially.
   em <- panna::build_team_expected_minutes(
-    team = tm, lineups = lu_team, as_of = as_of_domestic,
+    team = em_team, lineups = lu_team, as_of = as_of_domestic,
     international_only = FALSE, lookback_days = 1095L
   )
   if (is.null(em) || nrow(em) == 0L || !"player_id" %in% names(em)) {
@@ -461,6 +549,26 @@ for (i in seq_along(teams)) {
   )
 }
 agg <- data.table::rbindlist(agg_rows)
+
+n_fallback <- length(no_id) + length(unresolved_id)
+message(sprintf("  Squad join: %d/%d team(s) resolved by team_id",
+                length(teams) - n_fallback, length(teams)))
+if (length(no_id) > 0L) {
+  message(sprintf(paste("  NOTE: %d team(s) have no team_id at all and fell back to the",
+                        "NAME join -- these are the only rows where distinct clubs",
+                        "sharing a name could still merge: %s"),
+                  length(no_id), paste(no_id, collapse = ", ")))
+}
+if (length(unresolved_id) > 0L) {
+  message(sprintf(paste("  WARNING: %d team(s) have a team_id that does NOT appear in",
+                        "opta_lineups.parquet -- treated as having no lineups (squad_n=0)",
+                        "rather than risking a name-join match against a different club.",
+                        "This is 01_fixture_results.R's 'silent split-identity risk' (a",
+                        "team_id namespace drift between fixtures and lineups, not a",
+                        "missing id) -- expect the min-squad guard to abort on these unless",
+                        "opta_lineups.parquet is refreshed: %s"),
+                  length(unresolved_id), paste(unresolved_id, collapse = ", ")))
+}
 
 strength <- merge(team_league, agg, by = "team", all.x = TRUE)
 for (m in c("panna", "offense", "defense", "epr", "psr", "elo")) {

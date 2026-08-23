@@ -1,4 +1,63 @@
-# panna 0.3.28 (dev)
+# panna 0.3.32 (dev)
+
+## Domestic Tiento squads join on team_id, not club name (panna#193 follow-up)
+
+The first live run of step 12d (2026-08-23) refused to publish, and it was
+right to. Two clubs came back with **zero** players and the min-squad guard
+stopped the export. Both symptoms traced to one cause: the squad join was
+keyed on club NAME, and Opta reuses names freely across competitions and
+countries.
+
+It was wrong in both directions at once.
+
+*Too much.* `Liverpool` matches three Opta clubs -- Liverpool FC, Liverpool FC
+Women (WSL) and Liverpool FC Montevideo. Inside the 1095-day window that built
+a **168-player** squad against a real 69, roughly a quarter of it the women's
+team. `Arsenal` was 155 against 73 (Arsenal WFC + Arsenal de Sarandi) and
+`Everton` 155 against 63. Since Tiento is a minutes-weighted mean of player
+ratings, this dragged exactly the biggest clubs on the site toward whatever
+the other clubs were worth. 59 club names in `opta_lineups.parquet` map to
+more than one `team_id`, covering 5.4% of all lineup rows.
+
+*Too little.* Fixtures spell clubs `Le Mans FC` and `SV 07 Elversberg` where
+lineups say `Le Mans` and `Elversberg`, so those two squads resolved to
+nothing. These were the visible failure.
+
+Fixed by carrying `team_id` from `01_fixture_results.rds` (step 01 already
+backfills it, its section 6b) through `.classify_team_leagues()` and keying
+the `opta_lineups` slice on it. The name to filter on is now taken from the
+lineups slice itself, since `build_team_expected_minutes()` matches on
+`team_name` internally and the two sources spell clubs differently. A team
+with no usable id still falls back to the name join, but says so in the log
+rather than merging silently.
+
+Worth recording how the guard behaved, because it shaped the fix: the
+min-squad floor caught the two empty squads and was structurally blind to the
+merged ones, which are far more damaging. A merged squad has MORE players and
+reads as healthier than a correct one, so no size threshold can catch it. The
+new guard is structural instead -- one row of the export is one club, so its
+lineup slice must contain exactly one `team_id` -- and cannot be fooled by a
+merge that happens to look plausible.
+
+Two rounds of review found the fallback path itself had a residual gap: a
+`team_id` present on the fixture side but absent from `opta_lineups.parquet`
+(a scrape-lag case `01_fixture_results.R` already calls "the silent
+split-identity risk") was falling back to a plain name join -- which could
+silently match a *different* real club sharing that name, since only one id
+is present in that slice and the multi-id structural guard can't see a
+single-id wrong match. Fixed by treating an unresolved (but present) id as
+"no lineups for this club" rather than attempting a name match, so it hits
+the min-squad guard instead of publishing quietly. A second gap -- `.pick_one()`
+silently discarding a team_id split within a single league, with no log line
+-- is now reported before it's collapsed.
+
+Four regression tests cover the merge, the spelling mismatch, the
+name-fallback path, and the unresolved-id case; all four were confirmed to
+fail with the fix reverted.
+
+Version heading realigned to `DESCRIPTION` (0.3.32); the intervening bumps
+came from the PR hook without their own NEWS sections.
+
 
 ## Tiento for every domestic + cup club, not just the World Cup 48 (panna#193)
 
