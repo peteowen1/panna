@@ -2,6 +2,40 @@
 
 ## panna 0.3.28 (dev)
 
+### Tiento for every domestic + cup club, not just the World Cup 48 (panna#193)
+
+New step `12d_export_domestic_team_strength.R` publishes
+`team_strength.parquet` (one row per team:
+`panna, offense, defense, epr, psr, elo, tiento, rank_tiento, squad_n, n_rated, elo_seeded, seed_method, is_domestic_league, build_id`)
+for every club in the current fixture window – domestic-league clubs and
+cup-only clubs from leagues panna doesn’t scrape (e.g. Champions League
+opponents, ~253 teams at spec time). Squad aggregation mirrors
+`12_export_wc2026_blog.R` section 5 exactly
+(`build_team_expected_minutes(international_only = FALSE)`, same
+minutes-weighted formula, same rating sources), and Tiento reuses the
+existing weights (`panna .40 / epr .20 / elo .30 / psr .10`) unmodified,
+z-scored across the GLOBAL pool per `DOMESTIC-TIENTO-2026-08-21.md`. A
+dual-labelled team (domestic league + a continental cup this season, ~19
+of them) is pinned to its domestic league.
+
+Elo is the one genuinely new piece: a team freshly promoted from a
+division panna doesn’t scrape (currently Le Mans FC from Ligue 2, SV 07
+Elversberg from 2. Bundesliga – confirmed against the live
+`predictions-latest` release, which shows exactly these two and no
+others with NA Elo in the current fixture window) has no tracked history
+at all, and `03_team_rolling_features.R` deliberately surfaces that as
+NA rather than falling back to `ELO_INITIAL = 1500`. This step seeds
+such a team at the mean final Elo of the teams relegated from that
+league the previous season – measured near-unbiased (mean error +15, MAE
+69, sd 89 across 57 clean league-seasons) versus the league mean (179
+MAE) or ELO_INITIAL=1500 (97 MAE), so no correction term. Falls back to
+the league mean (and says so in the log) when no relegated cohort is
+identifiable – a league’s first tracked season, or a cup-only team (a
+cup has no relegation concept). `elo_seeded` marks every seeded team;
+`seed_method` records which rule fired. Non-fatal in the pipeline
+(`run_pred_step_optional`, step 12d) – a failure here must never hold
+back predictions-latest or blog-latest, same reasoning as step 12.
+
 ### A missing events table no longer discards an entire season’s matches (panna#166)
 
 `01_build_fixture_results.R` loaded `events` before `fixtures` in its
