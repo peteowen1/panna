@@ -318,7 +318,7 @@ test_that("guard: a 2-player squad is a broken join, not a small squad", {
 
   bad <- data.table::copy(good)
   bad$squad_n[1] <- 2L
-  expect_error(e$.validate_domestic_strength(bad, min_squad_n = 5L), "broken team_name join")
+  expect_error(e$.validate_domestic_strength(bad, min_squad_n = 5L), "found no lineups for them")
 
   expect_no_error(suppressMessages(e$.validate_domestic_strength(good, min_squad_n = 5L)))
 })
@@ -393,7 +393,8 @@ test_that("guard: panna/epr/psr zero (or all-NA) for >=50% of teams refuses to p
   for (tm in teams) {
     for (j in 1:4) {
       lu_rows[[length(lu_rows) + 1L]] <- data.frame(
-        team_name = tm, match_id = paste0("lu_", tm), match_date = "2026-09-01T00:00:00Z",
+        team_id = paste0("id_", tm), team_name = tm,
+        match_id = paste0("lu_", tm), match_date = "2026-09-01T00:00:00Z",
         player_id = sprintf("p%03d", pid), player_name = sprintf("Player %d", pid),
         position = c("Goalkeeper", "Centre Back", "Central Midfielder", "Striker")[j],
         is_starter = TRUE, minutes_played = 90L, competition = "Domestic",
@@ -539,7 +540,7 @@ test_that("12d aborts rather than shipping a team with an impossible squad (inte
   arrow::write_parquet(lu, file.path(opta_dir, "opta_lineups.parquet"))
 
   expect_error(.run_12d(cache_dir, opta_dir, skills_dir, publish = FALSE),
-              "broken team_name join")
+              "found no lineups for them")
 })
 
 
@@ -616,4 +617,97 @@ test_that("12d asks build_team_expected_minutes for the same window the WC path 
   expect_true(all(grepl("1095", wc_windows)))
   expect_true(any(grepl("lookback_days = 1095L",
                         readLines(step12d, warn = FALSE), fixed = TRUE)))
+})
+
+
+# ---------------------------------------------------------------------------
+# Regression tests for the 2026-08-23 team_name-join bug (found on the first
+# live run of 12d). Opta reuses club names across competitions and countries,
+# so a name-keyed squad join is wrong in BOTH directions at once:
+#   too much -- "Liverpool" matched Liverpool FC + Liverpool FC Women (WSL) +
+#     Liverpool FC Montevideo, giving a 168-player squad against a real 69,
+#     about a quarter of it the women's team. Arsenal and Everton the same.
+#   too little -- fixtures spell clubs "Le Mans FC" / "SV 07 Elversberg" where
+#     opta_lineups says "Le Mans" / "Elversberg", so those squads came back
+#     EMPTY and the min-squad guard blocked the publish.
+# Both are fixed by keying the join on team_id. The min-squad guard only ever
+# caught the second kind; the first inflates squad_n and looks healthier than
+# a correct squad, which is why it needs a test rather than a threshold.
+# ---------------------------------------------------------------------------
+
+test_that("a second club sharing a team NAME does not merge into the squad", {
+  skip_if_not_installed("arrow")
+  local_no_reload()
+  cache_dir <- withr::local_tempdir()
+  opta_dir <- withr::local_tempdir()
+  skills_dir <- withr::local_tempdir()
+  .dts_full_fixture(cache_dir, opta_dir, skills_dir)
+  on.exit(suppressWarnings(rm("publish_files", envir = globalenv())), add = TRUE)
+
+  lu_path <- file.path(opta_dir, "opta_lineups.parquet")
+  lu <- as.data.frame(arrow::read_parquet(lu_path, mmap = FALSE))
+  # The "TeamA Women" case: same team_name, different club, different id.
+  intruder <- lu[lu$team_id == "id_TeamA", ]
+  intruder$team_id    <- "id_TeamA_WOMEN"
+  intruder$match_id   <- paste0(intruder$match_id, "_w")
+  intruder$player_id  <- paste0(intruder$player_id, "_w")
+  arrow::write_parquet(rbind(lu, intruder), lu_path)
+
+  .run_12d(cache_dir, opta_dir, skills_dir)
+  out <- as.data.frame(arrow::read_parquet(file.path(cache_dir, "team_strength.parquet"),
+                                           mmap = FALSE))
+  # 4, not 8: the intruder's players must not be in TeamA's squad.
+  expect_identical(out$squad_n[out$team == "TeamA"], 4L)
+})
+
+test_that("a club spelled differently in lineups than in fixtures still resolves", {
+  skip_if_not_installed("arrow")
+  local_no_reload()
+  cache_dir <- withr::local_tempdir()
+  opta_dir <- withr::local_tempdir()
+  skills_dir <- withr::local_tempdir()
+  .dts_full_fixture(cache_dir, opta_dir, skills_dir)
+  on.exit(suppressWarnings(rm("publish_files", envir = globalenv())), add = TRUE)
+
+  lu_path <- file.path(opta_dir, "opta_lineups.parquet")
+  lu <- as.data.frame(arrow::read_parquet(lu_path, mmap = FALSE))
+  # Fixtures call it "TeamC"; lineups call it "TeamC FC" -- the Le Mans shape.
+  lu$team_name[lu$team_id == "id_TeamC"] <- "TeamC FC"
+  arrow::write_parquet(lu, lu_path)
+
+  .run_12d(cache_dir, opta_dir, skills_dir)
+  out <- as.data.frame(arrow::read_parquet(file.path(cache_dir, "team_strength.parquet"),
+                                           mmap = FALSE))
+  # Full squad despite the spelling difference; pre-fix this was 0 and the
+  # min-squad guard aborted the whole step.
+  expect_identical(out$squad_n[out$team == "TeamC"], 4L)
+})
+
+test_that("the name-fallback path refuses to merge two clubs into one squad", {
+  # The one route by which a merge can still happen: a team whose fixture rows
+  # carry no team_id falls back to the name join. That path must abort, not
+  # publish a merged squad.
+  skip_if_not_installed("arrow")
+  local_no_reload()
+  cache_dir <- withr::local_tempdir()
+  opta_dir <- withr::local_tempdir()
+  skills_dir <- withr::local_tempdir()
+  .dts_full_fixture(cache_dir, opta_dir, skills_dir)
+  on.exit(suppressWarnings(rm("publish_files", envir = globalenv())), add = TRUE)
+
+  fr <- readRDS(file.path(cache_dir, "01_fixture_results.rds"))
+  fr$home_team_id[fr$home_team == "TeamA"] <- NA_character_
+  fr$away_team_id[fr$away_team == "TeamA"] <- NA_character_
+  saveRDS(fr, file.path(cache_dir, "01_fixture_results.rds"))
+
+  lu_path <- file.path(opta_dir, "opta_lineups.parquet")
+  lu <- as.data.frame(arrow::read_parquet(lu_path, mmap = FALSE))
+  intruder <- lu[lu$team_id == "id_TeamA", ]
+  intruder$team_id   <- "id_TeamA_WOMEN"
+  intruder$match_id  <- paste0(intruder$match_id, "_w")
+  intruder$player_id <- paste0(intruder$player_id, "_w")
+  arrow::write_parquet(rbind(lu, intruder), lu_path)
+
+  expect_error(.run_12d(cache_dir, opta_dir, skills_dir),
+               "distinct clubs sharing a name")
 })
