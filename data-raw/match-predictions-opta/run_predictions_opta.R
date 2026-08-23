@@ -68,6 +68,7 @@ if (!exists("run_steps", inherits = FALSE)) {
     step_12_export_wc2026_blog       = FALSE,  # Opt-in: export WC2026 blog data
     step_12b_snapshot_wc_minutes     = FALSE,  # Opt-in: archive dated minutes snapshot + diff
     step_12c_snapshot_wc_strength    = FALSE,  # Opt-in: archive dated team-strength (ELO+p_champ) snapshot + diff
+    step_12d_export_domestic_team_strength = FALSE,  # Opt-in: export Tiento for every domestic/cup club (panna#193)
     step_13_publish_release_data     = FALSE   # Opt-in: single gated publish of predictions-latest + blog-latest (PA5/H-TORN)
   )
 }
@@ -493,6 +494,25 @@ step_results[["12c"]] <- run_pred_step_optional("snapshot_wc_strength", "12c", f
   source("data-raw/match-predictions-opta/12c_snapshot_wc_strength.R", local = TRUE)
 })
 
+# 14g2. Step 12d: Export Domestic + Cup Team Strength (Tiento, all clubs) ----
+# Domestic sibling of step 12 (panna#193): every team in the current fixture
+# window, not just the WC2026 48 -- Tiento becomes the headline team rating
+# everywhere, as Piero already is for players.
+#
+# NON-FATAL (run_pred_step_optional), for the SAME reason step 12 is: it
+# registers team_strength.parquet in publish_files only at its very own end
+# (12d:...), after every write has already succeeded, so a mid-step failure
+# registers nothing for step 13 to publish -- there is no half-written file
+# to protect the release from. Depends on step 4 (Elo -- though this step
+# re-derives final_elos itself; see the comment in 12d for why) and on the
+# rating-source files (career_panna.parquet, opta_epr_weekly.parquet, the
+# seasonal-ratings caches) already being on disk, same prerequisites as
+# step 12 section 5. Placed after 12c so it runs alongside its WC sibling.
+
+step_results[["12d"]] <- run_pred_step_optional("export_domestic_team_strength", "12d", function() {
+  source("data-raw/match-predictions-opta/12d_export_domestic_team_strength.R", local = TRUE)
+})
+
 # 14h. Step 13: Publish predictions-latest + blog-latest (gated, manifest-last) ----
 # Runs after every build step so publish_files is fully populated. A failure
 # here (e.g. one tag's vb_publish aborting) is caught by run_pipeline_step() like
@@ -536,6 +556,10 @@ if (isTRUE(run_steps$step_12_export_wc2026_blog)) {
   message(sprintf("  - %s", file.path(cache_dir, "wc2026_predictions.parquet")))
   message(sprintf("  - %s", file.path(cache_dir, "wc2026_team_strength.parquet")))
   message("  - (wc2026_*.parquet uploaded to blog-latest)")
+}
+if (isTRUE(run_steps$step_12d_export_domestic_team_strength)) {
+  message(sprintf("  - %s", file.path(cache_dir, "team_strength.parquet")))
+  message("  - (team_strength.parquet uploaded to blog-latest)")
 }
 
 message("\nDone!")
