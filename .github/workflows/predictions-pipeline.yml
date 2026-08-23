@@ -304,6 +304,12 @@ jobs:
               # snapshots to wc2026-strength-history so tournament rating drift
               # is tracked going forward (no replay needed next time).
               step_12c_snapshot_wc_strength  = TRUE,
+              # Tiento for every domestic-league + cup-only club (panna#193),
+              # not just the WC2026 48 -- the blog's Team Ratings page reads
+              # team_strength.parquet for the headline rating everywhere.
+              # Non-fatal like 11/12/12b/12c, for the same reason (a side
+              # export failing must never hold back predictions-latest).
+              step_12d_export_domestic_team_strength = TRUE,
               # Single gated publish of predictions-latest + blog-latest
               # (ECOSYSTEM-FIX-PLAN.md PA5/H-TORN) -- steps 09/10/10b/10c/10d/12
               # above now write LOCAL outputs only; this is the one place
