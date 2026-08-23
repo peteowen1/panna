@@ -588,4 +588,32 @@ test_that("12d's Elo literals still match 03_team_rolling_features.R", {
   expect_match(call_line, "k = 20", fixed = TRUE)
   expect_match(call_line, "home_advantage = 88", fixed = TRUE)
   expect_match(call_line, "initial_elo = 1500", fixed = TRUE)
+
+  # use_venue_factor too: it has already been flipped once (FALSE -> TRUE), so
+  # it is demonstrably a thing that changes. Both sites hardcode TRUE today.
+  # Match the ARGUMENT, not any mention -- step 3 also names it in a comment
+  # recording the FALSE -> TRUE change, which is itself the evidence that this
+  # value moves.
+  arg_of <- function(lines) {
+    hit <- grep("^[[:space:]]*use_venue_factor[[:space:]]*=", lines, value = TRUE)
+    if (!length(hit)) return(NA_character_)
+    trimws(sub(".*=", "", hit[1]))
+  }
+  expect_identical(arg_of(readLines(step3, warn = FALSE)), arg_of(src))
+})
+
+test_that("12d asks build_team_expected_minutes for the same window the WC path does", {
+  # The WC squads are built with lookback_days = 1095L; the library default is
+  # 730L. Taking the default here would make a domestic Tiento mean something
+  # different from a WC Tiento while the header claimed they matched -- which
+  # is what review found on the first version.
+  sq <- testthat::test_path("..", "..", "data-raw", "match-predictions-opta",
+                            "announced_squads.R")
+  step12d <- testthat::test_path("..", "..", "data-raw", "match-predictions-opta",
+                                 "12d_export_domestic_team_strength.R")
+  skip_if_not(file.exists(sq) && file.exists(step12d), "pipeline scripts not present")
+  wc_windows <- unique(trimws(grep("lookback_days", readLines(sq, warn = FALSE), value = TRUE)))
+  expect_true(all(grepl("1095", wc_windows)))
+  expect_true(any(grepl("lookback_days = 1095L",
+                        readLines(step12d, warn = FALSE), fixed = TRUE)))
 })

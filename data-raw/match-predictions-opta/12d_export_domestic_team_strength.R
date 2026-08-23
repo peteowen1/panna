@@ -161,9 +161,14 @@ message("\n=== Exporting domestic + cup team strength (Tiento, all clubs) ===\n"
 #' Measured rule (panna#193 spec, 57 clean league-seasons ENG/ESP/ITA/FRA/GER):
 #' seeding a promoted team at the mean final Elo of the PREVIOUS season's
 #' relegated cohort is essentially unbiased (mean error +15, MAE 69, sd 89) --
-#' clearly better than the league mean (~80 MAE) or ELO_INITIAL=1500 (~112
+#' clearly better than the league mean (179 MAE) or ELO_INITIAL=1500 (97
 #' MAE). No correction term: the bias is small enough relative to the spread
 #' to not be worth adding one.
+#'
+#' Re-derive with data-raw/debug/keep/_elo_seed_rule_measurement.R rather than
+#' trusting these figures -- it names the one trap that matters (738 of 7,135
+#' club-seasons start at exactly ELO_INITIAL, and leaving them in inflates the
+#' apparent bias from +15 to +50).
 #'
 #' Falls back to the league mean (excluding NA-elo teams) when no relegated
 #' cohort is identifiable -- no prior season tracked at all (a league's first
@@ -418,9 +423,17 @@ agg_rows <- vector("list", length(teams))
 for (i in seq_along(teams)) {
   tm <- teams[i]
   lu_team <- if (tm %in% lu_known_teams) lu_all[.(tm)] else lu_all[0L]
+  # lookback_days = 1095L, NOT the 730L library default. announced_squads.R
+  # passes 1095 at both of its build_team_expected_minutes() call sites, so
+  # taking the default here would have quietly made domestic Tiento mean
+  # something different from WC Tiento -- which is the one thing this step is
+  # not allowed to do. Caught in review; the header claimed parity the code did
+  # not have. Practical effect is on which fringe players clear the evidence
+  # bar, which matters most for exactly the thin-history clubs this step
+  # handles specially.
   em <- panna::build_team_expected_minutes(
     team = tm, lineups = lu_team, as_of = as_of_domestic,
-    international_only = FALSE
+    international_only = FALSE, lookback_days = 1095L
   )
   if (is.null(em) || nrow(em) == 0L || !"player_id" %in% names(em)) {
     agg_rows[[i]] <- data.table::data.table(

@@ -24,7 +24,8 @@ deliberately surfaces that as NA rather than falling back to `ELO_INITIAL =
 1500`. This step seeds such a team at the mean final Elo of the teams
 relegated from that league the previous season -- measured near-unbiased
 (mean error +15, MAE 69, sd 89 across 57 clean league-seasons) versus the
-league mean (~80 MAE) or 1500 (~112 MAE), so no correction term. Falls back to
+league mean (179 MAE) or ELO_INITIAL=1500 (97 MAE), so no correction term.
+Falls back to
 the league mean (and says so in the log) when no relegated cohort is
 identifiable -- a league's first tracked season, or a cup-only team (a cup has
 no relegation concept). `elo_seeded` marks every seeded team; `seed_method`
