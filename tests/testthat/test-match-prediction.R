@@ -112,6 +112,58 @@ test_that("compute_match_elos returns correct structure", {
 })
 
 
+test_that("compute_match_elos disambiguates two different real clubs sharing one name (panna#204-sibling)", {
+  # "Arsenal" the EPL club and "Arsenal" the Argentine club are different
+  # team_ids and must not blend into one Elo trajectory. The one with more
+  # rows here ("Arsenal", id a1) keeps the plain name; the other (id a2)
+  # gets disambiguated.
+  results <- data.frame(
+    match_id = paste0("m", 1:6),
+    match_date = as.Date("2024-01-01") + c(0, 7, 14, 21, 28, 35),
+    home_team = c("Arsenal", "Team X", "Arsenal", "Team X", "Arsenal", "Team Y"),
+    away_team = c("Team X", "Arsenal", "Team X", "Arsenal", "Team Z", "Arsenal"),
+    home_team_id = c("a1", "x1", "a1", "x1", "a1", "y1"),
+    away_team_id = c("x1", "a1", "x1", "a2", "z1", "a2"),
+    home_goals = c(2, 1, 3, 0, 1, 2),
+    away_goals = c(0, 1, 1, 0, 1, 1)
+  )
+
+  res <- compute_match_elos(results)
+
+  expect_true("id_rename_map" %in% names(res))
+  expect_length(res$id_rename_map, 1)
+  expect_identical(names(res$id_rename_map), "a2")
+  disambiguated <- res$id_rename_map[["a2"]]
+  expect_true(grepl("^Arsenal \\[id:", disambiguated))
+
+  # Both identities are present in final_elos under distinct keys, and the
+  # low-volume identity's trajectory is NOT the same as the high-volume
+  # one's (they never merged into a single state).
+  expect_true("Arsenal" %in% names(res$final_elos))
+  expect_true(disambiguated %in% names(res$final_elos))
+  expect_false(isTRUE(all.equal(
+    unname(res$final_elos["Arsenal"]), unname(res$final_elos[disambiguated])
+  )))
+})
+
+
+test_that("compute_match_elos is unchanged when no team_id columns are present (backward compat)", {
+  # Old callers / existing tests without home_team_id/away_team_id must see
+  # zero behavior change -- .disambiguate_collided_team_names() is a no-op.
+  results <- data.frame(
+    match_id = paste0("m", 1:2),
+    match_date = as.Date("2024-01-01") + c(0, 7),
+    home_team = c("Arsenal", "Team X"),
+    away_team = c("Team X", "Arsenal"),
+    home_goals = c(2, 1),
+    away_goals = c(0, 1)
+  )
+  res <- compute_match_elos(results)
+  expect_length(res$id_rename_map, 0)
+  expect_setequal(names(res$final_elos), c("Arsenal", "Team X"))
+})
+
+
 test_that("compute_match_elos handles NA goals (unplayed matches)", {
   results <- data.frame(
     match_id = paste0("m", 1:3),

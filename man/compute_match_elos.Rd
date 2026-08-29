@@ -70,12 +70,17 @@ not default but available for callers wanting FIFA/SPI-style recency.}
 (weight on goals vs xG, and expected-margin-per-400-Elo).}
 }
 \value{
-A list with two elements:
+A list with three elements:
 \itemize{
 \item \code{per_match}: data frame with match_id, home_elo, away_elo, elo_diff
 (pre-match Elo for each match in the input order)
 \item \code{final_elos}: named numeric vector of post-iteration team Elos,
 for use with upcoming fixtures
+\item \code{id_rename_map}: named character vector (\verb{team_id -> disambiguated name}), non-empty only when \code{results} carried \code{home_team_id}/
+\code{away_team_id} AND a name collision was found (see
+\code{\link[=.disambiguate_collided_team_names]{.disambiguate_collided_team_names()}}). A caller doing its own
+name-keyed lookup against \code{final_elos} for a team by \code{team_id} should
+apply this map to its lookup key first.
 }
 }
 \description{

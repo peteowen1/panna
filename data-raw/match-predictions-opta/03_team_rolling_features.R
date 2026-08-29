@@ -135,7 +135,17 @@ if (nrow(upcoming) > 0) {
   # assertion below counts how many WC2026 teams couldn't be resolved;
   # if it's anything > a small handful, that's a data-quality signal
   # worth investigating, not silently smoothing over.
-  lookup_elo <- function(team_name) {
+  # id_rename_map (panna#204-sibling fix): non-empty only when a real
+  # team-name collision was found (e.g. Arsenal EPL vs Arsenal Argentina) --
+  # final_elos then carries the disambiguated name for every identity but
+  # the most-established one, so a plain-name lookup here must resolve
+  # through the same map before searching final_elos.
+  id_rename_map <- elo_result$id_rename_map
+  lookup_elo <- function(team_name, team_id) {
+    if (length(id_rename_map) > 0 && !is.na(team_id) && nzchar(team_id) &&
+        team_id %in% names(id_rename_map)) {
+      team_name <- id_rename_map[[team_id]]
+    }
     if (is.na(team_name) || !(team_name %in% names(final_elos))) {
       return(NA_real_)
     }
@@ -143,8 +153,8 @@ if (nrow(upcoming) > 0) {
   }
   fixture_elos <- data.frame(
     match_id = upcoming$match_id,
-    home_elo = vapply(upcoming$home_team, lookup_elo, numeric(1)),
-    away_elo = vapply(upcoming$away_team, lookup_elo, numeric(1)),
+    home_elo = mapply(lookup_elo, upcoming$home_team, upcoming$home_team_id),
+    away_elo = mapply(lookup_elo, upcoming$away_team, upcoming$away_team_id),
     stringsAsFactors = FALSE
   )
   fixture_elos$elo_diff <- fixture_elos$home_elo - fixture_elos$away_elo
