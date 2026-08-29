@@ -725,49 +725,70 @@ for (col in keep_cols) {
 }
 results_clean <- results[, intersect(keep_cols, names(results))]
 
+# Normalize team names to one canonical spelling per team_id, across BOTH
+# played results and upcoming fixtures. Opta's fixtures endpoint sometimes
+# serves full legal names ("AFC Ajax", "BV Borussia 09 Dortmund", "Çaykur
+# Rize Spor Kulübü") while lineups use a different spelling ("Ajax",
+# "Borussia Dortmund", "Rizespor") — that split caused sim scripts to treat
+# them as different teams and inflate team counts. Separately, and more
+# seriously: the SAME played-match lineup feed itself emits multiple name
+# spellings for one team_id across seasons/competitions (e.g. "Angers" vs
+# "Angers SCO", "Gaziantep" vs "Gaziantep FK", "Bournemouth" vs "AFC
+# Bournemouth") — left uncanonicalized in `results_clean`, this silently
+# fragments that team's match history into two name-keyed identities for
+# every downstream consumer, including `compute_match_elos()` in both
+# 03_team_rolling_features.R (the PRODUCTION Elo feeding live predictions)
+# and 12d_export_domestic_team_strength.R — each identity gets its own,
+# wrong, Elo rating instead of one continuous one. Use team_id (stable
+# across both feeds) to rewrite every name occurrence to the same spelling.
+team_variants <- results_clean %>%
+  filter(!is.na(home_team_id), !is.na(home_team)) %>%
+  select(team_id = home_team_id, team_name = home_team) %>%
+  bind_rows(
+    results_clean %>%
+      filter(!is.na(away_team_id), !is.na(away_team)) %>%
+      select(team_id = away_team_id, team_name = away_team)
+  ) %>%
+  count(team_id, team_name, name = "n")
+
+# Deterministic tie-break: prefer the most-frequent name; on ties, prefer the
+# shortest (lineup variants tend to be shorter than fixture-feed legal names)
+# then alphabetically. Without this, the canonical name for a mid-season
+# renamed team could flip between pipeline runs based on row ordering, and
+# downstream name-keyed consumers (blog standings, PSR rollups) would see
+# phantom "team renamed" events.
+team_name_map <- team_variants %>%
+  group_by(team_id) %>%
+  arrange(desc(n), nchar(team_name), team_name, .by_group = TRUE) %>%
+  slice(1) %>%
+  ungroup() %>%
+  select(team_id, team_name)
+
+# Report team_ids with multiple name variants — these are the genuine
+# split-identity cases and the debug info someone will want next time
+# the standings view (or an Elo table) shows a split team.
+collisions <- team_variants %>% count(team_id, name = "variants") %>% filter(variants > 1)
+if (nrow(collisions) > 0) {
+  message(sprintf("  %d team_ids have multiple name variants in lineups (canonical = most frequent, tie-break = shortest)",
+                  nrow(collisions)))
+}
+
+# Apply the canonical name to results_clean's OWN home_team/away_team —
+# this is the part earlier versions of this block skipped, leaving played
+# matches split by name variant even though the map was built from them.
+if (nrow(team_name_map) > 0) {
+  canon_lookup <- setNames(team_name_map$team_name, team_name_map$team_id)
+  new_rc_home <- canon_lookup[as.character(results_clean$home_team_id)]
+  results_clean$home_team <- ifelse(is.na(new_rc_home), results_clean$home_team, unname(new_rc_home))
+  new_rc_away <- canon_lookup[as.character(results_clean$away_team_id)]
+  results_clean$away_team <- ifelse(is.na(new_rc_away), results_clean$away_team, unname(new_rc_away))
+}
+
 if (!is.null(fixtures_df)) {
   for (col in keep_cols) {
     if (!col %in% names(fixtures_df)) fixtures_df[[col]] <- NA
   }
   fixtures_clean <- fixtures_df[, intersect(keep_cols, names(fixtures_df))]
-
-  # Normalize fixture team names to the variant Opta uses in its lineup feed.
-  # Opta's fixtures endpoint sometimes serves full legal names ("AFC Ajax",
-  # "BV Borussia 09 Dortmund", "Çaykur Rize Spor Kulübü") while lineups use a
-  # different spelling ("Ajax", "Borussia Dortmund", "Rizespor"). That split
-  # caused sim scripts to treat them as different teams and inflate team counts.
-  # Use team_id (stable across both feeds) to rewrite fixture names to match.
-  team_variants <- results_clean %>%
-    filter(!is.na(home_team_id), !is.na(home_team)) %>%
-    select(team_id = home_team_id, team_name = home_team) %>%
-    bind_rows(
-      results_clean %>%
-        filter(!is.na(away_team_id), !is.na(away_team)) %>%
-        select(team_id = away_team_id, team_name = away_team)
-    ) %>%
-    count(team_id, team_name, name = "n")
-
-  # Deterministic tie-break: prefer the most-frequent name; on ties, prefer the
-  # shortest (lineup variants tend to be shorter than fixture-feed legal names)
-  # then alphabetically. Without this, the canonical name for a mid-season
-  # renamed team could flip between pipeline runs based on row ordering, and
-  # downstream name-keyed consumers (blog standings, PSR rollups) would see
-  # phantom "team renamed" events.
-  team_name_map <- team_variants %>%
-    group_by(team_id) %>%
-    arrange(desc(n), nchar(team_name), team_name, .by_group = TRUE) %>%
-    slice(1) %>%
-    ungroup() %>%
-    select(team_id, team_name)
-
-  # Report team_ids with multiple name variants — these are the genuine
-  # split-identity cases and the debug info someone will want next time
-  # the standings view shows a split team.
-  collisions <- team_variants %>% count(team_id, name = "variants") %>% filter(variants > 1)
-  if (nrow(collisions) > 0) {
-    message(sprintf("  %d team_ids have multiple name variants in lineups (canonical = most frequent, tie-break = shortest)",
-                    nrow(collisions)))
-  }
 
   n_home_renamed <- 0L
   n_away_renamed <- 0L
