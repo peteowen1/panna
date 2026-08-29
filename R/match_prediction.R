@@ -706,8 +706,10 @@ update_elo <- function(home_elo, away_elo, home_goals, away_goals,
 
   # One row per (team_id, team_name), with a row count as a proxy for how
   # "established" that identity is in this dataset -- used to decide which
-  # of the colliding identities keeps the plain name.
-  key <- paste(ids, nms, sep = "")
+  # of the colliding identities keeps the plain name. Explicit separator
+  # (review finding): a bare paste(ids, nms) with no separator could alias
+  # two different (id, name) pairs onto the same key in principle.
+  key <- paste(ids, nms, sep = "|")
   n_by_key <- table(key)
   first_idx <- !duplicated(key)
   id_u <- ids[first_idx]; nm_u <- nms[first_idx]
