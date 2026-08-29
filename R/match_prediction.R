@@ -660,6 +660,92 @@ update_elo <- function(home_elo, away_elo, home_goals, away_goals,
 }
 
 
+#' Disambiguate team-name collisions before Elo iteration
+#'
+#' `compute_match_elos()` keys its internal state by team NAME, so two
+#' genuinely different clubs that happen to share a name (confirmed:
+#' "Arsenal" is both the EPL club and Arsenal de Sarandi in the Argentine
+#' Liga Profesional) blend their match histories into one Elo trajectory --
+#' unlike the panna#204 case (one real club, several name spellings), this
+#' is one real name, several real clubs. Only usable when `results` carries
+#' `home_team_id`/`away_team_id` (a no-op otherwise, so old callers/tests
+#' without those columns see zero behavior change).
+#'
+#' For each name shared by >1 distinct `team_id`, the identity with the most
+#' rows keeps the plain name (the common case); every other identity sharing
+#' that name gets a `[id:xxxxxxxx]` suffix appended, so the Elo simulation
+#' tracks them as separate teams. This only affects the internal keys used
+#' during iteration and the names returned in `final_elos` -- per-match rows
+#' are returned aligned by `match_id`/row order regardless, so this is
+#' transparent to any caller that only reads `per_match`. A caller doing a
+#' post-hoc name lookup against `final_elos` for an UPCOMING fixture (e.g.
+#' step 03's `lookup_elo()`) needs the same disambiguation applied to its own
+#' lookup key -- see the returned `id_rename_map` (named character vector,
+#' `team_id -> disambiguated name`, empty if no collisions were found).
+#'
+#' @param results As in [compute_match_elos()].
+#' @return `results` with `home_team`/`away_team` disambiguated where needed,
+#'   plus an `id_rename_map` attribute (named character vector, possibly
+#'   length 0).
+#' @keywords internal
+.disambiguate_collided_team_names <- function(results) {
+  empty_map <- character(0)
+  if (!all(c("home_team_id", "away_team_id") %in% names(results))) {
+    attr(results, "id_rename_map") <- empty_map
+    return(results)
+  }
+
+  ids <- c(results$home_team_id, results$away_team_id)
+  nms <- c(results$home_team, results$away_team)
+  keep <- !is.na(ids) & nzchar(ids) & !is.na(nms) & nzchar(nms)
+  ids <- ids[keep]; nms <- nms[keep]
+  if (length(ids) == 0) {
+    attr(results, "id_rename_map") <- empty_map
+    return(results)
+  }
+
+  # One row per (team_id, team_name), with a row count as a proxy for how
+  # "established" that identity is in this dataset -- used to decide which
+  # of the colliding identities keeps the plain name. Explicit separator
+  # (review finding): a bare paste(ids, nms) with no separator could alias
+  # two different (id, name) pairs onto the same key in principle.
+  key <- paste(ids, nms, sep = "|")
+  n_by_key <- table(key)
+  first_idx <- !duplicated(key)
+  id_u <- ids[first_idx]; nm_u <- nms[first_idx]
+  n_u <- as.integer(n_by_key[key[first_idx]])
+
+  name_counts <- table(nm_u)
+  collided_names <- names(name_counts)[name_counts > 1]
+  if (length(collided_names) == 0) {
+    attr(results, "id_rename_map") <- empty_map
+    return(results)
+  }
+
+  rename_map <- setNames(character(0), character(0))
+  for (nm in collided_names) {
+    idx <- which(nm_u == nm)
+    ord <- order(-n_u[idx])
+    ids_this <- id_u[idx][ord]
+    for (j in seq_along(ids_this)[-1]) {
+      rename_map[ids_this[j]] <- sprintf("%s [id:%s]", nm, substr(ids_this[j], 1, 8))
+    }
+  }
+
+  cli::cli_inform(c(
+    "i" = "Elo: disambiguated {length(rename_map)} team-name collision(s) (same name, different team_id):",
+    stats::setNames(paste0(names(rename_map), " -> ", rename_map), rep("*", length(rename_map)))
+  ))
+
+  hit_home <- match(results$home_team_id, names(rename_map))
+  hit_away <- match(results$away_team_id, names(rename_map))
+  results$home_team <- ifelse(!is.na(hit_home), rename_map[hit_home], results$home_team)
+  results$away_team <- ifelse(!is.na(hit_away), rename_map[hit_away], results$away_team)
+  attr(results, "id_rename_map") <- rename_map
+  results
+}
+
+
 #' Compute Elo Ratings for All Matches
 #'
 #' Iterates through matches chronologically and computes Elo ratings.
@@ -709,11 +795,17 @@ update_elo <- function(home_elo, away_elo, home_goals, away_goals,
 #' @param blend_w,margin_slope Passed to [update_elo()] in margin_sqrt mode
 #'   (weight on goals vs xG, and expected-margin-per-400-Elo).
 #'
-#' @return A list with two elements:
+#' @return A list with three elements:
 #'   - `per_match`: data frame with match_id, home_elo, away_elo, elo_diff
 #'     (pre-match Elo for each match in the input order)
 #'   - `final_elos`: named numeric vector of post-iteration team Elos,
 #'     for use with upcoming fixtures
+#'   - `id_rename_map`: named character vector (`team_id -> disambiguated
+#'     name`), non-empty only when `results` carried `home_team_id`/
+#'     `away_team_id` AND a name collision was found (see
+#'     [.disambiguate_collided_team_names()]). A caller doing its own
+#'     name-keyed lookup against `final_elos` for a team by `team_id` should
+#'     apply this map to its lookup key first.
 #' @family match prediction
 #' @export
 compute_match_elos <- function(results, k = 20, home_advantage = 88,
@@ -738,6 +830,13 @@ compute_match_elos <- function(results, k = 20, home_advantage = 88,
   # to control "now"; defaults to max(match_date) in `results`.
   # Sort by date
   results <- results[order(results$match_date), ]
+
+  # panna#204's sibling case: two DIFFERENT real clubs sharing one name
+  # (Arsenal EPL vs Arsenal de Sarandi, Argentina) would otherwise blend
+  # into one Elo trajectory below. No-op when home_team_id/away_team_id
+  # aren't present, so old callers/tests see zero behavior change.
+  results <- .disambiguate_collided_team_names(results)
+  id_rename_map <- attr(results, "id_rename_map")
 
   all_teams <- unique(c(results$home_team, results$away_team))
 
@@ -880,7 +979,8 @@ compute_match_elos <- function(results, k = 20, home_advantage = 88,
       elo_diff = home_elo_pre - away_elo_pre,
       stringsAsFactors = FALSE
     ),
-    final_elos = elos
+    final_elos = elos,
+    id_rename_map = id_rename_map
   )
 }
 
