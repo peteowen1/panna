@@ -111,13 +111,21 @@ compute_match_elos(
 
 ## Value
 
-A list with two elements:
+A list with three elements:
 
 - `per_match`: data frame with match_id, home_elo, away_elo, elo_diff
   (pre-match Elo for each match in the input order)
 
 - `final_elos`: named numeric vector of post-iteration team Elos, for
   use with upcoming fixtures
+
+- `id_rename_map`: named character vector
+  (`team_id -> disambiguated name`), non-empty only when `results`
+  carried `home_team_id`/ `away_team_id` AND a name collision was found
+  (see
+  [`.disambiguate_collided_team_names()`](https://peteowen1.github.io/panna/reference/dot-disambiguate_collided_team_names.md)).
+  A caller doing its own name-keyed lookup against `final_elos` for a
+  team by `team_id` should apply this map to its lookup key first.
 
 ## See also
 

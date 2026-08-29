@@ -162,10 +162,15 @@ not default but available for callers wanting FIFA/SPI-style recency.</p></dd>
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
-    <p>A list with two elements:</p><ul><li><p><code>per_match</code>: data frame with match_id, home_elo, away_elo, elo_diff
+    <p>A list with three elements:</p><ul><li><p><code>per_match</code>: data frame with match_id, home_elo, away_elo, elo_diff
 (pre-match Elo for each match in the input order)</p></li>
 <li><p><code>final_elos</code>: named numeric vector of post-iteration team Elos,
 for use with upcoming fixtures</p></li>
+<li><p><code>id_rename_map</code>: named character vector (<code>team_id -&gt; disambiguated name</code>), non-empty only when <code>results</code> carried <code>home_team_id</code>/
+<code>away_team_id</code> AND a name collision was found (see
+<code><a href="dot-disambiguate_collided_team_names.html">.disambiguate_collided_team_names()</a></code>). A caller doing its own
+name-keyed lookup against <code>final_elos</code> for a team by <code>team_id</code> should
+apply this map to its lookup key first.</p></li>
 </ul></div>
     <div class="section level2">
     <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a></h2>
