@@ -1162,15 +1162,27 @@ softprob_matrix <- function(probs, n_rows, n_class = 3L) {
 #' fold split (leakage-audit finding, 2026-08-27).
 #'
 #' @param group_ids Vector, one entry per row of the training data (e.g.
-#'   \code{match_id}); rows sharing a value are always co-assigned.
-#' @param nfolds Number of folds.
+#'   \code{match_id}); rows sharing a value are always co-assigned. Must not
+#'   contain \code{NA} (a row with an unknown group can't be assigned a fold).
+#' @param nfolds Number of folds. Reduced to the number of distinct groups if
+#'   there are fewer groups than folds (an \code{xgb.cv} fold with no rows in
+#'   it does not error, so this would otherwise silently shrink CV to fewer
+#'   effective folds without warning).
 #' @param seed RNG seed for the fold assignment (reproducible).
-#' @return A list of length \code{nfolds}, each element a vector of row
-#'   indices forming that fold's TEST set — the format
-#'   \code{xgboost::xgb.cv(folds = ...)} expects.
+#' @return A list of length \code{nfolds} (as possibly reduced above), each
+#'   element a vector of row indices forming that fold's TEST set — the
+#'   format \code{xgboost::xgb.cv(folds = ...)} expects.
+#' @importFrom withr with_seed
 #' @keywords internal
 .grouped_cv_folds <- function(group_ids, nfolds, seed = 1234L) {
+  if (anyNA(group_ids)) {
+    cli::cli_abort("{.arg group_ids} must not contain NA — every row needs a known group.")
+  }
   groups <- unique(group_ids)
+  if (length(groups) < nfolds) {
+    cli::cli_warn("Only {length(groups)} distinct group{?s} for {nfolds} requested folds — using {length(groups)} folds instead.")
+    nfolds <- length(groups)
+  }
   withr::with_seed(seed, {
     group_fold <- sample(rep_len(seq_len(nfolds), length(groups)))
   })

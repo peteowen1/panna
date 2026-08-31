@@ -33,7 +33,8 @@ Imports:
     piggyback,
     rlang,
     stringi,
-    tools
+    tools,
+    withr
 Suggests:
     arrow (>= 10.0.0),
     doParallel,
@@ -48,7 +49,6 @@ Suggests:
     rmarkdown,
     rvest (>= 1.0.0),
     testthat (>= 3.0.0),
-    withr,
     xgboost
 Remotes:
     peteowen1/pannamodels

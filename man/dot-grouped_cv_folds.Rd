@@ -8,16 +8,20 @@
 }
 \arguments{
 \item{group_ids}{Vector, one entry per row of the training data (e.g.
-\code{match_id}); rows sharing a value are always co-assigned.}
+\code{match_id}); rows sharing a value are always co-assigned. Must not
+contain \code{NA} (a row with an unknown group can't be assigned a fold).}
 
-\item{nfolds}{Number of folds.}
+\item{nfolds}{Number of folds. Reduced to the number of distinct groups if
+there are fewer groups than folds (an \code{xgb.cv} fold with no rows in
+it does not error, so this would otherwise silently shrink CV to fewer
+effective folds without warning).}
 
 \item{seed}{RNG seed for the fold assignment (reproducible).}
 }
 \value{
-A list of length \code{nfolds}, each element a vector of row
-indices forming that fold's TEST set — the format
-\code{xgboost::xgb.cv(folds = ...)} expects.
+A list of length \code{nfolds} (as possibly reduced above), each
+element a vector of row indices forming that fold's TEST set — the
+format \code{xgboost::xgb.cv(folds = ...)} expects.
 }
 \description{
 Assigns whole GROUPS (not individual rows) to folds, so rows that share a
