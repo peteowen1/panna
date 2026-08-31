@@ -71,11 +71,13 @@ sd, not a player-population sd -- this is deliberate, not a bug. See
 \seealso{
 Other psr: 
 \code{\link{PSV_RELIABILITY_GD_SCALE}},
+\code{\link{apply_psr_season_calibration}()},
 \code{\link{calculate_psr}()},
 \code{\link{calculate_psv}()},
 \code{\link{calculate_psv_components}()},
 \code{\link{default_stat_rating_params}()},
 \code{\link{load_opta_psr_weekly}()},
+\code{\link{load_psr_calibration}()},
 \code{\link{load_psv_match_reliability}()},
 \code{\link{player_psr}()},
 \code{\link{soccer_position_map}()},

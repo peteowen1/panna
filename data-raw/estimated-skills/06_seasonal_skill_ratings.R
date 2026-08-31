@@ -543,6 +543,21 @@ if (nrow(seasonal_psr) > 0 && !is.null(psr_primary_league)) {
   }
 }
 
+# 6c. Per-season calibration ----
+#
+# compute_player_psr() has already applied the POSITION axis; the SEASON axis
+# has to wait until here because that function never sees season_end_year.
+# Puts each season's ratings on a common goals-per-90 footing so cross-season
+# tables compare like with like (panna#213). Seasons with no estimate --
+# always including the CURRENT one, whose factor needs the following season's
+# matches -- pass through at 1.
+if (!is.null(seasonal_psr) && nrow(seasonal_psr) > 0) {
+  seasonal_psr <- as.data.frame(
+    apply_psr_season_calibration(data.table::as.data.table(seasonal_psr))
+  )
+  cat("  Applied per-season PSR calibration\n")
+}
+
 # 7. Summary Statistics ----
 
 cat("\n=== Top Players by Season (Skill xRAPM) ===\n")

@@ -773,3 +773,88 @@ test_that("compute_player_psr scales GK rows end-to-end and leaves outfield unto
     expect_equal(s$osr[is_gk] + s$dsr[is_gk], s$psr[is_gk])
   }
 })
+
+
+# =============================================================================
+# PSR position + season calibration (panna#202 / #213 / #214)
+# =============================================================================
+
+test_that("shipped calibration table is well formed and in a sane range", {
+  cal <- load_psr_calibration()
+  expect_true(nrow(cal) > 0)
+  expect_true(all(c("axis", "level", "factor") %in% names(cal)))
+  expect_setequal(unique(cal$axis), c("position", "season"))
+  # a calibration, not a rewrite: nothing should flip a sign or explode
+  expect_true(all(cal$factor > 0))
+  expect_true(all(cal$factor > 0.3 & cal$factor < 2))
+  # keepers are the one large correction; outfield should stay near 1
+  pos <- cal[cal$axis == "position", ]
+  expect_true(pos$factor[pos$level == "GK"] < 0.7)
+  expect_true(all(pos$factor[pos$level != "GK"] > 0.8 & pos$factor[pos$level != "GK"] < 1.25))
+})
+
+test_that(".psr_calibration_factor defaults unknown keys to 1, never NA", {
+  cal <- data.table::data.table(axis = "position", level = c("GK", "DEF"),
+                                 factor = c(0.5, 0.9))
+  f <- panna:::.psr_calibration_factor(cal, "position", c("GK", "DEF", "FWD", NA))
+  expect_equal(f, c(0.5, 0.9, 1, 1))
+  # an unseen axis is a no-op, not an error
+  expect_equal(panna:::.psr_calibration_factor(cal, "season", c("2016", "2020")), c(1, 1))
+  # so is an empty table
+  expect_equal(panna:::.psr_calibration_factor(NULL, "position", c("GK")), 1)
+})
+
+test_that(".calibrate_psr_positions scales by position and preserves the identity", {
+  cal <- data.table::data.table(axis = "position", level = c("GK", "FWD"),
+                                 factor = c(0.5, 2.0))
+  dt <- data.table::data.table(
+    player_id = c("g", "f", "d"),
+    primary_position = c("GK", "FWD", "DEF"),
+    psr_raw = c(1.0, 1.0, 1.0), psr = c(0.4, 0.4, 0.4),
+    osr = c(0.3, 0.3, 0.3), dsr = c(0.1, 0.1, 0.1)
+  )
+  out <- panna:::.calibrate_psr_positions(dt, cal)
+  expect_equal(out$psr, c(0.2, 0.8, 0.4))     # GK halved, FWD doubled, DEF untouched
+  expect_equal(out$osr + out$dsr, out$psr)    # identity survives
+  expect_equal(out$psr_raw, c(0.5, 2.0, 1.0))
+})
+
+test_that(".calibrate_psr_positions is a no-op with NULL/empty calibration", {
+  dt <- data.table::data.table(player_id = "a", primary_position = "GK",
+                                psr = 0.4, osr = 0.3, dsr = 0.1)
+  expect_equal(panna:::.calibrate_psr_positions(dt, NULL), dt)
+  expect_equal(panna:::.calibrate_psr_positions(
+    dt, data.table::data.table(axis = character(0), level = character(0),
+                               factor = numeric(0))), dt)
+})
+
+test_that("apply_psr_season_calibration scales by season and needs the column", {
+  cal <- data.table::data.table(axis = "season", level = c("2016", "2023"),
+                                 factor = c(0.9, 1.1))
+  dt <- data.table::data.table(
+    player_id = c("a", "b", "c"), season_end_year = c(2016L, 2023L, 2019L),
+    psr = c(1.0, 1.0, 1.0), osr = c(0.6, 0.6, 0.6), dsr = c(0.4, 0.4, 0.4)
+  )
+  out <- apply_psr_season_calibration(dt, cal)
+  expect_equal(out$psr, c(0.9, 1.1, 1.0))   # 2019 absent -> unchanged, not NA
+  expect_equal(out$osr + out$dsr, out$psr)
+  expect_false(anyNA(out$psr))
+
+  expect_error(
+    apply_psr_season_calibration(
+      data.table::data.table(player_id = "a", psr = 1), cal),
+    "season_end_year"
+  )
+})
+
+test_that("the current season passes through uncalibrated rather than becoming NA", {
+  # a season's factor needs the FOLLOWING season's matches, so the newest
+  # season is always absent from the table -- it must survive untouched
+  cal <- load_psr_calibration()
+  newest <- max(as.integer(cal$level[cal$axis == "season"]), na.rm = TRUE)
+  dt <- data.table::data.table(player_id = "a", season_end_year = newest + 2L,
+                                psr = 0.5, osr = 0.3, dsr = 0.2)
+  out <- apply_psr_season_calibration(dt, cal)
+  expect_equal(out$psr, 0.5)
+  expect_false(anyNA(out$psr))
+})

@@ -1480,11 +1480,17 @@ load_psr_coefficients <- function(type = c("margin", "offense", "defense"),
 #' @param position_means Optional pre-computed position-mean lookup table used
 #'   to center skill columns before scoring (see \code{\link{compute_player_psv}}).
 #'   If \code{NULL}, no cross-position centering is applied.
-#' @param gk_goal_scale Multiplier putting goalkeeper PSR on the same
-#'   goals-per-90 footing as outfield PSR (panna#202). The GK sub-model is
-#'   trained on goal difference and the outfield model on xG difference, so a
-#'   unit of each buys a different amount of real goal difference. Defaults to
-#'   \code{GK_PSR_GOAL_SCALE}; pass \code{1} for pre-#202 behaviour.
+#' @param calibration Per-position calibration table putting every position on a
+#'   common goals-per-90 footing; defaults to \code{\link{load_psr_calibration}}.
+#'   Pass \code{NULL} to skip calibration entirely (raw model output).
+#'   The season axis is applied separately by
+#'   \code{\link{apply_psr_season_calibration}}, because this function cannot
+#'   see the season.
+#' @param gk_goal_scale \strong{Superseded} by \code{calibration}, which covers
+#'   goalkeepers along with every other position. Defaults to \code{1} (no-op);
+#'   passing both would double-scale keepers. Retained so a caller pinning the
+#'   old panna#202 behaviour (\code{GK_PSR_GOAL_SCALE} with
+#'   \code{calibration = NULL}) still works.
 #'
 #' @return A data.table with \code{psr}, \code{osr}, \code{dsr} columns.
 #'
@@ -1492,7 +1498,8 @@ load_psr_coefficients <- function(type = c("margin", "offense", "defense"),
 compute_player_psr <- function(skills, center = TRUE,
                                 target = c("blend", "xg", "goals"),
                                 position_means = NULL,
-                                gk_goal_scale = GK_PSR_GOAL_SCALE) {
+                                calibration = load_psr_calibration(),
+                                gk_goal_scale = 1) {
   target <- match.arg(target)
   dt <- data.table::as.data.table(skills)
   dt <- .position_normalize_skills(dt, position_means)
@@ -1562,13 +1569,10 @@ compute_player_psr <- function(skills, center = TRUE,
         results$gk <- calculate_psr(gk_skills, gk_margin_coef, center = center)
       }
 
-      # panna#202: put keeper PSR on the same goals-per-90 footing as outfield.
-      # The GK sub-model is trained on goal difference and the outfield model on
-      # xG difference, so a unit of each buys a different amount of real goal
-      # difference -- measured leak-free at GK = 0.70 of the outfield slope.
-      # Without this, keepers are doubly advantaged in any combined ranking:
-      # wider spread AND each unit worth less. Scaling psr/osr/dsr by the same
-      # factor preserves the osr + dsr == psr identity.
+      # Legacy GK-only scale. Superseded by the position calibration applied to
+      # the combined table below, which covers GK too -- so this defaults to 1
+      # (no-op) and exists only so a caller pinning the old behaviour still
+      # works. Passing both would double-scale keepers.
       results$gk <- .scale_gk_psr(results$gk, gk_goal_scale)
     } else {
       # No GK model at all -- warn and assign zeros
@@ -1584,8 +1588,123 @@ compute_player_psr <- function(skills, center = TRUE,
     }
   }
 
-  # Combine results
-  data.table::rbindlist(results, fill = TRUE, use.names = TRUE)
+  # Combine results, then put every position on a common goals footing.
+  combined <- data.table::rbindlist(results, fill = TRUE, use.names = TRUE)
+  .calibrate_psr_positions(combined, calibration)
+}
+
+#' Apply the per-position PSR calibration
+#'
+#' Multiplies each row's rating columns by its position factor from
+#' \code{\link{load_psr_calibration}}, so a unit of PSR means the same amount of
+#' goal difference regardless of position. Scales \code{psr}/\code{osr}/
+#' \code{dsr}/\code{psr_raw} together, preserving \code{osr + dsr == psr}.
+#'
+#' Positions absent from the table (including \code{NA} \code{primary_position})
+#' pass through with a factor of 1 rather than becoming \code{NA}.
+#'
+#' @param dt Combined PSR table with \code{primary_position}.
+#' @param calibration Calibration table, or \code{NULL} to skip entirely.
+#' @keywords internal
+#' @noRd
+.calibrate_psr_positions <- function(dt, calibration) {
+  if (is.null(calibration) || NROW(calibration) == 0) return(dt)
+  if (NROW(dt) == 0 || !"primary_position" %in% names(dt)) return(dt)
+  dt <- data.table::as.data.table(dt)
+  f <- .psr_calibration_factor(calibration, "position", dt$primary_position)
+  if (all(f == 1)) return(dt[])
+  for (col in intersect(c("psr_raw", "psr", "osr", "dsr"), names(dt))) {
+    data.table::set(dt, j = col, value = dt[[col]] * f)
+  }
+  dt[]
+}
+
+
+#' Load the PSR calibration table
+#'
+#' Per-position and per-season multipliers putting PSR on a common
+#' goals-per-90 footing (panna#202/#213/#214). See
+#' \code{inst/extdata/psr_calibration.csv}.
+#'
+#' Derived leak-free: each player's season S-1 rating predicts season S
+#' matches, minute-weighted and summed per position group, entered as
+#' own-minus-opponent differences against actual goal difference. The fitted
+#' slope for a cell is how much goal difference one unit of its rating actually
+#' buys, so multiplying by that slope maps the cell into goal units.
+#'
+#' Estimated as two SEPARABLE marginals, not 6 x 13 joint cells: each marginal
+#' is well powered, the joint would be mostly sampling noise. Factors are
+#' normalised so a recent outfield cell is ~1.0, i.e. today's outfield scale is
+#' preserved and only relative standing moves.
+#'
+#' @return data.table with \code{axis} ("position"/"season"), \code{level},
+#'   \code{factor}, plus the underlying \code{slope}/\code{se} for auditing.
+#' @family psr
+#' @export
+load_psr_calibration <- function() {
+  path <- system.file("extdata", "psr_calibration.csv", package = "panna")
+  if (path == "") {
+    cli::cli_warn(c(
+      "PSR calibration table not found: {.file psr_calibration.csv}",
+      "i" = "Ratings will be returned uncalibrated (all factors 1)."
+    ))
+    return(data.table::data.table(axis = character(0), level = character(0),
+                                   factor = numeric(0)))
+  }
+  data.table::as.data.table(utils::read.csv(path, stringsAsFactors = FALSE))
+}
+
+#' Look up a calibration factor, defaulting to 1
+#'
+#' An unknown key returns 1 (no adjustment) rather than NA. That matters most
+#' for the CURRENT season: its factor can only be estimated once the FOLLOWING
+#' season's matches exist, so the newest season is always uncalibrated by
+#' construction and must pass through untouched rather than becoming NA.
+#'
+#' @keywords internal
+#' @noRd
+.psr_calibration_factor <- function(calibration, axis_name, keys) {
+  if (is.null(calibration) || nrow(calibration) == 0) return(rep(1, length(keys)))
+  tab <- calibration[calibration$axis == axis_name, ]
+  if (nrow(tab) == 0) return(rep(1, length(keys)))
+  # column is `level`, NOT `key`: `key` is a reserved argument of
+  # data.table::data.table(), so a column of that name cannot be constructed
+  # literally (`data.table(axis = ..., key = ...)` sets a key instead of adding
+  # a column, and errors).
+  f <- tab$factor[match(as.character(keys), as.character(tab$level))]
+  f[is.na(f) | !is.finite(f) | f <= 0] <- 1
+  f
+}
+
+#' Apply per-season PSR calibration
+#'
+#' Multiplies \code{psr}/\code{osr}/\code{dsr}/\code{psr_raw} by the season
+#' factor from \code{\link{load_psr_calibration}}, preserving
+#' \code{osr + dsr == psr}. Applied AFTER \code{\link{compute_player_psr}}
+#' (which cannot see the season) and alongside the cross-league offsets.
+#'
+#' Seasons absent from the table pass through unchanged — see
+#' \code{.psr_calibration_factor}.
+#'
+#' @param psr_dt PSR table containing \code{season_end_year}.
+#' @param calibration Calibration table; defaults to the shipped one.
+#' @return \code{psr_dt} with rating columns season-calibrated.
+#' @family psr
+#' @export
+apply_psr_season_calibration <- function(psr_dt, calibration = load_psr_calibration()) {
+  dt <- data.table::as.data.table(psr_dt)
+  if (nrow(dt) == 0) return(dt)
+  if (!"season_end_year" %in% names(dt)) {
+    cli::cli_abort(c(
+      "{.arg psr_dt} must contain {.field season_end_year} to apply season calibration.",
+      "i" = "Call this after the season has been stamped onto the ratings."
+    ))
+  }
+  f <- .psr_calibration_factor(calibration, "season", dt$season_end_year)
+  for (col in intersect(c("psr_raw", "psr", "osr", "dsr"), names(dt))) {
+    data.table::set(dt, j = col, value = dt[[col]] * f)
+  }
+  dt[]
 }
 
 
