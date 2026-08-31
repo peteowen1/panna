@@ -1462,8 +1462,21 @@ load_psr_coefficients <- function(type = c("margin", "offense", "defense"),
 #' @param skills Player skill data (output of \code{estimate_player_skills()}
 #'   or \code{load_opta_skills()}).
 #' @param center Logical. Center PSR around position-group mean (default TRUE).
-#' @param target One of \code{"xg"} (default) or \code{"goals"} for the
-#'   outfield model. GK model always uses goal differential.
+#' @param target Outfield coefficient set: \code{"blend"} (default,
+#'   \code{0.6 * xG + 0.4 * goals}), \code{"xg"}, or \code{"goals"}. The GK
+#'   sub-model always uses goal differential regardless.
+#'
+#'   Default moved \code{"xg"} -> \code{"blend"} (panna#214). The xG-trained
+#'   set cannot reward finishing by construction — \code{npg_minus_npxg_per90}
+#'   is precisely the part of scoring xG does not capture — which made the net
+#'   effect of an extra non-penalty goal NEGATIVE (-0.059) and left Messi 93rd
+#'   among outfielders. Measured out-of-sample (prior-season rating -> next
+#'   season's matches, fit <=2022 / test >=2023, n = 15,912), blend is the only
+#'   set never worse than second: best on xG difference (test R2 0.1664 vs
+#'   0.1618 xG / 0.1611 goals) and a statistical tie for best on goal
+#'   difference (0.1428 vs 0.1431 goals / 0.1360 xG). Differences across sets
+#'   are small (<1 R2 point), so the switch costs no predictive accuracy while
+#'   materially improving valuation.
 #' @param position_means Optional pre-computed position-mean lookup table used
 #'   to center skill columns before scoring (see \code{\link{compute_player_psv}}).
 #'   If \code{NULL}, no cross-position centering is applied.
@@ -1477,7 +1490,7 @@ load_psr_coefficients <- function(type = c("margin", "offense", "defense"),
 #'
 #' @keywords internal
 compute_player_psr <- function(skills, center = TRUE,
-                                target = c("xg", "goals"),
+                                target = c("blend", "xg", "goals"),
                                 position_means = NULL,
                                 gk_goal_scale = GK_PSR_GOAL_SCALE) {
   target <- match.arg(target)
@@ -1496,15 +1509,17 @@ compute_player_psr <- function(skills, center = TRUE,
     outfield_skills <- dt[!is_gk]
     margin_coef <- load_psr_coefficients("margin", target = target)
 
-    prefix <- if (target == "goals") "gd_" else ""
-    osr_path <- system.file("extdata", paste0(prefix, "osr_coefficients.csv"),
-                             package = "panna")
-    dsr_path <- system.file("extdata", paste0(prefix, "dsr_coefficients.csv"),
-                             package = "panna")
+    # Route osr/dsr through the shared loader rather than rebuilding the prefix
+    # here: it already maps goals -> "gd_" / blend -> "blend_" and carries the
+    # blend-missing fallback. The old inline `if (target == "goals") "gd_"`
+    # silently resolved blend to the xG files, so target = "blend" would have
+    # mixed a blend margin with xG components.
+    osr_coef <- tryCatch(load_psr_coefficients("offense", target = target),
+                         error = function(e) NULL)
+    dsr_coef <- tryCatch(load_psr_coefficients("defense", target = target),
+                         error = function(e) NULL)
 
-    if (osr_path != "" && dsr_path != "") {
-      osr_coef <- utils::read.csv(osr_path, stringsAsFactors = FALSE)
-      dsr_coef <- utils::read.csv(dsr_path, stringsAsFactors = FALSE)
+    if (!is.null(osr_coef) && !is.null(dsr_coef)) {
       results$outfield <- calculate_psr_components(
         outfield_skills, margin_coef, osr_coef, dsr_coef, center = center
       )

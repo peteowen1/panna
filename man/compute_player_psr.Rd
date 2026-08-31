@@ -7,7 +7,7 @@
 compute_player_psr(
   skills,
   center = TRUE,
-  target = c("xg", "goals"),
+  target = c("blend", "xg", "goals"),
   position_means = NULL,
   gk_goal_scale = GK_PSR_GOAL_SCALE
 )
@@ -18,8 +18,21 @@ or \code{load_opta_skills()}).}
 
 \item{center}{Logical. Center PSR around position-group mean (default TRUE).}
 
-\item{target}{One of \code{"xg"} (default) or \code{"goals"} for the
-outfield model. GK model always uses goal differential.}
+\item{target}{Outfield coefficient set: \code{"blend"} (default,
+\code{0.6 * xG + 0.4 * goals}), \code{"xg"}, or \code{"goals"}. The GK
+sub-model always uses goal differential regardless.
+
+Default moved \code{"xg"} -> \code{"blend"} (panna#214). The xG-trained
+set cannot reward finishing by construction — \code{npg_minus_npxg_per90}
+is precisely the part of scoring xG does not capture — which made the net
+effect of an extra non-penalty goal NEGATIVE (-0.059) and left Messi 93rd
+among outfielders. Measured out-of-sample (prior-season rating -> next
+season's matches, fit <=2022 / test >=2023, n = 15,912), blend is the only
+set never worse than second: best on xG difference (test R2 0.1664 vs
+0.1618 xG / 0.1611 goals) and a statistical tie for best on goal
+difference (0.1428 vs 0.1431 goals / 0.1360 xG). Differences across sets
+are small (<1 R2 point), so the switch costs no predictive accuracy while
+materially improving valuation.}
 
 \item{position_means}{Optional pre-computed position-mean lookup table used
 to center skill columns before scoring (see \code{\link{compute_player_psv}}).
