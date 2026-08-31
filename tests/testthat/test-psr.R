@@ -787,10 +787,18 @@ test_that("shipped calibration table is well formed and in a sane range", {
   # a calibration, not a rewrite: nothing should flip a sign or explode
   expect_true(all(cal$factor > 0))
   expect_true(all(cal$factor > 0.3 & cal$factor < 2))
-  # keepers are the one large correction; outfield should stay near 1
+  # Factors ARE the fitted slopes (goal units), so they are NOT centred on 1 --
+  # outfield sits above 1 and GK well below. Assert the ordering that matters
+  # rather than an absolute scale, so a re-derivation does not spuriously fail.
   pos <- cal[cal$axis == "position", ]
-  expect_true(pos$factor[pos$level == "GK"] < 0.7)
-  expect_true(all(pos$factor[pos$level != "GK"] > 0.8 & pos$factor[pos$level != "GK"] < 1.25))
+  gk <- pos$factor[pos$level == "GK"]
+  out <- pos$factor[pos$level != "GK"]
+  expect_true(gk < 0.8)                 # keepers are the one large correction
+  expect_true(all(out > 0.9 & out < 1.6))
+  expect_true(gk < min(out))            # GK strictly below every outfield bucket
+  # season factors stay close to 1: the position axis already set the scale
+  sea <- cal[cal$axis == "season", ]
+  expect_true(all(sea$factor > 0.75 & sea$factor < 1.35))
 })
 
 test_that(".psr_calibration_factor defaults unknown keys to 1, never NA", {
