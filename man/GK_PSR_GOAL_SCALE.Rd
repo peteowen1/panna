@@ -39,5 +39,12 @@ NOTE the earlier seasonal-PSR version of this test gave the OPPOSITE sign
 contains the matches being predicted, and keepers play every minute, so
 their season figure is the most contaminated of any position. Only the
 point-in-time result is trustworthy.
+
+\strong{Residual gap:} \code{\link{compute_player_psv}} has the IDENTICAL
+goal-vs-xG target split for keepers (\code{.score(dt[is_gk], "goals", "gk")})
+and is deliberately NOT corrected here. PSV and PSR are both consumed by
+\code{piero_value} and the game-logs export, so until PSV is addressed the
+two metrics disagree about keepers by roughly this factor. Tracked
+separately -- do not assume both are fixed.
 }
 \keyword{internal}

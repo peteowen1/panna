@@ -476,6 +476,13 @@ SPM_BLEND_WEIGHT_GLMNET <- 0.5
 #' their season figure is the most contaminated of any position. Only the
 #' point-in-time result is trustworthy.
 #'
+#' \strong{Residual gap:} \code{\link{compute_player_psv}} has the IDENTICAL
+#' goal-vs-xG target split for keepers (\code{.score(dt[is_gk], "goals", "gk")})
+#' and is deliberately NOT corrected here. PSV and PSR are both consumed by
+#' \code{piero_value} and the game-logs export, so until PSV is addressed the
+#' two metrics disagree about keepers by roughly this factor. Tracked
+#' separately -- do not assume both are fixed.
+#'
 #' @format Numeric value: 0.72
 #' @keywords internal
 GK_PSR_GOAL_SCALE <- 0.72
