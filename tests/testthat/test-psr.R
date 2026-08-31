@@ -858,3 +858,26 @@ test_that("the current season passes through uncalibrated rather than becoming N
   expect_equal(out$psr, 0.5)
   expect_false(anyNA(out$psr))
 })
+
+
+test_that("psr_leaderboard_eligible flags rather than filters, and NA fails the bar", {
+  dt <- data.table::data.table(
+    player_id = c("full", "half", "cameo", "unknown"),
+    weighted_90s = c(30, 15, 7, NA_real_)
+  )
+  e <- psr_leaderboard_eligible(dt, min_90s = 15)
+  # boundary is inclusive; an unknown workload cannot clear a workload bar
+  expect_equal(e, c(TRUE, TRUE, FALSE, FALSE))
+  # returns a flag per row, not a filtered table -- callers keep the rows
+  expect_length(e, nrow(dt))
+  expect_type(e, "logical")
+
+  expect_error(
+    psr_leaderboard_eligible(data.table::data.table(player_id = "a")),
+    "weighted_90s"
+  )
+})
+
+test_that("MIN_90S_PSR_LEADERBOARD is a plausible half-season bar", {
+  expect_true(MIN_90S_PSR_LEADERBOARD >= 8 && MIN_90S_PSR_LEADERBOARD <= 25)
+})

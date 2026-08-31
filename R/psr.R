@@ -1620,6 +1620,35 @@ compute_player_psr <- function(skills, center = TRUE,
 }
 
 
+#' Is a player-season eligible for a PSR leaderboard? (panna#215)
+#'
+#' Returns a logical vector, one per row — deliberately NOT a filtered table.
+#' A low-minutes rating is still that player's best available estimate; it is
+#' only too noisy to \emph{rank} against a full season. Keep the rows, flag
+#' them, and let the display decide.
+#'
+#' Without this, 23 of the outfield top 100 are sub-15-nineties part-seasons
+#' (Totti 7.0, Pinilla 5.5, Pastore 9.7).
+#'
+#' @param psr_dt Table containing \code{weighted_90s}.
+#' @param min_90s Minimum weighted 90s; defaults to
+#'   \code{\link{MIN_90S_PSR_LEADERBOARD}}.
+#' @return Logical vector. \code{NA} or missing \code{weighted_90s} is treated
+#'   as NOT eligible — an unknown workload cannot clear a workload bar.
+#' @family psr
+#' @export
+psr_leaderboard_eligible <- function(psr_dt, min_90s = MIN_90S_PSR_LEADERBOARD) {
+  dt <- data.table::as.data.table(psr_dt)
+  if (!"weighted_90s" %in% names(dt)) {
+    cli::cli_abort(c(
+      "{.arg psr_dt} must contain {.field weighted_90s}.",
+      "i" = "Eligibility is a workload bar; without minutes it cannot be judged."
+    ))
+  }
+  w <- suppressWarnings(as.numeric(dt$weighted_90s))
+  !is.na(w) & is.finite(w) & w >= min_90s
+}
+
 #' Load the PSR calibration table
 #'
 #' Per-position and per-season multipliers putting PSR on a common

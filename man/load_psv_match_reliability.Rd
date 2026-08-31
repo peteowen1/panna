@@ -35,6 +35,7 @@ Other psr:
 \code{\link{load_opta_psr_weekly}()},
 \code{\link{load_psr_calibration}()},
 \code{\link{player_psr}()},
+\code{\link{psr_leaderboard_eligible}()},
 \code{\link{soccer_position_map}()},
 \code{\link{soccer_stat_rating_definitions}()},
 \code{\link{stat_rating_names}()}

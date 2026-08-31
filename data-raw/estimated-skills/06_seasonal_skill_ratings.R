@@ -556,6 +556,18 @@ if (!is.null(seasonal_psr) && nrow(seasonal_psr) > 0) {
     apply_psr_season_calibration(data.table::as.data.table(seasonal_psr))
   )
   cat("  Applied per-season PSR calibration\n")
+
+  # 6d. Leaderboard eligibility flag (panna#215) ----
+  # ADDITIVE: no rows dropped and no rating changed -- a low-minutes rating is
+  # still that player's best estimate, it is just too noisy to RANK against a
+  # full season. Consumers filter on this for top-N displays.
+  psr_q <- data.table::as.data.table(seasonal_psr)
+  psr_q[, psr_qualified := psr_leaderboard_eligible(psr_q)]
+  cat(sprintf("  Leaderboard-eligible (>= %g weighted 90s): %s of %s player-seasons\n",
+              MIN_90S_PSR_LEADERBOARD,
+              format(sum(psr_q$psr_qualified), big.mark = ","),
+              format(nrow(psr_q), big.mark = ",")))
+  seasonal_psr <- as.data.frame(psr_q)
 }
 
 # 7. Summary Statistics ----

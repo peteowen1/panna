@@ -505,6 +505,31 @@ SPM_BLEND_WEIGHT_GLMNET <- 0.5
 #' @keywords internal
 GK_PSR_GOAL_SCALE <- 0.50
 
+#' Minimum weighted 90s to qualify for a PSR leaderboard (panna#215)
+#'
+#' PSR rankings apply no minutes floor, so short partial seasons sit alongside
+#' full campaigns: **23 of the outfield top 100 have fewer than 15 weighted
+#' nineties and 11 fewer than 10** — F. Totti at 7.0, M. Pinilla at 5.5,
+#' J. Pastore at 9.7. This was the dominant driver of leaderboard noise,
+#' bigger than the cross-league offsets it is often blamed on (weak leagues are
+#' actually *under*-represented in the top 100: 91 of 100 are Big-5).
+#'
+#' 15 removes every sub-threshold entry currently in the outfield top 100; 10
+#' would remove 11 of 23. Chosen at 15 as roughly half a domestic season, the
+#' conventional qualification bar.
+#'
+#' This is a DISPLAY threshold, not a rating filter — a low-minutes rating is
+#' still the best estimate available for that player, it is just too noisy to
+#' rank against a full season. Use \code{\link{psr_leaderboard_eligible}} and
+#' keep the rows.
+#'
+#' @format Numeric value: 15
+#' @family constants
+#' @export
+#' @examples
+#' MIN_90S_PSR_LEADERBOARD
+MIN_90S_PSR_LEADERBOARD <- 15
+
 
 # =============================================================================
 # Cache Path Constants
