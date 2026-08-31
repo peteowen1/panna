@@ -1152,6 +1152,33 @@ softprob_matrix <- function(probs, n_rows, n_class = 3L) {
 }
 
 
+#' Grouped cross-validation folds
+#'
+#' Assigns whole GROUPS (not individual rows) to folds, so rows that share a
+#' group id always land in the same fold. Used to keep a match and its
+#' \code{\link{mirror_match_rows}} orientation-flipped twin together during
+#' CV early-stopping — otherwise a match's mirror can land in a different
+#' fold than the original, letting the same match inform both sides of a
+#' fold split (leakage-audit finding, 2026-08-27).
+#'
+#' @param group_ids Vector, one entry per row of the training data (e.g.
+#'   \code{match_id}); rows sharing a value are always co-assigned.
+#' @param nfolds Number of folds.
+#' @param seed RNG seed for the fold assignment (reproducible).
+#' @return A list of length \code{nfolds}, each element a vector of row
+#'   indices forming that fold's TEST set — the format
+#'   \code{xgboost::xgb.cv(folds = ...)} expects.
+#' @keywords internal
+.grouped_cv_folds <- function(group_ids, nfolds, seed = 1234L) {
+  groups <- unique(group_ids)
+  withr::with_seed(seed, {
+    group_fold <- sample(rep_len(seq_len(nfolds), length(groups)))
+  })
+  names(group_fold) <- as.character(groups)
+  row_fold <- group_fold[as.character(group_ids)]
+  lapply(seq_len(nfolds), function(f) which(row_fold == f))
+}
+
 #' Fit XGBoost Model with Cross-Validation
 #'
 #' Shared helper for training XGBoost models with k-fold cross-validation
@@ -1165,26 +1192,37 @@ softprob_matrix <- function(probs, n_rows, n_class = 3L) {
 #' @param nrounds Max boosting rounds (default 500)
 #' @param early_stopping Patience for early stopping (default 30)
 #' @param verbose Print progress (default 1)
+#' @param group_ids Optional vector, one entry per row of \code{X}/\code{y}
+#'   (e.g. \code{match_id}). When supplied, CV folds are assigned by group
+#'   via \code{\link{.grouped_cv_folds}} instead of xgboost's default random
+#'   per-row assignment, so a match and its mirrored twin never split across
+#'   folds. \code{NULL} (default) keeps the prior per-row random behaviour.
 #'
 #' @return List with model, cv_result, best_nrounds, metadata
 #' @keywords internal
 .fit_xgb_model <- function(X, y, params, nfolds = 5L, nrounds = 500L,
-                           early_stopping = 30L, verbose = 1L) {
+                           early_stopping = 30L, verbose = 1L,
+                           group_ids = NULL) {
   if (!requireNamespace("xgboost", quietly = TRUE)) {
     cli::cli_abort("Package {.pkg xgboost} is required.")
   }
 
   dtrain <- xgboost::xgb.DMatrix(data = X, label = y)
 
-  cv_result <- xgboost::xgb.cv(
+  cv_args <- list(
     params = params,
     data = dtrain,
     nrounds = nrounds,
-    nfold = nfolds,
     early_stopping_rounds = early_stopping,
     verbose = verbose,
     print_every_n = 50L
   )
+  if (is.null(group_ids)) {
+    cv_args$nfold <- nfolds
+  } else {
+    cv_args$folds <- .grouped_cv_folds(group_ids, nfolds)
+  }
+  cv_result <- do.call(xgboost::xgb.cv, cv_args)
 
   best_nrounds <- .get_best_nrounds(cv_result)
 
@@ -1221,12 +1259,14 @@ softprob_matrix <- function(probs, n_rows, n_class = 3L) {
 #' @param nrounds Max boosting rounds (default 500)
 #' @param early_stopping Patience for early stopping (default 30)
 #' @param verbose Print progress (default 1)
+#' @param group_ids Optional grouping vector (e.g. \code{match_id}) passed to
+#'   \code{\link{.fit_xgb_model}} — see its documentation.
 #'
 #' @return List with model, cv_result, best_nrounds, metadata
 #' @keywords internal
 fit_goals_xgb <- function(X, y, nfolds = 5L, params = NULL,
                            nrounds = 500L, early_stopping = 30L,
-                           verbose = 1L) {
+                           verbose = 1L, group_ids = NULL) {
   if (is.null(params)) {
     params <- list(
       objective = "count:poisson",
@@ -1238,7 +1278,7 @@ fit_goals_xgb <- function(X, y, nfolds = 5L, params = NULL,
       min_child_weight = 10
     )
   }
-  .fit_xgb_model(X, y, params, nfolds, nrounds, early_stopping, verbose)
+  .fit_xgb_model(X, y, params, nfolds, nrounds, early_stopping, verbose, group_ids)
 }
 
 
@@ -1254,12 +1294,14 @@ fit_goals_xgb <- function(X, y, nfolds = 5L, params = NULL,
 #' @param nrounds Max boosting rounds (default 500)
 #' @param early_stopping Patience for early stopping (default 30)
 #' @param verbose Print progress (default 1)
+#' @param group_ids Optional grouping vector (e.g. \code{match_id}) passed to
+#'   \code{\link{.fit_xgb_model}} — see its documentation.
 #'
 #' @return List with model, cv_result, best_nrounds, metadata
 #' @keywords internal
 fit_outcome_xgb <- function(X, y, nfolds = 5L, params = NULL,
                               nrounds = 500L, early_stopping = 30L,
-                              verbose = 1L) {
+                              verbose = 1L, group_ids = NULL) {
   if (is.null(params)) {
     params <- list(
       objective = "multi:softprob",
@@ -1272,7 +1314,7 @@ fit_outcome_xgb <- function(X, y, nfolds = 5L, params = NULL,
       min_child_weight = 10
     )
   }
-  .fit_xgb_model(X, y, params, nfolds, nrounds, early_stopping, verbose)
+  .fit_xgb_model(X, y, params, nfolds, nrounds, early_stopping, verbose, group_ids)
 }
 
 

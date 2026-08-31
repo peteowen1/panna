@@ -95,9 +95,13 @@ fit_outcome_segment <- function(seg_name, train_df, val_df, goals_seg) {
   X_train[is.na(X_train)] <- 0
   X_val[is.na(X_val)]     <- 0
 
+  # group_ids = match_id: same fix as 05_fit_goals_model.R — keeps a match and
+  # its mirror_match_rows() twin in the same CV fold (leakage-audit finding,
+  # 2026-08-27).
   outcome_model <- fit_outcome_xgb(X = X_train, y = train_df$outcome_label,
                                    nfolds = 5L, nrounds = 500L,
-                                   early_stopping = 30L, verbose = 0L)
+                                   early_stopping = 30L, verbose = 0L,
+                                   group_ids = train_df$match_id)
 
   vp_raw <- stats::predict(outcome_model$model, xgboost::xgb.DMatrix(X_val))
   vp <- if (is.matrix(vp_raw)) vp_raw else matrix(vp_raw, ncol = 3, byrow = TRUE)
