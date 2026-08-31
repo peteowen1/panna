@@ -6,23 +6,7 @@ Player rating system for football using RAPM + SPM methodology. This is the prim
 
 ## Development Commands
 
-```r
-# Load package for interactive dev
-devtools::load_all()
-
-# Run tests
-devtools::test()                          # All tests
-devtools::test(filter = "rapm")           # Single test file
-
-# Full package check (run before considering feature complete)
-devtools::check()
-
-# Rebuild docs (after editing roxygen comments)
-devtools::document()
-
-# Build pkgdown site
-pkgdown::build_site()
-```
+Standard `devtools::load_all()` / `check()` / `document()` workflow, plus `devtools::test(filter = "rapm")` to target a single test file and `pkgdown::build_site()` for the docs site.
 
 **Working directory**: Always `cd panna` before running R commands, or use `devtools::load_all("panna")` from pannaverse root.
 
