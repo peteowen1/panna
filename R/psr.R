@@ -1467,13 +1467,19 @@ load_psr_coefficients <- function(type = c("margin", "offense", "defense"),
 #' @param position_means Optional pre-computed position-mean lookup table used
 #'   to center skill columns before scoring (see \code{\link{compute_player_psv}}).
 #'   If \code{NULL}, no cross-position centering is applied.
+#' @param gk_goal_scale Multiplier putting goalkeeper PSR on the same
+#'   goals-per-90 footing as outfield PSR (panna#202). The GK sub-model is
+#'   trained on goal difference and the outfield model on xG difference, so a
+#'   unit of each buys a different amount of real goal difference. Defaults to
+#'   \code{GK_PSR_GOAL_SCALE}; pass \code{1} for pre-#202 behaviour.
 #'
 #' @return A data.table with \code{psr}, \code{osr}, \code{dsr} columns.
 #'
 #' @keywords internal
 compute_player_psr <- function(skills, center = TRUE,
                                 target = c("xg", "goals"),
-                                position_means = NULL) {
+                                position_means = NULL,
+                                gk_goal_scale = GK_PSR_GOAL_SCALE) {
   target <- match.arg(target)
   dt <- data.table::as.data.table(skills)
   dt <- .position_normalize_skills(dt, position_means)
@@ -1540,6 +1546,15 @@ compute_player_psr <- function(skills, center = TRUE,
       } else {
         results$gk <- calculate_psr(gk_skills, gk_margin_coef, center = center)
       }
+
+      # panna#202: put keeper PSR on the same goals-per-90 footing as outfield.
+      # The GK sub-model is trained on goal difference and the outfield model on
+      # xG difference, so a unit of each buys a different amount of real goal
+      # difference -- measured leak-free at GK = 0.70 of the outfield slope.
+      # Without this, keepers are doubly advantaged in any combined ranking:
+      # wider spread AND each unit worth less. Scaling psr/osr/dsr by the same
+      # factor preserves the osr + dsr == psr identity.
+      results$gk <- .scale_gk_psr(results$gk, gk_goal_scale)
     } else {
       # No GK model at all -- warn and assign zeros
       cli::cli_warn("GK coefficient files not found. GKs will have PSR = 0.")
@@ -1556,6 +1571,34 @@ compute_player_psr <- function(skills, center = TRUE,
 
   # Combine results
   data.table::rbindlist(results, fill = TRUE, use.names = TRUE)
+}
+
+
+#' Scale goalkeeper PSR onto the outfield goals footing (panna#202)
+#'
+#' Multiplies a GK result's rating columns by \code{scale}. Applied to
+#' \code{psr}, \code{osr}, \code{dsr} and \code{psr_raw} together so the
+#' \code{osr + dsr == psr} identity survives and the pre-centering value stays
+#' consistent with the centered one. A \code{scale} of 1 is an exact no-op, so
+#' callers can reproduce pre-#202 behaviour.
+#'
+#' @param gk_result GK rating table from \code{calculate_psr_components()} or
+#'   \code{calculate_psr()}.
+#' @param scale Multiplier; see \code{GK_PSR_GOAL_SCALE}.
+#' @return \code{gk_result} with its rating columns scaled.
+#' @keywords internal
+#' @noRd
+.scale_gk_psr <- function(gk_result, scale) {
+  if (is.null(gk_result) || nrow(gk_result) == 0) return(gk_result)
+  if (!is.numeric(scale) || length(scale) != 1L || !is.finite(scale)) {
+    cli::cli_abort("{.arg gk_goal_scale} must be a single finite number.")
+  }
+  if (isTRUE(all.equal(scale, 1))) return(gk_result)
+  dt <- data.table::as.data.table(gk_result)
+  for (col in intersect(c("psr_raw", "psr", "osr", "dsr"), names(dt))) {
+    data.table::set(dt, j = col, value = dt[[col]] * scale)
+  }
+  dt[]
 }
 
 

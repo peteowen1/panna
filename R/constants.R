@@ -446,6 +446,40 @@ MIN_MINUTES_RAPM_FIT <- 200L
 #' @keywords internal
 SPM_BLEND_WEIGHT_GLMNET <- 0.5
 
+#' Goalkeeper PSR scale correction (panna#202)
+#'
+#' Multiplier putting goalkeeper PSR on the same goals-per-90 footing as
+#' outfield PSR. The two sub-models are trained on different targets --
+#' outfield on xG difference, keepers always on goal difference
+#' (\code{psr.R}, \code{compute_player_psr()}) -- so their outputs are not
+#' directly comparable even though they share the name "PSR", get summed into
+#' team totals, and are ranked in one leaderboard.
+#'
+#' Derived from a leak-free calibration: each player-match was assigned the
+#' last weekly PSR snapshot STRICTLY BEFORE that match (rolling as-of join on
+#' \code{opta_psr_weekly.parquet}), minute-weighted and summed per position
+#' group, then regressed as own-minus-opponent differences on actual goal
+#' difference. Goalkeepers came out at 0.70 of their own outfield mean slope
+#' (GK 1.323 vs outfield 1.877, n = 54,328 team-matches) -- i.e. a unit of
+#' keeper PSR buys ~30\% less goal difference than a unit of outfield PSR.
+#'
+#' 0.72 is the median across slices. The estimate is tight to the minutes
+#' floor (0.705-0.746 across floors 0/3/5/8) and unanimous in direction (every
+#' slice below 1.0), but does move by era (2019-2022 0.828 vs 2023-2026 0.641)
+#' and league tier (Big-5 0.639 vs non-Big-5 0.771) -- so treat it as a central
+#' estimate, not a precise constant, and re-derive it when GK coefficients are
+#' retrained (\code{07_train_psr_model.R}).
+#'
+#' NOTE the earlier seasonal-PSR version of this test gave the OPPOSITE sign
+#' (keepers appeared under-weighted). That was leakage: a season rating
+#' contains the matches being predicted, and keepers play every minute, so
+#' their season figure is the most contaminated of any position. Only the
+#' point-in-time result is trustworthy.
+#'
+#' @format Numeric value: 0.72
+#' @keywords internal
+GK_PSR_GOAL_SCALE <- 0.72
+
 
 # =============================================================================
 # Cache Path Constants

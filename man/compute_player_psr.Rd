@@ -8,7 +8,8 @@ compute_player_psr(
   skills,
   center = TRUE,
   target = c("xg", "goals"),
-  position_means = NULL
+  position_means = NULL,
+  gk_goal_scale = GK_PSR_GOAL_SCALE
 )
 }
 \arguments{
@@ -23,6 +24,12 @@ outfield model. GK model always uses goal differential.}
 \item{position_means}{Optional pre-computed position-mean lookup table used
 to center skill columns before scoring (see \code{\link{compute_player_psv}}).
 If \code{NULL}, no cross-position centering is applied.}
+
+\item{gk_goal_scale}{Multiplier putting goalkeeper PSR on the same
+goals-per-90 footing as outfield PSR (panna#202). The GK sub-model is
+trained on goal difference and the outfield model on xG difference, so a
+unit of each buys a different amount of real goal difference. Defaults to
+\code{GK_PSR_GOAL_SCALE}; pass \code{1} for pre-#202 behaviour.}
 }
 \value{
 A data.table with \code{psr}, \code{osr}, \code{dsr} columns.

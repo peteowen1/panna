@@ -666,3 +666,64 @@ test_that(".estimate_prematch_skills_batch handles single-player data", {
   expect_equal(nrow(result[[1]]), 1)
   expect_equal(result[[1]]$player_id, "solo")
 })
+
+
+# =============================================================================
+# GK PSR goal-scale correction (panna#202)
+# =============================================================================
+
+test_that(".scale_gk_psr preserves the osr + dsr == psr identity", {
+  gk <- data.table::data.table(
+    player_id = c("a", "b"),
+    psr_raw = c(0.40, -0.20),
+    psr = c(0.50, -0.30),
+    osr = c(0.35, -0.10),
+    dsr = c(0.15, -0.20)
+  )
+  # precondition: the identity holds before scaling
+  expect_equal(gk$osr + gk$dsr, gk$psr)
+
+  out <- panna:::.scale_gk_psr(gk, 0.72)
+  expect_equal(out$osr + out$dsr, out$psr)
+  expect_equal(out$psr, c(0.50, -0.30) * 0.72)
+  expect_equal(out$psr_raw, c(0.40, -0.20) * 0.72)
+})
+
+test_that(".scale_gk_psr shrinks magnitude but never flips sign or reorders", {
+  gk <- data.table::data.table(
+    player_id = c("a", "b", "c"),
+    psr = c(0.50, -0.30, 0.10),
+    osr = c(0.35, -0.10, 0.06),
+    dsr = c(0.15, -0.20, 0.04)
+  )
+  out <- panna:::.scale_gk_psr(gk, 0.72)
+  # a correction, not a re-rating: order and signs must survive
+  expect_equal(order(out$psr), order(gk$psr))
+  expect_equal(sign(out$psr), sign(gk$psr))
+  expect_true(all(abs(out$psr) < abs(gk$psr)))
+})
+
+test_that(".scale_gk_psr with scale 1 is an exact no-op (pre-#202 behaviour)", {
+  gk <- data.table::data.table(
+    player_id = "a", psr = 0.5, osr = 0.35, dsr = 0.15
+  )
+  expect_equal(panna:::.scale_gk_psr(gk, 1), gk)
+})
+
+test_that(".scale_gk_psr handles empty input and rejects a bad scale", {
+  empty <- data.table::data.table(
+    player_id = character(0), psr = numeric(0),
+    osr = numeric(0), dsr = numeric(0)
+  )
+  expect_equal(nrow(panna:::.scale_gk_psr(empty, 0.72)), 0)
+
+  gk <- data.table::data.table(player_id = "a", psr = 0.5, osr = 0.3, dsr = 0.2)
+  expect_error(panna:::.scale_gk_psr(gk, c(0.5, 0.6)), "single finite number")
+  expect_error(panna:::.scale_gk_psr(gk, NA_real_), "single finite number")
+})
+
+test_that("GK_PSR_GOAL_SCALE is in a sane range", {
+  # a correction, not a rewrite -- if a retrain pushes this outside (0.4, 1.0)
+  # the derivation should be re-examined rather than the constant just updated
+  expect_true(GK_PSR_GOAL_SCALE > 0.4 && GK_PSR_GOAL_SCALE < 1.0)
+})
