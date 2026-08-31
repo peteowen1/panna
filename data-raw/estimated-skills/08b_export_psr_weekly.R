@@ -643,6 +643,18 @@ for (i in seq_along(snapshot_dates)) {
     }
   }
 
+  # Position calibration (panna#202/#214) -- AFTER the league offsets, same
+  # ordering rule as the seasonal path in 06: the published rating is
+  # `psr * factor + offset`, so scaling before the additive offset would leave
+  # the offset uncalibrated. Without this the weekly snapshots and the seasonal
+  # table would disagree about the same player by up to the GK factor (~2x).
+  # The SEASON axis is deliberately skipped here: these rows are keyed on
+  # snapshot_date, not season_end_year, and a snapshot's own season is the
+  # current one, whose factor cannot be estimated until the following season's
+  # matches exist. apply_psr_calibration() no-ops that axis when the column is
+  # absent.
+  psr <- apply_psr_calibration(data.table::as.data.table(psr))
+
   psr[, snapshot_date := d]
   psr_slim <- psr[, .(snapshot_date, player_id, player_name,
                        primary_position, psr, osr, dsr, weighted_90s)]

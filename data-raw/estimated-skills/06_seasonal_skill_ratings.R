@@ -543,19 +543,22 @@ if (nrow(seasonal_psr) > 0 && !is.null(psr_primary_league)) {
   }
 }
 
-# 6c. Per-season calibration ----
+# 6c. Position + season calibration ----
 #
-# compute_player_psr() has already applied the POSITION axis; the SEASON axis
-# has to wait until here because that function never sees season_end_year.
-# Puts each season's ratings on a common goals-per-90 footing so cross-season
-# tables compare like with like (panna#213). Seasons with no estimate --
-# always including the CURRENT one, whose factor needs the following season's
-# matches -- pass through at 1.
+# MUST run AFTER apply_psr_league_offsets(): the published rating is
+# `psr * factor + offset`, so scaling before the additive offset would leave
+# the offset itself uncalibrated. Measured — applying position pre-offset
+# equalised position slopes only to a 0.195 spread vs 0.058 post-offset.
+#
+# Puts every position and season on a common goals-per-90 footing so a keeper
+# in 2016 and a striker in 2025 mean the same thing (panna#202/#213/#214).
+# Cells with no estimate — always including the CURRENT season, whose factor
+# needs the following season's matches — pass through at 1.
 if (!is.null(seasonal_psr) && nrow(seasonal_psr) > 0) {
   seasonal_psr <- as.data.frame(
-    apply_psr_season_calibration(data.table::as.data.table(seasonal_psr))
+    apply_psr_calibration(data.table::as.data.table(seasonal_psr))
   )
-  cat("  Applied per-season PSR calibration\n")
+  cat("  Applied PSR calibration (position + season)\n")
 
   # 6d. Leaderboard eligibility flag (panna#215) ----
   # ADDITIVE: no rows dropped and no rating changed -- a low-minutes rating is

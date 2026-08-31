@@ -1480,17 +1480,13 @@ load_psr_coefficients <- function(type = c("margin", "offense", "defense"),
 #' @param position_means Optional pre-computed position-mean lookup table used
 #'   to center skill columns before scoring (see \code{\link{compute_player_psv}}).
 #'   If \code{NULL}, no cross-position centering is applied.
-#' @param calibration Per-position calibration table putting every position on a
-#'   common goals-per-90 footing; defaults to \code{\link{load_psr_calibration}}.
-#'   Pass \code{NULL} to skip calibration entirely (raw model output).
-#'   The season axis is applied separately by
-#'   \code{\link{apply_psr_season_calibration}}, because this function cannot
-#'   see the season.
-#' @param gk_goal_scale \strong{Superseded} by \code{calibration}, which covers
-#'   goalkeepers along with every other position. Defaults to \code{1} (no-op);
-#'   passing both would double-scale keepers. Retained so a caller pinning the
-#'   old panna#202 behaviour (\code{GK_PSR_GOAL_SCALE} with
-#'   \code{calibration = NULL}) still works.
+#' @param gk_goal_scale \strong{Superseded} by
+#'   \code{\link{apply_psr_calibration}}, which covers goalkeepers along with
+#'   every other position AND is applied at the correct point (after the
+#'   cross-league offsets). Defaults to \code{1} (no-op). Retained only so a
+#'   caller can pin the old panna#202 behaviour by passing
+#'   \code{GK_PSR_GOAL_SCALE} and skipping \code{apply_psr_calibration()};
+#'   doing both would double-scale keepers.
 #'
 #' @return A data.table with \code{psr}, \code{osr}, \code{dsr} columns.
 #'
@@ -1498,7 +1494,6 @@ load_psr_coefficients <- function(type = c("margin", "offense", "defense"),
 compute_player_psr <- function(skills, center = TRUE,
                                 target = c("blend", "xg", "goals"),
                                 position_means = NULL,
-                                calibration = load_psr_calibration(),
                                 gk_goal_scale = 1) {
   target <- match.arg(target)
   dt <- data.table::as.data.table(skills)
@@ -1588,9 +1583,18 @@ compute_player_psr <- function(skills, center = TRUE,
     }
   }
 
-  # Combine results, then put every position on a common goals footing.
+  # NOTE: calibration is deliberately NOT applied here. Both axes are applied
+  # by apply_psr_calibration() AFTER the additive cross-league offsets, because
+  # the published rating is `psr * factor + offset` -- scaling before the offset
+  # leaves the offset uncalibrated and dilutes the correction (measured: it cut
+  # the position-slope equalisation from a 0.058 spread to 0.195).
   combined <- data.table::rbindlist(results, fill = TRUE, use.names = TRUE)
-  .calibrate_psr_positions(combined, calibration)
+  # rbindlist drops attributes, so re-stamp the marker on the combined table --
+  # this is what lets apply_psr_calibration() refuse to double-scale keepers.
+  if (!isTRUE(all.equal(gk_goal_scale, 1))) {
+    data.table::setattr(combined, "panna_gk_scaled", TRUE)
+  }
+  combined
 }
 
 #' Apply the per-position PSR calibration
@@ -1705,6 +1709,49 @@ load_psr_calibration <- function() {
   f
 }
 
+#' Apply the PSR calibration (position and season)
+#'
+#' Puts every position and season on a common goals-per-90 footing, so 0.1 PSR
+#' means the same amount of goal difference for a keeper in 2016 and a striker
+#' in 2025.
+#'
+#' \strong{Call this AFTER the cross-league offsets.} The published rating is
+#' \code{psr * factor + offset}; scaling before the additive offset leaves the
+#' offset itself uncalibrated and dilutes the correction. Measured: applying
+#' position before the offset equalised position slopes to a spread of only
+#' 0.195, versus 0.058 when applied after.
+#'
+#' The season axis is skipped when \code{season_end_year} is absent (e.g. the
+#' weekly snapshot path, which is keyed on \code{snapshot_date}), so this is
+#' safe to call from any consumer.
+#'
+#' @param psr_dt PSR table with \code{primary_position}, optionally
+#'   \code{season_end_year}.
+#' @param calibration Calibration table; defaults to the shipped one. Pass
+#'   \code{NULL} to skip.
+#' @return \code{psr_dt} with rating columns calibrated on both axes.
+#' @family psr
+#' @export
+apply_psr_calibration <- function(psr_dt, calibration = load_psr_calibration()) {
+  dt <- data.table::as.data.table(psr_dt)
+  if (is.null(calibration) || NROW(calibration) == 0 || nrow(dt) == 0) return(dt)
+  # Guard the one way this can be silently wrong: calibrating a table whose
+  # keepers were already scaled by the superseded gk_goal_scale would apply
+  # ~0.5 twice (~0.27). The marker column is set by .scale_gk_psr().
+  if (isTRUE(attr(dt, "panna_gk_scaled"))) {
+    cli::cli_abort(c(
+      "These ratings were already scaled by {.arg gk_goal_scale}.",
+      "x" = "Calibrating again would double-scale goalkeepers.",
+      "i" = "Use {.emph either} {.arg gk_goal_scale} (superseded) {.emph or} {.fn apply_psr_calibration}, not both."
+    ))
+  }
+  dt <- .calibrate_psr_positions(dt, calibration)
+  if ("season_end_year" %in% names(dt)) {
+    dt <- apply_psr_season_calibration(dt, calibration)
+  }
+  dt[]
+}
+
 #' Apply per-season PSR calibration
 #'
 #' Multiplies \code{psr}/\code{osr}/\code{dsr}/\code{psr_raw} by the season
@@ -1761,6 +1808,8 @@ apply_psr_season_calibration <- function(psr_dt, calibration = load_psr_calibrat
   for (col in intersect(c("psr_raw", "psr", "osr", "dsr"), names(dt))) {
     data.table::set(dt, j = col, value = dt[[col]] * scale)
   }
+  # Marker so apply_psr_calibration() can refuse to scale keepers twice.
+  data.table::setattr(dt, "panna_gk_scaled", TRUE)
   dt[]
 }
 

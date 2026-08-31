@@ -9,7 +9,6 @@ compute_player_psr(
   center = TRUE,
   target = c("blend", "xg", "goals"),
   position_means = NULL,
-  calibration = load_psr_calibration(),
   gk_goal_scale = 1
 )
 }
@@ -39,18 +38,13 @@ materially improving valuation.}
 to center skill columns before scoring (see \code{\link{compute_player_psv}}).
 If \code{NULL}, no cross-position centering is applied.}
 
-\item{calibration}{Per-position calibration table putting every position on a
-common goals-per-90 footing; defaults to \code{\link{load_psr_calibration}}.
-Pass \code{NULL} to skip calibration entirely (raw model output).
-The season axis is applied separately by
-\code{\link{apply_psr_season_calibration}}, because this function cannot
-see the season.}
-
-\item{gk_goal_scale}{\strong{Superseded} by \code{calibration}, which covers
-goalkeepers along with every other position. Defaults to \code{1} (no-op);
-passing both would double-scale keepers. Retained so a caller pinning the
-old panna#202 behaviour (\code{GK_PSR_GOAL_SCALE} with
-\code{calibration = NULL}) still works.}
+\item{gk_goal_scale}{\strong{Superseded} by
+\code{\link{apply_psr_calibration}}, which covers goalkeepers along with
+every other position AND is applied at the correct point (after the
+cross-league offsets). Defaults to \code{1} (no-op). Retained only so a
+caller can pin the old panna#202 behaviour by passing
+\code{GK_PSR_GOAL_SCALE} and skipping \code{apply_psr_calibration()};
+doing both would double-scale keepers.}
 }
 \value{
 A data.table with \code{psr}, \code{osr}, \code{dsr} columns.

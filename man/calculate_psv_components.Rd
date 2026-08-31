@@ -81,6 +81,7 @@ producing \code{psv}, \code{osv}, and \code{dsv} columns where
 \seealso{
 Other psr: 
 \code{\link{PSV_RELIABILITY_GD_SCALE}},
+\code{\link{apply_psr_calibration}()},
 \code{\link{apply_psr_season_calibration}()},
 \code{\link{calculate_psr}()},
 \code{\link{calculate_psv}()},

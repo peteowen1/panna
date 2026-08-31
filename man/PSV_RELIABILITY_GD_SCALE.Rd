@@ -62,6 +62,7 @@ require re-running it.
 }
 \seealso{
 Other psr: 
+\code{\link{apply_psr_calibration}()},
 \code{\link{apply_psr_season_calibration}()},
 \code{\link{calculate_psr}()},
 \code{\link{calculate_psv}()},

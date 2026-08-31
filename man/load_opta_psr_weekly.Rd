@@ -47,6 +47,7 @@ psr <- load_opta_psr_weekly(date = "2026-03-18")
 \seealso{
 Other psr: 
 \code{\link{PSV_RELIABILITY_GD_SCALE}},
+\code{\link{apply_psr_calibration}()},
 \code{\link{apply_psr_season_calibration}()},
 \code{\link{calculate_psr}()},
 \code{\link{calculate_psv}()},

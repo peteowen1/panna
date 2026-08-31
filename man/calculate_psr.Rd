@@ -50,6 +50,7 @@ contribution to xG/goal differential based on their skill profile.
 \seealso{
 Other psr: 
 \code{\link{PSV_RELIABILITY_GD_SCALE}},
+\code{\link{apply_psr_calibration}()},
 \code{\link{apply_psr_season_calibration}()},
 \code{\link{calculate_psv}()},
 \code{\link{calculate_psv_components}()},

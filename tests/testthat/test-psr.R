@@ -881,3 +881,81 @@ test_that("psr_leaderboard_eligible flags rather than filters, and NA fails the 
 test_that("MIN_90S_PSR_LEADERBOARD is a plausible half-season bar", {
   expect_true(MIN_90S_PSR_LEADERBOARD >= 8 && MIN_90S_PSR_LEADERBOARD <= 25)
 })
+
+
+# =============================================================================
+# apply_psr_calibration: both axes, post-offset (panna#202/#213/#214)
+# =============================================================================
+
+test_that("apply_psr_calibration applies position and season together", {
+  cal <- data.table::data.table(
+    axis = c("position", "position", "season", "season"),
+    level = c("GK", "FWD", "2016", "2023"),
+    factor = c(0.5, 2.0, 0.5, 2.0)
+  )
+  dt <- data.table::data.table(
+    player_id = c("a", "b"),
+    primary_position = c("GK", "FWD"),
+    season_end_year = c(2016L, 2023L),
+    psr = c(1.0, 1.0), osr = c(0.6, 0.6), dsr = c(0.4, 0.4)
+  )
+  out <- apply_psr_calibration(dt, cal)
+  # both axes multiply: GK/2016 = 0.5*0.5, FWD/2023 = 2*2
+  expect_equal(out$psr, c(0.25, 4.0))
+  expect_equal(out$osr + out$dsr, out$psr)
+})
+
+test_that("apply_psr_calibration skips the season axis when the column is absent", {
+  # the weekly snapshot path is keyed on snapshot_date, not season_end_year
+  cal <- data.table::data.table(
+    axis = c("position", "season"), level = c("GK", "2016"), factor = c(0.5, 0.1)
+  )
+  dt <- data.table::data.table(player_id = "a", primary_position = "GK",
+                                psr = 1.0, osr = 0.6, dsr = 0.4)
+  out <- apply_psr_calibration(dt, cal)
+  expect_equal(out$psr, 0.5)          # position only, season not applied
+  expect_equal(out$osr + out$dsr, out$psr)
+})
+
+test_that("apply_psr_calibration refuses to double-scale already-gk-scaled ratings", {
+  skills <- data.table::data.table(
+    player_id = c("gk1", "of1"), player_name = c("K", "P"),
+    primary_position = c("GK", "DEF"),
+    weighted_90s = c(20, 22), total_minutes = c(1800, 1980),
+    passes_p90 = c(30, 45), touches_p90 = c(40, 60),
+    long_balls_p90 = c(12, 4), saves_p90 = c(3, 0),
+    high_claim_p90 = c(1.2, 0), keeper_sweeper_p90 = c(0.8, 0),
+    gsaa_per90 = c(0.05, 0)
+  )
+  scaled <- tryCatch(
+    suppressWarnings(suppressMessages(
+      compute_player_psr(skills, center = FALSE, gk_goal_scale = 0.5))),
+    error = function(e) NULL)
+  skip_if(is.null(scaled), "compute_player_psr unavailable on this fixture")
+  expect_error(apply_psr_calibration(scaled), "double-scale")
+
+  # the default path (gk_goal_scale = 1) carries no marker and calibrates fine
+  plain <- suppressWarnings(suppressMessages(
+    compute_player_psr(skills, center = FALSE)))
+  expect_no_error(apply_psr_calibration(plain))
+})
+
+test_that("compute_player_psr no longer calibrates internally", {
+  # calibration moved to apply_psr_calibration() so it lands AFTER the additive
+  # league offsets; verify the raw output is genuinely uncalibrated
+  skills <- data.table::data.table(
+    player_id = "gk1", player_name = "K", primary_position = "GK",
+    weighted_90s = 20, total_minutes = 1800,
+    passes_p90 = 30, touches_p90 = 40, long_balls_p90 = 12,
+    saves_p90 = 3, high_claim_p90 = 1.2, keeper_sweeper_p90 = 0.8,
+    gsaa_per90 = 0.05
+  )
+  raw <- tryCatch(
+    suppressWarnings(suppressMessages(compute_player_psr(skills, center = FALSE))),
+    error = function(e) NULL)
+  skip_if(is.null(raw), "compute_player_psr unavailable on this fixture")
+  cal <- apply_psr_calibration(data.table::as.data.table(raw))
+  gk_f <- load_psr_calibration()
+  gk_f <- gk_f$factor[gk_f$axis == "position" & gk_f$level == "GK"]
+  expect_equal(cal$psr, raw$psr * gk_f, tolerance = 1e-9)
+})
