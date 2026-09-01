@@ -706,6 +706,28 @@ PANNA_RATING_LEAGUES <- unlist(PANNA_LEAGUE_GROUPS, use.names = FALSE)
 #' @keywords internal
 PANNA_BRIDGE_LEAGUES <- c("LIB", "SUD", "CCC", "LGC", "ACLE", "CWC")
 
+#' Domestic-only competitions (for league-offset attribution)
+#'
+#' The subset of \code{PANNA_RATING_LEAGUES} that is a domestic league. Used
+#' when attributing a player-season to "the league he plays in", which must be
+#' a domestic competition -- a cross-league cup is where leagues MEET, not a
+#' league a player belongs to.
+#'
+#' Without this restriction the max-minutes rule assigns a continental
+#' competition as a player's league whenever his domestic one is absent from
+#' the rated set: measured at **19.1\% of player-seasons** (24,613 of 128,589)
+#' -- UEL 9,062, Conference 6,770, CAF_CL 3,438, UCL 2,724. Those players
+#' (typically from unrated leagues such as Norway, Czechia or Japan appearing
+#' only in Europe) were priced with the UEL/UCL offset rather than anything
+#' reflecting their actual domestic standard. Adding
+#' \code{PANNA_BRIDGE_LEAGUES} to the skills pipeline would extend the same
+#' problem to South American and Asian players.
+#'
+#' @format Character vector of domestic competition codes
+#' @keywords internal
+PANNA_DOMESTIC_LEAGUES <- c(PANNA_LEAGUE_GROUPS$domestic,
+                             PANNA_LEAGUE_GROUPS$calendar)
+
 #' International blend weight
 #'
 #' Weight on the international-specialist model when predicting international
