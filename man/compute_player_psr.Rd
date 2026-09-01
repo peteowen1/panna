@@ -9,7 +9,7 @@ compute_player_psr(
   center = TRUE,
   target = c("blend", "xg", "goals"),
   position_means = NULL,
-  gk_goal_scale = GK_PSR_GOAL_SCALE
+  gk_goal_scale = 1
 )
 }
 \arguments{
@@ -38,11 +38,13 @@ materially improving valuation.}
 to center skill columns before scoring (see \code{\link{compute_player_psv}}).
 If \code{NULL}, no cross-position centering is applied.}
 
-\item{gk_goal_scale}{Multiplier putting goalkeeper PSR on the same
-goals-per-90 footing as outfield PSR (panna#202). The GK sub-model is
-trained on goal difference and the outfield model on xG difference, so a
-unit of each buys a different amount of real goal difference. Defaults to
-\code{GK_PSR_GOAL_SCALE}; pass \code{1} for pre-#202 behaviour.}
+\item{gk_goal_scale}{\strong{Superseded} by
+\code{\link{apply_psr_calibration}}, which covers goalkeepers along with
+every other position AND is applied at the correct point (after the
+cross-league offsets). Defaults to \code{1} (no-op). Retained only so a
+caller can pin the old panna#202 behaviour by passing
+\code{GK_PSR_GOAL_SCALE} and skipping \code{apply_psr_calibration()};
+doing both would double-scale keepers.}
 }
 \value{
 A data.table with \code{psr}, \code{osr}, \code{dsr} columns.

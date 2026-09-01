@@ -9,6 +9,7 @@
   ref_dates,
   decay_params = NULL,
   min_weighted_90s = 3,
+  keep_players = NULL,
   verbose = TRUE
 )
 }
@@ -21,6 +22,15 @@
 \item{decay_params}{Decay parameters (default: \code{get_default_decay_params()}).}
 
 \item{min_weighted_90s}{Minimum weighted 90s for inclusion (default 3).}
+
+\item{keep_players}{Optional data.frame/data.table whose first two columns are
+\code{date} and \code{player_id}, restricting each date's OUTPUT to the
+players a caller actually needs. The running sums still cover every player
+(they must, for the decay recurrence to stay correct) — only the returned
+snapshot is narrowed, before the table is built. Without it an as-of run
+over N dates returns N x 46,044 rows. Note chunking the call is NOT an
+alternative: this function deep-copies \code{match_stats} on entry, so
+chunking pays that copy once per chunk instead of once in total.}
 
 \item{verbose}{Print progress (default TRUE).}
 }

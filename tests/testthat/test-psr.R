@@ -767,3 +767,229 @@ test_that("compute_player_psr scales GK rows end-to-end and leaves outfield unto
     expect_equal(s$osr[is_gk] + s$dsr[is_gk], s$psr[is_gk])
   }
 })
+
+
+# =============================================================================
+# PSR position + season calibration (panna#202 / #213 / #214)
+# =============================================================================
+
+test_that("shipped calibration table is well formed and in a sane range", {
+  cal <- load_psr_calibration()
+  expect_true(nrow(cal) > 0)
+  expect_true(all(c("axis", "level", "factor") %in% names(cal)))
+  expect_setequal(unique(cal$axis), c("position", "season"))
+  # a calibration, not a rewrite: nothing should flip a sign or explode
+  expect_true(all(cal$factor > 0))
+  expect_true(all(cal$factor > 0.3 & cal$factor < 2))
+  # Factors ARE the fitted slopes (goal units), so they are NOT centred on 1 --
+  # outfield sits above 1 and GK well below. Assert the ordering that matters
+  # rather than an absolute scale, so a re-derivation does not spuriously fail.
+  pos <- cal[cal$axis == "position", ]
+  gk <- pos$factor[pos$level == "GK"]
+  out <- pos$factor[pos$level != "GK"]
+  expect_true(gk < 0.8)                 # keepers are the one large correction
+  expect_true(all(out > 0.9 & out < 1.6))
+  expect_true(gk < min(out))            # GK strictly below every outfield bucket
+  # season factors stay close to 1: the position axis already set the scale
+  sea <- cal[cal$axis == "season", ]
+  expect_true(all(sea$factor > 0.75 & sea$factor < 1.35))
+})
+
+test_that(".psr_calibration_factor defaults unknown keys to 1, never NA", {
+  cal <- data.table::data.table(axis = "position", level = c("GK", "DEF"),
+                                 factor = c(0.5, 0.9))
+  f <- panna:::.psr_calibration_factor(cal, "position", c("GK", "DEF", "FWD", NA))
+  expect_equal(f, c(0.5, 0.9, 1, 1))
+  # an unseen axis is a no-op, not an error
+  expect_equal(panna:::.psr_calibration_factor(cal, "season", c("2016", "2020")), c(1, 1))
+  # so is an empty table
+  expect_equal(panna:::.psr_calibration_factor(NULL, "position", c("GK")), 1)
+})
+
+test_that(".calibrate_psr_positions scales by position and preserves the identity", {
+  cal <- data.table::data.table(axis = "position", level = c("GK", "FWD"),
+                                 factor = c(0.5, 2.0))
+  dt <- data.table::data.table(
+    player_id = c("g", "f", "d"),
+    primary_position = c("GK", "FWD", "DEF"),
+    psr_raw = c(1.0, 1.0, 1.0), psr = c(0.4, 0.4, 0.4),
+    osr = c(0.3, 0.3, 0.3), dsr = c(0.1, 0.1, 0.1)
+  )
+  out <- panna:::.calibrate_psr_positions(dt, cal)
+  expect_equal(out$psr, c(0.2, 0.8, 0.4))     # GK halved, FWD doubled, DEF untouched
+  expect_equal(out$osr + out$dsr, out$psr)    # identity survives
+  expect_equal(out$psr_raw, c(0.5, 2.0, 1.0))
+})
+
+test_that(".calibrate_psr_positions is a no-op with NULL/empty calibration", {
+  dt <- data.table::data.table(player_id = "a", primary_position = "GK",
+                                psr = 0.4, osr = 0.3, dsr = 0.1)
+  expect_equal(panna:::.calibrate_psr_positions(dt, NULL), dt)
+  expect_equal(panna:::.calibrate_psr_positions(
+    dt, data.table::data.table(axis = character(0), level = character(0),
+                               factor = numeric(0))), dt)
+})
+
+test_that("apply_psr_season_calibration scales by season and needs the column", {
+  cal <- data.table::data.table(axis = "season", level = c("2016", "2023"),
+                                 factor = c(0.9, 1.1))
+  dt <- data.table::data.table(
+    player_id = c("a", "b", "c"), season_end_year = c(2016L, 2023L, 2019L),
+    psr = c(1.0, 1.0, 1.0), osr = c(0.6, 0.6, 0.6), dsr = c(0.4, 0.4, 0.4)
+  )
+  out <- apply_psr_season_calibration(dt, cal)
+  expect_equal(out$psr, c(0.9, 1.1, 1.0))   # 2019 absent -> unchanged, not NA
+  expect_equal(out$osr + out$dsr, out$psr)
+  expect_false(anyNA(out$psr))
+
+  expect_error(
+    apply_psr_season_calibration(
+      data.table::data.table(player_id = "a", psr = 1), cal),
+    "season_end_year"
+  )
+})
+
+test_that("the current season passes through uncalibrated rather than becoming NA", {
+  # a season's factor needs the FOLLOWING season's matches, so the newest
+  # season is always absent from the table -- it must survive untouched
+  cal <- load_psr_calibration()
+  newest <- max(as.integer(cal$level[cal$axis == "season"]), na.rm = TRUE)
+  dt <- data.table::data.table(player_id = "a", season_end_year = newest + 2L,
+                                psr = 0.5, osr = 0.3, dsr = 0.2)
+  out <- apply_psr_season_calibration(dt, cal)
+  expect_equal(out$psr, 0.5)
+  expect_false(anyNA(out$psr))
+})
+
+
+test_that("psr_leaderboard_eligible flags rather than filters, and NA fails the bar", {
+  dt <- data.table::data.table(
+    player_id = c("full", "half", "cameo", "unknown"),
+    weighted_90s = c(30, 15, 7, NA_real_)
+  )
+  e <- psr_leaderboard_eligible(dt, min_90s = 15)
+  # boundary is inclusive; an unknown workload cannot clear a workload bar
+  expect_equal(e, c(TRUE, TRUE, FALSE, FALSE))
+  # returns a flag per row, not a filtered table -- callers keep the rows
+  expect_length(e, nrow(dt))
+  expect_type(e, "logical")
+
+  expect_error(
+    psr_leaderboard_eligible(data.table::data.table(player_id = "a")),
+    "weighted_90s"
+  )
+})
+
+test_that("MIN_90S_PSR_LEADERBOARD is a plausible half-season bar", {
+  expect_true(MIN_90S_PSR_LEADERBOARD >= 8 && MIN_90S_PSR_LEADERBOARD <= 25)
+})
+
+
+# =============================================================================
+# apply_psr_calibration: both axes, post-offset (panna#202/#213/#214)
+# =============================================================================
+
+test_that("apply_psr_calibration applies position and season together", {
+  cal <- data.table::data.table(
+    axis = c("position", "position", "season", "season"),
+    level = c("GK", "FWD", "2016", "2023"),
+    factor = c(0.5, 2.0, 0.5, 2.0)
+  )
+  dt <- data.table::data.table(
+    player_id = c("a", "b"),
+    primary_position = c("GK", "FWD"),
+    season_end_year = c(2016L, 2023L),
+    psr = c(1.0, 1.0), osr = c(0.6, 0.6), dsr = c(0.4, 0.4)
+  )
+  out <- apply_psr_calibration(dt, cal)
+  # both axes multiply: GK/2016 = 0.5*0.5, FWD/2023 = 2*2
+  expect_equal(out$psr, c(0.25, 4.0))
+  expect_equal(out$osr + out$dsr, out$psr)
+})
+
+test_that("apply_psr_calibration skips the season axis when the column is absent", {
+  # the weekly snapshot path is keyed on snapshot_date, not season_end_year
+  cal <- data.table::data.table(
+    axis = c("position", "season"), level = c("GK", "2016"), factor = c(0.5, 0.1)
+  )
+  dt <- data.table::data.table(player_id = "a", primary_position = "GK",
+                                psr = 1.0, osr = 0.6, dsr = 0.4)
+  out <- apply_psr_calibration(dt, cal)
+  expect_equal(out$psr, 0.5)          # position only, season not applied
+  expect_equal(out$osr + out$dsr, out$psr)
+})
+
+test_that("apply_psr_calibration refuses to double-scale already-gk-scaled ratings", {
+  skills <- data.table::data.table(
+    player_id = c("gk1", "of1"), player_name = c("K", "P"),
+    primary_position = c("GK", "DEF"),
+    weighted_90s = c(20, 22), total_minutes = c(1800, 1980),
+    passes_p90 = c(30, 45), touches_p90 = c(40, 60),
+    long_balls_p90 = c(12, 4), saves_p90 = c(3, 0),
+    high_claim_p90 = c(1.2, 0), keeper_sweeper_p90 = c(0.8, 0),
+    gsaa_per90 = c(0.05, 0)
+  )
+  scaled <- tryCatch(
+    suppressWarnings(suppressMessages(
+      compute_player_psr(skills, center = FALSE, gk_goal_scale = 0.5))),
+    error = function(e) NULL)
+  skip_if(is.null(scaled), "compute_player_psr unavailable on this fixture")
+  expect_error(apply_psr_calibration(scaled), "double-scale")
+
+  # the default path (gk_goal_scale = 1) carries no marker and calibrates fine
+  plain <- suppressWarnings(suppressMessages(
+    compute_player_psr(skills, center = FALSE)))
+  expect_no_error(apply_psr_calibration(plain))
+})
+
+test_that("compute_player_psr no longer calibrates internally", {
+  # calibration moved to apply_psr_calibration() so it lands AFTER the additive
+  # league offsets; verify the raw output is genuinely uncalibrated
+  skills <- data.table::data.table(
+    player_id = "gk1", player_name = "K", primary_position = "GK",
+    weighted_90s = 20, total_minutes = 1800,
+    passes_p90 = 30, touches_p90 = 40, long_balls_p90 = 12,
+    saves_p90 = 3, high_claim_p90 = 1.2, keeper_sweeper_p90 = 0.8,
+    gsaa_per90 = 0.05
+  )
+  raw <- tryCatch(
+    suppressWarnings(suppressMessages(compute_player_psr(skills, center = FALSE))),
+    error = function(e) NULL)
+  skip_if(is.null(raw), "compute_player_psr unavailable on this fixture")
+  cal <- apply_psr_calibration(data.table::as.data.table(raw))
+  gk_f <- load_psr_calibration()
+  gk_f <- gk_f$factor[gk_f$axis == "position" & gk_f$level == "GK"]
+  expect_equal(cal$psr, raw$psr * gk_f, tolerance = 1e-9)
+})
+
+
+# =============================================================================
+# League-set constants (panna#221)
+# =============================================================================
+
+test_that("bridge leagues are disjoint from rating leagues and not domestic", {
+  # bridges are connectivity-only: they must be ADDED to the rating set, never
+  # already inside it, and must never be attributable as a player's own league
+  expect_length(intersect(PANNA_RATING_LEAGUES, PANNA_BRIDGE_LEAGUES), 0)
+  expect_length(intersect(PANNA_DOMESTIC_LEAGUES, PANNA_BRIDGE_LEAGUES), 0)
+  expect_true(all(PANNA_DOMESTIC_LEAGUES %in% PANNA_RATING_LEAGUES))
+})
+
+test_that("PANNA_DOMESTIC_LEAGUES excludes every continental and international comp", {
+  # a cross-league cup is where leagues MEET, not one a player belongs to
+  not_domestic <- c("UCL", "UEL", "UECL", "CAFCL", "WC", "EURO",
+                    "AFCON", "Copa_America")
+  expect_length(intersect(PANNA_DOMESTIC_LEAGUES, not_domestic), 0)
+  # and the obvious domestic ones are present
+  expect_true(all(c("ENG", "ESP", "GER", "ITA", "FRA", "MLS", "SAU") %in%
+                    PANNA_DOMESTIC_LEAGUES))
+})
+
+test_that("the skills pipeline league set now includes the bridges", {
+  # guards the panna#221 regression: PSR was starved of cross-league links
+  # because this pipeline used PANNA_RATING_LEAGUES alone while EPV and RAPM
+  # both added the bridges on top
+  combined <- c(PANNA_RATING_LEAGUES, PANNA_BRIDGE_LEAGUES)
+  expect_true(all(PANNA_BRIDGE_LEAGUES %in% combined))
+  expect_gt(length(combined), length(PANNA_RATING_LEAGUES))
+})

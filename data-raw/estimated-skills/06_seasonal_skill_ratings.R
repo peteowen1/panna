@@ -74,10 +74,26 @@ psr_primary_league <- local({
            .(mins = sum(as.numeric(get(m_col)), na.rm = TRUE)),
            by = c("player_id", "season_end_year", lg_col)]
   data.table::setnames(pl, lg_col, "league")
+  # DOMESTIC ONLY. The league offset prices "the league a player plays in",
+  # which must be a domestic competition -- a cross-league cup is where leagues
+  # MEET, not one a player belongs to. Taking the plain max-minutes competition
+  # assigned a continental comp to 19.1% of player-seasons (24,613 of 128,589:
+  # UEL 9,062, Conference 6,770, CAF_CL 3,438, UCL 2,724), because players from
+  # UNRATED domestic leagues (Norway, Czechia, Japan ...) appear only in
+  # European competition, so that became their "league". They were then priced
+  # with the UEL/UCL offset. Adding PANNA_BRIDGE_LEAGUES to this pipeline would
+  # have extended the same fault to South American and Asian players.
+  #
+  # Players with no domestic competition in the data get league = NA and are
+  # left un-offset by apply_psr_league_offsets(), which is honest: we cannot
+  # price a league we do not observe. Previously they silently received a
+  # continental offset instead.
+  n_before <- data.table::uniqueN(pl[, .(player_id, season_end_year)])
+  pl <- pl[league %in% PANNA_DOMESTIC_LEAGUES]
   data.table::setorder(pl, player_id, season_end_year, -mins)
   pl <- pl[, .(league = league[1L]), by = .(player_id, season_end_year)]
-  cat(sprintf("Primary league lookup: %d player-seasons, %d leagues\n",
-              nrow(pl), data.table::uniqueN(pl$league)))
+  cat(sprintf("Primary league lookup: %d player-seasons, %d leagues (domestic only; %d dropped, no domestic comp observed)\n",
+              nrow(pl), data.table::uniqueN(pl$league), n_before - nrow(pl)))
   pl
 })
 
@@ -541,6 +557,36 @@ if (nrow(seasonal_psr) > 0 && !is.null(psr_primary_league)) {
     psr_dt[, league := NULL]  # don't leak league into the saved seasonal table
     seasonal_psr <- as.data.frame(psr_dt)
   }
+}
+
+# 6c. Position + season calibration ----
+#
+# MUST run AFTER apply_psr_league_offsets(): the published rating is
+# `psr * factor + offset`, so scaling before the additive offset would leave
+# the offset itself uncalibrated. Measured — applying position pre-offset
+# equalised position slopes only to a 0.195 spread vs 0.058 post-offset.
+#
+# Puts every position and season on a common goals-per-90 footing so a keeper
+# in 2016 and a striker in 2025 mean the same thing (panna#202/#213/#214).
+# Cells with no estimate — always including the CURRENT season, whose factor
+# needs the following season's matches — pass through at 1.
+if (!is.null(seasonal_psr) && nrow(seasonal_psr) > 0) {
+  seasonal_psr <- as.data.frame(
+    apply_psr_calibration(data.table::as.data.table(seasonal_psr))
+  )
+  cat("  Applied PSR calibration (position + season)\n")
+
+  # 6d. Leaderboard eligibility flag (panna#215) ----
+  # ADDITIVE: no rows dropped and no rating changed -- a low-minutes rating is
+  # still that player's best estimate, it is just too noisy to RANK against a
+  # full season. Consumers filter on this for top-N displays.
+  psr_q <- data.table::as.data.table(seasonal_psr)
+  psr_q[, psr_qualified := psr_leaderboard_eligible(psr_q)]
+  cat(sprintf("  Leaderboard-eligible (>= %g weighted 90s): %s of %s player-seasons\n",
+              MIN_90S_PSR_LEADERBOARD,
+              format(sum(psr_q$psr_qualified), big.mark = ","),
+              format(nrow(psr_q), big.mark = ",")))
+  seasonal_psr <- as.data.frame(psr_q)
 }
 
 # 7. Summary Statistics ----

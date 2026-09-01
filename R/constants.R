@@ -505,6 +505,31 @@ SPM_BLEND_WEIGHT_GLMNET <- 0.5
 #' @keywords internal
 GK_PSR_GOAL_SCALE <- 0.50
 
+#' Minimum weighted 90s to qualify for a PSR leaderboard (panna#215)
+#'
+#' PSR rankings apply no minutes floor, so short partial seasons sit alongside
+#' full campaigns: **23 of the outfield top 100 have fewer than 15 weighted
+#' nineties and 11 fewer than 10** — F. Totti at 7.0, M. Pinilla at 5.5,
+#' J. Pastore at 9.7. This was the dominant driver of leaderboard noise,
+#' bigger than the cross-league offsets it is often blamed on (weak leagues are
+#' actually *under*-represented in the top 100: 91 of 100 are Big-5).
+#'
+#' 15 removes every sub-threshold entry currently in the outfield top 100; 10
+#' would remove 11 of 23. Chosen at 15 as roughly half a domestic season, the
+#' conventional qualification bar.
+#'
+#' This is a DISPLAY threshold, not a rating filter — a low-minutes rating is
+#' still the best estimate available for that player, it is just too noisy to
+#' rank against a full season. Use \code{\link{psr_leaderboard_eligible}} and
+#' keep the rows.
+#'
+#' @format Numeric value: 15
+#' @family constants
+#' @export
+#' @examples
+#' MIN_90S_PSR_LEADERBOARD
+MIN_90S_PSR_LEADERBOARD <- 15
+
 
 # =============================================================================
 # Cache Path Constants
@@ -764,6 +789,28 @@ PANNA_RATING_LEAGUES <- unlist(PANNA_LEAGUE_GROUPS, use.names = FALSE)
 #' @rdname PANNA_LEAGUE_GROUPS
 #' @keywords internal
 PANNA_BRIDGE_LEAGUES <- c("LIB", "SUD", "CCC", "LGC", "ACLE", "CWC")
+
+#' Domestic-only competitions (for league-offset attribution)
+#'
+#' The subset of \code{PANNA_RATING_LEAGUES} that is a domestic league. Used
+#' when attributing a player-season to "the league he plays in", which must be
+#' a domestic competition -- a cross-league cup is where leagues MEET, not a
+#' league a player belongs to.
+#'
+#' Without this restriction the max-minutes rule assigns a continental
+#' competition as a player's league whenever his domestic one is absent from
+#' the rated set: measured at **19.1\% of player-seasons** (24,613 of 128,589)
+#' -- UEL 9,062, Conference 6,770, CAF_CL 3,438, UCL 2,724. Those players
+#' (typically from unrated leagues such as Norway, Czechia or Japan appearing
+#' only in Europe) were priced with the UEL/UCL offset rather than anything
+#' reflecting their actual domestic standard. Adding
+#' \code{PANNA_BRIDGE_LEAGUES} to the skills pipeline would extend the same
+#' problem to South American and Asian players.
+#'
+#' @format Character vector of domestic competition codes
+#' @keywords internal
+PANNA_DOMESTIC_LEAGUES <- c(PANNA_LEAGUE_GROUPS$domestic,
+                             PANNA_LEAGUE_GROUPS$calendar)
 
 #' International blend weight
 #'
