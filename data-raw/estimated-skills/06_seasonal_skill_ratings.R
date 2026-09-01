@@ -63,7 +63,7 @@ psr_primary_league <- local({
   }
   if (!"season_end_year" %in% names(ms)) {
     if ("season" %in% names(ms)) {
-      ms[, season_end_year := as.integer(vapply(season, extract_season_end_year, numeric(1)))]
+      ms[, season_end_year := as.integer(extract_season_end_year(season))]
     } else {
       d <- as.Date(ms$match_date)
       ms[, season_end_year := data.table::fifelse(
@@ -89,7 +89,23 @@ psr_primary_league <- local({
   # price a league we do not observe. Previously they silently received a
   # continental offset instead.
   n_before <- data.table::uniqueN(pl[, .(player_id, season_end_year)])
-  pl <- pl[league %in% PANNA_DOMESTIC_LEAGUES]
+  # PANNA_DOMESTIC_LEAGUES is coded ("ENG"), but `league` here is whatever
+  # lg_col resolved to -- "competition" (display names like "EPL") when
+  # present, which it is for every real match_stats cache. Comparing coded
+  # constants straight against display-name values matches almost nothing
+  # (only the handful where code == display name, e.g. "MLS"): this dropped
+  # 142,014 of 149,784 player-seasons (95%) instead of the intended ~19%
+  # (24,613) on the first run of this filter. Translate the codes to
+  # display names via the same to_opta_league() mapping
+  # compute_psr_league_offsets() uses, so both sides speak the same
+  # vocabulary regardless of which column lg_col picked.
+  domestic_lookup <- if (identical(lg_col, "competition")) {
+    vapply(PANNA_DOMESTIC_LEAGUES, function(l)
+      tryCatch(to_opta_league(l), error = function(e) l), character(1))
+  } else {
+    PANNA_DOMESTIC_LEAGUES
+  }
+  pl <- pl[league %in% domestic_lookup]
   data.table::setorder(pl, player_id, season_end_year, -mins)
   pl <- pl[, .(league = league[1L]), by = .(player_id, season_end_year)]
   cat(sprintf("Primary league lookup: %d player-seasons, %d leagues (domestic only; %d dropped, no domestic comp observed)\n",
