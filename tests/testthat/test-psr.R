@@ -750,6 +750,20 @@ test_that("apply_psv_calibration accepts raw Opta position labels", {
   expect_lt(out$psv[1], out$psv[3])
 })
 
+test_that("apply_psv_calibration accepts 16-role classify_role() codes (review finding)", {
+  # apply_psv_calibration()'s own fallback chain can hand .psv_position_group()
+  # a fine-grained primary_position (see .player_role()'s comment) -- this
+  # locks in the .role16_to_broad() fallback that closes that gap, and that
+  # .psv_position_group() no longer hand-rolls its own raw-label regex
+  # (it now defers to the canonical .simplify_position()).
+  d <- data.table::data.table(position = c("GK", "CB", "DM", "CF"),
+                              psv = c(0.1, 0.1, 0.1, 0.1))
+  out <- apply_psv_calibration(d, position_col = "position")
+  cal <- stats::setNames(panna:::load_psv_calibration()$factor,
+                         panna:::load_psv_calibration()$level)
+  expect_equal(out$psv, 0.1 * unname(cal[c("GK", "DEF", "MID", "FWD")]), tolerance = 1e-8)
+})
+
 test_that("apply_psv_calibration refuses to double-scale", {
   d <- data.table::data.table(pos_grp = "MID", psv = 0.2)
   once <- apply_psv_calibration(d)

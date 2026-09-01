@@ -1399,8 +1399,13 @@ compute_player_psv <- function(player_match_stats, min_adjust = TRUE,
 #' PSV from every position on a common goals footing. Missing file returns an
 #' empty table and warns, so callers degrade to uncalibrated rather than error.
 #'
-#' @return A data.table with \code{axis}, \code{level}, \code{factor}, \code{slope},
-#'   \code{se}, \code{n_obs}.
+#' @return A data.table with \code{axis}, \code{level}, \code{factor} (the
+#'   shipped, scale-preserving multiplier), \code{slope} (duplicate of
+#'   \code{factor} for interface parity with \code{load_psr_calibration}),
+#'   \code{se}, \code{n_obs}, and \code{slope_raw} (the un-normalised fitted
+#'   slope \code{factor} was derived from -- see
+#'   \code{\link{apply_psv_calibration}} for why the raw slope is not what's
+#'   applied).
 #' @seealso \code{\link{apply_psv_calibration}}
 #' @keywords internal
 load_psv_calibration <- function() {
@@ -1421,23 +1426,30 @@ load_psv_calibration <- function() {
 #' Multiplies \code{psv} (and \code{osv}/\code{dsv} when present, so
 #' \code{osv + dsv == psv} is preserved) by that player's position factor.
 #'
-#' \strong{Apply this BEFORE the league offsets, not after.} This is the opposite
-#' ordering to \code{apply_psr_calibration()}, and deliberately so: the PSR
-#' offsets are additive and derived elsewhere, whereas the league offsets are
-#' derived \emph{from} PSV via \code{build_league_network(value_col = "psv")}.
-#' Calibrating after the offsets would leave the offsets themselves estimated on
-#' uncalibrated input. In step 06 the sequence is: strip \code{psv_league_offset}
-#' -> \code{apply_psv_calibration()} -> \code{compute_psr_league_offsets()}.
-#' Do not iterate: feeding offset-adjusted PSV back into the network makes each
-#' cycle estimate the residual of its own previous output.
+#' \strong{Apply this BEFORE the league offsets, not after.} This LOOKS like it
+#' contradicts the project's general calibration-ordering rule (see
+#' \code{docs/reference/RATING_CALIBRATION.md}: PSR calibrates \emph{after} its
+#' additive league offset, because scaling first was measured to leave the
+#' offset itself uncalibrated). PSV's case is different in a way that flips the
+#' correct order: PSR's offset is a separately-estimated additive constant that
+#' does not depend on PSR's own scale, so PSR can be scaled either side of it.
+#' PSV's league offsets are not separate -- they are \code{compute_psr_league_offsets()}
+#' -> \code{build_league_network(value_col = "psv")}, i.e. \emph{derived from PSV
+#' itself}. Calibrating after that derivation would leave the offsets estimated
+#' on uncalibrated input, which is the one ordering the general rule exists to
+#' rule out. In step 06 the sequence is: strip \code{psv_league_offset} ->
+#' \code{apply_psv_calibration()} -> \code{compute_psr_league_offsets()}. Do not
+#' iterate: feeding offset-adjusted PSV back into the network makes each cycle
+#' estimate the residual of its own previous output.
 #'
 #' \strong{The position column must be a RESOLVED position, not the per-match
 #' role.} Opta records \code{position == "Substitute"} for anyone appearing off
-#' the bench -- 394,248 rows in \code{01_match_stats.rds}, ~29\% of game-log rows.
-#' Bucketing on that field puts a blend of every position into one group and
-#' biases the outfield factors. Resolve each player's modal non-Substitute
-#' position first (per season, career fallback); the factors shipped here were
-#' derived that way.
+#' the bench -- roughly 29\% of game-log rows as measured 2026-09 (an absolute
+#' count would already be stale given the daily Opta scrape; re-measure rather
+#' than trust a cached number). Bucketing on that field puts a blend of every
+#' position into one group and biases the outfield factors. Resolve each
+#' player's modal non-Substitute position first (per season, career fallback);
+#' the factors shipped here were derived that way.
 #'
 #' Factors come from a \strong{leak-free} fit -- season S-1 PSV predicting season
 #' S match outcomes, 450-minute prior gate. Fitting them against the same match's
@@ -1454,6 +1466,12 @@ load_psv_calibration <- function() {
 #' but is a units artefact. The genuine differential effect on the offsets is
 #' about \strong{+4.6\%}; the real payoff of this table is to PSV itself, where it
 #' cuts goalkeeper share of the top 1\% from 4.2x the population rate to ~0.2x.
+#'
+#' \strong{These figures are a point-in-time measurement (2026-09), not an
+#' enforced invariant} -- there is no checked-in script that regenerates
+#' \code{psv_calibration.csv} yet (unlike \code{07d_derive_psv_gd_scale.R} for
+#' \code{\link{PSV_RELIABILITY_GD_SCALE}}). If the PSR/PSV coefficients are ever
+#' retrained, re-derive these factors rather than assume they still hold.
 #'
 #' @param psv_dt A data.frame/data.table with \code{psv} and a position column.
 #' @param position_col Name of the resolved-position column. Default
@@ -1533,18 +1551,30 @@ resolve_position_group <- function(dt) {
   .psv_position_group(resolved)
 }
 
-#' Bucket an Opta position label into the calibration's position groups
+#' Bucket a position label into the calibration's position groups
+#'
+#' Accepts three input vocabularies, tried in order: an already-broad label
+#' (\code{GK}/\code{DEF}/\code{MID}/\code{FWD}, passed through); a raw Opta
+#' match-role string (\code{"Goalkeeper"}, \code{"Defender"}, ...), resolved via
+#' the canonical \code{\link{.simplify_position}} rather than a second hand-rolled
+#' mapping (review finding, panna#211: an earlier version of this function
+#' regex-matched the same vocabulary independently, which is exactly the kind of
+#' duplicated classifier this codebase's own gotchas warn drifts silently); or a
+#' 16-role \code{classify_role()} code (\code{"CB"}, \code{"DM"}, ...), resolved
+#' via \code{\link{.role16_to_broad}} -- needed because
+#' \code{apply_psv_calibration()}'s own fallback chain can hand this function a
+#' fine-grained \code{primary_position} (see \code{\link{.player_role}}'s
+#' comment: that column is "usually already broad... but [sometimes] a
+#' fine-grained label"). Anything none of the three recognize returns NA, which
+#' \code{apply_psv_calibration()} treats as factor 1 (uncalibrated passthrough).
 #' @keywords internal
 .psv_position_group <- function(p) {
   p <- as.character(p)
-  data.table::fcase(
-    p %in% c("GK", "DEF", "MID", "FWD"), p,          # already grouped
-    grepl("Goalkeep", p, ignore.case = TRUE), "GK",
-    grepl("Defender|Wing Back", p, ignore.case = TRUE), "DEF",
-    grepl("Midfield", p, ignore.case = TRUE), "MID",
-    grepl("Striker|Forward", p, ignore.case = TRUE), "FWD",
-    default = NA_character_
-  )
+  broad <- data.table::fifelse(p %in% c("GK", "DEF", "MID", "FWD"), p, NA_character_)
+  raw <- .simplify_position(p)
+  role16 <- .role16_to_broad(toupper(p))
+  role16[role16 == "OTHER"] <- NA_character_   # only trust a POSITIVE 16-role match
+  data.table::fcoalesce(broad, raw, role16)
 }
 
 #' Load bundled PSR coefficients

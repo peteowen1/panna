@@ -233,6 +233,24 @@ cat(sprintf(
 # broad role per player-game (same classifier position-norm uses)
 ms[, role := .player_role(ms)]
 
+# Load ONCE and pass explicitly (review finding): score_one() runs up to 3x per
+# subset league-season inside the loop below, and apply_psv_calibration()'s
+# default arg re-evaluates load_psv_calibration() -- i.e. re-reads and re-parses
+# the CSV -- on every call if not passed explicitly. Harmless when the file is
+# present, but if it's ever missing, load_psv_calibration()'s warning would fire
+# once per call instead of once, burying the one warning that matters in noise.
+.psv_cal <- load_psv_calibration()
+
+# Running coverage tally across every score_one() call (review finding: 06 logs
+# its resolved/unresolved rate; this file had no equivalent, so a role_lookup
+# merge regression -- e.g. a key-type mismatch silently dropping matches --
+# would produce NA roles -> factor 1 -> a wrong K constant with NOTHING in the
+# log to show it. Printed as one summary after the main loop, not per call,
+# to match this file's own after-the-loop diagnostic style rather than adding
+# per-league-season noise).
+.role_calib_n <- 0L
+.role_calib_na <- 0L
+
 score_one <- function(d, center, position_means, reliability = .psv_reliability) {
   scored <- compute_player_psv(d, min_adjust = FALSE, center = center,
                      scale_to_minutes = FALSE, exclude_efficiency = FALSE,
@@ -252,7 +270,9 @@ score_one <- function(d, center, position_means, reliability = .psv_reliability)
                         by = c("match_id", "player_id"))
   scored <- merge(scored, role_lookup, by = c("match_id", "player_id"),
                   all.x = TRUE, sort = FALSE)
-  scored <- apply_psv_calibration(scored, position_col = "role")
+  .role_calib_n  <<- .role_calib_n + nrow(scored)
+  .role_calib_na <<- .role_calib_na + sum(is.na(scored$role))
+  scored <- apply_psv_calibration(scored, position_col = "role", calibration = .psv_cal)
   scored[, role := NULL]
   scored[]
 }
@@ -344,6 +364,10 @@ for (s in recent) {
   }
 }
 K <- rbindlist(res)
+
+cat(sprintf("\n[calibration] role resolved for %.1f%% of scored rows across all score_one() calls (%.1f%% NA -> factor 1)\n",
+            100 * (1 - .role_calib_na / max(.role_calib_n, 1)),
+            100 * .role_calib_na / max(.role_calib_n, 1)))
 
 # ---- THEORY CHECK (HARD): K must be constant within (league,role) ----
 # This invariant is the whole justification for shipping ONE constant per group.
@@ -449,12 +473,18 @@ setorder(out, league, role)
 # correct published CSV beats a fresh degraded one. "Expected" = has CURRENT-
 # season rows (or a failed inline fetch), so a tournament aging out of the
 # 2-season window is a legitimate absence, not a red run.
-subset_expected <- intersect(LIVE_SUBSET_LEAGUES,
+# Union with INLINE_LEAGUES, not just LIVE_SUBSET_LEAGUES (review finding): the
+# two lists are equal today (both = c("WC")), which made checking LIVE_SUBSET_
+# LEAGUES alone accidentally correct rather than actually correct. An inline
+# league that ISN'T also a live-subset league is caught by the subset/inline
+# tryCatch's cat()-only skip path below with no OTHER safety net -- it produces
+# no row, and without this union the gate would not notice.
+subset_expected <- intersect(union(LIVE_SUBSET_LEAGUES, INLINE_LEAGUES),
                              union(unique(ms[sey == cur_year, league]), inline_failures))
 subset_missing <- setdiff(subset_expected, unique(out$league))
 if (length(subset_missing) > 0)
-  stop(sprintf(paste("live-subset league(s) %s expected this season but ABSENT from the",
-                     "output — an upstream fetch/enrich/scoring failure was skipped (see",
+  stop(sprintf(paste("live-subset/inline league(s) %s expected this season but ABSENT from",
+                     "the output — an upstream fetch/enrich/scoring failure was skipped (see",
                      "log above). Refusing to write a degraded constants CSV."),
                paste(subset_missing, collapse = ", ")))
 

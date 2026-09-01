@@ -7,8 +7,13 @@
 load_psv_calibration()
 }
 \value{
-A data.table with \code{axis}, \code{level}, \code{factor}, \code{slope},
-\code{se}, \code{n_obs}.
+A data.table with \code{axis}, \code{level}, \code{factor} (the
+shipped, scale-preserving multiplier), \code{slope} (duplicate of
+\code{factor} for interface parity with \code{load_psr_calibration}),
+\code{se}, \code{n_obs}, and \code{slope_raw} (the un-normalised fitted
+slope \code{factor} was derived from -- see
+\code{\link{apply_psv_calibration}} for why the raw slope is not what's
+applied).
 }
 \description{
 Reads \code{inst/extdata/psv_calibration.csv}: per-position factors that put
