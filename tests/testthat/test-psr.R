@@ -967,3 +967,35 @@ test_that("compute_player_psr no longer calibrates internally", {
   gk_f <- gk_f$factor[gk_f$axis == "position" & gk_f$level == "GK"]
   expect_equal(cal$psr, raw$psr * gk_f, tolerance = 1e-9)
 })
+
+
+# =============================================================================
+# League-set constants (panna#221)
+# =============================================================================
+
+test_that("bridge leagues are disjoint from rating leagues and not domestic", {
+  # bridges are connectivity-only: they must be ADDED to the rating set, never
+  # already inside it, and must never be attributable as a player's own league
+  expect_length(intersect(PANNA_RATING_LEAGUES, PANNA_BRIDGE_LEAGUES), 0)
+  expect_length(intersect(PANNA_DOMESTIC_LEAGUES, PANNA_BRIDGE_LEAGUES), 0)
+  expect_true(all(PANNA_DOMESTIC_LEAGUES %in% PANNA_RATING_LEAGUES))
+})
+
+test_that("PANNA_DOMESTIC_LEAGUES excludes every continental and international comp", {
+  # a cross-league cup is where leagues MEET, not one a player belongs to
+  not_domestic <- c("UCL", "UEL", "UECL", "CAFCL", "WC", "EURO",
+                    "AFCON", "Copa_America")
+  expect_length(intersect(PANNA_DOMESTIC_LEAGUES, not_domestic), 0)
+  # and the obvious domestic ones are present
+  expect_true(all(c("ENG", "ESP", "GER", "ITA", "FRA", "MLS", "SAU") %in%
+                    PANNA_DOMESTIC_LEAGUES))
+})
+
+test_that("the skills pipeline league set now includes the bridges", {
+  # guards the panna#221 regression: PSR was starved of cross-league links
+  # because this pipeline used PANNA_RATING_LEAGUES alone while EPV and RAPM
+  # both added the bridges on top
+  combined <- c(PANNA_RATING_LEAGUES, PANNA_BRIDGE_LEAGUES)
+  expect_true(all(PANNA_BRIDGE_LEAGUES %in% combined))
+  expect_gt(length(combined), length(PANNA_RATING_LEAGUES))
+})
