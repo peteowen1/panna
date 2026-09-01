@@ -1,0 +1,5 @@
+axis,level,factor,slope,se,n_obs,slope_raw
+position,DEF,0.9187,1.3627,0.0463,126636,1.3627
+position,FWD,1.3025,1.9319,0.0411,126636,1.9319
+position,GK,0.5290,0.7847,0.0401,126636,0.7847
+position,MID,1.0655,1.5804,0.0285,126636,1.5804

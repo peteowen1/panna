@@ -536,7 +536,8 @@ if (nrow(seasonal_psr) > 0 && !is.null(psr_primary_league)) {
   } else tryCatch({
     gl <- data.table::rbindlist(lapply(gl_files, function(f) {
       d <- arrow::read_parquet(f)
-      d[, intersect(c("player_id","season","league","total_minutes","psv","psv_league_offset"), names(d)), with = FALSE]
+      d[, intersect(c("player_id","season","league","total_minutes","psv","psv_league_offset",
+                      "position"), names(d)), with = FALSE]
     }), use.names = TRUE, fill = TRUE)
     # 10b end-adds psv_league_offset INTO psv in these parquets (#162). The
     # calibration must see the offset-free signal: feeding the adjusted psv
@@ -547,6 +548,54 @@ if (nrow(seasonal_psr) > 0 && !is.null(psr_primary_league)) {
     if ("psv_league_offset" %in% names(gl)) {
       gl[, psv := psv - data.table::fcoalesce(as.numeric(psv_league_offset), 0)]
       gl[, psv_league_offset := NULL]
+    }
+    # PSV position calibration MUST come after the offset strip and BEFORE the
+    # network (panna#211). This looks like it contradicts the project's general
+    # rule (RATING_CALIBRATION.md: calibrate AFTER additive offsets) -- PSV's
+    # case is different because these offsets are DERIVED FROM psv itself
+    # (compute_psr_league_offsets -> build_league_network), not a separate
+    # additive constant like PSR's. Calibrating after the derivation would leave
+    # the offsets estimated on uncalibrated input, exactly what the general rule
+    # exists to prevent -- see apply_psv_calibration()'s roxygen for the full
+    # argument. Goalkeeper PSV is 3.1x the outfield spread and far less
+    # predictive per unit; uncorrected it makes keepers 4.2x over-represented in
+    # the PSV top 1%.
+    # Effect on the OFFSETS is modest (+4.6% on weak leagues) -- the shipped
+    # factors are scale-preserving, so PSV's level is unchanged and only the
+    # relative position weighting moves. Do NOT use the raw fitted slopes here:
+    # they average 1.48, inflate all of PSV and every offset with it (+55%),
+    # which reads as a big correction but is a units artefact, and would break
+    # the PSV/PSR unit correspondence these offsets are added at full strength on.
+    # NB resolve_position_group() is required: Opta's `position` is the match
+    # ROLE, so ~29% of rows read "Substitute" and bucketing on it blends every
+    # position together.
+    # Calibration gets its OWN tryCatch, distinct from the one this whole block
+    # already sits inside (review finding: a calibration bug and a genuine
+    # "no game-logs yet" condition previously produced the identical generic
+    # "PSR offset estimation failed" warning and the identical effect -- offsets
+    # skipped entirely for the run. A calibration regression should be loud and
+    # distinguishable, but should NOT be allowed to kill the unrelated,
+    # previously-reliable offset computation -- so on failure this falls back to
+    # uncalibrated psv (offsets ~4-6% too small on weak leagues, not the ~28%
+    # once mis-measured here -- see panna#211/#219) rather than aborting.
+    if ("position" %in% names(gl)) {
+      psv_cal <- load_psv_calibration()   # load ONCE; a missing-file warning
+                                          # firing once per row is as good as none
+      gl <- tryCatch({
+        gl[, pos_grp := resolve_position_group(gl)]
+        out <- apply_psv_calibration(gl, position_col = "pos_grp", calibration = psv_cal)
+        cat(sprintf("Applied PSV position calibration to %.1f%% of rows (%.1f%% unresolved -> factor 1)\n",
+                    100 * mean(!is.na(out$pos_grp)), 100 * mean(is.na(out$pos_grp))))
+        out
+      }, error = function(e) {
+        warning("PSV position calibration FAILED: ", conditionMessage(e),
+                " -- proceeding with UNCALIBRATED psv (offsets biased toward ",
+                "GK-heavy leagues; see panna#211).", call. = FALSE)
+        gl
+      })
+    } else {
+      warning("game_logs lack `position`; PSV position calibration SKIPPED ",
+              "(offsets ~4-6% too small on weak leagues -- see panna#211).", call. = FALSE)
     }
     # bucket_years=2: bridge leagues a player straddles across adjacent seasons,
     # not only within one season. Fixes the same-season network's connectivity
