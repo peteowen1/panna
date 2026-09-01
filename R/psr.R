@@ -185,6 +185,14 @@
 #' @param ref_dates Character or Date vector of dates to estimate skills at.
 #' @param decay_params Decay parameters (default: \code{get_default_decay_params()}).
 #' @param min_weighted_90s Minimum weighted 90s for inclusion (default 3).
+#' @param keep_players Optional data.frame/data.table whose first two columns are
+#'   \code{date} and \code{player_id}, restricting each date's OUTPUT to the
+#'   players a caller actually needs. The running sums still cover every player
+#'   (they must, for the decay recurrence to stay correct) — only the returned
+#'   snapshot is narrowed, before the table is built. Without it an as-of run
+#'   over N dates returns N x 46,044 rows. Note chunking the call is NOT an
+#'   alternative: this function deep-copies \code{match_stats} on entry, so
+#'   chunking pays that copy once per chunk instead of once in total.
 #' @param verbose Print progress (default TRUE).
 #'
 #' @return Named list of data.tables (one per ref_date), keyed by date string.
@@ -193,8 +201,22 @@
 .estimate_prematch_skills_batch <- function(match_stats, ref_dates,
                                             decay_params = NULL,
                                             min_weighted_90s = 3,
+                                            keep_players = NULL,
                                             verbose = TRUE) {
   if (is.null(decay_params)) decay_params <- get_default_decay_params()
+  # keep_players: optional data.frame(date, player_id) restricting each date's
+  # OUTPUT to the players a caller actually needs. The running sums still cover
+  # every player (they must, for the decay recurrence to be correct) -- only the
+  # returned snapshot is narrowed. Without it an as-of run over N dates returns
+  # N x 46,044 rows, which is what drove a 100+ minute serialization and 1.7GB
+  # free RAM on 2026-09-01. Chunking the call is the WRONG fix: the function
+  # deep-copies match_stats on entry, so chunking pays that copy once per chunk.
+  if (!is.null(keep_players)) {
+    keep_players <- data.table::as.data.table(keep_players)
+    data.table::setnames(keep_players, names(keep_players)[1:2], c("date", "player_id"))
+    keep_players[, date := as.Date(date)]
+    data.table::setkey(keep_players, date)
+  }
 
   ref_dates <- sort(unique(as.Date(ref_dates)))
   n_dates <- length(ref_dates)
@@ -544,22 +566,38 @@
       }
 
       # --- Build result data.table ---
+      # Narrow to the requested rows BEFORE constructing the table: building the
+      # full n_players x n_stats frame and subsetting afterwards still allocates
+      # it, which is the whole cost we are avoiding.
+      sel <- if (is.null(keep_players)) {
+        which(run_w90 >= min_weighted_90s)
+      } else {
+        want <- keep_players[.(rd), player_id, nomatch = 0L]
+        idx <- match(want, all_player_ids)
+        idx <- idx[!is.na(idx)]
+        idx[run_w90[idx] >= min_weighted_90s]
+      }
+      if (length(sel) == 0L) {
+        NULL
+      } else {
+
       result <- data.table::data.table(
-        player_id = all_player_ids,
-        player_name = pname_lookup,
-        primary_position = ppos_lookup,
+        player_id = all_player_ids[sel],
+        player_name = pname_lookup[sel],
+        primary_position = ppos_lookup[sel],
         date = rd,
-        weighted_90s = run_w90
+        weighted_90s = run_w90[sel]
       )
 
       for (ci in seq_along(rate_stats)) {
-        data.table::set(result, j = rate_stats[ci], value = rate_skill_mat[, ci])
+        data.table::set(result, j = rate_stats[ci], value = rate_skill_mat[sel, ci])
       }
       for (sc in eff_stats) {
-        data.table::set(result, j = sc, value = eff_skill_vals[[sc]])
+        data.table::set(result, j = sc, value = eff_skill_vals[[sc]][sel])
       }
 
       result
+      }
       }  # end else (has prior data)
     },
     error = function(e) {
