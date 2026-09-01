@@ -749,14 +749,8 @@ test_that("compute_player_psr scales GK rows end-to-end and leaves outfield unto
     gsaa_per90 = c(0.05, -0.02, 0, 0)
   )
 
-  unscaled <- tryCatch(
-    suppressWarnings(suppressMessages(
-      compute_player_psr(skills, center = FALSE, gk_goal_scale = 1))),
-    error = function(e) NULL)
-  skip_if(is.null(unscaled), "compute_player_psr unavailable on this fixture")
-
-  scaled <- suppressWarnings(suppressMessages(
-    compute_player_psr(skills, center = FALSE, gk_goal_scale = 0.5)))
+  unscaled <- compute_player_psr(skills, center = FALSE, gk_goal_scale = 1)
+  scaled <- compute_player_psr(skills, center = FALSE, gk_goal_scale = 0.5)
 
   u <- data.table::as.data.table(unscaled)
   s <- data.table::as.data.table(scaled)

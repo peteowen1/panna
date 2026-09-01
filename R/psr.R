@@ -1514,10 +1514,17 @@ compute_player_psr <- function(skills, center = TRUE,
     # blend-missing fallback. The old inline `if (target == "goals") "gd_"`
     # silently resolved blend to the xG files, so target = "blend" would have
     # mixed a blend margin with xG components.
+    .warn_missing_coef <- function(role) function(e) {
+      cli::cli_warn(c(
+        "{role} coefficients unavailable for target {.val {target}}: {conditionMessage(e)}",
+        "i" = "Outfield PSR will have NA osr/dsr (no offense/defense breakdown) this run."
+      ))
+      NULL
+    }
     osr_coef <- tryCatch(load_psr_coefficients("offense", target = target),
-                         error = function(e) NULL)
+                         error = .warn_missing_coef("Offense (OSR)"))
     dsr_coef <- tryCatch(load_psr_coefficients("defense", target = target),
-                         error = function(e) NULL)
+                         error = .warn_missing_coef("Defense (DSR)"))
 
     if (!is.null(osr_coef) && !is.null(dsr_coef)) {
       results$outfield <- calculate_psr_components(
