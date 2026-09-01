@@ -559,7 +559,7 @@
         data.table::set(result, j = sc, value = eff_skill_vals[[sc]])
       }
 
-      result
+      result[weighted_90s >= min_weighted_90s]
       }  # end else (has prior data)
     },
     error = function(e) {
