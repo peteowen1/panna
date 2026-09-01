@@ -234,11 +234,27 @@ cat(sprintf(
 ms[, role := .player_role(ms)]
 
 score_one <- function(d, center, position_means, reliability = .psv_reliability) {
-  compute_player_psv(d, min_adjust = FALSE, center = center,
+  scored <- compute_player_psv(d, min_adjust = FALSE, center = center,
                      scale_to_minutes = FALSE, exclude_efficiency = FALSE,
                      target = "blend", position_means = position_means,
                      reliability = reliability,
                      center_weights = .psv_center_weights)
+  # panna#211: PSV position calibration MUST be threaded into BOTH ex and rw
+  # identically, exactly like the reliability lambda above (line ~121) --
+  # `d$role` is the SAME per-player-game classification on both sides, so a
+  # role-level multiplier scales K = psv_rw - psv_ex by that same constant
+  # (K_new = f[role] * K_old) rather than breaking the "K constant within
+  # (league,role)" invariant the hard-fail check below relies on. Apply here,
+  # not on the merged K table, so it also reaches the live-subset rw_full
+  # diagnostic further down.
+  scored <- as.data.table(scored)
+  role_lookup <- unique(d[, c("match_id", "player_id", "role"), with = FALSE],
+                        by = c("match_id", "player_id"))
+  scored <- merge(scored, role_lookup, by = c("match_id", "player_id"),
+                  all.x = TRUE, sort = FALSE)
+  scored <- apply_psv_calibration(scored, position_col = "role")
+  scored[, role := NULL]
+  scored[]
 }
 
 # Compute K per (league, season): raw (no norm, no center) minus exactPSV
