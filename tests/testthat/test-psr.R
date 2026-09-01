@@ -698,3 +698,98 @@ test_that("the skills pipeline league set now includes the bridges", {
   expect_true(all(PANNA_BRIDGE_LEAGUES %in% combined))
   expect_gt(length(combined), length(PANNA_RATING_LEAGUES))
 })
+
+# =============================================================================
+# PSV position calibration (panna#211)
+# =============================================================================
+
+test_that("load_psv_calibration returns the bundled position factors", {
+  cal <- panna:::load_psv_calibration()
+  expect_true(nrow(cal) > 0)
+  expect_true(all(c("axis", "level", "factor") %in% names(cal)))
+  expect_setequal(cal[cal$axis == "position", ]$level, c("GK", "DEF", "MID", "FWD"))
+  # GK must be the SMALLEST factor: goalkeeper PSV is the least predictive per
+  # unit, which is the whole point of the table. If this flips, the factors were
+  # fitted on a same-match target (tautological) rather than leak-free.
+  f <- stats::setNames(cal$factor, cal$level)
+  expect_lt(f[["GK"]], f[["DEF"]])
+  expect_lt(f[["GK"]], f[["MID"]])
+  expect_lt(f[["GK"]], f[["FWD"]])
+})
+
+test_that("apply_psv_calibration scales by position and preserves osv + dsv == psv", {
+  d <- data.table::data.table(
+    player_id = c("a", "b", "c", "d"),
+    pos_grp = c("GK", "DEF", "MID", "FWD"),
+    psv = c(0.10, 0.10, 0.10, 0.10),
+    osv = c(0.06, 0.06, 0.06, 0.06),
+    dsv = c(0.04, 0.04, 0.04, 0.04)
+  )
+  out <- apply_psv_calibration(d)
+  f <- stats::setNames(panna:::load_psv_calibration()$factor,
+                       panna:::load_psv_calibration()$level)
+  expect_equal(out$psv, 0.10 * unname(f[c("GK", "DEF", "MID", "FWD")]), tolerance = 1e-8)
+  expect_equal(out$osv + out$dsv, out$psv, tolerance = 1e-10)
+  # keepers must end up scaled DOWN relative to forwards
+  expect_lt(out$psv[1], out$psv[4])
+})
+
+test_that("apply_psv_calibration passes unknown positions through unchanged", {
+  d <- data.table::data.table(pos_grp = c("MID", "Referee", NA_character_),
+                              psv = c(0.2, 0.2, 0.2))
+  out <- apply_psv_calibration(d)
+  expect_equal(out$psv[2], 0.2)   # unrecognised -> factor 1
+  expect_equal(out$psv[3], 0.2)   # NA -> factor 1
+  expect_false(isTRUE(all.equal(out$psv[1], 0.2)))
+})
+
+test_that("apply_psv_calibration accepts raw Opta position labels", {
+  d <- data.table::data.table(position = c("Goalkeeper", "Defender", "Striker"),
+                              psv = c(0.1, 0.1, 0.1))
+  out <- apply_psv_calibration(d, position_col = "position")
+  expect_lt(out$psv[1], out$psv[3])
+})
+
+test_that("apply_psv_calibration refuses to double-scale", {
+  d <- data.table::data.table(pos_grp = "MID", psv = 0.2)
+  once <- apply_psv_calibration(d)
+  expect_error(apply_psv_calibration(once), "already been calibrated")
+})
+
+test_that("shipped PSV factors are scale-preserving, not the raw slopes", {
+  # The raw fitted slopes average ~1.48; using them inflates all of PSV and every
+  # league offset with it (+55%), a units artefact that would also break the
+  # PSV/PSR unit correspondence the offsets are added at full strength on.
+  cal <- panna:::load_psv_calibration()
+  expect_true("slope_raw" %in% names(cal))
+  expect_true(all(cal$factor < cal$slope_raw))          # normalised down
+  # position minute shares are roughly DEF .30 / MID .38 / FWD .22 / GK .09;
+  # under any plausible weighting the shipped factors must straddle 1
+  expect_lt(min(cal$factor), 1)
+  expect_gt(max(cal$factor), 1)
+  expect_gt(mean(cal$factor), 0.8)
+  expect_lt(mean(cal$factor), 1.2)
+})
+
+test_that("resolve_position_group ignores the Substitute match role", {
+  d <- data.table::data.table(
+    player_id = c("p1","p1","p1","p2","p2"),
+    season_end_year = c(2024L,2024L,2024L,2024L,2024L),
+    position = c("Striker","Striker","Substitute","Goalkeeper","Substitute"),
+    total_minutes = c(90, 90, 20, 90, 45)
+  )
+  g <- panna:::resolve_position_group(d)
+  expect_equal(g, c("FWD","FWD","FWD","GK","GK"))       # substitute rows inherit the real position
+})
+
+test_that("resolve_position_group falls back across seasons then to the row label", {
+  d <- data.table::data.table(
+    player_id = c("p1","p1","p2"),
+    season_end_year = c(2023L, 2024L, 2024L),
+    position = c("Defender","Substitute","Midfielder"),
+    total_minutes = c(900, 90, 90)
+  )
+  g <- panna:::resolve_position_group(d)
+  expect_equal(g[2], "DEF")                              # career fallback from 2023
+  expect_equal(g[3], "MID")
+})

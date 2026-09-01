@@ -1393,6 +1393,160 @@ compute_player_psv <- function(player_match_stats, min_adjust = TRUE,
 # Coefficient loading
 # ============================================================================
 
+#' Load the bundled PSV position-calibration table
+#'
+#' Reads \code{inst/extdata/psv_calibration.csv}: per-position factors that put
+#' PSV from every position on a common goals footing. Missing file returns an
+#' empty table and warns, so callers degrade to uncalibrated rather than error.
+#'
+#' @return A data.table with \code{axis}, \code{level}, \code{factor}, \code{slope},
+#'   \code{se}, \code{n_obs}.
+#' @seealso \code{\link{apply_psv_calibration}}
+#' @keywords internal
+load_psv_calibration <- function() {
+  path <- system.file("extdata", "psv_calibration.csv", package = "panna")
+  if (path == "") {
+    cli::cli_warn(c(
+      "PSV calibration table not found: {.file psv_calibration.csv}",
+      "i" = "PSV will be returned uncalibrated (all factors 1)."
+    ))
+    return(data.table::data.table(axis = character(0), level = character(0),
+                                   factor = numeric(0)))
+  }
+  data.table::as.data.table(utils::read.csv(path, stringsAsFactors = FALSE))
+}
+
+#' Apply the PSV position calibration
+#'
+#' Multiplies \code{psv} (and \code{osv}/\code{dsv} when present, so
+#' \code{osv + dsv == psv} is preserved) by that player's position factor.
+#'
+#' \strong{Apply this BEFORE the league offsets, not after.} This is the opposite
+#' ordering to \code{apply_psr_calibration()}, and deliberately so: the PSR
+#' offsets are additive and derived elsewhere, whereas the league offsets are
+#' derived \emph{from} PSV via \code{build_league_network(value_col = "psv")}.
+#' Calibrating after the offsets would leave the offsets themselves estimated on
+#' uncalibrated input. In step 06 the sequence is: strip \code{psv_league_offset}
+#' -> \code{apply_psv_calibration()} -> \code{compute_psr_league_offsets()}.
+#' Do not iterate: feeding offset-adjusted PSV back into the network makes each
+#' cycle estimate the residual of its own previous output.
+#'
+#' \strong{The position column must be a RESOLVED position, not the per-match
+#' role.} Opta records \code{position == "Substitute"} for anyone appearing off
+#' the bench -- 394,248 rows in \code{01_match_stats.rds}, ~29\% of game-log rows.
+#' Bucketing on that field puts a blend of every position into one group and
+#' biases the outfield factors. Resolve each player's modal non-Substitute
+#' position first (per season, career fallback); the factors shipped here were
+#' derived that way.
+#'
+#' Factors come from a \strong{leak-free} fit -- season S-1 PSV predicting season
+#' S match outcomes, 450-minute prior gate. Fitting them against the same match's
+#' goal difference is tautological for PSV (a keeper's PSV is built from that
+#' match's saves and goals conceded) and inverts them.
+#'
+#' \strong{The shipped factors are SCALE-PRESERVING}: the raw fitted slopes
+#' (\code{slope_raw}: GK 0.7847, DEF 1.3627, MID 1.5804, FWD 1.9319) are divided
+#' by their minute-weighted mean (1.4833) so the overall PSV level is unchanged
+#' and only the relative position weighting moves. That matters because these
+#' offsets are ADDED to PSR at full strength on the assumption that PSV and PSR
+#' share units. Using the raw slopes inflates all of PSV ~1.5x and every league
+#' offset with it -- which looks like a large correction (+55\% on weak leagues)
+#' but is a units artefact. The genuine differential effect on the offsets is
+#' about \strong{+4.6\%}; the real payoff of this table is to PSV itself, where it
+#' cuts goalkeeper share of the top 1\% from 4.2x the population rate to ~0.2x.
+#'
+#' @param psv_dt A data.frame/data.table with \code{psv} and a position column.
+#' @param position_col Name of the resolved-position column. Default
+#'   \code{"pos_grp"}; \code{"primary_position"} and \code{"position"} are used as
+#'   fallbacks when present.
+#' @param calibration Calibration table; defaults to \code{\link{load_psv_calibration}}.
+#'
+#' @return \code{psv_dt} with \code{psv} (and \code{osv}/\code{dsv}) scaled, and
+#'   an attribute \code{panna_psv_calibrated = TRUE}.
+#' @seealso \code{\link{load_psv_calibration}}, \code{\link{compute_psr_league_offsets}}
+#' @family psr
+#' @export
+apply_psv_calibration <- function(psv_dt, position_col = "pos_grp",
+                                   calibration = load_psv_calibration()) {
+  dt <- data.table::as.data.table(psv_dt)
+  if (is.null(calibration) || NROW(calibration) == 0 || nrow(dt) == 0) return(dt)
+  if (isTRUE(attr(psv_dt, "panna_psv_calibrated"))) {
+    cli::cli_abort(c(
+      "These PSV values have already been calibrated.",
+      "x" = "Applying the position factors twice would square them.",
+      "i" = "Call {.fn apply_psv_calibration} once, before the league offsets."
+    ))
+  }
+  pc <- position_col
+  if (!pc %in% names(dt)) {
+    pc <- intersect(c("pos_grp", "primary_position", "position"), names(dt))[1]
+    if (is.na(pc)) cli::cli_abort("No position column found for PSV calibration.")
+  }
+  pos <- .psv_position_group(dt[[pc]])
+  cal <- calibration[axis == "position"]
+  fac <- stats::setNames(cal$factor, cal$level)
+  f <- unname(fac[pos])
+  f[is.na(f)] <- 1                       # unknown position passes through, as PSR does
+  for (col in intersect(c("psv", "osv", "dsv"), names(dt))) {
+    data.table::set(dt, j = col, value = as.numeric(dt[[col]]) * f)
+  }
+  data.table::setattr(dt, "panna_psv_calibrated", TRUE)
+  dt[]
+}
+
+#' Resolve each row's position group, ignoring the "Substitute" match role
+#'
+#' Opta's \code{position} is the player's role IN THAT MATCH, so anyone appearing
+#' off the bench is recorded as \code{"Substitute"} — 394,248 rows in
+#' \code{01_match_stats.rds}, ~29\% of game-log rows. Bucketing on it directly
+#' puts a blend of every position into one group. This takes each player's modal
+#' NON-Substitute position (minute-weighted, per season, career fallback, then
+#' the row's own label as a last resort) and returns the calibration's groups.
+#'
+#' @param dt data.frame/data.table with \code{player_id}, \code{position} and,
+#'   ideally, \code{season_end_year} and \code{total_minutes}.
+#' @return Character vector of \code{"GK"}/\code{"DEF"}/\code{"MID"}/\code{"FWD"}/\code{NA},
+#'   one per row of \code{dt}.
+#' @keywords internal
+resolve_position_group <- function(dt) {
+  d <- data.table::as.data.table(dt)
+  if (!"position" %in% names(d) || !"player_id" %in% names(d)) {
+    cli::cli_abort("resolve_position_group needs {.field player_id} and {.field position}.")
+  }
+  w <- if ("total_minutes" %in% names(d)) as.numeric(d$total_minutes) else rep(1, nrow(d))
+  real <- data.table::data.table(player_id = d$player_id, position = as.character(d$position),
+                                  w = data.table::fifelse(is.na(w), 0, w))
+  if ("season_end_year" %in% names(d)) real[, season_end_year := d$season_end_year]
+  real <- real[!is.na(position) & !position %in% c("Substitute", "")]
+  pick <- function(pos, wt) { t <- tapply(wt, pos, sum, na.rm = TRUE); names(t)[which.max(t)] }
+  career <- real[, .(career_pos = pick(position, w)), by = player_id]
+  out <- data.table::data.table(player_id = d$player_id, row_pos = as.character(d$position))
+  if ("season_end_year" %in% names(real) && "season_end_year" %in% names(d)) {
+    seas <- real[, .(seas_pos = pick(position, w)), by = .(player_id, season_end_year)]
+    out[, season_end_year := d$season_end_year]
+    out <- merge(out, seas, by = c("player_id", "season_end_year"), all.x = TRUE, sort = FALSE)
+  } else out[, seas_pos := NA_character_]
+  out <- merge(out, career, by = "player_id", all.x = TRUE, sort = FALSE)
+  resolved <- data.table::fcoalesce(out$seas_pos, out$career_pos)
+  resolved[is.na(resolved) & !out$row_pos %in% c("Substitute", "")] <-
+    out$row_pos[is.na(resolved) & !out$row_pos %in% c("Substitute", "")]
+  .psv_position_group(resolved)
+}
+
+#' Bucket an Opta position label into the calibration's position groups
+#' @keywords internal
+.psv_position_group <- function(p) {
+  p <- as.character(p)
+  data.table::fcase(
+    p %in% c("GK", "DEF", "MID", "FWD"), p,          # already grouped
+    grepl("Goalkeep", p, ignore.case = TRUE), "GK",
+    grepl("Defender|Wing Back", p, ignore.case = TRUE), "DEF",
+    grepl("Midfield", p, ignore.case = TRUE), "MID",
+    grepl("Striker|Forward", p, ignore.case = TRUE), "FWD",
+    default = NA_character_
+  )
+}
+
 #' Load bundled PSR coefficients
 #'
 #' Loads pre-trained PSR coefficient CSV files from the package's

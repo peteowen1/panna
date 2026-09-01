@@ -98,6 +98,7 @@ coefficient file. Efficiency stats (ratios) are excluded from PSV by default.
 \seealso{
 Other psr: 
 \code{\link{PSV_RELIABILITY_GD_SCALE}},
+\code{\link{apply_psv_calibration}()},
 \code{\link{calculate_psr}()},
 \code{\link{calculate_psv_components}()},
 \code{\link{compute_player_psv}()},

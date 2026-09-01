@@ -24,6 +24,7 @@ PSR/PSV pipelines. Each stat has a type (rate or efficiency), category
 \seealso{
 Other psr: 
 \code{\link{PSV_RELIABILITY_GD_SCALE}},
+\code{\link{apply_psv_calibration}()},
 \code{\link{calculate_psr}()},
 \code{\link{calculate_psv}()},
 \code{\link{calculate_psv_components}()},

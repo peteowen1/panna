@@ -536,7 +536,8 @@ if (nrow(seasonal_psr) > 0 && !is.null(psr_primary_league)) {
   } else tryCatch({
     gl <- data.table::rbindlist(lapply(gl_files, function(f) {
       d <- arrow::read_parquet(f)
-      d[, intersect(c("player_id","season","league","total_minutes","psv","psv_league_offset"), names(d)), with = FALSE]
+      d[, intersect(c("player_id","season","league","total_minutes","psv","psv_league_offset",
+                      "position"), names(d)), with = FALSE]
     }), use.names = TRUE, fill = TRUE)
     # 10b end-adds psv_league_offset INTO psv in these parquets (#162). The
     # calibration must see the offset-free signal: feeding the adjusted psv
@@ -547,6 +548,30 @@ if (nrow(seasonal_psr) > 0 && !is.null(psr_primary_league)) {
     if ("psv_league_offset" %in% names(gl)) {
       gl[, psv := psv - data.table::fcoalesce(as.numeric(psv_league_offset), 0)]
       gl[, psv_league_offset := NULL]
+    }
+    # PSV position calibration MUST come after the offset strip and BEFORE the
+    # network (panna#211). The offsets are derived FROM psv, so calibrating
+    # afterwards would leave them estimated on uncalibrated input -- the opposite
+    # ordering to apply_psr_calibration(), deliberately. Goalkeeper PSV is 3.1x
+    # the outfield spread and far less predictive per unit; uncorrected it makes
+    # keepers 4.2x over-represented in the PSV top 1%.
+    # Effect on the OFFSETS is modest (+4.6% on weak leagues) -- the shipped
+    # factors are scale-preserving, so PSV's level is unchanged and only the
+    # relative position weighting moves. Do NOT use the raw fitted slopes here:
+    # they average 1.48, inflate all of PSV and every offset with it (+55%),
+    # which reads as a big correction but is a units artefact, and would break
+    # the PSV/PSR unit correspondence these offsets are added at full strength on.
+    # NB resolve_position_group() is required: Opta's `position` is the match
+    # ROLE, so ~29% of rows read "Substitute" and bucketing on it blends every
+    # position together.
+    if ("position" %in% names(gl)) {
+      gl[, pos_grp := resolve_position_group(gl)]
+      gl <- apply_psv_calibration(gl, position_col = "pos_grp")
+      cat(sprintf("Applied PSV position calibration to %.1f%% of rows (%.1f%% unresolved -> factor 1)\n",
+                  100 * mean(!is.na(gl$pos_grp)), 100 * mean(is.na(gl$pos_grp))))
+    } else {
+      warning("game_logs lack `position`; PSV position calibration SKIPPED ",
+              "(offsets will be ~28% too small -- see panna#211).", call. = FALSE)
     }
     # bucket_years=2: bridge leagues a player straddles across adjacent seasons,
     # not only within one season. Fixes the same-season network's connectivity
