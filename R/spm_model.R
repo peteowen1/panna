@@ -175,7 +175,8 @@ prepare_spm_regression_data <- function(player_features, rapm_ratings) {
 #' @export
 fit_spm_model <- function(data, predictor_cols = NULL, alpha = 0.5, nfolds = 10,
                           weight_by_minutes = TRUE, weight_transform = "sqrt",
-                          lower_limits = NULL, upper_limits = NULL) {
+                          lower_limits = NULL, upper_limits = NULL,
+                          penalty_factor = NULL) {
   # Validate input
   validate_dataframe(data, required_cols = "rapm", arg_name = "data")
 
@@ -254,6 +255,23 @@ fit_spm_model <- function(data, predictor_cols = NULL, alpha = 0.5, nfolds = 10,
   lower_vec <- resolve_limits(lower_limits, -Inf)
   upper_vec <- resolve_limits(upper_limits,  Inf)
 
+  ## penalty.factor: a named vector keyed by column name, resolved positionally
+  ## against X the same way the limits are. 0 means "never shrink this one" --
+  ## used for league fixed effects, which are controls rather than skills and
+  ## must not be selected away. Unnamed columns default to 1 (normal penalty).
+  penalty_vec <- NULL
+  if (!is.null(penalty_factor)) {
+    penalty_vec <- rep(1, ncol(X))
+    pf <- penalty_factor[!is.na(names(penalty_factor))]
+    matched <- intersect(names(pf), colnames(X))
+    penalty_vec[match(matched, colnames(X))] <- as.numeric(pf[matched])
+    if (length(matched) < length(pf)) {
+      cli::cli_warn(paste(
+        "penalty_factor named {length(pf)} column{?s} but only {length(matched)}",
+        "are in the design matrix; the rest were ignored."))
+    }
+  }
+
   cv_fit <- glmnet::cv.glmnet(
     x = X,
     y = y,
@@ -263,7 +281,8 @@ fit_spm_model <- function(data, predictor_cols = NULL, alpha = 0.5, nfolds = 10,
     nfolds = nfolds,
     type.measure = "mse",
     lower.limits = lower_vec,
-    upper.limits = upper_vec
+    upper.limits = upper_vec,
+    penalty.factor = if (is.null(penalty_vec)) rep(1, ncol(X)) else penalty_vec
   )
 
   # Store feature SDs for standardised importance (glmnet standardize=TRUE
@@ -632,6 +651,30 @@ calculate_spm_ratings <- function(player_features, spm_model, lambda = "min") {
 
   # Ensure data.frame (data.table subsetting interprets predictor_cols as column name)
   player_features <- as.data.frame(player_features)
+
+  # Rebuild the league dummies the model was fitted on. A league absent from
+  # the fit gets all-zero dummies and is therefore priced as the reference
+  # league -- deliberate, so a new competition is scored rather than dropped.
+  league_levels <- spm_model$panna_metadata$league_levels
+  if (!is.null(league_levels) && length(league_levels) > 0) {
+    dm <- .spm_league_dummies(player_features, levels = league_levels)
+    player_features <- dm$data
+    missing_dummies <- setdiff(dm$cols, names(player_features))
+    if (length(missing_dummies) > 0) {
+      cli::cli_abort(paste(
+        "calculate_spm_ratings: could not rebuild league dummies",
+        "{.field {missing_dummies}} -- {.arg player_features} needs a",
+        "{.field competition} or {.field league} column."))
+    }
+  }
+
+  missing_cols <- setdiff(predictor_cols, names(player_features))
+  if (length(missing_cols) > 0) {
+    cli::cli_abort(paste(
+      "calculate_spm_ratings: {length(missing_cols)} predictor column{?s} the",
+      "model was fitted on {?is/are} absent from {.arg player_features}:",
+      "{.field {utils::head(missing_cols, 8)}}."))
+  }
 
   # Prepare prediction matrix
   X <- as.matrix(player_features[, predictor_cols, drop = FALSE])

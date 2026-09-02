@@ -707,6 +707,61 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
            intersect(c(xm_suffixed, success_cols, pos_cols), names(data))))
 }
 
+#' Build league fixed-effect dummy columns for SPM
+#'
+#' SPM maps per-90 box-score rates onto RAPM. RAPM is already opponent-adjusted
+#' at player level (the design matrix carries \code{_off}/\code{_def} columns for
+#' both teams) and league-season centred, but the box-score rates it is regressed
+#' on are neither. What survives is residual stat inflation: the same per-90 line
+#' means less in a weaker league. Measured 2026-09-02 on 22,755 players, the
+#' fitted league effect spans **0.95 sd of RAPM** end to end (EPL to CAF_CL),
+#' worth ~3.3\% RMSE — and without it Saudi Arabia supplies 5 of SPM's top 20,
+#' as many as the Bundesliga (9 EPL / 2 Saudi once the term is added).
+#'
+#' Dummies are 0/1 with one level held out as the reference, so an **unseen
+#' league at predict time gets all-zero dummies and falls back to that reference**
+#' rather than erroring. That is the deliberate behaviour: a new competition
+#' should be priced as the reference league, not dropped.
+#'
+#' @param data Data frame carrying a \code{competition} or \code{league} column.
+#' @param levels Character vector of league levels from the fitted model. When
+#'   \code{NULL} they are derived from \code{data} (levels with at least
+#'   \code{min_n} rows), which is the fit-time path.
+#' @param min_n Minimum rows for a league to get its own dummy (default 50).
+#'   Thinner leagues fold into the reference level rather than fitting a
+#'   coefficient on a handful of players.
+#' @return A list with \code{data} (input plus dummy columns), \code{levels}
+#'   (the non-reference levels, for storing in model metadata) and \code{cols}
+#'   (the dummy column names).
+#' @keywords internal
+.spm_league_dummies <- function(data, levels = NULL, min_n = 50) {
+  league_col <- intersect(c("competition", "league"), names(data))[1]
+  if (is.na(league_col)) {
+    return(list(data = data, levels = character(0), cols = character(0)))
+  }
+  lg <- as.character(data[[league_col]])
+  lg[is.na(lg) | lg == ""] <- "__unknown__"
+
+  if (is.null(levels)) {
+    tab <- table(lg)
+    keep <- names(tab)[tab >= min_n]
+    keep <- setdiff(keep, "__unknown__")
+    if (length(keep) < 2) {
+      return(list(data = data, levels = character(0), cols = character(0)))
+    }
+    ## Reference = the largest league, so the held-out level is the best
+    ## estimated one and every other coefficient is read against it.
+    ref <- keep[which.max(tab[keep])]
+    levels <- sort(setdiff(keep, ref))
+  }
+
+  cols <- paste0("lg_", make.names(levels))
+  for (i in seq_along(levels)) {
+    data[[cols[i]]] <- as.numeric(lg == levels[i])
+  }
+  list(data = data, levels = levels, cols = cols)
+}
+
 #' Fit SPM model using Opta features
 #'
 #' Fits an elastic net model predicting RAPM from Opta box score statistics.
@@ -735,8 +790,32 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
 #' opta_spm <- fit_spm_opta(spm_data)
 #' }
 fit_spm_opta <- function(data, alpha = 0.5, nfolds = 10,
-                          weight_by_minutes = TRUE, weight_transform = "sqrt") {
+                          weight_by_minutes = TRUE, weight_transform = "sqrt",
+                          league_fe = FALSE, league_min_n = 50) {
   predictor_cols <- .spm_opta_predictor_cols(data)
+
+  ## League fixed effects (opt-in). Entered UNPENALIZED: they are controls, not
+  ## skills, and elastic net would otherwise shrink or select them away exactly
+  ## where they matter most (the thin weak leagues). Defaults to FALSE so this
+  ## ships as a single testable axis rather than silently changing the prior
+  ## every downstream rating shrinks toward.
+  league_levels <- character(0)
+  penalty_factor <- NULL
+  if (isTRUE(league_fe)) {
+    dm <- .spm_league_dummies(data, levels = NULL, min_n = league_min_n)
+    if (length(dm$cols) == 0) {
+      cli::cli_warn(paste(
+        "league_fe = TRUE but no usable league column (need {.field competition}",
+        "or {.field league} with >= 2 levels of {league_min_n}+ rows); fitting without it."))
+    } else {
+      data <- dm$data
+      league_levels <- dm$levels
+      predictor_cols <- c(predictor_cols, dm$cols)
+      penalty_factor <- stats::setNames(rep(0, length(dm$cols)), dm$cols)
+      progress_msg(sprintf("League FE: %d levels (reference held out), unpenalized",
+                            length(dm$levels)))
+    }
+  }
 
   # NA-safety for the widened `_per90` selection: fit_spm_model() keeps only
   # complete.cases rows, so an un-imputed NA xMetrics column would silently
@@ -759,14 +838,22 @@ fit_spm_opta <- function(data, alpha = 0.5, nfolds = 10,
 
   progress_msg(sprintf("Fitting Opta SPM with %d features", length(predictor_cols)))
 
-  fit_spm_model(
+  fit <- fit_spm_model(
     data = data,
     predictor_cols = predictor_cols,
     alpha = alpha,
     nfolds = nfolds,
     weight_by_minutes = weight_by_minutes,
-    weight_transform = weight_transform
+    weight_transform = weight_transform,
+    penalty_factor = penalty_factor
   )
+
+  ## Stash the levels so calculate_spm_ratings() can rebuild identical dummies
+  ## at predict time. Without this the predict matrix would be missing columns
+  ## the model was fitted on, which errors rather than silently mispredicting --
+  ## but only if someone reaches predict, so store it at fit time.
+  fit$panna_metadata$league_levels <- league_levels
+  fit
 }
 
 
