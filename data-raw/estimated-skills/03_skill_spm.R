@@ -15,6 +15,16 @@ cache_dir <- file.path("data-raw", "cache-skills")
 opta_cache_dir <- file.path("data-raw", "cache-opta")
 use_xmetrics_features <- if (exists("use_xmetrics_features")) use_xmetrics_features else TRUE
 
+# League fixed effects in the SPM fit (panna#229 / #220). Plain exists(), never
+# inherits = FALSE: driver globals reach a step through source() and would be
+# missed otherwise.
+#
+# DEFAULTS FALSE. Enabling it changes SPM, which is the prior xRAPM shrinks
+# toward, so it moves xRAPM, panna and piero in the same step. It is validated
+# out-of-sample (5/5 splits, -1.54% RMSE, p = 0.0024) but must be adopted as its
+# own arm with a before/after comparison, not switched on silently.
+spm_league_fe <- if (exists("spm_league_fe")) spm_league_fe else FALSE
+
 # 3. Load Data ----
 
 cat("\n=== Loading Data ===\n")
@@ -41,6 +51,43 @@ player_stats <- skill_features %>%
   ungroup()
 
 cat("Unique players for SPM:", nrow(player_stats), "\n")
+
+# Attach each player's league in the season the features come from, so
+# fit_spm_opta(league_fe = TRUE) has something to key on. 02_skill_features.rds
+# carries no league/competition column at all -- only season_end_year -- so
+# without this join the league_fe argument silently no-ops.
+#
+# Why a league term belongs here (panna#229 / #220): SPM maps per-90 box rates
+# onto RAPM. RAPM is already opponent-adjusted at PLAYER level (rapm_matrix.R
+# builds playerX_off / playerX_def columns with two rows per splint) and
+# league-season centred; the box rates it is regressed on are neither. What
+# survives is residual stat inflation -- the same per-90 line means less in a
+# weaker league. Measured 2026-09-02 on 22,847 players: the fitted league effect
+# spans 0.96 SD of RAPM end to end, worth ~3.3% RMSE, and held out at -1.54%
+# RMSE across 5 of 5 random splits (p = 0.0024). Without it Saudi Arabia
+# supplied 5 of SPM's top 20, as many as the Bundesliga (EPL 9 / Saudi 2 after).
+#
+# The league is the player's MODAL competition by minutes in that season, taken
+# from match stats rather than guessed, and joined on (player_id,
+# season_end_year) so it matches the exact season the features describe.
+ms_path <- file.path(cache_dir, "01_match_stats.rds")
+if (file.exists(ms_path)) {
+  .ms <- data.table::as.data.table(readRDS(ms_path))
+  .ms[, season_end_year := as.integer(extract_season_end_year(season))]
+  .ms <- .ms[!is.na(season_end_year) & !is.na(total_minutes) & total_minutes > 0]
+  .lg <- .ms[, .(mins = sum(as.numeric(total_minutes), na.rm = TRUE)),
+             by = .(player_id, season_end_year, competition)]
+  .lg <- .lg[order(-mins)][, .SD[1L], by = .(player_id, season_end_year)]
+  player_stats <- merge(player_stats,
+                        as.data.frame(.lg[, .(player_id, season_end_year, competition)]),
+                        by = c("player_id", "season_end_year"), all.x = TRUE)
+  cat(sprintf("Attached league for %.1f%% of players (%d competitions)\n",
+              100 * mean(!is.na(player_stats$competition)),
+              length(unique(stats::na.omit(player_stats$competition)))))
+  rm(.ms, .lg)
+} else {
+  cat("01_match_stats.rds absent - no league column; league_fe will no-op\n")
+}
 
 # Ensure required columns exist
 if (!"player_name" %in% names(player_stats)) {
@@ -83,7 +130,8 @@ spm_glmnet <- fit_spm_opta(
   alpha = 0.5,
   nfolds = 10,
   weight_by_minutes = TRUE,
-  weight_transform = "sqrt"
+  weight_transform = "sqrt",
+  league_fe = spm_league_fe
 )
 
 # 6. Fit XGBoost SPM ----
