@@ -89,10 +89,31 @@ calibrate <- function(x, label) {
   m0 <- lm(gd ~ vdiff, data = g); m1 <- lm(reformulate(dc, "gd"), data = g)
   co <- summary(m1)$coefficients
   gk <- sds[pos_grp=="GK"]$sd; df <- sds[pos_grp=="DEF"]$sd
+  ## E. top-20 anchor. Taken at each player's LATEST as-at value in the most
+  ## recent season, so it reads like a current leaderboard. Keepers are 1 of 11
+  ## starters, so a position-blind rating gives ~1.8 of 20; consensus is they are
+  ## under-represented among the very best, so 0-2 is the expected band and 9+ is
+  ## the known PSR failure. Big-5/UCL should be >= 15 of 20.
+  BIG5 <- c("EPL","La_Liga","Serie_A","Bundesliga","Ligue_1","UCL")
+  latest <- x[season_end_year == max(season_end_year)]
+  top20 <- NULL
+  if (nrow(latest) > 500) {
+    pl <- latest[, .(val = val[.N], mins = sum(as.numeric(total_minutes)),
+                     pg = pg[.N]), by = player_id][mins >= 900][order(-val)]
+    lgm <- unique(ms_star[season_end_year == max(x$season_end_year),
+                          .(player_id, competition)])[, .SD[1L], by = player_id]
+    pl <- merge(pl, lgm, by = "player_id", all.x = TRUE)
+    t20 <- utils::head(pl, 20)
+    top20 <- list(gk = sum(t20$pg == "GK", na.rm = TRUE),
+                  b5 = sum(t20$competition %in% BIG5, na.rm = TRUE))
+  }
+
   list(skip = FALSE, label = label, n = nrow(g), pct_na = pct_na,
        global = unname(coef(m0)["vdiff"]), r2 = summary(m0)$r.squared,
        pos = setNames(round(co[dc,"Estimate"], 3), sub("^d_","",dc)),
-       gk_def = if (length(gk) && length(df) && df > 0) gk/df else NA_real_)
+       gk_def = if (length(gk) && length(df) && df > 0) gk/df else NA_real_,
+       top20_gk = if (is.null(top20)) NA_integer_ else top20$gk,
+       top20_b5 = if (is.null(top20)) NA_integer_ else top20$b5)
 }
 
 #' As-at value from a WEEKLY SNAPSHOT file: last snapshot strictly before the
@@ -133,13 +154,16 @@ report <- function(r) {
   if (isTRUE(r$skip)) { cat(sprintf("%-16s -- insufficient coverage (%.1f%% NA)\n",
                                     r$label, r$pct_na)); return(NULL) }
   flag <- if (any(r$pos < 0)) "  <<< INVERTED CELL" else ""
-  cat(sprintf("%-16s global %7.3f | R2 %.4f | n %7s | %%NA %4.1f | GK/DEF sd %5.2f%s\n",
-              r$label, r$global, r$r2, format(r$n, big.mark=","), r$pct_na, r$gk_def, flag))
+  cat(sprintf("%-16s global %7.3f | R2 %.4f | n %7s | %%NA %4.1f | GK/DEF sd %5.2f | top20 GK=%s big5=%s%s\n",
+              r$label, r$global, r$r2, format(r$n, big.mark=","), r$pct_na, r$gk_def,
+              ifelse(is.na(r$top20_gk), "--", r$top20_gk),
+              ifelse(is.na(r$top20_b5), "--", r$top20_b5), flag))
   cat(sprintf("%-16s   %s\n", "",
               paste(sprintf("%s %7.2f", names(r$pos), r$pos), collapse = "  ")))
   data.table(metric = r$label, n = r$n, pct_na = round(r$pct_na,1),
              global = round(r$global,3), r2 = round(r$r2,4),
              gk_def_sd = round(r$gk_def,2),
+             top20_gk = r$top20_gk, top20_b5 = r$top20_b5,
              GK = r$pos[["GK"]], DEF = r$pos[["DEF"]],
              MID = r$pos[["MID"]], FWD = r$pos[["FWD"]])
 }
