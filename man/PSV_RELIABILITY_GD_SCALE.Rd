@@ -5,7 +5,7 @@
 \alias{PSV_RELIABILITY_GD_SCALE}
 \title{Reliability-shrunk PSV display scale ("expected GD contribution per 90")}
 \format{
-Numeric value: 2.717
+Numeric value: 5.822
 }
 \usage{
 PSV_RELIABILITY_GD_SCALE
@@ -59,6 +59,21 @@ coefficients (07_train_psr_model.R), then update this value by hand -- the
 script writes no file, it only prints the number. Note 07b reads neither the
 coefficients nor this constant, so a coefficient-only retrain does not
 require re-running it.
+
+Re-derived 2026-09-02 after the panna#224 retrain: \strong{2.717 -> 5.822}
+(\code{c_outfield = 5.8218}, se 0.0858, t = 67.8, R^2 = 0.239, n = 14,713).
+A 114\% drift, which is expected rather than alarming: with the opponent
+control live in every competition it absorbs variance the box-score features
+used to carry, so their betas shrank (e.g. \code{shots_ibox_p90} 0.103 -> 0.026)
+and a correspondingly larger multiplier is needed to reach goal units.
+
+The same fit returned \code{c_gk = -5.5474} (t = -28.8), REJECTED per the standing
+D1-v2 decision -- but note it has \strong{flipped sign} since the 2026-07-20 run,
+which recorded \code{c_gk = +25.39}. A negative keeper coefficient says a team with
+a better goalkeeper is predicted to lose, the same inversion as #209/#210. It
+does not touch this constant (GKs use \code{c_outfield}), but it must be resolved
+before any GK \emph{position factor} is derived from this coefficient vintage --
+see RATING_CALIBRATION.md: never calibrate before fixing an inverted rating.
 }
 \seealso{
 Other psr: 
