@@ -37,9 +37,16 @@ defensive). offensive + defensive == epv_total always.}
 \item{epv_shooting}{Shot credit (xG-weighted)}
 \item{epv_dribbling}{Ground take-on attempts}
 \item{epv_aerial}{Aerial duel credit (winner + / loser via duel_blame)}
-\item{epv_keeping}{Keeper pick-up, claim, punch (distribution/handling)}
-\item{epv_defending}{Tackles, interceptions, clearances, ball recoveries,
-keeper saves, fouls won, dispossessed events}
+\item{epv_keeping}{Goalkeeping: saves, pick-ups, claims, punches}
+\item{epv_defending}{Outfield defending: tackles, interceptions,
+clearances, ball recoveries, fouls won, dispossessed events}
+\item{epv_duel_blame}{Negative credit for losing duels (aerials, take-on
+vs tackle). Part of \code{epv_defensive}; exported so that roll-up is
+auditable.}
+\item{epv_aerial_att}{The attacking-third share of \code{epv_aerial}
+(\code{start_x > 67}). \code{epv_defensive} contains
+\code{epv_aerial - epv_aerial_att}, so without this column the defensive
+roll-up cannot be reconstructed from the exported components.}
 \item{minutes_played}{Minutes played (if lineups provided)}
 \item{epv_p90, epv_offensive_p90, ...}{Per-90 rates (if lineups provided)}
 \item{epv_adj}{Position-centered EPV (if \code{position_center = TRUE})}

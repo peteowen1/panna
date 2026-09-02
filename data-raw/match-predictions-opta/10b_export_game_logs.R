@@ -767,6 +767,14 @@ validate_game_log_schema <- function(dt, league, season) {
       "epv_offensive_adj", "epv_defensive_adj", "opp_adj",
       "epv_passing", "epv_shooting", "epv_dribbling", "epv_aerial",
       "epv_keeping", "epv_defending",
+      # epv_duel_blame and epv_aerial_att complete the defensive roll-up:
+      #   epv_defensive = epv_defending + epv_keeping
+      #                   + (epv_aerial - epv_aerial_att) + epv_duel_blame
+      # Without them `epv_defensive` cannot be reconstructed from the exported
+      # components -- `epv_aerial` ships as a TOTAL while only its non-attacking
+      # share is defensive. Added 2026-09-02 (panna#228), where that gap caused
+      # an inversion to be attributed to the wrong term.
+      "epv_duel_blame", "epv_aerial_att",
       "wpa_total", "wpa_as_actor", "wpa_as_receiver",
       "psv", "osv", "dsv", "psv_league_offset",
       "goals_minus_xgot", "placement_added", "xgot",
