@@ -184,7 +184,22 @@
 #'   \code{compute_match_level_opta_stats}).
 #' @param ref_dates Character or Date vector of dates to estimate skills at.
 #' @param decay_params Decay parameters (default: \code{get_default_decay_params()}).
-#' @param min_weighted_90s Minimum weighted 90s for inclusion (default 3).
+#' @param min_weighted_90s The estimator's REGRESSION threshold, not an
+#'   inclusion gate (default 3). Shrinkage toward the prior is what handles
+#'   thin samples -- see \code{estimate_player_skills} and the note at
+#'   \code{data-raw/estimated-skills/02_estimate_skills.R:23}. Do NOT use this
+#'   to trim output rows; that is \code{output_min_w90}.
+#' @param output_min_w90 Drop rows from each per-date snapshot whose
+#'   \code{weighted_90s} is below this (default 0 = keep every row). This is a
+#'   pure memory lever for callers that only need active players at each date.
+#'   \strong{Leave it at 0 for anything that trains a model.} Setting it to 3
+#'   for all callers on 2026-09-01 (456d8329) dropped
+#'   \code{07_train_psr_model.R}'s skill coverage from 100.0% to 84.7%: the
+#'   trimmed players still have player-match rows, so they matched no skill row,
+#'   and step 07 imputes missing skills to 0 -- which attenuates every
+#'   coefficient. That commit's claim that "every consumer joins on
+#'   (player_id, exact date), so the dropped rows were never read" was wrong;
+#'   step 07 reads exactly those rows. Its coverage guard caught it.
 #' @param verbose Print progress (default TRUE).
 #'
 #' @return Named list of data.tables (one per ref_date), keyed by date string.
@@ -193,6 +208,7 @@
 .estimate_prematch_skills_batch <- function(match_stats, ref_dates,
                                             decay_params = NULL,
                                             min_weighted_90s = 3,
+                                            output_min_w90 = 0,
                                             verbose = TRUE) {
   if (is.null(decay_params)) decay_params <- get_default_decay_params()
 
@@ -559,7 +575,7 @@
         data.table::set(result, j = sc, value = eff_skill_vals[[sc]])
       }
 
-      result[weighted_90s >= min_weighted_90s]
+      if (output_min_w90 > 0) result[weighted_90s >= output_min_w90] else result
       }  # end else (has prior data)
     },
     error = function(e) {
