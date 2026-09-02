@@ -109,12 +109,26 @@ if (file.exists(decay_params_path)) {
 # Ensure season_end_year exists
 ms_dt <- data.table::as.data.table(match_stats)
 rm(match_stats); gc(verbose = FALSE)
+## Season MUST come from the season LABEL, not from the match date. The
+## `month >= 7 -> year + 1` heuristic is the European convention and is wrong for
+## every calendar-year league: it mis-seasoned 11.9% of all player-match rows
+## (100% of Leagues Cup, 68.4% of Brazil, 49.2% of MLS, 36.9% of Argentina),
+## splitting single seasons across two league-season fixed-effect cells and
+## across the train/test boundary. See panna#224 and panna/CLAUDE.md.
 if (!"season_end_year" %in% names(ms_dt)) {
-  ms_dt[, season_end_year := data.table::fifelse(
-    data.table::month(as.Date(match_date)) >= 7L,
-    data.table::year(as.Date(match_date)) + 1L,
-    data.table::year(as.Date(match_date))
-  )]
+  if ("season" %in% names(ms_dt)) {
+    ms_dt[, season_end_year := as.integer(extract_season_end_year(season))]
+    n_bad <- sum(is.na(ms_dt$season_end_year))
+    if (n_bad > 0) {
+      cli::cli_warn(paste("extract_season_end_year() returned NA for {n_bad}",
+                          "rows; dropping them from PSR training."))
+      ms_dt <- ms_dt[!is.na(season_end_year)]
+    }
+  } else {
+    cli::cli_abort(paste("match_stats has neither {.field season_end_year} nor",
+                         "{.field season}; refusing to guess the season from",
+                         "match_date (wrong for calendar-year leagues)."))
+  }
 }
 ms_dt[, match_date := as.Date(match_date)]
 
@@ -123,6 +137,11 @@ ms_dt[, match_date := as.Date(match_date)]
 cat("\n=== Deriving Match Results ===\n\n")
 
 # Sum goals per team per match from player stats
+## Group by team_id, not team_name. Club names collide across leagues
+## (Independiente and River Plate each map to 3 distinct team_ids; Arsenal,
+## Everton, Liverpool and Barcelona to 2 each) and differ between feeds, which
+## is what broke the team-strength join in panna#224. team_name is carried for
+## readability only.
 team_goals <- ms_dt[, .(
   team_goals = sum(as.numeric(goals), na.rm = TRUE),
   team_name = team_name[1],
@@ -131,13 +150,15 @@ team_goals <- ms_dt[, .(
   season_end_year = season_end_year[1],
   competition = competition[1],
   n_players = .N
-), by = .(match_id, team_name)]
+), by = .(match_id, team_id)]
 
-home_side <- team_goals[is_home == 1, .(match_id, home_team = team_name,
+home_side <- team_goals[is_home == 1, .(match_id, home_team_id = team_id,
+                                          home_team = team_name,
                                           home_goals = team_goals,
                                           match_date, season_end_year,
                                           competition)]
-away_side <- team_goals[is_home == 0, .(match_id, away_team = team_name,
+away_side <- team_goals[is_home == 0, .(match_id, away_team_id = team_id,
+                                          away_team = team_name,
                                           away_goals = team_goals)]
 
 match_outcomes <- home_side[away_side, on = "match_id", nomatch = NULL]
@@ -157,28 +178,87 @@ cat(sprintf("Matches with goal data: %s\n",
 # weak defenders. opp_def_rating is calibrated cross-league via RAPM, so
 # it provides cleanly comparable opposition-quality signal.
 ts_path <- file.path("data-raw", "cache-opta", "team_season_strength.parquet")
+ts_cols <- c("home_off_rating", "home_def_rating", "away_off_rating", "away_def_rating")
 if (file.exists(ts_path) && requireNamespace("arrow", quietly = TRUE)) {
   ts <- data.table::as.data.table(arrow::read_parquet(ts_path))
-  match_outcomes <- merge(match_outcomes,
-                            ts[, .(team_name, season_end_year,
-                                    home_off_rating = off_rating,
-                                    home_def_rating = def_rating)],
-                            by.x = c("home_team","season_end_year"),
-                            by.y = c("team_name","season_end_year"), all.x = TRUE)
-  match_outcomes <- merge(match_outcomes,
-                            ts[, .(team_name, season_end_year,
-                                    away_off_rating = off_rating,
-                                    away_def_rating = def_rating)],
-                            by.x = c("away_team","season_end_year"),
-                            by.y = c("team_name","season_end_year"), all.x = TRUE)
-  for (c in c("home_off_rating","home_def_rating","away_off_rating","away_def_rating")) {
-    match_outcomes[is.na(get(c)), (c) := 0]
+
+  ## Require the team_id-keyed schema. The pre-panna#224 file was keyed on
+  ## team_name only; joining it here matched ~0% of MLS / Liga MX / Saudi /
+  ## Argentina and left the control inert in eight competitions. Fail loudly
+  ## rather than silently reproducing that.
+  if (!"team_id" %in% names(ts)) {
+    cli::cli_abort(paste(
+      "{.path {ts_path}} has no {.field team_id} column -- it predates",
+      "panna#224. Regenerate it with",
+      "{.path data-raw/player-ratings-opta/07c_team_season_strength.R}."))
   }
-  cat(sprintf("Team-strength controls joined: %d / %d matches have any rating\n",
-              sum(match_outcomes$home_off_rating != 0 |
-                    match_outcomes$away_off_rating != 0),
-              nrow(match_outcomes)))
+  stopifnot(!anyDuplicated(ts, by = c("team_id", "season_end_year")))
+
+  n_before <- nrow(match_outcomes)
+  match_outcomes <- merge(match_outcomes,
+                            ts[, .(team_id, season_end_year,
+                                    home_off_rating = off_rating,
+                                    home_def_rating = def_rating,
+                                    home_ts_coverage = coverage)],
+                            by.x = c("home_team_id", "season_end_year"),
+                            by.y = c("team_id", "season_end_year"), all.x = TRUE)
+  match_outcomes <- merge(match_outcomes,
+                            ts[, .(team_id, season_end_year,
+                                    away_off_rating = off_rating,
+                                    away_def_rating = def_rating,
+                                    away_ts_coverage = coverage)],
+                            by.x = c("away_team_id", "season_end_year"),
+                            by.y = c("team_id", "season_end_year"), all.x = TRUE)
+  ## A duplicated key would row-multiply the training set rather than error.
+  stopifnot(nrow(match_outcomes) == n_before)
+
+  ## Remaining unmatched team-seasons are teams with no lineup minutes at all.
+  ## Fill with that SEASON's median rather than 0 -- the ratings are not centred
+  ## on 0, so 0 is not a neutral value (it sits at the 11th percentile of
+  ## def_rating), and a constant fill is exactly what made the control inert.
+  n_unmatched <- sum(is.na(match_outcomes$home_def_rating) |
+                       is.na(match_outcomes$away_def_rating))
+  for (cc in ts_cols) {
+    med <- match_outcomes[, stats::median(get(cc), na.rm = TRUE),
+                          by = season_end_year]
+    data.table::setnames(med, "V1", ".med")
+    match_outcomes <- merge(match_outcomes, med, by = "season_end_year", all.x = TRUE)
+    match_outcomes[is.na(get(cc)), (cc) := .med]
+    match_outcomes[, .med := NULL]
+  }
+  ## Any season with no ratings at all leaves NA after the median fill.
+  for (cc in ts_cols) match_outcomes[is.na(get(cc)), (cc) := 0]
+  stopifnot(!anyNA(match_outcomes[, ..ts_cols]))
+
+  cat(sprintf("Team-strength controls joined on team_id: %s / %s matches matched (%.1f%%)\n",
+              format(nrow(match_outcomes) - n_unmatched, big.mark = ","),
+              format(nrow(match_outcomes), big.mark = ","),
+              100 * (1 - n_unmatched / nrow(match_outcomes))))
+
+  ## THE CHECK THAT WOULD HAVE CAUGHT panna#224. League-season fixed effects
+  ## absorb any constant, so a competition whose control has no WITHIN-league
+  ## spread receives no opponent adjustment at all -- silently, while its peers
+  ## are adjusted normally. Aggregate coverage cannot see this; only variance can.
+  spread <- match_outcomes[, .(matches = .N,
+                               sd_away_def = stats::sd(away_def_rating, na.rm = TRUE)),
+                           by = competition][order(sd_away_def)]
+  dead <- spread[matches >= 200 & (is.na(sd_away_def) | sd_away_def < 1e-3)]
+  if (nrow(dead) > 0) {
+    cli::cli_warn(paste(
+      "Opponent control is INERT in {nrow(dead)} competition(s):",
+      "{paste(dead$competition, collapse = ', ')}. Their PSR carries no",
+      "schedule-strength correction while other leagues' does. See panna#224."))
+    print(utils::head(spread, 10))
+  } else {
+    cat(sprintf("Opponent control has usable within-league spread in all %d competitions ",
+                nrow(spread)))
+    cat(sprintf("(min sd %.5f, %s)\n", min(spread$sd_away_def, na.rm = TRUE),
+                spread$competition[1]))
+  }
 } else {
+  cli::cli_warn(paste("{.path {ts_path}} not found -- PSR will train with NO",
+                      "opponent-quality control. Run",
+                      "{.path data-raw/player-ratings-opta/07c_team_season_strength.R}."))
   match_outcomes[, `:=`(home_off_rating = 0, home_def_rating = 0,
                           away_off_rating = 0, away_def_rating = 0)]
 }

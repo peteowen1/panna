@@ -92,21 +92,38 @@ t_log(sprintf("opponent lookup + join in %.1fs (NAs: %d/%d)",
 ## --- 3. Join opp_def_rating from team_season_strength ---
 t0 <- Sys.time()
 ts <- as.data.table(read_parquet("data-raw/cache-opta/team_season_strength.parquet"))
-team_name_map <- unique(lu[, .(team_id, team_name, season)])
-team_name_map[, season_end_year := {
-  if (all(grepl("^\\d{4}-\\d{4}$", season))) as.integer(sub(".*-", "", season))
-  else if (all(grepl("^\\d{4} ", season))) as.integer(sub(" .*", "", season))
-  else rep(NA_integer_, .N)
-}, by = season]
-team_name_map <- unique(team_name_map[, .(team_id, season_end_year, team_name)])
-ts_id <- merge(ts, team_name_map, by = c("team_name","season_end_year"))
-gl <- merge(gl, ts_id[, .(team_id, season_end_year,
-                            opp_def_rating = def_rating)],
+## Since panna#224 the file is keyed on team_id, so the team_name remap this
+## used to do is gone -- it was the source of ~0% match rates in MLS / Liga MX /
+## Saudi / Argentina, and its inline season parser had the same calendar-year
+## bug (it read "2025" as season_end_year 2025 only by luck of the branch order).
+if (!"team_id" %in% names(ts)) {
+  cli::cli_abort(paste(
+    "team_season_strength.parquet has no {.field team_id} column -- it predates",
+    "panna#224. Regenerate with",
+    "{.path data-raw/player-ratings-opta/07c_team_season_strength.R}."))
+}
+stopifnot(!anyDuplicated(ts, by = c("team_id", "season_end_year")))
+
+n_before <- nrow(gl)
+gl <- merge(gl, ts[, .(team_id, season_end_year,
+                         opp_def_rating = def_rating,
+                         opp_ts_coverage = coverage)],
              by.x = c("opp_team_id","season_end_year"),
              by.y = c("team_id","season_end_year"), all.x = TRUE)
+stopifnot(nrow(gl) == n_before)   # a duplicated key would row-multiply, not error
 n_na <- sum(is.na(gl$opp_def_rating))
-gl[is.na(opp_def_rating), opp_def_rating := 0]
-t_log(sprintf("opp_def_rating join in %.1fs: %d rows fallback to 0 (%.1f%%)",
+## Fill with the season median, not 0: the ratings are not centred on 0, and a
+## constant fill is absorbed by the league-season FE -- which is precisely how
+## the control went inert for eight competitions without anything failing.
+if (n_na > 0) {
+  med <- gl[, .(.med = median(opp_def_rating, na.rm = TRUE)), by = season_end_year]
+  gl <- merge(gl, med, by = "season_end_year", all.x = TRUE)
+  gl[is.na(opp_def_rating), opp_def_rating := .med]
+  gl[, .med := NULL]
+  gl[is.na(opp_def_rating), opp_def_rating := 0]   # season with no ratings at all
+}
+stopifnot(!anyNA(gl$opp_def_rating))
+t_log(sprintf("opp_def_rating joined on team_id in %.1fs: %d unmatched (%.1f%%), median-filled",
               as.numeric(Sys.time()-t0, units="secs"),
               n_na, 100*n_na/nrow(gl)))
 
