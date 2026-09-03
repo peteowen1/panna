@@ -77,6 +77,8 @@ for (league in LEAGUES) {
     tryCatch({
       events <- load_opta_match_events(league, season = season, source = "local")
       lineups <- load_opta_lineups(league, season = season, source = "local")
+      # body_part + situation for xG -- see the note in 02.
+      shot_lk <- .epv_shot_lookup(league, season)
 
       spadl <- convert_opta_to_spadl(events)
       spadl_chains <- create_possession_chains(spadl)
@@ -87,7 +89,8 @@ for (league in LEAGUES) {
       if (!is.null(epv_model)) {
         spadl_chains <- calculate_action_epv(spadl_chains, features = NULL,
                                              epv_model, league = league,
-                                             season = season)
+                                             season = season,
+                                             shot_lookup = shot_lk)
       }
 
       # #93: re-derive red cards from raw events (type_id 17 + qual 33/14) and

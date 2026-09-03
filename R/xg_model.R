@@ -684,6 +684,42 @@ add_xg_to_spadl <- function(spadl_actions, xg_model, season = NULL,
 }
 
 
+# Build the shot lookup that add_xg_to_spadl() and add_xgot_to_spadl() need.
+#
+# Internal, and deliberately NOT exported: it exists so the five pipeline steps
+# that score xG through calculate_action_epv() build the lookup identically
+# instead of each rolling its own (the sister-script drift that has bitten this
+# repo before). Plain function, no roxygen, so it needs no .Rd or _pkgdown entry.
+#
+# Uses load_opta_shot_events(), never a direct parquet read: the parquet returns
+# `event_id` as integer64 and merge() against SPADL's numeric original_event_id
+# matches 0% in silence.
+#
+# Returns NULL (with a visible warning) when shot events are unavailable, so a
+# caller degrades to the old skewed behaviour loudly rather than aborting a
+# whole pipeline run.
+.epv_shot_lookup <- function(league, season, source = "local") {
+  se <- tryCatch(
+    load_opta_shot_events(league, season = season, source = source),
+    error = function(e) {
+      cli::cli_alert_warning(
+        "shot_events unavailable for {league} {season} ({conditionMessage(e)}) - xG loses body part and situation.")
+      NULL
+    }
+  )
+  if (is.null(se) || nrow(se) == 0) return(NULL)
+  cols <- intersect(c("match_id", "event_id", "body_part", "situation",
+                      "type_id", "goalmouth_y", "goalmouth_z", "is_blocked"),
+                    names(se))
+  if (!all(c("match_id", "event_id") %in% cols)) {
+    cli::cli_alert_warning(
+      "shot_events for {league} {season} lack match_id/event_id - cannot build the xG lookup.")
+    return(NULL)
+  }
+  as.data.frame(se)[, cols, drop = FALSE]
+}
+
+
 #' Load Pre-trained xG Model
 #'
 #' Loads xG model from saved RDS file or downloads from GitHub releases.

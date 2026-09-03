@@ -171,6 +171,11 @@ for (league in LEAGUES) {
       # Load data
       events <- load_opta_match_events(league, season = season, source = "local")
       lineups <- load_opta_lineups(league, season = season, source = "local")
+      # Shot events supply body_part + situation for xG. SPADL cannot: its
+      # `bodypart` is a stub saying "foot" for every shot, so without this the
+      # xG feeding EPV is skewed ~6%. Use the loader, not the raw parquet
+      # (event_id is integer64 there and joins match nothing).
+      shot_lk <- .epv_shot_lookup(league, season)
 
       # Convert to SPADL
       spadl <- convert_opta_to_spadl(events)
@@ -189,7 +194,8 @@ for (league in LEAGUES) {
       # Create features and calculate EPV
       epv_features <- create_epv_features(spadl_labeled, n_prev = 3)
       spadl_epv <- calculate_action_epv(spadl_labeled, epv_features, epv_model,
-                                        league = league, season = season)
+                                        league = league, season = season,
+                                        shot_lookup = shot_lk)
 
       # Assign credit
       spadl_credit <- assign_epv_credit(spadl_epv, xpass_model)

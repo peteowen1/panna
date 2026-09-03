@@ -563,6 +563,12 @@ predict_epv_probs <- function(model, features) {
 #'   "2026 Canada-Mexico-USA"), forwarded to \code{add_xg_to_spadl()}. Required
 #'   when the xG model carries a season term; that model aborts rather than
 #'   score without it.
+#' @param shot_lookup Shot events keyed by (\code{match_id}, \code{event_id})
+#'   with \code{body_part} and \code{situation}, forwarded to
+#'   \code{add_xg_to_spadl()}. Without it six xG features are constant 0 and the
+#'   xG feeding EPV is skewed roughly 6%. Build it with
+#'   \code{load_opta_shot_events(league, season)}, not by reading the parquet
+#'   directly.
 #'
 #' @return SPADL actions with EPV columns added:
 #'   \itemize{
@@ -575,7 +581,7 @@ predict_epv_probs <- function(model, features) {
 #'
 #' @keywords internal
 calculate_action_epv <- function(spadl_actions, features = NULL, epv_model, xg_model = NULL,
-                                  league = NULL, season = NULL) {
+                                  league = NULL, season = NULL, shot_lookup = NULL) {
   cli::cli_alert_info("Calculating EPV for {nrow(spadl_actions)} actions...")
 
   # Try to load pre-trained Opta xG model if not provided
@@ -588,11 +594,16 @@ calculate_action_epv <- function(spadl_actions, features = NULL, epv_model, xg_m
     })
   }
 
-  # Apply xG model to add xg column for shots (if model available). `season` is
-  # forwarded because a season-aware xG model refuses to score without it -
-  # see add_xg_to_spadl().
+  # Apply xG model to add xg column for shots (if model available). `season` and
+  # `shot_lookup` are forwarded because without them the xG scored here is
+  # skewed: a season-aware model refuses to score without a season, and without
+  # the lookup SPADL supplies neither body part (its `bodypart` says "foot" for
+  # every shot) nor situation, leaving six features constant 0. See
+  # add_xg_to_spadl(). This function feeds EPV, WPA, game logs and equity, so
+  # the skew reached all of them.
   if (!is.null(xg_model)) {
-    spadl_actions <- add_xg_to_spadl(spadl_actions, xg_model, season = season)
+    spadl_actions <- add_xg_to_spadl(spadl_actions, xg_model, season = season,
+                                     shot_lookup = shot_lookup)
   }
 
   method <- epv_model$method %||% "goal"

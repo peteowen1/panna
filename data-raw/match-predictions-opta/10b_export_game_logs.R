@@ -412,9 +412,12 @@ validate_game_log_schema <- function(dt, league, season) {
       # --- EPV path ---
       # league_season, not season: a calendar-year league's label ("2026")
       # differs from the tournament-year one and the xG season term reads the
-      # END YEAR off whichever label it is handed.
+      # END YEAR off whichever label it is handed. shot_lookup supplies
+      # body_part + situation, which SPADL cannot (its bodypart says "foot" for
+      # every shot) - without it the xG behind these game logs is ~6% skewed.
       spadl_epv        <- calculate_action_epv(spadl_labeled, features = NULL, epv_model,
-                                               league = league, season = league_season)
+                                               league = league, season = league_season,
+                                               shot_lookup = .epv_shot_lookup(league, league_season))
       spadl_credit     <- assign_epv_credit(spadl_epv, xpass_model)
       player_game_epv  <- aggregate_player_game_epv(spadl_credit, lineups)
 

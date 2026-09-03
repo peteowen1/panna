@@ -168,7 +168,8 @@ validate_equity_schema <- function(dt, league, season) {
       # league_season, not season -- see the note at the matching 10b call.
       spadl_epv    <- calculate_action_epv(spadl_labeled, features = NULL,
                                            epv_model, league = league,
-                                           season = league_season)
+                                           season = league_season,
+                                           shot_lookup = .epv_shot_lookup(league, league_season))
       spadl_credit <- assign_epv_credit(spadl_epv, xpass_model)
 
       # Slim equity lookup — drop rows without an original_event_id

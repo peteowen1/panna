@@ -388,8 +388,12 @@ for (league in leagues) {
         }
 
         # Score shots with xG model. `season` is required by a season-aware
-        # model -- SPADL has no season column of its own.
-        spadl <- add_xg_to_spadl(spadl, xg_model, season = season)
+        # model -- SPADL has no season column of its own -- and shot_lookup
+        # supplies body_part + situation, which SPADL also cannot (its
+        # `bodypart` is a stub reading "foot" for every shot). Without the
+        # lookup six of the model's features are constant 0 and xG is ~6% off.
+        spadl <- add_xg_to_spadl(spadl, xg_model, season = season,
+                                 shot_lookup = .epv_shot_lookup(league, season))
 
         # Override penalty xG
         penalty_idx <- spadl$action_type == "shot" & spadl$is_penalty == 1L
