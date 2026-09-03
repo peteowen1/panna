@@ -415,7 +415,12 @@ opta_player_stats <- tryCatch(
 # "2026 Canada-Mexico-USA" tournaments); exact-string matching silently drops
 # the calendar-league + tournament rows. Always derive end year via the helper.
 box_minutes <- opta_player_stats %>%
-  mutate(season_end_year = vapply(season, extract_season_end_year, numeric(1))) %>%
+  # extract_season_end_year() is already vectorized (R/utils.R) - vapply()
+  # forces one R call per row instead of one call for the whole column. On
+  # this table's 8.9M rows that is the dominant cost of this step (a fresh
+  # duckdb read of the same file takes ~2s; the row-wise vapply took most of
+  # this step's remaining several minutes). Found 2026-09-04.
+  mutate(season_end_year = extract_season_end_year(season)) %>%
   filter(!is.na(season_end_year), !is.na(player_id)) %>%
   group_by(player_id, season_end_year) %>%
   summarise(box_minutes = sum(minsPlayed, na.rm = TRUE), .groups = "drop")

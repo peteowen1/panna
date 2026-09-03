@@ -57,8 +57,10 @@ if (!exists("processed_data")) {
 
   # Add season_end_year to results if not present
   if (!is.null(processed_data$results) && !"season_end_year" %in% names(processed_data$results)) {
+    # extract_season_end_year() is already vectorized - vapply() here forces
+    # one R call per row. See the same fix in 06_seasonal_skill_ratings.R.
     processed_data$results <- processed_data$results %>%
-      mutate(season_end_year = vapply(season, extract_season_end_year, numeric(1)))
+      mutate(season_end_year = extract_season_end_year(season))
   }
 
   # panna#87: opta_stats/opta_xmetrics saved to their OWN file, never attached
