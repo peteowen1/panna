@@ -759,7 +759,23 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
   if (is.na(lg) || is.na(mn) || !"player_id" %in% names(dt)) {
     return(list(data = NULL, cols = character(0), levels = character(0)))
   }
+  ## Coverage, not presence. `minsPlayed` is ~62.6% non-NA on the Opta stats
+  ## table, and rows without it are dropped here -- so if that missingness were
+  ## concentrated in a few competitions, those leagues' shares would be built
+  ## from a biased slice while every column still looked populated. Report the
+  ## per-competition retention rather than assume it is uniform.
+  n0 <- nrow(dt)
+  cov <- dt[, .(rows = .N,
+                usable = sum(!is.na(get(mn)) & as.numeric(get(mn)) > 0)),
+            by = c(lg)]
+  cov[, pct := 100 * usable / rows]
+  thin <- cov[pct < 50]
+  if (nrow(thin) > 0) {
+    cli::cli_alert_warning(
+      "League shares: {nrow(thin)} competition{?s} under 50% minutes coverage: {paste(sprintf('%s %.0f%%', thin[[lg]], thin$pct), collapse=', ')}")
+  }
   dt <- dt[!is.na(get(lg)) & !is.na(get(mn)) & as.numeric(get(mn)) > 0]
+  cli::cli_alert_info("League shares: {nrow(dt)} of {n0} rows usable ({round(100*nrow(dt)/n0, 1)}%), {nrow(cov)} competitions")
   if (!nrow(dt)) return(list(data = NULL, cols = character(0), levels = character(0)))
 
   keep <- dt[, .(n = .N), by = c(lg)][n >= min_n][[lg]]

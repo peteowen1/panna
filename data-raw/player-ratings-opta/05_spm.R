@@ -159,15 +159,6 @@ if (use_xmetrics_features && !is.null(opta_xmetrics)) {
 
 cat("\n=== Preparing SPM Training Data ===\n")
 
-spm_train_data <- player_stats %>%
-  inner_join(
-    rapm_ratings %>%
-      select(player_id, rapm, offense, defense),
-    by = "player_id"
-  )
-
-cat("Players for SPM training:", nrow(spm_train_data), "\n")
-
 # League control: minutes SHARES, not a dummy.
 #
 # aggregate_opta_stats() collapses 3.46M player-match rows to one row per
@@ -192,16 +183,38 @@ cat("Players for SPM training:", nrow(spm_train_data), "\n")
 # those wired.
 if (!exists("spm_league_shares")) spm_league_shares <- FALSE
 if (isTRUE(spm_league_shares)) {
-  .shares <- panna:::.spm_league_shares(processed_data$stats_summary, min_n = 50)
+  # Joined onto `player_stats`, NOT spm_train_data.
+  #
+  # spm_train_data is player_stats inner-joined to RAPM (35,590 of 68,830
+  # players), but SCORING runs on the full player_stats - so joining the shares
+  # downstream leaves the scoring frame without them and
+  # calculate_spm_ratings() aborts. Joining here means the training frame
+  # inherits the columns through the inner_join below, and both sides carry
+  # them by construction rather than by remembering to do it twice.
+  #
+  # `opta_stats` (player-match grain, from 02_opta_stats.rds) -- NOT
+  # processed_data, which does not exist in this step's environment.
+  .shares <- panna:::.spm_league_shares(opta_stats, min_n = 50)
   if (length(.shares$cols) == 0) {
     stop("spm_league_shares = TRUE but the share matrix is empty; refusing to fit unadjusted.")
   }
-  spm_train_data <- spm_train_data %>% left_join(.shares$data, by = "player_id")
-  for (.cc in .shares$cols) spm_train_data[[.cc]][is.na(spm_train_data[[.cc]])] <- 0
+  player_stats <- player_stats %>% left_join(.shares$data, by = "player_id")
+  for (.cc in .shares$cols) player_stats[[.cc]][is.na(player_stats[[.cc]])] <- 0
   cat(sprintf("League shares: %d columns (reference %s), %.1f%% of players non-reference\n",
               length(.shares$cols), .shares$reference,
-              100 * mean(rowSums(spm_train_data[, .shares$cols, drop = FALSE]) > 0)))
+              100 * mean(rowSums(player_stats[, .shares$cols, drop = FALSE]) > 0)))
 }
+
+# Training frame is built AFTER the shares join so it inherits those columns;
+# scoring later runs on player_stats, which now carries them too.
+spm_train_data <- player_stats %>%
+  inner_join(
+    rapm_ratings %>%
+      select(player_id, rapm, offense, defense),
+    by = "player_id"
+  )
+
+cat("Players for SPM training:", nrow(spm_train_data), "\n")
 
 # 6. Fit Elastic Net and XGBoost Models ----
 

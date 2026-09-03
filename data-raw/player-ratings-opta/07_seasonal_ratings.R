@@ -316,6 +316,33 @@ fit_season_ratings_opta <- function(splint_data, opta_stats, season,
     }
   }
 
+  # League minutes-share controls, when the fitted model was trained with them.
+  # Computed from THIS SEASON's player-match rows, not career: the model prices
+  # "share of minutes in competition X", and a player's mix changes year to
+  # year. Any column the model expects that this season cannot produce is set
+  # to 0, which places those players on the reference level - the same
+  # convention .spm_league_shares() uses for its dropped column.
+  .want_shares <- grep("^lgshare_",
+                       offense_spm_glmnet$panna_metadata$predictor_cols %||% character(0),
+                       value = TRUE)
+  if (length(.want_shares) > 0) {
+    .ss <- .spm_league_shares(season_opta_stats, min_n = 1)
+    if (!is.null(.ss$data)) {
+      .join <- .ss$data[, intersect(names(.ss$data), c("player_id", .want_shares)), drop = FALSE]
+      season_player_stats <- season_player_stats %>% left_join(.join, by = "player_id")
+    }
+    .filled <- 0L
+    for (col in .want_shares) {
+      if (!col %in% names(season_player_stats)) {
+        season_player_stats[[col]] <- 0; .filled <- .filled + 1L
+      } else {
+        season_player_stats[[col]][is.na(season_player_stats[[col]])] <- 0
+      }
+    }
+    cat(sprintf("    League shares: %d of %d columns present this season (%d defaulted to reference)\n",
+                length(.want_shares) - .filled, length(.want_shares), .filled))
+  }
+
   # Calculate season-specific SPM predictions (blended)
   off_glmnet <- calculate_spm_ratings(season_player_stats, offense_spm_glmnet)
   off_xgb <- calculate_spm_ratings_xgb(season_player_stats, offense_spm_xgb)
