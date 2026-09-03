@@ -18,8 +18,14 @@ source("data-raw/epv/_xmetrics_export_common.R")
 
 cli_h1("Export xMetrics to GitHub Releases")
 
+# Config override pattern: set XMETRICS_UPLOAD <- FALSE before sourcing to
+# consolidate locally without publishing. See 04b for the rationale.
+# Plain exists(), NOT inherits = FALSE - see 04b for why.
+if (!exists("XMETRICS_UPLOAD")) XMETRICS_UPLOAD <- TRUE
+
 cli_h2("Step 1: Consolidate xmetrics")
-combined <- export_consolidated_xmetrics("xmetrics", "opta_xmetrics.parquet", "player-seasons")
+combined <- export_consolidated_xmetrics("xmetrics", "opta_xmetrics.parquet", "player-seasons",
+                                         upload = XMETRICS_UPLOAD)
 
 cli_h2("Summary")
 
@@ -27,7 +33,8 @@ leagues <- if ("league" %in% names(combined)) unique(combined$league) else "unkn
 seasons <- if ("season" %in% names(combined)) range(combined$season) else "unknown"
 
 cli_alert_success(paste0(
-  "Uploaded opta_xmetrics.parquet: ",
+  if (XMETRICS_UPLOAD) "Uploaded " else "Consolidated (not published): ",
+  "opta_xmetrics.parquet: ",
   format(nrow(combined), big.mark = ","), " player-seasons, ",
   length(leagues), " leagues, ",
   "seasons ", paste(seasons, collapse = " to ")
