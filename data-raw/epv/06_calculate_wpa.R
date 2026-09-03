@@ -80,7 +80,8 @@ for (league in LEAGUES) {
       # post-overhaul model scores against degraded fallback features.
       if (!is.null(epv_model)) {
         spadl_chains <- calculate_action_epv(spadl_chains, features = NULL,
-                                             epv_model, league = league)
+                                             epv_model, league = league,
+                                             season = season)
       }
       spadl_chains <- add_red_card_to_chains(spadl_chains, events)
 

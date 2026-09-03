@@ -189,7 +189,7 @@ for (league in LEAGUES) {
       # Create features and calculate EPV
       epv_features <- create_epv_features(spadl_labeled, n_prev = 3)
       spadl_epv <- calculate_action_epv(spadl_labeled, epv_features, epv_model,
-                                        league = league)
+                                        league = league, season = season)
 
       # Assign credit
       spadl_credit <- assign_epv_credit(spadl_epv, xpass_model)

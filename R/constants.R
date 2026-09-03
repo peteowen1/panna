@@ -363,8 +363,9 @@ EPV_OPP_PRIOR_GAMES <- 2
 #' value came from ENG 2021-24 only, 251/306 = 0.82, and was rounded to 0.80 as
 #' "a robust central value". Measured across every league and season in
 #' `opta_shot_events.parquet` the rate is **39,916 / 51,881 = 0.7694**, 95% CI
-#' **[0.7657, 0.7730]** -- 170x the sample, and **0.80 falls outside the
+#' **0.7657 to 0.7730** -- 170x the sample, and **0.80 falls outside the
 #' interval**, so the old value overrated every penalty by about 4%.
+#' (Square brackets around the interval would be parsed by roxygen as a link.)
 #'
 #' It is stable enough to stay a single constant rather than becoming a model
 #' feature: by year 0.751-0.806 with no trend (2014-2026), by league 0.74-0.81

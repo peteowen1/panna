@@ -165,8 +165,10 @@ validate_equity_schema <- function(dt, league, season) {
       spadl_labeled  <- create_next_goal_labels(spadl_labeled)
 
       # EPV credit — features built internally by calculate_action_epv.
+      # league_season, not season -- see the note at the matching 10b call.
       spadl_epv    <- calculate_action_epv(spadl_labeled, features = NULL,
-                                           epv_model, league = league)
+                                           epv_model, league = league,
+                                           season = league_season)
       spadl_credit <- assign_epv_credit(spadl_epv, xpass_model)
 
       # Slim equity lookup — drop rows without an original_event_id

@@ -492,9 +492,35 @@ calculate_xg_calibration <- function(actual, predicted, n_bins = 10) {
 predict_xg <- function(xg_model, shot_features) {
   feature_cols <- xg_model$panna_metadata$feature_cols
 
-  # Ensure all required columns exist
+  # Ensure all required columns exist.
+  #
+  # A 0 fill is defensible for the binary flags -- 0 genuinely means "not a
+  # header", "not a corner". It is NOT defensible for `season_num`, where 0 is
+  # not a season at all: the model has never seen a year below 2014, so every
+  # split sends the row down its earliest-era branch and the whole prediction
+  # surface shifts. That is exactly what happened on 2026-09-03 (goals/xG
+  # 1.0000 -> 1.1265 across 3.0M shots) and the only signal was a cli_warn that
+  # R deferred into "There were 50 or more warnings" -- invisible in a 70-minute
+  # log. So continuous features abort; flags warn.
   missing_cols <- setdiff(feature_cols, names(shot_features))
   if (length(missing_cols) > 0) {
+    continuous <- intersect(missing_cols, c("season_num", "distance_to_goal",
+                                            "angle_to_goal", "x", "y"))
+    if (length(continuous) > 0) {
+      # cli pluralisation needs the quantity in the SAME string, so qty() is
+      # carried into each line -- otherwise cli aborts with "Cannot pluralize
+      # without a quantity" and hides the real error.
+      n_cont <- length(continuous)
+      cli::cli_abort(c(
+        "xG prediction: {n_cont} continuous feature{?s} missing: {paste(continuous, collapse=', ')}.",
+        "x" = "{cli::qty(n_cont)}Filling {?it/them} with 0 would put every row outside the training range.",
+        "i" = "{cli::qty(n_cont)}Build {?it/them} in the caller, the way the training path does."
+      ))
+    }
+    # cli_alert_warning prints immediately; cli_warn is deferred by R and gets
+    # swallowed by the \"50 or more warnings\" summary in long pipeline runs.
+    cli::cli_alert_warning(
+      "xG prediction: {length(missing_cols)} flag{?s} missing, defaulting to 0: {paste(missing_cols, collapse=', ')}")
     cli::cli_warn("xG prediction: {length(missing_cols)} feature{?s} missing, defaulting to 0: {paste(missing_cols, collapse=', ')}")
     for (col in missing_cols) {
       shot_features[[col]] <- 0
@@ -518,10 +544,16 @@ predict_xg <- function(xg_model, shot_features) {
 #'
 #' @param spadl_actions SPADL actions data frame
 #' @param xg_model Fitted xG model
+#' @param season Season label for these actions (e.g. "2025-2026", "2026",
+#'   "2026 Canada-Mexico-USA"). SPADL carries no season or date column, so a
+#'   season-aware model cannot derive it and this must be supplied; the end year
+#'   is read with \code{extract_season_end_year()}, exactly as training does.
+#'   Required when the model's features include \code{season_num} - it aborts
+#'   rather than score without it.
 #'
 #' @return SPADL actions with xg column added for shots
 #' @keywords internal
-add_xg_to_spadl <- function(spadl_actions, xg_model) {
+add_xg_to_spadl <- function(spadl_actions, xg_model, season = NULL) {
   # Initialize xG column
   spadl_actions$xg <- 0
 
@@ -552,6 +584,30 @@ add_xg_to_spadl <- function(spadl_actions, xg_model) {
     situation = NULL,
     is_big_chance = is_big_chance
   )
+
+  # Season term. SPADL carries no season or date column, so it has to be passed
+  # in; prepare_shots_for_xg() (the TRAINING path) builds it from the shot
+  # events' own `season`, and for a while this inference path simply did not
+  # build it at all. predict_xg() then filled it with 0 -- every shot scored as
+  # "year 0", far outside the 2014-2026 training range -- and the resulting
+  # train/serve skew cost a full 70-minute rebuild on 2026-09-03: overall
+  # goals/xG 1.0000 -> 1.1265 and by-season spread 1.3 -> 25.8 points, i.e. it
+  # undid the entire reason the season term was added. Use the same
+  # extract_season_end_year() training uses, never a date heuristic.
+  if ("season_num" %in% xg_model$panna_metadata$feature_cols) {
+    if (is.null(season)) {
+      cli::cli_abort(c(
+        "This xG model needs {.field season_num} but no {.arg season} was given.",
+        "x" = "Scoring without it silently biases every xG (measured: goals/xG 1.00 -> 1.13).",
+        "i" = "Pass the league's season label, e.g. {.code add_xg_to_spadl(spadl, m, season = \"2025-2026\")}."
+      ))
+    }
+    yr <- suppressWarnings(as.integer(extract_season_end_year(season)))
+    if (length(yr) != 1L || is.na(yr)) {
+      cli::cli_abort("Could not read a season end year from {.val {season}}.")
+    }
+    shot_features$season_num <- yr
+  }
 
   # Predict xG
   xg_pred <- predict_xg(xg_model, shot_features)

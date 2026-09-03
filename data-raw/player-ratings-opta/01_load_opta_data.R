@@ -387,8 +387,9 @@ for (league in leagues) {
           all_player_timing[[label]] <- extract_player_timing_from_events(raw_events)
         }
 
-        # Score shots with xG model
-        spadl <- add_xg_to_spadl(spadl, xg_model)
+        # Score shots with xG model. `season` is required by a season-aware
+        # model -- SPADL has no season column of its own.
+        spadl <- add_xg_to_spadl(spadl, xg_model, season = season)
 
         # Override penalty xG
         penalty_idx <- spadl$action_type == "shot" & spadl$is_penalty == 1L

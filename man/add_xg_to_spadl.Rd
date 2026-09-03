@@ -4,12 +4,19 @@
 \alias{add_xg_to_spadl}
 \title{Add xG to SPADL Actions}
 \usage{
-add_xg_to_spadl(spadl_actions, xg_model)
+add_xg_to_spadl(spadl_actions, xg_model, season = NULL)
 }
 \arguments{
 \item{spadl_actions}{SPADL actions data frame}
 
 \item{xg_model}{Fitted xG model}
+
+\item{season}{Season label for these actions (e.g. "2025-2026", "2026",
+"2026 Canada-Mexico-USA"). SPADL carries no season or date column, so a
+season-aware model cannot derive it and this must be supplied; the end year
+is read with \code{extract_season_end_year()}, exactly as training does.
+Required when the model's features include \code{season_num} - it aborts
+rather than score without it.}
 }
 \value{
 SPADL actions with xg column added for shots

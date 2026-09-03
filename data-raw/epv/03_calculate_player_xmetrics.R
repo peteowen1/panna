@@ -165,7 +165,7 @@ for (league in names(league_seasons)) {
       }
 
       # 4d. Add xG to shots
-      spadl <- add_xg_to_spadl(spadl, xg_model)
+      spadl <- add_xg_to_spadl(spadl, xg_model, season = season)
 
       # Override penalty xG with fixed value
       penalty_idx <- spadl$action_type == "shot" & spadl$is_penalty == 1L

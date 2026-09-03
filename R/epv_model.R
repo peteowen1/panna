@@ -559,6 +559,10 @@ predict_epv_probs <- function(model, features) {
 #'   position-based estimate if no model available.
 #' @param league League code (e.g., "ENG") for league-aware EPV features.
 #'   Only used when feature_mode is "simple". If NULL, defaults to 0 (unknown).
+#' @param season Season label for this league (e.g. "2025-2026", "2026",
+#'   "2026 Canada-Mexico-USA"), forwarded to \code{add_xg_to_spadl()}. Required
+#'   when the xG model carries a season term; that model aborts rather than
+#'   score without it.
 #'
 #' @return SPADL actions with EPV columns added:
 #'   \itemize{
@@ -571,7 +575,7 @@ predict_epv_probs <- function(model, features) {
 #'
 #' @keywords internal
 calculate_action_epv <- function(spadl_actions, features = NULL, epv_model, xg_model = NULL,
-                                  league = NULL) {
+                                  league = NULL, season = NULL) {
   cli::cli_alert_info("Calculating EPV for {nrow(spadl_actions)} actions...")
 
   # Try to load pre-trained Opta xG model if not provided
@@ -584,9 +588,11 @@ calculate_action_epv <- function(spadl_actions, features = NULL, epv_model, xg_m
     })
   }
 
-  # Apply xG model to add xg column for shots (if model available)
+  # Apply xG model to add xg column for shots (if model available). `season` is
+  # forwarded because a season-aware xG model refuses to score without it -
+  # see add_xg_to_spadl().
   if (!is.null(xg_model)) {
-    spadl_actions <- add_xg_to_spadl(spadl_actions, xg_model)
+    spadl_actions <- add_xg_to_spadl(spadl_actions, xg_model, season = season)
   }
 
   method <- epv_model$method %||% "goal"

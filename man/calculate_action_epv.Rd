@@ -9,7 +9,8 @@ calculate_action_epv(
   features = NULL,
   epv_model,
   xg_model = NULL,
-  league = NULL
+  league = NULL,
+  season = NULL
 )
 }
 \arguments{
@@ -25,6 +26,11 @@ position-based estimate if no model available.}
 
 \item{league}{League code (e.g., "ENG") for league-aware EPV features.
 Only used when feature_mode is "simple". If NULL, defaults to 0 (unknown).}
+
+\item{season}{Season label for this league (e.g. "2025-2026", "2026",
+"2026 Canada-Mexico-USA"), forwarded to \code{add_xg_to_spadl()}. Required
+when the xG model carries a season term; that model aborts rather than
+score without it.}
 }
 \value{
 SPADL actions with EPV columns added:

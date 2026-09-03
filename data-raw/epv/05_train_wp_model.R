@@ -86,7 +86,8 @@ for (league in LEAGUES) {
       # margin_poss-only fallback.
       if (!is.null(epv_model)) {
         spadl_chains <- calculate_action_epv(spadl_chains, features = NULL,
-                                             epv_model, league = league)
+                                             epv_model, league = league,
+                                             season = season)
       }
 
       # #93: re-derive red cards from raw events (type_id 17 + qual 33/14) and
