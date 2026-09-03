@@ -357,16 +357,31 @@ EPV_OPP_PRIOR_GAMES <- 2
 #' xG override for penalty kicks, applied in `add_xg_to_spadl()` to shots flagged
 #' `is_penalty` (Opta qualifier 9). The xG model is trained with penalties
 #' excluded (`exclude_penalties = TRUE`), so without this override a penalty
-#' scores like a contested ~12m open-play shot (~0.23). Empirical: ENG 2021-24 =
-#' 251/306 = 0.82 (thin, seasonal range 0.74-0.90); long-run top-flight ~0.78.
-#' 0.80 is a robust central value.
+#' scores like a contested ~12m open-play shot (~0.23).
 #'
-#' @format Numeric value: 0.80
+#' **Re-derived 2026-09-03 on the full corpus: 0.80 -> 0.7694.** The previous
+#' value came from ENG 2021-24 only, 251/306 = 0.82, and was rounded to 0.80 as
+#' "a robust central value". Measured across every league and season in
+#' `opta_shot_events.parquet` the rate is **39,916 / 51,881 = 0.7694**, 95% CI
+#' **[0.7657, 0.7730]** -- 170x the sample, and **0.80 falls outside the
+#' interval**, so the old value overrated every penalty by about 4%.
+#'
+#' It is stable enough to stay a single constant rather than becoming a model
+#' feature: by year 0.751-0.806 with no trend (2014-2026), by league 0.74-0.81
+#' across the twelve highest-volume competitions. Penalties remain EXCLUDED from
+#' xG training (`exclude_penalties = TRUE`) -- every penalty is taken from the
+#' same spot, so there is nothing for the geometry features to learn, and a
+#' measured constant is the right shape for it.
+#'
+#' Worth noting the old 0.80 exactly matched Opta's own penalty xG, which is
+#' what a copied constant looks like rather than a measured one.
+#'
+#' @format Numeric value: 0.7694
 #' @family constants
 #' @export
 #' @examples
 #' PENALTY_XG
-PENALTY_XG <- 0.80
+PENALTY_XG <- 0.7694
 
 #' Empirical penalty-shootout conversion rate
 #'

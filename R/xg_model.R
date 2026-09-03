@@ -47,18 +47,42 @@ NULL
     features$is_left_foot <- 0L
   }
 
-  # Situation
+  # Situation.
+  #
+  # `is_direct_freekick` was REMOVED on 2026-09-03: it was `grepl("free", ...)`
+  # and the only values Opta supplies are Corner / OpenPlay / Penalty / SetPiece.
+  # None contains "free", so the column was constant 0 across all 3,289,256
+  # shots -- a dead slot in a 14-feature model.
+  #
+  # `is_open_play` and `is_set_piece` are LEFT AS-IS despite strong evidence the
+  # two source labels are transposed, because inverting them here would be a
+  # silent semantic change on a guess about a third party's feed. The evidence
+  # (2026-09-03, full corpus):
+  #
+  #   situation   shots      %headers   mean_dist
+  #   SetPiece    2,189,191    10.3%      18.93
+  #   OpenPlay      831,295    29.7%      17.99
+  #   Corner        216,889    42.7%      14.98
+  #
+  # Genuine set pieces produce MORE headers, not fewer -- Corner at 42.7%
+  # confirms the test works. So the 66.6% labelled "SetPiece" behaves like open
+  # play (and 66.6% matches open play's expected share), while the 25.3%
+  # labelled "OpenPlay" behaves like set-piece-derived shots.
+  #
+  # It costs little in accuracy: a tree learns whichever split helps regardless
+  # of the name, and controlling for geometry the flag is worth a coefficient of
+  # 0.0451 (se 0.0044) -- significant on 3M rows, negligible in practice. It
+  # costs a lot in interpretation, since feature importances read backwards.
+  # Tracked so the mapping is fixed at the source rather than inverted here.
   if (!is.null(situation)) {
     sit_lower <- tolower(situation)
     features$is_open_play <- as.integer(grepl("open", sit_lower))
     features$is_set_piece <- as.integer(grepl("set", sit_lower))
     features$is_corner <- as.integer(grepl("corner", sit_lower))
-    features$is_direct_freekick <- as.integer(grepl("free", sit_lower))
   } else {
     features$is_open_play <- 1L
     features$is_set_piece <- 0L
     features$is_corner <- 0L
-    features$is_direct_freekick <- 0L
   }
 
   features$is_big_chance <- as.integer(is_big_chance)
@@ -80,9 +104,14 @@ NULL
 #'     \item angle_to_goal: Visible angle to goal
 #'     \item is_header: Binary indicator for headed shots
 #'     \item is_big_chance: Binary indicator for big chances
-#'     \item is_penalty: Binary indicator for penalties
-#'     \item is_direct_freekick: Binary for direct free kicks
-#'     \item shot_type_*: One-hot encoded shot types
+#'     \item is_penalty: Binary flag used to EXCLUDE penalties from training
+#'       (\code{exclude_penalties = TRUE}); they are scored at
+#'       \code{\link{PENALTY_XG}} instead, since every penalty is taken from the
+#'       same spot and there is nothing for the geometry features to learn
+#'     \item is_open_play, is_set_piece, is_corner: situation flags. NOTE the
+#'       source labels for open play and set piece appear transposed -- see
+#'       \code{.create_shot_features()} for the evidence and why they are left
+#'       as-is rather than silently inverted
 #'     \item is_goal: Target variable (1 = goal)
 #'   }
 #'
@@ -241,7 +270,9 @@ fit_xg_model <- function(shot_features,
     "x", "y", "distance_to_goal", "angle_to_goal",
     "in_penalty_area", "in_six_yard_box",
     "is_header", "is_right_foot", "is_left_foot",
-    "is_open_play", "is_set_piece", "is_corner", "is_direct_freekick",
+    "is_open_play", "is_set_piece", "is_corner",
+    # is_direct_freekick removed 2026-09-03: constant 0 on every shot
+    # (no Opta `situation` value contains "free"). See .create_shot_features().
     "is_big_chance"
   )
 

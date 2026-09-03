@@ -17,9 +17,14 @@ Data frame with xG features:
 \item angle_to_goal: Visible angle to goal
 \item is_header: Binary indicator for headed shots
 \item is_big_chance: Binary indicator for big chances
-\item is_penalty: Binary indicator for penalties
-\item is_direct_freekick: Binary for direct free kicks
-\item shot_type_*: One-hot encoded shot types
+\item is_penalty: Binary flag used to EXCLUDE penalties from training
+(\code{exclude_penalties = TRUE}); they are scored at
+\code{\link{PENALTY_XG}} instead, since every penalty is taken from the
+same spot and there is nothing for the geometry features to learn
+\item is_open_play, is_set_piece, is_corner: situation flags. NOTE the
+source labels for open play and set piece appear transposed -- see
+\code{.create_shot_features()} for the evidence and why they are left
+as-is rather than silently inverted
 \item is_goal: Target variable (1 = goal)
 }
 }

@@ -238,7 +238,9 @@ fit_xgot_model <- function(shot_features,
     "x", "y", "distance_to_goal", "angle_to_goal",
     "in_penalty_area", "in_six_yard_box",
     "is_header", "is_right_foot", "is_left_foot",
-    "is_open_play", "is_set_piece", "is_corner", "is_direct_freekick",
+    "is_open_play", "is_set_piece", "is_corner",
+    # is_direct_freekick removed 2026-09-03: constant 0 on every shot
+    # (no Opta `situation` value contains "free"). See .create_shot_features().
     "is_big_chance"
   )
   placement_cols <- attr(shot_features, "placement_cols")
