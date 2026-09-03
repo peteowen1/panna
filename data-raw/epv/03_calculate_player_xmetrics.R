@@ -203,9 +203,12 @@ for (league in names(league_seasons)) {
       if (!is.null(xgot_model)) {
         req_cols <- c("match_id", "event_id", "type_id", "goalmouth_y", "goalmouth_z")
         if (!is.null(shot_ev) && all(req_cols %in% names(shot_ev))) {
-          # Pass `situation` too (when present) — add_xgot_to_spadl needs it to
-          # match training features and avoid set-piece train/serve skew.
-          lk_cols <- c(req_cols, intersect("situation", names(shot_ev)))
+          # Pass `situation` AND `body_part` (when present) — add_xgot_to_spadl
+          # needs both to match training features. SPADL's own bodypart says
+          # "foot" for every shot, so without body_part here xGOT scores every
+          # header as a foot shot, the same skew that cost xG +6.30%.
+          lk_cols <- c(req_cols, intersect(c("situation", "is_blocked", "body_part"),
+                                           names(shot_ev)))
           spadl <- add_xgot_to_spadl(spadl, xgot_model,
                                      as.data.frame(shot_ev)[, lk_cols])
         } else if (!is.null(shot_ev)) {

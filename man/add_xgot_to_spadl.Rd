@@ -14,8 +14,14 @@ add_xgot_to_spadl(spadl_actions, xgot_model, goalmouth_lookup)
 
 \item{goalmouth_lookup}{Data frame keyed by (\code{match_id},
 \code{event_id}) with \code{type_id}, \code{goalmouth_y},
-\code{goalmouth_z}, \code{situation}, and \code{is_blocked} for shot
-events - e.g. from match_events / opta_shot_events. \code{situation} is
+\code{goalmouth_z}, \code{situation}, \code{is_blocked} and
+\code{body_part} for shot events - e.g. from match_events /
+opta_shot_events. Pass it via \code{load_opta_shot_events()}, NOT by
+reading the parquet directly: that returns \code{event_id} as integer64 and
+\code{merge()} against SPADL's numeric \code{original_event_id} matches
+nothing (a guard now aborts on this rather than reporting "0 scored").
+\code{body_part} is required for the header and footedness features -
+SPADL's own \code{bodypart} says "foot" for every shot. \code{situation} is
 required to avoid train/serve skew (the model trained on real
 situations); without it, set-piece/corner/free-kick shots are scored as
 open-play. \code{is_blocked} excludes shots blocked by an outfield
