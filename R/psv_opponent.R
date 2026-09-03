@@ -36,6 +36,37 @@
 #' @name psv_opponent
 NULL
 
+#' Abort if a team_season_strength.parquet table isn't sign-tagged as expected
+#'
+#' Every reader of `def_rating`/`opp_def_rating` (`07_train_psr_model.R`,
+#' `build_epr_weekly.R`, and any future `psv_opponent.R` caller) must call this
+#' right after loading the parquet, so a file built before the
+#' `sign_convention` column existed -- or built under the OTHER convention,
+#' post-migration -- aborts loudly instead of silently training on an
+#' inverted `def_rating`. See `docs/plans/SIGN-CONVENTION-POSITIVE-IS-GOOD.md`.
+#'
+#' @param ts The team_season_strength data.frame/data.table, already loaded.
+#' @param source_desc Short string naming the caller, for the error message.
+#' @keywords internal
+.assert_team_strength_sign_convention <- function(ts, source_desc) {
+  if (!"sign_convention" %in% names(ts)) {
+    cli::cli_abort(c(
+      "{source_desc}: team_season_strength.parquet has no {.field sign_convention} column.",
+      "i" = "It predates the sign-convention tagging (docs/plans/SIGN-CONVENTION-POSITIVE-IS-GOOD.md).",
+      "x" = "Regenerate it with {.path data-raw/player-ratings-opta/07c_team_season_strength.R}."
+    ))
+  }
+  got <- unique(ts$sign_convention)
+  if (!identical(got, TEAM_STRENGTH_SIGN_CONVENTION)) {
+    cli::cli_abort(c(
+      "{source_desc}: team_season_strength.parquet is tagged {.val {got}}, expected {.val {TEAM_STRENGTH_SIGN_CONVENTION}}.",
+      "x" = "Reading def_rating under the wrong sign convention silently inverts it.",
+      "i" = "Regenerate it with {.path data-raw/player-ratings-opta/07c_team_season_strength.R}."
+    ))
+  }
+  invisible(TRUE)
+}
+
 #' Fit the PSV opponent-adjustment coefficient
 #'
 #' Regresses per-90 PSV on the opponent's defensive rating across player-matches

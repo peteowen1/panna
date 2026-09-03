@@ -102,6 +102,7 @@ if (!"team_id" %in% names(ts)) {
     "panna#224. Regenerate with",
     "{.path data-raw/player-ratings-opta/07c_team_season_strength.R}."))
 }
+.assert_team_strength_sign_convention(ts, "build_epr_weekly.R")
 stopifnot(!anyDuplicated(ts, by = c("team_id", "season_end_year")))
 
 n_before <- nrow(gl)

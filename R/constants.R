@@ -823,3 +823,16 @@ WC2026_HOST_TEAM_IDS <- c(
 #' EM-weighted aggregation collapses to ~zero sum_panna.
 #' @keywords internal
 WC2026_OVERRIDE_MIN_RESOLVED <- 11L
+
+#' Sign convention tag written to team_season_strength.parquet
+#'
+#' Step 1 of the positive=good migration
+#' (docs/plans/SIGN-CONVENTION-POSITIVE-IS-GOOD.md at the pannaverse root):
+#' `07c_team_season_strength.R` stamps this into a `sign_convention` column so
+#' every consumer of `def_rating` (`07_train_psr_model.R`,
+#' `build_epr_weekly.R`, `R/psv_opponent.R`) can abort on an unmarked or
+#' mismatched file instead of silently reading an inverted value once the
+#' convention flips. Update this constant (and every consumer's check) in the
+#' SAME commit as the sign flip itself -- never separately.
+#' @keywords internal
+TEAM_STRENGTH_SIGN_CONVENTION <- "defense_negative_good"

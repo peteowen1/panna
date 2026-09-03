@@ -192,6 +192,7 @@ if (file.exists(ts_path) && requireNamespace("arrow", quietly = TRUE)) {
       "panna#224. Regenerate it with",
       "{.path data-raw/player-ratings-opta/07c_team_season_strength.R}."))
   }
+  .assert_team_strength_sign_convention(ts, "07_train_psr_model.R")
   stopifnot(!anyDuplicated(ts, by = c("team_id", "season_end_year")))
 
   n_before <- nrow(match_outcomes)

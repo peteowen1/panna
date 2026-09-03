@@ -26,11 +26,15 @@
 ##      "league average".
 ##
 ## Sign convention (inherited from xRAPM, unchanged): offense positive = good,
-## defense NEGATIVE = good. Consumers use def_rating as-is.
+## defense NEGATIVE = good. Consumers use def_rating as-is. Tagged via the
+## `sign_convention` column (see docs/plans/SIGN-CONVENTION-POSITIVE-IS-GOOD.md
+## migration step 1) so a consumer can abort on a mismatched/pre-tag file
+## rather than silently reading an inverted def_rating once the convention
+## flips.
 ##
 ## Output: cache-opta/team_season_strength.parquet
 ##   team_id, team_name, season_end_year, off_rating, def_rating,
-##   total_mins, n_players, n_rated, mins_rated, coverage
+##   total_mins, n_players, n_rated, mins_rated, coverage, sign_convention
 ##
 ## `coverage` is the share of a team-season's minutes played by RATED players.
 ## Consumers must gate on it -- a team-season built entirely from the prior
@@ -127,9 +131,11 @@ team_strength <- pts[, .(
 
 team_strength[, coverage := mins_rated / total_mins]
 team_strength <- team_strength[total_mins >= MIN_TEAM_SEASON_MINS]
+team_strength[, sign_convention := TEAM_STRENGTH_SIGN_CONVENTION]
 data.table::setcolorder(team_strength,
   c("team_id", "team_name", "season_end_year", "off_rating", "def_rating",
-    "total_mins", "n_players", "n_rated", "mins_rated", "coverage"))
+    "total_mins", "n_players", "n_rated", "mins_rated", "coverage",
+    "sign_convention"))
 
 cat(sprintf("\nteam-seasons: %s | median coverage %.3f | >=70%% covered: %.1f%%\n",
             format(nrow(team_strength), big.mark = ","),
