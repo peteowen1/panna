@@ -155,7 +155,10 @@ prepare_shots_for_xgot <- function(shot_events,
 
   # Complete-window gate (goalmouth coords reliable only from 2021-22+).
   if ("season" %in% names(shot_events)) {
-    ey <- vapply(shot_events$season, extract_season_end_year, numeric(1))
+    # extract_season_end_year() is already vectorized - shot_events is
+    # per-shot (millions of rows), so vapply() here forces one R call per
+    # shot instead of one call for the whole column.
+    ey <- extract_season_end_year(shot_events$season)
     keep <- !is.na(ey) & ey >= min_season_end_year
     n_drop <- sum(!keep)
     if (n_drop) {
