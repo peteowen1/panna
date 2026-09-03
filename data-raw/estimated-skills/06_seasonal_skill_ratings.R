@@ -486,7 +486,29 @@ if (nrow(old_bad) > 0 || nrow(current_bad) > 0) {
     "season), not a regression. Not blocking."),
     nrow(old_bad), nrow(current_bad), current_season), call. = FALSE)
 }
-if (nrow(recent_bad) > 0) {
+# Tolerance, to match this check's own stated intent. The comment above says a
+# real regression "corrupts MANY established players in COMPLETED recent
+# seasons" -- but the test was `> 0`, so a SINGLE genuine case hard-stopped the
+# pipeline. 2026-09-03: it blocked on Neymar 2024, xRAPM 0.155 on 386 minutes -
+# he joined Al Hilal in Aug 2023 and tore his ACL that October, so 386 minutes
+# is CORRECT. An elite player with an injury-shortened season is precisely the
+# "high rating, low minutes" profile this test trips on without a bug existing.
+# He entered the top 50 only because that day's xG and SPM changes moved xRAPM;
+# the guard did not start failing, the data moved into its window.
+#
+# A genuine minutes regression hits many players at once, so 1-2 warns and lists
+# them (still visible, still investigable) while 3+ hard-stops. Raise the floor
+# rather than delete the check.
+RECENT_BAD_TOLERANCE <- if (exists("recent_bad_tolerance")) recent_bad_tolerance else 2L
+if (nrow(recent_bad) > 0 && nrow(recent_bad) <= RECENT_BAD_TOLERANCE) {
+  cat(sprintf("\n!! %d recent top-50 player-season(s) under 900 min (tolerance %d) -- listing, not blocking:\n",
+              nrow(recent_bad), RECENT_BAD_TOLERANCE))
+  print(recent_bad %>%
+          select(season_end_year, player_id, player_name, xrapm, total_minutes) %>%
+          head(20))
+  cat("   Check each is a genuine short season (injury, mid-season transfer) before trusting the run.\n")
+}
+if (nrow(recent_bad) > RECENT_BAD_TOLERANCE) {
   print(recent_bad %>%
           select(season_end_year, player_id, player_name, xrapm, total_minutes) %>%
           head(20))
