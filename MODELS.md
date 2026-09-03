@@ -20,10 +20,37 @@ its fallback chain, the canonical (correct) version, and the override to pin it.
 |-------|--------|----------------|---------------------|-----------|
 | **EPV** | `load_epv_model()` | path → pannamodels → local | `pannadata/.../epv_model.rds` | **YES** — overhauled 2026-06-19 |
 | **WP** | `load_wp_model()` | path → pannamodels → local | `pannadata/.../wp_model.rds` | **YES** — overhauled 2026-06-19 |
-| **xG** | `load_xg_model()` | path → pannamodels → local | `pannadata/.../xg_model.rds` | stable |
+| **xG** | `load_xg_model()` | path → pannamodels → local | `pannadata/.../xg_model.rds` | **YES** — retraining 2026-09-03 (panna#229); published and candidate DIVERGE, see register |
 | **xGOT** | `load_xgot_model()` | path → pannamodels → local → **NULL** | `pannadata/.../xgot_model.rds` | stable (optional; returns NULL if absent) |
 | **xPass** | `load_xpass_model()` | path → pannamodels → local | `pannadata/.../xpass_model.rds` | stable |
 | Minutes / Knockout | — | no preloaded model (heuristic / fit on demand) | — | — |
+
+## Published artifact register (verify, don't assume)
+
+Sizes and dates as at **2026-09-03**. Published = `pannadata/data/opta/models/`,
+candidate = `panna/data-raw/cache/epv/` (gitignored). **A candidate is not
+production until it is published.** Compare byte sizes: a size difference means
+different files, and that is how the xG divergence below went unnoticed.
+
+| Model | Published | bytes | Candidate | Same? |
+|---|---|---:|---|---|
+| **xG** | 2026-06-18 | 7,771,969 | `xg_model.rds` 8,254,336 (07-17) | ⚠ **NO — divergent** |
+| xGOT | 2026-07-23 | 5,212,066 | same bytes | yes |
+| xPass | 2026-06-18 | 6,319,289 | same bytes | yes |
+| duel | 2026-06-24 | 368,305 | — | published only |
+| EPV | 2026-06-21 | 65,084,700 | `epv_model_xg_clean_full.rds`, same bytes | **yes** |
+| WP | 2026-07-16 | 119,875 | `wp_final_d2repl_reg/` | verify before relying on the override |
+
+**xG divergence (open, 2026-09-03).** Published is 2026-06-18 (trained on
+1,027,139 shots); the local candidate is 2026-07-17 (1,080,653). Neither
+reproduces the `xg` column in `opta_shot_events.parquet` — correlations 0.964
+and 0.967 — because **that column is Opta's own xG, quantised to 3dp (956
+distinct values across 3.3M shots), not ours.** Ours is used everywhere in the
+pipeline via SPADL; Opta's is a benchmark only.
+
+**EPV override is redundant as of 2026-09-03**: published `epv_model.rds` and
+`epv_model_xg_clean_full.rds` are byte-identical, so the bare default is the
+clean model. The override is harmless and still recommended for explicitness.
 
 ## Canonical (correct) models — the EPV/WP overhaul (2026-06-19)
 
@@ -77,6 +104,14 @@ source("data-raw/match-predictions-opta/10b_export_game_logs.R")
 Watch the log for the provenance line — it must show the **clean** model is in
 use (overrides bypass the loader, so you'll see the override taken, not a stale
 `epv_model.rds` date).
+
+**Follow this recipe rather than sourcing `10b_export_game_logs.R` directly.**
+The step depends on config the runner sets — `use_skill_ratings` above is one —
+and sourcing it bare aborts with `object 'use_skill_ratings' not found` after
+several minutes of loading. That happened on 2026-09-03, and the same run also
+warned the EPV/WP models it had fallen back to were 73 and 48 days old, which is
+exactly the failure the overrides exist to prevent. Both were avoidable by
+reading this section first.
 
 ## When models change
 
