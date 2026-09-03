@@ -31,10 +31,14 @@ cat("Skill xRAPM players:", nrow(xrapm_results$ratings), "\n")
 
 cat("\n=== Creating Unified Skill-Based Ratings ===\n")
 
+# NAMING (Pete, 2026-09-03): `panna` is reserved for the decayed career trait
+# from fit_career_rapm() (career_panna.parquet). This is the skill-based
+# season/pooled xRAPM from the skills pipeline - a different time-treatment,
+# so it gets its own name here. Parallel to 08_panna_ratings.R's xrapm_career.
 panna_ratings <- xrapm_results$ratings %>%
   select(
     player_id, player_name, total_minutes,
-    panna = xrapm, offense = offense, defense = defense,
+    xrapm_skill = xrapm, offense = offense, defense = defense,
     off_deviation, def_deviation, off_prior, def_prior
   )
 
@@ -84,23 +88,23 @@ if (n_missing_spm > 0) {
 # Ranks and percentiles
 panna_ratings <- panna_ratings %>%
   mutate(
-    panna_percentile = 100 * rank(panna) / n(),
-    panna_rank = rank(-panna)
+    xrapm_skill_percentile = 100 * rank(xrapm_skill) / n(),
+    xrapm_skill_rank = rank(-xrapm_skill)
   ) %>%
-  arrange(desc(panna))
+  arrange(desc(xrapm_skill))
 
 cat("Final skill-based ratings for", nrow(panna_ratings), "players\n")
 
 # 5. Summary ----
 
 cat("\n=== Rating Distributions ===\n")
-cat("\nPanna:\n"); print(summary(panna_ratings$panna))
+cat("\nPanna:\n"); print(summary(panna_ratings$xrapm_skill))
 cat("\nOffense:\n"); print(summary(panna_ratings$offense))
 cat("\nDefense:\n"); print(summary(panna_ratings$defense))
 
 cat("\nCorrelations:\n")
-cat("  Panna vs Base RAPM:", round(cor(panna_ratings$panna, panna_ratings$base_rapm, use = "complete"), 3), "\n")
-cat("  Panna vs Skill SPM:", round(cor(panna_ratings$panna, panna_ratings$spm_overall, use = "complete"), 3), "\n")
+cat("  Panna vs Base RAPM:", round(cor(panna_ratings$xrapm_skill, panna_ratings$base_rapm, use = "complete"), 3), "\n")
+cat("  Panna vs Skill SPM:", round(cor(panna_ratings$xrapm_skill, panna_ratings$spm_overall, use = "complete"), 3), "\n")
 
 # 6. Player Rankings ----
 
@@ -108,7 +112,7 @@ cat("\n=== Top 25 by Skill-Based Panna ===\n")
 print(
   panna_ratings %>%
     head(25) %>%
-    select(panna_rank, player_name, panna, offense, defense, total_minutes) %>%
+    select(xrapm_skill_rank, player_name, xrapm_skill, offense, defense, total_minutes) %>%
     mutate(across(where(is.numeric) & !matches("rank|minutes"), ~round(.x, 3)))
 )
 
@@ -121,9 +125,9 @@ if (file.exists(opta_panna_path)) {
   raw_panna <- readRDS(opta_panna_path)
 
   comp <- panna_ratings %>%
-    select(player_id, player_name, skill_panna = panna) %>%
+    select(player_id, player_name, skill_panna = xrapm_skill) %>%
     inner_join(
-      raw_panna$panna_ratings %>% select(player_id, raw_panna = panna),
+      raw_panna$panna_ratings %>% select(player_id, raw_panna = xrapm_career),
       by = "player_id"
     )
 
@@ -160,8 +164,8 @@ if (!is.null(processed_data$lineups)) {
     filter(!is.na(primary_team)) %>%
     group_by(primary_team) %>%
     summarise(
-      n_players = n(), sum_panna = sum(panna),
-      mean_panna = mean(panna), .groups = "drop"
+      n_players = n(), sum_panna = sum(xrapm_skill),
+      mean_panna = mean(xrapm_skill), .groups = "drop"
     ) %>%
     arrange(desc(sum_panna))
 
@@ -214,8 +218,8 @@ final_results <- list(
 saveRDS(final_results, file.path(cache_dir, "05_skill_panna.rds"))
 
 panna_export <- panna_ratings %>%
-  select(panna_rank, player_name, panna, offense, defense,
-         spm_overall, total_minutes, panna_percentile) %>%
+  select(xrapm_skill_rank, player_name, xrapm_skill, offense, defense,
+         spm_overall, total_minutes, xrapm_skill_percentile) %>%
   mutate(across(where(is.numeric) & !matches("rank|minutes|percentile"), ~round(.x, 4)))
 
 write.csv(panna_export, file.path(cache_dir, "skill_panna_ratings.csv"), row.names = FALSE)

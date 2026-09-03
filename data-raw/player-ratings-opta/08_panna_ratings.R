@@ -28,12 +28,16 @@ cat("xRAPM players:", nrow(xrapm_results$ratings), "\n")
 
 cat("\n=== Creating Unified Ratings ===\n")
 
+# NAMING (Pete, 2026-09-03): `panna` is reserved for the decayed career trait
+# from fit_career_rapm() (career_panna.parquet). This is the pooled/career
+# xRAPM from the Opta RAPM/SPM pipeline - a different time-treatment, so it
+# gets its own name here.
 panna_ratings <- xrapm_results$ratings %>%
   select(
     player_id,
     player_name,
     total_minutes,
-    panna = xrapm,
+    xrapm_career = xrapm,
     offense = offense,
     defense = defense,
     off_deviation,
@@ -95,10 +99,10 @@ rm(spm_results, spm_overall); gc(verbose = FALSE)
 # Calculate percentiles and ranks
 panna_ratings <- panna_ratings %>%
   mutate(
-    panna_percentile = 100 * rank(panna) / n(),
-    panna_rank = rank(-panna)
+    xrapm_career_percentile = 100 * rank(xrapm_career) / n(),
+    xrapm_career_rank = rank(-xrapm_career)
   ) %>%
-  arrange(desc(panna))
+  arrange(desc(xrapm_career))
 
 cat("Final ratings for", nrow(panna_ratings), "players\n")
 
@@ -107,7 +111,7 @@ cat("Final ratings for", nrow(panna_ratings), "players\n")
 cat("\n=== Rating Distributions ===\n")
 
 cat("\nPanna rating distribution:\n")
-print(summary(panna_ratings$panna))
+print(summary(panna_ratings$xrapm_career))
 
 cat("\nOffense rating distribution:\n")
 print(summary(panna_ratings$offense))
@@ -116,8 +120,8 @@ cat("\nDefense rating distribution:\n")
 print(summary(panna_ratings$defense))
 
 cat("\nCorrelations:\n")
-cat("  Panna vs Base RAPM:", round(cor(panna_ratings$panna, panna_ratings$base_rapm, use = "complete"), 3), "\n")
-cat("  Panna vs SPM:", round(cor(panna_ratings$panna, panna_ratings$spm_overall, use = "complete"), 3), "\n")
+cat("  Panna vs Base RAPM:", round(cor(panna_ratings$xrapm_career, panna_ratings$base_rapm, use = "complete"), 3), "\n")
+cat("  Panna vs SPM:", round(cor(panna_ratings$xrapm_career, panna_ratings$spm_overall, use = "complete"), 3), "\n")
 cat("  Offense vs Defense:", round(cor(panna_ratings$offense, panna_ratings$defense, use = "complete"), 3), "\n")
 
 # 5. Player Rankings ----
@@ -128,7 +132,7 @@ cat("\nTop 25 by Panna:\n")
 print(
   panna_ratings %>%
     head(25) %>%
-    select(panna_rank, player_name, panna, offense, defense, total_minutes) %>%
+    select(xrapm_career_rank, player_name, xrapm_career, offense, defense, total_minutes) %>%
     mutate(across(where(is.numeric) & !matches("rank|minutes"), ~round(.x, 3)))
 )
 
@@ -136,7 +140,7 @@ cat("\nBottom 25 by Panna:\n")
 print(
   panna_ratings %>%
     tail(25) %>%
-    select(panna_rank, player_name, panna, offense, defense, total_minutes) %>%
+    select(xrapm_career_rank, player_name, xrapm_career, offense, defense, total_minutes) %>%
     mutate(across(where(is.numeric) & !matches("rank|minutes"), ~round(.x, 3)))
 )
 
@@ -145,7 +149,7 @@ print(
   panna_ratings %>%
     arrange(desc(offense)) %>%
     head(15) %>%
-    select(player_name, offense, defense, panna, total_minutes) %>%
+    select(player_name, offense, defense, xrapm_career, total_minutes) %>%
     mutate(across(where(is.numeric) & !matches("minutes"), ~round(.x, 3)))
 )
 
@@ -154,7 +158,7 @@ print(
   panna_ratings %>%
     arrange(defense) %>%
     head(15) %>%
-    select(player_name, defense, offense, panna, total_minutes) %>%
+    select(player_name, defense, offense, xrapm_career, total_minutes) %>%
     mutate(across(where(is.numeric) & !matches("minutes"), ~round(.x, 3)))
 )
 
@@ -179,12 +183,12 @@ if (!is.null(processed_data$lineups)) {
     summarise(
       n_players = n(),
       total_minutes = sum(total_minutes),
-      sum_panna = sum(panna),
-      mean_panna = mean(panna),
+      sum_panna = sum(xrapm_career),
+      mean_panna = mean(xrapm_career),
       sum_offense = sum(offense),
       sum_defense = sum(defense),
-      top_player = player_name[which.max(panna)],
-      top_panna = max(panna),
+      top_player = player_name[which.max(xrapm_career)],
+      top_panna = max(xrapm_career),
       .groups = "drop"
     ) %>%
     arrange(desc(sum_panna))
@@ -257,14 +261,14 @@ saveRDS(final_results, file.path(cache_dir, "08_panna.rds"))
 
 panna_export <- panna_ratings %>%
   select(
-    panna_rank,
+    xrapm_career_rank,
     player_name,
-    panna,
+    xrapm_career,
     offense,
     defense,
     spm_overall,
     total_minutes,
-    panna_percentile
+    xrapm_career_percentile
   ) %>%
   mutate(across(where(is.numeric) & !matches("rank|minutes|percentile"), ~round(.x, 4)))
 
