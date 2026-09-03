@@ -11,7 +11,8 @@ fit_spm_opta(
   weight_by_minutes = TRUE,
   weight_transform = "sqrt",
   league_fe = FALSE,
-  league_min_n = 50
+  league_min_n = 50,
+  league_shares = FALSE
 )
 }
 \arguments{
