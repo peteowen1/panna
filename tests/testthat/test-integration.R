@@ -63,8 +63,8 @@ test_that("full pipeline: processed_data -> splints -> RAPM -> SPM", {
   expect_true(all(is.finite(rapm_ratings$offense)))
   expect_true(all(is.finite(rapm_ratings$defense)))
 
-  # O/D decomposition: RAPM = offense - defense
-  expect_equal(rapm_ratings$rapm, rapm_ratings$offense - rapm_ratings$defense, tolerance = 1e-10)
+  # O/D decomposition: RAPM = offense + defense (defense positive=good, 2026-09-03)
+  expect_equal(rapm_ratings$rapm, rapm_ratings$offense + rapm_ratings$defense, tolerance = 1e-10)
   expect_equal(nrow(rapm_ratings), length(rapm_data$player_ids))
   expect_true("player_name" %in% names(rapm_ratings))
   expect_true(all(!is.na(rapm_ratings$player_name)))

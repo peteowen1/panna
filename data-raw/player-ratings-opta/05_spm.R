@@ -516,13 +516,14 @@ if (length(chain_defense) > 0) {
 defense_cols <- intersect(defense_cols, names(spm_train_data))
 
 cat("\n--- Defense Elastic Net ---\n")
-# Directional sign constraints. RAPM defense column uses the model's native
-# convention: negative = good defender (suppresses opponent xG). So features
-# that genuinely indicate good defense should have NON-POSITIVE coefficients
-# (more = lower defense = better defender), and bad-defense features should
-# have NON-NEGATIVE coefficients. Without these constraints, multicollinearity
-# can flip signs (e.g., elastic net learning that more tackles_won → worse
-# defense, because tackles concentrate when teams are under pressure).
+# Directional sign constraints. sign convention (Pete, 2026-09-03): RAPM
+# defense column is positive = good defender (suppresses opponent xG). So
+# features that genuinely indicate good defense should have NON-NEGATIVE
+# coefficients (more = higher defense = better defender), and bad-defense
+# features should have NON-POSITIVE coefficients. Without these constraints,
+# multicollinearity can flip signs (e.g., elastic net learning that more
+# tackles_won → worse defense, because tackles concentrate when teams are
+# under pressure).
 defense_good_features <- c(
   # Direct defensive actions — more = better
   "tackles_p90", "tackles_won_p90",
@@ -546,8 +547,8 @@ defense_bad_features <- c(
   "pen_goals_conceded_p90",
   "poss_lost_ctrl_p90", "poss_lost_ctrl_per_touch"
 )
-def_lower <- setNames(rep(0,    length(defense_bad_features)),  defense_bad_features)
-def_upper <- setNames(rep(0,    length(defense_good_features)), defense_good_features)
+def_lower <- setNames(rep(0,    length(defense_good_features)), defense_good_features)
+def_upper <- setNames(rep(0,    length(defense_bad_features)),  defense_bad_features)
 
 # 11. Generate Blended O/D SPM Predictions ----
 

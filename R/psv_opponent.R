@@ -12,9 +12,15 @@
 #'   \code{psv_adj = psv - gamma * opp_def_rating}
 #'
 #' `opp_def_rating` is the opposing team's season defensive strength from
-#' `cache-opta/team_season_strength.parquet`, in the xRAPM sign convention where
-#' **negative is good defence**. So facing a strong defence (negative rating)
-#' raises the adjusted value and facing a leaky one lowers it, for `gamma > 0`.
+#' `cache-opta/team_season_strength.parquet` -- since 2026-09-03, in the
+#' xRAPM sign convention where **positive is good defence**. `gamma` is
+#' fitted empirically (`fit_psv_opponent_adjustment()`), so this formula is
+#' sign-convention-agnostic: whichever sign `opp_def_rating` holds, the
+#' fitted `gamma` comes out with the sign that makes `-gamma * opp_def_rating`
+#' raise the adjusted value for a strong defence and lower it for a leaky
+#' one. **Never hardcode a fitted `gamma` from one sign convention against
+#' data in the other** -- re-fit whenever `team_season_strength.parquet`'s
+#' `sign_convention` tag changes (see `TEAM_STRENGTH_SIGN_CONVENTION`).
 #'
 #' @section Why a single global gamma:
 #' Per-position or per-league gammas were not fitted. The relationship being

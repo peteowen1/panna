@@ -340,16 +340,22 @@ extract_rapm_ratings <- function(model, lambda = "min") {
     off_coefs <- all_coefs[off_cols]
     def_coefs <- all_coefs[def_cols]
 
-    # RAPM rating = offense - defense
+    # RAPM rating = offense - defense (raw coefficients; def_coefs is still
+    # "opponent xG allowed while this player defends", unnegated)
     # Positive offense = creates more xG (good)
-    # Positive defense = allows more xG (bad), so we subtract
+    # Positive def_coefs = allows more xG (bad), so we subtract here
     rapm <- off_coefs - def_coefs
 
+    # sign convention (Pete, 2026-09-03): positive = good, everywhere.
+    # def_coefs itself is "opponent xG allowed" (bad = positive), so the
+    # PUBLISHED `defense` column is negated -- this is the one place that
+    # conversion happens; `rapm` above is computed from the raw (unnegated)
+    # coefficients and is unaffected.
     ratings <- data.frame(
       player_id = player_ids,
       rapm = as.numeric(rapm),
       offense = as.numeric(off_coefs),
-      defense = as.numeric(def_coefs)
+      defense = as.numeric(-def_coefs)
     )
   }
 
@@ -833,18 +839,23 @@ extract_xrapm_ratings <- function(model, lambda = "min") {
     off_prior <- prior_vec[off_cols]
     def_prior <- prior_vec[def_cols]
 
-    # xRAPM rating = offense - defense
+    # xRAPM rating = offense - defense (raw coefficients, unnegated)
     xrapm <- off_coefs - def_coefs
 
+    # sign convention (Pete, 2026-09-03): positive = good, everywhere. All
+    # three published _def fields are negated together so the additive
+    # identity `defense == def_deviation + def_prior` still holds post-flip
+    # (beta_final = gamma + prior, so -def_coefs == -def_gamma + -def_prior).
+    # `xrapm` above uses the raw (unnegated) coefficients and is unaffected.
     ratings <- data.frame(
       player_id = player_ids,
       xrapm = as.numeric(xrapm),
       offense = as.numeric(off_coefs),
-      defense = as.numeric(def_coefs),
+      defense = as.numeric(-def_coefs),
       off_deviation = as.numeric(off_gamma),
-      def_deviation = as.numeric(def_gamma),
+      def_deviation = as.numeric(-def_gamma),
       off_prior = as.numeric(off_prior),
-      def_prior = as.numeric(def_prior)
+      def_prior = as.numeric(-def_prior)
     )
   }
 

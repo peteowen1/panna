@@ -574,8 +574,10 @@ strength <- merge(team_league, agg, by = "team", all.x = TRUE)
 for (m in c("panna", "offense", "defense", "epr", "psr", "elo")) {
   strength[[m]] <- round(strength[[m]], 4)
 }
-# Published convention: defence positive = good (internal model negative = good).
-strength[, defense := -defense]
+# Published convention: defence positive = good. Since 2026-09-03 this is
+# ALSO the internal convention (career_panna.parquet's panna_defense comes
+# from extract_xrapm_ratings(), which negates at extraction time), so no
+# export-boundary flip happens here any more.
 
 strength <- .compute_tiento(strength, TIENTO_WEIGHTS)
 

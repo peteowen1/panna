@@ -23,14 +23,25 @@ pred_defense, pred_net).
 \description{
 \code{fit_spm_panel()} is fit separately per target (offense/defense have
 different sign constraints and, for a real RAPM O/D split, different
-underlying signal). The targets are stored in the RAW internal
-convention (\code{defense_target} = contribution to opponent xG, positive =
-concedes more = bad), and net RAPM = offense - defense
-(\code{extract_rapm_ratings()}, R/rapm_model.R "RAPM rating = offense -
-defense") -- so the net prediction is \code{pred_offense - pred_defense}.
-(An earlier version summed the two, which flipped the defense half's
-contribution at eval time and tanked every candidate's next-window
-correlation -- caught in the 2026-07-22 full-panel bake-off.)
+underlying signal).
+}
+\details{
+Sign convention (Pete, 2026-09-03): \code{defense_target} is built directly
+from the published \code{defense} column (R/spm_panel.R's panel-building step,
+\code{defense_target = defense}), which as of the same date is
+POSITIVE = GOOD (\code{extract_rapm_ratings()}/\code{extract_xrapm_ratings()},
+R/rapm_model.R, now negate \code{def_coefs} at extraction). So
+\code{pred_defense} is already positive=good, and the net prediction is
+\code{pred_offense + pred_defense}.
+
+\strong{Do not "fix" this back to a minus sign.} An earlier version of this
+function used \code{-} when \code{defense_target} was still negative=good (that
+was correct THEN: net RAPM = offense - defense in the old convention),
+and summing the two at that time flipped the defense half's contribution
+at eval time and tanked every candidate's next-window correlation --
+caught in the 2026-07-22 full-panel bake-off. The \code{+} here is correct
+ONLY because the underlying target's sign flipped with it; the two
+changes must always travel together.
 }
 \seealso{
 Other spm panel: 

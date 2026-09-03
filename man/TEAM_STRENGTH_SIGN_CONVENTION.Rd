@@ -11,13 +11,15 @@ An object of class \code{character} of length 1.
 TEAM_STRENGTH_SIGN_CONVENTION
 }
 \description{
-Step 1 of the positive=good migration
-(docs/plans/SIGN-CONVENTION-POSITIVE-IS-GOOD.md at the pannaverse root):
-\verb{07c_team_season_strength.R} stamps this into a \code{sign_convention} column so
-every consumer of \code{def_rating} (\verb{07_train_psr_model.R},
-\code{build_epr_weekly.R}, \code{R/psv_opponent.R}) can abort on an unmarked or
-mismatched file instead of silently reading an inverted value once the
-convention flips. Update this constant (and every consumer's check) in the
-SAME commit as the sign flip itself -- never separately.
+Positive=good migration (docs/plans/SIGN-CONVENTION-POSITIVE-IS-GOOD.md at
+the pannaverse root): \verb{07c_team_season_strength.R} stamps this into a
+\code{sign_convention} column so every consumer of \code{def_rating}
+(\verb{07_train_psr_model.R}, \code{build_epr_weekly.R}, \code{R/psv_opponent.R}) can
+abort on an unmarked or mismatched file instead of silently reading an
+inverted value. Value flipped to "defense_positive_good" in the SAME
+commit as \code{extract_rapm_ratings()}/\code{extract_xrapm_ratings()} negating
+\code{def_coefs} at extraction (2026-09-04) -- any \code{team_season_strength.parquet}
+on disk from before that commit is now correctly rejected by every
+consumer until \verb{07c} regenerates it.
 }
 \keyword{internal}

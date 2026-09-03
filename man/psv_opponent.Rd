@@ -17,9 +17,15 @@ The adjustment is additive and deliberately minimal:
 \code{psv_adj = psv - gamma * opp_def_rating}
 
 \code{opp_def_rating} is the opposing team's season defensive strength from
-\code{cache-opta/team_season_strength.parquet}, in the xRAPM sign convention where
-\strong{negative is good defence}. So facing a strong defence (negative rating)
-raises the adjusted value and facing a leaky one lowers it, for \code{gamma > 0}.
+\code{cache-opta/team_season_strength.parquet} -- since 2026-09-03, in the
+xRAPM sign convention where \strong{positive is good defence}. \code{gamma} is
+fitted empirically (\code{fit_psv_opponent_adjustment()}), so this formula is
+sign-convention-agnostic: whichever sign \code{opp_def_rating} holds, the
+fitted \code{gamma} comes out with the sign that makes \code{-gamma * opp_def_rating}
+raise the adjusted value for a strong defence and lower it for a leaky
+one. \strong{Never hardcode a fitted \code{gamma} from one sign convention against
+data in the other} -- re-fit whenever \code{team_season_strength.parquet}'s
+\code{sign_convention} tag changes (see \code{TEAM_STRENGTH_SIGN_CONVENTION}).
 }
 \section{Why a single global gamma}{
 

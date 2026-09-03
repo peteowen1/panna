@@ -333,15 +333,17 @@ if (.wc11_available) {
     }
   }
 
-  # Published convention: defence as positive = good (internal model has
-  # negative = good, since defense is "xG added to the opponent").
-  strength[, defense := -defense]
+  # Published convention: defence as positive = good. Since 2026-09-03 this
+  # is ALSO the internal convention (career_panna.parquet's defense comes
+  # from extract_xrapm_ratings(), which negates at extraction time), so no
+  # export-boundary flip happens here any more.
 
   bt <- as.data.table(read_parquet(file.path(cache_dir, "wc2026_bt_ratings.parquet")))
   strength <- merge(strength, bt[, .(team, bt = rating)], by = "team", all.x = TRUE)
   strength <- merge(strength, sim[, .(team, p_champ)], by = "team", all.x = TRUE)
 
-  # Per-category rank (1 = strongest). Defence already flipped so higher = better.
+  # Per-category rank (1 = strongest). defense arrives already positive=good
+  # (see above), so higher = better here too.
   for (m in c("panna", "offense", "defense", "epr", "psr", "elo", "bt", "p_champ")) {
     strength[[paste0("rank_", m)]] <- frank(-strength[[m]], ties.method = "min")
   }

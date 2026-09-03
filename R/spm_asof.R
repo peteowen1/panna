@@ -234,8 +234,12 @@ fit_expanding_skill_spm <- function(skill_features, pooled_rapm_ratings, cutoff_
 
   defense_cols <- .skill_spm_defense_cols(spm_train_data)
   constraints <- .skill_spm_defense_constraints()
-  def_lower <- stats::setNames(rep(0, length(constraints$bad)), constraints$bad)
-  def_upper <- stats::setNames(rep(0, length(constraints$good)), constraints$good)
+  # sign convention (Pete, 2026-09-03): defense positive = good now, so a
+  # "good defense" feature (constraints$good) must have coef >= 0 (lower
+  # bound 0) and a "bad" one must have coef <= 0 (upper bound 0) -- swapped
+  # from the pre-flip negative=good constraint.
+  def_lower <- stats::setNames(rep(0, length(constraints$good)), constraints$good)
+  def_upper <- stats::setNames(rep(0, length(constraints$bad)), constraints$bad)
   defense_train <- spm_train_data %>% dplyr::mutate(rapm = defense)
   defense_spm_glmnet <- fit_spm_model(defense_train, predictor_cols = defense_cols,
                                       alpha = 0.5, nfolds = nfolds, weight_by_minutes = TRUE,

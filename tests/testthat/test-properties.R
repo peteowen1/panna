@@ -167,7 +167,7 @@ test_that("RAPM matrix: player exclusivity per row (offense XOR defense)", {
 })
 
 
-test_that("RAPM fit + extract: rapm == offense - defense for all players", {
+test_that("RAPM fit + extract: rapm == offense + defense for all players", {
   skip_if_not_installed("glmnet")
 
   for (seed in c(42, 123, 777)) {
@@ -176,10 +176,11 @@ test_that("RAPM fit + extract: rapm == offense - defense for all players", {
       model <- fit_rapm(rapm_data, parallel = FALSE, nfolds = 3)
       ratings <- extract_rapm_ratings(model)
 
-      # Property: rapm = offense - defense (exact)
-      expect_equal(ratings$rapm, ratings$offense - ratings$defense,
+      # Property: rapm = offense + defense (exact). sign convention
+      # (Pete, 2026-09-03): defense positive = good, so it's now additive.
+      expect_equal(ratings$rapm, ratings$offense + ratings$defense,
                    tolerance = 1e-10,
-                   info = paste("seed:", seed, "- rapm must equal offense - defense"))
+                   info = paste("seed:", seed, "- rapm must equal offense + defense"))
 
       # Property: all columns are numeric
       expect_true(is.numeric(ratings$rapm), info = "rapm must be numeric")

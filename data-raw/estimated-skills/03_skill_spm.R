@@ -252,11 +252,13 @@ defense_cols <- .skill_spm_defense_cols(spm_train_data)
 
 cat("\n--- Defense Elastic Net ---\n")
 # Directional sign constraints — same logic as Opta SPM step 05.
-# In the negative-good defense convention, "good defense" features must have
-# coef <= 0 (more = better defender). "Bad defense" features get coef >= 0.
+# sign convention (Pete, 2026-09-03): defense positive = good, so "good
+# defense" features must have coef >= 0 (more = better defender); "bad
+# defense" features get coef <= 0. (Swapped from the pre-flip negative=good
+# constraint.)
 defense_constraints <- .skill_spm_defense_constraints()
-def_lower <- setNames(rep(0, length(defense_constraints$bad)),  defense_constraints$bad)
-def_upper <- setNames(rep(0, length(defense_constraints$good)), defense_constraints$good)
+def_lower <- setNames(rep(0, length(defense_constraints$good)), defense_constraints$good)
+def_upper <- setNames(rep(0, length(defense_constraints$bad)),  defense_constraints$bad)
 
 defense_spm_glmnet <- fit_spm_model(defense_train, predictor_cols = defense_cols,
                                      alpha = 0.5, nfolds = 10, weight_by_minutes = TRUE,

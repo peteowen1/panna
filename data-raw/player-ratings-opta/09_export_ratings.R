@@ -79,9 +79,10 @@ tag <- "ratings-data"
 #
 # Export-boundary conventions mirror 10_export_blog_data.R exactly: drop the
 # synthetic player_id == "replacement" row (rapm_matrix.R's <200-min pool --
-# a model artifact, not a coherent player rating) and flip defense to
-# positive = good (internal convention is negative = good: additive
-# contribution to opponent xG). Column names are rapm_raw/rapm_raw_offense/
+# a model artifact, not a coherent player rating). defense is positive=good
+# since 2026-09-03 (extract_rapm_ratings() negates at extraction time), so no
+# export-boundary flip is needed here any more -- df$defense already IS
+# rapm_raw_defense. Column names are rapm_raw/rapm_raw_offense/
 # rapm_raw_defense so they can't be confused with xRAPM (`xrapm`) or the
 # career trait (`panna`).
 .drop_replacement_row <- function(df) {
@@ -95,7 +96,7 @@ tag <- "ratings-data"
     player_name = df$player_name,
     rapm_raw = round(df$rapm, 4),
     rapm_raw_offense = round(df$offense, 4),
-    rapm_raw_defense = round(-df$defense, 4),
+    rapm_raw_defense = round(df$defense, 4),
     total_minutes = df$total_minutes,
     stringsAsFactors = FALSE
   )
