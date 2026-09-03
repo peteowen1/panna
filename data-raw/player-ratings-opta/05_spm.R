@@ -809,9 +809,9 @@ if (run_multi_target && file.exists(multi_rapm_path)) {
         # F4 (FABLE-PRIOR-FIX-PLAN.md review): same offense/defense
         # fit+blend helper the base path (Sections 10-11 above) uses -- same
         # directional sign constraints (def_lower/def_upper, keyed by
-        # feature name: RAPM defense uses negative=good, so genuinely
-        # defensive features must have non-positive coefficients), same
-        # predictor_cols, same call order.
+        # feature name: RAPM defense is positive=good since 2026-09-04, so
+        # genuinely defensive features must have non-negative coefficients),
+        # same predictor_cols, same call order.
         od_fit_tgt <- .fit_od_spm_blend(offense_train_tgt, defense_train_tgt,
                                          offense_cols, defense_cols,
                                          def_lower, def_upper, player_stats)

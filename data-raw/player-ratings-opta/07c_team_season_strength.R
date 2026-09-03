@@ -25,8 +25,9 @@
 ##      season's REPLACEMENT-LEVEL rating, which is a real prior rather than
 ##      "league average".
 ##
-## Sign convention (inherited from xRAPM, unchanged): offense positive = good,
-## defense NEGATIVE = good. Consumers use def_rating as-is. Tagged via the
+## Sign convention (inherited from xRAPM): offense positive = good, defense
+## POSITIVE = good (flipped 2026-09-04, see extract_xrapm_ratings() in
+## R/rapm_model.R). Consumers use def_rating as-is. Tagged via the
 ## `sign_convention` column (see docs/plans/SIGN-CONVENTION-POSITIVE-IS-GOOD.md
 ## migration step 1) so a consumer can abort on a mismatched/pre-tag file
 ## rather than silently reading an inverted def_rating once the convention

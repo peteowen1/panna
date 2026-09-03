@@ -252,7 +252,8 @@ if (.wc11_available) {
   # quantity that used to be mislabeled `panna`). Source: career_panna.parquet
   # (estimated-skills/09_career_panna.R via fit_career_rapm), on pannadata's
   # ratings-data release. offense/defense = the career-trait decomposition
-  # (panna_offense/panna_defense; internal negative=good, flipped at display below).
+  # (panna_offense/panna_defense; positive=good since 2026-09-04, no flip
+  # needed anywhere downstream — see the sign-convention note further below).
   cp_path <- file.path(opta_data_dir(), "career_panna.parquet")
   if (!file.exists(cp_path)) {
     stop("career_panna.parquet not found at ", cp_path, " — the WC squad panna IS the ",
