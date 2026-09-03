@@ -164,8 +164,30 @@ for (league in names(league_seasons)) {
         }
       }
 
-      # 4d. Add xG to shots
-      spadl <- add_xg_to_spadl(spadl, xg_model, season = season)
+      # 4c-bis. Shot events, loaded ONCE and used by both xG and xGOT. This load
+      # used to sit inside the xGOT block below; xG needs it too, because SPADL
+      # cannot supply body part or situation (see add_xg_to_spadl()).
+      shot_ev <- tryCatch(
+        load_opta_shot_events(league, season = season, source = "local"),
+        error = function(e) {
+          cli_alert_warning("  shot_events failed to load for {label}: {e$message}")
+          NULL
+        }
+      )
+
+      # 4d. Add xG to shots. shot_lookup carries body_part + situation: without
+      # it every header scores as a foot shot (+6.3% on total xG) and every set
+      # piece as open play (-4.7%).
+      xg_lk_cols <- intersect(c("match_id", "event_id", "body_part", "situation"),
+                              names(shot_ev))
+      xg_lookup <- if (!is.null(shot_ev) &&
+                       all(c("match_id", "event_id") %in% xg_lk_cols)) {
+        as.data.frame(shot_ev)[, xg_lk_cols]
+      } else {
+        NULL
+      }
+      spadl <- add_xg_to_spadl(spadl, xg_model, season = season,
+                               shot_lookup = xg_lookup)
 
       # Override penalty xG with fixed value
       penalty_idx <- spadl$action_type == "shot" & spadl$is_penalty == 1L
@@ -179,16 +201,6 @@ for (league in names(league_seasons)) {
       # original_event_id inside add_xgot_to_spadl. Skips cleanly if the model
       # or the goalmouth columns aren't available yet.
       if (!is.null(xgot_model)) {
-        # Distinguish a genuine load error (warn with the cause) from coords
-        # being legitimately absent — don't report a corrupt parquet as
-        # "missing coords".
-        shot_ev <- tryCatch(
-          load_opta_shot_events(league, season = season, source = "local"),
-          error = function(e) {
-            cli_alert_warning("  xGOT: shot_events failed to load for {label}: {e$message}")
-            NULL
-          }
-        )
         req_cols <- c("match_id", "event_id", "type_id", "goalmouth_y", "goalmouth_z")
         if (!is.null(shot_ev) && all(req_cols %in% names(shot_ev))) {
           # Pass `situation` too (when present) — add_xgot_to_spadl needs it to

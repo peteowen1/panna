@@ -632,7 +632,20 @@ map_opta_bodypart <- function(type_id, qualifiers = NULL) {
   bodypart[type_id == 44L] <- "head"  # Aerials typically headed
   bodypart[type_id %in% c(10L, 52L, 53L)] <- "other"  # Keeper actions
 
-  # Would refine based on qualifiers if available
+  # STUB, and a consequential one. `qualifiers` is never passed by the only
+  # caller (convert_opta_to_spadl passes NULL), so the refinement below was
+  # never written and SHOTS never get a real body part: they are types
+  # 13/14/15/16, none of which is 44, so every shot -- header included --
+  # returns "foot". Measured on ENG 2015-2016: 9,782 of 9,782 shots labelled
+  # "foot", against 15.7% headers in the shot events.
+  #
+  # That silently killed three xG features (is_header, is_right_foot,
+  # is_left_foot) for as long as this has existed, worth +6.30% on total xG.
+  # xG now joins Opta's own `body_part` from the shot events instead -- see
+  # add_xg_to_spadl()'s shot_lookup. Fixing it HERE would be better, since
+  # every other SPADL consumer is still reading a constant, but it means
+  # parsing qualifiers and rebuilding ~2.8GB of cached SPADL, so it is tracked
+  # as a follow-up rather than done inline.
 
   bodypart
 }

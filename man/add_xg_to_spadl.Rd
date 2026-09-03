@@ -4,7 +4,7 @@
 \alias{add_xg_to_spadl}
 \title{Add xG to SPADL Actions}
 \usage{
-add_xg_to_spadl(spadl_actions, xg_model, season = NULL)
+add_xg_to_spadl(spadl_actions, xg_model, season = NULL, shot_lookup = NULL)
 }
 \arguments{
 \item{spadl_actions}{SPADL actions data frame}
@@ -17,6 +17,14 @@ season-aware model cannot derive it and this must be supplied; the end year
 is read with \code{extract_season_end_year()}, exactly as training does.
 Required when the model's features include \code{season_num} - it aborts
 rather than score without it.}
+
+\item{shot_lookup}{Optional data frame keyed by (\code{match_id},
+\code{event_id}) carrying \code{body_part} and \code{situation} for shot
+events, e.g. \code{opta_shot_events}. Strongly recommended: SPADL's own
+\code{bodypart} is a stub that labels every shot "foot", so without this
+the header and footedness flags are dead and set pieces score as open play.
+Joined on \code{original_event_id}, the same key
+\code{add_xgot_to_spadl()} uses.}
 }
 \value{
 SPADL actions with xg column added for shots

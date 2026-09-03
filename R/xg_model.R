@@ -550,10 +550,18 @@ predict_xg <- function(xg_model, shot_features) {
 #'   is read with \code{extract_season_end_year()}, exactly as training does.
 #'   Required when the model's features include \code{season_num} - it aborts
 #'   rather than score without it.
+#' @param shot_lookup Optional data frame keyed by (\code{match_id},
+#'   \code{event_id}) carrying \code{body_part} and \code{situation} for shot
+#'   events, e.g. \code{opta_shot_events}. Strongly recommended: SPADL's own
+#'   \code{bodypart} is a stub that labels every shot "foot", so without this
+#'   the header and footedness flags are dead and set pieces score as open play.
+#'   Joined on \code{original_event_id}, the same key
+#'   \code{add_xgot_to_spadl()} uses.
 #'
 #' @return SPADL actions with xg column added for shots
 #' @keywords internal
-add_xg_to_spadl <- function(spadl_actions, xg_model, season = NULL) {
+add_xg_to_spadl <- function(spadl_actions, xg_model, season = NULL,
+                            shot_lookup = NULL) {
   # Initialize xG column
   spadl_actions$xg <- 0
 
@@ -575,13 +583,54 @@ add_xg_to_spadl <- function(spadl_actions, xg_model, season = NULL) {
     0L
   }
 
-  # SPADL bodypart column has values like "head", "foot_left", "foot_right"
-  bodypart <- if ("bodypart" %in% names(shots)) shots$bodypart else NULL
+  # Body part and situation, joined back from the shot events.
+  #
+  # SPADL's own `bodypart` is USELESS for shots: map_opta_bodypart()
+  # (spadl_conversion.R:627) is a stub that returns "foot" for everything except
+  # aerials (type 44) and keeper actions, and shots are types 13/14/15/16 -- so
+  # every shot, header included, comes through as "foot". Measured on ENG
+  # 2015-2016: is_header 0.0% in SPADL vs 15.7% in the shot events, with
+  # is_right_foot and is_left_foot dead the same way. Training reads the real
+  # Opta `body_part` (RightFoot / LeftFoot / Head), so all three flags were a
+  # pure train/serve skew worth +6.30% on total xG (goals/xG 0.8837 vs 0.9394).
+  # `situation` was never passed either, worth a further -4.69%.
+  #
+  # Joined by (match_id, original_event_id), the same key add_xgot_to_spadl()
+  # uses for goal-mouth coords. Opta's labels pass straight through
+  # .create_shot_features()'s grepl() matching: "RightFoot" -> right,
+  # "LeftFoot" -> left, "Head" -> head.
+  bodypart  <- NULL
+  situation <- NULL
+  if (!is.null(shot_lookup)) {
+    if (!all(c("match_id", "event_id") %in% names(shot_lookup))) {
+      cli::cli_abort("{.arg shot_lookup} needs {.field match_id} and {.field event_id}.")
+    }
+    if (!"original_event_id" %in% names(shots)) {
+      cli::cli_abort("SPADL must carry {.field original_event_id} to join {.arg shot_lookup}.")
+    }
+    idx <- match(paste(shots$match_id, shots$original_event_id),
+                 paste(shot_lookup$match_id, shot_lookup$event_id))
+    hit <- mean(!is.na(idx))
+    if ("body_part" %in% names(shot_lookup)) bodypart  <- shot_lookup$body_part[idx]
+    if ("situation" %in% names(shot_lookup)) situation <- shot_lookup$situation[idx]
+    cli::cli_alert_info(
+      "Shot lookup matched {round(100 * hit, 1)}% of shots (body_part: {!is.null(bodypart)}, situation: {!is.null(situation)})")
+    if (hit < 0.9) {
+      cli::cli_alert_warning(
+        "Only {round(100 * hit, 1)}% of shots matched the lookup - the rest lose body part and situation.")
+    }
+  } else {
+    # cli_alert_warning prints immediately; cli_warn alone is deferred by R into
+    # the "50 or more warnings" summary and is invisible in a long pipeline log.
+    cli::cli_alert_warning(
+      "No {.arg shot_lookup}: headers scored as foot shots and set pieces as open play (train/serve skew, ~6% on xG).")
+    cli::cli_warn("add_xg_to_spadl(): no shot_lookup - body part and situation features are dead.")
+  }
 
   shot_features <- .create_shot_features(
     x = shots$start_x, y = shots$start_y,
     bodypart = bodypart,
-    situation = NULL,
+    situation = situation,
     is_big_chance = is_big_chance
   )
 
