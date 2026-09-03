@@ -265,11 +265,22 @@ for (league in leagues) {
         .note_skip(label, "no lineups")
         next
       }
-      if (is.null(events) || is.null(stats)) {
-        message(sprintf("    Skipping %s: league-level %s failed to load", label,
-                        paste(c("events", "stats")[c(is.null(events), is.null(stats))],
-                              collapse = " + ")))
-        .note_skip(label, "events/stats load failed")
+      # Check nrow, not just NULL. A league-level load can SUCCEED and still
+      # have no rows for this particular season -- .slice_season() matches
+      # `df$season == s` exactly, so a season present in list_opta_seasons() but
+      # absent from the events table slices to a 0-row frame that is not NULL.
+      # It then reaches `events$league <- league` and dies with "replacement has
+      # 1 row, data has 0", pointing at an assignment rather than at the missing
+      # data. That killed a 38-minute stage-2 run on 2026-09-03: AFCON 2021
+      # Cameroon has 2,320 player_stats rows and NO events rows at all (12 of
+      # AFCON's 13 seasons are in the events table). Lineups were already
+      # guarded this way; events and stats were not.
+      empty <- c(events = is.null(events) || nrow(events) == 0,
+                 stats  = is.null(stats)  || nrow(stats)  == 0)
+      if (any(empty)) {
+        message(sprintf("    Skipping %s: no %s rows for this season", label,
+                        paste(names(empty)[empty], collapse = " + ")))
+        .note_skip(label, paste0("empty ", paste(names(empty)[empty], collapse = "+")))
         next
       }
 
