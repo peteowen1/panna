@@ -42,7 +42,7 @@ domestic_cups    <- character(0)  # add domestic cups here if/when scraped to bl
 blog_leagues     <- c(continental_cups, intl_tournaments, domestic_cups)
 
 if (!exists("shootout_season", inherits = FALSE)) shootout_season <- "2025-2026"
-if (!exists("upload_shootout_wpa", inherits = FALSE)) upload_shootout_wpa <- TRUE
+if (!exists("upload_shootout_wpa")) upload_shootout_wpa <- TRUE
 
 # Opta shootout shot-outcome type_ids: 16 goal, 15 saved, 14 post, 13 missed.
 SO_OUTCOME_TYPE_IDS <- c(16L, 15L, 14L, 13L)

@@ -803,7 +803,7 @@ tag  <- "opta-latest"
 # Upload toggle — set upload_psr <- FALSE before sourcing to generate the parquet
 # locally for validation WITHOUT publishing to the live release (mirrors 10b's
 # upload_game_logs). Default TRUE preserves the scheduled-workflow behaviour.
-if (!exists("upload_psr", inherits = FALSE)) upload_psr <- TRUE
+if (!exists("upload_psr")) upload_psr <- TRUE
 
 if (!isTRUE(upload_psr)) {
   cat(sprintf("\n  upload_psr = FALSE — wrote %s locally, NOT publishing.\n", out_path))

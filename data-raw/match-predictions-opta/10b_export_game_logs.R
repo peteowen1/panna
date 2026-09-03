@@ -112,7 +112,7 @@ current_season_alias <- sort(game_log_seasons, decreasing = TRUE)[1]
 } else "minutes"
 
 # Upload toggle — set FALSE during local dev to skip the GH release push.
-if (!exists("upload_game_logs", inherits = FALSE)) upload_game_logs <- TRUE
+if (!exists("upload_game_logs")) upload_game_logs <- TRUE
 
 # Build toggle — set FALSE to skip the per-season processing loop (e.g. when
 # parquets were already built in parallel workers and this invocation only

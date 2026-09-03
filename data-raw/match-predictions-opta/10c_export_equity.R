@@ -68,7 +68,7 @@ equity_seasons <- as.character(equity_seasons)
 current_season_alias <- sort(equity_seasons, decreasing = TRUE)[1]
 
 # Upload toggle
-if (!exists("upload_equity", inherits = FALSE)) upload_equity <- TRUE
+if (!exists("upload_equity")) upload_equity <- TRUE
 
 # Build toggle — FALSE = skip per-season build, just do alias+upload
 if (!exists("build_equity", inherits = FALSE)) build_equity <- TRUE

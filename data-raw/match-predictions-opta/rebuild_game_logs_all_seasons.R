@@ -107,7 +107,7 @@ force_rebuild <- TRUE
 # --- Upload: OFF by default for this authoring/dry-run pass. Flip to TRUE
 # once gate #2 has passed and this is run for real (Wave 2 publishes via the
 # registered files, see 10b step 6 / 13_publish_release_data.R). ---
-if (!exists("upload_game_logs", inherits = FALSE)) upload_game_logs <- FALSE
+if (!exists("upload_game_logs")) upload_game_logs <- FALSE
 
 # --- use_skill_ratings: mirror 10b_backfill_game_logs.R's TRUE (skill-adjusted
 # SPM priors) for parity with the 2026-06-20 historical backfill, rather than

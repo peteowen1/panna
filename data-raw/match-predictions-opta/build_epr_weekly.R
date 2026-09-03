@@ -338,7 +338,7 @@ t_log(sprintf("Saved -> %s (%.1f MB)",
 ## unified onto opta-latest (Pete's decision 2026-07-14). Upload toggle
 ## mirrors 08b/10b's upload_psr/upload_game_logs -- set upload_epr <- FALSE
 ## before sourcing to build the parquet locally without publishing.
-if (!exists("upload_epr", inherits = FALSE)) upload_epr <- TRUE
+if (!exists("upload_epr")) upload_epr <- TRUE
 if (!isTRUE(upload_epr)) {
   t_log("upload_epr = FALSE -- wrote parquet locally, NOT publishing.")
 } else {

@@ -44,7 +44,7 @@ if (!exists("game_log_seasons", inherits = FALSE)) {
 if (!exists("force_rebuild", inherits = FALSE)) force_rebuild <- FALSE
 
 # Upload to blog-latest release? Set FALSE for a dry run.
-if (!exists("upload_game_logs", inherits = FALSE)) upload_game_logs <- TRUE
+if (!exists("upload_game_logs")) upload_game_logs <- TRUE
 
 # Use the skill-adjusted SPM priors (TRUE) vs raw Opta xRAPM priors (FALSE)
 if (!exists("use_skill_ratings", inherits = FALSE)) use_skill_ratings <- TRUE

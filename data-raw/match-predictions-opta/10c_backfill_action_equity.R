@@ -37,7 +37,7 @@ if (!exists("equity_seasons", inherits = FALSE)) {
 }
 
 if (!exists("force_rebuild", inherits = FALSE))    force_rebuild <- FALSE
-if (!exists("upload_equity", inherits = FALSE))    upload_equity <- TRUE
+if (!exists("upload_equity"))    upload_equity <- TRUE
 if (!exists("parallel_workers", inherits = FALSE)) parallel_workers <- 1L
 
 cache_dir <- file.path("data-raw", "cache-predictions-opta")
