@@ -12,7 +12,8 @@ fit_spm_opta(
   weight_transform = "sqrt",
   league_fe = FALSE,
   league_min_n = 50,
-  league_shares = FALSE
+  league_shares = FALSE,
+  opponent_elo = FALSE
 )
 }
 \arguments{
@@ -25,6 +26,10 @@ fit_spm_opta(
 \item{weight_by_minutes}{Whether to weight by minutes (default TRUE)}
 
 \item{weight_transform}{Transform for weighting: "sqrt", "linear", "log"}
+
+\item{opponent_elo}{Enter a pre-joined \code{opponent_elo} column as an
+unpenalized control (opt-in, default FALSE). Orthogonal to
+\code{league_fe}/\code{league_shares} -- can combine with either.}
 }
 \value{
 Fitted glmnet model with metadata

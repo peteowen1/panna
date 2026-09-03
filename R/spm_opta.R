@@ -838,6 +838,9 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
 #' @param nfolds Number of CV folds (default 10)
 #' @param weight_by_minutes Whether to weight by minutes (default TRUE)
 #' @param weight_transform Transform for weighting: "sqrt", "linear", "log"
+#' @param opponent_elo Enter a pre-joined `opponent_elo` column as an
+#'   unpenalized control (opt-in, default FALSE). Orthogonal to
+#'   `league_fe`/`league_shares` -- can combine with either.
 #'
 #' @return Fitted glmnet model with metadata
 #' @family spm opta
@@ -857,8 +860,14 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
 fit_spm_opta <- function(data, alpha = 0.5, nfolds = 10,
                           weight_by_minutes = TRUE, weight_transform = "sqrt",
                           league_fe = FALSE, league_min_n = 50,
-                          league_shares = FALSE) {
+                          league_shares = FALSE, opponent_elo = FALSE) {
   predictor_cols <- .spm_opta_predictor_cols(data)
+  ## Accumulates every unpenalized-control column across league_shares/
+  ## league_fe/opponent_elo. Unlike league_fe vs league_shares (mutually
+  ## exclusive alternatives), opponent_elo is orthogonal to both -- it can
+  ## combine with either, since Elo captures within-league opponent quality
+  ## that league membership alone doesn't.
+  unpenalized_cols <- character(0)
 
   ## Minutes-share league controls. The caller joins `lgshare_*` columns onto
   ## `data` (see .spm_league_shares()); this just enters them UNPENALIZED, for
@@ -884,6 +893,7 @@ fit_spm_opta <- function(data, alpha = 0.5, nfolds = 10,
     ## them on the reference level.
     for (cc in share_cols) data[[cc]][is.na(data[[cc]])] <- 0
     predictor_cols <- c(predictor_cols, share_cols)
+    unpenalized_cols <- c(unpenalized_cols, share_cols)
     progress_msg(sprintf("League shares: %d columns (reference dropped), unpenalized",
                           length(share_cols)))
   }
@@ -894,7 +904,6 @@ fit_spm_opta <- function(data, alpha = 0.5, nfolds = 10,
   ## ships as a single testable axis rather than silently changing the prior
   ## every downstream rating shrinks toward.
   league_levels <- character(0)
-  penalty_factor <- NULL
   if (isTRUE(league_fe)) {
     dm <- .spm_league_dummies(data, levels = NULL, min_n = league_min_n)
     if (length(dm$cols) == 0) {
@@ -905,13 +914,38 @@ fit_spm_opta <- function(data, alpha = 0.5, nfolds = 10,
       data <- dm$data
       league_levels <- dm$levels
       predictor_cols <- c(predictor_cols, dm$cols)
-      penalty_factor <- stats::setNames(rep(0, length(dm$cols)), dm$cols)
+      unpenalized_cols <- c(unpenalized_cols, dm$cols)
       progress_msg(sprintf("League FE: %d levels (reference held out), unpenalized",
                             length(dm$levels)))
     }
   }
-  if (length(share_cols) > 0) {
-    penalty_factor <- stats::setNames(rep(0, length(share_cols)), share_cols)
+
+  ## Opponent-strength control (opt-in). Same rationale as league_shares/
+  ## league_fe above: a control, not a skill, entered unpenalized so elastic
+  ## net can't shrink it away exactly where it matters (players who face
+  ## systematically weaker/stronger opposition). Caller pre-joins a single
+  ## numeric `opponent_elo` column onto `data` (minutes-weighted average
+  ## opponent Elo per player, from compute_match_elos()).
+  if (isTRUE(opponent_elo)) {
+    if (!"opponent_elo" %in% names(data)) {
+      cli::cli_abort(c(
+        "opponent_elo = TRUE but no {.field opponent_elo} column on the data.",
+        "i" = "Join it on by player_id before calling {.fn fit_spm_opta}.",
+        "x" = "Fitting without it would silently drop the opponent-strength control."
+      ))
+    }
+    if (anyNA(data$opponent_elo)) {
+      cli::cli_abort("opponent_elo column has NA values - impute before fitting.")
+    }
+    predictor_cols <- c(predictor_cols, "opponent_elo")
+    unpenalized_cols <- c(unpenalized_cols, "opponent_elo")
+    progress_msg("Opponent Elo: 1 column, unpenalized")
+  }
+
+  penalty_factor <- if (length(unpenalized_cols) > 0) {
+    stats::setNames(rep(0, length(unpenalized_cols)), unpenalized_cols)
+  } else {
+    NULL
   }
 
   # NA-safety for the widened `_per90` selection: fit_spm_model() keeps only
