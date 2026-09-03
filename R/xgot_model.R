@@ -311,6 +311,26 @@ fit_xgot_model <- function(shot_features,
 predict_xgot <- function(xgot_model, shot_features) {
   feature_cols <- xgot_model$panna_metadata$feature_cols
   missing_cols <- setdiff(feature_cols, names(shot_features))
+
+  # Back-compat for models trained BEFORE 2026-09-03. `is_direct_freekick` was
+  # removed that day because it was constant 0 on all 3,289,256 shots (no Opta
+  # `situation` value contains "free"), so any xgboost split on it is
+  # unreachable and restoring it as 0 reproduces the trained model EXACTLY.
+  # This is not imputation - it is replaying a value that was never anything
+  # else. Scoped to this one named column so a genuinely missing feature (a
+  # real placement column, say) still aborts below.
+  # TODO: retrain xgot_model without it, then delete this block. Held back
+  # deliberately today so the stage-1 rebuild changes xG ONLY and its
+  # calibration result stays attributable.
+  if ("is_direct_freekick" %in% missing_cols) {
+    cli::cli_warn(c(
+      "xGOT model is a pre-2026-09-03 build that still lists {.field is_direct_freekick}.",
+      "i" = "Restoring it as constant 0 (its only value in training). Retrain to drop it."
+    ))
+    shot_features$is_direct_freekick <- 0
+    missing_cols <- setdiff(missing_cols, "is_direct_freekick")
+  }
+
   if (length(missing_cols) > 0) {
     cli::cli_abort(c(
       "xGOT prediction: missing feature{?s}: {paste(missing_cols, collapse=', ')}",
