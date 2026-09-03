@@ -168,6 +168,41 @@ spm_train_data <- player_stats %>%
 
 cat("Players for SPM training:", nrow(spm_train_data), "\n")
 
+# League control: minutes SHARES, not a dummy.
+#
+# aggregate_opta_stats() collapses 3.46M player-match rows to one row per
+# player and no league column survives, so `league_fe = TRUE` here is a silent
+# no-op. Deriving one league per player is the panna#222 trap: of 48,377
+# players only 55.1% appear in a single competition, 12.0% have no competition
+# holding even 60% of their minutes, and 0.3% are exact ties. (Median dominant
+# share is 1.000 -- the same reassuring statistic that said #222's inputs were
+# fine.) A share vector removes the decision instead of making it badly, and
+# degenerates to the dummy for the 55% who played in one place.
+#
+# Validated as a single axis on 35,590 players, 5-fold held out: RMSE 0.03076
+# -> 0.02983, -3.02%. Limiting case checked and passed: on a
+# single-competition subset the shares carry no variance and the arms converge
+# (-0.06%), so the gain is a league effect and not 30 unpenalized columns
+# forcing the metric.
+#
+# DEFAULT OFF. Turning it on makes lgshare_* part of the model's predictor
+# contract, and calculate_spm_ratings() ABORTS when they are absent - so every
+# downstream scorer must join them too: 06_xrapm, 07_seasonal_ratings, and
+# 05b_export_spm_coefficients (live per-match parity). Switch on only with
+# those wired.
+if (!exists("spm_league_shares")) spm_league_shares <- FALSE
+if (isTRUE(spm_league_shares)) {
+  .shares <- panna:::.spm_league_shares(processed_data$stats_summary, min_n = 50)
+  if (length(.shares$cols) == 0) {
+    stop("spm_league_shares = TRUE but the share matrix is empty; refusing to fit unadjusted.")
+  }
+  spm_train_data <- spm_train_data %>% left_join(.shares$data, by = "player_id")
+  for (.cc in .shares$cols) spm_train_data[[.cc]][is.na(spm_train_data[[.cc]])] <- 0
+  cat(sprintf("League shares: %d columns (reference %s), %.1f%% of players non-reference\n",
+              length(.shares$cols), .shares$reference,
+              100 * mean(rowSums(spm_train_data[, .shares$cols, drop = FALSE]) > 0)))
+}
+
 # 6. Fit Elastic Net and XGBoost Models ----
 
 cat("\n=== Fitting Opta Elastic Net SPM ===\n")
@@ -176,7 +211,8 @@ spm_glmnet <- fit_spm_opta(
   alpha = 0.5,
   nfolds = 5,          # panna#87: 10 -> 5 to reduce CV memory/time
   weight_by_minutes = TRUE,
-  weight_transform = "sqrt"
+  weight_transform = "sqrt",
+  league_shares = spm_league_shares
 )
 
 cat("\n=== Fitting XGBoost SPM ===\n")
@@ -185,7 +221,12 @@ spm_xgb <- fit_spm_xgb(
   # Exact feature parity with the glmnet half: fit_spm_xgb's own default grep
   # was `_p90$`-only, which kept the XGB half of the 50/50 blend xMetrics-blind
   # even after fit_spm_opta's detector was fixed (2026-07-07 review finding).
-  predictor_cols = panna:::.spm_opta_predictor_cols(spm_train_data),
+  # The league shares are appended for the SAME reason: .spm_opta_predictor_cols()
+  # does not match `lgshare_*`, so adjusting only the glmnet half would leave
+  # half of a 50/50 blend league-blind - the identical parity break, one feature
+  # family later.
+  predictor_cols = c(panna:::.spm_opta_predictor_cols(spm_train_data),
+                     if (isTRUE(spm_league_shares)) grep("^lgshare_", names(spm_train_data), value = TRUE)),
   nfolds = 5,          # panna#87: 10 -> 5
   max_depth = 4,
   eta = 0.02,

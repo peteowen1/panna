@@ -734,6 +734,55 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
 #'   (the non-reference levels, for storing in model metadata) and \code{cols}
 #'   (the dummy column names).
 #' @keywords internal
+# Minutes-share league controls for a player-grain SPM frame.
+#
+# Why shares and not dummies. Stage 2's SPM aggregates 3.46M player-match rows
+# to one row per player, and NO league column survives that aggregation, so a
+# league fixed effect there needs a league to be DERIVED per player. Measured on
+# 48,377 players: only 55.1% appear in a single competition, 12.0% have no
+# competition holding even 60% of their minutes, and 0.3% are exact ties decided
+# by nothing at all. The median dominant share is 1.000 -- the same reassuring
+# statistic that said panna#222's inputs were fine while its league tag was a
+# coin-flip.
+#
+# A share vector removes the decision instead of making it badly: a player on
+# 70% EPL / 30% UCL gets 0.7 and 0.3, and for the 55% in one competition it
+# degenerates exactly to the dummy it replaces. Shares sum to 1, so one column
+# is dropped as the reference to avoid collinearity with the intercept.
+#
+# `stats` must be player-match grain with player_id, a competition column and a
+# minutes column. Returns one row per player_id.
+.spm_league_shares <- function(stats, min_n = 50, prefix = "lgshare_") {
+  dt <- data.table::as.data.table(stats)
+  lg <- intersect(c("competition", "league"), names(dt))[1]
+  mn <- intersect(c("minsPlayed", "minutes", "minutes_played", "mins"), names(dt))[1]
+  if (is.na(lg) || is.na(mn) || !"player_id" %in% names(dt)) {
+    return(list(data = NULL, cols = character(0), levels = character(0)))
+  }
+  dt <- dt[!is.na(get(lg)) & !is.na(get(mn)) & as.numeric(get(mn)) > 0]
+  if (!nrow(dt)) return(list(data = NULL, cols = character(0), levels = character(0)))
+
+  keep <- dt[, .(n = .N), by = c(lg)][n >= min_n][[lg]]
+  if (length(keep) < 2) return(list(data = NULL, cols = character(0), levels = character(0)))
+  dt[, .lg := data.table::fifelse(get(lg) %in% keep, as.character(get(lg)), "OTHER")]
+
+  m <- dt[, .(mins = sum(as.numeric(get(mn)))), by = .(player_id, .lg)]
+  m[, share := mins / sum(mins), by = player_id]
+  w <- data.table::dcast(m, player_id ~ .lg, value.var = "share", fill = 0)
+
+  ## Drop the largest competition as the reference level -- shares sum to 1, so
+  ## keeping every column would be perfectly collinear with the intercept.
+  lv <- setdiff(names(w), "player_id")
+  ref <- lv[which.max(vapply(lv, function(k) sum(w[[k]]), numeric(1)))]
+  lv <- setdiff(lv, ref)
+  data.table::setnames(w, lv, paste0(prefix, make.names(lv)))
+  w[, (ref) := NULL]
+  list(data = as.data.frame(w),
+       cols = paste0(prefix, make.names(lv)),
+       levels = lv, reference = ref)
+}
+
+
 .spm_league_dummies <- function(data, levels = NULL, min_n = 50) {
   league_col <- intersect(c("competition", "league"), names(data))[1]
   if (is.na(league_col)) {
@@ -791,8 +840,37 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
 #' }
 fit_spm_opta <- function(data, alpha = 0.5, nfolds = 10,
                           weight_by_minutes = TRUE, weight_transform = "sqrt",
-                          league_fe = FALSE, league_min_n = 50) {
+                          league_fe = FALSE, league_min_n = 50,
+                          league_shares = FALSE) {
   predictor_cols <- .spm_opta_predictor_cols(data)
+
+  ## Minutes-share league controls. The caller joins `lgshare_*` columns onto
+  ## `data` (see .spm_league_shares()); this just enters them UNPENALIZED, for
+  ## the same reason the dummies are: they are controls, not skills, and elastic
+  ## net would shrink them away exactly in the thin leagues where they matter.
+  ## Separate from league_fe because the two are alternatives, not additions -
+  ## enabling both would enter the same information twice.
+  share_cols <- character(0)
+  if (isTRUE(league_shares)) {
+    share_cols <- grep("^lgshare_", names(data), value = TRUE)
+    if (length(share_cols) == 0) {
+      cli::cli_abort(c(
+        "league_shares = TRUE but no {.field lgshare_*} columns on the data.",
+        "i" = "Build them with {.fn .spm_league_shares} and join by player_id first.",
+        "x" = "Fitting without them would silently drop the league control."
+      ))
+    }
+    if (isTRUE(league_fe)) {
+      cli::cli_abort("Set league_fe OR league_shares, not both - they encode the same information.")
+    }
+    ## NAs come from players absent from the shares frame (no qualifying
+    ## minutes). 0 across every share column is the correct encoding: it places
+    ## them on the reference level.
+    for (cc in share_cols) data[[cc]][is.na(data[[cc]])] <- 0
+    predictor_cols <- c(predictor_cols, share_cols)
+    progress_msg(sprintf("League shares: %d columns (reference dropped), unpenalized",
+                          length(share_cols)))
+  }
 
   ## League fixed effects (opt-in). Entered UNPENALIZED: they are controls, not
   ## skills, and elastic net would otherwise shrink or select them away exactly
@@ -815,6 +893,9 @@ fit_spm_opta <- function(data, alpha = 0.5, nfolds = 10,
       progress_msg(sprintf("League FE: %d levels (reference held out), unpenalized",
                             length(dm$levels)))
     }
+  }
+  if (length(share_cols) > 0) {
+    penalty_factor <- stats::setNames(rep(0, length(share_cols)), share_cols)
   }
 
   # NA-safety for the widened `_per90` selection: fit_spm_model() keeps only
