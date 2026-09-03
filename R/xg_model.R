@@ -176,6 +176,14 @@ prepare_shots_for_xg <- function(shot_events) {
     is_big_chance = big_chance
   )
 
+  # Season as a numeric year, for the optional season term in fit_xg_model().
+  # Carried here rather than derived at fit time so training and inference build
+  # it identically -- divergent feature construction is what made SPM xG-blind.
+  if ("season" %in% names(shot_events)) {
+    features$season_num <- suppressWarnings(
+      as.integer(extract_season_end_year(shot_events$season)))
+  }
+
   # Add metadata columns
   features$match_id <- shot_events$match_id
   features$event_id <- if ("event_id" %in% names(shot_events)) shot_events$event_id else seq_len(nrow(shot_events))
@@ -217,7 +225,11 @@ prepare_shots_for_xg <- function(shot_events) {
 #' Uses cross-validation to find optimal number of boosting rounds.
 #'
 #' @param shot_features Data frame from prepare_shots_for_xg()
-#' @param exclude_penalties Whether to exclude penalties from training (default TRUE)
+#' @param exclude_penalties Whether to exclude penalties from training (default TRUE).
+#'   Every penalty is taken from the same spot, so the geometry features carry no
+#'   information on them; they are scored at \code{\link{PENALTY_XG}} instead.
+#' @param season_feature Add a \code{season_num} term (default FALSE). See the
+#'   comment at the feature list for the evidence and the extrapolation caveat.
 #' @param nfolds Number of CV folds (default 5)
 #' @param max_depth Maximum tree depth (default 6)
 #' @param eta Learning rate (default 0.05)
@@ -246,6 +258,7 @@ prepare_shots_for_xg <- function(shot_events) {
 #' }
 fit_xg_model <- function(shot_features,
                           exclude_penalties = TRUE,
+                          season_feature = FALSE,
                           nfolds = 5,
                           max_depth = 6,
                           eta = 0.05,
@@ -275,6 +288,31 @@ fit_xg_model <- function(shot_features,
     # (no Opta `situation` value contains "free"). See .create_shot_features().
     "is_big_chance"
   )
+
+  # Optional season term (panna#229). `is_big_chance` is an Opta JUDGEMENT flag
+  # whose meaning has drifted -- its rate went 12.42% (2015) to 17.82% (2026) --
+  # so a season term lets the model learn that a 2025 big chance is not a 2015
+  # one. That is modelling a known label shift, not absorbing mystery drift.
+  #
+  # Validated on a TEMPORAL holdout (train <=2022, test 2023-26), which is the
+  # honest test: random CV lets season INTERPOLATE (2019 rows in both folds) and
+  # flatters it. Out of time it still won -- logloss -0.42%, calibration
+  # -10.3% -> -5.6%. A league term did nothing (+0.02%) and is not offered:
+  # league belongs in the offsets, not in chance quality.
+  #
+  # Caveat that must stay attached: season CANNOT extrapolate. Scoring a season
+  # beyond the training range, xgboost holds it at the last split it learned. It
+  # de-biases the training corpus rather than predicting forward, so it helps
+  # historical scoring (career ratings, backfill) far more than live scoring.
+  if (isTRUE(season_feature)) {
+    if (!"season_num" %in% names(shot_features)) {
+      cli::cli_warn(paste("season_feature = TRUE but no {.field season_num} column;",
+                          "fitting without it."))
+    } else {
+      feature_cols <- c(feature_cols, "season_num")
+      cli::cli_alert_info("Season term enabled (range {min(shot_features$season_num, na.rm = TRUE)}-{max(shot_features$season_num, na.rm = TRUE)})")
+    }
+  }
 
   # Use available features
   available_features <- intersect(feature_cols, names(shot_features))

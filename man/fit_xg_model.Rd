@@ -7,6 +7,7 @@
 fit_xg_model(
   shot_features,
   exclude_penalties = TRUE,
+  season_feature = FALSE,
   nfolds = 5,
   max_depth = 6,
   eta = 0.05,
@@ -20,7 +21,12 @@ fit_xg_model(
 \arguments{
 \item{shot_features}{Data frame from prepare_shots_for_xg()}
 
-\item{exclude_penalties}{Whether to exclude penalties from training (default TRUE)}
+\item{exclude_penalties}{Whether to exclude penalties from training (default TRUE).
+Every penalty is taken from the same spot, so the geometry features carry no
+information on them; they are scored at \code{\link{PENALTY_XG}} instead.}
+
+\item{season_feature}{Add a \code{season_num} term (default FALSE). See the
+comment at the feature list for the evidence and the extrapolation caveat.}
 
 \item{nfolds}{Number of CV folds (default 5)}
 
