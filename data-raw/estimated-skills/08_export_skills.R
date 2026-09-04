@@ -63,6 +63,20 @@ cat(sprintf("  Written: %s (%s MB)\n", ms_path, ms_mb))
 
 # 5. Upload to GitHub Release ----
 
+# Upload toggle (added 2026-09-04 - this step previously published
+# UNCONDITIONALLY, no flag at all, which caused a real unauthorized publish
+# incident). Set upload_skills <- FALSE before sourcing to write the two
+# parquets locally (already done above, under opta_dir) without publishing.
+# Default TRUE preserves the scheduled-workflow behaviour.
+if (!exists("upload_skills")) upload_skills <- TRUE
+
+if (!isTRUE(upload_skills)) {
+
+  cat(sprintf("\nupload_skills = FALSE -- wrote %s and %s locally, NOT publishing.\n",
+              skills_path, ms_path))
+
+} else {
+
 cat("\n=== Uploading to GitHub Release ===\n")
 
 if (!requireNamespace("piggyback", quietly = TRUE)) {
@@ -84,6 +98,8 @@ for (f in c(skills_path, ms_path)) {
 if (length(upload_failures) > 0) {
   stop(sprintf("Failed to upload %d file(s): %s. Skills are NOT published.",
                length(upload_failures), paste(upload_failures, collapse = ", ")))
+}
+
 }
 
 cat("\n=== COMPLETE ===\n")

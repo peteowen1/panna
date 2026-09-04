@@ -114,7 +114,32 @@ message(sprintf("  Raw RAPM (seasonal): %d player-seasons (replacement row dropp
 message(sprintf("  Raw RAPM (pooled all-history): %d players (replacement row dropped)",
                 nrow(pooled_rapm_raw)))
 
-# 3. Ensure Release Exists ----
+# 3. Upload toggle (added 2026-09-04 - this step previously published
+#    UNCONDITIONALLY, no flag at all, which caused a real unauthorized
+#    publish incident) ----
+# Set upload_ratings <- FALSE before sourcing to write the four parquets
+# locally (cache_dir) without publishing. Default TRUE preserves the
+# scheduled-workflow behaviour, mirroring 08b/10b/build_epr_weekly's
+# upload_psr/upload_game_logs/upload_epr pattern.
+if (!exists("upload_ratings")) upload_ratings <- TRUE
+
+if (is.null(seasonal_results$seasonal_spm)) {
+  stop("seasonal_spm not found in cache - re-run step 7 to generate both rating types")
+}
+
+if (!isTRUE(upload_ratings)) {
+  local_xrapm  <- file.path(cache_dir, "seasonal_xrapm.parquet")
+  local_spm    <- file.path(cache_dir, "seasonal_spm.parquet")
+  local_rapm   <- file.path(cache_dir, "seasonal_rapm_raw.parquet")
+  local_pooled <- file.path(cache_dir, "pooled_rapm_raw.parquet")
+  arrow::write_parquet(seasonal_results$seasonal_xrapm, local_xrapm)
+  arrow::write_parquet(seasonal_results$seasonal_spm, local_spm)
+  arrow::write_parquet(seasonal_rapm_raw, local_rapm)
+  arrow::write_parquet(pooled_rapm_raw, local_pooled)
+  message(sprintf("upload_ratings = FALSE -- wrote 4 parquets locally to %s, NOT publishing.", cache_dir))
+} else {
+
+# 4. Ensure Release Exists ----
 
 release_ok <- tryCatch({
   piggyback::pb_list(repo = repo, tag = tag)
@@ -133,11 +158,7 @@ if (!release_ok) {
   Sys.sleep(3)
 }
 
-# 4. Upload files (both-or-neither via vb_publish) ----
-
-if (is.null(seasonal_results$seasonal_spm)) {
-  stop("seasonal_spm not found in cache - re-run step 7 to generate both rating types")
-}
+# 5. Upload files (both-or-neither via vb_publish) ----
 
 # vb_publish() uploads each path under its OWN basename() (no rename param),
 # so the temp files must already be named seasonal_xrapm.parquet /
@@ -177,3 +198,4 @@ message(sprintf(
   nrow(seasonal_results$seasonal_xrapm), nrow(seasonal_results$seasonal_spm),
   nrow(seasonal_rapm_raw), nrow(pooled_rapm_raw),
   manifest$generation))
+}
