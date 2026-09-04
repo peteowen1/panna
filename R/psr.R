@@ -200,16 +200,37 @@
 #'   coefficient. That commit's claim that "every consumer joins on
 #'   (player_id, exact date), so the dropped rows were never read" was wrong;
 #'   step 07 reads exactly those rows. Its coverage guard caught it.
+#' @param stream_dir If supplied, write each date's full (uncoverage-filtered)
+#'   snapshot to \code{file.path(stream_dir, "<date>.rds")} as soon as it's
+#'   computed, freeing it from R's memory immediately, instead of
+#'   accumulating all dates in a single in-memory list (default \code{NULL} =
+#'   old in-memory behaviour, unchanged). This is a MEMORY lever, orthogonal to
+#'   \code{output_min_w90} -- it changes WHERE full-coverage results live, not
+#'   WHICH rows exist, so it carries none of \code{output_min_w90}'s coverage
+#'   risk. Added 2026-09-04: at full multi-season history (~684 weekly dates x
+#'   ~47k players x ~142 stats), the in-memory list alone peaks at 70GB+,
+#'   which does not reliably fit alongside other load on a shared machine (two
+#'   observed OOM near-misses the same night). \code{stream_dir} bounds peak
+#'   memory to roughly one date's snapshot regardless of history length. The
+#'   directory is NOT cleaned up by this function -- the caller owns it (create
+#'   under \code{tempfile()}, \code{unlink(recursive = TRUE)} when done).
 #' @param verbose Print progress (default TRUE).
 #'
-#' @return Named list of data.tables (one per ref_date), keyed by date string.
-#'   Each table has one row per player with skill columns.
+#' @return Named list keyed by date string. Each element is a data.table (one
+#'   row per player with skill columns) when \code{stream_dir} is
+#'   \code{NULL}, or the file path it was streamed to (a length-1 character
+#'   string) when \code{stream_dir} is supplied -- use
+#'   \code{.read_skill_chunk()} to transparently handle either case.
 #' @keywords internal
 .estimate_prematch_skills_batch <- function(match_stats, ref_dates,
                                             decay_params = NULL,
                                             min_weighted_90s = 3,
                                             output_min_w90 = 0,
+                                            stream_dir = NULL,
                                             verbose = TRUE) {
+  if (!is.null(stream_dir) && !dir.exists(stream_dir)) {
+    dir.create(stream_dir, recursive = TRUE)
+  }
   if (is.null(decay_params)) decay_params <- get_default_decay_params()
 
   ref_dates <- sort(unique(as.Date(ref_dates)))
@@ -582,10 +603,43 @@
       if (verbose) cat(sprintf("  ERROR at %s: %s\n", rd, e$message))
       NULL
     })
+
+    # Streaming mode: write this date's full snapshot to disk immediately and
+    # replace the in-memory copy with its path, so peak memory stays bounded
+    # to ~one date's snapshot regardless of how many ref_dates there are. See
+    # the stream_dir docs above -- this is unrelated to output_min_w90 and
+    # carries none of its coverage risk (every row is still written, just not
+    # all kept in RAM at once).
+    if (!is.null(stream_dir) && !is.null(results[[i]])) {
+      chunk_path <- file.path(stream_dir, paste0(as.character(rd), ".rds"))
+      saveRDS(results[[i]], chunk_path)
+      results[[i]] <- chunk_path
+    }
   }
 
   # Drop NULLs
   results[!vapply(results, is.null, logical(1))]
+}
+
+
+#' Read a pre-match skill snapshot, transparently handling streamed chunks
+#'
+#' \code{.estimate_prematch_skills_batch(stream_dir = )} returns a file path
+#' (character length-1) in place of each data.table element. Callers that
+#' need to work with either mode (streaming or the old in-memory list) should
+#' route every read through this helper rather than assuming the element is
+#' already a data.table.
+#'
+#' @param x One element of \code{.estimate_prematch_skills_batch()}'s
+#'   returned list: either a data.table/data.frame (in-memory mode) or a
+#'   length-1 character file path (streaming mode). \code{NULL} passes
+#'   through unchanged.
+#' @return The data.table for that date, or \code{NULL}.
+#' @keywords internal
+.read_skill_chunk <- function(x) {
+  if (is.null(x)) return(NULL)
+  if (is.character(x) && length(x) == 1L) return(readRDS(x))
+  x
 }
 
 

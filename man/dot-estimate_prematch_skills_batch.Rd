@@ -10,6 +10,7 @@
   decay_params = NULL,
   min_weighted_90s = 3,
   output_min_w90 = 0,
+  stream_dir = NULL,
   verbose = TRUE
 )
 }
@@ -39,11 +40,29 @@ coefficient. That commit's claim that "every consumer joins on
 (player_id, exact date), so the dropped rows were never read" was wrong;
 step 07 reads exactly those rows. Its coverage guard caught it.}
 
+\item{stream_dir}{If supplied, write each date's full (uncoverage-filtered)
+snapshot to \code{file.path(stream_dir, "<date>.rds")} as soon as it's
+computed, freeing it from R's memory immediately, instead of
+accumulating all dates in a single in-memory list (default \code{NULL} =
+old in-memory behaviour, unchanged). This is a MEMORY lever, orthogonal to
+\code{output_min_w90} -- it changes WHERE full-coverage results live, not
+WHICH rows exist, so it carries none of \code{output_min_w90}'s coverage
+risk. Added 2026-09-04: at full multi-season history (~684 weekly dates x
+~47k players x ~142 stats), the in-memory list alone peaks at 70GB+,
+which does not reliably fit alongside other load on a shared machine (two
+observed OOM near-misses the same night). \code{stream_dir} bounds peak
+memory to roughly one date's snapshot regardless of history length. The
+directory is NOT cleaned up by this function -- the caller owns it (create
+under \code{tempfile()}, \code{unlink(recursive = TRUE)} when done).}
+
 \item{verbose}{Print progress (default TRUE).}
 }
 \value{
-Named list of data.tables (one per ref_date), keyed by date string.
-Each table has one row per player with skill columns.
+Named list keyed by date string. Each element is a data.table (one
+row per player with skill columns) when \code{stream_dir} is
+\code{NULL}, or the file path it was streamed to (a length-1 character
+string) when \code{stream_dir} is supplied -- use
+\code{.read_skill_chunk()} to transparently handle either case.
 }
 \description{
 Highly optimized for sequential date estimation. Instead of re-processing

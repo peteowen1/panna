@@ -334,13 +334,20 @@ match_date_to_bin <- function(md) {
   weekly_dates[idx]
 }
 
-# Batch-estimate skills at each weekly date
+# Batch-estimate skills at each weekly date. stream_dir bounds peak memory to
+# ~one date's snapshot instead of holding all ~684 dates in RAM at once (the
+# in-memory list alone peaks at 70GB+ at full multi-season history, which
+# doesn't reliably fit alongside other load on a shared machine -- two
+# observed OOM near-misses the same night, 2026-09-04). See
+# .estimate_prematch_skills_batch()'s stream_dir docs (R/psr.R).
+skill_stream_dir <- tempfile("psr_skill_chunks_")
 prematch_skills <- tryCatch(
   .estimate_prematch_skills_batch(
     match_stats = ms_dt,
     ref_dates = weekly_dates,
     decay_params = decay_params,
     min_weighted_90s = MIN_W90_FOR_SKILLS,
+    stream_dir = skill_stream_dir,
     verbose = TRUE
   ),
   error = function(e) {
@@ -372,11 +379,14 @@ rm(ms_dt); gc(verbose = FALSE)
 # Map each match to its weekly bin
 player_match_ids[, skill_date := match_date_to_bin(match_date)]
 
-# Determine skill_keep_cols from the first non-empty result
+# Determine skill_keep_cols from the first non-empty result. .read_skill_chunk()
+# transparently reads from disk when prematch_skills was streamed (a file
+# path) or returns the in-memory table unchanged otherwise.
 first_sk <- NULL
 for (d in names(prematch_skills)) {
-  if (!is.null(prematch_skills[[d]]) && nrow(prematch_skills[[d]]) > 0) {
-    first_sk <- data.table::as.data.table(prematch_skills[[d]])
+  candidate <- .read_skill_chunk(prematch_skills[[d]])
+  if (!is.null(candidate) && nrow(candidate) > 0) {
+    first_sk <- data.table::as.data.table(candidate)
     break
   }
 }
@@ -388,7 +398,7 @@ rm(first_sk)
 
 # Save the latest date's skills for validation BEFORE freeing prematch_skills
 latest_skill_date <- max(names(prematch_skills))
-latest_skills_for_validation <- prematch_skills[[latest_skill_date]]
+latest_skills_for_validation <- .read_skill_chunk(prematch_skills[[latest_skill_date]])
 
 # Chunked join: for each weekly date, join its skills with matching
 # player-matches, then discard. Never hold all dates in memory at once.
@@ -408,7 +418,7 @@ dates_processed <- 0L
 skill_date_names <- names(prematch_skills)
 for (j in seq_along(skill_date_names)) {
   d <- skill_date_names[j]
-  sk <- prematch_skills[[d]]
+  sk <- .read_skill_chunk(prematch_skills[[d]])
   # Free this slot immediately after extracting
   prematch_skills[[d]] <- NULL
 
@@ -461,6 +471,7 @@ if (skipped_frac > 0.05) {
 
 rm(prematch_skills)
 gc(verbose = FALSE)
+if (dir.exists(skill_stream_dir)) unlink(skill_stream_dir, recursive = TRUE)
 
 pm_with_skills <- data.table::rbindlist(matched_chunks, fill = TRUE, use.names = TRUE)
 rm(matched_chunks)
@@ -1101,14 +1112,19 @@ gk_skill_keep_cols <- character(0)
     )]
   }
 
-  # Reload prematch_skills if freed
+  # Reload prematch_skills if freed. Streamed to disk for the same reason as
+  # section 6's main call - see its comment (this GK path recomputes the
+  # full history a second time when reached, so the memory risk is identical).
+  gk_skill_stream_dir <- NULL
   if (!exists("prematch_skills") || length(prematch_skills) == 0) {
     cat("Re-computing pre-match skills for GK features...\n")
+    gk_skill_stream_dir <- tempfile("psr_gk_skill_chunks_")
     prematch_skills <- .estimate_prematch_skills_batch(
       match_stats = ms_dt_gk,
       ref_dates = weekly_dates,
       decay_params = decay_params,
       min_weighted_90s = MIN_W90_FOR_SKILLS,
+      stream_dir = gk_skill_stream_dir,
       verbose = TRUE
     )
   }
@@ -1116,8 +1132,9 @@ gk_skill_keep_cols <- character(0)
   # Determine available GK skill columns from first non-empty result
   gk_first_sk <- NULL
   for (d in names(prematch_skills)) {
-    if (!is.null(prematch_skills[[d]]) && nrow(prematch_skills[[d]]) > 0) {
-      gk_first_sk <- data.table::as.data.table(prematch_skills[[d]])
+    candidate <- .read_skill_chunk(prematch_skills[[d]])
+    if (!is.null(candidate) && nrow(candidate) > 0) {
+      gk_first_sk <- data.table::as.data.table(candidate)
       break
     }
   }
@@ -1169,7 +1186,7 @@ gk_skill_keep_cols <- character(0)
       gk_dates_done <- 0L
 
       for (d_chr in names(prematch_skills)) {
-        sk_d <- prematch_skills[[d_chr]]
+        sk_d <- .read_skill_chunk(prematch_skills[[d_chr]])
         if (is.null(sk_d) || nrow(sk_d) == 0) next
         sk_dt <- data.table::as.data.table(sk_d)
         avail <- intersect(gk_skill_col_set, names(sk_dt))
@@ -1191,6 +1208,9 @@ gk_skill_keep_cols <- character(0)
       }
 
       cat(sprintf("GK skills joined for %d weekly dates\n", gk_dates_done))
+      if (!is.null(gk_skill_stream_dir) && dir.exists(gk_skill_stream_dir)) {
+        unlink(gk_skill_stream_dir, recursive = TRUE)
+      }
 
       # Impute missing with 0
       for (col in gk_skill_keep_cols) {
