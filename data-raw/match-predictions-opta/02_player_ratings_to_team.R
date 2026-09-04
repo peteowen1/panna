@@ -662,8 +662,9 @@ if (nrow(upcoming) > 0) {
         # Measured 2026-06-17: the SPM serve was compressed to ~half the training panna
         # sd and mean-pinned to ~average, so the model's #1 feature (panna_diff, ~0.23
         # gain) was muted for upcoming fixtures → over-flat WC odds. Convention verified
-        # identical (career panna = panna_offense - panna_defense = xRAPM off-def = the
-        # SPM line above), so the override is sign-safe. Fall back to the SPM value for
+        # identical (career panna = panna_offense + panna_defense = xRAPM off+def, both
+        # positive=good since 2026-09-04 = the SPM line above), so the override is
+        # sign-safe. Fall back to the SPM value for
         # players with no career-panna rating; `spm` keeps the SPM estimate so panna !=
         # spm (matching the played-side feature structure). career_panna.parquet is on
         # pannadata's ratings-data release (in the predictions-pipeline download list).

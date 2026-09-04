@@ -680,8 +680,8 @@ if (isTRUE(spm_use_panel)) {
     defense_spm_s6 = 0.5 * s6_gd$pred + 0.5 * s6_xd$pred
   )
 
-  # Hybrid tables: S6 where available, legacy elsewhere. Net = off − def
-  # (raw internal convention; see predict_spm_panel_net()).
+  # Hybrid tables: S6 where available, legacy elsewhere. Net = off + def
+  # (defense positive=good since 2026-09-04; see predict_spm_panel_net()).
   offense_spm_ratings <- offense_spm_ratings %>%
     left_join(s6_table %>% select(player_id, offense_spm_s6), by = "player_id") %>%
     mutate(offense_spm = ifelse(!is.na(offense_spm_s6), offense_spm_s6, offense_spm)) %>%

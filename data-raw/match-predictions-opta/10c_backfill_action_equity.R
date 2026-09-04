@@ -28,7 +28,9 @@ if (!exists("run_backfill", mode = "function")) {
 }
 
 # Override-safe config (same pattern as 10b_backfill_game_logs.R).
-if (!exists("equity_seasons", inherits = FALSE)) {
+# envir=globalenv() hardening (2026-09-04, latent-risk finding after the
+# upload_psr incident) -- see that file's comment for the rationale.
+if (!exists("equity_seasons", envir = globalenv(), inherits = FALSE)) {
   equity_seasons <- c(
     "2015-2016", "2016-2017", "2017-2018", "2018-2019",
     "2019-2020", "2020-2021", "2021-2022", "2022-2023",
@@ -36,9 +38,9 @@ if (!exists("equity_seasons", inherits = FALSE)) {
   )
 }
 
-if (!exists("force_rebuild", inherits = FALSE))    force_rebuild <- FALSE
+if (!exists("force_rebuild", envir = globalenv(), inherits = FALSE))    force_rebuild <- FALSE
 if (!exists("upload_equity"))    upload_equity <- TRUE
-if (!exists("parallel_workers", inherits = FALSE)) parallel_workers <- 1L
+if (!exists("parallel_workers", envir = globalenv(), inherits = FALSE)) parallel_workers <- 1L
 
 cache_dir <- file.path("data-raw", "cache-predictions-opta")
 

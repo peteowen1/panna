@@ -31,7 +31,12 @@ if (!exists("run_backfill", mode = "function")) {
 
 # Seasons to backfill (2015-2016 onwards — matches xMetrics coverage).
 # Override-safe: callers can set `game_log_seasons` before sourcing.
-if (!exists("game_log_seasons", inherits = FALSE)) {
+# envir=globalenv() hardening (2026-09-04, latent-risk finding after the
+# upload_psr incident): this script is currently only ever invoked as a
+# top-level entry point, never through an isolated source(local=TRUE), so
+# these guards aren't live bugs today -- but matching the fix used
+# elsewhere costs nothing and survives if that ever changes.
+if (!exists("game_log_seasons", envir = globalenv(), inherits = FALSE)) {
   game_log_seasons <- c(
     "2015-2016", "2016-2017", "2017-2018", "2018-2019",
     "2019-2020", "2020-2021", "2021-2022", "2022-2023",
@@ -41,20 +46,20 @@ if (!exists("game_log_seasons", inherits = FALSE)) {
 
 # Skip seasons whose parquet already exists. Set `force_rebuild <- TRUE`
 # before sourcing to regenerate everything (e.g. after column-schema changes).
-if (!exists("force_rebuild", inherits = FALSE)) force_rebuild <- FALSE
+if (!exists("force_rebuild", envir = globalenv(), inherits = FALSE)) force_rebuild <- FALSE
 
 # Upload to blog-latest release? Set FALSE for a dry run.
 if (!exists("upload_game_logs")) upload_game_logs <- TRUE
 
 # Use the skill-adjusted SPM priors (TRUE) vs raw Opta xRAPM priors (FALSE)
-if (!exists("use_skill_ratings", inherits = FALSE)) use_skill_ratings <- TRUE
+if (!exists("use_skill_ratings", envir = globalenv(), inherits = FALSE)) use_skill_ratings <- TRUE
 
 # Season-level parallel workers. 1 = serial (safe default). Each worker
 # duplicates the in-memory match_stats snapshot (~600 MB) + xgboost models,
 # so 4 workers needs ~4 GB free RAM on top of the main process. On a 16 GB
 # laptop, 2-4 workers is comfortable; tune based on free memory.
 # Requires `future` and `future.apply` packages.
-if (!exists("parallel_workers", inherits = FALSE)) parallel_workers <- 1L
+if (!exists("parallel_workers", envir = globalenv(), inherits = FALSE)) parallel_workers <- 1L
 
 # Paths
 cache_dir <- file.path("data-raw", "cache-predictions-opta")

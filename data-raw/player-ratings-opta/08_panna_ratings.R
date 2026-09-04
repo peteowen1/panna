@@ -153,10 +153,10 @@ print(
     mutate(across(where(is.numeric) & !matches("minutes"), ~round(.x, 3)))
 )
 
-cat("\nTop 15 Defensive Players (lowest = best):\n")
+cat("\nTop 15 Defensive Players:\n")
 print(
   panna_ratings %>%
-    arrange(defense) %>%
+    arrange(desc(defense)) %>%  # defense positive=good since 2026-09-04
     head(15) %>%
     select(player_name, defense, offense, xrapm_career, total_minutes) %>%
     mutate(across(where(is.numeric) & !matches("minutes"), ~round(.x, 3)))
