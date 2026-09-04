@@ -371,7 +371,7 @@ fit_season_ratings_opta <- function(splint_data, opta_stats, season,
       by = "player_id"
     ) %>%
     mutate(
-      spm = offense_spm - defense_spm,
+      spm = offense_spm + defense_spm,  # defense_spm positive=good since 2026-09-04
       season_end_year = season
     ) %>%
     arrange(desc(spm))
@@ -428,7 +428,11 @@ fit_season_ratings_opta <- function(splint_data, opta_stats, season,
   defense_prior <- build_prior_vector(
     spm_data = if (!is.null(prior_tables)) prior_tables$defense else defense_spm_season,
     spm_col = "defense_spm",
-    player_mapping = player_mapping
+    player_mapping = player_mapping,
+    negate = TRUE  # defense_spm (both the S6 hybrid table and the legacy
+                   # season-scored model) is positive=good (trained on the
+                   # flipped defense column); fit_rapm_with_prior() needs the
+                   # raw scale.
   )
 
   cat(sprintf("  Matched season SPM priors: %d offense, %d defense\n",

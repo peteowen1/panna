@@ -55,7 +55,9 @@ offense_prior <- build_prior_vector(
 defense_prior <- build_prior_vector(
   spm_data = spm_results$defense_spm_ratings,
   spm_col = "defense_spm",
-  player_mapping = player_mapping
+  player_mapping = player_mapping,
+  negate = TRUE  # defense_spm is positive=good (trained on the flipped
+                 # defense column); fit_rapm_with_prior() needs the raw scale.
 )
 
 cat("Offense priors set:", sum(offense_prior != 0), "\n")
@@ -292,7 +294,10 @@ if (run_multi_target && file.exists(multi_rapm_path) && file.exists(multi_spm_pa
         )
         def_prior_tgt <- build_prior_vector(
           spm_data = spm_tgt, spm_col = "defense_spm",
-          player_mapping = rapm_data_tgt$player_mapping
+          player_mapping = rapm_data_tgt$player_mapping,
+          negate = TRUE  # defense_spm is positive=good (trained on the
+                         # flipped defense column); fit_rapm_with_prior()
+                         # needs the raw scale.
         )
 
         n_obs_xt <- .n_obs_valid(rapm_data_tgt)

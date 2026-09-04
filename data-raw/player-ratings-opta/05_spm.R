@@ -693,7 +693,7 @@ if (isTRUE(spm_use_panel)) {
   spm_ratings <- spm_ratings %>%
     left_join(s6_table, by = "player_id") %>%
     mutate(spm = ifelse(!is.na(offense_spm_s6) & !is.na(defense_spm_s6),
-                        offense_spm_s6 - defense_spm_s6, spm)) %>%
+                        offense_spm_s6 + defense_spm_s6, spm)) %>%  # defense_spm positive=good since 2026-09-04
     select(-offense_spm_s6, -defense_spm_s6)
 
   cat(sprintf("S6 override: %d players on S6 values, %d on legacy fallback (GK + off-panel)\n",

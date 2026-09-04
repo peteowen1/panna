@@ -107,10 +107,12 @@ for (Y in eval_vintages) {
 
   blend_off <- blend_w_glmnet * g_off$pred + (1 - blend_w_glmnet) * x_off
   blend_def <- blend_w_glmnet * g_def$pred + (1 - blend_w_glmnet) * x_def
-  # Net = offense - defense (raw internal convention; see
-  # predict_spm_panel_net()'s docstring and the 2026-07-22 sign-bug note).
+  # Net = offense + defense (defense positive=good since 2026-09-04; see
+  # predict_spm_panel_net()'s docstring -- the two conventions must always
+  # travel together, don't revert this citing the 2026-07-22 sign-bug note,
+  # which was about the OLD convention).
   candidate_pred <- data.table(player_id = panel_Y$player_id,
-                               pred_net = blend_off - blend_def)
+                               pred_net = blend_off + blend_def)
 
   pairs <- build_vintage_pairs(candidate_pred, panel_Y, s0_pred,
                                as.data.table(next_entry$ratings), min_minutes = 900)

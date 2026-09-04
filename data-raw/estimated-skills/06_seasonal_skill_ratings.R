@@ -226,7 +226,7 @@ fit_season_skill_ratings <- function(splint_data, skill_features, season,
       by = "player_id"
     ) %>%
     mutate(
-      spm = offense_spm - defense_spm,
+      spm = offense_spm + defense_spm,  # defense_spm positive=good since 2026-09-04
       season_end_year = season
     ) %>%
     arrange(desc(spm))
@@ -268,7 +268,9 @@ fit_season_skill_ratings <- function(splint_data, skill_features, season,
   defense_prior <- build_prior_vector(
     spm_data = defense_spm_season,
     spm_col = "defense_spm",
-    player_mapping = player_mapping
+    player_mapping = player_mapping,
+    negate = TRUE  # defense_spm is positive=good (trained on the flipped
+                   # defense column); fit_rapm_with_prior() needs the raw scale.
   )
 
   cat(sprintf("  Matched skill SPM priors: %d offense, %d defense\n",

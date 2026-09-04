@@ -59,13 +59,18 @@ season_label_leagues <- .blog_league_groups$season_label_leagues
 # per-season output parquet contains ONLY the processed leagues, so a subset
 # run must set upload_game_logs <- FALSE and merge into the existing
 # game_logs_<season>.parquet files instead of clobbering them.
-if (!exists("blog_leagues", inherits = FALSE)) {
+## sign convention aside, these config-flag guards use envir=globalenv()
+## (not bare inherits=FALSE): the pipeline driver sources this via
+## source(local=TRUE), so a driver-set global is invisible to a plain
+## inherits=FALSE lookup -- same bug class as the upload_psr incident
+## (2026-09-04) and the career_panna silent-skip (2026-07-17).
+if (!exists("blog_leagues", envir = globalenv(), inherits = FALSE)) {
   blog_leagues <- .blog_league_groups$blog_leagues
 }
 
 # Seasons to export. Vector (new) or scalar `game_log_season` (back-compat).
-if (!exists("game_log_seasons", inherits = FALSE)) {
-  if (exists("game_log_season", inherits = FALSE)) {
+if (!exists("game_log_seasons", envir = globalenv(), inherits = FALSE)) {
+  if (exists("game_log_season", envir = globalenv(), inherits = FALSE)) {
     game_log_seasons <- game_log_season
   } else {
     game_log_seasons <- "2025-2026"
@@ -117,19 +122,19 @@ if (!exists("upload_game_logs")) upload_game_logs <- TRUE
 # Build toggle — set FALSE to skip the per-season processing loop (e.g. when
 # parquets were already built in parallel workers and this invocation only
 # needs to do the alias + upload step in a single main-process pass).
-if (!exists("build_game_logs", inherits = FALSE)) build_game_logs <- TRUE
+if (!exists("build_game_logs", envir = globalenv(), inherits = FALSE)) build_game_logs <- TRUE
 
 # Subset-league backfill: MERGE the processed leagues into each existing
 # game_logs_<season>.parquet instead of clobbering it. Set TRUE when running a
 # league SUBSET (e.g. adding AUS/BEL/BRA/CAFCL) so the other leagues' rows for
 # that season are preserved. Idempotent (drops + re-appends the rebuilt leagues).
-if (!exists("merge_subset_leagues", inherits = FALSE)) merge_subset_leagues <- FALSE
+if (!exists("merge_subset_leagues", envir = globalenv(), inherits = FALSE)) merge_subset_leagues <- FALSE
 
 # Alias toggle — mirror the most-recent processed season to game_logs.parquet
 # (the blog chain builder's name-pinned download). Default TRUE for weekly
 # runs, but set FALSE when back-filling a NON-current historical subset so
 # the alias keeps pointing at the real current season.
-if (!exists("mirror_alias", inherits = FALSE)) mirror_alias <- TRUE
+if (!exists("mirror_alias", envir = globalenv(), inherits = FALSE)) mirror_alias <- TRUE
 
 message(sprintf("\n=== Building Game Logs: %d season(s) ===", length(game_log_seasons)))
 message(sprintf("  Seasons: %s", paste(game_log_seasons, collapse = ", ")))

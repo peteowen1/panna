@@ -79,7 +79,13 @@ fit_career_rapm <- function(splint_data, match_dates, skill_spm = NULL,
     or <- data.table::as.data.table(skill_spm$offense_spm_ratings)
     dr <- data.table::as.data.table(skill_spm$defense_spm_ratings)
     offense_prior <- stats::setNames(or$offense_spm, or$player_id)
-    defense_prior <- stats::setNames(dr$defense_spm, dr$player_id)
+    # sign convention (Pete, 2026-09-04): defense_spm is positive=good
+    # (trained on the flipped `defense` column, 05_spm.R), but
+    # fit_rapm_with_prior()'s internal fitting math needs the raw scale
+    # (bad=positive) -- negate here, same fix as build_prior_vector(negate=
+    # TRUE) elsewhere. This path builds defense_prior manually rather than
+    # via build_prior_vector(), so it needs its own negation.
+    defense_prior <- -stats::setNames(dr$defense_spm, dr$player_id)
   }
 
   # 4. Fit career xRAPM = Panna. Derive lambda from the sample-size formula when
@@ -154,7 +160,10 @@ optimize_panna_decay <- function(splint_data, match_dates, skill_spm,
   or <- data.table::as.data.table(skill_spm$offense_spm_ratings)
   dr <- data.table::as.data.table(skill_spm$defense_spm_ratings)
   offense_prior <- stats::setNames(or$offense_spm, or$player_id)
-  defense_prior <- stats::setNames(dr$defense_spm, dr$player_id)
+  # sign convention (Pete, 2026-09-04): see fit_career_rapm() above -- same
+  # negation, same reason (defense_spm is positive=good, fit_rapm_with_prior()
+  # needs the raw scale).
+  defense_prior <- -stats::setNames(dr$defense_spm, dr$player_id)
 
   age_train <- as.numeric(train_end - row_dt$mdate[train_idx])  # decay anchored at train_end
   Xh <- X[hold_idx, , drop = FALSE]; yh <- y[hold_idx]; wh <- w0[hold_idx]

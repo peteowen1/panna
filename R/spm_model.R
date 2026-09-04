@@ -65,6 +65,20 @@ create_spm_prior <- function(spm_predictions, player_mapping, default_prior = 0)
 #' @param spm_col Name of the column containing SPM predictions
 #' @param player_mapping Data frame with player_id and player_name from RAPM
 #' @param default Value for players without SPM prediction (default 0)
+#' @param negate Negate the matched values before returning (default FALSE).
+#'   Sign convention (Pete, 2026-09-04): `fit_rapm_with_prior()`'s internal
+#'   fitting math (`y_adjusted <- y - X %*% prior_vec`, `beta_final <- gamma +
+#'   prior_vec`) needs `defense_prior` on the RAW internal scale (bad =
+#'   positive) -- unaffected by the extraction-time sign flip in
+#'   `extract_rapm_ratings()`/`extract_xrapm_ratings()`. But `defense_spm`
+#'   (the SPM column this is normally called with for a defense prior) is
+#'   trained against the PUBLISHED `defense` column (positive = good) via
+#'   `05_spm.R`'s `defense_train <- spm_train_data %>% mutate(rapm =
+#'   defense)`, so it comes out on the FLIPPED scale. Every defense-prior
+#'   call site must pass `negate = TRUE` to convert back to the raw scale
+#'   `fit_rapm_with_prior()` expects. Safe with the default=0 used by every
+#'   caller (0 negates to 0); if a caller ever passes a nonzero `default`,
+#'   revisit whether it also needs negating.
 #'
 #' @return Named vector of priors keyed by player_id
 #' @keywords internal
@@ -76,8 +90,15 @@ create_spm_prior <- function(spm_predictions, player_mapping, default_prior = 0)
 #'   spm_col = "offense_spm",
 #'   player_mapping = rapm_data$player_mapping
 #' )
+#' defense_prior <- build_prior_vector(
+#'   spm_data = defense_spm_ratings,
+#'   spm_col = "defense_spm",
+#'   player_mapping = rapm_data$player_mapping,
+#'   negate = TRUE
+#' )
 #' }
-build_prior_vector <- function(spm_data, spm_col, player_mapping, default = 0) {
+build_prior_vector <- function(spm_data, spm_col, player_mapping, default = 0,
+                                negate = FALSE) {
   # Initialize prior vector for all players in mapping
   all_player_ids <- unique(player_mapping$player_id)
   prior <- stats::setNames(rep(default, length(all_player_ids)), all_player_ids)
@@ -108,9 +129,11 @@ build_prior_vector <- function(spm_data, spm_col, player_mapping, default = 0) {
   }
 
   n_matched <- sum(prior != default)
-  progress_msg(sprintf("Prior '%s': matched %d of %d players [via %s]",
-                       spm_col, n_matched, nrow(spm_data), join_method))
+  progress_msg(sprintf("Prior '%s': matched %d of %d players [via %s]%s",
+                       spm_col, n_matched, nrow(spm_data), join_method,
+                       if (isTRUE(negate)) " (negated to raw scale)" else ""))
 
+  if (isTRUE(negate)) prior <- -prior
   prior
 }
 

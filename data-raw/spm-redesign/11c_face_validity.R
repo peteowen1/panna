@@ -43,7 +43,7 @@ pred <- data.table(player_id = panel_2026$player_id,
                    role_group = panel_2026$role_group,
                    window_minutes = panel_2026$window_minutes,
                    pred_off = off$pred, pred_def = def$pred)
-pred[, pred_net := pred_off - pred_def]
+pred[, pred_net := pred_off + pred_def]  # defense positive=good since 2026-09-04
 pred <- merge(pred, names_dt, by = "player_id", all.x = TRUE)
 pred_rated <- pred[window_minutes >= 2000]
 cli::cli_alert_info(sprintf("2026 vintage: %d rows, %d with >=2000 window minutes",

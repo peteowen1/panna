@@ -651,8 +651,8 @@ if (nrow(upcoming) > 0) {
           mutate(
             offense = offense_spm,
             defense = defense_spm,
-            spm = offense_spm - defense_spm,    # SPM estimate stays the `spm` feature
-            panna = offense_spm - defense_spm,  # provisional SPM fallback; overridden below
+            spm = offense_spm + defense_spm,    # SPM estimate stays the `spm` feature (defense_spm positive=good since 2026-09-04)
+            panna = offense_spm + defense_spm,  # provisional SPM fallback; overridden below
             season_end_year = latest_sey
           )
 

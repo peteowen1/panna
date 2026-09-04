@@ -132,7 +132,8 @@ season_fit <- function(season, arms = TRUE) {
     pm <- rapm_data$player_mapping
     for (arm in c("A", "B")) {
       op <- build_prior_vector(if (arm == "A") legacy_off else hybrid_off, "offense_spm", pm)
-      dp <- build_prior_vector(if (arm == "A") legacy_def else hybrid_def, "defense_spm", pm)
+      dp <- build_prior_vector(if (arm == "A") legacy_def else hybrid_def, "defense_spm", pm,
+                               negate = TRUE)  # defense_spm positive=good since 2026-09-04
       cli::cli_alert_info(sprintf("Season %d arm %s: priors set %d off / %d def",
                                   season, arm, sum(op != 0), sum(dp != 0)))
       xr_model <- fit_rapm_with_prior(rapm_data, offense_prior = op, defense_prior = dp,
