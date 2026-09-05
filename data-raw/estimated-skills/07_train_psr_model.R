@@ -340,7 +340,11 @@ match_date_to_bin <- function(md) {
 # doesn't reliably fit alongside other load on a shared machine -- two
 # observed OOM near-misses the same night, 2026-09-04). See
 # .estimate_prematch_skills_batch()'s stream_dir docs (R/psr.R).
-skill_stream_dir <- tempfile("psr_skill_chunks_")
+# A STABLE path (not tempfile(), which is unique per R session) so a killed
+# run's already-computed chunks + checkpoint are still there on the next
+# invocation and .estimate_prematch_skills_batch() can resume instead of
+# recomputing from date 1. Cleaned up below once the join fully succeeds.
+skill_stream_dir <- file.path(cache_dir, "psr_skill_chunks")
 prematch_skills <- tryCatch(
   .estimate_prematch_skills_batch(
     match_stats = ms_dt,
@@ -1118,7 +1122,7 @@ gk_skill_keep_cols <- character(0)
   gk_skill_stream_dir <- NULL
   if (!exists("prematch_skills") || length(prematch_skills) == 0) {
     cat("Re-computing pre-match skills for GK features...\n")
-    gk_skill_stream_dir <- tempfile("psr_gk_skill_chunks_")
+    gk_skill_stream_dir <- file.path(cache_dir, "psr_gk_skill_chunks")  # stable, see main call's comment
     prematch_skills <- .estimate_prematch_skills_batch(
       match_stats = ms_dt_gk,
       ref_dates = weekly_dates,

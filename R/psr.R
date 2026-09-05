@@ -231,6 +231,22 @@
   if (!is.null(stream_dir) && !dir.exists(stream_dir)) {
     dir.create(stream_dir, recursive = TRUE)
   }
+  checkpoint_path <- if (!is.null(stream_dir)) file.path(stream_dir, "_checkpoint.rds") else NULL
+  # Self-clean orphaned chunks. A checkpoint is deleted the moment the batch
+  # completes, so chunks present WITHOUT one are leftovers from a run that
+  # finished the batch and then died (or stopped) before its caller consumed
+  # them -- stale, never resumable, and safe to clear. Chunks WITH a
+  # checkpoint are live resume state and are never touched here.
+  if (!is.null(stream_dir) && !file.exists(checkpoint_path)) {
+    stale <- list.files(stream_dir, pattern = "\\.rds$", full.names = TRUE)
+    if (length(stale) > 0) {
+      if (verbose) {
+        progress_msg(sprintf("Clearing %d orphaned skill chunk(s) from a prior run (no checkpoint present)",
+                              length(stale)))
+      }
+      unlink(stale)
+    }
+  }
   if (is.null(decay_params)) decay_params <- get_default_decay_params()
 
   ref_dates <- sort(unique(as.Date(ref_dates)))
@@ -442,10 +458,49 @@
 
   cursor <- 0L
 
-  for (i in seq_along(ref_dates)) {
+  # === RESUME FROM CHECKPOINT, if one exists and matches this exact run ===
+  # A fingerprint of the inputs (not the data itself -- too expensive to hash
+  # 8.9M rows) guards against silently resuming a checkpoint from a DIFFERENT
+  # match_stats/ref_dates/decay_params than this call is using; a mismatch
+  # falls back to a full restart rather than risk building on wrong state.
+  resume_from <- 1L
+  # decay_params is embedded WHOLE (it's a small list of scalars + per-stat
+  # lookups, a few KB) rather than summarised: resuming a checkpoint built
+  # under different decay settings would splice two different computations
+  # together silently -- the running sums up to the resume point would carry
+  # the OLD decay while every date after it uses the NEW one, with no error
+  # and no visible symptom. Counts alone can't see that (decay_params doesn't
+  # change n_rows/n_players/n_dates), which is exactly why they aren't enough.
+  fingerprint <- list(n_rows = nrow(dt), n_players = n_players, n_dates = n_dates,
+                      ref_dates_sum = sum(ref_dates_num),
+                      min_weighted_90s = min_weighted_90s,
+                      output_min_w90 = output_min_w90,
+                      decay_params = decay_params)
+  if (!is.null(checkpoint_path) && file.exists(checkpoint_path)) {
+    cp <- tryCatch(readRDS(checkpoint_path), error = function(e) NULL)
+    if (.psr_checkpoint_usable(cp, fingerprint, n_dates)) {
+      run_rate <- cp$run_rate
+      run_eff <- cp$run_eff
+      run_w90 <- cp$run_w90
+      cursor <- cp$cursor
+      resume_from <- cp$i + 1L
+      for (k in seq_len(cp$i)) {
+        chunk_path <- file.path(stream_dir, paste0(as.character(ref_dates[k]), ".rds"))
+        if (file.exists(chunk_path)) results[[k]] <- chunk_path
+      }
+      if (verbose) {
+        progress_msg(sprintf("Resuming from checkpoint: %d/%d dates already done", cp$i, n_dates))
+      }
+    } else if (!is.null(cp) && verbose) {
+      progress_msg("Checkpoint found but inputs don't match (fingerprint mismatch) -- starting fresh.")
+    }
+  }
+
+  for (i in seq_len(n_dates)) {
+    if (i < resume_from) next  # already done, restored from checkpoint above
     rd <- ref_dates[i]
 
-    if (verbose && (i %% 50 == 0 || i == 1 || i == n_dates)) {
+    if (verbose && (i %% 50 == 0 || i == 1 || i == n_dates || i == resume_from)) {
       progress_msg(sprintf("  Date %d/%d: %s", i, n_dates, rd))
     }
 
@@ -615,7 +670,19 @@
       saveRDS(results[[i]], chunk_path)
       results[[i]] <- chunk_path
     }
+
+    # Checkpoint the running-sum state every 25 dates, so a kill mid-run loses
+    # at most ~25 dates of recomputation rather than the whole history. Cheap
+    # relative to a single date's own cost (a few small matrices/vectors, not
+    # the ~47k-player-wide result table).
+    if (!is.null(checkpoint_path) && i %% 25 == 0) {
+      saveRDS(list(fingerprint = fingerprint, run_rate = run_rate, run_eff = run_eff,
+                   run_w90 = run_w90, cursor = cursor, i = i),
+              checkpoint_path)
+    }
   }
+
+  if (!is.null(checkpoint_path) && file.exists(checkpoint_path)) unlink(checkpoint_path)
 
   # Drop NULLs
   results[!vapply(results, is.null, logical(1))]
@@ -640,6 +707,36 @@
   if (is.null(x)) return(NULL)
   if (is.character(x) && length(x) == 1L) return(readRDS(x))
   x
+}
+
+
+#' Decide whether a loaded checkpoint may be resumed from
+#'
+#' Split out of \code{.estimate_prematch_skills_batch()} so the decision that
+#' gates resuming can be tested directly -- accepting a checkpoint built from
+#' DIFFERENT inputs silently splices two computations together (running sums
+#' from one set of inputs, later dates from another) with no error and no
+#' visible symptom, so this is the single most consequential branch in the
+#' streaming/resume path.
+#'
+#' @param cp The deserialized checkpoint (or \code{NULL} if it was missing or
+#'   unreadable).
+#' @param fingerprint The fingerprint computed for the CURRENT call.
+#' @param n_dates Number of ref_dates in the current call, used to reject a
+#'   checkpoint whose recorded position can't apply to this run.
+#' @return \code{TRUE} only if the checkpoint is structurally complete and
+#'   its fingerprint matches exactly.
+#' @keywords internal
+.psr_checkpoint_usable <- function(cp, fingerprint, n_dates) {
+  if (is.null(cp) || !is.list(cp)) return(FALSE)
+  required <- c("fingerprint", "run_rate", "run_eff", "run_w90", "cursor", "i")
+  if (!all(required %in% names(cp))) return(FALSE)
+  if (!identical(cp$fingerprint, fingerprint)) return(FALSE)
+  # A position outside this run's date range can't be resumed from, whatever
+  # the fingerprint says.
+  if (!is.numeric(cp$i) || length(cp$i) != 1L || is.na(cp$i)) return(FALSE)
+  if (cp$i < 1L || cp$i > n_dates) return(FALSE)
+  TRUE
 }
 
 

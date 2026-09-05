@@ -807,3 +807,74 @@ test_that("resolve_position_group falls back across seasons then to the row labe
   expect_equal(g[2], "DEF")                              # career fallback from 2023
   expect_equal(g[3], "MID")
 })
+
+
+# ============================================================================
+# Streaming / checkpoint-resume for .estimate_prematch_skills_batch()
+# (added 2026-09-05 with the stream_dir + checkpoint work -- see that
+# function's docs. The resume DECISION is the consequential branch: accepting
+# a checkpoint built from different inputs silently splices two computations
+# together with no error, so it gets the bulk of the coverage here.)
+# ============================================================================
+
+.psr_test_fingerprint <- function(...) {
+  base <- list(n_rows = 100L, n_players = 10L, n_dates = 20L,
+               ref_dates_sum = 12345, min_weighted_90s = 3, output_min_w90 = 0,
+               decay_params = list(rate = 0.003, prior_strength = 5))
+  utils::modifyList(base, list(...))
+}
+
+.psr_test_checkpoint <- function(fingerprint, i = 5L) {
+  list(fingerprint = fingerprint, run_rate = list(), run_eff = list(),
+       run_w90 = numeric(10), cursor = 42L, i = i)
+}
+
+test_that(".psr_checkpoint_usable accepts an exactly-matching checkpoint", {
+  fp <- .psr_test_fingerprint()
+  expect_true(panna:::.psr_checkpoint_usable(.psr_test_checkpoint(fp), fp, n_dates = 20L))
+})
+
+test_that(".psr_checkpoint_usable REJECTS a checkpoint built under different decay_params", {
+  # The critical case: decay_params does not change n_rows/n_players/n_dates,
+  # so a counts-only fingerprint would wrongly accept this and decay the
+  # restored running sums under one setting while later dates use another.
+  fp_run  <- .psr_test_fingerprint()
+  fp_ckpt <- .psr_test_fingerprint(decay_params = list(rate = 0.009, prior_strength = 5))
+  expect_false(panna:::.psr_checkpoint_usable(.psr_test_checkpoint(fp_ckpt), fp_run, n_dates = 20L))
+})
+
+test_that(".psr_checkpoint_usable REJECTS mismatched data/config shape", {
+  fp <- .psr_test_fingerprint()
+  for (bad in list(
+    .psr_test_fingerprint(n_rows = 101L),
+    .psr_test_fingerprint(n_players = 11L),
+    .psr_test_fingerprint(n_dates = 21L),
+    .psr_test_fingerprint(ref_dates_sum = 12346),
+    .psr_test_fingerprint(min_weighted_90s = 5),
+    .psr_test_fingerprint(output_min_w90 = 3)
+  )) {
+    expect_false(panna:::.psr_checkpoint_usable(.psr_test_checkpoint(bad), fp, n_dates = 20L))
+  }
+})
+
+test_that(".psr_checkpoint_usable REJECTS null, malformed, or out-of-range checkpoints", {
+  fp <- cp_fp <- .psr_test_fingerprint()
+  expect_false(panna:::.psr_checkpoint_usable(NULL, fp, n_dates = 20L))
+  expect_false(panna:::.psr_checkpoint_usable("not a list", fp, n_dates = 20L))
+  # missing a required state component
+  incomplete <- .psr_test_checkpoint(cp_fp); incomplete$run_w90 <- NULL
+  expect_false(panna:::.psr_checkpoint_usable(incomplete, fp, n_dates = 20L))
+  # position outside this run's range
+  expect_false(panna:::.psr_checkpoint_usable(.psr_test_checkpoint(cp_fp, i = 0L), fp, n_dates = 20L))
+  expect_false(panna:::.psr_checkpoint_usable(.psr_test_checkpoint(cp_fp, i = 21L), fp, n_dates = 20L))
+  expect_false(panna:::.psr_checkpoint_usable(.psr_test_checkpoint(cp_fp, i = NA_integer_), fp, n_dates = 20L))
+})
+
+test_that(".read_skill_chunk handles paths, in-memory tables, and NULL", {
+  dt <- data.table::data.table(player_id = c("a", "b"), x = c(1.5, 2.5))
+  expect_null(panna:::.read_skill_chunk(NULL))
+  expect_identical(panna:::.read_skill_chunk(dt), dt)      # in-memory passthrough
+  p <- tempfile(fileext = ".rds"); saveRDS(dt, p)
+  expect_equal(panna:::.read_skill_chunk(p), dt)           # path -> read from disk
+  unlink(p)
+})
