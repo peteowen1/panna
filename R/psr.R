@@ -212,8 +212,22 @@
 #'   which does not reliably fit alongside other load on a shared machine (two
 #'   observed OOM near-misses the same night). \code{stream_dir} bounds peak
 #'   memory to roughly one date's snapshot regardless of history length. The
-#'   directory is NOT cleaned up by this function -- the caller owns it (create
-#'   under \code{tempfile()}, \code{unlink(recursive = TRUE)} when done).
+#'   directory is NOT cleaned up by this function on success -- the caller owns
+#'   that (orphaned chunks from a previous run ARE cleared at entry, see below).
+#'
+#'   \strong{Do not point two concurrent runs at the same \code{stream_dir}.}
+#'   For resume to work the caller must pass a STABLE path (a
+#'   \code{tempfile()} is unique per R session and would never be found again),
+#'   which means two overlapping invocations would share one checkpoint and
+#'   clobber each other's state. `07_train_psr_model.R`'s outfield and GK
+#'   paths deliberately use two different directories for this reason; an
+#'   accidental double-dispatch of the whole script is the case to avoid.
+#' @param source_fingerprint Optional caller-supplied value folded into the
+#'   checkpoint fingerprint -- e.g. \code{file.mtime()}/\code{file.size()} of
+#'   the file \code{match_stats} was read from. The count-based fingerprint
+#'   cannot see a data change that preserves n_rows/n_players/n_dates and the
+#'   date sum; passing this closes most of that gap for a few bytes. Optional
+#'   because not every caller has a single source file.
 #' @param verbose Print progress (default TRUE).
 #'
 #' @return Named list keyed by date string. Each element is a data.table (one
@@ -227,6 +241,7 @@
                                             min_weighted_90s = 3,
                                             output_min_w90 = 0,
                                             stream_dir = NULL,
+                                            source_fingerprint = NULL,
                                             verbose = TRUE) {
   if (!is.null(stream_dir) && !dir.exists(stream_dir)) {
     dir.create(stream_dir, recursive = TRUE)
@@ -475,7 +490,8 @@
                       ref_dates_sum = sum(ref_dates_num),
                       min_weighted_90s = min_weighted_90s,
                       output_min_w90 = output_min_w90,
-                      decay_params = decay_params)
+                      decay_params = decay_params,
+                      source_fingerprint = source_fingerprint)
   if (!is.null(checkpoint_path) && file.exists(checkpoint_path)) {
     cp <- tryCatch(readRDS(checkpoint_path), error = function(e) NULL)
     if (.psr_checkpoint_usable(cp, fingerprint, n_dates)) {
@@ -492,7 +508,8 @@
         progress_msg(sprintf("Resuming from checkpoint: %d/%d dates already done", cp$i, n_dates))
       }
     } else if (!is.null(cp) && verbose) {
-      progress_msg("Checkpoint found but inputs don't match (fingerprint mismatch) -- starting fresh.")
+      progress_msg(sprintf("Checkpoint found but unusable: %s -- starting fresh.",
+                            .psr_checkpoint_reject_reason(cp, fingerprint, n_dates)))
     }
   }
 
@@ -728,15 +745,46 @@
 #'   its fingerprint matches exactly.
 #' @keywords internal
 .psr_checkpoint_usable <- function(cp, fingerprint, n_dates) {
-  if (is.null(cp) || !is.list(cp)) return(FALSE)
+  isTRUE(.psr_checkpoint_reject_reason(cp, fingerprint, n_dates) == "")
+}
+
+
+#' Why a checkpoint was rejected (empty string = usable)
+#'
+#' Split from \code{.psr_checkpoint_usable()} so a resume failure logs the
+#' ACTUAL reason. The message used to say "fingerprint mismatch"
+#' unconditionally, which is misleading when the real cause was a truncated
+#' checkpoint or an out-of-range position -- exactly the situation where
+#' someone reading the log is trying to work out why a long run restarted
+#' from scratch.
+#'
+#' @inheritParams .psr_checkpoint_usable
+#' @return Empty string if usable, else a short human-readable reason.
+#' @keywords internal
+.psr_checkpoint_reject_reason <- function(cp, fingerprint, n_dates) {
+  if (is.null(cp) || !is.list(cp)) return("unreadable or not a list")
   required <- c("fingerprint", "run_rate", "run_eff", "run_w90", "cursor", "i")
-  if (!all(required %in% names(cp))) return(FALSE)
-  if (!identical(cp$fingerprint, fingerprint)) return(FALSE)
-  # A position outside this run's date range can't be resumed from, whatever
-  # the fingerprint says.
-  if (!is.numeric(cp$i) || length(cp$i) != 1L || is.na(cp$i)) return(FALSE)
-  if (cp$i < 1L || cp$i > n_dates) return(FALSE)
-  TRUE
+  missing <- setdiff(required, names(cp))
+  if (length(missing) > 0) {
+    return(sprintf("incomplete (missing %s)", paste(missing, collapse = ", ")))
+  }
+  if (!identical(cp$fingerprint, fingerprint)) {
+    # Union of both key sets, not just the current fingerprint's: a field
+    # present in one and absent in the other (e.g. a checkpoint written
+    # before source_fingerprint existed) is exactly the case worth naming.
+    keys <- union(names(fingerprint), names(cp$fingerprint))
+    changed <- keys[!vapply(keys, function(k)
+      identical(cp$fingerprint[[k]], fingerprint[[k]]), logical(1))]
+    return(sprintf("inputs changed (%s)",
+                   if (length(changed)) paste(changed, collapse = ", ") else "fingerprint differs"))
+  }
+  if (!is.numeric(cp$i) || length(cp$i) != 1L || is.na(cp$i)) {
+    return("position is not a single non-NA number")
+  }
+  if (cp$i < 1L || cp$i > n_dates) {
+    return(sprintf("position %s outside this run's 1..%d range", cp$i, n_dates))
+  }
+  ""
 }
 
 

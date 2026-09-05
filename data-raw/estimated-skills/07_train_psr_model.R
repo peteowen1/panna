@@ -352,6 +352,9 @@ prematch_skills <- tryCatch(
     decay_params = decay_params,
     min_weighted_90s = MIN_W90_FOR_SKILLS,
     stream_dir = skill_stream_dir,
+    # Folded into the checkpoint fingerprint: the count-based fields can't see
+    # a match_stats change that preserves row/player/date counts, this can.
+    source_fingerprint = list(mtime = file.mtime(full_path), size = file.size(full_path)),
     verbose = TRUE
   ),
   error = function(e) {
@@ -1129,6 +1132,7 @@ gk_skill_keep_cols <- character(0)
       decay_params = decay_params,
       min_weighted_90s = MIN_W90_FOR_SKILLS,
       stream_dir = gk_skill_stream_dir,
+      source_fingerprint = list(mtime = file.mtime(full_path), size = file.size(full_path)),
       verbose = TRUE
     )
   }

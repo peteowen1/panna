@@ -878,3 +878,31 @@ test_that(".read_skill_chunk handles paths, in-memory tables, and NULL", {
   expect_equal(panna:::.read_skill_chunk(p), dt)           # path -> read from disk
   unlink(p)
 })
+
+test_that(".psr_checkpoint_reject_reason names the ACTUAL reason, not always 'fingerprint'", {
+  fp <- .psr_test_fingerprint()
+  # usable -> empty string
+  expect_identical(panna:::.psr_checkpoint_reject_reason(.psr_test_checkpoint(fp), fp, 20L), "")
+  # each rejection path reports its own cause
+  expect_match(panna:::.psr_checkpoint_reject_reason(NULL, fp, 20L), "unreadable")
+  incomplete <- .psr_test_checkpoint(fp); incomplete$cursor <- NULL
+  expect_match(panna:::.psr_checkpoint_reject_reason(incomplete, fp, 20L), "incomplete.*cursor")
+  expect_match(panna:::.psr_checkpoint_reject_reason(.psr_test_checkpoint(fp, i = 99L), fp, 20L),
+               "outside this run")
+  # a changed input is named specifically, so a resume failure is debuggable
+  bad_decay <- .psr_test_fingerprint(decay_params = list(rate = 0.009))
+  expect_match(panna:::.psr_checkpoint_reject_reason(.psr_test_checkpoint(bad_decay), fp, 20L),
+               "decay_params")
+  bad_src <- .psr_test_fingerprint(source_fingerprint = list(size = 999))
+  expect_match(panna:::.psr_checkpoint_reject_reason(.psr_test_checkpoint(bad_src), fp, 20L),
+               "source_fingerprint")
+})
+
+test_that("source_fingerprint participates in checkpoint validation", {
+  # A match_stats change that preserves every count is invisible to the
+  # count-based fields; the source file's mtime/size is what catches it.
+  fp_run  <- .psr_test_fingerprint(source_fingerprint = list(mtime = "2026-09-05 10:00:00", size = 100))
+  fp_ckpt <- .psr_test_fingerprint(source_fingerprint = list(mtime = "2026-09-05 12:00:00", size = 100))
+  expect_false(panna:::.psr_checkpoint_usable(.psr_test_checkpoint(fp_ckpt), fp_run, 20L))
+  expect_true(panna:::.psr_checkpoint_usable(.psr_test_checkpoint(fp_run), fp_run, 20L))
+})

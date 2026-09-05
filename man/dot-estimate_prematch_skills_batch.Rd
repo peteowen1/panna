@@ -11,6 +11,7 @@
   min_weighted_90s = 3,
   output_min_w90 = 0,
   stream_dir = NULL,
+  source_fingerprint = NULL,
   verbose = TRUE
 )
 }
@@ -52,8 +53,23 @@ risk. Added 2026-09-04: at full multi-season history (~684 weekly dates x
 which does not reliably fit alongside other load on a shared machine (two
 observed OOM near-misses the same night). \code{stream_dir} bounds peak
 memory to roughly one date's snapshot regardless of history length. The
-directory is NOT cleaned up by this function -- the caller owns it (create
-under \code{tempfile()}, \code{unlink(recursive = TRUE)} when done).}
+directory is NOT cleaned up by this function on success -- the caller owns
+that (orphaned chunks from a previous run ARE cleared at entry, see below).
+
+\strong{Do not point two concurrent runs at the same \code{stream_dir}.}
+For resume to work the caller must pass a STABLE path (a
+\code{tempfile()} is unique per R session and would never be found again),
+which means two overlapping invocations would share one checkpoint and
+clobber each other's state. \verb{07_train_psr_model.R}'s outfield and GK
+paths deliberately use two different directories for this reason; an
+accidental double-dispatch of the whole script is the case to avoid.}
+
+\item{source_fingerprint}{Optional caller-supplied value folded into the
+checkpoint fingerprint -- e.g. \code{file.mtime()}/\code{file.size()} of
+the file \code{match_stats} was read from. The count-based fingerprint
+cannot see a data change that preserves n_rows/n_players/n_dates and the
+date sum; passing this closes most of that gap for a few bytes. Optional
+because not every caller has a single source file.}
 
 \item{verbose}{Print progress (default TRUE).}
 }
