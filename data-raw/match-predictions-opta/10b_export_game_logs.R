@@ -73,7 +73,14 @@ if (!exists("game_log_seasons", envir = globalenv(), inherits = FALSE)) {
   if (exists("game_log_season", envir = globalenv(), inherits = FALSE)) {
     game_log_seasons <- game_log_season
   } else {
-    game_log_seasons <- "2025-2026"
+    # Derived from the clock, never pinned. The pinned "2025-2026" that used to
+    # sit here went stale on 1 August 2026 and nothing failed: the weekly
+    # pipeline rebuilt last season's game logs and republished them as the
+    # current-season file every day, so the blog showed an empty Player Stats
+    # page three matchweeks into the season while the file's timestamp said it
+    # was built that morning. `current_season_alias` below is the max of this
+    # vector, so this one line decides which season becomes game_logs.parquet.
+    game_log_seasons <- current_domestic_season()
   }
 }
 game_log_seasons <- as.character(game_log_seasons)
