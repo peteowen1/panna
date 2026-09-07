@@ -93,46 +93,59 @@ for (league in blog_leagues) {
 }
 
 if (length(all_kicks) == 0L) {
+  # NEVER quit() here, and never return() either. run_predictions_opta.R
+  # source()s this file: a top-level quit ends the whole R session with
+  # status 0, so the pipeline reports SUCCESS while steps 11, 12, 12d and 13
+  # never run — and 13 is the publish, so nothing reaches blog-latest at all.
+  # That is exactly what happened on the first run after the season stopped
+  # being pinned (2026-09-07): a new season with no shootouts yet took this
+  # branch for the first time and silently truncated the pipeline. The pin
+  # had been hiding it, because the season it named always had shootouts.
+  #
+  # return() is no better: source() evaluates expression by expression, so it
+  # unwinds the sourcing frame but the REST OF THIS FILE still runs, on an
+  # empty list. Measured, not assumed. Hence the explicit else block below.
   message("No shootout kicks found for this season — nothing to export.")
-  quit(save = "no", status = 0)
-}
-
-kicks   <- data.table::rbindlist(all_kicks, fill = TRUE)
-lineups <- if (length(all_lineups)) data.table::rbindlist(all_lineups, fill = TRUE) else NULL
-
-# 3. Score + aggregate per player ----
-agg <- aggregate_shootout_wpa(kicks, lineups = lineups)
-agg[, season := shootout_season]
-
-message(sprintf("\n  %d players with shootout WPA (%d kicks, %d matches)",
-                nrow(agg), nrow(kicks), length(unique(kicks$match_id))))
-message("  Top 5 by shootout_wpa_total:")
-top5 <- head(agg[order(-shootout_wpa_total)], 5)
-for (i in seq_len(nrow(top5))) {
-  message(sprintf("    %-22s total=%+.3f (taker %+.3f, keeper %+.3f)",
-                  top5$player_name[i], top5$shootout_wpa_total[i],
-                  top5$taker_wpa[i], top5$keeper_wpa[i]))
-}
-
-# 4. Write + upload ----
-out_path <- file.path(cache_dir, "shootout_wpa.parquet")
-arrow::write_parquet(agg, out_path)
-# Small published table -> CSV companion too (per project convention).
-csv_path <- file.path(cache_dir, "shootout_wpa.csv")
-utils::write.csv(agg, csv_path, row.names = FALSE)
-message(sprintf("\n  Written: %s (%d rows) + CSV", out_path, nrow(agg)))
-
-if (isTRUE(upload_shootout_wpa)) {
-  # PA5/H-TORN: no upload here -- register for the single gated publish in
-  # 13_publish_release_data.R.
-  if (exists("publish_files", envir = .GlobalEnv)) {
-    publish_files$blog_latest <<- c(publish_files$blog_latest, out_path, csv_path)
-    message(sprintf("\n  Registered shootout_wpa.parquet + .csv for blog-latest publish (step 13)"))
-  } else {
-    message("\n  (standalone run -- not registered for step-13 publish)")
-  }
+  message("\n=== Shootout WPA export complete (no shootouts yet this season) ===")
 } else {
-  message("\n  (upload_shootout_wpa = FALSE — not registering for publish)")
-}
 
-message("\n=== Shootout WPA export complete ===")
+  kicks   <- data.table::rbindlist(all_kicks, fill = TRUE)
+  lineups <- if (length(all_lineups)) data.table::rbindlist(all_lineups, fill = TRUE) else NULL
+
+  # 3. Score + aggregate per player ----
+  agg <- aggregate_shootout_wpa(kicks, lineups = lineups)
+  agg[, season := shootout_season]
+
+  message(sprintf("\n  %d players with shootout WPA (%d kicks, %d matches)",
+                  nrow(agg), nrow(kicks), length(unique(kicks$match_id))))
+  message("  Top 5 by shootout_wpa_total:")
+  top5 <- head(agg[order(-shootout_wpa_total)], 5)
+  for (i in seq_len(nrow(top5))) {
+    message(sprintf("    %-22s total=%+.3f (taker %+.3f, keeper %+.3f)",
+                    top5$player_name[i], top5$shootout_wpa_total[i],
+                    top5$taker_wpa[i], top5$keeper_wpa[i]))
+  }
+
+  # 4. Write + upload ----
+  out_path <- file.path(cache_dir, "shootout_wpa.parquet")
+  arrow::write_parquet(agg, out_path)
+  # Small published table -> CSV companion too (per project convention).
+  csv_path <- file.path(cache_dir, "shootout_wpa.csv")
+  utils::write.csv(agg, csv_path, row.names = FALSE)
+  message(sprintf("\n  Written: %s (%d rows) + CSV", out_path, nrow(agg)))
+
+  if (isTRUE(upload_shootout_wpa)) {
+    # PA5/H-TORN: no upload here -- register for the single gated publish in
+    # 13_publish_release_data.R.
+    if (exists("publish_files", envir = .GlobalEnv)) {
+      publish_files$blog_latest <<- c(publish_files$blog_latest, out_path, csv_path)
+      message(sprintf("\n  Registered shootout_wpa.parquet + .csv for blog-latest publish (step 13)"))
+    } else {
+      message("\n  (standalone run -- not registered for step-13 publish)")
+    }
+  } else {
+    message("\n  (upload_shootout_wpa = FALSE — not registering for publish)")
+  }
+
+  message("\n=== Shootout WPA export complete ===")
+}
