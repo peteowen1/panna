@@ -26,7 +26,7 @@ env:
 jobs:
   psr-snapshot:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 135
 
     permissions:
       contents: write
@@ -275,4 +275,78 @@ jobs:
           else
             echo "**Status:** Snapshot FAILED (no output parquet found)" >> $GITHUB_STEP_SUMMARY
             exit 1
+          fi
+
+      # Rebuild the skill estimates themselves, which nothing had refreshed
+      # since 21 June 2026. opta_skills.parquet is a by-product of a manual
+      # pipeline, and this job — the only thing that runs weekly — exported the
+      # PSR snapshot and nothing else, so the blog's per-90 skill columns
+      # described last season while the board stamped them with today's date.
+      #
+      # AFTER the snapshot, deliberately, and continue-on-error: the PSR
+      # snapshot above works today and a heavier, less proven step must not be
+      # able to take it down. The sibling RAPM pipeline lost its daily trigger
+      # in June for exhausting a 16 GB runner, so treat this as unproven until
+      # it has run green a few times.
+      #
+      # 01 -> 02 -> 08 is self-contained: 01 reads the raw opta_player_stats
+      # already downloaded above (refreshed daily by the scrape, verified
+      # current), 02 estimates the decay-weighted skills from it, 08 exports.
+      # 08 is an EXPORT ONLY — it re-uploads whatever 02_skill_features.rds
+      # holds — so it must never run without 01 and 02 in the same invocation,
+      # or it would republish a stale cache under a fresh timestamp, which is
+      # precisely the failure that emptied the blog's Player Stats page for
+      # five weeks in August.
+      - name: Rebuild and export the skill estimates
+        continue-on-error: true
+        timeout-minutes: 45
+        env:
+          GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          PANNADATA_DIR: ${{ runner.temp }}/pannadata
+        run: |
+          cat > /tmp/run_skills_rebuild.R << 'EOF'
+          pannadata_path <- Sys.getenv("PANNADATA_DIR", "../pannadata/data")
+          opta_path <- file.path(pannadata_path, "opta")
+          devtools::load_all()
+          pannadata_dir(pannadata_path)
+          opta_data_dir(opta_path)
+          # Explicit, like the block above: start_step numbering pulls in
+          # neighbours that lack their prerequisites here and fail silently.
+          run_steps <- list(
+            step_01_compute_match_stats    = TRUE,
+            step_02_estimate_skills        = TRUE,
+            step_02b_optimize_params       = FALSE,
+            step_03_skill_spm              = FALSE,
+            step_04_skill_xrapm            = FALSE,
+            step_05_skill_panna_ratings    = FALSE,
+            step_06_seasonal_skill_ratings = FALSE,
+            step_07_train_psr_model        = FALSE,
+            step_08_export_skills          = TRUE,
+            step_08b_export_psr_weekly     = FALSE,
+            step_09_career_panna           = FALSE
+          )
+          source("data-raw/estimated-skills/run_skills_pipeline.R")
+          EOF
+          Rscript /tmp/run_skills_rebuild.R
+
+      # A skipped or failed rebuild is not a reason to say nothing: the whole
+      # point is that this file going stale was invisible for ten weeks. Report
+      # the published vintage either way, so a run that quietly stopped
+      # refreshing skills is visible in the job summary.
+      - name: Report the published skills vintage
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+        run: |
+          UPDATED=$(gh release view opta-latest --repo peteowen1/pannadata \
+            --json assets -q '.assets[] | select(.name=="opta_skills.parquet") | .updatedAt' 2>/dev/null || echo "")
+          echo "opta_skills.parquet on opta-latest: ${UPDATED:-UNKNOWN}"
+          echo "**Skills vintage:** \`${UPDATED:-unknown}\`" >> $GITHUB_STEP_SUMMARY
+          if [ -n "$UPDATED" ]; then
+            AGE=$(( ( $(date -u +%s) - $(date -u -d "$UPDATED" +%s) ) / 86400 ))
+            echo "  (${AGE} days old)"
+            if [ "$AGE" -gt 14 ]; then
+              echo "::warning::opta_skills.parquet is ${AGE} days old — the weekly rebuild is not landing."
+            fi
           fi
