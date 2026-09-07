@@ -12,6 +12,7 @@
 #   handle_force_rebuild()  - clear cache files for a given pipeline
 #   clear_cache_files()     - generic cache clearing with lettered step support
 #   resolve_blog_leagues()  - canonical domestic/calendar/continental/intl league groups
+#   current_domestic_season() - current European season label, from the clock
 #   run_backfill()          - shared season-backfill driver (serial or parallel)
 
 # Step keys actually reached by run_step() this session. Populated by
@@ -738,6 +739,35 @@ retry_with_backoff <- function(fn, max_retries = 3L, initial_delay_secs = 5,
 #'     whose season label is resolved by year prefix rather than passed through}
 #'   \item{blog_leagues}{the full default export set: domestic + calendar +
 #'     continental + intl}
+#' Current European domestic season label, derived from the clock
+#'
+#' Aug-Jul rollover: before August the season is (year-1)-(year); from August
+#' onward it is year-(year+1). "2026-2027" from 1 August 2026.
+#'
+#' WHY THIS EXISTS. A pinned season string is a time bomb that goes off every
+#' August, and it has now gone off twice. `scrape_opta.py` and the
+#' daily-opta-scrape workflow both de-pinned theirs for exactly this reason and
+#' say so in their comments. `10b_export_game_logs.R` kept its pin, so from
+#' August 2026 the weekly pipeline rebuilt and republished the 2025-2026 game
+#' logs as the current-season file every day: the blog's Player Stats, Player
+#' Game Logs, Team Game Logs and every Value tab showed nothing for the new
+#' season while the file looked freshly built. Any R pipeline step that needs
+#' the current season calls this rather than writing a fourth copy of the rule.
+#'
+#' The Python twin is `current_domestic_season()` in pannadata's
+#' `scripts/opta/scrape_opta.py`. Two languages in two repos cannot share one
+#' definition; if the convention ever changes, both move together.
+#'
+#' @param today Date to derive from. Defaults to the system date; passed
+#'   explicitly by the tests so they do not drift with the calendar.
+#' @return Season label, e.g. "2026-2027".
+current_domestic_season <- function(today = Sys.Date()) {
+  year  <- as.integer(format(today, "%Y"))
+  month <- as.integer(format(today, "%m"))
+  if (month >= 8) sprintf("%d-%d", year, year + 1L)
+  else sprintf("%d-%d", year - 1L, year)
+}
+
 resolve_blog_leagues <- function() {
   domestic_leagues  <- PANNA_LEAGUE_GROUPS$domestic
   calendar_leagues  <- PANNA_LEAGUE_GROUPS$calendar
