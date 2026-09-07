@@ -63,7 +63,10 @@ if (!exists("equity_seasons", envir = globalenv(), inherits = FALSE)) {
   if (exists("game_log_season", envir = globalenv(), inherits = FALSE)) {
     equity_seasons <- game_log_season
   } else {
-    equity_seasons <- "2025-2026"
+    # Derived from the clock, never pinned — the same time bomb that emptied
+    # the blog's Player Stats page in August 2026 when 10b's pin went stale.
+    # See current_domestic_season() in pipeline_utils.R.
+    equity_seasons <- current_domestic_season()
   }
 }
 equity_seasons <- as.character(equity_seasons)

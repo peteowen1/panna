@@ -41,7 +41,10 @@ intl_tournaments <- .blog_league_groups$intl_tournaments
 domestic_cups    <- character(0)  # add domestic cups here if/when scraped to blog
 blog_leagues     <- c(continental_cups, intl_tournaments, domestic_cups)
 
-if (!exists("shootout_season", envir = globalenv(), inherits = FALSE)) shootout_season <- "2025-2026"
+# Derived from the clock, never pinned — same time bomb as 10b's, which
+# emptied the blog's Player Stats page in August 2026. See
+# current_domestic_season() in pipeline_utils.R.
+if (!exists("shootout_season", envir = globalenv(), inherits = FALSE)) shootout_season <- current_domestic_season()
 if (!exists("upload_shootout_wpa")) upload_shootout_wpa <- TRUE
 
 # Opta shootout shot-outcome type_ids: 16 goal, 15 saved, 14 post, 13 missed.
