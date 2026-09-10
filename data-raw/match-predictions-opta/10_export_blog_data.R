@@ -363,7 +363,7 @@ if (!file.exists(fixture_results_path)) {
   # the blog's leagues.qmd Projected tab, while a direct league-phase
   # entrant's numbers are correct — caught 2026-09-10.
   is_cup_qualifier <- played$league %in% c("UCL", "UEL", "UECL") &
-    as.integer(format(as.Date(substr(played$match_date, 1, 10)), "%m")) < 9L
+    as.integer(format(suppressWarnings(as.Date(substr(played$match_date, 1, 10))), "%m")) < 9L
   n_qualifiers <- sum(is_cup_qualifier, na.rm = TRUE)
   if (n_qualifiers > 0) {
     message(sprintf("  Excluding %d UEFA cup qualifying-round match(es) from standings", n_qualifiers))
