@@ -29,20 +29,27 @@
     away_elo   = c(1410, 1510, 1530, 1300, 1310),
     diff_elo   = c(-10, -10, -10, 300, 340),
     home_field = c(1, 1, 1, 1, 1),
+    # Real match_month (= month(match_date)) -- the league-phase template row
+    # (A vs B, Sept) carries 9. If build_cup_pairwise_lookup() ever stops
+    # overriding this for the knockout prediction, that 9 leaks straight
+    # through into every matchup's X row.
+    match_month = c(8, 9, 9, 11, 1),
     stringsAsFactors = FALSE
   )
-  feature_cols <- c("home_elo", "away_elo", "diff_elo", "home_field")
+  feature_cols <- c("home_elo", "away_elo", "diff_elo", "home_field", "match_month")
 
-  # Deterministic-enough goals model: home goals = 5 + 3*home_field (elo_diff
-  # deliberately near-constant across training rows so XGBoost's split on
-  # home_field is the dominant, cleanly-recoverable signal).
+  # Deterministic-enough goals model: home goals = 5 + 3*home_field + match_month
+  # (elo_diff deliberately near-constant across training rows so XGBoost's
+  # splits on home_field/match_month are the dominant, cleanly-recoverable
+  # signal).
   set.seed(11)
   n <- 300L
   hf <- sample(c(-1, 0, 1), n, replace = TRUE)
+  mm <- sample(1:12, n, replace = TRUE)
   ed <- stats::rnorm(n, 0, 5)
-  X <- cbind(home_elo = 1500, away_elo = 1500, diff_elo = ed, home_field = hf)
-  y_home <- 5 + 3 * hf + 0.01 * ed
-  y_away <- 5 - 3 * hf - 0.01 * ed
+  X <- cbind(home_elo = 1500, away_elo = 1500, diff_elo = ed, home_field = hf, match_month = mm)
+  y_home <- 5 + 3 * hf + mm + 0.01 * ed
+  y_away <- 5 - 3 * hf - mm - 0.01 * ed
 
   fit_reg <- function(target) {
     xgboost::xgb.train(
@@ -75,6 +82,21 @@ test_that("qualifying-round rows (month < 9) are excluded from the team pool", {
                                    "UCL", "2025-2026", as_of = fx$as_of, verbose = FALSE)
   expect_setequal(unique(c(lk$probs$t1, lk$probs$t2)), c("A", "B", "C", "D"))
   expect_false(any(c("Z", "W") %in% c(lk$probs$t1, lk$probs$t2)))
+})
+
+test_that("match_month is overridden to the knockout period, not leaked from the league-phase template", {
+  fx <- .cup_fixture()
+  lk <- build_cup_pairwise_lookup(fx$match_dataset, fx$goals_models, fx$outcome_result,
+                                   "UCL", "2025-2026", as_of = fx$as_of, verbose = FALSE)
+  row <- lk$probs[(t1 == "A" & t2 == "B") | (t1 == "B" & t2 == "A")]
+  # Training target: home = 5 + 3*home_field + match_month. With the correct
+  # override (match_month=3) and home_field=1, A-hosts-B should read close to
+  # 5+3+3=11. If match_month instead leaked from the league-phase template
+  # row (Sept, month=9 -- the bug this guards against), it would read close
+  # to 5+3+9=17. Loose tolerance: XGBoost on a small synthetic fixture, not
+  # an exact linear fit.
+  expect_lt(abs(row$leg1_home_goals - 11), 3)
+  expect_gt(abs(row$leg1_home_goals - 17), 3)
 })
 
 test_that("team state is the row NEAREST as_of, any league -- not most-recent-played or cup-only", {

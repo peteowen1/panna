@@ -192,6 +192,24 @@ build_cup_pairwise_lookup <- function(match_dataset, goals_models, outcome_resul
   if ("home_field" %in% feature_cols)       X[, "home_field"] <- 1
   if ("is_neutral_venue" %in% feature_cols) X[, "is_neutral_venue"] <- 0
 
+  # match_month is a real, trained feature (not excluded in
+  # 05_fit_goals_model.R) -- build_knockout_lookup() explicitly overrides it
+  # to July for WC knockouts (R/knockout_model.R:236, "only venue + month
+  # vary per knockout matchup") and this must too, or every row here silently
+  # inherits the league-phase template's Sept-Dec month for ties that
+  # actually happen Feb-May. Unlike WC's single "the final is always July"
+  # constant, a club cup's knockout phase spans four different months
+  # (playoff ~Feb, R16 ~Mar, QF ~Apr, SF/Final ~May) and this ONE lookup
+  # table is reused across all of them -- there is no single correct value.
+  # March is used as the representative month: it's where the majority of
+  # genuinely-drawn ties sit (playoff round + R16 are real draws; QF/SF/Final
+  # are fixed bracket progression from R16, not fresh draws -- see
+  # football/cup-knockout-sim.js's header comment on the blog side), and
+  # R16 (~March) is the larger of those two by pair count context. A
+  # per-round month would need separate tables per round rather than one
+  # lookup; not done here.
+  if ("match_month" %in% feature_cols) X[, "match_month"] <- 3L
+
   leg1 <- .ko_predict(X, gm_pooled, om_pooled, augmented_features)  # t1 hosts
 
   Xm <- X
