@@ -352,6 +352,24 @@ if (!file.exists(fixture_results_path)) {
     played <- played %>% filter(season_end_year == latest)
   }
 
+  # UEFA cup qualifying rounds (Jul/Aug) share the same "UCL"/"UEL"/"UECL"
+  # league code as the league phase (Sep onward) in Opta's raw feed, so the
+  # filter above counts them as league-phase games. Exclude them here using
+  # the same month-based cut compute_league_offsets() already applies to
+  # keep qualifiers out of cross-league Elo calibration (R/league_offsets.R,
+  # `.is_q <- league %in% c("UCL","UEL","UECL") & month(match_date) < 9`).
+  # Without this, a team that had to qualify (e.g. Fenerbahce, Bodo/Glimt)
+  # shows games_played/current_points inflated by its qualifying legs on
+  # the blog's leagues.qmd Projected tab, while a direct league-phase
+  # entrant's numbers are correct — caught 2026-09-10.
+  is_cup_qualifier <- played$league %in% c("UCL", "UEL", "UECL") &
+    as.integer(format(suppressWarnings(as.Date(substr(played$match_date, 1, 10))), "%m")) < 9L
+  n_qualifiers <- sum(is_cup_qualifier, na.rm = TRUE)
+  if (n_qualifiers > 0) {
+    message(sprintf("  Excluding %d UEFA cup qualifying-round match(es) from standings", n_qualifiers))
+  }
+  played <- played[!is_cup_qualifier | is.na(is_cup_qualifier), ]
+
   message(sprintf("  Played matches (current season): %d", nrow(played)))
 
   # Compute standings from home and away perspectives
