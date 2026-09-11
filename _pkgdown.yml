@@ -131,6 +131,11 @@ reference:
   contents:
   - has_concept("world cup simulation")
 
+- title: Club Cup Simulation
+  desc: Pairwise knockout-matchup lookup for UCL/UEL/UECL (club-cup sibling of the World Cup's build_knockout_lookup)
+  contents:
+  - has_concept("cup simulation")
+
 - title: xDuel Models
   desc: Player-agnostic contextual win-probability for physical contests (aerial/take-on/tackle/containment) — the above-expected duel features that replaced the success ratios in PSR/PSV
   contents:
