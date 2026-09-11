@@ -166,9 +166,11 @@ test_that("add_xgot_to_spadl prefers the is_own_goal qualifier over position (#1
   lookup <- data.frame(
     match_id = "m", event_id = 1:3, type_id = 16L,   # all goals
     goalmouth_y = 50, goalmouth_z = 5, is_blocked = FALSE,
-    situation = "OpenPlay", stringsAsFactors = FALSE
+    situation = "OpenPlay", body_part = "RightFoot", stringsAsFactors = FALSE
   )
-  # Qualifier branch must not fire the missing-column fallback warning.
+  # Qualifier branch must not fire the missing-column fallback warning. body_part
+  # is supplied so the UNRELATED "lacks body_part" warning (added later, 2026-09-03
+  # header/footedness fix) can't mask a real own-goal-detection regression here.
   expect_no_warning(r <- suppressMessages(add_xgot_to_spadl(spadl, list(), lookup)))
   expect_equal(r$xgot[1], 0.5)     # x<50 but NOT an own goal -> scored, not NA
   expect_equal(r$xgot[2], 0.5)
