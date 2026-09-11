@@ -261,7 +261,9 @@ if (.wc11_available) {
          "list (pannadata ratings-data release) or run estimated-skills/09_career_panna.R.",
          call. = FALSE)
   }
-  sq_panna <- as.data.table(read_parquet(cp_path))[
+  cp_raw <- as.data.table(read_parquet(cp_path))
+  .assert_career_panna_sign_convention(cp_raw, "12_export_wc2026_blog.R")
+  sq_panna <- cp_raw[
     , .(player_id, panna, offense = panna_offense, defense = panna_defense, total_minutes)]
 
   sq_psr <- if (!is.null(sq_seasonal$seasonal_psr) && nrow(sq_seasonal$seasonal_psr) > 0) {

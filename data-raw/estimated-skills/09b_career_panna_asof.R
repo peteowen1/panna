@@ -16,7 +16,11 @@
 # Inputs: cache-opta/03_splints.rds, cache-skills/03_skill_spm.rds (fallback/burn-in),
 # cache-skills/03_skill_spm_asof.rds (expanding-window, preferred), opta_fixtures.parquet.
 # Output: career_panna_asof.parquet (player_id, ref_date, panna, panna_offense,
-# panna_defense, total_minutes), optionally uploaded to the ratings-data release.
+# panna_defense, total_minutes, sign_convention), optionally uploaded to the
+# ratings-data release. sign_convention lets every consumer abort on a stale
+# or unmarked file (see .assert_career_panna_sign_convention(), panna#F1
+# 2026-09-07/11); a `prev` file tagged with a mismatched/missing convention is
+# discarded rather than resumed-from, to avoid mixing conventions in one file.
 #
 # PRIOR caveat (RESOLVED 2026-07 — FABLE-ASOF-EXPERIMENTS.md sec 4, the promotion of this
 # file's own header caveat that H3 called for): skill_spm used to be the as-of-NOW
@@ -124,14 +128,28 @@ cat(sprintf("  granularity: %s | reference dates: %d (%s .. %s) | prune: >%dyr\n
             as.character(max(ref_dates)), prune_years))
 
 # ---- Resume: skip dates already present in a partial output -----------------
+# A `prev` file missing the sign_convention tag, or tagged with the OLD
+# convention, must NOT be merged in as-is: rbinding it with freshly-computed
+# post-flip snapshots would silently mix conventions WITHIN one file (early
+# ref_dates wrong-signed, later ones correct). Discard it and do a full
+# regen instead (panna#F1, 2026-09-11).
 done <- character(0)
+prev <- NULL
 if (isTRUE(resume) && file.exists(out_path)) {
-  prev <- as.data.table(read_parquet(out_path))
-  done <- as.character(unique(prev$ref_date))
-  cat(sprintf("  resume: %d snapshots already in %s — skipping those dates\n",
-              length(done), basename(out_path)))
-} else {
-  prev <- NULL
+  cand <- as.data.table(read_parquet(out_path))
+  cand_tag <- if ("sign_convention" %in% names(cand)) unique(cand$sign_convention) else NA_character_
+  if (identical(cand_tag, CAREER_PANNA_SIGN_CONVENTION)) {
+    prev <- cand
+    done <- as.character(unique(prev$ref_date))
+    cat(sprintf("  resume: %d snapshots already in %s — skipping those dates\n",
+                length(done), basename(out_path)))
+  } else {
+    cat(sprintf(paste0("  resume SKIPPED: %s is tagged %s (expected %s) — ",
+                       "discarding it and doing a full regen so old- and ",
+                       "new-convention snapshots don't mix in one file.\n"),
+                basename(out_path), if (is.na(cand_tag)) "<untagged>" else sQuote(cand_tag),
+                sQuote(CAREER_PANNA_SIGN_CONVENTION)))
+  }
 }
 
 # ---- Build snapshots --------------------------------------------------------
@@ -169,6 +187,7 @@ for (i in seq_along(ref_dates)) {
 if (!length(out)) { cat("\nNothing new to write (all dates already done).\n"); quit(save = "no") }
 
 allr <- rbindlist(out)
+allr[, sign_convention := CAREER_PANNA_SIGN_CONVENTION]
 if (!is.null(prev)) allr <- rbindlist(list(prev, allr), use.names = TRUE, fill = TRUE)
 setorder(allr, ref_date, -panna)
 write_parquet(as.data.frame(allr), out_path)

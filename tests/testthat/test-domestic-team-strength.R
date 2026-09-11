@@ -413,7 +413,9 @@ test_that("guard: panna/epr/psr zero (or all-NA) for >=50% of teams refuses to p
                    panna = seq(0.1, by = 0.05, length.out = n),
                    panna_offense = seq(0.2, by = 0.05, length.out = n),
                    panna_defense = seq(-0.1, by = -0.02, length.out = n),
-                   total_minutes = 900, stringsAsFactors = FALSE)
+                   total_minutes = 900,
+                   sign_convention = CAREER_PANNA_SIGN_CONVENTION,
+                   stringsAsFactors = FALSE)
   arrow::write_parquet(cp, file.path(opta_dir, "career_panna.parquet"))
 
   epr <- data.frame(player_id = player_ids, snapshot_date = "2026-09-15",

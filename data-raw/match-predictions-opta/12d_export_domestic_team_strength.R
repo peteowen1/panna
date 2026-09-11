@@ -427,8 +427,9 @@ if (!file.exists(cp_path)) {
   stop("career_panna.parquet not found at ", cp_path, " -- domestic Tiento needs ",
        "the same career-trait panna the blog publishes elsewhere.", call. = FALSE)
 }
-sq_panna <- as.data.table(read_parquet(cp_path))[
-  , .(player_id, panna, offense = panna_offense, defense = panna_defense)]
+cp_raw <- as.data.table(read_parquet(cp_path))
+.assert_career_panna_sign_convention(cp_raw, "12d_export_domestic_team_strength.R")
+sq_panna <- cp_raw[, .(player_id, panna, offense = panna_offense, defense = panna_defense)]
 
 if (!exists("skills_cache_dir")) skills_cache_dir <- file.path("data-raw", "cache-skills")
 if (!exists("opta_cache_dir")) opta_cache_dir <- file.path("data-raw", "cache-opta")
