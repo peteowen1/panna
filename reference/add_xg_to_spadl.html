@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.32</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.35</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -46,7 +46,7 @@
 
     <div class="section level2">
     <h2 id="ref-usage">Usage<a class="anchor" aria-label="anchor" href="#ref-usage"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">add_xg_to_spadl</span><span class="op">(</span><span class="va">spadl_actions</span>, <span class="va">xg_model</span><span class="op">)</span></span></code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">add_xg_to_spadl</span><span class="op">(</span><span class="va">spadl_actions</span>, <span class="va">xg_model</span>, season <span class="op">=</span> <span class="cn">NULL</span>, shot_lookup <span class="op">=</span> <span class="cn">NULL</span><span class="op">)</span></span></code></pre></div>
     </div>
 
     <div class="section level2">
@@ -59,6 +59,25 @@
 
 <dt id="arg-xg-model">xg_model<a class="anchor" aria-label="anchor" href="#arg-xg-model"></a></dt>
 <dd><p>Fitted xG model</p></dd>
+
+
+<dt id="arg-season">season<a class="anchor" aria-label="anchor" href="#arg-season"></a></dt>
+<dd><p>Season label for these actions (e.g. "2025-2026", "2026",
+"2026 Canada-Mexico-USA"). SPADL carries no season or date column, so a
+season-aware model cannot derive it and this must be supplied; the end year
+is read with <code><a href="extract_season_end_year.html">extract_season_end_year()</a></code>, exactly as training does.
+Required when the model's features include <code>season_num</code> - it aborts
+rather than score without it.</p></dd>
+
+
+<dt id="arg-shot-lookup">shot_lookup<a class="anchor" aria-label="anchor" href="#arg-shot-lookup"></a></dt>
+<dd><p>Optional data frame keyed by (<code>match_id</code>,
+<code>event_id</code>) carrying <code>body_part</code> and <code>situation</code> for shot
+events, e.g. <code>opta_shot_events</code>. Strongly recommended: SPADL's own
+<code>bodypart</code> is a stub that labels every shot "foot", so without this
+the header and footedness flags are dead and set pieces score as open play.
+Joined on <code>original_event_id</code>, the same key
+<code><a href="add_xgot_to_spadl.html">add_xgot_to_spadl()</a></code> uses.</p></dd>
 
 </dl></div>
     <div class="section level2">

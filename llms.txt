@@ -537,6 +537,15 @@ Bradley-Terry team ratings and knockout tournament simulation
 - [`simulate_world_cup()`](https://peteowen1.github.io/panna/reference/simulate_world_cup.md)
   : Simulate a 48-team World Cup
 
+## Club Cup Simulation
+
+Pairwise knockout-matchup lookup for UCL/UEL/UECL (club-cup sibling of
+the World Cup’s build_knockout_lookup)
+
+- [`build_cup_pairwise_lookup()`](https://peteowen1.github.io/panna/reference/build_cup_pairwise_lookup.md)
+  : Build a pooled-only, two-legged pairwise knockout lookup for one
+  UEFA cup
+
 ## xDuel Models
 
 Player-agnostic contextual win-probability for physical contests
@@ -604,6 +613,10 @@ Composite player skill and per-game stat value metrics
 - [`PSV_RELIABILITY_GD_SCALE`](https://peteowen1.github.io/panna/reference/PSV_RELIABILITY_GD_SCALE.md)
   : Reliability-shrunk PSV display scale ("expected GD contribution per
   90")
+- [`apply_psv_calibration()`](https://peteowen1.github.io/panna/reference/apply_psv_calibration.md)
+  : Apply the PSV position calibration
+- [`apply_psv_opponent_adjustment()`](https://peteowen1.github.io/panna/reference/apply_psv_opponent_adjustment.md)
+  : Apply the PSV opponent adjustment
 - [`calculate_psr()`](https://peteowen1.github.io/panna/reference/calculate_psr.md)
   : Calculate Player Skill Ratings (PSR)
 - [`calculate_psv()`](https://peteowen1.github.io/panna/reference/calculate_psv.md)
@@ -614,12 +627,16 @@ Composite player skill and per-game stat value metrics
   : Compute PSV from bundled coefficient files
 - [`default_stat_rating_params()`](https://peteowen1.github.io/panna/reference/default_stat_rating_params.md)
   : Default stat rating hyperparameters
+- [`fit_psv_opponent_adjustment()`](https://peteowen1.github.io/panna/reference/fit_psv_opponent_adjustment.md)
+  : Fit the PSV opponent-adjustment coefficient
 - [`load_opta_psr_weekly()`](https://peteowen1.github.io/panna/reference/load_opta_psr_weekly.md)
   : Load pre-computed weekly PSR snapshots
 - [`load_psv_match_reliability()`](https://peteowen1.github.io/panna/reference/load_psv_match_reliability.md)
   : Load the bundled per-match reliability artifact for PSV pricing
 - [`player_psr()`](https://peteowen1.github.io/panna/reference/player_psr.md)
   : Get Player Skill Ratings
+- [`psv_opponent`](https://peteowen1.github.io/panna/reference/psv_opponent.md)
+  : Opponent adjustment for per-match PSV (panna#220)
 - [`soccer_position_map()`](https://peteowen1.github.io/panna/reference/soccer_position_map.md)
   : Soccer position group mapping
 - [`soccer_stat_rating_definitions()`](https://peteowen1.github.io/panna/reference/soccer_stat_rating_definitions.md)

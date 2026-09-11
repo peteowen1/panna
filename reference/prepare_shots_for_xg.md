@@ -28,11 +28,17 @@ Data frame with xG features:
 
 - is_big_chance: Binary indicator for big chances
 
-- is_penalty: Binary indicator for penalties
+- is_penalty: Binary flag used to EXCLUDE penalties from training
+  (`exclude_penalties = TRUE`); they are scored at
+  [`PENALTY_XG`](https://peteowen1.github.io/panna/reference/PENALTY_XG.md)
+  instead, since every penalty is taken from the same spot and there is
+  nothing for the geometry features to learn
 
-- is_direct_freekick: Binary for direct free kicks
-
-- shot_type\_\*: One-hot encoded shot types
+- is_open_play, is_set_piece, is_corner: situation flags. NOTE the
+  source labels for open play and set piece appear transposed – see
+  [`.create_shot_features()`](https://peteowen1.github.io/panna/reference/dot-create_shot_features.md)
+  for the evidence and why they are left as-is rather than silently
+  inverted
 
 - is_goal: Target variable (1 = goal)
 

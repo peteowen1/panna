@@ -21,7 +21,7 @@ non-shot / unmatched  -&amp;gt; NA"><meta property="og:image" content="https://p
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.32</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.35</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -86,8 +86,14 @@ non-shot / unmatched  -&gt; NA</p>
 <dt id="arg-goalmouth-lookup">goalmouth_lookup<a class="anchor" aria-label="anchor" href="#arg-goalmouth-lookup"></a></dt>
 <dd><p>Data frame keyed by (<code>match_id</code>,
 <code>event_id</code>) with <code>type_id</code>, <code>goalmouth_y</code>,
-<code>goalmouth_z</code>, <code>situation</code>, and <code>is_blocked</code> for shot
-events - e.g. from match_events / opta_shot_events. <code>situation</code> is
+<code>goalmouth_z</code>, <code>situation</code>, <code>is_blocked</code> and
+<code>body_part</code> for shot events - e.g. from match_events /
+opta_shot_events. Pass it via <code><a href="load_opta_shot_events.html">load_opta_shot_events()</a></code>, NOT by
+reading the parquet directly: that returns <code>event_id</code> as integer64 and
+<code><a href="https://rdrr.io/r/base/merge.html" class="external-link">merge()</a></code> against SPADL's numeric <code>original_event_id</code> matches
+nothing (a guard now aborts on this rather than reporting "0 scored").
+<code>body_part</code> is required for the header and footedness features -
+SPADL's own <code>bodypart</code> says "foot" for every shot. <code>situation</code> is
 required to avoid train/serve skew (the model trained on real
 situations); without it, set-piece/corner/free-kick shots are scored as
 open-play. <code>is_blocked</code> excludes shots blocked by an outfield

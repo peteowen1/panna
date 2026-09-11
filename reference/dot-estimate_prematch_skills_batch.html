@@ -13,7 +13,7 @@ Uses rowsum() (C-level) for grouped matrix sums."><meta property="og:image" cont
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.32</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.35</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -60,6 +60,9 @@ Uses <code><a href="https://rdrr.io/r/base/rowsum.html" class="external-link">ro
 <span>  <span class="va">ref_dates</span>,</span>
 <span>  decay_params <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  min_weighted_90s <span class="op">=</span> <span class="fl">3</span>,</span>
+<span>  output_min_w90 <span class="op">=</span> <span class="fl">0</span>,</span>
+<span>  stream_dir <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  source_fingerprint <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  verbose <span class="op">=</span> <span class="cn">TRUE</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
@@ -82,7 +85,58 @@ Uses <code><a href="https://rdrr.io/r/base/rowsum.html" class="external-link">ro
 
 
 <dt id="arg-min-weighted-s">min_weighted_90s<a class="anchor" aria-label="anchor" href="#arg-min-weighted-s"></a></dt>
-<dd><p>Minimum weighted 90s for inclusion (default 3).</p></dd>
+<dd><p>The estimator's REGRESSION threshold, not an
+inclusion gate (default 3). Shrinkage toward the prior is what handles
+thin samples – see <code>estimate_player_skills</code> and the note at
+<code>data-raw/estimated-skills/02_estimate_skills.R:23</code>. Do NOT use this
+to trim output rows; that is <code>output_min_w90</code>.</p></dd>
+
+
+<dt id="arg-output-min-w-">output_min_w90<a class="anchor" aria-label="anchor" href="#arg-output-min-w-"></a></dt>
+<dd><p>Drop rows from each per-date snapshot whose
+<code>weighted_90s</code> is below this (default 0 = keep every row). This is a
+pure memory lever for callers that only need active players at each date.
+<strong>Leave it at 0 for anything that trains a model.</strong> Setting it to 3
+for all callers on 2026-09-01 (456d8329) dropped
+<code>07_train_psr_model.R</code>'s skill coverage from 100.0% to 84.7%: the
+trimmed players still have player-match rows, so they matched no skill row,
+and step 07 imputes missing skills to 0 – which attenuates every
+coefficient. That commit's claim that "every consumer joins on
+(player_id, exact date), so the dropped rows were never read" was wrong;
+step 07 reads exactly those rows. Its coverage guard caught it.</p></dd>
+
+
+<dt id="arg-stream-dir">stream_dir<a class="anchor" aria-label="anchor" href="#arg-stream-dir"></a></dt>
+<dd><p>If supplied, write each date's full (uncoverage-filtered)
+snapshot to <code>file.path(stream_dir, "&lt;date&gt;.rds")</code> as soon as it's
+computed, freeing it from R's memory immediately, instead of
+accumulating all dates in a single in-memory list (default <code>NULL</code> =
+old in-memory behaviour, unchanged). This is a MEMORY lever, orthogonal to
+<code>output_min_w90</code> – it changes WHERE full-coverage results live, not
+WHICH rows exist, so it carries none of <code>output_min_w90</code>'s coverage
+risk. Added 2026-09-04: at full multi-season history (~684 weekly dates x
+~47k players x ~142 stats), the in-memory list alone peaks at 70GB+,
+which does not reliably fit alongside other load on a shared machine (two
+observed OOM near-misses the same night). <code>stream_dir</code> bounds peak
+memory to roughly one date's snapshot regardless of history length. The
+directory is NOT cleaned up by this function on success – the caller owns
+that (orphaned chunks from a previous run ARE cleared at entry, see below).</p>
+<p><strong>Do not point two concurrent runs at the same <code>stream_dir</code>.</strong>
+For resume to work the caller must pass a STABLE path (a
+<code><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempfile()</a></code> is unique per R session and would never be found again),
+which means two overlapping invocations would share one checkpoint and
+clobber each other's state. <code>07_train_psr_model.R</code>'s outfield and GK
+paths deliberately use two different directories for this reason; an
+accidental double-dispatch of the whole script is the case to avoid.</p></dd>
+
+
+<dt id="arg-source-fingerprint">source_fingerprint<a class="anchor" aria-label="anchor" href="#arg-source-fingerprint"></a></dt>
+<dd><p>Optional caller-supplied value folded into the
+checkpoint fingerprint – e.g. <code><a href="https://rdrr.io/r/base/file.info.html" class="external-link">file.mtime()</a></code>/<code><a href="https://rdrr.io/r/base/file.info.html" class="external-link">file.size()</a></code> of
+the file <code>match_stats</code> was read from. The count-based fingerprint
+cannot see a data change that preserves n_rows/n_players/n_dates and the
+date sum; passing this closes most of that gap for a few bytes. Optional
+because not every caller has a single source file.</p></dd>
 
 
 <dt id="arg-verbose">verbose<a class="anchor" aria-label="anchor" href="#arg-verbose"></a></dt>
@@ -91,8 +145,11 @@ Uses <code><a href="https://rdrr.io/r/base/rowsum.html" class="external-link">ro
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
-    <p>Named list of data.tables (one per ref_date), keyed by date string.
-Each table has one row per player with skill columns.</p>
+    <p>Named list keyed by date string. Each element is a data.table (one
+row per player with skill columns) when <code>stream_dir</code> is
+<code>NULL</code>, or the file path it was streamed to (a length-1 character
+string) when <code>stream_dir</code> is supplied – use
+<code><a href="dot-read_skill_chunk.html">.read_skill_chunk()</a></code> to transparently handle either case.</p>
     </div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>

@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.32</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.35</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -68,7 +68,8 @@
 <td><code><a href="reference/load_xg_model.html">load_xg_model()</a></code></td>
 <td>path → pannamodels → local</td>
 <td><code>pannadata/.../xg_model.rds</code></td>
-<td>stable</td>
+<td>
+<strong>YES</strong> — retraining 2026-09-03 (panna#229); published and candidate DIVERGE, see register</td>
 </tr><tr class="even"><td><strong>xGOT</strong></td>
 <td><code><a href="reference/load_xgot_model.html">load_xgot_model()</a></code></td>
 <td>path → pannamodels → local → <strong>NULL</strong>
@@ -86,6 +87,50 @@
 <td>—</td>
 <td>—</td>
 </tr></tbody></table></div>
+<div class="section level2">
+<h2 id="published-artifact-register-verify-dont-assume">Published artifact register (verify, don’t assume)<a class="anchor" aria-label="anchor" href="#published-artifact-register-verify-dont-assume"></a></h2>
+<p>Sizes and dates as at <strong>2026-09-03</strong>. Published = <code>pannadata/data/opta/models/</code>, candidate = <code>panna/data-raw/cache/epv/</code> (gitignored). <strong>A candidate is not production until it is published.</strong> Compare byte sizes: a size difference means different files, and that is how the xG divergence below went unnoticed.</p>
+<table class="table"><colgroup><col width="18%"><col width="18%"><col width="25%"><col width="18%"><col width="18%"></colgroup><thead><tr class="header"><th>Model</th>
+<th>Published</th>
+<th align="right">bytes</th>
+<th>Candidate</th>
+<th>Same?</th>
+</tr></thead><tbody><tr class="odd"><td><strong>xG</strong></td>
+<td>2026-06-18</td>
+<td align="right">7,771,969</td>
+<td>
+<code>xg_model.rds</code> 8,254,336 (07-17)</td>
+<td>⚠ <strong>NO — divergent</strong>
+</td>
+</tr><tr class="even"><td>xGOT</td>
+<td>2026-07-23</td>
+<td align="right">5,212,066</td>
+<td>same bytes</td>
+<td>yes</td>
+</tr><tr class="odd"><td>xPass</td>
+<td>2026-06-18</td>
+<td align="right">6,319,289</td>
+<td>same bytes</td>
+<td>yes</td>
+</tr><tr class="even"><td>duel</td>
+<td>2026-06-24</td>
+<td align="right">368,305</td>
+<td>—</td>
+<td>published only</td>
+</tr><tr class="odd"><td>EPV</td>
+<td>2026-06-21</td>
+<td align="right">65,084,700</td>
+<td>
+<code>epv_model_xg_clean_full.rds</code>, same bytes</td>
+<td><strong>yes</strong></td>
+</tr><tr class="even"><td>WP</td>
+<td>2026-07-16</td>
+<td align="right">119,875</td>
+<td><code>wp_final_d2repl_reg/</code></td>
+<td>verify before relying on the override</td>
+</tr></tbody></table><p><strong>xG divergence (open, 2026-09-03).</strong> Published is 2026-06-18 (trained on 1,027,139 shots); the local candidate is 2026-07-17 (1,080,653). Neither reproduces the <code>xg</code> column in <code>opta_shot_events.parquet</code> — correlations 0.964 and 0.967 — because <strong>that column is Opta’s own xG, quantised to 3dp (956 distinct values across 3.3M shots), not ours.</strong> Ours is used everywhere in the pipeline via SPADL; Opta’s is a benchmark only.</p>
+<p><strong>EPV override is redundant as of 2026-09-03</strong>: published <code>epv_model.rds</code> and <code>epv_model_xg_clean_full.rds</code> are byte-identical, so the bare default is the clean model. The override is harmless and still recommended for explicitness.</p>
+</div>
 <div class="section level2">
 <h2 id="canonical-correct-models--the-epvwp-overhaul-2026-06-19">Canonical (correct) models — the EPV/WP overhaul (2026-06-19)<a class="anchor" aria-label="anchor" href="#canonical-correct-models--the-epvwp-overhaul-2026-06-19"></a></h2>
 <p>The “Rice over-reactivity” overhaul produced <strong>clean</strong> EPV+WP models. Status of the stale-default warning as of 2026-07-21 (verified by md5 during the explainer baseline sweep): <strong>EPV is healed</strong> — <code>pannadata/.../epv_model.rds</code> is now byte-identical to the canonical clean artifact, so the bare default is safe. <strong>WP is still stale</strong> — the bare default remains the pre-overhaul model (old feature set, no time interactions); the override below is still REQUIRED for WP. Also note: the WP artifact’s stored <code>cv_logloss</code> field is a misnomer — since the <code>reg:squarederror</code> objective switch it actually holds <strong>CV RMSE</strong> (confirmed against the training log); rename when the model is next retrained. Pin via overrides:</p>
@@ -129,6 +174,7 @@
 <span id="cb2-8"><a href="#cb2-8" tabindex="-1"></a>use_skill_ratings  <span class="ot">&lt;-</span> <span class="cn">FALSE</span></span>
 <span id="cb2-9"><a href="#cb2-9" tabindex="-1"></a><span class="fu">source</span>(<span class="st">"data-raw/match-predictions-opta/10b_export_game_logs.R"</span>)</span></code></pre></div>
 <p>Watch the log for the provenance line — it must show the <strong>clean</strong> model is in use (overrides bypass the loader, so you’ll see the override taken, not a stale <code>epv_model.rds</code> date).</p>
+<p><strong>Follow this recipe rather than sourcing <code>10b_export_game_logs.R</code> directly.</strong> The step depends on config the runner sets — <code>use_skill_ratings</code> above is one — and sourcing it bare aborts with <code>object 'use_skill_ratings' not found</code> after several minutes of loading. That happened on 2026-09-03, and the same run also warned the EPV/WP models it had fallen back to were 73 and 48 days old, which is exactly the failure the overrides exist to prevent. Both were avoidable by reading this section first.</p>
 </div>
 <div class="section level2">
 <h2 id="when-models-change">When models change<a class="anchor" aria-label="anchor" href="#when-models-change"></a></h2>

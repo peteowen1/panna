@@ -14,7 +14,9 @@ calculate_action_epv(
   features = NULL,
   epv_model,
   xg_model = NULL,
-  league = NULL
+  league = NULL,
+  season = NULL,
+  shot_lookup = NULL
 )
 ```
 
@@ -42,6 +44,24 @@ calculate_action_epv(
 
   League code (e.g., "ENG") for league-aware EPV features. Only used
   when feature_mode is "simple". If NULL, defaults to 0 (unknown).
+
+- season:
+
+  Season label for this league (e.g. "2025-2026", "2026", "2026
+  Canada-Mexico-USA"), forwarded to
+  [`add_xg_to_spadl()`](https://peteowen1.github.io/panna/reference/add_xg_to_spadl.md).
+  Required when the xG model carries a season term; that model aborts
+  rather than score without it.
+
+- shot_lookup:
+
+  Shot events keyed by (`match_id`, `event_id`) with `body_part` and
+  `situation`, forwarded to
+  [`add_xg_to_spadl()`](https://peteowen1.github.io/panna/reference/add_xg_to_spadl.md).
+  Without it six xG features are constant 0 and the xG feeding EPV is
+  skewed roughly 6%. Build it with
+  `load_opta_shot_events(league, season)`, not by reading the parquet
+  directly.
 
 ## Value
 

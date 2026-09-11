@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.32</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.35</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -1062,6 +1062,22 @@
         </dt>
         <dd>Simulate a 48-team World Cup</dd>
       </dl></div><div class="section level2">
+      <h2 id="club-cup-simulation">Club Cup Simulation<a class="anchor" aria-label="anchor" href="#club-cup-simulation"></a></h2>
+
+      <div class="section-desc"><p>Pairwise knockout-matchup lookup for UCL/UEL/UECL (club-cup sibling of the World Cup’s build_knockout_lookup)</p></div>
+
+      <dl></dl></div><div class="section level2">
+
+
+
+
+      <dl><dt>
+
+          <code><a href="build_cup_pairwise_lookup.html">build_cup_pairwise_lookup()</a></code>
+
+        </dt>
+        <dd>Build a pooled-only, two-legged pairwise knockout lookup for one UEFA cup</dd>
+      </dl></div><div class="section level2">
       <h2 id="xduel-models">xDuel Models<a class="anchor" aria-label="anchor" href="#xduel-models"></a></h2>
 
       <div class="section-desc"><p>Player-agnostic contextual win-probability for physical contests (aerial/take-on/tackle/containment) — the above-expected duel features that replaced the success ratios in PSR/PSV</p></div>
@@ -1230,6 +1246,20 @@
 
         <dt>
 
+          <code><a href="apply_psv_calibration.html">apply_psv_calibration()</a></code>
+
+        </dt>
+        <dd>Apply the PSV position calibration</dd>
+
+        <dt>
+
+          <code><a href="apply_psv_opponent_adjustment.html">apply_psv_opponent_adjustment()</a></code>
+
+        </dt>
+        <dd>Apply the PSV opponent adjustment</dd>
+
+        <dt>
+
           <code><a href="calculate_psr.html">calculate_psr()</a></code>
 
         </dt>
@@ -1265,6 +1295,13 @@
 
         <dt>
 
+          <code><a href="fit_psv_opponent_adjustment.html">fit_psv_opponent_adjustment()</a></code>
+
+        </dt>
+        <dd>Fit the PSV opponent-adjustment coefficient</dd>
+
+        <dt>
+
           <code><a href="load_opta_psr_weekly.html">load_opta_psr_weekly()</a></code>
 
         </dt>
@@ -1283,6 +1320,13 @@
 
         </dt>
         <dd>Get Player Skill Ratings</dd>
+
+        <dt>
+
+          <code><a href="psv_opponent.html">psv_opponent</a></code>
+
+        </dt>
+        <dd>Opponent adjustment for per-match PSV (panna#220)</dd>
 
         <dt>
 

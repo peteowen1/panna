@@ -14,7 +14,8 @@ fit_goals_xgb(
   params = NULL,
   nrounds = 500L,
   early_stopping = 30L,
-  verbose = 1L
+  verbose = 1L,
+  group_ids = NULL
 )
 ```
 
@@ -47,6 +48,12 @@ fit_goals_xgb(
 - verbose:
 
   Print progress (default 1)
+
+- group_ids:
+
+  Optional grouping vector (e.g. `match_id`) passed to
+  [`.fit_xgb_model`](https://peteowen1.github.io/panna/reference/dot-fit_xgb_model.md)
+  — see its documentation.
 
 ## Value
 

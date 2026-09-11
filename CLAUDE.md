@@ -12,23 +12,10 @@ the archive.
 
 ## Development Commands
 
-``` r
-# Load package for interactive dev
-devtools::load_all()
-
-# Run tests
-devtools::test()                          # All tests
-devtools::test(filter = "rapm")           # Single test file
-
-# Full package check (run before considering feature complete)
-devtools::check()
-
-# Rebuild docs (after editing roxygen comments)
-devtools::document()
-
-# Build pkgdown site
-pkgdown::build_site()
-```
+Standard `devtools::load_all()` / `check()` / `document()` workflow,
+plus `devtools::test(filter = "rapm")` to target a single test file and
+[`pkgdown::build_site()`](https://pkgdown.r-lib.org/reference/build_site.html)
+for the docs site.
 
 **Working directory**: Always `cd panna` before running R commands, or
 use `devtools::load_all("panna")` from pannaverse root.
@@ -165,15 +152,55 @@ held-out MSE) -
   `debug/wc_minutes_test/train_eval_xgb.R` and beating the heuristic;
   its top features are the heuristic’s own signals, so it mostly adds
   variance.
-- **Published `defense` is sign-flipped to positive=good** in
-  `10_export_blog_data.R` for blog consumption; internal model retains
-  negative=good convention. `panna_ratings.parquet` shows `defense` as
-  “defensive value added” (xG suppression per 90).
+- **NAMING: `panna` IS decayed xRAPM — nothing else may use the name**
+  (Pete, 2026-09-03). The career-trait rating from
+  [`fit_career_rapm()`](https://peteowen1.github.io/panna/reference/fit_career_rapm.md)
+  (halflife 365d, skill-SPM prior, `career_panna.parquet`). **`piero` is
+  the weighted average of EPR + PSR + Panna** — the three decayed
+  ratings. Four places currently relabel a non-decayed xRAPM as `panna`
+  and must be renamed: `08_panna_ratings.R:36` (career/pooled),
+  `estimated-skills/05_skill_panna_ratings.R:37` (skill),
+  `10_export_blog_data.R:187` (**season xRAPM, published to the blog as
+  “panna”** — the urgent one), and `02_player_ratings_to_team.R:77`
+  (model feature `home_sum_panna`; note that file already half-migrates
+  it at lines 191-223). Full audit + suggested names:
+  `pannaverse/docs/reference/RATING-TIME-AGGREGATIONS.md`.
+- **CONVENTION: positive = good, everywhere** (Pete, 2026-09-03). Not
+  yet true of the code — RAPM/xRAPM `defense` and
+  `team_season_strength.parquet`’s `def_rating` are still
+  **negative=good** internally and flipped at 5 export sites
+  (`09_export_ratings.R:98`, `10_export_blog_data.R:97` and `:197`,
+  `12d_export_domestic_team_strength.R:578`,
+  `12_export_wc2026_blog.R:338`). EPV/PSV/WPA are already positive=good.
+  **Do not “just delete the minus signs”:** SPM features are
+  sign-*constrained* in the negative-good convention (`spm_opta.R:1079`,
+  `spm_model.R:239`, `03_skill_spm.R:255`), and `def_rating` is stored
+  on disk in the old sign, so a partial flip silently inverts ratings
+  while diagnostics still look sane. Migration plan:
+  `pannaverse/docs/plans/SIGN-CONVENTION-POSITIVE-IS-GOOD.md`.
+  `panna_ratings.parquet` shows `defense` as “defensive value added” (xG
+  suppression per 90).
 - **Replacement Level filter at export** — `10_export_blog_data.R` drops
   `player_id == "replacement"` rows before publishing. The synthetic row
   is a model artifact (game-state confound, picks up uncontrolled
   variance from league-season fixed effects), not a coherent player
   rating.
+- **SPADL’s `bodypart` is a stub: every shot says “foot”.**
+  [`map_opta_bodypart()`](https://peteowen1.github.io/panna/reference/map_opta_bodypart.md)
+  (`spadl_conversion.R`) only ever sets “head” for aerials (type 44) and
+  “other” for keeper actions; its qualifier refinement was never written
+  and the sole caller passes `qualifiers = NULL`. Shots are types
+  13/14/15/16, so **100% of shots come through as “foot”** — measured
+  9,782/9,782 on ENG 2015-2016 against 15.7% real headers. Anything
+  deriving `is_header`/`is_right_foot`/`is_left_foot` from SPADL gets
+  three constant-zero features; the xG model is trained on Opta’s real
+  `body_part` (RightFoot/LeftFoot/Head), so this was a pure train/serve
+  skew worth **+6.30% on total xG**. Join `body_part` from
+  `opta_shot_events` on `(match_id, original_event_id)` instead —
+  `add_xg_to_spadl(shot_lookup = )` and
+  [`add_xgot_to_spadl()`](https://peteowen1.github.io/panna/reference/add_xgot_to_spadl.md)
+  both do. (An earlier version of this file claimed SPADL carried
+  “head”/“foot_left”/“foot_right”; it never has.)
 - **[`.get_col()`](https://peteowen1.github.io/panna/reference/dot-get_col.md)
   warns on missing columns** — memoized warnings via `.get_col_warned`
   env in `utils.R`

@@ -11,7 +11,7 @@ Useful for xG modeling as it includes shot coordinates."><meta property="og:imag
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.32</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.35</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -97,6 +97,22 @@ or Opta format (EPL, La_Liga, Bundesliga, Serie_A, Ligue_1).</p></dd>
 <li><p>situation: OpenPlay, SetPiece, Corner, Penalty</p></li>
 <li><p>big_chance: TRUE if big chance</p></li>
 </ul></div>
+    <div class="section level2">
+    <h2 id="the-xg-column-is-opta-s-not-ours">The <code>xg</code> column is OPTA's, not ours<a class="anchor" aria-label="anchor" href="#the-xg-column-is-opta-s-not-ours"></a></h2>
+
+
+<p><code>opta_shot_events.parquet</code> ships an <code>xg</code> column supplied by Opta. It is NOT
+panna's model output and must never be used as such – production always uses
+our own xG (via SPADL and <code><a href="predict_xg.html">predict_xg()</a></code>); Opta's is a benchmark only, for
+confirming ours is better on the shots they scored.</p>
+<p>They are trivial to tell apart: Opta's is quantised to 3 decimal places (956
+distinct values across 3.3M shots, penalties exactly 0.800), ours is
+float-continuous with ~84% of values unique. Neither of our models reproduces
+the stored column (correlations 0.964 / 0.967) because it was never ours.</p>
+<p>Measured head-to-head on 1,839,859 identical shots (2026-09-03, penalty
+override applied): ours wins on logloss (0.2519 vs 0.2549), Opta marginally
+better on bias (1.028 vs 1.033).</p>
+    </div>
     <div class="section level2">
     <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a></h2>
     <div class="dont-index"><p>Other opta loaders:

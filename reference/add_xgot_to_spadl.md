@@ -27,13 +27,21 @@ add_xgot_to_spadl(spadl_actions, xgot_model, goalmouth_lookup)
 - goalmouth_lookup:
 
   Data frame keyed by (`match_id`, `event_id`) with `type_id`,
-  `goalmouth_y`, `goalmouth_z`, `situation`, and `is_blocked` for shot
-  events - e.g. from match_events / opta_shot_events. `situation` is
-  required to avoid train/serve skew (the model trained on real
-  situations); without it, set-piece/corner/free-kick shots are scored
-  as open-play. `is_blocked` excludes shots blocked by an outfield
-  defender (q82) from on-target, matching training (panna#176); without
-  it, blocked shots are scored as real on-target attempts.
+  `goalmouth_y`, `goalmouth_z`, `situation`, `is_blocked` and
+  `body_part` for shot events - e.g. from match_events /
+  opta_shot_events. Pass it via
+  [`load_opta_shot_events()`](https://peteowen1.github.io/panna/reference/load_opta_shot_events.md),
+  NOT by reading the parquet directly: that returns `event_id` as
+  integer64 and [`merge()`](https://rdrr.io/r/base/merge.html) against
+  SPADL's numeric `original_event_id` matches nothing (a guard now
+  aborts on this rather than reporting "0 scored"). `body_part` is
+  required for the header and footedness features - SPADL's own
+  `bodypart` says "foot" for every shot. `situation` is required to
+  avoid train/serve skew (the model trained on real situations); without
+  it, set-piece/corner/free-kick shots are scored as open-play.
+  `is_blocked` excludes shots blocked by an outfield defender (q82) from
+  on-target, matching training (panna#176); without it, blocked shots
+  are scored as real on-target attempts.
 
 ## Value
 

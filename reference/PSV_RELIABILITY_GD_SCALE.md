@@ -16,7 +16,7 @@ PSV_RELIABILITY_GD_SCALE
 
 ## Format
 
-Numeric value: 2.717
+Numeric value: 5.293
 
 ## Details
 
@@ -60,17 +60,48 @@ the script writes no file, it only prints the number. Note 07b reads
 neither the coefficients nor this constant, so a coefficient-only
 retrain does not require re-running it.
 
+Re-derived 2026-09-02 after the panna#224 retrain: **2.717 -\> 5.822**
+(`c_outfield = 5.8218`, se 0.0858, t = 67.8, R^2 = 0.239, n = 14,713). A
+114% drift, which is expected rather than alarming: with the opponent
+control live in every competition it absorbs variance the box-score
+features used to carry, so their betas shrank (e.g. `shots_ibox_p90`
+0.103 -\> 0.026) and a correspondingly larger multiplier is needed to
+reach goal units.
+
+Re-derived again 2026-09-03 after the same-night PSR/PSV retrain (07,
+following the xG-inference fixes – season_num/body_part/situation dead
+at serve time, see PIPELINE-REBUILD-2026-09.md): **5.822 -\> 5.293**
+(`c_outfield = 5.2931`, se 0.0949, t = 55.8, R^2 = 0.169, n = 15,643). A
+9.1% drift, well past the 2% staleness threshold and expected: the
+coefficient vintage moved under it again. Re-ran 07c immediately after
+(same commit) so the live per-league PSV constants are built against
+this scale, not the stale one – this is the exact 3.5-week omission from
+2026-07-21 that this constant's own history above already documents
+once.
+
+The same fit returned `c_gk = -2.6946` (t = -13.3), REJECTED per the
+standing D1-v2 decision. Still negative, consistent with the 2026-09-02
+fit's flipped sign (was +25.39 on 2026-07-20) – this is the
+ALREADY-TRACKED \#226 inversion (`c_gk` inverted, blocks GK position
+factors), not a new finding. Unaffected here since GKs use `c_outfield`;
+still blocks any GK *position factor* work until \#226 is resolved – see
+RATING_CALIBRATION.md.
+
 ## See also
 
 Other psr:
+[`apply_psv_calibration()`](https://peteowen1.github.io/panna/reference/apply_psv_calibration.md),
+[`apply_psv_opponent_adjustment()`](https://peteowen1.github.io/panna/reference/apply_psv_opponent_adjustment.md),
 [`calculate_psr()`](https://peteowen1.github.io/panna/reference/calculate_psr.md),
 [`calculate_psv()`](https://peteowen1.github.io/panna/reference/calculate_psv.md),
 [`calculate_psv_components()`](https://peteowen1.github.io/panna/reference/calculate_psv_components.md),
 [`compute_player_psv()`](https://peteowen1.github.io/panna/reference/compute_player_psv.md),
 [`default_stat_rating_params()`](https://peteowen1.github.io/panna/reference/default_stat_rating_params.md),
+[`fit_psv_opponent_adjustment()`](https://peteowen1.github.io/panna/reference/fit_psv_opponent_adjustment.md),
 [`load_opta_psr_weekly()`](https://peteowen1.github.io/panna/reference/load_opta_psr_weekly.md),
 [`load_psv_match_reliability()`](https://peteowen1.github.io/panna/reference/load_psv_match_reliability.md),
 [`player_psr()`](https://peteowen1.github.io/panna/reference/player_psr.md),
+[`psv_opponent`](https://peteowen1.github.io/panna/reference/psv_opponent.md),
 [`soccer_position_map()`](https://peteowen1.github.io/panna/reference/soccer_position_map.md),
 [`soccer_stat_rating_definitions()`](https://peteowen1.github.io/panna/reference/soccer_stat_rating_definitions.md),
 [`stat_rating_names()`](https://peteowen1.github.io/panna/reference/stat_rating_names.md)

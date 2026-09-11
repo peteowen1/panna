@@ -9,7 +9,7 @@ Uses cross-validation to find optimal number of boosting rounds."><meta property
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.32</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.35</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -52,6 +52,7 @@ Uses cross-validation to find optimal number of boosting rounds.</p>
     <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">fit_xg_model</span><span class="op">(</span></span>
 <span>  <span class="va">shot_features</span>,</span>
 <span>  exclude_penalties <span class="op">=</span> <span class="cn">TRUE</span>,</span>
+<span>  season_feature <span class="op">=</span> <span class="cn">FALSE</span>,</span>
 <span>  nfolds <span class="op">=</span> <span class="fl">5</span>,</span>
 <span>  max_depth <span class="op">=</span> <span class="fl">6</span>,</span>
 <span>  eta <span class="op">=</span> <span class="fl">0.05</span>,</span>
@@ -72,7 +73,14 @@ Uses cross-validation to find optimal number of boosting rounds.</p>
 
 
 <dt id="arg-exclude-penalties">exclude_penalties<a class="anchor" aria-label="anchor" href="#arg-exclude-penalties"></a></dt>
-<dd><p>Whether to exclude penalties from training (default TRUE)</p></dd>
+<dd><p>Whether to exclude penalties from training (default TRUE).
+Every penalty is taken from the same spot, so the geometry features carry no
+information on them; they are scored at <code><a href="PENALTY_XG.html">PENALTY_XG</a></code> instead.</p></dd>
+
+
+<dt id="arg-season-feature">season_feature<a class="anchor" aria-label="anchor" href="#arg-season-feature"></a></dt>
+<dd><p>Add a <code>season_num</code> term (default FALSE). See the
+comment at the feature list for the evidence and the extrapolation caveat.</p></dd>
 
 
 <dt id="arg-nfolds">nfolds<a class="anchor" aria-label="anchor" href="#arg-nfolds"></a></dt>

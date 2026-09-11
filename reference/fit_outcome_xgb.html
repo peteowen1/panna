@@ -9,7 +9,7 @@ Labels: 0 = Home Win, 1 = Draw, 2 = Away Win."><meta property="og:image" content
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.32</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.35</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -56,7 +56,8 @@ Labels: 0 = Home Win, 1 = Draw, 2 = Away Win.</p>
 <span>  params <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  nrounds <span class="op">=</span> <span class="fl">500L</span>,</span>
 <span>  early_stopping <span class="op">=</span> <span class="fl">30L</span>,</span>
-<span>  verbose <span class="op">=</span> <span class="fl">1L</span></span>
+<span>  verbose <span class="op">=</span> <span class="fl">1L</span>,</span>
+<span>  group_ids <span class="op">=</span> <span class="cn">NULL</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -90,6 +91,11 @@ Labels: 0 = Home Win, 1 = Draw, 2 = Away Win.</p>
 
 <dt id="arg-verbose">verbose<a class="anchor" aria-label="anchor" href="#arg-verbose"></a></dt>
 <dd><p>Print progress (default 1)</p></dd>
+
+
+<dt id="arg-group-ids">group_ids<a class="anchor" aria-label="anchor" href="#arg-group-ids"></a></dt>
+<dd><p>Optional grouping vector (e.g. <code>match_id</code>) passed to
+<code><a href="dot-fit_xgb_model.html">.fit_xgb_model</a></code> — see its documentation.</p></dd>
 
 </dl></div>
     <div class="section level2">

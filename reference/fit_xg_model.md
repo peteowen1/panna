@@ -10,6 +10,7 @@ rounds.
 fit_xg_model(
   shot_features,
   exclude_penalties = TRUE,
+  season_feature = FALSE,
   nfolds = 5,
   max_depth = 6,
   eta = 0.05,
@@ -29,7 +30,16 @@ fit_xg_model(
 
 - exclude_penalties:
 
-  Whether to exclude penalties from training (default TRUE)
+  Whether to exclude penalties from training (default TRUE). Every
+  penalty is taken from the same spot, so the geometry features carry no
+  information on them; they are scored at
+  [`PENALTY_XG`](https://peteowen1.github.io/panna/reference/PENALTY_XG.md)
+  instead.
+
+- season_feature:
+
+  Add a `season_num` term (default FALSE). See the comment at the
+  feature list for the evidence and the extrapolation caveat.
 
 - nfolds:
 

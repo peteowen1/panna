@@ -82,12 +82,24 @@ A data.table with one row per player per match:
 
 - epv_keeping:
 
-  Keeper pick-up, claim, punch (distribution/handling)
+  Goalkeeping: saves, pick-ups, claims, punches
 
 - epv_defending:
 
-  Tackles, interceptions, clearances, ball recoveries, keeper saves,
-  fouls won, dispossessed events
+  Outfield defending: tackles, interceptions, clearances, ball
+  recoveries, fouls won, dispossessed events
+
+- epv_duel_blame:
+
+  Negative credit for losing duels (aerials, take-on vs tackle). Part of
+  `epv_defensive`; exported so that roll-up is auditable.
+
+- epv_aerial_att:
+
+  The attacking-third share of `epv_aerial` (`start_x > 67`).
+  `epv_defensive` contains `epv_aerial - epv_aerial_att`, so without
+  this column the defensive roll-up cannot be reconstructed from the
+  exported components.
 
 - minutes_played:
 

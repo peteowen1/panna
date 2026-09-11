@@ -11,7 +11,7 @@ decomposition, per-90 rates, and optional position-centering."><meta property="o
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.32</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.35</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -115,11 +115,22 @@ defensive). offensive + defensive == epv_total always.</p></dd>
 <dd><p>Aerial duel credit (winner + / loser via duel_blame)</p></dd>
 
 <dt>epv_keeping</dt>
-<dd><p>Keeper pick-up, claim, punch (distribution/handling)</p></dd>
+<dd><p>Goalkeeping: saves, pick-ups, claims, punches</p></dd>
 
 <dt>epv_defending</dt>
-<dd><p>Tackles, interceptions, clearances, ball recoveries,
-keeper saves, fouls won, dispossessed events</p></dd>
+<dd><p>Outfield defending: tackles, interceptions,
+clearances, ball recoveries, fouls won, dispossessed events</p></dd>
+
+<dt>epv_duel_blame</dt>
+<dd><p>Negative credit for losing duels (aerials, take-on
+vs tackle). Part of <code>epv_defensive</code>; exported so that roll-up is
+auditable.</p></dd>
+
+<dt>epv_aerial_att</dt>
+<dd><p>The attacking-third share of <code>epv_aerial</code>
+(<code>start_x &gt; 67</code>). <code>epv_defensive</code> contains
+<code>epv_aerial - epv_aerial_att</code>, so without this column the defensive
+roll-up cannot be reconstructed from the exported components.</p></dd>
 
 <dt>minutes_played</dt>
 <dd><p>Minutes played (if lineups provided)</p></dd>

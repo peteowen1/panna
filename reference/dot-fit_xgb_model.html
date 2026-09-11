@@ -11,7 +11,7 @@ fit_outcome_xgb (multinomial)."><meta property="og:image" content="https://peteo
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.32</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.35</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -59,7 +59,8 @@ and early stopping. Used by <code><a href="fit_goals_xgb.html">fit_goals_xgb</a>
 <span>  nfolds <span class="op">=</span> <span class="fl">5L</span>,</span>
 <span>  nrounds <span class="op">=</span> <span class="fl">500L</span>,</span>
 <span>  early_stopping <span class="op">=</span> <span class="fl">30L</span>,</span>
-<span>  verbose <span class="op">=</span> <span class="fl">1L</span></span>
+<span>  verbose <span class="op">=</span> <span class="fl">1L</span>,</span>
+<span>  group_ids <span class="op">=</span> <span class="cn">NULL</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -93,6 +94,14 @@ and early stopping. Used by <code><a href="fit_goals_xgb.html">fit_goals_xgb</a>
 
 <dt id="arg-verbose">verbose<a class="anchor" aria-label="anchor" href="#arg-verbose"></a></dt>
 <dd><p>Print progress (default 1)</p></dd>
+
+
+<dt id="arg-group-ids">group_ids<a class="anchor" aria-label="anchor" href="#arg-group-ids"></a></dt>
+<dd><p>Optional vector, one entry per row of <code>X</code>/<code>y</code>
+(e.g. <code>match_id</code>). When supplied, CV folds are assigned by group
+via <code><a href="dot-grouped_cv_folds.html">.grouped_cv_folds</a></code> instead of xgboost's default random
+per-row assignment, so a match and its mirrored twin never split across
+folds. <code>NULL</code> (default) keeps the prior per-row random behaviour.</p></dd>
 
 </dl></div>
     <div class="section level2">

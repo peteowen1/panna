@@ -65,6 +65,25 @@ Data frame of shot events with columns:
 
 - big_chance: TRUE if big chance
 
+## The `xg` column is OPTA's, not ours
+
+`opta_shot_events.parquet` ships an `xg` column supplied by Opta. It is
+NOT panna's model output and must never be used as such – production
+always uses our own xG (via SPADL and
+[`predict_xg()`](https://peteowen1.github.io/panna/reference/predict_xg.md));
+Opta's is a benchmark only, for confirming ours is better on the shots
+they scored.
+
+They are trivial to tell apart: Opta's is quantised to 3 decimal places
+(956 distinct values across 3.3M shots, penalties exactly 0.800), ours
+is float-continuous with ~84% of values unique. Neither of our models
+reproduces the stored column (correlations 0.964 / 0.967) because it was
+never ours.
+
+Measured head-to-head on 1,839,859 identical shots (2026-09-03, penalty
+override applied): ours wins on logloss (0.2519 vs 0.2549), Opta
+marginally better on bias (1.028 vs 1.033).
+
 ## See also
 
 Other opta loaders:

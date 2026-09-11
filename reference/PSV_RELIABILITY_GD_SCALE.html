@@ -17,7 +17,7 @@ PSVs predict match GD with slope 1.'><meta property="og:image" content="https://
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.32</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.35</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -66,7 +66,7 @@ PSVs predict match GD with slope 1.</p>
 
     <div class="section level2">
     <h2 id="format">Format<a class="anchor" aria-label="anchor" href="#format"></a></h2>
-    <p>Numeric value: 2.717</p>
+    <p>Numeric value: 5.293</p>
     </div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
@@ -106,18 +106,43 @@ coefficients (07_train_psr_model.R), then update this value by hand – the
 script writes no file, it only prints the number. Note 07b reads neither the
 coefficients nor this constant, so a coefficient-only retrain does not
 require re-running it.</p>
+<p>Re-derived 2026-09-02 after the panna#224 retrain: <strong>2.717 -&gt; 5.822</strong>
+(<code>c_outfield = 5.8218</code>, se 0.0858, t = 67.8, R^2 = 0.239, n = 14,713).
+A 114% drift, which is expected rather than alarming: with the opponent
+control live in every competition it absorbs variance the box-score features
+used to carry, so their betas shrank (e.g. <code>shots_ibox_p90</code> 0.103 -&gt; 0.026)
+and a correspondingly larger multiplier is needed to reach goal units.</p>
+<p>Re-derived again 2026-09-03 after the same-night PSR/PSV retrain (07,
+following the xG-inference fixes – season_num/body_part/situation dead at
+serve time, see PIPELINE-REBUILD-2026-09.md): <strong>5.822 -&gt; 5.293</strong>
+(<code>c_outfield = 5.2931</code>, se 0.0949, t = 55.8, R^2 = 0.169, n = 15,643).
+A 9.1% drift, well past the 2% staleness threshold and expected: the
+coefficient vintage moved under it again. Re-ran 07c immediately after (same
+commit) so the live per-league PSV constants are built against this scale,
+not the stale one – this is the exact 3.5-week omission from 2026-07-21
+that this constant's own history above already documents once.</p>
+<p>The same fit returned <code>c_gk = -2.6946</code> (t = -13.3), REJECTED per the
+standing D1-v2 decision. Still negative, consistent with the 2026-09-02
+fit's flipped sign (was +25.39 on 2026-07-20) – this is the ALREADY-TRACKED
+#226 inversion (<code>c_gk</code> inverted, blocks GK position factors), not a new
+finding. Unaffected here since GKs use <code>c_outfield</code>; still blocks any GK
+<em>position factor</em> work until #226 is resolved – see RATING_CALIBRATION.md.</p>
     </div>
     <div class="section level2">
     <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a></h2>
     <div class="dont-index"><p>Other psr:
+<code><a href="apply_psv_calibration.html">apply_psv_calibration()</a></code>,
+<code><a href="apply_psv_opponent_adjustment.html">apply_psv_opponent_adjustment()</a></code>,
 <code><a href="calculate_psr.html">calculate_psr()</a></code>,
 <code><a href="calculate_psv.html">calculate_psv()</a></code>,
 <code><a href="calculate_psv_components.html">calculate_psv_components()</a></code>,
 <code><a href="compute_player_psv.html">compute_player_psv()</a></code>,
 <code><a href="default_stat_rating_params.html">default_stat_rating_params()</a></code>,
+<code><a href="fit_psv_opponent_adjustment.html">fit_psv_opponent_adjustment()</a></code>,
 <code><a href="load_opta_psr_weekly.html">load_opta_psr_weekly()</a></code>,
 <code><a href="load_psv_match_reliability.html">load_psv_match_reliability()</a></code>,
 <code><a href="player_psr.html">player_psr()</a></code>,
+<code><a href="psv_opponent.html">psv_opponent</a></code>,
 <code><a href="soccer_position_map.html">soccer_position_map()</a></code>,
 <code><a href="soccer_stat_rating_definitions.html">soccer_stat_rating_definitions()</a></code>,
 <code><a href="stat_rating_names.html">stat_rating_names()</a></code></p></div>

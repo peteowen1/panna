@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.32</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.35</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -45,22 +45,7 @@
 <p><strong>Active data source: Opta only.</strong> The FBref/Understat archival sweep is complete (2026-06 code removal; 2026-07-14 scraper scripts deleted). Their R sources, loaders, and the <code>player-ratings-fbref/</code> pipeline were removed from this package, and the disabled scraper code in <code>pannadata/scripts/{fbref,understat}/</code> was also removed — git history is the archive.</p>
 <div class="section level2">
 <h2 id="development-commands">Development Commands<a class="anchor" aria-label="anchor" href="#development-commands"></a></h2>
-<div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="co"># Load package for interactive dev</span></span>
-<span><span class="fu">devtools</span><span class="fu">::</span><span class="fu">load_all</span><span class="op">(</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Run tests</span></span>
-<span><span class="fu">devtools</span><span class="fu">::</span><span class="fu">test</span><span class="op">(</span><span class="op">)</span>                          <span class="co"># All tests</span></span>
-<span><span class="fu">devtools</span><span class="fu">::</span><span class="fu">test</span><span class="op">(</span>filter <span class="op">=</span> <span class="st">"rapm"</span><span class="op">)</span>           <span class="co"># Single test file</span></span>
-<span></span>
-<span><span class="co"># Full package check (run before considering feature complete)</span></span>
-<span><span class="fu">devtools</span><span class="fu">::</span><span class="fu">check</span><span class="op">(</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Rebuild docs (after editing roxygen comments)</span></span>
-<span><span class="fu">devtools</span><span class="fu">::</span><span class="fu">document</span><span class="op">(</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Build pkgdown site</span></span>
-<span><span class="fu">pkgdown</span><span class="fu">::</span><span class="fu"><a href="https://pkgdown.r-lib.org/reference/build_site.html" class="external-link">build_site</a></span><span class="op">(</span><span class="op">)</span></span></code></pre></div>
+<p>Standard <code>devtools::load_all()</code> / <code>check()</code> / <code>document()</code> workflow, plus <code>devtools::test(filter = "rapm")</code> to target a single test file and <code><a href="https://pkgdown.r-lib.org/reference/build_site.html" class="external-link">pkgdown::build_site()</a></code> for the docs site.</p>
 <p><strong>Working directory</strong>: Always <code>cd panna</code> before running R commands, or use <code>devtools::load_all("panna")</code> from pannaverse root.</p>
 </div>
 <div class="section level2">
@@ -160,9 +145,13 @@ Stat ratings → PSR/OSR/DSR (smoothed skills via glmnet) ───────�
 <li>
 <strong>The XGBoost minutes model is benched, deliberately</strong> — <code>minutes_model*.R</code>/<code>minutes_query.R</code> are feature-complete (incl. <code>p_start_decay</code>, within-tournament accumulators, prev-team-match involvement, training/query parity tests) but LOSE to the tuned heuristic on the WC2022 holdout (22.4 vs 19.6 MAE, XI-hit tie). Don’t wire it into the pipeline without re-running <code>debug/wc_minutes_test/train_eval_xgb.R</code> and beating the heuristic; its top features are the heuristic’s own signals, so it mostly adds variance.</li>
 <li>
-<strong>Published <code>defense</code> is sign-flipped to positive=good</strong> in <code>10_export_blog_data.R</code> for blog consumption; internal model retains negative=good convention. <code>panna_ratings.parquet</code> shows <code>defense</code> as “defensive value added” (xG suppression per 90).</li>
+<strong>NAMING: <code>panna</code> IS decayed xRAPM — nothing else may use the name</strong> (Pete, 2026-09-03). The career-trait rating from <code><a href="reference/fit_career_rapm.html">fit_career_rapm()</a></code> (halflife 365d, skill-SPM prior, <code>career_panna.parquet</code>). <strong><code>piero</code> is the weighted average of EPR + PSR + Panna</strong> — the three decayed ratings. Four places currently relabel a non-decayed xRAPM as <code>panna</code> and must be renamed: <code>08_panna_ratings.R:36</code> (career/pooled), <code>estimated-skills/05_skill_panna_ratings.R:37</code> (skill), <code>10_export_blog_data.R:187</code> (<strong>season xRAPM, published to the blog as “panna”</strong> — the urgent one), and <code>02_player_ratings_to_team.R:77</code> (model feature <code>home_sum_panna</code>; note that file already half-migrates it at lines 191-223). Full audit + suggested names: <code>pannaverse/docs/reference/RATING-TIME-AGGREGATIONS.md</code>.</li>
+<li>
+<strong>CONVENTION: positive = good, everywhere</strong> (Pete, 2026-09-03). Not yet true of the code — RAPM/xRAPM <code>defense</code> and <code>team_season_strength.parquet</code>’s <code>def_rating</code> are still <strong>negative=good</strong> internally and flipped at 5 export sites (<code>09_export_ratings.R:98</code>, <code>10_export_blog_data.R:97</code> and <code>:197</code>, <code>12d_export_domestic_team_strength.R:578</code>, <code>12_export_wc2026_blog.R:338</code>). EPV/PSV/WPA are already positive=good. <strong>Do not “just delete the minus signs”:</strong> SPM features are sign-<em>constrained</em> in the negative-good convention (<code>spm_opta.R:1079</code>, <code>spm_model.R:239</code>, <code>03_skill_spm.R:255</code>), and <code>def_rating</code> is stored on disk in the old sign, so a partial flip silently inverts ratings while diagnostics still look sane. Migration plan: <code>pannaverse/docs/plans/SIGN-CONVENTION-POSITIVE-IS-GOOD.md</code>. <code>panna_ratings.parquet</code> shows <code>defense</code> as “defensive value added” (xG suppression per 90).</li>
 <li>
 <strong>Replacement Level filter at export</strong> — <code>10_export_blog_data.R</code> drops <code>player_id == "replacement"</code> rows before publishing. The synthetic row is a model artifact (game-state confound, picks up uncontrolled variance from league-season fixed effects), not a coherent player rating.</li>
+<li>
+<strong>SPADL’s <code>bodypart</code> is a stub: every shot says “foot”.</strong> <code><a href="reference/map_opta_bodypart.html">map_opta_bodypart()</a></code> (<code>spadl_conversion.R</code>) only ever sets “head” for aerials (type 44) and “other” for keeper actions; its qualifier refinement was never written and the sole caller passes <code>qualifiers = NULL</code>. Shots are types 13/14/15/16, so <strong>100% of shots come through as “foot”</strong> — measured 9,782/9,782 on ENG 2015-2016 against 15.7% real headers. Anything deriving <code>is_header</code>/<code>is_right_foot</code>/<code>is_left_foot</code> from SPADL gets three constant-zero features; the xG model is trained on Opta’s real <code>body_part</code> (RightFoot/LeftFoot/Head), so this was a pure train/serve skew worth <strong>+6.30% on total xG</strong>. Join <code>body_part</code> from <code>opta_shot_events</code> on <code>(match_id, original_event_id)</code> instead — <code>add_xg_to_spadl(shot_lookup = )</code> and <code><a href="reference/add_xgot_to_spadl.html">add_xgot_to_spadl()</a></code> both do. (An earlier version of this file claimed SPADL carried “head”/“foot_left”/“foot_right”; it never has.)</li>
 <li>
 <strong><code><a href="reference/dot-get_col.html">.get_col()</a></code> warns on missing columns</strong> — memoized warnings via <code>.get_col_warned</code> env in <code>utils.R</code>
 </li>
