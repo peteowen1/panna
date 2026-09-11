@@ -138,7 +138,8 @@ prev <- NULL
 if (isTRUE(resume) && file.exists(out_path)) {
   cand <- as.data.table(read_parquet(out_path))
   cand_tag <- if ("sign_convention" %in% names(cand)) unique(cand$sign_convention) else NA_character_
-  if (identical(cand_tag, CAREER_PANNA_SIGN_CONVENTION)) {
+  cand_tag_desc <- if (length(cand_tag) != 1L || is.na(cand_tag)) "<untagged>" else sQuote(cand_tag)
+  if (length(cand_tag) == 1L && identical(cand_tag, CAREER_PANNA_SIGN_CONVENTION)) {
     prev <- cand
     done <- as.character(unique(prev$ref_date))
     cat(sprintf("  resume: %d snapshots already in %s — skipping those dates\n",
@@ -147,14 +148,13 @@ if (isTRUE(resume) && file.exists(out_path)) {
     cat(sprintf(paste0("  resume SKIPPED: %s is tagged %s (expected %s) — ",
                        "discarding it and doing a full regen so old- and ",
                        "new-convention snapshots don't mix in one file.\n"),
-                basename(out_path), if (is.na(cand_tag)) "<untagged>" else sQuote(cand_tag),
-                sQuote(CAREER_PANNA_SIGN_CONVENTION)))
+                basename(out_path), cand_tag_desc, sQuote(CAREER_PANNA_SIGN_CONVENTION)))
   }
 }
 
 # ---- Build snapshots --------------------------------------------------------
-cat(sprintf("\n=== Fitting %d as-of snapshots (fixed-lambda, no CV) ===\n",
-            sum(!as.character(ref_dates) %in% done)))
+n_attempted <- sum(!as.character(ref_dates) %in% done)
+cat(sprintf("\n=== Fitting %d as-of snapshots (fixed-lambda, no CV) ===\n", n_attempted))
 out <- list()
 for (i in seq_along(ref_dates)) {
   D <- ref_dates[i]
@@ -184,7 +184,24 @@ for (i in seq_along(ref_dates)) {
               as.numeric(difftime(Sys.time(), t0, units = "mins"))))
 }
 
-if (!length(out)) { cat("\nNothing new to write (all dates already done).\n"); quit(save = "no") }
+if (!length(out)) {
+  # n_attempted > 0 means every attempted date's fit_career_rapm() call failed
+  # (see the tryCatch above) -- NOT the benign "everything was already resumed"
+  # case. Collapsing these to the same message would let a systemic fit
+  # failure (missing input, corrupted skill_spm, ...) exit 0 while the
+  # on-disk file keeps whatever sign_convention tag it had before this run --
+  # including a mismatched one that the discard branch above was trying to
+  # replace (panna#F1: the very bug this script exists to fix would then
+  # remain live while the pipeline step reports success).
+  if (n_attempted > 0L) {
+    stop(sprintf(paste0("Every attempted snapshot (%d date%s) failed to fit -- see ",
+                        "the FIT FAILED messages above. %s was NOT written; ",
+                        "its previous contents (if any) are unchanged."),
+                 n_attempted, if (n_attempted == 1L) "" else "s", out_path))
+  }
+  cat("\nNothing new to write (all dates already done).\n")
+  quit(save = "no")
+}
 
 allr <- rbindlist(out)
 allr[, sign_convention := CAREER_PANNA_SIGN_CONVENTION]
