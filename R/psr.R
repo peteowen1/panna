@@ -493,7 +493,20 @@
                       decay_params = decay_params,
                       source_fingerprint = source_fingerprint)
   if (!is.null(checkpoint_path) && file.exists(checkpoint_path)) {
-    cp <- tryCatch(readRDS(checkpoint_path), error = function(e) NULL)
+    cp <- tryCatch(readRDS(checkpoint_path), error = function(e) {
+      # A truncated/corrupt RDS (e.g. from a killed process -- exactly the
+      # scenario this checkpoint feature exists to survive) previously fell
+      # through to the SAME "starting fresh" path as a fingerprint-mismatched
+      # checkpoint, but silently: the `!is.null(cp)` guard below only logs
+      # when readRDS() succeeded, so a read failure printed nothing at any
+      # verbosity, hiding exactly why an expensive job restarted from scratch
+      # (silent-failure-hunter finding, panna#F1 PR, 2026-09-11).
+      if (verbose) {
+        progress_msg(sprintf("Checkpoint unreadable (%s) -- starting fresh.",
+                              conditionMessage(e)))
+      }
+      NULL
+    })
     if (.psr_checkpoint_usable(cp, fingerprint, n_dates)) {
       run_rate <- cp$run_rate
       run_eff <- cp$run_eff
