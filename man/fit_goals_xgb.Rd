@@ -11,7 +11,8 @@ fit_goals_xgb(
   params = NULL,
   nrounds = 500L,
   early_stopping = 30L,
-  verbose = 1L
+  verbose = 1L,
+  group_ids = NULL
 )
 }
 \arguments{
@@ -28,6 +29,9 @@ fit_goals_xgb(
 \item{early_stopping}{Patience for early stopping (default 30)}
 
 \item{verbose}{Print progress (default 1)}
+
+\item{group_ids}{Optional grouping vector (e.g. \code{match_id}) passed to
+\code{\link{.fit_xgb_model}} — see its documentation.}
 }
 \value{
 List with model, cv_result, best_nrounds, metadata

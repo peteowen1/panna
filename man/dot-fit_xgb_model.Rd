@@ -11,7 +11,8 @@
   nfolds = 5L,
   nrounds = 500L,
   early_stopping = 30L,
-  verbose = 1L
+  verbose = 1L,
+  group_ids = NULL
 )
 }
 \arguments{
@@ -28,6 +29,12 @@
 \item{early_stopping}{Patience for early stopping (default 30)}
 
 \item{verbose}{Print progress (default 1)}
+
+\item{group_ids}{Optional vector, one entry per row of \code{X}/\code{y}
+(e.g. \code{match_id}). When supplied, CV folds are assigned by group
+via \code{\link{.grouped_cv_folds}} instead of xgboost's default random
+per-row assignment, so a match and its mirrored twin never split across
+folds. \code{NULL} (default) keeps the prior per-row random behaviour.}
 }
 \value{
 List with model, cv_result, best_nrounds, metadata

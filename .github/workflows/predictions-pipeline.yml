@@ -310,6 +310,13 @@ jobs:
               # Non-fatal like 11/12/12b/12c, for the same reason (a side
               # export failing must never hold back predictions-latest).
               step_12d_export_domestic_team_strength = TRUE,
+              # Full-model pairwise knockout lookup for UCL/UEL/UECL (club-cup
+              # sibling of step 11's WC knockout lookup) -- the blog's cup
+              # knockout-phase Sim tab reads this instead of a client-side
+              # rating-difference approximation. Non-fatal like 11/12/12b/12c/
+              # 12d, and gated internally on team-state freshness (see
+              # 12e_export_cup_pairwise.R's STALE_DAYS_ABORT).
+              step_12e_export_cup_pairwise  = TRUE,
               # Single gated publish of predictions-latest + blog-latest
               # (ECOSYSTEM-FIX-PLAN.md PA5/H-TORN) -- steps 09/10/10b/10c/10d/12
               # above now write LOCAL outputs only; this is the one place

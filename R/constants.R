@@ -357,16 +357,32 @@ EPV_OPP_PRIOR_GAMES <- 2
 #' xG override for penalty kicks, applied in `add_xg_to_spadl()` to shots flagged
 #' `is_penalty` (Opta qualifier 9). The xG model is trained with penalties
 #' excluded (`exclude_penalties = TRUE`), so without this override a penalty
-#' scores like a contested ~12m open-play shot (~0.23). Empirical: ENG 2021-24 =
-#' 251/306 = 0.82 (thin, seasonal range 0.74-0.90); long-run top-flight ~0.78.
-#' 0.80 is a robust central value.
+#' scores like a contested ~12m open-play shot (~0.23).
 #'
-#' @format Numeric value: 0.80
+#' **Re-derived 2026-09-03 on the full corpus: 0.80 -> 0.7694.** The previous
+#' value came from ENG 2021-24 only, 251/306 = 0.82, and was rounded to 0.80 as
+#' "a robust central value". Measured across every league and season in
+#' `opta_shot_events.parquet` the rate is **39,916 / 51,881 = 0.7694**, 95% CI
+#' **0.7657 to 0.7730** -- 170x the sample, and **0.80 falls outside the
+#' interval**, so the old value overrated every penalty by about 4%.
+#' (Square brackets around the interval would be parsed by roxygen as a link.)
+#'
+#' It is stable enough to stay a single constant rather than becoming a model
+#' feature: by year 0.751-0.806 with no trend (2014-2026), by league 0.74-0.81
+#' across the twelve highest-volume competitions. Penalties remain EXCLUDED from
+#' xG training (`exclude_penalties = TRUE`) -- every penalty is taken from the
+#' same spot, so there is nothing for the geometry features to learn, and a
+#' measured constant is the right shape for it.
+#'
+#' Worth noting the old 0.80 exactly matched Opta's own penalty xG, which is
+#' what a copied constant looks like rather than a measured one.
+#'
+#' @format Numeric value: 0.7694
 #' @family constants
 #' @export
 #' @examples
 #' PENALTY_XG
-PENALTY_XG <- 0.80
+PENALTY_XG <- 0.7694
 
 #' Empirical penalty-shootout conversion rate
 #'
@@ -533,10 +549,34 @@ PANNA_PSR_WEIGHT <- 0.5
 #' coefficients nor this constant, so a coefficient-only retrain does not
 #' require re-running it.
 #'
-#' @format Numeric value: 2.717
+#' Re-derived 2026-09-02 after the panna#224 retrain: **2.717 -> 5.822**
+#' (`c_outfield = 5.8218`, se 0.0858, t = 67.8, R^2 = 0.239, n = 14,713).
+#' A 114% drift, which is expected rather than alarming: with the opponent
+#' control live in every competition it absorbs variance the box-score features
+#' used to carry, so their betas shrank (e.g. `shots_ibox_p90` 0.103 -> 0.026)
+#' and a correspondingly larger multiplier is needed to reach goal units.
+#'
+#' Re-derived again 2026-09-03 after the same-night PSR/PSV retrain (07,
+#' following the xG-inference fixes -- season_num/body_part/situation dead at
+#' serve time, see PIPELINE-REBUILD-2026-09.md): **5.822 -> 5.293**
+#' (`c_outfield = 5.2931`, se 0.0949, t = 55.8, R^2 = 0.169, n = 15,643).
+#' A 9.1% drift, well past the 2% staleness threshold and expected: the
+#' coefficient vintage moved under it again. Re-ran 07c immediately after (same
+#' commit) so the live per-league PSV constants are built against this scale,
+#' not the stale one -- this is the exact 3.5-week omission from 2026-07-21
+#' that this constant's own history above already documents once.
+#'
+#' The same fit returned `c_gk = -2.6946` (t = -13.3), REJECTED per the
+#' standing D1-v2 decision. Still negative, consistent with the 2026-09-02
+#' fit's flipped sign (was +25.39 on 2026-07-20) -- this is the ALREADY-TRACKED
+#' #226 inversion (\code{c_gk} inverted, blocks GK position factors), not a new
+#' finding. Unaffected here since GKs use `c_outfield`; still blocks any GK
+#' *position factor* work until #226 is resolved -- see RATING_CALIBRATION.md.
+#'
+#' @format Numeric value: 5.293
 #' @family psr
 #' @export
-PSV_RELIABILITY_GD_SCALE <- 2.717
+PSV_RELIABILITY_GD_SCALE <- 5.293
 
 
 # =============================================================================
@@ -706,6 +746,28 @@ PANNA_RATING_LEAGUES <- unlist(PANNA_LEAGUE_GROUPS, use.names = FALSE)
 #' @keywords internal
 PANNA_BRIDGE_LEAGUES <- c("LIB", "SUD", "CCC", "LGC", "ACLE", "CWC")
 
+#' Domestic-only competitions (for league-offset attribution)
+#'
+#' The subset of \code{PANNA_RATING_LEAGUES} that is a domestic league. Used
+#' when attributing a player-season to "the league he plays in", which must be
+#' a domestic competition -- a cross-league cup is where leagues MEET, not a
+#' league a player belongs to.
+#'
+#' Without this restriction the max-minutes rule assigns a continental
+#' competition as a player's league whenever his domestic one is absent from
+#' the rated set: measured at **19.1\% of player-seasons** (24,613 of 128,589)
+#' -- UEL 9,062, Conference 6,770, CAF_CL 3,438, UCL 2,724. Those players
+#' (typically from unrated leagues such as Norway, Czechia or Japan appearing
+#' only in Europe) were priced with the UEL/UCL offset rather than anything
+#' reflecting their actual domestic standard. Adding
+#' \code{PANNA_BRIDGE_LEAGUES} to the skills pipeline would extend the same
+#' problem to South American and Asian players.
+#'
+#' @format Character vector of domestic competition codes
+#' @keywords internal
+PANNA_DOMESTIC_LEAGUES <- c(PANNA_LEAGUE_GROUPS$domestic,
+                             PANNA_LEAGUE_GROUPS$calendar)
+
 #' International blend weight
 #'
 #' Weight on the international-specialist model when predicting international
@@ -761,3 +823,35 @@ WC2026_HOST_TEAM_IDS <- c(
 #' EM-weighted aggregation collapses to ~zero sum_panna.
 #' @keywords internal
 WC2026_OVERRIDE_MIN_RESOLVED <- 11L
+
+#' Sign convention tag written to team_season_strength.parquet
+#'
+#' Positive=good migration (docs/plans/SIGN-CONVENTION-POSITIVE-IS-GOOD.md at
+#' the pannaverse root): `07c_team_season_strength.R` stamps this into a
+#' `sign_convention` column so every consumer of `def_rating`
+#' (`07_train_psr_model.R`, `build_epr_weekly.R`, `R/psv_opponent.R`) can
+#' abort on an unmarked or mismatched file instead of silently reading an
+#' inverted value. Value flipped to "defense_positive_good" in the SAME
+#' commit as `extract_rapm_ratings()`/`extract_xrapm_ratings()` negating
+#' `def_coefs` at extraction (2026-09-04) -- any `team_season_strength.parquet`
+#' on disk from before that commit is now correctly rejected by every
+#' consumer until `07c` regenerates it.
+#' @keywords internal
+TEAM_STRENGTH_SIGN_CONVENTION <- "defense_positive_good"
+
+#' Sign convention tag written to career_panna.parquet / career_panna_asof.parquet
+#'
+#' Same idiom as `TEAM_STRENGTH_SIGN_CONVENTION`, added after panna#F1
+#' (2026-09-07, fixed 2026-09-11): commit `795feeb1` removed the defense-sign
+#' negation at every export site that reads `career_panna.parquet`, on the
+#' assumption the file already stored `panna_defense` as positive=good. It
+#' didn't -- the release asset was 7 weeks stale -- so every consumer that
+#' stopped flipping inherited the OLD (negative=good) convention and
+#' published elite defenders (Rodri, Saliba, Gabriel Magalhães) as the worst
+#' in the game. `09_career_panna.R` / `09b_career_panna_asof.R` stamp this
+#' into a `sign_convention` column at write time; every consumer must call
+#' `.assert_career_panna_sign_convention()` (`R/career_rapm.R`) right after
+#' loading either file, so a stale-vintage file aborts loudly instead of
+#' silently shipping inverted again.
+#' @keywords internal
+CAREER_PANNA_SIGN_CONVENTION <- "defense_positive_good"

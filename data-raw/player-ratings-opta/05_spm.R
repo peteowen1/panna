@@ -159,6 +159,54 @@ if (use_xmetrics_features && !is.null(opta_xmetrics)) {
 
 cat("\n=== Preparing SPM Training Data ===\n")
 
+# League control: minutes SHARES, not a dummy.
+#
+# aggregate_opta_stats() collapses 3.46M player-match rows to one row per
+# player and no league column survives, so `league_fe = TRUE` here is a silent
+# no-op. Deriving one league per player is the panna#222 trap: of 48,377
+# players only 55.1% appear in a single competition, 12.0% have no competition
+# holding even 60% of their minutes, and 0.3% are exact ties. (Median dominant
+# share is 1.000 -- the same reassuring statistic that said #222's inputs were
+# fine.) A share vector removes the decision instead of making it badly, and
+# degenerates to the dummy for the 55% who played in one place.
+#
+# Validated as a single axis on 35,590 players, 5-fold held out: RMSE 0.03076
+# -> 0.02983, -3.02%. Limiting case checked and passed: on a
+# single-competition subset the shares carry no variance and the arms converge
+# (-0.06%), so the gain is a league effect and not 30 unpenalized columns
+# forcing the metric.
+#
+# DEFAULT OFF. Turning it on makes lgshare_* part of the model's predictor
+# contract, and calculate_spm_ratings() ABORTS when they are absent - so every
+# downstream scorer must join them too: 06_xrapm, 07_seasonal_ratings, and
+# 05b_export_spm_coefficients (live per-match parity). Switch on only with
+# those wired.
+if (!exists("spm_league_shares")) spm_league_shares <- FALSE
+if (isTRUE(spm_league_shares)) {
+  # Joined onto `player_stats`, NOT spm_train_data.
+  #
+  # spm_train_data is player_stats inner-joined to RAPM (35,590 of 68,830
+  # players), but SCORING runs on the full player_stats - so joining the shares
+  # downstream leaves the scoring frame without them and
+  # calculate_spm_ratings() aborts. Joining here means the training frame
+  # inherits the columns through the inner_join below, and both sides carry
+  # them by construction rather than by remembering to do it twice.
+  #
+  # `opta_stats` (player-match grain, from 02_opta_stats.rds) -- NOT
+  # processed_data, which does not exist in this step's environment.
+  .shares <- panna:::.spm_league_shares(opta_stats, min_n = 50)
+  if (length(.shares$cols) == 0) {
+    stop("spm_league_shares = TRUE but the share matrix is empty; refusing to fit unadjusted.")
+  }
+  player_stats <- player_stats %>% left_join(.shares$data, by = "player_id")
+  for (.cc in .shares$cols) player_stats[[.cc]][is.na(player_stats[[.cc]])] <- 0
+  cat(sprintf("League shares: %d columns (reference %s), %.1f%% of players non-reference\n",
+              length(.shares$cols), .shares$reference,
+              100 * mean(rowSums(player_stats[, .shares$cols, drop = FALSE]) > 0)))
+}
+
+# Training frame is built AFTER the shares join so it inherits those columns;
+# scoring later runs on player_stats, which now carries them too.
 spm_train_data <- player_stats %>%
   inner_join(
     rapm_ratings %>%
@@ -176,7 +224,8 @@ spm_glmnet <- fit_spm_opta(
   alpha = 0.5,
   nfolds = 5,          # panna#87: 10 -> 5 to reduce CV memory/time
   weight_by_minutes = TRUE,
-  weight_transform = "sqrt"
+  weight_transform = "sqrt",
+  league_shares = spm_league_shares
 )
 
 cat("\n=== Fitting XGBoost SPM ===\n")
@@ -185,7 +234,12 @@ spm_xgb <- fit_spm_xgb(
   # Exact feature parity with the glmnet half: fit_spm_xgb's own default grep
   # was `_p90$`-only, which kept the XGB half of the 50/50 blend xMetrics-blind
   # even after fit_spm_opta's detector was fixed (2026-07-07 review finding).
-  predictor_cols = panna:::.spm_opta_predictor_cols(spm_train_data),
+  # The league shares are appended for the SAME reason: .spm_opta_predictor_cols()
+  # does not match `lgshare_*`, so adjusting only the glmnet half would leave
+  # half of a 50/50 blend league-blind - the identical parity break, one feature
+  # family later.
+  predictor_cols = c(panna:::.spm_opta_predictor_cols(spm_train_data),
+                     if (isTRUE(spm_league_shares)) grep("^lgshare_", names(spm_train_data), value = TRUE)),
   nfolds = 5,          # panna#87: 10 -> 5
   max_depth = 4,
   eta = 0.02,
@@ -462,13 +516,14 @@ if (length(chain_defense) > 0) {
 defense_cols <- intersect(defense_cols, names(spm_train_data))
 
 cat("\n--- Defense Elastic Net ---\n")
-# Directional sign constraints. RAPM defense column uses the model's native
-# convention: negative = good defender (suppresses opponent xG). So features
-# that genuinely indicate good defense should have NON-POSITIVE coefficients
-# (more = lower defense = better defender), and bad-defense features should
-# have NON-NEGATIVE coefficients. Without these constraints, multicollinearity
-# can flip signs (e.g., elastic net learning that more tackles_won → worse
-# defense, because tackles concentrate when teams are under pressure).
+# Directional sign constraints. sign convention (Pete, 2026-09-03): RAPM
+# defense column is positive = good defender (suppresses opponent xG). So
+# features that genuinely indicate good defense should have NON-NEGATIVE
+# coefficients (more = higher defense = better defender), and bad-defense
+# features should have NON-POSITIVE coefficients. Without these constraints,
+# multicollinearity can flip signs (e.g., elastic net learning that more
+# tackles_won → worse defense, because tackles concentrate when teams are
+# under pressure).
 defense_good_features <- c(
   # Direct defensive actions — more = better
   "tackles_p90", "tackles_won_p90",
@@ -492,8 +547,8 @@ defense_bad_features <- c(
   "pen_goals_conceded_p90",
   "poss_lost_ctrl_p90", "poss_lost_ctrl_per_touch"
 )
-def_lower <- setNames(rep(0,    length(defense_bad_features)),  defense_bad_features)
-def_upper <- setNames(rep(0,    length(defense_good_features)), defense_good_features)
+def_lower <- setNames(rep(0,    length(defense_good_features)), defense_good_features)
+def_upper <- setNames(rep(0,    length(defense_bad_features)),  defense_bad_features)
 
 # 11. Generate Blended O/D SPM Predictions ----
 
@@ -625,8 +680,8 @@ if (isTRUE(spm_use_panel)) {
     defense_spm_s6 = 0.5 * s6_gd$pred + 0.5 * s6_xd$pred
   )
 
-  # Hybrid tables: S6 where available, legacy elsewhere. Net = off − def
-  # (raw internal convention; see predict_spm_panel_net()).
+  # Hybrid tables: S6 where available, legacy elsewhere. Net = off + def
+  # (defense positive=good since 2026-09-04; see predict_spm_panel_net()).
   offense_spm_ratings <- offense_spm_ratings %>%
     left_join(s6_table %>% select(player_id, offense_spm_s6), by = "player_id") %>%
     mutate(offense_spm = ifelse(!is.na(offense_spm_s6), offense_spm_s6, offense_spm)) %>%
@@ -638,7 +693,7 @@ if (isTRUE(spm_use_panel)) {
   spm_ratings <- spm_ratings %>%
     left_join(s6_table, by = "player_id") %>%
     mutate(spm = ifelse(!is.na(offense_spm_s6) & !is.na(defense_spm_s6),
-                        offense_spm_s6 - defense_spm_s6, spm)) %>%
+                        offense_spm_s6 + defense_spm_s6, spm)) %>%  # defense_spm positive=good since 2026-09-04
     select(-offense_spm_s6, -defense_spm_s6)
 
   cat(sprintf("S6 override: %d players on S6 values, %d on legacy fallback (GK + off-panel)\n",
@@ -754,9 +809,9 @@ if (run_multi_target && file.exists(multi_rapm_path)) {
         # F4 (FABLE-PRIOR-FIX-PLAN.md review): same offense/defense
         # fit+blend helper the base path (Sections 10-11 above) uses -- same
         # directional sign constraints (def_lower/def_upper, keyed by
-        # feature name: RAPM defense uses negative=good, so genuinely
-        # defensive features must have non-positive coefficients), same
-        # predictor_cols, same call order.
+        # feature name: RAPM defense is positive=good since 2026-09-04, so
+        # genuinely defensive features must have non-negative coefficients),
+        # same predictor_cols, same call order.
         od_fit_tgt <- .fit_od_spm_blend(offense_train_tgt, defense_train_tgt,
                                          offense_cols, defense_cols,
                                          def_lower, def_upper, player_stats)

@@ -976,7 +976,9 @@ aggregate_skills_for_spm <- function(match_stats, decay_params = NULL,
   # Determine seasons from data
   if (!"season_end_year" %in% names(dt)) {
     if ("season" %in% names(dt)) {
-      dt[, season_end_year := as.integer(vapply(season, extract_season_end_year, numeric(1)))]
+      # extract_season_end_year() is already vectorized - vapply() here forces
+      # one R call per row. See the same fix in 06_seasonal_skill_ratings.R.
+      dt[, season_end_year := as.integer(extract_season_end_year(season))]
     } else {
       # Infer from match_date: season ending in June
       dt[, season_end_year := data.table::fifelse(

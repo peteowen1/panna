@@ -12,7 +12,8 @@ fit_spm_model(
   weight_by_minutes = TRUE,
   weight_transform = "sqrt",
   lower_limits = NULL,
-  upper_limits = NULL
+  upper_limits = NULL,
+  penalty_factor = NULL
 )
 }
 \arguments{

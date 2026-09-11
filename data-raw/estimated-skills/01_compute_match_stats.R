@@ -23,8 +23,12 @@ if (!exists("save_cache_with_meta", mode = "function")) {
   source(file.path("data-raw", "pipeline_utils.R"))
 }
 
-# Canonical rating/display set, shared with step 03 / RAPM / 10b (constants.R).
-leagues <- if (exists("leagues")) leagues else PANNA_RATING_LEAGUES
+# Canonical rating/display set, shared with step 03 / RAPM / 10b (constants.R),
+# plus the bridge competitions -- see the note in run_skills_pipeline.R. The
+# standalone fallback must match the driver, or a step run on its own silently
+# rebuilds the cache without the cross-league links.
+leagues <- if (exists("leagues")) leagues else
+             c(PANNA_RATING_LEAGUES, PANNA_BRIDGE_LEAGUES)
 
 seasons <- if (exists("seasons")) seasons else NULL
 min_season <- if (exists("min_season")) min_season else "2013-2014"

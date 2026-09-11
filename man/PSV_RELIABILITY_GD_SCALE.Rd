@@ -5,7 +5,7 @@
 \alias{PSV_RELIABILITY_GD_SCALE}
 \title{Reliability-shrunk PSV display scale ("expected GD contribution per 90")}
 \format{
-Numeric value: 2.717
+Numeric value: 5.293
 }
 \usage{
 PSV_RELIABILITY_GD_SCALE
@@ -59,17 +59,45 @@ coefficients (07_train_psr_model.R), then update this value by hand -- the
 script writes no file, it only prints the number. Note 07b reads neither the
 coefficients nor this constant, so a coefficient-only retrain does not
 require re-running it.
+
+Re-derived 2026-09-02 after the panna#224 retrain: \strong{2.717 -> 5.822}
+(\code{c_outfield = 5.8218}, se 0.0858, t = 67.8, R^2 = 0.239, n = 14,713).
+A 114\% drift, which is expected rather than alarming: with the opponent
+control live in every competition it absorbs variance the box-score features
+used to carry, so their betas shrank (e.g. \code{shots_ibox_p90} 0.103 -> 0.026)
+and a correspondingly larger multiplier is needed to reach goal units.
+
+Re-derived again 2026-09-03 after the same-night PSR/PSV retrain (07,
+following the xG-inference fixes -- season_num/body_part/situation dead at
+serve time, see PIPELINE-REBUILD-2026-09.md): \strong{5.822 -> 5.293}
+(\code{c_outfield = 5.2931}, se 0.0949, t = 55.8, R^2 = 0.169, n = 15,643).
+A 9.1\% drift, well past the 2\% staleness threshold and expected: the
+coefficient vintage moved under it again. Re-ran 07c immediately after (same
+commit) so the live per-league PSV constants are built against this scale,
+not the stale one -- this is the exact 3.5-week omission from 2026-07-21
+that this constant's own history above already documents once.
+
+The same fit returned \code{c_gk = -2.6946} (t = -13.3), REJECTED per the
+standing D1-v2 decision. Still negative, consistent with the 2026-09-02
+fit's flipped sign (was +25.39 on 2026-07-20) -- this is the ALREADY-TRACKED
+#226 inversion (\code{c_gk} inverted, blocks GK position factors), not a new
+finding. Unaffected here since GKs use \code{c_outfield}; still blocks any GK
+\emph{position factor} work until #226 is resolved -- see RATING_CALIBRATION.md.
 }
 \seealso{
 Other psr: 
+\code{\link{apply_psv_calibration}()},
+\code{\link{apply_psv_opponent_adjustment}()},
 \code{\link{calculate_psr}()},
 \code{\link{calculate_psv}()},
 \code{\link{calculate_psv_components}()},
 \code{\link{compute_player_psv}()},
 \code{\link{default_stat_rating_params}()},
+\code{\link{fit_psv_opponent_adjustment}()},
 \code{\link{load_opta_psr_weekly}()},
 \code{\link{load_psv_match_reliability}()},
 \code{\link{player_psr}()},
+\code{\link{psv_opponent}},
 \code{\link{soccer_position_map}()},
 \code{\link{soccer_stat_rating_definitions}()},
 \code{\link{stat_rating_names}()}

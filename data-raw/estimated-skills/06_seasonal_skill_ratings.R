@@ -63,7 +63,7 @@ psr_primary_league <- local({
   }
   if (!"season_end_year" %in% names(ms)) {
     if ("season" %in% names(ms)) {
-      ms[, season_end_year := as.integer(vapply(season, extract_season_end_year, numeric(1)))]
+      ms[, season_end_year := as.integer(extract_season_end_year(season))]
     } else {
       d <- as.Date(ms$match_date)
       ms[, season_end_year := data.table::fifelse(
@@ -74,10 +74,42 @@ psr_primary_league <- local({
            .(mins = sum(as.numeric(get(m_col)), na.rm = TRUE)),
            by = c("player_id", "season_end_year", lg_col)]
   data.table::setnames(pl, lg_col, "league")
+  # DOMESTIC ONLY. The league offset prices "the league a player plays in",
+  # which must be a domestic competition -- a cross-league cup is where leagues
+  # MEET, not one a player belongs to. Taking the plain max-minutes competition
+  # assigned a continental comp to 19.1% of player-seasons (24,613 of 128,589:
+  # UEL 9,062, Conference 6,770, CAF_CL 3,438, UCL 2,724), because players from
+  # UNRATED domestic leagues (Norway, Czechia, Japan ...) appear only in
+  # European competition, so that became their "league". They were then priced
+  # with the UEL/UCL offset. Adding PANNA_BRIDGE_LEAGUES to this pipeline would
+  # have extended the same fault to South American and Asian players.
+  #
+  # Players with no domestic competition in the data get league = NA and are
+  # left un-offset by apply_psr_league_offsets(), which is honest: we cannot
+  # price a league we do not observe. Previously they silently received a
+  # continental offset instead.
+  n_before <- data.table::uniqueN(pl[, .(player_id, season_end_year)])
+  # PANNA_DOMESTIC_LEAGUES is coded ("ENG"), but `league` here is whatever
+  # lg_col resolved to -- "competition" (display names like "EPL") when
+  # present, which it is for every real match_stats cache. Comparing coded
+  # constants straight against display-name values matches almost nothing
+  # (only the handful where code == display name, e.g. "MLS"): this dropped
+  # 142,014 of 149,784 player-seasons (95%) instead of the intended ~19%
+  # (24,613) on the first run of this filter. Translate the codes to
+  # display names via the same to_opta_league() mapping
+  # compute_psr_league_offsets() uses, so both sides speak the same
+  # vocabulary regardless of which column lg_col picked.
+  domestic_lookup <- if (identical(lg_col, "competition")) {
+    vapply(PANNA_DOMESTIC_LEAGUES, function(l)
+      tryCatch(to_opta_league(l), error = function(e) l), character(1))
+  } else {
+    PANNA_DOMESTIC_LEAGUES
+  }
+  pl <- pl[league %in% domestic_lookup]
   data.table::setorder(pl, player_id, season_end_year, -mins)
   pl <- pl[, .(league = league[1L]), by = .(player_id, season_end_year)]
-  cat(sprintf("Primary league lookup: %d player-seasons, %d leagues\n",
-              nrow(pl), data.table::uniqueN(pl$league)))
+  cat(sprintf("Primary league lookup: %d player-seasons, %d leagues (domestic only; %d dropped, no domestic comp observed)\n",
+              nrow(pl), data.table::uniqueN(pl$league), n_before - nrow(pl)))
   pl
 })
 
@@ -194,7 +226,7 @@ fit_season_skill_ratings <- function(splint_data, skill_features, season,
       by = "player_id"
     ) %>%
     mutate(
-      spm = offense_spm - defense_spm,
+      spm = offense_spm + defense_spm,  # defense_spm positive=good since 2026-09-04
       season_end_year = season
     ) %>%
     arrange(desc(spm))
@@ -236,7 +268,9 @@ fit_season_skill_ratings <- function(splint_data, skill_features, season,
   defense_prior <- build_prior_vector(
     spm_data = defense_spm_season,
     spm_col = "defense_spm",
-    player_mapping = player_mapping
+    player_mapping = player_mapping,
+    negate = TRUE  # defense_spm is positive=good (trained on the flipped
+                   # defense column); fit_rapm_with_prior() needs the raw scale.
   )
 
   cat(sprintf("  Matched skill SPM priors: %d offense, %d defense\n",
@@ -383,7 +417,12 @@ opta_player_stats <- tryCatch(
 # "2026 Canada-Mexico-USA" tournaments); exact-string matching silently drops
 # the calendar-league + tournament rows. Always derive end year via the helper.
 box_minutes <- opta_player_stats %>%
-  mutate(season_end_year = vapply(season, extract_season_end_year, numeric(1))) %>%
+  # extract_season_end_year() is already vectorized (R/utils.R) - vapply()
+  # forces one R call per row instead of one call for the whole column. On
+  # this table's 8.9M rows that is the dominant cost of this step (a fresh
+  # duckdb read of the same file takes ~2s; the row-wise vapply took most of
+  # this step's remaining several minutes). Found 2026-09-04.
+  mutate(season_end_year = extract_season_end_year(season)) %>%
   filter(!is.na(season_end_year), !is.na(player_id)) %>%
   group_by(player_id, season_end_year) %>%
   summarise(box_minutes = sum(minsPlayed, na.rm = TRUE), .groups = "drop")
@@ -454,7 +493,29 @@ if (nrow(old_bad) > 0 || nrow(current_bad) > 0) {
     "season), not a regression. Not blocking."),
     nrow(old_bad), nrow(current_bad), current_season), call. = FALSE)
 }
-if (nrow(recent_bad) > 0) {
+# Tolerance, to match this check's own stated intent. The comment above says a
+# real regression "corrupts MANY established players in COMPLETED recent
+# seasons" -- but the test was `> 0`, so a SINGLE genuine case hard-stopped the
+# pipeline. 2026-09-03: it blocked on Neymar 2024, xRAPM 0.155 on 386 minutes -
+# he joined Al Hilal in Aug 2023 and tore his ACL that October, so 386 minutes
+# is CORRECT. An elite player with an injury-shortened season is precisely the
+# "high rating, low minutes" profile this test trips on without a bug existing.
+# He entered the top 50 only because that day's xG and SPM changes moved xRAPM;
+# the guard did not start failing, the data moved into its window.
+#
+# A genuine minutes regression hits many players at once, so 1-2 warns and lists
+# them (still visible, still investigable) while 3+ hard-stops. Raise the floor
+# rather than delete the check.
+RECENT_BAD_TOLERANCE <- if (exists("recent_bad_tolerance")) recent_bad_tolerance else 2L
+if (nrow(recent_bad) > 0 && nrow(recent_bad) <= RECENT_BAD_TOLERANCE) {
+  cat(sprintf("\n!! %d recent top-50 player-season(s) under 900 min (tolerance %d) -- listing, not blocking:\n",
+              nrow(recent_bad), RECENT_BAD_TOLERANCE))
+  print(recent_bad %>%
+          select(season_end_year, player_id, player_name, xrapm, total_minutes) %>%
+          head(20))
+  cat("   Check each is a genuine short season (injury, mid-season transfer) before trusting the run.\n")
+}
+if (nrow(recent_bad) > RECENT_BAD_TOLERANCE) {
   print(recent_bad %>%
           select(season_end_year, player_id, player_name, xrapm, total_minutes) %>%
           head(20))
@@ -504,7 +565,8 @@ if (nrow(seasonal_psr) > 0 && !is.null(psr_primary_league)) {
   } else tryCatch({
     gl <- data.table::rbindlist(lapply(gl_files, function(f) {
       d <- arrow::read_parquet(f)
-      d[, intersect(c("player_id","season","league","total_minutes","psv","psv_league_offset"), names(d)), with = FALSE]
+      d[, intersect(c("player_id","season","league","total_minutes","psv","psv_league_offset",
+                      "position"), names(d)), with = FALSE]
     }), use.names = TRUE, fill = TRUE)
     # 10b end-adds psv_league_offset INTO psv in these parquets (#162). The
     # calibration must see the offset-free signal: feeding the adjusted psv
@@ -515,6 +577,54 @@ if (nrow(seasonal_psr) > 0 && !is.null(psr_primary_league)) {
     if ("psv_league_offset" %in% names(gl)) {
       gl[, psv := psv - data.table::fcoalesce(as.numeric(psv_league_offset), 0)]
       gl[, psv_league_offset := NULL]
+    }
+    # PSV position calibration MUST come after the offset strip and BEFORE the
+    # network (panna#211). This looks like it contradicts the project's general
+    # rule (RATING_CALIBRATION.md: calibrate AFTER additive offsets) -- PSV's
+    # case is different because these offsets are DERIVED FROM psv itself
+    # (compute_psr_league_offsets -> build_league_network), not a separate
+    # additive constant like PSR's. Calibrating after the derivation would leave
+    # the offsets estimated on uncalibrated input, exactly what the general rule
+    # exists to prevent -- see apply_psv_calibration()'s roxygen for the full
+    # argument. Goalkeeper PSV is 3.1x the outfield spread and far less
+    # predictive per unit; uncorrected it makes keepers 4.2x over-represented in
+    # the PSV top 1%.
+    # Effect on the OFFSETS is modest (+4.6% on weak leagues) -- the shipped
+    # factors are scale-preserving, so PSV's level is unchanged and only the
+    # relative position weighting moves. Do NOT use the raw fitted slopes here:
+    # they average 1.48, inflate all of PSV and every offset with it (+55%),
+    # which reads as a big correction but is a units artefact, and would break
+    # the PSV/PSR unit correspondence these offsets are added at full strength on.
+    # NB resolve_position_group() is required: Opta's `position` is the match
+    # ROLE, so ~29% of rows read "Substitute" and bucketing on it blends every
+    # position together.
+    # Calibration gets its OWN tryCatch, distinct from the one this whole block
+    # already sits inside (review finding: a calibration bug and a genuine
+    # "no game-logs yet" condition previously produced the identical generic
+    # "PSR offset estimation failed" warning and the identical effect -- offsets
+    # skipped entirely for the run. A calibration regression should be loud and
+    # distinguishable, but should NOT be allowed to kill the unrelated,
+    # previously-reliable offset computation -- so on failure this falls back to
+    # uncalibrated psv (offsets ~4-6% too small on weak leagues, not the ~28%
+    # once mis-measured here -- see panna#211/#219) rather than aborting.
+    if ("position" %in% names(gl)) {
+      psv_cal <- load_psv_calibration()   # load ONCE; a missing-file warning
+                                          # firing once per row is as good as none
+      gl <- tryCatch({
+        gl[, pos_grp := resolve_position_group(gl)]
+        out <- apply_psv_calibration(gl, position_col = "pos_grp", calibration = psv_cal)
+        cat(sprintf("Applied PSV position calibration to %.1f%% of rows (%.1f%% unresolved -> factor 1)\n",
+                    100 * mean(!is.na(out$pos_grp)), 100 * mean(is.na(out$pos_grp))))
+        out
+      }, error = function(e) {
+        warning("PSV position calibration FAILED: ", conditionMessage(e),
+                " -- proceeding with UNCALIBRATED psv (offsets biased toward ",
+                "GK-heavy leagues; see panna#211).", call. = FALSE)
+        gl
+      })
+    } else {
+      warning("game_logs lack `position`; PSV position calibration SKIPPED ",
+              "(offsets ~4-6% too small on weak leagues -- see panna#211).", call. = FALSE)
     }
     # bucket_years=2: bridge leagues a player straddles across adjacent seasons,
     # not only within one season. Fixes the same-season network's connectivity

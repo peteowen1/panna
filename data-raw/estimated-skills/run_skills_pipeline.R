@@ -18,8 +18,16 @@ devtools::load_all()
 # Must match run_pipeline_opta.R's league set so skills coverage tracks the
 # rated pool — otherwise box-score stats (opta_skills.parquet) miss whole
 # competitions the model rates (A_League/CAF_CL/Belgian/etc.).
-# Canonical rating/display set, shared with step 03 / RAPM / 10b (constants.R).
-if (!exists("leagues")) leagues <- PANNA_RATING_LEAGUES
+# Canonical rating/display set, shared with step 03 / RAPM / 10b (constants.R),
+# PLUS the bridge competitions. constants.R documents bridges as "offset/RAPM
+# connectivity only, never displayed ... added ON TOP", and both
+# epv/03_calculate_player_xmetrics.R and player-ratings-opta/run_pipeline_opta.R
+# already do so -- this pipeline did not, which starved PSR of exactly the
+# cross-league links its offsets are identified from. MLS and Saudi_League were
+# left with ~75-100 cross-league 90s and had to be estimated almost entirely
+# from a prior. Bridges stay non-displayed: they are excluded from the
+# domestic-league attribution below (PANNA_DOMESTIC_LEAGUES).
+if (!exists("leagues")) leagues <- c(PANNA_RATING_LEAGUES, PANNA_BRIDGE_LEAGUES)
 
 if (!exists("seasons")) seasons <- NULL
 if (!exists("min_season")) min_season <- "2013-2014"

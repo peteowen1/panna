@@ -9,7 +9,10 @@
 # splints), cache-skills/03_skill_spm.rds (career-trait SPM prior), and
 # opta_fixtures.parquet (exact match dates for the recency decay).
 # Output: career_panna.parquet (player_id, player_name, panna, panna_offense,
-# panna_defense, total_minutes), optionally uploaded to the ratings-data release.
+# panna_defense, total_minutes, sign_convention), optionally uploaded to the
+# ratings-data release. sign_convention lets every consumer abort on a stale
+# or unmarked file instead of silently reading an inverted panna_defense
+# (see .assert_career_panna_sign_convention(), panna#F1 2026-09-07/11).
 
 library(arrow)
 library(data.table)
@@ -48,6 +51,7 @@ cat(sprintf("\n=== Fitting career Panna (halflife %dd) ===\n", halflife))
 res <- fit_career_rapm(sd, fixtures, skill_spm = skill_spm, halflife_days = halflife,
                        min_minutes = MIN_MINUTES_RAPM_FIT, nfolds = 10)
 panna <- res$ratings[, .(player_id, player_name, panna, panna_offense, panna_defense, total_minutes)]
+panna[, sign_convention := CAREER_PANNA_SIGN_CONVENTION]
 
 cat(sprintf("\nCareer Panna: %d players | as-of %s\n", nrow(panna), as.character(res$reference_date)))
 cat("Top 15:\n")

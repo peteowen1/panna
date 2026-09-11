@@ -559,6 +559,16 @@ predict_epv_probs <- function(model, features) {
 #'   position-based estimate if no model available.
 #' @param league League code (e.g., "ENG") for league-aware EPV features.
 #'   Only used when feature_mode is "simple". If NULL, defaults to 0 (unknown).
+#' @param season Season label for this league (e.g. "2025-2026", "2026",
+#'   "2026 Canada-Mexico-USA"), forwarded to \code{add_xg_to_spadl()}. Required
+#'   when the xG model carries a season term; that model aborts rather than
+#'   score without it.
+#' @param shot_lookup Shot events keyed by (\code{match_id}, \code{event_id})
+#'   with \code{body_part} and \code{situation}, forwarded to
+#'   \code{add_xg_to_spadl()}. Without it six xG features are constant 0 and the
+#'   xG feeding EPV is skewed roughly 6%. Build it with
+#'   \code{load_opta_shot_events(league, season)}, not by reading the parquet
+#'   directly.
 #'
 #' @return SPADL actions with EPV columns added:
 #'   \itemize{
@@ -571,7 +581,7 @@ predict_epv_probs <- function(model, features) {
 #'
 #' @keywords internal
 calculate_action_epv <- function(spadl_actions, features = NULL, epv_model, xg_model = NULL,
-                                  league = NULL) {
+                                  league = NULL, season = NULL, shot_lookup = NULL) {
   cli::cli_alert_info("Calculating EPV for {nrow(spadl_actions)} actions...")
 
   # Try to load pre-trained Opta xG model if not provided
@@ -584,9 +594,16 @@ calculate_action_epv <- function(spadl_actions, features = NULL, epv_model, xg_m
     })
   }
 
-  # Apply xG model to add xg column for shots (if model available)
+  # Apply xG model to add xg column for shots (if model available). `season` and
+  # `shot_lookup` are forwarded because without them the xG scored here is
+  # skewed: a season-aware model refuses to score without a season, and without
+  # the lookup SPADL supplies neither body part (its `bodypart` says "foot" for
+  # every shot) nor situation, leaving six features constant 0. See
+  # add_xg_to_spadl(). This function feeds EPV, WPA, game logs and equity, so
+  # the skew reached all of them.
   if (!is.null(xg_model)) {
-    spadl_actions <- add_xg_to_spadl(spadl_actions, xg_model)
+    spadl_actions <- add_xg_to_spadl(spadl_actions, xg_model, season = season,
+                                     shot_lookup = shot_lookup)
   }
 
   method <- epv_model$method %||% "goal"
@@ -1373,9 +1390,16 @@ calculate_action_type_epv <- function(spadl_with_epv) {
 #'     \item{epv_shooting}{Shot credit (xG-weighted)}
 #'     \item{epv_dribbling}{Ground take-on attempts}
 #'     \item{epv_aerial}{Aerial duel credit (winner + / loser via duel_blame)}
-#'     \item{epv_keeping}{Keeper pick-up, claim, punch (distribution/handling)}
-#'     \item{epv_defending}{Tackles, interceptions, clearances, ball recoveries,
-#'       keeper saves, fouls won, dispossessed events}
+#'     \item{epv_keeping}{Goalkeeping: saves, pick-ups, claims, punches}
+#'     \item{epv_defending}{Outfield defending: tackles, interceptions,
+#'       clearances, ball recoveries, fouls won, dispossessed events}
+#'     \item{epv_duel_blame}{Negative credit for losing duels (aerials, take-on
+#'       vs tackle). Part of \code{epv_defensive}; exported so that roll-up is
+#'       auditable.}
+#'     \item{epv_aerial_att}{The attacking-third share of \code{epv_aerial}
+#'       (\code{start_x > 67}). \code{epv_defensive} contains
+#'       \code{epv_aerial - epv_aerial_att}, so without this column the defensive
+#'       roll-up cannot be reconstructed from the exported components.}
 #'     \item{minutes_played}{Minutes played (if lineups provided)}
 #'     \item{epv_p90, epv_offensive_p90, ...}{Per-90 rates (if lineups provided)}
 #'     \item{epv_adj}{Position-centered EPV (if \code{position_center = TRUE})}
@@ -1460,19 +1484,31 @@ aggregate_player_game_epv <- function(spadl_with_epv, lineups = NULL,
                 else if ("epv_delta" %in% names(dt)) "epv_delta"
                 else "epv"
 
-  # Action-type buckets. Keeper handling (pick-up/claim/punch) and aerial duels
-  # are split into their own components so `epv_passing` means outfield passing
-  # and `epv_dribbling` means ground take-ons -- without this split, GKs
-  # dominated `epv_passing` and target strikers dominated `epv_dribbling` via
-  # aerial wins. Keeper saves stay in `epv_defending` (they suppress opponent EPV).
+  # Action-type buckets. Keeper actions and aerial duels are split into their own
+  # components so `epv_passing` means outfield passing and `epv_dribbling` means
+  # ground take-ons -- without this split, GKs dominated `epv_passing` and target
+  # strikers dominated `epv_dribbling` via aerial wins.
+  #
+  # `keeper_save` moved from `epv_defending` to `epv_keeping` on 2026-09-02.
+  # This is PRESENTATIONAL ONLY: both buckets sit inside the defensive roll-up
+  # below, so offensive + defensive == epv_total is unchanged and no player's
+  # headline EPV / EPV(ADJ) moves. It was previously bucketed as defending on the
+  # grounds that a save suppresses opponent EPV, but that is true of every
+  # defensive action and left the two columns misnamed: `epv_keeping` held only
+  # handling (pick-up / claim / punch) and so measured almost nothing --
+  # calibrated against goal difference it read R^2 = 0.0001 -- while shot-stopping,
+  # the substance of goalkeeping, sat under `epv_defending` alongside outfield
+  # tackles. After the move each column means what it says: `epv_keeping` is
+  # goalkeeping, `epv_defending` is outfield defending.
   action_types <- list(
     epv_passing   = c("pass", "ball_touch"),
     epv_shooting  = "shot",
     epv_dribbling = "take_on",
     epv_aerial    = "aerial",
-    epv_keeping   = c("keeper_pick_up", "keeper_claim", "keeper_punch"),
+    epv_keeping   = c("keeper_pick_up", "keeper_claim", "keeper_punch",
+                      "keeper_save"),
     epv_defending = c("tackle", "interception", "clearance", "ball_recovery",
-                      "keeper_save", "foul", "dispossessed")
+                      "foul", "dispossessed")
   )
   for (col_name in names(action_types)) {
     at <- action_types[[col_name]]
@@ -1513,7 +1549,13 @@ aggregate_player_game_epv <- function(spadl_with_epv, lineups = NULL,
     epv_defensive = epv_defending + epv_keeping +
                     (epv_aerial - epv_aerial_att) + epv_duel_blame
   )]
-  player_epv[, epv_aerial_att := NULL]  # internal split helper, not exported
+  ## epv_aerial_att is KEPT (was dropped as an "internal split helper" until
+  ## 2026-09-02). Without it the defensive roll-up cannot be reconstructed from
+  ## the exported components: `epv_aerial` ships as a TOTAL while epv_defensive
+  ## contains only `epv_aerial - epv_aerial_att`. That gap made epv_defensive
+  ## un-auditable from published data and caused a component of an inversion
+  ## (panna#228) to be attributed to the wrong term -- the aerial total was
+  ## calibrated when the defensive half was the quantity of interest.
 
   # --- Join lineups for minutes and per-90 ---
   if (!is.null(lineups) && "minutes_played" %in% names(lineups)) {

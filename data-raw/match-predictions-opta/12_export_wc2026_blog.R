@@ -252,7 +252,8 @@ if (.wc11_available) {
   # quantity that used to be mislabeled `panna`). Source: career_panna.parquet
   # (estimated-skills/09_career_panna.R via fit_career_rapm), on pannadata's
   # ratings-data release. offense/defense = the career-trait decomposition
-  # (panna_offense/panna_defense; internal negative=good, flipped at display below).
+  # (panna_offense/panna_defense; positive=good since 2026-09-04, no flip
+  # needed anywhere downstream — see the sign-convention note further below).
   cp_path <- file.path(opta_data_dir(), "career_panna.parquet")
   if (!file.exists(cp_path)) {
     stop("career_panna.parquet not found at ", cp_path, " — the WC squad panna IS the ",
@@ -260,7 +261,9 @@ if (.wc11_available) {
          "list (pannadata ratings-data release) or run estimated-skills/09_career_panna.R.",
          call. = FALSE)
   }
-  sq_panna <- as.data.table(read_parquet(cp_path))[
+  cp_raw <- as.data.table(read_parquet(cp_path))
+  .assert_career_panna_sign_convention(cp_raw, "12_export_wc2026_blog.R")
+  sq_panna <- cp_raw[
     , .(player_id, panna, offense = panna_offense, defense = panna_defense, total_minutes)]
 
   sq_psr <- if (!is.null(sq_seasonal$seasonal_psr) && nrow(sq_seasonal$seasonal_psr) > 0) {
@@ -333,15 +336,17 @@ if (.wc11_available) {
     }
   }
 
-  # Published convention: defence as positive = good (internal model has
-  # negative = good, since defense is "xG added to the opponent").
-  strength[, defense := -defense]
+  # Published convention: defence as positive = good. Since 2026-09-03 this
+  # is ALSO the internal convention (career_panna.parquet's defense comes
+  # from extract_xrapm_ratings(), which negates at extraction time), so no
+  # export-boundary flip happens here any more.
 
   bt <- as.data.table(read_parquet(file.path(cache_dir, "wc2026_bt_ratings.parquet")))
   strength <- merge(strength, bt[, .(team, bt = rating)], by = "team", all.x = TRUE)
   strength <- merge(strength, sim[, .(team, p_champ)], by = "team", all.x = TRUE)
 
-  # Per-category rank (1 = strongest). Defence already flipped so higher = better.
+  # Per-category rank (1 = strongest). defense arrives already positive=good
+  # (see above), so higher = better here too.
   for (m in c("panna", "offense", "defense", "epr", "psr", "elo", "bt", "p_champ")) {
     strength[[paste0("rank_", m)]] <- frank(-strength[[m]], ties.method = "min")
   }

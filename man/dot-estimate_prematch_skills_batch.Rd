@@ -9,6 +9,9 @@
   ref_dates,
   decay_params = NULL,
   min_weighted_90s = 3,
+  output_min_w90 = 0,
+  stream_dir = NULL,
+  source_fingerprint = NULL,
   verbose = TRUE
 )
 }
@@ -20,13 +23,62 @@
 
 \item{decay_params}{Decay parameters (default: \code{get_default_decay_params()}).}
 
-\item{min_weighted_90s}{Minimum weighted 90s for inclusion (default 3).}
+\item{min_weighted_90s}{The estimator's REGRESSION threshold, not an
+inclusion gate (default 3). Shrinkage toward the prior is what handles
+thin samples -- see \code{estimate_player_skills} and the note at
+\code{data-raw/estimated-skills/02_estimate_skills.R:23}. Do NOT use this
+to trim output rows; that is \code{output_min_w90}.}
+
+\item{output_min_w90}{Drop rows from each per-date snapshot whose
+\code{weighted_90s} is below this (default 0 = keep every row). This is a
+pure memory lever for callers that only need active players at each date.
+\strong{Leave it at 0 for anything that trains a model.} Setting it to 3
+for all callers on 2026-09-01 (456d8329) dropped
+\code{07_train_psr_model.R}'s skill coverage from 100.0\% to 84.7\%: the
+trimmed players still have player-match rows, so they matched no skill row,
+and step 07 imputes missing skills to 0 -- which attenuates every
+coefficient. That commit's claim that "every consumer joins on
+(player_id, exact date), so the dropped rows were never read" was wrong;
+step 07 reads exactly those rows. Its coverage guard caught it.}
+
+\item{stream_dir}{If supplied, write each date's full (uncoverage-filtered)
+snapshot to \code{file.path(stream_dir, "<date>.rds")} as soon as it's
+computed, freeing it from R's memory immediately, instead of
+accumulating all dates in a single in-memory list (default \code{NULL} =
+old in-memory behaviour, unchanged). This is a MEMORY lever, orthogonal to
+\code{output_min_w90} -- it changes WHERE full-coverage results live, not
+WHICH rows exist, so it carries none of \code{output_min_w90}'s coverage
+risk. Added 2026-09-04: at full multi-season history (~684 weekly dates x
+~47k players x ~142 stats), the in-memory list alone peaks at 70GB+,
+which does not reliably fit alongside other load on a shared machine (two
+observed OOM near-misses the same night). \code{stream_dir} bounds peak
+memory to roughly one date's snapshot regardless of history length. The
+directory is NOT cleaned up by this function on success -- the caller owns
+that (orphaned chunks from a previous run ARE cleared at entry, see below).
+
+\strong{Do not point two concurrent runs at the same \code{stream_dir}.}
+For resume to work the caller must pass a STABLE path (a
+\code{tempfile()} is unique per R session and would never be found again),
+which means two overlapping invocations would share one checkpoint and
+clobber each other's state. \verb{07_train_psr_model.R}'s outfield and GK
+paths deliberately use two different directories for this reason; an
+accidental double-dispatch of the whole script is the case to avoid.}
+
+\item{source_fingerprint}{Optional caller-supplied value folded into the
+checkpoint fingerprint -- e.g. \code{file.mtime()}/\code{file.size()} of
+the file \code{match_stats} was read from. The count-based fingerprint
+cannot see a data change that preserves n_rows/n_players/n_dates and the
+date sum; passing this closes most of that gap for a few bytes. Optional
+because not every caller has a single source file.}
 
 \item{verbose}{Print progress (default TRUE).}
 }
 \value{
-Named list of data.tables (one per ref_date), keyed by date string.
-Each table has one row per player with skill columns.
+Named list keyed by date string. Each element is a data.table (one
+row per player with skill columns) when \code{stream_dir} is
+\code{NULL}, or the file path it was streamed to (a length-1 character
+string) when \code{stream_dir} is supplied -- use
+\code{.read_skill_chunk()} to transparently handle either case.
 }
 \description{
 Highly optimized for sequential date estimation. Instead of re-processing

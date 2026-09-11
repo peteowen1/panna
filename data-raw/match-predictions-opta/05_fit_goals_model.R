@@ -68,12 +68,17 @@ fit_goals_segment <- function(seg_name, train_df, val_df) {
   X_train[is.na(X_train)] <- 0
   X_val[is.na(X_val)]     <- 0
 
+  # group_ids = match_id keeps a match and its mirror_match_rows() twin in the
+  # same CV fold (leakage-audit finding, 2026-08-27) — without it, xgb.cv's
+  # default random per-row assignment can split a match from its own mirror.
   home_model <- fit_goals_xgb(X = X_train, y = train_df$home_goals,
                               nfolds = 5L, nrounds = 500L,
-                              early_stopping = 30L, verbose = 0L)
+                              early_stopping = 30L, verbose = 0L,
+                              group_ids = train_df$match_id)
   away_model <- fit_goals_xgb(X = X_train, y = train_df$away_goals,
                               nfolds = 5L, nrounds = 500L,
-                              early_stopping = 30L, verbose = 0L)
+                              early_stopping = 30L, verbose = 0L,
+                              group_ids = train_df$match_id)
 
   home_pred <- stats::predict(home_model$model, xgboost::xgb.DMatrix(X_val))
   away_pred <- stats::predict(away_model$model, xgboost::xgb.DMatrix(X_val))

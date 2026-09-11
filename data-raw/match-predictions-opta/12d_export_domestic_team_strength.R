@@ -427,8 +427,9 @@ if (!file.exists(cp_path)) {
   stop("career_panna.parquet not found at ", cp_path, " -- domestic Tiento needs ",
        "the same career-trait panna the blog publishes elsewhere.", call. = FALSE)
 }
-sq_panna <- as.data.table(read_parquet(cp_path))[
-  , .(player_id, panna, offense = panna_offense, defense = panna_defense)]
+cp_raw <- as.data.table(read_parquet(cp_path))
+.assert_career_panna_sign_convention(cp_raw, "12d_export_domestic_team_strength.R")
+sq_panna <- cp_raw[, .(player_id, panna, offense = panna_offense, defense = panna_defense)]
 
 if (!exists("skills_cache_dir")) skills_cache_dir <- file.path("data-raw", "cache-skills")
 if (!exists("opta_cache_dir")) opta_cache_dir <- file.path("data-raw", "cache-opta")
@@ -574,8 +575,10 @@ strength <- merge(team_league, agg, by = "team", all.x = TRUE)
 for (m in c("panna", "offense", "defense", "epr", "psr", "elo")) {
   strength[[m]] <- round(strength[[m]], 4)
 }
-# Published convention: defence positive = good (internal model negative = good).
-strength[, defense := -defense]
+# Published convention: defence positive = good. Since 2026-09-03 this is
+# ALSO the internal convention (career_panna.parquet's panna_defense comes
+# from extract_xrapm_ratings(), which negates at extraction time), so no
+# export-boundary flip happens here any more.
 
 strength <- .compute_tiento(strength, TIENTO_WEIGHTS)
 

@@ -666,3 +666,243 @@ test_that(".estimate_prematch_skills_batch handles single-player data", {
   expect_equal(nrow(result[[1]]), 1)
   expect_equal(result[[1]]$player_id, "solo")
 })
+
+
+# =============================================================================
+# League-set constants (panna#221)
+# =============================================================================
+
+test_that("bridge leagues are disjoint from rating leagues and not domestic", {
+  # bridges are connectivity-only: they must be ADDED to the rating set, never
+  # already inside it, and must never be attributable as a player's own league
+  expect_length(intersect(PANNA_RATING_LEAGUES, PANNA_BRIDGE_LEAGUES), 0)
+  expect_length(intersect(PANNA_DOMESTIC_LEAGUES, PANNA_BRIDGE_LEAGUES), 0)
+  expect_true(all(PANNA_DOMESTIC_LEAGUES %in% PANNA_RATING_LEAGUES))
+})
+
+test_that("PANNA_DOMESTIC_LEAGUES excludes every continental and international comp", {
+  # a cross-league cup is where leagues MEET, not one a player belongs to
+  not_domestic <- c("UCL", "UEL", "UECL", "CAFCL", "WC", "EURO",
+                    "AFCON", "Copa_America")
+  expect_length(intersect(PANNA_DOMESTIC_LEAGUES, not_domestic), 0)
+  # and the obvious domestic ones are present
+  expect_true(all(c("ENG", "ESP", "GER", "ITA", "FRA", "MLS", "SAU") %in%
+                    PANNA_DOMESTIC_LEAGUES))
+})
+
+test_that("the skills pipeline league set now includes the bridges", {
+  # guards the panna#221 regression: PSR was starved of cross-league links
+  # because this pipeline used PANNA_RATING_LEAGUES alone while EPV and RAPM
+  # both added the bridges on top
+  combined <- c(PANNA_RATING_LEAGUES, PANNA_BRIDGE_LEAGUES)
+  expect_true(all(PANNA_BRIDGE_LEAGUES %in% combined))
+  expect_gt(length(combined), length(PANNA_RATING_LEAGUES))
+})
+
+# =============================================================================
+# PSV position calibration (panna#211)
+# =============================================================================
+
+test_that("load_psv_calibration returns the bundled position factors", {
+  cal <- panna:::load_psv_calibration()
+  expect_true(nrow(cal) > 0)
+  expect_true(all(c("axis", "level", "factor") %in% names(cal)))
+  expect_setequal(cal[cal$axis == "position", ]$level, c("GK", "DEF", "MID", "FWD"))
+  # GK must be the SMALLEST factor: goalkeeper PSV is the least predictive per
+  # unit, which is the whole point of the table. If this flips, the factors were
+  # fitted on a same-match target (tautological) rather than leak-free.
+  f <- stats::setNames(cal$factor, cal$level)
+  expect_lt(f[["GK"]], f[["DEF"]])
+  expect_lt(f[["GK"]], f[["MID"]])
+  expect_lt(f[["GK"]], f[["FWD"]])
+})
+
+test_that("apply_psv_calibration scales by position and preserves osv + dsv == psv", {
+  d <- data.table::data.table(
+    player_id = c("a", "b", "c", "d"),
+    pos_grp = c("GK", "DEF", "MID", "FWD"),
+    psv = c(0.10, 0.10, 0.10, 0.10),
+    osv = c(0.06, 0.06, 0.06, 0.06),
+    dsv = c(0.04, 0.04, 0.04, 0.04)
+  )
+  out <- apply_psv_calibration(d)
+  f <- stats::setNames(panna:::load_psv_calibration()$factor,
+                       panna:::load_psv_calibration()$level)
+  expect_equal(out$psv, 0.10 * unname(f[c("GK", "DEF", "MID", "FWD")]), tolerance = 1e-8)
+  expect_equal(out$osv + out$dsv, out$psv, tolerance = 1e-10)
+  # keepers must end up scaled DOWN relative to forwards
+  expect_lt(out$psv[1], out$psv[4])
+})
+
+test_that("apply_psv_calibration passes unknown positions through unchanged", {
+  d <- data.table::data.table(pos_grp = c("MID", "Referee", NA_character_),
+                              psv = c(0.2, 0.2, 0.2))
+  out <- apply_psv_calibration(d)
+  expect_equal(out$psv[2], 0.2)   # unrecognised -> factor 1
+  expect_equal(out$psv[3], 0.2)   # NA -> factor 1
+  expect_false(isTRUE(all.equal(out$psv[1], 0.2)))
+})
+
+test_that("apply_psv_calibration accepts raw Opta position labels", {
+  d <- data.table::data.table(position = c("Goalkeeper", "Defender", "Striker"),
+                              psv = c(0.1, 0.1, 0.1))
+  out <- apply_psv_calibration(d, position_col = "position")
+  expect_lt(out$psv[1], out$psv[3])
+})
+
+test_that("apply_psv_calibration accepts 16-role classify_role() codes (review finding)", {
+  # apply_psv_calibration()'s own fallback chain can hand .psv_position_group()
+  # a fine-grained primary_position (see .player_role()'s comment) -- this
+  # locks in the .role16_to_broad() fallback that closes that gap, and that
+  # .psv_position_group() no longer hand-rolls its own raw-label regex
+  # (it now defers to the canonical .simplify_position()).
+  d <- data.table::data.table(position = c("GK", "CB", "DM", "CF"),
+                              psv = c(0.1, 0.1, 0.1, 0.1))
+  out <- apply_psv_calibration(d, position_col = "position")
+  cal <- stats::setNames(panna:::load_psv_calibration()$factor,
+                         panna:::load_psv_calibration()$level)
+  expect_equal(out$psv, 0.1 * unname(cal[c("GK", "DEF", "MID", "FWD")]), tolerance = 1e-8)
+})
+
+test_that("apply_psv_calibration refuses to double-scale", {
+  d <- data.table::data.table(pos_grp = "MID", psv = 0.2)
+  once <- apply_psv_calibration(d)
+  expect_error(apply_psv_calibration(once), "already been calibrated")
+})
+
+test_that("shipped PSV factors are scale-preserving, not the raw slopes", {
+  # The raw fitted slopes average ~1.48; using them inflates all of PSV and every
+  # league offset with it (+55%), a units artefact that would also break the
+  # PSV/PSR unit correspondence the offsets are added at full strength on.
+  cal <- panna:::load_psv_calibration()
+  expect_true("slope_raw" %in% names(cal))
+  expect_true(all(cal$factor < cal$slope_raw))          # normalised down
+  # position minute shares are roughly DEF .30 / MID .38 / FWD .22 / GK .09;
+  # under any plausible weighting the shipped factors must straddle 1
+  expect_lt(min(cal$factor), 1)
+  expect_gt(max(cal$factor), 1)
+  expect_gt(mean(cal$factor), 0.8)
+  expect_lt(mean(cal$factor), 1.2)
+})
+
+test_that("resolve_position_group ignores the Substitute match role", {
+  d <- data.table::data.table(
+    player_id = c("p1","p1","p1","p2","p2"),
+    season_end_year = c(2024L,2024L,2024L,2024L,2024L),
+    position = c("Striker","Striker","Substitute","Goalkeeper","Substitute"),
+    total_minutes = c(90, 90, 20, 90, 45)
+  )
+  g <- panna:::resolve_position_group(d)
+  expect_equal(g, c("FWD","FWD","FWD","GK","GK"))       # substitute rows inherit the real position
+})
+
+test_that("resolve_position_group falls back across seasons then to the row label", {
+  d <- data.table::data.table(
+    player_id = c("p1","p1","p2"),
+    season_end_year = c(2023L, 2024L, 2024L),
+    position = c("Defender","Substitute","Midfielder"),
+    total_minutes = c(900, 90, 90)
+  )
+  g <- panna:::resolve_position_group(d)
+  expect_equal(g[2], "DEF")                              # career fallback from 2023
+  expect_equal(g[3], "MID")
+})
+
+
+# ============================================================================
+# Streaming / checkpoint-resume for .estimate_prematch_skills_batch()
+# (added 2026-09-05 with the stream_dir + checkpoint work -- see that
+# function's docs. The resume DECISION is the consequential branch: accepting
+# a checkpoint built from different inputs silently splices two computations
+# together with no error, so it gets the bulk of the coverage here.)
+# ============================================================================
+
+.psr_test_fingerprint <- function(...) {
+  base <- list(n_rows = 100L, n_players = 10L, n_dates = 20L,
+               ref_dates_sum = 12345, min_weighted_90s = 3, output_min_w90 = 0,
+               decay_params = list(rate = 0.003, prior_strength = 5))
+  utils::modifyList(base, list(...))
+}
+
+.psr_test_checkpoint <- function(fingerprint, i = 5L) {
+  list(fingerprint = fingerprint, run_rate = list(), run_eff = list(),
+       run_w90 = numeric(10), cursor = 42L, i = i)
+}
+
+test_that(".psr_checkpoint_usable accepts an exactly-matching checkpoint", {
+  fp <- .psr_test_fingerprint()
+  expect_true(panna:::.psr_checkpoint_usable(.psr_test_checkpoint(fp), fp, n_dates = 20L))
+})
+
+test_that(".psr_checkpoint_usable REJECTS a checkpoint built under different decay_params", {
+  # The critical case: decay_params does not change n_rows/n_players/n_dates,
+  # so a counts-only fingerprint would wrongly accept this and decay the
+  # restored running sums under one setting while later dates use another.
+  fp_run  <- .psr_test_fingerprint()
+  fp_ckpt <- .psr_test_fingerprint(decay_params = list(rate = 0.009, prior_strength = 5))
+  expect_false(panna:::.psr_checkpoint_usable(.psr_test_checkpoint(fp_ckpt), fp_run, n_dates = 20L))
+})
+
+test_that(".psr_checkpoint_usable REJECTS mismatched data/config shape", {
+  fp <- .psr_test_fingerprint()
+  for (bad in list(
+    .psr_test_fingerprint(n_rows = 101L),
+    .psr_test_fingerprint(n_players = 11L),
+    .psr_test_fingerprint(n_dates = 21L),
+    .psr_test_fingerprint(ref_dates_sum = 12346),
+    .psr_test_fingerprint(min_weighted_90s = 5),
+    .psr_test_fingerprint(output_min_w90 = 3)
+  )) {
+    expect_false(panna:::.psr_checkpoint_usable(.psr_test_checkpoint(bad), fp, n_dates = 20L))
+  }
+})
+
+test_that(".psr_checkpoint_usable REJECTS null, malformed, or out-of-range checkpoints", {
+  fp <- cp_fp <- .psr_test_fingerprint()
+  expect_false(panna:::.psr_checkpoint_usable(NULL, fp, n_dates = 20L))
+  expect_false(panna:::.psr_checkpoint_usable("not a list", fp, n_dates = 20L))
+  # missing a required state component
+  incomplete <- .psr_test_checkpoint(cp_fp); incomplete$run_w90 <- NULL
+  expect_false(panna:::.psr_checkpoint_usable(incomplete, fp, n_dates = 20L))
+  # position outside this run's range
+  expect_false(panna:::.psr_checkpoint_usable(.psr_test_checkpoint(cp_fp, i = 0L), fp, n_dates = 20L))
+  expect_false(panna:::.psr_checkpoint_usable(.psr_test_checkpoint(cp_fp, i = 21L), fp, n_dates = 20L))
+  expect_false(panna:::.psr_checkpoint_usable(.psr_test_checkpoint(cp_fp, i = NA_integer_), fp, n_dates = 20L))
+})
+
+test_that(".read_skill_chunk handles paths, in-memory tables, and NULL", {
+  dt <- data.table::data.table(player_id = c("a", "b"), x = c(1.5, 2.5))
+  expect_null(panna:::.read_skill_chunk(NULL))
+  expect_identical(panna:::.read_skill_chunk(dt), dt)      # in-memory passthrough
+  p <- tempfile(fileext = ".rds"); saveRDS(dt, p)
+  expect_equal(panna:::.read_skill_chunk(p), dt)           # path -> read from disk
+  unlink(p)
+})
+
+test_that(".psr_checkpoint_reject_reason names the ACTUAL reason, not always 'fingerprint'", {
+  fp <- .psr_test_fingerprint()
+  # usable -> empty string
+  expect_identical(panna:::.psr_checkpoint_reject_reason(.psr_test_checkpoint(fp), fp, 20L), "")
+  # each rejection path reports its own cause
+  expect_match(panna:::.psr_checkpoint_reject_reason(NULL, fp, 20L), "unreadable")
+  incomplete <- .psr_test_checkpoint(fp); incomplete$cursor <- NULL
+  expect_match(panna:::.psr_checkpoint_reject_reason(incomplete, fp, 20L), "incomplete.*cursor")
+  expect_match(panna:::.psr_checkpoint_reject_reason(.psr_test_checkpoint(fp, i = 99L), fp, 20L),
+               "outside this run")
+  # a changed input is named specifically, so a resume failure is debuggable
+  bad_decay <- .psr_test_fingerprint(decay_params = list(rate = 0.009))
+  expect_match(panna:::.psr_checkpoint_reject_reason(.psr_test_checkpoint(bad_decay), fp, 20L),
+               "decay_params")
+  bad_src <- .psr_test_fingerprint(source_fingerprint = list(size = 999))
+  expect_match(panna:::.psr_checkpoint_reject_reason(.psr_test_checkpoint(bad_src), fp, 20L),
+               "source_fingerprint")
+})
+
+test_that("source_fingerprint participates in checkpoint validation", {
+  # A match_stats change that preserves every count is invisible to the
+  # count-based fields; the source file's mtime/size is what catches it.
+  fp_run  <- .psr_test_fingerprint(source_fingerprint = list(mtime = "2026-09-05 10:00:00", size = 100))
+  fp_ckpt <- .psr_test_fingerprint(source_fingerprint = list(mtime = "2026-09-05 12:00:00", size = 100))
+  expect_false(panna:::.psr_checkpoint_usable(.psr_test_checkpoint(fp_ckpt), fp_run, 20L))
+  expect_true(panna:::.psr_checkpoint_usable(.psr_test_checkpoint(fp_run), fp_run, 20L))
+})

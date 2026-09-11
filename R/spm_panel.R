@@ -441,8 +441,11 @@ build_spm_panel <- function(match_stats, rapm_window_targets,
     "pen_goals_conceded_p90",
     "poss_lost_ctrl_p90", "poss_lost_ctrl_per_touch"
   )
-  list(lower = stats::setNames(rep(0, length(bad)), bad),
-       upper = stats::setNames(rep(0, length(good)), good))
+  # sign convention (Pete, 2026-09-03): defense positive = good, so "good"
+  # features need coef >= 0 (lower bound 0) and "bad" ones coef <= 0 (upper
+  # bound 0) -- swapped from the pre-flip negative=good constraint.
+  list(lower = stats::setNames(rep(0, length(good)), good),
+       upper = stats::setNames(rep(0, length(bad)), bad))
 }
 
 
@@ -849,14 +852,24 @@ predict_spm_panel <- function(model, newdata, lambda = c("min", "1se")) {
 #'
 #' `fit_spm_panel()` is fit separately per target (offense/defense have
 #' different sign constraints and, for a real RAPM O/D split, different
-#' underlying signal). The targets are stored in the RAW internal
-#' convention (`defense_target` = contribution to opponent xG, positive =
-#' concedes more = bad), and net RAPM = offense - defense
-#' (`extract_rapm_ratings()`, R/rapm_model.R "RAPM rating = offense -
-#' defense") -- so the net prediction is `pred_offense - pred_defense`.
-#' (An earlier version summed the two, which flipped the defense half's
-#' contribution at eval time and tanked every candidate's next-window
-#' correlation -- caught in the 2026-07-22 full-panel bake-off.)
+#' underlying signal).
+#'
+#' Sign convention (Pete, 2026-09-03): `defense_target` is built directly
+#' from the published `defense` column (R/spm_panel.R's panel-building step,
+#' `defense_target = defense`), which as of the same date is
+#' POSITIVE = GOOD (`extract_rapm_ratings()`/`extract_xrapm_ratings()`,
+#' R/rapm_model.R, now negate `def_coefs` at extraction). So
+#' `pred_defense` is already positive=good, and the net prediction is
+#' `pred_offense + pred_defense`.
+#'
+#' **Do not "fix" this back to a minus sign.** An earlier version of this
+#' function used `-` when `defense_target` was still negative=good (that
+#' was correct THEN: net RAPM = offense - defense in the old convention),
+#' and summing the two at that time flipped the defense half's contribution
+#' at eval time and tanked every candidate's next-window correlation --
+#' caught in the 2026-07-22 full-panel bake-off. The `+` here is correct
+#' ONLY because the underlying target's sign flipped with it; the two
+#' changes must always travel together.
 #'
 #' @param fits List with `offense` and `defense` elements, each a
 #'   `fit_spm_panel()` result (as produced by the candidate configs in
@@ -878,7 +891,7 @@ predict_spm_panel_net <- function(fits, newdata, lambda = c("min", "1se")) {
   data.table::setnames(def, "pred", "pred_defense")
   join_cols <- intersect(c("player_id", "vintage_year"), names(off))
   out <- merge(off, def[, c(join_cols, "pred_defense"), with = FALSE], by = join_cols)
-  out[, pred_net := pred_offense - pred_defense]
+  out[, pred_net := pred_offense + pred_defense]
   out
 }
 

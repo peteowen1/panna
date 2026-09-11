@@ -1320,6 +1320,28 @@ prepare_opta_shots_for_splints <- function(opta_shot_events, use_goals_as_xg = F
   shots <- opta_shot_events
   shots$minute <- as.numeric(shots$minute)
   shots$team <- if (has_team_name) shots$team_name else shots$team_id
+
+  # STOP: the `xg` column on opta_shot_events is OPTA's xG, not ours.
+  #
+  # Standing rule (2026-09-03): production always uses panna's own xG model;
+  # Opta's is a benchmark only, for checking ours is better on the shots they
+  # scored. Tell them apart instantly -- Opta's is quantised to 3dp (956 distinct
+  # values across 3.3M shots, penalties exactly 0.800); ours is float-continuous.
+  #
+  # The production Opta pipeline does NOT reach here: `02_data_processing.R:42`
+  # passes `opta_shot_events = NULL` and then overrides shooting with
+  # SPADL-derived shots, which carry model xG via `add_xg_to_spadl()`. That is
+  # what feeds splints -> npxg_home/npxg_away -> RAPM's target. This branch is a
+  # fallback for callers who supply Opta shot events directly, and it is warned
+  # about rather than silent because a splint built on Opta's xG would retarget
+  # RAPM onto a third party's model without anything failing.
+  if (has_xg) {
+    cli::cli_warn(c(
+      "Using OPTA's xG column, not panna's model.",
+      "i" = "Production passes {.code opta_shot_events = NULL} and uses SPADL-derived shots instead.",
+      "i" = "If this is a RAPM/splint build, that is almost certainly not what you want."
+    ))
+  }
   shots$xg <- if (has_xg) {
     as.numeric(shots$xg)
   } else if (use_goals_as_xg) {

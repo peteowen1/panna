@@ -155,7 +155,10 @@ prepare_shots_for_xgot <- function(shot_events,
 
   # Complete-window gate (goalmouth coords reliable only from 2021-22+).
   if ("season" %in% names(shot_events)) {
-    ey <- vapply(shot_events$season, extract_season_end_year, numeric(1))
+    # extract_season_end_year() is already vectorized - shot_events is
+    # per-shot (millions of rows), so vapply() here forces one R call per
+    # shot instead of one call for the whole column.
+    ey <- extract_season_end_year(shot_events$season)
     keep <- !is.na(ey) & ey >= min_season_end_year
     n_drop <- sum(!keep)
     if (n_drop) {
@@ -238,7 +241,9 @@ fit_xgot_model <- function(shot_features,
     "x", "y", "distance_to_goal", "angle_to_goal",
     "in_penalty_area", "in_six_yard_box",
     "is_header", "is_right_foot", "is_left_foot",
-    "is_open_play", "is_set_piece", "is_corner", "is_direct_freekick",
+    "is_open_play", "is_set_piece", "is_corner",
+    # is_direct_freekick removed 2026-09-03: constant 0 on every shot
+    # (no Opta `situation` value contains "free"). See .create_shot_features().
     "is_big_chance"
   )
   placement_cols <- attr(shot_features, "placement_cols")
@@ -309,6 +314,26 @@ fit_xgot_model <- function(shot_features,
 predict_xgot <- function(xgot_model, shot_features) {
   feature_cols <- xgot_model$panna_metadata$feature_cols
   missing_cols <- setdiff(feature_cols, names(shot_features))
+
+  # Back-compat for models trained BEFORE 2026-09-03. `is_direct_freekick` was
+  # removed that day because it was constant 0 on all 3,289,256 shots (no Opta
+  # `situation` value contains "free"), so any xgboost split on it is
+  # unreachable and restoring it as 0 reproduces the trained model EXACTLY.
+  # This is not imputation - it is replaying a value that was never anything
+  # else. Scoped to this one named column so a genuinely missing feature (a
+  # real placement column, say) still aborts below.
+  # TODO: retrain xgot_model without it, then delete this block. Held back
+  # deliberately today so the stage-1 rebuild changes xG ONLY and its
+  # calibration result stays attributable.
+  if ("is_direct_freekick" %in% missing_cols) {
+    cli::cli_warn(c(
+      "xGOT model is a pre-2026-09-03 build that still lists {.field is_direct_freekick}.",
+      "i" = "Restoring it as constant 0 (its only value in training). Retrain to drop it."
+    ))
+    shot_features$is_direct_freekick <- 0
+    missing_cols <- setdiff(missing_cols, "is_direct_freekick")
+  }
+
   if (length(missing_cols) > 0) {
     cli::cli_abort(c(
       "xGOT prediction: missing feature{?s}: {paste(missing_cols, collapse=', ')}",
@@ -336,8 +361,14 @@ predict_xgot <- function(xgot_model, shot_features) {
 #' @param xgot_model Fitted xGOT model.
 #' @param goalmouth_lookup Data frame keyed by (\code{match_id},
 #'   \code{event_id}) with \code{type_id}, \code{goalmouth_y},
-#'   \code{goalmouth_z}, \code{situation}, and \code{is_blocked} for shot
-#'   events - e.g. from match_events / opta_shot_events. \code{situation} is
+#'   \code{goalmouth_z}, \code{situation}, \code{is_blocked} and
+#'   \code{body_part} for shot events - e.g. from match_events /
+#'   opta_shot_events. Pass it via \code{load_opta_shot_events()}, NOT by
+#'   reading the parquet directly: that returns \code{event_id} as integer64 and
+#'   \code{merge()} against SPADL's numeric \code{original_event_id} matches
+#'   nothing (a guard now aborts on this rather than reporting "0 scored").
+#'   \code{body_part} is required for the header and footedness features -
+#'   SPADL's own \code{bodypart} says "foot" for every shot. \code{situation} is
 #'   required to avoid train/serve skew (the model trained on real
 #'   situations); without it, set-piece/corner/free-kick shots are scored as
 #'   open-play. \code{is_blocked} excludes shots blocked by an outfield
@@ -373,9 +404,22 @@ add_xgot_to_spadl <- function(spadl_actions, xgot_model, goalmouth_lookup) {
   if (!have_is_blocked) {
     cli::cli_warn("goalmouth_lookup lacks `is_blocked` - blocked shots (Attempt Saved with q82) will be scored as real on-target attempts (train/serve skew, panna#176).")
   }
+  # `body_part` matters as much as `situation` did. prepare_shots_for_xgot()
+  # trains on shot_events$body_part (RightFoot / LeftFoot / Head), but SPADL's
+  # own `bodypart` is a stub that says "foot" for every shot -- see
+  # map_opta_bodypart() -- so reading it here left is_header, is_right_foot and
+  # is_left_foot constant 0 at inference while training saw the real values.
+  # Same train/serve skew that cost +6.30% on xG (2026-09-03).
+  have_body_part <- "body_part" %in% names(goalmouth_lookup)
+  if (!have_body_part) {
+    cli::cli_alert_warning(
+      "goalmouth_lookup lacks `body_part` - headers scored as foot shots (train/serve skew).")
+    cli::cli_warn("goalmouth_lookup lacks `body_part` - header/footedness features are dead.")
+  }
   lk_cols <- c("match_id", "event_id", "type_id", "goalmouth_y", "goalmouth_z",
                if (have_situation) "situation",
-               if (have_is_blocked) "is_blocked")
+               if (have_is_blocked) "is_blocked",
+               if (have_body_part) "body_part")
   lk <- goalmouth_lookup[, lk_cols, drop = FALSE]
   # De-dup on the join key: a duplicated (match_id, event_id) would let merge()
   # inflate rows and misalign coords to the wrong shot (silent wrong xGOT).
@@ -388,6 +432,22 @@ add_xgot_to_spadl <- function(spadl_actions, xgot_model, goalmouth_lookup) {
                paste(joined$match_id, joined$event_id))
   joined <- joined[ord, ]
   stopifnot(nrow(joined) == nrow(key))   # 1:1 invariant (guaranteed by de-dup)
+
+  # A join that matches NOTHING is indistinguishable from "every shot was
+  # off-target": both end with xgot 0/NA and a cheerful "0 scored" in the log.
+  # It happens easily -- `event_id` is integer64 straight from the parquet but
+  # numeric via load_opta_shot_events(), and merge() across those two types
+  # matches 0% without complaint (confirmed 2026-09-03 on EPL 2025-2026: 0.0%
+  # by merge, 100% by paste). Fail loudly instead.
+  matched <- mean(!is.na(joined$type_id))
+  if (matched < 0.5) {
+    cli::cli_abort(c(
+      "goalmouth_lookup matched only {round(100 * matched, 1)}% of {nrow(key)} shots.",
+      "x" = "xGOT would be silently empty rather than wrong-looking.",
+      "i" = "Check the join key types: {.field event_id} is integer64 from the raw parquet and numeric via {.fn load_opta_shot_events}."
+    ))
+  }
+  cli::cli_alert_info("Goalmouth lookup matched {round(100 * matched, 1)}% of shots")
 
   # NA-preserving: `%in%` collapses a missing type_id (unmatched shot) to
   # FALSE, which would mislabel it off-target (xgot=0) instead of unknown (NA).
@@ -408,7 +468,8 @@ add_xgot_to_spadl <- function(spadl_actions, xgot_model, goalmouth_lookup) {
 
   if (any(predable)) {
     is_big_chance <- if ("is_big_chance" %in% names(shots)) as.integer(shots$is_big_chance[predable]) else 0L
-    bodypart <- if ("bodypart" %in% names(shots)) shots$bodypart[predable] else NULL
+    # joined$body_part (Opta's own), NOT shots$bodypart (the SPADL stub).
+    bodypart <- if (have_body_part) joined$body_part[predable] else NULL
     # Real situation (not NULL) so set-piece/corner/FK shots match training.
     situation <- if (have_situation) joined$situation[predable] else NULL
     base <- .create_shot_features(

@@ -2,6 +2,38 @@
 # See CLAUDE_TODO_CAREER_PANNA.md. Panna is the impact TRAIT (career, recency-
 # weighted) — parallel to EPR/PSR — vs season `xrapm` (one season's contribution).
 
+#' Abort if a career_panna(_asof).parquet table isn't sign-tagged as expected
+#'
+#' Every reader of `panna_defense` (`02_player_ratings_to_team.R`'s career-Panna
+#' override, `09_export_ratings.R`, `12d_export_domestic_team_strength.R`,
+#' `12_export_wc2026_blog.R`, and any future caller) must call this right after
+#' loading either file, so a file built before the `sign_convention` column
+#' existed -- or a stale release asset predating the 2026-09-04 sign-convention
+#' flip -- aborts loudly instead of silently reading an inverted `panna_defense`
+#' (see panna#F1, 2026-09-07/11).
+#'
+#' @param cp The career_panna(_asof) data.frame/data.table, already loaded.
+#' @param source_desc Short string naming the caller, for the error message.
+#' @keywords internal
+.assert_career_panna_sign_convention <- function(cp, source_desc) {
+  if (!"sign_convention" %in% names(cp)) {
+    cli::cli_abort(c(
+      "{source_desc}: career_panna file has no {.field sign_convention} column.",
+      "i" = "It predates the sign-convention tagging (panna#F1, 2026-09-11).",
+      "x" = "Regenerate it with {.path data-raw/estimated-skills/09_career_panna.R} (or 09b for the as-of file)."
+    ))
+  }
+  got <- unique(cp$sign_convention)
+  if (!identical(got, CAREER_PANNA_SIGN_CONVENTION)) {
+    cli::cli_abort(c(
+      "{source_desc}: career_panna file is tagged {.val {got}}, expected {.val {CAREER_PANNA_SIGN_CONVENTION}}.",
+      "x" = "Reading panna_defense under the wrong sign convention silently inverts it.",
+      "i" = "Regenerate it with {.path data-raw/estimated-skills/09_career_panna.R} (or 09b for the as-of file)."
+    ))
+  }
+  invisible(TRUE)
+}
+
 #' Fit career-trait Panna (decay-weighted multi-season xRAPM)
 #'
 #' Pools every splint across all seasons into one ridge plus-minus fit, weighting
@@ -79,7 +111,13 @@ fit_career_rapm <- function(splint_data, match_dates, skill_spm = NULL,
     or <- data.table::as.data.table(skill_spm$offense_spm_ratings)
     dr <- data.table::as.data.table(skill_spm$defense_spm_ratings)
     offense_prior <- stats::setNames(or$offense_spm, or$player_id)
-    defense_prior <- stats::setNames(dr$defense_spm, dr$player_id)
+    # sign convention (Pete, 2026-09-04): defense_spm is positive=good
+    # (trained on the flipped `defense` column, 05_spm.R), but
+    # fit_rapm_with_prior()'s internal fitting math needs the raw scale
+    # (bad=positive) -- negate here, same fix as build_prior_vector(negate=
+    # TRUE) elsewhere. This path builds defense_prior manually rather than
+    # via build_prior_vector(), so it needs its own negation.
+    defense_prior <- -stats::setNames(dr$defense_spm, dr$player_id)
   }
 
   # 4. Fit career xRAPM = Panna. Derive lambda from the sample-size formula when
@@ -154,7 +192,10 @@ optimize_panna_decay <- function(splint_data, match_dates, skill_spm,
   or <- data.table::as.data.table(skill_spm$offense_spm_ratings)
   dr <- data.table::as.data.table(skill_spm$defense_spm_ratings)
   offense_prior <- stats::setNames(or$offense_spm, or$player_id)
-  defense_prior <- stats::setNames(dr$defense_spm, dr$player_id)
+  # sign convention (Pete, 2026-09-04): see fit_career_rapm() above -- same
+  # negation, same reason (defense_spm is positive=good, fit_rapm_with_prior()
+  # needs the raw scale).
+  defense_prior <- -stats::setNames(dr$defense_spm, dr$player_id)
 
   age_train <- as.numeric(train_end - row_dt$mdate[train_idx])  # decay anchored at train_end
   Xh <- X[hold_idx, , drop = FALSE]; yh <- y[hold_idx]; wh <- w0[hold_idx]

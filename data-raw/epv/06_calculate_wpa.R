@@ -68,6 +68,8 @@ for (league in LEAGUES) {
       # Load data
       events <- load_opta_match_events(league, season = season, source = "local")
       lineups <- load_opta_lineups(league, season = season, source = "local")
+      # body_part + situation for xG -- see the note in 02.
+      shot_lk <- .epv_shot_lookup(league, season)
 
       # Convert to SPADL
       spadl <- convert_opta_to_spadl(events)
@@ -80,7 +82,9 @@ for (league in LEAGUES) {
       # post-overhaul model scores against degraded fallback features.
       if (!is.null(epv_model)) {
         spadl_chains <- calculate_action_epv(spadl_chains, features = NULL,
-                                             epv_model, league = league)
+                                             epv_model, league = league,
+                                             season = season,
+                                             shot_lookup = shot_lk)
       }
       spadl_chains <- add_red_card_to_chains(spadl_chains, events)
 

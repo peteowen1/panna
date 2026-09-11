@@ -443,3 +443,41 @@ test_that("compute_match_elos handles NA team names without corruption", {
   expect_false(is.na(elos$home_elo[3]))
   expect_false(is.na(elos$home_elo[4]))
 })
+
+
+# =============================================================================
+# .grouped_cv_folds Tests
+# =============================================================================
+
+test_that(".grouped_cv_folds keeps every group's rows in a single fold", {
+  group_ids <- rep(c("m1", "m2", "m3", "m4", "m5", "m6"), each = 2)
+  folds <- panna:::.grouped_cv_folds(group_ids, nfolds = 3)
+
+  expect_length(folds, 3)
+  # Every row covered exactly once across the folds
+  expect_equal(sort(unname(unlist(folds))), seq_along(group_ids))
+  # A group's two rows never split across folds
+  row_fold <- integer(length(group_ids))
+  for (f in seq_along(folds)) row_fold[folds[[f]]] <- f
+  for (g in unique(group_ids)) {
+    idx <- which(group_ids == g)
+    expect_equal(length(unique(row_fold[idx])), 1)
+  }
+})
+
+test_that(".grouped_cv_folds errors on NA group_ids", {
+  expect_error(
+    panna:::.grouped_cv_folds(c("m1", NA, "m2"), nfolds = 2),
+    "must not contain NA"
+  )
+})
+
+test_that(".grouped_cv_folds reduces nfolds when there are fewer groups than folds", {
+  group_ids <- rep(c("m1", "m2"), each = 3)
+  expect_warning(
+    folds <- panna:::.grouped_cv_folds(group_ids, nfolds = 5),
+    "distinct group"
+  )
+  expect_length(folds, 2)
+  expect_equal(sort(unname(unlist(folds))), seq_along(group_ids))
+})

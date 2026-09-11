@@ -45,7 +45,9 @@ offense_prior <- build_prior_vector(
 defense_prior <- build_prior_vector(
   spm_data = spm_results$defense_spm_ratings,
   spm_col = "defense_spm",
-  player_mapping = player_mapping
+  player_mapping = player_mapping,
+  negate = TRUE  # defense_spm is positive=good (trained on the flipped
+                 # defense column); fit_rapm_with_prior() needs the raw scale.
 )
 
 cat("Offense priors set:", sum(offense_prior != 0), "\n")
