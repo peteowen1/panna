@@ -678,22 +678,35 @@ if (nrow(seasonal_psr) > 0 && !is.null(psr_primary_league)) {
 # `apply_psr_season_calibration()`.
 
 # Anchor check (stats-discipline §1): keepers are ~8% of the eligible pool, so
-# they should be ~8% of the top 20, not 50-70%. Returns both so the caller can
-# compare against the pool rather than a hard-coded constant -- the pool share
-# genuinely moves (a part-played season runs ~15%, because keepers accumulate
-# full 90s while outfielders rotate).
+# they should be ~8% of the top 20, not 50-70%. Compared against the pool rather
+# than a hard-coded constant, because the pool share genuinely moves -- a
+# part-played season runs ~15%, since keepers accumulate full 90s while
+# outfielders rotate.
+#
+# EVERY season, not just the latest. This table is the whole rating history and
+# the fix was measured across 13 complete seasons; a regression confined to older
+# ones (a legacy position vocabulary, a calibration key that stops matching for
+# part of the range) would leave the newest season looking fine while historical
+# leaderboards drifted back to keeper-dominated with no signal.
 .psr_keeper_top20_share <- function(d, min_90s = 10) {
   d <- data.table::as.data.table(d)
   if (!all(c("primary_position", "psr", "weighted_90s", "season_end_year") %in% names(d))) {
-    return(list(top20 = NA_real_, pool = NA_real_, n = 0L))
+    return(NULL)
   }
-  s <- d[season_end_year == max(season_end_year, na.rm = TRUE) &
-           weighted_90s >= min_90s & !is.na(psr)]
-  if (nrow(s) < 20) return(list(top20 = NA_real_, pool = NA_real_, n = nrow(s)))
-  is_gk <- s$primary_position == "GK"
-  list(top20 = 100 * mean(is_gk[order(-s$psr)][1:20]),
-       pool  = 100 * mean(is_gk),
-       n     = nrow(s))
+  s <- d[weighted_90s >= min_90s & !is.na(psr) & !is.na(season_end_year)]
+  if (nrow(s) == 0L) return(NULL)
+  out <- s[, {
+    if (.N < 20L) {
+      list(top20 = NA_real_, pool = NA_real_, n = .N)
+    } else {
+      g <- primary_position == "GK"
+      list(top20 = 100 * mean(g[order(-psr)][1:20]),
+           pool  = 100 * mean(g),
+           n     = .N)
+    }
+  }, by = season_end_year]
+  out[, excess := top20 - pool]
+  out[]
 }
 
 if (!is.null(seasonal_psr) && nrow(seasonal_psr) > 0) {
@@ -709,30 +722,70 @@ if (!is.null(seasonal_psr) && nrow(seasonal_psr) > 0) {
     stop("seasonal_psr lacks `primary_position` -- PSR position calibration ",
          "would silently no-op. Fix the upstream build rather than skipping it.")
   } else {
+    # A blank cell or renamed level in the CSV silently coerces that position's
+    # factor to 1, which is indistinguishable from "correctly uncalibrated" --
+    # and calibrating only SOME positions is worse than calibrating none, because
+    # it changes the relative ordering between them.
+    .want <- c("GK", "DEF", "MID", "FWD")
+    .pos_cal <- .psr_cal[.psr_cal$axis == "position", ]
+    .have <- .pos_cal[is.finite(.pos_cal$factor) & .pos_cal$factor > 0, ]$level
+    if (!all(.want %in% .have)) {
+      warning("PSR calibration table is missing a usable factor for: ",
+              paste(setdiff(.want, .have), collapse = ", "),
+              " -- those positions ship UNCALIBRATED at factor 1 while the others ",
+              "are scaled. Check inst/extdata/psr_calibration.csv (see panna#202).",
+              call. = FALSE)
+    }
+
     .gk_before <- .psr_keeper_top20_share(seasonal_psr)
     seasonal_psr <- as.data.frame(
-      apply_psr_calibration(seasonal_psr, .psr_cal[.psr_cal$axis == "position", ])
+      apply_psr_calibration(seasonal_psr, .pos_cal)
     )
     .gk_after <- .psr_keeper_top20_share(seasonal_psr)
-    cat(sprintf("  Keeper share of top 20 (latest season, n=%d): %.0f%% -> %.0f%% (pool %.0f%%)\n",
-                .gk_after$n, .gk_before$top20, .gk_after$top20, .gk_after$pool))
 
-    # Warn rather than stop, matching the PSV calibration path above: 06 is a
-    # ~20-minute step and killing it here would also discard the offsets and
-    # every rating it just fitted. The check is still worth having loud -- this
-    # exact defect shipped to the blog before anyone was looking for it.
-    # 25pp over the pool is deliberately slack: it clears the observed post-fix
-    # range (0-10% against an ~8% pool) while still catching the pre-fix 50-70%.
-    if (!is.na(.gk_after$top20) && .gk_after$top20 > .gk_after$pool + 25) {
-      warning(sprintf(
-        "PSR anchor FAILED: keepers are %.0f%% of the top 20 against a %.0f%% pool ",
-        .gk_after$top20, .gk_after$pool),
-        "share, after calibration. Expect the published leaderboard to be ",
-        "keeper-dominated -- do not publish without checking the position ",
-        "factors in inst/extdata/psr_calibration.csv (see panna#202).",
-        call. = FALSE)
+    if (is.null(.gk_after) || nrow(.gk_after) == 0L) {
+      warning("PSR anchor check could not run (no season had 20+ eligible ",
+              "players, or the columns it needs are absent) -- the calibration ",
+              "was applied but NOT verified.", call. = FALSE)
+    } else {
+      .latest <- .gk_after[season_end_year == max(season_end_year)]
+      .b <- if (!is.null(.gk_before)) {
+        .gk_before[season_end_year == .latest$season_end_year]$top20
+      } else NA_real_
+      cat(sprintf("  Keeper share of top 20, season %d (n=%d): %.0f%% -> %.0f%% (pool %.0f%%)\n",
+                  .latest$season_end_year, .latest$n,
+                  if (length(.b)) .b[1] else NA_real_, .latest$top20, .latest$pool))
+
+      # 25pp over the pool is deliberately slack: it clears the observed post-fix
+      # range (0-10% against an ~8% pool) while still catching the pre-fix 50-70%.
+      # Checked on the WORST season, not the newest -- see the helper's note.
+      .worst <- .gk_after[!is.na(excess)][order(-excess)]
+      cat(sprintf("  Worst season by keeper over-representation: %s\n",
+                  if (nrow(.worst) == 0L) "n/a" else
+                    sprintf("%d at %.0f%% vs %.0f%% pool (+%.0fpp)",
+                            .worst$season_end_year[1], .worst$top20[1],
+                            .worst$pool[1], .worst$excess[1])))
+
+      # Warn rather than stop, matching the PSV calibration path above: 06 is a
+      # ~20-minute step and killing it here would also discard the offsets and
+      # every rating it just fitted. The check is still worth having loud -- this
+      # exact defect shipped to the blog before anyone was looking for it.
+      if (nrow(.worst) > 0L && .worst$excess[1] > 25) {
+        .bad <- .worst[excess > 25]
+        warning(sprintf(
+          "PSR anchor FAILED in %d season(s), worst %d: keepers are %.0f%% of the top 20 ",
+          nrow(.bad), .worst$season_end_year[1], .worst$top20[1]),
+          sprintf("against a %.0f%% pool share, AFTER calibration. ", .worst$pool[1]),
+          sprintf("Seasons over the bar: %s. ",
+                  paste(.bad$season_end_year, collapse = ", ")),
+          "Expect keeper-dominated leaderboards -- do not publish without ",
+          "checking the position factors in inst/extdata/psr_calibration.csv ",
+          "(see panna#202).", call. = FALSE)
+        rm(.bad)
+      }
+      rm(.latest, .b, .worst)
     }
-    rm(.gk_before, .gk_after)
+    rm(.gk_before, .gk_after, .want, .pos_cal, .have)
   }
   rm(.psr_cal)
 }
