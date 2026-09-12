@@ -116,10 +116,18 @@ message("\n=== Exporting domestic + cup team strength (Tiento, all clubs) ===\n"
   # Pick the most-frequent league per team within each pool (a genuine data
   # anomaly -- mid-season rename, dual domestic entries -- should not crash
   # the export; deterministic tie-break by row count then league code).
+  # Group by (team, team_id), NOT team alone. Two DIFFERENT real clubs can
+  # share a name -- Arsenal FC and Arsenal de Sarandi, the panna#207 Elo case --
+  # and collapsing by name kept one and silently DROPPED the other from the
+  # export entirely (panna#206): not a blended rating like #204/#207, a missing
+  # club. Splitting on the id keeps both, while a single club appearing in two
+  # leagues still collapses to its most-frequent one, which is this function's
+  # actual job. Rows with a NA id keep the old name-only behaviour, since there
+  # is nothing to tell them apart with.
   .pick_one <- function(dt) {
     if (nrow(dt) == 0L) return(dt)
-    data.table::setorder(dt, team, -N, league)
-    dt[, .SD[1L], by = team]
+    data.table::setorder(dt, team, team_id, -N, league)
+    dt[, .SD[1L], by = .(team, team_id)]
   }
   # .pick_one() keeps only the highest-N (team, team_id) row per team, so a
   # club with two DIFFERENT ids inside the SAME league (a mid-season Opta id
@@ -154,9 +162,21 @@ message("\n=== Exporting domestic + cup team strength (Tiento, all clubs) ===\n"
       nrow(multi_dom), paste(multi_dom$team, collapse = ", ")))
   }
 
-  # Domestic wins over cup for any team present in both pools.
-  dom_teams <- dom1$team
-  cup_only <- cup1[!team %in% dom_teams]
+  # Domestic wins over cup for any team present in both pools -- matched on
+  # team_id where both sides carry one, for the same reason .pick_one() groups
+  # on it (panna#206). Excluding by NAME alone dropped a cup-only club whose
+  # name happened to match a DIFFERENT domestic club. Where either side has no
+  # id there is nothing better than the name, and the name is used -- that
+  # errs toward dropping a duplicate rather than publishing two rows for one
+  # club, the safer direction for a table the site ranks from.
+  dom_ids     <- unique(dom1[!is.na(team_id), team_id])
+  dom_names   <- unique(dom1$team)
+  dom_noid_nm <- unique(dom1[is.na(team_id), team])
+  cup_only <- cup1[!(
+    (!is.na(team_id) & team_id %in% dom_ids) |
+    (is.na(team_id)  & team    %in% dom_names) |
+    (team %in% dom_noid_nm)
+  )]
 
   out <- data.table::rbindlist(list(
     dom1[, .(team, team_id, league, is_domestic_league = TRUE, cur_sey)],
