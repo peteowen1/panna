@@ -59,6 +59,8 @@ player_psr(position = "MID")
 \seealso{
 Other psr: 
 \code{\link{PSV_RELIABILITY_GD_SCALE}},
+\code{\link{apply_psr_calibration}()},
+\code{\link{apply_psr_season_calibration}()},
 \code{\link{apply_psv_calibration}()},
 \code{\link{apply_psv_opponent_adjustment}()},
 \code{\link{calculate_psr}()},
@@ -68,7 +70,9 @@ Other psr:
 \code{\link{default_stat_rating_params}()},
 \code{\link{fit_psv_opponent_adjustment}()},
 \code{\link{load_opta_psr_weekly}()},
+\code{\link{load_psr_calibration}()},
 \code{\link{load_psv_match_reliability}()},
+\code{\link{psr_leaderboard_eligible}()},
 \code{\link{psv_opponent}},
 \code{\link{soccer_position_map}()},
 \code{\link{soccer_stat_rating_definitions}()},

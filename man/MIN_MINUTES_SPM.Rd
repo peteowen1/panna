@@ -25,6 +25,7 @@ Other constants:
 \code{\link{CONFIDENCE_LEVEL}},
 \code{\link{HALFTIME_MINUTE}},
 \code{\link{MINUTES_PER_MATCH}},
+\code{\link{MIN_90S_PSR_LEADERBOARD}},
 \code{\link{MIN_GAMES_FOR_PADDING}},
 \code{\link{MIN_MINUTES_FEATURES}},
 \code{\link{MIN_MINUTES_RAPM}},

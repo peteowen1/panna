@@ -462,6 +462,90 @@ MIN_MINUTES_RAPM_FIT <- 200L
 #' @keywords internal
 SPM_BLEND_WEIGHT_GLMNET <- 0.5
 
+#' Goalkeeper PSR scale correction (panna#202)
+#'
+#' Multiplier putting goalkeeper PSR on the same goals-per-90 footing as
+#' outfield PSR. The two sub-models are trained on different targets --
+#' outfield on xG difference, keepers always on goal difference
+#' (\code{psr.R}, \code{compute_player_psr()}) -- so their outputs are not
+#' directly comparable even though they share the name "PSR", get summed into
+#' team totals, and are ranked in one leaderboard.
+#'
+#' Derived from a leak-free calibration: each player-match was assigned the
+#' last weekly PSR snapshot STRICTLY BEFORE that match (rolling as-of join on
+#' \code{opta_psr_weekly.parquet}), minute-weighted and summed per position
+#' group, then regressed as own-minus-opponent differences on actual goal
+#' difference. Goalkeepers came out at 0.70 of their own outfield mean slope
+#' (GK 1.323 vs outfield 1.877, n = 54,328 team-matches) -- i.e. a unit of
+#' keeper PSR buys ~30\% less goal difference than a unit of outfield PSR.
+#'
+#' \strong{CONDITIONAL on the outfield coefficient set.} The GK coefficients are
+#' identical across sets, but this ratio is not, because the outfield regressors
+#' it is measured against change. Same out-of-sample harness (prior-season
+#' rating -> next season's matches, n = 34,304 team-matches):
+#'
+#' \tabular{lrrr}{
+#'   outfield set \tab GK slope \tab outfield mean \tab ratio \cr
+#'   xg    \tab 0.877 \tab 1.158 \tab 0.757 \cr
+#'   blend \tab 0.641 \tab 1.271 \tab 0.504 \cr
+#'   goals \tab 0.527 \tab 1.211 \tab 0.435 \cr
+#' }
+#'
+#' 0.50 matches \code{compute_player_psr()}'s \code{"blend"} default (panna#214).
+#' If that default changes again this constant MUST move with it -- carrying the
+#' xG-era 0.72 into a blend build would over-credit keepers by ~1.4x.
+#'
+#' Robustness, measured on the xG set where both routes exist: the weekly
+#' point-in-time harness gave 0.70 and this prior-season harness 0.757, so about
+#' +/-0.06 of method variance. That xG estimate was tight to the minutes floor
+#' (0.705-0.746 across floors 0/3/5/8) and unanimous in direction (every slice
+#' below 1.0), but moved by era (2019-2022 0.828 vs 2023-2026 0.641) and league
+#' tier (Big-5 0.639 vs non-Big-5 0.771). Treat as a central estimate, not a
+#' precise constant, and re-derive when the GK coefficients are retrained
+#' (\code{07_train_psr_model.R}) or the outfield target changes.
+#'
+#' NOTE the earlier seasonal-PSR version of this test gave the OPPOSITE sign
+#' (keepers appeared under-weighted). That was leakage: a season rating
+#' contains the matches being predicted, and keepers play every minute, so
+#' their season figure is the most contaminated of any position. Only the
+#' point-in-time result is trustworthy.
+#'
+#' \strong{Residual gap:} \code{\link{compute_player_psv}} has the IDENTICAL
+#' goal-vs-xG target split for keepers (\code{.score(dt[is_gk], "goals", "gk")})
+#' and is deliberately NOT corrected here. PSV and PSR are both consumed by
+#' \code{piero_value} and the game-logs export, so until PSV is addressed the
+#' two metrics disagree about keepers by roughly this factor. Tracked
+#' separately -- do not assume both are fixed.
+#'
+#' @format Numeric value: 0.50
+#' @keywords internal
+GK_PSR_GOAL_SCALE <- 0.50
+
+#' Minimum weighted 90s to qualify for a PSR leaderboard (panna#215)
+#'
+#' PSR rankings apply no minutes floor, so short partial seasons sit alongside
+#' full campaigns: **23 of the outfield top 100 have fewer than 15 weighted
+#' nineties and 11 fewer than 10** — F. Totti at 7.0, M. Pinilla at 5.5,
+#' J. Pastore at 9.7. This was the dominant driver of leaderboard noise,
+#' bigger than the cross-league offsets it is often blamed on (weak leagues are
+#' actually *under*-represented in the top 100: 91 of 100 are Big-5).
+#'
+#' 15 removes every sub-threshold entry currently in the outfield top 100; 10
+#' would remove 11 of 23. Chosen at 15 as roughly half a domestic season, the
+#' conventional qualification bar.
+#'
+#' This is a DISPLAY threshold, not a rating filter — a low-minutes rating is
+#' still the best estimate available for that player, it is just too noisy to
+#' rank against a full season. Use \code{\link{psr_leaderboard_eligible}} and
+#' keep the rows.
+#'
+#' @format Numeric value: 15
+#' @family constants
+#' @export
+#' @examples
+#' MIN_90S_PSR_LEADERBOARD
+MIN_90S_PSR_LEADERBOARD <- 15
+
 
 # =============================================================================
 # Cache Path Constants

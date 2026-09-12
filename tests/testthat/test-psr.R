@@ -669,6 +669,307 @@ test_that(".estimate_prematch_skills_batch handles single-player data", {
 
 
 # =============================================================================
+# GK PSR goal-scale correction (panna#202)
+# =============================================================================
+
+test_that(".scale_gk_psr preserves the osr + dsr == psr identity", {
+  gk <- data.table::data.table(
+    player_id = c("a", "b"),
+    psr_raw = c(0.40, -0.20),
+    psr = c(0.50, -0.30),
+    osr = c(0.35, -0.10),
+    dsr = c(0.15, -0.20)
+  )
+  # precondition: the identity holds before scaling
+  expect_equal(gk$osr + gk$dsr, gk$psr)
+
+  out <- panna:::.scale_gk_psr(gk, 0.72)
+  expect_equal(out$osr + out$dsr, out$psr)
+  expect_equal(out$psr, c(0.50, -0.30) * 0.72)
+  expect_equal(out$psr_raw, c(0.40, -0.20) * 0.72)
+})
+
+test_that(".scale_gk_psr shrinks magnitude but never flips sign or reorders", {
+  gk <- data.table::data.table(
+    player_id = c("a", "b", "c"),
+    psr = c(0.50, -0.30, 0.10),
+    osr = c(0.35, -0.10, 0.06),
+    dsr = c(0.15, -0.20, 0.04)
+  )
+  out <- panna:::.scale_gk_psr(gk, 0.72)
+  # a correction, not a re-rating: order and signs must survive
+  expect_equal(order(out$psr), order(gk$psr))
+  expect_equal(sign(out$psr), sign(gk$psr))
+  expect_true(all(abs(out$psr) < abs(gk$psr)))
+})
+
+test_that(".scale_gk_psr with scale 1 is an exact no-op (pre-#202 behaviour)", {
+  gk <- data.table::data.table(
+    player_id = "a", psr = 0.5, osr = 0.35, dsr = 0.15
+  )
+  expect_equal(panna:::.scale_gk_psr(gk, 1), gk)
+})
+
+test_that(".scale_gk_psr handles empty input and rejects a bad scale", {
+  empty <- data.table::data.table(
+    player_id = character(0), psr = numeric(0),
+    osr = numeric(0), dsr = numeric(0)
+  )
+  expect_equal(nrow(panna:::.scale_gk_psr(empty, 0.72)), 0)
+
+  gk <- data.table::data.table(player_id = "a", psr = 0.5, osr = 0.3, dsr = 0.2)
+  expect_error(panna:::.scale_gk_psr(gk, c(0.5, 0.6)), "single finite number")
+  expect_error(panna:::.scale_gk_psr(gk, NA_real_), "single finite number")
+})
+
+test_that("GK_PSR_GOAL_SCALE is in a sane range", {
+  # a correction, not a rewrite -- if a retrain pushes this outside (0.4, 1.0)
+  # the derivation should be re-examined rather than the constant just updated
+  expect_true(GK_PSR_GOAL_SCALE > 0.4 && GK_PSR_GOAL_SCALE < 1.0)
+})
+
+
+test_that("compute_player_psr scales GK rows end-to-end and leaves outfield untouched", {
+  # Pins the CALL-SITE wiring, not just .scale_gk_psr()'s arithmetic: the helper
+  # can be correct while being applied to the wrong rows, or not applied at all.
+  # Comparing two runs of the same input sidesteps having to reproduce the
+  # coefficient maths -- only the ratio between them is asserted.
+  skills <- data.table::data.table(
+    player_id = c("gk1", "gk2", "of1", "of2"),
+    player_name = c("K One", "K Two", "P One", "P Two"),
+    primary_position = c("GK", "GK", "DEF", "FWD"),
+    weighted_90s = c(20, 18, 22, 19),
+    total_minutes = c(1800, 1620, 1980, 1710),
+    passes_p90 = c(30, 28, 45, 20),
+    touches_p90 = c(40, 38, 60, 30),
+    long_balls_p90 = c(12, 10, 4, 1),
+    saves_p90 = c(3, 2.5, 0, 0),
+    high_claim_p90 = c(1.2, 0.9, 0, 0),
+    keeper_sweeper_p90 = c(0.8, 0.6, 0, 0),
+    gsaa_per90 = c(0.05, -0.02, 0, 0)
+  )
+
+  unscaled <- tryCatch(
+    suppressWarnings(suppressMessages(
+      compute_player_psr(skills, center = FALSE, gk_goal_scale = 1))),
+    error = function(e) NULL)
+  skip_if(is.null(unscaled), "compute_player_psr unavailable on this fixture")
+
+  scaled <- suppressWarnings(suppressMessages(
+    compute_player_psr(skills, center = FALSE, gk_goal_scale = 0.5)))
+
+  u <- data.table::as.data.table(unscaled)
+  s <- data.table::as.data.table(scaled)
+  data.table::setorder(u, player_id); data.table::setorder(s, player_id)
+  expect_equal(u$player_id, s$player_id)
+
+  is_gk <- u$player_id %in% c("gk1", "gk2")
+  # GK rows scale by exactly the factor...
+  expect_equal(s$psr[is_gk], u$psr[is_gk] * 0.5)
+  # ...and outfield rows are completely unaffected by a GK-only parameter
+  expect_equal(s$psr[!is_gk], u$psr[!is_gk])
+  # identity still holds on the scaled output
+  if (all(c("osr", "dsr") %in% names(s))) {
+    expect_equal(s$osr[is_gk] + s$dsr[is_gk], s$psr[is_gk])
+  }
+})
+
+
+# =============================================================================
+# PSR position + season calibration (panna#202 / #213 / #214)
+# =============================================================================
+
+test_that("shipped calibration table is well formed and in a sane range", {
+  cal <- load_psr_calibration()
+  expect_true(nrow(cal) > 0)
+  expect_true(all(c("axis", "level", "factor") %in% names(cal)))
+  expect_setequal(unique(cal$axis), c("position", "season"))
+  # a calibration, not a rewrite: nothing should flip a sign or explode
+  expect_true(all(cal$factor > 0))
+  expect_true(all(cal$factor > 0.3 & cal$factor < 2))
+  # Factors ARE the fitted slopes (goal units), so they are NOT centred on 1 --
+  # outfield sits above 1 and GK well below. Assert the ordering that matters
+  # rather than an absolute scale, so a re-derivation does not spuriously fail.
+  pos <- cal[cal$axis == "position", ]
+  gk <- pos$factor[pos$level == "GK"]
+  out <- pos$factor[pos$level != "GK"]
+  expect_true(gk < 0.8)                 # keepers are the one large correction
+  expect_true(all(out > 0.9 & out < 1.6))
+  expect_true(gk < min(out))            # GK strictly below every outfield bucket
+  # season factors stay close to 1: the position axis already set the scale
+  sea <- cal[cal$axis == "season", ]
+  expect_true(all(sea$factor > 0.75 & sea$factor < 1.35))
+})
+
+test_that(".psr_calibration_factor defaults unknown keys to 1, never NA", {
+  cal <- data.table::data.table(axis = "position", level = c("GK", "DEF"),
+                                 factor = c(0.5, 0.9))
+  f <- panna:::.psr_calibration_factor(cal, "position", c("GK", "DEF", "FWD", NA))
+  expect_equal(f, c(0.5, 0.9, 1, 1))
+  # an unseen axis is a no-op, not an error
+  expect_equal(panna:::.psr_calibration_factor(cal, "season", c("2016", "2020")), c(1, 1))
+  # so is an empty table
+  expect_equal(panna:::.psr_calibration_factor(NULL, "position", c("GK")), 1)
+})
+
+test_that(".calibrate_psr_positions scales by position and preserves the identity", {
+  cal <- data.table::data.table(axis = "position", level = c("GK", "FWD"),
+                                 factor = c(0.5, 2.0))
+  dt <- data.table::data.table(
+    player_id = c("g", "f", "d"),
+    primary_position = c("GK", "FWD", "DEF"),
+    psr_raw = c(1.0, 1.0, 1.0), psr = c(0.4, 0.4, 0.4),
+    osr = c(0.3, 0.3, 0.3), dsr = c(0.1, 0.1, 0.1)
+  )
+  out <- panna:::.calibrate_psr_positions(dt, cal)
+  expect_equal(out$psr, c(0.2, 0.8, 0.4))     # GK halved, FWD doubled, DEF untouched
+  expect_equal(out$osr + out$dsr, out$psr)    # identity survives
+  expect_equal(out$psr_raw, c(0.5, 2.0, 1.0))
+})
+
+test_that(".calibrate_psr_positions is a no-op with NULL/empty calibration", {
+  dt <- data.table::data.table(player_id = "a", primary_position = "GK",
+                                psr = 0.4, osr = 0.3, dsr = 0.1)
+  expect_equal(panna:::.calibrate_psr_positions(dt, NULL), dt)
+  expect_equal(panna:::.calibrate_psr_positions(
+    dt, data.table::data.table(axis = character(0), level = character(0),
+                               factor = numeric(0))), dt)
+})
+
+test_that("apply_psr_season_calibration scales by season and needs the column", {
+  cal <- data.table::data.table(axis = "season", level = c("2016", "2023"),
+                                 factor = c(0.9, 1.1))
+  dt <- data.table::data.table(
+    player_id = c("a", "b", "c"), season_end_year = c(2016L, 2023L, 2019L),
+    psr = c(1.0, 1.0, 1.0), osr = c(0.6, 0.6, 0.6), dsr = c(0.4, 0.4, 0.4)
+  )
+  out <- apply_psr_season_calibration(dt, cal)
+  expect_equal(out$psr, c(0.9, 1.1, 1.0))   # 2019 absent -> unchanged, not NA
+  expect_equal(out$osr + out$dsr, out$psr)
+  expect_false(anyNA(out$psr))
+
+  expect_error(
+    apply_psr_season_calibration(
+      data.table::data.table(player_id = "a", psr = 1), cal),
+    "season_end_year"
+  )
+})
+
+test_that("the current season passes through uncalibrated rather than becoming NA", {
+  # a season's factor needs the FOLLOWING season's matches, so the newest
+  # season is always absent from the table -- it must survive untouched
+  cal <- load_psr_calibration()
+  newest <- max(as.integer(cal$level[cal$axis == "season"]), na.rm = TRUE)
+  dt <- data.table::data.table(player_id = "a", season_end_year = newest + 2L,
+                                psr = 0.5, osr = 0.3, dsr = 0.2)
+  out <- apply_psr_season_calibration(dt, cal)
+  expect_equal(out$psr, 0.5)
+  expect_false(anyNA(out$psr))
+})
+
+
+test_that("psr_leaderboard_eligible flags rather than filters, and NA fails the bar", {
+  dt <- data.table::data.table(
+    player_id = c("full", "half", "cameo", "unknown"),
+    weighted_90s = c(30, 15, 7, NA_real_)
+  )
+  e <- psr_leaderboard_eligible(dt, min_90s = 15)
+  # boundary is inclusive; an unknown workload cannot clear a workload bar
+  expect_equal(e, c(TRUE, TRUE, FALSE, FALSE))
+  # returns a flag per row, not a filtered table -- callers keep the rows
+  expect_length(e, nrow(dt))
+  expect_type(e, "logical")
+
+  expect_error(
+    psr_leaderboard_eligible(data.table::data.table(player_id = "a")),
+    "weighted_90s"
+  )
+})
+
+test_that("MIN_90S_PSR_LEADERBOARD is a plausible half-season bar", {
+  expect_true(MIN_90S_PSR_LEADERBOARD >= 8 && MIN_90S_PSR_LEADERBOARD <= 25)
+})
+
+
+# =============================================================================
+# apply_psr_calibration: both axes, post-offset (panna#202/#213/#214)
+# =============================================================================
+
+test_that("apply_psr_calibration applies position and season together", {
+  cal <- data.table::data.table(
+    axis = c("position", "position", "season", "season"),
+    level = c("GK", "FWD", "2016", "2023"),
+    factor = c(0.5, 2.0, 0.5, 2.0)
+  )
+  dt <- data.table::data.table(
+    player_id = c("a", "b"),
+    primary_position = c("GK", "FWD"),
+    season_end_year = c(2016L, 2023L),
+    psr = c(1.0, 1.0), osr = c(0.6, 0.6), dsr = c(0.4, 0.4)
+  )
+  out <- apply_psr_calibration(dt, cal)
+  # both axes multiply: GK/2016 = 0.5*0.5, FWD/2023 = 2*2
+  expect_equal(out$psr, c(0.25, 4.0))
+  expect_equal(out$osr + out$dsr, out$psr)
+})
+
+test_that("apply_psr_calibration skips the season axis when the column is absent", {
+  # the weekly snapshot path is keyed on snapshot_date, not season_end_year
+  cal <- data.table::data.table(
+    axis = c("position", "season"), level = c("GK", "2016"), factor = c(0.5, 0.1)
+  )
+  dt <- data.table::data.table(player_id = "a", primary_position = "GK",
+                                psr = 1.0, osr = 0.6, dsr = 0.4)
+  out <- apply_psr_calibration(dt, cal)
+  expect_equal(out$psr, 0.5)          # position only, season not applied
+  expect_equal(out$osr + out$dsr, out$psr)
+})
+
+test_that("apply_psr_calibration refuses to double-scale already-gk-scaled ratings", {
+  skills <- data.table::data.table(
+    player_id = c("gk1", "of1"), player_name = c("K", "P"),
+    primary_position = c("GK", "DEF"),
+    weighted_90s = c(20, 22), total_minutes = c(1800, 1980),
+    passes_p90 = c(30, 45), touches_p90 = c(40, 60),
+    long_balls_p90 = c(12, 4), saves_p90 = c(3, 0),
+    high_claim_p90 = c(1.2, 0), keeper_sweeper_p90 = c(0.8, 0),
+    gsaa_per90 = c(0.05, 0)
+  )
+  scaled <- tryCatch(
+    suppressWarnings(suppressMessages(
+      compute_player_psr(skills, center = FALSE, gk_goal_scale = 0.5))),
+    error = function(e) NULL)
+  skip_if(is.null(scaled), "compute_player_psr unavailable on this fixture")
+  expect_error(apply_psr_calibration(scaled), "double-scale")
+
+  # the default path (gk_goal_scale = 1) carries no marker and calibrates fine
+  plain <- suppressWarnings(suppressMessages(
+    compute_player_psr(skills, center = FALSE)))
+  expect_no_error(apply_psr_calibration(plain))
+})
+
+test_that("compute_player_psr no longer calibrates internally", {
+  # calibration moved to apply_psr_calibration() so it lands AFTER the additive
+  # league offsets; verify the raw output is genuinely uncalibrated
+  skills <- data.table::data.table(
+    player_id = "gk1", player_name = "K", primary_position = "GK",
+    weighted_90s = 20, total_minutes = 1800,
+    passes_p90 = 30, touches_p90 = 40, long_balls_p90 = 12,
+    saves_p90 = 3, high_claim_p90 = 1.2, keeper_sweeper_p90 = 0.8,
+    gsaa_per90 = 0.05
+  )
+  raw <- tryCatch(
+    suppressWarnings(suppressMessages(compute_player_psr(skills, center = FALSE))),
+    error = function(e) NULL)
+  skip_if(is.null(raw), "compute_player_psr unavailable on this fixture")
+  cal <- apply_psr_calibration(data.table::as.data.table(raw))
+  gk_f <- load_psr_calibration()
+  gk_f <- gk_f$factor[gk_f$axis == "position" & gk_f$level == "GK"]
+  expect_equal(cal$psr, raw$psr * gk_f, tolerance = 1e-9)
+})
+
+
+# =============================================================================
 # League-set constants (panna#221)
 # =============================================================================
 
@@ -905,4 +1206,140 @@ test_that("source_fingerprint participates in checkpoint validation", {
   fp_ckpt <- .psr_test_fingerprint(source_fingerprint = list(mtime = "2026-09-05 12:00:00", size = 100))
   expect_false(panna:::.psr_checkpoint_usable(.psr_test_checkpoint(fp_ckpt), fp_run, 20L))
   expect_true(panna:::.psr_checkpoint_usable(.psr_test_checkpoint(fp_run), fp_run, 20L))
+})
+
+# ---------------------------------------------------------------------------
+# PSV position calibration: position resolution + GK pinning (panna#211)
+# ---------------------------------------------------------------------------
+
+test_that("resolve_position_group returns all-NA instead of erroring when every row is a substitute", {
+  # Nine league-seasons (Primeira_Liga 2015-2016, Liga_MX, A_League, Super_Lig,
+  # Championship, all 2013-2016) carry a blank `position` on 100% of rows. A
+  # caller scoped to one league-season hits this directly, and an error there is
+  # swallowed by the game-log export's per-league tryCatch -- dropping the whole
+  # league rather than leaving it uncalibrated.
+  dt <- data.table::data.table(
+    player_id     = c("p1", "p1", "p2"),
+    position      = c("Substitute", "", "Substitute"),
+    total_minutes = c(10, 20, 30)
+  )
+  res <- resolve_position_group(dt)
+  expect_length(res, 3L)
+  expect_true(all(is.na(res)))
+})
+
+test_that("resolve_position_group still resolves when only SOME rows are substitutes", {
+  dt <- data.table::data.table(
+    player_id     = c("p1", "p1", "p1"),
+    position      = c("Defender", "Substitute", "Defender"),
+    total_minutes = c(90, 10, 90)
+  )
+  expect_equal(resolve_position_group(dt), rep("DEF", 3L))
+})
+
+test_that("resolve_position_group picks the MINUTES-weighted position, not the most frequent", {
+  # Three short cameos up front must not outvote one full season in midfield:
+  # counting rows would return FWD, weighting by minutes returns MID.
+  dt <- data.table::data.table(
+    player_id     = rep("p1", 5L),
+    position      = c("Striker", "Striker", "Striker", "Midfielder", "Midfielder"),
+    total_minutes = c(5, 5, 5, 90, 90)
+  )
+  expect_equal(unique(resolve_position_group(dt)), "MID")
+})
+
+test_that(".psv_pos_grp marks a substitute keeper NA rather than giving it the GK factor", {
+  # A keeper coming off the bench has position == "Substitute", so the GK router
+  # (.detect_gk_rows) sends the row to the OUTFIELD model. Its resolved position
+  # is still GK, so without pinning it would take the GK factor onto a score the
+  # factor was not fitted on.
+  dt <- data.table::data.table(
+    player_id     = c("gk1", "gk1", "out1"),
+    position      = c("Goalkeeper", "Substitute", "Defender"),
+    total_minutes = c(90, 20, 90)
+  )
+  is_gk <- panna:::.detect_gk_rows(dt)
+  expect_equal(is_gk, c(TRUE, FALSE, FALSE))
+
+  res <- panna:::.psv_pos_grp(dt, is_gk)
+  expect_equal(res[1], "GK")      # started, routed to the GK model
+  expect_true(is.na(res[2]))      # sub keeper: outfield-model score, no factor
+  expect_equal(res[3], "DEF")
+})
+
+test_that(".psv_pos_grp yields pos_grp == 'GK' exactly when the GK router fires", {
+  dt <- data.table::data.table(
+    player_id     = c("a", "b", "c", "d"),
+    position      = c("Goalkeeper", "Defender", "Substitute", "Striker"),
+    total_minutes = c(90, 90, 15, 90)
+  )
+  is_gk <- panna:::.detect_gk_rows(dt)
+  res <- panna:::.psv_pos_grp(dt, is_gk)
+  expect_equal(is_gk, !is.na(res) & res == "GK")
+})
+
+test_that(".psv_pos_grp degrades to NA rather than aborting when the position columns are absent", {
+  dt <- data.table::data.table(psv = c(1, 2))
+  res <- panna:::.psv_pos_grp(dt, is_gk = c(FALSE, FALSE))
+  expect_length(res, 2L)
+  expect_true(all(is.na(res)))
+})
+
+test_that("compute_player_psv returns pos_grp so the calibration can key on it", {
+  # The exported `position` column is the per-match LINEUP position, so a
+  # calibration keyed on it is a silent no-op. pos_grp must survive the GK
+  # split's rbind to be usable downstream.
+  skip_if_not(file.exists("../../data-raw/cache-skills/01_match_stats.rds"),
+              "match stats cache not available")
+  ms <- data.table::as.data.table(
+    readRDS("../../data-raw/cache-skills/01_match_stats.rds"))
+  sub <- ms[season == ms$season[1]][1:500]
+  out <- compute_player_psv(sub, min_adjust = FALSE, center = TRUE,
+                            scale_to_minutes = TRUE, exclude_efficiency = FALSE,
+                            target = "blend")
+  expect_true("pos_grp" %in% names(out))
+  expect_equal(sum(out$pos_grp == "GK", na.rm = TRUE),
+               sum(panna:::.detect_gk_rows(out)))
+})
+
+test_that("the gk_goal_scale double-scale guard survives a merge(), not just rbindlist", {
+  # The marker existed only as an R attribute, and merge() drops attributes --
+  # while merge() is exactly what 08b and 06 run between computing PSR and
+  # calibrating it (the league-offset join). So on the attribute alone the guard
+  # was already gone by the time it ran, in the one code shape the pipeline uses.
+  dt <- data.table::data.table(
+    player_id = c("p1", "p2"),
+    primary_position = c("GK", "MID"),
+    psr = c(0.10, 0.20), osr = c(0.05, 0.10), dsr = c(0.05, 0.10),
+    panna_gk_scaled = TRUE
+  )
+  data.table::setattr(dt, "panna_gk_scaled", TRUE)
+  cal <- data.table::data.table(axis = "position", level = c("GK", "MID"),
+                                 factor = c(0.6411, 1.2337))
+
+  # Direct: guard fires (this is all the old test covered).
+  expect_error(apply_psr_calibration(dt, cal), "already scaled")
+
+  # After a merge, the attribute is gone -- prove that, so the test fails loudly
+  # if data.table ever starts preserving it and this test stops testing anything.
+  offsets <- data.table::data.table(player_id = c("p1", "p2"), offset = c(0.01, 0.02))
+  merged <- merge(dt, offsets, by = "player_id", all.x = TRUE)
+  expect_null(attr(merged, "panna_gk_scaled"))
+
+  # The column survives, so the guard must still fire.
+  expect_true("panna_gk_scaled" %in% names(merged))
+  expect_error(apply_psr_calibration(merged, cal), "already scaled")
+})
+
+test_that("an unmarked table calibrates normally (the guard is not always-on)", {
+  dt <- data.table::data.table(
+    player_id = c("p1", "p2"),
+    primary_position = c("GK", "MID"),
+    psr = c(0.10, 0.20), osr = c(0.05, 0.10), dsr = c(0.05, 0.10)
+  )
+  cal <- data.table::data.table(axis = "position", level = c("GK", "MID"),
+                                 factor = c(0.6411, 1.2337))
+  out <- apply_psr_calibration(dt, cal)
+  expect_equal(out$psr, c(0.10 * 0.6411, 0.20 * 1.2337))
+  expect_equal(out$osr + out$dsr, out$psr)
 })
