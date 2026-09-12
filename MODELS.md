@@ -18,14 +18,14 @@ override to pin it.
 
 ## The models
 
-| Model              | Loader                                                                                  | Fallback chain                                 | Default resolves to             | Iterating?                                                                                 |
-|--------------------|-----------------------------------------------------------------------------------------|------------------------------------------------|---------------------------------|--------------------------------------------------------------------------------------------|
-| **EPV**            | [`load_epv_model()`](https://peteowen1.github.io/panna/reference/load_epv_model.md)     | path → pannamodels → local                     | `pannadata/.../epv_model.rds`   | **YES** — overhauled 2026-06-19                                                            |
-| **WP**             | [`load_wp_model()`](https://peteowen1.github.io/panna/reference/load_wp_model.md)       | path → pannamodels → local                     | `pannadata/.../wp_model.rds`    | **YES** — overhauled 2026-06-19                                                            |
-| **xG**             | [`load_xg_model()`](https://peteowen1.github.io/panna/reference/load_xg_model.md)       | path → pannamodels → local                     | `pannadata/.../xg_model.rds`    | **YES** — retraining 2026-09-03 (panna#229); published and candidate DIVERGE, see register |
-| **xGOT**           | [`load_xgot_model()`](https://peteowen1.github.io/panna/reference/load_xgot_model.md)   | path → pannamodels → local → **NULL**          | `pannadata/.../xgot_model.rds`  | stable (optional; returns NULL if absent)                                                  |
-| **xPass**          | [`load_xpass_model()`](https://peteowen1.github.io/panna/reference/load_xpass_model.md) | path → pannamodels → local                     | `pannadata/.../xpass_model.rds` | stable                                                                                     |
-| Minutes / Knockout | —                                                                                       | no preloaded model (heuristic / fit on demand) | —                               | —                                                                                          |
+| Model              | Loader                                                                                  | Fallback chain                                 | Default resolves to             | Iterating?                                                                                                                                     |
+|--------------------|-----------------------------------------------------------------------------------------|------------------------------------------------|---------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------|
+| **EPV**            | [`load_epv_model()`](https://peteowen1.github.io/panna/reference/load_epv_model.md)     | path → pannamodels → local                     | `pannadata/.../epv_model.rds`   | **YES** — overhauled 2026-06-19                                                                                                                |
+| **WP**             | [`load_wp_model()`](https://peteowen1.github.io/panna/reference/load_wp_model.md)       | path → pannamodels → local                     | `pannadata/.../wp_model.rds`    | **YES** — overhauled 2026-06-19                                                                                                                |
+| **xG**             | [`load_xg_model()`](https://peteowen1.github.io/panna/reference/load_xg_model.md)       | path → pannamodels → local                     | `pannadata/.../xg_model.rds`    | **DEPLOYED 2026-09-12** — season-aware retrain (panna#229); published to BOTH `pannamodels@epv` (production) and `pannadata@models` (fallback) |
+| **xGOT**           | [`load_xgot_model()`](https://peteowen1.github.io/panna/reference/load_xgot_model.md)   | path → pannamodels → local → **NULL**          | `pannadata/.../xgot_model.rds`  | stable (optional; returns NULL if absent)                                                                                                      |
+| **xPass**          | [`load_xpass_model()`](https://peteowen1.github.io/panna/reference/load_xpass_model.md) | path → pannamodels → local                     | `pannadata/.../xpass_model.rds` | stable                                                                                                                                         |
+| Minutes / Knockout | —                                                                                       | no preloaded model (heuristic / fit on demand) | —                               | —                                                                                                                                              |
 
 ## Published artifact register (verify, don’t assume)
 
@@ -35,14 +35,15 @@ Sizes and dates as at **2026-09-03**. Published =
 Compare byte sizes: a size difference means different files, and that is
 how the xG divergence below went unnoticed.
 
-| Model  | Published  |      bytes | Candidate                                 | Same?                                 |
-|--------|------------|-----------:|-------------------------------------------|---------------------------------------|
-| **xG** | 2026-06-18 |  7,771,969 | `xg_model.rds` 8,254,336 (07-17)          | ⚠ **NO — divergent**                  |
-| xGOT   | 2026-07-23 |  5,212,066 | same bytes                                | yes                                   |
-| xPass  | 2026-06-18 |  6,319,289 | same bytes                                | yes                                   |
-| duel   | 2026-06-24 |    368,305 | —                                         | published only                        |
-| EPV    | 2026-06-21 | 65,084,700 | `epv_model_xg_clean_full.rds`, same bytes | **yes**                               |
-| WP     | 2026-07-16 |    119,875 | `wp_final_d2repl_reg/`                    | verify before relying on the override |
+| Model                   | Published      |          bytes | Candidate                                                | Same?                                 |
+|-------------------------|----------------|---------------:|----------------------------------------------------------|---------------------------------------|
+| **xG**                  | **2026-09-12** | **22,988,831** | same bytes                                               | ✅ yes — both releases aligned        |
+| xG (previous, archived) | 2026-06-18     |      7,771,969 | `_archive/xg_model_PANNAMODELS_PUBLISHED_2026-06-18.rds` | rollback copy                         |
+| xGOT                    | 2026-07-23     |      5,212,066 | same bytes                                               | yes                                   |
+| xPass                   | 2026-06-18     |      6,319,289 | same bytes                                               | yes                                   |
+| duel                    | 2026-06-24     |        368,305 | —                                                        | published only                        |
+| EPV                     | 2026-06-21     |     65,084,700 | `epv_model_xg_clean_full.rds`, same bytes                | **yes**                               |
+| WP                      | 2026-07-16     |        119,875 | `wp_final_d2repl_reg/`                                   | verify before relying on the override |
 
 **xG divergence (open, 2026-09-03).** Published is 2026-06-18 (trained
 on 1,027,139 shots); the local candidate is 2026-07-17 (1,080,653).

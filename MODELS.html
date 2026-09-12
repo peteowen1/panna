@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.42</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.43</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -69,7 +69,7 @@
 <td>path → pannamodels → local</td>
 <td><code>pannadata/.../xg_model.rds</code></td>
 <td>
-<strong>YES</strong> — retraining 2026-09-03 (panna#229); published and candidate DIVERGE, see register</td>
+<strong>DEPLOYED 2026-09-12</strong> — season-aware retrain (panna#229); published to BOTH <code>pannamodels@epv</code> (production) and <code>pannadata@models</code> (fallback)</td>
 </tr><tr class="even"><td><strong>xGOT</strong></td>
 <td><code><a href="reference/load_xgot_model.html">load_xgot_model()</a></code></td>
 <td>path → pannamodels → local → <strong>NULL</strong>
@@ -96,34 +96,37 @@
 <th>Candidate</th>
 <th>Same?</th>
 </tr></thead><tbody><tr class="odd"><td><strong>xG</strong></td>
+<td><strong>2026-09-12</strong></td>
+<td align="right"><strong>22,988,831</strong></td>
+<td>same bytes</td>
+<td>✅ yes — both releases aligned</td>
+</tr><tr class="even"><td>xG (previous, archived)</td>
 <td>2026-06-18</td>
 <td align="right">7,771,969</td>
-<td>
-<code>xg_model.rds</code> 8,254,336 (07-17)</td>
-<td>⚠ <strong>NO — divergent</strong>
-</td>
-</tr><tr class="even"><td>xGOT</td>
+<td><code>_archive/xg_model_PANNAMODELS_PUBLISHED_2026-06-18.rds</code></td>
+<td>rollback copy</td>
+</tr><tr class="odd"><td>xGOT</td>
 <td>2026-07-23</td>
 <td align="right">5,212,066</td>
 <td>same bytes</td>
 <td>yes</td>
-</tr><tr class="odd"><td>xPass</td>
+</tr><tr class="even"><td>xPass</td>
 <td>2026-06-18</td>
 <td align="right">6,319,289</td>
 <td>same bytes</td>
 <td>yes</td>
-</tr><tr class="even"><td>duel</td>
+</tr><tr class="odd"><td>duel</td>
 <td>2026-06-24</td>
 <td align="right">368,305</td>
 <td>—</td>
 <td>published only</td>
-</tr><tr class="odd"><td>EPV</td>
+</tr><tr class="even"><td>EPV</td>
 <td>2026-06-21</td>
 <td align="right">65,084,700</td>
 <td>
 <code>epv_model_xg_clean_full.rds</code>, same bytes</td>
 <td><strong>yes</strong></td>
-</tr><tr class="even"><td>WP</td>
+</tr><tr class="odd"><td>WP</td>
 <td>2026-07-16</td>
 <td align="right">119,875</td>
 <td><code>wp_final_d2repl_reg/</code></td>
