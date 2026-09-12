@@ -413,7 +413,9 @@ test_that("guard: panna/epr/psr zero (or all-NA) for >=50% of teams refuses to p
                    panna = seq(0.1, by = 0.05, length.out = n),
                    panna_offense = seq(0.2, by = 0.05, length.out = n),
                    panna_defense = seq(-0.1, by = -0.02, length.out = n),
-                   total_minutes = 900, stringsAsFactors = FALSE)
+                   total_minutes = 900,
+                   sign_convention = CAREER_PANNA_SIGN_CONVENTION,
+                   stringsAsFactors = FALSE)
   arrow::write_parquet(cp, file.path(opta_dir, "career_panna.parquet"))
 
   epr <- data.frame(player_id = player_ids, snapshot_date = "2026-09-15",
@@ -750,4 +752,47 @@ test_that("an unresolved (present-but-unmatched) team_id does not fall back to a
   # squad_n < MIN_PLAUSIBLE_SQUAD_N (3L in this harness) must abort, NOT
   # silently publish the impostor's 4-player squad under TeamB.
   expect_error(.run_12d(cache_dir, opta_dir, skills_dir), "found no lineups for them")
+})
+
+test_that("two DIFFERENT clubs sharing a name both survive classification (panna#206)", {
+  # .pick_one() used to collapse by team NAME, so of two real clubs sharing a
+  # name one was kept and the other silently VANISHED from the export -- not a
+  # blended rating like #204/#207, a missing club. Arsenal FC (ENG) and Arsenal
+  # de Sarandi (ARG) are the real pair this models.
+  e <- .dts_source_only()
+  fr <- data.table::data.table(
+    league  = c("ENG", "ENG", "ARG", "ARG"),
+    season_end_year = 2027,
+    home_team = c("Arsenal", "TeamB", "Arsenal", "TeamC"),
+    away_team = c("TeamB", "Arsenal", "TeamC", "Arsenal"),
+    home_team_id = c("ars_eng", "b_id", "ars_arg", "c_id"),
+    away_team_id = c("b_id", "ars_eng", "c_id", "ars_arg"),
+    match_status = "Played"
+  )
+  out <- e$.classify_team_leagues(fr, domestic_codes = c("ENG", "ARG"),
+                                  cup_codes = "UCL")
+  ars <- out[team == "Arsenal"]
+  expect_equal(nrow(ars), 2L)
+  expect_setequal(ars$team_id, c("ars_eng", "ars_arg"))
+  expect_setequal(ars$league, c("ENG", "ARG"))
+})
+
+test_that("a cup-only club is not dropped by a same-named domestic club (panna#206)", {
+  # The mirror half of the same bug: cup_only excluded on NAME, so a cup club
+  # whose name matched a DIFFERENT domestic club disappeared from the cup pool.
+  e <- .dts_source_only()
+  fr <- data.table::data.table(
+    league  = c("ENG", "ENG", "UCL", "UCL"),
+    season_end_year = 2027,
+    home_team = c("Arsenal", "TeamB", "Arsenal", "CupClub"),
+    away_team = c("TeamB", "Arsenal", "CupClub", "Arsenal"),
+    home_team_id = c("ars_eng", "b_id", "ars_arg", "cup_id"),
+    away_team_id = c("b_id", "ars_eng", "cup_id", "ars_arg"),
+    match_status = "Played"
+  )
+  out <- e$.classify_team_leagues(fr, domestic_codes = "ENG", cup_codes = "UCL")
+  ars <- out[team == "Arsenal"]
+  expect_equal(nrow(ars), 2L)
+  expect_true(ars[team_id == "ars_eng"]$is_domestic_league)
+  expect_false(ars[team_id == "ars_arg"]$is_domestic_league)
 })

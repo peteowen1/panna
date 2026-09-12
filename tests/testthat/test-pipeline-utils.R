@@ -387,3 +387,53 @@ test_that("save_cache_with_meta tolerates a corrupt or legacy sidecar", {
     "\\[growth\\].*rows"
   )
 })
+
+# ===========================================================================
+# current_domestic_season — the pinned-season incident of August 2026
+# ===========================================================================
+# The default season in 10b/10c/10d was the literal "2025-2026". It went stale
+# on 1 August 2026 and nothing failed: the pipeline rebuilt and republished
+# last season as the current-season file for five weeks, and the blog's Player
+# Stats page was empty for the whole new season while the file looked freshly
+# built. These tests exist because the original defect was an unguarded literal
+# with nothing to catch it going stale, and rollover arithmetic is the same
+# class of thing.
+#
+# `today` is passed explicitly throughout: a test that reads the clock passes
+# or fails depending on the month it runs in, which is the bug it is testing
+# for.
+
+test_that("current_domestic_season rolls over on 1 August", {
+  expect_equal(current_domestic_season(as.Date("2026-07-31")), "2025-2026")
+  expect_equal(current_domestic_season(as.Date("2026-08-01")), "2026-2027")
+})
+
+test_that("current_domestic_season holds the label across a calendar year end", {
+  expect_equal(current_domestic_season(as.Date("2026-12-31")), "2026-2027")
+  expect_equal(current_domestic_season(as.Date("2027-01-01")), "2026-2027")
+  expect_equal(current_domestic_season(as.Date("2027-07-31")), "2026-2027")
+})
+
+test_that("current_domestic_season covers every month of a season", {
+  # Aug-Dec take the year they start in; Jan-Jul take the year before.
+  for (m in 8:12) {
+    d <- as.Date(sprintf("2026-%02d-15", m))
+    expect_equal(current_domestic_season(d), "2026-2027", info = format(d))
+  }
+  for (m in 1:7) {
+    d <- as.Date(sprintf("2027-%02d-15", m))
+    expect_equal(current_domestic_season(d), "2026-2027", info = format(d))
+  }
+})
+
+test_that("current_domestic_season agrees with the Python twin's convention", {
+  # scrape_opta.py's current_domestic_season() uses the same Aug-Jul rule.
+  # If either side changes, this pins what the other must match.
+  expect_equal(current_domestic_season(as.Date("2025-08-01")), "2025-2026")
+  expect_equal(current_domestic_season(as.Date("2030-02-14")), "2029-2030")
+})
+
+test_that("current_domestic_season defaults to the clock", {
+  expect_equal(current_domestic_season(), current_domestic_season(Sys.Date()))
+  expect_match(current_domestic_season(), "^[0-9]{4}-[0-9]{4}$")
+})

@@ -217,7 +217,7 @@ test_that("fit_spm_panel respects offense sign constraints (goals_p90 coefficien
 })
 
 
-test_that("fit_spm_panel respects defense sign constraints (tackles_p90 upper bound 0)", {
+test_that("fit_spm_panel respects defense sign constraints (tackles_p90 lower bound 0)", {
   skip_if_not_installed("glmnet")
   set.seed(11)
   n <- 200
@@ -226,11 +226,11 @@ test_that("fit_spm_panel respects defense sign constraints (tackles_p90 upper bo
   panel <- data.table::data.table(
     player_id = paste0("p", seq_len(n)),
     offense_target = stats::rnorm(n, 0, 0.1),
-    # Adversarial: defense convention is negative = good, so a genuinely
-    # POSITIVE relationship between tackles_p90 and defense_target here
-    # (more tackles -> WORSE defense number) is the direction the
-    # defense_good_features upper-bound-0 constraint must suppress.
-    defense_target = 0.5 * tackles_p90 + stats::rnorm(n, 0, 0.05),
+    # Adversarial: defense convention is positive = good (2026-09-03), so a
+    # genuinely NEGATIVE relationship between tackles_p90 and defense_target
+    # here (more tackles -> WORSE defense number) is the direction the
+    # defense_good_features lower-bound-0 constraint must suppress.
+    defense_target = -0.5 * tackles_p90 + stats::rnorm(n, 0, 0.05),
     rapm_target = stats::rnorm(n, 0, 0.1),
     window_minutes = stats::runif(n, 900, 4000),
     role_group = "CB",
@@ -244,17 +244,20 @@ test_that("fit_spm_panel respects defense sign constraints (tackles_p90 upper bo
                                predictor_cols = c("tackles_p90", "touches_p90"),
                                weight_transform = "sqrt", nfolds = 3, seed = 1)
   co_con <- as.matrix(stats::coef(constrained, s = "lambda.min"))
-  expect_lte(co_con["tackles_p90", 1], 1e-8)
+  expect_gte(co_con["tackles_p90", 1], -1e-8)
 })
 
 
-test_that("predict_spm_panel_net combines as offense MINUS defense (raw internal convention)", {
+test_that("predict_spm_panel_net combines as offense PLUS defense (positive=good convention)", {
   skip_if_not_installed("glmnet")
-  # Net RAPM = offense - defense (extract_rapm_ratings, R/rapm_model.R:
-  # "RAPM rating = offense - defense"); defense_target is stored raw
-  # (positive = concedes more = bad), so the net combiner must subtract.
-  # Regression pin for the 2026-07-22 bake-off bug where a `+` here flipped
-  # the defense half's contribution for every candidate at eval time.
+  # Net RAPM = offense + defense (extract_rapm_ratings, R/rapm_model.R).
+  # defense positive=good since 2026-09-03, so defense_target (built as
+  # defense_target = defense) is already positive=good and the net combiner
+  # must add. Do not "fix" this back to a minus sign: an earlier version of
+  # this function used `-` when defense_target was still negative=good, and
+  # that was correct then (see the 2026-07-22 bake-off regression this test
+  # was originally a pin for) -- the two conventions must always travel
+  # together. See R/spm_panel.R's predict_spm_panel_net() docstring.
   panel <- .panel_test_fit_data()
   fits <- list(
     offense = fit_spm_panel(panel, target = "offense", role_pooling = FALSE,
@@ -267,7 +270,7 @@ test_that("predict_spm_panel_net combines as offense MINUS defense (raw internal
                             weight_transform = "sqrt", nfolds = 3, seed = 1)
   )
   out <- predict_spm_panel_net(fits, panel)
-  expect_equal(out$pred_net, out$pred_offense - out$pred_defense)
+  expect_equal(out$pred_net, out$pred_offense + out$pred_defense)
 })
 
 

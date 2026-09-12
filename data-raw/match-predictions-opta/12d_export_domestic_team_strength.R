@@ -116,10 +116,18 @@ message("\n=== Exporting domestic + cup team strength (Tiento, all clubs) ===\n"
   # Pick the most-frequent league per team within each pool (a genuine data
   # anomaly -- mid-season rename, dual domestic entries -- should not crash
   # the export; deterministic tie-break by row count then league code).
+  # Group by (team, team_id), NOT team alone. Two DIFFERENT real clubs can
+  # share a name -- Arsenal FC and Arsenal de Sarandi, the panna#207 Elo case --
+  # and collapsing by name kept one and silently DROPPED the other from the
+  # export entirely (panna#206): not a blended rating like #204/#207, a missing
+  # club. Splitting on the id keeps both, while a single club appearing in two
+  # leagues still collapses to its most-frequent one, which is this function's
+  # actual job. Rows with a NA id keep the old name-only behaviour, since there
+  # is nothing to tell them apart with.
   .pick_one <- function(dt) {
     if (nrow(dt) == 0L) return(dt)
-    data.table::setorder(dt, team, -N, league)
-    dt[, .SD[1L], by = team]
+    data.table::setorder(dt, team, team_id, -N, league)
+    dt[, .SD[1L], by = .(team, team_id)]
   }
   # .pick_one() keeps only the highest-N (team, team_id) row per team, so a
   # club with two DIFFERENT ids inside the SAME league (a mid-season Opta id
@@ -154,9 +162,21 @@ message("\n=== Exporting domestic + cup team strength (Tiento, all clubs) ===\n"
       nrow(multi_dom), paste(multi_dom$team, collapse = ", ")))
   }
 
-  # Domestic wins over cup for any team present in both pools.
-  dom_teams <- dom1$team
-  cup_only <- cup1[!team %in% dom_teams]
+  # Domestic wins over cup for any team present in both pools -- matched on
+  # team_id where both sides carry one, for the same reason .pick_one() groups
+  # on it (panna#206). Excluding by NAME alone dropped a cup-only club whose
+  # name happened to match a DIFFERENT domestic club. Where either side has no
+  # id there is nothing better than the name, and the name is used -- that
+  # errs toward dropping a duplicate rather than publishing two rows for one
+  # club, the safer direction for a table the site ranks from.
+  dom_ids     <- unique(dom1[!is.na(team_id), team_id])
+  dom_names   <- unique(dom1$team)
+  dom_noid_nm <- unique(dom1[is.na(team_id), team])
+  cup_only <- cup1[!(
+    (!is.na(team_id) & team_id %in% dom_ids) |
+    (is.na(team_id)  & team    %in% dom_names) |
+    (team %in% dom_noid_nm)
+  )]
 
   out <- data.table::rbindlist(list(
     dom1[, .(team, team_id, league, is_domestic_league = TRUE, cur_sey)],
@@ -218,20 +238,38 @@ message("\n=== Exporting domestic + cup team strength (Tiento, all clubs) ===\n"
 #'   tracked history at all).
 #' @param team_league data.table from `.classify_team_leagues()`.
 #' @param fixture_results Full fixture history (for `.relegated_cohort()`).
-#' @return data.table(team, elo, elo_seeded, seed_method, seed_n)
-.seed_missing_elo <- function(final_elos, team_league, fixture_results) {
-  elo_of <- function(team) {
-    v <- unname(final_elos[team])
-    if (length(v) == 0L) NA_real_ else v
+#' @return data.table(team, team_id, elo, elo_seeded, seed_method, seed_n)
+.seed_missing_elo <- function(final_elos, team_league, fixture_results,
+                              id_rename_map = NULL) {
+  # Resolve through id_rename_map before searching final_elos, exactly as
+  # 03_team_rolling_features.R's lookup_elo() does (R/match_prediction.R:807
+  # documents this as the required caller contract).
+  # compute_match_elos() disambiguates two REAL clubs sharing a name by
+  # renaming the less-established identity to "Arsenal [id:...]" internally,
+  # so a plain-name lookup returns the OTHER club's Elo for that identity --
+  # silently, and for exactly the pair panna#206 makes visible by keeping
+  # both rows instead of dropping one.
+  elo_of <- function(team, team_id) {
+    if (length(id_rename_map) > 0L && !is.na(team_id) && nzchar(team_id) &&
+        team_id %in% names(id_rename_map)) {
+      team <- id_rename_map[[team_id]]
+    }
+    if (is.na(team) || !(team %in% names(final_elos))) return(NA_real_)
+    unname(final_elos[team])
   }
   out <- data.table::copy(team_league)
-  out[, elo := vapply(team, elo_of, numeric(1))]
+  # Tolerate a team_league with no team_id at all -- same stance as
+  # .classify_team_leagues()'s .id_col(). Callers hand-build this in tests,
+  # and a caller with no ids is exactly the case that must keep working
+  # unchanged (it simply has nothing to disambiguate with).
+  if (!"team_id" %in% names(out)) out[, team_id := NA_character_]
+  out[, elo := vapply(seq_len(.N), function(i) elo_of(team[i], team_id[i]), numeric(1))]
   out[, elo_seeded := is.na(elo)]
   out[, seed_method := ifelse(elo_seeded, NA_character_, "earned")]
   out[, seed_n := NA_integer_]
 
   needs_seed <- out[elo_seeded == TRUE]
-  if (nrow(needs_seed) == 0L) return(out[, .(team, elo, elo_seeded, seed_method, seed_n)])
+  if (nrow(needs_seed) == 0L) return(out[, .(team, team_id, elo, elo_seeded, seed_method, seed_n)])
 
   for (i in seq_len(nrow(needs_seed))) {
     tm  <- needs_seed$team[i]
@@ -273,7 +311,7 @@ message("\n=== Exporting domestic + cup team strength (Tiento, all clubs) ===\n"
     }
   }
 
-  out[, .(team, elo, elo_seeded, seed_method, seed_n)]
+  out[, .(team, team_id, elo, elo_seeded, seed_method, seed_n)]
 }
 
 #' Weighted z-blend Tiento, z-scored across the GLOBAL pool (all teams)
@@ -394,7 +432,8 @@ elo_result <- compute_match_elos(
 )
 final_elos <- elo_result$final_elos
 
-elo_dt <- .seed_missing_elo(final_elos, team_league, fixture_results)
+elo_dt <- .seed_missing_elo(final_elos, team_league, fixture_results,
+                            id_rename_map = elo_result$id_rename_map)
 n_seeded <- sum(elo_dt$elo_seeded)
 if (n_seeded > 0L) {
   message(sprintf("  Elo: %d/%d teams seeded (no tracked history): %s",
@@ -402,7 +441,16 @@ if (n_seeded > 0L) {
                   paste(elo_dt$team[elo_dt$elo_seeded], collapse = ", ")))
 }
 
-team_league <- merge(team_league, elo_dt, by = "team")
+# Join on (team, team_id), not name alone. .classify_team_leagues() no longer
+# guarantees one row per NAME -- two real clubs sharing one are kept as two
+# rows (panna#206) -- so a name-only key cross-joins them, duplicating rows
+# AND pairing each with the wrong partner's Elo. The tripwire is the point:
+# no existing guard in .validate_domestic_strength() asserts row count, so a
+# silent duplication would reach team_strength.parquet unnoticed.
+.n_tl <- nrow(team_league)
+team_league <- merge(team_league, elo_dt, by = c("team", "team_id"))
+stopifnot("Elo merge changed team_league row count (name/id join key drift)" =
+            nrow(team_league) == .n_tl)
 
 # 4. Squad ratings + team strength (mirrors 12_export_wc2026_blog.R section 5
 #    exactly, minus the WC-only announced-squad step -- built directly from
@@ -427,8 +475,9 @@ if (!file.exists(cp_path)) {
   stop("career_panna.parquet not found at ", cp_path, " -- domestic Tiento needs ",
        "the same career-trait panna the blog publishes elsewhere.", call. = FALSE)
 }
-sq_panna <- as.data.table(read_parquet(cp_path))[
-  , .(player_id, panna, offense = panna_offense, defense = panna_defense)]
+cp_raw <- as.data.table(read_parquet(cp_path))
+.assert_career_panna_sign_convention(cp_raw, "12d_export_domestic_team_strength.R")
+sq_panna <- cp_raw[, .(player_id, panna, offense = panna_offense, defense = panna_defense)]
 
 if (!exists("skills_cache_dir")) skills_cache_dir <- file.path("data-raw", "cache-skills")
 if (!exists("opta_cache_dir")) opta_cache_dir <- file.path("data-raw", "cache-opta")
@@ -525,8 +574,9 @@ for (i in seq_along(teams)) {
   )
   if (is.null(em) || nrow(em) == 0L || !"player_id" %in% names(em)) {
     agg_rows[[i]] <- data.table::data.table(
-      team = tm, panna = NA_real_, offense = NA_real_, defense = NA_real_,
-      epr = NA_real_, psr = NA_real_, squad_n = 0L, n_rated = 0L)
+      team = tm, team_id = tid, panna = NA_real_, offense = NA_real_,
+      defense = NA_real_, epr = NA_real_, psr = NA_real_,
+      squad_n = 0L, n_rated = 0L)
     next
   }
   em <- data.table::as.data.table(em)
@@ -539,6 +589,7 @@ for (i in seq_along(teams)) {
   w <- em$expected_minutes_norm / 90
   agg_rows[[i]] <- data.table::data.table(
     team = tm,
+    team_id = tid,
     panna   = .wsum(em$panna,   w),
     offense = .wsum(em$offense, w),
     defense = .wsum(em$defense, w),
@@ -570,12 +621,17 @@ if (length(unresolved_id) > 0L) {
                   length(unresolved_id), paste(unresolved_id, collapse = ", ")))
 }
 
-strength <- merge(team_league, agg, by = "team", all.x = TRUE)
+.n_tl2 <- nrow(team_league)
+strength <- merge(team_league, agg, by = c("team", "team_id"), all.x = TRUE)
+stopifnot("squad merge changed row count (name/id join key drift)" =
+            nrow(strength) == .n_tl2)
 for (m in c("panna", "offense", "defense", "epr", "psr", "elo")) {
   strength[[m]] <- round(strength[[m]], 4)
 }
-# Published convention: defence positive = good (internal model negative = good).
-strength[, defense := -defense]
+# Published convention: defence positive = good. Since 2026-09-03 this is
+# ALSO the internal convention (career_panna.parquet's panna_defense comes
+# from extract_xrapm_ratings(), which negates at extraction time), so no
+# export-boundary flip happens here any more.
 
 strength <- .compute_tiento(strength, TIENTO_WEIGHTS)
 

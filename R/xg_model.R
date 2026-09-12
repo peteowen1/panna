@@ -47,18 +47,42 @@ NULL
     features$is_left_foot <- 0L
   }
 
-  # Situation
+  # Situation.
+  #
+  # `is_direct_freekick` was REMOVED on 2026-09-03: it was `grepl("free", ...)`
+  # and the only values Opta supplies are Corner / OpenPlay / Penalty / SetPiece.
+  # None contains "free", so the column was constant 0 across all 3,289,256
+  # shots -- a dead slot in a 14-feature model.
+  #
+  # `is_open_play` and `is_set_piece` are LEFT AS-IS despite strong evidence the
+  # two source labels are transposed, because inverting them here would be a
+  # silent semantic change on a guess about a third party's feed. The evidence
+  # (2026-09-03, full corpus):
+  #
+  #   situation   shots      %headers   mean_dist
+  #   SetPiece    2,189,191    10.3%      18.93
+  #   OpenPlay      831,295    29.7%      17.99
+  #   Corner        216,889    42.7%      14.98
+  #
+  # Genuine set pieces produce MORE headers, not fewer -- Corner at 42.7%
+  # confirms the test works. So the 66.6% labelled "SetPiece" behaves like open
+  # play (and 66.6% matches open play's expected share), while the 25.3%
+  # labelled "OpenPlay" behaves like set-piece-derived shots.
+  #
+  # It costs little in accuracy: a tree learns whichever split helps regardless
+  # of the name, and controlling for geometry the flag is worth a coefficient of
+  # 0.0451 (se 0.0044) -- significant on 3M rows, negligible in practice. It
+  # costs a lot in interpretation, since feature importances read backwards.
+  # Tracked so the mapping is fixed at the source rather than inverted here.
   if (!is.null(situation)) {
     sit_lower <- tolower(situation)
     features$is_open_play <- as.integer(grepl("open", sit_lower))
     features$is_set_piece <- as.integer(grepl("set", sit_lower))
     features$is_corner <- as.integer(grepl("corner", sit_lower))
-    features$is_direct_freekick <- as.integer(grepl("free", sit_lower))
   } else {
     features$is_open_play <- 1L
     features$is_set_piece <- 0L
     features$is_corner <- 0L
-    features$is_direct_freekick <- 0L
   }
 
   features$is_big_chance <- as.integer(is_big_chance)
@@ -80,9 +104,14 @@ NULL
 #'     \item angle_to_goal: Visible angle to goal
 #'     \item is_header: Binary indicator for headed shots
 #'     \item is_big_chance: Binary indicator for big chances
-#'     \item is_penalty: Binary indicator for penalties
-#'     \item is_direct_freekick: Binary for direct free kicks
-#'     \item shot_type_*: One-hot encoded shot types
+#'     \item is_penalty: Binary flag used to EXCLUDE penalties from training
+#'       (\code{exclude_penalties = TRUE}); they are scored at
+#'       \code{\link{PENALTY_XG}} instead, since every penalty is taken from the
+#'       same spot and there is nothing for the geometry features to learn
+#'     \item is_open_play, is_set_piece, is_corner: situation flags. NOTE the
+#'       source labels for open play and set piece appear transposed -- see
+#'       \code{.create_shot_features()} for the evidence and why they are left
+#'       as-is rather than silently inverted
 #'     \item is_goal: Target variable (1 = goal)
 #'   }
 #'
@@ -147,6 +176,14 @@ prepare_shots_for_xg <- function(shot_events) {
     is_big_chance = big_chance
   )
 
+  # Season as a numeric year, for the optional season term in fit_xg_model().
+  # Carried here rather than derived at fit time so training and inference build
+  # it identically -- divergent feature construction is what made SPM xG-blind.
+  if ("season" %in% names(shot_events)) {
+    features$season_num <- suppressWarnings(
+      as.integer(extract_season_end_year(shot_events$season)))
+  }
+
   # Add metadata columns
   features$match_id <- shot_events$match_id
   features$event_id <- if ("event_id" %in% names(shot_events)) shot_events$event_id else seq_len(nrow(shot_events))
@@ -188,7 +225,11 @@ prepare_shots_for_xg <- function(shot_events) {
 #' Uses cross-validation to find optimal number of boosting rounds.
 #'
 #' @param shot_features Data frame from prepare_shots_for_xg()
-#' @param exclude_penalties Whether to exclude penalties from training (default TRUE)
+#' @param exclude_penalties Whether to exclude penalties from training (default TRUE).
+#'   Every penalty is taken from the same spot, so the geometry features carry no
+#'   information on them; they are scored at \code{\link{PENALTY_XG}} instead.
+#' @param season_feature Add a \code{season_num} term (default FALSE). See the
+#'   comment at the feature list for the evidence and the extrapolation caveat.
 #' @param nfolds Number of CV folds (default 5)
 #' @param max_depth Maximum tree depth (default 6)
 #' @param eta Learning rate (default 0.05)
@@ -217,6 +258,7 @@ prepare_shots_for_xg <- function(shot_events) {
 #' }
 fit_xg_model <- function(shot_features,
                           exclude_penalties = TRUE,
+                          season_feature = FALSE,
                           nfolds = 5,
                           max_depth = 6,
                           eta = 0.05,
@@ -241,9 +283,36 @@ fit_xg_model <- function(shot_features,
     "x", "y", "distance_to_goal", "angle_to_goal",
     "in_penalty_area", "in_six_yard_box",
     "is_header", "is_right_foot", "is_left_foot",
-    "is_open_play", "is_set_piece", "is_corner", "is_direct_freekick",
+    "is_open_play", "is_set_piece", "is_corner",
+    # is_direct_freekick removed 2026-09-03: constant 0 on every shot
+    # (no Opta `situation` value contains "free"). See .create_shot_features().
     "is_big_chance"
   )
+
+  # Optional season term (panna#229). `is_big_chance` is an Opta JUDGEMENT flag
+  # whose meaning has drifted -- its rate went 12.42% (2015) to 17.82% (2026) --
+  # so a season term lets the model learn that a 2025 big chance is not a 2015
+  # one. That is modelling a known label shift, not absorbing mystery drift.
+  #
+  # Validated on a TEMPORAL holdout (train <=2022, test 2023-26), which is the
+  # honest test: random CV lets season INTERPOLATE (2019 rows in both folds) and
+  # flatters it. Out of time it still won -- logloss -0.42%, calibration
+  # -10.3% -> -5.6%. A league term did nothing (+0.02%) and is not offered:
+  # league belongs in the offsets, not in chance quality.
+  #
+  # Caveat that must stay attached: season CANNOT extrapolate. Scoring a season
+  # beyond the training range, xgboost holds it at the last split it learned. It
+  # de-biases the training corpus rather than predicting forward, so it helps
+  # historical scoring (career ratings, backfill) far more than live scoring.
+  if (isTRUE(season_feature)) {
+    if (!"season_num" %in% names(shot_features)) {
+      cli::cli_warn(paste("season_feature = TRUE but no {.field season_num} column;",
+                          "fitting without it."))
+    } else {
+      feature_cols <- c(feature_cols, "season_num")
+      cli::cli_alert_info("Season term enabled (range {min(shot_features$season_num, na.rm = TRUE)}-{max(shot_features$season_num, na.rm = TRUE)})")
+    }
+  }
 
   # Use available features
   available_features <- intersect(feature_cols, names(shot_features))
@@ -423,9 +492,35 @@ calculate_xg_calibration <- function(actual, predicted, n_bins = 10) {
 predict_xg <- function(xg_model, shot_features) {
   feature_cols <- xg_model$panna_metadata$feature_cols
 
-  # Ensure all required columns exist
+  # Ensure all required columns exist.
+  #
+  # A 0 fill is defensible for the binary flags -- 0 genuinely means "not a
+  # header", "not a corner". It is NOT defensible for `season_num`, where 0 is
+  # not a season at all: the model has never seen a year below 2014, so every
+  # split sends the row down its earliest-era branch and the whole prediction
+  # surface shifts. That is exactly what happened on 2026-09-03 (goals/xG
+  # 1.0000 -> 1.1265 across 3.0M shots) and the only signal was a cli_warn that
+  # R deferred into "There were 50 or more warnings" -- invisible in a 70-minute
+  # log. So continuous features abort; flags warn.
   missing_cols <- setdiff(feature_cols, names(shot_features))
   if (length(missing_cols) > 0) {
+    continuous <- intersect(missing_cols, c("season_num", "distance_to_goal",
+                                            "angle_to_goal", "x", "y"))
+    if (length(continuous) > 0) {
+      # cli pluralisation needs the quantity in the SAME string, so qty() is
+      # carried into each line -- otherwise cli aborts with "Cannot pluralize
+      # without a quantity" and hides the real error.
+      n_cont <- length(continuous)
+      cli::cli_abort(c(
+        "xG prediction: {n_cont} continuous feature{?s} missing: {paste(continuous, collapse=', ')}.",
+        "x" = "{cli::qty(n_cont)}Filling {?it/them} with 0 would put every row outside the training range.",
+        "i" = "{cli::qty(n_cont)}Build {?it/them} in the caller, the way the training path does."
+      ))
+    }
+    # cli_alert_warning prints immediately; cli_warn is deferred by R and gets
+    # swallowed by the \"50 or more warnings\" summary in long pipeline runs.
+    cli::cli_alert_warning(
+      "xG prediction: {length(missing_cols)} flag{?s} missing, defaulting to 0: {paste(missing_cols, collapse=', ')}")
     cli::cli_warn("xG prediction: {length(missing_cols)} feature{?s} missing, defaulting to 0: {paste(missing_cols, collapse=', ')}")
     for (col in missing_cols) {
       shot_features[[col]] <- 0
@@ -449,10 +544,24 @@ predict_xg <- function(xg_model, shot_features) {
 #'
 #' @param spadl_actions SPADL actions data frame
 #' @param xg_model Fitted xG model
+#' @param season Season label for these actions (e.g. "2025-2026", "2026",
+#'   "2026 Canada-Mexico-USA"). SPADL carries no season or date column, so a
+#'   season-aware model cannot derive it and this must be supplied; the end year
+#'   is read with \code{extract_season_end_year()}, exactly as training does.
+#'   Required when the model's features include \code{season_num} - it aborts
+#'   rather than score without it.
+#' @param shot_lookup Optional data frame keyed by (\code{match_id},
+#'   \code{event_id}) carrying \code{body_part} and \code{situation} for shot
+#'   events, e.g. \code{opta_shot_events}. Strongly recommended: SPADL's own
+#'   \code{bodypart} is a stub that labels every shot "foot", so without this
+#'   the header and footedness flags are dead and set pieces score as open play.
+#'   Joined on \code{original_event_id}, the same key
+#'   \code{add_xgot_to_spadl()} uses.
 #'
 #' @return SPADL actions with xg column added for shots
 #' @keywords internal
-add_xg_to_spadl <- function(spadl_actions, xg_model) {
+add_xg_to_spadl <- function(spadl_actions, xg_model, season = NULL,
+                            shot_lookup = NULL) {
   # Initialize xG column
   spadl_actions$xg <- 0
 
@@ -474,15 +583,80 @@ add_xg_to_spadl <- function(spadl_actions, xg_model) {
     0L
   }
 
-  # SPADL bodypart column has values like "head", "foot_left", "foot_right"
-  bodypart <- if ("bodypart" %in% names(shots)) shots$bodypart else NULL
+  # Body part and situation, joined back from the shot events.
+  #
+  # SPADL's own `bodypart` is USELESS for shots: map_opta_bodypart()
+  # (spadl_conversion.R:627) is a stub that returns "foot" for everything except
+  # aerials (type 44) and keeper actions, and shots are types 13/14/15/16 -- so
+  # every shot, header included, comes through as "foot". Measured on ENG
+  # 2015-2016: is_header 0.0% in SPADL vs 15.7% in the shot events, with
+  # is_right_foot and is_left_foot dead the same way. Training reads the real
+  # Opta `body_part` (RightFoot / LeftFoot / Head), so all three flags were a
+  # pure train/serve skew worth +6.30% on total xG (goals/xG 0.8837 vs 0.9394).
+  # `situation` was never passed either, worth a further -4.69%.
+  #
+  # Joined by (match_id, original_event_id), the same key add_xgot_to_spadl()
+  # uses for goal-mouth coords. Opta's labels pass straight through
+  # .create_shot_features()'s grepl() matching: "RightFoot" -> right,
+  # "LeftFoot" -> left, "Head" -> head.
+  bodypart  <- NULL
+  situation <- NULL
+  if (!is.null(shot_lookup)) {
+    if (!all(c("match_id", "event_id") %in% names(shot_lookup))) {
+      cli::cli_abort("{.arg shot_lookup} needs {.field match_id} and {.field event_id}.")
+    }
+    if (!"original_event_id" %in% names(shots)) {
+      cli::cli_abort("SPADL must carry {.field original_event_id} to join {.arg shot_lookup}.")
+    }
+    idx <- match(paste(shots$match_id, shots$original_event_id),
+                 paste(shot_lookup$match_id, shot_lookup$event_id))
+    hit <- mean(!is.na(idx))
+    if ("body_part" %in% names(shot_lookup)) bodypart  <- shot_lookup$body_part[idx]
+    if ("situation" %in% names(shot_lookup)) situation <- shot_lookup$situation[idx]
+    cli::cli_alert_info(
+      "Shot lookup matched {round(100 * hit, 1)}% of shots (body_part: {!is.null(bodypart)}, situation: {!is.null(situation)})")
+    if (hit < 0.9) {
+      cli::cli_alert_warning(
+        "Only {round(100 * hit, 1)}% of shots matched the lookup - the rest lose body part and situation.")
+    }
+  } else {
+    # cli_alert_warning prints immediately; cli_warn alone is deferred by R into
+    # the "50 or more warnings" summary and is invisible in a long pipeline log.
+    cli::cli_alert_warning(
+      "No {.arg shot_lookup}: headers scored as foot shots and set pieces as open play (train/serve skew, ~6% on xG).")
+    cli::cli_warn("add_xg_to_spadl(): no shot_lookup - body part and situation features are dead.")
+  }
 
   shot_features <- .create_shot_features(
     x = shots$start_x, y = shots$start_y,
     bodypart = bodypart,
-    situation = NULL,
+    situation = situation,
     is_big_chance = is_big_chance
   )
+
+  # Season term. SPADL carries no season or date column, so it has to be passed
+  # in; prepare_shots_for_xg() (the TRAINING path) builds it from the shot
+  # events' own `season`, and for a while this inference path simply did not
+  # build it at all. predict_xg() then filled it with 0 -- every shot scored as
+  # "year 0", far outside the 2014-2026 training range -- and the resulting
+  # train/serve skew cost a full 70-minute rebuild on 2026-09-03: overall
+  # goals/xG 1.0000 -> 1.1265 and by-season spread 1.3 -> 25.8 points, i.e. it
+  # undid the entire reason the season term was added. Use the same
+  # extract_season_end_year() training uses, never a date heuristic.
+  if ("season_num" %in% xg_model$panna_metadata$feature_cols) {
+    if (is.null(season)) {
+      cli::cli_abort(c(
+        "This xG model needs {.field season_num} but no {.arg season} was given.",
+        "x" = "Scoring without it silently biases every xG (measured: goals/xG 1.00 -> 1.13).",
+        "i" = "Pass the league's season label, e.g. {.code add_xg_to_spadl(spadl, m, season = \"2025-2026\")}."
+      ))
+    }
+    yr <- suppressWarnings(as.integer(extract_season_end_year(season)))
+    if (length(yr) != 1L || is.na(yr)) {
+      cli::cli_abort("Could not read a season end year from {.val {season}}.")
+    }
+    shot_features$season_num <- yr
+  }
 
   # Predict xG
   xg_pred <- predict_xg(xg_model, shot_features)
@@ -507,6 +681,42 @@ add_xg_to_spadl <- function(spadl_actions, xg_model) {
   cli::cli_alert_success("Added xG to {sum(shot_idx)} shots (mean xG: {round(mean(spadl_actions$xg[shot_idx]), 3)})")
 
   spadl_actions
+}
+
+
+# Build the shot lookup that add_xg_to_spadl() and add_xgot_to_spadl() need.
+#
+# Internal, and deliberately NOT exported: it exists so the five pipeline steps
+# that score xG through calculate_action_epv() build the lookup identically
+# instead of each rolling its own (the sister-script drift that has bitten this
+# repo before). Plain function, no roxygen, so it needs no .Rd or _pkgdown entry.
+#
+# Uses load_opta_shot_events(), never a direct parquet read: the parquet returns
+# `event_id` as integer64 and merge() against SPADL's numeric original_event_id
+# matches 0% in silence.
+#
+# Returns NULL (with a visible warning) when shot events are unavailable, so a
+# caller degrades to the old skewed behaviour loudly rather than aborting a
+# whole pipeline run.
+.epv_shot_lookup <- function(league, season, source = "local") {
+  se <- tryCatch(
+    load_opta_shot_events(league, season = season, source = source),
+    error = function(e) {
+      cli::cli_alert_warning(
+        "shot_events unavailable for {league} {season} ({conditionMessage(e)}) - xG loses body part and situation.")
+      NULL
+    }
+  )
+  if (is.null(se) || nrow(se) == 0) return(NULL)
+  cols <- intersect(c("match_id", "event_id", "body_part", "situation",
+                      "type_id", "goalmouth_y", "goalmouth_z", "is_blocked"),
+                    names(se))
+  if (!all(c("match_id", "event_id") %in% cols)) {
+    cli::cli_alert_warning(
+      "shot_events for {league} {season} lack match_id/event_id - cannot build the xG lookup.")
+    return(NULL)
+  }
+  as.data.frame(se)[, cols, drop = FALSE]
 }
 
 

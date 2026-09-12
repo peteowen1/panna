@@ -336,6 +336,33 @@ test_that("build_prior_vector creates aligned prior", {
 })
 
 
+test_that("build_prior_vector(negate = TRUE) returns the exact negation (panna#defense-prior-sign, 2026-09-04)", {
+  # Regression test for the defense-prior sign mismatch: fit_rapm_with_prior()
+  # needs defense_prior on the raw (bad=positive) scale, but defense_spm is
+  # trained against the flipped (positive=good) `defense` column since
+  # 795feeb1, so every defense-prior call site must pass negate = TRUE. If a
+  # future refactor drops the negation, this test should catch it.
+  player_mapping <- data.frame(
+    player_id = c("p1", "p2", "p3"),
+    player_name = c("Alice", "Bob", "Charlie"),
+    stringsAsFactors = FALSE
+  )
+  spm_data <- data.frame(
+    player_id = c("p1", "p2"),
+    defense_spm = c(0.05, -0.02),
+    stringsAsFactors = FALSE
+  )
+
+  plain <- build_prior_vector(spm_data, "defense_spm", player_mapping)
+  negated <- build_prior_vector(spm_data, "defense_spm", player_mapping, negate = TRUE)
+
+  expect_equal(negated[c("p1", "p2")], -plain[c("p1", "p2")])
+  # default=0 is unaffected by negation (unmatched player, both branches)
+  expect_equal(unname(negated["p3"]), 0)
+  expect_equal(unname(plain["p3"]), 0)
+})
+
+
 test_that("create_spm_prior handles data frame input", {
   player_mapping <- data.frame(
     player_id = c("p1", "p2", "p3"),

@@ -604,7 +604,8 @@ test_that("extract_xrapm_ratings od mode is unaffected by mode-awareness (regres
 
   expect_false(any(is.na(ratings$offense)))
   expect_false(any(is.na(ratings$defense)))
-  expect_equal(ratings$xrapm, ratings$offense - ratings$defense)
+  # defense positive=good (2026-09-03), so xrapm is additive now.
+  expect_equal(ratings$xrapm, ratings$offense + ratings$defense)
 })
 
 test_that("extract_xrapm_ratings aborts if coefficients don't match the declared mode (F4)", {
@@ -746,7 +747,8 @@ test_that("extract_rapm_ratings od mode is unaffected by mode-awareness (regress
 
   expect_false(any(is.na(ratings$offense)))
   expect_false(any(is.na(ratings$defense)))
-  expect_equal(ratings$rapm, ratings$offense - ratings$defense)
+  # defense positive=good (2026-09-03), so rapm is additive now.
+  expect_equal(ratings$rapm, ratings$offense + ratings$defense)
 })
 
 test_that("extract_rapm_ratings aborts if coefficients don't match the declared mode", {
@@ -800,8 +802,11 @@ test_that("od-mode ridge fit on a TRUE zero-sum target mirrors offense/defense h
 
   # A ridge fit on a truly zero-sum target is symmetric under the
   # (row, off/def role, target sign) swap, so its unique regularized solution
-  # is (very close to) a fixed point of that symmetry: offense = -defense for
-  # every player. Assert against the ACTUAL consequence -- this is exactly
+  # is (very close to) a fixed point of that symmetry: offense and defense
+  # are mirror images (perfectly anti-correlated) for every player -- true
+  # regardless of which sign convention `defense` is published under, which
+  # is why the assertion below uses abs(cor(...)) rather than a signed
+  # equality. Assert against the ACTUAL consequence -- this is exactly
   # what would abort 04_rapm.R's multi-target WPA fit (D5's cor_threshold =
   # 0.9) if it were left in mode = "od" instead of "net".
   expect_gt(abs(cor(ratings$offense, ratings$defense)), 0.9)

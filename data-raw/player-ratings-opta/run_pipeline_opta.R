@@ -49,6 +49,14 @@ if (!exists("run_steps", inherits = FALSE)) {
     step_05b_export_spm_coefficients = start_step <= 5.5,
     step_06_xrapm            = start_step <= 6,
     step_07_seasonal_ratings = start_step <= 7,
+    # Fractional step (panna#224), same idiom as 05b above. Reads
+    # cache-opta/07_seasonal_ratings.rds (no refit) plus the lineups feed, so it
+    # belongs right after step 7. Produces the opponent-quality control consumed
+    # by the skills pipeline's 07_train_psr_model.R and by build_epr_weekly.R.
+    # It lived in debug/keep/ and belonged to no pipeline until 2026-09-02,
+    # which is exactly why it went 3.5 months stale and silently disabled the
+    # opponent adjustment in eight competitions.
+    step_07c_team_season_strength = start_step <= 7.5,
     step_08_panna_ratings    = start_step <= 8,
     step_09_export_ratings   = start_step <= 9
   )
@@ -205,13 +213,22 @@ if (!isTRUE(pipeline_failed)) {
   check_step(8)
 }
 
+# 11b. Step 7c: Team-Season Strength (opponent-quality control) ----
+
+if (!isTRUE(pipeline_failed)) {
+  step_results[[9]] <- run_step_opta("team_season_strength", "7c", function() {
+    source("data-raw/player-ratings-opta/07c_team_season_strength.R", local = TRUE)
+  })
+  check_step(9)
+}
+
 # 12. Step 8: Final Ratings ----
 
 if (!isTRUE(pipeline_failed)) {
-  step_results[[9]] <- run_step_opta("panna_ratings", 8, function() {
+  step_results[[10]] <- run_step_opta("panna_ratings", 8, function() {
     source("data-raw/player-ratings-opta/08_panna_ratings.R", local = TRUE)
   })
-  check_step(9)
+  check_step(10)
 }
 
 # 13. Step 9: Export Ratings ----
@@ -219,17 +236,17 @@ if (!isTRUE(pipeline_failed)) {
 # Skip export if pipeline failed
 if (isTRUE(pipeline_failed)) {
   message("\nSkipping export: upstream step failed")
-  step_results[[10]] <- list(step = 9, name = "export_ratings", status = "SKIPPED",
+  step_results[[11]] <- list(step = 9, name = "export_ratings", status = "SKIPPED",
                             duration_secs = 0, duration_formatted = "0.0 seconds")
 } else {
-  step_results[[10]] <- run_step_opta("export_ratings", 9, function() {
+  step_results[[11]] <- run_step_opta("export_ratings", 9, function() {
     source("data-raw/player-ratings-opta/09_export_ratings.R", local = TRUE)
   })
   # Last step, but check_step still matters: it sets pipeline_failed, which the
   # workflow's `if (isTRUE(pipeline_failed)) quit(status = 1)` reads — without
   # this, a failed export prints FAILED in the summary yet the job stays green
   # (exactly how ratings-data went silently stale 2026-06-11 → 2026-07-17).
-  check_step(10)
+  check_step(11)
 }
 
 # 14. Summary ----

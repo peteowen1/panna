@@ -785,8 +785,12 @@ create_rapm_design_matrix <- function(splint_data, min_minutes = 90,
   required_elements <- c("splints", "players")
   missing_elements <- setdiff(required_elements, names(splint_data))
   if (length(missing_elements) > 0) {
+    # cli pluralisation needs the quantity in the SAME string via qty(), or it
+    # aborts with "Cannot pluralize without a quantity" and hides the real
+    # error underneath a worse one (found 2026-09-03 chasing an unrelated bug).
+    n_missing <- length(missing_elements)
     cli::cli_abort(c(
-      "{.arg splint_data} is missing required element{?s}.",
+      "{.arg splint_data} is missing {n_missing} required element{?s}.",
       "x" = "Missing: {.field {missing_elements}}",
       "i" = "Use {.fn create_all_splints} to generate valid splint data."
     ))

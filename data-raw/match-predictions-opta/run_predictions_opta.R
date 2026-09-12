@@ -69,6 +69,7 @@ if (!exists("run_steps", inherits = FALSE)) {
     step_12b_snapshot_wc_minutes     = FALSE,  # Opt-in: archive dated minutes snapshot + diff
     step_12c_snapshot_wc_strength    = FALSE,  # Opt-in: archive dated team-strength (ELO+p_champ) snapshot + diff
     step_12d_export_domestic_team_strength = FALSE,  # Opt-in: export Tiento for every domestic/cup club (panna#193)
+    step_12e_export_cup_pairwise     = FALSE,  # Opt-in: export UCL/UEL/UECL pairwise knockout lookup
     step_13_publish_release_data     = FALSE   # Opt-in: single gated publish of predictions-latest + blog-latest (PA5/H-TORN)
   )
 }
@@ -513,6 +514,18 @@ step_results[["12d"]] <- run_pred_step_optional("export_domestic_team_strength",
   source("data-raw/match-predictions-opta/12d_export_domestic_team_strength.R", local = TRUE)
 })
 
+# 14g3. Step 12e: Export Cup Pairwise Knockout Lookup (UCL/UEL/UECL) ----
+# NON-FATAL for the same reason 12/12d are: registers cup_pairwise.parquet in
+# publish_files only at its own end (12e:...), after every write has already
+# succeeded, so a mid-step failure registers nothing for step 13 to publish.
+# Depends on steps 4/5/6 (match dataset + trained models) being fresh in the
+# cache -- reloads them explicitly (same pattern as step 11) rather than
+# relying on shared session state, so it stays runnable/testable standalone.
+
+step_results[["12e"]] <- run_pred_step_optional("export_cup_pairwise", "12e", function() {
+  source("data-raw/match-predictions-opta/12e_export_cup_pairwise.R", local = TRUE)
+})
+
 # 14h. Step 13: Publish predictions-latest + blog-latest (gated, manifest-last) ----
 # Runs after every build step so publish_files is fully populated. A failure
 # here (e.g. one tag's vb_publish aborting) is caught by run_pipeline_step() like
@@ -560,6 +573,10 @@ if (isTRUE(run_steps$step_12_export_wc2026_blog)) {
 if (isTRUE(run_steps$step_12d_export_domestic_team_strength)) {
   message(sprintf("  - %s", file.path(cache_dir, "team_strength.parquet")))
   message("  - (team_strength.parquet uploaded to blog-latest)")
+}
+if (isTRUE(run_steps$step_12e_export_cup_pairwise)) {
+  message(sprintf("  - %s", file.path(cache_dir, "cup_pairwise.parquet")))
+  message("  - (cup_pairwise.parquet uploaded to blog-latest)")
 }
 
 message("\nDone!")

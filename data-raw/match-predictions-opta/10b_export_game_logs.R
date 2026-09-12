@@ -59,16 +59,28 @@ season_label_leagues <- .blog_league_groups$season_label_leagues
 # per-season output parquet contains ONLY the processed leagues, so a subset
 # run must set upload_game_logs <- FALSE and merge into the existing
 # game_logs_<season>.parquet files instead of clobbering them.
-if (!exists("blog_leagues", inherits = FALSE)) {
+## sign convention aside, these config-flag guards use envir=globalenv()
+## (not bare inherits=FALSE): the pipeline driver sources this via
+## source(local=TRUE), so a driver-set global is invisible to a plain
+## inherits=FALSE lookup -- same bug class as the upload_psr incident
+## (2026-09-04) and the career_panna silent-skip (2026-07-17).
+if (!exists("blog_leagues", envir = globalenv(), inherits = FALSE)) {
   blog_leagues <- .blog_league_groups$blog_leagues
 }
 
 # Seasons to export. Vector (new) or scalar `game_log_season` (back-compat).
-if (!exists("game_log_seasons", inherits = FALSE)) {
-  if (exists("game_log_season", inherits = FALSE)) {
+if (!exists("game_log_seasons", envir = globalenv(), inherits = FALSE)) {
+  if (exists("game_log_season", envir = globalenv(), inherits = FALSE)) {
     game_log_seasons <- game_log_season
   } else {
-    game_log_seasons <- "2025-2026"
+    # Derived from the clock, never pinned. The pinned "2025-2026" that used to
+    # sit here went stale on 1 August 2026 and nothing failed: the weekly
+    # pipeline rebuilt last season's game logs and republished them as the
+    # current-season file every day, so the blog showed an empty Player Stats
+    # page three matchweeks into the season while the file's timestamp said it
+    # was built that morning. `current_season_alias` below is the max of this
+    # vector, so this one line decides which season becomes game_logs.parquet.
+    game_log_seasons <- current_domestic_season()
   }
 }
 game_log_seasons <- as.character(game_log_seasons)
@@ -112,24 +124,24 @@ current_season_alias <- sort(game_log_seasons, decreasing = TRUE)[1]
 } else "minutes"
 
 # Upload toggle — set FALSE during local dev to skip the GH release push.
-if (!exists("upload_game_logs", inherits = FALSE)) upload_game_logs <- TRUE
+if (!exists("upload_game_logs")) upload_game_logs <- TRUE
 
 # Build toggle — set FALSE to skip the per-season processing loop (e.g. when
 # parquets were already built in parallel workers and this invocation only
 # needs to do the alias + upload step in a single main-process pass).
-if (!exists("build_game_logs", inherits = FALSE)) build_game_logs <- TRUE
+if (!exists("build_game_logs", envir = globalenv(), inherits = FALSE)) build_game_logs <- TRUE
 
 # Subset-league backfill: MERGE the processed leagues into each existing
 # game_logs_<season>.parquet instead of clobbering it. Set TRUE when running a
 # league SUBSET (e.g. adding AUS/BEL/BRA/CAFCL) so the other leagues' rows for
 # that season are preserved. Idempotent (drops + re-appends the rebuilt leagues).
-if (!exists("merge_subset_leagues", inherits = FALSE)) merge_subset_leagues <- FALSE
+if (!exists("merge_subset_leagues", envir = globalenv(), inherits = FALSE)) merge_subset_leagues <- FALSE
 
 # Alias toggle — mirror the most-recent processed season to game_logs.parquet
 # (the blog chain builder's name-pinned download). Default TRUE for weekly
 # runs, but set FALSE when back-filling a NON-current historical subset so
 # the alias keeps pointing at the real current season.
-if (!exists("mirror_alias", inherits = FALSE)) mirror_alias <- TRUE
+if (!exists("mirror_alias", envir = globalenv(), inherits = FALSE)) mirror_alias <- TRUE
 
 message(sprintf("\n=== Building Game Logs: %d season(s) ===", length(game_log_seasons)))
 message(sprintf("  Seasons: %s", paste(game_log_seasons, collapse = ", ")))
@@ -410,8 +422,14 @@ validate_game_log_schema <- function(dt, league, season) {
       spadl_labeled  <- create_next_goal_labels(spadl_labeled)
 
       # --- EPV path ---
+      # league_season, not season: a calendar-year league's label ("2026")
+      # differs from the tournament-year one and the xG season term reads the
+      # END YEAR off whichever label it is handed. shot_lookup supplies
+      # body_part + situation, which SPADL cannot (its bodypart says "foot" for
+      # every shot) - without it the xG behind these game logs is ~6% skewed.
       spadl_epv        <- calculate_action_epv(spadl_labeled, features = NULL, epv_model,
-                                               league = league)
+                                               league = league, season = league_season,
+                                               shot_lookup = .epv_shot_lookup(league, league_season))
       spadl_credit     <- assign_epv_credit(spadl_epv, xpass_model)
       player_game_epv  <- aggregate_player_game_epv(spadl_credit, lineups)
 
@@ -767,6 +785,14 @@ validate_game_log_schema <- function(dt, league, season) {
       "epv_offensive_adj", "epv_defensive_adj", "opp_adj",
       "epv_passing", "epv_shooting", "epv_dribbling", "epv_aerial",
       "epv_keeping", "epv_defending",
+      # epv_duel_blame and epv_aerial_att complete the defensive roll-up:
+      #   epv_defensive = epv_defending + epv_keeping
+      #                   + (epv_aerial - epv_aerial_att) + epv_duel_blame
+      # Without them `epv_defensive` cannot be reconstructed from the exported
+      # components -- `epv_aerial` ships as a TOTAL while only its non-attacking
+      # share is defensive. Added 2026-09-02 (panna#228), where that gap caused
+      # an inversion to be attributed to the wrong term.
+      "epv_duel_blame", "epv_aerial_att",
       "wpa_total", "wpa_as_actor", "wpa_as_receiver",
       "psv", "osv", "dsv", "psv_league_offset",
       "goals_minus_xgot", "placement_added", "xgot",

@@ -48,17 +48,25 @@ continental_cups     <- .blog_league_groups$continental_cups
 intl_tournaments     <- .blog_league_groups$intl_tournaments
 # Leagues whose season label is resolved by year prefix rather than passed through
 season_label_leagues <- .blog_league_groups$season_label_leagues
-if (!exists("blog_leagues", inherits = FALSE)) {
+## sign convention aside, these config-flag guards use envir=globalenv()
+## (not bare inherits=FALSE): the pipeline driver sources this via
+## source(local=TRUE), so a driver-set global is invisible to a plain
+## inherits=FALSE lookup -- same bug class as the upload_psr incident
+## (2026-09-04) and the career_panna silent-skip (2026-07-17).
+if (!exists("blog_leagues", envir = globalenv(), inherits = FALSE)) {
   blog_leagues <- .blog_league_groups$blog_leagues
 }
 
 # Seasons to export. Vector (new) or scalar `game_log_season` (back-compat
 # with the previous single-season behavior).
-if (!exists("equity_seasons", inherits = FALSE)) {
-  if (exists("game_log_season", inherits = FALSE)) {
+if (!exists("equity_seasons", envir = globalenv(), inherits = FALSE)) {
+  if (exists("game_log_season", envir = globalenv(), inherits = FALSE)) {
     equity_seasons <- game_log_season
   } else {
-    equity_seasons <- "2025-2026"
+    # Derived from the clock, never pinned — the same time bomb that emptied
+    # the blog's Player Stats page in August 2026 when 10b's pin went stale.
+    # See current_domestic_season() in pipeline_utils.R.
+    equity_seasons <- current_domestic_season()
   }
 }
 equity_seasons <- as.character(equity_seasons)
@@ -68,15 +76,15 @@ equity_seasons <- as.character(equity_seasons)
 current_season_alias <- sort(equity_seasons, decreasing = TRUE)[1]
 
 # Upload toggle
-if (!exists("upload_equity", inherits = FALSE)) upload_equity <- TRUE
+if (!exists("upload_equity")) upload_equity <- TRUE
 
 # Build toggle — FALSE = skip per-season build, just do alias+upload
-if (!exists("build_equity", inherits = FALSE)) build_equity <- TRUE
+if (!exists("build_equity", envir = globalenv(), inherits = FALSE)) build_equity <- TRUE
 
 # Alias toggle — mirror most-recent processed season to action_equity.parquet.
 # Set FALSE when back-filling a non-current historical subset to avoid
 # clobbering the blog chain builder's current-season pointer.
-if (!exists("mirror_alias", inherits = FALSE)) mirror_alias <- TRUE
+if (!exists("mirror_alias", envir = globalenv(), inherits = FALSE)) mirror_alias <- TRUE
 
 # Subset-league backfill: MERGE the processed leagues into each existing
 # action_equity_<season>.parquet instead of clobbering it. Set TRUE when
@@ -89,7 +97,7 @@ if (!exists("mirror_alias", inherits = FALSE)) mirror_alias <- TRUE
 # belongs to the just-rebuilt league(s) and re-appending is equivalent and
 # needs no schema change. Idempotent (drops + re-appends the rebuilt
 # league's matches).
-if (!exists("merge_subset_leagues", inherits = FALSE)) merge_subset_leagues <- FALSE
+if (!exists("merge_subset_leagues", envir = globalenv(), inherits = FALSE)) merge_subset_leagues <- FALSE
 
 message(sprintf("\n=== Building Action Equity: %d season(s) ===",
                 length(equity_seasons)))
@@ -165,8 +173,11 @@ validate_equity_schema <- function(dt, league, season) {
       spadl_labeled  <- create_next_goal_labels(spadl_labeled)
 
       # EPV credit — features built internally by calculate_action_epv.
+      # league_season, not season -- see the note at the matching 10b call.
       spadl_epv    <- calculate_action_epv(spadl_labeled, features = NULL,
-                                           epv_model, league = league)
+                                           epv_model, league = league,
+                                           season = league_season,
+                                           shot_lookup = .epv_shot_lookup(league, league_season))
       spadl_credit <- assign_epv_credit(spadl_epv, xpass_model)
 
       # Slim equity lookup — drop rows without an original_event_id

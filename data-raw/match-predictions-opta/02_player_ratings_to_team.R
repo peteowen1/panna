@@ -200,6 +200,7 @@ message(sprintf("  Ratings: %d player-seasons", nrow(ratings)))
 asof_path <- file.path(opta_data_dir(), "career_panna_asof.parquet")
 if (file.exists(asof_path) && requireNamespace("arrow", quietly = TRUE)) {
   asof <- data.table::as.data.table(arrow::read_parquet(asof_path))
+  .assert_career_panna_sign_convention(asof, "02_player_ratings_to_team.R (career-Panna override)")
   asof[, ref_date := as.Date(ref_date)]
   snap_dates <- sort(unique(asof$ref_date))
 
@@ -651,8 +652,8 @@ if (nrow(upcoming) > 0) {
           mutate(
             offense = offense_spm,
             defense = defense_spm,
-            spm = offense_spm - defense_spm,    # SPM estimate stays the `spm` feature
-            panna = offense_spm - defense_spm,  # provisional SPM fallback; overridden below
+            spm = offense_spm + defense_spm,    # SPM estimate stays the `spm` feature (defense_spm positive=good since 2026-09-04)
+            panna = offense_spm + defense_spm,  # provisional SPM fallback; overridden below
             season_end_year = latest_sey
           )
 
@@ -662,15 +663,17 @@ if (nrow(upcoming) > 0) {
         # Measured 2026-06-17: the SPM serve was compressed to ~half the training panna
         # sd and mean-pinned to ~average, so the model's #1 feature (panna_diff, ~0.23
         # gain) was muted for upcoming fixtures → over-flat WC odds. Convention verified
-        # identical (career panna = panna_offense - panna_defense = xRAPM off-def = the
-        # SPM line above), so the override is sign-safe. Fall back to the SPM value for
+        # identical (career panna = panna_offense + panna_defense = xRAPM off+def, both
+        # positive=good since 2026-09-04 = the SPM line above), so the override is
+        # sign-safe. Fall back to the SPM value for
         # players with no career-panna rating; `spm` keeps the SPM estimate so panna !=
         # spm (matching the played-side feature structure). career_panna.parquet is on
         # pannadata's ratings-data release (in the predictions-pipeline download list).
         cp_path_fx <- file.path(opta_data_dir(), "career_panna.parquet")
         if (file.exists(cp_path_fx) && requireNamespace("arrow", quietly = TRUE)) {
-          cp_fx <- as.data.frame(arrow::read_parquet(cp_path_fx))[
-            , c("player_id", "panna", "panna_offense", "panna_defense")]
+          cp_fx_raw <- as.data.frame(arrow::read_parquet(cp_path_fx))
+          .assert_career_panna_sign_convention(cp_fx_raw, "02_player_ratings_to_team.R (upcoming-fixture panna)")
+          cp_fx <- cp_fx_raw[, c("player_id", "panna", "panna_offense", "panna_defense")]
           names(cp_fx) <- c("player_id", ".cp_panna", ".cp_off", ".cp_def")
           n_match <- sum(fixture_ratings$player_id %in% cp_fx$player_id)
           fixture_ratings <- fixture_ratings %>%

@@ -10,8 +10,17 @@
 #' @param subdir "xmetrics" or "xmetrics_bymatch" under opta_data_dir()
 #' @param output_name Uploaded file name, e.g. "opta_xmetrics.parquet"
 #' @param row_label Noun for the row-count summary message, e.g. "player-seasons"
+#' @param upload Publish to the opta-latest release? TRUE keeps the CI
+#'   behaviour. FALSE writes the consolidated parquet to the cache and stops,
+#'   so the artifact can be inspected before it ships. Added 2026-09-03: with
+#'   consolidation and publishing welded together there was no way to build the
+#'   file and look at it, which blocked verifying a new xG model that was
+#'   deliberately being held back from the release. Callers may pre-set
+#'   XMETRICS_UPLOAD before sourcing 04/04b (the repo's config-override
+#'   pattern).
 #' @return The consolidated data.frame (invisibly used by callers for their own summary)
-export_consolidated_xmetrics <- function(subdir, output_name, row_label) {
+export_consolidated_xmetrics <- function(subdir, output_name, row_label,
+                                         upload = TRUE) {
   root <- file.path(opta_data_dir(), subdir)
   if (!dir.exists(root)) {
     cli::cli_abort(c(
@@ -75,6 +84,15 @@ export_consolidated_xmetrics <- function(subdir, output_name, row_label) {
   cli::cli_alert_success("Written {.path {output_name}} ({round(file_size, 1)} MB)")
 
   # 3. Upload to GitHub Releases ----
+  if (!isTRUE(upload)) {
+    cli::cli_h2("Step 3: Upload SKIPPED (upload = FALSE)")
+    cli::cli_alert_warning(c(
+      "{.path {output_name}} written to {.path {cache_dir}} but NOT published."
+    ))
+    cli::cli_alert_info("Re-run with {.code upload = TRUE} to publish to opta-latest.")
+    return(combined)
+  }
+
   cli::cli_h2("Step 3: Upload to GitHub Releases")
   repo <- "peteowen1/pannadata"
   tag <- "opta-latest"

@@ -707,6 +707,126 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
            intersect(c(xm_suffixed, success_cols, pos_cols), names(data))))
 }
 
+#' Build league fixed-effect dummy columns for SPM
+#'
+#' SPM maps per-90 box-score rates onto RAPM. RAPM is already opponent-adjusted
+#' at player level (the design matrix carries \code{_off}/\code{_def} columns for
+#' both teams) and league-season centred, but the box-score rates it is regressed
+#' on are neither. What survives is residual stat inflation: the same per-90 line
+#' means less in a weaker league. Measured 2026-09-02 on 22,755 players, the
+#' fitted league effect spans **0.95 sd of RAPM** end to end (EPL to CAF_CL),
+#' worth ~3.3\% RMSE — and without it Saudi Arabia supplies 5 of SPM's top 20,
+#' as many as the Bundesliga (9 EPL / 2 Saudi once the term is added).
+#'
+#' Dummies are 0/1 with one level held out as the reference, so an **unseen
+#' league at predict time gets all-zero dummies and falls back to that reference**
+#' rather than erroring. That is the deliberate behaviour: a new competition
+#' should be priced as the reference league, not dropped.
+#'
+#' @param data Data frame carrying a \code{competition} or \code{league} column.
+#' @param levels Character vector of league levels from the fitted model. When
+#'   \code{NULL} they are derived from \code{data} (levels with at least
+#'   \code{min_n} rows), which is the fit-time path.
+#' @param min_n Minimum rows for a league to get its own dummy (default 50).
+#'   Thinner leagues fold into the reference level rather than fitting a
+#'   coefficient on a handful of players.
+#' @return A list with \code{data} (input plus dummy columns), \code{levels}
+#'   (the non-reference levels, for storing in model metadata) and \code{cols}
+#'   (the dummy column names).
+#' @keywords internal
+# Minutes-share league controls for a player-grain SPM frame.
+#
+# Why shares and not dummies. Stage 2's SPM aggregates 3.46M player-match rows
+# to one row per player, and NO league column survives that aggregation, so a
+# league fixed effect there needs a league to be DERIVED per player. Measured on
+# 48,377 players: only 55.1% appear in a single competition, 12.0% have no
+# competition holding even 60% of their minutes, and 0.3% are exact ties decided
+# by nothing at all. The median dominant share is 1.000 -- the same reassuring
+# statistic that said panna#222's inputs were fine while its league tag was a
+# coin-flip.
+#
+# A share vector removes the decision instead of making it badly: a player on
+# 70% EPL / 30% UCL gets 0.7 and 0.3, and for the 55% in one competition it
+# degenerates exactly to the dummy it replaces. Shares sum to 1, so one column
+# is dropped as the reference to avoid collinearity with the intercept.
+#
+# `stats` must be player-match grain with player_id, a competition column and a
+# minutes column. Returns one row per player_id.
+.spm_league_shares <- function(stats, min_n = 50, prefix = "lgshare_") {
+  dt <- data.table::as.data.table(stats)
+  lg <- intersect(c("competition", "league"), names(dt))[1]
+  mn <- intersect(c("minsPlayed", "minutes", "minutes_played", "mins"), names(dt))[1]
+  if (is.na(lg) || is.na(mn) || !"player_id" %in% names(dt)) {
+    return(list(data = NULL, cols = character(0), levels = character(0)))
+  }
+  ## Coverage, not presence. `minsPlayed` is ~62.6% non-NA on the Opta stats
+  ## table, and rows without it are dropped here -- so if that missingness were
+  ## concentrated in a few competitions, those leagues' shares would be built
+  ## from a biased slice while every column still looked populated. Report the
+  ## per-competition retention rather than assume it is uniform.
+  n0 <- nrow(dt)
+  cov <- dt[, .(rows = .N,
+                usable = sum(!is.na(get(mn)) & as.numeric(get(mn)) > 0)),
+            by = c(lg)]
+  cov[, pct := 100 * usable / rows]
+  thin <- cov[pct < 50]
+  if (nrow(thin) > 0) {
+    cli::cli_alert_warning(
+      "League shares: {nrow(thin)} competition{?s} under 50% minutes coverage: {paste(sprintf('%s %.0f%%', thin[[lg]], thin$pct), collapse=', ')}")
+  }
+  dt <- dt[!is.na(get(lg)) & !is.na(get(mn)) & as.numeric(get(mn)) > 0]
+  cli::cli_alert_info("League shares: {nrow(dt)} of {n0} rows usable ({round(100*nrow(dt)/n0, 1)}%), {nrow(cov)} competitions")
+  if (!nrow(dt)) return(list(data = NULL, cols = character(0), levels = character(0)))
+
+  keep <- dt[, .(n = .N), by = c(lg)][n >= min_n][[lg]]
+  if (length(keep) < 2) return(list(data = NULL, cols = character(0), levels = character(0)))
+  dt[, .lg := data.table::fifelse(get(lg) %in% keep, as.character(get(lg)), "OTHER")]
+
+  m <- dt[, .(mins = sum(as.numeric(get(mn)))), by = .(player_id, .lg)]
+  m[, share := mins / sum(mins), by = player_id]
+  w <- data.table::dcast(m, player_id ~ .lg, value.var = "share", fill = 0)
+
+  ## Drop the largest competition as the reference level -- shares sum to 1, so
+  ## keeping every column would be perfectly collinear with the intercept.
+  lv <- setdiff(names(w), "player_id")
+  ref <- lv[which.max(vapply(lv, function(k) sum(w[[k]]), numeric(1)))]
+  lv <- setdiff(lv, ref)
+  data.table::setnames(w, lv, paste0(prefix, make.names(lv)))
+  w[, (ref) := NULL]
+  list(data = as.data.frame(w),
+       cols = paste0(prefix, make.names(lv)),
+       levels = lv, reference = ref)
+}
+
+
+.spm_league_dummies <- function(data, levels = NULL, min_n = 50) {
+  league_col <- intersect(c("competition", "league"), names(data))[1]
+  if (is.na(league_col)) {
+    return(list(data = data, levels = character(0), cols = character(0)))
+  }
+  lg <- as.character(data[[league_col]])
+  lg[is.na(lg) | lg == ""] <- "__unknown__"
+
+  if (is.null(levels)) {
+    tab <- table(lg)
+    keep <- names(tab)[tab >= min_n]
+    keep <- setdiff(keep, "__unknown__")
+    if (length(keep) < 2) {
+      return(list(data = data, levels = character(0), cols = character(0)))
+    }
+    ## Reference = the largest league, so the held-out level is the best
+    ## estimated one and every other coefficient is read against it.
+    ref <- keep[which.max(tab[keep])]
+    levels <- sort(setdiff(keep, ref))
+  }
+
+  cols <- paste0("lg_", make.names(levels))
+  for (i in seq_along(levels)) {
+    data[[cols[i]]] <- as.numeric(lg == levels[i])
+  }
+  list(data = data, levels = levels, cols = cols)
+}
+
 #' Fit SPM model using Opta features
 #'
 #' Fits an elastic net model predicting RAPM from Opta box score statistics.
@@ -718,6 +838,9 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
 #' @param nfolds Number of CV folds (default 10)
 #' @param weight_by_minutes Whether to weight by minutes (default TRUE)
 #' @param weight_transform Transform for weighting: "sqrt", "linear", "log"
+#' @param opponent_elo Enter a pre-joined `opponent_elo` column as an
+#'   unpenalized control (opt-in, default FALSE). Orthogonal to
+#'   `league_fe`/`league_shares` -- can combine with either.
 #'
 #' @return Fitted glmnet model with metadata
 #' @family spm opta
@@ -735,8 +858,95 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
 #' opta_spm <- fit_spm_opta(spm_data)
 #' }
 fit_spm_opta <- function(data, alpha = 0.5, nfolds = 10,
-                          weight_by_minutes = TRUE, weight_transform = "sqrt") {
+                          weight_by_minutes = TRUE, weight_transform = "sqrt",
+                          league_fe = FALSE, league_min_n = 50,
+                          league_shares = FALSE, opponent_elo = FALSE) {
   predictor_cols <- .spm_opta_predictor_cols(data)
+  ## Accumulates every unpenalized-control column across league_shares/
+  ## league_fe/opponent_elo. Unlike league_fe vs league_shares (mutually
+  ## exclusive alternatives), opponent_elo is orthogonal to both -- it can
+  ## combine with either, since Elo captures within-league opponent quality
+  ## that league membership alone doesn't.
+  unpenalized_cols <- character(0)
+
+  ## Minutes-share league controls. The caller joins `lgshare_*` columns onto
+  ## `data` (see .spm_league_shares()); this just enters them UNPENALIZED, for
+  ## the same reason the dummies are: they are controls, not skills, and elastic
+  ## net would shrink them away exactly in the thin leagues where they matter.
+  ## Separate from league_fe because the two are alternatives, not additions -
+  ## enabling both would enter the same information twice.
+  share_cols <- character(0)
+  if (isTRUE(league_shares)) {
+    share_cols <- grep("^lgshare_", names(data), value = TRUE)
+    if (length(share_cols) == 0) {
+      cli::cli_abort(c(
+        "league_shares = TRUE but no {.field lgshare_*} columns on the data.",
+        "i" = "Build them with {.fn .spm_league_shares} and join by player_id first.",
+        "x" = "Fitting without them would silently drop the league control."
+      ))
+    }
+    if (isTRUE(league_fe)) {
+      cli::cli_abort("Set league_fe OR league_shares, not both - they encode the same information.")
+    }
+    ## NAs come from players absent from the shares frame (no qualifying
+    ## minutes). 0 across every share column is the correct encoding: it places
+    ## them on the reference level.
+    for (cc in share_cols) data[[cc]][is.na(data[[cc]])] <- 0
+    predictor_cols <- c(predictor_cols, share_cols)
+    unpenalized_cols <- c(unpenalized_cols, share_cols)
+    progress_msg(sprintf("League shares: %d columns (reference dropped), unpenalized",
+                          length(share_cols)))
+  }
+
+  ## League fixed effects (opt-in). Entered UNPENALIZED: they are controls, not
+  ## skills, and elastic net would otherwise shrink or select them away exactly
+  ## where they matter most (the thin weak leagues). Defaults to FALSE so this
+  ## ships as a single testable axis rather than silently changing the prior
+  ## every downstream rating shrinks toward.
+  league_levels <- character(0)
+  if (isTRUE(league_fe)) {
+    dm <- .spm_league_dummies(data, levels = NULL, min_n = league_min_n)
+    if (length(dm$cols) == 0) {
+      cli::cli_warn(paste(
+        "league_fe = TRUE but no usable league column (need {.field competition}",
+        "or {.field league} with >= 2 levels of {league_min_n}+ rows); fitting without it."))
+    } else {
+      data <- dm$data
+      league_levels <- dm$levels
+      predictor_cols <- c(predictor_cols, dm$cols)
+      unpenalized_cols <- c(unpenalized_cols, dm$cols)
+      progress_msg(sprintf("League FE: %d levels (reference held out), unpenalized",
+                            length(dm$levels)))
+    }
+  }
+
+  ## Opponent-strength control (opt-in). Same rationale as league_shares/
+  ## league_fe above: a control, not a skill, entered unpenalized so elastic
+  ## net can't shrink it away exactly where it matters (players who face
+  ## systematically weaker/stronger opposition). Caller pre-joins a single
+  ## numeric `opponent_elo` column onto `data` (minutes-weighted average
+  ## opponent Elo per player, from compute_match_elos()).
+  if (isTRUE(opponent_elo)) {
+    if (!"opponent_elo" %in% names(data)) {
+      cli::cli_abort(c(
+        "opponent_elo = TRUE but no {.field opponent_elo} column on the data.",
+        "i" = "Join it on by player_id before calling {.fn fit_spm_opta}.",
+        "x" = "Fitting without it would silently drop the opponent-strength control."
+      ))
+    }
+    if (anyNA(data$opponent_elo)) {
+      cli::cli_abort("opponent_elo column has NA values - impute before fitting.")
+    }
+    predictor_cols <- c(predictor_cols, "opponent_elo")
+    unpenalized_cols <- c(unpenalized_cols, "opponent_elo")
+    progress_msg("Opponent Elo: 1 column, unpenalized")
+  }
+
+  penalty_factor <- if (length(unpenalized_cols) > 0) {
+    stats::setNames(rep(0, length(unpenalized_cols)), unpenalized_cols)
+  } else {
+    NULL
+  }
 
   # NA-safety for the widened `_per90` selection: fit_spm_model() keeps only
   # complete.cases rows, so an un-imputed NA xMetrics column would silently
@@ -759,14 +969,22 @@ fit_spm_opta <- function(data, alpha = 0.5, nfolds = 10,
 
   progress_msg(sprintf("Fitting Opta SPM with %d features", length(predictor_cols)))
 
-  fit_spm_model(
+  fit <- fit_spm_model(
     data = data,
     predictor_cols = predictor_cols,
     alpha = alpha,
     nfolds = nfolds,
     weight_by_minutes = weight_by_minutes,
-    weight_transform = weight_transform
+    weight_transform = weight_transform,
+    penalty_factor = penalty_factor
   )
+
+  ## Stash the levels so calculate_spm_ratings() can rebuild identical dummies
+  ## at predict time. Without this the predict matrix would be missing columns
+  ## the model was fitted on, which errors rather than silently mispredicting --
+  ## but only if someone reaches predict, so store it at fit time.
+  fit$panna_metadata$league_levels <- league_levels
+  fit
 }
 
 

@@ -94,7 +94,7 @@ if (!is.null(seasonal_results$seasonal_rapm) && nrow(seasonal_results$seasonal_r
     slice_max(total_minutes, n = 1, with_ties = FALSE) %>%
     ungroup() %>%
     transmute(!!dedup_key := .data[[dedup_key]],
-              rapm_raw = rapm, rapm_raw_offense = offense, rapm_raw_defense = -defense)
+              rapm_raw = rapm, rapm_raw_offense = offense, rapm_raw_defense = defense)
   message(sprintf("  Raw RAPM players: %d", nrow(seasonal_rapm_raw)))
 } else {
   warning("seasonal_rapm not found in ratings cache — rapm_raw columns will be absent from panna_ratings.parquet",
@@ -133,11 +133,11 @@ message(sprintf("  Derived total_minutes for %d players from %s (season %s)",
 
 # Join + compute ranks. Sign convention for the published file: POSITIVE =
 # good for both offense and defense (matches torpverse, NBA RAPM, and
-# consumer intuition). Internally the model treats `defense` as "additive
-# contribution to opponent xG" where negative = good defender; we flip the
-# sign here so the blog shows `defense` as "defensive value added (xG
-# suppression per 90)" — positive = good. `panna` is unchanged because
-# panna = offense - defense_internal = offense + defense_published.
+# consumer intuition). Since 2026-09-03 this is ALSO the internal convention
+# (extract_rapm_ratings()/extract_xrapm_ratings() negate at extraction time),
+# so no export-boundary flip happens here any more — `defense` already means
+# "defensive value added (xG suppression per 90)", positive = good, straight
+# from the cache. `xrapm = offense + defense` (additive, both positive=good).
 #
 # Minimum-minutes threshold for the panna_rank leaderboard. Without this,
 # low-sample players (e.g., Salah at 500 cache-minutes-bug with xrapm=0.26)
@@ -194,7 +194,6 @@ panna_ratings <- panna_ratings %>%
     total_minutes,
     panna_percentile
   ) %>%
-  mutate(defense = -defense) %>%
   mutate(across(c(panna, offense, defense, spm_overall,
                   rapm_raw, rapm_raw_offense, rapm_raw_defense), ~round(.x, 4))) %>%
   arrange(panna_rank)
@@ -351,6 +350,24 @@ if (!file.exists(fixture_results_path)) {
     latest <- max(played$season_end_year, na.rm = TRUE)
     played <- played %>% filter(season_end_year == latest)
   }
+
+  # UEFA cup qualifying rounds (Jul/Aug) share the same "UCL"/"UEL"/"UECL"
+  # league code as the league phase (Sep onward) in Opta's raw feed, so the
+  # filter above counts them as league-phase games. Exclude them here using
+  # the same month-based cut compute_league_offsets() already applies to
+  # keep qualifiers out of cross-league Elo calibration (R/league_offsets.R,
+  # `.is_q <- league %in% c("UCL","UEL","UECL") & month(match_date) < 9`).
+  # Without this, a team that had to qualify (e.g. Fenerbahce, Bodo/Glimt)
+  # shows games_played/current_points inflated by its qualifying legs on
+  # the blog's leagues.qmd Projected tab, while a direct league-phase
+  # entrant's numbers are correct — caught 2026-09-10.
+  is_cup_qualifier <- played$league %in% c("UCL", "UEL", "UECL") &
+    as.integer(format(suppressWarnings(as.Date(substr(played$match_date, 1, 10))), "%m")) < 9L
+  n_qualifiers <- sum(is_cup_qualifier, na.rm = TRUE)
+  if (n_qualifiers > 0) {
+    message(sprintf("  Excluding %d UEFA cup qualifying-round match(es) from standings", n_qualifiers))
+  }
+  played <- played[!is_cup_qualifier | is.na(is_cup_qualifier), ]
 
   message(sprintf("  Played matches (current season): %d", nrow(played)))
 

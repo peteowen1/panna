@@ -4,7 +4,13 @@
 \alias{build_prior_vector}
 \title{Build prior vector for RAPM from SPM predictions}
 \usage{
-build_prior_vector(spm_data, spm_col, player_mapping, default = 0)
+build_prior_vector(
+  spm_data,
+  spm_col,
+  player_mapping,
+  default = 0,
+  negate = FALSE
+)
 }
 \arguments{
 \item{spm_data}{Data frame with player_name and the SPM column to use}
@@ -14,6 +20,19 @@ build_prior_vector(spm_data, spm_col, player_mapping, default = 0)
 \item{player_mapping}{Data frame with player_id and player_name from RAPM}
 
 \item{default}{Value for players without SPM prediction (default 0)}
+
+\item{negate}{Negate the matched values before returning (default FALSE).
+Sign convention (Pete, 2026-09-04): \code{fit_rapm_with_prior()}'s internal
+fitting math (\code{y_adjusted <- y - X \%*\% prior_vec}, \code{beta_final <- gamma + prior_vec}) needs \code{defense_prior} on the RAW internal scale (bad =
+positive) -- unaffected by the extraction-time sign flip in
+\code{extract_rapm_ratings()}/\code{extract_xrapm_ratings()}. But \code{defense_spm}
+(the SPM column this is normally called with for a defense prior) is
+trained against the PUBLISHED \code{defense} column (positive = good) via
+\verb{05_spm.R}'s \code{defense_train <- spm_train_data \%>\% mutate(rapm = defense)}, so it comes out on the FLIPPED scale. Every defense-prior
+call site must pass \code{negate = TRUE} to convert back to the raw scale
+\code{fit_rapm_with_prior()} expects. Safe with the default=0 used by every
+caller (0 negates to 0); if a caller ever passes a nonzero \code{default},
+revisit whether it also needs negating.}
 }
 \value{
 Named vector of priors keyed by player_id
@@ -29,6 +48,12 @@ offense_prior <- build_prior_vector(
   spm_data = offense_spm_ratings,
   spm_col = "offense_spm",
   player_mapping = rapm_data$player_mapping
+)
+defense_prior <- build_prior_vector(
+  spm_data = defense_spm_ratings,
+  spm_col = "defense_spm",
+  player_mapping = rapm_data$player_mapping,
+  negate = TRUE
 )
 }
 }

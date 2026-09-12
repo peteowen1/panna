@@ -32,6 +32,20 @@ for (e in exports) {
   out_path <- file.path(extdata_dir, e$file)
   out <- export_spm_coefficients_csv(e$model, out_path)
   cat(sprintf("wrote %s: %d non-zero features (%s)\n", out_path, nrow(out), e$label))
+
+  # These CSVs are the LIVE per-match scoring contract (panna#173). If the model
+  # was fitted with league minutes-share controls, their coefficients are in
+  # here too, and any consumer that does not supply an lgshare_* value is
+  # scoring that player at the reference level - silently, because a missing
+  # column in a coefficient join reads as "no contribution" rather than as an
+  # error. Say so at export time; that is the only moment both sides are visible.
+  lg <- grep("^lgshare_", out$feature %||% out[[1]], value = TRUE)
+  if (length(lg) > 0) {
+    cat(sprintf("  !! %d league-share coefficients exported (%s ...).\n",
+                length(lg), paste(utils::head(lg, 3), collapse = ", ")))
+    cat("     Live scoring MUST join a player's minutes shares or it prices\n")
+    cat("     every one of them at the reference league.\n")
+  }
 }
 
 cat("\nDone.\n")

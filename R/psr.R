@@ -184,7 +184,50 @@
 #'   \code{compute_match_level_opta_stats}).
 #' @param ref_dates Character or Date vector of dates to estimate skills at.
 #' @param decay_params Decay parameters (default: \code{get_default_decay_params()}).
-#' @param min_weighted_90s Minimum weighted 90s for inclusion (default 3).
+#' @param min_weighted_90s The estimator's REGRESSION threshold, not an
+#'   inclusion gate (default 3). Shrinkage toward the prior is what handles
+#'   thin samples -- see \code{estimate_player_skills} and the note at
+#'   \code{data-raw/estimated-skills/02_estimate_skills.R:23}. Do NOT use this
+#'   to trim output rows; that is \code{output_min_w90}.
+#' @param output_min_w90 Drop rows from each per-date snapshot whose
+#'   \code{weighted_90s} is below this (default 0 = keep every row). This is a
+#'   pure memory lever for callers that only need active players at each date.
+#'   \strong{Leave it at 0 for anything that trains a model.} Setting it to 3
+#'   for all callers on 2026-09-01 (456d8329) dropped
+#'   \code{07_train_psr_model.R}'s skill coverage from 100.0% to 84.7%: the
+#'   trimmed players still have player-match rows, so they matched no skill row,
+#'   and step 07 imputes missing skills to 0 -- which attenuates every
+#'   coefficient. That commit's claim that "every consumer joins on
+#'   (player_id, exact date), so the dropped rows were never read" was wrong;
+#'   step 07 reads exactly those rows. Its coverage guard caught it.
+#' @param stream_dir If supplied, write each date's full (uncoverage-filtered)
+#'   snapshot to \code{file.path(stream_dir, "<date>.rds")} as soon as it's
+#'   computed, freeing it from R's memory immediately, instead of
+#'   accumulating all dates in a single in-memory list (default \code{NULL} =
+#'   old in-memory behaviour, unchanged). This is a MEMORY lever, orthogonal to
+#'   \code{output_min_w90} -- it changes WHERE full-coverage results live, not
+#'   WHICH rows exist, so it carries none of \code{output_min_w90}'s coverage
+#'   risk. Added 2026-09-04: at full multi-season history (~684 weekly dates x
+#'   ~47k players x ~142 stats), the in-memory list alone peaks at 70GB+,
+#'   which does not reliably fit alongside other load on a shared machine (two
+#'   observed OOM near-misses the same night). \code{stream_dir} bounds peak
+#'   memory to roughly one date's snapshot regardless of history length. The
+#'   directory is NOT cleaned up by this function on success -- the caller owns
+#'   that (orphaned chunks from a previous run ARE cleared at entry, see below).
+#'
+#'   \strong{Do not point two concurrent runs at the same \code{stream_dir}.}
+#'   For resume to work the caller must pass a STABLE path (a
+#'   \code{tempfile()} is unique per R session and would never be found again),
+#'   which means two overlapping invocations would share one checkpoint and
+#'   clobber each other's state. `07_train_psr_model.R`'s outfield and GK
+#'   paths deliberately use two different directories for this reason; an
+#'   accidental double-dispatch of the whole script is the case to avoid.
+#' @param source_fingerprint Optional caller-supplied value folded into the
+#'   checkpoint fingerprint -- e.g. \code{file.mtime()}/\code{file.size()} of
+#'   the file \code{match_stats} was read from. The count-based fingerprint
+#'   cannot see a data change that preserves n_rows/n_players/n_dates and the
+#'   date sum; passing this closes most of that gap for a few bytes. Optional
+#'   because not every caller has a single source file.
 #' @param keep_players Optional data.frame/data.table whose first two columns are
 #'   \code{date} and \code{player_id}, restricting each date's OUTPUT to the
 #'   players a caller actually needs. The running sums still cover every player
@@ -195,14 +238,39 @@
 #'   chunking pays that copy once per chunk instead of once in total.
 #' @param verbose Print progress (default TRUE).
 #'
-#' @return Named list of data.tables (one per ref_date), keyed by date string.
-#'   Each table has one row per player with skill columns.
+#' @return Named list keyed by date string. Each element is a data.table (one
+#'   row per player with skill columns) when \code{stream_dir} is
+#'   \code{NULL}, or the file path it was streamed to (a length-1 character
+#'   string) when \code{stream_dir} is supplied -- use
+#'   \code{.read_skill_chunk()} to transparently handle either case.
 #' @keywords internal
 .estimate_prematch_skills_batch <- function(match_stats, ref_dates,
                                             decay_params = NULL,
                                             min_weighted_90s = 3,
                                             keep_players = NULL,
+                                            output_min_w90 = 0,
+                                            stream_dir = NULL,
+                                            source_fingerprint = NULL,
                                             verbose = TRUE) {
+  if (!is.null(stream_dir) && !dir.exists(stream_dir)) {
+    dir.create(stream_dir, recursive = TRUE)
+  }
+  checkpoint_path <- if (!is.null(stream_dir)) file.path(stream_dir, "_checkpoint.rds") else NULL
+  # Self-clean orphaned chunks. A checkpoint is deleted the moment the batch
+  # completes, so chunks present WITHOUT one are leftovers from a run that
+  # finished the batch and then died (or stopped) before its caller consumed
+  # them -- stale, never resumable, and safe to clear. Chunks WITH a
+  # checkpoint are live resume state and are never touched here.
+  if (!is.null(stream_dir) && !file.exists(checkpoint_path)) {
+    stale <- list.files(stream_dir, pattern = "\\.rds$", full.names = TRUE)
+    if (length(stale) > 0) {
+      if (verbose) {
+        progress_msg(sprintf("Clearing %d orphaned skill chunk(s) from a prior run (no checkpoint present)",
+                              length(stale)))
+      }
+      unlink(stale)
+    }
+  }
   if (is.null(decay_params)) decay_params <- get_default_decay_params()
   # keep_players: optional data.frame(date, player_id) restricting each date's
   # OUTPUT to the players a caller actually needs. The running sums still cover
@@ -427,10 +495,64 @@
 
   cursor <- 0L
 
-  for (i in seq_along(ref_dates)) {
+  # === RESUME FROM CHECKPOINT, if one exists and matches this exact run ===
+  # A fingerprint of the inputs (not the data itself -- too expensive to hash
+  # 8.9M rows) guards against silently resuming a checkpoint from a DIFFERENT
+  # match_stats/ref_dates/decay_params than this call is using; a mismatch
+  # falls back to a full restart rather than risk building on wrong state.
+  resume_from <- 1L
+  # decay_params is embedded WHOLE (it's a small list of scalars + per-stat
+  # lookups, a few KB) rather than summarised: resuming a checkpoint built
+  # under different decay settings would splice two different computations
+  # together silently -- the running sums up to the resume point would carry
+  # the OLD decay while every date after it uses the NEW one, with no error
+  # and no visible symptom. Counts alone can't see that (decay_params doesn't
+  # change n_rows/n_players/n_dates), which is exactly why they aren't enough.
+  fingerprint <- list(n_rows = nrow(dt), n_players = n_players, n_dates = n_dates,
+                      ref_dates_sum = sum(ref_dates_num),
+                      min_weighted_90s = min_weighted_90s,
+                      output_min_w90 = output_min_w90,
+                      decay_params = decay_params,
+                      source_fingerprint = source_fingerprint)
+  if (!is.null(checkpoint_path) && file.exists(checkpoint_path)) {
+    cp <- tryCatch(readRDS(checkpoint_path), error = function(e) {
+      # A truncated/corrupt RDS (e.g. from a killed process -- exactly the
+      # scenario this checkpoint feature exists to survive) previously fell
+      # through to the SAME "starting fresh" path as a fingerprint-mismatched
+      # checkpoint, but silently: the `!is.null(cp)` guard below only logs
+      # when readRDS() succeeded, so a read failure printed nothing at any
+      # verbosity, hiding exactly why an expensive job restarted from scratch
+      # (silent-failure-hunter finding, panna#F1 PR, 2026-09-11).
+      if (verbose) {
+        progress_msg(sprintf("Checkpoint unreadable (%s) -- starting fresh.",
+                              conditionMessage(e)))
+      }
+      NULL
+    })
+    if (.psr_checkpoint_usable(cp, fingerprint, n_dates)) {
+      run_rate <- cp$run_rate
+      run_eff <- cp$run_eff
+      run_w90 <- cp$run_w90
+      cursor <- cp$cursor
+      resume_from <- cp$i + 1L
+      for (k in seq_len(cp$i)) {
+        chunk_path <- file.path(stream_dir, paste0(as.character(ref_dates[k]), ".rds"))
+        if (file.exists(chunk_path)) results[[k]] <- chunk_path
+      }
+      if (verbose) {
+        progress_msg(sprintf("Resuming from checkpoint: %d/%d dates already done", cp$i, n_dates))
+      }
+    } else if (!is.null(cp) && verbose) {
+      progress_msg(sprintf("Checkpoint found but unusable: %s -- starting fresh.",
+                            .psr_checkpoint_reject_reason(cp, fingerprint, n_dates)))
+    }
+  }
+
+  for (i in seq_len(n_dates)) {
+    if (i < resume_from) next  # already done, restored from checkpoint above
     rd <- ref_dates[i]
 
-    if (verbose && (i %% 50 == 0 || i == 1 || i == n_dates)) {
+    if (verbose && (i %% 50 == 0 || i == 1 || i == n_dates || i == resume_from)) {
       progress_msg(sprintf("  Date %d/%d: %s", i, n_dates, rd))
     }
 
@@ -596,7 +718,7 @@
         data.table::set(result, j = sc, value = eff_skill_vals[[sc]][sel])
       }
 
-      result
+      if (output_min_w90 > 0) result[weighted_90s >= output_min_w90] else result
       }
       }  # end else (has prior data)
     },
@@ -604,10 +726,116 @@
       if (verbose) cat(sprintf("  ERROR at %s: %s\n", rd, e$message))
       NULL
     })
+
+    # Streaming mode: write this date's full snapshot to disk immediately and
+    # replace the in-memory copy with its path, so peak memory stays bounded
+    # to ~one date's snapshot regardless of how many ref_dates there are. See
+    # the stream_dir docs above -- this is unrelated to output_min_w90 and
+    # carries none of its coverage risk (every row is still written, just not
+    # all kept in RAM at once).
+    if (!is.null(stream_dir) && !is.null(results[[i]])) {
+      chunk_path <- file.path(stream_dir, paste0(as.character(rd), ".rds"))
+      saveRDS(results[[i]], chunk_path)
+      results[[i]] <- chunk_path
+    }
+
+    # Checkpoint the running-sum state every 25 dates, so a kill mid-run loses
+    # at most ~25 dates of recomputation rather than the whole history. Cheap
+    # relative to a single date's own cost (a few small matrices/vectors, not
+    # the ~47k-player-wide result table).
+    if (!is.null(checkpoint_path) && i %% 25 == 0) {
+      saveRDS(list(fingerprint = fingerprint, run_rate = run_rate, run_eff = run_eff,
+                   run_w90 = run_w90, cursor = cursor, i = i),
+              checkpoint_path)
+    }
   }
+
+  if (!is.null(checkpoint_path) && file.exists(checkpoint_path)) unlink(checkpoint_path)
 
   # Drop NULLs
   results[!vapply(results, is.null, logical(1))]
+}
+
+
+#' Read a pre-match skill snapshot, transparently handling streamed chunks
+#'
+#' \code{.estimate_prematch_skills_batch(stream_dir = )} returns a file path
+#' (character length-1) in place of each data.table element. Callers that
+#' need to work with either mode (streaming or the old in-memory list) should
+#' route every read through this helper rather than assuming the element is
+#' already a data.table.
+#'
+#' @param x One element of \code{.estimate_prematch_skills_batch()}'s
+#'   returned list: either a data.table/data.frame (in-memory mode) or a
+#'   length-1 character file path (streaming mode). \code{NULL} passes
+#'   through unchanged.
+#' @return The data.table for that date, or \code{NULL}.
+#' @keywords internal
+.read_skill_chunk <- function(x) {
+  if (is.null(x)) return(NULL)
+  if (is.character(x) && length(x) == 1L) return(readRDS(x))
+  x
+}
+
+
+#' Decide whether a loaded checkpoint may be resumed from
+#'
+#' Split out of \code{.estimate_prematch_skills_batch()} so the decision that
+#' gates resuming can be tested directly -- accepting a checkpoint built from
+#' DIFFERENT inputs silently splices two computations together (running sums
+#' from one set of inputs, later dates from another) with no error and no
+#' visible symptom, so this is the single most consequential branch in the
+#' streaming/resume path.
+#'
+#' @param cp The deserialized checkpoint (or \code{NULL} if it was missing or
+#'   unreadable).
+#' @param fingerprint The fingerprint computed for the CURRENT call.
+#' @param n_dates Number of ref_dates in the current call, used to reject a
+#'   checkpoint whose recorded position can't apply to this run.
+#' @return \code{TRUE} only if the checkpoint is structurally complete and
+#'   its fingerprint matches exactly.
+#' @keywords internal
+.psr_checkpoint_usable <- function(cp, fingerprint, n_dates) {
+  isTRUE(.psr_checkpoint_reject_reason(cp, fingerprint, n_dates) == "")
+}
+
+
+#' Why a checkpoint was rejected (empty string = usable)
+#'
+#' Split from \code{.psr_checkpoint_usable()} so a resume failure logs the
+#' ACTUAL reason. The message used to say "fingerprint mismatch"
+#' unconditionally, which is misleading when the real cause was a truncated
+#' checkpoint or an out-of-range position -- exactly the situation where
+#' someone reading the log is trying to work out why a long run restarted
+#' from scratch.
+#'
+#' @inheritParams .psr_checkpoint_usable
+#' @return Empty string if usable, else a short human-readable reason.
+#' @keywords internal
+.psr_checkpoint_reject_reason <- function(cp, fingerprint, n_dates) {
+  if (is.null(cp) || !is.list(cp)) return("unreadable or not a list")
+  required <- c("fingerprint", "run_rate", "run_eff", "run_w90", "cursor", "i")
+  missing <- setdiff(required, names(cp))
+  if (length(missing) > 0) {
+    return(sprintf("incomplete (missing %s)", paste(missing, collapse = ", ")))
+  }
+  if (!identical(cp$fingerprint, fingerprint)) {
+    # Union of both key sets, not just the current fingerprint's: a field
+    # present in one and absent in the other (e.g. a checkpoint written
+    # before source_fingerprint existed) is exactly the case worth naming.
+    keys <- union(names(fingerprint), names(cp$fingerprint))
+    changed <- keys[!vapply(keys, function(k)
+      identical(cp$fingerprint[[k]], fingerprint[[k]]), logical(1))]
+    return(sprintf("inputs changed (%s)",
+                   if (length(changed)) paste(changed, collapse = ", ") else "fingerprint differs"))
+  }
+  if (!is.numeric(cp$i) || length(cp$i) != 1L || is.na(cp$i)) {
+    return("position is not a single non-NA number")
+  }
+  if (cp$i < 1L || cp$i > n_dates) {
+    return(sprintf("position %s outside this run's 1..%d range", cp$i, n_dates))
+  }
+  ""
 }
 
 
@@ -1430,6 +1658,190 @@ compute_player_psv <- function(player_match_stats, min_adjust = TRUE,
 # ============================================================================
 # Coefficient loading
 # ============================================================================
+
+#' Load the bundled PSV position-calibration table
+#'
+#' Reads \code{inst/extdata/psv_calibration.csv}: per-position factors that put
+#' PSV from every position on a common goals footing. Missing file returns an
+#' empty table and warns, so callers degrade to uncalibrated rather than error.
+#'
+#' @return A data.table with \code{axis}, \code{level}, \code{factor} (the
+#'   shipped, scale-preserving multiplier), \code{slope} (duplicate of
+#'   \code{factor} for interface parity with \code{load_psr_calibration}),
+#'   \code{se}, \code{n_obs}, and \code{slope_raw} (the un-normalised fitted
+#'   slope \code{factor} was derived from -- see
+#'   \code{\link{apply_psv_calibration}} for why the raw slope is not what's
+#'   applied).
+#' @seealso \code{\link{apply_psv_calibration}}
+#' @keywords internal
+load_psv_calibration <- function() {
+  path <- system.file("extdata", "psv_calibration.csv", package = "panna")
+  if (path == "") {
+    cli::cli_warn(c(
+      "PSV calibration table not found: {.file psv_calibration.csv}",
+      "i" = "PSV will be returned uncalibrated (all factors 1)."
+    ))
+    return(data.table::data.table(axis = character(0), level = character(0),
+                                   factor = numeric(0)))
+  }
+  data.table::as.data.table(utils::read.csv(path, stringsAsFactors = FALSE))
+}
+
+#' Apply the PSV position calibration
+#'
+#' Multiplies \code{psv} (and \code{osv}/\code{dsv} when present, so
+#' \code{osv + dsv == psv} is preserved) by that player's position factor.
+#'
+#' \strong{Apply this BEFORE the league offsets, not after.} This LOOKS like it
+#' contradicts the project's general calibration-ordering rule (see
+#' \code{docs/reference/RATING_CALIBRATION.md}: PSR calibrates \emph{after} its
+#' additive league offset, because scaling first was measured to leave the
+#' offset itself uncalibrated). PSV's case is different in a way that flips the
+#' correct order: PSR's offset is a separately-estimated additive constant that
+#' does not depend on PSR's own scale, so PSR can be scaled either side of it.
+#' PSV's league offsets are not separate -- they are \code{compute_psr_league_offsets()}
+#' -> \code{build_league_network(value_col = "psv")}, i.e. \emph{derived from PSV
+#' itself}. Calibrating after that derivation would leave the offsets estimated
+#' on uncalibrated input, which is the one ordering the general rule exists to
+#' rule out. In step 06 the sequence is: strip \code{psv_league_offset} ->
+#' \code{apply_psv_calibration()} -> \code{compute_psr_league_offsets()}. Do not
+#' iterate: feeding offset-adjusted PSV back into the network makes each cycle
+#' estimate the residual of its own previous output.
+#'
+#' \strong{The position column must be a RESOLVED position, not the per-match
+#' role.} Opta records \code{position == "Substitute"} for anyone appearing off
+#' the bench -- roughly 29\% of game-log rows as measured 2026-09 (an absolute
+#' count would already be stale given the daily Opta scrape; re-measure rather
+#' than trust a cached number). Bucketing on that field puts a blend of every
+#' position into one group and biases the outfield factors. Resolve each
+#' player's modal non-Substitute position first (per season, career fallback);
+#' the factors shipped here were derived that way.
+#'
+#' Factors come from a \strong{leak-free} fit -- season S-1 PSV predicting season
+#' S match outcomes, 450-minute prior gate. Fitting them against the same match's
+#' goal difference is tautological for PSV (a keeper's PSV is built from that
+#' match's saves and goals conceded) and inverts them.
+#'
+#' \strong{The shipped factors are SCALE-PRESERVING}: the raw fitted slopes
+#' (\code{slope_raw}: GK 0.7847, DEF 1.3627, MID 1.5804, FWD 1.9319) are divided
+#' by their minute-weighted mean (1.4833) so the overall PSV level is unchanged
+#' and only the relative position weighting moves. That matters because these
+#' offsets are ADDED to PSR at full strength on the assumption that PSV and PSR
+#' share units. Using the raw slopes inflates all of PSV ~1.5x and every league
+#' offset with it -- which looks like a large correction (+55\% on weak leagues)
+#' but is a units artefact. The genuine differential effect on the offsets is
+#' about \strong{+4.6\%}; the real payoff of this table is to PSV itself, where it
+#' cuts goalkeeper share of the top 1\% from 4.2x the population rate to ~0.2x.
+#'
+#' \strong{These figures are a point-in-time measurement (2026-09), not an
+#' enforced invariant} -- there is no checked-in script that regenerates
+#' \code{psv_calibration.csv} yet (unlike \code{07d_derive_psv_gd_scale.R} for
+#' \code{\link{PSV_RELIABILITY_GD_SCALE}}). If the PSR/PSV coefficients are ever
+#' retrained, re-derive these factors rather than assume they still hold.
+#'
+#' @param psv_dt A data.frame/data.table with \code{psv} and a position column.
+#' @param position_col Name of the resolved-position column. Default
+#'   \code{"pos_grp"}; \code{"primary_position"} and \code{"position"} are used as
+#'   fallbacks when present.
+#' @param calibration Calibration table; defaults to \code{\link{load_psv_calibration}}.
+#'
+#' @return \code{psv_dt} with \code{psv} (and \code{osv}/\code{dsv}) scaled, and
+#'   an attribute \code{panna_psv_calibrated = TRUE}.
+#' @seealso \code{\link{load_psv_calibration}}, \code{\link{compute_psr_league_offsets}}
+#' @family psr
+#' @export
+apply_psv_calibration <- function(psv_dt, position_col = "pos_grp",
+                                   calibration = load_psv_calibration()) {
+  dt <- data.table::as.data.table(psv_dt)
+  if (is.null(calibration) || NROW(calibration) == 0 || nrow(dt) == 0) return(dt)
+  if (isTRUE(attr(psv_dt, "panna_psv_calibrated"))) {
+    cli::cli_abort(c(
+      "These PSV values have already been calibrated.",
+      "x" = "Applying the position factors twice would square them.",
+      "i" = "Call {.fn apply_psv_calibration} once, before the league offsets."
+    ))
+  }
+  pc <- position_col
+  if (!pc %in% names(dt)) {
+    pc <- intersect(c("pos_grp", "primary_position", "position"), names(dt))[1]
+    if (is.na(pc)) cli::cli_abort("No position column found for PSV calibration.")
+  }
+  pos <- .psv_position_group(dt[[pc]])
+  cal <- calibration[axis == "position"]
+  fac <- stats::setNames(cal$factor, cal$level)
+  f <- unname(fac[pos])
+  f[is.na(f)] <- 1                       # unknown position passes through, as PSR does
+  for (col in intersect(c("psv", "osv", "dsv"), names(dt))) {
+    data.table::set(dt, j = col, value = as.numeric(dt[[col]]) * f)
+  }
+  data.table::setattr(dt, "panna_psv_calibrated", TRUE)
+  dt[]
+}
+
+#' Resolve each row's position group, ignoring the "Substitute" match role
+#'
+#' Opta's \code{position} is the player's role IN THAT MATCH, so anyone appearing
+#' off the bench is recorded as \code{"Substitute"} — 394,248 rows in
+#' \code{01_match_stats.rds}, ~29\% of game-log rows. Bucketing on it directly
+#' puts a blend of every position into one group. This takes each player's modal
+#' NON-Substitute position (minute-weighted, per season, career fallback, then
+#' the row's own label as a last resort) and returns the calibration's groups.
+#'
+#' @param dt data.frame/data.table with \code{player_id}, \code{position} and,
+#'   ideally, \code{season_end_year} and \code{total_minutes}.
+#' @return Character vector of \code{"GK"}/\code{"DEF"}/\code{"MID"}/\code{"FWD"}/\code{NA},
+#'   one per row of \code{dt}.
+#' @keywords internal
+resolve_position_group <- function(dt) {
+  d <- data.table::as.data.table(dt)
+  if (!"position" %in% names(d) || !"player_id" %in% names(d)) {
+    cli::cli_abort("resolve_position_group needs {.field player_id} and {.field position}.")
+  }
+  w <- if ("total_minutes" %in% names(d)) as.numeric(d$total_minutes) else rep(1, nrow(d))
+  real <- data.table::data.table(player_id = d$player_id, position = as.character(d$position),
+                                  w = data.table::fifelse(is.na(w), 0, w))
+  if ("season_end_year" %in% names(d)) real[, season_end_year := d$season_end_year]
+  real <- real[!is.na(position) & !position %in% c("Substitute", "")]
+  pick <- function(pos, wt) { t <- tapply(wt, pos, sum, na.rm = TRUE); names(t)[which.max(t)] }
+  career <- real[, .(career_pos = pick(position, w)), by = player_id]
+  out <- data.table::data.table(player_id = d$player_id, row_pos = as.character(d$position))
+  if ("season_end_year" %in% names(real) && "season_end_year" %in% names(d)) {
+    seas <- real[, .(seas_pos = pick(position, w)), by = .(player_id, season_end_year)]
+    out[, season_end_year := d$season_end_year]
+    out <- merge(out, seas, by = c("player_id", "season_end_year"), all.x = TRUE, sort = FALSE)
+  } else out[, seas_pos := NA_character_]
+  out <- merge(out, career, by = "player_id", all.x = TRUE, sort = FALSE)
+  resolved <- data.table::fcoalesce(out$seas_pos, out$career_pos)
+  resolved[is.na(resolved) & !out$row_pos %in% c("Substitute", "")] <-
+    out$row_pos[is.na(resolved) & !out$row_pos %in% c("Substitute", "")]
+  .psv_position_group(resolved)
+}
+
+#' Bucket a position label into the calibration's position groups
+#'
+#' Accepts three input vocabularies, tried in order: an already-broad label
+#' (\code{GK}/\code{DEF}/\code{MID}/\code{FWD}, passed through); a raw Opta
+#' match-role string (\code{"Goalkeeper"}, \code{"Defender"}, ...), resolved via
+#' the canonical \code{\link{.simplify_position}} rather than a second hand-rolled
+#' mapping (review finding, panna#211: an earlier version of this function
+#' regex-matched the same vocabulary independently, which is exactly the kind of
+#' duplicated classifier this codebase's own gotchas warn drifts silently); or a
+#' 16-role \code{classify_role()} code (\code{"CB"}, \code{"DM"}, ...), resolved
+#' via \code{\link{.role16_to_broad}} -- needed because
+#' \code{apply_psv_calibration()}'s own fallback chain can hand this function a
+#' fine-grained \code{primary_position} (see \code{\link{.player_role}}'s
+#' comment: that column is "usually already broad... but [sometimes] a
+#' fine-grained label"). Anything none of the three recognize returns NA, which
+#' \code{apply_psv_calibration()} treats as factor 1 (uncalibrated passthrough).
+#' @keywords internal
+.psv_position_group <- function(p) {
+  p <- as.character(p)
+  broad <- data.table::fifelse(p %in% c("GK", "DEF", "MID", "FWD"), p, NA_character_)
+  raw <- .simplify_position(p)
+  role16 <- .role16_to_broad(toupper(p))
+  role16[role16 == "OTHER"] <- NA_character_   # only trust a POSITIVE 16-role match
+  data.table::fcoalesce(broad, raw, role16)
+}
 
 #' Load bundled PSR coefficients
 #'
