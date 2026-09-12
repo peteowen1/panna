@@ -1,7 +1,7 @@
-# panna 0.3.45 (dev)
+# panna 0.3.46 (dev)
 
-Version heading realigned to `DESCRIPTION` (0.3.45). As with the 0.3.26-0.3.31
-run before it, 0.3.33-0.3.44 were `gh pr create` hook bumps with no NEWS
+Version heading realigned to `DESCRIPTION` (0.3.46). As with the 0.3.26-0.3.31
+run before it, 0.3.33-0.3.45 were `gh pr create` hook bumps with no NEWS
 sections of their own -- the hook bumps the patch version at PR-creation time,
 so a session that opens several PRs advances the version several times without
 any of them being a release. The sections below cover the actual work.
