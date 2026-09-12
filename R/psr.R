@@ -1081,7 +1081,8 @@ calculate_psv <- function(player_match_stats, coef_df, min_adjust = TRUE,
     dt[, c("psv_raw", "psv") := 0]
     id_cols <- intersect(
       c("player_id", "player_name", "season", "round", "match_id",
-        "team_name", "match_date", "minutes_played", "total_minutes"),
+        "team_name", "match_date", "minutes_played", "total_minutes",
+        "position", "primary_position", "pos_grp"),
       names(dt)
     )
     return(dt[, c(id_cols, "psv_raw", "psv"), with = FALSE])
@@ -1234,7 +1235,7 @@ calculate_psv <- function(player_match_stats, coef_df, min_adjust = TRUE,
   id_cols <- intersect(
     c("player_id", "player_name", "season", "round", "match_id",
       "team_name", "match_date", "minutes_played", "total_minutes",
-      "position", "primary_position"),
+      "position", "primary_position", "pos_grp"),
     names(dt)
   )
 
@@ -1373,6 +1374,71 @@ calculate_psv_components <- function(player_match_stats, coef_df, osr_coef_df,
   if (is.null(r)) return(rep("OTHER", nrow(dt)))
   r <- toupper(r)
   r[is.na(r) | !r %in% c("GK", "DEF", "MID", "FWD")] <- "OTHER"
+  r
+}
+
+#' Position bucket for PSV calibration, pinned to the GK router
+#'
+#' A thin wrapper over \code{\link{resolve_position_group}} -- the canonical
+#' resolver, which already handles the hard part: Opta's \code{position} is the
+#' match ROLE, so roughly 29\% of match-grain rows read \code{"Substitute"}, and
+#' bucketing on that blends every position into one group. It resolves each
+#' player's minutes-weighted modal non-Substitute position per season, falls back
+#' to their career modal, and only then to the row's own label. Do NOT
+#' reimplement that here: a duplicated position classifier is exactly what
+#' \code{\link{.psv_position_group}}'s notes record going wrong before.
+#'
+#' What this adds is the one thing the resolver cannot know -- which MODEL scored
+#' the row.
+#'
+#' @section Why the bucket is pinned to the GK router:
+#' A calibration factor is only meaningful against the model it was fitted on, so
+#' the bucket must describe the scoring path, not the player's true position.
+#' \code{is_gk} therefore wins outright: a row the GK router sent to the outfield
+#' model must never receive the GK factor.
+#'
+#' That matters for one real case. \code{\link{.detect_gk_rows}} greps the row's
+#' own \code{position}, which reads \code{"Substitute"} for a keeper coming off
+#' the bench -- so substitute keepers (measured 2026-09: 3,756 rows, 0.184\%) are
+#' scored by the OUTFIELD model. Their resolved position is nonetheless GK, so
+#' without this pin they would take the GK factor onto an outfield-model score.
+#' They are returned as \code{NA} instead, which
+#' \code{\link{apply_psv_calibration}} treats as factor 1 -- honest, because
+#' their scoring path has no fitted factor. Callers should report that count
+#' rather than let it pass silently: it is a gap, not a known value.
+#'
+#' The tempting fix -- routing substitute keepers to the GK model -- is NOT safe
+#' here. \code{.detect_gk_rows()} also selects the GK TRAINING set in
+#' \code{07_train_psr_model.R}, deliberately, so train and serve route
+#' identically. Changing it at serve time alone would create a train/serve skew.
+#' That fix needs a coordinated step-07 retrain and is tracked separately.
+#'
+#' @param dt Table with \code{position} and \code{player_id}; \code{total_minutes}
+#'   and \code{season_end_year} improve the resolution when present.
+#' @param is_gk Logical vector marking rows routed to the GK sub-model; defaults
+#'   to the same detection the scorer uses.
+#' @return Character vector of GK/DEF/MID/FWD, or \code{NA} where unresolved.
+#'   \code{"GK"} appears if and only if \code{is_gk} is \code{TRUE}.
+#' @keywords internal
+.psv_pos_grp <- function(dt, is_gk = .detect_gk_rows(dt)) {
+  # resolve_position_group() aborts without these; PSV is still scoreable
+  # without a resolvable position, so degrade to "uncalibrated" not "failed".
+  if (!all(c("player_id", "position") %in% names(dt))) {
+    return(.psv_pin_gk(rep(NA_character_, nrow(dt)), is_gk))
+  }
+  .psv_pin_gk(resolve_position_group(dt), is_gk)
+}
+
+# Force the bucket to agree with the GK router, so pos_grp == "GK" exactly when
+# the row was scored by the GK sub-model. A GK-resolved row the router sent to
+# the outfield model (a substitute keeper) becomes NA rather than inheriting a
+# GK factor that does not apply to its score. See .psv_pos_grp()'s roxygen.
+.psv_pin_gk <- function(r, is_gk) {
+  r <- as.character(r)
+  if (length(is_gk) != length(r)) return(r)
+  is_gk[is.na(is_gk)] <- FALSE
+  r[is_gk] <- "GK"
+  r[!is_gk & !is.na(r) & r == "GK"] <- NA_character_
   r
 }
 
@@ -1590,6 +1656,15 @@ compute_player_psv <- function(player_match_stats, min_adjust = TRUE,
   # credit). Splitting also centers GKs vs GKs and outfield vs outfield.
   is_gk <- .detect_gk_rows(dt)
 
+  # Export the position bucket the position calibration keys on, stamped BEFORE
+  # the split below: the split scores the two groups separately and rbinds them,
+  # so a bucket derived afterwards would be computed on a table whose row order
+  # no longer matches the input. Passing `is_gk` pins the bucket to the model
+  # that actually scored each row, which is the only thing a fitted factor is
+  # valid against -- see .psv_pos_grp()'s roxygen for the substitute-keeper case
+  # this rules out.
+  dt[, pos_grp := .psv_pos_grp(dt, is_gk)]
+
   .score <- function(sub, tgt, model) {
     margin <- load_psr_coefficients("margin", target = tgt, model = model)
     osr <- tryCatch(load_psr_coefficients("offense", target = tgt, model = model),
@@ -1802,7 +1877,22 @@ resolve_position_group <- function(dt) {
                                   w = data.table::fifelse(is.na(w), 0, w))
   if ("season_end_year" %in% names(d)) real[, season_end_year := d$season_end_year]
   real <- real[!is.na(position) & !position %in% c("Substitute", "")]
-  pick <- function(pos, wt) { t <- tapply(wt, pos, sum, na.rm = TRUE); names(t)[which.max(t)] }
+  # Every row a substitute or blank leaves nothing to resolve FROM. Returning
+  # all-NA (which apply_psv_calibration treats as factor 1) is the honest answer;
+  # without this guard `pick()` hands data.table a NULL column and the whole call
+  # errors. That is not hypothetical: nine league-seasons (Primeira_Liga
+  # 2015-2016, Liga_MX, A_League, Super_Lig, Championship, all 2013-2016) carry a
+  # blank `position` on 100% of rows. A caller scoped to ONE league-season -- as
+  # the game-log export is -- hits it directly, and inside that export's
+  # per-league tryCatch an error silently drops the entire league.
+  if (nrow(real) == 0L) return(rep(NA_character_, nrow(d)))
+  # which.max() on an all-NA/empty tally returns integer(0) -> NULL in j, same
+  # failure one group down. Keep the return length at exactly 1.
+  pick <- function(pos, wt) {
+    t <- tapply(wt, pos, sum, na.rm = TRUE)
+    if (length(t) == 0L || all(is.na(t))) return(NA_character_)
+    names(t)[which.max(t)]
+  }
   career <- real[, .(career_pos = pick(position, w)), by = player_id]
   out <- data.table::data.table(player_id = d$player_id, row_pos = as.character(d$position))
   if ("season_end_year" %in% names(real) && "season_end_year" %in% names(d)) {

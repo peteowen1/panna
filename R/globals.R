@@ -384,6 +384,7 @@ utils::globalVariables(c(
   "match_status",
   "clean_name",
   "pos_group",
+  "pos_grp",
   "modal_pos",
   "goals_scored",
   "goals_conceded",

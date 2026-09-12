@@ -1207,3 +1207,97 @@ test_that("source_fingerprint participates in checkpoint validation", {
   expect_false(panna:::.psr_checkpoint_usable(.psr_test_checkpoint(fp_ckpt), fp_run, 20L))
   expect_true(panna:::.psr_checkpoint_usable(.psr_test_checkpoint(fp_run), fp_run, 20L))
 })
+
+# ---------------------------------------------------------------------------
+# PSV position calibration: position resolution + GK pinning (panna#211)
+# ---------------------------------------------------------------------------
+
+test_that("resolve_position_group returns all-NA instead of erroring when every row is a substitute", {
+  # Nine league-seasons (Primeira_Liga 2015-2016, Liga_MX, A_League, Super_Lig,
+  # Championship, all 2013-2016) carry a blank `position` on 100% of rows. A
+  # caller scoped to one league-season hits this directly, and an error there is
+  # swallowed by the game-log export's per-league tryCatch -- dropping the whole
+  # league rather than leaving it uncalibrated.
+  dt <- data.table::data.table(
+    player_id     = c("p1", "p1", "p2"),
+    position      = c("Substitute", "", "Substitute"),
+    total_minutes = c(10, 20, 30)
+  )
+  res <- resolve_position_group(dt)
+  expect_length(res, 3L)
+  expect_true(all(is.na(res)))
+})
+
+test_that("resolve_position_group still resolves when only SOME rows are substitutes", {
+  dt <- data.table::data.table(
+    player_id     = c("p1", "p1", "p1"),
+    position      = c("Defender", "Substitute", "Defender"),
+    total_minutes = c(90, 10, 90)
+  )
+  expect_equal(resolve_position_group(dt), rep("DEF", 3L))
+})
+
+test_that("resolve_position_group picks the MINUTES-weighted position, not the most frequent", {
+  # Three short cameos up front must not outvote one full season in midfield:
+  # counting rows would return FWD, weighting by minutes returns MID.
+  dt <- data.table::data.table(
+    player_id     = rep("p1", 5L),
+    position      = c("Striker", "Striker", "Striker", "Midfielder", "Midfielder"),
+    total_minutes = c(5, 5, 5, 90, 90)
+  )
+  expect_equal(unique(resolve_position_group(dt)), "MID")
+})
+
+test_that(".psv_pos_grp marks a substitute keeper NA rather than giving it the GK factor", {
+  # A keeper coming off the bench has position == "Substitute", so the GK router
+  # (.detect_gk_rows) sends the row to the OUTFIELD model. Its resolved position
+  # is still GK, so without pinning it would take the GK factor onto a score the
+  # factor was not fitted on.
+  dt <- data.table::data.table(
+    player_id     = c("gk1", "gk1", "out1"),
+    position      = c("Goalkeeper", "Substitute", "Defender"),
+    total_minutes = c(90, 20, 90)
+  )
+  is_gk <- panna:::.detect_gk_rows(dt)
+  expect_equal(is_gk, c(TRUE, FALSE, FALSE))
+
+  res <- panna:::.psv_pos_grp(dt, is_gk)
+  expect_equal(res[1], "GK")      # started, routed to the GK model
+  expect_true(is.na(res[2]))      # sub keeper: outfield-model score, no factor
+  expect_equal(res[3], "DEF")
+})
+
+test_that(".psv_pos_grp yields pos_grp == 'GK' exactly when the GK router fires", {
+  dt <- data.table::data.table(
+    player_id     = c("a", "b", "c", "d"),
+    position      = c("Goalkeeper", "Defender", "Substitute", "Striker"),
+    total_minutes = c(90, 90, 15, 90)
+  )
+  is_gk <- panna:::.detect_gk_rows(dt)
+  res <- panna:::.psv_pos_grp(dt, is_gk)
+  expect_equal(is_gk, !is.na(res) & res == "GK")
+})
+
+test_that(".psv_pos_grp degrades to NA rather than aborting when the position columns are absent", {
+  dt <- data.table::data.table(psv = c(1, 2))
+  res <- panna:::.psv_pos_grp(dt, is_gk = c(FALSE, FALSE))
+  expect_length(res, 2L)
+  expect_true(all(is.na(res)))
+})
+
+test_that("compute_player_psv returns pos_grp so the calibration can key on it", {
+  # The exported `position` column is the per-match LINEUP position, so a
+  # calibration keyed on it is a silent no-op. pos_grp must survive the GK
+  # split's rbind to be usable downstream.
+  skip_if_not(file.exists("../../data-raw/cache-skills/01_match_stats.rds"),
+              "match stats cache not available")
+  ms <- data.table::as.data.table(
+    readRDS("../../data-raw/cache-skills/01_match_stats.rds"))
+  sub <- ms[season == ms$season[1]][1:500]
+  out <- compute_player_psv(sub, min_adjust = FALSE, center = TRUE,
+                            scale_to_minutes = TRUE, exclude_efficiency = FALSE,
+                            target = "blend")
+  expect_true("pos_grp" %in% names(out))
+  expect_equal(sum(out$pos_grp == "GK", na.rm = TRUE),
+               sum(panna:::.detect_gk_rows(out)))
+})

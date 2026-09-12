@@ -91,8 +91,13 @@ build_player_game_ratings <- function(player_game_epv,
   # --- Merge PSV ---
   if (!is.null(player_game_psv)) {
     psv <- data.table::as.data.table(player_game_psv)
+    # pos_grp rides along because the PSV position calibration is applied
+    # downstream (after the league offsets, in 10b) and needs the bucket the
+    # scoring model actually used. Deriving it again later is not equivalent:
+    # the exported `position` column is the per-match LINEUP position, which
+    # reads "Substitute" on ~29% of rows.
     psv_cols <- intersect(
-      c("player_id", "match_id", "psv", "psv_raw", "osv", "dsv"),
+      c("player_id", "match_id", "psv", "psv_raw", "osv", "dsv", "pos_grp"),
       names(psv)
     )
     psv <- psv[, ..psv_cols]
