@@ -1,4 +1,4 @@
-# panna 0.3.40 (dev)
+# panna 0.3.41 (dev)
 
 Version heading realigned to `DESCRIPTION` (0.3.39). As with the 0.3.26-0.3.31
 run before it, 0.3.33-0.3.38 were `gh pr create` hook bumps with no NEWS
