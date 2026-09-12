@@ -165,21 +165,49 @@ held-out MSE) -
   (model feature `home_sum_panna`; note that file already half-migrates
   it at lines 191-223). Full audit + suggested names:
   `pannaverse/docs/reference/RATING-TIME-AGGREGATIONS.md`.
-- **CONVENTION: positive = good, everywhere** (Pete, 2026-09-03). Not
-  yet true of the code — RAPM/xRAPM `defense` and
-  `team_season_strength.parquet`’s `def_rating` are still
-  **negative=good** internally and flipped at 5 export sites
-  (`09_export_ratings.R:98`, `10_export_blog_data.R:97` and `:197`,
-  `12d_export_domestic_team_strength.R:578`,
-  `12_export_wc2026_blog.R:338`). EPV/PSV/WPA are already positive=good.
-  **Do not “just delete the minus signs”:** SPM features are
-  sign-*constrained* in the negative-good convention (`spm_opta.R:1079`,
-  `spm_model.R:239`, `03_skill_spm.R:255`), and `def_rating` is stored
-  on disk in the old sign, so a partial flip silently inverts ratings
-  while diagnostics still look sane. Migration plan:
+- **CONVENTION: positive = good, everywhere** (Pete, 2026-09-03).
+  **Landed 2026-09-11** (merged `dev`→`main` as part of panna PR \#235)
+  — RAPM/xRAPM `defense` and `team_season_strength.parquet`’s
+  `def_rating` now flip to positive=good at extraction
+  ([`extract_rapm_ratings()`](https://peteowen1.github.io/panna/reference/extract_rapm_ratings.md)/[`extract_xrapm_ratings()`](https://peteowen1.github.io/panna/reference/extract_xrapm_ratings.md)),
+  not at each of the 5 former export sites. EPV/PSV/WPA were already
+  positive=good. Migration plan:
   `pannaverse/docs/plans/SIGN-CONVENTION-POSITIVE-IS-GOOD.md`.
   `panna_ratings.parquet` shows `defense` as “defensive value added” (xG
   suppression per 90).
+  - **The flip landing in code is not the same as every on-disk file
+    being under the new convention** — this is exactly what went wrong
+    (panna#F1, 2026-09-07, fixed 2026-09-11). `career_panna.parquet`’s
+    release asset stayed on the pre-flip convention for 7 weeks after
+    the code changed to assume post-flip, and the inverted
+    `panna_defense` (elite defenders reading as the worst in the game)
+    reached the public blog for ~4 days. Fix: every parquet asset in
+    this family now carries a `sign_convention` column stamped at write
+    time (`TEAM_STRENGTH_SIGN_CONVENTION` for
+    `team_season_strength.parquet`, `CAREER_PANNA_SIGN_CONVENTION` for
+    `career_panna.parquet`/`career_panna_asof.parquet`, both
+    `R/constants.R`), asserted by every reader
+    ([`.assert_team_strength_sign_convention()`](https://peteowen1.github.io/panna/reference/dot-assert_team_strength_sign_convention.md)
+    in `R/psv_opponent.R`,
+    [`.assert_career_panna_sign_convention()`](https://peteowen1.github.io/panna/reference/dot-assert_career_panna_sign_convention.md)
+    in `R/career_rapm.R`) so a stale or unmarked file aborts loudly
+    instead of silently reading inverted. **When adding a new
+    positive=good-convention parquet export, give it the same tag+assert
+    pattern from day one** — don’t wait for a live incident to add it.
+  - `career_panna_asof.parquet` (the predictions-pipeline’s
+    point-in-time model-feature file) was regenerated and republished
+    2026-09-12 via `data-raw/estimated-skills/09b_career_panna_asof.R`
+    (158 monthly snapshots, 3.1M rows, ~70 min) and is now correctly
+    tagged. Both files in this family are therefore on the post-flip
+    convention.
+  - **Ordering trap, learned the hard way:** publish the artifact only
+    AFTER the code that stamps its `sign_convention` exists. The
+    2026-09-11 `career_panna.parquet` publish ran from a refit that
+    finished *before* the stamping commit landed — correct data, no tag
+    — so the new assert (correctly) rejected it in `build-blog-data.yml`
+    the next day and the file had to be regenerated and republished.
+    Regenerate-then-publish, in that order, whenever you add a tag to an
+    existing artifact.
 - **Replacement Level filter at export** — `10_export_blog_data.R` drops
   `player_id == "replacement"` rows before publishing. The synthetic row
   is a model artifact (game-state confound, picks up uncontrolled

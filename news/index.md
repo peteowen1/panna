@@ -2,6 +2,40 @@
 
 ## panna 0.3.32 (dev)
 
+### career_panna.parquet’s defense rating shipped inverted for ~4 days (panna#F1)
+
+The 2026-09-04 sign-convention flip (`795feeb1`) removed the
+defense-sign negation at every export site that reads
+`career_panna.parquet`, on the assumption the release file already
+stored `panna_defense` as positive=good. It didn’t — the asset was 7
+weeks stale — so every consumer that stopped flipping inherited the OLD
+convention and published elite defenders (Rodri, Saliba, Gabriel
+Magalhães) as the worst in the game. Confirmed live:
+`build-blog-data.yml` went green 2026-09-07 (an unrelated CI-guard fix
+landed without the required republish happening first), so the inverted
+data reached the public blog for about 4 days before this fix.
+
+Fixed by running the skills-pipeline refit end-to-end for the first time
+(after 5 prior memory-death attempts, root-caused and fixed via
+`09b_career_panna_asof.R`’s `stream_dir` mode), regenerating and
+republishing `career_panna.parquet`, and adding a `sign_convention`
+guard column +
+[`.assert_career_panna_sign_convention()`](https://peteowen1.github.io/panna/reference/dot-assert_career_panna_sign_convention.md)
+(mirrors the existing `TEAM_STRENGTH_SIGN_CONVENTION` pattern) to every
+real consumer so a stale-vintage file aborts loudly instead of silently
+shipping inverted again. `career_panna_asof.parquet` (the
+predictions-pipeline’s point-in-time model feature) is still on the old
+vintage — flagged as a follow-up.
+
+### Fix test-xgot-model.R:172 fixture (panna#148) — test bug, not a code bug
+
+CI had been red on this test for 8+ days. Own-goal detection
+(`xgot_model.R`) already correctly prefers the `is_own_goal` qualifier
+over the positional heuristic — the actual failure was an unrelated test
+fixture missing a `body_part` column, tripped by a later, unrelated
+warning (the 2026-09-03 header/footedness train-serve-skew fix). Fixed
+the fixture.
+
 ### Domestic Tiento squads join on team_id, not club name (panna#193 follow-up)
 
 The first live run of step 12d (2026-08-23) refused to publish, and it
