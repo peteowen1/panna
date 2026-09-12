@@ -438,7 +438,14 @@ fit_season_ratings_opta <- function(splint_data, opta_stats, season,
   cat(sprintf("  Matched season SPM priors: %d offense, %d defense\n",
               sum(offense_prior != 0), sum(defense_prior != 0)))
 
-  # Fit xRAPM with season-specific SPM prior
+  # Fit xRAPM with season-specific SPM prior. parallel = FALSE for the SAME
+  # reason as the base RAPM fit above, on the SAME design matrix
+  # (fit_rapm_with_prior() defaults to parallel = TRUE and this call never
+  # overrode it): 2-core parallel CV forks rapm_data per worker, doubling peak
+  # memory, and step 07 fits 12+ seasons sequentially so the peak accumulates
+  # across iterations. Confirmed live 2026-09-12: this call alone OOM-killed a
+  # 16GB GHA runner at season 2025/14, with every earlier season already
+  # sitting within 100-160MB of the ceiling during this exact fit.
   xrapm_model <- fit_rapm_with_prior(
     rapm_data,
     offense_prior = offense_prior,
@@ -446,7 +453,8 @@ fit_season_ratings_opta <- function(splint_data, opta_stats, season,
     alpha = 0,
     nfolds = n_folds,
     use_weights = TRUE,
-    penalize_covariates = FALSE
+    penalize_covariates = FALSE,
+    parallel = FALSE
   )
 
   seasonal_xrapm <- extract_xrapm_ratings(xrapm_model, lambda = seasonal_lambda)
