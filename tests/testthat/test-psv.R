@@ -256,6 +256,40 @@ test_that("calculate_psv errors on no matching columns", {
   expect_error(calculate_psv(stats, coef_df), "No matching stat columns")
 })
 
+# Outfield fixtures below need stat columns that currently carry NON-ZERO
+# outfield coefficients, or calculate_psv() finds nothing to score and aborts
+# with "No matching stat columns". Hard-coding names is fragile: glmnet
+# re-selects features on every retrain, and on 2026-09-12 a retrain zeroed
+# shots_obox_p90 and pen_area_entries_p90 (blend non-zero count 56 -> 38),
+# breaking three tests whose subject is GK ROUTING, not feature selection.
+# Derive the names instead, so a legitimate retrain can't masquerade as a
+# routing bug. Catastrophic deselection is caught explicitly by its own test
+# at the end of this file, where it reads as what it is.
+.psv_live_outfield_stats <- function(n = 3) {
+  # Must satisfy ALL THREE sub-models, not just margin: compute_player_psv()
+  # routes through calculate_psv_components(), which calls calculate_psv()
+  # separately for margin, offense and defense -- each aborts on its own if
+  # none of ITS non-zero stats are present. Picking on margin alone happened
+  # to work only because the top margin features were also non-zero in OSR and
+  # DSR; that is coincidence, not a guarantee (review finding, 2026-09-12).
+  nz_for <- function(ty) {
+    co <- load_psr_coefficients(type = ty, target = "blend")
+    co$stat_name[co$beta != 0 & !is.na(co$beta)]
+  }
+  nz <- Reduce(intersect, list(nz_for("margin"), nz_for("offense"), nz_for("defense")))
+  nz <- nz[!grepl("gsaa|saves|keeper|claim|sweeper", nz)]  # keep GK stats out of an outfield row
+  testthat::skip_if(length(nz) < n,
+                    "fewer than n stats non-zero across all three blend sub-models")
+  utils::head(nz, n)
+}
+
+.psv_outfield_row <- function(..., stats_values = c(3, 1, 4)) {
+  nm <- .psv_live_outfield_stats(length(stats_values))
+  base <- data.frame(..., stringsAsFactors = FALSE)
+  for (i in seq_along(nm)) base[[nm[i]]] <- stats_values[i]
+  base
+}
+
 test_that("compute_player_psv routes keepers through the GK model (gsaa drives DSV)", {
   # Regression: compute_player_psv had NO test and originally applied the
   # outfield model to everyone — keepers scored as bad outfielders, no GSAA
@@ -272,14 +306,10 @@ test_that("compute_player_psv routes keepers through the GK model (gsaa drives D
     gsaa_per90 = c(2, 2, -2, -2),        # only GSAA varies
     stringsAsFactors = FALSE
   )
-  outfield <- data.frame(
+  outfield <- .psv_outfield_row(
     player_id = "of1", player_name = "Striker", match_id = "m5",
     primary_position = "Striker", total_minutes = 90,
-    # stats with non-zero outfield coefficients (goals_p90 is zeroed by glmnet —
-    # finishing enters via over-performance, so use shot-volume stats here)
-    shots_p90 = 3, shots_obox_p90 = 1, pen_area_entries_p90 = 4,
-    saves_p90 = 0, gsaa_per90 = 0,
-    stringsAsFactors = FALSE
+    saves_p90 = 0, gsaa_per90 = 0
   )
   dt <- data.table::rbindlist(list(gk, outfield), fill = TRUE)
 
@@ -638,12 +668,11 @@ test_that("compute_player_psv threads center_weights through the GK/outfield spl
     total_minutes = c(90, 30), season = "2024", round = 1,
     saves_p90 = c(3, 5), gsaa_per90 = c(1, -1), stringsAsFactors = FALSE
   )
-  outfield <- data.frame(
+  outfield <- .psv_outfield_row(
     player_id = c("of1", "of2"), player_name = c("Striker1", "Striker2"),
     match_id = c("m3", "m4"), primary_position = "Striker",
     total_minutes = c(90, 60), season = "2024", round = 1,
-    shots_p90 = c(3, 1), shots_obox_p90 = c(1, 0), pen_area_entries_p90 = c(4, 2),
-    saves_p90 = 0, gsaa_per90 = 0, stringsAsFactors = FALSE
+    saves_p90 = 0, gsaa_per90 = 0
   )
   dt <- data.table::rbindlist(list(gk, outfield), fill = TRUE)
 
@@ -663,11 +692,10 @@ test_that("compute_player_psv routes reliability by model (outfield vs gk)", {
     primary_position = "GK", total_minutes = 90,
     saves_p90 = 3, gsaa_per90 = 2, stringsAsFactors = FALSE
   )
-  outfield <- data.frame(
+  outfield <- .psv_outfield_row(
     player_id = "of1", player_name = "Striker", match_id = "m2",
     primary_position = "Striker", total_minutes = 90,
-    shots_p90 = 3, shots_obox_p90 = 1, pen_area_entries_p90 = 4,
-    saves_p90 = 0, gsaa_per90 = 0, stringsAsFactors = FALSE
+    saves_p90 = 0, gsaa_per90 = 0
   )
   dt <- data.table::rbindlist(list(gk, outfield), fill = TRUE)
 
@@ -700,4 +728,25 @@ test_that("compute_player_psv routes reliability by model (outfield vs gk)", {
   # all still turns on the GD-unit display scale (LIVE-PSV-UNBLOCK D1-v2
   # FINAL), so of_rel is the scaled version of of_no_rel, not identical to it.
   expect_equal(of_rel, of_no_rel * PSV_RELIABILITY_GD_SCALE)
+})
+
+test_that("blend coefficient files retain a workable number of non-zero stats", {
+  # The alarm the three GK-routing tests used to raise by accident. On
+  # 2026-09-12 a retrain cut blend_psr's non-zero stats 56 -> 38 and zeroed
+  # the exact features those fixtures hard-coded; the failure surfaced as
+  # "No matching stat columns" in a test about keeper routing, was read as
+  # unrelated, and shipped. A retrain legitimately re-selects features, so
+  # this is a floor against COLLAPSE, not a pin to any particular count or
+  # feature set -- if it trips, ask whether the fit was starved (check step
+  # 07 coverage) before touching the threshold.
+  # All three sub-models, not just margin -- PSV scores against each of them
+  # independently, so a collapse confined to OSR or DSR is just as breaking
+  # and would otherwise slip past this guard entirely.
+  for (tg in c("blend", "xg", "goals")) {
+    for (ty in c("margin", "offense", "defense")) {
+      co <- load_psr_coefficients(type = ty, target = tg)
+      nz <- sum(co$beta != 0 & !is.na(co$beta))
+      expect_gt(nz, 15)
+    }
+  }
 })
