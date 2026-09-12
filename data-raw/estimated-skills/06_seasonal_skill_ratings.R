@@ -653,6 +653,90 @@ if (nrow(seasonal_psr) > 0 && !is.null(psr_primary_league)) {
   }
 }
 
+# 6d. PSR position calibration (panna#202/#214) ----
+#
+# AFTER the league offsets above, never before: the published rating is
+# `psr * factor + offset`, so scaling first leaves the offset uncalibrated and
+# dilutes the correction. Same ordering rule as step 08b (weekly snapshots) and
+# as RATING_CALIBRATION.md. Unconditional -- outside the offsets block -- because
+# a failed offset estimation must not also silently drop the calibration.
+#
+# Without this, keepers take 50-70% of the top 20 in every season from 2017 on
+# against an ~8% population share: PSR centres goalkeepers and outfielders
+# separately, leaving the GK spread ~2x the outfield spread. Measured over the
+# 13 complete seasons in this table, the position factors cut the
+# outfield/GK spread's distance from parity 0.432 -> 0.149 and the keepers'
+# top-20 over-representation 42.5 -> 6.2 percentage points.
+#
+# POSITION AXIS ONLY. `apply_psr_calibration()` also applies the season axis
+# whenever `season_end_year` is present -- which it is here -- but the shipped
+# calibration table only carries season factors for 2016-2025. Applying it would
+# rescale history while leaving 2026 and 2027 (the live seasons) untouched,
+# putting a scale discontinuity between the current season and the history it is
+# ranked against. Passing a position-only table is what keeps that axis off; the
+# season factors are still available to any consumer that wants them via
+# `apply_psr_season_calibration()`.
+
+# Anchor check (stats-discipline §1): keepers are ~8% of the eligible pool, so
+# they should be ~8% of the top 20, not 50-70%. Returns both so the caller can
+# compare against the pool rather than a hard-coded constant -- the pool share
+# genuinely moves (a part-played season runs ~15%, because keepers accumulate
+# full 90s while outfielders rotate).
+.psr_keeper_top20_share <- function(d, min_90s = 10) {
+  d <- data.table::as.data.table(d)
+  if (!all(c("primary_position", "psr", "weighted_90s", "season_end_year") %in% names(d))) {
+    return(list(top20 = NA_real_, pool = NA_real_, n = 0L))
+  }
+  s <- d[season_end_year == max(season_end_year, na.rm = TRUE) &
+           weighted_90s >= min_90s & !is.na(psr)]
+  if (nrow(s) < 20) return(list(top20 = NA_real_, pool = NA_real_, n = nrow(s)))
+  is_gk <- s$primary_position == "GK"
+  list(top20 = 100 * mean(is_gk[order(-s$psr)][1:20]),
+       pool  = 100 * mean(is_gk),
+       n     = nrow(s))
+}
+
+if (!is.null(seasonal_psr) && nrow(seasonal_psr) > 0) {
+  cat("\n=== PSR position calibration (panna#202/#214) ===\n")
+  .psr_cal <- load_psr_calibration()
+  if (is.null(.psr_cal) || nrow(.psr_cal) == 0) {
+    warning("PSR calibration table unavailable; seasonal PSR left UNCALIBRATED ",
+            "(keepers will dominate the leaderboard -- see panna#202).",
+            call. = FALSE)
+  } else if (!"primary_position" %in% names(seasonal_psr)) {
+    # .calibrate_psr_positions() returns the table unchanged when this column is
+    # missing, so without this branch the whole step would be a silent no-op.
+    stop("seasonal_psr lacks `primary_position` -- PSR position calibration ",
+         "would silently no-op. Fix the upstream build rather than skipping it.")
+  } else {
+    .gk_before <- .psr_keeper_top20_share(seasonal_psr)
+    seasonal_psr <- as.data.frame(
+      apply_psr_calibration(seasonal_psr, .psr_cal[.psr_cal$axis == "position", ])
+    )
+    .gk_after <- .psr_keeper_top20_share(seasonal_psr)
+    cat(sprintf("  Keeper share of top 20 (latest season, n=%d): %.0f%% -> %.0f%% (pool %.0f%%)\n",
+                .gk_after$n, .gk_before$top20, .gk_after$top20, .gk_after$pool))
+
+    # Warn rather than stop, matching the PSV calibration path above: 06 is a
+    # ~20-minute step and killing it here would also discard the offsets and
+    # every rating it just fitted. The check is still worth having loud -- this
+    # exact defect shipped to the blog before anyone was looking for it.
+    # 25pp over the pool is deliberately slack: it clears the observed post-fix
+    # range (0-10% against an ~8% pool) while still catching the pre-fix 50-70%.
+    if (!is.na(.gk_after$top20) && .gk_after$top20 > .gk_after$pool + 25) {
+      warning(sprintf(
+        "PSR anchor FAILED: keepers are %.0f%% of the top 20 against a %.0f%% pool ",
+        .gk_after$top20, .gk_after$pool),
+        "share, after calibration. Expect the published leaderboard to be ",
+        "keeper-dominated -- do not publish without checking the position ",
+        "factors in inst/extdata/psr_calibration.csv (see panna#202).",
+        call. = FALSE)
+    }
+    rm(.gk_before, .gk_after)
+  }
+  rm(.psr_cal)
+}
+
 # 7. Summary Statistics ----
 
 cat("\n=== Top Players by Season (Skill xRAPM) ===\n")
