@@ -20,7 +20,7 @@ its fallback chain, the canonical (correct) version, and the override to pin it.
 |-------|--------|----------------|---------------------|-----------|
 | **EPV** | `load_epv_model()` | path → pannamodels → local | `pannadata/.../epv_model.rds` | **YES** — overhauled 2026-06-19 |
 | **WP** | `load_wp_model()` | path → pannamodels → local | `pannadata/.../wp_model.rds` | **YES** — overhauled 2026-06-19 |
-| **xG** | `load_xg_model()` | path → pannamodels → local | `pannadata/.../xg_model.rds` | **YES** — retraining 2026-09-03 (panna#229); published and candidate DIVERGE, see register |
+| **xG** | `load_xg_model()` | path → pannamodels → local | `pannadata/.../xg_model.rds` | **DEPLOYED 2026-09-12** — season-aware retrain (panna#229); published to BOTH `pannamodels@epv` (production) and `pannadata@models` (fallback) |
 | **xGOT** | `load_xgot_model()` | path → pannamodels → local → **NULL** | `pannadata/.../xgot_model.rds` | stable (optional; returns NULL if absent) |
 | **xPass** | `load_xpass_model()` | path → pannamodels → local | `pannadata/.../xpass_model.rds` | stable |
 | Minutes / Knockout | — | no preloaded model (heuristic / fit on demand) | — | — |
@@ -34,7 +34,8 @@ different files, and that is how the xG divergence below went unnoticed.
 
 | Model | Published | bytes | Candidate | Same? |
 |---|---|---:|---|---|
-| **xG** | 2026-06-18 | 7,771,969 | `xg_model.rds` 8,254,336 (07-17) | ⚠ **NO — divergent** |
+| **xG** | **2026-09-12** | **22,988,831** | same bytes | ✅ yes — both releases aligned |
+| xG (previous, archived) | 2026-06-18 | 7,771,969 | `_archive/xg_model_PANNAMODELS_PUBLISHED_2026-06-18.rds` | rollback copy |
 | xGOT | 2026-07-23 | 5,212,066 | same bytes | yes |
 | xPass | 2026-06-18 | 6,319,289 | same bytes | yes |
 | duel | 2026-06-24 | 368,305 | — | published only |
