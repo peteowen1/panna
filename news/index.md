@@ -1,6 +1,13 @@
 # Changelog
 
-## panna 0.3.32 (dev)
+## panna 0.3.39 (dev)
+
+Version heading realigned to `DESCRIPTION` (0.3.39). As with the
+0.3.26-0.3.31 run before it, 0.3.33-0.3.38 were `gh pr create` hook
+bumps with no NEWS sections of their own – the hook bumps the patch
+version at PR-creation time, so a session that opens several PRs
+advances the version several times without any of them being a release.
+The sections below cover the actual work.
 
 ### career_panna.parquet’s defense rating shipped inverted for ~4 days (panna#F1)
 
