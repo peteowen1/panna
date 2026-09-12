@@ -249,8 +249,16 @@ fit_season_skill_ratings <- function(splint_data, skill_features, season,
   n_folds <- min(10, floor(nrow(rapm_data$X) / 20))
   n_folds <- max(n_folds, 3)
 
-  # Fit base RAPM
-  rapm_model <- fit_rapm(rapm_data, alpha = 0, nfolds = n_folds, use_weights = TRUE)
+  # Fit base RAPM. parallel = FALSE -- 2-core parallel CV forks rapm_data per
+  # worker, doubling peak memory, and this whole block runs inside
+  # lapply(seasons, ...) below: 12+ seasons fit sequentially in ONE process, so
+  # the peak accumulates across iterations rather than resetting. Mirrors the
+  # same fix in player-ratings-opta/07_seasonal_ratings.R, which OOM-killed a
+  # 16GB GHA runner on this exact pattern (confirmed live 2026-09-12, season
+  # 2025 of 14, xRAPM call specifically -- but this base RAPM call shares the
+  # same design matrix and was never given the same treatment either).
+  rapm_model <- fit_rapm(rapm_data, alpha = 0, nfolds = n_folds, use_weights = TRUE,
+                          parallel = FALSE)
   seasonal_rapm <- extract_rapm_ratings(rapm_model, lambda = seasonal_lambda)
   seasonal_rapm$season_end_year <- season
 
@@ -276,7 +284,8 @@ fit_season_skill_ratings <- function(splint_data, skill_features, season,
   cat(sprintf("  Matched skill SPM priors: %d offense, %d defense\n",
               sum(offense_prior != 0), sum(defense_prior != 0)))
 
-  # Fit xRAPM with skill-based SPM prior
+  # Fit xRAPM with skill-based SPM prior. parallel = FALSE for the same reason
+  # as the base RAPM fit above -- see its comment.
   xrapm_model <- fit_rapm_with_prior(
     rapm_data,
     offense_prior = offense_prior,
@@ -284,7 +293,8 @@ fit_season_skill_ratings <- function(splint_data, skill_features, season,
     alpha = 0,
     nfolds = n_folds,
     use_weights = TRUE,
-    penalize_covariates = FALSE
+    penalize_covariates = FALSE,
+    parallel = FALSE
   )
 
   seasonal_xrapm <- extract_xrapm_ratings(xrapm_model, lambda = seasonal_lambda)
