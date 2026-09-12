@@ -517,7 +517,15 @@ test_that("calculate_action_epv produces bounded EPV values", {
     stringsAsFactors = FALSE
   )
 
-  result <- calculate_action_epv(spadl, features, epv_model, xg_model = NULL)
+  # `season` is required now that the published xG model is season-aware (it
+  # carries a `season_num` feature and refuses to score without one -- see
+  # add_xg_to_spadl()). This test passes xg_model = NULL, so calculate_action_epv()
+  # falls through to load_xg_model() and scores with whatever model is CURRENTLY
+  # PUBLISHED. That ambient dependency is why deploying the 2026-09-12 model
+  # turned this assertion about EPV bounds into an xG error: the test never
+  # isolated the model it was implicitly using.
+  result <- calculate_action_epv(spadl, features, epv_model, xg_model = NULL,
+                                 season = "2025-2026")
 
   # EPV = P(team_scores) - P(opponent_scores), so bounded in [-1, 1]
   expect_true(all(result$epv >= -1 & result$epv <= 1),
