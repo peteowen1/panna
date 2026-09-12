@@ -266,10 +266,20 @@ test_that("calculate_psv errors on no matching columns", {
 # routing bug. Catastrophic deselection is caught explicitly by its own test
 # at the end of this file, where it reads as what it is.
 .psv_live_outfield_stats <- function(n = 3) {
-  co <- load_psr_coefficients(target = "blend")
-  nz <- co$stat_name[co$beta != 0 & !is.na(co$beta)]
+  # Must satisfy ALL THREE sub-models, not just margin: compute_player_psv()
+  # routes through calculate_psv_components(), which calls calculate_psv()
+  # separately for margin, offense and defense -- each aborts on its own if
+  # none of ITS non-zero stats are present. Picking on margin alone happened
+  # to work only because the top margin features were also non-zero in OSR and
+  # DSR; that is coincidence, not a guarantee (review finding, 2026-09-12).
+  nz_for <- function(ty) {
+    co <- load_psr_coefficients(type = ty, target = "blend")
+    co$stat_name[co$beta != 0 & !is.na(co$beta)]
+  }
+  nz <- Reduce(intersect, list(nz_for("margin"), nz_for("offense"), nz_for("defense")))
   nz <- nz[!grepl("gsaa|saves|keeper|claim|sweeper", nz)]  # keep GK stats out of an outfield row
-  testthat::skip_if(length(nz) < n, "fewer than n non-zero outfield blend coefficients")
+  testthat::skip_if(length(nz) < n,
+                    "fewer than n stats non-zero across all three blend sub-models")
   utils::head(nz, n)
 }
 
@@ -729,9 +739,14 @@ test_that("blend coefficient files retain a workable number of non-zero stats", 
   # this is a floor against COLLAPSE, not a pin to any particular count or
   # feature set -- if it trips, ask whether the fit was starved (check step
   # 07 coverage) before touching the threshold.
+  # All three sub-models, not just margin -- PSV scores against each of them
+  # independently, so a collapse confined to OSR or DSR is just as breaking
+  # and would otherwise slip past this guard entirely.
   for (tg in c("blend", "xg", "goals")) {
-    co <- load_psr_coefficients(target = tg)
-    nz <- sum(co$beta != 0 & !is.na(co$beta))
-    expect_gt(nz, 15)
+    for (ty in c("margin", "offense", "defense")) {
+      co <- load_psr_coefficients(type = ty, target = tg)
+      nz <- sum(co$beta != 0 & !is.na(co$beta))
+      expect_gt(nz, 15)
+    }
   }
 })
