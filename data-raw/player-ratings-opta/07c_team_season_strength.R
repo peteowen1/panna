@@ -53,7 +53,14 @@ if (!exists("LOW_COVERAGE_WARN"))    LOW_COVERAGE_WARN    <- 0.30
 
 cache_opta <- file.path("data-raw", "cache-opta")
 ratings_path <- file.path(cache_opta, "07_seasonal_ratings.rds")
-lineups_path <- file.path("..", "pannadata", "data", "opta", "opta_lineups.parquet")
+# opta_data_dir() resolves BOTH layouts -- locally ../pannadata/data/opta via
+# pannadata_dir()'s sibling-walk, and on GHA $RUNNER_TEMP/pannadata/opta via
+# the PANNADATA_DIR env var the workflow sets (no "data/" segment there). The
+# hardcoded relative path this replaced silently resolved to a nonexistent
+# file on GHA -- confirmed live 2026-09-12, "file.exists(lineups_path) is not
+# TRUE" -- exactly the class of bug CLAUDE.md already documents for
+# 02_player_ratings_to_team.R's EPR merge. This file had never been fixed.
+lineups_path <- file.path(opta_data_dir(), "opta_lineups.parquet")
 
 stopifnot(file.exists(ratings_path), file.exists(lineups_path))
 cat(sprintf("ratings: %s (%s)\n", ratings_path,
