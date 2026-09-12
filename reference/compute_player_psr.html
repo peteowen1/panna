@@ -13,7 +13,7 @@ features) and outfield players through the standard xG-based model."><meta prope
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.39</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.42</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -58,8 +58,9 @@ features) and outfield players through the standard xG-based model.</p>
     <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">compute_player_psr</span><span class="op">(</span></span>
 <span>  <span class="va">skills</span>,</span>
 <span>  center <span class="op">=</span> <span class="cn">TRUE</span>,</span>
-<span>  target <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"xg"</span>, <span class="st">"goals"</span><span class="op">)</span>,</span>
-<span>  position_means <span class="op">=</span> <span class="cn">NULL</span></span>
+<span>  target <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"blend"</span>, <span class="st">"xg"</span>, <span class="st">"goals"</span><span class="op">)</span>,</span>
+<span>  position_means <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  gk_goal_scale <span class="op">=</span> <span class="fl">1</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -77,14 +78,36 @@ or <code><a href="load_opta_skills.html">load_opta_skills()</a></code>).</p></dd
 
 
 <dt id="arg-target">target<a class="anchor" aria-label="anchor" href="#arg-target"></a></dt>
-<dd><p>One of <code>"xg"</code> (default) or <code>"goals"</code> for the
-outfield model. GK model always uses goal differential.</p></dd>
+<dd><p>Outfield coefficient set: <code>"blend"</code> (default,
+<code>0.6 * xG + 0.4 * goals</code>), <code>"xg"</code>, or <code>"goals"</code>. The GK
+sub-model always uses goal differential regardless.</p>
+<p>Default moved <code>"xg"</code> -&gt; <code>"blend"</code> (panna#214). The xG-trained
+set cannot reward finishing by construction — <code>npg_minus_npxg_per90</code>
+is precisely the part of scoring xG does not capture — which made the net
+effect of an extra non-penalty goal NEGATIVE (-0.059) and left Messi 93rd
+among outfielders. Measured out-of-sample (prior-season rating -&gt; next
+season's matches, fit &lt;=2022 / test &gt;=2023, n = 15,912), blend is the only
+set never worse than second: best on xG difference (test R2 0.1664 vs
+0.1618 xG / 0.1611 goals) and a statistical tie for best on goal
+difference (0.1428 vs 0.1431 goals / 0.1360 xG). Differences across sets
+are small (&lt;1 R2 point), so the switch costs no predictive accuracy while
+materially improving valuation.</p></dd>
 
 
 <dt id="arg-position-means">position_means<a class="anchor" aria-label="anchor" href="#arg-position-means"></a></dt>
 <dd><p>Optional pre-computed position-mean lookup table used
 to center skill columns before scoring (see <code><a href="compute_player_psv.html">compute_player_psv</a></code>).
 If <code>NULL</code>, no cross-position centering is applied.</p></dd>
+
+
+<dt id="arg-gk-goal-scale">gk_goal_scale<a class="anchor" aria-label="anchor" href="#arg-gk-goal-scale"></a></dt>
+<dd><p><strong>Superseded</strong> by
+<code><a href="apply_psr_calibration.html">apply_psr_calibration</a></code>, which covers goalkeepers along with
+every other position AND is applied at the correct point (after the
+cross-league offsets). Defaults to <code>1</code> (no-op). Retained only so a
+caller can pin the old panna#202 behaviour by passing
+<code>GK_PSR_GOAL_SCALE</code> and skipping <code><a href="apply_psr_calibration.html">apply_psr_calibration()</a></code>;
+doing both would double-scale keepers.</p></dd>
 
 </dl></div>
     <div class="section level2">

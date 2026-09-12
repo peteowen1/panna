@@ -447,6 +447,10 @@ Composite player skill and per-game stat value metrics
 - [`PSV_RELIABILITY_GD_SCALE`](https://peteowen1.github.io/panna/reference/PSV_RELIABILITY_GD_SCALE.md)
   : Reliability-shrunk PSV display scale ("expected GD contribution per
   90")
+- [`apply_psr_calibration()`](https://peteowen1.github.io/panna/reference/apply_psr_calibration.md)
+  : Apply the PSR calibration (position and season)
+- [`apply_psr_season_calibration()`](https://peteowen1.github.io/panna/reference/apply_psr_season_calibration.md)
+  : Apply per-season PSR calibration
 - [`apply_psv_calibration()`](https://peteowen1.github.io/panna/reference/apply_psv_calibration.md)
   : Apply the PSV position calibration
 - [`apply_psv_opponent_adjustment()`](https://peteowen1.github.io/panna/reference/apply_psv_opponent_adjustment.md)
@@ -465,10 +469,14 @@ Composite player skill and per-game stat value metrics
   : Fit the PSV opponent-adjustment coefficient
 - [`load_opta_psr_weekly()`](https://peteowen1.github.io/panna/reference/load_opta_psr_weekly.md)
   : Load pre-computed weekly PSR snapshots
+- [`load_psr_calibration()`](https://peteowen1.github.io/panna/reference/load_psr_calibration.md)
+  : Load the PSR calibration table
 - [`load_psv_match_reliability()`](https://peteowen1.github.io/panna/reference/load_psv_match_reliability.md)
   : Load the bundled per-match reliability artifact for PSV pricing
 - [`player_psr()`](https://peteowen1.github.io/panna/reference/player_psr.md)
   : Get Player Skill Ratings
+- [`psr_leaderboard_eligible()`](https://peteowen1.github.io/panna/reference/psr_leaderboard_eligible.md)
+  : Is a player-season eligible for a PSR leaderboard? (panna#215)
 - [`psv_opponent`](https://peteowen1.github.io/panna/reference/psv_opponent.md)
   : Opponent adjustment for per-match PSV (panna#220)
 - [`soccer_position_map()`](https://peteowen1.github.io/panna/reference/soccer_position_map.md)
@@ -551,6 +559,8 @@ Package-wide constants and thresholds
   : Minute marking halftime (end of first half)
 - [`MINUTES_PER_MATCH`](https://peteowen1.github.io/panna/reference/MINUTES_PER_MATCH.md)
   : Minutes per regulation match
+- [`MIN_90S_PSR_LEADERBOARD`](https://peteowen1.github.io/panna/reference/MIN_90S_PSR_LEADERBOARD.md)
+  : Minimum weighted 90s to qualify for a PSR leaderboard (panna#215)
 - [`MIN_GAMES_FOR_PADDING`](https://peteowen1.github.io/panna/reference/MIN_GAMES_FOR_PADDING.md)
   : Default minimum games for Bayesian padding full weight
 - [`MIN_MINUTES_FEATURES`](https://peteowen1.github.io/panna/reference/MIN_MINUTES_FEATURES.md)

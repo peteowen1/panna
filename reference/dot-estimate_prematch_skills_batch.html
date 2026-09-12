@@ -13,7 +13,7 @@ Uses rowsum() (C-level) for grouped matrix sums."><meta property="og:image" cont
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.39</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.42</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -60,6 +60,7 @@ Uses <code><a href="https://rdrr.io/r/base/rowsum.html" class="external-link">ro
 <span>  <span class="va">ref_dates</span>,</span>
 <span>  decay_params <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  min_weighted_90s <span class="op">=</span> <span class="fl">3</span>,</span>
+<span>  keep_players <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  output_min_w90 <span class="op">=</span> <span class="fl">0</span>,</span>
 <span>  stream_dir <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  source_fingerprint <span class="op">=</span> <span class="cn">NULL</span>,</span>
@@ -90,6 +91,17 @@ inclusion gate (default 3). Shrinkage toward the prior is what handles
 thin samples – see <code>estimate_player_skills</code> and the note at
 <code>data-raw/estimated-skills/02_estimate_skills.R:23</code>. Do NOT use this
 to trim output rows; that is <code>output_min_w90</code>.</p></dd>
+
+
+<dt id="arg-keep-players">keep_players<a class="anchor" aria-label="anchor" href="#arg-keep-players"></a></dt>
+<dd><p>Optional data.frame/data.table whose first two columns are
+<code>date</code> and <code>player_id</code>, restricting each date's OUTPUT to the
+players a caller actually needs. The running sums still cover every player
+(they must, for the decay recurrence to stay correct) — only the returned
+snapshot is narrowed, before the table is built. Without it an as-of run
+over N dates returns N x 46,044 rows. Note chunking the call is NOT an
+alternative: this function deep-copies <code>match_stats</code> on entry, so
+chunking pays that copy once per chunk instead of once in total.</p></dd>
 
 
 <dt id="arg-output-min-w-">output_min_w90<a class="anchor" aria-label="anchor" href="#arg-output-min-w-"></a></dt>
