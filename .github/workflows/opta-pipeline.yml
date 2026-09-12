@@ -19,6 +19,10 @@ on:
         description: 'Start from step N (1-9). Downloads intermediate caches from predictions-cache release. Default 1 = full run.'
         type: number
         required: false
+      upload_ratings:
+        description: 'Publish step 9 ratings to the ratings-data release. Set FALSE to rebuild and inspect without publishing.'
+        type: boolean
+        default: true
   # repository_dispatch trigger removed 2026-06-11 (panna#87): the pipeline
   # OOMs the 16GB hosted runner deterministically since the 4-league
   # expansion, so the daily opta-scrape-complete dispatch burned ~1-3
@@ -273,6 +277,7 @@ jobs:
           INPUT_FORCE_REBUILD: ${{ inputs.force_rebuild }}
           INPUT_FORCE_REBUILD_FROM: ${{ inputs.force_rebuild_from }}
           INPUT_START_STEP: ${{ inputs.start_step }}
+          INPUT_UPLOAD_RATINGS: ${{ inputs.upload_ratings }}
           GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
           HB_UPLOAD_CACHES: ${{ inputs.upload_caches }}
         run: |
@@ -368,6 +373,22 @@ jobs:
               start_step <- as.integer(start_step_input)
               cat('Resume mode: start_step =', start_step, '\n')
             }
+
+            # Step 9 publishes to the ratings-data release. It used to do so
+            # UNCONDITIONALLY with no flag at all, which caused a real
+            # unauthorized publish (2026-09-04); 09_export_ratings.R gained an
+            # upload_ratings toggle that day, but this workflow had no way to
+            # set it, so a dispatch always published. Only an explicit 'false'
+            # suppresses it -- an unset or unparseable input keeps the
+            # publishing default, so the scheduled behaviour cannot change by
+            # accident. NB plain global assignment is deliberate: step 9 guards
+            # with bare exists(), which DOES see a driver global through
+            # source(); exists(..., inherits = FALSE) would not.
+            upload_ratings_input <- Sys.getenv('INPUT_UPLOAD_RATINGS', '')
+            upload_ratings <- !identical(tolower(trimws(upload_ratings_input)), 'false')
+            cat('upload_ratings =', upload_ratings,
+                if (upload_ratings) '(step 9 WILL publish to ratings-data)'
+                else '(step 9 will write locally, NOT publish)', '\n')
 
             source('data-raw/player-ratings-opta/run_pipeline_opta.R', chdir = FALSE)
             if (isTRUE(pipeline_failed)) quit(status = 1)
