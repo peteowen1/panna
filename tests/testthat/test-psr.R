@@ -1301,3 +1301,45 @@ test_that("compute_player_psv returns pos_grp so the calibration can key on it",
   expect_equal(sum(out$pos_grp == "GK", na.rm = TRUE),
                sum(panna:::.detect_gk_rows(out)))
 })
+
+test_that("the gk_goal_scale double-scale guard survives a merge(), not just rbindlist", {
+  # The marker existed only as an R attribute, and merge() drops attributes --
+  # while merge() is exactly what 08b and 06 run between computing PSR and
+  # calibrating it (the league-offset join). So on the attribute alone the guard
+  # was already gone by the time it ran, in the one code shape the pipeline uses.
+  dt <- data.table::data.table(
+    player_id = c("p1", "p2"),
+    primary_position = c("GK", "MID"),
+    psr = c(0.10, 0.20), osr = c(0.05, 0.10), dsr = c(0.05, 0.10),
+    panna_gk_scaled = TRUE
+  )
+  data.table::setattr(dt, "panna_gk_scaled", TRUE)
+  cal <- data.table::data.table(axis = "position", level = c("GK", "MID"),
+                                 factor = c(0.6411, 1.2337))
+
+  # Direct: guard fires (this is all the old test covered).
+  expect_error(apply_psr_calibration(dt, cal), "already scaled")
+
+  # After a merge, the attribute is gone -- prove that, so the test fails loudly
+  # if data.table ever starts preserving it and this test stops testing anything.
+  offsets <- data.table::data.table(player_id = c("p1", "p2"), offset = c(0.01, 0.02))
+  merged <- merge(dt, offsets, by = "player_id", all.x = TRUE)
+  expect_null(attr(merged, "panna_gk_scaled"))
+
+  # The column survives, so the guard must still fire.
+  expect_true("panna_gk_scaled" %in% names(merged))
+  expect_error(apply_psr_calibration(merged, cal), "already scaled")
+})
+
+test_that("an unmarked table calibrates normally (the guard is not always-on)", {
+  dt <- data.table::data.table(
+    player_id = c("p1", "p2"),
+    primary_position = c("GK", "MID"),
+    psr = c(0.10, 0.20), osr = c(0.05, 0.10), dsr = c(0.05, 0.10)
+  )
+  cal <- data.table::data.table(axis = "position", level = c("GK", "MID"),
+                                 factor = c(0.6411, 1.2337))
+  out <- apply_psr_calibration(dt, cal)
+  expect_equal(out$psr, c(0.10 * 0.6411, 0.20 * 1.2337))
+  expect_equal(out$osr + out$dsr, out$psr)
+})

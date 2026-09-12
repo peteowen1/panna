@@ -2129,9 +2129,19 @@ compute_player_psr <- function(skills, center = TRUE,
   # leaves the offset uncalibrated and dilutes the correction (measured: it cut
   # the position-slope equalisation from a 0.058 spread to 0.195).
   combined <- data.table::rbindlist(results, fill = TRUE, use.names = TRUE)
-  # rbindlist drops attributes, so re-stamp the marker on the combined table --
-  # this is what lets apply_psr_calibration() refuse to double-scale keepers.
+  # Mark that keepers were already scaled, so apply_psr_calibration() can refuse
+  # to scale them twice (0.5 * 0.6411 ~= 0.32 instead of one or the other).
+  #
+  # As a COLUMN, not only an attribute. `rbindlist()` drops attributes -- hence
+  # the re-stamp here -- but so does `merge()`, and merge is exactly what both
+  # export paths run between computing PSR and calibrating it (the league-offset
+  # join in 08b and 06). An attribute-only marker is therefore silently gone by
+  # the time the guard reads it, which defeats the guard in the one code shape
+  # this pipeline actually uses. A column survives merge, rbindlist(fill=TRUE)
+  # and subsetting. The attribute is kept alongside it for any caller still
+  # reading it.
   if (!isTRUE(all.equal(gk_goal_scale, 1))) {
+    combined[, panna_gk_scaled := TRUE]
     data.table::setattr(combined, "panna_gk_scaled", TRUE)
   }
   combined
@@ -2282,8 +2292,19 @@ apply_psr_calibration <- function(psr_dt, calibration = load_psr_calibration()) 
   if (is.null(calibration) || NROW(calibration) == 0 || nrow(dt) == 0) return(dt)
   # Guard the one way this can be silently wrong: calibrating a table whose
   # keepers were already scaled by the superseded gk_goal_scale would apply
-  # ~0.5 twice (~0.27). The marker column is set by .scale_gk_psr().
-  if (isTRUE(attr(dt, "panna_gk_scaled"))) {
+  # ~0.5 twice (~0.32).
+  #
+  # Check the COLUMN first and the attribute second. Both export paths merge the
+  # league offsets onto the ratings between computing and calibrating them, and
+  # merge() drops R attributes -- so on the attribute alone this guard is already
+  # gone by the time it runs, in exactly the code shape the pipeline uses.
+  # NB isTRUE() takes a length-1 logical, so isTRUE(c(TRUE, TRUE)) is FALSE --
+  # wrapping the whole column in it would make this guard never fire. Reduce to
+  # a scalar with any() FIRST, then test that.
+  .gk_marked <- isTRUE(attr(dt, "panna_gk_scaled")) ||
+    ("panna_gk_scaled" %in% names(dt) &&
+       isTRUE(any(as.logical(dt[["panna_gk_scaled"]]), na.rm = TRUE)))
+  if (.gk_marked) {
     cli::cli_abort(c(
       "These ratings were already scaled by {.arg gk_goal_scale}.",
       "x" = "Calibrating again would double-scale goalkeepers.",

@@ -385,6 +385,7 @@ utils::globalVariables(c(
   "clean_name",
   "pos_group",
   "pos_grp",
+  "panna_gk_scaled",
   "modal_pos",
   "goals_scored",
   "goals_conceded",
