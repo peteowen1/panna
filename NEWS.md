@@ -1,10 +1,68 @@
-# panna 0.3.41 (dev)
+# panna 0.3.42 (dev)
 
-Version heading realigned to `DESCRIPTION` (0.3.39). As with the 0.3.26-0.3.31
-run before it, 0.3.33-0.3.38 were `gh pr create` hook bumps with no NEWS
+Version heading realigned to `DESCRIPTION` (0.3.42). As with the 0.3.26-0.3.31
+run before it, 0.3.33-0.3.41 were `gh pr create` hook bumps with no NEWS
 sections of their own -- the hook bumps the patch version at PR-creation time,
 so a session that opens several PRs advances the version several times without
 any of them being a release. The sections below cover the actual work.
+
+## Position calibration reached the published PSR and PSV (panna#202/#211/#214)
+
+The position factors existed and were correct, but two of the three export
+paths never applied them, so a unit of the published rating still meant
+different amounts of goal difference depending on where a player played.
+Goalkeepers were the visible symptom: PSV overstates their goal-difference
+impact by roughly 1/0.529 = 1.9x, which put three of them in the published
+top 10 (Joan García 4th, David Raya 7th, Julien Butez 9th on 2025-2026).
+
+- **Seasonal PSR (`06_seasonal_skill_ratings.R`)** now calibrates after the
+  league offsets. Step 08b already did; step 06's own comment referenced "the
+  same ordering rule as the seasonal path in 06" for a call site that did not
+  exist. Across the 13 complete seasons in the cached table, keepers had taken
+  50-70% of the top 20 in every season from 2017 on against an ~8% population
+  share. Outfield/GK spread moved 0.432 -> 0.149 from parity; keeper top-20
+  over-representation 42.5 -> 6.2 percentage points. Position axis only: the
+  shipped table carries season factors for 2016-2025 only, so applying that axis
+  would rescale history while leaving the live seasons untouched.
+
+- **Published PSV (`10b_export_game_logs.R`)** now calibrates too, and does so
+  BEFORE the league offsets -- the opposite of PSR's ordering, because PSV's
+  offsets are derived FROM PSV by step 06 (which calibrates first) and therefore
+  arrive already on the calibrated scale. Calibrating afterwards would compute
+  `(psv + offset) * f` and shrink a keeper's league offset by 0.529.
+
+- `compute_player_psv()` now returns **`pos_grp`**, the bucket the calibration
+  keys on, resolved through the canonical `resolve_position_group()` and pinned
+  to the GK router. The exported `position` column cannot be used for this: it
+  is the per-match LINEUP position and reads "Substitute" on ~29% of rows, which
+  collapses to a single blended bucket -- a calibration keyed on it is a silent
+  no-op that changes nothing and reports no error. `pos_grp` also now ships in
+  `game_logs.parquet` alongside `position`, giving consumers a usable position
+  for the first time.
+
+### Fixes found while wiring this
+
+- `resolve_position_group()` errored when every row of its input was a
+  substitute or had a blank position, because the filtered table left `pick()`
+  returning NULL into data.table's `j`. Nine league-seasons (Primeira_Liga
+  2015-2016, Liga_MX, A_League, Super_Lig, Championship, all 2013-2016) carry a
+  blank `position` on 100% of rows, so any caller scoped to one league-season
+  hit it -- and inside the game-log export's per-league `tryCatch`, that error
+  would have silently dropped the entire league. Now returns all-NA, which
+  `apply_psv_calibration()` treats as factor 1.
+
+- Substitute goalkeepers (3,756 rows, 0.184%) are routed to the OUTFIELD model,
+  because `.detect_gk_rows()` greps the row's own `position` and sees
+  "Substitute". Their resolved position is still GK, so they would have taken
+  the GK factor onto a score it was never fitted against; they are returned as
+  NA instead. The underlying routing gap is left alone deliberately:
+  `.detect_gk_rows()` also selects the GK training set in
+  `07_train_psr_model.R`, so changing it at serve time only would create a
+  train/serve skew. That fix needs a coordinated step-07 retrain.
+
+About 2.3% of minutes ship uncalibrated (players whose every appearance in a
+league-season was a substitute, plus the blank-position seasons above). The
+export logs that count per season rather than passing it off as zero.
 
 ## career_panna.parquet's defense rating shipped inverted for ~4 days (panna#F1)
 

@@ -692,6 +692,145 @@ validate_game_log_schema <- function(dt, league, season) {
     skip_absent = TRUE
   )
 
+  # --- PSV position calibration (panna#211) ---
+  # A unit of PSV means different amounts of goal difference depending on
+  # position, so a cross-position sort is not comparable without it: keepers'
+  # PSV overstates their goal-difference impact by roughly 1/0.529 = 1.9x, which
+  # put three of them in the published top 10 (Joan García 4th, Raya 7th,
+  # Butez 9th on 2025-2026).
+  #
+  # BEFORE the league offsets below, which is the OPPOSITE of PSR's ordering in
+  # steps 06/08b -- see apply_psv_calibration()'s roxygen for why PSV flips it.
+  # In short: PSR's offset is separately estimated and independent of PSR's
+  # scale, so PSR can be scaled either side of it. PSV's offsets are DERIVED
+  # FROM PSV (compute_psr_league_offsets -> build_league_network(value_col =
+  # "psv")) by step 06, which calibrates before deriving them -- so the offsets
+  # in psr_league_offsets.parquet already arrive on the CALIBRATED scale.
+  # Calibrating after adding them would compute (psv + offset) * f and scale the
+  # offset a second time, shrinking a keeper's league offset by 0.529.
+  # Calibrate first, then add: psv * f + offset, both terms on one scale.
+  #
+  # Keys on `pos_grp`, carried through from compute_player_psv(). Do NOT
+  # substitute the exported `position` column: that is the per-match LINEUP
+  # position and reads "Substitute" on ~29% of rows, which .player_role()
+  # collapses to "OTHER" -- a calibration keyed on it is a silent no-op that
+  # changes nothing and reports no error (verified: bit-identical output).
+  # Own tryCatch, deliberately. This block sits AFTER the per-league loop closes,
+  # so it runs inside the per-SEASON handler -- an error escaping here aborts the
+  # whole season and publishes game logs for no league at all, while every other
+  # season still reports success. A calibration regression should be loud and
+  # distinguishable but must not destroy the unrelated, previously-reliable
+  # export, which is the same reasoning 06_seasonal_skill_ratings.R gives for
+  # wrapping its own PSV calibration call.
+  game_logs <- tryCatch({
+  if ("psv" %in% names(game_logs)) {
+    if (!"pos_grp" %in% names(game_logs)) {
+      warning(sprintf(
+        "[%s] game_logs lacks `pos_grp` — PSV position calibration SKIPPED, so ",
+        season),
+        "published PSV is not comparable across positions and keepers will be ",
+        "over-rated (see panna#211). Check that compute_player_psv() still ",
+        "returns it and that build_player_game_ratings() carries it through.",
+        call. = FALSE)
+    } else {
+      .psv_cal <- load_psv_calibration()
+      if (is.null(.psv_cal) || nrow(.psv_cal) == 0) {
+        warning(sprintf("[%s] PSV calibration table unavailable; PSV left ", season),
+                "position-uncalibrated (keepers over-rated, see panna#211).",
+                call. = FALSE)
+      } else {
+        # A blank cell or a renamed level in the CSV would silently coerce that
+        # position's factor to 1 (see .psv_calibration_factor / the fac[pos]
+        # lookup) -- indistinguishable from "correctly uncalibrated". Assert the
+        # four expected levels are actually present and usable before relying on
+        # them.
+        .want <- c("GK", "DEF", "MID", "FWD")
+        .have <- .psv_cal[.psv_cal$axis == "position" &
+                            is.finite(.psv_cal$factor) & .psv_cal$factor > 0, ]$level
+        if (!all(.want %in% .have)) {
+          warning(sprintf("[%s] PSV calibration table is missing a usable factor for: %s",
+                          season, paste(setdiff(.want, .have), collapse = ", ")),
+                  " -- those positions ship UNCALIBRATED at factor 1 while the ",
+                  "others are scaled, which is worse than calibrating none of ",
+                  "them (it changes the relative ordering between positions). ",
+                  "Check inst/extdata/psv_calibration.csv (see panna#211).",
+                  call. = FALSE)
+        }
+
+        # Report the uncalibrated share rather than letting it pass as a known
+        # value. Unresolved is NA (not the string "OTHER" -- resolve_position_group()
+        # and .psv_pin_gk() both emit NA, and apply_psv_calibration() treats NA as
+        # factor 1). It means a player whose every appearance in this league-season
+        # was a substitute, plus substitute keepers, whose outfield-model score has
+        # no fitted factor. Measured 2026-09: ~3.6% of rows, ~2.3% of minutes,
+        # concentrated in 2013-2016 league-seasons whose `position` is blank on
+        # every row.
+        n_other <- game_logs[is.na(pos_grp), .N]
+        .gk_top20 <- function(d) {
+          # Resolve each player to ONE bucket by minutes, not by whichever row
+          # happens to come first: a player appearing in two blog leagues in the
+          # same season can carry a different pos_grp in each, and this is the
+          # number meant to detect a calibration regression.
+          tot <- d[!is.na(psv), .(psv = sum(psv, na.rm = TRUE),
+                                  mins = sum(total_minutes, na.rm = TRUE),
+                                  pos_grp = pos_grp[which.max(
+                                    data.table::fifelse(is.na(total_minutes), 0,
+                                                        as.numeric(total_minutes)))]),
+                   by = player_id]
+          tot <- tot[mins >= 900]
+          if (nrow(tot) < 20) return(NA_real_)
+          100 * mean(tot[order(-psv)][1:20]$pos_grp == "GK", na.rm = TRUE)
+        }
+        .pool_gk <- function(d) {
+          tot <- d[!is.na(psv), .(mins = sum(total_minutes, na.rm = TRUE),
+                                  pos_grp = pos_grp[1]), by = player_id][mins >= 900]
+          if (nrow(tot) == 0) return(NA_real_)
+          100 * mean(tot$pos_grp == "GK", na.rm = TRUE)
+        }
+        .before <- .gk_top20(game_logs)
+        .pool   <- .pool_gk(game_logs)
+        game_logs <- data.table::as.data.table(
+          apply_psv_calibration(game_logs, position_col = "pos_grp",
+                                calibration = .psv_cal)
+        )
+        .after <- .gk_top20(game_logs)
+        message(sprintf(
+          "  [%s] PSV position calibration applied (%d/%d rows uncalibrated); keeper share of top 20: %.0f%% -> %.0f%% (pool %.0f%%)",
+          season, n_other, nrow(game_logs), .before, .after, .pool))
+
+        # Anchor check (stats-discipline §1), matching the one step 06 applies to
+        # PSR. Without it this block reports a regression as ordinary pipeline
+        # chatter: if pos_grp were to resolve to NA for most rows while the COLUMN
+        # still existed, the calibration would no-op, n_other would be large, and
+        # the message would read "45% -> 45%" with nothing flagged. This is the
+        # published-blog path, so it needs at least the safety net the seasonal
+        # path has. Warn, don't stop: 10b is expensive and killing it here would
+        # discard every league's game logs for the season.
+        if (!is.na(.after) && !is.na(.pool) && .after > .pool + 25) {
+          warning(sprintf(
+            "[%s] PSV anchor FAILED: keepers are %.0f%% of the top 20 against a %.0f%% pool ",
+            season, .after, .pool),
+            sprintf("share, AFTER calibration (%d of %d rows were uncalibrated). ",
+                    n_other, nrow(game_logs)),
+            "Published PSV is keeper-dominated -- do not publish without checking ",
+            "that pos_grp resolved and that inst/extdata/psv_calibration.csv is ",
+            "current (see panna#211).", call. = FALSE)
+        }
+        rm(.psv_cal, n_other, .gk_top20, .pool_gk, .before, .after, .pool, .want, .have)
+      }
+    }
+  }
+  game_logs
+  }, error = function(e) {
+    warning(sprintf("[%s] PSV position calibration FAILED: %s", season,
+                    conditionMessage(e)),
+            " -- proceeding with UNCALIBRATED PSV for this season. Keepers will ",
+            "be over-rated by roughly 1.9x relative to outfielders and a ",
+            "cross-position sort is not comparable (see panna#211). The rest of ",
+            "the game-log export is unaffected.", call. = FALSE)
+    game_logs
+  })
+
   # --- Cross-league PSV calibration (LIVE-PSV-UNBLOCK 2026-07-20, task 3) ---
   # PSV is a dot-product of box-score rates that barely vary by league (same
   # reason PSR needs it — see league-offsets.md), so a Saudi/MLS dominator can
@@ -779,7 +918,13 @@ validate_game_log_schema <- function(dt, league, season) {
   # Column selection/order
   blog_cols <- intersect(
     c("player_id", "player_name", "match_id", "match_date", "league", "season",
-      "team_id", "position", "total_minutes",
+      # pos_grp ships alongside `position` rather than replacing it (additive).
+      # `position` is the per-match LINEUP position and reads "Substitute" on
+      # ~29% of rows, so it cannot be used to group or filter by position;
+      # pos_grp is the GK/DEF/MID/FWD bucket the PSV calibration keys on, with
+      # substitute rows carrying the player's own most-played bucket. "OTHER"
+      # means genuinely unknown -- treat it as missing, not as a category.
+      "team_id", "position", "pos_grp", "total_minutes",
       "panna", "offense", "defense", "spm_overall", "panna_percentile",
       "epv_total", "epv_total_adj",
       "epv_offensive_adj", "epv_defensive_adj", "opp_adj",

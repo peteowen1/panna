@@ -91,8 +91,17 @@ build_player_game_ratings <- function(player_game_epv,
   # --- Merge PSV ---
   if (!is.null(player_game_psv)) {
     psv <- data.table::as.data.table(player_game_psv)
+    # pos_grp rides along because the PSV position calibration is applied
+    # downstream in 10b -- BEFORE the league offsets are added, which is the
+    # opposite of PSR's ordering and is deliberate: PSV's offsets are derived
+    # FROM PSV by step 06 (which calibrates first), so they already arrive on
+    # the calibrated scale and must not be scaled again. See
+    # apply_psv_calibration()'s roxygen for the full rationale before changing
+    # any of this. It needs the bucket the scoring model actually used, and
+    # deriving it again later is not equivalent: the exported `position` column
+    # is the per-match LINEUP position, which reads "Substitute" on ~29% of rows.
     psv_cols <- intersect(
-      c("player_id", "match_id", "psv", "psv_raw", "osv", "dsv"),
+      c("player_id", "match_id", "psv", "psv_raw", "osv", "dsv", "pos_grp"),
       names(psv)
     )
     psv <- psv[, ..psv_cols]

@@ -228,6 +228,14 @@
 #'   cannot see a data change that preserves n_rows/n_players/n_dates and the
 #'   date sum; passing this closes most of that gap for a few bytes. Optional
 #'   because not every caller has a single source file.
+#' @param keep_players Optional data.frame/data.table whose first two columns are
+#'   \code{date} and \code{player_id}, restricting each date's OUTPUT to the
+#'   players a caller actually needs. The running sums still cover every player
+#'   (they must, for the decay recurrence to stay correct) — only the returned
+#'   snapshot is narrowed, before the table is built. Without it an as-of run
+#'   over N dates returns N x 46,044 rows. Note chunking the call is NOT an
+#'   alternative: this function deep-copies \code{match_stats} on entry, so
+#'   chunking pays that copy once per chunk instead of once in total.
 #' @param verbose Print progress (default TRUE).
 #'
 #' @return Named list keyed by date string. Each element is a data.table (one
@@ -239,6 +247,7 @@
 .estimate_prematch_skills_batch <- function(match_stats, ref_dates,
                                             decay_params = NULL,
                                             min_weighted_90s = 3,
+                                            keep_players = NULL,
                                             output_min_w90 = 0,
                                             stream_dir = NULL,
                                             source_fingerprint = NULL,
@@ -263,6 +272,19 @@
     }
   }
   if (is.null(decay_params)) decay_params <- get_default_decay_params()
+  # keep_players: optional data.frame(date, player_id) restricting each date's
+  # OUTPUT to the players a caller actually needs. The running sums still cover
+  # every player (they must, for the decay recurrence to be correct) -- only the
+  # returned snapshot is narrowed. Without it an as-of run over N dates returns
+  # N x 46,044 rows, which is what drove a 100+ minute serialization and 1.7GB
+  # free RAM on 2026-09-01. Chunking the call is the WRONG fix: the function
+  # deep-copies match_stats on entry, so chunking pays that copy once per chunk.
+  if (!is.null(keep_players)) {
+    keep_players <- data.table::as.data.table(keep_players)
+    data.table::setnames(keep_players, names(keep_players)[1:2], c("date", "player_id"))
+    keep_players[, date := as.Date(date)]
+    data.table::setkey(keep_players, date)
+  }
 
   ref_dates <- sort(unique(as.Date(ref_dates)))
   n_dates <- length(ref_dates)
@@ -666,22 +688,38 @@
       }
 
       # --- Build result data.table ---
+      # Narrow to the requested rows BEFORE constructing the table: building the
+      # full n_players x n_stats frame and subsetting afterwards still allocates
+      # it, which is the whole cost we are avoiding.
+      sel <- if (is.null(keep_players)) {
+        which(run_w90 >= min_weighted_90s)
+      } else {
+        want <- keep_players[.(rd), player_id, nomatch = 0L]
+        idx <- match(want, all_player_ids)
+        idx <- idx[!is.na(idx)]
+        idx[run_w90[idx] >= min_weighted_90s]
+      }
+      if (length(sel) == 0L) {
+        NULL
+      } else {
+
       result <- data.table::data.table(
-        player_id = all_player_ids,
-        player_name = pname_lookup,
-        primary_position = ppos_lookup,
+        player_id = all_player_ids[sel],
+        player_name = pname_lookup[sel],
+        primary_position = ppos_lookup[sel],
         date = rd,
-        weighted_90s = run_w90
+        weighted_90s = run_w90[sel]
       )
 
       for (ci in seq_along(rate_stats)) {
-        data.table::set(result, j = rate_stats[ci], value = rate_skill_mat[, ci])
+        data.table::set(result, j = rate_stats[ci], value = rate_skill_mat[sel, ci])
       }
       for (sc in eff_stats) {
-        data.table::set(result, j = sc, value = eff_skill_vals[[sc]])
+        data.table::set(result, j = sc, value = eff_skill_vals[[sc]][sel])
       }
 
       if (output_min_w90 > 0) result[weighted_90s >= output_min_w90] else result
+      }
       }  # end else (has prior data)
     },
     error = function(e) {
@@ -1043,7 +1081,8 @@ calculate_psv <- function(player_match_stats, coef_df, min_adjust = TRUE,
     dt[, c("psv_raw", "psv") := 0]
     id_cols <- intersect(
       c("player_id", "player_name", "season", "round", "match_id",
-        "team_name", "match_date", "minutes_played", "total_minutes"),
+        "team_name", "match_date", "minutes_played", "total_minutes",
+        "position", "primary_position", "pos_grp"),
       names(dt)
     )
     return(dt[, c(id_cols, "psv_raw", "psv"), with = FALSE])
@@ -1196,7 +1235,7 @@ calculate_psv <- function(player_match_stats, coef_df, min_adjust = TRUE,
   id_cols <- intersect(
     c("player_id", "player_name", "season", "round", "match_id",
       "team_name", "match_date", "minutes_played", "total_minutes",
-      "position", "primary_position"),
+      "position", "primary_position", "pos_grp"),
     names(dt)
   )
 
@@ -1335,6 +1374,71 @@ calculate_psv_components <- function(player_match_stats, coef_df, osr_coef_df,
   if (is.null(r)) return(rep("OTHER", nrow(dt)))
   r <- toupper(r)
   r[is.na(r) | !r %in% c("GK", "DEF", "MID", "FWD")] <- "OTHER"
+  r
+}
+
+#' Position bucket for PSV calibration, pinned to the GK router
+#'
+#' A thin wrapper over \code{\link{resolve_position_group}} -- the canonical
+#' resolver, which already handles the hard part: Opta's \code{position} is the
+#' match ROLE, so roughly 29\% of match-grain rows read \code{"Substitute"}, and
+#' bucketing on that blends every position into one group. It resolves each
+#' player's minutes-weighted modal non-Substitute position per season, falls back
+#' to their career modal, and only then to the row's own label. Do NOT
+#' reimplement that here: a duplicated position classifier is exactly what
+#' \code{\link{.psv_position_group}}'s notes record going wrong before.
+#'
+#' What this adds is the one thing the resolver cannot know -- which MODEL scored
+#' the row.
+#'
+#' @section Why the bucket is pinned to the GK router:
+#' A calibration factor is only meaningful against the model it was fitted on, so
+#' the bucket must describe the scoring path, not the player's true position.
+#' \code{is_gk} therefore wins outright: a row the GK router sent to the outfield
+#' model must never receive the GK factor.
+#'
+#' That matters for one real case. \code{\link{.detect_gk_rows}} greps the row's
+#' own \code{position}, which reads \code{"Substitute"} for a keeper coming off
+#' the bench -- so substitute keepers (measured 2026-09: 3,756 rows, 0.184\%) are
+#' scored by the OUTFIELD model. Their resolved position is nonetheless GK, so
+#' without this pin they would take the GK factor onto an outfield-model score.
+#' They are returned as \code{NA} instead, which
+#' \code{\link{apply_psv_calibration}} treats as factor 1 -- honest, because
+#' their scoring path has no fitted factor. Callers should report that count
+#' rather than let it pass silently: it is a gap, not a known value.
+#'
+#' The tempting fix -- routing substitute keepers to the GK model -- is NOT safe
+#' here. \code{.detect_gk_rows()} also selects the GK TRAINING set in
+#' \code{07_train_psr_model.R}, deliberately, so train and serve route
+#' identically. Changing it at serve time alone would create a train/serve skew.
+#' That fix needs a coordinated step-07 retrain and is tracked separately.
+#'
+#' @param dt Table with \code{position} and \code{player_id}; \code{total_minutes}
+#'   and \code{season_end_year} improve the resolution when present.
+#' @param is_gk Logical vector marking rows routed to the GK sub-model; defaults
+#'   to the same detection the scorer uses.
+#' @return Character vector of GK/DEF/MID/FWD, or \code{NA} where unresolved.
+#'   \code{"GK"} appears if and only if \code{is_gk} is \code{TRUE}.
+#' @keywords internal
+.psv_pos_grp <- function(dt, is_gk = .detect_gk_rows(dt)) {
+  # resolve_position_group() aborts without these; PSV is still scoreable
+  # without a resolvable position, so degrade to "uncalibrated" not "failed".
+  if (!all(c("player_id", "position") %in% names(dt))) {
+    return(.psv_pin_gk(rep(NA_character_, nrow(dt)), is_gk))
+  }
+  .psv_pin_gk(resolve_position_group(dt), is_gk)
+}
+
+# Force the bucket to agree with the GK router, so pos_grp == "GK" exactly when
+# the row was scored by the GK sub-model. A GK-resolved row the router sent to
+# the outfield model (a substitute keeper) becomes NA rather than inheriting a
+# GK factor that does not apply to its score. See .psv_pos_grp()'s roxygen.
+.psv_pin_gk <- function(r, is_gk) {
+  r <- as.character(r)
+  if (length(is_gk) != length(r)) return(r)
+  is_gk[is.na(is_gk)] <- FALSE
+  r[is_gk] <- "GK"
+  r[!is_gk & !is.na(r) & r == "GK"] <- NA_character_
   r
 }
 
@@ -1552,6 +1656,15 @@ compute_player_psv <- function(player_match_stats, min_adjust = TRUE,
   # credit). Splitting also centers GKs vs GKs and outfield vs outfield.
   is_gk <- .detect_gk_rows(dt)
 
+  # Export the position bucket the position calibration keys on, stamped BEFORE
+  # the split below: the split scores the two groups separately and rbinds them,
+  # so a bucket derived afterwards would be computed on a table whose row order
+  # no longer matches the input. Passing `is_gk` pins the bucket to the model
+  # that actually scored each row, which is the only thing a fitted factor is
+  # valid against -- see .psv_pos_grp()'s roxygen for the substitute-keeper case
+  # this rules out.
+  dt[, pos_grp := .psv_pos_grp(dt, is_gk)]
+
   .score <- function(sub, tgt, model) {
     margin <- load_psr_coefficients("margin", target = tgt, model = model)
     osr <- tryCatch(load_psr_coefficients("offense", target = tgt, model = model),
@@ -1764,7 +1877,22 @@ resolve_position_group <- function(dt) {
                                   w = data.table::fifelse(is.na(w), 0, w))
   if ("season_end_year" %in% names(d)) real[, season_end_year := d$season_end_year]
   real <- real[!is.na(position) & !position %in% c("Substitute", "")]
-  pick <- function(pos, wt) { t <- tapply(wt, pos, sum, na.rm = TRUE); names(t)[which.max(t)] }
+  # Every row a substitute or blank leaves nothing to resolve FROM. Returning
+  # all-NA (which apply_psv_calibration treats as factor 1) is the honest answer;
+  # without this guard `pick()` hands data.table a NULL column and the whole call
+  # errors. That is not hypothetical: nine league-seasons (Primeira_Liga
+  # 2015-2016, Liga_MX, A_League, Super_Lig, Championship, all 2013-2016) carry a
+  # blank `position` on 100% of rows. A caller scoped to ONE league-season -- as
+  # the game-log export is -- hits it directly, and inside that export's
+  # per-league tryCatch an error silently drops the entire league.
+  if (nrow(real) == 0L) return(rep(NA_character_, nrow(d)))
+  # which.max() on an all-NA/empty tally returns integer(0) -> NULL in j, same
+  # failure one group down. Keep the return length at exactly 1.
+  pick <- function(pos, wt) {
+    t <- tapply(wt, pos, sum, na.rm = TRUE)
+    if (length(t) == 0L || all(is.na(t))) return(NA_character_)
+    names(t)[which.max(t)]
+  }
   career <- real[, .(career_pos = pick(position, w)), by = player_id]
   out <- data.table::data.table(player_id = d$player_id, row_pos = as.character(d$position))
   if ("season_end_year" %in% names(real) && "season_end_year" %in% names(d)) {
@@ -1874,18 +2002,39 @@ load_psr_coefficients <- function(type = c("margin", "offense", "defense"),
 #' @param skills Player skill data (output of \code{estimate_player_skills()}
 #'   or \code{load_opta_skills()}).
 #' @param center Logical. Center PSR around position-group mean (default TRUE).
-#' @param target One of \code{"xg"} (default) or \code{"goals"} for the
-#'   outfield model. GK model always uses goal differential.
+#' @param target Outfield coefficient set: \code{"blend"} (default,
+#'   \code{0.6 * xG + 0.4 * goals}), \code{"xg"}, or \code{"goals"}. The GK
+#'   sub-model always uses goal differential regardless.
+#'
+#'   Default moved \code{"xg"} -> \code{"blend"} (panna#214). The xG-trained
+#'   set cannot reward finishing by construction — \code{npg_minus_npxg_per90}
+#'   is precisely the part of scoring xG does not capture — which made the net
+#'   effect of an extra non-penalty goal NEGATIVE (-0.059) and left Messi 93rd
+#'   among outfielders. Measured out-of-sample (prior-season rating -> next
+#'   season's matches, fit <=2022 / test >=2023, n = 15,912), blend is the only
+#'   set never worse than second: best on xG difference (test R2 0.1664 vs
+#'   0.1618 xG / 0.1611 goals) and a statistical tie for best on goal
+#'   difference (0.1428 vs 0.1431 goals / 0.1360 xG). Differences across sets
+#'   are small (<1 R2 point), so the switch costs no predictive accuracy while
+#'   materially improving valuation.
 #' @param position_means Optional pre-computed position-mean lookup table used
 #'   to center skill columns before scoring (see \code{\link{compute_player_psv}}).
 #'   If \code{NULL}, no cross-position centering is applied.
+#' @param gk_goal_scale \strong{Superseded} by
+#'   \code{\link{apply_psr_calibration}}, which covers goalkeepers along with
+#'   every other position AND is applied at the correct point (after the
+#'   cross-league offsets). Defaults to \code{1} (no-op). Retained only so a
+#'   caller can pin the old panna#202 behaviour by passing
+#'   \code{GK_PSR_GOAL_SCALE} and skipping \code{apply_psr_calibration()};
+#'   doing both would double-scale keepers.
 #'
 #' @return A data.table with \code{psr}, \code{osr}, \code{dsr} columns.
 #'
 #' @keywords internal
 compute_player_psr <- function(skills, center = TRUE,
-                                target = c("xg", "goals"),
-                                position_means = NULL) {
+                                target = c("blend", "xg", "goals"),
+                                position_means = NULL,
+                                gk_goal_scale = 1) {
   target <- match.arg(target)
   dt <- data.table::as.data.table(skills)
   dt <- .position_normalize_skills(dt, position_means)
@@ -1902,15 +2051,17 @@ compute_player_psr <- function(skills, center = TRUE,
     outfield_skills <- dt[!is_gk]
     margin_coef <- load_psr_coefficients("margin", target = target)
 
-    prefix <- if (target == "goals") "gd_" else ""
-    osr_path <- system.file("extdata", paste0(prefix, "osr_coefficients.csv"),
-                             package = "panna")
-    dsr_path <- system.file("extdata", paste0(prefix, "dsr_coefficients.csv"),
-                             package = "panna")
+    # Route osr/dsr through the shared loader rather than rebuilding the prefix
+    # here: it already maps goals -> "gd_" / blend -> "blend_" and carries the
+    # blend-missing fallback. The old inline `if (target == "goals") "gd_"`
+    # silently resolved blend to the xG files, so target = "blend" would have
+    # mixed a blend margin with xG components.
+    osr_coef <- tryCatch(load_psr_coefficients("offense", target = target),
+                         error = function(e) NULL)
+    dsr_coef <- tryCatch(load_psr_coefficients("defense", target = target),
+                         error = function(e) NULL)
 
-    if (osr_path != "" && dsr_path != "") {
-      osr_coef <- utils::read.csv(osr_path, stringsAsFactors = FALSE)
-      dsr_coef <- utils::read.csv(dsr_path, stringsAsFactors = FALSE)
+    if (!is.null(osr_coef) && !is.null(dsr_coef)) {
       results$outfield <- calculate_psr_components(
         outfield_skills, margin_coef, osr_coef, dsr_coef, center = center
       )
@@ -1952,6 +2103,12 @@ compute_player_psr <- function(skills, center = TRUE,
       } else {
         results$gk <- calculate_psr(gk_skills, gk_margin_coef, center = center)
       }
+
+      # Legacy GK-only scale. Superseded by the position calibration applied to
+      # the combined table below, which covers GK too -- so this defaults to 1
+      # (no-op) and exists only so a caller pinning the old behaviour still
+      # works. Passing both would double-scale keepers.
+      results$gk <- .scale_gk_psr(results$gk, gk_goal_scale)
     } else {
       # No GK model at all -- warn and assign zeros
       cli::cli_warn("GK coefficient files not found. GKs will have PSR = 0.")
@@ -1966,8 +2123,260 @@ compute_player_psr <- function(skills, center = TRUE,
     }
   }
 
-  # Combine results
-  data.table::rbindlist(results, fill = TRUE, use.names = TRUE)
+  # NOTE: calibration is deliberately NOT applied here. Both axes are applied
+  # by apply_psr_calibration() AFTER the additive cross-league offsets, because
+  # the published rating is `psr * factor + offset` -- scaling before the offset
+  # leaves the offset uncalibrated and dilutes the correction (measured: it cut
+  # the position-slope equalisation from a 0.058 spread to 0.195).
+  combined <- data.table::rbindlist(results, fill = TRUE, use.names = TRUE)
+  # Mark that keepers were already scaled, so apply_psr_calibration() can refuse
+  # to scale them twice (0.5 * 0.6411 ~= 0.32 instead of one or the other).
+  #
+  # As a COLUMN, not only an attribute. `rbindlist()` drops attributes -- hence
+  # the re-stamp here -- but so does `merge()`, and merge is exactly what both
+  # export paths run between computing PSR and calibrating it (the league-offset
+  # join in 08b and 06). An attribute-only marker is therefore silently gone by
+  # the time the guard reads it, which defeats the guard in the one code shape
+  # this pipeline actually uses. A column survives merge, rbindlist(fill=TRUE)
+  # and subsetting. The attribute is kept alongside it for any caller still
+  # reading it.
+  if (!isTRUE(all.equal(gk_goal_scale, 1))) {
+    combined[, panna_gk_scaled := TRUE]
+    data.table::setattr(combined, "panna_gk_scaled", TRUE)
+  }
+  combined
+}
+
+#' Apply the per-position PSR calibration
+#'
+#' Multiplies each row's rating columns by its position factor from
+#' \code{\link{load_psr_calibration}}, so a unit of PSR means the same amount of
+#' goal difference regardless of position. Scales \code{psr}/\code{osr}/
+#' \code{dsr}/\code{psr_raw} together, preserving \code{osr + dsr == psr}.
+#'
+#' Positions absent from the table (including \code{NA} \code{primary_position})
+#' pass through with a factor of 1 rather than becoming \code{NA}.
+#'
+#' @param dt Combined PSR table with \code{primary_position}.
+#' @param calibration Calibration table, or \code{NULL} to skip entirely.
+#' @keywords internal
+#' @noRd
+.calibrate_psr_positions <- function(dt, calibration) {
+  if (is.null(calibration) || NROW(calibration) == 0) return(dt)
+  if (NROW(dt) == 0 || !"primary_position" %in% names(dt)) return(dt)
+  dt <- data.table::as.data.table(dt)
+  f <- .psr_calibration_factor(calibration, "position", dt$primary_position)
+  if (all(f == 1)) return(dt[])
+  for (col in intersect(c("psr_raw", "psr", "osr", "dsr"), names(dt))) {
+    data.table::set(dt, j = col, value = dt[[col]] * f)
+  }
+  dt[]
+}
+
+
+#' Is a player-season eligible for a PSR leaderboard? (panna#215)
+#'
+#' Returns a logical vector, one per row — deliberately NOT a filtered table.
+#' A low-minutes rating is still that player's best available estimate; it is
+#' only too noisy to \emph{rank} against a full season. Keep the rows, flag
+#' them, and let the display decide.
+#'
+#' Without this, 23 of the outfield top 100 are sub-15-nineties part-seasons
+#' (Totti 7.0, Pinilla 5.5, Pastore 9.7).
+#'
+#' @param psr_dt Table containing \code{weighted_90s}.
+#' @param min_90s Minimum weighted 90s; defaults to
+#'   \code{\link{MIN_90S_PSR_LEADERBOARD}}.
+#' @return Logical vector. \code{NA} or missing \code{weighted_90s} is treated
+#'   as NOT eligible — an unknown workload cannot clear a workload bar.
+#' @family psr
+#' @export
+psr_leaderboard_eligible <- function(psr_dt, min_90s = MIN_90S_PSR_LEADERBOARD) {
+  dt <- data.table::as.data.table(psr_dt)
+  if (!"weighted_90s" %in% names(dt)) {
+    cli::cli_abort(c(
+      "{.arg psr_dt} must contain {.field weighted_90s}.",
+      "i" = "Eligibility is a workload bar; without minutes it cannot be judged."
+    ))
+  }
+  w <- suppressWarnings(as.numeric(dt$weighted_90s))
+  !is.na(w) & is.finite(w) & w >= min_90s
+}
+
+#' Load the PSR calibration table
+#'
+#' Per-position and per-season multipliers putting PSR on a common
+#' goals-per-90 footing (panna#202/#213/#214). See
+#' \code{inst/extdata/psr_calibration.csv}.
+#'
+#' Derived leak-free: each player's season S-1 rating predicts season S
+#' matches, minute-weighted and summed per position group, entered as
+#' own-minus-opponent differences against actual goal difference. The fitted
+#' slope for a cell is how much goal difference one unit of its rating actually
+#' buys, so multiplying by that slope maps the cell into goal units.
+#'
+#' Estimated as two SEPARABLE marginals, not 6 x 13 joint cells: each marginal
+#' is well powered, the joint would be mostly sampling noise.
+#'
+#' \strong{The factor IS the slope}, so calibrated PSR is denominated in goals:
+#' if \code{GD = slope * psr}, then \code{psr * slope} regresses on goal
+#' difference with a coefficient of 1. Verified after application -- every
+#' position lands at 0.97-1.02 and every season at 0.98-1.03 (sd around 1 of
+#' 0.015). A player with calibrated PSR 0.30 contributed about 0.30 goals of
+#' difference per 90, whatever their position or era.
+#'
+#' @return data.table with \code{axis} ("position"/"season"), \code{level},
+#'   \code{factor}, plus the underlying \code{slope}/\code{se} for auditing.
+#' @family psr
+#' @export
+load_psr_calibration <- function() {
+  path <- system.file("extdata", "psr_calibration.csv", package = "panna")
+  if (path == "") {
+    cli::cli_warn(c(
+      "PSR calibration table not found: {.file psr_calibration.csv}",
+      "i" = "Ratings will be returned uncalibrated (all factors 1)."
+    ))
+    return(data.table::data.table(axis = character(0), level = character(0),
+                                   factor = numeric(0)))
+  }
+  data.table::as.data.table(utils::read.csv(path, stringsAsFactors = FALSE))
+}
+
+#' Look up a calibration factor, defaulting to 1
+#'
+#' An unknown key returns 1 (no adjustment) rather than NA. That matters most
+#' for the CURRENT season: its factor can only be estimated once the FOLLOWING
+#' season's matches exist, so the newest season is always uncalibrated by
+#' construction and must pass through untouched rather than becoming NA.
+#'
+#' @keywords internal
+#' @noRd
+.psr_calibration_factor <- function(calibration, axis_name, keys) {
+  if (is.null(calibration) || nrow(calibration) == 0) return(rep(1, length(keys)))
+  tab <- calibration[calibration$axis == axis_name, ]
+  if (nrow(tab) == 0) return(rep(1, length(keys)))
+  # column is `level`, NOT `key`: `key` is a reserved argument of
+  # data.table::data.table(), so a column of that name cannot be constructed
+  # literally (`data.table(axis = ..., key = ...)` sets a key instead of adding
+  # a column, and errors).
+  f <- tab$factor[match(as.character(keys), as.character(tab$level))]
+  f[is.na(f) | !is.finite(f) | f <= 0] <- 1
+  f
+}
+
+#' Apply the PSR calibration (position and season)
+#'
+#' Puts every position and season on a common goals-per-90 footing, so 0.1 PSR
+#' means the same amount of goal difference for a keeper in 2016 and a striker
+#' in 2025.
+#'
+#' \strong{Call this AFTER the cross-league offsets.} The published rating is
+#' \code{psr * factor + offset}; scaling before the additive offset leaves the
+#' offset itself uncalibrated and dilutes the correction. Measured: applying
+#' position before the offset equalised position slopes to a spread of only
+#' 0.195, versus 0.058 when applied after.
+#'
+#' The season axis is skipped when \code{season_end_year} is absent (e.g. the
+#' weekly snapshot path, which is keyed on \code{snapshot_date}), so this is
+#' safe to call from any consumer.
+#'
+#' @param psr_dt PSR table with \code{primary_position}, optionally
+#'   \code{season_end_year}.
+#' @param calibration Calibration table; defaults to the shipped one. Pass
+#'   \code{NULL} to skip.
+#' @return \code{psr_dt} with rating columns calibrated on both axes.
+#' @family psr
+#' @export
+apply_psr_calibration <- function(psr_dt, calibration = load_psr_calibration()) {
+  dt <- data.table::as.data.table(psr_dt)
+  if (is.null(calibration) || NROW(calibration) == 0 || nrow(dt) == 0) return(dt)
+  # Guard the one way this can be silently wrong: calibrating a table whose
+  # keepers were already scaled by the superseded gk_goal_scale would apply
+  # ~0.5 twice (~0.32).
+  #
+  # Check the COLUMN first and the attribute second. Both export paths merge the
+  # league offsets onto the ratings between computing and calibrating them, and
+  # merge() drops R attributes -- so on the attribute alone this guard is already
+  # gone by the time it runs, in exactly the code shape the pipeline uses.
+  # NB isTRUE() takes a length-1 logical, so isTRUE(c(TRUE, TRUE)) is FALSE --
+  # wrapping the whole column in it would make this guard never fire. Reduce to
+  # a scalar with any() FIRST, then test that.
+  .gk_marked <- isTRUE(attr(dt, "panna_gk_scaled")) ||
+    ("panna_gk_scaled" %in% names(dt) &&
+       isTRUE(any(as.logical(dt[["panna_gk_scaled"]]), na.rm = TRUE)))
+  if (.gk_marked) {
+    cli::cli_abort(c(
+      "These ratings were already scaled by {.arg gk_goal_scale}.",
+      "x" = "Calibrating again would double-scale goalkeepers.",
+      "i" = "Use {.emph either} {.arg gk_goal_scale} (superseded) {.emph or} {.fn apply_psr_calibration}, not both."
+    ))
+  }
+  dt <- .calibrate_psr_positions(dt, calibration)
+  if ("season_end_year" %in% names(dt)) {
+    dt <- apply_psr_season_calibration(dt, calibration)
+  }
+  dt[]
+}
+
+#' Apply per-season PSR calibration
+#'
+#' Multiplies \code{psr}/\code{osr}/\code{dsr}/\code{psr_raw} by the season
+#' factor from \code{\link{load_psr_calibration}}, preserving
+#' \code{osr + dsr == psr}. Applied AFTER \code{\link{compute_player_psr}}
+#' (which cannot see the season) and alongside the cross-league offsets.
+#'
+#' Seasons absent from the table pass through unchanged — see
+#' \code{.psr_calibration_factor}.
+#'
+#' @param psr_dt PSR table containing \code{season_end_year}.
+#' @param calibration Calibration table; defaults to the shipped one.
+#' @return \code{psr_dt} with rating columns season-calibrated.
+#' @family psr
+#' @export
+apply_psr_season_calibration <- function(psr_dt, calibration = load_psr_calibration()) {
+  dt <- data.table::as.data.table(psr_dt)
+  if (nrow(dt) == 0) return(dt)
+  if (!"season_end_year" %in% names(dt)) {
+    cli::cli_abort(c(
+      "{.arg psr_dt} must contain {.field season_end_year} to apply season calibration.",
+      "i" = "Call this after the season has been stamped onto the ratings."
+    ))
+  }
+  f <- .psr_calibration_factor(calibration, "season", dt$season_end_year)
+  for (col in intersect(c("psr_raw", "psr", "osr", "dsr"), names(dt))) {
+    data.table::set(dt, j = col, value = dt[[col]] * f)
+  }
+  dt[]
+}
+
+
+#' Scale goalkeeper PSR onto the outfield goals footing (panna#202)
+#'
+#' Multiplies a GK result's rating columns by \code{scale}. Applied to
+#' \code{psr}, \code{osr}, \code{dsr} and \code{psr_raw} together so the
+#' \code{osr + dsr == psr} identity survives and the pre-centering value stays
+#' consistent with the centered one. A \code{scale} of 1 is an exact no-op, so
+#' callers can reproduce pre-#202 behaviour.
+#'
+#' @param gk_result GK rating table from \code{calculate_psr_components()} or
+#'   \code{calculate_psr()}.
+#' @param scale Multiplier; see \code{GK_PSR_GOAL_SCALE}.
+#' @return \code{gk_result} with its rating columns scaled.
+#' @keywords internal
+#' @noRd
+.scale_gk_psr <- function(gk_result, scale) {
+  if (is.null(gk_result) || nrow(gk_result) == 0) return(gk_result)
+  if (!is.numeric(scale) || length(scale) != 1L || !is.finite(scale)) {
+    cli::cli_abort("{.arg gk_goal_scale} must be a single finite number.")
+  }
+  if (isTRUE(all.equal(scale, 1))) return(gk_result)
+  dt <- data.table::as.data.table(gk_result)
+  for (col in intersect(c("psr_raw", "psr", "osr", "dsr"), names(dt))) {
+    data.table::set(dt, j = col, value = dt[[col]] * scale)
+  }
+  # Marker so apply_psr_calibration() can refuse to scale keepers twice.
+  data.table::setattr(dt, "panna_gk_scaled", TRUE)
+  dt[]
 }
 
 

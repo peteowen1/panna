@@ -9,6 +9,7 @@
   ref_dates,
   decay_params = NULL,
   min_weighted_90s = 3,
+  keep_players = NULL,
   output_min_w90 = 0,
   stream_dir = NULL,
   source_fingerprint = NULL,
@@ -28,6 +29,15 @@ inclusion gate (default 3). Shrinkage toward the prior is what handles
 thin samples -- see \code{estimate_player_skills} and the note at
 \code{data-raw/estimated-skills/02_estimate_skills.R:23}. Do NOT use this
 to trim output rows; that is \code{output_min_w90}.}
+
+\item{keep_players}{Optional data.frame/data.table whose first two columns are
+\code{date} and \code{player_id}, restricting each date's OUTPUT to the
+players a caller actually needs. The running sums still cover every player
+(they must, for the decay recurrence to stay correct) — only the returned
+snapshot is narrowed, before the table is built. Without it an as-of run
+over N dates returns N x 46,044 rows. Note chunking the call is NOT an
+alternative: this function deep-copies \code{match_stats} on entry, so
+chunking pays that copy once per chunk instead of once in total.}
 
 \item{output_min_w90}{Drop rows from each per-date snapshot whose
 \code{weighted_90s} is below this (default 0 = keep every row). This is a
