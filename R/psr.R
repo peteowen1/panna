@@ -1753,11 +1753,12 @@ compute_player_psv <- function(player_match_stats, min_adjust = TRUE,
       cli::cli_abort("{.arg is_gk} must have one entry per row of {.arg player_match_stats} ({nrow(dt)}), got {length(is_gk)}.")
     }
     if (!is.logical(is_gk)) {
-      # dt[is_gk] treats a non-logical vector as POSITIONAL ROW INDICES, not a
-      # mask -- a numeric 0/1 override would silently select/duplicate the
-      # wrong rows into the GK branch with no error, while `!is_gk` (used for
-      # the outfield branch) happens to coerce correctly. Reject outright
-      # rather than let the two branches disagree on what `is_gk` even means.
+      # data.table's `[` treats a non-logical vector as POSITIONAL ROW
+      # INDICES, not a mask: dt[is_gk] silently selects/duplicates rows by
+      # position, and dt[!is_gk] silently EXCLUDES those same positions
+      # (equivalent to dt[-is_gk]) rather than negating a mask -- both
+      # branches misbehave, differently, with no error. Reject outright
+      # rather than let a numeric 0/1 override corrupt either branch.
       cli::cli_abort("{.arg is_gk} must be a logical vector, got {.cls {class(is_gk)}}.")
     }
     if (anyNA(is_gk)) {

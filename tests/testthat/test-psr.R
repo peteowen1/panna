@@ -1453,6 +1453,32 @@ test_that("compute_player_psr() normalizes using its OWN GK split, not .detect_g
   expect_equal(normalized$goals_p90[3], 0.3 - 0.25)
 })
 
+test_that("compute_player_psr() actually passes its own split into .position_normalize_skills() (not just the helper in isolation)", {
+  # The test above pins .position_normalize_skills() itself, which was never
+  # the buggy part -- compute_player_psr()'s CALL SITE was (it called the
+  # helper with no is_gk at all). Mock the helper to capture what
+  # compute_player_psr() actually hands it; this fails if the `is_gk = is_gk`
+  # argument at its call site is ever dropped again.
+  captured <- NULL
+  local_mocked_bindings(
+    .position_normalize_skills = function(dt, position_means, is_gk = NULL) {
+      captured <<- is_gk
+      dt
+    }
+  )
+  skills <- data.table::data.table(
+    player_id = c("p1", "p1", "p1"),
+    primary_position = c("GK", "GK", "MID"),
+    goals_p90 = c(0.02, 0.03, 0.3),
+    gsaa_per90 = c(0.1, 0.1, 0)  # a real nonzero-beta GK stat, so the GK branch has something to score
+  )
+  compute_player_psr(skills, target = "goals", position_means = data.table::data.table(
+    role = "MID", stat_name = "goals_p90", mean = 0.25, season_end_year = NA_integer_
+  ))
+  expect_false(is.null(captured))
+  expect_equal(captured, skills$primary_position == "GK")
+})
+
 test_that("compute_player_psv returns pos_grp so the calibration can key on it", {
   # The exported `position` column is the per-match LINEUP position, so a
   # calibration keyed on it is a silent no-op. pos_grp must survive the GK
