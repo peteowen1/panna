@@ -38,21 +38,31 @@ the bucket must describe the scoring path, not the player's true position.
 \code{is_gk} therefore wins outright: a row the GK router sent to the outfield
 model must never receive the GK factor.
 
-That matters for one real case. \code{\link{.detect_gk_rows}} greps the row's
-own \code{position}, which reads \code{"Substitute"} for a keeper coming off
-the bench -- so substitute keepers (measured 2026-09: 3,756 rows, 0.184\\%) are
-scored by the OUTFIELD model. Their resolved position is nonetheless GK, so
-without this pin they would take the GK factor onto an outfield-model score.
-They are returned as \code{NA} instead, which
-\code{\link{apply_psv_calibration}} treats as factor 1 -- honest, because
-their scoring path has no fitted factor. Callers should report that count
-rather than let it pass silently: it is a gap, not a known value.
+UPDATE 2026-09-13: \code{\link{.detect_gk_rows}} was fixed to route the vast
+majority of these correctly (a >50\\% GK-share majority vote across the
+player's other rows), so the case below is now rare rather than routine.
+This pin function is kept as the safety net for what remains: a player whose
+rows split exactly 50/50 defaults to non-GK, and any caller-supplied
+\code{is_gk} that disagrees with the resolved position for some other
+reason.
 
-The tempting fix -- routing substitute keepers to the GK model -- is NOT safe
-here. \code{.detect_gk_rows()} also selects the GK TRAINING set in
-\code{07_train_psr_model.R}, deliberately, so train and serve route
-identically. Changing it at serve time alone would create a train/serve skew.
-That fix needs a coordinated step-07 retrain and is tracked separately.
+Historical case, now mostly resolved. \code{\link{.detect_gk_rows}} used to
+grep only the row's own \code{position}, which reads \code{"Substitute"} for
+a keeper coming off the bench -- so substitute keepers (measured 2026-09:
+3,756 rows, 0.184\\%) were scored by the OUTFIELD model even though their
+resolved position was GK. Without this pin they would have taken the GK
+factor onto an outfield-model score. Any row still like this returns
+\code{NA}, which \code{\link{apply_psv_calibration}} treats as factor 1 --
+honest, because that scoring path has no fitted factor. Callers should
+report that count rather than let it pass silently: it is a gap, not a
+known value.
+
+The coefficient RETRAIN this routing fix calls for (07_train_psr_model.R,
+whose GK/outfield training split also runs through
+\code{.detect_gk_rows()}, deliberately, so train and serve route
+identically) is a separate, tracked step -- the newly-captured GK rows are
+correctly SCORED now, but the GK coefficients themselves were fit before
+those rows were part of the GK training set.
 }
 
 \keyword{internal}

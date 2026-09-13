@@ -4,7 +4,7 @@
 \alias{.player_role}
 \title{Player role for within-position normalization (broad GK/DEF/MID/FWD bucket)}
 \usage{
-.player_role(dt)
+.player_role(dt, is_gk = NULL)
 }
 \description{
 Broad buckets align with career-panna (RAPM) as well as the finer 16-role
