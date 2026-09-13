@@ -657,10 +657,22 @@ PANNA_PSR_WEIGHT <- 0.5
 #' finding. Unaffected here since GKs use `c_outfield`; still blocks any GK
 #' *position factor* work until #226 is resolved -- see RATING_CALIBRATION.md.
 #'
-#' @format Numeric value: 5.293
+#' Re-derived 2026-09-13 after the panna#249 retrain (coverage-gate fix in
+#' \code{.estimate_prematch_skills_batch()} restored ~15-18% of training rows
+#' that a same-day-prior regression, 273d5cf0, had been silently dropping):
+#' **5.293 -> 2.668** (`c_outfield = 2.6685`, se 0.1199, t = 22.3, R^2 = 0.164,
+#' n = 15,704). A 49.6% drift, large but expected: the coverage fix genuinely
+#' changed the training population (restored rows are lower-history, more
+#' heavily shrunk-toward-prior players), so the fitted PSR/PSV betas and this
+#' scale both moved together. `c_gk = 3.5739` (t = 22.6, POSITIVE again, unlike
+#' the 2026-09-02/09-03 inverted fits) -- still REJECTED per the standing
+#' D1-v2 decision (GKs use `c_outfield`), noted here only because the sign
+#' flip itself may be relevant to #226 if that gets revisited.
+#'
+#' @format Numeric value: 2.668
 #' @family psr
 #' @export
-PSV_RELIABILITY_GD_SCALE <- 5.293
+PSV_RELIABILITY_GD_SCALE <- 2.668
 
 
 # =============================================================================

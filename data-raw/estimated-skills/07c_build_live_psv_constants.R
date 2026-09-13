@@ -230,8 +230,21 @@ cat(sprintf(
   paste(intersect(.xm_new_cols, LIVE_XMETRICS_FEATURES), collapse = ", "),
   paste(.xm_drop_cols, collapse = ", ")))
 
-# broad role per player-game (same classifier position-norm uses)
-ms[, role := .player_role(ms)]
+# is_gk computed ONCE here, on the full multi-league/season population, and
+# threaded through every score_one() call below (rather than letting
+# compute_player_psv() recompute .detect_gk_rows() fresh on each small
+# per-league-season `blk`). The majority vote is NOT scope-invariant: a rare
+# emergency keeper's vote share can clear 50% over their full history but sit
+# below it (or come out row-inconsistent) within one narrow slice, since the
+# vote denominator shrinks with the slice. Confirmed 2026-09-13 (panna#249
+# follow-up) -- 3 MLS-2026 rows for keepers with only 3-5 total career rows
+# each (100% GK career-wide) broke this script's own K-invariant check this
+# way. See compute_player_psv()'s `is_gk` param and .player_role()'s roxygen.
+ms[, .is_gk_full := .detect_gk_rows(ms)]
+
+# broad role per player-game (same classifier position-norm uses). Pinned to
+# the SAME .is_gk_full computed above, not recomputed per-row here.
+ms[, role := .player_role(ms, is_gk = ms$.is_gk_full)]
 
 # Load ONCE and pass explicitly (review finding): score_one() runs up to 3x per
 # subset league-season inside the loop below, and apply_psv_calibration()'s
@@ -256,7 +269,8 @@ score_one <- function(d, center, position_means, reliability = .psv_reliability)
                      scale_to_minutes = FALSE, exclude_efficiency = FALSE,
                      target = "blend", position_means = position_means,
                      reliability = reliability,
-                     center_weights = .psv_center_weights)
+                     center_weights = .psv_center_weights,
+                     is_gk = d$.is_gk_full)
   # panna#211: PSV position calibration MUST be threaded into BOTH ex and rw
   # identically, exactly like the reliability lambda above (line ~121) --
   # `d$role` is the SAME per-player-game classification on both sides, so a

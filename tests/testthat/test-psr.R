@@ -1346,6 +1346,73 @@ test_that(".psv_pos_grp degrades to NA rather than aborting when the position co
   expect_true(all(is.na(res)))
 })
 
+test_that(".detect_gk_rows()'s majority vote is scope-dependent -- the motivation for compute_player_psv()'s is_gk override", {
+  # A rare emergency keeper: 3 "real" GK rows plus 2 rows recorded as
+  # "Substitute" (their raw label doesn't say GK). Full-history gk_share = 0.6
+  # -- clearly a keeper. But a caller iterating per league-season slice might
+  # only see the 2 "Substitute" rows plus one blank-labeled row, none of which
+  # say GK, and get gk_share = 0 for that slice -- a different, wrong answer
+  # for the exact same player. This is what broke 07c's K-invariant check
+  # 2026-09-13 for 3 rows in MLS 2026 (panna#249 follow-up).
+  full <- data.table::data.table(
+    player_id = rep("rare_keeper", 5),
+    position = c("Goalkeeper", "Goalkeeper", "Goalkeeper", "Substitute", "Substitute")
+  )
+  slice <- full[4:5]  # the two "Substitute" rows only -- what one narrow slice sees
+
+  full_is_gk <- panna:::.detect_gk_rows(full)
+  slice_is_gk <- panna:::.detect_gk_rows(slice)
+
+  expect_true(all(full_is_gk))           # full history: unambiguously GK
+  expect_false(any(slice_is_gk))         # the narrow slice alone: wrong answer
+})
+
+test_that("compute_player_psv()'s is_gk override is honored, not silently re-detected", {
+  skip_if_not(file.exists("../../data-raw/cache-skills/01_match_stats.rds"),
+              "match stats cache not available")
+  ms <- data.table::as.data.table(
+    readRDS("../../data-raw/cache-skills/01_match_stats.rds"))
+  sub <- ms[season == ms$season[1]][1:200]
+  # Row 1's raw position doesn't say GK, so the default (is_gk = NULL,
+  # recomputed internally) must NOT route it to the GK sub-model.
+  sub[1, position := "Substitute"]
+  default_is_gk <- panna:::.detect_gk_rows(sub)
+  expect_false(default_is_gk[1])
+  key1 <- sub[1, .(match_id, player_id)]
+
+  # Force an externally-supplied is_gk = TRUE for that same row -- exactly
+  # what a caller with a stable full-population classification (07c) does.
+  forced_is_gk <- default_is_gk
+  forced_is_gk[1] <- TRUE
+
+  # compute_player_psv() does NOT preserve input row order (outfield rows
+  # then GK rows, per its own documented behaviour) -- look the row back up
+  # by key rather than assuming position [1] survives the split.
+  out_default <- compute_player_psv(sub, min_adjust = FALSE, target = "blend")
+  out_forced  <- compute_player_psv(sub, min_adjust = FALSE, target = "blend",
+                                     is_gk = forced_is_gk)
+  row_default <- merge(as.data.table(out_default), key1, by = c("match_id", "player_id"))
+  row_forced  <- merge(as.data.table(out_forced),  key1, by = c("match_id", "player_id"))
+
+  # NA is the correct default answer here (resolve_position_group() has no
+  # career data to fall back on for this synthetic row) -- either NA or a
+  # non-GK guess is fine, just never "GK".
+  expect_true(is.na(row_default$pos_grp) || row_default$pos_grp != "GK")
+  # With the override, it's forced to GK -- proving the parameter is actually
+  # used (and not silently re-detected internally).
+  expect_equal(row_forced$pos_grp, "GK")
+})
+
+test_that("compute_player_psv() validates is_gk length against the input", {
+  sub <- data.table::data.table(
+    player_id = c("a", "b"), position = c("GK", "MID"), total_minutes = c(90, 90)
+  )
+  expect_error(
+    compute_player_psv(sub, is_gk = TRUE),  # length 1, not 2
+    "is_gk"
+  )
+})
+
 test_that("compute_player_psv returns pos_grp so the calibration can key on it", {
   # The exported `position` column is the per-match LINEUP position, so a
   # calibration keyed on it is a silent no-op. pos_grp must survive the GK

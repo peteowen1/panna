@@ -1399,7 +1399,7 @@ calculate_psv_components <- function(player_match_stats, coef_df, osr_coef_df,
 #' branches emit the same GK/DEF/MID/FWD labels, so artifact keys are consistent
 #' across paths. Anything outside GK/DEF/MID/FWD -> "OTHER".
 #' @keywords internal
-.player_role <- function(dt) {
+.player_role <- function(dt, is_gk = NULL) {
   r <- NULL
   if (all(c("position", "position_side") %in% names(dt))) {
     r16 <- tryCatch(as.character(classify_role(dt$position, dt$position_side)),
@@ -1414,9 +1414,41 @@ calculate_psv_components <- function(player_match_stats, coef_df, osr_coef_df,
     r <- data.table::fifelse(pp %in% c("GK", "DEF", "MID", "FWD"), pp, .role16_to_broad(pp))
   }
   if (is.null(r) && "pos_group" %in% names(dt)) r <- as.character(dt$pos_group)
-  if (is.null(r)) return(rep("OTHER", nrow(dt)))
-  r <- toupper(r)
-  r[is.na(r) | !r %in% c("GK", "DEF", "MID", "FWD")] <- "OTHER"
+  if (is.null(r)) {
+    r <- rep(NA_character_, nrow(dt))
+  } else {
+    r <- toupper(r)
+    r[is.na(r) | !r %in% c("GK", "DEF", "MID", "FWD")] <- NA_character_
+  }
+  # Pin to the SAME GK router compute_player_psv()/compute_player_psr() use
+  # (.detect_gk_rows()), exactly like .psv_pos_grp() already does for PSV
+  # calibration bucketing (see its roxygen). Without this, a row the GK
+  # majority-vote fix routes to the GK sub-model but whose raw position looks
+  # unclassifiable (blank/"Substitute" -- precisely the population that fix
+  # targets) lands in a non-GK bucket here, mixing GK-scored and outfield-
+  # scored rows under one nominally role-constant group. Confirmed 2026-09-13:
+  # broke 07c's "K constant within (league,role)" invariant, first surfacing
+  # in the OTHER bucket. NA (not "GK") in the opposite direction -- a row
+  # classified GK here but that the router did NOT send to the GK model --
+  # rather than inheriting a role that does not match how it was scored.
+  #
+  # `is_gk`: pass the SAME classification the caller's scorer will actually
+  # use, when the caller has a more stable one available. .detect_gk_rows()'s
+  # majority vote is computed fresh on whatever table it's given, which is
+  # NOT scope-invariant -- a rare emergency keeper's vote share can be >50%
+  # over their full career (all leagues/seasons) but borderline or row-
+  # inconsistent within one small per-league-season slice, since the vote
+  # denominator changes with the slice. Confirmed 2026-09-13 (panna#249
+  # follow-up): 3 MLS-2026 rows for 3 keepers with only 3-5 TOTAL career rows
+  # each (100% GK career-wide) got is_gk=TRUE on one of their MLS-2026 rows and
+  # FALSE on another, purely from being recomputed on that narrow slice.
+  # Defaults to the old scope-unstable behaviour (compute fresh on `dt`) so
+  # every other caller is unaffected; callers iterating over slices of a
+  # larger population (07c, potentially 06/08b/10b) should compute
+  # .detect_gk_rows() ONCE on the full population and pass it through.
+  if (is.null(is_gk)) is_gk <- .detect_gk_rows(dt)
+  r <- .psv_pin_gk(r, is_gk)
+  r[is.na(r)] <- "OTHER"
   r
 }
 
@@ -1612,11 +1644,11 @@ load_psv_match_reliability <- function() {
 # Subtract the per-(era, role) skill mean before scoring (no-op when
 # position_means NULL). Looks up the player-season's era; falls back to the
 # role-overall mean (season_end_year = NA) when the (season, role) cell is absent.
-.position_normalize_skills <- function(dt, position_means) {
+.position_normalize_skills <- function(dt, position_means, is_gk = NULL) {
   if (is.null(position_means) || nrow(position_means) == 0) return(dt)
   pm <- data.table::as.data.table(position_means)
   has_era <- "season_end_year" %in% names(pm)
-  role <- .player_role(dt)
+  role <- .player_role(dt, is_gk = is_gk)
   sey <- if (has_era) .season_end_year_col(dt) else rep(NA_integer_, nrow(dt))
   pm_stats <- unique(as.character(pm$stat_name))
   stats <- intersect(pm_stats, names(dt))
@@ -1688,6 +1720,18 @@ load_psv_match_reliability <- function() {
 #'   \code{\link{calculate_psv}} for BOTH the outfield and GK branches (each
 #'   sub-population is centered -- weighted or not -- separately, same as
 #'   today). See \code{\link{calculate_psv}} for the zero-sum property.
+#' @param is_gk Optional logical vector, one per row of \code{player_match_stats},
+#'   marking rows to route to the GK sub-model. \code{NULL} (default) computes
+#'   it fresh via \code{\link{.detect_gk_rows}} on \code{player_match_stats} --
+#'   unchanged behaviour for single-call use. Pass this explicitly when
+#'   scoring REPEATED SLICES of a larger population (looping per league,
+#'   season, or date): \code{.detect_gk_rows()}'s majority vote is NOT
+#'   scope-invariant, so the same player can get a different (even internally
+#'   inconsistent) classification depending on how much of their history the
+#'   current slice contains -- confirmed 2026-09-13 (panna#249 follow-up) for
+#'   rare emergency keepers with few total career rows. Compute
+#'   \code{.detect_gk_rows()} ONCE on the full population and subset it
+#'   alongside each slice instead.
 #'
 #' @return A data.table with \code{psv}, \code{osv}, \code{dsv} columns.
 #'
@@ -1699,17 +1743,22 @@ compute_player_psv <- function(player_match_stats, min_adjust = TRUE,
                                 exclude_efficiency = TRUE,
                                 position_means = NULL,
                                 reliability = NULL,
-                                center_weights = c("none", "minutes")) {
+                                center_weights = c("none", "minutes"),
+                                is_gk = NULL) {
   target <- match.arg(target)
   center_weights <- match.arg(center_weights)
   dt <- data.table::as.data.table(player_match_stats)
-  dt <- .position_normalize_skills(dt, position_means)
+  if (!is.null(is_gk) && length(is_gk) != nrow(dt)) {
+    cli::cli_abort("{.arg is_gk} must have one entry per row of {.arg player_match_stats} ({nrow(dt)}), got {length(is_gk)}.")
+  }
+  if (is.null(is_gk)) is_gk <- .detect_gk_rows(dt)
+  dt <- .position_normalize_skills(dt, position_means, is_gk = is_gk)
 
   # Route keepers through the GK sub-model (which carries gsaa_per90 and GK
   # features), outfield through the target model — mirroring compute_player_psr.
   # Without this, keepers are scored as bad outfielders (no GK shot-stopping
   # credit). Splitting also centers GKs vs GKs and outfield vs outfield.
-  is_gk <- .detect_gk_rows(dt)
+  # (`is_gk` resolved above, before position normalization needed it too.)
 
   # Export the position bucket the position calibration keys on, stamped BEFORE
   # the split below: the split scores the two groups separately and rbinds them,
