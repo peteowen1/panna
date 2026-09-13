@@ -25,12 +25,14 @@
 #   - cache-skills/07_psr_model.rds (full model objects for diagnostics)
 
 # 1. Setup ----
+cat(sprintf("[%s] Section 1: Setup\n", format(Sys.time(), "%H:%M:%S")))
 
 library(glmnet)
 library(Matrix)
 devtools::load_all()
 
 # 2. Configuration ----
+cat(sprintf("[%s] Section 2: Configuration\n", format(Sys.time(), "%H:%M:%S")))
 
 cache_dir <- file.path("data-raw", "cache-skills")
 opta_cache_dir <- file.path("data-raw", "cache-opta")
@@ -73,6 +75,7 @@ cat("#  PSR MODEL TRAINING (per-match skills, xG + goals targets)\n")
 cat(paste(rep("#", 70), collapse = ""), "\n\n")
 
 # 3. Load Data ----
+cat(sprintf("[%s] Section 3: Load Data\n", format(Sys.time(), "%H:%M:%S")))
 
 cat("=== Loading Data ===\n\n")
 
@@ -133,6 +136,7 @@ if (!"season_end_year" %in% names(ms_dt)) {
 ms_dt[, match_date := as.Date(match_date)]
 
 # 4. Derive Match Results (goals) ----
+cat(sprintf("[%s] Section 4: Derive Match Results (goals)\n", format(Sys.time(), "%H:%M:%S")))
 
 cat("\n=== Deriving Match Results ===\n\n")
 
@@ -265,6 +269,7 @@ if (file.exists(ts_path) && requireNamespace("arrow", quietly = TRUE)) {
 }
 
 # 5. Load Match-Level xG from Splint Data ----
+cat(sprintf("[%s] Section 5: Load Match-Level xG from Splint Data\n", format(Sys.time(), "%H:%M:%S")))
 
 cat("\n=== Loading xG Data ===\n\n")
 
@@ -308,6 +313,7 @@ if (file.exists(splint_path)) {
 }
 
 # 6. Compute Pre-Match Skills at Each Match Date ----
+cat(sprintf("[%s] Section 6: Compute Pre-Match Skills at Each Match Date\n", format(Sys.time(), "%H:%M:%S")))
 
 cat("\n=== Computing Pre-Match Skills ===\n\n")
 
@@ -345,6 +351,7 @@ match_date_to_bin <- function(md) {
 # invocation and .estimate_prematch_skills_batch() can resume instead of
 # recomputing from date 1. Cleaned up below once the join fully succeeds.
 skill_stream_dir <- file.path(cache_dir, "psr_skill_chunks")
+.t_skill_outfield_start <- Sys.time()
 prematch_skills <- tryCatch(
   .estimate_prematch_skills_batch(
     match_stats = ms_dt,
@@ -363,6 +370,8 @@ prematch_skills <- tryCatch(
     list()
   }
 )
+cat(sprintf("[PROFILE] outfield .estimate_prematch_skills_batch(): %.1f min\n",
+            as.numeric(difftime(Sys.time(), .t_skill_outfield_start, units = "mins"))))
 gc(verbose = FALSE)
 
 if (length(prematch_skills) == 0) {
@@ -372,6 +381,7 @@ cat(sprintf("\nSkills computed for %d / %d weekly dates\n",
             length(prematch_skills), length(weekly_dates)))
 
 # 7. Join Pre-Match Skills to Player-Matches ----
+cat(sprintf("[%s] Section 7: Join Pre-Match Skills to Player-Matches\n", format(Sys.time(), "%H:%M:%S")))
 # Memory-safe: process one weekly date at a time instead of stacking all
 # skills into one giant table. Avoids ~4GB peak from rbindlist.
 
@@ -516,6 +526,26 @@ cat(sprintf("Dates processed: %d\n", dates_processed))
 # (2026-08-14: 1,885,239 / 1,885,715, i.e. 476 rows short), so a 95% floor is
 # far below anything legitimate and far above the 50% the bug produced.
 if (skill_coverage < 0.95) {
+  # Diagnostic-only: break the shortfall down by skill_date so a re-run of
+  # this failure doesn't require re-deriving the deleted skill_stream_dir
+  # chunks. Not gated behind any flag -- this only executes on the failure
+  # path immediately before stop() halts the script anyway.
+  cov_by_date <- pm_with_skills[, .(
+    n = .N,
+    n_with_skill = sum(!is.na(get(skill_keep_cols[1])))
+  ), by = skill_date]
+  cov_by_date[, coverage := n_with_skill / n]
+  data.table::setorder(cov_by_date, coverage)
+  cat("\n[DIAGNOSTIC] Worst 20 skill_dates by coverage:\n")
+  print(utils::head(cov_by_date, 20))
+  cat(sprintf("\n[DIAGNOSTIC] Dates with <50%% coverage: %d / %d\n",
+              sum(cov_by_date$coverage < 0.5), nrow(cov_by_date)))
+  cat(sprintf("[DIAGNOSTIC] Dates with 100%% coverage: %d / %d\n",
+              sum(cov_by_date$coverage == 1), nrow(cov_by_date)))
+  diag_path <- file.path(cache_dir, "07_skill_coverage_by_date_DIAGNOSTIC.csv")
+  data.table::fwrite(cov_by_date, diag_path)
+  cat(sprintf("[DIAGNOSTIC] Full breakdown written to %s\n", diag_path))
+
   stop(sprintf(
     paste0("Only %.1f%% of player-matches have skills (%d of %d). Expected ",
            ">=95%%. The remainder are imputed to 0 below, which corrupts ",
@@ -530,6 +560,7 @@ for (col in skill_keep_cols) {
 }
 
 # 8. Aggregate Team-Level Skills Per Match ----
+cat(sprintf("[%s] Section 8: Aggregate Team-Level Skills Per Match\n", format(Sys.time(), "%H:%M:%S")))
 
 cat("\n=== Aggregating Team Skills ===\n\n")
 
@@ -554,6 +585,7 @@ cat(sprintf("Team-match skill rows: %s\n",
 team_skills <- team_skills[n_players >= MIN_PLAYERS_PER_TEAM]
 
 # 9. Create Home/Away Feature Matrix ----
+cat(sprintf("[%s] Section 9: Create Home/Away Feature Matrix\n", format(Sys.time(), "%H:%M:%S")))
 
 cat("\n=== Creating Home/Away Feature Matrix ===\n\n")
 
@@ -585,6 +617,7 @@ for (i in seq_len(nrow(season_counts))) {
 }
 
 # 10. Train/Test Split ----
+cat(sprintf("[%s] Section 10: Train/Test Split\n", format(Sys.time(), "%H:%M:%S")))
 
 cat("\n=== Train/Test Split ===\n\n")
 
@@ -603,6 +636,7 @@ if (sum(is_train) < 100) {
 }
 
 # 11. Prepare Features ----
+cat(sprintf("[%s] Section 11: Prepare Features\n", format(Sys.time(), "%H:%M:%S")))
 
 feature_cols <- c(paste0("home_", skill_keep_cols),
                    paste0("away_", skill_keep_cols))
@@ -743,6 +777,7 @@ cat(sprintf("Combined matrix: %d rows x %d cols (%d FE + %d team-strength + %d s
             nrow(X_train_full), ncol(X_train_full), n_fe, n_ts, n_skill))
 
 # 12. Train Model Helper ----
+cat(sprintf("[%s] Section 12: Train Model Helper\n", format(Sys.time(), "%H:%M:%S")))
 
 train_model <- function(X, y, w, foldid, alpha_grid, model_name, pf = NULL,
                          lower_limits = NULL, upper_limits = NULL) {
@@ -804,6 +839,7 @@ train_model <- function(X, y, w, foldid, alpha_grid, model_name, pf = NULL,
 }
 
 # 13. Extract Symmetric Coefficients Helper ----
+cat(sprintf("[%s] Section 13: Extract Symmetric Coefficients Helper\n", format(Sys.time(), "%H:%M:%S")))
 #
 # With FE prepended, the full coefficient vector is:
 #   [intercept, FE_1..FE_{n_fe}, home_skill_1..home_skill_n, away_skill_1..away_skill_n]
@@ -834,6 +870,7 @@ extract_symmetric_coefs <- function(model, skill_cols, train_sds, type, n_fe = 0
 }
 
 # 14. Train and Evaluate Helper ----
+cat(sprintf("[%s] Section 14: Train and Evaluate Helper\n", format(Sys.time(), "%H:%M:%S")))
 
 evaluate_model <- function(model, X_test_std, y_test, name) {
   if (is.null(X_test_std) || length(y_test) == 0) return(invisible(NULL))
@@ -958,6 +995,7 @@ cat(sprintf("\nOutfield margin sign constraints: %d negative-direction cols (%s)
             paste(intersect(outfield_margin_negative_cols, skill_keep_cols), collapse = ", ")))
 
 # 15. Train xG Models (Primary) ----
+cat(sprintf("[%s] Section 15: Train xG Models (Primary)\n", format(Sys.time(), "%H:%M:%S")))
 
 xg_models <- NULL
 if (has_xg) {
@@ -1014,6 +1052,7 @@ if (has_xg) {
 }
 
 # 16. Train Goal Diff Models (Secondary) ----
+cat(sprintf("[%s] Section 16: Train Goal Diff Models (Secondary)\n", format(Sys.time(), "%H:%M:%S")))
 
 gd_models <- train_and_save(
   y_margin = train_data$goal_diff[is_train],
@@ -1028,6 +1067,7 @@ gd_models <- train_and_save(
 )
 
 # 17. Validate: PSR for Latest Skills ----
+cat(sprintf("[%s] Section 17: Validate: PSR for Latest Skills\n", format(Sys.time(), "%H:%M:%S")))
 
 cat("\n=== Validation: PSR for Latest Date ===\n\n")
 
@@ -1065,6 +1105,7 @@ if (!is.null(latest_skills) && nrow(latest_skills) > 0) {
 }
 
 # 18. Train GK Sub-Model ----
+cat(sprintf("[%s] Section 18: Train GK Sub-Model\n", format(Sys.time(), "%H:%M:%S")))
 #
 # Separate model for goalkeepers using:
 #   - GK-specific features (.get_gk_skill_cols())
@@ -1123,6 +1164,22 @@ gk_skill_keep_cols <- character(0)
   # section 6's main call - see its comment (this GK path recomputes the
   # full history a second time when reached, so the memory risk is identical).
   gk_skill_stream_dir <- NULL
+  # [PROFILE 2026-09-13] This branch, when it fires, recomputes the SAME
+  # decay-weighted skill estimation as section 6's outfield call above:
+  # ms_dt_gk here is read fresh from the same ms_path, enriched with the same
+  # enrich_match_stats_with_xmetrics() call, over the same weekly_dates and
+  # decay_params, with no GK-only row filter applied before the call --
+  # .detect_skill_stat_cols() (R/psr.R) already unions
+  # .get_psr_skill_cols()/.get_gk_skill_cols() for ANY table with both column
+  # sets present, so section 6's single call should already estimate GK skill
+  # columns (gsaa_per90 etc.) too, PROVIDED the enrichment ran before it -- it
+  # does, at line ~95. This branch exists purely as a fallback for when
+  # prematch_skills has already been freed earlier in the script; the
+  # section-6 chunk cache (skill_stream_dir) that would let this branch read
+  # rather than recompute is deleted at line ~481, before this section runs.
+  # Timed below to confirm the actual cost before deciding whether reusing
+  # those chunks (rather than deleting them early) is worth the surgery.
+  .t_skill_gk_start <- Sys.time()
   if (!exists("prematch_skills") || length(prematch_skills) == 0) {
     cat("Re-computing pre-match skills for GK features...\n")
     gk_skill_stream_dir <- file.path(cache_dir, "psr_gk_skill_chunks")  # stable, see main call's comment
@@ -1135,6 +1192,10 @@ gk_skill_keep_cols <- character(0)
       source_fingerprint = list(mtime = file.mtime(full_path), size = file.size(full_path)),
       verbose = TRUE
     )
+    cat(sprintf("[PROFILE] GK .estimate_prematch_skills_batch() RECOMPUTE: %.1f min\n",
+                as.numeric(difftime(Sys.time(), .t_skill_gk_start, units = "mins"))))
+  } else {
+    cat("[PROFILE] GK skill estimation SKIPPED -- prematch_skills still in memory (no recompute)\n")
   }
 
   # Determine available GK skill columns from first non-empty result
@@ -1405,6 +1466,7 @@ if (is.null(gk_models)) {
 
 
 # 19. Save Full Model Objects ----
+cat(sprintf("[%s] Section 19: Save Full Model Objects\n", format(Sys.time(), "%H:%M:%S")))
 
 cat("\n=== Saving Model Objects ===\n\n")
 

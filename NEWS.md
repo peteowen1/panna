@@ -1,3 +1,16 @@
+# panna 0.3.48 (dev)
+
+## Fix a coverage-gate regression in `.estimate_prematch_skills_batch()` (panna#249)
+
+A memory optimization added the day before (273d5cf0) applied its
+`min_weighted_90s` gate even to the full-population case, silently dropping
+every player below 3 decayed weighted-90s of history from a live retrain --
+82.6% skill coverage against a required >=95%, flat across every season
+2016-2025. Restored full-population output for both the `keep_players = NULL`
+training path and the `keep_players`-provided (currently unused) path.
+Retrains the GK sub-model coefficients now that the gate is fixed; outfield
+coefficients came back byte-identical, as expected.
+
 # panna 0.3.47 (dev)
 
 Version heading realigned to `DESCRIPTION` (0.3.47). As with the 0.3.26-0.3.31
