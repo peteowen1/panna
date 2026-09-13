@@ -1,5 +1,27 @@
 # Changelog
 
+## panna 0.3.49 (dev)
+
+### Fix `.detect_gk_rows()` scope-instability breaking live-PSV constants (panna#250)
+
+`07c_build_live_psv_constants.R`’s own hard-fail check (K constant
+within league+role) started failing after the coverage-gate and
+GK-routing fixes:
+[`.detect_gk_rows()`](https://peteowen1.github.io/panna/reference/dot-detect_gk_rows.md)’s
+majority vote is computed fresh on whatever table it’s handed, so a rare
+emergency keeper’s classification could disagree with itself depending
+on which slice of their history a given call saw. Gave
+[`compute_player_psv()`](https://peteowen1.github.io/panna/reference/compute_player_psv.md)
+an `is_gk` override parameter so callers with a stable full-population
+classification (like `07c`) can supply it instead of each call
+recomputing on a narrow slice. Also fixed the same default change
+accidentally breaking
+[`compute_player_psr()`](https://peteowen1.github.io/panna/reference/compute_player_psr.md)’s
+internal consistency (caught in review) and rebuilt
+`position_role_means.csv`, `psv_match_reliability.csv`,
+`psv_live_constants.csv`, and `PSV_RELIABILITY_GD_SCALE` (5.293 -\>
+2.668).
+
 ## panna 0.3.48 (dev)
 
 ### Fix a coverage-gate regression in `.estimate_prematch_skills_batch()` (panna#249)
@@ -78,14 +100,16 @@ Butez 9th on 2025-2026).
   treats as factor 1.
 
 - Substitute goalkeepers (3,756 rows, 0.184%) are routed to the OUTFIELD
-  model, because `.detect_gk_rows()` greps the row’s own `position` and
-  sees “Substitute”. Their resolved position is still GK, so they would
-  have taken the GK factor onto a score it was never fitted against;
-  they are returned as NA instead. The underlying routing gap is left
-  alone deliberately: `.detect_gk_rows()` also selects the GK training
-  set in `07_train_psr_model.R`, so changing it at serve time only would
-  create a train/serve skew. That fix needs a coordinated step-07
-  retrain.
+  model, because
+  [`.detect_gk_rows()`](https://peteowen1.github.io/panna/reference/dot-detect_gk_rows.md)
+  greps the row’s own `position` and sees “Substitute”. Their resolved
+  position is still GK, so they would have taken the GK factor onto a
+  score it was never fitted against; they are returned as NA instead.
+  The underlying routing gap is left alone deliberately:
+  [`.detect_gk_rows()`](https://peteowen1.github.io/panna/reference/dot-detect_gk_rows.md)
+  also selects the GK training set in `07_train_psr_model.R`, so
+  changing it at serve time only would create a train/serve skew. That
+  fix needs a coordinated step-07 retrain.
 
 About 2.3% of minutes ship uncalibrated (players whose every appearance
 in a league-season was a substitute, plus the blank-position seasons

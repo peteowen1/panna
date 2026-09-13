@@ -17,7 +17,7 @@ PSVs predict match GD with slope 1.'><meta property="og:image" content="https://
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.48</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.49</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -66,7 +66,7 @@ PSVs predict match GD with slope 1.</p>
 
     <div class="section level2">
     <h2 id="format">Format<a class="anchor" aria-label="anchor" href="#format"></a></h2>
-    <p>Numeric value: 5.293</p>
+    <p>Numeric value: 2.668</p>
     </div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
@@ -127,6 +127,17 @@ fit's flipped sign (was +25.39 on 2026-07-20) – this is the ALREADY-TRACKED
 #226 inversion (<code>c_gk</code> inverted, blocks GK position factors), not a new
 finding. Unaffected here since GKs use <code>c_outfield</code>; still blocks any GK
 <em>position factor</em> work until #226 is resolved – see RATING_CALIBRATION.md.</p>
+<p>Re-derived 2026-09-13 after the panna#249 retrain (coverage-gate fix in
+<code><a href="dot-estimate_prematch_skills_batch.html">.estimate_prematch_skills_batch()</a></code> restored ~15-18% of training rows
+that a same-day-prior regression, 273d5cf0, had been silently dropping):
+<strong>5.293 -&gt; 2.668</strong> (<code>c_outfield = 2.6685</code>, se 0.1199, t = 22.3, R^2 = 0.164,
+n = 15,704). A 49.6% drift, large but expected: the coverage fix genuinely
+changed the training population (restored rows are lower-history, more
+heavily shrunk-toward-prior players), so the fitted PSR/PSV betas and this
+scale both moved together. <code>c_gk = 3.5739</code> (t = 22.6, POSITIVE again, unlike
+the 2026-09-02/09-03 inverted fits) – still REJECTED per the standing
+D1-v2 decision (GKs use <code>c_outfield</code>), noted here only because the sign
+flip itself may be relevant to #226 if that gets revisited.</p>
     </div>
     <div class="section level2">
     <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a></h2>

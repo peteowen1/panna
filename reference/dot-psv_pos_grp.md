@@ -46,20 +46,32 @@ on, so the bucket must describe the scoring path, not the player's true
 position. `is_gk` therefore wins outright: a row the GK router sent to
 the outfield model must never receive the GK factor.
 
-That matters for one real case. `.detect_gk_rows` greps the row's own
-`position`, which reads `"Substitute"` for a keeper coming off the bench
-– so substitute keepers (measured 2026-09: 3,756 rows, 0.184\\ scored by
-the OUTFIELD model. Their resolved position is nonetheless GK, so
-without this pin they would take the GK factor onto an outfield-model
-score. They are returned as `NA` instead, which
+UPDATE 2026-09-13:
+[`.detect_gk_rows`](https://peteowen1.github.io/panna/reference/dot-detect_gk_rows.md)
+was fixed to route the vast majority of these correctly (a \>50\\
+player's other rows), so the case below is now rare rather than routine.
+This pin function is kept as the safety net for what remains: a player
+whose rows split exactly 50/50 defaults to non-GK, and any
+caller-supplied `is_gk` that disagrees with the resolved position for
+some other reason.
+
+Historical case, now mostly resolved.
+[`.detect_gk_rows`](https://peteowen1.github.io/panna/reference/dot-detect_gk_rows.md)
+used to grep only the row's own `position`, which reads `"Substitute"`
+for a keeper coming off the bench – so substitute keepers (measured
+2026-09: 3,756 rows, 0.184\\ resolved position was GK. Without this pin
+they would have taken the GK factor onto an outfield-model score. Any
+row still like this returns `NA`, which
 [`apply_psv_calibration`](https://peteowen1.github.io/panna/reference/apply_psv_calibration.md)
-treats as factor 1 – honest, because their scoring path has no fitted
+treats as factor 1 – honest, because that scoring path has no fitted
 factor. Callers should report that count rather than let it pass
 silently: it is a gap, not a known value.
 
-The tempting fix – routing substitute keepers to the GK model – is NOT
-safe here. `.detect_gk_rows()` also selects the GK TRAINING set in
-`07_train_psr_model.R`, deliberately, so train and serve route
-identically. Changing it at serve time alone would create a train/serve
-skew. That fix needs a coordinated step-07 retrain and is tracked
-separately.
+The coefficient RETRAIN this routing fix calls for
+(07_train_psr_model.R, whose GK/outfield training split also runs
+through
+[`.detect_gk_rows()`](https://peteowen1.github.io/panna/reference/dot-detect_gk_rows.md),
+deliberately, so train and serve route identically) is a separate,
+tracked step – the newly-captured GK rows are correctly SCORED now, but
+the GK coefficients themselves were fit before those rows were part of
+the GK training set.

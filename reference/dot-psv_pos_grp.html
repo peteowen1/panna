@@ -21,7 +21,7 @@ reimplement that here: a duplicated position classifier is exactly what
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.48</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.49</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -67,7 +67,7 @@ reimplement that here: a duplicated position classifier is exactly what
 
     <div class="section level2">
     <h2 id="ref-usage">Usage<a class="anchor" aria-label="anchor" href="#ref-usage"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">.psv_pos_grp</span><span class="op">(</span><span class="va">dt</span>, is_gk <span class="op">=</span> <span class="fu">.detect_gk_rows</span><span class="op">(</span><span class="va">dt</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">.psv_pos_grp</span><span class="op">(</span><span class="va">dt</span>, is_gk <span class="op">=</span> <span class="fu"><a href="dot-detect_gk_rows.html">.detect_gk_rows</a></span><span class="op">(</span><span class="va">dt</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
     </div>
 
     <div class="section level2">
@@ -102,20 +102,29 @@ the row.</p>
 the bucket must describe the scoring path, not the player's true position.
 <code>is_gk</code> therefore wins outright: a row the GK router sent to the outfield
 model must never receive the GK factor.</p>
-<p>That matters for one real case. <code>.detect_gk_rows</code> greps the row's
-own <code>position</code>, which reads <code>"Substitute"</code> for a keeper coming off
-the bench – so substitute keepers (measured 2026-09: 3,756 rows, 0.184\<!-- %) are -->
-scored by the OUTFIELD model. Their resolved position is nonetheless GK, so
-without this pin they would take the GK factor onto an outfield-model score.
-They are returned as <code>NA</code> instead, which
-<code><a href="apply_psv_calibration.html">apply_psv_calibration</a></code> treats as factor 1 – honest, because
-their scoring path has no fitted factor. Callers should report that count
-rather than let it pass silently: it is a gap, not a known value.</p>
-<p>The tempting fix – routing substitute keepers to the GK model – is NOT safe
-here. <code>.detect_gk_rows()</code> also selects the GK TRAINING set in
-<code>07_train_psr_model.R</code>, deliberately, so train and serve route
-identically. Changing it at serve time alone would create a train/serve skew.
-That fix needs a coordinated step-07 retrain and is tracked separately.</p>
+<p>UPDATE 2026-09-13: <code><a href="dot-detect_gk_rows.html">.detect_gk_rows</a></code> was fixed to route the vast
+majority of these correctly (a &gt;50\<!-- % GK-share majority vote across the -->
+player's other rows), so the case below is now rare rather than routine.
+This pin function is kept as the safety net for what remains: a player whose
+rows split exactly 50/50 defaults to non-GK, and any caller-supplied
+<code>is_gk</code> that disagrees with the resolved position for some other
+reason.</p>
+<p>Historical case, now mostly resolved. <code><a href="dot-detect_gk_rows.html">.detect_gk_rows</a></code> used to
+grep only the row's own <code>position</code>, which reads <code>"Substitute"</code> for
+a keeper coming off the bench – so substitute keepers (measured 2026-09:
+3,756 rows, 0.184\<!-- %) were scored by the OUTFIELD model even though their -->
+resolved position was GK. Without this pin they would have taken the GK
+factor onto an outfield-model score. Any row still like this returns
+<code>NA</code>, which <code><a href="apply_psv_calibration.html">apply_psv_calibration</a></code> treats as factor 1 –
+honest, because that scoring path has no fitted factor. Callers should
+report that count rather than let it pass silently: it is a gap, not a
+known value.</p>
+<p>The coefficient RETRAIN this routing fix calls for (07_train_psr_model.R,
+whose GK/outfield training split also runs through
+<code><a href="dot-detect_gk_rows.html">.detect_gk_rows()</a></code>, deliberately, so train and serve route
+identically) is a separate, tracked step – the newly-captured GK rows are
+correctly SCORED now, but the GK coefficients themselves were fit before
+those rows were part of the GK training set.</p>
     </div>
 
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

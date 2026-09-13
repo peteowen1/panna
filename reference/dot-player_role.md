@@ -15,5 +15,5 @@ Anything outside GK/DEF/MID/FWD -\> "OTHER".
 ## Usage
 
 ``` r
-.player_role(dt)
+.player_role(dt, is_gk = NULL)
 ```

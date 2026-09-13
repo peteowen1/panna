@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.48</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.49</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -40,6 +40,13 @@
     </div>
 
     <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.49" id="panna-0349-dev">panna 0.3.49 (dev)<a class="anchor" aria-label="anchor" href="#panna-0349-dev"></a></h2>
+<div class="section level3">
+<h3 id="fix-detect_gk_rows-scope-instability-breaking-live-psv-constants-panna250-0-3-49">Fix <code>.detect_gk_rows()</code> scope-instability breaking live-PSV constants (panna#250)<a class="anchor" aria-label="anchor" href="#fix-detect_gk_rows-scope-instability-breaking-live-psv-constants-panna250-0-3-49"></a></h3>
+<p><code>07c_build_live_psv_constants.R</code>’s own hard-fail check (K constant within league+role) started failing after the coverage-gate and GK-routing fixes: <code><a href="../reference/dot-detect_gk_rows.html">.detect_gk_rows()</a></code>’s majority vote is computed fresh on whatever table it’s handed, so a rare emergency keeper’s classification could disagree with itself depending on which slice of their history a given call saw. Gave <code><a href="../reference/compute_player_psv.html">compute_player_psv()</a></code> an <code>is_gk</code> override parameter so callers with a stable full-population classification (like <code>07c</code>) can supply it instead of each call recomputing on a narrow slice. Also fixed the same default change accidentally breaking <code><a href="../reference/compute_player_psr.html">compute_player_psr()</a></code>’s internal consistency (caught in review) and rebuilt <code>position_role_means.csv</code>, <code>psv_match_reliability.csv</code>, <code>psv_live_constants.csv</code>, and <code>PSV_RELIABILITY_GD_SCALE</code> (5.293 -&gt; 2.668).</p>
+</div>
+</div>
+    <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.48" id="panna-0348-dev">panna 0.3.48 (dev)<a class="anchor" aria-label="anchor" href="#panna-0348-dev"></a></h2>
 <div class="section level3">
 <h3 id="fix-a-coverage-gate-regression-in-estimate_prematch_skills_batch-panna249-0-3-48">Fix a coverage-gate regression in <code>.estimate_prematch_skills_batch()</code> (panna#249)<a class="anchor" aria-label="anchor" href="#fix-a-coverage-gate-regression-in-estimate_prematch_skills_batch-panna249-0-3-48"></a></h3>
@@ -58,7 +65,7 @@
 </ul><div class="section level4">
 <h4 id="fixes-found-while-wiring-this-0-3-47">Fixes found while wiring this<a class="anchor" aria-label="anchor" href="#fixes-found-while-wiring-this-0-3-47"></a></h4>
 <ul><li><p><code><a href="../reference/resolve_position_group.html">resolve_position_group()</a></code> errored when every row of its input was a substitute or had a blank position, because the filtered table left <code>pick()</code> returning NULL into data.table’s <code>j</code>. Nine league-seasons (Primeira_Liga 2015-2016, Liga_MX, A_League, Super_Lig, Championship, all 2013-2016) carry a blank <code>position</code> on 100% of rows, so any caller scoped to one league-season hit it – and inside the game-log export’s per-league <code>tryCatch</code>, that error would have silently dropped the entire league. Now returns all-NA, which <code><a href="../reference/apply_psv_calibration.html">apply_psv_calibration()</a></code> treats as factor 1.</p></li>
-<li><p>Substitute goalkeepers (3,756 rows, 0.184%) are routed to the OUTFIELD model, because <code>.detect_gk_rows()</code> greps the row’s own <code>position</code> and sees “Substitute”. Their resolved position is still GK, so they would have taken the GK factor onto a score it was never fitted against; they are returned as NA instead. The underlying routing gap is left alone deliberately: <code>.detect_gk_rows()</code> also selects the GK training set in <code>07_train_psr_model.R</code>, so changing it at serve time only would create a train/serve skew. That fix needs a coordinated step-07 retrain.</p></li>
+<li><p>Substitute goalkeepers (3,756 rows, 0.184%) are routed to the OUTFIELD model, because <code><a href="../reference/dot-detect_gk_rows.html">.detect_gk_rows()</a></code> greps the row’s own <code>position</code> and sees “Substitute”. Their resolved position is still GK, so they would have taken the GK factor onto a score it was never fitted against; they are returned as NA instead. The underlying routing gap is left alone deliberately: <code><a href="../reference/dot-detect_gk_rows.html">.detect_gk_rows()</a></code> also selects the GK training set in <code>07_train_psr_model.R</code>, so changing it at serve time only would create a train/serve skew. That fix needs a coordinated step-07 retrain.</p></li>
 </ul><p>About 2.3% of minutes ship uncalibrated (players whose every appearance in a league-season was a substitute, plus the blank-position seasons above). The export logs that count per season rather than passing it off as zero.</p>
 </div>
 </div>

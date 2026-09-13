@@ -15,7 +15,8 @@ compute_player_psv(
   exclude_efficiency = TRUE,
   position_means = NULL,
   reliability = NULL,
-  center_weights = c("none", "minutes")
+  center_weights = c("none", "minutes"),
+  is_gk = NULL
 )
 ```
 
@@ -78,6 +79,25 @@ compute_player_psv(
   – weighted or not – separately, same as today). See
   [`calculate_psv`](https://peteowen1.github.io/panna/reference/calculate_psv.md)
   for the zero-sum property.
+
+- is_gk:
+
+  Optional logical vector, one per row of `player_match_stats`, marking
+  rows to route to the GK sub-model. `NULL` (default) computes it fresh
+  via
+  [`.detect_gk_rows`](https://peteowen1.github.io/panna/reference/dot-detect_gk_rows.md)
+  on `player_match_stats` – unchanged behaviour for single-call use.
+  Pass this explicitly when scoring REPEATED SLICES of a larger
+  population (looping per league, season, or date):
+  [`.detect_gk_rows()`](https://peteowen1.github.io/panna/reference/dot-detect_gk_rows.md)'s
+  majority vote is NOT scope-invariant, so the same player can get a
+  different (even internally inconsistent) classification depending on
+  how much of their history the current slice contains – confirmed
+  2026-09-13 (panna#249 follow-up) for rare emergency keepers with few
+  total career rows. Compute
+  [`.detect_gk_rows()`](https://peteowen1.github.io/panna/reference/dot-detect_gk_rows.md)
+  ONCE on the full population and subset it alongside each slice
+  instead.
 
 ## Value
 
