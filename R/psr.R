@@ -691,8 +691,15 @@
       # Narrow to the requested rows BEFORE constructing the table: building the
       # full n_players x n_stats frame and subsetting afterwards still allocates
       # it, which is the whole cost we are avoiding.
+      # NB min_weighted_90s is NOT applied here for the full-population
+      # (keep_players = NULL) case -- per its own docstring it is a
+      # regression/shrinkage threshold, not an inclusion gate; output_min_w90
+      # is the caller's actual row-count lever. Gating on it here silently
+      # dropped ~15-18% of player-matches in every era once this narrowing was
+      # added (2026-09-12, 273d5cf0) -- training callers pass output_min_w90=0
+      # expecting every player back, shrunk toward the prior, not omitted.
       sel <- if (is.null(keep_players)) {
-        which(run_w90 >= min_weighted_90s)
+        seq_len(n_players)
       } else {
         want <- keep_players[.(rd), player_id, nomatch = 0L]
         idx <- match(want, all_player_ids)

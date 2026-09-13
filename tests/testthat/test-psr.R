@@ -667,6 +667,41 @@ test_that(".estimate_prematch_skills_batch handles single-player data", {
   expect_equal(result[[1]]$player_id, "solo")
 })
 
+test_that(".estimate_prematch_skills_batch keeps thin-history players under the DEFAULT min_weighted_90s when keep_players is NULL", {
+  # Regression (2026-09-13): a memory optimization (273d5cf0, "add keep_players
+  # to narrow per-date output") added a `sel <- which(run_w90 >= min_weighted_90s)`
+  # gate that applied even when keep_players is NULL -- silently dropping every
+  # player below the default 3-weighted-90s floor from the full-population
+  # result, contradicting this function's own docstring ("REGRESSION threshold,
+  # not an inclusion gate... output_min_w90" is the row-count lever) and
+  # corrupting a live retrain (07_train_psr_model.R) to 82.6% skill coverage
+  # against a required >=95%, uniformly across every season 2016-2025. The only
+  # exclusion mechanism should be output_min_w90 (default 0 = keep everyone).
+  ms <- data.frame(
+    player_id = c(rep("veteran", 20), "rookie"),
+    player_name = c(rep("Veteran", 20), "Rookie"),
+    match_id = c(paste0("v", 1:20), "r1"),
+    match_date = c(as.Date("2024-01-01") + (0:19) * 7, as.Date("2024-04-15")),
+    total_minutes = 90,
+    position = "Striker",
+    goals_p90 = c(rep(0.4, 20), 0.2),
+    stringsAsFactors = FALSE
+  )
+
+  # veteran has 20 matches of decayed history (well over 3 weighted_90s);
+  # rookie has a single match one day before the ref_date (well under 3).
+  result <- panna:::.estimate_prematch_skills_batch(
+    ms, ref_dates = "2024-04-16", verbose = FALSE
+  )
+
+  sk <- result[[1]]
+  expect_true("rookie" %in% sk$player_id)
+  expect_true("veteran" %in% sk$player_id)
+  rookie_row <- sk[sk$player_id == "rookie", ]
+  expect_lt(rookie_row$weighted_90s, 3)
+  expect_false(is.na(rookie_row$goals_p90))
+})
+
 
 # =============================================================================
 # GK PSR goal-scale correction (panna#202)
