@@ -488,7 +488,16 @@ if (skipped_frac > 0.05) {
 
 rm(prematch_skills)
 gc(verbose = FALSE)
-if (dir.exists(skill_stream_dir)) unlink(skill_stream_dir, recursive = TRUE)
+# skill_stream_dir's chunk FILES are deliberately NOT deleted here (unlike
+# the old behaviour) -- Section 18's GK sub-model reuses them instead of
+# recomputing the same decay-weighted skill estimation a second time
+# (~14 min, confirmed via [PROFILE] timers 2026-09-13). `prematch_skills`
+# itself is safe to rm(): in stream_dir mode it only ever held small file
+# path strings (never the actual skill data), and the join loop above has
+# already nulled out every entry as it read it -- reconstructing the
+# equivalent path list from the chunk files still on disk is what Section 18
+# does, rather than depending on this now-empty in-memory list. Cleaned up
+# for real after Section 18 is done with it (search "skill_stream_dir" below).
 
 pm_with_skills <- data.table::rbindlist(matched_chunks, fill = TRUE, use.names = TRUE)
 rm(matched_chunks)
@@ -1160,28 +1169,37 @@ gk_skill_keep_cols <- character(0)
     )]
   }
 
-  # Reload prematch_skills if freed. Streamed to disk for the same reason as
-  # section 6's main call - see its comment (this GK path recomputes the
-  # full history a second time when reached, so the memory risk is identical).
+  # Reuse section 6's chunk files instead of recomputing the same
+  # decay-weighted skill estimation a second time (~14 min, confirmed via
+  # [PROFILE] timers 2026-09-13). ms_dt_gk here is read fresh from the same
+  # ms_path, enriched with the same enrich_match_stats_with_xmetrics() call,
+  # over the same weekly_dates and decay_params, with no GK-only row filter
+  # applied before section 6's call -- .detect_skill_stat_cols() (R/psr.R)
+  # already unions .get_psr_skill_cols()/.get_gk_skill_cols() for ANY table
+  # with both column sets present, so section 6's single call already
+  # estimated GK skill columns (gsaa_per90 etc.) too. `prematch_skills` (the
+  # in-memory list) is NOT a reliable signal here: it only ever held file
+  # path strings in stream_dir mode, and section 7's join loop nulls out
+  # every entry as it reads it -- so reconstruct the equivalent list directly
+  # from whichever chunk files are still on disk, which section 7 deliberately
+  # leaves in place for exactly this reuse (see its own comment).
   gk_skill_stream_dir <- NULL
-  # [PROFILE 2026-09-13] This branch, when it fires, recomputes the SAME
-  # decay-weighted skill estimation as section 6's outfield call above:
-  # ms_dt_gk here is read fresh from the same ms_path, enriched with the same
-  # enrich_match_stats_with_xmetrics() call, over the same weekly_dates and
-  # decay_params, with no GK-only row filter applied before the call --
-  # .detect_skill_stat_cols() (R/psr.R) already unions
-  # .get_psr_skill_cols()/.get_gk_skill_cols() for ANY table with both column
-  # sets present, so section 6's single call should already estimate GK skill
-  # columns (gsaa_per90 etc.) too, PROVIDED the enrichment ran before it -- it
-  # does, at line ~95. This branch exists purely as a fallback for when
-  # prematch_skills has already been freed earlier in the script; the
-  # section-6 chunk cache (skill_stream_dir) that would let this branch read
-  # rather than recompute is deleted at line ~481, before this section runs.
-  # Timed below to confirm the actual cost before deciding whether reusing
-  # those chunks (rather than deleting them early) is worth the surgery.
+  reused_chunks <- if (exists("skill_stream_dir") && dir.exists(skill_stream_dir)) {
+    candidate_paths <- stats::setNames(
+      file.path(skill_stream_dir, paste0(as.character(weekly_dates), ".rds")),
+      as.character(weekly_dates)
+    )
+    candidate_paths[file.exists(candidate_paths)]
+  } else {
+    character(0)
+  }
   .t_skill_gk_start <- Sys.time()
-  if (!exists("prematch_skills") || length(prematch_skills) == 0) {
-    cat("Re-computing pre-match skills for GK features...\n")
+  if (length(reused_chunks) > 0) {
+    prematch_skills <- as.list(reused_chunks)
+    cat(sprintf("GK skill estimation REUSED %d cached chunk(s) from section 6 (no recompute)\n",
+                length(reused_chunks)))
+  } else {
+    cat("Re-computing pre-match skills for GK features (section 6's chunks not found)...\n")
     gk_skill_stream_dir <- file.path(cache_dir, "psr_gk_skill_chunks")  # stable, see main call's comment
     prematch_skills <- .estimate_prematch_skills_batch(
       match_stats = ms_dt_gk,
@@ -1194,8 +1212,6 @@ gk_skill_keep_cols <- character(0)
     )
     cat(sprintf("[PROFILE] GK .estimate_prematch_skills_batch() RECOMPUTE: %.1f min\n",
                 as.numeric(difftime(Sys.time(), .t_skill_gk_start, units = "mins"))))
-  } else {
-    cat("[PROFILE] GK skill estimation SKIPPED -- prematch_skills still in memory (no recompute)\n")
   }
 
   # Determine available GK skill columns from first non-empty result
@@ -1279,6 +1295,12 @@ gk_skill_keep_cols <- character(0)
       cat(sprintf("GK skills joined for %d weekly dates\n", gk_dates_done))
       if (!is.null(gk_skill_stream_dir) && dir.exists(gk_skill_stream_dir)) {
         unlink(gk_skill_stream_dir, recursive = TRUE)
+      }
+      # Now safe to clean up section 6's chunks -- both outfield (section 7)
+      # and GK (here) are done reading them, whether this run reused them or
+      # (skill_stream_dir missing/incomplete) fell back to gk_skill_stream_dir.
+      if (exists("skill_stream_dir") && dir.exists(skill_stream_dir)) {
+        unlink(skill_stream_dir, recursive = TRUE)
       }
 
       # Impute missing with 0
