@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.47</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.48</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,6 +39,13 @@
       <small>Source: <a href="https://github.com/peteowen1/panna/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.48" id="panna-0348-dev">panna 0.3.48 (dev)<a class="anchor" aria-label="anchor" href="#panna-0348-dev"></a></h2>
+<div class="section level3">
+<h3 id="fix-a-coverage-gate-regression-in-estimate_prematch_skills_batch-panna249-0-3-48">Fix a coverage-gate regression in <code>.estimate_prematch_skills_batch()</code> (panna#249)<a class="anchor" aria-label="anchor" href="#fix-a-coverage-gate-regression-in-estimate_prematch_skills_batch-panna249-0-3-48"></a></h3>
+<p>A memory optimization added the day before (273d5cf0) applied its <code>min_weighted_90s</code> gate even to the full-population case, silently dropping every player below 3 decayed weighted-90s of history from a live retrain – 82.6% skill coverage against a required &gt;=95%, flat across every season 2016-2025. Restored full-population output for both the <code>keep_players = NULL</code> training path and the <code>keep_players</code>-provided (currently unused) path. Retrains the GK sub-model coefficients now that the gate is fixed; outfield coefficients came back byte-identical, as expected.</p>
+</div>
+</div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.47" id="panna-0347-dev">panna 0.3.47 (dev)<a class="anchor" aria-label="anchor" href="#panna-0347-dev"></a></h2>
 <p>Version heading realigned to <code>DESCRIPTION</code> (0.3.47). As with the 0.3.26-0.3.31 run before it, 0.3.33-0.3.46 were <code>gh pr create</code> hook bumps with no NEWS sections of their own – the hook bumps the patch version at PR-creation time, so a session that opens several PRs advances the version several times without any of them being a release. The sections below cover the actual work.</p>
