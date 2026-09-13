@@ -1323,15 +1323,48 @@ calculate_psv_components <- function(player_match_stats, coef_df, osr_coef_df,
 # ONE source of truth so the two never drift (mirrors compute_player_psr's
 # primary_position == "GK" check, generalized to also accept a `position` col
 # for match-stats rows that lack primary_position).
+#' A genuine keeper's own position label reads "Substitute" -- a lineup
+#' STATUS, not a position -- for any appearance off the bench, so a per-row
+#' grep alone misses every bench appearance a keeper makes (measured
+#' 2026-09-13: 3,756 rows, 0.184% of \code{01_match_stats.rds}). Those rows
+#' were being scored/trained through the outfield model instead, with no
+#' shot-stopping credit.
+#'
+#' Falls back to a MAJORITY VOTE across the player's other rows in \code{dt},
+#' not "ever GK". Measured on the same table: of 3,403 players who show a GK
+#' label at least once, 119 have a GK share under 50% -- overwhelmingly
+#' outfielders with a rare emergency-keeper appearance (e.g. after a red
+#' card) or a stray mislabel, not genuine keepers, several as low as 0.3-16%
+#' GK share among players who ALSO appear as substitutes. "Ever GK" would
+#' misroute every one of THEIR substitute rows to the GK model too. A >50%
+#' majority correctly separates genuine keepers (2,276 of 3,403 sit above 99%
+#' GK share) from that tail. An exact 50/50 split defaults to NOT-GK, the
+#' conservative side for a genuinely rare dual-role case.
+#'
+#' The vote is computed WITHIN whatever \code{dt} is passed in, not cached
+#' globally -- consistent with \code{\link{resolve_position_group}} and
+#' \code{\link{.psv_pos_grp}}, so a call scoped to one season resolves using
+#' that season's own rows and a call scoped to the whole table uses the whole
+#' table.
+#'
 #' @keywords internal
 .detect_gk_rows <- function(dt) {
   pos_col <- if ("primary_position" %in% names(dt)) "primary_position"
              else if ("position" %in% names(dt)) "position" else NULL
-  is_gk <- if (!is.null(pos_col)) {
+  raw_gk <- if (!is.null(pos_col)) {
     grepl("GK|Goalkeeper", dt[[pos_col]], ignore.case = TRUE)
   } else rep(FALSE, nrow(dt))
-  is_gk[is.na(is_gk)] <- FALSE
-  is_gk
+  raw_gk[is.na(raw_gk)] <- FALSE
+
+  if (!is.null(pos_col) && "player_id" %in% names(dt) && any(raw_gk) && any(!raw_gk)) {
+    pid <- as.character(dt[["player_id"]])
+    tab <- data.table::data.table(pid = pid, gk = raw_gk)
+    share <- tab[, .(gk_share = mean(gk)), by = pid]
+    is_gk_player <- share$gk_share[match(pid, share$pid)] > 0.5
+    is_gk_player[is.na(is_gk_player)] <- FALSE
+    raw_gk <- raw_gk | is_gk_player
+  }
+  raw_gk
 }
 
 # Collapse the 16-role classify_role() output to the broad GK/DEF/MID/FWD bucket.
@@ -1397,21 +1430,31 @@ calculate_psv_components <- function(player_match_stats, coef_df, osr_coef_df,
 #' \code{is_gk} therefore wins outright: a row the GK router sent to the outfield
 #' model must never receive the GK factor.
 #'
-#' That matters for one real case. \code{\link{.detect_gk_rows}} greps the row's
-#' own \code{position}, which reads \code{"Substitute"} for a keeper coming off
-#' the bench -- so substitute keepers (measured 2026-09: 3,756 rows, 0.184\%) are
-#' scored by the OUTFIELD model. Their resolved position is nonetheless GK, so
-#' without this pin they would take the GK factor onto an outfield-model score.
-#' They are returned as \code{NA} instead, which
-#' \code{\link{apply_psv_calibration}} treats as factor 1 -- honest, because
-#' their scoring path has no fitted factor. Callers should report that count
-#' rather than let it pass silently: it is a gap, not a known value.
+#' UPDATE 2026-09-13: \code{\link{.detect_gk_rows}} was fixed to route the vast
+#' majority of these correctly (a >50\% GK-share majority vote across the
+#' player's other rows), so the case below is now rare rather than routine.
+#' This pin function is kept as the safety net for what remains: a player whose
+#' rows split exactly 50/50 defaults to non-GK, and any caller-supplied
+#' \code{is_gk} that disagrees with the resolved position for some other
+#' reason.
 #'
-#' The tempting fix -- routing substitute keepers to the GK model -- is NOT safe
-#' here. \code{.detect_gk_rows()} also selects the GK TRAINING set in
-#' \code{07_train_psr_model.R}, deliberately, so train and serve route
-#' identically. Changing it at serve time alone would create a train/serve skew.
-#' That fix needs a coordinated step-07 retrain and is tracked separately.
+#' Historical case, now mostly resolved. \code{\link{.detect_gk_rows}} used to
+#' grep only the row's own \code{position}, which reads \code{"Substitute"} for
+#' a keeper coming off the bench -- so substitute keepers (measured 2026-09:
+#' 3,756 rows, 0.184\%) were scored by the OUTFIELD model even though their
+#' resolved position was GK. Without this pin they would have taken the GK
+#' factor onto an outfield-model score. Any row still like this returns
+#' \code{NA}, which \code{\link{apply_psv_calibration}} treats as factor 1 --
+#' honest, because that scoring path has no fitted factor. Callers should
+#' report that count rather than let it pass silently: it is a gap, not a
+#' known value.
+#'
+#' The coefficient RETRAIN this routing fix calls for (07_train_psr_model.R,
+#' whose GK/outfield training split also runs through
+#' \code{.detect_gk_rows()}, deliberately, so train and serve route
+#' identically) is a separate, tracked step -- the newly-captured GK rows are
+#' correctly SCORED now, but the GK coefficients themselves were fit before
+#' those rows were part of the GK training set.
 #'
 #' @param dt Table with \code{position} and \code{player_id}; \code{total_minutes}
 #'   and \code{season_end_year} improve the resolution when present.
@@ -1431,8 +1474,10 @@ calculate_psv_components <- function(player_match_stats, coef_df, osr_coef_df,
 
 # Force the bucket to agree with the GK router, so pos_grp == "GK" exactly when
 # the row was scored by the GK sub-model. A GK-resolved row the router sent to
-# the outfield model (a substitute keeper) becomes NA rather than inheriting a
-# GK factor that does not apply to its score. See .psv_pos_grp()'s roxygen.
+# the outfield model (rare since the 2026-09-13 majority-vote fix -- an exact
+# 50/50 split, or some other router/resolver disagreement) becomes NA rather
+# than inheriting a GK factor that does not apply to its score. See
+# .psv_pos_grp()'s roxygen.
 .psv_pin_gk <- function(r, is_gk) {
   r <- as.character(r)
   if (length(is_gk) != length(r)) return(r)
