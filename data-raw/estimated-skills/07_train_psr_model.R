@@ -1184,12 +1184,24 @@ gk_skill_keep_cols <- character(0)
   # from whichever chunk files are still on disk, which section 7 deliberately
   # leaves in place for exactly this reuse (see its own comment).
   gk_skill_stream_dir <- NULL
-  reused_chunks <- if (exists("skill_stream_dir") && dir.exists(skill_stream_dir)) {
+  # Completeness gate: reuse ONLY if every date section 6 actually produced a
+  # chunk for (skill_date_names, captured in section 7 -- NOT the full
+  # weekly_dates, since section 6 legitimately produces fewer than that: the
+  # earliest weekly dates have no prior history yet, e.g. 683/684 on a real
+  # run) still has its file present. A length(reused_chunks) > 0 check alone
+  # would silently accept a PARTIAL set from an interrupted write or OOM kill
+  # (this exact directory's own comments cite "two observed OOM near-misses")
+  # -- the same silent-corruption shape as the 2026-08-14 shrinking-list
+  # incident in this file (panna, r-datatable-gotchas.md), just via a new
+  # code path. Missing/extra dates fall back to a full, safe recompute rather
+  # than training on a partially-reused, partially-zero-imputed population.
+  reused_chunks <- if (exists("skill_stream_dir") && dir.exists(skill_stream_dir) &&
+                        exists("skill_date_names")) {
     candidate_paths <- stats::setNames(
-      file.path(skill_stream_dir, paste0(as.character(weekly_dates), ".rds")),
-      as.character(weekly_dates)
+      file.path(skill_stream_dir, paste0(skill_date_names, ".rds")),
+      skill_date_names
     )
-    candidate_paths[file.exists(candidate_paths)]
+    if (all(file.exists(candidate_paths))) candidate_paths else character(0)
   } else {
     character(0)
   }
@@ -1199,7 +1211,7 @@ gk_skill_keep_cols <- character(0)
     cat(sprintf("GK skill estimation REUSED %d cached chunk(s) from section 6 (no recompute)\n",
                 length(reused_chunks)))
   } else {
-    cat("Re-computing pre-match skills for GK features (section 6's chunks not found)...\n")
+    cat("Re-computing pre-match skills for GK features (section 6's chunks missing or incomplete)...\n")
     gk_skill_stream_dir <- file.path(cache_dir, "psr_gk_skill_chunks")  # stable, see main call's comment
     prematch_skills <- .estimate_prematch_skills_batch(
       match_stats = ms_dt_gk,
@@ -1295,12 +1307,6 @@ gk_skill_keep_cols <- character(0)
       cat(sprintf("GK skills joined for %d weekly dates\n", gk_dates_done))
       if (!is.null(gk_skill_stream_dir) && dir.exists(gk_skill_stream_dir)) {
         unlink(gk_skill_stream_dir, recursive = TRUE)
-      }
-      # Now safe to clean up section 6's chunks -- both outfield (section 7)
-      # and GK (here) are done reading them, whether this run reused them or
-      # (skill_stream_dir missing/incomplete) fell back to gk_skill_stream_dir.
-      if (exists("skill_stream_dir") && dir.exists(skill_stream_dir)) {
-        unlink(skill_stream_dir, recursive = TRUE)
       }
 
       # Impute missing with 0
@@ -1478,6 +1484,12 @@ gk_skill_keep_cols <- character(0)
     }
   }
   rm(ms_dt_gk); gc(verbose = FALSE)
+  # Unconditional: runs regardless of which branch above fired (chunks
+  # reused, recomputed, or GK training skipped/failed entirely) -- section 6's
+  # chunks are never needed again after this point.
+  if (exists("skill_stream_dir") && dir.exists(skill_stream_dir)) {
+    unlink(skill_stream_dir, recursive = TRUE)
+  }
 }
 
 if (is.null(gk_models)) {
