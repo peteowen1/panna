@@ -702,6 +702,32 @@ test_that(".estimate_prematch_skills_batch keeps thin-history players under the 
   expect_false(is.na(rookie_row$goals_p90))
 })
 
+test_that(".estimate_prematch_skills_batch keeps an explicitly-requested thin-history player when keep_players narrows the date", {
+  # Same bug, the keep_players branch: idx[run_w90[idx] >= min_weighted_90s]
+  # dropped a caller-requested player for having thin history, which makes no
+  # sense for a caller that explicitly asked for that (date, player_id) pair.
+  ms <- data.frame(
+    player_id = c(rep("veteran", 20), "rookie"),
+    player_name = c(rep("Veteran", 20), "Rookie"),
+    match_id = c(paste0("v", 1:20), "r1"),
+    match_date = c(as.Date("2024-01-01") + (0:19) * 7, as.Date("2024-04-15")),
+    total_minutes = 90,
+    position = "Striker",
+    goals_p90 = c(rep(0.4, 20), 0.2),
+    stringsAsFactors = FALSE
+  )
+  ref_date <- as.Date("2024-04-16")
+  keep <- data.table::data.table(date = ref_date, player_id = "rookie")
+  data.table::setkey(keep, date)
+
+  result <- panna:::.estimate_prematch_skills_batch(
+    ms, ref_dates = as.character(ref_date), keep_players = keep, verbose = FALSE
+  )
+
+  sk <- result[[1]]
+  expect_true("rookie" %in% sk$player_id)
+})
+
 
 # =============================================================================
 # GK PSR goal-scale correction (panna#202)

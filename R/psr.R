@@ -701,10 +701,13 @@
       sel <- if (is.null(keep_players)) {
         seq_len(n_players)
       } else {
+        # Same rule as above: narrow to the requested players only, don't
+        # ALSO drop explicitly-requested players for having thin history --
+        # a caller who names a player wants that player's (possibly heavily
+        # shrunk-toward-prior) estimate back, not a silent omission.
         want <- keep_players[.(rd), player_id, nomatch = 0L]
         idx <- match(want, all_player_ids)
-        idx <- idx[!is.na(idx)]
-        idx[run_w90[idx] >= min_weighted_90s]
+        idx[!is.na(idx)]
       }
       if (length(sel) == 0L) {
         NULL
