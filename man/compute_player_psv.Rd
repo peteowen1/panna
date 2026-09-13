@@ -13,7 +13,8 @@ compute_player_psv(
   exclude_efficiency = TRUE,
   position_means = NULL,
   reliability = NULL,
-  center_weights = c("none", "minutes")
+  center_weights = c("none", "minutes"),
+  is_gk = NULL
 )
 }
 \arguments{
@@ -54,6 +55,19 @@ passed through to \code{\link{calculate_psv_components}}/
 \code{\link{calculate_psv}} for BOTH the outfield and GK branches (each
 sub-population is centered -- weighted or not -- separately, same as
 today). See \code{\link{calculate_psv}} for the zero-sum property.}
+
+\item{is_gk}{Optional logical vector, one per row of \code{player_match_stats},
+marking rows to route to the GK sub-model. \code{NULL} (default) computes
+it fresh via \code{\link{.detect_gk_rows}} on \code{player_match_stats} --
+unchanged behaviour for single-call use. Pass this explicitly when
+scoring REPEATED SLICES of a larger population (looping per league,
+season, or date): \code{.detect_gk_rows()}'s majority vote is NOT
+scope-invariant, so the same player can get a different (even internally
+inconsistent) classification depending on how much of their history the
+current slice contains -- confirmed 2026-09-13 (panna#249 follow-up) for
+rare emergency keepers with few total career rows. Compute
+\code{.detect_gk_rows()} ONCE on the full population and subset it
+alongside each slice instead.}
 }
 \value{
 A data.table with \code{psv}, \code{osv}, \code{dsv} columns.

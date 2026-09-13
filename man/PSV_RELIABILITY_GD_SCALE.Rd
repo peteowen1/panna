@@ -5,7 +5,7 @@
 \alias{PSV_RELIABILITY_GD_SCALE}
 \title{Reliability-shrunk PSV display scale ("expected GD contribution per 90")}
 \format{
-Numeric value: 5.293
+Numeric value: 2.668
 }
 \usage{
 PSV_RELIABILITY_GD_SCALE
@@ -83,6 +83,18 @@ fit's flipped sign (was +25.39 on 2026-07-20) -- this is the ALREADY-TRACKED
 #226 inversion (\code{c_gk} inverted, blocks GK position factors), not a new
 finding. Unaffected here since GKs use \code{c_outfield}; still blocks any GK
 \emph{position factor} work until #226 is resolved -- see RATING_CALIBRATION.md.
+
+Re-derived 2026-09-13 after the panna#249 retrain (coverage-gate fix in
+\code{.estimate_prematch_skills_batch()} restored ~15-18\% of training rows
+that a same-day-prior regression, 273d5cf0, had been silently dropping):
+\strong{5.293 -> 2.668} (\code{c_outfield = 2.6685}, se 0.1199, t = 22.3, R^2 = 0.164,
+n = 15,704). A 49.6\% drift, large but expected: the coverage fix genuinely
+changed the training population (restored rows are lower-history, more
+heavily shrunk-toward-prior players), so the fitted PSR/PSV betas and this
+scale both moved together. \code{c_gk = 3.5739} (t = 22.6, POSITIVE again, unlike
+the 2026-09-02/09-03 inverted fits) -- still REJECTED per the standing
+D1-v2 decision (GKs use \code{c_outfield}), noted here only because the sign
+flip itself may be relevant to #226 if that gets revisited.
 }
 \seealso{
 Other psr: 
