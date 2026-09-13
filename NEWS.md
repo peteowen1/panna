@@ -1,3 +1,19 @@
+# panna 0.3.49 (dev)
+
+## Fix `.detect_gk_rows()` scope-instability breaking live-PSV constants (panna#250)
+
+`07c_build_live_psv_constants.R`'s own hard-fail check (K constant within
+league+role) started failing after the coverage-gate and GK-routing fixes:
+`.detect_gk_rows()`'s majority vote is computed fresh on whatever table it's
+handed, so a rare emergency keeper's classification could disagree with
+itself depending on which slice of their history a given call saw. Gave
+`compute_player_psv()` an `is_gk` override parameter so callers with a
+stable full-population classification (like `07c`) can supply it instead of
+each call recomputing on a narrow slice. Also fixed the same default change
+accidentally breaking `compute_player_psr()`'s internal consistency (caught
+in review) and rebuilt `position_role_means.csv`, `psv_match_reliability.csv`,
+`psv_live_constants.csv`, and `PSV_RELIABILITY_GD_SCALE` (5.293 -> 2.668).
+
 # panna 0.3.48 (dev)
 
 ## Fix a coverage-gate regression in `.estimate_prematch_skills_batch()` (panna#249)
