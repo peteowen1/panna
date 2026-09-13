@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.49</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.50</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,6 +39,13 @@
       <small>Source: <a href="https://github.com/peteowen1/panna/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.50" id="panna-0350-dev">panna 0.3.50 (dev)<a class="anchor" aria-label="anchor" href="#panna-0350-dev"></a></h2>
+<div class="section level3">
+<h3 id="eliminate-duplicate-skill-estimation-recompute-in-the-gk-sub-model-panna251-0-3-50">Eliminate duplicate skill-estimation recompute in the GK sub-model (panna#251)<a class="anchor" aria-label="anchor" href="#eliminate-duplicate-skill-estimation-recompute-in-the-gk-sub-model-panna251-0-3-50"></a></h3>
+<p><code>07_train_psr_model.R</code>’s outfield (Section 6) and GK (Section 18) training both called <code><a href="../reference/dot-estimate_prematch_skills_batch.html">.estimate_prematch_skills_batch()</a></code> on functionally identical inputs, costing ~14-55 minutes of pure duplicate work (~30%+ of total runtime) because Section 6’s per-date skill chunks were deleted right after Section 7’s join, before Section 18 could reuse them. Section 18 now reconstructs the same file list from disk instead, gated on an exact match against the dates Section 6 actually produced (not the theoretical full set) so a partial/interrupted chunk directory falls back safely to the original recompute rather than silently training on an incomplete population.</p>
+</div>
+</div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.49" id="panna-0349-dev">panna 0.3.49 (dev)<a class="anchor" aria-label="anchor" href="#panna-0349-dev"></a></h2>
 <div class="section level3">
