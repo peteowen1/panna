@@ -1368,17 +1368,20 @@ test_that(".detect_gk_rows()'s majority vote is scope-dependent -- the motivatio
 })
 
 test_that("compute_player_psv()'s is_gk override is honored, not silently re-detected", {
-  skip_if_not(file.exists("../../data-raw/cache-skills/01_match_stats.rds"),
-              "match stats cache not available")
-  ms <- data.table::as.data.table(
-    readRDS("../../data-raw/cache-skills/01_match_stats.rds"))
-  sub <- ms[season == ms$season[1]][1:200]
+  # Inline synthetic fixture (not the gitignored match-stats cache, which
+  # skip_if_not'd out of every CI run and gave this test zero real coverage).
+  sub <- data.table::data.table(
+    match_id = c("m1", "m2"),
+    player_id = c("sub_keeper", "outfielder"),
+    position = c("Substitute", "Midfielder"),  # neither row's raw label says GK
+    total_minutes = c(45, 90),
+    goals_p90 = c(0, 0.2),
+    gsaa_per90 = c(0.3, 0)  # a real nonzero-beta GK stat, so the GK branch has something to score
+  )
   # Row 1's raw position doesn't say GK, so the default (is_gk = NULL,
   # recomputed internally) must NOT route it to the GK sub-model.
-  sub[1, position := "Substitute"]
   default_is_gk <- panna:::.detect_gk_rows(sub)
   expect_false(default_is_gk[1])
-  key1 <- sub[1, .(match_id, player_id)]
 
   # Force an externally-supplied is_gk = TRUE for that same row -- exactly
   # what a caller with a stable full-population classification (07c) does.
@@ -1388,29 +1391,66 @@ test_that("compute_player_psv()'s is_gk override is honored, not silently re-det
   # compute_player_psv() does NOT preserve input row order (outfield rows
   # then GK rows, per its own documented behaviour) -- look the row back up
   # by key rather than assuming position [1] survives the split.
+  key1 <- sub[1, .(match_id, player_id)]
   out_default <- compute_player_psv(sub, min_adjust = FALSE, target = "blend")
   out_forced  <- compute_player_psv(sub, min_adjust = FALSE, target = "blend",
                                      is_gk = forced_is_gk)
   row_default <- merge(as.data.table(out_default), key1, by = c("match_id", "player_id"))
   row_forced  <- merge(as.data.table(out_forced),  key1, by = c("match_id", "player_id"))
 
-  # NA is the correct default answer here (resolve_position_group() has no
-  # career data to fall back on for this synthetic row) -- either NA or a
-  # non-GK guess is fine, just never "GK".
+  # NA is a fine default answer here (resolve_position_group() has no career
+  # data to fall back on for this synthetic single-appearance row) -- either
+  # NA or a non-GK guess passes, just never "GK".
   expect_true(is.na(row_default$pos_grp) || row_default$pos_grp != "GK")
   # With the override, it's forced to GK -- proving the parameter is actually
   # used (and not silently re-detected internally).
   expect_equal(row_forced$pos_grp, "GK")
 })
 
-test_that("compute_player_psv() validates is_gk length against the input", {
+test_that("compute_player_psv() validates is_gk length, type, and NA content", {
   sub <- data.table::data.table(
     player_id = c("a", "b"), position = c("GK", "MID"), total_minutes = c(90, 90)
   )
-  expect_error(
-    compute_player_psv(sub, is_gk = TRUE),  # length 1, not 2
-    "is_gk"
+  expect_error(compute_player_psv(sub, is_gk = TRUE), "is_gk")  # wrong length
+  # A non-logical vector would be silently treated as POSITIONAL ROW INDICES
+  # by dt[is_gk], not a mask -- must be rejected outright, not coerced.
+  expect_error(compute_player_psv(sub, is_gk = c(1, 0)), "is_gk")
+  expect_error(compute_player_psv(sub, is_gk = c(TRUE, NA)), "is_gk")
+})
+
+test_that("compute_player_psr() normalizes using its OWN GK split, not .detect_gk_rows()'s default", {
+  # Regression: giving .player_role() (used by .position_normalize_skills())
+  # a default of .detect_gk_rows() meant compute_player_psr() -- which calls
+  # .position_normalize_skills() WITHOUT an is_gk override, and splits
+  # GK/outfield via its own, different `primary_position == "GK"` check two
+  # lines later -- could silently normalize a row against the GK role mean
+  # while still scoring it with outfield coefficients, whenever the two
+  # checks disagree. Caught in code review 2026-09-13 on the
+  # .detect_gk_rows() scope-instability fix.
+  #
+  # Direct unit test on .position_normalize_skills(): a player with 2 of 3
+  # rows labelled GK flips their 3rd ("MID") row to GK under the majority
+  # vote, but compute_player_psr()'s own split (row-level `primary_position
+  # == "GK"`) says that row is outfield. Position means differ sharply
+  # between GK and MID, so which one gets subtracted is directly observable.
+  dt <- data.table::data.table(
+    player_id = c("p1", "p1", "p1"),
+    primary_position = c("GK", "GK", "MID"),
+    goals_p90 = c(0.02, 0.03, 0.3)
   )
+  pm <- data.table::data.table(
+    role = c("GK", "MID"), stat_name = "goals_p90",
+    mean = c(0.01, 0.25), season_end_year = NA_integer_
+  )
+  is_gk_own_split <- dt$primary_position == "GK"  # what compute_player_psr() uses
+  expect_true(panna:::.detect_gk_rows(dt)[3])      # majority vote would flip row 3 to GK
+  expect_false(is_gk_own_split[3])                 # but the row's own split says MID/outfield
+
+  normalized <- panna:::.position_normalize_skills(data.table::copy(dt), pm, is_gk = is_gk_own_split)
+  # Row 3 must be normalized against the MID mean (0.25), matching its own
+  # split -- not the GK mean (0.01) .detect_gk_rows()'s majority vote would
+  # have used if is_gk had not been passed through explicitly.
+  expect_equal(normalized$goals_p90[3], 0.3 - 0.25)
 })
 
 test_that("compute_player_psv returns pos_grp so the calibration can key on it", {

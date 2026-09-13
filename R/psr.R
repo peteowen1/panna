@@ -1748,8 +1748,21 @@ compute_player_psv <- function(player_match_stats, min_adjust = TRUE,
   target <- match.arg(target)
   center_weights <- match.arg(center_weights)
   dt <- data.table::as.data.table(player_match_stats)
-  if (!is.null(is_gk) && length(is_gk) != nrow(dt)) {
-    cli::cli_abort("{.arg is_gk} must have one entry per row of {.arg player_match_stats} ({nrow(dt)}), got {length(is_gk)}.")
+  if (!is.null(is_gk)) {
+    if (length(is_gk) != nrow(dt)) {
+      cli::cli_abort("{.arg is_gk} must have one entry per row of {.arg player_match_stats} ({nrow(dt)}), got {length(is_gk)}.")
+    }
+    if (!is.logical(is_gk)) {
+      # dt[is_gk] treats a non-logical vector as POSITIONAL ROW INDICES, not a
+      # mask -- a numeric 0/1 override would silently select/duplicate the
+      # wrong rows into the GK branch with no error, while `!is_gk` (used for
+      # the outfield branch) happens to coerce correctly. Reject outright
+      # rather than let the two branches disagree on what `is_gk` even means.
+      cli::cli_abort("{.arg is_gk} must be a logical vector, got {.cls {class(is_gk)}}.")
+    }
+    if (anyNA(is_gk)) {
+      cli::cli_abort("{.arg is_gk} must not contain NA -- resolve to TRUE/FALSE before calling.")
+    }
   }
   if (is.null(is_gk)) is_gk <- .detect_gk_rows(dt)
   dt <- .position_normalize_skills(dt, position_means, is_gk = is_gk)
@@ -2141,10 +2154,19 @@ compute_player_psr <- function(skills, center = TRUE,
                                 gk_goal_scale = 1) {
   target <- match.arg(target)
   dt <- data.table::as.data.table(skills)
-  dt <- .position_normalize_skills(dt, position_means)
 
-  # Split GKs from outfield players
+  # Split GKs from outfield players. Computed BEFORE position normalization
+  # (and passed into it explicitly) so the two agree -- this function's own
+  # split, unlike compute_player_psv()'s, does NOT use .detect_gk_rows(), so
+  # letting .position_normalize_skills() -> .player_role() fall back to its
+  # own default (.detect_gk_rows()) would silently normalize some rows
+  # against the GK role mean while still scoring them with the outfield
+  # coefficients -- confirmed 2026-09-13 as a review finding on the
+  # .detect_gk_rows() scope-instability fix, which is what gave .player_role()
+  # that default in the first place.
   is_gk <- dt$primary_position == "GK"
+  dt <- .position_normalize_skills(dt, position_means, is_gk = is_gk)
+
   has_gks <- any(is_gk, na.rm = TRUE)
   has_outfield <- any(!is_gk, na.rm = TRUE)
 
