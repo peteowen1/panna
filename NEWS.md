@@ -1,3 +1,17 @@
+# panna 0.3.50 (dev)
+
+## Eliminate duplicate skill-estimation recompute in the GK sub-model (panna#251)
+
+`07_train_psr_model.R`'s outfield (Section 6) and GK (Section 18) training
+both called `.estimate_prematch_skills_batch()` on functionally identical
+inputs, costing ~14-55 minutes of pure duplicate work (~30%+ of total
+runtime) because Section 6's per-date skill chunks were deleted right after
+Section 7's join, before Section 18 could reuse them. Section 18 now
+reconstructs the same file list from disk instead, gated on an exact match
+against the dates Section 6 actually produced (not the theoretical full set)
+so a partial/interrupted chunk directory falls back safely to the original
+recompute rather than silently training on an incomplete population.
+
 # panna 0.3.49 (dev)
 
 ## Fix `.detect_gk_rows()` scope-instability breaking live-PSV constants (panna#250)
