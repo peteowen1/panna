@@ -70,7 +70,21 @@ meta_cols <- intersect(c("match_id", "player_id", "player_name", "team_name", "o
                           "primary_position", "total_minutes", "is_home", "goals", "competition"),
                         names(ms))
 raw_feat_cols <- intersect(union(of_feats, gk_feats), names(ms))
-ms <- ms[total_minutes >= 20, c(meta_cols, raw_feat_cols), with = FALSE]
+
+# Vote on the FULL, unfiltered population, matching 07b_build_position_means.R
+# and 07_train_psr_model.R -- not the total_minutes>=20-filtered one below.
+# .detect_gk_rows() now votes across a player's rows in whatever table it's
+# handed (2026-09-13 majority-vote fix), so filtering first would change the
+# denominator: a player's own short cameos -- disproportionately the
+# substitute rows this fix exists to catch -- would be dropped from their own
+# vote before the vote runs, biasing gk_share for exactly the population that
+# matters. Compute as a ROW-LEVEL column (not aggregated with any()/all() --
+# that would reintroduce "ever GK", which the majority vote deliberately
+# rejects for the emergency-keeper tail) so each surviving row keeps its own
+# already-correct value when the minutes filter below drops other rows.
+ms[, .is_gk_full := .detect_gk_rows(ms)]
+
+ms <- ms[total_minutes >= 20, c(meta_cols, raw_feat_cols, ".is_gk_full"), with = FALSE]
 cli::cli_alert_info("match_stats rows after minutes>=20 filter: {format(nrow(ms), big.mark=',')}")
 
 ms <- enrich_match_stats_with_xmetrics(ms, verbose = TRUE, fail_if_missing_frac = 0.6)
@@ -80,7 +94,11 @@ gc(verbose = FALSE)
 ## 2. Population split + position/era centering (identical convention to
 ##    compute_player_psv / 07b_build_position_means.R)
 ## ---------------------------------------------------------------------------
-is_gk <- .detect_gk_rows(ms)
+# Use the vote computed on the full population BEFORE the minutes filter
+# above (.is_gk_full), not a fresh .detect_gk_rows(ms) call on the filtered
+# table -- see that block's comment for why re-voting here would be wrong.
+is_gk <- ms$.is_gk_full
+ms[, .is_gk_full := NULL]
 ms[, population := ifelse(is_gk, "gk", "outfield")]
 cli::cli_alert_info("outfield rows: {format(sum(!is_gk), big.mark=',')} | gk rows: {format(sum(is_gk), big.mark=',')}")
 

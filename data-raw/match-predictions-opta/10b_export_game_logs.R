@@ -761,10 +761,12 @@ validate_game_log_schema <- function(dt, league, season) {
         # value. Unresolved is NA (not the string "OTHER" -- resolve_position_group()
         # and .psv_pin_gk() both emit NA, and apply_psv_calibration() treats NA as
         # factor 1). It means a player whose every appearance in this league-season
-        # was a substitute, plus substitute keepers, whose outfield-model score has
-        # no fitted factor. Measured 2026-09: ~3.6% of rows, ~2.3% of minutes,
-        # concentrated in 2013-2016 league-seasons whose `position` is blank on
-        # every row.
+        # was a substitute, plus (now rare, since the 2026-09-13 .detect_gk_rows()
+        # majority-vote fix) a substitute keeper whose scoring path disagreed with
+        # its resolved position. Measured 2026-09-12 (BEFORE that fix): ~3.6% of
+        # rows, ~2.3% of minutes, concentrated in 2013-2016 league-seasons whose
+        # `position` is blank on every row -- not yet re-measured, but the
+        # substitute-keeper share of this should now be smaller.
         n_other <- game_logs[is.na(pos_grp), .N]
         .gk_top20 <- function(d) {
           # Resolve each player to ONE bucket by minutes, not by whichever row

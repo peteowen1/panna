@@ -1343,3 +1343,69 @@ test_that("an unmarked table calibrates normally (the guard is not always-on)", 
   expect_equal(out$psr, c(0.10 * 0.6411, 0.20 * 1.2337))
   expect_equal(out$osr + out$dsr, out$psr)
 })
+
+# ---------------------------------------------------------------------------
+# .detect_gk_rows(): majority-vote fallback for substitute keepers (2026-09-13)
+# ---------------------------------------------------------------------------
+
+test_that(".detect_gk_rows routes a substitute keeper's bench row to GK via majority vote", {
+  # A genuine keeper: 90% of appearances are real GK rows, one is a bench
+  # cameo where the row's own label reads "Substitute".
+  dt <- data.table::data.table(
+    player_id = rep("keeper1", 10),
+    position  = c(rep("Goalkeeper", 9), "Substitute")
+  )
+  is_gk <- panna:::.detect_gk_rows(dt)
+  expect_true(all(is_gk))
+})
+
+test_that(".detect_gk_rows does NOT flip an outfielder's rare emergency-keeper row", {
+  # An outfielder who covered in goal once (e.g. after a red card) -- 10% GK
+  # share, well under the >50% majority bar. Their real Defender rows must
+  # stay non-GK, and so must their own rare GK-labelled row: the majority vote
+  # only ADDS coverage for genuine keepers, it never removes a row's own
+  # correctly-labelled GK reading.
+  dt <- data.table::data.table(
+    player_id = rep("outfielder1", 10),
+    position  = c(rep("Defender", 9), "Goalkeeper")
+  )
+  is_gk <- panna:::.detect_gk_rows(dt)
+  expect_equal(is_gk, c(rep(FALSE, 9), TRUE))
+})
+
+test_that(".detect_gk_rows defaults an exact 50/50 split to non-GK", {
+  dt <- data.table::data.table(
+    player_id = rep("tied1", 4),
+    position  = c("Goalkeeper", "Goalkeeper", "Substitute", "Substitute")
+  )
+  is_gk <- panna:::.detect_gk_rows(dt)
+  expect_equal(is_gk, c(TRUE, TRUE, FALSE, FALSE))
+})
+
+test_that(".detect_gk_rows majority-vote fallback is purely additive, never removes a raw GK row", {
+  # player a: 2 of 3 rows real GK (67% share, clears the >50% bar) -- both
+  # substitute rows should flip. player b: a single real GK row, unaffected.
+  ms <- data.table::data.table(
+    player_id = c("a", "a", "a", "b"),
+    position  = c("Goalkeeper", "Goalkeeper", "Substitute", "Goalkeeper")
+  )
+  raw <- grepl("GK|Goalkeeper", ms$position, ignore.case = TRUE)
+  new <- panna:::.detect_gk_rows(ms)
+  expect_true(all(new[raw]))          # every raw-TRUE row stays TRUE
+  expect_true(all(new))               # player a's substitute row now flips too
+})
+
+test_that(".detect_gk_rows falls back gracefully with no player_id (unchanged, per-row only)", {
+  dt <- data.table::data.table(position = c("Goalkeeper", "Substitute"))
+  expect_equal(panna:::.detect_gk_rows(dt), c(TRUE, FALSE))
+})
+
+test_that(".detect_gk_rows recovers a genuine keeper's BLANK-position rows, not just Substitute", {
+  # Measured live 2026-09-13: most of the newly-captured population (1,990 of
+  # 3,344 rows) had a completely blank position, not literally "Substitute".
+  dt <- data.table::data.table(
+    player_id = rep("keeper2", 5),
+    position  = c(rep("Goalkeeper", 4), "")
+  )
+  expect_true(all(panna:::.detect_gk_rows(dt)))
+})
