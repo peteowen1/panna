@@ -1392,6 +1392,128 @@ calculate_psv_components <- function(player_match_stats, coef_df, osr_coef_df,
 # detector and the tests must all agree on the level set.
 PSR_ROLE8_LEVELS <- c("GK", "CB", "FB", "DM", "CM", "AM", "W", "ST")
 
+#' As-at role8 lookup: a player's bucket from their RECENT PRIOR matches only
+#'
+#' A career-wide modal bucket is wrong twice over for a point-in-time snapshot.
+#' It is era-inappropriate (a player who converted from full-back to centre-back
+#' is scored as a centre-back in the seasons he spent at full-back) and it is a
+#' LOOK-AHEAD (a 2016 snapshot's bucket informed by 2024 minutes), which cuts
+#' against the whole as-at design of the weekly snapshots.
+#'
+#' Measured 2026-09-14 on the live table: a career bucket disagrees with the
+#' season-appropriate one on **19.16% of player-seasons** and 16.36% of minutes,
+#' affecting 31.42% of players, with a median PSR error of 0.0173 on the rows it
+#' touches. The whole role8 normalization fix is worth 0.0055-0.0184, so the
+#' career shortcut would have cost about as much as the fix gained. Named cases:
+#' Declan Rice (career CM, seasons at CB and DM), Son Heung-Min (career ST,
+#' seasons at AM and W), Koke, Xhaka, Brandt, Sabitzer.
+#'
+#' Uses a trailing window rather than the whole prior career so the bucket
+#' tracks a conversion instead of being anchored by long-past minutes. Falls
+#' back to ALL prior matches when the window is empty (returning from injury,
+#' sparse lower-league coverage), then to "OTHER".
+#'
+#' @param match_stats Match-level stats with player_id, match_date, position,
+#'   position_side and total_minutes. Must NOT have been column-narrowed:
+#'   `position_side` is commonly dropped, and `classify_role()` silently returns
+#'   "UNK" for every outfielder without it.
+#' @param as_of Date. Only matches STRICTLY BEFORE this contribute.
+#' @param window_days Trailing window length; default 365.
+#' @return data.table(player_id, role8) for players with any prior match.
+#' @keywords internal
+#' @noRd
+#' @rdname role8-asof
+.role8_prepare <- function(match_stats) {
+  d <- data.table::as.data.table(match_stats)
+  if (!"position_side" %in% names(d)) {
+    cli::cli_abort(c(
+      "`match_stats` has no `position_side` column.",
+      "x" = "`classify_role()` returns \"UNK\" for every outfielder without it, \\
+             collapsing the whole population to \"OTHER\".",
+      "i" = "Prepare the role BEFORE any column narrowing."))
+  }
+  out <- data.table::data.table(
+    player_id     = as.character(d$player_id),
+    match_date    = as.Date(d$match_date),
+    total_minutes = as.numeric(d$total_minutes),
+    role8         = .role16_to_role8(classify_role(d$position, d$position_side))
+  )
+  out[is.na(total_minutes), total_minutes := 0]
+  # Drop rows that can never contribute, ONCE, then sort by date so
+  # .role8_asof() can binary-search its window instead of scanning the whole
+  # table twice per call. Two full 2M-row logical scans per date was the actual
+  # cost -- not classify_role(), which a first optimization attempt wrongly
+  # blamed and which moved the measured time by 1.1s/date.
+  out <- out[!is.na(match_date) & role8 != "OTHER" & total_minutes > 0]
+  data.table::setorder(out, match_date)
+  attr(out, "role8_sorted") <- TRUE
+  out
+}
+
+.role8_asof <- function(match_stats, as_of, window_days = 365L) {
+  d <- data.table::as.data.table(match_stats)
+  # `role8` is date-INDEPENDENT, so a caller looping over many dates should
+  # precompute it once with .role8_prepare() rather than paying classify_role()
+  # on the full table per date -- measured at ~8.6s/date on a 2M-row table,
+  # which is ~34 min across 08b's 237 snapshots.
+  if ("role8" %in% names(d)) {
+    r8 <- as.character(d$role8)
+  } else {
+    if (!"position_side" %in% names(d)) {
+      cli::cli_abort(c(
+        "`match_stats` has no `position_side` column.",
+        "x" = "`classify_role()` returns \"UNK\" for every outfielder without \\
+               it, collapsing the whole population to \"OTHER\".",
+        "i" = "Resolve the role BEFORE any column narrowing."))
+    }
+    r8 <- .role16_to_role8(classify_role(d$position, d$position_side))
+  }
+  as_of <- as.Date(as_of)
+  if (isTRUE(attr(match_stats, "role8_sorted"))) {
+    # Fast path: pre-filtered and date-sorted by .role8_prepare(), so the two
+    # windows are contiguous row ranges found by binary search.
+    dv <- as.numeric(d$match_date)
+    hi <- findInterval(as.numeric(as_of) - 1e-9, dv)   # last row strictly before
+    if (hi < 1L) return(data.table::data.table(player_id = character(0),
+                                               role8 = character(0)))
+    base <- data.table::data.table(player_id = d$player_id[seq_len(hi)],
+                                   role8 = r8[seq_len(hi)],
+                                   md = d$match_date[seq_len(hi)],
+                                   mins = d$total_minutes[seq_len(hi)])
+  } else {
+    md <- as.Date(d$match_date)
+    mins <- as.numeric(d$total_minutes)
+    mins[is.na(mins)] <- 0
+    keep <- !is.na(md) & md < as_of & r8 != "OTHER" & mins > 0
+    if (!any(keep)) return(data.table::data.table(player_id = character(0),
+                                                  role8 = character(0)))
+    base <- data.table::data.table(player_id = as.character(d$player_id[keep]),
+                                   role8 = r8[keep], md = md[keep],
+                                   mins = mins[keep])
+  }
+  pick <- function(tab) {
+    if (nrow(tab) == 0) return(NULL)
+    agg <- tab[, .(m = sum(mins)), by = .(player_id, role8)]
+    # `role8` is a DETERMINISTIC tie-break, not decoration. Without it a player
+    # with equal minutes in two buckets is resolved by input row order, so the
+    # same player gets a different bucket depending on how the caller happened
+    # to sort the table -- which is what an equivalence check between the sorted
+    # and unsorted paths caught here. Same family as the ties.method="first"
+    # coin-flip that mis-assigned league tags in panna#222.
+    data.table::setorder(agg, player_id, -m, role8)
+    agg[, .SD[1L], by = player_id][, .(player_id, role8)]
+  }
+  recent <- pick(base[md >= as_of - window_days])
+  # (see .role8_prepare() for the per-date-loop fast path)
+  # Players with no minutes in the window still get a bucket, from their full
+  # prior history -- silently dropping them would send them to "OTHER", which
+  # is the collapse this whole guard chain exists to prevent.
+  older <- pick(base)
+  if (is.null(recent)) return(if (is.null(older)) base[0, .(player_id, role8)] else older)
+  missing <- older[!player_id %in% recent$player_id]
+  data.table::rbindlist(list(recent, missing), use.names = TRUE)
+}
+
 # Collapse the 16-role classify_role() output to the 8 normalization buckets.
 # Wing-backs join full-backs (a formation label, not a different job); wide
 # midfielders join wingers (LM/RM and LW/RW do the same work, and the broad

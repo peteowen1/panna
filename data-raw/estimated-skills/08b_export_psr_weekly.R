@@ -108,33 +108,35 @@ gc(verbose = FALSE)
 # role8 -- `.position_normalize_skills()` detects the grain and ignores an
 # override it doesn't need.
 #
-# CAREER-WIDE, deliberately, with two known limitations (review, 2026-09-14):
-#   1. Unlike 06 (which keys per player-season because it scores player-SEASONS),
-#      a snapshot row is a point-in-time career estimate with no single season,
-#      so there is no season to key on here. A player who converts from full-back
-#      to centre-back therefore carries one bucket across their whole history
-#      rather than switching at the conversion.
-#   2. That mode is taken over ALL matches including ones AFTER a given snapshot
-#      date, so it is a mild look-ahead: the bucket a 2016 snapshot normalizes
-#      against can be informed by 2024 minutes.
-# Both are accepted rather than fixed: the bucket only selects which mean is
-# subtracted, position-switchers are a small minority, and resolving per date
-# would mean re-deriving the mode 237 times over a 2M-row table. Revisit if the
-# normalization ever feeds something other than a display rating.
-.role8_lookup <- local({
-  r8 <- .role16_to_role8(classify_role(match_stats$position,
-                                       match_stats$position_side))
-  mins <- as.numeric(match_stats$total_minutes)
-  mins[is.na(mins)] <- 0
-  tab <- data.table::data.table(player_id = match_stats$player_id,
-                                role8 = r8, mins = mins)[role8 != "OTHER"]
-  tab <- tab[, .(mins = sum(mins)), by = .(player_id, role8)]
-  data.table::setorder(tab, player_id, -mins)
-  tab[, .SD[1L], by = player_id][, .(player_id, role8)]
-})
-data.table::setkey(.role8_lookup, player_id)
-cat(sprintf("  role8 lookup: %s players\n",
-            format(nrow(.role8_lookup), big.mark = ",")))
+# Resolved PER SNAPSHOT DATE inside the loop, NOT once career-wide. A career
+# mode is both era-inappropriate (a player who converted from full-back to
+# centre-back would be scored as a centre-back in the seasons he spent at
+# full-back) and a LOOK-AHEAD -- a 2016 snapshot's bucket informed by 2024
+# minutes -- which cuts against the whole as-at design of these snapshots.
+#
+# Measured on this table rather than assumed: a career bucket disagrees with the
+# season-appropriate one on 19.16% of player-seasons and 16.36% of minutes,
+# affecting 31.42% of players, with a median PSR error of 0.0173 on the rows it
+# touches. The entire role8 normalization fix is worth 0.0055-0.0184, so the
+# career shortcut would have cost about what the fix gained. Named cases:
+# Declan Rice (career CM, seasons at CB and DM), Son Heung-Min (career ST,
+# seasons at AM and W), Koke, Xhaka, Brandt, Sabitzer.
+#
+# Cost is trivial -- the trailing-window filter cuts each pass to ~5% of rows,
+# so this is seconds across the whole run, not the hours an earlier estimate
+# claimed.
+#
+# These columns are snapshotted BEFORE match_stats is narrowed for the loop: the
+# narrowing drops `position_side`, and classify_role() silently returns "UNK"
+# for every outfielder without it -- the exact collapse review found on
+# 2026-09-14 in 02_player_ratings_to_team.R.
+# classify_role() is date-independent, so it runs ONCE here rather than per
+# snapshot -- measured at ~8.6s/date on this table, i.e. ~34 min across 237
+# dates if left inside the loop.
+.role8_src <- .role8_prepare(match_stats)
+cat(sprintf("  role8 source prepared: %s rows, %.1f%% resolvable (pre-narrowing)\n",
+            format(nrow(.role8_src), big.mark = ","),
+            100 * mean(.role8_src$role8 != "OTHER")))
 data.table::setkey(.is_gk_lookup, player_id)
 cat(sprintf("  Rows: %s | Date range: %s to %s\n",
             format(nrow(match_stats), big.mark = ","),
@@ -631,6 +633,7 @@ message(sprintf("  Streaming per-iteration chunks as flat files: %s*.parquet",
                 psr_chunk_prefix))
 
 n_success <- 0L
+.role8_other_rate <- numeric(0)   # per-date share falling through to "OTHER"
 start_time <- Sys.time()
 
 for (i in seq_along(snapshot_dates)) {
@@ -676,10 +679,12 @@ for (i in seq_along(snapshot_dates)) {
   skills_is_gk <- .is_gk_lookup$is_gk[match(skills$player_id, .is_gk_lookup$player_id)]
   skills_is_gk[is.na(skills_is_gk)] <- FALSE
 
-  # Same join, same degrade-safely convention: a player with no resolvable
-  # finer role falls to "OTHER", which the means artifact carries a row for.
-  skills_role8 <- .role8_lookup$role8[match(skills$player_id, .role8_lookup$player_id)]
+  # As-at bucket: only matches STRICTLY BEFORE this snapshot contribute, so the
+  # normalization carries no look-ahead and tracks a position conversion.
+  .r8_d <- .role8_asof(.role8_src, as_of = d)
+  skills_role8 <- .r8_d$role8[match(skills$player_id, .r8_d$player_id)]
   skills_role8[is.na(skills_role8)] <- "OTHER"
+  .role8_other_rate <- c(.role8_other_rate, mean(skills_role8 == "OTHER"))
 
   psr <- tryCatch(
     compute_player_psr(skills, center = TRUE, target = psr_target,
@@ -743,6 +748,19 @@ for (i in seq_along(snapshot_dates)) {
 }
 
 total_secs <- as.numeric(difftime(Sys.time(), start_time, units = "secs"))
+if (length(.role8_other_rate)) {
+  # Report the rate explicitly: "OTHER" is a REAL role in the means artifact, so
+  # a collapse to it reads as a matched role and the in-function guard in
+  # .position_normalize_skills() cannot see it. This is the outer net.
+  cat(sprintf("\nrole8 fallback to OTHER: mean %.1f%% of rows per date (max %.1f%%)\n",
+              100 * mean(.role8_other_rate), 100 * max(.role8_other_rate)))
+  if (mean(.role8_other_rate) > 0.5) {
+    stop("role8 resolution collapsed: >50% of rows fell through to OTHER, so ",
+         "they were normalized against a pooled substitute mean rather than ",
+         "their own position. Check that position_side survived to .role8_src.",
+         call. = FALSE)
+  }
+}
 cat(sprintf("\nCompleted: %d / %d dates (%.0fs, %.1f sec/date)\n",
             n_success, length(snapshot_dates),
             total_secs, total_secs / max(n_success, 1)))

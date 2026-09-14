@@ -1845,3 +1845,72 @@ test_that("compute_position_role_means can build at either grain", {
   expect_equal(.position_means_grain(fine), "role8")
   expect_true(all(unique(fine$role) %in% c(PSR_ROLE8_LEVELS, "OTHER")))
 })
+
+test_that(".role8_asof tracks a position conversion and never looks ahead", {
+  # A career-wide bucket is era-inappropriate AND a look-ahead. Measured on the
+  # live table, it disagrees with the season-appropriate bucket on 19.16% of
+  # player-seasons (16.36% of minutes, 31.42% of players), median PSR error
+  # 0.0173 -- about the size of the whole role8 fix. Named cases: Declan Rice
+  # (career CM, seasons at CB and DM), Son Heung-Min (career ST, seasons AM/W).
+  ms <- data.table::data.table(
+    player_id = "p1",
+    match_date = as.Date(c("2020-01-01","2020-02-01","2020-03-01",
+                           "2024-01-01","2024-02-01","2024-03-01","2024-04-01")),
+    position = "Defender",
+    position_side = c("Left","Left","Left","Centre","Centre","Centre","Centre"),
+    total_minutes = 90)
+
+  # Before the conversion he is a full-back, and the later CB minutes must not
+  # leak backwards into this answer.
+  expect_equal(.role8_asof(ms, "2020-06-01")$role8, "FB")
+  # After it, the trailing window has moved him to centre-back.
+  expect_equal(.role8_asof(ms, "2024-05-01")$role8, "CB")
+  # Strictly prior: a date before any match yields nothing, not a guess.
+  expect_equal(nrow(.role8_asof(ms, "2019-01-01")), 0L)
+  # Empty trailing window falls back to all prior history rather than "OTHER",
+  # which would be the silent collapse the guard chain exists to prevent.
+  expect_equal(.role8_asof(ms, "2023-01-01")$role8, "FB")
+})
+
+test_that(".role8_asof aborts when position_side was narrowed away", {
+  ms <- data.table::data.table(
+    player_id = "p1", match_date = as.Date("2024-01-01"),
+    position = "Defender", total_minutes = 90)
+  expect_error(.role8_asof(ms, "2024-05-01"), "position_side")
+})
+
+test_that(".role8_asof's fast and slow paths agree exactly", {
+  # .role8_prepare() pre-filters and date-sorts so .role8_asof() can binary-
+  # search its window. That is only safe if it is a pure optimization -- an
+  # equivalence check caught that it was NOT, because an equal-minutes tie was
+  # being resolved by input row order (same family as panna#222's
+  # ties.method="first" coin-flip). The tie-break is now deterministic.
+  set.seed(1)
+  n <- 5000
+  ms <- data.table::data.table(
+    player_id = sample(paste0("p", 1:300), n, TRUE),
+    match_date = as.Date("2015-01-01") + sample(0:3800, n, TRUE),
+    position = sample(c("Defender","Midfielder","Striker","Goalkeeper"), n, TRUE),
+    position_side = sample(c("Centre","Left","Right"), n, TRUE),
+    total_minutes = sample(c(0, 45, 90), n, TRUE))
+  prep <- .role8_prepare(ms)
+  for (d in c("2017-06-01", "2020-03-01", "2023-09-01")) {
+    slow <- .role8_asof(ms,   d)[order(player_id)]
+    fast <- .role8_asof(prep, d)[order(player_id)]
+    expect_equal(as.data.frame(slow), as.data.frame(fast), info = d)
+  }
+})
+
+test_that(".role8_asof's tie-break does not depend on row order", {
+  # Equal minutes in two buckets: the answer must not change when the rows are
+  # shuffled.
+  ms <- data.table::data.table(
+    player_id = "p1",
+    match_date = as.Date(c("2024-01-01", "2024-02-01")),
+    position = "Defender",
+    position_side = c("Centre", "Left"),   # CB and FB, 90 minutes each
+    total_minutes = c(90, 90))
+  a <- .role8_asof(ms, "2024-06-01")$role8
+  b <- .role8_asof(ms[c(2, 1)], "2024-06-01")$role8
+  expect_equal(a, b)
+})
