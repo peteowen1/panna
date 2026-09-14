@@ -9,7 +9,8 @@ compute_player_psr(
   center = TRUE,
   target = c("blend", "xg", "goals"),
   position_means = NULL,
-  gk_goal_scale = 1
+  gk_goal_scale = 1,
+  is_gk = NULL
 )
 }
 \arguments{
@@ -45,6 +46,17 @@ cross-league offsets). Defaults to \code{1} (no-op). Retained only so a
 caller can pin the old panna#202 behaviour by passing
 \code{GK_PSR_GOAL_SCALE} and skipping \code{apply_psr_calibration()};
 doing both would double-scale keepers.}
+
+\item{is_gk}{Optional logical vector, one per row of \code{skills}, marking
+rows to route to the GK sub-model. \code{NULL} (default) computes it via
+\code{\link{.detect_gk_rows}} on \code{skills} -- as of 2026-09-14, this
+is the SAME majority-vote GK router \code{\link{compute_player_psv}}
+uses (previously this function used a plain \code{primary_position ==
+  "GK"} check and never benefited from the substitute-keeper routing fix,
+panna PR #248). Pass this explicitly when scoring REPEATED SLICES of a
+larger population (looping per season, date, or fixture) -- see
+\code{\link{compute_player_psv}}'s \code{is_gk} docs for why
+\code{.detect_gk_rows()} is not scope-invariant on its own.}
 }
 \value{
 A data.table with \code{psr}, \code{osr}, \code{dsr} columns.

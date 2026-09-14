@@ -84,6 +84,21 @@ xm_source <- if (identical(Sys.getenv("XMETRICS_SOURCE"), "remote")) "remote" el
 match_stats <- enrich_match_stats_with_xmetrics(match_stats, verbose = FALSE,
                                                 source = xm_source)
 gc(verbose = FALSE)
+
+# Stable per-player GK lookup, computed ONCE on the full match history here
+# (before match_stats gets column-narrowed for the snapshot loop below) and
+# joined onto each date's `skills` by player_id -- estimate_player_skills()
+# returns a DIFFERENT table shape (one row per player, decay-weighted), not a
+# row-filter of match_stats, so this can't just ride along as a column the
+# way it does in scripts that slice match_stats directly. .detect_gk_rows()'s
+# majority vote is NOT scope-invariant across per-date slices -- see
+# compute_player_psv()'s is_gk roxygen (R/psr.R) and panna PR #250.
+.is_gk_lookup <- unique(
+  data.table::data.table(player_id = match_stats$player_id,
+                          is_gk = .detect_gk_rows(match_stats)),
+  by = "player_id"
+)
+data.table::setkey(.is_gk_lookup, player_id)
 cat(sprintf("  Rows: %s | Date range: %s to %s\n",
             format(nrow(match_stats), big.mark = ","),
             min(match_stats$match_date),
@@ -615,9 +630,19 @@ for (i in seq_along(snapshot_dates)) {
   )
   if (is.null(skills) || nrow(skills) == 0) { rm(skills); next }
 
+  # Join the stable, full-history GK classification computed once above --
+  # NOT .detect_gk_rows(skills), which would recompute the majority vote on
+  # just this date's estimated-skills population (scope-unstable, see the
+  # .is_gk_lookup comment above). Unmatched players (shouldn't happen --
+  # skills is derived from the same match_stats -- but degrade safely)
+  # default to outfield, matching .psv_pin_gk()'s NA convention elsewhere.
+  skills_is_gk <- .is_gk_lookup$is_gk[match(skills$player_id, .is_gk_lookup$player_id)]
+  skills_is_gk[is.na(skills_is_gk)] <- FALSE
+
   psr <- tryCatch(
     compute_player_psr(skills, center = TRUE, target = psr_target,
-                       position_means = .psr_position_means),
+                       position_means = .psr_position_means,
+                       is_gk = skills_is_gk),
     error = function(e) {
       cat(sprintf("  WARN: PSR failed for %s: %s\n", d, e$message))
       NULL
