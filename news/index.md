@@ -1,5 +1,22 @@
 # Changelog
 
+## panna 0.3.52 (dev)
+
+### Cut uncalibrated PSV minutes 2.24% -\> 0.44% (panna#253)
+
+10b resolved `pos_grp` per league-season, so
+[`resolve_position_group()`](https://peteowen1.github.io/panna/reference/resolve_position_group.md)’s
+season- and career-modal fallback tiers were capped at one league’s own
+history – leaving ~2.3% of minutes scored uncalibrated (factor 1),
+concentrated in 2013-2016 league-seasons with a blank `position` column.
+Adds a `.pos_grp_override` parameter to
+[`compute_player_psv()`](https://peteowen1.github.io/panna/reference/compute_player_psv.md)
+and resolves both `is_gk` and `pos_grp` once on the full cross-league
+population. Measured on the live cache: unresolved rows 3.52% -\> 0.77%,
+minutes 2.24% -\> 0.44%. The override is pinned to `is_gk` inside the
+function, so a row’s calibration bucket can never disagree with the
+sub-model that scored it.
+
 ## panna 0.3.51 (dev)
 
 ### Give compute_player_psr() the same substitute-keeper routing as compute_player_psv() (panna#252)

@@ -9,7 +9,7 @@ calculate_psv_components."><meta property="og:image" content="https://peteowen1.
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.51</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.52</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -59,7 +59,8 @@ calculate_psv_components."><meta property="og:image" content="https://peteowen1.
 <span>  position_means <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  reliability <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  center_weights <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"none"</span>, <span class="st">"minutes"</span><span class="op">)</span>,</span>
-<span>  is_gk <span class="op">=</span> <span class="cn">NULL</span></span>
+<span>  is_gk <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  .pos_grp_override <span class="op">=</span> <span class="cn">NULL</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -136,6 +137,22 @@ current slice contains – confirmed 2026-09-13 (panna#249 follow-up) for
 rare emergency keepers with few total career rows. Compute
 <code><a href="dot-detect_gk_rows.html">.detect_gk_rows()</a></code> ONCE on the full population and subset it
 alongside each slice instead.</p></dd>
+
+
+<dt id="arg--pos-grp-override">.pos_grp_override<a class="anchor" aria-label="anchor" href="#arg--pos-grp-override"></a></dt>
+<dd><p>Optional character vector, one per row of
+<code>player_match_stats</code>, supplying the <code>pos_grp</code> calibration
+bucket directly instead of resolving it internally via
+<code><a href="dot-psv_pos_grp.html">.psv_pos_grp</a></code>. Same scope-narrowness motivation as
+<code>is_gk</code>: <code><a href="resolve_position_group.html">resolve_position_group</a></code>'s season- and
+career-modal fallback tiers can only see the rows handed to THIS call, so
+a caller scoring one league-season at a time (10b) narrows the "career"
+tier to that single league's own history – a player whose <code>position</code>
+is blank across that whole league-season resolves to <code>NA</code> (scored
+uncalibrated, factor 1) even when their wider career makes the bucket
+obvious. Resolve once on the full population and pass it here. Named with
+a dot prefix deliberately: a parameter called <code>pos_grp</code> would be
+shadowed by the column of the same name inside <code>dt[...]</code>.</p></dd>
 
 </dl></div>
     <div class="section level2">

@@ -16,7 +16,8 @@ compute_player_psv(
   position_means = NULL,
   reliability = NULL,
   center_weights = c("none", "minutes"),
-  is_gk = NULL
+  is_gk = NULL,
+  .pos_grp_override = NULL
 )
 ```
 
@@ -98,6 +99,24 @@ compute_player_psv(
   [`.detect_gk_rows()`](https://peteowen1.github.io/panna/reference/dot-detect_gk_rows.md)
   ONCE on the full population and subset it alongside each slice
   instead.
+
+- .pos_grp_override:
+
+  Optional character vector, one per row of `player_match_stats`,
+  supplying the `pos_grp` calibration bucket directly instead of
+  resolving it internally via
+  [`.psv_pos_grp`](https://peteowen1.github.io/panna/reference/dot-psv_pos_grp.md).
+  Same scope-narrowness motivation as `is_gk`:
+  [`resolve_position_group`](https://peteowen1.github.io/panna/reference/resolve_position_group.md)'s
+  season- and career-modal fallback tiers can only see the rows handed
+  to THIS call, so a caller scoring one league-season at a time (10b)
+  narrows the "career" tier to that single league's own history – a
+  player whose `position` is blank across that whole league-season
+  resolves to `NA` (scored uncalibrated, factor 1) even when their wider
+  career makes the bucket obvious. Resolve once on the full population
+  and pass it here. Named with a dot prefix deliberately: a parameter
+  called `pos_grp` would be shadowed by the column of the same name
+  inside `dt[...]`.
 
 ## Value
 
