@@ -1387,6 +1387,38 @@ calculate_psv_components <- function(player_match_stats, coef_df, osr_coef_df,
     default = "OTHER")
 }
 
+# The 8 normalization buckets, one layer finer than GK/DEF/MID/FWD (Pete,
+# 2026-09-14). Exposed as a constant because the means artifact, the grain
+# detector and the tests must all agree on the level set.
+PSR_ROLE8_LEVELS <- c("GK", "CB", "FB", "DM", "CM", "AM", "W", "ST")
+
+# Collapse the 16-role classify_role() output to the 8 normalization buckets.
+# Wing-backs join full-backs (a formation label, not a different job); wide
+# midfielders join wingers (LM/RM and LW/RW do the same work, and the broad
+# mapper above splits them across MID and FWD, which is the defect this fixes);
+# LF/RF join CF (negligible volume, and those players are inside forwards).
+.role16_to_role8 <- function(r) {
+  data.table::fcase(
+    r == "GK", "GK",
+    r == "CB", "CB",
+    r %in% c("LB", "RB", "LWB", "RWB"), "FB",
+    r == "DM", "DM",
+    r == "CM", "CM",
+    r == "CAM", "AM",
+    r %in% c("LM", "RM", "LW", "RW"), "W",
+    r %in% c("CF", "LF", "RF"), "ST",
+    default = "OTHER")
+}
+
+# Which grain is a position_role_means artifact keyed on? Detected from the
+# file's own role levels rather than passed as a parameter, because the build
+# and the scorer must agree and a drifting flag is exactly how they stop
+# agreeing. Any finer level present => role8.
+.position_means_grain <- function(position_means) {
+  lv <- unique(as.character(position_means$role))
+  if (any(setdiff(PSR_ROLE8_LEVELS, c("GK")) %in% lv)) "role8" else "broad"
+}
+
 #' Player role for within-position normalization (broad GK/DEF/MID/FWD bucket)
 #'
 #' Broad buckets align with career-panna (RAPM) as well as the finer 16-role
@@ -1446,6 +1478,56 @@ calculate_psv_components <- function(player_match_stats, coef_df, osr_coef_df,
   # every other caller is unaffected; callers iterating over slices of a
   # larger population (07c, potentially 06/08b/10b) should compute
   # .detect_gk_rows() ONCE on the full population and pass it through.
+  if (is.null(is_gk)) is_gk <- .detect_gk_rows(dt)
+  r <- .psv_pin_gk(r, is_gk)
+  r[is.na(r)] <- "OTHER"
+  r
+}
+
+#' Player role at the finer 8-bucket grain (GK/CB/FB/DM/CM/AM/W/ST)
+#'
+#' The broad GK/DEF/MID/FWD grain pools centre-backs with attacking full-backs
+#' and attacking midfielders with holding ones, so normalizing against it leaves
+#' every player in the smaller sub-bucket carrying a standing offset. Measured
+#' 2026-09-14 on the live table: CB -0.0116 and FB +0.0172 of PSR, which is
+#' essentially the entire observed CB-vs-FB mean gap; the largest distortion is
+#' AM at -0.0481. See pannaverse docs/reviews/PSR-DEFENSIVE-BLINDNESS-2026-09-14.md.
+#'
+#' IMPORTANT: this grain is NOT recoverable from `primary_position`, which is
+#' already collapsed to GK/DEF/MID/FWD. Rows that only carry the broad label
+#' come back "OTHER". Callers scoring a skills table (which has no `position` /
+#' `position_side`) must therefore supply `role_override` -- resolved once on
+#' the full match-stats population, the same pattern as
+#' `compute_player_psv(.pos_grp_override=)`.
+#'
+#' @param dt Table with `position` + `position_side`, or already-fine labels in
+#'   `primary_position`.
+#' @param is_gk Optional pre-computed GK split; see `.player_role()`.
+#' @return Character vector of `PSR_ROLE8_LEVELS`, or "OTHER".
+#' @keywords internal
+#' @noRd
+.player_role8 <- function(dt, is_gk = NULL) {
+  r <- NULL
+  if (all(c("position", "position_side") %in% names(dt))) {
+    r16 <- tryCatch(as.character(classify_role(dt$position, dt$position_side)),
+                    error = function(e) NULL)
+    if (!is.null(r16)) r <- .role16_to_role8(r16)
+  }
+  if (is.null(r) && "primary_position" %in% names(dt)) {
+    # Only useful when primary_position already carries a fine label; a broad
+    # one (the usual case on skills tables) maps to OTHER by design rather than
+    # silently inventing a finer bucket it cannot know.
+    pp <- toupper(as.character(dt$primary_position))
+    r <- .role16_to_role8(pp)
+  }
+  if (is.null(r)) {
+    r <- rep(NA_character_, nrow(dt))
+  } else {
+    r <- toupper(r)
+    r[is.na(r) | !r %in% PSR_ROLE8_LEVELS] <- NA_character_
+  }
+  # Same GK pinning rule as .player_role(): the bucket must never disagree with
+  # the sub-model that actually scored the row.
   if (is.null(is_gk)) is_gk <- .detect_gk_rows(dt)
   r <- .psv_pin_gk(r, is_gk)
   r[is.na(r)] <- "OTHER"
@@ -1555,12 +1637,26 @@ calculate_psv_components <- function(player_match_stats, coef_df, osr_coef_df,
 #'   season_end_year) and the skill feature columns.
 #' @param skill_cols Skill feature names to summarise.
 #' @param min_n Minimum player-matches for a per-(season, role) cell to be kept.
+#' @param role_grain Role bucket to key on. \code{"broad"} (default) keys on
+#'   GK/DEF/MID/FWD; \code{"role8"} keys on GK/CB/FB/DM/CM/AM/W/ST, which stops
+#'   centre-backs being centred on a mean pooled with attacking full-backs and
+#'   attacking midfielders on one pooled with holding midfielders. The grain
+#'   written here is DETECTED at scoring time by
+#'   \code{.position_means_grain()}; writing \code{"role8"} obliges every
+#'   scoring caller to resolve a role at that grain (skills tables carry only
+#'   the broad \code{primary_position}, so they must pass
+#'   \code{.position_normalize_skills(role_override=)}) or normalization aborts.
 #' @return data.table(season_end_year, role, stat_name, mean); rows with
 #'   \code{season_end_year = NA} are the role-overall fallback.
 #' @keywords internal
-compute_position_role_means <- function(player_stats, skill_cols, min_n = 200L) {
+compute_position_role_means <- function(player_stats, skill_cols, min_n = 200L,
+                                        role_grain = c("broad", "role8")) {
+  role_grain <- match.arg(role_grain)
   dt <- data.table::as.data.table(player_stats)
-  dt[, .role := .player_role(dt)]
+  # The grain written here is what `.position_normalize_skills()` detects and
+  # must match at scoring time -- see `.position_means_grain()`. Writing role8
+  # means obliges every scoring caller to supply a role at that grain.
+  dt[, .role := if (role_grain == "role8") .player_role8(dt) else .player_role(dt)]
   dt[, .sey := .season_end_year_col(dt)]
   cols <- intersect(skill_cols, names(dt))
 
@@ -1644,11 +1740,48 @@ load_psv_match_reliability <- function() {
 # Subtract the per-(era, role) skill mean before scoring (no-op when
 # position_means NULL). Looks up the player-season's era; falls back to the
 # role-overall mean (season_end_year = NA) when the (season, role) cell is absent.
-.position_normalize_skills <- function(dt, position_means, is_gk = NULL) {
+.position_normalize_skills <- function(dt, position_means, is_gk = NULL,
+                                       role_override = NULL) {
   if (is.null(position_means) || nrow(position_means) == 0) return(dt)
   pm <- data.table::as.data.table(position_means)
   has_era <- "season_end_year" %in% names(pm)
-  role <- .player_role(dt, is_gk = is_gk)
+
+  # Resolve the role at whatever grain the artifact is keyed on. Detected from
+  # the artifact itself, never assumed: this function zero-fills an unmatched
+  # role (`sub[is.na(sub)] <- 0` below), so a build/scorer grain mismatch would
+  # silently turn normalization into a NO-OP instead of failing. That is the
+  # single most dangerous failure mode here -- every rating would still compute,
+  # just un-normalized -- hence the detector plus the hard match-rate guard.
+  grain <- .position_means_grain(pm)
+  if (!is.null(role_override)) {
+    if (length(role_override) != nrow(dt)) {
+      cli::cli_abort(c(
+        "`role_override` must have one entry per row of `dt`.",
+        "x" = "Got {length(role_override)} for {nrow(dt)} row{?s}."))
+    }
+    role <- .psv_pin_gk(toupper(as.character(role_override)),
+                        if (is.null(is_gk)) .detect_gk_rows(dt) else is_gk)
+    role[is.na(role)] <- "OTHER"
+  } else if (identical(grain, "role8")) {
+    role <- .player_role8(dt, is_gk = is_gk)
+  } else {
+    role <- .player_role(dt, is_gk = is_gk)
+  }
+
+  # Guard: a finer artifact scored against a table that can only resolve broad
+  # roles produces ~100% "OTHER", every lookup misses, and every feature is
+  # left un-normalized. Fail loudly instead.
+  matched <- mean(role %in% unique(as.character(pm$role)))
+  if (nrow(dt) > 0 && matched < 0.5) {
+    cli::cli_abort(c(
+      "position normalization: only {round(100 * matched, 1)}% of rows resolve to \\
+       a role present in the means artifact ({grain} grain).",
+      "x" = "Unmatched rows would be silently left UN-normalized.",
+      "i" = "Resolved roles: {paste(utils::head(unique(role), 8), collapse = ', ')}",
+      "i" = "Artifact roles: {paste(utils::head(unique(as.character(pm$role)), 10), collapse = ', ')}",
+      "i" = "A skills table carries only broad `primary_position` -- pass \\
+             `role_override` resolved from match stats."))
+  }
   sey <- if (has_era) .season_end_year_col(dt) else rep(NA_integer_, nrow(dt))
   pm_stats <- unique(as.character(pm$stat_name))
   stats <- intersect(pm_stats, names(dt))

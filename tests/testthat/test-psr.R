@@ -1707,3 +1707,88 @@ test_that(".detect_gk_rows recovers a genuine keeper's BLANK-position rows, not 
   )
   expect_true(all(panna:::.detect_gk_rows(dt)))
 })
+
+# ---- finer (role8) position-normalization grain -------------------------
+# Added 2026-09-14. The broad GK/DEF/MID/FWD grain pools centre-backs with
+# attacking full-backs and attacking midfielders with holding ones, leaving a
+# standing per-bucket offset (AM -0.0481, FB -0.0172, CB +0.0116 measured on the
+# live table). See pannaverse docs/reviews/PSR-DEFENSIVE-BLINDNESS-2026-09-14.md.
+
+test_that(".role16_to_role8 collapses to the agreed 8 buckets", {
+  expect_equal(
+    .role16_to_role8(c("GK","CB","LB","RB","LWB","RWB","DM","CM","CAM",
+                       "LM","RM","LW","RW","CF","LF","RF")),
+    c("GK","CB","FB","FB","FB","FB","DM","CM","AM",
+      "W","W","W","W","ST","ST","ST"))
+  expect_equal(.role16_to_role8("Substitute"), "OTHER")
+})
+
+test_that("the means grain is detected from the artifact, never assumed", {
+  expect_equal(.position_means_grain(data.table::data.table(
+    role = c("GK","DEF","MID","FWD","OTHER"))), "broad")
+  expect_equal(.position_means_grain(data.table::data.table(
+    role = c("GK","CB","FB","DM","CM","AM","W","ST"))), "role8")
+})
+
+test_that(".player_role8 refuses to invent a finer role from a broad label", {
+  dt <- data.table::data.table(
+    player_id = paste0("p", 1:4),
+    primary_position = c("DEF", "MID", "FWD", "GK"))
+  # primary_position is already collapsed, so the finer bucket is unknowable.
+  expect_equal(.player_role8(dt), c("OTHER", "OTHER", "OTHER", "GK"))
+})
+
+test_that("a role8 artifact scored on a broad-only table ABORTS", {
+  # The dangerous case: .position_normalize_skills() zero-fills an unmatched
+  # role, so without this guard every feature would be left un-normalized and
+  # every rating would still compute, silently wrong.
+  dt <- data.table::data.table(
+    player_id = paste0("p", 1:40),
+    primary_position = rep(c("DEF","MID","FWD","DEF"), 10),
+    shots_p90 = as.numeric(1:40))
+  pm <- data.table::data.table(role = c("CB","FB","ST","W"),
+                               stat_name = "shots_p90", mean = c(1, 2, 3, 4))
+  expect_error(.position_normalize_skills(data.table::copy(dt), pm),
+               "UN-normalized|resolve to")
+})
+
+test_that("role_override drives the lookup and is length-checked", {
+  dt <- data.table::data.table(
+    player_id = paste0("p", 1:4), primary_position = rep("DEF", 4),
+    shots_p90 = c(10, 10, 10, 10))
+  pm <- data.table::data.table(role = c("CB","FB"), stat_name = "shots_p90",
+                               mean = c(4, 6))
+  out <- .position_normalize_skills(data.table::copy(dt), pm,
+                                    role_override = c("CB","CB","FB","FB"))
+  expect_equal(out$shots_p90, c(6, 6, 4, 4))
+  expect_error(
+    .position_normalize_skills(data.table::copy(dt), pm, role_override = "CB"),
+    "one entry per row")
+})
+
+test_that("broad artifacts still normalize broad tables unchanged", {
+  dt <- data.table::data.table(
+    player_id = paste0("p", 1:4), primary_position = c("DEF","DEF","MID","MID"),
+    shots_p90 = c(10, 10, 10, 10))
+  pm <- data.table::data.table(role = c("DEF","MID"), stat_name = "shots_p90",
+                               mean = c(4, 6))
+  out <- .position_normalize_skills(data.table::copy(dt), pm)
+  expect_equal(out$shots_p90, c(6, 6, 4, 4))
+})
+
+test_that("compute_position_role_means can build at either grain", {
+  ms <- data.table::data.table(
+    player_id = rep(paste0("p", 1:8), each = 30),
+    position = rep(c("Defender","Defender","Midfielder","Midfielder",
+                     "Defender","Midfielder","Striker","Goalkeeper"), each = 30),
+    position_side = rep(c("Centre","Left","Centre","Left",
+                          "Right","Centre","Centre","Centre"), each = 30),
+    season = "2025-2026",
+    shots_p90 = as.numeric(seq_len(240)))
+  broad <- compute_position_role_means(ms, "shots_p90", min_n = 1L)
+  fine  <- compute_position_role_means(ms, "shots_p90", min_n = 1L,
+                                       role_grain = "role8")
+  expect_equal(.position_means_grain(broad), "broad")
+  expect_equal(.position_means_grain(fine), "role8")
+  expect_true(all(unique(fine$role) %in% c(PSR_ROLE8_LEVELS, "OTHER")))
+})
