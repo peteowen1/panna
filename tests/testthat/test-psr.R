@@ -1538,6 +1538,34 @@ test_that("compute_player_psv()'s .pos_grp_override replaces internal resolution
   expect_equal(row_forced$pos_grp, "DEF")
 })
 
+test_that("compute_player_psv() pins .pos_grp_override to is_gk rather than trusting it", {
+  # The invariant this parameter family exists to protect: the calibration
+  # bucket must never disagree with the sub-model that actually scored the
+  # row (the 07c failure mode). Enforced IN the function, not left to caller
+  # discipline -- a caller handing a GK bucket to an outfield-routed row gets
+  # it corrected, not applied.
+  sub <- data.table::data.table(
+    match_id = c("m1", "m2"),
+    player_id = c("p1", "p2"),
+    position = c("Midfielder", "Goalkeeper"),
+    total_minutes = c(90, 90),
+    goals_p90 = c(0.2, 0),
+    gsaa_per90 = c(0, 0.3)
+  )
+  # Deliberately inconsistent: claim row 1 is a GK while routing it outfield,
+  # and claim row 2 is MID while routing it to the GK sub-model.
+  out <- compute_player_psv(sub, min_adjust = FALSE, target = "blend",
+                             is_gk = c(FALSE, TRUE),
+                             .pos_grp_override = c("GK", "MID"))
+  out <- as.data.table(out)
+  r1 <- merge(out, sub[1, .(match_id, player_id)], by = c("match_id", "player_id"))
+  r2 <- merge(out, sub[2, .(match_id, player_id)], by = c("match_id", "player_id"))
+  # Row 1 was NOT routed to the GK model, so it must not carry a GK bucket.
+  expect_false(isTRUE(r1$pos_grp == "GK"))
+  # Row 2 WAS routed to the GK model, so the pin forces the GK bucket back.
+  expect_equal(r2$pos_grp, "GK")
+})
+
 test_that("compute_player_psv() validates .pos_grp_override length and type", {
   sub <- data.table::data.table(
     player_id = c("a", "b"), position = c("GK", "MID"), total_minutes = c(90, 90)

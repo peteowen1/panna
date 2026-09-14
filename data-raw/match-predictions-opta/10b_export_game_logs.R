@@ -194,8 +194,12 @@ if (has_match_stats) {
   }
   all_match_stats[, .is_gk_full := .detect_gk_rows(all_match_stats)]
   all_match_stats[, .pos_grp_full := .psv_pos_grp(all_match_stats, .is_gk_full)]
+  # Report the live figure only -- a baked-in "was X%" baseline would keep
+  # printing a fixed historical number as though it were a current comparison.
+  # The 2026-09-14 measurement (3.52% -> 0.77% of rows, 2.24% -> 0.44% of
+  # minutes) is recorded in the commit and the comment above instead.
   message(sprintf(
-    "  Resolved pos_grp once on the full population: %.2f%% of rows unresolved (was 3.52%% resolving per league-season, measured 2026-09-14)",
+    "  Resolved pos_grp once on the full population: %.2f%% of rows unresolved",
     100 * mean(is.na(all_match_stats$.pos_grp_full))))
 } else {
   message("  Note: No match stats cache — PSV will be unavailable")
@@ -616,13 +620,32 @@ validate_game_log_schema <- function(dt, league, season) {
                 .inline_is_gk <- .detect_gk_rows(match_level)
                 .inline_pos   <- resolve_position_group(match_level)
                 if (has_match_stats) {
-                  .pg_lookup <- unique(
-                    all_match_stats[, .(player_id, .is_gk_full, .pos_grp_full)],
-                    by = "player_id"
+                  # Join on (player_id, season_end_year), NOT player_id alone:
+                  # .pos_grp_full is season-varying by construction (that is
+                  # the whole reason season_end_year is derived above), so a
+                  # player_id-only unique() would keep whichever season loaded
+                  # first and hand a converted player (CB->FWD, winger->
+                  # fullback) their wrong-era bucket. .is_gk_full is likewise
+                  # not constant per player -- .detect_gk_rows() ORs the
+                  # majority vote with each row's own raw label, so the
+                  # emergency-keeper cohort has genuinely row-varying values.
+                  .ml_sey <- if ("season_end_year" %in% names(match_level)) {
+                    as.integer(match_level$season_end_year)
+                  } else {
+                    rep(extract_season_end_year(league_season), nrow(match_level))
+                  }
+                  .pg_season <- unique(
+                    all_match_stats[!is.na(season_end_year),
+                                    .(player_id, season_end_year,
+                                      .is_gk_full, .pos_grp_full)],
+                    by = c("player_id", "season_end_year")
                   )
-                  .idx <- match(match_level$player_id, .pg_lookup$player_id)
-                  .j_gk  <- .pg_lookup$.is_gk_full[.idx]
-                  .j_pos <- .pg_lookup$.pos_grp_full[.idx]
+                  .idx <- .pg_season[
+                    data.table::data.table(player_id = match_level$player_id,
+                                            season_end_year = .ml_sey),
+                    on = .(player_id, season_end_year), which = TRUE]
+                  .j_gk  <- .pg_season$.is_gk_full[.idx]
+                  .j_pos <- .pg_season$.pos_grp_full[.idx]
                   .inline_is_gk <- data.table::fifelse(is.na(.j_gk), .inline_is_gk, .j_gk)
                   .inline_pos   <- data.table::fifelse(is.na(.j_pos), .inline_pos, .j_pos)
                 }

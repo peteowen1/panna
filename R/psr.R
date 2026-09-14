@@ -1816,7 +1816,13 @@ compute_player_psv <- function(player_match_stats, min_adjust = TRUE,
   if (is.null(.pos_grp_override)) {
     dt[, pos_grp := .psv_pos_grp(dt, is_gk)]
   } else {
-    dt[, pos_grp := .pos_grp_override]
+    # Pin the caller's buckets to the is_gk actually used for scoring, exactly
+    # as the internal path does. Without this the invariant would rest on
+    # caller discipline alone: a row routed to the outfield sub-model but
+    # handed pos_grp = "GK" would be scored by one model and calibrated by the
+    # other's factor -- the 07c failure mode this parameter family exists to
+    # rule out. Enforce it here rather than trusting every call site.
+    dt[, pos_grp := .psv_pin_gk(.pos_grp_override, is_gk)]
   }
 
   .score <- function(sub, tgt, model) {
