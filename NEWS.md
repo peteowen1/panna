@@ -1,3 +1,20 @@
+# panna 0.3.51 (dev)
+
+## Give compute_player_psr() the same substitute-keeper routing as compute_player_psv() (panna#252)
+
+`compute_player_psr()` split GK/outfield via a plain `primary_position ==
+"GK"` check and never used `.detect_gk_rows()`, so PSR (and Piero) never
+benefited from the substitute-keeper majority-vote fix (panna#248). Added
+the same `is_gk` override pattern as `compute_player_psv()` (panna#250),
+threaded through the three call sites that iterate over slices of a larger
+population: `06_seasonal_skill_ratings.R` (simple row-filter), `08b_export_
+psr_weekly.R` and `02_player_ratings_to_team.R` (both need a join, since
+their skills tables come from a different-shaped estimator).
+
+Note: getting this into already-published historical PSR data needs a full
+`08b` rebuild (`PSR_FORCE_FULL_REBUILD=1`), not a plain re-run -- queued,
+not run in this release (~4-6h for a bug affecting a small population).
+
 # panna 0.3.50 (dev)
 
 ## Eliminate duplicate skill-estimation recompute in the GK sub-model (panna#251)
