@@ -387,6 +387,7 @@ utils::globalVariables(c(
   "pos_grp",
   "panna_gk_scaled",
   ".is_gk_full",
+  ".pos_grp_full",
   "modal_pos",
   "goals_scored",
   "goals_conceded",
