@@ -1508,6 +1508,72 @@ test_that("compute_player_psr()'s default is_gk uses .detect_gk_rows(), matching
   expect_equal(captured, panna:::.detect_gk_rows(skills))
 })
 
+test_that("compute_player_psv()'s .pos_grp_override replaces internal resolution, and is honored end-to-end", {
+  # Scope-narrowness fix for the PSV calibration bucket (the ~2.3%-of-minutes
+  # uncalibrated share): resolve_position_group()'s season/career fallback
+  # tiers only see the rows handed to THIS call, so a caller scoring one
+  # league-season at a time can't resolve a player whose `position` is blank
+  # across that whole slice. The override lets the caller resolve once on the
+  # full population and pass the answer in.
+  sub <- data.table::data.table(
+    match_id = c("m1", "m2"),
+    player_id = c("blank_pos_player", "outfielder"),
+    position = c("", "Midfielder"),   # row 1 unresolvable from this slice alone
+    total_minutes = c(90, 90),
+    goals_p90 = c(0, 0.2),
+    gsaa_per90 = c(0, 0)
+  )
+  # Without an override, row 1 has nothing to resolve from -> NA (uncalibrated).
+  out_default <- compute_player_psv(sub, min_adjust = FALSE, target = "blend")
+  row_default <- merge(as.data.table(out_default), sub[1, .(match_id, player_id)],
+                       by = c("match_id", "player_id"))
+  expect_true(is.na(row_default$pos_grp))
+
+  # With the override (as 10b now supplies from full-population resolution),
+  # the bucket is present and calibration can key on it.
+  out_forced <- compute_player_psv(sub, min_adjust = FALSE, target = "blend",
+                                    .pos_grp_override = c("DEF", "MID"))
+  row_forced <- merge(as.data.table(out_forced), sub[1, .(match_id, player_id)],
+                      by = c("match_id", "player_id"))
+  expect_equal(row_forced$pos_grp, "DEF")
+})
+
+test_that("compute_player_psv() pins .pos_grp_override to is_gk rather than trusting it", {
+  # The invariant this parameter family exists to protect: the calibration
+  # bucket must never disagree with the sub-model that actually scored the
+  # row (the 07c failure mode). Enforced IN the function, not left to caller
+  # discipline -- a caller handing a GK bucket to an outfield-routed row gets
+  # it corrected, not applied.
+  sub <- data.table::data.table(
+    match_id = c("m1", "m2"),
+    player_id = c("p1", "p2"),
+    position = c("Midfielder", "Goalkeeper"),
+    total_minutes = c(90, 90),
+    goals_p90 = c(0.2, 0),
+    gsaa_per90 = c(0, 0.3)
+  )
+  # Deliberately inconsistent: claim row 1 is a GK while routing it outfield,
+  # and claim row 2 is MID while routing it to the GK sub-model.
+  out <- compute_player_psv(sub, min_adjust = FALSE, target = "blend",
+                             is_gk = c(FALSE, TRUE),
+                             .pos_grp_override = c("GK", "MID"))
+  out <- as.data.table(out)
+  r1 <- merge(out, sub[1, .(match_id, player_id)], by = c("match_id", "player_id"))
+  r2 <- merge(out, sub[2, .(match_id, player_id)], by = c("match_id", "player_id"))
+  # Row 1 was NOT routed to the GK model, so it must not carry a GK bucket.
+  expect_false(isTRUE(r1$pos_grp == "GK"))
+  # Row 2 WAS routed to the GK model, so the pin forces the GK bucket back.
+  expect_equal(r2$pos_grp, "GK")
+})
+
+test_that("compute_player_psv() validates .pos_grp_override length and type", {
+  sub <- data.table::data.table(
+    player_id = c("a", "b"), position = c("GK", "MID"), total_minutes = c(90, 90)
+  )
+  expect_error(compute_player_psv(sub, .pos_grp_override = "DEF"), "pos_grp_override")
+  expect_error(compute_player_psv(sub, .pos_grp_override = c(1, 2)), "pos_grp_override")
+})
+
 test_that("compute_player_psr() validates is_gk length, type, and NA content", {
   skills <- data.table::data.table(
     player_id = c("a", "b"), primary_position = c("GK", "MID"), goals_p90 = c(0.1, 0.2)

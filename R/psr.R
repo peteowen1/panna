@@ -1732,6 +1732,19 @@ load_psv_match_reliability <- function() {
 #'   rare emergency keepers with few total career rows. Compute
 #'   \code{.detect_gk_rows()} ONCE on the full population and subset it
 #'   alongside each slice instead.
+#' @param .pos_grp_override Optional character vector, one per row of
+#'   \code{player_match_stats}, supplying the \code{pos_grp} calibration
+#'   bucket directly instead of resolving it internally via
+#'   \code{\link{.psv_pos_grp}}. Same scope-narrowness motivation as
+#'   \code{is_gk}: \code{\link{resolve_position_group}}'s season- and
+#'   career-modal fallback tiers can only see the rows handed to THIS call, so
+#'   a caller scoring one league-season at a time (10b) narrows the "career"
+#'   tier to that single league's own history -- a player whose \code{position}
+#'   is blank across that whole league-season resolves to \code{NA} (scored
+#'   uncalibrated, factor 1) even when their wider career makes the bucket
+#'   obvious. Resolve once on the full population and pass it here. Named with
+#'   a dot prefix deliberately: a parameter called \code{pos_grp} would be
+#'   shadowed by the column of the same name inside \code{dt[...]}.
 #'
 #' @return A data.table with \code{psv}, \code{osv}, \code{dsv} columns.
 #'
@@ -1744,10 +1757,19 @@ compute_player_psv <- function(player_match_stats, min_adjust = TRUE,
                                 position_means = NULL,
                                 reliability = NULL,
                                 center_weights = c("none", "minutes"),
-                                is_gk = NULL) {
+                                is_gk = NULL,
+                                .pos_grp_override = NULL) {
   target <- match.arg(target)
   center_weights <- match.arg(center_weights)
   dt <- data.table::as.data.table(player_match_stats)
+  if (!is.null(.pos_grp_override)) {
+    if (length(.pos_grp_override) != nrow(dt)) {
+      cli::cli_abort("{.arg .pos_grp_override} must have one entry per row of {.arg player_match_stats} ({nrow(dt)}), got {length(.pos_grp_override)}.")
+    }
+    if (!is.character(.pos_grp_override)) {
+      cli::cli_abort("{.arg .pos_grp_override} must be a character vector, got {.cls {class(.pos_grp_override)}}.")
+    }
+  }
   if (!is.null(is_gk)) {
     if (length(is_gk) != nrow(dt)) {
       cli::cli_abort("{.arg is_gk} must have one entry per row of {.arg player_match_stats} ({nrow(dt)}), got {length(is_gk)}.")
@@ -1780,8 +1802,28 @@ compute_player_psv <- function(player_match_stats, min_adjust = TRUE,
   # no longer matches the input. Passing `is_gk` pins the bucket to the model
   # that actually scored each row, which is the only thing a fitted factor is
   # valid against -- see .psv_pos_grp()'s roxygen for the substitute-keeper case
-  # this rules out.
-  dt[, pos_grp := .psv_pos_grp(dt, is_gk)]
+  # this rules out. A caller-supplied `pos_grp` wins: .psv_pos_grp() ->
+  # resolve_position_group()'s season/career fallback tiers can only see the
+  # population handed to THIS call, so a caller scoring per league-season
+  # (10b) narrows those tiers to one league's own history -- a player whose
+  # `position` is blank across that whole league-season resolves to NA even
+  # when their career elsewhere makes it obvious. Same scope-narrowness shape
+  # as the `is_gk` parameter above; see its roxygen.
+  # NB `.pos_grp_override` deliberately does NOT share a name with the column:
+  # a param named `pos_grp` would be shadowed by the column inside dt[...],
+  # silently assigning the column to itself (this repo's own documented
+  # data.table NSE trap).
+  if (is.null(.pos_grp_override)) {
+    dt[, pos_grp := .psv_pos_grp(dt, is_gk)]
+  } else {
+    # Pin the caller's buckets to the is_gk actually used for scoring, exactly
+    # as the internal path does. Without this the invariant would rest on
+    # caller discipline alone: a row routed to the outfield sub-model but
+    # handed pos_grp = "GK" would be scored by one model and calibrated by the
+    # other's factor -- the 07c failure mode this parameter family exists to
+    # rule out. Enforce it here rather than trusting every call site.
+    dt[, pos_grp := .psv_pin_gk(.pos_grp_override, is_gk)]
+  }
 
   .score <- function(sub, tgt, model) {
     margin <- load_psr_coefficients("margin", target = tgt, model = model)

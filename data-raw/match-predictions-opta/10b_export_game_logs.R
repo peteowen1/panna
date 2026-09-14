@@ -160,7 +160,47 @@ match_stats_path <- file.path("data-raw", "cache-skills", "01_match_stats.rds")
 has_match_stats  <- file.exists(match_stats_path)
 if (has_match_stats) {
   all_match_stats <- readRDS(match_stats_path)
+  data.table::setDT(all_match_stats)
   message(sprintf("  Loaded match stats: %d player-games", nrow(all_match_stats)))
+
+  # Resolve the GK router and the PSV calibration bucket ONCE, here, on the
+  # FULL cross-league/cross-season population -- then carry both as columns so
+  # the per-league row-filter below hands each compute_player_psv() call the
+  # same answers. Both resolvers only see the rows passed to them:
+  #   - .detect_gk_rows()'s majority vote is scope-dependent (panna PR #250)
+  #   - resolve_position_group()'s season- and career-modal fallback tiers are
+  #     capped by the population handed in, so resolving per league-season
+  #     narrows "career" to one league's own history. That is what leaves
+  #     ~3.6% of rows / ~2.3% of minutes with pos_grp = NA (scored
+  #     uncalibrated, factor 1), concentrated in 2013-2016 league-seasons
+  #     whose `position` is blank on every row -- those players' buckets are
+  #     obvious from their careers elsewhere, just not from inside that slice.
+  # season_end_year is NOT in this cache (only the `season` LABEL), and
+  # resolve_position_group() resolves per season ONLY when it's present --
+  # without it the full-population call collapses to one career-wide bucket
+  # per player, silently losing the season dimension the old per-league-season
+  # slices kept for free (each slice was one season). Measured on the live
+  # cache: omitting this changes 7.71% of already-resolved buckets (mostly
+  # MID<->FWD/DEF churn from converted players); with it, 1.16% -- and that
+  # remainder IS the intended gain (one consistent bucket for a player who
+  # splits a season across leagues, instead of a different one per league).
+  # Derived from the LABEL, never match_date (panna/CLAUDE.md), and mapped
+  # over unique labels rather than row-by-row (vectorization gotcha).
+  if (!"season_end_year" %in% names(all_match_stats)) {
+    .sey_map <- vapply(unique(all_match_stats$season), extract_season_end_year,
+                       numeric(1))
+    all_match_stats[, season_end_year :=
+                      as.integer(.sey_map[as.character(season)])]
+  }
+  all_match_stats[, .is_gk_full := .detect_gk_rows(all_match_stats)]
+  all_match_stats[, .pos_grp_full := .psv_pos_grp(all_match_stats, .is_gk_full)]
+  # Report the live figure only -- a baked-in "was X%" baseline would keep
+  # printing a fixed historical number as though it were a current comparison.
+  # The 2026-09-14 measurement (3.52% -> 0.77% of rows, 2.24% -> 0.44% of
+  # minutes) is recorded in the commit and the comment above instead.
+  message(sprintf(
+    "  Resolved pos_grp once on the full population: %.2f%% of rows unresolved",
+    100 * mean(is.na(all_match_stats$.pos_grp_full))))
 } else {
   message("  Note: No match stats cache — PSV will be unavailable")
 }
@@ -515,12 +555,18 @@ validate_game_log_schema <- function(dt, league, season) {
             # "PSV entirely NA for this league" on any local/remote gap.
             league_stats <- enrich_match_stats_with_xmetrics(league_stats, verbose = FALSE,
                                                              source = xm_source)
+            # Both resolved once on the full population above and carried
+            # through this row-filter -- NOT recomputed on this league-season
+            # slice, which is what narrows resolve_position_group()'s career
+            # fallback and leaves blank-position seasons uncalibrated.
             player_game_psv <- compute_player_psv(league_stats, min_adjust = FALSE,
                                                   center = TRUE, scale_to_minutes = TRUE,
                                                   exclude_efficiency = FALSE, target = "blend",
                                                   position_means = .psv_position_means,
                                                   reliability = .psv_reliability,
-                                                  center_weights = .psv_center_weights)
+                                                  center_weights = .psv_center_weights,
+                                                  is_gk = league_stats$.is_gk_full,
+                                                  .pos_grp_override = league_stats$.pos_grp_full)
             message(sprintf("    PSV: %d player-games", nrow(player_game_psv)))
           }
         }, error = function(e) {
@@ -565,12 +611,56 @@ validate_game_log_schema <- function(dt, league, season) {
                 # matching note on the cache-path enrich call above.
                 match_level <- enrich_match_stats_with_xmetrics(match_level, verbose = FALSE,
                                                                 source = xm_source)
+                # These rows are NOT in all_match_stats (that's why we're here),
+                # so the full-population columns can't ride along -- join by
+                # player_id instead, falling back to this slice's own resolution
+                # for anyone with no cache history at all (e.g. a WC player from
+                # an uncovered domestic league). Better than resolving purely
+                # within one tournament, honest where no wider history exists.
+                .inline_is_gk <- .detect_gk_rows(match_level)
+                .inline_pos   <- resolve_position_group(match_level)
+                if (has_match_stats) {
+                  # Join on (player_id, season_end_year), NOT player_id alone:
+                  # .pos_grp_full is season-varying by construction (that is
+                  # the whole reason season_end_year is derived above), so a
+                  # player_id-only unique() would keep whichever season loaded
+                  # first and hand a converted player (CB->FWD, winger->
+                  # fullback) their wrong-era bucket. .is_gk_full is likewise
+                  # not constant per player -- .detect_gk_rows() ORs the
+                  # majority vote with each row's own raw label, so the
+                  # emergency-keeper cohort has genuinely row-varying values.
+                  .ml_sey <- if ("season_end_year" %in% names(match_level)) {
+                    as.integer(match_level$season_end_year)
+                  } else {
+                    rep(extract_season_end_year(league_season), nrow(match_level))
+                  }
+                  .pg_season <- unique(
+                    all_match_stats[!is.na(season_end_year),
+                                    .(player_id, season_end_year,
+                                      .is_gk_full, .pos_grp_full)],
+                    by = c("player_id", "season_end_year")
+                  )
+                  .idx <- .pg_season[
+                    data.table::data.table(player_id = match_level$player_id,
+                                            season_end_year = .ml_sey),
+                    on = .(player_id, season_end_year), which = TRUE]
+                  .j_gk  <- .pg_season$.is_gk_full[.idx]
+                  .j_pos <- .pg_season$.pos_grp_full[.idx]
+                  .inline_is_gk <- data.table::fifelse(is.na(.j_gk), .inline_is_gk, .j_gk)
+                  .inline_pos   <- data.table::fifelse(is.na(.j_pos), .inline_pos, .j_pos)
+                }
+                # Pin LAST, to the is_gk actually being used for scoring, so the
+                # calibration bucket can never disagree with the model that
+                # scored the row (the 07c failure mode, panna PR #250).
+                .inline_pos <- .psv_pin_gk(.inline_pos, .inline_is_gk)
                 inline_psv <- compute_player_psv(match_level, min_adjust = FALSE,
                                                  center = TRUE, scale_to_minutes = TRUE,
                                                  exclude_efficiency = FALSE, target = "blend",
                                                  position_means = .psv_position_means,
                                                  reliability = .psv_reliability,
-                                                 center_weights = .psv_center_weights)
+                                                 center_weights = .psv_center_weights,
+                                                 is_gk = .inline_is_gk,
+                                                 .pos_grp_override = .inline_pos)
                 player_game_psv <- data.table::rbindlist(
                   list(player_game_psv, inline_psv), fill = TRUE, use.names = TRUE
                 )

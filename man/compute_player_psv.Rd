@@ -14,7 +14,8 @@ compute_player_psv(
   position_means = NULL,
   reliability = NULL,
   center_weights = c("none", "minutes"),
-  is_gk = NULL
+  is_gk = NULL,
+  .pos_grp_override = NULL
 )
 }
 \arguments{
@@ -68,6 +69,20 @@ current slice contains -- confirmed 2026-09-13 (panna#249 follow-up) for
 rare emergency keepers with few total career rows. Compute
 \code{.detect_gk_rows()} ONCE on the full population and subset it
 alongside each slice instead.}
+
+\item{.pos_grp_override}{Optional character vector, one per row of
+\code{player_match_stats}, supplying the \code{pos_grp} calibration
+bucket directly instead of resolving it internally via
+\code{\link{.psv_pos_grp}}. Same scope-narrowness motivation as
+\code{is_gk}: \code{\link{resolve_position_group}}'s season- and
+career-modal fallback tiers can only see the rows handed to THIS call, so
+a caller scoring one league-season at a time (10b) narrows the "career"
+tier to that single league's own history -- a player whose \code{position}
+is blank across that whole league-season resolves to \code{NA} (scored
+uncalibrated, factor 1) even when their wider career makes the bucket
+obvious. Resolve once on the full population and pass it here. Named with
+a dot prefix deliberately: a parameter called \code{pos_grp} would be
+shadowed by the column of the same name inside \code{dt[...]}.}
 }
 \value{
 A data.table with \code{psv}, \code{osv}, \code{dsv} columns.
