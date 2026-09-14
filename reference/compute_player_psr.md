@@ -14,7 +14,8 @@ compute_player_psr(
   target = c("blend", "xg", "goals"),
   position_means = NULL,
   gk_goal_scale = 1,
-  is_gk = NULL
+  is_gk = NULL,
+  role_override = NULL
 )
 ```
 

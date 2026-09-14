@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.52</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.53</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,6 +39,18 @@
       <small>Source: <a href="https://github.com/peteowen1/panna/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.53" id="panna-0353-dev">panna 0.3.53 (dev)<a class="anchor" aria-label="anchor" href="#panna-0353-dev"></a></h2>
+<div class="section level3">
+<h3 id="position-normalization-now-keys-on-a-finer-bucket-role-gkcbfbdmcmamwst-0-3-53">Position normalization now keys on a finer 8-bucket role (GK/CB/FB/DM/CM/AM/W/ST)<a class="anchor" aria-label="anchor" href="#position-normalization-now-keys-on-a-finer-bucket-role-gkcbfbdmcmamwst-0-3-53"></a></h3>
+<p><code>position_role_means.csv</code> was keyed on GK/DEF/MID/FWD, so <code>.position_normalize_skills()</code> centred centre-backs on a mean pooled with attacking full-backs, and attacking midfielders on one pooled with holding midfielders. Everyone in the smaller sub-bucket carried a standing offset.</p>
+<p>Measured end to end, both arms scored in one execution on identical rows: ST +0.0121, DM +0.0099, CB +0.0090, CM +0.0055, GK 0.0000, FB -0.0118, W -0.0136, AM -0.0184. The CB-to-FB gap closes by 0.0208, about 45% of a centre-back PSR standard deviation.</p>
+<p>Callers split by what they are handed. 07c/07d/10b get match stats carrying <code>position</code> + <code>position_side</code> and resolve natively; 06/08b/02 get a skills table carrying only the broad <code>primary_position</code> and pass <code>role_override</code>.</p>
+<p>Roles are resolved AS AT each scoring date (<code>.role8_asof()</code>, trailing 365-day window, strictly prior matches) rather than career-wide. A career mode is both era-inappropriate and a look-ahead: measured on the live table it disagrees with the season-appropriate bucket on 19.16% of player-seasons and 16.36% of minutes, median PSR error 0.0173 – about the size of the whole fix.</p>
+<p>The grain is detected from the artifact’s own role levels rather than passed as a flag, and <code>.position_normalize_skills()</code> aborts below a 50% match rate on REAL roles. <code>"OTHER"</code> is excluded from that numerator deliberately: every artifact carries an <code>"OTHER"</code> row, so counting it made a total collapse read as ~100% matched – which is exactly how a live defect in <code>02_player_ratings_to_team.R</code> (role resolved after <code>position_side</code> had been narrowed away) went unseen.</p>
+<p>Related: a finer <em>calibration</em> table was measured and rejected – its anchor failed, moving the best centre-back from 86th to 468th. See pannaverse <code>docs/reviews/PSR-DEFENSIVE-BLINDNESS-2026-09-14.md</code>.</p>
+</div>
+</div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.52" id="panna-0352-dev">panna 0.3.52 (dev)<a class="anchor" aria-label="anchor" href="#panna-0352-dev"></a></h2>
 <div class="section level3">

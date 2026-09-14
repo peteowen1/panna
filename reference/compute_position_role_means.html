@@ -17,7 +17,7 @@ game-logs get an era-appropriate baseline."><meta property="og:image" content="h
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.52</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.53</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -61,7 +61,12 @@ game-logs get an era-appropriate baseline.</p>
 
     <div class="section level2">
     <h2 id="ref-usage">Usage<a class="anchor" aria-label="anchor" href="#ref-usage"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">compute_position_role_means</span><span class="op">(</span><span class="va">player_stats</span>, <span class="va">skill_cols</span>, min_n <span class="op">=</span> <span class="fl">200L</span><span class="op">)</span></span></code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">compute_position_role_means</span><span class="op">(</span></span>
+<span>  <span class="va">player_stats</span>,</span>
+<span>  <span class="va">skill_cols</span>,</span>
+<span>  min_n <span class="op">=</span> <span class="fl">200L</span>,</span>
+<span>  role_grain <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"broad"</span>, <span class="st">"role8"</span><span class="op">)</span></span>
+<span><span class="op">)</span></span></code></pre></div>
     </div>
 
     <div class="section level2">
@@ -79,6 +84,18 @@ season_end_year) and the skill feature columns.</p></dd>
 
 <dt id="arg-min-n">min_n<a class="anchor" aria-label="anchor" href="#arg-min-n"></a></dt>
 <dd><p>Minimum player-matches for a per-(season, role) cell to be kept.</p></dd>
+
+
+<dt id="arg-role-grain">role_grain<a class="anchor" aria-label="anchor" href="#arg-role-grain"></a></dt>
+<dd><p>Role bucket to key on. <code>"broad"</code> (default) keys on
+GK/DEF/MID/FWD; <code>"role8"</code> keys on GK/CB/FB/DM/CM/AM/W/ST, which stops
+centre-backs being centred on a mean pooled with attacking full-backs and
+attacking midfielders on one pooled with holding midfielders. The grain
+written here is DETECTED at scoring time by
+<code>.position_means_grain()</code>; writing <code>"role8"</code> obliges every
+scoring caller to resolve a role at that grain (skills tables carry only
+the broad <code>primary_position</code>, so they must pass
+<code>.position_normalize_skills(role_override=)</code>) or normalization aborts.</p></dd>
 
 </dl></div>
     <div class="section level2">

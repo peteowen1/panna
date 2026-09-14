@@ -1,5 +1,44 @@
 # Changelog
 
+## panna 0.3.53 (dev)
+
+### Position normalization now keys on a finer 8-bucket role (GK/CB/FB/DM/CM/AM/W/ST)
+
+`position_role_means.csv` was keyed on GK/DEF/MID/FWD, so
+`.position_normalize_skills()` centred centre-backs on a mean pooled
+with attacking full-backs, and attacking midfielders on one pooled with
+holding midfielders. Everyone in the smaller sub-bucket carried a
+standing offset.
+
+Measured end to end, both arms scored in one execution on identical
+rows: ST +0.0121, DM +0.0099, CB +0.0090, CM +0.0055, GK 0.0000, FB
+-0.0118, W -0.0136, AM -0.0184. The CB-to-FB gap closes by 0.0208, about
+45% of a centre-back PSR standard deviation.
+
+Callers split by what they are handed. 07c/07d/10b get match stats
+carrying `position` + `position_side` and resolve natively; 06/08b/02
+get a skills table carrying only the broad `primary_position` and pass
+`role_override`.
+
+Roles are resolved AS AT each scoring date (`.role8_asof()`, trailing
+365-day window, strictly prior matches) rather than career-wide. A
+career mode is both era-inappropriate and a look-ahead: measured on the
+live table it disagrees with the season-appropriate bucket on 19.16% of
+player-seasons and 16.36% of minutes, median PSR error 0.0173 – about
+the size of the whole fix.
+
+The grain is detected from the artifact’s own role levels rather than
+passed as a flag, and `.position_normalize_skills()` aborts below a 50%
+match rate on REAL roles. `"OTHER"` is excluded from that numerator
+deliberately: every artifact carries an `"OTHER"` row, so counting it
+made a total collapse read as ~100% matched – which is exactly how a
+live defect in `02_player_ratings_to_team.R` (role resolved after
+`position_side` had been narrowed away) went unseen.
+
+Related: a finer *calibration* table was measured and rejected – its
+anchor failed, moving the best centre-back from 86th to 468th. See
+pannaverse `docs/reviews/PSR-DEFENSIVE-BLINDNESS-2026-09-14.md`.
+
 ## panna 0.3.52 (dev)
 
 ### Cut uncalibrated PSV minutes 2.24% -\> 0.44% (panna#253)
