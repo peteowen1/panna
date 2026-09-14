@@ -1464,7 +1464,11 @@ test_that("compute_player_psr() actually passes its resolved is_gk into .positio
   # that default happens to be.
   captured <- NULL
   local_mocked_bindings(
-    .position_normalize_skills = function(dt, position_means, is_gk = NULL) {
+    # Signature must track the real one: compute_player_psr() now also passes
+    # `role_override` (the finer role8 normalization grain), and a mock missing
+    # it fails with "unused argument" rather than anything about is_gk.
+    .position_normalize_skills = function(dt, position_means, is_gk = NULL,
+                                          role_override = NULL) {
       captured <<- is_gk
       dt
     }
@@ -1499,7 +1503,11 @@ test_that("compute_player_psr()'s default is_gk uses .detect_gk_rows(), matching
 
   captured <- NULL
   local_mocked_bindings(
-    .position_normalize_skills = function(dt, position_means, is_gk = NULL) {
+    # Signature must track the real one: compute_player_psr() now also passes
+    # `role_override` (the finer role8 normalization grain), and a mock missing
+    # it fails with "unused argument" rather than anything about is_gk.
+    .position_normalize_skills = function(dt, position_means, is_gk = NULL,
+                                          role_override = NULL) {
       captured <<- is_gk
       dt
     }

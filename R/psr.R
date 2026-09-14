@@ -2338,7 +2338,8 @@ compute_player_psr <- function(skills, center = TRUE,
                                 target = c("blend", "xg", "goals"),
                                 position_means = NULL,
                                 gk_goal_scale = 1,
-                                is_gk = NULL) {
+                                is_gk = NULL,
+                                role_override = NULL) {
   target <- match.arg(target)
   dt <- data.table::as.data.table(skills)
   if (!is.null(is_gk)) {
@@ -2359,7 +2360,13 @@ compute_player_psr <- function(skills, center = TRUE,
   # uses) rather than the old plain primary_position == "GK" check -- see
   # the is_gk roxygen above.
   if (is.null(is_gk)) is_gk <- .detect_gk_rows(dt)
-  dt <- .position_normalize_skills(dt, position_means, is_gk = is_gk)
+  if (!is.null(role_override) && length(role_override) != nrow(dt)) {
+    cli::cli_abort(c(
+      "`role_override` must have one entry per row of `skills`.",
+      "x" = "Got {length(role_override)} for {nrow(dt)} row{?s}."))
+  }
+  dt <- .position_normalize_skills(dt, position_means, is_gk = is_gk,
+                                   role_override = role_override)
 
   has_gks <- any(is_gk, na.rm = TRUE)
   has_outfield <- any(!is_gk, na.rm = TRUE)
