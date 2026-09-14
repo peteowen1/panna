@@ -1464,7 +1464,11 @@ test_that("compute_player_psr() actually passes its resolved is_gk into .positio
   # that default happens to be.
   captured <- NULL
   local_mocked_bindings(
-    .position_normalize_skills = function(dt, position_means, is_gk = NULL) {
+    # Signature must track the real one: compute_player_psr() now also passes
+    # `role_override` (the finer role8 normalization grain), and a mock missing
+    # it fails with "unused argument" rather than anything about is_gk.
+    .position_normalize_skills = function(dt, position_means, is_gk = NULL,
+                                          role_override = NULL) {
       captured <<- is_gk
       dt
     }
@@ -1499,7 +1503,11 @@ test_that("compute_player_psr()'s default is_gk uses .detect_gk_rows(), matching
 
   captured <- NULL
   local_mocked_bindings(
-    .position_normalize_skills = function(dt, position_means, is_gk = NULL) {
+    # Signature must track the real one: compute_player_psr() now also passes
+    # `role_override` (the finer role8 normalization grain), and a mock missing
+    # it fails with "unused argument" rather than anything about is_gk.
+    .position_normalize_skills = function(dt, position_means, is_gk = NULL,
+                                          role_override = NULL) {
       captured <<- is_gk
       dt
     }
@@ -1706,4 +1714,203 @@ test_that(".detect_gk_rows recovers a genuine keeper's BLANK-position rows, not 
     position  = c(rep("Goalkeeper", 4), "")
   )
   expect_true(all(panna:::.detect_gk_rows(dt)))
+})
+
+# ---- finer (role8) position-normalization grain -------------------------
+# Added 2026-09-14. The broad GK/DEF/MID/FWD grain pools centre-backs with
+# attacking full-backs and attacking midfielders with holding ones, leaving a
+# standing per-bucket offset (AM -0.0481, FB -0.0172, CB +0.0116 measured on the
+# live table). See pannaverse docs/reviews/PSR-DEFENSIVE-BLINDNESS-2026-09-14.md.
+
+test_that(".role16_to_role8 collapses to the agreed 8 buckets", {
+  expect_equal(
+    .role16_to_role8(c("GK","CB","LB","RB","LWB","RWB","DM","CM","CAM",
+                       "LM","RM","LW","RW","CF","LF","RF")),
+    c("GK","CB","FB","FB","FB","FB","DM","CM","AM",
+      "W","W","W","W","ST","ST","ST"))
+  expect_equal(.role16_to_role8("Substitute"), "OTHER")
+})
+
+test_that("the means grain is detected from the artifact, never assumed", {
+  expect_equal(.position_means_grain(data.table::data.table(
+    role = c("GK","DEF","MID","FWD","OTHER"))), "broad")
+  expect_equal(.position_means_grain(data.table::data.table(
+    role = c("GK","CB","FB","DM","CM","AM","W","ST"))), "role8")
+})
+
+test_that(".player_role8 refuses to invent a finer role from a broad label", {
+  dt <- data.table::data.table(
+    player_id = paste0("p", 1:4),
+    primary_position = c("DEF", "MID", "FWD", "GK"))
+  # primary_position is already collapsed, so the finer bucket is unknowable.
+  expect_equal(.player_role8(dt), c("OTHER", "OTHER", "OTHER", "GK"))
+})
+
+test_that("a role8 artifact scored on a broad-only table ABORTS", {
+  # The dangerous case: .position_normalize_skills() zero-fills an unmatched
+  # role, so without this guard every feature would be left un-normalized and
+  # every rating would still compute, silently wrong.
+  #
+  # The artifact MUST carry an "OTHER" row to be realistic: compute_position_
+  # role_means()'s role-overall fallback has no min_n filter, so every real
+  # artifact has one. An earlier version of this test omitted it and therefore
+  # only proved the guard fires in a case that cannot occur in production
+  # (review finding, 2026-09-14).
+  dt <- data.table::data.table(
+    player_id = paste0("p", 1:40),
+    primary_position = rep(c("DEF","MID","FWD","DEF"), 10),
+    shots_p90 = as.numeric(1:40))
+  pm <- data.table::data.table(role = c("CB","FB","ST","W","OTHER"),
+                               stat_name = "shots_p90", mean = c(1, 2, 3, 4, 99))
+  expect_error(.position_normalize_skills(data.table::copy(dt), pm),
+               "UN-normalized|resolve|OTHER")
+})
+
+test_that("a total collapse to OTHER aborts even though OTHER is a real role", {
+  # The bypass that nearly shipped: role resolution fails for some other reason
+  # (a dropped `position_side` column, say) and EVERY row degrades to the
+  # catch-all bucket. "OTHER" is a legitimate row in every real artifact, so a
+  # plain match-rate test reads ~100% and waves it through, leaving every player
+  # normalized against a pooled mean over substitutes.
+  dt <- data.table::data.table(
+    player_id = paste0("p", 1:100), primary_position = rep("DEF", 100),
+    shots_p90 = as.numeric(1:100))
+  pm <- data.table::data.table(role = c("CB","FB","OTHER"),
+                               stat_name = "shots_p90", mean = c(1, 2, 50))
+  expect_error(
+    .position_normalize_skills(data.table::copy(dt), pm,
+                               role_override = rep("OTHER", 100)),
+    "OTHER|REAL role")
+  # A GK+OTHER-only resolution is the same failure wearing a different hat:
+  # both tokens are present in the artifact, so only excluding OTHER catches it.
+  expect_error(
+    .position_normalize_skills(
+      data.table::copy(dt),
+      data.table::data.table(role = c("GK","CB","FB","OTHER"),
+                             stat_name = "shots_p90", mean = c(0, 1, 2, 50)),
+      role_override = rep(c("GK","OTHER"), each = 50)),
+    "OTHER|REAL role")
+})
+
+test_that("classify_role() without position_side cannot resolve outfielders", {
+  # Root cause of the above: .narrow_match_stats_for_skills() drops
+  # `position_side`, and classify_role(pos, NULL) then returns "UNK" for every
+  # outfielder because its is_central/is_left/is_right tests go zero-length.
+  # Pinning it here so a future change to classify_role() surfaces the
+  # dependency instead of silently collapsing a caller's whole population.
+  pos <- c("Goalkeeper", "Defender", "Midfielder", "Striker")
+  expect_equal(as.character(classify_role(pos, NULL)),
+               c("GK", "UNK", "UNK", "UNK"))
+  expect_equal(.role16_to_role8(classify_role(pos, NULL)),
+               c("GK", "OTHER", "OTHER", "OTHER"))
+})
+
+test_that("role_override drives the lookup and is length-checked", {
+  dt <- data.table::data.table(
+    player_id = paste0("p", 1:4), primary_position = rep("DEF", 4),
+    shots_p90 = c(10, 10, 10, 10))
+  pm <- data.table::data.table(role = c("CB","FB"), stat_name = "shots_p90",
+                               mean = c(4, 6))
+  out <- .position_normalize_skills(data.table::copy(dt), pm,
+                                    role_override = c("CB","CB","FB","FB"))
+  expect_equal(out$shots_p90, c(6, 6, 4, 4))
+  expect_error(
+    .position_normalize_skills(data.table::copy(dt), pm, role_override = "CB"),
+    "one entry per row")
+})
+
+test_that("broad artifacts still normalize broad tables unchanged", {
+  dt <- data.table::data.table(
+    player_id = paste0("p", 1:4), primary_position = c("DEF","DEF","MID","MID"),
+    shots_p90 = c(10, 10, 10, 10))
+  pm <- data.table::data.table(role = c("DEF","MID"), stat_name = "shots_p90",
+                               mean = c(4, 6))
+  out <- .position_normalize_skills(data.table::copy(dt), pm)
+  expect_equal(out$shots_p90, c(6, 6, 4, 4))
+})
+
+test_that("compute_position_role_means can build at either grain", {
+  ms <- data.table::data.table(
+    player_id = rep(paste0("p", 1:8), each = 30),
+    position = rep(c("Defender","Defender","Midfielder","Midfielder",
+                     "Defender","Midfielder","Striker","Goalkeeper"), each = 30),
+    position_side = rep(c("Centre","Left","Centre","Left",
+                          "Right","Centre","Centre","Centre"), each = 30),
+    season = "2025-2026",
+    shots_p90 = as.numeric(seq_len(240)))
+  broad <- compute_position_role_means(ms, "shots_p90", min_n = 1L)
+  fine  <- compute_position_role_means(ms, "shots_p90", min_n = 1L,
+                                       role_grain = "role8")
+  expect_equal(.position_means_grain(broad), "broad")
+  expect_equal(.position_means_grain(fine), "role8")
+  expect_true(all(unique(fine$role) %in% c(PSR_ROLE8_LEVELS, "OTHER")))
+})
+
+test_that(".role8_asof tracks a position conversion and never looks ahead", {
+  # A career-wide bucket is era-inappropriate AND a look-ahead. Measured on the
+  # live table, it disagrees with the season-appropriate bucket on 19.16% of
+  # player-seasons (16.36% of minutes, 31.42% of players), median PSR error
+  # 0.0173 -- about the size of the whole role8 fix. Named cases: Declan Rice
+  # (career CM, seasons at CB and DM), Son Heung-Min (career ST, seasons AM/W).
+  ms <- data.table::data.table(
+    player_id = "p1",
+    match_date = as.Date(c("2020-01-01","2020-02-01","2020-03-01",
+                           "2024-01-01","2024-02-01","2024-03-01","2024-04-01")),
+    position = "Defender",
+    position_side = c("Left","Left","Left","Centre","Centre","Centre","Centre"),
+    total_minutes = 90)
+
+  # Before the conversion he is a full-back, and the later CB minutes must not
+  # leak backwards into this answer.
+  expect_equal(.role8_asof(ms, "2020-06-01")$role8, "FB")
+  # After it, the trailing window has moved him to centre-back.
+  expect_equal(.role8_asof(ms, "2024-05-01")$role8, "CB")
+  # Strictly prior: a date before any match yields nothing, not a guess.
+  expect_equal(nrow(.role8_asof(ms, "2019-01-01")), 0L)
+  # Empty trailing window falls back to all prior history rather than "OTHER",
+  # which would be the silent collapse the guard chain exists to prevent.
+  expect_equal(.role8_asof(ms, "2023-01-01")$role8, "FB")
+})
+
+test_that(".role8_asof aborts when position_side was narrowed away", {
+  ms <- data.table::data.table(
+    player_id = "p1", match_date = as.Date("2024-01-01"),
+    position = "Defender", total_minutes = 90)
+  expect_error(.role8_asof(ms, "2024-05-01"), "position_side")
+})
+
+test_that(".role8_asof's fast and slow paths agree exactly", {
+  # .role8_prepare() pre-filters and date-sorts so .role8_asof() can binary-
+  # search its window. That is only safe if it is a pure optimization -- an
+  # equivalence check caught that it was NOT, because an equal-minutes tie was
+  # being resolved by input row order (same family as panna#222's
+  # ties.method="first" coin-flip). The tie-break is now deterministic.
+  set.seed(1)
+  n <- 5000
+  ms <- data.table::data.table(
+    player_id = sample(paste0("p", 1:300), n, TRUE),
+    match_date = as.Date("2015-01-01") + sample(0:3800, n, TRUE),
+    position = sample(c("Defender","Midfielder","Striker","Goalkeeper"), n, TRUE),
+    position_side = sample(c("Centre","Left","Right"), n, TRUE),
+    total_minutes = sample(c(0, 45, 90), n, TRUE))
+  prep <- .role8_prepare(ms)
+  for (d in c("2017-06-01", "2020-03-01", "2023-09-01")) {
+    slow <- .role8_asof(ms,   d)[order(player_id)]
+    fast <- .role8_asof(prep, d)[order(player_id)]
+    expect_equal(as.data.frame(slow), as.data.frame(fast), info = d)
+  }
+})
+
+test_that(".role8_asof's tie-break does not depend on row order", {
+  # Equal minutes in two buckets: the answer must not change when the rows are
+  # shuffled.
+  ms <- data.table::data.table(
+    player_id = "p1",
+    match_date = as.Date(c("2024-01-01", "2024-02-01")),
+    position = "Defender",
+    position_side = c("Centre", "Left"),   # CB and FB, 90 minutes each
+    total_minutes = c(90, 90))
+  a <- .role8_asof(ms, "2024-06-01")$role8
+  b <- .role8_asof(ms[c(2, 1)], "2024-06-01")$role8
+  expect_equal(a, b)
 })

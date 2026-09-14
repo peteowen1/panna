@@ -15,7 +15,8 @@ compute_player_psv(
   reliability = NULL,
   center_weights = c("none", "minutes"),
   is_gk = NULL,
-  .pos_grp_override = NULL
+  .pos_grp_override = NULL,
+  role_override = NULL
 )
 }
 \arguments{

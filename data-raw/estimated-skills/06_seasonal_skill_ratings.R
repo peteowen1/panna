@@ -46,6 +46,38 @@ skill_features <- readRDS(file.path(cache_dir, "02_skill_features.rds"))
 # classification depending on how much of their history a given call sees.
 skill_features[, .is_gk_full := .detect_gk_rows(skill_features)]
 
+# Finer (role8) normalization role. `02_skill_features` carries only the BROAD
+# `primary_position` -- already collapsed to GK/DEF/MID/FWD -- so the finer
+# bucket has to come from `01_match_stats`, joined on (player_id,
+# season_end_year). Keyed on the SEASON, not the career: a full-back who moves
+# to centre-back should change bucket between seasons, which a career-wide mode
+# would flatten. season_end_year comes from the season LABEL via
+# extract_season_end_year(), never from match_date -- three label formats share
+# one end year. Only consumed when the means artifact is keyed on role8.
+skill_features[, .role8_full := local({
+  msr <- data.table::as.data.table(
+    readRDS(file.path(cache_dir, "01_match_stats.rds")))
+  if (!"season_end_year" %in% names(msr)) {
+    msr[, season_end_year := as.integer(extract_season_end_year(season))]
+  }
+  r8 <- .role16_to_role8(classify_role(msr$position, msr$position_side))
+  mins <- as.numeric(msr$total_minutes); mins[is.na(mins)] <- 0
+  tab <- data.table::data.table(player_id = msr$player_id,
+                                season_end_year = msr$season_end_year,
+                                role8 = r8, mins = mins)[
+    role8 != "OTHER" & !is.na(season_end_year)]
+  tab <- tab[, .(mins = sum(mins)), by = .(player_id, season_end_year, role8)]
+  data.table::setorder(tab, player_id, season_end_year, -mins)
+  lut <- tab[, .SD[1L], by = .(player_id, season_end_year)][
+    , .(player_id, season_end_year, role8)]
+  key <- paste(skill_features$player_id, skill_features$season_end_year)
+  out <- lut$role8[match(key, paste(lut$player_id, lut$season_end_year))]
+  out[is.na(out)] <- "OTHER"
+  out
+})]
+cat(sprintf("  role8 resolved for %.1f%% of player-seasons\n",
+            100 * mean(skill_features$.role8_full != "OTHER")))
+
 # Skill SPM models (from step 03)
 spm_results <- readRDS(file.path(cache_dir, "03_skill_spm.rds"))
 
@@ -318,7 +350,8 @@ fit_season_skill_ratings <- function(splint_data, skill_features, season,
     # not vs all outfielders. Display-only (the RAPM psvf90 target is untouched).
     psr_result <- compute_player_psr(season_skills, center = TRUE,
                                      position_means = .psr_position_means,
-                                     is_gk = season_skills$.is_gk_full)
+                                     is_gk = season_skills$.is_gk_full,
+                                     role_override = season_skills$.role8_full)
     if (!is.null(psr_result) && nrow(psr_result) > 0) {
       psr_result$season_end_year <- season
       cat(sprintf("  Seasonal PSR ratings: %d players\n", nrow(psr_result)))
