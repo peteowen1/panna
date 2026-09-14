@@ -107,6 +107,20 @@ gc(verbose = FALSE)
 # games doesn't change bucket. Only consumed when the means artifact is keyed on
 # role8 -- `.position_normalize_skills()` detects the grain and ignores an
 # override it doesn't need.
+#
+# CAREER-WIDE, deliberately, with two known limitations (review, 2026-09-14):
+#   1. Unlike 06 (which keys per player-season because it scores player-SEASONS),
+#      a snapshot row is a point-in-time career estimate with no single season,
+#      so there is no season to key on here. A player who converts from full-back
+#      to centre-back therefore carries one bucket across their whole history
+#      rather than switching at the conversion.
+#   2. That mode is taken over ALL matches including ones AFTER a given snapshot
+#      date, so it is a mild look-ahead: the bucket a 2016 snapshot normalizes
+#      against can be informed by 2024 minutes.
+# Both are accepted rather than fixed: the bucket only selects which mean is
+# subtracted, position-switchers are a small minority, and resolving per date
+# would mean re-deriving the mode 237 times over a 2M-row table. Revisit if the
+# normalization ever feeds something other than a display rating.
 .role8_lookup <- local({
   r8 <- .role16_to_role8(classify_role(match_stats$position,
                                        match_stats$position_side))

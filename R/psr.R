@@ -1768,19 +1768,37 @@ load_psv_match_reliability <- function() {
     role <- .player_role(dt, is_gk = is_gk)
   }
 
-  # Guard: a finer artifact scored against a table that can only resolve broad
-  # roles produces ~100% "OTHER", every lookup misses, and every feature is
-  # left un-normalized. Fail loudly instead.
-  matched <- mean(role %in% unique(as.character(pm$role)))
+  # Guard. TWO distinct failures, and the second is the one that nearly shipped.
+  #
+  # (a) CROSS-GRAIN: a role8 artifact scored against a table resolving broad
+  #     roles ("DEF"/"MID"/"FWD") matches nothing, every lookup misses, every
+  #     feature is left un-normalized.
+  # (b) COLLAPSE-TO-OTHER: role resolution fails for a different reason and
+  #     every row degrades to the catch-all "OTHER". This is NOT caught by a
+  #     plain match-rate test, because `compute_position_role_means()` always
+  #     writes an "OTHER" row (its role-overall fallback has no min_n filter),
+  #     so "OTHER" is a legitimately MATCHED role and the rate reads ~100%.
+  #     Every player then gets normalized against a pooled mean over
+  #     substitutes and unclassifiable rows, silently. Found in review
+  #     2026-09-14: `.narrow_match_stats_for_skills()` drops `position_side`,
+  #     and `classify_role(position, NULL)` returns "UNK" for every outfielder,
+  #     so one caller collapsed its whole outfield population this way.
+  # Hence: exclude "OTHER" from the numerator, and test it separately.
+  real_roles <- setdiff(unique(as.character(pm$role)), "OTHER")
+  matched <- mean(role %in% real_roles)
+  other_share <- mean(role == "OTHER")
   if (nrow(dt) > 0 && matched < 0.5) {
     cli::cli_abort(c(
-      "position normalization: only {round(100 * matched, 1)}% of rows resolve to \\
-       a role present in the means artifact ({grain} grain).",
-      "x" = "Unmatched rows would be silently left UN-normalized.",
+      "position normalization: only {round(100 * matched, 1)}% of rows resolve \\
+       to a REAL role in the means artifact ({grain} grain); \\
+       {round(100 * other_share, 1)}% fell through to \"OTHER\".",
+      "x" = "Those rows would be normalized against a meaningless pooled mean, \\
+             or left UN-normalized -- silently, with every rating still computing.",
       "i" = "Resolved roles: {paste(utils::head(unique(role), 8), collapse = ', ')}",
       "i" = "Artifact roles: {paste(utils::head(unique(as.character(pm$role)), 10), collapse = ', ')}",
       "i" = "A skills table carries only broad `primary_position` -- pass \\
-             `role_override` resolved from match stats."))
+             `role_override` resolved from match stats BEFORE any column \\
+             narrowing, since `position_side` is commonly dropped."))
   }
   sey <- if (has_era) .season_end_year_col(dt) else rep(NA_integer_, nrow(dt))
   pm_stats <- unique(as.character(pm$stat_name))

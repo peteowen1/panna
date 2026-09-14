@@ -1750,14 +1750,59 @@ test_that("a role8 artifact scored on a broad-only table ABORTS", {
   # The dangerous case: .position_normalize_skills() zero-fills an unmatched
   # role, so without this guard every feature would be left un-normalized and
   # every rating would still compute, silently wrong.
+  #
+  # The artifact MUST carry an "OTHER" row to be realistic: compute_position_
+  # role_means()'s role-overall fallback has no min_n filter, so every real
+  # artifact has one. An earlier version of this test omitted it and therefore
+  # only proved the guard fires in a case that cannot occur in production
+  # (review finding, 2026-09-14).
   dt <- data.table::data.table(
     player_id = paste0("p", 1:40),
     primary_position = rep(c("DEF","MID","FWD","DEF"), 10),
     shots_p90 = as.numeric(1:40))
-  pm <- data.table::data.table(role = c("CB","FB","ST","W"),
-                               stat_name = "shots_p90", mean = c(1, 2, 3, 4))
+  pm <- data.table::data.table(role = c("CB","FB","ST","W","OTHER"),
+                               stat_name = "shots_p90", mean = c(1, 2, 3, 4, 99))
   expect_error(.position_normalize_skills(data.table::copy(dt), pm),
-               "UN-normalized|resolve to")
+               "UN-normalized|resolve|OTHER")
+})
+
+test_that("a total collapse to OTHER aborts even though OTHER is a real role", {
+  # The bypass that nearly shipped: role resolution fails for some other reason
+  # (a dropped `position_side` column, say) and EVERY row degrades to the
+  # catch-all bucket. "OTHER" is a legitimate row in every real artifact, so a
+  # plain match-rate test reads ~100% and waves it through, leaving every player
+  # normalized against a pooled mean over substitutes.
+  dt <- data.table::data.table(
+    player_id = paste0("p", 1:100), primary_position = rep("DEF", 100),
+    shots_p90 = as.numeric(1:100))
+  pm <- data.table::data.table(role = c("CB","FB","OTHER"),
+                               stat_name = "shots_p90", mean = c(1, 2, 50))
+  expect_error(
+    .position_normalize_skills(data.table::copy(dt), pm,
+                               role_override = rep("OTHER", 100)),
+    "OTHER|REAL role")
+  # A GK+OTHER-only resolution is the same failure wearing a different hat:
+  # both tokens are present in the artifact, so only excluding OTHER catches it.
+  expect_error(
+    .position_normalize_skills(
+      data.table::copy(dt),
+      data.table::data.table(role = c("GK","CB","FB","OTHER"),
+                             stat_name = "shots_p90", mean = c(0, 1, 2, 50)),
+      role_override = rep(c("GK","OTHER"), each = 50)),
+    "OTHER|REAL role")
+})
+
+test_that("classify_role() without position_side cannot resolve outfielders", {
+  # Root cause of the above: .narrow_match_stats_for_skills() drops
+  # `position_side`, and classify_role(pos, NULL) then returns "UNK" for every
+  # outfielder because its is_central/is_left/is_right tests go zero-length.
+  # Pinning it here so a future change to classify_role() surfaces the
+  # dependency instead of silently collapsing a caller's whole population.
+  pos <- c("Goalkeeper", "Defender", "Midfielder", "Striker")
+  expect_equal(as.character(classify_role(pos, NULL)),
+               c("GK", "UNK", "UNK", "UNK"))
+  expect_equal(.role16_to_role8(classify_role(pos, NULL)),
+               c("GK", "OTHER", "OTHER", "OTHER"))
 })
 
 test_that("role_override drives the lookup and is length-checked", {

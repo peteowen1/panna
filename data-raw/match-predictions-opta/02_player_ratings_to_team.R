@@ -561,6 +561,27 @@ if (nrow(upcoming) > 0) {
       # skill/identity/denominator set. 02b has narrowed since panna#133;
       # this site was the remaining full-width load (~5.9GB resident for the
       # whole step). Shared helper so the two sites can't drift again.
+      # role8 must be resolved BEFORE this narrowing: the helper's extra_cols
+      # keeps `position` but NOT `position_side`, and classify_role(pos, NULL)
+      # returns "UNK" for every outfielder -> every non-GK collapses to "OTHER".
+      # Caught in review 2026-09-14; the same ordering trap 08b already avoids
+      # by building its lookup above the narrowing.
+      .role8_lookup <- if ("player_id" %in% names(match_stats)) {
+        r8 <- .role16_to_role8(classify_role(match_stats$position,
+                                             match_stats$position_side))
+        mins <- as.numeric(match_stats$total_minutes); mins[is.na(mins)] <- 0
+        tab <- data.table::data.table(player_id = match_stats$player_id,
+                                      role8 = r8, mins = mins)[role8 != "OTHER"]
+        tab <- tab[, .(mins = sum(mins)), by = .(player_id, role8)]
+        data.table::setorder(tab, player_id, -mins)
+        tab[, .SD[1L], by = player_id][, .(player_id, role8)]
+      } else NULL
+      if (!is.null(.role8_lookup)) {
+        message(sprintf("  role8 lookup: %d players (%.1f%% of match_stats rows resolvable)",
+                        nrow(.role8_lookup),
+                        100 * mean(.role16_to_role8(classify_role(
+                          match_stats$position, match_stats$position_side)) != "OTHER")))
+      }
       match_stats <- .narrow_match_stats_for_skills(match_stats)
       gc(verbose = FALSE)
       message(sprintf("  Narrowed match_stats to %d columns for skill estimation",
@@ -578,27 +599,13 @@ if (nrow(upcoming) > 0) {
                                   is_gk = .detect_gk_rows(match_stats)),
           by = "player_id"
         )
-        # Finer (role8) normalization role, resolved on the SAME full table and
-        # for the same scope reason. live_skills carries only the broad
-        # primary_position, so the finer bucket cannot be recovered downstream.
-        .role8_lookup <- local({
-          r8 <- .role16_to_role8(classify_role(match_stats$position,
-                                               match_stats$position_side))
-          mins <- as.numeric(match_stats$total_minutes); mins[is.na(mins)] <- 0
-          tab <- data.table::data.table(player_id = match_stats$player_id,
-                                        role8 = r8, mins = mins)[role8 != "OTHER"]
-          tab <- tab[, .(mins = sum(mins)), by = .(player_id, role8)]
-          data.table::setorder(tab, player_id, -mins)
-          tab[, .SD[1L], by = player_id][, .(player_id, role8)]
-        })
         match_stats <- match_stats[match_stats$player_id %in% upcoming_player_ids, ]
         message(sprintf("  Filtered match_stats to %d players (%d rows)",
                         length(upcoming_player_ids), nrow(match_stats)))
       } else {
         message(sprintf("  match_stats has no player_id column — using FULL table (%d rows), NOT filtered",
                         nrow(match_stats)))
-        .is_gk_lookup <- NULL
-        .role8_lookup <- NULL
+        .is_gk_lookup <- NULL   # .role8_lookup already NULL from above
       }
 
       decay_params <- if (file.exists(decay_params_path)) readRDS(decay_params_path) else NULL
@@ -760,6 +767,10 @@ if (nrow(upcoming) > 0) {
         live_role8 <- if (!is.null(.role8_lookup)) {
           v <- .role8_lookup$role8[match(live_skills$player_id, .role8_lookup$player_id)]
           v[is.na(v)] <- "OTHER"
+          # Log the RATE, not just that the join ran: a collapse to "OTHER" is
+          # silent otherwise -- it reads as a matched role in the artifact.
+          message(sprintf("  role8 join: %.1f%% of live_skills rows resolved",
+                          100 * mean(v != "OTHER")))
           v
         } else {
           NULL
