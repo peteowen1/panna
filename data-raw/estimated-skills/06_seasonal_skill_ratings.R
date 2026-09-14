@@ -38,6 +38,14 @@ splint_data <- readRDS(file.path(opta_cache_dir, "03_splints.rds"))
 # Skill features (per player-season from step 02)
 skill_features <- readRDS(file.path(cache_dir, "02_skill_features.rds"))
 
+# Computed ONCE here, on the full multi-season population, and passed into
+# every compute_player_psr() call below (per-season) instead of letting it
+# recompute .detect_gk_rows() fresh on each season's slice. The majority vote
+# is NOT scope-invariant -- see compute_player_psv()'s is_gk roxygen (R/psr.R)
+# and panna PR #250 -- a player with few total rows can get a different GK
+# classification depending on how much of their history a given call sees.
+skill_features[, .is_gk_full := .detect_gk_rows(skill_features)]
+
 # Skill SPM models (from step 03)
 spm_results <- readRDS(file.path(cache_dir, "03_skill_spm.rds"))
 
@@ -309,7 +317,8 @@ fit_season_skill_ratings <- function(splint_data, skill_features, season,
     # Within-position normalization (BPM-style): value a player vs their role,
     # not vs all outfielders. Display-only (the RAPM psvf90 target is untouched).
     psr_result <- compute_player_psr(season_skills, center = TRUE,
-                                     position_means = .psr_position_means)
+                                     position_means = .psr_position_means,
+                                     is_gk = season_skills$.is_gk_full)
     if (!is.null(psr_result) && nrow(psr_result) > 0) {
       psr_result$season_end_year <- season
       cat(sprintf("  Seasonal PSR ratings: %d players\n", nrow(psr_result)))

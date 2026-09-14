@@ -1453,12 +1453,15 @@ test_that("compute_player_psr() normalizes using its OWN GK split, not .detect_g
   expect_equal(normalized$goals_p90[3], 0.3 - 0.25)
 })
 
-test_that("compute_player_psr() actually passes its own split into .position_normalize_skills() (not just the helper in isolation)", {
+test_that("compute_player_psr() actually passes its resolved is_gk into .position_normalize_skills() (not just the helper in isolation)", {
   # The test above pins .position_normalize_skills() itself, which was never
   # the buggy part -- compute_player_psr()'s CALL SITE was (it called the
   # helper with no is_gk at all). Mock the helper to capture what
   # compute_player_psr() actually hands it; this fails if the `is_gk = is_gk`
-  # argument at its call site is ever dropped again.
+  # argument at its call site is ever dropped again. Pass an EXPLICIT is_gk
+  # into compute_player_psr() itself (rather than relying on its internal
+  # default) so this test doesn't hardcode -- and isn't broken by -- whatever
+  # that default happens to be.
   captured <- NULL
   local_mocked_bindings(
     .position_normalize_skills = function(dt, position_means, is_gk = NULL) {
@@ -1472,11 +1475,46 @@ test_that("compute_player_psr() actually passes its own split into .position_nor
     goals_p90 = c(0.02, 0.03, 0.3),
     gsaa_per90 = c(0.1, 0.1, 0)  # a real nonzero-beta GK stat, so the GK branch has something to score
   )
+  explicit_is_gk <- c(TRUE, FALSE, FALSE)  # deliberately NOT primary_position=="GK" or .detect_gk_rows()'s answer
   compute_player_psr(skills, target = "goals", position_means = data.table::data.table(
     role = "MID", stat_name = "goals_p90", mean = 0.25, season_end_year = NA_integer_
-  ))
+  ), is_gk = explicit_is_gk)
   expect_false(is.null(captured))
-  expect_equal(captured, skills$primary_position == "GK")
+  expect_equal(captured, explicit_is_gk)
+})
+
+test_that("compute_player_psr()'s default is_gk uses .detect_gk_rows(), matching compute_player_psv()", {
+  # panna#251 follow-up: compute_player_psr() previously split GK/outfield via
+  # a plain `primary_position == "GK"` check and never benefited from the
+  # substitute-keeper majority-vote fix (panna#248). Default now matches
+  # compute_player_psv()'s .detect_gk_rows()-based routing.
+  skills <- data.table::data.table(
+    player_id = c("p1", "p1", "p1"),
+    primary_position = c("GK", "GK", "MID"),  # majority vote flips row 3 to GK
+    goals_p90 = c(0.02, 0.03, 0.3),
+    gsaa_per90 = c(0.1, 0.1, 0)
+  )
+  expect_true(panna:::.detect_gk_rows(skills)[3])            # majority vote: GK
+  expect_false(skills$primary_position[3] == "GK")           # raw label: not GK
+
+  captured <- NULL
+  local_mocked_bindings(
+    .position_normalize_skills = function(dt, position_means, is_gk = NULL) {
+      captured <<- is_gk
+      dt
+    }
+  )
+  compute_player_psr(skills, target = "goals")  # no is_gk override
+  expect_equal(captured, panna:::.detect_gk_rows(skills))
+})
+
+test_that("compute_player_psr() validates is_gk length, type, and NA content", {
+  skills <- data.table::data.table(
+    player_id = c("a", "b"), primary_position = c("GK", "MID"), goals_p90 = c(0.1, 0.2)
+  )
+  expect_error(compute_player_psr(skills, is_gk = TRUE), "is_gk")  # wrong length
+  expect_error(compute_player_psr(skills, is_gk = c(1, 0)), "is_gk")
+  expect_error(compute_player_psr(skills, is_gk = c(TRUE, NA)), "is_gk")
 })
 
 test_that("compute_player_psv returns pos_grp so the calibration can key on it", {

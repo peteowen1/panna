@@ -2145,6 +2145,16 @@ load_psr_coefficients <- function(type = c("margin", "offense", "defense"),
 #'   caller can pin the old panna#202 behaviour by passing
 #'   \code{GK_PSR_GOAL_SCALE} and skipping \code{apply_psr_calibration()};
 #'   doing both would double-scale keepers.
+#' @param is_gk Optional logical vector, one per row of \code{skills}, marking
+#'   rows to route to the GK sub-model. \code{NULL} (default) computes it via
+#'   \code{\link{.detect_gk_rows}} on \code{skills} -- as of 2026-09-14, this
+#'   is the SAME majority-vote GK router \code{\link{compute_player_psv}}
+#'   uses (previously this function used a plain \code{primary_position ==
+#'   "GK"} check and never benefited from the substitute-keeper routing fix,
+#'   panna PR #248). Pass this explicitly when scoring REPEATED SLICES of a
+#'   larger population (looping per season, date, or fixture) -- see
+#'   \code{\link{compute_player_psv}}'s \code{is_gk} docs for why
+#'   \code{.detect_gk_rows()} is not scope-invariant on its own.
 #'
 #' @return A data.table with \code{psr}, \code{osr}, \code{dsr} columns.
 #'
@@ -2152,20 +2162,28 @@ load_psr_coefficients <- function(type = c("margin", "offense", "defense"),
 compute_player_psr <- function(skills, center = TRUE,
                                 target = c("blend", "xg", "goals"),
                                 position_means = NULL,
-                                gk_goal_scale = 1) {
+                                gk_goal_scale = 1,
+                                is_gk = NULL) {
   target <- match.arg(target)
   dt <- data.table::as.data.table(skills)
+  if (!is.null(is_gk)) {
+    if (length(is_gk) != nrow(dt)) {
+      cli::cli_abort("{.arg is_gk} must have one entry per row of {.arg skills} ({nrow(dt)}), got {length(is_gk)}.")
+    }
+    if (!is.logical(is_gk)) {
+      cli::cli_abort("{.arg is_gk} must be a logical vector, got {.cls {class(is_gk)}}.")
+    }
+    if (anyNA(is_gk)) {
+      cli::cli_abort("{.arg is_gk} must not contain NA -- resolve to TRUE/FALSE before calling.")
+    }
+  }
 
   # Split GKs from outfield players. Computed BEFORE position normalization
-  # (and passed into it explicitly) so the two agree -- this function's own
-  # split, unlike compute_player_psv()'s, does NOT use .detect_gk_rows(), so
-  # letting .position_normalize_skills() -> .player_role() fall back to its
-  # own default (.detect_gk_rows()) would silently normalize some rows
-  # against the GK role mean while still scoring them with the outfield
-  # coefficients -- confirmed 2026-09-13 as a review finding on the
-  # .detect_gk_rows() scope-instability fix, which is what gave .player_role()
-  # that default in the first place.
-  is_gk <- dt$primary_position == "GK"
+  # (and passed into it explicitly) so the two agree. Defaults to
+  # .detect_gk_rows() (the same majority-vote router compute_player_psv()
+  # uses) rather than the old plain primary_position == "GK" check -- see
+  # the is_gk roxygen above.
+  if (is.null(is_gk)) is_gk <- .detect_gk_rows(dt)
   dt <- .position_normalize_skills(dt, position_means, is_gk = is_gk)
 
   has_gks <- any(is_gk, na.rm = TRUE)

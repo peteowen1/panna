@@ -566,12 +566,25 @@ if (nrow(upcoming) > 0) {
       message(sprintf("  Narrowed match_stats to %d columns for skill estimation",
                       ncol(match_stats)))
       if ("player_id" %in% names(match_stats)) {
+        # Stable per-player GK lookup computed on the FULL (pre-fixture-filter)
+        # match_stats, before it's narrowed to just upcoming_player_ids below.
+        # .detect_gk_rows()'s majority vote is NOT scope-invariant -- computing
+        # it on the fixture-narrowed subset instead would be the same class of
+        # bug fixed for 07c in panna PR #250 (see compute_player_psv()'s is_gk
+        # roxygen, R/psr.R). Joined onto live_skills by player_id below, since
+        # estimate_player_skills_at_date() returns a different table shape.
+        .is_gk_lookup <- unique(
+          data.table::data.table(player_id = match_stats$player_id,
+                                  is_gk = .detect_gk_rows(match_stats)),
+          by = "player_id"
+        )
         match_stats <- match_stats[match_stats$player_id %in% upcoming_player_ids, ]
         message(sprintf("  Filtered match_stats to %d players (%d rows)",
                         length(upcoming_player_ids), nrow(match_stats)))
       } else {
         message(sprintf("  match_stats has no player_id column — using FULL table (%d rows), NOT filtered",
                         nrow(match_stats)))
+        .is_gk_lookup <- NULL
       }
 
       decay_params <- if (file.exists(decay_params_path)) readRDS(decay_params_path) else NULL
@@ -718,7 +731,19 @@ if (nrow(upcoming) > 0) {
         # center over the full league population (pass an unfiltered reference,
         # or subtract a precomputed per-position league mean) rather than the
         # filtered upcoming set. No retrain needed (diffs cancel).
-        live_psr <- compute_player_psr(live_skills, center = TRUE)
+        # Join the stable, full-history GK lookup computed above -- NOT
+        # .detect_gk_rows(live_skills), which would recompute the majority
+        # vote on just the fixture-narrowed population (scope-unstable, see
+        # the .is_gk_lookup comment above). NULL lookup or unmatched players
+        # default to outfield, matching .psv_pin_gk()'s NA convention.
+        live_is_gk <- if (!is.null(.is_gk_lookup)) {
+          v <- .is_gk_lookup$is_gk[match(live_skills$player_id, .is_gk_lookup$player_id)]
+          v[is.na(v)] <- FALSE
+          v
+        } else {
+          rep(FALSE, nrow(live_skills))
+        }
+        live_psr <- compute_player_psr(live_skills, center = TRUE, is_gk = live_is_gk)
         if (is.null(live_psr) || nrow(live_psr) == 0) {
           message("  PSR skipped: compute_player_psr returned no rows")
         } else if (!"player_id" %in% names(fixture_ratings)) {
