@@ -1891,7 +1891,8 @@ compute_player_psv <- function(player_match_stats, min_adjust = TRUE,
                                 reliability = NULL,
                                 center_weights = c("none", "minutes"),
                                 is_gk = NULL,
-                                .pos_grp_override = NULL) {
+                                .pos_grp_override = NULL,
+                                role_override = NULL) {
   target <- match.arg(target)
   center_weights <- match.arg(center_weights)
   dt <- data.table::as.data.table(player_match_stats)
@@ -1921,7 +1922,18 @@ compute_player_psv <- function(player_match_stats, min_adjust = TRUE,
     }
   }
   if (is.null(is_gk)) is_gk <- .detect_gk_rows(dt)
-  dt <- .position_normalize_skills(dt, position_means, is_gk = is_gk)
+  # `role_override` is usually unnecessary here: this function is handed MATCH
+  # STATS, which carry `position` + `position_side`, so `.player_role8()` can
+  # resolve the finer grain natively. It exists for callers that slice a larger
+  # population (07c) and want the same scope-stable role everywhere, for the
+  # same reason `is_gk` and `.pos_grp_override` do.
+  if (!is.null(role_override) && length(role_override) != nrow(dt)) {
+    cli::cli_abort(c(
+      "`role_override` must have one entry per row of `player_match_stats`.",
+      "x" = "Got {length(role_override)} for {nrow(dt)} row{?s}."))
+  }
+  dt <- .position_normalize_skills(dt, position_means, is_gk = is_gk,
+                                   role_override = role_override)
 
   # Route keepers through the GK sub-model (which carries gsaa_per90 and GK
   # features), outfield through the target model — mirroring compute_player_psr.

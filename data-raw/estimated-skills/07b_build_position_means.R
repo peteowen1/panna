@@ -38,12 +38,24 @@ skill_cols <- unique(unlist(lapply(sets, function(p){
 })))
 skill_cols <- intersect(skill_cols, names(ms))
 
-pm <- compute_position_role_means(ms, skill_cols)
+# role8 grain (2026-09-14): the broad GK/DEF/MID/FWD key pooled centre-backs
+# with attacking full-backs and attacking midfielders with holding ones, leaving
+# every player in the smaller sub-bucket with a standing offset. Measured on the
+# live table: CB +0.0090, FB -0.0118, AM -0.0184 of PSR once applied end to end.
+# Evidence: pannaverse docs/reviews/PSR-DEFENSIVE-BLINDNESS-2026-09-14.md.
+#
+# The grain written HERE is detected at scoring time by .position_means_grain(),
+# so this line and the scoring callers must move together. Callers handed match
+# stats (07c/07d/10b) resolve the finer role natively from position +
+# position_side; callers handed a SKILLS table (06/08b/02) carry only the broad
+# primary_position and must pass role_override -- if any of them is missed,
+# .position_normalize_skills() aborts rather than silently skipping.
+pm <- compute_position_role_means(ms, skill_cols, role_grain = "role8")
 out <- file.path("inst", "extdata", "position_role_means.csv")
 fwrite(pm, out)
 cli::cli_alert_success("Saved {out}: {uniqueN(pm$role)} roles x {uniqueN(pm$stat_name)} stats = {nrow(pm)} rows")
 cat("\nrole coverage (player-matches):\n")
-ms[, .role := .player_role(ms)]
+ms[, .role := .player_role8(ms)]
 print(ms[, .(player_matches = .N), by = .role][order(-player_matches)])
 
 # ---------------------------------------------------------------------------

@@ -578,6 +578,19 @@ if (nrow(upcoming) > 0) {
                                   is_gk = .detect_gk_rows(match_stats)),
           by = "player_id"
         )
+        # Finer (role8) normalization role, resolved on the SAME full table and
+        # for the same scope reason. live_skills carries only the broad
+        # primary_position, so the finer bucket cannot be recovered downstream.
+        .role8_lookup <- local({
+          r8 <- .role16_to_role8(classify_role(match_stats$position,
+                                               match_stats$position_side))
+          mins <- as.numeric(match_stats$total_minutes); mins[is.na(mins)] <- 0
+          tab <- data.table::data.table(player_id = match_stats$player_id,
+                                        role8 = r8, mins = mins)[role8 != "OTHER"]
+          tab <- tab[, .(mins = sum(mins)), by = .(player_id, role8)]
+          data.table::setorder(tab, player_id, -mins)
+          tab[, .SD[1L], by = player_id][, .(player_id, role8)]
+        })
         match_stats <- match_stats[match_stats$player_id %in% upcoming_player_ids, ]
         message(sprintf("  Filtered match_stats to %d players (%d rows)",
                         length(upcoming_player_ids), nrow(match_stats)))
@@ -585,6 +598,7 @@ if (nrow(upcoming) > 0) {
         message(sprintf("  match_stats has no player_id column — using FULL table (%d rows), NOT filtered",
                         nrow(match_stats)))
         .is_gk_lookup <- NULL
+        .role8_lookup <- NULL
       }
 
       decay_params <- if (file.exists(decay_params_path)) readRDS(decay_params_path) else NULL
@@ -743,7 +757,16 @@ if (nrow(upcoming) > 0) {
         } else {
           rep(FALSE, nrow(live_skills))
         }
-        live_psr <- compute_player_psr(live_skills, center = TRUE, is_gk = live_is_gk)
+        live_role8 <- if (!is.null(.role8_lookup)) {
+          v <- .role8_lookup$role8[match(live_skills$player_id, .role8_lookup$player_id)]
+          v[is.na(v)] <- "OTHER"
+          v
+        } else {
+          NULL
+        }
+        live_psr <- compute_player_psr(live_skills, center = TRUE,
+                                       is_gk = live_is_gk,
+                                       role_override = live_role8)
         if (is.null(live_psr) || nrow(live_psr) == 0) {
           message("  PSR skipped: compute_player_psr returned no rows")
         } else if (!"player_id" %in% names(fixture_ratings)) {

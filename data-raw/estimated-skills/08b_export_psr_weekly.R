@@ -98,6 +98,29 @@ gc(verbose = FALSE)
                           is_gk = .detect_gk_rows(match_stats)),
   by = "player_id"
 )
+
+# Finer (role8) normalization role, resolved ONCE on the full match history for
+# exactly the same reasons as .is_gk_lookup above: `skills` is a different table
+# shape (one decay-weighted row per player) carrying only the BROAD
+# `primary_position`, from which the finer bucket is not recoverable. Resolved
+# by minutes-weighted mode so a centre-back who covered at right-back for three
+# games doesn't change bucket. Only consumed when the means artifact is keyed on
+# role8 -- `.position_normalize_skills()` detects the grain and ignores an
+# override it doesn't need.
+.role8_lookup <- local({
+  r8 <- .role16_to_role8(classify_role(match_stats$position,
+                                       match_stats$position_side))
+  mins <- as.numeric(match_stats$total_minutes)
+  mins[is.na(mins)] <- 0
+  tab <- data.table::data.table(player_id = match_stats$player_id,
+                                role8 = r8, mins = mins)[role8 != "OTHER"]
+  tab <- tab[, .(mins = sum(mins)), by = .(player_id, role8)]
+  data.table::setorder(tab, player_id, -mins)
+  tab[, .SD[1L], by = player_id][, .(player_id, role8)]
+})
+data.table::setkey(.role8_lookup, player_id)
+cat(sprintf("  role8 lookup: %s players\n",
+            format(nrow(.role8_lookup), big.mark = ",")))
 data.table::setkey(.is_gk_lookup, player_id)
 cat(sprintf("  Rows: %s | Date range: %s to %s\n",
             format(nrow(match_stats), big.mark = ","),
@@ -639,10 +662,16 @@ for (i in seq_along(snapshot_dates)) {
   skills_is_gk <- .is_gk_lookup$is_gk[match(skills$player_id, .is_gk_lookup$player_id)]
   skills_is_gk[is.na(skills_is_gk)] <- FALSE
 
+  # Same join, same degrade-safely convention: a player with no resolvable
+  # finer role falls to "OTHER", which the means artifact carries a row for.
+  skills_role8 <- .role8_lookup$role8[match(skills$player_id, .role8_lookup$player_id)]
+  skills_role8[is.na(skills_role8)] <- "OTHER"
+
   psr <- tryCatch(
     compute_player_psr(skills, center = TRUE, target = psr_target,
                        position_means = .psr_position_means,
-                       is_gk = skills_is_gk),
+                       is_gk = skills_is_gk,
+                       role_override = skills_role8),
     error = function(e) {
       cat(sprintf("  WARN: PSR failed for %s: %s\n", d, e$message))
       NULL
