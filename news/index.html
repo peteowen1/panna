@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.50</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.51</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,6 +39,14 @@
       <small>Source: <a href="https://github.com/peteowen1/panna/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.51" id="panna-0351-dev">panna 0.3.51 (dev)<a class="anchor" aria-label="anchor" href="#panna-0351-dev"></a></h2>
+<div class="section level3">
+<h3 id="give-compute_player_psr-the-same-substitute-keeper-routing-as-compute_player_psv-panna252-0-3-51">Give compute_player_psr() the same substitute-keeper routing as compute_player_psv() (panna#252)<a class="anchor" aria-label="anchor" href="#give-compute_player_psr-the-same-substitute-keeper-routing-as-compute_player_psv-panna252-0-3-51"></a></h3>
+<p><code><a href="../reference/compute_player_psr.html">compute_player_psr()</a></code> split GK/outfield via a plain <code>primary_position == "GK"</code> check and never used <code><a href="../reference/dot-detect_gk_rows.html">.detect_gk_rows()</a></code>, so PSR (and Piero) never benefited from the substitute-keeper majority-vote fix (panna#248). Added the same <code>is_gk</code> override pattern as <code><a href="../reference/compute_player_psv.html">compute_player_psv()</a></code> (panna#250), threaded through the three call sites that iterate over slices of a larger population: <code>06_seasonal_skill_ratings.R</code> (simple row-filter), <code>08b_export_ psr_weekly.R</code> and <code>02_player_ratings_to_team.R</code> (both need a join, since their skills tables come from a different-shaped estimator).</p>
+<p>Note: getting this into already-published historical PSR data needs a full <code>08b</code> rebuild (<code>PSR_FORCE_FULL_REBUILD=1</code>), not a plain re-run – queued, not run in this release (~4-6h for a bug affecting a small population).</p>
+</div>
+</div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.50" id="panna-0350-dev">panna 0.3.50 (dev)<a class="anchor" aria-label="anchor" href="#panna-0350-dev"></a></h2>
 <div class="section level3">

@@ -13,7 +13,8 @@ compute_player_psr(
   center = TRUE,
   target = c("blend", "xg", "goals"),
   position_means = NULL,
-  gk_goal_scale = 1
+  gk_goal_scale = 1,
+  is_gk = NULL
 )
 ```
 
@@ -65,6 +66,23 @@ compute_player_psr(
   panna#202 behaviour by passing `GK_PSR_GOAL_SCALE` and skipping
   [`apply_psr_calibration()`](https://peteowen1.github.io/panna/reference/apply_psr_calibration.md);
   doing both would double-scale keepers.
+
+- is_gk:
+
+  Optional logical vector, one per row of `skills`, marking rows to
+  route to the GK sub-model. `NULL` (default) computes it via
+  [`.detect_gk_rows`](https://peteowen1.github.io/panna/reference/dot-detect_gk_rows.md)
+  on `skills` – as of 2026-09-14, this is the SAME majority-vote GK
+  router
+  [`compute_player_psv`](https://peteowen1.github.io/panna/reference/compute_player_psv.md)
+  uses (previously this function used a plain `primary_position == "GK"`
+  check and never benefited from the substitute-keeper routing fix,
+  panna PR \#248). Pass this explicitly when scoring REPEATED SLICES of
+  a larger population (looping per season, date, or fixture) – see
+  [`compute_player_psv`](https://peteowen1.github.io/panna/reference/compute_player_psv.md)'s
+  `is_gk` docs for why
+  [`.detect_gk_rows()`](https://peteowen1.github.io/panna/reference/dot-detect_gk_rows.md)
+  is not scope-invariant on its own.
 
 ## Value
 

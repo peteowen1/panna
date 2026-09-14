@@ -13,7 +13,7 @@ features) and outfield players through the standard xG-based model."><meta prope
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.50</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.51</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -60,7 +60,8 @@ features) and outfield players through the standard xG-based model.</p>
 <span>  center <span class="op">=</span> <span class="cn">TRUE</span>,</span>
 <span>  target <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"blend"</span>, <span class="st">"xg"</span>, <span class="st">"goals"</span><span class="op">)</span>,</span>
 <span>  position_means <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  gk_goal_scale <span class="op">=</span> <span class="fl">1</span></span>
+<span>  gk_goal_scale <span class="op">=</span> <span class="fl">1</span>,</span>
+<span>  is_gk <span class="op">=</span> <span class="cn">NULL</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -108,6 +109,19 @@ cross-league offsets). Defaults to <code>1</code> (no-op). Retained only so a
 caller can pin the old panna#202 behaviour by passing
 <code>GK_PSR_GOAL_SCALE</code> and skipping <code><a href="apply_psr_calibration.html">apply_psr_calibration()</a></code>;
 doing both would double-scale keepers.</p></dd>
+
+
+<dt id="arg-is-gk">is_gk<a class="anchor" aria-label="anchor" href="#arg-is-gk"></a></dt>
+<dd><p>Optional logical vector, one per row of <code>skills</code>, marking
+rows to route to the GK sub-model. <code>NULL</code> (default) computes it via
+<code><a href="dot-detect_gk_rows.html">.detect_gk_rows</a></code> on <code>skills</code> – as of 2026-09-14, this
+is the SAME majority-vote GK router <code><a href="compute_player_psv.html">compute_player_psv</a></code>
+uses (previously this function used a plain <code>primary_position ==
+  "GK"</code> check and never benefited from the substitute-keeper routing fix,
+panna PR #248). Pass this explicitly when scoring REPEATED SLICES of a
+larger population (looping per season, date, or fixture) – see
+<code><a href="compute_player_psv.html">compute_player_psv</a></code>'s <code>is_gk</code> docs for why
+<code><a href="dot-detect_gk_rows.html">.detect_gk_rows()</a></code> is not scope-invariant on its own.</p></dd>
 
 </dl></div>
     <div class="section level2">
