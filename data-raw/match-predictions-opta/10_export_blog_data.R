@@ -73,7 +73,24 @@ seasonal_spm <- seasonal_results$seasonal_spm %>%
   group_by(.data[[dedup_key]]) %>%
   slice_max(total_minutes, n = 1, with_ties = FALSE) %>%
   ungroup() %>%
-  select(all_of(dedup_key), spm_overall = spm)
+  # Publish the OFFENSIVE and DEFENSIVE halves too, not just the overall.
+  # DSPM is the best defensive rating in the stack -- it scores +0.439 against
+  # the career-xRAPM-defence reference where the shipped DSV gets +0.241 and DSR
+  # +0.343, because its target is RAPM (already opponent- and teammate-
+  # controlled) rather than team-match xG conceded (which carries the whole
+  # territory confound). Dropping it here was why the best defensive number we
+  # have was invisible. Evidence: pannaverse
+  # docs/reviews/DEFENSIVE-RATING-INVESTIGATION-2026-09-15.md.
+  #
+  # SIGN: defense_spm is ALREADY positive=good -- it is trained on 05_spm.R's
+  # flipped `defense` column -- so unlike the raw-RAPM block below it needs no
+  # flip here. Verified empirically 2026-09-15 rather than taken from the
+  # comment: defensive positions outrank attacking ones (DM/CB/FB +0.00106 vs
+  # W/AM/ST +0.00078) and it correlates +0.335 with career xRAPM defence.
+  # Re-check if 05_spm.R's convention ever moves (panna#F1 shipped an inverted
+  # defensive rating to the blog for four days).
+  select(all_of(dedup_key), spm_overall = spm,
+         ospm = offense_spm, dspm = defense_spm)
 
 # Filter raw (prior-free) RAPM to latest season, drop replacement-pool row,
 # deduplicate, and flip defense to positive = good — same export-boundary

@@ -1914,3 +1914,174 @@ test_that(".role8_asof's tie-break does not depend on row order", {
   b <- .role8_asof(ms[c(2, 1)], "2024-06-01")$role8
   expect_equal(a, b)
 })
+
+# ---- territory-adjusted defensive features ------------------------------
+# Added 2026-09-15. A defensive box score is mostly a record of how much
+# territory a team lost: conceding 3+ comes with MORE clearances (6.27 vs 5.55)
+# and MORE aerials won (4.27 vs 2.96) than a clean sheet, so counting actions
+# counts being under siege. See pannaverse
+# docs/reviews/DEFENSIVE-RATING-INVESTIGATION-2026-09-15.md.
+
+test_that("territory adjustment scales by the OPPONENT's shot volume", {
+  # Team A faces a 20-shot barrage in m1 and 5 shots in m2. Identical raw
+  # clearances must be worth LESS in the barrage.
+  dt <- data.table::data.table(
+    match_id = c("m1","m1","m2","m2"), team_id = c("A","B","A","B"),
+    total_minutes = 90, shots_p90 = c(5, 20, 5, 5),
+    clearances_p90 = c(10, 10, 10, 10))
+  out <- .add_territory_features(data.table::copy(dt))
+  expect_true("clearances_p90_terr" %in% names(out))
+  expect_lt(out[match_id == "m1" & team_id == "A"]$clearances_p90_terr,
+            out[match_id == "m2" & team_id == "A"]$clearances_p90_terr)
+  expect_equal(out$clearances_p90, dt$clearances_p90)   # additive: original intact
+})
+
+test_that("a match with no resolvable opponent is left UNADJUSTED, not guessed", {
+  dt <- data.table::data.table(match_id = "solo", team_id = "A",
+                               total_minutes = 90, shots_p90 = 5,
+                               clearances_p90 = 10)
+  out <- .add_territory_features(data.table::copy(dt))
+  # The column must still EXIST (factor 1). A missing column would be silently
+  # dropped by a downstream feature list -- the 100%-NA-column failure mode.
+  expect_true("clearances_p90_terr" %in% names(out))
+  expect_equal(out$clearances_p90_terr, 10)
+})
+
+test_that("territory adjustment no-ops when its inputs are absent", {
+  dt <- data.table::data.table(match_id = "m", team_id = "A",
+                               total_minutes = 90, clearances_p90 = 3)
+  out <- .add_territory_features(data.table::copy(dt))
+  expect_false("clearances_p90_terr" %in% names(out))   # no shots_p90 -> no-op
+})
+
+# ---- SPMR: decayed SPM ---------------------------------------------------
+# Added 2026-09-15. Fills the one empty cell in the career/season/decayed
+# matrix. Justified by holdout rather than assumed: predicting held-out 2026
+# RAPM defence, decayed SPM 0.194 vs panna as-at 0.179, and it adds on top of
+# panna (adj R2 0.0360 -> 0.0617, partial corr +0.164).
+
+test_that("fit_spmr weights recent seasons more heavily", {
+  # Same minutes each season; the recent season must dominate.
+  sspm <- data.table::data.table(
+    player_id = "p1", season_end_year = c(2024L, 2025L, 2026L),
+    offense_spm = c(0, 0, 0), defense_spm = c(0, 0, 1), spm = c(0, 0, 1),
+    total_minutes = 1000)
+  out <- fit_spmr(sspm, halflife_seasons = 1)
+  # weights 0.25 / 0.5 / 1 -> the 2026 value carries 1/1.75 of the total
+  expect_equal(out$spmr, 1/1.75, tolerance = 1e-8)
+  expect_equal(out$ref_season, 2026L)
+  expect_equal(out$n_seasons, 3L)
+})
+
+test_that("fit_spmr weights by MINUTES as well as recency", {
+  # Two players, same seasons, but one played a full season and one a cameo in
+  # the season where they differ. Evidence should scale with minutes.
+  sspm <- data.table::data.table(
+    player_id = c("full","cameo"), season_end_year = 2026L,
+    offense_spm = 0, defense_spm = 1, spm = 1,
+    total_minutes = c(3000, 100))
+  out <- fit_spmr(sspm, min_minutes = 90)
+  # single season each, so the weighted mean is the same -- minutes matter only
+  # ACROSS seasons. This pins that behaviour rather than leaving it implied.
+  expect_equal(out[player_id == "full"]$spmr, out[player_id == "cameo"]$spmr)
+  sspm2 <- data.table::data.table(
+    player_id = "p", season_end_year = c(2025L, 2026L),
+    offense_spm = 0, defense_spm = c(0, 1), spm = c(0, 1),
+    total_minutes = c(3000, 100))
+  # recent season is up-weighted 2x by recency but 30x down by minutes
+  expect_lt(fit_spmr(sspm2, halflife_seasons = 1)$spmr, 0.1)
+})
+
+test_that("fit_spmr stamps a sign convention and the assert enforces it", {
+  sspm <- data.table::data.table(
+    player_id = "p1", season_end_year = 2026L, offense_spm = 0.1,
+    defense_spm = 0.2, spm = 0.3, total_minutes = 1000)
+  out <- fit_spmr(sspm)
+  expect_equal(unique(out$sign_convention), SPMR_SIGN_CONVENTION)
+  expect_true(.assert_spmr_sign_convention(out))
+  # an untagged artifact must ABORT, not be read as if it were fine -- this is
+  # the career_rapm.parquet failure mode
+  out2 <- data.table::copy(out); out2[, sign_convention := NULL]
+  expect_error(.assert_spmr_sign_convention(out2), "sign_convention")
+  out3 <- data.table::copy(out); out3[, sign_convention := "defense_negative_good"]
+  expect_error(.assert_spmr_sign_convention(out3), "expected")
+})
+
+test_that("fit_spmr refuses a table missing required columns", {
+  expect_error(fit_spmr(data.table::data.table(player_id = "p")), "missing")
+})
+
+# ---- fit_spmr() reliability shrinkage -----------------------------------
+# The shrinkage regression is the one numerically complex piece of fit_spmr()
+# and the tests above never reach it: they use 1-2 players, so the minutes
+# deciles collapse to fewer than the 4 rows `shrink_col()` needs and every one
+# of them exercises only the early-return path. These three force the real
+# branch, its fallback, and the coverage floor beside it.
+
+test_that("fit_spmr's shrinkage pulls low-minute players toward the mean", {
+  # 400 players with real talent spread, observed with noise that scales as
+  # 1/minutes -- the exact structure shrink_col() assumes. Minutes span three
+  # orders of magnitude so the deciles are well separated and the lm() branch
+  # is genuinely entered.
+  set.seed(42)
+  n <- 400L
+  mins <- round(exp(seq(log(120), log(3400), length.out = n)))
+  talent <- stats::rnorm(n, 0, 0.05)
+  obs <- talent + stats::rnorm(n, 0, 0.6 / sqrt(mins))
+  sspm <- data.table::data.table(
+    player_id = paste0("p", seq_len(n)), season_end_year = 2026L,
+    offense_spm = 0, defense_spm = obs, spm = obs, total_minutes = mins)
+  out <- fit_spmr(sspm, min_minutes = 90)
+  data.table::setkey(out, player_id)
+  got <- out[paste0("p", seq_len(n))]$spmr
+  m0  <- sum(obs * mins) / sum(mins)
+
+  # Shrinkage actually happened -- not the identity early-return.
+  expect_false(isTRUE(all.equal(got, obs)))
+  # Every value moved toward the grand mean, never past it or away from it.
+  expect_true(all(abs(got - m0) <= abs(obs - m0) + 1e-12))
+  # And it is minutes-ordered: the thinnest sample is pulled hardest.
+  pull <- abs(obs - m0) - abs(got - m0)
+  lo <- mins <= stats::quantile(mins, 0.2)
+  hi <- mins >= stats::quantile(mins, 0.8)
+  expect_gt(mean(pull[lo]), mean(pull[hi]))
+  # The point of the exercise: shrunk estimates track true talent better.
+  expect_gt(stats::cor(got, talent), stats::cor(obs, talent))
+})
+
+test_that("fit_spmr leaves values ALONE when variance is minutes-independent", {
+  # No 1/minutes structure to exploit, so the regression should find no
+  # within-player variance and shrink_col() must return the input untouched.
+  # A version that shrank anyway would quietly flatten real spread.
+  set.seed(7)
+  n <- 400L
+  mins <- round(exp(seq(log(120), log(3400), length.out = n)))
+  obs <- stats::rnorm(n, 0, 0.05)            # noise does NOT scale with minutes
+  sspm <- data.table::data.table(
+    player_id = paste0("p", seq_len(n)), season_end_year = 2026L,
+    offense_spm = 0, defense_spm = obs, spm = obs, total_minutes = mins)
+  out <- fit_spmr(sspm, min_minutes = 90)
+  data.table::setkey(out, player_id)
+  expect_equal(out[paste0("p", seq_len(n))]$spmr, obs, tolerance = 1e-8)
+})
+
+test_that("fit_spmr's coverage floor drops minutes-present-events-absent rows", {
+  # The defect this floor exists for: a player with real minutes and no events.
+  # SPM extrapolates them far past the top of the leaderboard, and a minutes
+  # floor cannot catch them because they clear it comfortably.
+  sspm <- data.table::data.table(
+    player_id = c("real", "ghost"), season_end_year = 2026L,
+    offense_spm = c(0.02, 0.45), defense_spm = c(0.01, 0.45),
+    spm = c(0.03, 0.45), total_minutes = c(2500, 1800),
+    touches_p90 = c(58, 0.4))
+  out <- fit_spmr(sspm, min_minutes = 90, coverage_col = "touches_p90",
+                  coverage_min = 5)
+  expect_equal(out$player_id, "real")
+  expect_false("ghost" %in% out$player_id)
+
+  # Without the floor the ghost survives AND outranks the real player, which is
+  # what makes this a silent failure rather than a visible one.
+  out2 <- fit_spmr(sspm, min_minutes = 90, coverage_col = NULL)
+  expect_true("ghost" %in% out2$player_id)
+  expect_gt(out2[player_id == "ghost"]$spmr, out2[player_id == "real"]$spmr)
+})
