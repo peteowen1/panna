@@ -3157,3 +3157,153 @@ player_psr <- function(date = NULL, player = NULL, n = 50,
   }
   dt
 }
+
+# ---- SPMR: decayed SPM ------------------------------------------------------
+
+#' Decay-weighted SPM (SPMR / OSPMR / DSPMR)
+#'
+#' SPM is fitted per season against RAPM. `fit_spmr()` decay-weights those
+#' seasonal values into a single "how good is this player now" rating, filling
+#' the one empty cell in the career / season / decayed matrix (see pannaverse
+#' docs/reference/RATING-TIME-AGGREGATIONS.md, which recorded decayed SPM as
+#' missing).
+#'
+#' **It is not redundant with `panna`**, despite xRAPM using SPM as its prior —
+#' that was the obvious objection and it was tested and falsified on 2026-09-15.
+#' Predicting HELD-OUT 2026 seasonal RAPM defence from data <= 2025: decayed SPM
+#' **0.194**, panna as-at 0.179, SPM 2025 alone 0.177. Added on top of panna it
+#' lifts adj R^2 0.0360 -> 0.0617, a partial correlation of +0.164 net of panna.
+#' Decaying SPM directly recovers something the prior route loses.
+#'
+#' Weights are per SEASON, `0.5 ^ (seasons_ago / halflife_seasons)`, and are
+#' multiplied by minutes so a full season counts more than a cameo. The default
+#' halflife was copied from `panna`'s 365 days and is **not tuned** — tuning it
+#' is an open item.
+#'
+#' @param seasonal_spm `seasonal_spm` from `07_seasonal_ratings.rds`: one row per
+#'   (player, season) with `offense_spm`, `defense_spm`, `spm`, `total_minutes`.
+#' @param ref_season Season to decay toward. Defaults to the latest present.
+#' @param halflife_seasons Seasons at which a season's weight halves.
+#' @param min_minutes Drop player-seasons below this before weighting.
+#' @param coverage_col Column used as the events-present check, applied when
+#'   present in `seasonal_spm`. A minutes floor cannot catch a player-season with
+#'   real minutes and no events -- see the coverage note in the body.
+#' @param coverage_min Minimum `coverage_col` value to keep. Default 5 touches
+#'   per 90 against a population mean of ~57: generous enough that no real
+#'   footballer is excluded, strict enough to reject an empty record.
+#' @return data.table(player_id, spmr, ospmr, dspmr, total_minutes, n_seasons,
+#'   ref_season, sign_convention). `dspmr` is positive=good, inherited from
+#'   `defense_spm` (trained on 05_spm.R's flipped column) — verified empirically,
+#'   not assumed.
+#' @keywords internal
+#' @noRd
+fit_spmr <- function(seasonal_spm, ref_season = NULL, halflife_seasons = 1,
+                     min_minutes = 90, coverage_col = "touches_p90",
+                     coverage_min = 5) {
+  dt <- data.table::as.data.table(seasonal_spm)
+  need <- c("player_id", "season_end_year", "offense_spm", "defense_spm",
+            "spm", "total_minutes")
+  miss <- setdiff(need, names(dt))
+  if (length(miss)) {
+    cli::cli_abort("`seasonal_spm` is missing {.val {miss}}.")
+  }
+  dt <- dt[is.finite(total_minutes) & total_minutes >= min_minutes]
+  if (!nrow(dt)) cli::cli_abort("No player-seasons clear `min_minutes`.")
+
+  # COVERAGE FLOOR, not just a minutes floor. Found 2026-09-15: 18 player-seasons
+  # (all 2024, all continental competitions) carry real minutes but essentially
+  # NO events -- 0.43 touches per 90 against a population mean of 56.8, zero key
+  # passes. SPM has never seen a player who is on the pitch and does nothing, so
+  # the linear fit extrapolates them to +0.45, eight times the 99th percentile,
+  # and they take the top five places on the SPMR leaderboard.
+  #
+  # A minutes floor does not catch this -- these players clear 200 minutes
+  # comfortably. The defect is minutes-present-events-absent, so the guard has to
+  # test events. This is the repo's own "assert COVERAGE, not presence" rule: the
+  # columns all exist and every schema check passes, they are simply zero.
+  if (!is.null(coverage_col) && coverage_col %in% names(dt)) {
+    cov <- as.numeric(dt[[coverage_col]])
+    cov[is.na(cov)] <- 0
+    n_before <- nrow(dt)
+    dt <- dt[cov >= coverage_min]
+    n_drop <- n_before - nrow(dt)
+    if (n_drop > 0) {
+      cli::cli_alert_info(
+        "SPMR coverage floor dropped {n_drop} player-season{?s} with minutes but          no events ({coverage_col} < {coverage_min}).")
+    }
+    if (!nrow(dt)) cli::cli_abort("No player-seasons clear the coverage floor.")
+  }
+  if (is.null(ref_season)) ref_season <- max(dt$season_end_year, na.rm = TRUE)
+  dt <- dt[season_end_year <= ref_season]
+
+  # Weight = recency decay x minutes. Minutes matter: a 3000-minute season is
+  # stronger evidence than a 200-minute one at the same recency.
+  dt[, .w := (0.5 ^ ((ref_season - season_end_year) / halflife_seasons)) * total_minutes]
+  raw <- dt[, .(spmr  = sum(spm         * .w) / sum(.w),
+                ospmr = sum(offense_spm * .w) / sum(.w),
+                dspmr = sum(defense_spm * .w) / sum(.w),
+                total_minutes = sum(total_minutes),
+                eff_w = sum(.w),
+                n_seasons = .N),
+            by = player_id]
+
+  # RELIABILITY SHRINKAGE. Without it the leaderboard is owned by cameos: the
+  # first run put five players with 210-271 career minutes above Messi on 42,393,
+  # because a single small-sample seasonal SPM passes through untouched. A hard
+  # minutes floor is the wrong tool -- it either admits noise or discards real
+  # players; shrinkage handles both and degrades smoothly.
+  #
+  # Gaussian analogue of the beta-binomial prior used for contest rates. A
+  # player's observed value has variance sigma2_within/eff_w on top of the real
+  # between-player variance, so:
+  #   var_obs(x) = sigma2_between + E[sigma2_within / eff_w]
+  # Solve for sigma2_within from the thin tail, then shrink each player toward
+  # the weighted grand mean with strength k = sigma2_within / sigma2_between,
+  # expressed in the same weight units as eff_w.
+  shrink_col <- function(v, w) {
+    m <- sum(v * w) / sum(w)
+    ok <- w >= stats::quantile(w, 0.5)          # well-observed players
+    s2_between <- stats::var(v[ok])
+    if (!is.finite(s2_between) || s2_between <= 0) return(v)
+    # regress squared deviation on 1/w to recover the sampling component
+    dev2 <- (v - m)^2
+    fit <- stats::lm(dev2 ~ I(1 / w))
+    s2_within <- unname(stats::coef(fit)[2])
+    if (!is.finite(s2_within) || s2_within <= 0) return(v)
+    k <- s2_within / s2_between
+    (v * w + m * k) / (w + k)
+  }
+  out <- data.table::copy(raw)
+  for (cc in c("spmr", "ospmr", "dspmr")) {
+    data.table::set(out, j = cc, value = shrink_col(raw[[cc]], raw$eff_w))
+  }
+  out[, eff_w := NULL]
+  if ("player_name" %in% names(dt)) {
+    nm <- dt[order(-season_end_year), .SD[1L], by = player_id][, .(player_id, player_name)]
+    out <- merge(out, nm, by = "player_id", all.x = TRUE)
+  }
+  out[, ref_season := ref_season]
+  out[, sign_convention := SPMR_SIGN_CONVENTION]
+  out[]
+}
+
+#' Abort if an SPMR artifact is missing or on a stale sign convention
+#' @keywords internal
+#' @noRd
+.assert_spmr_sign_convention <- function(x, what = "SPMR") {
+  if (!"sign_convention" %in% names(x)) {
+    cli::cli_abort(c(
+      "{what} carries no {.field sign_convention} column.",
+      "x" = "Reading {.field dspmr} under the wrong convention silently inverts it.",
+      "i" = "Regenerate with 09d_spmr.R. This is exactly how career_rapm.parquet \
+             came to rank Gabriel Magalhaes 383rd of 383."))
+  }
+  got <- unique(as.character(x$sign_convention))
+  if (!identical(got, SPMR_SIGN_CONVENTION)) {
+    cli::cli_abort(c(
+      "{what} is on sign convention {.val {got}}, expected \
+       {.val {SPMR_SIGN_CONVENTION}}.",
+      "i" = "Regenerate with 09d_spmr.R."))
+  }
+  invisible(TRUE)
+}

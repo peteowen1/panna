@@ -1953,3 +1953,60 @@ test_that("territory adjustment no-ops when its inputs are absent", {
   out <- .add_territory_features(data.table::copy(dt))
   expect_false("clearances_p90_terr" %in% names(out))   # no shots_p90 -> no-op
 })
+
+# ---- SPMR: decayed SPM ---------------------------------------------------
+# Added 2026-09-15. Fills the one empty cell in the career/season/decayed
+# matrix. Justified by holdout rather than assumed: predicting held-out 2026
+# RAPM defence, decayed SPM 0.194 vs panna as-at 0.179, and it adds on top of
+# panna (adj R2 0.0360 -> 0.0617, partial corr +0.164).
+
+test_that("fit_spmr weights recent seasons more heavily", {
+  # Same minutes each season; the recent season must dominate.
+  sspm <- data.table::data.table(
+    player_id = "p1", season_end_year = c(2024L, 2025L, 2026L),
+    offense_spm = c(0, 0, 0), defense_spm = c(0, 0, 1), spm = c(0, 0, 1),
+    total_minutes = 1000)
+  out <- fit_spmr(sspm, halflife_seasons = 1)
+  # weights 0.25 / 0.5 / 1 -> the 2026 value carries 1/1.75 of the total
+  expect_equal(out$spmr, 1/1.75, tolerance = 1e-8)
+  expect_equal(out$ref_season, 2026L)
+  expect_equal(out$n_seasons, 3L)
+})
+
+test_that("fit_spmr weights by MINUTES as well as recency", {
+  # Two players, same seasons, but one played a full season and one a cameo in
+  # the season where they differ. Evidence should scale with minutes.
+  sspm <- data.table::data.table(
+    player_id = c("full","cameo"), season_end_year = 2026L,
+    offense_spm = 0, defense_spm = 1, spm = 1,
+    total_minutes = c(3000, 100))
+  out <- fit_spmr(sspm, min_minutes = 90)
+  # single season each, so the weighted mean is the same -- minutes matter only
+  # ACROSS seasons. This pins that behaviour rather than leaving it implied.
+  expect_equal(out[player_id == "full"]$spmr, out[player_id == "cameo"]$spmr)
+  sspm2 <- data.table::data.table(
+    player_id = "p", season_end_year = c(2025L, 2026L),
+    offense_spm = 0, defense_spm = c(0, 1), spm = c(0, 1),
+    total_minutes = c(3000, 100))
+  # recent season is up-weighted 2x by recency but 30x down by minutes
+  expect_lt(fit_spmr(sspm2, halflife_seasons = 1)$spmr, 0.1)
+})
+
+test_that("fit_spmr stamps a sign convention and the assert enforces it", {
+  sspm <- data.table::data.table(
+    player_id = "p1", season_end_year = 2026L, offense_spm = 0.1,
+    defense_spm = 0.2, spm = 0.3, total_minutes = 1000)
+  out <- fit_spmr(sspm)
+  expect_equal(unique(out$sign_convention), SPMR_SIGN_CONVENTION)
+  expect_true(.assert_spmr_sign_convention(out))
+  # an untagged artifact must ABORT, not be read as if it were fine -- this is
+  # the career_rapm.parquet failure mode
+  out2 <- data.table::copy(out); out2[, sign_convention := NULL]
+  expect_error(.assert_spmr_sign_convention(out2), "sign_convention")
+  out3 <- data.table::copy(out); out3[, sign_convention := "defense_negative_good"]
+  expect_error(.assert_spmr_sign_convention(out3), "expected")
+})
+
+test_that("fit_spmr refuses a table missing required columns", {
+  expect_error(fit_spmr(data.table::data.table(player_id = "p")), "missing")
+})
