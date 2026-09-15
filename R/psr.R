@@ -3229,7 +3229,8 @@ fit_spmr <- function(seasonal_spm, ref_season = NULL, halflife_seasons = 1,
     n_drop <- n_before - nrow(dt)
     if (n_drop > 0) {
       cli::cli_alert_info(
-        "SPMR coverage floor dropped {n_drop} player-season{?s} with minutes but          no events ({coverage_col} < {coverage_min}).")
+        "SPMR coverage floor dropped {n_drop} player-season{?s} with minutes \\
+         but no events ({coverage_col} < {coverage_min}).")
     }
     if (!nrow(dt)) cli::cli_abort("No player-seasons clear the coverage floor.")
   }
