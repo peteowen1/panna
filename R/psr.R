@@ -3260,22 +3260,42 @@ fit_spmr <- function(seasonal_spm, ref_season = NULL, halflife_seasons = 1,
   # Solve for sigma2_within from the thin tail, then shrink each player toward
   # the weighted grand mean with strength k = sigma2_within / sigma2_between,
   # expressed in the same weight units as eff_w.
-  shrink_col <- function(v, w) {
-    m <- sum(v * w) / sum(w)
-    ok <- w >= stats::quantile(w, 0.5)          # well-observed players
-    s2_between <- stats::var(v[ok])
-    if (!is.finite(s2_between) || s2_between <= 0) return(v)
-    # regress squared deviation on 1/w to recover the sampling component
-    dev2 <- (v - m)^2
-    fit <- stats::lm(dev2 ~ I(1 / w))
-    s2_within <- unname(stats::coef(fit)[2])
-    if (!is.finite(s2_within) || s2_within <= 0) return(v)
+  # EXPOSURE IS MINUTES, not the decay weight. A first attempt shrank on `eff_w`
+  # and did essentially nothing, because decay crushes an old season to ~0
+  # regardless of how many minutes it was -- eff_w's bottom decile has a median
+  # of 0, conflating "few minutes" with "long ago". The players who actually need
+  # shrinking are low-MINUTES, so minutes is the exposure.
+  #
+  # Estimate the prior across minutes deciles rather than per row: within a
+  # decile, var(v) = s2_between + s2_within / minutes, so regressing decile
+  # variance on 1/minutes recovers both. Row-level regression is dominated by the
+  # 1/w explosion at tiny w and is numerically useless.
+  #
+  # Measured 2026-09-15 on DSPMR: k = 674 minutes. Only the DEFENSIVE component
+  # shows this at all -- decile-1/decile-10 sd ratio is 1.73 for dspmr against
+  # 0.92 for spmr and 0.85 for ospmr. An earlier run on SPMR overall found no
+  # pattern and correctly applied nothing, because the well-determined offensive
+  # component dominates the pooled statistic. Check the defensive half separately.
+  shrink_col <- function(v, mins) {
+    m0 <- sum(v * mins) / sum(mins)
+    q <- stats::quantile(mins, 0:10 / 10)
+    dec <- cut(mins, unique(q), include.lowest = TRUE, labels = FALSE)
+    agg <- data.table::data.table(v = v, mins = mins, dec = dec)[
+      !is.na(dec), .(vr = stats::var(v), md = stats::median(mins)), by = dec]
+    agg <- agg[is.finite(vr) & md > 0]
+    if (nrow(agg) < 4) return(v)
+    fit <- stats::lm(vr ~ I(1 / md), data = agg)
+    s2_between <- unname(stats::coef(fit)[1])
+    s2_within  <- unname(stats::coef(fit)[2])
+    if (!is.finite(s2_between) || !is.finite(s2_within) ||
+        s2_between <= 0 || s2_within <= 0) return(v)
     k <- s2_within / s2_between
-    (v * w + m * k) / (w + k)
+    (v * mins + m0 * k) / (mins + k)
   }
   out <- data.table::copy(raw)
   for (cc in c("spmr", "ospmr", "dspmr")) {
-    data.table::set(out, j = cc, value = shrink_col(raw[[cc]], raw$eff_w))
+    data.table::set(out, j = cc,
+                    value = shrink_col(raw[[cc]], raw$total_minutes))
   }
   out[, eff_w := NULL]
   if ("player_name" %in% names(dt)) {
