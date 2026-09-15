@@ -280,13 +280,30 @@ if (.wc11_available) {
     } else NULL
   }
 
+  # SPMR joined 2026-09-15: the blog's Piero blend took SPMR at weight 0.20
+  # (panna .4 / PSR .3 / SPMR .2 / EPR .1). The World Cup pages RECOMPUTE Piero
+  # client-side over this squads file rather than reading the shipped column
+  # (world-cup-player-ratings.qmd:165, world-cup-team.qmd:1062), so without an
+  # spmr column here their blend renormalizes to ~.5/.375/.125 and the same
+  # player shows a different Piero on a WC page than on the main ratings page --
+  # the divergence docs/reviews/PIERO-POOL-INDEPENDENCE.md exists to prevent.
+  sq_spmr <- {
+    sp <- file.path(opta_data_dir(), "career_spm.parquet")
+    if (file.exists(sp)) {
+      x <- as.data.table(read_parquet(sp))
+      .assert_spmr_sign_convention(x)
+      x[, .(player_id, spmr)]
+    } else NULL
+  }
+
   squad_out <- squads[, .(team = team_name, player_id, player_name, position,
                           expected_minutes_norm, is_starter_pred)]
   squad_out[, group := unname(team_group[team])]
   squad_out <- merge(squad_out, sq_panna, by = "player_id", all.x = TRUE)
   if (!is.null(sq_psr)) squad_out <- merge(squad_out, sq_psr, by = "player_id", all.x = TRUE)
   if (!is.null(sq_epr)) squad_out <- merge(squad_out, sq_epr, by = "player_id", all.x = TRUE)
-  for (col in c("panna", "offense", "defense", "epr", "psr", "total_minutes"))
+  if (!is.null(sq_spmr)) squad_out <- merge(squad_out, sq_spmr, by = "player_id", all.x = TRUE)
+  for (col in c("panna", "offense", "defense", "epr", "psr", "spmr", "total_minutes"))
     if (!col %in% names(squad_out)) squad_out[[col]] <- NA_real_
 
   # --- Team strength = Σ_squad (expected_minutes_norm / 90) * player_metric.
@@ -442,7 +459,8 @@ if (.wc11_available) {
   setcolorder(squad_out, c("team", "group", "player_id", "player_name", "position",
                            "club_name", "club_last_seen",
                            "expected_minutes_norm", "is_starter_pred",
-                           "panna", "offense", "defense", "epr", "psr", "total_minutes"))
+                           "panna", "offense", "defense", "epr", "psr", "spmr",
+                           "total_minutes"))
   setorder(squad_out, team, -expected_minutes_norm)
   write_parquet(squad_out, file.path(cache_dir, "wc2026_squads.parquet"))
   message(sprintf("  wc2026_squads.parquet: %d players across %d squads (%d with panna ratings)",
