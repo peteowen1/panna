@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.53</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.55</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,6 +39,28 @@
       <small>Source: <a href="https://github.com/peteowen1/panna/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.55" id="panna-0355-dev">panna 0.3.55 (dev)<a class="anchor" aria-label="anchor" href="#panna-0355-dev"></a></h2>
+<div class="section level3">
+<h3 id="spmr-decay-weighted-spm-becomes-a-rating-in-its-own-right-0-3-55">SPMR: decay-weighted SPM becomes a rating in its own right<a class="anchor" aria-label="anchor" href="#spmr-decay-weighted-spm-becomes-a-rating-in-its-own-right-0-3-55"></a></h3>
+<p><code>fit_spmr()</code> and <code>data-raw/estimated-skills/09d_spmr.R</code> produce <code>career_spm.parquet</code> (spmr / ospmr / dspmr), filling the one empty cell in the career / season / decayed matrix – RAPM and xRAPM both had a decayed form, SPM did not.</p>
+<p>The obvious objection is that xRAPM already uses SPM as its prior, so a decayed SPM should just re-derive <code>panna</code>. Tested and falsified: predicting held-out 2026 seasonal RAPM defence from data &lt;= 2025, decayed SPM scores 0.194 against panna-as-at’s 0.179 and single-season SPM’s 0.177, and adding it on top of panna lifts adj R-squared 0.0360 -&gt; 0.0617 (partial correlation +0.164 net of panna).</p>
+<p>Halflife tuned rather than copied: walk-forward over 8 target seasons (2019-2026), 39,684 pairs per arm, all arms scored in one pass on identical rows. The value is unresolvable across [0.75, 2], but decay belongs there at all – 8/8 seasons on every component (defence vs no decay +0.0063, t=6.15; vs last-season-only +0.0194, t=11.49). Kept at 1; do not re-sweep it.</p>
+<p>Two guards the first run needed. A <strong>coverage floor</strong>: 18 player-seasons with real minutes and ~0.43 touches/90 took the top five leaderboard places at eight times the 99th percentile, and a minutes floor cannot catch them because they clear it comfortably. And <strong>minutes-exposure shrinkage</strong>: five players with 210-271 career minutes ranked above Messi on 42,393. Exposure had to be minutes, not the decay weight, whose bottom decile has a median of 0 and so conflates “few minutes” with “long ago”.</p>
+</div>
+<div class="section level3">
+<h3 id="spms-offensive-and-defensive-halves-are-now-exported-0-3-55">SPM’s offensive and defensive halves are now exported<a class="anchor" aria-label="anchor" href="#spms-offensive-and-defensive-halves-are-now-exported-0-3-55"></a></h3>
+<p><code>10_export_blog_data.R</code> took only <code>spm_overall</code> and dropped <code>offense_spm</code>/<code>defense_spm</code>, which is why the strongest defensive rating in the stack was invisible downstream. DSPM scores +0.439 against the career reference where DSR manages +0.343 and shipped DSV +0.241, against a ceiling of +0.800. Additive; sign verified empirically rather than trusted from the comment.</p>
+</div>
+<div class="section level3">
+<h3 id="territory-adjusted-defensive-features-deliberately-dormant-0-3-55">Territory-adjusted defensive features, deliberately dormant<a class="anchor" aria-label="anchor" href="#territory-adjusted-defensive-features-deliberately-dormant-0-3-55"></a></h3>
+<p><code>.add_territory_features()</code> divides defensive volume stats by opponent shot volume, rescaled to a median match, writing <code>&lt;col&gt;_terr</code> beside the originals. Nothing consumes them yet, so no current output changes. They live in the shared <code><a href="../reference/enrich_match_stats_with_xmetrics.html">enrich_match_stats_with_xmetrics()</a></code> helper so a later retrain cannot introduce train/serve skew.</p>
+</div>
+<div class="section level3">
+<h3 id="piero-takes-spmr-at-weight-0-3-55">Piero takes SPMR at weight 0.20<a class="anchor" aria-label="anchor" href="#piero-takes-spmr-at-weight-0-3-55"></a></h3>
+<p><code>12_export_wc2026_blog.R</code> joins SPMR into the WC squads file. The World Cup pages recompute Piero client-side, so without an <code>spmr</code> column there they would renormalize to ~.5/.375/.125 while every other page used .4/.3/.2/.1 – the same player reading differently on two pages.</p>
+</div>
+</div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.53" id="panna-0353-dev">panna 0.3.53 (dev)<a class="anchor" aria-label="anchor" href="#panna-0353-dev"></a></h2>
 <div class="section level3">

@@ -1,5 +1,62 @@
 # Changelog
 
+## panna 0.3.55 (dev)
+
+### SPMR: decay-weighted SPM becomes a rating in its own right
+
+`fit_spmr()` and `data-raw/estimated-skills/09d_spmr.R` produce
+`career_spm.parquet` (spmr / ospmr / dspmr), filling the one empty cell
+in the career / season / decayed matrix – RAPM and xRAPM both had a
+decayed form, SPM did not.
+
+The obvious objection is that xRAPM already uses SPM as its prior, so a
+decayed SPM should just re-derive `panna`. Tested and falsified:
+predicting held-out 2026 seasonal RAPM defence from data \<= 2025,
+decayed SPM scores 0.194 against panna-as-at’s 0.179 and single-season
+SPM’s 0.177, and adding it on top of panna lifts adj R-squared 0.0360
+-\> 0.0617 (partial correlation +0.164 net of panna).
+
+Halflife tuned rather than copied: walk-forward over 8 target seasons
+(2019-2026), 39,684 pairs per arm, all arms scored in one pass on
+identical rows. The value is unresolvable across \[0.75, 2\], but decay
+belongs there at all – 8/8 seasons on every component (defence vs no
+decay +0.0063, t=6.15; vs last-season-only +0.0194, t=11.49). Kept at 1;
+do not re-sweep it.
+
+Two guards the first run needed. A **coverage floor**: 18 player-seasons
+with real minutes and ~0.43 touches/90 took the top five leaderboard
+places at eight times the 99th percentile, and a minutes floor cannot
+catch them because they clear it comfortably. And **minutes-exposure
+shrinkage**: five players with 210-271 career minutes ranked above Messi
+on 42,393. Exposure had to be minutes, not the decay weight, whose
+bottom decile has a median of 0 and so conflates “few minutes” with
+“long ago”.
+
+### SPM’s offensive and defensive halves are now exported
+
+`10_export_blog_data.R` took only `spm_overall` and dropped
+`offense_spm`/`defense_spm`, which is why the strongest defensive rating
+in the stack was invisible downstream. DSPM scores +0.439 against the
+career reference where DSR manages +0.343 and shipped DSV +0.241,
+against a ceiling of +0.800. Additive; sign verified empirically rather
+than trusted from the comment.
+
+### Territory-adjusted defensive features, deliberately dormant
+
+`.add_territory_features()` divides defensive volume stats by opponent
+shot volume, rescaled to a median match, writing `<col>_terr` beside the
+originals. Nothing consumes them yet, so no current output changes. They
+live in the shared
+[`enrich_match_stats_with_xmetrics()`](https://peteowen1.github.io/panna/reference/enrich_match_stats_with_xmetrics.md)
+helper so a later retrain cannot introduce train/serve skew.
+
+### Piero takes SPMR at weight 0.20
+
+`12_export_wc2026_blog.R` joins SPMR into the WC squads file. The World
+Cup pages recompute Piero client-side, so without an `spmr` column there
+they would renormalize to ~.5/.375/.125 while every other page used
+.4/.3/.2/.1 – the same player reading differently on two pages.
+
 ## panna 0.3.53 (dev)
 
 ### Position normalization now keys on a finer 8-bucket role (GK/CB/FB/DM/CM/AM/W/ST)
