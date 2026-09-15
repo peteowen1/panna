@@ -20,8 +20,27 @@
 # Evidence: pannaverse docs/reviews/DEFENSIVE-RATING-INVESTIGATION-2026-09-15.md
 # Registry:  pannaverse docs/reference/METRIC-DEFINITIONS.md
 #
-# OPEN: halflife_seasons = 1 was copied from panna's 365 days, not tuned. Tune it
-# against the same holdout before treating the value as settled.
+# HALFLIFE TUNED 2026-09-15 -- keep 1, and do not re-sweep it. Walk-forward over
+# 8 target seasons (2019-2026), predicting held-out seasonal RAPM from data
+# <= T-1, 39,684 player-season pairs per arm, all arms scored in ONE pass on
+# identical rows so the per-season comparison is paired.
+#
+# The halflife itself is unresolvable: hl 1.5 beats hl 1 by +0.0005 Spearman
+# (6/8 seasons, t=1.46) and hl 2 by +0.0001 (4/8, t=0.17) -- both inside noise.
+# The response is flat across [0.75, 2] and only degrades outside it.
+#
+# What IS resolved is that decay belongs here at all, 8/8 seasons on every
+# component:
+#   defence  hl1 vs no decay (hl 100)  +0.0063  t=6.15
+#   defence  hl1 vs last season only   +0.0194  t=11.49
+#   offence  hl1 vs no decay           +0.0119  t=6.25
+#   overall  hl1 vs no decay           +0.0143  t=11.02
+#
+# So pooling seasons and down-weighting old ones both earn their place; the
+# exact rate does not matter. Limiting cases converged as pre-registered
+# (hl->0 reproduces last-season-only, hl->Inf reproduces the career mean),
+# which is what licenses reading the flat middle as real rather than as a bug.
+# Sweep detail cached at cache-skills/spmr_halflife_sweep.rds.
 #
 # Inputs:  cache-opta/07_seasonal_ratings.rds ($seasonal_spm)
 # Output:  pannadata/data/opta/career_spm.parquet
