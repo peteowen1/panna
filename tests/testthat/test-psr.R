@@ -1914,3 +1914,42 @@ test_that(".role8_asof's tie-break does not depend on row order", {
   b <- .role8_asof(ms[c(2, 1)], "2024-06-01")$role8
   expect_equal(a, b)
 })
+
+# ---- territory-adjusted defensive features ------------------------------
+# Added 2026-09-15. A defensive box score is mostly a record of how much
+# territory a team lost: conceding 3+ comes with MORE clearances (6.27 vs 5.55)
+# and MORE aerials won (4.27 vs 2.96) than a clean sheet, so counting actions
+# counts being under siege. See pannaverse
+# docs/reviews/DEFENSIVE-RATING-INVESTIGATION-2026-09-15.md.
+
+test_that("territory adjustment scales by the OPPONENT's shot volume", {
+  # Team A faces a 20-shot barrage in m1 and 5 shots in m2. Identical raw
+  # clearances must be worth LESS in the barrage.
+  dt <- data.table::data.table(
+    match_id = c("m1","m1","m2","m2"), team_id = c("A","B","A","B"),
+    total_minutes = 90, shots_p90 = c(5, 20, 5, 5),
+    clearances_p90 = c(10, 10, 10, 10))
+  out <- .add_territory_features(data.table::copy(dt))
+  expect_true("clearances_p90_terr" %in% names(out))
+  expect_lt(out[match_id == "m1" & team_id == "A"]$clearances_p90_terr,
+            out[match_id == "m2" & team_id == "A"]$clearances_p90_terr)
+  expect_equal(out$clearances_p90, dt$clearances_p90)   # additive: original intact
+})
+
+test_that("a match with no resolvable opponent is left UNADJUSTED, not guessed", {
+  dt <- data.table::data.table(match_id = "solo", team_id = "A",
+                               total_minutes = 90, shots_p90 = 5,
+                               clearances_p90 = 10)
+  out <- .add_territory_features(data.table::copy(dt))
+  # The column must still EXIST (factor 1). A missing column would be silently
+  # dropped by a downstream feature list -- the 100%-NA-column failure mode.
+  expect_true("clearances_p90_terr" %in% names(out))
+  expect_equal(out$clearances_p90_terr, 10)
+})
+
+test_that("territory adjustment no-ops when its inputs are absent", {
+  dt <- data.table::data.table(match_id = "m", team_id = "A",
+                               total_minutes = 90, clearances_p90 = 3)
+  out <- .add_territory_features(data.table::copy(dt))
+  expect_false("clearances_p90_terr" %in% names(out))   # no shots_p90 -> no-op
+})

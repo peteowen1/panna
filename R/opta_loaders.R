@@ -1069,6 +1069,19 @@ enrich_match_stats_with_xmetrics <- function(match_stats, verbose = TRUE,
   }
   if (verbose) cat(sprintf("  xMetrics joined: %d cols (%s); %d/%d league-seasons missing bymatch\n",
                            length(added), paste(added, collapse = ", "), n_missing, nrow(ls_pairs)))
+
+  # Territory-adjusted defensive volumes, added HERE rather than in each caller
+  # for the same reason the xMetrics join lives here: this helper is what makes
+  # training and scoring see an identical feature set. Step 2, step 7's outfield
+  # path and step 7's separate GK extraction all call it, so a feature added
+  # anywhere else is a train/serve skew waiting to happen. Purely ADDITIVE --
+  # writes `<feature>_terr` and leaves every original column alone, so no
+  # existing fit changes until a feature list asks for them.
+  match_stats <- .add_territory_features(match_stats)
+  if (verbose) {
+    nt <- length(grep("_terr$", names(match_stats)))
+    cat(sprintf("  territory-adjusted defensive cols: %d\n", nt))
+  }
   match_stats
 }
 

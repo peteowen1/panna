@@ -3072,3 +3072,88 @@ player_psr <- function(date = NULL, player = NULL, n = 50,
 
   psr
 }
+
+# ---- territory-adjusted defensive features -----------------------------------
+
+#' Defensive volume features, adjusted for how much defending was required
+#'
+#' A defensive box score is mostly a record of how much territory a team lost.
+#' Measured 2026-09-15 on 280 ENG centre-back performances: conceding three or
+#' more comes with MORE clearances (6.27 vs 5.55) and MORE aerials won (4.27 vs
+#' 2.96) than a clean sheet, so counting actions counts being under siege. The
+#' shipped DSV pays a centre-back +0.05 for conceding 3+, and four of its six
+#' worst-rated performances are clean sheets.
+#'
+#' Dividing each defensive volume by the opponent's shot count in that
+#' team-match, rescaled to a median-territory match, removes that. Combined with
+#' role8 position normalization it moves centre-backs from Spearman -0.229 to
+#' +0.346 against the opponent-controlled reference — **neither treatment works
+#' alone** (territory only -0.034, role8 only -0.134). Evidence and the three
+#' denominators tried: pannaverse
+#' docs/reviews/DEFENSIVE-RATING-INVESTIGATION-2026-09-15.md.
+#'
+#' ADDITIVE by design: writes `<feature>_terr` columns and leaves the originals
+#' untouched, so nothing downstream changes until a feature list asks for them.
+#'
+#' Lives beside the xmetrics enrichment and is called from the same shared
+#' helper so training and scoring cannot drift — the exact train/serve skew that
+#' helper exists to prevent.
+#'
+#' @param dt Match-level stats with `match_id`, `team_id`, `total_minutes` and
+#'   `shots_p90`. Needs BOTH teams of a match present to find the opponent; rows
+#'   whose match has only one team get no adjustment (factor 1) rather than a
+#'   wrong one.
+#' @param cols Defensive volume columns to adjust. Defaults to the set tested.
+#' @return `dt` by reference, with `<col>_terr` added.
+#' @keywords internal
+#' @noRd
+.add_territory_features <- function(dt, cols = NULL) {
+  need <- c("match_id", "team_id", "total_minutes", "shots_p90")
+  if (!all(need %in% names(dt))) return(dt)
+  if (is.null(cols)) {
+    cols <- c("clearances_p90", "blocks_p90", "interceptions_p90",
+              "interceptions_won_p90", "tackles_won_p90", "tackles_p90",
+              "aerial_won_p90", "aerial_lost_p90", "duel_won_p90",
+              "duel_lost_p90", "ball_recovery_p90", "poss_won_def3rd_p90",
+              "blocked_passes_p90", "clearances_effective_p90",
+              "last_man_tackle_p90", "six_yard_block_p90")
+  }
+  cols <- intersect(cols, names(dt))
+  if (!length(cols)) return(dt)
+
+  mins <- as.numeric(dt$total_minutes); mins[is.na(mins)] <- 0
+  sh <- as.numeric(dt$shots_p90); sh[is.na(sh)] <- 0
+  tm <- data.table::data.table(match_id = dt$match_id, team_id = dt$team_id,
+                               s = sh * mins / 90)
+  tm <- tm[, .(s = sum(s)), by = .(match_id, team_id)]
+  two <- tm[, .N, by = match_id][N == 2L, match_id]
+  tm <- tm[match_id %in% two]
+  opp <- data.table::copy(tm)
+  data.table::setnames(opp, c("team_id", "s"), c(".o_team", ".opp_shots"))
+  pr <- merge(tm, opp, by = "match_id", allow.cartesian = TRUE)[
+    team_id != .o_team, .(match_id, team_id, .opp_shots)]
+
+  key <- paste(dt$match_id, dt$team_id)
+  terr <- pr$.opp_shots[match(key, paste(pr$match_id, pr$team_id))]
+  # A match with only one team present cannot have an opponent resolved. Give
+  # those rows factor 1 (unadjusted) rather than dropping or guessing -- a
+  # silent wrong adjustment is worse than no adjustment.
+  ok <- is.finite(terr)
+  # Always WRITE the columns, even when nothing resolves. A missing column is
+  # worse than an unadjusted one: downstream feature lists would silently drop
+  # it and the fit would quietly lose the feature, which is the failure mode
+  # this repo has hit before with a 100%-NA column passing every schema check.
+  fac <- rep(1, length(terr))
+  if (any(ok)) {
+    floor_v <- stats::quantile(terr[ok], 0.05, names = FALSE)
+    terr[ok] <- pmax(terr[ok], floor_v)
+    med <- stats::median(terr[ok])
+    fac[ok] <- med / terr[ok]
+  }
+
+  for (cc in cols) {
+    v <- as.numeric(dt[[cc]]); v[is.na(v)] <- 0
+    data.table::set(dt, j = paste0(cc, "_terr"), value = v * fac)
+  }
+  dt
+}
