@@ -93,6 +93,14 @@ if (length(todo_years) > 0) {
       target_provenance = "prior_free_rapm_window"
     )
     attr(rapm_window_targets, "target_provenance") <- "prior_free_rapm_window"
+    # panna#256: stamp the defensive sign convention. fit_expanding_pooled_rapm()
+    # returns extract_rapm_ratings() output, which negates the raw "opponent xG
+    # allowed" coefficients so `defense` is positive=good. The PRE-flip cache
+    # (2026-07-21) carried no tag, nothing checked it, and the inverted defensive
+    # prior reached xRAPM for 78.7% of player-seasons. An untagged file now
+    # migrates loudly in .assert_window_target_sign_convention(); a tagged one
+    # needs no migration at all.
+    attr(rapm_window_targets, "sign_convention") <- RAPM_WINDOW_TARGET_SIGN_CONVENTION
     saveRDS(rapm_window_targets, output_path)  # checkpoint after every vintage
 
     cat(sprintf("  vintage %d done in %.1f min (n_obs=%d, lambda.min=%.5f)\n",
@@ -107,6 +115,7 @@ if (length(todo_years) > 0) {
 }
 
 attr(rapm_window_targets, "target_provenance") <- "prior_free_rapm_window"
+attr(rapm_window_targets, "sign_convention") <- RAPM_WINDOW_TARGET_SIGN_CONVENTION
 saveRDS(rapm_window_targets, output_path)
 
 cat(sprintf("\nSaved %d windowed prior-free RAPM vintage(s) to %s\n",
