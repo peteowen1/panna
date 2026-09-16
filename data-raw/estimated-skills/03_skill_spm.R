@@ -41,8 +41,32 @@ spm_league_fe <- if (exists("spm_league_fe")) spm_league_fe else FALSE
 
 cat("\n=== Loading Data ===\n")
 
+# TRAINING TARGET (panna#257). This model's predictors (skill_features,
+# below) are decay-weighted per stat (halflife ~231-347d, 02_estimate_skills.R).
+# Until 2026-09-16 the target was `04_rapm.rds` -- an all-history POOLED RAPM
+# fit with ZERO decay. Target and features disagreed about what "now" means:
+# a player's decayed feature snapshot reflects recent form, but the model was
+# taught to map that onto a career-flat RAPM value. This is why a declined
+# player (T. Müller) could rank 2nd on the target despite a decayed signal
+# that had already fallen -- see docs/OVERNIGHT-2026-09-15.md sec 1.
+#
+# Fix: `04c_rapm_decayed.rds` applies the SAME decay fit_career_rapm() already
+# uses for panna's own signal half (R/career_rapm.R:90-100, halflife 365d,
+# tuned via optimize_panna_decay) to the RAPM fit that becomes this target.
+# Verified on the motivating case: Müller's offense value 0.1873 (flat, rank 2
+# of 36,049) -> 0.1827 (decayed, rank 6 of 36,049) -- moves the right
+# direction without a new mechanism. Built by
+# data-raw/player-ratings-opta/04c_rapm_decayed.R.
+skill_spm_use_decayed_target <- if (exists("skill_spm_use_decayed_target")) {
+  skill_spm_use_decayed_target
+} else {
+  TRUE
+}
+rapm_target_file <- if (isTRUE(skill_spm_use_decayed_target)) "04c_rapm_decayed.rds" else "04_rapm.rds"
+cat(sprintf("Skill-SPM training target: %s\n", rapm_target_file))
+
 skill_features <- readRDS(file.path(cache_dir, "02_skill_features.rds"))
-rapm_results <- readRDS(file.path(opta_cache_dir, "04_rapm.rds"))
+rapm_results <- readRDS(file.path(opta_cache_dir, rapm_target_file))
 
 rapm_ratings <- rapm_results$ratings
 # Free memory
