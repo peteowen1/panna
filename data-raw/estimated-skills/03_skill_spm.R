@@ -23,14 +23,64 @@ use_xmetrics_features <- if (exists("use_xmetrics_features")) use_xmetrics_featu
 # toward, so it moves xRAPM, panna and piero in the same step. It is validated
 # out-of-sample (5/5 splits, -1.54% RMSE, p = 0.0024) but must be adopted as its
 # own arm with a before/after comparison, not switched on silently.
+#
+# THE BEFORE/AFTER WAS RUN 2026-09-16 AND IT DID NOT PASS -- leave this FALSE
+# until someone improves on it. Measured on 5,686 active players:
+#   * league residuals vs decayed RAPM got WORSE, mean |residual| 0.144 -> 0.197.
+#     The reference level anchors everything, and EPL swung -0.035 -> +0.662.
+#   * it does NOT fix the case that motivated it. T. Müller's offence ranks are
+#     IDENTICAL either way: off_glmnet 18 before and after, off_xgb 2 before and
+#     after. His inflation is not league-blindness.
+#   * only overall agreement with decayed RAPM nudged up, +0.572 -> +0.584.
+# What the exercise DID find: the XGBoost half is what elevates Müller -- rank 2
+# against glmnet's 18 -- so the prior's real problem is in the tree model, not
+# the league term. See panna#257.
 spm_league_fe <- if (exists("spm_league_fe")) spm_league_fe else FALSE
 
 # 3. Load Data ----
 
 cat("\n=== Loading Data ===\n")
 
+# TRAINING TARGET (panna#257). This model's predictors (skill_features,
+# below) are decay-weighted per stat (halflife ~231-347d, 02_estimate_skills.R).
+# Until 2026-09-16 the target was `04_rapm.rds` -- an all-history POOLED RAPM
+# fit with ZERO decay. Target and features disagreed about what "now" means:
+# a player's decayed feature snapshot reflects recent form, but the model was
+# taught to map that onto a career-flat RAPM value. This is why a declined
+# player (T. Müller) could rank 2nd on the target despite a decayed signal
+# that had already fallen -- see docs/OVERNIGHT-2026-09-15.md sec 1.
+#
+# Fix: `04c_rapm_decayed.rds` applies the SAME decay fit_career_rapm() already
+# uses for panna's own signal half (R/career_rapm.R:90-100, halflife 365d,
+# tuned via optimize_panna_decay) to the RAPM fit that becomes this target.
+# Verified on the motivating case: Müller's offense value 0.1873 (flat, rank 2
+# of 36,049) -> 0.1827 (decayed, rank 6 of 36,049) -- moves the right
+# direction without a new mechanism. Built by
+# data-raw/player-ratings-opta/04c_rapm_decayed.R.
+skill_spm_use_decayed_target <- if (exists("skill_spm_use_decayed_target")) {
+  skill_spm_use_decayed_target
+} else {
+  TRUE
+}
+rapm_target_file <- if (isTRUE(skill_spm_use_decayed_target)) "04c_rapm_decayed.rds" else "04_rapm.rds"
+cat(sprintf("Skill-SPM training target: %s\n", rapm_target_file))
+
+# 04c_rapm_decayed.rds is a standalone script, not yet wired into
+# run_pipeline_opta.R's step sequence (unlike 04_rapm.R, which step 4 always
+# produces) -- a from-scratch pipeline run with the default TRUE flag would
+# otherwise die on a bare "cannot open the connection" readRDS error here.
+# Fail loudly with the actual fix instead.
+rapm_target_path <- file.path(opta_cache_dir, rapm_target_file)
+if (!file.exists(rapm_target_path)) {
+  cli::cli_abort(c(
+    "Skill-SPM training target {.file {rapm_target_path}} not found.",
+    "x" = "{.file {rapm_target_file}} is not yet wired into run_pipeline_opta.R -- it must be built manually.",
+    "i" = "Run {.file data-raw/player-ratings-opta/04c_rapm_decayed.R} first (needs cache-opta/03_splints.rds), or set skill_spm_use_decayed_target <- FALSE to use the flat 04_rapm.rds target instead."
+  ))
+}
+
 skill_features <- readRDS(file.path(cache_dir, "02_skill_features.rds"))
-rapm_results <- readRDS(file.path(opta_cache_dir, "04_rapm.rds"))
+rapm_results <- readRDS(rapm_target_path)
 
 rapm_ratings <- rapm_results$ratings
 # Free memory
@@ -234,9 +284,64 @@ offense_train <- spm_train_data %>% mutate(rapm = offense)
 # own history in the psr-skills.md gotcha).
 offense_cols <- .skill_spm_offense_cols(spm_train_data)
 
+# LEAGUE FIXED EFFECTS ON THE O/D MODELS (panna#257).
+#
+# `spm_league_fe` reaches fit_spm_opta() at the combined-model call above, but
+# NOTHING downstream uses that model. The prior xRAPM/panna actually shrink
+# toward is built from `offense_spm_ratings` / `defense_spm_ratings`, and those
+# come from fit_spm_model() below -- which has no `league_fe` argument at all.
+# So the flag was wired to the one model nobody reads, and the shipped prior was
+# league-blind: verified directly, 44 features and zero `lg_` dummies.
+#
+# Measured consequence (2026-09-15): against decay-weighted RAPM the prior
+# over-rates Saudi +0.280 and MLS +0.221 -- the two leagues
+# docs/reference/RATING_CALIBRATION.md names as most under-discounted -- and it
+# lifts T. Müller from 6th on the data to 2nd, which is what put a
+# Vancouver-era Müller top of panna overall.
+#
+# fit_spm_model() has no league_fe, but it does take `penalty_factor`, so the
+# dummies go in as ordinary predictors with penalty 0. That is exactly what
+# fit_spm_opta() does internally (R/spm_opta.R: `unpenalized_cols`) -- controls,
+# not skills, and elastic net would otherwise shrink them away precisely in the
+# thin leagues where they matter most.
+#
+# Built ONCE here and shared by both halves so offence and defence can never key
+# on different league levels.
+lg_cols <- character(0)
+if (isTRUE(spm_league_fe)) {
+  .dm <- .spm_league_dummies(spm_train_data, levels = NULL, min_n = 50)
+  if (length(.dm$cols) == 0) {
+    cli::cli_abort(c(
+      "spm_league_fe = TRUE but no usable league column on spm_train_data.",
+      "x" = "Fitting without it would silently ship a league-blind prior again.",
+      "i" = "Check the competition join above (needs 01_match_stats.rds)."
+    ))
+  }
+  lg_cols <- .dm$cols
+  lg_levels <- .dm$levels      # keep the REAL levels: cols go through make.names(),
+                               # so sub("^lg_","",cols) does not round-trip
+                               # ("Ligue 1" -> "lg_Ligue.1" -> "Ligue.1"), which
+                               # would silently build all-zero dummies.
+  spm_train_data <- .dm$data
+  offense_train  <- .spm_league_dummies(offense_train, levels = .dm$levels)$data
+  # SCORING frame needs the identical columns on the identical levels, or the
+  # predict step silently drops them and serves a league-blind rating from a
+  # league-aware model -- the train/serve skew this repo has been bitten by
+  # before (see reference_train_serve_skew_source_tables).
+  player_stats <- .spm_league_dummies(player_stats, levels = .dm$levels)$data
+  stopifnot(all(lg_cols %in% names(player_stats)),
+            all(lg_cols %in% names(offense_train)))
+  cat(sprintf("League FE: %d levels (reference held out), unpenalized\n",
+              length(.dm$levels)))
+}
+.pf <- function(cols) if (!length(lg_cols)) NULL else
+  as.numeric(!(cols %in% lg_cols))   # 0 = unpenalized control, 1 = penalized skill
+offense_cols <- c(offense_cols, lg_cols)
+
 cat("\n--- Offense Elastic Net ---\n")
 offense_spm_glmnet <- fit_spm_model(offense_train, predictor_cols = offense_cols,
-                                     alpha = 0.5, nfolds = 10, weight_by_minutes = TRUE)
+                                     alpha = 0.5, nfolds = 10, weight_by_minutes = TRUE,
+                                     penalty_factor = .pf(offense_cols))
 
 cat("\n--- Offense XGBoost ---\n")
 offense_spm_xgb <- fit_spm_xgb(offense_train, predictor_cols = offense_cols,
@@ -249,6 +354,11 @@ offense_spm_xgb <- fit_spm_xgb(offense_train, predictor_cols = offense_cols,
 defense_train <- spm_train_data %>% mutate(rapm = defense)
 
 defense_cols <- .skill_spm_defense_cols(spm_train_data)
+# Same league dummies as the offence half, on the same levels (built above).
+if (length(lg_cols)) {
+  defense_train <- .spm_league_dummies(defense_train, levels = lg_levels)$data
+  defense_cols  <- c(defense_cols, lg_cols)
+}
 
 cat("\n--- Defense Elastic Net ---\n")
 # Directional sign constraints — same logic as Opta SPM step 05.
@@ -263,7 +373,8 @@ def_upper <- setNames(rep(0, length(defense_constraints$bad)),  defense_constrai
 defense_spm_glmnet <- fit_spm_model(defense_train, predictor_cols = defense_cols,
                                      alpha = 0.5, nfolds = 10, weight_by_minutes = TRUE,
                                      lower_limits = def_lower,
-                                     upper_limits = def_upper)
+                                     upper_limits = def_upper,
+                                     penalty_factor = .pf(defense_cols))
 
 cat("\n--- Defense XGBoost ---\n")
 defense_spm_xgb <- fit_spm_xgb(defense_train, predictor_cols = defense_cols,

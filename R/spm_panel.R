@@ -301,6 +301,10 @@ build_spm_panel <- function(match_stats, rapm_window_targets,
                             include_gk = FALSE, strict_window_check = TRUE) {
   xmetrics_source <- match.arg(xmetrics_source)
   assert_prior_free_target(rapm_window_targets)
+  # panna#256: the cached target predates the 2026-09-04 positive=good flip and
+  # nothing checked it, so the S6 defensive prior shipped inverted for 78.7% of
+  # player-seasons. Migrate or abort BEFORE the target reaches the panel.
+  rapm_window_targets <- .assert_window_target_sign_convention(rapm_window_targets)
 
   match_stats <- data.table::as.data.table(match_stats)
   if (!"season_end_year" %in% names(match_stats)) {
@@ -999,4 +1003,77 @@ predict_spm_panel_xgb <- function(model, newdata) {
   )
   if ("vintage_year" %in% names(newdata)) out[, vintage_year := newdata$vintage_year]
   out
+}
+
+
+#' Assert (or migrate) the windowed RAPM target's defensive sign convention
+#'
+#' Third guard in the `sign_convention` family, added after panna#256. The other
+#' two (`.assert_career_panna_sign_convention()`, `.assert_spmr_sign_convention()`)
+#' only ever abort, because their artifacts are cheap to regenerate. This one
+#' also MIGRATES, for a specific and verified reason: `04b`'s ratings come from
+#' `extract_rapm_ratings()`, and `R/rapm_model.R` documents that the flip happens
+#' in exactly one place and is a **pure negation** of the defence column, with
+#' `rapm` computed from the raw (unnegated) coefficients and therefore untouched.
+#' So negating a pre-flip target is mathematically identical to re-running 04b's
+#' eight windowed ridge fits -- which is hours of compute for an operation that
+#' is provably a sign change. Verified empirically across all eight vintages:
+#' negating restores a positive correlation against decayed RAPM defence that
+#' tracks the offence control to within ~0.03 every time (see panna#256).
+#'
+#' An untagged file is assumed pre-flip, because the tag did not exist before
+#' the flip. A file tagged with anything OTHER than the expected convention is a
+#' hard abort -- that means an upstream change nobody here anticipated, and
+#' guessing at it is how panna#F1 happened.
+#'
+#' @param x The `rapm_window_targets` list, as written by `04b`.
+#' @param what Label for messages.
+#' @return `x`, with `ratings$defense` negated per vintage if a migration was
+#'   needed, and tagged so it is not migrated twice.
+#' @keywords internal
+#' @noRd
+.assert_window_target_sign_convention <- function(x, what = "rapm_window_targets") {
+  tag <- attr(x, "sign_convention")
+
+  if (!is.null(tag)) {
+    if (!identical(tag, RAPM_WINDOW_TARGET_SIGN_CONVENTION)) {
+      cli::cli_abort(c(
+        "{what} is tagged {.val {tag}}, expected {.val {RAPM_WINDOW_TARGET_SIGN_CONVENTION}}.",
+        "x" = "Refusing to guess at an unrecognised convention -- reading the
+               defence column under the wrong one silently inverts it.",
+        "i" = "Rebuild with {.file data-raw/player-ratings-opta/04b_rapm_window_targets.R}."
+      ))
+    }
+    return(x)
+  }
+
+  # Untagged => pre-flip (the tag did not exist before 2026-09-04). Migrate,
+  # loudly. Silence here is exactly what let panna#256 run for 11 days.
+  n_vintage <- 0L
+  for (nm in names(x)) {
+    e <- x[[nm]]
+    if (is.null(e$ratings) || !"defense" %in% names(e$ratings)) next
+    e$ratings$defense <- -e$ratings$defense
+    x[[nm]] <- e
+    n_vintage <- n_vintage + 1L
+  }
+  if (n_vintage == 0L) {
+    cli::cli_abort(c(
+      "{what} carries no {.field sign_convention} tag AND no vintage has a
+       {.field ratings$defense} column to migrate.",
+      "i" = "The artifact is not the shape this guard expects -- inspect it
+             rather than letting it through."
+    ))
+  }
+  attr(x, "sign_convention") <- RAPM_WINDOW_TARGET_SIGN_CONVENTION
+  # cli_warn(), not cli_alert_warning(): this must signal a real warning
+  # condition, not print to stdout. A silent-inversion guard whose only output
+  # can be swallowed by a redirect is most of the way back to the bug it exists
+  # to catch -- panna#256 ran 11 days precisely because nothing was catchable.
+  cli::cli_warn(
+    "{what} is UNTAGGED, so it predates the 2026-09-04 positive=good flip:
+     negated {.field defense} across {n_vintage} vintage{?s} (panna#256). This is
+     equivalent to rebuilding with 04b, which now stamps the tag. Rebuild when
+     convenient so this migration stops firing.")
+  x
 }

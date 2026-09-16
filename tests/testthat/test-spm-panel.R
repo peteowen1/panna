@@ -54,6 +54,12 @@
                         window = window, target_provenance = provenance)
   out <- stats::setNames(list(vintage_entry), as.character(vintage))
   attr(out, "target_provenance") <- provenance
+  # Tagged post-flip (panna#256). Fixtures must represent CURRENT correct data:
+  # left untagged, .assert_window_target_sign_convention() would treat them as
+  # pre-flip and negate `defense`, and every downstream expectation in this file
+  # would be asserting against migrated values. Tests that want the pre-flip
+  # path construct their own untagged target instead.
+  attr(out, "sign_convention") <- RAPM_WINDOW_TARGET_SIGN_CONVENTION
   out
 }
 
@@ -476,4 +482,73 @@ test_that("predict_spm_panel gives a clear error when a role-pooled model is sco
   newdata_with_role <- newdata_no_role
   newdata_with_role$role_group <- panel$role_group
   expect_no_error(predict_spm_panel(fit, newdata_with_role))
+})
+
+# ---- panna#256: windowed-target defensive sign convention ----------------
+# The cached rapm_window_targets.rds predated the 2026-09-04 positive=good flip
+# and nothing checked it, so the S6 defensive prior reached xRAPM inverted for
+# 78.7% of player-seasons. These pin the guard that makes that impossible.
+
+.mk_window_target <- function(n = 50L, tagged = FALSE) {
+  mk <- function(seed) {
+    set.seed(seed)
+    list(ratings = data.frame(
+           player_id = paste0("p", seq_len(n)),
+           rapm      = stats::rnorm(n, 0, 0.03),
+           offense   = stats::rnorm(n, 0, 0.02),
+           defense   = stats::rnorm(n, 0, 0.02)),
+         lambda_min = 0.01, n_obs = 1000L,
+         window = c(2021L, 2026L),
+         target_provenance = "prior_free_rapm_window")
+  }
+  x <- list("2025" = mk(1), "2026" = mk(2))
+  attr(x, "target_provenance") <- "prior_free_rapm_window"
+  if (tagged) attr(x, "sign_convention") <- RAPM_WINDOW_TARGET_SIGN_CONVENTION
+  x
+}
+
+test_that("an UNTAGGED window target is migrated (negated) and tagged", {
+  x <- .mk_window_target()
+  before <- x[["2026"]]$ratings$defense
+  expect_warning(out <- .assert_window_target_sign_convention(x), "UNTAGGED")
+  # defence negated on EVERY vintage, not just the first
+  expect_equal(out[["2026"]]$ratings$defense, -before)
+  expect_equal(out[["2025"]]$ratings$defense, -x[["2025"]]$ratings$defense)
+  expect_identical(attr(out, "sign_convention"), RAPM_WINDOW_TARGET_SIGN_CONVENTION)
+})
+
+test_that("the migration leaves rapm and offense untouched", {
+  # rapm is built from the RAW unnegated coefficients (R/rapm_model.R), so the
+  # flip must not move it. A migration that touched rapm would silently change
+  # the net target the panel trains on.
+  x <- .mk_window_target()
+  suppressWarnings(out <- .assert_window_target_sign_convention(x))
+  expect_equal(out[["2026"]]$ratings$rapm,    x[["2026"]]$ratings$rapm)
+  expect_equal(out[["2026"]]$ratings$offense, x[["2026"]]$ratings$offense)
+})
+
+test_that("an already-TAGGED target is returned untouched -- no double flip", {
+  # The failure this prevents is worse than the original bug: migrating twice
+  # restores the inversion while the tag claims it is correct.
+  x <- .mk_window_target(tagged = TRUE)
+  expect_silent(out <- .assert_window_target_sign_convention(x))
+  expect_equal(out[["2026"]]$ratings$defense, x[["2026"]]$ratings$defense)
+  suppressWarnings(twice <- .assert_window_target_sign_convention(
+    .assert_window_target_sign_convention(.mk_window_target())))
+  once <- suppressWarnings(.assert_window_target_sign_convention(.mk_window_target()))
+  expect_equal(twice[["2026"]]$ratings$defense, once[["2026"]]$ratings$defense)
+})
+
+test_that("a target tagged with an UNRECOGNISED convention aborts", {
+  # Guessing at an unknown convention is how panna#F1 happened.
+  x <- .mk_window_target()
+  attr(x, "sign_convention") <- "some_future_convention"
+  expect_error(.assert_window_target_sign_convention(x), "expected")
+})
+
+test_that("an untagged target with no defense column aborts rather than passing", {
+  x <- .mk_window_target()
+  x[["2025"]]$ratings$defense <- NULL
+  x[["2026"]]$ratings$defense <- NULL
+  expect_error(.assert_window_target_sign_convention(x), "no .*sign_convention|migrate")
 })
