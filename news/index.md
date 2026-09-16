@@ -1,5 +1,40 @@
 # Changelog
 
+## panna 0.3.56 (dev)
+
+### Skill-SPM’s RAPM target is now decayed (panna#257, partial)
+
+Skill-SPM’s predictors are decay-weighted per stat, but its target was
+`04_rapm.rds` – an all-history pooled RAPM fit with zero decay. Target
+and features disagreed about what “now” means, which is how a declined
+player (T. Müller) could rank 2nd on the target despite a decayed signal
+that had already fallen. `04c_rapm_decayed.R` applies the same decay
+[`fit_career_rapm()`](https://peteowen1.github.io/panna/reference/fit_career_rapm.md)
+already uses for panna’s own signal half (halflife 365d). Verified at
+every stage (rank of ~25-36k, lower is better): raw target offense 2nd
+-\> 6th, skill-SPM ensemble 2nd -\> 5th, final panna posterior still 1st
+but now a near-tie with Kimmich rather than a clear outlier. Does not
+fully resolve panna#257 – left open.
+
+### S6 panel promoted per-season, not a single static prior (panna#258, panna#168)
+
+`05_spm.R` deliberately collapsed the S6 panel to its latest vintage
+year before scoring – every season’s xRAPM prior, 2016 as much as 2026,
+got the same all-history-informed value (measured cost: 0.55/0.12
+offense/defense correlation with a leak-free 2016 prior). `05_spm.R` now
+scores every vintage year (no new fitting –
+[`predict_spm_panel()`](https://peteowen1.github.io/panna/reference/predict_spm_panel.md)
+already supports scoring any panel slice); `07_seasonal_ratings.R`’s
+per-season loop picks its own vintage for the xRAPM prior (on by
+default) and, opt-in via `seasonal_spm_use_s6_display`, for the
+displayed seasonal SPM table SPMR/ DSPMR read directly.
+
+Verified: seasonal defensive spread widened 2.44x overall / 2.87x on
+S6-covered seasons (2019-2026), matching the ~2.26-2.52x predicted in
+`docs/reviews/DEFENSIVE-METRIC-SCALES-2026-09-15.md`. DSPMR’s top 15 is
+now real elite CBs/DMs at 0.07-0.09 (Rodri, Thiago Silva, Rúben Dias,
+Marquinhos, J. Stones) instead of 0.01-0.02.
+
 ## panna 0.3.55 (dev)
 
 ### SPMR: decay-weighted SPM becomes a rating in its own right

@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.55</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.56</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,6 +39,18 @@
       <small>Source: <a href="https://github.com/peteowen1/panna/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.56" id="panna-0356-dev">panna 0.3.56 (dev)<a class="anchor" aria-label="anchor" href="#panna-0356-dev"></a></h2>
+<div class="section level3">
+<h3 id="skill-spms-rapm-target-is-now-decayed-panna257-partial-0-3-56">Skill-SPM’s RAPM target is now decayed (panna#257, partial)<a class="anchor" aria-label="anchor" href="#skill-spms-rapm-target-is-now-decayed-panna257-partial-0-3-56"></a></h3>
+<p>Skill-SPM’s predictors are decay-weighted per stat, but its target was <code>04_rapm.rds</code> – an all-history pooled RAPM fit with zero decay. Target and features disagreed about what “now” means, which is how a declined player (T. Müller) could rank 2nd on the target despite a decayed signal that had already fallen. <code>04c_rapm_decayed.R</code> applies the same decay <code><a href="../reference/fit_career_rapm.html">fit_career_rapm()</a></code> already uses for panna’s own signal half (halflife 365d). Verified at every stage (rank of ~25-36k, lower is better): raw target offense 2nd -&gt; 6th, skill-SPM ensemble 2nd -&gt; 5th, final panna posterior still 1st but now a near-tie with Kimmich rather than a clear outlier. Does not fully resolve panna#257 – left open.</p>
+</div>
+<div class="section level3">
+<h3 id="s6-panel-promoted-per-season-not-a-single-static-prior-panna258-panna168-0-3-56">S6 panel promoted per-season, not a single static prior (panna#258, panna#168)<a class="anchor" aria-label="anchor" href="#s6-panel-promoted-per-season-not-a-single-static-prior-panna258-panna168-0-3-56"></a></h3>
+<p><code>05_spm.R</code> deliberately collapsed the S6 panel to its latest vintage year before scoring – every season’s xRAPM prior, 2016 as much as 2026, got the same all-history-informed value (measured cost: 0.55/0.12 offense/defense correlation with a leak-free 2016 prior). <code>05_spm.R</code> now scores every vintage year (no new fitting – <code><a href="../reference/predict_spm_panel.html">predict_spm_panel()</a></code> already supports scoring any panel slice); <code>07_seasonal_ratings.R</code>’s per-season loop picks its own vintage for the xRAPM prior (on by default) and, opt-in via <code>seasonal_spm_use_s6_display</code>, for the displayed seasonal SPM table SPMR/ DSPMR read directly.</p>
+<p>Verified: seasonal defensive spread widened 2.44x overall / 2.87x on S6-covered seasons (2019-2026), matching the ~2.26-2.52x predicted in <code>docs/reviews/DEFENSIVE-METRIC-SCALES-2026-09-15.md</code>. DSPMR’s top 15 is now real elite CBs/DMs at 0.07-0.09 (Rodri, Thiago Silva, Rúben Dias, Marquinhos, J. Stones) instead of 0.01-0.02.</p>
+</div>
+</div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.55" id="panna-0355-dev">panna 0.3.55 (dev)<a class="anchor" aria-label="anchor" href="#panna-0355-dev"></a></h2>
 <div class="section level3">
