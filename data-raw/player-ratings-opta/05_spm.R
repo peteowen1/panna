@@ -666,13 +666,26 @@ if (isTRUE(spm_use_panel)) {
   s6_off_xgb <- fit_spm_panel_xgb(s6_panel, target = "offense", seed = 1)
   s6_def_xgb <- fit_spm_panel_xgb(s6_panel, target = "defense", seed = 1)
 
+  # Diagnostic mismatch check: reports WHICH ids/vintage disagree, not just
+  # R's generic "not all TRUE" (which gives no count, vintage, or player_id
+  # to act on when it fires).
+  .assert_s6_ids_match <- function(a, b, label) {
+    if (identical(a, b)) return(invisible(TRUE))
+    n_diff <- sum(a != b, na.rm = TRUE) + abs(length(a) - length(b))
+    cli::cli_abort(paste0(
+      "{label}: player_id vectors from glmnet vs xgb predictions disagree ",
+      "({n_diff} mismatched/missing of {length(a)}/{length(b)}) -- one of ",
+      "predict_spm_panel()/predict_spm_panel_xgb() dropped or reordered rows."
+    ))
+  }
+
   s6_latest <- s6_panel[s6_panel$vintage_year == max(s6_panel$vintage_year), ]
   s6_go <- predict_spm_panel(s6_off_glmnet, s6_latest)
   s6_gd <- predict_spm_panel(s6_def_glmnet, s6_latest)
   s6_xo <- predict_spm_panel_xgb(s6_off_xgb, s6_latest)
   s6_xd <- predict_spm_panel_xgb(s6_def_xgb, s6_latest)
-  stopifnot(identical(s6_go$player_id, s6_xo$player_id),
-            identical(s6_gd$player_id, s6_xd$player_id))
+  .assert_s6_ids_match(s6_go$player_id, s6_xo$player_id, "S6 latest-vintage offense")
+  .assert_s6_ids_match(s6_gd$player_id, s6_xd$player_id, "S6 latest-vintage defense")
 
   s6_table <- data.frame(
     player_id = s6_go$player_id,
@@ -700,7 +713,8 @@ if (isTRUE(spm_use_panel)) {
     gd <- predict_spm_panel(s6_def_glmnet, s6_v)
     xo <- predict_spm_panel_xgb(s6_off_xgb, s6_v)
     xd <- predict_spm_panel_xgb(s6_def_xgb, s6_v)
-    stopifnot(identical(go$player_id, xo$player_id), identical(gd$player_id, xd$player_id))
+    .assert_s6_ids_match(go$player_id, xo$player_id, sprintf("S6 vintage %d offense", vy))
+    .assert_s6_ids_match(gd$player_id, xd$player_id, sprintf("S6 vintage %d defense", vy))
     data.frame(
       player_id = go$player_id,
       vintage_year = vy,
@@ -709,6 +723,19 @@ if (isTRUE(spm_use_panel)) {
     )
   })
   s6_by_vintage <- do.call(rbind, s6_by_vintage)
+
+  # panna#258 review: assert vintage coverage matches what was requested,
+  # not just that SOMETHING came back -- a thin/schema-drifted vintage that
+  # predict_spm_panel() 0-fills instead of erroring would otherwise reach
+  # 07_seasonal_ratings.R silently (its own fallback there is only a cat()).
+  expected_vintages <- sort(unique(s6_panel$vintage_year))
+  got_vintages <- sort(unique(s6_by_vintage$vintage_year))
+  if (!identical(expected_vintages, got_vintages)) {
+    cli::cli_abort(paste0(
+      "s6_by_vintage is missing vintage year(s) {setdiff(expected_vintages, got_vintages)} ",
+      "that s6_panel has -- a predict_spm_panel() call silently dropped a vintage."
+    ))
+  }
 
   # Hybrid tables: S6 where available, legacy elsewhere. Net = off + def
   # (defense positive=good since 2026-09-04; see predict_spm_panel_net()).

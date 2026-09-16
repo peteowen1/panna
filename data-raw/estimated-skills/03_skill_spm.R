@@ -65,8 +65,22 @@ skill_spm_use_decayed_target <- if (exists("skill_spm_use_decayed_target")) {
 rapm_target_file <- if (isTRUE(skill_spm_use_decayed_target)) "04c_rapm_decayed.rds" else "04_rapm.rds"
 cat(sprintf("Skill-SPM training target: %s\n", rapm_target_file))
 
+# 04c_rapm_decayed.rds is a standalone script, not yet wired into
+# run_pipeline_opta.R's step sequence (unlike 04_rapm.R, which step 4 always
+# produces) -- a from-scratch pipeline run with the default TRUE flag would
+# otherwise die on a bare "cannot open the connection" readRDS error here.
+# Fail loudly with the actual fix instead.
+rapm_target_path <- file.path(opta_cache_dir, rapm_target_file)
+if (!file.exists(rapm_target_path)) {
+  cli::cli_abort(c(
+    "Skill-SPM training target {.file {rapm_target_path}} not found.",
+    "x" = "{.file {rapm_target_file}} is not yet wired into run_pipeline_opta.R -- it must be built manually.",
+    "i" = "Run {.file data-raw/player-ratings-opta/04c_rapm_decayed.R} first (needs cache-opta/03_splints.rds), or set skill_spm_use_decayed_target <- FALSE to use the flat 04_rapm.rds target instead."
+  ))
+}
+
 skill_features <- readRDS(file.path(cache_dir, "02_skill_features.rds"))
-rapm_results <- readRDS(file.path(opta_cache_dir, rapm_target_file))
+rapm_results <- readRDS(rapm_target_path)
 
 rapm_ratings <- rapm_results$ratings
 # Free memory

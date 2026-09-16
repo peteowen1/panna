@@ -36,7 +36,10 @@ library(data.table)
 cache_dir <- file.path("data-raw", "cache-opta")
 opta_dir  <- file.path("..", "pannadata", "data", "opta")
 
-halflife_days <- if (exists("skill_spm_target_halflife_days", inherits = FALSE)) {
+# Plain exists(), never inherits = FALSE: driver globals reach this script
+# through source(..., local = TRUE), which inherits=FALSE would miss (see
+# 03_skill_spm.R's spm_league_fe guard for the documented incident).
+halflife_days <- if (exists("skill_spm_target_halflife_days")) {
   skill_spm_target_halflife_days
 } else {
   365
@@ -62,15 +65,37 @@ md <- unique(fixtures[!is.na(match_date), .(match_id, match_date = as.Date(match
 
 row_md <- data.table(match_id = rapm_data$row_data$match_id)
 row_md[md, match_date := i.match_date, on = "match_id"]
+n_missing <- sum(is.na(row_md$match_date))
+pct_missing <- 100 * n_missing / nrow(row_md)
+# Coverage floor, not just presence: a partial join failure (stale fixtures
+# file, match_id type mismatch) would otherwise silently degrade most rows'
+# weights toward "oldest" with only an info-level log to notice by -- exactly
+# the failure mode this repo's memory calls "assert coverage, not presence."
+# A TOTAL failure is worse: max(age_days, na.rm=TRUE) on an all-NA vector is
+# -Inf, so decay becomes Inf and gets handed to glmnet as a weight -- abort
+# before that, not after a confusing downstream numerical error.
+if (pct_missing > 50) {
+  cli::cli_abort(paste0(
+    "{round(pct_missing, 1)}% of rows have no match_date after joining ",
+    "opta_fixtures.parquet -- this looks like a broken join (stale fixtures ",
+    "file, match_id type mismatch), not a few undated edge cases. Aborting ",
+    "rather than training on a degenerate decay."
+  ))
+} else if (pct_missing > 2) {
+  cli::cli_warn(paste0(
+    "{round(pct_missing, 1)}% of rows ({n_missing}) have no match_date -- ",
+    "above the ~2% this repo normally treats as noise. Check the fixtures join ",
+    "before trusting this target."
+  ))
+}
 reference_date <- max(row_md$match_date, na.rm = TRUE)
 age_days <- as.numeric(reference_date - row_md$match_date)
-n_missing <- sum(is.na(age_days))
 if (n_missing > 0) age_days[is.na(age_days)] <- max(age_days, na.rm = TRUE)
 decay <- 0.5 ^ (age_days / halflife_days)
 rapm_data$weights <- rapm_data$weights * decay
 cli::cli_alert_info(paste0(
   "Skill-SPM target decay: halflife {halflife_days}d | ref {as.character(reference_date)} | ",
-  "weight x{round(min(decay), 4)}-{round(max(decay), 4)} | undated rows: {n_missing}"))
+  "weight x{round(min(decay), 4)}-{round(max(decay), 4)} | undated rows: {n_missing} ({round(pct_missing, 2)}%)"))
 
 # 4. Fit RAPM on the decayed weights (same settings as 04_rapm.R for comparability) ----
 
