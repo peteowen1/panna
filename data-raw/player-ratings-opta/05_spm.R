@@ -680,6 +680,36 @@ if (isTRUE(spm_use_panel)) {
     defense_spm_s6 = 0.5 * s6_gd$pred + 0.5 * s6_xd$pred
   )
 
+  # panna#258: the block above deliberately collapses the panel to the LATEST
+  # vintage year only (documented tradeoff, "BLAST RADIUS" note above) -- every
+  # consumer of offense_spm_ratings/defense_spm_ratings, including every
+  # season's xRAPM prior in 07_seasonal_ratings.R, gets the SAME all-history-
+  # informed value regardless of which season is being fit. Measured cost
+  # (2026-09-16, panna#258): for players active in the 2016 season, that static
+  # value correlates only 0.55 (offense) / 0.12 (defense) with what a prior
+  # trained on data through 2016 alone would say.
+  #
+  # Score EVERY vintage year too (predict_spm_panel() already supports scoring
+  # any slice of the panel -- this reuses it, no new fitting) so
+  # 07_seasonal_ratings.R's per-season loop can pick the vintage matching its
+  # own season instead of always reading the latest one. Small marginal cost:
+  # one more predict() call per vintage on already-fitted models.
+  s6_by_vintage <- lapply(sort(unique(s6_panel$vintage_year)), function(vy) {
+    s6_v <- s6_panel[s6_panel$vintage_year == vy, ]
+    go <- predict_spm_panel(s6_off_glmnet, s6_v)
+    gd <- predict_spm_panel(s6_def_glmnet, s6_v)
+    xo <- predict_spm_panel_xgb(s6_off_xgb, s6_v)
+    xd <- predict_spm_panel_xgb(s6_def_xgb, s6_v)
+    stopifnot(identical(go$player_id, xo$player_id), identical(gd$player_id, xd$player_id))
+    data.frame(
+      player_id = go$player_id,
+      vintage_year = vy,
+      offense_spm_s6 = 0.5 * go$pred + 0.5 * xo$pred,
+      defense_spm_s6 = 0.5 * gd$pred + 0.5 * xd$pred
+    )
+  })
+  s6_by_vintage <- do.call(rbind, s6_by_vintage)
+
   # Hybrid tables: S6 where available, legacy elsewhere. Net = off + def
   # (defense positive=good since 2026-09-04; see predict_spm_panel_net()).
   offense_spm_ratings <- offense_spm_ratings %>%
@@ -714,7 +744,11 @@ if (isTRUE(spm_use_panel)) {
     latest_vintage = max(s6_panel$vintage_year),
     n_override = nrow(s6_table),
     panel_mtime = file.mtime(panel_path),
-    config = "S4a + grouped-CV xgb, 50/50 per-target blend (D-W2)"
+    config = "S4a + grouped-CV xgb, 50/50 per-target blend (D-W2)",
+    # panna#258: per-vintage-year predictions (player_id, vintage_year,
+    # offense_spm_s6, defense_spm_s6) -- lets a caller pick the vintage
+    # matching its own season instead of always reading the latest one.
+    by_vintage = s6_by_vintage
   )
   rm(s6_panel, panel_bundle, s6_latest, s6_go, s6_gd, s6_xo, s6_xd); invisible(gc(verbose = FALSE))
 } else {

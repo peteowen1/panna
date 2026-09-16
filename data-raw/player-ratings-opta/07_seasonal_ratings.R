@@ -138,7 +138,24 @@ defense_spm_xgb <- spm_results$defense_spm_xgb
 # season-scored model prior — the same career-table shape the Wave-4 gate
 # (13c_prior_swap_gate.R) validated. The legacy models above still score
 # the seasonal_spm DISPLAY table (unchanged this cut; see panna#168).
+#
+# panna#258 (2026-09-16): the ORIGINAL version of this block took a single
+# flat table (spm_results$offense_spm_ratings / defense_spm_ratings), which
+# 05_spm.R deliberately collapses to the LATEST vintage year only. Every
+# season's xRAPM fit -- 2016 as much as 2026 -- was shrinking toward the
+# exact same all-history-informed prior, i.e. hindsight leakage for every
+# season but the newest. Measured cost: for players active in the 2016
+# season, that static value correlated only 0.55 (offense) / 0.12 (defense)
+# with a prior trained on data through 2016 alone.
+#
+# Fix: 05_spm.R now also scores EVERY vintage year (panel_s6$by_vintage,
+# same fitted models, no new fitting), so each season below can select ITS
+# OWN vintage instead of the flat one. panel_s6_by_vintage is resolved per
+# season inside fit_season_ratings_opta(); this top-level prior_tables stays
+# only as the legacy/manual-override fallback for seasons the panel doesn't
+# cover (pre-2019, before spm_panel.rds's vintage_years start).
 prior_tables <- NULL
+panel_s6_by_vintage <- NULL
 if (!is.null(spm_results$panel_s6)) {
   prior_tables <- list(
     offense = spm_results$offense_spm_ratings[, c("player_id", "offense_spm")],
@@ -146,6 +163,19 @@ if (!is.null(spm_results$panel_s6)) {
   )
   cat(sprintf("Wave-4 S6 prior active: career hybrid tables (%d offense / %d defense rows)\n",
               nrow(prior_tables$offense), nrow(prior_tables$defense)))
+  panel_s6_by_vintage <- spm_results$panel_s6$by_vintage
+  if (is.null(panel_s6_by_vintage)) {
+    cli::cli_warn(paste(
+      "spm_results$panel_s6 has no by_vintage table (built by an older",
+      "05_spm.R) -- falling back to the flat, all-history prior for every",
+      "season (panna#258 not fixed for this run). Rebuild 05_spm.R to get",
+      "per-season priors."
+    ))
+  } else {
+    cat(sprintf("panna#258 fix active: %d vintage year(s) available for per-season priors [%s]\n",
+                length(unique(panel_s6_by_vintage$vintage_year)),
+                paste(sort(unique(panel_s6_by_vintage$vintage_year)), collapse = ",")))
+  }
 }
 
 # Free memory
@@ -173,7 +203,26 @@ fit_season_ratings_opta <- function(splint_data, opta_stats, season,
                                      defense_spm_glmnet, defense_spm_xgb,
                                      opta_xmetrics = NULL,
                                      min_minutes_spm = 200, min_minutes_rapm = 200,
-                                     prior_tables = NULL) {
+                                     prior_tables = NULL,
+                                     panel_s6_by_vintage = NULL) {
+  # panna#258: prefer a per-season S6 prior over the flat `prior_tables`
+  # fallback. Vintage Y's window is [Y-5, Y) -- it excludes season Y itself
+  # by construction, so vintage_year == season is the right, leak-free pick
+  # (not season - 1). Seasons outside the panel's vintage_years coverage
+  # (pre-2019 by default) have no matching vintage and fall back to
+  # `prior_tables` (flat S6-latest, or NULL -> legacy season-scored prior).
+  if (!is.null(panel_s6_by_vintage) && season %in% panel_s6_by_vintage$vintage_year) {
+    pv <- panel_s6_by_vintage[panel_s6_by_vintage$vintage_year == season, ]
+    prior_tables <- list(
+      offense = data.frame(player_id = pv$player_id, offense_spm = pv$offense_spm_s6),
+      defense = data.frame(player_id = pv$player_id, defense_spm = pv$defense_spm_s6)
+    )
+    cat(sprintf("  panna#258: using vintage-%d S6 prior (%d players) -- not the flat one\n",
+                season, nrow(pv)))
+  } else if (!is.null(panel_s6_by_vintage)) {
+    cat(sprintf("  panna#258: season %d outside panel vintage coverage -- flat/legacy prior fallback\n",
+                season))
+  }
   cat(sprintf("\n--- Season %d ---\n", season))
 
   # Filter splints to this season
@@ -362,6 +411,42 @@ fit_season_ratings_opta <- function(splint_data, opta_stats, season,
 
   cat(sprintf("  Season SPM predictions: %d offense, %d defense\n",
               nrow(offense_spm_season), nrow(defense_spm_season)))
+
+  # panna#168 (opt-in, DEFAULT FALSE): promote the S6 panel to the seasonal
+  # SPM DISPLAY table too, not just the xRAPM prior. DSPMR/SPMR (09d_spmr.R)
+  # read seasonal_spm DIRECTLY, so this is the actual fix for DSPMR's scale
+  # (docs/reviews/DEFENSIVE-METRIC-SCALES-2026-09-15.md): the S6 panel has
+  # ~2.52x the legacy defensive spread, close to the ~2.26x measured against
+  # true talent, vs. the legacy per-season fit's ~56%-too-narrow spread.
+  #
+  # Same per-season vintage lookup as the panna#258 prior fix above --
+  # S6 where this season has a matching vintage, legacy fit elsewhere
+  # (pre-2019 seasons, or any player the panel doesn't cover).
+  #
+  # DEFAULT FALSE: unlike the prior fix (which reuses the ALREADY-gated S6
+  # mechanism, 13c_prior_swap_gate.R), swapping the DISPLAYED value has no
+  # before/after gate run yet -- it changes every published seasonal SPM
+  # number, SPMR, and DSPMR. Flip on only with its own gate, per the review
+  # doc's recommended order.
+  seasonal_spm_use_s6_display <- if (exists("seasonal_spm_use_s6_display")) {
+    seasonal_spm_use_s6_display
+  } else {
+    FALSE
+  }
+  if (isTRUE(seasonal_spm_use_s6_display) && !is.null(panel_s6_by_vintage) &&
+      season %in% panel_s6_by_vintage$vintage_year) {
+    pv <- panel_s6_by_vintage[panel_s6_by_vintage$vintage_year == season, ]
+    offense_spm_season <- offense_spm_season %>%
+      left_join(pv %>% select(player_id, offense_spm_s6), by = "player_id") %>%
+      mutate(offense_spm = ifelse(!is.na(offense_spm_s6), offense_spm_s6, offense_spm)) %>%
+      select(-offense_spm_s6)
+    defense_spm_season <- defense_spm_season %>%
+      left_join(pv %>% select(player_id, defense_spm_s6), by = "player_id") %>%
+      mutate(defense_spm = ifelse(!is.na(defense_spm_s6), defense_spm_s6, defense_spm)) %>%
+      select(-defense_spm_s6)
+    cat(sprintf("  panna#168: season %d display SPM overridden by S6 vintage-%d for %d players\n",
+                season, season, nrow(pv)))
+  }
 
   # Create seasonal SPM ratings table
   seasonal_spm <- offense_spm_season %>%
@@ -576,7 +661,8 @@ for (season in seasons) {
       opta_xmetrics = s_xm,
       min_minutes_spm = 200,
       min_minutes_rapm = 200,
-      prior_tables = prior_tables
+      prior_tables = prior_tables,
+      panel_s6_by_vintage = panel_s6_by_vintage
     )
   }, error = function(e) {
     # panna#87: R buffers warning() into a terse "There were N warnings"
