@@ -113,3 +113,17 @@ them at the end of a session. Reviews under `docs/reviews/` are immutable once w
 addenda, don't rewrite historical prose). New idea/TODO files belong in `pannaverse/docs/backlog/`,
 not at this repo's root.
 
+## Agent skills
+
+### Issue tracker
+
+Issues live in this repo's GitHub Issues (`peteowen1/panna`). See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Canonical defaults (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context — one `CONTEXT.md` + `docs/adr/` at this repo's root (neither exists yet; created lazily by `/domain-modeling`). See `docs/agents/domain.md`.
+
