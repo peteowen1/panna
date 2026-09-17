@@ -1,3 +1,12 @@
+# panna 0.3.57 (dev)
+
+## Agent-skills triage config (docs only)
+
+Wires up mattpocock-skills `/triage`, issue-tracker, and domain-docs config
+for this repo (`docs/agents/{issue-tracker,triage-labels,domain}.md`), and
+fixes `.gitignore` so `docs/agents/` isn't caught by the blanket
+pkgdown-output `docs/` ignore rule. No code changes.
+
 # panna 0.3.56 (dev)
 
 ## Skill-SPM's RAPM target is now decayed (panna#257, partial)
