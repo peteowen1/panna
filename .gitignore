@@ -20,7 +20,9 @@ data/
 .claude/
 
 # pkgdown output (rebuilt fresh by .github/workflows/pkgdown.yaml, deployed to gh-pages)
-docs/
+# docs/agents/ is hand-written agent-skill config, not pkgdown output — keep it tracked
+docs/*
+!docs/agents/
 
 # IDE
 .vscode/
