@@ -1,3 +1,29 @@
+# panna 0.3.62 (dev)
+
+## `net_goals` published into game logs
+
+Step 10b now joins three additive columns onto every player-match row:
+`net_goals` and its two halves `ng_offensive` / `ng_defensive`. Every existing
+column is untouched, and a league whose ledger cannot be built publishes the
+rest rather than nothing.
+
+Computed deliberately BEFORE the position and opponent adjustments, so the
+published column carries the raw ledger. Centring breaks conservation by
+construction; a rating layer that wants it calls `ng_adjust_for_rating()`.
+
+xPass is added explicitly and asserted. `assign_epv_credit()` computes it
+internally without leaving it on the frame, and without it the passer/receiver
+difficulty split silently degrades to actor-keeps-all instead of failing — so
+the block aborts if fewer than half of passes carry one.
+
+Verified on ENG 2024-2025: 11,427 of 11,427 player-rows matched, the two halves
+sum to the total at 3.3e-15, and a team's players sum to that team's own goal
+difference at cor 0.9834, median error 0.201 goals.
+
+The blog's new `scripts/validate-football-epv-units.mjs` already carries the
+check for this column and will pick it up on the next build — asserted PER TEAM
+against that team's own goal difference, never through a home-minus-away fit.
+
 # panna 0.3.61 (dev)
 
 ## The rating-layer adjustment for net goals

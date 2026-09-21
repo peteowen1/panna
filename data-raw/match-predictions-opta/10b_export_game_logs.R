@@ -473,6 +473,54 @@ validate_game_log_schema <- function(dt, league, season) {
       spadl_credit     <- assign_epv_credit(spadl_epv, xpass_model)
       player_game_epv  <- aggregate_player_game_epv(spadl_credit, lineups)
 
+      # --- Net goals ledger (ADDITIVE; every production column above is
+      # untouched). Three columns join the frame: `net_goals` and its two
+      # halves. The ledger allocates each action so a team's players sum to
+      # that team's own goal difference; see
+      # pannaverse/docs/plans/EPV-NET-GOALS.md.
+      #
+      # Deliberately computed BEFORE the position/opponent adjustments below.
+      # Centring breaks conservation by construction, so the published column
+      # carries the raw ledger and any rating layer centres it itself via
+      # ng_adjust_for_rating().
+      #
+      # xPass has to be added explicitly. assign_epv_credit() computes it
+      # internally and does not leave it on the frame, and WITHOUT IT the
+      # passer/receiver difficulty split silently degrades to actor-keeps-all
+      # rather than failing -- so it is asserted rather than assumed.
+      tryCatch({
+        spadl_ng <- add_xpass_to_spadl(spadl_epv, xpass_model)
+        n_pass_xp <- sum(spadl_ng$action_type == "pass" & !is.na(spadl_ng$xpass))
+        if (n_pass_xp < 0.5 * sum(spadl_ng$action_type == "pass")) {
+          stop(sprintf("xpass on only %d of %d passes", n_pass_xp,
+                       sum(spadl_ng$action_type == "pass")))
+        }
+        ng_fx <- as.data.frame(load_opta_fixtures(league, season = league_season,
+                                                  source = "local"))
+        ng_pay <- ng_build_ledger(spadl_ng,
+                                  adj = ng_build_adjacency(events, verbose = FALSE),
+                                  fixtures = ng_fx, verbose = FALSE)
+        ng_pay <- ng_spread_pools(ng_pay, spadl_ng, lineups, verbose = FALSE)
+        ng_pg  <- data.table::as.data.table(
+          ng_player_game(ng_pay, lineups, verbose = FALSE))
+        data.table::setnames(ng_pg, c("epv_offensive", "epv_defensive"),
+                             c("ng_offensive", "ng_defensive"))
+        player_game_epv <- merge(
+          data.table::as.data.table(player_game_epv),
+          ng_pg[, .(match_id, player_id, net_goals, ng_offensive, ng_defensive)],
+          by = c("match_id", "player_id"), all.x = TRUE)
+        message(sprintf("    net goals: %d of %d player-rows matched",
+                        sum(!is.na(player_game_epv$net_goals)),
+                        nrow(player_game_epv)))
+      }, error = function(e) {
+        # Never fail the export over an additive column: the production
+        # columns are complete without it, and a league that cannot build a
+        # ledger should publish the rest rather than nothing.
+        message(sprintf("    net goals SKIPPED for %s: %s", league,
+                        conditionMessage(e)))
+      })
+
+
       # EPV adjustments (position centering + opponent)
       tryCatch({
         dt_lu <- data.table::as.data.table(lineups)
