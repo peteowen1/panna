@@ -1,3 +1,29 @@
+# panna 0.3.59 (dev)
+
+## Net goals: a readable page, and the repeatability test
+
+`pkgdown/assets/net-goals.html`, generated live by
+`data-raw/epv/net-goals/build_net_goals_page.R`. A worked attacker and a worked
+defender traced action by action with both halves of the double entry visible,
+the identity check, the leaderboard, and the position and play-type tables.
+Nothing is cached, so it cannot drift from the ledger the way torp's equivalent
+page did.
+
+`data-raw/epv/net-goals/ng_repeatability.R` runs torp's D17 arbiter: correlate a
+player's net goals per 90 between consecutive seasons and prefer the setting
+that repeats. Over ENG 2022-2023 to 2024-2025, 397 players clearing 900 minutes
+in both seasons of a pair:
+
+* Repeatability falls monotonically as `dacts_share` rises -- 0.658 flat, 0.583
+  at 0.25, **0.525 at the shipped 0.50**, 0.502 at 1.00.
+* Every other lever prefers less redistribution too: lower `exec_blame`, lower
+  `named_share`, lower `off_pool` all repeat better.
+
+Recorded, not acted on. Repeatability rewards concentrating value on high-volume
+players because volume repeats, and net goals is a descriptive metric -- torp
+shipped its own team convention against the same measurement deliberately. The
+shares are unchanged pending Pete's call, with the cost now measured.
+
 # panna 0.3.58 (dev)
 
 ## EPV net goals ledger (`ng_*`), a new entry point
