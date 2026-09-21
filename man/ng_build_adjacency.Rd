@@ -43,6 +43,7 @@ every measurement taken against them.
 }
 \seealso{
 Other net_goals: 
+\code{\link{ng_adjust_for_rating}()},
 \code{\link{ng_build_ledger}()},
 \code{\link{ng_check_conservation}()},
 \code{\link{ng_check_team_totals}()},

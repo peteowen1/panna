@@ -69,6 +69,7 @@ change a match total.
 }
 \seealso{
 Other net_goals: 
+\code{\link{ng_adjust_for_rating}()},
 \code{\link{ng_build_adjacency}()},
 \code{\link{ng_check_conservation}()},
 \code{\link{ng_check_team_totals}()},

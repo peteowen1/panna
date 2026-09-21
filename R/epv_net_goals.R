@@ -1385,3 +1385,98 @@ ng_player_game <- function(pay, lineups, verbose = TRUE) {
 
   out[]
 }
+
+
+# =============================================================================
+# STEP 7 -- THE RATING-LAYER ADJUSTMENT
+# =============================================================================
+
+#' Position-centre per-game net goals for the rating layer
+#'
+#' The two-layer split, made explicit. The ledger conserves and therefore
+#' carries no baseline: the moment a positional mean is subtracted, a team's
+#' players stop summing to its goal difference. Predicting is a different job
+#' with different rules, so the centring belongs here, downstream, where
+#' breaking conservation is allowed and useful.
+#'
+#' **What this mirrors, and why it is needed for a fair comparison.** Production
+#' EPR is fed `epv_offensive_adj` / `epv_defensive_adj` renamed to the raw
+#' names (`data-raw/match-predictions-opta/build_epr_weekly.R:63-66`) -- the
+#' position-centred columns produced at export by `10b_export_game_logs.R`, not
+#' the raw ones. `ng_player_game()` emits raw net goals. Feeding those two to
+#' `calculate_epr_regression()` unchanged would compare a centred input against
+#' an uncentred one and attribute the difference to the ledger, which it is not.
+#' This function removes that confound.
+#'
+#' Centring is per position **and season**: position means drift between
+#' seasons, and a single pooled mean would carry one season's shape into
+#' another. Measured on ENG 2024-2025 the means run from +0.088 for a striker
+#' to -0.035 for a defender per player-game -- small, real, and exactly the
+#' systematic offset a rating should not reward or punish a player for.
+#'
+#' @param player_game Output of `ng_player_game()`.
+#' @param positions A player-to-position map with `player_id` and `position`,
+#'   e.g. from `get_player_positions()`. Rows whose position is unknown are
+#'   centred on the all-player mean rather than dropped, and reported.
+#' @param by_season Centre within season as well as position. Default `TRUE`.
+#' @param verbose Print a summary. Default `TRUE`.
+#'
+#' @return The same frame with `epv_offensive` and `epv_defensive` replaced by
+#'   their centred values, the originals kept as `*_raw`, and `net_goals_raw`
+#'   preserved. The column names are deliberately unchanged so this is a
+#'   drop-in for `calculate_epr_regression()`.
+#'
+#' @family net_goals
+#' @export
+ng_adjust_for_rating <- function(player_game, positions, by_season = TRUE,
+                                 verbose = TRUE) {
+  d <- data.table::as.data.table(player_game)
+  need <- c("player_id", "epv_offensive", "epv_defensive")
+  missing <- setdiff(need, names(d))
+  if (length(missing)) {
+    cli::cli_abort("{.fn ng_adjust_for_rating} needs column{?s} {.val {missing}}.")
+  }
+
+  pos <- unique(data.table::as.data.table(positions)[, .(player_id, position)],
+                by = "player_id")
+  d <- merge(d, pos, by = "player_id", all.x = TRUE)
+  n_nopos <- sum(is.na(d$position))
+  if (n_nopos > 0) {
+    # Centred on everyone rather than dropped: a player with no position map is
+    # still a player, and dropping him would quietly shrink the rating pool.
+    d[is.na(position), position := "__unknown__"]
+    if (isTRUE(verbose)) {
+      cli::cli_warn(paste0(
+        "{format(n_nopos, big.mark = ',')} player-match row{?s} have no position ",
+        "and are centred together as one group."))
+    }
+  }
+
+  d[, `:=`(net_goals_raw = net_goals,
+           epv_offensive_raw = epv_offensive,
+           epv_defensive_raw = epv_defensive)]
+
+  grp <- if (isTRUE(by_season) && "season" %in% names(d)) {
+    c("position", "season")
+  } else {
+    "position"
+  }
+  if (isTRUE(by_season) && !"season" %in% names(d)) {
+    cli::cli_warn("No {.field season} column: centring by position only.")
+  }
+
+  d[, epv_offensive := epv_offensive - mean(epv_offensive, na.rm = TRUE), by = grp]
+  d[, epv_defensive := epv_defensive - mean(epv_defensive, na.rm = TRUE), by = grp]
+  d[, net_goals := epv_offensive + epv_defensive]
+
+  if (isTRUE(verbose)) {
+    shift <- d[, .(m = mean(net_goals_raw, na.rm = TRUE)), by = position][order(-m)]
+    cli::cli_alert_success(paste0(
+      "Centred {format(nrow(d), big.mark = ',')} player-match row{?s} by ",
+      "{paste(grp, collapse = ' x ')}; position means removed ran from ",
+      "{round(max(shift$m), 3)} to {round(min(shift$m), 3)} net goals a game. ",
+      "The ledger's own totals are untouched -- {.field net_goals_raw} keeps them."))
+  }
+
+  d[]
+}

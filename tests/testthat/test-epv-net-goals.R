@@ -628,3 +628,84 @@ test_that("per-game halves and roles both sum to net goals", {
   expect_equal(tt[team_id == "A"]$v, -1.00, tolerance = 1e-10)
   expect_lt(abs(sum(pg$net_goals)), 1e-10)
 })
+
+
+# =============================================================================
+# The rating-layer adjustment (step 7): centring belongs downstream of the
+# ledger, because subtracting a positional mean breaks conservation by design.
+# =============================================================================
+
+ng_fixture_pg <- function() {
+  # Two positions, two players each, deliberately offset so centring has work
+  # to do: strikers average +1, defenders -1, and within each pair the spread
+  # is the same so a correct centring cannot reorder anyone.
+  data.table::data.table(
+    player_id = c("s1", "s2", "d1", "d2"),
+    player_name = c("S One", "S Two", "D One", "D Two"),
+    match_id = rep("m1", 4),
+    season = rep("2025-2026", 4),
+    minutes_played = rep(90, 4),
+    net_goals = c(1.5, 0.5, -0.5, -1.5),
+    epv_offensive = c(1.0, 0.4, -0.2, -0.8),
+    epv_defensive = c(0.5, 0.1, -0.3, -0.7)
+  )
+}
+ng_fixture_pos <- function() {
+  data.frame(player_id = c("s1", "s2", "d1", "d2"),
+             position = c("Striker", "Striker", "Defender", "Defender"),
+             stringsAsFactors = FALSE)
+}
+
+test_that("centring removes the position mean and nothing else", {
+  out <- ng_adjust_for_rating(ng_fixture_pg(), ng_fixture_pos(), verbose = FALSE)
+
+  # Strikers averaged +0.7 offence, defenders -0.5; both go to zero.
+  m <- out[, .(o = mean(epv_offensive), d = mean(epv_defensive)), by = position]
+  expect_true(all(abs(m$o) < 1e-12))
+  expect_true(all(abs(m$d) < 1e-12))
+
+  # Hand-computed: s1's offence 1.0 against a striker mean of 0.7 leaves +0.3.
+  expect_equal(out[player_id == "s1"]$epv_offensive, 0.3, tolerance = 1e-12)
+  expect_equal(out[player_id == "d2"]$epv_defensive, -0.2, tolerance = 1e-12)
+})
+
+test_that("centring does not reorder players inside a position", {
+  # The whole safety argument. A level shift is fine; a transform that changes
+  # the ranking inside a position is a different metric, not an adjustment.
+  pg <- ng_fixture_pg()
+  out <- ng_adjust_for_rating(pg, ng_fixture_pos(), verbose = FALSE)
+  for (p in c("Striker", "Defender")) {
+    ids <- out[position == p][order(-net_goals)]$player_id
+    raw <- out[position == p][order(-net_goals_raw)]$player_id
+    expect_equal(ids, raw, info = p)
+  }
+  # And the spread within a position is untouched.
+  expect_equal(sd(out[position == "Striker"]$net_goals),
+               sd(out[position == "Striker"]$net_goals_raw), tolerance = 1e-12)
+})
+
+test_that("the ledger's own totals survive as _raw", {
+  pg <- ng_fixture_pg()
+  out <- ng_adjust_for_rating(pg, ng_fixture_pos(), verbose = FALSE)
+  expect_equal(sum(out$net_goals_raw), sum(pg$net_goals), tolerance = 1e-12)
+  expect_equal(out[order(player_id)]$epv_offensive_raw,
+               pg[order(player_id)]$epv_offensive, tolerance = 1e-12)
+  # The centred total is ~0 by construction, which is exactly why this cannot
+  # live inside the conserving layer.
+  expect_lt(abs(sum(out$net_goals)), 1e-12)
+})
+
+test_that("a player with no position is grouped, not dropped", {
+  pos <- ng_fixture_pos()[1:3, ]          # d2 has no position
+  expect_warning(
+    out <- ng_adjust_for_rating(ng_fixture_pg(), pos, verbose = TRUE),
+    "no position")
+  expect_equal(nrow(out), 4L)
+  expect_true("d2" %in% out$player_id)
+})
+
+test_that("the EPR column contract is preserved", {
+  out <- ng_adjust_for_rating(ng_fixture_pg(), ng_fixture_pos(), verbose = FALSE)
+  expect_true(all(c("player_id", "player_name", "minutes_played",
+                    "epv_offensive", "epv_defensive") %in% names(out)))
+})

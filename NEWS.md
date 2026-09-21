@@ -1,3 +1,29 @@
+# panna 0.3.61 (dev)
+
+## The rating-layer adjustment for net goals
+
+`ng_adjust_for_rating()` position-centres per-game net goals, by position and
+season, returning the same column names so it is a drop-in for
+`calculate_epr_regression()`.
+
+This makes the EPR gate like-for-like, which it would not otherwise be.
+Production EPR is fed `epv_offensive_adj` / `epv_defensive_adj` renamed to the
+raw names (`build_epr_weekly.R:63-66`) — the position-centred columns produced
+at export by `10b_export_game_logs.R`. `ng_player_game()` emits raw net goals.
+Feeding those two to EPR unchanged would compare a centred input against an
+uncentred one and credit the difference to the ledger, which it is not.
+
+Measured on ENG 2024-2025: the position means removed run from +0.054 for a
+goalkeeper to -0.042 for a defender per player-game. Within-position spread is
+unchanged (defender sd 0.2852 before and after) and no player moves relative to
+a positional peer — a level shift, not a different metric. The ledger's own
+totals survive as `net_goals_raw`, `epv_offensive_raw`, `epv_defensive_raw`.
+
+Centring lives here and not in the ledger for the reason torp records as D4:
+the moment a positional mean is subtracted, a team's players stop summing to
+its goal difference. The centred total is ~0 by construction, which is exactly
+why it cannot sit upstream.
+
 # panna 0.3.60 (dev)
 
 ## Per-game net goals, and a receiver paid to the wrong team
