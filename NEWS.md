@@ -20,6 +20,18 @@ Verified on ENG 2024-2025: 11,427 of 11,427 player-rows matched, the two halves
 sum to the total at 3.3e-15, and a team's players sum to that team's own goal
 difference at cor 0.9834, median error 0.201 goals.
 
+The published column is the ledger RESTRICTED to players the game-logs frame
+carries (11,472 ledger rows against 11,427 published on ENG 2024-2025), so a
+match's two sides cancel to about 0.1 goals rather than the ~1e-14 the
+standalone ledger reaches. Second order against the 0.20 median error already
+in the metric, but it means `net_goals` as published is very nearly conserving,
+not exactly conserving.
+
+Three stages sat between computing the column and writing it, two of which
+rebuild the frame from a fixed column set. The first attempt logged
+"11427 of 11427 matched" and wrote a parquet with no net-goals columns at all.
+Verify the written artifact, not the log.
+
 The blog's new `scripts/validate-football-epv-units.mjs` already carries the
 check for this column and will pick it up on the next build — asserted PER TEAM
 against that team's own goal difference, never through a home-minus-away fit.

@@ -473,6 +473,7 @@ validate_game_log_schema <- function(dt, league, season) {
       spadl_credit     <- assign_epv_credit(spadl_epv, xpass_model)
       player_game_epv  <- aggregate_player_game_epv(spadl_credit, lineups)
 
+      ng_cols <- NULL   # reset per league: a skip must not inherit the last one's
       # --- Net goals ledger (ADDITIVE; every production column above is
       # untouched). Three columns join the frame: `net_goals` and its two
       # halves. The ledger allocates each action so a team's players sum to
@@ -505,13 +506,15 @@ validate_game_log_schema <- function(dt, league, season) {
           ng_player_game(ng_pay, lineups, verbose = FALSE))
         data.table::setnames(ng_pg, c("epv_offensive", "epv_defensive"),
                              c("ng_offensive", "ng_defensive"))
-        player_game_epv <- merge(
-          data.table::as.data.table(player_game_epv),
-          ng_pg[, .(match_id, player_id, net_goals, ng_offensive, ng_defensive)],
-          by = c("match_id", "player_id"), all.x = TRUE)
-        message(sprintf("    net goals: %d of %d player-rows matched",
-                        sum(!is.na(player_game_epv$net_goals)),
-                        nrow(player_game_epv)))
+        # Stashed, NOT merged onto player_game_epv:
+        # build_player_game_ratings() assembles the published frame from a fixed
+        # column set, so anything joined here is silently dropped before the
+        # parquet is written. It reported "11427 of 11427 matched" and wrote a
+        # file with no net-goals columns at all. The join happens after that
+        # function instead.
+        ng_cols <- ng_pg[, .(match_id, player_id, net_goals,
+                             ng_offensive, ng_defensive)]
+        message(sprintf("    net goals: %d player-rows computed", nrow(ng_cols)))
       }, error = function(e) {
         # Never fail the export over an additive column: the production
         # columns are complete without it, and a league that cannot build a
@@ -774,6 +777,22 @@ validate_game_log_schema <- function(dt, league, season) {
         game_ratings <- merge(game_ratings, match_dates, by = "match_id", all.x = TRUE)
       }
 
+      if (!is.null(ng_cols)) {
+        game_ratings <- merge(data.table::as.data.table(game_ratings), ng_cols,
+                              by = c("match_id", "player_id"), all.x = TRUE)
+        # The published column is the ledger RESTRICTED to players this frame
+        # carries, and the two populations are not identical -- 11,472 ledger
+        # rows against 11,427 published on ENG 2024-2025. So a match's two
+        # sides cancel to about 0.1 goals here rather than the ~1e-14 the
+        # standalone ledger reaches. That is second order against the 0.20
+        # median error already in the metric, and it is stated rather than
+        # left for a reader to trip over: `net_goals` published is very nearly
+        # conserving, not exactly conserving.
+        n_drop <- nrow(ng_cols) - sum(!is.na(game_ratings$net_goals))
+        message(sprintf("    net goals: %d of %d published rows carry it (%d ledger row%s not in this frame)",
+                        sum(!is.na(game_ratings$net_goals)), nrow(game_ratings),
+                        n_drop, if (n_drop == 1) "" else "s"))
+      }
       game_ratings[, league := league]
       game_ratings[, season := season]
 
@@ -1078,6 +1097,14 @@ validate_game_log_schema <- function(dt, league, season) {
       # share is defensive. Added 2026-09-02 (panna#228), where that gap caused
       # an inversion to be attributed to the wrong term.
       "epv_duel_blame", "epv_aerial_att",
+      # Net goals ledger (panna >= 0.3.62). `net_goals` sums, per team, to that
+      # team's OWN goal difference, so a consumer must assert it PER TEAM and
+      # never through a home-minus-away fit -- the difference is 2x the margin
+      # by construction. `ng_offensive` + `ng_defensive` = `net_goals`, split by
+      # which half of the double entry the payment sat on rather than by action
+      # type. Absent for a league whose ledger could not be built; the
+      # intersect() above drops it silently in that case, which is intended.
+      "net_goals", "ng_offensive", "ng_defensive",
       "wpa_total", "wpa_as_actor", "wpa_as_receiver",
       "psv", "osv", "dsv", "psv_league_offset",
       "goals_minus_xgot", "placement_added", "xgot",
