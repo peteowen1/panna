@@ -805,7 +805,24 @@ validate_game_log_schema <- function(dt, league, season) {
         # payment. Sized before it was written -- 7.6% of absolute value,
         # per-player-game correlation 0.9972, no minutes bias -- and it is the
         # same step torp runs to reach 0.000. See `ng_reconcile_margin()`.
-        game_ratings <- ng_reconcile_margin(game_ratings, ng_fx, verbose = TRUE)
+        #
+        # Wrapped, and the columns DROPPED rather than shipped raw if it fails.
+        # Everything above this line is best-effort by design -- the ledger build
+        # is wrapped for exactly that reason -- but this call was not, so a single
+        # bad fixtures frame would have taken the whole league's game logs with it
+        # rather than just the additive column. Shipping an UNRECONCILED
+        # `net_goals` instead would be worse than shipping none: it looks like the
+        # real column, and the only thing that would notice is the blog's units
+        # gate, days later and one repo away.
+        game_ratings <- tryCatch(
+          ng_reconcile_margin(game_ratings, ng_fx, verbose = TRUE),
+          error = function(e) {
+            message(sprintf(
+              "    net goals DROPPED for %s: margin reconciliation failed (%s)",
+              league, conditionMessage(e)))
+            data.table::as.data.table(game_ratings)[
+              , c("net_goals", "ng_offensive", "ng_defensive") := NULL][]
+          })
         message(sprintf("    net goals: %d of %d published rows carry it",
                         sum(!is.na(game_ratings$net_goals)), nrow(game_ratings)))
       }

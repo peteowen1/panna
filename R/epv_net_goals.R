@@ -1690,7 +1690,11 @@ ng_reconcile_margin <- function(ng, fixtures, verbose = TRUE) {
       "and are left out of the reconciliation, so their match will not cancel exactly."))
   }
 
-  tm <- d[!is.na(team_id) & match_id %chin% fx$match_id,
+  # `%in%`, not `%chin%`: the latter errors outright when its table is not a
+  # character vector, and `match_id` arrives as an integer from some loaders in
+  # this package (`R/rapm_matrix.R` casts it before its own joins for the same
+  # reason). An additive column must not be able to abort a league's export.
+  tm <- d[!is.na(team_id) & match_id %in% fx$match_id,
           .(got = sum(net_goals, na.rm = TRUE),
             wsum = sum(pmax(as.numeric(minutes_played), 0), na.rm = TRUE),
             n = .N),
@@ -1718,7 +1722,7 @@ ng_reconcile_margin <- function(ng, fixtures, verbose = TRUE) {
   d[, c(".short", ".wsum", ".n", ".w") := NULL]
 
   if (isTRUE(verbose)) {
-    chk <- d[!is.na(team_id) & match_id %chin% fx$match_id,
+    chk <- d[!is.na(team_id) & match_id %in% fx$match_id,
              .(got = sum(net_goals, na.rm = TRUE)), by = .(match_id, team_id)]
     chk <- merge(chk, tm[, .(match_id, team_id, want)], by = c("match_id", "team_id"))
     cli::cli_alert_success(paste0(

@@ -820,3 +820,32 @@ test_that("ng_reconcile_margin accepts the epv_* spelling of the halves", {
   expect_equal(out[player_id == "h1"]$epv_defensive, 0.6)
   expect_equal(out[player_id == "h1"]$net_goals, 1)
 })
+
+test_that("ng_reconcile_margin works with a non-character match_id", {
+  # The regression this exists for: `%chin%` errors outright when its table is
+  # not character, and `match_id` arrives as an integer from some loaders here.
+  # Every other test in this file uses character ids, so none of them would
+  # have caught it -- and the call site publishes an additive column, so an
+  # abort would have cost a whole league's game logs, not just this one.
+  ng <- data.table::data.table(
+    match_id = rep(101L, 4), player_id = c("h1", "h2", "a1", "a2"),
+    team_id = rep(c("H", "A"), each = 2), minutes_played = rep(90, 4),
+    net_goals = c(0.4, 0.4, -0.4, -0.4),
+    ng_offensive = c(0.4, 0.4, -0.4, -0.4), ng_defensive = rep(0, 4))
+  fx <- data.frame(match_id = 101L, home_team_id = "H", away_team_id = "A",
+                   home_score = 3, away_score = 1)
+  out <- ng_reconcile_margin(ng, fx, verbose = FALSE)
+  # H short = 2 - 0.8 = 1.2 over two equal shares; A short = -2 - -0.8 = -1.2.
+  expect_equal(sum(out[team_id == "H"]$net_goals), 2)
+  expect_equal(sum(out[team_id == "A"]$net_goals), -2)
+  expect_equal(out[player_id == "h1"]$ng_recon, 0.6)
+})
+
+test_that("ng_reconcile_margin aborts rather than guessing when a half is missing", {
+  ng <- data.table::data.table(
+    match_id = "m1", player_id = c("h1", "a1"), team_id = c("H", "A"),
+    minutes_played = c(90, 90), net_goals = c(0.4, -0.4))
+  fx <- data.frame(match_id = "m1", home_team_id = "H", away_team_id = "A",
+                   home_score = 1, away_score = 0)
+  expect_error(ng_reconcile_margin(ng, fx, verbose = FALSE), "epv_defensive")
+})
