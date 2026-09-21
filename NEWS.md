@@ -1,3 +1,75 @@
+# panna 0.3.59 (dev)
+
+## Net goals: a readable page, and the repeatability test
+
+`pkgdown/assets/net-goals.html`, generated live by
+`data-raw/epv/net-goals/build_net_goals_page.R`. A worked attacker and a worked
+defender traced action by action with both halves of the double entry visible,
+the identity check, the leaderboard, and the position and play-type tables.
+Nothing is cached, so it cannot drift from the ledger the way torp's equivalent
+page did.
+
+`data-raw/epv/net-goals/ng_repeatability.R` runs torp's D17 arbiter: correlate a
+player's net goals per 90 between consecutive seasons and prefer the setting
+that repeats. Over ENG 2022-2023 to 2024-2025, 397 players clearing 900 minutes
+in both seasons of a pair:
+
+* Repeatability falls monotonically as `dacts_share` rises -- 0.658 flat, 0.583
+  at 0.25, **0.525 at the shipped 0.50**, 0.502 at 1.00.
+* Every other lever prefers less redistribution too: lower `exec_blame`, lower
+  `named_share`, lower `off_pool` all repeat better.
+
+Recorded, not acted on. Repeatability rewards concentrating value on high-volume
+players because volume repeats, and net goals is a descriptive metric -- torp
+shipped its own team convention against the same measurement deliberately. The
+shares are unchanged pending Pete's call, with the cost now measured.
+
+# panna 0.3.58 (dev)
+
+## EPV net goals ledger (`ng_*`), a new entry point
+
+Allocates each action's `epv_delta` to players so that a match's payments sum
+to the scoreline. Production is untouched: `assign_epv_credit()`,
+`aggregate_player_game_epv()` and every pipeline behave exactly as before.
+
+Method deliberately mirrors torpverse's net points. Under the default
+`convention = "team"` each side's players sum to that team's own goal
+difference -- +2 and -2 for a 3-1 win, zero across the match -- which is the
+ESPN Net Points convention and what torp ships as of 1.7.0. `"margin"` is kept
+for comparison, pinning the match total and letting team totals float.
+
+Measured on ENG 2024-2025 (514,458 actions, 377 matches, 754 team-matches):
+cor 0.9835 with each team's own goal difference, slope 1.0012, median error
+0.198 goals, the two sides cancelling to 1.2e-13. No reconciliation and no
+forced level -- the identity falls out of double entry.
+
+What it fixes, and why it was wrong before:
+
+* **Shot-stopping went from -51.2 to +195.2 goals across the season.** A
+  successful stop was worth **-0.0100 goals to its own team** and every
+  position read negative, because the shot row charges the shooter `0 - xG`
+  for missing while nobody was ever paid the xG the stop prevented. SPADL has
+  no `block` type -- 2,802 of 5,124 `keeper_save` rows (54.7%) are outfield
+  players -- so keepers and blockers are covered by one rule.
+* **Adjacency is now computed on the full 639,507-event stream**
+  (`ng_build_adjacency()`), before SPADL's filter rather than after it. 12.01%
+  of actions had the wrong next team; 30,038 were classified as turnovers that
+  are not. Nine dropped Opta types name the player who caused the possession
+  change (Ball Out alone is 82 a match) and are now visible to the ledger. The
+  SPADL filter itself is unchanged, so no model input moves.
+* **Team pools are spread across the eleven on the pitch, to the minute**
+  (`ng_spread_pools()`), with `dacts_share = 0.5` routing half the defensive
+  pool's credit half by defensive work. Positions land within 0.122 goals per
+  90 of each other against 0.221 under a flat spread.
+
+New exports: `ng_build_adjacency()`, `ng_build_ledger()`,
+`ng_check_conservation()`, `ng_check_team_totals()`, `ng_shares()`,
+`ng_spread_pools()`. Regenerable analysis scripts live in
+`data-raw/epv/net-goals/`.
+
+Design and measurement: `pannaverse/docs/plans/EPV-NET-GOALS.md`; rules, build
+log and share sweeps: `pannaverse/docs/plans/EPV-NET-GOALS-RULES.md`.
+
 # panna 0.3.57 (dev)
 
 ## Agent-skills triage config (docs only)
