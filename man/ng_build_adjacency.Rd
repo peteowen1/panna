@@ -46,6 +46,7 @@ Other net_goals:
 \code{\link{ng_build_ledger}()},
 \code{\link{ng_check_conservation}()},
 \code{\link{ng_check_team_totals}()},
+\code{\link{ng_player_game}()},
 \code{\link{ng_shares}()},
 \code{\link{ng_spread_pools}()}
 }

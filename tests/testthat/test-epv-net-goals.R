@@ -551,3 +551,80 @@ test_that("a keeper_save follows the rebound rule under BOTH conventions", {
     expect_false(any(pay[action_id == 3L]$role == "actor"), info = conv)
   }
 })
+
+
+# =============================================================================
+# Per-game aggregation, and the receiver-must-be-a-teammate rule.
+# =============================================================================
+
+ng_fixture_lineup <- function() {
+  data.frame(
+    match_id = rep("m1", 22),
+    player_id = c(paste0("h", 1:11), paste0("a", 1:11)),
+    team_id = rep(c("H", "A"), each = 11),
+    player_name = c(paste0("Home ", 1:11), paste0("Away ", 1:11)),
+    match_date = rep("2026-01-01", 22),
+    is_starter = rep(TRUE, 22),
+    minutes_played = rep(90, 22),
+    sub_on_minute = rep(0, 22),
+    sub_off_minute = rep(0, 22),
+    competition = rep("ENG", 22),
+    season = rep("2025-2026", 22),
+    stringsAsFactors = FALSE
+  )
+}
+
+test_that("a successful pass to an OPPONENT pays no receiver share", {
+  # Regression. SPADL names a receiver on 26.4% of actions who is on the other
+  # side -- 11,905 of them on passes it calls successful, carrying 201.7 goals
+  # of absolute value. Paying those the teammate split credited an opponent and
+  # booked it under HIS team, i.e. on the wrong side of the double entry, which
+  # left 55% of player-matches holding payments under two team ids.
+  d <- ng_fixture_spadl()
+  d$receiver_player_id <- c("h2", "a1", NA, NA)     # action 2 "reaches" an opponent
+  d$receiver_team_id   <- c("H", "A", NA, NA)
+  d$xpass              <- c(0.9, 0.9, NA, NA)
+
+  pay <- ng_build_ledger(d, adj = NULL, allocate = TRUE, convention = "team",
+                         fixtures = ng_fixture_fixtures(), verbose = FALSE)
+
+  # Action 1's receiver is a teammate and is paid; action 2's is not.
+  expect_equal(nrow(pay[action_id == 1L & role == "receiver"]), 1L)
+  expect_equal(pay[action_id == 1L & role == "receiver"]$player_id, "h2")
+  expect_equal(nrow(pay[action_id == 2L & role == "receiver"]), 0L)
+  # a1 must not appear on the HOME side of the ledger at all.
+  expect_equal(nrow(pay[player_id == "a1" & team_id == "H"]), 0L)
+  # The identity is untouched either way.
+  expect_equal(sum(pay[team_id == "H"]$value_own), 1.00, tolerance = 1e-12)
+})
+
+test_that("ng_player_game refuses unspread pools rather than dropping them", {
+  # A pool has no player, so aggregating before the spread would shrink every
+  # player-game total while the team totals stayed exactly right.
+  d <- ng_fixture_spadl()
+  pay <- ng_build_ledger(d, adj = NULL, allocate = TRUE, convention = "team",
+                         fixtures = ng_fixture_fixtures(), verbose = FALSE)
+  expect_error(ng_player_game(pay, ng_fixture_lineup(), verbose = FALSE),
+               "unspread team pools")
+})
+
+test_that("per-game halves and roles both sum to net goals", {
+  d <- ng_fixture_spadl()
+  acts <- transform(d, time_seconds = c(10, 20, 65, 90), period_id = 1L)
+  pay <- ng_build_ledger(d, adj = NULL, allocate = TRUE, convention = "team",
+                         fixtures = ng_fixture_fixtures(), verbose = FALSE)
+  sp <- ng_spread_pools(pay, acts, ng_fixture_lineup(), verbose = FALSE)
+  pg <- ng_player_game(sp, ng_fixture_lineup(), verbose = FALSE)
+
+  expect_true(all(c("player_id", "player_name", "match_date", "minutes_played",
+                    "epv_offensive", "epv_defensive") %in% names(pg)))
+  expect_lt(max(abs(pg$epv_offensive + pg$epv_defensive - pg$net_goals)), 1e-10)
+  rc <- grep("^ng_", names(pg), value = TRUE)
+  expect_lt(max(abs(rowSums(pg[, ..rc]) - pg$net_goals)), 1e-10)
+
+  # Team totals survive the aggregation: H to +1, A to -1, match to zero.
+  tt <- pg[, .(v = sum(net_goals)), by = team_id]
+  expect_equal(tt[team_id == "H"]$v, 1.00, tolerance = 1e-10)
+  expect_equal(tt[team_id == "A"]$v, -1.00, tolerance = 1e-10)
+  expect_lt(abs(sum(pg$net_goals)), 1e-10)
+})

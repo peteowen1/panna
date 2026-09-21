@@ -543,8 +543,26 @@ NG_STOP_ACTIONS <- c("keeper_save")
   d[, `:=`(
     is_shot = action_type == "shot",
     is_stop = action_type %chin% NG_STOP_ACTIONS,
-    has_receiver = !is.na(receiver_player_id) & nzchar(as.character(receiver_player_id))
+    # A receiver share is a TEAMMATE's share, so the receiver must be on the
+    # acting team. SPADL names a receiver on 26.4% of actions who is on the
+    # OPPOSING side -- 11,905 of them on passes SPADL calls successful, carrying
+    # 201.7 goals of absolute value. Paying those the teammate split credited an
+    # opponent and booked it under his own team, i.e. on the wrong side of the
+    # double entry, which is how 55% of player-matches ended up with payments
+    # under two team ids. Such a pass falls through to the generic branch and
+    # the actor keeps it.
+    #
+    # Whether a pass that reaches an opponent should be `result == "success"`
+    # at all is an upstream question about SPADL, not one to answer by
+    # redefining `result` here.
+    has_receiver = !is.na(receiver_player_id) &
+      nzchar(as.character(receiver_player_id))
   )]
+  # Element-wise, deliberately: `receiver_team_id %in% team_id` would test
+  # membership against the WHOLE column and be TRUE on every row.
+  if ("receiver_team_id" %in% names(d)) {
+    d[, has_receiver := has_receiver & (receiver_team_id == team_id) %in% TRUE]
+  }
   # A stop is scored on its own row, never as a turnover: its value IS the
   # rebound, which the rebound rule already pays for. Scoring it both ways would
   # charge the stopper twice for one event.
@@ -1255,4 +1273,115 @@ NG_DEFENSIVE_ACTIONS <- c("tackle", "interception", "clearance", "keeper_save",
     pay[unnamed, `:=`(role = pool_role, player_id = NA_character_)]
   }
   pay
+}
+
+
+# =============================================================================
+# STEP 6 -- PER-GAME AGGREGATION
+# =============================================================================
+
+#' Aggregate net goals to one row per player-match
+#'
+#' Turns the payment ledger into the frame the rating layer consumes. The
+#' column contract deliberately matches `aggregate_player_game_epv()`'s --
+#' `player_id`, `player_name`, `match_date`, `minutes_played`,
+#' `epv_offensive`, `epv_defensive` -- so `calculate_epr_regression()` can be
+#' pointed at either without changing, and the two can be gated against each
+#' other on identical footing.
+#'
+#' **The offence/defence split means something different here, and it is the
+#' better of the two.** `aggregate_player_game_epv()` splits by bucketing action
+#' types (passing and shooting are offensive, tackles and keeper handling
+#' defensive), which is presentational -- re-bucketing an action changes the
+#' split and not the total. Net goals splits by which half of the double entry
+#' the payment sits on: `offence` is the side that acted, `defence` the side
+#' that conceded. Every player is paid on both halves of every action his team
+#' is involved in, so a defender who never touches the ball still has a
+#' defensive number, which is the whole point.
+#'
+#' Pools must be spread first. A payment with no player is real value, and
+#' dropping it here would quietly shrink a player-game total while every team
+#' total stayed correct -- so an unspread pool aborts rather than being skipped.
+#'
+#' @param pay Payments from `ng_spread_pools()`.
+#' @param lineups Opta lineups, for minutes, names, date, league and season.
+#' @param verbose Print a summary. Default `TRUE`.
+#'
+#' @return One row per player-match: identifiers, `minutes_played`,
+#'   `net_goals`, `epv_offensive`, `epv_defensive`, and one `ng_*` column per
+#'   role so a rating layer can choose its own grouping rather than inheriting
+#'   this one (torp D3: store tags, group later).
+#'
+#' @family net_goals
+#' @export
+ng_player_game <- function(pay, lineups, verbose = TRUE) {
+  p <- data.table::as.data.table(pay)
+
+  unspread <- p$role %chin% c("pool_off", "pool_def")
+  if (any(unspread)) {
+    cli::cli_abort(c(
+      "{format(sum(unspread), big.mark = ',')} payment{?s} are still unspread team pools.",
+      "i" = "Run {.fn ng_spread_pools} first: a pool has no player, so aggregating now would drop that value from every player-game while the team totals stayed correct.",
+      "i" = "Unspread pools carry {round(sum(abs(p$value_own[unspread])), 1)} goals of absolute value here."))
+  }
+  p <- p[!is.na(player_id) & nzchar(as.character(player_id))]
+
+  if (!"entry" %in% names(p)) {
+    cli::cli_abort(c(
+      "{.fn ng_player_game} needs the {.field entry} tag to split offence from defence.",
+      "i" = "It is set by {.code ng_build_ledger(convention = \"team\")}."))
+  }
+
+  tot <- p[, .(net_goals = sum(value_own, na.rm = TRUE)),
+           by = .(match_id, player_id, team_id)]
+  halves <- data.table::dcast(
+    p[, .(v = sum(value_own, na.rm = TRUE)), by = .(match_id, player_id, entry)],
+    match_id + player_id ~ entry, value.var = "v", fill = 0)
+  for (nm in c("offence", "defence")) if (!nm %in% names(halves)) halves[, (nm) := 0]
+  data.table::setnames(halves, c("offence", "defence"),
+                       c("epv_offensive", "epv_defensive"))
+
+  # One column per role. A rating layer that wants three channels, or five, can
+  # build them from these rather than inheriting whatever grouping suited the
+  # display -- the same reason torp keeps role tags rather than fixed channels.
+  roles <- data.table::dcast(
+    p[, .(v = sum(value_own, na.rm = TRUE)), by = .(match_id, player_id, role)],
+    match_id + player_id ~ role, value.var = "v", fill = 0)
+  rcols <- setdiff(names(roles), c("match_id", "player_id"))
+  data.table::setnames(roles, rcols, paste0("ng_", rcols))
+
+  out <- merge(tot, halves, by = c("match_id", "player_id"))
+  out <- merge(out, roles, by = c("match_id", "player_id"))
+
+  lu <- data.table::as.data.table(lineups)
+  keep <- intersect(c("match_id", "player_id", "player_name", "match_date",
+                      "minutes_played", "competition", "season"), names(lu))
+  lu <- unique(lu[, ..keep], by = c("match_id", "player_id"))
+  out <- merge(out, lu, by = c("match_id", "player_id"), all.x = TRUE)
+  if ("competition" %in% names(out)) data.table::setnames(out, "competition", "league")
+  if ("minutes_played" %in% names(out)) {
+    out[, minutes_played := suppressWarnings(as.numeric(minutes_played))]
+  }
+
+  n_nolu <- sum(is.na(out$minutes_played))
+  if (n_nolu > 0) {
+    cli::cli_warn(paste0(
+      "{format(n_nolu, big.mark = ',')} player-match row{?s} have no lineup entry, ",
+      "so no minutes, name, date or league. They keep their net goals and will ",
+      "be dropped by any rating layer that needs minutes."))
+  }
+
+  data.table::setcolorder(out, intersect(
+    c("player_id", "player_name", "match_id", "team_id", "match_date", "league",
+      "season", "minutes_played", "net_goals", "epv_offensive", "epv_defensive"),
+    names(out)))
+
+  if (isTRUE(verbose)) {
+    cli::cli_alert_success(paste0(
+      "Per-game: {format(nrow(out), big.mark = ',')} player-match row{?s} over ",
+      "{uniqueN(out$match_id)} match{?es}; net goals sum {round(sum(out$net_goals), 3)} ",
+      "(zero across a full set of matches, because every action is booked to both sides)."))
+  }
+
+  out[]
 }

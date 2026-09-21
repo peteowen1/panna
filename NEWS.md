@@ -1,3 +1,37 @@
+# panna 0.3.60 (dev)
+
+## Per-game net goals, and a receiver paid to the wrong team
+
+`ng_player_game()` aggregates the payment ledger to one row per player-match,
+deliberately matching `aggregate_player_game_epv()`'s column contract
+(`player_id`, `player_name`, `match_date`, `minutes_played`, `epv_offensive`,
+`epv_defensive`) so `calculate_epr_regression()` can be pointed at either and
+the two gated against each other on identical footing. It also emits one `ng_*`
+column per role, so a rating layer can pick its own channels rather than
+inheriting a display grouping.
+
+The offence/defence split means something better here than in the existing
+aggregator. That one buckets action types (passing offensive, tackles
+defensive), which is presentational — re-bucketing changes the split and not
+the total. Net goals splits by which half of the double entry a payment sits
+on, so a defender who never touches the ball still has a defensive number.
+
+**Bug found while building it.** SPADL names a receiver on 26.4% of actions who
+is on the *opposing* team — 11,905 of them on passes it calls successful,
+carrying 201.7 goals of absolute value. The pass branch paid those the teammate
+receiver split and booked it under the receiver's own team, i.e. the wrong side
+of the double entry, leaving 55% of player-matches holding payments under two
+team ids. A receiver share now requires the receiver to be on the acting team;
+such a pass falls through to the generic branch and the actor keeps it.
+
+Effect: Salah 14.32 to 14.00 across the season, Pickford 6.46 to 6.83, and the
+top 20 reorders slightly. Team totals are untouched (cor 0.9835, median error
+0.198), because the misrouted value was always booked somewhere on the right
+match — just to the wrong side of it.
+
+Whether a pass that reaches an opponent should be `result == "success"` at all
+is an upstream SPADL question and is not answered here.
+
 # panna 0.3.59 (dev)
 
 ## Net goals: a readable page, and the repeatability test
