@@ -1216,7 +1216,15 @@ if (isTRUE(build_game_logs)) {
     p <- tryCatch(
       .process_season(s),
       error = function(e) {
-        warning(sprintf("Season %s aborted: %s", s, e$message), call. = FALSE)
+        # `message()`, NOT `warning()`. R DEFERS warnings to the end of the
+        # script and caps the deferred list at 50, so an aborted season used to
+        # surface as one line of "There were 50 or more warnings" printed AFTER
+        # "Game logs exported successfully!". On 2026-09-22 that hid seven of
+        # eleven seasons aborting at the events-coverage guard: the run reported
+        # success, listed four seasons where eleven were asked for, and nothing
+        # said the other seven were missing. A message prints at the moment it
+        # happens, which is the only time it can stop a run that is going wrong.
+        message(sprintf("\n  !! SEASON %s ABORTED: %s\n", s, conditionMessage(e)))
         NULL
       }
     )
@@ -1235,6 +1243,34 @@ if (isTRUE(build_game_logs)) {
 
 if (length(season_paths) == 0) {
   stop("No seasons produced game logs. Check upstream data availability.")
+}
+
+# Requested vs built. A run that produces SOME of what was asked for is the
+# dangerous case: "No seasons produced game logs" already stops the empty run,
+# and a complete run is fine, but a partial one used to print
+# "Game logs exported successfully!" over a short list and nothing else. That is
+# how a net_goals backfill quietly built 4 of 11 seasons on 2026-09-22.
+.missing_seasons <- setdiff(game_log_seasons, names(season_paths))
+if (length(.missing_seasons) > 0L) {
+  message(sprintf(paste0(
+    "\n########################################\n",
+    "INCOMPLETE: %d of %d season(s) produced game logs.\n",
+    "MISSING: %s\n",
+    "########################################\n"),
+    length(season_paths), length(game_log_seasons),
+    paste(.missing_seasons, collapse = ", ")))
+  # Never publish a partial set. Uploading is outward-facing and the consumer
+  # cannot tell a short release from a complete one -- the blog would serve a
+  # history with holes in it and nothing would go red. A local build keeps what
+  # it made; only the publish is blocked.
+  if (isTRUE(upload_game_logs)) {
+    stop(sprintf(
+      paste0("Refusing to upload a partial backfill: %d of %d seasons built, ",
+             "missing %s. Re-run with the upstream gap fixed, or set ",
+             "upload_game_logs <- FALSE to keep the local files."),
+      length(season_paths), length(game_log_seasons),
+      paste(.missing_seasons, collapse = ", ")))
+  }
 }
 
 # 5. Mirror current-season alias → game_logs.parquet (blog-workflow compat) ----
