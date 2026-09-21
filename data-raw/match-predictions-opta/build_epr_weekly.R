@@ -60,11 +60,65 @@ files <- list.files(cache_dir, pattern = "^game_logs_.*\\.parquet$",
 gl <- rbindlist(lapply(files, read_parquet),
                 use.names = TRUE, fill = TRUE)
 gl[, match_date := as.Date(sub("Z$","", match_date))]
-gl <- gl[!is.na(epv_offensive_adj) & !is.na(epv_defensive_adj),
-         .(player_id, player_name, match_id, match_date, league, season,
-            team_id, minutes_played = total_minutes,
-            epv_offensive = epv_offensive_adj,
-            epv_defensive = epv_defensive_adj)]
+## WHICH LEDGER FEEDS THE RATING. "epv" is the production credit layer, read as
+## the position-centred `epv_*_adj` columns renamed to the raw names -- the
+## historical behaviour, and the default. "net_goals" is the net goals ledger
+## (pannaverse/docs/plans/EPV-NET-GOALS.md), centred here rather than at export
+## because the ledger must stay conserving upstream of the rating layer.
+##
+## The EPR gate measured these against each other over 5 leagues walk-forward,
+## 5,232 matches: net goals won every fold (MAE 1.3135 vs 1.3254, sign test
+## p = 0.007). The gain is small and real; see that plan's section 14 before
+## reading more into it.
+##
+## NOT flipped by default, because `net_goals` only exists in game logs built
+## after panna 0.3.62. Flipping before a full rebuild would silently drop every
+## season that predates it, so the branch below ABORTS instead of quietly
+## training on a fraction of the history.
+if (!exists("EPR_SOURCE", inherits = FALSE)) EPR_SOURCE <- "epv"
+stopifnot(EPR_SOURCE %in% c("epv", "net_goals"))
+t_log(sprintf("EPR source: %s", EPR_SOURCE))
+
+if (EPR_SOURCE == "net_goals") {
+  need <- c("net_goals", "ng_offensive", "ng_defensive")
+  missing <- setdiff(need, names(gl))
+  if (length(missing)) {
+    stop(sprintf(paste0(
+      "EPR_SOURCE='net_goals' but game_logs lacks %s.
+",
+      "  Rebuild the game logs first (10b, panna >= 0.3.62) -- training on the ",
+      "seasons that happen to carry the column would silently drop the rest."),
+      paste(missing, collapse = ", ")))
+  }
+  n_have <- sum(!is.na(gl$net_goals))
+  if (n_have < 0.95 * nrow(gl)) {
+    stop(sprintf(paste0(
+      "EPR_SOURCE='net_goals' but only %s of %s rows carry it (%.1f%%).
+",
+      "  A partial rebuild trains on a biased slice of history."),
+      format(n_have, big.mark = ","), format(nrow(gl), big.mark = ","),
+      100 * n_have / nrow(gl)))
+  }
+  ## Centre by the player's MODAL position, never the first row seen: game_logs
+  ## carries a position per player-MATCH, so taking the first gives whichever
+  ## slot he happened to fill that day.
+  posmap <- gl[!is.na(position), .N, by = .(player_id, position)]
+  setorder(posmap, player_id, -N)
+  posmap <- posmap[, .SD[1], by = player_id][, .(player_id, position)]
+  gl <- gl[!is.na(net_goals),
+           .(player_id, player_name, match_id, match_date, league, season,
+             team_id, minutes_played = total_minutes,
+             epv_offensive = ng_offensive, epv_defensive = ng_defensive)]
+  gl <- as.data.table(ng_adjust_for_rating(gl, posmap, verbose = FALSE))
+  gl <- gl[, .(player_id, player_name, match_id, match_date, league, season,
+               team_id, minutes_played, epv_offensive, epv_defensive)]
+} else {
+  gl <- gl[!is.na(epv_offensive_adj) & !is.na(epv_defensive_adj),
+           .(player_id, player_name, match_id, match_date, league, season,
+              team_id, minutes_played = total_minutes,
+              epv_offensive = epv_offensive_adj,
+              epv_defensive = epv_defensive_adj)]
+}
 gl[, season_end_year := fifelse(month(match_date) >= 7L,
                                  year(match_date) + 1L,
                                  year(match_date))]
