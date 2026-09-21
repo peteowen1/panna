@@ -27,19 +27,22 @@ winner, -2 for the loser, zero across the match. Every unit of value is
 allocated twice: once as credit on the side that earned it, once as blame on
 the side that conceded it.
 
-Torp scoped this on 2026-09-07 and \strong{declined to build it}
-(\code{torpverse/docs/plans/NET-POINTS-TEAM-SUM-CONVENTION.md}) for one reason,
-stated in its section 4: AFL play-by-play carries no on-ground state, so the
-entire defensive half would have to be spread by proxy -- and that half is
-bigger than the half AFL can observe. Its section 6 names what would change
-the recommendation: per-moment on-ground data.
+Torp ships this too, as of 1.7.0 / rating vintage v6 (2026-09-08). Its
+scoping doc \code{torpverse/docs/plans/NET-POINTS-TEAM-SUM-CONVENTION.md}
+(2026-09-07) recommended against building it on AFL data, and torp shipped it
+the next day anyway on Pete's explicit call -- against its own repeatability
+measurements, because what it buys is a number answering who won the game
+rather than who played well. \strong{Cite the decision log, not a dated plan:} an
+earlier version of this comment repeated the plan's recommendation as if it
+still stood, which it had not for two weeks.
 
-\strong{Football has it.} Opta lineups give each player's exact sub-on and sub-off
-minute, so "who was on the pitch for this play" is a lookup, not a proxy --
-the same standing ESPN has in basketball. Football also names the defender on
-17.6\% of raw ledger value (tackles, interceptions, clearances, blocks, saves)
-where AFL chains names one on none of it. So the objection that killed it in
-torp does not apply here, and the convention is worth having.
+What that plan got right is the cost, and it still holds. AFL play-by-play
+carries no per-moment on-ground state, so its defensive half is spread almost
+entirely by proxy. Football has that state -- Opta lineups give each player's
+exact sub-on and sub-off minute -- and names the defender on 17.6\% of raw
+ledger value where AFL chains names one on none of it. Measured here, 39.1\%
+of total absolute value is proxy-spread (68.4\% of the defensive half, 21.8\%
+of the offensive half); the plan feared ~55\% for AFL.
 
 Why the arithmetic works out. Team A's total is the sum of its own actions'
 values minus the sum of B's, and that difference is already the goal

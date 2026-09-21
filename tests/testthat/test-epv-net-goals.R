@@ -413,10 +413,10 @@ test_that("dacts_share routes only the defensive pool's credit half", {
   # Every fixture action belongs to H, so it is A that holds the defensive
   # entries -- and only A's defensive acts can tilt A's defensive pool. Give
   # a1 two and a2 one so the weighting has something to separate.
-  acts <- transform(d, time_seconds = c(10, 20, 65, 90),
+  acts <- transform(d, time_seconds = c(10, 20, 65, 90), period_id = 1L,
                     action_type = c("pass", "pass", "pass", "shot"))
   acts <- rbind(acts, data.frame(
-    match_id = rep("m1", 3), action_id = 101:103,
+    match_id = rep("m1", 3), action_id = 101:103, period_id = 1L,
     original_event_id = 101:103, team_id = rep("A", 3),
     player_id = c("a1", "a1", "a2"),
     action_type = rep("tackle", 3), result = rep("success", 3),
@@ -478,4 +478,76 @@ test_that("the shipped defaults are the ones Pete chose", {
   expect_equal(formals(ng_build_ledger)$convention[[2]], "team")
   expect_equal(formals(ng_spread_pools)$dacts_share, 0.5)
   expect_equal(formals(ng_spread_pools)$dacts_measure[[2]], "act_value")
+})
+
+
+test_that("a first-half stoppage minute is not bucketed with the second half", {
+  # `time_seconds` is cumulative, so minute bins 45-56 exist in BOTH halves:
+  # first-half stoppage overlaps the early second half. On ENG 2024-2025 that is
+  # 15.66% of all actions, and with half-time substitutions the two periods have
+  # different elevens -- so a bucket keyed on the minute alone pays a first-half
+  # stoppage pool to players who only came on at the interval.
+  d <- ng_fixture_spadl()
+  fxt <- ng_fixture_fixtures()
+  # One action at minute 47 of the FIRST half.
+  acts <- transform(d, time_seconds = c(10, 20, 65, 47 * 60),
+                    period_id = c(1L, 1L, 1L, 1L))
+
+  # h11 starts; h1 comes on at half time and h11 goes off.
+  lineup <- data.frame(
+    match_id = rep("m1", 23),
+    player_id = c(paste0("h", 1:11), paste0("a", 1:11), "h12"),
+    team_id = c(rep("H", 11), rep("A", 11), "H"),
+    is_starter = c(FALSE, rep(TRUE, 10), rep(TRUE, 11), TRUE),
+    minutes_played = c(45, rep(90, 10), rep(90, 11), 45),
+    sub_on_minute = c(45, rep(0, 10), rep(0, 11), 0),
+    sub_off_minute = c(0, rep(0, 10), rep(0, 11), 45),
+    stringsAsFactors = FALSE
+  )
+
+  pay <- ng_build_ledger(d, adj = NULL, allocate = TRUE, convention = "team",
+                         fixtures = fxt, verbose = FALSE)
+  out <- ng_spread_pools(pay, acts, lineup, dacts_share = 0, verbose = FALSE)
+
+  # The minute-47 action happened in the FIRST half, so h12 (off at 45) must be
+  # paid for it and h1 (on at 45) must not. Keyed on the minute alone, it would
+  # be the other way round.
+  a4 <- unique(out[play_type == "pool" & team_id == "H"]$player_id)
+  expect_true("h12" %in% a4)
+
+  # And the identity is unaffected either way.
+  expect_equal(sum(out[team_id == "H"]$value_own), 1.00, tolerance = 1e-10)
+  expect_equal(sum(out[team_id == "A"]$value_own), -1.00, tolerance = 1e-10)
+})
+
+test_that("ng_spread_pools refuses actions with no period_id", {
+  d <- ng_fixture_spadl()
+  pay <- ng_build_ledger(d, adj = NULL, allocate = TRUE, convention = "team",
+                         fixtures = ng_fixture_fixtures(), verbose = FALSE)
+  expect_error(ng_spread_pools(pay, d, data.frame(), verbose = FALSE),
+               "period_id")
+})
+
+test_that("a keeper_save follows the rebound rule under BOTH conventions", {
+  # Regression: `reb_named` was implemented in the margin convention only, so
+  # under the team convention -- the default -- a stop fell through to the
+  # generic branch and the keeper kept 90% of the rebound as an ordinary on-ball
+  # action. Neither row-level assertion could see it: paying the wrong recipient
+  # the right amount conserves perfectly.
+  d <- ng_fixture_spadl()
+  d$action_type[3] <- "keeper_save"          # action 3, +0.20
+  d$action_type[2] <- "shot"                 # so action 3 HAS a shot before it
+  d$result[2] <- "fail"
+  d$team_id[2] <- "A"                        # the shot is the opponent's
+  d$player_id[2] <- "a1"
+
+  for (conv in c("team", "margin")) {
+    pay <- ng_build_ledger(d, adj = NULL, allocate = TRUE, convention = conv,
+                           fixtures = ng_fixture_fixtures(), verbose = FALSE)
+    reb <- pay[action_id == 3L & role == "stopper_rebound"]
+    expect_equal(nrow(reb), 1L, info = conv)
+    # reb_named = 0.40 of the row's +0.20, in the keeper's own frame.
+    expect_equal(reb$value_own, 0.08, tolerance = 1e-12, info = conv)
+    expect_false(any(pay[action_id == 3L]$role == "actor"), info = conv)
+  }
 })

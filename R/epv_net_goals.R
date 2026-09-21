@@ -37,7 +37,10 @@ NULL
 #' changes) is a marker with no attribution content and stays invisible.
 #'
 #' Counts are ENG 2024-2025, "on change" = the surviving rows either side belong
-#' to different teams.
+#' to different teams. **The table below is the named-player subset**: its "on
+#' change" column sums to 43,241 of the 60,535, the remaining 17,294 being
+#' markers (deleted events, substitutions, cards, period boundaries) that also
+#' sit on a possession change but name nobody worth paying.
 #'
 #' | id | name              |      n | on change |
 #' |----|-------------------|--------|-----------|
@@ -253,8 +256,10 @@ ng_build_adjacency <- function(events, verbose = TRUE) {
 #'   difference -- +2 and -2 for a 3-1 win, zero across the match. That is the
 #'   ESPN Net Points convention and what torp ships as of 1.7.0.
 #'   `"margin"` allocates it once, split across both sides, so the **match**
-#'   sums to the goal difference and team totals float. It carries a smaller
-#'   proxy share (21.8% against 39.1%) and is kept for comparison.
+#'   sums to the goal difference and team totals float. Its pools carry 17.4% of
+#'   absolute ledger value against the team convention's 39.1%, because it never
+#'   books the conceding half -- which is most of what nobody is named for. Kept
+#'   for comparison.
 #' @param verbose Print a summary. Default `TRUE`.
 #'
 #' @return A data.table of payments, one row per (action, recipient):
@@ -325,6 +330,7 @@ ng_build_ledger <- function(spadl_with_epv, adj = NULL, fixtures,
     pay[, is_home := team_id == home_team_id]
     pay[, value_home := fifelse(is_home, value_own, -value_own)]
     pay[, home_team_id := NULL]
+    pay <- .ng_pool_unnamed(pay)
     if (isTRUE(verbose)) {
       cli::cli_alert_success(paste0(
         "Ledger (team convention): {format(nrow(pay), big.mark = ',')} payment{?s} ",
@@ -348,15 +354,7 @@ ng_build_ledger <- function(spadl_with_epv, adj = NULL, fixtures,
                   role = "actor", play_type = action_type, value_home)]
   }
 
-  # A payment whose recipient the feed does not name goes to that team's pool
-  # rather than being dropped. Dropping it would break conservation quietly,
-  # exactly the class of defect the row-sum assertion above exists to catch.
-  unnamed <- (is.na(pay$player_id) | !nzchar(as.character(pay$player_id))) &
-    !(pay$role %chin% c("pool_off", "pool_def"))
-  if (any(unnamed)) {
-    pay[unnamed, role := "pool_off"]
-    pay[unnamed, player_id := NA_character_]
-  }
+  pay <- .ng_pool_unnamed(pay)
   pay <- merge(pay, unique(dt[, .(match_id, home_team_id)]), by = "match_id",
                all.x = TRUE)
   pay[, is_home := team_id == home_team_id]
@@ -624,12 +622,12 @@ NG_STOP_ACTIONS <- c("keeper_save")
   sh <- shares
 
   # --- A. Goal: the shooter converted a chance worth xG into one worth 1. ----
-  a <- d$is_shot & d$result == "success"
+  a <- d$is_shot & d$result %in% "success"
   add(a, d$player_id, d$team_id, v * (1 - sh$off_pool), "shooter")
   add(a, NAc, d$team_id, v * sh$off_pool, "pool_off")
 
   # --- B. Shot stopped or missed: the surprise is -xG. ----------------------
-  b <- d$is_shot & d$result != "success"
+  b <- d$is_shot & !(d$result %in% "success")
   add(b, d$player_id, d$team_id, v * sh$exec_blame, "shooter")
   rest_b <- v * (1 - sh$exec_blame)
   b_named <- b & !is.na(d$stopper_id)
@@ -686,10 +684,13 @@ NG_STOP_ACTIONS <- c("keeper_save")
 #' Spread team pools across the players who were on the pitch
 #'
 #' A pool payment has a team but no player: it is the pressure, the marking and
-#' the runs nobody is named for. Measured on ENG 2024-2025 the pools carry 17.4%
-#' of the ledger's absolute value, so leaving them unspread would read as "17.4%
-#' of football is done by nobody" and would make any comparison between
-#' positions meaningless.
+#' the runs nobody is named for. Measured on ENG 2024-2025, the pools carry
+#' **17.4%** of absolute ledger value under `convention = "margin"` and
+#' **39.1%** under `convention = "team"` (which books a conceding half that is
+#' mostly unnamed). Leaving them unspread would read as that share of football
+#' being done by nobody, and would make any comparison between positions
+#' meaningless. Every figure in this file is ENG 2024-2025 unless it says
+#' otherwise, and the convention is named wherever it changes the number.
 #'
 #' The spread is **flat across the eleven on the pitch at that minute**. That is
 #' a deliberate starting point, not a result. Torp swept the alternatives and
@@ -751,29 +752,47 @@ ng_spread_pools <- function(pay, actions, lineups, dacts_share = 0.5,
   pools <- p[is_pool]
   rest  <- p[!is_pool]
 
-  acts <- data.table::as.data.table(actions)[
-    , .(match_id, action_id, minute = as.numeric(time_seconds) / 60)]
+  av <- data.table::as.data.table(actions)
+  if (!"period_id" %in% names(av)) {
+    cli::cli_abort(c(
+      "{.fn ng_spread_pools} needs {.field period_id} on the actions.",
+      "i" = "Minute bins 45-56 exist in BOTH halves -- first-half stoppage time overlaps the early second half -- so a bucket keyed on the minute alone mixes the two lineups."))
+  }
+  acts <- av[, .(match_id, action_id, period_id,
+                 minute = as.numeric(time_seconds) / 60)]
   pools <- merge(pools, acts, by = c("match_id", "action_id"), all.x = TRUE)
 
   # Bucket by whole minute before exploding: a season has ~515k pool payments
   # but only ~75k (match, team, minute, role) buckets, and the eleven on the
   # pitch cannot change inside a minute in any way the feed records.
+  # `time_seconds` is cumulative from kick-off, so a minute bin is NOT unique
+  # within a match: first-half stoppage runs to minute 56 while the second half
+  # starts at 45, and on ENG 2024-2025 **15.66% of all actions** fall in bins
+  # 45-56 that exist in both halves. With 237 half-time substitutions across 160
+  # of 377 matches, bucketing on the minute alone would spread a first-half
+  # stoppage pool across the post-half-time eleven. `period_id` joins the key.
   pools[, mbin := floor(pmax(minute, 0))]
+  # And the stint test needs the same care: a first-half stoppage action must be
+  # tested against the first-half lineup, so its effective minute is capped just
+  # below the interval.
+  pools[, stint_min := fifelse(period_id %in% 1L, pmin(mbin, 44), mbin)]
   # Carry `entry` through when the team convention set it: an offensive pool and
   # a defensive pool are different accounts and must not merge.
   has_entry <- "entry" %in% names(pools)
   if (!has_entry) pools[, entry := NA_character_]
 
-  # Credit and blame are bucketed apart so they can be routed apart. The
-  # defensive pool nets to -1,172.3 goals a season but is made of +2,824.9 of
-  # credit (a ball won back with nobody named) and -3,997.2 of blame (value
-  # conceded). Routing the WHOLE pool by defensive acts would hand defenders
+  # Credit and blame are bucketed apart so they can be routed apart. Under the
+  # team convention on ENG 2024-2025 the defensive pool nets to -1,172.3 goals a
+  # season but is made of +2,824.9 of credit (a ball won back with nobody named)
+  # and -3,997.2 of blame (value conceded). The margin convention has no
+  # conceding half, so its numbers differ; the shape of the argument does not. Routing the WHOLE pool by defensive acts would hand defenders
   # 44.9% of a net-negative account and make them worse -- which is the mirror
   # of what torp hit at rating vintage v11, where one setting spread a side's
   # OFFENCE pool by DEFENSIVE acts and charged defenders most for defending.
   pools[, half := fifelse(value_own >= 0, "credit", "blame")]
   buck <- pools[, .(value_home = sum(value_home), value_own = sum(value_own)),
-                by = .(match_id, team_id, role, entry, half, mbin)]
+                by = .(match_id, team_id, role, entry, half, period_id, mbin,
+                       stint_min)]
 
   # Opta's lineup uses 0 as the sentinel for "not substituted", NOT NA: a
   # starter who played the full 90 carries sub_off_minute == 0, and an unused
@@ -791,12 +810,26 @@ ng_spread_pools <- function(pay, actions, lineups, dacts_share = 0.5,
   lu <- lu[!is.na(mins) & mins > 0]
   lu[, start_min := fifelse(is_starter, 0, on)]
   lu[, end_min := fifelse(is.na(off) | off <= 0, Inf, off)]
+  # The 0 sentinel is handled above; a genuinely MISSING minute is a different
+  # thing and must not be waved through as if it were the sentinel. A
+  # substitute with no on-minute cannot be placed at all and would be dropped
+  # silently, shrinking the recipient pool; a player who left early with no
+  # off-minute would linger past his departure and dilute the players actually
+  # on. Neither is visible to any total, so both are reported.
+  n_no_on <- sum(!lu$is_starter & is.na(lu$on))
+  n_no_off <- sum(lu$is_starter & is.na(lu$off) & lu$mins < 85)
+  if (n_no_on > 0 || n_no_off > 0) {
+    cli::cli_warn(c(
+      "Lineup has {n_no_on} substitute{?s} with no on-minute and {n_no_off} starter{?s} who left early with no off-minute.",
+      "i" = "The first are dropped from the spread; the second are treated as playing to the end.",
+      "x" = "Both misallocate pools without changing any total."))
+  }
   lu <- lu[!is.na(start_min)]
 
   # Cartesian within (match, team), then filter to the stint. Each bucket keeps
   # only the players actually on.
   j <- merge(buck, lu, by = c("match_id", "team_id"), allow.cartesian = TRUE)
-  j <- j[mbin >= start_min & mbin < end_min]
+  j <- j[stint_min >= start_min & stint_min < end_min]
 
   # Weight. Flat by default: every player on the pitch takes an equal share.
   # `dacts_share` tilts ONLY the defensive pool's credit half toward whoever
@@ -812,27 +845,34 @@ ng_spread_pools <- function(pay, actions, lineups, dacts_share = 0.5,
     tilt <- j$entry %in% "defence" & j$half %in% "credit"
     # Normalised within the bucket, so the blend is between two shares rather
     # than between a share and a raw count.
-    j[, dshare := dacts / sum(dacts), by = .(match_id, team_id, role, entry, half, mbin)]
+    j[, dshare := dacts / sum(dacts), by = .(match_id, team_id, role, entry, half, period_id, mbin)]
     j[!is.finite(dshare), dshare := 1 / .N,
-      by = .(match_id, team_id, role, entry, half, mbin)]
-    j[, flat := 1 / .N, by = .(match_id, team_id, role, entry, half, mbin)]
+      by = .(match_id, team_id, role, entry, half, period_id, mbin)]
+    j[, flat := 1 / .N, by = .(match_id, team_id, role, entry, half, period_id, mbin)]
     j[tilt, w := (1 - dacts_share) * flat + dacts_share * dshare]
   }
 
-  j[, wsum := sum(w), by = .(match_id, team_id, role, entry, half, mbin)]
-  n_on <- j[, .(n_on = .N), by = .(match_id, team_id, role, entry, half, mbin)]
-  j <- merge(j, n_on, by = c("match_id", "team_id", "role", "entry", "half", "mbin"))
+  j[, wsum := sum(w), by = .(match_id, team_id, role, entry, half, period_id, mbin)]
+  n_on <- j[, .(n_on = .N), by = .(match_id, team_id, role, entry, half, period_id, mbin)]
+  j <- merge(j, n_on, by = c("match_id", "team_id", "role", "entry", "half", "period_id", "mbin"))
   j[, `:=`(value_home = value_home * w / wsum, value_own = value_own * w / wsum)]
 
   # Conservation cannot see this: dividing a pool among three players instead of
   # eleven still balances perfectly, it just pays the wrong, smaller group. So
   # assert the squad size directly. A team is eleven players until a red card,
   # so a median outside 10-11 means the stint logic is wrong, not the football.
+  # A MEDIAN IS THE WRONG GUARD ON ITS OWN. It is robust by construction, so
+  # just under half of all buckets could hold 3 players and it would still read
+  # 11 -- which is exactly the failure this check exists to catch, merely
+  # confined to a minority (one competition's lineup feed, one substitution
+  # pattern). So check the share of bad buckets too, not only the centre.
   med_on <- stats::median(n_on$n_on)
-  if (nrow(n_on) == 0 || med_on < 10 || med_on > 11) {
+  bad_share <- mean(n_on$n_on < 10 | n_on$n_on > 11)
+  if (nrow(n_on) == 0 || med_on < 10 || med_on > 11 || bad_share > 0.02) {
     cli::cli_abort(c(
-      "Pool spread reached a median of {round(med_on, 1)} player{?s} per (match, team, minute), not 10-11.",
+      "Pool spread: median {round(med_on, 1)} player{?s} per (match, team, period, minute) and {round(100 * bad_share, 1)}% of buckets outside 10-11.",
       "x" = "A side is eleven players; anything else means the stint logic misread the lineup.",
+      "i" = "A pool divided among the wrong, smaller group still conserves perfectly, so no total will tell you.",
       "i" = "Opta uses 0, not NA, for 'not substituted' -- check {.field sub_on_minute} / {.field sub_off_minute}."
     ))
   }
@@ -842,8 +882,8 @@ ng_spread_pools <- function(pay, actions, lineups, dacts_share = 0.5,
                   value_home, is_home = NA)]
 
   # Pools with no lineup to spread onto: reported, not dropped.
-  keys <- unique(j[, .(match_id, team_id, role, entry, half, mbin)])
-  orphan <- buck[!keys, on = c("match_id", "team_id", "role", "entry", "half", "mbin")]
+  keys <- unique(j[, .(match_id, team_id, role, entry, half, period_id, mbin)])
+  orphan <- buck[!keys, on = c("match_id", "team_id", "role", "entry", "half", "period_id", "mbin")]
   if (nrow(orphan) > 0) {
     cli::cli_warn(paste0(
       "{format(nrow(orphan), big.mark = ',')} pool bucket{?s} worth ",
@@ -891,19 +931,22 @@ ng_spread_pools <- function(pay, actions, lineups, dacts_share = 0.5,
 #' allocated twice: once as credit on the side that earned it, once as blame on
 #' the side that conceded it.
 #'
-#' Torp scoped this on 2026-09-07 and **declined to build it**
-#' (`torpverse/docs/plans/NET-POINTS-TEAM-SUM-CONVENTION.md`) for one reason,
-#' stated in its section 4: AFL play-by-play carries no on-ground state, so the
-#' entire defensive half would have to be spread by proxy -- and that half is
-#' bigger than the half AFL can observe. Its section 6 names what would change
-#' the recommendation: per-moment on-ground data.
+#' Torp ships this too, as of 1.7.0 / rating vintage v6 (2026-09-08). Its
+#' scoping doc `torpverse/docs/plans/NET-POINTS-TEAM-SUM-CONVENTION.md`
+#' (2026-09-07) recommended against building it on AFL data, and torp shipped it
+#' the next day anyway on Pete's explicit call -- against its own repeatability
+#' measurements, because what it buys is a number answering who won the game
+#' rather than who played well. **Cite the decision log, not a dated plan:** an
+#' earlier version of this comment repeated the plan's recommendation as if it
+#' still stood, which it had not for two weeks.
 #'
-#' **Football has it.** Opta lineups give each player's exact sub-on and sub-off
-#' minute, so "who was on the pitch for this play" is a lookup, not a proxy --
-#' the same standing ESPN has in basketball. Football also names the defender on
-#' 17.6% of raw ledger value (tackles, interceptions, clearances, blocks, saves)
-#' where AFL chains names one on none of it. So the objection that killed it in
-#' torp does not apply here, and the convention is worth having.
+#' What that plan got right is the cost, and it still holds. AFL play-by-play
+#' carries no per-moment on-ground state, so its defensive half is spread almost
+#' entirely by proxy. Football has that state -- Opta lineups give each player's
+#' exact sub-on and sub-off minute -- and names the defender on 17.6% of raw
+#' ledger value where AFL chains names one on none of it. Measured here, 39.1%
+#' of total absolute value is proxy-spread (68.4% of the defensive half, 21.8%
+#' of the offensive half); the plan feared ~55% for AFL.
 #'
 #' Why the arithmetic works out. Team A's total is the sum of its own actions'
 #' values minus the sum of B's, and that difference is already the goal
@@ -959,18 +1002,32 @@ ng_spread_pools <- function(pay, actions, lineups, dacts_share = 0.5,
   # team, not between them. His longshot example gives a missed heave 21.8% to
   # the shooter and 19.6% to each of four team-mates; the blame is shared by
   # people who did their own job, and it still sums to the whole miss.
-  fail <- !d$is_shot & !(d$result %in% "success")
+  fail <- !d$is_shot & !d$is_stop & !(d$result %in% "success")
   add(fail, d$player_id, att, v * sh$exec_blame, "actor", "offence")
   add(fail, NAc, att, v * (1 - sh$exec_blame), "pool_off", "offence")
 
   # A completed pass with a named receiver splits by difficulty (torp D6).
-  pass <- !d$is_shot & d$result %in% "success" & d$has_receiver &
+  pass <- !d$is_shot & !d$is_stop & d$result %in% "success" & d$has_receiver &
     d$action_type == "pass" & !is.na(d$xpass)
   add(pass, d$player_id, att, keep * (1 - d$xpass), "actor", "offence")
   add(pass, d$receiver_player_id, att, keep * d$xpass, "receiver", "offence")
   add(pass, NAc, att, v * sh$off_pool, "pool_off", "offence")
 
-  other <- !d$is_shot & d$result %in% "success" & !(pass %in% TRUE)
+  # A shot-stopping row's value IS the rebound (measured: mean epv_delta -0.0236
+  # when the attacking team regathers and +0.0236 when it does not, exactly
+  # symmetric). It must follow the rebound rule, not the generic branch, or the
+  # stopper keeps 90% of it as an ordinary on-ball action and `reb_named` never
+  # applies. That is what happened until 2026-09-21: `reb_named` was implemented
+  # in the margin convention only, and the team convention -- the default -- fell
+  # through to `other`. Neither row-level assertion could see it, because paying
+  # the wrong recipient the right amount conserves perfectly.
+  stop_row <- d$is_stop & d$stop_has_shot
+  add(stop_row, d$player_id, att, v * sh$reb_named, "stopper_rebound", "offence")
+  add(stop_row, NAc, att, v * (1 - sh$reb_named), "pool_def", "offence")
+  # Orphan stop: no shot to credit, so no rebound to charge. Whole row to pool.
+  add(d$is_stop & !d$stop_has_shot, NAc, att, v, "pool_def", "offence")
+
+  other <- !d$is_shot & !d$is_stop & d$result %in% "success" & !(pass %in% TRUE)
   add(other, d$player_id, att, keep, "actor", "offence")
   add(other, NAc, att, v * sh$off_pool, "pool_off", "offence")
 
@@ -1127,8 +1184,10 @@ ng_check_team_totals <- function(pay, fixtures, verbose = TRUE) {
 #'
 #' The reason it is wrong is that the same event was paying him twice through
 #' different doors: `keeper_pick_up` already credits him +0.1235 a 90 directly
-#' as the actor (4,396 events, +93.8 goals a season, mean `epv_delta` +0.0237),
-#' *and* bought him the defensive pool share on top. Collecting a ball that is
+#' as the actor, *and* bought him the defensive pool share on top. The two
+#' figures quoted for that event are different quantities and should not be
+#' expected to match: 4,396 events at mean `epv_delta` +0.0237 is +104.2 goals
+#' of raw row value, of which he is paid +93.8 after the 10% `off_pool` slice. Collecting a ball that is
 #' already safe is a state change, not a defensive act. Without the two,
 #' a keeper counts 5.24 a 90 against outfielders' 9.81.
 #'
@@ -1171,4 +1230,29 @@ NG_DEFENSIVE_ACTIONS <- c("tackle", "interception", "clearance", "keeper_save",
   d <- p[entry %in% "defence" & role %in% "defender" &
            !is.na(player_id) & nzchar(as.character(player_id))]
   d[, .(dacts = sum(pmax(value_own, 0), na.rm = TRUE)), by = .(match_id, player_id)]
+}
+
+
+#' Route a payment whose recipient the feed does not name into a team pool
+#'
+#' A payment with no player would be dropped by any per-player aggregation --
+#' silently, because the team totals are untouched by the loss. Both conventions
+#' need this, and for a while only the margin one had it: the team branch
+#' returned before reaching it, so an action with no attributed player produced
+#' an `actor` row with `player_id = NA` that sat outside `ng_spread_pools()`
+#' (which only touches pool roles) and vanished from every player-level rollup.
+#'
+#' @param pay Payments with `player_id`, `role`.
+#' @return The same payments with unnamed non-pool rows re-tagged as pools.
+#' @keywords internal
+.ng_pool_unnamed <- function(pay) {
+  unnamed <- (is.na(pay$player_id) | !nzchar(as.character(pay$player_id))) &
+    !(pay$role %chin% c("pool_off", "pool_def"))
+  if (any(unnamed)) {
+    pool_role <- if ("entry" %in% names(pay)) {
+      fifelse(pay$entry[unnamed] %in% "defence", "pool_def", "pool_off")
+    } else "pool_off"
+    pay[unnamed, `:=`(role = pool_role, player_id = NA_character_)]
+  }
+  pay
 }

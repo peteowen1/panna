@@ -8,10 +8,12 @@
 #   4. how much of the ledger is paid to a NAMED player rather than spread by
 #      proxy across whoever was on the pitch?
 #
-# Question 4 is the honest one. Torp declined the team convention precisely
-# because AFL's defensive half would be almost entirely proxy
-# (torpverse/docs/plans/NET-POINTS-TEAM-SUM-CONVENTION.md section 4). Football
-# can name a defender more often, but not always, and this reports how often.
+# Question 4 is the honest one. Torp's 2026-09-07 scoping doc
+# (torpverse/docs/plans/NET-POINTS-TEAM-SUM-CONVENTION.md section 4) argued
+# against this convention because AFL's defensive half would be almost entirely
+# proxy -- then torp shipped it anyway the next day, as 1.7.0. The cost argument
+# still stands even though the recommendation did not: football can name a
+# defender more often than AFL, but not always, and this reports how often.
 #
 # Run from panna/:  Rscript data-raw/epv/net-goals/ng_spread_report.R
 
@@ -121,7 +123,7 @@ print(pl, row.names = FALSE)
 cat("\n==== 4. HOW MUCH IS NAMED, AND HOW MUCH IS PROXY? ====\n")
 cat("A named payment goes to the player the feed identified. A proxy payment is\n")
 cat("spread across whoever was on the pitch, because nobody was named. Torp\n")
-cat("declined this convention because AFL's defensive half would be ~all proxy.\n\n")
+cat("feared it would make AFLs defensive half ~all proxy, then shipped it anyway.\n\n")
 p[, kind := fifelse(play_type == "pool", "proxy (pool)", "named")]
 k <- p[, .(abs_v = sum(abs(value_own), na.rm = TRUE)), by = .(entry, kind)]
 k[, pct := round(100 * abs_v / sum(abs_v), 1)]

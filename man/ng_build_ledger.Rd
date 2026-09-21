@@ -36,8 +36,10 @@ action twice, once per side, so \strong{each team} sums to its own goal
 difference -- +2 and -2 for a 3-1 win, zero across the match. That is the
 ESPN Net Points convention and what torp ships as of 1.7.0.
 \code{"margin"} allocates it once, split across both sides, so the \strong{match}
-sums to the goal difference and team totals float. It carries a smaller
-proxy share (21.8\% against 39.1\%) and is kept for comparison.}
+sums to the goal difference and team totals float. Its pools carry 17.4\% of
+absolute ledger value against the team convention's 39.1\%, because it never
+books the conceding half -- which is most of what nobody is named for. Kept
+for comparison.}
 
 \item{verbose}{Print a summary. Default \code{TRUE}.}
 }

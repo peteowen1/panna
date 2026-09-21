@@ -27,7 +27,10 @@ filtered (deleted events, substitutions, cards, period markers, formation
 changes) is a marker with no attribution content and stays invisible.
 
 Counts are ENG 2024-2025, "on change" = the surviving rows either side belong
-to different teams.\tabular{llll}{
+to different teams. \strong{The table below is the named-player subset}: its "on
+change" column sums to 43,241 of the 60,535, the remaining 17,294 being
+markers (deleted events, substitutions, cards, period boundaries) that also
+sit on a possession change but name nobody worth paying.\tabular{llll}{
    id \tab name \tab n \tab on change \cr
    5 \tab Ball Out \tab 35,860 \tab 30,934 \cr
    6 \tab Corner Awarded \tab 7,766 \tab 6,328 \cr

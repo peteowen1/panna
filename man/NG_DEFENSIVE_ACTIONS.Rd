@@ -25,8 +25,10 @@ made the keeper the best position in the league at \code{dacts_share = 1}
 
 The reason it is wrong is that the same event was paying him twice through
 different doors: \code{keeper_pick_up} already credits him +0.1235 a 90 directly
-as the actor (4,396 events, +93.8 goals a season, mean \code{epv_delta} +0.0237),
-\emph{and} bought him the defensive pool share on top. Collecting a ball that is
+as the actor, \emph{and} bought him the defensive pool share on top. The two
+figures quoted for that event are different quantities and should not be
+expected to match: 4,396 events at mean \code{epv_delta} +0.0237 is +104.2 goals
+of raw row value, of which he is paid +93.8 after the 10\% \code{off_pool} slice. Collecting a ball that is
 already safe is a state change, not a defensive act. Without the two,
 a keeper counts 5.24 a 90 against outfielders' 9.81.
 

@@ -53,10 +53,13 @@ reported, never silently dropped.
 }
 \description{
 A pool payment has a team but no player: it is the pressure, the marking and
-the runs nobody is named for. Measured on ENG 2024-2025 the pools carry 17.4\%
-of the ledger's absolute value, so leaving them unspread would read as "17.4\%
-of football is done by nobody" and would make any comparison between
-positions meaningless.
+the runs nobody is named for. Measured on ENG 2024-2025, the pools carry
+\strong{17.4\%} of absolute ledger value under \code{convention = "margin"} and
+\strong{39.1\%} under \code{convention = "team"} (which books a conceding half that is
+mostly unnamed). Leaving them unspread would read as that share of football
+being done by nobody, and would make any comparison between positions
+meaningless. Every figure in this file is ENG 2024-2025 unless it says
+otherwise, and the convention is named wherever it changes the number.
 }
 \details{
 The spread is \strong{flat across the eleven on the pitch at that minute}. That is
