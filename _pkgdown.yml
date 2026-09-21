@@ -91,6 +91,13 @@ reference:
   contents:
   - has_concept("epv")
 
+- title: EPV Net Goals ledger
+  desc: >
+    Allocating each action's expected-goal change to players so a match's
+    payments sum to its goal difference
+  contents:
+  - has_concept("net_goals")
+
 - title: Win Probability (WPA)
   desc: Win probability model and WPA credit assignment
   contents:
