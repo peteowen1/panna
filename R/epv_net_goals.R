@@ -1414,7 +1414,10 @@ ng_player_game <- function(pay, lineups, verbose = TRUE) {
 #' to -0.035 for a defender per player-game -- small, real, and exactly the
 #' systematic offset a rating should not reward or punish a player for.
 #'
-#' @param player_game Output of `ng_player_game()`.
+#' @param player_game Output of `ng_player_game()`, or any per-game frame with
+#'   `player_id`, `epv_offensive` and `epv_defensive` -- the gate runs this on
+#'   the production credit layer too, so both arms are centred identically and
+#'   only the allocation differs.
 #' @param positions A player-to-position map with `player_id` and `position`,
 #'   e.g. from `get_player_positions()`. Rows whose position is unknown are
 #'   centred on the all-player mean rather than dropped, and reported.
@@ -1452,6 +1455,11 @@ ng_adjust_for_rating <- function(player_game, positions, by_season = TRUE,
     }
   }
 
+  # `net_goals` is this ledger's name for the total, but the function's job is
+  # centring a per-game frame and it is used on the production credit layer too
+  # (which has no such column) so the gate can hold everything else constant.
+  # Derive it where it is absent rather than demanding it.
+  if (!"net_goals" %in% names(d)) d[, net_goals := epv_offensive + epv_defensive]
   d[, `:=`(net_goals_raw = net_goals,
            epv_offensive_raw = epv_offensive,
            epv_defensive_raw = epv_defensive)]
