@@ -512,8 +512,8 @@ validate_game_log_schema <- function(dt, league, season) {
         # parquet is written. It reported "11427 of 11427 matched" and wrote a
         # file with no net-goals columns at all. The join happens after that
         # function instead.
-        ng_cols <- ng_pg[, .(match_id, player_id, net_goals,
-                             ng_offensive, ng_defensive)]
+        ng_cols <- ng_pg[, .(match_id, player_id, team_id, minutes_played,
+                             net_goals, ng_offensive, ng_defensive)]
         message(sprintf("    net goals: %d player-rows computed", nrow(ng_cols)))
       }, error = function(e) {
         # Never fail the export over an additive column: the production
@@ -778,20 +778,36 @@ validate_game_log_schema <- function(dt, league, season) {
       }
 
       if (!is.null(ng_cols)) {
-        game_ratings <- merge(data.table::as.data.table(game_ratings), ng_cols,
-                              by = c("match_id", "player_id"), all.x = TRUE)
-        # The published column is the ledger RESTRICTED to players this frame
-        # carries, and the two populations are not identical -- 11,472 ledger
-        # rows against 11,427 published on ENG 2024-2025. So a match's two
-        # sides cancel to about 0.1 goals here rather than the ~1e-14 the
-        # standalone ledger reaches. That is second order against the 0.20
-        # median error already in the metric, and it is stated rather than
-        # left for a reader to trip over: `net_goals` published is very nearly
-        # conserving, not exactly conserving.
-        n_drop <- nrow(ng_cols) - sum(!is.na(game_ratings$net_goals))
-        message(sprintf("    net goals: %d of %d published rows carry it (%d ledger row%s not in this frame)",
-                        sum(!is.na(game_ratings$net_goals)), nrow(game_ratings),
-                        n_drop, if (n_drop == 1) "" else "s"))
+        # The ledger pays every player on the pitch; this frame is action-driven
+        # and has no row for a substitute who never touched the ball. Joining
+        # straight in would drop their value and stop a match's sides
+        # cancelling. Fold it back to their teams first, so a published team's
+        # rows sum to exactly what the ledger gave that team.
+        ng_cols <- ng_fold_unpublished(
+          ng_cols, data.table::as.data.table(game_ratings)[, .(match_id, player_id)],
+          verbose = FALSE)
+        game_ratings <- merge(
+          data.table::as.data.table(game_ratings),
+          ng_cols[, .(match_id, player_id, ng_team_id = team_id,
+                      net_goals, ng_offensive, ng_defensive)],
+          by = c("match_id", "player_id"), all.x = TRUE)
+        # 14 of ENG 2024-2025's published rows have no `team_id` at all -- late
+        # substitutes the lineups frame has no club for. They are the whole
+        # reason a match's two sides did not cancel, because a row belonging to
+        # neither side is in no team's total. The ledger derived a team for them
+        # from the payment table, so take it where the frame has none.
+        game_ratings[is.na(team_id) & !is.na(ng_team_id), team_id := ng_team_id]
+        game_ratings[, ng_team_id := NULL]
+        # Then force each team to its own goal difference. Without this the
+        # ledger is antisymmetric but anchored to nothing: the median team-match
+        # lands 0.20 goals from the scoreline, because restarts, half-time and
+        # the event types SPADL does not carry move the state without booking a
+        # payment. Sized before it was written -- 7.6% of absolute value,
+        # per-player-game correlation 0.9972, no minutes bias -- and it is the
+        # same step torp runs to reach 0.000. See `ng_reconcile_margin()`.
+        game_ratings <- ng_reconcile_margin(game_ratings, ng_fx, verbose = TRUE)
+        message(sprintf("    net goals: %d of %d published rows carry it",
+                        sum(!is.na(game_ratings$net_goals)), nrow(game_ratings)))
       }
       game_ratings[, league := league]
       game_ratings[, season := season]
@@ -1098,13 +1114,17 @@ validate_game_log_schema <- function(dt, league, season) {
       # an inversion to be attributed to the wrong term.
       "epv_duel_blame", "epv_aerial_att",
       # Net goals ledger (panna >= 0.3.62). `net_goals` sums, per team, to that
-      # team's OWN goal difference, so a consumer must assert it PER TEAM and
-      # never through a home-minus-away fit -- the difference is 2x the margin
-      # by construction. `ng_offensive` + `ng_defensive` = `net_goals`, split by
-      # which half of the double entry the payment sat on rather than by action
-      # type. Absent for a league whose ledger could not be built; the
+      # team's OWN goal difference EXACTLY (max 1.8e-15 on ENG 2024-2025), so a
+      # consumer must assert it PER TEAM and never through a home-minus-away fit
+      # -- the difference is 2x the margin by construction. `ng_offensive` +
+      # `ng_defensive` = `net_goals`, split by which half of the double entry the
+      # payment sat on rather than by action type. `ng_recon` is the third part:
+      # the share of the team's gap to the scoreline this player was given, kept
+      # as its own column so one player's number can be traced by hand
+      # (`ng_recon` is already inside both `net_goals` and `ng_defensive`, not
+      # added on top). Absent for a league whose ledger could not be built; the
       # intersect() above drops it silently in that case, which is intended.
-      "net_goals", "ng_offensive", "ng_defensive",
+      "net_goals", "ng_offensive", "ng_defensive", "ng_recon",
       "wpa_total", "wpa_as_actor", "wpa_as_receiver",
       "psv", "osv", "dsv", "psv_league_offset",
       "goals_minus_xgot", "placement_added", "xgot",

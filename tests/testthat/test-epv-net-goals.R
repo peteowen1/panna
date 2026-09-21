@@ -709,3 +709,114 @@ test_that("the EPR column contract is preserved", {
   expect_true(all(c("player_id", "player_name", "minutes_played",
                     "epv_offensive", "epv_defensive") %in% names(out)))
 })
+
+
+# ---- ng_reconcile_margin() -------------------------------------------------
+# The step that makes the published column exactly conserving. Every number
+# below is hand-computed in the comments so a failure says which rule broke.
+
+test_that("ng_reconcile_margin lands each team on its own goal difference", {
+  # Match m1, home H beat away A 3-1, so H's own gd is +2 and A's is -2.
+  # The ledger gave H 1.5 and A -1.5, so H is 0.5 short and A is 0.5 long
+  # (short = want - got = -2 - -1.5 = -0.5).
+  ng <- data.table::data.table(
+    match_id       = rep("m1", 6),
+    player_id      = c("h1", "h2", "h3", "a1", "a2", "a3"),
+    team_id        = rep(c("H", "A"), each = 3),
+    minutes_played = c(90, 60, 30, 90, 90, 0),
+    net_goals      = c(1.0, 0.3, 0.2, -1.0, -0.4, -0.1),
+    ng_offensive   = c(0.8, 0.2, 0.1, -0.6, -0.3, -0.1),
+    ng_defensive   = c(0.2, 0.1, 0.1, -0.4, -0.1,  0.0))
+  fx <- data.frame(match_id = "m1", home_team_id = "H", away_team_id = "A",
+                   home_score = 3, away_score = 1)
+
+  out <- ng_reconcile_margin(ng, fx, verbose = FALSE)
+  data.table::setkey(out, player_id)
+
+  # H: short = +0.5 over 180 minutes -> 90/180, 60/180, 30/180 of it.
+  expect_equal(out["h1"]$ng_recon, 0.25)
+  expect_equal(out["h2"]$ng_recon, 0.5 * 60 / 180)
+  expect_equal(out["h3"]$ng_recon, 0.5 * 30 / 180)
+  # A: short = -0.5 over 180 minutes, and a3 played none, so he gets nothing.
+  expect_equal(out["a1"]$ng_recon, -0.25)
+  expect_equal(out["a2"]$ng_recon, -0.25)
+  expect_equal(out["a3"]$ng_recon, 0)
+
+  tot <- out[, .(s = sum(net_goals)), by = team_id]
+  expect_equal(tot[team_id == "H"]$s, 2)
+  expect_equal(tot[team_id == "A"]$s, -2)
+  # The two halves still add to the whole, with the residual inside defence.
+  expect_equal(out$ng_offensive + out$ng_defensive, out$net_goals)
+  expect_equal(out["h1"]$ng_offensive, 0.8)
+  expect_equal(out["h1"]$ng_defensive, 0.2 + 0.25)
+})
+
+test_that("ng_reconcile_margin splits equally when a team has no minutes", {
+  # Every minute missing: the fallback is an equal split, because dropping the
+  # value would defeat the point of the step.
+  ng <- data.table::data.table(
+    match_id = rep("m1", 4), player_id = c("h1", "h2", "a1", "a2"),
+    team_id = rep(c("H", "A"), each = 2),
+    minutes_played = c(NA_real_, NA_real_, 90, 90),
+    net_goals = c(0.5, 0.5, -0.5, -0.5),
+    ng_offensive = c(0.5, 0.5, -0.5, -0.5), ng_defensive = c(0, 0, 0, 0))
+  fx <- data.frame(match_id = "m1", home_team_id = "H", away_team_id = "A",
+                   home_score = 2, away_score = 0)
+  out <- ng_reconcile_margin(ng, fx, verbose = FALSE)
+  data.table::setkey(out, player_id)
+  # H short = 2 - 1 = 1, split 0.5 / 0.5.
+  expect_equal(out["h1"]$ng_recon, 0.5)
+  expect_equal(out["h2"]$ng_recon, 0.5)
+  # A short = -2 - -1 = -1, split by real minutes, also even here.
+  expect_equal(out["a1"]$ng_recon, -0.5)
+  expect_equal(sum(out[team_id == "H"]$net_goals), 2)
+  expect_equal(sum(out[team_id == "A"]$net_goals), -2)
+})
+
+test_that("ng_reconcile_margin leaves a team-less row alone and says so", {
+  ng <- data.table::data.table(
+    match_id = rep("m1", 5), player_id = c("h1", "h2", "a1", "a2", "x"),
+    team_id = c("H", "H", "A", "A", NA_character_),
+    minutes_played = c(90, 90, 90, 90, 5),
+    net_goals = c(0.5, 0.5, -0.5, -0.4, -0.1),
+    ng_offensive = c(0.5, 0.5, -0.5, -0.4, -0.1),
+    ng_defensive = c(0, 0, 0, 0, 0))
+  fx <- data.frame(match_id = "m1", home_team_id = "H", away_team_id = "A",
+                   home_score = 1, away_score = 0)
+  expect_warning(out <- ng_reconcile_margin(ng, fx, verbose = FALSE),
+                 "no .*team_id")
+  data.table::setkey(out, player_id)
+  expect_equal(out["x"]$ng_recon, 0)
+  expect_equal(out["x"]$net_goals, -0.1)
+  expect_equal(sum(out[!is.na(team_id) & team_id == "H"]$net_goals), 1)
+  expect_equal(sum(out[!is.na(team_id) & team_id == "A"]$net_goals), -1)
+})
+
+test_that("ng_reconcile_margin skips a match with no score and keeps its value", {
+  ng <- data.table::data.table(
+    match_id = rep(c("m1", "m2"), each = 2),
+    player_id = c("h1", "a1", "h2", "a2"),
+    team_id = c("H", "A", "H", "A"), minutes_played = rep(90, 4),
+    net_goals = c(0.4, -0.4, 0.6, -0.6),
+    ng_offensive = c(0.4, -0.4, 0.6, -0.6), ng_defensive = rep(0, 4))
+  fx <- data.frame(match_id = c("m1", "m2"), home_team_id = "H",
+                   away_team_id = "A", home_score = c(1, NA), away_score = c(0, NA))
+  out <- ng_reconcile_margin(ng, fx, verbose = FALSE)
+  data.table::setkey(out, player_id)
+  expect_equal(out["h2"]$ng_recon, 0)
+  expect_equal(out["h2"]$net_goals, 0.6)      # unplayed match untouched
+  expect_equal(out["h1"]$net_goals, 1)
+})
+
+test_that("ng_reconcile_margin accepts the epv_* spelling of the halves", {
+  ng <- data.table::data.table(
+    match_id = rep("m1", 2), player_id = c("h1", "a1"),
+    team_id = c("H", "A"), minutes_played = c(90, 90),
+    net_goals = c(0.4, -0.4),
+    epv_offensive = c(0.4, -0.4), epv_defensive = c(0, 0))
+  fx <- data.frame(match_id = "m1", home_team_id = "H", away_team_id = "A",
+                   home_score = 1, away_score = 0)
+  out <- ng_reconcile_margin(ng, fx, verbose = FALSE)
+  expect_equal(out[player_id == "h1"]$epv_defensive, 0.6)
+  expect_equal(out[player_id == "h1"]$net_goals, 1)
+})

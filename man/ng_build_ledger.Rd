@@ -58,8 +58,10 @@ conserves. Summed over a match, the payments equal the goal difference.
 The allocation at this stage is deliberately crude -- every row pays its whole
 \code{epv_delta} to the acting player. That is obviously wrong about \emph{who} and
 provably right about \emph{how much}, which makes it the one clean moment to assert
-the identity: there is no rule for an error to hide behind, and no reconciler
-downstream absorbing it. Torp's suite passed 48 assertions against a ledger
+the identity: there is no rule for an error to hide behind, and nothing has
+yet been forced toward a target. \code{\link[=ng_reconcile_margin]{ng_reconcile_margin()}} does force one, at
+the very end of the chain, and that is exactly why this assertion has to
+happen HERE and stay here. Torp's suite passed 48 assertions against a ledger
 with the away sign flipped because every test ran after its reconciler; this
 function is the assertion point that avoids repeating that.
 
@@ -73,7 +75,9 @@ Other net_goals:
 \code{\link{ng_build_adjacency}()},
 \code{\link{ng_check_conservation}()},
 \code{\link{ng_check_team_totals}()},
+\code{\link{ng_fold_unpublished}()},
 \code{\link{ng_player_game}()},
+\code{\link{ng_reconcile_margin}()},
 \code{\link{ng_shares}()},
 \code{\link{ng_spread_pools}()}
 }

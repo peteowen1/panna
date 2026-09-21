@@ -231,8 +231,10 @@ ng_build_adjacency <- function(events, verbose = TRUE) {
 #' The allocation at this stage is deliberately crude -- every row pays its whole
 #' `epv_delta` to the acting player. That is obviously wrong about *who* and
 #' provably right about *how much*, which makes it the one clean moment to assert
-#' the identity: there is no rule for an error to hide behind, and no reconciler
-#' downstream absorbing it. Torp's suite passed 48 assertions against a ledger
+#' the identity: there is no rule for an error to hide behind, and nothing has
+#' yet been forced toward a target. [ng_reconcile_margin()] does force one, at
+#' the very end of the chain, and that is exactly why this assertion has to
+#' happen HERE and stay here. Torp's suite passed 48 assertions against a ledger
 #' with the away sign flipped because every test ran after its reconciler; this
 #' function is the assertion point that avoids repeating that.
 #'
@@ -1073,10 +1075,14 @@ ng_spread_pools <- function(pay, actions, lineups, dacts_share = 0.5,
 #' losers to -2, and the match sums to zero. Unlike the margin convention this
 #' is checked per team, not per match.
 #'
-#' Like `ng_check_conservation()` this is a report, not a gate. Forcing a team
-#' to its goal difference would charge a residual and, as torp measured for the
-#' analogous `half_margin` mode, a residual can be larger than the thing it
-#' corrects and can reorder players.
+#' Like `ng_check_conservation()` this is a report, not a gate, and it measures
+#' the RAW ledger -- before [ng_reconcile_margin()] forces each team onto its
+#' scoreline. That gap is the thing worth watching: on ENG 2024-2025 it is a
+#' median 0.20 goals per team-match, and the reconciliation that closes it is
+#' only safe while it stays small. If this report moves, the reconciliation is
+#' quietly doing more of the work than the ledger is, which is the failure torp
+#' recorded for its `half_margin` mode (residual 102% of the value, players
+#' reordered). Read this number before trusting the reconciled one.
 #'
 #' @param pay Payments from `ng_build_ledger(convention = "team")`
 #' @param fixtures Fixtures with `match_id`, `home_team_id`, `home_score`,
@@ -1486,5 +1492,241 @@ ng_adjust_for_rating <- function(player_game, positions, by_season = TRUE,
       "The ledger's own totals are untouched -- {.field net_goals_raw} keeps them."))
   }
 
+  d[]
+}
+
+
+# =============================================================================
+# STEP 8 -- FOLDING VALUE THE PUBLISHED FRAME CANNOT CARRY
+# =============================================================================
+
+#' Fold value owed to unpublished players back into their team
+#'
+#' The ledger pays every player who was on the pitch, because the pool spread
+#' reaches all eleven. The published game-logs frame is built from
+#' `aggregate_player_game_epv()`, which is ACTION-driven: a substitute who came
+#' on for a minute and never touched the ball has no actions, so he has no row.
+#' Measured on ENG 2024-2025 that is 45 of 11,472 rows -- every one of them a
+#' substitute with 1 to 12 minutes, all genuinely in the lineup.
+#'
+#' Joining the ledger onto that frame therefore drops their value, and a match's
+#' two sides stop cancelling: 0.116 goals instead of ~1e-14. **That is a
+#' publishing artefact, not model error, and it is a different problem from the
+#' 0.20-goal median gap to the scoreline that [ng_reconcile_margin()] closes.**
+#' Nothing here is forced toward a target; the value simply has to land
+#' somewhere real. Running this FIRST is what keeps the reconciliation honest --
+#' otherwise the gap those 45 rows leave would be charged to the reconciliation
+#' as if the model had produced it.
+#'
+#' So it goes back to the team, spread across the team-mates the frame does
+#' carry, by minutes. That is the same rule `.ng_pool_unnamed()` already
+#' applies one layer up: a payment with no publishable recipient becomes the
+#' team's. After this, a published team's rows sum to exactly what the ledger
+#' gave that team, and the only remaining gap to the scoreline is the model's.
+#'
+#' @param ng Per-game ledger output from `ng_player_game()`. Needs `match_id`,
+#'   `player_id`, `team_id`, `minutes_played`, `net_goals`, `ng_offensive`,
+#'   `ng_defensive`.
+#' @param published A frame with the `match_id` + `player_id` pairs that will be
+#'   published.
+#' @param verbose Print what was folded. Default `TRUE`.
+#'
+#' @return `ng` restricted to the published pairs, with each team's totals
+#'   preserved exactly.
+#'
+#' @family net_goals
+#' @export
+ng_fold_unpublished <- function(ng, published, verbose = TRUE) {
+  d <- data.table::as.data.table(ng)
+  need <- c("match_id", "player_id", "team_id", "minutes_played",
+            "net_goals", "ng_offensive", "ng_defensive")
+  missing <- setdiff(need, names(d))
+  if (length(missing)) {
+    cli::cli_abort("{.fn ng_fold_unpublished} needs column{?s} {.val {missing}}.")
+  }
+  keys <- unique(data.table::as.data.table(published)[, .(match_id, player_id)])
+  keys[, .published := TRUE]
+  d <- merge(d, keys, by = c("match_id", "player_id"), all.x = TRUE)
+  d[is.na(.published), .published := FALSE]
+
+  if (all(d$.published)) {
+    if (isTRUE(verbose)) {
+      cli::cli_alert_success("Every ledger row is published; nothing to fold.")
+    }
+    d[, .published := NULL]
+    return(d[])
+  }
+
+  vcols <- c("net_goals", "ng_offensive", "ng_defensive")
+  # What each team is owed by players the frame will not carry.
+  owed <- d[.published == FALSE, lapply(.SD, sum, na.rm = TRUE),
+            by = .(match_id, team_id), .SDcols = vcols]
+  data.table::setnames(owed, vcols, paste0("owed_", vcols))
+
+  keep <- d[.published == TRUE]
+  keep <- merge(keep, owed, by = c("match_id", "team_id"), all.x = TRUE)
+  for (v in vcols) {
+    ov <- paste0("owed_", v)
+    keep[is.na(get(ov)), (ov) := 0]
+  }
+  # Minutes are the weight, with an equal split as the fallback when a team's
+  # published rows somehow carry none -- dropping the value instead would be
+  # the very thing this function exists to stop.
+  keep[, .w := {
+    m <- minutes_played
+    m[is.na(m) | m <= 0] <- 0
+    if (sum(m) > 0) m / sum(m) else rep(1 / .N, .N)
+  }, by = .(match_id, team_id)]
+  for (v in vcols) keep[, (v) := get(v) + get(paste0("owed_", v)) * .w]
+
+  n_folded <- sum(!d$.published)
+  v_folded <- sum(d[.published == FALSE]$net_goals, na.rm = TRUE)
+  keep[, c(".published", ".w", paste0("owed_", vcols)) := NULL]
+
+  # A team that has NO published rows cannot receive its own value back. Report
+  # it rather than lose it quietly: the totals below would not balance.
+  orphan_teams <- owed[!unique(keep[, .(match_id, team_id)]),
+                       on = c("match_id", "team_id")]
+  if (nrow(orphan_teams) > 0) {
+    cli::cli_warn(paste0(
+      "{nrow(orphan_teams)} team-match{?es} have unpublished value but no ",
+      "published rows to fold it into; {round(sum(orphan_teams$owed_net_goals), 3)} ",
+      "goals cannot be placed."))
+  }
+
+  if (isTRUE(verbose)) {
+    cli::cli_alert_success(paste0(
+      "Folded {n_folded} unpublished row{?s} worth {round(v_folded, 3)} goals ",
+      "back to their teams; published team totals now match the ledger exactly."))
+  }
+  keep[]
+}
+
+
+# =============================================================================
+
+#' Force each team's published rows to sum to that team's own goal difference
+#'
+#' The last gap. After [ng_fold_unpublished()] a match's two sides cancel to
+#' rounding, but neither side lands on the scoreline: measured on ENG 2024-2025
+#' the median team-match is **0.20 goals** from its own goal difference and the
+#' worst is 1.39. The ledger is antisymmetric by construction and anchored to
+#' nothing, so what it tracks is the EPV the actions generated, not the goals
+#' the match actually produced. Restarts, half-time, and the event types SPADL
+#' does not carry all move the state without booking a payment, and that
+#' difference has to go somewhere or the metric is not net goals.
+#'
+#' **torp does exactly this and it is why torp reaches 0.000.**
+#' `.np_team_margin()` computes `short = want - tot` per team-match and spreads
+#' it across the side by time on ground. This is the same step in goals.
+#'
+#' ## Why this is safe here and the thing torp rejected was not
+#'
+#' torp's own docs reject a reconciliation, and the rejection is of a different
+#' step: `.np_reconcile(level = "half_margin")`, measured *before* the team-sum
+#' convention, whose residual was **102% of** `|net_points|` and reordered
+#' players against time on ground. That is a correction larger than the thing it
+#' corrects. Sized the same way before this was written, panna's is not:
+#'
+#' \tabular{lr}{
+#'   residual as a share of total `|net_goals|` \tab 7.6% \cr
+#'   correlation, per player-game, before vs after \tab 0.9972 \cr
+#'   Spearman on season totals \tab 0.9944 \cr
+#'   correlation of the residual with minutes \tab 0.0008
+#' }
+#'
+#' Nobody meaningfully reorders and the residual carries no minutes bias, so it
+#' is not quietly paying whoever was on the pitch longest. It is in the same
+#' range as the `sum`-level reconciliation torp actually ships (3%).
+#'
+#' ## Where it lands in the offence/defence split
+#'
+#' All of it on the defensive half, which is what torp does (it books the change
+#' against the pool channel, "the honest home for the difference"). The gap is
+#' unattributed team-level value, and panna's team pool is already
+#' defence-weighted. Splitting it across both halves pro-rata was the
+#' alternative and it explodes on a player whose two halves nearly cancel --
+#' the same failure torp records from rescaling components.
+#'
+#' @param ng Per-game frame from [ng_player_game()], optionally already folded
+#'   by [ng_fold_unpublished()]. Needs `match_id`, `player_id`, `team_id`,
+#'   `minutes_played` and `net_goals`, plus the two halves under either the
+#'   `epv_*` or the `ng_*` spelling.
+#' @param fixtures Fixtures with `match_id`, `home_team_id`, `away_team_id`,
+#'   `home_score`, `away_score`.
+#' @param verbose Print the before-and-after error. Default `TRUE`.
+#'
+#' @return `ng` with `net_goals` and the defensive half adjusted, plus an
+#'   `ng_recon` column holding what each player was given, so a reader tracing
+#'   one number by hand can see the three parts separately.
+#'
+#' @family net_goals
+#' @export
+ng_reconcile_margin <- function(ng, fixtures, verbose = TRUE) {
+  d <- data.table::as.data.table(ng)
+  def <- if ("ng_defensive" %in% names(d)) "ng_defensive" else "epv_defensive"
+  need <- c("match_id", "player_id", "team_id", "minutes_played", "net_goals", def)
+  missing <- setdiff(need, names(d))
+  if (length(missing)) {
+    cli::cli_abort(c(
+      "{.fn ng_reconcile_margin} needs column{?s} {.val {missing}}.",
+      "i" = "The offence/defence halves may be spelled {.field epv_*} or {.field ng_*}."))
+  }
+
+  fx <- data.table::as.data.table(fixtures)[
+    , .(match_id, home_team_id, away_team_id,
+        home_score = as.numeric(home_score), away_score = as.numeric(away_score))]
+  fx <- unique(fx[!is.na(home_score) & !is.na(away_score)], by = "match_id")
+
+  # A row whose team is unknown cannot be reconciled toward any scoreline, and
+  # must not silently join one side's pool either. It keeps its ledger value and
+  # is reported: on ENG 2024-2025 that is 14 rows, all substitutes the lineups
+  # frame has no team for, and they are the entire reason the two sides were
+  # not already cancelling to rounding.
+  n_noteam <- sum(is.na(d$team_id))
+  if (n_noteam > 0) {
+    cli::cli_warn(paste0(
+      "{n_noteam} row{?s} have no {.field team_id}; they keep their ledger value ",
+      "and are left out of the reconciliation, so their match will not cancel exactly."))
+  }
+
+  tm <- d[!is.na(team_id) & match_id %chin% fx$match_id,
+          .(got = sum(net_goals, na.rm = TRUE),
+            wsum = sum(pmax(as.numeric(minutes_played), 0), na.rm = TRUE),
+            n = .N),
+          by = .(match_id, team_id)]
+  tm <- merge(tm, fx, by = "match_id")
+  tm <- tm[team_id == home_team_id | team_id == away_team_id]
+  tm[, want := data.table::fifelse(team_id == home_team_id,
+                                   home_score - away_score, away_score - home_score)]
+  tm[, short := want - got]
+  before <- if (nrow(tm)) stats::median(abs(tm$short)) else NA_real_
+
+  d <- merge(d, tm[, .(match_id, team_id, .short = short, .wsum = wsum, .n = n)],
+             by = c("match_id", "team_id"), all.x = TRUE)
+  # Minutes are the weight, with an equal split when a team's rows carry none --
+  # the same fallback `ng_fold_unpublished()` uses, and for the same reason:
+  # dropping the value would defeat the point of the step.
+  d[, .w := {
+    m <- pmax(as.numeric(minutes_played), 0)
+    m[is.na(m)] <- 0
+    if (sum(m) > 0) m / sum(m) else rep(1 / .N, .N)
+  }, by = .(match_id, team_id)]
+  d[, ng_recon := data.table::fifelse(is.na(.short), 0, .short * .w)]
+  d[, net_goals := net_goals + ng_recon]
+  data.table::set(d, j = def, value = d[[def]] + d$ng_recon)
+  d[, c(".short", ".wsum", ".n", ".w") := NULL]
+
+  if (isTRUE(verbose)) {
+    chk <- d[!is.na(team_id) & match_id %chin% fx$match_id,
+             .(got = sum(net_goals, na.rm = TRUE)), by = .(match_id, team_id)]
+    chk <- merge(chk, tm[, .(match_id, team_id, want)], by = c("match_id", "team_id"))
+    cli::cli_alert_success(paste0(
+      "Reconciled {nrow(tm)} team-match{?es} to their own goal difference: ",
+      "median |error| {round(before, 3)} -> ",
+      "{format(max(abs(chk$got - chk$want)), digits = 3, scientific = TRUE)} (max). ",
+      "Residual is {round(100 * sum(abs(d$ng_recon)) / sum(abs(d$net_goals)), 1)}% ",
+      "of absolute value."))
+  }
   d[]
 }

@@ -23,10 +23,14 @@ losers to -2, and the match sums to zero. Unlike the margin convention this
 is checked per team, not per match.
 }
 \details{
-Like \code{ng_check_conservation()} this is a report, not a gate. Forcing a team
-to its goal difference would charge a residual and, as torp measured for the
-analogous \code{half_margin} mode, a residual can be larger than the thing it
-corrects and can reorder players.
+Like \code{ng_check_conservation()} this is a report, not a gate, and it measures
+the RAW ledger -- before \code{\link[=ng_reconcile_margin]{ng_reconcile_margin()}} forces each team onto its
+scoreline. That gap is the thing worth watching: on ENG 2024-2025 it is a
+median 0.20 goals per team-match, and the reconciliation that closes it is
+only safe while it stays small. If this report moves, the reconciliation is
+quietly doing more of the work than the ledger is, which is the failure torp
+recorded for its \code{half_margin} mode (residual 102\% of the value, players
+reordered). Read this number before trusting the reconciled one.
 }
 \seealso{
 Other net_goals: 
@@ -34,7 +38,9 @@ Other net_goals:
 \code{\link{ng_build_adjacency}()},
 \code{\link{ng_build_ledger}()},
 \code{\link{ng_check_conservation}()},
+\code{\link{ng_fold_unpublished}()},
 \code{\link{ng_player_game}()},
+\code{\link{ng_reconcile_margin}()},
 \code{\link{ng_shares}()},
 \code{\link{ng_spread_pools}()}
 }

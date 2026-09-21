@@ -7,7 +7,10 @@
 ng_adjust_for_rating(player_game, positions, by_season = TRUE, verbose = TRUE)
 }
 \arguments{
-\item{player_game}{Output of \code{ng_player_game()}.}
+\item{player_game}{Output of \code{ng_player_game()}, or any per-game frame with
+\code{player_id}, \code{epv_offensive} and \code{epv_defensive} -- the gate runs this on
+the production credit layer too, so both arms are centred identically and
+only the allocation differs.}
 
 \item{positions}{A player-to-position map with \code{player_id} and \code{position},
 e.g. from \code{get_player_positions()}. Rows whose position is unknown are
@@ -52,7 +55,9 @@ Other net_goals:
 \code{\link{ng_build_ledger}()},
 \code{\link{ng_check_conservation}()},
 \code{\link{ng_check_team_totals}()},
+\code{\link{ng_fold_unpublished}()},
 \code{\link{ng_player_game}()},
+\code{\link{ng_reconcile_margin}()},
 \code{\link{ng_shares}()},
 \code{\link{ng_spread_pools}()}
 }
