@@ -57,8 +57,57 @@ cache_dir <- "data-raw/cache-predictions-opta"
 t0 <- Sys.time()
 files <- list.files(cache_dir, pattern = "^game_logs_.*\\.parquet$",
                     full.names = TRUE)
+## EPR_MIN_SEASON_END_YEAR -- restrict the history to seasons ending at or
+## after this year. Default NULL = every file, the historical behaviour.
+##
+## Why it exists: `net_goals` cannot be built before 2015-2016. Those seasons
+## have events but no LINEUPS for most leagues (measured 2026-09-22: NED, ITA,
+## GER, POR and UEL all report "No data found" for 2011-2012 and 2012-2013),
+## and the ledger needs lineups to spread the team pool. So net_goals coverage
+## tops out around 91% with them included and the 95% guard below can never
+## pass. Setting this makes BOTH arms of a comparison use the same matches,
+## which is the only way it stays honest -- filtering one arm alone would
+## confound the rating change with a population change.
+.min_sy <- if (exists("EPR_MIN_SEASON_END_YEAR", inherits = FALSE)) {
+  EPR_MIN_SEASON_END_YEAR
+} else NULL
+if (!is.null(.min_sy)) {
+  .sy <- suppressWarnings(as.integer(
+    sub("^game_logs_[0-9]{4}-([0-9]{4})[.]parquet$", "\\1", basename(files))))
+  ## A file whose name carries no season (game_logs_BRA.parquet) yields NA and
+  ## is DROPPED, deliberately: it is not a season, so it cannot be said to fall
+  ## inside the window.
+  .keep <- !is.na(.sy) & .sy >= .min_sy
+  t_log(sprintf("EPR_MIN_SEASON_END_YEAR=%s: using %d of %d game-log files",
+                .min_sy, sum(.keep), length(files)))
+  if (any(!.keep)) {
+    t_log(sprintf("  excluded: %s", paste(basename(files[!.keep]), collapse = ", ")))
+  }
+  files <- files[.keep]
+  if (length(files) == 0L) stop("EPR_MIN_SEASON_END_YEAR excluded every game-log file.")
+}
+
 gl <- rbindlist(lapply(files, read_parquet),
                 use.names = TRUE, fill = TRUE)
+
+## Deduplicate on (player_id, match_id). These files are SUPPOSED to partition
+## the history by season and nothing enforces it: `game_logs_BRA.parquet`, a
+## leftover from debug/build_bra_game_logs.R, holds 14,707 rows that are ALL
+## already in the season files -- 467 matches and 1,064 players counted twice
+## in every fit since May 2026, a median 17% row inflation for those players.
+## rbindlist does not dedup, and the stray carries every column the fit reads,
+## so its rows reach the regression rather than being dropped as incomplete.
+## Report what goes: a silent dedup would hide the next stray exactly as this
+## one was hidden.
+.n_before <- nrow(gl)
+gl <- unique(gl, by = c("player_id", "match_id"))
+if (nrow(gl) < .n_before) {
+  t_log(sprintf("Dropped %s duplicate player-match row%s (%.2f%%) before fitting",
+                format(.n_before - nrow(gl), big.mark = ","),
+                if (.n_before - nrow(gl) == 1L) "" else "s",
+                100 * (.n_before - nrow(gl)) / .n_before))
+}
+
 gl[, match_date := as.Date(sub("Z$","", match_date))]
 ## WHICH LEDGER FEEDS THE RATING. "epv" is the production credit layer, read as
 ## the position-centred `epv_*_adj` columns renamed to the raw names -- the
