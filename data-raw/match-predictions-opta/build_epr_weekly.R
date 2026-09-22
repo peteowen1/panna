@@ -68,8 +68,15 @@ files <- list.files(cache_dir, pattern = "^game_logs_.*\\.parquet$",
 ## pass. Setting this makes BOTH arms of a comparison use the same matches,
 ## which is the only way it stays honest -- filtering one arm alone would
 ## confound the rating change with a population change.
-.min_sy <- if (exists("EPR_MIN_SEASON_END_YEAR", inherits = FALSE)) {
-  EPR_MIN_SEASON_END_YEAR
+## Read from globalenv() explicitly, not the calling frame. Every current call
+## path happens to be top-level or `source(local = FALSE)`, so a bare
+## `inherits = FALSE` would work today -- but the moment this is sourced from
+## inside a function (which is how run_predictions_opta.R invokes the numbered
+## steps) the guard would see nothing, fall through to NULL, and SILENTLY keep
+## every file. `10b_export_game_logs.R` documents that exact bug class twice.
+.min_sy <- if (exists("EPR_MIN_SEASON_END_YEAR", envir = globalenv(),
+                      inherits = FALSE)) {
+  get("EPR_MIN_SEASON_END_YEAR", envir = globalenv())
 } else NULL
 if (!is.null(.min_sy)) {
   .sy <- suppressWarnings(as.integer(
