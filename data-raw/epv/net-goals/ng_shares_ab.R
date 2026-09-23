@@ -1,5 +1,10 @@
-# Even share A/B: does a player keep the same share of his losses as his gains?
+# Share A/B: score ng_shares() settings on repeatability and position means
 # =============================================================================
+# One script for every share A/B. Set ARMS (a named list of ng_shares()) before
+# sourcing to test something else; ng_duel_loser_ab.R does that. The default
+# arms are the first test run with it, kept so it can be re-run:
+#
+# EVEN SHARE: does a player keep the same share of his losses as his gains?
 # 2026-09-23. A failed action's actor keeps exec_blame (0.30) of its loss; every
 # successful action keeps 0.90 whatever its sign. np/ng_asymmetry_check.R found
 # that excuses attackers' losses (strikers +0.032 goals a game, defenders
@@ -20,7 +25,7 @@ NG_INPUTS_ONLY <- TRUE
 source("data-raw/epv/net-goals/build_net_goals_artifacts.R")
 SEASONS <- c("2022-2023", "2023-2024", "2024-2025")
 MIN_MINS <- 900
-ARMS <- list(shipped_0.30 = ng_shares(), even_0.90 = ng_shares(exec_blame = 0.90))
+if (!exists("ARMS")) ARMS <- list(shipped_0.30 = ng_shares(), even_0.90 = ng_shares(exec_blame = 0.90))
 
 inputs <- lapply(SEASONS, function(s) {
   SEASON <<- s
@@ -61,13 +66,17 @@ tab <- rbindlist(lapply(names(res), function(a) {
   data.table(arm = a, pairs = o$n, r_overall = round(o$r, 4), r_within_position = round(w$r, 4))
 }))
 print(tab)
-# paired bootstrap on the within-position difference (same player pairs in both arms)
+# paired bootstrap on the within-position difference, each arm against the
+# first (same player pairs in every arm)
 set.seed(1)
-wa <- rep_r(res[[1]], TRUE)$pr; wb <- rep_r(res[[2]], TRUE)$pr
-stopifnot(identical(wa$player_id, wb$player_id))
-d <- replicate(2000, { i <- sample(nrow(wa), replace = TRUE); cor(wb$x[i], wb$y[i]) - cor(wa$x[i], wa$y[i]) })
-say("within-position r, even minus shipped: ", round(cor(wb$x, wb$y) - cor(wa$x, wa$y), 4),
-    "  (95% interval ", round(quantile(d, .025), 4), " to ", round(quantile(d, .975), 4), ", ", nrow(wa), " player pairs)")
+wa <- rep_r(res[[1]], TRUE)$pr
+for (k in names(res)[-1]) {
+  wb <- rep_r(res[[k]], TRUE)$pr
+  stopifnot(identical(wa$player_id, wb$player_id))
+  d <- replicate(2000, { i <- sample(nrow(wa), replace = TRUE); cor(wb$x[i], wb$y[i]) - cor(wa$x[i], wa$y[i]) })
+  say("within-position r, ", k, " minus ", names(res)[1], ": ", round(cor(wb$x, wb$y) - cor(wa$x, wa$y), 4),
+      "  (95% interval ", round(quantile(d, .025), 4), " to ", round(quantile(d, .975), 4), ", ", nrow(wa), " player pairs)")
+}
 
 say("\nPosition means, ENG 2024-25, net goals per game (players with 10+ games). Higher is better for that position.")
 pm <- rbindlist(lapply(names(res), function(a) {
