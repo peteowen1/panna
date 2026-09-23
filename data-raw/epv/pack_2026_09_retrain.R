@@ -107,7 +107,7 @@ for (i in seq_len(nrow(units))) {
   if (file.exists(out)) next
   ch <- as.data.table(arrow::read_parquet(units$file[i]))
   lk <- as.data.frame(shots[unit_league == units$league[i] & unit_season == units$season[i], ..lk_cols])
-  sx <- suppressMessages(as.data.table(add_xg_to_spadl(ch, xg_model, shot_lookup = lk)))
+  sx <- suppressMessages(as.data.table(add_xg_to_spadl(ch, xg_model, season = units$season[i], shot_lookup = lk)))
   xv <- sx[action_type == "shot" & is.finite(xg), .(match_id, action_id, xg)]
   ch[, next_xg_label_position_only := next_xg_label]
   ch[, next_xg_label := NULL]
