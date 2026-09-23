@@ -798,9 +798,11 @@ NG_STOP_ACTIONS <- c("keeper_save")
 #'   `is_starter`, `sub_on_minute`, `sub_off_minute`.
 #' @param keeper_pool_blame,keeper_pool_credit A goalkeeper's weight in the
 #'   **defensive pool's** blame and credit halves, relative to an outfield
-#'   player's 1. Both default 0: keepers are named on every goal and save by the
-#'   shot split, so what is left in the defensive pool is outfield work. Needs
-#'   `position` in `lineups` to find keepers.
+#'   player's 1. Both default 1. Needs `position` in `lineups` to find keepers.
+#' @param keeper_outside_weight A goalkeeper's weight in any pool for play
+#'   OUTSIDE his own third. Default 0: a keeper shares unnamed value near his
+#'   own goal, not at the other end. Needs `start_x` and `team_id` on
+#'   `actions`; without them every action counts as his own third.
 #' @param dacts_share How much of the **defensive pool's credit half** to route
 #'   by each player's defensive work rather than flat. 0 is a flat spread; 1
 #'   routes it entirely by defensive work. Default **0.5** (Pete, 2026-09-21). See the note below on why
@@ -828,8 +830,8 @@ NG_STOP_ACTIONS <- c("keeper_save")
 #'
 #' @family net_goals
 #' @export
-ng_spread_pools <- function(pay, actions, lineups, dacts_share = 0.5, keeper_pool_blame = 0,
-                            keeper_pool_credit = 0,
+ng_spread_pools <- function(pay, actions, lineups, dacts_share = 0.5, keeper_pool_blame = 1,
+                            keeper_pool_credit = 1, keeper_outside_weight = 0,
                             dacts_measure = c("act_value", "count", "named_value"),
                             verbose = TRUE) {
   dacts_measure <- match.arg(dacts_measure)
@@ -851,8 +853,19 @@ ng_spread_pools <- function(pay, actions, lineups, dacts_share = 0.5, keeper_poo
       "i" = "Minute bins 45-56 exist in BOTH halves -- first-half stoppage time overlaps the early second half -- so a bucket keyed on the minute alone mixes the two lineups."))
   }
   acts <- av[, .(match_id, action_id, period_id,
-                 minute = as.numeric(time_seconds) / 60)]
+                 minute = as.numeric(time_seconds) / 60,
+                 act_team = if ("team_id" %in% names(av)) team_id else NA_character_,
+                 start_x = if ("start_x" %in% names(av)) as.numeric(start_x) else NA_real_)]
   pools <- merge(pools, acts, by = c("match_id", "action_id"), all.x = TRUE)
+  # Where the pooled play happened, in the POOL team's frame: its own third or
+  # not. SPADL's x runs 0-100 in the ACTING team's attacking direction, so for
+  # a pool on the acting side (offence) its own third is x < 33.3, and for the
+  # other side's pool (defence) it is x > 66.7. Lets a keeper share unnamed
+  # value near his own goal without sharing a turnover at the other end.
+  pools[, zone := data.table::fifelse(
+    is.na(start_x) | is.na(act_team), "own",
+    data.table::fifelse((team_id == act_team & start_x < 100 / 3) |
+                        (team_id != act_team & start_x > 200 / 3), "own", "rest"))]
 
   # Bucket by whole minute before exploding: a season has ~515k pool payments
   # but only ~75k (match, team, minute, role) buckets, and the eleven on the
@@ -883,7 +896,7 @@ ng_spread_pools <- function(pay, actions, lineups, dacts_share = 0.5, keeper_poo
   # OFFENCE pool by DEFENSIVE acts and charged defenders most for defending.
   pools[, half := fifelse(value_own >= 0, "credit", "blame")]
   buck <- pools[, .(value_home = sum(value_home), value_own = sum(value_own)),
-                by = .(match_id, team_id, role, entry, half, period_id, mbin,
+                by = .(match_id, team_id, role, entry, half, zone, period_id, mbin,
                        stint_min)]
 
   # Opta's lineup uses 0 as the sentinel for "not substituted", NOT NA: a
@@ -938,35 +951,33 @@ ng_spread_pools <- function(pay, actions, lineups, dacts_share = 0.5, keeper_poo
     tilt <- j$entry %in% "defence" & j$half %in% "credit"
     # Normalised within the bucket, so the blend is between two shares rather
     # than between a share and a raw count.
-    j[, dshare := dacts / sum(dacts), by = .(match_id, team_id, role, entry, half, period_id, mbin)]
+    j[, dshare := dacts / sum(dacts), by = .(match_id, team_id, role, entry, half, zone, period_id, mbin)]
     j[!is.finite(dshare), dshare := 1 / .N,
-      by = .(match_id, team_id, role, entry, half, period_id, mbin)]
-    j[, flat := 1 / .N, by = .(match_id, team_id, role, entry, half, period_id, mbin)]
+      by = .(match_id, team_id, role, entry, half, zone, period_id, mbin)]
+    j[, flat := 1 / .N, by = .(match_id, team_id, role, entry, half, zone, period_id, mbin)]
     j[tilt, w := (1 - dacts_share) * flat + dacts_share * dshare]
   }
 
-  # KEEPERS AND THE DEFENSIVE POOL'S BLAME (Pete, 2026-09-23). Once the shot
-  # split names the keeper on every goal and save, what is left in the
-  # defensive pool's blame half is unnamed outfield work -- pressure, marking,
-  # the run nobody tracked. Sharing it with the keeper as well charged him for
-  # other players' defending, and with saves and goals netting to about 0 for
-  # an average keeper it left every keeper reading negative (-0.23 a game,
-  # 2024-25) purely by position. Excluding him from the blame alone overshot to
-  # +0.23 (he still took a full share of the credit), and the same reasoning
-  # covers credit: unnamed defensive credit is outfield pressure too. So by
-  # default he sits out the defensive pool entirely (`keeper_pool_blame`,
-  # `keeper_pool_credit` both 0): keepers -0.134 a game, defenders -0.044,
-  # strikers +0.061. What is left for keepers is mostly the OFFENSIVE pool
-  # (-0.179), an open question for Pete. A substitute keeper is listed as
-  # "Substitute" in the feed and is not recognised (rare).
+  # KEEPERS IN THE POOLS (Pete, 2026-09-23). Keepers share every pool, but only
+  # for play in their own third (`keeper_outside_weight`, default 0): unnamed
+  # value near his goal is partly his; a turnover or a carry at the other end is
+  # not. Measured on ENG 2024-25, keepers average -0.230 a game sharing
+  # everything flat, -0.134 out of the defensive pool, -0.035 own-third-only
+  # (spread 0.114 either way), with each outfield position giving back ~0.013.
+  # `keeper_pool_blame` / `keeper_pool_credit` scale his defensive-pool weight
+  # further (both 1 by default). A substitute keeper is listed as "Substitute"
+  # in the feed and is not recognised (rare).
   kb <- j$is_keeper & j$entry %in% "defence" & j$half %in% "blame"
   j[kb, w := w * keeper_pool_blame]
   kc <- j$is_keeper & j$entry %in% "defence" & j$half %in% "credit"
   j[kc, w := w * keeper_pool_credit]
-  j[, wsum := sum(w), by = .(match_id, team_id, role, entry, half, period_id, mbin)]
-  j[wsum <= 0, `:=`(w = 1, wsum = .N), by = .(match_id, team_id, role, entry, half, period_id, mbin)]
-  n_on <- j[, .(n_on = .N), by = .(match_id, team_id, role, entry, half, period_id, mbin)]
-  j <- merge(j, n_on, by = c("match_id", "team_id", "role", "entry", "half", "period_id", "mbin"))
+  # Outside his own third a keeper's weight in ANY pool is keeper_outside_weight
+  # (1 = shares like anyone; 0 = own third only).
+  j[j$is_keeper & j$zone %in% "rest", w := w * keeper_outside_weight]
+  j[, wsum := sum(w), by = .(match_id, team_id, role, entry, half, zone, period_id, mbin)]
+  j[wsum <= 0, `:=`(w = 1, wsum = .N), by = .(match_id, team_id, role, entry, half, zone, period_id, mbin)]
+  n_on <- j[, .(n_on = .N), by = .(match_id, team_id, role, entry, half, zone, period_id, mbin)]
+  j <- merge(j, n_on, by = c("match_id", "team_id", "role", "entry", "half", "zone", "period_id", "mbin"))
   j[, `:=`(value_home = value_home * w / wsum, value_own = value_own * w / wsum)]
 
   # Conservation cannot see this: dividing a pool among three players instead of
@@ -994,8 +1005,8 @@ ng_spread_pools <- function(pay, actions, lineups, dacts_share = 0.5, keeper_poo
                   value_home, is_home = NA)]
 
   # Pools with no lineup to spread onto: reported, not dropped.
-  keys <- unique(j[, .(match_id, team_id, role, entry, half, period_id, mbin)])
-  orphan <- buck[!keys, on = c("match_id", "team_id", "role", "entry", "half", "period_id", "mbin")]
+  keys <- unique(j[, .(match_id, team_id, role, entry, half, zone, period_id, mbin)])
+  orphan <- buck[!keys, on = c("match_id", "team_id", "role", "entry", "half", "zone", "period_id", "mbin")]
   if (nrow(orphan) > 0) {
     cli::cli_warn(paste0(
       "{format(nrow(orphan), big.mark = ',')} pool bucket{?s} worth ",

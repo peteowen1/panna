@@ -931,7 +931,7 @@ test_that("a missed shot that rebounds to a second shot books its whole value", 
   expect_equal(pay[action_id == 1L & entry == "defence", sum(value_own)], -0.76, tolerance = 1e-12)
 })
 
-test_that("keepers take no share of the defensive pool's blame; team totals hold", {
+test_that("keepers share pools only for play in their own third; team totals hold", {
   d <- ng_fixture_spadl()
   fxt <- ng_fixture_fixtures()
   lineup <- data.frame(
@@ -939,23 +939,23 @@ test_that("keepers take no share of the defensive pool's blame; team totals hold
     team_id = rep(c("H", "A"), each = 11), is_starter = TRUE, minutes_played = 90,
     sub_on_minute = 0, sub_off_minute = 0,
     position = rep(c("Goalkeeper", rep("Defender", 10)), 2), stringsAsFactors = FALSE)
-  acts <- transform(d, time_seconds = c(10, 20, 65, 90), period_id = 1L)
+  # every fixture action is H's, taken at x = 50 (midfield): outside both
+  # keepers' own thirds, so neither keeper shares any pool from them
+  acts <- transform(d, time_seconds = c(10, 20, 65, 90), period_id = 1L, start_x = 50)
   pay <- ng_build_ledger(d, fixtures = fxt, verbose = FALSE)
-  # A's defensive pool holds blame (H's gains) and some credit (H's -0.05
-  # pass); keepers skip only the blame, so look at the negative rows
-  off <- ng_spread_pools(pay, acts, lineup, dacts_share = 0, keeper_pool_blame = 1,
-                         keeper_pool_credit = 1, verbose = FALSE)
-  on  <- ng_spread_pools(pay, acts, lineup, dacts_share = 0, keeper_pool_credit = 1, verbose = FALSE)
-  both <- ng_spread_pools(pay, acts, lineup, dacts_share = 0, verbose = FALSE)   # the default
-  blame <- function(p, who) p[player_id == who & role == "pool_def_spread" & value_own < 0, sum(value_own)]
-  credit <- function(p, who) p[player_id == who & role == "pool_def_spread" & value_own > 0, sum(value_own)]
-  expect_equal(credit(on, "a1"), credit(off, "a1"), tolerance = 1e-12)   # credit unchanged
-  expect_lt(blame(off, "a1"), 0)                    # as an equal eleventh when included
-  expect_equal(blame(on, "a1"), 0)                  # nothing when excluded
-  expect_equal(blame(on, "a2"), blame(off, "a2") * 11 / 10, tolerance = 1e-12)
-  expect_equal(both[player_id == "a1" & role == "pool_def_spread", sum(value_own)], 0)
-  for (p in list(off, on, both)) {
+  flat <- ng_spread_pools(pay, acts, lineup, dacts_share = 0, keeper_outside_weight = 1, verbose = FALSE)
+  zone <- ng_spread_pools(pay, acts, lineup, dacts_share = 0, verbose = FALSE)   # the default
+  kpool <- function(p, who) p[player_id == who & grepl("_spread$", role), sum(abs(value_own))]
+  expect_gt(kpool(flat, "a1"), 0)
+  expect_equal(kpool(zone, "a1"), 0)
+  expect_equal(kpool(zone, "h1"), 0)
+  # deep in A's own third (H attacking at x = 90), A's keeper shares again
+  acts2 <- transform(acts, start_x = 90)
+  deep <- ng_spread_pools(pay, acts2, lineup, dacts_share = 0, verbose = FALSE)
+  expect_gt(kpool(deep, "a1"), 0)
+  for (p in list(flat, zone, deep)) {
     expect_equal(sum(p[team_id == "A"]$value_own), -1.00, tolerance = 1e-10)
+    expect_equal(sum(p[team_id == "H"]$value_own), 1.00, tolerance = 1e-10)
   }
 })
 

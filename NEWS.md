@@ -1,3 +1,14 @@
+# panna 0.3.64
+
+## Net goals: keepers back in every pool, weighted by where the play happened
+
+Pools are keyed by pitch zone (the pool team's own third or not), and a keeper's weight
+outside his own third is `ng_spread_pools(keeper_outside_weight = 0)`: he shares unnamed value
+near his goal, not at the other end. `keeper_pool_blame` / `keeper_pool_credit` return to 1.
+ENG 2024-25 keepers: -0.230 a game sharing everything flat, -0.134 out of the defensive pool,
+-0.035 own-third only. Keepers are paid exactly 70% of goals saved against xGOT
+(`ng_keeper_check.R`: slope 0.696, r 0.997), so their low average came from the pools.
+
 # panna 0.3.63
 
 ## Net goals: the xGOT shot split, unbroken value after shots, keepers out of the defensive pool
