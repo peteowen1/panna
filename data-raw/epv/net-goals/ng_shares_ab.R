@@ -27,12 +27,25 @@ SEASONS <- c("2022-2023", "2023-2024", "2024-2025")
 MIN_MINS <- 900
 if (!exists("ARMS")) ARMS <- list(shipped_0.30 = ng_shares(), even_0.90 = ng_shares(exec_blame = 0.90))
 
-inputs <- lapply(SEASONS, function(s) {
-  SEASON <<- s
-  INPUTS <<- sprintf("data-raw/cache/epv/net-goals/ng_inputs_%s_%s%s.rds", LEAGUE, s, epv_tag)
-  ng_load_inputs()
-})
-names(inputs) <- SEASONS
+# An arm is either ng_shares() or list(shares = ng_shares(), epv = "<model.rds>");
+# each EPV model's inputs are built once and cached under their own name.
+DEFAULT_EPV <- "data-raw/cache/epv/epv_model_xg_clean_full.rds"
+arm_shares <- function(a) if (!is.null(a$shares)) a$shares else a
+arm_epv    <- function(a) if (!is.null(a$epv)) a$epv else DEFAULT_EPV
+load_for <- function(epv_path) {
+  EPV_MODEL_PATH <<- epv_path
+  epv_tag <<- if (grepl("epv_model_xg_clean_full", epv_path, fixed = TRUE)) "" else
+    paste0("_", tools::file_path_sans_ext(basename(epv_path)))
+  out <- lapply(SEASONS, function(s) {
+    SEASON <<- s
+    INPUTS <<- sprintf("data-raw/cache/epv/net-goals/ng_inputs_%s_%s%s.rds", LEAGUE, s, epv_tag)
+    ng_load_inputs()
+  })
+  names(out) <- SEASONS
+  out
+}
+inputs_by_epv <- list()
+for (a in ARMS) { e <- arm_epv(a); if (is.null(inputs_by_epv[[e]])) inputs_by_epv[[e]] <- load_for(e) }
 
 per_season <- function(inp, sh) {
   raw <- ng_build_ledger(inp$ep, adj = inp$adj, fixtures = inp$fx, lineups = inp$lineups,
@@ -47,7 +60,7 @@ per_season <- function(inp, sh) {
 }
 
 res <- lapply(names(ARMS), function(a) {
-  say("arm ", a); lapply(inputs, per_season, sh = ARMS[[a]])
+  say("arm ", a); lapply(inputs_by_epv[[arm_epv(ARMS[[a]])]], per_season, sh = arm_shares(ARMS[[a]]))
 })
 names(res) <- names(ARMS)
 

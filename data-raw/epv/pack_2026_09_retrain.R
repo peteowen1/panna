@@ -28,9 +28,14 @@ HOLDOUT <- "2025-2026"          # scored by the gates, never trained on by the g
 # chance is worth by construction. On 2026-27 (unseen by both) the published
 # xG beat the pack's new one -- goals/xG 0.985 vs 0.963, headers 0.948 vs 0.853
 # (pack_gate_2026_27.R) -- because Opta's big-chance tag rate drifted up.
+# "published_v0" (Pete, 2026-09-24): the published xG plus the ledger's shot
+# aftermath, V0 = xG + (1 - xG) * A with A = NG_SHOT_AFTERMATH_LINE -- the exact
+# price the ledger books a shot at, so the row before a shot no longer collects
+# ~0.03 of aftermath EPV never expected (+0.047 on won-aerial-then-header rows
+# with plain-xG labels, ng_epv_pack_ab.R).
 LABEL_XG <- if (exists("LABEL_XG")) LABEL_XG else "published"
-LBL_DIR  <- if (LABEL_XG == "published") "chunks_pubxg" else "chunks_realxg"
-EPV_FILE <- if (LABEL_XG == "published") "epv_model_pubxg.rds" else "epv_model.rds"
+LBL_DIR  <- switch(LABEL_XG, published = "chunks_pubxg", published_v0 = "chunks_pubv0", "chunks_realxg")
+EPV_FILE <- switch(LABEL_XG, published = "epv_model_pubxg.rds", published_v0 = "epv_model_pubv0.rds", "epv_model.rds")
 dir.create(file.path(OUT, LBL_DIR), recursive = TRUE, showWarnings = FALSE)
 ck <- function(f) file.path(OUT, f)
 
@@ -82,7 +87,7 @@ if (!file.exists(ck("xg_model.rds"))) {
   fm <- rt_stage("xG fit (final, all)", fit_xg_model(ft, nrounds = 1000, early_stopping_rounds = 50, verbose = 0))
   saveRDS(fm, ck("xg_model.rds"))
 }
-xg_model <- readRDS(if (LABEL_XG == "published") "data-raw/cache/epv/xg_model.rds" else ck("xg_model.rds"))
+xg_model <- readRDS(if (LABEL_XG %in% c("published", "published_v0")) "data-raw/cache/epv/xg_model.rds" else ck("xg_model.rds"))
 say("EPV labels priced by the ", LABEL_XG, " xG -> ", LBL_DIR, ", ", EPV_FILE)
 
 # ---- C. xGOT: same shape, header gate ---------------------------------------
@@ -109,6 +114,10 @@ for (i in seq_len(nrow(units))) {
   lk <- as.data.frame(shots[unit_league == units$league[i] & unit_season == units$season[i], ..lk_cols])
   sx <- suppressMessages(as.data.table(add_xg_to_spadl(ch, xg_model, season = units$season[i], shot_lookup = lk)))
   xv <- sx[action_type == "shot" & is.finite(xg), .(match_id, action_id, xg)]
+  if (LABEL_XG == "published_v0") {
+    A <- NG_SHOT_AFTERMATH_LINE
+    xv[, xg := xg + (1 - xg) * (A$intercept + A$slope * xg)]
+  }
   ch[, next_xg_label_position_only := next_xg_label]
   ch[, next_xg_label := NULL]
   ch <- suppressMessages(as.data.table(create_next_xg_labels(ch, xg_values = xv)))
