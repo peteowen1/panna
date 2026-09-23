@@ -517,6 +517,15 @@ validate_game_log_schema <- function(dt, league, season) {
         ng_pay <- ng_build_ledger(spadl_ng,
                                   adj = ng_build_adjacency(events, verbose = FALSE),
                                   fixtures = ng_fx, lineups = lineups, verbose = FALSE)
+        # Which shot-aftermath line this league-season used, said now and with
+        # the league's name: a small tournament borrows the default line, and
+        # that must be findable in the log (message, not a deferred warning).
+        ng_af <- attr(ng_pay, "shot_aftermath_fit")
+        message(if (is.null(ng_af)) sprintf("    net goals (%s): shot aftermath OFF, shots at xG", league)
+                else sprintf("    net goals (%s): shot aftermath A = %.4f + %.4f x xG, %s (%d shots)",
+                             league, ng_af$intercept, ng_af$slope,
+                             if (isTRUE(ng_af$fallback)) "DEFAULT line, too few shots to fit" else "fitted here",
+                             ng_af$n_fit))
         ng_pay <- ng_spread_pools(ng_pay, spadl_ng, lineups, verbose = FALSE)
         ng_pg  <- data.table::as.data.table(
           ng_player_game(ng_pay, lineups, verbose = FALSE))

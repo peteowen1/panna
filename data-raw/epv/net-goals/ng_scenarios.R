@@ -25,10 +25,15 @@ od <- merge(o, d, by = c("match_id", "action_id"))
 chk("double entry on every action", nrow(od), max(abs(od$v.x + od$v.y)) < 1e-9,
     sprintf("worst %.1e", max(abs(od$v.x + od$v.y))))
 
-# 2. Goals. A goal's two sides book 1 - xG exactly.
+# 2. Goals. A goal's two sides book 1 - V0 exactly, where V0 is the shot's price:
+# xG + (1 - xG) * A, A being the season's fitted aftermath line (2026-09-23).
+af <- attr(x$raw, "shot_aftermath_fit")
+stopifnot(!is.null(af))
 g <- ep[action_type == "shot" & result == "success" & is.finite(xgot)]
-gg <- merge(g[, .(match_id, action_id, want = 1 - epv)], o, by = c("match_id", "action_id"))
-chk("goals book 1 - xG", nrow(gg), max(abs(gg$v - gg$want)) < 1e-9)
+g[, v0 := epv + (1 - epv) * (af$intercept + af$slope * epv)]
+gg <- merge(g[, .(match_id, action_id, want = 1 - v0)], o, by = c("match_id", "action_id"))
+chk("goals book 1 - V0 (xG plus the aftermath)", nrow(gg), max(abs(gg$v - gg$want)) < 1e-9,
+    sprintf("A = %.4f + %.4f x xG", af$intercept, af$slope))
 
 # 3. Penalties: on-target penalties are split, and a saved one names the stopper.
 pk <- ep[action_type == "shot" & is.finite(xgot) & epv > 0.6]
@@ -82,10 +87,18 @@ chk("no single payment beyond 1 goal + its starting value", nrow(lim),
 chk("no player-match beyond +/-4 goals (a hat-trick reaches ~3)", nrow(pg), max(abs(pg$net_goals)) < 4,
     sprintf("range %.2f to %.2f", min(pg$net_goals), max(pg$net_goals)))
 
-# 9. Shot chain: the row after a shot starts from 0 in the ledger.
-nx <- ep[order(match_id, action_id)][, prev := shift(action_type), by = match_id][prev == "shot" & action_type != "shot"]
-nxl <- merge(nx[, .(match_id, action_id, want = epv + epv_delta)], o, by = c("match_id", "action_id"))
-chk("row after a shot books from 0", nrow(nxl), max(abs(nxl$v - nxl$want)) < 1e-9)
+# 9. Shot chain. The row after a GOAL starts from 0; the row after a non-goal
+# shot books only its own change, because the shot now ends where it starts.
+# (Rows that themselves precede a shot are repriced, so they are left out.)
+nx <- ep[order(match_id, action_id)][, `:=`(prev = shift(action_type), prev_res = shift(result),
+                                            nxt = shift(action_type, -1)), by = match_id][
+  prev == "shot" & action_type != "shot" & !(nxt %in% "shot")]
+nxl <- merge(nx[, .(match_id, action_id, goal = prev_res %in% "success",
+                    want = fifelse(prev_res %in% "success", epv + epv_delta, epv_delta))],
+             o, by = c("match_id", "action_id"))
+chk("row after a goal books from 0", nxl[goal == TRUE, .N], nxl[goal == TRUE, max(abs(v - want))] < 1e-9)
+chk("row after a non-goal shot books its own change", nxl[goal == FALSE, .N],
+    nxl[goal == FALSE, max(abs(v - want))] < 1e-9)
 
 out <- rbindlist(res)
 print(out, row.names = FALSE)

@@ -1,3 +1,26 @@
+# panna 0.3.65
+
+## Net goals: a shot is worth more than its xG
+
+A shot that does not score still leaves its side a corner, a rebound or the ball: on ENG
+2024-25 the state after a non-goal shot is worth +0.038 goals to the shooters on average
+(8,709 shots), against a mean xG of 0.112. `ng_build_ledger(shot_aftermath = TRUE)` (the new
+default) prices each shot at `xG + (1 - xG) * A`, with `A` a straight line in xG fitted on the
+season's own non-goal shots (`.ng_shot_aftermath()`), reprices the row before the shot to
+match, and ends a non-goal shot at the real value of the next state instead of 0. The shot row
+gains a third step, `role = "shot_aftermath"`, beside the strike and the finish. The chain
+from 0 now applies after goals only. Fewer than 50 non-goal shots cannot fit the line: pass a
+season's fit (`attr(pay, "shot_aftermath_fit")`) or the shots stay at their xG, with a warning.
+
+ENG 2024-25: won aerials straight before the same player's headed shot go from -0.062 to
+-0.028 a row (828 rows); keepers from -0.036 to +0.032 a game, because a save row is no
+longer charged for the danger the shot created before the keeper touched it; raw team totals
+land a median 0.0146 goals from goal difference (was 0.0145). With `shot_aftermath = FALSE`
+the ledger is identical to 0.3.64. A/B: `data-raw/epv/net-goals/ng_aftermath_ab.R`.
+
+`build_net_goals_artifacts.R` now caches only its slow inputs (SPADL, EPV, xPass, xGOT) and
+rebuilds the ledger from live code on every run, so a rule change needs no cache bump.
+
 # panna 0.3.64
 
 ## Net goals: keepers back in every pool, weighted by where the play happened

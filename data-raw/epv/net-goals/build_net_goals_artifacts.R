@@ -9,8 +9,9 @@
 #   data-raw/cache/epv/net-goals/ng_walkthrough.json          one passage, action by action,
 #       up to and including a goal, with every payment each action made.
 #
-# The ledger build is the slow part, so it is cached to CACHE and reused. Delete
-# the file to rebuild from live code.
+# The inputs (SPADL, EPV, xPass, xGOT) are cached to INPUTS; the ledger is
+# rebuilt from live code on every run. Set NG_INPUTS_ONLY <- TRUE before
+# sourcing to get ng_load_inputs() without building anything (for A/B scripts).
 #
 # Run from panna/:  Rscript data-raw/epv/net-goals/build_net_goals_artifacts.R
 
@@ -26,15 +27,27 @@ WALK_N   <- 30                                             # actions up to the g
 CACHE    <- sprintf("data-raw/cache/epv/net-goals/ng_ledger_%s_%s.rds", LEAGUE, SEASON)
 OUT_DIR  <- "data-raw/cache/epv/net-goals"   # gitignored
 
-# ---- build (or read the cached build) ---------------------------------------
-# Bump CACHE_VERSION whenever the cached contents change (v2 added the action
-# coordinates the walkthrough's pitch plot needs), so an old cache is rebuilt
-# rather than read with columns missing.
-CACHE_VERSION <- 6L   # v6: keepers back in every pool, own third only (v5 out of def pool)
-x <- if (file.exists(CACHE)) readRDS(CACHE) else NULL
-if (!is.null(x) && identical(x$cache_version, CACHE_VERSION)) {
-  say("reading cached ledger: ", CACHE, " (delete it to rebuild from live code)")
-} else {
+# ---- inputs (slow, cached) and ledger (fast, always from live code) ---------
+# The slow part is SPADL + EPV + xPass + xGOT (minutes); the ledger itself takes
+# seconds. So only the INPUTS are cached, and the ledger is rebuilt from the
+# current R/epv_net_goals.R on every run -- a rule change never needs a cache
+# bump, and A/B scripts can source the same inputs. Bump INPUT_VERSION when the
+# inputs change; delete INPUTS to rebuild them from live code.
+INPUTS <- sprintf("data-raw/cache/epv/net-goals/ng_inputs_%s_%s.rds", LEAGUE, SEASON)
+INPUT_VERSION <- 1L
+# The local model files are part of the key, so replacing one rebuilds the
+# inputs without anyone remembering a bump. (The xGOT model comes from
+# load_xgot_model() and the events from the local parquet: those still rely on
+# INPUT_VERSION, or deleting INPUTS.)
+MODEL_FILES <- c("data-raw/cache/epv/xg_model.rds", "data-raw/cache/epv/xpass_model.rds",
+                 "data-raw/cache/epv/epv_model_xg_clean_full.rds")
+ng_load_inputs <- function() {
+  key <- list(version = INPUT_VERSION, models = unname(tools::md5sum(MODEL_FILES)))
+  x <- if (file.exists(INPUTS)) readRDS(INPUTS) else NULL
+  if (!is.null(x) && identical(x$input_key, key)) {
+    say("reading cached inputs: ", INPUTS, " (built ", format(x$built), "; SPADL/EPV/xPass/xGOT are NOT rebuilt)")
+    return(x)
+  }
   t0 <- Sys.time()
   events  <- load_opta_match_events(LEAGUE, season = SEASON, source = "local")
   lineups <- as.data.table(load_opta_lineups(LEAGUE, season = SEASON, source = "local"))
@@ -64,18 +77,27 @@ if (!is.null(x) && identical(x$cache_version, CACHE_VERSION)) {
   fx <- as.data.table(load_opta_fixtures(LEAGUE, season = SEASON, source = "local"))[
     , .(match_id, home_team, away_team, home_team_id, away_team_id, home_score, away_score)]
   adj <- ng_build_adjacency(events, verbose = FALSE)
-  raw <- ng_build_ledger(ep, adj = adj, fixtures = fx, lineups = lineups, verbose = TRUE)
-  pay <- ng_spread_pools(raw, ep, lineups, verbose = FALSE)
-  keep_ep <- intersect(c("match_id", "action_id", "period_id", "time_seconds", "team_id",
-                         "player_id", "player_name", "action_type", "result", "epv",
-                         "epv_delta", "xpass", "xg", "xgot", "start_x", "start_y", "end_x", "end_y"),
-                       names(ep))
-  x <- list(cache_version = CACHE_VERSION, ep = ep[, ..keep_ep], lineups = lineups, fx = fx, raw = raw, pay = pay,
-            positions = as.data.table(get_player_positions(lineups, ep)))
-  dir.create(dirname(CACHE), recursive = TRUE, showWarnings = FALSE)
-  saveRDS(x, CACHE)
-  say("built and cached the ledger in ", round(as.numeric(difftime(Sys.time(), t0, units = "mins")), 1), " min")
+  x <- list(input_key = key, built = Sys.time(), ep = ep, adj = adj, lineups = lineups, fx = fx)
+  dir.create(dirname(INPUTS), recursive = TRUE, showWarnings = FALSE)
+  saveRDS(x, INPUTS)
+  say("built and cached the inputs in ", round(as.numeric(difftime(Sys.time(), t0, units = "mins")), 1), " min")
+  x
 }
+if (!exists("NG_INPUTS_ONLY")) {
+inp <- ng_load_inputs()
+t0 <- Sys.time()
+raw <- ng_build_ledger(inp$ep, adj = inp$adj, fixtures = inp$fx, lineups = inp$lineups, verbose = TRUE)
+pay <- ng_spread_pools(raw, inp$ep, inp$lineups, verbose = FALSE)
+keep_ep <- intersect(c("match_id", "action_id", "period_id", "time_seconds", "team_id",
+                       "player_id", "player_name", "action_type", "result", "epv",
+                       "epv_delta", "xpass", "xg", "xgot", "start_x", "start_y", "end_x", "end_y"),
+                     names(inp$ep))
+# CACHE keeps the finished ledger for the check scripts (ng_keeper_check.R and
+# friends); it is rewritten on every run.
+x <- list(ep = inp$ep[, ..keep_ep], lineups = inp$lineups, fx = inp$fx, raw = raw, pay = pay,
+          positions = as.data.table(get_player_positions(inp$lineups, inp$ep)))
+saveRDS(x, CACHE)
+say("ledger built from live code in ", round(as.numeric(difftime(Sys.time(), t0, units = "secs"))), " s")
 ep <- x$ep; lineups <- x$lineups; fx <- x$fx; raw <- as.data.table(x$raw)
 pay <- as.data.table(x$pay)
 say("actions ", nrow(ep), " | payments ", nrow(pay), " | matches ", uniqueN(pay$match_id))
@@ -106,6 +128,7 @@ lab <- function(play_type, role) {
   data.table::fcase(
     grepl("^pool_", role),                                    "Team pool share",
     role == "shooter",                                        "Shooting",
+    role == "shot_aftermath",                                 "Shooting: what it left behind",
     role == "receiver",                                       "Receiving a pass",
     role == "stopper_rebound",                                "Keeper: rebound after a save",
     role == "defender" & play_type == "shot",                 "Stopping shots",
@@ -166,7 +189,8 @@ setorder(w, -net)
 
 CATS <- setdiff(names(w), c("player_id", "gms", "mins", "name", "team", "pos", "net"))
 fam <- list(
-  "On the ball" = c("Passing", "Receiving a pass", "Carrying", "Take-ons", "Shooting", "Losing the ball"),
+  "On the ball" = c("Passing", "Receiving a pass", "Carrying", "Take-ons", "Shooting",
+                  "Shooting: what it left behind", "Losing the ball"),
   "Winning it back" = c("Tackles & interceptions", "Ball recoveries", "Aerial duels", "Clearances",
                         "Cutting out passes", "Defending other actions", "Fouls"),
   "Goalkeeping" = c("Stopping shots", "Keeper: handling", "Keeper: rebound after a save"),
@@ -250,3 +274,4 @@ write_json(list(sport = "football", unit = "goals",
                 totals = tot[, .(player = player_name, team, net, anchor)]),
            file.path(OUT_DIR, "ng_walkthrough.json"), auto_unbox = TRUE, na = "null", digits = 6)
 say("wrote ", file.path(OUT_DIR, "ng_walkthrough.json"))
+}  # end if (!exists("NG_INPUTS_ONLY"))
