@@ -958,3 +958,29 @@ test_that("keepers take no share of the defensive pool's blame; team totals hold
     expect_equal(sum(p[team_id == "A"]$value_own), -1.00, tolerance = 1e-10)
   }
 })
+
+test_that("the keeper named on a goal is the one who played, and the incoming one after a swap", {
+  d <- ng_fixture_shot_save(result = "success")[1, ]
+  d$time_seconds <- 80 * 60
+  lu <- data.frame(match_id = "m1", team_id = "A",
+                   player_id = c("bench", "gk1", "gk2"),
+                   position = c("Goalkeeper", "Goalkeeper", "Substitute"),
+                   minutes_played = c(0, 60, 30), sub_on_minute = c(0, 0, 60),
+                   sub_off_minute = c(0, 60, 0), stringsAsFactors = FALSE)
+  pay <- ng_build_ledger(d, fixtures = ng_fixture_fixtures(), lineups = lu, verbose = FALSE)
+  # the goal is in the 80th minute: gk1 went off at 60 and gk2 came on then
+  expect_true("gk2" %in% pay$player_id)
+  expect_false(any(pay$player_id %in% c("bench", "gk1")))
+  d$time_seconds <- 30 * 60
+  pay <- ng_build_ledger(d, fixtures = ng_fixture_fixtures(), lineups = lu, verbose = FALSE)
+  expect_true("gk1" %in% pay$player_id)
+})
+
+test_that("the shot chain never carries a shot into the next match", {
+  d <- rbind(ng_fixture_shot_save()[1, ], ng_fixture_shot_save()[3, ])
+  d$match_id <- c("m1", "m2"); d$action_id <- c(1L, 1L)
+  fx <- rbind(ng_fixture_fixtures(), transform(ng_fixture_fixtures(), match_id = "m2"))
+  pay <- ng_build_ledger(d, fixtures = fx, verbose = FALSE)
+  # m2's first row keeps its own value (0.01), not epv + delta (0.05)
+  expect_equal(pay[match_id == "m2" & entry == "offence", sum(value_own)], 0.01, tolerance = 1e-12)
+})

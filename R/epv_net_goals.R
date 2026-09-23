@@ -332,23 +332,39 @@ ng_build_ledger <- function(spadl_with_epv, adj = NULL, fixtures,
     dt[, .prev_shot := NULL]
   }
 
-  # Each side's goalkeeper, for the goal step of the shot split below: a goal
-  # has no save row to name him from. The starting keeper, until he is
-  # substituted; after that nobody is named and the blame goes to the pool.
+  # Each side's goalkeeper, for the finish step of a shot with no save row (a
+  # goal). The keeper who played the most minutes -- a bench keeper can also be
+  # listed as "Goalkeeper", so first-listed is not good enough -- and, if he was
+  # substituted, the one substitute who came on at that minute (the feed lists
+  # an incoming keeper as "Substitute", so that is the only way to find him).
+  # Where it cannot be told, nobody is named and the blame goes to the pool.
   if (!is.null(lineups)) {
     lu <- data.table::as.data.table(lineups)
     if (all(c("match_id", "team_id", "player_id", "position") %in% names(lu))) {
-      gk <- lu[position %chin% "Goalkeeper",
+      num <- function(v) suppressWarnings(as.numeric(v))
+      if (!"minutes_played" %in% names(lu)) lu[, minutes_played := NA_real_]
+      if (!"sub_off_minute" %in% names(lu)) lu[, sub_off_minute := NA_real_]
+      if (!"sub_on_minute" %in% names(lu)) lu[, sub_on_minute := NA_real_]
+      gk <- lu[position %chin% "Goalkeeper" & !(num(minutes_played) %in% 0),
                .(match_id, def_team_id = team_id, keeper_id = as.character(player_id),
-                 keeper_off = if ("sub_off_minute" %in% names(lu)) as.numeric(sub_off_minute) else NA_real_)]
+                 mins = num(minutes_played), keeper_off = num(sub_off_minute))]
+      data.table::setorder(gk, match_id, def_team_id, -mins, na.last = TRUE)
       gk <- unique(gk, by = c("match_id", "def_team_id"))
+      gk[!(keeper_off > 0), keeper_off := NA_real_]
+      subs <- lu[, .(match_id, def_team_id = team_id, keeper2 = as.character(player_id),
+                     on = num(sub_on_minute))][on > 0]
+      k2 <- merge(gk[!is.na(keeper_off), .(match_id, def_team_id, keeper_off)], subs,
+                  by = c("match_id", "def_team_id"))[on == keeper_off]
+      k2 <- k2[, .(keeper2 = if (.N == 1L) keeper2 else NA_character_), by = .(match_id, def_team_id)]
+      gk <- merge(gk, k2, by = c("match_id", "def_team_id"), all.x = TRUE)
       dt[, def_team_id := data.table::fifelse(is_home, away_team_id, home_team_id)]
-      dt <- merge(dt, gk, by = c("match_id", "def_team_id"), all.x = TRUE)
+      dt <- merge(dt, gk[, .(match_id, def_team_id, keeper_id, keeper_off, keeper2)],
+                  by = c("match_id", "def_team_id"), all.x = TRUE)
       if ("time_seconds" %in% names(dt)) {
-        dt[!is.na(keeper_off) & keeper_off > 0 & as.numeric(time_seconds) / 60 > keeper_off,
-           keeper_id := NA_character_]
+        after <- !is.na(dt$keeper_off) & as.numeric(dt$time_seconds) / 60 > dt$keeper_off
+        dt[after, keeper_id := keeper2]
       }
-      dt[, c("def_team_id", "keeper_off") := NULL]
+      dt[, c("def_team_id", "keeper_off", "keeper2") := NULL]
       data.table::setorder(dt, match_id, action_id)
     }
   }
@@ -1168,9 +1184,9 @@ ng_spread_pools <- function(pay, actions, lineups, dacts_share = 0.5, keeper_poo
 
   # Split shots, defending side. STRIKE (-strike): a named stopper on a shot
   # that was NOT on target is a blocker, and takes named_share; otherwise the
-  # team pool. FINISH (-finish, on target only): the keeper takes named_share --
-  # the saver where the feed names one, else the side's keeper from the lineup
-  # (a goal has no save row) -- and the pool the rest.
+  # team pool. FINISH (-finish, whenever it is not zero -- see `fin` above):
+  # the stopper the feed names takes named_share, else the side's keeper when
+  # the shot was on target or scored, else nobody; the pool takes the rest.
   kp <- if ("keeper_id" %in% names(d)) d$keeper_id else NAc
   blocker <- data.table::fifelse(split & !on_target, d$stopper_id, NA_character_)
   add(split & !is.na(blocker), blocker, def, -strike * sh$named_share, "defender", "defence")
