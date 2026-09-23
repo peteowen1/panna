@@ -29,7 +29,7 @@ if (!exists("ARMS")) ARMS <- list(shipped_0.30 = ng_shares(), even_0.90 = ng_sha
 
 inputs <- lapply(SEASONS, function(s) {
   SEASON <<- s
-  INPUTS <<- sprintf("data-raw/cache/epv/net-goals/ng_inputs_%s_%s.rds", LEAGUE, s)
+  INPUTS <<- sprintf("data-raw/cache/epv/net-goals/ng_inputs_%s_%s%s.rds", LEAGUE, s, epv_tag)
   ng_load_inputs()
 })
 names(inputs) <- SEASONS

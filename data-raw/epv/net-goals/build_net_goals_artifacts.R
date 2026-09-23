@@ -33,7 +33,13 @@ OUT_DIR  <- "data-raw/cache/epv/net-goals"   # gitignored
 # current R/epv_net_goals.R on every run -- a rule change never needs a cache
 # bump, and A/B scripts can source the same inputs. Bump INPUT_VERSION when the
 # inputs change; delete INPUTS to rebuild them from live code.
-INPUTS <- sprintf("data-raw/cache/epv/net-goals/ng_inputs_%s_%s.rds", LEAGUE, SEASON)
+# EPV_MODEL_PATH picks the EPV model the inputs are built with (default: the
+# canonical clean model); a non-default one gets its own INPUTS file so old and
+# new inputs sit side by side for an A/B (model-pack retrain, step 7).
+if (!exists("EPV_MODEL_PATH")) EPV_MODEL_PATH <- "data-raw/cache/epv/epv_model_xg_clean_full.rds"
+epv_tag <- if (grepl("epv_model_xg_clean_full", EPV_MODEL_PATH, fixed = TRUE)) "" else
+  paste0("_", tools::file_path_sans_ext(basename(EPV_MODEL_PATH)))
+INPUTS <- sprintf("data-raw/cache/epv/net-goals/ng_inputs_%s_%s%s.rds", LEAGUE, SEASON, epv_tag)
 INPUT_VERSION <- 1L
 # The local model files are part of the key, so replacing one rebuilds the
 # inputs without anyone remembering a bump. (The xGOT model comes from
@@ -42,7 +48,7 @@ INPUT_VERSION <- 1L
 MODEL_FILES <- c("data-raw/cache/epv/xg_model.rds", "data-raw/cache/epv/xpass_model.rds",
                  "data-raw/cache/epv/epv_model_xg_clean_full.rds")
 ng_load_inputs <- function() {
-  key <- list(version = INPUT_VERSION, models = unname(tools::md5sum(MODEL_FILES)))
+  key <- list(version = INPUT_VERSION, models = unname(tools::md5sum(c(MODEL_FILES[!grepl("epv_model", MODEL_FILES)], EPV_MODEL_PATH))))
   x <- if (file.exists(INPUTS)) readRDS(INPUTS) else NULL
   if (!is.null(x) && identical(x$input_key, key)) {
     say("reading cached inputs: ", INPUTS, " (built ", format(x$built), "; SPADL/EPV/xPass/xGOT are NOT rebuilt)")
@@ -54,7 +60,7 @@ ng_load_inputs <- function() {
   shot_lk <- panna:::.epv_shot_lookup(LEAGUE, SEASON)
   xg_model    <- readRDS("data-raw/cache/epv/xg_model.rds")
   xpass_model <- readRDS("data-raw/cache/epv/xpass_model.rds")
-  epv_model   <- readRDS("data-raw/cache/epv/epv_model_xg_clean_full.rds")
+  epv_model   <- readRDS(EPV_MODEL_PATH)
   spadl <- convert_opta_to_spadl(events)
   ch  <- create_possession_chains(spadl)
   lab <- label_actions_with_outcomes(ch, add_next_chain_outcome(classify_chain_outcomes(ch)))
