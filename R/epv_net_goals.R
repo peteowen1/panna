@@ -231,8 +231,10 @@ ng_build_adjacency <- function(events, verbose = TRUE) {
 #' The allocation at this stage is deliberately crude -- every row pays its whole
 #' `epv_delta` to the acting player. That is obviously wrong about *who* and
 #' provably right about *how much*, which makes it the one clean moment to assert
-#' the identity: there is no rule for an error to hide behind, and no reconciler
-#' downstream absorbing it. Torp's suite passed 48 assertions against a ledger
+#' the identity: there is no rule for an error to hide behind, and nothing has
+#' yet been forced toward a target. [ng_reconcile_margin()] does force one, at
+#' the very end of the chain, and that is exactly why this assertion has to
+#' happen HERE and stay here. Torp's suite passed 48 assertions against a ledger
 #' with the away sign flipped because every test ran after its reconciler; this
 #' function is the assertion point that avoids repeating that.
 #'
@@ -260,6 +262,14 @@ ng_build_adjacency <- function(events, verbose = TRUE) {
 #'   absolute ledger value against the team convention's 39.1%, because it never
 #'   books the conceding half -- which is most of what nobody is named for. Kept
 #'   for comparison.
+#' @param lineups Optional lineups (`match_id`, `team_id`, `player_id`,
+#'   `position`, `sub_off_minute`). Used to name each side's goalkeeper on the
+#'   finish step of a shot that has no save row (a goal). Without it, that step
+#'   goes to the defending side's pool.
+#' @param shot_chain If `TRUE` (default), the row after a shot starts from 0,
+#'   the shot's end, instead of the model's restart value, so no value appears
+#'   between them unbooked (309 goals a season on ENG 2024-25). Needs `epv` on
+#'   the actions; ignored without it.
 #' @param verbose Print a summary. Default `TRUE`.
 #'
 #' @return A data.table of payments, one row per (action, recipient):
@@ -272,6 +282,7 @@ ng_build_adjacency <- function(events, verbose = TRUE) {
 ng_build_ledger <- function(spadl_with_epv, adj = NULL, fixtures,
                             allocate = TRUE, shares = ng_shares(),
                             convention = c("team", "margin"),
+                            lineups = NULL, shot_chain = TRUE,
                             verbose = TRUE) {
   convention <- match.arg(convention)
   dt <- data.table::as.data.table(spadl_with_epv)
@@ -300,6 +311,63 @@ ng_build_ledger <- function(spadl_with_epv, adj = NULL, fixtures,
   }
 
   dt[, is_home := team_id == home_team_id]
+
+  # THE SHOT CHAIN (Pete, 2026-09-23). A shot is valued at its xG and ends at 1
+  # or 0, but the next row then RESTARTED from the model's own value for that
+  # state, so the value between the shot's end and that restart was booked to
+  # nobody: 337 goals of |value| on ENG 2024-2025, 4% of all value moved, most
+  # of it on keeper-save rows. The row after a shot now starts from 0, the
+  # shot's end, so a save that parries the ball to an attacker is charged the
+  # whole rebound and the value runs unbroken. A shot after a shot keeps its own
+  # xG start (a rebound shot is a new chance, priced by its own xG).
+  if (isTRUE(shot_chain) && "epv" %in% names(dt)) {
+    data.table::setorder(dt, match_id, action_id)
+    dt[, .prev_shot := data.table::shift(action_type) %in% "shot", by = match_id]
+    fix <- dt$.prev_shot & dt$action_type != "shot" & is.finite(dt$epv) & is.finite(dt$epv_delta)
+    dt[fix, epv_delta := epv + epv_delta]
+    if (isTRUE(verbose)) {
+      cli::cli_alert_info(
+        "Shot chain: {format(sum(fix), big.mark = ',')} row{?s} after a shot now start from 0 ({round(sum(abs(dt$epv[fix])), 1)} goals that used to go unbooked).")
+    }
+    dt[, .prev_shot := NULL]
+  }
+
+  # Each side's goalkeeper, for the finish step of a shot with no save row (a
+  # goal). The keeper who played the most minutes -- a bench keeper can also be
+  # listed as "Goalkeeper", so first-listed is not good enough -- and, if he was
+  # substituted, the one substitute who came on at that minute (the feed lists
+  # an incoming keeper as "Substitute", so that is the only way to find him).
+  # Where it cannot be told, nobody is named and the blame goes to the pool.
+  if (!is.null(lineups)) {
+    lu <- data.table::as.data.table(lineups)
+    if (all(c("match_id", "team_id", "player_id", "position") %in% names(lu))) {
+      num <- function(v) suppressWarnings(as.numeric(v))
+      if (!"minutes_played" %in% names(lu)) lu[, minutes_played := NA_real_]
+      if (!"sub_off_minute" %in% names(lu)) lu[, sub_off_minute := NA_real_]
+      if (!"sub_on_minute" %in% names(lu)) lu[, sub_on_minute := NA_real_]
+      gk <- lu[position %chin% "Goalkeeper" & !(num(minutes_played) %in% 0),
+               .(match_id, def_team_id = team_id, keeper_id = as.character(player_id),
+                 mins = num(minutes_played), keeper_off = num(sub_off_minute))]
+      data.table::setorder(gk, match_id, def_team_id, -mins, na.last = TRUE)
+      gk <- unique(gk, by = c("match_id", "def_team_id"))
+      gk[!(keeper_off > 0), keeper_off := NA_real_]
+      subs <- lu[, .(match_id, def_team_id = team_id, keeper2 = as.character(player_id),
+                     on = num(sub_on_minute))][on > 0]
+      k2 <- merge(gk[!is.na(keeper_off), .(match_id, def_team_id, keeper_off)], subs,
+                  by = c("match_id", "def_team_id"))[on == keeper_off]
+      k2 <- k2[, .(keeper2 = if (.N == 1L) keeper2 else NA_character_), by = .(match_id, def_team_id)]
+      gk <- merge(gk, k2, by = c("match_id", "def_team_id"), all.x = TRUE)
+      dt[, def_team_id := data.table::fifelse(is_home, away_team_id, home_team_id)]
+      dt <- merge(dt, gk[, .(match_id, def_team_id, keeper_id, keeper_off, keeper2)],
+                  by = c("match_id", "def_team_id"), all.x = TRUE)
+      if ("time_seconds" %in% names(dt)) {
+        after <- !is.na(dt$keeper_off) & as.numeric(dt$time_seconds) / 60 > dt$keeper_off
+        dt[after, keeper_id := keeper2]
+      }
+      dt[, c("def_team_id", "keeper_off", "keeper2") := NULL]
+      data.table::setorder(dt, match_id, action_id)
+    }
+  }
 
   # Attach the true next actor where the caller supplied one. `original_event_id`
   # is SPADL's link back to the raw feed.
@@ -543,8 +611,26 @@ NG_STOP_ACTIONS <- c("keeper_save")
   d[, `:=`(
     is_shot = action_type == "shot",
     is_stop = action_type %chin% NG_STOP_ACTIONS,
-    has_receiver = !is.na(receiver_player_id) & nzchar(as.character(receiver_player_id))
+    # A receiver share is a TEAMMATE's share, so the receiver must be on the
+    # acting team. SPADL names a receiver on 26.4% of actions who is on the
+    # OPPOSING side -- 11,905 of them on passes SPADL calls successful, carrying
+    # 201.7 goals of absolute value. Paying those the teammate split credited an
+    # opponent and booked it under his own team, i.e. on the wrong side of the
+    # double entry, which is how 55% of player-matches ended up with payments
+    # under two team ids. Such a pass falls through to the generic branch and
+    # the actor keeps it.
+    #
+    # Whether a pass that reaches an opponent should be `result == "success"`
+    # at all is an upstream question about SPADL, not one to answer by
+    # redefining `result` here.
+    has_receiver = !is.na(receiver_player_id) &
+      nzchar(as.character(receiver_player_id))
   )]
+  # Element-wise, deliberately: `receiver_team_id %in% team_id` would test
+  # membership against the WHOLE column and be TRUE on every row.
+  if ("receiver_team_id" %in% names(d)) {
+    d[, has_receiver := has_receiver & (receiver_team_id == team_id) %in% TRUE]
+  }
   # A stop is scored on its own row, never as a turnover: its value IS the
   # rebound, which the rebound rule already pays for. Scoring it both ways would
   # charge the stopper twice for one event.
@@ -710,6 +796,11 @@ NG_STOP_ACTIONS <- c("keeper_save")
 #'   Needs `match_id`, `action_id`, `time_seconds`.
 #' @param lineups Opta lineups with `match_id`, `player_id`, `team_id`,
 #'   `is_starter`, `sub_on_minute`, `sub_off_minute`.
+#' @param keeper_pool_blame,keeper_pool_credit A goalkeeper's weight in the
+#'   **defensive pool's** blame and credit halves, relative to an outfield
+#'   player's 1. Both default 0: keepers are named on every goal and save by the
+#'   shot split, so what is left in the defensive pool is outfield work. Needs
+#'   `position` in `lineups` to find keepers.
 #' @param dacts_share How much of the **defensive pool's credit half** to route
 #'   by each player's defensive work rather than flat. 0 is a flat spread; 1
 #'   routes it entirely by defensive work. Default **0.5** (Pete, 2026-09-21). See the note below on why
@@ -737,7 +828,8 @@ NG_STOP_ACTIONS <- c("keeper_save")
 #'
 #' @family net_goals
 #' @export
-ng_spread_pools <- function(pay, actions, lineups, dacts_share = 0.5,
+ng_spread_pools <- function(pay, actions, lineups, dacts_share = 0.5, keeper_pool_blame = 0,
+                            keeper_pool_credit = 0,
                             dacts_measure = c("act_value", "count", "named_value"),
                             verbose = TRUE) {
   dacts_measure <- match.arg(dacts_measure)
@@ -803,6 +895,7 @@ ng_spread_pools <- function(pay, actions, lineups, dacts_share = 0.5,
   lu <- data.table::as.data.table(lineups)[
     , .(match_id, player_id, team_id,
         is_starter = is_starter %in% TRUE,
+        is_keeper = if ("position" %in% names(lineups)) position %in% "Goalkeeper" else FALSE,
         on = suppressWarnings(as.numeric(sub_on_minute)),
         off = suppressWarnings(as.numeric(sub_off_minute)),
         mins = suppressWarnings(as.numeric(minutes_played)))]
@@ -852,7 +945,26 @@ ng_spread_pools <- function(pay, actions, lineups, dacts_share = 0.5,
     j[tilt, w := (1 - dacts_share) * flat + dacts_share * dshare]
   }
 
+  # KEEPERS AND THE DEFENSIVE POOL'S BLAME (Pete, 2026-09-23). Once the shot
+  # split names the keeper on every goal and save, what is left in the
+  # defensive pool's blame half is unnamed outfield work -- pressure, marking,
+  # the run nobody tracked. Sharing it with the keeper as well charged him for
+  # other players' defending, and with saves and goals netting to about 0 for
+  # an average keeper it left every keeper reading negative (-0.23 a game,
+  # 2024-25) purely by position. Excluding him from the blame alone overshot to
+  # +0.23 (he still took a full share of the credit), and the same reasoning
+  # covers credit: unnamed defensive credit is outfield pressure too. So by
+  # default he sits out the defensive pool entirely (`keeper_pool_blame`,
+  # `keeper_pool_credit` both 0): keepers -0.134 a game, defenders -0.044,
+  # strikers +0.061. What is left for keepers is mostly the OFFENSIVE pool
+  # (-0.179), an open question for Pete. A substitute keeper is listed as
+  # "Substitute" in the feed and is not recognised (rare).
+  kb <- j$is_keeper & j$entry %in% "defence" & j$half %in% "blame"
+  j[kb, w := w * keeper_pool_blame]
+  kc <- j$is_keeper & j$entry %in% "defence" & j$half %in% "credit"
+  j[kc, w := w * keeper_pool_credit]
   j[, wsum := sum(w), by = .(match_id, team_id, role, entry, half, period_id, mbin)]
+  j[wsum <= 0, `:=`(w = 1, wsum = .N), by = .(match_id, team_id, role, entry, half, period_id, mbin)]
   n_on <- j[, .(n_on = .N), by = .(match_id, team_id, role, entry, half, period_id, mbin)]
   j <- merge(j, n_on, by = c("match_id", "team_id", "role", "entry", "half", "period_id", "mbin"))
   j[, `:=`(value_home = value_home * w / wsum, value_own = value_own * w / wsum)]
@@ -989,11 +1101,42 @@ ng_spread_pools <- function(pay, actions, lineups, dacts_share = 0.5,
   # ---- OFFENCE: +v to the side that acted --------------------------------
   keep <- v * (1 - sh$off_pool)
 
-  goal <- d$is_shot & d$result %in% "success"
+  # THE xGOT SPLIT (Pete, 2026-09-23). Where a shot has xGOT, its value
+  # (outcome - xG) is two steps: the STRIKE, xG -> xGOT (0 off target), which
+  # is the shooter's; and the FINISH, xGOT -> 1 (goal) or -> 0 (saved), which is
+  # the keeper's duel. Each step is split like any action of its sign: a gain
+  # mostly to the shooter, a loss mostly to his team. `finish` is v - strike, so
+  # the two always add to the row. Own goals and shots without xGOT keep the
+  # single-step rule below.
+  og <- if ("is_own_goal" %in% names(d)) d$is_own_goal %in% TRUE else rep(FALSE, n)
+  xg0 <- if ("epv" %in% names(d)) d$epv else rep(NA_real_, n)
+  xgt <- if ("xgot" %in% names(d)) d$xgot else rep(NA_real_, n)
+  split <- d$is_shot & !og & is.finite(xg0) & is.finite(xgt)
+  strike <- data.table::fifelse(split, xgt - xg0, 0)
+  finish <- data.table::fifelse(split, v - strike, 0)
+  # The FINISH is whatever happened after the strike, and it is paid whenever it
+  # is not zero: a goal (-> 1), a save (-> 0), or a live rebound. The last one
+  # is real: when a shot is followed by another shot, calculate_action_epv()
+  # gives the first the rebound's xG as its end value (106 shots on ENG
+  # 2024-25), so an off-target or blocked shot can finish well above 0 -- the
+  # ball stayed live. An earlier version paid the finish only on target and
+  # dropped those 106 from the row; the double-entry check caught it.
+  on_target <- split & (xgt > 0 | d$result %in% "success")
+  fin <- split & abs(finish) > 1e-12
+  pay_step <- function(sel, x) {
+    add(sel & x >= 0, d$player_id, att, x * (1 - sh$off_pool), "shooter", "offence")
+    add(sel & x >= 0, NAc, att, x * sh$off_pool, "pool_off", "offence")
+    add(sel & x < 0, d$player_id, att, x * sh$exec_blame, "shooter", "offence")
+    add(sel & x < 0, NAc, att, x * (1 - sh$exec_blame), "pool_off", "offence")
+  }
+  pay_step(split, strike)
+  pay_step(fin, finish)
+
+  goal <- d$is_shot & !split & d$result %in% "success"
   add(goal, d$player_id, att, keep, "shooter", "offence")
   add(goal, NAc, att, v * sh$off_pool, "pool_off", "offence")
 
-  miss <- d$is_shot & !(d$result %in% "success")
+  miss <- d$is_shot & !split & !(d$result %in% "success")
   add(miss, d$player_id, att, v * sh$exec_blame, "shooter", "offence")
   add(miss, NAc, att, v * (1 - sh$exec_blame), "pool_off", "offence")
 
@@ -1039,10 +1182,30 @@ ng_spread_pools <- function(pay, actions, lineups, dacts_share = 0.5,
     !is.na(d$stopper_id) & d$is_shot, d$stopper_id,
     data.table::fifelse(d$is_turnover, d$winner_id, NA_character_))
 
-  has <- !is.na(named)
+  # Split shots, defending side. STRIKE (-strike): a named stopper on a shot
+  # that was NOT on target is a blocker, and takes named_share; otherwise the
+  # team pool. FINISH (-finish, whenever it is not zero -- see `fin` above):
+  # the stopper the feed names takes named_share, else the side's keeper when
+  # the shot was on target or scored, else nobody; the pool takes the rest.
+  kp <- if ("keeper_id" %in% names(d)) d$keeper_id else NAc
+  blocker <- data.table::fifelse(split & !on_target, d$stopper_id, NA_character_)
+  add(split & !is.na(blocker), blocker, def, -strike * sh$named_share, "defender", "defence")
+  add(split & !is.na(blocker), NAc, def, -strike * (1 - sh$named_share), "pool_def", "defence")
+  add(split & is.na(blocker), NAc, def, -strike, "pool_def", "defence")
+  # Who is named on the finish: the stopper the feed names; failing that, the
+  # side's keeper when the shot was on target or scored; otherwise nobody.
+  saver <- data.table::fifelse(!is.na(d$stopper_id), d$stopper_id,
+                               data.table::fifelse(on_target, kp, NA_character_))
+  add(fin & !is.na(saver), saver, def, -finish * sh$named_share, "defender", "defence")
+  add(fin & !is.na(saver), NAc, def, -finish * (1 - sh$named_share), "pool_def", "defence")
+  add(fin & is.na(saver), NAc, def, -finish, "pool_def", "defence")
+
+  named[split] <- NA_character_
+  rest <- !split
+  has <- rest & !is.na(named)
   add(has, named, def, w * sh$named_share, "defender", "defence")
   add(has, NAc, def, w * (1 - sh$named_share), "pool_def", "defence")
-  add(!has, NAc, def, w, "pool_def", "defence")
+  add(rest & !has, NAc, def, w, "pool_def", "defence")
 
   out <- data.table::rbindlist(p, use.names = TRUE)
   out[]
@@ -1055,10 +1218,14 @@ ng_spread_pools <- function(pay, actions, lineups, dacts_share = 0.5,
 #' losers to -2, and the match sums to zero. Unlike the margin convention this
 #' is checked per team, not per match.
 #'
-#' Like `ng_check_conservation()` this is a report, not a gate. Forcing a team
-#' to its goal difference would charge a residual and, as torp measured for the
-#' analogous `half_margin` mode, a residual can be larger than the thing it
-#' corrects and can reorder players.
+#' Like `ng_check_conservation()` this is a report, not a gate, and it measures
+#' the RAW ledger -- before [ng_reconcile_margin()] forces each team onto its
+#' scoreline. That gap is the thing worth watching: on ENG 2024-2025 it is a
+#' median 0.20 goals per team-match, and the reconciliation that closes it is
+#' only safe while it stays small. If this report moves, the reconciliation is
+#' quietly doing more of the work than the ledger is, which is the failure torp
+#' recorded for its `half_margin` mode (residual 102% of the value, players
+#' reordered). Read this number before trusting the reconciled one.
 #'
 #' @param pay Payments from `ng_build_ledger(convention = "team")`
 #' @param fixtures Fixtures with `match_id`, `home_team_id`, `home_score`,
@@ -1255,4 +1422,458 @@ NG_DEFENSIVE_ACTIONS <- c("tackle", "interception", "clearance", "keeper_save",
     pay[unnamed, `:=`(role = pool_role, player_id = NA_character_)]
   }
   pay
+}
+
+
+# =============================================================================
+# STEP 6 -- PER-GAME AGGREGATION
+# =============================================================================
+
+#' Aggregate net goals to one row per player-match
+#'
+#' Turns the payment ledger into the frame the rating layer consumes. The
+#' column contract deliberately matches `aggregate_player_game_epv()`'s --
+#' `player_id`, `player_name`, `match_date`, `minutes_played`,
+#' `epv_offensive`, `epv_defensive` -- so `calculate_epr_regression()` can be
+#' pointed at either without changing, and the two can be gated against each
+#' other on identical footing.
+#'
+#' **The offence/defence split means something different here, and it is the
+#' better of the two.** `aggregate_player_game_epv()` splits by bucketing action
+#' types (passing and shooting are offensive, tackles and keeper handling
+#' defensive), which is presentational -- re-bucketing an action changes the
+#' split and not the total. Net goals splits by which half of the double entry
+#' the payment sits on: `offence` is the side that acted, `defence` the side
+#' that conceded. Every player is paid on both halves of every action his team
+#' is involved in, so a defender who never touches the ball still has a
+#' defensive number, which is the whole point.
+#'
+#' Pools must be spread first. A payment with no player is real value, and
+#' dropping it here would quietly shrink a player-game total while every team
+#' total stayed correct -- so an unspread pool aborts rather than being skipped.
+#'
+#' @param pay Payments from `ng_spread_pools()`.
+#' @param lineups Opta lineups, for minutes, names, date, league and season.
+#' @param verbose Print a summary. Default `TRUE`.
+#'
+#' @return One row per player-match: identifiers, `minutes_played`,
+#'   `net_goals`, `epv_offensive`, `epv_defensive`, and one `ng_*` column per
+#'   role so a rating layer can choose its own grouping rather than inheriting
+#'   this one (torp D3: store tags, group later).
+#'
+#' @family net_goals
+#' @export
+ng_player_game <- function(pay, lineups, verbose = TRUE) {
+  p <- data.table::as.data.table(pay)
+
+  unspread <- p$role %chin% c("pool_off", "pool_def")
+  if (any(unspread)) {
+    cli::cli_abort(c(
+      "{format(sum(unspread), big.mark = ',')} payment{?s} are still unspread team pools.",
+      "i" = "Run {.fn ng_spread_pools} first: a pool has no player, so aggregating now would drop that value from every player-game while the team totals stayed correct.",
+      "i" = "Unspread pools carry {round(sum(abs(p$value_own[unspread])), 1)} goals of absolute value here."))
+  }
+  p <- p[!is.na(player_id) & nzchar(as.character(player_id))]
+
+  if (!"entry" %in% names(p)) {
+    cli::cli_abort(c(
+      "{.fn ng_player_game} needs the {.field entry} tag to split offence from defence.",
+      "i" = "It is set by {.code ng_build_ledger(convention = \"team\")}."))
+  }
+
+  tot <- p[, .(net_goals = sum(value_own, na.rm = TRUE)),
+           by = .(match_id, player_id, team_id)]
+  halves <- data.table::dcast(
+    p[, .(v = sum(value_own, na.rm = TRUE)), by = .(match_id, player_id, entry)],
+    match_id + player_id ~ entry, value.var = "v", fill = 0)
+  for (nm in c("offence", "defence")) if (!nm %in% names(halves)) halves[, (nm) := 0]
+  data.table::setnames(halves, c("offence", "defence"),
+                       c("epv_offensive", "epv_defensive"))
+
+  # One column per role. A rating layer that wants three channels, or five, can
+  # build them from these rather than inheriting whatever grouping suited the
+  # display -- the same reason torp keeps role tags rather than fixed channels.
+  roles <- data.table::dcast(
+    p[, .(v = sum(value_own, na.rm = TRUE)), by = .(match_id, player_id, role)],
+    match_id + player_id ~ role, value.var = "v", fill = 0)
+  rcols <- setdiff(names(roles), c("match_id", "player_id"))
+  data.table::setnames(roles, rcols, paste0("ng_", rcols))
+
+  out <- merge(tot, halves, by = c("match_id", "player_id"))
+  out <- merge(out, roles, by = c("match_id", "player_id"))
+
+  lu <- data.table::as.data.table(lineups)
+  keep <- intersect(c("match_id", "player_id", "player_name", "match_date",
+                      "minutes_played", "competition", "season"), names(lu))
+  lu <- unique(lu[, ..keep], by = c("match_id", "player_id"))
+  out <- merge(out, lu, by = c("match_id", "player_id"), all.x = TRUE)
+  if ("competition" %in% names(out)) data.table::setnames(out, "competition", "league")
+  if ("minutes_played" %in% names(out)) {
+    out[, minutes_played := suppressWarnings(as.numeric(minutes_played))]
+  }
+
+  n_nolu <- sum(is.na(out$minutes_played))
+  if (n_nolu > 0) {
+    cli::cli_warn(paste0(
+      "{format(n_nolu, big.mark = ',')} player-match row{?s} have no lineup entry, ",
+      "so no minutes, name, date or league. They keep their net goals and will ",
+      "be dropped by any rating layer that needs minutes."))
+  }
+
+  data.table::setcolorder(out, intersect(
+    c("player_id", "player_name", "match_id", "team_id", "match_date", "league",
+      "season", "minutes_played", "net_goals", "epv_offensive", "epv_defensive"),
+    names(out)))
+
+  if (isTRUE(verbose)) {
+    cli::cli_alert_success(paste0(
+      "Per-game: {format(nrow(out), big.mark = ',')} player-match row{?s} over ",
+      "{uniqueN(out$match_id)} match{?es}; net goals sum {round(sum(out$net_goals), 3)} ",
+      "(zero across a full set of matches, because every action is booked to both sides)."))
+  }
+
+  out[]
+}
+
+
+# =============================================================================
+# STEP 7 -- THE RATING-LAYER ADJUSTMENT
+# =============================================================================
+
+#' Position-centre per-game net goals for the rating layer
+#'
+#' The two-layer split, made explicit. The ledger conserves and therefore
+#' carries no baseline: the moment a positional mean is subtracted, a team's
+#' players stop summing to its goal difference. Predicting is a different job
+#' with different rules, so the centring belongs here, downstream, where
+#' breaking conservation is allowed and useful.
+#'
+#' **What this mirrors, and why it is needed for a fair comparison.** Production
+#' EPR is fed `epv_offensive_adj` / `epv_defensive_adj` renamed to the raw
+#' names (`data-raw/match-predictions-opta/build_epr_weekly.R:63-66`) -- the
+#' position-centred columns produced at export by `10b_export_game_logs.R`, not
+#' the raw ones. `ng_player_game()` emits raw net goals. Feeding those two to
+#' `calculate_epr_regression()` unchanged would compare a centred input against
+#' an uncentred one and attribute the difference to the ledger, which it is not.
+#' This function removes that confound.
+#'
+#' Centring is per position **and season**: position means drift between
+#' seasons, and a single pooled mean would carry one season's shape into
+#' another. Measured on ENG 2024-2025 the means run from +0.088 for a striker
+#' to -0.035 for a defender per player-game -- small, real, and exactly the
+#' systematic offset a rating should not reward or punish a player for.
+#'
+#' @param player_game Output of `ng_player_game()`, or any per-game frame with
+#'   `player_id`, `epv_offensive` and `epv_defensive` -- the gate runs this on
+#'   the production credit layer too, so both arms are centred identically and
+#'   only the allocation differs.
+#' @param positions A player-to-position map with `player_id` and `position`,
+#'   e.g. from `get_player_positions()`. Rows whose position is unknown are
+#'   centred on the all-player mean rather than dropped, and reported.
+#' @param by_season Centre within season as well as position. Default `TRUE`.
+#' @param verbose Print a summary. Default `TRUE`.
+#'
+#' @return The same frame with `epv_offensive` and `epv_defensive` replaced by
+#'   their centred values, the originals kept as `*_raw`, and `net_goals_raw`
+#'   preserved. The column names are deliberately unchanged so this is a
+#'   drop-in for `calculate_epr_regression()`.
+#'
+#' @family net_goals
+#' @export
+ng_adjust_for_rating <- function(player_game, positions, by_season = TRUE,
+                                 verbose = TRUE) {
+  d <- data.table::as.data.table(player_game)
+  need <- c("player_id", "epv_offensive", "epv_defensive")
+  missing <- setdiff(need, names(d))
+  if (length(missing)) {
+    cli::cli_abort("{.fn ng_adjust_for_rating} needs column{?s} {.val {missing}}.")
+  }
+
+  pos <- unique(data.table::as.data.table(positions)[, .(player_id, position)],
+                by = "player_id")
+  d <- merge(d, pos, by = "player_id", all.x = TRUE)
+  n_nopos <- sum(is.na(d$position))
+  if (n_nopos > 0) {
+    # Centred on everyone rather than dropped: a player with no position map is
+    # still a player, and dropping him would quietly shrink the rating pool.
+    d[is.na(position), position := "__unknown__"]
+    if (isTRUE(verbose)) {
+      cli::cli_warn(paste0(
+        "{format(n_nopos, big.mark = ',')} player-match row{?s} have no position ",
+        "and are centred together as one group."))
+    }
+  }
+
+  # `net_goals` is this ledger's name for the total, but the function's job is
+  # centring a per-game frame and it is used on the production credit layer too
+  # (which has no such column) so the gate can hold everything else constant.
+  # Derive it where it is absent rather than demanding it.
+  if (!"net_goals" %in% names(d)) d[, net_goals := epv_offensive + epv_defensive]
+  d[, `:=`(net_goals_raw = net_goals,
+           epv_offensive_raw = epv_offensive,
+           epv_defensive_raw = epv_defensive)]
+
+  grp <- if (isTRUE(by_season) && "season" %in% names(d)) {
+    c("position", "season")
+  } else {
+    "position"
+  }
+  if (isTRUE(by_season) && !"season" %in% names(d)) {
+    cli::cli_warn("No {.field season} column: centring by position only.")
+  }
+
+  d[, epv_offensive := epv_offensive - mean(epv_offensive, na.rm = TRUE), by = grp]
+  d[, epv_defensive := epv_defensive - mean(epv_defensive, na.rm = TRUE), by = grp]
+  d[, net_goals := epv_offensive + epv_defensive]
+
+  if (isTRUE(verbose)) {
+    shift <- d[, .(m = mean(net_goals_raw, na.rm = TRUE)), by = position][order(-m)]
+    cli::cli_alert_success(paste0(
+      "Centred {format(nrow(d), big.mark = ',')} player-match row{?s} by ",
+      "{paste(grp, collapse = ' x ')}; position means removed ran from ",
+      "{round(max(shift$m), 3)} to {round(min(shift$m), 3)} net goals a game. ",
+      "The ledger's own totals are untouched -- {.field net_goals_raw} keeps them."))
+  }
+
+  d[]
+}
+
+
+# =============================================================================
+# STEP 8 -- FOLDING VALUE THE PUBLISHED FRAME CANNOT CARRY
+# =============================================================================
+
+#' Fold value owed to unpublished players back into their team
+#'
+#' The ledger pays every player who was on the pitch, because the pool spread
+#' reaches all eleven. The published game-logs frame is built from
+#' `aggregate_player_game_epv()`, which is ACTION-driven: a substitute who came
+#' on for a minute and never touched the ball has no actions, so he has no row.
+#' Measured on ENG 2024-2025 that is 45 of 11,472 rows -- every one of them a
+#' substitute with 1 to 12 minutes, all genuinely in the lineup.
+#'
+#' Joining the ledger onto that frame therefore drops their value, and a match's
+#' two sides stop cancelling: 0.116 goals instead of ~1e-14. **That is a
+#' publishing artefact, not model error, and it is a different problem from the
+#' 0.20-goal median gap to the scoreline that [ng_reconcile_margin()] closes.**
+#' Nothing here is forced toward a target; the value simply has to land
+#' somewhere real. Running this FIRST is what keeps the reconciliation honest --
+#' otherwise the gap those 45 rows leave would be charged to the reconciliation
+#' as if the model had produced it.
+#'
+#' So it goes back to the team, spread across the team-mates the frame does
+#' carry, by minutes. That is the same rule `.ng_pool_unnamed()` already
+#' applies one layer up: a payment with no publishable recipient becomes the
+#' team's. After this, a published team's rows sum to exactly what the ledger
+#' gave that team, and the only remaining gap to the scoreline is the model's.
+#'
+#' @param ng Per-game ledger output from `ng_player_game()`. Needs `match_id`,
+#'   `player_id`, `team_id`, `minutes_played`, `net_goals`, `ng_offensive`,
+#'   `ng_defensive`.
+#' @param published A frame with the `match_id` + `player_id` pairs that will be
+#'   published.
+#' @param verbose Print what was folded. Default `TRUE`.
+#'
+#' @return `ng` restricted to the published pairs, with each team's totals
+#'   preserved exactly.
+#'
+#' @family net_goals
+#' @export
+ng_fold_unpublished <- function(ng, published, verbose = TRUE) {
+  d <- data.table::as.data.table(ng)
+  need <- c("match_id", "player_id", "team_id", "minutes_played",
+            "net_goals", "ng_offensive", "ng_defensive")
+  missing <- setdiff(need, names(d))
+  if (length(missing)) {
+    cli::cli_abort("{.fn ng_fold_unpublished} needs column{?s} {.val {missing}}.")
+  }
+  keys <- unique(data.table::as.data.table(published)[, .(match_id, player_id)])
+  keys[, .published := TRUE]
+  d <- merge(d, keys, by = c("match_id", "player_id"), all.x = TRUE)
+  d[is.na(.published), .published := FALSE]
+
+  if (all(d$.published)) {
+    if (isTRUE(verbose)) {
+      cli::cli_alert_success("Every ledger row is published; nothing to fold.")
+    }
+    d[, .published := NULL]
+    return(d[])
+  }
+
+  vcols <- c("net_goals", "ng_offensive", "ng_defensive")
+  # What each team is owed by players the frame will not carry.
+  owed <- d[.published == FALSE, lapply(.SD, sum, na.rm = TRUE),
+            by = .(match_id, team_id), .SDcols = vcols]
+  data.table::setnames(owed, vcols, paste0("owed_", vcols))
+
+  keep <- d[.published == TRUE]
+  keep <- merge(keep, owed, by = c("match_id", "team_id"), all.x = TRUE)
+  for (v in vcols) {
+    ov <- paste0("owed_", v)
+    keep[is.na(get(ov)), (ov) := 0]
+  }
+  # Minutes are the weight, with an equal split as the fallback when a team's
+  # published rows somehow carry none -- dropping the value instead would be
+  # the very thing this function exists to stop.
+  keep[, .w := {
+    m <- minutes_played
+    m[is.na(m) | m <= 0] <- 0
+    if (sum(m) > 0) m / sum(m) else rep(1 / .N, .N)
+  }, by = .(match_id, team_id)]
+  for (v in vcols) keep[, (v) := get(v) + get(paste0("owed_", v)) * .w]
+
+  n_folded <- sum(!d$.published)
+  v_folded <- sum(d[.published == FALSE]$net_goals, na.rm = TRUE)
+  keep[, c(".published", ".w", paste0("owed_", vcols)) := NULL]
+
+  # A team that has NO published rows cannot receive its own value back. Report
+  # it rather than lose it quietly: the totals below would not balance.
+  orphan_teams <- owed[!unique(keep[, .(match_id, team_id)]),
+                       on = c("match_id", "team_id")]
+  if (nrow(orphan_teams) > 0) {
+    cli::cli_warn(paste0(
+      "{nrow(orphan_teams)} team-match{?es} have unpublished value but no ",
+      "published rows to fold it into; {round(sum(orphan_teams$owed_net_goals), 3)} ",
+      "goals cannot be placed."))
+  }
+
+  if (isTRUE(verbose)) {
+    cli::cli_alert_success(paste0(
+      "Folded {n_folded} unpublished row{?s} worth {round(v_folded, 3)} goals ",
+      "back to their teams; published team totals now match the ledger exactly."))
+  }
+  keep[]
+}
+
+
+# =============================================================================
+
+#' Force each team's published rows to sum to that team's own goal difference
+#'
+#' The last gap. After [ng_fold_unpublished()] a match's two sides cancel to
+#' rounding, but neither side lands on the scoreline: measured on ENG 2024-2025
+#' the median team-match is **0.20 goals** from its own goal difference and the
+#' worst is 1.39. The ledger is antisymmetric by construction and anchored to
+#' nothing, so what it tracks is the EPV the actions generated, not the goals
+#' the match actually produced. Restarts, half-time, and the event types SPADL
+#' does not carry all move the state without booking a payment, and that
+#' difference has to go somewhere or the metric is not net goals.
+#'
+#' **torp does exactly this and it is why torp reaches 0.000.**
+#' `.np_team_margin()` computes `short = want - tot` per team-match and spreads
+#' it across the side by time on ground. This is the same step in goals.
+#'
+#' ## Why this is safe here and the thing torp rejected was not
+#'
+#' torp's own docs reject a reconciliation, and the rejection is of a different
+#' step: `.np_reconcile(level = "half_margin")`, measured *before* the team-sum
+#' convention, whose residual was **102% of** `|net_points|` and reordered
+#' players against time on ground. That is a correction larger than the thing it
+#' corrects. Sized the same way before this was written, panna's is not:
+#'
+#' \tabular{lr}{
+#'   residual as a share of total `|net_goals|` \tab 7.6% \cr
+#'   correlation, per player-game, before vs after \tab 0.9972 \cr
+#'   Spearman on season totals \tab 0.9944 \cr
+#'   correlation of the residual with minutes \tab 0.0008
+#' }
+#'
+#' Nobody meaningfully reorders and the residual carries no minutes bias, so it
+#' is not quietly paying whoever was on the pitch longest. It is in the same
+#' range as the `sum`-level reconciliation torp actually ships (3%).
+#'
+#' ## Where it lands in the offence/defence split
+#'
+#' All of it on the defensive half, which is what torp does (it books the change
+#' against the pool channel, "the honest home for the difference"). The gap is
+#' unattributed team-level value, and panna's team pool is already
+#' defence-weighted. Splitting it across both halves pro-rata was the
+#' alternative and it explodes on a player whose two halves nearly cancel --
+#' the same failure torp records from rescaling components.
+#'
+#' @param ng Per-game frame from [ng_player_game()], optionally already folded
+#'   by [ng_fold_unpublished()]. Needs `match_id`, `player_id`, `team_id`,
+#'   `minutes_played` and `net_goals`, plus the two halves under either the
+#'   `epv_*` or the `ng_*` spelling.
+#' @param fixtures Fixtures with `match_id`, `home_team_id`, `away_team_id`,
+#'   `home_score`, `away_score`.
+#' @param verbose Print the before-and-after error. Default `TRUE`.
+#'
+#' @return `ng` with `net_goals` and the defensive half adjusted, plus an
+#'   `ng_recon` column holding what each player was given, so a reader tracing
+#'   one number by hand can see the three parts separately.
+#'
+#' @family net_goals
+#' @export
+ng_reconcile_margin <- function(ng, fixtures, verbose = TRUE) {
+  d <- data.table::as.data.table(ng)
+  def <- if ("ng_defensive" %in% names(d)) "ng_defensive" else "epv_defensive"
+  need <- c("match_id", "player_id", "team_id", "minutes_played", "net_goals", def)
+  missing <- setdiff(need, names(d))
+  if (length(missing)) {
+    cli::cli_abort(c(
+      "{.fn ng_reconcile_margin} needs column{?s} {.val {missing}}.",
+      "i" = "The offence/defence halves may be spelled {.field epv_*} or {.field ng_*}."))
+  }
+
+  fx <- data.table::as.data.table(fixtures)[
+    , .(match_id, home_team_id, away_team_id,
+        home_score = as.numeric(home_score), away_score = as.numeric(away_score))]
+  fx <- unique(fx[!is.na(home_score) & !is.na(away_score)], by = "match_id")
+
+  # A row whose team is unknown cannot be reconciled toward any scoreline, and
+  # must not silently join one side's pool either. It keeps its ledger value and
+  # is reported: on ENG 2024-2025 that is 14 rows, all substitutes the lineups
+  # frame has no team for, and they are the entire reason the two sides were
+  # not already cancelling to rounding.
+  n_noteam <- sum(is.na(d$team_id))
+  if (n_noteam > 0) {
+    cli::cli_warn(paste0(
+      "{n_noteam} row{?s} have no {.field team_id}; they keep their ledger value ",
+      "and are left out of the reconciliation, so their match will not cancel exactly."))
+  }
+
+  # `%in%`, not `%chin%`: the latter errors outright when its table is not a
+  # character vector, and `match_id` arrives as an integer from some loaders in
+  # this package (`R/rapm_matrix.R` casts it before its own joins for the same
+  # reason). An additive column must not be able to abort a league's export.
+  tm <- d[!is.na(team_id) & match_id %in% fx$match_id,
+          .(got = sum(net_goals, na.rm = TRUE),
+            wsum = sum(pmax(as.numeric(minutes_played), 0), na.rm = TRUE),
+            n = .N),
+          by = .(match_id, team_id)]
+  tm <- merge(tm, fx, by = "match_id")
+  tm <- tm[team_id == home_team_id | team_id == away_team_id]
+  tm[, want := data.table::fifelse(team_id == home_team_id,
+                                   home_score - away_score, away_score - home_score)]
+  tm[, short := want - got]
+  before <- if (nrow(tm)) stats::median(abs(tm$short)) else NA_real_
+
+  d <- merge(d, tm[, .(match_id, team_id, .short = short, .wsum = wsum, .n = n)],
+             by = c("match_id", "team_id"), all.x = TRUE)
+  # Minutes are the weight, with an equal split when a team's rows carry none --
+  # the same fallback `ng_fold_unpublished()` uses, and for the same reason:
+  # dropping the value would defeat the point of the step.
+  d[, .w := {
+    m <- pmax(as.numeric(minutes_played), 0)
+    m[is.na(m)] <- 0
+    if (sum(m) > 0) m / sum(m) else rep(1 / .N, .N)
+  }, by = .(match_id, team_id)]
+  d[, ng_recon := data.table::fifelse(is.na(.short), 0, .short * .w)]
+  d[, net_goals := net_goals + ng_recon]
+  data.table::set(d, j = def, value = d[[def]] + d$ng_recon)
+  d[, c(".short", ".wsum", ".n", ".w") := NULL]
+
+  if (isTRUE(verbose)) {
+    chk <- d[!is.na(team_id) & match_id %in% fx$match_id,
+             .(got = sum(net_goals, na.rm = TRUE)), by = .(match_id, team_id)]
+    chk <- merge(chk, tm[, .(match_id, team_id, want)], by = c("match_id", "team_id"))
+    cli::cli_alert_success(paste0(
+      "Reconciled {nrow(tm)} team-match{?es} to their own goal difference: ",
+      "median |error| {round(before, 3)} -> ",
+      "{format(max(abs(chk$got - chk$want)), digits = 3, scientific = TRUE)} (max). ",
+      "Residual is {round(100 * sum(abs(d$ng_recon)) / sum(abs(d$net_goals)), 1)}% ",
+      "of absolute value."))
+  }
+  d[]
 }

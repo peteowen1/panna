@@ -473,6 +473,73 @@ validate_game_log_schema <- function(dt, league, season) {
       spadl_credit     <- assign_epv_credit(spadl_epv, xpass_model)
       player_game_epv  <- aggregate_player_game_epv(spadl_credit, lineups)
 
+      ng_cols <- NULL   # reset per league: a skip must not inherit the last one's
+      # --- Net goals ledger (ADDITIVE; every production column above is
+      # untouched). Three columns join the frame: `net_goals` and its two
+      # halves. The ledger allocates each action so a team's players sum to
+      # that team's own goal difference; see
+      # pannaverse/docs/plans/EPV-NET-GOALS.md.
+      #
+      # Deliberately computed BEFORE the position/opponent adjustments below.
+      # Centring breaks conservation by construction, so the published column
+      # carries the raw ledger and any rating layer centres it itself via
+      # ng_adjust_for_rating().
+      #
+      # xPass has to be added explicitly. assign_epv_credit() computes it
+      # internally and does not leave it on the frame, and WITHOUT IT the
+      # passer/receiver difficulty split silently degrades to actor-keeps-all
+      # rather than failing -- so it is asserted rather than assumed.
+      tryCatch({
+        spadl_ng <- add_xpass_to_spadl(spadl_epv, xpass_model)
+        n_pass_xp <- sum(spadl_ng$action_type == "pass" & !is.na(spadl_ng$xpass))
+        if (n_pass_xp < 0.5 * sum(spadl_ng$action_type == "pass")) {
+          stop(sprintf("xpass on only %d of %d passes", n_pass_xp,
+                       sum(spadl_ng$action_type == "pass")))
+        }
+        # xGOT and lineups for the shot split (strike xG -> xGOT, finish
+        # xGOT -> outcome, keeper named on goals and saves). The ledger's
+        # keeper pool rule assumes the split ran, so publishing without it
+        # would have keepers credited for saves, never blamed for goals, and
+        # out of the pool blame too. Required, not optional: a league without
+        # xGOT on its shots drops its net goals columns instead.
+        ng_xgot_model <- load_xgot_model()
+        ng_shots <- as.data.frame(load_opta_shot_events(league, season = league_season))
+        ng_lk <- c("match_id", "event_id", "type_id", "goalmouth_y", "goalmouth_z",
+                   intersect(c("situation", "is_blocked", "body_part"), names(ng_shots)))
+        spadl_ng <- add_xgot_to_spadl(spadl_ng, ng_xgot_model, ng_shots[, ng_lk])
+        is_shot <- spadl_ng$action_type == "shot"
+        if (sum(is_shot) > 0 && mean(!is.na(spadl_ng$xgot[is_shot])) < 0.95) {
+          stop(sprintf("xGOT on only %d of %d shots", sum(!is.na(spadl_ng$xgot[is_shot])),
+                       sum(is_shot)))
+        }
+        ng_fx <- as.data.frame(load_opta_fixtures(league, season = league_season,
+                                                  source = "local"))
+        ng_pay <- ng_build_ledger(spadl_ng,
+                                  adj = ng_build_adjacency(events, verbose = FALSE),
+                                  fixtures = ng_fx, lineups = lineups, verbose = FALSE)
+        ng_pay <- ng_spread_pools(ng_pay, spadl_ng, lineups, verbose = FALSE)
+        ng_pg  <- data.table::as.data.table(
+          ng_player_game(ng_pay, lineups, verbose = FALSE))
+        data.table::setnames(ng_pg, c("epv_offensive", "epv_defensive"),
+                             c("ng_offensive", "ng_defensive"))
+        # Stashed, NOT merged onto player_game_epv:
+        # build_player_game_ratings() assembles the published frame from a fixed
+        # column set, so anything joined here is silently dropped before the
+        # parquet is written. It reported "11427 of 11427 matched" and wrote a
+        # file with no net-goals columns at all. The join happens after that
+        # function instead.
+        ng_cols <- ng_pg[, .(match_id, player_id, team_id, minutes_played,
+                             net_goals, ng_offensive, ng_defensive)]
+        message(sprintf("    net goals: %d player-rows computed", nrow(ng_cols)))
+      }, error = function(e) {
+        # Never fail the export over an additive column: the production
+        # columns are complete without it, and a league that cannot build a
+        # ledger should publish the rest rather than nothing.
+        message(sprintf("    net goals SKIPPED for %s: %s", league,
+                        conditionMessage(e)))
+      })
+
+
       # EPV adjustments (position centering + opponent)
       tryCatch({
         dt_lu <- data.table::as.data.table(lineups)
@@ -726,6 +793,55 @@ validate_game_log_schema <- function(dt, league, season) {
         game_ratings <- merge(game_ratings, match_dates, by = "match_id", all.x = TRUE)
       }
 
+      if (!is.null(ng_cols)) {
+        # The ledger pays every player on the pitch; this frame is action-driven
+        # and has no row for a substitute who never touched the ball. Joining
+        # straight in would drop their value and stop a match's sides
+        # cancelling. Fold it back to their teams first, so a published team's
+        # rows sum to exactly what the ledger gave that team.
+        ng_cols <- ng_fold_unpublished(
+          ng_cols, data.table::as.data.table(game_ratings)[, .(match_id, player_id)],
+          verbose = FALSE)
+        game_ratings <- merge(
+          data.table::as.data.table(game_ratings),
+          ng_cols[, .(match_id, player_id, ng_team_id = team_id,
+                      net_goals, ng_offensive, ng_defensive)],
+          by = c("match_id", "player_id"), all.x = TRUE)
+        # 14 of ENG 2024-2025's published rows have no `team_id` at all -- late
+        # substitutes the lineups frame has no club for. They are the whole
+        # reason a match's two sides did not cancel, because a row belonging to
+        # neither side is in no team's total. The ledger derived a team for them
+        # from the payment table, so take it where the frame has none.
+        game_ratings[is.na(team_id) & !is.na(ng_team_id), team_id := ng_team_id]
+        game_ratings[, ng_team_id := NULL]
+        # Then force each team to its own goal difference. Without this the
+        # ledger is antisymmetric but anchored to nothing: the median team-match
+        # lands 0.20 goals from the scoreline, because restarts, half-time and
+        # the event types SPADL does not carry move the state without booking a
+        # payment. Sized before it was written -- 7.6% of absolute value,
+        # per-player-game correlation 0.9972, no minutes bias -- and it is the
+        # same step torp runs to reach 0.000. See `ng_reconcile_margin()`.
+        #
+        # Wrapped, and the columns DROPPED rather than shipped raw if it fails.
+        # Everything above this line is best-effort by design -- the ledger build
+        # is wrapped for exactly that reason -- but this call was not, so a single
+        # bad fixtures frame would have taken the whole league's game logs with it
+        # rather than just the additive column. Shipping an UNRECONCILED
+        # `net_goals` instead would be worse than shipping none: it looks like the
+        # real column, and the only thing that would notice is the blog's units
+        # gate, days later and one repo away.
+        game_ratings <- tryCatch(
+          ng_reconcile_margin(game_ratings, ng_fx, verbose = TRUE),
+          error = function(e) {
+            message(sprintf(
+              "    net goals DROPPED for %s: margin reconciliation failed (%s)",
+              league, conditionMessage(e)))
+            data.table::as.data.table(game_ratings)[
+              , c("net_goals", "ng_offensive", "ng_defensive") := NULL][]
+          })
+        message(sprintf("    net goals: %d of %d published rows carry it",
+                        sum(!is.na(game_ratings$net_goals)), nrow(game_ratings)))
+      }
       game_ratings[, league := league]
       game_ratings[, season := season]
 
@@ -1030,6 +1146,18 @@ validate_game_log_schema <- function(dt, league, season) {
       # share is defensive. Added 2026-09-02 (panna#228), where that gap caused
       # an inversion to be attributed to the wrong term.
       "epv_duel_blame", "epv_aerial_att",
+      # Net goals ledger (panna >= 0.3.62). `net_goals` sums, per team, to that
+      # team's OWN goal difference EXACTLY (max 1.8e-15 on ENG 2024-2025), so a
+      # consumer must assert it PER TEAM and never through a home-minus-away fit
+      # -- the difference is 2x the margin by construction. `ng_offensive` +
+      # `ng_defensive` = `net_goals`, split by which half of the double entry the
+      # payment sat on rather than by action type. `ng_recon` is the third part:
+      # the share of the team's gap to the scoreline this player was given, kept
+      # as its own column so one player's number can be traced by hand
+      # (`ng_recon` is already inside both `net_goals` and `ng_defensive`, not
+      # added on top). Absent for a league whose ledger could not be built; the
+      # intersect() above drops it silently in that case, which is intended.
+      "net_goals", "ng_offensive", "ng_defensive", "ng_recon",
       "wpa_total", "wpa_as_actor", "wpa_as_receiver",
       "psv", "osv", "dsv", "psv_league_offset",
       "goals_minus_xgot", "placement_added", "xgot",
@@ -1104,7 +1232,15 @@ if (isTRUE(build_game_logs)) {
     p <- tryCatch(
       .process_season(s),
       error = function(e) {
-        warning(sprintf("Season %s aborted: %s", s, e$message), call. = FALSE)
+        # `message()`, NOT `warning()`. R DEFERS warnings to the end of the
+        # script and caps the deferred list at 50, so an aborted season used to
+        # surface as one line of "There were 50 or more warnings" printed AFTER
+        # "Game logs exported successfully!". On 2026-09-22 that hid seven of
+        # eleven seasons aborting at the events-coverage guard: the run reported
+        # success, listed four seasons where eleven were asked for, and nothing
+        # said the other seven were missing. A message prints at the moment it
+        # happens, which is the only time it can stop a run that is going wrong.
+        message(sprintf("\n  !! SEASON %s ABORTED: %s\n", s, conditionMessage(e)))
         NULL
       }
     )
@@ -1123,6 +1259,34 @@ if (isTRUE(build_game_logs)) {
 
 if (length(season_paths) == 0) {
   stop("No seasons produced game logs. Check upstream data availability.")
+}
+
+# Requested vs built. A run that produces SOME of what was asked for is the
+# dangerous case: "No seasons produced game logs" already stops the empty run,
+# and a complete run is fine, but a partial one used to print
+# "Game logs exported successfully!" over a short list and nothing else. That is
+# how a net_goals backfill quietly built 4 of 11 seasons on 2026-09-22.
+.missing_seasons <- setdiff(game_log_seasons, names(season_paths))
+if (length(.missing_seasons) > 0L) {
+  message(sprintf(paste0(
+    "\n########################################\n",
+    "INCOMPLETE: %d of %d season(s) produced game logs.\n",
+    "MISSING: %s\n",
+    "########################################\n"),
+    length(season_paths), length(game_log_seasons),
+    paste(.missing_seasons, collapse = ", ")))
+  # Never publish a partial set. Uploading is outward-facing and the consumer
+  # cannot tell a short release from a complete one -- the blog would serve a
+  # history with holes in it and nothing would go red. A local build keeps what
+  # it made; only the publish is blocked.
+  if (isTRUE(upload_game_logs)) {
+    stop(sprintf(
+      paste0("Refusing to upload a partial backfill: %d of %d seasons built, ",
+             "missing %s. Re-run with the upstream gap fixed, or set ",
+             "upload_game_logs <- FALSE to keep the local files."),
+      length(season_paths), length(game_log_seasons),
+      paste(.missing_seasons, collapse = ", ")))
+  }
 }
 
 # 5. Mirror current-season alias → game_logs.parquet (blog-workflow compat) ----

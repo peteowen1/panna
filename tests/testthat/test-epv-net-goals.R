@@ -551,3 +551,436 @@ test_that("a keeper_save follows the rebound rule under BOTH conventions", {
     expect_false(any(pay[action_id == 3L]$role == "actor"), info = conv)
   }
 })
+
+
+# =============================================================================
+# Per-game aggregation, and the receiver-must-be-a-teammate rule.
+# =============================================================================
+
+ng_fixture_lineup <- function() {
+  data.frame(
+    match_id = rep("m1", 22),
+    player_id = c(paste0("h", 1:11), paste0("a", 1:11)),
+    team_id = rep(c("H", "A"), each = 11),
+    player_name = c(paste0("Home ", 1:11), paste0("Away ", 1:11)),
+    match_date = rep("2026-01-01", 22),
+    is_starter = rep(TRUE, 22),
+    minutes_played = rep(90, 22),
+    sub_on_minute = rep(0, 22),
+    sub_off_minute = rep(0, 22),
+    competition = rep("ENG", 22),
+    season = rep("2025-2026", 22),
+    stringsAsFactors = FALSE
+  )
+}
+
+test_that("a successful pass to an OPPONENT pays no receiver share", {
+  # Regression. SPADL names a receiver on 26.4% of actions who is on the other
+  # side -- 11,905 of them on passes it calls successful, carrying 201.7 goals
+  # of absolute value. Paying those the teammate split credited an opponent and
+  # booked it under HIS team, i.e. on the wrong side of the double entry, which
+  # left 55% of player-matches holding payments under two team ids.
+  d <- ng_fixture_spadl()
+  d$receiver_player_id <- c("h2", "a1", NA, NA)     # action 2 "reaches" an opponent
+  d$receiver_team_id   <- c("H", "A", NA, NA)
+  d$xpass              <- c(0.9, 0.9, NA, NA)
+
+  pay <- ng_build_ledger(d, adj = NULL, allocate = TRUE, convention = "team",
+                         fixtures = ng_fixture_fixtures(), verbose = FALSE)
+
+  # Action 1's receiver is a teammate and is paid; action 2's is not.
+  expect_equal(nrow(pay[action_id == 1L & role == "receiver"]), 1L)
+  expect_equal(pay[action_id == 1L & role == "receiver"]$player_id, "h2")
+  expect_equal(nrow(pay[action_id == 2L & role == "receiver"]), 0L)
+  # a1 must not appear on the HOME side of the ledger at all.
+  expect_equal(nrow(pay[player_id == "a1" & team_id == "H"]), 0L)
+  # The identity is untouched either way.
+  expect_equal(sum(pay[team_id == "H"]$value_own), 1.00, tolerance = 1e-12)
+})
+
+test_that("ng_player_game refuses unspread pools rather than dropping them", {
+  # A pool has no player, so aggregating before the spread would shrink every
+  # player-game total while the team totals stayed exactly right.
+  d <- ng_fixture_spadl()
+  pay <- ng_build_ledger(d, adj = NULL, allocate = TRUE, convention = "team",
+                         fixtures = ng_fixture_fixtures(), verbose = FALSE)
+  expect_error(ng_player_game(pay, ng_fixture_lineup(), verbose = FALSE),
+               "unspread team pools")
+})
+
+test_that("per-game halves and roles both sum to net goals", {
+  d <- ng_fixture_spadl()
+  acts <- transform(d, time_seconds = c(10, 20, 65, 90), period_id = 1L)
+  pay <- ng_build_ledger(d, adj = NULL, allocate = TRUE, convention = "team",
+                         fixtures = ng_fixture_fixtures(), verbose = FALSE)
+  sp <- ng_spread_pools(pay, acts, ng_fixture_lineup(), verbose = FALSE)
+  pg <- ng_player_game(sp, ng_fixture_lineup(), verbose = FALSE)
+
+  expect_true(all(c("player_id", "player_name", "match_date", "minutes_played",
+                    "epv_offensive", "epv_defensive") %in% names(pg)))
+  expect_lt(max(abs(pg$epv_offensive + pg$epv_defensive - pg$net_goals)), 1e-10)
+  rc <- grep("^ng_", names(pg), value = TRUE)
+  expect_lt(max(abs(rowSums(pg[, ..rc]) - pg$net_goals)), 1e-10)
+
+  # Team totals survive the aggregation: H to +1, A to -1, match to zero.
+  tt <- pg[, .(v = sum(net_goals)), by = team_id]
+  expect_equal(tt[team_id == "H"]$v, 1.00, tolerance = 1e-10)
+  expect_equal(tt[team_id == "A"]$v, -1.00, tolerance = 1e-10)
+  expect_lt(abs(sum(pg$net_goals)), 1e-10)
+})
+
+
+# =============================================================================
+# The rating-layer adjustment (step 7): centring belongs downstream of the
+# ledger, because subtracting a positional mean breaks conservation by design.
+# =============================================================================
+
+ng_fixture_pg <- function() {
+  # Two positions, two players each, deliberately offset so centring has work
+  # to do: strikers average +1, defenders -1, and within each pair the spread
+  # is the same so a correct centring cannot reorder anyone.
+  data.table::data.table(
+    player_id = c("s1", "s2", "d1", "d2"),
+    player_name = c("S One", "S Two", "D One", "D Two"),
+    match_id = rep("m1", 4),
+    season = rep("2025-2026", 4),
+    minutes_played = rep(90, 4),
+    net_goals = c(1.5, 0.5, -0.5, -1.5),
+    epv_offensive = c(1.0, 0.4, -0.2, -0.8),
+    epv_defensive = c(0.5, 0.1, -0.3, -0.7)
+  )
+}
+ng_fixture_pos <- function() {
+  data.frame(player_id = c("s1", "s2", "d1", "d2"),
+             position = c("Striker", "Striker", "Defender", "Defender"),
+             stringsAsFactors = FALSE)
+}
+
+test_that("centring removes the position mean and nothing else", {
+  out <- ng_adjust_for_rating(ng_fixture_pg(), ng_fixture_pos(), verbose = FALSE)
+
+  # Strikers averaged +0.7 offence, defenders -0.5; both go to zero.
+  m <- out[, .(o = mean(epv_offensive), d = mean(epv_defensive)), by = position]
+  expect_true(all(abs(m$o) < 1e-12))
+  expect_true(all(abs(m$d) < 1e-12))
+
+  # Hand-computed: s1's offence 1.0 against a striker mean of 0.7 leaves +0.3.
+  expect_equal(out[player_id == "s1"]$epv_offensive, 0.3, tolerance = 1e-12)
+  expect_equal(out[player_id == "d2"]$epv_defensive, -0.2, tolerance = 1e-12)
+})
+
+test_that("centring does not reorder players inside a position", {
+  # The whole safety argument. A level shift is fine; a transform that changes
+  # the ranking inside a position is a different metric, not an adjustment.
+  pg <- ng_fixture_pg()
+  out <- ng_adjust_for_rating(pg, ng_fixture_pos(), verbose = FALSE)
+  for (p in c("Striker", "Defender")) {
+    ids <- out[position == p][order(-net_goals)]$player_id
+    raw <- out[position == p][order(-net_goals_raw)]$player_id
+    expect_equal(ids, raw, info = p)
+  }
+  # And the spread within a position is untouched.
+  expect_equal(sd(out[position == "Striker"]$net_goals),
+               sd(out[position == "Striker"]$net_goals_raw), tolerance = 1e-12)
+})
+
+test_that("the ledger's own totals survive as _raw", {
+  pg <- ng_fixture_pg()
+  out <- ng_adjust_for_rating(pg, ng_fixture_pos(), verbose = FALSE)
+  expect_equal(sum(out$net_goals_raw), sum(pg$net_goals), tolerance = 1e-12)
+  expect_equal(out[order(player_id)]$epv_offensive_raw,
+               pg[order(player_id)]$epv_offensive, tolerance = 1e-12)
+  # The centred total is ~0 by construction, which is exactly why this cannot
+  # live inside the conserving layer.
+  expect_lt(abs(sum(out$net_goals)), 1e-12)
+})
+
+test_that("a player with no position is grouped, not dropped", {
+  pos <- ng_fixture_pos()[1:3, ]          # d2 has no position
+  expect_warning(
+    out <- ng_adjust_for_rating(ng_fixture_pg(), pos, verbose = TRUE),
+    "no position")
+  expect_equal(nrow(out), 4L)
+  expect_true("d2" %in% out$player_id)
+})
+
+test_that("the EPR column contract is preserved", {
+  out <- ng_adjust_for_rating(ng_fixture_pg(), ng_fixture_pos(), verbose = FALSE)
+  expect_true(all(c("player_id", "player_name", "minutes_played",
+                    "epv_offensive", "epv_defensive") %in% names(out)))
+})
+
+
+# ---- ng_reconcile_margin() -------------------------------------------------
+# The step that makes the published column exactly conserving. Every number
+# below is hand-computed in the comments so a failure says which rule broke.
+
+test_that("ng_reconcile_margin lands each team on its own goal difference", {
+  # Match m1, home H beat away A 3-1, so H's own gd is +2 and A's is -2.
+  # The ledger gave H 1.5 and A -1.5, so H is 0.5 short and A is 0.5 long
+  # (short = want - got = -2 - -1.5 = -0.5).
+  ng <- data.table::data.table(
+    match_id       = rep("m1", 6),
+    player_id      = c("h1", "h2", "h3", "a1", "a2", "a3"),
+    team_id        = rep(c("H", "A"), each = 3),
+    minutes_played = c(90, 60, 30, 90, 90, 0),
+    net_goals      = c(1.0, 0.3, 0.2, -1.0, -0.4, -0.1),
+    ng_offensive   = c(0.8, 0.2, 0.1, -0.6, -0.3, -0.1),
+    ng_defensive   = c(0.2, 0.1, 0.1, -0.4, -0.1,  0.0))
+  fx <- data.frame(match_id = "m1", home_team_id = "H", away_team_id = "A",
+                   home_score = 3, away_score = 1)
+
+  out <- ng_reconcile_margin(ng, fx, verbose = FALSE)
+  data.table::setkey(out, player_id)
+
+  # H: short = +0.5 over 180 minutes -> 90/180, 60/180, 30/180 of it.
+  expect_equal(out["h1"]$ng_recon, 0.25)
+  expect_equal(out["h2"]$ng_recon, 0.5 * 60 / 180)
+  expect_equal(out["h3"]$ng_recon, 0.5 * 30 / 180)
+  # A: short = -0.5 over 180 minutes, and a3 played none, so he gets nothing.
+  expect_equal(out["a1"]$ng_recon, -0.25)
+  expect_equal(out["a2"]$ng_recon, -0.25)
+  expect_equal(out["a3"]$ng_recon, 0)
+
+  tot <- out[, .(s = sum(net_goals)), by = team_id]
+  expect_equal(tot[team_id == "H"]$s, 2)
+  expect_equal(tot[team_id == "A"]$s, -2)
+  # The two halves still add to the whole, with the residual inside defence.
+  expect_equal(out$ng_offensive + out$ng_defensive, out$net_goals)
+  expect_equal(out["h1"]$ng_offensive, 0.8)
+  expect_equal(out["h1"]$ng_defensive, 0.2 + 0.25)
+})
+
+test_that("ng_reconcile_margin splits equally when a team has no minutes", {
+  # Every minute missing: the fallback is an equal split, because dropping the
+  # value would defeat the point of the step.
+  ng <- data.table::data.table(
+    match_id = rep("m1", 4), player_id = c("h1", "h2", "a1", "a2"),
+    team_id = rep(c("H", "A"), each = 2),
+    minutes_played = c(NA_real_, NA_real_, 90, 90),
+    net_goals = c(0.5, 0.5, -0.5, -0.5),
+    ng_offensive = c(0.5, 0.5, -0.5, -0.5), ng_defensive = c(0, 0, 0, 0))
+  fx <- data.frame(match_id = "m1", home_team_id = "H", away_team_id = "A",
+                   home_score = 2, away_score = 0)
+  out <- ng_reconcile_margin(ng, fx, verbose = FALSE)
+  data.table::setkey(out, player_id)
+  # H short = 2 - 1 = 1, split 0.5 / 0.5.
+  expect_equal(out["h1"]$ng_recon, 0.5)
+  expect_equal(out["h2"]$ng_recon, 0.5)
+  # A short = -2 - -1 = -1, split by real minutes, also even here.
+  expect_equal(out["a1"]$ng_recon, -0.5)
+  expect_equal(sum(out[team_id == "H"]$net_goals), 2)
+  expect_equal(sum(out[team_id == "A"]$net_goals), -2)
+})
+
+test_that("ng_reconcile_margin leaves a team-less row alone and says so", {
+  ng <- data.table::data.table(
+    match_id = rep("m1", 5), player_id = c("h1", "h2", "a1", "a2", "x"),
+    team_id = c("H", "H", "A", "A", NA_character_),
+    minutes_played = c(90, 90, 90, 90, 5),
+    net_goals = c(0.5, 0.5, -0.5, -0.4, -0.1),
+    ng_offensive = c(0.5, 0.5, -0.5, -0.4, -0.1),
+    ng_defensive = c(0, 0, 0, 0, 0))
+  fx <- data.frame(match_id = "m1", home_team_id = "H", away_team_id = "A",
+                   home_score = 1, away_score = 0)
+  expect_warning(out <- ng_reconcile_margin(ng, fx, verbose = FALSE),
+                 "no .*team_id")
+  data.table::setkey(out, player_id)
+  expect_equal(out["x"]$ng_recon, 0)
+  expect_equal(out["x"]$net_goals, -0.1)
+  expect_equal(sum(out[!is.na(team_id) & team_id == "H"]$net_goals), 1)
+  expect_equal(sum(out[!is.na(team_id) & team_id == "A"]$net_goals), -1)
+})
+
+test_that("ng_reconcile_margin skips a match with no score and keeps its value", {
+  ng <- data.table::data.table(
+    match_id = rep(c("m1", "m2"), each = 2),
+    player_id = c("h1", "a1", "h2", "a2"),
+    team_id = c("H", "A", "H", "A"), minutes_played = rep(90, 4),
+    net_goals = c(0.4, -0.4, 0.6, -0.6),
+    ng_offensive = c(0.4, -0.4, 0.6, -0.6), ng_defensive = rep(0, 4))
+  fx <- data.frame(match_id = c("m1", "m2"), home_team_id = "H",
+                   away_team_id = "A", home_score = c(1, NA), away_score = c(0, NA))
+  out <- ng_reconcile_margin(ng, fx, verbose = FALSE)
+  data.table::setkey(out, player_id)
+  expect_equal(out["h2"]$ng_recon, 0)
+  expect_equal(out["h2"]$net_goals, 0.6)      # unplayed match untouched
+  expect_equal(out["h1"]$net_goals, 1)
+})
+
+test_that("ng_reconcile_margin accepts the epv_* spelling of the halves", {
+  ng <- data.table::data.table(
+    match_id = rep("m1", 2), player_id = c("h1", "a1"),
+    team_id = c("H", "A"), minutes_played = c(90, 90),
+    net_goals = c(0.4, -0.4),
+    epv_offensive = c(0.4, -0.4), epv_defensive = c(0, 0))
+  fx <- data.frame(match_id = "m1", home_team_id = "H", away_team_id = "A",
+                   home_score = 1, away_score = 0)
+  out <- ng_reconcile_margin(ng, fx, verbose = FALSE)
+  expect_equal(out[player_id == "h1"]$epv_defensive, 0.6)
+  expect_equal(out[player_id == "h1"]$net_goals, 1)
+})
+
+test_that("ng_reconcile_margin works with a non-character match_id", {
+  # The regression this exists for: `%chin%` errors outright when its table is
+  # not character, and `match_id` arrives as an integer from some loaders here.
+  # Every other test in this file uses character ids, so none of them would
+  # have caught it -- and the call site publishes an additive column, so an
+  # abort would have cost a whole league's game logs, not just this one.
+  ng <- data.table::data.table(
+    match_id = rep(101L, 4), player_id = c("h1", "h2", "a1", "a2"),
+    team_id = rep(c("H", "A"), each = 2), minutes_played = rep(90, 4),
+    net_goals = c(0.4, 0.4, -0.4, -0.4),
+    ng_offensive = c(0.4, 0.4, -0.4, -0.4), ng_defensive = rep(0, 4))
+  fx <- data.frame(match_id = 101L, home_team_id = "H", away_team_id = "A",
+                   home_score = 3, away_score = 1)
+  out <- ng_reconcile_margin(ng, fx, verbose = FALSE)
+  # H short = 2 - 0.8 = 1.2 over two equal shares; A short = -2 - -0.8 = -1.2.
+  expect_equal(sum(out[team_id == "H"]$net_goals), 2)
+  expect_equal(sum(out[team_id == "A"]$net_goals), -2)
+  expect_equal(out[player_id == "h1"]$ng_recon, 0.6)
+})
+
+test_that("ng_reconcile_margin aborts rather than guessing when a half is missing", {
+  ng <- data.table::data.table(
+    match_id = "m1", player_id = c("h1", "a1"), team_id = c("H", "A"),
+    minutes_played = c(90, 90), net_goals = c(0.4, -0.4))
+  fx <- data.frame(match_id = "m1", home_team_id = "H", away_team_id = "A",
+                   home_score = 1, away_score = 0)
+  expect_error(ng_reconcile_margin(ng, fx, verbose = FALSE), "epv_defensive")
+})
+
+
+# =============================================================================
+# The xGOT shot split and the shot chain (Pete, 2026-09-23), on his worked
+# example: a shot worth xG 0.03, struck on target at xGOT 0.20, saved, and the
+# attack regathers at 0.04.
+# =============================================================================
+ng_fixture_shot_save <- function(result = "fail", xgot = 0.20) {
+  data.frame(
+    match_id = "m1", action_id = 1:3, original_event_id = 1:3,
+    team_id = c("H", "A", "H"), player_id = c("h1", "k1", "h2"),
+    action_type = c("shot", "keeper_save", "pass"),
+    result = c(result, "success", "success"),
+    epv = c(0.03, -0.03, 0.04),
+    # shot: outcome - xG; save (keeper's frame): the model's -0.03 -> -0.04;
+    # pass: whatever, it is not under test
+    epv_delta = c(if (result == "success") 0.97 else -0.03, -0.01, 0.01),
+    xgot = c(xgot, NA, NA),
+    stringsAsFactors = FALSE)
+}
+
+test_that("a saved on-target shot pays the strike to the shooter and the save to the keeper", {
+  pay <- ng_build_ledger(ng_fixture_shot_save(), fixtures = ng_fixture_fixtures(), verbose = FALSE)
+  sh <- ng_shares()
+  s <- pay[action_id == 1L]
+  # strike +0.17: shooter keeps (1 - off_pool); finish -0.20: shooter exec_blame
+  expect_equal(s[role == "shooter", sum(value_own)],
+               0.17 * (1 - sh$off_pool) + -0.20 * sh$exec_blame, tolerance = 1e-12)
+  # the keeper (named as the stopper) takes named_share of the save, +0.20
+  expect_equal(s[role == "defender" & player_id == "k1", value_own], 0.20 * sh$named_share,
+               tolerance = 1e-12)
+  # each side still books exactly the row's value, -0.03 / +0.03
+  expect_equal(s[entry == "offence", sum(value_own)], -0.03, tolerance = 1e-12)
+  expect_equal(s[entry == "defence", sum(value_own)], 0.03, tolerance = 1e-12)
+})
+
+test_that("the row after a shot starts from 0, so the rebound is booked in full", {
+  on <- ng_build_ledger(ng_fixture_shot_save(), fixtures = ng_fixture_fixtures(), verbose = FALSE)
+  off <- ng_build_ledger(ng_fixture_shot_save(), fixtures = ng_fixture_fixtures(),
+                         shot_chain = FALSE, verbose = FALSE)
+  # keeper's side of the save row: -0.03 + -0.01 = -0.04 (attack regathered at 0.04)
+  expect_equal(on[action_id == 2L & entry == "offence", sum(value_own)], -0.04, tolerance = 1e-12)
+  expect_equal(off[action_id == 2L & entry == "offence", sum(value_own)], -0.01, tolerance = 1e-12)
+  # a shot's own row is never restarted
+  expect_equal(on[action_id == 1L & entry == "offence", sum(value_own)], -0.03, tolerance = 1e-12)
+})
+
+test_that("a goal blames the side's keeper from the lineup, and off target nobody is named", {
+  d <- ng_fixture_shot_save(result = "success")[1, ]
+  lu <- data.frame(match_id = "m1", team_id = "A", player_id = "gkA",
+                   position = "Goalkeeper", sub_off_minute = NA_real_)
+  pay <- ng_build_ledger(d, fixtures = ng_fixture_fixtures(), lineups = lu, verbose = FALSE)
+  sh <- ng_shares()
+  # finish = 0.97 - 0.17 = 0.80 (xGOT 0.20 -> 1): keeper blamed named_share of it
+  expect_equal(pay[player_id == "gkA", value_own], -0.80 * sh$named_share, tolerance = 1e-12)
+  expect_equal(pay[entry == "defence", sum(value_own)], -0.97, tolerance = 1e-12)
+
+  off <- ng_fixture_shot_save(xgot = 0)[1, ]
+  p2 <- ng_build_ledger(off, fixtures = ng_fixture_fixtures(), lineups = lu, verbose = FALSE)
+  expect_false(any(p2$player_id %in% "gkA"))                 # no keeper step off target
+  expect_equal(p2[entry == "offence", sum(value_own)], -0.03, tolerance = 1e-12)
+})
+
+test_that("a deflected goal (xGOT 0, not on target) still pays its finish", {
+  d <- ng_fixture_shot_save(result = "success", xgot = 0)[1, ]
+  pay <- ng_build_ledger(d, fixtures = ng_fixture_fixtures(), verbose = FALSE)
+  expect_equal(pay[entry == "offence", sum(value_own)], 0.97, tolerance = 1e-12)
+  expect_equal(pay[entry == "defence", sum(value_own)], -0.97, tolerance = 1e-12)
+})
+
+test_that("a missed shot that rebounds to a second shot books its whole value", {
+  # the first shot misses (xGOT 0) but its value runs to the rebound's xG 0.81,
+  # which is what calculate_action_epv() gives a shot followed by a shot
+  d <- data.frame(match_id = "m1", action_id = 1:2, original_event_id = 1:2,
+                  team_id = "H", player_id = c("h1", "h2"), action_type = "shot",
+                  result = c("fail", "success"), epv = c(0.05, 0.81),
+                  epv_delta = c(0.76, 0.19), xgot = c(0, 0.94), stringsAsFactors = FALSE)
+  pay <- ng_build_ledger(d, fixtures = ng_fixture_fixtures(), verbose = FALSE)
+  expect_equal(pay[action_id == 1L & entry == "offence", sum(value_own)], 0.76, tolerance = 1e-12)
+  expect_equal(pay[action_id == 1L & entry == "defence", sum(value_own)], -0.76, tolerance = 1e-12)
+})
+
+test_that("keepers take no share of the defensive pool's blame; team totals hold", {
+  d <- ng_fixture_spadl()
+  fxt <- ng_fixture_fixtures()
+  lineup <- data.frame(
+    match_id = "m1", player_id = c(paste0("h", 1:11), paste0("a", 1:11)),
+    team_id = rep(c("H", "A"), each = 11), is_starter = TRUE, minutes_played = 90,
+    sub_on_minute = 0, sub_off_minute = 0,
+    position = rep(c("Goalkeeper", rep("Defender", 10)), 2), stringsAsFactors = FALSE)
+  acts <- transform(d, time_seconds = c(10, 20, 65, 90), period_id = 1L)
+  pay <- ng_build_ledger(d, fixtures = fxt, verbose = FALSE)
+  # A's defensive pool holds blame (H's gains) and some credit (H's -0.05
+  # pass); keepers skip only the blame, so look at the negative rows
+  off <- ng_spread_pools(pay, acts, lineup, dacts_share = 0, keeper_pool_blame = 1,
+                         keeper_pool_credit = 1, verbose = FALSE)
+  on  <- ng_spread_pools(pay, acts, lineup, dacts_share = 0, keeper_pool_credit = 1, verbose = FALSE)
+  both <- ng_spread_pools(pay, acts, lineup, dacts_share = 0, verbose = FALSE)   # the default
+  blame <- function(p, who) p[player_id == who & role == "pool_def_spread" & value_own < 0, sum(value_own)]
+  credit <- function(p, who) p[player_id == who & role == "pool_def_spread" & value_own > 0, sum(value_own)]
+  expect_equal(credit(on, "a1"), credit(off, "a1"), tolerance = 1e-12)   # credit unchanged
+  expect_lt(blame(off, "a1"), 0)                    # as an equal eleventh when included
+  expect_equal(blame(on, "a1"), 0)                  # nothing when excluded
+  expect_equal(blame(on, "a2"), blame(off, "a2") * 11 / 10, tolerance = 1e-12)
+  expect_equal(both[player_id == "a1" & role == "pool_def_spread", sum(value_own)], 0)
+  for (p in list(off, on, both)) {
+    expect_equal(sum(p[team_id == "A"]$value_own), -1.00, tolerance = 1e-10)
+  }
+})
+
+test_that("the keeper named on a goal is the one who played, and the incoming one after a swap", {
+  d <- ng_fixture_shot_save(result = "success")[1, ]
+  d$time_seconds <- 80 * 60
+  lu <- data.frame(match_id = "m1", team_id = "A",
+                   player_id = c("bench", "gk1", "gk2"),
+                   position = c("Goalkeeper", "Goalkeeper", "Substitute"),
+                   minutes_played = c(0, 60, 30), sub_on_minute = c(0, 0, 60),
+                   sub_off_minute = c(0, 60, 0), stringsAsFactors = FALSE)
+  pay <- ng_build_ledger(d, fixtures = ng_fixture_fixtures(), lineups = lu, verbose = FALSE)
+  # the goal is in the 80th minute: gk1 went off at 60 and gk2 came on then
+  expect_true("gk2" %in% pay$player_id)
+  expect_false(any(pay$player_id %in% c("bench", "gk1")))
+  d$time_seconds <- 30 * 60
+  pay <- ng_build_ledger(d, fixtures = ng_fixture_fixtures(), lineups = lu, verbose = FALSE)
+  expect_true("gk1" %in% pay$player_id)
+})
+
+test_that("the shot chain never carries a shot into the next match", {
+  d <- rbind(ng_fixture_shot_save()[1, ], ng_fixture_shot_save()[3, ])
+  d$match_id <- c("m1", "m2"); d$action_id <- c(1L, 1L)
+  fx <- rbind(ng_fixture_fixtures(), transform(ng_fixture_fixtures(), match_id = "m2"))
+  pay <- ng_build_ledger(d, fixtures = fx, verbose = FALSE)
+  # m2's first row keeps its own value (0.01), not epv + delta (0.05)
+  expect_equal(pay[match_id == "m2" & entry == "offence", sum(value_own)], 0.01, tolerance = 1e-12)
+})

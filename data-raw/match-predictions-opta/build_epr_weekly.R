@@ -57,14 +57,124 @@ cache_dir <- "data-raw/cache-predictions-opta"
 t0 <- Sys.time()
 files <- list.files(cache_dir, pattern = "^game_logs_.*\\.parquet$",
                     full.names = TRUE)
+## EPR_MIN_SEASON_END_YEAR -- restrict the history to seasons ending at or
+## after this year. Default NULL = every file, the historical behaviour.
+##
+## Why it exists: `net_goals` cannot be built before 2015-2016. Those seasons
+## have events but no LINEUPS for most leagues (measured 2026-09-22: NED, ITA,
+## GER, POR and UEL all report "No data found" for 2011-2012 and 2012-2013),
+## and the ledger needs lineups to spread the team pool. So net_goals coverage
+## tops out around 91% with them included and the 95% guard below can never
+## pass. Setting this makes BOTH arms of a comparison use the same matches,
+## which is the only way it stays honest -- filtering one arm alone would
+## confound the rating change with a population change.
+## Read from globalenv() explicitly, not the calling frame. Every current call
+## path happens to be top-level or `source(local = FALSE)`, so a bare
+## `inherits = FALSE` would work today -- but the moment this is sourced from
+## inside a function (which is how run_predictions_opta.R invokes the numbered
+## steps) the guard would see nothing, fall through to NULL, and SILENTLY keep
+## every file. `10b_export_game_logs.R` documents that exact bug class twice.
+.min_sy <- if (exists("EPR_MIN_SEASON_END_YEAR", envir = globalenv(),
+                      inherits = FALSE)) {
+  get("EPR_MIN_SEASON_END_YEAR", envir = globalenv())
+} else NULL
+if (!is.null(.min_sy)) {
+  .sy <- suppressWarnings(as.integer(
+    sub("^game_logs_[0-9]{4}-([0-9]{4})[.]parquet$", "\\1", basename(files))))
+  ## A file whose name carries no season (game_logs_BRA.parquet) yields NA and
+  ## is DROPPED, deliberately: it is not a season, so it cannot be said to fall
+  ## inside the window.
+  .keep <- !is.na(.sy) & .sy >= .min_sy
+  t_log(sprintf("EPR_MIN_SEASON_END_YEAR=%s: using %d of %d game-log files",
+                .min_sy, sum(.keep), length(files)))
+  if (any(!.keep)) {
+    t_log(sprintf("  excluded: %s", paste(basename(files[!.keep]), collapse = ", ")))
+  }
+  files <- files[.keep]
+  if (length(files) == 0L) stop("EPR_MIN_SEASON_END_YEAR excluded every game-log file.")
+}
+
 gl <- rbindlist(lapply(files, read_parquet),
                 use.names = TRUE, fill = TRUE)
+
+## Deduplicate on (player_id, match_id). These files are SUPPOSED to partition
+## the history by season and nothing enforces it: `game_logs_BRA.parquet`, a
+## leftover from debug/build_bra_game_logs.R, holds 14,707 rows that are ALL
+## already in the season files -- 467 matches and 1,064 players counted twice
+## in every fit since May 2026, a median 17% row inflation for those players.
+## rbindlist does not dedup, and the stray carries every column the fit reads,
+## so its rows reach the regression rather than being dropped as incomplete.
+## Report what goes: a silent dedup would hide the next stray exactly as this
+## one was hidden.
+.n_before <- nrow(gl)
+gl <- unique(gl, by = c("player_id", "match_id"))
+if (nrow(gl) < .n_before) {
+  t_log(sprintf("Dropped %s duplicate player-match row%s (%.2f%%) before fitting",
+                format(.n_before - nrow(gl), big.mark = ","),
+                if (.n_before - nrow(gl) == 1L) "" else "s",
+                100 * (.n_before - nrow(gl)) / .n_before))
+}
+
 gl[, match_date := as.Date(sub("Z$","", match_date))]
-gl <- gl[!is.na(epv_offensive_adj) & !is.na(epv_defensive_adj),
-         .(player_id, player_name, match_id, match_date, league, season,
-            team_id, minutes_played = total_minutes,
-            epv_offensive = epv_offensive_adj,
-            epv_defensive = epv_defensive_adj)]
+## WHICH LEDGER FEEDS THE RATING. "epv" is the production credit layer, read as
+## the position-centred `epv_*_adj` columns renamed to the raw names -- the
+## historical behaviour, and the default. "net_goals" is the net goals ledger
+## (pannaverse/docs/plans/EPV-NET-GOALS.md), centred here rather than at export
+## because the ledger must stay conserving upstream of the rating layer.
+##
+## The EPR gate measured these against each other over 5 leagues walk-forward,
+## 5,232 matches: net goals won every fold (MAE 1.3135 vs 1.3254, sign test
+## p = 0.007). The gain is small and real; see that plan's section 14 before
+## reading more into it.
+##
+## NOT flipped by default, because `net_goals` only exists in game logs built
+## after panna 0.3.62. Flipping before a full rebuild would silently drop every
+## season that predates it, so the branch below ABORTS instead of quietly
+## training on a fraction of the history.
+if (!exists("EPR_SOURCE", inherits = FALSE)) EPR_SOURCE <- "epv"
+stopifnot(EPR_SOURCE %in% c("epv", "net_goals"))
+t_log(sprintf("EPR source: %s", EPR_SOURCE))
+
+if (EPR_SOURCE == "net_goals") {
+  need <- c("net_goals", "ng_offensive", "ng_defensive")
+  missing <- setdiff(need, names(gl))
+  if (length(missing)) {
+    stop(sprintf(paste0(
+      "EPR_SOURCE='net_goals' but game_logs lacks %s.
+",
+      "  Rebuild the game logs first (10b, panna >= 0.3.62) -- training on the ",
+      "seasons that happen to carry the column would silently drop the rest."),
+      paste(missing, collapse = ", ")))
+  }
+  n_have <- sum(!is.na(gl$net_goals))
+  if (n_have < 0.95 * nrow(gl)) {
+    stop(sprintf(paste0(
+      "EPR_SOURCE='net_goals' but only %s of %s rows carry it (%.1f%%).
+",
+      "  A partial rebuild trains on a biased slice of history."),
+      format(n_have, big.mark = ","), format(nrow(gl), big.mark = ","),
+      100 * n_have / nrow(gl)))
+  }
+  ## Centre by the player's MODAL position, never the first row seen: game_logs
+  ## carries a position per player-MATCH, so taking the first gives whichever
+  ## slot he happened to fill that day.
+  posmap <- gl[!is.na(position), .N, by = .(player_id, position)]
+  setorder(posmap, player_id, -N)
+  posmap <- posmap[, .SD[1], by = player_id][, .(player_id, position)]
+  gl <- gl[!is.na(net_goals),
+           .(player_id, player_name, match_id, match_date, league, season,
+             team_id, minutes_played = total_minutes,
+             epv_offensive = ng_offensive, epv_defensive = ng_defensive)]
+  gl <- as.data.table(ng_adjust_for_rating(gl, posmap, verbose = FALSE))
+  gl <- gl[, .(player_id, player_name, match_id, match_date, league, season,
+               team_id, minutes_played, epv_offensive, epv_defensive)]
+} else {
+  gl <- gl[!is.na(epv_offensive_adj) & !is.na(epv_defensive_adj),
+           .(player_id, player_name, match_id, match_date, league, season,
+              team_id, minutes_played = total_minutes,
+              epv_offensive = epv_offensive_adj,
+              epv_defensive = epv_defensive_adj)]
+}
 gl[, season_end_year := fifelse(month(match_date) >= 7L,
                                  year(match_date) + 1L,
                                  year(match_date))]

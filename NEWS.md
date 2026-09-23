@@ -1,3 +1,117 @@
+# panna 0.3.63
+
+## Net goals: the xGOT shot split, unbroken value after shots, keepers out of the defensive pool
+
+- **Shot chain** (`ng_build_ledger(shot_chain = TRUE)`): the row after a shot starts from 0 (the
+  shot's end) instead of the model's restart value. 309 goals of |value| a season used to appear
+  there booked to nobody; before reconciliation the ledger now lands a median 0.014 goals from each
+  team's goal difference (was 0.198), and the reconciliation moves 0.5% of value (was 7.6%).
+- **xGOT split**: a shot with xGOT is two steps. The strike (xG → xGOT, or → 0 off target) is the
+  shooter's; the finish (xGOT → goal, save or live rebound) is the keeper duel, with the keeper named
+  for 70% (the saver, else the side's keeper from `lineups`). Each row still books exactly its value.
+- **Keepers sit out the defensive pool** (`ng_spread_pools(keeper_pool_blame = 0, keeper_pool_credit
+  = 0)`): they are now named on every goal and save, so what is left in that pool is outfield work.
+- Step 10b adds xGOT and lineups to the ledger, and skips a league's net goals rather than publish
+  them if its shots lack xGOT.
+- Page generator `data-raw/epv/net-goals/build_net_goals_artifacts.R` (per-player play types and a
+  walkthrough, in the page shape torp uses) and real-season edge-case checks `ng_scenarios.R`.
+
+## `net_goals` published into game logs
+
+Step 10b now joins three additive columns onto every player-match row:
+`net_goals` and its two halves `ng_offensive` / `ng_defensive`. Every existing
+column is untouched, and a league whose ledger cannot be built publishes the
+rest rather than nothing.
+
+Computed deliberately BEFORE the position and opponent adjustments, so the
+published column carries the raw ledger. Centring breaks conservation by
+construction; a rating layer that wants it calls `ng_adjust_for_rating()`.
+
+xPass is added explicitly and asserted. `assign_epv_credit()` computes it
+internally without leaving it on the frame, and without it the passer/receiver
+difficulty split silently degrades to actor-keeps-all instead of failing — so
+the block aborts if fewer than half of passes carry one.
+
+Verified on ENG 2024-2025: 11,427 of 11,427 player-rows matched, the two halves
+sum to the total at 3.3e-15, and a team's players sum to that team's own goal
+difference at cor 0.9834, median error 0.201 goals.
+
+The published column is the ledger RESTRICTED to players the game-logs frame
+carries (11,472 ledger rows against 11,427 published on ENG 2024-2025), so a
+match's two sides cancel to about 0.1 goals rather than the ~1e-14 the
+standalone ledger reaches. Second order against the 0.20 median error already
+in the metric, but it means `net_goals` as published is very nearly conserving,
+not exactly conserving.
+
+Three stages sat between computing the column and writing it, two of which
+rebuild the frame from a fixed column set. The first attempt logged
+"11427 of 11427 matched" and wrote a parquet with no net-goals columns at all.
+Verify the written artifact, not the log.
+
+The blog's new `scripts/validate-football-epv-units.mjs` already carries the
+check for this column and will pick it up on the next build — asserted PER TEAM
+against that team's own goal difference, never through a home-minus-away fit.
+
+# panna 0.3.61 (dev)
+
+## The rating-layer adjustment for net goals
+
+`ng_adjust_for_rating()` position-centres per-game net goals, by position and
+season, returning the same column names so it is a drop-in for
+`calculate_epr_regression()`.
+
+This makes the EPR gate like-for-like, which it would not otherwise be.
+Production EPR is fed `epv_offensive_adj` / `epv_defensive_adj` renamed to the
+raw names (`build_epr_weekly.R:63-66`) — the position-centred columns produced
+at export by `10b_export_game_logs.R`. `ng_player_game()` emits raw net goals.
+Feeding those two to EPR unchanged would compare a centred input against an
+uncentred one and credit the difference to the ledger, which it is not.
+
+Measured on ENG 2024-2025: the position means removed run from +0.054 for a
+goalkeeper to -0.042 for a defender per player-game. Within-position spread is
+unchanged (defender sd 0.2852 before and after) and no player moves relative to
+a positional peer — a level shift, not a different metric. The ledger's own
+totals survive as `net_goals_raw`, `epv_offensive_raw`, `epv_defensive_raw`.
+
+Centring lives here and not in the ledger for the reason torp records as D4:
+the moment a positional mean is subtracted, a team's players stop summing to
+its goal difference. The centred total is ~0 by construction, which is exactly
+why it cannot sit upstream.
+
+# panna 0.3.60 (dev)
+
+## Per-game net goals, and a receiver paid to the wrong team
+
+`ng_player_game()` aggregates the payment ledger to one row per player-match,
+deliberately matching `aggregate_player_game_epv()`'s column contract
+(`player_id`, `player_name`, `match_date`, `minutes_played`, `epv_offensive`,
+`epv_defensive`) so `calculate_epr_regression()` can be pointed at either and
+the two gated against each other on identical footing. It also emits one `ng_*`
+column per role, so a rating layer can pick its own channels rather than
+inheriting a display grouping.
+
+The offence/defence split means something better here than in the existing
+aggregator. That one buckets action types (passing offensive, tackles
+defensive), which is presentational — re-bucketing changes the split and not
+the total. Net goals splits by which half of the double entry a payment sits
+on, so a defender who never touches the ball still has a defensive number.
+
+**Bug found while building it.** SPADL names a receiver on 26.4% of actions who
+is on the *opposing* team — 11,905 of them on passes it calls successful,
+carrying 201.7 goals of absolute value. The pass branch paid those the teammate
+receiver split and booked it under the receiver's own team, i.e. the wrong side
+of the double entry, leaving 55% of player-matches holding payments under two
+team ids. A receiver share now requires the receiver to be on the acting team;
+such a pass falls through to the generic branch and the actor keeps it.
+
+Effect: Salah 14.32 to 14.00 across the season, Pickford 6.46 to 6.83, and the
+top 20 reorders slightly. Team totals are untouched (cor 0.9835, median error
+0.198), because the misrouted value was always booked somewhere on the right
+match — just to the wrong side of it.
+
+Whether a pass that reaches an opponent should be `result == "success"` at all
+is an upstream SPADL question and is not answered here.
+
 # panna 0.3.59 (dev)
 
 ## Net goals: a readable page, and the repeatability test

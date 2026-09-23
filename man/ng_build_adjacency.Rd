@@ -43,9 +43,13 @@ every measurement taken against them.
 }
 \seealso{
 Other net_goals: 
+\code{\link{ng_adjust_for_rating}()},
 \code{\link{ng_build_ledger}()},
 \code{\link{ng_check_conservation}()},
 \code{\link{ng_check_team_totals}()},
+\code{\link{ng_fold_unpublished}()},
+\code{\link{ng_player_game}()},
+\code{\link{ng_reconcile_margin}()},
 \code{\link{ng_shares}()},
 \code{\link{ng_spread_pools}()}
 }

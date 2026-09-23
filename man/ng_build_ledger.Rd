@@ -11,6 +11,8 @@ ng_build_ledger(
   allocate = TRUE,
   shares = ng_shares(),
   convention = c("team", "margin"),
+  lineups = NULL,
+  shot_chain = TRUE,
   verbose = TRUE
 )
 }
@@ -41,6 +43,16 @@ absolute ledger value against the team convention's 39.1\%, because it never
 books the conceding half -- which is most of what nobody is named for. Kept
 for comparison.}
 
+\item{lineups}{Optional lineups (\code{match_id}, \code{team_id}, \code{player_id},
+\code{position}, \code{sub_off_minute}). Used to name each side's goalkeeper on the
+finish step of a shot that has no save row (a goal). Without it, that step
+goes to the defending side's pool.}
+
+\item{shot_chain}{If \code{TRUE} (default), the row after a shot starts from 0,
+the shot's end, instead of the model's restart value, so no value appears
+between them unbooked (309 goals a season on ENG 2024-25). Needs \code{epv} on
+the actions; ignored without it.}
+
 \item{verbose}{Print a summary. Default \code{TRUE}.}
 }
 \value{
@@ -58,8 +70,10 @@ conserves. Summed over a match, the payments equal the goal difference.
 The allocation at this stage is deliberately crude -- every row pays its whole
 \code{epv_delta} to the acting player. That is obviously wrong about \emph{who} and
 provably right about \emph{how much}, which makes it the one clean moment to assert
-the identity: there is no rule for an error to hide behind, and no reconciler
-downstream absorbing it. Torp's suite passed 48 assertions against a ledger
+the identity: there is no rule for an error to hide behind, and nothing has
+yet been forced toward a target. \code{\link[=ng_reconcile_margin]{ng_reconcile_margin()}} does force one, at
+the very end of the chain, and that is exactly why this assertion has to
+happen HERE and stay here. Torp's suite passed 48 assertions against a ledger
 with the away sign flipped because every test ran after its reconciler; this
 function is the assertion point that avoids repeating that.
 
@@ -69,9 +83,13 @@ change a match total.
 }
 \seealso{
 Other net_goals: 
+\code{\link{ng_adjust_for_rating}()},
 \code{\link{ng_build_adjacency}()},
 \code{\link{ng_check_conservation}()},
 \code{\link{ng_check_team_totals}()},
+\code{\link{ng_fold_unpublished}()},
+\code{\link{ng_player_game}()},
+\code{\link{ng_reconcile_margin}()},
 \code{\link{ng_shares}()},
 \code{\link{ng_spread_pools}()}
 }
