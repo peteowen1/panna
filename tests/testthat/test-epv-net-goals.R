@@ -1092,3 +1092,16 @@ test_that("shot aftermath: an own goal keeps its sign even without the is_own_go
   expect_equal(pay[action_id == 2L & entry == "offence", sum(value_own)], -1.02, tolerance = 1e-12)
   expect_equal(pay[action_id == 1L & entry == "offence", sum(value_own)], 0.05, tolerance = 1e-12)
 })
+
+test_that("shot aftermath: a shot that ends a match does not read the next match", {
+  # m1 ends on H's missed shot; m2 opens with A's pass. The shot must end at 0,
+  # not at m2's first value: 0 - 0.136 = -0.136.
+  d <- ng_fixture_aftermath()[1:2, ]
+  d2 <- ng_fixture_aftermath()[3:4, ]
+  d2$match_id <- "m2"; d2$action_id <- 1:2
+  fx <- rbind(ng_fixture_fixtures(), transform(ng_fixture_fixtures(), match_id = "m2"))
+  pay <- panna::ng_build_ledger(rbind(d, d2), fixtures = fx,
+                                shot_aftermath = aft_line, verbose = FALSE)
+  expect_equal(pay[match_id == "m1" & action_id == 2L & entry == "offence", sum(value_own)],
+               -0.136, tolerance = 1e-12)
+})
