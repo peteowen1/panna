@@ -13,6 +13,7 @@ ng_build_ledger(
   convention = c("team", "margin"),
   lineups = NULL,
   shot_chain = TRUE,
+  shot_aftermath = TRUE,
   verbose = TRUE
 )
 }
@@ -52,6 +53,17 @@ goes to the defending side's pool.}
 the shot's end, instead of the model's restart value, so no value appears
 between them unbooked (309 goals a season on ENG 2024-25). Needs \code{epv} on
 the actions; ignored without it.}
+
+\item{shot_aftermath}{If \code{TRUE} (default), a shot is worth more than its xG:
+\code{xG + (1 - xG) * A}, where \code{A} is the expected value of the state after a
+shot that does not score (corners, rebounds, keeping the ball), fitted on
+the season's own non-goal shots. The row before the shot is repriced to
+match, and a non-goal shot ends at the real value of the next state
+rather than 0, so the next toucher no longer inherits it. The chain from 0
+(\code{shot_chain}) then applies after goals only. Needs \code{epv} on the actions.
+May also be a fit from an earlier build (\code{attr(pay, "shot_aftermath_fit")})
+to price shots with that season's line -- for a single match, whose 20-odd
+shots are too few to fit one.}
 
 \item{verbose}{Print a summary. Default \code{TRUE}.}
 }

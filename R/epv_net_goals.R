@@ -270,6 +270,16 @@ ng_build_adjacency <- function(events, verbose = TRUE) {
 #'   the shot's end, instead of the model's restart value, so no value appears
 #'   between them unbooked (309 goals a season on ENG 2024-25). Needs `epv` on
 #'   the actions; ignored without it.
+#' @param shot_aftermath If `TRUE` (default), a shot is worth more than its xG:
+#'   `xG + (1 - xG) * A`, where `A` is the expected value of the state after a
+#'   shot that does not score (corners, rebounds, keeping the ball), fitted on
+#'   the season's own non-goal shots. The row before the shot is repriced to
+#'   match, and a non-goal shot ends at the real value of the next state
+#'   rather than 0, so the next toucher no longer inherits it. The chain from 0
+#'   (`shot_chain`) then applies after goals only. Needs `epv` on the actions.
+#'   May also be a fit from an earlier build (`attr(pay, "shot_aftermath_fit")`)
+#'   to price shots with that season's line -- for a single match, whose 20-odd
+#'   shots are too few to fit one.
 #' @param verbose Print a summary. Default `TRUE`.
 #'
 #' @return A data.table of payments, one row per (action, recipient):
@@ -283,7 +293,7 @@ ng_build_ledger <- function(spadl_with_epv, adj = NULL, fixtures,
                             allocate = TRUE, shares = ng_shares(),
                             convention = c("team", "margin"),
                             lineups = NULL, shot_chain = TRUE,
-                            verbose = TRUE) {
+                            shot_aftermath = TRUE, verbose = TRUE) {
   convention <- match.arg(convention)
   dt <- data.table::as.data.table(spadl_with_epv)
   fx <- data.table::as.data.table(fixtures)[
@@ -320,9 +330,22 @@ ng_build_ledger <- function(spadl_with_epv, adj = NULL, fixtures,
   # shot's end, so a save that parries the ball to an attacker is charged the
   # whole rebound and the value runs unbroken. A shot after a shot keeps its own
   # xG start (a rebound shot is a new chance, priced by its own xG).
+  aft_fit <- NULL
+  if ((isTRUE(shot_aftermath) || is.list(shot_aftermath)) && "epv" %in% names(dt)) {
+    r <- .ng_shot_aftermath(dt, fit = if (is.list(shot_aftermath)) shot_aftermath,
+                            verbose = verbose)
+    dt <- r$dt
+    aft_fit <- r$fit
+  }
   if (isTRUE(shot_chain) && "epv" %in% names(dt)) {
     data.table::setorder(dt, match_id, action_id)
-    dt[, .prev_shot := data.table::shift(action_type) %in% "shot", by = match_id]
+    # With the aftermath on, a non-goal shot already ends where the next row
+    # starts, so only the row after a GOAL restarts from 0.
+    prev_ok <- if (!is.null(aft_fit)) c("goal") else c("goal", "other")
+    dt[, .prev_shot := data.table::fcase(
+      data.table::shift(action_type) %in% "shot" & data.table::shift(result) %in% "success", "goal",
+      data.table::shift(action_type) %in% "shot", "other", default = "none") %chin% prev_ok,
+      by = match_id]
     fix <- dt$.prev_shot & dt$action_type != "shot" & is.finite(dt$epv) & is.finite(dt$epv_delta)
     dt[fix, epv_delta := epv + epv_delta]
     if (isTRUE(verbose)) {
@@ -399,6 +422,7 @@ ng_build_ledger <- function(spadl_with_epv, adj = NULL, fixtures,
     pay[, value_home := fifelse(is_home, value_own, -value_own)]
     pay[, home_team_id := NULL]
     pay <- .ng_pool_unnamed(pay)
+    data.table::setattr(pay, "shot_aftermath_fit", aft_fit)
     if (isTRUE(verbose)) {
       cli::cli_alert_success(paste0(
         "Ledger (team convention): {format(nrow(pay), big.mark = ',')} payment{?s} ",
@@ -439,6 +463,109 @@ ng_build_ledger <- function(spadl_with_epv, adj = NULL, fixtures,
   }
 
   pay[]
+}
+
+
+#' Price a shot at more than its xG: the value it leaves behind
+#'
+#' A shot that does not score still leaves its side something: a corner, a
+#' rebound, the ball. On ENG 2024-2025 the state straight after a non-goal shot
+#' is worth +0.034 goals to the shooting side on average (8,690 shots), against
+#' a mean xG of 0.112. Pricing the shot at its xG alone under-pays the pass
+#' before it and the decision to shoot, and hands that value to whoever touches
+#' the ball next.
+#'
+#' Here a shot is worth `V0 = xG + (1 - xG) * A`, where `A` is a straight line in
+#' xG fitted on the season's own non-goal shots: the value of the next state to
+#' the shooting side, or 0 when nothing follows in the period. It is refitted on
+#' every call, as torp reprices stoppages per season. The row before a shot
+#' targeted its xG, so it moves up by `V0 - xG`; a shot that does not score ends
+#' at the next row's start value in its own frame; a goal still ends at 1.
+#' Own goals are left alone. `shot_xg` keeps each repriced shot's xG, which
+#' the credit rules need to split the row.
+#'
+#' @param dt The ledger's actions (modified by reference), with `epv`,
+#'   `epv_delta`, `result`, `team_id`, `action_type`.
+#' @param fit Optional: a fit returned by an earlier call (`intercept`,
+#'   `slope`), used instead of fitting on `dt`.
+#' @param verbose Print the fit.
+#' @return `list(dt, fit)`; `fit` is `NULL` when fewer than 50 non-goal shots
+#'   exist, and the shots are then left at their xG.
+#' @keywords internal
+.ng_shot_aftermath <- function(dt, fit = NULL, verbose = TRUE) {
+  if (!"result" %in% names(dt)) {
+    cli::cli_abort("{.fn .ng_shot_aftermath} needs {.field result} to tell goals from misses.")
+  }
+  data.table::setorder(dt, match_id, action_id)
+  og <- if ("is_own_goal" %in% names(dt)) dt$is_own_goal %in% TRUE else rep(FALSE, nrow(dt))
+  is_sh <- dt$action_type %chin% "shot" & !og & is.finite(dt$epv)
+  goal <- dt$result %in% "success"
+  has_per <- "period_id" %in% names(dt)
+  # The next state's value to the side on THIS row: flipped when the other side
+  # has the next row, and 0 when the period (or match) ends.
+  next_value <- function() {
+    dt[, `:=`(.nx_epv = data.table::shift(epv, -1L),
+              .nx_team = data.table::shift(team_id, -1L),
+              .nx_per = if (has_per) data.table::shift(period_id, -1L) else 1L),
+       by = match_id]
+    same <- !is.na(dt$.nx_epv) & is.finite(dt$.nx_epv) &
+      (if (has_per) (dt$.nx_per == dt$period_id) %in% TRUE else TRUE)
+    data.table::fifelse(same, data.table::fifelse(dt$.nx_team == dt$team_id,
+                                                  dt$.nx_epv, -dt$.nx_epv), 0)
+  }
+  S <- next_value()
+  fitrows <- is_sh & !goal
+  given <- !is.null(fit)
+  if (given && !all(c("intercept", "slope") %in% names(fit))) {
+    cli::cli_abort("{.arg fit} needs {.field intercept} and {.field slope}.")
+  }
+  if (!given && sum(fitrows) < 50L) {
+    cli::cli_warn(paste0(
+      "Shot aftermath not fitted: only {sum(fitrows)} non-goal shot{?s}; ",
+      "shots stay at their xG."))
+    dt[, c(".nx_epv", ".nx_team", ".nx_per") := NULL]
+    return(list(dt = dt, fit = NULL))
+  }
+  # A real copy: dt$epv shares memory with the column, and the `:=` below
+  # would rewrite `xg` in place.
+  xg <- data.table::copy(dt$epv)
+  if (given) {
+    cf <- c(fit$intercept, fit$slope)
+  } else {
+    cf <- unname(stats::coef(stats::lm(S ~ xg, data = data.frame(S = S[fitrows], xg = xg[fitrows]))))
+  }
+  A <- cf[1] + cf[2] * xg
+  bump <- data.table::fifelse(is_sh, (1 - xg) * A, 0)
+
+  dt[, shot_xg := NA_real_]
+  dt[is_sh, shot_xg := epv]
+  # The row before a shot was priced to reach the shot's xG (calculate_action_epv
+  # recomputes it); move it to V0, in its own frame.
+  dt[, .bump := bump]
+  dt[, .nx_bump := data.table::shift(.bump, -1L), by = match_id]
+  pre <- !(dt$action_type %chin% "shot") & is.finite(dt$.nx_bump) &
+    dt$.nx_bump != 0 & is.finite(dt$epv_delta)
+  dt[pre, epv_delta := epv_delta + data.table::fifelse(.nx_team == team_id, .nx_bump, -.nx_bump)]
+  dt[is_sh, epv := epv + .bump]
+  # Re-read the next state now that a rebound shot is also repriced.
+  S <- next_value()
+  dt[is_sh & goal, epv_delta := 1 - epv]
+  dt[, .S := S]
+  dt[is_sh & !goal, epv_delta := .S - epv]
+  dt[, c(".nx_epv", ".nx_team", ".nx_per", ".bump", ".nx_bump", ".S") := NULL]
+
+  fit <- list(intercept = cf[1], slope = cf[2], given = given,
+              n_fit = if (given) fit$n_fit else sum(fitrows), n_shots = sum(is_sh),
+              mean_xg = mean(xg[is_sh]), mean_aftermath = mean(S[fitrows]),
+              mean_added = mean(bump[is_sh]), rows_before = sum(pre))
+  if (isTRUE(verbose)) {
+    cli::cli_alert_info(paste0(
+      "Shot aftermath: a non-goal shot leaves {round(fit$mean_aftermath, 4)} goals on average here ",
+      "({if (given) 'line given' else 'fitted'} on {format(fit$n_fit, big.mark = ',')} shots; A = {round(fit$intercept, 4)} + ",
+      "{round(fit$slope, 4)} x xG). Shots now worth +{round(fit$mean_added, 4)} over their ",
+      "xG ({round(fit$mean_xg, 4)}); {format(fit$rows_before, big.mark = ',')} row{?s} before a shot repriced."))
+  }
+  list(dt = dt, fit = fit)
 }
 
 
@@ -1121,6 +1248,19 @@ ng_spread_pools <- function(pay, actions, lineups, dacts_share = 0.5, keeper_poo
   # single-step rule below.
   og <- if ("is_own_goal" %in% names(d)) d$is_own_goal %in% TRUE else rep(FALSE, n)
   xg0 <- if ("epv" %in% names(d)) d$epv else rep(NA_real_, n)
+  # THE AFTERMATH (Pete, 2026-09-23; see .ng_shot_aftermath()). Where the shot
+  # was repriced, its start is xG + (1 - xG) * A and `shot_xg` keeps the xG. The
+  # aftermath step is the row minus the goal part (outcome - xG): what the shot
+  # left behind against what a shot like it usually does. It is split by sign
+  # like the others, and the goal part runs through the rules below unchanged.
+  aft <- rep(0, n)
+  if ("shot_xg" %in% names(d)) {
+    has_sx <- d$is_shot & !og & is.finite(d$shot_xg)
+    xg0 <- data.table::fifelse(has_sx, d$shot_xg, xg0)
+    aft <- data.table::fifelse(has_sx, v - ((d$result %in% "success") - d$shot_xg), 0)
+    v <- v - aft
+    keep <- v * (1 - sh$off_pool)
+  }
   xgt <- if ("xgot" %in% names(d)) d$xgot else rep(NA_real_, n)
   split <- d$is_shot & !og & is.finite(xg0) & is.finite(xgt)
   strike <- data.table::fifelse(split, xgt - xg0, 0)
@@ -1134,14 +1274,16 @@ ng_spread_pools <- function(pay, actions, lineups, dacts_share = 0.5, keeper_poo
   # dropped those 106 from the row; the double-entry check caught it.
   on_target <- split & (xgt > 0 | d$result %in% "success")
   fin <- split & abs(finish) > 1e-12
-  pay_step <- function(sel, x) {
-    add(sel & x >= 0, d$player_id, att, x * (1 - sh$off_pool), "shooter", "offence")
+  pay_step <- function(sel, x, role = "shooter") {
+    add(sel & x >= 0, d$player_id, att, x * (1 - sh$off_pool), role, "offence")
     add(sel & x >= 0, NAc, att, x * sh$off_pool, "pool_off", "offence")
-    add(sel & x < 0, d$player_id, att, x * sh$exec_blame, "shooter", "offence")
+    add(sel & x < 0, d$player_id, att, x * sh$exec_blame, role, "offence")
     add(sel & x < 0, NAc, att, x * (1 - sh$exec_blame), "pool_off", "offence")
   }
   pay_step(split, strike)
   pay_step(fin, finish)
+  has_aft <- abs(aft) > 1e-12
+  pay_step(has_aft, aft, "shot_aftermath")
 
   goal <- d$is_shot & !split & d$result %in% "success"
   add(goal, d$player_id, att, keep, "shooter", "offence")
@@ -1210,6 +1352,9 @@ ng_spread_pools <- function(pay, actions, lineups, dacts_share = 0.5, keeper_poo
   add(fin & !is.na(saver), saver, def, -finish * sh$named_share, "defender", "defence")
   add(fin & !is.na(saver), NAc, def, -finish * (1 - sh$named_share), "pool_def", "defence")
   add(fin & is.na(saver), NAc, def, -finish, "pool_def", "defence")
+
+  # The aftermath's other side: nobody is named, the pool takes it.
+  add(has_aft, NAc, def, -aft, "pool_def", "defence")
 
   named[split] <- NA_character_
   rest <- !split

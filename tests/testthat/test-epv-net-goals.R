@@ -6,6 +6,14 @@
 # test of the raw allocation compared it to a ledger built by the same mutated
 # function. See torpverse/docs/plans/EPV-NET-POINTS.md section 6.
 
+# Most fixtures below hold a handful of shots, too few to fit the shot
+# aftermath line (it needs 50 non-goal shots), so they test the rules with shots
+# priced at their xG. The aftermath has its own tests at the end of the file,
+# run with a given line.
+ng_build_ledger <- function(..., shot_aftermath = FALSE) {
+  panna::ng_build_ledger(..., shot_aftermath = shot_aftermath)
+}
+
 # ---------------------------------------------------------------------------
 # Fixture: one match, two teams, seven raw events.
 #
@@ -475,7 +483,9 @@ test_that("under the team convention a successful pass pays no named defender", 
 test_that("the shipped defaults are the ones Pete chose", {
   # convention = "team" and dacts_share = 0.5, decided 2026-09-21. A default
   # that drifts silently is how a published number changes without a decision.
-  expect_equal(formals(ng_build_ledger)$convention[[2]], "team")
+  expect_equal(formals(panna::ng_build_ledger)$convention[[2]], "team")
+  # shot_aftermath = TRUE, decided with Pete 2026-09-23
+  expect_true(formals(panna::ng_build_ledger)$shot_aftermath)
   expect_equal(formals(ng_spread_pools)$dacts_share, 0.5)
   expect_equal(formals(ng_spread_pools)$dacts_measure[[2]], "act_value")
 })
@@ -983,4 +993,90 @@ test_that("the shot chain never carries a shot into the next match", {
   pay <- ng_build_ledger(d, fixtures = fx, verbose = FALSE)
   # m2's first row keeps its own value (0.01), not epv + delta (0.05)
   expect_equal(pay[match_id == "m2" & entry == "offence", sum(value_own)], 0.01, tolerance = 1e-12)
+})
+
+
+# ---------------------------------------------------------------------------
+# Shot aftermath (2026-09-23). Fixture: H passes, shoots (xG 0.10, xGOT 0.30),
+# A's keeper saves and A clears. Given line A = 0.04 flat (slope 0), so the shot
+# is worth V0 = 0.10 + 0.90 * 0.04 = 0.136. By hand:
+#   pass:  0.05 -> 0.10 targeted xG (+0.05); now -> 0.136, so +0.086
+#   shot (miss): ends at the save row's start, flipped: -(-0.05) = +0.05, so
+#          0.05 - 0.136 = -0.086; goal part 0 - 0.10 = -0.10; aftermath +0.014
+#   save:  its own change only, -0.05 -> -0.06 = -0.01 (keeper's frame)
+ng_fixture_aftermath <- function(result = "fail") {
+  data.frame(
+    match_id = "m1", action_id = 1:4, original_event_id = 1:4, period_id = 1L,
+    team_id = c("H", "H", "A", "A"), player_id = c("h1", "h2", "k1", "a2"),
+    action_type = c("pass", "shot", "keeper_save", "clearance"),
+    result = c("success", result, "success", "success"),
+    epv = c(0.05, 0.10, -0.05, -0.06),
+    epv_delta = c(0.05, if (result == "success") 0.90 else -0.10, -0.01, 0.01),
+    xgot = c(NA, 0.30, NA, NA),
+    stringsAsFactors = FALSE)
+}
+aft_line <- list(intercept = 0.04, slope = 0)
+
+test_that("shot aftermath: the shot is worth more than its xG and ends where the next row starts", {
+  pay <- panna::ng_build_ledger(ng_fixture_aftermath(), fixtures = ng_fixture_fixtures(),
+                                shot_aftermath = aft_line, verbose = FALSE)
+  sh <- ng_shares()
+  off <- function(i) pay[action_id == i & entry == "offence", sum(value_own)]
+  def <- function(i) pay[action_id == i & entry == "defence", sum(value_own)]
+  expect_equal(off(1L), 0.086, tolerance = 1e-12)
+  expect_equal(off(2L), -0.086, tolerance = 1e-12)
+  expect_equal(off(3L), -0.01, tolerance = 1e-12)   # the keeper's own change only
+  for (i in 1:4) expect_equal(def(i), -off(i), tolerance = 1e-12)
+  # aftermath +0.014 is a gain: the shooter keeps (1 - off_pool), the defence pool pays it
+  s <- pay[action_id == 2L]
+  expect_equal(s[role == "shot_aftermath", value_own], 0.014 * (1 - sh$off_pool), tolerance = 1e-12)
+  expect_true(any(abs(s[entry == "defence" & role == "pool_def"]$value_own + 0.014) < 1e-12))
+  # the goal part runs as before: strike +0.20 kept, finish -0.30 at exec_blame
+  expect_equal(s[role == "shooter", sum(value_own)],
+               0.20 * (1 - sh$off_pool) + -0.30 * sh$exec_blame, tolerance = 1e-12)
+  expect_null(attr(pay, "shot_aftermath_fit")$n_fit)
+})
+
+test_that("shot aftermath: a goal still ends at 1 and gives back the aftermath it did not need", {
+  pay <- panna::ng_build_ledger(ng_fixture_aftermath("success"), fixtures = ng_fixture_fixtures(),
+                                shot_aftermath = aft_line, verbose = FALSE)
+  sh <- ng_shares()
+  # 1 - 0.136 = 0.864; goal part 1 - 0.10 = 0.90; aftermath -0.036, a loss
+  expect_equal(pay[action_id == 2L & entry == "offence", sum(value_own)], 0.864, tolerance = 1e-12)
+  expect_equal(pay[action_id == 2L & role == "shot_aftermath", value_own], -0.036 * sh$exec_blame,
+               tolerance = 1e-12)
+  # the row after a goal still restarts from 0: -0.05 + -0.01
+  expect_equal(pay[action_id == 3L & entry == "offence", sum(value_own)], -0.06, tolerance = 1e-12)
+})
+
+test_that("shot aftermath: a shot that ends the period ends at 0", {
+  d <- ng_fixture_aftermath()
+  d$period_id <- c(1L, 1L, 2L, 2L)
+  pay <- panna::ng_build_ledger(d, fixtures = ng_fixture_fixtures(),
+                                shot_aftermath = aft_line, verbose = FALSE)
+  expect_equal(pay[action_id == 2L & entry == "offence", sum(value_own)], -0.136, tolerance = 1e-12)
+})
+
+test_that("shot aftermath: the line is fitted on non-goal shots, and too few shots fall back loudly", {
+  set.seed(1)
+  n <- 60L
+  xg <- round(runif(n, 0.02, 0.4), 3)
+  nxt <- round(0.03 + 0.05 * xg + rnorm(n, 0, 0.005), 4)   # next state, attackers' frame
+  d <- data.frame(
+    match_id = "m1", action_id = seq_len(2L * n), original_event_id = seq_len(2L * n), period_id = 1L,
+    team_id = rep(c("H", "A"), n), player_id = rep(c("h1", "k1"), n),
+    action_type = rep(c("shot", "keeper_save"), n), result = rep(c("fail", "success"), n),
+    epv = as.vector(rbind(xg, -nxt)), epv_delta = as.vector(rbind(-xg, 0)),
+    stringsAsFactors = FALSE)
+  pay <- panna::ng_build_ledger(d, fixtures = ng_fixture_fixtures(), verbose = FALSE)
+  fit <- attr(pay, "shot_aftermath_fit")
+  ref <- unname(coef(lm(nxt ~ xg)))
+  expect_equal(c(fit$intercept, fit$slope), ref, tolerance = 1e-10)
+  expect_equal(fit$n_fit, n)
+
+  few <- d[1:20, ]
+  expect_warning(p2 <- panna::ng_build_ledger(few, fixtures = ng_fixture_fixtures(), verbose = FALSE),
+                 "not fitted")
+  p3 <- panna::ng_build_ledger(few, fixtures = ng_fixture_fixtures(), shot_aftermath = FALSE, verbose = FALSE)
+  expect_equal(p2[order(action_id, entry, role)]$value_own, p3[order(action_id, entry, role)]$value_own)
 })
