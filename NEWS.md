@@ -1,4 +1,4 @@
-# panna (development version)
+# panna 0.3.66
 
 ## Net goals: every step of a shot splits the same way, gain or loss
 
