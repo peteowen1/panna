@@ -1,4 +1,4 @@
-# panna (development version)
+# panna 0.3.65
 
 ## Net goals: a shot is worth more than its xG
 
