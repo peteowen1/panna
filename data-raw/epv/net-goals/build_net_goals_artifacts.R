@@ -198,8 +198,16 @@ rp <- raw[match_id == f$match_id & action_id %in% win$action_id]
 rp <- merge(rp, names_lu, by = "player_id", all.x = TRUE)
 rp[, side := fifelse(value_own >= 0, "gain", "concede")]
 
+# The headline number is the LEDGER's row value (what the payments below sum
+# to on the acting side), not the model's epv_delta: after a shot the ledger
+# starts the next row from 0 (the shot chain), so the two differ there.
+lv <- rp[entry %in% "offence", .(ledger = sum(value_own)), by = action_id]
+prev_shot <- c(FALSE, head(win$action_type, -1) == "shot")
 rows <- lapply(seq_len(nrow(win)), function(i) {
   a <- win[i]
+  chg <- lv[action_id == a$action_id, ledger]
+  chg <- if (length(chg)) chg else a$epv_delta
+  before <- if (prev_shot[i] && a$action_type != "shot") 0 else a$epv
   py <- rp[action_id == a$action_id][order(-abs(value_own))]
   # Opta gives every action in its own team's attacking direction (left to
   # right, 0-100). Flip the away side's so one picture holds the whole passage:
@@ -210,7 +218,7 @@ rows <- lapply(seq_len(nrow(win)), function(i) {
        from = pt(a$start_x, a$start_y), to = pt(a$end_x, a$end_y), clock = sprintf("%02d:%02d", a$time_seconds %/% 60, round(a$time_seconds %% 60)),
        team = team_lu[team_id == a$team_id]$team, player = a$player_name,
        action = a$action_type, result = a$result,
-       value_before = round(a$epv, 4), change = round(a$epv_delta, 4),
+       value_before = round(before, 4), change = round(chg, 4),
        tags = list(xpass = if ("xpass" %in% names(a)) round(a$xpass, 2) else NULL),
        payments = lapply(seq_len(nrow(py)), function(j) list(
          player = if (is.na(py$player_id[j])) NA else py$player_name[j],
