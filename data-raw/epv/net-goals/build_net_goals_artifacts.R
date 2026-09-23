@@ -254,7 +254,18 @@ step_of <- function(a, py) {
     keep <- sh_$shot_keep
     data.table(step = k, v = c(x * keep, x * (1 - keep), -x, -x * sh_$named_share, -x * (1 - sh_$named_share)))
   }))
-  vapply(py$value_own, function(v) cand$step[which.min(abs(cand$v - v))], character(1))
+  # The shooter's own rows carry their step in the role. Every other payment is
+  # matched to the nearest rebuilt amount, and each amount is used once: when
+  # two steps are the same size (a goal from xG 0.20 at xGOT 0.60 has strike
+  # and finish both 0.40), nearest-match alone would label both "strike".
+  out <- sub("^shot_", "", py$role)
+  out[!out %in% names(st)] <- NA_character_
+  used <- rep(FALSE, nrow(cand))
+  for (j in which(is.na(out))) {
+    d <- abs(cand$v - py$value_own[j]); d[used] <- Inf
+    i <- which.min(d); used[i] <- TRUE; out[j] <- cand$step[i]
+  }
+  out
 }
 STEP_LAB <- c(strike = "strike: xG to xGOT", finish = "finish: xGOT to the result",
               aftermath = "what the shot left behind")
