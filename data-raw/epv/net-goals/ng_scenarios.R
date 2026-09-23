@@ -43,14 +43,11 @@ og <- ep[action_type == "shot" & result == "success" & !is.finite(xgot)]
 ogg <- od[paste(match_id, action_id) %in% og[, paste(match_id, action_id)]]
 chk("own goals conserve", nrow(ogg), max(abs(ogg$v.x + ogg$v.y)) < 1e-9)
 
-# 5. Keepers: never in the defensive pool; named on on-target shots.
+# 5. Keepers share pools only for play in their own third.
 gk <- unique(lu[position == "Goalkeeper", .(match_id, player_id)])
-# (The keeper's own side's REBOUND pool -- role pool_def, entry offence, after
-# his save spills -- is his team's blame and he shares it; only the DEFENSIVE
-# entries are outfield work.)
-kp <- merge(pay[role == "pool_def_spread" & entry == "defence"], gk, by = c("match_id", "player_id"))
-chk("keepers get no defensive pool share", nrow(gk), sum(abs(kp$value_own)) < 1e-9,
-    sprintf("%.2g goals on %d rows", sum(abs(kp$value_own)), nrow(kp)))
+kp <- merge(pay[grepl("_spread$", role)], gk, by = c("match_id", "player_id"))
+chk("keepers share pools (own third only)", nrow(gk), nrow(kp) > 0 && sum(abs(kp$value_own)) > 0,
+    sprintf("%.1f goals of |value| over %d keeper-matches", sum(abs(kp$value_own)), nrow(gk)))
 ot <- ep[action_type == "shot" & xgot > 0]
 named <- raw[role == "defender" & paste(match_id, action_id) %in% ot[, paste(match_id, action_id)]]
 chk("a keeper or stopper is named on on-target shots", nrow(ot),

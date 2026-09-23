@@ -30,7 +30,7 @@ OUT_DIR  <- "data-raw/cache/epv/net-goals"   # gitignored
 # Bump CACHE_VERSION whenever the cached contents change (v2 added the action
 # coordinates the walkthrough's pitch plot needs), so an old cache is rebuilt
 # rather than read with columns missing.
-CACHE_VERSION <- 5L   # v5: keepers sit out the whole defensive pool (v4 blame only; v3 xGOT)
+CACHE_VERSION <- 6L   # v6: keepers back in every pool, own third only (v5 out of def pool)
 x <- if (file.exists(CACHE)) readRDS(CACHE) else NULL
 if (!is.null(x) && identical(x$cache_version, CACHE_VERSION)) {
   say("reading cached ledger: ", CACHE, " (delete it to rebuild from live code)")

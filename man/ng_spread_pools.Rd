@@ -9,8 +9,9 @@ ng_spread_pools(
   actions,
   lineups,
   dacts_share = 0.5,
-  keeper_pool_blame = 0,
-  keeper_pool_credit = 0,
+  keeper_pool_blame = 1,
+  keeper_pool_credit = 1,
+  keeper_outside_weight = 0,
   dacts_measure = c("act_value", "count", "named_value"),
   verbose = TRUE
 )
@@ -32,9 +33,12 @@ only the credit half, and why the default is 0.}
 
 \item{keeper_pool_blame, keeper_pool_credit}{A goalkeeper's weight in the
 \strong{defensive pool's} blame and credit halves, relative to an outfield
-player's 1. Both default 0: keepers are named on every goal and save by the
-shot split, so what is left in the defensive pool is outfield work. Needs
-\code{position} in \code{lineups} to find keepers.}
+player's 1. Both default 1. Needs \code{position} in \code{lineups} to find keepers.}
+
+\item{keeper_outside_weight}{A goalkeeper's weight in any pool for play
+OUTSIDE his own third. Default 0: a keeper shares unnamed value near his
+own goal, not at the other end. Needs \code{start_x} and \code{team_id} on
+\code{actions}; without them every action counts as his own third.}
 
 \item{dacts_measure}{What "defensive work" means.
 \code{"act_value"} (the default) weights each act by how much its own
