@@ -11,6 +11,8 @@ ng_build_ledger(
   allocate = TRUE,
   shares = ng_shares(),
   convention = c("team", "margin"),
+  lineups = NULL,
+  shot_chain = TRUE,
   verbose = TRUE
 )
 }
@@ -40,6 +42,16 @@ sums to the goal difference and team totals float. Its pools carry 17.4\% of
 absolute ledger value against the team convention's 39.1\%, because it never
 books the conceding half -- which is most of what nobody is named for. Kept
 for comparison.}
+
+\item{lineups}{Optional lineups (\code{match_id}, \code{team_id}, \code{player_id},
+\code{position}, \code{sub_off_minute}). Used to name each side's goalkeeper on the
+finish step of a shot that has no save row (a goal). Without it, that step
+goes to the defending side's pool.}
+
+\item{shot_chain}{If \code{TRUE} (default), the row after a shot starts from 0,
+the shot's end, instead of the model's restart value, so no value appears
+between them unbooked (309 goals a season on ENG 2024-25). Needs \code{epv} on
+the actions; ignored without it.}
 
 \item{verbose}{Print a summary. Default \code{TRUE}.}
 }

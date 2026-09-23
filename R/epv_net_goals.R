@@ -262,6 +262,14 @@ ng_build_adjacency <- function(events, verbose = TRUE) {
 #'   absolute ledger value against the team convention's 39.1%, because it never
 #'   books the conceding half -- which is most of what nobody is named for. Kept
 #'   for comparison.
+#' @param lineups Optional lineups (`match_id`, `team_id`, `player_id`,
+#'   `position`, `sub_off_minute`). Used to name each side's goalkeeper on the
+#'   finish step of a shot that has no save row (a goal). Without it, that step
+#'   goes to the defending side's pool.
+#' @param shot_chain If `TRUE` (default), the row after a shot starts from 0,
+#'   the shot's end, instead of the model's restart value, so no value appears
+#'   between them unbooked (309 goals a season on ENG 2024-25). Needs `epv` on
+#'   the actions; ignored without it.
 #' @param verbose Print a summary. Default `TRUE`.
 #'
 #' @return A data.table of payments, one row per (action, recipient):

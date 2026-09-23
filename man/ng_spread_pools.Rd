@@ -9,6 +9,8 @@ ng_spread_pools(
   actions,
   lineups,
   dacts_share = 0.5,
+  keeper_pool_blame = 0,
+  keeper_pool_credit = 0,
   dacts_measure = c("act_value", "count", "named_value"),
   verbose = TRUE
 )
@@ -27,6 +29,12 @@ Needs \code{match_id}, \code{action_id}, \code{time_seconds}.}
 by each player's defensive work rather than flat. 0 is a flat spread; 1
 routes it entirely by defensive work. Default \strong{0.5} (Pete, 2026-09-21). See the note below on why
 only the credit half, and why the default is 0.}
+
+\item{keeper_pool_blame, keeper_pool_credit}{A goalkeeper's weight in the
+\strong{defensive pool's} blame and credit halves, relative to an outfield
+player's 1. Both default 0: keepers are named on every goal and save by the
+shot split, so what is left in the defensive pool is outfield work. Needs
+\code{position} in \code{lineups} to find keepers.}
 
 \item{dacts_measure}{What "defensive work" means.
 \code{"act_value"} (the default) weights each act by how much its own
