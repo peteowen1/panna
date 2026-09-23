@@ -1109,3 +1109,49 @@ test_that("shot aftermath: a shot that ends a match does not read the next match
   expect_equal(pay[match_id == "m1" & action_id == 2L & entry == "offence", sum(value_own)],
                -0.136, tolerance = 1e-12)
 })
+
+# ---------------------------------------------------------------------------
+# Duel loser (loser_share, 2026-09-23). The duel's result is priced on the row
+# that delivered the ball into it, so the beaten player is named there, on the
+# losing side, taking loser_share of what that side's pool held.
+test_that("duel loser: an attacker wins the header, the beaten defender is named on the cross", {
+  # H's h1 crosses (+0.04, a success: defence side all pool, -0.04); h2 wins
+  # the header over A's a1. With loser_share 0.5, a1 takes -0.02, the pool -0.02.
+  d <- data.frame(match_id = "m1", action_id = 1:3, team_id = c("H", "H", "A"),
+                  player_id = c("h1", "h2", "a1"), action_type = c("cross", "aerial", "clearance"),
+                  result = "success", epv_delta = c(0.04, 0.01, 0.00),
+                  opponent_player_id = c(NA, "a1", NA), stringsAsFactors = FALSE)
+  pay <- ng_build_ledger(d, fixtures = ng_fixture_fixtures(), shares = ng_shares(loser_share = 0.5),
+                         verbose = FALSE)
+  r1 <- pay[action_id == 1L & entry == "defence"]
+  expect_equal(r1[player_id %in% "a1" & role == "duel_loser", value_own], -0.02, tolerance = 1e-12)
+  expect_equal(r1[is.na(player_id), sum(value_own)], -0.02, tolerance = 1e-12)
+  expect_equal(sum(r1$value_own), -0.04, tolerance = 1e-12)
+  # never on the duel row itself
+  expect_false(any(pay[action_id == 2L]$role == "duel_loser"))
+  # loser_share 0 (the default) names nobody
+  p0 <- ng_build_ledger(d, fixtures = ng_fixture_fixtures(), verbose = FALSE)
+  expect_false(any(p0$role == "duel_loser"))
+})
+
+test_that("duel loser: a defender wins the header off the cross, the beaten attacker is named on it", {
+  # H's h1 crosses and A's a1 wins the header over H's h3: the cross failed
+  # (-0.03). Offence side: h1 exec_blame 0.3 = -0.009, pool -0.021; h3 takes
+  # half the pool's share, -0.0105.
+  d <- data.frame(match_id = "m1", action_id = 1:3, team_id = c("H", "A", "H"),
+                  player_id = c("h1", "a1", "h3"), action_type = c("cross", "aerial", "pass"),
+                  result = c("fail", "success", "success"), epv_delta = c(-0.03, 0.01, 0.00),
+                  opponent_player_id = c(NA, "h3", NA), possession_change = c(TRUE, TRUE, FALSE),
+                  stringsAsFactors = FALSE)
+  pay <- ng_build_ledger(d, fixtures = ng_fixture_fixtures(), shares = ng_shares(loser_share = 0.5),
+                         verbose = FALSE)
+  r1 <- pay[action_id == 1L & entry == "offence"]
+  expect_equal(r1[player_id %in% "h1", value_own], -0.009, tolerance = 1e-12)
+  expect_equal(r1[player_id %in% "h3" & role == "duel_loser", value_own], -0.0105, tolerance = 1e-12)
+  expect_equal(sum(r1$value_own), -0.03, tolerance = 1e-12)
+  # a loser who never played for that team is not paid under it
+  d$player_id[3] <- "zz"
+  p2 <- ng_build_ledger(d, fixtures = ng_fixture_fixtures(), shares = ng_shares(loser_share = 0.5),
+                        verbose = FALSE)
+  expect_false(any(p2$role == "duel_loser"))
+})

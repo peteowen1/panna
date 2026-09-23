@@ -698,6 +698,13 @@ ng_check_conservation <- function(pay, fixtures, verbose = TRUE) {
 #'   for parrying it back into play.
 #' @param off_pool Share of retained attacking value going to the attacking team
 #'   pool, for the runs and structure that created the option. Torp D9.
+#' @param loser_share Share of the pooled value on the losing side of the row
+#'   that delivered the ball into a won aerial or tackle, moved to the player
+#'   who lost the duel (`opponent_player_id` on the duel row). The duel's
+#'   result is priced on that delivery row, not on the duel row -- SPADL drops
+#'   the loser's own row -- so that is where he belongs: naming him on the duel
+#'   row would credit a beaten defender whenever the winner's next touch was
+#'   poor. 0 (the default) names nobody; see `ng_duel_loser_ab.R`.
 #' @param shot_keep Share of every step of a shot (strike, finish, aftermath)
 #'   the shooter keeps, the SAME whether the step gains or loses (Pete,
 #'   2026-09-23). Splitting by sign -- 90% of a gain, 30% of a loss -- paid
@@ -710,9 +717,11 @@ ng_check_conservation <- function(pay, fixtures, verbose = TRUE) {
 #' @family net_goals
 #' @export
 ng_shares <- function(exec_blame = 0.30, named_share = 0.70,
-                      reb_named = 0.40, off_pool = 0.10, shot_keep = 0.90) {
+                      reb_named = 0.40, off_pool = 0.10, shot_keep = 0.90,
+                      loser_share = 0) {
   s <- list(exec_blame = exec_blame, named_share = named_share,
-            reb_named = reb_named, off_pool = off_pool, shot_keep = shot_keep)
+            reb_named = reb_named, off_pool = off_pool, shot_keep = shot_keep,
+            loser_share = loser_share)
   bad <- vapply(s, function(x) !is.numeric(x) || length(x) != 1L ||
                   is.na(x) || x < 0 || x > 1, logical(1))
   if (any(bad)) {
@@ -808,6 +817,11 @@ NG_STOP_ACTIONS <- c("keeper_save")
   d[, nxt_act := shift(action_type, 1, type = "lead"), by = match_id]
   d[, nxt_player := shift(player_id, 1, type = "lead"), by = match_id]
   d[, nxt_team := shift(team_id, 1, type = "lead"), by = match_id]
+  # The next row's duel loser and result, for naming a beaten player on the
+  # row that delivered the ball into the duel (ng_shares(loser_share)).
+  if (!"opponent_player_id" %in% names(d)) d[, opponent_player_id := NA_character_]
+  d[, nxt_opp := shift(as.character(opponent_player_id), 1, type = "lead"), by = match_id]
+  d[, nxt_res := shift(result, 1, type = "lead"), by = match_id]
   d[, stopper_id := NA_character_]
   d[is_shot == TRUE & nxt_act %chin% NG_STOP_ACTIONS & nxt_team != team_id,
     stopper_id := nxt_player]
@@ -1400,6 +1414,42 @@ ng_spread_pools <- function(pay, actions, lineups, dacts_share = 0.5, keeper_poo
   add(rest & !has, NAc, def, w, "pool_def", "defence")
 
   out <- data.table::rbindlist(p, use.names = TRUE)
+
+  # ---- THE DUEL LOSER (loser_share) ---------------------------------------
+  # On a row that delivered the ball into a won aerial or tackle, the side that
+  # lost the duel has its pooled share partly named to the player who lost it:
+  # the defence of the delivery row when the deliverer's side won the duel, the
+  # offence when the other side did. Skipped when he is already named on that
+  # side, and when he never acted for that team in the match (a guard against
+  # paying a player under the wrong team).
+  if (isTRUE(sh$loser_share > 0)) {
+    lz <- d$nxt_act %chin% c("aerial", "tackle") & d$nxt_res %in% "success" &
+      !is.na(d$nxt_opp) & nzchar(d$nxt_opp) & !is.na(d$nxt_team) & !d$is_shot & !d$is_stop
+    if (any(lz)) {
+      won_by_att <- d$nxt_team[lz] == att[lz]
+      key <- data.table::data.table(
+        match_id = d$match_id[lz], action_id = d$action_id[lz],
+        entry = data.table::fifelse(won_by_att, "defence", "offence"),
+        team_id = data.table::fifelse(won_by_att, def[lz], att[lz]),
+        loser = d$nxt_opp[lz])
+      on_team <- unique(d[!is.na(player_id), .(match_id, team_id, loser = as.character(player_id))])
+      key <- key[on_team, on = c("match_id", "team_id", "loser"), nomatch = NULL]
+      already <- out[!is.na(player_id), .(match_id, action_id, entry, loser = player_id)]
+      key <- key[!already, on = c("match_id", "action_id", "entry", "loser")]
+      out[, .rid := .I]
+      pools <- out[is.na(player_id) & role %chin% c("pool_off", "pool_def")][
+        key, on = c("match_id", "action_id", "entry", "team_id"), nomatch = NULL]
+      if (nrow(pools)) {
+        moved <- pools[, .(match_id, action_id, player_id = loser, team_id,
+                           role = "duel_loser", entry, play_type,
+                           value_own = value_own * sh$loser_share)]
+        out[pools$.rid, value_own := value_own * (1 - sh$loser_share)]
+        out <- data.table::rbindlist(list(out[, !".rid"], moved), use.names = TRUE)
+      } else {
+        out[, .rid := NULL]
+      }
+    }
+  }
   out[]
 }
 
