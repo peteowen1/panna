@@ -127,8 +127,12 @@ print(dcast(p[is_pool == FALSE, .(v = round(sum(abs(value_own)), 1)), by = .(pla
 lab <- function(play_type, role) {
   data.table::fcase(
     grepl("^pool_", role),                                    "Team pool share",
-    role == "shooter",                                        "Shooting",
+    # A shot's three steps, read apart: placement is finishing skill, the finish
+    # is how keepers did against him (negative = good saves).
+    role == "shot_strike",                                    "Shooting: placement (xG to xGOT)",
+    role == "shot_finish",                                    "Shooting: against the keeper",
     role == "shot_aftermath",                                 "Shooting: what it left behind",
+    role == "shooter",                                        "Shooting: no xGOT",
     role == "receiver",                                       "Receiving a pass",
     role == "stopper_rebound",                                "Keeper: rebound after a save",
     role == "defender" & play_type == "shot",                 "Stopping shots",
@@ -189,8 +193,9 @@ setorder(w, -net)
 
 CATS <- setdiff(names(w), c("player_id", "gms", "mins", "name", "team", "pos", "net"))
 fam <- list(
-  "On the ball" = c("Passing", "Receiving a pass", "Carrying", "Take-ons", "Shooting",
-                  "Shooting: what it left behind", "Losing the ball"),
+  "On the ball" = c("Passing", "Receiving a pass", "Carrying", "Take-ons",
+                  "Shooting: placement (xG to xGOT)", "Shooting: against the keeper",
+                  "Shooting: what it left behind", "Shooting: no xGOT", "Losing the ball"),
   "Winning it back" = c("Tackles & interceptions", "Ball recoveries", "Aerial duels", "Clearances",
                         "Cutting out passes", "Defending other actions", "Fouls"),
   "Goalkeeping" = c("Stopping shots", "Keeper: handling", "Keeper: rebound after a save"),
@@ -246,7 +251,7 @@ step_of <- function(a, py) {
   st["aftermath"] <- lv[action_id == a$action_id, ledger] - sum(st)
   cand <- rbindlist(lapply(names(st), function(k) {
     x <- st[[k]]
-    keep <- if (x >= 0) 1 - sh_$off_pool else sh_$exec_blame
+    keep <- sh_$shot_keep
     data.table(step = k, v = c(x * keep, x * (1 - keep), -x, -x * sh_$named_share, -x * (1 - sh_$named_share)))
   }))
   vapply(py$value_own, function(v) cand$step[which.min(abs(cand$v - v))], character(1))
@@ -275,7 +280,8 @@ rows <- lapply(seq_len(nrow(win)), function(i) {
        payments = lapply(seq_len(nrow(py)), function(j) list(
          player = if (is.na(py$player_id[j])) NA else py$player_name[j],
          team = team_lu[team_id == py$team_id[j]]$team,
-         role = if (is.na(py$step[j])) py$role[j] else paste0(py$role[j], " · ", STEP_LAB[[py$step[j]]]),
+         role = if (is.na(py$step[j])) py$role[j] else
+           paste0(sub("^shot_.*", "shooter", py$role[j]), " · ", STEP_LAB[[py$step[j]]]),
          entry = if ("entry" %in% names(py)) py$entry[j] else NA,
          value = round(py$value_own[j], 4))))
 })

@@ -1,3 +1,20 @@
+# panna (development version)
+
+## Net goals: every step of a shot splits the same way, gain or loss
+
+`ng_shares(shot_keep = 0.90)`: the shooter keeps 90% of each step of a shot -- strike (xG to
+xGOT), finish (xGOT to the result) and aftermath -- whether it gains or loses. The old rule gave
+him 90% of a gain and 30% of a loss, and the xGOT split turns a saved shot into one big gain
+(the strike) and one big loss (the finish). On ENG 2024-25 that paid shooters +612.7 goals on
+their shot rows, funded by their teams' pools (-664.5), against league finishing of -23.7 goals
+minus xG (9,782 shots, own goals out). Now shooters are paid exactly 0.9 of their shot rows
+(-17.6). Van Dijk's saved header against Man City: +0.46 -> +0.013.
+
+The steps have their own roles (`shot_strike`, `shot_finish`, `shot_aftermath`; `shooter` for a
+shot with no xGOT, own goals included), so placement and luck against keepers read apart.
+Position means, net goals a game: strikers +0.067 -> -0.002, attacking midfielders +0.033 ->
+-0.001, defenders -0.072 -> -0.028, keepers unchanged at +0.032.
+
 # panna 0.3.65
 
 ## Net goals: a shot is worth more than its xG

@@ -4,7 +4,13 @@
 \alias{ng_shares}
 \title{Default shares for the net goals allocation}
 \usage{
-ng_shares(exec_blame = 0.3, named_share = 0.7, reb_named = 0.4, off_pool = 0.1)
+ng_shares(
+  exec_blame = 0.3,
+  named_share = 0.7,
+  reb_named = 0.4,
+  off_pool = 0.1,
+  shot_keep = 0.9
+)
 }
 \arguments{
 \item{exec_blame}{Share of a failed action's value the actor keeps as
@@ -20,6 +26,14 @@ for parrying it back into play.}
 
 \item{off_pool}{Share of retained attacking value going to the attacking team
 pool, for the runs and structure that created the option. Torp D9.}
+
+\item{shot_keep}{Share of every step of a shot (strike, finish, aftermath)
+the shooter keeps, the SAME whether the step gains or loses (Pete,
+2026-09-23). Splitting by sign -- 90\% of a gain, 30\% of a loss -- paid
+shooters +612.7 goals a season on ENG 2024-25 against +10 of actual goals
+minus xG, because the xGOT split turns a saved shot into a big gain (the
+strike) and a big loss (the finish). With one share, a shooter's shot rows
+add up to \code{shot_keep} times his real finishing.}
 }
 \value{
 A named list of shares.

@@ -486,6 +486,8 @@ test_that("the shipped defaults are the ones Pete chose", {
   expect_equal(formals(panna::ng_build_ledger)$convention[[2]], "team")
   # shot_aftermath = TRUE, decided with Pete 2026-09-23
   expect_true(formals(panna::ng_build_ledger)$shot_aftermath)
+  # one share for every step of a shot, gain or loss (Pete, 2026-09-23)
+  expect_equal(ng_shares()$shot_keep, 0.90)
   expect_equal(formals(ng_spread_pools)$dacts_share, 0.5)
   expect_equal(formals(ng_spread_pools)$dacts_measure[[2]], "act_value")
 })
@@ -884,9 +886,11 @@ test_that("a saved on-target shot pays the strike to the shooter and the save to
   pay <- ng_build_ledger(ng_fixture_shot_save(), fixtures = ng_fixture_fixtures(), verbose = FALSE)
   sh <- ng_shares()
   s <- pay[action_id == 1L]
-  # strike +0.17: shooter keeps (1 - off_pool); finish -0.20: shooter exec_blame
-  expect_equal(s[role == "shooter", sum(value_own)],
-               0.17 * (1 - sh$off_pool) + -0.20 * sh$exec_blame, tolerance = 1e-12)
+  # strike +0.17 and finish -0.20: the shooter keeps shot_keep (0.9) of EACH,
+  # gain or loss alike, so +0.153 and -0.180, and his team the other 10%.
+  expect_equal(s[role == "shot_strike", value_own], 0.153, tolerance = 1e-12)
+  expect_equal(s[role == "shot_finish", value_own], -0.180, tolerance = 1e-12)
+  expect_equal(s[entry == "offence" & role == "pool_off", sum(value_own)], 0.1 * -0.03, tolerance = 1e-12)
   # the keeper (named as the stopper) takes named_share of the save, +0.20
   expect_equal(s[role == "defender" & player_id == "k1", value_own], 0.20 * sh$named_share,
                tolerance = 1e-12)
@@ -1029,11 +1033,11 @@ test_that("shot aftermath: the shot is worth more than its xG and ends where the
   for (i in 1:4) expect_equal(def(i), -off(i), tolerance = 1e-12)
   # aftermath +0.014 is a gain: the shooter keeps (1 - off_pool), the defence pool pays it
   s <- pay[action_id == 2L]
-  expect_equal(s[role == "shot_aftermath", value_own], 0.014 * (1 - sh$off_pool), tolerance = 1e-12)
+  expect_equal(s[role == "shot_aftermath", value_own], 0.014 * 0.9, tolerance = 1e-12)
   expect_true(any(abs(s[entry == "defence" & role == "pool_def"]$value_own + 0.014) < 1e-12))
-  # the goal part runs as before: strike +0.20 kept, finish -0.30 at exec_blame
-  expect_equal(s[role == "shooter", sum(value_own)],
-               0.20 * (1 - sh$off_pool) + -0.30 * sh$exec_blame, tolerance = 1e-12)
+  # strike +0.20 and finish -0.30, the shooter keeps 0.9 of each: +0.18, -0.27
+  expect_equal(s[role == "shot_strike", value_own], 0.18, tolerance = 1e-12)
+  expect_equal(s[role == "shot_finish", value_own], -0.27, tolerance = 1e-12)
   expect_null(attr(pay, "shot_aftermath_fit")$n_fit)
 })
 
@@ -1043,7 +1047,7 @@ test_that("shot aftermath: a goal still ends at 1 and gives back the aftermath i
   sh <- ng_shares()
   # 1 - 0.136 = 0.864; goal part 1 - 0.10 = 0.90; aftermath -0.036, a loss
   expect_equal(pay[action_id == 2L & entry == "offence", sum(value_own)], 0.864, tolerance = 1e-12)
-  expect_equal(pay[action_id == 2L & role == "shot_aftermath", value_own], -0.036 * sh$exec_blame,
+  expect_equal(pay[action_id == 2L & role == "shot_aftermath", value_own], -0.036 * 0.9,
                tolerance = 1e-12)
   # the row after a goal still restarts from 0: -0.05 + -0.01
   expect_equal(pay[action_id == 3L & entry == "offence", sum(value_own)], -0.06, tolerance = 1e-12)
