@@ -698,14 +698,21 @@ ng_check_conservation <- function(pay, fixtures, verbose = TRUE) {
 #'   for parrying it back into play.
 #' @param off_pool Share of retained attacking value going to the attacking team
 #'   pool, for the runs and structure that created the option. Torp D9.
+#' @param shot_keep Share of every step of a shot (strike, finish, aftermath)
+#'   the shooter keeps, the SAME whether the step gains or loses (Pete,
+#'   2026-09-23). Splitting by sign -- 90% of a gain, 30% of a loss -- paid
+#'   shooters +612.7 goals a season on ENG 2024-25 against +10 of actual goals
+#'   minus xG, because the xGOT split turns a saved shot into a big gain (the
+#'   strike) and a big loss (the finish). With one share, a shooter's shot rows
+#'   add up to `shot_keep` times his real finishing.
 #'
 #' @return A named list of shares.
 #' @family net_goals
 #' @export
 ng_shares <- function(exec_blame = 0.30, named_share = 0.70,
-                      reb_named = 0.40, off_pool = 0.10) {
+                      reb_named = 0.40, off_pool = 0.10, shot_keep = 0.90) {
   s <- list(exec_blame = exec_blame, named_share = named_share,
-            reb_named = reb_named, off_pool = off_pool)
+            reb_named = reb_named, off_pool = off_pool, shot_keep = shot_keep)
   bad <- vapply(s, function(x) !is.numeric(x) || length(x) != 1L ||
                   is.na(x) || x < 0 || x > 1, logical(1))
   if (any(bad)) {
@@ -1306,24 +1313,21 @@ ng_spread_pools <- function(pay, actions, lineups, dacts_share = 0.5, keeper_poo
   # dropped those 106 from the row; the double-entry check caught it.
   on_target <- split & (xgt > 0 | d$result %in% "success")
   fin <- split & abs(finish) > 1e-12
-  pay_step <- function(sel, x, role = "shooter") {
-    add(sel & x >= 0, d$player_id, att, x * (1 - sh$off_pool), role, "offence")
-    add(sel & x >= 0, NAc, att, x * sh$off_pool, "pool_off", "offence")
-    add(sel & x < 0, d$player_id, att, x * sh$exec_blame, role, "offence")
-    add(sel & x < 0, NAc, att, x * (1 - sh$exec_blame), "pool_off", "offence")
+  # Every step of a shot is split the same way whatever its sign: the shooter
+  # keeps shot_keep, his team the rest (see ng_shares()). Each step has its own
+  # role so a player's placement (strike) and his luck against keepers (finish)
+  # can be read apart.
+  pay_step <- function(sel, x, role) {
+    add(sel, d$player_id, att, x * sh$shot_keep, role, "offence")
+    add(sel, NAc, att, x * (1 - sh$shot_keep), "pool_off", "offence")
   }
-  pay_step(split, strike)
-  pay_step(fin, finish)
+  pay_step(split, strike, "shot_strike")
+  pay_step(fin, finish, "shot_finish")
   has_aft <- abs(aft) > 1e-12
   pay_step(has_aft, aft, "shot_aftermath")
 
-  goal <- d$is_shot & !split & d$result %in% "success"
-  add(goal, d$player_id, att, keep, "shooter", "offence")
-  add(goal, NAc, att, v * sh$off_pool, "pool_off", "offence")
-
-  miss <- d$is_shot & !split & !(d$result %in% "success")
-  add(miss, d$player_id, att, v * sh$exec_blame, "shooter", "offence")
-  add(miss, NAc, att, v * (1 - sh$exec_blame), "pool_off", "offence")
+  # A shot with no xGOT -- own goals included -- is one step, split the same way.
+  pay_step(d$is_shot & !split, v, "shooter")
 
   # A failed action: the actor keeps exec_blame of it and his own team-mates
   # carry the rest. This is Oliver's asymmetry in its proper place -- WITHIN a

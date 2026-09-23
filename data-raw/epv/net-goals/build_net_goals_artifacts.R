@@ -127,8 +127,12 @@ print(dcast(p[is_pool == FALSE, .(v = round(sum(abs(value_own)), 1)), by = .(pla
 lab <- function(play_type, role) {
   data.table::fcase(
     grepl("^pool_", role),                                    "Team pool share",
-    role == "shooter",                                        "Shooting",
+    # A shot's three steps, read apart: placement is finishing skill, the finish
+    # is how keepers did against him (negative = good saves).
+    role == "shot_strike",                                    "Shooting: placement (xG to xGOT)",
+    role == "shot_finish",                                    "Shooting: against the keeper",
     role == "shot_aftermath",                                 "Shooting: what it left behind",
+    role == "shooter",                                        "Shooting: no xGOT",
     role == "receiver",                                       "Receiving a pass",
     role == "stopper_rebound",                                "Keeper: rebound after a save",
     role == "defender" & play_type == "shot",                 "Stopping shots",
@@ -189,8 +193,9 @@ setorder(w, -net)
 
 CATS <- setdiff(names(w), c("player_id", "gms", "mins", "name", "team", "pos", "net"))
 fam <- list(
-  "On the ball" = c("Passing", "Receiving a pass", "Carrying", "Take-ons", "Shooting",
-                  "Shooting: what it left behind", "Losing the ball"),
+  "On the ball" = c("Passing", "Receiving a pass", "Carrying", "Take-ons",
+                  "Shooting: placement (xG to xGOT)", "Shooting: against the keeper",
+                  "Shooting: what it left behind", "Shooting: no xGOT", "Losing the ball"),
   "Winning it back" = c("Tackles & interceptions", "Ball recoveries", "Aerial duels", "Clearances",
                         "Cutting out passes", "Defending other actions", "Fouls"),
   "Goalkeeping" = c("Stopping shots", "Keeper: handling", "Keeper: rebound after a save"),
@@ -223,16 +228,55 @@ rp <- merge(rp, names_lu, by = "player_id", all.x = TRUE)
 rp[, side := fifelse(value_own >= 0, "gain", "concede")]
 
 # The headline number is the LEDGER's row value (what the payments below sum
-# to on the acting side), not the model's epv_delta: after a shot the ledger
-# starts the next row from 0 (the shot chain), so the two differ there.
+# to on the acting side), not the model's epv_delta, and "from" is where the
+# ledger starts the row: a shot at its price V0 = xG + (1 - xG) * A (the shot
+# aftermath), the row after a GOAL at 0, everything else at its own value. A row
+# plus its change lands on the next row's start (checked below).
 lv <- rp[entry %in% "offence", .(ledger = sum(value_own)), by = action_id]
-prev_shot <- c(FALSE, head(win$action_type, -1) == "shot")
+af <- attr(raw, "shot_aftermath_fit")
+stopifnot(!is.null(af))
+price <- function(xg) xg + (1 - xg) * (af$intercept + af$slope * xg)
+own_goal <- function(a) a$action_type == "shot" && a$result %in% "success" && a$epv_delta < 0
+prev_goal <- c(FALSE, head(win$action_type == "shot" & win$result %in% "success", -1))
+
+# Which step of a shot each payment belongs to. The ledger books the strike
+# (xG -> xGOT), the finish (xGOT -> goal or save) and the aftermath (what the
+# shot left behind) as separate payments with the same role, so label them by
+# rebuilding the three amounts and matching each payment to one.
+sh_ <- ng_shares()
+step_of <- function(a, py) {
+  if (a$action_type != "shot" || own_goal(a) || !is.finite(a$xgot)) return(rep(NA_character_, nrow(py)))
+  xg <- a$epv; g <- as.numeric(a$result %in% "success")
+  st <- c(strike = a$xgot - xg, finish = g - a$xgot)
+  st["aftermath"] <- lv[action_id == a$action_id, ledger] - sum(st)
+  cand <- rbindlist(lapply(names(st), function(k) {
+    x <- st[[k]]
+    keep <- sh_$shot_keep
+    data.table(step = k, v = c(x * keep, x * (1 - keep), -x, -x * sh_$named_share, -x * (1 - sh_$named_share)))
+  }))
+  # The shooter's own rows carry their step in the role. Every other payment is
+  # matched to the nearest rebuilt amount, and each amount is used once: when
+  # two steps are the same size (a goal from xG 0.20 at xGOT 0.60 has strike
+  # and finish both 0.40), nearest-match alone would label both "strike".
+  out <- sub("^shot_", "", py$role)
+  out[!out %in% names(st)] <- NA_character_
+  used <- rep(FALSE, nrow(cand))
+  for (j in which(is.na(out))) {
+    d <- abs(cand$v - py$value_own[j]); d[used] <- Inf
+    i <- which.min(d); used[i] <- TRUE; out[j] <- cand$step[i]
+  }
+  out
+}
+STEP_LAB <- c(strike = "strike: xG to xGOT", finish = "finish: xGOT to the result",
+              aftermath = "what the shot left behind")
 rows <- lapply(seq_len(nrow(win)), function(i) {
   a <- win[i]
   chg <- lv[action_id == a$action_id, ledger]
   chg <- if (length(chg)) chg else a$epv_delta
-  before <- if (prev_shot[i] && a$action_type != "shot") 0 else a$epv
+  before <- if (prev_goal[i]) 0 else if (a$action_type == "shot" && !own_goal(a)) price(a$epv) else a$epv
   py <- rp[action_id == a$action_id][order(-abs(value_own))]
+  py[, step := step_of(a, py)]
+  py <- py[order(entry, match(step, names(STEP_LAB)), -abs(value_own))]
   # Opta gives every action in its own team's attacking direction (left to
   # right, 0-100). Flip the away side's so one picture holds the whole passage:
   # the home team always attacks to the right.
@@ -247,12 +291,24 @@ rows <- lapply(seq_len(nrow(win)), function(i) {
        payments = lapply(seq_len(nrow(py)), function(j) list(
          player = if (is.na(py$player_id[j])) NA else py$player_name[j],
          team = team_lu[team_id == py$team_id[j]]$team,
-         role = py$role[j], entry = if ("entry" %in% names(py)) py$entry[j] else NA,
+         role = if (is.na(py$step[j])) py$role[j] else
+           paste0(sub("^shot_.*", "shooter", py$role[j]), " · ", STEP_LAB[[py$step[j]]]),
+         entry = if ("entry" %in% names(py)) py$entry[j] else NA,
          value = round(py$value_own[j], 4))))
 })
 # Double entry, checked on the passage the page shows: in each side's OWN frame
 # the gaining side books +v and the conceding side -v, so an action's payments
 # sum to zero. (value_home does NOT: both halves point the same way for home.)
+# ... and each row's start plus its change is the next row's start, in the
+# next row's frame (a possession change flips the sign). A break here means the
+# page's "from" is wrong, not the ledger.
+st_ <- vapply(rows, function(r) r$value_before, numeric(1)); ch_ <- vapply(rows, function(r) r$change, numeric(1))
+same_ <- head(win$team_id, -1) == tail(win$team_id, -1)
+land_ <- head(st_ + ch_, -1); nxt_ <- tail(st_, -1)
+gap_ <- abs(ifelse(same_, land_ - nxt_, land_ + nxt_))
+gap_[head(win$action_type == "shot" & win$result %in% "success", -1)] <- 0   # a goal ends at 1; the kick-off restarts
+say("walkthrough chain: worst gap between a row's end and the next row's start ", signif(max(gap_), 3))
+if (max(gap_) > 1e-3) stop("walkthrough 'from' values do not chain (", max(gap_), ")")
 rv <- rp[, .(net = sum(value_own)), by = action_id]
 .de <- max(abs(rv$net))
 say("walkthrough: ", nrow(win), " actions, ", nrow(rp), " payments; worst double-entry gap ", signif(.de, 3))
