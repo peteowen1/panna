@@ -23,7 +23,15 @@ say <- function(...) { cat(format(Sys.time(), "%H:%M:%S"), ..., "\n", sep = "");
 CHUNKS  <- "data-raw/cache/epv/labeled_chunks"
 OUT     <- if (exists("PACK_OUT")) PACK_OUT else "data-raw/cache/epv/pack-2026-09"
 HOLDOUT <- "2025-2026"          # scored by the gates, never trained on by the gate models
-dir.create(file.path(OUT, "chunks_realxg"), recursive = TRUE, showWarnings = FALSE)
+# Which xG prices the EPV labels. "published" (default since 2026-09-23): the
+# xG the ledger itself prices shots with, so EPV and the ledger agree on what a
+# chance is worth by construction. On 2026-27 (unseen by both) the published
+# xG beat the pack's new one -- goals/xG 0.985 vs 0.963, headers 0.948 vs 0.853
+# (pack_gate_2026_27.R) -- because Opta's big-chance tag rate drifted up.
+LABEL_XG <- if (exists("LABEL_XG")) LABEL_XG else "published"
+LBL_DIR  <- if (LABEL_XG == "published") "chunks_pubxg" else "chunks_realxg"
+EPV_FILE <- if (LABEL_XG == "published") "epv_model_pubxg.rds" else "epv_model.rds"
+dir.create(file.path(OUT, LBL_DIR), recursive = TRUE, showWarnings = FALSE)
 ck <- function(f) file.path(OUT, f)
 
 # ---- which league-seasons: exactly the ones the chunks hold -----------------
@@ -74,7 +82,8 @@ if (!file.exists(ck("xg_model.rds"))) {
   fm <- rt_stage("xG fit (final, all)", fit_xg_model(ft, nrounds = 1000, early_stopping_rounds = 50, verbose = 0))
   saveRDS(fm, ck("xg_model.rds"))
 }
-xg_model <- readRDS(ck("xg_model.rds"))
+xg_model <- readRDS(if (LABEL_XG == "published") "data-raw/cache/epv/xg_model.rds" else ck("xg_model.rds"))
+say("EPV labels priced by the ", LABEL_XG, " xG -> ", LBL_DIR, ", ", EPV_FILE)
 
 # ---- C. xGOT: same shape, header gate ---------------------------------------
 if (!file.exists(ck("xgot_model.rds"))) {
@@ -94,7 +103,7 @@ if (!file.exists(ck("xgot_model.rds"))) {
 lk_cols <- intersect(c("match_id", "event_id", "body_part", "situation", "is_big_chance"), names(shots))
 done <- 0L
 for (i in seq_len(nrow(units))) {
-  out <- file.path(OUT, "chunks_realxg", basename(units$file[i]))
+  out <- file.path(OUT, LBL_DIR, basename(units$file[i]))
   if (file.exists(out)) next
   ch <- as.data.table(arrow::read_parquet(units$file[i]))
   lk <- as.data.frame(shots[unit_league == units$league[i] & unit_season == units$season[i], ..lk_cols])
@@ -107,12 +116,12 @@ for (i in seq_len(nrow(units))) {
   done <- done + 1L
   if (done %% 20 == 0) say("  relabelled ", done, " chunks")
 }
-say("relabel stage complete: ", length(list.files(file.path(OUT, "chunks_realxg"))), " chunks")
+say("relabel stage complete: ", length(list.files(file.path(OUT, LBL_DIR))), " chunks")
 
 # ---- E. EPV, the canonical recipe on the re-priced chunks -------------------
-if (!file.exists(ck("epv_model.rds"))) {
+if (!file.exists(ck(EPV_FILE))) {
   set.seed(1)
-  files <- list.files(file.path(OUT, "chunks_realxg"), pattern = "parquet$", full.names = TRUE)
+  files <- list.files(file.path(OUT, LBL_DIR), pattern = "parquet$", full.names = TRUE)
   dat <- rt_stage("EPV training rows", rbindlist(lapply(files, function(f) {
     d <- as.data.table(arrow::read_parquet(f))
     if (nrow(d) > 1) d <- d[sample(.N, ceiling(.N * 0.35))]
@@ -124,12 +133,12 @@ if (!file.exists(ck("epv_model.rds"))) {
   say("EPV training rows ", format(nrow(dat), big.mark = ","))
   m <- rt_stage("EPV fit", fit_epv_model(dat, dat, method = "xg", nrounds = 1000, early_stopping_rounds = 50, verbose = 0))
   m$panna_metadata$feature_mode <- "simple"
-  m$panna_metadata$labels <- "next shot's xG from pack-2026-09 xg_model.rds (real xG, repaired situations)"
-  saveRDS(m, ck("epv_model.rds"))
+  m$panna_metadata$labels <- paste0("next shot's xG from the ", LABEL_XG, " xG model (not estimate_simple_xg)")
+  saveRDS(m, ck(EPV_FILE))
 }
 
 # ---- F. what moved: label means by the kind of shot that ends the label -----
-new <- readRDS(ck("epv_model.rds")); old <- readRDS("data-raw/cache/epv/epv_model_xg_clean_full.rds")
+new <- readRDS(ck(EPV_FILE)); old <- readRDS("data-raw/cache/epv/epv_model_xg_clean_full.rds")
 fc <- old$panna_metadata$feature_cols
 mkrow <- function(sx, sy, act) {
   d2g <- sqrt((100 - sx)^2 + (50 - sy)^2)
@@ -147,5 +156,5 @@ spots[, `:=`(old = round(sapply(seq_len(.N), function(i) predict(old$model, mkro
              new = round(sapply(seq_len(.N), function(i) predict(new$model, mkrow(x[i], y[i], act[i]))), 3))]
 say("EPV state values, old (position-only labels) vs new (real-xG labels); ENG, time 0.9:")
 print(spots[, .(spot, old, new)])
-fwrite(spots, ck("epv_spots.csv"))
+fwrite(spots, ck(sub(".rds", "_spots.csv", EPV_FILE, fixed = TRUE)))
 say("done. Outputs in ", OUT)
