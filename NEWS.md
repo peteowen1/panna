@@ -1,5 +1,21 @@
 # panna 0.3.62 (dev)
 
+## Net goals: the xGOT shot split, unbroken value after shots, keepers out of the defensive pool
+
+- **Shot chain** (`ng_build_ledger(shot_chain = TRUE)`): the row after a shot starts from 0 (the
+  shot's end) instead of the model's restart value. 309 goals of |value| a season used to appear
+  there booked to nobody; before reconciliation the ledger now lands a median 0.014 goals from each
+  team's goal difference (was 0.198), and the reconciliation moves 0.5% of value (was 7.6%).
+- **xGOT split**: a shot with xGOT is two steps. The strike (xG → xGOT, or → 0 off target) is the
+  shooter's; the finish (xGOT → goal, save or live rebound) is the keeper duel, with the keeper named
+  for 70% (the saver, else the side's keeper from `lineups`). Each row still books exactly its value.
+- **Keepers sit out the defensive pool** (`ng_spread_pools(keeper_pool_blame = 0, keeper_pool_credit
+  = 0)`): they are now named on every goal and save, so what is left in that pool is outfield work.
+- Step 10b adds xGOT and lineups to the ledger, and skips a league's net goals rather than publish
+  them if its shots lack xGOT.
+- Page generator `data-raw/epv/net-goals/build_net_goals_artifacts.R` (per-player play types and a
+  walkthrough, in the page shape torp uses) and real-season edge-case checks `ng_scenarios.R`.
+
 ## `net_goals` published into game logs
 
 Step 10b now joins three additive columns onto every player-match row:
