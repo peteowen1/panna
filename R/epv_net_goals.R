@@ -274,6 +274,7 @@ ng_build_adjacency <- function(events, verbose = TRUE) {
 ng_build_ledger <- function(spadl_with_epv, adj = NULL, fixtures,
                             allocate = TRUE, shares = ng_shares(),
                             convention = c("team", "margin"),
+                            lineups = NULL, shot_chain = TRUE,
                             verbose = TRUE) {
   convention <- match.arg(convention)
   dt <- data.table::as.data.table(spadl_with_epv)
@@ -302,6 +303,47 @@ ng_build_ledger <- function(spadl_with_epv, adj = NULL, fixtures,
   }
 
   dt[, is_home := team_id == home_team_id]
+
+  # THE SHOT CHAIN (Pete, 2026-09-23). A shot is valued at its xG and ends at 1
+  # or 0, but the next row then RESTARTED from the model's own value for that
+  # state, so the value between the shot's end and that restart was booked to
+  # nobody: 337 goals of |value| on ENG 2024-2025, 4% of all value moved, most
+  # of it on keeper-save rows. The row after a shot now starts from 0, the
+  # shot's end, so a save that parries the ball to an attacker is charged the
+  # whole rebound and the value runs unbroken. A shot after a shot keeps its own
+  # xG start (a rebound shot is a new chance, priced by its own xG).
+  if (isTRUE(shot_chain) && "epv" %in% names(dt)) {
+    data.table::setorder(dt, match_id, action_id)
+    dt[, .prev_shot := data.table::shift(action_type) %in% "shot", by = match_id]
+    fix <- dt$.prev_shot & dt$action_type != "shot" & is.finite(dt$epv) & is.finite(dt$epv_delta)
+    dt[fix, epv_delta := epv + epv_delta]
+    if (isTRUE(verbose)) {
+      cli::cli_alert_info(
+        "Shot chain: {format(sum(fix), big.mark = ',')} row{?s} after a shot now start from 0 ({round(sum(abs(dt$epv[fix])), 1)} goals that used to go unbooked).")
+    }
+    dt[, .prev_shot := NULL]
+  }
+
+  # Each side's goalkeeper, for the goal step of the shot split below: a goal
+  # has no save row to name him from. The starting keeper, until he is
+  # substituted; after that nobody is named and the blame goes to the pool.
+  if (!is.null(lineups)) {
+    lu <- data.table::as.data.table(lineups)
+    if (all(c("match_id", "team_id", "player_id", "position") %in% names(lu))) {
+      gk <- lu[position %chin% "Goalkeeper",
+               .(match_id, def_team_id = team_id, keeper_id = as.character(player_id),
+                 keeper_off = if ("sub_off_minute" %in% names(lu)) as.numeric(sub_off_minute) else NA_real_)]
+      gk <- unique(gk, by = c("match_id", "def_team_id"))
+      dt[, def_team_id := data.table::fifelse(is_home, away_team_id, home_team_id)]
+      dt <- merge(dt, gk, by = c("match_id", "def_team_id"), all.x = TRUE)
+      if ("time_seconds" %in% names(dt)) {
+        dt[!is.na(keeper_off) & keeper_off > 0 & as.numeric(time_seconds) / 60 > keeper_off,
+           keeper_id := NA_character_]
+      }
+      dt[, c("def_team_id", "keeper_off") := NULL]
+      data.table::setorder(dt, match_id, action_id)
+    }
+  }
 
   # Attach the true next actor where the caller supplied one. `original_event_id`
   # is SPADL's link back to the raw feed.
@@ -730,6 +772,11 @@ NG_STOP_ACTIONS <- c("keeper_save")
 #'   Needs `match_id`, `action_id`, `time_seconds`.
 #' @param lineups Opta lineups with `match_id`, `player_id`, `team_id`,
 #'   `is_starter`, `sub_on_minute`, `sub_off_minute`.
+#' @param keeper_pool_blame,keeper_pool_credit A goalkeeper's weight in the
+#'   **defensive pool's** blame and credit halves, relative to an outfield
+#'   player's 1. Both default 0: keepers are named on every goal and save by the
+#'   shot split, so what is left in the defensive pool is outfield work. Needs
+#'   `position` in `lineups` to find keepers.
 #' @param dacts_share How much of the **defensive pool's credit half** to route
 #'   by each player's defensive work rather than flat. 0 is a flat spread; 1
 #'   routes it entirely by defensive work. Default **0.5** (Pete, 2026-09-21). See the note below on why
@@ -757,7 +804,8 @@ NG_STOP_ACTIONS <- c("keeper_save")
 #'
 #' @family net_goals
 #' @export
-ng_spread_pools <- function(pay, actions, lineups, dacts_share = 0.5,
+ng_spread_pools <- function(pay, actions, lineups, dacts_share = 0.5, keeper_pool_blame = 0,
+                            keeper_pool_credit = 0,
                             dacts_measure = c("act_value", "count", "named_value"),
                             verbose = TRUE) {
   dacts_measure <- match.arg(dacts_measure)
@@ -823,6 +871,7 @@ ng_spread_pools <- function(pay, actions, lineups, dacts_share = 0.5,
   lu <- data.table::as.data.table(lineups)[
     , .(match_id, player_id, team_id,
         is_starter = is_starter %in% TRUE,
+        is_keeper = if ("position" %in% names(lineups)) position %in% "Goalkeeper" else FALSE,
         on = suppressWarnings(as.numeric(sub_on_minute)),
         off = suppressWarnings(as.numeric(sub_off_minute)),
         mins = suppressWarnings(as.numeric(minutes_played)))]
@@ -872,7 +921,26 @@ ng_spread_pools <- function(pay, actions, lineups, dacts_share = 0.5,
     j[tilt, w := (1 - dacts_share) * flat + dacts_share * dshare]
   }
 
+  # KEEPERS AND THE DEFENSIVE POOL'S BLAME (Pete, 2026-09-23). Once the shot
+  # split names the keeper on every goal and save, what is left in the
+  # defensive pool's blame half is unnamed outfield work -- pressure, marking,
+  # the run nobody tracked. Sharing it with the keeper as well charged him for
+  # other players' defending, and with saves and goals netting to about 0 for
+  # an average keeper it left every keeper reading negative (-0.23 a game,
+  # 2024-25) purely by position. Excluding him from the blame alone overshot to
+  # +0.23 (he still took a full share of the credit), and the same reasoning
+  # covers credit: unnamed defensive credit is outfield pressure too. So by
+  # default he sits out the defensive pool entirely (`keeper_pool_blame`,
+  # `keeper_pool_credit` both 0): keepers -0.134 a game, defenders -0.044,
+  # strikers +0.061. What is left for keepers is mostly the OFFENSIVE pool
+  # (-0.179), an open question for Pete. A substitute keeper is listed as
+  # "Substitute" in the feed and is not recognised (rare).
+  kb <- j$is_keeper & j$entry %in% "defence" & j$half %in% "blame"
+  j[kb, w := w * keeper_pool_blame]
+  kc <- j$is_keeper & j$entry %in% "defence" & j$half %in% "credit"
+  j[kc, w := w * keeper_pool_credit]
   j[, wsum := sum(w), by = .(match_id, team_id, role, entry, half, period_id, mbin)]
+  j[wsum <= 0, `:=`(w = 1, wsum = .N), by = .(match_id, team_id, role, entry, half, period_id, mbin)]
   n_on <- j[, .(n_on = .N), by = .(match_id, team_id, role, entry, half, period_id, mbin)]
   j <- merge(j, n_on, by = c("match_id", "team_id", "role", "entry", "half", "period_id", "mbin"))
   j[, `:=`(value_home = value_home * w / wsum, value_own = value_own * w / wsum)]
@@ -1009,11 +1077,42 @@ ng_spread_pools <- function(pay, actions, lineups, dacts_share = 0.5,
   # ---- OFFENCE: +v to the side that acted --------------------------------
   keep <- v * (1 - sh$off_pool)
 
-  goal <- d$is_shot & d$result %in% "success"
+  # THE xGOT SPLIT (Pete, 2026-09-23). Where a shot has xGOT, its value
+  # (outcome - xG) is two steps: the STRIKE, xG -> xGOT (0 off target), which
+  # is the shooter's; and the FINISH, xGOT -> 1 (goal) or -> 0 (saved), which is
+  # the keeper's duel. Each step is split like any action of its sign: a gain
+  # mostly to the shooter, a loss mostly to his team. `finish` is v - strike, so
+  # the two always add to the row. Own goals and shots without xGOT keep the
+  # single-step rule below.
+  og <- if ("is_own_goal" %in% names(d)) d$is_own_goal %in% TRUE else rep(FALSE, n)
+  xg0 <- if ("epv" %in% names(d)) d$epv else rep(NA_real_, n)
+  xgt <- if ("xgot" %in% names(d)) d$xgot else rep(NA_real_, n)
+  split <- d$is_shot & !og & is.finite(xg0) & is.finite(xgt)
+  strike <- data.table::fifelse(split, xgt - xg0, 0)
+  finish <- data.table::fifelse(split, v - strike, 0)
+  # The FINISH is whatever happened after the strike, and it is paid whenever it
+  # is not zero: a goal (-> 1), a save (-> 0), or a live rebound. The last one
+  # is real: when a shot is followed by another shot, calculate_action_epv()
+  # gives the first the rebound's xG as its end value (106 shots on ENG
+  # 2024-25), so an off-target or blocked shot can finish well above 0 -- the
+  # ball stayed live. An earlier version paid the finish only on target and
+  # dropped those 106 from the row; the double-entry check caught it.
+  on_target <- split & (xgt > 0 | d$result %in% "success")
+  fin <- split & abs(finish) > 1e-12
+  pay_step <- function(sel, x) {
+    add(sel & x >= 0, d$player_id, att, x * (1 - sh$off_pool), "shooter", "offence")
+    add(sel & x >= 0, NAc, att, x * sh$off_pool, "pool_off", "offence")
+    add(sel & x < 0, d$player_id, att, x * sh$exec_blame, "shooter", "offence")
+    add(sel & x < 0, NAc, att, x * (1 - sh$exec_blame), "pool_off", "offence")
+  }
+  pay_step(split, strike)
+  pay_step(fin, finish)
+
+  goal <- d$is_shot & !split & d$result %in% "success"
   add(goal, d$player_id, att, keep, "shooter", "offence")
   add(goal, NAc, att, v * sh$off_pool, "pool_off", "offence")
 
-  miss <- d$is_shot & !(d$result %in% "success")
+  miss <- d$is_shot & !split & !(d$result %in% "success")
   add(miss, d$player_id, att, v * sh$exec_blame, "shooter", "offence")
   add(miss, NAc, att, v * (1 - sh$exec_blame), "pool_off", "offence")
 
@@ -1059,10 +1158,30 @@ ng_spread_pools <- function(pay, actions, lineups, dacts_share = 0.5,
     !is.na(d$stopper_id) & d$is_shot, d$stopper_id,
     data.table::fifelse(d$is_turnover, d$winner_id, NA_character_))
 
-  has <- !is.na(named)
+  # Split shots, defending side. STRIKE (-strike): a named stopper on a shot
+  # that was NOT on target is a blocker, and takes named_share; otherwise the
+  # team pool. FINISH (-finish, on target only): the keeper takes named_share --
+  # the saver where the feed names one, else the side's keeper from the lineup
+  # (a goal has no save row) -- and the pool the rest.
+  kp <- if ("keeper_id" %in% names(d)) d$keeper_id else NAc
+  blocker <- data.table::fifelse(split & !on_target, d$stopper_id, NA_character_)
+  add(split & !is.na(blocker), blocker, def, -strike * sh$named_share, "defender", "defence")
+  add(split & !is.na(blocker), NAc, def, -strike * (1 - sh$named_share), "pool_def", "defence")
+  add(split & is.na(blocker), NAc, def, -strike, "pool_def", "defence")
+  # Who is named on the finish: the stopper the feed names; failing that, the
+  # side's keeper when the shot was on target or scored; otherwise nobody.
+  saver <- data.table::fifelse(!is.na(d$stopper_id), d$stopper_id,
+                               data.table::fifelse(on_target, kp, NA_character_))
+  add(fin & !is.na(saver), saver, def, -finish * sh$named_share, "defender", "defence")
+  add(fin & !is.na(saver), NAc, def, -finish * (1 - sh$named_share), "pool_def", "defence")
+  add(fin & is.na(saver), NAc, def, -finish, "pool_def", "defence")
+
+  named[split] <- NA_character_
+  rest <- !split
+  has <- rest & !is.na(named)
   add(has, named, def, w * sh$named_share, "defender", "defence")
   add(has, NAc, def, w * (1 - sh$named_share), "pool_def", "defence")
-  add(!has, NAc, def, w, "pool_def", "defence")
+  add(rest & !has, NAc, def, w, "pool_def", "defence")
 
   out <- data.table::rbindlist(p, use.names = TRUE)
   out[]

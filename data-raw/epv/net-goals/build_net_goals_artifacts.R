@@ -30,7 +30,7 @@ OUT_DIR  <- "data-raw/cache/epv/net-goals"   # gitignored
 # Bump CACHE_VERSION whenever the cached contents change (v2 added the action
 # coordinates the walkthrough's pitch plot needs), so an old cache is rebuilt
 # rather than read with columns missing.
-CACHE_VERSION <- 2L
+CACHE_VERSION <- 5L   # v5: keepers sit out the whole defensive pool (v4 blame only; v3 xGOT)
 x <- if (file.exists(CACHE)) readRDS(CACHE) else NULL
 if (!is.null(x) && identical(x$cache_version, CACHE_VERSION)) {
   say("reading cached ledger: ", CACHE, " (delete it to rebuild from live code)")
@@ -51,14 +51,24 @@ if (!is.null(x) && identical(x$cache_version, CACHE_VERSION)) {
                               xg_model = xg_model, league = LEAGUE, season = SEASON,
                               shot_lookup = shot_lk)
   ep  <- as.data.table(add_xpass_to_spadl(ep, xpass_model))
+  # xGOT for the shot split (strike xG -> xGOT, finish xGOT -> outcome). Same
+  # call as the xmetrics pipeline: shot events carry the goal-mouth point SPADL
+  # drops, plus situation / blocked / body part so it matches training.
+  # The published model (pannamodels), not the local cache: the cached
+  # data-raw/cache/epv/xgot_model.rds is a pre-2026-09-03 build.
+  xgot_model <- load_xgot_model()
+  shot_ev <- as.data.frame(load_opta_shot_events(LEAGUE, season = SEASON, source = "local"))
+  lk <- c("match_id", "event_id", "type_id", "goalmouth_y", "goalmouth_z",
+          intersect(c("situation", "is_blocked", "body_part"), names(shot_ev)))
+  ep  <- as.data.table(add_xgot_to_spadl(ep, xgot_model, shot_ev[, lk]))
   fx <- as.data.table(load_opta_fixtures(LEAGUE, season = SEASON, source = "local"))[
     , .(match_id, home_team, away_team, home_team_id, away_team_id, home_score, away_score)]
   adj <- ng_build_adjacency(events, verbose = FALSE)
-  raw <- ng_build_ledger(ep, adj = adj, fixtures = fx, verbose = FALSE)
+  raw <- ng_build_ledger(ep, adj = adj, fixtures = fx, lineups = lineups, verbose = TRUE)
   pay <- ng_spread_pools(raw, ep, lineups, verbose = FALSE)
   keep_ep <- intersect(c("match_id", "action_id", "period_id", "time_seconds", "team_id",
                          "player_id", "player_name", "action_type", "result", "epv",
-                         "epv_delta", "xpass", "xg", "start_x", "start_y", "end_x", "end_y"),
+                         "epv_delta", "xpass", "xg", "xgot", "start_x", "start_y", "end_x", "end_y"),
                        names(ep))
   x <- list(cache_version = CACHE_VERSION, ep = ep[, ..keep_ep], lineups = lineups, fx = fx, raw = raw, pay = pay,
             positions = as.data.table(get_player_positions(lineups, ep)))

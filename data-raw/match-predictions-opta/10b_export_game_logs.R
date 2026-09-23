@@ -496,11 +496,27 @@ validate_game_log_schema <- function(dt, league, season) {
           stop(sprintf("xpass on only %d of %d passes", n_pass_xp,
                        sum(spadl_ng$action_type == "pass")))
         }
+        # xGOT and lineups for the shot split (strike xG -> xGOT, finish
+        # xGOT -> outcome, keeper named on goals and saves). The ledger's
+        # keeper pool rule assumes the split ran, so publishing without it
+        # would have keepers credited for saves, never blamed for goals, and
+        # out of the pool blame too. Required, not optional: a league without
+        # xGOT on its shots drops its net goals columns instead.
+        ng_xgot_model <- load_xgot_model()
+        ng_shots <- as.data.frame(load_opta_shot_events(league, season = league_season))
+        ng_lk <- c("match_id", "event_id", "type_id", "goalmouth_y", "goalmouth_z",
+                   intersect(c("situation", "is_blocked", "body_part"), names(ng_shots)))
+        spadl_ng <- add_xgot_to_spadl(spadl_ng, ng_xgot_model, ng_shots[, ng_lk])
+        is_shot <- spadl_ng$action_type == "shot"
+        if (sum(is_shot) > 0 && mean(!is.na(spadl_ng$xgot[is_shot])) < 0.95) {
+          stop(sprintf("xGOT on only %d of %d shots", sum(!is.na(spadl_ng$xgot[is_shot])),
+                       sum(is_shot)))
+        }
         ng_fx <- as.data.frame(load_opta_fixtures(league, season = league_season,
                                                   source = "local"))
         ng_pay <- ng_build_ledger(spadl_ng,
                                   adj = ng_build_adjacency(events, verbose = FALSE),
-                                  fixtures = ng_fx, verbose = FALSE)
+                                  fixtures = ng_fx, lineups = lineups, verbose = FALSE)
         ng_pay <- ng_spread_pools(ng_pay, spadl_ng, lineups, verbose = FALSE)
         ng_pg  <- data.table::as.data.table(
           ng_player_game(ng_pay, lineups, verbose = FALSE))

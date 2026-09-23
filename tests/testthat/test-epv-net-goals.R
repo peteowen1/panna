@@ -849,3 +849,112 @@ test_that("ng_reconcile_margin aborts rather than guessing when a half is missin
                    home_score = 1, away_score = 0)
   expect_error(ng_reconcile_margin(ng, fx, verbose = FALSE), "epv_defensive")
 })
+
+
+# =============================================================================
+# The xGOT shot split and the shot chain (Pete, 2026-09-23), on his worked
+# example: a shot worth xG 0.03, struck on target at xGOT 0.20, saved, and the
+# attack regathers at 0.04.
+# =============================================================================
+ng_fixture_shot_save <- function(result = "fail", xgot = 0.20) {
+  data.frame(
+    match_id = "m1", action_id = 1:3, original_event_id = 1:3,
+    team_id = c("H", "A", "H"), player_id = c("h1", "k1", "h2"),
+    action_type = c("shot", "keeper_save", "pass"),
+    result = c(result, "success", "success"),
+    epv = c(0.03, -0.03, 0.04),
+    # shot: outcome - xG; save (keeper's frame): the model's -0.03 -> -0.04;
+    # pass: whatever, it is not under test
+    epv_delta = c(if (result == "success") 0.97 else -0.03, -0.01, 0.01),
+    xgot = c(xgot, NA, NA),
+    stringsAsFactors = FALSE)
+}
+
+test_that("a saved on-target shot pays the strike to the shooter and the save to the keeper", {
+  pay <- ng_build_ledger(ng_fixture_shot_save(), fixtures = ng_fixture_fixtures(), verbose = FALSE)
+  sh <- ng_shares()
+  s <- pay[action_id == 1L]
+  # strike +0.17: shooter keeps (1 - off_pool); finish -0.20: shooter exec_blame
+  expect_equal(s[role == "shooter", sum(value_own)],
+               0.17 * (1 - sh$off_pool) + -0.20 * sh$exec_blame, tolerance = 1e-12)
+  # the keeper (named as the stopper) takes named_share of the save, +0.20
+  expect_equal(s[role == "defender" & player_id == "k1", value_own], 0.20 * sh$named_share,
+               tolerance = 1e-12)
+  # each side still books exactly the row's value, -0.03 / +0.03
+  expect_equal(s[entry == "offence", sum(value_own)], -0.03, tolerance = 1e-12)
+  expect_equal(s[entry == "defence", sum(value_own)], 0.03, tolerance = 1e-12)
+})
+
+test_that("the row after a shot starts from 0, so the rebound is booked in full", {
+  on <- ng_build_ledger(ng_fixture_shot_save(), fixtures = ng_fixture_fixtures(), verbose = FALSE)
+  off <- ng_build_ledger(ng_fixture_shot_save(), fixtures = ng_fixture_fixtures(),
+                         shot_chain = FALSE, verbose = FALSE)
+  # keeper's side of the save row: -0.03 + -0.01 = -0.04 (attack regathered at 0.04)
+  expect_equal(on[action_id == 2L & entry == "offence", sum(value_own)], -0.04, tolerance = 1e-12)
+  expect_equal(off[action_id == 2L & entry == "offence", sum(value_own)], -0.01, tolerance = 1e-12)
+  # a shot's own row is never restarted
+  expect_equal(on[action_id == 1L & entry == "offence", sum(value_own)], -0.03, tolerance = 1e-12)
+})
+
+test_that("a goal blames the side's keeper from the lineup, and off target nobody is named", {
+  d <- ng_fixture_shot_save(result = "success")[1, ]
+  lu <- data.frame(match_id = "m1", team_id = "A", player_id = "gkA",
+                   position = "Goalkeeper", sub_off_minute = NA_real_)
+  pay <- ng_build_ledger(d, fixtures = ng_fixture_fixtures(), lineups = lu, verbose = FALSE)
+  sh <- ng_shares()
+  # finish = 0.97 - 0.17 = 0.80 (xGOT 0.20 -> 1): keeper blamed named_share of it
+  expect_equal(pay[player_id == "gkA", value_own], -0.80 * sh$named_share, tolerance = 1e-12)
+  expect_equal(pay[entry == "defence", sum(value_own)], -0.97, tolerance = 1e-12)
+
+  off <- ng_fixture_shot_save(xgot = 0)[1, ]
+  p2 <- ng_build_ledger(off, fixtures = ng_fixture_fixtures(), lineups = lu, verbose = FALSE)
+  expect_false(any(p2$player_id %in% "gkA"))                 # no keeper step off target
+  expect_equal(p2[entry == "offence", sum(value_own)], -0.03, tolerance = 1e-12)
+})
+
+test_that("a deflected goal (xGOT 0, not on target) still pays its finish", {
+  d <- ng_fixture_shot_save(result = "success", xgot = 0)[1, ]
+  pay <- ng_build_ledger(d, fixtures = ng_fixture_fixtures(), verbose = FALSE)
+  expect_equal(pay[entry == "offence", sum(value_own)], 0.97, tolerance = 1e-12)
+  expect_equal(pay[entry == "defence", sum(value_own)], -0.97, tolerance = 1e-12)
+})
+
+test_that("a missed shot that rebounds to a second shot books its whole value", {
+  # the first shot misses (xGOT 0) but its value runs to the rebound's xG 0.81,
+  # which is what calculate_action_epv() gives a shot followed by a shot
+  d <- data.frame(match_id = "m1", action_id = 1:2, original_event_id = 1:2,
+                  team_id = "H", player_id = c("h1", "h2"), action_type = "shot",
+                  result = c("fail", "success"), epv = c(0.05, 0.81),
+                  epv_delta = c(0.76, 0.19), xgot = c(0, 0.94), stringsAsFactors = FALSE)
+  pay <- ng_build_ledger(d, fixtures = ng_fixture_fixtures(), verbose = FALSE)
+  expect_equal(pay[action_id == 1L & entry == "offence", sum(value_own)], 0.76, tolerance = 1e-12)
+  expect_equal(pay[action_id == 1L & entry == "defence", sum(value_own)], -0.76, tolerance = 1e-12)
+})
+
+test_that("keepers take no share of the defensive pool's blame; team totals hold", {
+  d <- ng_fixture_spadl()
+  fxt <- ng_fixture_fixtures()
+  lineup <- data.frame(
+    match_id = "m1", player_id = c(paste0("h", 1:11), paste0("a", 1:11)),
+    team_id = rep(c("H", "A"), each = 11), is_starter = TRUE, minutes_played = 90,
+    sub_on_minute = 0, sub_off_minute = 0,
+    position = rep(c("Goalkeeper", rep("Defender", 10)), 2), stringsAsFactors = FALSE)
+  acts <- transform(d, time_seconds = c(10, 20, 65, 90), period_id = 1L)
+  pay <- ng_build_ledger(d, fixtures = fxt, verbose = FALSE)
+  # A's defensive pool holds blame (H's gains) and some credit (H's -0.05
+  # pass); keepers skip only the blame, so look at the negative rows
+  off <- ng_spread_pools(pay, acts, lineup, dacts_share = 0, keeper_pool_blame = 1,
+                         keeper_pool_credit = 1, verbose = FALSE)
+  on  <- ng_spread_pools(pay, acts, lineup, dacts_share = 0, keeper_pool_credit = 1, verbose = FALSE)
+  both <- ng_spread_pools(pay, acts, lineup, dacts_share = 0, verbose = FALSE)   # the default
+  blame <- function(p, who) p[player_id == who & role == "pool_def_spread" & value_own < 0, sum(value_own)]
+  credit <- function(p, who) p[player_id == who & role == "pool_def_spread" & value_own > 0, sum(value_own)]
+  expect_equal(credit(on, "a1"), credit(off, "a1"), tolerance = 1e-12)   # credit unchanged
+  expect_lt(blame(off, "a1"), 0)                    # as an equal eleventh when included
+  expect_equal(blame(on, "a1"), 0)                  # nothing when excluded
+  expect_equal(blame(on, "a2"), blame(off, "a2") * 11 / 10, tolerance = 1e-12)
+  expect_equal(both[player_id == "a1" & role == "pool_def_spread", sum(value_own)], 0)
+  for (p in list(off, on, both)) {
+    expect_equal(sum(p[team_id == "A"]$value_own), -1.00, tolerance = 1e-10)
+  }
+})
