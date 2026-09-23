@@ -331,6 +331,9 @@ ng_build_ledger <- function(spadl_with_epv, adj = NULL, fixtures,
   # whole rebound and the value runs unbroken. A shot after a shot keeps its own
   # xG start (a rebound shot is a new chance, priced by its own xG).
   aft_fit <- NULL
+  if ((isTRUE(shot_aftermath) || is.list(shot_aftermath)) && !"epv" %in% names(dt)) {
+    cli::cli_warn("{.arg shot_aftermath} needs {.field epv} on the actions; shots stay at their xG.")
+  }
   if ((isTRUE(shot_aftermath) || is.list(shot_aftermath)) && "epv" %in% names(dt)) {
     r <- .ng_shot_aftermath(dt, fit = if (is.list(shot_aftermath)) shot_aftermath,
                             verbose = verbose)
@@ -466,6 +469,16 @@ ng_build_ledger <- function(spadl_with_epv, adj = NULL, fixtures,
 }
 
 
+#' The shot aftermath line used when a build has too few shots to fit its own
+#'
+#' `A = intercept + slope * xG`, fitted on ENG 2024-2025 (8,709 non-goal shots,
+#' 2026-09-23). A league-season with fewer than 50 non-goal shots (a small
+#' tournament) uses this line rather than dropping back to plain xG, so every
+#' league in one published file prices shots by the same rule.
+#' @keywords internal
+NG_SHOT_AFTERMATH_LINE <- list(intercept = 0.0349, slope = 0.0364, n_fit = 8709L,
+                               source = "ENG 2024-2025")
+
 #' Price a shot at more than its xG: the value it leaves behind
 #'
 #' A shot that does not score still leaves its side something: a corner, a
@@ -489,18 +502,29 @@ ng_build_ledger <- function(spadl_with_epv, adj = NULL, fixtures,
 #' @param fit Optional: a fit returned by an earlier call (`intercept`,
 #'   `slope`), used instead of fitting on `dt`.
 #' @param verbose Print the fit.
-#' @return `list(dt, fit)`; `fit` is `NULL` when fewer than 50 non-goal shots
-#'   exist, and the shots are then left at their xG.
+#' @return `list(dt, fit)`. With fewer than 50 non-goal shots and no `fit`
+#'   given, the line is `NG_SHOT_AFTERMATH_LINE` and `fit$fallback` is `TRUE`;
+#'   this is said as a message at the time, not a deferred warning.
 #' @keywords internal
 .ng_shot_aftermath <- function(dt, fit = NULL, verbose = TRUE) {
   if (!"result" %in% names(dt)) {
     cli::cli_abort("{.fn .ng_shot_aftermath} needs {.field result} to tell goals from misses.")
   }
   data.table::setorder(dt, match_id, action_id)
-  og <- if ("is_own_goal" %in% names(dt)) dt$is_own_goal %in% TRUE else rep(FALSE, nrow(dt))
+  # Own goals keep their own pricing (-1 - value before). Found from the flag
+  # AND from the value: a successful shot booked below zero is an own goal
+  # whether or not `is_own_goal` came through -- repricing one as a goal would
+  # flip its sign.
+  og <- (if ("is_own_goal" %in% names(dt)) dt$is_own_goal %in% TRUE else FALSE) |
+    (dt$action_type %chin% "shot" & dt$result %in% "success" & (dt$epv_delta < 0) %in% TRUE)
   is_sh <- dt$action_type %chin% "shot" & !og & is.finite(dt$epv)
   goal <- dt$result %in% "success"
   has_per <- "period_id" %in% names(dt)
+  if (!has_per) {
+    cli::cli_alert_warning(paste0(
+      "Shot aftermath: no {.field period_id}, so a shot that ends a half is ",
+      "valued against the next half's first action."))
+  }
   # The next state's value to the side on THIS row: flipped when the other side
   # has the next row, and 0 when the period (or match) ends.
   next_value <- function() {
@@ -515,16 +539,23 @@ ng_build_ledger <- function(spadl_with_epv, adj = NULL, fixtures,
   }
   S <- next_value()
   fitrows <- is_sh & !goal
+  # Next rows with no value that are NOT a period end: counted, because they
+  # are priced as "nothing follows" and pull the fitted line down.
+  n_gap <- sum(is_sh & !goal & !is.na(dt$.nx_team) & !is.finite(dt$.nx_epv) &
+                 (if (has_per) (dt$.nx_per == dt$period_id) %in% TRUE else TRUE))
   given <- !is.null(fit)
   if (given && !all(c("intercept", "slope") %in% names(fit))) {
     cli::cli_abort("{.arg fit} needs {.field intercept} and {.field slope}.")
   }
-  if (!given && sum(fitrows) < 50L) {
-    cli::cli_warn(paste0(
-      "Shot aftermath not fitted: only {sum(fitrows)} non-goal shot{?s}; ",
-      "shots stay at their xG."))
-    dt[, c(".nx_epv", ".nx_team", ".nx_per") := NULL]
-    return(list(dt = dt, fit = NULL))
+  fallback <- !given && sum(fitrows) < 50L
+  if (fallback) {
+    # message(), not warning(): a deferred warning in a long multi-league run
+    # prints after the success banner, if at all.
+    cli::cli_alert_warning(paste0(
+      "Shot aftermath: only {sum(fitrows)} non-goal shot{?s}, too few to fit; ",
+      "using the {NG_SHOT_AFTERMATH_LINE$source} line."))
+    fit <- NG_SHOT_AFTERMATH_LINE
+    given <- TRUE
   }
   # A real copy: dt$epv shares memory with the column, and the `:=` below
   # would rewrite `xg` in place.
@@ -554,8 +585,8 @@ ng_build_ledger <- function(spadl_with_epv, adj = NULL, fixtures,
   dt[is_sh & !goal, epv_delta := .S - epv]
   dt[, c(".nx_epv", ".nx_team", ".nx_per", ".bump", ".nx_bump", ".S") := NULL]
 
-  fit <- list(intercept = cf[1], slope = cf[2], given = given,
-              n_fit = if (given) fit$n_fit else sum(fitrows), n_shots = sum(is_sh),
+  fit <- list(intercept = cf[1], slope = cf[2], given = given, fallback = fallback,
+              n_fit = if (given) fit$n_fit else sum(fitrows), n_next_missing = n_gap, n_shots = sum(is_sh),
               mean_xg = mean(xg[is_sh]), mean_aftermath = mean(S[fitrows]),
               mean_added = mean(bump[is_sh]), rows_before = sum(pre))
   if (isTRUE(verbose)) {
@@ -563,7 +594,8 @@ ng_build_ledger <- function(spadl_with_epv, adj = NULL, fixtures,
       "Shot aftermath: a non-goal shot leaves {round(fit$mean_aftermath, 4)} goals on average here ",
       "({if (given) 'line given' else 'fitted'} on {format(fit$n_fit, big.mark = ',')} shots; A = {round(fit$intercept, 4)} + ",
       "{round(fit$slope, 4)} x xG). Shots now worth +{round(fit$mean_added, 4)} over their ",
-      "xG ({round(fit$mean_xg, 4)}); {format(fit$rows_before, big.mark = ',')} row{?s} before a shot repriced."))
+      "xG ({round(fit$mean_xg, 4)}); {format(fit$rows_before, big.mark = ',')} row{?s} before a shot repriced; ",
+      "{fit$n_next_missing} non-goal shot{?s} followed by a row with no value."))
   }
   list(dt = dt, fit = fit)
 }

@@ -1074,9 +1074,21 @@ test_that("shot aftermath: the line is fitted on non-goal shots, and too few sho
   expect_equal(c(fit$intercept, fit$slope), ref, tolerance = 1e-10)
   expect_equal(fit$n_fit, n)
 
+  # Too few shots: the default line, said at the time, and flagged on the fit.
   few <- d[1:20, ]
-  expect_warning(p2 <- panna::ng_build_ledger(few, fixtures = ng_fixture_fixtures(), verbose = FALSE),
-                 "not fitted")
-  p3 <- panna::ng_build_ledger(few, fixtures = ng_fixture_fixtures(), shot_aftermath = FALSE, verbose = FALSE)
-  expect_equal(p2[order(action_id, entry, role)]$value_own, p3[order(action_id, entry, role)]$value_own)
+  expect_message(p2 <- panna::ng_build_ledger(few, fixtures = ng_fixture_fixtures(), verbose = FALSE),
+                 "too few to fit")
+  f2 <- attr(p2, "shot_aftermath_fit")
+  expect_true(f2$fallback)
+  expect_equal(c(f2$intercept, f2$slope), c(0.0349, 0.0364))
+})
+
+test_that("shot aftermath: an own goal keeps its sign even without the is_own_goal flag", {
+  # H scores into its own net: epv 0.02 before, booked -1 - 0.02 = -1.02.
+  d <- ng_fixture_aftermath()[1:2, ]
+  d$result[2] <- "success"; d$epv_delta[2] <- -1.02
+  pay <- panna::ng_build_ledger(d, fixtures = ng_fixture_fixtures(),
+                                shot_aftermath = aft_line, verbose = FALSE)
+  expect_equal(pay[action_id == 2L & entry == "offence", sum(value_own)], -1.02, tolerance = 1e-12)
+  expect_equal(pay[action_id == 1L & entry == "offence", sum(value_own)], 0.05, tolerance = 1e-12)
 })

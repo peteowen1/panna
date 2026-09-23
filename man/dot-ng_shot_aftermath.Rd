@@ -16,8 +16,9 @@
 \item{verbose}{Print the fit.}
 }
 \value{
-\code{list(dt, fit)}; \code{fit} is \code{NULL} when fewer than 50 non-goal shots
-exist, and the shots are then left at their xG.
+\code{list(dt, fit)}. With fewer than 50 non-goal shots and no \code{fit}
+given, the line is \code{NG_SHOT_AFTERMATH_LINE} and \code{fit$fallback} is \code{TRUE};
+this is said as a message at the time, not a deferred warning.
 }
 \description{
 A shot that does not score still leaves its side something: a corner, a

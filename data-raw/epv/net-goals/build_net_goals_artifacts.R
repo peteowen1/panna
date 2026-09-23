@@ -35,10 +35,17 @@ OUT_DIR  <- "data-raw/cache/epv/net-goals"   # gitignored
 # inputs change; delete INPUTS to rebuild them from live code.
 INPUTS <- sprintf("data-raw/cache/epv/net-goals/ng_inputs_%s_%s.rds", LEAGUE, SEASON)
 INPUT_VERSION <- 1L
+# The local model files are part of the key, so replacing one rebuilds the
+# inputs without anyone remembering a bump. (The xGOT model comes from
+# load_xgot_model() and the events from the local parquet: those still rely on
+# INPUT_VERSION, or deleting INPUTS.)
+MODEL_FILES <- c("data-raw/cache/epv/xg_model.rds", "data-raw/cache/epv/xpass_model.rds",
+                 "data-raw/cache/epv/epv_model_xg_clean_full.rds")
 ng_load_inputs <- function() {
+  key <- list(version = INPUT_VERSION, models = unname(tools::md5sum(MODEL_FILES)))
   x <- if (file.exists(INPUTS)) readRDS(INPUTS) else NULL
-  if (!is.null(x) && identical(x$input_version, INPUT_VERSION)) {
-    say("reading cached inputs: ", INPUTS)
+  if (!is.null(x) && identical(x$input_key, key)) {
+    say("reading cached inputs: ", INPUTS, " (built ", format(x$built), "; SPADL/EPV/xPass/xGOT are NOT rebuilt)")
     return(x)
   }
   t0 <- Sys.time()
@@ -70,7 +77,7 @@ ng_load_inputs <- function() {
   fx <- as.data.table(load_opta_fixtures(LEAGUE, season = SEASON, source = "local"))[
     , .(match_id, home_team, away_team, home_team_id, away_team_id, home_score, away_score)]
   adj <- ng_build_adjacency(events, verbose = FALSE)
-  x <- list(input_version = INPUT_VERSION, ep = ep, adj = adj, lineups = lineups, fx = fx)
+  x <- list(input_key = key, built = Sys.time(), ep = ep, adj = adj, lineups = lineups, fx = fx)
   dir.create(dirname(INPUTS), recursive = TRUE, showWarnings = FALSE)
   saveRDS(x, INPUTS)
   say("built and cached the inputs in ", round(as.numeric(difftime(Sys.time(), t0, units = "mins")), 1), " min")
