@@ -553,8 +553,10 @@ parse_opta_qualifiers <- function(dt) {
     is_throw_in = valid & grepl('[{,]"107":', qjson),
     is_goal_kick = valid & grepl('[{,]"124":', qjson),
     is_headed = valid & grepl('[{,]"15":', qjson),
-    is_right_foot = valid & grepl('[{,]"72":', qjson),
-    is_left_foot = valid & grepl('[{,]"36":', qjson),
+    # Opta F24: 20 = right footed, 72 = left footed. These read 72 / 36 until
+    # 2026-09-24; harmless only because both columns are dropped below.
+    is_right_foot = valid & grepl('[{,]"20":', qjson),
+    is_left_foot = valid & grepl('[{,]"72":', qjson),
     is_big_chance = valid & grepl('[{,]"214":', qjson),
     is_own_goal = valid & grepl('[{,]"28":', qjson),
     is_penalty = valid & grepl('[{,]"9":', qjson)   # qualifier 9 = penalty

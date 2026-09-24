@@ -529,7 +529,12 @@ predict_xg <- function(xg_model, shot_features) {
 
   # Prepare prediction matrix
   X <- as.matrix(shot_features[, feature_cols, drop = FALSE])
-  X[is.na(X)] <- 0
+  # Models trained with missing values left missing (xG v5: no assist, too few
+  # earlier foot shots, ...) learned a branch for NA; zero-filling would score an
+  # unassisted shot as assisted from the goal line and every new shooter as on
+  # his weakest foot. Older models were trained on complete cases, so keep
+  # their zero fill exactly as it was.
+  if (!isTRUE(xg_model$panna_metadata$na_is_missing)) X[is.na(X)] <- 0
 
   # Predict
   xg_pred <- stats::predict(xg_model$model, X)
@@ -558,10 +563,16 @@ predict_xg <- function(xg_model, shot_features) {
 #'   Joined on \code{original_event_id}, the same key
 #'   \code{add_xgot_to_spadl()} uses.
 #'
+#' @param events Full Opta events for these matches. Needed only by a model
+#'   that reads pre-shot context (xG v5: assist, possession, rebound, score);
+#'   such a model aborts without it. See \code{.shot_context()}.
+#' @param foot_history Each shooter's earlier foot shots
+#'   (\code{.shot_foot_history()}). Needed only by a model that reads
+#'   \code{foot_share}.
 #' @return SPADL actions with xg column added for shots
 #' @keywords internal
 add_xg_to_spadl <- function(spadl_actions, xg_model, season = NULL,
-                            shot_lookup = NULL) {
+                            shot_lookup = NULL, events = NULL, foot_history = NULL) {
   # Initialize xG column
   spadl_actions$xg <- 0
 
@@ -658,6 +669,14 @@ add_xg_to_spadl <- function(spadl_actions, xg_model, season = NULL,
     shot_features$season_num <- yr
   }
 
+  # Pre-shot context (xG v5 and later): built from the events by the same
+  # .shot_context() the training features came from. Older models need none.
+  ctx_need <- intersect(xg_model$panna_metadata$feature_cols, .SHOT_CONTEXT_FEATURES)
+  if (length(ctx_need)) {
+    shot_features <- .add_shot_context_features(shot_features, shots, ctx_need,
+                                                events = events, foot_history = foot_history, what = "xG")
+  }
+
   # Predict xG
   xg_pred <- predict_xg(xg_model, shot_features)
 
@@ -673,8 +692,9 @@ add_xg_to_spadl <- function(spadl_actions, xg_model, season = NULL,
     pen_idx <- shot_idx & (spadl_actions$is_penalty %in% TRUE)   # %in% TRUE is NA-safe
     n_pen <- sum(pen_idx)
     if (n_pen > 0) {
-      spadl_actions$xg[pen_idx] <- PENALTY_XG
-      cli::cli_alert_info("Overrode {n_pen} penalt{?y/ies} to xG = {PENALTY_XG}")
+      pen_xg <- .penalty_xg_for(xg_model, season)
+      spadl_actions$xg[pen_idx] <- pen_xg
+      cli::cli_alert_info("Overrode {n_pen} penalt{?y/ies} to xG = {pen_xg}")
     }
   }
 

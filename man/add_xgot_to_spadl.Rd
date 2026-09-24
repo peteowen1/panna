@@ -4,7 +4,14 @@
 \alias{add_xgot_to_spadl}
 \title{Add xGOT to SPADL Actions}
 \usage{
-add_xgot_to_spadl(spadl_actions, xgot_model, goalmouth_lookup)
+add_xgot_to_spadl(
+  spadl_actions,
+  xgot_model,
+  goalmouth_lookup,
+  season = NULL,
+  events = NULL,
+  foot_history = NULL
+)
 }
 \arguments{
 \item{spadl_actions}{SPADL actions data frame (must carry
@@ -27,6 +34,10 @@ situations); without it, set-piece/corner/free-kick shots are scored as
 open-play. \code{is_blocked} excludes shots blocked by an outfield
 defender (q82) from on-target, matching training (panna#176); without
 it, blocked shots are scored as real on-target attempts.}
+
+\item{season, events, foot_history}{As in \code{add_xg_to_spadl()}: needed
+only by a model whose features include \code{season_num} or pre-shot
+context (xGOT v3); such a model aborts without them.}
 }
 \value{
 SPADL actions with an \code{xgot} column added.

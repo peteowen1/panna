@@ -806,3 +806,12 @@ utils::globalVariables(c(
   "vintage_year", "pred_net", "pred_offense", "pred_defense", "off_glmnet",
   "off_xgb", "def_glmnet", "def_xgb"
 ))
+
+# Shot context (R/shot_context.R) NSE columns
+utils::globalVariables(c(
+  "ev_ord", "idx", "t", "other", "j_idx", "a_idx", "a_t", "a_period", "a_x", "a_y", "a_len",
+  "has_assist", "o_idx", "o_pos", "o_t", "o_period", "opp_idx", "opp_t", "opp_period",
+  "poss_secs", "poss_passes", "p_idx", "r_idx", "r_t", "r_period", "rebound", "g_idx", "og",
+  "scorer", "goals_for", "goals_against", "score_diff", "i.teams", "i.goals_for", "i.goals_against",
+  "right", "r_prev", "n_prev", "match_date", "body_part", "is_own_goal"
+))

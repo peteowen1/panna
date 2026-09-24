@@ -4,7 +4,14 @@
 \alias{add_xg_to_spadl}
 \title{Add xG to SPADL Actions}
 \usage{
-add_xg_to_spadl(spadl_actions, xg_model, season = NULL, shot_lookup = NULL)
+add_xg_to_spadl(
+  spadl_actions,
+  xg_model,
+  season = NULL,
+  shot_lookup = NULL,
+  events = NULL,
+  foot_history = NULL
+)
 }
 \arguments{
 \item{spadl_actions}{SPADL actions data frame}
@@ -25,6 +32,14 @@ events, e.g. \code{opta_shot_events}. Strongly recommended: SPADL's own
 the header and footedness flags are dead and set pieces score as open play.
 Joined on \code{original_event_id}, the same key
 \code{add_xgot_to_spadl()} uses.}
+
+\item{events}{Full Opta events for these matches. Needed only by a model
+that reads pre-shot context (xG v5: assist, possession, rebound, score);
+such a model aborts without it. See \code{.shot_context()}.}
+
+\item{foot_history}{Each shooter's earlier foot shots
+(\code{.shot_foot_history()}). Needed only by a model that reads
+\code{foot_share}.}
 }
 \value{
 SPADL actions with xg column added for shots
