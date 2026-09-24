@@ -18,9 +18,17 @@ src <- file.path(C, sprintf("game_logs_%s.parquet", SEASONS))
 stopifnot(all(file.exists(src)))
 age_h <- as.numeric(difftime(Sys.time(), file.mtime(src), units = "hours"))
 if (any(age_h > 48)) stop("a season file is older than 48 h -- not from today's rebuild: ", paste(src[age_h > 48], collapse = ", "))
+# A FIXED list every season must carry, not only "what the other seasons have":
+# a systemic failure strips every season alike, which a cross-season comparison
+# cannot see (review finding, 2026-09-24).
+REQUIRED <- c("net_goals", "ng_recon", "epv_total", "psv",
+              "goals_minus_xgot", "placement_added", "xgot", "gsaa", "gsaa_per90", "xgot_faced",
+              "goals_conceded", "aerial_woe_per90", "aerial_poss_woe_per90", "takeon_woe_per90",
+              "tackle_poss_woe_per90", "containment_woe_per90")
 for (f in src) {
   cols <- names(arrow::open_dataset(f))
-  if (!all(c("net_goals", "ng_recon") %in% cols)) stop(f, " lacks net_goals / ng_recon")
+  miss <- setdiff(REQUIRED, cols)
+  if (length(miss)) stop(basename(f), " lacks required columns: ", paste(miss, collapse = ", "))
 }
 # Every season must carry every column any season carries. 2026-09-24: the
 # 2026-27 file was published without its 12 xGOT / GSAA / duel columns because

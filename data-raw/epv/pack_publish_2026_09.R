@@ -23,6 +23,7 @@ feats <- function(m) m$feature_names %||% m$panna_metadata$feature_cols %||% m$m
 cat("== input contract: new vs what is published now ==\n")
 for (nm in names(new)) {
   a <- feats(readRDS(new[[nm]])); b <- feats(readRDS(paste0(BAK, nm)))
+  if (!length(a) || !length(b)) stop(nm, ": could not read a feature list from one of the models; the contract check would compare nothing")
   cat(sprintf("%-15s new %2d features, published %2d, identical: %s\n", nm, length(a), length(b), identical(a, b)))
   # xGOT: predict_xgot() selects the model's own feature_cols by name, so a
   # model that drops an input still scores from the same R code. The retrain
