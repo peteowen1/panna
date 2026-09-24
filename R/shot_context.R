@@ -157,7 +157,8 @@ SHOT_FOOT_MIN <- 10L
 #' @param shots SPADL shot rows: `match_id`, `original_event_id`, `player_id`.
 #' @param need Context columns the model reads (from its feature_cols).
 #' @param events Full Opta events for these matches (see `.shot_context()`).
-#'   Not needed when `shots` already carries every column in `need`.
+#'   Always required for context inputs: columns already on `shots` are not
+#'   trusted, since other steps write same-named columns with other meanings.
 #' @param foot_history `.shot_foot_history()` output; needed for `foot_share`.
 #' @param what Model name for messages.
 #' @return `features` with the `need` columns added. Missing values stay NA:
@@ -167,9 +168,10 @@ SHOT_FOOT_MIN <- 10L
 .add_shot_context_features <- function(features, shots, need, events = NULL, foot_history = NULL, what = "xG") {
   ctx_need <- setdiff(need, "foot_share")
   if (length(ctx_need)) {
-    if (all(ctx_need %in% names(shots))) {
-      for (cc in ctx_need) features[[cc]] <- as.numeric(shots[[cc]])
-    } else {
+    # Always rebuilt from the events: a same-named column already on SPADL is not
+    # trusted (create_wp_features() writes a HOME-perspective score_diff, the
+    # model's is the shooter's -- review finding, 2026-09-24).
+    {
       if (is.null(events)) {
         cli::cli_abort(c(
           "This {what} model reads pre-shot context ({length(ctx_need)} inputs) but no {.arg events} were given.",
@@ -209,6 +211,10 @@ SHOT_FOOT_MIN <- 10L
   tab <- xg_model$panna_metadata$penalty_xg_by_season
   if (is.null(tab) || is.null(season)) return(PENALTY_XG)
   yr <- suppressWarnings(as.integer(extract_season_end_year(season)))
+  if (length(yr) != 1L || is.na(yr)) {
+    cli::cli_alert_warning("Penalty xG: could not read a season from {.val {season}}; using PENALTY_XG ({PENALTY_XG}).")
+    return(PENALTY_XG)
+  }
   yrs <- as.integer(names(tab))
   ok <- !is.na(yr) & yrs <= yr
   if (!any(ok)) return(unname(tab[which.min(yrs)]))

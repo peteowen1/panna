@@ -21,7 +21,8 @@
 \item{need}{Context columns the model reads (from its feature_cols).}
 
 \item{events}{Full Opta events for these matches (see \code{.shot_context()}).
-Not needed when \code{shots} already carries every column in \code{need}.}
+Always required for context inputs: columns already on \code{shots} are not
+trusted, since other steps write same-named columns with other meanings.}
 
 \item{foot_history}{\code{.shot_foot_history()} output; needed for \code{foot_share}.}
 

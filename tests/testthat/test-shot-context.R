@@ -69,6 +69,11 @@ test_that("a context model refuses to score without events or foot history", {
   # with events: filled from .shot_context, matched on original_event_id
   out <- panna:::.add_shot_context_features(feats, shots, c("poss_secs", "rebound"), events = ev_fixture())
   expect_equal(out$poss_secs, 80); expect_equal(out$rebound, 0)
+  # a same-named column already on SPADL is ignored: context always comes from the events
+  shots_wp <- transform(shots, score_diff = -5)
+  out_wp <- panna:::.add_shot_context_features(feats, shots_wp, "score_diff", events = ev_fixture())
+  expect_equal(out_wp$score_diff, 0)
+  expect_error(panna:::.add_shot_context_features(feats, shots_wp, "score_diff"), "no .*events")
   # events for the wrong match abort instead of scoring blind
   shots_x <- data.frame(match_id = "OTHER", original_event_id = 13, player_id = "P")
   expect_error(panna:::.add_shot_context_features(feats, shots_x, "rebound", events = ev_fixture()), "only 0%")
@@ -96,4 +101,5 @@ test_that(".penalty_xg_for uses the model's by-season table, else PENALTY_XG", {
   expect_equal(panna:::.penalty_xg_for(m, "2020-2021"), 0.7783)     # before the table: its first season
   expect_equal(panna:::.penalty_xg_for(list(panna_metadata = list()), "2026-2027"), PENALTY_XG)
   expect_equal(panna:::.penalty_xg_for(m, NULL), PENALTY_XG)
+  expect_equal(panna:::.penalty_xg_for(m, "not a season"), PENALTY_XG)   # unreadable: the constant, not the table's first row
 })
