@@ -27,7 +27,7 @@ its fallback chain, the canonical (correct) version, and the override to pin it.
 
 ## Published artifact register (verify, don't assume)
 
-Sizes and dates as at **2026-09-03**. Published = `pannadata/data/opta/models/`,
+Sizes and dates as at **2026-09-03**, EPV and xGOT rows updated **2026-09-24** (model pack, `pannaverse/docs/plans/EPV-RETRAIN-SCOPE.md`). Published = `pannadata/data/opta/models/`,
 candidate = `panna/data-raw/cache/epv/` (gitignored). **A candidate is not
 production until it is published.** Compare byte sizes: a size difference means
 different files, and that is how the xG divergence below went unnoticed.
@@ -36,10 +36,12 @@ different files, and that is how the xG divergence below went unnoticed.
 |---|---|---:|---|---|
 | **xG** | **2026-09-12** | **22,988,831** | same bytes | ✅ yes — both releases aligned |
 | xG (previous, archived) | 2026-06-18 | 7,771,969 | `_archive/xg_model_PANNAMODELS_PUBLISHED_2026-06-18.rds` | rollback copy |
-| xGOT | 2026-07-23 | 5,212,066 | same bytes | yes |
+| **xGOT** | **2026-09-24** | **3,365,021** (md5 5a5fce8b) | `data-raw/cache/epv/pack-2026-09/xgot_model.rds`, same bytes | ✅ both releases (pannamodels `epv`, pannadata `models`), sha256 checked by re-download. 17 inputs: `is_direct_freekick` dropped (R scores by name; the worker JSON still has 18 and moves in step 9). **Local `pannadata/data/opta/models/xgot_model.rds` is still the 07-23 file**, so the bare loader is stale on this machine: pass `xgot_model_override` |
+| xGOT (previous) | 2026-07-23 | 5,212,066 | `C:/dev/_model-backups/2026-09-23/` | rollback copy |
 | xPass | 2026-06-18 | 6,319,289 | same bytes | yes |
 | duel | 2026-06-24 | 368,305 | — | published only |
-| EPV | 2026-06-21 | 65,084,700 | `epv_model_xg_clean_full.rds`, same bytes | **yes** |
+| **EPV** | **2026-09-24** | **70,570,212** (md5 4ca161c1) | `data-raw/cache/epv/pack-2026-09/epv_model_pubv0.rds`, same bytes | ✅ both releases, sha256 checked. Labels priced at the ledger's shot price (published xG + aftermath); same 14 inputs. **Local pannadata copy is still the 06-21 file**: pass `epv_model_override` |
+| EPV (previous) | 2026-06-21 | 65,084,700 | `epv_model_xg_clean_full.rds`, backup in `C:/dev/_model-backups/2026-09-23/` | rollback copy |
 | WP | 2026-07-16 | 119,875 | `wp_final_d2repl_reg/` | verify before relying on the override |
 
 **xG divergence (open, 2026-09-03).** Published is 2026-06-18 (trained on
@@ -91,9 +93,10 @@ iterating (EPV/WP) models.
 ## How to rebuild game-logs correctly (the recipe)
 
 ```r
-# from panna/
-epv_model_override <- readRDS("data-raw/cache/epv/epv_model_xg_clean_full.rds")
-wp_model_override  <- readRDS("data-raw/cache/epv/wp_final_d2repl_reg/wp_model.rds")
+# from panna/  (since 2026-09-24: the model pack; see the register above)
+epv_model_override  <- readRDS("data-raw/cache/epv/pack-2026-09/epv_model_pubv0.rds")
+xgot_model_override <- readRDS("data-raw/cache/epv/pack-2026-09/xgot_model.rds")
+wp_model_override   <- readRDS("data-raw/cache/epv/pack-2026-09/wp_pubv0/wp_model.rds")  # same config as wp_final_d2repl_reg, trained on the new EPV
 blog_leagues       <- c(... blog leagues ...)
 game_log_seasons   <- "2025-2026"   # or a vector for backfill
 upload_game_logs   <- FALSE

@@ -8,7 +8,9 @@
 # Run from panna/: Rscript data-raw/epv/net-goals/ng_scenarios.R
 suppressPackageStartupMessages(library(data.table))
 devtools::load_all(quiet = TRUE)
-x <- readRDS("data-raw/cache/epv/net-goals/ng_ledger_ENG_2024-2025.rds")
+# LEDGER picks another cached ledger, e.g. one built on a candidate EPV model
+if (!exists("LEDGER")) LEDGER <- "data-raw/cache/epv/net-goals/ng_ledger_ENG_2024-2025.rds"
+x <- readRDS(LEDGER)
 ep <- as.data.table(x$ep); raw <- as.data.table(x$raw); pay <- as.data.table(x$pay)
 lu <- as.data.table(x$lineups); fx <- as.data.table(x$fx)
 res <- list()

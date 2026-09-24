@@ -24,8 +24,6 @@ SEASON   <- "2024-2025"
 MIN_GMS  <- 10
 WALK_HOME <- "Liverpool FC"; WALK_AWAY <- "Manchester City FC"  # fixtures carry the "FC"
 WALK_N   <- 30                                             # actions up to the goal
-CACHE    <- sprintf("data-raw/cache/epv/net-goals/ng_ledger_%s_%s.rds", LEAGUE, SEASON)
-OUT_DIR  <- "data-raw/cache/epv/net-goals"   # gitignored
 
 # ---- inputs (slow, cached) and ledger (fast, always from live code) ---------
 # The slow part is SPADL + EPV + xPass + xGOT (minutes); the ledger itself takes
@@ -40,6 +38,11 @@ if (!exists("EPV_MODEL_PATH")) EPV_MODEL_PATH <- "data-raw/cache/epv/epv_model_x
 epv_tag <- if (grepl("epv_model_xg_clean_full", EPV_MODEL_PATH, fixed = TRUE)) "" else
   paste0("_", tools::file_path_sans_ext(basename(EPV_MODEL_PATH)))
 INPUTS <- sprintf("data-raw/cache/epv/net-goals/ng_inputs_%s_%s%s.rds", LEAGUE, SEASON, epv_tag)
+# A non-default EPV model also gets its own ledger cache and page JSON, so an A/B
+# run never overwrites the published pages' data.
+CACHE    <- sprintf("data-raw/cache/epv/net-goals/ng_ledger_%s_%s%s.rds", LEAGUE, SEASON, epv_tag)
+OUT_DIR  <- file.path("data-raw/cache/epv/net-goals", sub("^_", "", epv_tag))   # gitignored
+dir.create(OUT_DIR, showWarnings = FALSE, recursive = TRUE)
 INPUT_VERSION <- 1L
 # The local model files are part of the key, so replacing one rebuilds the
 # inputs without anyone remembering a bump. (The xGOT model comes from

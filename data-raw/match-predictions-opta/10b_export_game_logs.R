@@ -502,7 +502,10 @@ validate_game_log_schema <- function(dt, league, season) {
         # would have keepers credited for saves, never blamed for goals, and
         # out of the pool blame too. Required, not optional: a league without
         # xGOT on its shots drops its net goals columns instead.
-        ng_xgot_model <- load_xgot_model()
+        # xgot_model_override pins the model like the EPV/WP overrides do: the
+        # bare loader falls back to pannadata's LOCAL copy when pannamodels is
+        # not installed, which can lag the published model (MODELS.md).
+        ng_xgot_model <- if (exists("xgot_model_override")) xgot_model_override else load_xgot_model()
         ng_shots <- as.data.frame(load_opta_shot_events(league, season = league_season))
         ng_lk <- c("match_id", "event_id", "type_id", "goalmouth_y", "goalmouth_z",
                    intersect(c("situation", "is_blocked", "body_part"), names(ng_shots)))
@@ -791,8 +794,13 @@ validate_game_log_schema <- function(dt, league, season) {
                                 by = c("player_id", "match_id"), all.x = TRUE)
         }
       }, error = function(e) {
-        warning(sprintf("xGOT display cols join failed for %s %s: %s",
-                        league, season, e$message), call. = FALSE)
+        # message(), not warning(): R defers warnings to the end of the run, and
+        # on 2026-09-24 this one hid a whole season published without its 12
+        # xGOT / GSAA / duel columns (a stale LOCAL xmetrics table; set
+        # XMETRICS_SOURCE=remote). pack_publish_game_logs.R now refuses a season
+        # missing columns the others have.
+        message(sprintf("!! xGOT display cols join FAILED for %s %s (%s): this season will lack xgot/gsaa/duel columns",
+                        league, season, e$message))
       })
 
       # match_date from lineups
