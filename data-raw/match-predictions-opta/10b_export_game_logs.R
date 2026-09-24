@@ -38,6 +38,11 @@ tag <- "blog-latest"
 # (predictions-pipeline.yml sets XMETRICS_SOURCE=remote), not an R flag —
 # local pipeline runs default to the pipeline-generated local files.
 xm_source <- if (identical(Sys.getenv("XMETRICS_SOURCE"), "remote")) "remote" else "local"
+# League-seasons whose xMetrics display join was tried / failed this run. A
+# systemic failure (every league, as on 2026-09-24 with a stale local table)
+# blocks the upload below; an isolated one is reported loudly at the end.
+.xm_join_tried <- 0L
+.xm_join_failed <- character(0)
 
 # Leagues to include in the per-match blog export. Three categories:
 #   (1) domestic       — iterate with the export season ("YYYY-YYYY")
@@ -502,7 +507,10 @@ validate_game_log_schema <- function(dt, league, season) {
         # would have keepers credited for saves, never blamed for goals, and
         # out of the pool blame too. Required, not optional: a league without
         # xGOT on its shots drops its net goals columns instead.
-        ng_xgot_model <- load_xgot_model()
+        # xgot_model_override pins the model like the EPV/WP overrides do: the
+        # bare loader falls back to pannadata's LOCAL copy when pannamodels is
+        # not installed, which can lag the published model (MODELS.md).
+        ng_xgot_model <- if (exists("xgot_model_override")) xgot_model_override else load_xgot_model()
         ng_shots <- as.data.frame(load_opta_shot_events(league, season = league_season))
         ng_lk <- c("match_id", "event_id", "type_id", "goalmouth_y", "goalmouth_z",
                    intersect(c("situation", "is_blocked", "body_part"), names(ng_shots)))
@@ -769,6 +777,7 @@ validate_game_log_schema <- function(dt, league, season) {
       # "Unlucky striker" signal: a player who placed shots well (high xGOT) but
       # didn't score reads negative. Pulled from the per-match xMetrics; display
       # only (not a value-blend input). NA-safe left join by (player_id, match_id).
+      .xm_join_tried <<- .xm_join_tried + 1L   # inside .process_season(): <<- reaches the script-level counter
       tryCatch({
         xg_disp <- data.table::as.data.table(
           load_opta_xmetrics(league, season = league_season,
@@ -791,8 +800,14 @@ validate_game_log_schema <- function(dt, league, season) {
                                 by = c("player_id", "match_id"), all.x = TRUE)
         }
       }, error = function(e) {
-        warning(sprintf("xGOT display cols join failed for %s %s: %s",
-                        league, season, e$message), call. = FALSE)
+        # message(), not warning(): R defers warnings to the end of the run, and
+        # on 2026-09-24 this one hid a whole season published without its 12
+        # xGOT / GSAA / duel columns (a stale LOCAL xmetrics table; set
+        # XMETRICS_SOURCE=remote). pack_publish_game_logs.R now refuses a season
+        # missing columns the others have.
+        message(sprintf("!! xGOT display cols join FAILED for %s %s (%s): this season will lack xgot/gsaa/duel columns",
+                        league, season, e$message))
+        .xm_join_failed <<- c(.xm_join_failed, paste(league, season))
       })
 
       # match_date from lineups
@@ -1295,6 +1310,24 @@ if (length(.missing_seasons) > 0L) {
              "upload_game_logs <- FALSE to keep the local files."),
       length(season_paths), length(game_log_seasons),
       paste(.missing_seasons, collapse = ", ")))
+  }
+}
+
+# xMetrics display join: report every failure, and refuse to publish when it is
+# systemic (more than a fifth of the league-seasons tried) -- that is a broken
+# source, not one competition without xMetrics.
+if (length(.xm_join_failed)) {
+  .xm_share <- length(.xm_join_failed) / max(.xm_join_tried, 1L)
+  message(sprintf(paste0("
+!! xMetrics display join FAILED for %d of %d league-seasons (%.0f%%): %s
+",
+                         "   Those rows lack xgot / gsaa / duel columns. XMETRICS_SOURCE=%s."),
+                  length(.xm_join_failed), .xm_join_tried, 100 * .xm_share,
+                  paste(.xm_join_failed, collapse = ", "), xm_source))
+  if (isTRUE(upload_game_logs) && .xm_share > 0.2) {
+    stop(sprintf(paste0("Refusing to upload: the xMetrics display join failed for %.0f%% of league-seasons, ",
+                        "so the game logs would lose their xGOT / GSAA / duel columns. Fix the source ",
+                        "(on a dev box: XMETRICS_SOURCE=remote) or set upload_game_logs <- FALSE."), 100 * .xm_share))
   }
 }
 

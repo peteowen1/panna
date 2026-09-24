@@ -24,7 +24,7 @@ devtools::load_all(quiet = TRUE)
 CACHE <- "data-raw/cache-predictions-opta"
 SEASONS <- c("2015-2016","2016-2017","2017-2018","2018-2019","2019-2020",
              "2020-2021","2021-2022","2022-2023","2023-2024","2024-2025",
-             "2025-2026")
+             "2025-2026","2026-2027")
 
 fx <- as.data.table(collect(arrow::open_dataset(
   "C:/dev/pannaverse/pannadata/data/opta/opta_fixtures.parquet") |>

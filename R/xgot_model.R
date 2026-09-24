@@ -374,9 +374,13 @@ predict_xgot <- function(xgot_model, shot_features) {
 #'   open-play. \code{is_blocked} excludes shots blocked by an outfield
 #'   defender (q82) from on-target, matching training (panna#176); without
 #'   it, blocked shots are scored as real on-target attempts.
+#' @param season,events,foot_history As in \code{add_xg_to_spadl()}: needed
+#'   only by a model whose features include \code{season_num} or pre-shot
+#'   context (xGOT v3); such a model aborts without them.
 #' @return SPADL actions with an \code{xgot} column added.
 #' @keywords internal
-add_xgot_to_spadl <- function(spadl_actions, xgot_model, goalmouth_lookup) {
+add_xgot_to_spadl <- function(spadl_actions, xgot_model, goalmouth_lookup,
+                              season = NULL, events = NULL, foot_history = NULL) {
   spadl_actions$xgot <- NA_real_
   spadl_actions$shot_on_target <- NA   # logical; set for shots below
   shot_idx <- which(spadl_actions$action_type == "shot")
@@ -477,7 +481,21 @@ add_xgot_to_spadl <- function(spadl_actions, xgot_model, goalmouth_lookup) {
       bodypart = bodypart, situation = situation, is_big_chance = is_big_chance
     )
     plc <- .create_placement_features(joined$goalmouth_y[predable], joined$goalmouth_z[predable])
-    xgot_vec[predable] <- predict_xgot(xgot_model, cbind(base, plc))
+    feats <- cbind(base, plc)
+    fc <- xgot_model$panna_metadata$feature_cols
+    if ("season_num" %in% fc) {
+      yr <- if (is.null(season)) NA_integer_ else suppressWarnings(as.integer(extract_season_end_year(season)))
+      if (length(yr) != 1L || is.na(yr)) {
+        cli::cli_abort("This xGOT model needs {.field season_num}: pass {.arg season} (e.g. \"2025-2026\").")
+      }
+      feats$season_num <- yr
+    }
+    ctx_need <- intersect(fc, .SHOT_CONTEXT_FEATURES)
+    if (length(ctx_need)) {
+      feats <- .add_shot_context_features(feats, shots[predable, , drop = FALSE], ctx_need,
+                                          events = events, foot_history = foot_history, what = "xGOT")
+    }
+    xgot_vec[predable] <- predict_xgot(xgot_model, feats)
   }
 
   # Own-goal guard: goal-mouth placement is meaningless for the "shooter" ->
