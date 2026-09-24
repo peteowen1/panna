@@ -1,3 +1,36 @@
+# panna 0.3.67
+
+## Pre-shot context for the next xG / xGOT models
+
+`.shot_context()` builds what was known before a shot from the Opta event stream: the assist
+(pass tagged 210 in the 20 s before, with its type, length and origin), seconds since the other
+team had the ball and passes since, whether it follows another shot within 5 s, and the score.
+`.shot_foot_history()` gives each shooter's earlier foot shots for the weak-foot input. The same
+functions build the training features and score shots: on ENG 2024-25 the scoring path equals the
+model's predictions on its training features for all 9,699 shots (max difference 0).
+
+`add_xg_to_spadl()` / `add_xgot_to_spadl()` take optional `events` and `foot_history` (and
+`add_xgot_to_spadl()` a `season`); a model that reads context aborts without them. Models without
+these inputs score exactly as before. The new models are not published yet.
+
+## `predict_xg()` keeps NA for models trained with it
+
+It replaced every NA with 0. The new models learned a branch for NA (no assist, too few earlier
+foot shots), so a zero fill would score an unassisted shot as assisted from the goal line. NA is
+now kept when the model's metadata sets `na_is_missing`; older models are unchanged.
+
+## Penalty xG by season
+
+A model carrying `penalty_xg_by_season` (the pooled conversion of earlier seasons, in-match
+penalties only: 0.7775 for 2026-27) prices penalties from it; otherwise `PENALTY_XG`, as before.
+
+## Game logs: a failed xMetrics join no longer ships quietly
+
+10b reported a failed xMetrics display join with `warning()`, which R holds to the end of a run;
+on 2026-09-24 that hid a season published without its 12 xGOT / GSAA / duel columns. It now
+reports each failure as it happens, lists them all at the end, and refuses to upload when more
+than a fifth of league-seasons failed.
+
 # panna 0.3.66
 
 ## Net goals: every step of a shot splits the same way, gain or loss
