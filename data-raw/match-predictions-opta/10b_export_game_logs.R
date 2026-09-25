@@ -352,10 +352,46 @@ validate_game_log_schema <- function(dt, league, season) {
   invisible(refreshed)
 }
 
+# Net goals by play type for one season: ng_breakdown_<season>.parquet beside
+# the game logs. Every league whose breakdown built is written; a league whose
+# breakdown FAILED is left out entirely -- also dropped from the existing file on
+# a subset re-run -- so its players show no chart rather than last run's numbers
+# beside this run's game logs. Subset-league runs merge the way the game logs do.
+.write_ng_breakdown <- function(parts, failed, season) {
+  if (length(failed)) {
+    message(sprintf("  [%s] net goals breakdown left OUT for %s (failed); other leagues written",
+                    season, paste(failed, collapse = ", ")))
+  }
+  bd <- data.table::rbindlist(parts, use.names = TRUE)
+  path <- file.path(cache_dir, sprintf("ng_breakdown_%s.parquet", season))
+  if (isTRUE(merge_subset_leagues) && file.exists(path)) {
+    existing <- data.table::as.data.table(arrow::read_parquet(path))
+    gc()   # release arrow's mapped handle before overwriting (Windows 1224)
+    drop <- c(names(parts), failed)
+    bd <- data.table::rbindlist(list(existing[!league %in% drop], bd),
+                                use.names = TRUE, fill = TRUE)
+  }
+  if (!nrow(bd)) return(invisible(NULL))
+  tmp <- paste0(path, ".tmp")
+  arrow::write_parquet(bd, tmp)
+  if (file.exists(path)) file.remove(path)
+  file.rename(tmp, path)
+  message(sprintf("  [%s] Written: %s (%d rows, %d leagues)", season, path,
+                  nrow(bd), data.table::uniqueN(bd$league)))
+  invisible(path)
+}
+
+# Breakdown files written by THIS run -- the only ones registered for publish, so
+# a season whose breakdown failed never ships last run's file beside new logs.
+ng_bd_paths <- character(0)
+ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not built
+
 # Process a single season: returns path to written parquet, or NULL on failure.
 .process_season <- function(season) {
   message(sprintf("\n########## SEASON %s ##########", season))
   all_game_logs <- list()
+  all_ng_breakdown <- list()   # net goals by play type, one table per league
+  ng_bd_failed <- character(0)
 
   # --- Pre-flight: events_consolidated coverage check (panna#NN) -----------
   # The EPV pipeline reads from events_consolidated/events_<comp>.parquet.
@@ -479,6 +515,7 @@ validate_game_log_schema <- function(dt, league, season) {
       player_game_epv  <- aggregate_player_game_epv(spadl_credit, lineups)
 
       ng_cols <- NULL   # reset per league: a skip must not inherit the last one's
+      ng_pay <- NULL; ng_pre <- NULL
       # --- Net goals ledger (ADDITIVE; every production column above is
       # untouched). Three columns join the frame: `net_goals` and its two
       # halves. The ledger allocates each action so a team's players sum to
@@ -823,6 +860,7 @@ validate_game_log_schema <- function(dt, league, season) {
         # straight in would drop their value and stop a match's sides
         # cancelling. Fold it back to their teams first, so a published team's
         # rows sum to exactly what the ledger gave that team.
+        ng_pre <- ng_cols   # kept for the play-type breakdown's fold check
         ng_cols <- ng_fold_unpublished(
           ng_cols, data.table::as.data.table(game_ratings)[, .(match_id, player_id)],
           verbose = FALSE)
@@ -865,6 +903,29 @@ validate_game_log_schema <- function(dt, league, season) {
           })
         message(sprintf("    net goals: %d of %d published rows carry it",
                         sum(!is.na(game_ratings$net_goals)), nrow(game_ratings)))
+        # Net goals by play type for the player page ("where their EPV comes
+        # from"). .ng_breakdown() aborts unless every published row's parts add
+        # up to its net_goals. A failure costs only this file, never the game
+        # logs, and is counted so the season's breakdown is not written short.
+        if ("net_goals" %in% names(game_ratings)) {
+          # Caught whatever the error: the breakdown is additive and must not
+          # cost the league its game logs. The message says which kind it was,
+          # because a code bug and a real add-up mismatch need different fixes.
+          bd <- tryCatch(.ng_breakdown(ng_pay, ng_pre, game_ratings), error = function(e) {
+            kind <- if (inherits(e, "panna_ng_breakdown_mismatch")) "parts do not add up" else "code error"
+            message(sprintf("    net goals breakdown FAILED for %s (%s): %s", league, kind,
+                            conditionMessage(e)))
+            NULL
+          })
+          if (is.null(bd)) {
+            ng_bd_failed <- c(ng_bd_failed, league)
+          } else {
+            bd[, `:=`(league = league, season = season)]
+            all_ng_breakdown[[league]] <- bd
+            message(sprintf("    net goals breakdown: %d rows, %d categories",
+                            nrow(bd), data.table::uniqueN(bd$category)))
+          }
+        }
       }
       game_ratings[, league := league]
       game_ratings[, season := season]
@@ -1241,8 +1302,21 @@ validate_game_log_schema <- function(dt, league, season) {
                   file.size(out_path) / (1024 * 1024),
                   nrow(game_logs), ncol(game_logs)))
 
+  # Guarded: the season's game logs are already on disk, and a failure writing
+  # the additive breakdown must not get the whole season reported ABORTED.
+  bd_path <- tryCatch(.write_ng_breakdown(all_ng_breakdown, ng_bd_failed, season),
+                      error = function(e) {
+    message(sprintf("  [%s] net goals breakdown write FAILED: %s", season, conditionMessage(e)))
+    NULL
+  })
+  if (!is.null(bd_path)) ng_bd_paths <<- c(ng_bd_paths, bd_path)
+  if (length(ng_bd_failed) || (is.null(bd_path) && length(all_ng_breakdown))) {
+    ng_bd_missing <<- c(ng_bd_missing, sprintf("%s (%s)", season,
+      if (length(ng_bd_failed)) paste(ng_bd_failed, collapse = ", ") else "write failed"))
+  }
+
   # Free memory between seasons
-  rm(game_logs, player_totals, all_game_logs)
+  rm(game_logs, player_totals, all_game_logs, all_ng_breakdown)
   gc(verbose = FALSE)
 
   out_path
@@ -1276,6 +1350,8 @@ if (isTRUE(build_game_logs)) {
   for (s in game_log_seasons) {
     p <- file.path(cache_dir, sprintf("game_logs_%s.parquet", s))
     if (file.exists(p)) season_paths[[s]] <- p
+    b <- file.path(cache_dir, sprintf("ng_breakdown_%s.parquet", s))
+    if (file.exists(b)) ng_bd_paths <- c(ng_bd_paths, b)
   }
   message(sprintf("Upload-only mode: %d existing season parquet(s) found",
                   length(season_paths)))
@@ -1356,7 +1432,7 @@ if (isTRUE(upload_game_logs)) {
   } else {
     unlist(season_paths)
   }
-  files_to_publish <- candidates[file.exists(candidates)]
+  files_to_publish <- c(candidates[file.exists(candidates)], ng_bd_paths)
 
   if (exists("publish_files", envir = .GlobalEnv)) {
     publish_files$blog_latest <<- c(publish_files$blog_latest, files_to_publish)
@@ -1381,4 +1457,19 @@ for (s in names(season_paths)) {
 }
 if (isTRUE(upload_game_logs)) {
   message(sprintf("  Release: https://github.com/%s/releases/tag/%s", repo, tag))
+}
+# The breakdown is additive, so a missing one never blocks the game logs -- but
+# the release then keeps LAST run's breakdown for that season beside new game
+# logs. Say so where it will be seen: at the end, and as a GitHub Actions
+# annotation on the run page (plain text on a local run).
+if (length(ng_bd_missing)) {
+  txt <- sprintf(paste0("Net goals breakdown NOT built for %d season(s): %s. Those leagues' ",
+                        "players get no player-page EPV chart; a season whose file was not ",
+                        "rewritten keeps the previous one (the blog hides a player's chart ",
+                        "where it no longer adds up to the game logs)."),
+                 length(ng_bd_missing), paste(ng_bd_missing, collapse = ", "))
+  message("
+!! ", txt)
+  if (nzchar(Sys.getenv("GITHUB_ACTIONS"))) cat("::warning::", txt, "
+", sep = "")
 }

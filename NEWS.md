@@ -1,3 +1,19 @@
+# panna 0.3.68
+
+## Net goals by play type for the player page
+
+`.ng_breakdown()` splits every published player-match's `net_goals` into the kinds of play that
+earned or cost it (passing, carrying, shooting in four parts, tackles, keeper work, ...), plus
+the three steps that build the published number: the team pool share, the share of unlisted
+team-mates (`ng_fold_unpublished()`) and the anchor to the real goal difference. The parts add up
+to the published value; it aborts at a 1e-9 gap, and checks the unlisted-team-mates part against
+what folding handed out per team-match, because that part is computed as a remainder. Step 10b
+writes `ng_breakdown_<season>.parquet` beside the game logs and registers it for `blog-latest`.
+A league whose breakdown fails keeps its game logs and is left out of the file (also dropped from
+it on a subset re-run), so its players show no chart rather than last run's numbers; the run ends
+with a warning naming it, as a GitHub Actions annotation in CI. The football twin of torp's
+`.np_breakdown()`.
+
 # panna 0.3.67
 
 ## Pre-shot context for the next xG / xGOT models
