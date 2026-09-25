@@ -1,3 +1,15 @@
+# panna 0.3.71
+
+## Opta injury markers and "failed to block" are no longer scored as plays
+
+Opta types 90 and 91 (an injury stoppage and the restart, always at (0, 0), naming the injured
+player) and 69 ("failed to block", GER 2015-17 only) join `OPTA_NON_GAMEPLAY_TYPES`. They reached
+SPADL as `other`: on ENG2 2026-27 the 143 injury markers paid the injured players +2.92 goals and
+moved 259 of the 274 actions around them. 69 is dropped like the 50/50s rather than blamed, since
+only one feed tags it. `get_or_build_spadl()` rebuilds a cache that still holds an excluded type.
+Both choices, with their alternatives, are in pannaverse
+`docs/reference/NET-GOALS-DECISION-POINTS.md`. Game logs change at the next rebuild.
+
 # panna 0.3.70
 
 ## Player breakdown file sorted by a numeric player bucket
