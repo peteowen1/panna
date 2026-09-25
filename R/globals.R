@@ -815,3 +815,8 @@ utils::globalVariables(c(
   "scorer", "goals_for", "goals_against", "score_diff", "i.teams", "i.goals_for", "i.goals_against",
   "right", "r_prev", "n_prev", "match_date", "body_part", "is_own_goal"
 ))
+
+# .ng_breakdown() / .ng_play_type() (R/ng_breakdown.R).
+utils::globalVariables(c(
+  "value_own", "play_type", "net_goals", "ng_recon", "pre", "owed", "got", "tot", "s"
+))

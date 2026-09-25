@@ -352,10 +352,45 @@ validate_game_log_schema <- function(dt, league, season) {
   invisible(refreshed)
 }
 
+# Net goals by play type for one season: ng_breakdown_<season>.parquet beside
+# the game logs. Written only when every league that built net goals also built
+# its breakdown -- a file short of a league would show that league's players
+# nothing while the rest looked complete. Subset-league runs merge into the
+# existing file the same way the game logs do.
+.write_ng_breakdown <- function(parts, failed, season) {
+  if (length(failed)) {
+    message(sprintf("  [%s] net goals breakdown NOT written: failed for %s",
+                    season, paste(failed, collapse = ", ")))
+    return(invisible(NULL))
+  }
+  if (!length(parts)) return(invisible(NULL))
+  bd <- data.table::rbindlist(parts, use.names = TRUE)
+  path <- file.path(cache_dir, sprintf("ng_breakdown_%s.parquet", season))
+  if (isTRUE(merge_subset_leagues) && file.exists(path)) {
+    existing <- data.table::as.data.table(arrow::read_parquet(path))
+    gc()   # release arrow's mapped handle before overwriting (Windows 1224)
+    bd <- data.table::rbindlist(list(existing[!league %in% unique(bd$league)], bd),
+                                use.names = TRUE)
+  }
+  tmp <- paste0(path, ".tmp")
+  arrow::write_parquet(bd, tmp)
+  if (file.exists(path)) file.remove(path)
+  file.rename(tmp, path)
+  message(sprintf("  [%s] Written: %s (%d rows, %d leagues)", season, path,
+                  nrow(bd), data.table::uniqueN(bd$league)))
+  invisible(path)
+}
+
+# Breakdown files written by THIS run -- the only ones registered for publish, so
+# a season whose breakdown failed never ships last run's file beside new logs.
+ng_bd_paths <- character(0)
+
 # Process a single season: returns path to written parquet, or NULL on failure.
 .process_season <- function(season) {
   message(sprintf("\n########## SEASON %s ##########", season))
   all_game_logs <- list()
+  all_ng_breakdown <- list()   # net goals by play type, one table per league
+  ng_bd_failed <- character(0)
 
   # --- Pre-flight: events_consolidated coverage check (panna#NN) -----------
   # The EPV pipeline reads from events_consolidated/events_<comp>.parquet.
@@ -479,6 +514,7 @@ validate_game_log_schema <- function(dt, league, season) {
       player_game_epv  <- aggregate_player_game_epv(spadl_credit, lineups)
 
       ng_cols <- NULL   # reset per league: a skip must not inherit the last one's
+      ng_pay <- NULL; ng_pre <- NULL
       # --- Net goals ledger (ADDITIVE; every production column above is
       # untouched). Three columns join the frame: `net_goals` and its two
       # halves. The ledger allocates each action so a team's players sum to
@@ -823,6 +859,7 @@ validate_game_log_schema <- function(dt, league, season) {
         # straight in would drop their value and stop a match's sides
         # cancelling. Fold it back to their teams first, so a published team's
         # rows sum to exactly what the ledger gave that team.
+        ng_pre <- ng_cols   # kept for the play-type breakdown's fold check
         ng_cols <- ng_fold_unpublished(
           ng_cols, data.table::as.data.table(game_ratings)[, .(match_id, player_id)],
           verbose = FALSE)
@@ -865,6 +902,25 @@ validate_game_log_schema <- function(dt, league, season) {
           })
         message(sprintf("    net goals: %d of %d published rows carry it",
                         sum(!is.na(game_ratings$net_goals)), nrow(game_ratings)))
+        # Net goals by play type for the player page ("where their EPV comes
+        # from"). .ng_breakdown() aborts unless every published row's parts add
+        # up to its net_goals. A failure costs only this file, never the game
+        # logs, and is counted so the season's breakdown is not written short.
+        if ("net_goals" %in% names(game_ratings)) {
+          bd <- tryCatch(.ng_breakdown(ng_pay, ng_pre, game_ratings), error = function(e) {
+            message(sprintf("    net goals breakdown FAILED for %s: %s", league,
+                            conditionMessage(e)))
+            NULL
+          })
+          if (is.null(bd)) {
+            ng_bd_failed <- c(ng_bd_failed, league)
+          } else {
+            bd[, `:=`(league = league, season = season)]
+            all_ng_breakdown[[league]] <- bd
+            message(sprintf("    net goals breakdown: %d rows, %d categories",
+                            nrow(bd), data.table::uniqueN(bd$category)))
+          }
+        }
       }
       game_ratings[, league := league]
       game_ratings[, season := season]
@@ -1241,8 +1297,11 @@ validate_game_log_schema <- function(dt, league, season) {
                   file.size(out_path) / (1024 * 1024),
                   nrow(game_logs), ncol(game_logs)))
 
+  bd_path <- .write_ng_breakdown(all_ng_breakdown, ng_bd_failed, season)
+  if (!is.null(bd_path)) ng_bd_paths <<- c(ng_bd_paths, bd_path)
+
   # Free memory between seasons
-  rm(game_logs, player_totals, all_game_logs)
+  rm(game_logs, player_totals, all_game_logs, all_ng_breakdown)
   gc(verbose = FALSE)
 
   out_path
@@ -1356,7 +1415,7 @@ if (isTRUE(upload_game_logs)) {
   } else {
     unlist(season_paths)
   }
-  files_to_publish <- candidates[file.exists(candidates)]
+  files_to_publish <- c(candidates[file.exists(candidates)], ng_bd_paths)
 
   if (exists("publish_files", envir = .GlobalEnv)) {
     publish_files$blog_latest <<- c(publish_files$blog_latest, files_to_publish)
