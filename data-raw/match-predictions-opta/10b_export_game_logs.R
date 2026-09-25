@@ -378,7 +378,45 @@ validate_game_log_schema <- function(dt, league, season) {
   file.rename(tmp, path)
   message(sprintf("  [%s] Written: %s (%d rows, %d leagues)", season, path,
                   nrow(bd), data.table::uniqueN(bd$league)))
-  invisible(path)
+  c(path, .write_ng_player_breakdown(bd, season, cache_dir))
+}
+
+# Season totals per player (the file the player page reads): sorted by player in
+# row groups of 5,000, so the page's filtered read touches one group instead of a
+# season's 2M+ match rows. Built from the whole season file after any merge, so a
+# subset re-run still totals every league.
+.write_ng_player_breakdown <- function(bd, season, dir) {
+  pl <- .ng_breakdown_players(bd)
+  path <- file.path(dir, sprintf("ng_player_breakdown_%s.parquet", season))
+  tmp <- paste0(path, ".tmp")
+  arrow::write_parquet(pl, tmp, chunk_size = 5000L)
+  if (file.exists(path)) file.remove(path)
+  file.rename(tmp, path)
+  message(sprintf("  [%s] Written: %s (%d players)", season, path, data.table::uniqueN(pl$player_id)))
+  path
+}
+
+# Stage timers. Reading the code cannot say where a 10b run spends its time --
+# only a timer can -- so every league reports its split and the run ends with
+# the total per stage. Base R only, so it works in CI as well as locally.
+.stage_secs <- numeric(0)     # run totals by stage
+.stage_league <- numeric(0)   # this league's split
+.stage_t0 <- NULL
+.stage_start <- function() {
+  .stage_league <<- numeric(0)
+  .stage_t0 <<- proc.time()[["elapsed"]]
+}
+.stage <- function(name) {
+  if (is.null(.stage_t0)) return(invisible())
+  now <- proc.time()[["elapsed"]]
+  .stage_league[name] <<- sum(.stage_league[name], now - .stage_t0, na.rm = TRUE)
+  .stage_secs[name] <<- sum(.stage_secs[name], now - .stage_t0, na.rm = TRUE)
+  .stage_t0 <<- now
+}
+.stage_report <- function(label) {
+  tot <- sum(.stage_league)
+  message(sprintf("    time %s: %.0fs (%s)", label, tot, paste(sprintf("%s %.0f%%",
+    names(.stage_league), 100 * .stage_league / max(tot, 1e-9)), collapse = ", ")))
 }
 
 # Breakdown files written by THIS run -- the only ones registered for publish, so
@@ -471,8 +509,10 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
                sprintf("%s (%s)", league, league_season)
       message(sprintf("\n  Processing %s %s...", label, season))
 
+      .stage_start()
       events  <- load_opta_match_events(league, season = league_season)
       lineups <- load_opta_lineups(league, season = league_season)
+      .stage("load events + lineups")
       # Optional: restrict to specific match_ids (worker gate-fixture regen — only
       # the 2 reference matches need rebuilding, not the whole league-season).
       if (exists("target_match_ids")) {
@@ -501,6 +541,7 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
       chain_outcomes <- add_next_chain_outcome(chain_outcomes)
       spadl_labeled  <- label_actions_with_outcomes(spadl_chains, chain_outcomes)
       spadl_labeled  <- create_next_goal_labels(spadl_labeled)
+      .stage("SPADL + chains")
 
       # --- EPV path ---
       # league_season, not season: a calendar-year league's label ("2026")
@@ -513,6 +554,7 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
                                                shot_lookup = .epv_shot_lookup(league, league_season))
       spadl_credit     <- assign_epv_credit(spadl_epv, xpass_model)
       player_game_epv  <- aggregate_player_game_epv(spadl_credit, lineups)
+      .stage("EPV + credit")
 
       ng_cols <- NULL   # reset per league: a skip must not inherit the last one's
       ng_pay <- NULL; ng_pre <- NULL
@@ -627,6 +669,7 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
       })
 
       message(sprintf("    EPV: %d player-games", nrow(player_game_epv)))
+      .stage("net goals ledger + EPV adjustments")
 
       # --- WPA path ---
       player_game_wpa <- tryCatch({
@@ -660,6 +703,7 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
         NULL
       })
 
+      .stage("WPA")
       # --- PSV path ---
       player_game_psv <- NULL
       league_match_ids <- unique(events$match_id)
@@ -803,6 +847,7 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
         })
       }
 
+      .stage("PSV")
       # --- Merge ---
       game_ratings <- build_player_game_ratings(
         player_game_epv = player_game_epv,
@@ -932,6 +977,8 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
 
       validate_game_log_schema(game_ratings, league, season)
 
+      .stage("merge + fold/anchor + breakdown")
+      .stage_report(label)
       all_game_logs[[league]] <- game_ratings
       message(sprintf("    Final: %d player-games", nrow(game_ratings)))
 
@@ -1350,8 +1397,8 @@ if (isTRUE(build_game_logs)) {
   for (s in game_log_seasons) {
     p <- file.path(cache_dir, sprintf("game_logs_%s.parquet", s))
     if (file.exists(p)) season_paths[[s]] <- p
-    b <- file.path(cache_dir, sprintf("ng_breakdown_%s.parquet", s))
-    if (file.exists(b)) ng_bd_paths <- c(ng_bd_paths, b)
+    b <- file.path(cache_dir, sprintf(c("ng_breakdown_%s.parquet", "ng_player_breakdown_%s.parquet"), s))
+    ng_bd_paths <- c(ng_bd_paths, b[file.exists(b)])
   }
   message(sprintf("Upload-only mode: %d existing season parquet(s) found",
                   length(season_paths)))
@@ -1462,6 +1509,12 @@ if (isTRUE(upload_game_logs)) {
 # the release then keeps LAST run's breakdown for that season beside new game
 # logs. Say so where it will be seen: at the end, and as a GitHub Actions
 # annotation on the run page (plain text on a local run).
+if (length(.stage_secs)) {
+  message("
+Time by stage across every league-season built (seconds, share of total):")
+  o <- sort(.stage_secs, decreasing = TRUE)
+  for (nm in names(o)) message(sprintf("  %-36s %7.0f  %4.1f%%", nm, o[[nm]], 100 * o[[nm]] / sum(o)))
+}
 if (length(ng_bd_missing)) {
   txt <- sprintf(paste0("Net goals breakdown NOT built for %d season(s): %s. Those leagues' ",
                         "players get no player-page EPV chart; a season whose file was not ",

@@ -1,3 +1,17 @@
+# panna 0.3.69
+
+## Player season totals for the EPV breakdown, and stage timers in 10b
+
+`.ng_breakdown_players()` sums each player's net goals breakdown over a season, across every
+competition, and 10b writes it as `ng_player_breakdown_<season>.parquet`: sorted by player in row
+groups of 5,000, so the player page's filtered read takes 0.35 s instead of 13.7 s for the
+per-match file (2024-25, 2.4M rows). `data-raw/epv/net-goals/build_ng_player_breakdown.R` builds
+it from per-match files already on disk; `pack_publish_game_logs.R` publishes both and checks each
+player's total and games count against the game logs.
+
+10b now times its stages (loading, SPADL and chains, EPV, the net goals ledger, WPA, PSV, merge)
+and prints each league's split and the run's totals, so the next rebuild says where its time goes.
+
 # panna 0.3.68
 
 ## Net goals by play type for the player page

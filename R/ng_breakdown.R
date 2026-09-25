@@ -123,3 +123,33 @@
   }
   out[]
 }
+
+#' Season totals of the net goals breakdown, one block of rows per player
+#'
+#' The player page shows a season's EPV by play type for one player. Reading the
+#' per-match breakdown for that took 13.7 s on a past season (2.4M rows, 21 MB),
+#' because the page downloads every player's matches to draw one. This sums each
+#' player's season across every competition they played, and the file is written
+#' sorted by player in small row groups so the page reads one group.
+#'
+#' @param bd [.ng_breakdown()] rows for one season: `match_id`, `player_id`,
+#'   `category`, `value`.
+#' @return data.table sorted by `player_id`: `player_id`, `category`, `value`
+#'   (season total, goals), `games` (matches with a breakdown) and `net_goals`
+#'   (the player's season total, the same on each of their rows, so the page can
+#'   check its parts add up).
+#' @keywords internal
+.ng_breakdown_players <- function(bd) {
+  b <- data.table::as.data.table(bd)
+  if (!nrow(b)) cli::cli_abort("No breakdown rows to total.")
+  pl <- b[, .(games = data.table::uniqueN(match_id), net_goals = sum(value)), by = player_id]
+  out <- b[, .(value = sum(value)), by = .(player_id, category)]
+  out <- merge(out, pl, by = "player_id")
+  gap <- max(abs(out[, .(s = sum(value), n = net_goals[1]), by = player_id][, s - n]))
+  if (!is.finite(gap) || gap > 1e-9) {
+    cli::cli_abort("Player season totals do not add up ({signif(gap, 3)}).",
+                   class = "panna_ng_breakdown_mismatch")
+  }
+  data.table::setorder(out, player_id, category)
+  out[]
+}
