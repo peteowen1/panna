@@ -169,7 +169,9 @@ OPTA_TYPE_NAMES <- c(
   "80" = "Unknown",                       # n~89k; was "Chance Missed" (that is 60); located x~12 (verify)
   "81" = "Unknown",                       # n~15.7k; located x~64 (verify)
   "83" = "Att One on One",                # n~798k; maps to take_on; located x~39 (verify - not in public sources)
-  "84" = "Unknown"                        # n~10.8k; non-located; carries rich qualifiers
+  "84" = "Unknown",                       # n~10.8k; non-located; carries rich qualifiers
+  "90" = "Injury Stoppage",               # qualifier 41 (injury); (0, 0), names the injured player; 2025+ feeds
+  "91" = "Injury Resume"                  # play restarting after 90; (0, 0)
 )
 
 # Non-gameplay event type_ids to filter out
@@ -207,7 +209,16 @@ OPTA_NON_GAMEPLAY_TYPES <- c(
   59L,  # Unknown
   60L,  # Unknown
   65L,  # Unknown
-  84L   # Unknown
+  84L,  # Unknown
+  # Named a player, so they used to reach SPADL as action_type "other" -- the
+  # player-less markers never did. See pannaverse docs/plans/XG-VNEXT-2026-09.md
+  # ("Pre-retrain fix"), measured 2026-09-25 on ENG2 2026-27.
+  69L,  # Failed To Block - GER 2015-17 only; dropped like 45/67 (50/50s) rather than
+        #   blamed, since no other feed tags it (Pete, 2026-09-25)
+  90L,  # Injury stoppage (qualifier 41), always at (0, 0): scored as if the ball were
+        #   at the injured player's own corner flag, it paid him +0.02 a time and
+        #   moved 259 of the 274 actions around it
+  91L   # Play resumes after an injury, always at (0, 0)
 )
 
 
@@ -245,7 +256,14 @@ get_or_build_spadl <- function(events, league, season,
                        "player_id", "action_type", "start_x", "start_y",
                        "result")
     missing_cols <- setdiff(required_cols, names(spadl))
-    if (length(missing_cols) == 0) {
+    # A cache built before a type joined OPTA_NON_GAMEPLAY_TYPES still carries
+    # it, and nothing downstream would notice (2026-09-25: injury markers 90/91).
+    excluded_present <- "opta_type_id" %in% names(spadl) &&
+      any(spadl$opta_type_id %in% OPTA_NON_GAMEPLAY_TYPES)
+    if (excluded_present) {
+      cli::cli_alert_info("SPADL cache {.file {basename(cache_path)}} holds event types now excluded as non-play; rebuilding.")
+    }
+    if (length(missing_cols) == 0 && !excluded_present) {
       # Coverage sanity -- cache must cover all requested match_ids.
       wanted <- unique(events$match_id)
       if (length(setdiff(wanted, unique(spadl$match_id))) == 0) {
