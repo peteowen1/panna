@@ -69,9 +69,17 @@ test_that("player season totals sum each player's matches across competitions", 
     category  = c("Passing", "Team pool share", "Passing", "Passing", "Passing"),
     value     = c(0.1, -0.05, 0.2, 0.3, 0.4))
   out <- .ng_breakdown_players(bd)
-  expect_equal(out$player_id, c("p1", "p1", "p2"))
+  expect_setequal(out$player_id, c("p1", "p1", "p2")); expect_false(is.unsorted(out$bucket))
   expect_equal(out[player_id == "p1" & category == "Passing", value], 0.7)
   expect_equal(unique(out[player_id == "p1", games]), 3L)
   expect_equal(unique(out[player_id == "p1", net_goals]), 0.65)
   expect_error(.ng_breakdown_players(bd[0]), "No breakdown rows")
+})
+
+test_that("player bucket matches the website's twin on known ids", {
+  # Values computed by ngPlayerBucket() in football/player.qmd; if either side
+  # changes, the page stops finding players.
+  expect_identical(.ng_player_bucket(c("1ehcji0j9s8b0qsj8v5zinjvu", "5ilkkfbsss0bxd6ttdlqg0uz9", "a", "")),
+                   c(205969L, 498678L, 97L, 0L))
+  expect_true(all(.ng_player_bucket(c("zzzzzzzzzzzzzzzzzzzzzzzzz", "5ilkkfbsss0bxd6ttdlqg0uz9")) < 1000003L))
 })

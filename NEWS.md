@@ -1,3 +1,13 @@
+# panna 0.3.70
+
+## Player breakdown file sorted by a numeric player bucket
+
+`ng_player_breakdown_<season>.parquet` is now sorted by `bucket`, a number from
+`.ng_player_bucket()` (a hash of the player id with an identical JavaScript twin on the player
+page), and the page filters on it. The site's parquet reader skips row groups only on a numeric
+filter, so filtering on `player_id` read all 39 row groups, one R2 request each, and timed out at
+30 s.
+
 # panna 0.3.69
 
 ## Player season totals for the EPV breakdown, and stage timers in 10b

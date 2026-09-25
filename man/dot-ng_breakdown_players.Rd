@@ -11,7 +11,8 @@
 \code{category}, \code{value}.}
 }
 \value{
-data.table sorted by \code{player_id}: \code{player_id}, \code{category}, \code{value}
+data.table sorted by \code{bucket} (\code{\link[=.ng_player_bucket]{.ng_player_bucket()}}) then \code{player_id}:
+\code{bucket}, \code{player_id}, \code{category}, \code{value}
 (season total, goals), \code{games} (matches with a breakdown) and \code{net_goals}
 (the player's season total, the same on each of their rows, so the page can
 check its parts add up).
