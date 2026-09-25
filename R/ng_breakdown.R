@@ -109,7 +109,7 @@
     cli::cli_abort(c(
       "Net goals breakdown: the unlisted team-mates' share misses what folding handed out by {signif(gap_fold, 3)} goals.",
       "x" = "Published net_goals is not payments + fold + anchor for some team-match."
-    ))
+    ), class = "panna_ng_breakdown_mismatch")
   }
   chk <- merge(out[, .(tot = sum(value)), by = .(match_id, player_id)],
                pub[, .(match_id, player_id, net_goals)], by = c("match_id", "player_id"), all.y = TRUE)
@@ -119,7 +119,7 @@
     cli::cli_abort(c(
       "Net goals play types do not add up (payments vs ng_player_game: {signif(gap_pre, 3)}; parts vs published: {signif(gap, 3)}).",
       "x" = "A payment was dropped, doubled or relabelled; nothing is written."
-    ))
+    ), class = "panna_ng_breakdown_mismatch")
   }
   out[]
 }

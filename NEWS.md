@@ -8,9 +8,11 @@ the three steps that build the published number: the team pool share, the share 
 team-mates (`ng_fold_unpublished()`) and the anchor to the real goal difference. The parts add up
 to the published value; it aborts at a 1e-9 gap, and checks the unlisted-team-mates part against
 what folding handed out per team-match, because that part is computed as a remainder. Step 10b
-writes `ng_breakdown_<season>.parquet` beside the game logs and registers it for `blog-latest`;
-a league whose breakdown fails keeps its game logs, but the season's breakdown file is then not
-written. The football twin of torp's `.np_breakdown()`.
+writes `ng_breakdown_<season>.parquet` beside the game logs and registers it for `blog-latest`.
+A league whose breakdown fails keeps its game logs and is left out of the file (also dropped from
+it on a subset re-run), so its players show no chart rather than last run's numbers; the run ends
+with a warning naming it, as a GitHub Actions annotation in CI. The football twin of torp's
+`.np_breakdown()`.
 
 # panna 0.3.67
 

@@ -37,13 +37,13 @@ test_that("parts add up to published net_goals, with fold and anchor as their ow
 test_that("a fold that does not match the unlisted players' value is refused", {
   f <- ng_bd_fixture()
   f$pub[player_id == "p1", net_goals := net_goals + 0.01]   # extra value from nowhere
-  expect_error(.ng_breakdown(f$pay, f$pre, f$pub), "unlisted team-mates")
+  expect_error(.ng_breakdown(f$pay, f$pre, f$pub), "unlisted team-mates", class = "panna_ng_breakdown_mismatch")
 })
 
 test_that("a payment table that disagrees with ng_player_game is refused", {
   f <- ng_bd_fixture()
   f$pay[1, value_own := 0.5]     # pre_fold was built from the old value
-  expect_error(.ng_breakdown(f$pay, f$pre, f$pub), "do not add up")
+  expect_error(.ng_breakdown(f$pay, f$pre, f$pub), "do not add up", class = "panna_ng_breakdown_mismatch")
 })
 
 test_that("a team with no published rows does not trip the fold check", {
