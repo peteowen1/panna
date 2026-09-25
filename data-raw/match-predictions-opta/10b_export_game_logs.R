@@ -378,11 +378,19 @@ validate_game_log_schema <- function(dt, league, season) {
   file.rename(tmp, path)
   message(sprintf("  [%s] Written: %s (%d rows, %d leagues)", season, path,
                   nrow(bd), data.table::uniqueN(bd$league)))
-  c(path, .write_ng_player_breakdown(bd, season, cache_dir))
+  # Its own guard: the per-match file above is already on disk and correct, so a
+  # failure here must cost only the player totals, not un-register that file.
+  pl_path <- tryCatch(.write_ng_player_breakdown(bd, season, cache_dir), error = function(e) {
+    message(sprintf("  [%s] player breakdown totals FAILED: %s", season, conditionMessage(e)))
+    ng_bd_missing <<- c(ng_bd_missing, sprintf("%s (player totals)", season))
+    NULL
+  })
+  c(path, pl_path)
 }
 
 # Season totals per player (the file the player page reads): sorted by player in
-# row groups of 5,000, so the page's filtered read touches one group instead of a
+# row groups of 5,000, so the page's filtered read touches one or two groups (a
+# player's rows can straddle a boundary) instead of a
 # season's 2M+ match rows. Built from the whole season file after any merge, so a
 # subset re-run still totals every league.
 .write_ng_player_breakdown <- function(bd, season, dir) {
