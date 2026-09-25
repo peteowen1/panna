@@ -61,3 +61,17 @@ test_that("play types map role first", {
                c("Shooting: against the keeper", "Stopping shots", "Receiving a pass",
                  "Passing", "Keeper: handling"))
 })
+
+test_that("player season totals sum each player's matches across competitions", {
+  bd <- data.table::data.table(
+    match_id  = c("m1", "m1", "m2", "m3", "m3"),
+    player_id = c("p1", "p1", "p1", "p2", "p1"),
+    category  = c("Passing", "Team pool share", "Passing", "Passing", "Passing"),
+    value     = c(0.1, -0.05, 0.2, 0.3, 0.4))
+  out <- .ng_breakdown_players(bd)
+  expect_equal(out$player_id, c("p1", "p1", "p2"))
+  expect_equal(out[player_id == "p1" & category == "Passing", value], 0.7)
+  expect_equal(unique(out[player_id == "p1", games]), 3L)
+  expect_equal(unique(out[player_id == "p1", net_goals]), 0.65)
+  expect_error(.ng_breakdown_players(bd[0]), "No breakdown rows")
+})

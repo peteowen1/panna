@@ -1,4 +1,4 @@
-# Model-pack step 9: publish the twelve rebuilt game-log seasons to pannadata@blog-latest.
+# Publish the twelve rebuilt game-log seasons, and their net goals breakdowns, to pannadata@blog-latest.
 # =============================================================================
 # Built by _run_10b_pack_2026_09.R on the new EPV + xGOT (published 2026-09-24);
 # every season verified by ng_verify_seasons.R (each team-match within 5e-4 of its
@@ -39,10 +39,53 @@ want <- Reduce(union, all_cols)
 short <- vapply(all_cols, function(cc) paste(setdiff(want, cc), collapse = ", "), character(1))
 if (any(nzchar(short))) stop("seasons missing columns other seasons have:\n",
                              paste(basename(src)[nzchar(short)], short[nzchar(short)], sep = ": ", collapse = "\n"))
+# Net goals by play type (the player page's "where their EPV comes from"), one
+# file per rebuilt season. Published WITH the game logs because the chart hides
+# a player whose breakdown does not add up to the game logs it sits beside, so
+# the two must come from the same build. Checked here as well as in 10b: every
+# player-match with net_goals has a breakdown, the parts add up to the rounded
+# net_goals (the game logs carry 4 dp), and nothing is missing either way.
+bd_src <- file.path(C, sprintf("ng_breakdown_%s.parquet", SEASONS))
+stopifnot(all(file.exists(bd_src)))
+bd_age <- as.numeric(difftime(Sys.time(), file.mtime(bd_src), units = "hours"))
+if (any(abs(bd_age - age_h) > 1)) stop("breakdown and game logs are from different builds: ",
+                                        paste(basename(bd_src)[abs(bd_age - age_h) > 1], collapse = ", "))
+for (i in seq_along(SEASONS)) {
+  bd <- data.table::as.data.table(arrow::read_parquet(bd_src[i], col_select = c("match_id", "player_id", "value")))
+  gl <- data.table::as.data.table(arrow::read_parquet(src[i], col_select = c("match_id", "player_id", "net_goals")))
+  b <- bd[, .(b = sum(value)), by = .(match_id, player_id)]
+  m <- merge(b, gl[!is.na(net_goals)], by = c("match_id", "player_id"), all = TRUE)
+  if (!nrow(m)) stop(basename(bd_src[i]), " is empty")
+  n_miss <- sum(is.na(m$b) | is.na(m$net_goals))
+  gap <- max(abs(m$b - m$net_goals), na.rm = TRUE)
+  if (n_miss > 0 || gap > 1e-4) stop(sprintf("%s: %d player-matches unmatched, worst gap %.2g", basename(bd_src[i]), n_miss, gap))
+}
+cat("breakdown check: all", length(SEASONS), "seasons add up to their game logs
+")
+# The player season totals the page reads: each player's total must equal the
+# sum of their game-log net_goals for the season, and their games count the
+# number of their game-log rows with net_goals.
+pl_src <- file.path(C, sprintf("ng_player_breakdown_%s.parquet", SEASONS))
+stopifnot(all(file.exists(pl_src)))
+for (i in seq_along(SEASONS)) {
+  pl <- unique(data.table::as.data.table(arrow::read_parquet(pl_src[i]))[, .(player_id, games, net_goals)])
+  gl <- data.table::as.data.table(arrow::read_parquet(src[i], col_select = c("player_id", "net_goals")))[
+    !is.na(net_goals), .(n = .N, t = sum(net_goals)), by = player_id]
+  m <- merge(pl, gl, by = "player_id", all = TRUE)
+  bad <- m[is.na(games) | is.na(n) | games != n | abs(net_goals - t) > 1e-3 * pmax(n, 1)]
+  if (!nrow(m) || nrow(bad)) stop(sprintf("%s: %d of %d players do not match their game logs",
+                                          basename(pl_src[i]), nrow(bad), nrow(m)))
+}
+cat("player totals check: all", length(SEASONS), "seasons match their game logs
+")
 stage <- file.path(tempdir(), "gl-pack"); dir.create(stage, showWarnings = FALSE)
 paths <- file.path(stage, basename(src)); stopifnot(all(file.copy(src, paths, overwrite = TRUE)))
 alias <- file.path(stage, "game_logs.parquet"); stopifnot(file.copy(src[length(src)], alias, overwrite = TRUE))
 paths <- c(paths, alias)
+bd_paths <- file.path(stage, basename(bd_src)); stopifnot(all(file.copy(bd_src, bd_paths, overwrite = TRUE)))
+paths <- c(paths, bd_paths)
+pl_paths <- file.path(stage, basename(pl_src)); stopifnot(all(file.copy(pl_src, pl_paths, overwrite = TRUE)))
+paths <- c(paths, pl_paths)
 rows <- setNames(vapply(paths, function(p) nrow(arrow::open_dataset(p)), numeric(1)), basename(paths))
 print(data.frame(asset = names(rows), rows = unname(rows), md5 = unname(tools::md5sum(paths))))
 dry <- !identical(Sys.getenv("PACK_PUBLISH"), "1")
