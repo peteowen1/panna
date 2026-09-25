@@ -134,7 +134,8 @@
 #'
 #' @param bd [.ng_breakdown()] rows for one season: `match_id`, `player_id`,
 #'   `category`, `value`.
-#' @return data.table sorted by `player_id`: `player_id`, `category`, `value`
+#' @return data.table sorted by `bucket` ([.ng_player_bucket()]) then `player_id`:
+#'   `bucket`, `player_id`, `category`, `value`
 #'   (season total, goals), `games` (matches with a breakdown) and `net_goals`
 #'   (the player's season total, the same on each of their rows, so the page can
 #'   check its parts add up).
@@ -150,6 +151,34 @@
     cli::cli_abort("Player season totals do not add up ({signif(gap, 3)}).",
                    class = "panna_ng_breakdown_mismatch")
   }
-  data.table::setorder(out, player_id, category)
+  out[, bucket := .ng_player_bucket(player_id)]
+  data.table::setcolorder(out, "bucket")
+  data.table::setorder(out, bucket, player_id, category)
   out[]
+}
+
+#' A number for each player id, the same in R and on the website
+#'
+#' The site's parquet reader only skips row groups when it filters on a numeric
+#' column (min/max statistics on text are not safe to compare in the browser --
+#' see `_rowGroupRanges` in the blog's `data-loader.js`). Filtering the player
+#' file on `player_id` therefore read all 39 row groups, one request each, and
+#' timed out at 30 s over R2. Sorting by this number and filtering on it lets the
+#' reader fetch the one or two row groups that hold the player.
+#'
+#' Polynomial hash, base 31, modulo 1,000,003: every intermediate stays below
+#' 2^53, so R doubles and JavaScript numbers give identical results. Twin:
+#' `ngPlayerBucket()` in the blog's `football/player.qmd`. Change both or neither.
+#'
+#' @param id Character vector of player ids.
+#' @return Integer vector in 0..1000002.
+#' @keywords internal
+.ng_player_bucket <- function(id) {
+  u <- unique(id)
+  h <- vapply(u, function(x) {
+    v <- 0
+    for (cp in utf8ToInt(x)) v <- (v * 31 + cp) %% 1000003
+    v
+  }, numeric(1), USE.NAMES = FALSE)
+  as.integer(h[match(id, u)])
 }

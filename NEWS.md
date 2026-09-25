@@ -5,7 +5,10 @@
 `.ng_breakdown_players()` sums each player's net goals breakdown over a season, across every
 competition, and 10b writes it as `ng_player_breakdown_<season>.parquet`: sorted by player in row
 groups of 5,000, so the player page's filtered read takes 0.35 s instead of 13.7 s for the
-per-match file (2024-25, 2.4M rows). `data-raw/epv/net-goals/build_ng_player_breakdown.R` builds
+per-match file (2024-25, 2.4M rows). The file is sorted by `bucket`, a number from
+`.ng_player_bucket()` (a hash of the player id with a JavaScript twin on the page), because the
+site's reader skips row groups only on a numeric filter: filtering on `player_id` read all 39
+groups and timed out at 30 s over R2. `data-raw/epv/net-goals/build_ng_player_breakdown.R` builds
 it from per-match files already on disk; `pack_publish_game_logs.R` publishes both and checks each
 player's total and games count against the game logs.
 
