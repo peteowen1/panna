@@ -58,7 +58,7 @@ build_player_game_ratings <- function(player_game_epv,
       "epv_total_adj", "epv_offensive_adj", "epv_defensive_adj", "opp_adj",
       "epv_passing", "epv_shooting", "epv_dribbling", "epv_aerial",
       "epv_keeping", "epv_defending",
-      "epv_as_actor", "epv_as_receiver", "epv_duel_blame",
+      "epv_as_actor", "epv_as_receiver", "epv_duel_blame", "epv_aerial_att",
       "epv_total_p90", "epv_offensive_p90", "epv_defensive_p90",
       "epv_adj"),
     names(result)
