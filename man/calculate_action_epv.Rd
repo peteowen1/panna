@@ -11,7 +11,9 @@ calculate_action_epv(
   xg_model = NULL,
   league = NULL,
   season = NULL,
-  shot_lookup = NULL
+  shot_lookup = NULL,
+  events = NULL,
+  foot_history = NULL
 )
 }
 \arguments{
@@ -39,6 +41,11 @@ with \code{body_part} and \code{situation}, forwarded to
 xG feeding EPV is skewed roughly 6\%. Build it with
 \code{load_opta_shot_events(league, season)}, not by reading the parquet
 directly.}
+
+\item{events, foot_history}{Full Opta events for these matches and each
+shooter's earlier foot shots, forwarded to \code{add_xg_to_spadl()}.
+Needed only when the xG model reads pre-shot context (xG v5); that model
+aborts without them.}
 }
 \value{
 SPADL actions with EPV columns added:

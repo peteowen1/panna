@@ -4,11 +4,16 @@
 \alias{load_xgot_model}
 \title{Load Pre-trained xGOT Model}
 \usage{
-load_xgot_model(path = NULL)
+load_xgot_model(path = NULL, name = "xgot_model")
 }
 \arguments{
 \item{path}{Optional path to a model RDS. If NULL, tries pannamodels then
 the local pannadata models dir (mirrors load_xg_model()).}
+
+\item{name}{Release asset to load when \code{path} is NULL:
+\code{"xgot_model"} (default) or \code{"xgot_model_v3"} (pre-shot context;
+pass \code{season}, \code{events} and \code{foot_history} to
+\code{add_xgot_to_spadl()}). Never falls back to a differently named model.}
 }
 \value{
 Fitted xGOT model, or NULL if unavailable.

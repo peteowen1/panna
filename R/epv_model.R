@@ -569,6 +569,10 @@ predict_epv_probs <- function(model, features) {
 #'   xG feeding EPV is skewed roughly 6%. Build it with
 #'   \code{load_opta_shot_events(league, season)}, not by reading the parquet
 #'   directly.
+#' @param events,foot_history Full Opta events for these matches and each
+#'   shooter's earlier foot shots, forwarded to \code{add_xg_to_spadl()}.
+#'   Needed only when the xG model reads pre-shot context (xG v5); that model
+#'   aborts without them.
 #'
 #' @return SPADL actions with EPV columns added:
 #'   \itemize{
@@ -581,7 +585,8 @@ predict_epv_probs <- function(model, features) {
 #'
 #' @keywords internal
 calculate_action_epv <- function(spadl_actions, features = NULL, epv_model, xg_model = NULL,
-                                  league = NULL, season = NULL, shot_lookup = NULL) {
+                                  league = NULL, season = NULL, shot_lookup = NULL,
+                                  events = NULL, foot_history = NULL) {
   cli::cli_alert_info("Calculating EPV for {nrow(spadl_actions)} actions...")
 
   # Try to load pre-trained Opta xG model if not provided
@@ -603,7 +608,8 @@ calculate_action_epv <- function(spadl_actions, features = NULL, epv_model, xg_m
   # the skew reached all of them.
   if (!is.null(xg_model)) {
     spadl_actions <- add_xg_to_spadl(spadl_actions, xg_model, season = season,
-                                     shot_lookup = shot_lookup)
+                                     shot_lookup = shot_lookup, events = events,
+                                     foot_history = foot_history)
   }
 
   method <- epv_model$method %||% "goal"

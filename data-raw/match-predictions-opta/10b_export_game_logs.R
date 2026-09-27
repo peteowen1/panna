@@ -160,6 +160,22 @@ message(sprintf("  Alias (game_logs.parquet) → %s", current_season_alias))
 epv_model   <- if (exists("epv_model_override")) epv_model_override else load_epv_model()
 xpass_model <- load_xpass_model()
 wp_model    <- if (exists("wp_model_override")) wp_model_override else load_wp_model()
+# xG and xGOT that price every shot in the game logs and the net goals ledger.
+# Unset, the default published models. To switch to the context models, a driver
+# sets xg_model_override <- load_xg_model(name = "xg_model_v5") and
+# xgot_model_override <- load_xgot_model(name = "xgot_model_v3"); those read
+# pre-shot context from the events and each shooter's earlier foot shots in
+# every league, which is loaded once here.
+xg_model    <- if (exists("xg_model_override")) xg_model_override else load_xg_model()
+xgot_model  <- if (exists("xgot_model_override")) xgot_model_override else load_xgot_model()
+shot_foot_history <- if (.needs_shot_context(xg_model) ||
+                         (!is.null(xgot_model) && .needs_shot_context(xgot_model))) {
+  .load_shot_foot_history()
+}
+message(sprintf("  Shot models: xG %s, xGOT %s%s",
+                xg_model$panna_metadata$version %||% "published",
+                if (is.null(xgot_model)) "none" else xgot_model$panna_metadata$version %||% "published",
+                if (is.null(shot_foot_history)) "" else " (pre-shot context on)"))
 
 match_stats_path <- file.path("data-raw", "cache-skills", "01_match_stats.rds")
 has_match_stats  <- file.exists(match_stats_path)
@@ -544,6 +560,10 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
       # and deterministic given raw events. Use `league_season` in the key
       # so tournament years (WC 2014 vs 2018) get separate cache entries.
       spadl          <- get_or_build_spadl(events, league, league_season)
+      # The SPADL cache holds the whole league-season; keep it to the same
+      # matches as the events, or a context xG model (v5) finds no pre-shot
+      # context for the other matches' shots and aborts.
+      if (exists("target_match_ids")) spadl <- spadl[spadl$match_id %in% target_match_ids, ]
       spadl_chains   <- create_possession_chains(spadl)
       chain_outcomes <- classify_chain_outcomes(spadl_chains)
       chain_outcomes <- add_next_chain_outcome(chain_outcomes)
@@ -558,8 +578,10 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
       # body_part + situation, which SPADL cannot (its bodypart says "foot" for
       # every shot) - without it the xG behind these game logs is ~6% skewed.
       spadl_epv        <- calculate_action_epv(spadl_labeled, features = NULL, epv_model,
+                                               xg_model = xg_model,
                                                league = league, season = league_season,
-                                               shot_lookup = .epv_shot_lookup(league, league_season))
+                                               shot_lookup = .epv_shot_lookup(league, league_season),
+                                               events = events, foot_history = shot_foot_history)
       spadl_credit     <- assign_epv_credit(spadl_epv, xpass_model)
       player_game_epv  <- aggregate_player_game_epv(spadl_credit, lineups)
       .stage("EPV + credit")
@@ -594,14 +616,17 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
         # would have keepers credited for saves, never blamed for goals, and
         # out of the pool blame too. Required, not optional: a league without
         # xGOT on its shots drops its net goals columns instead.
-        # xgot_model_override pins the model like the EPV/WP overrides do: the
-        # bare loader falls back to pannadata's LOCAL copy when pannamodels is
-        # not installed, which can lag the published model (MODELS.md).
-        ng_xgot_model <- if (exists("xgot_model_override")) xgot_model_override else load_xgot_model()
+        # xgot_model (loaded once above) honours xgot_model_override like the
+        # EPV/WP overrides: the bare loader falls back to pannadata's LOCAL copy
+        # when pannamodels is not installed, which can lag the published model
+        # (MODELS.md).
+        ng_xgot_model <- xgot_model
         ng_shots <- as.data.frame(load_opta_shot_events(league, season = league_season))
         ng_lk <- c("match_id", "event_id", "type_id", "goalmouth_y", "goalmouth_z",
                    intersect(c("situation", "is_blocked", "body_part"), names(ng_shots)))
-        spadl_ng <- add_xgot_to_spadl(spadl_ng, ng_xgot_model, ng_shots[, ng_lk])
+        spadl_ng <- add_xgot_to_spadl(spadl_ng, ng_xgot_model, ng_shots[, ng_lk],
+                                      season = league_season, events = events,
+                                      foot_history = shot_foot_history)
         is_shot <- spadl_ng$action_type == "shot"
         if (sum(is_shot) > 0 && mean(!is.na(spadl_ng$xgot[is_shot])) < 0.95) {
           stop(sprintf("xGOT on only %d of %d shots", sum(!is.na(spadl_ng$xgot[is_shot])),

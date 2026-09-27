@@ -103,3 +103,51 @@ test_that(".penalty_xg_for uses the model's by-season table, else PENALTY_XG", {
   expect_equal(panna:::.penalty_xg_for(m, NULL), PENALTY_XG)
   expect_equal(panna:::.penalty_xg_for(m, "not a season"), PENALTY_XG)   # unreadable: the constant, not the table's first row
 })
+
+test_that(".needs_shot_context tells context models from older ones", {
+  expect_true(panna:::.needs_shot_context(list(panna_metadata = list(feature_cols = c("x", "rebound")))))
+  expect_true(panna:::.needs_shot_context(list(panna_metadata = list(feature_cols = c("x", "foot_share")))))
+  expect_false(panna:::.needs_shot_context(list(panna_metadata = list(feature_cols = c("x", "season_num")))))
+})
+
+test_that("a named model loader never falls back to a differently named model", {
+  withr::local_options(pannamodels.cache_dir = withr::local_tempdir())
+  d <- withr::local_tempdir()
+  dir.create(file.path(d, "models"))
+  saveRDS(list(tag = "published"), file.path(d, "models", "xg_model.rds"))
+  saveRDS(list(tag = "published"), file.path(d, "models", "xgot_model.rds"))
+  local_mocked_bindings(opta_data_dir = function(...) d)
+  if (requireNamespace("pannamodels", quietly = TRUE))   # keep it offline: local files only
+    local_mocked_bindings(load_panna_model = function(...) stop("offline"), .package = "pannamodels")
+  expect_equal(suppressMessages(load_xg_model())$tag, "published")
+  expect_error(suppressMessages(load_xg_model(name = "xg_model_v5")), "xg_model_v5")
+  expect_null(suppressWarnings(suppressMessages(load_xgot_model(name = "xgot_model_v3"))))
+  saveRDS(list(tag = "v5"), file.path(d, "models", "xg_model_v5.rds"))
+  expect_equal(suppressMessages(load_xg_model(name = "xg_model_v5"))$tag, "v5")
+})
+
+test_that(".load_shot_foot_history reads the consolidated files, checks dates and caches", {
+  skip_if_not_installed("arrow")
+  # separate folders per case: on Windows arrow keeps a read parquet mapped, so it can't be overwritten
+  write_case <- function(fx_rows) {
+    d <- withr::local_tempdir(.local_envir = parent.frame(2))
+    se <- data.frame(player_id = c("P", "P", "P"), match_id = c("m1", "m2", "m3"),
+                     body_part = c("RightFoot", "LeftFoot", "RightFoot"), is_own_goal = FALSE)
+    fx <- data.frame(match_id = c("m1", "m2", "m3"), match_date = as.Date(c("2024-01-01", "2024-01-08", "2024-01-15")))
+    arrow::write_parquet(se, file.path(d, "opta_shot_events.parquet"))
+    if (length(fx_rows)) arrow::write_parquet(fx[fx_rows, ], file.path(d, "opta_fixtures.parquet"))
+    d
+  }
+  clear <- function() rm(list = ls(panna:::.shot_history_cache), envir = panna:::.shot_history_cache)
+  full <- write_case(1:3); short <- write_case(1); nofx <- write_case(integer(0))
+  cur <- full
+  local_mocked_bindings(opta_data_dir = function(...) cur)
+  clear(); withr::defer(clear())
+  fh <- suppressMessages(panna:::.load_shot_foot_history())
+  expect_equal(fh[match_id == "m3", c(r_prev, n_prev)], c(1, 2))   # only EARLIER matches count
+  cur <- short
+  expect_identical(suppressMessages(panna:::.load_shot_foot_history()), fh)             # cached
+  expect_error(suppressMessages(panna:::.load_shot_foot_history(refresh = TRUE)), "match date")  # fixtures look short
+  cur <- nofx; clear()
+  expect_error(panna:::.load_shot_foot_history(), "missing")
+})

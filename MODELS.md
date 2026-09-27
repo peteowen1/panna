@@ -27,7 +27,7 @@ its fallback chain, the canonical (correct) version, and the override to pin it.
 
 ## Published artifact register (verify, don't assume)
 
-Sizes and dates as at **2026-09-03**, EPV and xGOT rows updated **2026-09-24** (model pack, `pannaverse/docs/plans/EPV-RETRAIN-SCOPE.md`). Published = `pannadata/data/opta/models/`,
+Sizes and dates as at **2026-09-03**, EPV and xGOT rows updated **2026-09-24** (model pack, `pannaverse/docs/plans/EPV-RETRAIN-SCOPE.md`), EPV / WP / xG v5 / xGOT v3 rows **2026-09-28** (xG v5 release, `pannaverse/docs/plans/XG-VNEXT-2026-09.md`). Published = `pannadata/data/opta/models/`,
 candidate = `panna/data-raw/cache/epv/` (gitignored). **A candidate is not
 production until it is published.** Compare byte sizes: a size difference means
 different files, and that is how the xG divergence below went unnoticed.
@@ -40,9 +40,12 @@ different files, and that is how the xG divergence below went unnoticed.
 | xGOT (previous) | 2026-07-23 | 5,212,066 | `C:/dev/_model-backups/2026-09-23/` | rollback copy |
 | xPass | 2026-06-18 | 6,319,289 | same bytes | yes |
 | duel | 2026-06-24 | 368,305 | — | published only |
-| **EPV** | **2026-09-24** | **70,570,212** (md5 4ca161c1) | `data-raw/cache/epv/pack-2026-09/epv_model_pubv0.rds`, same bytes | ✅ both releases, sha256 checked. Labels priced at the ledger's shot price (published xG + aftermath); same 14 inputs. **Local pannadata copy is still the 06-21 file**: pass `epv_model_override` |
-| EPV (previous) | 2026-06-21 | 65,084,700 | `epv_model_xg_clean_full.rds`, backup in `C:/dev/_model-backups/2026-09-23/` | rollback copy |
-| WP | 2026-07-16 | 119,875 | `wp_final_d2repl_reg/` | verify before relying on the override |
+| **EPV** | **2026-09-28** | **70,578,310** (md5 e9fe2721) | `data-raw/cache/epv/pack-2026-09/epv_model_v5v0.rds`, same bytes | ✅ both releases, md5 checked by re-download. Labels at the ledger's shot price on xG v5 (decision register D9); same 14 inputs |
+| EPV (previous) | 2026-09-24 | 70,570,212 (md5 4ca161c1) | `epv_model_pubv0.rds`, backup in `C:/dev/_model-backups/2026-09-28/` | rollback copy |
+| **WP** | **2026-09-28** | **109,567** (md5 e409e551) | `data-raw/cache/epv/pack-2026-09/wp_v5/wp_model.rds`, same bytes | ✅ both releases, md5 checked. The live WP's configuration (depth 4, logistic, raw xmargin/epv) retrained on the v5 pack; passed `pack_gate_wp_v5.R` |
+| WP (previous) | 2026-07-16 | 119,875 | `C:/dev/_model-backups/2026-09-28/` | rollback copy |
+| **xG v5** (`xg_model_v5`) | **2026-09-28** | **789,776** (md5 85a2fdef) | `data-raw/cache/epv/xg-vnext/xg_model_v5.rds` | ✅ both releases. NEW name: `xg_model` above is untouched. Reads pre-shot context: load with `load_xg_model(name = "xg_model_v5")` and pass `events` + `foot_history` (D8) |
+| **xGOT v3** (`xgot_model_v3`) | **2026-09-28** | **792,992** (md5 9554291f) | `data-raw/cache/epv/xg-vnext/xgot_model_v3.rds` | ✅ both releases. NEW name, as xG v5 |
 
 **xG divergence (open, 2026-09-03).** Published is 2026-06-18 (trained on
 1,027,139 shots); the local candidate is 2026-07-17 (1,080,653). Neither
@@ -93,10 +96,12 @@ iterating (EPV/WP) models.
 ## How to rebuild game-logs correctly (the recipe)
 
 ```r
-# from panna/  (since 2026-09-24: the model pack; see the register above)
-epv_model_override  <- readRDS("data-raw/cache/epv/pack-2026-09/epv_model_pubv0.rds")
-xgot_model_override <- readRDS("data-raw/cache/epv/pack-2026-09/xgot_model.rds")
-wp_model_override   <- readRDS("data-raw/cache/epv/pack-2026-09/wp_pubv0/wp_model.rds")  # same config as wp_final_d2repl_reg, trained on the new EPV
+# from panna/  (see the register above)
+# since 2026-09-28: the xG v5 pack
+epv_model_override  <- readRDS("data-raw/cache/epv/pack-2026-09/epv_model_v5v0.rds")
+wp_model_override   <- readRDS("data-raw/cache/epv/pack-2026-09/wp_v5/wp_model.rds")
+xg_model_override   <- load_xg_model("data-raw/cache/epv/xg-vnext/xg_model_v5.rds")    # or load_xg_model(name = "xg_model_v5")
+xgot_model_override <- load_xgot_model("data-raw/cache/epv/xg-vnext/xgot_model_v3.rds")
 blog_leagues       <- c(... blog leagues ...)
 game_log_seasons   <- "2025-2026"   # or a vector for backfill
 upload_game_logs   <- FALSE

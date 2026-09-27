@@ -220,3 +220,47 @@ SHOT_FOOT_MIN <- 10L
   if (!any(ok)) return(unname(tab[which.min(yrs)]))
   unname(tab[which.max(ifelse(ok, yrs, -Inf))])
 }
+
+# Does this xG / xGOT model read pre-shot context (and so need `events`, and
+# `foot_history` for the weak-foot input, at scoring time)?
+.needs_shot_context <- function(model) {
+  any(model$panna_metadata$feature_cols %in% .SHOT_CONTEXT_FEATURES)
+}
+
+.shot_history_cache <- new.env(parent = emptyenv())
+
+#' Every shooter's earlier foot shots, from the full local shot history
+#'
+#' The weak-foot input counts a player's foot shots in EARLIER matches in every
+#' league, so it is built once from the consolidated shot events and fixtures
+#' (all leagues), not per league-season. Cached for the session.
+#'
+#' @param refresh Rebuild even if cached.
+#' @return `.shot_foot_history()` output.
+#' @keywords internal
+.load_shot_foot_history <- function(refresh = FALSE) {
+  if (!refresh && !is.null(.shot_history_cache$foot)) return(.shot_history_cache$foot)
+  dir <- opta_data_dir()
+  se_path <- file.path(dir, "opta_shot_events.parquet")
+  fx_path <- file.path(dir, "opta_fixtures.parquet")
+  miss <- c(se_path, fx_path)[!file.exists(c(se_path, fx_path))]
+  if (length(miss)) {
+    cli::cli_abort(c(
+      "Weak-foot history needs the consolidated shot events and fixtures: {.file {miss}} missing.",
+      "i" = "Sync them with {.code pb_download_opta()}."
+    ))
+  }
+  se <- data.table::as.data.table(arrow::read_parquet(
+    se_path, col_select = c("player_id", "match_id", "body_part", "is_own_goal")))
+  fx <- unique(data.table::as.data.table(arrow::read_parquet(
+    fx_path, col_select = c("match_id", "match_date"))), by = "match_id")
+  se[fx, on = "match_id", match_date := i.match_date]
+  n_dated <- sum(!is.na(se$match_date))
+  if (n_dated < 0.95 * nrow(se)) {
+    cli::cli_abort("Weak-foot history: only {n_dated} of {nrow(se)} shots have a match date; the fixtures file looks short.")
+  }
+  fh <- .shot_foot_history(se)
+  cli::cli_alert_info("Weak-foot history: {nrow(se)} shots, {data.table::uniqueN(fh$player_id)} players")
+  .shot_history_cache$foot <- fh
+  fh
+}

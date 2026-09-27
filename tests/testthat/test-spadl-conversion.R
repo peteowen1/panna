@@ -66,3 +66,19 @@ test_that("convert_opta_to_spadl flips no attribution itself but correctly tags 
   expect_false(any(other_rows$is_own_goal))
   expect_false(any(other_rows$is_penalty))
 })
+
+test_that("Opta injury markers (90/91) and 'failed to block' (69) never reach SPADL", {
+  # 90/91 sit at (0, 0) and name the injured player; scored as plays they paid
+  # him for going down and moved the actions around them (2026-09-25).
+  events <- data.frame(
+    match_id = "m1", event_id = 1:5, type_id = c(1L, 90L, 91L, 69L, 1L),
+    team_id = c("t1", "t1", "t1", "t2", "t1"), player_id = c("p1", "p2", "p2", "q1", "p1"),
+    player_name = c("A", "B", "B", "Q", "A"), minute = c(1L, 2L, 3L, 4L, 5L), second = 0L,
+    x = c(50, 0, 0, 45, 55), y = c(50, 0, 0, 50, 50), end_x = c(60, 0, 0, 45, 65),
+    end_y = 50, outcome = c(1L, 1L, 1L, 0L, 1L), period_id = 1L,
+    qualifier_json = c('{"1":null}', '{"41":null}', '{"189":null}', "{}", '{"1":null}'),
+    stringsAsFactors = FALSE)
+  spadl <- convert_opta_to_spadl(events)
+  expect_false(any(spadl$opta_type_id %in% c(69L, 90L, 91L)))
+  expect_setequal(spadl$original_event_id, c(1, 5))
+})
