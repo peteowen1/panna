@@ -27,7 +27,9 @@ for (d in DEST) {
     f <- file.path(out, a)
     if (file.exists(f)) next
     st <- system2("gh", c("release", "download", d[2], "-R", d[1], "-p", a, "-D", shQuote(out)), stdout = TRUE, stderr = TRUE)
-    if (!file.exists(f)) cat("  (", d[1], d[2], a, "not on the release:", tail(st, 1), ")\n")
+    # A failed download must stop the publish: step 3 overwrites both releases, and
+    # a destination without its backup has no rollback (review finding).
+    if (!file.exists(f)) stop("backup failed: ", d[1], "@", d[2], " ", a, " (", tail(st, 1), ")")
   }
   fs <- list.files(out, pattern = "[.]rds$", full.names = TRUE)
   md <- data.frame(file = basename(fs), md5 = unname(tools::md5sum(fs)), bytes = file.size(fs))
@@ -43,11 +45,11 @@ writeLines(c("# Model backups before the xG v5 release (2026-09-28)",
 
 # ---- 2. input contracts --------------------------------------------------------
 feats <- function(m) m$feature_names %||% m$panna_metadata$feature_cols %||% m$model$feature_names
-bak_pm <- file.path(BAK, "pannamodels-epv")
-for (nm in c("epv_model.rds", "wp_model.rds")) {
-  a <- feats(readRDS(new[[nm]])); b <- feats(readRDS(file.path(bak_pm, nm)))
+for (d in DEST) for (nm in c("epv_model.rds", "wp_model.rds")) {   # against what EACH release holds now
+  bak <- file.path(BAK, paste0(basename(d[1]), "-", d[2]), nm)
+  a <- feats(readRDS(new[[nm]])); b <- feats(readRDS(bak))
   if (!length(a) || !length(b)) stop(nm, ": no feature list to compare")
-  cat(sprintf("%-14s new %2d inputs, published %2d, identical: %s\n", nm, length(a), length(b), identical(a, b)))
+  cat(sprintf("%-22s %-14s new %2d inputs, published %2d, identical: %s\n", paste0(d[1], "@", d[2]), nm, length(a), length(b), identical(a, b)))
   if (!identical(a, b)) stop(nm, ": the input contract changed; that needs a code lockstep, not this script")
 }
 for (nm in c("xg_model_v5.rds", "xgot_model_v3.rds"))
