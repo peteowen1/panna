@@ -136,6 +136,17 @@ cli_alert_success("booster_json embedding is byte-identical to xgb.save.raw() ou
 fresh_booster <- xgb.load.raw(charToRaw(extracted_booster_json))
 cli_alert_success("Reloaded booster from embedded JSON via xgb.load.raw()")
 
+# Models that read pre-shot context (xGOT v3, XG-VNEXT-2026-09) need the match
+# events and weak-foot history for every input, which the fixture step below
+# does not build (it has only the 18 geometry/placement inputs). Their parity
+# gate is the worker's own (inthegame-blog worker test-xg-v5.mjs pattern), so
+# the byte-identical splice + reload check above is the whole check here.
+needs_ctx <- "season_num" %in% feature_names || any(feature_names %in% .SHOT_CONTEXT_FEATURES)
+if (needs_ctx) {
+  cli_alert_info("Model reads pre-shot context ({sum(feature_names %in% .SHOT_CONTEXT_FEATURES)} inputs + season): skipping the geometry-only fixture step.")
+  cli_h1("Complete")
+  cli_alert_success("Model JSON: {json_path}")
+} else {
 # ------------------------------------------------------------------------
 # 5. Build ~20 REAL shot fixtures (real match coords + real goalmouth
 #    coords -- never synthetic) with full input feature vectors + expected
@@ -259,3 +270,4 @@ cli_h1("Complete")
 cli_alert_success("Model JSON: {json_path}")
 cli_alert_success("Fixtures JSON: {fixtures_path}")
 cli_alert_info("Max abs diff (original vs reloaded booster on fixtures): {format(max_diff, scientific = TRUE)}")
+}
