@@ -537,27 +537,31 @@ add_xgot_to_spadl <- function(spadl_actions, xgot_model, goalmouth_lookup,
 #'
 #' @param path Optional path to a model RDS. If NULL, tries pannamodels then
 #'   the local pannadata models dir (mirrors load_xg_model()).
+#' @param name Release asset to load when \code{path} is NULL:
+#'   \code{"xgot_model"} (default) or \code{"xgot_model_v3"} (pre-shot context;
+#'   pass \code{season}, \code{events} and \code{foot_history} to
+#'   \code{add_xgot_to_spadl()}). Never falls back to a differently named model.
 #' @return Fitted xGOT model, or NULL if unavailable.
 #' @family epv
 #' @export
-load_xgot_model <- function(path = NULL) {
+load_xgot_model <- function(path = NULL, name = "xgot_model") {
   if (!is.null(path) && file.exists(path)) {
     cli::cli_alert_success("Loaded xGOT model from {path}")
     return(readRDS(path))
   }
   if (requireNamespace("pannamodels", quietly = TRUE)) {
-    model <- tryCatch(pannamodels::load_panna_model("xgot_model", verbose = FALSE),
+    model <- tryCatch(pannamodels::load_panna_model(name, verbose = FALSE),
                       error = function(e) NULL)
     if (!is.null(model)) {
-      cli::cli_alert_success("Loaded xGOT model from pannamodels")
+      cli::cli_alert_success("Loaded xGOT model {.val {name}} from pannamodels")
       return(model)
     }
   }
-  local_path <- file.path(opta_data_dir(), "models", "xgot_model.rds")
+  local_path <- file.path(opta_data_dir(), "models", paste0(name, ".rds"))
   if (file.exists(local_path)) {
     cli::cli_alert_success("Loaded xGOT model from {local_path}")
     return(readRDS(local_path))
   }
-  cli::cli_warn("xGOT model not found (pannamodels or {local_path}). Run the EPV pipeline with goalmouth-enabled shots.")
+  cli::cli_warn("xGOT model {.val {name}} not found (pannamodels or {local_path}). Run the EPV pipeline with goalmouth-enabled shots.")
   NULL
 }

@@ -4,10 +4,16 @@
 \alias{load_xg_model}
 \title{Load Pre-trained xG Model}
 \usage{
-load_xg_model(path = NULL)
+load_xg_model(path = NULL, name = "xg_model")
 }
 \arguments{
 \item{path}{Path to model RDS file. If NULL, attempts to download from releases.}
+
+\item{name}{Release asset to load when \code{path} is NULL: \code{"xg_model"}
+(the default model every caller has always read) or \code{"xg_model_v5"}
+(pre-shot context; its callers must pass \code{events} and
+\code{foot_history} to \code{add_xg_to_spadl()}). A named model never
+falls back to a differently named one.}
 }
 \value{
 Fitted xG model

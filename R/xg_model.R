@@ -745,11 +745,16 @@ add_xg_to_spadl <- function(spadl_actions, xg_model, season = NULL,
 #' Loads xG model from saved RDS file or downloads from GitHub releases.
 #'
 #' @param path Path to model RDS file. If NULL, attempts to download from releases.
+#' @param name Release asset to load when \code{path} is NULL: \code{"xg_model"}
+#'   (the default model every caller has always read) or \code{"xg_model_v5"}
+#'   (pre-shot context; its callers must pass \code{events} and
+#'   \code{foot_history} to \code{add_xg_to_spadl()}). A named model never
+#'   falls back to a differently named one.
 #'
 #' @return Fitted xG model
 #' @family epv
 #' @export
-load_xg_model <- function(path = NULL) {
+load_xg_model <- function(path = NULL, name = "xg_model") {
   if (!is.null(path) && file.exists(path)) {
     model <- readRDS(path)
     cli::cli_alert_success("Loaded xG model from {path}")
@@ -759,17 +764,17 @@ load_xg_model <- function(path = NULL) {
   # Try pannamodels package first (preferred)
   if (requireNamespace("pannamodels", quietly = TRUE)) {
     model <- tryCatch(
-      pannamodels::load_panna_model("xg_model", verbose = FALSE),
+      pannamodels::load_panna_model(name, verbose = FALSE),
       error = function(e) NULL
     )
     if (!is.null(model)) {
-      cli::cli_alert_success("Loaded xG model from pannamodels")
+      cli::cli_alert_success("Loaded xG model {.val {name}} from pannamodels")
       return(model)
     }
   }
 
   # Fall back to local pannadata path
-  default_path <- file.path(opta_data_dir(), "models", "xg_model.rds")
+  default_path <- file.path(opta_data_dir(), "models", paste0(name, ".rds"))
   if (file.exists(default_path)) {
     model <- readRDS(default_path)
     cli::cli_alert_success("Loaded xG model from {default_path}")
@@ -777,7 +782,7 @@ load_xg_model <- function(path = NULL) {
   }
 
   cli::cli_abort(c(
-    "xG model not found.",
+    "xG model {.val {name}} not found.",
     "i" = "Install pannamodels: devtools::install_github('peteowen1/pannamodels')",
     "i" = "Or download with pb_download_epv_models()"
   ))

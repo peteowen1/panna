@@ -68,6 +68,13 @@ epv_model <- if (exists("epv_model_override")) {
   NULL
 })
 
+# xG behind the shots (and so behind `xg_diff` and the EPV at each shot). Unset,
+# the default published model. xg_model_override <- load_xg_model(name =
+# "xg_model_v5") switches to the context model, which also needs the events and
+# each shooter's earlier foot shots (loaded once, all leagues).
+wp_xg_model <- if (exists("xg_model_override")) xg_model_override else NULL
+wp_foot_history <- if (!is.null(wp_xg_model) && .needs_shot_context(wp_xg_model)) .load_shot_foot_history()
+
 all_wp_features <- list()
 
 for (league in LEAGUES) {
@@ -88,9 +95,10 @@ for (league in LEAGUES) {
       # margin_poss-only fallback.
       if (!is.null(epv_model)) {
         spadl_chains <- calculate_action_epv(spadl_chains, features = NULL,
-                                             epv_model, league = league,
-                                             season = season,
-                                             shot_lookup = shot_lk)
+                                             epv_model, xg_model = wp_xg_model,
+                                             league = league, season = season,
+                                             shot_lookup = shot_lk, events = events,
+                                             foot_history = wp_foot_history)
       }
 
       # #93: re-derive red cards from raw events (type_id 17 + qual 33/14) and
