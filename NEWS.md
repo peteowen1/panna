@@ -1,3 +1,19 @@
+# panna 0.3.72
+
+## xG v5.1 and xGOT v3.1: goals-only feeds never train
+
+xG v5 priced 11,698 shots above 0.9 and 98.7% of them were goals. 3,229 matches in the Opta data
+are goals-only feeds (kick-off, the goals, full-time), and v5 had learned to recognise their rows.
+A match now trains only if its event feed has at least 200 passes (`xgv_12_feed_passes.R`); EPV
+and WP were retrained on the result. v5.1 is right on average every season (out-of-fold goals
+per xG 0.997 to 1.004), and published 2026-09-29 under the same asset names (`MODELS.md`).
+
+## Season labels with an apostrophe
+
+The per-season parquet readers quote their path for DuckDB with `.sql_path()`, so a tournament
+label such as "2023 Côte d'Ivoire" no longer breaks the query. It had cost AFCON 2022-23's game
+logs their xGOT, keeper and duel columns.
+
 # panna 0.3.71
 
 ## Opta injury markers and "failed to block" are no longer scored as plays
