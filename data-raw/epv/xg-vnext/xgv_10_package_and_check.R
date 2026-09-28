@@ -12,12 +12,14 @@
 suppressMessages({library(data.table); library(arrow); library(dplyr); devtools::load_all(quiet = TRUE)})
 X <- "data-raw/cache/epv/xg-vnext"; OD <- "C:/dev/pannaverse/pannadata/data/opta/"
 LG <- "ENG"; SE <- "2024-2025"
+TAG <- Sys.getenv("XG_TAG", "_1")   # "_1" = v5.1 / v3.1 (full event feeds only)
+XGF <- paste0("xg_model_v5", TAG, ".rds"); XGOTF <- paste0("xgot_model_v3", TAG, ".rds")
 
 pr <- fread(file.path(X, "penalty_rates.csv"))
 by_season <- unique(pr[, .(season_num, prior)])[order(season_num)]
 tab <- setNames(round(by_season$prior, 5), by_season$season_num)
 cur <- tab[[as.character(max(as.integer(names(tab))) - 1L)]]   # the season being played: 2026-27 -> 2027
-for (f in c("xg_model_v5.rds", "xgot_model_v3.rds")) {
+for (f in c(XGF, XGOTF)) {
   m <- readRDS(file.path(X, f))
   m$panna_metadata$na_is_missing <- TRUE
   m$panna_metadata$penalty_xg <- cur
@@ -25,7 +27,7 @@ for (f in c("xg_model_v5.rds", "xgot_model_v3.rds")) {
   saveRDS(m, file.path(X, f))
   cat(f, ": na_is_missing TRUE, penalty_xg", cur, ", by season", length(tab), "rows\n")
 }
-xg5 <- readRDS(file.path(X, "xg_model_v5.rds")); xgot3 <- readRDS(file.path(X, "xgot_model_v3.rds"))
+xg5 <- readRDS(file.path(X, XGF)); xgot3 <- readRDS(file.path(X, XGOTF))
 
 # ---- the scoring path, as a pipeline would run it -------------------------------
 events <- load_opta_match_events(LG, season = SE, source = "local")

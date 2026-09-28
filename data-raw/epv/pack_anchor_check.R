@@ -10,7 +10,8 @@ ft <- as.data.table(suppressMessages(create_epv_features_simple(ep)))
 M <- list(old_canonical = "data-raw/cache/epv/epv_model_xg_clean_full.rds",
           new_pubxg = "data-raw/cache/epv/pack-2026-09/epv_model_pubxg.rds",
           new_pubv0 = "data-raw/cache/epv/pack-2026-09/epv_model_pubv0.rds",
-          new_v5v0 = "data-raw/cache/epv/pack-2026-09/epv_model_v5v0.rds")   # xG v5 release, 2026-09-27
+          new_v5v0 = "data-raw/cache/epv/pack-2026-09/epv_model_v5v0.rds",   # xG v5 release, 2026-09-27
+          new_v51v0 = "data-raw/cache/epv/pack-2026-09/epv_model_v51v0.rds") # xG v5.1, full event feeds only, 2026-09-28
 for (n in names(M)) ep[[n]] <- predict_epv_probs(readRDS(M[[n]]), ft)$expected_xg
 six <- ep[action_type == "aerial" & result %in% "success" & start_x > 94.8 & start_y > 36.8 & start_y < 63.2]
 hdr <- ep[action_type == "aerial" & result %in% "success" & n1_type == "shot" & n1_pl == player_id]
@@ -24,3 +25,6 @@ cat("shot-price labels: 6-yard aerials", round(mean(six$new_pubv0), 3), "| won a
 cat("xG v5 shot-price labels (v5v0): 6-yard aerials", round(mean(six$new_v5v0), 3),
     if (mean(six$new_v5v0) >= 0.08 && mean(six$new_v5v0) <= 0.14) "(ANCHOR PASS)" else "(ANCHOR FAIL)",
     "| won aerial then own header", round(mean(hdr$new_v5v0), 3), "| mean EPV over all actions", round(mean(ep$new_v5v0), 4), "\n")
+cat("xG v5.1 shot-price labels (v51v0): 6-yard aerials", round(mean(six$new_v51v0), 3),
+    if (mean(six$new_v51v0) >= 0.08 && mean(six$new_v51v0) <= 0.14) "(ANCHOR PASS)" else "(ANCHOR FAIL)",
+    "| won aerial then own header", round(mean(hdr$new_v51v0), 3), "| mean EPV over all actions", round(mean(ep$new_v51v0), 4), "\n")
