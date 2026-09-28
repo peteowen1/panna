@@ -15,7 +15,7 @@
 suppressMessages({library(arrow); library(data.table); library(xgboost); devtools::load_all(".", quiet = TRUE)})
 options(width = 130)
 P <- "data-raw/cache/epv/pack-2026-09/"
-TAG <- Sys.getenv("PACK_TAG", "v5")
+TAG <- Sys.getenv("PACK_TAG", "v51")   # v5 is kept only to reproduce the 2026-09-27 gate
 PACK <- switch(TAG,
   v5  = list(epv = "epv_model_v5v0.rds",  xg = "xg_model_v5.rds",   wp = "wp_v5",  label = "v5"),
   v51 = list(epv = "epv_model_v51v0.rds", xg = "xg_model_v5_1.rds", wp = "wp_v51", label = "v5.1"),

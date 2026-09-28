@@ -39,7 +39,7 @@ for (d in DEST) {
   cat("backup", out, ":", nrow(md), "files\n")
 }
 writeLines(c("# Model backups before the xG v5.1 release (2026-09-29): the v5 pack as published 2026-09-28",
-             "Taken by panna data-raw/epv/pack_publish_v5.R. Rollback: re-upload these files to the same",
+             "Taken by panna data-raw/epv/pack_publish_v51.R. Rollback: re-upload these files to the same",
              "release with vb_publish(..., carry_forward = TRUE), then re-run 10b. Not executed: each overwrites a live asset.",
              "xg_model_v5.rds / xgot_model_v3.rds here are v5 / v3 (the goals-only leak); roll back to them only knowingly."),
            file.path(BAK, "README.md"))
