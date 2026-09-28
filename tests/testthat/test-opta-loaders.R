@@ -469,3 +469,16 @@ test_that("remote xMetrics enrichment errors when the join matches zero rows", {
     "matched 0 of"
   )
 })
+
+test_that(".sql_path quotes a path with an apostrophe so DuckDB can read it", {
+  skip_if_not_installed("duckdb")
+  skip_if_not_installed("arrow")
+  expect_equal(panna:::.sql_path("a/2023 C'b.parquet"), "'a/2023 C''b.parquet'")
+  d <- withr::local_tempdir()
+  f <- file.path(d, "2023 C\u00f4te d'Ivoire.parquet")
+  arrow::write_parquet(data.frame(x = 1:3), f)
+  con <- DBI::dbConnect(duckdb::duckdb()); withr::defer(DBI::dbDisconnect(con, shutdown = TRUE))
+  sql <- sprintf("SELECT * FROM read_parquet(%s, union_by_name=true)",
+                 panna:::.sql_path(normalizePath(f, winslash = "/")))
+  expect_equal(nrow(DBI::dbGetQuery(con, sql)), 3L)
+})

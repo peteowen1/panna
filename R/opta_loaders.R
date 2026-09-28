@@ -634,7 +634,7 @@ load_opta_table <- function(table_type, league, season, columns,
           ), class = "vb_error_absent")
         }
       }
-      parquet_pattern <- sprintf("'%s'", normalizePath(parquet_path, winslash = "/", mustWork = TRUE))
+      parquet_pattern <- .sql_path(normalizePath(parquet_path, winslash = "/", mustWork = TRUE))
     } else {
       league_dir <- file.path(base_dir, table_type, opta_league)
       if (!dir.exists(league_dir)) {
@@ -644,7 +644,7 @@ load_opta_table <- function(table_type, league, season, columns,
           "i" = "Or use {.code source = 'remote'} to load directly from GitHub."
         ), class = "vb_error_absent")
       }
-      parquet_pattern <- sprintf("'%s/*.parquet'", normalizePath(league_dir, winslash = "/", mustWork = TRUE))
+      parquet_pattern <- .sql_path(paste0(normalizePath(league_dir, winslash = "/", mustWork = TRUE), "/*.parquet"))
     }
 
     # Build column selection (validate to prevent SQL injection)
@@ -690,8 +690,8 @@ load_opta_table <- function(table_type, league, season, columns,
         )
         per_path_q <- normalizePath(per_season_path, winslash = "/", mustWork = TRUE)
         col_sql <- .col_sql(columns)
-        sql2 <- sprintf("SELECT %s FROM read_parquet('%s', union_by_name=true)",
-                         col_sql, per_path_q)
+        sql2 <- sprintf("SELECT %s FROM read_parquet(%s, union_by_name=true)",
+                         col_sql, .sql_path(per_path_q))
         result <- tryCatch(DBI::dbGetQuery(conn, sql2),
                             error = function(e) result)
       }
@@ -824,7 +824,7 @@ load_opta_xmetrics <- function(league, season = NULL, columns = NULL,
         "i" = "Try {.code source = 'remote'} or run the 03_calculate_player_xmetrics.R pipeline."
       ))
     }
-    parquet_pattern <- sprintf("'%s'", normalizePath(parquet_path, winslash = "/", mustWork = TRUE))
+    parquet_pattern <- .sql_path(normalizePath(parquet_path, winslash = "/", mustWork = TRUE))
   } else {
     if (!dir.exists(xmetrics_dir)) {
       cli::cli_abort(c(
@@ -832,7 +832,7 @@ load_opta_xmetrics <- function(league, season = NULL, columns = NULL,
         "i" = "Try {.code source = 'remote'} or run the 03_calculate_player_xmetrics.R pipeline."
       ))
     }
-    parquet_pattern <- sprintf("'%s/*.parquet'", normalizePath(xmetrics_dir, winslash = "/", mustWork = TRUE))
+    parquet_pattern <- .sql_path(paste0(normalizePath(xmetrics_dir, winslash = "/", mustWork = TRUE), "/*.parquet"))
   }
 
   col_sql <- .col_sql(columns)
@@ -1338,3 +1338,8 @@ load_opta_psr_weekly <- function(date = NULL, columns = NULL,
   result
 }
 
+# A file path as a quoted DuckDB string literal. Per-season files are named after
+# the season label, and tournament labels can carry an apostrophe
+# ("2023 Côte d'Ivoire"), which ended the literal early and failed the query
+# (AFCON 2022-23 lost its xMetrics columns in game logs, 2026-09-28).
+.sql_path <- function(path) paste0("'", gsub("'", "''", path, fixed = TRUE), "'")

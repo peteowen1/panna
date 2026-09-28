@@ -38,9 +38,13 @@ HOLDOUT <- "2025-2026"          # scored by the gates, never trained on by the g
 # context the chunks do not carry, so it is read from the training features
 # (xg-vnext/shot_features.parquet, keyed match_id + Opta event id); a chunk shot
 # with no row there keeps its published-xG price, and the count is logged.
+# "v51_v0" (2026-09-28): the same, on xG v5.1 (retrained without goals-only and thin
+# event feeds), and EPV itself never trains on a match without a full event feed
+# (>= 200 passes, xg-vnext/feed_passes.parquet). Pete: never train on goals-only matches.
 LABEL_XG <- if (exists("LABEL_XG")) LABEL_XG else "published"
-LBL_DIR  <- switch(LABEL_XG, published = "chunks_pubxg", published_v0 = "chunks_pubv0", v5_v0 = "chunks_v5v0", "chunks_realxg")
-EPV_FILE <- switch(LABEL_XG, published = "epv_model_pubxg.rds", published_v0 = "epv_model_pubv0.rds", v5_v0 = "epv_model_v5v0.rds", "epv_model.rds")
+V5_MODES <- c("v5_v0", "v51_v0")
+LBL_DIR  <- switch(LABEL_XG, published = "chunks_pubxg", published_v0 = "chunks_pubv0", v5_v0 = "chunks_v5v0", v51_v0 = "chunks_v51v0", "chunks_realxg")
+EPV_FILE <- switch(LABEL_XG, published = "epv_model_pubxg.rds", published_v0 = "epv_model_pubv0.rds", v5_v0 = "epv_model_v5v0.rds", v51_v0 = "epv_model_v51v0.rds", "epv_model.rds")
 dir.create(file.path(OUT, LBL_DIR), recursive = TRUE, showWarnings = FALSE)
 ck <- function(f) file.path(OUT, f)
 
@@ -92,7 +96,7 @@ if (!file.exists(ck("xg_model.rds"))) {
   fm <- rt_stage("xG fit (final, all)", fit_xg_model(ft, nrounds = 1000, early_stopping_rounds = 50, verbose = 0))
   saveRDS(fm, ck("xg_model.rds"))
 }
-xg_model <- readRDS(if (LABEL_XG %in% c("published", "published_v0", "v5_v0")) "data-raw/cache/epv/xg_model.rds" else ck("xg_model.rds"))
+xg_model <- readRDS(if (LABEL_XG %in% c("published", "published_v0", V5_MODES)) "data-raw/cache/epv/xg_model.rds" else ck("xg_model.rds"))
 say("EPV labels priced by the ", LABEL_XG, " xG -> ", LBL_DIR, ", ", EPV_FILE)
 
 # ---- C. xGOT: same shape, header gate ---------------------------------------
@@ -110,8 +114,8 @@ if (!file.exists(ck("xgot_model.rds"))) {
 }
 
 # ---- D. re-price every chunk's labels with the new xG -----------------------
-if (LABEL_XG == "v5_v0") {
-  v5 <- readRDS("data-raw/cache/epv/xg-vnext/xg_model_v5.rds")
+if (LABEL_XG %in% V5_MODES) {
+  v5 <- readRDS(if (LABEL_XG == "v51_v0") "data-raw/cache/epv/xg-vnext/xg_model_v5_1.rds" else "data-raw/cache/epv/xg-vnext/xg_model_v5.rds")
   sf <- as.data.table(arrow::read_parquet("data-raw/cache/epv/xg-vnext/shot_features.parquet"))
   sf[, xg_v5 := NA_real_]
   sf[!(is_penalty %in% 1L), xg_v5 := predict_xg(v5, as.data.frame(.SD))]
@@ -133,7 +137,7 @@ for (i in seq_len(nrow(units))) {
   lk <- as.data.frame(shots[unit_league == units$league[i] & unit_season == units$season[i], ..lk_cols])
   sx <- suppressMessages(as.data.table(add_xg_to_spadl(ch, xg_model, season = units$season[i], shot_lookup = lk)))
   xv <- sx[action_type == "shot" & is.finite(xg), .(match_id, action_id, xg, original_event_id)]
-  if (LABEL_XG == "v5_v0") {
+  if (LABEL_XG %in% V5_MODES) {
     xv[, event_id := as.character(original_event_id)]
     xv[v5_price, xg_v5 := i.xg_v5, on = .(match_id, event_id)]
     v5_hits <- v5_hits + xv[!is.na(xg_v5), .N]; v5_miss <- v5_miss + xv[is.na(xg_v5), .N]
@@ -141,7 +145,7 @@ for (i in seq_len(nrow(units))) {
     xv[, c("event_id", "xg_v5") := NULL]
   }
   xv[, original_event_id := NULL]
-  if (LABEL_XG %in% c("published_v0", "v5_v0")) {
+  if (LABEL_XG %in% c("published_v0", V5_MODES)) {
     A <- NG_SHOT_AFTERMATH_LINE
     xv[, xg := xg + (1 - xg) * (A$intercept + A$slope * xg)]
   }
@@ -153,7 +157,7 @@ for (i in seq_len(nrow(units))) {
   if (done %% 20 == 0) say("  relabelled ", done, " chunks")
 }
 say("relabel stage complete: ", length(list.files(file.path(OUT, LBL_DIR))), " chunks")
-if (LABEL_XG == "v5_v0") {
+if (LABEL_XG %in% V5_MODES) {
   say("xG v5 price found for ", v5_hits, " shots, published-xG fallback for ", v5_miss,
       " (", round(100 * v5_miss / max(1, v5_hits + v5_miss), 2), "%) in chunks relabelled this run")
   if (v5_hits + v5_miss > 0 && v5_miss / (v5_hits + v5_miss) > 0.02) stop("more than 2% of shots have no xG v5 price: the join is broken")
@@ -171,6 +175,11 @@ if (!file.exists(ck(EPV_FILE))) {
     fe
   }), fill = TRUE))
   dat <- dat[!is.na(next_xg_label)]
+  if (LABEL_XG == "v51_v0") {
+    fp <- arrow::read_parquet("data-raw/cache/epv/xg-vnext/feed_passes.parquet")
+    n0 <- nrow(dat); dat <- dat[match_id %in% fp$match_id[fp$full_feed]]
+    say("EPV: dropped ", n0 - nrow(dat), " rows from matches without a full event feed")
+  }
   say("EPV training rows ", format(nrow(dat), big.mark = ","))
   m <- rt_stage("EPV fit", fit_epv_model(dat, dat, method = "xg", nrounds = 1000, early_stopping_rounds = 50, verbose = 0))
   m$panna_metadata$feature_mode <- "simple"

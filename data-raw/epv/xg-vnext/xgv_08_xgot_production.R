@@ -37,6 +37,13 @@ ft <- merge(ft, sf[, c("match_id", "event_id", CTX), with = FALSE], by = c("matc
 ft <- ft[period_id %in% 1:4 & !is.na(rebound) & !is.na(season_num)]
 cov <- ft[, .(nongoal = sum(is_goal == 0)), by = .(competition, season)]
 ft <- ft[!cov[nongoal == 0], on = .(competition, season)]
+# Never train on goals-only or thin event feeds (Pete, 2026-09-28): a match trains
+# only with a full event feed (>= 200 passes, xgv_12_feed_passes.R). The v5 fit took
+# 3,229 goals-only matches and learned to price their "shots" near 1.
+fp <- read_parquet(file.path(X, "feed_passes.parquet"))
+n0 <- nrow(ft); ft <- ft[match_id %in% fp$match_id[fp$full_feed]]
+say("dropped ", n0 - nrow(ft), " on-target shots from matches without a full event feed")
+TAG <- Sys.getenv("XG_TAG", "_1")   # "_1" = v3.1, see xgv_06_production.R
 ft[, goal := is_goal]
 for (v in CTX) if (is.logical(ft[[v]])) set(ft, j = v, value = as.integer(ft[[v]]))
 
@@ -49,7 +56,7 @@ set.seed(2026)
 mids <- unique(d$match_id); fold_of <- setNames(sample(rep(1:5, length.out = length(mids))), mids)
 folds <- lapply(1:5, function(k) which(fold_of[d$match_id] == k))
 dm <- xgb.DMatrix(as.matrix(d[, ..G2]), label = d$goal, missing = NA)
-CVF <- file.path(X, "xgot_prod_cv.rds")
+CVF <- file.path(X, paste0("xgot_prod_cv", TAG, ".rds"))
 if (file.exists(CVF)) cvs <- readRDS(CVF) else {
   cv <- xgb.cv(params = PAR, data = dm, nrounds = 5000, folds = folds, early_stopping_rounds = 50,
                prediction = TRUE, verbose = 1, print_every_n = 200)
@@ -65,16 +72,16 @@ m <- xgb.train(params = PAR, data = dm, nrounds = best, verbose = 0)
 cal <- rbind(d[, .(cut = "all", shots = .N, goals = sum(goal), goals_per_xgot = sum(goal) / sum(oof)), by = season_num],
              d[is_header == 1, .(cut = "header", shots = .N, goals = sum(goal), goals_per_xgot = sum(goal) / sum(oof)), by = season_num],
              d[is_set_piece == 1 | is_corner == 1, .(cut = "set piece", shots = .N, goals = sum(goal), goals_per_xgot = sum(goal) / sum(oof)), by = season_num])
-fwrite(cal, file.path(X, "xgot_calib_by_season.csv"))
+fwrite(cal, file.path(X, paste0("xgot_calib_by_season", TAG, ".csv")))
 say("out-of-fold goals per xGOT by season"); print(dcast(cal, season_num ~ cut, value.var = "goals_per_xgot"), digits = 3)
 bins <- d[, .(shots = .N, pred = mean(oof), actual = mean(goal)), by = .(bin = cut(oof, c(0, .05, .1, .2, .3, .5, .7, .9, 1)))][order(bin)]
 say("out-of-fold calibration by predicted bin"); print(bins, digits = 3)
 saveRDS(list(model = m, feature_names = G2, best_nrounds = best, best_logloss = el$test_logloss_mean[best], cv_log = el,
              calibration_by_season = cal, calibration_bins = bins,
              importance = as.data.table(xgb.importance(model = m))[, .(Feature, gain = round(100 * Gain, 1))],
-             panna_metadata = list(type = "xgot_model", version = "v3 (2026-09-24, xg-vnext G2)", feature_cols = G2,
+             panna_metadata = list(type = "xgot_model", version = if (TAG == "_1") "v3.1 (2026-09-28, xg-vnext G2, full event feeds only)" else "v3 (2026-09-24, xg-vnext G2)", feature_cols = G2,
                                    n_shots = nrow(d), n_goals = sum(d$goal), goal_rate = mean(d$goal), params = PAR,
                                    seasons = range(d$season_num), exclude_penalties = TRUE,
                                    note = "needs xgv_03/xgv_04 context features at scoring time; not yet wired")),
-        file.path(X, "xgot_model_v3.rds"))
-say("saved xgot_model_v3.rds"); say("DONE")
+        file.path(X, paste0("xgot_model_v3", TAG, ".rds")))
+say("saved xgot_model_v3", TAG, ".rds"); say("DONE")
