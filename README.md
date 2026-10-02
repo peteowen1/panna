@@ -4,6 +4,8 @@
 [![Lifecycle: experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
 <!-- badges: end -->
 
+Ratings, predictions and simulations built with panna are published, updated after every matchday, at [inthegame.blog/football](https://inthegame.blog/football/).
+
 Player ratings for football (soccer), built on Opta event and box-score data. Full documentation site: <https://peteowen1.github.io/panna/>.
 
 ## Overview
