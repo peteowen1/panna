@@ -384,6 +384,40 @@ EPV_OPP_PRIOR_GAMES <- 2
 #' PENALTY_XG
 PENALTY_XG <- 0.7694
 
+#' xG override for shots direct from a corner kick
+#'
+#' Applied in `add_xg_to_spadl()` to shots `.is_direct_corner()` flags (Opta
+#' qualifier 263, or a Corner-situation shot inside the corner-flag box). Opta
+#' logs a corner as a shot only when it threatens the goal, so the shot table
+#' alone says 238 goals from 272 attempts (0.875), and the model learned that.
+#' Across all 1,253,311 corners taken in the v5.1 training matches the rate is
+#' 0.00019. Set to 0.02 (Pete, 2026-10-06, panna#277) so a logged attempt is
+#' still priced as a real, if poor, chance rather than zero.
+#'
+#' @format Numeric value: 0.02
+#' @keywords internal
+DIRECT_CORNER_XG <- 0.02
+
+#' xGOT override for on-target shots direct from a corner kick
+#'
+#' Applied in `add_xgot_to_spadl()` to the same shots as [DIRECT_CORNER_XG].
+#' Of the 1,253,311 corners in the v5.1 training matches, 2,624 were met first
+#' (within 3 seconds) by a save or tip-over from the defending keeper inside his
+#' six-yard box, against 238 direct goals: 238 / (238 + 2,624) = 0.083. Claims,
+#' punches and pick-ups were left out because most are crosses taken at the
+#' edge of the box, not balls going in (Pete, 2026-10-06, panna#277).
+#'
+#' @format Numeric value: 0.08
+#' @keywords internal
+DIRECT_CORNER_XGOT <- 0.08
+
+#' Corner-flag box for untagged direct corners: x at or beyond 97 and within 4
+#' of a touchline, Opta 0-100 coordinates (panna#277).
+#' @keywords internal
+DIRECT_CORNER_X_MIN <- 97
+#' @rdname DIRECT_CORNER_X_MIN
+DIRECT_CORNER_Y_EDGE <- 4
+
 #' Empirical penalty-shootout conversion rate
 #'
 #' Per-kick conversion probability in a penalty shootout, measured from local

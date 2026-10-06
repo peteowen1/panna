@@ -1,3 +1,15 @@
+# panna 0.3.73
+
+## Direct-from-corner shots score 0.02 xG (#277)
+
+Opta logs a corner kick as a shot only when it threatens the goal, so xG had learned 0.875 at the
+corner flag (238 goals from 272 tagged shots) when the rate across all 1,253,311 corners taken is
+0.00019. `add_xg_to_spadl()` now scores these shots at `DIRECT_CORNER_XG` (0.02): any shot with Opta
+qualifier 263, or a Corner-situation shot inside the corner-flag box (x >= 97, y <= 4 or >= 96).
+
+On-target direct corners get xGOT `DIRECT_CORNER_XGOT` (0.08) in `add_xgot_to_spadl()`: 238 direct goals
+against 2,624 corners first met by a save or tip-over from the keeper inside his six-yard box.
+
 # panna 0.3.72
 
 ## xG v5.1 and xGOT v3.1: goals-only feeds never train
