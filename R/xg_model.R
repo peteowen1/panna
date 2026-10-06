@@ -706,8 +706,14 @@ add_xg_to_spadl <- function(spadl_actions, xg_model, season = NULL,
     ev_idx <- match(paste(shots$match_id, shots$original_event_id),
                     paste(events$match_id, as.character(events$event_id)))   # integer64-safe
     q263 <- .has_q(events$qualifier_json[ev_idx], "263") %in% TRUE
+    ev_hit <- mean(!is.na(ev_idx))
+    if (ev_hit < 0.9) {
+      cli::cli_alert_warning(
+        "Direct-corner check: only {round(100 * ev_hit, 1)}% of shots matched {.arg events} - the rest use the box rule only.")
+    }
   }
   dc <- .is_direct_corner(shots$start_x, shots$start_y, situation, q263)
+  if ("is_penalty" %in% names(shots)) dc <- dc & !(shots$is_penalty %in% TRUE)
   if (any(dc)) {
     spadl_actions$xg[which(shot_idx)[dc]] <- DIRECT_CORNER_XG
     cli::cli_alert_info("Overrode {sum(dc)} direct corner{?s} to xG = {DIRECT_CORNER_XG}")
