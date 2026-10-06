@@ -103,6 +103,44 @@ test_that("fit_xg_model trains a model with predictions in [0,1]", {
   expect_true(all(preds >= 0 & preds <= 1))
 })
 
+test_that(".is_direct_corner flags q263 or a Corner shot in the corner-flag box (panna#277)", {
+  x   <- c(99.5, 99.5, 99.5, 99.5, 96.0, 99.5)
+  y   <- c( 0.5, 99.5, 50.0,  0.5,  0.5,  0.5)
+  sit <- c("Corner", "Corner", "Corner", "OpenPlay", "Corner", "OpenPlay")
+  q   <- c(FALSE, FALSE, FALSE, FALSE, FALSE, TRUE)
+  # flag box both sides; central byline no; open play in box no; x < 97 no; tag wins anywhere
+  expect_identical(.is_direct_corner(x, y, sit, q), c(TRUE, TRUE, FALSE, FALSE, FALSE, TRUE))
+  # missing inputs never count as a match
+  expect_identical(.is_direct_corner(x, y), rep(FALSE, 6))
+  expect_identical(.is_direct_corner(x, y, q263 = c(NA, q[-1])), q)
+})
+
+test_that("add_xg_to_spadl scores direct corners at DIRECT_CORNER_XG (panna#277)", {
+  skip_if_not_installed("xgboost")
+  set.seed(42)
+  n <- 200
+  tr <- data.frame(
+    match_id = "m1", player_id = paste0("p", seq_len(n)), player_name = "P",
+    x = runif(n, 70, 100), y = runif(n, 20, 80), is_goal = rbinom(n, 1, 0.1),
+    body_part = "Right Foot", situation = "Open Play", big_chance = 0L
+  )
+  model <- fit_xg_model(prepare_shots_for_xg(tr), nrounds = 20, nfolds = 2, verbose = 0)
+  spadl <- data.frame(
+    match_id = "m9", original_event_id = c(1, 2, 3, 4),
+    action_type = c("shot", "shot", "shot", "pass"),
+    start_x = c(99.6, 99.4, 90, 99.6), start_y = c(0.4, 99.6, 50, 0.4)
+  )
+  lookup <- data.frame(match_id = "m9", event_id = c(1, 2, 3),
+                       body_part = "RightFoot", situation = c("Corner", "OpenPlay", "OpenPlay"))
+  events <- data.frame(match_id = "m9", event_id = c("1", "2", "3"),
+                       qualifier_json = c('{"25":""}', '{"263":""}', '{"22":""}'))
+  out <- suppressWarnings(add_xg_to_spadl(spadl, model, season = "2025-2026",
+                                          shot_lookup = lookup, events = events))
+  expect_equal(out$xg[1:2], c(DIRECT_CORNER_XG, DIRECT_CORNER_XG))  # box rule, then q263
+  expect_false(out$xg[3] == DIRECT_CORNER_XG)                     # ordinary shot untouched
+  expect_equal(out$xg[4], 0)                                       # non-shot stays 0
+})
+
 test_that("predict_xg handles missing features with zero-fill", {
   skip_if_not_installed("xgboost")
 
