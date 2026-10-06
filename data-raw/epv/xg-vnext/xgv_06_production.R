@@ -12,6 +12,7 @@
 # model, feature_cols, cv, calibration) and calib_by_season.csv.
 # Run from panna/:  Rscript data-raw/epv/xg-vnext/xgv_06_production.R  (detached)
 suppressMessages({library(data.table); library(arrow); library(xgboost)})
+.is_direct_corner <- local({ e <- new.env(); sys.source("R/constants.R", e); sys.source("R/xg_model.R", e); e$.is_direct_corner })
 source(file.path(Sys.getenv("USERPROFILE"), ".claude/lib/runtime_log.R"))
 X <- "data-raw/cache/epv/xg-vnext"
 say <- function(...) { cat(format(Sys.time(), "%H:%M:%S "), ..., "\n", sep = ""); flush.console() }
@@ -30,6 +31,14 @@ d <- d[!cov[nongoal == 0], on = .(competition, season)]
 fp <- read_parquet(file.path(X, "feed_passes.parquet"))
 n0 <- nrow(d); d <- d[match_id %in% fp$match_id[fp$full_feed]]
 say("dropped ", n0 - nrow(d), " shots from matches without a full event feed (", sum(!fp$full_feed), " such matches)")
+# Never train on direct-from-corner shots (Pete, 2026-10-06, panna#277): Opta logs a
+# corner as a shot only when it threatens, so these rows are nearly all goals. Scoring
+# prices them at DIRECT_CORNER_XG; the flag is the same .is_direct_corner() rule.
+dcf <- read_parquet(file.path(X, "direct_corner_flags.parquet"))   # xgv_13_direct_corner_flags.R
+d[, event_id := as.character(event_id)]
+d[, q263 := paste(match_id, event_id) %in% paste(dcf$match_id, dcf$event_id)]   # a lookup: row order unchanged
+dc <- .is_direct_corner(d$x, d$y, fifelse(d$is_corner %in% 1, "Corner", ""), d$q263)
+say("dropped ", sum(dc), " direct corners (", sum(d$q263), " tagged q263)"); d <- d[!dc][, q263 := NULL]
 FEAT <- readRDS(file.path(X, "fits", "model_F4_state_foot.rds"))$features
 for (v in FEAT) if (is.logical(d[[v]])) set(d, j = v, value = as.integer(d[[v]]))
 say("training shots ", nrow(d), " from ", uniqueN(d$match_id), " matches, seasons ", min(d$season_num), "-", max(d$season_num),

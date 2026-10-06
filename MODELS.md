@@ -27,7 +27,7 @@ its fallback chain, the canonical (correct) version, and the override to pin it.
 
 ## Published artifact register (verify, don't assume)
 
-Sizes and dates as at **2026-09-03**, EPV and xGOT rows updated **2026-09-24** (model pack, `pannaverse/docs/plans/EPV-RETRAIN-SCOPE.md`), EPV / WP / xG v5 / xGOT v3 rows **2026-09-29** (xG v5.1 release: v5 retrained without goals-only and thin event feeds, `pannaverse/docs/plans/XG-VNEXT-2026-09.md`). Published = `pannadata/data/opta/models/`,
+Sizes and dates as at **2026-09-03**, EPV and xGOT rows updated **2026-09-24** (model pack, `pannaverse/docs/plans/EPV-RETRAIN-SCOPE.md`), EPV / WP / xG v5 / xGOT v3 rows **2026-09-29** (xG v5.1 release: v5 retrained without goals-only and thin event feeds, `pannaverse/docs/plans/XG-VNEXT-2026-09.md`), xG v5 / xGOT v3 rows **2026-10-06** (v5.2 / v3.2: direct corners out, panna#277). Published = `pannadata/data/opta/models/`,
 candidate = `panna/data-raw/cache/epv/` (gitignored). **A candidate is not
 production until it is published.** Compare byte sizes: a size difference means
 different files, and that is how the xG divergence below went unnoticed.
@@ -45,8 +45,9 @@ different files, and that is how the xG divergence below went unnoticed.
 | EPV (before the xG v5 release) | 2026-09-24 | 70,570,212 (md5 4ca161c1) | `epv_model_pubv0.rds`, backup in `C:/dev/_model-backups/2026-09-28/` | rollback copy |
 | **WP** | **2026-09-29** | **107,485** (md5 1e57310d) | `data-raw/cache/epv/pack-2026-09/wp_v51/wp_model.rds`, same bytes | ✅ both releases, md5 checked. The live WP's configuration retrained on the v5.1 pack; passed `pack_gate_wp_v5.R` (PACK_TAG=v51) |
 | WP (previous) | 2026-07-16 | 119,875 | `C:/dev/_model-backups/2026-09-28/` | rollback copy (the v5-pack WP of 2026-09-28 is in `2026-09-29/`) |
-| **xG v5.1** (asset `xg_model_v5`) | **2026-09-29** | **786,631** (md5 c2bfd8b8) | `data-raw/cache/epv/xg-vnext/xg_model_v5_1.rds` | ✅ both releases. v5 retrained without goals-only / thin feeds (v5 priced their goals near 1). `xg_model` is untouched. Load with `load_xg_model(name = "xg_model_v5")`; pass `events` + `foot_history` (D8) |
-| **xGOT v3.1** (asset `xgot_model_v3`) | **2026-09-29** | **875,984** (md5 7137d9f1) | `data-raw/cache/epv/xg-vnext/xgot_model_v3_1.rds` | ✅ both releases, as xG v5.1 |
+| **xG v5.2** (asset `xg_model_v5`) | **2026-10-06** | **728,325** (md5 7d02ee53) | `data-raw/cache/epv/xg-vnext/xg_model_v5_2.rds` | ✅ both releases, md5 checked by re-download. v5.1 retrained without 332 direct-from-corner shots (panna#277; flags from `xgv_13_direct_corner_flags.R`); wide-byline goals/xG 0.83 -> 1.01, everything else unchanged (`xgv_14_direct_corner_report.R`). Published without a gate (Pete). `xg_model` is untouched. Load with `load_xg_model(name = "xg_model_v5")`; pass `events` + `foot_history` (D8) |
+| **xGOT v3.2** (asset `xgot_model_v3`) | **2026-10-06** | **793,091** (md5 289156b0) | `data-raw/cache/epv/xg-vnext/xgot_model_v3_2.rds` | ✅ both releases, as xG v5.2 (159 on-target direct corners dropped) |
+| xG v5.1 / xGOT v3.1 (previous) | 2026-09-29 | 786,631 (c2bfd8b8) / 875,984 (7137d9f1) | `C:/dev/_model-backups/2026-10-06/` | rollback copies. EPV labels (row above) still use xG v5.1: Pete kept them (2026-10-06) |
 
 **xG divergence (open, 2026-09-03).** Published is 2026-06-18 (trained on
 1,027,139 shots); the local candidate is 2026-07-17 (1,080,653). Neither
@@ -98,11 +99,11 @@ iterating (EPV/WP) models.
 
 ```r
 # from panna/  (see the register above)
-# since 2026-09-29: the xG v5.1 pack
+# since 2026-09-29: the xG v5.1 pack (xG / xGOT rows: v5.2 / v3.2 since 2026-10-06)
 epv_model_override  <- readRDS("data-raw/cache/epv/pack-2026-09/epv_model_v51v0.rds")
 wp_model_override   <- readRDS("data-raw/cache/epv/pack-2026-09/wp_v51/wp_model.rds")
-xg_model_override   <- load_xg_model("data-raw/cache/epv/xg-vnext/xg_model_v5_1.rds")  # or load_xg_model(name = "xg_model_v5")
-xgot_model_override <- load_xgot_model("data-raw/cache/epv/xg-vnext/xgot_model_v3_1.rds")
+xg_model_override   <- load_xg_model("data-raw/cache/epv/xg-vnext/xg_model_v5_2.rds")  # or load_xg_model(name = "xg_model_v5")
+xgot_model_override <- load_xgot_model("data-raw/cache/epv/xg-vnext/xgot_model_v3_2.rds")
 blog_leagues       <- c(... blog leagues ...)
 game_log_seasons   <- "2025-2026"   # or a vector for backfill
 upload_game_logs   <- FALSE

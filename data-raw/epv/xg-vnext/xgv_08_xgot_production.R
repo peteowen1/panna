@@ -43,6 +43,11 @@ ft <- ft[!cov[nongoal == 0], on = .(competition, season)]
 fp <- read_parquet(file.path(X, "feed_passes.parquet"))
 n0 <- nrow(ft); ft <- ft[match_id %in% fp$match_id[fp$full_feed]]
 say("dropped ", n0 - nrow(ft), " on-target shots from matches without a full event feed")
+# Never train on direct-from-corner shots (panna#277): the same rule and flags as xgv_06.
+dcf <- read_parquet(file.path(X, "direct_corner_flags.parquet"))   # xgv_13_direct_corner_flags.R
+ft[, q263 := paste(match_id, event_id) %in% paste(dcf$match_id, dcf$event_id)]   # a lookup: row order unchanged
+dc <- .is_direct_corner(ft$x, ft$y, fifelse(ft$is_corner %in% 1, "Corner", ""), ft$q263)
+say("dropped ", sum(dc), " on-target direct corners (", sum(ft$q263), " tagged q263)"); ft <- ft[!dc][, q263 := NULL]
 TAG <- Sys.getenv("XG_TAG", "_1")   # "_1" = v3.1, see xgv_06_production.R
 ft[, goal := is_goal]
 for (v in CTX) if (is.logical(ft[[v]])) set(ft, j = v, value = as.integer(ft[[v]]))
