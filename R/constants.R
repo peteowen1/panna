@@ -398,6 +398,19 @@ PENALTY_XG <- 0.7694
 #' @keywords internal
 DIRECT_CORNER_XG <- 0.02
 
+#' xGOT override for on-target shots direct from a corner kick
+#'
+#' Applied in `add_xgot_to_spadl()` to the same shots as [DIRECT_CORNER_XG].
+#' Of the 1,253,311 corners in the v5.1 training matches, 2,624 were met first
+#' (within 3 seconds) by a save or tip-over from the defending keeper inside his
+#' six-yard box, against 238 direct goals: 238 / (238 + 2,624) = 0.083. Claims,
+#' punches and pick-ups were left out because most are crosses taken at the
+#' edge of the box, not balls going in (Pete, 2026-10-06, panna#277).
+#'
+#' @format Numeric value: 0.08
+#' @keywords internal
+DIRECT_CORNER_XGOT <- 0.08
+
 #' Corner-flag box for untagged direct corners: x at or beyond 97 and within 4
 #' of a touchline, Opta 0-100 coordinates (panna#277).
 #' @keywords internal

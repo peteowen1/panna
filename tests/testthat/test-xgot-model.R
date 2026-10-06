@@ -152,6 +152,29 @@ test_that("add_xgot_to_spadl assigns xgot correctly (realign, 0/NA matrix, own-g
   expect_equal(r$shot_on_target, c(TRUE, TRUE, TRUE, NA, TRUE, NA))
 })
 
+test_that("add_xgot_to_spadl scores on-target direct corners at DIRECT_CORNER_XGOT (panna#277)", {
+  testthat::local_mocked_bindings(
+    predict_xgot = function(xgot_model, shot_features) rep(0.5, nrow(shot_features))
+  )
+  spadl <- data.frame(
+    match_id = "m", original_event_id = 1:4, action_type = "shot",
+    start_x = c(99.6, 99.4, 99.6, 85), start_y = c(0.4, 99.6, 0.4, 50),
+    bodypart = "foot_right", stringsAsFactors = FALSE
+  )
+  lookup <- data.frame(
+    match_id = "m", event_id = 1:4,
+    type_id = c(16L, 15L, 13L, 16L),             # goal / saved / miss / goal
+    goalmouth_y = c(50, 51, NA, 50), goalmouth_z = c(5, 3, NA, 5),
+    situation = c("Corner", "OpenPlay", "Corner", "OpenPlay"), stringsAsFactors = FALSE
+  )
+  events <- data.frame(match_id = "m", event_id = c("1", "2", "3", "4"),
+                       qualifier_json = c('{"25":""}', '{"263":""}', '{"25":""}', '{"22":""}'))
+  r <- suppressWarnings(suppressMessages(add_xgot_to_spadl(spadl, list(), lookup, events = events)))
+  expect_equal(r$xgot[1:2], c(DIRECT_CORNER_XGOT, DIRECT_CORNER_XGOT))  # box rule, then q263
+  expect_equal(r$xgot[3], 0)                     # off-target direct corner stays 0
+  expect_equal(r$xgot[4], 0.5)                   # ordinary shot keeps the model value
+})
+
 test_that("add_xgot_to_spadl prefers the is_own_goal qualifier over position (#148)", {
   testthat::local_mocked_bindings(
     predict_xgot = function(xgot_model, shot_features) rep(0.5, nrow(shot_features))

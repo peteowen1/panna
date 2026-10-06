@@ -701,19 +701,7 @@ add_xg_to_spadl <- function(spadl_actions, xg_model, season = NULL,
   # Direct-corner override (panna#277): Opta logs a corner kick as a shot only
   # when it threatens the goal, so the model learned 0.875 xG at the corner flag
   # from 238 goals in 272 logged attempts, out of 1,253,311 corners taken.
-  q263 <- NULL
-  if (!is.null(events) && all(c("match_id", "event_id", "qualifier_json") %in% names(events))) {
-    ev_idx <- match(paste(shots$match_id, shots$original_event_id),
-                    paste(events$match_id, as.character(events$event_id)))   # integer64-safe
-    q263 <- .has_q(events$qualifier_json[ev_idx], "263") %in% TRUE
-    ev_hit <- mean(!is.na(ev_idx))
-    if (ev_hit < 0.9) {
-      cli::cli_alert_warning(
-        "Direct-corner check: only {round(100 * ev_hit, 1)}% of shots matched {.arg events} - the rest use the box rule only.")
-    }
-  }
-  dc <- .is_direct_corner(shots$start_x, shots$start_y, situation, q263)
-  if ("is_penalty" %in% names(shots)) dc <- dc & !(shots$is_penalty %in% TRUE)
+  dc <- .flag_direct_corners(shots, situation, events)
   if (any(dc)) {
     spadl_actions$xg[which(shot_idx)[dc]] <- DIRECT_CORNER_XG
     cli::cli_alert_info("Overrode {sum(dc)} direct corner{?s} to xG = {DIRECT_CORNER_XG}")
@@ -736,6 +724,26 @@ add_xg_to_spadl <- function(spadl_actions, xg_model, season = NULL,
   in_box <- x >= DIRECT_CORNER_X_MIN & (y <= DIRECT_CORNER_Y_EDGE | y >= 100 - DIRECT_CORNER_Y_EDGE)
   corner <- if (is.null(situation)) rep(FALSE, n) else grepl("corner", tolower(situation))
   tagged | (corner & in_box %in% TRUE)
+}
+
+# .is_direct_corner() for SPADL shot rows, shared by add_xg_to_spadl() and
+# add_xgot_to_spadl() so the two overrides always flag the same shots. Reads
+# qualifier 263 from `events` when given; penalties are never flagged.
+.flag_direct_corners <- function(shots, situation = NULL, events = NULL) {
+  q263 <- NULL
+  if (!is.null(events) && all(c("match_id", "event_id", "qualifier_json") %in% names(events))) {
+    ev_idx <- match(paste(shots$match_id, shots$original_event_id),
+                    paste(events$match_id, as.character(events$event_id)))   # integer64-safe
+    q263 <- .has_q(events$qualifier_json[ev_idx], "263") %in% TRUE
+    ev_hit <- mean(!is.na(ev_idx))
+    if (ev_hit < 0.9) {
+      cli::cli_alert_warning(
+        "Direct-corner check: only {round(100 * ev_hit, 1)}% of shots matched {.arg events} - the rest use the box rule only.")
+    }
+  }
+  dc <- .is_direct_corner(shots$start_x, shots$start_y, situation, q263)
+  if ("is_penalty" %in% names(shots)) dc <- dc & !(shots$is_penalty %in% TRUE)
+  dc
 }
 
 

@@ -522,6 +522,16 @@ add_xgot_to_spadl <- function(spadl_actions, xgot_model, goalmouth_lookup,
   }
   xgot_vec[is_og] <- NA_real_
 
+  # Direct-corner override (panna#277): the model learned near-certain goals at
+  # the corner flag. Only on-target ones that were scored above are touched;
+  # off-target stays 0 and unknown stays NA.
+  dc <- .flag_direct_corners(shots, if (have_situation) joined$situation else NULL, events)
+  dc <- dc & predable & !is_og
+  if (any(dc)) {
+    xgot_vec[dc] <- DIRECT_CORNER_XGOT
+    cli::cli_alert_info("Overrode {sum(dc)} on-target direct corner{?s} to xGOT = {DIRECT_CORNER_XGOT}")
+  }
+
   spadl_actions$xgot[shot_idx] <- xgot_vec
   spadl_actions$shot_on_target[shot_idx] <- on_target  # TRUE/FALSE/NA per type_id, blocked shots excluded (panna#176)
   n_pred <- sum(predable)
