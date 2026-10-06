@@ -12,7 +12,7 @@
 suppressMessages({library(data.table); library(arrow); library(dplyr); devtools::load_all(quiet = TRUE)})
 X <- "data-raw/cache/epv/xg-vnext"; OD <- "C:/dev/pannaverse/pannadata/data/opta/"
 LG <- "ENG"; SE <- "2024-2025"
-TAG <- Sys.getenv("XG_TAG", "_1")   # "_1" = v5.1 / v3.1 (full event feeds only)
+TAG <- Sys.getenv("XG_TAG", "_2")   # "_2" = v5.2 / v3.2 (no direct corners); "_1" = v5.1 / v3.1
 XGF <- paste0("xg_model_v5", TAG, ".rds"); XGOTF <- paste0("xgot_model_v3", TAG, ".rds")
 
 pr <- fread(file.path(X, "penalty_rates.csv"))

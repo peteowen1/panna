@@ -43,7 +43,12 @@ ft <- ft[!cov[nongoal == 0], on = .(competition, season)]
 fp <- read_parquet(file.path(X, "feed_passes.parquet"))
 n0 <- nrow(ft); ft <- ft[match_id %in% fp$match_id[fp$full_feed]]
 say("dropped ", n0 - nrow(ft), " on-target shots from matches without a full event feed")
-TAG <- Sys.getenv("XG_TAG", "_1")   # "_1" = v3.1, see xgv_06_production.R
+# Never train on direct-from-corner shots (panna#277): the same rule and flags as xgv_06.
+dcf <- read_parquet(file.path(X, "direct_corner_flags.parquet"))   # xgv_13_direct_corner_flags.R
+ft[, q263 := paste(match_id, event_id) %in% paste(dcf$match_id, dcf$event_id)]   # a lookup: row order unchanged
+dc <- .is_direct_corner(ft$x, ft$y, fifelse(ft$is_corner %in% 1, "Corner", ""), ft$q263)
+say("dropped ", sum(dc), " on-target direct corners (", sum(ft$q263), " tagged q263)"); ft <- ft[!dc][, q263 := NULL]
+TAG <- Sys.getenv("XG_TAG", "_2")   # "_2" = v3.2, see xgv_06_production.R
 ft[, goal := is_goal]
 for (v in CTX) if (is.logical(ft[[v]])) set(ft, j = v, value = as.integer(ft[[v]]))
 
@@ -79,7 +84,7 @@ say("out-of-fold calibration by predicted bin"); print(bins, digits = 3)
 saveRDS(list(model = m, feature_names = G2, best_nrounds = best, best_logloss = el$test_logloss_mean[best], cv_log = el,
              calibration_by_season = cal, calibration_bins = bins,
              importance = as.data.table(xgb.importance(model = m))[, .(Feature, gain = round(100 * Gain, 1))],
-             panna_metadata = list(type = "xgot_model", version = if (TAG == "_1") "v3.1 (2026-09-28, xg-vnext G2, full event feeds only)" else "v3 (2026-09-24, xg-vnext G2)", feature_cols = G2,
+             panna_metadata = list(type = "xgot_model", version = switch(TAG, "_2" = "v3.2 (2026-10-06, xg-vnext G2, full event feeds, no direct corners)", "_1" = "v3.1 (2026-09-28, xg-vnext G2, full event feeds only)", "v3 (2026-09-24, xg-vnext G2)"), feature_cols = G2,
                                    n_shots = nrow(d), n_goals = sum(d$goal), goal_rate = mean(d$goal), params = PAR,
                                    seasons = range(d$season_num), exclude_penalties = TRUE,
                                    note = "needs xgv_03/xgv_04 context features at scoring time; not yet wired")),

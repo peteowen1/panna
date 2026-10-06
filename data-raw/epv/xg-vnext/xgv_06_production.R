@@ -12,12 +12,13 @@
 # model, feature_cols, cv, calibration) and calib_by_season.csv.
 # Run from panna/:  Rscript data-raw/epv/xg-vnext/xgv_06_production.R  (detached)
 suppressMessages({library(data.table); library(arrow); library(xgboost)})
+.is_direct_corner <- local({ e <- new.env(); sys.source("R/constants.R", e); sys.source("R/xg_model.R", e); e$.is_direct_corner })
 source(file.path(Sys.getenv("USERPROFILE"), ".claude/lib/runtime_log.R"))
 X <- "data-raw/cache/epv/xg-vnext"
 say <- function(...) { cat(format(Sys.time(), "%H:%M:%S "), ..., "\n", sep = ""); flush.console() }
 # Model tag: "" wrote v5 (2026-09-24); "_1" is v5.1, the same fit without goals-only
 # and thin-feed matches (2026-09-28). Outputs never overwrite another tag's files.
-TAG <- Sys.getenv("XG_TAG", "_1")
+TAG <- Sys.getenv("XG_TAG", "_2")   # "_2" = v5.2, direct corners out (2026-10-06, panna#277)
 OUT <- file.path(X, paste0("xg_model_v5", TAG, ".rds"))
 
 d <- as.data.table(read_parquet(file.path(X, "shot_features.parquet")))
@@ -30,6 +31,14 @@ d <- d[!cov[nongoal == 0], on = .(competition, season)]
 fp <- read_parquet(file.path(X, "feed_passes.parquet"))
 n0 <- nrow(d); d <- d[match_id %in% fp$match_id[fp$full_feed]]
 say("dropped ", n0 - nrow(d), " shots from matches without a full event feed (", sum(!fp$full_feed), " such matches)")
+# Never train on direct-from-corner shots (Pete, 2026-10-06, panna#277): Opta logs a
+# corner as a shot only when it threatens, so these rows are nearly all goals. Scoring
+# prices them at DIRECT_CORNER_XG; the flag is the same .is_direct_corner() rule.
+dcf <- read_parquet(file.path(X, "direct_corner_flags.parquet"))   # xgv_13_direct_corner_flags.R
+d[, event_id := as.character(event_id)]
+d[, q263 := paste(match_id, event_id) %in% paste(dcf$match_id, dcf$event_id)]   # a lookup: row order unchanged
+dc <- .is_direct_corner(d$x, d$y, fifelse(d$is_corner %in% 1, "Corner", ""), d$q263)
+say("dropped ", sum(dc), " direct corners (", sum(d$q263), " tagged q263)"); d <- d[!dc][, q263 := NULL]
 FEAT <- readRDS(file.path(X, "fits", "model_F4_state_foot.rds"))$features
 for (v in FEAT) if (is.logical(d[[v]])) set(d, j = v, value = as.integer(d[[v]]))
 say("training shots ", nrow(d), " from ", uniqueN(d$match_id), " matches, seasons ", min(d$season_num), "-", max(d$season_num),
@@ -68,7 +77,7 @@ say("out-of-fold calibration by predicted bin"); print(bins, digits = 3)
 imp <- as.data.table(xgb.importance(model = m))[, .(Feature, gain = round(100 * Gain, 1))]
 saveRDS(list(model = m, feature_names = FEAT, best_nrounds = best, best_logloss = el$test_logloss_mean[best],
              cv_log = el, calibration_by_season = cal, calibration_bins = bins, importance = imp,
-             panna_metadata = list(type = "xg_model", version = if (TAG == "_1") "v5.1 (2026-09-28, xg-vnext F4, full event feeds only)" else "v5 (2026-09-24, xg-vnext F4)", feature_cols = FEAT,
+             panna_metadata = list(type = "xg_model", version = switch(TAG, "_2" = "v5.2 (2026-10-06, xg-vnext F4, full event feeds, no direct corners)", "_1" = "v5.1 (2026-09-28, xg-vnext F4, full event feeds only)", "v5 (2026-09-24, xg-vnext F4)"), feature_cols = FEAT,
                                    n_shots = nrow(d), n_goals = sum(d$goal), goal_rate = mean(d$goal), params = PAR,
                                    seasons = range(d$season_num), exclude_penalties = TRUE,
                                    note = "needs xgv_03/xgv_04 context features at scoring time; not yet wired into add_xg_to_spadl")),

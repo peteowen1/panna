@@ -1,3 +1,13 @@
+# panna 0.3.74
+
+## xG v5.2 and xGOT v3.2: trained without direct corners (#277)
+
+Published 2026-10-06 under the same asset names (`MODELS.md`). v5.1 and v3.1 retrained without
+direct-from-corner shots: 332 xG rows and 159 on-target xGOT rows, flagged by Opta qualifier 263
+(`xgv_13_direct_corner_flags.R`) or the corner-flag box. On the same rows, out of fold, the wide
+byline's goals per xG moved from 0.83 to 1.01 and every other zone and season was unchanged
+(`xgv_14_direct_corner_report.R`). EPV keeps its labels from xG v5.1.
+
 # panna 0.3.73
 
 ## Direct-from-corner shots score 0.02 xG (#277)
