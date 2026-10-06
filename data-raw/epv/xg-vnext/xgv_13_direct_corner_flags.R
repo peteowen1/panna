@@ -19,7 +19,8 @@ for (p in files) {
   q <- as.data.table(open_dataset(p) |>
     filter(type_id %in% c(13L, 14L, 15L, 16L), grepl('"263":', qualifier_json, fixed = TRUE)) |>
     select(match_id, event_id) |> collect())
-  q[, `:=`(match_id = as.character(match_id), event_id = as.character(event_id), q263 = TRUE)]
+  # event_id is int64 in most files but double in a few: as.character() on a double can give "2.107e+09"
+  q[, `:=`(match_id = as.character(match_id), event_id = format(event_id, scientific = FALSE, trim = TRUE), q263 = TRUE)]
   write_parquet(q, out)   # an empty part still marks the file as done
 }
 dcf <- unique(rbindlist(lapply(list.files(PART, full.names = TRUE), read_parquet)), by = c("match_id", "event_id"))

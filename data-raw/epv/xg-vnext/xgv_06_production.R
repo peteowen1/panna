@@ -18,7 +18,7 @@ X <- "data-raw/cache/epv/xg-vnext"
 say <- function(...) { cat(format(Sys.time(), "%H:%M:%S "), ..., "\n", sep = ""); flush.console() }
 # Model tag: "" wrote v5 (2026-09-24); "_1" is v5.1, the same fit without goals-only
 # and thin-feed matches (2026-09-28). Outputs never overwrite another tag's files.
-TAG <- Sys.getenv("XG_TAG", "_1")
+TAG <- Sys.getenv("XG_TAG", "_2")   # "_2" = v5.2, direct corners out (2026-10-06, panna#277)
 OUT <- file.path(X, paste0("xg_model_v5", TAG, ".rds"))
 
 d <- as.data.table(read_parquet(file.path(X, "shot_features.parquet")))
@@ -77,7 +77,7 @@ say("out-of-fold calibration by predicted bin"); print(bins, digits = 3)
 imp <- as.data.table(xgb.importance(model = m))[, .(Feature, gain = round(100 * Gain, 1))]
 saveRDS(list(model = m, feature_names = FEAT, best_nrounds = best, best_logloss = el$test_logloss_mean[best],
              cv_log = el, calibration_by_season = cal, calibration_bins = bins, importance = imp,
-             panna_metadata = list(type = "xg_model", version = if (TAG == "_1") "v5.1 (2026-09-28, xg-vnext F4, full event feeds only)" else "v5 (2026-09-24, xg-vnext F4)", feature_cols = FEAT,
+             panna_metadata = list(type = "xg_model", version = switch(TAG, "_2" = "v5.2 (2026-10-06, xg-vnext F4, full event feeds, no direct corners)", "_1" = "v5.1 (2026-09-28, xg-vnext F4, full event feeds only)", "v5 (2026-09-24, xg-vnext F4)"), feature_cols = FEAT,
                                    n_shots = nrow(d), n_goals = sum(d$goal), goal_rate = mean(d$goal), params = PAR,
                                    seasons = range(d$season_num), exclude_penalties = TRUE,
                                    note = "needs xgv_03/xgv_04 context features at scoring time; not yet wired into add_xg_to_spadl")),
