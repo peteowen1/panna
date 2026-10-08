@@ -36,7 +36,7 @@ INLINE_LEAGUES <- c("WC")
 # the unobservable features' contribution. A full-vector K would over-subtract
 # by the population mean of exactly that contribution (every player negative —
 # the Kane −0.13 bug). Building K as mean(raw_OBSERVABLE − exactPSV) absorbs it.
-# NB for these leagues K is NOT constant within (league, role) — the within-
+# NB for these leagues K is NOT constant within (league, role, role8) — the within-
 # group SD is the irreducible live-estimate noise, reported not enforced.
 LIVE_SUBSET_LEAGUES <- c("WC")
 
@@ -473,9 +473,19 @@ g[, `:=`(pr_psr = fifelse(is.na(p_psr), d_psr, p_psr),
          pr_osr = fifelse(is.na(p_osr), d_osr, p_osr),
          pr_dsr = fifelse(is.na(p_dsr), d_dsr, p_dsr))]
 w <- function(n) n / (n + SHRINK_K)
-g[, `:=`(psr = w(n)*c_psr + (1-w(n))*pr_psr,
-         osr = w(n)*c_osr + (1-w(n))*pr_osr,
-         dsr = w(n)*c_dsr + (1-w(n))*pr_dsr)]
+# Shrinkage weight from the BROAD-role sample (summed over its role8 cells), not
+# the cell's own n (panna#281 review): K is exact within a cell, so the prior
+# only guards against season-to-season C_pop drift, which is shared across a
+# role's cells. Weighting by the smaller per-cell n would have pulled every
+# cell harder toward last season than the pre-role8 constants did.
+# A cell with no current-season games (n = 0, c_* zero-filled above) keeps
+# weight 0 -> 100% its prior, exactly as before; only cells WITH games borrow
+# the broad-role weight.
+g[, n_role := sum(n), by = .(league, role)]
+g[, wt := fifelse(n > 0, w(n_role), 0)]
+g[, `:=`(psr = wt*c_psr + (1-wt)*pr_psr,
+         osr = wt*c_osr + (1-wt)*pr_osr,
+         dsr = wt*c_dsr + (1-wt)*pr_dsr)]
 
 # Live-subset leagues bypass the shrinkage blend entirely: their prior would be
 # a full-vector K (prev season or __default__), i.e. the wrong convention —
@@ -492,9 +502,9 @@ out <- rbind(
   defaults[, .(league = "__default__", role, role8, psr, osr, dsr, n = 0L, live_subset = FALSE)]
 )
 setorder(out, league, role, role8)
-# Every (league, role) must still have at least one role8 row; a role8 that
-# came back NA would key a constant the live scorer can never look up.
-stopifnot(!anyNA(out$role8))
+# A constant with an NA key or NA value must never ship: the live scorer would
+# look up nothing, or subtract NA.
+stopifnot(!anyNA(out[, .(role8, psr, osr, dsr)]))
 
 # ---- UPLOAD GATE: expected live-subset leagues must be present ---------------
 # Every WC failure path above (inline fetch, enrich xG-blind abort, scoring) is
