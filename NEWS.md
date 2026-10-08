@@ -1,3 +1,14 @@
+# panna 0.3.75
+
+## Live-PSV constants keyed on the 8-bucket role (#281)
+
+`Weekly PSR Snapshot` had failed every week since 2026-09-16. #254 moved position normalization to
+the 8-bucket role, so the live centering constant K is no longer constant within a broad role, and
+07c's hard check stopped the run (max within-group SD 0.045). `07c_build_live_psv_constants.R` now
+builds, checks and shrinks K per (league, role, role8), and `psv_live_constants.csv` gains a `role8`
+column. On ENG 2026 the offensive K for broad MID splits into DM 0.201, CM 0.214, W 0.276 and AM 0.301.
+The blog's live scorer must look K up by role8 before its coefficients are regenerated from this file.
+
 # panna 0.3.74
 
 ## xG v5.2 and xGOT v3.2: trained without direct corners (#277)
