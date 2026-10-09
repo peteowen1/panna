@@ -611,11 +611,9 @@ if (exists(".log_rss", mode = "function")) .log_rss("before season loop")
 # removal, no pre-split) costs only O(that season's own row count) per
 # iteration — the same approach the pipeline used for years before tonight,
 # now combined with the two real fixes from this session (shared SPM
-# xMetrics enrichment; RSS checkpoints for visibility). The tradeoff this
-# accepts: opta_stats/splint_data$players stay resident for the whole loop
-# (confirmed ~9.5GB baseline at current scale) — if that alone doesn't
-# leave enough headroom for the biggest season's fit, the runner has
-# genuinely outgrown 16GB and needs a size bump, not a cleverer loop.
+# xMetrics enrichment; RSS checkpoints for visibility). The extraction loop
+# below still filters each season from the untouched originals, but it only
+# writes the slices to disk; the fits run afterwards, one process per season.
 .season_end_year_map <- function(x) {
   u <- unique(x)
   stats::setNames(extract_season_end_year(u), u)
@@ -625,12 +623,31 @@ xm_end_years <- if (!is.null(opta_xmetrics) && nrow(opta_xmetrics) > 0) {
   .season_end_year_map(opta_xmetrics$season)
 } else NULL
 
-seasonal_ratings_list <- vector("list", length(seasons))
-names(seasonal_ratings_list) <- as.character(seasons)
-for (season in seasons) {
-  key <- as.character(season)
-  if (exists(".log_rss", mode = "function")) .log_rss(sprintf("season %d start", season))
+# panna#87: ONE FRESH PROCESS PER SEASON. With every season fitted in a
+# single process, R's heap stayed flat at ~5.4GB across all 14 seasons but
+# RSS climbed 6.0 -> 14.1GB over the first five and never came back (run
+# 34964936705), and the per-season fits add a ~3.5GB transient on top: peak
+# 15.3GB of the 16GB runner. Capping glibc's arenas/thresholds in the
+# workflow only brought the plateau to ~11.9GB (run 37928291881, peak still
+# 15.2GB). So: write each season's slice to disk (same O(one season)
+# extraction as before, from the UNTOUCHED originals), free the full tables,
+# then fit each season in its own callr child, which hands ALL of its memory
+# back to the OS when it exits.
+#
+# Each child is seeded with set.seed(season): the cv.glmnet folds were
+# unseeded, so step 07 was not reproducible run to run before this change.
+#
+# fit_season_ratings_opta() is shipped to the child with its environment
+# reset to globalenv -- its own environment is THIS script's local env, and
+# serializing that would copy every table above into each child. Its only
+# free variable is `seasonal_lambda` (codetools::findGlobals; every other
+# global it names is a column name inside dplyr verbs).
+season_dir <- file.path(tempdir(), "step07_seasons")
+dir.create(season_dir, showWarnings = FALSE, recursive = TRUE)
+.slice_path <- function(season) file.path(season_dir, sprintf("slice_%d.rds", season))
+.out_path <- function(season) file.path(season_dir, sprintf("out_%d.rds", season))
 
+for (season in seasons) {
   s_splints <- splint_data$splints[splint_data$splints$season_end_year == season, ]
   s_players <- splint_data$players[splint_data$players$splint_id %in% s_splints$splint_id, ]
 
@@ -646,41 +663,91 @@ for (season in seasons) {
     s_xm <- opta_xmetrics[opta_xmetrics$season %in% xm_matching, ]
   }
 
-  bundle_splint_data <- list(splints = s_splints, players = s_players,
-                             match_info = splint_data$match_info)
+  saveRDS(list(splints = s_splints, players = s_players,
+               opta_stats = s_stats, opta_xmetrics = s_xm),
+          .slice_path(season), compress = FALSE)
+  rm(s_splints, s_players, s_stats, s_xm)
+}
+
+fit_fn <- fit_season_ratings_opta
+environment(fit_fn) <- globalenv()
+shared_path <- file.path(season_dir, "shared.rds")
+saveRDS(list(
+  fit_fn = fit_fn,
+  seasonal_lambda = seasonal_lambda,
+  match_info = splint_data$match_info,
+  offense_spm_glmnet = offense_spm_glmnet,
+  offense_spm_xgb = offense_spm_xgb,
+  defense_spm_glmnet = defense_spm_glmnet,
+  defense_spm_xgb = defense_spm_xgb,
+  prior_tables = prior_tables,
+  panel_s6_by_vintage = panel_s6_by_vintage
+), shared_path, compress = FALSE)
+rm(fit_fn, splint_data, opta_stats, opta_xmetrics)
+gc(verbose = FALSE)
+if (exists(".log_rss", mode = "function")) .log_rss("season slices written, full tables freed")
+
+.fit_one_season <- function(season, slice_path, shared_path, out_path, utils_path) {
+  if (file.exists(utils_path)) source(utils_path)
+  library(dplyr)
+  devtools::load_all(quiet = TRUE)
+  shared <- readRDS(shared_path)
+  slice <- readRDS(slice_path)
+  assign("seasonal_lambda", shared$seasonal_lambda, envir = globalenv())
+  fit <- shared$fit_fn
+  environment(fit) <- globalenv()
+  set.seed(season)
+  res <- fit(
+    splint_data = list(splints = slice$splints, players = slice$players,
+                       match_info = shared$match_info),
+    opta_stats = slice$opta_stats,
+    season = season,
+    offense_spm_glmnet = shared$offense_spm_glmnet,
+    offense_spm_xgb = shared$offense_spm_xgb,
+    defense_spm_glmnet = shared$defense_spm_glmnet,
+    defense_spm_xgb = shared$defense_spm_xgb,
+    opta_xmetrics = slice$opta_xmetrics,
+    min_minutes_spm = 200,
+    min_minutes_rapm = 200,
+    prior_tables = shared$prior_tables,
+    panel_s6_by_vintage = shared$panel_s6_by_vintage
+  )
+  if (exists(".log_rss", mode = "function")) .log_rss(sprintf("season %d child end", season))
+  saveRDS(res, out_path)
+  invisible(NULL)
+}
+
+seasonal_ratings_list <- vector("list", length(seasons))
+names(seasonal_ratings_list) <- as.character(seasons)
+for (season in seasons) {
+  key <- as.character(season)
+  if (exists(".log_rss", mode = "function")) .log_rss(sprintf("season %d start", season))
 
   seasonal_ratings_list[[key]] <- tryCatch({
-    fit_season_ratings_opta(
-      splint_data = bundle_splint_data,
-      opta_stats = s_stats,
-      season = season,
-      offense_spm_glmnet = offense_spm_glmnet,
-      offense_spm_xgb = offense_spm_xgb,
-      defense_spm_glmnet = defense_spm_glmnet,
-      defense_spm_xgb = defense_spm_xgb,
-      opta_xmetrics = s_xm,
-      min_minutes_spm = 200,
-      min_minutes_rapm = 200,
-      prior_tables = prior_tables,
-      panel_s6_by_vintage = panel_s6_by_vintage
+    callr::r(
+      .fit_one_season,
+      args = list(season = season, slice_path = .slice_path(season),
+                  shared_path = shared_path, out_path = .out_path(season),
+                  utils_path = file.path("data-raw", "pipeline_utils.R")),
+      wd = getwd(), show = TRUE, spinner = FALSE
     )
+    readRDS(.out_path(season))
   }, error = function(e) {
     # panna#87: R buffers warning() into a terse "There were N warnings"
     # summary by default, hiding the actual message. cat() to stderr prints
     # immediately regardless of the warning options, so a run that silently
     # returns 0 processed seasons (as happened in run 28921623204 — all 14
     # seasons failed with no visible cause) shows its real error inline.
-    cat(sprintf("\n[season %d ERROR]: %s\n", season, conditionMessage(e)))
-    cat(sprintf("[season %d CALL]: %s\n", season, deparse(conditionCall(e))))
-    warning(sprintf("Failed to process season %d: %s", season, e$message))
+    # For a callr failure the child's real error is the `parent` condition.
+    msg <- conditionMessage(e)
+    if (!is.null(e$parent)) msg <- paste(msg, conditionMessage(e$parent))
+    cat(sprintf("\n[season %d ERROR]: %s\n", season, msg))
+    warning(sprintf("Failed to process season %d: %s", season, msg))
     NULL
   })
-
-  rm(s_splints, s_players, s_stats, s_xm, bundle_splint_data)
-  gc(verbose = FALSE)
+  unlink(c(.slice_path(season), .out_path(season)))
 }
-rm(splint_data, opta_stats, opta_xmetrics)
-gc(verbose = FALSE)
+unlink(season_dir, recursive = TRUE)
 
 seasonal_ratings_list <- Filter(Negate(is.null), seasonal_ratings_list)
 

@@ -426,7 +426,13 @@ jobs:
         # a later step failed. Lets us re-dispatch with start_step=N to skip
         # already-completed steps and iterate on the failing one in ~5 min
         # instead of 50+ min from scratch.
-        if: always() && inputs.upload_caches != 'false'
+        # github.event.inputs (strings), NOT inputs (typed): `inputs.upload_caches`
+        # is a boolean, and boolean false != 'false' is TRUE in GHA expressions
+        # (the string coerces to NaN), so upload_caches=false still uploaded
+        # (run 37928291881, 2026-10-09). The string form also stays truthy when
+        # there are no inputs at all (a repository_dispatch run), so a scheduled
+        # run keeps uploading.
+        if: always() && github.event.inputs.upload_caches != 'false'
         env:
           GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
         run: |
