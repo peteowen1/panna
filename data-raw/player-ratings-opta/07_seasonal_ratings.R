@@ -717,6 +717,7 @@ if (exists(".log_rss", mode = "function")) .log_rss("season slices written, full
   invisible(NULL)
 }
 
+failed_seasons <- integer(0)
 seasonal_ratings_list <- vector("list", length(seasons))
 names(seasonal_ratings_list) <- as.character(seasons)
 for (season in seasons) {
@@ -742,6 +743,7 @@ for (season in seasons) {
     msg <- conditionMessage(e)
     if (!is.null(e$parent)) msg <- paste(msg, conditionMessage(e$parent))
     cat(sprintf("\n[season %d ERROR]: %s\n", season, msg))
+    failed_seasons <<- c(failed_seasons, season)
     warning(sprintf("Failed to process season %d: %s", season, msg))
     NULL
   })
@@ -749,6 +751,16 @@ for (season in seasons) {
 }
 unlink(season_dir, recursive = TRUE)
 
+# A season that ERRORED (child error or OOM kill) used to be dropped here and
+# the remaining seasons shipped as a partial step-07 output. With seasons in
+# child processes, an OOM on the largest season is the likeliest failure, so
+# fail the step instead. A season fit_season_ratings_opta() deliberately skips
+# (< 100 splints) returns NULL without erroring and is still dropped below.
+if (length(failed_seasons) > 0) {
+  stop(sprintf("Step 07: %d of %d seasons failed (%s); not writing a partial result.",
+               length(failed_seasons), length(seasonal_ratings_list),
+               paste(failed_seasons, collapse = ", ")), call. = FALSE)
+}
 seasonal_ratings_list <- Filter(Negate(is.null), seasonal_ratings_list)
 
 seasonal_spm <- bind_rows(lapply(seasonal_ratings_list, `[[`, "spm"))
