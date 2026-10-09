@@ -60,11 +60,15 @@ local_no_published_models <- function(env = parent.frame()) {
   # Registered before the mocks so it runs after they are restored (deferred
   # handlers run last-in first-out). Registered after them, a failing check
   # skipped the restore and the stubs leaked into later tests.
+  # trace_env = env: the check runs as an exit handler, after the test's own
+  # frames have unwound, so without it expect() can't build a traceback and
+  # errors ("Can't find `bottom` on the call tree") instead of failing.
   withr::defer(
     testthat::expect(
       length(reached) == 0,
       sprintf("Test fell through to a published-model loader: %s",
-              paste(unique(reached), collapse = ", "))
+              paste(unique(reached), collapse = ", ")),
+      trace_env = env
     ),
     envir = env
   )
