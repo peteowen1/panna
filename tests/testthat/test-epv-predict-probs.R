@@ -21,6 +21,13 @@ test_that("predict_epv_probs() matches the old reshape = TRUE output without the
   expect_equal(nrow(out), 20L)
   expect_equal(rowSums(out), rep(1, 20), tolerance = 1e-6)
 
+  # Column order checked without the old call, so it survives the skip below:
+  # rows deep inside each class region must put the most probability on that
+  # class's column (class 0 -> p_team_scores, 1 -> p_opponent, 2 -> p_nobody).
+  probe <- data.frame(a = c(0.95, 0.20, 0.20), b = c(0.50, 0.90, 0.10))
+  p <- as.matrix(predict_epv_probs(model, probe))
+  expect_equal(unname(max.col(p)), c(1L, 2L, 3L))
+
   # The pre-change call. Skipped once xgboost turns the deprecation into an
   # error, at which point there is nothing left to compare against.
   old <- tryCatch(
