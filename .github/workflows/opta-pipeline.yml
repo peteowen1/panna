@@ -421,6 +421,17 @@ jobs:
           fi
           exit "$RSCRIPT_EXIT"
 
+      # Keep the step-07 output as a run artifact on every run, so a test run
+      # with upload_caches=false can still be compared against a baseline.
+      - name: Keep step-07 output as a run artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seasonal-ratings
+          path: data-raw/cache-opta/07_seasonal_ratings.rds
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Upload caches to predictions-cache release
         # if: always() — upload whatever step caches were produced even if
         # a later step failed. Lets us re-dispatch with start_step=N to skip
