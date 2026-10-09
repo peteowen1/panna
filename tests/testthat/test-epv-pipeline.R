@@ -517,15 +517,13 @@ test_that("calculate_action_epv produces bounded EPV values", {
     stringsAsFactors = FALSE
   )
 
-  # `season` is required now that the published xG model is season-aware (it
-  # carries a `season_num` feature and refuses to score without one -- see
-  # add_xg_to_spadl()). This test passes xg_model = NULL, so calculate_action_epv()
-  # falls through to load_xg_model() and scores with whatever model is CURRENTLY
-  # PUBLISHED. That ambient dependency is why deploying the 2026-09-12 model
-  # turned this assertion about EPV bounds into an xG error: the test never
-  # isolated the model it was implicitly using.
-  result <- calculate_action_epv(spadl, features, epv_model, xg_model = NULL,
-                                 season = "2025-2026")
+  # xG is a fixed input here, not a live variable (panna#244). With
+  # xg_model = NULL this test used to fall through to load_xg_model() and score
+  # with whatever model was currently published, so deploying the season-aware
+  # model on 2026-09-12 turned this assertion about EPV bounds into an xG error.
+  local_no_published_models()
+  result <- calculate_action_epv(spadl, features, epv_model,
+                                 xg_model = fixture_xg_model())
 
   # EPV = P(team_scores) - P(opponent_scores), so bounded in [-1, 1]
   expect_true(all(result$epv >= -1 & result$epv <= 1),
@@ -546,6 +544,25 @@ test_that("calculate_action_epv produces bounded EPV values", {
   last_actions <- result[!duplicated(result$match_id, fromLast = TRUE), ]
   expect_true(all(last_actions$epv_delta == 0),
               info = "Last action per match should have epv_delta = 0")
+})
+
+test_that("local_no_published_models() fails a test that falls through to load_xg_model() (panna#244)", {
+  # calculate_action_epv() swallows a load_xg_model() error into a warning, so
+  # the guard has to fail the test on exit rather than rely on the stub's error
+  # propagating. The bogus epv_model errors right after the xG step; only the
+  # guard's verdict matters here.
+  spadl <- data.frame(match_id = "m1", action_id = 1L, action_type = "pass",
+                      start_x = 50, start_y = 50)
+  expect_failure(local({
+    local_no_published_models()
+    suppressWarnings(try(
+      calculate_action_epv(spadl, NULL, epv_model = list(), xg_model = NULL),
+      silent = TRUE
+    ))
+  }), "load_xg_model")
+
+  # A test that never reaches a loader passes the guard's check.
+  expect_success(local(local_no_published_models()))
 })
 
 # =============================================================================
