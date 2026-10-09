@@ -522,8 +522,10 @@ predict_epv_probs <- function(model, features) {
   X[is.na(X)] <- 0
 
   if (method == "goal") {
-    # Multinomial: returns matrix of probabilities (n_samples x 3)
-    probs <- stats::predict(model$model, X, reshape = TRUE)
+    # Multinomial: matrix of probabilities (n_samples x 3). softprob_matrix()
+    # handles both xgboost return shapes; the old `reshape = TRUE` argument is
+    # deprecated in xgboost >= 3.
+    probs <- softprob_matrix(stats::predict(model$model, X), nrow(X))
 
     data.frame(
       p_team_scores = probs[, 1],
