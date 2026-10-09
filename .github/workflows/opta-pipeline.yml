@@ -40,6 +40,17 @@ env:
   # runner. We keep the free ubuntu-latest runner (runs-on unchanged) and rely on
   # this flag instead. Any non-empty value enables it.
   OPTA_FIXED_LAMBDA: '1'
+  # panna#87: step 07's R heap stays flat at ~5.4GB across all 14 seasons, but
+  # its RSS climbs 6.0 -> 14.1GB over the first five and never comes back
+  # (run 34964936705, peak 15.3GB of 16GB). That gap is memory R has freed
+  # that glibc keeps instead of returning to the OS: per-thread malloc arenas
+  # (data.table/OpenMP) and an mmap threshold that adapts upward so large
+  # freed vectors land on the heap. Cap the arenas and pin both thresholds so
+  # big blocks are mmap'd and given back on free. glibc reads these at process
+  # start; callr step children inherit them.
+  MALLOC_ARENA_MAX: '2'
+  MALLOC_MMAP_THRESHOLD_: '65536'
+  MALLOC_TRIM_THRESHOLD_: '131072'
 
 jobs:
   opta-pipeline:
