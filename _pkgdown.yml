@@ -1,4 +1,7 @@
 url: https://peteowen1.github.io/panna/
+# Not docs/: that holds docs/agents/ (agent-skill config), and pkgdown refuses
+# to build into a non-empty folder it did not create (broke 2026-09-17).
+destination: pkgdown-site
 
 template:
   bootstrap: 5
