@@ -23,13 +23,14 @@ on:
         description: 'Publish step 9 ratings to the ratings-data release. Set FALSE to rebuild and inspect without publishing.'
         type: boolean
         default: true
-  # repository_dispatch trigger removed 2026-06-11 (panna#87): the pipeline
-  # OOMs the 16GB hosted runner deterministically since the 4-league
-  # expansion, so the daily opta-scrape-complete dispatch burned ~1-3
-  # runner-hours per day on guaranteed failures. Manual-only until the
-  # memory profile fits 16GB again (or the job moves to a larger runner).
-  # repository_dispatch:
-  #   types: [opta-scrape-complete]
+  # Daily after each Opta scrape. Removed 2026-06-11 (panna#87) because every
+  # run OOM'd the 16GB runner; re-enabled 2026-10-10 (Pete) once a full
+  # no-publish rebuild fit with 2.2GB headroom at the tightest step (run
+  # 38021761037: step 07 one process per season, steps 05/07 read the narrowed
+  # stats file). A dispatch has no inputs, so it is a full rebuild that
+  # uploads caches and publishes ratings (~2h05m).
+  repository_dispatch:
+    types: [opta-scrape-complete]
 
 env:
   GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
@@ -40,6 +41,17 @@ env:
   # runner. We keep the free ubuntu-latest runner (runs-on unchanged) and rely on
   # this flag instead. Any non-empty value enables it.
   OPTA_FIXED_LAMBDA: '1'
+  # panna#87: step 07's R heap stays flat at ~5.4GB across all 14 seasons, but
+  # its RSS climbs 6.0 -> 14.1GB over the first five and never comes back
+  # (run 34964936705, peak 15.3GB of 16GB). That gap is memory R has freed
+  # that glibc keeps instead of returning to the OS: per-thread malloc arenas
+  # (data.table/OpenMP) and an mmap threshold that adapts upward so large
+  # freed vectors land on the heap. Cap the arenas and pin both thresholds so
+  # big blocks are mmap'd and given back on free. glibc reads these at process
+  # start; callr step children inherit them.
+  MALLOC_ARENA_MAX: '2'
+  MALLOC_MMAP_THRESHOLD_: '65536'
+  MALLOC_TRIM_THRESHOLD_: '131072'
 
 jobs:
   opta-pipeline:
@@ -266,6 +278,18 @@ jobs:
             exit 1
           fi
 
+          # Optional (panna#87): the narrowed stats copy steps 5/7 read. Not in
+          # NEEDED because a release from before it existed lacks it, and those
+          # steps fall back to the full 02_opta_stats.rds without it.
+          if [ "$INPUT_START_STEP" -ge 3 ]; then
+            if gh release download predictions-cache --repo peteowen1/pannadata \
+                 --pattern 02_opta_stats_narrow.rds --dir "$CACHE_DIR" 2>/dev/null; then
+              echo "  Downloaded 02_opta_stats_narrow.rds (optional)"
+            else
+              echo "  02_opta_stats_narrow.rds not in the release (optional; steps 5/7 read the full file)"
+            fi
+          fi
+
           # Touch all downloaded files so their mtime matches each other and
           # the pipeline's per-step "is cache fresh?" check passes.
           touch "$CACHE_DIR"/*.rds
@@ -410,12 +434,29 @@ jobs:
           fi
           exit "$RSCRIPT_EXIT"
 
+      # Keep the step-07 output as a run artifact on every run, so a test run
+      # with upload_caches=false can still be compared against a baseline.
+      - name: Keep step-07 output as a run artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seasonal-ratings
+          path: data-raw/cache-opta/07_seasonal_ratings.rds
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Upload caches to predictions-cache release
         # if: always() — upload whatever step caches were produced even if
         # a later step failed. Lets us re-dispatch with start_step=N to skip
         # already-completed steps and iterate on the failing one in ~5 min
         # instead of 50+ min from scratch.
-        if: always() && inputs.upload_caches != 'false'
+        # github.event.inputs (strings), NOT inputs (typed): `inputs.upload_caches`
+        # is a boolean, and boolean false != 'false' is TRUE in GHA expressions
+        # (the string coerces to NaN), so upload_caches=false still uploaded
+        # (run 37928291881, 2026-10-09). The string form also stays truthy when
+        # there are no inputs at all (a repository_dispatch run), so a scheduled
+        # run keeps uploading.
+        if: always() && github.event.inputs.upload_caches != 'false'
         env:
           GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
         run: |
@@ -429,7 +470,7 @@ jobs:
           echo "Uploading any per-step caches that were produced..."
           UPLOADED=0
           for f in 01_raw_data.rds 01_config.rds \
-                   02_processed_data.rds 02_opta_stats.rds \
+                   02_processed_data.rds 02_opta_stats.rds 02_opta_stats_narrow.rds \
                    03_splints.rds \
                    04_rapm.rds 04_rapm_multi.rds \
                    05_spm.rds \

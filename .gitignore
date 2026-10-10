@@ -19,8 +19,10 @@ data/
 # Claude Code (local settings)
 .claude/
 
-# pkgdown output (rebuilt fresh by .github/workflows/pkgdown.yaml, deployed to gh-pages)
-# docs/agents/ is hand-written agent-skill config, not pkgdown output — keep it tracked
+# pkgdown output (rebuilt fresh by .github/workflows/pkgdown.yaml, deployed to gh-pages).
+# It builds into pkgdown-site/ (destination in _pkgdown.yml); docs/agents/ is
+# hand-written agent-skill config and stays tracked.
+pkgdown-site/
 docs/*
 !docs/agents/
 
