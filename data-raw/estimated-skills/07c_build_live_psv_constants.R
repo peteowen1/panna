@@ -1,11 +1,15 @@
-# Generate per-(league, role) live-PSV centering constants K[league,role] for the
-# blog's live in-match scorer (inthegame-blog/football/stat-value.js).
+# Generate per-(league, role, role8) live-PSV centering constants for the blog's
+# live in-match scorer (inthegame-blog/football/stat-value.js).
 #
 # THEORY (see session notes): exact game-logs PSV (per-90, pre-minutes) is
-#   exactPSV = raw_full(x) - B_role[role] - C_pop[league, pop]
+#   exactPSV = raw_full(x) - B_role[role8] - C_pop[league, pop]   (x f[role] calib)
 # so the single constant live must subtract is
-#   K[league,role] = raw_full(x) - exactPSV    ( = B_role + C_pop )
-# and x cancels => K is CONSTANT within every (league, role). We compute it
+#   K[league,role,role8] = raw_full(x) - exactPSV
+# and x cancels => K is CONSTANT within every (league, role, role8). The role8
+# key is needed since #254 moved position means to the 8-bucket role, and the
+# broad role stays in the key because the PSV calibration multiplier is keyed on
+# it (panna#281: a broad-MID W and a broad-FWD W get different K). The CSV gained
+# a `role8` column; the blog must look K up by both. We compute it
 # empirically (drift-proof: consistent with whatever 10b ships) and self-check
 # that the within-group SD ~ 0. Missing-feature terms (xMetrics/duel WOE) live
 # inside both raw_full and exactPSV so they cancel — K is clean regardless.
@@ -32,7 +36,7 @@ INLINE_LEAGUES <- c("WC")
 # the unobservable features' contribution. A full-vector K would over-subtract
 # by the population mean of exactly that contribution (every player negative —
 # the Kane −0.13 bug). Building K as mean(raw_OBSERVABLE − exactPSV) absorbs it.
-# NB for these leagues K is NOT constant within (league, role) — the within-
+# NB for these leagues K is NOT constant within (league, role, role8) — the within-
 # group SD is the irreducible live-estimate noise, reported not enforced.
 LIVE_SUBSET_LEAGUES <- c("WC")
 
@@ -245,6 +249,13 @@ ms[, .is_gk_full := .detect_gk_rows(ms)]
 # broad role per player-game (same classifier position-norm uses). Pinned to
 # the SAME .is_gk_full computed above, not recomputed per-row here.
 ms[, role := .player_role(ms, is_gk = ms$.is_gk_full)]
+# panna#281: the 8-bucket role (GK/CB/FB/DM/CM/AM/W/ST) that position
+# normalization keys on since #254. K = B_role + C_pop now varies with the role8
+# bucket AND (via the broad-role PSV calibration multiplier) with the broad role,
+# so it is constant only within (league, role, role8): e.g. ENG 2026 MID K_osr
+# DM 0.201 / CM 0.214 / W 0.276 / AM 0.301, and a broad-MID W differs from a
+# broad-FWD W. Same row-level resolver compute_player_psv() normalizes with.
+ms[, role8 := .player_role8(ms, is_gk = ms$.is_gk_full)]
 
 # Load ONCE and pass explicitly (review finding): score_one() runs up to 3x per
 # subset league-season inside the loop below, and apply_psv_calibration()'s
@@ -346,11 +357,12 @@ for (s in recent) {
       m <- merge(ex[, c(key, "psv","osv","dsv"), with=FALSE],
                  rw[, c(key, "psv","osv","dsv"), with=FALSE],
                  by = key, suffixes = c("_ex","_rw"))
-      role_lookup <- unique(blk[, c(key, "role"), with=FALSE], by = key)
+      role_lookup <- unique(blk[, c(key, "role", "role8"), with=FALSE], by = key)
       m <- merge(m, role_lookup, by = key)
       m[, `:=`(K_psr = psv_rw - psv_ex, K_osr = osv_rw - osv_ex, K_dsr = dsv_rw - dsv_ex)]
       gg <- m[, .(psr = mean(K_psr), osr = mean(K_osr), dsr = mean(K_dsr),
-                  sd_psr = sd(K_psr), sd_osr = sd(K_osr), sd_dsr = sd(K_dsr), n = .N), by = role]
+                  sd_psr = sd(K_psr), sd_osr = sd(K_osr), sd_dsr = sd(K_dsr), n = .N),
+              by = .(role, role8)]
       gg[, `:=`(league = lg, sey = s, live_subset = is_subset)]
       # Diagnostic for subset leagues: the full-vector K alongside, so the delta
       # (= population-mean contribution of the live-unobservable features) is
@@ -360,11 +372,11 @@ for (s in recent) {
         mf <- merge(ex[, c(key, "psv"), with=FALSE], rw_full[, c(key, "psv"), with=FALSE],
                     by = key, suffixes = c("_ex","_rw"))
         mf <- merge(mf, role_lookup, by = key)
-        kf <- mf[, .(K_full = mean(psv_rw - psv_ex)), by = role]
-        diag <- merge(gg[, .(role, K_obs = psr)], kf, by = "role")
+        kf <- mf[, .(K_full = mean(psv_rw - psv_ex)), by = .(role, role8)]
+        diag <- merge(gg[, .(role, role8, K_obs = psr)], kf, by = c("role", "role8"))
         diag[, unobservable_mean := K_full - K_obs]
         cat(sprintf("\n[subset] %s %s — K on live-observable subset vs full vector:\n", lg, s))
-        print(diag[order(role)])
+        print(diag[order(role, role8)])
       }
       gg
     }, error = function(e) {
@@ -383,7 +395,9 @@ cat(sprintf("\n[calibration] role resolved for %.1f%% of scored rows across all 
             100 * (1 - .role_calib_na / max(.role_calib_n, 1)),
             100 * .role_calib_na / max(.role_calib_n, 1)))
 
-# ---- THEORY CHECK (HARD): K must be constant within (league,role) ----
+# ---- THEORY CHECK (HARD): K must be constant within (league,role,role8) ----
+# (role8 added 2026-10-08, panna#281: since #254's role8 position means, K is
+# constant per role8 bucket, not per broad role.)
 # This invariant is the whole justification for shipping ONE constant per group.
 # Abort rather than ship a wrong constant if it ever breaks — e.g. a future
 # round/matchweek column splitting calculate_psv's centering into subgroups, or
@@ -397,15 +411,15 @@ K_full <- K[live_subset == FALSE]
 max_sd <- max(c(K_full$sd_psr, K_full$sd_osr, K_full$sd_dsr), na.rm = TRUE)
 cat(sprintf("\n[check] max within-group SD of K (psr/osr/dsr, full-vector leagues): %.3e (tol %.0e)\n",
             max_sd, SD_TOL))
-print(head(K_full[order(-sd_psr), .(league, sey, role, n, sd_psr, sd_osr, sd_dsr)], 5))
+print(head(K_full[order(-sd_psr), .(league, sey, role, role8, n, sd_psr, sd_osr, sd_dsr)], 5))
 if (is.finite(max_sd) && max_sd > SD_TOL)
-  stop(sprintf(paste("K is NOT constant within (league,role): max SD %.3e > %.0e.",
+  stop(sprintf(paste("K is NOT constant within (league,role,role8): max SD %.3e > %.0e.",
                      "The centering-constant assumption is broken (round-split centering?",
                      "GK/role taxonomy drift?). Aborting rather than shipping a wrong constant."),
                max_sd, SD_TOL))
 if (any(K$live_subset)) {
   cat("\n[subset] within-group SD for live-subset leagues (= irreducible live noise, per-90):\n")
-  print(K[live_subset == TRUE, .(league, sey, role, n,
+  print(K[live_subset == TRUE, .(league, sey, role, role8, n,
                                  sd_psr = round(sd_psr, 4), sd_osr = round(sd_osr, 4),
                                  sd_dsr = round(sd_dsr, 4))])
   # SANITY BOUND: subset SD is expected nonzero (live noise, observed 0.06-0.31
@@ -416,7 +430,7 @@ if (any(K$live_subset)) {
   bad <- K[live_subset == TRUE &
              (sd_psr > SUBSET_SD_MAX | sd_osr > SUBSET_SD_MAX | sd_dsr > SUBSET_SD_MAX)]
   if (nrow(bad) > 0) {
-    print(bad[, .(league, sey, role, n, sd_psr, sd_osr, sd_dsr)])
+    print(bad[, .(league, sey, role, role8, n, sd_psr, sd_osr, sd_dsr)])
     stop(sprintf(paste("live-subset within-group SD exceeds %.1f per-90 — far above the",
                        "irreducible live noise. Likely a centering split or role-taxonomy",
                        "drift; aborting rather than shipping a wrong subset constant."),
@@ -428,7 +442,7 @@ if (any(K$live_subset)) {
 cur <- max(recent)
 cat(sprintf("\n[spread] cross-league K_psr by role, current season (end %d):\n", cur))
 print(K[sey == cur, .(mean = round(mean(psr),4), sd = round(sd(psr),4),
-                      min = round(min(psr),4), max = round(max(psr),4), nlg = .N), by = role])
+                      min = round(min(psr),4), max = round(max(psr),4), nlg = .N), by = .(role, role8)])
 
 # ---- Shrink toward a prior, KEEPING prior-only leagues -------------------------
 # Prior hierarchy: current-season league K (weight n/(n+SHRINK_K)) blended with
@@ -438,20 +452,20 @@ print(K[sey == cur, .(mean = round(mean(psr),4), sd = round(sd(psr),4),
 # generic default (that drop was the cold-start regression this is designed to do
 # right). __default__ is the n-WEIGHTED cross-league mean so a thin 20-game league
 # can't skew the offset every unseen league inherits.
-cur_dt <- K[sey == cur,         .(league, role, c_psr = psr, c_osr = osr, c_dsr = dsr, n)]
-prev   <- K[sey == min(recent), .(league, role, p_psr = psr, p_osr = osr, p_dsr = dsr)]
+cur_dt <- K[sey == cur,         .(league, role, role8, c_psr = psr, c_osr = osr, c_dsr = dsr, n)]
+prev   <- K[sey == min(recent), .(league, role, role8, p_psr = psr, p_osr = osr, p_dsr = dsr)]
 # __default__ from full-vector leagues ONLY: a live-subset K is a different
 # convention (observable-subset raw) and would contaminate the prior every
 # unseen club league inherits.
 defaults <- K[sey == cur & live_subset == FALSE,
               .(psr = weighted.mean(psr, n), osr = weighted.mean(osr, n),
-                dsr = weighted.mean(dsr, n)), by = role]  # __default__
+                dsr = weighted.mean(dsr, n)), by = .(role, role8)]  # __default__
 
-# universe = every (league, role) seen in EITHER season (keeps prior-only leagues)
-universe <- unique(rbind(cur_dt[, .(league, role)], prev[, .(league, role)]))
-g <- merge(universe, cur_dt, by = c("league","role"), all.x = TRUE)
-g <- merge(g, prev,     by = c("league","role"), all.x = TRUE)
-g <- merge(g, defaults[, .(role, d_psr = psr, d_osr = osr, d_dsr = dsr)], by = "role", all.x = TRUE)
+# universe = every (league, role, role8) seen in EITHER season (keeps prior-only leagues)
+universe <- unique(rbind(cur_dt[, .(league, role, role8)], prev[, .(league, role, role8)]))
+g <- merge(universe, cur_dt, by = c("league","role","role8"), all.x = TRUE)
+g <- merge(g, prev,     by = c("league","role","role8"), all.x = TRUE)
+g <- merge(g, defaults[, .(role, role8, d_psr = psr, d_osr = osr, d_dsr = dsr)], by = c("role","role8"), all.x = TRUE)
 g[is.na(n), n := 0L]
 for (cc in c("c_psr","c_osr","c_dsr")) g[is.na(get(cc)), (cc) := 0]   # n=0 -> weight 0, value unused
 # prior = prev-season league K if present, else cross-league default
@@ -459,9 +473,19 @@ g[, `:=`(pr_psr = fifelse(is.na(p_psr), d_psr, p_psr),
          pr_osr = fifelse(is.na(p_osr), d_osr, p_osr),
          pr_dsr = fifelse(is.na(p_dsr), d_dsr, p_dsr))]
 w <- function(n) n / (n + SHRINK_K)
-g[, `:=`(psr = w(n)*c_psr + (1-w(n))*pr_psr,
-         osr = w(n)*c_osr + (1-w(n))*pr_osr,
-         dsr = w(n)*c_dsr + (1-w(n))*pr_dsr)]
+# Shrinkage weight from the BROAD-role sample (summed over its role8 cells), not
+# the cell's own n (panna#281 review): K is exact within a cell, so the prior
+# only guards against season-to-season C_pop drift, which is shared across a
+# role's cells. Weighting by the smaller per-cell n would have pulled every
+# cell harder toward last season than the pre-role8 constants did.
+# A cell with no current-season games (n = 0, c_* zero-filled above) keeps
+# weight 0 -> 100% its prior, exactly as before; only cells WITH games borrow
+# the broad-role weight.
+g[, n_role := sum(n), by = .(league, role)]
+g[, wt := fifelse(n > 0, w(n_role), 0)]
+g[, `:=`(psr = wt*c_psr + (1-wt)*pr_psr,
+         osr = wt*c_osr + (1-wt)*pr_osr,
+         dsr = wt*c_dsr + (1-wt)*pr_dsr)]
 
 # Live-subset leagues bypass the shrinkage blend entirely: their prior would be
 # a full-vector K (prev season or __default__), i.e. the wrong convention —
@@ -472,10 +496,15 @@ g[live_subset == TRUE & n > 0, `:=`(psr = c_psr, osr = c_osr, dsr = c_dsr)]
 g <- g[!(live_subset == TRUE & n == 0)]
 
 out <- rbind(
-  g[, .(league, role, psr, osr, dsr, n, live_subset)],
-  defaults[, .(league = "__default__", role, psr, osr, dsr, n = 0L, live_subset = FALSE)]
+  # role8 sits between role and psr; live_subset MUST stay the last column
+  # (psr-weekly-snapshot.yml reads it as awk $NF).
+  g[, .(league, role, role8, psr, osr, dsr, n, live_subset)],
+  defaults[, .(league = "__default__", role, role8, psr, osr, dsr, n = 0L, live_subset = FALSE)]
 )
-setorder(out, league, role)
+setorder(out, league, role, role8)
+# A constant with an NA key or NA value must never ship: the live scorer would
+# look up nothing, or subtract NA.
+stopifnot(!anyNA(out[, .(role8, psr, osr, dsr)]))
 
 # ---- UPLOAD GATE: expected live-subset leagues must be present ---------------
 # Every WC failure path above (inline fetch, enrich xG-blind abort, scoring) is
