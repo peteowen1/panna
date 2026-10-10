@@ -23,13 +23,14 @@ on:
         description: 'Publish step 9 ratings to the ratings-data release. Set FALSE to rebuild and inspect without publishing.'
         type: boolean
         default: true
-  # repository_dispatch trigger removed 2026-06-11 (panna#87): the pipeline
-  # OOMs the 16GB hosted runner deterministically since the 4-league
-  # expansion, so the daily opta-scrape-complete dispatch burned ~1-3
-  # runner-hours per day on guaranteed failures. Manual-only until the
-  # memory profile fits 16GB again (or the job moves to a larger runner).
-  # repository_dispatch:
-  #   types: [opta-scrape-complete]
+  # Daily after each Opta scrape. Removed 2026-06-11 (panna#87) because every
+  # run OOM'd the 16GB runner; re-enabled 2026-10-10 (Pete) once a full
+  # no-publish rebuild fit with 2.2GB headroom at the tightest step (run
+  # 38021761037: step 07 one process per season, steps 05/07 read the narrowed
+  # stats file). A dispatch has no inputs, so it is a full rebuild that
+  # uploads caches and publishes ratings (~2h05m).
+  repository_dispatch:
+    types: [opta-scrape-complete]
 
 env:
   GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
