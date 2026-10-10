@@ -81,11 +81,11 @@ if (exists(".log_rss", mode = "function")) {
 # Validated old-vs-narrowed single-season output with all.equal() before
 # this landed on GHA (docs/plans/FABLE-QUEUE-2026-07-16-PLAN.md WS-3).
 opta_stats_wide_ncol <- ncol(opta_stats)
-opta_stats_keep_cols <- intersect(
-  c("season", "player_id", "player_name", "match_id", "position",
-    unname(.get_opta_col_mapping())),
-  names(opta_stats)
-)
+# The shared list (R/spm_opta.R) also keeps the competition and minutes
+# columns .spm_league_shares() needs. The list once inlined here dropped
+# competition, so if a model were ever trained with lgshare_* predictors,
+# every player's shares would silently become 0 in this step.
+opta_stats_keep_cols <- .spm_opta_stats_keep_cols(names(opta_stats))
 opta_stats_wide <- opta_stats
 opta_stats <- opta_stats_wide[opta_stats_keep_cols]
 rm(opta_stats_wide)
