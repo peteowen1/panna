@@ -1,5 +1,9 @@
 # panna
 
+Ratings, predictions and simulations built with panna are published,
+updated after every matchday, at
+[inthegame.blog/football](https://inthegame.blog/football/).
+
 Player ratings for football (soccer), built on Opta event and box-score
 data. Full documentation site: <https://peteowen1.github.io/panna/>.
 
@@ -390,6 +394,33 @@ Action-level player valuation from Opta event data
   : Predict Pass Completion Probability
 - [`save_epv_model()`](https://peteowen1.github.io/panna/reference/save_epv_model.md)
   : Save EPV Model
+
+## EPV Net Goals ledger
+
+Allocating each action’s expected-goal change to players so a match’s
+payments sum to its goal difference
+
+- [`ng_adjust_for_rating()`](https://peteowen1.github.io/panna/reference/ng_adjust_for_rating.md)
+  : Position-centre per-game net goals for the rating layer
+- [`ng_build_adjacency()`](https://peteowen1.github.io/panna/reference/ng_build_adjacency.md)
+  : Build a full-stream adjacency table
+- [`ng_build_ledger()`](https://peteowen1.github.io/panna/reference/ng_build_ledger.md)
+  : Build the net goals ledger
+- [`ng_check_conservation()`](https://peteowen1.github.io/panna/reference/ng_check_conservation.md)
+  : Check the ledger against the scoreline
+- [`ng_check_team_totals()`](https://peteowen1.github.io/panna/reference/ng_check_team_totals.md)
+  : Check each team's players against that team's own goal difference
+- [`ng_fold_unpublished()`](https://peteowen1.github.io/panna/reference/ng_fold_unpublished.md)
+  : Fold value owed to unpublished players back into their team
+- [`ng_player_game()`](https://peteowen1.github.io/panna/reference/ng_player_game.md)
+  : Aggregate net goals to one row per player-match
+- [`ng_reconcile_margin()`](https://peteowen1.github.io/panna/reference/ng_reconcile_margin.md)
+  : Force each team's published rows to sum to that team's own goal
+  difference
+- [`ng_shares()`](https://peteowen1.github.io/panna/reference/ng_shares.md)
+  : Default shares for the net goals allocation
+- [`ng_spread_pools()`](https://peteowen1.github.io/panna/reference/ng_spread_pools.md)
+  : Spread team pools across the players who were on the pitch
 
 ## Win Probability (WPA)
 

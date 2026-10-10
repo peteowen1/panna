@@ -10,7 +10,14 @@ on-target, no coords -\> NA (surfaced, never imputed) off-target -\> 0
 ## Usage
 
 ``` r
-add_xgot_to_spadl(spadl_actions, xgot_model, goalmouth_lookup)
+add_xgot_to_spadl(
+  spadl_actions,
+  xgot_model,
+  goalmouth_lookup,
+  season = NULL,
+  events = NULL,
+  foot_history = NULL
+)
 ```
 
 ## Arguments
@@ -42,6 +49,13 @@ add_xgot_to_spadl(spadl_actions, xgot_model, goalmouth_lookup)
   `is_blocked` excludes shots blocked by an outfield defender (q82) from
   on-target, matching training (panna#176); without it, blocked shots
   are scored as real on-target attempts.
+
+- season, events, foot_history:
+
+  As in
+  [`add_xg_to_spadl()`](https://peteowen1.github.io/panna/reference/add_xg_to_spadl.md):
+  needed only by a model whose features include `season_num` or pre-shot
+  context (xGOT v3); such a model aborts without them.
 
 ## Value
 

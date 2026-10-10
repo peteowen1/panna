@@ -1,5 +1,480 @@
 # Changelog
 
+## panna 0.3.75
+
+### Live-PSV constants keyed on the 8-bucket role ([\#281](https://github.com/peteowen1/panna/issues/281))
+
+`Weekly PSR Snapshot` had failed every week since 2026-09-16.
+[\#254](https://github.com/peteowen1/panna/issues/254) moved position
+normalization to the 8-bucket role, so the live centering constant K is
+no longer constant within a broad role, and 07c’s hard check stopped the
+run (max within-group SD 0.045). `07c_build_live_psv_constants.R` now
+builds, checks and shrinks K per (league, role, role8), and
+`psv_live_constants.csv` gains a `role8` column. On ENG 2026 the
+offensive K for broad MID splits into DM 0.201, CM 0.214, W 0.276 and AM
+0.301. The blog’s live scorer must look K up by role8 before its
+coefficients are regenerated from this file.
+
+## panna 0.3.74
+
+### xG v5.2 and xGOT v3.2: trained without direct corners ([\#277](https://github.com/peteowen1/panna/issues/277))
+
+Published 2026-10-06 under the same asset names (`MODELS.md`). v5.1 and
+v3.1 retrained without direct-from-corner shots: 332 xG rows and 159
+on-target xGOT rows, flagged by Opta qualifier 263
+(`xgv_13_direct_corner_flags.R`) or the corner-flag box. On the same
+rows, out of fold, the wide byline’s goals per xG moved from 0.83 to
+1.01 and every other zone and season was unchanged
+(`xgv_14_direct_corner_report.R`). EPV keeps its labels from xG v5.1.
+
+## panna 0.3.73
+
+### Direct-from-corner shots score 0.02 xG ([\#277](https://github.com/peteowen1/panna/issues/277))
+
+Opta logs a corner kick as a shot only when it threatens the goal, so xG
+had learned 0.875 at the corner flag (238 goals from 272 tagged shots)
+when the rate across all 1,253,311 corners taken is 0.00019.
+[`add_xg_to_spadl()`](https://peteowen1.github.io/panna/reference/add_xg_to_spadl.md)
+now scores these shots at `DIRECT_CORNER_XG` (0.02): any shot with Opta
+qualifier 263, or a Corner-situation shot inside the corner-flag box (x
+\>= 97, y \<= 4 or \>= 96).
+
+On-target direct corners get xGOT `DIRECT_CORNER_XGOT` (0.08) in
+[`add_xgot_to_spadl()`](https://peteowen1.github.io/panna/reference/add_xgot_to_spadl.md):
+238 direct goals against 2,624 corners first met by a save or tip-over
+from the keeper inside his six-yard box.
+
+## panna 0.3.72
+
+### xG v5.1 and xGOT v3.1: goals-only feeds never train
+
+xG v5 priced 11,698 shots above 0.9 and 98.7% of them were goals. 3,229
+matches in the Opta data are goals-only feeds (kick-off, the goals,
+full-time), and v5 had learned to recognise their rows. A match now
+trains only if its event feed has at least 200 passes
+(`xgv_12_feed_passes.R`); EPV and WP were retrained on the result. v5.1
+is right on average every season (out-of-fold goals per xG 0.997 to
+1.004), and published 2026-09-29 under the same asset names
+(`MODELS.md`).
+
+### Season labels with an apostrophe
+
+The per-season parquet readers quote their path for DuckDB with
+`.sql_path()`, so a tournament label such as “2023 Côte d’Ivoire” no
+longer breaks the query. It had cost AFCON 2022-23’s game logs their
+xGOT, keeper and duel columns.
+
+## panna 0.3.71
+
+### Opta injury markers and “failed to block” are no longer scored as plays
+
+Opta types 90 and 91 (an injury stoppage and the restart, always at (0,
+0), naming the injured player) and 69 (“failed to block”, GER 2015-17
+only) join `OPTA_NON_GAMEPLAY_TYPES`. They reached SPADL as `other`: on
+ENG2 2026-27 the 143 injury markers paid the injured players +2.92 goals
+and moved 259 of the 274 actions around them. 69 is dropped like the
+50/50s rather than blamed, since only one feed tags it.
+[`get_or_build_spadl()`](https://peteowen1.github.io/panna/reference/get_or_build_spadl.md)
+rebuilds a cache that still holds an excluded type. Both choices, with
+their alternatives, are in pannaverse
+`docs/reference/NET-GOALS-DECISION-POINTS.md`. Game logs change at the
+next rebuild.
+
+## panna 0.3.70
+
+### Player breakdown file sorted by a numeric player bucket
+
+`ng_player_breakdown_<season>.parquet` is now sorted by `bucket`, a
+number from
+[`.ng_player_bucket()`](https://peteowen1.github.io/panna/reference/dot-ng_player_bucket.md)
+(a hash of the player id with an identical JavaScript twin on the player
+page), and the page filters on it. The site’s parquet reader skips row
+groups only on a numeric filter, so filtering on `player_id` read all 39
+row groups, one R2 request each, and timed out at 30 s.
+
+## panna 0.3.69
+
+### Player season totals for the EPV breakdown, and stage timers in 10b
+
+[`.ng_breakdown_players()`](https://peteowen1.github.io/panna/reference/dot-ng_breakdown_players.md)
+sums each player’s net goals breakdown over a season, across every
+competition, and 10b writes it as
+`ng_player_breakdown_<season>.parquet`: sorted by player in row groups
+of 5,000, so the player page’s filtered read takes 0.35 s instead of
+13.7 s for the per-match file (2024-25, 2.4M rows).
+`data-raw/epv/net-goals/build_ng_player_breakdown.R` builds it from
+per-match files already on disk; `pack_publish_game_logs.R` publishes
+both and checks each player’s total and games count against the game
+logs.
+
+10b now times its stages (loading, SPADL and chains, EPV, the net goals
+ledger, WPA, PSV, merge) and prints each league’s split and the run’s
+totals, so the next rebuild says where its time goes.
+
+## panna 0.3.68
+
+### Net goals by play type for the player page
+
+[`.ng_breakdown()`](https://peteowen1.github.io/panna/reference/dot-ng_breakdown.md)
+splits every published player-match’s `net_goals` into the kinds of play
+that earned or cost it (passing, carrying, shooting in four parts,
+tackles, keeper work, …), plus the three steps that build the published
+number: the team pool share, the share of unlisted team-mates
+([`ng_fold_unpublished()`](https://peteowen1.github.io/panna/reference/ng_fold_unpublished.md))
+and the anchor to the real goal difference. The parts add up to the
+published value; it aborts at a 1e-9 gap, and checks the
+unlisted-team-mates part against what folding handed out per team-match,
+because that part is computed as a remainder. Step 10b writes
+`ng_breakdown_<season>.parquet` beside the game logs and registers it
+for `blog-latest`. A league whose breakdown fails keeps its game logs
+and is left out of the file (also dropped from it on a subset re-run),
+so its players show no chart rather than last run’s numbers; the run
+ends with a warning naming it, as a GitHub Actions annotation in CI. The
+football twin of torp’s `.np_breakdown()`.
+
+## panna 0.3.67
+
+### Pre-shot context for the next xG / xGOT models
+
+[`.shot_context()`](https://peteowen1.github.io/panna/reference/dot-shot_context.md)
+builds what was known before a shot from the Opta event stream: the
+assist (pass tagged 210 in the 20 s before, with its type, length and
+origin), seconds since the other team had the ball and passes since,
+whether it follows another shot within 5 s, and the score.
+[`.shot_foot_history()`](https://peteowen1.github.io/panna/reference/dot-shot_foot_history.md)
+gives each shooter’s earlier foot shots for the weak-foot input. The
+same functions build the training features and score shots: on ENG
+2024-25 the scoring path equals the model’s predictions on its training
+features for all 9,699 shots (max difference 0).
+
+[`add_xg_to_spadl()`](https://peteowen1.github.io/panna/reference/add_xg_to_spadl.md)
+/
+[`add_xgot_to_spadl()`](https://peteowen1.github.io/panna/reference/add_xgot_to_spadl.md)
+take optional `events` and `foot_history` (and
+[`add_xgot_to_spadl()`](https://peteowen1.github.io/panna/reference/add_xgot_to_spadl.md)
+a `season`); a model that reads context aborts without them. Models
+without these inputs score exactly as before. The new models are not
+published yet.
+
+### `predict_xg()` keeps NA for models trained with it
+
+It replaced every NA with 0. The new models learned a branch for NA (no
+assist, too few earlier foot shots), so a zero fill would score an
+unassisted shot as assisted from the goal line. NA is now kept when the
+model’s metadata sets `na_is_missing`; older models are unchanged.
+
+### Penalty xG by season
+
+A model carrying `penalty_xg_by_season` (the pooled conversion of
+earlier seasons, in-match penalties only: 0.7775 for 2026-27) prices
+penalties from it; otherwise `PENALTY_XG`, as before.
+
+### Game logs: a failed xMetrics join no longer ships quietly
+
+10b reported a failed xMetrics display join with
+[`warning()`](https://rdrr.io/r/base/warning.html), which R holds to the
+end of a run; on 2026-09-24 that hid a season published without its 12
+xGOT / GSAA / duel columns. It now reports each failure as it happens,
+lists them all at the end, and refuses to upload when more than a fifth
+of league-seasons failed.
+
+## panna 0.3.66
+
+### Net goals: every step of a shot splits the same way, gain or loss
+
+`ng_shares(shot_keep = 0.90)`: the shooter keeps 90% of each step of a
+shot – strike (xG to xGOT), finish (xGOT to the result) and aftermath –
+whether it gains or loses. The old rule gave him 90% of a gain and 30%
+of a loss, and the xGOT split turns a saved shot into one big gain (the
+strike) and one big loss (the finish). On ENG 2024-25 that paid shooters
++612.7 goals on their shot rows, funded by their teams’ pools (-664.5),
+against league finishing of -23.7 goals minus xG (9,782 shots, own goals
+out). Now shooters are paid exactly 0.9 of their shot rows (-17.6). Van
+Dijk’s saved header against Man City: +0.46 -\> +0.013.
+
+The steps have their own roles (`shot_strike`, `shot_finish`,
+`shot_aftermath`; `shooter` for a shot with no xGOT, own goals
+included), so placement and luck against keepers read apart. Position
+means, net goals a game: strikers +0.067 -\> -0.002, attacking
+midfielders +0.033 -\> -0.001, defenders -0.072 -\> -0.028, keepers
+unchanged at +0.032.
+
+## panna 0.3.65
+
+### Net goals: a shot is worth more than its xG
+
+A shot that does not score still leaves its side a corner, a rebound or
+the ball: on ENG 2024-25 the state after a non-goal shot is worth +0.038
+goals to the shooters on average (8,709 shots), against a mean xG of
+0.112. `ng_build_ledger(shot_aftermath = TRUE)` (the new default) prices
+each shot at `xG + (1 - xG) * A`, with `A` a straight line in xG fitted
+on the season’s own non-goal shots
+([`.ng_shot_aftermath()`](https://peteowen1.github.io/panna/reference/dot-ng_shot_aftermath.md)),
+reprices the row before the shot to match, and ends a non-goal shot at
+the real value of the next state instead of 0. The shot row gains a
+third step, `role = "shot_aftermath"`, beside the strike and the finish.
+The chain from 0 now applies after goals only. Fewer than 50 non-goal
+shots cannot fit the line: pass a season’s fit
+(`attr(pay, "shot_aftermath_fit")`) or the shots stay at their xG, with
+a warning.
+
+ENG 2024-25: won aerials straight before the same player’s headed shot
+go from -0.062 to -0.028 a row (828 rows); keepers from -0.036 to +0.032
+a game, because a save row is no longer charged for the danger the shot
+created before the keeper touched it; raw team totals land a median
+0.0146 goals from goal difference (was 0.0145). With
+`shot_aftermath = FALSE` the ledger is identical to 0.3.64. A/B:
+`data-raw/epv/net-goals/ng_aftermath_ab.R`.
+
+`build_net_goals_artifacts.R` now caches only its slow inputs (SPADL,
+EPV, xPass, xGOT) and rebuilds the ledger from live code on every run,
+so a rule change needs no cache bump.
+
+## panna 0.3.64
+
+### Net goals: keepers back in every pool, weighted by where the play happened
+
+Pools are keyed by pitch zone (the pool team’s own third or not), and a
+keeper’s weight outside his own third is
+`ng_spread_pools(keeper_outside_weight = 0)`: he shares unnamed value
+near his goal, not at the other end. `keeper_pool_blame` /
+`keeper_pool_credit` return to 1. ENG 2024-25 keepers: -0.230 a game
+sharing everything flat, -0.134 out of the defensive pool, -0.035
+own-third only. Keepers are paid exactly 70% of goals saved against xGOT
+(`ng_keeper_check.R`: slope 0.696, r 0.997), so their low average came
+from the pools.
+
+## panna 0.3.63
+
+### Net goals: the xGOT shot split, unbroken value after shots, keepers out of the defensive pool
+
+- **Shot chain** (`ng_build_ledger(shot_chain = TRUE)`): the row after a
+  shot starts from 0 (the shot’s end) instead of the model’s restart
+  value. 309 goals of \|value\| a season used to appear there booked to
+  nobody; before reconciliation the ledger now lands a median 0.014
+  goals from each team’s goal difference (was 0.198), and the
+  reconciliation moves 0.5% of value (was 7.6%).
+- **xGOT split**: a shot with xGOT is two steps. The strike (xG → xGOT,
+  or → 0 off target) is the shooter’s; the finish (xGOT → goal, save or
+  live rebound) is the keeper duel, with the keeper named for 70% (the
+  saver, else the side’s keeper from `lineups`). Each row still books
+  exactly its value.
+- **Keepers sit out the defensive pool**
+  (`ng_spread_pools(keeper_pool_blame = 0, keeper_pool_credit = 0)`):
+  they are now named on every goal and save, so what is left in that
+  pool is outfield work.
+- Step 10b adds xGOT and lineups to the ledger, and skips a league’s net
+  goals rather than publish them if its shots lack xGOT.
+- Page generator `data-raw/epv/net-goals/build_net_goals_artifacts.R`
+  (per-player play types and a walkthrough, in the page shape torp uses)
+  and real-season edge-case checks `ng_scenarios.R`.
+
+### `net_goals` published into game logs
+
+Step 10b now joins three additive columns onto every player-match row:
+`net_goals` and its two halves `ng_offensive` / `ng_defensive`. Every
+existing column is untouched, and a league whose ledger cannot be built
+publishes the rest rather than nothing.
+
+Computed deliberately BEFORE the position and opponent adjustments, so
+the published column carries the raw ledger. Centring breaks
+conservation by construction; a rating layer that wants it calls
+[`ng_adjust_for_rating()`](https://peteowen1.github.io/panna/reference/ng_adjust_for_rating.md).
+
+xPass is added explicitly and asserted.
+[`assign_epv_credit()`](https://peteowen1.github.io/panna/reference/assign_epv_credit.md)
+computes it internally without leaving it on the frame, and without it
+the passer/receiver difficulty split silently degrades to
+actor-keeps-all instead of failing — so the block aborts if fewer than
+half of passes carry one.
+
+Verified on ENG 2024-2025: 11,427 of 11,427 player-rows matched, the two
+halves sum to the total at 3.3e-15, and a team’s players sum to that
+team’s own goal difference at cor 0.9834, median error 0.201 goals.
+
+The published column is the ledger RESTRICTED to players the game-logs
+frame carries (11,472 ledger rows against 11,427 published on ENG
+2024-2025), so a match’s two sides cancel to about 0.1 goals rather than
+the ~1e-14 the standalone ledger reaches. Second order against the 0.20
+median error already in the metric, but it means `net_goals` as
+published is very nearly conserving, not exactly conserving.
+
+Three stages sat between computing the column and writing it, two of
+which rebuild the frame from a fixed column set. The first attempt
+logged “11427 of 11427 matched” and wrote a parquet with no net-goals
+columns at all. Verify the written artifact, not the log.
+
+The blog’s new `scripts/validate-football-epv-units.mjs` already carries
+the check for this column and will pick it up on the next build —
+asserted PER TEAM against that team’s own goal difference, never through
+a home-minus-away fit.
+
+## panna 0.3.61 (dev)
+
+### The rating-layer adjustment for net goals
+
+[`ng_adjust_for_rating()`](https://peteowen1.github.io/panna/reference/ng_adjust_for_rating.md)
+position-centres per-game net goals, by position and season, returning
+the same column names so it is a drop-in for
+[`calculate_epr_regression()`](https://peteowen1.github.io/panna/reference/calculate_epr_regression.md).
+
+This makes the EPR gate like-for-like, which it would not otherwise be.
+Production EPR is fed `epv_offensive_adj` / `epv_defensive_adj` renamed
+to the raw names (`build_epr_weekly.R:63-66`) — the position-centred
+columns produced at export by `10b_export_game_logs.R`.
+[`ng_player_game()`](https://peteowen1.github.io/panna/reference/ng_player_game.md)
+emits raw net goals. Feeding those two to EPR unchanged would compare a
+centred input against an uncentred one and credit the difference to the
+ledger, which it is not.
+
+Measured on ENG 2024-2025: the position means removed run from +0.054
+for a goalkeeper to -0.042 for a defender per player-game.
+Within-position spread is unchanged (defender sd 0.2852 before and
+after) and no player moves relative to a positional peer — a level
+shift, not a different metric. The ledger’s own totals survive as
+`net_goals_raw`, `epv_offensive_raw`, `epv_defensive_raw`.
+
+Centring lives here and not in the ledger for the reason torp records as
+D4: the moment a positional mean is subtracted, a team’s players stop
+summing to its goal difference. The centred total is ~0 by construction,
+which is exactly why it cannot sit upstream.
+
+## panna 0.3.60 (dev)
+
+### Per-game net goals, and a receiver paid to the wrong team
+
+[`ng_player_game()`](https://peteowen1.github.io/panna/reference/ng_player_game.md)
+aggregates the payment ledger to one row per player-match, deliberately
+matching
+[`aggregate_player_game_epv()`](https://peteowen1.github.io/panna/reference/aggregate_player_game_epv.md)’s
+column contract (`player_id`, `player_name`, `match_date`,
+`minutes_played`, `epv_offensive`, `epv_defensive`) so
+[`calculate_epr_regression()`](https://peteowen1.github.io/panna/reference/calculate_epr_regression.md)
+can be pointed at either and the two gated against each other on
+identical footing. It also emits one `ng_*` column per role, so a rating
+layer can pick its own channels rather than inheriting a display
+grouping.
+
+The offence/defence split means something better here than in the
+existing aggregator. That one buckets action types (passing offensive,
+tackles defensive), which is presentational — re-bucketing changes the
+split and not the total. Net goals splits by which half of the double
+entry a payment sits on, so a defender who never touches the ball still
+has a defensive number.
+
+**Bug found while building it.** SPADL names a receiver on 26.4% of
+actions who is on the *opposing* team — 11,905 of them on passes it
+calls successful, carrying 201.7 goals of absolute value. The pass
+branch paid those the teammate receiver split and booked it under the
+receiver’s own team, i.e. the wrong side of the double entry, leaving
+55% of player-matches holding payments under two team ids. A receiver
+share now requires the receiver to be on the acting team; such a pass
+falls through to the generic branch and the actor keeps it.
+
+Effect: Salah 14.32 to 14.00 across the season, Pickford 6.46 to 6.83,
+and the top 20 reorders slightly. Team totals are untouched (cor 0.9835,
+median error 0.198), because the misrouted value was always booked
+somewhere on the right match — just to the wrong side of it.
+
+Whether a pass that reaches an opponent should be `result == "success"`
+at all is an upstream SPADL question and is not answered here.
+
+## panna 0.3.59 (dev)
+
+### Net goals: a readable page, and the repeatability test
+
+`pkgdown/assets/net-goals.html`, generated live by
+`data-raw/epv/net-goals/build_net_goals_page.R`. A worked attacker and a
+worked defender traced action by action with both halves of the double
+entry visible, the identity check, the leaderboard, and the position and
+play-type tables. Nothing is cached, so it cannot drift from the ledger
+the way torp’s equivalent page did.
+
+`data-raw/epv/net-goals/ng_repeatability.R` runs torp’s D17 arbiter:
+correlate a player’s net goals per 90 between consecutive seasons and
+prefer the setting that repeats. Over ENG 2022-2023 to 2024-2025, 397
+players clearing 900 minutes in both seasons of a pair:
+
+- Repeatability falls monotonically as `dacts_share` rises – 0.658 flat,
+  0.583 at 0.25, **0.525 at the shipped 0.50**, 0.502 at 1.00.
+- Every other lever prefers less redistribution too: lower `exec_blame`,
+  lower `named_share`, lower `off_pool` all repeat better.
+
+Recorded, not acted on. Repeatability rewards concentrating value on
+high-volume players because volume repeats, and net goals is a
+descriptive metric – torp shipped its own team convention against the
+same measurement deliberately. The shares are unchanged pending Pete’s
+call, with the cost now measured.
+
+## panna 0.3.58 (dev)
+
+### EPV net goals ledger (`ng_*`), a new entry point
+
+Allocates each action’s `epv_delta` to players so that a match’s
+payments sum to the scoreline. Production is untouched:
+[`assign_epv_credit()`](https://peteowen1.github.io/panna/reference/assign_epv_credit.md),
+[`aggregate_player_game_epv()`](https://peteowen1.github.io/panna/reference/aggregate_player_game_epv.md)
+and every pipeline behave exactly as before.
+
+Method deliberately mirrors torpverse’s net points. Under the default
+`convention = "team"` each side’s players sum to that team’s own goal
+difference – +2 and -2 for a 3-1 win, zero across the match – which is
+the ESPN Net Points convention and what torp ships as of 1.7.0.
+`"margin"` is kept for comparison, pinning the match total and letting
+team totals float.
+
+Measured on ENG 2024-2025 (514,458 actions, 377 matches, 754
+team-matches): cor 0.9835 with each team’s own goal difference, slope
+1.0012, median error 0.198 goals, the two sides cancelling to 1.2e-13.
+No reconciliation and no forced level – the identity falls out of double
+entry.
+
+What it fixes, and why it was wrong before:
+
+- **Shot-stopping went from -51.2 to +195.2 goals across the season.** A
+  successful stop was worth **-0.0100 goals to its own team** and every
+  position read negative, because the shot row charges the shooter
+  `0 - xG` for missing while nobody was ever paid the xG the stop
+  prevented. SPADL has no `block` type – 2,802 of 5,124 `keeper_save`
+  rows (54.7%) are outfield players – so keepers and blockers are
+  covered by one rule.
+- **Adjacency is now computed on the full 639,507-event stream**
+  ([`ng_build_adjacency()`](https://peteowen1.github.io/panna/reference/ng_build_adjacency.md)),
+  before SPADL’s filter rather than after it. 12.01% of actions had the
+  wrong next team; 30,038 were classified as turnovers that are not.
+  Nine dropped Opta types name the player who caused the possession
+  change (Ball Out alone is 82 a match) and are now visible to the
+  ledger. The SPADL filter itself is unchanged, so no model input moves.
+- **Team pools are spread across the eleven on the pitch, to the
+  minute**
+  ([`ng_spread_pools()`](https://peteowen1.github.io/panna/reference/ng_spread_pools.md)),
+  with `dacts_share = 0.5` routing half the defensive pool’s credit half
+  by defensive work. Positions land within 0.122 goals per 90 of each
+  other against 0.221 under a flat spread.
+
+New exports:
+[`ng_build_adjacency()`](https://peteowen1.github.io/panna/reference/ng_build_adjacency.md),
+[`ng_build_ledger()`](https://peteowen1.github.io/panna/reference/ng_build_ledger.md),
+[`ng_check_conservation()`](https://peteowen1.github.io/panna/reference/ng_check_conservation.md),
+[`ng_check_team_totals()`](https://peteowen1.github.io/panna/reference/ng_check_team_totals.md),
+[`ng_shares()`](https://peteowen1.github.io/panna/reference/ng_shares.md),
+[`ng_spread_pools()`](https://peteowen1.github.io/panna/reference/ng_spread_pools.md).
+Regenerable analysis scripts live in `data-raw/epv/net-goals/`.
+
+Design and measurement: `pannaverse/docs/plans/EPV-NET-GOALS.md`; rules,
+build log and share sweeps:
+`pannaverse/docs/plans/EPV-NET-GOALS-RULES.md`.
+
+## panna 0.3.57 (dev)
+
+### Agent-skills triage config (docs only)
+
+Wires up mattpocock-skills `/triage`, issue-tracker, and domain-docs
+config for this repo
+(`docs/agents/{issue-tracker,triage-labels,domain}.md`), and fixes
+`.gitignore` so `docs/agents/` isn’t caught by the blanket
+pkgdown-output `docs/` ignore rule. No code changes.
+
 ## panna 0.3.56 (dev)
 
 ### Skill-SPM’s RAPM target is now decayed (panna#257, partial)

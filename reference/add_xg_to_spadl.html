@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.56</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.75</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -36,7 +36,7 @@
 <div class="row">
   <main id="main" class="col-md-9"><div class="page-header">
       <img src="../logo.png" class="logo" alt=""><h1>Add xG to SPADL Actions</h1>
-      <small class="dont-index">Source: <a href="https://github.com/peteowen1/panna/blob/main/R/xg_model.R" class="external-link"><code>R/xg_model.R</code></a></small>
+      <small class="dont-index">Source: <a href="https://github.com/peteowen1/panna/blob/pkgdown-own-dest/R/xg_model.R" class="external-link"><code>R/xg_model.R</code></a></small>
       <div class="d-none name"><code>add_xg_to_spadl.Rd</code></div>
     </div>
 
@@ -46,7 +46,14 @@
 
     <div class="section level2">
     <h2 id="ref-usage">Usage<a class="anchor" aria-label="anchor" href="#ref-usage"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">add_xg_to_spadl</span><span class="op">(</span><span class="va">spadl_actions</span>, <span class="va">xg_model</span>, season <span class="op">=</span> <span class="cn">NULL</span>, shot_lookup <span class="op">=</span> <span class="cn">NULL</span><span class="op">)</span></span></code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">add_xg_to_spadl</span><span class="op">(</span></span>
+<span>  <span class="va">spadl_actions</span>,</span>
+<span>  <span class="va">xg_model</span>,</span>
+<span>  season <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  shot_lookup <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  events <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  foot_history <span class="op">=</span> <span class="cn">NULL</span></span>
+<span><span class="op">)</span></span></code></pre></div>
     </div>
 
     <div class="section level2">
@@ -78,6 +85,18 @@ events, e.g. <code>opta_shot_events</code>. Strongly recommended: SPADL's own
 the header and footedness flags are dead and set pieces score as open play.
 Joined on <code>original_event_id</code>, the same key
 <code><a href="add_xgot_to_spadl.html">add_xgot_to_spadl()</a></code> uses.</p></dd>
+
+
+<dt id="arg-events">events<a class="anchor" aria-label="anchor" href="#arg-events"></a></dt>
+<dd><p>Full Opta events for these matches. Needed only by a model
+that reads pre-shot context (xG v5: assist, possession, rebound, score);
+such a model aborts without it. See <code><a href="dot-shot_context.html">.shot_context()</a></code>.</p></dd>
+
+
+<dt id="arg-foot-history">foot_history<a class="anchor" aria-label="anchor" href="#arg-foot-history"></a></dt>
+<dd><p>Each shooter's earlier foot shots
+(<code><a href="dot-shot_foot_history.html">.shot_foot_history()</a></code>). Needed only by a model that reads
+<code>foot_share</code>.</p></dd>
 
 </dl></div>
     <div class="section level2">

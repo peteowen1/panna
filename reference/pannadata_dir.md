@@ -50,7 +50,7 @@ Other cache management:
 ``` r
 # Get current path
 pannadata_dir()
-#> ! pannadata_dir() falling through to /home/runner/.local/share/R/panna (no `pannadata/data` near /home/runner/work/panna/panna/docs/reference, no PANNADATA_DIR env var). If you meant to use a workspace clone, set PANNADATA_DIR or call `pannadata_dir('path/to/pannadata/data')` once.
+#> ! pannadata_dir() falling through to /home/runner/.local/share/R/panna (no `pannadata/data` near /home/runner/work/panna/panna/pkgdown-site/reference, no PANNADATA_DIR env var). If you meant to use a workspace clone, set PANNADATA_DIR or call `pannadata_dir('path/to/pannadata/data')` once.
 #> [1] "/home/runner/.local/share/R/panna"
 
 # Set custom path

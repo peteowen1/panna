@@ -157,57 +157,39 @@ held-out MSE) -
   [`fit_career_rapm()`](https://peteowen1.github.io/panna/reference/fit_career_rapm.md)
   (halflife 365d, skill-SPM prior, `career_panna.parquet`). **`piero` is
   the weighted average of EPR + PSR + Panna** — the three decayed
-  ratings. Four places currently relabel a non-decayed xRAPM as `panna`
-  and must be renamed: `08_panna_ratings.R:36` (career/pooled),
-  `estimated-skills/05_skill_panna_ratings.R:37` (skill),
-  `10_export_blog_data.R:187` (**season xRAPM, published to the blog as
-  “panna”** — the urgent one), and `02_player_ratings_to_team.R:77`
-  (model feature `home_sum_panna`; note that file already half-migrates
-  it at lines 191-223). Full audit + suggested names:
-  `pannaverse/docs/reference/RATING-TIME-AGGREGATIONS.md`.
-- **CONVENTION: positive = good, everywhere** (Pete, 2026-09-03).
-  **Landed 2026-09-11** (merged `dev`→`main` as part of panna PR \#235)
-  — RAPM/xRAPM `defense` and `team_season_strength.parquet`’s
-  `def_rating` now flip to positive=good at extraction
+  ratings. Of the four places once found relabeling a non-decayed xRAPM
+  as `panna`: `08_panna_ratings.R` and
+  `estimated-skills/05_skill_panna_ratings.R` are fixed (now
+  `xrapm_career`/`xrapm_skill`, 2026-09-04);
+  `02_player_ratings_to_team.R` overwrites its interim `panna` column
+  with the leak-free career-Panna override ONLY when
+  `career_panna_asof.parquet` is present; if the file is missing it
+  issues a [`warning()`](https://rdrr.io/r/base/warning.html) (deferred
+  by R to the end of the run) and the season xRAPM stays under the name
+  `panna` — so that site is still open whenever the file is absent.
+  **`10_export_blog_data.R` still publishes the season xRAPM to the blog
+  under the name `panna`** — the one remaining site (verified
+  2026-09-27). Full audit + history:
+  `pannaverse/docs/plans/PANNA-RENAME-EXECUTION.md`.
+- **CONVENTION: positive = good, everywhere** (Pete, 2026-09-03; landed
+  2026-09-11, panna PR \#235). RAPM/xRAPM `defense` and
+  `team_season_strength.parquet`’s `def_rating` flip to positive=good at
+  extraction
   ([`extract_rapm_ratings()`](https://peteowen1.github.io/panna/reference/extract_rapm_ratings.md)/[`extract_xrapm_ratings()`](https://peteowen1.github.io/panna/reference/extract_xrapm_ratings.md)),
-  not at each of the 5 former export sites. EPV/PSV/WPA were already
-  positive=good. Migration plan:
-  `pannaverse/docs/plans/SIGN-CONVENTION-POSITIVE-IS-GOOD.md`.
-  `panna_ratings.parquet` shows `defense` as “defensive value added” (xG
-  suppression per 90).
-  - **The flip landing in code is not the same as every on-disk file
-    being under the new convention** — this is exactly what went wrong
-    (panna#F1, 2026-09-07, fixed 2026-09-11). `career_panna.parquet`’s
-    release asset stayed on the pre-flip convention for 7 weeks after
-    the code changed to assume post-flip, and the inverted
-    `panna_defense` (elite defenders reading as the worst in the game)
-    reached the public blog for ~4 days. Fix: every parquet asset in
-    this family now carries a `sign_convention` column stamped at write
-    time (`TEAM_STRENGTH_SIGN_CONVENTION` for
-    `team_season_strength.parquet`, `CAREER_PANNA_SIGN_CONVENTION` for
-    `career_panna.parquet`/`career_panna_asof.parquet`, both
-    `R/constants.R`), asserted by every reader
-    ([`.assert_team_strength_sign_convention()`](https://peteowen1.github.io/panna/reference/dot-assert_team_strength_sign_convention.md)
-    in `R/psv_opponent.R`,
-    [`.assert_career_panna_sign_convention()`](https://peteowen1.github.io/panna/reference/dot-assert_career_panna_sign_convention.md)
-    in `R/career_rapm.R`) so a stale or unmarked file aborts loudly
-    instead of silently reading inverted. **When adding a new
-    positive=good-convention parquet export, give it the same tag+assert
-    pattern from day one** — don’t wait for a live incident to add it.
-  - `career_panna_asof.parquet` (the predictions-pipeline’s
-    point-in-time model-feature file) was regenerated and republished
-    2026-09-12 via `data-raw/estimated-skills/09b_career_panna_asof.R`
-    (158 monthly snapshots, 3.1M rows, ~70 min) and is now correctly
-    tagged. Both files in this family are therefore on the post-flip
-    convention.
-  - **Ordering trap, learned the hard way:** publish the artifact only
-    AFTER the code that stamps its `sign_convention` exists. The
-    2026-09-11 `career_panna.parquet` publish ran from a refit that
-    finished *before* the stamping commit landed — correct data, no tag
-    — so the new assert (correctly) rejected it in `build-blog-data.yml`
-    the next day and the file had to be regenerated and republished.
-    Regenerate-then-publish, in that order, whenever you add a tag to an
-    existing artifact.
+  not at each export site. EPV/PSV/WPA were already positive=good.
+  Migration plan:
+  `pannaverse/docs/plans/SIGN-CONVENTION-POSITIVE-IS-GOOD.md`. Every
+  positive=good parquet export carries a `sign_convention` column
+  stamped at write time and asserted by every reader
+  ([`.assert_team_strength_sign_convention()`](https://peteowen1.github.io/panna/reference/dot-assert_team_strength_sign_convention.md)
+  in `R/psv_opponent.R`,
+  [`.assert_career_panna_sign_convention()`](https://peteowen1.github.io/panna/reference/dot-assert_career_panna_sign_convention.md)
+  in `R/career_rapm.R`) — give any new export in this family the same
+  tag+assert pattern from day one, and always regenerate an artifact
+  AFTER the code that stamps it lands, never before. Incident history (a
+  7-week inverted-defense blog leak that motivated the assert, panna#F1)
+  and the publish-ordering trap:
+  `pannaverse/docs/reference/claude-md-detail-panna.md`.
 - **Replacement Level filter at export** — `10_export_blog_data.R` drops
   `player_id == "replacement"` rows before publishing. The synthetic row
   is a model artifact (game-state confound, picks up uncontrolled
@@ -217,18 +199,16 @@ held-out MSE) -
   [`map_opta_bodypart()`](https://peteowen1.github.io/panna/reference/map_opta_bodypart.md)
   (`spadl_conversion.R`) only ever sets “head” for aerials (type 44) and
   “other” for keeper actions; its qualifier refinement was never written
-  and the sole caller passes `qualifiers = NULL`. Shots are types
-  13/14/15/16, so **100% of shots come through as “foot”** — measured
-  9,782/9,782 on ENG 2015-2016 against 15.7% real headers. Anything
-  deriving `is_header`/`is_right_foot`/`is_left_foot` from SPADL gets
-  three constant-zero features; the xG model is trained on Opta’s real
-  `body_part` (RightFoot/LeftFoot/Head), so this was a pure train/serve
-  skew worth **+6.30% on total xG**. Join `body_part` from
+  and the sole caller passes `qualifiers = NULL` (verified current
+  2026-09-27). Shots are types 13/14/15/16, so 100% of shots come
+  through as “foot” against a real headers rate in the double digits — a
+  pure train/serve skew, since the xG model is trained on Opta’s real
+  `body_part` (RightFoot/LeftFoot/Head). Join `body_part` from
   `opta_shot_events` on `(match_id, original_event_id)` instead —
   `add_xg_to_spadl(shot_lookup = )` and
   [`add_xgot_to_spadl()`](https://peteowen1.github.io/panna/reference/add_xgot_to_spadl.md)
-  both do. (An earlier version of this file claimed SPADL carried
-  “head”/“foot_left”/“foot_right”; it never has.)
+  both do. Measured impact and the original mistaken claim this
+  replaced: `pannaverse/docs/reference/claude-md-detail-panna.md`.
 - **[`.get_col()`](https://peteowen1.github.io/panna/reference/dot-get_col.md)
   warns on missing columns** — memoized warnings via `.get_col_warned`
   env in `utils.R`
@@ -270,6 +250,7 @@ held-out MSE) -
 | `pkgdown.yaml`             | Push                                                                                                                            | Documentation site                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `predictions-pipeline.yml` | Wed 8 AM UTC / manual / `opta-scrape-complete` dispatch                                                                         | Weekly match predictions. Runs steps 1-10c + 11 (WC2026 sim) + 12 (WC2026 blog export). Triggers `predictions-complete` repository_dispatch on `pannadata` to refresh blog data. Note: WC2026 sim defaults to FALSE in `run_predictions_opta.R` but the workflow enables it in its `run_steps` override.                                                                                                                                                                                          |
 | `psr-weekly-snapshot.yml`  | Weekly snapshot / manual                                                                                                        | PSR weekly snapshot generation                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `epr-weekly-snapshot.yml`  | Weekly snapshot / manual                                                                                                        | EPR weekly snapshot generation, builds `opta_epr_weekly.parquet` (incremental since 2026-06-23), mirrors `psr-weekly-snapshot.yml`                                                                                                                                                                                                                                                                                                                                                                |
 | `epv-pipeline.yml`         | Daily `opta-scrape-complete` dispatch + Sunday 18:00 cron (both xmetrics_only, published models) / manual dispatch for retrains | EPV model training pipeline. Daily dispatch added 2026-07-18 (panna#150) so `opta_xmetrics_bymatch.parquet` follows every scrape — game-logs xGOT/GSAA no longer go NULL between Sundays. Own concurrency group (NOT panna-release-writer — pending-slot cancellation risk vs predictions’ same-event run)                                                                                                                                                                                        |
 
 ## Documentation convention
@@ -285,3 +266,21 @@ the living queue/decision-log — update them at the end of a session.
 Reviews under `docs/reviews/` are immutable once written (append
 addenda, don’t rewrite historical prose). New idea/TODO files belong in
 `pannaverse/docs/backlog/`, not at this repo’s root.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in this repo’s GitHub Issues (`peteowen1/panna`). See
+`docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Canonical defaults (`needs-triage`, `needs-info`, `ready-for-agent`,
+`ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context — one `CONTEXT.md` + `docs/adr/` at this repo’s root
+(neither exists yet; created lazily by `/domain-modeling`). See
+`docs/agents/domain.md`.

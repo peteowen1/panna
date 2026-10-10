@@ -5,7 +5,14 @@ Adds xG predictions to shot actions in SPADL data.
 ## Usage
 
 ``` r
-add_xg_to_spadl(spadl_actions, xg_model, season = NULL, shot_lookup = NULL)
+add_xg_to_spadl(
+  spadl_actions,
+  xg_model,
+  season = NULL,
+  shot_lookup = NULL,
+  events = NULL,
+  foot_history = NULL
+)
 ```
 
 ## Arguments
@@ -38,6 +45,19 @@ add_xg_to_spadl(spadl_actions, xg_model, season = NULL, shot_lookup = NULL)
   the same key
   [`add_xgot_to_spadl()`](https://peteowen1.github.io/panna/reference/add_xgot_to_spadl.md)
   uses.
+
+- events:
+
+  Full Opta events for these matches. Needed only by a model that reads
+  pre-shot context (xG v5: assist, possession, rebound, score); such a
+  model aborts without it. See
+  [`.shot_context()`](https://peteowen1.github.io/panna/reference/dot-shot_context.md).
+
+- foot_history:
+
+  Each shooter's earlier foot shots
+  ([`.shot_foot_history()`](https://peteowen1.github.io/panna/reference/dot-shot_foot_history.md)).
+  Needed only by a model that reads `foot_share`.
 
 ## Value
 

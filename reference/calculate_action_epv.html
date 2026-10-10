@@ -15,7 +15,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.56</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.75</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -44,7 +44,7 @@
 <div class="row">
   <main id="main" class="col-md-9"><div class="page-header">
       <img src="../logo.png" class="logo" alt=""><h1>Calculate Action EPV Values</h1>
-      <small class="dont-index">Source: <a href="https://github.com/peteowen1/panna/blob/main/R/epv_model.R" class="external-link"><code>R/epv_model.R</code></a></small>
+      <small class="dont-index">Source: <a href="https://github.com/peteowen1/panna/blob/pkgdown-own-dest/R/epv_model.R" class="external-link"><code>R/epv_model.R</code></a></small>
       <div class="d-none name"><code>calculate_action_epv.Rd</code></div>
     </div>
 
@@ -62,7 +62,9 @@
 <span>  xg_model <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  league <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  season <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  shot_lookup <span class="op">=</span> <span class="cn">NULL</span></span>
+<span>  shot_lookup <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  events <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  foot_history <span class="op">=</span> <span class="cn">NULL</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -107,6 +109,13 @@ with <code>body_part</code> and <code>situation</code>, forwarded to
 xG feeding EPV is skewed roughly 6%. Build it with
 <code>load_opta_shot_events(league, season)</code>, not by reading the parquet
 directly.</p></dd>
+
+
+<dt id="arg-events-foot-history">events, foot_history<a class="anchor" aria-label="anchor" href="#arg-events-foot-history"></a></dt>
+<dd><p>Full Opta events for these matches and each
+shooter's earlier foot shots, forwarded to <code><a href="add_xg_to_spadl.html">add_xg_to_spadl()</a></code>.
+Needed only when the xG model reads pre-shot context (xG v5); that model
+aborts without them.</p></dd>
 
 </dl></div>
     <div class="section level2">

@@ -21,7 +21,7 @@ non-shot / unmatched  -&amp;gt; NA"><meta property="og:image" content="https://p
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.56</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.75</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -50,7 +50,7 @@ non-shot / unmatched  -&amp;gt; NA"><meta property="og:image" content="https://p
 <div class="row">
   <main id="main" class="col-md-9"><div class="page-header">
       <img src="../logo.png" class="logo" alt=""><h1>Add xGOT to SPADL Actions</h1>
-      <small class="dont-index">Source: <a href="https://github.com/peteowen1/panna/blob/main/R/xgot_model.R" class="external-link"><code>R/xgot_model.R</code></a></small>
+      <small class="dont-index">Source: <a href="https://github.com/peteowen1/panna/blob/pkgdown-own-dest/R/xgot_model.R" class="external-link"><code>R/xgot_model.R</code></a></small>
       <div class="d-none name"><code>add_xgot_to_spadl.Rd</code></div>
     </div>
 
@@ -67,7 +67,14 @@ non-shot / unmatched  -&gt; NA</p>
 
     <div class="section level2">
     <h2 id="ref-usage">Usage<a class="anchor" aria-label="anchor" href="#ref-usage"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">add_xgot_to_spadl</span><span class="op">(</span><span class="va">spadl_actions</span>, <span class="va">xgot_model</span>, <span class="va">goalmouth_lookup</span><span class="op">)</span></span></code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">add_xgot_to_spadl</span><span class="op">(</span></span>
+<span>  <span class="va">spadl_actions</span>,</span>
+<span>  <span class="va">xgot_model</span>,</span>
+<span>  <span class="va">goalmouth_lookup</span>,</span>
+<span>  season <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  events <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  foot_history <span class="op">=</span> <span class="cn">NULL</span></span>
+<span><span class="op">)</span></span></code></pre></div>
     </div>
 
     <div class="section level2">
@@ -99,6 +106,12 @@ situations); without it, set-piece/corner/free-kick shots are scored as
 open-play. <code>is_blocked</code> excludes shots blocked by an outfield
 defender (q82) from on-target, matching training (panna#176); without
 it, blocked shots are scored as real on-target attempts.</p></dd>
+
+
+<dt id="arg-season-events-foot-history">season, events, foot_history<a class="anchor" aria-label="anchor" href="#arg-season-events-foot-history"></a></dt>
+<dd><p>As in <code><a href="add_xg_to_spadl.html">add_xg_to_spadl()</a></code>: needed
+only by a model whose features include <code>season_num</code> or pre-shot
+context (xGOT v3); such a model aborts without them.</p></dd>
 
 </dl></div>
     <div class="section level2">

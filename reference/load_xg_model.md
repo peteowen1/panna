@@ -5,7 +5,7 @@ Loads xG model from saved RDS file or downloads from GitHub releases.
 ## Usage
 
 ``` r
-load_xg_model(path = NULL)
+load_xg_model(path = NULL, name = "xg_model")
 ```
 
 ## Arguments
@@ -13,6 +13,14 @@ load_xg_model(path = NULL)
 - path:
 
   Path to model RDS file. If NULL, attempts to download from releases.
+
+- name:
+
+  Release asset to load when `path` is NULL: `"xg_model"` (the default
+  model every caller has always read) or `"xg_model_v5"` (pre-shot
+  context; its callers must pass `events` and `foot_history` to
+  [`add_xg_to_spadl()`](https://peteowen1.github.io/panna/reference/add_xg_to_spadl.md)).
+  A named model never falls back to a differently named one.
 
 ## Value
 

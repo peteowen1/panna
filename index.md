@@ -1,5 +1,9 @@
 # panna
 
+Ratings, predictions and simulations built with panna are published,
+updated after every matchday, at
+[inthegame.blog/football](https://inthegame.blog/football/).
+
 Player ratings for football (soccer), built on Opta event and box-score
 data. Full documentation site: <https://peteowen1.github.io/panna/>.
 

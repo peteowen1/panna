@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.56</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.75</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -36,7 +36,7 @@
 <div class="row">
   <main id="main" class="col-md-9"><div class="page-header">
       <img src="logo.png" class="logo" alt=""><h1>MODELS.md — which model is used where, and how to pin it</h1>
-      <small class="dont-index">Source: <a href="https://github.com/peteowen1/panna/blob/main/MODELS.md" class="external-link"><code>MODELS.md</code></a></small>
+      <small class="dont-index">Source: <a href="https://github.com/peteowen1/panna/blob/pkgdown-own-dest/MODELS.md" class="external-link"><code>MODELS.md</code></a></small>
     </div>
 
 <div id="modelsmd--which-model-is-used-where-and-how-to-pin-it" class="section level1">
@@ -89,7 +89,7 @@
 </tr></tbody></table></div>
 <div class="section level2">
 <h2 id="published-artifact-register-verify-dont-assume">Published artifact register (verify, don’t assume)<a class="anchor" aria-label="anchor" href="#published-artifact-register-verify-dont-assume"></a></h2>
-<p>Sizes and dates as at <strong>2026-09-03</strong>. Published = <code>pannadata/data/opta/models/</code>, candidate = <code>panna/data-raw/cache/epv/</code> (gitignored). <strong>A candidate is not production until it is published.</strong> Compare byte sizes: a size difference means different files, and that is how the xG divergence below went unnoticed.</p>
+<p>Sizes and dates as at <strong>2026-09-03</strong>, EPV and xGOT rows updated <strong>2026-09-24</strong> (model pack, <code>pannaverse/docs/plans/EPV-RETRAIN-SCOPE.md</code>), EPV / WP / xG v5 / xGOT v3 rows <strong>2026-09-29</strong> (xG v5.1 release: v5 retrained without goals-only and thin event feeds, <code>pannaverse/docs/plans/XG-VNEXT-2026-09.md</code>), xG v5 / xGOT v3 rows <strong>2026-10-06</strong> (v5.2 / v3.2: direct corners out, panna#277). Published = <code>pannadata/data/opta/models/</code>, candidate = <code>panna/data-raw/cache/epv/</code> (gitignored). <strong>A candidate is not production until it is published.</strong> Compare byte sizes: a size difference means different files, and that is how the xG divergence below went unnoticed.</p>
 <table class="table"><colgroup><col width="18%"><col width="18%"><col width="25%"><col width="18%"><col width="18%"></colgroup><thead><tr class="header"><th>Model</th>
 <th>Published</th>
 <th align="right">bytes</th>
@@ -105,32 +105,81 @@
 <td align="right">7,771,969</td>
 <td><code>_archive/xg_model_PANNAMODELS_PUBLISHED_2026-06-18.rds</code></td>
 <td>rollback copy</td>
-</tr><tr class="odd"><td>xGOT</td>
+</tr><tr class="odd"><td><strong>xGOT</strong></td>
+<td><strong>2026-09-24</strong></td>
+<td align="right">
+<strong>3,365,021</strong> (md5 5a5fce8b)</td>
+<td>
+<code>data-raw/cache/epv/pack-2026-09/xgot_model.rds</code>, same bytes</td>
+<td>✅ both releases (pannamodels <code>epv</code>, pannadata <code>models</code>), sha256 checked by re-download. 17 inputs: <code>is_direct_freekick</code> dropped (R scores by name; the worker JSON still has 18 and moves in step 9). <strong>Local <code>pannadata/data/opta/models/xgot_model.rds</code> is still the 07-23 file</strong>, so the bare loader is stale on this machine: pass <code>xgot_model_override</code>
+</td>
+</tr><tr class="even"><td>xGOT (previous)</td>
 <td>2026-07-23</td>
 <td align="right">5,212,066</td>
-<td>same bytes</td>
-<td>yes</td>
-</tr><tr class="even"><td>xPass</td>
+<td><code>C:/dev/_model-backups/2026-09-23/</code></td>
+<td>rollback copy</td>
+</tr><tr class="odd"><td>xPass</td>
 <td>2026-06-18</td>
 <td align="right">6,319,289</td>
 <td>same bytes</td>
 <td>yes</td>
-</tr><tr class="odd"><td>duel</td>
+</tr><tr class="even"><td>duel</td>
 <td>2026-06-24</td>
 <td align="right">368,305</td>
 <td>—</td>
 <td>published only</td>
-</tr><tr class="even"><td>EPV</td>
-<td>2026-06-21</td>
-<td align="right">65,084,700</td>
+</tr><tr class="odd"><td><strong>EPV</strong></td>
+<td><strong>2026-09-29</strong></td>
+<td align="right">
+<strong>70,384,093</strong> (md5 739407d2)</td>
 <td>
-<code>epv_model_xg_clean_full.rds</code>, same bytes</td>
-<td><strong>yes</strong></td>
-</tr><tr class="odd"><td>WP</td>
+<code>data-raw/cache/epv/pack-2026-09/epv_model_v51v0.rds</code>, same bytes</td>
+<td>✅ both releases, md5 checked by re-download. Labels at the ledger’s shot price on xG v5.1; trained only on matches with a full event feed (&gt;= 200 passes); same 14 inputs</td>
+</tr><tr class="even"><td>EPV (v5 pack, withdrawn)</td>
+<td>2026-09-28</td>
+<td align="right">70,578,310 (md5 e9fe2721)</td>
+<td>
+<code>epv_model_v5v0.rds</code>, backup in <code>C:/dev/_model-backups/2026-09-29/</code>
+</td>
+<td>priced on the leaky v5; rollback only knowingly</td>
+</tr><tr class="odd"><td>EPV (before the xG v5 release)</td>
+<td>2026-09-24</td>
+<td align="right">70,570,212 (md5 4ca161c1)</td>
+<td>
+<code>epv_model_pubv0.rds</code>, backup in <code>C:/dev/_model-backups/2026-09-28/</code>
+</td>
+<td>rollback copy</td>
+</tr><tr class="even"><td><strong>WP</strong></td>
+<td><strong>2026-09-29</strong></td>
+<td align="right">
+<strong>107,485</strong> (md5 1e57310d)</td>
+<td>
+<code>data-raw/cache/epv/pack-2026-09/wp_v51/wp_model.rds</code>, same bytes</td>
+<td>✅ both releases, md5 checked. The live WP’s configuration retrained on the v5.1 pack; passed <code>pack_gate_wp_v5.R</code> (PACK_TAG=v51)</td>
+</tr><tr class="odd"><td>WP (previous)</td>
 <td>2026-07-16</td>
 <td align="right">119,875</td>
-<td><code>wp_final_d2repl_reg/</code></td>
-<td>verify before relying on the override</td>
+<td><code>C:/dev/_model-backups/2026-09-28/</code></td>
+<td>rollback copy (the v5-pack WP of 2026-09-28 is in <code>2026-09-29/</code>)</td>
+</tr><tr class="even"><td>
+<strong>xG v5.2</strong> (asset <code>xg_model_v5</code>)</td>
+<td><strong>2026-10-06</strong></td>
+<td align="right">
+<strong>728,355</strong> (md5 a98df5d1)</td>
+<td><code>data-raw/cache/epv/xg-vnext/xg_model_v5_2.rds</code></td>
+<td>✅ both releases, md5 checked by re-download. v5.1 retrained without 332 direct-from-corner shots (panna#277; flags from <code>xgv_13_direct_corner_flags.R</code>); wide-byline goals/xG 0.83 -&gt; 1.01 (493 shots, 43 goals); overall and by-season calibration unchanged, per-shot values move by retrain noise (<code>xgv_14_direct_corner_report.R</code>). Published without a gate (Pete). <code>xg_model</code> is untouched. Load with <code>load_xg_model(name = "xg_model_v5")</code>; pass <code>events</code> + <code>foot_history</code> (D8)</td>
+</tr><tr class="odd"><td>
+<strong>xGOT v3.2</strong> (asset <code>xgot_model_v3</code>)</td>
+<td><strong>2026-10-06</strong></td>
+<td align="right">
+<strong>793,119</strong> (md5 4709ead1)</td>
+<td><code>data-raw/cache/epv/xg-vnext/xgot_model_v3_2.rds</code></td>
+<td>✅ both releases, as xG v5.2 (159 on-target direct corners dropped)</td>
+</tr><tr class="even"><td>xG v5.1 / xGOT v3.1 (previous)</td>
+<td>2026-09-29</td>
+<td align="right">786,631 (c2bfd8b8) / 875,984 (7137d9f1)</td>
+<td><code>C:/dev/_model-backups/2026-10-06/</code></td>
+<td>rollback copies. EPV labels (row above) still use xG v5.1: Pete kept them (2026-10-06)</td>
 </tr></tbody></table><p><strong>xG divergence (open, 2026-09-03).</strong> Published is 2026-06-18 (trained on 1,027,139 shots); the local candidate is 2026-07-17 (1,080,653). Neither reproduces the <code>xg</code> column in <code>opta_shot_events.parquet</code> — correlations 0.964 and 0.967 — because <strong>that column is Opta’s own xG, quantised to 3dp (956 distinct values across 3.3M shots), not ours.</strong> Ours is used everywhere in the pipeline via SPADL; Opta’s is a benchmark only.</p>
 <p><strong>EPV override is redundant as of 2026-09-03</strong>: published <code>epv_model.rds</code> and <code>epv_model_xg_clean_full.rds</code> are byte-identical, so the bare default is the clean model. The override is harmless and still recommended for explicitness.</p>
 </div>
@@ -167,15 +216,18 @@
 </div>
 <div class="section level2">
 <h2 id="how-to-rebuild-game-logs-correctly-the-recipe">How to rebuild game-logs correctly (the recipe)<a class="anchor" aria-label="anchor" href="#how-to-rebuild-game-logs-correctly-the-recipe"></a></h2>
-<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a><span class="co"># from panna/</span></span>
-<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a>epv_model_override <span class="ot">&lt;-</span> <span class="fu">readRDS</span>(<span class="st">"data-raw/cache/epv/epv_model_xg_clean_full.rds"</span>)</span>
-<span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a>wp_model_override  <span class="ot">&lt;-</span> <span class="fu">readRDS</span>(<span class="st">"data-raw/cache/epv/wp_final_d2repl_reg/wp_model.rds"</span>)</span>
-<span id="cb2-4"><a href="#cb2-4" tabindex="-1"></a>blog_leagues       <span class="ot">&lt;-</span> <span class="fu">c</span>(... blog leagues ...)</span>
-<span id="cb2-5"><a href="#cb2-5" tabindex="-1"></a>game_log_seasons   <span class="ot">&lt;-</span> <span class="st">"2025-2026"</span>   <span class="co"># or a vector for backfill</span></span>
-<span id="cb2-6"><a href="#cb2-6" tabindex="-1"></a>upload_game_logs   <span class="ot">&lt;-</span> <span class="cn">FALSE</span></span>
-<span id="cb2-7"><a href="#cb2-7" tabindex="-1"></a>build_game_logs    <span class="ot">&lt;-</span> <span class="cn">TRUE</span></span>
-<span id="cb2-8"><a href="#cb2-8" tabindex="-1"></a>use_skill_ratings  <span class="ot">&lt;-</span> <span class="cn">FALSE</span></span>
-<span id="cb2-9"><a href="#cb2-9" tabindex="-1"></a><span class="fu">source</span>(<span class="st">"data-raw/match-predictions-opta/10b_export_game_logs.R"</span>)</span></code></pre></div>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a><span class="co"># from panna/  (see the register above)</span></span>
+<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a><span class="co"># since 2026-09-29: the xG v5.1 pack (xG / xGOT rows: v5.2 / v3.2 since 2026-10-06)</span></span>
+<span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a>epv_model_override  <span class="ot">&lt;-</span> <span class="fu">readRDS</span>(<span class="st">"data-raw/cache/epv/pack-2026-09/epv_model_v51v0.rds"</span>)</span>
+<span id="cb2-4"><a href="#cb2-4" tabindex="-1"></a>wp_model_override   <span class="ot">&lt;-</span> <span class="fu">readRDS</span>(<span class="st">"data-raw/cache/epv/pack-2026-09/wp_v51/wp_model.rds"</span>)</span>
+<span id="cb2-5"><a href="#cb2-5" tabindex="-1"></a>xg_model_override   <span class="ot">&lt;-</span> <span class="fu">load_xg_model</span>(<span class="st">"data-raw/cache/epv/xg-vnext/xg_model_v5_2.rds"</span>)  <span class="co"># or load_xg_model(name = "xg_model_v5")</span></span>
+<span id="cb2-6"><a href="#cb2-6" tabindex="-1"></a>xgot_model_override <span class="ot">&lt;-</span> <span class="fu">load_xgot_model</span>(<span class="st">"data-raw/cache/epv/xg-vnext/xgot_model_v3_2.rds"</span>)</span>
+<span id="cb2-7"><a href="#cb2-7" tabindex="-1"></a>blog_leagues       <span class="ot">&lt;-</span> <span class="fu">c</span>(... blog leagues ...)</span>
+<span id="cb2-8"><a href="#cb2-8" tabindex="-1"></a>game_log_seasons   <span class="ot">&lt;-</span> <span class="st">"2025-2026"</span>   <span class="co"># or a vector for backfill</span></span>
+<span id="cb2-9"><a href="#cb2-9" tabindex="-1"></a>upload_game_logs   <span class="ot">&lt;-</span> <span class="cn">FALSE</span></span>
+<span id="cb2-10"><a href="#cb2-10" tabindex="-1"></a>build_game_logs    <span class="ot">&lt;-</span> <span class="cn">TRUE</span></span>
+<span id="cb2-11"><a href="#cb2-11" tabindex="-1"></a>use_skill_ratings  <span class="ot">&lt;-</span> <span class="cn">FALSE</span></span>
+<span id="cb2-12"><a href="#cb2-12" tabindex="-1"></a><span class="fu">source</span>(<span class="st">"data-raw/match-predictions-opta/10b_export_game_logs.R"</span>)</span></code></pre></div>
 <p>Watch the log for the provenance line — it must show the <strong>clean</strong> model is in use (overrides bypass the loader, so you’ll see the override taken, not a stale <code>epv_model.rds</code> date).</p>
 <p><strong>Follow this recipe rather than sourcing <code>10b_export_game_logs.R</code> directly.</strong> The step depends on config the runner sets — <code>use_skill_ratings</code> above is one — and sourcing it bare aborts with <code>object 'use_skill_ratings' not found</code> after several minutes of loading. That happened on 2026-09-03, and the same run also warned the EPV/WP models it had fallen back to were 73 and 48 days old, which is exactly the failure the overrides exist to prevent. Both were avoidable by reading this section first.</p>
 </div>

@@ -5,7 +5,7 @@ Load Pre-trained xGOT Model
 ## Usage
 
 ``` r
-load_xgot_model(path = NULL)
+load_xgot_model(path = NULL, name = "xgot_model")
 ```
 
 ## Arguments
@@ -14,6 +14,14 @@ load_xgot_model(path = NULL)
 
   Optional path to a model RDS. If NULL, tries pannamodels then the
   local pannadata models dir (mirrors load_xg_model()).
+
+- name:
+
+  Release asset to load when `path` is NULL: `"xgot_model"` (default) or
+  `"xgot_model_v3"` (pre-shot context; pass `season`, `events` and
+  `foot_history` to
+  [`add_xgot_to_spadl()`](https://peteowen1.github.io/panna/reference/add_xgot_to_spadl.md)).
+  Never falls back to a differently named model.
 
 ## Value
 

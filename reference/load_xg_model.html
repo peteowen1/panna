@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.56</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.75</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -36,7 +36,7 @@
 <div class="row">
   <main id="main" class="col-md-9"><div class="page-header">
       <img src="../logo.png" class="logo" alt=""><h1>Load Pre-trained xG Model</h1>
-      <small class="dont-index">Source: <a href="https://github.com/peteowen1/panna/blob/main/R/xg_model.R" class="external-link"><code>R/xg_model.R</code></a></small>
+      <small class="dont-index">Source: <a href="https://github.com/peteowen1/panna/blob/pkgdown-own-dest/R/xg_model.R" class="external-link"><code>R/xg_model.R</code></a></small>
       <div class="d-none name"><code>load_xg_model.Rd</code></div>
     </div>
 
@@ -46,7 +46,7 @@
 
     <div class="section level2">
     <h2 id="ref-usage">Usage<a class="anchor" aria-label="anchor" href="#ref-usage"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">load_xg_model</span><span class="op">(</span>path <span class="op">=</span> <span class="cn">NULL</span><span class="op">)</span></span></code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">load_xg_model</span><span class="op">(</span>path <span class="op">=</span> <span class="cn">NULL</span>, name <span class="op">=</span> <span class="st">"xg_model"</span><span class="op">)</span></span></code></pre></div>
     </div>
 
     <div class="section level2">
@@ -55,6 +55,14 @@
 
 <dl><dt id="arg-path">path<a class="anchor" aria-label="anchor" href="#arg-path"></a></dt>
 <dd><p>Path to model RDS file. If NULL, attempts to download from releases.</p></dd>
+
+
+<dt id="arg-name">name<a class="anchor" aria-label="anchor" href="#arg-name"></a></dt>
+<dd><p>Release asset to load when <code>path</code> is NULL: <code>"xg_model"</code>
+(the default model every caller has always read) or <code>"xg_model_v5"</code>
+(pre-shot context; its callers must pass <code>events</code> and
+<code>foot_history</code> to <code><a href="add_xg_to_spadl.html">add_xg_to_spadl()</a></code>). A named model never
+falls back to a differently named one.</p></dd>
 
 </dl></div>
     <div class="section level2">

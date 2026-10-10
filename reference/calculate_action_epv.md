@@ -16,7 +16,9 @@ calculate_action_epv(
   xg_model = NULL,
   league = NULL,
   season = NULL,
-  shot_lookup = NULL
+  shot_lookup = NULL,
+  events = NULL,
+  foot_history = NULL
 )
 ```
 
@@ -62,6 +64,14 @@ calculate_action_epv(
   skewed roughly 6%. Build it with
   `load_opta_shot_events(league, season)`, not by reading the parquet
   directly.
+
+- events, foot_history:
+
+  Full Opta events for these matches and each shooter's earlier foot
+  shots, forwarded to
+  [`add_xg_to_spadl()`](https://peteowen1.github.io/panna/reference/add_xg_to_spadl.md).
+  Needed only when the xG model reads pre-shot context (xG v5); that
+  model aborts without them.
 
 ## Value
 

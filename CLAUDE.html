@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.56</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.75</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -36,7 +36,7 @@
 <div class="row">
   <main id="main" class="col-md-9"><div class="page-header">
       <img src="logo.png" class="logo" alt=""><h1>CLAUDE.md — panna R Package</h1>
-      <small class="dont-index">Source: <a href="https://github.com/peteowen1/panna/blob/main/CLAUDE.md" class="external-link"><code>CLAUDE.md</code></a></small>
+      <small class="dont-index">Source: <a href="https://github.com/peteowen1/panna/blob/pkgdown-own-dest/CLAUDE.md" class="external-link"><code>CLAUDE.md</code></a></small>
     </div>
 
 <div id="claudemd--panna-r-package" class="section level1">
@@ -145,20 +145,13 @@ Stat ratings → PSR/OSR/DSR (smoothed skills via glmnet) ───────�
 <li>
 <strong>The XGBoost minutes model is benched, deliberately</strong> — <code>minutes_model*.R</code>/<code>minutes_query.R</code> are feature-complete (incl. <code>p_start_decay</code>, within-tournament accumulators, prev-team-match involvement, training/query parity tests) but LOSE to the tuned heuristic on the WC2022 holdout (22.4 vs 19.6 MAE, XI-hit tie). Don’t wire it into the pipeline without re-running <code>debug/wc_minutes_test/train_eval_xgb.R</code> and beating the heuristic; its top features are the heuristic’s own signals, so it mostly adds variance.</li>
 <li>
-<strong>NAMING: <code>panna</code> IS decayed xRAPM — nothing else may use the name</strong> (Pete, 2026-09-03). The career-trait rating from <code><a href="reference/fit_career_rapm.html">fit_career_rapm()</a></code> (halflife 365d, skill-SPM prior, <code>career_panna.parquet</code>). <strong><code>piero</code> is the weighted average of EPR + PSR + Panna</strong> — the three decayed ratings. Four places currently relabel a non-decayed xRAPM as <code>panna</code> and must be renamed: <code>08_panna_ratings.R:36</code> (career/pooled), <code>estimated-skills/05_skill_panna_ratings.R:37</code> (skill), <code>10_export_blog_data.R:187</code> (<strong>season xRAPM, published to the blog as “panna”</strong> — the urgent one), and <code>02_player_ratings_to_team.R:77</code> (model feature <code>home_sum_panna</code>; note that file already half-migrates it at lines 191-223). Full audit + suggested names: <code>pannaverse/docs/reference/RATING-TIME-AGGREGATIONS.md</code>.</li>
+<strong>NAMING: <code>panna</code> IS decayed xRAPM — nothing else may use the name</strong> (Pete, 2026-09-03). The career-trait rating from <code><a href="reference/fit_career_rapm.html">fit_career_rapm()</a></code> (halflife 365d, skill-SPM prior, <code>career_panna.parquet</code>). <strong><code>piero</code> is the weighted average of EPR + PSR + Panna</strong> — the three decayed ratings. Of the four places once found relabeling a non-decayed xRAPM as <code>panna</code>: <code>08_panna_ratings.R</code> and <code>estimated-skills/05_skill_panna_ratings.R</code> are fixed (now <code>xrapm_career</code>/<code>xrapm_skill</code>, 2026-09-04); <code>02_player_ratings_to_team.R</code> overwrites its interim <code>panna</code> column with the leak-free career-Panna override ONLY when <code>career_panna_asof.parquet</code> is present; if the file is missing it issues a <code><a href="https://rdrr.io/r/base/warning.html" class="external-link">warning()</a></code> (deferred by R to the end of the run) and the season xRAPM stays under the name <code>panna</code> — so that site is still open whenever the file is absent. <strong><code>10_export_blog_data.R</code> still publishes the season xRAPM to the blog under the name <code>panna</code></strong> — the one remaining site (verified 2026-09-27). Full audit + history: <code>pannaverse/docs/plans/PANNA-RENAME-EXECUTION.md</code>.</li>
 <li>
-<strong>CONVENTION: positive = good, everywhere</strong> (Pete, 2026-09-03). <strong>Landed 2026-09-11</strong> (merged <code>dev</code>→<code>main</code> as part of panna PR #235) — RAPM/xRAPM <code>defense</code> and <code>team_season_strength.parquet</code>’s <code>def_rating</code> now flip to positive=good at extraction (<code><a href="reference/extract_rapm_ratings.html">extract_rapm_ratings()</a></code>/<code><a href="reference/extract_xrapm_ratings.html">extract_xrapm_ratings()</a></code>), not at each of the 5 former export sites. EPV/PSV/WPA were already positive=good. Migration plan: <code>pannaverse/docs/plans/SIGN-CONVENTION-POSITIVE-IS-GOOD.md</code>. <code>panna_ratings.parquet</code> shows <code>defense</code> as “defensive value added” (xG suppression per 90).
-<ul><li>
-<strong>The flip landing in code is not the same as every on-disk file being under the new convention</strong> — this is exactly what went wrong (panna#F1, 2026-09-07, fixed 2026-09-11). <code>career_panna.parquet</code>’s release asset stayed on the pre-flip convention for 7 weeks after the code changed to assume post-flip, and the inverted <code>panna_defense</code> (elite defenders reading as the worst in the game) reached the public blog for ~4 days. Fix: every parquet asset in this family now carries a <code>sign_convention</code> column stamped at write time (<code>TEAM_STRENGTH_SIGN_CONVENTION</code> for <code>team_season_strength.parquet</code>, <code>CAREER_PANNA_SIGN_CONVENTION</code> for <code>career_panna.parquet</code>/<code>career_panna_asof.parquet</code>, both <code>R/constants.R</code>), asserted by every reader (<code><a href="reference/dot-assert_team_strength_sign_convention.html">.assert_team_strength_sign_convention()</a></code> in <code>R/psv_opponent.R</code>, <code><a href="reference/dot-assert_career_panna_sign_convention.html">.assert_career_panna_sign_convention()</a></code> in <code>R/career_rapm.R</code>) so a stale or unmarked file aborts loudly instead of silently reading inverted. <strong>When adding a new positive=good-convention parquet export, give it the same tag+assert pattern from day one</strong> — don’t wait for a live incident to add it.</li>
-<li>
-<code>career_panna_asof.parquet</code> (the predictions-pipeline’s point-in-time model-feature file) was regenerated and republished 2026-09-12 via <code>data-raw/estimated-skills/09b_career_panna_asof.R</code> (158 monthly snapshots, 3.1M rows, ~70 min) and is now correctly tagged. Both files in this family are therefore on the post-flip convention.</li>
-<li>
-<strong>Ordering trap, learned the hard way:</strong> publish the artifact only AFTER the code that stamps its <code>sign_convention</code> exists. The 2026-09-11 <code>career_panna.parquet</code> publish ran from a refit that finished <em>before</em> the stamping commit landed — correct data, no tag — so the new assert (correctly) rejected it in <code>build-blog-data.yml</code> the next day and the file had to be regenerated and republished. Regenerate-then-publish, in that order, whenever you add a tag to an existing artifact.</li>
-</ul></li>
+<strong>CONVENTION: positive = good, everywhere</strong> (Pete, 2026-09-03; landed 2026-09-11, panna PR #235). RAPM/xRAPM <code>defense</code> and <code>team_season_strength.parquet</code>’s <code>def_rating</code> flip to positive=good at extraction (<code><a href="reference/extract_rapm_ratings.html">extract_rapm_ratings()</a></code>/<code><a href="reference/extract_xrapm_ratings.html">extract_xrapm_ratings()</a></code>), not at each export site. EPV/PSV/WPA were already positive=good. Migration plan: <code>pannaverse/docs/plans/SIGN-CONVENTION-POSITIVE-IS-GOOD.md</code>. Every positive=good parquet export carries a <code>sign_convention</code> column stamped at write time and asserted by every reader (<code><a href="reference/dot-assert_team_strength_sign_convention.html">.assert_team_strength_sign_convention()</a></code> in <code>R/psv_opponent.R</code>, <code><a href="reference/dot-assert_career_panna_sign_convention.html">.assert_career_panna_sign_convention()</a></code> in <code>R/career_rapm.R</code>) — give any new export in this family the same tag+assert pattern from day one, and always regenerate an artifact AFTER the code that stamps it lands, never before. Incident history (a 7-week inverted-defense blog leak that motivated the assert, panna#F1) and the publish-ordering trap: <code>pannaverse/docs/reference/claude-md-detail-panna.md</code>.</li>
 <li>
 <strong>Replacement Level filter at export</strong> — <code>10_export_blog_data.R</code> drops <code>player_id == "replacement"</code> rows before publishing. The synthetic row is a model artifact (game-state confound, picks up uncontrolled variance from league-season fixed effects), not a coherent player rating.</li>
 <li>
-<strong>SPADL’s <code>bodypart</code> is a stub: every shot says “foot”.</strong> <code><a href="reference/map_opta_bodypart.html">map_opta_bodypart()</a></code> (<code>spadl_conversion.R</code>) only ever sets “head” for aerials (type 44) and “other” for keeper actions; its qualifier refinement was never written and the sole caller passes <code>qualifiers = NULL</code>. Shots are types 13/14/15/16, so <strong>100% of shots come through as “foot”</strong> — measured 9,782/9,782 on ENG 2015-2016 against 15.7% real headers. Anything deriving <code>is_header</code>/<code>is_right_foot</code>/<code>is_left_foot</code> from SPADL gets three constant-zero features; the xG model is trained on Opta’s real <code>body_part</code> (RightFoot/LeftFoot/Head), so this was a pure train/serve skew worth <strong>+6.30% on total xG</strong>. Join <code>body_part</code> from <code>opta_shot_events</code> on <code>(match_id, original_event_id)</code> instead — <code>add_xg_to_spadl(shot_lookup = )</code> and <code><a href="reference/add_xgot_to_spadl.html">add_xgot_to_spadl()</a></code> both do. (An earlier version of this file claimed SPADL carried “head”/“foot_left”/“foot_right”; it never has.)</li>
+<strong>SPADL’s <code>bodypart</code> is a stub: every shot says “foot”.</strong> <code><a href="reference/map_opta_bodypart.html">map_opta_bodypart()</a></code> (<code>spadl_conversion.R</code>) only ever sets “head” for aerials (type 44) and “other” for keeper actions; its qualifier refinement was never written and the sole caller passes <code>qualifiers = NULL</code> (verified current 2026-09-27). Shots are types 13/14/15/16, so 100% of shots come through as “foot” against a real headers rate in the double digits — a pure train/serve skew, since the xG model is trained on Opta’s real <code>body_part</code> (RightFoot/LeftFoot/Head). Join <code>body_part</code> from <code>opta_shot_events</code> on <code>(match_id, original_event_id)</code> instead — <code>add_xg_to_spadl(shot_lookup = )</code> and <code><a href="reference/add_xgot_to_spadl.html">add_xgot_to_spadl()</a></code> both do. Measured impact and the original mistaken claim this replaced: <code>pannaverse/docs/reference/claude-md-detail-panna.md</code>.</li>
 <li>
 <strong><code><a href="reference/dot-get_col.html">.get_col()</a></code> warns on missing columns</strong> — memoized warnings via <code>.get_col_warned</code> env in <code>utils.R</code>
 </li>
@@ -190,13 +183,32 @@ Stat ratings → PSR/OSR/DSR (smoothed skills via glmnet) ───────�
 </tr><tr class="odd"><td><code>psr-weekly-snapshot.yml</code></td>
 <td>Weekly snapshot / manual</td>
 <td>PSR weekly snapshot generation</td>
-</tr><tr class="even"><td><code>epv-pipeline.yml</code></td>
+</tr><tr class="even"><td><code>epr-weekly-snapshot.yml</code></td>
+<td>Weekly snapshot / manual</td>
+<td>EPR weekly snapshot generation, builds <code>opta_epr_weekly.parquet</code> (incremental since 2026-06-23), mirrors <code>psr-weekly-snapshot.yml</code>
+</td>
+</tr><tr class="odd"><td><code>epv-pipeline.yml</code></td>
 <td>Daily <code>opta-scrape-complete</code> dispatch + Sunday 18:00 cron (both xmetrics_only, published models) / manual dispatch for retrains</td>
 <td>EPV model training pipeline. Daily dispatch added 2026-07-18 (panna#150) so <code>opta_xmetrics_bymatch.parquet</code> follows every scrape — game-logs xGOT/GSAA no longer go NULL between Sundays. Own concurrency group (NOT panna-release-writer — pending-slot cancellation risk vs predictions’ same-event run)</td>
 </tr></tbody></table></div>
 <div class="section level2">
 <h2 id="documentation-convention">Documentation convention<a class="anchor" aria-label="anchor" href="#documentation-convention"></a></h2>
 <p>Deep/verse-level docs (reviews, plans, incidents, reference material, backlog TODOs) live one level up at <code>pannaverse/docs/{reviews,plans,incidents,reference,backlog}/</code>, not in this repo — see <code>pannaverse/docs/HOME.md</code> for the index. This repo keeps only README, CLAUDE, NEWS, LICENSE, cran-comments, DATA_DICTIONARY, DATA_ISSUES, MODELS, OPTA_REFERENCE, and ARCHITECTURE at its root. <code>pannaverse/docs/NEXT-STEPS.md</code> and <code>pannaverse/docs/DECISIONS.md</code> are the living queue/decision-log — update them at the end of a session. Reviews under <code>docs/reviews/</code> are immutable once written (append addenda, don’t rewrite historical prose). New idea/TODO files belong in <code>pannaverse/docs/backlog/</code>, not at this repo’s root.</p>
+</div>
+<div class="section level2">
+<h2 id="agent-skills">Agent skills<a class="anchor" aria-label="anchor" href="#agent-skills"></a></h2>
+<div class="section level3">
+<h3 id="issue-tracker">Issue tracker<a class="anchor" aria-label="anchor" href="#issue-tracker"></a></h3>
+<p>Issues live in this repo’s GitHub Issues (<code>peteowen1/panna</code>). See <code>docs/agents/issue-tracker.md</code>.</p>
+</div>
+<div class="section level3">
+<h3 id="triage-labels">Triage labels<a class="anchor" aria-label="anchor" href="#triage-labels"></a></h3>
+<p>Canonical defaults (<code>needs-triage</code>, <code>needs-info</code>, <code>ready-for-agent</code>, <code>ready-for-human</code>, <code>wontfix</code>). See <code>docs/agents/triage-labels.md</code>.</p>
+</div>
+<div class="section level3">
+<h3 id="domain-docs">Domain docs<a class="anchor" aria-label="anchor" href="#domain-docs"></a></h3>
+<p>Single-context — one <code>CONTEXT.md</code> + <code>docs/adr/</code> at this repo’s root (neither exists yet; created lazily by <code>/domain-modeling</code>). See <code>docs/agents/domain.md</code>.</p>
+</div>
 </div>
 </div>
 
