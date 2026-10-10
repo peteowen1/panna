@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.75</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.76</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -172,8 +172,8 @@ Stat ratings → PSR/OSR/DSR (smoothed skills via glmnet) ───────�
 </td>
 <td>Package checks</td>
 </tr><tr class="even"><td><code>opta-pipeline.yml</code></td>
-<td>Manual dispatch</td>
-<td>Opta RAPM/SPM on GHA, auto-uploads caches. Fixed 2026-07-16 (panna#109): step 7 (<code>07_seasonal_ratings.R</code>) narrows <code>opta_stats</code>/<code>opta_xmetrics</code> to their read-list before the 14-season loop, keeping RSS flat (~14.1GB) instead of creeping to 15.9GB and OOMing at season 9/14 — verified green end-to-end via <code>-f start_step=7</code> resume-mode run (all 14 seasons, 12.1 min). The <code>opta-scrape-complete</code> auto-trigger stays removed (Pete’s call, not re-enabled by this fix) — dispatch manually</td>
+<td>Daily <code>opta-scrape-complete</code> dispatch / manual dispatch</td>
+<td>Opta RAPM/SPM on GHA, auto-uploads caches; a dispatch is a full rebuild that publishes ratings (~2h05m). Fits the 16GB runner since 2026-10-10 (panna#87, #286): step 7 fits each season in its own callr child, and steps 5/7 read <code>02_opta_stats_narrow.rds</code> (only the columns they use, written by step 2; keep lists in <code>R/spm_opta.R</code>). Peaks on run 38021761037: steps 1-2 ~13.8GB, step 5 13.0GB, step 7 8.8GB of 16GB. Test without publishing: <code>-f upload_caches=false -f upload_ratings=false</code> (each run keeps <code>07_seasonal_ratings.rds</code> as a 7-day artifact)</td>
 </tr><tr class="odd"><td><code>pkgdown.yaml</code></td>
 <td>Push</td>
 <td>Documentation site</td>
