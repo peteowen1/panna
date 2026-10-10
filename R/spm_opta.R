@@ -588,6 +588,66 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
 }
 
 
+#' Columns of the Opta stats and xmetrics tables the SPM steps read
+#'
+#' Steps 05 (SPM fit) and 07 (seasonal ratings) read only these columns of
+#' the ~289-column player-match stats table and the ~69-column xmetrics
+#' table. Step 02 writes a narrowed copy (\code{02_opta_stats_narrow.rds})
+#' so those steps never deserialize the full ~9.5GB stats table, which put
+#' step 05 at 15.6-15.8GB of the 16GB runner and killed it on 2026-10-10
+#' (panna#87). Readers of the stats table: \code{aggregate_opta_stats()}
+#' (every column in \code{.get_opta_col_mapping()}, plus \code{match_id},
+#' \code{player_name}, \code{position}), \code{.ensure_player_id()},
+#' \code{.spm_league_shares()} (a competition column and a minutes column),
+#' and step 07's season filters (\code{season}). Readers of xmetrics:
+#' \code{.aggregate_xmetrics_for_spm()} and the chain-feature blocks in
+#' 05/07. \code{tests/testthat/test-spm-opta-helpers.R} checks that each
+#' reader gives identical output on the narrowed table.
+#'
+#' @param nm Column names of the table being narrowed.
+#' @return The subset of \code{nm} to keep, in \code{nm}'s order.
+#' @keywords internal
+.spm_opta_stats_keep_cols <- function(nm) {
+  keep <- c("season", "player_id", "player_name", "match_id", "position",
+            "competition", "league",
+            "minsPlayed", "minutes", "minutes_played", "mins",
+            unname(.get_opta_col_mapping()))
+  nm[nm %in% keep]
+}
+
+#' @rdname dot-spm_opta_stats_keep_cols
+#' @keywords internal
+.spm_xmetrics_keep_cols <- function(nm) {
+  keep <- c("season", "player_id", "minutes", "xg", "npxg", "xa",
+            "xpass_overperformance", "aerial_woe", "aerial_poss_woe",
+            "takeon_woe", "tackle_poss_woe", "containment_woe",
+            "npg_minus_npxg", "ibox_g_minus_xg", "obox_g_minus_xg",
+            "placement_added", "gsaa",
+            "chains_involved", "chain_actions", "successful_chains",
+            "chain_goals", "chain_starts", "chain_xg")
+  nm[nm %in% keep]
+}
+
+#' Select columns without copying them
+#'
+#' Builds a table from references to \code{x}'s existing column vectors, so
+#' narrowing a multi-GB table costs no memory (R copies a vector only when
+#' one side is modified). \code{x[cols]} on a data.frame is also shallow, but
+#' \code{dt[, cols, with = FALSE]} deep-copies every column, and step 02 is
+#' already at ~13.7GB when it writes the narrowed copy.
+#'
+#' @param x A data.frame or data.table.
+#' @param cols Column names to keep, all present in \code{x}.
+#' @return An object of \code{x}'s class with only \code{cols}.
+#' @keywords internal
+.select_cols_shallow <- function(x, cols) {
+  out <- lapply(cols, function(cl) x[[cl]])
+  names(out) <- cols
+  if (data.table::is.data.table(x)) return(data.table::setDT(out))
+  structure(out, class = class(x), row.names = .set_row_names(nrow(x)))
+}
+
+
 #' Aggregate an xMetrics table to player-level per-90 SPM features
 #'
 #' THE ONE implementation of "given an xmetrics table (any subset — full

@@ -1,3 +1,18 @@
+# panna 0.3.76
+
+## The Opta RAPM/SPM pipeline fits the 16 GB runner again; daily run back on (#286, panna#87)
+
+Every full `opta-pipeline.yml` run had been OOM-killed since the June league expansion: step 07 peaked
+at 15.3 GB and step 05 at 15.6-15.8 GB of 15,989 MB. Step 07 now fits each season in its own `callr`
+child, seeded with `set.seed(season)` (its cv.glmnet folds were unseeded), and fails rather than
+shipping a partial result when a season errors. Steps 05 and 07 read `02_opta_stats_narrow.rds`, which
+step 02 writes with only the ~146 of 289 stats columns they use; the keep lists are in `R/spm_opta.R`.
+A full rebuild took 2h05m with 2.2 GB headroom at the tightest step (steps 1-2, 13.8 GB), and step 07's
+output matched production (SPM identical, RAPM/xRAPM Pearson >= 0.9996, the old fold noise). The
+`opta-scrape-complete` trigger is re-enabled, and `upload_caches = false` no longer uploads anyway.
+
+## EPV prediction no longer passes xgboost's deprecated `reshape` argument (#285)
+
 # panna 0.3.75
 
 ## Live-PSV constants keyed on the 8-bucket role (#281)

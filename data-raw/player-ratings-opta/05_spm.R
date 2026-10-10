@@ -26,7 +26,12 @@ cat("\n=== Loading Data ===\n")
 # after the identical load OOM'd outright (07_seasonal_ratings, run
 # 28921032951). Loading the narrow file directly removes that risk instead
 # of merely narrowing faster after the fact.
-opta_stats_bundle <- readRDS(file.path(cache_dir, "02_opta_stats.rds"))
+# panna#87: the narrowed copy step 02 writes, falling back to the full file
+# (read_spm_opta_stats() in data-raw/pipeline_utils.R).
+if (!exists("read_spm_opta_stats", mode = "function")) {
+  source(file.path("data-raw", "pipeline_utils.R"))
+}
+opta_stats_bundle <- read_spm_opta_stats(cache_dir)
 opta_stats <- opta_stats_bundle$opta_stats
 opta_xmetrics <- opta_stats_bundle$opta_xmetrics
 rm(opta_stats_bundle); gc(verbose = FALSE)
