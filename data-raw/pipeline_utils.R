@@ -911,3 +911,29 @@ run_backfill <- function(export_script, seasons, seasons_var, upload_var, build_
   message(sprintf("\n%s complete in %.1f min", label, elapsed))
   invisible(elapsed)
 }
+
+
+#' Load opta_stats/opta_xmetrics for the SPM steps (05, 07)
+#'
+#' Reads 02_opta_stats_narrow.rds (only the columns those steps use; see
+#' .spm_opta_stats_keep_cols() in R/spm_opta.R) when it is at least as new as
+#' 02_opta_stats.rds, so a stale narrow copy is never paired with fresh data.
+#' Otherwise falls back to the full file and says so. panna#87.
+#'
+#' @param cache_dir The opta cache directory
+#' @return list(opta_stats, opta_xmetrics)
+read_spm_opta_stats <- function(cache_dir) {
+  wide <- file.path(cache_dir, "02_opta_stats.rds")
+  narrow <- file.path(cache_dir, "02_opta_stats_narrow.rds")
+  use_narrow <- file.exists(narrow) &&
+    (!file.exists(wide) || file.mtime(narrow) >= file.mtime(wide))
+  if (!use_narrow) {
+    message(if (file.exists(narrow)) {
+      "02_opta_stats_narrow.rds is older than 02_opta_stats.rds; reading the full file."
+    } else {
+      "02_opta_stats_narrow.rds not found; reading the full 02_opta_stats.rds."
+    })
+  }
+  bundle <- readRDS(if (use_narrow) narrow else wide)
+  list(opta_stats = bundle$opta_stats, opta_xmetrics = bundle$opta_xmetrics)
+}

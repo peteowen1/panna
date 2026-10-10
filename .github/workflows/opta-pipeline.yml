@@ -277,6 +277,18 @@ jobs:
             exit 1
           fi
 
+          # Optional (panna#87): the narrowed stats copy steps 5/7 read. Not in
+          # NEEDED because a release from before it existed lacks it, and those
+          # steps fall back to the full 02_opta_stats.rds without it.
+          if [ "$INPUT_START_STEP" -ge 3 ]; then
+            if gh release download predictions-cache --repo peteowen1/pannadata \
+                 --pattern 02_opta_stats_narrow.rds --dir "$CACHE_DIR" 2>/dev/null; then
+              echo "  Downloaded 02_opta_stats_narrow.rds (optional)"
+            else
+              echo "  02_opta_stats_narrow.rds not in the release (optional; steps 5/7 read the full file)"
+            fi
+          fi
+
           # Touch all downloaded files so their mtime matches each other and
           # the pipeline's per-step "is cache fresh?" check passes.
           touch "$CACHE_DIR"/*.rds
@@ -457,7 +469,7 @@ jobs:
           echo "Uploading any per-step caches that were produced..."
           UPLOADED=0
           for f in 01_raw_data.rds 01_config.rds \
-                   02_processed_data.rds 02_opta_stats.rds \
+                   02_processed_data.rds 02_opta_stats.rds 02_opta_stats_narrow.rds \
                    03_splints.rds \
                    04_rapm.rds 04_rapm_multi.rds \
                    05_spm.rds \
