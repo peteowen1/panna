@@ -304,6 +304,10 @@ jobs:
           GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
           GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
           PANNADATA_DIR: ${{ runner.temp }}/pannadata
+          # Step 02 joins per-match xMetrics; the runner has no local
+          # xmetrics_bymatch/ tree, so read the consolidated parquet from
+          # opta-latest, same as the PSR export above.
+          XMETRICS_SOURCE: remote
         run: |
           cat > /tmp/run_skills_rebuild.R << 'EOF'
           pannadata_path <- Sys.getenv("PANNADATA_DIR", "../pannadata/data")

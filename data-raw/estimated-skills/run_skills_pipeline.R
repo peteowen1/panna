@@ -136,6 +136,31 @@ pipeline_start <- Sys.time()
 step_results <- list()
 pipeline_failed <- FALSE
 
+# Each step runs in its own callr subprocess, like run_pipeline_opta.R
+# (run_step_isolated() in pipeline_utils.R; panna#87/#128). In one session,
+# step 01 left RSS at 7.2GB with R's heap at 185MB, and step 02 then took the
+# 16GB runner down ("runner has received a shutdown signal", psr-weekly-snapshot
+# runs 38029108708 and 38030989611, 2026-10-10). Steps already communicate
+# only through the cache. The children find the data through PANNADATA_DIR, so
+# set it from pannadata_dir() when a caller set the path in-session instead.
+if (!nzchar(Sys.getenv("PANNADATA_DIR")) && exists("pannadata_dir", mode = "function")) {
+  .pd <- tryCatch(pannadata_dir(), error = function(e) "")
+  if (nzchar(.pd)) Sys.setenv(PANNADATA_DIR = .pd)
+  rm(.pd)
+}
+skills_cfg_path <- file.path(cache_dir, ".pipeline_config.rds")
+write_isolated_config(skills_cfg_path)
+
+run_skills_step <- function(step_name, step_num, code_block) {
+  result <- run_step_isolated(step_name, step_num, code_block,
+                              cfg_path = skills_cfg_path, run_steps = run_steps,
+                              pipeline_failed = pipeline_failed)
+  if (!is.null(result) && identical(result$status, "FAILED")) {
+    pipeline_failed <<- TRUE
+  }
+  result
+}
+
 print_pipeline_banner("ESTIMATED SKILLS PIPELINE", c(
   sprintf("Leagues: %s", paste(leagues, collapse = ", ")),
   sprintf("Seasons: %s", if (is.null(seasons)) "All available" else paste(seasons, collapse = ", ")),
@@ -145,61 +170,61 @@ print_pipeline_banner("ESTIMATED SKILLS PIPELINE", c(
 
 # 5. Step 1: Compute Match-Level Stats ----
 
-step_results[[1]] <- run_pipeline_step("compute_match_stats", 1, function() {
+step_results[[1]] <- run_skills_step("compute_match_stats", 1, function() {
   source("data-raw/estimated-skills/01_compute_match_stats.R", local = TRUE)
 })
 
 # 6. Step 2: Estimate Skills ----
 
-step_results[[2]] <- run_pipeline_step("estimate_skills", 2, function() {
+step_results[[2]] <- run_skills_step("estimate_skills", 2, function() {
   source("data-raw/estimated-skills/02_estimate_skills.R", local = TRUE)
 })
 
 # 7. Step 2b: Optimize Params (optional) ----
 
-step_results[[3]] <- run_pipeline_step("optimize_params", "2b", function() {
+step_results[[3]] <- run_skills_step("optimize_params", "2b", function() {
   source("data-raw/estimated-skills/02b_optimize_params.R", local = TRUE)
 })
 
 # 8. Step 3: Skill SPM ----
 
-step_results[[4]] <- run_pipeline_step("skill_spm", 3, function() {
+step_results[[4]] <- run_skills_step("skill_spm", 3, function() {
   source("data-raw/estimated-skills/03_skill_spm.R", local = TRUE)
 })
 
 # 9. Step 4: Skill xRAPM ----
 
-step_results[[5]] <- run_pipeline_step("skill_xrapm", 4, function() {
+step_results[[5]] <- run_skills_step("skill_xrapm", 4, function() {
   source("data-raw/estimated-skills/04_skill_xrapm.R", local = TRUE)
 })
 
 # 10. Step 5: Skill Panna Ratings ----
 
-step_results[[6]] <- run_pipeline_step("skill_panna_ratings", 5, function() {
+step_results[[6]] <- run_skills_step("skill_panna_ratings", 5, function() {
   source("data-raw/estimated-skills/05_skill_panna_ratings.R", local = TRUE)
 })
 
 # 11. Step 6: Seasonal Skill Ratings ----
 
-step_results[[7]] <- run_pipeline_step("seasonal_skill_ratings", 6, function() {
+step_results[[7]] <- run_skills_step("seasonal_skill_ratings", 6, function() {
   source("data-raw/estimated-skills/06_seasonal_skill_ratings.R", local = TRUE)
 })
 
 # 12. Step 7: Train PSR Model ----
 
-step_results[[8]] <- run_pipeline_step("train_psr_model", 7, function() {
+step_results[[8]] <- run_skills_step("train_psr_model", 7, function() {
   source("data-raw/estimated-skills/07_train_psr_model.R", local = TRUE)
 })
 
 # 13. Step 8: Export Skills ----
 
-step_results[[9]] <- run_pipeline_step("export_skills", 8, function() {
+step_results[[9]] <- run_skills_step("export_skills", 8, function() {
   source("data-raw/estimated-skills/08_export_skills.R", local = TRUE)
 })
 
 # 14. Step 8b: Export Weekly PSR Snapshots ----
 
-step_results[[10]] <- run_pipeline_step("export_psr_weekly", "8b", function() {
+step_results[[10]] <- run_skills_step("export_psr_weekly", "8b", function() {
   source("data-raw/estimated-skills/08b_export_psr_weekly.R", local = TRUE)
 })
 
@@ -207,7 +232,7 @@ step_results[[10]] <- run_pipeline_step("export_psr_weekly", "8b", function() {
 # the step-03 skill-SPM, so it runs last. Uploads career_panna.parquet to ratings-data
 # when a driver sets upload_career_panna <- TRUE before sourcing (no CI does this —
 # it's a manual/driver-script flag). See CLAUDE_TODO_CAREER_PANNA.md.
-step_results[[11]] <- run_pipeline_step("career_panna", 9, function() {
+step_results[[11]] <- run_skills_step("career_panna", 9, function() {
   source("data-raw/estimated-skills/09_career_panna.R", local = TRUE)
 })
 

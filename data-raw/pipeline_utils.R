@@ -282,9 +282,9 @@ check_critical_step <- function(result_or_num, step_name = NULL, step_results = 
 
 #' Run a pipeline step, propagating failure to the caller's pipeline_failed flag
 #'
-#' Thin wrapper around run_step() shared by run_predictions_opta.R (formerly
-#' its own run_pred_step()) and run_skills_pipeline.R (formerly run_skills_step())
-#' — both bodies were identical. Reads `run_steps` and `pipeline_failed` as free
+#' Thin wrapper around run_step() used by run_predictions_opta.R (formerly its
+#' own run_pred_step()). run_skills_pipeline.R used it too until 2026-10-10,
+#' when its steps moved to run_step_isolated() for memory isolation. Reads `run_steps` and `pipeline_failed` as free
 #' variables from the caller's scope (globalenv, since every run_*.R sources
 #' this file at top level) exactly like the two original wrappers did, so
 #' moving them here is a pure dedup, not a behavior change.
