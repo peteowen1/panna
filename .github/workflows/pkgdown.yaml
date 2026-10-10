@@ -31,7 +31,9 @@ jobs:
           needs: website
 
       - name: Build pkgdown site
-        run: pkgdown::build_site_github_pages(new_process = FALSE, install = TRUE)
+        # dest_dir must match _pkgdown.yml's destination (build_site_github_pages
+        # defaults it to docs/, which holds docs/agents/ and makes pkgdown abort).
+        run: pkgdown::build_site_github_pages(dest_dir = "pkgdown-site", new_process = FALSE, install = TRUE)
         shell: Rscript {0}
 
       - name: Deploy to GitHub Pages
@@ -40,4 +42,4 @@ jobs:
         with:
           clean: false
           branch: gh-pages
-          folder: docs
+          folder: pkgdown-site

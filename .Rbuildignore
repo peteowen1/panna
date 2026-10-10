@@ -5,6 +5,7 @@
 ^\.github$
 ^_pkgdown\.yml$
 ^docs$
+^pkgdown-site$
 ^pkgdown$
 ^\.claude$
 ^CLAUDE\.md$
