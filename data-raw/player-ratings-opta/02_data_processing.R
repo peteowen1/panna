@@ -88,6 +88,23 @@ if (!exists("processed_data")) {
     opta_stats_path, pipeline = "player-ratings-opta"
   )
 
+  # panna#87: steps 05/07 read only ~150 of the stats table's ~289 columns, but
+  # loading the full file above takes ~9.5GB and left step 05 at 15.6-15.8GB
+  # of the 16GB runner (killed in run 38002760876). They read this narrowed
+  # copy instead; the full file stays for other consumers. The column lists
+  # and the no-copy select live in R/spm_opta.R.
+  .xm <- raw_opta_data$xmetrics
+  save_cache_with_meta(
+    list(
+      opta_stats = .select_cols_shallow(
+        raw_opta_data$stats, .spm_opta_stats_keep_cols(names(raw_opta_data$stats))),
+      opta_xmetrics = if (is.null(.xm)) NULL else
+        .select_cols_shallow(.xm, .spm_xmetrics_keep_cols(names(.xm)))
+    ),
+    file.path(cache_dir, "02_opta_stats_narrow.rds"), pipeline = "player-ratings-opta"
+  )
+  rm(.xm)
+
   # Combined file WITHOUT the multi-GB events blob (and, as of panna#87,
   # without opta_stats/opta_xmetrics -- see above). Consumers: RAPM steps
   # 03/06/08, the skills pipeline. NONE read $events (verified) -- loading
