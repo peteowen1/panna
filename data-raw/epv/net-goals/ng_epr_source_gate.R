@@ -46,17 +46,14 @@ dir.create(OUT, recursive = TRUE, showWarnings = FALSE)
 say <- function(...) { cat("[", format(Sys.time(), "%H:%M:%S"), "] ", ..., "\n", sep = ""); flush.console() }
 
 # ---- protect the shared data bus ------------------------------------------
-BACKUP <- file.path(tempdir(), "opta_epr_weekly_PREGATE.parquet")
+# The backup lives in OUT, not tempdir(): R deletes tempdir() on exit, so a
+# crash would take the only copy with it. And the restore is a tryCatch
+# `finally` around the arms below, not on.exit(): a top-level on.exit() is
+# ignored under Rscript, so it never fired on a crash.
+BACKUP <- file.path(OUT, "opta_epr_weekly_PREGATE.parquet")
 if (!file.exists(EPR_PATH)) stop("No existing ", EPR_PATH, " to protect; refusing to run.")
-file.copy(EPR_PATH, BACKUP, overwrite = TRUE)
+if (!file.copy(EPR_PATH, BACKUP, overwrite = TRUE)) stop("Could not back up ", EPR_PATH)
 say("backed up production EPR to ", BACKUP)
-restored <- FALSE
-on.exit({
-  if (!restored) {
-    file.copy(BACKUP, EPR_PATH, overwrite = TRUE)
-    say("RESTORED production EPR from backup (on.exit)")
-  }
-}, add = TRUE)
 
 # ---- preconditions ---------------------------------------------------------
 # Checked here rather than trusted: the gate is worthless on a partial backfill,
@@ -86,13 +83,20 @@ if (any(!cov$has_ng) || min(cov$pct) < 95) {
 }
 
 # ---- one arm ---------------------------------------------------------------
+ARM_CACHES <- c("02_team_ratings.rds", "02b_team_skill_features.rds",
+                "03_rolling_features.rds", "04_match_dataset.rds",
+                "05_goals_model.rds", "06_outcome_model.rds",
+                "07_predictions.rds", "08_evaluation.rds")
 run_arm <- function(source_name) {
   say("================ ARM: EPR_SOURCE = ", source_name, " ================")
   # Clear the downstream caches so nothing is silently reused between arms.
-  for (f in c("04_match_dataset.rds", "05_goals_model.rds",
-              "06_outcome_model.rds", "07_predictions.rds")) {
+  # Steps 02-06 each load their .rds when it exists and force_rebuild is not
+  # TRUE. Step 02 is where EPR becomes home_sum_epr / away_sum_epr, so leaving
+  # its cache in place gave both arms the same features: a false null.
+  for (f in ARM_CACHES) {
     p <- file.path(CACHE, f); if (file.exists(p)) file.remove(p)
   }
+  assign("force_rebuild", TRUE, envir = globalenv())
   Sys.setenv(EPR_FORCE_FULL_REBUILD = "1")
   assign("EPR_SOURCE", source_name, envir = globalenv())
   # BOTH arms restricted to the same window (Pete, 2026-09-23). net_goals
@@ -128,10 +132,19 @@ run_arm <- function(source_name) {
              away_rmse = grab("away_rmse"))
 }
 
-res <- rbindlist(list(run_arm("epv"), run_arm("net_goals")), fill = TRUE)
-
-file.copy(BACKUP, EPR_PATH, overwrite = TRUE); restored <- TRUE
-say("restored production EPR")
+res <- tryCatch(
+  rbindlist(list(run_arm("epv"), run_arm("net_goals")), fill = TRUE),
+  finally = {
+    if (!file.copy(BACKUP, EPR_PATH, overwrite = TRUE)) {
+      stop("RESTORE FAILED: copy ", BACKUP, " back to ", EPR_PATH, " by hand")
+    }
+    say("restored production EPR from ", BACKUP)
+    # The last arm's 02-08 caches are built on that arm's EPR. Remove them so
+    # the next real predictions run rebuilds from production EPR, not these.
+    file.remove(file.path(CACHE, ARM_CACHES)[file.exists(file.path(CACHE, ARM_CACHES))])
+    say("removed the gate's 02-08 caches from ", CACHE)
+  }
+)
 
 # ---- the locked decision ---------------------------------------------------
 say("\n==== EPR SOURCE GATE ====")
