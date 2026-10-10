@@ -7,7 +7,7 @@
 ## Citation
 
 Source:
-[`DESCRIPTION`](https://github.com/peteowen1/panna/blob/pkgdown-own-dest/DESCRIPTION)
+[`DESCRIPTION`](https://github.com/peteowen1/panna/blob/main/DESCRIPTION)
 
 Owen P (2026). *panna: Player Rating System for Football Using RAPM,
 SPM, and EPV Methods*. R package version 0.3.75,
