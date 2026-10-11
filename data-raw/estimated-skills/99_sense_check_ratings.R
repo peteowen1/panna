@@ -186,7 +186,7 @@ if (length(f) == 0) {
   cat("no game_logs_*.parquet -- run the predictions pipeline first\n")
 } else {
   MCOLS <- c("psv","osv","dsv","epv_total","epv_total_adj","wpa_total",
-             "panna","piero_value_p90","spm_overall")
+             "piero","panna","piero_value_p90","spm_overall")
   gl <- rbindlist(lapply(f, function(p) {
     d <- as.data.table(read_parquet(p))
     d[, intersect(c("player_id","match_id","team_id","match_date","season", MCOLS),

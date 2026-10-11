@@ -1067,11 +1067,15 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
   message(sprintf("\n  [%s] Combined: %d player-games across %d leagues",
                   season, nrow(game_logs), n_leagues_ok))
 
-  # Rename columns to match blog expectations
+  # Rename columns to match blog expectations. piero_value ships as `piero`:
+  # until 2026-10 it shipped as `panna`, and epv_offensive/epv_defensive as
+  # `offense`/`defense` -- the names of the decayed-xRAPM rating in
+  # ratings.parquet, which these columns are not (only xRAPM may be called
+  # panna). The blog's player timeline reads both names during the switch.
   data.table::setnames(
     game_logs,
-    old = c("piero_value", "epv_offensive", "epv_defensive", "minutes_played"),
-    new = c("panna", "offense", "defense", "total_minutes"),
+    old = c("piero_value", "minutes_played"),
+    new = c("piero", "total_minutes"),
     skip_absent = TRUE
   )
 
@@ -1279,33 +1283,33 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
   }
 
   # --- Recompute piero from the FINAL psv (review R019) ---
-  # build_player_game_ratings() formed piero (renamed `panna` above) from the
+  # build_player_game_ratings() formed piero (renamed `piero` above) from the
   # raw PSV, before the position calibration and league offsets just applied,
   # so keepers' uncalibrated PSV (~1.9x too large) went straight into it: 6 of
   # the 2024-25 top 50 season totals were keepers, 0 once recomputed. Same
   # formula and weights as build_player_game_ratings(); NA psv stays NA (R007).
-  if (all(c("panna", "psv") %in% names(game_logs))) {
+  if (all(c("piero", "psv") %in% names(game_logs))) {
     .epv <- if ("epv_total_adj" %in% names(game_logs)) {
       data.table::fifelse(is.na(game_logs$epv_total_adj), 0, game_logs$epv_total_adj)
     } else {
       game_logs$epv_total
     }
-    game_logs[, panna := PANNA_EPR_WEIGHT * .epv + PANNA_PSR_WEIGHT * psv]
+    game_logs[, piero := PANNA_EPR_WEIGHT * .epv + PANNA_PSR_WEIGHT * psv]
     if ("piero_value_p90" %in% names(game_logs)) {
       .mins <- pmax(game_logs$total_minutes, 1, na.rm = TRUE)
-      game_logs[, piero_value_p90 := panna / (.mins / 90)]
+      game_logs[, piero_value_p90 := piero / (.mins / 90)]
     }
     rm(.epv)
     # Anchor check on the published column: keepers' share of the top 20
     # season totals (900+ min). Above the keepers' share of the pool means
     # piero is ranking keepers on a scale outfielders are not on.
     if ("pos_grp" %in% names(game_logs)) {
-      .pt <- game_logs[!is.na(panna), .(panna = sum(panna), mins = sum(total_minutes, na.rm = TRUE),
+      .pt <- game_logs[!is.na(piero), .(piero = sum(piero), mins = sum(total_minutes, na.rm = TRUE),
                                         gk = any(pos_grp == "GK", na.rm = TRUE)),
                        by = player_id][mins >= 900]
       if (nrow(.pt) >= 20) {
         message(sprintf("  [%s] piero anchor: keepers are %.0f%% of the top 20 season totals (%.0f%% of the 900+ min pool)",
-                        season, 100 * mean(.pt[order(-panna)][1:20]$gk), 100 * mean(.pt$gk)))
+                        season, 100 * mean(.pt[order(-piero)][1:20]$gk), 100 * mean(.pt$gk)))
       }
       rm(.pt)
     }
@@ -1327,15 +1331,15 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
     }
   }
 
-  # Season-scoped panna percentile
+  # Season-scoped piero percentile
   # A player with no piero in any game (cameos with no PSV, R007) gets NA, not
   # a total of 0 ranked mid-table.
-  player_totals <- game_logs[, .(total_panna = if (all(is.na(panna))) NA_real_ else
-                                   sum(panna, na.rm = TRUE)), by = player_id]
-  player_totals[, panna_percentile := round(100 * rank(total_panna, ties.method = "min",
+  player_totals <- game_logs[, .(total_piero = if (all(is.na(piero))) NA_real_ else
+                                   sum(piero, na.rm = TRUE)), by = player_id]
+  player_totals[, piero_percentile := round(100 * rank(total_piero, ties.method = "min",
                                                        na.last = "keep") /
-                                              sum(!is.na(total_panna)), 1)]
-  game_logs <- merge(game_logs, player_totals[, .(player_id, panna_percentile)],
+                                              sum(!is.na(total_piero)), 1)]
+  game_logs <- merge(game_logs, player_totals[, .(player_id, piero_percentile)],
                      by = "player_id", all.x = TRUE)
 
   # Column selection/order
@@ -1348,7 +1352,7 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
       # substitute rows carrying the player's own most-played bucket. "OTHER"
       # means genuinely unknown -- treat it as missing, not as a category.
       "team_id", "position", "pos_grp", "total_minutes",
-      "panna", "offense", "defense", "spm_overall", "panna_percentile",
+      "piero", "epv_offensive", "epv_defensive", "spm_overall", "piero_percentile",
       "epv_total", "epv_total_adj",
       "epv_offensive_adj", "epv_defensive_adj", "opp_adj",
       "epv_passing", "epv_shooting", "epv_dribbling", "epv_aerial",
@@ -1391,7 +1395,7 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
     data.table::set(game_logs, j = col, value = round(game_logs[[col]], 4))
   }
 
-  data.table::setorderv(game_logs, c("league", "match_date", "match_id", "panna"),
+  data.table::setorderv(game_logs, c("league", "match_date", "match_id", "piero"),
                           order = c(1L, 1L, 1L, -1L), na.last = TRUE)
 
   out_path <- file.path(cache_dir, sprintf("game_logs_%s.parquet", season))
@@ -1411,12 +1415,19 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
         !"piero_value_p90" %in% names(existing)) {
       data.table::setnames(existing, "panna_value_p90", "piero_value_p90")
     }
+    # Same for the 2026-10 rename: panna/offense/defense/panna_percentile in a
+    # file published before it are piero/epv_offensive/epv_defensive/
+    # piero_percentile.
+    .old_new <- c(panna = "piero", offense = "epv_offensive",
+                  defense = "epv_defensive", panna_percentile = "piero_percentile")
+    .ren <- .old_new[names(.old_new) %in% names(existing) & !.old_new %in% names(existing)]
+    if (length(.ren)) data.table::setnames(existing, names(.ren), unname(.ren))
     rebuilt <- unique(game_logs$league)
     kept <- existing[!league %in% rebuilt]
     n_kept <- nrow(kept)
     n_dropped <- nrow(existing) - n_kept
     game_logs <- data.table::rbindlist(list(kept, game_logs), fill = TRUE, use.names = TRUE)
-    data.table::setorderv(game_logs, c("league", "match_date", "match_id", "panna"),
+    data.table::setorderv(game_logs, c("league", "match_date", "match_id", "piero"),
                           order = c(1L, 1L, 1L, -1L), na.last = TRUE)
     rm(existing, kept); gc()
     message(sprintf("  [%s] Merge: kept %d existing rows (replaced %d for %s), total %d",
