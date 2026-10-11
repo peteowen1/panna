@@ -1,5 +1,16 @@
 # Changelog
 
+## panna 0.3.84
+
+### UEFA cups: January league-phase matches are no longer treated as qualifiers ([\#312](https://github.com/peteowen1/panna/issues/312))
+
+Three places dropped every UCL/UEL/UECL match before September as a
+qualifying round, which also dropped January’s league-phase matchdays
+(144 UCL+UEL matches in the current fixture cache): the league offsets,
+the blog standings (frozen at matchday 6), and the knockout simulator’s
+team pool. All three now keep September to January and drop February to
+August. Review R121.
+
 ## panna 0.3.83
 
 ### WPA credit and pipeline early exits ([\#310](https://github.com/peteowen1/panna/issues/310))
