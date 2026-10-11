@@ -71,7 +71,10 @@ augment_ratings_with_history <- function(ratings, current_sey,
 #' including sum, mean, max, min, stdev, goalkeeper, and positional group averages.
 #'
 #' @param lineups Data frame of match lineups with player_name, team_name,
-#'   team_position (home/away), position, is_starter columns
+#'   team_position (home/away), position, is_starter columns. Optional
+#'   \code{asof_<col>} columns (e.g. \code{asof_epr}, \code{asof_psr},
+#'   \code{asof_spm}) give a per-row as-at rating that replaces the season
+#'   lookup for \code{<col>}; NA means unrated (imputed below).
 #' @param ratings Data frame of seasonal player ratings with player_name,
 #'   season_end_year, panna, offense, defense, spm columns
 #' @param season_end_year Numeric season end year for rating lookup
@@ -176,6 +179,20 @@ aggregate_lineup_ratings <- function(lineups, ratings, season_end_year,
       starters[is.na(get(c)), (c) := get(prev_c)]
     }
   }
+
+  # Per-row as-at ratings win over the season lookup. A lineup column named
+  # `asof_<col>` (e.g. asof_epr, set by predictions step 02 from the weekly
+  # snapshot strictly before the match) replaces `<col>` for every row,
+  # NA included, so an unrated player goes to the imputation below rather
+  # than back to the season value. The season value for season S contains
+  # S's own matches, so using it for a match in S leaks the result (review
+  # R005/R017).
+  asof_in <- grep("^asof_", names(starters), value = TRUE)
+  for (ac in asof_in) {
+    c <- sub("^asof_", "", ac)
+    if (c %in% names(starters)) starters[, (c) := get(ac)]
+  }
+  if (length(asof_in) > 0) starters[, (asof_in) := NULL]
 
   # Capture pre-imputation rated status BEFORE the imputation block below
   # rewrites NA panna with team-mean estimates. The post-imputation
