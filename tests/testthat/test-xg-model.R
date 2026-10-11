@@ -558,3 +558,49 @@ test_that("shooter xGOT decomposition is NA where a team-match has on-target sho
     min_minutes = 0)))
   expect_true(is.na(res2[player_id == "p1"]$placement_added))
 })
+
+test_that("per90 and goals_minus_xgot use only the matches with defined xGOT/GSAA (R013 numerator/denominator)", {
+  # keeper: two 90-min matches, m2 has an unscored on-target goal
+  spadl <- data.frame(
+    match_id = c("m1", "m1", "m2", "m2"), action_type = "shot",
+    team_id = "t2", xg = c(0.30, 0.20, 0.40, 0.10), xgot = c(0.50, 0, NA, 0),
+    result = c("fail", "fail", "success", "fail"), is_own_goal = FALSE,
+    stringsAsFactors = FALSE)
+  lineups <- data.frame(
+    match_id = c("m1", "m1", "m2", "m2"), player_id = c("kA", "kB", "kA", "kB"),
+    team_id = c("t1", "t2", "t1", "t2"), position = "GK", minutes_played = 90,
+    stringsAsFactors = FALSE)
+  s <- data.table::as.data.table(panna:::.compute_keeper_gsaa(spadl, lineups))
+  expect_equal(s[player_id == "kA"]$gsaa_minutes, 90)
+  # SPM must not re-dilute: 0.50 per 90 covered minutes, not 0.25
+  xm <- data.frame(player_id = "kA", minutes = 180, xg = 0, npxg = 0, xa = 0,
+                   xpass_overperformance = 0,
+                   gsaa = s[player_id == "kA"]$gsaa,
+                   gsaa_minutes = s[player_id == "kA"]$gsaa_minutes)
+  agg <- panna:::.aggregate_xmetrics_for_spm(xm)
+  expect_equal(agg$gsaa_per90, 0.50)
+  # legacy rows without *_minutes keep the old covered-minutes behaviour
+  agg2 <- panna:::.aggregate_xmetrics_for_spm(xm[, setdiff(names(xm), "gsaa_minutes")])
+  expect_equal(agg2$gsaa_per90, 0.25)
+
+  # shooter: m1 complete (goal, xgot 0.5), m2 flagged (goal with no coords)
+  mk <- function(mid, xg, xgot, ot, res) data.frame(
+    match_id = mid, team_id = "t1", player_id = "p1", player_name = "P1",
+    action_type = "shot", result = res, xg = xg, xgot = xgot,
+    shot_on_target = ot, is_penalty = 0L, is_own_goal = FALSE,
+    opta_type_id = ifelse(ot, 16L, 13L), start_x = 90, start_y = 50,
+    stringsAsFactors = FALSE)
+  sp <- rbind(mk("m1", 0.30, 0.50, TRUE, "success"),
+              mk("m2", 0.30, NA, TRUE, "success"))
+  lu <- data.frame(
+    match_id = c("m1", "m2", "m1", "m2"), player_id = c("p1", "p1", "k2", "k2"),
+    player_name = c("P1", "P1", "K2", "K2"), team_id = c("t1", "t1", "t2", "t2"),
+    team_name = c("T1", "T1", "T2", "T2"), position = c("CF", "CF", "GK", "GK"),
+    minutes_played = 90, stringsAsFactors = FALSE)
+  r <- data.table::as.data.table(suppressMessages(
+    aggregate_player_xmetrics(sp, lu, min_minutes = 0)))[player_id == "p1"]
+  expect_equal(r$goals, 2)
+  expect_equal(r$placement_added, 0.20)
+  expect_equal(r$placement_added_per90, round(0.20 / 90 * 90, 3))  # not /180
+  expect_equal(r$goals_minus_xgot, 1 - 0.50)   # m1's goal only; m2's excluded
+})
