@@ -231,16 +231,27 @@ force_full_rebuild <- nzchar(Sys.getenv("PSR_FORCE_FULL_REBUILD"))
 # value. Reused rows must have been scored by the SAME model, or the published
 # history is mixed-vintage (old weeks on old coefficients, new weeks on new).
 # Stamped on every row as `model_fingerprint`; a mismatch, or a file from
-# before the stamp existed, forces a full rebuild below.
+# before the stamp existed, forces a full rebuild below. Inputs are hashed as
+# FILE BYTES (not R objects) so the hash cannot move with an R/data.table
+# version. Package CODE changes (compute_player_psr(), the normalisation, a
+# constant) are not covered: after one, run with PSR_FORCE_FULL_REBUILD=1.
 .fp_file <- function(p) if (nzchar(p) && file.exists(p)) digest::digest(p, algo = "sha256", file = TRUE) else "absent"
+.extdata <- system.file("extdata", package = "panna")
+# Every PSR/OSR/DSR coefficient set the scorer can read: outfield xg / gd /
+# blend and the separate goalkeeper model (gk_*), which step 07 can retrain
+# on its own. spm_* are SPM coefficients, not PSR.
+.coef_files <- sort(setdiff(
+  list.files(.extdata, pattern = "(psr|osr|dsr)_coefficients\\.csv$"),
+  list.files(.extdata, pattern = "^spm_")))
 psr_model_fingerprint <- digest::digest(list(
-  coef_xg        = .fp_file(coef_xg),
-  coef_gd        = .fp_file(coef_gd),
+  coefficients   = vapply(file.path(.extdata, .coef_files), .fp_file, character(1), USE.NAMES = FALSE),
+  coef_names     = .coef_files,
   target         = psr_target,
-  position_means = .psr_position_means,
+  position_means = if (is.null(.psr_position_means)) "off" else
+    .fp_file(file.path(.extdata, "position_role_means.csv")),
   decay_params   = .fp_file(decay_params_path),
   offsets        = .fp_file(file.path(cache_dir, "psr_league_offsets.parquet")),
-  calibration    = load_psr_calibration()
+  calibration    = .fp_file(file.path(.extdata, "psr_calibration.csv"))
 ), algo = "sha256")
 message(sprintf("  PSR model fingerprint: %s", substr(psr_model_fingerprint, 1, 12)))
 
