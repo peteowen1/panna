@@ -371,15 +371,19 @@ if (!file.exists(fixture_results_path)) {
   # UEFA cup qualifying rounds (Jul/Aug) share the same "UCL"/"UEL"/"UECL"
   # league code as the league phase (Sep onward) in Opta's raw feed, so the
   # filter above counts them as league-phase games. Exclude them here using
-  # the same month-based cut compute_league_offsets() already applies to
-  # keep qualifiers out of cross-league Elo calibration (R/league_offsets.R,
-  # `.is_q <- league %in% c("UCL","UEL","UECL") & month(match_date) < 9`).
+  # the same month-based cut compute_league_offsets() applies to keep
+  # qualifiers out of cross-league Elo calibration (R/league_offsets.R).
   # Without this, a team that had to qualify (e.g. Fenerbahce, Bodo/Glimt)
   # shows games_played/current_points inflated by its qualifying legs on
   # the blog's leagues.qmd Projected tab, while a direct league-phase
   # entrant's numbers are correct — caught 2026-09-10.
+  # The league phase runs September to January: keep those months, drop
+  # Feb-Aug (August qualifiers/play-offs and the Feb-onward knockouts). The
+  # old `month < 9` cut also dropped January's league-phase matchdays 7-8
+  # (36 UCL matches in 2025-26), freezing the table at matchday 6 (review R121).
+  cup_month <- as.integer(format(suppressWarnings(as.Date(substr(played$match_date, 1, 10))), "%m"))
   is_cup_qualifier <- played$league %in% c("UCL", "UEL", "UECL") &
-    as.integer(format(suppressWarnings(as.Date(substr(played$match_date, 1, 10))), "%m")) < 9L
+    cup_month >= 2L & cup_month <= 8L
   n_qualifiers <- sum(is_cup_qualifier, na.rm = TRUE)
   if (n_qualifiers > 0) {
     message(sprintf("  Excluding %d UEFA cup qualifying-round match(es) from standings", n_qualifiers))
