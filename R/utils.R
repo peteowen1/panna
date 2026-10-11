@@ -688,7 +688,9 @@ build_where_clause <- function(filters, prefix = TRUE) {
 #'     when a goal record has no time). Counted by team, a 2-1 becomes 4-2,
 #'     and in the splint timeline the copies all land at kick-off. A row at
 #'     0:00 is dropped when the same player has a timed goal in that match,
-#'     one copy per timed goal.
+#'     one copy per timed goal. A genuine untimed goal by a player who also
+#'     scored a timed one is indistinguishable and is dropped too (about 2 of
+#'     238k matches in the 2026-10 corpus).
 #'   \item \strong{Wrong team, including own goals (R022).} An own goal row
 #'     carries the CONCEDING team, so Fulham 1-1 Man Utd (Martinez OG) counted
 #'     0-2, and some older rows carry the wrong team outright. Each goal is

@@ -30,9 +30,13 @@ config_path <- file.path(cache_dir, "01_config.rds")
 
 # 3. Check Cache ----
 
+# goal_cleaning: bump when the goal-event handling changes, so a cache built
+# with the old goals is rebuilt rather than reused (1 = .clean_goal_events(),
+# review R022 / phantom 0:00 copies).
 current_config <- list(leagues = leagues, seasons = seasons,
                        min_season = min_season,
-                       use_xmetrics_features = use_xmetrics_features)
+                       use_xmetrics_features = use_xmetrics_features,
+                       goal_cleaning = 1L)
 
 if (file.exists(raw_data_path) && file.exists(config_path)) {
   cached_config <- readRDS(config_path)
@@ -748,10 +752,16 @@ if (file.exists(fx_path)) {
   chk <- merge(results[, c("match_id", "home_goals", "away_goals")],
                fx_scores[!is.na(fx_scores$fx_home) & !is.na(fx_scores$fx_away), ],
                by = "match_id")
+  # Coverage first: a check that matched no fixtures would pass vacuously.
+  cover <- if (nrow(results) > 0) nrow(chk) / nrow(results) else 0
+  if (cover < 0.8) {
+    stop(sprintf("Score check matched only %d of %d results to opta_fixtures (%.0f%%, need 80%%).",
+                 nrow(chk), nrow(results), 100 * cover), call. = FALSE)
+  }
   n_bad <- sum(chk$home_goals != chk$fx_home | chk$away_goals != chk$fx_away)
-  bad_rate <- if (nrow(chk) > 0) n_bad / nrow(chk) else 0
-  message(sprintf("  Score check vs opta_fixtures: %d of %d matches differ (%.2f%%)",
-                  n_bad, nrow(chk), 100 * bad_rate))
+  bad_rate <- n_bad / nrow(chk)
+  message(sprintf("  Score check vs opta_fixtures: %d of %d matches differ (%.2f%%; %.0f%% of results checked)",
+                  n_bad, nrow(chk), 100 * bad_rate, 100 * cover))
   if (bad_rate > 0.05) {
     stop(sprintf("%.1f%% of match scores built from goal events differ from opta_fixtures (limit 5%%). ",
                  100 * bad_rate), "The goal-event cleaning (.clean_goal_events) is not working.", call. = FALSE)
