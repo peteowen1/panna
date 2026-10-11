@@ -488,3 +488,119 @@ test_that(".compute_keeper_gsaa flips own-goal attribution to the conceding team
   expect_equal(g["kA"]$gsaa, 0.95 - 1)
   expect_equal(g["kA"]$goals_conceded, 1)
 })
+
+test_that("keeper GSAA is NA, not -goals_conceded, where on-target shots lack goalmouth coords (R013)", {
+  # m1: complete coords. m2: t2's on-target goal has xgot NA (no goalmouth
+  # coords) beside an off-target shot with xgot 0 -- the 0 used to make
+  # n_xgot > 0, defeat the xG fallback and give gsaa = 0 - 1 = -goals_conceded.
+  spadl <- data.frame(
+    match_id = c("m1", "m1", "m2", "m2"),
+    action_type = "shot",
+    team_id = c("t2", "t2", "t2", "t2"),
+    xg = c(0.30, 0.20, 0.40, 0.10),
+    xgot = c(0.50, 0.00, NA, 0.00),
+    result = c("fail", "fail", "success", "fail"),
+    is_own_goal = FALSE,
+    stringsAsFactors = FALSE
+  )
+  lineups <- data.frame(
+    match_id = c("m1", "m1", "m2", "m2"),
+    player_id = c("kA", "kB", "kA", "kB"),
+    team_id = c("t1", "t2", "t1", "t2"),
+    position = "GK", minutes_played = 90, stringsAsFactors = FALSE
+  )
+  g <- data.table::as.data.table(
+    panna:::.compute_keeper_gsaa(spadl, lineups, by_match = TRUE))
+  data.table::setkey(g, match_id, player_id)
+  # complete match is unchanged: 0.50 + 0.00 expected, 0 conceded
+  expect_equal(g[.("m1", "kA")]$gsaa, 0.50)
+  # incomplete match: unknown, not -1; the goal is still recorded
+  expect_true(is.na(g[.("m2", "kA")]$gsaa))
+  expect_true(is.na(g[.("m2", "kA")]$gsaa_per90))
+  expect_true(is.na(g[.("m2", "kA")]$xgot_faced))
+  expect_equal(g[.("m2", "kA")]$goals_conceded, 1)
+
+  # Season totals use only the matches with a defined GSAA (minutes too)
+  s <- data.table::as.data.table(
+    panna:::.compute_keeper_gsaa(spadl, lineups, by_match = FALSE))
+  expect_equal(s[player_id == "kA"]$gsaa, 0.50)
+  expect_equal(s[player_id == "kA"]$gsaa_per90, 0.50)   # 0.50 over 90 min, not 180
+  expect_equal(s[player_id == "kA"]$goals_conceded, 1)
+
+  # A keeper with no usable match gets NA, not a summed-to-zero GSAA
+  s2 <- data.table::as.data.table(panna:::.compute_keeper_gsaa(
+    spadl[spadl$match_id == "m2", ], lineups[lineups$match_id == "m2", ]))
+  expect_true(is.na(s2[player_id == "kA"]$gsaa))
+  expect_true(is.na(s2[player_id == "kA"]$gsaa_per90))
+})
+
+test_that("shooter xGOT decomposition is NA where a team-match has on-target shots without coords (R053)", {
+  mk <- function(mid, xg, xgot, ot) data.frame(
+    match_id = mid, team_id = "t1", player_id = "p1", player_name = "P1",
+    action_type = "shot", result = "fail", xg = xg, xgot = xgot,
+    shot_on_target = ot, is_penalty = 0L, is_own_goal = FALSE,
+    opta_type_id = ifelse(ot, 15L, 13L), start_x = 90, start_y = 50, stringsAsFactors = FALSE)
+  # m1 complete: on-target +0.20 (0.50 - 0.30), miss -0.10 => +0.10
+  # m2 incomplete: miss -0.20 alone would read as -0.20; on-target NA xgot
+  spadl <- rbind(mk("m1", c(0.30, 0.10), c(0.50, 0.00), c(TRUE, FALSE)),
+                 mk("m2", c(0.20, 0.30), c(0.00, NA), c(FALSE, TRUE)))
+  lineups <- data.frame(
+    match_id = c("m1", "m2", "m1", "m2"), player_id = c("p1", "p1", "k2", "k2"),
+    player_name = c("P1", "P1", "K2", "K2"), team_id = c("t1", "t1", "t2", "t2"),
+    team_name = c("T1", "T1", "T2", "T2"), position = c("CF", "CF", "GK", "GK"),
+    minutes_played = 90, stringsAsFactors = FALSE)
+  res <- data.table::as.data.table(
+    suppressMessages(aggregate_player_xmetrics(spadl, lineups, min_minutes = 0)))
+  expect_equal(res[player_id == "p1"]$placement_added, 0.10)
+  # a player whose only match is incomplete is NA, not a negative number
+  res2 <- data.table::as.data.table(suppressMessages(aggregate_player_xmetrics(
+    spadl[spadl$match_id == "m2", ], lineups[lineups$match_id == "m2", ],
+    min_minutes = 0)))
+  expect_true(is.na(res2[player_id == "p1"]$placement_added))
+})
+
+test_that("per90 and goals_minus_xgot use only the matches with defined xGOT/GSAA (R013 numerator/denominator)", {
+  # keeper: two 90-min matches, m2 has an unscored on-target goal
+  spadl <- data.frame(
+    match_id = c("m1", "m1", "m2", "m2"), action_type = "shot",
+    team_id = "t2", xg = c(0.30, 0.20, 0.40, 0.10), xgot = c(0.50, 0, NA, 0),
+    result = c("fail", "fail", "success", "fail"), is_own_goal = FALSE,
+    stringsAsFactors = FALSE)
+  lineups <- data.frame(
+    match_id = c("m1", "m1", "m2", "m2"), player_id = c("kA", "kB", "kA", "kB"),
+    team_id = c("t1", "t2", "t1", "t2"), position = "GK", minutes_played = 90,
+    stringsAsFactors = FALSE)
+  s <- data.table::as.data.table(panna:::.compute_keeper_gsaa(spadl, lineups))
+  expect_equal(s[player_id == "kA"]$gsaa_minutes, 90)
+  # SPM must not re-dilute: 0.50 per 90 covered minutes, not 0.25
+  xm <- data.frame(player_id = "kA", minutes = 180, xg = 0, npxg = 0, xa = 0,
+                   xpass_overperformance = 0,
+                   gsaa = s[player_id == "kA"]$gsaa,
+                   gsaa_minutes = s[player_id == "kA"]$gsaa_minutes)
+  agg <- panna:::.aggregate_xmetrics_for_spm(xm)
+  expect_equal(agg$gsaa_per90, 0.50)
+  # legacy rows without *_minutes keep the old covered-minutes behaviour
+  agg2 <- panna:::.aggregate_xmetrics_for_spm(xm[, setdiff(names(xm), "gsaa_minutes")])
+  expect_equal(agg2$gsaa_per90, 0.25)
+
+  # shooter: m1 complete (goal, xgot 0.5), m2 flagged (goal with no coords)
+  mk <- function(mid, xg, xgot, ot, res) data.frame(
+    match_id = mid, team_id = "t1", player_id = "p1", player_name = "P1",
+    action_type = "shot", result = res, xg = xg, xgot = xgot,
+    shot_on_target = ot, is_penalty = 0L, is_own_goal = FALSE,
+    opta_type_id = ifelse(ot, 16L, 13L), start_x = 90, start_y = 50,
+    stringsAsFactors = FALSE)
+  sp <- rbind(mk("m1", 0.30, 0.50, TRUE, "success"),
+              mk("m2", 0.30, NA, TRUE, "success"))
+  lu <- data.frame(
+    match_id = c("m1", "m2", "m1", "m2"), player_id = c("p1", "p1", "k2", "k2"),
+    player_name = c("P1", "P1", "K2", "K2"), team_id = c("t1", "t1", "t2", "t2"),
+    team_name = c("T1", "T1", "T2", "T2"), position = c("CF", "CF", "GK", "GK"),
+    minutes_played = 90, stringsAsFactors = FALSE)
+  r <- data.table::as.data.table(suppressMessages(
+    aggregate_player_xmetrics(sp, lu, min_minutes = 0)))[player_id == "p1"]
+  expect_equal(r$goals, 2)
+  expect_equal(r$placement_added, 0.20)
+  expect_equal(r$placement_added_per90, round(0.20 / 90 * 90, 3))  # not /180
+  expect_equal(r$goals_minus_xgot, 1 - 0.50)   # m1's goal only; m2's excluded
+})

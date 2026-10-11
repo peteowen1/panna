@@ -623,6 +623,7 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
             "takeon_woe", "tackle_poss_woe", "containment_woe",
             "npg_minus_npxg", "ibox_g_minus_xg", "obox_g_minus_xg",
             "placement_added", "gsaa",
+            "gsaa_minutes", "placement_added_minutes",
             "chains_involved", "chain_actions", "successful_chains",
             "chain_goals", "chain_starts", "chain_xg")
   nm[nm %in% keep]
@@ -687,6 +688,18 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
   # an all-minutes denominator dilutes a player with partial coverage toward
   # 0 (panna#87 review finding). xg/npxg/xa don't need this: uncovered rows
   # have no xmetrics row at all.
+  # Season-level rows carry their own covered minutes (`<col>_minutes`, e.g.
+  # gsaa_minutes) where some matches were excluded as NA (R013): the row's
+  # `minutes` includes those matches, so dividing by it dilutes per90.
+  xmetrics <- as.data.frame(xmetrics)
+  for (tot in xm_extra_totals) {
+    cm <- paste0(tot, "_minutes")
+    xmetrics[[paste0(".cm_", tot)]] <- if (cm %in% names(xmetrics)) {
+      ifelse(is.na(xmetrics[[tot]]), 0, xmetrics[[cm]])
+    } else {
+      ifelse(is.na(xmetrics[[tot]]), 0, xmetrics$minutes)
+    }
+  }
   xmetrics_agg <- xmetrics %>%
     dplyr::group_by(player_id) %>%
     dplyr::summarise(
@@ -697,7 +710,7 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
       xpass_overperformance_total = sum(xpass_overperformance, na.rm = TRUE),
       dplyr::across(dplyr::all_of(xm_extra_totals), ~ sum(.x, na.rm = TRUE),
                     .names = "{.col}_total"),
-      dplyr::across(dplyr::all_of(xm_extra_totals), ~ sum(minutes[!is.na(.x)], na.rm = TRUE),
+      dplyr::across(dplyr::all_of(paste0(".cm_", xm_extra_totals)), ~ sum(.x, na.rm = TRUE),
                     .names = "{.col}_covmins"),
       .groups = "drop"
     ) %>%
@@ -709,7 +722,7 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
       xpass_overperformance_per90_xmetrics = xpass_overperformance_total / xmetrics_minutes * 90
     )
   for (tot in xm_extra_totals) {
-    covmins <- xmetrics_agg[[paste0(tot, "_covmins")]]
+    covmins <- xmetrics_agg[[paste0(".cm_", tot, "_covmins")]]
     xmetrics_agg[[paste0(tot, "_per90")]] <-
       ifelse(covmins > 0,
              xmetrics_agg[[paste0(tot, "_total")]] / covmins * 90,

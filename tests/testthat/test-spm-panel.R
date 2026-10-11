@@ -552,3 +552,14 @@ test_that("an untagged target with no defense column aborts rather than passing"
   x[["2026"]]$ratings$defense <- NULL
   expect_error(.assert_window_target_sign_convention(x), "no .*sign_convention|migrate")
 })
+
+
+test_that("04b resume refuses an untagged (pre-flip) cache and accepts a tagged one (R023)", {
+  untagged <- .mk_window_target()
+  expect_error(.require_tagged_window_targets_for_resume(untagged), "Cannot resume")
+  stale <- .mk_window_target(); attr(stale, "sign_convention") <- "defense_negative_good"
+  expect_error(.require_tagged_window_targets_for_resume(stale), "Cannot resume")
+  tagged <- .mk_window_target(tagged = TRUE)
+  expect_identical(.require_tagged_window_targets_for_resume(tagged), tagged)
+  expect_identical(.require_tagged_window_targets_for_resume(list()), list())
+})

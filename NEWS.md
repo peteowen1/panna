@@ -1,3 +1,26 @@
+# panna 0.3.79
+
+## Four review fixes: coverage gate, keeper GSAA, shootout export, 04b resume (#292)
+
+- The events-coverage gate before step 10b's publish now checks the remote events a GHA runner actually
+  uses; before, every league counted as "not local yet" and the gate could never abort (R006).
+- Keeper GSAA is NA, not minus goals conceded, in matches whose on-target shots lack goalmouth
+  coordinates, and shooter placement and `goals_minus_xgot` exclude the same matches. Per-90s, including
+  SPM's, divide by the minutes of matches that are defined (`gsaa_minutes`, `placement_added_minutes`,
+  `xgot_goals`) (R013, R053).
+- Step 10d exports shootouts for every league; it used to stop at the first league with none (R020).
+- Step 04b refuses to resume an untagged pre-sign-flip window-target cache instead of stamping it as
+  current (R023).
+
+# panna 0.3.78
+
+## Weekly PSR snapshots include current-season matches again (#291)
+
+`psr-weekly-snapshot.yml` built every snapshot from a hand-uploaded `01_match_stats.rds` whose newest
+match was 2026-07-03, so all published PSR since July was decay with no new minutes (all 38,126 players
+fell). The job now rebuilds match stats with skills step 01 before 8b, and 8b refuses a match-stats
+table whose newest match is more than `PSR_MAX_STATS_AGE_DAYS` (default 21) old. A `force_full_rebuild`
+dispatch input regenerates the already-published weeks. Found by the 2026-10-11 codebase review (R001).
 # panna 0.3.77
 
 ## Upcoming-fixture predictions no longer double each team's lineup; live skill ratings work again (#290)
