@@ -1085,6 +1085,19 @@ aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0,
     # shooter skill; xgot_placement is the stable "finds-corners" component.
     if (all(c("xgot", "shot_on_target") %in% names(shots_dt))) {
       np <- shots_dt[is.na(is_penalty) | is_penalty == 0L]
+      # R013/R053: a team-match where ANY shot has an unknown xGOT (on-target
+      # with no goalmouth coords) has only its off-target zeros left in the
+      # decomposition -- the negative half -- so every shooter on that side
+      # reads as a poor finisher. Null out xgot for the whole team-match so
+      # those shots drop out together (n_xgot_shots == 0 below then yields NA).
+      incomplete <- np[, .(.xgot_incomplete = any(is.na(xgot))),
+                       by = .(match_id, team_id)]
+      np <- incomplete[np, on = c("match_id", "team_id")]
+      n_inc <- sum(np$.xgot_incomplete & !is.na(np$xgot))
+      if (n_inc > 0L) {
+        cli::cli_alert_info("{n_inc} scored shot{?s} in team-matches with missing goalmouth coords excluded from the xGOT decomposition")
+      }
+      np[.xgot_incomplete == TRUE, xgot := NA_real_]
       xgot_agg <- np[, .(
         n_xgot_shots = sum(!is.na(xgot)),   # shots with a defined xGOT (off-target 0s count; missing-coord NAs don't)
         xgot = sum(xgot, na.rm = TRUE),
@@ -1414,15 +1427,31 @@ aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0,
   )]
   if (nrow(conc) == 0) return(NULL)
 
+  # An unscored shot (xgot NA, own goals aside -- those are NA by design) is an
+  # on-target shot with no goalmouth coords, or one that never matched the
+  # shot-event table. Its goal still counts in goals_conceded but its expected
+  # value is unknown, so exp_faced for that team-match is incomplete.
+  # Off-target shots carry xgot = 0 and used to make n_xgot > 0 even when every
+  # on-target shot was unscored, giving gsaa = -goals_conceded (review R013).
+  # Such matches get NA gsaa (never imputed, never a fake zero).
+  conc[, unscored := if (has_xgot) is.na(xgot) & !is_own_goal else FALSE]
   conceded <- conc[, .(
     xg_faced = sum(xg, na.rm = TRUE),
     xgot_faced = sum(xgot, na.rm = TRUE),
     goals_conceded = sum(is_goal, na.rm = TRUE),
-    n_xgot = sum(!is.na(xgot))
+    n_xgot = sum(!is.na(xgot)),
+    n_unscored = sum(unscored)
   ), by = .(match_id, team_id)]
-  # expected goals faced: post-shot xGOT if any defined, else pre-shot xG
+  # expected goals faced: post-shot xGOT if any defined, else pre-shot xG;
+  # NA where any non-own-goal shot's xGOT is unknown.
   conceded[, exp_faced := data.table::fifelse(n_xgot > 0L, xgot_faced, xg_faced)]
+  conceded[n_unscored > 0L, exp_faced := NA_real_]
   conceded[, gsaa := exp_faced - goals_conceded]
+  n_na <- sum(is.na(conceded$gsaa))
+  if (n_na > 0L) {
+    cli::cli_alert_warning(
+      "{n_na}/{nrow(conceded)} team-match{?es} have shots with unknown xGOT (no goalmouth coords): GSAA left NA, excluded from keeper totals")
+  }
 
   # primary keeper per (match_id, team_id): GK with most minutes
   gks <- lu[grepl("GK|Goalkeeper", position, ignore.case = TRUE) &
@@ -1441,11 +1470,14 @@ aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0,
     km[, .(player_id, team_id, match_id, gsaa,
            gsaa_per90, xgot_faced = exp_faced, goals_conceded)]
   } else {
-    km[, .(gsaa = sum(gsaa, na.rm = TRUE),
-           xgot_faced = sum(exp_faced, na.rm = TRUE),
+    # Totals over matches with a defined gsaa only (minutes too, so per90 is
+    # not diluted by excluded matches); all-excluded -> NA, not a fake 0.
+    km[, .(gsaa = if (all(is.na(gsaa))) NA_real_ else sum(gsaa, na.rm = TRUE),
+           xgot_faced = if (all(is.na(exp_faced))) NA_real_ else sum(exp_faced, na.rm = TRUE),
            goals_conceded = sum(goals_conceded, na.rm = TRUE),
-           gsaa_per90 = round(sum(gsaa, na.rm = TRUE) /
-                              pmax(sum(gk_minutes), 1) * 90, 3)),
+           gsaa_per90 = if (all(is.na(gsaa))) NA_real_ else
+             round(sum(gsaa, na.rm = TRUE) /
+                   pmax(sum(gk_minutes[!is.na(gsaa)]), 1) * 90, 3)),
        by = .(player_id, team_id)]
   }
 }
