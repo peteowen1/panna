@@ -2,7 +2,7 @@
 % Please edit documentation in R/estimated_skills.R
 \name{.resolve_position_multipliers}
 \alias{.resolve_position_multipliers}
-\title{Position multipliers for every requested stat}
+\title{Cached position multipliers, warning on any gap}
 \usage{
 .resolve_position_multipliers(decay_params, dt, stat_cols)
 }
@@ -14,14 +14,15 @@
 \item{stat_cols}{Stats that need a multiplier.}
 }
 \value{
-Named list of multipliers covering \code{stat_cols}.
+Named list of position multipliers.
 }
 \description{
-Uses the cached \code{decay_params$position_multipliers} where present and
-computes the rest from \code{dt}. Before this, a stat missing from the cached
-list (36 of 88 skill stats in the 2026-09 cache: every keeper stat, xG,
-GSAA, the duel WOE stats) got no positional prior centre, so a back-up
-keeper's saves were shrunk toward the all-player mean (0.15 per 90) rather
-than the keeper mean (1.76) (review R015).
+Returns \code{decay_params$position_multipliers} (or computes all of them
+from \code{dt} when none are cached). Stats missing from the cache are NOT
+filled from \code{dt}, because callers pass slices and a per-slice
+multiplier would differ between training and serving; they get a warning
+instead. Skills step 02b caches every detected stat (review R015: the
+2026-09 cache covered 52 of 88, so a back-up keeper's saves shrank toward
+the all-player mean 0.15 per 90 rather than the keeper mean 1.76).
 }
 \keyword{internal}
