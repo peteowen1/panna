@@ -1,3 +1,15 @@
+# panna 0.3.80
+
+## Step 01 cleans the goal events: phantom 0:00 copies dropped, own goals credited correctly (#294)
+
+The goal rows in `opta_events.parquet` that step 01 counts for match scores, and step 03 turns into the
+splint score state, had three defects. Older feeds repeat every goal at 0:00 (303,685 of 958,439 rows;
+about every RAPM-league match 2014-2017), own goals carry the conceding team, and some older rows carry
+the wrong team. `.clean_goal_events()` drops the copies and takes each goal's team from its matched goal
+shot, flipped on Opta's own-goal qualifier. Matches whose score disagrees with `opta_fixtures` fell from
+26.52% to 0.82% in step 01's leagues; step 01 now stops above 5%. Found by the 2026-10-11 codebase
+review (R022). RAPM-family ratings change on the next pipeline run, most for 2014-2018.
+
 # panna 0.3.79
 
 ## Four review fixes: coverage gate, keeper GSAA, shootout export, 04b resume (#292)
