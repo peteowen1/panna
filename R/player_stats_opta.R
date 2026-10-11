@@ -159,7 +159,9 @@
 
   # Filter by min_minutes
   if (is.null(player)) {
-    result <- result[result$minutes >= min_minutes, ]
+    # which(): minutes is NA when its source column is absent (R041); a bare
+    # logical index would turn those into all-NA rows.
+    result <- result[which(result$minutes >= min_minutes), ]
   }
 
   result <- result[order(-result$minutes), ]
