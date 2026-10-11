@@ -1161,12 +1161,18 @@ gk_skill_keep_cols <- character(0)
     ms_dt_gk <- enrich_match_stats_with_xmetrics(ms_dt_gk, fail_if_missing_frac = 0.6)
   }
   ms_dt_gk[, match_date := as.Date(match_date)]
+  # Season from the label, as section 3 does for the outfield model (panna#224);
+  # the month rule is only a fallback for label-less input.
   if (!"season_end_year" %in% names(ms_dt_gk)) {
-    ms_dt_gk[, season_end_year := data.table::fifelse(
-      data.table::month(match_date) >= 7L,
-      data.table::year(match_date) + 1L,
-      data.table::year(match_date)
-    )]
+    if ("season" %in% names(ms_dt_gk)) {
+      ms_dt_gk[, season_end_year := as.integer(extract_season_end_year(season))]
+    } else {
+      ms_dt_gk[, season_end_year := data.table::fifelse(
+        data.table::month(match_date) >= 7L,
+        data.table::year(match_date) + 1L,
+        data.table::year(match_date)
+      )]
+    }
   }
 
   # Reuse section 6's chunk files instead of recomputing the same
