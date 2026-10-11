@@ -1,3 +1,16 @@
+# panna 0.3.87
+
+## SPM primary position: the position a player starts in, not "Substitute" (#315)
+
+`aggregate_opta_stats()` and the S6 panel took each player's most common lineup `position`, and every bench
+row reads "Substitute". In 2024-25 that made "Substitute" the primary position of 53% of EPL and 57% of La Liga
+players, so they got no position dummy, and half the keepers who started in goal (21 of 42 EPL, 22 of 44
+La Liga) were not flagged `is_gk`. Both now use `.spm_primary_position()`: the most common position over games
+the player started. Wing Back now sets `is_df`. A refit with this change (steps 5-7, nothing published) moves
+seasonal SPM very little (correlation 0.999 with production; next-season RAPM correlation 0.4355 -> 0.4363), so
+this is a correctness fix rather than an accuracy gain. The S6 panel (`spm_panel.rds`) picks it up when it is
+next rebuilt with `04c_build_spm_panel.R`. Review R010.
+
 # panna 0.3.86
 
 ## Missing PSV is NA, not 0 (#314)

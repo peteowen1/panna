@@ -267,3 +267,34 @@ test_that(".select_cols_shallow keeps class and does not copy columns", {
   expect_identical(as.data.frame(out_dt), as.data.frame(dt[, c("a", "b")]))
   expect_identical(data.table::address(out_dt$a), data.table::address(dt$a))
 })
+
+
+test_that(".spm_primary_position ignores Substitute and unused-bench rows (R010)", {
+  d <- data.table::data.table(
+    player_id = c(rep("k", 5), rep("b", 3), "w"),
+    position  = c("Goalkeeper", "Goalkeeper", "Substitute", "Substitute", "Substitute",
+                  "Substitute", "Substitute", "", "Wing Back"),
+    minsPlayed = c(90, 90, NA, NA, NA, 12, NA, 5, 90)
+  )
+  pm <- panna:::.spm_primary_position(d, c("minsPlayed", "total_minutes"))
+  # keeper benched more often than he started is still a Goalkeeper
+  expect_equal(pm[player_id == "k", primary_position], "Goalkeeper")
+  # bench-only player gets no row (NA after the join), never "Substitute"
+  expect_false("b" %in% pm$player_id)
+  expect_equal(pm[player_id == "w", primary_position], "Wing Back")
+})
+
+test_that("aggregate_opta_stats: benched keeper is is_gk, Wing Back is is_df (R010)", {
+  d <- data.frame(
+    player_id = c("k", "k", "k", "w"), player_name = c("K", "K", "K", "W"),
+    match_id = c("m1", "m2", "m3", "m1"),
+    position = c("Goalkeeper", "Substitute", "Substitute", "Wing Back"),
+    minsPlayed = c(90, NA, NA, 90), goals = 0
+  )
+  r <- suppressWarnings(aggregate_opta_stats(d, min_minutes = 0))
+  k <- r[r$player_id == "k", ]
+  w <- r[r$player_id == "w", ]
+  expect_equal(k$primary_position, "Goalkeeper")
+  expect_equal(c(k$is_gk, k$is_df), c(1L, 0L))
+  expect_equal(c(w$is_gk, w$is_df), c(0L, 1L))
+})
