@@ -820,3 +820,7 @@ utils::globalVariables(c(
 utils::globalVariables(c(
   "value_own", "play_type", "net_goals", "ng_recon", "pre", "owed", "got", "tot", "s", "games", "n", "bucket"
 ))
+
+# .clean_goal_events() (R/utils.R).
+utils::globalVariables(c(".og", ".row", ".new_team", ".k", ".d", "n_timed", "ev_minute", ".gs", "shot_team", "sh_minute", "og",
+                         "home_team_id", "away_team_id"))
