@@ -1278,6 +1278,39 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
     }
   }
 
+  # --- Recompute piero from the FINAL psv (review R019) ---
+  # build_player_game_ratings() formed piero (renamed `panna` above) from the
+  # raw PSV, before the position calibration and league offsets just applied,
+  # so keepers' uncalibrated PSV (~1.9x too large) went straight into it: 6 of
+  # the 2024-25 top 50 season totals were keepers, 0 once recomputed. Same
+  # formula and weights as build_player_game_ratings(); NA psv stays NA (R007).
+  if (all(c("panna", "psv") %in% names(game_logs))) {
+    .epv <- if ("epv_total_adj" %in% names(game_logs)) {
+      data.table::fifelse(is.na(game_logs$epv_total_adj), 0, game_logs$epv_total_adj)
+    } else {
+      game_logs$epv_total
+    }
+    game_logs[, panna := PANNA_EPR_WEIGHT * .epv + PANNA_PSR_WEIGHT * psv]
+    if ("piero_value_p90" %in% names(game_logs)) {
+      .mins <- pmax(game_logs$total_minutes, 1, na.rm = TRUE)
+      game_logs[, piero_value_p90 := panna / (.mins / 90)]
+    }
+    rm(.epv)
+    # Anchor check on the published column: keepers' share of the top 20
+    # season totals (900+ min). Above the keepers' share of the pool means
+    # piero is ranking keepers on a scale outfielders are not on.
+    if ("pos_grp" %in% names(game_logs)) {
+      .pt <- game_logs[!is.na(panna), .(panna = sum(panna), mins = sum(total_minutes, na.rm = TRUE),
+                                        gk = any(pos_grp == "GK", na.rm = TRUE)),
+                       by = player_id][mins >= 900]
+      if (nrow(.pt) >= 20) {
+        message(sprintf("  [%s] piero anchor: keepers are %.0f%% of the top 20 season totals (%.0f%% of the 900+ min pool)",
+                        season, 100 * mean(.pt[order(-panna)][1:20]$gk), 100 * mean(.pt$gk)))
+      }
+      rm(.pt)
+    }
+  }
+
   # SPM lookup (for this season's end year)
   if (!is.null(all_spm_dt)) {
     sy <- .season_end_year(season)
