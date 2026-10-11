@@ -13,7 +13,10 @@ aggregate_lineup_ratings(
 }
 \arguments{
 \item{lineups}{Data frame of match lineups with player_name, team_name,
-team_position (home/away), position, is_starter columns}
+team_position (home/away), position, is_starter columns. Optional
+\code{asof_<col>} columns (e.g. \code{asof_epr}, \code{asof_psr},
+\code{asof_spm}) give a per-row as-at rating that replaces the season
+lookup for \code{<col>}; NA means unrated (imputed below).}
 
 \item{ratings}{Data frame of seasonal player ratings with player_name,
 season_end_year, panna, offense, defense, spm columns}
