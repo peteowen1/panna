@@ -889,6 +889,16 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
         player_game_wpa = player_game_wpa,
         player_game_psv = player_game_psv
       )
+      # Missing PSV now stays NA (review R007); say how much is missing so a
+      # coverage gap (e.g. ESP's 1-9 minute cameos) is visible in the run log.
+      .played <- if ("minutes_played" %in% names(game_ratings)) {
+        !is.na(game_ratings$minutes_played) & game_ratings$minutes_played > 0
+      } else rep(TRUE, nrow(game_ratings))
+      .no_psv <- sum(.played & !game_ratings$has_psv)
+      if (.no_psv > 0L) {
+        message(sprintf("    PSV missing for %d of %d played player-games (%.1f%%): psv and piero_value left NA",
+                        .no_psv, sum(.played), 100 * .no_psv / max(sum(.played), 1L)))
+      }
 
       # --- Display: finishing luck (goals - xGOT) + placement skill ---
       # "Unlucky striker" signal: a player who placed shots well (high xGOT) but

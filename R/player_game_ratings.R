@@ -34,9 +34,12 @@
 #'     \item{epv_p90}{EPV per 90 minutes}
 #'     \item{wpa_total, wpa_as_actor, wpa_as_receiver}{WPA components}
 #'     \item{wpa_p90}{WPA per 90 minutes}
-#'     \item{psv, osv, dsv}{Player Stat Value with O/D decomposition}
+#'     \item{psv, osv, dsv}{Player Stat Value with O/D decomposition; NA when
+#'       the player-game has no PSV row}
 #'     \item{piero_value}{Combined: \code{epv_weight * epv_total_adj +
-#'       psv_weight * psv} (falls back to \code{epv_total} if no adj columns).}
+#'       psv_weight * psv} (falls back to \code{epv_total} if no adj columns);
+#'       NA when PSV is missing}
+#'     \item{has_wpa, has_psv}{Per row: whether WPA / PSV is present}
 #'     \item{piero_value_p90}{Combined per 90 minutes}
 #'   }
 #'
@@ -118,9 +121,10 @@ build_player_game_ratings <- function(player_game_epv,
   } else if ("epv_total" %in% names(result)) {
     result$epv_total
   } else 0
-  psv_val <- if ("psv" %in% names(result)) {
-    data.table::fifelse(is.na(result$psv), 0, result$psv)
-  } else 0
+  # A player-game with no PSV row has no PSV, not a PSV of 0: psv/osv/dsv and
+  # piero_value stay NA. Filling them with 0 shipped 4,659 cameos (2022-26,
+  # mostly ESP/GER) as exact zeros, with piero silently halved (review R007).
+  psv_val <- if ("psv" %in% names(result)) result$psv else NA_real_
 
   result[, piero_value := epv_weight * epv_val + psv_weight * psv_val]
 
@@ -130,17 +134,21 @@ build_player_game_ratings <- function(player_game_epv,
     result[, piero_value_p90 := piero_value / (mins_safe / 90)]
   }
 
-  # Track which metrics were computed (before NA fill masks the difference)
-  result[, has_wpa := !is.null(player_game_wpa) && "wpa_total" %in% names(result)]
-  result[, has_psv := !is.null(player_game_psv) && "psv" %in% names(result)]
+  # Per row: did this player-game get a WPA / PSV value?
+  result[, has_wpa := if ("wpa_total" %in% names(result)) !is.na(wpa_total) else FALSE]
+  result[, has_psv := if ("psv" %in% names(result)) !is.na(psv) else FALSE]
 
-  # Fill NAs in numeric columns
-  num_cols <- names(result)[vapply(result, is.numeric, logical(1))]
+  # Fill NAs in the remaining numeric columns (EPV components, counts). WPA and
+  # PSV columns and piero_value keep their NAs so a missing value looks missing.
+  keep_na <- c("psv", "psv_raw", "osv", "dsv", "piero_value", "piero_value_p90",
+               grep("^wpa_|^max_wpa$", names(result), value = TRUE))
+  num_cols <- setdiff(names(result)[vapply(result, is.numeric, logical(1))], keep_na)
   for (col in num_cols) {
     data.table::set(result, which(is.na(result[[col]])), col, 0)
   }
 
-  data.table::setorder(result, match_id, -piero_value)
+  data.table::setorderv(result, c("match_id", "piero_value"), order = c(1L, -1L),
+                        na.last = TRUE)
   result[]
 }
 
