@@ -1499,7 +1499,22 @@ gk_skill_keep_cols <- character(0)
 }
 
 if (is.null(gk_models)) {
-  cat("\nGK sub-model not trained. GK PSR will be zero until retrained.\n")
+  # GK PSR is NOT zero after this: compute_player_psr() reads whatever
+  # gk_*_coefficients.csv is already in inst/extdata, so a failed or skipped
+  # GK fit leaves the PREVIOUS run's keeper model live next to this run's new
+  # outfield coefficients -- a mixed-vintage set (review R063). Stop unless the
+  # caller says that is intended.
+  old_gk <- list.files(extdata_dir, pattern = "^gk_.*_coefficients\\.csv$")
+  if (length(old_gk) && !isTRUE(get0("allow_stale_gk", ifnotfound = FALSE))) {
+    stop(sprintf(paste0(
+      "GK sub-model not trained, but %s from an earlier run would stay live next ",
+      "to the new outfield coefficients. Fix the GK fit, or set allow_stale_gk <- TRUE ",
+      "before sourcing to keep the old keeper model knowingly."),
+      paste(old_gk, collapse = ", ")), call. = FALSE)
+  }
+  cat(sprintf("\nGK sub-model not trained. %s\n", if (length(old_gk))
+    paste("KEEPING the previous keeper model (allow_stale_gk = TRUE):", paste(old_gk, collapse = ", "))
+    else "No gk_* coefficients exist, so keepers get no PSR."))
 } else {
   cat("\nGK sub-model trained successfully.\n")
 }
