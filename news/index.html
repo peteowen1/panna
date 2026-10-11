@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.78</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.79</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,6 +39,16 @@
       <small>Source: <a href="https://github.com/peteowen1/panna/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.79" id="panna-0379">panna 0.3.79<a class="anchor" aria-label="anchor" href="#panna-0379"></a></h2>
+<div class="section level3">
+<h3 id="four-review-fixes-coverage-gate-keeper-gsaa-shootout-exportb-resume-0-3-79">Four review fixes: coverage gate, keeper GSAA, shootout export, 04b resume (<a href="https://github.com/peteowen1/panna/issues/292" class="external-link">#292</a>)<a class="anchor" aria-label="anchor" href="#four-review-fixes-coverage-gate-keeper-gsaa-shootout-exportb-resume-0-3-79"></a></h3>
+<ul><li>The events-coverage gate before step 10b’s publish now checks the remote events a GHA runner actually uses; before, every league counted as “not local yet” and the gate could never abort (R006).</li>
+<li>Keeper GSAA is NA, not minus goals conceded, in matches whose on-target shots lack goalmouth coordinates, and shooter placement and <code>goals_minus_xgot</code> exclude the same matches. Per-90s, including SPM’s, divide by the minutes of matches that are defined (<code>gsaa_minutes</code>, <code>placement_added_minutes</code>, <code>xgot_goals</code>) (R013, R053).</li>
+<li>Step 10d exports shootouts for every league; it used to stop at the first league with none (R020).</li>
+<li>Step 04b refuses to resume an untagged pre-sign-flip window-target cache instead of stamping it as current (R023).</li>
+</ul></div>
+</div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.78" id="panna-0378">panna 0.3.78<a class="anchor" aria-label="anchor" href="#panna-0378"></a></h2>
 <div class="section level3">
