@@ -9,7 +9,7 @@ is no receiver (shots, clearances, etc.), the actor gets 100% of WPA."><meta pro
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.82</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.83</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -59,7 +59,9 @@ is no receiver (shots, clearances, etc.), the actor gets 100% of WPA.</p>
 <dl><dt id="arg-spadl-with-wpa">spadl_with_wpa<a class="anchor" aria-label="anchor" href="#arg-spadl-with-wpa"></a></dt>
 <dd><p>SPADL actions with <code>wpa</code>, <code>player_id</code>,
 <code>team_id</code>, and optionally <code>receiver_player_id</code> +
-<code>receiver_team_id</code> columns.</p></dd>
+<code>receiver_team_id</code> columns. If <code>receiver_player_id</code> is present,
+<code>receiver_team_id</code> is required (error otherwise). <code>action_type</code>,
+<code>result</code>, <code>period_id</code> enable the goal / period-end exclusions.</p></dd>
 
 
 <dt id="arg-actor-share">actor_share<a class="anchor" aria-label="anchor" href="#arg-actor-share"></a></dt>
@@ -80,7 +82,10 @@ sign-flipped on cross-team transitions</p></dd>
 </dl></div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
-    <p>Cross-team note: WPA is sign-flipped per actor's team in
+    <p>Goals (successful shots, own goals included) and the last action of each
+period keep 100% for the actor: the "receiver" there is just the next
+kick-off taker, who was not involved in the play.</p>
+<p>Cross-team note: WPA is sign-flipped per actor's team in
 <code><a href="add_wp_vars.html">add_wp_vars</a></code> so positive wpa always means "good for my team".
 When the next-action's player is on the OPPOSITE team (turnover, save,
 interception, opp shot), passing the receiver <code>(1 - actor_share) * wpa</code>

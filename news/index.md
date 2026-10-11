@@ -1,5 +1,25 @@
 # Changelog
 
+## panna 0.3.83
+
+### WPA credit and pipeline early exits ([\#310](https://github.com/peteowen1/panna/issues/310))
+
+- WPA credit (review R011, R012):
+  [`create_wp_features()`](https://peteowen1.github.io/panna/reference/create_wp_features.md)
+  now keeps `receiver_team_id`, so the cross-team sign flip in
+  [`assign_wpa_credit()`](https://peteowen1.github.io/panna/reference/assign_wpa_credit.md)
+  actually runs (a keeper who saves is credited, not charged), and it
+  aborts if the column is missing. Goals, own goals included, and the
+  last action of each period keep 100% for the actor; the opposing
+  kick-off taker no longer receives half of a goal.
+- A top-level [`return()`](https://rdrr.io/r/base/function.html) in a
+  sourced pipeline script does not stop it (review R060, R068, R076).
+  The cache-hit checks that relied on it never worked and are removed;
+  real early exits now stop via a one-shot block; step 02b’s “train
+  without skill features” fallback is reported live and on GHA. A test
+  fails on any new top-level
+  [`return()`](https://rdrr.io/r/base/function.html) under data-raw/.
+
 ## panna 0.3.82
 
 ### Skills: position-specific priors for every stat; no future as-of dates ([\#309](https://github.com/peteowen1/panna/issues/309))

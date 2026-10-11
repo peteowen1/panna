@@ -15,7 +15,10 @@ assign_wpa_credit(spadl_with_wpa, actor_share = WPA_ACTOR_SHARE)
 - spadl_with_wpa:
 
   SPADL actions with `wpa`, `player_id`, `team_id`, and optionally
-  `receiver_player_id` + `receiver_team_id` columns.
+  `receiver_player_id` + `receiver_team_id` columns. If
+  `receiver_player_id` is present, `receiver_team_id` is required (error
+  otherwise). `action_type`, `result`, `period_id` enable the goal /
+  period-end exclusions.
 
 - actor_share:
 
@@ -36,6 +39,10 @@ The input data.table with added columns:
   cross-team transitions
 
 ## Details
+
+Goals (successful shots, own goals included) and the last action of each
+period keep 100% for the actor: the "receiver" there is just the next
+kick-off taker, who was not involved in the play.
 
 Cross-team note: WPA is sign-flipped per actor's team in
 [`add_wp_vars`](https://peteowen1.github.io/panna/reference/add_wp_vars.md)

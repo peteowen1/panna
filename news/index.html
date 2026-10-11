@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.82</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.83</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,6 +39,14 @@
       <small>Source: <a href="https://github.com/peteowen1/panna/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.83" id="panna-0383">panna 0.3.83<a class="anchor" aria-label="anchor" href="#panna-0383"></a></h2>
+<div class="section level3">
+<h3 id="wpa-credit-and-pipeline-early-exits-0-3-83">WPA credit and pipeline early exits (<a href="https://github.com/peteowen1/panna/issues/310" class="external-link">#310</a>)<a class="anchor" aria-label="anchor" href="#wpa-credit-and-pipeline-early-exits-0-3-83"></a></h3>
+<ul><li>WPA credit (review R011, R012): <code><a href="../reference/create_wp_features.html">create_wp_features()</a></code> now keeps <code>receiver_team_id</code>, so the cross-team sign flip in <code><a href="../reference/assign_wpa_credit.html">assign_wpa_credit()</a></code> actually runs (a keeper who saves is credited, not charged), and it aborts if the column is missing. Goals, own goals included, and the last action of each period keep 100% for the actor; the opposing kick-off taker no longer receives half of a goal.</li>
+<li>A top-level <code><a href="https://rdrr.io/r/base/function.html" class="external-link">return()</a></code> in a sourced pipeline script does not stop it (review R060, R068, R076). The cache-hit checks that relied on it never worked and are removed; real early exits now stop via a one-shot block; step 02b’s “train without skill features” fallback is reported live and on GHA. A test fails on any new top-level <code><a href="https://rdrr.io/r/base/function.html" class="external-link">return()</a></code> under data-raw/.</li>
+</ul></div>
+</div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.82" id="panna-0382">panna 0.3.82<a class="anchor" aria-label="anchor" href="#panna-0382"></a></h2>
 <div class="section level3">
