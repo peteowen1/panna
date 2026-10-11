@@ -371,9 +371,8 @@ if (!file.exists(fixture_results_path)) {
   # UEFA cup qualifying rounds (Jul/Aug) share the same "UCL"/"UEL"/"UECL"
   # league code as the league phase (Sep onward) in Opta's raw feed, so the
   # filter above counts them as league-phase games. Exclude them here using
-  # the same month-based cut compute_league_offsets() already applies to
-  # keep qualifiers out of cross-league Elo calibration (R/league_offsets.R,
-  # `.is_q <- league %in% c("UCL","UEL","UECL") & month(match_date) < 9`).
+  # the same month-based cut compute_league_offsets() applies to keep
+  # qualifiers out of cross-league Elo calibration (R/league_offsets.R).
   # Without this, a team that had to qualify (e.g. Fenerbahce, Bodo/Glimt)
   # shows games_played/current_points inflated by its qualifying legs on
   # the blog's leagues.qmd Projected tab, while a direct league-phase

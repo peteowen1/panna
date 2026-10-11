@@ -84,6 +84,19 @@ test_that("qualifying-round rows (month < 9) are excluded from the team pool", {
   expect_false(any(c("Z", "W") %in% c(lk$probs$t1, lk$probs$t2)))
 })
 
+test_that("January league-phase rows stay in the team pool (review R121)", {
+  fx <- .cup_fixture()
+  jan <- fx$match_dataset[2, ]
+  jan$match_date <- as.Date("2026-01-10")
+  jan$home_team <- "E"
+  jan$away_team <- "F"
+  jan$match_month <- 1
+  ds <- rbind(fx$match_dataset, jan)
+  lk <- build_cup_pairwise_lookup(ds, fx$goals_models, fx$outcome_result,
+                                   "UCL", "2025-2026", as_of = fx$as_of, verbose = FALSE)
+  expect_setequal(unique(c(lk$probs$t1, lk$probs$t2)), c("A", "B", "C", "D", "E", "F"))
+})
+
 test_that("match_month is overridden to the knockout period, not leaked from the league-phase template", {
   fx <- .cup_fixture()
   lk <- build_cup_pairwise_lookup(fx$match_dataset, fx$goals_models, fx$outcome_result,

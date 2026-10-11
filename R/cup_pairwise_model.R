@@ -50,7 +50,7 @@
 #      +1 for whichever team sits in the home slot of that leg's feature
 #      row (never negated the way WC's host-nation bonus is).
 #
-# Team pool: real league-phase rows only, excluding the Jul/Aug qualifying-
+# Team pool: real league-phase rows only (Sep-Jan), excluding the Jul/Aug qualifying-
 # round contamination (Opta tags qualifiers with the same UCL/UEL/UECL
 # league code as the league phase -- same exclusion as panna PR #234's
 # season_standings fix and the blog's client-side isCupQualifyingRound()).
@@ -101,9 +101,11 @@ build_cup_pairwise_lookup <- function(match_dataset, goals_models, outcome_resul
     cli::cli_abort("build_cup_pairwise_lookup: expected $pooled sub-models")
   }
 
+  # League phase is Sep-Jan; `>= 9` also dropped January's matchdays (R121).
+  phase_month <- as.integer(format(as.Date(dt$match_date), "%m"))
   is_league_phase <- dt$league == league & dt$season == season &
     !is.na(dt$home_team) & dt$home_team != "" &
-    as.integer(format(as.Date(dt$match_date), "%m")) >= 9L
+    !is.na(phase_month) & (phase_month >= 9L | phase_month == 1L)
   phase <- dt[is_league_phase, ]
   if (nrow(phase) == 0) {
     cli::cli_abort("build_cup_pairwise_lookup: no league-phase rows for {league}/{season}")
