@@ -47,13 +47,6 @@ if (nrow(match_stats) == 0) {
   stop("No rows after league filter. Check that league codes match optim_leagues.")
 }
 
-# Join per-match xMetrics (xG, GSAA, duel WOE, ...) as steps 02/07/08b do, so
-# the optimiser computes position multipliers for those stats too. Without
-# it the cache covered 52 of 88 skill stats and the rest had no positional
-# prior centre (review R015). Same XMETRICS_SOURCE switch as step 02.
-xm_source <- if (identical(Sys.getenv("XMETRICS_SOURCE"), "remote")) "remote" else "local"
-match_stats <- enrich_match_stats_with_xmetrics(match_stats, fail_if_missing_frac = 0.6,
-                                                source = xm_source)
 
 # 4. Run Optimization ----
 
@@ -79,6 +72,25 @@ optim_duration <- difftime(Sys.time(), start_time, units = "mins")
 cat(sprintf("\nOptimization time: %.1f minutes\n", as.numeric(optim_duration)))
 
 # 5. Save Parameters ----
+
+# Position multipliers for EVERY skill stat (review R015). The optimiser above
+# runs on box-score stats only and cached multipliers for 52 of 88 skill
+# stats; the other 36 (keeper stats, xG, GSAA, duel WOE) had no positional
+# prior centre. Join xMetrics here, AFTER optimisation so the optimised set
+# is unchanged, and compute multipliers on this full Big-5 table for every
+# stat the estimators detect. Readers never fill gaps from their own slice.
+xm_source <- if (identical(Sys.getenv("XMETRICS_SOURCE"), "remote")) "remote" else "local"
+ms_x <- enrich_match_stats_with_xmetrics(match_stats, fail_if_missing_frac = 0.6, source = xm_source)
+mult_cols <- union(.detect_skill_stat_cols(ms_x),
+                   intersect(union(.get_psr_skill_cols(), .get_gk_skill_cols()), names(ms_x)))
+pm_all <- compute_position_multipliers(ms_x, mult_cols)
+pm_all[names(decay_params$position_multipliers)] <- decay_params$position_multipliers
+decay_params$position_multipliers <- pm_all
+rm(ms_x); gc(verbose = FALSE)
+cat(sprintf("Position multipliers cached for %d stats\n", length(pm_all)))
+miss <- setdiff(union(.get_psr_skill_cols(), .get_gk_skill_cols()), names(pm_all))
+if (length(miss) > 0) warning(sprintf("No position multiplier for %d registered skill stats: %s",
+                                      length(miss), paste(miss, collapse = ", ")), call. = FALSE)
 
 saveRDS(decay_params, output_path)
 cat(sprintf("Saved to: %s\n", output_path))

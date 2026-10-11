@@ -164,31 +164,35 @@ get_default_decay_params <- function() {
 }
 
 
-#' Position multipliers for every requested stat
+#' Cached position multipliers, warning on any gap
 #'
-#' Uses the cached \code{decay_params$position_multipliers} where present and
-#' computes the rest from \code{dt}. Before this, a stat missing from the cached
-#' list (36 of 88 skill stats in the 2026-09 cache: every keeper stat, xG,
-#' GSAA, the duel WOE stats) got no positional prior centre, so a back-up
-#' keeper's saves were shrunk toward the all-player mean (0.15 per 90) rather
-#' than the keeper mean (1.76) (review R015).
+#' Returns \code{decay_params$position_multipliers} (or computes all of them
+#' from \code{dt} when none are cached). Stats missing from the cache are NOT
+#' filled from \code{dt}, because callers pass slices and a per-slice
+#' multiplier would differ between training and serving; they get a warning
+#' instead. Skills step 02b caches every detected stat (review R015: the
+#' 2026-09 cache covered 52 of 88, so a back-up keeper's saves shrank toward
+#' the all-player mean 0.15 per 90 rather than the keeper mean 1.76).
 #'
 #' @param decay_params Decay parameters, possibly holding position_multipliers.
 #' @param dt Match-level stats with a \code{position} column.
 #' @param stat_cols Stats that need a multiplier.
-#' @return Named list of multipliers covering \code{stat_cols}.
+#' @return Named list of position multipliers.
 #' @keywords internal
 .resolve_position_multipliers <- function(decay_params, dt, stat_cols) {
   pm <- decay_params$position_multipliers
   if (is.null(pm)) return(compute_position_multipliers(dt, stat_cols))
   miss <- setdiff(stat_cols, names(pm))
   if (length(miss) > 0) {
-    extra <- compute_position_multipliers(dt, miss)
-    pm[names(extra)] <- extra
-    cli::cli_alert_info(paste0(
-      "Position multipliers computed from the data for {length(miss)} stat{?s} ",
-      "missing from decay_params (R015): {.field {utils::head(miss, 6)}}",
-      if (length(miss) > 6) " ..." else ""))
+    # Do NOT fill the gap from `dt`: callers pass slices (the fixture path
+    # passes only the upcoming squads), and a multiplier computed per slice
+    # would differ between training and serving. A missing stat keeps the old
+    # behaviour (no positional centre); the fix is re-running skills step 02b,
+    # which now caches every detected stat.
+    cli::cli_warn(c(
+      "No cached position multiplier for {length(miss)} skill stat{?s}; they use no positional prior centre (R015).",
+      "i" = "First: {.field {utils::head(miss, 6)}}{if (length(miss) > 6) ' ...' else ''}",
+      "i" = "Re-run data-raw/estimated-skills/02b_optimize_params.R to cache them."))
   }
   pm
 }

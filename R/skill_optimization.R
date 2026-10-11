@@ -599,12 +599,7 @@ optimize_all_priors <- function(match_stats, decay_params = NULL,
 
   # Compute position multipliers once for all stats
   all_stat_cols <- c(all_rate_stats, all_eff_stats)
-  # Multipliers for EVERY skill stat present, not only the optimised tiers:
-  # the cached list is what 02/06/07 read, and a stat missing from it got no
-  # positional prior centre (review R015).
-  mult_cols <- union(all_stat_cols,
-                     intersect(union(.get_psr_skill_cols(), .get_gk_skill_cols()), names(match_stats)))
-  pos_multipliers <- compute_position_multipliers(match_stats, mult_cols)
+  pos_multipliers <- compute_position_multipliers(match_stats, all_stat_cols)
   if (verbose) progress_msg("Computed position multipliers (GK/DEF/MID/FWD)")
 
   # Precompute shared per-player data (sort, positions, sample, split)

@@ -438,16 +438,18 @@ test_that(".compute_snapshot_loop_columns drops NA/NULL extra_cols (optional lea
   expect_setequal(kept, c("player_id", "goals_p90"))
 })
 
-test_that(".resolve_position_multipliers fills stats missing from the cache (R015)", {
+test_that(".resolve_position_multipliers warns on a gap and never fills it from the slice (R015)", {
   ms <- data.table::as.data.table(make_test_match_stats(n_players = 3, n_matches = 6))
   cached <- compute_position_multipliers(ms, "goals_p90")
   dp <- list(position_multipliers = cached)
-  pm <- suppressMessages(.resolve_position_multipliers(dp, ms, c("goals_p90", "tackles_won_p90")))
-  expect_setequal(names(pm), c("goals_p90", "tackles_won_p90"))
-  expect_identical(pm$goals_p90, cached$goals_p90)          # cached values kept
-  expect_equal(pm$tackles_won_p90, compute_position_multipliers(ms, "tackles_won_p90")$tackles_won_p90)
-  # the defender's tackling multiplier is position-specific, not a flat 1
-  expect_gt(pm$tackles_won_p90[["DEF"]], 1)
+  expect_warning(pm <- .resolve_position_multipliers(dp, ms, c("goals_p90", "tackles_won_p90")),
+                 "No cached position multiplier")
+  expect_identical(names(pm), "goals_p90")                 # gap left as before, not slice-filled
+  expect_identical(pm$goals_p90, cached$goals_p90)
+  expect_silent(.resolve_position_multipliers(dp, ms, "goals_p90"))
+  # nothing cached at all: compute everything (unchanged behaviour)
+  expect_setequal(names(.resolve_position_multipliers(list(), ms, c("goals_p90", "tackles_won_p90"))),
+                  c("goals_p90", "tackles_won_p90"))
 })
 
 test_that("aggregate_skills_for_spm never dates a season after the last match (R004)", {
