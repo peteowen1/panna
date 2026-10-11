@@ -164,6 +164,40 @@ get_default_decay_params <- function() {
 }
 
 
+#' Cached position multipliers, warning on any gap
+#'
+#' Returns \code{decay_params$position_multipliers} (or computes all of them
+#' from \code{dt} when none are cached). Stats missing from the cache are NOT
+#' filled from \code{dt}, because callers pass slices and a per-slice
+#' multiplier would differ between training and serving; they get a warning
+#' instead. Skills step 02b caches every detected stat (review R015: the
+#' 2026-09 cache covered 52 of 88, so a back-up keeper's saves shrank toward
+#' the all-player mean 0.15 per 90 rather than the keeper mean 1.76).
+#'
+#' @param decay_params Decay parameters, possibly holding position_multipliers.
+#' @param dt Match-level stats with a \code{position} column.
+#' @param stat_cols Stats that need a multiplier.
+#' @return Named list of position multipliers.
+#' @keywords internal
+.resolve_position_multipliers <- function(decay_params, dt, stat_cols) {
+  pm <- decay_params$position_multipliers
+  if (is.null(pm)) return(compute_position_multipliers(dt, stat_cols))
+  miss <- setdiff(stat_cols, names(pm))
+  if (length(miss) > 0) {
+    # Do NOT fill the gap from `dt`: callers pass slices (the fixture path
+    # passes only the upcoming squads), and a multiplier computed per slice
+    # would differ between training and serving. A missing stat keeps the old
+    # behaviour (no positional centre); the fix is re-running skills step 02b,
+    # which now caches every detected stat.
+    cli::cli_warn(c(
+      "No cached position multiplier for {length(miss)} skill stat{?s}; they use no positional prior centre (R015).",
+      "i" = "First: {.field {utils::head(miss, 6)}}{if (length(miss) > 6) ' ...' else ''}",
+      "i" = "Re-run data-raw/estimated-skills/02b_optimize_params.R to cache them."),
+      .frequency = "once", .frequency_id = "panna_r015_missing_multipliers")
+  }
+  pm
+}
+
 #' Compute position-specific multipliers for prior centers
 #'
 #' For each stat, computes the ratio of position-specific weighted average to
@@ -518,11 +552,7 @@ estimate_player_skills <- function(match_stats, decay_params = NULL,
   }, by = player_id]
 
   # Compute position multipliers: pos_avg / global_avg per stat
-  pos_multipliers <- if (!is.null(decay_params$position_multipliers)) {
-    decay_params$position_multipliers
-  } else {
-    compute_position_multipliers(dt, stat_cols)
-  }
+  pos_multipliers <- .resolve_position_multipliers(decay_params, dt, stat_cols)
 
   # Build global prior center lookup per stat (minutes-weighted mean)
   grand_means <- numeric(length(stat_cols))
@@ -1001,11 +1031,17 @@ aggregate_skills_for_spm <- function(match_stats, decay_params = NULL,
   }
 
   results_list <- vector("list", length(seasons))
+  # Never estimate as of a future date (review R004). For the season in
+  # progress, a 30 June target decayed every match as if it were already next
+  # June (built 2026-09-03 for 2027-06-30: weights x0.41), over-shrinking
+  # every current player toward the prior. Cap at the day after the last match.
+  last_match_next_day <- max(dt$match_date, na.rm = TRUE) + 1L
 
   for (idx in seq_along(seasons)) {
     s <- seasons[idx]
     target_date <- season_end_dates[as.character(s)]
     if (is.na(target_date)) target_date <- as.Date(paste0(s, "-06-30"))
+    target_date <- min(target_date, last_match_next_day)
 
     # Season-specific minutes filter: sum minutes in this season only
     season_start <- as.Date(paste0(s - 1, "-07-01"))
@@ -1196,11 +1232,7 @@ backtest_skill_predictions <- function(match_stats, decay_params = NULL,
 
   # Resolve positions and compute multipliers
   dt <- .resolve_positions(dt)
-  pos_multipliers <- if (!is.null(decay_params$position_multipliers)) {
-    decay_params$position_multipliers
-  } else {
-    compute_position_multipliers(dt, stat_cols)
-  }
+  pos_multipliers <- .resolve_position_multipliers(decay_params, dt, stat_cols)
 
   # Player modal position lookup
   player_pos_lookup <- dt[!is.na(pos_group), {

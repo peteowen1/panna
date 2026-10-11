@@ -437,3 +437,28 @@ test_that(".compute_snapshot_loop_columns drops NA/NULL extra_cols (optional lea
 
   expect_setequal(kept, c("player_id", "goals_p90"))
 })
+
+test_that(".resolve_position_multipliers warns on a gap and never fills it from the slice (R015)", {
+  ms <- data.table::as.data.table(make_test_match_stats(n_players = 3, n_matches = 6))
+  cached <- compute_position_multipliers(ms, "goals_p90")
+  dp <- list(position_multipliers = cached)
+  expect_warning(pm <- .resolve_position_multipliers(dp, ms, c("goals_p90", "tackles_won_p90")),
+                 "No cached position multiplier")
+  expect_identical(names(pm), "goals_p90")                 # gap left as before, not slice-filled
+  expect_identical(pm$goals_p90, cached$goals_p90)
+  expect_silent(.resolve_position_multipliers(dp, ms, "goals_p90"))
+  # nothing cached at all: compute everything (unchanged behaviour)
+  expect_setequal(names(.resolve_position_multipliers(list(), ms, c("goals_p90", "tackles_won_p90"))),
+                  c("goals_p90", "tackles_won_p90"))
+})
+
+test_that("aggregate_skills_for_spm never dates a season after the last match (R004)", {
+  ms <- make_test_match_stats(n_players = 3, n_matches = 6)   # 2024-01-01 .. 2024-02-05
+  ms$season_end_year <- 2024L
+  out <- suppressMessages(suppressWarnings(
+    aggregate_skills_for_spm(ms, min_minutes = 90, min_weighted_90s = 0)))
+  skip_if(is.null(out) || nrow(out) == 0, "no rows produced")
+  date_col <- intersect(c("date", "target_date", "ref_date"), names(out))[1]
+  skip_if(is.na(date_col), "no date column in output")
+  expect_true(all(as.Date(out[[date_col]]) <= max(as.Date(ms$match_date)) + 1))
+})

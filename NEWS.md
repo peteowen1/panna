@@ -1,3 +1,15 @@
+# panna 0.3.82
+
+## Skills: position-specific priors for every stat; no future as-of dates (#309)
+
+Step 02b cached position multipliers for 52 of 88 skill stats, so the other 36 (keeper stats, xG, GSAA,
+duel WOE) shrank low-minute players toward the all-player mean: a back-up keeper's saves toward 0.15 per
+90 rather than the keeper mean 1.76. 02b now caches multipliers for every detected stat after joining
+xMetrics, and readers never fill a gap from their own slice (`.resolve_position_multipliers()`). The
+season in progress is no longer estimated as of 30 June of its end year (a future date that decayed
+every weight about x0.41); the as-of date is capped at the day after the last match. Review R015, R004.
+Published skills and PSR change on the next skills retrain (02b, 02-07).
+
 # panna 0.3.81
 
 ## Match-prediction training rows use as-at player ratings (#308)

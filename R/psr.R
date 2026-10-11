@@ -327,11 +327,7 @@
   }, numeric(1))
 
   # Position multipliers & grand means -- compute once
-  pos_multipliers <- if (!is.null(decay_params$position_multipliers)) {
-    decay_params$position_multipliers
-  } else {
-    compute_position_multipliers(dt, stat_cols)
-  }
+  pos_multipliers <- .resolve_position_multipliers(decay_params, dt, stat_cols)
 
   grand_means <- numeric(length(stat_cols))
   names(grand_means) <- stat_cols
