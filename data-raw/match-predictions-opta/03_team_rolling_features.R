@@ -109,6 +109,24 @@ rolling_team <- compute_team_rolling_features(played, windows = ROLLING_WINDOWS)
 message(sprintf("  Rolling features: %d matches, %d columns",
                 nrow(rolling_team), ncol(rolling_team) - 1))
 
+# Upcoming fixtures get their form from the SAME lagged window as training
+# rows (review R069/R070): append them with no outcome, rerun, keep only their
+# rows. Each fixture then sees the team's latest match on EITHER side, and rest
+# days count to the fixture date. The old carry-forward reused the pre-match
+# values of each team's last HOME (or AWAY) match, which missed that match's
+# own result and could be weeks stale. Training rows still come from `played`
+# alone above, so postponed fixtures cannot leak NA rows into training windows.
+.roll_in <- c("match_id", "match_date", "home_team", "away_team",
+              "home_goals", "away_goals", "home_xg", "away_xg")
+upcoming_roll <- fixture_results[fixture_results$match_status != "Played", .roll_in, drop = FALSE]
+rolling_upcoming <- NULL
+if (nrow(upcoming_roll) > 0) {
+  upcoming_roll[c("home_goals", "away_goals", "home_xg", "away_xg")] <- NA_real_
+  ru <- compute_team_rolling_features(
+    rbind(played[, .roll_in, drop = FALSE], upcoming_roll), windows = ROLLING_WINDOWS)
+  rolling_upcoming <- ru[ru$match_id %in% upcoming_roll$match_id, , drop = FALSE]
+}
+
 # 7. Combine ----
 
 rolling_features <- merge(elo_features, rolling_team, by = "match_id", all.x = TRUE)
@@ -173,65 +191,14 @@ if (nrow(upcoming) > 0) {
     }
   }
 
-  # Carry forward each team's last known rolling features to fixtures.
-  # Rolling-form columns are named home_<metric>_last_<window> (and
-  # home_days_since_last) — there is no `roll_` infix. Take the column names
-  # from rolling_team so the Elo columns (home_elo/away_elo) are excluded.
-  dt_roll <- data.table::as.data.table(rolling_features)
-  home_roll_cols <- grep("^home_", names(rolling_team), value = TRUE)
-  away_roll_cols <- grep("^away_", names(rolling_team), value = TRUE)
-
-  if (length(home_roll_cols) > 0) {
-    dt_played <- data.table::as.data.table(played)
-    fixture_dt <- data.table::as.data.table(fixture_elos)
-    fixture_dt[, home_team := upcoming$home_team]
-    fixture_dt[, away_team := upcoming$away_team]
-
-    # Last home-side rolling features per team (from their most recent home match)
-    home_lookup <- merge(dt_played[, .(match_id, home_team, match_date)],
-                         dt_roll[, c("match_id", home_roll_cols), with = FALSE],
-                         by = "match_id")
-    data.table::setorder(home_lookup, match_date)
-    home_lookup <- home_lookup[, .SD[.N], by = home_team]
-
-    # Last away-side rolling features per team (from their most recent away match)
-    away_lookup <- merge(dt_played[, .(match_id, away_team, match_date)],
-                         dt_roll[, c("match_id", away_roll_cols), with = FALSE],
-                         by = "match_id")
-    data.table::setorder(away_lookup, match_date)
-    away_lookup <- away_lookup[, .SD[.N], by = away_team]
-
-    # Join onto fixtures by team name
-    fixture_dt <- merge(fixture_dt,
-                        home_lookup[, c("home_team", home_roll_cols), with = FALSE],
-                        by = "home_team", all.x = TRUE)
-    fixture_dt <- merge(fixture_dt,
-                        away_lookup[, c("away_team", away_roll_cols), with = FALSE],
-                        by = "away_team", all.x = TRUE)
-
-    # Recompute the rolling differentials for the fixture rows from the
-    # carried-forward home_/away_ values (compute_team_rolling_features only
-    # derived these for played matches).
-    for (w in ROLLING_WINDOWS) {
-      for (m in c("goals_scored", "xg_for", "points", "npxgd")) {
-        hc <- sprintf("home_%s_last_%d", m, w)
-        ac <- sprintf("away_%s_last_%d", m, w)
-        dc <- sprintf("diff_%s_last_%d", m, w)
-        if (hc %in% names(fixture_dt) && ac %in% names(fixture_dt)) {
-          fixture_dt[, (dc) := get(hc) - get(ac)]
-        }
-      }
-    }
-    if (all(c("home_days_since_last", "away_days_since_last") %in% names(fixture_dt))) {
-      fixture_dt[, rest_diff := home_days_since_last - away_days_since_last]
-    }
-
-    n_form <- sum(!is.na(fixture_dt[["home_points_last_10"]]))
-    message(sprintf("  Rolling form carried to %d/%d fixtures (%.0f%%)",
-                    n_form, nrow(fixture_dt), 100 * n_form / nrow(fixture_dt)))
-
-    fixture_dt[, c("home_team", "away_team") := NULL]
-    fixture_elos <- fixture_dt
+  # Rolling form for fixtures: computed above (rolling_upcoming) from the same
+  # lagged window as training rows, so it already carries the home_/away_
+  # columns, the diff_* differentials and rest_diff.
+  if (!is.null(rolling_upcoming)) {
+    fixture_elos <- merge(fixture_elos, rolling_upcoming, by = "match_id", all.x = TRUE)
+    n_form <- sum(!is.na(fixture_elos[["home_points_last_10"]]))
+    message(sprintf("  Rolling form for %d/%d fixtures (%.0f%%)",
+                    n_form, nrow(fixture_elos), 100 * n_form / nrow(fixture_elos)))
   }
 
   # Append fixture rows to rolling_features
