@@ -47,6 +47,14 @@ if (nrow(match_stats) == 0) {
   stop("No rows after league filter. Check that league codes match optim_leagues.")
 }
 
+# Join per-match xMetrics (xG, GSAA, duel WOE, ...) as steps 02/07/08b do, so
+# the optimiser computes position multipliers for those stats too. Without
+# it the cache covered 52 of 88 skill stats and the rest had no positional
+# prior centre (review R015). Same XMETRICS_SOURCE switch as step 02.
+xm_source <- if (identical(Sys.getenv("XMETRICS_SOURCE"), "remote")) "remote" else "local"
+match_stats <- enrich_match_stats_with_xmetrics(match_stats, fail_if_missing_frac = 0.6,
+                                                source = xm_source)
+
 # 4. Run Optimization ----
 
 cat("\n=== Joint 2D Optimization (L-BFGS-B) ===\n")
