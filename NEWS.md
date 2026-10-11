@@ -1,3 +1,17 @@
+# panna 0.3.79
+
+## Four review fixes: coverage gate, keeper GSAA, shootout export, 04b resume (#292)
+
+- The events-coverage gate before step 10b's publish now checks the remote events a GHA runner actually
+  uses; before, every league counted as "not local yet" and the gate could never abort (R006).
+- Keeper GSAA is NA, not minus goals conceded, in matches whose on-target shots lack goalmouth
+  coordinates, and shooter placement and `goals_minus_xgot` exclude the same matches. Per-90s, including
+  SPM's, divide by the minutes of matches that are defined (`gsaa_minutes`, `placement_added_minutes`,
+  `xgot_goals`) (R013, R053).
+- Step 10d exports shootouts for every league; it used to stop at the first league with none (R020).
+- Step 04b refuses to resume an untagged pre-sign-flip window-target cache instead of stamping it as
+  current (R023).
+
 # panna 0.3.78
 
 ## Weekly PSR snapshots include current-season matches again (#291)

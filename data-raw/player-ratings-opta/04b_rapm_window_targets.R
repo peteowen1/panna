@@ -50,7 +50,9 @@ rapm_window_targets <- list()
 if (isTRUE(force_rebuild) && file.exists(output_path)) {
   cat(sprintf("force_rebuild = TRUE: ignoring existing %s\n", basename(output_path)))
 } else if (file.exists(output_path)) {
-  rapm_window_targets <- readRDS(output_path)
+  # Refuse an untagged (pre-flip) cache rather than re-stamping it below (R023).
+  rapm_window_targets <- .require_tagged_window_targets_for_resume(
+    readRDS(output_path), what = basename(output_path))
   cat(sprintf("resume: %d vintage(s) already in %s\n",
               length(rapm_window_targets), basename(output_path)))
 }

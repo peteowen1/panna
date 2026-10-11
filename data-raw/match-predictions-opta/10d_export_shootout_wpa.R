@@ -56,32 +56,43 @@ message(sprintf("\n=== Shootout WPA export: season %s ===", shootout_season))
 all_kicks <- list()
 all_lineups <- list()
 
+# Per-league loader. The early exits MUST be return() from THIS function.
+# They used to be return(NULL) inside a tryCatch inside the for loop below;
+# this file is source()d (run_predictions_opta.R), and under source() such a
+# return() unwinds the whole top-level for expression, so the first league with
+# no shootouts (UCL, usually) silently dropped every later league (review
+# R020/R021). Standalone Rscript hid it: there return() errors and is caught.
+# Returns NULL (nothing to add for this league) or list(kicks, lineups).
+.load_shootout_league <- function(league, league_season) {
+  events <- load_opta_match_events(league, season = league_season)
+  if (is.null(events) || nrow(events) < 100) return(NULL)
+  dt <- data.table::as.data.table(events)
+  if (!"period_id" %in% names(dt)) return(NULL)
+  k <- dt[period_id >= 5L & type_id %in% SO_OUTCOME_TYPE_IDS]
+  if (nrow(k) == 0L) {
+    message(sprintf("  %s %s: no shootouts", league, league_season))
+    return(NULL)
+  }
+  k[, scored := as.integer(type_id == 16L)]
+  k[, league := league]
+  lu <- tryCatch(load_opta_lineups(league, season = league_season),
+                 error = function(e) NULL)
+  message(sprintf("  %s %s: %d shootout kicks across %d matches",
+                  league, league_season, nrow(k), length(unique(k$match_id))))
+  list(kicks = k, lineups = lu)
+}
+
 for (league in blog_leagues) {
   league_season <- resolve_league_season(league, shootout_season,
                                           tournament_leagues = intl_tournaments)
   if (is.null(league_season)) next
 
-  res <- tryCatch({
-    events <- load_opta_match_events(league, season = league_season)
-    if (is.null(events) || nrow(events) < 100) return(NULL)
-    dt <- data.table::as.data.table(events)
-    if (!"period_id" %in% names(dt)) return(NULL)
-    k <- dt[period_id >= 5L & type_id %in% SO_OUTCOME_TYPE_IDS]
-    if (nrow(k) == 0L) {
-      message(sprintf("  %s %s: no shootouts", league, league_season))
-      return(NULL)
-    }
-    k[, scored := as.integer(type_id == 16L)]
-    k[, league := league]
-    lu <- tryCatch(load_opta_lineups(league, season = league_season),
-                   error = function(e) NULL)
-    message(sprintf("  %s %s: %d shootout kicks across %d matches",
-                    league, league_season, nrow(k), length(unique(k$match_id))))
-    list(kicks = k, lineups = lu)
-  }, error = function(e) {
-    cli_alert_warning("  {league} {league_season}: {e$message}")
-    NULL
-  })
+  res <- tryCatch(
+    .load_shootout_league(league, league_season),
+    error = function(e) {
+      cli_alert_warning("  {league} {league_season}: {e$message}")
+      NULL
+    })
 
   if (!is.null(res)) {
     all_kicks[[league]] <- res$kicks
