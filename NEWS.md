@@ -1,3 +1,24 @@
+# panna 0.3.89
+
+## Game logs: piero is called `piero` (#317)
+
+The game-log export renamed piero to `panna` and the raw EPV attack/defence split to `offense`/`defense`, the
+names of the decayed-xRAPM rating. It now ships `piero`, `epv_offensive`, `epv_defensive` and `piero_percentile`.
+A partial-league rebuild renames an older file's columns before merging. The blog reads both names during the
+switch (inthegame-blog#886).
+
+# panna 0.3.88
+
+## Game-log piero recomputed after the PSV calibration (#316)
+
+10b published each game's `panna` (piero) and `piero_value_p90` from the raw PSV, before the position
+calibration (keepers x0.529) and league offsets it applies to `psv`. Keepers' uncalibrated PSV went straight
+into piero: in 2024-25 their mean per-game value was +0.0024 published vs -0.0133 from the final PSV, and 6
+keepers were in the top 50 season totals (Schmeichel 5th) vs 0 once recomputed. Both columns, and the season
+percentile built on them, now come from the final `psv`; 10b logs the keepers' share of the top 20. Takes
+effect on the next full game-log rebuild (a partial-league rebuild keeps the old values for leagues it skips).
+Review R019.
+
 # panna 0.3.87
 
 ## SPM primary position: the position a player starts in, not "Substitute" (#315)
