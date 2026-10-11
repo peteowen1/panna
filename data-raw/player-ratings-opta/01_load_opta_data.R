@@ -295,6 +295,23 @@ for (league in leagues) {
       stats$league <- league
       stats$season <- season
 
+      # Summary events carry the match clock but no period_id, and the clock
+      # cannot say which half an event at 45:00-48:00 belongs to (review R009 /
+      # panna#300). Look the period up in the raw match events so splint
+      # creation can place goals, cards and subs on the continuous timeline.
+      events <- assign_event_period_id(events, .slice_season(lg_match_events, season))
+      if ("period_id" %in% names(events)) {
+        pid_cov <- mean(!is.na(events$period_id))
+        message(sprintf("    Event period_id coverage: %.2f%% of %d events", 100 * pid_cov, nrow(events)))
+        if (pid_cov < 0.99) {
+          warning(sprintf("%s: only %.1f%% of summary events have a period_id; the rest stay on the raw clock (R009)",
+                          label, 100 * pid_cov), call. = FALSE)
+        }
+      } else {
+        warning(sprintf("%s: no raw match events to derive event period_id from; events stay on the raw clock (R009)", label),
+                call. = FALSE)
+      }
+
       .stage_write(lineups, "lineups", label)
       .stage_write(events, "events", label)
       .stage_write(stats, "stats", label)

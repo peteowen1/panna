@@ -44,7 +44,10 @@ test_that("extract_player_timing_from_events cuts off_minute short at a red card
     player_id = NA_character_, minute = 90L, qualifier_json = NA_character_,
     stringsAsFactors = FALSE
   )
-  events <- rbind(formation, cards, match_end)
+  # p3's period-1 card is at 50:00 with no first-half end marker, so without
+  # this marker the continuous timeline would infer 5 min of stoppage (R009).
+  first_half_end <- transform(match_end, period_id = 1L, minute = 45L)
+  events <- rbind(formation, cards, first_half_end, match_end)
 
   result <- extract_player_timing_from_events(events)
 

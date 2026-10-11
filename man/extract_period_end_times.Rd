@@ -12,7 +12,13 @@ extract_period_end_times(match_events)
 }
 \value{
 Data frame with columns \code{match_id}, \code{first_half_end_time},
-\code{match_end_time}. Matches without markers are omitted.
+\code{match_end_time} (end of period 2), \code{extra_time_1_end_time} and
+\code{extra_time_2_end_time} (end of periods 3 and 4, \code{NA} when there was no
+extra time). All are on the RAW Opta clock, which restarts each period
+(period 2 at 45:00, period 3 at 90:00, period 4 at 105:00); splint creation
+moves them onto the continuous timeline. Where a period has events but no
+\code{type_id == 30} marker, the latest event clock in that period is used.
+Matches with no usable period are omitted.
 }
 \description{
 Opta marks the actual final whistle of each period with \code{type_id == 30}

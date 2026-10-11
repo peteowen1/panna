@@ -32,9 +32,13 @@ qualifier 131 = position number (1-11 = starter, 0 = bench).
 \item Sub on: \code{type_id == 19} (Player On).
 \item Sub off: \code{type_id == 18} (Player Off).
 \item Red card off: \code{type_id == 17} (Card) with qualifier 33 (straight red) or 32 (second yellow).
-\item Match end: \code{type_id == 30} with \code{period_id == 2} (used as default off_minute
-for finishers who never came off).
+\item Match end: the \code{type_id == 30} marker of the last period (2, or 3/4 after
+extra time), used as default off_minute for finishers who never came off.
 }
+
+All times are on the continuous match timeline: period >= 2 clock values are
+shifted by the cumulative stoppage of earlier periods (period 2 starts at the
+first-half end, not 45:00), see \code{period_clock_map()}.
 
 Why this beats lineups: Opta records \code{minutes_played = 90} for unsubstituted
 finishers regardless of stoppage time, and rounds sub timing to whole minutes.

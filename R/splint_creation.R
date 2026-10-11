@@ -130,6 +130,266 @@ calculate_effective_minute <- function(minute, added_time, first_half_stoppage =
 }
 
 
+# ---- Continuous match timeline (review R009 / panna#300) -------------------
+#
+# Opta's match clock restarts at each period: period 2 starts at 45:00 however
+# long first-half stoppage ran, period 3 at 90:00 and period 4 at 105:00. So
+# clock 45:00 to ~48:00 exists twice (first-half stoppage AND the opening
+# minutes of the second half). The splint pipeline works on ONE continuous
+# timeline instead: every clock value in period p >= 2 is shifted by the
+# cumulative overrun of the earlier periods, so period 2 starts where period 1
+# actually ended.
+
+# Nominal raw-clock start/end of periods 1..5 (5 = penalty shootout, which has
+# no clock of its own and simply inherits the period-4 shift).
+.PERIOD_NOMINAL_START <- c(0, 45, 90, 105, 120)
+.PERIOD_NOMINAL_END   <- c(45, 90, 105, 120, 120)
+
+#' Per-match map from raw Opta clock to the continuous timeline
+#'
+#' @param ends Numeric length-4 vector: raw-clock end of periods 1..4 (the
+#'   type-30 marker, or the latest event clock when the marker is missing).
+#'   `NA` means the period is unknown; it then contributes no overrun.
+#'
+#' @return List with, for periods 1..5: `offset` (add to the raw clock),
+#'   `start` (continuous start of the period; used to clamp float error) and,
+#'   for periods 1..4, `end` (continuous end, `NA` when the period is unknown).
+#' @keywords internal
+period_clock_map <- function(ends) {
+  ends <- c(as.numeric(ends), rep(NA_real_, 4))[1:4]
+  offset <- numeric(5)
+  start  <- numeric(5)
+  cont_end <- rep(NA_real_, 4)
+  for (p in 1:4) {
+    e <- if (is.na(ends[p])) .PERIOD_NOMINAL_END[p] else max(ends[p], .PERIOD_NOMINAL_END[p])
+    this_end <- e + offset[p]
+    if (!is.na(ends[p])) cont_end[p] <- this_end
+    start[p + 1]  <- this_end
+    offset[p + 1] <- this_end - .PERIOD_NOMINAL_START[p + 1]
+  }
+  list(offset = offset, start = start, end = cont_end)
+}
+
+#' Shift raw Opta clock values onto the continuous timeline
+#'
+#' @param clock Numeric raw clock (minutes).
+#' @param period_id Integer period of each value; `NA` or outside 1..5 leaves
+#'   the value unshifted.
+#' @param map Output of [period_clock_map()].
+#' @keywords internal
+shift_to_continuous_clock <- function(clock, period_id, map) {
+  p <- suppressWarnings(as.integer(period_id))
+  ok <- !is.na(p) & p >= 1L & p <= 5L & !is.na(clock)
+  out <- as.numeric(clock)
+  # pmax() with the period's continuous start removes float error for an
+  # event at exactly the restart clock (raw 45:00 -> start of period 2).
+  out[ok] <- pmax(out[ok] + map$offset[p[ok]], map$start[p[ok]])
+  out
+}
+
+#' Raw-clock period ends per match from Opta events
+#'
+#' Marker (`type_id == 30`) where present, otherwise the latest event clock in
+#' that period. Only periods 1..4 are used.
+#'
+#' @param dt data.table with `match_id`, `type_id`, `period_id`, `clock`.
+#' @return data.table with `match_id` and `e1`..`e4`, or `NULL` if no usable rows.
+#' @keywords internal
+.match_period_ends <- function(dt) {
+  d <- dt[!is.na(period_id) & period_id %in% 1:4 & !is.na(clock)]
+  if (nrow(d) == 0) return(NULL)
+  marker <- d[type_id == 30, .(marker_end = max(clock)), by = .(match_id, period_id)]
+  seen   <- d[, .(seen_end = max(clock)), by = .(match_id, period_id)]
+  m <- merge(seen, marker, by = c("match_id", "period_id"), all.x = TRUE)
+  m[, end := data.table::fcoalesce(marker_end, seen_end)]
+  m[, period_id := as.integer(period_id)]
+  wide <- data.table::dcast(m, match_id ~ period_id, value.var = "end")
+  for (p in 1:4) {
+    nm <- as.character(p)
+    if (!nm %in% names(wide)) wide[, (nm) := NA_real_]
+  }
+  data.table::setnames(wide, as.character(1:4), paste0("e", 1:4))
+  wide[, .(match_id, e1, e2, e3, e4)]
+}
+
+#' Long table of per-match period clock maps
+#' @param ends data.table from [.match_period_ends()].
+#' @return data.table `match_id`, `period_id` (1..5), `offset`, `start`, plus
+#'   `match_end` repeated per row: the continuous end of the last known period
+#'   among 2..4 (`NA` if none).
+#' @keywords internal
+.period_maps_long <- function(ends) {
+  data.table::rbindlist(lapply(seq_len(nrow(ends)), function(i) {
+    mp <- period_clock_map(unlist(ends[i, .(e1, e2, e3, e4)], use.names = FALSE))
+    ce <- mp$end[2:4]
+    data.table::data.table(
+      match_id = ends$match_id[i], period_id = 1:5,
+      offset = mp$offset, start = mp$start,
+      match_end = if (all(is.na(ce))) NA_real_ else max(ce, na.rm = TRUE)
+    )
+  }))
+}
+
+
+#' Move one match's events and shots onto the continuous timeline
+#'
+#' Resolves the raw-clock end of periods 1..4 (results markers first, then the
+#' latest event/shot clock seen in that period), builds the clock map, and
+#' shifts:
+#' * events: adds `event_clock` (minute + added_time on the continuous
+#'   timeline); `minute` and `added_time` stay raw;
+#' * shots: replaces `minute` with the continuous-timeline value.
+#'
+#' Inactive (everything returned unchanged, `active = FALSE`) when neither
+#' events nor shots carry `period_id`: legacy FBref-shaped inputs keep the raw
+#' clock and the older `calculate_effective_minute()` fallback.
+#'
+#' @return List with `events`, `shooting`, `active`, `map`, `first_half_end`
+#'   and `match_end` (continuous timeline, `NULL` when unknown).
+#' @keywords internal
+.apply_continuous_timeline <- function(events, shooting, results) {
+  has_period <- function(x) !is.null(x) && nrow(x) > 0 && "period_id" %in% names(x) &&
+    any(!is.na(x$period_id))
+  ev_ok <- has_period(events)
+  sh_ok <- has_period(shooting)
+  inactive <- list(events = events, shooting = shooting, active = FALSE,
+                   map = period_clock_map(rep(NA_real_, 4)),
+                   first_half_end = NULL, match_end = NULL)
+  if (!ev_ok && !sh_ok) return(inactive)
+
+  if (!is.null(shooting) && nrow(shooting) > 0 && !sh_ok) {
+    cli::cli_warn(c(
+      "Shots have no {.field period_id}; their clock is left on the raw Opta clock.",
+      "i" = "Events are on the continuous timeline, so shots after half-time would be mis-assigned (review R009)."
+    ), .frequency = "once", .frequency_id = "panna_shots_no_period_id")
+  }
+
+  # Raw-clock period ends: markers from results (periods 1..4), else the
+  # latest event/shot clock seen in that period.
+  col_for <- c("first_half_end_time", "match_end_time",
+               "extra_time_1_end_time", "extra_time_2_end_time")
+  ends <- rep(NA_real_, 4)
+  if (!is.null(results) && nrow(results) > 0) {
+    for (p in 1:4) {
+      if (col_for[p] %in% names(results)) {
+        v <- suppressWarnings(as.numeric(results[[col_for[p]]][1]))
+        if (!is.na(v) && v > 0) ends[p] <- v
+      }
+    }
+  }
+  seen <- rep(NA_real_, 4)
+  if (ev_ok) {
+    added <- if ("added_time" %in% names(events)) ifelse(is.na(events$added_time), 0, events$added_time) else 0
+    clock <- as.numeric(events$minute) + added
+    for (p in 1:4) {
+      i <- which(events$period_id == p & !is.na(clock))
+      if (length(i)) seen[p] <- max(seen[p], max(clock[i]), na.rm = TRUE)
+    }
+  }
+  if (sh_ok) {
+    clock <- as.numeric(shooting$minute)
+    for (p in 1:4) {
+      i <- which(shooting$period_id == p & !is.na(clock))
+      if (length(i)) seen[p] <- max(seen[p], max(clock[i]), na.rm = TRUE)
+    }
+  }
+  ends <- ifelse(is.na(ends), seen, ends)
+  map <- period_clock_map(ends)
+
+  if (ev_ok) {
+    added <- if ("added_time" %in% names(events)) ifelse(is.na(events$added_time), 0, events$added_time) else 0
+    events$event_clock <- shift_to_continuous_clock(
+      as.numeric(events$minute) + added, events$period_id, map)
+  }
+  if (sh_ok) {
+    shooting$minute <- shift_to_continuous_clock(shooting$minute, shooting$period_id, map)
+  }
+
+  last_end <- map$end[2:4]
+  list(
+    events = events, shooting = shooting, active = TRUE, map = map,
+    first_half_end = if (is.na(map$end[1])) NULL else map$end[1],
+    match_end = if (all(is.na(last_end))) NULL else max(last_end, na.rm = TRUE)
+  )
+}
+
+
+#' Attach `period_id` to Opta summary events (goals, cards, substitutions)
+#'
+#' The summary events table (`load_opta_events()`) has the match clock but no
+#' `period_id`, and the clock alone cannot say which half an event belongs to
+#' in the 45:00 to first-half-end overlap (review R009 / panna#300). The raw
+#' match events do carry it, so look it up there: goals are `type_id == 16`,
+#' cards `17`, substitutions `19` (player on), matched on
+#' `(match_id, minute, second, player_id)`.
+#'
+#' Events with no raw match are placed by the clock only where that is
+#' unambiguous (before 45:00 is period 1; after the period-1 end, with no extra
+#' time, is period 2). Anything else is left `NA`, and splint creation then
+#' keeps that event on the raw clock rather than guessing.
+#'
+#' @param events Summary events with `match_id`, `event_type`, `minute`, and
+#'   optionally `second`, `player_id`, `player_on_id`.
+#' @param match_events Raw Opta match events with `match_id`, `type_id`,
+#'   `period_id`, `minute`, `second`, `player_id`.
+#' @return `events` with an integer `period_id` column (unchanged, and with no
+#'   `period_id`, if `match_events` is missing or lacks required columns).
+#' @keywords internal
+assign_event_period_id <- function(events, match_events) {
+  if (is.null(events) || nrow(events) == 0 || is.null(match_events) || nrow(match_events) == 0) {
+    return(events)
+  }
+  needed <- c("match_id", "type_id", "period_id", "minute", "player_id")
+  if (!all(needed %in% names(match_events)) || !all(c("match_id", "event_type", "minute") %in% names(events))) {
+    return(events)
+  }
+  ev <- data.table::as.data.table(events)
+  raw <- data.table::data.table(
+    match_id = as.character(match_events$match_id),
+    type_id = as.integer(match_events$type_id),
+    period_id = as.integer(match_events$period_id),
+    minute = as.integer(match_events$minute),
+    second = if ("second" %in% names(match_events)) as.integer(match_events$second) else 0L,
+    player_id = as.character(match_events$player_id)
+  )
+  key_tbl <- raw[type_id %in% c(16L, 17L, 19L) & period_id %in% 1:5,
+                 .(match_id, minute, second, player_id, period_id)]
+  key_tbl <- unique(key_tbl, by = c("match_id", "minute", "second", "player_id"))
+
+  sec <- if ("second" %in% names(ev)) as.integer(ev$second) else rep(0L, nrow(ev))
+  on_id <- if ("player_on_id" %in% names(ev)) as.character(ev$player_on_id) else rep(NA_character_, nrow(ev))
+  pid <- if ("player_id" %in% names(ev)) as.character(ev$player_id) else rep(NA_character_, nrow(ev))
+  look <- data.table::data.table(
+    .row = seq_len(nrow(ev)), match_id = as.character(ev$match_id),
+    minute = as.integer(ev$minute), second = sec,
+    player_id = data.table::fifelse(ev$event_type == "substitution", on_id, pid)
+  )
+  look[key_tbl, period_id := i.period_id,
+       on = c("match_id", "minute", "second", "player_id")]
+
+  # Clock-only placement for the rest, where unambiguous.
+  miss <- which(is.na(look$period_id))
+  if (length(miss) > 0) {
+    ends <- .match_period_ends(raw[, .(match_id, type_id, period_id,
+                                       clock = minute + second / 60)])
+    e1 <- e3 <- stats::setNames(rep(NA_real_, 0), character(0))
+    if (!is.null(ends)) {
+      e1 <- stats::setNames(ends$e1, ends$match_id)
+      e3 <- stats::setNames(ends$e3, ends$match_id)
+    }
+    mm <- look$match_id[miss]
+    clk <- look$minute[miss] + look$second[miss] / 60
+    guess <- rep(NA_integer_, length(miss))
+    guess[which(look$minute[miss] < 45)] <- 1L
+    after_p1 <- which(is.na(guess) & !is.na(e1[mm]) & clk > e1[mm] & is.na(e3[mm]))
+    guess[after_p1] <- 2L
+    look$period_id[miss] <- guess
+  }
+  events$period_id <- look$period_id
+  events
+}
+
+
 #' Get first-half stoppage time from events
 #'
 #' Finds the maximum added_time for events at minute 45.
@@ -613,6 +873,15 @@ create_match_splints_fast <- function(match_id, events, lineups, shooting, resul
                                        min_splint_duration = 5) {
   current_match_id <- match_id
 
+  # Continuous timeline (review R009 / panna#300). Events and shots carry
+  # `period_id` and the raw Opta clock; lineups already hold chain-derived
+  # on/off times on the continuous timeline (extract_player_timing_from_events).
+  # Shift events and shots here, once, so goal/sub/red boundaries, shot
+  # assignment and the hard boundaries all share one axis.
+  period_shift <- .apply_continuous_timeline(events, shooting, results)
+  events <- period_shift$events
+  shooting <- period_shift$shooting
+
   # Get match info
   info_cols <- c("match_id", "season", "home_team", "away_team")
   if (!is.null(results) && "league" %in% names(results)) info_cols <- c(info_cols, "league")
@@ -702,6 +971,13 @@ create_match_splints_fast <- function(match_id, events, lineups, shooting, resul
     val <- results$match_end_time[1]
     if (!is.na(val) && val > 0) val else NULL
   } else NULL
+  if (period_shift$active) {
+    # Period-aware data: the overrides above are RAW clock values. Use the
+    # continuous-timeline equivalents (period 1 ends at its raw clock; the
+    # match ends at the continuous end of the last known period).
+    fh_end_override <- period_shift$first_half_end
+    match_end_override <- period_shift$match_end
+  }
 
   # Create splint boundaries with derived goal/sub/red card times
   # Pass shooting data for more accurate match end timing
@@ -719,6 +995,10 @@ create_match_splints_fast <- function(match_id, events, lineups, shooting, resul
     min_splint_duration = min_splint_duration
   )
   boundaries$match_id <- current_match_id
+  # Per-match raw-clock -> continuous-timeline shifts for periods 2..5, so
+  # per-action streams on the raw clock (EPV/WPA, add_value_metrics_to_splints)
+  # can be cut on the same axis.
+  for (p in 2:5) boundaries[[paste0("period_shift_", p)]] <- period_shift$map$offset[p]
 
   # Add league/season to boundaries
   if (!is.null(results) && nrow(results) > 0) {
@@ -800,6 +1080,11 @@ create_splint_boundaries_fast <- function(events, shots = NULL, include_goals = 
       rep(0, nrow(events))
     }
     event_time <- events$minute + added_safe
+    # Period-aware events (see .apply_continuous_timeline) carry the same
+    # time on the continuous timeline; use it instead of the raw clock.
+    if ("event_clock" %in% names(events)) {
+      event_time <- ifelse(is.na(events$event_clock), event_time, events$event_clock)
+    }
 
     # Substitutions from events (handle multiple event type formats)
     if ("is_sub" %in% names(events) || "event_type" %in% names(events)) {
@@ -1136,7 +1421,8 @@ get_splint_players <- function(splint_data, splint_id) {
 #' @param match_results Data frame with home_team, away_team, team_id mapping
 #'
 #' @return Data frame with columns: match_id, minute, added_time, event_type,
-#'   is_goal, is_sub, is_red_card, is_home, player_id, player_name
+#'   is_goal, is_sub, is_red_card, is_home, player_id, player_name, and
+#'   period_id when the input has it.
 #'
 #' @keywords internal
 prepare_opta_events_for_splints <- function(opta_events, match_results = NULL) {
@@ -1151,7 +1437,8 @@ prepare_opta_events_for_splints <- function(opta_events, match_results = NULL) {
       is_red_card = logical(0),
       is_home = logical(0),
       player_id = character(0),
-      player_name = character(0)
+      player_name = character(0),
+      period_id = integer(0)
     ))
   }
 
@@ -1183,6 +1470,9 @@ prepare_opta_events_for_splints <- function(opta_events, match_results = NULL) {
   out_cols <- c("match_id", "minute", "added_time", "event_type",
                 "is_goal", "is_sub", "is_red_card", "is_home",
                 "player_id", "player_name")
+  # period_id is needed to move period >= 2 clock values onto the continuous
+  # timeline (R009); absent in legacy inputs, which then keep the raw clock.
+  if ("period_id" %in% names(events)) out_cols <- c(out_cols, "period_id")
   events[, out_cols, drop = FALSE]
 }
 
@@ -1357,6 +1647,7 @@ prepare_opta_shots_for_splints <- function(opta_shot_events, use_goals_as_xg = F
 
   out_cols <- c("match_id", "minute", "team", "player_id", "player_name",
                 "xg", "is_goal", "is_penalty")
+  if ("period_id" %in% names(shots)) out_cols <- c(out_cols, "period_id")
   shots[, out_cols, drop = FALSE]
 }
 
@@ -1450,8 +1741,12 @@ create_opta_processed_data <- function(opta_lineups, opta_events = NULL,
 #' - Sub on: `type_id == 19` (Player On).
 #' - Sub off: `type_id == 18` (Player Off).
 #' - Red card off: `type_id == 17` (Card) with qualifier 33 (straight red) or 32 (second yellow).
-#' - Match end: `type_id == 30` with `period_id == 2` (used as default off_minute
-#'   for finishers who never came off).
+#' - Match end: the `type_id == 30` marker of the last period (2, or 3/4 after
+#'   extra time), used as default off_minute for finishers who never came off.
+#'
+#' All times are on the continuous match timeline: period >= 2 clock values are
+#' shifted by the cumulative stoppage of earlier periods (period 2 starts at the
+#' first-half end, not 45:00), see `period_clock_map()`.
 #'
 #' Why this beats lineups: Opta records `minutes_played = 90` for unsubstituted
 #' finishers regardless of stoppage time, and rounds sub timing to whole minutes.
@@ -1485,9 +1780,23 @@ extract_player_timing_from_events <- function(match_events) {
   )]
   dt[, eff_minute := minute_num + second_num / 60]
 
-  # 1) Match end per match (period 2 type_id == 30)
-  match_end_dt <- dt[type_id == 30 & period_id == 2,
-                     .(match_end = max(eff_minute, na.rm = TRUE)), by = match_id]
+  # Continuous timeline (R009): Opta's period-2 clock restarts at 45:00 however
+  # long first-half stoppage ran, so move every period >= 2 clock value onto
+  # one timeline shifted by the earlier periods' overrun. This must match the
+  # shift applied to events and shots in create_match_splints_fast().
+  period_ends <- .match_period_ends(
+    dt[, .(match_id, type_id, period_id = as.integer(period_id), clock = eff_minute)])
+  match_end_dt <- data.table::data.table(match_id = character(0), match_end = numeric(0))
+  if (!is.null(period_ends)) {
+    maps <- .period_maps_long(period_ends)
+    dt[, period_id_int := suppressWarnings(as.integer(period_id))]
+    dt[maps, `:=`(.shift = i.offset, .pstart = i.start),
+       on = c("match_id", period_id_int = "period_id")]
+    dt[, eff_minute := data.table::fifelse(
+      is.na(.shift), eff_minute, pmax(eff_minute + .shift, .pstart))]
+    # 1) Match end per match: continuous end of the last known period (2..4)
+    match_end_dt <- unique(maps[!is.na(match_end), .(match_id, match_end)])
+  }
 
   # 2) Starting squads from type_id == 34 (formation events)
   formations <- dt[type_id == 34, .(match_id, team_id, qualifier_json)]
@@ -1580,50 +1889,44 @@ extract_player_timing_from_events <- function(match_events) {
 #' @param match_events Raw Opta match-events data frame with columns
 #'   `match_id`, `type_id`, `period_id`, `minute`, and (optionally) `second`.
 #' @return Data frame with columns `match_id`, `first_half_end_time`,
-#'   `match_end_time`. Matches without markers are omitted.
+#'   `match_end_time` (end of period 2), `extra_time_1_end_time` and
+#'   `extra_time_2_end_time` (end of periods 3 and 4, `NA` when there was no
+#'   extra time). All are on the RAW Opta clock, which restarts each period
+#'   (period 2 at 45:00, period 3 at 90:00, period 4 at 105:00); splint creation
+#'   moves them onto the continuous timeline. Where a period has events but no
+#'   `type_id == 30` marker, the latest event clock in that period is used.
+#'   Matches with no usable period are omitted.
 #' @family rapm
 #' @export
 extract_period_end_times <- function(match_events) {
-  if (is.null(match_events) || nrow(match_events) == 0) {
-    return(data.frame(
-      match_id = character(0),
-      first_half_end_time = numeric(0),
-      match_end_time = numeric(0)
-    ))
-  }
+  empty <- data.frame(
+    match_id = character(0),
+    first_half_end_time = numeric(0),
+    match_end_time = numeric(0),
+    extra_time_1_end_time = numeric(0),
+    extra_time_2_end_time = numeric(0)
+  )
+  if (is.null(match_events) || nrow(match_events) == 0) return(empty)
   needed <- c("match_id", "type_id", "period_id", "minute")
   missing <- setdiff(needed, names(match_events))
   if (length(missing) > 0) {
     cli::cli_warn("extract_period_end_times: missing column{?s} {.field {missing}} - returning empty result.")
-    return(data.frame(
-      match_id = character(0),
-      first_half_end_time = numeric(0),
-      match_end_time = numeric(0)
-    ))
+    return(empty)
   }
   dt <- data.table::as.data.table(match_events)
-  dt <- dt[type_id == 30 & period_id %in% c(1, 2),
-           .(match_id, period_id,
-             minute = as.numeric(minute),
-             second = if ("second" %in% names(dt)) as.numeric(second) else 0)]
-  if (nrow(dt) == 0) {
-    return(data.frame(
-      match_id = character(0),
-      first_half_end_time = numeric(0),
-      match_end_time = numeric(0)
-    ))
-  }
-  dt[, end_time := minute + second / 60]
-  agg <- dt[, .(end_time = max(end_time, na.rm = TRUE)),
-            by = .(match_id, period_id)]
-  wide <- data.table::dcast(agg, match_id ~ period_id, value.var = "end_time")
-  out <- data.frame(
-    match_id = wide$match_id,
-    first_half_end_time = if ("1" %in% names(wide)) wide[["1"]] else NA_real_,
-    match_end_time      = if ("2" %in% names(wide)) wide[["2"]] else NA_real_,
+  dt <- dt[, .(match_id, type_id, period_id,
+               clock = as.numeric(minute) +
+                 (if ("second" %in% names(dt)) as.numeric(second) else 0) / 60)]
+  ends <- .match_period_ends(dt)
+  if (is.null(ends)) return(empty)
+  data.frame(
+    match_id = ends$match_id,
+    first_half_end_time = ends$e1,
+    match_end_time = ends$e2,
+    extra_time_1_end_time = ends$e3,
+    extra_time_2_end_time = ends$e4,
     stringsAsFactors = FALSE
   )
-  out
 }
 
 

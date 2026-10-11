@@ -78,6 +78,57 @@ add_value_metrics_to_splints <- function(splint_data,
   # into another's actions; a stream match_id absent from `splints` (e.g.
   # filtered upstream) simply attributes nowhere rather than guessing.
   bd <- sid <- n_splints_by_match <- NULL
+  # Raw-clock -> continuous-timeline shift per match and period (review R009).
+  # create_match_splints_fast() records it on every splint row as
+  # period_shift_2..5; the streams below carry the RAW Opta clock in
+  # time_seconds (period 2 restarts at 2700 s), so they must be shifted the
+  # same way before being cut at the (continuous-timeline) splint boundaries.
+  shift_cols <- paste0("period_shift_", 2:5)
+  have_shift <- all(shift_cols %in% names(splints))
+  shift_tbl <- NULL
+  if (need_boundaries && have_shift && nrow(splints) > 0) {
+    shift_tbl <- unique(splints[, c("match_id", shift_cols), with = FALSE])
+    shift_tbl[, match_id := as.character(match_id)]
+    shift_tbl <- shift_tbl[, .SD[1], by = match_id]
+  }
+  # Adds `action_minute` (continuous timeline) to a stream with match_id,
+  # period_id and time_seconds.
+  .stream_action_minute <- function(dt, what) {
+    if (is.null(shift_tbl)) {
+      if (need_boundaries && nrow(splints) > 0) {
+        cli::cli_warn(c(
+          "{.arg splint_data$splints} has no {.field period_shift_*} columns; the {what} stream is cut on the raw Opta clock.",
+          "i" = "These splints predate the continuous timeline (review R009); rebuild them."
+        ), .frequency = "once", .frequency_id = "panna_splints_no_period_shift")
+      }
+      dt[, action_minute := time_seconds / 60]
+      return(dt)
+    }
+    if (!"period_id" %in% names(dt)) {
+      if (!any(unlist(shift_tbl[, ..shift_cols]) != 0, na.rm = TRUE)) {
+        dt[, action_minute := time_seconds / 60]  # no match has a shift: raw == continuous
+        return(dt)
+      }
+      cli::cli_abort(c(
+        "{.arg {what}} needs a {.field period_id} column.",
+        "i" = "Splints are on the continuous timeline, whose period-2 start is not 45:00; a bare time_seconds cannot be placed on it."
+      ))
+    }
+    dt[shift_tbl, `:=`(.s2 = i.period_shift_2, .s3 = i.period_shift_3,
+                       .s4 = i.period_shift_4, .s5 = i.period_shift_5),
+       on = "match_id"]
+    dt[, action_minute := time_seconds / 60 +
+         data.table::fcase(period_id == 2L, data.table::fcoalesce(.s2, 0),
+                           period_id == 3L, data.table::fcoalesce(.s3, 0),
+                           period_id == 4L, data.table::fcoalesce(.s4, 0),
+                           period_id == 5L, data.table::fcoalesce(.s5, 0),
+                           default = 0)]
+    # An action at the exact restart clock must not fall one float-ulp below
+    # the boundary that was built from the same number.
+    dt[period_id >= 2L, action_minute := action_minute + 1e-9]
+    dt[, c(".s2", ".s3", ".s4", ".s5") := NULL]
+    dt
+  }
   if (need_boundaries) {
     bnd <- splints[, .(match_id = as.character(match_id), splint_id, start_minute)]
     data.table::setorder(bnd, match_id, start_minute)
@@ -124,7 +175,7 @@ add_value_metrics_to_splints <- function(splint_data,
     if (length(missing_cols) > 0) {
       cli::cli_abort("{.arg player_action_epv} missing column{?s}: {.field {missing_cols}}")
     }
-    epv_dt <- epv_dt[, required, with = FALSE]
+    epv_dt <- epv_dt[, intersect(c(required, "period_id"), names(epv_dt)), with = FALSE]
     epv_dt[, match_id := as.character(match_id)]
     epv_dt <- epv_dt[!is.na(match_id) & match_id %in% names(bd)]
 
@@ -132,7 +183,7 @@ add_value_metrics_to_splints <- function(splint_data,
     splints[, epv_away := 0]
 
     if (nrow(epv_dt) > 0) {
-      epv_dt[, action_minute := time_seconds / 60]
+      epv_dt <- .stream_action_minute(epv_dt, "player_action_epv")
       epv_dt <- .cut_to_splints(epv_dt)
       epv_dt <- epv_dt[!is.na(splint_id)]
 
@@ -201,14 +252,14 @@ add_value_metrics_to_splints <- function(splint_data,
     if (length(missing_cols) > 0) {
       cli::cli_abort("{.arg match_action_wpa} missing column{?s}: {.field {missing_cols}}")
     }
-    wpa_dt <- wpa_dt[, required, with = FALSE]
+    wpa_dt <- wpa_dt[, intersect(c(required, "period_id"), names(wpa_dt)), with = FALSE]
     wpa_dt[, match_id := as.character(match_id)]
     wpa_dt <- wpa_dt[!is.na(match_id) & match_id %in% names(bd)]
 
     splints[, wpa_home := 0]
 
     if (nrow(wpa_dt) > 0) {
-      wpa_dt[, action_minute := time_seconds / 60]
+      wpa_dt <- .stream_action_minute(wpa_dt, "match_action_wpa")
       wpa_dt <- .cut_to_splints(wpa_dt)
       wpa_dt <- wpa_dt[!is.na(splint_id)]
 

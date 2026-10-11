@@ -1512,7 +1512,9 @@ aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0,
 #'
 #' @return Data frame with one row per shot containing:
 #'   \itemize{
-#'     \item match_id, minute, team, player_id, player_name
+#'     \item match_id, minute (raw Opta clock, floor of whole minutes), team,
+#'       player_id, player_name, and period_id (so splint creation can place the
+#'       shot on the continuous timeline)
 #'     \item xg: Model-predicted xG (penalties overridden to \code{PENALTY_XG})
 #'     \item is_goal: Whether the shot resulted in a goal
 #'     \item is_penalty: Whether the shot was a penalty
@@ -1574,6 +1576,10 @@ extract_shots_from_spadl <- function(spadl, lineups) {
     is_goal = shots$result == "success",
     is_penalty = is_pen
   )
+  # `minute` is the RAW Opta clock, which restarts at 45:00 in period 2.
+  # period_id lets create_match_splints_fast() move it onto the continuous
+  # match timeline (review R009 / panna#300).
+  if ("period_id" %in% names(shots)) result$period_id <- shots$period_id
 
   cli::cli_alert_success(
     "Extracted {nrow(result)} shots from SPADL (mean xG: {round(mean(result$xg, na.rm = TRUE), 3)})"

@@ -13,7 +13,8 @@ prepare_opta_events_for_splints(opta_events, match_results = NULL)
 }
 \value{
 Data frame with columns: match_id, minute, added_time, event_type,
-is_goal, is_sub, is_red_card, is_home, player_id, player_name
+is_goal, is_sub, is_red_card, is_home, player_id, player_name, and
+period_id when the input has it.
 }
 \description{
 Converts Opta event data to the format expected by splint creation functions.

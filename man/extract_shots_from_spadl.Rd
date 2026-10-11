@@ -15,7 +15,9 @@ extract_shots_from_spadl(spadl, lineups)
 \value{
 Data frame with one row per shot containing:
 \itemize{
-\item match_id, minute, team, player_id, player_name
+\item match_id, minute (raw Opta clock, floor of whole minutes), team,
+player_id, player_name, and period_id (so splint creation can place the
+shot on the continuous timeline)
 \item xg: Model-predicted xG (penalties overridden to \code{PENALTY_XG})
 \item is_goal: Whether the shot resulted in a goal
 \item is_penalty: Whether the shot was a penalty
