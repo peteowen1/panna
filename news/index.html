@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.86</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.87</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,6 +39,13 @@
       <small>Source: <a href="https://github.com/peteowen1/panna/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.87" id="panna-0387">panna 0.3.87<a class="anchor" aria-label="anchor" href="#panna-0387"></a></h2>
+<div class="section level3">
+<h3 id="spm-primary-position-the-position-a-player-starts-in-not-substitute-0-3-87">SPM primary position: the position a player starts in, not “Substitute” (<a href="https://github.com/peteowen1/panna/issues/315" class="external-link">#315</a>)<a class="anchor" aria-label="anchor" href="#spm-primary-position-the-position-a-player-starts-in-not-substitute-0-3-87"></a></h3>
+<p><code><a href="../reference/aggregate_opta_stats.html">aggregate_opta_stats()</a></code> and the S6 panel took each player’s most common lineup <code>position</code>, and every bench row reads “Substitute”. In 2024-25 that made “Substitute” the primary position of 53% of EPL and 57% of La Liga players, so they got no position dummy, and half the keepers who started in goal (21 of 42 EPL, 22 of 44 La Liga) were not flagged <code>is_gk</code>. Both now use <code><a href="../reference/dot-spm_primary_position.html">.spm_primary_position()</a></code>: the most common position over games the player started. Wing Back now sets <code>is_df</code>. A refit with this change (steps 5-7, nothing published) moves seasonal SPM very little (correlation 0.999 with production; next-season RAPM correlation 0.4355 -&gt; 0.4363), so this is a correctness fix rather than an accuracy gain. The S6 panel (<code>spm_panel.rds</code>) picks it up when it is next rebuilt with <code>04c_build_spm_panel.R</code>. Review R010.</p>
+</div>
+</div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.86" id="panna-0386">panna 0.3.86<a class="anchor" aria-label="anchor" href="#panna-0386"></a></h2>
 <div class="section level3">
