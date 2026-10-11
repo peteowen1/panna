@@ -155,6 +155,39 @@ jobs:
             exit 1
           fi
 
+      # Step 01 in its OWN R process. Run in the same process as 8b it left
+      # RSS at 7.5 GB (R heap 185 MB: freed memory is not returned to the OS),
+      # and the full rebuild on top of that was OOM-killed at 6.5 min
+      # (run 38112678510). A separate Rscript hands the memory back.
+      - name: Rebuild match stats (skills step 01)
+        env:
+          PANNADATA_DIR: ${{ runner.temp }}/pannadata
+          GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
+        run: |
+          cat > /tmp/run_step01.R << 'EOF'
+          pannadata_path <- Sys.getenv("PANNADATA_DIR", "../pannadata/data")
+          opta_path <- file.path(pannadata_path, "opta")
+          devtools::load_all()
+          pannadata_dir(pannadata_path)
+          opta_data_dir(opta_path)
+          run_steps <- list(
+            step_01_compute_match_stats    = TRUE,
+            step_02_estimate_skills        = FALSE,
+            step_02b_optimize_params       = FALSE,
+            step_03_skill_spm              = FALSE,
+            step_04_skill_xrapm            = FALSE,
+            step_05_skill_panna_ratings    = FALSE,
+            step_06_seasonal_skill_ratings = FALSE,
+            step_07_train_psr_model        = FALSE,
+            step_08_export_skills          = FALSE,
+            step_08b_export_psr_weekly     = FALSE,
+            step_09_career_panna           = FALSE
+          )
+          source("data-raw/estimated-skills/run_skills_pipeline.R")
+          EOF
+          Rscript /tmp/run_step01.R
+          test -f data-raw/cache-skills/01_match_stats.rds || { echo "FATAL: step 01 wrote no 01_match_stats.rds"; exit 1; }
+
       - name: Export weekly PSR snapshots
         env:
           PANNADATA_DIR: ${{ runner.temp }}/pannadata
@@ -180,11 +213,10 @@ jobs:
           # (career_panna, 8.5 <= 9), which lacks its cache-opta prerequisites
           # here and failed silently every week. Preset run_steps explicitly
           # (run_skills_pipeline.R only builds it if it doesn't exist).
-          # Step 01 first: it rebuilds 01_match_stats.rds from the fresh
-          # opta_player_stats (~6 min, ~0.4 GB on run 38036435673). 08b then
+          # Match stats were rebuilt by the step above (own process); 08b
           # refuses a match-stats table that is more than a few weeks old.
           run_steps <- list(
-            step_01_compute_match_stats    = TRUE,
+            step_01_compute_match_stats    = FALSE,
             step_02_estimate_skills        = FALSE,
             step_02b_optimize_params       = FALSE,
             step_03_skill_spm              = FALSE,
