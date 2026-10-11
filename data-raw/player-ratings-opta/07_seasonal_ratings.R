@@ -97,6 +97,7 @@ if (!is.null(opta_xmetrics) && nrow(opta_xmetrics) > 0) {
       "xpass_overperformance", "aerial_woe", "aerial_poss_woe", "takeon_woe",
       "tackle_poss_woe", "containment_woe", "npg_minus_npxg",
       "ibox_g_minus_xg", "obox_g_minus_xg", "placement_added", "gsaa",
+      "gsaa_minutes", "placement_added_minutes",
       "chains_involved", "chain_actions", "successful_chains",
       "chain_goals", "chain_starts", "chain_xg"),
     names(opta_xmetrics)
