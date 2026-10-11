@@ -134,10 +134,7 @@ classify_role_group <- function(role) {
   #     since they're existing `.spm_opta_predictor_cols()` columns, not new.
   pos_mode <- NULL
   if ("position" %in% names(window)) {
-    pos_mode <- window[!is.na(position) & position != "", {
-      tbl <- table(position)
-      list(primary_position = names(tbl)[which.max(tbl)])
-    }, by = player_id]
+    pos_mode <- .spm_primary_position(window, "total_minutes")
   }
 
   window[, row_role := classify_role(position, position_side)]
