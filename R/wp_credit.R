@@ -9,6 +9,10 @@
 #' Splits WPA between the acting player and receiver (for passes). When there
 #' is no receiver (shots, clearances, etc.), the actor gets 100% of WPA.
 #'
+#' Goals (successful shots, own goals included) and the last action of each
+#' period keep 100% for the actor: the "receiver" there is just the next
+#' kick-off taker, who was not involved in the play.
+#'
 #' Cross-team note: WPA is sign-flipped per actor's team in
 #' \code{\link{add_wp_vars}} so positive wpa always means "good for my team".
 #' When the next-action's player is on the OPPOSITE team (turnover, save,
@@ -21,7 +25,9 @@
 #'
 #' @param spadl_with_wpa SPADL actions with \code{wpa}, \code{player_id},
 #'   \code{team_id}, and optionally \code{receiver_player_id} +
-#'   \code{receiver_team_id} columns.
+#'   \code{receiver_team_id} columns. If \code{receiver_player_id} is present,
+#'   \code{receiver_team_id} is required (error otherwise). \code{action_type},
+#'   \code{result}, \code{period_id} enable the goal / period-end exclusions.
 #' @param actor_share Fraction of WPA credited to the actor (0-1).
 #'   Default \code{WPA_ACTOR_SHARE} (0.5). Receiver gets \code{1 - actor_share}.
 #'
@@ -44,22 +50,41 @@ assign_wpa_credit <- function(spadl_with_wpa, actor_share = WPA_ACTOR_SHARE) {
   has_receiver <- "receiver_player_id" %in% names(dt)
   has_receiver_team <- "receiver_team_id" %in% names(dt)
 
+  if (has_receiver && !has_receiver_team) {
+    cli::cli_abort(c(
+      "{.arg spadl_with_wpa} has {.field receiver_player_id} but no {.field receiver_team_id}.",
+      "i" = "Without it the cross-team sign flip cannot run and every receiver would silently be treated as a teammate (review R011).",
+      "i" = "{.fn create_wp_features} keeps {.field receiver_team_id}; make sure the column is carried through."
+    ))
+  }
+
   if (has_receiver) {
     dt[, has_recv := !is.na(receiver_player_id) & receiver_player_id != player_id]
+
+    # Terminal actions keep 100% for the actor (review R012), same definitions
+    # as assign_epv_credit(): a goal (successful shot, own goals included --
+    # the next action is the conceding side's kick-off) and the last action of
+    # a period (the next action is the next period's kick-off).
+    is_goal <- if (all(c("action_type", "result") %in% names(dt))) {
+      dt$action_type %in% "shot" & dt$result %in% "success"
+    } else {
+      rep(FALSE, nrow(dt))
+    }
+    is_period_end <- rep(FALSE, nrow(dt))
+    if (all(c("period_id", "match_id") %in% names(dt))) {
+      dt[, .next_period := data.table::shift(period_id, 1L, type = "lead"),
+         by = match_id]
+      is_period_end <- !is.na(dt$.next_period) & dt$period_id != dt$.next_period
+      dt[, .next_period := NULL]
+    }
+    dt[, has_recv := has_recv & !is_goal & !is_period_end]
     dt[, wpa_actor := data.table::fifelse(has_recv, actor_share * wpa, wpa)]
 
     # Cross-team sign flip on receiver credit. pos_team = +1 for same-team
     # (legitimate pass completion), -1 for cross-team (turnover/save) -- flips
     # the receiver's portion back into their own team's perspective.
-    if (has_receiver_team) {
-      dt[, pos_team := data.table::fifelse(
-        !is.na(receiver_team_id) & team_id == receiver_team_id, 1L, -1L)]
-    } else {
-      # Without receiver_team_id we can't detect cross-team; default to +1
-      # (assume same-team) which preserves prior behaviour. Callers should
-      # supply receiver_team_id (set in convert_opta_to_spadl line 428).
-      dt[, pos_team := 1L]
-    }
+    dt[, pos_team := data.table::fifelse(
+      !is.na(receiver_team_id) & team_id == receiver_team_id, 1L, -1L)]
     dt[, wpa_receiver := data.table::fifelse(
       has_recv, pos_team * (1 - actor_share) * wpa, 0)]
     dt[, c("has_recv", "pos_team") := NULL]

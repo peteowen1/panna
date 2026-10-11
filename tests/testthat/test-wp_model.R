@@ -263,6 +263,7 @@ test_that("assign_wpa_credit splits WPA between actor and receiver", {
     wpa = c(0.1, 0.2, -0.05),
     receiver_player_id = c("p2", NA, NA),
     receiver_player_name = c("B", NA, NA),
+    receiver_team_id = c("t1", NA, NA),
     stringsAsFactors = FALSE
   )
 
@@ -281,6 +282,68 @@ test_that("assign_wpa_credit splits WPA between actor and receiver", {
 
   # Action 3: no receiver → 100% to actor
   expect_equal(result$wpa_actor[3], -0.05)
+})
+
+test_that("assign_wpa_credit: goal + opposing kick-off, save, pass, period end (R011/R012)", {
+  spadl <- data.frame(
+    match_id = "m1",
+    period_id = c(1L, 1L, 1L, 1L, 1L, 2L),
+    team_id = c("A", "A", "A", "B", "A", "A"),
+    player_id = c("a1", "a2", "a1", "bk", "a3", "a1"),
+    action_type = c("pass", "shot", "shot", "shot", "pass", "pass"),
+    result = c("success", "success", "fail", "fail", "success", "success"),
+    wpa = c(0.10, 0.20, -0.04, -0.06, 0.08, 0.01),
+    # 1 same-team pass; 2 goal -> opposing kick-off; 3 saved by B keeper;
+    # 4 B shot, next is A; 5 last action of period 1; 6 last row
+    receiver_player_id = c("a2", "b9", "bk", "a3", "a9", NA),
+    receiver_team_id = c("A", "B", "B", "A", "A", NA),
+    stringsAsFactors = FALSE
+  )
+  r <- assign_wpa_credit(spadl, actor_share = 0.5)
+
+  # same-team pass: 50/50, same sign
+  expect_equal(c(r$wpa_actor[1], r$wpa_receiver[1]), c(0.05, 0.05))
+  # goal: scorer keeps 100%, kick-off taker gets nothing
+  expect_equal(c(r$wpa_actor[2], r$wpa_receiver[2]), c(0.20, 0))
+  # cross-team save: shooter blamed half, keeper credited (positive)
+  expect_equal(c(r$wpa_actor[3], r$wpa_receiver[3]), c(-0.02, 0.02))
+  # cross-team turnover after a B shot: sign flipped for the receiver
+  expect_equal(r$wpa_receiver[4], 0.03)
+  # last action of a period: actor keeps 100%
+  expect_equal(c(r$wpa_actor[5], r$wpa_receiver[5]), c(0.08, 0))
+  # total WPA is conserved on same-team/goal rows
+  expect_equal(r$wpa_actor[2] + r$wpa_receiver[2], 0.20)
+})
+
+test_that("assign_wpa_credit aborts when receiver_team_id is missing", {
+  spadl <- data.frame(
+    match_id = "m1", player_id = "p1", team_id = "t1", wpa = 0.1,
+    receiver_player_id = "p2", stringsAsFactors = FALSE
+  )
+  expect_error(assign_wpa_credit(spadl), "receiver_team_id")
+})
+
+test_that("create_wp_features keeps receiver_team_id so assign_wpa_credit can run (R011)", {
+  spadl <- data.frame(
+    match_id = rep("m1", 3),
+    team_id = c("t1", "t1", "t2"),
+    player_id = c("p1", "p1", "p2"),
+    player_name = c("A", "A", "B"),
+    action_type = c("pass", "shot", "pass"),
+    result = c("success", "fail", "success"),
+    time_seconds = c(100, 500, 1000),
+    period_id = rep(1L, 3),
+    receiver_player_id = c("p1", "p2", NA),
+    receiver_team_id = c("t1", "t2", NA),
+    stringsAsFactors = FALSE
+  )
+  mr <- data.frame(match_id = "m1", home_team_id = "t1", away_team_id = "t2",
+                   home_goals = 1, away_goals = 0, stringsAsFactors = FALSE)
+  feat <- create_wp_features(spadl, mr)
+  expect_true("receiver_team_id" %in% names(feat))
+  feat$wpa <- c(0.1, -0.04, 0.02)
+  r <- assign_wpa_credit(feat)
+  expect_equal(r$wpa_receiver[2], 0.02)  # keeper-type receiver credited positively
 })
 
 test_that("aggregate_player_game_wpa groups by match_id", {
