@@ -7,6 +7,18 @@ match was 2026-07-03, so all published PSR since July was decay with no new minu
 fell). The job now rebuilds match stats with skills step 01 before 8b, and 8b refuses a match-stats
 table whose newest match is more than `PSR_MAX_STATS_AGE_DAYS` (default 21) old. A `force_full_rebuild`
 dispatch input regenerates the already-published weeks. Found by the 2026-10-11 codebase review (R001).
+# panna 0.3.77
+
+## Upcoming-fixture predictions no longer double each team's lineup; live skill ratings work again (#290)
+
+Step 02 of the predictions pipeline stacked `opta_lineups.parquet` and the RAPM-cache lineups without
+de-duplicating them, so each team's latest XI appeared twice and every upcoming domestic and European
+fixture got doubled team-sum features (up to 22 rated players a side). It now keeps each player once
+per match and one match per team, drops used substitutes the feed flags as starters, and warns or stops
+when an XI exceeds 11 (1,134 of 6,768 teams over 11 before, 5 after). The date-specific skill ratings
+for fixtures had failed on every run since July because `01_match_stats.rds` lacks the xMetrics
+predictors the skill SPM needs; step 02 now joins them as 08b does, and a fallback to seasonal ratings
+is reported while the run is live. Found by the 2026-10-11 codebase review (R002, R018).
 
 # panna 0.3.76
 
