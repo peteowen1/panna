@@ -69,6 +69,25 @@ data.table::setDT(match_stats)
 if (!inherits(match_stats$match_date, "Date")) {
   match_stats[, match_date := as.Date(match_date)]
 }
+# Freshness guard (review R001): the GHA job once read a hand-uploaded cache
+# that stopped at 2026-07-03 for three months, and every snapshot stamped with
+# a later date was pure decay with no new minutes. Refuse to publish from a
+# table whose newest match is more than PSR_MAX_STATS_AGE_DAYS (default 21)
+# old. International breaks and the European summer are covered by the
+# calendar-year leagues, so a real gap this long means the input is stale.
+.max_age <- suppressWarnings(as.numeric(Sys.getenv("PSR_MAX_STATS_AGE_DAYS", "21")))
+if (is.na(.max_age)) .max_age <- 21
+.newest <- max(match_stats$match_date, na.rm = TRUE)
+.age <- as.numeric(Sys.Date() - .newest)
+cat(sprintf("  Match stats: %s rows, %s to %s (%d days old)\n",
+            format(nrow(match_stats), big.mark = ","),
+            min(match_stats$match_date, na.rm = TRUE), .newest, as.integer(.age)))
+if (!is.finite(.age) || .age > .max_age) {
+  stop(sprintf(paste0(
+    "Match stats are stale: newest match %s is %s days old (limit %s). ",
+    "Rebuild step 01 before 8b, or set PSR_MAX_STATS_AGE_DAYS to override."),
+    .newest, round(.age), .max_age), call. = FALSE)
+}
 # Enrich with per-match xMetrics so the weekly PSR snapshots see the xG
 # over-performance / gsaa skill features (same as steps 2/7). Without this the
 # snapshot loop estimates skills from box-score-only stats and PSR is xG-blind
