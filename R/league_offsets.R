@@ -129,8 +129,10 @@ compute_league_offsets <- function(game_logs,
     data.table::year(match_date) + 1L,
     data.table::year(match_date))]
   if (isTRUE(exclude_qualifiers)) {
+    # League phase is Sep-Jan; `month < 9` also dropped January's league-phase
+    # matchdays (review R121). Knockouts (Feb+) are dropped with the qualifiers.
     dt[, .is_q := (league %in% c("UCL","UEL","UECL")) &
-                    data.table::month(match_date) < 9L]
+                    data.table::month(match_date) %in% 2:8]
     dt <- dt[.is_q == FALSE]
     dt[, .is_q := NULL]
   }

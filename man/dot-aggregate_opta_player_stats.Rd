@@ -26,7 +26,8 @@
 
 \item{min_minutes}{Numeric. Minimum minutes threshold.}
 
-\item{by_team}{Logical. Aggregate by player+team if TRUE.}
+\item{by_team}{Logical. Aggregate by player+team if TRUE.
+Players are keyed on Opta \code{player_id} (when present), never on name.}
 
 \item{source}{Character. "remote" or "local".}
 

@@ -25,6 +25,11 @@ outcome_result <- readRDS(file.path(cache_dir, "06_outcome_model.rds"))
 feature_cols <- goals_models$feature_cols
 augmented_features <- outcome_result$augmented_features
 
+# One-shot block so the early exits below can `break` out of it. A top-level
+# return() inside a source()d script does NOT stop the script (review R068); break
+# does, and unlike a function wrapper it keeps <<- and variable scope unchanged.
+# (Body deliberately not re-indented, to keep the diff reviewable.)
+repeat {
 # 4. Prepare Test Data ----
 
 test_data <- as.data.frame(match_dataset[match_dataset$split == "test" &
@@ -33,7 +38,7 @@ test_data <- as.data.frame(match_dataset[match_dataset$split == "test" &
 if (nrow(test_data) == 0) {
   message("No test data available.")
   saveRDS(list(), output_path)
-  return(invisible(NULL))
+  break
 }
 
 message(sprintf("  Test set: %d matches", nrow(test_data)))
@@ -248,3 +253,6 @@ message(sprintf("Outcome: LogLoss=%.4f (naive %.4f, Elo %.4f)",
 message(sprintf("Accuracy: %.1f%% (baseline %.1f%%)",
                 100 * test_accuracy, 100 * naive_accuracy))
 message(sprintf("\nSaved to: %s", output_path))
+
+break  # end of one-shot block
+}

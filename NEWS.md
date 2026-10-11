@@ -1,3 +1,37 @@
+# panna 0.3.85
+
+## Player stats are keyed on player_id, not the abbreviated name (#313)
+
+`player_opta_*()` and `compare_players()` grouped rows by `player_name`. Opta abbreviates names, so
+different players who share one (A. Onana, B. Johnson in ENG 2024-25) were summed into a single row.
+They now group by `player_id`, showing the most frequent name per id, and return a `player_id` column.
+A name search finds the matching ids and then keeps every row of those ids, so a player seen under two
+spellings is not cut short. Rows with no name or id are dropped with a message rather than pooled into
+one "NA" player. `matches` now counts appearances with minutes played, so unused substitutes no longer
+count, which raises keepers' `clean_sheet_pct`. Review R008, R040, R042.
+
+# panna 0.3.84
+
+## UEFA cups: January league-phase matches are no longer treated as qualifiers (#312)
+
+Three places dropped every UCL/UEL/UECL match before September as a qualifying round, which also dropped
+January's league-phase matchdays (144 UCL+UEL matches in the current fixture cache): the league offsets,
+the blog standings (frozen at matchday 6), and the knockout simulator's team pool. All three now keep
+September to January and drop February to August. Review R121.
+
+# panna 0.3.83
+
+## WPA credit and pipeline early exits (#310)
+
+- WPA credit (review R011, R012): `create_wp_features()` now keeps `receiver_team_id`, so the cross-team
+  sign flip in `assign_wpa_credit()` actually runs (a keeper who saves is credited, not charged), and
+  it aborts if the column is missing. Goals, own goals included, and the last action of each period
+  keep 100% for the actor; the opposing kick-off taker no longer receives half of a goal.
+- A top-level `return()` in a sourced pipeline script does not stop it (review R060, R068, R076). The
+  cache-hit checks that relied on it never worked and are removed; real early exits now stop via a
+  one-shot block; step 02b's "train without skill features" fallback is reported live and on GHA. A
+  test fails on any new top-level `return()` under data-raw/.
+
 # panna 0.3.82
 
 ## Skills: position-specific priors for every stat; no future as-of dates (#309)

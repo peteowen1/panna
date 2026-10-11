@@ -38,17 +38,13 @@ current_config <- list(leagues = leagues, seasons = seasons,
                        use_xmetrics_features = use_xmetrics_features,
                        goal_cleaning = 1L)
 
-if (file.exists(raw_data_path) && file.exists(config_path)) {
-  cached_config <- readRDS(config_path)
-  if (identical(cached_config, current_config)) {
-    message("Cache is up to date - skipping data load")
-    raw_opta_data <- readRDS(raw_data_path)
-    message(sprintf("  Loaded from cache: %d matches, %d lineups",
-                    nrow(raw_opta_data$results), nrow(raw_opta_data$lineups)))
-    return(invisible(NULL))
-  }
-  message("Configuration changed - reloading data")
-}
+# NOTE (review R060/R068/R076): there is deliberately NO cache-hit early exit here.
+# A top-level return() inside a source()d script does not stop the script, so the
+# old branch only logged and then rebuilt anyway. Making it work would serve a stale
+# 01_raw_data.rds: current_config (incl. goal_cleaning) is config only, with no data vintage, so new
+# matches would never be loaded and a later step 02 mtime check would trust the stale
+# file. Add a data fingerprint (max match_date / parquet mtimes) before ever
+# reinstating a skip. current_config is still saved below.
 
 # 4. Load xG Model ----
 
