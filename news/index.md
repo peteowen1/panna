@@ -1,5 +1,22 @@
 # Changelog
 
+## panna 0.3.86
+
+### Missing PSV is NA, not 0 ([\#314](https://github.com/peteowen1/panna/issues/314))
+
+[`build_player_game_ratings()`](https://peteowen1.github.io/panna/reference/build_player_game_ratings.md)
+filled every missing number with 0, so a player-game with no PSV row
+shipped `psv`/`osv`/`dsv` as exact zeros and `piero_value` as its EPV
+half alone. In 2022-26 that was 4,659 cameos of 1-9 minutes (3,367 in
+ESP, 1,269 in GER). PSV, WPA and `piero_value` now stay NA when missing,
+`has_psv` / `has_wpa` are per row, and 10b logs the share of played
+player-games without PSV.
+[`aggregate_season_ratings()`](https://peteowen1.github.io/panna/reference/aggregate_season_ratings.md)
+keeps an all-missing season NA and divides each per-90 rate by the
+minutes where that metric is present; the game-log season percentile is
+NA for players with no piero at all. Review R007. The ESP/GER cameo
+coverage gap itself is not fixed here.
+
 ## panna 0.3.85
 
 ### Player stats are keyed on player_id, not the abbreviated name ([\#313](https://github.com/peteowen1/panna/issues/313))

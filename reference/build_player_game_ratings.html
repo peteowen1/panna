@@ -11,7 +11,7 @@ EPV and PSV contributions."><meta property="og:image" content="https://peteowen1
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.85</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.86</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -118,11 +118,16 @@ includes the opponent-strength adjustment.</p></dd>
 <dd><p>WPA per 90 minutes</p></dd>
 
 <dt>psv, osv, dsv</dt>
-<dd><p>Player Stat Value with O/D decomposition</p></dd>
+<dd><p>Player Stat Value with O/D decomposition; NA when
+the player-game has no PSV row</p></dd>
 
 <dt>piero_value</dt>
 <dd><p>Combined: <code>epv_weight * epv_total_adj +
-      psv_weight * psv</code> (falls back to <code>epv_total</code> if no adj columns).</p></dd>
+      psv_weight * psv</code> (falls back to <code>epv_total</code> if no adj columns);
+NA when PSV is missing</p></dd>
+
+<dt>has_wpa, has_psv</dt>
+<dd><p>Per row: whether WPA / PSV is present</p></dd>
 
 <dt>piero_value_p90</dt>
 <dd><p>Combined per 90 minutes</p></dd>

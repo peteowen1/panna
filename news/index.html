@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.85</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.86</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,6 +39,13 @@
       <small>Source: <a href="https://github.com/peteowen1/panna/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.86" id="panna-0386">panna 0.3.86<a class="anchor" aria-label="anchor" href="#panna-0386"></a></h2>
+<div class="section level3">
+<h3 id="missing-psv-is-na-not-0-3-86">Missing PSV is NA, not 0 (<a href="https://github.com/peteowen1/panna/issues/314" class="external-link">#314</a>)<a class="anchor" aria-label="anchor" href="#missing-psv-is-na-not-0-3-86"></a></h3>
+<p><code><a href="../reference/build_player_game_ratings.html">build_player_game_ratings()</a></code> filled every missing number with 0, so a player-game with no PSV row shipped <code>psv</code>/<code>osv</code>/<code>dsv</code> as exact zeros and <code>piero_value</code> as its EPV half alone. In 2022-26 that was 4,659 cameos of 1-9 minutes (3,367 in ESP, 1,269 in GER). PSV, WPA and <code>piero_value</code> now stay NA when missing, <code>has_psv</code> / <code>has_wpa</code> are per row, and 10b logs the share of played player-games without PSV. <code><a href="../reference/aggregate_season_ratings.html">aggregate_season_ratings()</a></code> keeps an all-missing season NA and divides each per-90 rate by the minutes where that metric is present; the game-log season percentile is NA for players with no piero at all. Review R007. The ESP/GER cameo coverage gap itself is not fixed here.</p>
+</div>
+</div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.85" id="panna-0385">panna 0.3.85<a class="anchor" aria-label="anchor" href="#panna-0385"></a></h2>
 <div class="section level3">

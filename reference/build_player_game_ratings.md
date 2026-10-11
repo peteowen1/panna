@@ -82,12 +82,17 @@ A data.table with one row per player per match:
 
 - psv, osv, dsv:
 
-  Player Stat Value with O/D decomposition
+  Player Stat Value with O/D decomposition; NA when the player-game has
+  no PSV row
 
 - piero_value:
 
   Combined: `epv_weight * epv_total_adj + psv_weight * psv` (falls back
-  to `epv_total` if no adj columns).
+  to `epv_total` if no adj columns); NA when PSV is missing
+
+- has_wpa, has_psv:
+
+  Per row: whether WPA / PSV is present
 
 - piero_value_p90:
 

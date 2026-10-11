@@ -1,11 +1,12 @@
-# Position multipliers for every requested stat
+# Cached position multipliers, warning on any gap
 
-Uses the cached `decay_params$position_multipliers` where present and
-computes the rest from `dt`. Before this, a stat missing from the cached
-list (36 of 88 skill stats in the 2026-09 cache: every keeper stat, xG,
-GSAA, the duel WOE stats) got no positional prior centre, so a back-up
-keeper's saves were shrunk toward the all-player mean (0.15 per 90)
-rather than the keeper mean (1.76) (review R015).
+Returns `decay_params$position_multipliers` (or computes all of them
+from `dt` when none are cached). Stats missing from the cache are NOT
+filled from `dt`, because callers pass slices and a per-slice multiplier
+would differ between training and serving; they get a warning instead.
+Skills step 02b caches every detected stat (review R015: the 2026-09
+cache covered 52 of 88, so a back-up keeper's saves shrank toward the
+all-player mean 0.15 per 90 rather than the keeper mean 1.76).
 
 ## Usage
 
@@ -29,4 +30,4 @@ rather than the keeper mean (1.76) (review R015).
 
 ## Value
 
-Named list of multipliers covering `stat_cols`.
+Named list of position multipliers.
