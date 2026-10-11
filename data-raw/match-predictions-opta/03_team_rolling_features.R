@@ -109,22 +109,57 @@ rolling_team <- compute_team_rolling_features(played, windows = ROLLING_WINDOWS)
 message(sprintf("  Rolling features: %d matches, %d columns",
                 nrow(rolling_team), ncol(rolling_team) - 1))
 
-# Upcoming fixtures get their form from the SAME lagged window as training
-# rows (review R069/R070): append them with no outcome, rerun, keep only their
-# rows. Each fixture then sees the team's latest match on EITHER side, and rest
-# days count to the fixture date. The old carry-forward reused the pre-match
-# values of each team's last HOME (or AWAY) match, which missed that match's
-# own result and could be weeks stale. Training rows still come from `played`
-# alone above, so postponed fixtures cannot leak NA rows into training windows.
-.roll_in <- c("match_id", "match_date", "home_team", "away_team",
-              "home_goals", "away_goals", "home_xg", "away_xg")
-upcoming_roll <- fixture_results[fixture_results$match_status != "Played", .roll_in, drop = FALSE]
+# Upcoming fixtures get each team's form AS OF ITS LAST PLAYED MATCH (review
+# R069/R070): the mean of its last w played matches (NA with fewer than w,
+# exactly like frollmean in compute_team_rolling_features() for training rows)
+# and rest days from that match to the fixture date. The old carry-forward
+# reused the pre-match values of the team's last HOME (or AWAY) match, which
+# missed that match's own result and measured rest days to it. (Appending the
+# fixtures to the rolling window instead fills it with result-less rows: by a
+# team's 6th-11th upcoming fixture the form went NaN.)
+upcoming_ids <- fixture_results$match_id[fixture_results$match_status != "Played"]
 rolling_upcoming <- NULL
-if (nrow(upcoming_roll) > 0) {
-  upcoming_roll[c("home_goals", "away_goals", "home_xg", "away_xg")] <- NA_real_
-  ru <- compute_team_rolling_features(
-    rbind(played[, .roll_in, drop = FALSE], upcoming_roll), windows = ROLLING_WINDOWS)
-  rolling_upcoming <- ru[ru$match_id %in% upcoming_roll$match_id, , drop = FALSE]
+if (length(upcoming_ids) > 0) {
+  .pl <- data.table::as.data.table(played)
+  .tm <- data.table::rbindlist(list(
+    .pl[, .(match_date, team = home_team, goals_scored = home_goals, goals_conceded = away_goals,
+            xg_for = home_xg, xg_against = away_xg)],
+    .pl[, .(match_date, team = away_team, goals_scored = away_goals, goals_conceded = home_goals,
+            xg_for = away_xg, xg_against = home_xg)]))
+  .tm <- .tm[order(match_date)]
+  .tm[, `:=`(points = data.table::fifelse(goals_scored > goals_conceded, 3L,
+                        data.table::fifelse(goals_scored == goals_conceded, 1L, 0L)),
+             win = as.integer(goals_scored > goals_conceded),
+             clean_sheet = as.integer(goals_conceded == 0),
+             npxgd = xg_for - xg_against)]
+  .metrics <- c("goals_scored", "goals_conceded", "xg_for", "xg_against",
+                "points", "win", "clean_sheet", "npxgd")
+  .last_w <- function(x, w) if (length(x) < w) NA_real_ else mean(utils::tail(x, w), na.rm = TRUE)
+  .state <- .tm[, c(list(last_date = match_date[.N]),
+                    unlist(lapply(ROLLING_WINDOWS, function(w)
+                      stats::setNames(lapply(.SD, .last_w, w = w),
+                                      sprintf("%s_last_%d", .metrics, w))), recursive = FALSE)),
+                by = team, .SDcols = .metrics]
+  .fx <- data.table::as.data.table(fixture_results)[match_id %in% upcoming_ids,
+                                                    .(match_id, match_date, home_team, away_team)]
+  .feat <- setdiff(names(.state), c("team", "last_date"))
+  .side <- function(side) {
+    st <- data.table::copy(.state)
+    data.table::setnames(st, c("team", .feat), c(paste0(side, "_team"), paste0(side, "_", .feat)))
+    out <- st[.fx, on = paste0(side, "_team")]
+    out[, (paste0(side, "_days_since_last")) := as.numeric(difftime(match_date, last_date, units = "days"))]
+    out[, c("match_id", paste0(side, "_", .feat), paste0(side, "_days_since_last")), with = FALSE]
+  }
+  ru <- .side("home")[.side("away"), on = "match_id"]
+  for (w in ROLLING_WINDOWS) {
+    for (m in c("goals_scored", "xg_for", "points", "npxgd")) {
+      ru[, (sprintf("diff_%s_last_%d", m, w)) :=
+           get(sprintf("home_%s_last_%d", m, w)) - get(sprintf("away_%s_last_%d", m, w))]
+    }
+  }
+  ru[, rest_diff := home_days_since_last - away_days_since_last]
+  rolling_upcoming <- as.data.frame(ru)
+  rm(.pl, .tm, .state, .fx)
 }
 
 # 7. Combine ----
