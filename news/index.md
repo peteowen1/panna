@@ -1,5 +1,16 @@
 # Changelog
 
+## panna 0.3.89
+
+### Game logs: piero is called `piero` ([\#317](https://github.com/peteowen1/panna/issues/317))
+
+The game-log export renamed piero to `panna` and the raw EPV
+attack/defence split to `offense`/`defense`, the names of the
+decayed-xRAPM rating. It now ships `piero`, `epv_offensive`,
+`epv_defensive` and `piero_percentile`. A partial-league rebuild renames
+an older file’s columns before merging. The blog reads both names during
+the switch (inthegame-blog#886).
+
 ## panna 0.3.88
 
 ### Game-log piero recomputed after the PSV calibration ([\#316](https://github.com/peteowen1/panna/issues/316))
