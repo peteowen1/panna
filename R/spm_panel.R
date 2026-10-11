@@ -1077,3 +1077,39 @@ predict_spm_panel_xgb <- function(model, newdata) {
      convenient so this migration stops firing.")
   x
 }
+
+
+#' Refuse to resume an untagged windowed RAPM target cache (04b)
+#'
+#' `04b` resumes per-vintage from `rapm_window_targets.rds` and re-saves the
+#' whole object. If it stamped `sign_convention` on a loaded file it never
+#' checked, a PRE-flip cache would be vouched for as positive=good and
+#' `.assert_window_target_sign_convention()` would skip its migration -- the
+#' panna#256 failure with the guard actively endorsing it (codebase review R023).
+#' So a non-empty resumed cache must already carry the current tag; otherwise
+#' this aborts. Not migrated here: negating loaded vintages while fitting new
+#' ones post-flip is exact only if the file is wholly pre-flip, which 04b
+#' cannot know. Downstream readers still migrate an untagged file on read.
+#'
+#' @param x The object loaded by `readRDS()` in `04b`.
+#' @param what Label for messages.
+#' @return `x`, unchanged, when empty or already tagged with the current convention.
+#' @keywords internal
+#' @noRd
+.require_tagged_window_targets_for_resume <- function(x, what = "rapm_window_targets") {
+  if (length(x) == 0L) return(x)
+  tag <- attr(x, "sign_convention")
+  if (!identical(tag, RAPM_WINDOW_TARGET_SIGN_CONVENTION)) {
+    cli::cli_abort(c(
+      "Cannot resume {what}: its {.field sign_convention} tag is
+       {.val {if (is.null(tag)) 'absent' else tag}}, expected
+       {.val {RAPM_WINDOW_TARGET_SIGN_CONVENTION}}.",
+      "x" = "Resuming would mix pre-flip vintages with new ones and stamp the
+             whole file as positive=good (panna#256, review R023).",
+      "i" = "Set {.code force_rebuild <- TRUE} to refit every vintage. To use
+             the old file as-is, load it through build_spm_panel(), which
+             migrates an untagged file on read."
+    ))
+  }
+  x
+}
