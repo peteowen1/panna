@@ -552,7 +552,10 @@
       progress_msg(sprintf("  Date %d/%d: %s", i, n_dates, rd))
     }
 
-    results[[i]] <- tryCatch({
+    # Collect into a local and store with results[i] <- list(val): assigning
+    # NULL via results[[i]] DELETES the slot, shifting every later snapshot
+    # one place left under the wrong date's name (review R044).
+    val <- tryCatch({
       new_cursor <- cursor_positions[i]
 
       # Skip dates with no prior data (use NULL, not return() -- we're in tryCatch)
@@ -739,11 +742,12 @@
     # the stream_dir docs above -- this is unrelated to output_min_w90 and
     # carries none of its coverage risk (every row is still written, just not
     # all kept in RAM at once).
-    if (!is.null(stream_dir) && !is.null(results[[i]])) {
+    if (!is.null(stream_dir) && !is.null(val)) {
       chunk_path <- file.path(stream_dir, paste0(as.character(rd), ".rds"))
-      saveRDS(results[[i]], chunk_path)
-      results[[i]] <- chunk_path
+      saveRDS(val, chunk_path)
+      val <- chunk_path
     }
+    results[i] <- list(val)
 
     # Checkpoint the running-sum state every 25 dates, so a kill mid-run loses
     # at most ~25 dates of recomputation rather than the whole history. Cheap

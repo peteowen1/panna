@@ -2085,3 +2085,16 @@ test_that("fit_spmr's coverage floor drops minutes-present-events-absent rows", 
   expect_true("ghost" %in% out2$player_id)
   expect_gt(out2[player_id == "ghost"]$spmr, out2[player_id == "real"]$spmr)
 })
+
+test_that(".estimate_prematch_skills_batch keeps date names aligned after an empty date (R044)", {
+  ms <- make_psr_test_data(n_players = 3, n_matches = 6)
+  dates <- c("2024-02-01", "2024-03-01")
+  ref <- panna:::.estimate_prematch_skills_batch(ms, ref_dates = dates, verbose = FALSE)
+  # A date before any match has no prior data and yields NULL; it used to
+  # delete its slot and shift every later snapshot onto the wrong date.
+  got <- panna:::.estimate_prematch_skills_batch(
+    ms, ref_dates = c("1990-01-01", dates), verbose = FALSE
+  )
+  expect_identical(names(got), names(ref))
+  for (d in names(ref)) expect_equal(got[[d]], ref[[d]])
+})
