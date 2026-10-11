@@ -9,7 +9,9 @@ assign_wpa_credit(spadl_with_wpa, actor_share = WPA_ACTOR_SHARE)
 \arguments{
 \item{spadl_with_wpa}{SPADL actions with \code{wpa}, \code{player_id},
 \code{team_id}, and optionally \code{receiver_player_id} +
-\code{receiver_team_id} columns.}
+\code{receiver_team_id} columns. If \code{receiver_player_id} is present,
+\code{receiver_team_id} is required (error otherwise). \code{action_type},
+\code{result}, \code{period_id} enable the goal / period-end exclusions.}
 
 \item{actor_share}{Fraction of WPA credited to the actor (0-1).
 Default \code{WPA_ACTOR_SHARE} (0.5). Receiver gets \code{1 - actor_share}.}
@@ -27,6 +29,10 @@ Splits WPA between the acting player and receiver (for passes). When there
 is no receiver (shots, clearances, etc.), the actor gets 100\% of WPA.
 }
 \details{
+Goals (successful shots, own goals included) and the last action of each
+period keep 100\% for the actor: the "receiver" there is just the next
+kick-off taker, who was not involved in the play.
+
 Cross-team note: WPA is sign-flipped per actor's team in
 \code{\link{add_wp_vars}} so positive wpa always means "good for my team".
 When the next-action's player is on the OPPOSITE team (turnover, save,

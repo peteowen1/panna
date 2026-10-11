@@ -44,16 +44,13 @@ current_config <- list(leagues = leagues, seasons = seasons,
                        min_season = min_season,
                        min_match_minutes = min_match_minutes)
 
-if (file.exists(cache_path) && file.exists(config_path)) {
-  cached_config <- readRDS(config_path)
-  if (identical(cached_config, current_config)) {
-    message("Cache is up to date - skipping match stats computation")
-    match_stats <- readRDS(cache_path)
-    message(sprintf("  Loaded from cache: %d player-match rows", nrow(match_stats)))
-    return(invisible(NULL))
-  }
-  message("Configuration changed - recomputing match stats")
-}
+# NOTE (review R060/R068/R076): there is deliberately NO cache-hit early exit here.
+# A top-level return() inside a source()d script does not stop the script, so the
+# old branch only logged and then rebuilt anyway. Making it work would serve a stale
+# 01_match_stats.rds: current_config is only (leagues, seasons, min_season, min_match_minutes), with no
+# data vintage, so new matches would never reach the cache. The weekly PSR snapshot
+# relies on this step rebuilding (review R001). Add a data fingerprint before ever
+# reinstating a skip.
 
 # 4. Load and Process by League-Season ----
 

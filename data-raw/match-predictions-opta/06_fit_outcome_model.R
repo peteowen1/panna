@@ -18,15 +18,11 @@ output_path <- file.path(cache_dir, "06_outcome_model.rds")
 
 # 3. Check Cache ----
 
-if (file.exists(output_path) && !isTRUE(force_rebuild)) {
-  message("Cache exists - loading 06_outcome_model.rds")
-  outcome_result <- readRDS(output_path)
-  for (seg in outcome_result$segments) {
-    message(sprintf("  [%s] outcome model: %d rounds", seg,
-                    outcome_result[[seg]]$model$best_nrounds))
-  }
-  return(invisible(NULL))
-}
+# NOTE (review R060/R068/R076): there is deliberately NO cache-hit early exit here.
+# A top-level return() inside a source()d script does not stop the script, so the
+# old "Cache exists - loading" branch only logged and then rebuilt anyway. Making it
+# work would serve a stale outcome model: the key is file existence only, so it would survive a rebuilt training dataset.
+# Always rebuild; clear_cache_files()/force_rebuild_from only governs downstream files.
 
 # 4. Load Data and Goals Models ----
 

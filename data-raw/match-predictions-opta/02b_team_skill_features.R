@@ -18,24 +18,34 @@ output_path <- file.path(cache_dir, "02b_team_skill_features.rds")
 
 # 3. Check Cache ----
 
-if (file.exists(output_path) && !isTRUE(force_rebuild)) {
-  message("Cache exists - loading 02b_team_skill_features.rds")
-  team_skill_features <- readRDS(output_path)
-  message(sprintf("  %d matches with team skill features", nrow(team_skill_features)))
-  return(invisible(NULL))
-}
+# NOTE (review R060/R068/R076): there is deliberately NO cache-hit early exit here.
+# A top-level return() inside a source()d script does not stop the script, so the
+# old branch only logged and then rebuilt anyway. Making it work would serve a stale
+# skill-features table: the key is file existence only, so it ignores new matches and a re-estimated skills cache.
 
+# One-shot block so the early exits below can `break` out of it. A top-level
+# return() inside a source()d script does NOT stop the script (review R068); break
+# does, and unlike a function wrapper it keeps <<- and variable scope unchanged.
+# (Body deliberately not re-indented, to keep the diff reviewable.)
+# Degrading to "no skill features" must be visible while the run is live (and
+# on GHA as an annotation), not only as a deferred warning() at the end.
+.degrade_loudly <- function(msg) {
+  message("  WARNING: ", msg)
+  if (nzchar(Sys.getenv("GITHUB_ACTIONS"))) cat("::warning::", msg, "\n", sep = "")
+  warning(msg, call. = FALSE)
+}
+repeat {
 # 4. Check Prerequisites ----
 
 match_stats_path <- file.path(skill_cache_dir, "01_match_stats.rds")
 decay_params_path <- file.path(skill_cache_dir, "02b_decay_params.rds")
 
 if (!file.exists(match_stats_path)) {
-  warning("Skill match stats not found - model will train WITHOUT skill features. ",
-          "Run the estimated skills pipeline first.", call. = FALSE)
+  .degrade_loudly(paste0("Skill match stats not found - model will train WITHOUT skill features. ",
+                         "Run the estimated skills pipeline first."))
   team_skill_features <- NULL
   saveRDS(team_skill_features, output_path)
-  return(invisible(NULL))
+  break
 }
 
 message("\n=== Computing Team-Level Skill Features ===\n")
@@ -79,10 +89,10 @@ if (file.exists(rapm_cache)) {
   }
   lineups <- bind_rows(all_lineups)
   if (nrow(lineups) == 0) {
-    warning("No lineups loaded - model will train WITHOUT skill features.", call. = FALSE)
+    .degrade_loudly("No lineups loaded - model will train WITHOUT skill features.")
     team_skill_features <- NULL
     saveRDS(team_skill_features, output_path)
-    return(invisible(NULL))
+    break
   }
 }
 
@@ -301,10 +311,12 @@ if (length(all_skill_features) > 0) {
   message(sprintf("\nTotal: %d matches with team skill features (%d columns)",
                   nrow(team_skill_features), ncol(team_skill_features)))
 } else {
-  warning("No team skill features computed - model will train WITHOUT skill features.",
-          call. = FALSE)
+  .degrade_loudly("No team skill features computed - model will train WITHOUT skill features.")
   team_skill_features <- NULL
 }
 
 saveRDS(team_skill_features, output_path)
 message(sprintf("Saved to: %s", output_path))
+
+break  # end of one-shot block
+}
