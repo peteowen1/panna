@@ -1,3 +1,16 @@
+# panna 0.3.77
+
+## Upcoming-fixture predictions no longer double each team's lineup; live skill ratings work again (#290)
+
+Step 02 of the predictions pipeline stacked `opta_lineups.parquet` and the RAPM-cache lineups without
+de-duplicating them, so each team's latest XI appeared twice and every upcoming domestic and European
+fixture got doubled team-sum features (up to 22 rated players a side). It now keeps each player once
+per match and one match per team, drops used substitutes the feed flags as starters, and warns or stops
+when an XI exceeds 11 (1,134 of 6,768 teams over 11 before, 5 after). The date-specific skill ratings
+for fixtures had failed on every run since July because `01_match_stats.rds` lacks the xMetrics
+predictors the skill SPM needs; step 02 now joins them as 08b does, and a fallback to seasonal ratings
+is reported while the run is live. Found by the 2026-10-11 codebase review (R002, R018).
+
 # panna 0.3.76
 
 ## The Opta RAPM/SPM pipeline fits the 16 GB runner again; daily run back on (#286, panna#87)
