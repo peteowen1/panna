@@ -1,3 +1,13 @@
+# panna 0.3.78
+
+## Weekly PSR snapshots include current-season matches again (#291)
+
+`psr-weekly-snapshot.yml` built every snapshot from a hand-uploaded `01_match_stats.rds` whose newest
+match was 2026-07-03, so all published PSR since July was decay with no new minutes (all 38,126 players
+fell). The job now rebuilds match stats with skills step 01 before 8b, and 8b refuses a match-stats
+table whose newest match is more than `PSR_MAX_STATS_AGE_DAYS` (default 21) old. A `force_full_rebuild`
+dispatch input regenerates the already-published weeks. Found by the 2026-10-11 codebase review (R001).
+
 # panna 0.3.76
 
 ## The Opta RAPM/SPM pipeline fits the 16 GB runner again; daily run back on (#286, panna#87)
