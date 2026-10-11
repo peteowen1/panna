@@ -105,6 +105,11 @@ run_arm <- function(source_name) {
   # and applying it to one arm only would confound the rating change with a
   # population change. This is the whole reason the flag exists.
   assign("EPR_MIN_SEASON_END_YEAR", MIN_SEASON_END_YEAR, envir = globalenv())
+  # build_epr_weekly.R publishes to opta-latest unless upload_epr is FALSE
+  # (its `if (!exists("upload_epr")) upload_epr <- TRUE`). Without this, each
+  # arm would overwrite the production EPR with an experiment (review R014);
+  # the local backup/restore below only covers the local copy.
+  assign("upload_epr", FALSE, envir = globalenv())
   say("building EPR (full rebuild, ~25 min) ...")
   source("data-raw/match-predictions-opta/build_epr_weekly.R", local = FALSE)
 
