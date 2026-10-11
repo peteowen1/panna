@@ -515,10 +515,12 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
     # Hard guard. After an auto-refresh this aborts ONLY if the cloud itself is
     # genuinely short (the case worth stopping for); on a normal dev box the
     # refresh closes the gap and this passes.
-    assert_events_coverage(ls_pairs,
-                            warn_threshold = 5L,
-                            abort_threshold = abort_thresh,
-                            source = "local")
+    # Leagues with no local events (a GHA runner downloads only the consolidated
+    # files) are re-checked against the remote copy the loads below consume;
+    # a local-only check is vacuous there (review R006).
+    .assert_events_coverage_publish(ls_pairs,
+                                     warn_threshold = 5L,
+                                     abort_threshold = abort_thresh)
   }
 
   for (league in blog_leagues) {

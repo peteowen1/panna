@@ -294,8 +294,13 @@ assert_events_coverage <- function(league_seasons, season = NULL,
     #     shortfall (the 2026-05-29 Championship 265/557 case) without flagging
     #     the cup qualifiers Opta provides no event feed for.
     #   ok            -- gap <= warn_threshold.
+    #
+    # source_missing is a LOCAL-only notion (R006, review 2026-10-11): it means
+    # "the local file isn't here, the remote copy will be lazy-loaded". When
+    # source == "remote" the remote copy IS what is being checked, so 0 events
+    # against a non-empty universe is a hard gap (partial_gap), not a skip.
     has_universe <- r$n_played > 0L || r$n_player_stats > 0L
-    r$status <- if (r$n_events == 0L && has_universe) "source_missing"
+    r$status <- if (source == "local" && r$n_events == 0L && has_universe) "source_missing"
                 else if (r$gap > warn_threshold) "partial_gap"
                 else "ok"
     elx <- if (r$n_eventless > 0L) sprintf("; %d event-less excluded", r$n_eventless) else ""
@@ -345,3 +350,39 @@ assert_events_coverage <- function(league_seasons, season = NULL,
                   n_source_missing = n_source_missing))
 }
 
+
+
+#' Events-Coverage Guard For The Publishing Path
+#'
+#' Runs \code{assert_events_coverage()} against the local events, then re-runs
+#' it against the REMOTE copy for every league the local pass classed
+#' \code{source_missing} (no local events file, e.g. a fresh GHA runner that
+#' downloads only the consolidated Opta files). Step 10b's real event loads are
+#' remote, so a local-only guard is vacuous on the runner that publishes
+#' blog-latest (review R006).
+#'
+#' @inheritParams assert_events_coverage
+#' @return Invisibly: list with \code{local} and \code{remote} (or NULL) results.
+#' @keywords internal
+#' @noRd
+.assert_events_coverage_publish <- function(league_seasons,
+                                             warn_threshold = 5L,
+                                             abort_threshold = Inf) {
+  local_res <- assert_events_coverage(league_seasons,
+                                       warn_threshold = warn_threshold,
+                                       abort_threshold = abort_threshold,
+                                       source = "local")
+  missing_idx <- which(vapply(local_res$reports,
+    function(r) identical(r$status, "source_missing"), logical(1)))
+  remote_res <- NULL
+  if (length(missing_idx) > 0L) {
+    cli::cli_alert_info(
+      "{length(missing_idx)} league(s) have no local events; checking the remote copy that step 10b actually loads"
+    )
+    remote_res <- assert_events_coverage(league_seasons[missing_idx],
+                                          warn_threshold = warn_threshold,
+                                          abort_threshold = abort_threshold,
+                                          source = "remote")
+  }
+  invisible(list(local = local_res, remote = remote_res))
+}
