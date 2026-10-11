@@ -882,6 +882,11 @@ if (nrow(upcoming) > 0) {
                         nrow(fixture_ratings), fixture_date))
       }
     }, error = function(e) {
+      # The body assigns fixture_ratings in script scope as it goes, so an
+      # error after line ~714 (PSR/EPR joins, sign assert) would leave a
+      # half-built table with no psr/epr columns that is then USED below.
+      # Reset it so the seasonal fallback the message promises really happens.
+      fixture_ratings <<- NULL
       # message() + a GHA annotation so the fallback is visible while the run
       # is live; a deferred warning() alone went unseen for ~10 weeks (R018).
       msg <- sprintf("Date-specific skills failed: %s (using seasonal fallback)", e$message)
