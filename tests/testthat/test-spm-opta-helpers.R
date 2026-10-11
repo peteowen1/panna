@@ -228,6 +228,7 @@ test_that("narrowed xmetrics gives identical xmetrics and chain aggregates", {
                "aerial_woe", "aerial_poss_woe", "takeon_woe", "tackle_poss_woe",
                "containment_woe", "npg_minus_npxg", "ibox_g_minus_xg",
                "obox_g_minus_xg", "placement_added", "gsaa",
+               "gsaa_minutes", "placement_added_minutes",
                "chains_involved", "chain_actions", "successful_chains",
                "chain_goals", "chain_starts", "chain_xg")
   wide <- data.frame(season = sample(c("2024-2025", "2025"), n, TRUE),
@@ -239,6 +240,15 @@ test_that("narrowed xmetrics gives identical xmetrics and chain aggregates", {
   narrow <- .select_cols_shallow(wide, .spm_xmetrics_keep_cols(names(wide)))
   expect_false(any(grepl("^unused_xm_", names(narrow))))
   expect_identical(.aggregate_xmetrics_for_spm(narrow), .aggregate_xmetrics_for_spm(wide))
+  # R013: covered-minutes columns survive narrowing and change the output
+  # (they differ from `minutes`, so dropping them would silently re-dilute).
+  expect_true(all(c("gsaa_minutes", "placement_added_minutes") %in% names(narrow)))
+  wide$gsaa_minutes <- wide$minutes / 2
+  wide$placement_added_minutes <- wide$minutes / 2
+  narrow2 <- .select_cols_shallow(wide, .spm_xmetrics_keep_cols(names(wide)))
+  expect_identical(.aggregate_xmetrics_for_spm(narrow2), .aggregate_xmetrics_for_spm(wide))
+  expect_false(isTRUE(all.equal(.aggregate_xmetrics_for_spm(wide)$gsaa_per90,
+                                .aggregate_xmetrics_for_spm(narrow)$gsaa_per90)))
   # Every column the 05/07 chain-feature blocks read survives narrowing.
   expect_true(all(c("player_id", "minutes", "chains_involved", "chain_actions",
                     "successful_chains", "chain_goals", "chain_starts",
