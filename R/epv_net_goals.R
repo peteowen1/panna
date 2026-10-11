@@ -129,8 +129,13 @@ ng_build_adjacency <- function(events, verbose = TRUE) {
   dt <- dt[, ..req]
   dt[, tsec := as.numeric(minute) * 60 + as.numeric(second)]
 
-  # Opta emits events in feed order; event_id breaks ties within a second.
-  data.table::setorder(dt, match_id, period_id, tsec, event_id)
+  # Break same-second ties by INPUT ROW ORDER (the feed order), exactly as
+  # SPADL's stable setorder(match_id, period_id, time_seconds) does. event_id
+  # is not feed order: on EPL 2025-26 it put the keeper's save BEFORE the shot
+  # in 195 of 900 same-second shot/save pairs, row order in 2 (review R003).
+  dt[, .ord := seq_len(.N)]
+  data.table::setorder(dt, match_id, period_id, tsec, .ord)
+  dt[, .ord := NULL]
 
   # A marker carries no attribution: it is neither a real action nor one of the
   # named-player drops worth seeing. Skipping markers is what makes "the next

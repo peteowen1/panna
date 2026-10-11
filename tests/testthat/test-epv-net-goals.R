@@ -1109,3 +1109,20 @@ test_that("shot aftermath: a shot that ends a match does not read the next match
   expect_equal(pay[match_id == "m1" & action_id == 2L & entry == "offence", sum(value_own)],
                -0.136, tolerance = 1e-12)
 })
+
+test_that("same-second events keep feed (row) order, not event_id order (R003)", {
+  # pass, then a shot and the keeper's save in the SAME second. The save's
+  # event_id (8) is lower than the shot's (9) -- common in real feeds -- but the
+  # feed lists the shot first. Expected by hand: pass -> shot -> save.
+  ev <- data.frame(
+    match_id = "m1", event_id = c(1L, 9L, 8L), type_id = c(1L, 15L, 10L),
+    team_id = c("H", "H", "A"), player_id = c("h1", "h2", "a1"),
+    period_id = 1L, minute = c(0L, 0L, 0L), second = c(10L, 20L, 20L),
+    stringsAsFactors = FALSE
+  )
+  adj <- ng_build_adjacency(ev, verbose = FALSE)
+  expect_equal(adj[event_id == 1L]$next_type_id, 15L)
+  expect_equal(adj[event_id == 9L]$next_type_id, 10L)
+  expect_equal(adj[event_id == 9L]$next_team_id, "A")
+  expect_true(is.na(adj[event_id == 8L]$next_type_id))
+})
