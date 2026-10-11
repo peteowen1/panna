@@ -25,7 +25,8 @@ players are specified).}
 \item{source}{Character. "remote" (default) or "local".}
 }
 \value{
-Data frame with one row per player and columns grouped by category:
+Data frame with one row per player (keyed on Opta \code{player_id}, so
+namesakes stay separate rows) and columns grouped by category:
 identity, shooting, creating, passing, chains, defending, possession.
 }
 \description{
