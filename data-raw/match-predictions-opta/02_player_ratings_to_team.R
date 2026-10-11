@@ -282,6 +282,73 @@ if (nrow(lineups) == 0) {
   stop("No lineups loaded. Cannot compute team-level ratings. Check data availability and error messages above.")
 }
 
+# 5b. As-at ratings for played matches (review R005/R017) ----
+#
+# The season tables above give a match in season S its player's END-of-S
+# rating, which already contains that match and the rest of S: the model
+# trained on the results it predicts (Chelsea 0-2 City, 18 Aug 2024, was fed
+# the 27 Jun 2025 EPR snapshot). For played matches use instead:
+#   - EPR / PSR (and their off/def halves): the latest weekly snapshot
+#     strictly before the match date, the same as-at contract serving uses;
+#   - SPM: the PREVIOUS season's value (no in-season snapshots exist; Pete's
+#     call 2026-10-11, SPM is the #4 feature so the staleness costs little).
+# These ride on the lineup rows as asof_* columns, which
+# aggregate_lineup_ratings() prefers over the season lookup. Upcoming
+# fixtures are untouched: their ratings are already pre-match.
+lu_dt <- data.table::as.data.table(lineups)
+lu_dt[, match_id := as.character(match_id)]
+pl_dt <- data.table::as.data.table(played)[, .(match_id = as.character(match_id),
+                                               md_ = as.Date(substr(as.character(match_date), 1, 10)),
+                                               sey_ = as.integer(season_end_year))]
+pl_dt <- unique(pl_dt, by = "match_id")
+lu_dt[pl_dt, `:=`(md_ = i.md_, sey_ = i.sey_), on = "match_id"]
+lu_dt[, ref_ := md_ - 1L]
+lu_dt[, i_ := .I]
+
+# Latest snapshot on or before ref_ (= strictly before the match day).
+.attach_asof <- function(lu, snaps, cols, label) {
+  sn <- data.table::as.data.table(snaps)[, c("player_id", "snapshot_date", cols), with = FALSE]
+  sn[, snapshot_date := as.Date(snapshot_date)]
+  data.table::setkey(sn, player_id, snapshot_date)
+  q <- lu[!is.na(ref_), .(i_, player_id, snapshot_date = ref_)]
+  hit <- sn[q, on = .(player_id, snapshot_date), roll = Inf]
+  for (cc in cols) {
+    ac <- paste0("asof_", cc)
+    lu[, (ac) := NA_real_]
+    lu[hit$i_, (ac) := hit[[cc]]]
+  }
+  message(sprintf("  As-at %s: %d of %d played lineup rows had a snapshot before the match (%.1f%%)",
+                  label, sum(!is.na(hit[[cols[1]]])), nrow(hit), 100 * mean(!is.na(hit[[cols[1]]]))))
+  invisible(lu)
+}
+if (!exists("epr_dt")) stop("EPR weekly snapshots were not loaded (non-standard ratings cache); ",
+                            "cannot build as-at EPR for training rows (R005).", call. = FALSE)
+.attach_asof(lu_dt, epr_dt[, .(player_id, snapshot_date, epr, epr_offensive, epr_defensive)],
+             c("epr", "epr_offensive", "epr_defensive"), "EPR")
+psr_w_path <- file.path(opta_data_dir(), "opta_psr_weekly.parquet")
+if (!file.exists(psr_w_path)) {
+  stop("opta_psr_weekly.parquet not found at ", psr_w_path,
+       " -- needed for leak-free as-at PSR in training rows (R005). On GHA add it to ",
+       "predictions-pipeline.yml's download list.", call. = FALSE)
+}
+psr_w <- arrow::read_parquet(psr_w_path, col_select = c("player_id", "snapshot_date", "psr", "osr", "dsr"))
+.attach_asof(lu_dt, psr_w, c("psr", "osr", "dsr"), "PSR")
+rm(psr_w); gc(verbose = FALSE)
+# SPM: previous season's value, keyed on the match's season.
+spm_prev <- data.table::as.data.table(ratings)[!is.na(spm), .(player_id, sey_ = as.integer(season_end_year) + 1L,
+                                                               asof_spm = spm)]
+spm_prev <- unique(spm_prev, by = c("player_id", "sey_"))
+lu_dt[, asof_spm := NA_real_]
+lu_dt[spm_prev, asof_spm := i.asof_spm, on = c("player_id", "sey_")]
+message(sprintf("  As-at SPM (previous season): %d of %d played lineup rows rated (%.1f%%)",
+                sum(!is.na(lu_dt$asof_spm) & !is.na(lu_dt$ref_)), sum(!is.na(lu_dt$ref_)),
+                100 * mean(!is.na(lu_dt$asof_spm[!is.na(lu_dt$ref_)]))))
+# Rows of matches not in `played` (no ref_) keep NA asof_* only for columns
+# that exist; drop the helpers.
+lu_dt[, c("md_", "sey_", "ref_", "i_") := NULL]
+lineups <- as.data.frame(lu_dt)
+rm(lu_dt, pl_dt, spm_prev); gc(verbose = FALSE)
+
 # 6. Aggregate Ratings to Team Level ----
 
 # Get unique season_end_years
