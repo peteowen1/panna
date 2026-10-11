@@ -40,9 +40,12 @@ includes the opponent-strength adjustment.}
 \item{epv_p90}{EPV per 90 minutes}
 \item{wpa_total, wpa_as_actor, wpa_as_receiver}{WPA components}
 \item{wpa_p90}{WPA per 90 minutes}
-\item{psv, osv, dsv}{Player Stat Value with O/D decomposition}
+\item{psv, osv, dsv}{Player Stat Value with O/D decomposition; NA when
+the player-game has no PSV row}
 \item{piero_value}{Combined: \code{epv_weight * epv_total_adj +
-      psv_weight * psv} (falls back to \code{epv_total} if no adj columns).}
+      psv_weight * psv} (falls back to \code{epv_total} if no adj columns);
+NA when PSV is missing}
+\item{has_wpa, has_psv}{Per row: whether WPA / PSV is present}
 \item{piero_value_p90}{Combined per 90 minutes}
 }
 }

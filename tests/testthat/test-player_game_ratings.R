@@ -66,8 +66,35 @@ test_that("build_player_game_ratings works without WPA/PSV", {
 
   expect_equal(nrow(result), 1)
   expect_true("piero_value" %in% names(result))
-  # No PSV → piero_value uses EPV only (PSV defaults to 0)
-  expect_equal(result$piero_value, PANNA_EPR_WEIGHT * 0.5)
+  # No PSV -> piero_value is NA, not EPV with PSV taken as 0 (review R007)
+  expect_true(is.na(result$piero_value))
+  expect_false(result$has_psv)
+  expect_false(result$has_wpa)
+})
+
+test_that("a player-game with no PSV row keeps NA psv and piero (R007)", {
+  epv <- data.frame(
+    player_id = c("p1", "p2"), player_name = c("Alice", "Bob"),
+    team_id = "t1", match_id = "m1", minutes_played = c(90, 5),
+    epv_total = c(0.5, 0.05), epv_offensive = c(0.4, 0.05), epv_defensive = c(0.1, 0),
+    stringsAsFactors = FALSE
+  )
+  wpa <- data.frame(player_id = "p1", match_id = "m1", wpa_total = 0.08,
+                    stringsAsFactors = FALSE)
+  psv <- data.frame(player_id = "p1", match_id = "m1", psv = 0.6, osv = 0.4,
+                    dsv = 0.2, stringsAsFactors = FALSE)
+  result <- build_player_game_ratings(epv, wpa, psv)
+  bob <- result[result$player_id == "p2", ]
+  expect_true(all(is.na(c(bob$psv, bob$osv, bob$dsv, bob$wpa_total,
+                          bob$piero_value, bob$piero_value_p90))))
+  expect_false(bob$has_psv)
+  expect_false(bob$has_wpa)
+  expect_equal(bob$epv_total, 0.05)
+  alice <- result[result$player_id == "p1", ]
+  expect_true(alice$has_psv && alice$has_wpa)
+  expect_equal(alice$piero_value, PANNA_EPR_WEIGHT * 0.5 + PANNA_PSR_WEIGHT * 0.6)
+  # NA piero sorts last within the match
+  expect_identical(result$player_id, c("p1", "p2"))
 })
 
 test_that("build_player_game_ratings computes piero_value_p90", {
@@ -137,4 +164,22 @@ test_that("aggregate_season_ratings sums and averages correctly", {
 
   # Per-90: 1.2 / (225/90) = 0.48
   expect_equal(result$epv_total_p90, 1.2 / (225 / 90))
+})
+
+test_that("aggregate_season_ratings keeps missing PSV out of totals and per-90 (R007)", {
+  gr <- data.frame(
+    player_id = c("p1", "p1", "p2"), player_name = c("Alice", "Alice", "Bob"),
+    match_id = c("m1", "m2", "m1"), season = "2024",
+    minutes_played = c(90, 10, 5),
+    epv_total = c(0.5, 0.1, 0.05), psv = c(0.6, NA, NA),
+    piero_value = c(0.55, NA, NA), stringsAsFactors = FALSE
+  )
+  res <- aggregate_season_ratings(gr)
+  a <- res[res$player_id == "p1", ]
+  b <- res[res$player_id == "p2", ]
+  expect_equal(a$psv, 0.6)
+  expect_equal(a$psv_p90, 0.6)                 # divides by the 90 PSV minutes, not 100
+  expect_equal(a$epv_total_p90, 0.6 / (100 / 90))
+  expect_true(is.na(b$psv) && is.na(b$piero_value) && is.na(b$psv_p90))
+  expect_identical(res$player_id, c("p1", "p2"))   # NA piero sorts last
 })
