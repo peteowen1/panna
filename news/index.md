@@ -1,5 +1,22 @@
 # Changelog
 
+## panna 0.3.85
+
+### Player stats are keyed on player_id, not the abbreviated name ([\#313](https://github.com/peteowen1/panna/issues/313))
+
+`player_opta_*()` and
+[`compare_players()`](https://peteowen1.github.io/panna/reference/compare_players.md)
+grouped rows by `player_name`. Opta abbreviates names, so different
+players who share one (A. Onana, B. Johnson in ENG 2024-25) were summed
+into a single row. They now group by `player_id`, showing the most
+frequent name per id, and return a `player_id` column. A name search
+finds the matching ids and then keeps every row of those ids, so a
+player seen under two spellings is not cut short. Rows with no name or
+id are dropped with a message rather than pooled into one “NA” player.
+`matches` now counts appearances with minutes played, so unused
+substitutes no longer count, which raises keepers’ `clean_sheet_pct`.
+Review R008, R040, R042.
+
 ## panna 0.3.84
 
 ### UEFA cups: January league-phase matches are no longer treated as qualifiers ([\#312](https://github.com/peteowen1/panna/issues/312))

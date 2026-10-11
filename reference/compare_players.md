@@ -41,8 +41,9 @@ compare_players(
 
 ## Value
 
-Data frame with one row per player and columns grouped by category:
-identity, shooting, creating, passing, chains, defending, possession.
+Data frame with one row per player (keyed on Opta `player_id`, so
+namesakes stay separate rows) and columns grouped by category: identity,
+shooting, creating, passing, chains, defending, possession.
 
 ## See also
 

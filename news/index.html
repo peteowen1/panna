@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.84</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.85</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,6 +39,13 @@
       <small>Source: <a href="https://github.com/peteowen1/panna/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.85" id="panna-0385">panna 0.3.85<a class="anchor" aria-label="anchor" href="#panna-0385"></a></h2>
+<div class="section level3">
+<h3 id="player-stats-are-keyed-on-player_id-not-the-abbreviated-name-0-3-85">Player stats are keyed on player_id, not the abbreviated name (<a href="https://github.com/peteowen1/panna/issues/313" class="external-link">#313</a>)<a class="anchor" aria-label="anchor" href="#player-stats-are-keyed-on-player_id-not-the-abbreviated-name-0-3-85"></a></h3>
+<p><code>player_opta_*()</code> and <code><a href="../reference/compare_players.html">compare_players()</a></code> grouped rows by <code>player_name</code>. Opta abbreviates names, so different players who share one (A. Onana, B. Johnson in ENG 2024-25) were summed into a single row. They now group by <code>player_id</code>, showing the most frequent name per id, and return a <code>player_id</code> column. A name search finds the matching ids and then keeps every row of those ids, so a player seen under two spellings is not cut short. Rows with no name or id are dropped with a message rather than pooled into one “NA” player. <code>matches</code> now counts appearances with minutes played, so unused substitutes no longer count, which raises keepers’ <code>clean_sheet_pct</code>. Review R008, R040, R042.</p>
+</div>
+</div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.84" id="panna-0384">panna 0.3.84<a class="anchor" aria-label="anchor" href="#panna-0384"></a></h2>
 <div class="section level3">

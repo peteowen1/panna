@@ -39,7 +39,8 @@ Shared aggregation helper for player_opta\_\* functions
 
 - by_team:
 
-  Logical. Aggregate by player+team if TRUE.
+  Logical. Aggregate by player+team if TRUE. Players are keyed on Opta
+  `player_id` (when present), never on name.
 
 - source:
 
