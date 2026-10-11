@@ -21,12 +21,11 @@ ROLLING_WINDOWS <- c(5L, 10L, 20L)
 
 # 3. Check Cache ----
 
-if (file.exists(output_path) && !isTRUE(force_rebuild)) {
-  message("Cache exists - loading 03_rolling_features.rds")
-  rolling_features <- readRDS(output_path)
-  message(sprintf("  %d matches with rolling features", nrow(rolling_features)))
-  return(invisible(NULL))
-}
+# NOTE (review R060/R068/R076): there is deliberately NO cache-hit early exit here.
+# A top-level return() inside a source()d script does not stop the script, so the
+# old "Cache exists - loading" branch only logged and then rebuilt anyway. Making it
+# work would serve a stale rolling-features table: the key is file existence only, so it ignores new matches.
+# Always rebuild; clear_cache_files()/force_rebuild_from only governs downstream files.
 
 # 4. Load Data ----
 

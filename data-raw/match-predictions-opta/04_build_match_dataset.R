@@ -21,16 +21,11 @@ N_TEST_SEASONS <- 1L
 
 # 3. Check Cache ----
 
-if (file.exists(output_path) && !isTRUE(force_rebuild)) {
-  message("Cache exists - loading 04_match_dataset.rds")
-  match_dataset <- readRDS(output_path)
-  message(sprintf("  Train: %d, Val: %d, Test: %d, Fixture: %d",
-                  sum(match_dataset$split == "train"),
-                  sum(match_dataset$split == "val"),
-                  sum(match_dataset$split == "test"),
-                  sum(match_dataset$split == "fixture")))
-  return(invisible(NULL))
-}
+# NOTE (review R060/R068/R076): there is deliberately NO cache-hit early exit here.
+# A top-level return() inside a source()d script does not stop the script, so the
+# old "Cache exists - loading" branch only logged and then rebuilt anyway. Making it
+# work would serve a stale match dataset: the key is file existence only, so it ignores every upstream step.
+# Always rebuild; clear_cache_files()/force_rebuild_from only governs downstream files.
 
 # 4. Load All Components ----
 

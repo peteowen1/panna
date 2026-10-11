@@ -22,13 +22,16 @@ devtools::load_all()
 cache_dir <- file.path("data-raw", "cache-opta")
 output_path <- file.path(cache_dir, "07b_centrality.rds")
 
-if (file.exists(output_path) && !isTRUE(force_rebuild)) {
-  message("Cache exists - loading 07b_centrality.rds")
-  centrality_results <- readRDS(output_path)
-  message(sprintf("  %d players with centrality scores", nrow(centrality_results)))
-  return(invisible(NULL))
-}
+# NOTE (review R060/R068/R076): there is deliberately NO cache-hit early exit here.
+# A top-level return() inside a source()d script does not stop the script, so the
+# old branch only logged and then rebuilt anyway. Making it work would serve a stale
+# centrality table: the key is file existence only, so it ignores new lineups, and predictions step 02 consumes it.
 
+# One-shot block so the early exits below can `break` out of it. A top-level
+# return() inside a source()d script does NOT stop the script (review R068); break
+# does, and unlike a function wrapper it keeps <<- and variable scope unchanged.
+# (Body deliberately not re-indented, to keep the diff reviewable.)
+repeat {
 # 3. Load Lineup Data ----
 
 message("\n=== Calculating Player Centrality ===\n")
@@ -38,7 +41,7 @@ message("\n=== Calculating Player Centrality ===\n")
 lineups_path <- file.path("data-raw", "cache-opta", "01_raw_data.rds")
 if (!file.exists(lineups_path)) {
   message("  No raw data cache found - skipping centrality")
-  return(invisible(NULL))
+  break
 }
 
 raw_data <- readRDS(lineups_path)
@@ -46,7 +49,7 @@ raw_data <- readRDS(lineups_path)
 # Extract player-match records from lineups
 if (is.null(raw_data$lineups) || nrow(raw_data$lineups) == 0) {
   message("  No lineup data available - skipping centrality")
-  return(invisible(NULL))
+  break
 }
 
 lineups <- raw_data$lineups
@@ -63,7 +66,7 @@ player_matches <- lineups %>%
 
 if (nrow(player_matches) == 0 || !"player_id" %in% names(player_matches)) {
   message("  Could not build player_matches - skipping centrality")
-  return(invisible(NULL))
+  break
 }
 
 # Add opponent (other team in same match)
@@ -98,7 +101,7 @@ centrality_results <- tryCatch(
 )
 
 if (is.null(centrality_results)) {
-  return(invisible(NULL))
+  break
 }
 
 # 5. Save Results ----
@@ -109,3 +112,6 @@ message(sprintf("  Saved %d centrality scores to %s",
 message(sprintf("  Centrality range: [%.3f, %.3f]",
                 min(centrality_results$centrality),
                 max(centrality_results$centrality)))
+
+break  # end of one-shot block
+}
