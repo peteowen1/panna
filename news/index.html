@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.87</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.88</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,6 +39,13 @@
       <small>Source: <a href="https://github.com/peteowen1/panna/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.88" id="panna-0388">panna 0.3.88<a class="anchor" aria-label="anchor" href="#panna-0388"></a></h2>
+<div class="section level3">
+<h3 id="game-log-piero-recomputed-after-the-psv-calibration-0-3-88">Game-log piero recomputed after the PSV calibration (<a href="https://github.com/peteowen1/panna/issues/316" class="external-link">#316</a>)<a class="anchor" aria-label="anchor" href="#game-log-piero-recomputed-after-the-psv-calibration-0-3-88"></a></h3>
+<p>10b published each game’s <code>panna</code> (piero) and <code>piero_value_p90</code> from the raw PSV, before the position calibration (keepers x0.529) and league offsets it applies to <code>psv</code>. Keepers’ uncalibrated PSV went straight into piero: in 2024-25 their mean per-game value was +0.0024 published vs -0.0133 from the final PSV, and 6 keepers were in the top 50 season totals (Schmeichel 5th) vs 0 once recomputed. Both columns, and the season percentile built on them, now come from the final <code>psv</code>; 10b logs the keepers’ share of the top 20. Takes effect on the next full game-log rebuild (a partial-league rebuild keeps the old values for leagues it skips). Review R019.</p>
+</div>
+</div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.87" id="panna-0387">panna 0.3.87<a class="anchor" aria-label="anchor" href="#panna-0387"></a></h2>
 <div class="section level3">
