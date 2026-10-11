@@ -293,7 +293,7 @@
   if ("primary_position" %in% names(player_stats)) {
     pos <- player_stats$primary_position
     player_stats$is_gk <- as.integer(grepl("Goalkeeper", pos, ignore.case = TRUE))
-    player_stats$is_df <- as.integer(grepl("Defender", pos, ignore.case = TRUE))
+    player_stats$is_df <- as.integer(grepl("Defender|Wing Back", pos, ignore.case = TRUE))
     player_stats$is_mf <- as.integer(grepl("Midfielder", pos, ignore.case = TRUE))
     player_stats$is_fw <- as.integer(grepl("Forward|Striker", pos, ignore.case = TRUE))
   }
@@ -305,6 +305,33 @@
 # ============================================================================
 # Shared column preparation helpers
 # ============================================================================
+
+#' Primary position per player: modal position over the games they STARTED
+#'
+#' Opta's \code{position} is the role in that match, and every bench appearance
+#' (used or not) reads \code{"Substitute"}. Counting those made "Substitute" the
+#' modal label for 53\% of EPL and 57\% of La Liga players in 2024-25, so they
+#' got no position dummy, and half the keepers who started in goal (21 of 42
+#' EPL, 22 of 44 La Liga) were not flagged \code{is_gk} (review R010). This
+#' counts only rows with minutes played and a real position. A player who only
+#' ever came off the bench gets no row (NA after the join), as before.
+#'
+#' @param dt data.table with \code{player_id} and \code{position}.
+#' @param minutes_col Candidate minutes column names, first present wins (rows
+#'   with no minutes are unused-bench rows). If none is present, every row counts.
+#' @return data.table with \code{player_id}, \code{primary_position}.
+#' @keywords internal
+.spm_primary_position <- function(dt, minutes_col) {
+  pos <- as.character(dt[["position"]])
+  mc <- intersect(minutes_col, names(dt))[1]
+  mins <- if (!is.na(mc)) suppressWarnings(as.numeric(dt[[mc]])) else rep(1, length(pos))
+  ok <- !is.na(pos) & !pos %in% c("", "Substitute") & !is.na(mins) & mins > 0
+  started <- data.table::data.table(player_id = dt[["player_id"]][ok], position = pos[ok])
+  started[, {
+    tbl <- table(position)
+    list(primary_position = names(tbl)[which.max(tbl)])
+  }, by = player_id]
+}
 
 #' Ensure player_id column exists in an Opta data.table
 #' @param dt data.table with player data
@@ -532,10 +559,7 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
 
   # Get primary position
   if ("position" %in% names(opta_dt)) {
-    pos_mode <- opta_dt[!is.na(position) & position != "", {
-      tbl <- table(position)
-      list(primary_position = names(tbl)[which.max(tbl)])
-    }, by = player_id]
+    pos_mode <- .spm_primary_position(opta_dt, c("minsPlayed", "total_minutes"))
     player_stats <- pos_mode[player_stats, on = "player_id"]
   }
 

@@ -117,9 +117,10 @@ classify_role_group <- function(role) {
   window <- data.table::copy(window)
 
   # TWO SEPARATE position derivations, deliberately -- not silent drift:
-  #  1. `primary_position` (below): the COUNT-modal `position` string over
-  #     window rows, byte-for-byte the same recipe `aggregate_opta_stats()`
-  #     uses (spm_opta.R). Feeding this into `.calculate_opta_derived_features()`
+  #  1. `primary_position` (below): the COUNT-modal `position` over the
+  #     window rows a player STARTED (minutes > 0, not "Substitute"), via
+  #     .spm_primary_position() -- the same helper `aggregate_opta_stats()`
+  #     calls (spm_opta.R). Feeding this into `.calculate_opta_derived_features()`
   #     (further down) makes it create is_gk/is_df/is_mf/is_fw the EXACT
   #     career-SPM way, and lets `build_spm_panel()` route GK EXCLUSION
   #     through the canonical `.detect_gk_rows()` (R/psr.R) -- the
@@ -134,10 +135,7 @@ classify_role_group <- function(role) {
   #     since they're existing `.spm_opta_predictor_cols()` columns, not new.
   pos_mode <- NULL
   if ("position" %in% names(window)) {
-    pos_mode <- window[!is.na(position) & position != "", {
-      tbl <- table(position)
-      list(primary_position = names(tbl)[which.max(tbl)])
-    }, by = player_id]
+    pos_mode <- .spm_primary_position(window, "total_minutes")
   }
 
   window[, row_role := classify_role(position, position_side)]
