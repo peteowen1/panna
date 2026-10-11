@@ -34,6 +34,7 @@ test_that("an NA asof value is imputed, not reverted to the season value", {
   out <- aggregate_lineup_ratings(mk_lineups(asof_epr = c(0.3, 0.3, NA, 0.3, 0.3, 0.3)),
                                   ratings, season_end_year = 2025)
   # Not 0.3 + 0.3 + 1 (season value back); the NA row gets the shrunk team mean.
-  expect_lt(out$home_sum_epr, 1)
+  # team mean of rated = 0.3, coverage 1 -> shrink 1/(1+0.6) = 0.625 -> 0.1875
+  expect_equal(out$home_sum_epr, 0.3 + 0.3 + 0.3 * 0.625)
   expect_equal(out$home_n_rated_players, 3)   # rated status is still panna-based
 })
