@@ -122,8 +122,9 @@ build_player_game_ratings <- function(player_game_epv,
     result$epv_total
   } else 0
   # A player-game with no PSV row has no PSV, not a PSV of 0: psv/osv/dsv and
-  # piero_value stay NA. Filling them with 0 shipped 4,659 cameos (2022-26,
-  # mostly ESP/GER) as exact zeros, with piero silently halved (review R007).
+  # piero_value stay NA. Filling them with 0 shipped every cameo under 10
+  # minutes (62,030 in 2022-26; PSV needs 10+) with a fake PSV, piero silently
+  # halved (review R007).
   psv_val <- if ("psv" %in% names(result)) result$psv else NA_real_
 
   result[, piero_value := epv_weight * epv_val + psv_weight * psv_val]
