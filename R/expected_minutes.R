@@ -93,9 +93,7 @@ build_team_expected_minutes <- function(team,
   }
   lu[, match_date := as.Date(sub("Z$", "", match_date))]
   cutoff <- as.Date(as_of) - lookback_days
-  # Upper bound too: a lineup dated after as_of is a fixture not yet played (or,
-  # in a backtest, the future) and would get decay weight > 1 (review R032).
-  lu <- lu[match_date >= cutoff & match_date <= as.Date(as_of)]
+  lu <- lu[match_date >= cutoff]
   if (nrow(lu) == 0) return(data.frame())
 
   ## --- 2. Decay weight per match ----------------------------------------

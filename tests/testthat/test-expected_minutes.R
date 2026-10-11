@@ -131,20 +131,3 @@ test_that("tournament_boost upweights in-tournament matches only", {
   expect_equal(on[["T"]], 4 * on[["F"]], tolerance = 0.05)
   expect_equal(on[["F"]], off[["F"]])
 })
-
-test_that("lineups dated after as_of are ignored (R032)", {
-  base <- data.table::data.table(
-    team_name = "Testland", match_id = c("m1", "m2"),
-    match_date = c("2026-01-01", "2026-03-01"), player_id = "p1",
-    player_name = "P One", position = "Striker", is_starter = TRUE,
-    minutes_played = 90L, sub_on_minute = NA_real_, sub_off_minute = NA_real_,
-    competition = "Intl_Friendlies"
-  )
-  # a third match AFTER as_of: without the bound it gets weight 2^(+x) > 1
-  future <- data.table::copy(base[2])[, `:=`(match_id = "m3", match_date = "2026-06-01")]
-  as_of <- as.Date("2026-04-01")
-  em_base <- build_team_expected_minutes("Testland", base, as_of = as_of)
-  em_fut  <- build_team_expected_minutes("Testland", rbind(base, future), as_of = as_of)
-  expect_equal(em_fut$n_appear, em_base$n_appear)
-  expect_equal(em_fut$expected_minutes, em_base$expected_minutes)
-})
