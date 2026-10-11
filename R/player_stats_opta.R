@@ -45,6 +45,7 @@
 #' @param season Character. Season string.
 #' @param min_minutes Numeric. Minimum minutes threshold.
 #' @param by_team Logical. Aggregate by player+team if TRUE.
+#'   Players are keyed on Opta `player_id` (when present), never on name.
 #' @param source Character. "remote" or "local".
 #' @param col_spec Named list mapping output column names to source column names.
 #' @param derive_fn Function(result) -> result that adds derived metrics.
@@ -73,33 +74,77 @@
   }
 
   if (!is.null(player)) {
-    data <- data[grepl(tolower(player), tolower(data$player_name), fixed = TRUE), ]
-    if (nrow(data) == 0) {
+    hit <- grepl(tolower(player), tolower(data$player_name), fixed = TRUE)
+    if (!any(hit)) {
       cli::cli_warn("No data found for player: {player}")
       return(data.frame())
+    }
+    # The name only finds the player; keep every row of each matched id, so
+    # rows under another spelling of the same id still count.
+    if ("player_id" %in% names(data)) {
+      ids <- unique(data$player_id[hit & !is.na(data$player_id)])
+      hit <- hit | data$player_id %in% ids
+    }
+    data <- data[hit, ]
+  }
+
+  # Identity key: player_id when the data carries it (Opta names are
+  # abbreviated, e.g. "A. Onana", so different players share a name), else
+  # fall back to the name (synthetic / legacy tables without player_id).
+  has_id <- "player_id" %in% names(data)
+
+  # Rows with no name cannot be displayed (and used to pool into one "NA"
+  # player); drop them and say so.
+  no_name <- is.na(data$player_name)
+  if (any(no_name)) {
+    cli::cli_inform("Dropped {sum(no_name)} row{?s} with missing player_name.")
+    data <- data[!no_name, , drop = FALSE]
+    if (nrow(data) == 0) return(data.frame())
+  }
+  if (has_id) {
+    no_id <- is.na(data$player_id)
+    if (any(no_id)) {
+      cli::cli_inform("Dropped {sum(no_id)} row{?s} with missing player_id.")
+      data <- data[!no_id, , drop = FALSE]
+      if (nrow(data) == 0) return(data.frame())
     }
   }
 
   # Build aggregation data.table from col_spec
   agg_dt <- data.table::data.table(
+    pid = if (has_id) as.character(data$player_id) else data$player_name,
     player = data$player_name,
-    team = data$team_name,
-    matches = 1
+    team = data$team_name
   )
   for (nm in names(col_spec)) {
     data.table::set(agg_dt, j = nm, value = .get_col(data, col_spec[[nm]]))
   }
+  # A match is an appearance only when minutes were played: unused
+  # substitutes are squad rows with NA minsPlayed.
+  agg_dt[, matches := if ("minutes" %in% names(agg_dt)) {
+    as.numeric(!is.na(minutes) & minutes > 0)
+  } else {
+    1
+  }]
   stat_cols_agg <- c("matches", names(col_spec))
+
+  # Display name per id: most frequent, ties broken alphabetically.
+  name_per_id <- agg_dt[, .N, by = .(pid, player)][order(pid, -N, player)][
+    , .(player = player[1L]), by = pid]
+  # Team per id (mode, ties alphabetical via table order).
+  team_mode <- agg_dt[, .(team = names(which.max(table(team)))), by = pid]
 
   if (by_team) {
     result <- agg_dt[, lapply(.SD, function(x) sum(x, na.rm = TRUE)),
-                     by = .(player, team), .SDcols = stat_cols_agg]
+                     by = .(pid, team), .SDcols = stat_cols_agg]
+    result <- name_per_id[result, on = "pid"]
   } else {
     result <- agg_dt[, lapply(.SD, function(x) sum(x, na.rm = TRUE)),
-                     by = .(player), .SDcols = stat_cols_agg]
-    team_mode <- agg_dt[, .(team = names(which.max(table(team)))), by = player]
-    result <- team_mode[result, on = "player"]
+                     by = .(pid), .SDcols = stat_cols_agg]
+    result <- name_per_id[result, on = "pid"]
+    result <- team_mode[result, on = "pid"]
   }
+  if (has_id) data.table::setnames(result, "pid", "player_id") else result[, pid := NULL]
   data.table::setDF(result)
 
   # Apply custom derived metrics
@@ -111,7 +156,7 @@
   }
 
   result <- result[order(-result$minutes), ]
-  col_order <- intersect(col_order, names(result))
+  col_order <- intersect(c(col_order[1L], "player_id", col_order[-1L]), names(result))
   result <- result[, col_order]
   rownames(result) <- NULL
 

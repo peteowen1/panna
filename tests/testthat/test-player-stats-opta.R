@@ -920,3 +920,85 @@ test_that("min_minutes validation rejects invalid values", {
     }
   )
 })
+
+
+# =============================================================================
+# R008 / R040 / R042: identity keyed on player_id
+# =============================================================================
+
+namesake_data <- function() {
+  data.frame(
+    player_id   = c("id1", "id1", "id2", "id2", "id3", "id1", NA, "id4"),
+    player_name = c("A. Onana", "A. Onana", "A. Onana", "A. Onana", "Z. Zed",
+                    "A. Onana", "Ghost", NA),
+    team_name   = c("T1", "T1", "T2", "T2", "T1", "T1", "T1", "T1"),
+    minsPlayed  = c(90, 90, 80, 70, 60, NA, 90, 90),
+    goals       = c(1, 0, 2, 0, 0, 5, 9, 9),
+    stringsAsFactors = FALSE
+  )
+}
+
+run_namesake <- function(by_team = FALSE, data = namesake_data(), player = NULL) {
+  panna:::.aggregate_opta_player_stats(
+    player = player, league = "ENG", season = "2024-2025",
+    min_minutes = 0, by_team = by_team, source = "local",
+    col_spec = list(minutes = "minsPlayed", goals = "goals"),
+    derive_fn = identity,
+    col_order = c("player", "team", "matches", "minutes", "goals"),
+    loader = function(...) data
+  )
+}
+
+test_that("same-name players with different player_id stay separate rows", {
+  res <- suppressMessages(run_namesake())
+  on <- res[res$player == "A. Onana", ]
+  expect_equal(nrow(on), 2)
+  expect_setequal(on$player_id, c("id1", "id2"))
+  expect_equal(on$minutes[on$player_id == "id1"], 180)
+  expect_equal(on$minutes[on$player_id == "id2"], 150)
+  expect_equal(on$team[on$player_id == "id2"], "T2")
+  expect_true(all(c("player", "player_id", "team", "matches", "minutes") %in% names(res)))
+  expect_identical(names(res)[1], "player")
+})
+
+test_that("by_team = TRUE also keeps namesakes apart", {
+  res <- suppressMessages(run_namesake(by_team = TRUE))
+  expect_equal(sum(res$player == "A. Onana"), 2)
+})
+
+test_that("rows with NA player_name / player_id are dropped, not pooled", {
+  expect_message(res <- run_namesake(), "missing player_name")
+  expect_false(anyNA(res$player))
+  expect_false("Ghost" %in% res$player)
+})
+
+test_that("matches counts appearances only (NA minutes is an unused sub)", {
+  res <- suppressMessages(run_namesake())
+  # id1 has 3 squad rows but one is an unused sub (NA minutes)
+  expect_equal(res$matches[res$player_id == "id1"], 2)
+  # the unused-sub row's goals still sum (NA minutes only affects matches)
+})
+
+test_that("display name per id is the most frequent, ties alphabetical", {
+  d <- data.frame(
+    player_id = rep("x", 4), player_name = c("B. Name", "A. Name", "B. Name", "A. Name"),
+    team_name = "T", minsPlayed = 90, goals = 0, stringsAsFactors = FALSE
+  )
+  expect_equal(run_namesake(data = d)$player, "A. Name")
+})
+
+test_that("a name filter keeps every row of the matched id, any spelling", {
+  d <- data.frame(
+    player_id = c("id1", "id1", "id2"),
+    player_name = c("A. Onana", "Andre Onana", "B. Other"),
+    team_name = "T", minsPlayed = c(90, 90, 90), goals = 0, stringsAsFactors = FALSE
+  )
+  res <- run_namesake(data = d, player = "A. Onana")
+  expect_equal(nrow(res), 1)
+  expect_equal(res$minutes, 180)
+})
+
+test_that("tables without player_id fall back to name grouping", {
+  res <- run_namesake(data = namesake_data()[, c("player_name", "team_name", "minsPlayed", "goals")])
+  expect_false("player_id" %in% names(res))
+})
