@@ -369,19 +369,45 @@ if (nrow(upcoming) > 0) {
   opta_all <- opta_all[opta_all$is_starter == TRUE & !is.na(opta_all$team_id), ]
   # Normalize RAPM-cache match_date to Date (cache stores as character)
   lineups$match_date <- as.Date(sub("Z$", "", as.character(lineups$match_date)))
-  # Combine: prefer opta_all (broader coverage), fall back to RAPM cache rows
+  # Combine: prefer opta_all (broader coverage), fall back to RAPM cache rows.
+  # The two sources overlap on every domestic match, so a player row present
+  # in both must be kept ONCE (opta_all's copy, as it is bound first).
+  # Without this, each team's latest XI was stacked twice and every upcoming
+  # fixture's sum_* features were doubled (codebase review R002).
   common_cols <- intersect(names(opta_all), names(lineups))
   combined_lu <- dplyr::bind_rows(
     opta_all[, common_cols, drop = FALSE],
     lineups[lineups$is_starter == TRUE, common_cols, drop = FALSE]
   )
   rm(opta_all); gc(verbose = FALSE)
+  combined_lu$match_id <- as.character(combined_lu$match_id)
+  combined_lu <- combined_lu[!duplicated(combined_lu[, c("match_id", "team_id", "player_id")]), ]
+  # Some cup / lower-tier feeds flag a used substitute as a starter
+  # (position "Substitute", sub_on_minute 81): not part of the XI.
+  if ("sub_on_minute" %in% names(combined_lu)) {
+    combined_lu <- combined_lu[is.na(combined_lu$sub_on_minute) | combined_lu$sub_on_minute <= 0, ]
+  }
+  # One match per team: two different match_ids on the team's latest date
+  # (a fixture listed under two competitions) would also stack two XIs.
   latest_lineups <- combined_lu %>%
     filter(!is.na(team_id)) %>%
     group_by(team_id) %>%
     filter(match_date == max(match_date)) %>%
+    filter(match_id == max(match_id)) %>%
     ungroup()
   rm(combined_lu)
+  xi_size <- table(latest_lineups$team_id)
+  n_over <- sum(xi_size > 11L)
+  if (n_over > 0L) {
+    msg <- sprintf(
+      "Latest lineup has more than 11 starters for %d of %d team(s) (max %d), e.g. %s. Their fixture team sums are inflated.",
+      n_over, length(xi_size), max(xi_size), paste(head(names(xi_size)[xi_size > 11L], 3), collapse = ", "))
+    # A handful is a feed quirk; more than 1% means the dedupe above broke.
+    if (n_over > 0.01 * length(xi_size)) stop(msg, call. = FALSE)
+    message("  WARNING: ", msg)
+  }
+  message(sprintf("  Latest lineups: %d teams, starters per team median %g (max %d)",
+                  length(xi_size), stats::median(xi_size), max(xi_size)))
   rm(lineups); gc(verbose = FALSE)
 
   # make_dummy_lineup() is defined in R/match_prediction.R
@@ -582,7 +608,12 @@ if (nrow(upcoming) > 0) {
                         100 * mean(.role16_to_role8(classify_role(
                           match_stats$position, match_stats$position_side)) != "OTHER")))
       }
-      match_stats <- .narrow_match_stats_for_skills(match_stats)
+      # Keep the xMetrics join keys (league/season/match_id) through the
+      # narrowing so the enrichment below can run on the small filtered table.
+      match_stats <- .narrow_match_stats_for_skills(
+        match_stats,
+        extra_cols = c("player_id", "player_name", "match_date", "position",
+                       "total_minutes", "league", "season", "match_id"))
       gc(verbose = FALSE)
       message(sprintf("  Narrowed match_stats to %d columns for skill estimation",
                       ncol(match_stats)))
@@ -602,6 +633,14 @@ if (nrow(upcoming) > 0) {
         match_stats <- match_stats[match_stats$player_id %in% upcoming_player_ids, ]
         message(sprintf("  Filtered match_stats to %d players (%d rows)",
                         length(upcoming_player_ids), nrow(match_stats)))
+        # 03_skill_spm.rds was fitted on xMetrics predictors (xg_per90,
+        # npxg_per90, xa_per90_xmetrics, ...) that 01_match_stats.rds does not
+        # carry. Without this join calculate_spm_ratings() errored on every
+        # run since 2026-07 and the tryCatch below silently fell back to
+        # seasonal ratings (codebase review R018). Same call as 08b / skills 02.
+        xm_source <- if (identical(Sys.getenv("XMETRICS_SOURCE"), "remote")) "remote" else "local"
+        match_stats <- enrich_match_stats_with_xmetrics(match_stats, verbose = TRUE,
+                                                        source = xm_source)
       } else {
         message(sprintf("  match_stats has no player_id column — using FULL table (%d rows), NOT filtered",
                         nrow(match_stats)))
@@ -843,8 +882,12 @@ if (nrow(upcoming) > 0) {
                         nrow(fixture_ratings), fixture_date))
       }
     }, error = function(e) {
-      warning(sprintf("Date-specific skills failed: %s (using seasonal fallback)", e$message),
-              call. = FALSE)
+      # message() + a GHA annotation so the fallback is visible while the run
+      # is live; a deferred warning() alone went unseen for ~10 weeks (R018).
+      msg <- sprintf("Date-specific skills failed: %s (using seasonal fallback)", e$message)
+      message("  WARNING: ", msg)
+      if (nzchar(Sys.getenv("GITHUB_ACTIONS"))) cat(sprintf("::warning::%s\n", msg))
+      warning(msg, call. = FALSE)
     })
   }
 
