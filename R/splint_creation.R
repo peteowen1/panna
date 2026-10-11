@@ -257,11 +257,30 @@ shift_to_continuous_clock <- function(clock, period_id, map) {
                    first_half_end = NULL, match_end = NULL)
   if (!ev_ok && !sh_ok) return(inactive)
 
-  if (!is.null(shooting) && nrow(shooting) > 0 && !sh_ok) {
+  mid <- if (!is.null(results) && nrow(results) > 0 && "match_id" %in% names(results)) results$match_id[1] else NA
+  n_ev <- if (is.null(events)) 0L else nrow(events)
+  n_sh <- if (is.null(shooting)) 0L else nrow(shooting)
+
+  # Events present but without any period_id while shots have one: boundaries
+  # would stay raw while shots shift. Keep the whole match on the raw clock.
+  if (!ev_ok && n_ev > 0) {
     cli::cli_warn(c(
-      "Shots have no {.field period_id}; their clock is left on the raw Opta clock.",
-      "i" = "Events are on the continuous timeline, so shots after half-time would be mis-assigned (review R009)."
-    ), .frequency = "once", .frequency_id = "panna_shots_no_period_id")
+      "Match {mid}: {n_ev} event{?s} have no {.field period_id} but shots do; building this match on the raw Opta clock.",
+      "i" = "Player on/off times from chain timing are still continuous, so lineups for this match may disagree with its events (review R009)."
+    ))
+    return(inactive)
+  }
+  if (!sh_ok && n_sh > 0) {
+    cli::cli_warn(c(
+      "Match {mid}: {n_sh} shot{?s} have no {.field period_id}; their clock is left on the raw Opta clock while events are continuous.",
+      "i" = "Shots after half-time may be mis-assigned (review R009)."
+    ))
+  }
+  if (ev_ok && anyNA(events$period_id)) {
+    cli::cli_warn("Match {mid}: {sum(is.na(events$period_id))} of {n_ev} event{?s} have an NA {.field period_id} and stay on the raw clock (review R009).")
+  }
+  if (sh_ok && anyNA(shooting$period_id)) {
+    cli::cli_warn("Match {mid}: {sum(is.na(shooting$period_id))} of {n_sh} shot{?s} have an NA {.field period_id} and stay on the raw clock (review R009).")
   }
 
   # Raw-clock period ends: markers from results (periods 1..4), else the
@@ -1477,6 +1496,57 @@ prepare_opta_events_for_splints <- function(opta_events, match_results = NULL) {
 }
 
 
+#' Move lineup-derived on/off times onto the continuous timeline
+#'
+#' Lineups record the raw Opta clock with no period. A time of 45 or more is
+#' read as period 2 (a half-time sub is logged at 45), more than the period-2
+#' end as extra time when the match had it. The default off time of 90 (player
+#' never came off) becomes the continuous end of regulation. First-half
+#' stoppage substitutions logged at 45 to ~48 are indistinguishable from
+#' half-time ones and so are read as period 2 (at most a few minutes off, and
+#' only for players without a chain row).
+#'
+#' @param lineups Data frame with `match_id`, `on_minute`, `off_minute`.
+#' @param off_default Logical, `TRUE` where off_minute is the default 90.
+#' @param period_ends Data frame with `match_id` and raw period-end columns, or NULL.
+#' @return `lineups` with shifted `on_minute` / `off_minute`.
+#' @keywords internal
+.shift_lineup_times <- function(lineups, off_default, period_ends) {
+  if (is.null(period_ends) || nrow(period_ends) == 0 || nrow(lineups) == 0) return(lineups)
+  cols <- c("first_half_end_time", "match_end_time", "extra_time_1_end_time", "extra_time_2_end_time")
+  pe <- as.data.frame(period_ends)
+  if (!"match_id" %in% names(pe)) return(lineups)
+  for (cn in cols) if (!cn %in% names(pe)) pe[[cn]] <- NA_real_
+  pe <- pe[!duplicated(pe$match_id), c("match_id", cols), drop = FALSE]
+  idx <- match(as.character(lineups$match_id), as.character(pe$match_id))
+  has <- which(!is.na(idx))
+  if (length(has) == 0) return(lineups)
+  rows_by_match <- split(has, as.character(lineups$match_id[has]))
+  for (rows in rows_by_match) {
+    ends <- unlist(pe[idx[rows[1]], cols], use.names = FALSE)
+    ends[!is.na(ends) & ends <= 0] <- NA_real_
+    mp <- period_clock_map(ends)
+    period_of <- function(m) {
+      p <- rep(1L, length(m))
+      p[!is.na(m) & m >= 45] <- 2L
+      if (!is.na(ends[3])) {
+        e2 <- max(ends[2], 90, na.rm = TRUE)
+        p[!is.na(m) & m > e2] <- 3L
+        p[!is.na(m) & m > ends[3]] <- 4L
+      }
+      p
+    }
+    on <- lineups$on_minute[rows]; off <- lineups$off_minute[rows]
+    lineups$on_minute[rows]  <- shift_to_continuous_clock(on, period_of(on), mp)
+    shifted_off <- shift_to_continuous_clock(off, period_of(off), mp)
+    # never came off: plays to the continuous end of regulation (start of period 3)
+    shifted_off[off_default[rows]] <- mp$start[3]
+    lineups$off_minute[rows] <- shifted_off
+  }
+  lineups
+}
+
+
 #' Prepare Opta Lineups for Splint Creation
 #'
 #' Converts Opta lineup data to the format expected by splint creation functions.
@@ -1496,13 +1566,19 @@ prepare_opta_events_for_splints <- function(opta_events, match_results = NULL) {
 #'   `player_id`, `on_minute`, `off_minute`, `is_starter`. When supplied,
 #'   chain-derived on/off times override the lineup-derived ones.
 #'
+#' @param period_ends Optional data frame with `match_id` and the raw period-end
+#'   columns of [extract_period_end_times()] (the step-01 results table has
+#'   them). Used to move the lineup-derived (non-chain) on/off times onto the
+#'   continuous timeline. If `NULL`, lineup times stay on the raw clock.
+#'
 #' @return Data frame with columns: match_id, player_id, player_name, team,
 #'   is_home, is_starter, minutes, on_minute, off_minute, on_off_source.
 #'   The `on_off_source` column is "chain" when chain-derived times were used,
 #'   "lineup" otherwise.
 #'
 #' @keywords internal
-prepare_opta_lineups_for_splints <- function(opta_lineups, player_timing = NULL) {
+prepare_opta_lineups_for_splints <- function(opta_lineups, player_timing = NULL,
+                                              period_ends = NULL) {
   if (is.null(opta_lineups) || nrow(opta_lineups) == 0) {
     return(data.frame(
       match_id = character(0),
@@ -1535,10 +1611,18 @@ prepare_opta_lineups_for_splints <- function(opta_lineups, player_timing = NULL)
   }
   if (has_sub_off) {
     sub_off <- as.numeric(lineups$sub_off_minute)
-    lineups$off_minute <- ifelse(is.na(sub_off) | sub_off == 0, 90, sub_off)
+    off_default <- is.na(sub_off) | sub_off == 0
+    lineups$off_minute <- ifelse(off_default, 90, sub_off)
   } else {
+    off_default <- rep(TRUE, nrow(lineups))
     lineups$off_minute <- 90
   }
+
+  # Continuous timeline (R009): lineup times are on the raw Opta clock, which
+  # restarts in period 2. Players with a chain row are overridden below; the
+  # rest (the fallback) must be shifted the same way or they would disagree
+  # with events, shots and chain-timed team-mates in the same match.
+  lineups <- .shift_lineup_times(lineups, off_default, period_ends)
   lineups$is_home <- if (has_team_pos) {
     tolower(lineups$team_position) == "home"
   } else {
@@ -1683,7 +1767,8 @@ prepare_opta_shots_for_splints <- function(opta_shot_events, use_goals_as_xg = F
 create_opta_processed_data <- function(opta_lineups, opta_events = NULL,
                                         opta_shot_events = NULL, opta_stats = NULL,
                                         use_goals_as_xg = FALSE,
-                                        player_timing = NULL) {
+                                        player_timing = NULL,
+                                        period_ends = NULL) {
   # Create match results from lineups (get unique matches with home/away teams)
   results <- NULL
   if (!is.null(opta_lineups) && nrow(opta_lineups) > 0) {
@@ -1700,7 +1785,8 @@ create_opta_processed_data <- function(opta_lineups, opta_events = NULL,
   }
 
   # Prepare lineups (chain-derived player_timing overrides on/off when supplied)
-  lineups <- prepare_opta_lineups_for_splints(opta_lineups, player_timing = player_timing)
+  lineups <- prepare_opta_lineups_for_splints(opta_lineups, player_timing = player_timing,
+                                              period_ends = period_ends)
 
   # Prepare events (if provided)
   events <- if (!is.null(opta_events)) {

@@ -117,6 +117,17 @@ add_value_metrics_to_splints <- function(splint_data,
     dt[shift_tbl, `:=`(.s2 = i.period_shift_2, .s3 = i.period_shift_3,
                        .s4 = i.period_shift_4, .s5 = i.period_shift_5),
        on = "match_id"]
+    # Rows that cannot be placed on the continuous timeline are left on the
+    # raw clock (shift 0). Count and say so rather than doing it silently.
+    n_na_period <- sum(is.na(dt$period_id))
+    n_na_shift <- sum(is.na(dt$.s2) & !is.na(dt$period_id) & dt$period_id >= 2L)
+    n_no_match <- sum(is.na(dt$.s2) & is.na(dt$.s3) & is.na(dt$.s4) & is.na(dt$.s5))
+    if (n_na_period > 0 || n_na_shift > 0) {
+      cli::cli_warn(c(
+        "{what}: {n_na_period} of {nrow(dt)} stream row{?s} have an NA {.field period_id} and {n_na_shift} period >= 2 row{?s} have an NA {.field period_shift_*} in the splints; they are cut on the raw clock.",
+        "i" = "{n_no_match} row{?s} belong to matches with no shift entry at all."
+      ))
+    }
     dt[, action_minute := time_seconds / 60 +
          data.table::fcase(period_id == 2L, data.table::fcoalesce(.s2, 0),
                            period_id == 3L, data.table::fcoalesce(.s3, 0),

@@ -33,10 +33,15 @@ config_path <- file.path(cache_dir, "01_config.rds")
 # goal_cleaning: bump when the goal-event handling changes, so a cache built
 # with the old goals is rebuilt rather than reused (1 = .clean_goal_events(),
 # review R022 / phantom 0:00 copies).
+# period_timeline: bump when events/shots/timing change clock basis (1 = events
+# carry period_id and splints use the continuous timeline, review R009 /
+# panna#300). Without this a cache built before the fix would be reused and the
+# fix would be silently inert.
 current_config <- list(leagues = leagues, seasons = seasons,
                        min_season = min_season,
                        use_xmetrics_features = use_xmetrics_features,
-                       goal_cleaning = 1L)
+                       goal_cleaning = 1L,
+                       period_timeline = 1L)
 
 if (file.exists(raw_data_path) && file.exists(config_path)) {
   cached_config <- readRDS(config_path)
@@ -241,7 +246,12 @@ for (league in leagues) {
   lg_events       <- tryCatch(load_opta_events(league, season = NULL, source = "local"),  error = function(e) NULL)
   lg_stats        <- tryCatch(load_opta_stats(league, season = NULL, source = "local"),   error = function(e) NULL)
   lg_xmetrics     <- if (use_xmetrics_features) tryCatch(load_opta_xmetrics(league, season = NULL), error = function(e) NULL) else NULL
-  lg_match_events <- tryCatch(load_opta_match_events(league, season = NULL), error = function(e) NULL)
+  lg_match_events <- tryCatch(load_opta_match_events(league, season = NULL),
+                              error = function(e) {
+                                message(sprintf("  ERROR loading raw match events for %s: %s -- shots, period ends, player timing and event period_id are unavailable for this league",
+                                                league, conditionMessage(e)))
+                                NULL
+                              })
 
   for (season in available_seasons) {
     label <- paste(league, season)
@@ -303,11 +313,21 @@ for (league in leagues) {
       if ("period_id" %in% names(events)) {
         pid_cov <- mean(!is.na(events$period_id))
         message(sprintf("    Event period_id coverage: %.2f%% of %d events", 100 * pid_cov, nrow(events)))
+        message(sprintf("    Event period_id: %d of %d events assigned, %d left NA",
+                        sum(!is.na(events$period_id)), nrow(events), sum(is.na(events$period_id))))
+        # Real seasons run 99.4% (EPL, 3 matches lack raw events) to 100% (MLS).
+        # Far below that means the raw/summary join is broken, and the splints
+        # would quietly mix raw and continuous clocks.
+        if (pid_cov < 0.95) {
+          stop(sprintf("%s: only %.1f%% of summary events have a period_id (%d of %d); expected >= 95%%. Fix the raw/summary event join (R009).",
+                       label, 100 * pid_cov, sum(!is.na(events$period_id)), nrow(events)), call. = FALSE)
+        }
         if (pid_cov < 0.99) {
           warning(sprintf("%s: only %.1f%% of summary events have a period_id; the rest stay on the raw clock (R009)",
                           label, 100 * pid_cov), call. = FALSE)
         }
       } else {
+        message(sprintf("    No raw match events for %s: event period_id not assigned", label))
         warning(sprintf("%s: no raw match events to derive event period_id from; events stay on the raw clock (R009)", label),
                 call. = FALSE)
       }

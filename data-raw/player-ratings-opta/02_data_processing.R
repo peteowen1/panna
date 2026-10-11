@@ -41,7 +41,8 @@ if (!exists("processed_data")) {
     opta_events = raw_opta_data$events,
     opta_shot_events = NULL,  # We use SPADL-derived shots instead
     opta_stats = raw_opta_data$stats,
-    player_timing = raw_opta_data$player_timing
+    player_timing = raw_opta_data$player_timing,
+    period_ends = raw_opta_data$results  # period-end markers: lineup-fallback times join the continuous timeline (R009)
   )
 
   # Override shooting with SPADL-derived shots (which have model xG)

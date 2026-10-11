@@ -183,3 +183,47 @@ test_that("assign_event_period_id looks the period up in raw events and falls ba
   # No raw events: returned unchanged, no period_id
   expect_false("period_id" %in% names(assign_event_period_id(ev, NULL)))
 })
+
+test_that("lineup-fallback times (no chain row) join the continuous timeline", {
+  lu <- data.frame(
+    match_id = "M", player_id = c("S", "SUBOFF", "HT", "LATE"),
+    player_name = c("S", "SUBOFF", "HT", "LATE"), team_id = "T", team_name = "T",
+    team_position = "home", is_starter = c(TRUE, TRUE, FALSE, FALSE),
+    minutes_played = c(90, 60, 45, 20),
+    sub_on_minute = c(NA, NA, 45, 70), sub_off_minute = c(NA, 60, NA, NA),
+    stringsAsFactors = FALSE
+  )
+  pe <- data.frame(match_id = "M", first_half_end_time = 48, match_end_time = 94)
+  out <- prepare_opta_lineups_for_splints(lu, period_ends = pe)
+  o <- function(id) out[out$player_id == id, ]
+  expect_equal(o("S")$off_minute, 97)       # never came off: continuous end of regulation
+  expect_equal(o("SUBOFF")$off_minute, 63)  # period 2 off time shifted by 3
+  expect_equal(o("HT")$on_minute, 48)       # half-time sub starts where period 2 does
+  expect_equal(o("LATE")$on_minute, 73)
+  # no period_ends: raw clock, as before
+  raw <- prepare_opta_lineups_for_splints(lu)
+  expect_equal(raw$off_minute[raw$player_id == "S"], 90)
+})
+
+test_that("mixed raw/shifted clocks are not built quietly", {
+  m <- .r009_match()
+  ev <- m$events; ev$period_id <- NA_integer_
+  expect_warning(sh <- .apply_continuous_timeline(ev, m$shooting, m$results), "raw Opta clock")
+  expect_false(sh$active)
+  expect_equal(sh$shooting$minute, m$shooting$minute)
+
+  sh2 <- m$shooting; sh2$period_id[1] <- NA
+  expect_warning(.apply_continuous_timeline(m$events, sh2, m$results), "NA")
+})
+
+test_that("stream rows with NA period_id warn with counts", {
+  m <- .r009_match()
+  res <- create_match_splints_fast(
+    "R009", m$events, m$lineups, m$shooting, m$results, min_splint_duration = 5)
+  sp <- res$splints; sp$splint_id <- paste0("R009_", sp$splint_num)
+  pl <- res$players; pl$splint_id <- paste0("R009_", pl$splint_num)
+  wpa <- data.frame(match_id = "R009", period_id = c(1L, NA), time_seconds = c(2790, 2790),
+                    wp_delta_home = c(0.1, 0.2))
+  expect_warning(add_value_metrics_to_splints(list(splints = sp, players = pl), match_action_wpa = wpa),
+                 "1 of 2")
+})
