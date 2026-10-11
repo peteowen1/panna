@@ -48,14 +48,11 @@ output_path <- file.path(cache_dir, "01_fixture_results.rds")
 
 # 3. Check Cache ----
 
-if (file.exists(output_path) && !isTRUE(force_rebuild)) {
-  message("Cache exists - loading 01_fixture_results.rds")
-  fixture_results <- readRDS(output_path)
-  message(sprintf("  %d historical + %d fixtures",
-                  sum(fixture_results$match_status == "Played"),
-                  sum(fixture_results$match_status != "Played")))
-  return(invisible(NULL))
-}
+# NOTE (review R060/R068/R076): there is deliberately NO cache-hit early exit here.
+# A top-level return() inside a source()d script does not stop the script, so the
+# old "Cache exists - loading" branch only logged and then rebuilt anyway. Making it
+# work would serve a stale fixture/results table: the key is file existence only, so new results and fixture status changes would never be picked up.
+# Always rebuild; clear_cache_files()/force_rebuild_from only governs downstream files.
 
 # 4. Try Loading from RAPM Cache ----
 

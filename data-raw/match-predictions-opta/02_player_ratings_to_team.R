@@ -20,12 +20,11 @@ if (!exists("use_skill_ratings")) use_skill_ratings <- TRUE
 
 # 3. Check Cache ----
 
-if (file.exists(output_path) && !isTRUE(force_rebuild)) {
-  message("Cache exists - loading 02_team_ratings.rds")
-  team_ratings <- readRDS(output_path)
-  message(sprintf("  %d matches with team ratings", nrow(team_ratings)))
-  return(invisible(NULL))
-}
+# NOTE (review R060/R068/R076): there is deliberately NO cache-hit early exit here.
+# A top-level return() inside a source()d script does not stop the script, so the
+# old "Cache exists - loading" branch only logged and then rebuilt anyway. Making it
+# work would serve a stale team ratings table: the key is file existence only, so it ignores new ratings and results.
+# Always rebuild; clear_cache_files()/force_rebuild_from only governs downstream files.
 
 # 4. Load Required Data ----
 
