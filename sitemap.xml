@@ -70,11 +70,13 @@
 <url><loc>https://peteowen1.github.io/panna/reference/PENALTY_XG.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/PLAYERS_PER_TEAM.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/PSV_RELIABILITY_GD_SCALE.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/RAPM_WINDOW_TARGET_SIGN_CONVENTION.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/REGULATION_SECONDS.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/SIX_YARD_X_MIN.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/SIX_YARD_Y_MAX.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/SIX_YARD_Y_MIN.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/SPADL_CACHE_DIR.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/SPMR_SIGN_CONVENTION.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/SPM_BLEND_WEIGHT_GLMNET.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/TEAM_STRENGTH_SIGN_CONVENTION.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/TOUCHES_PER_SEQUENCE.html</loc></url>
@@ -242,6 +244,7 @@
 <url><loc>https://peteowen1.github.io/panna/reference/dot-check_n_prev.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-check_suggests.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-classify_skill_stats.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/dot-clean_goal_events.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-clean_numeric_na.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-compute_keeper_gsaa.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-compute_snapshot_loop_columns.html</loc></url>
@@ -295,6 +298,7 @@
 <url><loc>https://peteowen1.github.io/panna/reference/dot-rename_opta_columns.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-report_model_provenance.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-resolve_lambda.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/dot-resolve_position_multipliers.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-resolve_positions.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-resolve_prior_strength.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-rolling_at.html</loc></url>

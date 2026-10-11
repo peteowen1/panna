@@ -1,5 +1,21 @@
 # Changelog
 
+## panna 0.3.82
+
+### Skills: position-specific priors for every stat; no future as-of dates ([\#309](https://github.com/peteowen1/panna/issues/309))
+
+Step 02b cached position multipliers for 52 of 88 skill stats, so the
+other 36 (keeper stats, xG, GSAA, duel WOE) shrank low-minute players
+toward the all-player mean: a back-up keeper’s saves toward 0.15 per 90
+rather than the keeper mean 1.76. 02b now caches multipliers for every
+detected stat after joining xMetrics, and readers never fill a gap from
+their own slice
+([`.resolve_position_multipliers()`](https://peteowen1.github.io/panna/reference/dot-resolve_position_multipliers.md)).
+The season in progress is no longer estimated as of 30 June of its end
+year (a future date that decayed every weight about x0.41); the as-of
+date is capped at the day after the last match. Review R015, R004.
+Published skills and PSR change on the next skills retrain (02b, 02-07).
+
 ## panna 0.3.81
 
 ### Match-prediction training rows use as-at player ratings ([\#308](https://github.com/peteowen1/panna/issues/308))
@@ -24,7 +40,8 @@ The goal rows in `opta_events.parquet` that step 01 counts for match
 scores, and step 03 turns into the splint score state, had three
 defects. Older feeds repeat every goal at 0:00 (303,685 of 958,439 rows;
 about every RAPM-league match 2014-2017), own goals carry the conceding
-team, and some older rows carry the wrong team. `.clean_goal_events()`
+team, and some older rows carry the wrong team.
+[`.clean_goal_events()`](https://peteowen1.github.io/panna/reference/dot-clean_goal_events.md)
 drops the copies and takes each goal’s team from its matched goal shot,
 flipped on Opta’s own-goal qualifier. Matches whose score disagrees with
 `opta_fixtures` fell from 26.52% to 0.82% in step 01’s leagues; step 01

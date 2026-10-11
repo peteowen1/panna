@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.81</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.82</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -40,6 +40,13 @@
     </div>
 
     <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.82" id="panna-0382">panna 0.3.82<a class="anchor" aria-label="anchor" href="#panna-0382"></a></h2>
+<div class="section level3">
+<h3 id="skills-position-specific-priors-for-every-stat-no-future-as-of-dates-0-3-82">Skills: position-specific priors for every stat; no future as-of dates (<a href="https://github.com/peteowen1/panna/issues/309" class="external-link">#309</a>)<a class="anchor" aria-label="anchor" href="#skills-position-specific-priors-for-every-stat-no-future-as-of-dates-0-3-82"></a></h3>
+<p>Step 02b cached position multipliers for 52 of 88 skill stats, so the other 36 (keeper stats, xG, GSAA, duel WOE) shrank low-minute players toward the all-player mean: a back-up keeper’s saves toward 0.15 per 90 rather than the keeper mean 1.76. 02b now caches multipliers for every detected stat after joining xMetrics, and readers never fill a gap from their own slice (<code><a href="../reference/dot-resolve_position_multipliers.html">.resolve_position_multipliers()</a></code>). The season in progress is no longer estimated as of 30 June of its end year (a future date that decayed every weight about x0.41); the as-of date is capped at the day after the last match. Review R015, R004. Published skills and PSR change on the next skills retrain (02b, 02-07).</p>
+</div>
+</div>
+    <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.81" id="panna-0381">panna 0.3.81<a class="anchor" aria-label="anchor" href="#panna-0381"></a></h2>
 <div class="section level3">
 <h3 id="match-prediction-training-rows-use-as-at-player-ratings-0-3-81">Match-prediction training rows use as-at player ratings (<a href="https://github.com/peteowen1/panna/issues/308" class="external-link">#308</a>)<a class="anchor" aria-label="anchor" href="#match-prediction-training-rows-use-as-at-player-ratings-0-3-81"></a></h3>
@@ -50,7 +57,7 @@
 <h2 class="pkg-version" data-toc-text="0.3.80" id="panna-0380">panna 0.3.80<a class="anchor" aria-label="anchor" href="#panna-0380"></a></h2>
 <div class="section level3">
 <h3 id="step-cleans-the-goal-events-phantom-copies-dropped-own-goals-credited-correctly-0-3-80">Step 01 cleans the goal events: phantom 0:00 copies dropped, own goals credited correctly (<a href="https://github.com/peteowen1/panna/issues/294" class="external-link">#294</a>)<a class="anchor" aria-label="anchor" href="#step-cleans-the-goal-events-phantom-copies-dropped-own-goals-credited-correctly-0-3-80"></a></h3>
-<p>The goal rows in <code>opta_events.parquet</code> that step 01 counts for match scores, and step 03 turns into the splint score state, had three defects. Older feeds repeat every goal at 0:00 (303,685 of 958,439 rows; about every RAPM-league match 2014-2017), own goals carry the conceding team, and some older rows carry the wrong team. <code>.clean_goal_events()</code> drops the copies and takes each goal’s team from its matched goal shot, flipped on Opta’s own-goal qualifier. Matches whose score disagrees with <code>opta_fixtures</code> fell from 26.52% to 0.82% in step 01’s leagues; step 01 now stops above 5%. Found by the 2026-10-11 codebase review (R022). RAPM-family ratings change on the next pipeline run, most for 2014-2018.</p>
+<p>The goal rows in <code>opta_events.parquet</code> that step 01 counts for match scores, and step 03 turns into the splint score state, had three defects. Older feeds repeat every goal at 0:00 (303,685 of 958,439 rows; about every RAPM-league match 2014-2017), own goals carry the conceding team, and some older rows carry the wrong team. <code><a href="../reference/dot-clean_goal_events.html">.clean_goal_events()</a></code> drops the copies and takes each goal’s team from its matched goal shot, flipped on Opta’s own-goal qualifier. Matches whose score disagrees with <code>opta_fixtures</code> fell from 26.52% to 0.82% in step 01’s leagues; step 01 now stops above 5%. Found by the 2026-10-11 codebase review (R022). RAPM-family ratings change on the next pipeline run, most for 2014-2018.</p>
 </div>
 </div>
     <div class="section level2">
