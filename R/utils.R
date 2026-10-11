@@ -676,3 +676,109 @@ build_where_clause <- function(filters, prefix = TRUE) {
   }
 }
 
+
+#' Clean Opta summary goal events: drop phantom copies, credit own goals
+#'
+#' Two defects in `opta_events.parquet`'s `event_type == "goal"` rows, both
+#' found in the 2026-10-11 codebase review:
+#' \enumerate{
+#'   \item \strong{Phantom copies.} Older feeds (in the RAPM leagues: about all
+#'     matches 2014-2017, about 30\% in 2018, none from 2019) carry each goal
+#'     twice: once timed, once at minute 0 second 0 (the scraper's fallback
+#'     when a goal record has no time). Counted by team, a 2-1 becomes 4-2,
+#'     and in the splint timeline the copies all land at kick-off. A row at
+#'     0:00 is dropped when the same player has a timed goal in that match,
+#'     one copy per timed goal.
+#'   \item \strong{Wrong team, including own goals (R022).} An own goal row
+#'     carries the CONCEDING team, so Fulham 1-1 Man Utd (Martinez OG) counted
+#'     0-2, and some older rows carry the wrong team outright. Each goal is
+#'     matched to its goal shot (same match and player, nearest minute within
+#'     2; old seasons store minute+1 and second 0) and takes the shooter's
+#'     team, or the opponent when the shot has Opta's own-goal qualifier 28.
+#' }
+#'
+#' @param events Summary events with `match_id`, `event_type`, `team_id`,
+#'   `player_id`, `minute`, `second`.
+#' @param goal_shots Goal shot events (type 16) with `match_id`, `player_id`,
+#'   `team_id` (the shooter's team), `minute` and `is_own_goal`.
+#' @param match_teams One row per match: `match_id`, `home_team_id`,
+#'   `away_team_id`.
+#' @return `events` without the phantom rows, with `team_id` switched to the
+#'   opponent on own goals and a logical `is_own_goal` column, plus attribute
+#'   `goal_cleaning` = c(phantoms_dropped, own_goals_flipped,
+#'   own_goals_unmatched, wrong_team_fixed).
+#' @keywords internal
+.clean_goal_events <- function(events, goal_shots, match_teams) {
+  was_dt <- data.table::is.data.table(events)
+  ev <- data.table::as.data.table(events)
+  ev[, is_own_goal := FALSE]
+  ev[, .row := .I]
+  goal <- ev$event_type == "goal"
+
+  # 1. Phantom 0:00 copies: drop up to one per timed goal by the same player.
+  sec <- if ("second" %in% names(ev)) ev$second else rep(NA_real_, nrow(ev))
+  ph <- goal & ev$minute %in% 0 & (is.na(sec) | sec %in% 0)
+  timed <- ev[goal & !ph, .(n_timed = .N), by = .(match_id, player_id)]
+  phr <- ev[ph, .(.row, match_id, player_id)]
+  phr[, .k := seq_len(.N), by = .(match_id, player_id)]
+  phr <- timed[phr, on = .(match_id, player_id)]
+  drop_rows <- phr[!is.na(n_timed) & .k <= n_timed, .row]
+  n_ph <- length(drop_rows)
+  if (n_ph > 0L) ev <- ev[!.row %in% drop_rows]
+
+  # 2. Team from the shot events. Each summary goal is matched to a goal shot
+  #    (type 16) by the same player in the same match, nearest minute within 2
+  #    (old seasons store minute+1 and second 0). The scoring team is the
+  #    shooter's team, or the opponent on an own goal (qualifier 28). This fixes
+  #    own goals (R022) and older rows logged under the wrong team.
+  gs <- data.table::as.data.table(goal_shots)
+  gs <- gs[, .(match_id, player_id, shot_team = team_id, sh_minute = as.numeric(minute),
+               og = is_own_goal %in% TRUE)]
+  n_og <- sum(gs$og); n_flip <- 0L; n_team_fix <- 0L; n_unmatched_og <- n_og
+  if (nrow(gs) > 0L && any(ev$event_type == "goal")) {
+    gs[, .gs := seq_len(.N)]
+    cand <- ev[event_type == "goal", .(.row, match_id, player_id, ev_minute = as.numeric(minute), team_id)]
+    pairs <- cand[gs, on = .(match_id, player_id), nomatch = NULL, allow.cartesian = TRUE]
+    pairs[, .d := abs(ev_minute - sh_minute)]
+    pairs <- pairs[.d <= 2]
+    data.table::setorder(pairs, .d)
+    pairs <- pairs[!duplicated(.gs)][!duplicated(.row)]   # one-to-one, nearest first
+    # Second pass: the two feeds sometimes name different scorers for one goal
+    # (a deflection credited to the shooter in one, logged as a defender's own
+    # goal in the other). Pair what is left by match and nearest minute.
+    left_ev <- cand[!.row %in% pairs$.row]
+    left_gs <- gs[!.gs %in% pairs$.gs]
+    if (nrow(left_ev) > 0L && nrow(left_gs) > 0L) {
+      p2 <- left_ev[left_gs[, !"player_id"], on = "match_id", nomatch = NULL, allow.cartesian = TRUE]
+      p2[, .d := abs(ev_minute - sh_minute)]
+      p2 <- p2[.d <= 2]
+      data.table::setorder(p2, .d)
+      p2 <- p2[!duplicated(.gs)][!duplicated(.row)]
+      pairs <- data.table::rbindlist(list(pairs, p2), use.names = TRUE, fill = TRUE)
+    }
+    mt <- unique(data.table::as.data.table(match_teams)[, .(match_id, home_team_id, away_team_id)], by = "match_id")
+    pairs <- mt[pairs, on = "match_id"]
+    pairs[, .new_team := data.table::fifelse(
+      og,
+      data.table::fcase(shot_team == home_team_id, away_team_id,
+                        shot_team == away_team_id, home_team_id, default = NA_character_),
+      data.table::fifelse(shot_team %in% c(home_team_id, away_team_id), shot_team, NA_character_))]
+    pairs <- pairs[!is.na(.new_team)]
+    idx <- match(pairs$.row, ev$.row)
+    changed <- ev$team_id[idx] != pairs$.new_team
+    n_flip <- sum(pairs$og); n_unmatched_og <- n_og - n_flip
+    n_team_fix <- sum(changed & !pairs$og)
+    ev[idx, `:=`(team_id = pairs$.new_team, is_own_goal = pairs$og)]
+    # splint_creation.R prefers team_position over team_id for is_home.
+    if ("team_position" %in% names(ev)) {
+      home <- pairs$.new_team == pairs$home_team_id
+      ev[idx, team_position := data.table::fifelse(home, "home", "away")]
+    }
+  }
+  ev[, .row := NULL]
+  out <- if (was_dt) ev else as.data.frame(ev)
+  attr(out, "goal_cleaning") <- c(phantoms_dropped = n_ph, own_goals_flipped = n_flip,
+                                  own_goals_unmatched = n_unmatched_og,
+                                  wrong_team_fixed = n_team_fix)
+  out
+}

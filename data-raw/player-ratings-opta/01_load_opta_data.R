@@ -657,6 +657,33 @@ match_info <- as.data.frame(
   ), keyby = .(match_id, league, season)]
 )
 
+# Goal-event cleaning (review R022 + phantom copies, see .clean_goal_events()).
+# Opta's summary goal rows (a) carry the CONCEDING team on an own goal, so
+# Fulham 1-1 Man Utd (Martinez OG) was recorded 0-2, and (b) in older feeds
+# repeat every goal at 0:00, so a 2-1 was recorded 4-2 with two "goals" at
+# kick-off. The splints built from these events (step 03) inherited both.
+# This runs before goal_counts AND before combined_events is saved, so the
+# results table and the splint timeline both see the cleaned goals.
+og_path <- file.path(opta_data_dir(), "opta_shot_events.parquet")
+if (!file.exists(og_path)) {
+  stop("opta_shot_events.parquet not found at ", og_path,
+       " -- needed to credit goals and own goals to the right team (R022).", call. = FALSE)
+}
+goal_shots <- as.data.frame(
+  arrow::open_dataset(og_path) |>
+    dplyr::filter(type_id == 16L) |>
+    dplyr::select(match_id, player_id, team_id, minute, is_own_goal) |>
+    dplyr::collect()
+)
+combined_events <- .clean_goal_events(combined_events, goal_shots, match_info)
+.gc <- attr(combined_events, "goal_cleaning")
+message(sprintf(paste0("  Goal events cleaned: %d phantom 0:00 copies dropped, %d own goals re-credited ",
+                       "to the benefiting team (%d own-goal shots not matched), %d rows moved to the ",
+                       "shooter's team"),
+                .gc[["phantoms_dropped"]], .gc[["own_goals_flipped"]], .gc[["own_goals_unmatched"]],
+                .gc[["wrong_team_fixed"]]))
+rm(goal_shots, .gc)
+
 # Derive match scores from goal events. OPT #5: data.table aggregation on the
 # ~1M-row events table (was dplyr group_by/summarise).
 goal_counts <- as.data.frame(
@@ -702,6 +729,39 @@ results <- match_info %>%
     # type-unstable: it returns a list, not a numeric, when `season` is empty.
     season_end_year = extract_season_end_year(season)
   )
+
+# Score check against Opta's official result (review R022). Before the goal
+# cleaning above, 45% of all played fixtures (and ~100% of 2014-2017 RAPM-league
+# matches) scored wrong from these events; after it, 3.7% corpus-wide, mostly
+# cup ties and lower leagues. Warn above 1%, stop above 5% -- that level means
+# the cleaning has stopped working, not a few odd feeds.
+fx_path <- file.path(opta_data_dir(), "opta_fixtures.parquet")
+if (file.exists(fx_path)) {
+  fx_scores <- as.data.frame(
+    arrow::open_dataset(fx_path) |>
+      dplyr::filter(match_id %in% !!results$match_id) |>
+      dplyr::select(match_id, fx_home = home_score, fx_away = away_score) |>
+      dplyr::collect()
+  )
+  fx_scores$fx_home <- suppressWarnings(as.integer(fx_scores$fx_home))
+  fx_scores$fx_away <- suppressWarnings(as.integer(fx_scores$fx_away))
+  chk <- merge(results[, c("match_id", "home_goals", "away_goals")],
+               fx_scores[!is.na(fx_scores$fx_home) & !is.na(fx_scores$fx_away), ],
+               by = "match_id")
+  n_bad <- sum(chk$home_goals != chk$fx_home | chk$away_goals != chk$fx_away)
+  bad_rate <- if (nrow(chk) > 0) n_bad / nrow(chk) else 0
+  message(sprintf("  Score check vs opta_fixtures: %d of %d matches differ (%.2f%%)",
+                  n_bad, nrow(chk), 100 * bad_rate))
+  if (bad_rate > 0.05) {
+    stop(sprintf("%.1f%% of match scores built from goal events differ from opta_fixtures (limit 5%%). ",
+                 100 * bad_rate), "The goal-event cleaning (.clean_goal_events) is not working.", call. = FALSE)
+  } else if (bad_rate > 0.01) {
+    message("  WARNING: more than 1% of match scores differ from opta_fixtures")
+  }
+  rm(fx_scores, chk)
+} else {
+  message("  WARNING: opta_fixtures.parquet not found; score check skipped")
+}
 
 # Join match-level xG
 if (!is.null(combined_match_xg)) {
