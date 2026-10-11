@@ -1,3 +1,14 @@
+# panna 0.3.81
+
+## Match-prediction training rows use as-at player ratings (#308)
+
+Step 02 gave every played match its players' end-of-season EPR, PSR and SPM, which already contain the
+match being predicted, so the goals and outcome models trained on ratings that knew the result (Chelsea
+0-2 Man City, 18 Aug 2024, was fed June 2025 EPR: team sum 0.451 instead of 0.431). Played lineups now
+carry the latest weekly EPR/PSR snapshot strictly before the match and the previous season's SPM, which
+`aggregate_lineup_ratings()` prefers over the season lookup (`asof_*` columns). Expect the held-out
+metrics to drop on the next retrain: the leak was flattering them. Review R005/R017 (#297).
+
 # panna 0.3.80
 
 ## Step 01 cleans the goal events: phantom 0:00 copies dropped, own goals credited correctly (#294)
