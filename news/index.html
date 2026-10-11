@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.76</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.77</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,6 +39,13 @@
       <small>Source: <a href="https://github.com/peteowen1/panna/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.77" id="panna-0377">panna 0.3.77<a class="anchor" aria-label="anchor" href="#panna-0377"></a></h2>
+<div class="section level3">
+<h3 id="upcoming-fixture-predictions-no-longer-double-each-teams-lineup-live-skill-ratings-work-again-0-3-77">Upcoming-fixture predictions no longer double each team’s lineup; live skill ratings work again (<a href="https://github.com/peteowen1/panna/issues/290" class="external-link">#290</a>)<a class="anchor" aria-label="anchor" href="#upcoming-fixture-predictions-no-longer-double-each-teams-lineup-live-skill-ratings-work-again-0-3-77"></a></h3>
+<p>Step 02 of the predictions pipeline stacked <code>opta_lineups.parquet</code> and the RAPM-cache lineups without de-duplicating them, so each team’s latest XI appeared twice and every upcoming domestic and European fixture got doubled team-sum features (up to 22 rated players a side). It now keeps each player once per match and one match per team, drops used substitutes the feed flags as starters, and warns or stops when an XI exceeds 11 (1,134 of 6,768 teams over 11 before, 5 after). The date-specific skill ratings for fixtures had failed on every run since July because <code>01_match_stats.rds</code> lacks the xMetrics predictors the skill SPM needs; step 02 now joins them as 08b does, and a fallback to seasonal ratings is reported while the run is live. Found by the 2026-10-11 codebase review (R002, R018).</p>
+</div>
+</div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.76" id="panna-0376">panna 0.3.76<a class="anchor" aria-label="anchor" href="#panna-0376"></a></h2>
 <div class="section level3">
