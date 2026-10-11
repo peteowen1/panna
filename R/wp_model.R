@@ -407,7 +407,7 @@ create_wp_features <- function(spadl_with_epv, match_results = NULL,
   keep_cols <- intersect(
     c(feature_cols, "result", "home_team_id",
       "receiver_player_id", "receiver_player_name",
-      "player_credit", "epv_delta"),
+      "receiver_team_id", "player_credit", "epv_delta"),
     names(dt)
   )
 
