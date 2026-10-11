@@ -188,18 +188,24 @@ aggregate_season_ratings <- function(game_ratings, season_col = "season") {
       n_games = .N,
       total_minutes = sum(minutes_played, na.rm = TRUE)
     ),
-    lapply(.SD, sum, na.rm = TRUE)
+    # All-NA (e.g. no game with PSV) stays NA rather than summing to 0 (R007)
+    lapply(.SD, function(x) if (all(is.na(x))) NA_real_ else sum(x, na.rm = TRUE)),
+    # Minutes of the games where each metric is present: the per-90 divisor
+    stats::setNames(lapply(.SD, function(x) sum(minutes_played[!is.na(x)], na.rm = TRUE)),
+                    paste0(".min_", value_cols))
   ), by = group_cols, .SDcols = value_cols]
 
   # Per-90 rates
-  mins_safe <- pmax(result$total_minutes, 1)
   for (col in value_cols) {
     p90_col <- paste0(col, "_p90")
+    mins_safe <- pmax(result[[paste0(".min_", col)]], 1)
     data.table::set(result, j = p90_col,
                      value = result[[col]] / (mins_safe / 90))
   }
+  result[, (paste0(".min_", value_cols)) := NULL]
 
-  data.table::setorder(result, -piero_value)
+  data.table::setorderv(result, intersect("piero_value", names(result)),
+                        order = -1L, na.last = TRUE)
   result[]
 }
 

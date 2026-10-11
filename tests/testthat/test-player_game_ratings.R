@@ -165,3 +165,21 @@ test_that("aggregate_season_ratings sums and averages correctly", {
   # Per-90: 1.2 / (225/90) = 0.48
   expect_equal(result$epv_total_p90, 1.2 / (225 / 90))
 })
+
+test_that("aggregate_season_ratings keeps missing PSV out of totals and per-90 (R007)", {
+  gr <- data.frame(
+    player_id = c("p1", "p1", "p2"), player_name = c("Alice", "Alice", "Bob"),
+    match_id = c("m1", "m2", "m1"), season = "2024",
+    minutes_played = c(90, 10, 5),
+    epv_total = c(0.5, 0.1, 0.05), psv = c(0.6, NA, NA),
+    piero_value = c(0.55, NA, NA), stringsAsFactors = FALSE
+  )
+  res <- aggregate_season_ratings(gr)
+  a <- res[res$player_id == "p1", ]
+  b <- res[res$player_id == "p2", ]
+  expect_equal(a$psv, 0.6)
+  expect_equal(a$psv_p90, 0.6)                 # divides by the 90 PSV minutes, not 100
+  expect_equal(a$epv_total_p90, 0.6 / (100 / 90))
+  expect_true(is.na(b$psv) && is.na(b$piero_value) && is.na(b$psv_p90))
+  expect_identical(res$player_id, c("p1", "p2"))   # NA piero sorts last
+})

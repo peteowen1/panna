@@ -1295,8 +1295,13 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
   }
 
   # Season-scoped panna percentile
-  player_totals <- game_logs[, .(total_panna = sum(panna, na.rm = TRUE)), by = player_id]
-  player_totals[, panna_percentile := round(100 * rank(total_panna, ties.method = "min") / .N, 1)]
+  # A player with no piero in any game (cameos with no PSV, R007) gets NA, not
+  # a total of 0 ranked mid-table.
+  player_totals <- game_logs[, .(total_panna = if (all(is.na(panna))) NA_real_ else
+                                   sum(panna, na.rm = TRUE)), by = player_id]
+  player_totals[, panna_percentile := round(100 * rank(total_panna, ties.method = "min",
+                                                       na.last = "keep") /
+                                              sum(!is.na(total_panna)), 1)]
   game_logs <- merge(game_logs, player_totals[, .(player_id, panna_percentile)],
                      by = "player_id", all.x = TRUE)
 
@@ -1353,7 +1358,8 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
     data.table::set(game_logs, j = col, value = round(game_logs[[col]], 4))
   }
 
-  data.table::setorder(game_logs, league, match_date, match_id, -panna)
+  data.table::setorderv(game_logs, c("league", "match_date", "match_id", "panna"),
+                          order = c(1L, 1L, 1L, -1L), na.last = TRUE)
 
   out_path <- file.path(cache_dir, sprintf("game_logs_%s.parquet", season))
   # Subset-league backfill: merge into the existing per-season file rather than
@@ -1377,7 +1383,8 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
     n_kept <- nrow(kept)
     n_dropped <- nrow(existing) - n_kept
     game_logs <- data.table::rbindlist(list(kept, game_logs), fill = TRUE, use.names = TRUE)
-    data.table::setorder(game_logs, league, match_date, match_id, -panna)
+    data.table::setorderv(game_logs, c("league", "match_date", "match_id", "panna"),
+                          order = c(1L, 1L, 1L, -1L), na.last = TRUE)
     rm(existing, kept); gc()
     message(sprintf("  [%s] Merge: kept %d existing rows (replaced %d for %s), total %d",
                     season, n_kept, n_dropped, paste(rebuilt, collapse = ","),
