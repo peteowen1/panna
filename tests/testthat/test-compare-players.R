@@ -113,3 +113,13 @@ test_that("compare_players keeps same-name players with different player_id apar
   expect_equal(res$minutes[res$player_id == "p2"], 160)
   expect_true("player_name" %in% names(res))
 })
+
+test_that("compare_players keeps every row of a matched id, any spelling", {
+  mock <- mock_xmetrics_data()
+  mock$player_name <- c("A. Onana", "Andre Onana", "B. Other", "B. Other")
+  mock$player_id <- c("p1", "p1", "p2", "p2")
+  local_mocked_bindings(.load_opta_xmetrics_data = function(...) mock)
+  res <- suppressMessages(compare_players("A. Onana", source = "local"))
+  expect_equal(nrow(res), 1)
+  expect_equal(res$minutes, sum(mock$minutes[mock$player_id == "p1"]))
+})

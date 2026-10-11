@@ -74,11 +74,18 @@
   }
 
   if (!is.null(player)) {
-    data <- data[grepl(tolower(player), tolower(data$player_name), fixed = TRUE), ]
-    if (nrow(data) == 0) {
+    hit <- grepl(tolower(player), tolower(data$player_name), fixed = TRUE)
+    if (!any(hit)) {
       cli::cli_warn("No data found for player: {player}")
       return(data.frame())
     }
+    # The name only finds the player; keep every row of each matched id, so
+    # rows under another spelling of the same id still count.
+    if ("player_id" %in% names(data)) {
+      ids <- unique(data$player_id[hit & !is.na(data$player_id)])
+      hit <- hit | data$player_id %in% ids
+    }
+    data <- data[hit, ]
   }
 
   # Identity key: player_id when the data carries it (Opta names are

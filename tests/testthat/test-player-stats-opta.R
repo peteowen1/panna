@@ -987,6 +987,17 @@ test_that("display name per id is the most frequent, ties alphabetical", {
   expect_equal(run_namesake(data = d)$player, "A. Name")
 })
 
+test_that("a name filter keeps every row of the matched id, any spelling", {
+  d <- data.frame(
+    player_id = c("id1", "id1", "id2"),
+    player_name = c("A. Onana", "Andre Onana", "B. Other"),
+    team_name = "T", minsPlayed = c(90, 90, 90), goals = 0, stringsAsFactors = FALSE
+  )
+  res <- run_namesake(data = d, player = "A. Onana")
+  expect_equal(nrow(res), 1)
+  expect_equal(res$minutes, 180)
+})
+
 test_that("tables without player_id fall back to name grouping", {
   res <- run_namesake(data = namesake_data()[, c("player_name", "team_name", "minsPlayed", "goals")])
   expect_false("player_id" %in% names(res))

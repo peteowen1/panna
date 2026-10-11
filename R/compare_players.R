@@ -61,6 +61,12 @@ compare_players <- function(players,
       player_mask <- player_mask | grepl(tolower(p), lower_names, fixed = TRUE)
     }
   }
+  # The name only finds the player; keep every row of each matched id, so
+  # rows under another spelling of the same id still count.
+  if ("player_id" %in% names(xm_data)) {
+    ids <- unique(xm_data$player_id[player_mask & !is.na(xm_data$player_id)])
+    player_mask <- player_mask | xm_data$player_id %in% ids
+  }
   xm_data <- xm_data[player_mask, ]
 
   if (nrow(xm_data) == 0) {
