@@ -14,6 +14,10 @@ on:
         description: 'Allow a live_subset league to drop from psv_live_constants.csv (tournament legitimately ended)'
         type: boolean
         default: false
+      force_full_rebuild:
+        description: 'Rebuild EVERY weekly snapshot, not just new weeks (needed once after a stale-input incident, e.g. review R001)'
+        type: boolean
+        default: false
 
 concurrency:
   group: panna-release-writer
@@ -125,7 +129,7 @@ jobs:
           mkdir -p "$CACHE_SKILLS"
 
           echo "Downloading skill caches..."
-          for f in 01_match_stats.rds 02b_decay_params.rds 03_skill_spm.rds psr_league_offsets.parquet; do
+          for f in 02b_decay_params.rds 03_skill_spm.rds psr_league_offsets.parquet; do
             if gh release download predictions-cache --repo peteowen1/pannadata \
                  --pattern "$f" --dir "$CACHE_SKILLS" 2>/dev/null; then
               echo "  Downloaded $f"
@@ -138,10 +142,10 @@ jobs:
           ls -lh "$CACHE_SKILLS"/*.rds "$CACHE_SKILLS"/*.parquet 2>/dev/null || echo "  No skill caches"
 
           # Validate prerequisites for step 8b
-          if [ ! -f "$CACHE_SKILLS/01_match_stats.rds" ] && [ ! -f "$CACHE_SKILLS/01_match_stats_slim.rds" ]; then
-            echo "FATAL: 01_match_stats(_slim).rds required for PSR snapshot"
-            exit 1
-          fi
+          # 01_match_stats.rds is NOT downloaded: the predictions-cache copy is
+          # refreshed only by hand and sat at 2026-07-05 for three months, so
+          # every snapshot since was pure decay (review R001). Step 01 rebuilds
+          # it below from the opta_player_stats downloaded above.
           # Offsets are REQUIRED: every GHA weekly run until 2026-07-04 silently
           # built offset-free snapshots (offsets were never downloaded), mixing
           # conventions in the released parquet. 8b also hard-fails via
@@ -162,6 +166,8 @@ jobs:
           # GHA has no local xmetrics_bymatch/ tree (panna#126) — read the
           # consolidated opta_xmetrics_bymatch.parquet from opta-latest instead.
           XMETRICS_SOURCE: remote
+          # One-off full rebuild (dispatch input); empty = incremental.
+          PSR_FORCE_FULL_REBUILD: ${{ inputs.force_full_rebuild && '1' || '' }}
         run: |
           cat > /tmp/run_psr_weekly.R << 'EOF'
           pannadata_path <- Sys.getenv("PANNADATA_DIR", "../pannadata/data")
@@ -174,8 +180,11 @@ jobs:
           # (career_panna, 8.5 <= 9), which lacks its cache-opta prerequisites
           # here and failed silently every week. Preset run_steps explicitly
           # (run_skills_pipeline.R only builds it if it doesn't exist).
+          # Step 01 first: it rebuilds 01_match_stats.rds from the fresh
+          # opta_player_stats (~6 min, ~0.4 GB on run 38036435673). 08b then
+          # refuses a match-stats table that is more than a few weeks old.
           run_steps <- list(
-            step_01_compute_match_stats    = FALSE,
+            step_01_compute_match_stats    = TRUE,
             step_02_estimate_skills        = FALSE,
             step_02b_optimize_params       = FALSE,
             step_03_skill_spm              = FALSE,
