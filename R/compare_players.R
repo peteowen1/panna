@@ -15,7 +15,8 @@
 #'   players are specified).
 #' @param source Character. "remote" (default) or "local".
 #'
-#' @return Data frame with one row per player and columns grouped by category:
+#' @return Data frame with one row per player (keyed on Opta `player_id`, so
+#'   namesakes stay separate rows) and columns grouped by category:
 #'   identity, shooting, creating, passing, chains, defending, possession.
 #'
 #' @family player statistics
@@ -67,8 +68,16 @@ compare_players <- function(players,
     return(data.frame())
   }
 
-  # Aggregate across seasons/leagues per player
+  # Aggregate across seasons/leagues per player. Key on player_id (Opta names
+  # are abbreviated and shared between different players); fall back to the
+  # name only for tables without an id column.
   dt <- data.table::as.data.table(xm_data)
+  dt <- dt[!is.na(player_name)]
+  has_id <- "player_id" %in% names(dt)
+  if (has_id) dt <- dt[!is.na(player_id)]
+  dt[, pid := if (has_id) as.character(player_id) else player_name]
+  name_per_id <- dt[, .N, by = .(pid, player_name)][order(pid, -N, player_name)][
+    , .(player_name = player_name[1L]), by = pid]
   result <- dt[, .(
     team = names(which.max(table(team_name))),
     minutes = sum(minutes, na.rm = TRUE),
@@ -85,7 +94,8 @@ compare_players <- function(players,
     passes_completed = sum(passes_completed, na.rm = TRUE),
     passes_attempted = sum(passes_attempted, na.rm = TRUE),
     xpass_overperformance = sum(xpass_overperformance, na.rm = TRUE)
-  ), by = .(player_name)]
+  ), by = .(pid)]
+  result <- name_per_id[result, on = "pid"]
 
   # Add chain stats if available
   has_chains <- "chains_involved" %in% names(dt)
@@ -96,9 +106,10 @@ compare_players <- function(players,
       chain_goals = sum(chain_goals, na.rm = TRUE),
       chain_starts = sum(chain_starts, na.rm = TRUE),
       chain_xg = sum(chain_xg, na.rm = TRUE)
-    ), by = .(player_name)]
-    result <- chain_agg[result, on = "player_name"]
+    ), by = .(pid)]
+    result <- chain_agg[result, on = "pid"]
   }
+  if (has_id) data.table::setnames(result, "pid", "player_id") else result[, pid := NULL]
 
   data.table::setDF(result)
 
@@ -131,7 +142,7 @@ compare_players <- function(players,
   }
 
   # Select output columns
-  out_cols <- c("player_name", "team", "minutes",
+  out_cols <- c("player_name", "player_id", "team", "minutes",
                 "goals", "xg_p90", "npxg_p90", "shots_p90",
                 "assists", "xa_p90", "key_passes",
                 "pass_pct", "xpass_op_p90")

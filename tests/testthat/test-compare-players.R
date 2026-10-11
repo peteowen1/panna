@@ -98,3 +98,18 @@ test_that("compare_players warns for unmatched player", {
   )
   expect_equal(nrow(result), 0)
 })
+
+
+test_that("compare_players keeps same-name players with different player_id apart (R008)", {
+  mock <- mock_xmetrics_data()
+  mock$player_name <- "A. Onana"
+  mock$player_id <- c("p1", "p1", "p2", "p2")
+  mock$team_name <- c("Man Utd", "Man Utd", "Aston Villa", "Aston Villa")
+  local_mocked_bindings(.load_opta_xmetrics_data = function(...) mock)
+  res <- suppressMessages(compare_players("Onana", source = "local"))
+  expect_equal(nrow(res), 2)
+  expect_setequal(res$player_id, c("p1", "p2"))
+  expect_equal(res$minutes[res$player_id == "p1"], 175)
+  expect_equal(res$minutes[res$player_id == "p2"], 160)
+  expect_true("player_name" %in% names(res))
+})

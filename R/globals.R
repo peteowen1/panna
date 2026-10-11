@@ -824,3 +824,6 @@ utils::globalVariables(c(
 # .clean_goal_events() (R/utils.R).
 utils::globalVariables(c(".og", ".row", ".new_team", ".k", ".d", "n_timed", "ev_minute", ".gs", "shot_team", "sh_minute", "og",
                          "home_team_id", "away_team_id"))
+
+# .aggregate_opta_player_stats() / compare_players() (R/player_stats_opta.R, R/compare_players.R).
+utils::globalVariables(c("pid", "minutes", "player_id"))
