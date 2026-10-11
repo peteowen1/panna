@@ -385,15 +385,9 @@ progress_msg <- function(msg, verbose = TRUE) {
     }
     is_home <- events$is_home
 
-    # Convention (review R051): a splint is (start, end]. An event exactly on a
-    # boundary -- and goals CREATE boundaries -- belongs to the splint it ENDS,
-    # and is already part of the next splint's starting score ("before" counts
-    # minute <= start). Left-closed binning put such a goal in the NEXT splint
-    # as well, i.e. it was counted twice and credited to the lineup after it.
     if (type == "within") {
-      # left.open + rightmost.closed: intervals (b1,b2], ..., with the FIRST one
-      # closed at b1 so a minute-0 event still lands in splint 1.
-      bins <- findInterval(event_mins, boundaries, rightmost.closed = TRUE, left.open = TRUE)
+      # findInterval: bin each event into its splint (1-based)
+      bins <- findInterval(event_mins, boundaries, rightmost.closed = FALSE, left.open = FALSE)
       # Clamp to valid range (events outside boundaries get 0 or n_splints+1)
       valid <- bins >= 1 & bins <= n_splints
       if (any(valid)) {
@@ -401,18 +395,15 @@ progress_msg <- function(msg, verbose = TRUE) {
         away_count <- tabulate(bins[valid & !is_home], nbins = n_splints)
       }
     } else {
-      # "before": the score at each splint's START, i.e. events with
-      # minute <= boundaries[i] (a goal on the boundary has happened). The old
-      # `- .Machine$double.eps` meant "<" but is below double precision at any
-      # minute >= 2, so it already counted "<="; this states it.
+      # "before": count events before each splint's start boundary
+      # For splint i, count events with minute < boundaries[i]
+      # Use cumulative counts on sorted events
       home_mins <- sort(event_mins[is_home])
       away_mins <- sort(event_mins[!is_home])
-      home_count <- findInterval(boundaries[seq_len(n_splints)], home_mins)
-      away_count <- findInterval(boundaries[seq_len(n_splints)], away_mins)
-      # Splint 1 is closed at its start (see "within"), so its starting score
-      # counts only events strictly BEFORE it.
-      home_count[1] <- sum(home_mins < boundaries[1])
-      away_count[1] <- sum(away_mins < boundaries[1])
+      home_count <- findInterval(boundaries[seq_len(n_splints)] - .Machine$double.eps,
+                                 home_mins)
+      away_count <- findInterval(boundaries[seq_len(n_splints)] - .Machine$double.eps,
+                                 away_mins)
     }
   }
 
