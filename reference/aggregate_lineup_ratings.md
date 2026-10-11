@@ -21,7 +21,10 @@ aggregate_lineup_ratings(
 - lineups:
 
   Data frame of match lineups with player_name, team_name, team_position
-  (home/away), position, is_starter columns
+  (home/away), position, is_starter columns. Optional `asof_<col>`
+  columns (e.g. `asof_epr`, `asof_psr`, `asof_spm`) give a per-row as-at
+  rating that replaces the season lookup for `<col>`; NA means unrated
+  (imputed below).
 
 - ratings:
 
