@@ -325,6 +325,7 @@ if (!exists("epr_dt")) stop("EPR weekly snapshots were not loaded (non-standard 
                             "cannot build as-at EPR for training rows (R005).", call. = FALSE)
 .attach_asof(lu_dt, epr_dt[, .(player_id, snapshot_date, epr, epr_offensive, epr_defensive)],
              c("epr", "epr_offensive", "epr_defensive"), "EPR")
+rm(epr_w, epr_dt); gc(verbose = FALSE)   # ~1 GB; the fixture path re-reads EPR
 psr_w_path <- file.path(opta_data_dir(), "opta_psr_weekly.parquet")
 if (!file.exists(psr_w_path)) {
   stop("opta_psr_weekly.parquet not found at ", psr_w_path,
@@ -343,8 +344,14 @@ lu_dt[spm_prev, asof_spm := i.asof_spm, on = c("player_id", "sey_")]
 message(sprintf("  As-at SPM (previous season): %d of %d played lineup rows rated (%.1f%%)",
                 sum(!is.na(lu_dt$asof_spm) & !is.na(lu_dt$ref_)), sum(!is.na(lu_dt$ref_)),
                 100 * mean(!is.na(lu_dt$asof_spm[!is.na(lu_dt$ref_)]))))
-# Rows of matches not in `played` (no ref_) keep NA asof_* only for columns
-# that exist; drop the helpers.
+# Unrated -> 0, the same as the serve path (fixture_ratings epr/psr NA -> 0
+# below) and as the season merge did before; imputing here instead would make
+# a new train/serve gap. The no-silent-imputation fix is panna#74.
+asof_all <- grep("^asof_", names(lu_dt), value = TRUE)
+n_na <- vapply(asof_all, function(cc) sum(is.na(lu_dt[[cc]]) & !is.na(lu_dt$ref_)), integer(1))
+for (cc in asof_all) lu_dt[is.na(get(cc)), (cc) := 0]
+message("  As-at unrated played rows set to 0 (panna#74): ",
+        paste(sprintf("%s %d", sub("^asof_", "", asof_all), n_na), collapse = ", "))
 lu_dt[, c("md_", "sey_", "ref_", "i_") := NULL]
 lineups <- as.data.frame(lu_dt)
 rm(lu_dt, pl_dt, spm_prev); gc(verbose = FALSE)
