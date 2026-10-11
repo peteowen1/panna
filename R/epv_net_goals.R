@@ -1086,21 +1086,24 @@ ng_spread_pools <- function(pay, actions, lineups, dacts_share = 0.5, keeper_poo
   lu <- unique(lu, by = c("match_id", "player_id", "team_id"))
   lu <- lu[!is.na(mins) & mins > 0]
   lu[, start_min := fifelse(is_starter, 0, on)]
-  lu[, end_min := fifelse(is.na(off) | off <= 0, Inf, off)]
-  # The 0 sentinel is handled above; a genuinely MISSING minute is a different
-  # thing and must not be waved through as if it were the sentinel. A
-  # substitute with no on-minute cannot be placed at all and would be dropped
-  # silently, shrinking the recipient pool; a player who left early with no
-  # off-minute would linger past his departure and dilute the players actually
-  # on. Neither is visible to any total, so both are reported.
+  # A red card also leaves off == 0 (the "not substituted" sentinel), so a
+  # sent-off player used to collect pool shares to the final whistle (review
+  # R031). With no real off-minute, an exit before the 85th minute (minutes
+  # played says so) ends the stint at start + minutes; later exits and full
+  # games run to the end, which also absorbs stoppage-time minute counts.
+  lu[, early_exit := (is.na(off) | off <= 0) & !is.na(start_min) & start_min + mins < 85]
+  lu[, end_min := fifelse(!is.na(off) & off > 0, off,
+                   fifelse(early_exit, start_min + mins, Inf))]
+  # A substitute with no on-minute cannot be placed at all and is dropped,
+  # shrinking the recipient pool; that is invisible to any total, so report it.
   n_no_on <- sum(!lu$is_starter & is.na(lu$on))
-  n_no_off <- sum(lu$is_starter & is.na(lu$off) & lu$mins < 85)
-  if (n_no_on > 0 || n_no_off > 0) {
+  if (n_no_on > 0) {
     cli::cli_warn(c(
-      "Lineup has {n_no_on} substitute{?s} with no on-minute and {n_no_off} starter{?s} who left early with no off-minute.",
-      "i" = "The first are dropped from the spread; the second are treated as playing to the end.",
-      "x" = "Both misallocate pools without changing any total."))
+      "Lineup has {n_no_on} substitute{?s} with no on-minute.",
+      "i" = "They are dropped from the spread.",
+      "x" = "That misallocates pools without changing any total."))
   }
+  lu[, early_exit := NULL]
   lu <- lu[!is.na(start_min)]
 
   # Cartesian within (match, team), then filter to the stint. Each bucket keeps

@@ -1126,3 +1126,29 @@ test_that("same-second events keep feed (row) order, not event_id order (R003)",
   expect_equal(adj[event_id == 9L]$next_team_id, "A")
   expect_true(is.na(adj[event_id == 8L]$next_type_id))
 })
+
+test_that("a sent-off player stops receiving pool shares at his exit (R031)", {
+  # Opta writes a red card as sub_off_minute = 0 (the "not substituted"
+  # sentinel) with minutes_played = the minutes before the dismissal. h2 is
+  # sent off after 30 minutes; every action here is after minute 47, so h2
+  # must receive no pool share at all. Before the fix the 0 sentinel kept him
+  # on to the final whistle.
+  d <- ng_fixture_spadl()
+  fxt <- ng_fixture_fixtures()
+  acts <- transform(d, time_seconds = c(47, 48, 49, 50) * 60, period_id = 1L)
+  lineup <- data.frame(
+    match_id = "m1",
+    player_id = c(paste0("h", 1:11), paste0("a", 1:11)),
+    team_id = c(rep("H", 11), rep("A", 11)),
+    is_starter = TRUE,
+    minutes_played = c(90, 30, rep(90, 9), rep(90, 11)),
+    sub_on_minute = 0, sub_off_minute = 0,
+    stringsAsFactors = FALSE
+  )
+  pay <- ng_build_ledger(d, adj = NULL, allocate = TRUE, convention = "team",
+                         fixtures = fxt, verbose = FALSE)
+  out <- ng_spread_pools(pay, acts, lineup, dacts_share = 0, verbose = FALSE)
+  expect_false("h2" %in% out[play_type == "pool"]$player_id)
+  expect_true("h3" %in% out[play_type == "pool"]$player_id)
+  expect_equal(sum(out[team_id == "H"]$value_own), 1.00, tolerance = 1e-10)
+})
