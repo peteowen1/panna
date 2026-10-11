@@ -192,7 +192,8 @@ get_default_decay_params <- function() {
     cli::cli_warn(c(
       "No cached position multiplier for {length(miss)} skill stat{?s}; they use no positional prior centre (R015).",
       "i" = "First: {.field {utils::head(miss, 6)}}{if (length(miss) > 6) ' ...' else ''}",
-      "i" = "Re-run data-raw/estimated-skills/02b_optimize_params.R to cache them."))
+      "i" = "Re-run data-raw/estimated-skills/02b_optimize_params.R to cache them."),
+      .frequency = "once", .frequency_id = "panna_r015_missing_multipliers")
   }
   pm
 }

@@ -80,7 +80,10 @@ cat(sprintf("\nOptimization time: %.1f minutes\n", as.numeric(optim_duration)))
 # is unchanged, and compute multipliers on this full Big-5 table for every
 # stat the estimators detect. Readers never fill gaps from their own slice.
 xm_source <- if (identical(Sys.getenv("XMETRICS_SOURCE"), "remote")) "remote" else "local"
-ms_x <- enrich_match_stats_with_xmetrics(match_stats, fail_if_missing_frac = 0.6, source = xm_source)
+# copy(): the enrich adds columns by reference, and the backtest below must
+# keep running on the box-score table it always used.
+ms_x <- enrich_match_stats_with_xmetrics(data.table::copy(match_stats), fail_if_missing_frac = 0.6,
+                                         source = xm_source)
 mult_cols <- union(.detect_skill_stat_cols(ms_x),
                    intersect(union(.get_psr_skill_cols(), .get_gk_skill_cols()), names(ms_x)))
 pm_all <- compute_position_multipliers(ms_x, mult_cols)
