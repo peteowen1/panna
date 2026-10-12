@@ -54,3 +54,19 @@ test_that("opta-pipeline serialises runs and only uploads caches after success",
   expect_match(up$`if`, "success()", fixed = TRUE)
   expect_false(grepl("always()", up$`if`, fixed = TRUE))
 })
+
+test_that("psr skills rebuild runs even when an earlier step failed (R100)", {
+  skip_if_not_installed("yaml")
+  skip_if_not(file.exists(wf_path("psr-weekly-snapshot.yml")), ".github not available (R CMD check)")
+  steps <- yaml::read_yaml(wf_path("psr-weekly-snapshot.yml"))$jobs[[1]]$steps
+  st <- Filter(function(s) identical(s$name, "Rebuild and export the skill estimates"), steps)[[1]]
+  expect_match(st$`if`, "!cancelled()", fixed = TRUE)
+})
+
+test_that("08b smoke-test guard uses plain exists() so the isolated driver can set it (R065)", {
+  p <- testthat::test_path("..", "..", "data-raw", "estimated-skills", "08b_export_psr_weekly.R")
+  skip_if_not(file.exists(p), "data-raw not available (R CMD check)")
+  src <- readLines(p, warn = FALSE)
+  expect_false(any(grepl('exists("psr_smoke_n", inherits = FALSE)', src, fixed = TRUE)))
+  expect_true(any(grepl('exists("psr_smoke_n")', src, fixed = TRUE)))
+})

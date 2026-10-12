@@ -391,7 +391,7 @@ if (length(snapshot_dates) == 0) {
 # resulting parquet is missing snapshots and must NEVER upload: force upload_psr
 # off rather than trusting the caller to remember (a forgotten flag would clobber
 # the released opta_psr_weekly.parquet with weeks of missing history).
-if (exists("psr_smoke_n", inherits = FALSE) && psr_smoke_n > 0) {
+if (exists("psr_smoke_n") && psr_smoke_n > 0) {
   full_dates <- sort(unique(c(older_monthly, recent_weekly)))
   full_dates <- full_dates[full_dates >= min_history]
   snapshot_dates <- utils::tail(full_dates, psr_smoke_n)
@@ -943,7 +943,7 @@ arrow::write_parquet(as.data.frame(weekly_psr), out_path)
 mb <- round(file.info(out_path)$size / 1024^2, 1)
 cat(sprintf("  Written: %s (%s MB)\n", out_path, mb))
 
-if (exists("psr_smoke_n", inherits = FALSE) && psr_smoke_n > 0) {
+if (exists("psr_smoke_n") && psr_smoke_n > 0) {
   wp <- data.table::as.data.table(weekly_psr)
   dl <- max(wp$snapshot_date)
   tt <- wp[snapshot_date == dl & weighted_90s >= 8][order(-psr)]
