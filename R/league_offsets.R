@@ -124,10 +124,17 @@ compute_league_offsets <- function(game_logs,
   }
   dt <- dt[!is.na(epv_offensive) & !is.na(epv_defensive) & !is.na(league)]
 
-  dt[, season_end_year := data.table::fifelse(
-    data.table::month(match_date) >= 7L,
-    data.table::year(match_date) + 1L,
-    data.table::year(match_date))]
+  # Season from the label when there is one: the month>=7 rule mis-seasons
+  # calendar-year leagues (70% of BRA rows, 52% of MLS) and summer tournaments
+  # (review R074). The month rule stays only as a fallback for label-less input.
+  if ("season" %in% names(dt)) {
+    dt[, season_end_year := as.integer(extract_season_end_year(season))]
+  } else {
+    dt[, season_end_year := data.table::fifelse(
+      data.table::month(match_date) >= 7L,
+      data.table::year(match_date) + 1L,
+      data.table::year(match_date))]
+  }
   if (isTRUE(exclude_qualifiers)) {
     # League phase is Sep-Jan; `month < 9` also dropped January's league-phase
     # matchdays (review R121). Knockouts (Feb+) are dropped with the qualifiers.

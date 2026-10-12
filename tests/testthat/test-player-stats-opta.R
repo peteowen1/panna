@@ -342,7 +342,7 @@ test_that(".aggregate_opta_player_stats handles missing columns via .get_col", {
   )
 
   expect_equal(result$goals, 3)
-  expect_equal(result$assists, 0)  # Missing col defaults to 0
+  expect_true(is.na(result$assists))  # missing source column is unknown, not 0 (R041)
 })
 
 

@@ -458,10 +458,7 @@ load_xpass_model <- function(path = NULL) {
 
   # Try pannamodels package (preferred)
   if (requireNamespace("pannamodels", quietly = TRUE)) {
-    model <- tryCatch(
-      pannamodels::load_panna_model("xpass_model", verbose = FALSE),
-      error = function(e) NULL
-    )
+    model <- .load_from_pannamodels("xpass_model")
     if (!is.null(model)) {
       cli::cli_alert_success("Loaded xPass model from pannamodels")
       return(model)

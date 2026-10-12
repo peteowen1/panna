@@ -300,3 +300,14 @@ test_that(".log_rss respects verbose = FALSE", {
   msgs <- capture_messages(.log_rss("quiet", verbose = FALSE))
   expect_length(msgs, 0)
 })
+
+test_that(".load_from_pannamodels aborts on an integrity failure, falls back otherwise (R052)", {
+  bad_sha <- function(n) stop(structure(class = c("vb_error_integrity", "error", "condition"),
+                                        list(message = "sha256 mismatch", call = NULL)))
+  expect_error(panna:::.load_from_pannamodels("xg_model", loader = bad_sha), "integrity")
+
+  expect_message(res <- panna:::.load_from_pannamodels("xg_model", loader = function(n) stop("network down")),
+                 "network down")
+  expect_null(res)
+  expect_identical(panna:::.load_from_pannamodels("xg_model", loader = function(n) "MODEL"), "MODEL")
+})

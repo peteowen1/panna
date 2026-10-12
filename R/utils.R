@@ -784,3 +784,37 @@ build_where_clause <- function(filters, prefix = TRUE) {
                                   wrong_team_fixed = n_team_fix)
   out
 }
+
+
+#' Load a model from pannamodels without hiding why it failed
+#'
+#' The model loaders try pannamodels first and fall back to a local copy.
+#' They used to swallow every pannamodels error, including a failed sha256
+#' integrity check, and quietly use the local file, which is often an older
+#' vintage (review R052/R091). An integrity failure now aborts; any other
+#' error is reported before the caller falls back.
+#'
+#' @param name Model name passed to `pannamodels::load_panna_model()`.
+#' @param loader Function taking `name` and returning the model; defaults to
+#'   pannamodels. Tests inject a stub so they run without pannamodels.
+#' @return The model, or `NULL` when pannamodels is not installed or the load
+#'   failed for a reason other than integrity.
+#' @keywords internal
+.load_from_pannamodels <- function(name,
+                                   loader = function(n) pannamodels::load_panna_model(n, verbose = FALSE)) {
+  # Capture first, decide after: an abort raised INSIDE a tryCatch handler is
+  # caught by a sibling `error =` handler, which turned the integrity abort
+  # back into a quiet fallback.
+  res <- tryCatch(loader(name), error = function(e) e)
+  if (inherits(res, "vb_error_integrity")) {
+    cli::cli_abort(c(
+      "pannamodels integrity check failed for {.val {name}}: {conditionMessage(res)}",
+      "x" = "Refusing to fall back to an unverified local copy."
+    ), parent = res)
+  }
+  if (inherits(res, "error")) {
+    cli::cli_alert_warning("pannamodels could not load {.val {name}} ({conditionMessage(res)}); trying the local copy, which may be an older model.")
+    return(NULL)
+  }
+  res
+}

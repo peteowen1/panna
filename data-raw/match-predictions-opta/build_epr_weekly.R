@@ -175,9 +175,16 @@ if (EPR_SOURCE == "net_goals") {
               epv_offensive = epv_offensive_adj,
               epv_defensive = epv_defensive_adj)]
 }
-gl[, season_end_year := fifelse(month(match_date) >= 7L,
-                                 year(match_date) + 1L,
-                                 year(match_date))]
+# Season from the LABEL, never the match month: the month>=7 rule mis-seasoned
+# 272,671 of 2.4M game-log rows (BRA 70%, MLS 52%, ARG 38%, every summer
+# tournament), so they joined the wrong season's opponent strength and sat in
+# the wrong league-season FE (review R074/R075).
+.sey_map <- unique(gl$season)
+.sey_map <- stats::setNames(as.integer(extract_season_end_year(.sey_map)), .sey_map)
+gl[, season_end_year := unname(.sey_map[season])]
+if (anyNA(gl$season_end_year)) {
+  cli::cli_abort("Unparseable season label{?s} in game logs: {.val {unique(gl$season[is.na(gl$season_end_year)])}}")
+}
 t_log(sprintf("loaded game_logs in %.1fs: %s rows, %s players, %s matches",
               as.numeric(Sys.time()-t0, units="secs"),
               format(nrow(gl), big.mark=","),

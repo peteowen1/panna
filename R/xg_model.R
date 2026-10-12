@@ -806,10 +806,7 @@ load_xg_model <- function(path = NULL, name = "xg_model") {
 
   # Try pannamodels package first (preferred)
   if (requireNamespace("pannamodels", quietly = TRUE)) {
-    model <- tryCatch(
-      pannamodels::load_panna_model(name, verbose = FALSE),
-      error = function(e) NULL
-    )
+    model <- .load_from_pannamodels(name)
     if (!is.null(model)) {
       cli::cli_alert_success("Loaded xG model {.val {name}} from pannamodels")
       return(model)

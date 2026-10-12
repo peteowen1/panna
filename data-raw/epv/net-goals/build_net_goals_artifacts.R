@@ -43,7 +43,7 @@ INPUTS <- sprintf("data-raw/cache/epv/net-goals/ng_inputs_%s_%s%s.rds", LEAGUE, 
 CACHE    <- sprintf("data-raw/cache/epv/net-goals/ng_ledger_%s_%s%s.rds", LEAGUE, SEASON, epv_tag)
 OUT_DIR  <- file.path("data-raw/cache/epv/net-goals", sub("^_", "", epv_tag))   # gitignored
 dir.create(OUT_DIR, showWarnings = FALSE, recursive = TRUE)
-INPUT_VERSION <- 1L
+INPUT_VERSION <- 2L   # 2: ng_build_adjacency() orders same-second ties by feed order (review R003)
 # The local model files are part of the key, so replacing one rebuilds the
 # inputs without anyone remembering a bump. (The xGOT model comes from
 # load_xgot_model() and the events from the local parquet: those still rely on

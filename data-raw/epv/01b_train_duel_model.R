@@ -21,10 +21,10 @@ library(data.table)
 # scores ALL leagues in step 03.
 if (!exists("duel_train_leagues")) {
   duel_train_leagues <- c(
-    "Premier_League", "La_Liga", "Bundesliga", "Serie_A", "Ligue_1",
+    "EPL", "La_Liga", "Bundesliga", "Serie_A", "Ligue_1",
     "Eredivisie", "Primeira_Liga", "Belgian_First_Division", "Championship",
     "Brazilian_Serie_A", "Argentine_Liga_Profesional", "MLS",
-    "UEFA_Champions_League", "World_Cup"
+    "UCL", "World_Cup"
   )
 }
 if (!exists("duel_save")) duel_save <- TRUE
@@ -33,9 +33,16 @@ opta_dir <- file.path(pannadata_dir(), "opta")
 avail <- list.files(opta_dir, pattern = "^events_.*\\.parquet$")
 want <- paste0("events_", duel_train_leagues, ".parquet")
 have <- intersect(want, avail)
-if (length(have) == 0) {
-  cli::cli_alert_warning("None of the requested leagues found; using all available event files.")
-  have <- avail
+# A requested league with no events file is a typo or a missing download, not
+# something to train around: "Premier_League" and "UEFA_Champions_League"
+# (the Opta file names are EPL / UCL) silently dropped both from every xDuel
+# training run until 2026-10 (review R054).
+missing_leagues <- setdiff(duel_train_leagues, sub("^events_", "", sub("[.]parquet$", "", have)))
+if (length(missing_leagues)) {
+  cli::cli_abort(c(
+    "No events file for requested league{?s}: {.val {missing_leagues}}.",
+    "i" = "Use the Opta file names (events_<LEAGUE>.parquet), or download the events first."
+  ))
 }
 # Full event stream needed (aerial_poss next-possession + containment row-adjacency).
 need_cols <- c("match_id", "player_id", "team_id", "type_id", "outcome",

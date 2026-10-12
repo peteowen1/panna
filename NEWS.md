@@ -1,3 +1,34 @@
+# panna 0.3.90
+
+## Review fixes batch 3 (#318)
+
+Fixes from the 2026-10-11 codebase review, each checked on real data:
+
+- **Net goals** (`ng_build_adjacency()`): same-second events keep feed order, not `event_id` order, matching
+  SPADL. On EPL 2025-26 the save came before the shot in 195 of 900 same-second pairs; 13% of events get a
+  different "next event". The artifacts' `INPUT_VERSION` is bumped so cached inputs rebuild. Review R003.
+- **Net goals** (`ng_spread_pools()`): a sent-off player stops receiving pool shares at his exit (Opta writes a
+  red card as `sub_off_minute = 0`). EPL 2024-25: 46 such rows against 55 red cards. Review R031.
+- **Weekly PSR** (08b): every row carries a `model_fingerprint` of the coefficient files (all 12, incl. the
+  goalkeeper model), position means, decay params, league offsets and calibration; old snapshots are reused only
+  when it matches, otherwise the history is rebuilt. The first weekly run after this does one full rebuild.
+  Review R016.
+- **EPR weekly**: season from the season label, not the match month. 272,671 of 2.4M game-log rows (BRA 70%,
+  MLS 52%, ARG 38%, summer tournaments) had joined the neighbouring season's opponent strength.
+  `compute_league_offsets()` and step 07's goalkeeper path use the label too. Review R074/R075/R039.
+- **Match predictions** (step 03): upcoming fixtures get each team's form as of its last played match, with rest
+  days to the fixture. They used to reuse the pre-match values of the team's last home (or away) match: rest days
+  after the October break read 3-4 instead of ~21. Review R069/R070.
+- **Game logs** (10b): WPA labels use the own-goal-aware match-results helper. The local copy matched the
+  official EPL 2024-25 score in 345 of 380 matches (now 377). Review R071.
+- **Pre-match skills batch**: a date with no data no longer shifts every later snapshot onto the wrong date.
+  Review R044.
+- **Model loaders**: a pannamodels integrity failure aborts instead of silently using a local copy; other
+  failures are reported. Review R052/R091.
+- **Step 07** stops when the goalkeeper fit fails but an earlier run's `gk_*` coefficients would stay live
+  (`allow_stale_gk <- TRUE` to override). xDuel training uses the real league names (EPL/UCL were silently
+  dropped). `player_opta_*()` report NA, not 0, for a stat the data lacks. Review R063, R054, R041.
+
 # panna 0.3.89
 
 ## Game logs: piero is called `piero` (#317)
