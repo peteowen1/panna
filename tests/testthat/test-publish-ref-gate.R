@@ -70,3 +70,27 @@ test_that("08b smoke-test guard uses plain exists() so the isolated driver can s
   expect_false(any(grepl('exists("psr_smoke_n", inherits = FALSE)', src, fixed = TRUE)))
   expect_true(any(grepl('exists("psr_smoke_n")', src, fixed = TRUE)))
 })
+
+test_that("step 13 publishes nothing when PANNA_PUBLISH_DISABLED is set, and publishes when it is not (R026)", {
+  script <- testthat::test_path("..", "..", "data-raw", "match-predictions-opta",
+                                "13_publish_release_data.R")
+  skip_if_not(file.exists(script), "data-raw not available (R CMD check)")
+  f <- withr::local_tempfile(fileext = ".csv")
+  writeLines("a,b", f)
+  assign("publish_files", list(predictions_latest = f, blog_latest = f), envir = .GlobalEnv)
+  withr::defer(rm("publish_files", envir = .GlobalEnv))
+
+  run_step <- function(disabled) {
+    calls <- character(0)
+    env <- new.env(parent = globalenv())
+    env$vb_publish <- function(paths, repo, tag, ...) {
+      calls <<- c(calls, tag)
+      list(generation = "g")
+    }
+    withr::with_envvar(c(PANNA_PUBLISH_DISABLED = disabled),
+                       suppressMessages(source(script, local = env)))
+    calls
+  }
+  expect_length(run_step("true"), 0L)
+  expect_equal(run_step("false"), c("predictions-latest", "blog-latest"))
+})

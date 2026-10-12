@@ -457,6 +457,11 @@ t_log(sprintf("Saved -> %s (%.1f MB)",
 ## mirrors 08b/10b's upload_psr/upload_game_logs -- set upload_epr <- FALSE
 ## before sourcing to build the parquet locally without publishing.
 if (!exists("upload_epr")) upload_epr <- TRUE
+## R026: CI sets PANNA_PUBLISH_DISABLED on any ref other than main/dev.
+if (tolower(Sys.getenv("PANNA_PUBLISH_DISABLED", "")) %in% c("true", "1")) {
+  t_log("PANNA_PUBLISH_DISABLED is set -- forcing upload_epr = FALSE")
+  upload_epr <- FALSE
+}
 if (!isTRUE(upload_epr)) {
   t_log("upload_epr = FALSE -- wrote parquet locally, NOT publishing.")
 } else {

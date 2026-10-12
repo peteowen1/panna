@@ -518,18 +518,6 @@ vb_generation <- function(repo, tag) {
   max(stamps)
 }
 
-#' Is publishing switched off for this process?
-#'
-#' CI sets `PANNA_PUBLISH_DISABLED=true` on any run whose git ref is not
-#' `main` or `dev` (review R026), so a `workflow_dispatch` from a feature
-#' branch cannot write to a production release. Scripts that upload directly
-#' check this too.
-#' @return `TRUE` when `PANNA_PUBLISH_DISABLED` is `"true"` or `"1"`.
-#' @noRd
-.vb_publish_blocked <- function() {
-  tolower(trimws(Sys.getenv("PANNA_PUBLISH_DISABLED", ""))) %in% c("true", "1")
-}
-
 #' Manifest-last atomic publish (the versebus producer pattern)
 #'
 #' Ordered: hash -> floor-check -> upload data assets (bounded retries, collect
@@ -580,14 +568,6 @@ vb_publish <- function(paths, repo, tag,
                    previous {pe$rows} -- refusing to publish", "vb_error_integrity")
       }
     }
-  }
-
-  # R026: a blocked process behaves as a dry run (same return value, nothing
-  # uploaded) so callers that read the manifest keep working.
-  if (!dry_run && .vb_publish_blocked()) {
-    cli::cli_alert_warning(
-      "vb_publish: PANNA_PUBLISH_DISABLED is set -- NOT uploading {length(entries)} asset(s) to {repo}@{tag}")
-    dry_run <- TRUE
   }
 
   if (dry_run) {
