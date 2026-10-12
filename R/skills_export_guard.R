@@ -1,0 +1,99 @@
+# Pre-publish gate for the skills export (data-raw/estimated-skills/08_export_skills.R).
+# Review R064: that step used to upload with no check at all, so a thin or
+# half-empty rebuild replaced the live file on the blog.
+
+#' Assert a skills/match-stats table is fit to publish
+#'
+#' Stops (before anything is uploaded) when the new table would be a regression
+#' on what is live. Three checks:
+#' \enumerate{
+#'   \item no skill column (names matching `skill_pattern`) is 100% `NA`;
+#'   \item row count is at least `min_row_frac` of the previously published
+#'     table (skipped when `prev` is `NULL`);
+#'   \item the seasons (`season_end_year`) and, where both tables carry one,
+#'     the `league` values of the previous table are all still present (the new
+#'     table may add, never drop; skipped when `prev` is `NULL`).
+#' }
+#'
+#' @param new data.frame about to be published.
+#' @param prev data.frame currently published, or `NULL` when it could not be
+#'   read (the row-count and coverage checks are then skipped and say so).
+#' @param min_row_frac minimum new/previous row ratio.
+#' @param skill_pattern regex selecting the skill columns.
+#' @param label name used in messages.
+#' @return Invisibly, a list of what was checked (`skill_cols`, `n_new`,
+#'   `n_prev`, `prev_checked`).
+#' @noRd
+assert_skills_export_ok <- function(new, prev = NULL, min_row_frac = 0.9,
+                                    skill_pattern = "_p90$",
+                                    label = "skills export") {
+  problems <- character(0)
+
+  skill_cols <- grep(skill_pattern, names(new), value = TRUE)
+  if (length(skill_cols) == 0L) {
+    problems <- c(problems, sprintf("no columns match '%s' (wrong table?)", skill_pattern))
+  } else {
+    all_na <- skill_cols[vapply(skill_cols, function(cn) all(is.na(new[[cn]])), logical(1))]
+    if (length(all_na) > 0L) {
+      problems <- c(problems, sprintf("%d skill column(s) are 100%% NA: %s",
+                                      length(all_na), paste(utils::head(all_na, 10), collapse = ", ")))
+    }
+  }
+
+  n_new <- nrow(new)
+  n_prev <- NA_integer_
+  prev_checked <- !is.null(prev)
+  if (prev_checked) {
+    n_prev <- nrow(prev)
+    if (n_prev > 0L && n_new < min_row_frac * n_prev) {
+      problems <- c(problems, sprintf(
+        "%s rows is below %.0f%% of the %s rows currently published",
+        format(n_new, big.mark = ","), min_row_frac * 100, format(n_prev, big.mark = ",")))
+    }
+    for (col in c("season_end_year", "league")) {
+      if (col %in% names(new) && col %in% names(prev)) {
+        lost <- setdiff(unique(prev[[col]][!is.na(prev[[col]])]),
+                        unique(new[[col]][!is.na(new[[col]])]))
+        if (length(lost) > 0L) {
+          problems <- c(problems, sprintf("%s value(s) in the published table are missing from the new one: %s",
+                                          col, paste(utils::head(sort(lost), 10), collapse = ", ")))
+        }
+      }
+    }
+  } else {
+    message(sprintf("  [%s] previous published table not available: row-count and coverage checks SKIPPED",
+                    label))
+  }
+
+  if (length(problems) > 0L) {
+    stop(sprintf("%s refused, nothing uploaded:\n  - %s", label,
+                 paste(problems, collapse = "\n  - ")), call. = FALSE)
+  }
+  message(sprintf("  [%s] pre-publish checks passed (%d skill columns, %s rows%s)",
+                  label, length(skill_cols), format(n_new, big.mark = ","),
+                  if (prev_checked) sprintf(", previous %s", format(n_prev, big.mark = ",")) else ""))
+  invisible(list(skill_cols = skill_cols, n_new = n_new, n_prev = n_prev,
+                 prev_checked = prev_checked))
+}
+
+#' Read the currently published copy of a release asset, or NULL
+#'
+#' Downloads to a temp dir (never over a local file). Any failure (offline, no
+#' such asset, unreadable parquet) returns `NULL` so the caller can skip the
+#' comparison and say so.
+#' @noRd
+read_published_asset <- function(file_name, repo = "peteowen1/pannadata",
+                                 tag = "opta-latest") {
+  dest <- tempfile("published_")
+  dir.create(dest)
+  on.exit(unlink(dest, recursive = TRUE), add = TRUE)
+  tryCatch({
+    piggyback::pb_download(file_name, repo = repo, tag = tag, dest = dest, show_progress = FALSE)
+    path <- file.path(dest, file_name)
+    if (!file.exists(path)) return(NULL)
+    as.data.frame(arrow::read_parquet(path))
+  }, error = function(e) {
+    message(sprintf("  could not read published %s: %s", file_name, conditionMessage(e)))
+    NULL
+  })
+}

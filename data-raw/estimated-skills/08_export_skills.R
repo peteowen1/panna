@@ -82,6 +82,15 @@ if (!isTRUE(upload_skills)) {
 
 } else {
 
+# R064: refuse to publish a table that would regress what is live. Runs before
+# any upload; reads the currently published assets (skipped, with a message, if
+# they cannot be read). See R/skills_export_guard.R.
+cat("\n=== Pre-publish checks ===\n")
+assert_skills_export_ok(skill_features, read_published_asset("opta_skills.parquet"),
+                        label = "opta_skills")
+assert_skills_export_ok(match_stats, read_published_asset("opta_match_stats.parquet"),
+                        label = "opta_match_stats")
+
 cat("\n=== Uploading to GitHub Release ===\n")
 
 if (!requireNamespace("piggyback", quietly = TRUE)) {
