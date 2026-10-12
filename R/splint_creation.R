@@ -618,6 +618,9 @@ create_match_splints_fast <- function(match_id, events, lineups, shooting, resul
   if (!is.null(results) && "league" %in% names(results)) info_cols <- c(info_cols, "league")
   if (!is.null(results) && "season_end_year" %in% names(results)) info_cols <- c(info_cols, "season_end_year")
   if (!is.null(results) && "country" %in% names(results)) info_cols <- c(info_cols, "country")
+  # Period ends travel with match_info so value-stream cuts can use the same
+  # continuous clock as the splints (R009).
+  info_cols <- c(info_cols, intersect(c("first_half_end_time", "match_end_time"), names(results)))
 
   match_info <- if (!is.null(results) && nrow(results) > 0) {
     results[1, intersect(info_cols, names(results)), drop = FALSE]
@@ -1081,7 +1084,9 @@ calculate_splint_npxgd_fast <- function(boundaries, shooting, home_team, away_te
   shot_minutes <- np_shots$minute
   # findInterval returns which interval (splint) each shot falls into
   # Returns 0 for shots before first boundary, n_splints+1 for shots after last
-  shot_splint <- findInterval(shot_minutes, boundaries$start_minute)
+  # left.open: a shot exactly on a boundary belongs to the splint it ENDS
+  # (start, end], the same convention as goals and the value streams (R051).
+  shot_splint <- findInterval(shot_minutes, boundaries$start_minute, left.open = TRUE)
   # Clamp to valid range [1, n_splints] to handle edge cases
   shot_splint <- pmax(1L, pmin(n_splints, shot_splint))
 
@@ -1456,6 +1461,53 @@ create_opta_processed_data <- function(opta_lineups, opta_events = NULL,
     results = results,
     stats_summary = opta_stats
   )
+}
+
+
+#' Give goal/sub/card events their match period
+#'
+#' The scraped events table (goals, substitutions, cards) has no period_id,
+#' and Opta's clock restarts the second half at 45, so an event at 45-57
+#' minutes can be first-half stoppage or second half. Matches each row to the
+#' raw event stream on (match_id, minute, second, team_id) among goal / sub /
+#' card types and takes that period; unmatched rows are period 1 before 45 and
+#' period 2 after the first half's end, else NA (left unshifted). Review R009.
+#' @param events Events table (match_id, minute, second, team_id, ...).
+#' @param match_events Raw Opta match events with period_id.
+#' @return `events` with a `period_id` column.
+#' @keywords internal
+.attach_event_periods <- function(events, match_events) {
+  if (is.null(events) || !nrow(events)) return(events)
+  if ("period_id" %in% names(events)) return(events)
+  ev <- data.table::as.data.table(events)
+  ev[, .row := .I]
+  if (is.null(match_events) || !nrow(match_events) || !"period_id" %in% names(match_events)) {
+    ev[, period_id := data.table::fifelse(as.numeric(minute) < 45, 1L, NA_integer_)]
+  } else {
+    me <- data.table::as.data.table(match_events)[
+      type_id %in% c(16L, 17L, 18L, 19L),
+      .(match_id, minute = as.numeric(minute),
+        second = if ("second" %in% names(match_events)) as.numeric(second) else 0,
+        team_id, .p = as.integer(period_id))]
+    me <- unique(me, by = c("match_id", "minute", "second", "team_id"))
+    ev[, `:=`(.m = as.numeric(minute), .s = if ("second" %in% names(ev)) as.numeric(second) else 0)]
+    ev[me, .p := i..p, on = c("match_id", .m = "minute", .s = "second", "team_id")]
+    fh <- data.table::as.data.table(match_events)[period_id == 1L,
+            .(.fh = max(as.numeric(minute) + if ("second" %in% names(match_events)) as.numeric(second) / 60 else 0)),
+            by = match_id]
+    ev[fh, .fh := i..fh, on = "match_id"]
+    if (!".fh" %in% names(ev)) ev[, .fh := NA_real_]
+    ev[, period_id := data.table::fcase(
+      !is.na(.p), .p,
+      .m + .s / 60 < 45, 1L,
+      !is.na(.fh) & .m + .s / 60 > .fh, 2L,
+      default = NA_integer_)]
+    ev[, intersect(c(".m", ".s", ".p", ".fh"), names(ev)) := NULL]
+  }
+  data.table::setorder(ev, .row)
+  ev[, .row := NULL]
+  out <- as.data.frame(ev)
+  out
 }
 
 

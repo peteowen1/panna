@@ -100,11 +100,10 @@ test_that("a splint with no stream actions gets 0, not NA (EPV)", {
   expect_equal(empty_row$epv_away, 0)
 })
 
-test_that("EPV boundary tie-break matches the xG findInterval convention (left-closed)", {
+test_that("EPV boundary tie-break matches the xG convention: (start, end] (R051)", {
   # An action AT exactly the splint-2 start timestamp (45 min = 2700s)
-  # belongs to splint 2 (the splint STARTING there), not splint 1 --
-  # calculate_splint_npxgd_fast()'s findInterval(shot_minutes,
-  # boundaries$start_minute) convention (R/splint_creation.R).
+  # belongs to splint 1 (the splint it ENDS) -- the convention every target
+  # shares since R051 (goals, shots, value streams).
   tie_action <- data.frame(
     match_id = "m1", period_id = 2L, time_seconds = 2700, team_id = "t1",
     player_id = "p1", credit = 1.0, stringsAsFactors = FALSE
@@ -112,8 +111,8 @@ test_that("EPV boundary tie-break matches the xG findInterval convention (left-c
   result <- add_value_metrics_to_splints(.svt_splint_data, player_action_epv = tie_action)
   splints <- result$splints
 
-  expect_equal(splints$epv_home[splints$splint_id == "m1_1"], 0)
-  expect_equal(splints$epv_home[splints$splint_id == "m1_2"], 1.0)
+  expect_equal(splints$epv_home[splints$splint_id == "m1_1"], 1.0)
+  expect_equal(splints$epv_home[splints$splint_id == "m1_2"], 0)
 })
 
 test_that("player_action_epv missing required columns aborts", {
