@@ -292,6 +292,9 @@ for (league in leagues) {
       stats$season <- season
 
       .stage_write(lineups, "lineups", label)
+      # Period per goal/sub/card event (the scraped table has none), so splint
+      # creation can put it on the continuous clock (review R009).
+      events <- .attach_event_periods(events, .slice_season(lg_match_events, season))
       .stage_write(events, "events", label)
       .stage_write(stats, "stats", label)
 

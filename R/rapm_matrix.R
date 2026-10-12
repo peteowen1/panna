@@ -89,6 +89,28 @@ add_value_metrics_to_splints <- function(splint_data,
     n_splints_by_match <- stats::setNames(bnd_grp$n, bnd_grp$match_id)
   }
 
+  # Continuous match clock for value streams (review R009): SPADL's
+  # time_seconds restarts the second half at 45:00, so a period-2 action is
+  # shifted by the match's real first-half length -- the same conversion the
+  # splint boundaries got. Needs period_id on the stream and the period ends
+  # in splint_data$match_info; without them the raw clock is kept.
+  .pe <- if (!is.null(splint_data$match_info) &&
+             all(c("match_id", "first_half_end_time") %in% names(splint_data$match_info))) {
+    unique(data.table::as.data.table(splint_data$match_info)[
+      , .(match_id = as.character(match_id), .fh = first_half_end_time,
+          .sh = if ("match_end_time" %in% names(splint_data$match_info))
+                  match_end_time - first_half_end_time + 45 else NA_real_)], by = "match_id")
+  } else NULL
+  .to_continuous <- function(dt) {
+    if (is.null(.pe) || !"period_id" %in% names(dt)) return(dt)
+    dt[.pe, `:=`(.fh = i..fh, .sh = i..sh), on = "match_id"]
+    if (".fh" %in% names(dt)) {
+      dt[, action_minute := .continuous_minute(action_minute, period_id, .fh, .sh)]
+      dt[, c(".fh", ".sh") := NULL]
+    }
+    dt
+  }
+
   # Cuts a per-action stream (data.table with match_id + action_minute
   # columns) at splint boundaries, adding a `splint_id` column -- NA for
   # actions whose match_id has no splints in this splint_data.
@@ -99,7 +121,8 @@ add_value_metrics_to_splints <- function(splint_data,
       if (is.null(b)) {
         rep(NA_character_, .N)
       } else {
-        idx <- findInterval(action_minute, b)
+        # (start, end]: an action on a boundary belongs to the splint it ends (R051)
+        idx <- findInterval(action_minute, b, left.open = TRUE)
         idx <- pmax(1L, pmin(n_splints_by_match[[mid]], idx))
         sid[[mid]][idx]
       }
@@ -124,7 +147,7 @@ add_value_metrics_to_splints <- function(splint_data,
     if (length(missing_cols) > 0) {
       cli::cli_abort("{.arg player_action_epv} missing column{?s}: {.field {missing_cols}}")
     }
-    epv_dt <- epv_dt[, required, with = FALSE]
+    epv_dt <- epv_dt[, c(required, intersect("period_id", names(epv_dt))), with = FALSE]
     epv_dt[, match_id := as.character(match_id)]
     epv_dt <- epv_dt[!is.na(match_id) & match_id %in% names(bd)]
 
@@ -133,6 +156,7 @@ add_value_metrics_to_splints <- function(splint_data,
 
     if (nrow(epv_dt) > 0) {
       epv_dt[, action_minute := time_seconds / 60]
+      epv_dt <- .to_continuous(epv_dt)
       epv_dt <- .cut_to_splints(epv_dt)
       epv_dt <- epv_dt[!is.na(splint_id)]
 
@@ -201,7 +225,7 @@ add_value_metrics_to_splints <- function(splint_data,
     if (length(missing_cols) > 0) {
       cli::cli_abort("{.arg match_action_wpa} missing column{?s}: {.field {missing_cols}}")
     }
-    wpa_dt <- wpa_dt[, required, with = FALSE]
+    wpa_dt <- wpa_dt[, c(required, intersect("period_id", names(wpa_dt))), with = FALSE]
     wpa_dt[, match_id := as.character(match_id)]
     wpa_dt <- wpa_dt[!is.na(match_id) & match_id %in% names(bd)]
 
@@ -209,6 +233,7 @@ add_value_metrics_to_splints <- function(splint_data,
 
     if (nrow(wpa_dt) > 0) {
       wpa_dt[, action_minute := time_seconds / 60]
+      wpa_dt <- .to_continuous(wpa_dt)
       wpa_dt <- .cut_to_splints(wpa_dt)
       wpa_dt <- wpa_dt[!is.na(splint_id)]
 
