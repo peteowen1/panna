@@ -32,9 +32,21 @@ on:
   repository_dispatch:
     types: [opta-scrape-complete]
 
+# R099: one run at a time. A second run queues instead of cancelling a running
+# one, so two runs never write the same predictions-cache / ratings-data assets
+# at once.
+concurrency:
+  group: opta-pipeline
+  cancel-in-progress: false
+
 env:
   GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
   R_KEEP_PKG_SOURCE: yes
+  # R026: only main and dev may publish. Scheduled and repository_dispatch runs
+  # use the default branch (main). A workflow_dispatch from any other branch
+  # builds but uploads nothing: the R scripts force their upload_* flags off and the
+  # workflow upload steps are gated on it (vb_publish() itself does not read it).
+  PANNA_PUBLISH_DISABLED: ${{ (github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev') && 'true' || 'false' }}
   # panna#87 OOM mitigation (option A): skip cv.glmnet in steps 04/06 and fit at
   # the closed-form lambda = 16.67 * n_obs^-0.58. CV does 11 dense refits per call
   # (10 folds + final); the back-to-back RAPM/xRAPM fits are what OOM the 16GB
@@ -71,6 +83,16 @@ jobs:
       contents: write
 
     steps:
+      - name: Publish gate (R026)
+        run: |
+          if [ "$PANNA_PUBLISH_DISABLED" = "true" ]; then
+            echo "::warning title=Publishing disabled::ref $GITHUB_REF is not main or dev, so this run builds but uploads nothing."
+            echo "> [!WARNING]" >> "$GITHUB_STEP_SUMMARY"
+            echo "> **Publishing disabled:** ref \`$GITHUB_REF\` is not main or dev; every upload is forced off." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Publishing allowed on $GITHUB_REF."
+          fi
+
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
@@ -301,9 +323,9 @@ jobs:
           INPUT_FORCE_REBUILD: ${{ inputs.force_rebuild }}
           INPUT_FORCE_REBUILD_FROM: ${{ inputs.force_rebuild_from }}
           INPUT_START_STEP: ${{ inputs.start_step }}
-          INPUT_UPLOAD_RATINGS: ${{ inputs.upload_ratings }}
+          INPUT_UPLOAD_RATINGS: ${{ env.PANNA_PUBLISH_DISABLED == 'true' && 'false' || inputs.upload_ratings }}
           GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
-          HB_UPLOAD_CACHES: ${{ inputs.upload_caches }}
+          HB_UPLOAD_CACHES: ${{ env.PANNA_PUBLISH_DISABLED == 'true' && 'false' || inputs.upload_caches }}
         run: |
           # --- memory tracer (diagnostic, no pipeline logic) -----------------
           # Sample RAM every 20s to the step log AND pipeline.log (so the
@@ -446,6 +468,7 @@ jobs:
           retention-days: 7
 
       - name: Upload caches to predictions-cache release
+        id: upload_caches
         # if: always() — upload whatever step caches were produced even if
         # a later step failed. Lets us re-dispatch with start_step=N to skip
         # already-completed steps and iterate on the failing one in ~5 min
@@ -456,7 +479,10 @@ jobs:
         # (run 37928291881, 2026-10-09). The string form also stays truthy when
         # there are no inputs at all (a repository_dispatch run), so a scheduled
         # run keeps uploading.
-        if: always() && github.event.inputs.upload_caches != 'false'
+        # R099/R026: only after every earlier step succeeded (a failed run's
+        # completed steps were already uploaded by the heartbeat, which is what
+        # start_step resume uses) and only on main or dev.
+        if: success() && github.event.inputs.upload_caches != 'false' && env.PANNA_PUBLISH_DISABLED != 'true'
         env:
           GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
         run: |
@@ -505,8 +531,10 @@ jobs:
           CACHE_DIR="data-raw/cache-opta"
           if [ -f "$CACHE_DIR/07_seasonal_ratings.rds" ]; then
             echo "**Ratings:** generated successfully" >> $GITHUB_STEP_SUMMARY
-            if [ "${{ inputs.upload_caches }}" != "false" ]; then
+            if [ "${{ steps.upload_caches.outcome }}" = "success" ]; then
               echo "**Caches:** uploaded to \`predictions-cache\` release" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "**Caches:** NOT uploaded by the end-of-job step (outcome: ${{ steps.upload_caches.outcome }}; publishing disabled: $PANNA_PUBLISH_DISABLED)" >> $GITHUB_STEP_SUMMARY
             fi
           else
             echo "**Status:** Pipeline FAILED (no ratings cache found)" >> $GITHUB_STEP_SUMMARY

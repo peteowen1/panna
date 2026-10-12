@@ -212,6 +212,10 @@ cat(sprintf("\nSAVED %s: %d rows across %d snapshots (%.1f MB)\n",
             out_path, nrow(allr), data.table::uniqueN(allr$ref_date),
             file.info(out_path)$size / 1048576))
 
+if (tolower(Sys.getenv("PANNA_PUBLISH_DISABLED", "")) %in% c("true", "1")) {
+  cat("PANNA_PUBLISH_DISABLED is set -- forcing upload = FALSE\n")
+  upload <- FALSE
+}
 if (isTRUE(upload)) {
   piggyback::pb_upload(out_path, repo = "peteowen1/pannadata", tag = "ratings-data",
                        name = "career_panna_asof.parquet", overwrite = TRUE)

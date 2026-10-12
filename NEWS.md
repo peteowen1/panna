@@ -1,3 +1,18 @@
+# panna 0.3.97
+
+## Publish safety and CI (review batch 5)
+
+- A dispatched workflow publishes only from `main` or `dev` (R026). From any other branch it builds but uploads
+  nothing, and the run summary says so. Scheduled and `repository_dispatch` runs use `main` and publish as before.
+- CI now runs the full test suite from the source tree in a `source-tests` job (R025). R CMD check builds the
+  package without `data-raw/` and `.github/`, so the tests guarding publishing and pipeline scripts had always
+  skipped there.
+- `opta-pipeline.yml` gets a concurrency group and no longer uploads caches from a failed run (R099).
+- The skills export refuses to publish if a skill column is all NA, rows fall below 90% of the published file, or a
+  published season or league is missing (R064).
+- The PSR smoke-test guard that forces `upload_psr` off now engages (R065), and the weekly PSR summary checks the
+  asset's real upload time (R100).
+
 # panna 0.3.96
 
 ## Silent zero-fills made loud (review batch 4)

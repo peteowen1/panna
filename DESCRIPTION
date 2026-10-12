@@ -1,6 +1,6 @@
 Package: panna
 Title: Player Rating System for Football Using RAPM, SPM, and EPV Methods
-Version: 0.3.96
+Version: 0.3.97
 Authors@R:
     person("Pete", "Owen", , "pete.owen1@hotmail.co.uk", role = c("aut", "cre", "cph"))
 Description: Implements player ratings for football (soccer) from 'Opta'
@@ -49,7 +49,8 @@ Suggests:
     rmarkdown,
     rvest (>= 1.0.0),
     testthat (>= 3.0.0),
-    xgboost
+    xgboost,
+    yaml
 Remotes:
     peteowen1/pannamodels
 Config/testthat/edition: 3

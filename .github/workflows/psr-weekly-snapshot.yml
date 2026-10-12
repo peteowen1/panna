@@ -26,6 +26,11 @@ concurrency:
 env:
   GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
   R_KEEP_PKG_SOURCE: yes
+  # R026: only main and dev may publish. Scheduled and repository_dispatch runs
+  # use the default branch (main). A workflow_dispatch from any other branch
+  # builds but uploads nothing: the R scripts force their upload_* flags off and the
+  # workflow upload steps are gated on it (vb_publish() itself does not read it).
+  PANNA_PUBLISH_DISABLED: ${{ (github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev') && 'true' || 'false' }}
 
 jobs:
   psr-snapshot:
@@ -36,6 +41,17 @@ jobs:
       contents: write
 
     steps:
+      - name: Publish gate (R026)
+        run: |
+          echo "RUN_START_EPOCH=$(date -u +%s)" >> "$GITHUB_ENV"
+          if [ "$PANNA_PUBLISH_DISABLED" = "true" ]; then
+            echo "::warning title=Publishing disabled::ref $GITHUB_REF is not main or dev, so this run builds but uploads nothing."
+            echo "> [!WARNING]" >> "$GITHUB_STEP_SUMMARY"
+            echo "> **Publishing disabled:** ref \`$GITHUB_REF\` is not main or dev; every upload is forced off." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Publishing allowed on $GITHUB_REF."
+          fi
+
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
@@ -295,12 +311,18 @@ jobs:
             fi
           fi
 
-          echo "Uploading psv_live_constants.csv to pannadata blog-latest..."
-          gh release upload blog-latest inst/extdata/psv_live_constants.csv \
-            --repo peteowen1/pannadata --clobber
+          if [ "$PANNA_PUBLISH_DISABLED" = "true" ]; then
+            echo "PANNA_PUBLISH_DISABLED=true: NOT uploading psv_live_constants.csv (ref $GITHUB_REF)."
+          else
+            echo "Uploading psv_live_constants.csv to pannadata blog-latest..."
+            gh release upload blog-latest inst/extdata/psv_live_constants.csv \
+              --repo peteowen1/pannadata --clobber
+          fi
 
       - name: Snapshot summary
         if: always()
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
         run: |
           echo "## Weekly PSR Snapshot" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -312,7 +334,18 @@ jobs:
           if [ -f "$OUT_FILE" ]; then
             SIZE=$(ls -lh "$OUT_FILE" | awk '{print $5}')
             echo "**Output:** opta_psr_weekly.parquet ($SIZE)" >> $GITHUB_STEP_SUMMARY
-            echo "**Upload:** uploaded to \`opta-latest\` release" >> $GITHUB_STEP_SUMMARY
+            # R100: a local file proves nothing about the upload. Ask the release
+            # whether the asset was updated since this job started.
+            PUB=$(gh release view opta-latest --repo peteowen1/pannadata \
+              --json assets -q '.assets[] | select(.name=="opta_psr_weekly.parquet") | .updatedAt' 2>/dev/null || echo "")
+            if [ "$PANNA_PUBLISH_DISABLED" = "true" ]; then
+              echo "**Upload:** NOT uploaded (publishing disabled on this ref)" >> $GITHUB_STEP_SUMMARY
+            elif [ -n "$PUB" ] && [ "$(date -u -d "$PUB" +%s)" -ge "${RUN_START_EPOCH:-0}" ]; then
+              echo "**Upload:** \`opta_psr_weekly.parquet\` updated on \`opta-latest\` at $PUB" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "**Upload:** NOT confirmed. \`opta_psr_weekly.parquet\` on \`opta-latest\` was last updated ${PUB:-at an unknown time}, before this run started." >> $GITHUB_STEP_SUMMARY
+              echo "::warning::opta_psr_weekly.parquet was not updated by this run"
+            fi
           else
             echo "**Status:** Snapshot FAILED (no output parquet found)" >> $GITHUB_STEP_SUMMARY
             exit 1
@@ -339,6 +372,10 @@ jobs:
       # precisely the failure that emptied the blog's Player Stats page for
       # five weeks in August.
       - name: Rebuild and export the skill estimates
+        # R100: !cancelled(), not the default success(), so a hard failure in
+        # 07c or the lockstep check above cannot starve the skills rebuild.
+        # The job still ends red from the failed step.
+        if: ${{ !cancelled() }}
         continue-on-error: true
         timeout-minutes: 45
         env:
