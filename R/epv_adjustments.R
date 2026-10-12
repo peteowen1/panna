@@ -18,54 +18,71 @@ NULL
 
 #' Adjust Player EPV Credits for Position
 #'
-#' Subtracts the positional mean from each EPV component, so players are
+#' Subtracts the positional average from each EPV component, so players are
 #' compared to peers at the same position rather than across all positions.
-#' Uses Opta lineup positions (Goalkeeper, Defender, Defensive Midfielder,
-#' Midfielder, Attacking Midfielder, Striker). Wing Back merged into Defender.
+#'
+#' The position is each player's usual STARTING position (his most common
+#' non-"Substitute" lineup label in the data; Wing Back counts as Defender), not
+#' the day's lineup label: that label reads "Substitute" on ~27% of
+#' player-games, which made "Substitute" a position of its own (review R027).
+#' A player who never started keeps no adjustment (adj = raw).
+#'
+#' With a minutes column the average is PER 90 MINUTES, scaled by the minutes
+#' each row played: a full-90 game is charged 90 minutes of the position's
+#' average and a 4-minute cameo 4 minutes' worth. (Per game, a full-90 starter
+#' was compared with starters averaging ~80 minutes, and a cameo was charged a
+#' whole substitute appearance.) Without a minutes column it falls back to the
+#' per-game average.
 #'
 #' @param player_match data.table with columns: player_id, match_id, position,
 #'   and one or more credit columns to center
 #' @param credit_cols Character vector of column names to position-center.
 #'   Defaults to "total_credit".
+#' @param minutes_col Minutes column used for the per-90 average. Default
+#'   "minutes_played"; if absent, the per-game average is used.
 #'
 #' @return Same data.table with `{col}_adj` columns added for each credit col
 #' @keywords internal
-adjust_epv_for_position <- function(player_match, credit_cols = "total_credit") {
+adjust_epv_for_position <- function(player_match, credit_cols = "total_credit",
+                                    minutes_col = "minutes_played") {
   if (!"position" %in% names(player_match)) {
     cli::cli_abort("player_match must have a 'position' column")
   }
 
   dt <- data.table::as.data.table(player_match)
 
-  # Compute position means
-  pos_means <- dt[!is.na(position), lapply(.SD, mean, na.rm = TRUE),
-    by = position, .SDcols = credit_cols]
+  # Usual starting position per player (Wing Back -> Defender, as
+  # get_player_positions() does).
+  pos <- data.table::fifelse(dt$position %in% "Wing Back", "Defender", dt$position)
+  start_lu <- data.table::data.table(player_id = dt$player_id, pos = pos)[
+    !is.na(pos) & !pos %in% c("Substitute", ""), .N, by = .(player_id, pos)]
+  data.table::setorder(start_lu, player_id, -N)
+  start_lu <- start_lu[, .(start_pos = pos[1L]), by = player_id]
+  dt[start_lu, .start_pos := i.start_pos, on = "player_id"]
+  if (!".start_pos" %in% names(dt)) dt[, .start_pos := NA_character_]
 
-  # Rename to _pos_mean
-  mean_cols <- paste0(credit_cols, "_pos_mean")
-  data.table::setnames(pos_means, credit_cols, mean_cols)
+  per90 <- !is.null(minutes_col) && minutes_col %in% names(dt)
+  mins <- if (per90) as.numeric(dt[[minutes_col]]) else rep(NA_real_, nrow(dt))
 
-  # Join and subtract
-
-  dt <- pos_means[dt, on = "position"]
-
-  for (i in seq_along(credit_cols)) {
-    adj_col <- paste0(credit_cols[i], "_adj")
-    dt[, (adj_col) := get(credit_cols[i]) - get(mean_cols[i])]
-  }
-
-  # Players with NA position get no adjustment (adj = raw value)
-  n_na_pos <- sum(is.na(dt$position))
-  if (n_na_pos > 0) {
-    for (i in seq_along(credit_cols)) {
-      adj_col <- paste0(credit_cols[i], "_adj")
-      dt[is.na(position), (adj_col) := get(credit_cols[i])]
+  for (cc in credit_cols) {
+    adj_col <- paste0(cc, "_adj")
+    x <- as.numeric(dt[[cc]])
+    if (per90) {
+      ok <- !is.na(dt$.start_pos) & !is.na(x) & !is.na(mins) & mins > 0
+      rate <- data.table::data.table(sp = dt$.start_pos[ok], x = x[ok], m = mins[ok])[
+        , .(r = sum(x) / sum(m)), by = sp]
+      r <- rate$r[match(dt$.start_pos, rate$sp)]
+      expected <- r * mins
+    } else {
+      ok <- !is.na(dt$.start_pos) & !is.na(x)
+      means <- data.table::data.table(sp = dt$.start_pos[ok], x = x[ok])[, .(mu = mean(x)), by = sp]
+      expected <- means$mu[match(dt$.start_pos, means$sp)]
     }
+    # No starting position (or no minutes) -> no adjustment: adj = raw value.
+    data.table::set(dt, j = adj_col, value = data.table::fifelse(is.na(expected), x, x - expected))
   }
 
-  # Clean up temp columns
-  dt[, (mean_cols) := NULL]
-
+  dt[, .start_pos := NULL]
   dt
 }
 
