@@ -418,9 +418,25 @@ test_that("apply_psr_league_offsets adds offset and preserves osr+dsr=psr", {
 test_that("apply_psr_league_offsets leaves unknown leagues unchanged (offset 0)", {
   offs <- data.table::data.table(league = "WEAK", offset = -0.18)
   dt <- data.table::data.table(player_id = "z", league = "UNKNOWN_LG", psr = 0.2)
-  out <- apply_psr_league_offsets(dt, offs)
+  # R094: still offset 0 (documented), but no longer silent
+  expect_warning(out <- apply_psr_league_offsets(dt, offs),
+                 "1 of 1 row.*1 league.*no league offset")
   expect_equal(out$psr, 0.2)
   expect_equal(out$psr_league_offset, 0)
+})
+
+test_that("R094: duplicate offset rows abort, healthy offsets are silent", {
+  dt <- data.table::data.table(player_id = "z", league = "WEAK", psr = 0.2)
+  dup <- data.table::data.table(league = c("WEAK", "WEAK"), offset = c(-0.1, -0.2))
+  expect_error(apply_psr_league_offsets(dt, dup), "more than one row")
+  ok <- data.table::data.table(league = "WEAK", offset = -0.1)
+  expect_no_warning(out <- apply_psr_league_offsets(dt, ok))
+  expect_equal(out$psr, 0.1)
+  # the blend helper names the leagues and minutes
+  expect_warning(
+    panna:::.warn_leagues_without_offset(c("WEAK", "NEW", "NEW"),
+      data.table::data.table(league = "WEAK", .off = -0.1), "ctx", minutes = c(90, 90, 45)),
+    "2 of 3 rows.*135 minutes")
 })
 
 

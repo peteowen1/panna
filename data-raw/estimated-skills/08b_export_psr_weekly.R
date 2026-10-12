@@ -534,7 +534,11 @@ if (psr_apply_offsets) {
   blend_src <- merge(pl_src,
                      data.table::as.data.table(psr_offsets)[, .(.lg = league, .off = offset)],
                      by = ".lg", all.x = TRUE)
-  blend_src[is.na(.off), .off := 0]              # leagues without an offset contribute 0
+  # leagues without an offset contribute 0 -- but say so (review R094)
+  panna:::.warn_leagues_without_offset(
+    blend_src$.lg, data.table::data.table(league = psr_offsets$league, .off = psr_offsets$offset),
+    "08b weekly PSR blend", minutes = blend_src$total_minutes)
+  blend_src[is.na(.off), .off := 0]
   .maxmd_psr <- as.numeric(max(blend_src$match_date))
   # gfac = exp(-lambda*(d - md))*mins; the exp(-lambda*d) common factor cancels in
   # the blend ratio, so precompute the max-date-shifted per-game weight once.
