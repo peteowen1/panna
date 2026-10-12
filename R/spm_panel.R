@@ -378,6 +378,15 @@ build_spm_panel <- function(match_stats, rapm_window_targets,
   }
 
   vintages_with_xm <- names(xmetrics_flags)[!is.na(xmetrics_flags) & xmetrics_flags]
+  if (isTRUE(include_xmetrics)) {
+    box_only <- names(xmetrics_flags)[!is.na(xmetrics_flags) & !xmetrics_flags]
+    if (length(box_only) > 0) {
+      cli::cli_warn(c(
+        "build_spm_panel: {length(box_only)} vintage{?s} came back box-only (no xMetrics) although {.code include_xmetrics = TRUE}: {box_only}.",
+        "i" = "Their xMetrics columns are NA, so the fit functions drop those rows at fit time (see {.fn fit_spm_panel})."
+      ))
+    }
+  }
   cli::cli_inform(sprintf(
     "build_spm_panel: %d rows, %d players, %d vintages [%s]. xMetrics included for %d/%d vintages [%s].",
     nrow(panel), data.table::uniqueN(panel$player_id), data.table::uniqueN(panel$vintage_year),
@@ -739,6 +748,7 @@ fit_spm_panel <- function(panel, target = c("offense", "defense", "net"),
   }
 
   complete_idx <- stats::complete.cases(X, y)
+  .report_incomplete_panel_rows(complete_idx, panel$vintage_year, "fit_spm_panel")
   X <- X[complete_idx, , drop = FALSE]
   y <- y[complete_idx]
   weights <- weights[complete_idx]
@@ -945,6 +955,7 @@ fit_spm_panel_xgb <- function(panel, target = c("offense", "defense"),
   w <- w / mean(w, na.rm = TRUE)
 
   ok <- stats::complete.cases(X, y)
+  .report_incomplete_panel_rows(ok, panel$vintage_year, "fit_spm_panel_xgb")
   X <- X[ok, , drop = FALSE]; y <- y[ok]; w <- w[ok]
   pid <- as.character(panel$player_id[ok])
   foldid <- make_grouped_player_foldid(pid, nfolds = nfolds, seed = seed)
@@ -1110,4 +1121,26 @@ predict_spm_panel_xgb <- function(model, newdata) {
     ))
   }
   x
+}
+
+
+# complete.cases() at fit time silently removes any panel row with an NA
+# predictor or target -- notably every row of a box-only vintage (review R095).
+# Report how many went and from which vintages. Warn above 5% of rows; the drop
+# itself is unchanged (it is the established behaviour).
+.report_incomplete_panel_rows <- function(ok, vintage_year, who) {
+  n_drop <- sum(!ok)
+  if (n_drop == 0L) return(invisible(0L))
+  n_all <- length(ok)
+  pct <- round(100 * n_drop / n_all, 1)
+  by_v <- if (!is.null(vintage_year) && length(vintage_year) == n_all) {
+    tb <- table(vintage_year[!ok])
+    paste0(names(tb), ": ", as.integer(tb), collapse = ", ")
+  } else "vintage unknown"
+  msg <- c(
+    "{who}: dropping {n_drop} of {n_all} row{?s} ({pct}%) with NA predictors or target.",
+    "i" = "By vintage: {by_v}"
+  )
+  if (n_drop / n_all > 0.05) cli::cli_warn(msg) else cli::cli_inform(msg)
+  invisible(n_drop)
 }

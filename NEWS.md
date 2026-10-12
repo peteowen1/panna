@@ -1,3 +1,17 @@
+# panna 0.3.96
+
+## Silent zero-fills made loud (review batch 4)
+
+Eleven places where a failed join, missing model or empty input quietly became 0 now say so, without changing any
+output on healthy data. Aborts where continuing would publish wrong numbers: EPV scoring with no feature table or
+features out of line with the actions (R030, R112), foot-history lookup under 50% (R047), net-goals adjacency join
+under 50% (R093), duplicate league-offset rows (R094). Warnings or messages with counts elsewhere: xMetrics coverage
+per league-season (R036/R037; warns for the latest season, older permanent gaps are a message), leagues with no PSR
+offset (R094, a message: cup competitions have none by design), splints with no EPV/WPA stream rows (R045),
+`complete.cases` drops in the SPM panel fit (R095), zero reference checks run (R038), and a missing duel sub-model
+(R108, now NA expected wins and WOE instead of WOE = wins). A real 10b run on ENG/ESP/GER/UCL 2026-27 produced no new
+warnings.
+
 # panna 0.3.95
 
 ## Expected minutes ignore lineups after `as_of` (review R032)
