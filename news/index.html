@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.96</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.97</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,6 +39,18 @@
       <small>Source: <a href="https://github.com/peteowen1/panna/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.97" id="panna-0397">panna 0.3.97<a class="anchor" aria-label="anchor" href="#panna-0397"></a></h2>
+<div class="section level3">
+<h3 id="publish-safety-and-ci-review-batch-0-3-97">Publish safety and CI (review batch 5)<a class="anchor" aria-label="anchor" href="#publish-safety-and-ci-review-batch-0-3-97"></a></h3>
+<ul><li>A dispatched workflow publishes only from <code>main</code> or <code>dev</code> (R026). From any other branch it builds but uploads nothing, and the run summary says so. Scheduled and <code>repository_dispatch</code> runs use <code>main</code> and publish as before.</li>
+<li>CI now runs the full test suite from the source tree in a <code>source-tests</code> job (R025). R CMD check builds the package without <code>data-raw/</code> and <code>.github/</code>, so the tests guarding publishing and pipeline scripts had always skipped there.</li>
+<li>
+<code>opta-pipeline.yml</code> gets a concurrency group and no longer uploads caches from a failed run (R099).</li>
+<li>The skills export refuses to publish if a skill column is all NA, rows fall below 90% of the published file, or a published season or league is missing (R064).</li>
+<li>The PSR smoke-test guard that forces <code>upload_psr</code> off now engages (R065), and the weekly PSR summary checks the asset’s real upload time (R100).</li>
+</ul></div>
+</div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.96" id="panna-0396">panna 0.3.96<a class="anchor" aria-label="anchor" href="#panna-0396"></a></h2>
 <div class="section level3">
