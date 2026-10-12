@@ -1,5 +1,24 @@
 # Changelog
 
+## panna 0.3.94
+
+### Splints on one continuous match clock (review R009 + R051)
+
+Opta’s clock restarts the second half at 45:00, so second-half times
+overlapped first-half stoppage: in 379 of 380 EPL 2024-25 matches a
+splint could hold both a half-time substitute and the player they
+replaced. Player timing, period ends, shots, goal/sub/card events and
+the EPV/WPA value streams now all use one continuous clock (second-half
+times shift by the real first-half length; extra time by the real
+second-half end). Step 01 attaches each event’s period from the raw
+match events, and a match missing a period-end marker uses the period’s
+last event for players, events and shots alike. Every target now uses
+(start, end\] splints, so an event on a boundary belongs to the splint
+it ends, counted once. Full rebuild against main: seasonal xRAPM
+correlates 0.999 (RAPM 0.997), season-to-season stability unchanged
+within bootstrap noise (xRAPM +0.0006, 95% interval -0.0004 to +0.0014),
+total player-minutes +2.27% (first-half stoppage now counted).
+
 ## panna 0.3.93
 
 ### Game-log PSV centred on the full box-score population

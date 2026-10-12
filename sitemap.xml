@@ -235,6 +235,7 @@
 <url><loc>https://peteowen1.github.io/panna/reference/dot-aggregate_xmetrics_for_spm.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-assert_career_panna_sign_convention.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-assert_team_strength_sign_convention.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/dot-attach_event_periods.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-build_match_results_from_events.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-build_panel_design_matrix.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-build_rapm_row_data.html</loc></url>
@@ -248,6 +249,7 @@
 <url><loc>https://peteowen1.github.io/panna/reference/dot-clean_numeric_na.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-compute_keeper_gsaa.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-compute_snapshot_loop_columns.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/dot-continuous_minute.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-count_events.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-create_duel_features.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-create_placement_features.html</loc></url>
@@ -295,6 +297,7 @@
 <url><loc>https://peteowen1.github.io/panna/reference/dot-psr_checkpoint_usable.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-psv_pos_grp.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-psv_position_group.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/dot-raw_period_ends.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-read_skill_chunk.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-rename_opta_columns.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-report_model_provenance.html</loc></url>

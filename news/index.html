@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.93</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.94</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,6 +39,13 @@
       <small>Source: <a href="https://github.com/peteowen1/panna/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.94" id="panna-0394">panna 0.3.94<a class="anchor" aria-label="anchor" href="#panna-0394"></a></h2>
+<div class="section level3">
+<h3 id="splints-on-one-continuous-match-clock-review-r009--r051-0-3-94">Splints on one continuous match clock (review R009 + R051)<a class="anchor" aria-label="anchor" href="#splints-on-one-continuous-match-clock-review-r009--r051-0-3-94"></a></h3>
+<p>Opta’s clock restarts the second half at 45:00, so second-half times overlapped first-half stoppage: in 379 of 380 EPL 2024-25 matches a splint could hold both a half-time substitute and the player they replaced. Player timing, period ends, shots, goal/sub/card events and the EPV/WPA value streams now all use one continuous clock (second-half times shift by the real first-half length; extra time by the real second-half end). Step 01 attaches each event’s period from the raw match events, and a match missing a period-end marker uses the period’s last event for players, events and shots alike. Every target now uses (start, end] splints, so an event on a boundary belongs to the splint it ends, counted once. Full rebuild against main: seasonal xRAPM correlates 0.999 (RAPM 0.997), season-to-season stability unchanged within bootstrap noise (xRAPM +0.0006, 95% interval -0.0004 to +0.0014), total player-minutes +2.27% (first-half stoppage now counted).</p>
+</div>
+</div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.93" id="panna-0393">panna 0.3.93<a class="anchor" aria-label="anchor" href="#panna-0393"></a></h2>
 <div class="section level3">
