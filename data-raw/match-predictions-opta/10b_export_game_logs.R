@@ -725,34 +725,37 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
 
       .stage("WPA")
       # --- PSV path ---
+      # Centre on the league-season's FULL box-score population, then keep only
+      # the rows that have game logs (event coverage). compute_player_psv()
+      # centres by (season, round), and neither the skills cache nor the box
+      # scores carry `round`, so the centring group is the whole league-season.
+      # Scoring only the event-covered matches centred cups on a partial slice:
+      # 2026-27 qualifiers have box scores but no events (UECL 58 of 108
+      # matches, UEL 47 of 68, UCL 42 of 52), which pulled UECL game-log PSV
+      # ~0.14/90 below the live scorer, whose K (07c) is built on every
+      # box-score match. Cache rows and inline rows are now ONE population
+      # scored once; before, each was centred on its own half.
+      # Trade-off (Pete, 2026-10-12): a row's PSV can move a little each week
+      # as the season's population fills in; centring per match date instead
+      # would freeze it but break agreement with the season-level live K.
       player_game_psv <- NULL
       league_match_ids <- unique(events$match_id)
+      .lg <- league
+      psv_pop <- NULL
       if (has_match_stats) {
         tryCatch({
-          league_stats <- all_match_stats[all_match_stats$match_id %in% league_match_ids, ]
-          if (nrow(league_stats) > 0) {
+          .in_pop <- (all_match_stats$league == .lg & all_match_stats$season == league_season) |
+            all_match_stats$match_id %in% league_match_ids
+          cache_rows <- all_match_stats[.in_pop]
+          if (nrow(cache_rows) > 0) {
             # Enrich with per-match xMetrics BEFORE scoring — the blend model was
             # trained WITH over-performance/gsaa features (step 7), so serving on
             # box-score-only stats is a train/serve skew (finishing under-credited).
             # fail_if_missing_frac left at the library default (Inf, warn-only) —
-            # this whole block is per-league tryCatch'd anyway, but a hard stop()
-            # here would still convert "PSV present but box-score-only" into
-            # "PSV entirely NA for this league" on any local/remote gap.
-            league_stats <- enrich_match_stats_with_xmetrics(league_stats, verbose = FALSE,
-                                                             source = xm_source)
-            # Both resolved once on the full population above and carried
-            # through this row-filter -- NOT recomputed on this league-season
-            # slice, which is what narrows resolve_position_group()'s career
-            # fallback and leaves blank-position seasons uncalibrated.
-            player_game_psv <- compute_player_psv(league_stats, min_adjust = FALSE,
-                                                  center = TRUE, scale_to_minutes = TRUE,
-                                                  exclude_efficiency = FALSE, target = "blend",
-                                                  position_means = .psv_position_means,
-                                                  reliability = .psv_reliability,
-                                                  center_weights = .psv_center_weights,
-                                                  is_gk = league_stats$.is_gk_full,
-                                                  .pos_grp_override = league_stats$.pos_grp_full)
-            message(sprintf("    PSV: %d player-games", nrow(player_game_psv)))
+            # a hard stop() here would convert "PSV present but box-score-only"
+            # into "PSV entirely NA for this league" on any local/remote gap.
+            psv_pop <- data.table::as.data.table(
+              enrich_match_stats_with_xmetrics(cache_rows, verbose = FALSE, source = xm_source))
           }
         }, error = function(e) {
           warning(sprintf("PSV failed for %s %s: %s",
@@ -761,41 +764,31 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
       }
 
       # pannadata#74: the skills cache (cache-skills/01_match_stats.rds) is built
-      # by a SEPARATE skills-pipeline run and can lag the predictions pipeline —
-      # for World Cup it has no current WC box-score rows, so the path above
-      # yields 0 PSV/OSV/DSV for every WC player-game. When the cache gives no
-      # PSV for ANY of this league's matches, compute PSV inline from the league's
-      # own box scores (load_opta_stats → compute_match_level_opta_stats →
-      # compute_player_psv), exactly the transform the skills pipeline applies in
-      # 01_compute_match_stats.R. center = TRUE centers over the INPUT population
-      # (here: this tournament's players, i.e. "vs the average WC player") — the
-      # documented per-population semantics (panna/CLAUDE.md), preserved here.
-      cache_covered_ids <- if (!is.null(player_game_psv) &&
-                               "match_id" %in% names(player_game_psv)) {
-        unique(player_game_psv$match_id)
-      } else {
-        character(0)
-      }
-      if (length(setdiff(league_match_ids, cache_covered_ids)) > 0L) {
+      # by a SEPARATE skills-pipeline run and can lag the predictions pipeline
+      # (World Cup had no current rows at all). Top the population up from the
+      # league's own box scores (load_opta_stats → compute_match_level_opta_stats,
+      # the transform 01_compute_match_stats.R applies) whenever event matches
+      # are uncovered, and ALWAYS for the current season: a lagging cache can
+      # cover every event match yet still miss box-score-only matches, which
+      # would put centring back on a partial population. Never re-adds a match
+      # the cache already holds.
+      cache_covered_ids <- if (!is.null(psv_pop)) unique(psv_pop$match_id) else character(0)
+      if (length(setdiff(league_match_ids, cache_covered_ids)) > 0L ||
+          identical(season, current_season_alias)) {
         tryCatch({
           box_stats <- load_opta_stats(league, season = league_season)
           if (!is.null(box_stats) && nrow(box_stats) > 0) {
             box_dt <- data.table::as.data.table(box_stats)
-            box_dt <- box_dt[match_id %in% league_match_ids]
-            # Only fill matches the cache path missed — never clobber cache rows.
-            if (length(cache_covered_ids) > 0L) {
-              box_dt <- box_dt[!match_id %in% cache_covered_ids]
-            }
+            box_dt <- box_dt[!match_id %in% cache_covered_ids]
             if (nrow(box_dt) > 0L) {
-              box_dt[, league := league]
+              box_dt[, league := .lg]
               box_dt[, season := league_season]
               match_level <- compute_match_level_opta_stats(box_dt, min_minutes = 10)
               if (!is.null(match_level) && nrow(match_level) > 0L) {
                 # Enrich BEFORE scoring (train/serve parity — see note above).
-                # fail_if_missing_frac left at the library default — see the
-                # matching note on the cache-path enrich call above.
-                match_level <- enrich_match_stats_with_xmetrics(match_level, verbose = FALSE,
-                                                                source = xm_source)
+                match_level <- data.table::as.data.table(
+                  enrich_match_stats_with_xmetrics(match_level, verbose = FALSE,
+                                                   source = xm_source))
                 # These rows are NOT in all_match_stats (that's why we're here),
                 # so the full-population columns can't ride along -- join by
                 # player_id instead, falling back to this slice's own resolution
@@ -819,6 +812,10 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
                   } else {
                     rep(extract_season_end_year(league_season), nrow(match_level))
                   }
+                  # Carry it as a column too: cache rows have season_end_year, and
+                  # once rbind NA-fills it here the position-role means fall back
+                  # to the role-overall mean for these rows (up to 0.02/90).
+                  match_level[, season_end_year := .ml_sey]
                   .pg_season <- unique(
                     all_match_stats[!is.na(season_end_year),
                                     .(player_id, season_end_year,
@@ -837,23 +834,25 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
                 # Pin LAST, to the is_gk actually being used for scoring, so the
                 # calibration bucket can never disagree with the model that
                 # scored the row (the 07c failure mode, panna PR #250).
-                .inline_pos <- .psv_pin_gk(.inline_pos, .inline_is_gk)
-                inline_psv <- compute_player_psv(match_level, min_adjust = FALSE,
-                                                 center = TRUE, scale_to_minutes = TRUE,
-                                                 exclude_efficiency = FALSE, target = "blend",
-                                                 position_means = .psv_position_means,
-                                                 reliability = .psv_reliability,
-                                                 center_weights = .psv_center_weights,
-                                                 is_gk = .inline_is_gk,
-                                                 .pos_grp_override = .inline_pos)
-                player_game_psv <- data.table::rbindlist(
-                  list(player_game_psv, inline_psv), fill = TRUE, use.names = TRUE
-                )
-                message(sprintf("    PSV (inline box scores, #74): +%d player-games",
-                                nrow(inline_psv)))
+                match_level[, `:=`(.is_gk_full = .inline_is_gk,
+                                   .pos_grp_full = .psv_pin_gk(.inline_pos, .inline_is_gk))]
+                if (!is.null(psv_pop)) {
+                  # A column on one side only is NA-filled for the other side's
+                  # rows; say so rather than let it pass silently.
+                  .one_sided <- setdiff(union(names(psv_pop), names(match_level)),
+                                        intersect(names(psv_pop), names(match_level)))
+                  if (length(.one_sided) > 0L) {
+                    message(sprintf("    PSV population: %d column(s) only in cache or only in box scores, NA for the other rows: %s",
+                                    length(.one_sided), paste(head(.one_sided, 8), collapse = ", ")))
+                  }
+                }
+                psv_pop <- data.table::rbindlist(list(psv_pop, match_level),
+                                                 fill = TRUE, use.names = TRUE)
+                message(sprintf("    PSV population (inline box scores, #74): +%d player-games from %d matches",
+                                nrow(match_level), data.table::uniqueN(match_level$match_id)))
               }
             }
-          } else {
+          } else if (length(setdiff(league_match_ids, cache_covered_ids)) > 0L) {
             # Surface, don't fabricate: leave PSV NA for the uncovered matches.
             warning(sprintf(
               "PSV gap for %s %s (#74): %d match(es) absent from skills cache AND no box scores from load_opta_stats — PSV left NA",
@@ -862,7 +861,33 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
             ), call. = FALSE)
           }
         }, error = function(e) {
-          warning(sprintf("Inline PSV (#74) failed for %s %s: %s",
+          warning(sprintf("Inline PSV (#74) failed for %s %s: %s%s",
+                          league, season, e$message,
+                          if (!is.null(psv_pop)) " -- PSV centred on the skills-cache rows only (partial population)" else ""),
+                  call. = FALSE)
+        })
+      }
+
+      if (!is.null(psv_pop) && nrow(psv_pop) > 0L) {
+        tryCatch({
+          # .is_gk_full / .pos_grp_full: resolved once on the full population
+          # (cache rows) or joined from it (inline rows) -- NOT recomputed on
+          # this slice, which narrows resolve_position_group()'s career fallback.
+          scored <- data.table::as.data.table(
+            compute_player_psv(psv_pop, min_adjust = FALSE,
+                               center = TRUE, scale_to_minutes = TRUE,
+                               exclude_efficiency = FALSE, target = "blend",
+                               position_means = .psv_position_means,
+                               reliability = .psv_reliability,
+                               center_weights = .psv_center_weights,
+                               is_gk = psv_pop$.is_gk_full,
+                               .pos_grp_override = psv_pop$.pos_grp_full))
+          player_game_psv <- scored[match_id %in% league_match_ids]
+          message(sprintf("    PSV: %d player-games kept (%d matches with game logs), centred on %d player-games from %d box-score matches",
+                          nrow(player_game_psv), data.table::uniqueN(player_game_psv$match_id),
+                          nrow(scored), data.table::uniqueN(scored$match_id)))
+        }, error = function(e) {
+          warning(sprintf("PSV failed for %s %s: %s",
                           league, season, e$message), call. = FALSE)
         })
       }

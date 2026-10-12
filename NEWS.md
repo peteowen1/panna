@@ -1,3 +1,15 @@
+# panna 0.3.93
+
+## Game-log PSV centred on the full box-score population
+
+10b scored PSV only on matches with event data, but PSV is centred on the whole league-season (no `round` in the
+inputs). 2026-27 cup qualifiers have box scores but no events (UECL 58 of 108 matches, UEL 47 of 68, UCL 42 of 52),
+so cup game-log PSV was centred on a partial slice and read below the live scorer, whose K is built on every match.
+10b now scores each league-season once on all its box-score matches (skills cache plus an inline top-up, always taken
+for the current season) and keeps the event-covered rows. On identical inputs, starters' mean PSV per 90 moves UECL
++0.143, UEL +0.101, UCL +0.062, ENG 0.000. Rows can move a little week to week as a season fills in (Pete's choice,
+to agree with the season-level live K).
+
 # panna 0.3.92
 
 ## Publish what worked, then fail the run (#320)
