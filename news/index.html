@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.90</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.91</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,6 +39,13 @@
       <small>Source: <a href="https://github.com/peteowen1/panna/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.91" id="panna-0391">panna 0.3.91<a class="anchor" aria-label="anchor" href="#panna-0391"></a></h2>
+<div class="section level3">
+<h3 id="epv-position-centring-usual-starting-position-per-minutes-0-3-91">EPV position centring: usual starting position, per 90 minutes (<a href="https://github.com/peteowen1/panna/issues/319" class="external-link">#319</a>)<a class="anchor" aria-label="anchor" href="#epv-position-centring-usual-starting-position-per-minutes-0-3-91"></a></h3>
+<p><code><a href="../reference/adjust_epv_for_position.html">adjust_epv_for_position()</a></code> centred each game on the mean for that day’s lineup label, so “Substitute” (27% of player-games) was a position of its own, a full-90 starter was compared with starters averaging ~80 minutes, and a 4-minute cameo was charged a whole substitute appearance. It now uses each player’s usual starting position (Wing Back counts as Defender) and charges the position’s per-minute average for the minutes played. EPL 2024-25 season totals: Salah 11.59 -&gt; 9.52, Mbeumo 8.42 -&gt; 6.15, Nwaneri 0.18 -&gt; 1.07 (ranks Spearman 0.953). Feeds <code>epv_total_adj</code>, so EPR and piero move at the next game-log and EPR runs. Review R027 (decided with Pete after walking real rows).</p>
+</div>
+</div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.90" id="panna-0390">panna 0.3.90<a class="anchor" aria-label="anchor" href="#panna-0390"></a></h2>
 <div class="section level3">
