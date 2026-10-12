@@ -628,6 +628,42 @@ create_match_splints_fast <- function(match_id, events, lineups, shooting, resul
   home_team <- if (!is.null(results) && nrow(results) > 0) results$home_team[1] else NULL
   away_team <- if (!is.null(results) && nrow(results) > 0) results$away_team[1] else NULL
 
+  # Pull precomputed period-end times from results if present
+  # (set by 01_load_opta_data.R from Opta's type_id == 30 markers).
+  # These give exact second-level period boundaries; without them
+  # we fall back to last-event time with no buffer.
+  fh_end_override <- if (!is.null(results) && nrow(results) > 0 &&
+                          "first_half_end_time" %in% names(results)) {
+    val <- results$first_half_end_time[1]
+    if (!is.na(val) && val > 0) val else NULL
+  } else NULL
+  match_end_override <- if (!is.null(results) && nrow(results) > 0 &&
+                            "match_end_time" %in% names(results)) {
+    val <- results$match_end_time[1]
+    if (!is.na(val) && val > 0) val else NULL
+  } else NULL
+
+  # One continuous match clock (review R009): Opta restarts the second half at
+  # 45 even after ten minutes of first-half stoppage. Shift period-2 (and
+  # extra-time) shots and events by the real first-half length so they cannot
+  # share splints with first-half stoppage. Player on/off times arrive already
+  # converted (extract_player_timing_from_events), as does match_end_time.
+  if (!is.null(fh_end_override)) {
+    sh_end_raw <- if (!is.null(match_end_override)) match_end_override - fh_end_override + 45 else NA_real_
+    if (!is.null(shooting) && nrow(shooting) > 0 &&
+        all(c("time_min", "period_id") %in% names(shooting))) {
+      shooting$minute <- .continuous_minute(shooting$time_min, shooting$period_id,
+                                            fh_end_override, sh_end_raw)
+    }
+    if (!is.null(events) && nrow(events) > 0 && "period_id" %in% names(events)) {
+      added <- if ("added_time" %in% names(events)) ifelse(is.na(events$added_time), 0, events$added_time) else 0
+      events$minute <- .continuous_minute(events$minute + added, events$period_id,
+                                          fh_end_override, sh_end_raw)
+      events$added_time <- 0
+    }
+  }
+
+
   # Derive goal times from shooting data if events are NULL/empty
   goal_times <- NULL
   goal_is_home <- NULL
@@ -687,21 +723,6 @@ create_match_splints_fast <- function(match_id, events, lineups, shooting, resul
       }
     }
   }
-
-  # Pull precomputed period-end times from results if present
-  # (set by 01_load_opta_data.R from Opta's type_id == 30 markers).
-  # These give exact second-level period boundaries; without them
-  # we fall back to last-event time with no buffer.
-  fh_end_override <- if (!is.null(results) && nrow(results) > 0 &&
-                          "first_half_end_time" %in% names(results)) {
-    val <- results$first_half_end_time[1]
-    if (!is.na(val) && val > 0) val else NULL
-  } else NULL
-  match_end_override <- if (!is.null(results) && nrow(results) > 0 &&
-                            "match_end_time" %in% names(results)) {
-    val <- results$match_end_time[1]
-    if (!is.na(val) && val > 0) val else NULL
-  } else NULL
 
   # Create splint boundaries with derived goal/sub/red card times
   # Pass shooting data for more accurate match end timing
@@ -1183,6 +1204,8 @@ prepare_opta_events_for_splints <- function(opta_events, match_results = NULL) {
   out_cols <- c("match_id", "minute", "added_time", "event_type",
                 "is_goal", "is_sub", "is_red_card", "is_home",
                 "player_id", "player_name")
+  # period_id travels on so splint creation can build the continuous clock (R009)
+  if ("period_id" %in% names(events)) out_cols <- c(out_cols, "period_id")
   events[, out_cols, drop = FALSE]
 }
 
@@ -1436,6 +1459,59 @@ create_opta_processed_data <- function(opta_lineups, opta_events = NULL,
 }
 
 
+#' Convert Opta (period, clock) times to one continuous match clock
+#'
+#' Opta's clock runs ON through first-half stoppage (period 1 can reach minute
+#' 56) and the second half RESTARTS at 45, so first-half stoppage and the start
+#' of the second half share clock values (review R009). This shifts period-2
+#' times by the real first-half length and extra-time periods by the real end
+#' of the second half, so every splint time (boundaries, shots, player on/off,
+#' value streams) sits on one timeline.
+#'
+#' @param t Numeric clock minutes (minute + second/60).
+#' @param period_id Integer period (1, 2; 3/4 extra time).
+#' @param first_half_end First-half end on the raw clock (period-1 type 30
+#'   marker), recycled. NA leaves period-2+ times unshifted.
+#' @param second_half_end_raw Second-half end on the raw clock (period-2
+#'   marker). NA shifts extra time like period 2.
+#' @return Numeric continuous minutes.
+#' @keywords internal
+.continuous_minute <- function(t, period_id, first_half_end, second_half_end_raw = NA_real_) {
+  t <- as.numeric(t); p <- as.integer(period_id)
+  fh <- rep_len(as.numeric(first_half_end), length(t))
+  sh <- rep_len(as.numeric(second_half_end_raw), length(t))
+  out <- t
+  p2 <- !is.na(p) & p == 2L & !is.na(fh)
+  out[p2] <- t[p2] - 45 + fh[p2]
+  et <- !is.na(p) & p %in% c(3L, 4L) & !is.na(fh)
+  sh_cont <- sh - 45 + fh
+  et_known <- et & !is.na(sh)
+  out[et_known] <- t[et_known] - 90 + sh_cont[et_known]
+  out[et & is.na(sh)] <- t[et & is.na(sh)] - 45 + fh[et & is.na(sh)]
+  out
+}
+
+
+#' Per-match period ends on the raw Opta clock
+#'
+#' First-half end from the period-1 type 30 marker (else the last period-1
+#' event), second-half end from the period-2 marker (else the last period-2
+#' event).
+#' @param dt data.table with match_id, type_id, period_id, eff_minute.
+#' @return data.table match_id, fh_end, sh_end_raw.
+#' @keywords internal
+.raw_period_ends <- function(dt) {
+  mk <- dt[type_id == 30L & period_id %in% c(1L, 2L),
+           .(end = max(eff_minute, na.rm = TRUE)), by = .(match_id, period_id)]
+  last <- dt[period_id %in% c(1L, 2L), .(end = max(eff_minute, na.rm = TRUE)), by = .(match_id, period_id)]
+  both <- merge(last, mk, by = c("match_id", "period_id"), all.x = TRUE, suffixes = c("_last", "_mk"))
+  both[, end := data.table::fifelse(is.na(end_mk), end_last, end_mk)]
+  merge(both[period_id == 1L, .(match_id, fh_end = end)],
+        both[period_id == 2L, .(match_id, sh_end_raw = end)],
+        by = "match_id", all = TRUE)
+}
+
+
 #' Extract Season from Match Date
 #'
 #' Extract Per-Player On/Off Times from Raw Opta Match Events
@@ -1484,8 +1560,15 @@ extract_player_timing_from_events <- function(match_events) {
     second_num = if ("second" %in% names(dt)) as.numeric(second) else 0
   )]
   dt[, eff_minute := minute_num + second_num / 60]
+  # One continuous clock (review R009): Opta restarts the second half at 45
+  # even after ten minutes of first-half stoppage, so a half-time sub's
+  # on-minute (45:00, period 2) used to sit INSIDE the first half.
+  .pe <- .raw_period_ends(dt)
+  dt[.pe, `:=`(.fh = i.fh_end, .sh = i.sh_end_raw), on = "match_id"]
+  if (!".fh" %in% names(dt)) dt[, `:=`(.fh = NA_real_, .sh = NA_real_)]
+  dt[, eff_minute := .continuous_minute(eff_minute, period_id, .fh, .sh)]
 
-  # 1) Match end per match (period 2 type_id == 30)
+  # 1) Match end per match (period 2 type_id == 30), now on the continuous clock
   match_end_dt <- dt[type_id == 30 & period_id == 2,
                      .(match_end = max(eff_minute, na.rm = TRUE)), by = match_id]
 
@@ -1617,10 +1700,14 @@ extract_period_end_times <- function(match_events) {
   agg <- dt[, .(end_time = max(end_time, na.rm = TRUE)),
             by = .(match_id, period_id)]
   wide <- data.table::dcast(agg, match_id ~ period_id, value.var = "end_time")
+  fh <- if ("1" %in% names(wide)) wide[["1"]] else rep(NA_real_, nrow(wide))
+  sh_raw <- if ("2" %in% names(wide)) wide[["2"]] else rep(NA_real_, nrow(wide))
   out <- data.frame(
     match_id = wide$match_id,
-    first_half_end_time = if ("1" %in% names(wide)) wide[["1"]] else NA_real_,
-    match_end_time      = if ("2" %in% names(wide)) wide[["2"]] else NA_real_,
+    first_half_end_time = fh,
+    # Continuous clock (review R009): the second half restarts at 45 on
+    # Opta's clock, so its end is shifted by the real first-half length.
+    match_end_time      = .continuous_minute(sh_raw, 2L, fh),
     stringsAsFactors = FALSE
   )
   out
