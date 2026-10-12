@@ -358,6 +358,16 @@ compute_duel_woe <- function(events, duel_model, by_match = FALSE) {
   key <- if (by_match) c("player_id", "team_id", "match_id") else c("player_id", "team_id")
   dt <- .order_events(events)
   aggs <- list()
+  # A contest with no sub-model has no expectation: its _exp / _woe are NA, not
+  # 0 (a 0 expectation makes WOE equal raw wins -- review R108).
+  no_model <- names(.DUEL_CONTESTS)[vapply(names(.DUEL_CONTESTS),
+                                           function(cst) is.null(duel_model[[cst]]), logical(1))]
+  if (length(no_model) > 0) {
+    cli::cli_warn(c(
+      "compute_duel_woe: duel model has no sub-model for {.val {no_model}}.",
+      "x" = "Expected wins and WOE for {length(no_model)} contest{?s} are set to NA (not 0, which would make WOE equal raw wins)."
+    ))
+  }
   for (cst in names(.DUEL_CONTESTS)) {
     prefix <- .DUEL_CONTESTS[[cst]]
     f <- .finalize_duel(.DUEL_PREP_FUNS[[cst]](dt))
@@ -377,6 +387,10 @@ compute_duel_woe <- function(events, duel_model, by_match = FALSE) {
       data.table::set(out, which(is.na(out[[col]])), col, 0)
     }
     out[, (paste0(prefix, "_woe")) := get(paste0(prefix, "_won")) - get(paste0(prefix, "_exp"))]
+  }
+  for (cst in no_model) {
+    prefix <- .DUEL_CONTESTS[[cst]]
+    data.table::set(out, j = paste0(prefix, c("_exp", "_woe")), value = list(NA_real_, NA_real_))
   }
   out[]
 }

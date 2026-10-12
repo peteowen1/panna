@@ -563,3 +563,18 @@ test_that("04b resume refuses an untagged (pre-flip) cache and accepts a tagged 
   expect_identical(.require_tagged_window_targets_for_resume(tagged), tagged)
   expect_identical(.require_tagged_window_targets_for_resume(list()), list())
 })
+
+test_that("R095: rows dropped by complete.cases are counted by vintage, not silent", {
+  ok <- c(rep(TRUE, 18), FALSE, FALSE)
+  v <- c(rep(2024L, 10), rep(2025L, 10))
+  # 10% dropped: above the 5% line -> warning naming the vintage
+  expect_warning(panna:::.report_incomplete_panel_rows(ok, v, "fit_spm_panel"),
+                 "2 of 20 rows.*10%")
+  # small drop: informational message only
+  ok2 <- c(rep(TRUE, 99), FALSE)
+  expect_message(
+    expect_no_warning(panna:::.report_incomplete_panel_rows(ok2, rep(2024L, 100), "fit_spm_panel")),
+    "1 of 100 row")
+  # healthy: silent
+  expect_no_message(panna:::.report_incomplete_panel_rows(rep(TRUE, 5), 1:5, "x"))
+})

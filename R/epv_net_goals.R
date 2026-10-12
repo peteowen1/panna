@@ -414,6 +414,25 @@ ng_build_ledger <- function(spadl_with_epv, adj = NULL, fixtures,
           true_possession_change)]
     dt <- merge(dt, a, by.x = c("match_id", "original_event_id"),
                 by.y = c("match_id", "event_id"), all.x = TRUE)
+    # Match-rate guard (review R093). Every event in `adj` carries a non-NA
+    # true_possession_change, so NA after the merge means the action found no
+    # adjacency row. A failed join (id type/format drift, wrong league's adj)
+    # would otherwise silently delete every named turnover. Penalty-shootout
+    # rows (period 5) are outside the denominator.
+    in_play <- if ("period_id" %in% names(dt)) !(dt$period_id %in% 5L) else rep(TRUE, nrow(dt))
+    adj_hit <- if (any(in_play)) mean(!is.na(dt$true_possession_change[in_play])) else 1
+    if (adj_hit < 0.5) {
+      cli::cli_abort(c(
+        "Adjacency join matched only {round(100 * adj_hit, 1)}% of {sum(in_play)} actions.",
+        "x" = "Named turnovers would be silently dropped; {.arg adj} does not cover {.arg spadl_with_epv} (match_id / event_id drift, or the wrong league's adjacency).",
+        "i" = "Build it for the same events with {.fn ng_build_adjacency}."
+      ))
+    } else if (adj_hit < 0.99) {
+      cli::cli_warn(c(
+        "Adjacency join matched only {round(100 * adj_hit, 1)}% of {sum(in_play)} actions (healthy is ~100%).",
+        "i" = "Unmatched actions lose their named turnover / ball-winner."
+      ))
+    }
   }
 
   # The home-margin frame. This single negation is what makes one number

@@ -217,6 +217,28 @@ test_that("adjacency changes who is next without changing the match total", {
 })
 
 
+test_that("R093: an adjacency table that does not cover the actions is loud", {
+  adj <- ng_build_adjacency(ng_fixture_events(), verbose = FALSE)
+  # healthy: full coverage, no warning
+  expect_no_warning(
+    ng_build_ledger(ng_fixture_spadl(), adj = adj, allocate = FALSE,
+                    fixtures = ng_fixture_fixtures(), verbose = FALSE))
+  # key drift: no action finds its adjacency row -> abort, not silent no-op
+  adj_bad <- data.table::copy(adj)
+  adj_bad[, match_id := paste0("x", match_id)]
+  expect_error(
+    ng_build_ledger(ng_fixture_spadl(), adj = adj_bad, allocate = FALSE,
+                    fixtures = ng_fixture_fixtures(), verbose = FALSE),
+    "matched only 0%")
+  # partial coverage (3 of 4 actions = 75%) -> warning with the rate
+  adj_part <- adj[event_id != 6L]
+  expect_warning(
+    ng_build_ledger(ng_fixture_spadl(), adj = adj_part, allocate = FALSE,
+                    fixtures = ng_fixture_fixtures(), verbose = FALSE),
+    "matched only 75%")
+})
+
+
 # =============================================================================
 # Allocation (step 3). Every expectation below is arithmetic done by hand in the
 # comment above it, on the fixture's four hand-chosen deltas.

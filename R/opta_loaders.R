@@ -935,6 +935,7 @@ enrich_match_stats_with_xmetrics <- function(match_stats, verbose = TRUE,
   }
 
   ls_pairs <- unique(match_stats[, .(league, season)])
+  remote_err <- NULL   # the remote load error, so a swallowed failure is still reported
 
   if (source == "remote") {
     # opta_xmetrics_bymatch.parquet is ONE consolidated file on opta-latest —
@@ -968,7 +969,7 @@ enrich_match_stats_with_xmetrics <- function(match_stats, verbose = TRUE,
       data.table::setDT(x)
       keep <- intersect(want, names(x))
       x[, ..keep]
-    }, error = function(e) NULL)
+    }, error = function(e) { remote_err <<- conditionMessage(e); NULL })
     if (is.null(xm)) {
       xm <- data.table::data.table()
       n_missing <- nrow(ls_pairs)
@@ -1005,6 +1006,7 @@ enrich_match_stats_with_xmetrics <- function(match_stats, verbose = TRUE,
         "No per-match xMetrics found (xmetrics_bymatch/ absent for all %d league-seasons). ",
         "Re-run data-raw/epv/03_calculate_player_xmetrics.R."), nrow(ls_pairs))
     }
+    if (!is.null(remote_err)) msg <- paste0(msg, " Load error: ", remote_err, ".")
     # A total miss is fatal whenever the caller demanded the features (finite
     # fail_if_missing_frac) — training xG-blind silently is the bug this exists
     # to prevent. Library-default (Inf) warns and proceeds.
@@ -1059,6 +1061,60 @@ enrich_match_stats_with_xmetrics <- function(match_stats, verbose = TRUE,
       "xMetrics join matched only %.1f%% of match_stats rows (healthy is ~98%%) - ",
       "investigate key drift; unmatched rows get xMetrics = 0."),
       100 * matched_frac), call. = FALSE)
+  }
+  # Per league-season coverage (review R036/R037). The global rate above hides a
+  # league-season that matched nothing (its rows would all become xMetrics = 0,
+  # i.e. "took no shots"), so check each stratum, over rows with minutes played
+  # when the table has minutes. Warn with the list; stop only when the caller
+  # demanded the features (finite fail_if_missing_frac) and too many league-
+  # seasons matched nothing.
+  if (nrow(xm) > 0 && length(idx)) {
+    played <- if ("total_minutes" %in% names(match_stats)) {
+      p <- match_stats$total_minutes > 0
+      p[is.na(p)] <- FALSE
+      p
+    } else rep(TRUE, length(idx))
+    strat <- data.table::data.table(league = match_stats$league, season = match_stats$season,
+                                    hit = !is.na(idx))[played, .(n = .N, matched = sum(hit)),
+                                                       by = .(league, season)]
+    strat[, frac := matched / n]
+    # Warn only for the input's latest season: older gaps (Scottish
+    # Premiership 2014-19, Championship/UCL 2013-15 never had xMetrics) are
+    # permanent and would otherwise warn on every call of every caller.
+    # They are still listed, as a message.
+    strat[, sey := vapply(as.character(season), function(s)
+      tryCatch(as.numeric(extract_season_end_year(s)), error = function(e) NA_real_), numeric(1))]
+    latest <- suppressWarnings(max(strat$sey, na.rm = TRUE))
+    strat[, current := !is.na(sey) & sey == latest]
+    unmatched_old <- strat[matched == 0L & !current]
+    if (nrow(unmatched_old) > 0L) {
+      message(sprintf("  xMetrics: %d older league-season(s) have no xMetrics (known gaps, xMetrics = 0): %s%s",
+                      nrow(unmatched_old),
+                      paste(utils::head(paste(unmatched_old$league, unmatched_old$season), 8), collapse = ", "),
+                      if (nrow(unmatched_old) > 8L) ", ..." else ""))
+    }
+    unmatched_ls <- strat[matched == 0L & current]
+    low_ls <- strat[matched > 0L & frac < 0.8 & current]
+    if (nrow(unmatched_ls) > 0L) {
+      msg0 <- sprintf(paste0("xMetrics matched NO rows in %d/%d league-seasons of the latest season (%s%s); ",
+                             "their %d player-matches get xMetrics = 0."),
+                      nrow(unmatched_ls), sum(strat$current),
+                      paste(utils::head(paste(unmatched_ls$league, unmatched_ls$season), 8), collapse = ", "),
+                      if (nrow(unmatched_ls) > 8L) ", ..." else "", sum(unmatched_ls$n))
+      if (is.finite(fail_if_missing_frac) &&
+          nrow(strat[matched == 0L]) / nrow(strat) > fail_if_missing_frac) {
+        stop(msg0, " Exceeds fail_if_missing_frac=", fail_if_missing_frac, ".", call. = FALSE)
+      }
+      warning(msg0, call. = FALSE)
+    }
+    if (nrow(low_ls) > 0L) {
+      warning(sprintf(paste0("xMetrics matched under 80%% of rows in %d league-season(s) (%s); ",
+                             "unmatched player-matches get xMetrics = 0."),
+                      nrow(low_ls),
+                      paste(utils::head(sprintf("%s %s: %d/%d", low_ls$league, low_ls$season,
+                                                low_ls$matched, low_ls$n), 8), collapse = "; ")),
+              call. = FALSE)
+    }
   }
   for (col in added_cols) {
     data.table::set(match_stats, j = col, value = xm[[col]][idx])

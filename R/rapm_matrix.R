@@ -8,6 +8,24 @@
 # Value metric helpers
 # ============================================================================
 
+# Splints whose match has no rows at all in a value stream keep the initial
+# target of 0, indistinguishable from a real zero (review R045). Targets are not
+# changed here (healthy output is identical); the gap is counted and reported so
+# a stream that silently misses matches is visible. Warn, not abort: the
+# multi-target path is opt-in and a partial stream can be legitimate.
+.warn_uncovered_splints <- function(splints, covered_matches, label) {
+  all_m <- unique(as.character(splints$match_id))
+  uncovered <- setdiff(all_m, covered_matches)
+  if (length(uncovered) == 0L) return(invisible(0L))
+  n_spl <- sum(as.character(splints$match_id) %in% uncovered)
+  cli::cli_warn(c(
+    "add_value_metrics_to_splints ({label}): {length(uncovered)} of {length(all_m)} match{?es} ({n_spl} of {nrow(splints)} splint{?s}) have no {label} stream rows; their {label} target stays 0.",
+    "i" = "First uncovered match id{?s}: {.val {utils::head(uncovered, 5)}}"
+  ))
+  invisible(length(uncovered))
+}
+
+
 #' Add value metric columns to splints
 #'
 #' Joins per-splint player value metrics (EPV, WPA, PSV) to splint data.
@@ -150,6 +168,7 @@ add_value_metrics_to_splints <- function(splint_data,
     epv_dt <- epv_dt[, c(required, intersect("period_id", names(epv_dt))), with = FALSE]
     epv_dt[, match_id := as.character(match_id)]
     epv_dt <- epv_dt[!is.na(match_id) & match_id %in% names(bd)]
+    .warn_uncovered_splints(splints, unique(epv_dt$match_id), "EPV")
 
     splints[, epv_home := 0]
     splints[, epv_away := 0]
@@ -228,6 +247,7 @@ add_value_metrics_to_splints <- function(splint_data,
     wpa_dt <- wpa_dt[, c(required, intersect("period_id", names(wpa_dt))), with = FALSE]
     wpa_dt[, match_id := as.character(match_id)]
     wpa_dt <- wpa_dt[!is.na(match_id) & match_id %in% names(bd)]
+    .warn_uncovered_splints(splints, unique(wpa_dt$match_id), "WPA")
 
     splints[, wpa_home := 0]
 

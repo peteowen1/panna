@@ -151,3 +151,23 @@ test_that(".load_shot_foot_history reads the consolidated files, checks dates an
   cur <- nofx; clear()
   expect_error(panna:::.load_shot_foot_history(), "missing")
 })
+
+test_that("R047: a foot history that does not cover the shots is loud, a healthy one is silent", {
+  fh <- data.frame(player_id = c("P1", "P2"), match_id = c("M1", "M1"),
+                   r_prev = c(8, 2), n_prev = c(12, 12))
+  shots <- data.frame(match_id = "M1", player_id = c("P1", "P2"), original_event_id = 1:2)
+  feats <- data.frame(is_header = c(0, 0), is_right_foot = c(1, 1))
+  out <- panna:::.add_shot_context_features(feats, shots, "foot_share", foot_history = fh)
+  expect_equal(out$foot_share, c(8 / 12, 2 / 12))
+  # headers are expected to be unmatched and do not count against coverage
+  shots_h <- rbind(shots, data.frame(match_id = "M1", player_id = "P3", original_event_id = 3L))
+  feats_h <- data.frame(is_header = c(0, 0, 1), is_right_foot = c(1, 1, 0))
+  expect_no_warning(panna:::.add_shot_context_features(feats_h, shots_h, "foot_share", foot_history = fh))
+  # 1 of 2 foot shots matched (50%): warn; 0 of 2: abort
+  fh_short <- fh[1, ]
+  expect_warning(panna:::.add_shot_context_features(feats, shots, "foot_share", foot_history = fh_short),
+                 "only 50%")
+  fh_none <- transform(fh, match_id = "OLD")
+  expect_error(panna:::.add_shot_context_features(feats, shots, "foot_share", foot_history = fh_none),
+               "only 0%")
+})

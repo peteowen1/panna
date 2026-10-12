@@ -338,3 +338,32 @@ test_that("add_value_metrics_to_splints still supports the psv whole-match-prora
   match_dur <- sum(.svt_splints$duration)
   expect_equal(splints$psv_home[splints$splint_id == "m1_1"], 0.6 * 45 / match_dur)
 })
+
+
+# ===========================================================================
+# R045: a match with no stream rows is reported, not silently a target of 0
+# ===========================================================================
+
+test_that("R045: splints of a match absent from the EPV/WPA stream warn with counts", {
+  sd2 <- .svt_splint_data
+  extra <- sd2$splints[1, ]
+  extra$splint_id <- "m2_1"; extra$match_id <- "m2"
+  sd2$splints <- rbind(sd2$splints, extra)
+
+  expect_warning(
+    res <- add_value_metrics_to_splints(sd2, player_action_epv = .svt_player_action_epv),
+    "1 of 2 match.*no EPV stream rows"
+  )
+  expect_equal(res$splints$epv_home[res$splints$splint_id == "m2_1"], 0)
+  expect_warning(
+    add_value_metrics_to_splints(sd2, match_action_wpa = .svt_match_action_wpa),
+    "no WPA stream rows"
+  )
+
+  # healthy path: every match covered -> no warning, output unchanged
+  expect_no_warning(
+    add_value_metrics_to_splints(.svt_splint_data,
+                                 player_action_epv = .svt_player_action_epv,
+                                 match_action_wpa = .svt_match_action_wpa)
+  )
+})

@@ -505,12 +505,28 @@ predict_epv_probs <- function(model, features) {
     }
   }
 
+  # No feature table (or none of the model's features in it) would be scored as
+  # all zeros: garbage in every row with nothing failing (review R030).
+  if (is.null(features) || NROW(features) == 0L || length(names(features)) == 0L ||
+      !any(feature_cols %in% names(features))) {
+    cli::cli_abort(c(
+      "predict_epv_probs: the feature table is missing or has none of the model's {length(feature_cols)} feature column{?s}.",
+      "x" = "Scoring it would fill every feature with 0 and return meaningless EPV.",
+      "i" = "For a full-mode model pass {.arg features} from {.fn create_epv_features}."
+    ))
+  }
+
   # Convert to data.table for fast column operations
   dt <- data.table::as.data.table(features)
 
-  # Add missing columns (vectorized, not loop)
+  # Partially missing features are still 0-filled (established behaviour, kept so
+  # healthy output is unchanged) but no longer silently.
   missing_cols <- setdiff(feature_cols, names(dt))
   if (length(missing_cols) > 0) {
+    cli::cli_warn(c(
+      "predict_epv_probs: {length(missing_cols)} of {length(feature_cols)} model feature{?s} missing from the feature table; filling with 0: {.val {missing_cols}}.",
+      "i" = "A model/feature-code version mismatch scores every action with these features at 0."
+    ))
     dt[, (missing_cols) := 0]
   }
 
@@ -542,6 +558,34 @@ predict_epv_probs <- function(model, features) {
   }
 }
 
+
+# Abort unless predictions made from `features` line up row-for-row with
+# `spadl_actions`: same row count and, when the feature table carries match_id /
+# action_id (the simple feature set does), the same keys in the same order.
+.assert_epv_features_aligned <- function(spadl_actions, features, n_pred) {
+  n_act <- nrow(spadl_actions)
+  if (n_pred != n_act) {
+    cli::cli_abort(c(
+      "EPV predictions ({n_pred} rows) do not line up with the SPADL actions ({n_act} rows).",
+      "x" = "Predictions are assigned by position, so the feature table must be one row per action."
+    ))
+  }
+  if (!is.null(features) && all(c("match_id", "action_id") %in% names(features)) &&
+      all(c("match_id", "action_id") %in% names(spadl_actions))) {
+    same <- identical(as.character(features$match_id), as.character(spadl_actions$match_id)) &&
+      identical(as.character(features$action_id), as.character(spadl_actions$action_id))
+    if (!same) {
+      n_bad <- sum(as.character(features$match_id) != as.character(spadl_actions$match_id) |
+                   as.character(features$action_id) != as.character(spadl_actions$action_id), na.rm = TRUE)
+      cli::cli_abort(c(
+        "EPV feature rows are not in the same order as the SPADL actions ({n_bad} of {n_act} rows differ on match_id / action_id).",
+        "x" = "Predictions would be assigned to the wrong actions.",
+        "i" = "Sort {.arg spadl_actions} by match_id, period_id, time_seconds, action_id (the order the features use) before calling."
+      ))
+    }
+  }
+  invisible(TRUE)
+}
 
 #' Calculate Action EPV Values
 #'
@@ -624,6 +668,13 @@ calculate_action_epv <- function(spadl_actions, features = NULL, epv_model, xg_m
 
   # Get predictions
   preds <- predict_epv_probs(epv_model, features)
+
+  # Row-alignment guard (review R112): predictions are assigned to the actions
+  # BY POSITION below, but create_epv_features*() re-sorts its output (by match,
+  # period, time, action). If the feature table is not row-for-row the action
+  # table, every EPV would be paired with another action's prediction and
+  # nothing would fail. Not live today (identical order on the real inputs).
+  .assert_epv_features_aligned(spadl_actions, features, nrow(preds))
 
   # Convert to data.table
   dt <- data.table::as.data.table(spadl_actions)

@@ -2921,6 +2921,38 @@ compute_psr_league_offsets <- function(game_logs,
 }
 
 
+# Rows whose league has no (non-NA) offset get an offset of 0 downstream, which
+# is indistinguishable from a league genuinely centred on the reference (review
+# R094). The 0 is kept (documented behaviour, healthy output unchanged); this
+# makes the gap visible with the league list and counts. `offsets` needs
+# columns `league` and `.off`.
+# Reported as a message, not a warning: on healthy data six cup/bridge
+# competitions (Libertadores, Leagues Cup, Club World Cup, ...) deliberately
+# have no offset, so a warning would fire every run and be ignored. Rows with
+# league NA (players with no domestic competition, by design) are not counted.
+.warn_leagues_without_offset <- function(leagues, offsets, context, minutes = NULL) {
+  keep <- !is.na(leagues)
+  leagues <- leagues[keep]
+  if (!is.null(minutes)) minutes <- minutes[keep]
+  if (!length(leagues)) return(invisible(character()))
+  ok <- leagues %in% offsets$league[!is.na(offsets$.off)]
+  n_bad <- sum(!ok)
+  if (n_bad == 0L) return(invisible(character()))
+  bad_lg <- sort(unique(as.character(leagues[!ok])), na.last = TRUE)
+  mins <- if (is.null(minutes)) "" else
+    sprintf(" (%s minutes)", format(round(sum(as.numeric(minutes)[!ok], na.rm = TRUE)), big.mark = ","))
+  pct <- round(100 * n_bad / length(leagues), 1)
+  n_lg <- length(bad_lg)
+  lg_txt <- paste0(utils::head(bad_lg, 10), collapse = ", ")
+  if (n_lg > 10) lg_txt <- paste0(lg_txt, ", ...")
+  cli::cli_inform(c(
+    "!" = "{context}: {n_bad} of {length(leagues)} rows ({pct}%) in {n_lg} league(s) have no league offset and get 0{mins}.",
+    "i" = "Leagues: {lg_txt}",
+    "i" = "A league with no offset row is treated as centred on the reference; re-run the offsets step if it should have one."
+  ))
+  invisible(bad_lg)
+}
+
 #' Apply cross-league PSR offsets to a PSR table
 #'
 #' Adds the per-league offset from \code{\link{compute_psr_league_offsets}} to
@@ -2952,6 +2984,13 @@ apply_psr_league_offsets <- function(psr_dt, offsets, verbose = FALSE) {
     return(dt[])
   }
   off <- data.table::as.data.table(offsets)[, .(league, .off = offset)]
+  if (anyDuplicated(off$league)) {
+    cli::cli_abort(c(
+      "{.arg offsets} has more than one row for league{?s} {.val {unique(off$league[duplicated(off$league)])}}.",
+      "x" = "The join would duplicate player rows."
+    ))
+  }
+  .warn_leagues_without_offset(dt$league, off, "apply_psr_league_offsets", minutes = dt$total_minutes)
   dt <- merge(dt, off, by = "league", all.x = TRUE, sort = FALSE)
   dt[is.na(.off), .off := 0]
   dt[, psr := psr + .off]

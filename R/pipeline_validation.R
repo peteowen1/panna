@@ -341,6 +341,19 @@ run_wc2026_reference_checks <- function(
     results[[name]] <- list(passed = !check_failed, fact = entry$fact)
   }
 
+  # Zero checks run is NOT success (review R038): with no output files present
+  # every fact is skipped and "All 0 reference facts hold" would read as green.
+  # Warn rather than abort: this runs after publish and an absent file can be a
+  # legitimate partial run, but it must not look like a pass.
+  if (length(results) == 0L) {
+    cli::cli_warn(c(
+      "WC2026 reference-fact validation ran 0 of {length(WC2026_REFERENCE_FACTS)} fact{?s}: no checkable pipeline output found in {.path {cache_dir}}.",
+      "x" = "Nothing was validated.",
+      "i" = "Expected {.file wc2026_team_strength.parquet}, {.file wc2026_simulation.parquet} or {.file 04_match_dataset.rds}."
+    ))
+    return(invisible(list()))
+  }
+
   n_pass <- sum(vapply(results, function(r) r$passed, logical(1)))
   n_fail <- length(results) - n_pass
 
