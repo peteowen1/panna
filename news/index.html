@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.94</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.95</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,6 +39,13 @@
       <small>Source: <a href="https://github.com/peteowen1/panna/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.95" id="panna-0395">panna 0.3.95<a class="anchor" aria-label="anchor" href="#panna-0395"></a></h2>
+<div class="section level3">
+<h3 id="expected-minutes-ignore-lineups-after-as_of-review-r032-0-3-95">Expected minutes ignore lineups after <code>as_of</code> (review R032)<a class="anchor" aria-label="anchor" href="#expected-minutes-ignore-lineups-after-as_of-review-r032-0-3-95"></a></h3>
+<p><code><a href="../reference/build_team_expected_minutes.html">build_team_expected_minutes()</a></code> had no upper date bound, so a lineup after <code>as_of</code> got a decay weight above 1 (the future, in a backtest). It now keeps <code>match_date &lt;= as_of</code>. The World Cup squad builder (<code>announced_squads.R</code>) now defaults <code>as_of</code> to the run date instead of the 2026-06-11 kickoff, so the in-tournament boost sees exactly the tournament matches already played, which is how <code>tournament_boost = 5</code> was tuned (Pete, 2026-10-12). No live effect until the next tournament.</p>
+</div>
+</div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.94" id="panna-0394">panna 0.3.94<a class="anchor" aria-label="anchor" href="#panna-0394"></a></h2>
 <div class="section level3">

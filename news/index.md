@@ -1,5 +1,18 @@
 # Changelog
 
+## panna 0.3.95
+
+### Expected minutes ignore lineups after `as_of` (review R032)
+
+[`build_team_expected_minutes()`](https://peteowen1.github.io/panna/reference/build_team_expected_minutes.md)
+had no upper date bound, so a lineup after `as_of` got a decay weight
+above 1 (the future, in a backtest). It now keeps `match_date <= as_of`.
+The World Cup squad builder (`announced_squads.R`) now defaults `as_of`
+to the run date instead of the 2026-06-11 kickoff, so the in-tournament
+boost sees exactly the tournament matches already played, which is how
+`tournament_boost = 5` was tuned (Pete, 2026-10-12). No live effect
+until the next tournament.
+
 ## panna 0.3.94
 
 ### Splints on one continuous match clock (review R009 + R051)
