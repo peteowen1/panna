@@ -32,7 +32,8 @@ env:
   R_KEEP_PKG_SOURCE: yes
   # R026: only main and dev may publish. Scheduled and repository_dispatch runs
   # use the default branch (main). A workflow_dispatch from any other branch
-  # builds but uploads nothing: R scripts and vb_publish() read this variable.
+  # builds but uploads nothing: the R scripts force their upload_* flags off and the
+  # workflow upload steps are gated on it (vb_publish() itself does not read it).
   PANNA_PUBLISH_DISABLED: ${{ (github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev') && 'true' || 'false' }}
   # Steps 07b/12b/12c upload dated snapshots with gh directly; they already
   # honour this switch.
