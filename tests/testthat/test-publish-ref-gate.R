@@ -42,3 +42,15 @@ test_that("shell upload steps are gated on the publish switch", {
     }
   }
 })
+
+test_that("opta-pipeline serialises runs and only uploads caches after success", {
+  skip_if_not_installed("yaml")
+  skip_if_not(file.exists(wf_path("opta-pipeline.yml")), ".github not available (R CMD check)")
+  wf <- yaml::read_yaml(wf_path("opta-pipeline.yml"))
+  expect_equal(wf$concurrency$group, "opta-pipeline")
+  expect_false(isTRUE(wf$concurrency$`cancel-in-progress`))
+  steps <- wf$jobs[[1]]$steps
+  up <- Filter(function(s) identical(s$name, "Upload caches to predictions-cache release"), steps)[[1]]
+  expect_match(up$`if`, "success()", fixed = TRUE)
+  expect_false(grepl("always()", up$`if`, fixed = TRUE))
+})

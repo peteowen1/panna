@@ -32,6 +32,13 @@ on:
   repository_dispatch:
     types: [opta-scrape-complete]
 
+# R099: one run at a time. A second run queues instead of cancelling a running
+# one, so two runs never write the same predictions-cache / ratings-data assets
+# at once.
+concurrency:
+  group: opta-pipeline
+  cancel-in-progress: false
+
 env:
   GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
   R_KEEP_PKG_SOURCE: yes
@@ -471,7 +478,10 @@ jobs:
         # (run 37928291881, 2026-10-09). The string form also stays truthy when
         # there are no inputs at all (a repository_dispatch run), so a scheduled
         # run keeps uploading.
-        if: always() && github.event.inputs.upload_caches != 'false' && env.PANNA_PUBLISH_DISABLED != 'true'
+        # R099/R026: only after every earlier step succeeded (a failed run's
+        # completed steps were already uploaded by the heartbeat, which is what
+        # start_step resume uses) and only on main or dev.
+        if: success() && github.event.inputs.upload_caches != 'false' && env.PANNA_PUBLISH_DISABLED != 'true'
         env:
           GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
         run: |
