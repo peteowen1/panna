@@ -445,9 +445,38 @@ test_that("remote xMetrics enrichment aligns a multi-row match() join (shuffled,
   testthat::local_mocked_bindings(
     query_remote_opta_parquet = function(...) xm_remote
   )
-  out <- enrich_match_stats_with_xmetrics(ms, verbose = FALSE, source = "remote")
+  # 2 of 3 rows matched (67%) is under the per-league-season 80% floor: warns (R036)
+  expect_warning(
+    out <- enrich_match_stats_with_xmetrics(ms, verbose = FALSE, source = "remote"),
+    "under 80% of rows in 1 league-season")
   expect_equal(out$xg_per90, c(0, 0.7, 0.9))   # row 1 unmatched -> 0; rows realigned
   expect_equal(out$gsaa_per90, c(0, 0, 0.2))   # NA inside a matched row -> 0 too
+})
+
+test_that("R036/R037: a league-season that matches nothing is reported even when the global rate is healthy", {
+  ms <- data.frame(
+    player_id = paste0("p", 1:6), match_id = paste0("m", 1:6),
+    league = rep(c("EPL", "TINY"), c(5, 1)), season = "2024-2025",
+    total_minutes = 90, goals_p90 = 1, stringsAsFactors = FALSE
+  )
+  # EPL fully matched (5/6 = 83% overall, above the old 50% tripwire); TINY has none.
+  xm_remote <- data.frame(player_id = paste0("p", 1:5), match_id = paste0("m", 1:5),
+                          xg_per90 = 0.5, stringsAsFactors = FALSE)
+  testthat::local_mocked_bindings(query_remote_opta_parquet = function(...) xm_remote)
+  expect_warning(
+    out <- enrich_match_stats_with_xmetrics(ms, verbose = FALSE, source = "remote"),
+    "NO rows in 1/2 league-seasons [(]TINY 2024-2025[)]")
+  expect_equal(out$xg_per90, c(rep(0.5, 5), 0))   # fill itself unchanged
+  # a caller that demanded the features stops when too many league-seasons are empty
+  expect_error(
+    suppressWarnings(enrich_match_stats_with_xmetrics(ms, verbose = FALSE, source = "remote",
+                                                      fail_if_missing_frac = 0.25)),
+    "Exceeds fail_if_missing_frac")
+  # healthy: everything matched -> silent
+  xm_all <- data.frame(player_id = paste0("p", 1:6), match_id = paste0("m", 1:6),
+                       xg_per90 = 0.5, stringsAsFactors = FALSE)
+  testthat::local_mocked_bindings(query_remote_opta_parquet = function(...) xm_all)
+  expect_no_warning(enrich_match_stats_with_xmetrics(ms, verbose = FALSE, source = "remote"))
 })
 
 test_that("remote xMetrics enrichment errors when the join matches zero rows", {
