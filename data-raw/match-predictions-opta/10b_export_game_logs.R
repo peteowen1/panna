@@ -247,26 +247,11 @@ if (!is.null(seasonal_results) && !is.null(seasonal_results$seasonal_spm)) {
 
 # 3. Helpers ----
 
-.build_match_results <- function(events, lineups) {
-  dt_lineups <- data.table::as.data.table(lineups)
-  match_teams <- dt_lineups[, .(
-    home_team_id = team_id[tolower(team_position) == "home"][1],
-    away_team_id = team_id[tolower(team_position) == "away"][1]
-  ), by = match_id]
-  dt_events <- data.table::as.data.table(events)
-  # Exclude penalty-shootout goals (period_id >= 5) — a pens match is a draw in
-  # open play, so shootout conversions must not inflate the match score.
-  if ("period_id" %in% names(dt_events)) {
-    dt_events <- dt_events[!is_shootout_period(period_id)]
-  }
-  goals <- dt_events[type_id == 16L]
-  goal_counts <- goals[, .N, by = .(match_id, team_id)]
-  match_teams[goal_counts, home_goals := i.N, on = .(match_id, home_team_id = team_id)]
-  match_teams[goal_counts, away_goals := i.N, on = .(match_id, away_team_id = team_id)]
-  match_teams[is.na(home_goals), home_goals := 0L]
-  match_teams[is.na(away_goals), away_goals := 0L]
-  as.data.frame(match_teams)
-}
+# Match results for the WPA labels come from the package helper
+# .build_match_results_from_events() (R/wp_model.R), which flips own goals to
+# the scoring side and drops shootout goals. A local copy here had no own-goal
+# flip: on EPL 2024-25 it got 35 of 380 final scores wrong and 18 results
+# (win/draw/loss) wrong (review R071).
 
 # season_str = "2025-2026"; returns integer season_end_year (2026) or NA
 .season_end_year <- function(season_str) {
@@ -708,7 +693,7 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
 
       # --- WPA path ---
       player_game_wpa <- tryCatch({
-        match_results <- .build_match_results(events, lineups)
+        match_results <- .build_match_results_from_events(events, lineups)
 
         # #92: surface the standalone live-threat `epv` feature. spadl_chains
         # carry no EPV, but spadl_epv (computed above) does -- join it back on

@@ -560,8 +560,7 @@ load_xgot_model <- function(path = NULL, name = "xgot_model") {
     return(readRDS(path))
   }
   if (requireNamespace("pannamodels", quietly = TRUE)) {
-    model <- tryCatch(pannamodels::load_panna_model(name, verbose = FALSE),
-                      error = function(e) NULL)
+    model <- .load_from_pannamodels(name)
     if (!is.null(model)) {
       cli::cli_alert_success("Loaded xGOT model {.val {name}} from pannamodels")
       return(model)

@@ -392,8 +392,7 @@ load_duel_model <- function(path = NULL) {
     cli::cli_alert_success("Loaded xDuel model from {path}"); return(readRDS(path))
   }
   if (requireNamespace("pannamodels", quietly = TRUE)) {
-    model <- tryCatch(pannamodels::load_panna_model("duel_model", verbose = FALSE),
-                      error = function(e) NULL)
+    model <- .load_from_pannamodels("duel_model")
     if (!is.null(model)) { cli::cli_alert_success("Loaded xDuel model from pannamodels"); return(model) }
   }
   default_path <- file.path(opta_data_dir(), "models", "duel_model.rds")

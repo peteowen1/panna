@@ -227,6 +227,34 @@ message("\n=== Incremental Update Check ===")
 recompute_buffer_days <- 28L   # Recompute the last 4 weeks (covers late results)
 force_full_rebuild <- nzchar(Sys.getenv("PSR_FORCE_FULL_REBUILD"))
 
+# Model fingerprint (review R016): everything that turns skills into a PSR
+# value. Reused rows must have been scored by the SAME model, or the published
+# history is mixed-vintage (old weeks on old coefficients, new weeks on new).
+# Stamped on every row as `model_fingerprint`; a mismatch, or a file from
+# before the stamp existed, forces a full rebuild below. Inputs are hashed as
+# FILE BYTES (not R objects) so the hash cannot move with an R/data.table
+# version. Package CODE changes (compute_player_psr(), the normalisation, a
+# constant) are not covered: after one, run with PSR_FORCE_FULL_REBUILD=1.
+.fp_file <- function(p) if (nzchar(p) && file.exists(p)) digest::digest(p, algo = "sha256", file = TRUE) else "absent"
+.extdata <- system.file("extdata", package = "panna")
+# Every PSR/OSR/DSR coefficient set the scorer can read: outfield xg / gd /
+# blend and the separate goalkeeper model (gk_*), which step 07 can retrain
+# on its own. spm_* are SPM coefficients, not PSR.
+.coef_files <- sort(setdiff(
+  list.files(.extdata, pattern = "(psr|osr|dsr)_coefficients\\.csv$"),
+  list.files(.extdata, pattern = "^spm_")))
+psr_model_fingerprint <- digest::digest(list(
+  coefficients   = vapply(file.path(.extdata, .coef_files), .fp_file, character(1), USE.NAMES = FALSE),
+  coef_names     = .coef_files,
+  target         = psr_target,
+  position_means = if (is.null(.psr_position_means)) "off" else
+    .fp_file(file.path(.extdata, "position_role_means.csv")),
+  decay_params   = .fp_file(decay_params_path),
+  offsets        = .fp_file(file.path(cache_dir, "psr_league_offsets.parquet")),
+  calibration    = .fp_file(file.path(.extdata, "psr_calibration.csv"))
+), algo = "sha256")
+message(sprintf("  PSR model fingerprint: %s", substr(psr_model_fingerprint, 1, 12)))
+
 existing_parquet <- NULL
 if (force_full_rebuild) {
   message("  PSR_FORCE_FULL_REBUILD set - skipping incremental check")
@@ -296,6 +324,17 @@ if (!is.null(existing_parquet) && "snapshot_date" %in% names(existing_parquet) &
       paste(missing_cols, collapse = ", ")),
       "Falling back to full rebuild. Investigate whether the schema changed ",
       "intentionally.", call. = FALSE)
+  } else if (!"model_fingerprint" %in% names(existing_dt) ||
+             any(existing_dt$model_fingerprint != psr_model_fingerprint, na.rm = TRUE) ||
+             anyNA(existing_dt$model_fingerprint)) {
+    # Expected after a retrain (new coefficients/calibration/offsets/means)
+    # and once for every file published before the stamp: not a warning.
+    message(sprintf(
+      "  Existing parquet was scored by a different PSR model (%s) - full rebuild so every snapshot uses the current one",
+      if (!"model_fingerprint" %in% names(existing_dt)) "no fingerprint" else
+        paste(unique(substr(stats::na.omit(existing_dt$model_fingerprint), 1, 12)), collapse = ", ")))
+    if (nzchar(Sys.getenv("GITHUB_ACTIONS")))
+      message("::notice::PSR model changed since the last publish - weekly history fully rebuilt")
   } else {
     existing_dates <- sort(unique(existing_dt$snapshot_date))
     # Keep rows strictly older than the recompute buffer, AND only rows ON the
@@ -828,6 +867,7 @@ new_psr <- data.table::as.data.table(
   arrow::open_dataset(chunk_files, format = "parquet") |>
     dplyr::collect()
 )
+new_psr[, model_fingerprint := psr_model_fingerprint]
 message(sprintf("  Newly computed: %s rows across %d dates",
                 format(nrow(new_psr), big.mark = ","),
                 data.table::uniqueN(new_psr$snapshot_date)))

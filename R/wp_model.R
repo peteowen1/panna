@@ -795,13 +795,7 @@ load_wp_model <- function(path = NULL) {
 
   # 2. Try pannamodels (the canonical distribution)
   if (requireNamespace("pannamodels", quietly = TRUE)) {
-    model <- tryCatch(
-      pannamodels::load_panna_model("wp_model", verbose = FALSE),
-      error = function(e) {
-        cli::cli_alert_info("pannamodels wp_model lookup failed: {e$message}. Trying local path.")
-        NULL
-      }
-    )
+    model <- .load_from_pannamodels("wp_model")
     if (!is.null(model)) {
       .report_model_provenance("WP", NULL, "pannamodels package")
       return(model)

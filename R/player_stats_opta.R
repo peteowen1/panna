@@ -147,12 +147,21 @@
   if (has_id) data.table::setnames(result, "pid", "player_id") else result[, pid := NULL]
   data.table::setDF(result)
 
+  # A stat whose source column is not in the data is unknown, not 0: .get_col()
+  # zero-fills it, so a league or season without e.g. carries would report 0
+  # carries for every player (review R041). EPL 2024-25 has every column, so
+  # nothing there changes.
+  absent <- names(col_spec)[!vapply(col_spec, function(cl) cl %in% names(data), logical(1))]
+  for (nm in absent) result[[nm]] <- NA_real_
+
   # Apply custom derived metrics
   result <- derive_fn(result)
 
   # Filter by min_minutes
   if (is.null(player)) {
-    result <- result[result$minutes >= min_minutes, ]
+    # which(): minutes is NA when its source column is absent (R041); a bare
+    # logical index would turn those into all-NA rows.
+    result <- result[which(result$minutes >= min_minutes), ]
   }
 
   result <- result[order(-result$minutes), ]

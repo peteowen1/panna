@@ -1716,13 +1716,7 @@ load_epv_model <- function(path = NULL) {
 
   # Try pannamodels package (preferred)
   if (requireNamespace("pannamodels", quietly = TRUE)) {
-    model <- tryCatch(
-      pannamodels::load_panna_model("epv_model", verbose = FALSE),
-      error = function(e) {
-        cli::cli_alert_info("pannamodels failed: {e$message}. Trying local path.")
-        NULL
-      }
-    )
+    model <- .load_from_pannamodels("epv_model")
     if (!is.null(model)) {
       .report_model_provenance("EPV", NULL, "pannamodels package")
       return(model)
