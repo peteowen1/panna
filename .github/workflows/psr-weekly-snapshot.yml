@@ -26,6 +26,10 @@ concurrency:
 env:
   GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
   R_KEEP_PKG_SOURCE: yes
+  # R026: only main and dev may publish. Scheduled and repository_dispatch runs
+  # use the default branch (main). A workflow_dispatch from any other branch
+  # builds but uploads nothing: R scripts and vb_publish() read this variable.
+  PANNA_PUBLISH_DISABLED: ${{ (github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev') && 'true' || 'false' }}
 
 jobs:
   psr-snapshot:
@@ -36,6 +40,17 @@ jobs:
       contents: write
 
     steps:
+      - name: Publish gate (R026)
+        run: |
+          echo "RUN_START_EPOCH=$(date -u +%s)" >> "$GITHUB_ENV"
+          if [ "$PANNA_PUBLISH_DISABLED" = "true" ]; then
+            echo "::warning title=Publishing disabled::ref $GITHUB_REF is not main or dev, so this run builds but uploads nothing."
+            echo "> [!WARNING]" >> "$GITHUB_STEP_SUMMARY"
+            echo "> **Publishing disabled:** ref \`$GITHUB_REF\` is not main or dev; every upload is forced off." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Publishing allowed on $GITHUB_REF."
+          fi
+
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
@@ -295,9 +310,13 @@ jobs:
             fi
           fi
 
-          echo "Uploading psv_live_constants.csv to pannadata blog-latest..."
-          gh release upload blog-latest inst/extdata/psv_live_constants.csv \
-            --repo peteowen1/pannadata --clobber
+          if [ "$PANNA_PUBLISH_DISABLED" = "true" ]; then
+            echo "PANNA_PUBLISH_DISABLED=true: NOT uploading psv_live_constants.csv (ref $GITHUB_REF)."
+          else
+            echo "Uploading psv_live_constants.csv to pannadata blog-latest..."
+            gh release upload blog-latest inst/extdata/psv_live_constants.csv \
+              --repo peteowen1/pannadata --clobber
+          fi
 
       - name: Snapshot summary
         if: always()

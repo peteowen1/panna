@@ -965,6 +965,11 @@ tag  <- "opta-latest"
 # locally for validation WITHOUT publishing to the live release (mirrors 10b's
 # upload_game_logs). Default TRUE preserves the scheduled-workflow behaviour.
 if (!exists("upload_psr")) upload_psr <- TRUE
+# R026: CI sets PANNA_PUBLISH_DISABLED on any ref other than main/dev.
+if (tolower(Sys.getenv("PANNA_PUBLISH_DISABLED", "")) %in% c("true", "1")) {
+  cat("PANNA_PUBLISH_DISABLED is set -- forcing upload_psr = FALSE\n")
+  upload_psr <- FALSE
+}
 
 if (!isTRUE(upload_psr)) {
   cat(sprintf("\n  upload_psr = FALSE — wrote %s locally, NOT publishing.\n", out_path))

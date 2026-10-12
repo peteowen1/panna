@@ -369,3 +369,35 @@ test_that("vb_generation drops NA updated_at before max() instead of letting one
   gen <- vb_generation("test/fixture", "generation-na-tag")
   expect_identical(gen, "2026-03-01T00:00:00Z")
 })
+
+test_that(".vb_publish_blocked reads PANNA_PUBLISH_DISABLED", {
+  withr::with_envvar(c(PANNA_PUBLISH_DISABLED = NA), expect_false(.vb_publish_blocked()))
+  withr::with_envvar(c(PANNA_PUBLISH_DISABLED = ""), expect_false(.vb_publish_blocked()))
+  withr::with_envvar(c(PANNA_PUBLISH_DISABLED = "false"), expect_false(.vb_publish_blocked()))
+  withr::with_envvar(c(PANNA_PUBLISH_DISABLED = "true"), expect_true(.vb_publish_blocked()))
+  withr::with_envvar(c(PANNA_PUBLISH_DISABLED = "TRUE"), expect_true(.vb_publish_blocked()))
+  withr::with_envvar(c(PANNA_PUBLISH_DISABLED = "1"), expect_true(.vb_publish_blocked()))
+})
+
+test_that("vb_publish uploads nothing when PANNA_PUBLISH_DISABLED is set but still returns a manifest (R026)", {
+  dir <- withr::local_tempdir()
+  p1 <- write_fixture_file(dir, "a.rds")
+  upload_log <- character(0)
+  testthat::local_mocked_bindings(
+    pb_upload = function(file, repo, tag, overwrite = TRUE, ...) {
+      upload_log <<- c(upload_log, basename(file))
+      invisible(NULL)
+    },
+    .package = "piggyback"
+  )
+  testthat::local_mocked_bindings(
+    gh = function(...) stop(structure(class = c("http_error_404", "error", "condition"),
+                                      list(message = "Not Found", call = NULL))),
+    .package = "gh"
+  )
+  withr::local_envvar(PANNA_PUBLISH_DISABLED = "true")
+  m <- suppressMessages(vb_publish(p1, repo = "test/fixture", tag = "test-tag"))
+  expect_length(upload_log, 0L)
+  expect_equal(m$tag, "test-tag")
+  expect_true(length(m$assets) >= 1L)
+})

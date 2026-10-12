@@ -69,6 +69,11 @@ cat(sprintf("  Written: %s (%s MB)\n", ms_path, ms_mb))
 # parquets locally (already done above, under opta_dir) without publishing.
 # Default TRUE preserves the scheduled-workflow behaviour.
 if (!exists("upload_skills")) upload_skills <- TRUE
+# R026: CI sets PANNA_PUBLISH_DISABLED on any ref other than main/dev.
+if (tolower(Sys.getenv("PANNA_PUBLISH_DISABLED", "")) %in% c("true", "1")) {
+  cat("PANNA_PUBLISH_DISABLED is set -- forcing upload_skills = FALSE\n")
+  upload_skills <- FALSE
+}
 
 if (!isTRUE(upload_skills)) {
 
