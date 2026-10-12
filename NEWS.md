@@ -1,3 +1,15 @@
+# panna 0.3.91
+
+## EPV position centring: usual starting position, per 90 minutes (#319)
+
+`adjust_epv_for_position()` centred each game on the mean for that day's lineup label, so "Substitute" (27% of
+player-games) was a position of its own, a full-90 starter was compared with starters averaging ~80 minutes, and
+a 4-minute cameo was charged a whole substitute appearance. It now uses each player's usual starting position
+(Wing Back counts as Defender) and charges the position's per-minute average for the minutes played. EPL 2024-25
+season totals: Salah 11.59 -> 9.52, Mbeumo 8.42 -> 6.15, Nwaneri 0.18 -> 1.07 (ranks Spearman 0.953). Feeds
+`epv_total_adj`, so EPR and piero move at the next game-log and EPR runs. Review R027 (decided with Pete after
+walking real rows).
+
 # panna 0.3.90
 
 ## Review fixes batch 3 (#318)
