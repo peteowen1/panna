@@ -1029,8 +1029,15 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
       if (is_data_error) {
         message(sprintf("    Skipping %s %s — data not available", league, season))
       } else {
-        warning(sprintf("ERROR processing %s %s: %s",
-                        league, season, e$message), call. = FALSE)
+        # Publish the leagues that worked, but make the run go red (review
+        # R073, Pete 2026-10-12): message() now, and a marker the workflow's
+        # last step turns into a failed run AFTER the publish and blog
+        # dispatch. A deferred warning() was the only trace before.
+        msg <- sprintf("ERROR processing %s %s: %s", league, season, conditionMessage(e))
+        message("    !! ", msg)
+        cat(sprintf("10b %s %s: %s\n", league, season,
+                    gsub("[\r\n]+", " ", conditionMessage(e))),
+            file = file.path(cache_dir, ".partial_publish_failures"), append = TRUE)
       }
     })
   }
