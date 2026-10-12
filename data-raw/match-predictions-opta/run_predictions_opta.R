@@ -190,6 +190,9 @@ if (!dir.exists(cache_dir)) {
 # fresh so this is a no-op there; locally the cache directory persists, and a
 # marker left over from yesterday would report a failure that did not happen.
 unlink(file.path(cache_dir, .NONFATAL_MARKER))
+# Leagues/seasons a publishing step lost but published around (10b, review
+# R073); the workflow's last step fails the run when this is non-empty.
+unlink(file.path(cache_dir, ".partial_publish_failures"))
 
 # Handle force rebuild
 pred_cache_files <- list(

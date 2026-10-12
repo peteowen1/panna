@@ -440,6 +440,15 @@ seasonal_spm <- bind_rows(lapply(seasonal_ratings_list, `[[`, "spm"))
 seasonal_rapm <- bind_rows(lapply(seasonal_ratings_list, `[[`, "rapm"))
 seasonal_xrapm <- bind_rows(lapply(seasonal_ratings_list, `[[`, "xrapm"))
 seasonal_psr <- bind_rows(Filter(Negate(is.null), lapply(seasonal_ratings_list, `[[`, "psr")))
+# Requested vs produced (review R061): a season whose PSR failed used to drop
+# out with only a deferred warning while the step still succeeded. Say so now;
+# the step fails at the very END, after every output is saved.
+.psr_missing <- setdiff(unique(seasonal_xrapm$season_end_year),
+                        unique(seasonal_psr$season_end_year))
+if (length(.psr_missing)) {
+  message(sprintf("  !! PSR missing for %d season(s) that have xRAPM: %s",
+                  length(.psr_missing), paste(sort(.psr_missing), collapse = ", ")))
+}
 
 # 6b. Override total_minutes with box-score minutes (panna#74) ----
 #
@@ -951,5 +960,12 @@ write.csv(
   file.path(cache_dir, "seasonal_skill_xrapm.csv"),
   row.names = FALSE
 )
+
+if (length(.psr_missing)) {
+  txt <- sprintf("Step 06: PSR missing for season(s) %s (outputs above were saved without them).",
+                 paste(sort(.psr_missing), collapse = ", "))
+  if (nzchar(Sys.getenv("GITHUB_ACTIONS"))) cat("::error::", txt, "\n", sep = "")
+  stop(txt, call. = FALSE)
+}
 
 cat("\n=== COMPLETE ===\n")
