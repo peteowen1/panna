@@ -812,6 +812,10 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
                   } else {
                     rep(extract_season_end_year(league_season), nrow(match_level))
                   }
+                  # Carry it as a column too: cache rows have season_end_year, and
+                  # once rbind NA-fills it here the position-role means fall back
+                  # to the role-overall mean for these rows (up to 0.02/90).
+                  match_level[, season_end_year := .ml_sey]
                   .pg_season <- unique(
                     all_match_stats[!is.na(season_end_year),
                                     .(player_id, season_end_year,
@@ -857,8 +861,10 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
             ), call. = FALSE)
           }
         }, error = function(e) {
-          warning(sprintf("Inline PSV (#74) failed for %s %s: %s",
-                          league, season, e$message), call. = FALSE)
+          warning(sprintf("Inline PSV (#74) failed for %s %s: %s%s",
+                          league, season, e$message,
+                          if (!is.null(psv_pop)) " -- PSV centred on the skills-cache rows only (partial population)" else ""),
+                  call. = FALSE)
         })
       }
 
