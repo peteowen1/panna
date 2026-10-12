@@ -30,7 +30,9 @@ test_that("extract_period_end_times pulls max time per (match, period_id)", {
 
   m1 <- out[out$match_id == "M1", ]
   expect_equal(m1$first_half_end_time, 45 + 17/60)  # max p1 second
-  expect_equal(m1$match_end_time,      93 + 30/60)  # max p2 second
+  # Continuous clock (R009): the second half restarts at 45 on Opta's clock,
+  # so its end shifts by the 17s of first-half stoppage: 93:30 -> 93:47.
+  expect_equal(m1$match_end_time,      93 + 30/60 + 17/60)
 
   m2 <- out[out$match_id == "M2", ]
   expect_true(is.na(m2$first_half_end_time))   # no p1 marker for M2
@@ -102,7 +104,8 @@ test_that("extract_player_timing_from_events derives starters from type_id 34", 
   # Only HBENCH1 came on in our synthetic match.
   expect_equal(nrow(bench_played), 1)
   expect_equal(bench_played$player_id, "HBENCH1")
-  expect_equal(bench_played$on_minute, 60 + 30/60)
+  # period-2 times shift by the 17s of first-half stoppage (R009)
+  expect_equal(bench_played$on_minute, 60 + 30/60 + 17/60)
 })
 
 test_that("extract_player_timing_from_events sets sub-off time for substituted starter", {
@@ -111,7 +114,7 @@ test_that("extract_player_timing_from_events sets sub-off time for substituted s
   hstart11 <- out[out$player_id == "HSTART11", ]
   expect_equal(nrow(hstart11), 1)
   expect_equal(hstart11$on_minute, 0)            # starter
-  expect_equal(hstart11$off_minute, 60 + 30/60)  # sub-off time
+  expect_equal(hstart11$off_minute, 60 + 30/60 + 17/60)  # sub-off time, +17s (R009)
 })
 
 test_that("extract_player_timing_from_events sets red-card off_minute", {
@@ -120,7 +123,7 @@ test_that("extract_player_timing_from_events sets red-card off_minute", {
   red <- out[out$player_id == "ASTART5", ]
   expect_equal(nrow(red), 1)
   expect_equal(red$on_minute, 0)
-  expect_equal(red$off_minute, 75 + 45/60)
+  expect_equal(red$off_minute, 75 + 45/60 + 17/60)  # +17s first-half stoppage (R009)
 })
 
 test_that("extract_player_timing_from_events uses match_end for finishers", {
@@ -129,7 +132,7 @@ test_that("extract_player_timing_from_events uses match_end for finishers", {
   # HSTART1 was not subbed off, not red-carded — should play to match end (93:30)
   finisher <- out[out$player_id == "HSTART1", ]
   expect_equal(finisher$on_minute, 0)
-  expect_equal(finisher$off_minute, 93 + 30/60)  # type_id 30 period 2
+  expect_equal(finisher$off_minute, 93 + 30/60 + 17/60)  # type_id 30 period 2, +17s (R009)
 })
 
 test_that("extract_player_timing_from_events returns empty df on empty input", {
