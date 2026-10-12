@@ -465,7 +465,7 @@ test_that("R036/R037: a league-season that matches nothing is reported even when
   testthat::local_mocked_bindings(query_remote_opta_parquet = function(...) xm_remote)
   expect_warning(
     out <- enrich_match_stats_with_xmetrics(ms, verbose = FALSE, source = "remote"),
-    "NO rows in 1/2 league-seasons [(]TINY 2024-2025[)]")
+    "NO rows in 1/2 league-seasons of the latest season [(]TINY 2024-2025[)]")
   expect_equal(out$xg_per90, c(rep(0.5, 5), 0))   # fill itself unchanged
   # a caller that demanded the features stops when too many league-seasons are empty
   expect_error(
@@ -477,6 +477,12 @@ test_that("R036/R037: a league-season that matches nothing is reported even when
                        xg_per90 = 0.5, stringsAsFactors = FALSE)
   testthat::local_mocked_bindings(query_remote_opta_parquet = function(...) xm_all)
   expect_no_warning(enrich_match_stats_with_xmetrics(ms, verbose = FALSE, source = "remote"))
+  # an OLDER season with no xMetrics is a known permanent gap: message, not warning
+  ms_old <- rbind(ms, data.frame(player_id = "p7", match_id = "m7", league = "SCO", season = "2015-2016",
+                                 total_minutes = 90, goals_p90 = 1, stringsAsFactors = FALSE))
+  expect_no_warning(expect_message(
+    enrich_match_stats_with_xmetrics(ms_old, verbose = FALSE, source = "remote"),
+    "older league-season.*SCO 2015-2016"))
 })
 
 test_that("remote xMetrics enrichment errors when the join matches zero rows", {

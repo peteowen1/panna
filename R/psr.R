@@ -2926,7 +2926,15 @@ compute_psr_league_offsets <- function(game_logs,
 # R094). The 0 is kept (documented behaviour, healthy output unchanged); this
 # makes the gap visible with the league list and counts. `offsets` needs
 # columns `league` and `.off`.
+# Reported as a message, not a warning: on healthy data six cup/bridge
+# competitions (Libertadores, Leagues Cup, Club World Cup, ...) deliberately
+# have no offset, so a warning would fire every run and be ignored. Rows with
+# league NA (players with no domestic competition, by design) are not counted.
 .warn_leagues_without_offset <- function(leagues, offsets, context, minutes = NULL) {
+  keep <- !is.na(leagues)
+  leagues <- leagues[keep]
+  if (!is.null(minutes)) minutes <- minutes[keep]
+  if (!length(leagues)) return(invisible(character()))
   ok <- leagues %in% offsets$league[!is.na(offsets$.off)]
   n_bad <- sum(!ok)
   if (n_bad == 0L) return(invisible(character()))
@@ -2937,8 +2945,8 @@ compute_psr_league_offsets <- function(game_logs,
   n_lg <- length(bad_lg)
   lg_txt <- paste0(utils::head(bad_lg, 10), collapse = ", ")
   if (n_lg > 10) lg_txt <- paste0(lg_txt, ", ...")
-  cli::cli_warn(c(
-    "{context}: {n_bad} of {length(leagues)} rows ({pct}%) in {n_lg} league(s) have no league offset and get 0{mins}.",
+  cli::cli_inform(c(
+    "!" = "{context}: {n_bad} of {length(leagues)} rows ({pct}%) in {n_lg} league(s) have no league offset and get 0{mins}.",
     "i" = "Leagues: {lg_txt}",
     "i" = "A league with no offset row is treated as centred on the reference; re-run the offsets step if it should have one."
   ))

@@ -1078,15 +1078,31 @@ enrich_match_stats_with_xmetrics <- function(match_stats, verbose = TRUE,
                                     hit = !is.na(idx))[played, .(n = .N, matched = sum(hit)),
                                                        by = .(league, season)]
     strat[, frac := matched / n]
-    unmatched_ls <- strat[matched == 0L]
-    low_ls <- strat[matched > 0L & frac < 0.8]
+    # Warn only for the input's latest season: older gaps (Scottish
+    # Premiership 2014-19, Championship/UCL 2013-15 never had xMetrics) are
+    # permanent and would otherwise warn on every call of every caller.
+    # They are still listed, as a message.
+    strat[, sey := vapply(as.character(season), function(s)
+      tryCatch(as.numeric(extract_season_end_year(s)), error = function(e) NA_real_), numeric(1))]
+    latest <- suppressWarnings(max(strat$sey, na.rm = TRUE))
+    strat[, current := !is.na(sey) & sey == latest]
+    unmatched_old <- strat[matched == 0L & !current]
+    if (nrow(unmatched_old) > 0L) {
+      message(sprintf("  xMetrics: %d older league-season(s) have no xMetrics (known gaps, xMetrics = 0): %s%s",
+                      nrow(unmatched_old),
+                      paste(utils::head(paste(unmatched_old$league, unmatched_old$season), 8), collapse = ", "),
+                      if (nrow(unmatched_old) > 8L) ", ..." else ""))
+    }
+    unmatched_ls <- strat[matched == 0L & current]
+    low_ls <- strat[matched > 0L & frac < 0.8 & current]
     if (nrow(unmatched_ls) > 0L) {
-      msg0 <- sprintf(paste0("xMetrics matched NO rows in %d/%d league-seasons (%s%s); ",
+      msg0 <- sprintf(paste0("xMetrics matched NO rows in %d/%d league-seasons of the latest season (%s%s); ",
                              "their %d player-matches get xMetrics = 0."),
-                      nrow(unmatched_ls), nrow(strat),
+                      nrow(unmatched_ls), sum(strat$current),
                       paste(utils::head(paste(unmatched_ls$league, unmatched_ls$season), 8), collapse = ", "),
                       if (nrow(unmatched_ls) > 8L) ", ..." else "", sum(unmatched_ls$n))
-      if (is.finite(fail_if_missing_frac) && nrow(unmatched_ls) / nrow(strat) > fail_if_missing_frac) {
+      if (is.finite(fail_if_missing_frac) &&
+          nrow(strat[matched == 0L]) / nrow(strat) > fail_if_missing_frac) {
         stop(msg0, " Exceeds fail_if_missing_frac=", fail_if_missing_frac, ".", call. = FALSE)
       }
       warning(msg0, call. = FALSE)
