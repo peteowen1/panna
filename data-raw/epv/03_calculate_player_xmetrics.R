@@ -308,8 +308,10 @@ for (league in names(league_seasons)) {
       errors[[label]] <<- e$message
       cli_alert_warning("  Skipping {label}: {e$message}")
       # A league-season that was never scraped is a skip, not a failure.
-      no_data <- inherits(e, "panna_data_not_found") ||
-        grepl("^No data found for|^No .+ data available", conditionMessage(e))
+      # vb_error_absent: "Opta data not found for {league}" (no local directory).
+      no_data <- inherits(e, c("panna_data_not_found", "vb_error_absent")) ||
+        grepl("^No data found for|^No .+ data available|^Opta data not found for",
+              conditionMessage(e))
       if (!no_data) {
         cat(sprintf("03 xmetrics %s: %s\n", label,
                     gsub("[\r\n]+", " ", conditionMessage(e))),

@@ -1024,8 +1024,10 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
       invisible(NULL)
     },
     error = function(e) {
-      is_data_error <- inherits(e, "panna_data_not_found") ||
-        grepl("^No data found for|^No .+ data available", e$message)
+      # vb_error_absent: the loaders' "Opta data not found for {league}" when a
+      # league has no local directory yet (opta_coverage.R treats it the same).
+      is_data_error <- inherits(e, c("panna_data_not_found", "vb_error_absent")) ||
+        grepl("^No data found for|^No .+ data available|^Opta data not found for", e$message)
       if (is_data_error) {
         message(sprintf("    Skipping %s %s — data not available", league, season))
       } else {
