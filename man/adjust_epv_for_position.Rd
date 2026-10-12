@@ -4,7 +4,11 @@
 \alias{adjust_epv_for_position}
 \title{Adjust Player EPV Credits for Position}
 \usage{
-adjust_epv_for_position(player_match, credit_cols = "total_credit")
+adjust_epv_for_position(
+  player_match,
+  credit_cols = "total_credit",
+  minutes_col = "minutes_played"
+)
 }
 \arguments{
 \item{player_match}{data.table with columns: player_id, match_id, position,
@@ -12,14 +16,29 @@ and one or more credit columns to center}
 
 \item{credit_cols}{Character vector of column names to position-center.
 Defaults to "total_credit".}
+
+\item{minutes_col}{Minutes column used for the per-90 average. Default
+"minutes_played"; if absent, the per-game average is used.}
 }
 \value{
 Same data.table with \verb{\{col\}_adj} columns added for each credit col
 }
 \description{
-Subtracts the positional mean from each EPV component, so players are
+Subtracts the positional average from each EPV component, so players are
 compared to peers at the same position rather than across all positions.
-Uses Opta lineup positions (Goalkeeper, Defender, Defensive Midfielder,
-Midfielder, Attacking Midfielder, Striker). Wing Back merged into Defender.
+}
+\details{
+The position is each player's usual STARTING position (his most common
+non-"Substitute" lineup label in the data; Wing Back counts as Defender), not
+the day's lineup label: that label reads "Substitute" on ~27\% of
+player-games, which made "Substitute" a position of its own (review R027).
+A player who never started keeps no adjustment (adj = raw).
+
+With a minutes column the average is PER 90 MINUTES, scaled by the minutes
+each row played: a full-90 game is charged 90 minutes of the position's
+average and a 4-minute cameo 4 minutes' worth. (Per game, a full-90 starter
+was compared with starters averaging ~80 minutes, and a cameo was charged a
+whole substitute appearance.) Without a minutes column it falls back to the
+per-game average.
 }
 \keyword{internal}

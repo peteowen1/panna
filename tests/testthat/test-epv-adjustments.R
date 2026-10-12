@@ -245,3 +245,28 @@ test_that("vectorized rolling profile matches naive loop (numerical equivalence)
   # Edge: zero-length input → empty.
   expect_equal(vec_profile(numeric(0), numeric(0)), numeric(0))
 })
+
+test_that("position centring uses the starting position, per 90 minutes (R027)", {
+  # p1 usually starts at AM; in m2 he is a 30-min sub. p2 is a full-time AM.
+  # AM per-minute rate over all AM-starter rows (incl. p1's sub game):
+  # (0.9 + 0.3 + 0.9) / (90 + 30 + 90) = 0.01 per minute.
+  dt <- data.table::data.table(
+    player_id = c("p1", "p1", "p2"),
+    match_id = c("m1", "m2", "m1"),
+    position = c("Attacking Midfielder", "Substitute", "Attacking Midfielder"),
+    minutes_played = c(90, 30, 90),
+    total_credit = c(0.9, 0.3, 0.9)
+  )
+  res <- adjust_epv_for_position(dt, credit_cols = "total_credit")
+  # charged minutes x rate: 90 min -> 0.9, 30 min -> 0.3
+  expect_equal(res$total_credit_adj, c(0, 0, 0))
+  # a sub-only player with no starting position keeps his raw value
+  dt2 <- rbind(dt, data.table::data.table(player_id = "p3", match_id = "m1",
+    position = "Substitute", minutes_played = 5, total_credit = 0.2))
+  res2 <- adjust_epv_for_position(dt2, credit_cols = "total_credit")
+  expect_equal(res2[player_id == "p3"]$total_credit_adj, 0.2)
+  # Wing Back is a Defender
+  dt3 <- data.table::data.table(player_id = c("a", "b"), match_id = "m1",
+    position = c("Wing Back", "Defender"), minutes_played = 90, total_credit = c(0.1, 0.3))
+  expect_equal(adjust_epv_for_position(dt3, "total_credit")$total_credit_adj, c(-0.1, 0.1))
+})
