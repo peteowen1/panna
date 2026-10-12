@@ -200,6 +200,27 @@ SHOT_FOOT_MIN <- 10L
     }
     fh <- data.table::as.data.table(foot_history)
     j <- match(paste(shots$player_id, shots$match_id), paste(fh$player_id, fh$match_id))
+    # Match-rate guard (review R047): every foot shot by a named player has a
+    # (player, match) row in a complete history, so a low hit rate means the
+    # history does not cover these matches and foot_share would silently go NA
+    # (the model reads that as "too few earlier shots"). Headers are excluded:
+    # they have no foot and are expected to be unmatched.
+    foot <- which(features$is_header %in% 0 & !is.na(shots$player_id))
+    if (length(foot) > 0L) {
+      hit_fh <- mean(!is.na(j[foot]))
+      if (hit_fh < 0.5) {
+        cli::cli_abort(c(
+          "{what}: foot history found for only {round(100 * hit_fh, 1)}% of {length(foot)} foot shots.",
+          "x" = "The history does not cover these matches (stale shot-events file, or wrong ids); foot_share would be NA for nearly every shot.",
+          "i" = "Rebuild it with {.code .load_shot_foot_history(refresh = TRUE)} after {.code pb_download_opta()}."
+        ))
+      } else if (hit_fh < 0.95) {
+        cli::cli_warn(c(
+          "{what}: foot history found for only {round(100 * hit_fh, 1)}% of {length(foot)} foot shots; the rest get foot_share = NA.",
+          "i" = "Healthy coverage is ~100%; check the history covers the latest match dates."
+        ))
+      }
+    }
     features$foot_share <- .foot_share(features$is_header, features$is_right_foot, fh$r_prev[j], fh$n_prev[j])
   }
   features
