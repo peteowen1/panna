@@ -1,5 +1,21 @@
 # Changelog
 
+## panna 0.3.92
+
+### Publish what worked, then fail the run ([\#320](https://github.com/peteowen1/panna/issues/320))
+
+Pete’s policy (2026-10-12) for a publishing step that loses a league or
+season for a real reason (not “no data”): publish the rest, but end the
+run red. Game logs (10b) and xMetrics (epv step 03) now print each
+failure at once and write it to a `.partial_publish_failures` marker;
+the last step of `predictions-pipeline.yml` / `epv-pipeline.yml` turns
+the marker into error annotations and a failed run, after the publish
+(and, for predictions, after the blog build is dispatched). Skills step
+06 stops at the end, after saving, when a season with xRAPM has no PSR.
+Opta step 07 still stops before writing when a season errors (it
+replaces the whole ratings file); its deliberate skips are now printed,
+not deferred warnings. Review R073, R057, R061, R081.
+
 ## panna 0.3.91
 
 ### EPV position centring: usual starting position, per 90 minutes ([\#319](https://github.com/peteowen1/panna/issues/319))

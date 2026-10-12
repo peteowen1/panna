@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.91</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.92</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,6 +39,13 @@
       <small>Source: <a href="https://github.com/peteowen1/panna/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.92" id="panna-0392">panna 0.3.92<a class="anchor" aria-label="anchor" href="#panna-0392"></a></h2>
+<div class="section level3">
+<h3 id="publish-what-worked-then-fail-the-run-0-3-92">Publish what worked, then fail the run (<a href="https://github.com/peteowen1/panna/issues/320" class="external-link">#320</a>)<a class="anchor" aria-label="anchor" href="#publish-what-worked-then-fail-the-run-0-3-92"></a></h3>
+<p>Pete’s policy (2026-10-12) for a publishing step that loses a league or season for a real reason (not “no data”): publish the rest, but end the run red. Game logs (10b) and xMetrics (epv step 03) now print each failure at once and write it to a <code>.partial_publish_failures</code> marker; the last step of <code>predictions-pipeline.yml</code> / <code>epv-pipeline.yml</code> turns the marker into error annotations and a failed run, after the publish (and, for predictions, after the blog build is dispatched). Skills step 06 stops at the end, after saving, when a season with xRAPM has no PSR. Opta step 07 still stops before writing when a season errors (it replaces the whole ratings file); its deliberate skips are now printed, not deferred warnings. Review R073, R057, R061, R081.</p>
+</div>
+</div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.91" id="panna-0391">panna 0.3.91<a class="anchor" aria-label="anchor" href="#panna-0391"></a></h2>
 <div class="section level3">
