@@ -102,6 +102,12 @@ cli_h2("Step 3: Process League-Seasons")
 
 all_results <- list()
 errors <- list()
+# Real failures (not "no data") are written here; epv-pipeline.yml's last step
+# fails the run when it is non-empty, after the xMetrics were published
+# around them (review R057, Pete 2026-10-12).
+.partial_marker <- file.path("data-raw", "cache", "epv", ".partial_publish_failures")
+dir.create(dirname(.partial_marker), recursive = TRUE, showWarnings = FALSE)
+unlink(.partial_marker)
 
 for (league in names(league_seasons)) {
   opta_league <- to_opta_league(league)
@@ -301,6 +307,14 @@ for (league in names(league_seasons)) {
     }, error = function(e) {
       errors[[label]] <<- e$message
       cli_alert_warning("  Skipping {label}: {e$message}")
+      # A league-season that was never scraped is a skip, not a failure.
+      no_data <- inherits(e, "panna_data_not_found") ||
+        grepl("^No data found for|^No .+ data available", conditionMessage(e))
+      if (!no_data) {
+        cat(sprintf("03 xmetrics %s: %s\n", label,
+                    gsub("[\r\n]+", " ", conditionMessage(e))),
+            file = .partial_marker, append = TRUE)
+      }
     })
   }
 }
