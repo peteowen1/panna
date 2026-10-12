@@ -1571,6 +1571,10 @@ extract_shots_from_spadl <- function(spadl, lineups) {
     is_goal = shots$result == "success",
     is_penalty = is_pen
   )
+  # Exact time and period, so splint creation can place each shot on the
+  # continuous match clock (review R009); `minute` stays for older callers.
+  result$time_min <- shots$time_seconds / 60
+  if ("period_id" %in% names(shots)) result$period_id <- as.integer(shots$period_id)
 
   cli::cli_alert_success(
     "Extracted {nrow(result)} shots from SPADL (mean xG: {round(mean(result$xg, na.rm = TRUE), 3)})"
