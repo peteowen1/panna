@@ -1736,11 +1736,15 @@ extract_period_end_times <- function(match_events) {
       match_end_time = numeric(0)
     ))
   }
+  # Same period ends as extract_player_timing_from_events (.raw_period_ends:
+  # the type 30 marker, else the last event of the period), so a match missing
+  # a marker gets ONE clock for players, events and shots (R009 review: 25 of
+  # 103,417 local matches lack the period-1 marker).
   dt <- data.table::as.data.table(match_events)
-  dt <- dt[type_id == 30 & period_id %in% c(1, 2),
-           .(match_id, period_id,
-             minute = as.numeric(minute),
-             second = if ("second" %in% names(dt)) as.numeric(second) else 0)]
+  dt <- dt[period_id %in% c(1L, 2L),
+           .(match_id, type_id, period_id,
+             eff_minute = as.numeric(minute) +
+               (if ("second" %in% names(dt)) as.numeric(second) else 0) / 60)]
   if (nrow(dt) == 0) {
     return(data.frame(
       match_id = character(0),
@@ -1748,21 +1752,15 @@ extract_period_end_times <- function(match_events) {
       match_end_time = numeric(0)
     ))
   }
-  dt[, end_time := minute + second / 60]
-  agg <- dt[, .(end_time = max(end_time, na.rm = TRUE)),
-            by = .(match_id, period_id)]
-  wide <- data.table::dcast(agg, match_id ~ period_id, value.var = "end_time")
-  fh <- if ("1" %in% names(wide)) wide[["1"]] else rep(NA_real_, nrow(wide))
-  sh_raw <- if ("2" %in% names(wide)) wide[["2"]] else rep(NA_real_, nrow(wide))
-  out <- data.frame(
-    match_id = wide$match_id,
-    first_half_end_time = fh,
+  pe <- .raw_period_ends(dt)
+  data.frame(
+    match_id = pe$match_id,
+    first_half_end_time = pe$fh_end,
     # Continuous clock (review R009): the second half restarts at 45 on
     # Opta's clock, so its end is shifted by the real first-half length.
-    match_end_time      = .continuous_minute(sh_raw, 2L, fh),
+    match_end_time      = .continuous_minute(pe$sh_end_raw, 2L, pe$fh_end),
     stringsAsFactors = FALSE
   )
-  out
 }
 
 
