@@ -63,6 +63,10 @@ out <- file.path(opta_dir, "career_panna.parquet")
 arrow::write_parquet(as.data.frame(panna), out)
 cat(sprintf("\nWrote %s (%.1f MB)\n", out, file.info(out)$size / 1048576))
 
+if (tolower(Sys.getenv("PANNA_PUBLISH_DISABLED", "")) %in% c("true", "1")) {
+  cat("PANNA_PUBLISH_DISABLED is set -- forcing upload = FALSE\n")
+  upload <- FALSE
+}
 if (isTRUE(upload)) {
   piggyback::pb_upload(out, repo = "peteowen1/pannadata", tag = "ratings-data",
                        name = "career_panna.parquet", overwrite = TRUE)

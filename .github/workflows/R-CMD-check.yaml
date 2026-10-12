@@ -48,3 +48,43 @@ jobs:
           # on synthetic data) + upstream deprecations (xgboost reshape). A real
           # ERROR (incl. a deprecation that becomes an error) still fails the run.
           error-on: '"error"'
+
+  # R CMD check runs on the built tarball, and .Rbuildignore excludes data-raw/
+  # and .github/. The tests that guard publishing and the pipeline scripts
+  # (test-publish-gating, test-workflow-r-payloads, test-sourced-script-return,
+  # test-wc2026-export, ...) read those paths, so inside the check they skip
+  # silently. This job runs the same suite from the source tree, where they
+  # exist, with yaml and arrow installed so they do not skip for that reason
+  # either. Make it a required status check in branch protection.
+  source-tests:
+    runs-on: ubuntu-latest
+
+    name: testthat from source tree
+
+    env:
+      GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: |
+            any::devtools
+            any::yaml
+            any::arrow
+            peteowen1/pannamodels
+          needs: check
+
+      - name: Run full testthat suite from source
+        shell: Rscript {0}
+        run: |
+          res <- as.data.frame(devtools::test(stop_on_failure = FALSE, reporter = "summary"))
+          message("passed=", sum(res$passed), " failed=", sum(res$failed),
+                  " errors=", sum(res$error), " skipped=", sum(res$skipped))
+          if (sum(res$failed) > 0 || any(res$error)) quit(status = 1)

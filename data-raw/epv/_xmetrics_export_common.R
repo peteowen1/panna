@@ -84,6 +84,11 @@ export_consolidated_xmetrics <- function(subdir, output_name, row_label,
   cli::cli_alert_success("Written {.path {output_name}} ({round(file_size, 1)} MB)")
 
   # 3. Upload to GitHub Releases ----
+  # R026: CI sets PANNA_PUBLISH_DISABLED on any ref other than main/dev.
+  if (tolower(Sys.getenv("PANNA_PUBLISH_DISABLED", "")) %in% c("true", "1")) {
+    cli::cli_alert_warning("PANNA_PUBLISH_DISABLED is set -- forcing upload = FALSE")
+    upload <- FALSE
+  }
   if (!isTRUE(upload)) {
     cli::cli_h2("Step 3: Upload SKIPPED (upload = FALSE)")
     cli::cli_alert_warning(c(

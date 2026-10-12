@@ -24,12 +24,17 @@ if (!exists("publish_files", envir = .GlobalEnv)) {
 } else {
   pf <- get("publish_files", envir = .GlobalEnv)
 
+  # R026: CI sets PANNA_PUBLISH_DISABLED on any ref other than main/dev.
+  publish_disabled <- tolower(Sys.getenv("PANNA_PUBLISH_DISABLED", "")) %in% c("true", "1")
+
   pred_files <- unique(pf$predictions_latest)
   pred_files <- pred_files[file.exists(pred_files)]
   blog_files <- unique(pf$blog_latest)
   blog_files <- blog_files[file.exists(blog_files)]
 
-  if (length(pred_files) > 0) {
+  if (publish_disabled && length(pred_files) > 0) {
+    message(sprintf("\n=== PANNA_PUBLISH_DISABLED: NOT publishing predictions-latest (%d file(s)) ===", length(pred_files)))
+  } else if (length(pred_files) > 0) {
     message(sprintf("\n=== Publishing predictions-latest (%d file(s)) ===", length(pred_files)))
     for (f in pred_files) message(sprintf("  %s", basename(f)))
     manifest <- vb_publish(pred_files, repo = repo, tag = "predictions-latest")
@@ -38,7 +43,9 @@ if (!exists("publish_files", envir = .GlobalEnv)) {
     message("\n  No predictions-latest files registered this run -- skipping publish")
   }
 
-  if (length(blog_files) > 0) {
+  if (publish_disabled && length(blog_files) > 0) {
+    message(sprintf("\n=== PANNA_PUBLISH_DISABLED: NOT publishing blog-latest (%d file(s)) ===", length(blog_files)))
+  } else if (length(blog_files) > 0) {
     message(sprintf("\n=== Publishing blog-latest (%d file(s)) ===", length(blog_files)))
     for (f in blog_files) message(sprintf("  %s", basename(f)))
     manifest <- vb_publish(blog_files, repo = repo, tag = "blog-latest")

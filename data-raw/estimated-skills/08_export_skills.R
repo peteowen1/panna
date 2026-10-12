@@ -69,6 +69,11 @@ cat(sprintf("  Written: %s (%s MB)\n", ms_path, ms_mb))
 # parquets locally (already done above, under opta_dir) without publishing.
 # Default TRUE preserves the scheduled-workflow behaviour.
 if (!exists("upload_skills")) upload_skills <- TRUE
+# R026: CI sets PANNA_PUBLISH_DISABLED on any ref other than main/dev.
+if (tolower(Sys.getenv("PANNA_PUBLISH_DISABLED", "")) %in% c("true", "1")) {
+  cat("PANNA_PUBLISH_DISABLED is set -- forcing upload_skills = FALSE\n")
+  upload_skills <- FALSE
+}
 
 if (!isTRUE(upload_skills)) {
 
@@ -76,6 +81,15 @@ if (!isTRUE(upload_skills)) {
               skills_path, ms_path))
 
 } else {
+
+# R064: refuse to publish a table that would regress what is live. Runs before
+# any upload; reads the currently published assets (skipped, with a message, if
+# they cannot be read). See R/skills_export_guard.R.
+cat("\n=== Pre-publish checks ===\n")
+assert_skills_export_ok(skill_features, read_published_asset("opta_skills.parquet"),
+                        label = "opta_skills")
+assert_skills_export_ok(match_stats, read_published_asset("opta_match_stats.parquet"),
+                        label = "opta_match_stats")
 
 cat("\n=== Uploading to GitHub Release ===\n")
 

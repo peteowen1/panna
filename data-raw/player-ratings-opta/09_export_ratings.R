@@ -122,6 +122,11 @@ message(sprintf("  Raw RAPM (pooled all-history): %d players (replacement row dr
 # scheduled-workflow behaviour, mirroring 08b/10b/build_epr_weekly's
 # upload_psr/upload_game_logs/upload_epr pattern.
 if (!exists("upload_ratings")) upload_ratings <- TRUE
+# R026: CI sets PANNA_PUBLISH_DISABLED on any ref other than main/dev.
+if (tolower(Sys.getenv("PANNA_PUBLISH_DISABLED", "")) %in% c("true", "1")) {
+  message("PANNA_PUBLISH_DISABLED is set -- forcing upload_ratings = FALSE")
+  upload_ratings <- FALSE
+}
 
 if (is.null(seasonal_results$seasonal_spm)) {
   stop("seasonal_spm not found in cache - re-run step 7 to generate both rating types")
