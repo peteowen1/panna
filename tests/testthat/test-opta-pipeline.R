@@ -456,3 +456,18 @@ test_that("count helper functions handle empty data", {
   counts_before2 <- count_events_before(empty_df, boundaries)
   expect_equal(counts_before2$home, c(0, 0))
 })
+
+test_that("a goal ON a splint boundary belongs to the splint it ends, counted once (R051)", {
+  # Goals create boundaries: the home goal at 30 ends splint 1 (0,30] and is
+  # part of splint 2's starting score. A minute-0 goal sits in splint 1 only.
+  events <- data.frame(minute = c(0, 30, 70), is_home = c(FALSE, TRUE, TRUE))
+  boundaries <- c(0, 30, 70, 90)
+  within <- count_events_in_splint(events, boundaries)
+  before <- count_events_before(events, boundaries)
+  expect_equal(within$home, c(1L, 1L, 0L))
+  expect_equal(within$away, c(1L, 0L, 0L))
+  expect_equal(before$home, c(0L, 1L, 2L))
+  expect_equal(before$away, c(0L, 1L, 1L))
+  # every goal counted exactly once across the splints
+  expect_equal(sum(within$home) + sum(within$away), nrow(events))
+})
