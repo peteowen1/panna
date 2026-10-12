@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.92</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.93</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,6 +39,13 @@
       <small>Source: <a href="https://github.com/peteowen1/panna/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.93" id="panna-0393">panna 0.3.93<a class="anchor" aria-label="anchor" href="#panna-0393"></a></h2>
+<div class="section level3">
+<h3 id="game-log-psv-centred-on-the-full-box-score-population-0-3-93">Game-log PSV centred on the full box-score population<a class="anchor" aria-label="anchor" href="#game-log-psv-centred-on-the-full-box-score-population-0-3-93"></a></h3>
+<p>10b scored PSV only on matches with event data, but PSV is centred on the whole league-season (no <code>round</code> in the inputs). 2026-27 cup qualifiers have box scores but no events (UECL 58 of 108 matches, UEL 47 of 68, UCL 42 of 52), so cup game-log PSV was centred on a partial slice and read below the live scorer, whose K is built on every match. 10b now scores each league-season once on all its box-score matches (skills cache plus an inline top-up, always taken for the current season) and keeps the event-covered rows. On identical inputs, starters’ mean PSV per 90 moves UECL +0.143, UEL +0.101, UCL +0.062, ENG 0.000. Rows can move a little week to week as a season fills in (Pete’s choice, to agree with the season-level live K).</p>
+</div>
+</div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.92" id="panna-0392">panna 0.3.92<a class="anchor" aria-label="anchor" href="#panna-0392"></a></h2>
 <div class="section level3">
