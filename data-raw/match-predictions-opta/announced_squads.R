@@ -574,9 +574,10 @@ resolve_team_announced_squad <- function(team, ann_names, lineups,
 # @param team Opta `team_name`.
 # @param team_id_in Opta `team_id`.
 # @param lineups Intl-filtered opta_lineups already filtered to the team.
-# @param as_of Date for EM decay (default WC kickoff).
+# @param as_of Date for EM decay (default: the run date). Only lineups up to
+#   as_of count (build_team_expected_minutes bounds it, review R032).
 resolve_derived_squad <- function(team, team_id_in, lineups,
-                                    as_of = as.Date("2026-06-11")) {
+                                    as_of = Sys.Date()) {
   if (!data.table::is.data.table(lineups)) {
     lineups <- data.table::as.data.table(lineups)
   }
@@ -642,7 +643,11 @@ resolve_derived_squad <- function(team, team_id_in, lineups,
 #' @param out_path Output parquet path.
 #' @param squads Named list of announced squads. Defaults to the master
 #'   list in this file.
-#' @param as_of `Date` for the EM decay. Default `2026-06-11` (WC kickoff).
+#' @param as_of `Date` for the EM decay. Default `Sys.Date()`, the prediction
+#'   date: lineups after as_of are ignored (review R032), so the in-tournament
+#'   boost sees exactly the tournament matches already played, which is how
+#'   tournament_boost = 5 was tuned. Was the 2026-06-11 kickoff, which gave
+#'   every post-kickoff match a decay weight above 1.
 build_wc2026_announced_squads <- function(
     opta_lineups_path = file.path(opta_data_dir(), "opta_lineups.parquet"),
     fixture_results_path = file.path("data-raw", "cache-predictions-opta",
@@ -650,7 +655,7 @@ build_wc2026_announced_squads <- function(
     out_path = file.path("data-raw", "cache-predictions-opta",
                          "wc2026_announced_squads.parquet"),
     squads = WC2026_ANNOUNCED_SQUADS,
-    as_of = as.Date("2026-06-11"),
+    as_of = Sys.Date(),
     include_derived = TRUE) {
 
   stopifnot(file.exists(opta_lineups_path))
