@@ -425,3 +425,15 @@ jobs:
 
           echo ""
           echo "=== EPV Pipeline Complete ==="
+
+      # Pete 2026-10-12 (review R057): a league-season that FAILED (not "no
+      # data") is published around -- the consolidated xMetrics still ship --
+      # but the run must go red. Runs last, after every upload.
+      - name: Fail if a league-season was dropped from the xMetrics
+        if: success() && env.EXPORT_XMETRICS == 'true'
+        run: |
+          MARKER="data-raw/cache/epv/.partial_publish_failures"
+          if [ -s "$MARKER" ]; then
+            while IFS= read -r line; do echo "::error title=League-season dropped from xMetrics::$line"; done < "$MARKER"
+            exit 1
+          fi

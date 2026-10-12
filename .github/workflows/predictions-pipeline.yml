@@ -373,6 +373,22 @@ jobs:
             -f event_type=predictions-complete
           echo "Triggered build-blog-data.yml in pannadata"
 
+      # Pete 2026-10-12 (review R073): a league that failed inside a publishing
+      # step is published AROUND (the rest ships and the blog updates above),
+      # but the run must not look healthy. Runs last, so it cannot block the
+      # publish or the blog dispatch.
+      - name: Fail if a league was dropped from the publish
+        if: success()
+        run: |
+          MARKER="data-raw/cache-predictions-opta/.partial_publish_failures"
+          if [ -s "$MARKER" ]; then
+            while IFS= read -r line; do echo "::error title=League dropped from publish::$line"; done < "$MARKER"
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "> [!CAUTION]" >> $GITHUB_STEP_SUMMARY
+            echo "> **Published without:** $(paste -sd ';' "$MARKER")" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
       # Weekly PSR snapshot (step 8b) was previously inline here. It was moved
       # to .github/workflows/psr-weekly-snapshot.yml because runner-level OOM
       # during the export reddened this job despite the predictions themselves

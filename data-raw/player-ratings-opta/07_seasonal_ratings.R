@@ -246,7 +246,7 @@ fit_season_ratings_opta <- function(splint_data, opta_stats, season,
               nrow(season_splints), nrow(season_players)))
 
   if (nrow(season_splints) < 100) {
-    warning(sprintf("Season %d has only %d splints, skipping", season, nrow(season_splints)))
+    message(sprintf("  !! Season %d has only %d splints, SKIPPED (not in the output)", season, nrow(season_splints)))
     return(NULL)
   }
 
@@ -276,7 +276,7 @@ fit_season_ratings_opta <- function(splint_data, opta_stats, season,
   cat(sprintf("  Season Opta stats rows: %d\n", nrow(season_opta_stats)))
 
   if (is.null(season_opta_stats) || nrow(season_opta_stats) == 0) {
-    warning(sprintf("Season %d has no Opta stats, skipping", season))
+    message(sprintf("  !! Season %d has no Opta stats, SKIPPED (not in the output)", season))
     return(NULL)
   }
 
@@ -478,7 +478,7 @@ fit_season_ratings_opta <- function(splint_data, opta_stats, season,
               min_minutes_rapm, rapm_data$n_players))
 
   if (rapm_data$n_players < 50) {
-    warning(sprintf("Season %d has only %d players, skipping", season, rapm_data$n_players))
+    message(sprintf("  !! Season %d has only %d players, SKIPPED (not in the output)", season, rapm_data$n_players))
     return(NULL)
   }
 
@@ -766,6 +766,13 @@ if (length(failed_seasons) > 0) {
   stop(sprintf("Step 07: %d of %d seasons failed (%s); not writing a partial result.",
                length(failed_seasons), length(seasonal_ratings_list),
                paste(failed_seasons, collapse = ", ")), call. = FALSE)
+}
+skipped_seasons <- names(seasonal_ratings_list)[vapply(seasonal_ratings_list, is.null, logical(1))]
+if (length(skipped_seasons)) {
+  # Deliberate skips (too few splints / stats / players), not errors -- say so
+  # where it is seen, not as a deferred warning (review R081).
+  message(sprintf("Step 07: %d season(s) skipped as too thin and absent from the output: %s",
+                  length(skipped_seasons), paste(skipped_seasons, collapse = ", ")))
 }
 seasonal_ratings_list <- Filter(Negate(is.null), seasonal_ratings_list)
 

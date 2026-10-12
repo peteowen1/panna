@@ -1024,13 +1024,22 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
       invisible(NULL)
     },
     error = function(e) {
-      is_data_error <- inherits(e, "panna_data_not_found") ||
-        grepl("^No data found for|^No .+ data available", e$message)
+      # vb_error_absent: the loaders' "Opta data not found for {league}" when a
+      # league has no local directory yet (opta_coverage.R treats it the same).
+      is_data_error <- inherits(e, c("panna_data_not_found", "vb_error_absent")) ||
+        grepl("^No data found for|^No .+ data available|^Opta data not found for", e$message)
       if (is_data_error) {
         message(sprintf("    Skipping %s %s — data not available", league, season))
       } else {
-        warning(sprintf("ERROR processing %s %s: %s",
-                        league, season, e$message), call. = FALSE)
+        # Publish the leagues that worked, but make the run go red (review
+        # R073, Pete 2026-10-12): message() now, and a marker the workflow's
+        # last step turns into a failed run AFTER the publish and blog
+        # dispatch. A deferred warning() was the only trace before.
+        msg <- sprintf("ERROR processing %s %s: %s", league, season, conditionMessage(e))
+        message("    !! ", msg)
+        cat(sprintf("10b %s %s: %s\n", league, season,
+                    gsub("[\r\n]+", " ", conditionMessage(e))),
+            file = file.path(cache_dir, ".partial_publish_failures"), append = TRUE)
       }
     })
   }
