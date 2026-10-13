@@ -102,6 +102,7 @@ cli_h2("Step 3: Process League-Seasons")
 
 all_results <- list()
 errors <- list()
+duel_woe_failures <- character(0)  # labels where compute_duel_woe() errored (R055)
 # Real failures (not "no data") are written here; epv-pipeline.yml's last step
 # fails the run when it is non-empty, after the xMetrics were published
 # around them (review R057, Pete 2026-10-12).
@@ -128,10 +129,26 @@ for (league in names(league_seasons)) {
 
       # 4b. Convert to SPADL (cache to avoid re-conversion)
       spadl_cache <- file.path(CACHE_DIR, sprintf("spadl_%s_%s.rds", league, season))
+      spadl <- NULL
       if (file.exists(spadl_cache)) {
         spadl <- readRDS(spadl_cache)
-        cli_alert_info("  Loaded cached SPADL ({format(nrow(spadl), big.mark=',')} actions)")
-      } else {
+        # R056: a cache built before new matches were scraped silently drops
+        # them. Rebuild when the events carry matches the cache has never seen.
+        # Only matches with a named player event count: convert_opta_to_spadl()
+        # drops blank-player_name events, so a marker-only match (types 32/34)
+        # never reaches SPADL and would otherwise force a rebuild every run
+        # (5 of 87 local league-seasons, 2026-10-13).
+        has_player <- !is.na(events$player_name) & nzchar(events$player_name)
+        missing_matches <- setdiff(unique(events$match_id[has_player]), unique(spadl$match_id))
+        if (length(missing_matches) > 0) {
+          message(sprintf("  Cached SPADL for %s is STALE: %d match(es) in events are absent from it - rebuilding",
+                          label, length(missing_matches)))
+          spadl <- NULL
+        } else {
+          cli_alert_info("  Loaded cached SPADL ({format(nrow(spadl), big.mark=',')} actions)")
+        }
+      }
+      if (is.null(spadl)) {
         spadl <- convert_opta_to_spadl(events)
         saveRDS(spadl, spadl_cache)
         cli_alert_info("  Converted to SPADL ({format(nrow(spadl), big.mark=',')} actions)")
@@ -268,11 +285,17 @@ for (league in names(league_seasons)) {
                             # A real compute error (the model loaded, this league threw) is
                             # concerning — loud + CI-visible. A benign empty league (no error,
                             # nrow 0) falls through silently below, which is correct.
-                            cli_alert_danger("  duel WOE FAILED for {label} — features zero-filled: {e$message}")
+                            cli_alert_danger("  duel WOE FAILED for {label} — duel columns left NA: {e$message}")
                             cat(sprintf("::warning::duel WOE compute failed for %s\n", label))
+                            duel_woe_failures <<- c(duel_woe_failures, label)
                             NULL
                           })
-          if (is.null(woe) || nrow(woe) == 0) {
+          if (is.null(woe)) {
+            # R055: a compute error must not look like "no duel edge" (0). Leave NA.
+            for (p90 in paste0(.duel_woe_cols, "_per90")) pm[[p90]] <- NA_real_
+            return(pm)
+          }
+          if (nrow(woe) == 0) {
             for (p90 in paste0(.duel_woe_cols, "_per90")) pm[[p90]] <- 0
             return(pm)
           }
@@ -352,6 +375,11 @@ if (length(all_results) > 0) {
     print(top_xpass[, c("player_name", "team_name", "league", "minutes",
                          "passes_completed", "sum_xpass", "xpass_overperformance")])
   }
+}
+
+if (length(duel_woe_failures) > 0) {
+  message(sprintf("xDuel WOE FAILED for %d league-season(s), duel columns left NA: %s",
+                  length(duel_woe_failures), paste(duel_woe_failures, collapse = ", ")))
 }
 
 if (length(errors) > 0) {
