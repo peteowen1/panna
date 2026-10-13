@@ -26,7 +26,10 @@ suppressMessages({devtools::load_all(quiet = TRUE); library(data.table)})
 args <- commandArgs(trailingOnly = TRUE)
 prod_spm_path <- if (length(args)) args[1] else file.path("data-raw", "cache-opta", "05_spm.rds")
 out_dir <- file.path("data-raw", "spm-redesign")
-gate_seasons <- 2022:2025
+# LEGACY_LAG=1 builds the fallback from seasons <= S-1 (same cut-off as the
+# S6 vintage-S prior, which excludes season S); 0 = seasons <= S.
+legacy_lag <- as.integer(Sys.getenv("LEGACY_LAG", "0"))
+gate_seasons <- if (legacy_lag == 0L) 2022:2025 else 2023:2025
 min_minutes_pairs <- 900
 t0 <- Sys.time()
 ts <- function(...) cat(sprintf("[%s +%.1fm] ", format(Sys.time(), "%H:%M:%S"),
@@ -49,7 +52,8 @@ part_dir <- file.path("data-raw", "cache-r083", "r080_parts")
 dir.create(part_dir, recursive = TRUE, showWarnings = FALSE)
 
 season_fit <- function(season, arms) {
-  part <- file.path(part_dir, sprintf("%d_%s.rds", season, if (arms) "arms" else "raw"))
+  part <- file.path(part_dir, sprintf("%d_%s.rds", season,
+                                      if (!arms) "raw" else if (legacy_lag == 0L) "arms" else sprintf("arms_lag%d", legacy_lag)))
   if (file.exists(part)) { ts("reusing ", part); return(readRDS(part)) }
   ss <- splint_data$splints[splint_data$splints$season_end_year == season, ]
   sp <- splint_data$players[splint_data$players$splint_id %in% ss$splint_id, ]
@@ -65,7 +69,7 @@ season_fit <- function(season, arms) {
     v <- bv[vintage_year == season]
     z_off <- v[, .(player_id, offense_spm = offense_spm_s6)]
     z_def <- v[, .(player_id, defense_spm = defense_spm_s6)]
-    lg <- legacy_asof(season)
+    lg <- legacy_asof(season - legacy_lag)
     f_off <- rbind(z_off, lg$off[!player_id %in% z_off$player_id])
     f_def <- rbind(z_def, lg$def[!player_id %in% z_def$player_id])
     out$filled_ids <- setdiff(lg$off$player_id, z_off$player_id)
@@ -117,8 +121,9 @@ res <- rbindlist(lapply(list(all = pairs, affected = pairs[affected == TRUE], un
                delta = b[["delta"]], ci_lo = b[["lo"]], ci_hi = b[["hi"]])
   }), idcol = "players")
 by_season <- pairs[affected == TRUE, .(n = .N, cor_zero = stats::cor(z, raw_next), cor_fallback = stats::cor(f, raw_next)), by = season]
-fwrite(res, file.path(out_dir, "r080_fallback_gate.csv"))
-fwrite(by_season, file.path(out_dir, "r080_fallback_gate_by_season.csv"))
+sfx <- if (legacy_lag == 0L) "" else sprintf("_lag%d", legacy_lag)
+fwrite(res, file.path(out_dir, sprintf("r080_fallback_gate%s.csv", sfx)))
+fwrite(by_season, file.path(out_dir, sprintf("r080_fallback_gate_by_season%s.csv", sfx)))
 cat("\n== R080 fallback gate: next-season raw RAPM correlation, higher is better ==\n")
 print(res); cat("\naffected players by season:\n"); print(by_season)
 ts("done")
