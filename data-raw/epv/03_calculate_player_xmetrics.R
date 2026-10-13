@@ -134,7 +134,12 @@ for (league in names(league_seasons)) {
         spadl <- readRDS(spadl_cache)
         # R056: a cache built before new matches were scraped silently drops
         # them. Rebuild when the events carry matches the cache has never seen.
-        missing_matches <- setdiff(unique(events$match_id), unique(spadl$match_id))
+        # Only matches with a named player event count: convert_opta_to_spadl()
+        # drops blank-player_name events, so a marker-only match (types 32/34)
+        # never reaches SPADL and would otherwise force a rebuild every run
+        # (5 of 87 local league-seasons, 2026-10-13).
+        has_player <- !is.na(events$player_name) & nzchar(events$player_name)
+        missing_matches <- setdiff(unique(events$match_id[has_player]), unique(spadl$match_id))
         if (length(missing_matches) > 0) {
           message(sprintf("  Cached SPADL for %s is STALE: %d match(es) in events are absent from it - rebuilding",
                           label, length(missing_matches)))

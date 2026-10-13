@@ -104,13 +104,14 @@ test_that("create_all_splints reports failed matches and aborts when too many fa
     results = data.frame(match_id = ids, league = league)
   )
   fake <- function(match_id, ...) {
-    if (match_id == "m1") stop("boom")
+    if (match_id %in% bad) stop("boom")
     list(splints = data.frame(match_id = match_id, splint_num = 1L, duration = 1),
          players = data.frame(match_id = match_id), match_info = data.frame(match_id = match_id))
   }
   testthat::local_mocked_bindings(create_match_splints_fast = fake)
 
   # 1 of 300 failing (0.33%) is tolerated but must be announced with its id
+  bad <- "m1"
   ids <- paste0("m", 1:300)
   expect_message(
     out <- create_all_splints(mk(ids), verbose = FALSE, chunk_by = "none"),
@@ -118,10 +119,15 @@ test_that("create_all_splints reports failed matches and aborts when too many fa
   )
   expect_equal(nrow(out$splints), 299)
 
-  # 1 of 10 failing (10%) aborts
+  # 1 of 10 (10%) is tolerated: a small cup is not stopped by one bad match
+  out <- suppressMessages(create_all_splints(mk(paste0("m", 1:10)), verbose = FALSE, chunk_by = "none"))
+  expect_equal(nrow(out$splints), 9)
+
+  # 3 of 10 (30%, and more than 2) aborts
+  bad <- c("m1", "m2", "m3")
   suppressMessages(expect_error(
     create_all_splints(mk(paste0("m", 1:10)), verbose = FALSE, chunk_by = "none"),
-    "failed for 1 of 10"
+    "failed for 3 of 10"
   ))
 })
 

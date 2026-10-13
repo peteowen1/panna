@@ -552,13 +552,18 @@ create_all_splints <- function(processed_data, include_goals = TRUE, verbose = T
     if (i %% 5000 == 0) gc(verbose = FALSE)
   }
 
-  # A few bad matches are tolerated (and listed above); a systematic failure is not
+  # A few bad matches are tolerated (and listed above); a systematic failure is
+  # not. 03_splint_creation.R calls this once per league, so the 0.5% share
+  # alone would abort a <200-match cup on a single bad match: also require
+  # more than max_fail_n failures.
   max_fail_frac <- 0.005
+  max_fail_n <- 2L
   if (length(failed_match_ids) > 0) {
     message(sprintf("Splint creation failed for %d of %d matches: %s",
                     length(failed_match_ids), n_matches,
                     paste(utils::head(failed_match_ids, 20), collapse = ", ")))
-    if (length(failed_match_ids) / n_matches > max_fail_frac) {
+    if (length(failed_match_ids) > max_fail_n &&
+        length(failed_match_ids) / n_matches > max_fail_frac) {
       cli::cli_abort(
         "Splint creation failed for {length(failed_match_ids)} of {n_matches} matches (> {max_fail_frac * 100}%)."
       )
