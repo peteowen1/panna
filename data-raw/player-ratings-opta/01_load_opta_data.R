@@ -233,11 +233,22 @@ for (league in leagues) {
     if (is.null(df) || !"season" %in% names(df)) return(df)
     df[df$season == s, , drop = FALSE]
   }
-  lg_lineups      <- tryCatch(load_opta_lineups(league, season = NULL, source = "local"), error = function(e) NULL)
-  lg_events       <- tryCatch(load_opta_events(league, season = NULL, source = "local"),  error = function(e) NULL)
-  lg_stats        <- tryCatch(load_opta_stats(league, season = NULL, source = "local"),   error = function(e) NULL)
-  lg_xmetrics     <- if (use_xmetrics_features) tryCatch(load_opta_xmetrics(league, season = NULL), error = function(e) NULL) else NULL
-  lg_match_events <- tryCatch(load_opta_match_events(league, season = NULL), error = function(e) NULL)
+  # R077: a league-level load exception used to become NULL silently, which then
+  # cascaded into "no lineups"/"no raw events" skips for EVERY season of the
+  # league. Record it (with the reason) in failed_ls so the gate below fires.
+  .lg_load <- function(what, expr) {
+    tryCatch(expr, error = function(e) {
+      message(sprintf("    ERROR loading %s for %s: %s", what, league, conditionMessage(e)))
+      failed_ls <<- c(failed_ls, sprintf("%s league-level %s load (%s)", league, what,
+                                         conditionMessage(e)))
+      NULL
+    })
+  }
+  lg_lineups      <- .lg_load("lineups", load_opta_lineups(league, season = NULL, source = "local"))
+  lg_events       <- .lg_load("events", load_opta_events(league, season = NULL, source = "local"))
+  lg_stats        <- .lg_load("stats", load_opta_stats(league, season = NULL, source = "local"))
+  lg_xmetrics     <- if (use_xmetrics_features) .lg_load("xmetrics", load_opta_xmetrics(league, season = NULL)) else NULL
+  lg_match_events <- .lg_load("match_events", load_opta_match_events(league, season = NULL))
 
   for (season in available_seasons) {
     label <- paste(league, season)
@@ -573,6 +584,13 @@ max_failed_league_seasons <- if (exists("max_failed_league_seasons")) {
 # is still computed and reported, but the floor is applied to the shots grain.
 min_coverage_frac <- if (exists("min_coverage_frac")) min_coverage_frac else 0.90
 
+# R077: the coverage floor is a pooled fraction, so a whole league can drop out
+# (e.g. 3 of 30 league-seasons) while it passes. Any requested league with ZERO
+# league-seasons with shots stops the run unless explicitly allow-listed.
+allow_leagues_without_shots <- if (exists("allow_leagues_without_shots")) {
+  allow_leagues_without_shots
+} else character(0)
+
 n_attempted <- length(attempted_ls)
 lineups_ls <- unique(paste(combined_lineups$league, combined_lineups$season))
 shots_ls <- if (!is.null(combined_shots) && nrow(combined_shots) > 0) {
@@ -614,6 +632,16 @@ if (length(failed_ls) > max_failed_league_seasons) {
            "to knowingly proceed."),
     length(failed_ls), max_failed_league_seasons,
     paste(sprintf("  - %s", failed_ls), collapse = "\n")),
+    call. = FALSE)
+}
+
+leagues_no_shots <- setdiff(leagues, c(unique(combined_shots$league), allow_leagues_without_shots))
+if (length(leagues_no_shots) > 0) {
+  stop(sprintf(
+    paste0("%d requested league(s) have no league-season with shots/xG: %s. ",
+           "The entire league is absent from RAPM. Fix the root cause, or set ",
+           "allow_leagues_without_shots before sourcing to knowingly proceed."),
+    length(leagues_no_shots), paste(leagues_no_shots, collapse = ", ")),
     call. = FALSE)
 }
 

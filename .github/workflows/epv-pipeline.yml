@@ -282,6 +282,8 @@ jobs:
         if: ${{ env.EXPORT_XMETRICS == 'true' }}
         env:
           PANNADATA_DIR: ${{ runner.temp }}/pannadata
+          # R055: abort rather than publish xMetrics without the xDuel features
+          PANNA_DUEL_REQUIRED: '1'
         run: |
           Rscript -e "
             pannadata_path <- Sys.getenv('PANNADATA_DIR', '../pannadata/data')

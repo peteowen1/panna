@@ -96,3 +96,40 @@ test_that("a half-time sub's on-minute follows the whole first half on the conti
   expect_equal(tm$on_minute[tm$player_id == "p2"], 48.5)
   expect_equal(tm$off_minute[tm$player_id == "p2"], 97.5)
 })
+
+test_that("create_all_splints reports failed matches and aborts when too many fail (R048)", {
+  mk <- function(ids, league = "L1") list(
+    lineups = data.frame(match_id = ids, player_id = "p"),
+    shooting = data.frame(match_id = ids),
+    results = data.frame(match_id = ids, league = league)
+  )
+  fake <- function(match_id, ...) {
+    if (match_id == "m1") stop("boom")
+    list(splints = data.frame(match_id = match_id, splint_num = 1L, duration = 1),
+         players = data.frame(match_id = match_id), match_info = data.frame(match_id = match_id))
+  }
+  testthat::local_mocked_bindings(create_match_splints_fast = fake)
+
+  # 1 of 300 failing (0.33%) is tolerated but must be announced with its id
+  ids <- paste0("m", 1:300)
+  expect_message(
+    out <- create_all_splints(mk(ids), verbose = FALSE, chunk_by = "none"),
+    "m1"
+  )
+  expect_equal(nrow(out$splints), 299)
+
+  # 1 of 10 failing (10%) aborts
+  suppressMessages(expect_error(
+    create_all_splints(mk(paste0("m", 1:10)), verbose = FALSE, chunk_by = "none"),
+    "failed for 1 of 10"
+  ))
+})
+
+test_that("create_all_splints aborts on NA league when chunking by league (R048)", {
+  p <- list(
+    lineups = data.frame(match_id = c("a", "b"), player_id = "p"),
+    shooting = data.frame(match_id = c("a", "b")),
+    results = data.frame(match_id = c("a", "b"), league = c("L1", NA))
+  )
+  expect_error(create_all_splints(p, verbose = FALSE, chunk_by = "league"), "NA league")
+})

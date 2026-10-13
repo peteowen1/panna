@@ -366,6 +366,15 @@ create_all_splints <- function(processed_data, include_goals = TRUE, verbose = T
 
   # --- Chunked processing by league ---
   if (chunk_by == "league" && "league" %in% names(processed_data$results)) {
+    # A match with NA league can never match `league == lg`, so it would be
+    # silently dropped from every chunk. Fail loudly instead.
+    n_na_league <- sum(is.na(processed_data$results$league))
+    if (n_na_league > 0) {
+      cli::cli_abort(c(
+        "{n_na_league} match{?es} with NA league cannot be chunked by league.",
+        "i" = "Fix the league column or use {.code chunk_by = \"none\"}."
+      ))
+    }
     leagues <- unique(processed_data$results$league)
     n_matches_total <- length(unique(processed_data$results$match_id))
 
@@ -495,6 +504,7 @@ create_all_splints <- function(processed_data, include_goals = TRUE, verbose = T
 
   # Progress tracking
   last_pct <- 0
+  failed_match_ids <- character(0)
 
   for (i in seq_along(match_ids)) {
     mid <- match_ids[i]
@@ -534,11 +544,25 @@ create_all_splints <- function(processed_data, include_goals = TRUE, verbose = T
       all_match_info[[i]] <- result$match_info
 
     }, error = function(e) {
-      cli::cli_warn("Failed to create splints for match: {mid} - {conditionMessage(e)}")
+      message(sprintf("Failed to create splints for match %s: %s", mid, conditionMessage(e)))
+      failed_match_ids <<- c(failed_match_ids, as.character(mid))
     })
 
     # Periodic GC to keep memory in check on large runs
     if (i %% 5000 == 0) gc(verbose = FALSE)
+  }
+
+  # A few bad matches are tolerated (and listed above); a systematic failure is not
+  max_fail_frac <- 0.005
+  if (length(failed_match_ids) > 0) {
+    message(sprintf("Splint creation failed for %d of %d matches: %s",
+                    length(failed_match_ids), n_matches,
+                    paste(utils::head(failed_match_ids, 20), collapse = ", ")))
+    if (length(failed_match_ids) / n_matches > max_fail_frac) {
+      cli::cli_abort(
+        "Splint creation failed for {length(failed_match_ids)} of {n_matches} matches (> {max_fail_frac * 100}%)."
+      )
+    }
   }
 
   if (verbose) {
