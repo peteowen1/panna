@@ -55,7 +55,7 @@ suppressMessages(library(data.table))
 # Core logic (pure functions)
 # ============================================================================
 
-#' Load S0 (current production SPM) as a single fixed comparator
+#' Load S0 (the legacy production SPM) as a single fixed comparator
 #'
 #' @param cache_dir Production cache dir.
 #' @return data.table(player_id, pred_net_s0) or NULL if 05_spm.rds absent.
@@ -66,8 +66,15 @@ load_s0_baseline <- function(cache_dir) {
     return(NULL)
   }
   s5 <- readRDS(path)
-  combined <- data.table::as.data.table(s5$combined_ratings)
-  combined[, .(player_id, pred_net_s0 = spm)]
+  # R082: since the S6 promotion, combined_ratings/spm_ratings hold the S6
+  # hybrid, so S0 must come from the preserved legacy table -- otherwise S6
+  # candidates are gated against S6 itself. Gate CSVs written before
+  # 2026-10-13 may have used either; check their date before comparing.
+  if (is.null(s5$spm_ratings_legacy)) {
+    cli::cli_abort("{.path {path}} has no {.field spm_ratings_legacy}; cannot build the S0 (legacy) baseline.")
+  }
+  legacy <- data.table::as.data.table(s5$spm_ratings_legacy)
+  legacy[, .(player_id, pred_net_s0 = spm)]
 }
 
 #' Build the (player) pairs for one vintage Y: candidate_net, s0_net,

@@ -1027,13 +1027,18 @@ make_dummy_lineup <- function(match_id, team_id, team_name, team_position) {
 #' lagged windows (no data leakage). Uses data.table frollmean + shift.
 #'
 #' @param results Data frame of match results with match_id, match_date,
-#'   home_team, away_team, home_goals, away_goals, home_xg, away_xg
+#'   home_team, away_team, home_goals, away_goals, home_xg, away_xg. With
+#'   home_team_id/away_team_id present, clubs that share a name are tracked
+#'   separately (see [.disambiguate_collided_team_names()]).
 #' @param windows Rolling window sizes (default c(5, 10, 20))
 #'
 #' @return Data frame with match_id and rolling features for home/away
 #' @family match prediction
 #' @export
 compute_team_rolling_features <- function(results, windows = c(5L, 10L, 20L)) {
+  # Form is keyed by team name; separate clubs that share one (R033). A no-op
+  # without team ids or collisions, and on input already renamed apart.
+  results <- .disambiguate_collided_team_names(results)
   dt <- data.table::as.data.table(results)
   dt <- dt[order(match_date)]
 

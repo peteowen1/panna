@@ -74,3 +74,23 @@ test_that("query_minutes_features computes tournament + decay-prior features", {
                                    as_of_date = as.Date("2026-06-16"))
   expect_equal(feats0$tourn_mins_sofar, 0)
 })
+
+test_that("tournament_match_num counts matches, not player rows (R035)", {
+  mk <- function(team, date, mid) data.table::data.table(
+    match_id = mid, match_date = paste0(date, "Z"), team_name = team,
+    competition = "World_Cup", season = "2022 Qatar",
+    player_id = paste0(team, "_p", 1:14), player_name = paste0(team, "_p", 1:14),
+    minutes_played = c(rep(90L, 11), 30L, 0L, 0L), is_starter = rep(c(TRUE, FALSE), c(11, 3)),
+    position = c("Goalkeeper", rep("Defender", 4), rep("Midfielder", 4), rep("Forward", 5)),
+    position_side = "Centre")
+  dates <- as.Date("2022-11-20") + 4 * (0:5)
+  lu <- data.table::rbindlist(c(
+    lapply(seq_along(dates), function(i) mk("A", dates[i], paste0("a", i))),
+    lapply(seq_along(dates), function(i) mk("B", dates[i], paste0("b", i)))))
+  tr <- build_minutes_training_data(lu, intl_comps = "World_Cup", ratings_path = tempfile(),
+                                    min_team_matches = 1L, verbose = FALSE)
+  per_match <- tr[, .(n = data.table::uniqueN(tournament_match_num), k = tournament_match_num[1]),
+                  by = .(team_name, match_date)][order(team_name, match_date)]
+  expect_true(all(per_match$n == 1L))
+  expect_equal(per_match[team_name == "A", k], 1:6)
+})
