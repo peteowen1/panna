@@ -481,3 +481,23 @@ test_that(".grouped_cv_folds reduces nfolds when there are fewer groups than fol
   expect_length(folds, 2)
   expect_equal(sort(unname(unlist(folds))), seq_along(group_ids))
 })
+
+
+test_that("compute_team_rolling_features keeps same-name clubs apart (R033)", {
+  # Two different clubs called "Liverpool" (L1, L2). L1 wins m1 and m3; L2
+  # loses m2 in between. L1's form going into m4 is its own two wins only.
+  results <- data.frame(
+    match_id = paste0("m", 1:4),
+    match_date = as.Date("2024-01-01") + 0:3,
+    home_team = c("Liverpool", "Liverpool", "Liverpool", "Liverpool"),
+    away_team = c("X", "Y", "Z", "W"),
+    home_team_id = c("L1", "L2", "L1", "L1"),
+    away_team_id = c("x", "y", "z", "w"),
+    home_goals = c(2, 0, 1, 1), away_goals = c(0, 3, 0, 1),
+    home_xg = 1, away_xg = 1
+  )
+  rf <- data.table::as.data.table(compute_team_rolling_features(results, windows = 2L))
+  expect_equal(rf[match_id == "m4", home_points_last_2], 3)
+  # L2 has played once before nothing: its only match carries no 2-match form
+  expect_true(is.na(rf[match_id == "m2", home_points_last_2]))
+})

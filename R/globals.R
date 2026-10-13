@@ -297,6 +297,8 @@ utils::globalVariables(c(
 
   # data.table join prefix columns (i. prefix)
   "i.action_id",
+  "canon_name",
+  "i.canon_name",
   "i.kp_is_goal",
   "i.kp_xa",
   "i.match_id",
@@ -796,7 +798,7 @@ utils::globalVariables(c(
   "start_club", "start_intl", "started_prev_team_match", "starts_decay", "sw",
   "t1", "t2", "taker_wpa", "targeting", "team_id_next", "team_intl_count",
   "team_n_rated", "team_n_total", "teams", "tier", "tot_w", "total_mins",
-  "tourn_mins_sofar", "tourn_starts_sofar", "tournament_match_num", "w",
+  "tourn_mins_sofar", "tourn_starts_sofar", "tournament_match_num", "i.tournament_match_num", "w",
   "was_rated", "weight", "weight_bench", "weight_start", "weight_sub_on",
   "weight_total", "wp_first_kicker", "wt_games_tier_t1", "wt_games_tier_t2",
   "xgot", "xgot_placement", "xmargin", "y_def", "y_off", "y_tot", "years_gap",

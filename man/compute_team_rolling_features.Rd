@@ -8,7 +8,9 @@ compute_team_rolling_features(results, windows = c(5L, 10L, 20L))
 }
 \arguments{
 \item{results}{Data frame of match results with match_id, match_date,
-home_team, away_team, home_goals, away_goals, home_xg, away_xg}
+home_team, away_team, home_goals, away_goals, home_xg, away_xg. With
+home_team_id/away_team_id present, clubs that share a name are tracked
+separately (see \code{\link[=.disambiguate_collided_team_names]{.disambiguate_collided_team_names()}}).}
 
 \item{windows}{Rolling window sizes (default c(5, 10, 20))}
 }

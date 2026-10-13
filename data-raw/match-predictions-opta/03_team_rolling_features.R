@@ -104,7 +104,25 @@ for (lg in unique(played$league)) {
   played$away_xg[na_away] <- lg_away_mean
 }
 
-rolling_team <- compute_team_rolling_features(played, windows = ROLLING_WINDOWS)
+# R033: form is keyed by team name, and Opta reuses names across clubs
+# ("Liverpool" is 3 clubs). Give each colliding club its own name for the form
+# features only, from ONE map built on all fixtures so training rows and the
+# upcoming carry-forward agree. The Elo lookup below keeps the raw names and
+# step 02's own id_rename_map. No collisions in the current league set
+# (869 names = 869 ids, 2026-10-13), so today this is a no-op.
+.form_map <- attr(.disambiguate_collided_team_names(fixture_results), "id_rename_map")
+.form_names <- function(d) {
+  if (length(.form_map) == 0) return(d)
+  for (s in c("home", "away")) {
+    id <- d[[paste0(s, "_team_id")]]
+    hit <- !is.na(id) & id %in% names(.form_map)
+    d[[paste0(s, "_team")]][hit] <- unname(.form_map[id[hit]])
+  }
+  d
+}
+if (length(.form_map) > 0) message(sprintf("  Form: %d club(s) renamed apart from a same-name club", length(.form_map)))
+
+rolling_team <- compute_team_rolling_features(.form_names(played), windows = ROLLING_WINDOWS)
 
 message(sprintf("  Rolling features: %d matches, %d columns",
                 nrow(rolling_team), ncol(rolling_team) - 1))
@@ -120,7 +138,7 @@ message(sprintf("  Rolling features: %d matches, %d columns",
 upcoming_ids <- fixture_results$match_id[fixture_results$match_status != "Played"]
 rolling_upcoming <- NULL
 if (length(upcoming_ids) > 0) {
-  .pl <- data.table::as.data.table(played)
+  .pl <- data.table::as.data.table(.form_names(played))
   .tm <- data.table::rbindlist(list(
     .pl[, .(match_date, team = home_team, goals_scored = home_goals, goals_conceded = away_goals,
             xg_for = home_xg, xg_against = away_xg)],
@@ -140,7 +158,7 @@ if (length(upcoming_ids) > 0) {
                       stats::setNames(lapply(.SD, .last_w, w = w),
                                       sprintf("%s_last_%d", .metrics, w))), recursive = FALSE)),
                 by = team, .SDcols = .metrics]
-  .fx <- data.table::as.data.table(fixture_results)[match_id %in% upcoming_ids,
+  .fx <- data.table::as.data.table(.form_names(fixture_results))[match_id %in% upcoming_ids,
                                                     .(match_id, match_date, home_team, away_team)]
   .feat <- setdiff(names(.state), c("team", "last_date"))
   .side <- function(side) {

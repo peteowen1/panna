@@ -234,8 +234,15 @@ build_minutes_training_data <- function(lineups,
   ## starters at the hour mark. Distinct minute distribution from competitive
   ## matches; explicit flag lets the model learn separate leaf weights.
   train[, is_friendly := as.integer(competition == "Intl_Friendlies")]
-  setorder(train, team_name, competition, season, match_date)
-  train[, tournament_match_num := seq_len(.N), by = .(team_name, competition, season)]
+  ## Numbered per MATCH, not per player row (R035): seq_len(.N) over player
+  ## rows made a team's 2nd match ~15-25, while the query side
+  ## (minutes_query.R) passes the true match number. A team plays once a day,
+  ## so (team, competition, season, date) is the match key, as in team_dates.
+  tm_num <- unique(train[, .(team_name, competition, season, match_date)])
+  setorder(tm_num, team_name, competition, season, match_date)
+  tm_num[, tournament_match_num := seq_len(.N), by = .(team_name, competition, season)]
+  train[tm_num, tournament_match_num := i.tournament_match_num,
+        on = .(team_name, competition, season, match_date)]
 
   ## --- 7b. Within-current-tournament accumulation ------------------------
   ## Minutes/starts already banked in THIS tournament instance (player x
