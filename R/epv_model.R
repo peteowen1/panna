@@ -252,6 +252,30 @@ estimate_simple_xg <- function(x, y) {
 # MODEL TRAINING
 # =============================================================================
 
+#' Cross-validation folds that keep each match whole
+#'
+#' @param match_id Match id of each training row, in row order.
+#' @param nfolds Number of folds.
+#' @return List of `nfolds` integer vectors of test-row indices, as
+#'   `xgboost::xgb.cv(folds = )` expects. Matches are assigned to folds at
+#'   random, so fold sizes follow match sizes. With fewer matches than
+#'   folds (toy inputs and test fixtures) it warns and splits rows at random.
+#' @noRd
+.match_grouped_folds <- function(match_id, nfolds) {
+  ids <- unique(match_id)
+  if (length(ids) < nfolds) {
+    cli::cli_warn(c(
+      "Only {length(ids)} match{?es} for {nfolds}-fold CV: folds split rows at random.",
+      "!" = "Neighbouring actions then leak across folds; real training data has thousands of matches."
+    ))
+    fold <- sample(rep_len(seq_len(nfolds), length(match_id)))
+    return(lapply(seq_len(nfolds), function(k) which(fold == k)))
+  }
+  fold_of_match <- sample(rep_len(seq_len(nfolds), length(ids)))
+  fold <- fold_of_match[match(match_id, ids)]
+  lapply(seq_len(nfolds), function(k) which(fold == k))
+}
+
 #' Fit EPV Model
 #'
 #' Trains an XGBoost model to predict expected possession value.
@@ -390,12 +414,15 @@ fit_epv_model <- function(features,
   # Create DMatrix
   dtrain <- xgboost::xgb.DMatrix(data = X, label = y)
 
-  # Cross-validation
+  # Cross-validation on whole-match folds. Neighbouring actions in a match
+  # share their label (74% of consecutive ENG 2023-24 pairs) and have similar
+  # positions, so random row folds let a test row's neighbours sit in the
+  # training folds and early stopping reads an optimistic score (R029/R111).
   cv_result <- xgboost::xgb.cv(
     params = params,
     data = dtrain,
     nrounds = nrounds,
-    nfold = nfolds,
+    folds = .match_grouped_folds(dt$match_id[valid_idx], nfolds),
     early_stopping_rounds = early_stopping_rounds,
     verbose = verbose,
     print_every_n = 50
