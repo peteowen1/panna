@@ -203,11 +203,16 @@ jobs:
           for f in $(gh release view opta-latest --repo peteowen1/pannadata --json assets -q '.assets[].name' | grep 'events_'); do
             EVENTS_DIR="$OPTA_DIR/events_consolidated"
             mkdir -p "$EVENTS_DIR"
-            if gh release download opta-latest --repo peteowen1/pannadata --pattern "$f" --dir "$EVENTS_DIR"; then
+            if gh release download opta-latest --repo peteowen1/pannadata --pattern "$f" --dir "$EVENTS_DIR" --clobber \
+               || { sleep 20; gh release download opta-latest --repo peteowen1/pannadata --pattern "$f" --dir "$EVENTS_DIR" --clobber; }; then
               echo "  Downloaded $f"
               EVENT_COUNT=$((EVENT_COUNT + 1))
             else
-              echo "::warning::Failed to download event file $f"
+              # R098: a league whose events are missing would be exported from a
+              # partial event set. Record it; the last step fails the run red
+              # after the other leagues publish (same policy as R057).
+              echo "::warning::Failed to download event file $f (after one retry)"
+              echo "$f" >> "${{ runner.temp }}/event_download_failures"
             fi
           done
           echo "Downloaded $EVENT_COUNT event files"
@@ -451,7 +456,14 @@ jobs:
         if: success() && env.EXPORT_XMETRICS == 'true'
         run: |
           MARKER="data-raw/cache/epv/.partial_publish_failures"
+          EVFAIL="${{ runner.temp }}/event_download_failures"
+          FAIL=0
           if [ -s "$MARKER" ]; then
             while IFS= read -r line; do echo "::error title=League-season dropped from xMetrics::$line"; done < "$MARKER"
-            exit 1
+            FAIL=1
           fi
+          if [ -s "$EVFAIL" ]; then
+            while IFS= read -r line; do echo "::error title=Event file not downloaded (R098)::$line"; done < "$EVFAIL"
+            FAIL=1
+          fi
+          exit $FAIL
