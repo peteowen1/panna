@@ -642,7 +642,7 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
 #' @rdname dot-spm_opta_stats_keep_cols
 #' @keywords internal
 .spm_xmetrics_keep_cols <- function(nm) {
-  keep <- c("season", "player_id", "minutes", "xg", "npxg", "xa",
+  keep <- c("season", "player_id", "league", "competition", "minutes", "xg", "npxg", "xa",
             "xpass_overperformance", "aerial_woe", "aerial_poss_woe",
             "takeon_woe", "tackle_poss_woe", "containment_woe",
             "npg_minus_npxg", "ibox_g_minus_xg", "obox_g_minus_xg",
@@ -651,6 +651,91 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
             "chains_involved", "chain_actions", "successful_chains",
             "chain_goals", "chain_starts", "chain_xg")
   nm[nm %in% keep]
+}
+
+#' Report xMetrics coverage of each competition-season's minutes (R079)
+#'
+#' SPM imputes xg/npxg/xa to 0 for a player with no xMetrics row, so a
+#' competition-season whose xMetrics never got built silently trains as
+#' "nobody shot". Coverage is all-or-nothing in practice (2026-10-14: 562 of
+#' 894 competition-seasons at exactly 0%, the rest at 100%), mostly seasons
+#' before xMetrics starts (2013-14) and Scottish 2014-15 to 2018-19. This
+#' prints one summary of the uncovered seasons of competitions that DO have
+#' xMetrics elsewhere, and raises a GitHub Actions warning only when one of
+#' them is among the latest \code{recent_seasons} -- the case that means a
+#' build failed rather than a known historical gap. It never changes data.
+#'
+#' @param opta_stats Player-match stats with player_id, competition, season
+#'   and a minutes column.
+#' @param opta_xmetrics xMetrics season table with player_id, season and
+#'   either competition (Opta name) or league (panna code, as step 01 adds).
+#' @param recent_seasons Number of latest season end years that warn.
+#' @param floor Share of minutes below which a competition-season counts as
+#'   uncovered.
+#' @return The coverage table (competition, season, minutes, share),
+#'   invisibly; NULL when either input lacks the needed columns.
+#' @keywords internal
+.report_xmetrics_coverage <- function(opta_stats, opta_xmetrics, recent_seasons = 2L, floor = 0.8) {
+  min_col <- intersect(c("minsPlayed", "minutes", "minutes_played", "mins"), names(opta_stats))[1]
+  need_st <- c("player_id", "competition", "season")
+  if (is.null(opta_xmetrics) || nrow(opta_xmetrics) == 0 || is.na(min_col) ||
+      !all(need_st %in% names(opta_stats)) || !all(c("player_id", "season") %in% names(opta_xmetrics))) {
+    message("xMetrics coverage: not checked (missing table or columns)")
+    return(invisible(NULL))
+  }
+  # The pipeline's xmetrics carry a panna league code (`league`, e.g. "ENG",
+  # added in step 01) while the stats carry the Opta competition name ("EPL").
+  # Map the code; without either column coverage cannot be scoped, so say so.
+  xm_comp <- if ("competition" %in% names(opta_xmetrics)) {
+    as.character(opta_xmetrics$competition)
+  } else if ("league" %in% names(opta_xmetrics)) {
+    codes <- unique(as.character(opta_xmetrics$league))
+    map <- stats::setNames(vapply(codes, function(cd) tryCatch(as.character(to_opta_league(cd)), error = function(e) NA_character_),
+                                  character(1)), codes)
+    unname(map[as.character(opta_xmetrics$league)])
+  } else {
+    NULL
+  }
+  if (is.null(xm_comp)) {
+    message("xMetrics coverage: not checked (xmetrics has neither competition nor league)")
+    return(invisible(NULL))
+  }
+  st <- data.table::data.table(player_id = as.character(opta_stats$player_id),
+                               competition = as.character(opta_stats$competition),
+                               season = as.character(opta_stats$season), m = as.numeric(opta_stats[[min_col]]))
+  st <- st[!is.na(m) & m > 0, list(m = sum(m)), by = c("player_id", "competition", "season")]
+  xk <- unique(data.table::data.table(player_id = as.character(opta_xmetrics$player_id), competition = xm_comp,
+                                      season = as.character(opta_xmetrics$season)))
+  xk[, has_xm := TRUE]
+  st <- xk[st, on = c("player_id", "competition", "season")]
+  st[is.na(has_xm), has_xm := FALSE]
+  cov <- st[, list(minutes = sum(m), share = sum(m[has_xm]) / sum(m)), by = c("competition", "season")]
+  xm_comps <- unique(stats::na.omit(xm_comp))
+  low <- cov[share < floor & competition %in% xm_comps]
+  never <- setdiff(unique(cov$competition), xm_comps)
+  if (length(never) > 0) {
+    message(sprintf("xMetrics coverage: %d competition(s) never have xMetrics (outside the xMetrics league set): %s",
+                    length(never), paste(utils::head(sort(never), 8), collapse = ", ")))
+  }
+  if (nrow(low) == 0) {
+    message(sprintf("xMetrics coverage: every season of the %d xMetrics competitions is >= %d%% covered",
+                    length(xm_comps), round(100 * floor)))
+    return(invisible(cov))
+  }
+  message(sprintf(paste0("xMetrics coverage: %d season(s) of xMetrics competitions are under %d%% covered ",
+                         "(%.1f%% of those competitions' minutes); their players get xg/npxg/xa = 0 in SPM (R079)."),
+                  nrow(low), round(100 * floor),
+                  100 * sum(low$minutes) / sum(cov[competition %in% xm_comps]$minutes)))
+  low_by <- low[order(competition, season), list(seasons = paste(season, collapse = " ")), by = "competition"]
+  for (i in seq_len(nrow(low_by))) message(sprintf("  %s: %s", low_by$competition[i], low_by$seasons[i]))
+  sey <- extract_season_end_year(cov$season)
+  cut <- max(sey, na.rm = TRUE) - recent_seasons + 1
+  recent <- low[extract_season_end_year(low$season) >= cut]
+  for (i in seq_len(nrow(recent))) {
+    cat(sprintf("::warning::xMetrics missing for RECENT %s %s (%.0f%% of minutes covered) -- check the epv-pipeline xmetrics build\n",
+                recent$competition[i], recent$season[i], 100 * recent$share[i]))
+  }
+  invisible(cov)
 }
 
 #' Select columns without copying them

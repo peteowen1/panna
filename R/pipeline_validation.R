@@ -59,13 +59,14 @@ assert_step_output <- function(data, step_name, expectations,
   }
 
   failed <- character(0)
+  check_errors <- character(0)
   for (name in names(expectations)) {
     ok <- tryCatch(
       isTRUE(expectations[[name]](data)),
       error = function(e) {
-        # Capture the error message so the user sees WHY the check
-        # couldn't run (not just that it failed silently).
-        attr(name, "error") <<- conditionMessage(e)
+        # Keep the error message so the report says WHY the check couldn't
+        # run (R133: it used to be set as an attribute that c() dropped).
+        check_errors[[name]] <<- conditionMessage(e)
         FALSE
       }
     )
@@ -75,7 +76,10 @@ assert_step_output <- function(data, step_name, expectations,
   if (length(failed) > 0L) {
     # cli bullet format: names are bullet types ("x", "i", "*"), values
     # are the message text. Order matters for setNames().
-    bullets <- stats::setNames(failed, rep("x", length(failed)))
+    shown <- ifelse(failed %in% names(check_errors),
+                    paste0(failed, " (check errored: ", check_errors[failed], ")"), failed)
+    shown <- gsub("}", "}}", gsub("{", "{{", shown, fixed = TRUE), fixed = TRUE)  # cli glue-interpolates braces
+    bullets <- stats::setNames(shown, rep("x", length(failed)))
     msg <- c(
       sprintf("[%s] %d / %d output assertions failed.",
               step_name, length(failed), length(expectations)),

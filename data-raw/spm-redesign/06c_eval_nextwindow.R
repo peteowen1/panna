@@ -121,7 +121,8 @@ weighted_cor <- function(x, y, w) {
 
 pearson_row <- function(pairs, label) {
   n <- nrow(pairs)
-  safe_cor <- function(a, b) if (n >= 3 && stats::sd(a, na.rm = TRUE) > 0) stats::cor(a, b, use = "complete.obs") else NA_real_
+  # R187: isTRUE() -- with no S0 baseline every s0 is NA, sd() is NA and a bare `NA > 0` errored.
+  safe_cor <- function(a, b) if (n >= 3 && isTRUE(stats::sd(a, na.rm = TRUE) > 0)) stats::cor(a, b, use = "complete.obs") else NA_real_
   data.table::data.table(
     vintage = as.character(label), n = n,
     cor_candidate = safe_cor(pairs$candidate, pairs$target_next),

@@ -998,13 +998,16 @@ assert_step_output(
   list(
     "row count plausible (>10k matches across all leagues+fixtures)" =
       function(d) nrow(d) > 10000L,
-    "EPR + PSR columns populated (not all NA from a join failure)" =
+    "EPR + PSR columns populated (not all zero/NA from a join failure)" =
       function(d) {
         cols <- intersect(c("home_sum_epr", "home_sum_psr",
                              "away_sum_epr", "away_sum_psr"),
                           names(d))
         if (length(cols) == 0L) return(TRUE)
-        all(vapply(cols, function(c) sum(!is.na(d[[c]])) > 0.5 * nrow(d),
+        # R172: count NON-ZERO, not non-NA -- NAs are zero-filled upstream, so a
+        # failed join reads as all 0 and the old non-NA test always passed.
+        # Healthy (2026-09-10 cache): 91.5-96.6% non-zero over 55,223 rows.
+        all(vapply(cols, function(c) sum(!is.na(d[[c]]) & d[[c]] != 0) > 0.5 * nrow(d),
                    logical(1)))
       },
     "WC2026 fixtures have nonzero sum_epr (catches the player_id-drop bug)" =

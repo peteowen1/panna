@@ -1315,7 +1315,8 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
     }
     game_logs[, piero := PANNA_EPR_WEIGHT * .epv + PANNA_PSR_WEIGHT * psv]
     if ("piero_value_p90" %in% names(game_logs)) {
-      .mins <- pmax(game_logs$total_minutes, 1, na.rm = TRUE)
+      .mins <- data.table::fifelse(is.na(game_logs$total_minutes) | game_logs$total_minutes <= 0,
+                                   NA_real_, pmax(game_logs$total_minutes, 1))  # R114: no 1-minute fallback
       game_logs[, piero_value_p90 := piero / (.mins / 90)]
     }
     rm(.epv)

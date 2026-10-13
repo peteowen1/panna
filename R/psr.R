@@ -289,6 +289,7 @@
   ref_dates <- sort(unique(as.Date(ref_dates)))
   n_dates <- length(ref_dates)
   results <- vector("list", n_dates)
+  failed_dates <- character(0)  # R137
   names(results) <- as.character(ref_dates)
 
   if (verbose) {
@@ -732,7 +733,9 @@
       }  # end else (has prior data)
     },
     error = function(e) {
-      if (verbose) cat(sprintf("  ERROR at %s: %s\n", rd, e$message))
+      # R137: always say so -- a failed date used to vanish unless verbose.
+      message(sprintf("  skills batch: date %s FAILED: %s", rd, conditionMessage(e)))
+      failed_dates <<- c(failed_dates, as.character(rd))
       NULL
     })
 
@@ -762,8 +765,17 @@
 
   if (!is.null(checkpoint_path) && file.exists(checkpoint_path)) unlink(checkpoint_path)
 
+  if (length(failed_dates) > 0) {
+    message(sprintf("skills batch: %d of %d date(s) FAILED and are missing from the output: %s%s",
+                    length(failed_dates), length(results),
+                    paste(utils::head(failed_dates, 5), collapse = ", "),
+                    if (length(failed_dates) > 5) ", ..." else ""))
+  }
+
   # Drop NULLs
-  results[!vapply(results, is.null, logical(1))]
+  out <- results[!vapply(results, is.null, logical(1))]
+  attr(out, "failed_dates") <- failed_dates
+  out
 }
 
 

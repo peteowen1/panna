@@ -183,3 +183,16 @@ test_that("aggregate_season_ratings keeps missing PSV out of totals and per-90 (
   expect_true(is.na(b$psv) && is.na(b$piero_value) && is.na(b$psv_p90))
   expect_identical(res$player_id, c("p1", "p2"))   # NA piero sorts last
 })
+
+test_that("unknown minutes give NA per-90, not a 1-minute rate (R114)", {
+  epv <- data.frame(
+    player_id = c("p1", "p2", "p3"), player_name = c("A", "B", "C"), team_id = "t1", match_id = "m1",
+    minutes_played = c(45, 0, NA), epv_total = 0.5, epv_offensive = 0.4, epv_defensive = 0.1,
+    epv_total_p90 = c(1, NA, NA), stringsAsFactors = FALSE
+  )
+  result <- as.data.frame(build_player_game_ratings(epv))
+  result <- result[order(result$player_id), ]
+  expect_equal(result$piero_value_p90[1], result$piero_value[1] / (45 / 90))
+  expect_true(all(is.na(result$piero_value_p90[2:3])))   # was piero_value * 90
+  expect_true(all(is.na(result$epv_p90[2:3])))           # was zero-filled to 0
+})
