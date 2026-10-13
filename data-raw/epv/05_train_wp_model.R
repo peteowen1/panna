@@ -64,9 +64,15 @@ epv_model <- if (exists("epv_model_override")) {
   cli_alert_info("Using injected EPV model override (feature_cols: {length(epv_model_override$panna_metadata$feature_cols)})")
   epv_model_override
 } else tryCatch(load_epv_model(path = "data-raw/cache/epv"), error = function(e) {
-  cli_alert_warning("Could not load EPV model ({e$message}); training WITHOUT the #92 epv feature.")
+  cli_alert_warning("Could not load EPV model ({e$message}).")
   NULL
 })
+# R058: a WP model trained without the epv feature is a different model, and
+# this script stages it for publishing. Stop unless the driver asks for it.
+if (is.null(epv_model) && !isTRUE(if (exists("allow_wp_without_epv")) allow_wp_without_epv)) {
+  cli::cli_abort(c("No EPV model, so the WP model would train WITHOUT its #92 epv feature.",
+                   "i" = "Set {.code allow_wp_without_epv <- TRUE} before sourcing to do that on purpose."))
+}
 
 # xG behind the shots (and so behind `xg_diff` and the EPV at each shot). Unset,
 # the default published model. xg_model_override <- load_xg_model(name =
@@ -126,6 +132,14 @@ for (league in LEAGUES) {
 
 wp_data <- data.table::rbindlist(all_wp_features, fill = TRUE)
 rm(all_wp_features); gc(verbose = FALSE)
+# R058: the epv feature must actually be populated, not just present.
+if (!is.null(epv_model)) {
+  epv_cov <- if ("epv" %in% names(wp_data)) mean(!is.na(wp_data$epv)) else 0
+  cli_alert_info("epv feature coverage: {round(100 * epv_cov, 1)}% of {nrow(wp_data)} actions")
+  if (epv_cov < 0.95) {
+    cli::cli_abort("epv feature is populated on only {round(100 * epv_cov, 1)}% of WP training rows (need 95%).")
+  }
+}
 cli_alert_success("Total: {nrow(wp_data)} actions from {length(unique(wp_data$match_id))} matches")
 
 # ============================================================================

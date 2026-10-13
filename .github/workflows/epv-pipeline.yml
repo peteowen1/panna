@@ -33,7 +33,7 @@ on:
         type: boolean
         default: false
       wp_only:
-        description: 'Train ONLY the WP model — skip the EPV/xMetrics retrain. Much faster (~20min vs ~120). The WP model does not consume EPV, so this is lossless for a WP retrain. Implies train_wp.'
+        description: 'Train ONLY the WP model — skip the EPV/xMetrics retrain. Much faster (~20min vs ~120). The WP epv feature uses the published pannamodels EPV model (training stops if none loads, R058). Implies train_wp.'
         type: boolean
         default: false
       xmetrics_only:

@@ -1026,6 +1026,22 @@ aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0,
     cli::cli_alert_info("Filtered {n_dropped} SPADL actions without valid lineup minutes")
   }
 
+  # One name per player (R043). Each component below groups by player_name but
+  # the merges join without it, so a player spelled two ways (an Opta rename,
+  # SPADL vs lineups) came out as a cross product -- 2 spellings across 4
+  # tables = 16 rows, each one summed by every season-level consumer. Use the
+  # most frequent spelling, ties alphabetical.
+  canon <- data.table::rbindlist(list(
+    lineup_dt[!is.na(player_name), .(player_id, player_name)],
+    dt[!is.na(player_name), .(player_id, player_name)]
+  ))[, .N, by = .(player_id, player_name)][
+    order(player_id, -N, player_name)][, .(canon_name = player_name[1L]), by = player_id]
+  if (nrow(canon) > 0) {
+    lineup_dt <- data.table::copy(lineup_dt)  # never edit the caller's lineups
+    dt[canon, player_name := i.canon_name, on = "player_id"]
+    lineup_dt[canon, player_name := i.canon_name, on = "player_id"]
+  }
+
   # --- Shooting stats ---
   shots_dt <- dt[action_type == "shot"]
   # Own goals are logged as a "shot" (type-16 Goal, qualifier 28) attributed to
@@ -1183,10 +1199,17 @@ aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0,
   result <- shooting[minutes_df, on = join_keys]
   result <- assisting[result, on = join_keys]
   result <- passing[result, on = join_keys]
+  n_dup <- sum(duplicated(result[, join_keys, with = FALSE]))
+  if (n_dup > 0) {
+    cli::cli_abort("aggregate_player_xmetrics: {n_dup} duplicate {.val {join_keys}} row{?s} after the merges (R043 fan-out).")
+  }
 
   # Drop duplicate player_name columns from data.table joins
   i_cols <- grep("^i\\.", names(result), value = TRUE)
   if (length(i_cols) > 0) result[, (i_cols) := NULL]
+  # The surviving player_name comes from the outermost table (passing), which
+  # is NA for a player with no passes; take it from the one-name map instead.
+  if (nrow(canon) > 0) result[canon, player_name := i.canon_name, on = "player_id"]
 
   # Fill NAs with 0
   # NOTE: the xGOT decomposition columns (xgot/placement_added/xgot_placement/

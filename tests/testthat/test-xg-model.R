@@ -313,6 +313,34 @@ test_that("aggregate_player_xmetrics computes zonal finishing over-performance",
   expect_equal(r$npg_minus_npxg, 2 - 0.75)
 })
 
+test_that("aggregate_player_xmetrics gives one row per player across name spellings (R043)", {
+  # p1 is spelled "A. Silva" in m1 and "Silva" in m2 (an Opta rename). Before
+  # R043 every component grouped by name and the merges joined without it, so
+  # this came out as a cross product of rows that consumers then summed.
+  spadl <- data.frame(
+    match_id = c("m1", "m2"), action_id = 1:2, period_id = 1L,
+    team_id = "t1", player_id = "p1", player_name = c("A. Silva", "Silva"),
+    action_type = "shot", result = c("success", "fail"), bodypart = "foot_right",
+    start_x = 90, start_y = 50, end_x = 100, end_y = 50,
+    xg = c(0.30, 0.20), is_penalty = 0L, opta_type_id = c(16L, 15L),
+    time_seconds = 600, stringsAsFactors = FALSE
+  )
+  lineups <- data.frame(
+    match_id = c("m1", "m2", "m3"), team_id = "t1", team_name = "T",
+    player_id = "p1", player_name = c("A. Silva", "Silva", "Silva"),
+    minutes_played = 90, stringsAsFactors = FALSE
+  )
+  res <- data.table::as.data.table(aggregate_player_xmetrics(spadl, lineups))
+  expect_equal(nrow(res), 1L)
+  expect_equal(res$player_name, "Silva")   # 3 of 5 rows use this spelling
+  expect_equal(res$minutes, 270)
+  expect_equal(res$shots, 2L)
+  expect_equal(res$goals, 1L)
+  expect_equal(res$xg, 0.50)
+  expect_equal(nrow(lineups), 3L)          # caller's lineups untouched
+  expect_equal(lineups$player_name[1], "A. Silva")
+})
+
 test_that("aggregate_player_xmetrics by_match keys per player-match", {
   # Same player, two matches: m1 (1 in-box goal, xg 0.3), m2 (1 in-box goal, xg 0.5)
   spadl <- data.frame(
