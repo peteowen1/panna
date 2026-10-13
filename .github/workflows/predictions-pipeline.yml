@@ -201,7 +201,10 @@ jobs:
           # naming the actual missing file.
           fetch_cache 06_seasonal_ratings.rds "$CACHE_SKILLS" required || exit 1
           fetch_cache 07_seasonal_ratings.rds "$CACHE_OPTA" optional || exit 1
-          for f in 01_match_stats.rds 02b_decay_params.rds 03_skill_spm.rds; do
+          # 01_match_stats.rds is NOT downloaded: the predictions-cache copy is
+          # refreshed only by hand and sat at 2026-07-05 (R092). The next step
+          # rebuilds it, same as psr-weekly-snapshot.yml (R001).
+          for f in 02b_decay_params.rds 03_skill_spm.rds; do
             fetch_cache "$f" "$CACHE_SKILLS" optional || exit 1
           done
 
@@ -217,6 +220,38 @@ jobs:
             echo "FATAL: No seasonal ratings cache found. Run upload_prediction_caches.R first."
             exit 1
           fi
+
+      # R092: team skill features (step 02b) read this table for training rows
+      # and for upcoming fixtures. Own R process, as in psr-weekly-snapshot.yml:
+      # freed memory is not returned to the OS, so sharing a process with the
+      # pipeline would carry its peak into step 02b. ~6 min.
+      - name: Rebuild match stats (skills step 01)
+        env:
+          PANNADATA_DIR: ${{ runner.temp }}/pannadata
+        run: |
+          cat > /tmp/run_step01.R << 'EOF'
+          pannadata_path <- Sys.getenv("PANNADATA_DIR", "../pannadata/data")
+          opta_path <- file.path(pannadata_path, "opta")
+          devtools::load_all()
+          pannadata_dir(pannadata_path)
+          opta_data_dir(opta_path)
+          run_steps <- list(
+            step_01_compute_match_stats    = TRUE,
+            step_02_estimate_skills        = FALSE,
+            step_02b_optimize_params       = FALSE,
+            step_03_skill_spm              = FALSE,
+            step_04_skill_xrapm            = FALSE,
+            step_05_skill_panna_ratings    = FALSE,
+            step_06_seasonal_skill_ratings = FALSE,
+            step_07_train_psr_model        = FALSE,
+            step_08_export_skills          = FALSE,
+            step_08b_export_psr_weekly     = FALSE,
+            step_09_career_panna           = FALSE
+          )
+          source("data-raw/estimated-skills/run_skills_pipeline.R")
+          EOF
+          Rscript /tmp/run_step01.R
+          test -f data-raw/cache-skills/01_match_stats.rds || { echo "FATAL: step 01 wrote no 01_match_stats.rds"; exit 1; }
 
       - name: Run predictions pipeline
         env:
@@ -345,6 +380,18 @@ jobs:
             source('data-raw/match-predictions-opta/run_predictions_opta.R', chdir = FALSE)
             if (isTRUE(pipeline_failed)) quit(status = 1)
           "
+
+      # A branch run publishes nothing (R026), so keep its predictions as a run
+      # artifact: that is how a change is compared with the live
+      # predictions-latest copy before it merges.
+      - name: Keep predictions as an artifact (branch runs)
+        if: always() && env.PANNA_PUBLISH_DISABLED == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: predictions-branch-run
+          path: data-raw/cache-predictions-opta/predictions.parquet
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Pipeline summary
         if: always()
