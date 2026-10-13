@@ -1661,7 +1661,14 @@ aggregate_player_game_epv <- function(spadl_with_epv, lineups = NULL,
       # Per-90 rates
       epv_cols <- grep("^epv_", names(player_epv), value = TRUE)
       epv_cols <- setdiff(epv_cols, grep("_p90$|_adj$", epv_cols, value = TRUE))
-      mins_safe <- pmax(player_epv$minutes_played, 1, na.rm = TRUE)
+      # R114: no lineup row means unknown minutes, so per-90 is NA -- not
+      # "1 minute", which multiplied the player's EPV by 90.
+      n_no_min <- sum(is.na(player_epv$minutes_played))
+      if (n_no_min > 0) {
+        message(sprintf("aggregate_player_game_epv: %d player-match row(s) have no lineup minutes; their *_p90 are NA",
+                        n_no_min))
+      }
+      mins_safe <- pmax(player_epv$minutes_played, 1)
       for (col in epv_cols) {
         p90_col <- paste0(col, "_p90")
         data.table::set(player_epv, j = p90_col,
@@ -1691,8 +1698,10 @@ aggregate_player_game_epv <- function(spadl_with_epv, lineups = NULL,
     player_epv[, pos_group := NULL]
   }
 
-  # Fill remaining NAs in numeric columns
+  # Fill remaining NAs in numeric columns -- except per-90 rates, which stay NA
+  # where minutes are unknown (R114).
   num_cols <- names(player_epv)[vapply(player_epv, is.numeric, logical(1))]
+  num_cols <- num_cols[!grepl("_p90$", num_cols)]
   for (col in num_cols) {
     data.table::set(player_epv, which(is.na(player_epv[[col]])), col, 0)
   }

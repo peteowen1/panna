@@ -155,3 +155,17 @@ test_that("aggregate_player_game_epv position centering works", {
   alice <- result[result$player_id == "p1", ]
   expect_equal(alice$epv_adj, 0.1)
 })
+
+test_that("aggregate_player_game_epv gives NA per-90 without lineup minutes (R114)", {
+  spadl <- data.frame(
+    player_id = c("p1", "p2"), player_name = c("Alice", "Bob"),
+    team_id = "t1", match_id = "m1", action_type = c("pass", "pass"),
+    player_credit = c(0.3, 0.3), stringsAsFactors = FALSE
+  )
+  lineups <- data.frame(player_id = "p1", match_id = "m1", minutes_played = 45,
+                        position = "MID", stringsAsFactors = FALSE)
+  expect_message(result <- aggregate_player_game_epv(spadl, lineups = lineups),
+                 "have no lineup minutes", fixed = TRUE)
+  expect_equal(result$epv_total_p90[result$player_id == "p1"], 0.6)
+  expect_true(is.na(result$epv_total_p90[result$player_id == "p2"]))  # was 0.3 * 90 = 27
+})
