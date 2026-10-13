@@ -286,6 +286,7 @@ cmp <- xm[cand[, .(match_id, player_id)], on = c("match_id", "player_id")]
 
 cross_check_rows <- list()
 max_p90_diff <- 0
+n_compared <- 0L  # R162: a max over zero comparisons is not a pass
 for (i in seq_len(nrow(cand))) {
   mid <- cand$match_id[i]; pid <- cand$player_id[i]
   shipped <- xm[match_id == mid & player_id == pid]
@@ -296,7 +297,7 @@ for (i in seq_len(nrow(cand))) {
     s_val <- if (nrow(shipped) == 1 && p90col %in% names(shipped)) shipped[[p90col]] else NA_real_
     m_val <- mine[[p90col]]
     d <- abs((s_val %||% NA_real_) - m_val)
-    if (!is.na(d)) max_p90_diff <- max(max_p90_diff, d)
+    if (!is.na(d)) { max_p90_diff <- max(max_p90_diff, d); n_compared <- n_compared + 1L }
     row_diffs[[p90col]] <- list(shipped = s_val, recomputed = m_val)
   }
   cli_alert_info(
@@ -305,7 +306,10 @@ for (i in seq_len(nrow(cand))) {
   cross_check_rows[[i]] <- list(match_id = mid, player_id = pid, minutes = mine$minutes,
                                  woe_per90 = row_diffs)
 }
-cli_alert_success("xmetrics_bymatch cross-check: max |shipped - recomputed| woe_per90 across {nrow(cand)} player-matches x 5 contests = {max_p90_diff}")
+if (n_compared == 0L) {
+  cli::cli_abort("xmetrics_bymatch cross-check compared nothing: no shipped row matched any of the {nrow(cand)} candidates.")
+}
+cli_alert_success("xmetrics_bymatch cross-check: max |shipped - recomputed| woe_per90 over {n_compared} compared values ({nrow(cand)} player-matches x 5 contests) = {max_p90_diff}")
 
 # ------------------------------------------------------------------------------
 # 7. Write fixtures file (small, committable)

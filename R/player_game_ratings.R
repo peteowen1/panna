@@ -130,7 +130,10 @@ build_player_game_ratings <- function(player_game_epv,
 
   # Per-90 piero_value
   if ("minutes_played" %in% names(result)) {
-    mins_safe <- pmax(result$minutes_played, 1, na.rm = TRUE)
+    # R114: unknown minutes (NA, or the 0 that aggregate_player_game_epv()
+    # fills for a player with no lineup row) give NA, not a 1-minute 90x rate.
+    mins <- result$minutes_played
+    mins_safe <- data.table::fifelse(is.na(mins) | mins <= 0, NA_real_, pmax(mins, 1))
     result[, piero_value_p90 := piero_value / (mins_safe / 90)]
   }
 
@@ -140,7 +143,8 @@ build_player_game_ratings <- function(player_game_epv,
 
   # Fill NAs in the remaining numeric columns (EPV components, counts). WPA and
   # PSV columns and piero_value keep their NAs so a missing value looks missing.
-  keep_na <- c("psv", "psv_raw", "osv", "dsv", "piero_value", "piero_value_p90",
+  keep_na <- c("psv", "psv_raw", "osv", "dsv", "piero_value",
+               grep("_p90$", names(result), value = TRUE),  # R114: unknown rate stays NA
                grep("^wpa_|^max_wpa$", names(result), value = TRUE))
   num_cols <- setdiff(names(result)[vapply(result, is.numeric, logical(1))], keep_na)
   for (col in num_cols) {
