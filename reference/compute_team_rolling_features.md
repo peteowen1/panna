@@ -14,7 +14,10 @@ compute_team_rolling_features(results, windows = c(5L, 10L, 20L))
 - results:
 
   Data frame of match results with match_id, match_date, home_team,
-  away_team, home_goals, away_goals, home_xg, away_xg
+  away_team, home_goals, away_goals, home_xg, away_xg. With
+  home_team_id/away_team_id present, clubs that share a name are tracked
+  separately (see
+  [`.disambiguate_collided_team_names()`](https://peteowen1.github.io/panna/reference/dot-disambiguate_collided_team_names.md)).
 
 - windows:
 

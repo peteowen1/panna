@@ -58,7 +58,9 @@ lagged windows (no data leakage). Uses data.table frollmean + shift.</p>
 
 <dl><dt id="arg-results">results<a class="anchor" aria-label="anchor" href="#arg-results"></a></dt>
 <dd><p>Data frame of match results with match_id, match_date,
-home_team, away_team, home_goals, away_goals, home_xg, away_xg</p></dd>
+home_team, away_team, home_goals, away_goals, home_xg, away_xg. With
+home_team_id/away_team_id present, clubs that share a name are tracked
+separately (see <code><a href="dot-disambiguate_collided_team_names.html">.disambiguate_collided_team_names()</a></code>).</p></dd>
 
 
 <dt id="arg-windows">windows<a class="anchor" aria-label="anchor" href="#arg-windows"></a></dt>
