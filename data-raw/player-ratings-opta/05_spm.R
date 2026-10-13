@@ -35,6 +35,8 @@ opta_stats_bundle <- read_spm_opta_stats(cache_dir)
 opta_stats <- opta_stats_bundle$opta_stats
 opta_xmetrics <- opta_stats_bundle$opta_xmetrics
 rm(opta_stats_bundle); gc(verbose = FALSE)
+# R079: say which competition-seasons train SPM with xg/npxg/xa imputed to 0.
+.report_xmetrics_coverage(opta_stats, opta_xmetrics)
 
 rapm_results <- readRDS(file.path(cache_dir, "04_rapm.rds"))
 rapm_ratings <- rapm_results$ratings

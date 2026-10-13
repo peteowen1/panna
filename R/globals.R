@@ -298,6 +298,7 @@ utils::globalVariables(c(
   # data.table join prefix columns (i. prefix)
   "i.action_id",
   "canon_name",
+  "has_xm",
   "i.canon_name",
   "i.kp_is_goal",
   "i.kp_xa",
