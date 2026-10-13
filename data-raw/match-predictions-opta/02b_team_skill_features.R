@@ -198,8 +198,9 @@ if (nrow(upcoming) > 0 && !is.null(latest_lineups)) {
   # R092 (panna#307): upcoming fixtures take skills "as of today" from this
   # cache, so a cache that stopped updating serves months-old form while every
   # NA check passes. Say how far behind it is; warn in CI past 14 days.
-  if ("match_date" %in% names(ms_fixture) && nrow(ms_fixture) > 0) {
-    ms_last <- max(as.Date(ms_fixture$match_date), na.rm = TRUE)
+  ms_dates <- if ("match_date" %in% names(ms_fixture)) as.Date(ms_fixture$match_date) else as.Date(character(0))
+  if (any(!is.na(ms_dates))) {
+    ms_last <- max(ms_dates, na.rm = TRUE)
     ms_lag <- as.integer(Sys.Date() - ms_last)
     message(sprintf("  Skills cache for fixtures ends %s (%d days ago)", format(ms_last), ms_lag))
     if (ms_lag > 14) {

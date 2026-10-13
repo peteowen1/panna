@@ -306,16 +306,17 @@ test_that(".report_xmetrics_coverage flags uncovered seasons and warns only on r
     season = c("2012-2013", "2012-2013", "2025-2026", "2025-2026", "2025-2026"),
     minsPlayed = 90
   )
-  xm_ok <- data.frame(player_id = c("a", "b"), competition = "EPL", season = "2025-2026", minutes = 90)
+  xm_ok <- data.frame(player_id = c("a", "b"), league = "ENG", season = "2025-2026", minutes = 90)  # step-01 shape
   msgs <- testthat::capture_messages(out <- capture.output(cov <- .report_xmetrics_coverage(st, xm_ok)))
   expect_true(any(grepl("EPL: 2012-2013", msgs)))
   expect_true(any(grepl("never have xMetrics.*League_Two", msgs)))
   expect_false(any(grepl("::warning::", out)))           # old gap only: no CI warning
   expect_equal(cov[competition == "EPL" & season == "2025-2026", share], 1)
 
-  xm_gap <- data.frame(player_id = "a", competition = "EPL", season = "2012-2013", minutes = 90)
+  xm_gap <- data.frame(player_id = "a", league = "ENG", season = "2012-2013", minutes = 90)
   out2 <- capture.output(suppressMessages(.report_xmetrics_coverage(st, xm_gap)))
   expect_true(any(grepl("::warning::xMetrics missing for RECENT EPL 2025-2026", out2)))
 
   expect_null(suppressMessages(.report_xmetrics_coverage(st, NULL)))
+  expect_null(suppressMessages(.report_xmetrics_coverage(st, data.frame(player_id = "a", season = "2025-2026"))))
 })

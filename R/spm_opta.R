@@ -642,7 +642,7 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
 #' @rdname dot-spm_opta_stats_keep_cols
 #' @keywords internal
 .spm_xmetrics_keep_cols <- function(nm) {
-  keep <- c("season", "player_id", "competition", "minutes", "xg", "npxg", "xa",
+  keep <- c("season", "player_id", "league", "competition", "minutes", "xg", "npxg", "xa",
             "xpass_overperformance", "aerial_woe", "aerial_poss_woe",
             "takeon_woe", "tackle_poss_woe", "containment_woe",
             "npg_minus_npxg", "ibox_g_minus_xg", "obox_g_minus_xg",
@@ -668,7 +668,7 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
 #' @param opta_stats Player-match stats with player_id, competition, season
 #'   and a minutes column.
 #' @param opta_xmetrics xMetrics season table with player_id, season and
-#'   (ideally) competition.
+#'   either competition (Opta name) or league (panna code, as step 01 adds).
 #' @param recent_seasons Number of latest season end years that warn.
 #' @param floor Share of minutes below which a competition-season counts as
 #'   uncovered.
@@ -683,16 +683,34 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
     message("xMetrics coverage: not checked (missing table or columns)")
     return(invisible(NULL))
   }
-  st <- data.table::data.table(player_id = opta_stats$player_id, competition = opta_stats$competition,
-                               season = opta_stats$season, m = as.numeric(opta_stats[[min_col]]))
+  # The pipeline's xmetrics carry a panna league code (`league`, e.g. "ENG",
+  # added in step 01) while the stats carry the Opta competition name ("EPL").
+  # Map the code; without either column coverage cannot be scoped, so say so.
+  xm_comp <- if ("competition" %in% names(opta_xmetrics)) {
+    as.character(opta_xmetrics$competition)
+  } else if ("league" %in% names(opta_xmetrics)) {
+    codes <- unique(as.character(opta_xmetrics$league))
+    map <- stats::setNames(vapply(codes, function(cd) tryCatch(as.character(to_opta_league(cd)), error = function(e) NA_character_),
+                                  character(1)), codes)
+    unname(map[as.character(opta_xmetrics$league)])
+  } else {
+    NULL
+  }
+  if (is.null(xm_comp)) {
+    message("xMetrics coverage: not checked (xmetrics has neither competition nor league)")
+    return(invisible(NULL))
+  }
+  st <- data.table::data.table(player_id = as.character(opta_stats$player_id),
+                               competition = as.character(opta_stats$competition),
+                               season = as.character(opta_stats$season), m = as.numeric(opta_stats[[min_col]]))
   st <- st[!is.na(m) & m > 0, list(m = sum(m)), by = c("player_id", "competition", "season")]
-  key <- intersect(c("player_id", "competition", "season"), names(opta_xmetrics))
-  xk <- unique(data.table::as.data.table(lapply(stats::setNames(key, key), function(k) opta_xmetrics[[k]])))
+  xk <- unique(data.table::data.table(player_id = as.character(opta_xmetrics$player_id), competition = xm_comp,
+                                      season = as.character(opta_xmetrics$season)))
   xk[, has_xm := TRUE]
-  st <- xk[st, on = key]
+  st <- xk[st, on = c("player_id", "competition", "season")]
   st[is.na(has_xm), has_xm := FALSE]
   cov <- st[, list(minutes = sum(m), share = sum(m[has_xm]) / sum(m)), by = c("competition", "season")]
-  xm_comps <- if ("competition" %in% names(opta_xmetrics)) unique(opta_xmetrics$competition) else unique(cov$competition)
+  xm_comps <- unique(stats::na.omit(xm_comp))
   low <- cov[share < floor & competition %in% xm_comps]
   never <- setdiff(unique(cov$competition), xm_comps)
   if (length(never) > 0) {

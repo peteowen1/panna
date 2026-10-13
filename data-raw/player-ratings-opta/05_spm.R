@@ -36,7 +36,8 @@ opta_stats <- opta_stats_bundle$opta_stats
 opta_xmetrics <- opta_stats_bundle$opta_xmetrics
 rm(opta_stats_bundle); gc(verbose = FALSE)
 # R079: say which competition-seasons train SPM with xg/npxg/xa imputed to 0.
-.report_xmetrics_coverage(opta_stats, opta_xmetrics)
+tryCatch(.report_xmetrics_coverage(opta_stats, opta_xmetrics),
+         error = function(e) message("xMetrics coverage report failed (ignored): ", conditionMessage(e)))
 
 rapm_results <- readRDS(file.path(cache_dir, "04_rapm.rds"))
 rapm_ratings <- rapm_results$ratings
