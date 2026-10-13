@@ -585,7 +585,7 @@ max_failed_league_seasons <- if (exists("max_failed_league_seasons")) {
 min_coverage_frac <- if (exists("min_coverage_frac")) min_coverage_frac else 0.90
 
 # R077: the coverage floor is a pooled fraction, so a whole league can drop out
-# (e.g. 3 of 30 league-seasons) while it passes. Any requested league with ZERO
+# (e.g. 3 of 30 league-seasons) while it passes. Any attempted league with ZERO
 # league-seasons with shots stops the run unless explicitly allow-listed.
 allow_leagues_without_shots <- if (exists("allow_leagues_without_shots")) {
   allow_leagues_without_shots
@@ -635,7 +635,12 @@ if (length(failed_ls) > max_failed_league_seasons) {
     call. = FALSE)
 }
 
-leagues_no_shots <- setdiff(leagues, c(unique(combined_shots$league), allow_leagues_without_shots))
+# Only leagues that entered the season loop: a league with zero seasons (none
+# listed, or none left after a seasons/min_season filter, e.g. a tournament in
+# an incremental run) is already reported in empty_leagues above and stays
+# allowed, as before.
+leagues_attempted <- unique(sub(" .*$", "", attempted_ls))
+leagues_no_shots <- setdiff(leagues_attempted, c(unique(combined_shots$league), allow_leagues_without_shots))
 if (length(leagues_no_shots) > 0) {
   stop(sprintf(
     paste0("%d requested league(s) have no league-season with shots/xG: %s. ",
