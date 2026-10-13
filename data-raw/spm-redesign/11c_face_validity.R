@@ -83,7 +83,8 @@ print(pred_rated[, .(n = .N, mean_net = mean(pred_net), sd_net = sd(pred_net),
                  by = role_group][order(-mean_net)], digits = 3)
 
 cli::cli_h1("5. Top 10 by predicted DEFENSE (DPM degeneracy probe)")
-print(pred_rated[order(pred_def)][1:10, .(player_name, role_group, window_minutes,
+# R190: defense is positive=good since 2026-09-04, so the best are the highest.
+print(pred_rated[order(-pred_def)][1:10, .(player_name, role_group, window_minutes,
                                           pred_def, pred_net)], digits = 3)
 
 fwrite(pred_rated[order(-pred_net)][1:100, .(player_name, role_group, window_minutes,

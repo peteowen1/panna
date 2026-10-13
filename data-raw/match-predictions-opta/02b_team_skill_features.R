@@ -203,8 +203,7 @@ if (nrow(upcoming) > 0 && !is.null(latest_lineups)) {
     ms_lag <- as.integer(Sys.Date() - ms_last)
     message(sprintf("  Skills cache for fixtures ends %s (%d days ago)", format(ms_last), ms_lag))
     if (ms_lag > 14) {
-      cat(sprintf("::warning::01_match_stats.rds ends %s, %d days before today: upcoming-fixture team skills are that stale (R092, panna#307)
-",
+      cat(sprintf("::warning::01_match_stats.rds ends %s, %d days before today: upcoming-fixture team skills are that stale (R092, panna#307)\n",
                   format(ms_last), ms_lag))
     }
   }
