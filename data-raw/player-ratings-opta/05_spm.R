@@ -707,17 +707,43 @@ if (isTRUE(spm_use_panel)) {
   # value correlates only 0.55 (offense) / 0.12 (defense) with what a prior
   # trained on data through 2016 alone would say.
   #
-  # Score EVERY vintage year too (predict_spm_panel() already supports scoring
-  # any slice of the panel -- this reuses it, no new fitting) so
-  # 07_seasonal_ratings.R's per-season loop can pick the vintage matching its
-  # own season instead of always reading the latest one. Small marginal cost:
-  # one more predict() call per vintage on already-fitted models.
+  # Score EVERY vintage year too, so 07_seasonal_ratings.R's per-season loop
+  # can pick the vintage matching its own season instead of always reading
+  # the latest one.
+  #
+  # R096 (review 2026-10-11): each vintage Y is scored by models fit ONLY on
+  # vintages <= Y (assert_asof_panel_window), not by the all-vintage models
+  # above, whose coefficients learned from later seasons' targets. The latest
+  # vintage reuses the full fits (vintages <= max is the whole panel).
+  # Measured 2026-10-13 on vintage 2020 (18,025 players): as-of vs all-vintage
+  # prior cor 0.968 offense / 0.987 defense. Cost ~0.5-1.5 min per vintage.
+  .s6_fit_asof <- function(vy) {
+    tp <- s6_panel[s6_panel$vintage_year <= vy, ]
+    assert_asof_panel_window(tp, vy)
+    list(
+      go = fit_spm_panel(tp, target = "offense", role_pooling = TRUE,
+                         sign_constraints = TRUE, weight_transform = "linear",
+                         alpha = 0.5, deviation_penalty_mult = 5, nfolds = 5, seed = 1),
+      gd = fit_spm_panel(tp, target = "defense", role_pooling = TRUE,
+                         sign_constraints = TRUE, weight_transform = "linear",
+                         alpha = 0.5, deviation_penalty_mult = 5, nfolds = 5, seed = 1),
+      xo = fit_spm_panel_xgb(tp, target = "offense", seed = 1),
+      xd = fit_spm_panel_xgb(tp, target = "defense", seed = 1)
+    )
+  }
+  s6_max_vintage <- max(s6_panel$vintage_year)
   s6_by_vintage <- lapply(sort(unique(s6_panel$vintage_year)), function(vy) {
     s6_v <- s6_panel[s6_panel$vintage_year == vy, ]
-    go <- predict_spm_panel(s6_off_glmnet, s6_v)
-    gd <- predict_spm_panel(s6_def_glmnet, s6_v)
-    xo <- predict_spm_panel_xgb(s6_off_xgb, s6_v)
-    xd <- predict_spm_panel_xgb(s6_def_xgb, s6_v)
+    f <- if (vy == s6_max_vintage) {
+      list(go = s6_off_glmnet, gd = s6_def_glmnet, xo = s6_off_xgb, xd = s6_def_xgb)
+    } else {
+      cat(sprintf("  S6 vintage %d: fitting on vintages <= %d (R096)\n", vy, vy))
+      .s6_fit_asof(vy)
+    }
+    go <- predict_spm_panel(f$go, s6_v)
+    gd <- predict_spm_panel(f$gd, s6_v)
+    xo <- predict_spm_panel_xgb(f$xo, s6_v)
+    xd <- predict_spm_panel_xgb(f$xd, s6_v)
     .assert_s6_ids_match(go$player_id, xo$player_id, sprintf("S6 vintage %d offense", vy))
     .assert_s6_ids_match(gd$player_id, xd$player_id, sprintf("S6 vintage %d defense", vy))
     data.frame(
@@ -728,6 +754,31 @@ if (isTRUE(spm_use_panel)) {
     )
   })
   s6_by_vintage <- do.call(rbind, s6_by_vintage)
+
+  # GK rows that slip into the outfield-only panel (role GK by classify_role()
+  # but not by .detect_gk_rows(); 9 of 156,307 rows on 2026-10-13) are
+  # dropped here, so 07 gives those players the legacy prior as designed for
+  # keepers. Their keeper per-90s sit far outside the outfield training range
+  # (gsaa_per90 z = 214 on a 140-minute window), and the as-of vintage-2022
+  # glmnet extrapolated them to -21.9 / -8.4 goals per 90.
+  s6_gk_keys <- unique(paste(s6_panel$player_id[s6_panel$role == "GK"],
+                             s6_panel$vintage_year[s6_panel$role == "GK"]))
+  s6_is_gk <- paste(s6_by_vintage$player_id, s6_by_vintage$vintage_year) %in% s6_gk_keys
+  if (any(s6_is_gk)) {
+    cat(sprintf("  S6 by-vintage: dropped %d GK-role row(s); those players keep the legacy prior\n",
+                sum(s6_is_gk)))
+    s6_by_vintage <- s6_by_vintage[!s6_is_gk, ]
+  }
+  # No prior can be worth more than a goal per 90 either way. Fail loudly
+  # rather than seed a season's xRAPM with an extrapolated value.
+  s6_bad <- abs(s6_by_vintage$offense_spm_s6) > 1 | abs(s6_by_vintage$defense_spm_s6) > 1
+  if (any(s6_bad)) {
+    cli::cli_abort(c(
+      "S6 by-vintage prior has {sum(s6_bad)} value(s) beyond +/-1 goal per 90.",
+      "x" = "Vintage(s) {unique(s6_by_vintage$vintage_year[s6_bad])}; max |value| {signif(max(abs(c(s6_by_vintage$offense_spm_s6[s6_bad], s6_by_vintage$defense_spm_s6[s6_bad]))), 3)}.",
+      "i" = "Likely a panel row with extreme per-90s from very few minutes; inspect it before shipping."
+    ))
+  }
 
   # panna#258 review: assert vintage coverage matches what was requested,
   # not just that SOMETHING came back -- a thin/schema-drifted vintage that
