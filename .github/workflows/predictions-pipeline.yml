@@ -386,7 +386,7 @@ jobs:
       # predictions-latest copy before it merges.
       - name: Keep predictions as an artifact (branch runs)
         if: always() && env.PANNA_PUBLISH_DISABLED == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: predictions-branch-run
           path: data-raw/cache-predictions-opta/predictions.parquet
