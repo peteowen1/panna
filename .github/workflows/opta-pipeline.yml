@@ -255,6 +255,9 @@ jobs:
           # R080: the as-of legacy prior for players outside each S6 vintage
           # (every GK, newcomers). Built locally by 04d + 04e like the panel;
           # without it step 07 gives those players prior 0, so fail here.
+          # COUPLED TO THE PANEL: when spm_panel.rds gains vintage Y, run
+          # 04d for Y-1 and 04e (LEGACY_ASOF_VINTAGES=2019:Y), then re-upload,
+          # or step 07 aborts on the missing vintage.
           if gh release download predictions-cache --repo peteowen1/pannadata \
                --pattern "legacy_spm_asof.parquet" --dir "$CACHE_DIR"; then
             echo "Downloaded legacy_spm_asof.parquet ($(stat -c %s "$CACHE_DIR/legacy_spm_asof.parquet") bytes)"
