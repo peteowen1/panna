@@ -107,6 +107,9 @@ if (is.character(cfg)) cfg <- jsonlite::fromJSON(cfg, simplifyDataFrame = FALSE,
 objective <- cfg$objective$name %||% cfg$learner$objective$name %||% "reg:squarederror"
 bs_raw <- cfg$learner$learner_model_param$base_score
 base_score <- as.numeric(gsub("[\\[\\]]", "", bs_raw, perl = TRUE))
+if (length(base_score) != 1L || !is.finite(base_score)) {
+  cli_abort("base_score extracted from booster config is not a single finite number.")
+}
 cli_alert_info("Objective from booster config: {objective}; base_score: {round(base_score, 5)}")
 
 envelope <- list(
@@ -256,6 +259,7 @@ cli_alert_info("Booster base_score (reusing step 3 extraction) = {round(base_sco
 
 logit <- function(p) log(p / (1 - p))
 
+parity_ok <- logical(nrow(scenarios))
 for (i in seq_len(nrow(scenarios))) {
   feats <- as.list(scenarios[i, wp$feature_names])
   raw_sum <- predict_manual(reloaded$trees, feats)
@@ -270,8 +274,14 @@ for (i in seq_len(nrow(scenarios))) {
     raw_sum + base_score
   }
   rpred  <- pred_scalar[i]
-  ok <- abs(manual - rpred) < 1e-5
+  ok <- isTRUE(abs(manual - rpred) < 1e-5)
+  parity_ok[i] <- ok
   cli_alert_info("{scenarios$label[i]}: R = {round(rpred, 5)}, manual = {round(manual, 5)}, diff = {signif(abs(manual - rpred), 3)} {ifelse(ok, '[OK]', '[MISMATCH]')}")
+}
+# The exported JSON is already on disk, so a mismatch must fail the run rather
+# than scroll past as a console line.
+if (!all(parity_ok)) {
+  cli_abort("Tree-walker parity FAILED (tolerance 1e-5) for: {paste(scenarios$label[!parity_ok], collapse = ', ')}. Do not upload {json_path}.")
 }
 
 # ------------------------------------------------------------------------------

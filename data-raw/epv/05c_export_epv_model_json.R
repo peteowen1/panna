@@ -49,6 +49,8 @@ if (length(unknown) > 0) cli_abort("Tree uses unknown features: {paste(unknown, 
 
 # Extract base_score from booster config. xgb.config returns either a
 # list (newer xgboost) or a JSON string. Handle both.
+# No fallback: a silent base_score of 0 would ship a worker model that is
+# offset wrong on every prediction, so a failed extraction aborts the export.
 base_score <- tryCatch({
   cfg <- xgb.config(booster)
   if (is.character(cfg)) cfg <- fromJSON(cfg, simplifyDataFrame = FALSE, simplifyVector = FALSE)
@@ -56,9 +58,11 @@ base_score <- tryCatch({
   # Value is like "[5.5080795E-1]" — strip brackets, parse float
   as.numeric(gsub("[\\[\\]]", "", bs_raw, perl = TRUE))
 }, error = function(e) {
-  cli_alert_warning("Could not extract base_score from booster config: {e$message}")
-  0.0
+  cli_abort("Could not extract base_score from booster config: {e$message}")
 })
+if (length(base_score) != 1L || !is.finite(base_score)) {
+  cli_abort("base_score extracted from booster config is not a single finite number.")
+}
 cli_alert_info("base_score: {round(base_score, 5)}")
 
 envelope <- list(

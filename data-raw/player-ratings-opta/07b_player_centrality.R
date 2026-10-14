@@ -56,28 +56,39 @@ lineups <- raw_data$lineups
 
 # Build player_matches data frame
 # Each row: player appeared in a match with their team vs opponent
-player_matches <- lineups %>%
-  select(
-    player_id = any_of(c("player_id", "player_href")),
-    team = any_of(c("team")),
-    match_id = any_of(c("match_id", "match_url")),
-    minutes = any_of(c("minutes", "min"))
-  )
-
-if (nrow(player_matches) == 0 || !"player_id" %in% names(player_matches)) {
-  message("  Could not build player_matches - skipping centrality")
+# Column names are those of load_opta_lineups() (team_name, minutes_played,
+# team_position); the old team/minutes/player_href names do not exist there, so
+# the select() silently produced a table with no team column.
+needed <- c("player_id", "team_name", "match_id", "team_position")
+if (!all(needed %in% names(lineups))) {
+  message(sprintf("  Lineups missing columns (%s) - skipping centrality",
+                  paste(setdiff(needed, names(lineups)), collapse = ", ")))
   break
 }
+player_matches <- lineups %>%
+  select(
+    player_id,
+    team = team_name,
+    match_id,
+    team_position,
+    minutes = any_of("minutes_played")
+  )
 
-# Add opponent (other team in same match)
-match_teams <- player_matches %>%
-  distinct(match_id, team) %>%
-  group_by(match_id) %>%
-  mutate(opponent = rev(team)) %>%
-  ungroup()
+# Add opponent (the other side of the same match, by home/away)
+side_teams <- function(side) {
+  player_matches %>%
+    filter(tolower(team_position) == side) %>%
+    distinct(match_id, .keep_all = FALSE, team) %>%
+    group_by(match_id) %>% slice(1L) %>% ungroup()
+}
+home_teams <- side_teams("home") %>% rename(home = team)
+away_teams <- side_teams("away") %>% rename(away = team)
 
 player_matches <- player_matches %>%
-  left_join(match_teams %>% select(match_id, team, opponent), by = c("match_id", "team"))
+  left_join(home_teams, by = "match_id") %>%
+  left_join(away_teams, by = "match_id") %>%
+  mutate(opponent = ifelse(tolower(team_position) == "home", away, home)) %>%
+  select(-team_position, -home, -away)
 
 # Filter out any NA opponents
 player_matches <- player_matches %>%

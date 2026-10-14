@@ -169,7 +169,8 @@ panna_ratings <- seasonal_xrapm %>%
   # Use the derived total_minutes; keep cache total_minutes as fallback
   # for players with no opta_player_stats row this season (rare; intl-only
   # players whose 2025-26 friendlies got filtered).
-  mutate(total_minutes = coalesce(total_minutes_real, total_minutes)) %>%
+  mutate(minutes_from_cache = is.na(total_minutes_real),
+         total_minutes = coalesce(total_minutes_real, total_minutes)) %>%
   select(-total_minutes_real)
 
 # panna#165: join raw RAPM columns (NA-filled, schema-stable, when the
@@ -196,6 +197,23 @@ if (sum(qualified) > 0) {
 message(sprintf("  Ranked %d players with total_minutes >= %d (of %d total)",
                 sum(qualified), MIN_MINUTES_FOR_RANK, nrow(panna_ratings)))
 
+# Guard: a top-50 ranked player whose minutes could NOT be re-derived from
+# opta_player_stats falls back to the cache's total_minutes, which has shipped
+# wrong values before (the Salah 511-vs-3058 bug above). The rank threshold
+# is applied to those same minutes, so a comparison against it can never fire
+# (the old top-50 < MIN_MINUTES check was vacuous); flag the fallback instead.
+top50_cache_min <- panna_ratings[which(panna_ratings$panna_rank <= 50L &
+                                         panna_ratings$minutes_from_cache), ]
+if (nrow(top50_cache_min) > 0L) {
+  warning(sprintf(
+    "%d top-50 panna_rank player(s) rely on cache total_minutes (no opta_player_stats row for %s): %s",
+    nrow(top50_cache_min), latest_season_str,
+    paste(sprintf("#%d %s (%.0f min)", top50_cache_min$panna_rank,
+                  top50_cache_min$player_name, top50_cache_min$total_minutes),
+          collapse = "; ")
+  ), call. = FALSE)
+}
+
 panna_ratings <- panna_ratings %>%
   select(
     panna_rank,
@@ -214,24 +232,6 @@ panna_ratings <- panna_ratings %>%
   mutate(across(c(panna, offense, defense, spm_overall,
                   rapm_raw, rapm_raw_offense, rapm_raw_defense), ~round(.x, 4))) %>%
   arrange(panna_rank)
-
-# Validation guard: a top-50 ranked player with implausibly low minutes is
-# a strong signal the upstream cache is corrupted (skills/06_seasonal
-# repeatedly ships wrong total_minutes for some players). After the
-# total_minutes override above this should never trigger — keep the check
-# as belt-and-braces for future cache schema changes.
-top50 <- panna_ratings %>% filter(!is.na(panna_rank), panna_rank <= 50L)
-top50_bad <- top50 %>% filter(total_minutes < MIN_MINUTES_FOR_RANK)
-if (nrow(top50_bad) > 0L) {
-  stop(sprintf(
-    "%d top-50 panna_rank player(s) have total_minutes < %d after override — refusing to publish a leaderboard that surfaces low-sample players.\n  %s",
-    nrow(top50_bad), MIN_MINUTES_FOR_RANK,
-    paste(sprintf("  #%d %s (%.0f min)",
-                  top50_bad$panna_rank, top50_bad$player_name,
-                  top50_bad$total_minutes),
-          collapse = "\n")
-  ), call. = FALSE)
-}
 
 na_spm <- sum(is.na(panna_ratings$spm_overall))
 if (na_spm > 0) message(sprintf("  Note: %d players have no SPM rating (NA)", na_spm))
