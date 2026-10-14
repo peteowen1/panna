@@ -140,9 +140,10 @@ opta_data_dir <- function(path = NULL) {
       .opta_env$opta_dir <- normalizePath(opta_dir)
       return(.opta_env$opta_dir)
     }
-    # Directory doesn't exist yet, but return the path anyway
-    .opta_env$opta_dir <- normalizePath(opta_dir, mustWork = FALSE)
-    return(.opta_env$opta_dir)
+    # Directory doesn't exist yet: return the path anyway but do NOT cache it.
+    # The fallback can depend on the working directory, and caching it would
+    # pin every later call to the wrong place for the whole session.
+    return(normalizePath(opta_dir, mustWork = FALSE))
   }
 
   cli::cli_abort(c(

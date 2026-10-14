@@ -79,10 +79,12 @@ cat(sprintf("[%s] Section 3: Load Data\n", format(Sys.time(), "%H:%M:%S")))
 
 cat("=== Loading Data ===\n\n")
 
-# Prefer slim version (fewer columns, less memory) if available
-slim_path <- file.path(cache_dir, "01_match_stats_slim.rds")
+# Always the full step-01 output. A "_slim" variant used to win here when present,
+# but nothing produces it, so a stale leftover silently beat the fresh file (and
+# the source_fingerprint below read full_path, not the file actually loaded).
 full_path <- file.path(cache_dir, "01_match_stats.rds")
-ms_path <- if (file.exists(slim_path)) slim_path else full_path
+if (!file.exists(full_path)) stop("Missing match stats cache. Run step 01 first.")
+ms_path <- full_path
 cat(sprintf("Loading: %s\n", basename(ms_path)))
 match_stats <- readRDS(ms_path)
 gc(verbose = FALSE)
@@ -1175,11 +1177,12 @@ gk_skill_keep_cols <- character(0)
         ms_dt_gk <- ms_dt_gk[!is.na(season_end_year)]
       }
     } else {
-      ms_dt_gk[, season_end_year := data.table::fifelse(
-        data.table::month(match_date) >= 7L,
-        data.table::year(match_date) + 1L,
-        data.table::year(match_date)
-      )]
+      # Unreachable in practice (section 3 already aborted on the same table);
+      # kept as an abort because the old month>=7 guess mis-seasons calendar-year
+      # leagues (panna#224).
+      cli::cli_abort(paste("match_stats has neither {.field season_end_year} nor",
+                           "{.field season}; refusing to guess the season from",
+                           "match_date (wrong for calendar-year leagues)."))
     }
   }
 
