@@ -252,6 +252,19 @@ jobs:
             echo "::error::spm_panel.rds not on predictions-cache — step 05's S6 prior would abort. Build it locally (04c) and upload, or dispatch with the legacy path by setting spm_use_panel FALSE in the driver."
             exit 1
           fi
+          # R080: the as-of legacy prior for players outside each S6 vintage
+          # (every GK, newcomers). Built locally by 04d + 04e like the panel;
+          # without it step 07 gives those players prior 0, so fail here.
+          # COUPLED TO THE PANEL: when spm_panel.rds gains vintage Y, run
+          # 04d for Y-1 and 04e (LEGACY_ASOF_VINTAGES=2019:Y), then re-upload,
+          # or step 07 aborts on the missing vintage.
+          if gh release download predictions-cache --repo peteowen1/pannadata \
+               --pattern "legacy_spm_asof.parquet" --dir "$CACHE_DIR"; then
+            echo "Downloaded legacy_spm_asof.parquet ($(stat -c %s "$CACHE_DIR/legacy_spm_asof.parquet") bytes)"
+          else
+            echo "::error::legacy_spm_asof.parquet not on predictions-cache — build it locally (04d per season, then 04e) and upload."
+            exit 1
+          fi
 
       - name: Download intermediate caches (resume mode)
         if: inputs.start_step != '' && inputs.start_step != '1'
