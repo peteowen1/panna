@@ -1,14 +1,15 @@
 # Review batch 10 (R129, R130, R135): make silent failures loud.
 
-test_that("R129: remote load_opta_table aborts (vb_error_absent) on a season with 0 rows", {
+test_that("R129: remote load_opta_table warns (not aborts) on a season with 0 rows", {
   local_mocked_bindings(
     query_remote_opta_parquet = function(...) data.frame(match_id = character(0)),
     to_opta_league = function(league) league
   )
-  expect_error(
-    panna:::load_opta_table("lineups", "EPL", "1999-2000", NULL, source = "remote"),
-    class = "vb_error_absent"
+  expect_warning(
+    out <- panna:::load_opta_table("lineups", "EPL", "1999-2000", NULL, source = "remote"),
+    class = "panna_warning_empty_season"
   )
+  expect_equal(nrow(out), 0L)
 })
 
 test_that("R129: remote load_opta_table still returns rows when the season exists", {

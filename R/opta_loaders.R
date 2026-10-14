@@ -558,13 +558,15 @@ load_opta_table <- function(table_type, league, season, columns,
   # Handle remote source
   if (source == "remote") {
     res <- query_remote_opta_parquet(table_type, opta_league, season, columns)
-    # Same absent-season contract as the local branch below: a requested season
-    # with 0 rows is an error, not an empty frame that callers read as "no data".
+    # R129: a requested season with 0 rows used to come back silently. Warn
+    # (not abort, unlike the local branch): pipeline loops such as 10b and 07c
+    # legitimately hit leagues with no rows yet for the current season, and an
+    # abort there would fail the whole run.
     if (!is.null(season) && nrow(res) == 0L) {
-      cli::cli_abort(c(
-        "No data found for {opta_league} season {.val {season}}.",
+      cli::cli_warn(c(
+        "No remote {table_type} rows for {opta_league} season {.val {season}}.",
         "i" = "Note: leagues use {.val 2024-2025} format, tournaments use {.val {c('2024', '2024 Germany')}} format."
-      ), class = "vb_error_absent")
+      ), class = "panna_warning_empty_season")
     }
     return(res)
   }
