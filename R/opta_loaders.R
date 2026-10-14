@@ -368,10 +368,25 @@ load_opta_fixtures <- function(league, season = NULL, columns = NULL,
                                 status = NULL,
                                 source = c("remote", "local")) {
   source <- match.arg(source)
-  result <- load_opta_table("fixtures", league, season, columns, source)
 
-  if (!is.null(status) && "match_status" %in% names(result)) {
+  # The status filter needs match_status even when the caller selected
+  # narrower columns. Without this, columns = "match_id" + status = "Played"
+  # skipped the filter and returned every fixture, unplayed ones included:
+  # on 2026-10-14 check_events_coverage() counted all 83 unplayed A-League
+  # 2026-2027 fixtures as expected matches and aborted the season's game logs.
+  load_columns <- columns
+  if (!is.null(status) && !is.null(columns) && !"match_status" %in% columns) {
+    load_columns <- c(columns, "match_status")
+  }
+  result <- load_opta_table("fixtures", league, season, load_columns, source)
+
+  if (!is.null(status)) {
+    if (!"match_status" %in% names(result)) {
+      stop("load_opta_fixtures(): cannot filter by status because the ",
+           "fixtures table has no match_status column.", call. = FALSE)
+    }
     result <- result[result$match_status %in% status, , drop = FALSE]
+    if (!identical(load_columns, columns)) result$match_status <- NULL
   }
 
   result

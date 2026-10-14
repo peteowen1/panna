@@ -517,3 +517,45 @@ test_that(".sql_path quotes a path with an apostrophe so DuckDB can read it", {
                  panna:::.sql_path(normalizePath(f, winslash = "/")))
   expect_equal(nrow(DBI::dbGetQuery(con, sql)), 3L)
 })
+
+test_that("load_opta_fixtures applies the status filter when columns omit match_status", {
+  # Regression, 2026-10-14: columns = "match_id" + status = "Played" skipped the
+  # filter and returned unplayed fixtures, so check_events_coverage() counted
+  # 83 unplayed A-League 2026-2027 fixtures as expected matches.
+  fx <- data.frame(match_id = c("a", "b", "c"),
+                   match_status = c("Played", "Fixture", "Played"))
+  requested <- NULL
+  local_mocked_bindings(
+    load_opta_table = function(table_type, league, season, columns, source) {
+      requested <<- columns
+      if (is.null(columns)) fx else fx[, intersect(columns, names(fx)), drop = FALSE]
+    },
+    .package = "panna"
+  )
+
+  out <- load_opta_fixtures("AUS", "2026-2027", columns = "match_id",
+                            status = "Played")
+  expect_equal(out$match_id, c("a", "c"))
+  expect_equal(names(out), "match_id")
+  expect_true("match_status" %in% requested)
+
+  # Callers that asked for match_status keep it.
+  out2 <- load_opta_fixtures("AUS", "2026-2027",
+                             columns = c("match_id", "match_status"),
+                             status = "Fixture")
+  expect_equal(out2$match_id, "b")
+  expect_equal(names(out2), c("match_id", "match_status"))
+
+  # No status: columns pass through untouched.
+  out3 <- load_opta_fixtures("AUS", "2026-2027", columns = "match_id")
+  expect_equal(nrow(out3), 3L)
+})
+
+test_that("load_opta_fixtures errors rather than ignoring status when match_status is absent", {
+  local_mocked_bindings(
+    load_opta_table = function(...) data.frame(match_id = c("a", "b")),
+    .package = "panna"
+  )
+  expect_error(load_opta_fixtures("AUS", "2026-2027", status = "Played"),
+               "no match_status column")
+})
