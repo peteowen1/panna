@@ -12,7 +12,7 @@ devtools::load_all()
 
 # 2. Configuration ----
 
-cache_dir <- file.path("data-raw", "cache-predictions-opta")
+if (!exists("cache_dir")) cache_dir <- file.path("data-raw", "cache-predictions-opta")
 output_path <- file.path(cache_dir, "02_team_ratings.rds")
 
 # Use skill-based ratings if available (from estimated skills pipeline)
