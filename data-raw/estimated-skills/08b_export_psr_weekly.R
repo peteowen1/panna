@@ -42,9 +42,9 @@ if (psr_target == "goals") {
   cat("Re-run step 07 after fixing splint xG columns for xG-based PSR.\n\n")
 }
 
-slim_path <- file.path(cache_dir, "01_match_stats_slim.rds")
+# No "_slim" variant: nothing produces it, and a stale one would beat the fresh file.
 full_path  <- file.path(cache_dir, "01_match_stats.rds")
-ms_path    <- if (file.exists(slim_path)) slim_path else full_path
+ms_path    <- full_path
 if (!file.exists(ms_path)) {
   stop("Missing match stats cache. Run step 01 first.")
 }

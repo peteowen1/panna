@@ -557,7 +557,16 @@ load_opta_table <- function(table_type, league, season, columns,
 
   # Handle remote source
   if (source == "remote") {
-    return(query_remote_opta_parquet(table_type, opta_league, season, columns))
+    res <- query_remote_opta_parquet(table_type, opta_league, season, columns)
+    # Same absent-season contract as the local branch below: a requested season
+    # with 0 rows is an error, not an empty frame that callers read as "no data".
+    if (!is.null(season) && nrow(res) == 0L) {
+      cli::cli_abort(c(
+        "No data found for {opta_league} season {.val {season}}.",
+        "i" = "Note: leagues use {.val 2024-2025} format, tournaments use {.val {c('2024', '2024 Germany')}} format."
+      ), class = "vb_error_absent")
+    }
+    return(res)
   }
 
   # Local source - check for consolidated file first

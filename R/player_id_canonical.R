@@ -39,7 +39,7 @@ build_player_id_canonical_map <- function(lineups,
   if (!requireNamespace("stringi", quietly = TRUE))
     stop("Package 'stringi' required for accent normalization.")
   lu_meta <- unique(lineups[, .(player_id, player_name, team_name)])
-  lu_meta[, name_norm := tolower(trimws(gsub("[-\u036f]", "",
+  lu_meta[, name_norm := tolower(trimws(gsub("[\u0300-\u036f]", "",
                                                 stringi::stri_trans_nfd(player_name))))]
 
   ## Appearance count per id
