@@ -184,6 +184,37 @@ if (!is.null(spm_results$panel_s6)) {
   }
 }
 
+# R080 (Pete, 2026-10-14): the S6 panel is outfield-only and needs panel
+# history, so goalkeepers and newcomers have no vintage-S row and used to get
+# prior 0. They now take the legacy SPM prior rebuilt on seasons <= S-1 only
+# (same cut-off as vintage S). Built locally by 04d/04e and shipped on
+# predictions-cache. Gate (13f, lag 1): next-season raw-RAPM cor for those
+# players 0.360 -> 0.433, +0.072 [0.046, 0.099], n 935.
+legacy_spm_asof <- NULL
+if (!is.null(panel_s6_by_vintage)) {
+  legacy_asof_path <- file.path(cache_dir, "legacy_spm_asof.parquet")
+  if (file.exists(legacy_asof_path)) {
+    legacy_spm_asof <- as.data.frame(arrow::read_parquet(legacy_asof_path))
+    stopifnot(all(c("vintage_year", "player_id", "offense_spm", "defense_spm") %in%
+                    names(legacy_spm_asof)))
+    missing_v <- setdiff(unique(panel_s6_by_vintage$vintage_year), legacy_spm_asof$vintage_year)
+    if (length(missing_v)) {
+      cli::cli_abort(c(
+        "legacy_spm_asof.parquet has no rows for vintage(s) {missing_v}.",
+        "i" = "Build them with data-raw/player-ratings-opta/04d + 04e and re-upload."
+      ))
+    }
+    cat(sprintf("R080 legacy as-of fallback loaded: %d rows, vintages %s\n",
+                nrow(legacy_spm_asof),
+                paste(sort(unique(legacy_spm_asof$vintage_year)), collapse = ",")))
+  } else {
+    cli::cli_warn(c(
+      "No {.file {legacy_asof_path}}: players outside each S6 vintage (every GK, newcomers) get prior 0 (R080).",
+      "i" = "gh release download predictions-cache --repo peteowen1/pannadata --pattern legacy_spm_asof.parquet --dir {cache_dir}"
+    ))
+  }
+}
+
 # Free memory
 rm(spm_results); gc(verbose = FALSE)
 
@@ -210,7 +241,8 @@ fit_season_ratings_opta <- function(splint_data, opta_stats, season,
                                      opta_xmetrics = NULL,
                                      min_minutes_spm = 200, min_minutes_rapm = 200,
                                      prior_tables = NULL,
-                                     panel_s6_by_vintage = NULL) {
+                                     panel_s6_by_vintage = NULL,
+                                     legacy_spm_asof = NULL) {
   # panna#258: prefer a per-season S6 prior over the flat `prior_tables`
   # fallback. Vintage Y's window is [Y-5, Y) -- it excludes season Y itself
   # by construction, so vintage_year == season is the right, leak-free pick
@@ -225,6 +257,17 @@ fit_season_ratings_opta <- function(splint_data, opta_stats, season,
     )
     cat(sprintf("  panna#258: using vintage-%d S6 prior (%d players) -- not the flat one\n",
                 season, nrow(pv)))
+    # R080: players with no vintage-S row get the as-of legacy prior, not 0.
+    if (!is.null(legacy_spm_asof)) {
+      lg <- legacy_spm_asof[legacy_spm_asof$vintage_year == season &
+                              !(legacy_spm_asof$player_id %in% pv$player_id), ]
+      prior_tables$offense <- rbind(prior_tables$offense,
+                                    data.frame(player_id = lg$player_id, offense_spm = lg$offense_spm))
+      prior_tables$defense <- rbind(prior_tables$defense,
+                                    data.frame(player_id = lg$player_id, defense_spm = lg$defense_spm))
+      cat(sprintf("  R080: %d players outside vintage %d take the as-of legacy prior (built on seasons <= %d)\n",
+                  nrow(lg), season, season - 1L))
+    }
   } else if (!is.null(panel_s6_by_vintage)) {
     cat(sprintf("  panna#258: season %d outside panel vintage coverage -- flat/legacy prior fallback\n",
                 season))
@@ -687,7 +730,8 @@ saveRDS(list(
   defense_spm_glmnet = defense_spm_glmnet,
   defense_spm_xgb = defense_spm_xgb,
   prior_tables = prior_tables,
-  panel_s6_by_vintage = panel_s6_by_vintage
+  panel_s6_by_vintage = panel_s6_by_vintage,
+  legacy_spm_asof = legacy_spm_asof
 ), shared_path, compress = FALSE)
 rm(fit_fn, splint_data, opta_stats, opta_xmetrics)
 gc(verbose = FALSE)
@@ -716,7 +760,8 @@ if (exists(".log_rss", mode = "function")) .log_rss("season slices written, full
     min_minutes_spm = 200,
     min_minutes_rapm = 200,
     prior_tables = shared$prior_tables,
-    panel_s6_by_vintage = shared$panel_s6_by_vintage
+    panel_s6_by_vintage = shared$panel_s6_by_vintage,
+    legacy_spm_asof = shared$legacy_spm_asof
   )
   if (exists(".log_rss", mode = "function")) .log_rss(sprintf("season %d child end", season))
   saveRDS(res, out_path)
