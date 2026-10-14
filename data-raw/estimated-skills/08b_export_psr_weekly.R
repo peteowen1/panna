@@ -103,6 +103,7 @@ xm_source <- if (identical(Sys.getenv("XMETRICS_SOURCE"), "remote")) "remote" el
 match_stats <- enrich_match_stats_with_xmetrics(match_stats, verbose = FALSE,
                                                 source = xm_source)
 gc(verbose = FALSE)
+.log_rss("08b: loaded + xmetrics-enriched match_stats")
 
 # Stable per-player GK lookup, computed ONCE on the full match history here
 # (before match_stats gets column-narrowed for the snapshot loop below) and
@@ -475,6 +476,7 @@ cat(sprintf("  Stat columns detected: %d\n", length(stat_cols_all)))
 # Verified locally: narrowed vs full-width match_stats produce IDENTICAL
 # skill estimates (data-raw/debug/_run_verify_narrow_equivalence.R). Built via
 # `[[` (not bracket-select) — same safe pattern as the pl_src fix below.
+.log_rss("08b: before narrowing match_stats")
 .psr_lg_col_early <- if ("competition" %in% names(match_stats)) "competition" else
                      if ("league" %in% names(match_stats)) "league" else NULL
 needed_cols_loop <- .compute_snapshot_loop_columns(
@@ -488,11 +490,17 @@ match_stats <- data.table::setDT(stats::setNames(
   needed_cols_loop
 ))
 cat(sprintf("  Narrowed match_stats to %d columns for the snapshot loop\n", ncol(match_stats)))
+# The full-width table (~420 cols) is unreferenced now but not yet collected;
+# free it before the next allocations. 2026-10-14 the runner died right here
+# twice once the table grew past ~2.1M rows (runs 38506136847, 38507208923).
+gc(verbose = FALSE, full = TRUE)
+.log_rss("08b: after narrowing match_stats")
 
 # Pre-sort by date so each date filter is a fast prefix scan
 data.table::setorder(match_stats, match_date)
 match_date_vec <- match_stats$match_date  # cached for binary search
 cat(sprintf("  match_stats sorted by date\n"))
+.log_rss("08b: after sort")
 
 # --- Cross-league PSR offsets (transfer-graph calibration) ----
 # PSR is built from box-score rates that barely vary by league, so strong
@@ -552,6 +560,7 @@ if (psr_apply_offsets) {
   }
   cat(sprintf("  PSR league offsets loaded (%d leagues); decay-weighted blend built (%s, lambda=%.4f ~ %d-day half-life)\n",
               nrow(psr_offsets), psr_lg_col, PSR_BLEND_LAMBDA, round(log(2) / PSR_BLEND_LAMBDA)))
+  .log_rss("08b: after offset blend")
 } else {
   cat(sprintf("  NOTE: PSR league offsets %s -> not applied\n",
               if (is.null(psr_offsets)) "not found (run step 06 first)" else "disabled (no competition/minutes)"))
