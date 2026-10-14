@@ -473,7 +473,7 @@ jobs:
       # with upload_caches=false can still be compared against a baseline.
       - name: Keep step-07 output as a run artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: seasonal-ratings
           path: data-raw/cache-opta/07_seasonal_ratings.rds
