@@ -356,7 +356,8 @@ if (!is.null(existing_parquet) && "snapshot_date" %in% names(existing_parquet) &
     # (today-anchored grids from different run weekdays, offset-free GHA
     # recomputes, per-run `today` singletons). Off-grid rows are purged here so
     # legacy pollution drains instead of being carried forward verbatim.
-    before_cutoff <- existing_row_dates < recompute_cutoff
+    # !is.na(): the old data.table filter dropped NA-date rows; keep that.
+    before_cutoff <- !is.na(existing_row_dates) & existing_row_dates < recompute_cutoff
     keep_mask <- before_cutoff & on_grid(existing_row_dates)
     # Filter in Arrow, then convert only the kept rows (one copy, ~0.6 GB).
     keep_existing <- data.table::setDT(as.data.frame(existing_parquet[keep_mask, ]))
