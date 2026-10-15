@@ -11,7 +11,7 @@ devtools::load_all()
 
 # 2. Configuration ----
 
-cache_dir <- file.path("data-raw", "cache-predictions-opta")
+if (!exists("cache_dir")) cache_dir <- file.path("data-raw", "cache-predictions-opta")
 output_path <- file.path(cache_dir, "03_rolling_features.rds")
 
 ELO_K <- 20                    # fallback for any league NOT in ELO_MATCH_TYPE_K

@@ -217,6 +217,34 @@ if (tolower(Sys.getenv("PANNA_PUBLISH_DISABLED", "")) %in% c("true", "1")) {
   upload <- FALSE
 }
 if (isTRUE(upload)) {
+  # Resume reads only the LOCAL out_path, so a run on a machine without it
+  # rebuilds from scratch and would overwrite the published history with a
+  # cut-down file (clobber audit 2026-10-08, row 7). Refuse to publish unless
+  # every snapshot date already on the release is in the new file.
+  # An absent asset (first publish) leaves no file and skips the check; a
+  # download ERROR stops, since then the check cannot be done.
+  pub_dir <- tempfile("career_asof_pub_")
+  dir.create(pub_dir)
+  tryCatch(
+    piggyback::pb_download("career_panna_asof.parquet", repo = "peteowen1/pannadata",
+                           tag = "ratings-data", dest = pub_dir, overwrite = TRUE),
+    error = function(e) {
+      stop("Could not read the published career_panna_asof.parquet to check it ",
+           "would not be shrunk (", conditionMessage(e), "). Not uploading.", call. = FALSE)
+    })
+  pub_file <- file.path(pub_dir, "career_panna_asof.parquet")
+  if (file.exists(pub_file)) {
+    pub_dates <- unique(as.character(arrow::read_parquet(pub_file, col_select = "ref_date")$ref_date))
+    lost <- setdiff(pub_dates, as.character(unique(allr$ref_date)))
+    unlink(pub_file)
+    if (length(lost) > 0L) {
+      stop(sprintf(paste0("Refusing to upload: %d of %d published snapshot dates are missing ",
+                          "from %s (e.g. %s). Restore the published file locally and re-run ",
+                          "with resume, or delete the release asset by hand if the shrink is intended."),
+                   length(lost), length(pub_dates), out_path, lost[1]), call. = FALSE)
+    }
+    cat(sprintf("Publish check: all %d published snapshot dates kept.\n", length(pub_dates)))
+  }
   piggyback::pb_upload(out_path, repo = "peteowen1/pannadata", tag = "ratings-data",
                        name = "career_panna_asof.parquet", overwrite = TRUE)
   cat("Uploaded career_panna_asof.parquet to ratings-data release.\n")

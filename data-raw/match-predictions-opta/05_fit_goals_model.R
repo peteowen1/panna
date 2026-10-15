@@ -14,7 +14,7 @@ devtools::load_all()
 
 # 2. Configuration ----
 
-cache_dir <- file.path("data-raw", "cache-predictions-opta")
+if (!exists("cache_dir")) cache_dir <- file.path("data-raw", "cache-predictions-opta")
 output_path <- file.path(cache_dir, "05_goals_model.rds")
 
 # 3. Check Cache ----

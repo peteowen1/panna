@@ -27,7 +27,7 @@ devtools::load_all()
 
 # 2. Configuration ----
 
-cache_dir <- file.path("data-raw", "cache-predictions-opta")
+if (!exists("cache_dir")) cache_dir <- file.path("data-raw", "cache-predictions-opta")
 if (!dir.exists(cache_dir)) dir.create(cache_dir, recursive = TRUE)
 
 leagues <- if (exists("leagues")) leagues else c(
