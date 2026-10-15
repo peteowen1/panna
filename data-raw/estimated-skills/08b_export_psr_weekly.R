@@ -274,6 +274,7 @@ if (force_full_rebuild) {
   existing_path <- file.path(dl_dir, "opta_psr_weekly.parquet")
   if (file.exists(existing_path)) file.remove(existing_path)
 
+  .log_rss("08b: incr check: before download")
   existing_parquet <- tryCatch({
     piggyback::pb_download(
       file = "opta_psr_weekly.parquet",
@@ -283,7 +284,10 @@ if (force_full_rebuild) {
       overwrite = TRUE
     )
     if (file.exists(existing_path)) {
-      arrow::read_parquet(existing_path, as_data_frame = FALSE)
+      .log_rss("08b: incr check: existing file downloaded")
+      tbl <- arrow::read_parquet(existing_path, as_data_frame = FALSE)
+      .log_rss("08b: incr check: existing file read as Arrow Table")
+      tbl
     } else {
       message("  Release exists but asset 'opta_psr_weekly.parquet' not in it - full rebuild")
       NULL
@@ -321,6 +325,7 @@ if (!is.null(existing_parquet) && "snapshot_date" %in% names(existing_parquet) &
   existing_nrow <- existing_parquet$num_rows
   # One Date per row (8 bytes x 8.2M = ~66 MB); the string columns stay in Arrow.
   existing_row_dates <- as.Date(as.vector(existing_parquet$snapshot_date))
+  .log_rss("08b: incr check: row dates read")
   existing_dates <- sort(unique(existing_row_dates))
   existing_n_dates <- length(existing_dates)
 
@@ -333,6 +338,7 @@ if (!is.null(existing_parquet) && "snapshot_date" %in% names(existing_parquet) &
   has_fp <- "model_fingerprint" %in% existing_cols
   # Distinct fingerprints computed in Arrow: a handful of values, not 8.2M strings.
   existing_fps <- if (has_fp) as.vector(unique(existing_parquet$model_fingerprint)) else character(0)
+  .log_rss("08b: incr check: fingerprints read")
   if (length(missing_cols) > 0) {
     warning(sprintf(
       "opta_psr_weekly.parquet schema mismatch: existing release missing [%s]. ",
@@ -361,6 +367,7 @@ if (!is.null(existing_parquet) && "snapshot_date" %in% names(existing_parquet) &
     keep_mask <- before_cutoff & on_grid(existing_row_dates)
     # Filter in Arrow, then convert only the kept rows (one copy, ~0.6 GB).
     keep_existing <- data.table::setDT(as.data.frame(existing_parquet[keep_mask, ]))
+    .log_rss("08b: incr check: keep_existing converted")
     keep_existing[, snapshot_date := as.Date(snapshot_date)]
     stopifnot(nrow(keep_existing) == sum(keep_mask))
     n_purged <- sum(before_cutoff) - nrow(keep_existing)
