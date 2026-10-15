@@ -1,5 +1,14 @@
 # Changelog
 
+## panna 0.3.98
+
+- [`load_opta_fixtures()`](https://peteowen1.github.io/panna/reference/load_opta_fixtures.md)
+  applies its `status` filter even when `columns` leaves out
+  `match_status`, and errors if the column is missing instead of
+  returning every fixture. The events-coverage guard counted 83 unplayed
+  A-League 2026-2027 fixtures as expected matches and aborted the
+  season’s game logs (predictions run 38564255778).
+
 ## panna 0.3.97
 
 ### Publish safety and CI (review batch 5)
