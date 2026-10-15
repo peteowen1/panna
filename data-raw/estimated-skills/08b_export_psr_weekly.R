@@ -256,6 +256,12 @@ psr_model_fingerprint <- digest::digest(list(
 ), algo = "sha256")
 message(sprintf("  PSR model fingerprint: %s", substr(psr_model_fingerprint, 1, 12)))
 
+# Read as an Arrow Table, NOT a data frame (2026-10-14 OOM, run 38584211411):
+# the 8.2M-row file is ~0.6 GB in R, and as.data.table() plus the subset
+# copies below took ~2.5 GB on top of match_stats' 9.2 GB, killing the
+# runner during this check on the first run that took the incremental path.
+# Dates and fingerprints are checked on the Arrow side; only the reused rows
+# become a data.table, and the Table is dropped right after on every path.
 existing_parquet <- NULL
 if (force_full_rebuild) {
   message("  PSR_FORCE_FULL_REBUILD set - skipping incremental check")
@@ -277,7 +283,7 @@ if (force_full_rebuild) {
       overwrite = TRUE
     )
     if (file.exists(existing_path)) {
-      arrow::read_parquet(existing_path)
+      arrow::read_parquet(existing_path, as_data_frame = FALSE)
     } else {
       message("  Release exists but asset 'opta_psr_weekly.parquet' not in it - full rebuild")
       NULL
@@ -307,44 +313,57 @@ keep_existing <- NULL
 recompute_cutoff <- today - recompute_buffer_days
 n_before <- length(snapshot_dates)
 incremental_active <- FALSE
+existing_n_dates <- 0L
 
 if (!is.null(existing_parquet) && "snapshot_date" %in% names(existing_parquet) &&
-    nrow(existing_parquet) > 0) {
-  existing_dt <- data.table::as.data.table(existing_parquet)
-  existing_dt[, snapshot_date := as.Date(snapshot_date)]
+    existing_parquet$num_rows > 0) {
+  existing_cols <- names(existing_parquet)
+  existing_nrow <- existing_parquet$num_rows
+  # One Date per row (8 bytes x 8.2M = ~66 MB); the string columns stay in Arrow.
+  existing_row_dates <- as.Date(as.vector(existing_parquet$snapshot_date))
+  existing_dates <- sort(unique(existing_row_dates))
+  existing_n_dates <- length(existing_dates)
 
   # Schema compatibility: all expected output columns must be present in the
   # existing parquet. Missing columns = schema drift, fall back with a loud
   # warning so the daily health check (which greps for Warning:) flags it.
   expected_cols <- c("snapshot_date", "player_id", "player_name",
                      "primary_position", "psr", "osr", "dsr", "weighted_90s")
-  missing_cols <- setdiff(expected_cols, names(existing_dt))
+  missing_cols <- setdiff(expected_cols, existing_cols)
+  has_fp <- "model_fingerprint" %in% existing_cols
+  # Distinct fingerprints computed in Arrow: a handful of values, not 8.2M strings.
+  existing_fps <- if (has_fp) as.vector(unique(existing_parquet$model_fingerprint)) else character(0)
   if (length(missing_cols) > 0) {
     warning(sprintf(
       "opta_psr_weekly.parquet schema mismatch: existing release missing [%s]. ",
       paste(missing_cols, collapse = ", ")),
       "Falling back to full rebuild. Investigate whether the schema changed ",
       "intentionally.", call. = FALSE)
-  } else if (!"model_fingerprint" %in% names(existing_dt) ||
-             any(existing_dt$model_fingerprint != psr_model_fingerprint, na.rm = TRUE) ||
-             anyNA(existing_dt$model_fingerprint)) {
+  } else if (!has_fp ||
+             any(existing_fps != psr_model_fingerprint, na.rm = TRUE) ||
+             anyNA(existing_fps)) {
     # Expected after a retrain (new coefficients/calibration/offsets/means)
     # and once for every file published before the stamp: not a warning.
     message(sprintf(
       "  Existing parquet was scored by a different PSR model (%s) - full rebuild so every snapshot uses the current one",
-      if (!"model_fingerprint" %in% names(existing_dt)) "no fingerprint" else
-        paste(unique(substr(stats::na.omit(existing_dt$model_fingerprint), 1, 12)), collapse = ", ")))
+      if (!has_fp) "no fingerprint" else
+        paste(unique(substr(stats::na.omit(existing_fps), 1, 12)), collapse = ", ")))
     if (nzchar(Sys.getenv("GITHUB_ACTIONS")))
       message("::notice::PSR model changed since the last publish - weekly history fully rebuilt")
   } else {
-    existing_dates <- sort(unique(existing_dt$snapshot_date))
     # Keep rows strictly older than the recompute buffer, AND only rows ON the
     # fixed grid: the bug-era parquet accumulated interleaved off-grid dates
     # (today-anchored grids from different run weekdays, offset-free GHA
     # recomputes, per-run `today` singletons). Off-grid rows are purged here so
     # legacy pollution drains instead of being carried forward verbatim.
-    keep_existing <- existing_dt[snapshot_date < recompute_cutoff & on_grid(snapshot_date)]
-    n_purged <- nrow(existing_dt[snapshot_date < recompute_cutoff]) - nrow(keep_existing)
+    before_cutoff <- existing_row_dates < recompute_cutoff
+    keep_mask <- before_cutoff & on_grid(existing_row_dates)
+    # Filter in Arrow, then convert only the kept rows (one copy, ~0.6 GB).
+    keep_existing <- data.table::setDT(as.data.frame(existing_parquet[keep_mask, ]))
+    keep_existing[, snapshot_date := as.Date(snapshot_date)]
+    stopifnot(nrow(keep_existing) == sum(keep_mask))
+    n_purged <- sum(before_cutoff) - nrow(keep_existing)
+    rm(before_cutoff, keep_mask)
     if (n_purged > 0)
       message(sprintf("  Purged %s off-grid legacy rows from keep_existing",
                       format(n_purged, big.mark = ",")))
@@ -354,7 +373,7 @@ if (!is.null(existing_parquet) && "snapshot_date" %in% names(existing_parquet) &
     incremental_active <- TRUE
 
     message(sprintf("  Existing parquet: %s rows covering %d dates (%s to %s)",
-                    format(nrow(existing_dt), big.mark = ","),
+                    format(existing_nrow, big.mark = ","),
                     length(existing_dates),
                     min(existing_dates), max(existing_dates)))
     message(sprintf("  Recompute buffer: last %d days (dates >= %s)",
@@ -368,6 +387,12 @@ if (!is.null(existing_parquet) && "snapshot_date" %in% names(existing_parquet) &
 } else {
   message("  No valid existing data - computing all dates fresh")
 }
+# Free the Arrow Table on EVERY path. Before 2026-10-15 the full-rebuild path
+# never freed the existing file, carrying ~1.2 GB into the 14.7 GB peak.
+existing_parquet <- NULL
+if (exists("existing_row_dates", inherits = FALSE)) rm(existing_row_dates)
+invisible(gc(verbose = FALSE, full = TRUE))
+.log_rss("08b: after incremental check (existing file freed)")
 
 # Safety net: the incremental filter may legitimately leave zero dates when
 # everything is already covered outside the buffer. In that case, refresh
@@ -414,13 +439,13 @@ if (exists("psr_smoke_n") && psr_smoke_n > 0) {
 # existing_parquet / existing_dt too.
 
 existing_schema_cols <- NULL
-existing_n_dates <- 0L
+# existing_n_dates (dates in the whole existing file) is set by the
+# incremental check above; it only gates the coverage assertion when rows
+# are reused, so zero it otherwise to keep the old semantics.
+if (is.null(keep_existing) || nrow(keep_existing) == 0) existing_n_dates <- 0L
 
 if (!is.null(keep_existing) && nrow(keep_existing) > 0) {
   existing_schema_cols <- names(keep_existing)
-  if (!is.null(existing_parquet)) {
-    existing_n_dates <- data.table::uniqueN(as.Date(existing_parquet$snapshot_date))
-  }
 
   # Keep keep_existing in memory through the loop. Earlier versions streamed
   # it to a parquet file under cache_dir to free ~500 MB of RAM during the
@@ -431,9 +456,6 @@ if (!is.null(keep_existing) && nrow(keep_existing) > 0) {
   # every iteration (added in v5), peak memory is bounded by ONE iter's
   # transients rather than 10 iters' worth — keep_existing's 500 MB fits
   # comfortably below the 7 GB ceiling without needing the disk round-trip.
-  rm(existing_parquet)
-  if (exists("existing_dt")) rm(existing_dt)
-  gc(verbose = FALSE, full = TRUE)
   message(sprintf("  Holding keep_existing in memory: %s rows (~%s)",
                   format(nrow(keep_existing), big.mark = ","),
                   format(utils::object.size(keep_existing), units = "auto")))
