@@ -583,7 +583,12 @@ estimate_player_skills <- function(match_stats, decay_params = NULL,
   wts <- data.table::fifelse(is.na(dt$total_minutes), 0,
                               as.numeric(dt$total_minutes))
   total_wt <- sum(wts)
+  # Each stat leaves a few full-length temporaries; with a multi-GB heap R
+  # lets ~6 GB of them pile up before collecting (run 38918305147). A gc()
+  # every 25 stats bounds that and changes no value.
+  gc_every <- 25L
   for (sc in stat_cols) {
+    if (match(sc, stat_cols) %% gc_every == 0L) invisible(gc(verbose = FALSE))
     if (!is.null(prior_centers_cached) && sc %in% names(prior_centers_cached)) {
       grand_means[sc] <- prior_centers_cached[sc]
     } else if (sc %in% names(src)) {
@@ -690,6 +695,7 @@ estimate_player_skills <- function(match_stats, decay_params = NULL,
   names(skill_results) <- stat_cols
 
   for (sc in stat_cols) {
+    if (match(sc, stat_cols) %% gc_every == 0L) invisible(gc(verbose = FALSE))
     lam <- stat_lambdas[sc]
     w_col <- decay_cols[as.character(lam)]
     w_vec <- dt[[w_col]]
