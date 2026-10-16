@@ -81,9 +81,15 @@ assert_skills_export_ok <- function(new, prev = NULL, min_row_frac = 0.9,
 #' Downloads to a temp dir (never over a local file). Any failure (offline, no
 #' such asset, unreadable parquet) returns `NULL` so the caller can skip the
 #' comparison and say so.
+#'
+#' `columns` reads only those columns (the ones present; the first column when
+#' none are, so `nrow()` still holds). `assert_skills_export_ok()` reads only
+#' the row count, `season_end_year` and `league` from `prev`, and reading all
+#' 422 columns of `opta_match_stats.parquet` OOM-killed step 08 on the 16 GB
+#' GHA runner (run 38836860556) with the new full-width table resident.
 #' @noRd
 read_published_asset <- function(file_name, repo = "peteowen1/pannadata",
-                                 tag = "opta-latest") {
+                                 tag = "opta-latest", columns = NULL) {
   dest <- tempfile("published_")
   dir.create(dest)
   on.exit(unlink(dest, recursive = TRUE), add = TRUE)
@@ -91,7 +97,12 @@ read_published_asset <- function(file_name, repo = "peteowen1/pannadata",
     piggyback::pb_download(file_name, repo = repo, tag = tag, dest = dest, show_progress = FALSE)
     path <- file.path(dest, file_name)
     if (!file.exists(path)) return(NULL)
-    as.data.frame(arrow::read_parquet(path))
+    if (is.null(columns)) return(as.data.frame(arrow::read_parquet(path)))
+    reader <- arrow::ParquetFileReader$create(path)
+    avail <- reader$GetSchema()$names
+    idx <- match(intersect(columns, avail), avail)
+    if (length(idx) == 0L) idx <- 1L
+    as.data.frame(reader$ReadTable(idx - 1L))   # 0-based column indices
   }, error = function(e) {
     message(sprintf("  could not read published %s: %s", file_name, conditionMessage(e)))
     NULL

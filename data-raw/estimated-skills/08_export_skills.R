@@ -86,10 +86,18 @@ if (!isTRUE(upload_skills)) {
 # any upload; reads the currently published assets (skipped, with a message, if
 # they cannot be read). See R/skills_export_guard.R.
 cat("\n=== Pre-publish checks ===\n")
-assert_skills_export_ok(skill_features, read_published_asset("opta_skills.parquet"),
+# Only the columns the guard reads from the published copy (row count,
+# season_end_year, league): reading all 422 match-stats columns OOM-killed
+# this step on GHA (run 38836860556).
+guard_cols <- c("season_end_year", "league")
+.log_rss("08: before pre-publish checks")
+assert_skills_export_ok(skill_features,
+                        read_published_asset("opta_skills.parquet", columns = guard_cols),
                         label = "opta_skills")
-assert_skills_export_ok(match_stats, read_published_asset("opta_match_stats.parquet"),
+assert_skills_export_ok(match_stats,
+                        read_published_asset("opta_match_stats.parquet", columns = guard_cols),
                         label = "opta_match_stats")
+.log_rss("08: after pre-publish checks")
 
 cat("\n=== Uploading to GitHub Release ===\n")
 
