@@ -1,5 +1,16 @@
 # Changelog
 
+## panna 0.3.101
+
+- Skills step 08 writes its parquets without
+  [`as.data.frame()`](https://rdrr.io/r/base/as.data.frame.html), which
+  deep-copied the 6.6 GB, 422-column match_stats. The new internal
+  [`.as_df_no_copy()`](https://peteowen1.github.io/panna/reference/dot-as_df_no_copy.md)
+  views the same columns, so the files are byte-identical. Step 08’s
+  peak on the 16 GB runner falls from 14.4 GB (main run 38860800656) to
+  8.0 GB (branch run
+  38866981903. ([\#344](https://github.com/peteowen1/panna/issues/344)).
+
 ## panna 0.3.100
 
 - The skills export’s pre-publish check reads only the row count,
