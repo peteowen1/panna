@@ -1,3 +1,10 @@
+# panna 0.3.101
+
+- Skills step 08 writes its parquets without `as.data.frame()`, which deep-copied the 6.6 GB, 422-column
+  match_stats. The new internal `.as_df_no_copy()` views the same columns, so the files are byte-identical.
+  Step 08's peak on the 16 GB runner falls from 14.4 GB (main run 38860800656) to 8.0 GB (branch run
+  38866981903) (#344).
+
 # panna 0.3.100
 
 - The skills export's pre-publish check reads only the row count, `season_end_year` and `league` from the published
