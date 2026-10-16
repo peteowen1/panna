@@ -311,3 +311,19 @@ test_that(".load_from_pannamodels aborts on an integrity failure, falls back oth
   expect_null(res)
   expect_identical(panna:::.load_from_pannamodels("xg_model", loader = function(n) "MODEL"), "MODEL")
 })
+
+test_that(".as_df_no_copy shares columns and writes the same parquet as as.data.frame", {
+  dt <- data.table::data.table(a = 1:3, b = c("x", "y", "z"), d = as.Date("2026-01-01") + 0:2)
+  data.table::setkey(dt, b)
+  df <- .as_df_no_copy(dt)
+  expect_identical(class(df), "data.frame")
+  expect_identical(df, as.data.frame(dt))
+  expect_identical(data.table::address(df$a), data.table::address(dt$a))
+  expect_true(data.table::is.data.table(dt))
+
+  skip_if_not_installed("arrow")
+  p1 <- tempfile(fileext = ".parquet"); p2 <- tempfile(fileext = ".parquet")
+  arrow::write_parquet(as.data.frame(dt), p1)
+  arrow::write_parquet(df, p2)
+  expect_identical(unname(tools::md5sum(p1)), unname(tools::md5sum(p2)))
+})

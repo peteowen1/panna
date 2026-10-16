@@ -42,7 +42,7 @@ cat(sprintf("  Unique players: %s\n",
             format(data.table::uniqueN(skill_features$player_id), big.mark = ",")))
 
 skills_path <- file.path(opta_dir, "opta_skills.parquet")
-arrow::write_parquet(as.data.frame(skill_features), skills_path)
+arrow::write_parquet(.as_df_no_copy(skill_features), skills_path)
 skills_mb <- round(file.info(skills_path)$size / (1024 * 1024), 1)
 cat(sprintf("  Written: %s (%s MB)\n", skills_path, skills_mb))
 
@@ -57,7 +57,11 @@ cat(sprintf("  Unique players: %s\n",
             format(data.table::uniqueN(match_stats$player_id), big.mark = ",")))
 
 ms_path <- file.path(opta_dir, "opta_match_stats.parquet")
-arrow::write_parquet(as.data.frame(match_stats), ms_path)
+# .as_df_no_copy(), not as.data.frame(): the latter deep-copies all 422
+# columns and doubled this step's peak to 13.7 GB on GHA (run 38860800656).
+.log_rss("08: before writing match_stats")
+arrow::write_parquet(.as_df_no_copy(match_stats), ms_path)
+.log_rss("08: after writing match_stats")
 ms_mb <- round(file.info(ms_path)$size / (1024 * 1024), 1)
 cat(sprintf("  Written: %s (%s MB)\n", ms_path, ms_mb))
 
