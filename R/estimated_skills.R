@@ -789,23 +789,19 @@ estimate_player_skills <- function(match_stats, decay_params = NULL,
   result[w90_agg, weighted_90s := i.weighted_90s, on = "player_id"]
   data.table::setnames(result, "pos_group", "primary_position")
 
+  # Columns are placed by matched row, not by 142 update joins with get() in
+  # j: those joins took the latest-season call from 7.4 to 10.3 GB of R heap
+  # on GHA (run 38926840999). player_id is unique in both tables, so a
+  # player with no result for a stat gets NA, as the join gave.
   for (sc in stat_cols) {
     sr <- skill_results[[sc]]
     if (is.null(sr)) next
-
+    idx <- match(result$player_id, sr$player_id)
+    out_name <- if (rating_names) paste0(sc, "_rating") else sc
+    data.table::set(result, j = out_name, value = sr$skill[idx])
     if (compute_ci) {
-      out_name <- if (rating_names) paste0(sc, "_rating") else sc
-      lower_name <- paste0(sc, "_rating_lower")
-      upper_name <- paste0(sc, "_rating_upper")
-      data.table::setnames(sr, c("skill", "ci_lower", "ci_upper"),
-                            c(out_name, lower_name, upper_name))
-      result[sr, (out_name) := get(paste0("i.", out_name)), on = "player_id"]
-      result[sr, (lower_name) := get(paste0("i.", lower_name)), on = "player_id"]
-      result[sr, (upper_name) := get(paste0("i.", upper_name)), on = "player_id"]
-    } else {
-      out_name <- if (rating_names) paste0(sc, "_rating") else sc
-      data.table::setnames(sr, "skill", out_name)
-      result[sr, (out_name) := get(paste0("i.", out_name)), on = "player_id"]
+      data.table::set(result, j = paste0(sc, "_rating_lower"), value = sr$ci_lower[idx])
+      data.table::set(result, j = paste0(sc, "_rating_upper"), value = sr$ci_upper[idx])
     }
   }
 
