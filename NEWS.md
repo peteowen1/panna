@@ -1,3 +1,28 @@
+# panna 0.3.99
+
+## Weekly PSR job fits the 16 GB runner again (#339, #340)
+
+`psr-weekly-snapshot.yml` had been OOM-killed (exit 143) on every run since 2026-10-14, and its skills rebuild had
+never finished on GHA, so `opta_skills.parquet` on opta-latest stayed at 2026-09-13.
+
+- `.role8_prepare()` / `.role8_asof()` no longer deep-copy the 2.1M-row, 400+-column match_stats to read 5 columns
+  (~4.9 GB of RSS).
+- 08b reads the existing weekly parquet as an Arrow Table and converts only the reused rows; the incremental path
+  reuses 7,966,842 rows and recomputes 5 dates instead of 239.
+- `aggregate_skills_for_spm()` aliases the caller's columns instead of `copy()`, and skills step 02 narrows
+  match_stats 422 -> 183 columns before the season loop. Output `identical()` to before.
+- RSS checkpoints through 08b's incremental check and after each season of `aggregate_skills_for_spm()`. Step 02
+  now peaks at 13.3 GB, which leaves ~2.7 GB headroom.
+
+## Pipeline safety
+
+- Each skills-pipeline step runs in its own R process; on GHA the skills rebuild reads per-match xMetrics from
+  opta-latest (`XMETRICS_SOURCE=remote`).
+- `09b_career_panna_asof.R` refuses to publish `career_panna_asof.parquet` if it would drop published snapshot
+  dates.
+- The EPR source gate never publishes an arm's EPR to opta-latest, and three bugs were fixed before its first run.
+- Predictions steps 01-08 honour a pre-set `cache_dir`.
+
 # panna 0.3.98
 
 - `load_opta_fixtures()` applies its `status` filter even when `columns` leaves out `match_status`, and errors if
