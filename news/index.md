@@ -1,5 +1,15 @@
 # Changelog
 
+## panna 0.3.100
+
+- The skills export’s pre-publish check reads only the row count,
+  `season_end_year` and `league` from the published copy
+  (`read_published_asset(columns =)`). Reading all 422 columns of the
+  published `opta_match_stats.parquet` (6.6 GB in R) OOM-killed step 08
+  on the first 0.3.99 run on main (38836860556), after skills step 02
+  had passed, so `opta_skills.parquet` stayed at 2026-09-13
+  ([\#342](https://github.com/peteowen1/panna/issues/342)).
+
 ## panna 0.3.99
 
 ### Weekly PSR job fits the 16 GB runner again ([\#339](https://github.com/peteowen1/panna/issues/339), [\#340](https://github.com/peteowen1/panna/issues/340))

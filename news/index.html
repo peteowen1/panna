@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.99</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.100</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,6 +39,10 @@
       <small>Source: <a href="https://github.com/peteowen1/panna/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.100" id="panna-03100">panna 0.3.100<a class="anchor" aria-label="anchor" href="#panna-03100"></a></h2>
+<ul><li>The skills export’s pre-publish check reads only the row count, <code>season_end_year</code> and <code>league</code> from the published copy (<code>read_published_asset(columns =)</code>). Reading all 422 columns of the published <code>opta_match_stats.parquet</code> (6.6 GB in R) OOM-killed step 08 on the first 0.3.99 run on main (38836860556), after skills step 02 had passed, so <code>opta_skills.parquet</code> stayed at 2026-09-13 (<a href="https://github.com/peteowen1/panna/issues/342" class="external-link">#342</a>).</li>
+</ul></div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.99" id="panna-0399">panna 0.3.99<a class="anchor" aria-label="anchor" href="#panna-0399"></a></h2>
 <div class="section level3">
