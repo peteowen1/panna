@@ -1004,8 +1004,9 @@ aggregate_skills_for_spm <- function(match_stats, decay_params = NULL,
   if (!data.table::is.data.table(match_stats)) {
     match_stats <- data.table::as.data.table(match_stats)
   }
+  # By position, not name, so a duplicated column name keeps both columns.
   dt <- data.table::setDT(stats::setNames(
-    lapply(names(match_stats), function(cc) match_stats[[cc]]), names(match_stats)))
+    lapply(seq_along(match_stats), function(i) match_stats[[i]]), names(match_stats)))
   if (!inherits(dt$match_date, "Date")) {
     dt[, match_date := as.Date(match_date)]
   }
