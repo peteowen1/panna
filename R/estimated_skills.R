@@ -994,11 +994,18 @@ aggregate_skills_for_spm <- function(match_stats, decay_params = NULL,
                                       min_weighted_90s = 5) {
   if (is.null(decay_params)) decay_params <- get_default_decay_params()
 
-  # panna#128: as.data.table() on an already-valid data.table copies
-  # regardless, so copy(as.data.table(x)) was copying twice.
-  dt <- data.table::copy(
-    if (data.table::is.data.table(match_stats)) match_stats
-    else data.table::as.data.table(match_stats))
+  # A new data.table whose columns ALIAS the caller's (copies nothing), so the
+  # := below add/replace columns on this table only and the caller's table is
+  # untouched. It was copy(): on the GHA weekly job's xMetrics-enriched
+  # match_stats (~9 GB resident) that full deep copy OOM-killed skills step 2
+  # 85 s in (run 38746867917). Only whole-column := is safe on these aliased
+  # columns -- never a row-subset := (dt[i, col := ...]), which writes into
+  # the caller's vector.
+  if (!data.table::is.data.table(match_stats)) {
+    match_stats <- data.table::as.data.table(match_stats)
+  }
+  dt <- data.table::setDT(stats::setNames(
+    lapply(names(match_stats), function(cc) match_stats[[cc]]), names(match_stats)))
   if (!inherits(dt$match_date, "Date")) {
     dt[, match_date := as.Date(match_date)]
   }
@@ -1045,7 +1052,10 @@ aggregate_skills_for_spm <- function(match_stats, decay_params = NULL,
 
     # Season-specific minutes filter: sum minutes in this season only
     season_start <- as.Date(paste0(s - 1, "-07-01"))
-    season_dt <- dt[match_date >= season_start & match_date < target_date]
+    # Only the three columns read below: a bare row filter here copied all
+    # 400+ columns of a season's rows on every iteration.
+    season_dt <- dt[match_date >= season_start & match_date < target_date,
+                    .(player_id, total_minutes, match_id)]
 
     if (nrow(season_dt) == 0) {
       cli::cli_alert_warning("Season {s}: no matches found, skipping.")
