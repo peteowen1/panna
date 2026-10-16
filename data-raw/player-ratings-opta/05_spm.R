@@ -736,6 +736,15 @@ if (isTRUE(spm_use_panel)) {
   }
   s6_max_vintage <- max(s6_panel$vintage_year)
   s6_by_vintage <- lapply(sort(unique(s6_panel$vintage_year)), function(vy) {
+    # Free the previous vintage's four models and panel copy BEFORE the next
+    # fit. Without this they sat uncollected: the runner climbed from ~10.5 GB
+    # to 12-14 GB between vintages and peaked at 15.85 of 16 GB in vintage
+    # 2023 on both 2026-10-13 13:11 (green, 150 MB free) and 2026-10-14 12:30
+    # (killed, exit 143, run 38564255904). The xgboost boosters keep their
+    # memory outside R's heap and free it only in a finalizer, so R feels no
+    # pressure to collect them; an explicit gc() runs those finalizers. It
+    # changes no result.
+    invisible(gc(verbose = FALSE))
     s6_v <- s6_panel[s6_panel$vintage_year == vy, ]
     f <- if (vy == s6_max_vintage) {
       list(go = s6_off_glmnet, gd = s6_def_glmnet, xo = s6_off_xgb, xd = s6_def_xgb)
