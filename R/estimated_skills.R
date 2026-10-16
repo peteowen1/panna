@@ -1097,6 +1097,7 @@ aggregate_skills_for_spm <- function(match_stats, decay_params = NULL,
     # primary_position already set by estimate_player_skills()
 
     results_list[[idx]] <- skills
+    .log_rss(sprintf("aggregate_skills_for_spm: season %s done", s))
   }
 
   result <- data.table::rbindlist(results_list, fill = TRUE)
