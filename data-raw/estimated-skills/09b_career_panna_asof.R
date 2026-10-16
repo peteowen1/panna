@@ -220,7 +220,8 @@ if (isTRUE(upload)) {
   # Resume reads only the LOCAL out_path, so a run on a machine without it
   # rebuilds from scratch and would overwrite the published history with a
   # cut-down file (clobber audit 2026-10-08, row 7). Refuse to publish unless
-  # every snapshot date already on the release is in the new file.
+  # every snapshot date already on the release is in the new file with at
+  # least 90% of its published rows.
   # An absent asset (first publish) leaves no file and skips the check; a
   # download ERROR stops, since then the check cannot be done.
   pub_dir <- tempfile("career_asof_pub_")
@@ -234,16 +235,16 @@ if (isTRUE(upload)) {
     })
   pub_file <- file.path(pub_dir, "career_panna_asof.parquet")
   if (file.exists(pub_file)) {
-    pub_dates <- unique(as.character(arrow::read_parquet(pub_file, col_select = "ref_date")$ref_date))
-    lost <- setdiff(pub_dates, as.character(unique(allr$ref_date)))
+    pub_dates <- arrow::read_parquet(pub_file, col_select = "ref_date")$ref_date
     unlink(pub_file)
-    if (length(lost) > 0L) {
-      stop(sprintf(paste0("Refusing to upload: %d of %d published snapshot dates are missing ",
-                          "from %s (e.g. %s). Restore the published file locally and re-run ",
+    problems <- .snapshot_shrink_problems(pub_dates, allr$ref_date)
+    if (length(problems) > 0L) {
+      stop(sprintf(paste0("Refusing to upload %s: %s. Restore the published file locally and re-run ",
                           "with resume, or delete the release asset by hand if the shrink is intended."),
-                   length(lost), length(pub_dates), out_path, lost[1]), call. = FALSE)
+                   out_path, paste(problems, collapse = "; ")), call. = FALSE)
     }
-    cat(sprintf("Publish check: all %d published snapshot dates kept.\n", length(pub_dates)))
+    cat(sprintf("Publish check: all %d published snapshot dates kept, none below 90%% of their rows.\n",
+                data.table::uniqueN(pub_dates)))
   }
   piggyback::pb_upload(out_path, repo = "peteowen1/pannadata", tag = "ratings-data",
                        name = "career_panna_asof.parquet", overwrite = TRUE)
