@@ -311,6 +311,27 @@ progress_msg <- function(msg, verbose = TRUE) {
 }
 
 
+#' View a data.table as a plain data.frame without copying its columns
+#'
+#' \code{as.data.frame()} on a data.table deep-copies every column. On the
+#' 422-column skills match_stats (6.6 GB) that doubled step 08's peak to
+#' 13.7 GB of the 16 GB GHA runner just to call \code{write_parquet()}.
+#' This builds a data.frame whose columns are the same vectors, so it costs
+#' nothing; the parquet written from it is byte-identical. Do not modify the
+#' result in place: it shares memory with \code{x}.
+#'
+#' @param x A data.frame or data.table.
+#' @return A plain data.frame sharing \code{x}'s column vectors.
+#' @keywords internal
+.as_df_no_copy <- function(x) {
+  # By position, not name, so a duplicated column name keeps both columns.
+  df <- stats::setNames(lapply(seq_along(x), function(i) x[[i]]), names(x))
+  attr(df, "row.names") <- .set_row_names(nrow(x))
+  class(df) <- "data.frame"
+  df
+}
+
+
 #' Log OS-level memory (RSS) alongside R's own heap at a checkpoint
 #'
 #' The panna#128 and #133 OOM hunts both hinged on the same observation:
