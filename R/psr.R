@@ -1436,7 +1436,10 @@ PSR_ROLE8_LEVELS <- c("GK", "CB", "FB", "DM", "CM", "AM", "W", "ST")
 #' @noRd
 #' @rdname role8-asof
 .role8_prepare <- function(match_stats) {
-  d <- data.table::as.data.table(match_stats)
+  # Read columns straight off the input: as.data.table() deep-copies even a
+  # data.table, and on 08b's 2.1M x 400+ match_stats that copy left RSS ~4.9 GB
+  # higher after gc (run 38745046526), OOM-killing the weekly PSR job.
+  d <- match_stats
   if (!"position_side" %in% names(d)) {
     cli::cli_abort(c(
       "`match_stats` has no `position_side` column.",
@@ -1463,7 +1466,7 @@ PSR_ROLE8_LEVELS <- c("GK", "CB", "FB", "DM", "CM", "AM", "W", "ST")
 }
 
 .role8_asof <- function(match_stats, as_of, window_days = 365L) {
-  d <- data.table::as.data.table(match_stats)
+  d <- match_stats   # column reads only; no copy (see .role8_prepare())
   # `role8` is date-INDEPENDENT, so a caller looping over many dates should
   # precompute it once with .role8_prepare() rather than paying classify_role()
   # on the full table per date -- measured at ~8.6s/date on a 2M-row table,

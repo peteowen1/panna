@@ -64,8 +64,29 @@ if (file.exists(decay_params_path)) {
 if (use_xmetrics_features) {
   # Per-match xG join (shared helper — step 7 uses the same so coefficients and
   # skill ratings see the identical feature set).
-  match_stats <- enrich_match_stats_with_xmetrics(match_stats, fail_if_missing_frac = 0.6)
+  # GHA has no local xmetrics_bymatch/ tree (panna#126) and sets
+  # XMETRICS_SOURCE=remote, as 08b_export_psr_weekly.R reads it. Without this
+  # the call defaulted to "local", found nothing for all 341 league-seasons and
+  # stopped, so psr-weekly-snapshot.yml's skills rebuild failed every run
+  # behind continue-on-error and opta_skills.parquet stayed at 2026-09-13.
+  xm_source <- if (identical(Sys.getenv("XMETRICS_SOURCE"), "remote")) "remote" else "local"
+  match_stats <- enrich_match_stats_with_xmetrics(match_stats, fail_if_missing_frac = 0.6,
+                                                  source = xm_source)
 }
+
+# Narrow to the columns skill estimation reads (400+ -> ~180), through the
+# shared helper predictions steps 02/02b use. On GHA the enriched full-width
+# table (~9 GB) plus each season's filtered history OOM-killed this step in
+# the season loop (run 38827820090, ~season 6 of 13).
+.log_rss("02: before narrowing match_stats")
+match_stats <- .narrow_match_stats_for_skills(
+  match_stats,
+  extra_cols = c("player_id", "player_name", "match_date", "position",
+                 "total_minutes", "match_id", "season", "season_end_year",
+                 unlist(decay_params$precomputed_match_exp, use.names = FALSE))
+)
+.log_rss("02: after narrowing match_stats")
+cat(sprintf("Narrowed match_stats: %d rows x %d cols\n", nrow(match_stats), ncol(match_stats)))
 
 # 6. Estimate Skills ----
 
