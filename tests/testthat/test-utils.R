@@ -315,7 +315,7 @@ test_that(".load_from_pannamodels aborts on an integrity failure, falls back oth
 test_that(".as_df_no_copy shares columns and writes the same parquet as as.data.frame", {
   dt <- data.table::data.table(a = 1:3, b = c("x", "y", "z"), d = as.Date("2026-01-01") + 0:2)
   data.table::setkey(dt, b)
-  df <- .as_df_no_copy(dt)
+  df <- panna:::.as_df_no_copy(dt)
   expect_identical(class(df), "data.frame")
   expect_identical(df, as.data.frame(dt))
   expect_identical(data.table::address(df$a), data.table::address(dt$a))
