@@ -74,6 +74,20 @@ if (use_xmetrics_features) {
                                                   source = xm_source)
 }
 
+# Narrow to the columns skill estimation reads (400+ -> ~180), through the
+# shared helper predictions steps 02/02b use. On GHA the enriched full-width
+# table (~9 GB) plus each season's filtered history OOM-killed this step in
+# the season loop (run 38827820090, ~season 6 of 13).
+.log_rss("02: before narrowing match_stats")
+match_stats <- .narrow_match_stats_for_skills(
+  match_stats,
+  extra_cols = c("player_id", "player_name", "match_date", "position",
+                 "total_minutes", "match_id", "season", "season_end_year",
+                 unlist(decay_params$precomputed_match_exp, use.names = FALSE))
+)
+.log_rss("02: after narrowing match_stats")
+cat(sprintf("Narrowed match_stats: %d rows x %d cols\n", nrow(match_stats), ncol(match_stats)))
+
 # 6. Estimate Skills ----
 
 cat("\n=== Estimating Skills ===\n")
