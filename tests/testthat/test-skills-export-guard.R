@@ -73,3 +73,21 @@ test_that("all problems are reported together", {
   expect_match(err, "below 90%")
   expect_match(err, "season_end_year")
 })
+
+test_that(".snapshot_shrink_problems flags lost dates and shrunk dates, passes a kept file", {
+  pub <- c(rep("2026-01-01", 100), rep("2026-02-01", 100))
+  expect_length(panna:::.snapshot_shrink_problems(pub, c(pub, rep("2026-03-01", 50))), 0)
+  expect_length(panna:::.snapshot_shrink_problems(pub, c(rep("2026-01-01", 95), rep("2026-02-01", 90))), 0)
+
+  lost <- panna:::.snapshot_shrink_problems(pub, rep("2026-01-01", 100))
+  expect_length(lost, 1)
+  expect_match(lost, "1 of 2 published snapshot dates are missing (e.g. 2026-02-01)", fixed = TRUE)
+
+  # Every date kept, most rows gone: the case the dates-only check passed.
+  shrunk <- panna:::.snapshot_shrink_problems(pub, c(rep("2026-01-01", 100), rep("2026-02-01", 10)))
+  expect_length(shrunk, 1)
+  expect_match(shrunk, "2026-02-01: 10 of 100")
+
+  d <- as.Date(c("2026-01-01", "2026-01-01"))
+  expect_length(panna:::.snapshot_shrink_problems(d, d), 0)
+})

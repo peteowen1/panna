@@ -57,7 +57,9 @@ calculate_spm_value <- function(match_stats, coefs = NULL, gd_scale = 1.0) {
     coefs <- load_spm_value_coefficients()
   }
 
-  dt <- data.table::as.data.table(match_stats)
+  # Read-only below (dt[[col]] extracts copy on modify), so an existing
+  # data.table is used as is: as.data.table() deep-copies every column.
+  dt <- if (data.table::is.data.table(match_stats)) match_stats else data.table::as.data.table(match_stats)
   n <- nrow(dt)
   if (n == 0) {
     return(data.table::data.table(
