@@ -1,3 +1,14 @@
+# panna 0.3.102
+
+- `estimate_player_skills()` peaks lower: skills step 02 on the 16 GB runner falls from 13.3 GB to 10.7 GB
+  (clean branch run 38935197894, 106,206 player-seasons). Three in-call causes, each about 3 GB: the row copy
+  before the `target_date` filter (now column views by row position), the minutes weights rebuilt once per stat
+  (now built once, with a `gc()` every 25 stats), and 142 update joins with `get()` in `j` at result assembly
+  (now `match()` + `set()`). Output identical to the old function in 8 local cases (#348).
+- Skills step 09b refuses to publish when any snapshot date has under 90% of its published rows, not only when a
+  date is missing (`.snapshot_shrink_problems()`, #346).
+- `calculate_spm_value()` and `player_skill_profile()` no longer deep-copy `match_stats` (#347).
+
 # panna 0.3.101
 
 - Skills step 08 writes its parquets without `as.data.frame()`, which deep-copied the 6.6 GB, 422-column
