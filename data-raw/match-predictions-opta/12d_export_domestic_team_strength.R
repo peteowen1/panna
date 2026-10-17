@@ -404,6 +404,18 @@ message("\n=== Exporting domestic + cup team strength (Tiento, all clubs) ===\n"
   invisible(TRUE)
 }
 
+#' Log a degraded-but-published condition where the run summary will see it
+#'
+#' Appends to the same `.nonfatal_step_failures` marker run_predictions_opta.R
+#' writes for a failed optional step; the workflow's summary step turns each
+#' line into a warning annotation, so the run stays green but not silent.
+.note_degraded <- function(msg, marker_dir = cache_dir) {
+  message("  WARNING: ", msg)
+  cat(sprintf("step 12d (degraded): %s\n", msg),
+      file = file.path(marker_dir, ".nonfatal_step_failures"), append = TRUE)
+  invisible(NULL)
+}
+
 #' Reset some leagues' average Elo from their squads' panna (panna#280)
 #'
 #' Fits league-mean Elo ~ league-mean squad panna over `fit_leagues` (domestic
@@ -414,8 +426,11 @@ message("\n=== Exporting domestic + cup team strength (Tiento, all clubs) ===\n"
 #' @param strength data.table with league, is_domestic_league, elo, panna.
 #' @param anchor_leagues,fit_leagues Character vectors of league codes.
 #' @param min_fit Minimum fit leagues; fewer refuses rather than extrapolating.
+#' @param on_missing Called with a message naming any anchor league absent
+#'   from `strength`; the driver passes `.note_degraded`.
 #' @return `strength` with `elo` shifted and `elo_league_shift` (0 if unshifted).
-.anchor_league_elo <- function(strength, anchor_leagues, fit_leagues, min_fit = 5L) {
+.anchor_league_elo <- function(strength, anchor_leagues, fit_leagues, min_fit = 5L,
+                               on_missing = function(msg) message("  WARNING: ", msg)) {
   dt <- data.table::copy(strength)
   dt[, elo_league_shift := 0]
   lv <- dt[is_domestic_league == TRUE,
@@ -423,10 +438,12 @@ message("\n=== Exporting domestic + cup team strength (Tiento, all clubs) ===\n"
            by = league]
   fit <- lv[league %in% fit_leagues & is.finite(elo) & is.finite(panna)]
   todo <- intersect(anchor_leagues, lv$league)
-  if (length(todo) == 0L) {
-    message("  Elo anchor: none of ", paste(anchor_leagues, collapse = ", "), " present; no shift")
-    return(dt)
+  absent <- setdiff(anchor_leagues, lv$league)
+  if (length(absent) > 0L) {
+    on_missing(paste0("Elo anchor: league(s) to anchor have no domestic clubs, so no shift: ",
+                      paste(absent, collapse = ", ")))
   }
+  if (length(todo) == 0L) return(dt)
   if (nrow(fit) < min_fit) {
     stop(sprintf("Elo anchor: only %d fit league(s) (need %d); refusing to extrapolate a level for %s",
                  nrow(fit), min_fit, paste(todo, collapse = ", ")), call. = FALSE)
@@ -488,17 +505,28 @@ if (length(.extra_leagues) > 0L) {
     source("data-raw/match-predictions-opta/01_build_fixture_results.R", local = .extra_env)
     data.table::as.data.table(readRDS(file.path(.extra_dir, "01_fixture_results.rds")))
   }, error = function(e) {
-    message("  WARNING: extra-league fixture build FAILED, so ",
-            paste(.extra_leagues, collapse = ", "),
-            " get no Elo history and drop out of team_strength: ", conditionMessage(e))
+    .note_degraded(paste0("extra-league fixture build FAILED, so ",
+                          paste(.extra_leagues, collapse = ", "),
+                          " drop out of team_strength: ", conditionMessage(e)))
     NULL
   })
   rm(.extra_env); invisible(gc(verbose = FALSE))
   if (!is.null(.extra_fr)) {
     .extra_fr <- .extra_fr[league %in% .extra_leagues]
-    message(sprintf("  Extra-league fixtures: %d rows (%d played) across %s",
-                    nrow(.extra_fr), sum(.extra_fr$match_status == "Played"),
-                    paste(sort(unique(.extra_fr$league)), collapse = ", ")))
+    # Step 01 skips a league or season that fails to load and still saves, so
+    # check requested against produced, and show each league's depth: a league
+    # with one season of history would get a thin Elo and still be shifted.
+    .missing <- setdiff(.extra_leagues, unique(.extra_fr$league))
+    if (length(.missing) > 0L) {
+      .note_degraded(paste0("extra leagues requested but no fixtures built, so they drop out of ",
+                            "team_strength: ", paste(.missing, collapse = ", ")))
+    }
+    .depth <- .extra_fr[, .(played = sum(match_status == "Played"),
+                            first = min(match_date), last = max(match_date)), by = league]
+    data.table::setorder(.depth, league)
+    message("  Extra-league fixtures (played, first, last): ",
+            paste(sprintf("%s %d %s..%s", .depth$league, .depth$played,
+                          as.Date(.depth$first), as.Date(.depth$last)), collapse = "; "))
     fixture_results <- data.table::rbindlist(list(fixture_results, .extra_fr),
                                              use.names = TRUE, fill = TRUE)
   }
@@ -735,7 +763,8 @@ stopifnot("squad merge changed row count (name/id join key drift)" =
 # exactly the ones whose level results alone cannot pin down.
 strength <- .anchor_league_elo(
   strength, anchor_leagues = elo_anchor_leagues,
-  fit_leagues = setdiff(unique(strength$league[strength$is_domestic_league]), elo_extra_leagues))
+  fit_leagues = setdiff(unique(strength$league[strength$is_domestic_league]), elo_extra_leagues),
+  on_missing = .note_degraded)
 message("  Leagues in team_strength: ",
         paste(sort(unique(strength$league[strength$is_domestic_league])), collapse = ", "),
         " + cups: ", paste(sort(unique(strength$league[!strength$is_domestic_league])), collapse = ", "))

@@ -454,7 +454,7 @@ test_that("guard: panna/epr/psr zero (or all-NA) for >=50% of teams refuses to p
         as_of_domestic = as.Date("2026-10-15"),
         MIN_PLAUSIBLE_SQUAD_N = 3L,
         # no real step-01 build for the panna#280 extra leagues in a fixture test
-        elo_extra_leagues = character(0),
+        elo_extra_leagues = character(0), elo_anchor_leagues = character(0),
         skills_cache_dir = skills_dir,
         opta_cache_dir = file.path(skills_dir, "..", "cache-opta")),
     parent = globalenv())
@@ -852,4 +852,24 @@ test_that("anchor with no listed league present is a no-op, not an error", {
   out <- suppressMessages(e$.anchor_league_elo(inp, "MLS", paste0("L", 1:5)))
   expect_equal(out$elo, inp$elo)
   expect_true(all(out$elo_league_shift == 0))
+})
+
+test_that("an anchor league with no clubs is named, and the others still shift", {
+  e <- .dts_source_only()
+  said <- character(0)
+  out <- suppressMessages(e$.anchor_league_elo(
+    .anchor_fixture(), c("X", "BEL"), paste0("L", 1:5),
+    on_missing = function(msg) said <<- c(said, msg)))
+  expect_length(said, 1L)
+  expect_match(said, "BEL")
+  expect_equal(unique(out[league == "X", elo_league_shift]), 100)
+})
+
+test_that(".note_degraded appends to the non-fatal marker the workflow reads", {
+  e <- .dts_source_only()
+  d <- withr::local_tempdir()
+  suppressMessages(e$.note_degraded("first", marker_dir = d))
+  suppressMessages(e$.note_degraded("second", marker_dir = d))
+  lines <- readLines(file.path(d, ".nonfatal_step_failures"))
+  expect_equal(lines, c("step 12d (degraded): first", "step 12d (degraded): second"))
 })
