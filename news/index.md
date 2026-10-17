@@ -1,5 +1,28 @@
 # Changelog
 
+## panna 0.3.102
+
+- [`estimate_player_skills()`](https://peteowen1.github.io/panna/reference/estimate_player_skills.md)
+  peaks lower: skills step 02 on the 16 GB runner falls from 13.3 GB to
+  10.7 GB (clean branch run 38935197894, 106,206 player-seasons). Three
+  in-call causes, each about 3 GB: the row copy before the `target_date`
+  filter (now column views by row position), the minutes weights rebuilt
+  once per stat (now built once, with a
+  [`gc()`](https://rdrr.io/r/base/gc.html) every 25 stats), and 142
+  update joins with [`get()`](https://rdrr.io/r/base/get.html) in `j` at
+  result assembly (now [`match()`](https://rdrr.io/r/base/match.html) +
+  `set()`). Output identical to the old function in 8 local cases
+  ([\#348](https://github.com/peteowen1/panna/issues/348)).
+- Skills step 09b refuses to publish when any snapshot date has under
+  90% of its published rows, not only when a date is missing
+  (`.snapshot_shrink_problems()`,
+  [\#346](https://github.com/peteowen1/panna/issues/346)).
+- [`calculate_spm_value()`](https://peteowen1.github.io/panna/reference/calculate_spm_value.md)
+  and
+  [`player_skill_profile()`](https://peteowen1.github.io/panna/reference/player_skill_profile.md)
+  no longer deep-copy `match_stats`
+  ([\#347](https://github.com/peteowen1/panna/issues/347)).
+
 ## panna 0.3.101
 
 - Skills step 08 writes its parquets without
