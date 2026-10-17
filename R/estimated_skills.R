@@ -508,19 +508,32 @@ estimate_player_skills <- function(match_stats, decay_params = NULL,
       lapply(needed_cols, function(cc) dt[[cc]]), needed_cols))
   }
 
-  # Filter by date BEFORE copying -- subsetting creates a new data.table,
-  # avoiding a full copy of the (potentially multi-GB) input
+  # Keep the row positions before target_date instead of copying the rows.
+  # A bracket filter copied all ~180 needed columns on every call: ~3 GB at
+  # the latest season, which put skills step 02 at 13.3 GB of the 16 GB GHA
+  # runner (run 38866981903). Stat, denominator and precomputed-exp columns
+  # are now pulled one at a time through take(); when every row passes (the
+  # latest season, or no target_date) take() returns the caller's vector
+  # itself and nothing is copied.
+  src <- dt
+  keep <- NULL
   if (!is.null(target_date)) {
     target_date <- as.Date(target_date)
-    # Compare using temp vector to avoid mutating caller's data.table
-    md <- if (!inherits(dt$match_date, "Date")) as.Date(dt$match_date) else dt$match_date
-    dt <- dt[md < target_date]
-  } else {
-    # Without filtering, copy to avoid mutating caller's data
-    dt <- data.table::copy(dt)
+    md <- if (!inherits(src$match_date, "Date")) as.Date(src$match_date) else src$match_date
+    keep <- which(md < target_date)
+    if (length(keep) == nrow(src)) keep <- NULL
   }
+  take <- function(cc) if (is.null(keep)) src[[cc]] else src[[cc]][keep]
 
-  # Now safe to mutate -- dt is either a subset (new object) or an explicit copy
+  # The working table holds only the per-row columns every stat shares. The
+  # code below only ADDS columns to it (set()/:= on new names) or replaces a
+  # whole column, so aliasing the caller's vectors when keep is NULL is safe;
+  # never add a row-subset := on one of these five columns.
+  base_cols <- intersect(c("player_id", "player_name", "match_date", "position",
+                           "total_minutes"), names(src))
+  dt <- data.table::setDT(stats::setNames(lapply(base_cols, take), base_cols))
+
+  # Now safe to mutate: only new or whole-replaced columns from here on
   if (!inherits(dt$match_date, "Date")) {
     dt[, match_date := as.Date(match_date)]
   }
@@ -551,26 +564,40 @@ estimate_player_skills <- function(match_stats, decay_params = NULL,
     list(pos_group = names(tt)[which.max(tt)])
   }, by = player_id]
 
-  # Compute position multipliers: pos_avg / global_avg per stat
-  pos_multipliers <- .resolve_position_multipliers(decay_params, dt, stat_cols)
+  # Compute position multipliers: pos_avg / global_avg per stat. Only the
+  # uncached path reads stat columns, so only it builds them.
+  pos_multipliers <- if (is.null(decay_params$position_multipliers)) {
+    pm_cols <- intersect(c("player_id", "position", "total_minutes", stat_cols), names(src))
+    compute_position_multipliers(
+      data.table::setDT(stats::setNames(lapply(pm_cols, take), pm_cols)), stat_cols)
+  } else {
+    .resolve_position_multipliers(decay_params, dt, stat_cols)
+  }
 
   # Build global prior center lookup per stat (minutes-weighted mean)
   grand_means <- numeric(length(stat_cols))
   names(grand_means) <- stat_cols
   prior_centers_cached <- decay_params$prior_centers
-  total_wt <- sum(data.table::fifelse(is.na(dt$total_minutes), 0,
-                                       as.numeric(dt$total_minutes)))
+  # Minutes weights once, not once per stat: rebuilding them inside the loop
+  # left ~3 GB of garbage at the latest season on GHA (run 38913817010).
+  wts <- data.table::fifelse(is.na(dt$total_minutes), 0,
+                              as.numeric(dt$total_minutes))
+  total_wt <- sum(wts)
+  # Each stat leaves a few full-length temporaries; with a multi-GB heap R
+  # lets ~6 GB of them pile up before collecting (run 38918305147). A gc()
+  # every 25 stats bounds that and changes no value.
+  gc_every <- 25L
   for (sc in stat_cols) {
+    if (match(sc, stat_cols) %% gc_every == 0L) invisible(gc(verbose = FALSE))
     if (!is.null(prior_centers_cached) && sc %in% names(prior_centers_cached)) {
       grand_means[sc] <- prior_centers_cached[sc]
-    } else if (sc %in% names(dt)) {
-      vals <- as.numeric(dt[[sc]])
+    } else if (sc %in% names(src)) {
+      vals <- as.numeric(take(sc))
       vals[is.na(vals)] <- 0
-      wts <- data.table::fifelse(is.na(dt$total_minutes), 0,
-                                  as.numeric(dt$total_minutes))
       if (total_wt > 0) grand_means[sc] <- sum(vals * wts) / total_wt
     }
   }
+  rm(wts)
 
   # Prior strength
   default_prior_90s <- decay_params$prior_90s %||% 2
@@ -618,7 +645,7 @@ estimate_player_skills <- function(match_stats, decay_params = NULL,
   use_fast_path <- function(lam) {
     if (!fast_path_configured) return(NULL)
     mexp_col <- precomp_mexp[[as.character(lam)]]
-    if (is.null(mexp_col) || !(mexp_col %in% names(dt))) {
+    if (is.null(mexp_col) || !(mexp_col %in% names(src))) {
       if (!slow_path_warned) {
         warning(sprintf(
           "precomputed_match_exp set but no cached column for lambda=%.6g ",
@@ -641,7 +668,7 @@ estimate_player_skills <- function(match_stats, decay_params = NULL,
     decay_cols[as.character(lam)] <- col_name
     mexp_col <- use_fast_path(lam)
     if (!is.null(mexp_col)) {
-      data.table::set(dt, j = col_name, value = dt[[mexp_col]] * exp(-lam * target_num))
+      data.table::set(dt, j = col_name, value = take(mexp_col) * exp(-lam * target_num))
     } else {
       data.table::set(dt, j = col_name, value = exp(-lam * dt$days_since))
     }
@@ -654,7 +681,7 @@ estimate_player_skills <- function(match_stats, decay_params = NULL,
     rate_mexp_col <- use_fast_path(rate_lam)
     if (!is.null(rate_mexp_col)) {
       data.table::set(dt, j = ".w_rate",
-                      value = dt[[rate_mexp_col]] * exp(-rate_lam * target_num))
+                      value = take(rate_mexp_col) * exp(-rate_lam * target_num))
     } else {
       dt[, .w_rate := exp(-rate_lam * days_since)]
     }
@@ -668,17 +695,21 @@ estimate_player_skills <- function(match_stats, decay_params = NULL,
   names(skill_results) <- stat_cols
 
   for (sc in stat_cols) {
+    if (match(sc, stat_cols) %% gc_every == 0L) invisible(gc(verbose = FALSE))
     lam <- stat_lambdas[sc]
     w_col <- decay_cols[as.character(lam)]
     w_vec <- dt[[w_col]]
     is_eff <- sc %in% names(eff_map)
     prior_strength <- get_prior(sc, is_eff)
 
-    vals <- as.numeric(dt[[sc]])
+    vals <- as.numeric(take(sc))
     vals[is.na(vals)] <- 0
 
     if (is_eff) {
-      denom <- compute_denominator(dt, eff_map[[sc]])
+      denom_parts <- intersect(strsplit(eff_map[[sc]], "+", fixed = TRUE)[[1]], names(src))
+      denom <- compute_denominator(
+        data.table::setDT(stats::setNames(lapply(denom_parts, take), denom_parts)),
+        eff_map[[sc]])
       if (is.null(denom)) next  # skip stat if denominator columns missing
       data.table::set(dt, j = ".wnum", value = w_vec * vals * denom)
       data.table::set(dt, j = ".wden", value = w_vec * denom)
@@ -758,23 +789,19 @@ estimate_player_skills <- function(match_stats, decay_params = NULL,
   result[w90_agg, weighted_90s := i.weighted_90s, on = "player_id"]
   data.table::setnames(result, "pos_group", "primary_position")
 
+  # Columns are placed by matched row, not by 142 update joins with get() in
+  # j: those joins took the latest-season call from 7.4 to 10.3 GB of R heap
+  # on GHA (run 38926840999). player_id is unique in both tables, so a
+  # player with no result for a stat gets NA, as the join gave.
   for (sc in stat_cols) {
     sr <- skill_results[[sc]]
     if (is.null(sr)) next
-
+    idx <- match(result$player_id, sr$player_id)
+    out_name <- if (rating_names) paste0(sc, "_rating") else sc
+    data.table::set(result, j = out_name, value = sr$skill[idx])
     if (compute_ci) {
-      out_name <- if (rating_names) paste0(sc, "_rating") else sc
-      lower_name <- paste0(sc, "_rating_lower")
-      upper_name <- paste0(sc, "_rating_upper")
-      data.table::setnames(sr, c("skill", "ci_lower", "ci_upper"),
-                            c(out_name, lower_name, upper_name))
-      result[sr, (out_name) := get(paste0("i.", out_name)), on = "player_id"]
-      result[sr, (lower_name) := get(paste0("i.", lower_name)), on = "player_id"]
-      result[sr, (upper_name) := get(paste0("i.", upper_name)), on = "player_id"]
-    } else {
-      out_name <- if (rating_names) paste0(sc, "_rating") else sc
-      data.table::setnames(sr, "skill", out_name)
-      result[sr, (out_name) := get(paste0("i.", out_name)), on = "player_id"]
+      data.table::set(result, j = paste0(sc, "_rating_lower"), value = sr$ci_lower[idx])
+      data.table::set(result, j = paste0(sc, "_rating_upper"), value = sr$ci_upper[idx])
     }
   }
 
