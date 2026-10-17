@@ -1872,7 +1872,12 @@ player_skill_profile <- function(player_name, match_stats = NULL,
   total_90s <- NA_real_
   n_matches_val <- NA_integer_
   if (!is.null(match_stats)) {
-    dt <- data.table::as.data.table(match_stats)
+    # A table aliasing the caller's columns, not as.data.table()'s deep copy:
+    # the only := below replaces a whole column, which leaves the caller's
+    # table untouched.
+    if (!data.table::is.data.table(match_stats)) match_stats <- data.table::as.data.table(match_stats)
+    dt <- data.table::setDT(stats::setNames(
+      lapply(seq_along(match_stats), function(i) match_stats[[i]]), names(match_stats)))
     if (!inherits(dt$match_date, "Date")) dt[, match_date := as.Date(match_date)]
     player_matches <- dt[player_id == player_id_val]
     if (nrow(player_matches) > 0) {
