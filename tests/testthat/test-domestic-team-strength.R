@@ -453,6 +453,8 @@ test_that("guard: panna/epr/psr zero (or all-NA) for >=50% of teams refuses to p
         domestic_codes = c("ENG", "SCO"), cup_codes = "UCL",
         as_of_domestic = as.Date("2026-10-15"),
         MIN_PLAUSIBLE_SQUAD_N = 3L,
+        # no real step-01 build for the panna#280 extra leagues in a fixture test
+        elo_extra_leagues = character(0), elo_anchor_leagues = character(0),
         skills_cache_dir = skills_dir,
         opta_cache_dir = file.path(skills_dir, "..", "cache-opta")),
     parent = globalenv())
@@ -795,4 +797,79 @@ test_that("a cup-only club is not dropped by a same-named domestic club (panna#2
   expect_equal(nrow(ars), 2L)
   expect_true(ars[team_id == "ars_eng"]$is_domestic_league)
   expect_false(ars[team_id == "ars_arg"]$is_domestic_league)
+})
+
+# ============================================================
+# .anchor_league_elo() (panna#280)
+# ============================================================
+
+.anchor_fixture <- function() {
+  # Five fit leagues on an exact line elo = 1500 + 400 * panna, two clubs each
+  # (+-50 around the league level), plus league X sitting 100 below its line
+  # and a cup-only club labelled X's cup.
+  fit <- data.table::rbindlist(lapply(seq_len(5), function(i) {
+    p <- (i - 3) * 0.2; lvl <- 1500 + 400 * p
+    data.table::data.table(league = paste0("L", i), is_domestic_league = TRUE,
+                           team = paste0("L", i, c("a", "b")),
+                           elo = lvl + c(-50, 50), panna = p)
+  }))
+  x <- data.table::data.table(league = "X", is_domestic_league = TRUE,
+                              team = c("Xa", "Xb"), elo = 1600 + c(-30, 30), panna = 0.5)
+  cup <- data.table::data.table(league = "CUP", is_domestic_league = FALSE,
+                                team = "Xcup", elo = 1400, panna = 0.5)
+  data.table::rbindlist(list(fit, x, cup))
+}
+
+test_that("anchor moves a league's level to the fitted line and keeps its spread", {
+  e <- .dts_source_only()
+  out <- suppressMessages(e$.anchor_league_elo(.anchor_fixture(), "X", paste0("L", 1:5)))
+  expect_equal(out[team == "Xa", elo], 1700 - 30)
+  expect_equal(out[team == "Xb", elo], 1700 + 30)
+  expect_equal(unique(out[league == "X", elo_league_shift]), 100)
+})
+
+test_that("anchor leaves fit leagues, unlisted leagues and cup-only rows alone", {
+  e <- .dts_source_only()
+  inp <- .anchor_fixture()
+  out <- suppressMessages(e$.anchor_league_elo(inp, "X", paste0("L", 1:5)))
+  expect_equal(out[league != "X", elo], inp[league != "X", elo])
+  expect_true(all(out[league != "X", elo_league_shift] == 0))
+  expect_equal(out[team == "Xcup", elo], 1400)
+  expect_equal(nrow(out), nrow(inp))
+  # the input table is not modified by reference
+  expect_false("elo_league_shift" %in% names(inp))
+})
+
+test_that("anchor refuses to extrapolate from too few fit leagues", {
+  e <- .dts_source_only()
+  expect_error(suppressMessages(e$.anchor_league_elo(.anchor_fixture(), "X", c("L1", "L2"))),
+               "refusing to extrapolate")
+})
+
+test_that("anchor with no listed league present is a no-op, not an error", {
+  e <- .dts_source_only()
+  inp <- .anchor_fixture()
+  out <- suppressMessages(e$.anchor_league_elo(inp, "MLS", paste0("L", 1:5)))
+  expect_equal(out$elo, inp$elo)
+  expect_true(all(out$elo_league_shift == 0))
+})
+
+test_that("an anchor league with no clubs is named, and the others still shift", {
+  e <- .dts_source_only()
+  said <- character(0)
+  out <- suppressMessages(e$.anchor_league_elo(
+    .anchor_fixture(), c("X", "BEL"), paste0("L", 1:5),
+    on_missing = function(msg) said <<- c(said, msg)))
+  expect_length(said, 1L)
+  expect_match(said, "BEL")
+  expect_equal(unique(out[league == "X", elo_league_shift]), 100)
+})
+
+test_that(".note_degraded appends to the non-fatal marker the workflow reads", {
+  e <- .dts_source_only()
+  d <- withr::local_tempdir()
+  suppressMessages(e$.note_degraded("first", marker_dir = d))
+  suppressMessages(e$.note_degraded("second", marker_dir = d))
+  lines <- readLines(file.path(d, ".nonfatal_step_failures"))
+  expect_equal(lines, c("step 12d (degraded): first", "step 12d (degraded): second"))
 })
