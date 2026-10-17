@@ -76,6 +76,41 @@ assert_skills_export_ok <- function(new, prev = NULL, min_row_frac = 0.9,
                  prev_checked = prev_checked))
 }
 
+#' Why a snapshot file would shrink what is published, if it would
+#'
+#' Compares the per-snapshot row counts of a file about to be published with
+#' the published copy. A published snapshot date missing from the new file is
+#' a problem, and so is one whose new row count is below `min_row_frac` of the
+#' published count: the dates-only check passed a file with every date kept
+#' but most of each date's rows gone.
+#'
+#' @param pub_dates Snapshot date of every row in the published file.
+#' @param new_dates Snapshot date of every row in the new file.
+#' @param min_row_frac Minimum new/published row ratio per snapshot date.
+#' @return Character vector of problems, empty when the new file keeps
+#'   everything.
+#' @noRd
+.snapshot_shrink_problems <- function(pub_dates, new_dates, min_row_frac = 0.9) {
+  pub_n <- table(as.character(pub_dates))
+  new_n <- table(as.character(new_dates))
+  problems <- character(0)
+  lost <- setdiff(names(pub_n), names(new_n))
+  if (length(lost) > 0L) {
+    problems <- c(problems, sprintf("%d of %d published snapshot dates are missing (e.g. %s)",
+                                    length(lost), length(pub_n), sort(lost)[1]))
+  }
+  kept <- intersect(names(pub_n), names(new_n))
+  ratio <- as.numeric(new_n[kept]) / as.numeric(pub_n[kept])
+  shrunk <- kept[ratio < min_row_frac]
+  if (length(shrunk) > 0L) {
+    first <- sort(shrunk)[1]
+    problems <- c(problems, sprintf(
+      "%d snapshot date(s) have under %.0f%% of their published rows (e.g. %s: %d of %d)",
+      length(shrunk), min_row_frac * 100, first, as.integer(new_n[first]), as.integer(pub_n[first])))
+  }
+  problems
+}
+
 #' Read the currently published copy of a release asset, or NULL
 #'
 #' Downloads to a temp dir (never over a local file). Any failure (offline, no
