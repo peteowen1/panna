@@ -24,7 +24,10 @@ on:
     types: [opta-scrape-complete]
 
 concurrency:
-  group: panna-release-writer
+  # main/dev share panna-release-writer so release writes never overlap. Any other ref is a dry
+  # build (PANNA_PUBLISH_DISABLED), so it gets its own queue: GitHub keeps one pending
+  # run per group, and a pending branch run would otherwise replace a pending publish.
+  group: ${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && 'panna-release-writer' || format('panna-release-writer-dry-{0}', github.ref) }}
   cancel-in-progress: false
 
 env:

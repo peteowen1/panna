@@ -34,7 +34,10 @@ permissions:
 # bus_manifest.json at the start and rewrites it at the end, so two runs at once
 # would lose one side's entries. Queues behind it, never cancels.
 concurrency:
-  group: opta-pipeline
+  # main/dev share opta-pipeline so release writes never overlap. Any other ref is a dry
+  # build (PANNA_PUBLISH_DISABLED), so it gets its own queue: GitHub keeps one pending
+  # run per group, and a pending branch run would otherwise replace a pending publish.
+  group: ${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && 'opta-pipeline' || format('opta-pipeline-dry-{0}', github.ref) }}
   cancel-in-progress: false
 
 jobs:

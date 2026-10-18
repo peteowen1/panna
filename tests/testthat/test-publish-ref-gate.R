@@ -47,12 +47,32 @@ test_that("opta-pipeline serialises runs and only uploads caches after success",
   skip_if_not_installed("yaml")
   skip_if_not(file.exists(wf_path("opta-pipeline.yml")), ".github not available (R CMD check)")
   wf <- yaml::read_yaml(wf_path("opta-pipeline.yml"))
-  expect_equal(wf$concurrency$group, "opta-pipeline")
+  # main/dev share the group; other refs (dry builds) get their own queue.
+  expect_match(wf$concurrency$group,
+               "(github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && 'opta-pipeline'",
+               fixed = TRUE)
   expect_false(isTRUE(wf$concurrency$`cancel-in-progress`))
   steps <- wf$jobs[[1]]$steps
   up <- Filter(function(s) identical(s$name, "Upload caches to predictions-cache release"), steps)[[1]]
   expect_match(up$`if`, "success()", fixed = TRUE)
   expect_false(grepl("always()", up$`if`, fixed = TRUE))
+})
+
+test_that("release-writing workflows share their queue only on main/dev", {
+  skip_if_not_installed("yaml")
+  skip_if_not(file.exists(wf_path(publishers[1])), ".github not available (R CMD check)")
+  # GitHub keeps one pending run per group, so a dry branch run in the shared group
+  # would replace a pending publish. The shared name must sit behind the main/dev test.
+  shared <- c("psr-weekly-snapshot.yml" = "panna-release-writer",
+              "epr-weekly-snapshot.yml" = "panna-release-writer",
+              "predictions-pipeline.yml" = "panna-release-writer",
+              "opta-pipeline.yml" = "opta-pipeline",
+              "career-panna.yml" = "opta-pipeline")
+  for (f in names(shared)) {
+    g <- yaml::read_yaml(wf_path(f))$concurrency$group
+    expect_match(g, sprintf("(github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && '%s' || format('%s-dry-{0}', github.ref)",
+                            shared[[f]], shared[[f]]), fixed = TRUE, info = f)
+  }
 })
 
 test_that("psr skills rebuild runs even when an earlier step failed (R100)", {
