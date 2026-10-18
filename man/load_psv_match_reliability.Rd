@@ -40,6 +40,8 @@ Other psr:
 \code{\link{load_psr_calibration}()},
 \code{\link{player_psr}()},
 \code{\link{psr_leaderboard_eligible}()},
+\code{\link{psr_season_coverage}()},
+\code{\link{psr_season_covered}()},
 \code{\link{psv_opponent}},
 \code{\link{soccer_position_map}()},
 \code{\link{soccer_stat_rating_definitions}()},
