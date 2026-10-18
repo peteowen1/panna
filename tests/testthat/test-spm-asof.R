@@ -310,3 +310,35 @@ test_that(".assert_skill_spm_sign_convention accepts the current tag and rejects
   expect_error(.assert_skill_spm_sign_convention(list(sign_convention = "defense_negative_good"), "old"),
                "defense_negative_good")
 })
+
+test_that("fit_expanding_pooled_rapm halflife_days = NULL reproduces the undecayed fit", {
+  skip_if_not_installed("glmnet")
+  fx <- make_expanding_pooled_fixture()
+  a <- fit_expanding_pooled_rapm(fx$rapm_data, fx$splint_season_map, cutoff_year = 2020, nfolds = 3, seed = 1)
+  b <- fit_expanding_pooled_rapm(fx$rapm_data, fx$splint_season_map, cutoff_year = 2020, nfolds = 3, seed = 1,
+                                 halflife_days = NULL)
+  expect_equal(a$ratings, b$ratings)
+  expect_null(b$halflife_days)
+  expect_true(is.na(b$anchor_date))
+})
+
+test_that("fit_expanding_pooled_rapm decay needs match dates and anchors inside the window", {
+  skip_if_not_installed("glmnet")
+  fx <- make_expanding_pooled_fixture()
+  expect_error(fit_expanding_pooled_rapm(fx$rapm_data, fx$splint_season_map, cutoff_year = 2020,
+                                         nfolds = 3, seed = 1, halflife_days = 365),
+               "match_date")
+
+  ssm <- fx$splint_season_map
+  set.seed(7)
+  ssm$match_date <- as.Date(sprintf("%d-01-01", ssm$season_end_year)) + sample(0:300, nrow(ssm), replace = TRUE)
+  undecayed <- fit_expanding_pooled_rapm(fx$rapm_data, ssm, cutoff_year = 2020, nfolds = 3, seed = 1)
+  decayed <- fit_expanding_pooled_rapm(fx$rapm_data, ssm, cutoff_year = 2020, nfolds = 3, seed = 1,
+                                       halflife_days = 365)
+  expect_equal(decayed$halflife_days, 365)
+  # the anchor is the last match BEFORE the cutoff season, never a 2020 date
+  expect_equal(decayed$anchor_date, max(ssm$match_date[ssm$season_end_year < 2020]))
+  expect_false(isTRUE(all.equal(decayed$ratings$rapm, undecayed$ratings$rapm)))
+  # same rows kept: decay re-weights, it does not drop
+  expect_equal(decayed$n_obs, undecayed$n_obs)
+})
