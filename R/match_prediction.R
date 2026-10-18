@@ -1231,12 +1231,18 @@ softprob_matrix <- function(probs, n_rows, n_class = 3L) {
 #'   via \code{\link{.grouped_cv_folds}} instead of xgboost's default random
 #'   per-row assignment, so a match and its mirrored twin never split across
 #'   folds. \code{NULL} (default) keeps the prior per-row random behaviour.
+#' @param seed Integer seed for the CV fold draw and xgboost's row/column
+#'   subsampling, which both use R's random-number stream. Without it the fit
+#'   depended on whatever had drawn from that stream before: two identical
+#'   predictions runs on 2026-10-18 differed by 0.001 test log-loss (n 1,330)
+#'   and by up to 0.33 on single matches (panna#257). The caller's stream is
+#'   left as it was.
 #'
 #' @return List with model, cv_result, best_nrounds, metadata
 #' @keywords internal
 .fit_xgb_model <- function(X, y, params, nfolds = 5L, nrounds = 500L,
                            early_stopping = 30L, verbose = 1L,
-                           group_ids = NULL) {
+                           group_ids = NULL, seed = 20261019L) {
   if (!requireNamespace("xgboost", quietly = TRUE)) {
     cli::cli_abort("Package {.pkg xgboost} is required.")
   }
@@ -1256,16 +1262,16 @@ softprob_matrix <- function(probs, n_rows, n_class = 3L) {
   } else {
     cv_args$folds <- .grouped_cv_folds(group_ids, nfolds)
   }
-  cv_result <- do.call(xgboost::xgb.cv, cv_args)
+  cv_result <- withr::with_seed(seed, do.call(xgboost::xgb.cv, cv_args))
 
   best_nrounds <- .get_best_nrounds(cv_result)
 
-  model <- xgboost::xgb.train(
+  model <- withr::with_seed(seed, xgboost::xgb.train(
     params = params,
     data = dtrain,
     nrounds = best_nrounds,
     verbose = 0L
-  )
+  ))
 
   importance <- xgboost::xgb.importance(
     feature_names = colnames(X),
