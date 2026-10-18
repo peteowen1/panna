@@ -25,10 +25,12 @@ env:
 permissions:
   contents: read
 
-# Shares opta-pipeline's group: both vb_publish() to ratings-data, which reads its
-# bus_manifest.json at the start and rewrites it at the end. Queues, never cancels.
+# On main/dev it shares opta-pipeline's group: both vb_publish() to ratings-data, which
+# reads its bus_manifest.json at the start and rewrites it at the end. Queues, never
+# cancels. A branch run can never publish (the gate above), so it gets its own group
+# instead of waiting up to two hours behind a scrape-day Opta run.
 concurrency:
-  group: opta-pipeline
+  group: ${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && 'opta-pipeline' || format('career-panna-asof-dry-{0}', github.ref) }}
   cancel-in-progress: false
 
 jobs:
