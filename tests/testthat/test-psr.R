@@ -2119,3 +2119,38 @@ test_that(".estimate_prematch_skills_batch keeps date names aligned after an emp
   expect_identical(names(got), names(ref))
   for (d in names(ref)) expect_equal(got[[d]], ref[[d]])
 })
+
+# =============================================================================
+# Duplicate-feature sweep on the shipped coefficients (issue #172)
+# =============================================================================
+
+test_that("shipped PSR coefficient files have no unexpected duplicate features", {
+  # `sd` is the training sd of each team-sum feature, so two byte-identical
+  # training columns must carry identical sds. Sweeping the committed CSVs
+  # detects duplicates in whatever data the shipped model actually trained on.
+  # A duplicate leaves the design matrix rank-deficient and the elastic net
+  # splits one effect across the pair (issue #172).
+  files <- list.files(
+    system.file("extdata", package = "panna"),
+    pattern = "^(blend_|gd_|gk_)?(psr|osr|dsr)_coefficients\\.csv$",
+    full.names = TRUE
+  )
+  expect_gt(length(files), 0)
+
+  # Known duplicate, pending a retrain that drops one member (issue #172).
+  # Remove this entry once turnover_p90 is dropped from .get_psr_skill_cols();
+  # the check below fails on a stale entry so it cannot linger.
+  known <- list(c("turnover_p90", "unsuccessful_touch_p90"))
+  known_cols <- unlist(known)
+
+  for (f in files) {
+    d <- utils::read.csv(f, stringsAsFactors = FALSE)
+    d <- d[!is.na(d$sd), ]
+    key <- signif(d$sd, 9)
+    found <- sort(d$stat_name[duplicated(key) | duplicated(key, fromLast = TRUE)])
+    expect_identical(
+      found, if (nrow(d) > 25) sort(known_cols) else character(0),
+      info = paste("duplicate-sd features in", basename(f))
+    )
+  }
+})
