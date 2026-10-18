@@ -809,27 +809,28 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
       ifelse(is.na(xmetrics[[tot]]), 0, xmetrics$minutes)
     }
   }
-  xmetrics_agg <- xmetrics %>%
-    dplyr::group_by(player_id) %>%
-    dplyr::summarise(
-      xg_total = sum(xg, na.rm = TRUE),
-      npxg_total = sum(npxg, na.rm = TRUE),
-      xa_total = sum(xa, na.rm = TRUE),
-      xmetrics_minutes = sum(minutes, na.rm = TRUE),
-      xpass_overperformance_total = sum(xpass_overperformance, na.rm = TRUE),
-      dplyr::across(dplyr::all_of(xm_extra_totals), ~ sum(.x, na.rm = TRUE),
-                    .names = "{.col}_total"),
-      dplyr::across(dplyr::all_of(paste0(".cm_", xm_extra_totals)), ~ sum(.x, na.rm = TRUE),
-                    .names = "{.col}_covmins"),
-      .groups = "drop"
-    ) %>%
-    dplyr::filter(xmetrics_minutes > 0) %>%
-    dplyr::mutate(
-      xg_per90 = xg_total / xmetrics_minutes * 90,
-      npxg_per90 = npxg_total / xmetrics_minutes * 90,
-      xa_per90_xmetrics = xa_total / xmetrics_minutes * 90,
-      xpass_overperformance_per90_xmetrics = xpass_overperformance_total / xmetrics_minutes * 90
-    )
+  ## Per-player totals in data.table, not dplyr (the package takes no new hard
+  ## dependency). keyby() sorts players as group_by() did, and sum_na() is
+  ## sum(na.rm = TRUE), so an all-NA group still totals 0.
+  sum_na <- function(x) sum(x, na.rm = TRUE)
+  sum_src <- c("xg", "npxg", "xa", "minutes", "xpass_overperformance",
+               xm_extra_totals, paste0(".cm_", xm_extra_totals, recycle0 = TRUE))
+  sum_out <- c("xg_total", "npxg_total", "xa_total", "xmetrics_minutes",
+               "xpass_overperformance_total",
+               paste0(xm_extra_totals, "_total", recycle0 = TRUE),
+               paste0(".cm_", xm_extra_totals, "_covmins", recycle0 = TRUE))
+  xmetrics_agg <- data.table::as.data.table(xmetrics)[
+    , lapply(.SD, sum_na), keyby = player_id, .SDcols = sum_src]
+  data.table::setnames(xmetrics_agg, sum_src, sum_out)
+  xmetrics_agg <- as.data.frame(xmetrics_agg)
+  xmetrics_agg <- xmetrics_agg[order(is.na(xmetrics_agg$player_id)), , drop = FALSE]
+  xmetrics_agg <- xmetrics_agg[xmetrics_agg$xmetrics_minutes > 0, , drop = FALSE]
+  row.names(xmetrics_agg) <- NULL
+  xmetrics_agg$xg_per90 <- xmetrics_agg$xg_total / xmetrics_agg$xmetrics_minutes * 90
+  xmetrics_agg$npxg_per90 <- xmetrics_agg$npxg_total / xmetrics_agg$xmetrics_minutes * 90
+  xmetrics_agg$xa_per90_xmetrics <- xmetrics_agg$xa_total / xmetrics_agg$xmetrics_minutes * 90
+  xmetrics_agg$xpass_overperformance_per90_xmetrics <-
+    xmetrics_agg$xpass_overperformance_total / xmetrics_agg$xmetrics_minutes * 90
   for (tot in xm_extra_totals) {
     covmins <- xmetrics_agg[[paste0(".cm_", tot, "_covmins")]]
     xmetrics_agg[[paste0(tot, "_per90")]] <-
@@ -843,7 +844,7 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
   xm_cols <- c("xg_per90", "npxg_per90", "xa_per90_xmetrics",
                "xpass_overperformance_per90_xmetrics",
                paste0(xm_extra_totals, "_per90", recycle0 = TRUE))
-  xmetrics_agg %>% dplyr::select(dplyr::all_of(c("player_id", xm_cols)))
+  xmetrics_agg[, c("player_id", xm_cols), drop = FALSE]
 }
 
 
