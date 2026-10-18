@@ -985,9 +985,10 @@ cat(sprintf("  Written: %s (%s MB)\n", out_path, mb))
 if (exists("psr_smoke_n") && psr_smoke_n > 0) {
   wp <- data.table::as.data.table(weekly_psr)
   dl <- max(wp$snapshot_date)
-  tt <- wp[snapshot_date == dl & weighted_90s >= 8][order(-psr)]
-  cat(sprintf("\n=== SMOKE: TOP 20 PSR @ %s  (min 8 nineties, %d qualifying) ===\n",
-              as.character(dl), nrow(tt)))
+  wl <- wp[snapshot_date == dl]
+  tt <- wl[psr_leaderboard_eligible(wl)][order(-psr)]
+  cat(sprintf("\n=== SMOKE: TOP 20 PSR @ %s  (min %s nineties, %d qualifying) ===\n",
+              as.character(dl), MIN_90S_PSR_LEADERBOARD, nrow(tt)))
   print(utils::head(tt[, .(player_name, primary_position,
                            psr = round(psr, 3), osr = round(osr, 3),
                            dsr = round(dsr, 3), n90 = round(weighted_90s, 1))], 20))

@@ -972,6 +972,31 @@ test_that("MIN_90S_PSR_LEADERBOARD is a plausible half-season bar", {
   expect_true(MIN_90S_PSR_LEADERBOARD >= 8 && MIN_90S_PSR_LEADERBOARD <= 25)
 })
 
+test_that("player_psr() leaves sub-floor part-seasons off the ranking but keeps them for a name lookup (panna#215)", {
+  snap <- data.table::data.table(
+    snapshot_date = as.Date("2026-10-01"),
+    player_name = c("Full Season", "Half Season", "F. Totti", "Pinilla"),
+    primary_position = "FWD",
+    psr = c(0.30, 0.25, 0.36, 0.35),
+    osr = 0.1, dsr = 0.1,
+    weighted_90s = c(30, 15, 7.0, 5.5)
+  )
+  testthat::local_mocked_bindings(load_opta_psr_weekly = function(...) data.table::copy(snap))
+
+  top <- player_psr(n = NULL)
+  # Totti and Pinilla out-rate everyone on psr but fall under the floor
+  expect_equal(top$player_name, c("Full Season", "Half Season"))
+
+  # floor is adjustable; 0 restores the unfiltered ranking
+  expect_equal(player_psr(n = NULL, min_90s = 0)$player_name[1], "F. Totti")
+  expect_equal(player_psr(n = NULL, min_90s = 20)$player_name, "Full Season")
+
+  # a profile lookup is not a ranking: the short season still shows
+  expect_equal(player_psr(player = "Totti")$weighted_90s, 7.0)
+
+  expect_error(player_psr(min_90s = 100), "weighted 90s")
+})
+
 
 # =============================================================================
 # apply_psr_calibration: both axes, post-offset (panna#202/#213/#214)

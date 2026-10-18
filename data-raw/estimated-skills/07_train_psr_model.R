@@ -1106,8 +1106,9 @@ if (!is.null(latest_skills) && nrow(latest_skills) > 0) {
     cat(sprintf("PSR range: [%.3f, %.3f], sd: %.3f\n",
                 min(psr_result$psr), max(psr_result$psr), sd(psr_result$psr)))
 
-    cat("\nTop 20 by PSR:\n")
-    top20 <- psr_result[order(-psr)][1:min(20, nrow(psr_result))]
+    cat(sprintf("\nTop 20 by PSR (min %s weighted 90s):\n", MIN_90S_PSR_LEADERBOARD))
+    top20 <- psr_result[psr_leaderboard_eligible(psr_result)][order(-psr)]
+    top20 <- top20[seq_len(min(20, nrow(top20)))]
     print(top20[, .(player_name, primary_position,
                      psr = round(psr, 3), osr = round(osr, 3),
                      dsr = round(dsr, 3))],
