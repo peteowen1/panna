@@ -140,7 +140,9 @@ jobs:
           GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
         run: |
           set -euo pipefail
-          BK="03_skill_spm_asof.$(date -u +%F)-BACKUP.rds"
+          # Run id in the name: a same-day rerun would otherwise back up the already-refitted
+          # prior over the only copy of the old one.
+          BK="03_skill_spm_asof.$(date -u +%F)-run$GITHUB_RUN_ID-BACKUP.rds"
           cp /tmp/old_asof_prior.rds "/tmp/$BK"
           gh release upload predictions-cache "/tmp/$BK" -R peteowen1/pannadata --clobber
           gh release view predictions-cache -R peteowen1/pannadata --json assets --jq ".assets[].name" | grep -qx "$BK"
