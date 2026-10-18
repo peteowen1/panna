@@ -41,6 +41,12 @@ numeric vector of length \code{ncol(X)}, or a named numeric vector keyed by
 predictor name (unmatched predictors default to \code{-Inf}/\code{Inf}). Use to
 enforce directional priors (e.g. negative defensive-tackle coefficient).
 \code{NULL} (default) = unconstrained.}
+
+\item{penalty_factor}{Optional named numeric vector of glmnet penalty
+factors, keyed by predictor name. \code{0} leaves a column unshrunk (used for
+league controls); columns not named keep the default of 1. Names that are
+not in the design matrix are ignored with a warning. \code{NULL} (default) =
+every column penalized.}
 }
 \value{
 Fitted glmnet model with metadata

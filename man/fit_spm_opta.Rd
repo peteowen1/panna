@@ -27,6 +27,16 @@ fit_spm_opta(
 
 \item{weight_transform}{Transform for weighting: "sqrt", "linear", "log"}
 
+\item{league_fe}{Add league fixed-effect dummies as unpenalized controls
+(opt-in, default FALSE). Mutually exclusive with \code{league_shares}.}
+
+\item{league_min_n}{Minimum rows for a league to get its own dummy when
+\code{league_fe = TRUE} (default 50). Thinner leagues fold into the reference.}
+
+\item{league_shares}{Enter the minutes-share \verb{lgshare_*} columns (built by
+\code{.spm_league_shares()} and joined by \code{player_id}) as unpenalized controls
+(opt-in, default FALSE). Mutually exclusive with \code{league_fe}.}
+
 \item{opponent_elo}{Enter a pre-joined \code{opponent_elo} column as an
 unpenalized control (opt-in, default FALSE). Orthogonal to
 \code{league_fe}/\code{league_shares} -- can combine with either.}

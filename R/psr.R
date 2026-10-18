@@ -2033,6 +2033,13 @@ load_psv_match_reliability <- function() {
 #'   obvious. Resolve once on the full population and pass it here. Named with
 #'   a dot prefix deliberately: a parameter called \code{pos_grp} would be
 #'   shadowed by the column of the same name inside \code{dt[...]}.
+#' @param role_override Optional character vector, one per row of
+#'   \code{player_match_stats}, giving each row's role code in the
+#'   \code{classify_role()} vocabulary (e.g. \code{"CB"}). Used by the
+#'   position-normalization step. Usually unnecessary: match stats carry
+#'   \code{position} and \code{position_side}, so the role resolves from them.
+#'   Pass it when scoring a slice of a larger population, so every slice uses
+#'   the role resolved on the full population.
 #'
 #' @return A data.table with \code{psv}, \code{osv}, \code{dsv} columns.
 #'
@@ -2245,7 +2252,7 @@ load_psv_calibration <- function() {
 #'
 #' \strong{The position column must be a RESOLVED position, not the per-match
 #' role.} Opta records \code{position == "Substitute"} for anyone appearing off
-#' the bench -- roughly 29\% of game-log rows as measured 2026-09 (an absolute
+#' the bench -- roughly 29% of game-log rows as measured 2026-09 (an absolute
 #' count would already be stale given the daily Opta scrape; re-measure rather
 #' than trust a cached number). Bucketing on that field puts a blend of every
 #' position into one group and biases the outfield factors. Resolve each
@@ -2263,10 +2270,10 @@ load_psv_calibration <- function() {
 #' and only the relative position weighting moves. That matters because these
 #' offsets are ADDED to PSR at full strength on the assumption that PSV and PSR
 #' share units. Using the raw slopes inflates all of PSV ~1.5x and every league
-#' offset with it -- which looks like a large correction (+55\% on weak leagues)
+#' offset with it -- which looks like a large correction (+55% on weak leagues)
 #' but is a units artefact. The genuine differential effect on the offsets is
-#' about \strong{+4.6\%}; the real payoff of this table is to PSV itself, where it
-#' cuts goalkeeper share of the top 1\% from 4.2x the population rate to ~0.2x.
+#' about **+4.6%**; the real payoff of this table is to PSV itself, where it
+#' cuts goalkeeper share of the top 1% from 4.2x the population rate to ~0.2x.
 #'
 #' \strong{These figures are a point-in-time measurement (2026-09), not an
 #' enforced invariant} -- there is no checked-in script that regenerates
@@ -2377,10 +2384,10 @@ resolve_position_group <- function(dt) {
 #' regex-matched the same vocabulary independently, which is exactly the kind of
 #' duplicated classifier this codebase's own gotchas warn drifts silently); or a
 #' 16-role \code{classify_role()} code (\code{"CB"}, \code{"DM"}, ...), resolved
-#' via \code{\link{.role16_to_broad}} -- needed because
+#' via \code{.role16_to_broad()} -- needed because
 #' \code{apply_psv_calibration()}'s own fallback chain can hand this function a
 #' fine-grained \code{primary_position} (see \code{\link{.player_role}}'s
-#' comment: that column is "usually already broad... but [sometimes] a
+#' comment: that column is "usually already broad... but \[sometimes\] a
 #' fine-grained label"). Anything none of the three recognize returns NA, which
 #' \code{apply_psv_calibration()} treats as factor 1 (uncalibrated passthrough).
 #' @keywords internal

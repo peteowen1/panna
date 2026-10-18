@@ -192,6 +192,11 @@ prepare_spm_regression_data <- function(player_features, rapm_ratings) {
 #'   predictor name (unmatched predictors default to `-Inf`/`Inf`). Use to
 #'   enforce directional priors (e.g. negative defensive-tackle coefficient).
 #'   `NULL` (default) = unconstrained.
+#' @param penalty_factor Optional named numeric vector of glmnet penalty
+#'   factors, keyed by predictor name. `0` leaves a column unshrunk (used for
+#'   league controls); columns not named keep the default of 1. Names that are
+#'   not in the design matrix are ignored with a warning. `NULL` (default) =
+#'   every column penalized.
 #'
 #' @return Fitted glmnet model with metadata
 #' @family spm
