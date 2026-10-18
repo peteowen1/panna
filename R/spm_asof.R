@@ -198,22 +198,29 @@ fit_expanding_pooled_rapm <- function(rapm_data, splint_season_map, cutoff_year,
 #' @keywords internal
 fit_expanding_skill_spm <- function(skill_features, pooled_rapm_ratings, cutoff_year,
                                     nfolds = 5) {
-  player_stats <- skill_features %>%
-    dplyr::filter(season_end_year < cutoff_year) %>%
-    dplyr::group_by(player_id) %>%
-    dplyr::slice_max(season_end_year, n = 1, with_ties = FALSE) %>%
-    dplyr::ungroup()
+  ## Latest pre-cutoff season per player: the first row of each player's max
+  ## season (what group_by() + slice_max(with_ties = FALSE) kept), in player_id
+  ## order. data.table, not dplyr, so the package takes no new hard dependency.
+  player_stats <- data.table::as.data.table(skill_features)
+  player_stats <- player_stats[season_end_year < cutoff_year]
+  data.table::setorderv(player_stats, c("player_id", "season_end_year"), c(1L, -1L),
+                        na.last = TRUE)
+  player_stats <- as.data.frame(player_stats[!duplicated(player_stats, by = "player_id")])
 
   if (!"player_name" %in% names(player_stats)) player_stats$player_name <- player_stats$player_id
   if (!"mins_per_90" %in% names(player_stats)) {
     player_stats$mins_per_90 <- player_stats$total_minutes / 90
   }
 
-  spm_train_data <- player_stats %>%
-    dplyr::inner_join(
-      pooled_rapm_ratings %>% dplyr::select(player_id, rapm, offense, defense),
-      by = "player_id"
-    )
+  ## inner_join(player_stats, pooled ratings, by = "player_id"): player_stats'
+  ## row order is kept and the three rating columns are appended after its own.
+  pooled_row <- match(player_stats$player_id, pooled_rapm_ratings$player_id)
+  keep <- !is.na(pooled_row)
+  spm_train_data <- player_stats[keep, , drop = FALSE]
+  for (col in c("rapm", "offense", "defense")) {
+    spm_train_data[[col]] <- pooled_rapm_ratings[[col]][pooled_row[keep]]
+  }
+  row.names(spm_train_data) <- NULL
 
   if (nrow(spm_train_data) < 100) {
     cli::cli_warn(paste0(
@@ -223,7 +230,8 @@ fit_expanding_skill_spm <- function(skill_features, pooled_rapm_ratings, cutoff_
   }
 
   offense_cols <- .skill_spm_offense_cols(spm_train_data)
-  offense_train <- spm_train_data %>% dplyr::mutate(rapm = offense)
+  offense_train <- spm_train_data
+  offense_train$rapm <- offense_train$offense
   offense_spm_glmnet <- fit_spm_model(offense_train, predictor_cols = offense_cols,
                                       alpha = 0.5, nfolds = nfolds, weight_by_minutes = TRUE)
   offense_spm_xgb <- fit_spm_xgb(offense_train, predictor_cols = offense_cols,
@@ -240,7 +248,8 @@ fit_expanding_skill_spm <- function(skill_features, pooled_rapm_ratings, cutoff_
   # from the pre-flip negative=good constraint.
   def_lower <- stats::setNames(rep(0, length(constraints$good)), constraints$good)
   def_upper <- stats::setNames(rep(0, length(constraints$bad)), constraints$bad)
-  defense_train <- spm_train_data %>% dplyr::mutate(rapm = defense)
+  defense_train <- spm_train_data
+  defense_train$rapm <- defense_train$defense
   defense_spm_glmnet <- fit_spm_model(defense_train, predictor_cols = defense_cols,
                                       alpha = 0.5, nfolds = nfolds, weight_by_minutes = TRUE,
                                       lower_limits = def_lower, upper_limits = def_upper)
@@ -252,17 +261,17 @@ fit_expanding_skill_spm <- function(skill_features, pooled_rapm_ratings, cutoff_
 
   offense_glmnet_pred <- calculate_spm_ratings(player_stats, offense_spm_glmnet)
   offense_xgb_pred <- calculate_spm_ratings_xgb(player_stats, offense_spm_xgb)
-  offense_spm_ratings <- offense_glmnet_pred %>%
-    dplyr::rename(off_glmnet = spm) %>%
-    dplyr::inner_join(offense_xgb_pred %>% dplyr::select(player_id, off_xgb = spm), by = "player_id") %>%
-    dplyr::mutate(offense_spm = 0.5 * off_glmnet + 0.5 * off_xgb)
+  offense_spm_ratings <- .join_spm_predictions(offense_glmnet_pred, offense_xgb_pred,
+                                               "off_glmnet", "off_xgb")
+  offense_spm_ratings$offense_spm <- 0.5 * offense_spm_ratings$off_glmnet +
+    0.5 * offense_spm_ratings$off_xgb
 
   defense_glmnet_pred <- calculate_spm_ratings(player_stats, defense_spm_glmnet)
   defense_xgb_pred <- calculate_spm_ratings_xgb(player_stats, defense_spm_xgb)
-  defense_spm_ratings <- defense_glmnet_pred %>%
-    dplyr::rename(def_glmnet = spm) %>%
-    dplyr::inner_join(defense_xgb_pred %>% dplyr::select(player_id, def_xgb = spm), by = "player_id") %>%
-    dplyr::mutate(defense_spm = 0.5 * def_glmnet + 0.5 * def_xgb)
+  defense_spm_ratings <- .join_spm_predictions(defense_glmnet_pred, defense_xgb_pred,
+                                               "def_glmnet", "def_xgb")
+  defense_spm_ratings$defense_spm <- 0.5 * defense_spm_ratings$def_glmnet +
+    0.5 * defense_spm_ratings$def_xgb
 
   list(
     offense_spm_glmnet = offense_spm_glmnet,
@@ -274,6 +283,20 @@ fit_expanding_skill_spm <- function(skill_features, pooled_rapm_ratings, cutoff_
     cutoff_year = cutoff_year,
     n_train = nrow(spm_train_data)
   )
+}
+
+## Rows of the glmnet predictions that also have an xgboost prediction: an
+## inner join that keeps the glmnet row order, as dplyr::inner_join did. The
+## glmnet `spm` column becomes `glmnet_name` and the xgboost one is added as
+## `xgb_name`.
+.join_spm_predictions <- function(glmnet_pred, xgb_pred, glmnet_name, xgb_name) {
+  xgb_row <- match(glmnet_pred$player_id, xgb_pred$player_id)
+  keep <- !is.na(xgb_row)
+  out <- glmnet_pred[keep, , drop = FALSE]
+  names(out)[names(out) == "spm"] <- glmnet_name
+  out[[xgb_name]] <- xgb_pred$spm[xgb_row[keep]]
+  row.names(out) <- NULL
+  out
 }
 
 
