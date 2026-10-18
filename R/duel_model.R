@@ -247,6 +247,10 @@ compute_all_duel_preps <- function(events) {
 .fit_contest_model <- function(features, label, nfolds, max_depth, eta,
                                subsample, colsample_bytree, nrounds,
                                early_stopping_rounds, verbose) {
+  # xgboost draws its seed, CV folds and subsampling from R's random stream; fix it
+  # so a retrain on the same data gives the same model, and restore the caller's
+  # stream on exit (panna#360).
+  withr::local_seed(MODEL_FIT_SEED)
   feature_cols <- intersect(.DUEL_FEATURE_COLS, names(features))
   cli::cli_alert_info(
     "Fitting x{label} model ({length(feature_cols)} feats) on {format(nrow(features), big.mark=',')} contests..."

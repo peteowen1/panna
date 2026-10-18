@@ -318,7 +318,10 @@ print(importance)
 # hyperparameters, and CALL ORDER (offense EN -> offense XGB -> defense EN ->
 # defense XGB -> offense predict/blend -> defense predict/blend) as the
 # pre-hoist base path, so CV fold assignment / xgb random draws are
-# unaffected by the hoist.
+# unaffected by the hoist. Since panna#360, fit_spm_xgb() seeds itself and
+# restores the stream on exit, so the xgb fits no longer advance the stream
+# the elastic-net folds draw from: call order still matters for glmnet's
+# folds, but no longer for xgboost.
 .fit_od_spm_blend <- function(offense_train, defense_train, offense_cols, defense_cols,
                                def_lower, def_upper, player_stats) {
   cat("\n--- Offense Elastic Net ---\n")

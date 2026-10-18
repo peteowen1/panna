@@ -1017,3 +1017,12 @@ SPMR_SIGN_CONVENTION <- "defense_positive_good"
 #' (pre-flip) one loudly rather than silently trusting it.
 #' @keywords internal
 RAPM_WINDOW_TARGET_SIGN_CONVENTION <- "defense_positive_good"
+
+#' Seed for model fits that draw on R's random stream
+#'
+#' xgboost 3.x's R `xgb.train` takes its internal seed from R's random stream when
+#' `params` has none, and `xgb.cv` draws its folds from it, so an unseeded retrain on
+#' identical data gives a different model (panna#360). Each model fit sets this with
+#' `withr::local_seed()`, which also restores the caller's stream.
+#' @keywords internal
+MODEL_FIT_SEED <- 20261019L
