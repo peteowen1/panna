@@ -830,3 +830,6 @@ utils::globalVariables(c(".og", ".row", ".new_team", ".k", ".d", "n_timed", "ev_
 
 # .aggregate_opta_player_stats() / compare_players() (R/player_stats_opta.R, R/compare_players.R).
 utils::globalVariables(c("pid", "minutes", "player_id"))
+
+# .add_territory_features() (R/psr.R): temp columns renamed into place on the opponent-shots lookup.
+utils::globalVariables(c(".o_team", ".opp_shots"))
