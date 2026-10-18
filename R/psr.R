@@ -3036,13 +3036,20 @@ apply_psr_league_offsets <- function(psr_dt, offsets, verbose = FALSE) {
 #' Get Player Skill Ratings
 #'
 #' Returns a ranked PSR leaderboard using pre-computed weekly snapshots.
-#' Snaps to the nearest weekly date at or before \code{date}.
+#' Snaps to the nearest weekly date at or before \code{date}. Players under
+#' \code{min_90s} weighted nineties are left off the ranking (a name lookup
+#' via \code{player} is exempt).
 #'
 #' @param date Date to query as a \code{Date} or \code{"YYYY-MM-DD"} string.
 #'   Defaults to the latest available snapshot.
 #' @param player Optional player name filter (partial match, case-insensitive).
 #'   E.g., \code{"Salah"} matches "Mohamed Salah".
 #' @param n Number of top players to show (default 50, NULL for all).
+#' @param min_90s Minimum weighted 90s to appear in the leaderboard (default
+#'   \code{\link{MIN_90S_PSR_LEADERBOARD}}, panna#215). Applied through
+#'   \code{\link{psr_leaderboard_eligible}} before ranking. Not applied when
+#'   \code{player} is given, so a single-player lookup still shows a short
+#'   season's rating. Use \code{0} to rank every row.
 #' @param position Filter by position group: \code{"GK"}, \code{"DEF"},
 #'   \code{"MID"}, \code{"FWD"}, or NULL for all.
 #' @param target One of \code{"xg"} (default, xG differential) or
@@ -3073,6 +3080,7 @@ apply_psr_league_offsets <- function(psr_dt, offsets, verbose = FALSE) {
 #' player_psr(position = "MID")
 #' }
 player_psr <- function(date = NULL, player = NULL, n = 50,
+                        min_90s = MIN_90S_PSR_LEADERBOARD,
                         position = NULL, target = c("xg", "goals"),
                         source = c("remote", "local")) {
   source <- match.arg(source)
@@ -3115,6 +3123,20 @@ player_psr <- function(date = NULL, player = NULL, n = 50,
       ))
     }
     psr <- psr[primary_position == position]
+  }
+
+  # Minutes floor for the ranking (panna#215). A name lookup is a profile view,
+  # not a ranking, so it keeps short seasons.
+  if (is.null(player)) {
+    # flag computed outside `[`: inside it, `psr` would resolve to the column
+    eligible <- psr_leaderboard_eligible(psr, min_90s = min_90s)
+    psr <- psr[eligible]
+    if (nrow(psr) == 0) {
+      cli::cli_abort(c(
+        "No players have at least {min_90s} weighted 90s.",
+        "i" = "Lower {.arg min_90s} to rank thinner samples."
+      ))
+    }
   }
 
   # Sort by PSR descending

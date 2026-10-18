@@ -1,3 +1,11 @@
+# panna (development)
+
+- `player_psr()` now ranks only players with at least `MIN_90S_PSR_LEADERBOARD` (15) weighted nineties, through
+  `psr_leaderboard_eligible()`, with a new `min_90s` argument (0 turns it off). A name lookup (`player =`) is
+  exempt. On the latest weekly snapshot 21 of the top 50 had fewer than 15 nineties. The skills-pipeline "Top 20
+  by PSR" console prints (steps 07 and 08b) use the same floor. The weekly parquet still carries every player
+  (#215).
+
 # panna 0.3.102
 
 - `estimate_player_skills()` peaks lower: skills step 02 on the 16 GB runner falls from 13.3 GB to 10.7 GB
