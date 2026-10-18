@@ -5,7 +5,7 @@ name: Career panna (step 09)
 # 2026-10-18 this step only ran on a laptop and uploaded only when a flag was set, so
 # the published file fell a month behind the code (panna#257). Off main/dev the
 # publish gate (PANNA_PUBLISH_DISABLED) forces upload off: a branch run is a dry build
-# whose output is the run's artifact and summary only.
+# whose output is the run's artifact and summary only (artifact: career-panna).
 on:
   workflow_dispatch:
     inputs:
