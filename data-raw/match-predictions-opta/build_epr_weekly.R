@@ -57,8 +57,31 @@ cache_dir <- "data-raw/cache-predictions-opta"
 t0 <- Sys.time()
 files <- list.files(cache_dir, pattern = "^game_logs_.*\\.parquet$",
                     full.names = TRUE)
+## WHICH LEDGER FEEDS THE RATING -- resolved here, before file selection,
+## because the source decides the default window. "net_goals" (the default
+## since 2026-10-19) is the net goals ledger (pannaverse/docs/plans/EPV-NET-GOALS.md);
+## "epv" is the old production credit layer, kept as a fallback. Pete shipped
+## net goals on the production-model gate (EPR-SOURCE-SWITCH-GATE.md "Result":
+## log loss 0.972724 vs 0.973716 on 1,330 test matches, a statistical tie the
+## locked rule's "no worse" passes). Override with a global EPR_SOURCE, else the
+## env var of the same name. A global wins: in an interactive session a previous
+## run of this script leaves EPR_SOURCE behind, so set or rm() it before rerunning.
+##
+## Both knobs are read from globalenv() explicitly, not the calling frame. Every
+## current call path is top-level or `source(local = FALSE)`, so a bare
+## `inherits = FALSE` would work today -- but the moment this is sourced from
+## inside a function (which is how run_predictions_opta.R invokes the numbered
+## steps) the guard would see nothing, fall through to the default, and SILENTLY
+## change the history. `10b_export_game_logs.R` documents that bug class twice.
+EPR_SOURCE <- if (exists("EPR_SOURCE", envir = globalenv(), inherits = FALSE)) {
+  get("EPR_SOURCE", envir = globalenv())
+} else Sys.getenv("EPR_SOURCE", "net_goals")
+stopifnot(EPR_SOURCE %in% c("epv", "net_goals"))
+
 ## EPR_MIN_SEASON_END_YEAR -- restrict the history to seasons ending at or
-## after this year. Default NULL = every file, the historical behaviour.
+## after this year. Default: 2016 for net_goals (the window both gate arms used,
+## so production runs the configuration the gate measured), NULL = every file
+## for epv.
 ##
 ## Why it exists: `net_goals` cannot be built before 2015-2016. Those seasons
 ## have events but no LINEUPS for most leagues (measured 2026-09-22: NED, ITA,
@@ -68,27 +91,6 @@ files <- list.files(cache_dir, pattern = "^game_logs_.*\\.parquet$",
 ## pass. Setting this makes BOTH arms of a comparison use the same matches,
 ## which is the only way it stays honest -- filtering one arm alone would
 ## confound the rating change with a population change.
-## Read from globalenv() explicitly, not the calling frame. Every current call
-## path happens to be top-level or `source(local = FALSE)`, so a bare
-## `inherits = FALSE` would work today -- but the moment this is sourced from
-## inside a function (which is how run_predictions_opta.R invokes the numbered
-## steps) the guard would see nothing, fall through to NULL, and SILENTLY keep
-## every file. `10b_export_game_logs.R` documents that exact bug class twice.
-## WHICH LEDGER FEEDS THE RATING -- resolved here, before file selection,
-## because the source decides the default window. "net_goals" (the default
-## since 2026-10-19) is the net goals ledger (pannaverse/docs/plans/EPV-NET-GOALS.md);
-## "epv" is the old production credit layer, kept as a fallback. Pete shipped
-## net goals on the production-model gate (EPR-SOURCE-SWITCH-GATE.md "Result":
-## log loss 0.972724 vs 0.973716 on 1,330 test matches, a statistical tie the
-## locked rule's "no worse" passes). Override with a global EPR_SOURCE or the
-## env var of the same name.
-## Read from globalenv() for the reason given for EPR_MIN_SEASON_END_YEAR below.
-EPR_SOURCE <- if (exists("EPR_SOURCE", envir = globalenv(), inherits = FALSE)) {
-  get("EPR_SOURCE", envir = globalenv())
-} else Sys.getenv("EPR_SOURCE", "net_goals")
-stopifnot(EPR_SOURCE %in% c("epv", "net_goals"))
-## The window net goals was gated on. Both gate arms used it, so production on
-## any other window would be a configuration the gate never measured.
 EPR_NET_GOALS_MIN_SEASON_END_YEAR <- 2016L
 .min_sy <- if (exists("EPR_MIN_SEASON_END_YEAR", envir = globalenv(),
                       inherits = FALSE)) {
