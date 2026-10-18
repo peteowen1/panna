@@ -13,8 +13,10 @@ the production credit layer too, so both arms are centred identically and
 only the allocation differs.}
 
 \item{positions}{A player-to-position map with \code{player_id} and \code{position},
-e.g. from \code{get_player_positions()}. Rows whose position is unknown are
-centred on the all-player mean rather than dropped, and reported.}
+e.g. from \code{get_player_positions()}, or \code{NULL} to use a per-row \code{position}
+column already on \code{player_game} (one group per player-MATCH, as
+\code{\link[=ng_role8_per_match]{ng_role8_per_match()}} gives). Rows whose position is unknown are
+centred together as one group rather than dropped, and reported.}
 
 \item{by_season}{Centre within season as well as position. Default \code{TRUE}.}
 
@@ -58,6 +60,7 @@ Other net_goals:
 \code{\link{ng_fold_unpublished}()},
 \code{\link{ng_player_game}()},
 \code{\link{ng_reconcile_margin}()},
+\code{\link{ng_role8_per_match}()},
 \code{\link{ng_shares}()},
 \code{\link{ng_spread_pools}()}
 }

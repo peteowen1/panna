@@ -57,8 +57,31 @@ cache_dir <- "data-raw/cache-predictions-opta"
 t0 <- Sys.time()
 files <- list.files(cache_dir, pattern = "^game_logs_.*\\.parquet$",
                     full.names = TRUE)
+## WHICH LEDGER FEEDS THE RATING -- resolved here, before file selection,
+## because the source decides the default window. "net_goals" (the default
+## since 2026-10-19) is the net goals ledger (pannaverse/docs/plans/EPV-NET-GOALS.md);
+## "epv" is the old production credit layer, kept as a fallback. Pete shipped
+## net goals on the production-model gate (EPR-SOURCE-SWITCH-GATE.md "Result":
+## log loss 0.972724 vs 0.973716 on 1,330 test matches, a statistical tie the
+## locked rule's "no worse" passes). Override with a global EPR_SOURCE, else the
+## env var of the same name. A global wins: in an interactive session a previous
+## run of this script leaves EPR_SOURCE behind, so set or rm() it before rerunning.
+##
+## Both knobs are read from globalenv() explicitly, not the calling frame. Every
+## current call path is top-level or `source(local = FALSE)`, so a bare
+## `inherits = FALSE` would work today -- but the moment this is sourced from
+## inside a function (which is how run_predictions_opta.R invokes the numbered
+## steps) the guard would see nothing, fall through to the default, and SILENTLY
+## change the history. `10b_export_game_logs.R` documents that bug class twice.
+EPR_SOURCE <- if (exists("EPR_SOURCE", envir = globalenv(), inherits = FALSE)) {
+  get("EPR_SOURCE", envir = globalenv())
+} else Sys.getenv("EPR_SOURCE", "net_goals")
+stopifnot(EPR_SOURCE %in% c("epv", "net_goals"))
+
 ## EPR_MIN_SEASON_END_YEAR -- restrict the history to seasons ending at or
-## after this year. Default NULL = every file, the historical behaviour.
+## after this year. Default: 2016 for net_goals (the window both gate arms used,
+## so production runs the configuration the gate measured), NULL = every file
+## for epv.
 ##
 ## Why it exists: `net_goals` cannot be built before 2015-2016. Those seasons
 ## have events but no LINEUPS for most leagues (measured 2026-09-22: NED, ITA,
@@ -68,16 +91,11 @@ files <- list.files(cache_dir, pattern = "^game_logs_.*\\.parquet$",
 ## pass. Setting this makes BOTH arms of a comparison use the same matches,
 ## which is the only way it stays honest -- filtering one arm alone would
 ## confound the rating change with a population change.
-## Read from globalenv() explicitly, not the calling frame. Every current call
-## path happens to be top-level or `source(local = FALSE)`, so a bare
-## `inherits = FALSE` would work today -- but the moment this is sourced from
-## inside a function (which is how run_predictions_opta.R invokes the numbered
-## steps) the guard would see nothing, fall through to NULL, and SILENTLY keep
-## every file. `10b_export_game_logs.R` documents that exact bug class twice.
+EPR_NET_GOALS_MIN_SEASON_END_YEAR <- 2016L
 .min_sy <- if (exists("EPR_MIN_SEASON_END_YEAR", envir = globalenv(),
                       inherits = FALSE)) {
   get("EPR_MIN_SEASON_END_YEAR", envir = globalenv())
-} else NULL
+} else if (EPR_SOURCE == "net_goals") EPR_NET_GOALS_MIN_SEASON_END_YEAR else NULL
 if (!is.null(.min_sy)) {
   .sy <- suppressWarnings(as.integer(
     sub("^game_logs_[0-9]{4}-([0-9]{4})[.]parquet$", "\\1", basename(files))))
@@ -116,24 +134,15 @@ if (nrow(gl) < .n_before) {
 }
 
 gl[, match_date := as.Date(sub("Z$","", match_date))]
-## WHICH LEDGER FEEDS THE RATING. "epv" is the production credit layer, read as
-## the position-centred `epv_*_adj` columns renamed to the raw names -- the
-## historical behaviour, and the default. "net_goals" is the net goals ledger
-## (pannaverse/docs/plans/EPV-NET-GOALS.md), centred here rather than at export
-## because the ledger must stay conserving upstream of the rating layer.
+## EPR_SOURCE was resolved above. "epv" reads the position-centred `epv_*_adj`
+## columns renamed to the raw names. "net_goals" is centred here rather than at
+## export because the ledger must stay conserving upstream of the rating layer.
 ##
-## The EPR gate measured these against each other over 5 leagues walk-forward,
-## 5,232 matches: net goals won every fold (MAE 1.3135 vs 1.3254, sign test
-## p = 0.007). The gain is small and real; see that plan's section 14 before
-## reading more into it.
-##
-## NOT flipped by default, because `net_goals` only exists in game logs built
-## after panna 0.3.62. Flipping before a full rebuild would silently drop every
-## season that predates it, so the branch below ABORTS instead of quietly
-## training on a fraction of the history.
-if (!exists("EPR_SOURCE", inherits = FALSE)) EPR_SOURCE <- "epv"
-stopifnot(EPR_SOURCE %in% c("epv", "net_goals"))
-t_log(sprintf("EPR source: %s", EPR_SOURCE))
+## `net_goals` only exists in game logs built after panna 0.3.62, so the branch
+## below ABORTS on missing or partial coverage instead of quietly training on a
+## fraction of the history.
+t_log(sprintf("EPR source: %s (seasons ending >= %s)", EPR_SOURCE,
+              if (is.null(.min_sy)) "all" else .min_sy))
 
 if (EPR_SOURCE == "net_goals") {
   need <- c("net_goals", "ng_offensive", "ng_defensive")
@@ -155,17 +164,33 @@ if (EPR_SOURCE == "net_goals") {
       format(n_have, big.mark = ","), format(nrow(gl), big.mark = ","),
       100 * n_have / nrow(gl)))
   }
-  ## Centre by the player's MODAL position, never the first row seen: game_logs
-  ## carries a position per player-MATCH, so taking the first gives whichever
-  ## slot he happened to fill that day.
-  posmap <- gl[!is.na(position), .N, by = .(player_id, position)]
-  setorder(posmap, player_id, -N)
-  posmap <- posmap[, .SD[1], by = player_id][, .(player_id, position)]
+  ## Centre within role8 (GK, CB, FB, DM, CM, AM, W, ST; Pete 2026-10-19), per
+  ## player-MATCH. The old map was one career-modal Opta label per player, which
+  ## grouped full-backs with centre-backs ("Defender") and bench players as
+  ## "Substitute": Hakimi sat 0.115 a 90 below the Defender defensive mean for
+  ## being a full-back. Side comes from the lineups, which game_logs lacks.
   gl <- gl[!is.na(net_goals),
            .(player_id, player_name, match_id, match_date, league, season,
              team_id, minutes_played = total_minutes,
              epv_offensive = ng_offensive, epv_defensive = ng_defensive)]
-  gl <- as.data.table(ng_adjust_for_rating(gl, posmap, verbose = FALSE))
+  .lu_pos <- as.data.table(read_parquet("../pannadata/data/opta/opta_lineups.parquet",
+    col_select = c("match_id", "player_id", "position", "position_side", "is_starter")))
+  .lu_pos <- unique(.lu_pos, by = c("match_id", "player_id"))
+  .lu_pos[, role8_match := fifelse(is_starter %in% TRUE,
+                                   .role16_to_role8(classify_role(position, position_side)),
+                                   NA_character_)]
+  gl <- merge(gl, .lu_pos[, .(match_id, player_id, role8_match)],
+              by = c("match_id", "player_id"), all.x = TRUE)
+  rm(.lu_pos)
+  gl[, position := ng_role8_per_match(data.table(player_id, match_date,
+                                                 minutes = minutes_played, role8_match))]
+  .rc <- gl[, .(rows = .N, from_match = sum(!is.na(role8_match) & role8_match != "OTHER")), by = position][order(-rows)]
+  t_log(sprintf("net goals centred by role8: %s",
+                paste(sprintf("%s %s", .rc$position, format(.rc$rows, big.mark = ",")), collapse = " | ")))
+  t_log(sprintf("  role from the match itself on %.1f%% of rows; the rest from previous starts; OTHER %.1f%%",
+                100 * sum(.rc$from_match) / nrow(gl), 100 * mean(gl$position == "OTHER")))
+  gl[, role8_match := NULL]
+  gl <- as.data.table(ng_adjust_for_rating(gl, NULL, verbose = FALSE))
   gl <- gl[, .(player_id, player_name, match_id, match_date, league, season,
                team_id, minutes_played, epv_offensive, epv_defensive)]
 } else {
@@ -354,6 +379,25 @@ if (force_full_epr) {
                            error = function(e) { t_log(sprintf(
                              "could not read existing parquet (%s) — full rebuild",
                              conditionMessage(e))); NULL })
+  ## Reuse is only sound when the old snapshots were built from the same ledger
+  ## and window. A file from before the stamp existed counts as "epv" on every
+  ## season. Without this check the first net-goals run would keep ~99% of its
+  ## snapshots from the EPV build and recompute a 28-day tail -- a mixed file
+  ## that reads as net goals.
+  .config_changed <- FALSE
+  .old_src <- if (!is.null(existing_epr) && "epr_source" %in% names(existing_epr))
+    unique(existing_epr$epr_source) else "epv"
+  .old_min <- if (!is.null(existing_epr) && "epr_min_season_end_year" %in% names(existing_epr))
+    unique(existing_epr$epr_min_season_end_year) else NA_integer_
+  .new_min <- if (is.null(.min_sy)) NA_integer_ else as.integer(.min_sy)
+  if (!is.null(existing_epr) &&
+      !(identical(.old_src, EPR_SOURCE) && identical(as.integer(.old_min), .new_min))) {
+    t_log(sprintf("existing parquet was built from %s (seasons >= %s), this run is %s (>= %s) -- full rebuild",
+                  paste(.old_src, collapse = "/"), paste(.old_min, collapse = "/"),
+                  EPR_SOURCE, .new_min))
+    existing_epr <- NULL
+    .config_changed <- TRUE
+  }
   if (!is.null(existing_epr) && "snapshot_date" %in% names(existing_epr) &&
       nrow(existing_epr) > 0) {
     existing_epr[, snapshot_date := as.Date(snapshot_date)]
@@ -363,7 +407,7 @@ if (force_full_epr) {
     t_log(sprintf("Incremental: reuse %s rows (<%s), recompute %d snapshots (>=%s)",
                   format(nrow(keep_existing), big.mark = ","), cutoff,
                   length(snapshots), cutoff))
-  } else {
+  } else if (!isTRUE(.config_changed)) {
     t_log("existing parquet unusable (no snapshot_date / empty) — full rebuild")
   }
 } else {
@@ -436,6 +480,9 @@ if (!is.null(keep_existing) && nrow(keep_existing) > 0) {
   epr_weekly <- new_epr
 }
 setorder(epr_weekly, snapshot_date, player_id)
+## Stamp what built the file, so the next incremental run can tell (section 4b).
+epr_weekly[, epr_source := EPR_SOURCE]
+epr_weekly[, epr_min_season_end_year := if (is.null(.min_sy)) NA_integer_ else as.integer(.min_sy)]
 t_log(sprintf("Done fitting %d snapshots in %.1f min",
               length(snapshots),
               as.numeric(Sys.time()-t0, units="mins")))

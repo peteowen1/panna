@@ -383,6 +383,10 @@ fit_spm_xgb <- function(data, predictor_cols = NULL, nfolds = 10,
                          nrounds = 500, early_stopping_rounds = 20,
                          weight_by_minutes = TRUE, weight_transform = "sqrt",
                          verbose = 1) {
+  # xgboost draws its seed, CV folds and subsampling from R's random stream; fix it
+  # so a retrain on the same data gives the same model, and restore the caller's
+  # stream on exit (panna#360).
+  withr::local_seed(MODEL_FIT_SEED)
   if (!requireNamespace("xgboost", quietly = TRUE)) {
     cli::cli_abort("Package {.pkg xgboost} is required. Install with: {.code install.packages('xgboost')}")
   }

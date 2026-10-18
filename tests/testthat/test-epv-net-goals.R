@@ -1174,3 +1174,36 @@ test_that("a sent-off player stops receiving pool shares at his exit (R031)", {
   expect_true("h3" %in% out[play_type == "pool"]$player_id)
   expect_equal(sum(out[team_id == "H"]$value_own), 1.00, tolerance = 1e-10)
 })
+
+test_that("ng_role8_per_match uses the match's own bucket, else previous starts only", {
+  pm <- data.frame(
+    player_id   = c("a", "a", "a", "a", "b", "b"),
+    match_date  = as.Date(c("2025-01-01", "2025-01-15", "2025-01-15", "2025-01-22",
+                            "2025-01-01", "2025-02-01")),
+    minutes     = c(90, 120, 30, 20, 15, 90),
+    # a: one FB start, then a longer CB start and a sub on the SAME day, then a sub;
+    # b: a sub before any start, then a CM start
+    role8_match = c("FB", "CB", NA, NA, NA, "CM"),
+    stringsAsFactors = FALSE)
+  out <- ng_role8_per_match(pm)
+  # The same-day sub sees only the FB start (strictly before): were the CB
+  # start's 120 minutes visible, it would read CB. A week later CB leads.
+  expect_equal(out, c("FB", "CB", "FB", "CB", "OTHER", "CM"))
+  # row order follows the input, not the sorted order
+  expect_equal(ng_role8_per_match(pm[6:1, ]), rev(out))
+  # a bucket outside PSR_ROLE8_LEVELS ("OTHER", a typo) counts as unknown
+  pm2 <- pm; pm2$role8_match[2] <- "OTHER"
+  expect_equal(ng_role8_per_match(pm2)[c(2, 4)], c("FB", "FB"))
+  expect_error(ng_role8_per_match(pm[, -4]), "role8_match")
+})
+
+test_that("ng_adjust_for_rating centres on a per-row position when positions is NULL", {
+  pg <- data.table::as.data.table(ng_fixture_pg())
+  # the same player in two different roles on different rows
+  pg[, position := rep(c("FB", "CB"), length.out = .N)]
+  out <- ng_adjust_for_rating(pg, NULL, verbose = FALSE)
+  m <- out[, .(o = mean(epv_offensive), d = mean(epv_defensive)), by = position]
+  expect_setequal(m$position, c("FB", "CB"))
+  expect_true(all(abs(m$o) < 1e-12) && all(abs(m$d) < 1e-12))
+  expect_error(ng_adjust_for_rating(pg[, -"position"], NULL, verbose = FALSE), "no .*position")
+})
