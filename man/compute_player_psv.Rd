@@ -84,6 +84,14 @@ uncalibrated, factor 1) even when their wider career makes the bucket
 obvious. Resolve once on the full population and pass it here. Named with
 a dot prefix deliberately: a parameter called \code{pos_grp} would be
 shadowed by the column of the same name inside \code{dt[...]}.}
+
+\item{role_override}{Optional character vector, one per row of
+\code{player_match_stats}, supplying the fine-grained role label directly
+instead of resolving it from \code{position} + \code{position_side}.
+Usually unnecessary here, since match stats carry both columns. It exists
+for callers that score slices of a larger population and want the same
+scope-stable role everywhere, for the same reason as \code{is_gk} and
+\code{.pos_grp_override}. \code{NULL} (default) resolves roles natively.}
 }
 \value{
 A data.table with \code{psv}, \code{osv}, \code{dsv} columns.

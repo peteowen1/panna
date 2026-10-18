@@ -27,6 +27,19 @@ fit_spm_opta(
 
 \item{weight_transform}{Transform for weighting: "sqrt", "linear", "log"}
 
+\item{league_fe}{Add league fixed-effect dummies as unpenalized controls
+(opt-in, default FALSE). The largest league is held out as the reference.
+Mutually exclusive with \code{league_shares}.}
+
+\item{league_min_n}{Minimum number of rows a league needs to get its own
+dummy when \code{league_fe = TRUE} (default 50). Needs at least 2 qualifying
+leagues, otherwise the model is fitted without league effects.}
+
+\item{league_shares}{Enter the pre-joined \verb{lgshare_*} columns (see
+\code{.spm_league_shares()}) as unpenalized controls (opt-in, default FALSE).
+Errors if no such columns are on \code{data}. Mutually exclusive with
+\code{league_fe}.}
+
 \item{opponent_elo}{Enter a pre-joined \code{opponent_elo} column as an
 unpenalized control (opt-in, default FALSE). Orthogonal to
 \code{league_fe}/\code{league_shares} -- can combine with either.}
