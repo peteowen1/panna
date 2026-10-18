@@ -955,7 +955,7 @@ enrich_match_stats_with_xmetrics <- function(match_stats, verbose = TRUE,
   )
 
   if (!all(c("league", "season", "match_id", "player_id") %in% names(match_stats))) {
-    warning("match_stats missing league/season/match_id/player_id — skipping xMetrics join",
+    warning("match_stats missing league/season/match_id/player_id -- skipping xMetrics join",
             call. = FALSE)
     return(match_stats)
   }

@@ -524,7 +524,7 @@ predict_epv_probs <- function(model, features) {
     extra <- setdiff(feature_cols, EPV_SIMPLE_FEATURE_COLS)
     if (length(extra) > 0) {
       cli::cli_abort(c(
-        "EPV model feature-contract MISMATCH — refusing to score with a stale/wrong model.",
+        "EPV model feature-contract MISMATCH -- refusing to score with a stale/wrong model.",
         "x" = "Model expects {length(feature_cols)} features incl. {.val {extra}} the current code does NOT emit.",
         "i" = "Code emits {length(EPV_SIMPLE_FEATURE_COLS)} (EPV_SIMPLE_FEATURE_COLS) -- this looks like the pre-overhaul model.",
         "i" = "Use the clean model: pass {.code epv_model_override} or republish the clean model as default (see MODELS.md)."
@@ -1768,7 +1768,7 @@ save_epv_model <- function(epv_model, path = NULL) {
   if (isTRUE(age > max_age_days)) {
     cli::cli_warn(c(
       line,
-      "!" = paste("This model is >{round(max_age_days)} days old — confirm it's the",
+      "!" = paste("This model is >{round(max_age_days)} days old -- confirm it's the",
                   "intended (latest) version. For game-logs, pass",
                   "{.code epv_model_override}/{.code wp_model_override} to pin the",
                   "post-overhaul models (see MODELS.md).")
