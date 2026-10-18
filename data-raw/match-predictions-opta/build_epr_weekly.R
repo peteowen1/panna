@@ -368,6 +368,7 @@ if (force_full_epr) {
   ## season. Without this check the first net-goals run would keep ~99% of its
   ## snapshots from the EPV build and recompute a 28-day tail -- a mixed file
   ## that reads as net goals.
+  .config_changed <- FALSE
   .old_src <- if (!is.null(existing_epr) && "epr_source" %in% names(existing_epr))
     unique(existing_epr$epr_source) else "epv"
   .old_min <- if (!is.null(existing_epr) && "epr_min_season_end_year" %in% names(existing_epr))
@@ -379,6 +380,7 @@ if (force_full_epr) {
                   paste(.old_src, collapse = "/"), paste(.old_min, collapse = "/"),
                   EPR_SOURCE, .new_min))
     existing_epr <- NULL
+    .config_changed <- TRUE
   }
   if (!is.null(existing_epr) && "snapshot_date" %in% names(existing_epr) &&
       nrow(existing_epr) > 0) {
@@ -389,7 +391,7 @@ if (force_full_epr) {
     t_log(sprintf("Incremental: reuse %s rows (<%s), recompute %d snapshots (>=%s)",
                   format(nrow(keep_existing), big.mark = ","), cutoff,
                   length(snapshots), cutoff))
-  } else {
+  } else if (!isTRUE(.config_changed)) {
     t_log("existing parquet unusable (no snapshot_date / empty) — full rebuild")
   }
 } else {

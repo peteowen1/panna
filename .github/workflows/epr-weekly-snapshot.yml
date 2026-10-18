@@ -128,6 +128,8 @@ jobs:
           if gh release download opta-latest --repo peteowen1/pannadata \
                --pattern "opta_epr_weekly.parquet" --dir "$PD_OPTA" 2>/dev/null; then
             echo "  downloaded — incremental run (recompute recent snapshots only)"
+            # The build overwrites it in place; keep the published copy to compare against.
+            cp "$PD_OPTA/opta_epr_weekly.parquet" /tmp/published_epr_weekly.parquet
           else
             echo "  not found — FIRST RUN, full rebuild (~25 min)"
           fi
@@ -150,6 +152,36 @@ jobs:
           GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
         run: |
           Rscript data-raw/match-predictions-opta/build_epr_weekly.R
+
+      # New build against the published file, latest snapshot: does a change of
+      # method move the ranking, and who moved. Read-only; runs on every ref.
+      - name: Compare with the published file
+        run: |
+          [ -f /tmp/published_epr_weekly.parquet ] || { echo "no published copy to compare against"; exit 0; }
+          cat > /tmp/compare_epr.R <<'EOF'
+          suppressMessages(library(data.table))
+          cols <- c("player_id", "player_name", "snapshot_date", "epr", "epr_offensive", "epr_defensive", "wt_games")
+          rd <- function(p) { d <- as.data.table(arrow::read_parquet(p, col_select = tidyselect::any_of(cols)))
+                              d[, snapshot_date := as.Date(snapshot_date)]; d[snapshot_date == max(snapshot_date)] }
+          pub <- rd("/tmp/published_epr_weekly.parquet")
+          new <- rd("../pannadata/data/opta/opta_epr_weekly.parquet")
+          cat(sprintf("latest snapshot: new %s (%d players) | published %s (%d players)\n",
+                      max(new$snapshot_date), nrow(new), max(pub$snapshot_date), nrow(pub)))
+          m <- merge(new, pub[, .(player_id, pub_epr = epr, pub_off = epr_offensive, pub_def = epr_defensive)], by = "player_id")
+          m <- m[wt_games >= 20]
+          cat(sprintf("players in both with 20+ weighted games: %d\n", nrow(m)))
+          cat(sprintf("rank Spearman new vs published: EPR %.3f, offence %.3f, defence %.3f\n",
+                      cor(m$epr, m$pub_epr, method = "spearman"), cor(m$epr_offensive, m$pub_off, method = "spearman"),
+                      cor(m$epr_defensive, m$pub_def, method = "spearman")))
+          m[, `:=`(rank = frank(-epr, ties.method = "min"), pub_rank = frank(-pub_epr, ties.method = "min"))]
+          cat("\nTop 20 (20+ weighted games), new build vs published. EPR is rated goal value per 90 on the Big-5 scale; higher is better:\n")
+          print(m[order(rank)][1:20, .(player_name, rank, pub_rank, epr = round(epr, 3), pub_epr = round(pub_epr, 3))])
+          cat("\nBiggest risers and fallers among the published top 200 (move = published rank - new rank):\n")
+          t <- m[pub_rank <= 200][, move := pub_rank - rank]
+          print(rbind(t[order(-move)][1:8], t[order(move)][1:8])[, .(player_name, rank, pub_rank, move)])
+          EOF
+          set -o pipefail
+          Rscript /tmp/compare_epr.R | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Snapshot summary
         if: always()
