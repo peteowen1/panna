@@ -164,17 +164,33 @@ if (EPR_SOURCE == "net_goals") {
       format(n_have, big.mark = ","), format(nrow(gl), big.mark = ","),
       100 * n_have / nrow(gl)))
   }
-  ## Centre by the player's MODAL position, never the first row seen: game_logs
-  ## carries a position per player-MATCH, so taking the first gives whichever
-  ## slot he happened to fill that day.
-  posmap <- gl[!is.na(position), .N, by = .(player_id, position)]
-  setorder(posmap, player_id, -N)
-  posmap <- posmap[, .SD[1], by = player_id][, .(player_id, position)]
+  ## Centre within role8 (GK, CB, FB, DM, CM, AM, W, ST; Pete 2026-10-19), per
+  ## player-MATCH. The old map was one career-modal Opta label per player, which
+  ## grouped full-backs with centre-backs ("Defender") and bench players as
+  ## "Substitute": Hakimi sat 0.115 a 90 below the Defender defensive mean for
+  ## being a full-back. Side comes from the lineups, which game_logs lacks.
   gl <- gl[!is.na(net_goals),
            .(player_id, player_name, match_id, match_date, league, season,
              team_id, minutes_played = total_minutes,
              epv_offensive = ng_offensive, epv_defensive = ng_defensive)]
-  gl <- as.data.table(ng_adjust_for_rating(gl, posmap, verbose = FALSE))
+  .lu_pos <- as.data.table(read_parquet("../pannadata/data/opta/opta_lineups.parquet",
+    col_select = c("match_id", "player_id", "position", "position_side", "is_starter")))
+  .lu_pos <- unique(.lu_pos, by = c("match_id", "player_id"))
+  .lu_pos[, role8_match := fifelse(is_starter %in% TRUE,
+                                   .role16_to_role8(classify_role(position, position_side)),
+                                   NA_character_)]
+  gl <- merge(gl, .lu_pos[, .(match_id, player_id, role8_match)],
+              by = c("match_id", "player_id"), all.x = TRUE)
+  rm(.lu_pos)
+  gl[, position := ng_role8_per_match(data.table(player_id, match_date,
+                                                 minutes = minutes_played, role8_match))]
+  .rc <- gl[, .(rows = .N, from_match = sum(!is.na(role8_match) & role8_match != "OTHER")), by = position][order(-rows)]
+  t_log(sprintf("net goals centred by role8: %s",
+                paste(sprintf("%s %s", .rc$position, format(.rc$rows, big.mark = ",")), collapse = " | ")))
+  t_log(sprintf("  role from the match itself on %.1f%% of rows; the rest from previous starts; OTHER %.1f%%",
+                100 * sum(.rc$from_match) / nrow(gl), 100 * mean(gl$position == "OTHER")))
+  gl[, role8_match := NULL]
+  gl <- as.data.table(ng_adjust_for_rating(gl, NULL, verbose = FALSE))
   gl <- gl[, .(player_id, player_name, match_id, match_date, league, season,
                team_id, minutes_played, epv_offensive, epv_defensive)]
 } else {

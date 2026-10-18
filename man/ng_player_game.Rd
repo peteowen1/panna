@@ -51,6 +51,7 @@ Other net_goals:
 \code{\link{ng_check_team_totals}()},
 \code{\link{ng_fold_unpublished}()},
 \code{\link{ng_reconcile_margin}()},
+\code{\link{ng_role8_per_match}()},
 \code{\link{ng_shares}()},
 \code{\link{ng_spread_pools}()}
 }

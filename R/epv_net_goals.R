@@ -1787,8 +1787,10 @@ ng_player_game <- function(pay, lineups, verbose = TRUE) {
 #'   the production credit layer too, so both arms are centred identically and
 #'   only the allocation differs.
 #' @param positions A player-to-position map with `player_id` and `position`,
-#'   e.g. from `get_player_positions()`. Rows whose position is unknown are
-#'   centred on the all-player mean rather than dropped, and reported.
+#'   e.g. from `get_player_positions()`, or `NULL` to use a per-row `position`
+#'   column already on `player_game` (one group per player-MATCH, as
+#'   [ng_role8_per_match()] gives). Rows whose position is unknown are
+#'   centred together as one group rather than dropped, and reported.
 #' @param by_season Centre within season as well as position. Default `TRUE`.
 #' @param verbose Print a summary. Default `TRUE`.
 #'
@@ -1808,9 +1810,18 @@ ng_adjust_for_rating <- function(player_game, positions, by_season = TRUE,
     cli::cli_abort("{.fn ng_adjust_for_rating} needs column{?s} {.val {missing}}.")
   }
 
-  pos <- unique(data.table::as.data.table(positions)[, .(player_id, position)],
-                by = "player_id")
-  d <- merge(d, pos, by = "player_id", all.x = TRUE)
+  if (is.null(positions)) {
+    if (!"position" %in% names(d)) {
+      cli::cli_abort(c(
+        "{.arg positions} is NULL but {.arg player_game} has no {.field position} column.",
+        "i" = "Pass a player-to-position map, or put a per-row position on the frame."))
+    }
+  } else {
+    pos <- unique(data.table::as.data.table(positions)[, .(player_id, position)],
+                  by = "player_id")
+    if ("position" %in% names(d)) d[, position := NULL]
+    d <- merge(d, pos, by = "player_id", all.x = TRUE)
+  }
   n_nopos <- sum(is.na(d$position))
   if (n_nopos > 0) {
     # Centred on everyone rather than dropped: a player with no position map is
@@ -1855,6 +1866,63 @@ ng_adjust_for_rating <- function(player_game, positions, by_season = TRUE,
   }
 
   d[]
+}
+
+
+#' Each player-match's role8 bucket, for centring net goals by role
+#'
+#' The rating layer centres net goals within a position group, so the group
+#' decides who a player is compared with. Opta's `position` label alone puts
+#' full-backs and centre-backs in one "Defender" group (left and right live in
+#' `position_side`), and bench players in "Substitute". This uses the same eight
+#' buckets as PSR's normalisation (`PSR_ROLE8_LEVELS`: GK, CB, FB, DM, CM, AM, W,
+#' ST; left and right mirrored), Pete 2026-10-19.
+#'
+#' A starter with a known position takes that match's bucket. Anyone else (a
+#' substitute, or a starter whose lineup carries no position) takes the bucket
+#' he has played most minutes in over his PREVIOUS starts -- never later ones,
+#' so a 2016 row is not grouped by 2024 minutes. With no previous known start the
+#' row is `"OTHER"`, and [ng_adjust_for_rating()] centres those together.
+#'
+#' @param player_match One row per player-match with `player_id`, `match_date`,
+#'   `minutes` and `role8_match` (the match's own bucket, `NA` when unknown).
+#' @return Character vector of buckets, in the input's row order.
+#' @family net_goals
+#' @export
+ng_role8_per_match <- function(player_match) {
+  need <- c("player_id", "match_date", "minutes", "role8_match")
+  missing <- setdiff(need, names(player_match))
+  if (length(missing)) {
+    cli::cli_abort("{.fn ng_role8_per_match} needs column{?s} {.val {missing}}.")
+  }
+  r <- as.character(player_match$role8_match)
+  r[!r %in% PSR_ROLE8_LEVELS] <- NA_character_
+  d <- data.table::data.table(.i = seq_along(r),
+                              player_id = as.character(player_match$player_id),
+                              md = as.Date(player_match$match_date),
+                              r = r,
+                              m = pmax(as.numeric(player_match$minutes), 0, na.rm = TRUE))
+  d[is.na(m), m := 0]
+  # Date then original order: the cumulative sums below must only ever see
+  # earlier matches, and a stable tie order keeps the result reproducible.
+  data.table::setorder(d, player_id, md, .i)
+  levs <- PSR_ROLE8_LEVELS
+  prior <- matrix(0, nrow(d), length(levs), dimnames = list(NULL, levs))
+  for (k in seq_along(levs)) {
+    d[, .own := data.table::fifelse(!is.na(r) & r == levs[k], m, 0)]
+    d[, .cs := cumsum(.own), by = player_id]
+    # Minutes strictly before this DATE: cs minus this day's running total is
+    # the total at the end of the previous match day, so two matches on one
+    # date cannot see each other.
+    d[, .dcs := cumsum(.own), by = .(player_id, md)]
+    prior[, k] <- d$.cs - d$.dcs
+  }
+  d[, c(".own", ".cs", ".dcs") := NULL]
+  # First level wins a tie (deterministic, the PSR_ROLE8_LEVELS order).
+  best <- levs[max.col(prior, ties.method = "first")]
+  best[rowSums(prior) <= 0] <- "OTHER"
+  out <- data.table::fifelse(!is.na(d$r), d$r, best)
+  out[order(d$.i)]
 }
 
 
