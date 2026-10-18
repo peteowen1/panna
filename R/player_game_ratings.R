@@ -36,6 +36,9 @@
 #'     \item{wpa_p90}{WPA per 90 minutes}
 #'     \item{psv, osv, dsv}{Player Stat Value with O/D decomposition; NA when
 #'       the player-game has no PSV row}
+#'     \item{psv_minutes}{Minutes the PSV was scaled by (present only when
+#'       PSV was computed with \code{scale_to_minutes = TRUE}); used to scale
+#'       the game-logs league offset the same way (panna#164)}
 #'     \item{piero_value}{Combined: \code{epv_weight * epv_total_adj +
 #'       psv_weight * psv} (falls back to \code{epv_total} if no adj columns);
 #'       NA when PSV is missing}
@@ -104,7 +107,8 @@ build_player_game_ratings <- function(player_game_epv,
     # deriving it again later is not equivalent: the exported `position` column
     # is the per-match LINEUP position, which reads "Substitute" on ~29% of rows.
     psv_cols <- intersect(
-      c("player_id", "match_id", "psv", "psv_raw", "osv", "dsv", "pos_grp"),
+      c("player_id", "match_id", "psv", "psv_raw", "osv", "dsv", "pos_grp",
+        "psv_minutes"),
       names(psv)
     )
     psv <- psv[, ..psv_cols]
@@ -144,7 +148,7 @@ build_player_game_ratings <- function(player_game_epv,
 
   # Fill NAs in the remaining numeric columns (EPV components, counts). WPA and
   # PSV columns and piero_value keep their NAs so a missing value looks missing.
-  keep_na <- c("psv", "psv_raw", "osv", "dsv", "piero_value",
+  keep_na <- c("psv", "psv_raw", "osv", "dsv", "psv_minutes", "piero_value",
                grep("_p90$", names(result), value = TRUE),  # R114: unknown rate stays NA
                grep("^wpa_|^max_wpa$", names(result), value = TRUE))
   num_cols <- setdiff(names(result)[vapply(result, is.numeric, logical(1))], keep_na)

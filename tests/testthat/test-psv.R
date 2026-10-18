@@ -750,3 +750,64 @@ test_that("blend coefficient files retain a workable number of non-zero stats", 
     }
   }
 })
+
+# panna#164: the league offset must be priced in the minutes PSV itself used.
+test_that("calculate_psv exposes the minutes it scaled by (psv_minutes)", {
+  coef_df <- data.frame(stat_name = "goals_p90", beta = 1, stringsAsFactors = FALSE)
+  base <- data.frame(player_id = c("p1", "p2"), match_id = "m1",
+                     goals_p90 = c(2, 2), stringsAsFactors = FALSE)
+
+  # total_minutes only -> that is what it scales by
+  tm <- calculate_psv(cbind(base, total_minutes = c(90, 45)), coef_df,
+                      min_adjust = FALSE, center = FALSE, scale_to_minutes = TRUE)
+  expect_equal(tm$psv_minutes, c(90, 45))
+
+  # minutes_played wins over total_minutes when both exist
+  both <- calculate_psv(cbind(base, minutes_played = c(60, 30),
+                              total_minutes = c(90, 45)), coef_df,
+                        min_adjust = FALSE, center = FALSE, scale_to_minutes = TRUE)
+  expect_equal(both$psv_minutes, c(60, 30))
+  expect_equal(both$psv, 2 * both$psv_minutes / 90)
+
+  # NA / negative minutes scale PSV by 0, and psv_minutes says so
+  odd <- calculate_psv(cbind(base, minutes_played = c(NA, -5)), coef_df,
+                       min_adjust = FALSE, center = FALSE, scale_to_minutes = TRUE)
+  expect_equal(odd$psv_minutes, c(0, 0))
+
+  # Not scaled -> no psv_minutes column
+  per90 <- calculate_psv(cbind(base, minutes_played = c(60, 30)), coef_df,
+                         min_adjust = FALSE, center = FALSE)
+  expect_false("psv_minutes" %in% names(per90))
+})
+
+test_that("league offset follows PSV's resolved minutes, not lineups total_minutes (panna#164)", {
+  coef_df <- data.frame(stat_name = "goals_p90", beta = 1, stringsAsFactors = FALSE)
+  # match stats carry minutes_played (60/30) that DIFFER from lineups minutes (90/45)
+  stats <- data.frame(player_id = c("p1", "p2"), match_id = "m1",
+                      goals_p90 = c(2, 2), minutes_played = c(60, 30),
+                      stringsAsFactors = FALSE)
+  psv <- calculate_psv(stats, coef_df, min_adjust = FALSE, center = FALSE,
+                       scale_to_minutes = TRUE)
+  epv <- data.frame(player_id = c("p1", "p2"), match_id = "m1",
+                    minutes_played = c(90, 45), epv_total = c(0.1, 0.2),
+                    stringsAsFactors = FALSE)
+  gl <- build_player_game_ratings(epv, player_game_psv = psv)
+  expect_true("psv_minutes" %in% names(gl))
+  gl <- gl[order(player_id)]
+
+  off <- 0.3
+  ms <- .psv_offset_mins_scale(gl[["psv_minutes"]], gl$minutes_played)
+  expect_equal(off * ms, off * c(60, 30) / 90)            # PSV's minutes
+  expect_false(isTRUE(all.equal(off * ms, off * c(90, 45) / 90)))  # not lineups'
+
+  # A game with no PSV row: psv_minutes stays NA and falls back to lineups minutes
+  gl2 <- build_player_game_ratings(rbind(epv, data.frame(
+    player_id = "p3", match_id = "m1", minutes_played = 20, epv_total = 0)),
+    player_game_psv = psv)
+  expect_true(is.na(gl2[player_id == "p3"]$psv_minutes))
+  ms2 <- .psv_offset_mins_scale(gl2[["psv_minutes"]], gl2$minutes_played)
+  expect_equal(ms2[gl2$player_id == "p3"], 20 / 90)
+
+  # Column absent altogether -> legacy behaviour (lineups minutes, clamped >= 0)
+  expect_equal(.psv_offset_mins_scale(NULL, c(90, NA, -3)), c(1, 0, 0))
+})

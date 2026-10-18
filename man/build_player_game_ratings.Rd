@@ -42,6 +42,9 @@ includes the opponent-strength adjustment.}
 \item{wpa_p90}{WPA per 90 minutes}
 \item{psv, osv, dsv}{Player Stat Value with O/D decomposition; NA when
 the player-game has no PSV row}
+\item{psv_minutes}{Minutes the PSV was scaled by (present only when
+PSV was computed with \code{scale_to_minutes = TRUE}); used to scale
+the game-logs league offset the same way (panna#164)}
 \item{piero_value}{Combined: \code{epv_weight * epv_total_adj +
       psv_weight * psv} (falls back to \code{epv_total} if no adj columns);
 NA when PSV is missing}
