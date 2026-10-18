@@ -973,6 +973,44 @@ test_that("MIN_90S_PSR_LEADERBOARD is a plausible half-season bar", {
 })
 
 
+test_that("psr_season_coverage counts distinct matches per season from either label form", {
+  ms <- data.table::data.table(
+    match_id = c("a", "a", "b", "c", "d", "e"),
+    season = c("2013-2014", "2013-2014", "2013-2014", "2014", "2025-2026", "2026")
+  )
+  cov <- psr_season_coverage(ms)
+  # "2013-2014" and calendar "2014" share an end year -> one season, 3 matches
+  expect_equal(cov$season_end_year, c(2014L, 2026L))
+  expect_equal(cov$n_matches, c(3L, 2L))
+  expect_error(psr_season_coverage(data.table::data.table(season = "2014")), "match_id")
+})
+
+test_that("psr_season_covered gates thin seasons, exempts the latest, fails unknowns", {
+  cov <- data.table::data.table(season_end_year = c(2014L, 2015L, 2016L, 2027L),
+                                n_matches = c(822L, 2663L, 5456L, 1515L))
+  dt <- data.table::data.table(season_end_year = c(2014L, 2015L, 2016L, 2027L, 2010L, NA))
+  expect_equal(psr_season_covered(dt, cov),
+               c(FALSE, FALSE, TRUE, TRUE, FALSE, FALSE))
+  # the threshold is the argument; boundary is inclusive
+  expect_equal(psr_season_covered(dt[1:3], cov, min_matches = 2663L),
+               c(FALSE, TRUE, TRUE))
+  expect_error(psr_season_covered(data.table::data.table(x = 1), cov), "season_end_year")
+})
+
+test_that("psr_leaderboard_eligible ANDs the season gate in only when given coverage", {
+  cov <- data.table::data.table(season_end_year = c(2014L, 2016L), n_matches = c(822L, 5456L))
+  dt <- data.table::data.table(weighted_90s = c(30, 30, 7),
+                               season_end_year = c(2014L, 2016L, 2016L))
+  expect_equal(psr_leaderboard_eligible(dt), c(TRUE, TRUE, FALSE))
+  expect_equal(psr_leaderboard_eligible(dt, season_coverage = cov), c(FALSE, TRUE, FALSE))
+})
+
+test_that("MIN_MATCHES_PSR_SEASON separates the Opta ramp-up from steady state", {
+  # measured 2026-10-18 on opta_player_stats.parquet (matches with player stats)
+  expect_true(2663L < MIN_MATCHES_PSR_SEASON && MIN_MATCHES_PSR_SEASON < 5456L)
+})
+
+
 # =============================================================================
 # apply_psr_calibration: both axes, post-offset (panna#202/#213/#214)
 # =============================================================================

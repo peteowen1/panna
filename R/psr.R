@@ -2688,11 +2688,16 @@ compute_player_psr <- function(skills, center = TRUE,
 #' @param psr_dt Table containing \code{weighted_90s}.
 #' @param min_90s Minimum weighted 90s; defaults to
 #'   \code{\link{MIN_90S_PSR_LEADERBOARD}}.
+#' @param season_coverage Optional table from \code{\link{psr_season_coverage}}.
+#'   When supplied, a row must also sit in a season with enough Opta coverage
+#'   (\code{\link{psr_season_covered}}); \code{NULL} (default) applies the
+#'   workload bar alone. Needs \code{season_end_year} in \code{psr_dt}.
 #' @return Logical vector. \code{NA} or missing \code{weighted_90s} is treated
 #'   as NOT eligible — an unknown workload cannot clear a workload bar.
 #' @family psr
 #' @export
-psr_leaderboard_eligible <- function(psr_dt, min_90s = MIN_90S_PSR_LEADERBOARD) {
+psr_leaderboard_eligible <- function(psr_dt, min_90s = MIN_90S_PSR_LEADERBOARD,
+                                     season_coverage = NULL) {
   dt <- data.table::as.data.table(psr_dt)
   if (!"weighted_90s" %in% names(dt)) {
     cli::cli_abort(c(
@@ -2701,7 +2706,78 @@ psr_leaderboard_eligible <- function(psr_dt, min_90s = MIN_90S_PSR_LEADERBOARD) 
     ))
   }
   w <- suppressWarnings(as.numeric(dt$weighted_90s))
-  !is.na(w) & is.finite(w) & w >= min_90s
+  ok <- !is.na(w) & is.finite(w) & w >= min_90s
+  if (!is.null(season_coverage)) ok <- ok & psr_season_covered(dt, season_coverage)
+  ok
+}
+
+
+#' Matches per season with real player stats
+#'
+#' Counts distinct matches per \code{season_end_year} in a match-level stats
+#' table (one row per player-match, as built by step 01 of the skills pipeline).
+#' Those rows already carry the minimum-minutes filter, so a match only counts
+#' if it has player box-score data -- which is what PSR needs, and what early
+#' Opta seasons mostly lack (panna#221).
+#'
+#' @param match_stats Table with \code{match_id} and either
+#'   \code{season_end_year} or \code{season}.
+#' @return \code{data.table(season_end_year, n_matches)}, one row per season.
+#' @family psr
+#' @export
+psr_season_coverage <- function(match_stats) {
+  dt <- data.table::as.data.table(match_stats)
+  if (!"match_id" %in% names(dt)) {
+    cli::cli_abort("{.arg match_stats} must contain {.field match_id}.")
+  }
+  if (!"season_end_year" %in% names(dt)) {
+    if (!"season" %in% names(dt)) {
+      cli::cli_abort("{.arg match_stats} needs {.field season_end_year} or {.field season}.")
+    }
+    # by label, never by exact "YYYY-YYYY" match (CLAUDE.md season rule)
+    dt <- data.table::copy(dt)
+    dt[, season_end_year := as.integer(extract_season_end_year(season))]
+  }
+  dt[!is.na(season_end_year) & !is.na(match_id),
+     .(n_matches = data.table::uniqueN(match_id)),
+     by = .(season_end_year = as.integer(season_end_year))][order(season_end_year)]
+}
+
+
+#' Is a player-season in a season with enough Opta coverage? (panna#221)
+#'
+#' Returns a logical vector, one per row -- a flag, not a filter. Opta's first
+#' seasons are sparse (2014: 822 matches with player stats against ~6,000 in a
+#' normal season), so one well-covered club tops any cross-season table. Pair
+#' with \code{\link{psr_leaderboard_eligible}}, which accepts this gate through
+#' its \code{season_coverage} argument so consumers need not know about it.
+#'
+#' The latest season in \code{season_coverage} always passes: it can be in
+#' progress and so legitimately short, and the ramp-up seasons this gate exists
+#' for are never the latest. A season absent from the table, or an \code{NA}
+#' season, is NOT covered -- unknown coverage cannot clear a coverage bar.
+#'
+#' @param psr_dt Table containing \code{season_end_year}.
+#' @param season_coverage Table from \code{\link{psr_season_coverage}}.
+#' @param min_matches Minimum matches; defaults to
+#'   \code{\link{MIN_MATCHES_PSR_SEASON}}.
+#' @return Logical vector.
+#' @family psr
+#' @export
+psr_season_covered <- function(psr_dt, season_coverage,
+                               min_matches = MIN_MATCHES_PSR_SEASON) {
+  dt <- data.table::as.data.table(psr_dt)
+  if (!"season_end_year" %in% names(dt)) {
+    cli::cli_abort("{.arg psr_dt} must contain {.field season_end_year}.")
+  }
+  if (!all(c("season_end_year", "n_matches") %in% names(season_coverage))) {
+    cli::cli_abort(
+      "{.arg season_coverage} must come from {.fn psr_season_coverage}.")
+  }
+  sey <- suppressWarnings(as.integer(dt$season_end_year))
+  n <- season_coverage$n_matches[match(sey, season_coverage$season_end_year)]
+  latest <- max(season_coverage$season_end_year, na.rm = TRUE)
+  !is.na(sey) & ((!is.na(n) & n >= min_matches) | sey >= latest)
 }
 
 #' Load the PSR calibration table

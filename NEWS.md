@@ -1,3 +1,12 @@
+# panna 0.3.103
+
+- Season-coverage gate for cross-season PSR displays: `psr_season_coverage()` counts matches with player stats
+  per season, `psr_season_covered()` flags seasons under `MIN_MATCHES_PSR_SEASON` (4,000), and
+  `psr_leaderboard_eligible(season_coverage = )` applies both bars. The latest season always passes (it may be
+  in progress). Measured on the raw feed: matches with player stats are 822 in 2014 and 2,663 in 2015, against
+  5,456+ from 2016. The sparsity is Opta box-score coverage, not a pipeline filter: lineup rows exist for all
+  6,183 matches of 2014 (#221).
+
 # panna 0.3.102
 
 - `estimate_player_skills()` peaks lower: skills step 02 on the 16 GB runner falls from 13.3 GB to 10.7 GB

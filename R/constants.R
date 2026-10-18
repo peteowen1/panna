@@ -580,6 +580,40 @@ GK_PSR_GOAL_SCALE <- 0.50
 #' MIN_90S_PSR_LEADERBOARD
 MIN_90S_PSR_LEADERBOARD <- 15
 
+#' Minimum matches in a season for it to enter a cross-season PSR display
+#'
+#' Opta box-score coverage ramps up over its first seasons: the lineup rows exist
+#' for every match, but the per-player stats PSR is built from are populated for
+#' only a fraction of them. Counting matches with real player stats (>= 10
+#' minutes played) over the rating and bridge competitions in
+#' \code{opta_player_stats.parquet} (measured 2026-10-18):
+#'
+#' \tabular{rrr}{
+#'   season \tab matches \tab with stats \cr
+#'   2013 \tab 5,396 \tab 499 \cr
+#'   2014 \tab 6,183 \tab 822 \cr
+#'   2015 \tab 6,547 \tab 2,663 \cr
+#'   2016 \tab 6,353 \tab 5,456 \cr
+#'   2017 \tab 6,542 \tab 6,031
+#' }
+#'
+#' So the thin seasons are genuinely thin Opta data, not a pipeline filter (the
+#' raw feed has all 376 EPL matches for 2014, but only 45 carry player stats).
+#' A season with a handful of European matches puts that one club at the top of
+#' any cross-season table -- 2014 was swept by Arsenal. Every season from 2016 on
+#' clears 5,400; 2015 (2,663) and earlier sit below 1,000-2,700. 4,000 splits the
+#' two groups with room either side.
+#'
+#' A DISPLAY threshold, like \code{\link{MIN_90S_PSR_LEADERBOARD}}: the ratings
+#' are kept, only flagged. See \code{\link{psr_season_covered}}.
+#'
+#' @format Integer value: 4000
+#' @family constants
+#' @export
+#' @examples
+#' MIN_MATCHES_PSR_SEASON
+MIN_MATCHES_PSR_SEASON <- 4000L
+
 
 # =============================================================================
 # Cache Path Constants
