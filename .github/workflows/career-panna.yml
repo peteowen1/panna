@@ -22,19 +22,31 @@ on:
 
 env:
   PANNA_PUBLISH_DISABLED: ${{ (github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev') && 'true' || 'false' }}
-  # A test push builds against the staged fixed prior (panna#257, built 2026-09-16).
-  PRIOR_ASSET: ${{ inputs.prior_asset || '03_skill_spm.STAGED-2026-09-16.rds' }}
+  # The live prior (the panna#257 fix, promoted 2026-10-18); a dispatch can name another asset.
+  PRIOR_ASSET: ${{ inputs.prior_asset || '03_skill_spm.rds' }}
   UPLOAD: ${{ inputs.upload && 'true' || 'false' }}
   GH_TOKEN: ${{ github.token }}
 
 permissions:
   contents: read
 
+# Publishes to ratings-data like opta-pipeline; never run two publishes at once.
+concurrency:
+  group: career-panna
+  cancel-in-progress: false
+
 jobs:
   career-panna:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
+      - name: Publish gate
+        run: |
+          if [ "$PANNA_PUBLISH_DISABLED" = "true" ]; then
+            echo "::warning title=Publishing disabled::ref $GITHUB_REF is not main or dev, so this run builds but uploads nothing."
+            echo "> **Publishing disabled:** ref \`$GITHUB_REF\` is not main or dev; this is a dry build." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - uses: actions/checkout@v7
 
       - uses: r-lib/actions/setup-r@v2
@@ -44,7 +56,7 @@ jobs:
 
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
-          cache-version: 1
+          cache-version: 11
           extra-packages: |
             any::devtools
             any::piggyback
@@ -63,6 +75,10 @@ jobs:
           echo "prior: $PRIOR_ASSET ($(sha256sum data-raw/cache-skills/03_skill_spm.rds | cut -c1-16))"
 
       - name: Step 09
+        env:
+          # The PAT only when this run may publish (vb_publish writes to pannadata);
+          # a branch run never holds it.
+          GITHUB_PAT: ${{ env.PANNA_PUBLISH_DISABLED != 'true' && secrets.WORKFLOW_PAT || '' }}
         run: |
           Rscript -e "upload_career_panna <- identical(Sys.getenv('UPLOAD'), 'true'); source('data-raw/estimated-skills/09_career_panna.R')"
 

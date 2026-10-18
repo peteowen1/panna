@@ -68,9 +68,12 @@ if (tolower(Sys.getenv("PANNA_PUBLISH_DISABLED", "")) %in% c("true", "1")) {
   upload <- FALSE
 }
 if (isTRUE(upload)) {
-  piggyback::pb_upload(out, repo = "peteowen1/pannadata", tag = "ratings-data",
-                       name = "career_panna.parquet", overwrite = TRUE)
-  cat("Uploaded career_panna.parquet to ratings-data release.\n")
+  # vb_publish() (R/versebus.R), not a bare pb_upload(overwrite = TRUE): it hashes
+  # first, retries a bounded number of times, verifies the live asset list and
+  # records the asset in ratings-data's bus_manifest.json -- the same path 08b uses.
+  manifest <- vb_publish(out, repo = "peteowen1/pannadata", tag = "ratings-data",
+                         rows = c(career_panna.parquet = nrow(panna)))
+  cat(sprintf("Uploaded career_panna.parquet to ratings-data, generation %s.\n", manifest$generation))
 } else {
   cat("(upload skipped — set upload_career_panna <- TRUE before sourcing to publish)\n")
 }
