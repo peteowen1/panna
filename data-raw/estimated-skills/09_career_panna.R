@@ -72,7 +72,8 @@ if (isTRUE(upload)) {
   # first, retries a bounded number of times, verifies the live asset list and
   # records the asset in ratings-data's bus_manifest.json -- the same path 08b uses.
   manifest <- vb_publish(out, repo = "peteowen1/pannadata", tag = "ratings-data",
-                         rows = c(career_panna.parquet = nrow(panna)))
+                         rows = c(career_panna.parquet = nrow(panna)),
+                         min_row_frac = 0.9)  # refuse a build that lost >10% of players
   cat(sprintf("Uploaded career_panna.parquet to ratings-data, generation %s.\n", manifest$generation))
 } else {
   cat("(upload skipped — set upload_career_panna <- TRUE before sourcing to publish)\n")

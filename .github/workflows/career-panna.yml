@@ -30,9 +30,11 @@ env:
 permissions:
   contents: read
 
-# Publishes to ratings-data like opta-pipeline; never run two publishes at once.
+# Shares opta-pipeline's group: both vb_publish() to ratings-data, which reads its
+# bus_manifest.json at the start and rewrites it at the end, so two runs at once
+# would lose one side's entries. Queues behind it, never cancels.
 concurrency:
-  group: career-panna
+  group: opta-pipeline
   cancel-in-progress: false
 
 jobs:
@@ -78,7 +80,7 @@ jobs:
         env:
           # The PAT only when this run may publish (vb_publish writes to pannadata);
           # a branch run never holds it.
-          GITHUB_PAT: ${{ env.PANNA_PUBLISH_DISABLED != 'true' && secrets.WORKFLOW_PAT || '' }}
+          GITHUB_PAT: ${{ (env.PANNA_PUBLISH_DISABLED != 'true' && env.UPLOAD == 'true') && secrets.WORKFLOW_PAT || '' }}
         run: |
           Rscript -e "upload_career_panna <- identical(Sys.getenv('UPLOAD'), 'true'); source('data-raw/estimated-skills/09_career_panna.R')"
 
