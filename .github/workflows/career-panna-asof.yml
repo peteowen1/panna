@@ -13,6 +13,10 @@ on:
         description: Publish career_panna_asof.parquet to ratings-data (main/dev only)
         type: boolean
         default: false
+      refit_prior:
+        description: Refit the year-by-year skill-SPM prior (03_skill_spm_asof.rds) first, with 03's default target decay; with upload, also publish it to predictions-cache
+        type: boolean
+        default: false
   push:
     branches: ["career-panna-asof*"]
     paths: [".github/workflows/career-panna-asof.yml", "data-raw/estimated-skills/09b_career_panna_asof.R"]
@@ -20,6 +24,7 @@ on:
 env:
   PANNA_PUBLISH_DISABLED: ${{ (github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev') && 'true' || 'false' }}
   UPLOAD: ${{ inputs.upload && 'true' || 'false' }}
+  REFIT_PRIOR: ${{ inputs.refit_prior && 'true' || 'false' }}
   GH_TOKEN: ${{ github.token }}
 
 permissions:
@@ -36,7 +41,7 @@ concurrency:
 jobs:
   career-panna-asof:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 150
     steps:
       - name: Publish gate
         run: |
@@ -73,6 +78,24 @@ jobs:
           ls -la data-raw/cache-opta data-raw/cache-skills ../pannadata/data/opta /tmp/pub
           for f in data-raw/cache-skills/*.rds; do echo "$f $(sha256sum "$f" | cut -c1-16)"; done
 
+      # The prior's inputs are the 2026-09-03 skill features (the vintage the published
+      # prior was fitted on, so a refit changes only what 03 changed) and the pooled RAPM.
+      # 03 also refits the LIVE prior 03_skill_spm.rds as a side effect; that is thrown
+      # away and the downloaded copy restored, because career panna owns it.
+      - name: Refit the year-by-year prior
+        if: env.REFIT_PRIOR == 'true'
+        run: |
+          set -euo pipefail
+          gh release download predictions-cache -R peteowen1/pannadata -p 04_rapm.rds -D data-raw/cache-opta
+          gh release download predictions-cache -R peteowen1/pannadata -p 02_skill_features.2026-09-03.rds -D /tmp
+          mv /tmp/02_skill_features.2026-09-03.rds data-raw/cache-skills/02_skill_features.rds
+          cp data-raw/cache-skills/03_skill_spm.rds /tmp/live_prior.rds
+          cp data-raw/cache-skills/03_skill_spm_asof.rds /tmp/old_asof_prior.rds
+          Rscript -e "skill_spm_use_decayed_target <- FALSE; asof_resume <- FALSE; source('data-raw/estimated-skills/03_skill_spm.R')" 2>&1 | tee /tmp/prior.log
+          cp /tmp/live_prior.rds data-raw/cache-skills/03_skill_spm.rds
+          grep -E "target decay|match dates joined|cutoff_year [0-9]+ done|Saved [0-9]+ expanding" /tmp/prior.log | tee -a "$GITHUB_STEP_SUMMARY"
+          Rscript -e 'p <- readRDS("data-raw/cache-skills/03_skill_spm_asof.rds"); hl <- vapply(p, function(x) as.numeric(x$target_halflife_days %||% NA), 1); cat("cutoff years:", length(p), "| target half-life:", paste(unique(hl), collapse = "/"), "\n"); stopifnot(length(p) >= 13, all(!is.na(hl)))' | tee -a "$GITHUB_STEP_SUMMARY"
+
       - name: Step 09b
         env:
           # The PAT only when this run may publish (vb_publish writes to pannadata);
@@ -108,12 +131,31 @@ jobs:
           set -o pipefail
           Rscript /tmp/compare.R | tee -a "$GITHUB_STEP_SUMMARY"
 
+      # After 09b has published the snapshots built on it, so the prior on
+      # predictions-cache always matches the published parquet. The old prior is kept
+      # first under a dated backup name: a clobber deletes before it uploads.
+      - name: Publish the refitted prior to predictions-cache
+        if: env.REFIT_PRIOR == 'true' && env.UPLOAD == 'true' && env.PANNA_PUBLISH_DISABLED != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+        run: |
+          set -euo pipefail
+          BK="03_skill_spm_asof.$(date -u +%F)-BACKUP.rds"
+          cp /tmp/old_asof_prior.rds "/tmp/$BK"
+          gh release upload predictions-cache "/tmp/$BK" -R peteowen1/pannadata --clobber
+          gh release view predictions-cache -R peteowen1/pannadata --json assets --jq ".assets[].name" | grep -qx "$BK"
+          gh release upload predictions-cache data-raw/cache-skills/03_skill_spm_asof.rds -R peteowen1/pannadata --clobber
+          gh release view predictions-cache -R peteowen1/pannadata --json assets --jq '.assets[] | select(.name=="03_skill_spm_asof.rds") | "\(.name) \(.size) \(.updatedAt)"' | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "old prior kept as $BK" >> "$GITHUB_STEP_SUMMARY"
+
       # upload-artifact takes paths inside the workspace only
       - name: Stage the output for the artifact
-        run: mkdir -p _out && cp ../pannadata/data/opta/career_panna_asof.parquet _out/
+        run: |
+          mkdir -p _out && cp ../pannadata/data/opta/career_panna_asof.parquet _out/
+          if [ "$REFIT_PRIOR" = "true" ]; then cp data-raw/cache-skills/03_skill_spm_asof.rds _out/; fi
 
       - uses: actions/upload-artifact@v4
         with:
           name: career-panna-asof
-          path: _out/career_panna_asof.parquet
+          path: _out/
           retention-days: 14
