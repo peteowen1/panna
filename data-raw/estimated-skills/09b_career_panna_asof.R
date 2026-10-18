@@ -206,6 +206,16 @@ if (!length(out)) {
   quit(save = "no")
 }
 
+# A date whose fit failed is skipped above. The shrink check below catches that only
+# for dates already published, so a failed NEW month would ship as a silent gap.
+n_failed <- n_attempted - length(out)
+if (n_failed > 0L) {
+  message(sprintf("WARNING: %d of %d attempted snapshots failed to fit (see FIT FAILED above).",
+                  n_failed, n_attempted))
+  if (isTRUE(upload) && !tolower(Sys.getenv("PANNA_PUBLISH_DISABLED", "")) %in% c("true", "1"))
+    stop("Refusing to publish career_panna_asof.parquet with failed snapshots.", call. = FALSE)
+}
+
 allr <- rbindlist(out)
 allr[, sign_convention := CAREER_PANNA_SIGN_CONVENTION]
 if (!is.null(prev)) allr <- rbindlist(list(prev, allr), use.names = TRUE, fill = TRUE)
@@ -249,9 +259,10 @@ if (isTRUE(upload)) {
     cat(sprintf("Publish check: all %d published snapshot dates kept, none below 90%% of their rows.\n",
                 data.table::uniqueN(pub_dates)))
   }
-  # vb_publish() (R/versebus.R), not pb_upload(overwrite = TRUE), which deletes the
-  # published asset before uploading (same swap as 09_career_panna.R, #355). It names
-  # the asset after the file, so a custom asof_out_path is staged under the real name.
+  # vb_publish() (R/versebus.R), as 09_career_panna.R does (#355). It still replaces the
+  # asset by delete-then-upload, but adds bounded retries, a hash and live size check,
+  # and records the asset in bus_manifest.json last. It names the asset after the file,
+  # so a custom asof_out_path is staged under the real name.
   pub_path <- out_path
   if (basename(out_path) != "career_panna_asof.parquet") {
     pub_path <- file.path(tempfile("career_asof_up_"), "career_panna_asof.parquet")

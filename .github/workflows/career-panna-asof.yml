@@ -105,6 +105,7 @@ jobs:
           cat(sprintf("\nTop 20 at %s (9k+ min), new build vs published:\n", D))
           print(s[order(rank)][1:20, .(player_name, rank, pub_rank, panna = round(panna, 3), def = round(d, 3), pub_def = round(pub_d, 3))])
           EOF
+          set -o pipefail
           Rscript /tmp/compare.R | tee -a "$GITHUB_STEP_SUMMARY"
 
       # upload-artifact takes paths inside the workspace only
