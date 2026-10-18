@@ -272,8 +272,39 @@ fit_expanding_skill_spm <- function(skill_features, pooled_rapm_ratings, cutoff_
     offense_spm_ratings = offense_spm_ratings,
     defense_spm_ratings = defense_spm_ratings,
     cutoff_year = cutoff_year,
-    n_train = nrow(spm_train_data)
+    n_train = nrow(spm_train_data),
+    sign_convention = CAREER_PANNA_SIGN_CONVENTION
   )
+}
+
+
+#' Abort unless a skill-SPM prior is tagged with the current sign convention
+#'
+#' `fit_career_rapm()` negates `defense_spm` on the way in because it assumes
+#' positive = good (Pete, 2026-09-04). A prior fitted under the old
+#' convention (negative = good) is therefore inverted a second time, which
+#' pulls every good defender toward a "bad defender" prior with no error.
+#' That happened: `03_skill_spm_asof.rds` was fitted 2026-09-03, the day before
+#' the flip, and every `career_panna_asof.parquet` snapshot since was shrunk
+#' toward it (panna#257, found 2026-10-18; Spearman of its defence against the
+#' live prior's was -0.81). The tag is the only reliable signal: a prior's own
+#' values cannot say which way round they are.
+#'
+#' @param spm One skill-SPM fit (an element of `03_skill_spm_asof.rds`, or
+#'   `03_skill_spm.rds`).
+#' @param source_desc Where it came from, for the error message.
+#' @return Invisibly `TRUE` if tagged `CAREER_PANNA_SIGN_CONVENTION`.
+#' @keywords internal
+.assert_skill_spm_sign_convention <- function(spm, source_desc) {
+  got <- spm$sign_convention
+  if (!identical(got, CAREER_PANNA_SIGN_CONVENTION)) {
+    cli::cli_abort(c(
+      "{source_desc}: skill-SPM prior is tagged {.val {got %||% 'nothing'}}, expected {.val {CAREER_PANNA_SIGN_CONVENTION}}.",
+      "x" = "fit_career_rapm() negates defense_spm, so an old-convention prior silently inverts every defensive rating.",
+      "i" = "Refit it (03_skill_spm.R with asof_resume <- FALSE), or repair a pre-2026-09-04 fit with data-raw/estimated-skills/03c_repair_asof_prior_sign.R."
+    ))
+  }
+  invisible(TRUE)
 }
 
 

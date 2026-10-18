@@ -256,6 +256,7 @@ test_that("fit_expanding_skill_spm fits O/D models using only pre-cutoff seasons
 
   expect_false(is.null(fit))
   expect_equal(fit$cutoff_year, 2024)
+  expect_identical(fit$sign_convention, CAREER_PANNA_SIGN_CONVENTION)
   expect_true(all(c("offense_spm_glmnet", "offense_spm_xgb",
                     "defense_spm_glmnet", "defense_spm_xgb",
                     "offense_spm_ratings", "defense_spm_ratings") %in% names(fit)))
@@ -300,4 +301,12 @@ test_that("fit_expanding_skill_spm excludes the cutoff season itself from traini
     expect_false(is.null(fit))
     expect_true(all(fit$offense_spm_ratings$player_id %in% eligible))
   }
+})
+
+test_that(".assert_skill_spm_sign_convention accepts the current tag and rejects others", {
+  ok <- list(sign_convention = CAREER_PANNA_SIGN_CONVENTION)
+  expect_true(.assert_skill_spm_sign_convention(ok, "test"))
+  expect_error(.assert_skill_spm_sign_convention(list(), "untagged"), "tagged")
+  expect_error(.assert_skill_spm_sign_convention(list(sign_convention = "defense_negative_good"), "old"),
+               "defense_negative_good")
 })

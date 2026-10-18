@@ -85,6 +85,9 @@ if (is.null(skill_spm_asof) || length(skill_spm_asof) == 0) {
     "(FABLE-ASOF-EXPERIMENTS.md sec 4)."), call. = FALSE)
   asof_years <- integer(0)
 } else {
+  for (.y in names(skill_spm_asof))
+    .assert_skill_spm_sign_convention(skill_spm_asof[[.y]],
+                                      sprintf("%s, cutoff year %s", basename(skill_spm_asof_path), .y))
   asof_years <- sort(as.integer(names(skill_spm_asof)))
   cat(sprintf("  expanding-window skill-SPM: %d cutoff years available (%d-%d)\n",
               length(asof_years), min(asof_years), max(asof_years)))
