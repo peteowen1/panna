@@ -16,6 +16,10 @@ on:
         description: 'Force full rebuild from step 1'
         type: boolean
         default: false
+      asof_asset:
+        description: 'EXPERIMENT: career_panna_asof asset on predictions-cache to use instead of ratings-data'
+        type: string
+        default: ''
       force_rebuild_from:
         description: 'Force rebuild from step N (1-10, blank = use cache)'
         type: number
@@ -24,11 +28,13 @@ on:
     types: [opta-scrape-complete]
 
 concurrency:
-  group: panna-release-writer
+  # EXPERIMENT BRANCH: own queue per run, never panna-release-writer.
+  group: ${{ format('exp-decay-port-predictions-{0}', github.run_id) }}
   cancel-in-progress: false
 
 env:
   GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
+  ASOF_ASSET: ${{ inputs.asof_asset }}
   R_KEEP_PKG_SOURCE: yes
   # R026: only main and dev may publish. Scheduled and repository_dispatch runs
   # use the default branch (main). A workflow_dispatch from any other branch
@@ -131,6 +137,14 @@ jobs:
             echo "  Downloaded career_panna_asof.parquet"
           else
             echo "  Skipped career_panna_asof.parquet (not found on ratings-data)"
+          fi
+          if [ -n "${ASOF_ASSET}" ]; then
+            echo "EXPERIMENT: replacing career_panna_asof.parquet with predictions-cache/${ASOF_ASSET}"
+            rm -f "$OPTA_DIR/career_panna_asof.parquet"
+            mkdir -p /tmp/exp_asof
+            gh release download predictions-cache --repo peteowen1/pannadata --pattern "${ASOF_ASSET}" --dir /tmp/exp_asof
+            mv "/tmp/exp_asof/${ASOF_ASSET}" "$OPTA_DIR/career_panna_asof.parquet"
+            sha256sum "$OPTA_DIR/career_panna_asof.parquet"
           fi
 
           echo "Opta data downloaded to $OPTA_DIR"
@@ -311,18 +325,18 @@ jobs:
               # replay of a club league/cup can use the ACTUAL predictions
               # that existed on a given historical date, same pattern as
               # 12b/12c below for WC2026 minutes/team-strength.
-              step_07b_snapshot_predictions  = TRUE,
+              step_07b_snapshot_predictions  = FALSE,
               step_08_evaluate_model         = TRUE,
-              step_09_upload_predictions     = TRUE,
-              step_10_export_blog_data       = TRUE,
+              step_09_upload_predictions     = FALSE,
+              step_10_export_blog_data       = FALSE,
               # Per-match value metrics (EPV+WPA+PSV) and per-action equity.
               # The blog's Value tab + possession-chains visualizations consume
               # these. Defaults in run_predictions_opta.R are FALSE (manual
               # backfill only); enabling here makes them weekly artifacts so
               # game_logs.parquet / action_equity.parquet on blog-latest don't
               # drift behind the box-score data. See panna#71.
-              step_10b_export_game_logs      = TRUE,
-              step_10c_export_equity         = TRUE,
+              step_10b_export_game_logs      = FALSE,
+              step_10c_export_equity         = FALSE,
               # Per-player penalty-shootout WPA -> shootout_wpa.parquet on
               # blog-latest (pannadata build-blog-data passes it to R2 as
               # football/shootout-wpa.parquet). Cheap (thin data) and additive;
@@ -332,8 +346,8 @@ jobs:
               # without this there is no way to ask what the model saw for a
               # given fixture outside a live run -- panna#190 and panna#192 both
               # stalled on exactly that. Small, additive, no existing consumer.
-              step_04b_export_match_features = TRUE,
-              step_10d_export_shootout_wpa   = TRUE,
+              step_04b_export_match_features = FALSE,
+              step_10d_export_shootout_wpa   = FALSE,
               # WC2026 simulation + blog export. Refresh weekly with the rest
               # of the predictions chain so the WC tab tracks the latest match
               # outcomes (esp. during the qualifier finals window). Disable in
@@ -347,34 +361,34 @@ jobs:
               # under a TRUE here is the gate working, not drift. They are also
               # non-fatal now: before 2026-08-21 a step-11 abort set
               # pipeline_failed and step 13 published nothing for eight days.
-              step_11_simulate_wc2026        = TRUE,
-              step_12_export_wc2026_blog     = TRUE,
+              step_11_simulate_wc2026        = FALSE,
+              step_12_export_wc2026_blog     = FALSE,
               # Archive a dated minutes snapshot + diff to the
               # wc2026-minutes-history release so group-stage drift is tracked
               # (blog-latest clobbers, so it retains no history of its own).
-              step_12b_snapshot_wc_minutes   = TRUE,
+              step_12b_snapshot_wc_minutes   = FALSE,
               # Same pattern for team strength: dated ELO + champion-odds
               # snapshots to wc2026-strength-history so tournament rating drift
               # is tracked going forward (no replay needed next time).
-              step_12c_snapshot_wc_strength  = TRUE,
+              step_12c_snapshot_wc_strength  = FALSE,
               # Tiento for every domestic-league + cup-only club (panna#193),
               # not just the WC2026 48 -- the blog's Team Ratings page reads
               # team_strength.parquet for the headline rating everywhere.
               # Non-fatal like 11/12/12b/12c, for the same reason (a side
               # export failing must never hold back predictions-latest).
-              step_12d_export_domestic_team_strength = TRUE,
+              step_12d_export_domestic_team_strength = FALSE,
               # Full-model pairwise knockout lookup for UCL/UEL/UECL (club-cup
               # sibling of step 11's WC knockout lookup) -- the blog's cup
               # knockout-phase Sim tab reads this instead of a client-side
               # rating-difference approximation. Non-fatal like 11/12/12b/12c/
               # 12d, and gated internally on team-state freshness (see
               # 12e_export_cup_pairwise.R's STALE_DAYS_ABORT).
-              step_12e_export_cup_pairwise  = TRUE,
+              step_12e_export_cup_pairwise  = FALSE,
               # Single gated publish of predictions-latest + blog-latest
               # (ECOSYSTEM-FIX-PLAN.md PA5/H-TORN) -- steps 09/10/10b/10c/10d/12
               # above now write LOCAL outputs only; this is the one place
               # either tag actually gets uploaded, manifest-last per tag.
-              step_13_publish_release_data  = TRUE
+              step_13_publish_release_data  = FALSE
             )
 
             source('data-raw/match-predictions-opta/run_predictions_opta.R', chdir = FALSE)
@@ -389,7 +403,10 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: predictions-branch-run
-          path: data-raw/cache-predictions-opta/predictions.parquet
+          path: |
+            data-raw/cache-predictions-opta/predictions.parquet
+            data-raw/cache-predictions-opta/08_evaluation.rds
+            data-raw/cache-predictions-opta/06_outcome_model.rds
           if-no-files-found: warn
           retention-days: 14
 
