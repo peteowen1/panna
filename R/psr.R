@@ -2756,6 +2756,9 @@ psr_season_coverage <- function(match_stats) {
 #' progress and so legitimately short, and the ramp-up seasons this gate exists
 #' for are never the latest. A season absent from the table, or an \code{NA}
 #' season, is NOT covered -- unknown coverage cannot clear a coverage bar.
+#' An empty \code{season_coverage}, or one ending before the latest season in
+#' \code{psr_dt}, is an error: either means it was not built from the full
+#' match-stats table.
 #'
 #' @param psr_dt Table containing \code{season_end_year}.
 #' @param season_coverage Table from \code{\link{psr_season_coverage}}.
@@ -2775,9 +2778,24 @@ psr_season_covered <- function(psr_dt, season_coverage,
       "{.arg season_coverage} must come from {.fn psr_season_coverage}.")
   }
   sey <- suppressWarnings(as.integer(dt$season_end_year))
-  n <- season_coverage$n_matches[match(sey, season_coverage$season_end_year)]
-  latest <- max(season_coverage$season_end_year, na.rm = TRUE)
-  !is.na(sey) & ((!is.na(n) & n >= min_matches) | sey >= latest)
+  cov_years <- suppressWarnings(as.integer(season_coverage$season_end_year))
+  # An empty table made max() -Inf, so every season counted as "latest" and
+  # passed: the gate failed open on exactly the input a broken upstream gives.
+  if (!any(!is.na(cov_years))) {
+    cli::cli_abort(c(
+      "{.arg season_coverage} has no seasons, so coverage cannot be judged.",
+      "i" = "Build it from the full match-stats table with {.fn psr_season_coverage}."))
+  }
+  latest <- max(cov_years, na.rm = TRUE)
+  # A coverage table that stops before the seasons being judged was built from a
+  # subset; its "latest" is then some thin season, which would wrongly pass.
+  if (any(sey > latest, na.rm = TRUE)) {
+    cli::cli_abort(c(
+      "{.arg season_coverage} ends at {latest} but {.arg psr_dt} has later seasons.",
+      "i" = "Build it from the full match-stats table, not a subset."))
+  }
+  n <- season_coverage$n_matches[match(sey, cov_years)]
+  !is.na(sey) & ((!is.na(n) & n >= min_matches) | sey == latest)
 }
 
 #' Load the PSR calibration table

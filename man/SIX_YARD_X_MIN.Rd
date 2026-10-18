@@ -25,6 +25,7 @@ Other constants:
 \code{\link{MINUTES_PER_MATCH}},
 \code{\link{MIN_90S_PSR_LEADERBOARD}},
 \code{\link{MIN_GAMES_FOR_PADDING}},
+\code{\link{MIN_MATCHES_PSR_SEASON}},
 \code{\link{MIN_MINUTES_FEATURES}},
 \code{\link{MIN_MINUTES_RAPM}},
 \code{\link{MIN_MINUTES_SPM}},

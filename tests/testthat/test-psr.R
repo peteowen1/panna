@@ -997,6 +997,20 @@ test_that("psr_season_covered gates thin seasons, exempts the latest, fails unkn
   expect_error(psr_season_covered(data.table::data.table(x = 1), cov), "season_end_year")
 })
 
+test_that("psr_season_covered refuses an empty or truncated coverage table instead of passing everyone", {
+  dt <- data.table::data.table(season_end_year = c(2014L, 2016L))
+  empty <- data.table::data.table(season_end_year = integer(0), n_matches = integer(0))
+  expect_error(psr_season_covered(dt, empty), "no seasons")
+  all_na <- data.table::data.table(season_end_year = NA_integer_, n_matches = 10L)
+  expect_error(psr_season_covered(dt, all_na), "no seasons")
+  # built from a subset: 2014 alone would otherwise be "latest" and pass
+  only_2014 <- data.table::data.table(season_end_year = 2014L, n_matches = 822L)
+  expect_error(psr_season_covered(dt, only_2014), "later seasons")
+  # the full table still exempts only its own latest season
+  full <- data.table::data.table(season_end_year = c(2014L, 2016L), n_matches = c(822L, 900L))
+  expect_equal(psr_season_covered(dt, full), c(FALSE, TRUE))
+})
+
 test_that("psr_leaderboard_eligible ANDs the season gate in only when given coverage", {
   cov <- data.table::data.table(season_end_year = c(2014L, 2016L), n_matches = c(822L, 5456L))
   dt <- data.table::data.table(weighted_90s = c(30, 30, 7),

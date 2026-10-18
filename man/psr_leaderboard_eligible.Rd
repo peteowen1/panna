@@ -36,27 +36,27 @@ Without this, 23 of the outfield top 100 are sub-15-nineties part-seasons
 (Totti 7.0, Pinilla 5.5, Pastore 9.7).
 }
 \seealso{
-Other psr:
+Other psr: 
 \code{\link{PSV_RELIABILITY_GD_SCALE}},
-\code{\link[=apply_psr_calibration]{apply_psr_calibration()}},
-\code{\link[=apply_psr_season_calibration]{apply_psr_season_calibration()}},
-\code{\link[=apply_psv_calibration]{apply_psv_calibration()}},
-\code{\link[=apply_psv_opponent_adjustment]{apply_psv_opponent_adjustment()}},
-\code{\link[=calculate_psr]{calculate_psr()}},
-\code{\link[=calculate_psv]{calculate_psv()}},
-\code{\link[=calculate_psv_components]{calculate_psv_components()}},
-\code{\link[=compute_player_psv]{compute_player_psv()}},
-\code{\link[=default_stat_rating_params]{default_stat_rating_params()}},
-\code{\link[=fit_psv_opponent_adjustment]{fit_psv_opponent_adjustment()}},
-\code{\link[=load_opta_psr_weekly]{load_opta_psr_weekly()}},
-\code{\link[=load_psr_calibration]{load_psr_calibration()}},
-\code{\link[=load_psv_match_reliability]{load_psv_match_reliability()}},
-\code{\link[=player_psr]{player_psr()}},
-\code{\link[=psr_season_coverage]{psr_season_coverage()}},
-\code{\link[=psr_season_covered]{psr_season_covered()}},
+\code{\link{apply_psr_calibration}()},
+\code{\link{apply_psr_season_calibration}()},
+\code{\link{apply_psv_calibration}()},
+\code{\link{apply_psv_opponent_adjustment}()},
+\code{\link{calculate_psr}()},
+\code{\link{calculate_psv}()},
+\code{\link{calculate_psv_components}()},
+\code{\link{compute_player_psv}()},
+\code{\link{default_stat_rating_params}()},
+\code{\link{fit_psv_opponent_adjustment}()},
+\code{\link{load_opta_psr_weekly}()},
+\code{\link{load_psr_calibration}()},
+\code{\link{load_psv_match_reliability}()},
+\code{\link{player_psr}()},
+\code{\link{psr_season_coverage}()},
+\code{\link{psr_season_covered}()},
 \code{\link{psv_opponent}},
-\code{\link[=soccer_position_map]{soccer_position_map()}},
-\code{\link[=soccer_stat_rating_definitions]{soccer_stat_rating_definitions()}},
-\code{\link[=stat_rating_names]{stat_rating_names()}}
+\code{\link{soccer_position_map}()},
+\code{\link{soccer_stat_rating_definitions}()},
+\code{\link{stat_rating_names}()}
 }
 \concept{psr}

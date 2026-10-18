@@ -33,29 +33,32 @@ The latest season in \code{season_coverage} always passes: it can be in
 progress and so legitimately short, and the ramp-up seasons this gate exists
 for are never the latest. A season absent from the table, or an \code{NA}
 season, is NOT covered -- unknown coverage cannot clear a coverage bar.
+An empty \code{season_coverage}, or one ending before the latest season in
+\code{psr_dt}, is an error: either means it was not built from the full
+match-stats table.
 }
 \seealso{
-Other psr:
+Other psr: 
 \code{\link{PSV_RELIABILITY_GD_SCALE}},
-\code{\link[=apply_psr_calibration]{apply_psr_calibration()}},
-\code{\link[=apply_psr_season_calibration]{apply_psr_season_calibration()}},
-\code{\link[=apply_psv_calibration]{apply_psv_calibration()}},
-\code{\link[=apply_psv_opponent_adjustment]{apply_psv_opponent_adjustment()}},
-\code{\link[=calculate_psr]{calculate_psr()}},
-\code{\link[=calculate_psv]{calculate_psv()}},
-\code{\link[=calculate_psv_components]{calculate_psv_components()}},
-\code{\link[=compute_player_psv]{compute_player_psv()}},
-\code{\link[=default_stat_rating_params]{default_stat_rating_params()}},
-\code{\link[=fit_psv_opponent_adjustment]{fit_psv_opponent_adjustment()}},
-\code{\link[=load_opta_psr_weekly]{load_opta_psr_weekly()}},
-\code{\link[=load_psr_calibration]{load_psr_calibration()}},
-\code{\link[=load_psv_match_reliability]{load_psv_match_reliability()}},
-\code{\link[=player_psr]{player_psr()}},
-\code{\link[=psr_leaderboard_eligible]{psr_leaderboard_eligible()}},
-\code{\link[=psr_season_coverage]{psr_season_coverage()}},
+\code{\link{apply_psr_calibration}()},
+\code{\link{apply_psr_season_calibration}()},
+\code{\link{apply_psv_calibration}()},
+\code{\link{apply_psv_opponent_adjustment}()},
+\code{\link{calculate_psr}()},
+\code{\link{calculate_psv}()},
+\code{\link{calculate_psv_components}()},
+\code{\link{compute_player_psv}()},
+\code{\link{default_stat_rating_params}()},
+\code{\link{fit_psv_opponent_adjustment}()},
+\code{\link{load_opta_psr_weekly}()},
+\code{\link{load_psr_calibration}()},
+\code{\link{load_psv_match_reliability}()},
+\code{\link{player_psr}()},
+\code{\link{psr_leaderboard_eligible}()},
+\code{\link{psr_season_coverage}()},
 \code{\link{psv_opponent}},
-\code{\link[=soccer_position_map]{soccer_position_map()}},
-\code{\link[=soccer_stat_rating_definitions]{soccer_stat_rating_definitions()}},
-\code{\link[=stat_rating_names]{stat_rating_names()}}
+\code{\link{soccer_position_map}()},
+\code{\link{soccer_stat_rating_definitions}()},
+\code{\link{stat_rating_names}()}
 }
 \concept{psr}
