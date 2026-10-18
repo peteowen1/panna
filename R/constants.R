@@ -885,7 +885,7 @@ PANNA_BRIDGE_LEAGUES <- c("LIB", "SUD", "CCC", "LGC", "ACLE", "CWC")
 #'
 #' Without this restriction the max-minutes rule assigns a continental
 #' competition as a player's league whenever his domestic one is absent from
-#' the rated set: measured at **19.1\% of player-seasons** (24,613 of 128,589)
+#' the rated set: measured at **19.1% of player-seasons** (24,613 of 128,589)
 #' -- UEL 9,062, Conference 6,770, CAF_CL 3,438, UCL 2,724. Those players
 #' (typically from unrated leagues such as Norway, Czechia or Japan appearing
 #' only in Europe) were priced with the UEL/UCL offset rather than anything

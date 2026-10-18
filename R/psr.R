@@ -1827,7 +1827,7 @@ compute_position_role_means <- function(player_stats, skill_cols, min_n = 200L,
 load_position_role_means <- function() {
   p <- system.file("extdata", "position_role_means.csv", package = "panna")
   if (p == "" || !file.exists(p)) {
-    cli::cli_warn("position_role_means.csv not found — position normalization disabled")
+    cli::cli_warn("position_role_means.csv not found -- position normalization disabled")
     return(NULL)
   }
   data.table::fread(p)
@@ -1854,7 +1854,7 @@ load_position_role_means <- function() {
 load_psv_match_reliability <- function() {
   p <- system.file("extdata", "psv_match_reliability.csv", package = "panna")
   if (p == "" || !file.exists(p)) {
-    cli::cli_warn("psv_match_reliability.csv not found — per-match PSV reliability shrinkage disabled")
+    cli::cli_warn("psv_match_reliability.csv not found -- per-match PSV reliability shrinkage disabled")
     return(NULL)
   }
   data.table::fread(p)
@@ -2033,6 +2033,13 @@ load_psv_match_reliability <- function() {
 #'   obvious. Resolve once on the full population and pass it here. Named with
 #'   a dot prefix deliberately: a parameter called \code{pos_grp} would be
 #'   shadowed by the column of the same name inside \code{dt[...]}.
+#' @param role_override Optional character vector, one per row of
+#'   \code{player_match_stats}, supplying the fine-grained role label directly
+#'   instead of resolving it from \code{position} + \code{position_side}.
+#'   Usually unnecessary here, since match stats carry both columns. It exists
+#'   for callers that score slices of a larger population and want the same
+#'   scope-stable role everywhere, for the same reason as \code{is_gk} and
+#'   \code{.pos_grp_override}. \code{NULL} (default) resolves roles natively.
 #'
 #' @return A data.table with \code{psv}, \code{osv}, \code{dsv} columns.
 #'
@@ -2245,7 +2252,7 @@ load_psv_calibration <- function() {
 #'
 #' \strong{The position column must be a RESOLVED position, not the per-match
 #' role.} Opta records \code{position == "Substitute"} for anyone appearing off
-#' the bench -- roughly 29\% of game-log rows as measured 2026-09 (an absolute
+#' the bench -- roughly 29% of game-log rows as measured 2026-09 (an absolute
 #' count would already be stale given the daily Opta scrape; re-measure rather
 #' than trust a cached number). Bucketing on that field puts a blend of every
 #' position into one group and biases the outfield factors. Resolve each
@@ -2263,10 +2270,10 @@ load_psv_calibration <- function() {
 #' and only the relative position weighting moves. That matters because these
 #' offsets are ADDED to PSR at full strength on the assumption that PSV and PSR
 #' share units. Using the raw slopes inflates all of PSV ~1.5x and every league
-#' offset with it -- which looks like a large correction (+55\% on weak leagues)
+#' offset with it -- which looks like a large correction (+55% on weak leagues)
 #' but is a units artefact. The genuine differential effect on the offsets is
-#' about \strong{+4.6\%}; the real payoff of this table is to PSV itself, where it
-#' cuts goalkeeper share of the top 1\% from 4.2x the population rate to ~0.2x.
+#' about \strong{+4.6%}; the real payoff of this table is to PSV itself, where it
+#' cuts goalkeeper share of the top 1% from 4.2x the population rate to ~0.2x.
 #'
 #' \strong{These figures are a point-in-time measurement (2026-09), not an
 #' enforced invariant} -- there is no checked-in script that regenerates
@@ -2377,10 +2384,10 @@ resolve_position_group <- function(dt) {
 #' regex-matched the same vocabulary independently, which is exactly the kind of
 #' duplicated classifier this codebase's own gotchas warn drifts silently); or a
 #' 16-role \code{classify_role()} code (\code{"CB"}, \code{"DM"}, ...), resolved
-#' via \code{\link{.role16_to_broad}} -- needed because
+#' via \code{.role16_to_broad()} -- needed because
 #' \code{apply_psv_calibration()}'s own fallback chain can hand this function a
 #' fine-grained \code{primary_position} (see \code{\link{.player_role}}'s
-#' comment: that column is "usually already broad... but [sometimes] a
+#' comment: that column is "usually already broad... but \[sometimes\] a
 #' fine-grained label"). Anything none of the three recognize returns NA, which
 #' \code{apply_psv_calibration()} treats as factor 1 (uncalibrated passthrough).
 #' @keywords internal
