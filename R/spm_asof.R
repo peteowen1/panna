@@ -96,6 +96,8 @@
     X_full = X,
     y = y,
     weights = w,
+    # Kept so a caller can attach per-row dates (fit_expanding_pooled_rapm()'s decay).
+    splint_id = rapm_data$row_data$splint_id[keep_rows],
     player_mapping = rapm_data$player_mapping[rapm_data$player_mapping$player_id %in% new_pids, ],
     player_ids = new_pids,
     n_players = length(new_pids) - 1L,
@@ -131,25 +133,55 @@
 #' @param nfolds CV folds (default 5, matching the production pooled fit).
 #' @param seed RNG seed for `fit_rapm()`'s CV fold assignment, for
 #'   reproducible per-cutoff-year fits. `NULL` = no explicit seed.
+#' @param halflife_days Numeric or `NULL` (default). When set, each kept row's
+#'   weight is multiplied by `0.5^(age / halflife_days)`, where age is days
+#'   before the window's LAST match -- the same decay
+#'   `data-raw/player-ratings-opta/04c_rapm_decayed.R` applies to the live
+#'   skill-SPM target (panna#257), anchored inside the window so no date at or
+#'   after the cutoff is used. Needs a `match_date` column on
+#'   `splint_season_map`. `NULL` keeps the undecayed fit exactly.
 #'
 #' @return List: `ratings` (data.frame player_id/rapm/offense/defense),
 #'   `lambda_min`, `n_obs`, `cutoff_year`, `min_year` (the argument as
-#'   supplied, `NULL` for the unbounded expanding-window default). `NULL`
+#'   supplied, `NULL` for the unbounded expanding-window default),
+#'   `halflife_days` and `anchor_date` (`NULL` / `NA` when undecayed). `NULL`
 #'   (with a warning) if fewer than 1000 valid observations remain (too few
 #'   prior seasons, or an empty/too-narrow window).
 #' @keywords internal
 fit_expanding_pooled_rapm <- function(rapm_data, splint_season_map, cutoff_year,
                                       min_year = NULL,
                                       lambda_formula = function(n) 16.67 * n^(-0.58),
-                                      nfolds = 5, seed = NULL) {
+                                      nfolds = 5, seed = NULL, halflife_days = NULL) {
   rapm_sub <- .subset_rapm_data_expanding(rapm_data, splint_season_map, cutoff_year,
                                           min_year = min_year)
+  # Checked before the decay, so an empty window skips instead of failing on its dates.
   n_obs <- sum(!is.na(rapm_sub$y) & is.finite(rapm_sub$y))
   if (n_obs < 1000) {
     cli::cli_warn(paste0(
       "fit_expanding_pooled_rapm: only {n_obs} valid observations for ",
       "cutoff_year={cutoff_year} (too few prior seasons) -- skipping."))
     return(NULL)
+  }
+  anchor_date <- as.Date(NA)
+  if (!is.null(halflife_days)) {
+    stopifnot(is.numeric(halflife_days), length(halflife_days) == 1L, halflife_days > 0)
+    if (!"match_date" %in% names(splint_season_map)) {
+      cli::cli_abort("halflife_days is set but {.arg splint_season_map} has no {.field match_date} column.")
+    }
+    ssm <- data.table::as.data.table(splint_season_map)
+    row_date <- as.Date(ssm$match_date[match(rapm_sub$splint_id, ssm$splint_id)])
+    pct_missing <- 100 * mean(is.na(row_date))
+    # Same thresholds as 04c_rapm_decayed.R: a mostly-undated design is a broken
+    # join, not a few edge cases.
+    if (pct_missing > 50) {
+      cli::cli_abort("{round(pct_missing, 1)}% of rows have no match_date for cutoff_year={cutoff_year} -- broken join.")
+    } else if (pct_missing > 2) {
+      cli::cli_warn("{round(pct_missing, 1)}% of rows have no match_date for cutoff_year={cutoff_year}.")
+    }
+    anchor_date <- max(row_date, na.rm = TRUE)
+    age_days <- as.numeric(anchor_date - row_date)
+    age_days[is.na(age_days)] <- max(age_days, na.rm = TRUE)  # undated rows weigh least
+    rapm_sub$weights <- rapm_sub$weights * 0.5^(age_days / halflife_days)
   }
 
   lambda_grid <- lambda_formula(n_obs) * 2^seq(3, -3, by = -0.5)
@@ -164,7 +196,9 @@ fit_expanding_pooled_rapm <- function(rapm_data, splint_season_map, cutoff_year,
     lambda_min = model$lambda.min,
     n_obs = n_obs,
     cutoff_year = cutoff_year,
-    min_year = min_year
+    min_year = min_year,
+    halflife_days = halflife_days,
+    anchor_date = anchor_date
   )
 }
 

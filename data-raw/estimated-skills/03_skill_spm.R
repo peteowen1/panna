@@ -462,6 +462,13 @@ if (build_skill_spm_asof) {
   asof_nfolds <- if (exists("asof_nfolds")) asof_nfolds else 5
   asof_lambda_formula <- if (exists("asof_lambda_formula")) asof_lambda_formula else
     function(n) 16.67 * n^(-0.58)
+  # Decay on each cutoff year's pooled RAPM target, as 04c_rapm_decayed.R does for
+  # the live prior (panna#257). NULL (no decay) stays the default until the
+  # predictions backtest in pannaverse docs/plans/DECAY-PORT-ASOF-PRIOR.md passes;
+  # 365 is the value under test. Plain exists(): a driver global must reach it.
+  asof_target_halflife_days <- if (exists("asof_target_halflife_days")) asof_target_halflife_days else NULL
+  cat(sprintf("  target decay: %s\n", if (is.null(asof_target_halflife_days)) "none" else
+    sprintf("half-life %s days", asof_target_halflife_days)))
 
   all_years <- sort(unique(skill_features$season_end_year))
   # The earliest year has no prior seasons to train on — skip it. 09b's
@@ -480,6 +487,17 @@ if (build_skill_spm_asof) {
     for (.y in names(skill_spm_asof))
       .assert_skill_spm_sign_convention(skill_spm_asof[[.y]],
                                         sprintf("%s, cutoff year %s", basename(skill_spm_asof_path), .y))
+    # Same reason for the target decay: a file must not mix decayed and undecayed years.
+    # Untagged years predate the knob, so they are undecayed.
+    for (.y in names(skill_spm_asof)) {
+      .hl <- skill_spm_asof[[.y]]$target_halflife_days
+      if (!identical(as.numeric(.hl %||% NA), as.numeric(asof_target_halflife_days %||% NA))) {
+        stop(sprintf(paste0("%s cutoff year %s was fitted with target half-life %s, but this run uses %s. ",
+                            "Set asof_resume <- FALSE to refit every year."),
+                     basename(skill_spm_asof_path), .y, .hl %||% "none", asof_target_halflife_days %||% "none"),
+             call. = FALSE)
+      }
+    }
   }
 
   todo_years <- reference_years[!as.character(reference_years) %in% names(skill_spm_asof)]
@@ -492,8 +510,18 @@ if (build_skill_spm_asof) {
     rm(r4); gc(verbose = FALSE)
 
     splints03 <- readRDS(file.path(opta_cache_dir, "03_splints.rds"))
-    splint_season_map <- splints03$splints[, c("splint_id", "season_end_year")]
+    splint_season_map <- splints03$splints[, c("splint_id", "season_end_year", "match_id")]
     rm(splints03); gc(verbose = FALSE)
+    if (!is.null(asof_target_halflife_days)) {
+      .fx_path <- file.path("..", "pannadata", "data", "opta", "opta_fixtures.parquet")
+      if (!file.exists(.fx_path)) stop("Target decay needs match dates: missing ", .fx_path, call. = FALSE)
+      .fx <- data.table::as.data.table(arrow::read_parquet(.fx_path, col_select = c("match_id", "match_date")))
+      .fx <- unique(.fx[!is.na(match_date), .(match_id, match_date = as.Date(match_date))], by = "match_id")
+      splint_season_map <- merge(data.table::as.data.table(splint_season_map), .fx, by = "match_id", all.x = TRUE)
+      cat(sprintf("  match dates joined for %.1f%% of %d splints\n",
+                  100 * mean(!is.na(splint_season_map$match_date)), nrow(splint_season_map)))
+      rm(.fx)
+    }
 
     for (Y in todo_years) {
       cat(sprintf("\n--- cutoff_year %d (train on seasons < %d) ---\n", Y, Y))
@@ -501,7 +529,8 @@ if (build_skill_spm_asof) {
 
       pooled_fit <- fit_expanding_pooled_rapm(
         pooled_rapm_data, splint_season_map, cutoff_year = Y,
-        lambda_formula = asof_lambda_formula, nfolds = asof_nfolds, seed = 20260710L
+        lambda_formula = asof_lambda_formula, nfolds = asof_nfolds, seed = 20260710L,
+        halflife_days = asof_target_halflife_days
       )
       if (is.null(pooled_fit)) next
 
@@ -509,6 +538,8 @@ if (build_skill_spm_asof) {
         skill_features, pooled_fit$ratings, cutoff_year = Y, nfolds = asof_nfolds
       )
       if (is.null(skill_fit)) next
+      skill_fit$target_halflife_days <- asof_target_halflife_days
+      skill_fit$target_anchor_date <- pooled_fit$anchor_date
 
       skill_spm_asof[[as.character(Y)]] <- skill_fit
       saveRDS(skill_spm_asof, skill_spm_asof_path)  # checkpoint after every year
