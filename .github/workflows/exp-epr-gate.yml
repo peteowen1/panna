@@ -49,6 +49,12 @@ jobs:
             echo "Publishing allowed on $GITHUB_REF."
           fi
 
+      - name: Add 16 GB swap (each gate arm peaks at ~14.5 GB R heap on a 16 GB runner)
+        run: |
+          free -h
+          sudo swapoff -a || true
+          sudo fallocate -l 16G /swapfile16 && sudo chmod 600 /swapfile16 && sudo mkswap /swapfile16 && sudo swapon /swapfile16
+          free -h
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
