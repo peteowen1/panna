@@ -1013,6 +1013,54 @@ calculate_psr_components <- function(skills, coef_df, osr_coef_df, dsr_coef_df,
 # Per-Game Player Stat Value (PSV/OSV/DSV)
 # ============================================================================
 
+#' Resolve the minutes column PSV scales by
+#'
+#' The ONE place that decides which column \code{\link{calculate_psv}} uses
+#' for its per-90 adjustment, its \code{center_weights = "minutes"} weights
+#' and its \code{scale_to_minutes} factor: \code{minutes_played} when present,
+#' else \code{total_minutes}, else \code{NULL}. Anything that must price in
+#' the SAME minutes as a PSV it adds to (the game-logs league offset, panna#164)
+#' should read the \code{psv_minutes} column \code{calculate_psv} returns
+#' rather than re-deriving a minutes column of its own.
+#'
+#' @param dt A data.frame or data.table of per-game stats.
+#' @return A single column name, or \code{NULL} when neither column exists.
+#' @keywords internal
+.psv_minutes_col <- function(dt) {
+  nms <- names(dt)
+  if ("minutes_played" %in% nms) "minutes_played"
+  else if ("total_minutes" %in% nms) "total_minutes"
+  else NULL
+}
+
+#' Minutes to scale a PSV league offset by
+#'
+#' Returns, per row, the number of minutes \code{calculate_psv} actually
+#' scaled that row's PSV by (its \code{psv_minutes} column, carried through
+#' \code{\link{build_player_game_ratings}}), divided by 90 and floored at 0.
+#' Rows with no \code{psv_minutes} (no PSV row at all, so \code{psv} is NA
+#' and the offset cannot reach a value) fall back to \code{fallback_minutes},
+#' which keeps the published \code{psv_league_offset} column unchanged for
+#' them. When the \code{psv_minutes} column is absent altogether, everything
+#' falls back, as before panna#164.
+#'
+#' @param psv_minutes Numeric vector (or \code{NULL}) of minutes PSV used.
+#' @param fallback_minutes Numeric vector of lineup-derived minutes
+#'   (\code{total_minutes}), same length.
+#' @return Numeric vector of \code{minutes / 90}, never NA or negative.
+#' @keywords internal
+.psv_offset_mins_scale <- function(psv_minutes, fallback_minutes) {
+  mins <- as.numeric(fallback_minutes)
+  if (!is.null(psv_minutes)) {
+    pm <- as.numeric(psv_minutes)
+    mins <- ifelse(is.na(pm), mins, pm)
+  }
+  scale <- mins / 90
+  scale[is.na(scale) | scale < 0] <- 0
+  scale
+}
+
+
 #' Calculate Per-Game Player Stat Value
 #'
 #' Applies pre-trained glmnet coefficients to raw per-game box-score stats,
@@ -1082,7 +1130,12 @@ calculate_psr_components <- function(skills, coef_df, osr_coef_df, dsr_coef_df,
 #'   stays bit-identical to the pre-scale behaviour.
 #'
 #' @return A data.table with identifier columns plus \code{psv_raw} and
-#'   \code{psv}.
+#'   \code{psv}. With \code{scale_to_minutes = TRUE} it also carries
+#'   \code{psv_minutes}: the minutes each row's PSV was actually scaled by
+#'   (from \code{minutes_played}, else \code{total_minutes}; NA or negative
+#'   input minutes read as 0). Add any further per-90 quantity (e.g. the
+#'   game-logs league offset) using this column, so it can never be priced in
+#'   a different minutes source than the PSV it joins (panna#164).
 #'
 #' @family psr
 #' @export
@@ -1142,9 +1195,7 @@ calculate_psv <- function(player_match_stats, coef_df, min_adjust = TRUE,
   # so exempt them from the per-90 scaling. (Matters only when efficiency stats
   # are kept, i.e. exclude_efficiency = FALSE; otherwise they aren't in `mat`.)
   if (min_adjust) {
-    mins_col <- if ("minutes_played" %in% names(dt)) "minutes_played"
-                else if ("total_minutes" %in% names(dt)) "total_minutes"
-                else NULL
+    mins_col <- .psv_minutes_col(dt)
     if (!is.null(mins_col)) {
       mins <- as.numeric(dt[[mins_col]])
       mins[is.na(mins) | mins <= 0] <- 90  # default to 90 for missing
@@ -1200,9 +1251,7 @@ calculate_psv <- function(player_match_stats, coef_df, min_adjust = TRUE,
       # Same minutes-column resolution as scale_to_minutes, so the weight
       # used here is EXACTLY the per-row factor that later multiplies psv —
       # that identity is what makes the post-scale group sum exactly 0.
-      w_mins_col <- if ("minutes_played" %in% names(dt)) "minutes_played"
-                    else if ("total_minutes" %in% names(dt)) "total_minutes"
-                    else NULL
+      w_mins_col <- .psv_minutes_col(dt)
       if (is.null(w_mins_col)) {
         cli::cli_warn(
           "center_weights = \"minutes\" but no minutes column found; falling back to unweighted centering"
@@ -1239,9 +1288,7 @@ calculate_psv <- function(player_match_stats, coef_df, min_adjust = TRUE,
   # total_minutes/90 to recover the per-90 rate. Preserves osv + dsv = psv
   # (both components scaled by the same per-row factor).
   if (scale_to_minutes) {
-    mins_col <- if ("minutes_played" %in% names(dt)) "minutes_played"
-                else if ("total_minutes" %in% names(dt)) "total_minutes"
-                else NULL
+    mins_col <- .psv_minutes_col(dt)
     if (is.null(mins_col)) {
       cli::cli_warn(
         "scale_to_minutes = TRUE but no minutes column found; PSV left per-90"
@@ -1251,6 +1298,10 @@ calculate_psv <- function(player_match_stats, coef_df, min_adjust = TRUE,
       scale_fac[is.na(scale_fac) | scale_fac < 0] <- 0
       dt[, psv_raw := psv_raw * scale_fac]
       dt[, psv := psv * scale_fac]
+      # Expose the minutes this PSV was actually scaled by (panna#164), so a
+      # caller adding a per-90 quantity (the league offset) prices it in the
+      # same minutes instead of re-resolving a column of its own.
+      dt[, psv_minutes := scale_fac * 90]
     }
   }
 
@@ -1261,7 +1312,8 @@ calculate_psv <- function(player_match_stats, coef_df, min_adjust = TRUE,
     names(dt)
   )
 
-  dt[, c(id_cols, "psv_raw", "psv"), with = FALSE]
+  out_cols <- c(id_cols, "psv_raw", "psv", intersect("psv_minutes", names(dt)))
+  dt[, out_cols, with = FALSE]
 }
 
 
@@ -3130,13 +3182,20 @@ apply_psr_league_offsets <- function(psr_dt, offsets, verbose = FALSE) {
 #' Get Player Skill Ratings
 #'
 #' Returns a ranked PSR leaderboard using pre-computed weekly snapshots.
-#' Snaps to the nearest weekly date at or before \code{date}.
+#' Snaps to the nearest weekly date at or before \code{date}. Players under
+#' \code{min_90s} weighted nineties are left off the ranking (a name lookup
+#' via \code{player} is exempt).
 #'
 #' @param date Date to query as a \code{Date} or \code{"YYYY-MM-DD"} string.
 #'   Defaults to the latest available snapshot.
 #' @param player Optional player name filter (partial match, case-insensitive).
 #'   E.g., \code{"Salah"} matches "Mohamed Salah".
 #' @param n Number of top players to show (default 50, NULL for all).
+#' @param min_90s Minimum weighted 90s to appear in the leaderboard (default
+#'   \code{\link{MIN_90S_PSR_LEADERBOARD}}, panna#215). Applied through
+#'   \code{\link{psr_leaderboard_eligible}} before ranking. Not applied when
+#'   \code{player} is given, so a single-player lookup still shows a short
+#'   season's rating. Use \code{0} to rank every row.
 #' @param position Filter by position group: \code{"GK"}, \code{"DEF"},
 #'   \code{"MID"}, \code{"FWD"}, or NULL for all.
 #' @param target One of \code{"xg"} (default, xG differential) or
@@ -3167,6 +3226,7 @@ apply_psr_league_offsets <- function(psr_dt, offsets, verbose = FALSE) {
 #' player_psr(position = "MID")
 #' }
 player_psr <- function(date = NULL, player = NULL, n = 50,
+                        min_90s = MIN_90S_PSR_LEADERBOARD,
                         position = NULL, target = c("xg", "goals"),
                         source = c("remote", "local")) {
   source <- match.arg(source)
@@ -3209,6 +3269,20 @@ player_psr <- function(date = NULL, player = NULL, n = 50,
       ))
     }
     psr <- psr[primary_position == position]
+  }
+
+  # Minutes floor for the ranking (panna#215). A name lookup is a profile view,
+  # not a ranking, so it keeps short seasons.
+  if (is.null(player)) {
+    # flag computed outside `[`: inside it, `psr` would resolve to the column
+    eligible <- psr_leaderboard_eligible(psr, min_90s = min_90s)
+    psr <- psr[eligible]
+    if (nrow(psr) == 0) {
+      cli::cli_abort(c(
+        "No players have at least {min_90s} weighted 90s.",
+        "i" = "Lower {.arg min_90s} to rank thinner samples."
+      ))
+    }
   }
 
   # Sort by PSR descending

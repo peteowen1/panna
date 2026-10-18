@@ -972,6 +972,31 @@ test_that("MIN_90S_PSR_LEADERBOARD is a plausible half-season bar", {
   expect_true(MIN_90S_PSR_LEADERBOARD >= 8 && MIN_90S_PSR_LEADERBOARD <= 25)
 })
 
+test_that("player_psr() leaves sub-floor part-seasons off the ranking but keeps them for a name lookup (panna#215)", {
+  snap <- data.table::data.table(
+    snapshot_date = as.Date("2026-10-01"),
+    player_name = c("Full Season", "Half Season", "F. Totti", "Pinilla"),
+    primary_position = "FWD",
+    psr = c(0.30, 0.25, 0.36, 0.35),
+    osr = 0.1, dsr = 0.1,
+    weighted_90s = c(30, 15, 7.0, 5.5)
+  )
+  testthat::local_mocked_bindings(load_opta_psr_weekly = function(...) data.table::copy(snap))
+
+  top <- player_psr(n = NULL)
+  # Totti and Pinilla out-rate everyone on psr but fall under the floor
+  expect_equal(top$player_name, c("Full Season", "Half Season"))
+
+  # floor is adjustable; 0 restores the unfiltered ranking
+  expect_equal(player_psr(n = NULL, min_90s = 0)$player_name[1], "F. Totti")
+  expect_equal(player_psr(n = NULL, min_90s = 20)$player_name, "Full Season")
+
+  # a profile lookup is not a ranking: the short season still shows
+  expect_equal(player_psr(player = "Totti")$weighted_90s, 7.0)
+
+  expect_error(player_psr(min_90s = 100), "weighted 90s")
+})
+
 
 test_that("psr_season_coverage counts distinct matches per season from either label form", {
   ms <- data.table::data.table(
@@ -2170,4 +2195,39 @@ test_that(".estimate_prematch_skills_batch keeps date names aligned after an emp
   )
   expect_identical(names(got), names(ref))
   for (d in names(ref)) expect_equal(got[[d]], ref[[d]])
+})
+
+# =============================================================================
+# Duplicate-feature sweep on the shipped coefficients (issue #172)
+# =============================================================================
+
+test_that("shipped PSR coefficient files have no unexpected duplicate features", {
+  # `sd` is the training sd of each team-sum feature, so two byte-identical
+  # training columns must carry identical sds. Sweeping the committed CSVs
+  # detects duplicates in whatever data the shipped model actually trained on.
+  # A duplicate leaves the design matrix rank-deficient and the elastic net
+  # splits one effect across the pair (issue #172).
+  files <- list.files(
+    system.file("extdata", package = "panna"),
+    pattern = "^(blend_|gd_|gk_)?(psr|osr|dsr)_coefficients\\.csv$",
+    full.names = TRUE
+  )
+  expect_gt(length(files), 0)
+
+  # Known duplicate, pending a retrain that drops one member (issue #172).
+  # Remove this entry once turnover_p90 is dropped from .get_psr_skill_cols();
+  # the check below fails on a stale entry so it cannot linger.
+  known <- list(c("turnover_p90", "unsuccessful_touch_p90"))
+  known_cols <- unlist(known)
+
+  for (f in files) {
+    d <- utils::read.csv(f, stringsAsFactors = FALSE)
+    d <- d[!is.na(d$sd), ]
+    key <- signif(d$sd, 9)
+    found <- sort(d$stat_name[duplicated(key) | duplicated(key, fromLast = TRUE)])
+    expect_identical(
+      found, if (nrow(d) > 25) sort(known_cols) else character(0),
+      info = paste("duplicate-sd features in", basename(f))
+    )
+  }
 })

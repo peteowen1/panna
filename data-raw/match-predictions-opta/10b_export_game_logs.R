@@ -1251,7 +1251,7 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
   # scored/centered every league — the RAPM psvf90 target and the per-league
   # within-round centering above never see it. `psv` here is already
   # minutes-scaled (scale_to_minutes = TRUE), so end-add
-  # offset * total_minutes / 90 (mirrors how scale_to_minutes itself turns a
+  # offset * psv_minutes / 90 (mirrors how scale_to_minutes itself turns a
   # per-90 rate into a minutes-scaled one). Split evenly across osv/dsv,
   # mirroring apply_psr_league_offsets()'s /2 split (osv + dsv = psv stays
   # exact). Set psv_league_offset_pricing <- FALSE before sourcing to disable.
@@ -1286,8 +1286,12 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
       }
       game_logs[is.na(.off), .off := 0]
 
-      mins_scale <- as.numeric(game_logs$total_minutes) / 90
-      mins_scale[is.na(mins_scale) | mins_scale < 0] <- 0
+      # Minutes come from calculate_psv()'s own `psv_minutes` (the column it
+      # resolved and scaled psv by), NOT game_logs$total_minutes, which is
+      # lineups-derived and would silently disagree if match stats ever gain a
+      # differing `minutes_played` (panna#164).
+      mins_scale <- .psv_offset_mins_scale(game_logs[["psv_minutes"]],
+                                           game_logs$total_minutes)
       game_logs[, psv_league_offset := .off * mins_scale]
       game_logs[, psv := psv + psv_league_offset]
       if (all(c("osv", "dsv") %in% names(game_logs))) {

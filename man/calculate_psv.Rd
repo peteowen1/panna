@@ -82,7 +82,12 @@ zero. Display path only (game-logs export) -- has no effect when
 }
 \value{
 A data.table with identifier columns plus \code{psv_raw} and
-\code{psv}.
+\code{psv}. With \code{scale_to_minutes = TRUE} it also carries
+\code{psv_minutes}: the minutes each row's PSV was actually scaled by
+(from \code{minutes_played}, else \code{total_minutes}; NA or negative
+input minutes read as 0). Add any further per-90 quantity (e.g. the
+game-logs league offset) using this column, so it can never be priced in
+a different minutes source than the PSV it joins (panna#164).
 }
 \description{
 Applies pre-trained glmnet coefficients to raw per-game box-score stats,
