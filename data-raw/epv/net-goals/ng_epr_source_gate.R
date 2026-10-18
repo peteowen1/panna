@@ -126,6 +126,9 @@ run_arm <- function(source_name) {
     say("  step ", st)
     source(sprintf("data-raw/match-predictions-opta/%s.R", st), local = FALSE)
   }
+  # THROWAWAY BRANCH ONLY: keep this arm's per-match test probabilities for a paired interval.
+  file.copy(file.path(CACHE, "08_evaluation.rds"),
+            file.path(OUT, paste0("08_evaluation_", source_name, ".rds")), overwrite = TRUE)
 
   # 08 leaves its numbers in the global env; pull the ones the locked metric
   # names, and fail loudly rather than reporting NA if any is absent.

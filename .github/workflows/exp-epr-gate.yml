@@ -400,6 +400,7 @@ jobs:
           name: epr-source-gate
           path: |
             data-raw/cache/epv/net-goals/epr_source_gate.csv
+            data-raw/cache/epv/net-goals/08_evaluation_*.rds
           if-no-files-found: warn
           retention-days: 14
 
