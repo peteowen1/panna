@@ -2034,8 +2034,9 @@ load_psv_match_reliability <- function() {
 #'   a dot prefix deliberately: a parameter called \code{pos_grp} would be
 #'   shadowed by the column of the same name inside \code{dt[...]}.
 #' @param role_override Optional character vector, one per row of
-#'   \code{player_match_stats}, giving each row's role code in the
-#'   \code{classify_role()} vocabulary (e.g. \code{"CB"}). Used by the
+#'   \code{player_match_stats}, giving each row's role in the position-means
+#'   vocabulary (\code{PSR_ROLE8_LEVELS}: \code{"GK"}, \code{"CB"}, \code{"FB"},
+#'   \code{"DM"}, \code{"CM"}, \code{"AM"}, \code{"W"}, \code{"ST"}). Used by the
 #'   position-normalization step. Usually unnecessary: match stats carry
 #'   \code{position} and \code{position_side}, so the role resolves from them.
 #'   Pass it when scoring a slice of a larger population, so every slice uses
