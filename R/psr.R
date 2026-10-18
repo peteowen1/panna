@@ -1827,7 +1827,7 @@ compute_position_role_means <- function(player_stats, skill_cols, min_n = 200L,
 load_position_role_means <- function() {
   p <- system.file("extdata", "position_role_means.csv", package = "panna")
   if (p == "" || !file.exists(p)) {
-    cli::cli_warn("position_role_means.csv not found — position normalization disabled")
+    cli::cli_warn("position_role_means.csv not found -- position normalization disabled")
     return(NULL)
   }
   data.table::fread(p)
@@ -1854,7 +1854,7 @@ load_position_role_means <- function() {
 load_psv_match_reliability <- function() {
   p <- system.file("extdata", "psv_match_reliability.csv", package = "panna")
   if (p == "" || !file.exists(p)) {
-    cli::cli_warn("psv_match_reliability.csv not found — per-match PSV reliability shrinkage disabled")
+    cli::cli_warn("psv_match_reliability.csv not found -- per-match PSV reliability shrinkage disabled")
     return(NULL)
   }
   data.table::fread(p)

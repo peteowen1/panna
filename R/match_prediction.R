@@ -1198,11 +1198,11 @@ softprob_matrix <- function(probs, n_rows, n_class = 3L) {
 #' @keywords internal
 .grouped_cv_folds <- function(group_ids, nfolds, seed = 1234L) {
   if (anyNA(group_ids)) {
-    cli::cli_abort("{.arg group_ids} must not contain NA — every row needs a known group.")
+    cli::cli_abort("{.arg group_ids} must not contain NA -- every row needs a known group.")
   }
   groups <- unique(group_ids)
   if (length(groups) < nfolds) {
-    cli::cli_warn("Only {length(groups)} distinct group{?s} for {nfolds} requested folds — using {length(groups)} folds instead.")
+    cli::cli_warn("Only {length(groups)} distinct group{?s} for {nfolds} requested folds -- using {length(groups)} folds instead.")
     nfolds <- length(groups)
   }
   withr::with_seed(seed, {
