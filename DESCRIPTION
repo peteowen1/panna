@@ -30,6 +30,7 @@ Imports:
     janitor,
     jsonlite,
     Matrix,
+    methods,
     piggyback,
     rlang,
     stringi,
