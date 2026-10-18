@@ -1,0 +1,71 @@
+name: exp decay port, priors + snapshots (panna#257, throwaway)
+# Builds the year-by-year skill-SPM prior twice on today's inputs (arm A: no target
+# decay; arm B: 365-day half-life), then all career_panna_asof snapshots from each.
+# Nothing is published; outputs are artifacts. Plan: pannaverse docs/plans/DECAY-PORT-ASOF-PRIOR.md
+on:
+  push:
+    branches: ["exp-decay-port"]
+    paths: [".github/workflows/exp-decay-port-prior.yml"]
+permissions:
+  contents: read
+concurrency:
+  group: exp-decay-port-prior
+  cancel-in-progress: false
+env:
+  GH_TOKEN: ${{ github.token }}
+  PANNA_PUBLISH_DISABLED: "true"
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arm: A
+            halflife: "NULL"
+          - arm: B
+            halflife: "365"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.5.0'
+          use-public-rspm: true
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          cache-version: 11
+          extra-packages: |
+            any::devtools
+            any::arrow
+      - name: Download inputs
+        run: |
+          set -euo pipefail
+          mkdir -p data-raw/cache-opta data-raw/cache-skills ../pannadata/data/opta
+          gh release download predictions-cache -R peteowen1/pannadata -p 03_splints.rds -D data-raw/cache-opta
+          gh release download predictions-cache -R peteowen1/pannadata -p 04_rapm.rds -D data-raw/cache-opta
+          gh release download predictions-cache -R peteowen1/pannadata -p 02_skill_features.2026-09-03.rds -D /tmp
+          mv /tmp/02_skill_features.2026-09-03.rds data-raw/cache-skills/02_skill_features.rds
+          gh release download opta-latest -R peteowen1/pannadata -p opta_fixtures.parquet -D ../pannadata/data/opta
+          for f in data-raw/cache-opta/*.rds data-raw/cache-skills/*.rds; do echo "$f $(sha256sum "$f" | cut -c1-16)"; done
+      - name: Year-by-year prior, arm ${{ matrix.arm }}
+        run: |
+          set -o pipefail
+          Rscript -e "skill_spm_use_decayed_target <- FALSE; asof_resume <- FALSE; asof_target_halflife_days <- ${{ matrix.halflife }}; source('data-raw/estimated-skills/03_skill_spm.R')" 2>&1 | tee /tmp/prior.log
+          grep -E "target decay|match dates joined|cutoff_year [0-9]+ done|Saved [0-9]+ expanding" /tmp/prior.log | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Restore the live prior (03 overwrote it with its own main fit)
+        run: |
+          rm data-raw/cache-skills/03_skill_spm.rds
+          gh release download predictions-cache -R peteowen1/pannadata -p 03_skill_spm.rds -D data-raw/cache-skills
+          sha256sum data-raw/cache-skills/03_skill_spm.rds | cut -c1-16
+      - name: 09b snapshots, arm ${{ matrix.arm }}
+        run: |
+          set -o pipefail
+          Rscript -e "asof_resume <- FALSE; source('data-raw/estimated-skills/09b_career_panna_asof.R')" 2>&1 | tee /tmp/asof.log
+          grep -E "FIT FAILED|SAVED|failed to fit" /tmp/asof.log | tee -a "$GITHUB_STEP_SUMMARY"
+          mkdir -p _out && cp ../pannadata/data/opta/career_panna_asof.parquet _out/ && cp data-raw/cache-skills/03_skill_spm_asof.rds _out/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arm-${{ matrix.arm }}
+          path: _out/
+          retention-days: 14
