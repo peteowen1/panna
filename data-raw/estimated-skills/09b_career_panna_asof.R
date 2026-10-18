@@ -249,9 +249,19 @@ if (isTRUE(upload)) {
     cat(sprintf("Publish check: all %d published snapshot dates kept, none below 90%% of their rows.\n",
                 data.table::uniqueN(pub_dates)))
   }
-  piggyback::pb_upload(out_path, repo = "peteowen1/pannadata", tag = "ratings-data",
-                       name = "career_panna_asof.parquet", overwrite = TRUE)
-  cat("Uploaded career_panna_asof.parquet to ratings-data release.\n")
+  # vb_publish() (R/versebus.R), not pb_upload(overwrite = TRUE), which deletes the
+  # published asset before uploading (same swap as 09_career_panna.R, #355). It names
+  # the asset after the file, so a custom asof_out_path is staged under the real name.
+  pub_path <- out_path
+  if (basename(out_path) != "career_panna_asof.parquet") {
+    pub_path <- file.path(tempfile("career_asof_up_"), "career_panna_asof.parquet")
+    dir.create(dirname(pub_path))
+    stopifnot(file.copy(out_path, pub_path))
+  }
+  manifest <- vb_publish(pub_path, repo = "peteowen1/pannadata", tag = "ratings-data",
+                         rows = c(career_panna_asof.parquet = nrow(allr)),
+                         min_row_frac = 0.9)
+  cat(sprintf("Uploaded career_panna_asof.parquet to ratings-data, generation %s.\n", manifest$generation))
 } else {
   cat("(upload skipped — set upload_career_panna_asof <- TRUE before sourcing to publish)\n")
 }
