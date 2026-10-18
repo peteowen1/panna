@@ -154,6 +154,14 @@ fit_expanding_pooled_rapm <- function(rapm_data, splint_season_map, cutoff_year,
                                       nfolds = 5, seed = NULL, halflife_days = NULL) {
   rapm_sub <- .subset_rapm_data_expanding(rapm_data, splint_season_map, cutoff_year,
                                           min_year = min_year)
+  # Checked before the decay, so an empty window skips instead of failing on its dates.
+  n_obs <- sum(!is.na(rapm_sub$y) & is.finite(rapm_sub$y))
+  if (n_obs < 1000) {
+    cli::cli_warn(paste0(
+      "fit_expanding_pooled_rapm: only {n_obs} valid observations for ",
+      "cutoff_year={cutoff_year} (too few prior seasons) -- skipping."))
+    return(NULL)
+  }
   anchor_date <- as.Date(NA)
   if (!is.null(halflife_days)) {
     stopifnot(is.numeric(halflife_days), length(halflife_days) == 1L, halflife_days > 0)
@@ -174,13 +182,6 @@ fit_expanding_pooled_rapm <- function(rapm_data, splint_season_map, cutoff_year,
     age_days <- as.numeric(anchor_date - row_date)
     age_days[is.na(age_days)] <- max(age_days, na.rm = TRUE)  # undated rows weigh least
     rapm_sub$weights <- rapm_sub$weights * 0.5^(age_days / halflife_days)
-  }
-  n_obs <- sum(!is.na(rapm_sub$y) & is.finite(rapm_sub$y))
-  if (n_obs < 1000) {
-    cli::cli_warn(paste0(
-      "fit_expanding_pooled_rapm: only {n_obs} valid observations for ",
-      "cutoff_year={cutoff_year} (too few prior seasons) -- skipping."))
-    return(NULL)
   }
 
   lambda_grid <- lambda_formula(n_obs) * 2^seq(3, -3, by = -0.5)

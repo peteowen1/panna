@@ -342,3 +342,13 @@ test_that("fit_expanding_pooled_rapm decay needs match dates and anchors inside 
   # same rows kept: decay re-weights, it does not drop
   expect_equal(decayed$n_obs, undecayed$n_obs)
 })
+
+test_that("fit_expanding_pooled_rapm with decay skips an empty window instead of failing", {
+  skip_if_not_installed("glmnet")
+  fx <- make_expanding_pooled_fixture()
+  ssm <- fx$splint_season_map
+  ssm$match_date <- as.Date(sprintf("%d-03-01", ssm$season_end_year))
+  expect_warning(res <- fit_expanding_pooled_rapm(fx$rapm_data, ssm, cutoff_year = 2015,
+                                                  nfolds = 3, halflife_days = 365), "skipping")
+  expect_null(res)
+})
