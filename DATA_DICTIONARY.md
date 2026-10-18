@@ -407,7 +407,7 @@ Primary data source (15 leagues, 263 columns per player). Use `load_opta_*()` fu
 | team_name | character | Team name |
 | team_position | character | "home" or "away" |
 | minsPlayed | numeric | Minutes played |
-| position | character | Position (Goalkeeper, Defender, etc.) |
+| position | character | Opta slot: Goalkeeper, Defender, Wing Back, Defensive Midfielder, Midfielder, Attacking Midfielder, Striker, or Substitute (every non-starter); blank on lineups with no formation data. Groupings built from it: docs/reference/POSITION-TAXONOMY.md (pannaverse) |
 | goals | numeric | Goals scored |
 | totalScoringAtt | numeric | Total shots |
 | ontargetScoringAtt | numeric | Shots on target |
@@ -493,8 +493,8 @@ Player lineup data with timing.
 | team_id | character | Team ID |
 | team_name | character | Team name |
 | team_position | character | "home" or "away" |
-| position | character | Position (Goalkeeper, Defender, etc.) |
-| position_side | character | Left, Right, Centre |
+| position | character | Opta slot: Goalkeeper, Defender, Wing Back, Defensive Midfielder, Midfielder, Attacking Midfielder, Striker, or Substitute (every non-starter); blank on lineups with no formation data. Groupings built from it: docs/reference/POSITION-TAXONOMY.md (pannaverse) |
+| position_side | character | Left, Right, Centre, Left/Centre or Centre/Right; starters only (blank for substitutes). Defender + Left/Right = full-back, Defender + a Centre value = centre-back |
 | formation_place | integer | 1-11 for starters |
 | shirt_number | integer | Jersey number |
 | is_starter | logical | Started the match |
