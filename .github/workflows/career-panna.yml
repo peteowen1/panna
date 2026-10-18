@@ -92,8 +92,12 @@ jobs:
           EOF
           Rscript /tmp/compare.R | tee -a "$GITHUB_STEP_SUMMARY"
 
+      # upload-artifact takes paths inside the workspace only
+      - name: Stage the output for the artifact
+        run: mkdir -p _out && cp ../pannadata/data/opta/career_panna.parquet _out/
+
       - uses: actions/upload-artifact@v4
         with:
           name: career-panna
-          path: ../pannadata/data/opta/career_panna.parquet
+          path: _out/career_panna.parquet
           retention-days: 14
