@@ -426,7 +426,9 @@ spm_results <- list(
     cv_rmse_glmnet = cv_rmse_glmnet,
     cv_rmse_xgb = cv_rmse_xgb,
     blend_weight = 0.5
-  )
+  ),
+  # Read by .assert_skill_spm_sign_convention() (panna#257).
+  sign_convention = CAREER_PANNA_SIGN_CONVENTION
 )
 
 saveRDS(spm_results, file.path(cache_dir, "03_skill_spm.rds"))
@@ -473,6 +475,11 @@ if (build_skill_spm_asof) {
     skill_spm_asof <- readRDS(skill_spm_asof_path)
     cat(sprintf("  resume: %d cutoff-year models already in %s\n",
                 length(skill_spm_asof), basename(skill_spm_asof_path)))
+    # Resumed years are never refit, so an untagged (pre-2026-09-04) year would
+    # sit in the file forever beside correctly-signed new ones (panna#257).
+    for (.y in names(skill_spm_asof))
+      .assert_skill_spm_sign_convention(skill_spm_asof[[.y]],
+                                        sprintf("%s, cutoff year %s", basename(skill_spm_asof_path), .y))
   }
 
   todo_years <- reference_years[!as.character(reference_years) %in% names(skill_spm_asof)]
