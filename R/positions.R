@@ -327,3 +327,109 @@ position_match <- function(lineups, events, slot_table = NULL) {
          match_formation = formation, match_slot = slot, match_slot_role_full,
          match_role_full, match_role16, match_role8, match_role4, match_role_source)]
 }
+
+# Level order per grouping: ties in a most-minutes vote go to the first code.
+.POSITION_LEVELS <- list(
+  role_full = unique(POSITION_ROLE_MAP$role_full),
+  role16 = c("GK", "CB", "LB", "RB", "LWB", "RWB", "DM", "CM", "LM", "RM",
+             "CAM", "LW", "RW", "CF", "LF", "RF"),
+  role8 = c("GK", "CB", "FB", "DM", "CM", "AM", "W", "ST"),  # PSR_ROLE8_LEVELS (psr.R loads after this file; a test pins them equal)
+  role4 = c("GK", "DEF", "MID", "FWD"))
+
+# The match_ sources that count as a real position for a vote. A value filled
+# in from the asof_ level ("none") never votes for itself.
+.POSITION_VOTING_SOURCES <- c("opta", "opta_sub", "slot", "slot_table")
+
+#' Each player's usual position before each match (the `asof_` level)
+#'
+#' For every row, the position he played most minutes in over matches on
+#' EARLIER dates only: never the same day, never later, so a 2016 row is not
+#' decided by 2024 minutes. The vote uses the `window_days` before the match
+#' (default 365, as `.role8_asof()` does for PSR) and falls back to his whole
+#' earlier career when that window is empty (back from a long injury). Each
+#' grouping is voted on separately, so `asof_role8` is his most common role8,
+#' not a coarsening of his most common `role_full`. Ties go to the first code
+#' in level order.
+#'
+#' Only rows whose `match_role_source` is a real position vote ("opta",
+#' "opta_sub", "slot", "slot_table"), weighted by minutes.
+#'
+#' @param player_match One row per player-match: `player_id`, `match_date`,
+#'   `minutes`, `match_role_full`, `match_role_source` (e.g.
+#'   [position_match()] output with date and minutes joined on).
+#' @param window_days Trailing window in days; `Inf` for the whole earlier
+#'   career.
+#' @return A data.table in the row order of `player_match` with
+#'   `asof_role_full`, `asof_role16`, `asof_role8`, `asof_role4` and
+#'   `asof_role_source`: "window" (voted in the trailing window), "all_prior"
+#'   (window empty, whole earlier career used) or "none" (no earlier
+#'   position; every role column `NA`).
+#' @family positions
+#' @export
+position_asof <- function(player_match, window_days = 365L) {
+  need <- c("player_id", "match_date", "minutes", "match_role_full", "match_role_source")
+  miss <- setdiff(need, names(player_match))
+  if (length(miss)) {
+    cli::cli_abort("{.arg player_match} is missing column{?s} {.field {miss}}.")
+  }
+  d <- data.table::data.table(
+    .i = seq_len(nrow(player_match)),
+    player_id = as.character(player_match$player_id),
+    md = as.integer(as.Date(player_match$match_date)),
+    m = suppressWarnings(as.numeric(player_match$minutes)),
+    full = as.character(player_match$match_role_full),
+    src = as.character(player_match$match_role_source))
+  if (anyNA(d$md)) {
+    cli::cli_abort("{.arg player_match} has {sum(is.na(d$md))} row{?s} with no {.field match_date}.")
+  }
+  m16 <- POSITION_ROLE_MAP[, .(role16 = role16[1L]), by = role_full]
+  d[, r16 := m16$role16[match(full, m16$role_full)]]
+  d[, `:=`(r8 = data.table::fifelse(is.na(r16), NA_character_, .role16_to_role8(r16)),
+           r4 = data.table::fifelse(is.na(r16), NA_character_, .role16_to_broad(r16)))]
+  votes <- d[src %in% .POSITION_VOTING_SOURCES & !is.na(full) & !is.na(m) & m > 0]
+  queries <- unique(d[, .(player_id, md)])
+  lookback <- if (is.finite(window_days)) as.integer(window_days) else NA_integer_
+
+  vote_one <- function(col, levels) {
+    v <- data.table::data.table(player_id = votes$player_id, code = votes[[col]],
+                                md = votes$md, m = votes$m)[, .(m = sum(m)), by = .(player_id, code, md)]
+    data.table::setorder(v, player_id, code, md)
+    v[, cs := cumsum(m), by = .(player_id, code)]
+    # every query date x every code that player has ever voted for
+    pc <- unique(v[, .(player_id, code)])
+    q <- pc[queries, on = "player_id", allow.cartesian = TRUE, nomatch = NULL]
+    data.table::setkey(v, player_id, code, md)
+    # minutes up to the day BEFORE the match, and up to the day before the window
+    q[, before := v[.(q$player_id, q$code, q$md - 1L), cs, roll = TRUE]]
+    q[, win_start := if (is.na(lookback)) NA_real_ else
+        v[.(q$player_id, q$code, q$md - 1L - lookback), cs, roll = TRUE]]
+    q[is.na(before), before := 0]
+    q[is.na(win_start), win_start := 0]
+    q[, win := if (is.na(lookback)) before else before - win_start]
+    q[, lev := match(code, levels)]
+    tot <- q[, .(win_tot = sum(win), all_tot = sum(before)), by = .(player_id, md)]
+    q[tot, `:=`(win_tot = i.win_tot, all_tot = i.all_tot), on = c("player_id", "md")]
+    q[, score := data.table::fifelse(win_tot > 0, win, before)]
+    data.table::setorder(q, player_id, md, -score, lev)
+    best <- q[score > 0, .(code = code[1L]), by = .(player_id, md)]
+    list(best = best, tot = tot)
+  }
+
+  res <- list()
+  for (g in names(.POSITION_LEVELS)) {
+    col <- c(role_full = "full", role16 = "r16", role8 = "r8", role4 = "r4")[[g]]
+    res[[g]] <- vote_one(col, .POSITION_LEVELS[[g]])
+  }
+  out <- d[, .(.i, player_id, md)]
+  for (g in names(res)) {
+    out[res[[g]]$best, (paste0("asof_", g)) := i.code, on = c("player_id", "md")]
+    if (!paste0("asof_", g) %in% names(out)) out[, (paste0("asof_", g)) := NA_character_]
+  }
+  tot <- res$role_full$tot
+  out[tot, `:=`(.win = i.win_tot, .all = i.all_tot), on = c("player_id", "md")]
+  if (!".win" %in% names(out)) out[, `:=`(.win = NA_real_, .all = NA_real_)]
+  out[, asof_role_source := data.table::fcase(
+    .win > 0, "window", .all > 0, "all_prior", default = "none")]
+  data.table::setorder(out, .i)
+  out[, .(asof_role_full, asof_role16, asof_role8, asof_role4, asof_role_source)]
+}

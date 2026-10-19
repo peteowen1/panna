@@ -23,6 +23,7 @@ in every column.
 }
 \seealso{
 Other positions: 
+\code{\link{position_asof}()},
 \code{\link{position_match}()},
 \code{\link{position_slot_table}()}
 }
