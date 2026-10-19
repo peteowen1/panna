@@ -1,5 +1,12 @@
 # panna (development)
 
+- `ng_spread_pools()` no longer reads a broken lineup as a mass sending-off. Some lineups give every player who
+  was never subbed off one half's minutes (46) and every substitute 1 minute; the red-card rule (R031) then
+  ended all their stints at minute 46, left the late pools with nobody to go to, and `ng_player_game()` aborted
+  for the whole league-season. Four or more early exits in one team-match now count as bad minutes, and nobody
+  in it is treated as sent off. This dropped net goals for all of La Liga, MLS and Argentina in the 2025-26 game-log
+  rebuild (one such match each; 27 of 252,305 matches in `opta_lineups.parquet`).
+
 - `player_psr()` now ranks only players with at least `MIN_90S_PSR_LEADERBOARD` (15) weighted nineties, through
   `psr_leaderboard_eligible()`, with a new `min_90s` argument (0 turns it off). A name lookup (`player =`) is
   exempt. On the latest weekly snapshot 21 of the top 50 had fewer than 15 nineties. The skills-pipeline "Top 20
