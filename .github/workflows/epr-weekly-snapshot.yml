@@ -26,6 +26,11 @@ on:
         description: 'Recompute every snapshot (slow ~25 min) instead of incremental'
         type: boolean
         default: false
+      game_logs_run_id:
+        description: 'Build from the game logs of a Game Logs Rebuild (dry) run id instead of blog-latest (forces a full rebuild; never publish this)'
+        type: string
+        required: false
+        default: ''
 
 concurrency:
   # main/dev share panna-release-writer so release writes never overlap. Any other ref is a dry
@@ -91,6 +96,7 @@ jobs:
       - name: Download inputs
         env:
           GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          GAME_LOGS_RUN_ID: ${{ inputs.game_logs_run_id }}
         run: |
           # build_epr_weekly.R uses hardcoded RELATIVE paths (cwd = repo root):
           #   data-raw/cache-predictions-opta/game_logs_*.parquet  (per-season logs)
@@ -102,12 +108,27 @@ jobs:
           PD_OPTA="../pannadata/data/opta"
           mkdir -p "$CACHE_PRED" "$CACHE_OPTA" "$PD_OPTA"
 
-          echo "== per-season game logs (blog-latest) =="
-          # Matches game_logs_<season>.parquet only (not the game_logs.parquet alias,
-          # which build_epr_weekly's ^game_logs_.* pattern excludes anyway).
-          gh release download blog-latest --repo peteowen1/pannadata \
-            --pattern "game_logs_*.parquet" --dir "$CACHE_PRED"
-          echo "  $(ls "$CACHE_PRED"/game_logs_*.parquet | wc -l) game_logs files"
+          if [ -n "$GAME_LOGS_RUN_ID" ]; then
+            # A rebuild being gated must never reach opta-latest.
+            if [ "$PANNA_PUBLISH_DISABLED" != "true" ]; then
+              echo "FATAL: game_logs_run_id is for branch dry runs only; this ref publishes"; exit 1
+            fi
+            echo "== per-season game logs (artifacts of rebuild run $GAME_LOGS_RUN_ID) =="
+            gh run download "$GAME_LOGS_RUN_ID" --repo peteowen1/panna --pattern 'game-logs-*' --dir /tmp/gl_art
+            find /tmp/gl_art -name 'game_logs_*.parquet' -exec mv {} "$CACHE_PRED"/ \;
+            n_pub=$(gh release view blog-latest --repo peteowen1/pannadata --json assets \
+                      --jq '[.assets[].name | select(test("^game_logs_[0-9]{4}-[0-9]{4}[.]parquet$"))] | length')
+            n_art=$(ls "$CACHE_PRED"/game_logs_*.parquet | wc -l)
+            echo "  $n_art rebuilt seasons (blog-latest has $n_pub)"
+            [ "$n_art" -eq "$n_pub" ] || { echo "FATAL: rebuild has $n_art seasons, blog-latest $n_pub; a partial history would bias EPR"; exit 1; }
+          else
+            echo "== per-season game logs (blog-latest) =="
+            # Matches game_logs_<season>.parquet only (not the game_logs.parquet alias,
+            # which build_epr_weekly's ^game_logs_.* pattern excludes anyway).
+            gh release download blog-latest --repo peteowen1/pannadata \
+              --pattern "game_logs_*.parquet" --dir "$CACHE_PRED"
+            echo "  $(ls "$CACHE_PRED"/game_logs_*.parquet | wc -l) game_logs files"
+          fi
 
           echo "== team_season_strength (predictions-cache) =="
           # REQUIRED, not best-effort: without it opp_def_rating zeroes out for
@@ -128,6 +149,8 @@ jobs:
           if gh release download opta-latest --repo peteowen1/pannadata \
                --pattern "opta_epr_weekly.parquet" --dir "$PD_OPTA" 2>/dev/null; then
             echo "  downloaded — incremental run (recompute recent snapshots only)"
+            # The build overwrites it in place; keep the published copy to compare against.
+            cp "$PD_OPTA/opta_epr_weekly.parquet" /tmp/published_epr_weekly.parquet
           else
             echo "  not found — FIRST RUN, full rebuild (~25 min)"
           fi
@@ -146,10 +169,51 @@ jobs:
         # run here was removed as redundant (Pete's decision 2026-07-14,
         # unifying pipeline uploads onto vb_publish).
         env:
-          EPR_FORCE_FULL_REBUILD: ${{ inputs.force_full_rebuild == true && '1' || '' }}
+          EPR_FORCE_FULL_REBUILD: ${{ (inputs.force_full_rebuild == true || inputs.game_logs_run_id != '') && '1' || '' }}
           GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
         run: |
           Rscript data-raw/match-predictions-opta/build_epr_weekly.R
+
+      # New build against the published file, latest snapshot: does a change of
+      # method move the ranking, and who moved. Read-only; runs on every ref.
+      - name: Compare with the published file
+        run: |
+          [ -f /tmp/published_epr_weekly.parquet ] || { echo "no published copy to compare against"; exit 0; }
+          cat > /tmp/compare_epr.R <<'EOF'
+          suppressMessages(library(data.table))
+          cols <- c("player_id", "player_name", "snapshot_date", "epr", "epr_offensive", "epr_defensive", "wt_games")
+          rd <- function(p) { d <- as.data.table(arrow::read_parquet(p, col_select = tidyselect::any_of(cols)))
+                              d[, snapshot_date := as.Date(snapshot_date)]; d[snapshot_date == max(snapshot_date)] }
+          pub <- rd("/tmp/published_epr_weekly.parquet")
+          new <- rd("../pannadata/data/opta/opta_epr_weekly.parquet")
+          cat(sprintf("latest snapshot: new %s (%d players) | published %s (%d players)\n",
+                      max(new$snapshot_date), nrow(new), max(pub$snapshot_date), nrow(pub)))
+          m <- merge(new, pub[, .(player_id, pub_epr = epr, pub_off = epr_offensive, pub_def = epr_defensive)], by = "player_id")
+          m <- m[wt_games >= 20]
+          cat(sprintf("players in both with 20+ weighted games: %d\n", nrow(m)))
+          cat(sprintf("rank Spearman new vs published: EPR %.3f, offence %.3f, defence %.3f\n",
+                      cor(m$epr, m$pub_epr, method = "spearman"), cor(m$epr_offensive, m$pub_off, method = "spearman"),
+                      cor(m$epr_defensive, m$pub_def, method = "spearman")))
+          m[, `:=`(rank = frank(-epr, ties.method = "min"), pub_rank = frank(-pub_epr, ties.method = "min"))]
+          cat("\nTop 20 (20+ weighted games), new build vs published. EPR is rated goal value per 90 on the Big-5 scale; higher is better:\n")
+          print(m[order(rank)][1:20, .(player_name, rank, pub_rank, epr = round(epr, 3), pub_epr = round(pub_epr, 3))])
+          cat("\nBiggest risers and fallers among the published top 200 (move = published rank - new rank):\n")
+          t <- m[pub_rank <= 200][, move := pub_rank - rank]
+          print(rbind(t[order(-move)][1:8], t[order(move)][1:8])[, .(player_name, rank, pub_rank, move)])
+          EOF
+          set -o pipefail
+          Rscript /tmp/compare_epr.R | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # Keep the build so two dry runs (a rebuild and its control) can be
+      # compared with each other, not only with the published file.
+      - name: Keep the EPR build as an artifact (branch runs)
+        if: env.PANNA_PUBLISH_DISABLED == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: epr-weekly-branch-run
+          path: ../pannadata/data/opta/opta_epr_weekly.parquet
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Snapshot summary
         if: always()
