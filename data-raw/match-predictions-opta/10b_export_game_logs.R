@@ -678,8 +678,15 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
           player_game_epv <- data.table::as.data.table(player_game_epv)
           player_game_epv[.pm, .role8 := i.match_role8, on = c("match_id", "player_id")]
           if (!".role8" %in% names(player_game_epv)) player_game_epv[, .role8 := NA_character_]
-          message(sprintf("    EPV centred by player-match role8: %.1f%% of %d rows placed (%s)",
+          # What the start_label centring could have centred here: rows whose
+          # player has a real Opta starting label in this league-season. Some
+          # older league-seasons have neither labels nor formation lists, so
+          # neither method can place them; the gate compares the two shares.
+          .lab <- player_game_epv$position
+          .has_start <- unique(player_game_epv$player_id[!is.na(.lab) & !.lab %in% c("Substitute", "")])
+          message(sprintf("    EPV centred by player-match role8: %.1f%% of %d rows placed; start_label would centre %.1f%% (%s)",
                           100 * mean(!is.na(player_game_epv$.role8)), nrow(player_game_epv),
+                          100 * mean(player_game_epv$player_id %in% .has_start),
                           paste(sprintf("%s %d", names(table(.pm$match_role_source)),
                                         as.integer(table(.pm$match_role_source))), collapse = ", ")))
           player_game_epv <- adjust_epv_for_position(

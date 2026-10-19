@@ -48,12 +48,18 @@ jobs:
     outputs:
       seasons: ${{ steps.list.outputs.seasons }}
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
       - name: List seasons
         id: list
         env:
           GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
           INPUT_SEASONS: ${{ inputs.seasons || '' }}
         run: |
+          # A push can't pass inputs, so a branch may name its seasons in this file.
+          f=.github/game-logs-rebuild-seasons.txt
+          if [ -z "$INPUT_SEASONS" ] && [ -f "$f" ]; then INPUT_SEASONS=$(grep -v '^#' "$f" | tr '\n' ' '); fi
           if [ -n "$INPUT_SEASONS" ]; then
             s="$INPUT_SEASONS"
           else
@@ -223,8 +229,13 @@ jobs:
             echo "::error title=Season $SEASON incomplete::10b logged a skipped or failed stage (lines above)"; bad=1
           fi
           if [ "$EPV_POSITION_GROUPING" = "role8" ]; then
-            # every league must place at least 90% of its player-game rows
-            low=$(grep -oE "centred by player-match role8: [0-9.]+% of [0-9]+ rows" /tmp/10b.log | awk '{gsub("%","",$5); if ($5 + 0 < 90) print}')
+            # role8 must place at least as many of each league's player-game
+            # rows as today's start_label centring could (2 points' slack).
+            # Some older league-seasons carry neither Opta labels nor
+            # formation lists; neither method can place those, and that is
+            # not a role8 failure.
+            low=$(grep -oE "centred by player-match role8: [0-9.]+% of [0-9]+ rows placed; start_label would centre [0-9.]+%" /tmp/10b.log \
+                    | awk '{a=$5; b=$13; gsub("%","",a); gsub("%","",b); if (a + 2 < b + 0) print}')
             n=$(grep -c "centred by player-match role8" /tmp/10b.log || true)
             if [ -n "$low" ]; then echo "::error title=Season $SEASON role8 coverage::$low"; bad=1; fi
             if [ "$n" -eq 0 ]; then echo "::error title=Season $SEASON::role8 centring never ran"; bad=1; fi

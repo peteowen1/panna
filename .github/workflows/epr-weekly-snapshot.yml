@@ -27,7 +27,7 @@ on:
         type: boolean
         default: false
       game_logs_run_id:
-        description: 'Build from the game logs of a Game Logs Rebuild (dry) run id instead of blog-latest (forces a full rebuild; never publish this)'
+        description: 'Build from the game logs of Game Logs Rebuild (dry) run ids, space-separated, a later run replacing an earlier one season by season (instead of blog-latest; forces a full rebuild; never published)'
         type: string
         required: false
         default: ''
@@ -113,9 +113,12 @@ jobs:
             if [ "$PANNA_PUBLISH_DISABLED" != "true" ]; then
               echo "FATAL: game_logs_run_id is for branch dry runs only; this ref publishes"; exit 1
             fi
-            echo "== per-season game logs (artifacts of rebuild run $GAME_LOGS_RUN_ID) =="
-            gh run download "$GAME_LOGS_RUN_ID" --repo peteowen1/panna --pattern 'game-logs-*' --dir /tmp/gl_art
-            find /tmp/gl_art -name 'game_logs_*.parquet' -exec mv {} "$CACHE_PRED"/ \;
+            for rid in $GAME_LOGS_RUN_ID; do
+              echo "== per-season game logs (artifacts of rebuild run $rid) =="
+              rm -rf /tmp/gl_art && mkdir -p /tmp/gl_art
+              gh run download "$rid" --repo peteowen1/panna --pattern 'game-logs-*' --dir /tmp/gl_art
+              find /tmp/gl_art -name 'game_logs_*.parquet' -exec mv -f {} "$CACHE_PRED"/ \;
+            done
             n_pub=$(gh release view blog-latest --repo peteowen1/pannadata --json assets \
                       --jq '[.assets[].name | select(test("^game_logs_[0-9]{4}-[0-9]{4}[.]parquet$"))] | length')
             n_art=$(ls "$CACHE_PRED"/game_logs_*.parquet | wc -l)
