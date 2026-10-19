@@ -129,3 +129,79 @@ test_that("missing columns abort with the column named", {
   ev <- fixture_events()[, !"qualifier_json"]
   expect_error(position_match(fixture_lineups(), ev, fixture_table), "qualifier_json")
 })
+
+asof_fixture <- function() {
+  data.table::data.table(
+    player_id = c("a", "a", "a", "a", "a", "a", "b"),
+    match_date = as.Date(c("2020-01-01", "2020-01-08", "2020-01-08", "2020-01-15",
+                           "2022-06-01", "2022-06-08", "2020-01-01")),
+    minutes = c(90, 90, 30, 90, 90, 90, 90),
+    match_role_full = c("LB", "LCB", "LCB", "RCB", "RCB", NA, "ST"),
+    match_role_source = c("opta", "opta", "opta_sub", "opta", "opta", "none", "opta"))
+}
+
+test_that("position_asof only sees earlier dates", {
+  out <- position_asof(asof_fixture())
+  # first match: nothing earlier
+  expect_identical(out$asof_role_source[1], "none")
+  expect_true(is.na(out$asof_role8[1]))
+  # both 2020-01-08 rows see only the 01-01 LB start, never each other
+  expect_identical(out$asof_role_full[2:3], c("LB", "LB"))
+  # 01-15: LB 90 v LCB 120 -> LCB; role8 FB 90 v CB 120 -> CB
+  expect_identical(out$asof_role_full[4], "LCB")
+  expect_identical(out$asof_role8[4], "CB")
+  # 2022: the 365-day window is empty, so the whole earlier career votes
+  expect_identical(out$asof_role_source[5], "all_prior")
+  expect_identical(out$asof_role16[5], "CB")
+  # 2022-06-08: window holds the 06-01 RCB start
+  expect_identical(out$asof_role_source[6], "window")
+  expect_identical(out$asof_role_full[6], "RCB")
+  # another player's minutes never leak in
+  expect_identical(out$asof_role_source[7], "none")
+})
+
+test_that("position_asof votes each grouping separately and breaks ties by level order", {
+  d <- data.table::data.table(
+    player_id = "c", match_date = as.Date(c("2021-01-01", "2021-01-02", "2021-01-03", "2021-01-04")),
+    minutes = c(60, 50, 50, 90), match_role_full = c("CM", "LM", "RM", NA),
+    match_role_source = c("opta", "opta", "slot", "unused"))
+  out <- position_asof(d)
+  # role_full: CM 60 beats LM 50 and RM 50; role8: W 100 beats CM 60
+  expect_identical(out$asof_role_full[4], "CM")
+  expect_identical(out$asof_role8[4], "W")
+  # at 01-03: CM 60 v LM 50 -> CM; on 01-02 only CM
+  expect_identical(out$asof_role8[3], "CM")
+  # a tie (LM 50 v RM 50 in role16 with CM 60 ahead) is not needed; test one directly
+  t <- data.table::data.table(player_id = "d", match_date = as.Date(c("2021-01-01", "2021-01-02", "2021-01-03")),
+                              minutes = c(45, 45, 90), match_role_full = c("RB", "LB", NA),
+                              match_role_source = c("opta", "opta", "none"))
+  expect_identical(position_asof(t)$asof_role_full[3], "LB")   # LB precedes RB in level order
+})
+
+test_that("unused and filled-in rows never vote, and the row order is kept", {
+  d <- asof_fixture()[c(7, 4, 1, 6, 2, 5, 3)]
+  expect_identical(position_asof(d), position_asof(asof_fixture())[c(7, 4, 1, 6, 2, 5, 3)])
+  expect_error(position_asof(d[, !"minutes"]), "minutes")
+})
+
+test_that("the position level orders match the constants they copy", {
+  expect_identical(panna:::.POSITION_LEVELS$role8, PSR_ROLE8_LEVELS)
+  expect_setequal(panna:::.POSITION_LEVELS$role16, unique(panna:::POSITION_ROLE_MAP$role16))
+})
+
+test_that("the window is the window_days before the match, edge included", {
+  d <- data.table::data.table(
+    player_id = "e",
+    match_date = as.Date(c("2020-01-01", "2020-01-02", "2021-01-01", "2021-01-02")),
+    minutes = c(90, 90, 10, 90), match_role_full = c("ST", "XX", "CB", NA),
+    match_role_source = c("opta", "opta", "opta", "none"))
+  out <- position_asof(d, window_days = 365L)
+  # 2021-01-01 is 366 days after 2020-01-01: outside; 2020-01-02 (365 days) inside but
+  # unmapped, so it never votes -> window empty -> whole career -> ST
+  expect_identical(out$asof_role_source[3], "all_prior")
+  expect_identical(out$asof_role_full[3], "ST")
+  # 2021-01-02: the 10-minute CB start sits in the window, the ST start does not
+  expect_identical(out$asof_role_full[4], "CB")
+  expect_identical(position_asof(d, window_days = 366L)$asof_role_full[3], "ST")
+  expect_identical(position_asof(d, window_days = 366L)$asof_role_source[3], "window")
+})
