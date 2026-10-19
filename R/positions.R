@@ -1,0 +1,280 @@
+# Position groupings, one builder per level (docs: pannaverse
+# docs/reference/POSITION-TAXONOMY.md section 6, Pete 2026-10-19).
+#
+# Column names are {level}_{grouping}: levels match_ / asof_ / season_ /
+# career_, groupings role_full / role16 / role8 / role4. Every coarser grouping
+# is derived from role_full through POSITION_ROLE_MAP, never re-derived from raw
+# Opta text, which is how the older groupings drifted apart.
+
+# Opta position x side -> role_full -> role16. role16 reproduces classify_role()
+# exactly (a test pins this), so nothing downstream of role16 moves. role_full
+# keeps the side that role16 merges: LCB / CB / RCB rather than one CB.
+POSITION_ROLE_MAP <- data.table::data.table(
+  position = c(rep("Goalkeeper", 5),
+               rep("Defender", 5),
+               rep("Wing Back", 5),
+               rep("Defensive Midfielder", 5),
+               rep("Midfielder", 5),
+               rep("Attacking Midfielder", 5),
+               rep("Striker", 5)),
+  position_side = rep(c("Left", "Left/Centre", "Centre", "Centre/Right", "Right"), 7),
+  role_full = c("GK", "GK", "GK", "GK", "GK",
+                "LB", "LCB", "CB", "RCB", "RB",
+                "LWB", "LCWB", "CWB", "RCWB", "RWB",
+                "LWDM", "LDM", "DM", "RDM", "RWDM",
+                "LM", "LCM", "CM", "RCM", "RM",
+                "LW", "LAM", "AM", "RAM", "RW",
+                "LF", "LST", "ST", "RST", "RF"),
+  role16 = c("GK", "GK", "GK", "GK", "GK",
+             "LB", "CB", "CB", "CB", "RB",
+             "LWB", "RWB", "RWB", "RWB", "RWB",
+             "DM", "DM", "DM", "DM", "DM",
+             "LM", "CM", "CM", "CM", "RM",
+             "LW", "CAM", "CAM", "CAM", "RW",
+             "LF", "CF", "CF", "CF", "RF")
+)
+
+#' Every position grouping from one Opta position and side
+#'
+#' The single mapping behind the `role_full`, `role16`, `role8` and `role4`
+#' groupings. `role_full` keeps left and right (LCB, RCB, LCM, ...);
+#' `role16` is [classify_role()]'s 16 roles; `role8` mirrors left and right
+#' into GK, CB, FB, DM, CM, AM, W, ST (the default grouping); `role4` is GK,
+#' DEF, MID, FWD. A blank position, "Substitute" or a missing side gives `NA`
+#' in every column.
+#'
+#' @param position,position_side Opta `position` and `position_side`.
+#' @return A data.table with `role_full`, `role16`, `role8`, `role4`, one row
+#'   per input element.
+#' @family positions
+#' @export
+position_roles <- function(position, position_side) {
+  key <- data.table::data.table(position = as.character(position),
+                                position_side = as.character(position_side))
+  # A keeper is a keeper whatever side Opta stamps (or omits).
+  key[position == "Goalkeeper", position_side := "Centre"]
+  out <- POSITION_ROLE_MAP[key, on = c("position", "position_side"),
+                           .(role_full, role16)]
+  out[, role8 := data.table::fifelse(is.na(role16), NA_character_, .role16_to_role8(role16))]
+  out[, role4 := data.table::fifelse(is.na(role16), NA_character_, .role16_to_broad(role16))]
+  out[]
+}
+
+# One qualifier's value from Opta's qualifier JSON, as text. NA where the key
+# is absent or JSON null. A regex rather than jsonlite: this runs on every
+# sub-on and formation event of every league, and the values are flat strings.
+.opta_qualifier <- function(json, key) {
+  m <- stringi::stri_match_first_regex(
+    json, paste0('"', key, '"\\s*:\\s*(?:"([^"]*)"|(-?[0-9.]+))'))
+  out <- data.table::fifelse(is.na(m[, 2L]), m[, 3L], m[, 2L])
+  out[!is.na(out) & !nzchar(out)] <- NA_character_
+  out
+}
+
+# Formation states from type 34 (team set-up, the kick-off shape) and type 40
+# (formation change): one row per player in each state, with the formation id
+# (qualifier 130) and the player's slot (131, aligned with the ids in 30).
+# States whose player list is missing (JSON null; 1-20% of type 40 in
+# 2011-2015) keep their formation with no players.
+.formation_states <- function(ev) {
+  st <- ev[type_id %in% c(34L, 40L)]
+  if (!nrow(st)) {
+    return(list(
+      states = data.table::data.table(match_id = character(), team_id = character(),
+                                      state_t = numeric(), is_kickoff = logical(),
+                                      formation = integer()),
+      players = data.table::data.table(match_id = character(), team_id = character(),
+                                       state_t = numeric(), player_id = character(),
+                                       slot = integer())))
+  }
+  st[, formation := suppressWarnings(as.integer(.opta_qualifier(qualifier_json, "130")))]
+  st[, ids := .opta_qualifier(qualifier_json, "30")]
+  st[, sl := .opta_qualifier(qualifier_json, "131")]
+  st[, is_kickoff := type_id == 34L]
+  # A team set-up is the kick-off shape whatever its stamped time.
+  st[is_kickoff == TRUE, state_t := -Inf]
+  states <- st[, .(match_id, team_id, state_t, is_kickoff, formation)]
+  pl <- st[!is.na(ids) & !is.na(sl)]
+  players <- if (!nrow(pl)) {
+    data.table::data.table(match_id = character(), team_id = character(),
+                           state_t = numeric(), player_id = character(), slot = integer())
+  } else {
+    pl[, .row := .I]
+    pl[, {
+      i <- trimws(strsplit(ids, ",", fixed = TRUE)[[1L]])
+      s <- suppressWarnings(as.integer(trimws(strsplit(sl, ",", fixed = TRUE)[[1L]])))
+      n <- min(length(i), length(s))
+      list(player_id = i[seq_len(n)], slot = s[seq_len(n)])
+    }, by = .(match_id, team_id, state_t, .row)][, .row := NULL][]
+  }
+  list(states = states, players = players[!is.na(slot) & slot >= 1L & slot <= 11L])
+}
+
+# Event time on one sortable scale: period first, so a second-half 45:00 sorts
+# after first-half stoppage.
+.event_t <- function(period_id, minute, second) {
+  p <- suppressWarnings(as.numeric(period_id)); p[is.na(p)] <- 0
+  s <- if (is.null(second)) 0 else suppressWarnings(as.numeric(second))
+  s[is.na(s)] <- 0
+  p * 1e4 + suppressWarnings(as.numeric(minute)) * 60 + s
+}
+
+.prepare_position_events <- function(events) {
+  need <- c("match_id", "team_id", "player_id", "type_id", "period_id", "minute", "qualifier_json")
+  miss <- setdiff(need, names(events))
+  if (length(miss)) {
+    cli::cli_abort("{.arg events} is missing column{?s} {.field {miss}}.")
+  }
+  ev <- data.table::as.data.table(events)[as.integer(type_id) %in% c(19L, 34L, 40L)]
+  ev[, `:=`(match_id = as.character(match_id), team_id = as.character(team_id),
+            player_id = as.character(player_id), type_id = as.integer(type_id))]
+  ev[, state_t := .event_t(period_id, minute, if ("second" %in% names(ev)) second else NULL)]
+  ev
+}
+
+#' Most common position per formation slot, learned from labelled starters
+#'
+#' Opta records the formation (qualifier 130) and each starter's slot
+#' (qualifier 131) at kick-off. Across matches, a given formation and slot is
+#' almost always the same position, so this table gives a position to anyone
+#' whose own label is missing: a substitute after a formation change, or a
+#' starter whose lineup row is blank. It describes Opta's slot numbering, not
+#' any player, so building it from every match passed in does not leak one
+#' player's future into his past.
+#'
+#' @param lineups Lineup rows with `match_id`, `team_id`, `player_id`,
+#'   `position`, `position_side`, `is_starter`.
+#' @param events Opta events with `match_id`, `team_id`, `player_id`,
+#'   `type_id`, `period_id`, `minute`, `qualifier_json` (only types 34 and 40
+#'   are used).
+#' @return One row per formation and slot: `formation`, `slot`, `role_full`
+#'   (the most common), `n` (labelled starters seen) and `share` (the share of
+#'   them with that `role_full`).
+#' @family positions
+#' @export
+position_slot_table <- function(lineups, events) {
+  ev <- .prepare_position_events(events)
+  fs <- .formation_states(ev)
+  ko <- fs$players[is.infinite(state_t)][
+    fs$states[is_kickoff == TRUE, .(match_id, team_id, formation)],
+    on = c("match_id", "team_id"), nomatch = NULL]
+  lu <- data.table::as.data.table(lineups)[is_starter %in% TRUE,
+    .(match_id = as.character(match_id), player_id = as.character(player_id),
+      position, position_side)]
+  lu[, role_full := position_roles(position, position_side)$role_full]
+  x <- ko[lu[!is.na(role_full)], on = c("match_id", "player_id"), nomatch = NULL]
+  x <- x[!is.na(formation), .N, by = .(formation, slot, role_full)]
+  # Ties go to the first code alphabetically, so the table is reproducible.
+  data.table::setorder(x, formation, slot, -N, role_full)
+  x[, .(role_full = role_full[1L], n = sum(N), share = N[1L] / sum(N)),
+    by = .(formation, slot)][]
+}
+
+#' Each player's position in each match (the `match_` level)
+#'
+#' One row per lineup row, with the position he played in that match in every
+#' grouping and where it came from:
+#'
+#' - `opta`: a starter with an Opta position and side.
+#' - `slot`: a substitute, or a starter with a blank label, who took a slot
+#'   whose kick-off holder in this match had a label, with the formation
+#'   unchanged since kick-off. He gets that holder's position. Opta records the
+#'   slot on every sub-on event (qualifier 145).
+#' - `slot_table`: the formation had changed, or the slot's holder had no
+#'   label, so the position is the most common one for that formation and slot
+#'   ([position_slot_table()]).
+#' - `none`: he played but no slot is known (no event data for the match).
+#'   Every role column is `NA`; fill from the `asof_` level where a value is
+#'   needed.
+#' - `unused`: an unused substitute. Every role column is `NA`.
+#'
+#' A player moved by a later formation change keeps the position he started
+#' the match (or came on) in.
+#'
+#' @param lineups Lineup rows with `match_id`, `team_id`, `player_id`,
+#'   `position`, `position_side`, `is_starter`, `minutes_played`.
+#' @inheritParams position_slot_table
+#' @param slot_table A [position_slot_table()] result, or `NULL` to build one
+#'   from `lineups` and `events`. Pass a fixed table when scoring a small
+#'   subset of matches.
+#' @return A data.table with `match_id`, `team_id`, `player_id`,
+#'   `match_is_starter`, `match_formation`, `match_slot`, `match_role_full`,
+#'   `match_role16`, `match_role8`, `match_role4`, `match_role_source`, in the
+#'   row order of `lineups`.
+#' @family positions
+#' @export
+position_match <- function(lineups, events, slot_table = NULL) {
+  need <- c("match_id", "team_id", "player_id", "position", "position_side",
+            "is_starter", "minutes_played")
+  miss <- setdiff(need, names(lineups))
+  if (length(miss)) {
+    cli::cli_abort("{.arg lineups} is missing column{?s} {.field {miss}}.")
+  }
+  ev <- .prepare_position_events(events)
+  if (is.null(slot_table)) slot_table <- position_slot_table(lineups, events)
+  slot_table <- data.table::as.data.table(slot_table)[, .(formation, slot, tbl_role_full = role_full)]
+
+  lu <- data.table::as.data.table(lineups)[, .(
+    .i = .I, match_id = as.character(match_id), team_id = as.character(team_id),
+    player_id = as.character(player_id), position = as.character(position),
+    position_side = as.character(position_side),
+    match_is_starter = is_starter %in% TRUE,
+    mins = suppressWarnings(as.numeric(minutes_played)))]
+  lu[, own_full := position_roles(position, position_side)$role_full]
+
+  fs <- .formation_states(ev)
+  ko_form <- fs$states[is_kickoff == TRUE, .(ko_formation = formation[1L]), by = .(match_id, team_id)]
+  ko_slot <- fs$players[is.infinite(state_t), .(slot = slot[1L]), by = .(match_id, team_id, player_id)]
+  # The labelled kick-off holder of each slot: who a later sub inherits from.
+  holder <- ko_slot[lu[match_is_starter == TRUE & !is.na(own_full), .(match_id, player_id, own_full)],
+                    on = c("match_id", "player_id"), nomatch = NULL][
+    , .(holder_full = own_full[1L]), by = .(match_id, team_id, slot)]
+
+  # Sub-on events: his slot (qualifier 145) and the formation in effect then.
+  on <- ev[type_id == 19L, .(match_id, team_id, player_id, on_t = state_t,
+                             sub_slot = suppressWarnings(as.integer(.opta_qualifier(qualifier_json, "145"))))]
+  on <- unique(on, by = c("match_id", "player_id"))
+  st <- fs$states[!is.na(formation), .(match_id, team_id, on_t = state_t, formation)]
+  data.table::setkey(st, match_id, team_id, on_t)
+  # The shape in effect when he came on: the latest state at or before then
+  # (a formation change logged in the same second as the sub counts, since the
+  # sub's slot is numbered in the new shape).
+  on[, sub_formation := st[on, formation, on = c("match_id", "team_id", "on_t"),
+                           roll = TRUE, mult = "last"]]
+
+  lu[, `:=`(slot = NA_integer_, formation = NA_integer_, ko_f = NA_integer_,
+            sub_slot = NA_integer_, sub_formation = NA_integer_, came_on = FALSE,
+            holder_full = NA_character_, tbl_full = NA_character_)]
+  lu[ko_form, ko_f := i.ko_formation, on = c("match_id", "team_id")]
+  lu[ko_slot, slot := i.slot, on = c("match_id", "team_id", "player_id")]
+  lu[on, `:=`(sub_slot = i.sub_slot, sub_formation = i.sub_formation, came_on = TRUE),
+     on = c("match_id", "team_id", "player_id")]
+  lu[match_is_starter == TRUE, formation := ko_f]
+  lu[match_is_starter == FALSE, `:=`(slot = sub_slot, formation = sub_formation)]
+  lu[holder, holder_full := i.holder_full, on = c("match_id", "team_id", "slot")]
+  lu[slot_table, tbl_full := i.tbl_role_full, on = c("formation", "slot")]
+
+  played <- lu$match_is_starter | lu$came_on | (!is.na(lu$mins) & lu$mins > 0)
+  same_shape <- !is.na(lu$formation) & !is.na(lu$ko_f) & lu$formation == lu$ko_f
+  lu[, match_role_source := data.table::fcase(
+    !played, "unused",
+    match_is_starter & !is.na(own_full), "opta",
+    !is.na(slot) & same_shape & !is.na(holder_full), "slot",
+    !is.na(slot) & !is.na(tbl_full), "slot_table",
+    default = "none")]
+  lu[, match_role_full := data.table::fcase(
+    match_role_source == "opta", own_full,
+    match_role_source == "slot", holder_full,
+    match_role_source == "slot_table", tbl_full,
+    default = NA_character_)]
+
+  m <- POSITION_ROLE_MAP[, .(role16 = role16[1L]), by = role_full]
+  lu[, match_role16 := NA_character_]
+  lu[m, match_role16 := i.role16, on = c(match_role_full = "role_full")]
+  lu[, match_role8 := data.table::fifelse(is.na(match_role16), NA_character_, .role16_to_role8(match_role16))]
+  lu[, match_role4 := data.table::fifelse(is.na(match_role16), NA_character_, .role16_to_broad(match_role16))]
+  data.table::setorder(lu, .i)
+  lu[, .(match_id, team_id, player_id, match_is_starter,
+         match_formation = formation, match_slot = slot,
+         match_role_full, match_role16, match_role8, match_role4, match_role_source)]
+}

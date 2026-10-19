@@ -1,0 +1,120 @@
+# position_roles(), position_slot_table(), position_match()
+
+q <- function(...) {
+  x <- list(...)
+  paste0("{", paste(sprintf('"%s":"%s"', names(x), unlist(x)), collapse = ","), "}")
+}
+
+starter_ids <- paste0("p", 1:11)
+ko_json <- q(`30` = paste(c(starter_ids, "s1", "s2", "s3", "s4"), collapse = ", "),
+             `131` = paste(c(1:11, 0, 0, 0, 0), collapse = ", "), `130` = "8")
+
+fixture_lineups <- function() {
+  data.table::data.table(
+    match_id = c(rep("m1", 15), rep("m2", 3)),
+    team_id = "A",
+    player_id = c(starter_ids, "s1", "s2", "s3", "s4", "q1", "q2", "q3"),
+    position = c("Goalkeeper", "Defender", "", "Defender", "Defender",
+                 "Defensive Midfielder", "Attacking Midfielder", "Defensive Midfielder",
+                 "Striker", "Attacking Midfielder", "Attacking Midfielder",
+                 rep("Substitute", 4),
+                 "Defender", "", "Substitute"),
+    position_side = c("Centre", "Right", "", "Centre/Right", "Left/Centre",
+                      "Left/Centre", "Right", "Centre/Right", "Centre", "Centre", "Left",
+                      rep(NA, 4),
+                      "Left", "", NA),
+    is_starter = c(rep(TRUE, 11), rep(FALSE, 4), TRUE, TRUE, FALSE),
+    minutes_played = c(rep(90, 11), 30, 10, 0, 5, 90, 90, 20))
+}
+
+fixture_events <- function() {
+  data.table::data.table(
+    match_id = "m1", team_id = "A",
+    player_id = c(NA, "s1", NA, "s2", NA, "s4"),
+    type_id = c(34L, 19L, 40L, 19L, 40L, 19L),
+    period_id = c(16L, 2L, 2L, 2L, 2L, 2L),
+    minute = c(0, 60, 70, 80, 85, 85),
+    second = c(0, 0, 0, 0, 10, 10),
+    qualifier_json = c(ko_json, q(`145` = "2", `44` = "Defender"),
+                       q(`30` = "p1, p2", `131` = "1, 2", `130` = "2"),
+                       q(`145` = "7", `44` = "Midfielder"),
+                       q(`30` = "p1, p2", `131` = "1, 2", `130` = "3"),
+                       q(`145` = "4", `44` = "Defender")))
+}
+
+fixture_table <- data.table::data.table(
+  formation = c(8L, 2L, 3L), slot = c(3L, 7L, 4L),
+  role_full = c("LB", "RM", "LCB"), n = 100L, share = 0.9)
+
+test_that("role16 from the shared map reproduces classify_role() exactly", {
+  m <- panna:::POSITION_ROLE_MAP
+  expect_identical(position_roles(m$position, m$position_side)$role16,
+                   classify_role(m$position, m$position_side))
+  expect_identical(nrow(m), nrow(unique(m, by = c("position", "position_side"))))
+  expect_true(all(position_roles(m$position, m$position_side)$role8 %in% PSR_ROLE8_LEVELS))
+})
+
+test_that("position_roles keeps sides in role_full and mirrors them in role8", {
+  r <- position_roles(c("Defender", "Defender", "Defender", "Goalkeeper", "Substitute", ""),
+                      c("Left/Centre", "Centre/Right", "Left", NA, NA, "Left"))
+  expect_identical(r$role_full, c("LCB", "RCB", "LB", "GK", NA, NA))
+  expect_identical(r$role8, c("CB", "CB", "FB", "GK", NA, NA))
+  expect_identical(r$role4, c("DEF", "DEF", "DEF", "GK", NA, NA))
+})
+
+test_that("position_match gives every route its source and position", {
+  lu <- fixture_lineups()
+  out <- position_match(lu, fixture_events(), slot_table = fixture_table)
+  expect_identical(out$player_id, lu$player_id)          # input row order
+  get <- function(pid, col) out[[col]][out$player_id == pid]
+  # a labelled starter keeps Opta's own label
+  expect_identical(get("p2", "match_role_full"), "RB")
+  expect_identical(get("p2", "match_role_source"), "opta")
+  # a sub into slot 2 with the kick-off shape unchanged inherits p2's label
+  expect_identical(get("s1", "match_role_full"), "RB")
+  expect_identical(get("s1", "match_role8"), "FB")
+  expect_identical(get("s1", "match_role_source"), "slot")
+  # after a formation change the slot means something else: use the table
+  expect_identical(get("s2", "match_formation"), 2L)
+  expect_identical(get("s2", "match_role_full"), "RM")
+  expect_identical(get("s2", "match_role_source"), "slot_table")
+  # a change logged in the same second as the sub is the shape he joined
+  expect_identical(get("s4", "match_formation"), 3L)
+  expect_identical(get("s4", "match_role_full"), "LCB")
+  # a blank-label starter is placed by his own kick-off slot
+  expect_identical(get("p3", "match_slot"), 3L)
+  expect_identical(get("p3", "match_role_full"), "LB")
+  expect_identical(get("p3", "match_role_source"), "slot_table")
+  # an unused sub has no position
+  expect_identical(get("s3", "match_role_source"), "unused")
+  expect_true(is.na(get("s3", "match_role8")))
+  # no event data: labelled starter still opta, the rest none
+  expect_identical(get("q1", "match_role_source"), "opta")
+  expect_identical(get("q2", "match_role_source"), "none")
+  expect_identical(get("q3", "match_role_source"), "none")
+  expect_true(is.na(get("q3", "match_role8")))
+})
+
+test_that("a sub never inherits from a later formation change", {
+  # the change at minute 70 must not reach s1, who came on at 60
+  out <- position_match(fixture_lineups(), fixture_events(), slot_table = fixture_table)
+  expect_identical(out$match_formation[out$player_id == "s1"], 8L)
+})
+
+test_that("position_slot_table learns the most common label per formation slot", {
+  lu <- fixture_lineups()
+  tb <- position_slot_table(lu, fixture_events())
+  expect_identical(tb[formation == 8L & slot == 2L, role_full], "RB")
+  expect_identical(tb[formation == 8L & slot == 2L, n], 1L)
+  # the blank-label starter's slot has no labelled example
+  expect_identical(nrow(tb[formation == 8L & slot == 3L]), 0L)
+  # only kick-off shapes are learned from
+  expect_identical(sort(unique(tb$formation)), 8L)
+})
+
+test_that("missing columns abort with the column named", {
+  lu <- fixture_lineups()[, !"minutes_played"]
+  expect_error(position_match(lu, fixture_events(), fixture_table), "minutes_played")
+  ev <- fixture_events()[, !"qualifier_json"]
+  expect_error(position_match(fixture_lineups(), ev, fixture_table), "qualifier_json")
+})
