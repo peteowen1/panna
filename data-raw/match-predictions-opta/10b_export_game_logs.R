@@ -18,6 +18,16 @@
 
 # 1. Configuration ----
 
+# Memory per stage when PANNA_LOG_RSS is set: current and PEAK resident memory
+# (VmRSS / VmHWM; Linux only). The peak is what a runner's OOM kill sees, and a
+# gc()-then-sample checkpoint misses it.
+.rss_note <- function(name) {
+  if (!nzchar(Sys.getenv("PANNA_LOG_RSS")) || !file.exists("/proc/self/status")) return(invisible())
+  st <- readLines("/proc/self/status")
+  mb <- function(k) round(as.numeric(gsub("[^0-9]", "", grep(paste0("^", k, ":"), st, value = TRUE))) / 1024)
+  message(sprintf("    [mem] %s: RSS %d MB, peak %d MB", name, mb("VmRSS"), mb("VmHWM")))
+}
+
 # When sourced standalone (outside run_predictions_opta.R) pipeline_utils.R
 # isn't loaded yet — source it here so resolve_blog_leagues() is available
 # regardless of entry point (direct Rscript, 10b_backfill_game_logs.R, or the
@@ -425,15 +435,6 @@ validate_game_log_schema <- function(dt, league, season) {
 .stage_start <- function() {
   .stage_league <<- numeric(0)
   .stage_t0 <<- proc.time()[["elapsed"]]
-}
-# Memory per stage when PANNA_LOG_RSS is set: current and PEAK resident memory
-# (VmRSS / VmHWM; Linux only). The peak is what a runner's OOM kill sees, and a
-# gc()-then-sample checkpoint misses it.
-.rss_note <- function(name) {
-  if (!nzchar(Sys.getenv("PANNA_LOG_RSS")) || !file.exists("/proc/self/status")) return(invisible())
-  st <- readLines("/proc/self/status")
-  mb <- function(k) round(as.numeric(gsub("[^0-9]", "", grep(paste0("^", k, ":"), st, value = TRUE))) / 1024)
-  message(sprintf("    [mem] %s: RSS %d MB, peak %d MB", name, mb("VmRSS"), mb("VmHWM")))
 }
 .stage <- function(name) {
   .rss_note(name)
