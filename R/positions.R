@@ -386,7 +386,10 @@ position_asof <- function(player_match, window_days = 365L) {
   d[, r16 := m16$role16[match(full, m16$role_full)]]
   d[, `:=`(r8 = data.table::fifelse(is.na(r16), NA_character_, .role16_to_role8(r16)),
            r4 = data.table::fifelse(is.na(r16), NA_character_, .role16_to_broad(r16)))]
-  votes <- d[src %in% .POSITION_VOTING_SOURCES & !is.na(full) & !is.na(m) & m > 0]
+  # only codes from the shared map vote; anything else would sort ahead of real
+  # codes in a tie (its level is NA)
+  votes <- d[src %in% .POSITION_VOTING_SOURCES & full %in% .POSITION_LEVELS$role_full &
+               !is.na(m) & m > 0]
   queries <- unique(d[, .(player_id, md)])
   lookback <- if (is.finite(window_days)) as.integer(window_days) else NA_integer_
 

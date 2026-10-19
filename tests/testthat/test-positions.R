@@ -188,3 +188,20 @@ test_that("the position level orders match the constants they copy", {
   expect_identical(panna:::.POSITION_LEVELS$role8, PSR_ROLE8_LEVELS)
   expect_setequal(panna:::.POSITION_LEVELS$role16, unique(panna:::POSITION_ROLE_MAP$role16))
 })
+
+test_that("the window is the window_days before the match, edge included", {
+  d <- data.table::data.table(
+    player_id = "e",
+    match_date = as.Date(c("2020-01-01", "2020-01-02", "2021-01-01", "2021-01-02")),
+    minutes = c(90, 90, 10, 90), match_role_full = c("ST", "XX", "CB", NA),
+    match_role_source = c("opta", "opta", "opta", "none"))
+  out <- position_asof(d, window_days = 365L)
+  # 2021-01-01 is 366 days after 2020-01-01: outside; 2020-01-02 (365 days) inside but
+  # unmapped, so it never votes -> window empty -> whole career -> ST
+  expect_identical(out$asof_role_source[3], "all_prior")
+  expect_identical(out$asof_role_full[3], "ST")
+  # 2021-01-02: the 10-minute CB start sits in the window, the ST start does not
+  expect_identical(out$asof_role_full[4], "CB")
+  expect_identical(position_asof(d, window_days = 366L)$asof_role_full[3], "ST")
+  expect_identical(position_asof(d, window_days = 366L)$asof_role_source[3], "window")
+})
