@@ -143,11 +143,12 @@ if (!exists("upload_game_logs")) upload_game_logs <- TRUE
 # How EPV is position-centred. "start_label": the player's most common Opta
 # starting label in the league-season (Defender lumps full-backs with
 # centre-backs). "role8": each player-MATCH's role8 from position_match()
-# (GK CB FB DM CM AM W ST; subs from Opta's own sub position). role8 is a
-# model change: it waits on its gate before becoming the default
-# (pannaverse docs/reference/POSITION-TAXONOMY.md section 6).
+# (GK CB FB DM CM AM W ST; subs from Opta's own sub position). role8 is the
+# default (Pete 2026-10-19), chosen over its production-model gate (log loss
+# +0.00166 [-0.00100, +0.00438] vs start_label, n 1,330; pannaverse DECISIONS):
+# like is compared with like, and it is the grouping used everywhere else.
 if (!exists("epv_position_grouping", envir = globalenv(), inherits = FALSE)) {
-  epv_position_grouping <- Sys.getenv("EPV_POSITION_GROUPING", "start_label")
+  epv_position_grouping <- Sys.getenv("EPV_POSITION_GROUPING", "role8")
 }
 stopifnot(epv_position_grouping %in% c("start_label", "role8"))
 
@@ -703,7 +704,12 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
           match_dates     <- dt_lu[, .(match_date = match_date[1]), by = match_id]
           player_game_epv <- merge(player_game_epv, match_dates, by = "match_id", all.x = TRUE)
         }
-        if (identical(epv_position_grouping, "role8")) {
+        # role8 gets its own fallback: an error here must not take the
+        # opponent adjustment with it (the enclosing handler only warns, and a
+        # deferred warning is invisible in the weekly log), so a failed role8
+        # step says so and centres by start_label instead.
+        .epv_centred <- FALSE
+        if (identical(epv_position_grouping, "role8")) tryCatch({
           .pm <- position_match(lineups, events)
           player_game_epv <- data.table::as.data.table(player_game_epv)
           player_game_epv[.pm, .role8 := i.match_role8, on = c("match_id", "player_id")]
@@ -726,7 +732,14 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
           )
           player_game_epv[, .role8 := NULL]
           rm(.pm)
-        } else if ("position" %in% names(player_game_epv)) {
+          .epv_centred <- TRUE
+        }, error = function(e) {
+          message(sprintf("    !! role8 EPV centring FAILED for %s %s (%s): falling back to start_label",
+                          league, season, conditionMessage(e)))
+        })
+        if (!.epv_centred && "position" %in% names(player_game_epv)) {
+          player_game_epv <- data.table::as.data.table(player_game_epv)
+          if (".role8" %in% names(player_game_epv)) player_game_epv[, .role8 := NULL]
           player_game_epv <- adjust_epv_for_position(
             player_game_epv,
             credit_cols = c("epv_total", "epv_offensive", "epv_defensive")
