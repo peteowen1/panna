@@ -11,7 +11,10 @@ on:
   # A dispatch-only workflow can't be run until it is on main, so a push to this
   # branch runs it with the defaults (every season, role8) before then.
   push:
-    branches: [exp/game-logs-rebuild]
+    # exp/game-logs-rebuild-control builds the same seasons with today's
+    # centring, so role8 is compared with a rebuild on the same code and data,
+    # not with game logs published over months of model and data changes.
+    branches: [exp/game-logs-rebuild, exp/game-logs-rebuild-control]
   workflow_dispatch:
     inputs:
       seasons:
@@ -168,7 +171,7 @@ jobs:
           GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
           XMETRICS_SOURCE: remote
           SEASON: ${{ matrix.season }}
-          EPV_POSITION_GROUPING: ${{ inputs.epv_position_grouping || 'role8' }}
+          EPV_POSITION_GROUPING: ${{ inputs.epv_position_grouping || (github.ref == 'refs/heads/exp/game-logs-rebuild-control' && 'start_label' || 'role8') }}
         run: |
           cat > /tmp/run_10b.R << 'EOF'
           pannadata_path <- Sys.getenv("PANNADATA_DIR")
@@ -202,7 +205,7 @@ jobs:
       - name: Refuse a partial season
         env:
           SEASON: ${{ matrix.season }}
-          EPV_POSITION_GROUPING: ${{ inputs.epv_position_grouping || 'role8' }}
+          EPV_POSITION_GROUPING: ${{ inputs.epv_position_grouping || (github.ref == 'refs/heads/exp/game-logs-rebuild-control' && 'start_label' || 'role8') }}
         run: |
           bad=0
           marker=data-raw/cache-predictions-opta/.partial_publish_failures
