@@ -24,7 +24,9 @@ in every column.
 \seealso{
 Other positions: 
 \code{\link{position_asof}()},
+\code{\link{position_career}()},
 \code{\link{position_match}()},
+\code{\link{position_season}()},
 \code{\link{position_slot_table}()}
 }
 \concept{positions}

@@ -205,3 +205,48 @@ test_that("the window is the window_days before the match, edge included", {
   expect_identical(position_asof(d, window_days = 366L)$asof_role_full[3], "ST")
   expect_identical(position_asof(d, window_days = 366L)$asof_role_source[3], "window")
 })
+
+season_fixture <- function() {
+  data.table::data.table(
+    player_id = c("a", "a", "a", "a", "a", "b"),
+    season = c("2019-2020", "2019-2020", "2020", "2020-2021", "2020-2021", "2020"),
+    minutes = c(90, 60, 90, 0, 90, 30),
+    match_role_full = c("LCB", "LB", "RB", NA, NA, "ST"),
+    match_role_source = c("opta", "opta", "opta_sub", "unused", "none", "slot"))
+}
+
+test_that("position_career votes over every match, per grouping", {
+  out <- position_career(season_fixture())
+  # a: LCB 90, LB 60, RB 90 -> LCB and RB tie on 90; LCB comes first in level order
+  expect_identical(out$career_role_full[1:5], rep("LCB", 5))
+  # role8: FB 150 beats CB 90 -- voted separately, not coarsened from LCB
+  expect_identical(out$career_role8[1], "FB")
+  expect_identical(out$career_role_source[6], "career")
+  expect_identical(out$career_role_full[6], "ST")
+})
+
+test_that("position_season uses the season end year and falls back to career", {
+  out <- position_season(season_fixture())
+  # 2019-2020 and calendar 2020 share end year 2020: LCB 90, LB 60, RB 90 -> LCB
+  expect_identical(out$season_role_full[1:3], rep("LCB", 3))
+  expect_identical(out$season_role_source[1], "season")
+  # 2020-2021 has no real position -> career
+  expect_identical(out$season_role_source[4:5], c("career", "career"))
+  expect_identical(out$season_role8[4], "FB")
+  # row order kept on shuffled input
+  sh <- season_fixture()[c(6, 3, 1, 5, 2, 4)]
+  expect_identical(position_season(sh), position_season(season_fixture())[c(6, 3, 1, 5, 2, 4)])
+  expect_error(position_season(season_fixture()[, !"season"]), "season")
+})
+
+test_that("season votes are per player, and missing player ids abort", {
+  d <- data.table::data.table(player_id = c("a", "b", "a", "b"), season = "2020-2021",
+                              minutes = 90, match_role_full = c("ST", "GK", "ST", "GK"),
+                              match_role_source = "opta")
+  expect_identical(position_season(d)$season_role_full, c("ST", "GK", "ST", "GK"))
+  d$player_id[2] <- NA
+  expect_error(position_season(d), "player_id")
+  expect_error(position_career(d), "player_id")
+  d$match_date <- as.Date("2020-09-01")
+  expect_error(position_asof(d), "player_id")
+})

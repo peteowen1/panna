@@ -37,8 +37,10 @@ Only rows whose \code{match_role_source} is a real position vote ("opta",
 }
 \seealso{
 Other positions: 
+\code{\link{position_career}()},
 \code{\link{position_match}()},
 \code{\link{position_roles}()},
+\code{\link{position_season}()},
 \code{\link{position_slot_table}()}
 }
 \concept{positions}
