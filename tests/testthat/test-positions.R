@@ -257,3 +257,25 @@ test_that(".position_role4_any reads role4 codes, labels with side, and bare lab
                    c("MID", "MID", NA, "FWD", "MID", NA, NA))
   expect_identical(f(c("Attacking Midfielder", "Defender"), c("Left", "Centre")), c("FWD", "DEF"))
 })
+
+test_that("wide midfielders in a back three with no full-back slot become wing-backs", {
+  tb <- data.table::data.table(
+    formation = rep(c(17L, 11L, 8L), each = 4),
+    slot = rep(1:4, 3),
+    role_full = c("LCB", "CB", "RCB", "LM",    # 3-4-2-1: no full-back slot
+                  "LCB", "CB", "RCB", "LWB",   # 5-4-1: wing-backs labelled already
+                  "LCB", "RCB", "LB", "LM"),   # back four
+    n = 10L, share = 1)
+  expect_identical(panna:::.wingback_formations(tb), 17L)
+  lu <- data.table::data.table(match_id = c("m", "m", "n", "o"), team_id = "A", player_id = c("p1", "p2", "p3", "p4"),
+                               position = "Midfielder", position_side = c("Left", "Right", "Left", "Left"),
+                               is_starter = TRUE, minutes_played = 90)
+  ev <- data.table::data.table(match_id = c("m", "n", "o"), team_id = "A", player_id = NA, type_id = 34L,
+                               period_id = 16L, minute = 0, second = 0,
+                               qualifier_json = c(q(`30` = "p1, p2", `131` = "4, 5", `130` = "17"),
+                                                  q(`30` = "p3", `131` = "4", `130` = "11"),
+                                                  q(`30` = "p4", `131` = "4", `130` = "8")))
+  out <- position_match(lu, ev, slot_table = tb)
+  expect_identical(out$match_role_full, c("LWB", "RWB", "LM", "LM"))
+  expect_identical(out$match_role8, c("FB", "FB", "W", "W"))
+})
