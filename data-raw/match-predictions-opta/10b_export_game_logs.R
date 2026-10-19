@@ -704,7 +704,12 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
           match_dates     <- dt_lu[, .(match_date = match_date[1]), by = match_id]
           player_game_epv <- merge(player_game_epv, match_dates, by = "match_id", all.x = TRUE)
         }
-        if (identical(epv_position_grouping, "role8")) {
+        # role8 gets its own fallback: an error here must not take the
+        # opponent adjustment with it (the enclosing handler only warns, and a
+        # deferred warning is invisible in the weekly log), so a failed role8
+        # step says so and centres by start_label instead.
+        .epv_centred <- FALSE
+        if (identical(epv_position_grouping, "role8")) tryCatch({
           .pm <- position_match(lineups, events)
           player_game_epv <- data.table::as.data.table(player_game_epv)
           player_game_epv[.pm, .role8 := i.match_role8, on = c("match_id", "player_id")]
@@ -727,7 +732,14 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
           )
           player_game_epv[, .role8 := NULL]
           rm(.pm)
-        } else if ("position" %in% names(player_game_epv)) {
+          .epv_centred <- TRUE
+        }, error = function(e) {
+          message(sprintf("    !! role8 EPV centring FAILED for %s %s (%s): falling back to start_label",
+                          league, season, conditionMessage(e)))
+        })
+        if (!.epv_centred && "position" %in% names(player_game_epv)) {
+          player_game_epv <- data.table::as.data.table(player_game_epv)
+          if (".role8" %in% names(player_game_epv)) player_game_epv[, .role8 := NULL]
           player_game_epv <- adjust_epv_for_position(
             player_game_epv,
             credit_cols = c("epv_total", "epv_offensive", "epv_defensive")

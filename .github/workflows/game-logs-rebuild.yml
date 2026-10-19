@@ -4,8 +4,8 @@ name: Game Logs Rebuild (dry)
 # and keeps each as a run ARTIFACT. Never uploads to any release: publishing
 # rebuilt game logs to blog-latest is a separate, deliberate step. Built for the
 # EPV role8 centring gate (pannaverse docs/reference/POSITION-TAXONOMY.md
-# section 6): rebuild every season with `epv_position_grouping = role8`, then
-# build EPR from the artifacts and compare with the published EPR.
+# section 6) and reusable for any full-history rebuild: the artifacts feed
+# epr-weekly-snapshot.yml's game_logs_run_id on a branch run.
 
 on:
   # A dispatch-only workflow can't be run until it is on main, so a push to this
@@ -291,7 +291,7 @@ jobs:
               fi
             done < "$marker"
           fi
-          if grep -nE "EPV adjustments skipped|SEASON .* ABORTED|join FAILED|INCOMPLETE" /tmp/10b.log; then
+          if grep -nE "EPV adjustments skipped|SEASON .* ABORTED|join FAILED|INCOMPLETE|role8 EPV centring FAILED" /tmp/10b.log; then
             echo "::error title=Season $SEASON incomplete::10b logged a skipped or failed stage (lines above)"; bad=1
           fi
           # An empty part is accepted only after the two checks above: a part
