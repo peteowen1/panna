@@ -130,6 +130,16 @@ current_season_alias <- sort(game_log_seasons, decreasing = TRUE)[1]
 
 # Upload toggle — set FALSE during local dev to skip the GH release push.
 if (!exists("upload_game_logs")) upload_game_logs <- TRUE
+# How EPV is position-centred. "start_label": the player's most common Opta
+# starting label in the league-season (Defender lumps full-backs with
+# centre-backs). "role8": each player-MATCH's role8 from position_match()
+# (GK CB FB DM CM AM W ST; subs from Opta's own sub position). role8 is a
+# model change: it waits on its gate before becoming the default
+# (pannaverse docs/reference/POSITION-TAXONOMY.md section 6).
+if (!exists("epv_position_grouping", envir = globalenv(), inherits = FALSE)) {
+  epv_position_grouping <- Sys.getenv("EPV_POSITION_GROUPING", "start_label")
+}
+stopifnot(epv_position_grouping %in% c("start_label", "role8"))
 
 # Build toggle — set FALSE to skip the per-season processing loop (e.g. when
 # parquets were already built in parallel workers and this invocation only
@@ -663,7 +673,23 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
           match_dates     <- dt_lu[, .(match_date = match_date[1]), by = match_id]
           player_game_epv <- merge(player_game_epv, match_dates, by = "match_id", all.x = TRUE)
         }
-        if ("position" %in% names(player_game_epv)) {
+        if (identical(epv_position_grouping, "role8")) {
+          .pm <- position_match(lineups, events)
+          player_game_epv <- data.table::as.data.table(player_game_epv)
+          player_game_epv[.pm, .role8 := i.match_role8, on = c("match_id", "player_id")]
+          if (!".role8" %in% names(player_game_epv)) player_game_epv[, .role8 := NA_character_]
+          message(sprintf("    EPV centred by player-match role8: %.1f%% of %d rows placed (%s)",
+                          100 * mean(!is.na(player_game_epv$.role8)), nrow(player_game_epv),
+                          paste(sprintf("%s %d", names(table(.pm$match_role_source)),
+                                        as.integer(table(.pm$match_role_source))), collapse = ", ")))
+          player_game_epv <- adjust_epv_for_position(
+            player_game_epv,
+            credit_cols = c("epv_total", "epv_offensive", "epv_defensive"),
+            group_col = ".role8"
+          )
+          player_game_epv[, .role8 := NULL]
+          rm(.pm)
+        } else if ("position" %in% names(player_game_epv)) {
           player_game_epv <- adjust_epv_for_position(
             player_game_epv,
             credit_cols = c("epv_total", "epv_offensive", "epv_defensive")
