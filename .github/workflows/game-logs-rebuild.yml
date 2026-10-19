@@ -28,7 +28,7 @@ on:
         required: false
         default: ''
       epv_position_grouping:
-        description: 'EPV position centring: start_label (today) or role8'
+        description: 'EPV position centring: role8 (default since 2026-10-19) or start_label (the old default)'
         type: choice
         options: [role8, start_label]
         default: role8
