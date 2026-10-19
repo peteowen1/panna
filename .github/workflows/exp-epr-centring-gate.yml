@@ -1,0 +1,482 @@
+name: exp EPR centring gate (throwaway, Pete 2026-10-19)
+# Runs data-raw/match-predictions-opta/epr_centring_gate.R on a runner: two pre-built EPR files
+# (role8-centred and start_label-centred game logs) each through predictions steps 02-08,
+# scored on the locked rule in that script. Built from exp-epr-gate.yml.
+# Holds NO write token: github.token only (pannadata releases are public).
+on:
+  push:
+    branches: ["exp-epr-centring-gate"]
+
+concurrency:
+  # EXPERIMENT: own queue.
+  # main/dev share panna-release-writer so release writes never overlap. Any other ref is a dry
+  # build (PANNA_PUBLISH_DISABLED), so it gets its own queue: GitHub keeps one pending
+  # run per group, and a pending branch run would otherwise replace a pending publish.
+  group: ${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && 'panna-release-writer' || format('panna-release-writer-dry-{0}', github.ref) }}
+  cancel-in-progress: false
+
+env:
+  GITHUB_PAT: ${{ github.token }}
+  R_KEEP_PKG_SOURCE: yes
+  # R026: only main and dev may publish. Scheduled and repository_dispatch runs
+  # use the default branch (main). A workflow_dispatch from any other branch
+  # builds but uploads nothing: the R scripts force their upload_* flags off and the
+  # workflow upload steps are gated on it (vb_publish() itself does not read it).
+  PANNA_PUBLISH_DISABLED: ${{ (github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev') && 'true' || 'false' }}
+  # Steps 07b/12b/12c upload dated snapshots with gh directly; they already
+  # honour this switch.
+  WC2026_NO_UPLOAD: ${{ (github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev') && '1' || '' }}
+
+jobs:
+  predict:
+    runs-on: ubuntu-latest
+    # Bumped from 75 to 100 after enabling step_10b + step_10c (per-match value
+    # metrics + per-action equity). Each iterates SPADL/EPV across 13 blog
+    # leagues for the current season; combined add ~15-25 min to the weekly run.
+    timeout-minutes: 340
+
+    permissions:
+      contents: read
+      actions: read   # download the two EPR arms from other runs' artifacts
+
+    steps:
+      - name: Publish gate (R026)
+        run: |
+          if [ "$PANNA_PUBLISH_DISABLED" = "true" ]; then
+            echo "::warning title=Publishing disabled::ref $GITHUB_REF is not main or dev, so this run builds but uploads nothing."
+            echo "> [!WARNING]" >> "$GITHUB_STEP_SUMMARY"
+            echo "> **Publishing disabled:** ref \`$GITHUB_REF\` is not main or dev; every upload is forced off." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Publishing allowed on $GITHUB_REF."
+          fi
+
+      - name: Add 16 GB swap (each gate arm peaks at ~14.5 GB R heap on a 16 GB runner)
+        run: |
+          free -h
+          sudo swapoff -a || true
+          sudo fallocate -l 16G /swapfile16 && sudo chmod 600 /swapfile16 && sudo mkswap /swapfile16 && sudo swapon /swapfile16
+          free -h
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.5.0'
+          use-public-rspm: true
+
+      - name: Setup R dependencies
+        uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          cache-version: 2
+          extra-packages: |
+            any::devtools
+            any::callr
+            any::piggyback
+            any::arrow
+            any::dplyr
+            any::tidyr
+            any::glmnet
+            any::xgboost
+            any::Matrix
+            any::data.table
+            any::DBI
+            any::duckdb
+            any::cli
+          needs: |
+            devtools
+
+      - name: Download consolidated Opta data
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          OPTA_DIR="${{ runner.temp }}/pannadata/opta"
+          mkdir -p "$OPTA_DIR"
+
+          echo "Downloading consolidated Opta files..."
+          for f in opta_player_stats.parquet opta_shots.parquet opta_shot_events.parquet \
+                   opta_events.parquet opta_lineups.parquet opta_fixtures.parquet \
+                   opta_skills.parquet opta_match_stats.parquet opta_xmetrics.parquet \
+                   opta_epr_weekly.parquet opta_psr_weekly.parquet opta_match_xg.parquet \
+                   opta-catalog.json; do
+            if gh release download opta-latest --repo peteowen1/pannadata --pattern "$f" --dir "$OPTA_DIR" 2>/dev/null; then
+              echo "  Downloaded $f"
+            else
+              echo "  Skipped $f (not found)"
+            fi
+          done
+
+          # Career-trait panna (the real `panna` RATING — decay-weighted multi-season
+          # xRAPM) lives on the ratings-data release, not opta-latest. Step 12 joins it
+          # for the WC squad/team-strength so they show the trait, not season xRAPM.
+          echo "Downloading career_panna.parquet from ratings-data..."
+          if gh release download ratings-data --repo peteowen1/pannadata --pattern career_panna.parquet --dir "$OPTA_DIR" 2>/dev/null; then
+            echo "  Downloaded career_panna.parquet"
+          else
+            echo "  Skipped career_panna.parquet (not found on ratings-data)"
+          fi
+
+          # As-of-date career-panna snapshots (one career-trait fit per month, leak-
+          # free) — step 02 joins the latest snapshot before each match to give the
+          # model the point-in-time panna feature instead of leaky in-season xRAPM.
+          echo "Downloading career_panna_asof.parquet from ratings-data..."
+          if gh release download ratings-data --repo peteowen1/pannadata --pattern career_panna_asof.parquet --dir "$OPTA_DIR" 2>/dev/null; then
+            echo "  Downloaded career_panna_asof.parquet"
+          else
+            echo "  Skipped career_panna_asof.parquet (not found on ratings-data)"
+          fi
+
+          echo "Opta data downloaded to $OPTA_DIR"
+          ls -lh "$OPTA_DIR"
+
+          # Validate required files
+          MISSING=0
+          for f in opta_lineups.parquet opta_fixtures.parquet opta_player_stats.parquet opta_epr_weekly.parquet career_panna.parquet career_panna_asof.parquet opta-catalog.json; do
+            if [ ! -f "$OPTA_DIR/$f" ]; then
+              echo "FATAL: Required file $f was not downloaded"
+              MISSING=$((MISSING + 1))
+            fi
+          done
+          if [ "$MISSING" -gt 0 ]; then
+            echo "ERROR: $MISSING required file(s) missing. Cannot run predictions pipeline."
+            exit 1
+          fi
+
+      - name: Download prediction caches
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          CACHE_OPTA="data-raw/cache-opta"
+          CACHE_SKILLS="data-raw/cache-skills"
+          mkdir -p "$CACHE_OPTA" "$CACHE_SKILLS"
+
+          echo "Downloading prediction caches..."
+
+          # Retry, because a missing asset here is usually transient. This
+          # workflow's `panna-release-writer` concurrency group serialises runs
+          # but does NOT stop the previous run from re-uploading release assets
+          # as this one starts, and `gh release upload --clobber` deletes before
+          # it uploads -- so there is a window where a perfectly healthy asset
+          # 404s. That is exactly what took down the 2026-08-12 09:16 scheduled
+          # run: 06_seasonal_ratings.rds missed its download by minutes.
+          fetch_cache() {              # $1 = file, $2 = dest dir, $3 = required|optional
+            f="$1"; dest="$2"; requirement="$3"
+            for attempt in 1 2 3; do
+              if gh release download predictions-cache --repo peteowen1/pannadata \
+                   --pattern "$f" --dir "$dest" 2>/dev/null; then
+                echo "  Downloaded $f -> $dest (attempt $attempt)"
+                return 0
+              fi
+              # `if`, not `[ ... ] && sleep`. Both survive `bash -e` here (a
+              # non-final command in an && list is exempt), but that exemption
+              # is subtle enough that the next person to add a line after it
+              # gets a surprise. Spell the branch out.
+              if [ "$attempt" -lt 3 ]; then
+                echo "  retry $attempt/3 for $f (likely a concurrent release publish)"
+                sleep 20
+              fi
+            done
+            if [ "$requirement" = "required" ]; then
+              echo "FATAL: required cache $f could not be downloaded after 3 attempts."
+              echo "  If a publish was mid-clobber, simply re-run this workflow."
+              return 1
+            fi
+            echo "  WARNING: $f not found (optional)"
+            return 0
+          }
+
+          # 06_seasonal_ratings.rds is REQUIRED, not interchangeable with 07.
+          # Step 02 prefers it and falls back to cache-opta/07 on a mere R
+          # warning() -- but 07 carries raw-stat ratings with no seasonal_psr,
+          # so the fallback guarantees psr = 0 for every team. The pipeline then
+          # runs for ~35 more minutes before step 12's tripwire refuses to
+          # publish, blaming "a squad rating-join failure". Fail here instead,
+          # naming the actual missing file.
+          fetch_cache 06_seasonal_ratings.rds "$CACHE_SKILLS" required || exit 1
+          fetch_cache 07_seasonal_ratings.rds "$CACHE_OPTA" optional || exit 1
+          # 01_match_stats.rds is NOT downloaded: the predictions-cache copy is
+          # refreshed only by hand and sat at 2026-07-05 (R092). The next step
+          # rebuilds it, same as psr-weekly-snapshot.yml (R001).
+          for f in 02b_decay_params.rds 03_skill_spm.rds; do
+            fetch_cache "$f" "$CACHE_SKILLS" optional || exit 1
+          done
+
+          echo ""
+          echo "Cache files:"
+          ls -lh "$CACHE_OPTA"/*.rds 2>/dev/null || echo "  No RAPM caches"
+          ls -lh "$CACHE_SKILLS"/*.rds 2>/dev/null || echo "  No skill caches"
+
+          # Backstop: redundant while 06 is required above, kept so that
+          # relaxing that requirement cannot silently leave the pipeline with
+          # no seasonal ratings at all.
+          if [ ! -f "$CACHE_OPTA/07_seasonal_ratings.rds" ] && [ ! -f "$CACHE_SKILLS/06_seasonal_ratings.rds" ]; then
+            echo "FATAL: No seasonal ratings cache found. Run upload_prediction_caches.R first."
+            exit 1
+          fi
+
+      # R092: team skill features (step 02b) read this table for training rows
+      # and for upcoming fixtures. Own R process, as in psr-weekly-snapshot.yml:
+      # freed memory is not returned to the OS, so sharing a process with the
+      # pipeline would carry its peak into step 02b. ~6 min.
+      - name: Rebuild match stats (skills step 01)
+        env:
+          PANNADATA_DIR: ${{ runner.temp }}/pannadata
+        run: |
+          cat > /tmp/run_step01.R << 'EOF'
+          pannadata_path <- Sys.getenv("PANNADATA_DIR", "../pannadata/data")
+          opta_path <- file.path(pannadata_path, "opta")
+          devtools::load_all()
+          pannadata_dir(pannadata_path)
+          opta_data_dir(opta_path)
+          run_steps <- list(
+            step_01_compute_match_stats    = TRUE,
+            step_02_estimate_skills        = FALSE,
+            step_02b_optimize_params       = FALSE,
+            step_03_skill_spm              = FALSE,
+            step_04_skill_xrapm            = FALSE,
+            step_05_skill_panna_ratings    = FALSE,
+            step_06_seasonal_skill_ratings = FALSE,
+            step_07_train_psr_model        = FALSE,
+            step_08_export_skills          = FALSE,
+            step_08b_export_psr_weekly     = FALSE,
+            step_09_career_panna           = FALSE
+          )
+          source("data-raw/estimated-skills/run_skills_pipeline.R")
+          EOF
+          Rscript /tmp/run_step01.R
+          test -f data-raw/cache-skills/01_match_stats.rds || { echo "FATAL: step 01 wrote no 01_match_stats.rds"; exit 1; }
+
+      - name: EPR gate inputs (game logs, team strength, the two EPR arms, relative pannadata path)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # the two arms, from the epr-weekly-snapshot branch builds
+          gh run download 39230927287 --repo peteowen1/panna -n epr-weekly-branch-run -D /tmp/arm_control
+          gh run download 39230907202 --repo peteowen1/panna -n epr-weekly-branch-run -D /tmp/arm_role8
+          mv /tmp/arm_control/epr_weekly_branch_run.parquet /tmp/epr_control.parquet
+          mv /tmp/arm_role8/epr_weekly_branch_run.parquet /tmp/epr_role8.parquet
+          ls -la /tmp/epr_control.parquet /tmp/epr_role8.parquet
+          # build_epr_weekly.R and the gate use ../pannadata/data/opta; point it at the runner copy.
+          mkdir -p ../pannadata/data data-raw/cache-predictions-opta data-raw/cache-opta
+          ln -sfn "${{ runner.temp }}/pannadata/opta" ../pannadata/data/opta
+          gh release download blog-latest --repo peteowen1/pannadata --pattern "game_logs_*.parquet" --dir data-raw/cache-predictions-opta
+          echo "game logs: $(ls data-raw/cache-predictions-opta/game_logs_*.parquet | wc -l)"
+          gh release download predictions-cache --repo peteowen1/pannadata --pattern team_season_strength.parquet --dir data-raw/cache-opta --clobber
+          test -f ../pannadata/data/opta/opta_epr_weekly.parquet || gh release download opta-latest --repo peteowen1/pannadata --pattern opta_epr_weekly.parquet --dir ../pannadata/data/opta
+          ls -la ../pannadata/data/opta/opta_lineups.parquet ../pannadata/data/opta/opta_epr_weekly.parquet data-raw/cache-opta/team_season_strength.parquet
+      - name: Run predictions pipeline
+        env:
+          PANNADATA_DIR: ${{ runner.temp }}/pannadata
+          GH_TOKEN: ${{ github.token }}
+          INPUT_FORCE_REBUILD: ${{ inputs.force_rebuild }}
+          INPUT_FORCE_REBUILD_FROM: ${{ inputs.force_rebuild_from }}
+          # GHA has no local xmetrics_bymatch/ tree (panna#126) — 10b's PSV
+          # enrich calls read the consolidated opta_xmetrics_bymatch.parquet
+          # from opta-latest instead.
+          XMETRICS_SOURCE: remote
+        run: |
+          Rscript -e "
+            # Point panna at downloaded Opta data
+            pannadata_path <- Sys.getenv('PANNADATA_DIR', '../pannadata/data')
+            opta_path <- file.path(pannadata_path, 'opta')
+            cat('PANNADATA_DIR:', pannadata_path, '\n')
+            cat('Opta data dir:', opta_path, '\n')
+            cat('Files:', length(list.files(opta_path)), '\n')
+
+            devtools::load_all()
+            pannadata_dir(pannadata_path)
+            opta_data_dir(opta_path)
+
+            # Config overrides (from env vars, not interpolated inputs)
+            force_rebuild_input <- Sys.getenv('INPUT_FORCE_REBUILD', 'false')
+            force_rebuild_from_input <- Sys.getenv('INPUT_FORCE_REBUILD_FROM', '')
+
+            if (isTRUE(as.logical(force_rebuild_input))) {
+              force_rebuild_from <- 1L
+            } else if (nzchar(force_rebuild_from_input) && !is.na(as.numeric(force_rebuild_from_input))) {
+              force_rebuild_from <- as.integer(force_rebuild_from_input)
+            } else {
+              force_rebuild_from <- NULL
+            }
+
+            use_skill_ratings <- TRUE
+
+            run_steps <- list(
+              step_01_build_fixture_results  = TRUE,
+              # Rebuild WC2026 announced-squads expected minutes from the
+              # Wikipedia squads page + fresh lineups each run. Before
+              # 2026-06-11 the parquet was local-only, so cloud runs
+              # silently fell back to last-played-XI weighting for WC2026
+              # team ratings. Falls back to the predictions-cache copy if
+              # the wiki scrape fails.
+              step_01b_refresh_wc2026_squads = TRUE,
+              step_02_player_ratings_to_team = FALSE,
+              step_02b_team_skill_features   = FALSE,
+              step_03_team_rolling_features  = FALSE,
+              step_04_build_match_dataset    = FALSE,
+              step_05_fit_goals_model        = FALSE,
+              step_06_fit_outcome_model      = FALSE,
+              step_07_predict_fixtures       = FALSE,
+              # Archive a dated predictions.parquet snapshot to the
+              # predictions-history release (panna#178) so a future as-at
+              # replay of a club league/cup can use the ACTUAL predictions
+              # that existed on a given historical date, same pattern as
+              # 12b/12c below for WC2026 minutes/team-strength.
+              step_07b_snapshot_predictions  = FALSE,
+              step_08_evaluate_model         = FALSE,
+              step_09_upload_predictions     = FALSE,
+              step_10_export_blog_data       = FALSE,
+              # Per-match value metrics (EPV+WPA+PSV) and per-action equity.
+              # The blog's Value tab + possession-chains visualizations consume
+              # these. Defaults in run_predictions_opta.R are FALSE (manual
+              # backfill only); enabling here makes them weekly artifacts so
+              # game_logs.parquet / action_equity.parquet on blog-latest don't
+              # drift behind the box-score data. See panna#71.
+              step_10b_export_game_logs      = FALSE,
+              step_10c_export_equity         = FALSE,
+              # Per-player penalty-shootout WPA -> shootout_wpa.parquet on
+              # blog-latest (pannadata build-blog-data passes it to R2 as
+              # football/shootout-wpa.parquet). Cheap (thin data) and additive;
+              # absent for seasons with no shootouts in blog comps.
+              # Publish the per-fixture strength features the models consume.
+              # 04_match_dataset.rds is built on the runner and discarded, so
+              # without this there is no way to ask what the model saw for a
+              # given fixture outside a live run -- panna#190 and panna#192 both
+              # stalled on exactly that. Small, additive, no existing consumer.
+              step_04b_export_match_features = FALSE,
+              step_10d_export_shootout_wpa   = FALSE,
+              # WC2026 simulation + blog export. Refresh weekly with the rest
+              # of the predictions chain so the WC tab tracks the latest match
+              # outcomes (esp. during the qualifier finals window). Disable in
+              # run_predictions_opta.R defaults so dev runs stay snappy; the
+              # workflow opts in here as the production schedule.
+              #
+              # These four stay TRUE across tournaments. run_predictions_opta.R
+              # gates them at runtime on .wc2026_fixtures_remaining() and turns
+              # them off by itself once the final is played, saying so in the
+              # log -- so a log line reading DISABLING steps 11/12/12b/12c
+              # under a TRUE here is the gate working, not drift. They are also
+              # non-fatal now: before 2026-08-21 a step-11 abort set
+              # pipeline_failed and step 13 published nothing for eight days.
+              step_11_simulate_wc2026        = FALSE,
+              step_12_export_wc2026_blog     = FALSE,
+              # Archive a dated minutes snapshot + diff to the
+              # wc2026-minutes-history release so group-stage drift is tracked
+              # (blog-latest clobbers, so it retains no history of its own).
+              step_12b_snapshot_wc_minutes   = FALSE,
+              # Same pattern for team strength: dated ELO + champion-odds
+              # snapshots to wc2026-strength-history so tournament rating drift
+              # is tracked going forward (no replay needed next time).
+              step_12c_snapshot_wc_strength  = FALSE,
+              # Tiento for every domestic-league + cup-only club (panna#193),
+              # not just the WC2026 48 -- the blog's Team Ratings page reads
+              # team_strength.parquet for the headline rating everywhere.
+              # Non-fatal like 11/12/12b/12c, for the same reason (a side
+              # export failing must never hold back predictions-latest).
+              step_12d_export_domestic_team_strength = FALSE,
+              # Full-model pairwise knockout lookup for UCL/UEL/UECL (club-cup
+              # sibling of step 11's WC knockout lookup) -- the blog's cup
+              # knockout-phase Sim tab reads this instead of a client-side
+              # rating-difference approximation. Non-fatal like 11/12/12b/12c/
+              # 12d, and gated internally on team-state freshness (see
+              # 12e_export_cup_pairwise.R's STALE_DAYS_ABORT).
+              step_12e_export_cup_pairwise  = FALSE,
+              # Single gated publish of predictions-latest + blog-latest
+              # (ECOSYSTEM-FIX-PLAN.md PA5/H-TORN) -- steps 09/10/10b/10c/10d/12
+              # above now write LOCAL outputs only; this is the one place
+              # either tag actually gets uploaded, manifest-last per tag.
+              step_13_publish_release_data  = FALSE
+            )
+
+            source('data-raw/match-predictions-opta/run_predictions_opta.R', chdir = FALSE)
+            if (isTRUE(pipeline_failed)) quit(status = 1)
+            cat('=== step 01 done; starting the EPR source gate ===\n')
+            source('data-raw/match-predictions-opta/epr_centring_gate.R', local = FALSE)
+          "
+
+      # A branch run publishes nothing (R026), so keep its predictions as a run
+      # artifact: that is how a change is compared with the live
+      # predictions-latest copy before it merges.
+      - name: Keep predictions as an artifact (branch runs)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: epr-centring-gate
+          path: |
+            data-raw/cache/epr-centring-gate/epr_centring_gate.csv
+            data-raw/cache/epr-centring-gate/08_evaluation_*.rds
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Pipeline summary
+        if: always()
+        run: |
+          echo "## Predictions Pipeline" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Date:** $(date +'%Y-%m-%d %H:%M UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "**Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          CACHE_DIR="data-raw/cache-predictions-opta"
+
+          # Steps 11/12/12b/12c (World Cup) are non-fatal by design -- see
+          # run_pred_step_optional() in run_predictions_opta.R. Non-fatal is
+          # not the same as fine: the job stays green, so without this the
+          # only trace of a WC step failing is a line in the raw log, and a
+          # recurring one would go unnoticed for weeks. Surface it as a
+          # warning annotation on the run page instead.
+          NONFATAL="$CACHE_DIR/.nonfatal_step_failures"
+          if [ -s "$NONFATAL" ]; then
+            FAILED=$(awk '{printf "%s%s", sep, $0; sep=", "} END {print ""}' "$NONFATAL")
+            echo "::warning title=Non-fatal pipeline step failed::$FAILED failed. The run is green because World Cup steps do not gate the publish, but this needs looking at."
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "> [!WARNING]" >> $GITHUB_STEP_SUMMARY
+            echo "> **Non-fatal step failure:** $FAILED" >> $GITHUB_STEP_SUMMARY
+            echo "> The publish went ahead (World Cup steps do not gate it), but check the log." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ -f "$CACHE_DIR/predictions.parquet" ]; then
+            if [ "$PANNA_PUBLISH_DISABLED" = "true" ]; then
+              echo "**Predictions / blog data:** NOT uploaded (publishing disabled on this ref)" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "**Predictions:** published to \`predictions-latest\` release" >> $GITHUB_STEP_SUMMARY
+              echo "**Blog data:** published to \`blog-latest\` release" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "**Status:** Pipeline FAILED (no predictions file found)" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+      - name: Trigger blog data build
+        if: success() && env.PANNA_PUBLISH_DISABLED != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api repos/peteowen1/pannadata/dispatches \
+            -f event_type=predictions-complete
+          echo "Triggered build-blog-data.yml in pannadata"
+
+      # Pete 2026-10-12 (review R073): a league that failed inside a publishing
+      # step is published AROUND (the rest ships and the blog updates above),
+      # but the run must not look healthy. Runs last, so it cannot block the
+      # publish or the blog dispatch.
+      - name: Fail if a league was dropped from the publish
+        if: success()
+        run: |
+          MARKER="data-raw/cache-predictions-opta/.partial_publish_failures"
+          if [ -s "$MARKER" ]; then
+            while IFS= read -r line; do echo "::error title=League dropped from publish::$line"; done < "$MARKER"
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "> [!CAUTION]" >> $GITHUB_STEP_SUMMARY
+            echo "> **Published without:** $(paste -sd ';' "$MARKER")" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+      # Weekly PSR snapshot (step 8b) was previously inline here. It was moved
+      # to .github/workflows/psr-weekly-snapshot.yml because runner-level OOM
+      # during the export reddened this job despite the predictions themselves
+      # succeeding. The snapshot runs Wednesday 10am UTC on its own runner.
