@@ -238,3 +238,15 @@ test_that("position_season uses the season end year and falls back to career", {
   expect_identical(position_season(sh), position_season(season_fixture())[c(6, 3, 1, 5, 2, 4)])
   expect_error(position_season(season_fixture()[, !"season"]), "season")
 })
+
+test_that("season votes are per player, and missing player ids abort", {
+  d <- data.table::data.table(player_id = c("a", "b", "a", "b"), season = "2020-2021",
+                              minutes = 90, match_role_full = c("ST", "GK", "ST", "GK"),
+                              match_role_source = "opta")
+  expect_identical(position_season(d)$season_role_full, c("ST", "GK", "ST", "GK"))
+  d$player_id[2] <- NA
+  expect_error(position_season(d), "player_id")
+  expect_error(position_career(d), "player_id")
+  d$match_date <- as.Date("2020-09-01")
+  expect_error(position_asof(d), "player_id")
+})

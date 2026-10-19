@@ -379,6 +379,7 @@ position_asof <- function(player_match, window_days = 365L) {
     m = suppressWarnings(as.numeric(player_match$minutes)),
     full = as.character(player_match$match_role_full),
     src = as.character(player_match$match_role_source))
+  .abort_na_player_id(d$player_id)
   if (anyNA(d$md)) {
     cli::cli_abort("{.arg player_match} has {sum(is.na(d$md))} row{?s} with no {.field match_date}.")
   }
@@ -468,11 +469,20 @@ position_asof <- function(player_match, window_days = 365L) {
     m = suppressWarnings(as.numeric(player_match$minutes)),
     full = as.character(player_match$match_role_full),
     src = as.character(player_match$match_role_source))
+  .abort_na_player_id(d$player_id)
   m16 <- POSITION_ROLE_MAP[, .(role16 = role16[1L]), by = role_full]
   d[, r16 := m16$role16[match(full, m16$role_full)]]
   d[, `:=`(r8 = data.table::fifelse(is.na(r16), NA_character_, .role16_to_role8(r16)),
            r4 = data.table::fifelse(is.na(r16), NA_character_, .role16_to_broad(r16)))]
   d
+}
+
+# Rows with no player id would be pooled as one "player" and vote for each other.
+.abort_na_player_id <- function(player_id) {
+  bad <- is.na(player_id) | !nzchar(player_id)
+  if (any(bad)) {
+    cli::cli_abort("{sum(bad)} row{?s} of {.arg player_match} ha{?s/ve} no {.field player_id}.")
+  }
 }
 
 #' Each player's position over his whole career (the `career_` level)
