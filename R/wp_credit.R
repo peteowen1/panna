@@ -201,13 +201,8 @@ aggregate_player_game_wpa <- function(spadl_with_wpa, lineups = NULL,
 
   # --- Position centering ---
   if (isTRUE(position_center) && "position" %in% names(result)) {
-    result[, pos_group := data.table::fcase(
-      grepl("GK|Goalkeeper", position, ignore.case = TRUE), "GK",
-      grepl("DEF|Back|CB|LB|RB|WB", position, ignore.case = TRUE), "DEF",
-      grepl("MID|CM|DM|AM|Wing", position, ignore.case = TRUE), "MID",
-      grepl("FWD|Forward|Striker|CF|ST", position, ignore.case = TRUE), "FWD",
-      default = "MID"
-    )]
+    result[, pos_group := .position_role4_any(
+      position, if ("position_side" %in% names(result)) position_side else NULL)]
     result[, wpa_adj := wpa_total - mean(wpa_total, na.rm = TRUE),
             by = pos_group]
     result[, pos_group := NULL]

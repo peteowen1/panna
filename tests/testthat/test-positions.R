@@ -250,3 +250,10 @@ test_that("season votes are per player, and missing player ids abort", {
   d$match_date <- as.Date("2020-09-01")
   expect_error(position_asof(d), "player_id")
 })
+
+test_that(".position_role4_any reads role4 codes, labels with side, and bare labels", {
+  f <- panna:::.position_role4_any
+  expect_identical(f(c("MID", "Defensive Midfielder", "Substitute", "Striker", "Attacking Midfielder", "", NA)),
+                   c("MID", "MID", NA, "FWD", "MID", NA, NA))
+  expect_identical(f(c("Attacking Midfielder", "Defender"), c("Left", "Centre")), c("FWD", "DEF"))
+})

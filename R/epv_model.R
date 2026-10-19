@@ -1683,14 +1683,10 @@ aggregate_player_game_epv <- function(spadl_with_epv, lineups = NULL,
 
   # --- Position centering ---
   if (isTRUE(position_center) && "position" %in% names(player_epv)) {
-    # Map to broad groups
-    player_epv[, pos_group := data.table::fcase(
-      grepl("GK|Goalkeeper", position, ignore.case = TRUE), "GK",
-      grepl("DEF|Back|CB|LB|RB|WB", position, ignore.case = TRUE), "DEF",
-      grepl("MID|CM|DM|AM|Wing", position, ignore.case = TRUE), "MID",
-      grepl("FWD|Forward|Striker|CF|ST", position, ignore.case = TRUE), "FWD",
-      default = "MID"
-    )]
+    # GK / DEF / MID / FWD through the shared position map; unknown rows
+    # (bench, blank) are centred together as their own group
+    player_epv[, pos_group := .position_role4_any(
+      position, if ("position_side" %in% names(player_epv)) position_side else NULL)]
     adj_cols <- c("epv_total", "epv_offensive", "epv_defensive")
     for (col in adj_cols) {
       adj_name <- sub("^epv_", "epv_", paste0(col, "_adj"))
