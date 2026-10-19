@@ -20,7 +20,8 @@ subset of matches.}
 }
 \value{
 A data.table with \code{match_id}, \code{team_id}, \code{player_id},
-\code{match_is_starter}, \code{match_formation}, \code{match_slot}, \code{match_role_full},
+\code{match_is_starter}, \code{match_formation}, \code{match_slot},
+\code{match_slot_role_full}, \code{match_role_full},
 \code{match_role16}, \code{match_role8}, \code{match_role4}, \code{match_role_source}, in the
 row order of \code{lineups}.
 }
@@ -31,7 +32,13 @@ grouping and where it came from:
 \details{
 \itemize{
 \item \code{opta}: a starter with an Opta position and side.
-\item \code{slot}: a substitute, or a starter with a blank label, who took a slot
+\item \code{opta_sub}: a substitute, from the position Opta records on his sub-on
+event (qualifiers 292 and 293; on 96-100\% of sub-ons from 2015).
+Measured 2026-10-19 on 101,484 subs, this matches where he touched the
+ball as often as his usual position does (39.3\% vs 39.6\%) and more often
+than his slot (31.8\%): the slot is the departing player's.
+\item \code{slot}: a substitute with no Opta sub position, or a starter with a blank
+label, who took a slot
 whose kick-off holder in this match had a label, with the formation
 unchanged since kick-off. He gets that holder's position. Opta records the
 slot on every sub-on event (qualifier 145).
@@ -45,7 +52,8 @@ needed.
 }
 
 A player moved by a later formation change keeps the position he started
-the match (or came on) in.
+the match (or came on) in. \code{match_slot_role_full} keeps the position the
+slot implies (for a sub, the departing player's), whatever the source.
 }
 \seealso{
 Other positions: 

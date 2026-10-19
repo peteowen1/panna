@@ -37,7 +37,7 @@ fixture_events <- function() {
     second = c(0, 0, 0, 0, 10, 10),
     qualifier_json = c(ko_json, q(`145` = "2", `44` = "Defender"),
                        q(`30` = "p1, p2", `131` = "1, 2", `130` = "2"),
-                       q(`145` = "7", `44` = "Midfielder"),
+                       q(`145` = "7", `44` = "Midfielder", `292` = "9", `293` = "3"),
                        q(`30` = "p1, p2", `131` = "1, 2", `130` = "3"),
                        q(`145` = "4", `44` = "Defender")))
 }
@@ -74,10 +74,13 @@ test_that("position_match gives every route its source and position", {
   expect_identical(get("s1", "match_role_full"), "RB")
   expect_identical(get("s1", "match_role8"), "FB")
   expect_identical(get("s1", "match_role_source"), "slot")
+  # Opta's own sub position wins over the slot; the slot's position is kept
+  expect_identical(get("s2", "match_role_full"), "ST")
+  expect_identical(get("s2", "match_role_source"), "opta_sub")
   # after a formation change the slot means something else: use the table
   expect_identical(get("s2", "match_formation"), 2L)
-  expect_identical(get("s2", "match_role_full"), "RM")
-  expect_identical(get("s2", "match_role_source"), "slot_table")
+  expect_identical(get("s2", "match_slot_role_full"), "RM")
+  expect_identical(get("s1", "match_slot_role_full"), "RB")
   # a change logged in the same second as the sub is the shape he joined
   expect_identical(get("s4", "match_formation"), 3L)
   expect_identical(get("s4", "match_role_full"), "LCB")
@@ -93,6 +96,14 @@ test_that("position_match gives every route its source and position", {
   expect_identical(get("q2", "match_role_source"), "none")
   expect_identical(get("q3", "match_role_source"), "none")
   expect_true(is.na(get("q3", "match_role8")))
+})
+
+test_that("Opta sub qualifiers decode to positions", {
+  sp <- panna:::.sub_position_from_qualifiers(c("3", "3", "4", "4", "9", "9", "6", "7", "8", "10", "1", "0", NA),
+                                              c("1", "2", "4", "3", "1", "3", "2", "3", "1", "3", "3", "0", NA))
+  r <- position_roles(sp$position, sp$position_side)
+  expect_identical(r$role_full, c("LB", "RB", "LCB", "CB", "LST", "ST", "RW", "CM", "LW", "AM", "GK", NA, NA))
+  expect_identical(r$role8, c("FB", "FB", "CB", "CB", "ST", "ST", "W", "CM", "W", "AM", "GK", NA, NA))
 })
 
 test_that("a sub never inherits from a later formation change", {

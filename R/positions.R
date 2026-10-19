@@ -170,13 +170,50 @@ position_slot_table <- function(lineups, events) {
     by = .(formation, slot)][]
 }
 
+# Opta's own position for a substitute, from his sub-on event (type 19):
+# qualifier 292 is a detailed position, 293 its side. Decoded 2026-10-19 from
+# 101,484 subs in five leagues (no Opta documentation found): 292 1 keeper,
+# 3 full-back, 4 centre-back, 5 holding midfielder, 6 attacking midfielder,
+# 7 central midfielder, 8 wide forward, 9 striker, 10 second striker, 0
+# unknown; 293 1 Left, 2 Right, 3 Centre, 4 Left/Centre, 5 Centre/Right, 0
+# unknown. Returned as an Opta position and side so position_roles() maps it
+# like any starter's label. Strikers' 1 and 2 are the left and right of a
+# pair (the replaced starter is "Striker Left/Centre" 52% of the time), and a
+# wide forward touches the ball where wingers do, so it maps as one. A second
+# striker maps to attacking midfielder, Opta's code being separate from 9.
+.sub_position_from_qualifiers <- function(q292, q293) {
+  side <- c("1" = "Left", "2" = "Right", "3" = "Centre",
+            "4" = "Left/Centre", "5" = "Centre/Right")[as.character(q293)]
+  pos <- c("1" = "Goalkeeper", "3" = "Defender", "4" = "Defender",
+           "5" = "Defensive Midfielder", "6" = "Attacking Midfielder",
+           "7" = "Midfielder", "8" = "Attacking Midfielder", "9" = "Striker",
+           "10" = "Attacking Midfielder")[as.character(q292)]
+  pos <- unname(pos); side <- unname(side)
+  side[pos %in% "Goalkeeper"] <- "Centre"
+  side[pos %in% "Attacking Midfielder" & q292 %in% "10"] <- "Centre"
+  # a full-back is wide and a centre-back central, whatever the side code says
+  side[q292 %in% "3" & side %in% c("Left/Centre", "Centre")] <- "Left"
+  side[q292 %in% "3" & side %in% "Centre/Right"] <- "Right"
+  side[q292 %in% "4" & side %in% "Left"] <- "Left/Centre"
+  side[q292 %in% "4" & side %in% "Right"] <- "Centre/Right"
+  side[q292 %in% "9" & side %in% "Left"] <- "Left/Centre"
+  side[q292 %in% "9" & side %in% "Right"] <- "Centre/Right"
+  list(position = pos, position_side = side)
+}
+
 #' Each player's position in each match (the `match_` level)
 #'
 #' One row per lineup row, with the position he played in that match in every
 #' grouping and where it came from:
 #'
 #' - `opta`: a starter with an Opta position and side.
-#' - `slot`: a substitute, or a starter with a blank label, who took a slot
+#' - `opta_sub`: a substitute, from the position Opta records on his sub-on
+#'   event (qualifiers 292 and 293; on 96-100% of sub-ons from 2015).
+#'   Measured 2026-10-19 on 101,484 subs, this matches where he touched the
+#'   ball as often as his usual position does (39.3% vs 39.6%) and more often
+#'   than his slot (31.8%): the slot is the departing player's.
+#' - `slot`: a substitute with no Opta sub position, or a starter with a blank
+#'   label, who took a slot
 #'   whose kick-off holder in this match had a label, with the formation
 #'   unchanged since kick-off. He gets that holder's position. Opta records the
 #'   slot on every sub-on event (qualifier 145).
@@ -189,7 +226,8 @@ position_slot_table <- function(lineups, events) {
 #' - `unused`: an unused substitute. Every role column is `NA`.
 #'
 #' A player moved by a later formation change keeps the position he started
-#' the match (or came on) in.
+#' the match (or came on) in. `match_slot_role_full` keeps the position the
+#' slot implies (for a sub, the departing player's), whatever the source.
 #'
 #' @param lineups Lineup rows with `match_id`, `team_id`, `player_id`,
 #'   `position`, `position_side`, `is_starter`, `minutes_played`.
@@ -198,7 +236,8 @@ position_slot_table <- function(lineups, events) {
 #'   from `lineups` and `events`. Pass a fixed table when scoring a small
 #'   subset of matches.
 #' @return A data.table with `match_id`, `team_id`, `player_id`,
-#'   `match_is_starter`, `match_formation`, `match_slot`, `match_role_full`,
+#'   `match_is_starter`, `match_formation`, `match_slot`,
+#'   `match_slot_role_full`, `match_role_full`,
 #'   `match_role16`, `match_role8`, `match_role4`, `match_role_source`, in the
 #'   row order of `lineups`.
 #' @family positions
@@ -232,8 +271,12 @@ position_match <- function(lineups, events, slot_table = NULL) {
 
   # Sub-on events: his slot (qualifier 145) and the formation in effect then.
   on <- ev[type_id == 19L, .(match_id, team_id, player_id, on_t = state_t,
-                             sub_slot = suppressWarnings(as.integer(.opta_qualifier(qualifier_json, "145"))))]
+                             sub_slot = suppressWarnings(as.integer(.opta_qualifier(qualifier_json, "145"))),
+                             q292 = .opta_qualifier(qualifier_json, "292"),
+                             q293 = .opta_qualifier(qualifier_json, "293"))]
   on <- unique(on, by = c("match_id", "player_id"))
+  sp <- .sub_position_from_qualifiers(on$q292, on$q293)
+  on[, sub_full := position_roles(sp$position, sp$position_side)$role_full]
   st <- fs$states[!is.na(formation), .(match_id, team_id, on_t = state_t, formation)]
   data.table::setkey(st, match_id, team_id, on_t)
   # The shape in effect when he came on: the latest state at or before then
@@ -244,10 +287,10 @@ position_match <- function(lineups, events, slot_table = NULL) {
 
   lu[, `:=`(slot = NA_integer_, formation = NA_integer_, ko_f = NA_integer_,
             sub_slot = NA_integer_, sub_formation = NA_integer_, came_on = FALSE,
-            holder_full = NA_character_, tbl_full = NA_character_)]
+            holder_full = NA_character_, tbl_full = NA_character_, sub_full = NA_character_)]
   lu[ko_form, ko_f := i.ko_formation, on = c("match_id", "team_id")]
   lu[ko_slot, slot := i.slot, on = c("match_id", "team_id", "player_id")]
-  lu[on, `:=`(sub_slot = i.sub_slot, sub_formation = i.sub_formation, came_on = TRUE),
+  lu[on, `:=`(sub_slot = i.sub_slot, sub_formation = i.sub_formation, sub_full = i.sub_full, came_on = TRUE),
      on = c("match_id", "team_id", "player_id")]
   lu[match_is_starter == TRUE, formation := ko_f]
   lu[match_is_starter == FALSE, `:=`(slot = sub_slot, formation = sub_formation)]
@@ -259,14 +302,20 @@ position_match <- function(lineups, events, slot_table = NULL) {
   lu[, match_role_source := data.table::fcase(
     !played, "unused",
     match_is_starter & !is.na(own_full), "opta",
+    !match_is_starter & !is.na(sub_full), "opta_sub",
     !is.na(slot) & same_shape & !is.na(holder_full), "slot",
     !is.na(slot) & !is.na(tbl_full), "slot_table",
     default = "none")]
   lu[, match_role_full := data.table::fcase(
     match_role_source == "opta", own_full,
+    match_role_source == "opta_sub", sub_full,
     match_role_source == "slot", holder_full,
     match_role_source == "slot_table", tbl_full,
     default = NA_character_)]
+
+  lu[, match_slot_role_full := data.table::fifelse(
+    !is.na(slot) & same_shape & !is.na(holder_full), holder_full, tbl_full)]
+  lu[is.na(slot), match_slot_role_full := NA_character_]
 
   m <- POSITION_ROLE_MAP[, .(role16 = role16[1L]), by = role_full]
   lu[, match_role16 := NA_character_]
@@ -275,6 +324,6 @@ position_match <- function(lineups, events, slot_table = NULL) {
   lu[, match_role4 := data.table::fifelse(is.na(match_role16), NA_character_, .role16_to_broad(match_role16))]
   data.table::setorder(lu, .i)
   lu[, .(match_id, team_id, player_id, match_is_starter,
-         match_formation = formation, match_slot = slot,
+         match_formation = formation, match_slot = slot, match_slot_role_full,
          match_role_full, match_role16, match_role8, match_role4, match_role_source)]
 }
