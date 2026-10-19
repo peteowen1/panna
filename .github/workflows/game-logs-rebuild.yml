@@ -191,8 +191,35 @@ jobs:
                       game_log_seasons, nrow(gl), length(unique(gl$match_id)), length(unique(gl$league)),
                       as.numeric(Sys.time() - t0, units = "mins"), epv_position_grouping))
           EOF
+          set -o pipefail
           Rscript /tmp/run_10b.R 2>&1 | tee /tmp/10b.log
           grep -E "^GAME_LOGS|centred by player-match role8|EPV adjustments skipped" /tmp/10b.log >> "$GITHUB_STEP_SUMMARY" || true
+
+      # 10b tolerates a failing league (it warns and writes the rest), which is
+      # right for the weekly publish and wrong for a gate: a missing league or
+      # missing epv_*_adj columns would skew the EPR comparison while the job
+      # and artifact look complete. Fail on every such signal instead.
+      - name: Refuse a partial season
+        env:
+          SEASON: ${{ matrix.season }}
+          EPV_POSITION_GROUPING: ${{ inputs.epv_position_grouping || 'role8' }}
+        run: |
+          bad=0
+          marker=data-raw/cache-predictions-opta/.partial_publish_failures
+          if [ -s "$marker" ]; then
+            echo "::error title=Partial season $SEASON::leagues failed: $(paste -sd ' ' "$marker")"; bad=1
+          fi
+          if grep -nE "EPV adjustments skipped|SEASON .* ABORTED|join FAILED|INCOMPLETE" /tmp/10b.log; then
+            echo "::error title=Season $SEASON incomplete::10b logged a skipped or failed stage (lines above)"; bad=1
+          fi
+          if [ "$EPV_POSITION_GROUPING" = "role8" ]; then
+            # every league must place at least 90% of its player-game rows
+            low=$(grep -oE "centred by player-match role8: [0-9.]+% of [0-9]+ rows" /tmp/10b.log | awk '{gsub("%","",$5); if ($5 + 0 < 90) print}')
+            n=$(grep -c "centred by player-match role8" /tmp/10b.log || true)
+            if [ -n "$low" ]; then echo "::error title=Season $SEASON role8 coverage::$low"; bad=1; fi
+            if [ "$n" -eq 0 ]; then echo "::error title=Season $SEASON::role8 centring never ran"; bad=1; fi
+          fi
+          exit $bad
 
       - name: Keep the game logs as an artifact
         uses: actions/upload-artifact@v7
