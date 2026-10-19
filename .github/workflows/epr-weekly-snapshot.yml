@@ -231,12 +231,18 @@ jobs:
 
       # Keep the build so two dry runs (a rebuild and its control) can be
       # compared with each other, not only with the published file.
+      # upload-artifact refuses a path outside the workspace (../pannadata), so
+      # copy the build in first.
+      - name: Stage the EPR build (branch runs)
+        if: env.PANNA_PUBLISH_DISABLED == 'true'
+        run: cp ../pannadata/data/opta/opta_epr_weekly.parquet epr_weekly_branch_run.parquet
+
       - name: Keep the EPR build as an artifact (branch runs)
         if: env.PANNA_PUBLISH_DISABLED == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: epr-weekly-branch-run
-          path: ../pannadata/data/opta/opta_epr_weekly.parquet
+          path: epr_weekly_branch_run.parquet
           if-no-files-found: warn
           retention-days: 14
 
