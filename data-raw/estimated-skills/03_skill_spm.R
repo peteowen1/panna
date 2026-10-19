@@ -463,10 +463,12 @@ if (build_skill_spm_asof) {
   asof_lambda_formula <- if (exists("asof_lambda_formula")) asof_lambda_formula else
     function(n) 16.67 * n^(-0.58)
   # Decay on each cutoff year's pooled RAPM target, as 04c_rapm_decayed.R does for
-  # the live prior (panna#257). NULL (no decay) stays the default until the
-  # predictions backtest in pannaverse docs/plans/DECAY-PORT-ASOF-PRIOR.md passes;
-  # 365 is the value under test. Plain exists(): a driver global must reach it.
-  asof_target_halflife_days <- if (exists("asof_target_halflife_days")) asof_target_halflife_days else NULL
+  # the live prior (panna#257). On by default at 365 days since 2026-10-19 (Pete):
+  # the predictions backtest in pannaverse docs/plans/DECAY-PORT-ASOF-PRIOR.md
+  # was a measured null (log loss +0.00096, noise floor +0.00099), and it fixes
+  # past-peak players in the snapshots (Mueller 2nd -> 9th in Oct 2026). Set NULL
+  # for the old undecayed target. Plain exists(): a driver global must reach it.
+  asof_target_halflife_days <- if (exists("asof_target_halflife_days")) asof_target_halflife_days else 365
   cat(sprintf("  target decay: %s\n", if (is.null(asof_target_halflife_days)) "none" else
     sprintf("half-life %s days", asof_target_halflife_days)))
 
