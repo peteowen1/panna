@@ -121,10 +121,10 @@ jobs:
               # A later run replaces an earlier one season by season: drop every
               # part already held for a season this run carries, so a season
               # re-run in quarters never mixes with its earlier halves.
-              for sz in $(find /tmp/gl_art -name 'game_logs_*__part*.parquet' -printf '%f\n' | sed -E 's/__part.*//' | sort -u); do
-                rm -f /tmp/gl_parts/"${sz}"__part*.parquet
+              for sz in $(find /tmp/gl_art -name 'game_logs_*__part*' -printf '%f\n' | sed -E 's/__part.*//' | sort -u); do
+                rm -f /tmp/gl_parts/"${sz}"__part*
               done
-              find /tmp/gl_art -name 'game_logs_*__part*.parquet' -exec mv -f {} /tmp/gl_parts/ \;
+              find /tmp/gl_art \( -name 'game_logs_*__part*.parquet' -o -name 'game_logs_*__part*.empty' \) -exec mv -f {} /tmp/gl_parts/ \;
             done
             # The rebuild writes each season in two halves (by league): join them.
             cat > /tmp/join_parts.R <<'EOF'
@@ -132,6 +132,20 @@ jobs:
           fs <- list.files("/tmp/gl_parts", "^game_logs_.*__part[0-9]+(of[0-9]+)?[.]parquet$", full.names = TRUE)
           for (k in unique(sub("__part[0-9]+(of[0-9]+)?[.]parquet$", "", basename(fs)))) {
             p <- fs[startsWith(basename(fs), paste0(k, "__"))]
+            # Every part 1..N must have arrived, as data or as a .empty marker: a
+            # failed part uploads nothing, and joining what is left would pass the
+            # season count with half a season. Files named without "ofN" come from
+            # runs before the markers existed and cannot be checked.
+            all_k <- list.files("/tmp/gl_parts", paste0("^", k, "__part[0-9]+of[0-9]+[.](parquet|empty)$"))
+            if (length(all_k)) {
+              n <- unique(as.integer(sub(".*of([0-9]+)[.].*$", "\\1", all_k)))
+              got <- sort(unique(as.integer(sub(".*__part([0-9]+)of.*$", "\\1", all_k))))
+              if (length(n) != 1L || !identical(got, seq_len(n))) {
+                stop(sprintf("%s: parts %s present of %s", k, paste(got, collapse = ","), paste(n, collapse = "/")))
+              }
+            } else {
+              cat(sprintf("  %s: parts from a run before the completeness markers; not checked\n", k))
+            }
             d <- data.table::rbindlist(lapply(p, function(f) data.table::as.data.table(arrow::read_parquet(f))),
                                        use.names = TRUE, fill = TRUE)
             stopifnot(!anyDuplicated(d[, .(player_id, match_id)]))

@@ -238,7 +238,12 @@ jobs:
                            stop(e)
                          })
           if (!ok) {
-            cat(sprintf("EMPTY_PART %s part %d: no league in this half has data\n", game_log_seasons, part))
+            # "No seasons produced" also follows a part whose leagues all FAILED;
+            # the refuse step checks the failure marker and the log before it
+            # accepts an empty part. The .empty file tells the EPR join this
+            # part ran and had nothing, as opposed to never arriving.
+            cat(sprintf("EMPTY_PART %s part %d: no league in this part produced game logs\n", game_log_seasons, part))
+            writeLines("empty", file.path(cache_dir, sprintf("game_logs_%s__part%dof%d.empty", game_log_seasons, part, nparts)))
             quit(status = 0)
           }
           out <- file.path(cache_dir, sprintf("game_logs_%s.parquet", game_log_seasons))
@@ -265,7 +270,6 @@ jobs:
           SEASON: ${{ matrix.season }}
           EPV_POSITION_GROUPING: ${{ inputs.epv_position_grouping || (contains(github.ref, 'control') && 'start_label' || 'role8') }}
         run: |
-          if grep -q "^EMPTY_PART" /tmp/10b.log; then echo "empty half, nothing to check"; exit 0; fi
           bad=0
           marker=data-raw/cache-predictions-opta/.partial_publish_failures
           if [ -s "$marker" ]; then
@@ -290,6 +294,9 @@ jobs:
           if grep -nE "EPV adjustments skipped|SEASON .* ABORTED|join FAILED|INCOMPLETE" /tmp/10b.log; then
             echo "::error title=Season $SEASON incomplete::10b logged a skipped or failed stage (lines above)"; bad=1
           fi
+          # An empty part is accepted only after the two checks above: a part
+          # whose leagues all failed also ends in "No seasons produced".
+          if grep -q "^EMPTY_PART" /tmp/10b.log; then echo "empty part, no failures logged"; exit $bad; fi
           if [ "$EPV_POSITION_GROUPING" = "role8" ]; then
             # role8 must place at least as many of each league's player-game
             # rows as today's start_label centring could (2 points' slack).
@@ -308,7 +315,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: game-logs-${{ matrix.season }}-part${{ matrix.part }}of${{ needs.plan.outputs.nparts }}
-          path: data-raw/cache-predictions-opta/game_logs_${{ matrix.season }}__part${{ matrix.part }}of${{ needs.plan.outputs.nparts }}.parquet
-          # an empty half writes no file; a crash has already failed the build step
-          if-no-files-found: warn
+          path: data-raw/cache-predictions-opta/game_logs_${{ matrix.season }}__part${{ matrix.part }}of${{ needs.plan.outputs.nparts }}.*
+          # every part that passes writes a .parquet or a .empty
+          if-no-files-found: error
           retention-days: 14
