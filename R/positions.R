@@ -328,6 +328,29 @@ position_match <- function(lineups, events, slot_table = NULL) {
          match_role_full, match_role16, match_role8, match_role4, match_role_source)]
 }
 
+# role4 (GK / DEF / MID / FWD) from whatever a caller's `position` column holds:
+# role4 codes pass through; an Opta label with its side goes through the shared
+# map; a bare Opta label (no side column) takes the side-free reading, where an
+# Attacking Midfielder is MID because his side is unknown. "Substitute", blank
+# and anything unrecognised give NA, never a guessed group (the old regexes
+# here sent "Defensive Midfielder" to DEF and "Substitute" to FWD).
+.position_role4_any <- function(position, position_side = NULL) {
+  p <- as.character(position)
+  out <- rep(NA_character_, length(p))
+  is4 <- p %in% c("GK", "DEF", "MID", "FWD")
+  out[is4] <- p[is4]
+  if (!is.null(position_side)) {
+    r <- position_roles(p, position_side)$role4
+    out[!is4] <- r[!is4]
+  }
+  bare <- c(Goalkeeper = "GK", Defender = "DEF", `Wing Back` = "DEF",
+            `Defensive Midfielder` = "MID", Midfielder = "MID",
+            `Attacking Midfielder` = "MID", Striker = "FWD")
+  fill <- is.na(out) & p %in% names(bare)
+  out[fill] <- unname(bare[p[fill]])
+  out
+}
+
 # Level order per grouping: ties in a most-minutes vote go to the first code.
 .POSITION_LEVELS <- list(
   role_full = unique(POSITION_ROLE_MAP$role_full),
