@@ -248,6 +248,7 @@ if (isTRUE(use_skill_ratings) && file.exists(skill_ratings_path)) {
 }
 if (!is.null(seasonal_results) && !is.null(seasonal_results$seasonal_spm)) {
   all_spm_dt <- data.table::as.data.table(seasonal_results$seasonal_spm)
+  .rss_note("after loading match stats and seasonal ratings")
   message(sprintf("  Seasonal SPM: %d player-seasons across %d years",
                   nrow(all_spm_dt), length(unique(all_spm_dt$season_end_year))))
 } else {
@@ -425,7 +426,17 @@ validate_game_log_schema <- function(dt, league, season) {
   .stage_league <<- numeric(0)
   .stage_t0 <<- proc.time()[["elapsed"]]
 }
+# Memory per stage when PANNA_LOG_RSS is set: current and PEAK resident memory
+# (VmRSS / VmHWM; Linux only). The peak is what a runner's OOM kill sees, and a
+# gc()-then-sample checkpoint misses it.
+.rss_note <- function(name) {
+  if (!nzchar(Sys.getenv("PANNA_LOG_RSS")) || !file.exists("/proc/self/status")) return(invisible())
+  st <- readLines("/proc/self/status")
+  mb <- function(k) round(as.numeric(gsub("[^0-9]", "", grep(paste0("^", k, ":"), st, value = TRUE))) / 1024)
+  message(sprintf("    [mem] %s: RSS %d MB, peak %d MB", name, mb("VmRSS"), mb("VmHWM")))
+}
 .stage <- function(name) {
+  .rss_note(name)
   if (is.null(.stage_t0)) return(invisible())
   now <- proc.time()[["elapsed"]]
   .stage_league[name] <<- sum(.stage_league[name], now - .stage_t0, na.rm = TRUE)
@@ -557,11 +568,13 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
       # and deterministic given raw events. Use `league_season` in the key
       # so tournament years (WC 2014 vs 2018) get separate cache entries.
       spadl          <- get_or_build_spadl(events, league, league_season)
+      .rss_note("after SPADL conversion")
       # The SPADL cache holds the whole league-season; keep it to the same
       # matches as the events, or a context xG model (v5) finds no pre-shot
       # context for the other matches' shots and aborts.
       if (exists("target_match_ids")) spadl <- spadl[spadl$match_id %in% target_match_ids, ]
       spadl_chains   <- create_possession_chains(spadl)
+      .rss_note("after possession chains")
       chain_outcomes <- classify_chain_outcomes(spadl_chains)
       chain_outcomes <- add_next_chain_outcome(chain_outcomes)
       spadl_labeled  <- label_actions_with_outcomes(spadl_chains, chain_outcomes)

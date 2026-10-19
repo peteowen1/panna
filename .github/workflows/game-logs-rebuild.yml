@@ -18,7 +18,8 @@ on:
     # .github/game-logs-rebuild-seasons.txt) in more parts after a failure.
     # Any branch with "control" in its name builds with today's centring.
     branches: [exp/game-logs-rebuild, exp/game-logs-rebuild-control,
-               exp/game-logs-rebuild-retry, exp/game-logs-rebuild-retry-control]
+               exp/game-logs-rebuild-retry, exp/game-logs-rebuild-retry-control,
+               exp/game-logs-rebuild-diag]
   workflow_dispatch:
     inputs:
       seasons:
@@ -196,6 +197,8 @@ jobs:
           SEASON: ${{ matrix.season }}
           PART: ${{ matrix.part }}
           NPARTS_PER_SEASON: ${{ needs.plan.outputs.nparts }}
+          # memory per 10b stage (see .rss_note in 10b)
+          PANNA_LOG_RSS: '1'
           EPV_POSITION_GROUPING: ${{ inputs.epv_position_grouping || (contains(github.ref, 'control') && 'start_label' || 'role8') }}
         run: |
           cat > /tmp/run_10b.R << 'EOF'
