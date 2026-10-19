@@ -185,6 +185,13 @@ jobs:
           use_skill_ratings <- TRUE
           upload_game_logs <- FALSE
           mirror_alias <- FALSE
+          # The remote copy has no events at all for some older league-seasons
+          # (e.g. SCO 2015-16, ENG2 2013-14), and 10b's publish guard aborts the
+          # whole season over one such league. A dry rebuild skips that league
+          # instead: the role8 and control runs read identical inputs, so both
+          # skip the same leagues. The skipped-league list is in the log and
+          # the summary. Never relax this for a publishing run.
+          events_coverage_abort_threshold <- Inf
           t0 <- Sys.time()
           source("data-raw/match-predictions-opta/10b_export_game_logs.R")
           out <- file.path(cache_dir, sprintf("game_logs_%s.parquet", game_log_seasons))
@@ -196,7 +203,7 @@ jobs:
           EOF
           set -o pipefail
           Rscript /tmp/run_10b.R 2>&1 | tee /tmp/10b.log
-          grep -E "^GAME_LOGS|centred by player-match role8|EPV adjustments skipped" /tmp/10b.log >> "$GITHUB_STEP_SUMMARY" || true
+          grep -E "^GAME_LOGS|centred by player-match role8|EPV adjustments skipped|missing [0-9]+ of [0-9]+ expected|Skipping" /tmp/10b.log >> "$GITHUB_STEP_SUMMARY" || true
 
       # 10b tolerates a failing league (it warns and writes the rest), which is
       # right for the weekly publish and wrong for a gate: a missing league or
