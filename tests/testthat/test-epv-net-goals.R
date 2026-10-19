@@ -1174,3 +1174,30 @@ test_that("a sent-off player stops receiving pool shares at his exit (R031)", {
   expect_true("h3" %in% out[play_type == "pool"]$player_id)
   expect_equal(sum(out[team_id == "H"]$value_own), 1.00, tolerance = 1e-10)
 })
+
+test_that("a side whose minutes read as one half is not sent off wholesale", {
+  # The broken-feed shape seen in La Liga, MLS and Argentina 2025-26: every
+  # player never subbed off shows 46 minutes. Read as red cards, nobody is on
+  # after minute 46, the pools stay unspread and ng_player_game() aborts. With
+  # 4+ early exits in one team-match the minutes are treated as wrong instead.
+  d <- ng_fixture_spadl()
+  fxt <- ng_fixture_fixtures()
+  acts <- transform(d, time_seconds = c(80, 81, 82, 83) * 60, period_id = 2L)
+  lineup <- data.frame(
+    match_id = "m1",
+    player_id = c(paste0("h", 1:11), paste0("a", 1:11)),
+    team_id = c(rep("H", 11), rep("A", 11)),
+    is_starter = TRUE,
+    minutes_played = c(rep(46, 11), rep(90, 11)),
+    sub_on_minute = 0, sub_off_minute = 0,
+    stringsAsFactors = FALSE
+  )
+  pay <- ng_build_ledger(d, adj = NULL, allocate = TRUE, convention = "team",
+                         fixtures = fxt, verbose = FALSE)
+  expect_message(out <- ng_spread_pools(pay, acts, lineup, dacts_share = 0, verbose = FALSE),
+                 "minutes look wrong")
+  expect_false(any(out$role %chin% c("pool_off", "pool_def")))
+  expect_setequal(out[team_id == "H" & play_type == "pool"]$player_id, paste0("h", 1:11))
+  expect_equal(sum(out[team_id == "H"]$value_own), 1.00, tolerance = 1e-10)
+  expect_no_error(ng_player_game(out, lineup, verbose = FALSE))
+})
