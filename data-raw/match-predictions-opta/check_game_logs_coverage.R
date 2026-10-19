@@ -73,8 +73,9 @@ expl_fake <- if (all(c("psv.o", "psv_league_offset.o") %in% names(m))) {
 expl_noxm <- rep(FALSE, nrow(m))
 if (!is.na(xm_f)) {
   xm_ids <- unique(read_parquet(xm_f, col_select = "match_id")$match_id)
-  stopifnot(length(xm_ids) > 0)
   expl_noxm <- !m$match_id %in% xm_ids
+  # An xMetrics file sharing no match with these logs would excuse every PSV loss.
+  if (all(expl_noxm)) stop("--xmetrics shares no match_id with the game logs: wrong file?")
 } else {
   cat("no --xmetrics given: losses on matches without xMetrics count as unexplained\n")
 }

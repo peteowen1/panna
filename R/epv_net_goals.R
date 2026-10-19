@@ -1125,7 +1125,7 @@ ng_spread_pools <- function(pay, actions, lineups, dacts_share = 0.5, keeper_poo
   if (n_bad > 0) {
     cli::cli_inform(c(
       "!" = "{n_bad} team-match{?es} show 4 or more players leaving early with no off-minute.",
-      "i" = "Their lineup minutes look wrong (not red cards), so nobody in them is treated as sent off."))
+      "i" = "Their lineup minutes look wrong (or the match was cut short), not red cards, so nobody in them is treated as sent off."))
     lu[n_exit >= 4L, early_exit := FALSE]
   }
   lu[, n_exit := NULL]
