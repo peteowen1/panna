@@ -31,7 +31,9 @@ player's future into his past.
 \seealso{
 Other positions: 
 \code{\link{position_asof}()},
+\code{\link{position_career}()},
 \code{\link{position_match}()},
-\code{\link{position_roles}()}
+\code{\link{position_roles}()},
+\code{\link{position_season}()}
 }
 \concept{positions}

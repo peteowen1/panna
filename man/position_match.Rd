@@ -58,7 +58,9 @@ slot implies (for a sub, the departing player's), whatever the source.
 \seealso{
 Other positions: 
 \code{\link{position_asof}()},
+\code{\link{position_career}()},
 \code{\link{position_roles}()},
+\code{\link{position_season}()},
 \code{\link{position_slot_table}()}
 }
 \concept{positions}

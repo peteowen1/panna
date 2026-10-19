@@ -436,3 +436,104 @@ position_asof <- function(player_match, window_days = 365L) {
   data.table::setorder(out, .i)
   out[, .(asof_role_full, asof_role16, asof_role8, asof_role4, asof_role_source)]
 }
+
+# Most-minutes code per group for every grouping: one row per `by` group with
+# role_full / role16 / role8 / role4, ties to the first code in level order.
+.position_vote_by <- function(d, by) {
+  votes <- d[src %in% .POSITION_VOTING_SOURCES & full %in% .POSITION_LEVELS$role_full &
+               !is.na(m) & m > 0]
+  keys <- unique(d[, by, with = FALSE])
+  for (g in names(.POSITION_LEVELS)) {
+    col <- c(role_full = "full", role16 = "r16", role8 = "r8", role4 = "r4")[[g]]
+    v <- data.table::data.table(votes[, by, with = FALSE], code = votes[[col]], m = votes$m)
+    v <- v[, .(m = sum(m)), by = c(by, "code")]
+    v[, lev := match(code, .POSITION_LEVELS[[g]])]
+    data.table::setorderv(v, c(by, "m", "lev"), c(rep(1L, length(by)), -1L, 1L))
+    best <- v[, .(code = code[1L]), by = by]
+    keys[best, (g) := i.code, on = by]
+    if (!g %in% names(keys)) keys[, (g) := NA_character_]
+  }
+  keys[]
+}
+
+# The shared front half of position_season() / position_career().
+.position_frame <- function(player_match, need) {
+  miss <- setdiff(need, names(player_match))
+  if (length(miss)) {
+    cli::cli_abort("{.arg player_match} is missing column{?s} {.field {miss}}.")
+  }
+  d <- data.table::data.table(
+    .i = seq_len(nrow(player_match)),
+    player_id = as.character(player_match$player_id),
+    m = suppressWarnings(as.numeric(player_match$minutes)),
+    full = as.character(player_match$match_role_full),
+    src = as.character(player_match$match_role_source))
+  m16 <- POSITION_ROLE_MAP[, .(role16 = role16[1L]), by = role_full]
+  d[, r16 := m16$role16[match(full, m16$role_full)]]
+  d[, `:=`(r8 = data.table::fifelse(is.na(r16), NA_character_, .role16_to_role8(r16)),
+           r4 = data.table::fifelse(is.na(r16), NA_character_, .role16_to_broad(r16)))]
+  d
+}
+
+#' Each player's position over his whole career (the `career_` level)
+#'
+#' The position he played most minutes in across every match passed in,
+#' voted separately for each grouping, ties to the first code in level order.
+#' Uses later matches by design: for player pages and displays, never as a
+#' model input (use [position_asof()] there). Votes as [position_asof()] does:
+#' only rows whose `match_role_source` is a real position, weighted by
+#' minutes.
+#'
+#' @param player_match One row per player-match: `player_id`, `minutes`,
+#'   `match_role_full`, `match_role_source`.
+#' @return A data.table in the row order of `player_match` with
+#'   `career_role_full`, `career_role16`, `career_role8`, `career_role4` and
+#'   `career_role_source` ("career", or "none" with every role `NA`).
+#' @family positions
+#' @export
+position_career <- function(player_match) {
+  d <- .position_frame(player_match, c("player_id", "minutes", "match_role_full", "match_role_source"))
+  cv <- .position_vote_by(d, "player_id")
+  out <- cv[d[, .(.i, player_id)], on = "player_id"]
+  data.table::setorder(out, .i)
+  out[, .(career_role_full = role_full, career_role16 = role16, career_role8 = role8,
+          career_role4 = role4,
+          career_role_source = data.table::fifelse(is.na(role_full), "none", "career"))]
+}
+
+#' Each player's position over each season (the `season_` level)
+#'
+#' The position he played most minutes in across the season, voted as
+#' [position_career()] does, falling back to his career position for a
+#' season with no real position (a season of unused-sub appearances). A
+#' season is the season END year ([extract_season_end_year()]), so a
+#' calendar-year league and a European season ending the same year are one
+#' season. Uses the whole season by design: season tables and pages only,
+#' never a model input.
+#'
+#' @param player_match One row per player-match: `player_id`, `season`,
+#'   `minutes`, `match_role_full`, `match_role_source`.
+#' @return A data.table in the row order of `player_match` with
+#'   `season_role_full`, `season_role16`, `season_role8`, `season_role4` and
+#'   `season_role_source` ("season", "career" or "none").
+#' @family positions
+#' @export
+position_season <- function(player_match) {
+  d <- .position_frame(player_match, c("player_id", "season", "minutes", "match_role_full", "match_role_source"))
+  d[, sey := as.integer(extract_season_end_year(player_match$season))]
+  if (anyNA(d$sey)) {
+    cli::cli_abort("{sum(is.na(d$sey))} row{?s} of {.arg player_match} ha{?s/ve} a {.field season} with no end year.")
+  }
+  sv <- .position_vote_by(d, c("player_id", "sey"))
+  cv <- .position_vote_by(d, "player_id")
+  out <- sv[d[, .(.i, player_id, sey)], on = c("player_id", "sey")]
+  out[cv, paste0("c_", names(.POSITION_LEVELS)) := mget(paste0("i.", names(.POSITION_LEVELS))), on = "player_id"]
+  out[, season_role_source := data.table::fcase(!is.na(role_full), "season",
+                                                !is.na(c_role_full), "career", default = "none")]
+  for (g in names(.POSITION_LEVELS)) {
+    out[season_role_source == "career", (g) := get(paste0("c_", g))]
+  }
+  data.table::setorder(out, .i)
+  out[, .(season_role_full = role_full, season_role16 = role16, season_role8 = role8,
+          season_role4 = role4, season_role_source)]
+}
