@@ -82,6 +82,10 @@ jobs:
       max-parallel: ${{ fromJSON(inputs.max_parallel || '6') }}
       matrix:
         season: ${{ fromJSON(needs.plan.outputs.seasons) }}
+        # Each season is built in two jobs, half the leagues each: a whole
+        # season of 2013-16 ran out of memory on the 16 GB runner. The EPR dry
+        # run joins the halves back into one file per season.
+        part: [1, 2]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -171,12 +175,13 @@ jobs:
           Rscript /tmp/run_step01.R
           test -f data-raw/cache-skills/01_match_stats.rds || { echo "FATAL: step 01 wrote no 01_match_stats.rds"; exit 1; }
 
-      - name: Build game logs for ${{ matrix.season }}
+      - name: Build game logs for ${{ matrix.season }} (part ${{ matrix.part }})
         env:
           PANNADATA_DIR: ${{ runner.temp }}/pannadata
           GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
           XMETRICS_SOURCE: remote
           SEASON: ${{ matrix.season }}
+          PART: ${{ matrix.part }}
           EPV_POSITION_GROUPING: ${{ inputs.epv_position_grouping || (github.ref == 'refs/heads/exp/game-logs-rebuild-control' && 'start_label' || 'role8') }}
         run: |
           cat > /tmp/run_10b.R << 'EOF'
@@ -187,6 +192,13 @@ jobs:
           cache_dir <- file.path("data-raw", "cache-predictions-opta")
           dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE)
           game_log_seasons <- Sys.getenv("SEASON")
+          # this job's half of the blog leagues (alternate leagues, so the big
+          # domestic leagues split between the halves)
+          source(file.path("data-raw", "pipeline_utils.R"))
+          .all <- resolve_blog_leagues()$blog_leagues
+          part <- as.integer(Sys.getenv("PART"))
+          blog_leagues <- .all[seq_along(.all) %% 2L == part %% 2L]
+          cat(sprintf("PART %d of 2: %s\n", part, paste(blog_leagues, collapse = " ")))
           epv_position_grouping <- Sys.getenv("EPV_POSITION_GROUPING")
           use_skill_ratings <- TRUE
           upload_game_logs <- FALSE
@@ -199,12 +211,25 @@ jobs:
           # the summary. Never relax this for a publishing run.
           events_coverage_abort_threshold <- Inf
           t0 <- Sys.time()
-          source("data-raw/match-predictions-opta/10b_export_game_logs.R")
+          # A half can legitimately hold no data (an old season is one
+          # tournament, in one half): 10b then stops with this message.
+          ok <- tryCatch({ source("data-raw/match-predictions-opta/10b_export_game_logs.R"); TRUE },
+                         error = function(e) {
+                           if (grepl("No seasons produced game logs", conditionMessage(e))) return(FALSE)
+                           stop(e)
+                         })
+          if (!ok) {
+            cat(sprintf("EMPTY_PART %s part %d: no league in this half has data\n", game_log_seasons, part))
+            quit(status = 0)
+          }
           out <- file.path(cache_dir, sprintf("game_logs_%s.parquet", game_log_seasons))
           if (!file.exists(out)) stop("10b wrote no ", out)
-          gl <- arrow::read_parquet(out)
-          cat(sprintf("GAME_LOGS %s: %d rows, %d matches, %d leagues, %.1f min, EPV centring %s\n",
-                      game_log_seasons, nrow(gl), length(unique(gl$match_id)), length(unique(gl$league)),
+          part_out <- sub("[.]parquet$", sprintf("__part%d.parquet", part), out)
+          stopifnot(file.rename(out, part_out))
+          gl <- arrow::read_parquet(part_out)
+          cat(sprintf("GAME_LOGS %s part %d: %d rows, %d matches, %d leagues (%s), %.1f min, EPV centring %s\n",
+                      game_log_seasons, part, nrow(gl), length(unique(gl$match_id)), length(unique(gl$league)),
+                      paste(sort(unique(gl$league)), collapse = " "),
                       as.numeric(Sys.time() - t0, units = "mins"), epv_position_grouping))
           EOF
           set -o pipefail
@@ -217,13 +242,31 @@ jobs:
       # and artifact look complete. Fail on every such signal instead.
       - name: Refuse a partial season
         env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
           SEASON: ${{ matrix.season }}
           EPV_POSITION_GROUPING: ${{ inputs.epv_position_grouping || (github.ref == 'refs/heads/exp/game-logs-rebuild-control' && 'start_label' || 'role8') }}
         run: |
+          if grep -q "^EMPTY_PART" /tmp/10b.log; then echo "empty half, nothing to check"; exit 0; fi
           bad=0
           marker=data-raw/cache-predictions-opta/.partial_publish_failures
           if [ -s "$marker" ]; then
-            echo "::error title=Partial season $SEASON::leagues failed: $(paste -sd ' ' "$marker")"; bad=1
+            # A league that fails here AND is absent from the published season
+            # has never built (e.g. FRA 2011-12's possession-chains error), so
+            # leaving it out costs the comparison nothing. Any other failed
+            # league fails the job.
+            mkdir -p /tmp/pub
+            gh release download blog-latest --repo peteowen1/pannadata --pattern "game_logs_${SEASON}.parquet" --dir /tmp/pub \
+              || echo "  no published copy of $SEASON"
+            pub=$(Rscript -e 'f <- commandArgs(TRUE)[1]; if (file.exists(f)) cat(unique(arrow::read_parquet(f, col_select = "league")$league))' "/tmp/pub/game_logs_${SEASON}.parquet" || true)
+            echo "  published $SEASON leagues: $pub"
+            while read -r line; do
+              lg=$(echo "$line" | awk '{print $2}')
+              if echo " $pub " | grep -q " $lg "; then
+                echo "::error title=Partial season $SEASON::$line (the published logs have $lg)"; bad=1
+              else
+                echo "::warning title=League never built $SEASON::$line (absent from the published logs too)"
+              fi
+            done < "$marker"
           fi
           if grep -nE "EPV adjustments skipped|SEASON .* ABORTED|join FAILED|INCOMPLETE" /tmp/10b.log; then
             echo "::error title=Season $SEASON incomplete::10b logged a skipped or failed stage (lines above)"; bad=1
@@ -245,7 +288,8 @@ jobs:
       - name: Keep the game logs as an artifact
         uses: actions/upload-artifact@v7
         with:
-          name: game-logs-${{ matrix.season }}
-          path: data-raw/cache-predictions-opta/game_logs_${{ matrix.season }}.parquet
-          if-no-files-found: error
+          name: game-logs-${{ matrix.season }}-part${{ matrix.part }}
+          path: data-raw/cache-predictions-opta/game_logs_${{ matrix.season }}__part${{ matrix.part }}.parquet
+          # an empty half writes no file; a crash has already failed the build step
+          if-no-files-found: warn
           retention-days: 14
