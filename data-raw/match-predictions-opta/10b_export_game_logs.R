@@ -242,6 +242,22 @@ if (has_match_stats) {
   message(sprintf(
     "  Resolved pos_grp once on the full population: %.2f%% of rows unresolved",
     100 * mean(is.na(all_match_stats$.pos_grp_full))))
+
+  # Memory: only the resolution above needs every season. After it the loop
+  # reads rows of the seasons being built (the league-season filter and the
+  # player x season_end_year lookup below), so keep those seasons, the one
+  # before (a calendar-year league or a tournament label can sit a year early)
+  # and any row with no end year. The full table is ~14.5 GB on a GHA runner,
+  # which left no room for a league's events: 2012-21 seasons ran out of
+  # memory on their first league (2026-10-19). Output is unchanged.
+  .keep_sey <- unique(as.integer(vapply(game_log_seasons, extract_season_end_year, numeric(1))))
+  .n_all <- nrow(all_match_stats)
+  all_match_stats <- all_match_stats[is.na(season_end_year) |
+                                       season_end_year %in% c(.keep_sey, .keep_sey - 1L)]
+  invisible(gc())
+  message(sprintf("  Kept match stats for season end year(s) %s (and the year before): %d of %d rows",
+                  paste(sort(.keep_sey), collapse = ", "), nrow(all_match_stats), .n_all))
+  .rss_note("after trimming match stats to the seasons built")
 } else {
   message("  Note: No match stats cache — PSV will be unavailable")
 }
