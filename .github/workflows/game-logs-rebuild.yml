@@ -1,0 +1,321 @@
+name: Game Logs Rebuild (dry)
+
+# Rebuilds game_logs_<season>.parquet for chosen seasons, one job per season,
+# and keeps each as a run ARTIFACT. Never uploads to any release: publishing
+# rebuilt game logs to blog-latest is a separate, deliberate step. Built for the
+# EPV role8 centring gate (pannaverse docs/reference/POSITION-TAXONOMY.md
+# section 6): rebuild every season with `epv_position_grouping = role8`, then
+# build EPR from the artifacts and compare with the published EPR.
+
+on:
+  # A dispatch-only workflow can't be run until it is on main, so a push to this
+  # branch runs it with the defaults (every season, role8) before then.
+  push:
+    # exp/game-logs-rebuild-control builds the same seasons with today's
+    # centring, so role8 is compared with a rebuild on the same code and data,
+    # not with game logs published over months of model and data changes.
+    # The -retry branches re-run chosen seasons (listed in
+    # .github/game-logs-rebuild-seasons.txt) in more parts after a failure.
+    # Any branch with "control" in its name builds with today's centring.
+    branches: [exp/game-logs-rebuild, exp/game-logs-rebuild-control,
+               exp/game-logs-rebuild-retry, exp/game-logs-rebuild-retry-control,
+               exp/game-logs-rebuild-diag]
+  workflow_dispatch:
+    inputs:
+      seasons:
+        description: 'Space-separated season labels (blank = every season on blog-latest)'
+        type: string
+        required: false
+        default: ''
+      epv_position_grouping:
+        description: 'EPV position centring: start_label (today) or role8'
+        type: choice
+        options: [role8, start_label]
+        default: role8
+      max_parallel:
+        description: 'Seasons built at once'
+        type: number
+        default: 6
+
+concurrency:
+  group: game-logs-rebuild-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
+  R_KEEP_PKG_SOURCE: yes
+  # Belt and braces: 10b's own upload is also forced off below.
+  PANNA_PUBLISH_DISABLED: 'true'
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      seasons: ${{ steps.list.outputs.seasons }}
+      parts: ${{ steps.list.outputs.parts }}
+      nparts: ${{ steps.list.outputs.nparts }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: List seasons
+        id: list
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          INPUT_SEASONS: ${{ inputs.seasons || '' }}
+        run: |
+          # A push can't pass inputs, so a branch may name its seasons in this file.
+          f=.github/game-logs-rebuild-seasons.txt
+          if [ -z "$INPUT_SEASONS" ] && [ -f "$f" ]; then INPUT_SEASONS=$(grep -v '^#' "$f" | tr '\n' ' '); fi
+          if [ -n "$INPUT_SEASONS" ]; then
+            s="$INPUT_SEASONS"
+          else
+            # Every season blog-latest already publishes, so the rebuild covers
+            # exactly what EPR reads today.
+            s=$(gh release view blog-latest --repo peteowen1/pannadata --json assets \
+                  --jq '[.assets[].name | select(test("^game_logs_[0-9]{4}-[0-9]{4}[.]parquet$")) | sub("^game_logs_"; "") | sub("[.]parquet$"; "")] | sort | join(" ")')
+          fi
+          [ -n "$s" ] || { echo "FATAL: no seasons to build"; exit 1; }
+          json=$(printf '%s\n' $s | jq -R . | jq -cs .)
+          echo "Seasons: $json"
+          echo "seasons=$json" >> "$GITHUB_OUTPUT"
+          # How many jobs each season is split into (by league), default 2.
+          n=2; [ -f .github/game-logs-rebuild-parts.txt ] && n=$(grep -v '^#' .github/game-logs-rebuild-parts.txt | tr -dc '0-9')
+          [ "$n" -ge 1 ] 2>/dev/null || { echo "FATAL: bad parts count '$n'"; exit 1; }
+          echo "Parts per season: $n"
+          echo "parts=$(seq 1 "$n" | jq -cs .)" >> "$GITHUB_OUTPUT"
+          echo "nparts=$n" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: ${{ fromJSON(inputs.max_parallel || '6') }}
+      matrix:
+        season: ${{ fromJSON(needs.plan.outputs.seasons) }}
+        # Each season is built in several jobs, a share of the leagues each:
+        # a whole season of 2013-16, and even half of 2012-13, ran out of
+        # memory on the 16 GB runner (memory builds up league by league). The
+        # EPR dry run joins the parts back into one file per season.
+        part: ${{ fromJSON(needs.plan.outputs.parts) }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.5.0'
+          use-public-rspm: true
+
+      - name: Setup R dependencies
+        uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          cache-version: 2
+          extra-packages: |
+            any::devtools
+            any::callr
+            any::piggyback
+            any::arrow
+            any::dplyr
+            any::tidyr
+            any::glmnet
+            any::xgboost
+            any::Matrix
+            any::data.table
+            any::DBI
+            any::duckdb
+            any::cli
+          needs: |
+            devtools
+
+      # Same consolidated files the predictions pipeline downloads (10b loads
+      # per-league events and lineups through load_opta_*() itself).
+      - name: Download consolidated Opta data
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+        run: |
+          OPTA_DIR="${{ runner.temp }}/pannadata/opta"
+          mkdir -p "$OPTA_DIR"
+          for f in opta_player_stats.parquet opta_shots.parquet opta_shot_events.parquet \
+                   opta_events.parquet opta_lineups.parquet opta_fixtures.parquet \
+                   opta_skills.parquet opta_match_stats.parquet opta_xmetrics.parquet \
+                   opta_match_xg.parquet opta-catalog.json; do
+            gh release download opta-latest --repo peteowen1/pannadata --pattern "$f" --dir "$OPTA_DIR" \
+              && echo "  Downloaded $f" || echo "  Skipped $f (not found)"
+          done
+          for f in opta_lineups.parquet opta_fixtures.parquet opta_player_stats.parquet opta-catalog.json; do
+            [ -f "$OPTA_DIR/$f" ] || { echo "FATAL: required $f missing"; exit 1; }
+          done
+
+      - name: Download skill caches
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+        run: |
+          mkdir -p data-raw/cache-skills data-raw/cache-opta
+          # 06 is required (10b's seasonal SPM); the league offsets feed the
+          # game-logs PSV league offset.
+          for f in 06_seasonal_ratings.rds psr_league_offsets.parquet; do
+            gh release download predictions-cache --repo peteowen1/pannadata --pattern "$f" --dir data-raw/cache-skills \
+              || { echo "FATAL: required cache $f missing"; exit 1; }
+          done
+          for f in 02b_decay_params.rds 03_skill_spm.rds; do
+            gh release download predictions-cache --repo peteowen1/pannadata --pattern "$f" --dir data-raw/cache-skills \
+              || echo "  WARNING: optional $f not found"
+          done
+
+      # 10b reads cache-skills/01_match_stats.rds for PSV. Own R process, as in
+      # the predictions pipeline.
+      - name: Rebuild match stats (skills step 01)
+        env:
+          PANNADATA_DIR: ${{ runner.temp }}/pannadata
+        run: |
+          cat > /tmp/run_step01.R << 'EOF'
+          pannadata_path <- Sys.getenv("PANNADATA_DIR")
+          devtools::load_all()
+          pannadata_dir(pannadata_path)
+          opta_data_dir(file.path(pannadata_path, "opta"))
+          run_steps <- list(
+            step_01_compute_match_stats = TRUE, step_02_estimate_skills = FALSE,
+            step_02b_optimize_params = FALSE, step_03_skill_spm = FALSE,
+            step_04_skill_xrapm = FALSE, step_05_skill_panna_ratings = FALSE,
+            step_06_seasonal_skill_ratings = FALSE, step_07_train_psr_model = FALSE,
+            step_08_export_skills = FALSE, step_08b_export_psr_weekly = FALSE,
+            step_09_career_panna = FALSE)
+          source("data-raw/estimated-skills/run_skills_pipeline.R")
+          EOF
+          Rscript /tmp/run_step01.R
+          test -f data-raw/cache-skills/01_match_stats.rds || { echo "FATAL: step 01 wrote no 01_match_stats.rds"; exit 1; }
+
+      - name: Build game logs for ${{ matrix.season }} (part ${{ matrix.part }})
+        env:
+          PANNADATA_DIR: ${{ runner.temp }}/pannadata
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          XMETRICS_SOURCE: remote
+          SEASON: ${{ matrix.season }}
+          PART: ${{ matrix.part }}
+          NPARTS_PER_SEASON: ${{ needs.plan.outputs.nparts }}
+          # memory per 10b stage (see .rss_note in 10b)
+          PANNA_LOG_RSS: '1'
+          EPV_POSITION_GROUPING: ${{ inputs.epv_position_grouping || (contains(github.ref, 'control') && 'start_label' || 'role8') }}
+        run: |
+          cat > /tmp/run_10b.R << 'EOF'
+          pannadata_path <- Sys.getenv("PANNADATA_DIR")
+          devtools::load_all()
+          pannadata_dir(pannadata_path)
+          opta_data_dir(file.path(pannadata_path, "opta"))
+          cache_dir <- file.path("data-raw", "cache-predictions-opta")
+          dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE)
+          game_log_seasons <- Sys.getenv("SEASON")
+          # this job's half of the blog leagues (alternate leagues, so the big
+          # domestic leagues split between the halves)
+          source(file.path("data-raw", "pipeline_utils.R"))
+          .all <- resolve_blog_leagues()$blog_leagues
+          part <- as.integer(Sys.getenv("PART"))
+          nparts <- as.integer(Sys.getenv("NPARTS_PER_SEASON"))
+          stopifnot(!is.na(part), !is.na(nparts), part >= 1L, part <= nparts)
+          blog_leagues <- .all[seq_along(.all) %% nparts == part %% nparts]
+          cat(sprintf("PART %d of %d: %s\n", part, nparts, paste(blog_leagues, collapse = " ")))
+          epv_position_grouping <- Sys.getenv("EPV_POSITION_GROUPING")
+          use_skill_ratings <- TRUE
+          upload_game_logs <- FALSE
+          mirror_alias <- FALSE
+          # The remote copy has no events at all for some older league-seasons
+          # (e.g. SCO 2015-16, ENG2 2013-14), and 10b's publish guard aborts the
+          # whole season over one such league. A dry rebuild skips that league
+          # instead: the role8 and control runs read identical inputs, so both
+          # skip the same leagues. The skipped-league list is in the log and
+          # the summary. Never relax this for a publishing run.
+          events_coverage_abort_threshold <- Inf
+          t0 <- Sys.time()
+          # A half can legitimately hold no data (an old season is one
+          # tournament, in one half): 10b then stops with this message.
+          ok <- tryCatch({ source("data-raw/match-predictions-opta/10b_export_game_logs.R"); TRUE },
+                         error = function(e) {
+                           if (grepl("No seasons produced game logs", conditionMessage(e))) return(FALSE)
+                           stop(e)
+                         })
+          if (!ok) {
+            # "No seasons produced" also follows a part whose leagues all FAILED;
+            # the refuse step checks the failure marker and the log before it
+            # accepts an empty part. The .empty file tells the EPR join this
+            # part ran and had nothing, as opposed to never arriving.
+            cat(sprintf("EMPTY_PART %s part %d: no league in this part produced game logs\n", game_log_seasons, part))
+            writeLines("empty", file.path(cache_dir, sprintf("game_logs_%s__part%dof%d.empty", game_log_seasons, part, nparts)))
+            quit(status = 0)
+          }
+          out <- file.path(cache_dir, sprintf("game_logs_%s.parquet", game_log_seasons))
+          if (!file.exists(out)) stop("10b wrote no ", out)
+          part_out <- sub("[.]parquet$", sprintf("__part%dof%d.parquet", part, nparts), out)
+          stopifnot(file.rename(out, part_out))
+          gl <- arrow::read_parquet(part_out)
+          cat(sprintf("GAME_LOGS %s part %d: %d rows, %d matches, %d leagues (%s), %.1f min, EPV centring %s\n",
+                      game_log_seasons, part, nrow(gl), length(unique(gl$match_id)), length(unique(gl$league)),
+                      paste(sort(unique(gl$league)), collapse = " "),
+                      as.numeric(Sys.time() - t0, units = "mins"), epv_position_grouping))
+          EOF
+          set -o pipefail
+          Rscript /tmp/run_10b.R 2>&1 | tee /tmp/10b.log
+          grep -E "^GAME_LOGS|centred by player-match role8|EPV adjustments skipped|missing [0-9]+ of [0-9]+ expected|Skipping" /tmp/10b.log >> "$GITHUB_STEP_SUMMARY" || true
+
+      # 10b tolerates a failing league (it warns and writes the rest), which is
+      # right for the weekly publish and wrong for a gate: a missing league or
+      # missing epv_*_adj columns would skew the EPR comparison while the job
+      # and artifact look complete. Fail on every such signal instead.
+      - name: Refuse a partial season
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          SEASON: ${{ matrix.season }}
+          EPV_POSITION_GROUPING: ${{ inputs.epv_position_grouping || (contains(github.ref, 'control') && 'start_label' || 'role8') }}
+        run: |
+          bad=0
+          marker=data-raw/cache-predictions-opta/.partial_publish_failures
+          if [ -s "$marker" ]; then
+            # A league that fails here AND is absent from the published season
+            # has never built (e.g. FRA 2011-12's possession-chains error), so
+            # leaving it out costs the comparison nothing. Any other failed
+            # league fails the job.
+            mkdir -p /tmp/pub
+            gh release download blog-latest --repo peteowen1/pannadata --pattern "game_logs_${SEASON}.parquet" --dir /tmp/pub \
+              || echo "  no published copy of $SEASON"
+            pub=$(Rscript -e 'f <- commandArgs(TRUE)[1]; if (file.exists(f)) cat(unique(arrow::read_parquet(f, col_select = "league")$league))' "/tmp/pub/game_logs_${SEASON}.parquet" || true)
+            echo "  published $SEASON leagues: $pub"
+            while read -r line; do
+              lg=$(echo "$line" | awk '{print $2}')
+              if echo " $pub " | grep -q " $lg "; then
+                echo "::error title=Partial season $SEASON::$line (the published logs have $lg)"; bad=1
+              else
+                echo "::warning title=League never built $SEASON::$line (absent from the published logs too)"
+              fi
+            done < "$marker"
+          fi
+          if grep -nE "EPV adjustments skipped|SEASON .* ABORTED|join FAILED|INCOMPLETE" /tmp/10b.log; then
+            echo "::error title=Season $SEASON incomplete::10b logged a skipped or failed stage (lines above)"; bad=1
+          fi
+          # An empty part is accepted only after the two checks above: a part
+          # whose leagues all failed also ends in "No seasons produced".
+          if grep -q "^EMPTY_PART" /tmp/10b.log; then echo "empty part, no failures logged"; exit $bad; fi
+          if [ "$EPV_POSITION_GROUPING" = "role8" ]; then
+            # role8 must place at least as many of each league's player-game
+            # rows as today's start_label centring could (2 points' slack).
+            # Some older league-seasons carry neither Opta labels nor
+            # formation lists; neither method can place those, and that is
+            # not a role8 failure.
+            low=$(grep -oE "centred by player-match role8: [0-9.]+% of [0-9]+ rows placed; start_label would centre [0-9.]+%" /tmp/10b.log \
+                    | awk '{a=$5; b=$13; gsub("%","",a); gsub("%","",b); if (a + 2 < b + 0) print}')
+            n=$(grep -c "centred by player-match role8" /tmp/10b.log || true)
+            if [ -n "$low" ]; then echo "::error title=Season $SEASON role8 coverage::$low"; bad=1; fi
+            if [ "$n" -eq 0 ]; then echo "::error title=Season $SEASON::role8 centring never ran"; bad=1; fi
+          fi
+          exit $bad
+
+      - name: Keep the game logs as an artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: game-logs-${{ matrix.season }}-part${{ matrix.part }}of${{ needs.plan.outputs.nparts }}
+          path: data-raw/cache-predictions-opta/game_logs_${{ matrix.season }}__part${{ matrix.part }}of${{ needs.plan.outputs.nparts }}.*
+          # every part that passes writes a .parquet or a .empty
+          if-no-files-found: error
+          retention-days: 14

@@ -40,26 +40,38 @@ NULL
 #'   Defaults to "total_credit".
 #' @param minutes_col Minutes column used for the per-90 average. Default
 #'   "minutes_played"; if absent, the per-game average is used.
+#' @param group_col Optional column holding each ROW's group (e.g. the
+#'   player-match role8 from [position_match()]). When given, rows are centred
+#'   within that group instead of the player's usual starting label; `NA` and
+#'   "OTHER" rows keep no adjustment.
 #'
 #' @return Same data.table with `{col}_adj` columns added for each credit col
 #' @keywords internal
 adjust_epv_for_position <- function(player_match, credit_cols = "total_credit",
-                                    minutes_col = "minutes_played") {
-  if (!"position" %in% names(player_match)) {
-    cli::cli_abort("player_match must have a 'position' column")
-  }
-
+                                    minutes_col = "minutes_played", group_col = NULL) {
   dt <- data.table::as.data.table(player_match)
 
-  # Usual starting position per player (Wing Back -> Defender, as
-  # get_player_positions() does).
-  pos <- data.table::fifelse(dt$position %in% "Wing Back", "Defender", dt$position)
-  start_lu <- data.table::data.table(player_id = dt$player_id, pos = pos)[
-    !is.na(pos) & !pos %in% c("Substitute", ""), .N, by = .(player_id, pos)]
-  data.table::setorder(start_lu, player_id, -N)
-  start_lu <- start_lu[, .(start_pos = pos[1L]), by = player_id]
-  dt[start_lu, .start_pos := i.start_pos, on = "player_id"]
-  if (!".start_pos" %in% names(dt)) dt[, .start_pos := NA_character_]
+  if (!is.null(group_col)) {
+    if (!group_col %in% names(dt)) {
+      cli::cli_abort("player_match has no {.field {group_col}} column.")
+    }
+    g <- as.character(dt[[group_col]])
+    g[g %in% c("OTHER", "")] <- NA_character_
+    dt[, .start_pos := g]
+  } else {
+    if (!"position" %in% names(player_match)) {
+      cli::cli_abort("player_match must have a 'position' column")
+    }
+    # Usual starting position per player (Wing Back -> Defender, as
+    # get_player_positions() does).
+    pos <- data.table::fifelse(dt$position %in% "Wing Back", "Defender", dt$position)
+    start_lu <- data.table::data.table(player_id = dt$player_id, pos = pos)[
+      !is.na(pos) & !pos %in% c("Substitute", ""), .N, by = .(player_id, pos)]
+    data.table::setorder(start_lu, player_id, -N)
+    start_lu <- start_lu[, .(start_pos = pos[1L]), by = player_id]
+    dt[start_lu, .start_pos := i.start_pos, on = "player_id"]
+    if (!".start_pos" %in% names(dt)) dt[, .start_pos := NA_character_]
+  }
 
   per90 <- !is.null(minutes_col) && minutes_col %in% names(dt)
   mins <- if (per90) as.numeric(dt[[minutes_col]]) else rep(NA_real_, nrow(dt))

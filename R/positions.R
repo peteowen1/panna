@@ -201,6 +201,16 @@ position_slot_table <- function(lineups, events) {
   list(position = pos, position_side = side)
 }
 
+# Formation ids with three centre-back slots and no full-back or wing-back
+# slot, by each slot's usual label: their wide midfielders are wing-backs.
+.wingback_formations <- function(slot_table) {
+  st <- data.table::as.data.table(slot_table)
+  f <- st[, .(cb = sum(role_full %in% c("LCB", "CB", "RCB")),
+              fb = sum(role_full %in% c("LB", "RB", "LWB", "RWB", "LCWB", "RCWB", "CWB"))),
+          by = formation]
+  f[cb >= 3L & fb == 0L, formation]
+}
+
 #' Each player's position in each match (the `match_` level)
 #'
 #' One row per lineup row, with the position he played in that match in every
@@ -224,6 +234,10 @@ position_slot_table <- function(lineups, events) {
 #'   Every role column is `NA`; fill from the `asof_` level where a value is
 #'   needed.
 #' - `unused`: an unused substitute. Every role column is `NA`.
+#'
+#' In a back three with no full-back slot (3-4-3, 3-5-2, ...), a wide
+#' midfielder (LM / RM) is recorded as a wing-back (LWB / RWB), so role8
+#' groups him with full-backs: that is where he touches the ball.
 #'
 #' A player moved by a later formation change keeps the position he started
 #' the match (or came on) in. `match_slot_role_full` keeps the position the
@@ -251,7 +265,8 @@ position_match <- function(lineups, events, slot_table = NULL) {
   }
   ev <- .prepare_position_events(events)
   if (is.null(slot_table)) slot_table <- position_slot_table(lineups, events)
-  slot_table <- data.table::as.data.table(slot_table)[, .(formation, slot, tbl_role_full = role_full)]
+  slot_table_full <- data.table::as.data.table(slot_table)
+  slot_table <- slot_table_full[, .(formation, slot, tbl_role_full = role_full)]
 
   lu <- data.table::as.data.table(lineups)[, .(
     .i = .I, match_id = as.character(match_id), team_id = as.character(team_id),
@@ -312,6 +327,18 @@ position_match <- function(lineups, events, slot_table = NULL) {
     match_role_source == "slot", holder_full,
     match_role_source == "slot_table", tbl_full,
     default = NA_character_)]
+
+  # Wing-backs in a back three. Opta labels them "Midfielder Left/Right" (LM/RM)
+  # when the shape has three centre-backs and no full-back slot (3-4-3, 3-5-2,
+  # 3-4-2-1 ...), and they touch the ball where full-backs do, not wingers:
+  # five leagues, 18,497 such rows sit 3.5 ahead of their team's average touch
+  # and 31.5 from the middle, vs full-backs -2.6 / 33.2 and wingers 10.9 / 21.6
+  # (Pete 2026-10-19: wing-backs count as full-backs). Shapes found from the
+  # slot table, not a hard-coded list: in a 5-4-1 Opta already labels LWB/RWB
+  # and the LM/RM ahead of them are real wide midfielders.
+  wb3 <- .wingback_formations(slot_table_full)
+  lu[formation %in% wb3 & match_role_full == "LM", match_role_full := "LWB"]
+  lu[formation %in% wb3 & match_role_full == "RM", match_role_full := "RWB"]
 
   lu[, match_slot_role_full := data.table::fifelse(
     !is.na(slot) & same_shape & !is.na(holder_full), holder_full, tbl_full)]

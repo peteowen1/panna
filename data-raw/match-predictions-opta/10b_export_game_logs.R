@@ -18,6 +18,16 @@
 
 # 1. Configuration ----
 
+# Memory per stage when PANNA_LOG_RSS is set: current and PEAK resident memory
+# (VmRSS / VmHWM; Linux only). The peak is what a runner's OOM kill sees, and a
+# gc()-then-sample checkpoint misses it.
+.rss_note <- function(name) {
+  if (!nzchar(Sys.getenv("PANNA_LOG_RSS")) || !file.exists("/proc/self/status")) return(invisible())
+  st <- readLines("/proc/self/status")
+  mb <- function(k) round(as.numeric(gsub("[^0-9]", "", grep(paste0("^", k, ":"), st, value = TRUE))) / 1024)
+  message(sprintf("    [mem] %s: RSS %d MB, peak %d MB", name, mb("VmRSS"), mb("VmHWM")))
+}
+
 # When sourced standalone (outside run_predictions_opta.R) pipeline_utils.R
 # isn't loaded yet — source it here so resolve_blog_leagues() is available
 # regardless of entry point (direct Rscript, 10b_backfill_game_logs.R, or the
@@ -130,6 +140,16 @@ current_season_alias <- sort(game_log_seasons, decreasing = TRUE)[1]
 
 # Upload toggle — set FALSE during local dev to skip the GH release push.
 if (!exists("upload_game_logs")) upload_game_logs <- TRUE
+# How EPV is position-centred. "start_label": the player's most common Opta
+# starting label in the league-season (Defender lumps full-backs with
+# centre-backs). "role8": each player-MATCH's role8 from position_match()
+# (GK CB FB DM CM AM W ST; subs from Opta's own sub position). role8 is a
+# model change: it waits on its gate before becoming the default
+# (pannaverse docs/reference/POSITION-TAXONOMY.md section 6).
+if (!exists("epv_position_grouping", envir = globalenv(), inherits = FALSE)) {
+  epv_position_grouping <- Sys.getenv("EPV_POSITION_GROUPING", "start_label")
+}
+stopifnot(epv_position_grouping %in% c("start_label", "role8"))
 
 # Build toggle — set FALSE to skip the per-season processing loop (e.g. when
 # parquets were already built in parallel workers and this invocation only
@@ -222,6 +242,22 @@ if (has_match_stats) {
   message(sprintf(
     "  Resolved pos_grp once on the full population: %.2f%% of rows unresolved",
     100 * mean(is.na(all_match_stats$.pos_grp_full))))
+
+  # Memory: only the resolution above needs every season. After it the loop
+  # reads rows of the seasons being built (the league-season filter and the
+  # player x season_end_year lookup below), so keep those seasons, the one
+  # before (a calendar-year league or a tournament label can sit a year early)
+  # and any row with no end year. The full table is ~14.5 GB on a GHA runner,
+  # which left no room for a league's events: 2012-21 seasons ran out of
+  # memory on their first league (2026-10-19). Output is unchanged.
+  .keep_sey <- unique(as.integer(vapply(game_log_seasons, extract_season_end_year, numeric(1))))
+  .n_all <- nrow(all_match_stats)
+  all_match_stats <- all_match_stats[is.na(season_end_year) |
+                                       season_end_year %in% c(.keep_sey, .keep_sey - 1L)]
+  invisible(gc())
+  message(sprintf("  Kept match stats for season end year(s) %s (and the year before): %d of %d rows",
+                  paste(sort(.keep_sey), collapse = ", "), nrow(all_match_stats), .n_all))
+  .rss_note("after trimming match stats to the seasons built")
 } else {
   message("  Note: No match stats cache — PSV will be unavailable")
 }
@@ -238,6 +274,7 @@ if (isTRUE(use_skill_ratings) && file.exists(skill_ratings_path)) {
 }
 if (!is.null(seasonal_results) && !is.null(seasonal_results$seasonal_spm)) {
   all_spm_dt <- data.table::as.data.table(seasonal_results$seasonal_spm)
+  .rss_note("after loading match stats and seasonal ratings")
   message(sprintf("  Seasonal SPM: %d player-seasons across %d years",
                   nrow(all_spm_dt), length(unique(all_spm_dt$season_end_year))))
 } else {
@@ -416,6 +453,7 @@ validate_game_log_schema <- function(dt, league, season) {
   .stage_t0 <<- proc.time()[["elapsed"]]
 }
 .stage <- function(name) {
+  .rss_note(name)
   if (is.null(.stage_t0)) return(invisible())
   now <- proc.time()[["elapsed"]]
   .stage_league[name] <<- sum(.stage_league[name], now - .stage_t0, na.rm = TRUE)
@@ -547,11 +585,13 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
       # and deterministic given raw events. Use `league_season` in the key
       # so tournament years (WC 2014 vs 2018) get separate cache entries.
       spadl          <- get_or_build_spadl(events, league, league_season)
+      .rss_note("after SPADL conversion")
       # The SPADL cache holds the whole league-season; keep it to the same
       # matches as the events, or a context xG model (v5) finds no pre-shot
       # context for the other matches' shots and aborts.
       if (exists("target_match_ids")) spadl <- spadl[spadl$match_id %in% target_match_ids, ]
       spadl_chains   <- create_possession_chains(spadl)
+      .rss_note("after possession chains")
       chain_outcomes <- classify_chain_outcomes(spadl_chains)
       chain_outcomes <- add_next_chain_outcome(chain_outcomes)
       spadl_labeled  <- label_actions_with_outcomes(spadl_chains, chain_outcomes)
@@ -663,7 +703,30 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
           match_dates     <- dt_lu[, .(match_date = match_date[1]), by = match_id]
           player_game_epv <- merge(player_game_epv, match_dates, by = "match_id", all.x = TRUE)
         }
-        if ("position" %in% names(player_game_epv)) {
+        if (identical(epv_position_grouping, "role8")) {
+          .pm <- position_match(lineups, events)
+          player_game_epv <- data.table::as.data.table(player_game_epv)
+          player_game_epv[.pm, .role8 := i.match_role8, on = c("match_id", "player_id")]
+          if (!".role8" %in% names(player_game_epv)) player_game_epv[, .role8 := NA_character_]
+          # What the start_label centring could have centred here: rows whose
+          # player has a real Opta starting label in this league-season. Some
+          # older league-seasons have neither labels nor formation lists, so
+          # neither method can place them; the gate compares the two shares.
+          .lab <- player_game_epv$position
+          .has_start <- unique(player_game_epv$player_id[!is.na(.lab) & !.lab %in% c("Substitute", "")])
+          message(sprintf("    EPV centred by player-match role8: %.1f%% of %d rows placed; start_label would centre %.1f%% (%s)",
+                          100 * mean(!is.na(player_game_epv$.role8)), nrow(player_game_epv),
+                          100 * mean(player_game_epv$player_id %in% .has_start),
+                          paste(sprintf("%s %d", names(table(.pm$match_role_source)),
+                                        as.integer(table(.pm$match_role_source))), collapse = ", ")))
+          player_game_epv <- adjust_epv_for_position(
+            player_game_epv,
+            credit_cols = c("epv_total", "epv_offensive", "epv_defensive"),
+            group_col = ".role8"
+          )
+          player_game_epv[, .role8 := NULL]
+          rm(.pm)
+        } else if ("position" %in% names(player_game_epv)) {
           player_game_epv <- adjust_epv_for_position(
             player_game_epv,
             credit_cols = c("epv_total", "epv_offensive", "epv_defensive")

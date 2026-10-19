@@ -51,6 +51,10 @@ needed.
 \item \code{unused}: an unused substitute. Every role column is \code{NA}.
 }
 
+In a back three with no full-back slot (3-4-3, 3-5-2, ...), a wide
+midfielder (LM / RM) is recorded as a wing-back (LWB / RWB), so role8
+groups him with full-backs: that is where he touches the ball.
+
 A player moved by a later formation change keeps the position he started
 the match (or came on) in. \code{match_slot_role_full} keeps the position the
 slot implies (for a sub, the departing player's), whatever the source.
