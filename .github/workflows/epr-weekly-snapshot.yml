@@ -118,14 +118,19 @@ jobs:
               echo "== per-season game logs (artifacts of rebuild run $rid) =="
               rm -rf /tmp/gl_art && mkdir -p /tmp/gl_art
               gh run download "$rid" --repo peteowen1/panna --pattern 'game-logs-*' --dir /tmp/gl_art
-              # a later run replaces an earlier one's files of the same name
-              find /tmp/gl_art -name 'game_logs_*.parquet' -exec mv -f {} /tmp/gl_parts/ \;
+              # A later run replaces an earlier one season by season: drop every
+              # part already held for a season this run carries, so a season
+              # re-run in quarters never mixes with its earlier halves.
+              for sz in $(find /tmp/gl_art -name 'game_logs_*__part*.parquet' -printf '%f\n' | sed -E 's/__part.*//' | sort -u); do
+                rm -f /tmp/gl_parts/"${sz}"__part*.parquet
+              done
+              find /tmp/gl_art -name 'game_logs_*__part*.parquet' -exec mv -f {} /tmp/gl_parts/ \;
             done
             # The rebuild writes each season in two halves (by league): join them.
             cat > /tmp/join_parts.R <<'EOF'
           suppressMessages(library(data.table))
-          fs <- list.files("/tmp/gl_parts", "^game_logs_.*__part[0-9][.]parquet$", full.names = TRUE)
-          for (k in unique(sub("__part[0-9][.]parquet$", "", basename(fs)))) {
+          fs <- list.files("/tmp/gl_parts", "^game_logs_.*__part[0-9]+(of[0-9]+)?[.]parquet$", full.names = TRUE)
+          for (k in unique(sub("__part[0-9]+(of[0-9]+)?[.]parquet$", "", basename(fs)))) {
             p <- fs[startsWith(basename(fs), paste0(k, "__"))]
             d <- data.table::rbindlist(lapply(p, function(f) data.table::as.data.table(arrow::read_parquet(f))),
                                        use.names = TRUE, fill = TRUE)

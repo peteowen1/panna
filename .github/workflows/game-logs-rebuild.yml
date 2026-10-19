@@ -14,7 +14,11 @@ on:
     # exp/game-logs-rebuild-control builds the same seasons with today's
     # centring, so role8 is compared with a rebuild on the same code and data,
     # not with game logs published over months of model and data changes.
-    branches: [exp/game-logs-rebuild, exp/game-logs-rebuild-control]
+    # The -retry branches re-run chosen seasons (listed in
+    # .github/game-logs-rebuild-seasons.txt) in more parts after a failure.
+    # Any branch with "control" in its name builds with today's centring.
+    branches: [exp/game-logs-rebuild, exp/game-logs-rebuild-control,
+               exp/game-logs-rebuild-retry, exp/game-logs-rebuild-retry-control]
   workflow_dispatch:
     inputs:
       seasons:
@@ -47,6 +51,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       seasons: ${{ steps.list.outputs.seasons }}
+      parts: ${{ steps.list.outputs.parts }}
+      nparts: ${{ steps.list.outputs.nparts }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -72,6 +78,12 @@ jobs:
           json=$(printf '%s\n' $s | jq -R . | jq -cs .)
           echo "Seasons: $json"
           echo "seasons=$json" >> "$GITHUB_OUTPUT"
+          # How many jobs each season is split into (by league), default 2.
+          n=2; [ -f .github/game-logs-rebuild-parts.txt ] && n=$(grep -v '^#' .github/game-logs-rebuild-parts.txt | tr -dc '0-9')
+          [ "$n" -ge 1 ] 2>/dev/null || { echo "FATAL: bad parts count '$n'"; exit 1; }
+          echo "Parts per season: $n"
+          echo "parts=$(seq 1 "$n" | jq -cs .)" >> "$GITHUB_OUTPUT"
+          echo "nparts=$n" >> "$GITHUB_OUTPUT"
 
   build:
     needs: plan
@@ -82,10 +94,11 @@ jobs:
       max-parallel: ${{ fromJSON(inputs.max_parallel || '6') }}
       matrix:
         season: ${{ fromJSON(needs.plan.outputs.seasons) }}
-        # Each season is built in two jobs, half the leagues each: a whole
-        # season of 2013-16 ran out of memory on the 16 GB runner. The EPR dry
-        # run joins the halves back into one file per season.
-        part: [1, 2]
+        # Each season is built in several jobs, a share of the leagues each:
+        # a whole season of 2013-16, and even half of 2012-13, ran out of
+        # memory on the 16 GB runner (memory builds up league by league). The
+        # EPR dry run joins the parts back into one file per season.
+        part: ${{ fromJSON(needs.plan.outputs.parts) }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -182,7 +195,8 @@ jobs:
           XMETRICS_SOURCE: remote
           SEASON: ${{ matrix.season }}
           PART: ${{ matrix.part }}
-          EPV_POSITION_GROUPING: ${{ inputs.epv_position_grouping || (github.ref == 'refs/heads/exp/game-logs-rebuild-control' && 'start_label' || 'role8') }}
+          NPARTS_PER_SEASON: ${{ needs.plan.outputs.nparts }}
+          EPV_POSITION_GROUPING: ${{ inputs.epv_position_grouping || (contains(github.ref, 'control') && 'start_label' || 'role8') }}
         run: |
           cat > /tmp/run_10b.R << 'EOF'
           pannadata_path <- Sys.getenv("PANNADATA_DIR")
@@ -197,8 +211,10 @@ jobs:
           source(file.path("data-raw", "pipeline_utils.R"))
           .all <- resolve_blog_leagues()$blog_leagues
           part <- as.integer(Sys.getenv("PART"))
-          blog_leagues <- .all[seq_along(.all) %% 2L == part %% 2L]
-          cat(sprintf("PART %d of 2: %s\n", part, paste(blog_leagues, collapse = " ")))
+          nparts <- as.integer(Sys.getenv("NPARTS_PER_SEASON"))
+          stopifnot(!is.na(part), !is.na(nparts), part >= 1L, part <= nparts)
+          blog_leagues <- .all[seq_along(.all) %% nparts == part %% nparts]
+          cat(sprintf("PART %d of %d: %s\n", part, nparts, paste(blog_leagues, collapse = " ")))
           epv_position_grouping <- Sys.getenv("EPV_POSITION_GROUPING")
           use_skill_ratings <- TRUE
           upload_game_logs <- FALSE
@@ -224,7 +240,7 @@ jobs:
           }
           out <- file.path(cache_dir, sprintf("game_logs_%s.parquet", game_log_seasons))
           if (!file.exists(out)) stop("10b wrote no ", out)
-          part_out <- sub("[.]parquet$", sprintf("__part%d.parquet", part), out)
+          part_out <- sub("[.]parquet$", sprintf("__part%dof%d.parquet", part, nparts), out)
           stopifnot(file.rename(out, part_out))
           gl <- arrow::read_parquet(part_out)
           cat(sprintf("GAME_LOGS %s part %d: %d rows, %d matches, %d leagues (%s), %.1f min, EPV centring %s\n",
@@ -244,7 +260,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
           SEASON: ${{ matrix.season }}
-          EPV_POSITION_GROUPING: ${{ inputs.epv_position_grouping || (github.ref == 'refs/heads/exp/game-logs-rebuild-control' && 'start_label' || 'role8') }}
+          EPV_POSITION_GROUPING: ${{ inputs.epv_position_grouping || (contains(github.ref, 'control') && 'start_label' || 'role8') }}
         run: |
           if grep -q "^EMPTY_PART" /tmp/10b.log; then echo "empty half, nothing to check"; exit 0; fi
           bad=0
@@ -288,8 +304,8 @@ jobs:
       - name: Keep the game logs as an artifact
         uses: actions/upload-artifact@v7
         with:
-          name: game-logs-${{ matrix.season }}-part${{ matrix.part }}
-          path: data-raw/cache-predictions-opta/game_logs_${{ matrix.season }}__part${{ matrix.part }}.parquet
+          name: game-logs-${{ matrix.season }}-part${{ matrix.part }}of${{ needs.plan.outputs.nparts }}
+          path: data-raw/cache-predictions-opta/game_logs_${{ matrix.season }}__part${{ matrix.part }}of${{ needs.plan.outputs.nparts }}.parquet
           # an empty half writes no file; a crash has already failed the build step
           if-no-files-found: warn
           retention-days: 14
