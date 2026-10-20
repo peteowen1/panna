@@ -11,9 +11,8 @@ step 05 at 15.6-15.8GB of the 16GB runner and killed it on 2026-10-10
 [`.get_opta_col_mapping()`](https://peteowen1.github.io/panna/reference/dot-get_opta_col_mapping.md),
 plus `match_id`, `player_name`, `position`),
 [`.ensure_player_id()`](https://peteowen1.github.io/panna/reference/dot-ensure_player_id.md),
-[`.spm_league_shares()`](https://peteowen1.github.io/panna/reference/dot-spm_league_shares.md)
-(a competition column and a minutes column), and step 07's season
-filters (`season`). Readers of xmetrics:
+`.spm_league_shares()` (a competition column and a minutes column), and
+step 07's season filters (`season`). Readers of xmetrics:
 [`.aggregate_xmetrics_for_spm()`](https://peteowen1.github.io/panna/reference/dot-aggregate_xmetrics_for_spm.md)
 and the chain-feature blocks in 05/07.
 `tests/testthat/test-spm-opta-helpers.R` checks that each reader gives

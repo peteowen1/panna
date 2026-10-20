@@ -15,7 +15,8 @@ fit_expanding_pooled_rapm(
   min_year = NULL,
   lambda_formula = function(n) 16.67 * n^(-0.58),
   nfolds = 5,
-  seed = NULL
+  seed = NULL,
+  halflife_days = NULL
 )
 ```
 
@@ -58,10 +59,21 @@ fit_expanding_pooled_rapm(
   CV fold assignment, for reproducible per-cutoff-year fits. `NULL` = no
   explicit seed.
 
+- halflife_days:
+
+  Numeric or `NULL` (default). When set, each kept row's weight is
+  multiplied by `0.5^(age / halflife_days)`, where age is days before
+  the window's LAST match – the same decay
+  `data-raw/player-ratings-opta/04c_rapm_decayed.R` applies to the live
+  skill-SPM target (panna#257), anchored inside the window so no date at
+  or after the cutoff is used. Needs a `match_date` column on
+  `splint_season_map`. `NULL` keeps the undecayed fit exactly.
+
 ## Value
 
 List: `ratings` (data.frame player_id/rapm/offense/defense),
 `lambda_min`, `n_obs`, `cutoff_year`, `min_year` (the argument as
-supplied, `NULL` for the unbounded expanding-window default). `NULL`
+supplied, `NULL` for the unbounded expanding-window default),
+`halflife_days` and `anchor_date` (`NULL` / `NA` when undecayed). `NULL`
 (with a warning) if fewer than 1000 valid observations remain (too few
 prior seasons, or an empty/too-narrow window).

@@ -522,6 +522,38 @@ XGBoost Poisson/multinomial match outcome prediction
 - [`update_elo()`](https://peteowen1.github.io/panna/reference/update_elo.md)
   : Update Elo Ratings After a Match
 
+## Positions
+
+Position groupings per match (role_full, role16, role8, role4) from Opta
+labels and formation slots
+
+- [`position_asof()`](https://peteowen1.github.io/panna/reference/position_asof.md)
+  :
+
+  Each player's usual position before each match (the `asof_` level)
+
+- [`position_career()`](https://peteowen1.github.io/panna/reference/position_career.md)
+  :
+
+  Each player's position over his whole career (the `career_` level)
+
+- [`position_match()`](https://peteowen1.github.io/panna/reference/position_match.md)
+  :
+
+  Each player's position in each match (the `match_` level)
+
+- [`position_roles()`](https://peteowen1.github.io/panna/reference/position_roles.md)
+  : Every position grouping from one Opta position and side
+
+- [`position_season()`](https://peteowen1.github.io/panna/reference/position_season.md)
+  :
+
+  Each player's position over each season (the `season_` level)
+
+- [`position_slot_table()`](https://peteowen1.github.io/panna/reference/position_slot_table.md)
+  : Most common position per formation slot, learned from labelled
+  starters
+
 ## Expected Minutes Model
 
 Player role classification and expected-minutes prediction for lineups
@@ -674,6 +706,11 @@ Composite player skill and per-game stat value metrics
   : Get Player Skill Ratings
 - [`psr_leaderboard_eligible()`](https://peteowen1.github.io/panna/reference/psr_leaderboard_eligible.md)
   : Is a player-season eligible for a PSR leaderboard? (panna#215)
+- [`psr_season_coverage()`](https://peteowen1.github.io/panna/reference/psr_season_coverage.md)
+  : Matches per season with real player stats
+- [`psr_season_covered()`](https://peteowen1.github.io/panna/reference/psr_season_covered.md)
+  : Is a player-season in a season with enough Opta coverage?
+  (panna#221)
 - [`psv_opponent`](https://peteowen1.github.io/panna/reference/psv_opponent.md)
   : Opponent adjustment for per-match PSV (panna#220)
 - [`soccer_position_map()`](https://peteowen1.github.io/panna/reference/soccer_position_map.md)
@@ -760,6 +797,9 @@ Package-wide constants and thresholds
   : Minimum weighted 90s to qualify for a PSR leaderboard (panna#215)
 - [`MIN_GAMES_FOR_PADDING`](https://peteowen1.github.io/panna/reference/MIN_GAMES_FOR_PADDING.md)
   : Default minimum games for Bayesian padding full weight
+- [`MIN_MATCHES_PSR_SEASON`](https://peteowen1.github.io/panna/reference/MIN_MATCHES_PSR_SEASON.md)
+  : Minimum matches in a season for it to enter a cross-season PSR
+  display
 - [`MIN_MINUTES_FEATURES`](https://peteowen1.github.io/panna/reference/MIN_MINUTES_FEATURES.md)
   : Default minimum minutes for player feature matrix
 - [`MIN_MINUTES_RAPM`](https://peteowen1.github.io/panna/reference/MIN_MINUTES_RAPM.md)

@@ -7,10 +7,10 @@ mapping (review finding, panna#211: an earlier version of this function
 regex-matched the same vocabulary independently, which is exactly the kind of
 duplicated classifier this codebase's own gotchas warn drifts silently); or a
 16-role classify_role() code (&quot;CB&quot;, &quot;DM&quot;, ...), resolved
-via .role16_to_broad – needed because
+via .role16_to_broad() – needed because
 apply_psv_calibration()'s own fallback chain can hand this function a
 fine-grained primary_position (see .player_role's
-comment: that column is &quot;usually already broad... but sometimes a
+comment: that column is &quot;usually already broad... but [sometimes] a
 fine-grained label&quot;). Anything none of the three recognize returns NA, which
 apply_psv_calibration() treats as factor 1 (uncalibrated passthrough)."><meta property="og:description" content="Accepts three input vocabularies, tried in order: an already-broad label
 (GK/DEF/MID/FWD, passed through); a raw Opta
@@ -20,10 +20,10 @@ mapping (review finding, panna#211: an earlier version of this function
 regex-matched the same vocabulary independently, which is exactly the kind of
 duplicated classifier this codebase's own gotchas warn drifts silently); or a
 16-role classify_role() code (&quot;CB&quot;, &quot;DM&quot;, ...), resolved
-via .role16_to_broad – needed because
+via .role16_to_broad() – needed because
 apply_psv_calibration()'s own fallback chain can hand this function a
 fine-grained primary_position (see .player_role's
-comment: that column is &quot;usually already broad... but sometimes a
+comment: that column is &quot;usually already broad... but [sometimes] a
 fine-grained label&quot;). Anything none of the three recognize returns NA, which
 apply_psv_calibration() treats as factor 1 (uncalibrated passthrough)."><meta property="og:image" content="https://peteowen1.github.io/panna/logo.png"></head><body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
@@ -33,7 +33,7 @@ apply_psv_calibration() treats as factor 1 (uncalibrated passthrough)."><meta pr
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.102</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.103</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -75,10 +75,10 @@ mapping (review finding, panna#211: an earlier version of this function
 regex-matched the same vocabulary independently, which is exactly the kind of
 duplicated classifier this codebase's own gotchas warn drifts silently); or a
 16-role <code><a href="classify_role.html">classify_role()</a></code> code (<code>"CB"</code>, <code>"DM"</code>, ...), resolved
-via <code>.role16_to_broad</code> – needed because
+via <code>.role16_to_broad()</code> – needed because
 <code><a href="apply_psv_calibration.html">apply_psv_calibration()</a></code>'s own fallback chain can hand this function a
 fine-grained <code>primary_position</code> (see <code><a href="dot-player_role.html">.player_role</a></code>'s
-comment: that column is "usually already broad... but sometimes a
+comment: that column is "usually already broad... but [sometimes] a
 fine-grained label"). Anything none of the three recognize returns NA, which
 <code><a href="apply_psv_calibration.html">apply_psv_calibration()</a></code> treats as factor 1 (uncalibrated passthrough).</p>
     </div>

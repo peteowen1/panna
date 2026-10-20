@@ -119,6 +119,16 @@ compute_player_psv(
   called `pos_grp` would be shadowed by the column of the same name
   inside `dt[...]`.
 
+- role_override:
+
+  Optional character vector, one per row of `player_match_stats`,
+  supplying the fine-grained role label directly instead of resolving it
+  from `position` + `position_side`. Usually unnecessary here, since
+  match stats carry both columns. It exists for callers that score
+  slices of a larger population and want the same scope-stable role
+  everywhere, for the same reason as `is_gk` and `.pos_grp_override`.
+  `NULL` (default) resolves roles natively.
+
 ## Value
 
 A data.table with `psv`, `osv`, `dsv` columns.
@@ -148,6 +158,8 @@ Other psr:
 [`load_psv_match_reliability()`](https://peteowen1.github.io/panna/reference/load_psv_match_reliability.md),
 [`player_psr()`](https://peteowen1.github.io/panna/reference/player_psr.md),
 [`psr_leaderboard_eligible()`](https://peteowen1.github.io/panna/reference/psr_leaderboard_eligible.md),
+[`psr_season_coverage()`](https://peteowen1.github.io/panna/reference/psr_season_coverage.md),
+[`psr_season_covered()`](https://peteowen1.github.io/panna/reference/psr_season_covered.md),
 [`psv_opponent`](https://peteowen1.github.io/panna/reference/psv_opponent.md),
 [`soccer_position_map()`](https://peteowen1.github.io/panna/reference/soccer_position_map.md),
 [`soccer_stat_rating_definitions()`](https://peteowen1.github.io/panna/reference/soccer_stat_rating_definitions.md),

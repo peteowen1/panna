@@ -1,0 +1,48 @@
+# Matches per season with real player stats
+
+Counts distinct matches per `season_end_year` in a match-level stats
+table (one row per player-match, as built by step 01 of the skills
+pipeline). Those rows already carry the minimum-minutes filter, so a
+match only counts if it has player box-score data – which is what PSR
+needs, and what early Opta seasons mostly lack (panna#221).
+
+## Usage
+
+``` r
+psr_season_coverage(match_stats)
+```
+
+## Arguments
+
+- match_stats:
+
+  Table with `match_id` and either `season_end_year` or `season`.
+
+## Value
+
+`data.table(season_end_year, n_matches)`, one row per season.
+
+## See also
+
+Other psr:
+[`PSV_RELIABILITY_GD_SCALE`](https://peteowen1.github.io/panna/reference/PSV_RELIABILITY_GD_SCALE.md),
+[`apply_psr_calibration()`](https://peteowen1.github.io/panna/reference/apply_psr_calibration.md),
+[`apply_psr_season_calibration()`](https://peteowen1.github.io/panna/reference/apply_psr_season_calibration.md),
+[`apply_psv_calibration()`](https://peteowen1.github.io/panna/reference/apply_psv_calibration.md),
+[`apply_psv_opponent_adjustment()`](https://peteowen1.github.io/panna/reference/apply_psv_opponent_adjustment.md),
+[`calculate_psr()`](https://peteowen1.github.io/panna/reference/calculate_psr.md),
+[`calculate_psv()`](https://peteowen1.github.io/panna/reference/calculate_psv.md),
+[`calculate_psv_components()`](https://peteowen1.github.io/panna/reference/calculate_psv_components.md),
+[`compute_player_psv()`](https://peteowen1.github.io/panna/reference/compute_player_psv.md),
+[`default_stat_rating_params()`](https://peteowen1.github.io/panna/reference/default_stat_rating_params.md),
+[`fit_psv_opponent_adjustment()`](https://peteowen1.github.io/panna/reference/fit_psv_opponent_adjustment.md),
+[`load_opta_psr_weekly()`](https://peteowen1.github.io/panna/reference/load_opta_psr_weekly.md),
+[`load_psr_calibration()`](https://peteowen1.github.io/panna/reference/load_psr_calibration.md),
+[`load_psv_match_reliability()`](https://peteowen1.github.io/panna/reference/load_psv_match_reliability.md),
+[`player_psr()`](https://peteowen1.github.io/panna/reference/player_psr.md),
+[`psr_leaderboard_eligible()`](https://peteowen1.github.io/panna/reference/psr_leaderboard_eligible.md),
+[`psr_season_covered()`](https://peteowen1.github.io/panna/reference/psr_season_covered.md),
+[`psv_opponent`](https://peteowen1.github.io/panna/reference/psv_opponent.md),
+[`soccer_position_map()`](https://peteowen1.github.io/panna/reference/soccer_position_map.md),
+[`soccer_stat_rating_definitions()`](https://peteowen1.github.io/panna/reference/soccer_stat_rating_definitions.md),
+[`stat_rating_names()`](https://peteowen1.github.io/panna/reference/stat_rating_names.md)

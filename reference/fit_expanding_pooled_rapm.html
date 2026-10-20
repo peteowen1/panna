@@ -13,7 +13,7 @@ recommended by FABLE-ASOF-EXPERIMENTS.md sec 4."><meta property="og:image" conte
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.102</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.103</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -62,7 +62,8 @@ recommended by FABLE-ASOF-EXPERIMENTS.md sec 4.</p>
 <span>  min_year <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  lambda_formula <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">n</span><span class="op">)</span> <span class="fl">16.67</span> <span class="op">*</span> <span class="va">n</span><span class="op">^</span><span class="op">(</span><span class="op">-</span><span class="fl">0.58</span><span class="op">)</span>,</span>
 <span>  nfolds <span class="op">=</span> <span class="fl">5</span>,</span>
-<span>  seed <span class="op">=</span> <span class="cn">NULL</span></span>
+<span>  seed <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  halflife_days <span class="op">=</span> <span class="cn">NULL</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -104,12 +105,23 @@ windowed prior-free RAPM target, e.g. a 5-season window <code>min_year = cutoff_
 <dd><p>RNG seed for <code><a href="fit_rapm.html">fit_rapm()</a></code>'s CV fold assignment, for
 reproducible per-cutoff-year fits. <code>NULL</code> = no explicit seed.</p></dd>
 
+
+<dt id="arg-halflife-days">halflife_days<a class="anchor" aria-label="anchor" href="#arg-halflife-days"></a></dt>
+<dd><p>Numeric or <code>NULL</code> (default). When set, each kept row's
+weight is multiplied by <code>0.5^(age / halflife_days)</code>, where age is days
+before the window's LAST match – the same decay
+<code>data-raw/player-ratings-opta/04c_rapm_decayed.R</code> applies to the live
+skill-SPM target (panna#257), anchored inside the window so no date at or
+after the cutoff is used. Needs a <code>match_date</code> column on
+<code>splint_season_map</code>. <code>NULL</code> keeps the undecayed fit exactly.</p></dd>
+
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
     <p>List: <code>ratings</code> (data.frame player_id/rapm/offense/defense),
 <code>lambda_min</code>, <code>n_obs</code>, <code>cutoff_year</code>, <code>min_year</code> (the argument as
-supplied, <code>NULL</code> for the unbounded expanding-window default). <code>NULL</code>
+supplied, <code>NULL</code> for the unbounded expanding-window default),
+<code>halflife_days</code> and <code>anchor_date</code> (<code>NULL</code> / <code>NA</code> when undecayed). <code>NULL</code>
 (with a warning) if fewer than 1000 valid observations remain (too few
 prior seasons, or an empty/too-narrow window).</p>
     </div>

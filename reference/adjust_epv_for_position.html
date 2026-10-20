@@ -9,7 +9,7 @@ compared to peers at the same position rather than across all positions."><meta 
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.102</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.103</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -52,7 +52,8 @@ compared to peers at the same position rather than across all positions.</p>
     <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">adjust_epv_for_position</span><span class="op">(</span></span>
 <span>  <span class="va">player_match</span>,</span>
 <span>  credit_cols <span class="op">=</span> <span class="st">"total_credit"</span>,</span>
-<span>  minutes_col <span class="op">=</span> <span class="st">"minutes_played"</span></span>
+<span>  minutes_col <span class="op">=</span> <span class="st">"minutes_played"</span>,</span>
+<span>  group_col <span class="op">=</span> <span class="cn">NULL</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -73,6 +74,13 @@ Defaults to "total_credit".</p></dd>
 <dt id="arg-minutes-col">minutes_col<a class="anchor" aria-label="anchor" href="#arg-minutes-col"></a></dt>
 <dd><p>Minutes column used for the per-90 average. Default
 "minutes_played"; if absent, the per-game average is used.</p></dd>
+
+
+<dt id="arg-group-col">group_col<a class="anchor" aria-label="anchor" href="#arg-group-col"></a></dt>
+<dd><p>Optional column holding each ROW's group (e.g. the
+player-match role8 from <code><a href="position_match.html">position_match()</a></code>). When given, rows are centred
+within that group instead of the player's usual starting label; <code>NA</code> and
+"OTHER" rows keep no adjustment.</p></dd>
 
 </dl></div>
     <div class="section level2">

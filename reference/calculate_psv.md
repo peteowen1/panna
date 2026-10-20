@@ -105,7 +105,13 @@ calculate_psv(
 
 ## Value
 
-A data.table with identifier columns plus `psv_raw` and `psv`.
+A data.table with identifier columns plus `psv_raw` and `psv`. With
+`scale_to_minutes = TRUE` it also carries `psv_minutes`: the minutes
+each row's PSV was actually scaled by (from `minutes_played`, else
+`total_minutes`; NA or negative input minutes read as 0). Add any
+further per-90 quantity (e.g. the game-logs league offset) using this
+column, so it can never be priced in a different minutes source than the
+PSV it joins (panna#164).
 
 ## Details
 
@@ -132,6 +138,8 @@ Other psr:
 [`load_psv_match_reliability()`](https://peteowen1.github.io/panna/reference/load_psv_match_reliability.md),
 [`player_psr()`](https://peteowen1.github.io/panna/reference/player_psr.md),
 [`psr_leaderboard_eligible()`](https://peteowen1.github.io/panna/reference/psr_leaderboard_eligible.md),
+[`psr_season_coverage()`](https://peteowen1.github.io/panna/reference/psr_season_coverage.md),
+[`psr_season_covered()`](https://peteowen1.github.io/panna/reference/psr_season_covered.md),
 [`psv_opponent`](https://peteowen1.github.io/panna/reference/psv_opponent.md),
 [`soccer_position_map()`](https://peteowen1.github.io/panna/reference/soccer_position_map.md),
 [`soccer_stat_rating_definitions()`](https://peteowen1.github.io/panna/reference/soccer_stat_rating_definitions.md),

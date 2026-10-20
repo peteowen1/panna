@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.102</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.103</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -1016,6 +1016,57 @@
         </dt>
         <dd>Update Elo Ratings After a Match</dd>
       </dl></div><div class="section level2">
+      <h2 id="positions">Positions<a class="anchor" aria-label="anchor" href="#positions"></a></h2>
+
+      <div class="section-desc"><p>Position groupings per match (role_full, role16, role8, role4) from Opta labels and formation slots</p></div>
+
+      <dl></dl></div><div class="section level2">
+
+
+
+
+      <dl><dt>
+
+          <code><a href="position_asof.html">position_asof()</a></code>
+
+        </dt>
+        <dd>Each player's usual position before each match (the <code>asof_</code> level)</dd>
+
+        <dt>
+
+          <code><a href="position_career.html">position_career()</a></code>
+
+        </dt>
+        <dd>Each player's position over his whole career (the <code>career_</code> level)</dd>
+
+        <dt>
+
+          <code><a href="position_match.html">position_match()</a></code>
+
+        </dt>
+        <dd>Each player's position in each match (the <code>match_</code> level)</dd>
+
+        <dt>
+
+          <code><a href="position_roles.html">position_roles()</a></code>
+
+        </dt>
+        <dd>Every position grouping from one Opta position and side</dd>
+
+        <dt>
+
+          <code><a href="position_season.html">position_season()</a></code>
+
+        </dt>
+        <dd>Each player's position over each season (the <code>season_</code> level)</dd>
+
+        <dt>
+
+          <code><a href="position_slot_table.html">position_slot_table()</a></code>
+
+        </dt>
+        <dd>Most common position per formation slot, learned from labelled starters</dd>
+      </dl></div><div class="section level2">
       <h2 id="expected-minutes-model">Expected Minutes Model<a class="anchor" aria-label="anchor" href="#expected-minutes-model"></a></h2>
 
       <div class="section-desc"><p>Player role classification and expected-minutes prediction for lineups</p></div>
@@ -1430,6 +1481,20 @@
 
         <dt>
 
+          <code><a href="psr_season_coverage.html">psr_season_coverage()</a></code>
+
+        </dt>
+        <dd>Matches per season with real player stats</dd>
+
+        <dt>
+
+          <code><a href="psr_season_covered.html">psr_season_covered()</a></code>
+
+        </dt>
+        <dd>Is a player-season in a season with enough Opta coverage? (panna#221)</dd>
+
+        <dt>
+
           <code><a href="psv_opponent.html">psv_opponent</a></code>
 
         </dt>
@@ -1677,6 +1742,13 @@
 
         </dt>
         <dd>Default minimum games for Bayesian padding full weight</dd>
+
+        <dt>
+
+          <code><a href="MIN_MATCHES_PSR_SEASON.html">MIN_MATCHES_PSR_SEASON</a></code>
+
+        </dt>
+        <dd>Minimum matches in a season for it to enter a cross-season PSR display</dd>
 
         <dt>
 

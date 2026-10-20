@@ -11,7 +11,7 @@ EPV and PSV contributions."><meta property="og:image" content="https://peteowen1
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.102</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.103</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -120,6 +120,11 @@ includes the opponent-strength adjustment.</p></dd>
 <dt>psv, osv, dsv</dt>
 <dd><p>Player Stat Value with O/D decomposition; NA when
 the player-game has no PSV row</p></dd>
+
+<dt>psv_minutes</dt>
+<dd><p>Minutes the PSV was scaled by (present only when
+PSV was computed with <code>scale_to_minutes = TRUE</code>); used to scale
+the game-logs league offset the same way (panna#164)</p></dd>
 
 <dt>piero_value</dt>
 <dd><p>Combined: <code>epv_weight * epv_total_adj +

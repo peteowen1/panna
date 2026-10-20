@@ -13,7 +13,7 @@ them, and let the display decide."><meta property="og:image" content="https://pe
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.102</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.103</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -55,7 +55,11 @@ them, and let the display decide.</p>
 
     <div class="section level2">
     <h2 id="ref-usage">Usage<a class="anchor" aria-label="anchor" href="#ref-usage"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">psr_leaderboard_eligible</span><span class="op">(</span><span class="va">psr_dt</span>, min_90s <span class="op">=</span> <span class="va">MIN_90S_PSR_LEADERBOARD</span><span class="op">)</span></span></code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">psr_leaderboard_eligible</span><span class="op">(</span></span>
+<span>  <span class="va">psr_dt</span>,</span>
+<span>  min_90s <span class="op">=</span> <span class="va">MIN_90S_PSR_LEADERBOARD</span>,</span>
+<span>  season_coverage <span class="op">=</span> <span class="cn">NULL</span></span>
+<span><span class="op">)</span></span></code></pre></div>
     </div>
 
     <div class="section level2">
@@ -69,6 +73,13 @@ them, and let the display decide.</p>
 <dt id="arg-min-s">min_90s<a class="anchor" aria-label="anchor" href="#arg-min-s"></a></dt>
 <dd><p>Minimum weighted 90s; defaults to
 <code><a href="MIN_90S_PSR_LEADERBOARD.html">MIN_90S_PSR_LEADERBOARD</a></code>.</p></dd>
+
+
+<dt id="arg-season-coverage">season_coverage<a class="anchor" aria-label="anchor" href="#arg-season-coverage"></a></dt>
+<dd><p>Optional table from <code><a href="psr_season_coverage.html">psr_season_coverage</a></code>.
+When supplied, a row must also sit in a season with enough Opta coverage
+(<code><a href="psr_season_covered.html">psr_season_covered</a></code>); <code>NULL</code> (default) applies the
+workload bar alone. Needs <code>season_end_year</code> in <code>psr_dt</code>.</p></dd>
 
 </dl></div>
     <div class="section level2">
@@ -99,6 +110,8 @@ as NOT eligible — an unknown workload cannot clear a workload bar.</p>
 <code><a href="load_psr_calibration.html">load_psr_calibration()</a></code>,
 <code><a href="load_psv_match_reliability.html">load_psv_match_reliability()</a></code>,
 <code><a href="player_psr.html">player_psr()</a></code>,
+<code><a href="psr_season_coverage.html">psr_season_coverage()</a></code>,
+<code><a href="psr_season_covered.html">psr_season_covered()</a></code>,
 <code><a href="psv_opponent.html">psv_opponent</a></code>,
 <code><a href="soccer_position_map.html">soccer_position_map()</a></code>,
 <code><a href="soccer_stat_rating_definitions.html">soccer_stat_rating_definitions()</a></code>,

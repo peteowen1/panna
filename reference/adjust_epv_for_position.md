@@ -9,7 +9,8 @@ compared to peers at the same position rather than across all positions.
 adjust_epv_for_position(
   player_match,
   credit_cols = "total_credit",
-  minutes_col = "minutes_played"
+  minutes_col = "minutes_played",
+  group_col = NULL
 )
 ```
 
@@ -29,6 +30,14 @@ adjust_epv_for_position(
 
   Minutes column used for the per-90 average. Default "minutes_played";
   if absent, the per-game average is used.
+
+- group_col:
+
+  Optional column holding each ROW's group (e.g. the player-match role8
+  from
+  [`position_match()`](https://peteowen1.github.io/panna/reference/position_match.md)).
+  When given, rows are centred within that group instead of the player's
+  usual starting label; `NA` and "OTHER" rows keep no adjustment.
 
 ## Value
 

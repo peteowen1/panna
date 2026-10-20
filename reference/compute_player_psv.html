@@ -9,7 +9,7 @@ calculate_psv_components."><meta property="og:image" content="https://peteowen1.
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.102</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.103</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -155,6 +155,16 @@ obvious. Resolve once on the full population and pass it here. Named with
 a dot prefix deliberately: a parameter called <code>pos_grp</code> would be
 shadowed by the column of the same name inside <code>dt[...]</code>.</p></dd>
 
+
+<dt id="arg-role-override">role_override<a class="anchor" aria-label="anchor" href="#arg-role-override"></a></dt>
+<dd><p>Optional character vector, one per row of
+<code>player_match_stats</code>, supplying the fine-grained role label directly
+instead of resolving it from <code>position</code> + <code>position_side</code>.
+Usually unnecessary here, since match stats carry both columns. It exists
+for callers that score slices of a larger population and want the same
+scope-stable role everywhere, for the same reason as <code>is_gk</code> and
+<code>.pos_grp_override</code>. <code>NULL</code> (default) resolves roles natively.</p></dd>
+
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
@@ -185,6 +195,8 @@ sd, not a player-population sd – this is deliberate, not a bug. See
 <code><a href="load_psv_match_reliability.html">load_psv_match_reliability()</a></code>,
 <code><a href="player_psr.html">player_psr()</a></code>,
 <code><a href="psr_leaderboard_eligible.html">psr_leaderboard_eligible()</a></code>,
+<code><a href="psr_season_coverage.html">psr_season_coverage()</a></code>,
+<code><a href="psr_season_covered.html">psr_season_covered()</a></code>,
 <code><a href="psv_opponent.html">psv_opponent</a></code>,
 <code><a href="soccer_position_map.html">soccer_position_map()</a></code>,
 <code><a href="soccer_stat_rating_definitions.html">soccer_stat_rating_definitions()</a></code>,

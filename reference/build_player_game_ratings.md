@@ -85,6 +85,12 @@ A data.table with one row per player per match:
   Player Stat Value with O/D decomposition; NA when the player-game has
   no PSV row
 
+- psv_minutes:
+
+  Minutes the PSV was scaled by (present only when PSV was computed with
+  `scale_to_minutes = TRUE`); used to scale the game-logs league offset
+  the same way (panna#164)
+
 - piero_value:
 
   Combined: `epv_weight * epv_total_adj + psv_weight * psv` (falls back

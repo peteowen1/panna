@@ -8,7 +8,11 @@ rows, flag them, and let the display decide.
 ## Usage
 
 ``` r
-psr_leaderboard_eligible(psr_dt, min_90s = MIN_90S_PSR_LEADERBOARD)
+psr_leaderboard_eligible(
+  psr_dt,
+  min_90s = MIN_90S_PSR_LEADERBOARD,
+  season_coverage = NULL
+)
 ```
 
 ## Arguments
@@ -21,6 +25,16 @@ psr_leaderboard_eligible(psr_dt, min_90s = MIN_90S_PSR_LEADERBOARD)
 
   Minimum weighted 90s; defaults to
   [`MIN_90S_PSR_LEADERBOARD`](https://peteowen1.github.io/panna/reference/MIN_90S_PSR_LEADERBOARD.md).
+
+- season_coverage:
+
+  Optional table from
+  [`psr_season_coverage`](https://peteowen1.github.io/panna/reference/psr_season_coverage.md).
+  When supplied, a row must also sit in a season with enough Opta
+  coverage
+  ([`psr_season_covered`](https://peteowen1.github.io/panna/reference/psr_season_covered.md));
+  `NULL` (default) applies the workload bar alone. Needs
+  `season_end_year` in `psr_dt`.
 
 ## Value
 
@@ -50,6 +64,8 @@ Other psr:
 [`load_psr_calibration()`](https://peteowen1.github.io/panna/reference/load_psr_calibration.md),
 [`load_psv_match_reliability()`](https://peteowen1.github.io/panna/reference/load_psv_match_reliability.md),
 [`player_psr()`](https://peteowen1.github.io/panna/reference/player_psr.md),
+[`psr_season_coverage()`](https://peteowen1.github.io/panna/reference/psr_season_coverage.md),
+[`psr_season_covered()`](https://peteowen1.github.io/panna/reference/psr_season_covered.md),
 [`psv_opponent`](https://peteowen1.github.io/panna/reference/psv_opponent.md),
 [`soccer_position_map()`](https://peteowen1.github.io/panna/reference/soccer_position_map.md),
 [`soccer_stat_rating_definitions()`](https://peteowen1.github.io/panna/reference/soccer_stat_rating_definitions.md),

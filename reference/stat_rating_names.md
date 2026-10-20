@@ -44,6 +44,8 @@ Other psr:
 [`load_psv_match_reliability()`](https://peteowen1.github.io/panna/reference/load_psv_match_reliability.md),
 [`player_psr()`](https://peteowen1.github.io/panna/reference/player_psr.md),
 [`psr_leaderboard_eligible()`](https://peteowen1.github.io/panna/reference/psr_leaderboard_eligible.md),
+[`psr_season_coverage()`](https://peteowen1.github.io/panna/reference/psr_season_coverage.md),
+[`psr_season_covered()`](https://peteowen1.github.io/panna/reference/psr_season_covered.md),
 [`psv_opponent`](https://peteowen1.github.io/panna/reference/psv_opponent.md),
 [`soccer_position_map()`](https://peteowen1.github.io/panna/reference/soccer_position_map.md),
 [`soccer_stat_rating_definitions()`](https://peteowen1.github.io/panna/reference/soccer_stat_rating_definitions.md)

@@ -61,6 +61,15 @@ fit_spm_model(
   directional priors (e.g. negative defensive-tackle coefficient).
   `NULL` (default) = unconstrained.
 
+- penalty_factor:
+
+  Optional named numeric vector of per-predictor glmnet penalty factors,
+  keyed by predictor name. `0` means "never shrink this predictor" (used
+  for league fixed effects, which are controls rather than skills).
+  Unnamed or unmatched predictors default to `1` (normal penalty); names
+  not in the design matrix are ignored with a warning. `NULL` (default)
+  = every predictor penalized equally.
+
 ## Value
 
 Fitted glmnet model with metadata

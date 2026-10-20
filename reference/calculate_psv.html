@@ -13,7 +13,7 @@ ratings.'><meta property="og:image" content="https://peteowen1.github.io/panna/l
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.102</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.103</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -154,7 +154,12 @@ zero. Display path only (game-logs export) – has no effect when
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
     <p>A data.table with identifier columns plus <code>psv_raw</code> and
-<code>psv</code>.</p>
+<code>psv</code>. With <code>scale_to_minutes = TRUE</code> it also carries
+<code>psv_minutes</code>: the minutes each row's PSV was actually scaled by
+(from <code>minutes_played</code>, else <code>total_minutes</code>; NA or negative
+input minutes read as 0). Add any further per-90 quantity (e.g. the
+game-logs league offset) using this column, so it can never be priced in
+a different minutes source than the PSV it joins (panna#164).</p>
     </div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
@@ -180,6 +185,8 @@ coefficient file. Efficiency stats (ratios) are excluded from PSV by default.</p
 <code><a href="load_psv_match_reliability.html">load_psv_match_reliability()</a></code>,
 <code><a href="player_psr.html">player_psr()</a></code>,
 <code><a href="psr_leaderboard_eligible.html">psr_leaderboard_eligible()</a></code>,
+<code><a href="psr_season_coverage.html">psr_season_coverage()</a></code>,
+<code><a href="psr_season_covered.html">psr_season_covered()</a></code>,
 <code><a href="psv_opponent.html">psv_opponent</a></code>,
 <code><a href="soccer_position_map.html">soccer_position_map()</a></code>,
 <code><a href="soccer_stat_rating_definitions.html">soccer_stat_rating_definitions()</a></code>,

@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.102</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.103</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,6 +39,13 @@
       <small>Source: <a href="https://github.com/peteowen1/panna/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.103" id="panna-03103">panna 0.3.103<a class="anchor" aria-label="anchor" href="#panna-03103"></a></h2>
+<ul><li><p>Step 10b’s role8 EPV fallback to start_label now also writes a GitHub Actions <code>::warning::</code>, so a weekly run that falls back for a league is visible rather than green and silent.</p></li>
+<li><p><code><a href="../reference/ng_spread_pools.html">ng_spread_pools()</a></code> no longer reads a broken lineup as a mass sending-off. Some lineups give every player who was never subbed off one half’s minutes (46) and every substitute 1 minute; the red-card rule (R031) then ended all their stints at minute 46, left the late pools with nobody to go to, and <code><a href="../reference/ng_player_game.html">ng_player_game()</a></code> aborted for the whole league-season. Four or more early exits in one team-match now count as bad minutes, and nobody in it is treated as sent off. This dropped net goals for all of La Liga, MLS and Argentina in the 2025-26 game-log rebuild (one such match each; 27 of 252,305 matches in <code>opta_lineups.parquet</code>).</p></li>
+<li><p><code><a href="../reference/player_psr.html">player_psr()</a></code> now ranks only players with at least <code>MIN_90S_PSR_LEADERBOARD</code> (15) weighted nineties, through <code><a href="../reference/psr_leaderboard_eligible.html">psr_leaderboard_eligible()</a></code>, with a new <code>min_90s</code> argument (0 turns it off). A name lookup (<code>player =</code>) is exempt. On the latest weekly snapshot 21 of the top 50 had fewer than 15 nineties. The skills-pipeline “Top 20 by PSR” console prints (steps 07 and 08b) use the same floor. The weekly parquet still carries every player (<a href="https://github.com/peteowen1/panna/issues/215" class="external-link">#215</a>).</p></li>
+<li><p>Season-coverage gate for cross-season PSR displays: <code><a href="../reference/psr_season_coverage.html">psr_season_coverage()</a></code> counts matches with player stats per season, <code><a href="../reference/psr_season_covered.html">psr_season_covered()</a></code> flags seasons under <code>MIN_MATCHES_PSR_SEASON</code> (4,000), and <code>psr_leaderboard_eligible(season_coverage = )</code> applies both bars. The latest season always passes (it may be in progress). Measured on the raw feed: matches with player stats are 822 in 2014 and 2,663 in 2015, against 5,456+ from 2016. The sparsity is Opta box-score coverage, not a pipeline filter: lineup rows exist for all 6,183 matches of 2014 (<a href="https://github.com/peteowen1/panna/issues/221" class="external-link">#221</a>).</p></li>
+</ul></div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.102" id="panna-03102">panna 0.3.102<a class="anchor" aria-label="anchor" href="#panna-03102"></a></h2>
 <ul><li>

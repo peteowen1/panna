@@ -44,6 +44,24 @@ fit_spm_opta(
 
   Transform for weighting: "sqrt", "linear", "log"
 
+- league_fe:
+
+  Add league fixed-effect dummies as unpenalized controls (opt-in,
+  default FALSE). The largest league is held out as the reference.
+  Mutually exclusive with `league_shares`.
+
+- league_min_n:
+
+  Minimum number of rows a league needs to get its own dummy when
+  `league_fe = TRUE` (default 50). Needs at least 2 qualifying leagues,
+  otherwise the model is fitted without league effects.
+
+- league_shares:
+
+  Enter the pre-joined `lgshare_*` columns (see `.spm_league_shares()`)
+  as unpenalized controls (opt-in, default FALSE). Errors if no such
+  columns are on `data`. Mutually exclusive with `league_fe`.
+
 - opponent_elo:
 
   Enter a pre-joined `opponent_elo` column as an unpenalized control

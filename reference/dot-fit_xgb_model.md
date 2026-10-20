@@ -18,7 +18,8 @@ and early stopping. Used by
   nrounds = 500L,
   early_stopping = 30L,
   verbose = 1L,
-  group_ids = NULL
+  group_ids = NULL,
+  seed = 20261019L
 )
 ```
 
@@ -61,6 +62,15 @@ and early stopping. Used by
   instead of xgboost's default random per-row assignment, so a match and
   its mirrored twin never split across folds. `NULL` (default) keeps the
   prior per-row random behaviour.
+
+- seed:
+
+  Integer seed for the CV fold draw and xgboost's row/column
+  subsampling, which both use R's random-number stream. Without it the
+  fit depended on whatever had drawn from that stream before: two
+  identical predictions runs on 2026-10-18 differed by 0.001 test
+  log-loss (n 1,330) and by up to 0.33 on single matches (panna#257).
+  The caller's stream is left as it was.
 
 ## Value
 

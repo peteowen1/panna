@@ -11,7 +11,7 @@ canonical Opta-SPM feature set shared with the XGBoost half of the blend."><meta
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.102</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.103</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -87,6 +87,25 @@ canonical Opta-SPM feature set shared with the XGBoost half of the blend.</p>
 
 <dt id="arg-weight-transform">weight_transform<a class="anchor" aria-label="anchor" href="#arg-weight-transform"></a></dt>
 <dd><p>Transform for weighting: "sqrt", "linear", "log"</p></dd>
+
+
+<dt id="arg-league-fe">league_fe<a class="anchor" aria-label="anchor" href="#arg-league-fe"></a></dt>
+<dd><p>Add league fixed-effect dummies as unpenalized controls
+(opt-in, default FALSE). The largest league is held out as the reference.
+Mutually exclusive with <code>league_shares</code>.</p></dd>
+
+
+<dt id="arg-league-min-n">league_min_n<a class="anchor" aria-label="anchor" href="#arg-league-min-n"></a></dt>
+<dd><p>Minimum number of rows a league needs to get its own
+dummy when <code>league_fe = TRUE</code> (default 50). Needs at least 2 qualifying
+leagues, otherwise the model is fitted without league effects.</p></dd>
+
+
+<dt id="arg-league-shares">league_shares<a class="anchor" aria-label="anchor" href="#arg-league-shares"></a></dt>
+<dd><p>Enter the pre-joined <code>lgshare_*</code> columns (see
+<code>.spm_league_shares()</code>) as unpenalized controls (opt-in, default FALSE).
+Errors if no such columns are on <code>data</code>. Mutually exclusive with
+<code>league_fe</code>.</p></dd>
 
 
 <dt id="arg-opponent-elo">opponent_elo<a class="anchor" aria-label="anchor" href="#arg-opponent-elo"></a></dt>

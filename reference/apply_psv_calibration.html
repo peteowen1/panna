@@ -9,7 +9,7 @@ osv + dsv == psv is preserved) by that player's position factor."><meta property
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.102</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.103</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -81,9 +81,48 @@ an attribute <code>panna_psv_calibrated = TRUE</code>.</p>
     </div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
-
-
-
+    <p><strong>Apply this BEFORE the league offsets, not after.</strong> This LOOKS like it
+contradicts the project's general calibration-ordering rule (see
+<code>docs/reference/RATING_CALIBRATION.md</code>: PSR calibrates <em>after</em> its
+additive league offset, because scaling first was measured to leave the
+offset itself uncalibrated). PSV's case is different in a way that flips the
+correct order: PSR's offset is a separately-estimated additive constant that
+does not depend on PSR's own scale, so PSR can be scaled either side of it.
+PSV's league offsets are not separate – they are <code><a href="compute_psr_league_offsets.html">compute_psr_league_offsets()</a></code>
+-&gt; <code>build_league_network(value_col = "psv")</code>, i.e. <em>derived from PSV
+itself</em>. Calibrating after that derivation would leave the offsets estimated
+on uncalibrated input, which is the one ordering the general rule exists to
+rule out. In step 06 the sequence is: strip <code>psv_league_offset</code> -&gt;
+<code>apply_psv_calibration()</code> -&gt; <code><a href="compute_psr_league_offsets.html">compute_psr_league_offsets()</a></code>. Do not
+iterate: feeding offset-adjusted PSV back into the network makes each cycle
+estimate the residual of its own previous output.</p>
+<p><strong>The position column must be a RESOLVED position, not the per-match
+role.</strong> Opta records <code>position == "Substitute"</code> for anyone appearing off
+the bench – roughly 29% of game-log rows as measured 2026-09 (an absolute
+count would already be stale given the daily Opta scrape; re-measure rather
+than trust a cached number). Bucketing on that field puts a blend of every
+position into one group and biases the outfield factors. Resolve each
+player's modal non-Substitute position first (per season, career fallback);
+the factors shipped here were derived that way.</p>
+<p>Factors come from a <strong>leak-free</strong> fit – season S-1 PSV predicting season
+S match outcomes, 450-minute prior gate. Fitting them against the same match's
+goal difference is tautological for PSV (a keeper's PSV is built from that
+match's saves and goals conceded) and inverts them.</p>
+<p><strong>The shipped factors are SCALE-PRESERVING</strong>: the raw fitted slopes
+(<code>slope_raw</code>: GK 0.7847, DEF 1.3627, MID 1.5804, FWD 1.9319) are divided
+by their minute-weighted mean (1.4833) so the overall PSV level is unchanged
+and only the relative position weighting moves. That matters because these
+offsets are ADDED to PSR at full strength on the assumption that PSV and PSR
+share units. Using the raw slopes inflates all of PSV ~1.5x and every league
+offset with it – which looks like a large correction (+55% on weak leagues)
+but is a units artefact. The genuine differential effect on the offsets is
+about <strong>+4.6%</strong>; the real payoff of this table is to PSV itself, where it
+cuts goalkeeper share of the top 1% from 4.2x the population rate to ~0.2x.</p>
+<p><strong>These figures are a point-in-time measurement (2026-09), not an
+enforced invariant</strong> – there is no checked-in script that regenerates
+<code>psv_calibration.csv</code> yet (unlike <code>07d_derive_psv_gd_scale.R</code> for
+<code><a href="PSV_RELIABILITY_GD_SCALE.html">PSV_RELIABILITY_GD_SCALE</a></code>). If the PSR/PSV coefficients are ever
+retrained, re-derive these factors rather than assume they still hold.</p>
     </div>
     <div class="section level2">
     <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a></h2>
@@ -104,6 +143,8 @@ an attribute <code>panna_psv_calibrated = TRUE</code>.</p>
 <code><a href="load_psv_match_reliability.html">load_psv_match_reliability()</a></code>,
 <code><a href="player_psr.html">player_psr()</a></code>,
 <code><a href="psr_leaderboard_eligible.html">psr_leaderboard_eligible()</a></code>,
+<code><a href="psr_season_coverage.html">psr_season_coverage()</a></code>,
+<code><a href="psr_season_covered.html">psr_season_covered()</a></code>,
 <code><a href="psv_opponent.html">psv_opponent</a></code>,
 <code><a href="soccer_position_map.html">soccer_position_map()</a></code>,
 <code><a href="soccer_stat_rating_definitions.html">soccer_stat_rating_definitions()</a></code>,

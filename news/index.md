@@ -1,5 +1,47 @@
 # Changelog
 
+## panna 0.3.103
+
+- Step 10b’s role8 EPV fallback to start_label now also writes a GitHub
+  Actions `::warning::`, so a weekly run that falls back for a league is
+  visible rather than green and silent.
+
+- [`ng_spread_pools()`](https://peteowen1.github.io/panna/reference/ng_spread_pools.md)
+  no longer reads a broken lineup as a mass sending-off. Some lineups
+  give every player who was never subbed off one half’s minutes (46) and
+  every substitute 1 minute; the red-card rule (R031) then ended all
+  their stints at minute 46, left the late pools with nobody to go to,
+  and
+  [`ng_player_game()`](https://peteowen1.github.io/panna/reference/ng_player_game.md)
+  aborted for the whole league-season. Four or more early exits in one
+  team-match now count as bad minutes, and nobody in it is treated as
+  sent off. This dropped net goals for all of La Liga, MLS and Argentina
+  in the 2025-26 game-log rebuild (one such match each; 27 of 252,305
+  matches in `opta_lineups.parquet`).
+
+- [`player_psr()`](https://peteowen1.github.io/panna/reference/player_psr.md)
+  now ranks only players with at least `MIN_90S_PSR_LEADERBOARD` (15)
+  weighted nineties, through
+  [`psr_leaderboard_eligible()`](https://peteowen1.github.io/panna/reference/psr_leaderboard_eligible.md),
+  with a new `min_90s` argument (0 turns it off). A name lookup
+  (`player =`) is exempt. On the latest weekly snapshot 21 of the top 50
+  had fewer than 15 nineties. The skills-pipeline “Top 20 by PSR”
+  console prints (steps 07 and 08b) use the same floor. The weekly
+  parquet still carries every player
+  ([\#215](https://github.com/peteowen1/panna/issues/215)).
+
+- Season-coverage gate for cross-season PSR displays:
+  [`psr_season_coverage()`](https://peteowen1.github.io/panna/reference/psr_season_coverage.md)
+  counts matches with player stats per season,
+  [`psr_season_covered()`](https://peteowen1.github.io/panna/reference/psr_season_covered.md)
+  flags seasons under `MIN_MATCHES_PSR_SEASON` (4,000), and
+  `psr_leaderboard_eligible(season_coverage = )` applies both bars. The
+  latest season always passes (it may be in progress). Measured on the
+  raw feed: matches with player stats are 822 in 2014 and 2,663 in 2015,
+  against 5,456+ from 2016. The sparsity is Opta box-score coverage, not
+  a pipeline filter: lineup rows exist for all 6,183 matches of 2014
+  ([\#221](https://github.com/peteowen1/panna/issues/221)).
+
 ## panna 0.3.102
 
 - [`estimate_player_skills()`](https://peteowen1.github.io/panna/reference/estimate_player_skills.md)

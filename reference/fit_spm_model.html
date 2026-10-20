@@ -11,7 +11,7 @@ influence of noisy low-minute players whose RAPM and per-90 stats are unreliable
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.102</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.103</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -106,6 +106,15 @@ numeric vector of length <code>ncol(X)</code>, or a named numeric vector keyed b
 predictor name (unmatched predictors default to <code>-Inf</code>/<code>Inf</code>). Use to
 enforce directional priors (e.g. negative defensive-tackle coefficient).
 <code>NULL</code> (default) = unconstrained.</p></dd>
+
+
+<dt id="arg-penalty-factor">penalty_factor<a class="anchor" aria-label="anchor" href="#arg-penalty-factor"></a></dt>
+<dd><p>Optional named numeric vector of per-predictor glmnet
+penalty factors, keyed by predictor name. <code>0</code> means "never shrink this
+predictor" (used for league fixed effects, which are controls rather than
+skills). Unnamed or unmatched predictors default to <code>1</code> (normal penalty);
+names not in the design matrix are ignored with a warning. <code>NULL</code>
+(default) = every predictor penalized equally.</p></dd>
 
 </dl></div>
     <div class="section level2">
