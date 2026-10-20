@@ -734,8 +734,11 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
           rm(.pm)
           .epv_centred <- TRUE
         }, error = function(e) {
-          message(sprintf("    !! role8 EPV centring FAILED for %s %s (%s): falling back to start_label",
-                          league, season, conditionMessage(e)))
+          txt <- sprintf("role8 EPV centring FAILED for %s %s (%s): falling back to start_label",
+                         league, season, conditionMessage(e))
+          message("    !! ", txt)
+          # The weekly run would otherwise publish this league start_label-centred with the job green.
+          if (nzchar(Sys.getenv("GITHUB_ACTIONS"))) cat("::warning::", txt, "\n", sep = "")
         })
         if (!.epv_centred && "position" %in% names(player_game_epv)) {
           player_game_epv <- data.table::as.data.table(player_game_epv)
