@@ -192,6 +192,12 @@ prepare_spm_regression_data <- function(player_features, rapm_ratings) {
 #'   predictor name (unmatched predictors default to `-Inf`/`Inf`). Use to
 #'   enforce directional priors (e.g. negative defensive-tackle coefficient).
 #'   `NULL` (default) = unconstrained.
+#' @param penalty_factor Optional named numeric vector of per-predictor glmnet
+#'   penalty factors, keyed by predictor name. `0` means "never shrink this
+#'   predictor" (used for league fixed effects, which are controls rather than
+#'   skills). Unnamed or unmatched predictors default to `1` (normal penalty);
+#'   names not in the design matrix are ignored with a warning. `NULL`
+#'   (default) = every predictor penalized equally.
 #'
 #' @return Fitted glmnet model with metadata
 #' @family spm
@@ -377,6 +383,10 @@ fit_spm_xgb <- function(data, predictor_cols = NULL, nfolds = 10,
                          nrounds = 500, early_stopping_rounds = 20,
                          weight_by_minutes = TRUE, weight_transform = "sqrt",
                          verbose = 1) {
+  # xgboost draws its seed, CV folds and subsampling from R's random stream; fix it
+  # so a retrain on the same data gives the same model, and restore the caller's
+  # stream on exit (panna#360).
+  withr::local_seed(MODEL_FIT_SEED)
   if (!requireNamespace("xgboost", quietly = TRUE)) {
     cli::cli_abort("Package {.pkg xgboost} is required. Install with: {.code install.packages('xgboost')}")
   }

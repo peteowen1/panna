@@ -8,6 +8,7 @@ player_psr(
   date = NULL,
   player = NULL,
   n = 50,
+  min_90s = MIN_90S_PSR_LEADERBOARD,
   position = NULL,
   target = c("xg", "goals"),
   source = c("remote", "local")
@@ -21,6 +22,12 @@ Defaults to the latest available snapshot.}
 E.g., \code{"Salah"} matches "Mohamed Salah".}
 
 \item{n}{Number of top players to show (default 50, NULL for all).}
+
+\item{min_90s}{Minimum weighted 90s to appear in the leaderboard (default
+\code{\link{MIN_90S_PSR_LEADERBOARD}}, panna#215). Applied through
+\code{\link{psr_leaderboard_eligible}} before ranking. Not applied when
+\code{player} is given, so a single-player lookup still shows a short
+season's rating. Use \code{0} to rank every row.}
 
 \item{position}{Filter by position group: \code{"GK"}, \code{"DEF"},
 \code{"MID"}, \code{"FWD"}, or NULL for all.}
@@ -39,7 +46,9 @@ A data.table with columns: \code{snapshot_date}, \code{player_name},
 }
 \description{
 Returns a ranked PSR leaderboard using pre-computed weekly snapshots.
-Snaps to the nearest weekly date at or before \code{date}.
+Snaps to the nearest weekly date at or before \code{date}. Players under
+\code{min_90s} weighted nineties are left off the ranking (a name lookup
+via \code{player} is exempt).
 }
 \examples{
 \dontrun{
@@ -73,6 +82,8 @@ Other psr:
 \code{\link{load_psr_calibration}()},
 \code{\link{load_psv_match_reliability}()},
 \code{\link{psr_leaderboard_eligible}()},
+\code{\link{psr_season_coverage}()},
+\code{\link{psr_season_covered}()},
 \code{\link{psv_opponent}},
 \code{\link{soccer_position_map}()},
 \code{\link{soccer_stat_rating_definitions}()},

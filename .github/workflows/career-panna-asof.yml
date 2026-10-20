@@ -1,0 +1,163 @@
+name: Career panna as-of (step 09b)
+
+# Rebuilds career_panna_asof.parquet (estimated-skills step 09b: one leak-free career
+# panna fit per month, read by the match predictions model) on a runner, from the caches
+# on pannadata releases. Until 2026-10-18 this ran only on a laptop, and the published
+# file kept defence shrunk toward a wrong-signed prior for five weeks (panna#257). Off
+# main/dev the publish gate forces upload off: a branch run is a dry build whose output is
+# the run's artifact and summary only (artifact: career-panna-asof).
+on:
+  workflow_dispatch:
+    inputs:
+      upload:
+        description: Publish career_panna_asof.parquet to ratings-data (main/dev only)
+        type: boolean
+        default: false
+      refit_prior:
+        description: Refit the year-by-year skill-SPM prior (03_skill_spm_asof.rds) first, with 03's default target decay; with upload, also publish it to predictions-cache
+        type: boolean
+        default: false
+  push:
+    branches: ["career-panna-asof*"]
+    paths: [".github/workflows/career-panna-asof.yml", "data-raw/estimated-skills/09b_career_panna_asof.R"]
+
+env:
+  PANNA_PUBLISH_DISABLED: ${{ (github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev') && 'true' || 'false' }}
+  UPLOAD: ${{ inputs.upload && 'true' || 'false' }}
+  REFIT_PRIOR: ${{ inputs.refit_prior && 'true' || 'false' }}
+  GH_TOKEN: ${{ github.token }}
+
+permissions:
+  contents: read
+
+# On main/dev it shares opta-pipeline's group: both vb_publish() to ratings-data, which
+# reads its bus_manifest.json at the start and rewrites it at the end. Queues, never
+# cancels. A branch run can never publish (the gate above), so it gets its own group
+# instead of waiting up to two hours behind a scrape-day Opta run.
+concurrency:
+  group: ${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && 'opta-pipeline' || format('career-panna-asof-dry-{0}', github.ref) }}
+  cancel-in-progress: false
+
+jobs:
+  career-panna-asof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - name: Publish gate
+        run: |
+          if [ "$PANNA_PUBLISH_DISABLED" = "true" ]; then
+            echo "::warning title=Publishing disabled::ref $GITHUB_REF is not main or dev, so this run builds but uploads nothing."
+            echo "> **Publishing disabled:** ref \`$GITHUB_REF\` is not main or dev; this is a dry build." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - uses: actions/checkout@v7
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.5.0'
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          cache-version: 11
+          extra-packages: |
+            any::devtools
+            any::piggyback
+            any::arrow
+
+      - name: Download inputs (public pannadata releases)
+        run: |
+          set -euo pipefail
+          mkdir -p data-raw/cache-opta data-raw/cache-skills ../pannadata/data/opta /tmp/pub
+          gh release download predictions-cache -R peteowen1/pannadata -p 03_splints.rds -D data-raw/cache-opta
+          gh release download predictions-cache -R peteowen1/pannadata -p 03_skill_spm.rds -D data-raw/cache-skills
+          gh release download predictions-cache -R peteowen1/pannadata -p 03_skill_spm_asof.rds -D data-raw/cache-skills
+          gh release download opta-latest -R peteowen1/pannadata -p opta_fixtures.parquet -D ../pannadata/data/opta
+          gh release download ratings-data -R peteowen1/pannadata -p career_panna_asof.parquet -D /tmp/pub
+          gh release download ratings-data -R peteowen1/pannadata -p career_panna.parquet -D /tmp/pub
+          ls -la data-raw/cache-opta data-raw/cache-skills ../pannadata/data/opta /tmp/pub
+          for f in data-raw/cache-skills/*.rds; do echo "$f $(sha256sum "$f" | cut -c1-16)"; done
+
+      # The prior's inputs are the 2026-09-03 skill features (the vintage the published
+      # prior was fitted on, so a refit changes only what 03 changed) and the pooled RAPM.
+      # 03 also refits the LIVE prior 03_skill_spm.rds as a side effect; that is thrown
+      # away and the downloaded copy restored, because career panna owns it.
+      - name: Refit the year-by-year prior
+        if: env.REFIT_PRIOR == 'true'
+        run: |
+          set -euo pipefail
+          gh release download predictions-cache -R peteowen1/pannadata -p 04_rapm.rds -D data-raw/cache-opta
+          gh release download predictions-cache -R peteowen1/pannadata -p 02_skill_features.2026-09-03.rds -D /tmp
+          mv /tmp/02_skill_features.2026-09-03.rds data-raw/cache-skills/02_skill_features.rds
+          cp data-raw/cache-skills/03_skill_spm.rds /tmp/live_prior.rds
+          cp data-raw/cache-skills/03_skill_spm_asof.rds /tmp/old_asof_prior.rds
+          Rscript -e "skill_spm_use_decayed_target <- FALSE; asof_resume <- FALSE; source('data-raw/estimated-skills/03_skill_spm.R')" 2>&1 | tee /tmp/prior.log
+          cp /tmp/live_prior.rds data-raw/cache-skills/03_skill_spm.rds
+          grep -E "target decay|match dates joined|cutoff_year [0-9]+ done|Saved [0-9]+ expanding" /tmp/prior.log | tee -a "$GITHUB_STEP_SUMMARY"
+          Rscript -e 'p <- readRDS("data-raw/cache-skills/03_skill_spm_asof.rds"); hl <- vapply(p, function(x) as.numeric(x$target_halflife_days %||% NA), 1); cat("cutoff years:", length(p), "| target half-life:", paste(unique(hl), collapse = "/"), "\n"); stopifnot(length(p) >= 13, all(!is.na(hl)))' | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Step 09b
+        env:
+          # The PAT only when this run may publish (vb_publish writes to pannadata);
+          # a branch run never holds it.
+          GITHUB_PAT: ${{ (env.PANNA_PUBLISH_DISABLED != 'true' && env.UPLOAD == 'true') && secrets.WORKFLOW_PAT || '' }}
+        run: |
+          Rscript -e "asof_resume <- FALSE; upload_career_panna_asof <- identical(Sys.getenv('UPLOAD'), 'true'); source('data-raw/estimated-skills/09b_career_panna_asof.R')"
+
+      - name: Compare with the published file
+        run: |
+          cat > /tmp/compare.R <<'EOF'
+          suppressMessages(library(data.table))
+          pub <- as.data.table(arrow::read_parquet("/tmp/pub/career_panna_asof.parquet"))
+          new <- as.data.table(arrow::read_parquet("../pannadata/data/opta/career_panna_asof.parquet"))
+          cp  <- as.data.table(arrow::read_parquet("/tmp/pub/career_panna.parquet"))[, .(player_id, player_name, cp_def = panna_defense)]
+          cat(sprintf("rows: new %d (%d snapshots, %s..%s) | published %d (%d snapshots, %s..%s)\n",
+                      nrow(new), uniqueN(new$ref_date), min(new$ref_date), max(new$ref_date),
+                      nrow(pub), uniqueN(pub$ref_date), min(pub$ref_date), max(pub$ref_date)))
+          m <- merge(new[, .(player_id, ref_date, panna, d = panna_defense, mins = total_minutes)],
+                     pub[, .(player_id, ref_date, pub_panna = panna, pub_d = panna_defense)],
+                     by = c("player_id", "ref_date"))
+          per <- m[, .(rank_spearman = cor(panna, pub_panna, method = "spearman")), by = ref_date]
+          cat(sprintf("per-snapshot rank Spearman new vs published over %d shared snapshots: min %.3f, median %.3f\n",
+                      nrow(per), min(per$rank_spearman), median(per$rank_spearman)))
+          D <- max(m$ref_date)
+          s <- merge(m[ref_date == D & mins >= 9000], cp, by = "player_id")
+          cat(sprintf("snapshot %s, players with 9k+ min (n %d): defence vs career panna defence, Spearman new %.3f, published %.3f\n",
+                      D, nrow(s), cor(s$d, s$cp_def, method = "spearman"), cor(s$pub_d, s$cp_def, method = "spearman")))
+          s[, `:=`(rank = frank(-panna, ties.method = "min"), pub_rank = frank(-pub_panna, ties.method = "min"))]
+          cat(sprintf("\nTop 20 at %s (9k+ min), new build vs published:\n", D))
+          print(s[order(rank)][1:20, .(player_name, rank, pub_rank, panna = round(panna, 3), def = round(d, 3), pub_def = round(pub_d, 3))])
+          EOF
+          set -o pipefail
+          Rscript /tmp/compare.R | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # After 09b has published the snapshots built on it, so the prior on
+      # predictions-cache always matches the published parquet. The old prior is kept
+      # first under a dated backup name: a clobber deletes before it uploads.
+      - name: Publish the refitted prior to predictions-cache
+        if: env.REFIT_PRIOR == 'true' && env.UPLOAD == 'true' && env.PANNA_PUBLISH_DISABLED != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+        run: |
+          set -euo pipefail
+          # Run id in the name: a same-day rerun would otherwise back up the already-refitted
+          # prior over the only copy of the old one.
+          BK="03_skill_spm_asof.$(date -u +%F)-run$GITHUB_RUN_ID-BACKUP.rds"
+          cp /tmp/old_asof_prior.rds "/tmp/$BK"
+          gh release upload predictions-cache "/tmp/$BK" -R peteowen1/pannadata --clobber
+          gh release view predictions-cache -R peteowen1/pannadata --json assets --jq ".assets[].name" | grep -qx "$BK"
+          gh release upload predictions-cache data-raw/cache-skills/03_skill_spm_asof.rds -R peteowen1/pannadata --clobber
+          gh release view predictions-cache -R peteowen1/pannadata --json assets --jq '.assets[] | select(.name=="03_skill_spm_asof.rds") | "\(.name) \(.size) \(.updatedAt)"' | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "old prior kept as $BK" >> "$GITHUB_STEP_SUMMARY"
+
+      # upload-artifact takes paths inside the workspace only
+      - name: Stage the output for the artifact
+        run: |
+          mkdir -p _out && cp ../pannadata/data/opta/career_panna_asof.parquet _out/
+          if [ "$REFIT_PRIOR" = "true" ]; then cp data-raw/cache-skills/03_skill_spm_asof.rds _out/; fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: career-panna-asof
+          path: _out/
+          retention-days: 14

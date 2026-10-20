@@ -1,0 +1,124 @@
+name: Career panna (step 09)
+
+# Rebuilds career_panna.parquet (estimated-skills step 09: decayed career xRAPM shrunk
+# to the skill-SPM prior) on a runner, from the caches on pannadata releases. Until
+# 2026-10-18 this step only ran on a laptop and uploaded only when a flag was set, so
+# the published file fell a month behind the code (panna#257). Off main/dev the
+# publish gate (PANNA_PUBLISH_DISABLED) forces upload off: a branch run is a dry build
+# whose output is the run's artifact and summary only (artifact: career-panna).
+on:
+  workflow_dispatch:
+    inputs:
+      prior_asset:
+        description: Skill-SPM prior asset on predictions-cache
+        default: 03_skill_spm.rds
+      upload:
+        description: Publish career_panna.parquet to ratings-data (main/dev only)
+        type: boolean
+        default: false
+  push:
+    branches: ["career-panna-*"]
+    paths: [".github/workflows/career-panna.yml", "data-raw/estimated-skills/09_career_panna.R"]
+
+env:
+  PANNA_PUBLISH_DISABLED: ${{ (github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev') && 'true' || 'false' }}
+  # The live prior (the panna#257 fix, promoted 2026-10-18); a dispatch can name another asset.
+  PRIOR_ASSET: ${{ inputs.prior_asset || '03_skill_spm.rds' }}
+  UPLOAD: ${{ inputs.upload && 'true' || 'false' }}
+  GH_TOKEN: ${{ github.token }}
+
+permissions:
+  contents: read
+
+# Shares opta-pipeline's group: both vb_publish() to ratings-data, which reads its
+# bus_manifest.json at the start and rewrites it at the end, so two runs at once
+# would lose one side's entries. Queues behind it, never cancels.
+concurrency:
+  # main/dev share opta-pipeline so release writes never overlap. Any other ref is a dry
+  # build (PANNA_PUBLISH_DISABLED), so it gets its own queue: GitHub keeps one pending
+  # run per group, and a pending branch run would otherwise replace a pending publish.
+  group: ${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && 'opta-pipeline' || format('opta-pipeline-dry-{0}', github.ref) }}
+  cancel-in-progress: false
+
+jobs:
+  career-panna:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Publish gate
+        run: |
+          if [ "$PANNA_PUBLISH_DISABLED" = "true" ]; then
+            echo "::warning title=Publishing disabled::ref $GITHUB_REF is not main or dev, so this run builds but uploads nothing."
+            echo "> **Publishing disabled:** ref \`$GITHUB_REF\` is not main or dev; this is a dry build." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - uses: actions/checkout@v7
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.5.0'
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          cache-version: 11
+          extra-packages: |
+            any::devtools
+            any::piggyback
+            any::arrow
+
+      - name: Download inputs (public pannadata releases)
+        run: |
+          set -euo pipefail
+          mkdir -p data-raw/cache-opta data-raw/cache-skills ../pannadata/data/opta /tmp/pub
+          gh release download predictions-cache -R peteowen1/pannadata -p 03_splints.rds -D data-raw/cache-opta
+          gh release download predictions-cache -R peteowen1/pannadata -p "$PRIOR_ASSET" -D /tmp
+          mv "/tmp/$PRIOR_ASSET" data-raw/cache-skills/03_skill_spm.rds
+          gh release download opta-latest -R peteowen1/pannadata -p opta_fixtures.parquet -D ../pannadata/data/opta
+          gh release download ratings-data -R peteowen1/pannadata -p career_panna.parquet -D /tmp/pub
+          ls -la data-raw/cache-opta data-raw/cache-skills ../pannadata/data/opta /tmp/pub
+          echo "prior: $PRIOR_ASSET ($(sha256sum data-raw/cache-skills/03_skill_spm.rds | cut -c1-16))"
+
+      - name: Step 09
+        env:
+          # The PAT only when this run may publish (vb_publish writes to pannadata);
+          # a branch run never holds it.
+          GITHUB_PAT: ${{ (env.PANNA_PUBLISH_DISABLED != 'true' && env.UPLOAD == 'true') && secrets.WORKFLOW_PAT || '' }}
+        run: |
+          Rscript -e "upload_career_panna <- identical(Sys.getenv('UPLOAD'), 'true'); source('data-raw/estimated-skills/09_career_panna.R')"
+
+      - name: Compare with the published file
+        run: |
+          cat > /tmp/compare.R <<'EOF'
+          suppressMessages(library(data.table))
+          pub <- as.data.table(arrow::read_parquet("/tmp/pub/career_panna.parquet"))
+          new <- as.data.table(arrow::read_parquet("../pannadata/data/opta/career_panna.parquet"))
+          spm <- readRDS("data-raw/cache-skills/03_skill_spm.rds")
+          pr <- merge(as.data.table(spm$offense_spm_ratings)[, .(player_id, po = offense_spm)],
+                      as.data.table(spm$defense_spm_ratings)[, .(player_id, pd = defense_spm)], by = "player_id")
+          pub[, pub_rank := frank(-panna, ties.method = "min")]
+          new[, rank := frank(-panna, ties.method = "min")]
+          m <- merge(new, pub[, .(player_id, pub_panna = panna, pub_rank)], by = "player_id", all.x = TRUE)
+          m <- merge(m, pr, by = "player_id", all.x = TRUE)
+          m[, prior := po + pd][, from_recent := panna - prior]
+          cat(sprintf("rows: new %d, published %d; rank Spearman vs published %.3f\n", nrow(new), nrow(pub),
+                      cor(m$rank, m$pub_rank, method = "spearman", use = "complete.obs")))
+          cat("\nTop 20, new build (panna = prior + from_recent; published rank for comparison):\n")
+          print(m[order(rank)][1:20, .(player_name, rank, panna = round(panna, 3), prior = round(prior, 3),
+                                       from_recent = round(from_recent, 3), pub_rank, mins = round(total_minutes))])
+          cat("\nBiggest falls from the published top 100:\n")
+          print(m[pub_rank <= 100][order(-(rank - pub_rank))][1:10, .(player_name, pub_rank, rank)])
+          cat("\nBiggest rises into the new top 50:\n")
+          print(m[rank <= 50][order(rank - pub_rank)][1:10, .(player_name, pub_rank, rank)])
+          EOF
+          Rscript /tmp/compare.R | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # upload-artifact takes paths inside the workspace only
+      - name: Stage the output for the artifact
+        run: mkdir -p _out && cp ../pannadata/data/opta/career_panna.parquet _out/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: career-panna
+          path: _out/career_panna.parquet
+          retention-days: 14

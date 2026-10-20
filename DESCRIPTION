@@ -1,6 +1,6 @@
 Package: panna
 Title: Player Rating System for Football Using RAPM, SPM, and EPV Methods
-Version: 0.3.102
+Version: 0.3.103
 Authors@R:
     person("Pete", "Owen", , "pete.owen1@hotmail.co.uk", role = c("aut", "cre", "cph"))
 Description: Implements player ratings for football (soccer) from 'Opta'
@@ -23,6 +23,7 @@ Imports:
     data.table (>= 1.14.0),
     DBI,
     digest,
+    dplyr,
     duckdb (>= 0.9.0),
     gh,
     glmnet (>= 4.0),
@@ -30,6 +31,7 @@ Imports:
     janitor,
     jsonlite,
     Matrix,
+    methods,
     piggyback,
     rlang,
     stringi,

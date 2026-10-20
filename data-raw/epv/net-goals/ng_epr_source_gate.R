@@ -89,6 +89,12 @@ ARM_CACHES <- c("02_team_ratings.rds", "02b_team_skill_features.rds",
                 "07_predictions.rds", "08_evaluation.rds")
 run_arm <- function(source_name) {
   say("================ ARM: EPR_SOURCE = ", source_name, " ================")
+  # Steps 02-08 are sourced into the global env, so everything the previous arm
+  # loaded (game logs, match datasets, models) stayed in memory. On the 16 GB
+  # runner the second arm died 40 s into its EPR load (run 39139354291). Drop
+  # every global created since the gate started, and log the heap so the next
+  # failure shows its peak.
+  .gate_reset()
   # Clear the downstream caches so nothing is silently reused between arms.
   # Steps 02-06 each load their .rds when it exists and force_rebuild is not
   # TRUE. Step 02 is where EPR becomes home_sum_epr / away_sum_epr, so leaving
@@ -130,12 +136,24 @@ run_arm <- function(source_name) {
     }
     get(nm, envir = globalenv())
   }
+  .g <- gc()
+  say(sprintf("arm %s: R heap max used %.1f GB", source_name, sum(.g[, 6]) / 1024))
   data.table(arm = source_name,
              logloss   = grab("test_logloss"),
              accuracy  = grab("test_accuracy"),
              home_rmse = grab("home_rmse"),
              away_rmse = grab("away_rmse"))
 }
+
+# Everything defined up to here (and anything a driver set before sourcing this
+# file) survives between arms; anything an arm creates is dropped before the next.
+.gate_reset <- function() {
+  drop <- setdiff(ls(globalenv(), all.names = TRUE), .gate_keep)
+  rm(list = drop, envir = globalenv())
+  g <- gc(reset = TRUE)
+  say(sprintf("dropped %d globals from before this arm; R heap now %.1f GB", length(drop), sum(g[, 2]) / 1024))
+}
+.gate_keep <- c(ls(globalenv(), all.names = TRUE), ".gate_keep")
 
 res <- tryCatch(
   rbindlist(list(run_arm("epv"), run_arm("net_goals")), fill = TRUE),

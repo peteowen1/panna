@@ -11,7 +11,8 @@ fit_expanding_pooled_rapm(
   min_year = NULL,
   lambda_formula = function(n) 16.67 * n^(-0.58),
   nfolds = 5,
-  seed = NULL
+  seed = NULL,
+  halflife_days = NULL
 )
 }
 \arguments{
@@ -35,11 +36,20 @@ windowed prior-free RAPM target, e.g. a 5-season window \code{min_year = cutoff_
 
 \item{seed}{RNG seed for \code{fit_rapm()}'s CV fold assignment, for
 reproducible per-cutoff-year fits. \code{NULL} = no explicit seed.}
+
+\item{halflife_days}{Numeric or \code{NULL} (default). When set, each kept row's
+weight is multiplied by \code{0.5^(age / halflife_days)}, where age is days
+before the window's LAST match -- the same decay
+\verb{data-raw/player-ratings-opta/04c_rapm_decayed.R} applies to the live
+skill-SPM target (panna#257), anchored inside the window so no date at or
+after the cutoff is used. Needs a \code{match_date} column on
+\code{splint_season_map}. \code{NULL} keeps the undecayed fit exactly.}
 }
 \value{
 List: \code{ratings} (data.frame player_id/rapm/offense/defense),
 \code{lambda_min}, \code{n_obs}, \code{cutoff_year}, \code{min_year} (the argument as
-supplied, \code{NULL} for the unbounded expanding-window default). \code{NULL}
+supplied, \code{NULL} for the unbounded expanding-window default),
+\code{halflife_days} and \code{anchor_date} (\code{NULL} / \code{NA} when undecayed). \code{NULL}
 (with a warning) if fewer than 1000 valid observations remain (too few
 prior seasons, or an empty/too-narrow window).
 }

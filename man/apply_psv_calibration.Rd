@@ -28,7 +28,52 @@ Multiplies \code{psv} (and \code{osv}/\code{dsv} when present, so
 \code{osv + dsv == psv} is preserved) by that player's position factor.
 }
 \details{
+\strong{Apply this BEFORE the league offsets, not after.} This LOOKS like it
+contradicts the project's general calibration-ordering rule (see
+\code{docs/reference/RATING_CALIBRATION.md}: PSR calibrates \emph{after} its
+additive league offset, because scaling first was measured to leave the
+offset itself uncalibrated). PSV's case is different in a way that flips the
+correct order: PSR's offset is a separately-estimated additive constant that
+does not depend on PSR's own scale, so PSR can be scaled either side of it.
+PSV's league offsets are not separate -- they are \code{compute_psr_league_offsets()}
+-> \code{build_league_network(value_col = "psv")}, i.e. \emph{derived from PSV
+itself}. Calibrating after that derivation would leave the offsets estimated
+on uncalibrated input, which is the one ordering the general rule exists to
+rule out. In step 06 the sequence is: strip \code{psv_league_offset} ->
+\code{apply_psv_calibration()} -> \code{compute_psr_league_offsets()}. Do not
+iterate: feeding offset-adjusted PSV back into the network makes each cycle
+estimate the residual of its own previous output.
 
+\strong{The position column must be a RESOLVED position, not the per-match
+role.} Opta records \code{position == "Substitute"} for anyone appearing off
+the bench -- roughly 29\% of game-log rows as measured 2026-09 (an absolute
+count would already be stale given the daily Opta scrape; re-measure rather
+than trust a cached number). Bucketing on that field puts a blend of every
+position into one group and biases the outfield factors. Resolve each
+player's modal non-Substitute position first (per season, career fallback);
+the factors shipped here were derived that way.
+
+Factors come from a \strong{leak-free} fit -- season S-1 PSV predicting season
+S match outcomes, 450-minute prior gate. Fitting them against the same match's
+goal difference is tautological for PSV (a keeper's PSV is built from that
+match's saves and goals conceded) and inverts them.
+
+\strong{The shipped factors are SCALE-PRESERVING}: the raw fitted slopes
+(\code{slope_raw}: GK 0.7847, DEF 1.3627, MID 1.5804, FWD 1.9319) are divided
+by their minute-weighted mean (1.4833) so the overall PSV level is unchanged
+and only the relative position weighting moves. That matters because these
+offsets are ADDED to PSR at full strength on the assumption that PSV and PSR
+share units. Using the raw slopes inflates all of PSV ~1.5x and every league
+offset with it -- which looks like a large correction (+55\% on weak leagues)
+but is a units artefact. The genuine differential effect on the offsets is
+about \strong{+4.6\%}; the real payoff of this table is to PSV itself, where it
+cuts goalkeeper share of the top 1\% from 4.2x the population rate to ~0.2x.
+
+\strong{These figures are a point-in-time measurement (2026-09), not an
+enforced invariant} -- there is no checked-in script that regenerates
+\code{psv_calibration.csv} yet (unlike \code{07d_derive_psv_gd_scale.R} for
+\code{\link{PSV_RELIABILITY_GD_SCALE}}). If the PSR/PSV coefficients are ever
+retrained, re-derive these factors rather than assume they still hold.
 }
 \seealso{
 \code{\link{load_psv_calibration}}, \code{\link{compute_psr_league_offsets}}
@@ -49,6 +94,8 @@ Other psr:
 \code{\link{load_psv_match_reliability}()},
 \code{\link{player_psr}()},
 \code{\link{psr_leaderboard_eligible}()},
+\code{\link{psr_season_coverage}()},
+\code{\link{psr_season_covered}()},
 \code{\link{psv_opponent}},
 \code{\link{soccer_position_map}()},
 \code{\link{soccer_stat_rating_definitions}()},

@@ -70,7 +70,18 @@ calculate_spm_value <- function(match_stats, coefs = NULL, gd_scale = 1.0) {
   }
 
   # 1. Classify role group per row
-  roles <- if ("position_role" %in% names(dt)) dt$position_role else if ("position" %in% names(dt)) dt$position else rep("UNK", n)
+  # classify_role_group() takes 16-role codes; raw Opta labels have to go
+  # through classify_role() with their side first, or every row is NA
+  roles <- if ("position_role" %in% names(dt)) {
+    dt$position_role
+  } else if (all(c("position", "position_side") %in% names(dt))) {
+    classify_role(dt$position, dt$position_side)
+  } else {
+    if ("position" %in% names(dt)) {
+      cli::cli_warn("{.fn calculate_spm_value}: {.field position} without {.field position_side} cannot give a role group; scoring with global coefficients only.")
+    }
+    rep("UNK", n)
+  }
   role_groups <- classify_role_group(roles)
 
   # 2. Score Offense & Defense

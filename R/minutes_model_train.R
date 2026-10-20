@@ -21,6 +21,10 @@ fit_minutes_model <- function(train, feature_cols, train_idx,
                                 nrounds_clf = 600L, nrounds_reg = 800L,
                                 early_stopping = 30L,
                                 verbose = TRUE) {
+  # xgboost draws its seed, CV folds and subsampling from R's random stream; fix it
+  # so a retrain on the same data gives the same model, and restore the caller's
+  # stream on exit (panna#360).
+  withr::local_seed(MODEL_FIT_SEED)
   if (!requireNamespace("xgboost", quietly = TRUE)) {
     stop("xgboost package is required")
   }

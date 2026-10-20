@@ -52,3 +52,16 @@ test_that("calculate_value_context_gap computes psv - spm_value correctly", {
   gap <- calculate_value_context_gap(psv, spm_val)
   expect_equal(gap, c(0.5, -0.2, -0.1))
 })
+
+test_that("calculate_spm_value maps raw Opta labels with their side to role groups", {
+  mock_coefs <- list(
+    offense = data.table::data.table(target = "offense", feature = c("(Intercept)", "dev__CF__touches_p90"),
+      role_group = c(NA, "CF"), base_feature = c(NA, "touches_p90"), is_deviation = c(FALSE, TRUE), coef = c(0, 0.01)),
+    defense = data.table::data.table(target = "defense", feature = "(Intercept)", role_group = NA,
+      base_feature = NA, is_deviation = FALSE, coef = 0))
+  df <- data.table::data.table(position = c("Striker", "Defender"), position_side = c("Centre", "Left"),
+                               touches_p90 = c(50, 50))
+  res <- calculate_spm_value(df, coefs = mock_coefs)
+  expect_equal(res$spm_value_off, c(0.5, 0))
+  expect_warning(calculate_spm_value(df[, !"position_side"], coefs = mock_coefs), "position_side")
+})

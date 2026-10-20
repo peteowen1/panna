@@ -15,10 +15,10 @@ mapping (review finding, panna#211: an earlier version of this function
 regex-matched the same vocabulary independently, which is exactly the kind of
 duplicated classifier this codebase's own gotchas warn drifts silently); or a
 16-role \code{classify_role()} code (\code{"CB"}, \code{"DM"}, ...), resolved
-via \code{\link{.role16_to_broad}} -- needed because
+via \code{.role16_to_broad()} -- needed because
 \code{apply_psv_calibration()}'s own fallback chain can hand this function a
 fine-grained \code{primary_position} (see \code{\link{.player_role}}'s
-comment: that column is "usually already broad... but \link{sometimes} a
+comment: that column is "usually already broad... but [sometimes] a
 fine-grained label"). Anything none of the three recognize returns NA, which
 \code{apply_psv_calibration()} treats as factor 1 (uncalibrated passthrough).
 }

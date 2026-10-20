@@ -310,6 +310,10 @@ fit_epv_model <- function(features,
                            nrounds = 1000,
                            early_stopping_rounds = 50,
                            verbose = 1) {
+  # xgboost draws its seed, CV folds and subsampling from R's random stream; fix it
+  # so a retrain on the same data gives the same model, and restore the caller's
+  # stream on exit (panna#360).
+  withr::local_seed(MODEL_FIT_SEED)
 
   method <- match.arg(method)
 
@@ -524,7 +528,7 @@ predict_epv_probs <- function(model, features) {
     extra <- setdiff(feature_cols, EPV_SIMPLE_FEATURE_COLS)
     if (length(extra) > 0) {
       cli::cli_abort(c(
-        "EPV model feature-contract MISMATCH — refusing to score with a stale/wrong model.",
+        "EPV model feature-contract MISMATCH -- refusing to score with a stale/wrong model.",
         "x" = "Model expects {length(feature_cols)} features incl. {.val {extra}} the current code does NOT emit.",
         "i" = "Code emits {length(EPV_SIMPLE_FEATURE_COLS)} (EPV_SIMPLE_FEATURE_COLS) -- this looks like the pre-overhaul model.",
         "i" = "Use the clean model: pass {.code epv_model_override} or republish the clean model as default (see MODELS.md)."
@@ -1679,14 +1683,10 @@ aggregate_player_game_epv <- function(spadl_with_epv, lineups = NULL,
 
   # --- Position centering ---
   if (isTRUE(position_center) && "position" %in% names(player_epv)) {
-    # Map to broad groups
-    player_epv[, pos_group := data.table::fcase(
-      grepl("GK|Goalkeeper", position, ignore.case = TRUE), "GK",
-      grepl("DEF|Back|CB|LB|RB|WB", position, ignore.case = TRUE), "DEF",
-      grepl("MID|CM|DM|AM|Wing", position, ignore.case = TRUE), "MID",
-      grepl("FWD|Forward|Striker|CF|ST", position, ignore.case = TRUE), "FWD",
-      default = "MID"
-    )]
+    # GK / DEF / MID / FWD through the shared position map; unknown rows
+    # (bench, blank) are centred together as their own group
+    player_epv[, pos_group := .position_role4_any(
+      position, if ("position_side" %in% names(player_epv)) position_side else NULL)]
     adj_cols <- c("epv_total", "epv_offensive", "epv_defensive")
     for (col in adj_cols) {
       adj_name <- sub("^epv_", "epv_", paste0(col, "_adj"))
@@ -1768,7 +1768,7 @@ save_epv_model <- function(epv_model, path = NULL) {
   if (isTRUE(age > max_age_days)) {
     cli::cli_warn(c(
       line,
-      "!" = paste("This model is >{round(max_age_days)} days old — confirm it's the",
+      "!" = paste("This model is >{round(max_age_days)} days old -- confirm it's the",
                   "intended (latest) version. For game-logs, pass",
                   "{.code epv_model_override}/{.code wp_model_override} to pin the",
                   "post-overhaul models (see MODELS.md).")

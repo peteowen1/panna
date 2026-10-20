@@ -85,6 +85,9 @@ if (is.null(skill_spm_asof) || length(skill_spm_asof) == 0) {
     "(FABLE-ASOF-EXPERIMENTS.md sec 4)."), call. = FALSE)
   asof_years <- integer(0)
 } else {
+  for (.y in names(skill_spm_asof))
+    .assert_skill_spm_sign_convention(skill_spm_asof[[.y]],
+                                      sprintf("%s, cutoff year %s", basename(skill_spm_asof_path), .y))
   asof_years <- sort(as.integer(names(skill_spm_asof)))
   cat(sprintf("  expanding-window skill-SPM: %d cutoff years available (%d-%d)\n",
               length(asof_years), min(asof_years), max(asof_years)))
@@ -203,6 +206,16 @@ if (!length(out)) {
   quit(save = "no")
 }
 
+# A date whose fit failed is skipped above. The shrink check below catches that only
+# for dates already published, so a failed NEW month would ship as a silent gap.
+n_failed <- n_attempted - length(out)
+if (n_failed > 0L) {
+  message(sprintf("WARNING: %d of %d attempted snapshots failed to fit (see FIT FAILED above).",
+                  n_failed, n_attempted))
+  if (isTRUE(upload) && !tolower(Sys.getenv("PANNA_PUBLISH_DISABLED", "")) %in% c("true", "1"))
+    stop("Refusing to publish career_panna_asof.parquet with failed snapshots.", call. = FALSE)
+}
+
 allr <- rbindlist(out)
 allr[, sign_convention := CAREER_PANNA_SIGN_CONVENTION]
 if (!is.null(prev)) allr <- rbindlist(list(prev, allr), use.names = TRUE, fill = TRUE)
@@ -246,9 +259,20 @@ if (isTRUE(upload)) {
     cat(sprintf("Publish check: all %d published snapshot dates kept, none below 90%% of their rows.\n",
                 data.table::uniqueN(pub_dates)))
   }
-  piggyback::pb_upload(out_path, repo = "peteowen1/pannadata", tag = "ratings-data",
-                       name = "career_panna_asof.parquet", overwrite = TRUE)
-  cat("Uploaded career_panna_asof.parquet to ratings-data release.\n")
+  # vb_publish() (R/versebus.R), as 09_career_panna.R does (#355). It still replaces the
+  # asset by delete-then-upload, but adds bounded retries, a hash and live size check,
+  # and records the asset in bus_manifest.json last. It names the asset after the file,
+  # so a custom asof_out_path is staged under the real name.
+  pub_path <- out_path
+  if (basename(out_path) != "career_panna_asof.parquet") {
+    pub_path <- file.path(tempfile("career_asof_up_"), "career_panna_asof.parquet")
+    dir.create(dirname(pub_path))
+    stopifnot(file.copy(out_path, pub_path))
+  }
+  manifest <- vb_publish(pub_path, repo = "peteowen1/pannadata", tag = "ratings-data",
+                         rows = c(career_panna_asof.parquet = nrow(allr)),
+                         min_row_frac = 0.9)
+  cat(sprintf("Uploaded career_panna_asof.parquet to ratings-data, generation %s.\n", manifest$generation))
 } else {
   cat("(upload skipped — set upload_career_panna_asof <- TRUE before sourcing to publish)\n")
 }

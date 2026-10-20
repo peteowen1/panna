@@ -972,6 +972,83 @@ test_that("MIN_90S_PSR_LEADERBOARD is a plausible half-season bar", {
   expect_true(MIN_90S_PSR_LEADERBOARD >= 8 && MIN_90S_PSR_LEADERBOARD <= 25)
 })
 
+test_that("player_psr() leaves sub-floor part-seasons off the ranking but keeps them for a name lookup (panna#215)", {
+  snap <- data.table::data.table(
+    snapshot_date = as.Date("2026-10-01"),
+    player_name = c("Full Season", "Half Season", "F. Totti", "Pinilla"),
+    primary_position = "FWD",
+    psr = c(0.30, 0.25, 0.36, 0.35),
+    osr = 0.1, dsr = 0.1,
+    weighted_90s = c(30, 15, 7.0, 5.5)
+  )
+  testthat::local_mocked_bindings(load_opta_psr_weekly = function(...) data.table::copy(snap))
+
+  top <- player_psr(n = NULL)
+  # Totti and Pinilla out-rate everyone on psr but fall under the floor
+  expect_equal(top$player_name, c("Full Season", "Half Season"))
+
+  # floor is adjustable; 0 restores the unfiltered ranking
+  expect_equal(player_psr(n = NULL, min_90s = 0)$player_name[1], "F. Totti")
+  expect_equal(player_psr(n = NULL, min_90s = 20)$player_name, "Full Season")
+
+  # a profile lookup is not a ranking: the short season still shows
+  expect_equal(player_psr(player = "Totti")$weighted_90s, 7.0)
+
+  expect_error(player_psr(min_90s = 100), "weighted 90s")
+})
+
+
+test_that("psr_season_coverage counts distinct matches per season from either label form", {
+  ms <- data.table::data.table(
+    match_id = c("a", "a", "b", "c", "d", "e"),
+    season = c("2013-2014", "2013-2014", "2013-2014", "2014", "2025-2026", "2026")
+  )
+  cov <- psr_season_coverage(ms)
+  # "2013-2014" and calendar "2014" share an end year -> one season, 3 matches
+  expect_equal(cov$season_end_year, c(2014L, 2026L))
+  expect_equal(cov$n_matches, c(3L, 2L))
+  expect_error(psr_season_coverage(data.table::data.table(season = "2014")), "match_id")
+})
+
+test_that("psr_season_covered gates thin seasons, exempts the latest, fails unknowns", {
+  cov <- data.table::data.table(season_end_year = c(2014L, 2015L, 2016L, 2027L),
+                                n_matches = c(822L, 2663L, 5456L, 1515L))
+  dt <- data.table::data.table(season_end_year = c(2014L, 2015L, 2016L, 2027L, 2010L, NA))
+  expect_equal(psr_season_covered(dt, cov),
+               c(FALSE, FALSE, TRUE, TRUE, FALSE, FALSE))
+  # the threshold is the argument; boundary is inclusive
+  expect_equal(psr_season_covered(dt[1:3], cov, min_matches = 2663L),
+               c(FALSE, TRUE, TRUE))
+  expect_error(psr_season_covered(data.table::data.table(x = 1), cov), "season_end_year")
+})
+
+test_that("psr_season_covered refuses an empty or truncated coverage table instead of passing everyone", {
+  dt <- data.table::data.table(season_end_year = c(2014L, 2016L))
+  empty <- data.table::data.table(season_end_year = integer(0), n_matches = integer(0))
+  expect_error(psr_season_covered(dt, empty), "no seasons")
+  all_na <- data.table::data.table(season_end_year = NA_integer_, n_matches = 10L)
+  expect_error(psr_season_covered(dt, all_na), "no seasons")
+  # built from a subset: 2014 alone would otherwise be "latest" and pass
+  only_2014 <- data.table::data.table(season_end_year = 2014L, n_matches = 822L)
+  expect_error(psr_season_covered(dt, only_2014), "later seasons")
+  # the full table still exempts only its own latest season
+  full <- data.table::data.table(season_end_year = c(2014L, 2016L), n_matches = c(822L, 900L))
+  expect_equal(psr_season_covered(dt, full), c(FALSE, TRUE))
+})
+
+test_that("psr_leaderboard_eligible ANDs the season gate in only when given coverage", {
+  cov <- data.table::data.table(season_end_year = c(2014L, 2016L), n_matches = c(822L, 5456L))
+  dt <- data.table::data.table(weighted_90s = c(30, 30, 7),
+                               season_end_year = c(2014L, 2016L, 2016L))
+  expect_equal(psr_leaderboard_eligible(dt), c(TRUE, TRUE, FALSE))
+  expect_equal(psr_leaderboard_eligible(dt, season_coverage = cov), c(FALSE, TRUE, FALSE))
+})
+
+test_that("MIN_MATCHES_PSR_SEASON separates the Opta ramp-up from steady state", {
+  # measured 2026-10-18 on opta_player_stats.parquet (matches with player stats)
+  expect_true(2663L < MIN_MATCHES_PSR_SEASON && MIN_MATCHES_PSR_SEASON < 5456L)
+})
+
 
 # =============================================================================
 # apply_psr_calibration: both axes, post-offset (panna#202/#213/#214)
@@ -2118,4 +2195,39 @@ test_that(".estimate_prematch_skills_batch keeps date names aligned after an emp
   )
   expect_identical(names(got), names(ref))
   for (d in names(ref)) expect_equal(got[[d]], ref[[d]])
+})
+
+# =============================================================================
+# Duplicate-feature sweep on the shipped coefficients (issue #172)
+# =============================================================================
+
+test_that("shipped PSR coefficient files have no unexpected duplicate features", {
+  # `sd` is the training sd of each team-sum feature, so two byte-identical
+  # training columns must carry identical sds. Sweeping the committed CSVs
+  # detects duplicates in whatever data the shipped model actually trained on.
+  # A duplicate leaves the design matrix rank-deficient and the elastic net
+  # splits one effect across the pair (issue #172).
+  files <- list.files(
+    system.file("extdata", package = "panna"),
+    pattern = "^(blend_|gd_|gk_)?(psr|osr|dsr)_coefficients\\.csv$",
+    full.names = TRUE
+  )
+  expect_gt(length(files), 0)
+
+  # Known duplicate, pending a retrain that drops one member (issue #172).
+  # Remove this entry once turnover_p90 is dropped from .get_psr_skill_cols();
+  # the check below fails on a stale entry so it cannot linger.
+  known <- list(c("turnover_p90", "unsuccessful_touch_p90"))
+  known_cols <- unlist(known)
+
+  for (f in files) {
+    d <- utils::read.csv(f, stringsAsFactors = FALSE)
+    d <- d[!is.na(d$sd), ]
+    key <- signif(d$sd, 9)
+    found <- sort(d$stat_name[duplicated(key) | duplicated(key, fromLast = TRUE)])
+    expect_identical(
+      found, if (nrow(d) > 25) sort(known_cols) else character(0),
+      info = paste("duplicate-sd features in", basename(f))
+    )
+  }
 })

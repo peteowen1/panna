@@ -270,3 +270,15 @@ test_that("position centring uses the starting position, per 90 minutes (R027)",
     position = c("Wing Back", "Defender"), minutes_played = 90, total_credit = c(0.1, 0.3))
   expect_equal(adjust_epv_for_position(dt3, "total_credit")$total_credit_adj, c(-0.1, 0.1))
 })
+
+test_that("adjust_epv_for_position can centre within a per-row group", {
+  dt <- data.table::data.table(
+    player_id = c("a", "a", "b", "c", "d"),
+    match_id = c("m1", "m2", "m1", "m1", "m1"),
+    grp = c("FB", "CB", "FB", "CB", "OTHER"),
+    minutes_played = 90, total_credit = c(1, 3, 3, 1, 5))
+  res <- adjust_epv_for_position(dt, credit_cols = "total_credit", group_col = "grp")
+  # a is centred as a FB in m1 and as a CB in m2: per-row, not his usual label
+  expect_equal(res$total_credit_adj, c(-1, 1, 1, -1, 5))
+  expect_error(adjust_epv_for_position(dt, group_col = "nope"), "nope")
+})

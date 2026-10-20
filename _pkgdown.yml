@@ -126,6 +126,11 @@ reference:
   contents:
   - has_concept("match prediction")
 
+- title: Positions
+  desc: Position groupings per match (role_full, role16, role8, role4) from Opta labels and formation slots
+  contents:
+  - has_concept("positions")
+
 - title: Expected Minutes Model
   desc: Player role classification and expected-minutes prediction for lineups
   contents:

@@ -4,13 +4,22 @@
 \alias{psr_leaderboard_eligible}
 \title{Is a player-season eligible for a PSR leaderboard? (panna#215)}
 \usage{
-psr_leaderboard_eligible(psr_dt, min_90s = MIN_90S_PSR_LEADERBOARD)
+psr_leaderboard_eligible(
+  psr_dt,
+  min_90s = MIN_90S_PSR_LEADERBOARD,
+  season_coverage = NULL
+)
 }
 \arguments{
 \item{psr_dt}{Table containing \code{weighted_90s}.}
 
 \item{min_90s}{Minimum weighted 90s; defaults to
 \code{\link{MIN_90S_PSR_LEADERBOARD}}.}
+
+\item{season_coverage}{Optional table from \code{\link{psr_season_coverage}}.
+When supplied, a row must also sit in a season with enough Opta coverage
+(\code{\link{psr_season_covered}}); \code{NULL} (default) applies the
+workload bar alone. Needs \code{season_end_year} in \code{psr_dt}.}
 }
 \value{
 Logical vector. \code{NA} or missing \code{weighted_90s} is treated
@@ -43,6 +52,8 @@ Other psr:
 \code{\link{load_psr_calibration}()},
 \code{\link{load_psv_match_reliability}()},
 \code{\link{player_psr}()},
+\code{\link{psr_season_coverage}()},
+\code{\link{psr_season_covered}()},
 \code{\link{psv_opponent}},
 \code{\link{soccer_position_map}()},
 \code{\link{soccer_stat_rating_definitions}()},

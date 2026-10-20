@@ -7,7 +7,8 @@
 adjust_epv_for_position(
   player_match,
   credit_cols = "total_credit",
-  minutes_col = "minutes_played"
+  minutes_col = "minutes_played",
+  group_col = NULL
 )
 }
 \arguments{
@@ -19,6 +20,11 @@ Defaults to "total_credit".}
 
 \item{minutes_col}{Minutes column used for the per-90 average. Default
 "minutes_played"; if absent, the per-game average is used.}
+
+\item{group_col}{Optional column holding each ROW's group (e.g. the
+player-match role8 from \code{\link[=position_match]{position_match()}}). When given, rows are centred
+within that group instead of the player's usual starting label; \code{NA} and
+"OTHER" rows keep no adjustment.}
 }
 \value{
 Same data.table with \verb{\{col\}_adj} columns added for each credit col

@@ -1111,6 +1111,24 @@ ng_spread_pools <- function(pay, actions, lineups, dacts_share = 0.5, keeper_poo
   # played says so) ends the stint at start + minutes; later exits and full
   # games run to the end, which also absorbs stoppage-time minute counts.
   lu[, early_exit := (is.na(off) | off <= 0) & !is.na(start_min) & start_min + mins < 85]
+  # But a whole side "sent off" is a broken feed, not football. Some lineups
+  # give every player who was never subbed off the minutes of one half (46)
+  # and every substitute 1 minute (La Liga, MLS and Argentina 2025-26 have one
+  # such match each; 27 of 252,305 matches in opta_lineups on 2026-10-20).
+  # Read as red cards, nobody is left on the pitch after minute 46, the late
+  # pools have no one to go to, and ng_player_game() then aborts for the whole
+  # league-season. Four or more early exits in one team-match means the
+  # minutes are wrong: nobody in it leaves early, so its players run to their
+  # off-minute or the final whistle.
+  lu[, n_exit := sum(early_exit), by = .(match_id, team_id)]
+  n_bad <- data.table::uniqueN(lu[n_exit >= 4L, .(match_id, team_id)])
+  if (n_bad > 0) {
+    cli::cli_inform(c(
+      "!" = "{n_bad} team-match{?es} show 4 or more players leaving early with no off-minute.",
+      "i" = "Their lineup minutes look wrong (or the match was cut short), not red cards, so nobody in them is treated as sent off."))
+    lu[n_exit >= 4L, early_exit := FALSE]
+  }
+  lu[, n_exit := NULL]
   lu[, end_min := fifelse(!is.na(off) & off > 0, off,
                    fifelse(early_exit, start_min + mins, Inf))]
   # A substitute with no on-minute cannot be placed at all and is dropped,

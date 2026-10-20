@@ -389,3 +389,20 @@ test_that("create_spm_prior handles data frame input", {
   # Unmatched get default
   expect_equal(unname(prior["p3"]), 0)
 })
+
+test_that("fit_spm_xgb gives the same model whatever the caller's random state (panna#360)", {
+  skip_if_not_installed("xgboost")
+  set.seed(3); n <- 400
+  d <- data.frame(player_id = paste0("p", seq_len(n)), player_name = paste0("P", seq_len(n)),
+                  total_minutes = stats::runif(n, 900, 3000), a_p90 = stats::rnorm(n), b_p90 = stats::rnorm(n))
+  d$mins_per_90 <- d$total_minutes / 90
+  d$rapm <- 0.05 * d$a_p90 + stats::rnorm(n, sd = 0.05)
+  fit <- function() fit_spm_xgb(d, predictor_cols = c("a_p90", "b_p90"), nfolds = 3, nrounds = 40,
+                                early_stopping_rounds = 5, verbose = 0)
+  set.seed(101); a <- fit()
+  set.seed(202); b <- fit()
+  X <- as.matrix(d[, c("a_p90", "b_p90")])
+  expect_equal(stats::predict(a$model, X), stats::predict(b$model, X))
+  set.seed(9); before <- stats::runif(1); set.seed(9); invisible(fit()); after <- stats::runif(1)
+  expect_identical(before, after)
+})

@@ -889,33 +889,6 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
            intersect(c(xm_suffixed, success_cols, pos_cols), names(data))))
 }
 
-#' Build league fixed-effect dummy columns for SPM
-#'
-#' SPM maps per-90 box-score rates onto RAPM. RAPM is already opponent-adjusted
-#' at player level (the design matrix carries \code{_off}/\code{_def} columns for
-#' both teams) and league-season centred, but the box-score rates it is regressed
-#' on are neither. What survives is residual stat inflation: the same per-90 line
-#' means less in a weaker league. Measured 2026-09-02 on 22,755 players, the
-#' fitted league effect spans **0.95 sd of RAPM** end to end (EPL to CAF_CL),
-#' worth ~3.3\% RMSE — and without it Saudi Arabia supplies 5 of SPM's top 20,
-#' as many as the Bundesliga (9 EPL / 2 Saudi once the term is added).
-#'
-#' Dummies are 0/1 with one level held out as the reference, so an **unseen
-#' league at predict time gets all-zero dummies and falls back to that reference**
-#' rather than erroring. That is the deliberate behaviour: a new competition
-#' should be priced as the reference league, not dropped.
-#'
-#' @param data Data frame carrying a \code{competition} or \code{league} column.
-#' @param levels Character vector of league levels from the fitted model. When
-#'   \code{NULL} they are derived from \code{data} (levels with at least
-#'   \code{min_n} rows), which is the fit-time path.
-#' @param min_n Minimum rows for a league to get its own dummy (default 50).
-#'   Thinner leagues fold into the reference level rather than fitting a
-#'   coefficient on a handful of players.
-#' @return A list with \code{data} (input plus dummy columns), \code{levels}
-#'   (the non-reference levels, for storing in model metadata) and \code{cols}
-#'   (the dummy column names).
-#' @keywords internal
 # Minutes-share league controls for a player-grain SPM frame.
 #
 # Why shares and not dummies. Stage 2's SPM aggregates 3.46M player-match rows
@@ -981,6 +954,33 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
 }
 
 
+#' Build league fixed-effect dummy columns for SPM
+#'
+#' SPM maps per-90 box-score rates onto RAPM. RAPM is already opponent-adjusted
+#' at player level (the design matrix carries \code{_off}/\code{_def} columns for
+#' both teams) and league-season centred, but the box-score rates it is regressed
+#' on are neither. What survives is residual stat inflation: the same per-90 line
+#' means less in a weaker league. Measured 2026-09-02 on 22,755 players, the
+#' fitted league effect spans **0.95 sd of RAPM** end to end (EPL to CAF_CL),
+#' worth ~3.3\% RMSE — and without it Saudi Arabia supplies 5 of SPM's top 20,
+#' as many as the Bundesliga (9 EPL / 2 Saudi once the term is added).
+#'
+#' Dummies are 0/1 with one level held out as the reference, so an **unseen
+#' league at predict time gets all-zero dummies and falls back to that reference**
+#' rather than erroring. That is the deliberate behaviour: a new competition
+#' should be priced as the reference league, not dropped.
+#'
+#' @param data Data frame carrying a \code{competition} or \code{league} column.
+#' @param levels Character vector of league levels from the fitted model. When
+#'   \code{NULL} they are derived from \code{data} (levels with at least
+#'   \code{min_n} rows), which is the fit-time path.
+#' @param min_n Minimum rows for a league to get its own dummy (default 50).
+#'   Thinner leagues fold into the reference level rather than fitting a
+#'   coefficient on a handful of players.
+#' @return A list with \code{data} (input plus dummy columns), \code{levels}
+#'   (the non-reference levels, for storing in model metadata) and \code{cols}
+#'   (the dummy column names).
+#' @keywords internal
 .spm_league_dummies <- function(data, levels = NULL, min_n = 50) {
   league_col <- intersect(c("competition", "league"), names(data))[1]
   if (is.na(league_col)) {
@@ -1020,6 +1020,16 @@ aggregate_opta_stats <- function(opta_stats, min_minutes = 450) {
 #' @param nfolds Number of CV folds (default 10)
 #' @param weight_by_minutes Whether to weight by minutes (default TRUE)
 #' @param weight_transform Transform for weighting: "sqrt", "linear", "log"
+#' @param league_fe Add league fixed-effect dummies as unpenalized controls
+#'   (opt-in, default FALSE). The largest league is held out as the reference.
+#'   Mutually exclusive with `league_shares`.
+#' @param league_min_n Minimum number of rows a league needs to get its own
+#'   dummy when `league_fe = TRUE` (default 50). Needs at least 2 qualifying
+#'   leagues, otherwise the model is fitted without league effects.
+#' @param league_shares Enter the pre-joined `lgshare_*` columns (see
+#'   `.spm_league_shares()`) as unpenalized controls (opt-in, default FALSE).
+#'   Errors if no such columns are on `data`. Mutually exclusive with
+#'   `league_fe`.
 #' @param opponent_elo Enter a pre-joined `opponent_elo` column as an
 #'   unpenalized control (opt-in, default FALSE). Orthogonal to
 #'   `league_fe`/`league_shares` -- can combine with either.

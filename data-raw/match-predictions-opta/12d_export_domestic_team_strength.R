@@ -11,7 +11,14 @@
 #   current fixture window (domestic-league clubs AND cup-only clubs from
 #   leagues panna does not scrape, e.g. Champions League opponents), columns:
 #     team, league, panna, offense, defense, epr, psr, elo, tiento, rank_tiento,
-#     squad_n, n_rated, elo_seeded, is_domestic_league, build_id
+#     squad_n, n_rated, elo_seeded, elo_league_shift, is_domestic_league, build_id
+#
+# Leagues the predictions pipeline does not model (BEL, MEX, SAU, AUS, MLS,
+# ARG, BRA; panna#280) have no fixtures in 01_fixture_results.rds, so this
+# step builds theirs itself (step 01 run into a temp dir, section 3a) and adds
+# them to the Elo history. Most of those leagues barely meet the European ones,
+# so their LEVEL is then reset from their squads' panna (section 4b); the
+# spread of clubs within each league still comes from results.
 #
 # Squad aggregation mirrors 12_export_wc2026_blog.R section 5 EXACTLY (same
 # minutes-weighted formula, same rating sources) so a domestic Tiento means the
@@ -50,6 +57,20 @@ if (!exists("as_of_domestic")) as_of_domestic <- Sys.Date()
 # a division panna does not scrape has an Elo seed but no players. 26-man cap
 # makes even a genuinely thin squad clear the bar comfortably.
 if (!exists("MIN_PLAUSIBLE_SQUAD_N")) MIN_PLAUSIBLE_SQUAD_N <- 5L
+
+# panna#280. Leagues with rated players but no predictions-pipeline fixtures:
+# their fixtures are built here so their clubs get an Elo. Any league already
+# in 01_fixture_results.rds is skipped, so adding one to the pipeline later
+# needs no change here. Set to character(0) to switch the extra build off.
+if (!exists("elo_extra_leagues")) elo_extra_leagues <- c("BEL", "MEX", "SAU", "AUS", "MLS", "ARG", "BRA")
+if (!exists("elo_extra_min_season")) elo_extra_min_season <- "2018-2019"
+# Leagues whose average Elo is reset from squad panna, fitted on the leagues
+# the predictions pipeline does model. Measured 2026-10-17 on those 10:
+# leave-one-league-out mean error 29 Elo against a 112 spread of league
+# levels. MLS is deliberately NOT anchored (Pete, 2026-10-17): its squad panna
+# may carry panna#203's MLS league-effect drift, which would lift it above MEX
+# against the CONCACAF head-to-head record. Revisit once #203 is fixed.
+if (!exists("elo_anchor_leagues")) elo_anchor_leagues <- c("BEL", "MEX", "SAU", "AUS", "ARG", "BRA")
 
 TIENTO_WEIGHTS <- c(panna = 0.40, epr = 0.20, elo = 0.30, psr = 0.10)  # DO NOT re-fit; 12_export_wc2026_blog.R:359 is the one derivation
 
@@ -383,6 +404,70 @@ message("\n=== Exporting domestic + cup team strength (Tiento, all clubs) ===\n"
   invisible(TRUE)
 }
 
+#' Log a degraded-but-published condition where the run summary will see it
+#'
+#' Appends to the same `.nonfatal_step_failures` marker run_predictions_opta.R
+#' writes for a failed optional step; the workflow's summary step turns each
+#' line into a warning annotation, so the run stays green but not silent.
+.note_degraded <- function(msg, marker_dir = cache_dir) {
+  message("  WARNING: ", msg)
+  cat(sprintf("step 12d (degraded): %s\n", msg),
+      file = file.path(marker_dir, ".nonfatal_step_failures"), append = TRUE)
+  invisible(NULL)
+}
+
+#' Reset some leagues' average Elo from their squads' panna (panna#280)
+#'
+#' Fits league-mean Elo ~ league-mean squad panna over `fit_leagues` (domestic
+#' rows only), then shifts every domestic club of each `anchor_leagues` league
+#' by (fitted level - current level). Clubs keep their order and gaps inside
+#' the league; cup-only rows are never shifted.
+#'
+#' @param strength data.table with league, is_domestic_league, elo, panna.
+#' @param anchor_leagues,fit_leagues Character vectors of league codes.
+#' @param min_fit Minimum fit leagues; fewer refuses rather than extrapolating.
+#' @param on_missing Called with a message naming any anchor league absent
+#'   from `strength`; the driver passes `.note_degraded`.
+#' @return `strength` with `elo` shifted and `elo_league_shift` (0 if unshifted).
+.anchor_league_elo <- function(strength, anchor_leagues, fit_leagues, min_fit = 5L,
+                               on_missing = function(msg) message("  WARNING: ", msg)) {
+  dt <- data.table::copy(strength)
+  dt[, elo_league_shift := 0]
+  lv <- dt[is_domestic_league == TRUE,
+           .(elo = mean(elo, na.rm = TRUE), panna = mean(panna, na.rm = TRUE), n = .N),
+           by = league]
+  fit <- lv[league %in% fit_leagues & is.finite(elo) & is.finite(panna)]
+  todo <- intersect(anchor_leagues, lv$league)
+  absent <- setdiff(anchor_leagues, lv$league)
+  if (length(absent) > 0L) {
+    on_missing(paste0("Elo anchor: league(s) to anchor have no domestic clubs, so no shift: ",
+                      paste(absent, collapse = ", ")))
+  }
+  if (length(todo) == 0L) return(dt)
+  if (nrow(fit) < min_fit) {
+    stop(sprintf("Elo anchor: only %d fit league(s) (need %d); refusing to extrapolate a level for %s",
+                 nrow(fit), min_fit, paste(todo, collapse = ", ")), call. = FALSE)
+  }
+  m <- stats::lm(elo ~ panna, data = fit)
+  shift <- lv[league %in% todo]
+  shift[, target := stats::predict(m, newdata = shift)]
+  shift[, delta := target - elo]
+  if (any(!is.finite(shift$delta))) {
+    stop("Elo anchor: non-finite shift for ",
+         paste(shift$league[!is.finite(shift$delta)], collapse = ", "), call. = FALSE)
+  }
+  message(sprintf("  Elo anchor: fit on %d leagues, elo = %.0f + %.0f x panna, R2 = %.2f",
+                  nrow(fit), stats::coef(m)[1], stats::coef(m)[2],
+                  stats::cor(fit$elo, stats::fitted(m))^2))
+  message("  Elo anchor shifts: ", paste(sprintf("%s %+.0f (%.0f -> %.0f)", shift$league,
+          shift$delta, shift$elo, shift$target), collapse = ", "))
+  for (i in seq_len(nrow(shift))) {
+    dt[league == shift$league[i] & is_domestic_league == TRUE,
+       `:=`(elo = elo + shift$delta[i], elo_league_shift = shift$delta[i])]
+  }
+  dt[]
+}
+
 # 3. Driver ----
 # Guarded so tests can source() this file to get the helper functions above
 # (for hand-built-fixture unit tests, e.g. `.seed_missing_elo()` on a tiny
@@ -399,6 +484,53 @@ if (!file.exists(fr_path)) {
   stop("01_fixture_results.rds not found in ", cache_dir, " -- run step 01 first.", call. = FALSE)
 }
 fixture_results <- data.table::as.data.table(readRDS(fr_path))
+
+# 3a. Fixtures for leagues the predictions pipeline does not model ----
+# Step 01 is sourced into its own environment with its own cache_dir (a temp
+# dir) and league list, so the pipeline's 01_fixture_results.rds and global
+# `leagues` are never touched. A failure here costs those leagues, not the
+# whole export: it says so, and the league list printed below shows the gap.
+.extra_leagues <- setdiff(elo_extra_leagues, unique(fixture_results$league))
+if (length(.extra_leagues) > 0L) {
+  message("  Building fixtures for leagues outside the predictions pipeline: ",
+          paste(.extra_leagues, collapse = ", "))
+  .extra_dir <- file.path(tempdir(), "12d_extra_fixtures")
+  dir.create(.extra_dir, recursive = TRUE, showWarnings = FALSE)
+  .extra_env <- new.env(parent = globalenv())
+  assign("cache_dir", .extra_dir, envir = .extra_env)
+  assign("leagues", .extra_leagues, envir = .extra_env)
+  assign("seasons", NULL, envir = .extra_env)
+  assign("min_season", elo_extra_min_season, envir = .extra_env)
+  .extra_fr <- tryCatch({
+    source("data-raw/match-predictions-opta/01_build_fixture_results.R", local = .extra_env)
+    data.table::as.data.table(readRDS(file.path(.extra_dir, "01_fixture_results.rds")))
+  }, error = function(e) {
+    .note_degraded(paste0("extra-league fixture build FAILED, so ",
+                          paste(.extra_leagues, collapse = ", "),
+                          " drop out of team_strength: ", conditionMessage(e)))
+    NULL
+  })
+  rm(.extra_env); invisible(gc(verbose = FALSE))
+  if (!is.null(.extra_fr)) {
+    .extra_fr <- .extra_fr[league %in% .extra_leagues]
+    # Step 01 skips a league or season that fails to load and still saves, so
+    # check requested against produced, and show each league's depth: a league
+    # with one season of history would get a thin Elo and still be shifted.
+    .missing <- setdiff(.extra_leagues, unique(.extra_fr$league))
+    if (length(.missing) > 0L) {
+      .note_degraded(paste0("extra leagues requested but no fixtures built, so they drop out of ",
+                            "team_strength: ", paste(.missing, collapse = ", ")))
+    }
+    .depth <- .extra_fr[, .(played = sum(match_status == "Played"),
+                            first = min(match_date), last = max(match_date)), by = league]
+    data.table::setorder(.depth, league)
+    message("  Extra-league fixtures (played, first, last): ",
+            paste(sprintf("%s %d %s..%s", .depth$league, .depth$played,
+                          as.Date(.depth$first), as.Date(.depth$last)), collapse = "; "))
+    fixture_results <- data.table::rbindlist(list(fixture_results, .extra_fr),
+                                             use.names = TRUE, fill = TRUE)
+  }
+}
 
 team_league <- .classify_team_leagues(fixture_results, domestic_codes, cup_codes)
 if (nrow(team_league) == 0L) {
@@ -625,7 +757,19 @@ if (length(unresolved_id) > 0L) {
 strength <- merge(team_league, agg, by = c("team", "team_id"), all.x = TRUE)
 stopifnot("squad merge changed row count (name/id join key drift)" =
             nrow(strength) == .n_tl2)
-for (m in c("panna", "offense", "defense", "epr", "psr", "elo")) {
+
+# 4b. League-level Elo anchor (panna#280) ----
+# Fit on the domestic leagues the pipeline models; the extra leagues are
+# exactly the ones whose level results alone cannot pin down.
+strength <- .anchor_league_elo(
+  strength, anchor_leagues = elo_anchor_leagues,
+  fit_leagues = setdiff(unique(strength$league[strength$is_domestic_league]), elo_extra_leagues),
+  on_missing = .note_degraded)
+message("  Leagues in team_strength: ",
+        paste(sort(unique(strength$league[strength$is_domestic_league])), collapse = ", "),
+        " + cups: ", paste(sort(unique(strength$league[!strength$is_domestic_league])), collapse = ", "))
+
+for (m in c("panna", "offense", "defense", "epr", "psr", "elo", "elo_league_shift")) {
   strength[[m]] <- round(strength[[m]], 4)
 }
 # Published convention: defence positive = good. Since 2026-09-03 this is
@@ -650,7 +794,7 @@ strength[, build_id := .build_id_val]
 strength <- strength[, .(
   team, league, panna, offense, defense, epr, psr, elo,
   tiento, rank_tiento, squad_n, n_rated, elo_seeded, seed_method,
-  is_domestic_league, build_id)]
+  elo_league_shift, is_domestic_league, build_id)]
 data.table::setorder(strength, -tiento)
 
 out_path <- file.path(cache_dir, "team_strength.parquet")

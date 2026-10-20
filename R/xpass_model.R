@@ -175,6 +175,10 @@ fit_xpass_model <- function(pass_features,
                              nrounds = 500,
                              early_stopping_rounds = 50,
                              verbose = 1) {
+  # xgboost draws its seed, CV folds and subsampling from R's random stream; fix it
+  # so a retrain on the same data gives the same model, and restore the caller's
+  # stream on exit (panna#360).
+  withr::local_seed(MODEL_FIT_SEED)
 
   if (!requireNamespace("xgboost", quietly = TRUE)) {
     cli::cli_abort("xgboost package required. Install with: install.packages('xgboost')")

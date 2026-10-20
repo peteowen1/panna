@@ -501,3 +501,31 @@ test_that("compute_team_rolling_features keeps same-name clubs apart (R033)", {
   # L2 has played once before nothing: its only match carries no 2-match form
   expect_true(is.na(rf[match_id == "m2", home_points_last_2]))
 })
+
+test_that(".fit_xgb_model is reproducible and leaves the caller's random stream alone", {
+  skip_if_not_installed("xgboost")
+  set.seed(1); n <- 600
+  X <- matrix(stats::rnorm(n * 5), n); colnames(X) <- paste0("f", 1:5)
+  y <- sample(0:2, n, replace = TRUE)
+  fit <- function(...) fit_outcome_xgb(X, y, nfolds = 3L, nrounds = 30L, early_stopping = 5L, verbose = 0L, ...)
+  set.seed(11); a <- fit()
+  set.seed(99); b <- fit()                       # different caller state, same result
+  expect_identical(a$best_nrounds, b$best_nrounds)
+  expect_equal(predict(a$model, xgboost::xgb.DMatrix(X)), predict(b$model, xgboost::xgb.DMatrix(X)))
+  set.seed(5); before <- stats::runif(1); set.seed(5); invisible(fit()); after <- stats::runif(1)
+  expect_identical(before, after)                 # with_seed restored the stream
+})
+
+test_that(".fit_xgb_model is reproducible on the grouped-fold path the pipeline uses", {
+  skip_if_not_installed("xgboost")
+  set.seed(2); n <- 600
+  X <- matrix(stats::rnorm(n * 5), n); colnames(X) <- paste0("f", 1:5)
+  y <- sample(0:2, n, replace = TRUE)
+  g <- rep(seq_len(n / 2), 2)                    # a match and its mirror share a group
+  fit <- function() fit_outcome_xgb(X, y, nfolds = 3L, nrounds = 30L, early_stopping = 5L,
+                                    verbose = 0L, group_ids = g)
+  set.seed(21); a <- fit()
+  set.seed(77); b <- fit()
+  expect_identical(a$best_nrounds, b$best_nrounds)
+  expect_equal(predict(a$model, xgboost::xgb.DMatrix(X)), predict(b$model, xgboost::xgb.DMatrix(X)))
+})

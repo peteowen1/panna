@@ -1013,6 +1013,54 @@ calculate_psr_components <- function(skills, coef_df, osr_coef_df, dsr_coef_df,
 # Per-Game Player Stat Value (PSV/OSV/DSV)
 # ============================================================================
 
+#' Resolve the minutes column PSV scales by
+#'
+#' The ONE place that decides which column \code{\link{calculate_psv}} uses
+#' for its per-90 adjustment, its \code{center_weights = "minutes"} weights
+#' and its \code{scale_to_minutes} factor: \code{minutes_played} when present,
+#' else \code{total_minutes}, else \code{NULL}. Anything that must price in
+#' the SAME minutes as a PSV it adds to (the game-logs league offset, panna#164)
+#' should read the \code{psv_minutes} column \code{calculate_psv} returns
+#' rather than re-deriving a minutes column of its own.
+#'
+#' @param dt A data.frame or data.table of per-game stats.
+#' @return A single column name, or \code{NULL} when neither column exists.
+#' @keywords internal
+.psv_minutes_col <- function(dt) {
+  nms <- names(dt)
+  if ("minutes_played" %in% nms) "minutes_played"
+  else if ("total_minutes" %in% nms) "total_minutes"
+  else NULL
+}
+
+#' Minutes to scale a PSV league offset by
+#'
+#' Returns, per row, the number of minutes \code{calculate_psv} actually
+#' scaled that row's PSV by (its \code{psv_minutes} column, carried through
+#' \code{\link{build_player_game_ratings}}), divided by 90 and floored at 0.
+#' Rows with no \code{psv_minutes} (no PSV row at all, so \code{psv} is NA
+#' and the offset cannot reach a value) fall back to \code{fallback_minutes},
+#' which keeps the published \code{psv_league_offset} column unchanged for
+#' them. When the \code{psv_minutes} column is absent altogether, everything
+#' falls back, as before panna#164.
+#'
+#' @param psv_minutes Numeric vector (or \code{NULL}) of minutes PSV used.
+#' @param fallback_minutes Numeric vector of lineup-derived minutes
+#'   (\code{total_minutes}), same length.
+#' @return Numeric vector of \code{minutes / 90}, never NA or negative.
+#' @keywords internal
+.psv_offset_mins_scale <- function(psv_minutes, fallback_minutes) {
+  mins <- as.numeric(fallback_minutes)
+  if (!is.null(psv_minutes)) {
+    pm <- as.numeric(psv_minutes)
+    mins <- ifelse(is.na(pm), mins, pm)
+  }
+  scale <- mins / 90
+  scale[is.na(scale) | scale < 0] <- 0
+  scale
+}
+
+
 #' Calculate Per-Game Player Stat Value
 #'
 #' Applies pre-trained glmnet coefficients to raw per-game box-score stats,
@@ -1082,7 +1130,12 @@ calculate_psr_components <- function(skills, coef_df, osr_coef_df, dsr_coef_df,
 #'   stays bit-identical to the pre-scale behaviour.
 #'
 #' @return A data.table with identifier columns plus \code{psv_raw} and
-#'   \code{psv}.
+#'   \code{psv}. With \code{scale_to_minutes = TRUE} it also carries
+#'   \code{psv_minutes}: the minutes each row's PSV was actually scaled by
+#'   (from \code{minutes_played}, else \code{total_minutes}; NA or negative
+#'   input minutes read as 0). Add any further per-90 quantity (e.g. the
+#'   game-logs league offset) using this column, so it can never be priced in
+#'   a different minutes source than the PSV it joins (panna#164).
 #'
 #' @family psr
 #' @export
@@ -1142,9 +1195,7 @@ calculate_psv <- function(player_match_stats, coef_df, min_adjust = TRUE,
   # so exempt them from the per-90 scaling. (Matters only when efficiency stats
   # are kept, i.e. exclude_efficiency = FALSE; otherwise they aren't in `mat`.)
   if (min_adjust) {
-    mins_col <- if ("minutes_played" %in% names(dt)) "minutes_played"
-                else if ("total_minutes" %in% names(dt)) "total_minutes"
-                else NULL
+    mins_col <- .psv_minutes_col(dt)
     if (!is.null(mins_col)) {
       mins <- as.numeric(dt[[mins_col]])
       mins[is.na(mins) | mins <= 0] <- 90  # default to 90 for missing
@@ -1200,9 +1251,7 @@ calculate_psv <- function(player_match_stats, coef_df, min_adjust = TRUE,
       # Same minutes-column resolution as scale_to_minutes, so the weight
       # used here is EXACTLY the per-row factor that later multiplies psv —
       # that identity is what makes the post-scale group sum exactly 0.
-      w_mins_col <- if ("minutes_played" %in% names(dt)) "minutes_played"
-                    else if ("total_minutes" %in% names(dt)) "total_minutes"
-                    else NULL
+      w_mins_col <- .psv_minutes_col(dt)
       if (is.null(w_mins_col)) {
         cli::cli_warn(
           "center_weights = \"minutes\" but no minutes column found; falling back to unweighted centering"
@@ -1239,9 +1288,7 @@ calculate_psv <- function(player_match_stats, coef_df, min_adjust = TRUE,
   # total_minutes/90 to recover the per-90 rate. Preserves osv + dsv = psv
   # (both components scaled by the same per-row factor).
   if (scale_to_minutes) {
-    mins_col <- if ("minutes_played" %in% names(dt)) "minutes_played"
-                else if ("total_minutes" %in% names(dt)) "total_minutes"
-                else NULL
+    mins_col <- .psv_minutes_col(dt)
     if (is.null(mins_col)) {
       cli::cli_warn(
         "scale_to_minutes = TRUE but no minutes column found; PSV left per-90"
@@ -1251,6 +1298,10 @@ calculate_psv <- function(player_match_stats, coef_df, min_adjust = TRUE,
       scale_fac[is.na(scale_fac) | scale_fac < 0] <- 0
       dt[, psv_raw := psv_raw * scale_fac]
       dt[, psv := psv * scale_fac]
+      # Expose the minutes this PSV was actually scaled by (panna#164), so a
+      # caller adding a per-90 quantity (the league offset) prices it in the
+      # same minutes instead of re-resolving a column of its own.
+      dt[, psv_minutes := scale_fac * 90]
     }
   }
 
@@ -1261,7 +1312,8 @@ calculate_psv <- function(player_match_stats, coef_df, min_adjust = TRUE,
     names(dt)
   )
 
-  dt[, c(id_cols, "psv_raw", "psv"), with = FALSE]
+  out_cols <- c(id_cols, "psv_raw", "psv", intersect("psv_minutes", names(dt)))
+  dt[, out_cols, with = FALSE]
 }
 
 
@@ -1827,7 +1879,7 @@ compute_position_role_means <- function(player_stats, skill_cols, min_n = 200L,
 load_position_role_means <- function() {
   p <- system.file("extdata", "position_role_means.csv", package = "panna")
   if (p == "" || !file.exists(p)) {
-    cli::cli_warn("position_role_means.csv not found — position normalization disabled")
+    cli::cli_warn("position_role_means.csv not found -- position normalization disabled")
     return(NULL)
   }
   data.table::fread(p)
@@ -1854,7 +1906,7 @@ load_position_role_means <- function() {
 load_psv_match_reliability <- function() {
   p <- system.file("extdata", "psv_match_reliability.csv", package = "panna")
   if (p == "" || !file.exists(p)) {
-    cli::cli_warn("psv_match_reliability.csv not found — per-match PSV reliability shrinkage disabled")
+    cli::cli_warn("psv_match_reliability.csv not found -- per-match PSV reliability shrinkage disabled")
     return(NULL)
   }
   data.table::fread(p)
@@ -2033,6 +2085,13 @@ load_psv_match_reliability <- function() {
 #'   obvious. Resolve once on the full population and pass it here. Named with
 #'   a dot prefix deliberately: a parameter called \code{pos_grp} would be
 #'   shadowed by the column of the same name inside \code{dt[...]}.
+#' @param role_override Optional character vector, one per row of
+#'   \code{player_match_stats}, supplying the fine-grained role label directly
+#'   instead of resolving it from \code{position} + \code{position_side}.
+#'   Usually unnecessary here, since match stats carry both columns. It exists
+#'   for callers that score slices of a larger population and want the same
+#'   scope-stable role everywhere, for the same reason as \code{is_gk} and
+#'   \code{.pos_grp_override}. \code{NULL} (default) resolves roles natively.
 #'
 #' @return A data.table with \code{psv}, \code{osv}, \code{dsv} columns.
 #'
@@ -2245,7 +2304,7 @@ load_psv_calibration <- function() {
 #'
 #' \strong{The position column must be a RESOLVED position, not the per-match
 #' role.} Opta records \code{position == "Substitute"} for anyone appearing off
-#' the bench -- roughly 29\% of game-log rows as measured 2026-09 (an absolute
+#' the bench -- roughly 29% of game-log rows as measured 2026-09 (an absolute
 #' count would already be stale given the daily Opta scrape; re-measure rather
 #' than trust a cached number). Bucketing on that field puts a blend of every
 #' position into one group and biases the outfield factors. Resolve each
@@ -2263,10 +2322,10 @@ load_psv_calibration <- function() {
 #' and only the relative position weighting moves. That matters because these
 #' offsets are ADDED to PSR at full strength on the assumption that PSV and PSR
 #' share units. Using the raw slopes inflates all of PSV ~1.5x and every league
-#' offset with it -- which looks like a large correction (+55\% on weak leagues)
+#' offset with it -- which looks like a large correction (+55% on weak leagues)
 #' but is a units artefact. The genuine differential effect on the offsets is
-#' about \strong{+4.6\%}; the real payoff of this table is to PSV itself, where it
-#' cuts goalkeeper share of the top 1\% from 4.2x the population rate to ~0.2x.
+#' about \strong{+4.6%}; the real payoff of this table is to PSV itself, where it
+#' cuts goalkeeper share of the top 1% from 4.2x the population rate to ~0.2x.
 #'
 #' \strong{These figures are a point-in-time measurement (2026-09), not an
 #' enforced invariant} -- there is no checked-in script that regenerates
@@ -2377,10 +2436,10 @@ resolve_position_group <- function(dt) {
 #' regex-matched the same vocabulary independently, which is exactly the kind of
 #' duplicated classifier this codebase's own gotchas warn drifts silently); or a
 #' 16-role \code{classify_role()} code (\code{"CB"}, \code{"DM"}, ...), resolved
-#' via \code{\link{.role16_to_broad}} -- needed because
+#' via \code{.role16_to_broad()} -- needed because
 #' \code{apply_psv_calibration()}'s own fallback chain can hand this function a
 #' fine-grained \code{primary_position} (see \code{\link{.player_role}}'s
-#' comment: that column is "usually already broad... but [sometimes] a
+#' comment: that column is "usually already broad... but \[sometimes\] a
 #' fine-grained label"). Anything none of the three recognize returns NA, which
 #' \code{apply_psv_calibration()} treats as factor 1 (uncalibrated passthrough).
 #' @keywords internal
@@ -2681,11 +2740,16 @@ compute_player_psr <- function(skills, center = TRUE,
 #' @param psr_dt Table containing \code{weighted_90s}.
 #' @param min_90s Minimum weighted 90s; defaults to
 #'   \code{\link{MIN_90S_PSR_LEADERBOARD}}.
+#' @param season_coverage Optional table from \code{\link{psr_season_coverage}}.
+#'   When supplied, a row must also sit in a season with enough Opta coverage
+#'   (\code{\link{psr_season_covered}}); \code{NULL} (default) applies the
+#'   workload bar alone. Needs \code{season_end_year} in \code{psr_dt}.
 #' @return Logical vector. \code{NA} or missing \code{weighted_90s} is treated
 #'   as NOT eligible — an unknown workload cannot clear a workload bar.
 #' @family psr
 #' @export
-psr_leaderboard_eligible <- function(psr_dt, min_90s = MIN_90S_PSR_LEADERBOARD) {
+psr_leaderboard_eligible <- function(psr_dt, min_90s = MIN_90S_PSR_LEADERBOARD,
+                                     season_coverage = NULL) {
   dt <- data.table::as.data.table(psr_dt)
   if (!"weighted_90s" %in% names(dt)) {
     cli::cli_abort(c(
@@ -2694,7 +2758,96 @@ psr_leaderboard_eligible <- function(psr_dt, min_90s = MIN_90S_PSR_LEADERBOARD) 
     ))
   }
   w <- suppressWarnings(as.numeric(dt$weighted_90s))
-  !is.na(w) & is.finite(w) & w >= min_90s
+  ok <- !is.na(w) & is.finite(w) & w >= min_90s
+  if (!is.null(season_coverage)) ok <- ok & psr_season_covered(dt, season_coverage)
+  ok
+}
+
+
+#' Matches per season with real player stats
+#'
+#' Counts distinct matches per \code{season_end_year} in a match-level stats
+#' table (one row per player-match, as built by step 01 of the skills pipeline).
+#' Those rows already carry the minimum-minutes filter, so a match only counts
+#' if it has player box-score data -- which is what PSR needs, and what early
+#' Opta seasons mostly lack (panna#221).
+#'
+#' @param match_stats Table with \code{match_id} and either
+#'   \code{season_end_year} or \code{season}.
+#' @return \code{data.table(season_end_year, n_matches)}, one row per season.
+#' @family psr
+#' @export
+psr_season_coverage <- function(match_stats) {
+  dt <- data.table::as.data.table(match_stats)
+  if (!"match_id" %in% names(dt)) {
+    cli::cli_abort("{.arg match_stats} must contain {.field match_id}.")
+  }
+  if (!"season_end_year" %in% names(dt)) {
+    if (!"season" %in% names(dt)) {
+      cli::cli_abort("{.arg match_stats} needs {.field season_end_year} or {.field season}.")
+    }
+    # by label, never by exact "YYYY-YYYY" match (CLAUDE.md season rule)
+    dt <- data.table::copy(dt)
+    dt[, season_end_year := as.integer(extract_season_end_year(season))]
+  }
+  dt[!is.na(season_end_year) & !is.na(match_id),
+     .(n_matches = data.table::uniqueN(match_id)),
+     by = .(season_end_year = as.integer(season_end_year))][order(season_end_year)]
+}
+
+
+#' Is a player-season in a season with enough Opta coverage? (panna#221)
+#'
+#' Returns a logical vector, one per row -- a flag, not a filter. Opta's first
+#' seasons are sparse (2014: 822 matches with player stats against ~6,000 in a
+#' normal season), so one well-covered club tops any cross-season table. Pair
+#' with \code{\link{psr_leaderboard_eligible}}, which accepts this gate through
+#' its \code{season_coverage} argument so consumers need not know about it.
+#'
+#' The latest season in \code{season_coverage} always passes: it can be in
+#' progress and so legitimately short, and the ramp-up seasons this gate exists
+#' for are never the latest. A season absent from the table, or an \code{NA}
+#' season, is NOT covered -- unknown coverage cannot clear a coverage bar.
+#' An empty \code{season_coverage}, or one ending before the latest season in
+#' \code{psr_dt}, is an error: either means it was not built from the full
+#' match-stats table.
+#'
+#' @param psr_dt Table containing \code{season_end_year}.
+#' @param season_coverage Table from \code{\link{psr_season_coverage}}.
+#' @param min_matches Minimum matches; defaults to
+#'   \code{\link{MIN_MATCHES_PSR_SEASON}}.
+#' @return Logical vector.
+#' @family psr
+#' @export
+psr_season_covered <- function(psr_dt, season_coverage,
+                               min_matches = MIN_MATCHES_PSR_SEASON) {
+  dt <- data.table::as.data.table(psr_dt)
+  if (!"season_end_year" %in% names(dt)) {
+    cli::cli_abort("{.arg psr_dt} must contain {.field season_end_year}.")
+  }
+  if (!all(c("season_end_year", "n_matches") %in% names(season_coverage))) {
+    cli::cli_abort(
+      "{.arg season_coverage} must come from {.fn psr_season_coverage}.")
+  }
+  sey <- suppressWarnings(as.integer(dt$season_end_year))
+  cov_years <- suppressWarnings(as.integer(season_coverage$season_end_year))
+  # An empty table made max() -Inf, so every season counted as "latest" and
+  # passed: the gate failed open on exactly the input a broken upstream gives.
+  if (!any(!is.na(cov_years))) {
+    cli::cli_abort(c(
+      "{.arg season_coverage} has no seasons, so coverage cannot be judged.",
+      "i" = "Build it from the full match-stats table with {.fn psr_season_coverage}."))
+  }
+  latest <- max(cov_years, na.rm = TRUE)
+  # A coverage table that stops before the seasons being judged was built from a
+  # subset; its "latest" is then some thin season, which would wrongly pass.
+  if (any(sey > latest, na.rm = TRUE)) {
+    cli::cli_abort(c(
+      "{.arg season_coverage} ends at {latest} but {.arg psr_dt} has later seasons.",
+      "i" = "Build it from the full match-stats table, not a subset."))
+  }
+  n <- season_coverage$n_matches[match(sey, cov_years)]
+  !is.na(sey) & ((!is.na(n) & n >= min_matches) | sey == latest)
 }
 
 #' Load the PSR calibration table
@@ -3029,13 +3182,20 @@ apply_psr_league_offsets <- function(psr_dt, offsets, verbose = FALSE) {
 #' Get Player Skill Ratings
 #'
 #' Returns a ranked PSR leaderboard using pre-computed weekly snapshots.
-#' Snaps to the nearest weekly date at or before \code{date}.
+#' Snaps to the nearest weekly date at or before \code{date}. Players under
+#' \code{min_90s} weighted nineties are left off the ranking (a name lookup
+#' via \code{player} is exempt).
 #'
 #' @param date Date to query as a \code{Date} or \code{"YYYY-MM-DD"} string.
 #'   Defaults to the latest available snapshot.
 #' @param player Optional player name filter (partial match, case-insensitive).
 #'   E.g., \code{"Salah"} matches "Mohamed Salah".
 #' @param n Number of top players to show (default 50, NULL for all).
+#' @param min_90s Minimum weighted 90s to appear in the leaderboard (default
+#'   \code{\link{MIN_90S_PSR_LEADERBOARD}}, panna#215). Applied through
+#'   \code{\link{psr_leaderboard_eligible}} before ranking. Not applied when
+#'   \code{player} is given, so a single-player lookup still shows a short
+#'   season's rating. Use \code{0} to rank every row.
 #' @param position Filter by position group: \code{"GK"}, \code{"DEF"},
 #'   \code{"MID"}, \code{"FWD"}, or NULL for all.
 #' @param target One of \code{"xg"} (default, xG differential) or
@@ -3066,6 +3226,7 @@ apply_psr_league_offsets <- function(psr_dt, offsets, verbose = FALSE) {
 #' player_psr(position = "MID")
 #' }
 player_psr <- function(date = NULL, player = NULL, n = 50,
+                        min_90s = MIN_90S_PSR_LEADERBOARD,
                         position = NULL, target = c("xg", "goals"),
                         source = c("remote", "local")) {
   source <- match.arg(source)
@@ -3108,6 +3269,20 @@ player_psr <- function(date = NULL, player = NULL, n = 50,
       ))
     }
     psr <- psr[primary_position == position]
+  }
+
+  # Minutes floor for the ranking (panna#215). A name lookup is a profile view,
+  # not a ranking, so it keeps short seasons.
+  if (is.null(player)) {
+    # flag computed outside `[`: inside it, `psr` would resolve to the column
+    eligible <- psr_leaderboard_eligible(psr, min_90s = min_90s)
+    psr <- psr[eligible]
+    if (nrow(psr) == 0) {
+      cli::cli_abort(c(
+        "No players have at least {min_90s} weighted 90s.",
+        "i" = "Lower {.arg min_90s} to rank thinner samples."
+      ))
+    }
   }
 
   # Sort by PSR descending
