@@ -1,4 +1,7 @@
-# panna (development)
+# panna 0.3.103
+
+- Step 10b's role8 EPV fallback to start_label now also writes a GitHub Actions `::warning::`, so a weekly run
+  that falls back for a league is visible rather than green and silent.
 
 - `ng_spread_pools()` no longer reads a broken lineup as a mass sending-off. Some lineups give every player who
   was never subbed off one half's minutes (46) and every substitute 1 minute; the red-card rule (R031) then
