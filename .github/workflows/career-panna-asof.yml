@@ -156,7 +156,7 @@ jobs:
           mkdir -p _out && cp ../pannadata/data/opta/career_panna_asof.parquet _out/
           if [ "$REFIT_PRIOR" = "true" ]; then cp data-raw/cache-skills/03_skill_spm_asof.rds _out/; fi
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: career-panna-asof
           path: _out/
