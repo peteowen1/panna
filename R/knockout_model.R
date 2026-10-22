@@ -319,3 +319,26 @@ build_knockout_lookup <- function(match_dataset, goals_models, outcome_result,
   sum(p$status[wc] == "fixture", na.rm = TRUE)
 }
 
+#' Group letter for a WC 2026 fixture, or `NA` for a knockout tie
+#'
+#' A group-stage match pairs two teams from the same group, dated on or before
+#' `WC2026_GROUP_STAGE_END`. A knockout tie pairs teams from different groups,
+#' so the same-group test does the separating. The date window stops a
+#' same-group pairing played later from being labelled.
+#'
+#' @param home_team,away_team Character vectors of team names.
+#' @param match_date Date, or a character/POSIXct vector whose first 10
+#'   characters are the UTC date (`"2026-06-11Z"`).
+#' @param team_group Named character vector: team name to group letter.
+#' @return Character vector, the group letter for group-stage rows and `NA`
+#'   otherwise.
+#' @keywords internal
+.wc2026_group_label <- function(home_team, away_team, match_date, team_group) {
+  home_grp <- unname(team_group[home_team])
+  away_grp <- unname(team_group[away_team])
+  day <- as.Date(substr(as.character(match_date), 1, 10))
+  in_group <- !is.na(home_grp) & !is.na(away_grp) & home_grp == away_grp &
+    !is.na(day) & day <= WC2026_GROUP_STAGE_END
+  ifelse(in_group, home_grp, NA_character_)
+}
+

@@ -964,6 +964,16 @@ WC2026_LEAGUE <- "WC"
 #' @keywords internal
 WC2026_SEASON_LABEL <- "2026 Canada-Mexico-USA"
 
+#' Last calendar day (UTC) of the WC 2026 group stage
+#'
+#' Final-matchday group games kick off late in the US evening, so their stored
+#' UTC date can be one day past the local date: the last two group matches
+#' (Jordan v Argentina, Algeria v Austria) are dated `2026-06-28Z`. The
+#' knockout bracket also opens on `2026-06-28Z`, so this date alone cannot
+#' separate the stages. See `.wc2026_group_label()`.
+#' @keywords internal
+WC2026_GROUP_STAGE_END <- as.Date("2026-06-28")
+
 #' Opta team_ids of the three WC 2026 hosts (USA / Canada / Mexico)
 #'
 #' Keyed by team_id rather than name because Opta has already served at least

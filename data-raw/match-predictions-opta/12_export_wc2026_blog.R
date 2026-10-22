@@ -82,13 +82,15 @@ wc_pred <- preds[league == WC2026_LEAGUE & season == wc_season &
                    home_team != "" & away_team != ""]
 wc_pred <- wc_pred[, .(
   match_date,
-  group      = unname(team_group[home_team]),
+  # Group-stage rows only: knockout ties have no group (#349). NA sorts last so
+  # a knockout tie dated on the group stage's final day follows its group games.
+  group      = .wc2026_group_label(home_team, away_team, match_date, team_group),
   home_team, away_team,
   prob_home  = prob_H, prob_draw = prob_D, prob_away = prob_A,
   pred_home_goals, pred_away_goals,
   predicted  = predicted_result
 )]
-setorder(wc_pred, match_date, group)
+setorder(wc_pred, match_date, group, na.last = TRUE)
 write_parquet(wc_pred, file.path(cache_dir, "wc2026_predictions.parquet"))
 message(sprintf("  wc2026_predictions.parquet: %d fixtures", nrow(wc_pred)))
 
