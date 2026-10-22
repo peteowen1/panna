@@ -1,5 +1,15 @@
 # panna 0.3.103
 
+- Keeper GSAA / `xgot_faced` / `goals_conceded` now credit each conceded shot to the keeper on the pitch when it
+  was taken, not the whole match to the keeper with most minutes. A keeper's span runs from kick-off (or
+  `sub_on_minute`) to `sub_off_minute`; a half-time change leaves first-half stoppage shots with the outgoing
+  keeper. A keeper who came off the bench (lineup `position = "Substitute"`) is found from keeper-only events
+  (types 11/41/52/53/54/59) or from being a keeper in his other lineup rows, so he is no longer dropped, and
+  `gsaa_minutes` is each keeper's own minutes. A keeper who played but faced no shot reads 0, not missing.
+  Without `time_seconds`, or where no keeper's span covers a shot, the old most-minutes keeper still gets it.
+  Barcelona v Racing (2026-09-16) goes from Joan García -0.59 on 1.41 faced / 2 conceded and Szczęsny 0/0, to
+  García 0.305 faced / 1 conceded and Szczęsny 1.122 / 1 (issue #351).
+
 - Step 10b's role8 EPV fallback to start_label now also writes a GitHub Actions `::warning::`, so a weekly run
   that falls back for a league is visible rather than green and silent.
 
