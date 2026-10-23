@@ -169,3 +169,63 @@ test_that("a skipped simulation is not re-stamped with this run's build_id", {
   expect_true("build_id" %in% names(fresh))
   expect_false(any(fresh$build_id == "PRIOR-RUN"))
 })
+
+# #349: knockout ties were labelled with their home team's group. Only
+# group-stage fixtures carry a group letter now.
+test_that(".wc2026_group_label labels group-stage fixtures and leaves knockout ties NA", {
+  team_group <- c(Mexico = "A", Czechia = "A", Canada = "B",
+                  Jordan = "J", Argentina = "J")
+
+  got <- .wc2026_group_label(
+    home_team  = c("Mexico", "Jordan", "Mexico", "Mexico", "Mexico", "", "Mexico"),
+    away_team  = c("Czechia", "Argentina", "Canada", "Czechia", "Canada", "Czechia", "Nowhere"),
+    match_date = c("2026-06-11Z", "2026-06-28Z", "2026-06-28Z", "2026-07-01Z",
+                   "2026-07-05Z", "2026-06-12Z", "2026-06-12Z"),
+    team_group = team_group
+  )
+  # group / group on the final group day / group / knockout (other groups) /
+  # knockout / blank placeholder / unknown team
+  expect_identical(got, c("A", "J", NA, NA, NA, NA, NA))
+
+  # Date objects are accepted as well as the "YYYY-MM-DDZ" strings.
+  expect_identical(
+    .wc2026_group_label("Mexico", "Czechia", as.Date("2026-06-28"), team_group),
+    "A")
+  expect_identical(
+    .wc2026_group_label("Mexico", "Czechia", as.Date("2026-06-29"), team_group),
+    NA_character_)
+})
+
+test_that("step 12 writes a group letter only on group-stage rows", {
+  skip_if_not_installed("arrow")
+  local_no_reload()
+
+  script <- testthat::test_path("..", "..", "data-raw", "match-predictions-opta",
+                                "12_export_wc2026_blog.R")
+  skip_if_not(file.exists(script), "12_export_wc2026_blog.R not found")
+
+  cache_dir <- withr::local_tempdir()
+  preds <- data.frame(
+    league = WC2026_LEAGUE,
+    season = WC2026_SEASON_LABEL,
+    match_date = as.Date(c("2026-06-28", "2026-06-15", "2026-06-28")),
+    home_team = c("Mexico", "Mexico", "Jordan"),
+    away_team = c("Canada", "Czechia", "Argentina"),
+    prob_H = c(0.40, 0.45, 0.30),
+    prob_D = c(0.30, 0.30, 0.30),
+    prob_A = c(0.30, 0.25, 0.40),
+    pred_home_goals = c(1.2, 1.6, 1.0),
+    pred_away_goals = c(1.1, 1.0, 1.3),
+    predicted_result = c("H", "H", "A"),
+    stringsAsFactors = FALSE
+  )
+  saveRDS(preds, file.path(cache_dir, "07_predictions.rds"))
+
+  expect_no_error(source(script, local = TRUE))
+
+  out <- arrow::read_parquet(file.path(cache_dir, "wc2026_predictions.parquet"))
+  # Ordered by date, then group; the knockout tie (Mexico v Canada, other
+  # groups) is last on its date with no group.
+  expect_identical(out$home_team, c("Mexico", "Jordan", "Mexico"))
+  expect_identical(out$group, c("A", "J", NA))
+})

@@ -38,7 +38,7 @@ env:
   # builds but uploads nothing: the R scripts force their upload_* flags off and the
   # workflow upload steps are gated on it (vb_publish() itself does not read it).
   PANNA_PUBLISH_DISABLED: ${{ (github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev') && 'true' || 'false' }}
-  # Steps 07b/12b/12c upload dated snapshots with gh directly; they already
+  # Steps 07b/12b/12c/12f upload dated snapshots with gh directly; they already
   # honour this switch.
   WC2026_NO_UPLOAD: ${{ (github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev') && '1' || '' }}
 
@@ -360,6 +360,11 @@ jobs:
               # snapshots to wc2026-strength-history so tournament rating drift
               # is tracked going forward (no replay needed next time).
               step_12c_snapshot_wc_strength  = TRUE,
+              # And for the per-match H/D/A probabilities + knockout lookup:
+              # step 07 re-stamps every match with a re-fit model each run, so
+              # without dated copies the probabilities shown on a past date
+              # are unrecoverable (panna#177). wc2026-predictions-history.
+              step_12f_snapshot_wc_predictions = TRUE,
               # Tiento for every domestic-league + cup-only club (panna#193),
               # not just the WC2026 48 -- the blog's Team Ratings page reads
               # team_strength.parquet for the headline rating everywhere.

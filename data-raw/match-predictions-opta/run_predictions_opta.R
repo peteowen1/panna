@@ -68,6 +68,7 @@ if (!exists("run_steps", inherits = FALSE)) {
     step_12_export_wc2026_blog       = FALSE,  # Opt-in: export WC2026 blog data
     step_12b_snapshot_wc_minutes     = FALSE,  # Opt-in: archive dated minutes snapshot + diff
     step_12c_snapshot_wc_strength    = FALSE,  # Opt-in: archive dated team-strength (ELO+p_champ) snapshot + diff
+    step_12f_snapshot_wc_predictions = FALSE,  # Opt-in: archive dated wc2026_predictions + knockout_probs snapshots (panna#177)
     step_12d_export_domestic_team_strength = FALSE,  # Opt-in: export Tiento for every domestic/cup club (panna#193)
     step_12e_export_cup_pairwise     = FALSE,  # Opt-in: export UCL/UEL/UECL pairwise knockout lookup
     step_13_publish_release_data     = FALSE   # Opt-in: single gated publish of predictions-latest + blog-latest (PA5/H-TORN)
@@ -439,24 +440,25 @@ step_results[["10d"]] <- run_pipeline_step("export_shootout_wpa", "10d", functio
 # run costs a stale WC tab for a day -- against eight days of the whole
 # pipeline publishing nothing, which is what the alternative cost.
 .wc_steps <- c("step_11_simulate_wc2026",
-               "step_12b_snapshot_wc_minutes", "step_12c_snapshot_wc_strength")
+               "step_12b_snapshot_wc_minutes", "step_12c_snapshot_wc_strength",
+               "step_12f_snapshot_wc_predictions")
 if (any(vapply(.wc_steps, function(k) isTRUE(run_steps[[k]]), logical(1)))) {
   .wc_remaining <- .wc2026_fixtures_remaining(cache_dir)
   # Say what happened either way. Silently overriding a workflow's explicit
   # TRUE is the same failure shape as the bug above: it looks like it worked.
   if (is.na(.wc_remaining)) {
     message(sprintf(
-      "\n[%s] WC2026 gate: cannot read %s -- leaving steps 11/12b/12c as configured.",
+      "\n[%s] WC2026 gate: cannot read %s -- leaving steps 11/12b/12c/12f as configured.",
       format(Sys.time(), "%H:%M:%S"),
       file.path(cache_dir, "07_predictions.rds")))
   } else if (.wc_remaining > 0L) {
     message(sprintf(
-      "\n[%s] WC2026 gate: %d fixture(s) remaining -- steps 11/12b/12c will run.",
+      "\n[%s] WC2026 gate: %d fixture(s) remaining -- steps 11/12b/12c/12f will run.",
       format(Sys.time(), "%H:%M:%S"), .wc_remaining))
   } else {
     message(sprintf(paste0(
       "\n[%s] WC2026 gate: 0 unplayed WC2026 fixtures in 07_predictions.rds.\n",
-      "  The tournament is over -- DISABLING steps 11/12b/12c for this run.\n",
+      "  The tournament is over -- DISABLING steps 11/12b/12c/12f for this run.\n",
       "  (Simulating a finished tournament produced champion odds off zero\n",
       "  group-stage predictions, and aborts in build_knockout_lookup().)\n",
       "  Step 12 still runs -- it exports match history/predictions, not a\n",
@@ -496,6 +498,18 @@ step_results[["12b"]] <- run_pred_step_optional("snapshot_wc_minutes", "12b", fu
 
 step_results[["12c"]] <- run_pred_step_optional("snapshot_wc_strength", "12c", function() {
   source("data-raw/match-predictions-opta/12c_snapshot_wc_strength.R", local = TRUE)
+})
+
+# 14g1. Step 12f: Snapshot WC 2026 Predictions ----
+# Archive dated copies of wc2026_predictions.parquet (per-match H/D/A) and
+# wc2026_knockout_probs.parquet to the wc2026-predictions-history release, so an
+# as-at replay can use what was actually published on a date rather than the
+# current model re-stamped onto it (panna#177). Runs after step 12 (writes the
+# predictions file) and step 11 (writes the knockout lookup). Named 12f because
+# 12d/12e are taken.
+
+step_results[["12f"]] <- run_pred_step_optional("snapshot_wc_predictions", "12f", function() {
+  source("data-raw/match-predictions-opta/12f_snapshot_wc_predictions.R", local = TRUE)
 })
 
 # 14g2. Step 12d: Export Domestic + Cup Team Strength (Tiento, all clubs) ----
