@@ -90,18 +90,29 @@ message(sprintf("  Final-state Elo range across %d teams: %.0f to %.0f",
 
 message("  Computing rolling team features...")
 
-# Fill missing xG with per-league average xG (less noisy than actual goals)
-for (lg in unique(played$league)) {
-  lg_idx <- played$league == lg
-  lg_home_mean <- mean(played$home_xg[lg_idx], na.rm = TRUE)
-  lg_away_mean <- mean(played$away_xg[lg_idx], na.rm = TRUE)
-  # If entire league has no xG, fall back to global mean
-  if (is.na(lg_home_mean)) lg_home_mean <- mean(played$home_xg, na.rm = TRUE)
-  if (is.na(lg_away_mean)) lg_away_mean <- mean(played$away_xg, na.rm = TRUE)
-  na_home <- lg_idx & is.na(played$home_xg)
-  na_away <- lg_idx & is.na(played$away_xg)
-  played$home_xg[na_home] <- lg_home_mean
-  played$away_xg[na_away] <- lg_away_mean
+# Fill missing xG with the league's average xG (less noisy than actual goals),
+# taken over matches played BEFORE the row's date only. The all-seasons mean
+# used until 2026-10 let later seasons' xG into earlier rows' rolling form
+# (HONEST-PREDICTIONS-PLAN.md section 2). A league with no earlier xG falls back
+# to the earlier mean over all leagues; a row with no earlier xG anywhere stays
+# NA, and step 04 imputes its rolling features from train rows.
+prior_xg_mean <- function(xg, group, date) {
+  d <- data.table::data.table(xg = xg, g = group, date = date)
+  by_day <- d[, .(s = sum(xg, na.rm = TRUE), n = sum(!is.na(xg))), by = .(g, date)]
+  data.table::setorder(by_day, g, date)
+  by_day[, `:=`(prior_s = cumsum(s) - s, prior_n = cumsum(n) - n), by = g]
+  by_day[, prior_mean := data.table::fifelse(prior_n > 0, prior_s / prior_n, NA_real_)]
+  by_day[d, on = .(g, date), prior_mean]
+}
+xg_fill_date <- as.Date(substr(as.character(played$match_date), 1, 10))
+for (side in c("home_xg", "away_xg")) {
+  fill <- prior_xg_mean(played[[side]], played$league, xg_fill_date)
+  fill_all <- prior_xg_mean(played[[side]], rep("all", nrow(played)), xg_fill_date)
+  fill[is.na(fill)] <- fill_all[is.na(fill)]
+  na_idx <- is.na(played[[side]])
+  played[[side]][na_idx] <- fill[na_idx]
+  message(sprintf("  %s: %d missing values filled from earlier matches; %d left NA (no earlier xG)",
+                  side, sum(na_idx & !is.na(fill)), sum(na_idx & is.na(fill))))
 }
 
 # R033: form is keyed by team name, and Opta reuses names across clubs
