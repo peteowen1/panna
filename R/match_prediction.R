@@ -1439,7 +1439,11 @@ compute_multiclass_logloss <- function(y_true, prob_matrix, eps = 1e-15) {
 #' @param prob_matrix Matrix with 3 columns of predicted probabilities
 #' @param n_bins Number of calibration bins (default 10)
 #'
-#' @return Data frame with bin midpoints, predicted and actual probabilities
+#' @return A data.table with one row per outcome (Home, Draw, Away) and bin,
+#'   so `3 * n_bins` rows. Columns: `bin` (interval label), `bin_lower`,
+#'   `bin_upper`, `pred_mean`, `actual_mean`, `n`, `outcome`. A bin no
+#'   prediction falls into has `n = 0` and `NA` for `pred_mean` and
+#'   `actual_mean`.
 #' @family match prediction
 #' @export
 calibration_table <- function(y_true, prob_matrix, n_bins = 10L) {
@@ -1453,12 +1457,21 @@ calibration_table <- function(y_true, prob_matrix, n_bins = 10L) {
     breaks <- seq(0, 1, length.out = n_bins + 1L)
     bins <- cut(probs, breaks = breaks, include.lowest = TRUE)
 
-    dt <- data.table::data.table(prob = probs, actual = actual, bin = bins)
-    cal <- dt[, .(
-      pred_mean = mean(prob),
-      actual_mean = mean(actual),
-      n = .N
-    ), by = bin]
+    # Index by bin position rather than grouping on the factor, so bins no
+    # prediction falls into are kept (n = 0, NA means) instead of dropped
+    bin_idx <- as.integer(bins)
+    cal <- data.table::data.table(
+      bin = factor(levels(bins), levels = levels(bins)),
+      bin_lower = breaks[-length(breaks)],
+      bin_upper = breaks[-1L],
+      pred_mean = vapply(seq_len(n_bins), function(b) {
+        if (any(bin_idx == b, na.rm = TRUE)) mean(probs[which(bin_idx == b)]) else NA_real_
+      }, numeric(1)),
+      actual_mean = vapply(seq_len(n_bins), function(b) {
+        if (any(bin_idx == b, na.rm = TRUE)) mean(actual[which(bin_idx == b)]) else NA_real_
+      }, numeric(1)),
+      n = vapply(seq_len(n_bins), function(b) sum(bin_idx == b, na.rm = TRUE), integer(1))
+    )
 
     cal$outcome <- outcome_labels[k]
     results[[k]] <- cal
