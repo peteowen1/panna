@@ -233,22 +233,57 @@ if (nrow(fixtures) == 0) {
     # to join (zero-filled for parity, but the prediction is unreliable).
     # Downstream blog steps should grey these out rather than drop them.
     degraded_features = degraded_features,
+    # Honest-record columns (pannaverse docs/plans/HONEST-PREDICTIONS-PLAN.md).
+    # `split` says whether the models were fitted on this match ("train"): such
+    # rows are in-sample and step 10 keeps them off the blog. The score lets a
+    # published row be checked without a second join; generated_utc dates the
+    # number, since played rows are re-scored on every run.
+    split = fixtures$split,
+    home_goals = if ("home_goals" %in% names(fixtures)) fixtures$home_goals else NA_real_,
+    away_goals = if ("away_goals" %in% names(fixtures)) fixtures$away_goals else NA_real_,
+    generated_utc = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
     stringsAsFactors = FALSE
   )
 
   predictions <- predictions[order(predictions$match_date, predictions$league), ]
 
+  # Which honest-record tier each row is (Pete, 2026-10-25: publish only real
+  # pre-match predictions). "forecast" = a fixture, "retrodiction" = played
+  # but out-of-fit (val/test), "none" = the models were fitted on this match.
+  # The pre-match "locked" tier is assigned downstream by pannadata's
+  # lock_predictions.R, which holds the append-only lock record.
+  predictions$record <- ifelse(predictions$split == "fixture", "forecast",
+                        ifelse(predictions$split == "train", "none", "retrodiction"))
+
   # 9. Save ----
 
+  # The rds stays complete: steps 11, 12 and the knockout model read it, and
+  # it is never published.
   saveRDS(predictions, output_path)
+
+  # The published copies (predictions-latest, predictions-history, and through
+  # step 10 the blog) carry no in-sample numbers. The rows stay, because the
+  # blog lists matches from this file (ITG, 2026-10-25); only the model's
+  # outputs are blanked.
+  published <- predictions
+  in_sample <- published$split == "train"
+  published[in_sample, c("pred_home_goals", "pred_away_goals",
+                         "prob_H", "prob_D", "prob_A")] <- NA_real_
+  published$predicted_result[in_sample] <- NA_character_
+  if (any(!is.na(published$prob_H[published$split == "train"]))) {
+    stop("07: an in-sample (split == 'train') row still carries probabilities in the published copy")
+  }
+  message(sprintf("  Published copy: %d in-sample rows blanked; %d retrodiction, %d forecast rows keep their numbers",
+                  sum(in_sample), sum(published$record == "retrodiction"),
+                  sum(published$record == "forecast")))
 
   # Also save CSV for easy viewing
   csv_path <- file.path(cache_dir, "predictions.csv")
-  write.csv(predictions, csv_path, row.names = FALSE)
+  write.csv(published, csv_path, row.names = FALSE)
 
   # Save parquet for GitHub release upload
   parquet_path <- file.path(cache_dir, "predictions.parquet")
-  arrow::write_parquet(predictions, parquet_path)
+  arrow::write_parquet(published, parquet_path)
 
   # 10. Summary ----
 
