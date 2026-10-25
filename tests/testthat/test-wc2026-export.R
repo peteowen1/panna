@@ -47,6 +47,7 @@ local_no_reload <- function(env = parent.frame()) {
     pred_home_goals = c(1.6, 1.1),
     pred_away_goals = c(1.0, 1.4),
     predicted_result = c("H", "A"),
+    split = c("val", "fixture"),
     stringsAsFactors = FALSE
   )
 }
@@ -217,6 +218,7 @@ test_that("step 12 writes a group letter only on group-stage rows", {
     pred_home_goals = c(1.2, 1.6, 1.0),
     pred_away_goals = c(1.1, 1.0, 1.3),
     predicted_result = c("H", "H", "A"),
+    split = "fixture",
     stringsAsFactors = FALSE
   )
   saveRDS(preds, file.path(cache_dir, "07_predictions.rds"))
@@ -228,4 +230,44 @@ test_that("step 12 writes a group letter only on group-stage rows", {
   # groups) is last on its date with no group.
   expect_identical(out$home_team, c("Mexico", "Jordan", "Mexico"))
   expect_identical(out$group, c("A", "J", NA))
+})
+
+test_that("step 12 blanks in-sample rows and labels every row's record tier", {
+  skip_if_not_installed("arrow")
+  local_no_reload()
+
+  script <- testthat::test_path("..", "..", "data-raw", "match-predictions-opta",
+                                "12_export_wc2026_blog.R")
+  skip_if_not(file.exists(script), "12_export_wc2026_blog.R not found")
+
+  cache_dir <- withr::local_tempdir()
+  preds <- .wc12_preds_fixture()
+  preds$split <- c("train", "fixture")
+  saveRDS(preds, file.path(cache_dir, "07_predictions.rds"))
+
+  expect_no_error(source(script, local = TRUE))
+
+  out <- arrow::read_parquet(file.path(cache_dir, "wc2026_predictions.parquet"))
+  out <- as.data.frame(out)[order(out$match_date), ]
+  expect_identical(out$record, c("none", "forecast"))
+  expect_true(all(is.na(unlist(out[1, c("prob_home", "prob_draw", "prob_away",
+                                        "pred_home_goals", "pred_away_goals")]))))
+  expect_true(is.na(out$predicted[1]))
+  expect_equal(out$prob_home[2], 0.30)
+})
+
+test_that("step 12 stops with a plain message when 07_predictions has no split column", {
+  skip_if_not_installed("arrow")
+  local_no_reload()
+
+  script <- testthat::test_path("..", "..", "data-raw", "match-predictions-opta",
+                                "12_export_wc2026_blog.R")
+  skip_if_not(file.exists(script), "12_export_wc2026_blog.R not found")
+
+  cache_dir <- withr::local_tempdir()
+  preds <- .wc12_preds_fixture()
+  preds$split <- NULL
+  saveRDS(preds, file.path(cache_dir, "07_predictions.rds"))
+
+  expect_error(source(script, local = TRUE), "no `split` column")
 })
