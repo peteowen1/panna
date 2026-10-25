@@ -200,7 +200,10 @@ for (league in names(league_seasons)) {
 
       # 4d. Add xG to shots. shot_lookup carries body_part + situation: without
       # it every header scores as a foot shot (+6.3% on total xG) and every set
-      # piece as open play (-4.7%).
+      # piece as open play (-4.7%). `events` carries qualifier 263 (Opta's
+      # direct-corner tag) for the panna#277 override; without it only the
+      # corner-flag box rule applies. xGOT below gets it too, so the two
+      # overrides flag the same shots.
       xg_lk_cols <- intersect(c("match_id", "event_id", "body_part", "situation"),
                               names(shot_ev))
       xg_lookup <- if (!is.null(shot_ev) &&
@@ -210,7 +213,7 @@ for (league in names(league_seasons)) {
         NULL
       }
       spadl <- add_xg_to_spadl(spadl, xg_model, season = season,
-                               shot_lookup = xg_lookup)
+                               shot_lookup = xg_lookup, events = events)
 
       # Override penalty xG with fixed value
       penalty_idx <- spadl$action_type == "shot" & spadl$is_penalty == 1L
@@ -233,7 +236,8 @@ for (league in names(league_seasons)) {
           lk_cols <- c(req_cols, intersect(c("situation", "is_blocked", "body_part"),
                                            names(shot_ev)))
           spadl <- add_xgot_to_spadl(spadl, xgot_model,
-                                     as.data.frame(shot_ev)[, lk_cols])
+                                     as.data.frame(shot_ev)[, lk_cols],
+                                     events = events)
         } else if (!is.null(shot_ev)) {
           cli_alert_warning("  Skipping xGOT for {label}: shot_events lack goalmouth coords (run backfill + re-upload)")
         }

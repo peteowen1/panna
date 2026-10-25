@@ -937,3 +937,20 @@ read_spm_opta_stats <- function(cache_dir) {
   bundle <- readRDS(if (use_narrow) narrow else wide)
   list(opta_stats = bundle$opta_stats, opta_xmetrics = bundle$opta_xmetrics)
 }
+
+
+#' Is this predictions run going to publish?
+#'
+#' TRUE when a publishing step (09 upload or 13 gated publish) is switched on in
+#' `run_steps` AND the CI ref gate (R026, `PANNA_PUBLISH_DISABLED`) is not set.
+#' Used to turn a "feature is leaky / degraded" warning() into a stop() only for
+#' runs whose output reaches predictions-latest, keeping local exploratory runs
+#' (every publishing step defaults to FALSE) running with a warning.
+#'
+#' @param run_steps The orchestrator's run_steps list (NULL if absent).
+#' @return Logical scalar
+is_publish_run <- function(run_steps = NULL) {
+  if (tolower(Sys.getenv("PANNA_PUBLISH_DISABLED", "")) %in% c("true", "1")) return(FALSE)
+  isTRUE(run_steps$step_09_upload_predictions) ||
+    isTRUE(run_steps$step_13_publish_release_data)
+}
