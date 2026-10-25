@@ -33,7 +33,6 @@ preds <- load_predictions(source = "local")
 \seealso{
 Other data distribution: 
 \code{\link{pb_download_opta}()},
-\code{\link{pb_download_predictions}()},
-\code{\link{pb_list_sources}()}
+\code{\link{pb_download_predictions}()}
 }
 \concept{data distribution}

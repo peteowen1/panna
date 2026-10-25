@@ -401,41 +401,6 @@ prepare_passes_for_xpass_minimal <- function(passes) {
 }
 
 
-#' Calculate Pass Credit Split
-#'
-#' Splits EPV credit between passer and receiver based on pass difficulty.
-#' Harder passes (lower xPass) give more credit to the passer.
-#'
-#' @param pass_value Total EPV value of the pass
-#' @param xpass Predicted pass completion probability
-#'
-#' @return List with passer_credit and receiver_credit
-#'
-#' @keywords internal
-#' @examples
-#' \dontrun{
-#' # Easy pass (80% completion): receiver gets most credit
-#' split_pass_credit(0.1, 0.8)
-#'
-#' # Difficult pass (30% completion): passer gets most credit
-#' split_pass_credit(0.1, 0.3)
-#' }
-split_pass_credit <- function(pass_value, xpass) {
-  # Clip xpass to avoid extreme splits
-  xpass <- pmax(pmin(xpass, 0.95), 0.05)
-
-  # Passer credit: proportional to difficulty (1 - xpass)
-  # Receiver credit: proportional to ease (xpass)
-  passer_credit <- pass_value * (1 - xpass)
-  receiver_credit <- pass_value * xpass
-
-  list(
-    passer_credit = passer_credit,
-    receiver_credit = receiver_credit
-  )
-}
-
-
 #' Load Pre-trained xPass Model
 #'
 #' Loads xPass model from saved RDS file.

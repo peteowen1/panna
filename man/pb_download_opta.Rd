@@ -66,7 +66,6 @@ pb_download_opta(pattern = "^events_")
 \seealso{
 Other data distribution: 
 \code{\link{load_predictions}()},
-\code{\link{pb_download_predictions}()},
-\code{\link{pb_list_sources}()}
+\code{\link{pb_download_predictions}()}
 }
 \concept{data distribution}

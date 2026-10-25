@@ -28,7 +28,6 @@ Imports:
     gh,
     glmnet (>= 4.0),
     httr2,
-    janitor,
     jsonlite,
     Matrix,
     methods,

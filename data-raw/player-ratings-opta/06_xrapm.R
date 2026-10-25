@@ -18,11 +18,9 @@ cat(sprintf("Using lambda = %s for xRAPM\n", xrapm_lambda))
 # is set (any non-empty value), skip cv.glmnet in fit_rapm_with_prior() and fit
 # at the closed-form lambda = 16.67 * n_obs^-0.58. Default (unset) keeps CV.
 use_fixed_lambda <- nzchar(Sys.getenv("OPTA_FIXED_LAMBDA"))
-# Sample-size lambda formula (same as data-raw/estimated-skills/09b_career_panna_asof.R).
-lambda_formula <- function(n) 16.67 * n^(-0.58)
-# n_obs for a fit = count of valid (non-NA, finite) responses, matching the
-# count fit_rapm_with_prior() uses internally.
-.n_obs_valid <- function(rd) sum(!is.na(rd$y) & is.finite(rd$y))
+# Sample-size lambda formula: the one package copy in R/rapm_model.R.
+# n_obs for a fit comes from the package's .n_obs_valid() (valid, finite responses).
+lambda_formula <- rapm_lambda_from_n
 
 # 2. Load Data ----
 

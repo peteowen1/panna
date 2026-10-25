@@ -50,22 +50,6 @@ opta_qualifier_is_red <- function(qualifier_json) {
 }
 
 
-#' Clean column names to snake_case
-#'
-#' Applies janitor::clean_names() to standardize all column names.
-#'
-#' @param data Data frame
-#'
-#' @return Data frame with snake_case column names
-#' @keywords internal
-clean_column_names <- function(data) {
-  if (is.null(data) || !is.data.frame(data)) {
-    return(data)
-  }
-  janitor::clean_names(data)
-}
-
-
 #' Safe division handling division by zero
 #'
 #' @param x Numerator
@@ -87,63 +71,6 @@ safe_divide <- function(x, y, default = 0) {
   bad <- (is.infinite(result) | is.nan(result)) & !input_na
   result[bad] <- default
   result
-}
-
-
-#' Validate season input
-#'
-#' Checks that seasons are in valid "YYYY-YYYY" format and within the
-#' available data range. The minimum year depends on the data source:
-#' FBref starts at 2017, Opta at 2013.
-#'
-#' @param seasons Character vector of seasons in format "YYYY-YYYY" (e.g., "2023-2024")
-#' @param min_year Minimum start year allowed (default 2017 for FBref)
-#' @param source_name Name of the data source for error messages (default "FBref")
-#'
-#' @return TRUE if valid, otherwise throws an error
-#' @family utilities
-#' @export
-#'
-#' @examples
-#' validate_seasons("2023-2024")
-#' validate_seasons(c("2022-2023", "2023-2024"))
-#' validate_seasons("2013-2014", min_year = 2013, source_name = "Opta")
-validate_seasons <- function(seasons, min_year = 2017, source_name = "FBref") {
-  # Check format
-  if (!all(grepl("^\\d{4}-\\d{4}$", seasons))) {
-    bad_seasons <- seasons[!grepl("^\\d{4}-\\d{4}$", seasons)]
-    cli::cli_abort(c(
-      "Seasons must be in format 'YYYY-YYYY'.",
-      "x" = "Invalid: {.val {head(bad_seasons, 3)}}",
-      "i" = "Example: {.val 2023-2024}"
-    ))
-  }
-
-  # Extract start years
-  start_years <- as.numeric(substr(seasons, 1, 4))
-
-  # Check minimum year
-  if (any(start_years < min_year)) {
-    bad_seasons <- seasons[start_years < min_year]
-    min_season <- paste0(min_year, "-", min_year + 1L)
-    cli::cli_abort(c(
-      "{source_name} data is only available from {min_season} season onwards.",
-      "x" = "Invalid: {.val {head(bad_seasons, 3)}}"
-    ))
-  }
-
-  # Check end year is start + 1
-  end_years <- as.numeric(substr(seasons, 6, 9))
-  if (!all(end_years == start_years + 1)) {
-    bad_seasons <- seasons[end_years != start_years + 1]
-    cli::cli_abort(c(
-      "Season end year must be start year + 1.",
-      "x" = "Invalid: {.val {head(bad_seasons, 3)}}",
-      "i" = "Example: {.val 2023-2024}"
-    ))
-  }
-
-  TRUE
 }
 
 
@@ -198,22 +125,6 @@ clean_player_name <- function(names) {
   # Build lookup and return via O(1) match
   lookup <- setNames(cleaned, unique_names)
   unname(lookup[names])
-}
-
-
-#' Create unique match ID
-#'
-#' Generates a unique identifier for a match based on season, date, and teams.
-#'
-#' @param season Season string (e.g., "2023-2024")
-#' @param date Date of match
-#' @param home_team Home team name
-#' @param away_team Away team name
-#'
-#' @return Character vector of match IDs
-#' @keywords internal
-create_match_id <- function(season, date, home_team, away_team) {
-  paste(season, format(as.Date(date), "%Y%m%d"), home_team, away_team, sep = "_")
 }
 
 
@@ -466,47 +377,6 @@ count_events_before <- function(events, boundaries) {
 #' @keywords internal
 count_events_in_splint <- function(events, boundaries) {
   .count_events(events, boundaries, type = "within")
-}
-
-
-#' Extract season from match_id
-#'
-#' Extracts the season string from a match_id.
-#' Match IDs have format "2017-2018_20170915_TeamA_TeamB".
-#'
-#' @param match_id Character vector of match IDs
-#'
-#' @return Character vector of season strings (e.g., "2017-2018")
-#' @keywords internal
-#'
-#' @examples
-#' \dontrun{
-#' extract_season_from_match_id("2017-2018_20170915_Bournemouth_Brighton")
-#' # Returns "2017-2018"
-#' }
-extract_season_from_match_id <- function(match_id) {
-  sub("^([0-9]{4}-[0-9]{4})_.*", "\\1", match_id)
-}
-
-
-#' Extract season end year from match_id
-#'
-#' Extracts the season end year as a numeric value from a match_id.
-#' Match IDs have format "2017-2018_20170915_TeamA_TeamB".
-#'
-#' @param match_id Character vector of match IDs
-#'
-#' @return Numeric vector of season end years (e.g., 2018)
-#' @keywords internal
-#'
-#' @examples
-#' \dontrun{
-#' extract_season_end_year_from_match_id("2017-2018_20170915_Bournemouth_Brighton")
-#' # Returns 2018
-#' }
-extract_season_end_year_from_match_id <- function(match_id) {
-  season <- extract_season_from_match_id(match_id)
-  as.numeric(substr(season, 6, 9))
 }
 
 

@@ -37,7 +37,7 @@ window_nfolds <- if (exists("window_nfolds", inherits = FALSE)) window_nfolds el
 window_lambda_formula <- if (exists("window_lambda_formula", inherits = FALSE)) {
   window_lambda_formula
 } else {
-  function(n) 16.67 * n^(-0.58)
+  rapm_lambda_from_n
 }
 window_seed <- if (exists("window_seed", inherits = FALSE)) window_seed else 20260721L
 

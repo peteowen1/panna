@@ -87,7 +87,7 @@ The FBref pipeline shares the same RAPM/SPM methodology as Opta but uses FBref d
 
 ### 01_raw_data.rds
 
-Raw data from pannadata repository. All columns are snake_case after `clean_column_names()`.
+Raw data from pannadata repository. All columns are snake_case.
 
 ### results
 | Column | Type | Description |

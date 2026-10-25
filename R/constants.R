@@ -123,6 +123,18 @@ MIN_SHOTS_FOR_FINISHING <- 20L
 #' MIN_WEIGHT_DURATION
 MIN_WEIGHT_DURATION <- 0.01
 
+#' Sample-size RAPM ridge-lambda formula coefficients
+#'
+#' The fitted closed form \code{lambda = RAPM_LAMBDA_COEF * n_obs ^
+#' RAPM_LAMBDA_EXPONENT} (panna#87; R^2 = 0.96 against cv.glmnet's
+#' lambda.min). Used by \code{rapm_lambda_from_n()}, which every RAPM stage
+#' calls, so a refit of the formula is a change here only.
+#'
+#' @keywords internal
+#' @noRd
+RAPM_LAMBDA_COEF <- 16.67
+RAPM_LAMBDA_EXPONENT <- -0.58
+
 
 # =============================================================================
 # Statistical Defaults

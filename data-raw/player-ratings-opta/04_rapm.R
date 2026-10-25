@@ -19,11 +19,9 @@ if (!exists("cache_dir", inherits = FALSE)) cache_dir <- file.path("data-raw", "
 # and this step runs ~4 such fits back-to-back — the spike that OOMs the 16GB
 # runner. Default (unset) keeps the current cross-validated behaviour unchanged.
 use_fixed_lambda <- nzchar(Sys.getenv("OPTA_FIXED_LAMBDA"))
-# Sample-size lambda formula (same as data-raw/estimated-skills/09b_career_panna_asof.R).
-lambda_formula <- function(n) 16.67 * n^(-0.58)
-# n_obs for a fit = count of valid (non-NA, finite) responses, matching the
-# count fit_rapm()/fit_rapm_with_prior() use internally.
-.n_obs_valid <- function(rd) sum(!is.na(rd$y) & is.finite(rd$y))
+# Sample-size lambda formula: the one package copy in R/rapm_model.R.
+# n_obs for a fit comes from the package's .n_obs_valid() (valid, finite responses).
+lambda_formula <- rapm_lambda_from_n
 
 # 2. Load Splint Data ----
 

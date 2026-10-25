@@ -100,7 +100,7 @@ cli::cli_alert_info(paste0(
 # 4. Fit RAPM on the decayed weights (same settings as 04_rapm.R for comparability) ----
 
 n_obs <- sum(!is.na(rapm_data$y) & is.finite(rapm_data$y))
-lambda_formula <- function(n) 16.67 * n^(-0.58)
+lambda_formula <- rapm_lambda_from_n
 lambda_seq <- lambda_formula(n_obs) * 2^seq(3, -3, by = -0.5)
 
 cat("\n=== Fitting decayed RAPM ===\n")
