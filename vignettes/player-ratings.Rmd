@@ -59,17 +59,17 @@ positive always means "better".
 ## The Piero composite
 
 Piero is the number shown as the main player rating on the blog. It is a
-z-scored blend of the three complementary rating estimators, rescaled back
+z-scored blend of four complementary rating estimators, rescaled back
 into panna's own units:
 
 ```
-piero = z(0.5 * z(panna) + 0.3 * z(epr) + 0.2 * z(psr)) * sd(panna) + mean(panna)
+piero = z(0.4 * z(panna) + 0.3 * z(psr) + 0.2 * z(spmr) + 0.1 * z(epr)) * sd(panna) + mean(panna)
 ```
 
-The weights (panna 0.5 / EPR 0.3 / PSR 0.2) live in `PIERO_WEIGHTS` inside
+The weights (panna 0.4 / PSR 0.3 / SPMR 0.2 / EPR 0.1, re-derived 2026-09-15) live in `PIERO_WEIGHTS` inside
 `pannadata/scripts/build_blog_data.R` -- Piero itself is **not** a function
-exported from this package. panna supplies the three ingredient ratings
-(`panna`, EPR, PSR); the blend and publish step happen downstream in
+exported from this package. panna supplies the four ingredient ratings
+(`panna`, PSR, SPMR, EPR); the blend and publish step happen downstream in
 `pannadata`. The per-match twin follows the same idea but blends the
 *production* metrics instead: `piero_value = 0.5 * epv_total_adj + 0.5 * psv`,
 controlled by this package's own `PANNA_EPR_WEIGHT` / `PANNA_PSR_WEIGHT`
