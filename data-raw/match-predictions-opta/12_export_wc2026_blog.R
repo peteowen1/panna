@@ -83,6 +83,12 @@ preds <- as.data.table(readRDS(file.path(cache_dir, "07_predictions.rds")))
 # them once here, before both files below are built, so wc2026_predictions and
 # wc_history_predictions cannot disagree (today WC 2026 is "val"; it becomes
 # "train" at the next season rollover). `record` says which tier a row is.
+# Without a split column, `split` below would resolve to base::split() and fail
+# with an unreadable error; step 07 writes it on every run since panna#395.
+if (!"split" %in% names(preds)) {
+  stop("07_predictions.rds has no `split` column: rerun step 07 (panna#395 or later) ",
+       "so in-sample World Cup rows can be blanked before publishing.")
+}
 preds[, record := fifelse(split == "train", "none",
                   fifelse(split == "fixture", "forecast", "retrodiction"))]
 num_cols <- c("prob_H", "prob_D", "prob_A", "pred_home_goals", "pred_away_goals")
