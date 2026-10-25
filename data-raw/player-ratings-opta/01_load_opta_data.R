@@ -417,8 +417,12 @@ for (league in leagues) {
         # supplies body_part + situation, which SPADL also cannot (its
         # `bodypart` is a stub reading "foot" for every shot). Without the
         # lookup six of the model's features are constant 0 and xG is ~6% off.
+        # raw_events carries qualifier 263 (Opta's direct-corner tag): without it
+        # the panna#277 direct-corner override falls back to the corner-flag box
+        # rule and misses the tagged shots outside the box.
         spadl <- add_xg_to_spadl(spadl, xg_model, season = season,
-                                 shot_lookup = .epv_shot_lookup(league, season))
+                                 shot_lookup = .epv_shot_lookup(league, season),
+                                 events = raw_events)
 
         # Override penalty xG
         penalty_idx <- spadl$action_type == "shot" & spadl$is_penalty == 1L
