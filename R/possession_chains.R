@@ -86,7 +86,10 @@ create_possession_chains <- function(spadl_actions) {
   # keeper rebound) stay NA and are handled by the first-action break below.
   dt[, effective_team_id := {
     filled_idx <- cummax((!is.na(effective_team_id)) * seq_len(.N))
-    fifelse(filled_idx == 0L, NA_character_, effective_team_id[filled_idx])
+    # x[0] drops the element rather than yielding NA, so index with pmax(.., 1L)
+    # and let fifelse() NA-out the pre-first-populated rows; otherwise a match
+    # opening on a keeper rebound returns a vector shorter than `test`.
+    fifelse(filled_idx == 0L, NA_character_, effective_team_id[pmax(filled_idx, 1L)])
   }, by = match_id]
   # Compare each row against the carried-forward attacker team. Keeper-rebound
   # rows now match the prior attacker (so they don't start a chain); genuine
