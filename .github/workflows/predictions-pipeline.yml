@@ -407,39 +407,6 @@ jobs:
             if (isTRUE(pipeline_failed)) quit(status = 1)
           "
 
-      # Opt-in: rebuild wc_backfill_predictions.parquet from THIS run's match
-      # dataset. The first copy (2026-10-25) was built locally from a 2026-09-10
-      # cache that predates panna#308, so its player ratings were end-of-season
-      # values that include the tournament; a fresh 04_match_dataset.rds carries
-      # the as-at EPR/PSR/SPM inputs. Steps 05/06 are refit on matches before each
-      # tournament (backfill_wc_walkforward.R). The upload lands in
-      # predictions-cache, so step 12 of the NEXT run publishes it.
-      - name: Rebuild WC walk-forward backfill (opt-in)
-        if: success() && inputs.wc_backfill
-        timeout-minutes: 60
-        env:
-          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
-        run: |
-          OUT=wc-backfill-work/wc_backfill_predictions.parquet
-          # The script stops unless all three tournaments are predicted in full.
-          Rscript data-raw/match-predictions-opta/backfill_wc_walkforward.R \
-            data-raw/cache-predictions-opta/04_match_dataset.rds wc-backfill-work
-          if [ "$PANNA_PUBLISH_DISABLED" = "true" ]; then
-            echo "Branch run: backfill built but not uploaded (R026); see the run artifact."
-          else
-            gh release upload predictions-cache "$OUT" --repo peteowen1/pannadata --clobber
-            echo "Uploaded $OUT to pannadata predictions-cache; the next run's step 12 publishes it."
-          fi
-
-      - name: Keep the WC backfill as an artifact
-        if: always() && inputs.wc_backfill
-        uses: actions/upload-artifact@v7
-        with:
-          name: wc-backfill
-          path: wc-backfill-work/wc_backfill_predictions.parquet
-          if-no-files-found: warn
-          retention-days: 14
-
       # A branch run publishes nothing (R026), so keep its predictions as a run
       # artifact: that is how a change is compared with the live
       # predictions-latest copy before it merges.
@@ -521,3 +488,38 @@ jobs:
       # to .github/workflows/psr-weekly-snapshot.yml because runner-level OOM
       # during the export reddened this job despite the predictions themselves
       # succeeding. The snapshot runs Wednesday 10am UTC on its own runner.
+
+      # Opt-in: rebuild wc_backfill_predictions.parquet from THIS run's match
+      # dataset. The first copy (2026-10-25) was built locally from a 2026-09-10
+      # cache that predates panna#308, so its player ratings were end-of-season
+      # values that include the tournament; a fresh 04_match_dataset.rds carries
+      # the as-at EPR/PSR/SPM inputs. Steps 05/06 are refit on matches before each
+      # tournament (backfill_wc_walkforward.R). The upload lands in
+      # predictions-cache, so step 12 of the NEXT run publishes it. It runs LAST so
+      # a backfill failure cannot skip the blog trigger or the league check above
+      # (step 13 has already published by then); it still turns the run red.
+      - name: Rebuild WC walk-forward backfill (opt-in)
+        if: success() && inputs.wc_backfill
+        timeout-minutes: 60
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+        run: |
+          OUT=wc-backfill-work/wc_backfill_predictions.parquet
+          # The script stops unless all three tournaments are predicted in full.
+          Rscript data-raw/match-predictions-opta/backfill_wc_walkforward.R \
+            data-raw/cache-predictions-opta/04_match_dataset.rds wc-backfill-work
+          if [ "$PANNA_PUBLISH_DISABLED" = "true" ]; then
+            echo "Branch run: backfill built but not uploaded (R026); see the run artifact."
+          else
+            gh release upload predictions-cache "$OUT" --repo peteowen1/pannadata --clobber
+            echo "Uploaded $OUT to pannadata predictions-cache; the next run's step 12 publishes it."
+          fi
+
+      - name: Keep the WC backfill as an artifact
+        if: always() && inputs.wc_backfill
+        uses: actions/upload-artifact@v7
+        with:
+          name: wc-backfill
+          path: wc-backfill-work/wc_backfill_predictions.parquet
+          if-no-files-found: warn
+          retention-days: 14
