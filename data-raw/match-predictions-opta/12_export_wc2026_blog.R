@@ -78,6 +78,16 @@ team_group <- stats::setNames(groups$group, groups$team)
 # 2. Match predictions ----
 
 preds <- as.data.table(readRDS(file.path(cache_dir, "07_predictions.rds")))
+# Honest record (Pete, 2026-10-25; pannaverse docs/plans/HONEST-PREDICTIONS-PLAN.md):
+# no published WC file carries numbers from models fitted on that match. Blank
+# them once here, before both files below are built, so wc2026_predictions and
+# wc_history_predictions cannot disagree (today WC 2026 is "val"; it becomes
+# "train" at the next season rollover). `record` says which tier a row is.
+preds[, record := fifelse(split == "train", "none",
+                  fifelse(split == "fixture", "forecast", "retrodiction"))]
+num_cols <- c("prob_H", "prob_D", "prob_A", "pred_home_goals", "pred_away_goals")
+preds[split == "train", (num_cols) := NA_real_]
+preds[split == "train", predicted_result := NA_character_]
 wc_pred <- preds[league == WC2026_LEAGUE & season == wc_season &
                    home_team != "" & away_team != ""]
 wc_pred <- wc_pred[, .(
@@ -88,7 +98,8 @@ wc_pred <- wc_pred[, .(
   home_team, away_team,
   prob_home  = prob_H, prob_draw = prob_D, prob_away = prob_A,
   pred_home_goals, pred_away_goals,
-  predicted  = predicted_result
+  predicted  = predicted_result,
+  record
 )]
 setorder(wc_pred, match_date, group, na.last = TRUE)
 write_parquet(wc_pred, file.path(cache_dir, "wc2026_predictions.parquet"))
@@ -110,16 +121,9 @@ message(sprintf("  wc2026_predictions.parquet: %d fixtures", nrow(wc_pred)))
 # football/wc-history-groups.json — sourced from Wikipedia and cross-checked
 # against these very fixtures. Keeping it there avoids a second, drifting copy.
 hist_pred <- preds[league == WC2026_LEAGUE & home_team != "" & away_team != ""]
-# Honest record (Pete, 2026-10-25; pannaverse docs/plans/HONEST-PREDICTIONS-PLAN.md):
-# a tournament the step-07 models were fitted on ("train") never publishes
-# those numbers. It shows the walk-forward backfill instead (models refitted
-# on matches before the tournament, backfill_wc_walkforward.R), or no odds if
-# the backfill file is absent. `record` says which.
-hist_pred[, record := fifelse(split == "train", "none",
-                      fifelse(split == "fixture", "forecast", "retrodiction"))]
-num_cols <- c("prob_H", "prob_D", "prob_A", "pred_home_goals", "pred_away_goals")
-hist_pred[split == "train", (num_cols) := NA_real_]
-hist_pred[split == "train", predicted_result := NA_character_]
+# In-sample tournaments (blanked above) show the walk-forward backfill instead
+# (models refitted on matches before the tournament, backfill_wc_walkforward.R),
+# or no odds if the backfill file is absent.
 bf_path <- file.path(cache_dir, "wc_backfill_predictions.parquet")
 if (file.exists(bf_path)) {
   bf <- as.data.table(read_parquet(bf_path))
