@@ -272,7 +272,9 @@ if (length(missing_required) > 0) {
 }
 
 # Optional columns — include if available.
-optional_cols <- c("season", "pred_home_goals", "pred_away_goals", "predicted_result")
+optional_cols <- c("season", "pred_home_goals", "pred_away_goals", "predicted_result",
+                   # honest-record columns from step 07 (HONEST-PREDICTIONS-PLAN.md)
+                   "split", "record", "home_goals", "away_goals", "generated_utc")
 missing_optional <- setdiff(optional_cols, names(predictions))
 if (length(missing_optional) > 0) {
   message(sprintf("  Note: Optional columns missing (excluded): %s",
@@ -333,6 +335,31 @@ if (nrow(stale_status) > 0L) {
   ), call. = FALSE)
 }
 message(sprintf("  Validation passed: 0 duplicate (match_id, season), 0 stale-status rows"))
+
+# Honest-record gate (Pete, 2026-10-25: publish only real pre-match
+# predictions). Step 07 blanks the numbers on rows the models were fitted on;
+# refuse to publish if a stale or hand-built predictions.parquet slipped
+# through with in-sample numbers, or without the columns that say which rows
+# are honest.
+honest_cols <- c("split", "record", "generated_utc")
+missing_honest <- setdiff(honest_cols, names(mp_dt))
+if (length(missing_honest) > 0L) {
+  stop(sprintf("match_predictions.parquet lacks %s — rebuild step 07 before publishing (HONEST-PREDICTIONS-PLAN.md).",
+               paste(missing_honest, collapse = ", ")), call. = FALSE)
+}
+empty_honest <- honest_cols[vapply(honest_cols, function(cl) all(is.na(mp_dt[[cl]])), logical(1))]
+if (length(empty_honest) > 0L) {
+  stop(sprintf("match_predictions.parquet column(s) %s are 100%% NA — refusing to publish.",
+               paste(empty_honest, collapse = ", ")), call. = FALSE)
+}
+leaked <- mp_dt[split == "train" & (!is.na(prob_H) | !is.na(prob_D) | !is.na(prob_A))]
+if (nrow(leaked) > 0L) {
+  stop(sprintf("match_predictions.parquet has %d in-sample (split == 'train') rows with probabilities — refusing to publish.",
+               nrow(leaked)), call. = FALSE)
+}
+message(sprintf("  Honest-record gate passed: %d in-sample rows carry no numbers; %d retrodiction, %d forecast",
+                sum(mp_dt$split == "train"), sum(mp_dt$record == "retrodiction"),
+                sum(mp_dt$record == "forecast")))
 
 arrow::write_parquet(match_predictions, predictions_output)
 message(sprintf("  Written: %s", predictions_output))

@@ -216,6 +216,12 @@ jobs:
           for f in 02b_decay_params.rds 03_skill_spm.rds; do
             fetch_cache "$f" "$CACHE_SKILLS" optional || exit 1
           done
+          # Walk-forward predictions for WC 2014/2018/2022, built once by
+          # backfill_wc_walkforward.R. Step 12 publishes them as record
+          # "backfill"; without the file those tournaments ship with no odds
+          # (step 12 says so in the log), never with in-sample ones.
+          mkdir -p data-raw/cache-predictions-opta
+          fetch_cache wc_backfill_predictions.parquet data-raw/cache-predictions-opta optional || exit 1
 
           echo ""
           echo "Cache files:"
