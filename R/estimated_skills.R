@@ -122,10 +122,7 @@ get_default_decay_params <- function() {
   # For NA (mostly Substitutes), fill with player's modal starting position
   na_idx <- which(is.na(dt$pos_group))
   if (length(na_idx) > 0) {
-    modal_pos <- dt[!is.na(pos_group), {
-      tt <- table(pos_group)
-      list(modal_pos = names(tt)[which.max(tt)])
-    }, by = player_id]
+    modal_pos <- .modal_pos_group(dt, name = "modal_pos")
 
     dt[modal_pos, on = "player_id", modal_pos := i.modal_pos]
     dt[is.na(pos_group) & !is.na(modal_pos), pos_group := modal_pos]
@@ -139,10 +136,12 @@ get_default_decay_params <- function() {
 # Compute denominator vector for efficiency stats from a denom_spec string.
 # Supports "col1+col2" for summing multiple columns.
 # Returns NULL if denominator columns are not found (caller should skip stat).
-.compute_denominator <- function(dt_sub, denom_spec) {
+# `dt_sub` may also be a plain named list of equal-length columns, with `n`
+# its row count (nrow() of a list is NULL).
+.compute_denominator <- function(dt_sub, denom_spec, n = nrow(dt_sub)) {
   if (grepl("\\+", denom_spec)) {
     parts <- strsplit(denom_spec, "\\+")[[1]]
-    result <- rep(0, nrow(dt_sub))
+    result <- rep(0, n)
     found_any <- FALSE
     for (p in parts) {
       if (p %in% names(dt_sub)) {
@@ -161,6 +160,61 @@ get_default_decay_params <- function() {
     return(v)
   }
   NULL
+}
+
+
+# Each player's most common non-NA pos_group, as a data.table of player_id
+# plus one column named `name`. Ties go to the first group table() lists.
+.modal_pos_group <- function(dt, name = "pos_group") {
+  out <- dt[!is.na(pos_group), {
+    tt <- table(pos_group)
+    list(pos_group = names(tt)[which.max(tt)])
+  }, by = player_id]
+  data.table::setnames(out, "pos_group", name, skip_absent = TRUE)
+  out
+}
+
+
+# Global prior centre per stat: the cached decay_params$prior_centers value
+# when there is one, else the minutes-weighted mean of the stat over all rows
+# (0 when the stat is absent or no row has minutes). `take(sc)` returns the
+# stat column and `available` lists the stats it can return; both default to
+# reading dt. `gc_every` runs gc() every that many stats (memory only, no
+# value changes).
+.stat_grand_means <- function(dt, stat_cols, prior_centers = NULL,
+                              take = function(sc) dt[[sc]],
+                              available = names(dt), gc_every = NULL) {
+  grand_means <- numeric(length(stat_cols))
+  names(grand_means) <- stat_cols
+  # Minutes weights once, not once per stat: rebuilding them inside the loop
+  # left ~3 GB of garbage at the latest season on GHA (run 38913817010).
+  wts <- data.table::fifelse(is.na(dt$total_minutes), 0,
+                              as.numeric(dt$total_minutes))
+  total_wt <- sum(wts)
+  for (sc in stat_cols) {
+    if (!is.null(gc_every) && match(sc, stat_cols) %% gc_every == 0L) {
+      invisible(gc(verbose = FALSE))
+    }
+    if (!is.null(prior_centers) && sc %in% names(prior_centers)) {
+      grand_means[sc] <- prior_centers[sc]
+    } else if (sc %in% available) {
+      vals <- as.numeric(take(sc))
+      vals[is.na(vals)] <- 0
+      if (total_wt > 0) grand_means[sc] <- sum(vals * wts) / total_wt
+    }
+  }
+  grand_means
+}
+
+
+# Position-scaled prior centre: gm everywhere, gm * pm_lookup[pg] for players
+# whose pos_group is pg. pm_lookup NULL leaves every player at gm.
+.position_prior_center <- function(gm, pm_lookup, pos_group) {
+  m <- rep(gm, length(pos_group))
+  if (!is.null(pm_lookup)) {
+    for (pg in names(pm_lookup)) m[pos_group == pg] <- gm * pm_lookup[pg]
+  }
+  m
 }
 
 
@@ -559,10 +613,7 @@ estimate_player_skills <- function(match_stats, decay_params = NULL,
   dt <- .resolve_positions(dt)
 
   # Get position group for each player (mode of pos_group)
-  player_pos <- dt[!is.na(pos_group), {
-    tt <- table(pos_group)
-    list(pos_group = names(tt)[which.max(tt)])
-  }, by = player_id]
+  player_pos <- .modal_pos_group(dt)
 
   # Compute position multipliers: pos_avg / global_avg per stat. Only the
   # uncached path reads stat columns, so only it builds them.
@@ -574,30 +625,14 @@ estimate_player_skills <- function(match_stats, decay_params = NULL,
     .resolve_position_multipliers(decay_params, dt, stat_cols)
   }
 
-  # Build global prior center lookup per stat (minutes-weighted mean)
-  grand_means <- numeric(length(stat_cols))
-  names(grand_means) <- stat_cols
-  prior_centers_cached <- decay_params$prior_centers
-  # Minutes weights once, not once per stat: rebuilding them inside the loop
-  # left ~3 GB of garbage at the latest season on GHA (run 38913817010).
-  wts <- data.table::fifelse(is.na(dt$total_minutes), 0,
-                              as.numeric(dt$total_minutes))
-  total_wt <- sum(wts)
+  # Build global prior center lookup per stat (minutes-weighted mean).
   # Each stat leaves a few full-length temporaries; with a multi-GB heap R
   # lets ~6 GB of them pile up before collecting (run 38918305147). A gc()
   # every 25 stats bounds that and changes no value.
   gc_every <- 25L
-  for (sc in stat_cols) {
-    if (match(sc, stat_cols) %% gc_every == 0L) invisible(gc(verbose = FALSE))
-    if (!is.null(prior_centers_cached) && sc %in% names(prior_centers_cached)) {
-      grand_means[sc] <- prior_centers_cached[sc]
-    } else if (sc %in% names(src)) {
-      vals <- as.numeric(take(sc))
-      vals[is.na(vals)] <- 0
-      if (total_wt > 0) grand_means[sc] <- sum(vals * wts) / total_wt
-    }
-  }
-  rm(wts)
+  grand_means <- .stat_grand_means(dt, stat_cols, decay_params$prior_centers,
+                                   take = take, available = names(src),
+                                   gc_every = gc_every)
 
   # Prior strength
   default_prior_90s <- decay_params$prior_90s %||% 2
@@ -719,15 +754,8 @@ estimate_player_skills <- function(match_stats, decay_params = NULL,
       agg[player_meta, pos_group := i.pos_group, on = "player_id"]
       gm <- grand_means[sc]
       pm_lookup <- if (sc %in% names(pos_multipliers)) pos_multipliers[[sc]] else NULL
-      agg[, mu0 := {
-        m <- rep(gm, .N)
-        if (!is.null(pm_lookup)) {
-          for (pg in names(pm_lookup)) {
-            m[pos_group == pg] <- gm * pm_lookup[pg]
-          }
-        }
-        pmax(pmin(m, 1 - 1e-6), 1e-6)
-      }]
+      agg[, mu0 := pmax(pmin(.position_prior_center(gm, pm_lookup, pos_group),
+                             1 - 1e-6), 1e-6)]
       agg[, (sc) := (mu0 * prior_strength + w_num) /
                      (prior_strength + w_den)]
       if (compute_ci) {
@@ -750,17 +778,10 @@ estimate_player_skills <- function(match_stats, decay_params = NULL,
       agg[player_meta, pos_group := i.pos_group, on = "player_id"]
       gm <- grand_means[sc]
       pm_lookup <- if (sc %in% names(pos_multipliers)) pos_multipliers[[sc]] else NULL
-      agg[, alpha0 := {
-        m <- rep(gm, .N)
-        if (!is.null(pm_lookup)) {
-          for (pg in names(pm_lookup)) {
-            m[pos_group == pg] <- gm * pm_lookup[pg]
-          }
-        }
-        # Floor at small positive value so prior always provides shrinkage
-        # (prevents zero alpha0 when grand_mean is 0 for position-specific stats)
-        pmax(m * prior_strength, 1e-4)
-      }]
+      # Floor at small positive value so prior always provides shrinkage
+      # (prevents zero alpha0 when grand_mean is 0 for position-specific stats)
+      agg[, alpha0 := pmax(.position_prior_center(gm, pm_lookup, pos_group) *
+                             prior_strength, 1e-4)]
       agg[, (sc) := (alpha0 + w_num) / (prior_strength + w_den)]
       if (compute_ci) {
         # Gamma posterior: shape = alpha0 + w_num, rate = prior_strength + w_den
@@ -851,28 +872,15 @@ inspect_skill <- function(stat_name, match_stats, decay_params = NULL,
   is_eff <- stat_name %in% names(eff_map)
 
   # Lambda
-  lam <- if (stat_name %in% names(decay_params)) decay_params[[stat_name]]
-         else if (is_eff) decay_params$efficiency
-         else if (grepl("^(xg|npxg|xa|xpass)", stat_name)) decay_params$xmetrics
-         else decay_params$rate
+  lam <- .resolve_lambda(stat_name, decay_params, eff_map)
   half_life <- if (lam > 0) log(2) / lam else Inf
 
   # Prior strength
-  stat_priors <- decay_params$stat_priors
-  prior_strength <- if (!is.null(stat_priors) && stat_name %in% names(stat_priors)) {
-    stat_priors[[stat_name]]
-  } else if (is_eff) {
-    decay_params$prior_attempts %||% 50
-  } else {
-    decay_params$prior_90s %||% 2
-  }
+  prior_strength <- .resolve_prior_strength(stat_name, decay_params, is_eff)
 
   # Positions
   dt <- .resolve_positions(dt)
-  player_pos <- dt[!is.na(pos_group), {
-    tt <- table(pos_group)
-    list(pos_group = names(tt)[which.max(tt)])
-  }, by = player_id]
+  player_pos <- .modal_pos_group(dt)
 
   # Grand mean
   vals_all <- as.numeric(dt[[stat_name]])
@@ -937,13 +945,7 @@ inspect_skill <- function(stat_name, match_stats, decay_params = NULL,
   agg[player_pos, pos_group := i.pos_group, on = "player_id"]
 
   # Position-specific prior center
-  agg[, prior_center := {
-    m <- rep(grand_mean, .N)
-    if (!is.null(pm)) {
-      for (pg in names(pm)) m[pos_group == pg] <- grand_mean * pm[pg]
-    }
-    m
-  }]
+  agg[, prior_center := .position_prior_center(grand_mean, pm, pos_group)]
   agg[, prior_strength := prior_strength]
 
   # Skill estimate (Bayesian posterior)
@@ -1252,9 +1254,6 @@ backtest_skill_predictions <- function(match_stats, decay_params = NULL,
   data.table::setorder(dt, player_id, match_date)
 
   eff_map <- .classify_skill_stats()
-  stat_priors <- decay_params$stat_priors
-  default_prior_90s <- decay_params$prior_90s %||% 2
-  default_prior_attempts <- decay_params$prior_attempts %||% 50
 
   # Default stats to evaluate. Sourced from the canonical skill-col registries
   # (psr.R: .get_psr_skill_cols() / .get_gk_skill_cols()) instead of a
@@ -1274,10 +1273,7 @@ backtest_skill_predictions <- function(match_stats, decay_params = NULL,
   pos_multipliers <- .resolve_position_multipliers(decay_params, dt, stat_cols)
 
   # Player modal position lookup
-  player_pos_lookup <- dt[!is.na(pos_group), {
-    tt <- table(pos_group)
-    list(pos_group = names(tt)[which.max(tt)])
-  }, by = player_id]
+  player_pos_lookup <- .modal_pos_group(dt)
 
   # Compute global prior centers: use optimized quantiles if available, else weighted mean
   prior_quantiles <- decay_params$prior_quantiles
@@ -1318,46 +1314,21 @@ backtest_skill_predictions <- function(match_stats, decay_params = NULL,
   for (si in seq_along(stat_cols)) {
     sc <- stat_cols[si]
     is_eff <- sc %in% names(eff_map)
-    lambda <- if (sc %in% names(decay_params)) {
-      decay_params[[sc]]
-    } else if (is_eff) {
-      decay_params$efficiency
-    } else if (grepl("^(xg|npxg|xa|xpass)", sc)) {
-      decay_params$xmetrics
-    } else {
-      decay_params$rate
-    }
-
-    prior_strength <- if (!is.null(stat_priors) && sc %in% names(stat_priors)) {
-      stat_priors[[sc]]
-    } else if (is_eff) {
-      default_prior_attempts
-    } else {
-      default_prior_90s
-    }
+    lambda <- .resolve_lambda(sc, decay_params, eff_map)
+    prior_strength <- .resolve_prior_strength(sc, decay_params, is_eff)
 
     mu0 <- pop_means[sc]
     match_preds <- list()
     k <- 0
 
-    # Pre-compute denominator column for efficiency stats
+    # Pre-compute denominator column for efficiency stats. A "+" spec with no
+    # part present gives zeros; a missing single column gives NULL, so the
+    # player loop below falls back to minutes/90.
     denom_vals_all <- NULL
     if (is_eff) {
       denom_spec <- eff_map[[sc]]
-      if (grepl("\\+", denom_spec)) {
-        parts <- strsplit(denom_spec, "\\+")[[1]]
-        denom_vals_all <- rep(0, nrow(dt))
-        for (p in parts) {
-          if (p %in% names(dt)) {
-            d <- as.numeric(dt[[p]])
-            d[is.na(d)] <- 0
-            denom_vals_all <- denom_vals_all + d
-          }
-        }
-      } else if (denom_spec %in% names(dt)) {
-        denom_vals_all <- as.numeric(dt[[denom_spec]])
-        denom_vals_all[is.na(denom_vals_all)] <- 0
-      }
+      denom_vals_all <- .compute_denominator(dt, denom_spec) %||%
+        (if (grepl("+", denom_spec, fixed = TRUE)) rep(0, nrow(dt)))
     }
 
     for (pid in players) {
@@ -1898,12 +1869,7 @@ player_skill_profile <- function(player_name, match_stats = NULL,
       eff_map <- .classify_skill_stats()
       compute_denominator <- .compute_denominator
 
-      resolve_lambda <- function(stat_name) {
-        if (stat_name %in% names(decay_params)) return(decay_params[[stat_name]])
-        if (stat_name %in% names(eff_map)) return(decay_params$efficiency)
-        if (grepl("^(xg|npxg|xa|xpass)", stat_name)) return(decay_params$xmetrics)
-        decay_params$rate
-      }
+      resolve_lambda <- function(stat_name) .resolve_lambda(stat_name, decay_params, eff_map)
 
       # Classify each stat and compute appropriate effective sample size
       stat_types <- vapply(stat_cols, function(s) {

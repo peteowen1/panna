@@ -462,3 +462,33 @@ test_that("aggregate_skills_for_spm never dates a season after the last match (R
   skip_if(is.na(date_col), "no date column in output")
   expect_true(all(as.Date(out[[date_col]]) <= max(as.Date(ms$match_date)) + 1))
 })
+
+test_that("shared prior helpers match the hand-written blocks they replaced", {
+  dt <- data.table::data.table(
+    player_id = c(1, 1, 1, 2, 2, 3),
+    pos_group = c("DEF", "MID", "DEF", NA, "FWD", NA),
+    total_minutes = c(90, NA, 45, 90, 30, 60),
+    goals_p90 = c(1, 2, NA, 0, 3, 1)
+  )
+  modal <- .modal_pos_group(dt)
+  expect_equal(modal$player_id, c(1, 2))
+  expect_equal(modal$pos_group, c("DEF", "FWD"))
+  expect_named(.modal_pos_group(dt, name = "modal_pos"), c("player_id", "modal_pos"))
+
+  # Weighted mean with NA minutes as 0 and NA values as 0; a cached centre wins;
+  # a stat that is not in the table stays 0.
+  gm <- .stat_grand_means(dt, c("goals_p90", "absent"))
+  expect_equal(unname(gm["goals_p90"]), (90 * 1 + 0 + 0 + 0 + 30 * 3 + 60 * 1) / 315)
+  expect_equal(unname(gm["absent"]), 0)
+  expect_equal(unname(.stat_grand_means(dt, "goals_p90", c(goals_p90 = 0.7))), 0.7)
+
+  pc <- .position_prior_center(2, c(DEF = 0.5, FWD = 3), c("DEF", "MID", NA, "FWD"))
+  expect_equal(unname(pc), c(1, 2, 2, 6))
+  expect_equal(.position_prior_center(2, NULL, c("DEF", NA)), c(2, 2))
+})
+
+test_that(".compute_denominator takes a plain list when given its row count", {
+  ps <- list(duel_won = c(1, NA, 2), duel_lost = c(0, 1, 1), .n = 3L)
+  expect_equal(.compute_denominator(ps, "duel_won+duel_lost", n = 3L), c(1, 1, 3))
+  expect_null(.compute_denominator(ps, "a+b", n = 3L))
+})
