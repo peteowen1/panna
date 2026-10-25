@@ -149,3 +149,23 @@ test_that(".subset_rapm_data_expanding rejects a net-mode design", {
     'supports .*"od".* designs only'
   )
 })
+
+test_that("fit_rapm and fit_rapm_with_prior share input validation", {
+  rd <- .guard_rapm_data()
+  rd$y[] <- NA
+  # fit_rapm_with_prior() used to fall through to glmnet on zero rows; it now
+  # aborts with fit_rapm()'s message from the shared prepare step.
+  expect_error(fit_rapm(rd, parallel = FALSE), "No valid observations")
+  expect_error(fit_rapm_with_prior(rd, NULL, NULL, parallel = FALSE),
+               "No valid observations")
+  expect_error(fit_rapm_with_prior("x", NULL, NULL), "must be a list")
+  expect_error(fit_rapm_with_prior(list(X = matrix(1)), NULL, NULL), "must contain 'y'")
+})
+
+test_that(".rapm_penalty_factor leaves trailing covariates unpenalized unless asked", {
+  expect_equal(.rapm_penalty_factor(5, c("a", "b"), FALSE), c(1, 1, 1, 0, 0))
+  expect_equal(.rapm_penalty_factor(5, c("a", "b"), TRUE), rep(1, 5))
+  expect_equal(.rapm_penalty_factor(3, character(0), FALSE), rep(1, 3))
+  expect_false(.rapm_register_parallel(TRUE, fixed_lambda = 0.1, n_cores = 2))
+  expect_false(.rapm_register_parallel(FALSE, fixed_lambda = NULL, n_cores = 2))
+})

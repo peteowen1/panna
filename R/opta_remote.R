@@ -382,23 +382,11 @@ query_remote_opta_parquet <- function(table_type, opta_league, season = NULL,
   cli::cli_alert_info("Querying remote Opta {table_type} for {opta_league}...")
 
   result <- .with_duckdb(function(conn) {
-    tryCatch({
-      DBI::dbGetQuery(conn, sql)
-    }, error = function(e) {
-      if (grepl("magic bytes|No magic bytes", e$message, ignore.case = TRUE)) {
-        # Invalidate corrupt cached file
-        if (exists(cache_key, envir = .opta_remote_env)) {
-          cached <- get(cache_key, envir = .opta_remote_env)
-          if (file.exists(cached)) unlink(cached)
-          rm(list = cache_key, envir = .opta_remote_env)
-        }
-        cli::cli_abort(c(
-          "Cached parquet file is corrupt (no magic bytes).",
-          "i" = "The corrupt file has been removed. Please re-run your command to re-download."
-        ))
-      }
-      cli::cli_abort("DuckDB query failed: {e$message}")
-    })
+    # A corrupt cached file is invalidated before the abort.
+    .opta_duckdb_query(conn, sql, c(
+      "Cached parquet file is corrupt (no magic bytes).",
+      "i" = "The corrupt file has been removed. Please re-run your command to re-download."
+    ), cache_key = cache_key)
   })
 
   cli::cli_alert_success("Loaded {format(nrow(result), big.mark=',')} rows ({ncol(result)} columns)")
@@ -506,22 +494,11 @@ query_remote_opta_match_events <- function(opta_league, season = NULL,
   cli::cli_alert_info("Querying match events for {opta_league}...")
 
   result <- .with_duckdb(function(conn) {
-    tryCatch({
-      DBI::dbGetQuery(conn, sql)
-    }, error = function(e) {
-      if (grepl("magic bytes|No magic bytes", e$message, ignore.case = TRUE)) {
-        if (exists(cache_key, envir = .opta_remote_env)) {
-          cached <- get(cache_key, envir = .opta_remote_env)
-          if (file.exists(cached)) unlink(cached)
-          rm(list = cache_key, envir = .opta_remote_env)
-        }
-        cli::cli_abort(c(
-          "Cached parquet file is corrupt (no magic bytes).",
-          "i" = "The corrupt file has been removed. Please re-run your command to re-download."
-        ))
-      }
-      cli::cli_abort("DuckDB query failed: {e$message}")
-    })
+    # A corrupt cached file is invalidated before the abort.
+    .opta_duckdb_query(conn, sql, c(
+      "Cached parquet file is corrupt (no magic bytes).",
+      "i" = "The corrupt file has been removed. Please re-run your command to re-download."
+    ), cache_key = cache_key)
   })
 
   cli::cli_alert_success("Loaded {format(nrow(result), big.mark=',')} rows ({ncol(result)} columns)")

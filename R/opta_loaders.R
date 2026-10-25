@@ -684,23 +684,16 @@ load_opta_table <- function(table_type, league, season, columns,
   cli::cli_alert_info("Loading Opta {table_type} for {opta_league}...")
 
   result <- .with_duckdb(function(conn) {
-    result <- tryCatch({
-      DBI::dbGetQuery(conn, sql)
-    }, error = function(e) {
-      if (grepl("magic bytes|No magic bytes", e$message, ignore.case = TRUE)) {
-        cli::cli_abort(c(
-          "Parquet file is corrupt for {opta_league} {table_type}.",
-          "i" = "Try {.code source = 'remote'} or re-download with {.fn pb_download_opta}."
-        ), class = "vb_error_integrity")
-      }
-      # Binder errors (e.g. `column "x" does not exist`) and other DuckDB
-      # failures are REAL load failures, not "data not here yet" -- left
-      # unclassed (not vb_error_absent) so they propagate as errors instead of
-      # being reclassified as source_missing by callers like
-      # check_events_coverage()'s is_missing_source_err() (panna H-GATE,
-      # 2026-07-08 review).
-      cli::cli_abort("DuckDB query failed: {e$message}")
-    })
+    # Binder errors (e.g. `column "x" does not exist`) and other DuckDB
+    # failures are REAL load failures, not "data not here yet" -- the helper
+    # leaves them unclassed (not vb_error_absent) so they propagate as errors
+    # instead of being reclassified as source_missing by callers like
+    # check_events_coverage()'s is_missing_source_err() (panna H-GATE,
+    # 2026-07-08 review).
+    result <- .opta_duckdb_query(conn, sql, c(
+      "Parquet file is corrupt for {opta_league} {table_type}.",
+      "i" = "Try {.code source = 'remote'} or re-download with {.fn pb_download_opta}."
+    ), error_class = "vb_error_integrity")
 
     # If season was requested but got 0 rows AND we read from the consolidated
     # parquet, try the per-season file before erroring. Consolidated parquets
@@ -867,17 +860,10 @@ load_opta_xmetrics <- function(league, season = NULL, columns = NULL,
   cli::cli_alert_info("Loading Opta xmetrics for {opta_league}...")
 
   result <- .with_duckdb(function(conn) {
-    tryCatch({
-      DBI::dbGetQuery(conn, sql)
-    }, error = function(e) {
-      if (grepl("magic bytes|No magic bytes", e$message, ignore.case = TRUE)) {
-        cli::cli_abort(c(
-          "Parquet file is corrupt for {opta_league} xmetrics.",
-          "i" = "Re-run the 03_calculate_player_xmetrics.R pipeline to regenerate."
-        ))
-      }
-      cli::cli_abort("DuckDB query failed: {e$message}")
-    })
+    .opta_duckdb_query(conn, sql, c(
+      "Parquet file is corrupt for {opta_league} xmetrics.",
+      "i" = "Re-run the 03_calculate_player_xmetrics.R pipeline to regenerate."
+    ))
   })
 
   cli::cli_alert_success("Loaded {format(nrow(result), big.mark=',')} rows ({ncol(result)} columns)")
@@ -1205,46 +1191,13 @@ load_opta_skills <- function(season = NULL, columns = NULL,
                               repo = "peteowen1/pannadata",
                               tag = "opta-latest") {
   source <- match.arg(source)
-  file_name <- "opta_skills.parquet"
-  cache_key <- paste0(file_name, "_", repo, "_", tag)
-
-  parquet_path <- download_opta_release_file(
-    file_name, source = source, repo = repo, tag = tag
+  result <- .load_opta_release_parquet(
+    "opta_skills.parquet",
+    where_sql_fn = function(parquet_norm) {
+      build_where_clause(list(season_end_year = season), prefix = FALSE)
+    },
+    columns = columns, source = source, repo = repo, tag = tag
   )
-
-  # Build SQL query
-  col_sql <- .col_sql(columns)
-
-  parquet_norm <- normalizePath(parquet_path, winslash = "/", mustWork = TRUE)
-  where_sql <- build_where_clause(
-    list(season_end_year = season),
-    prefix = FALSE
-  )
-
-  sql <- if (nchar(where_sql) > 0) {
-    sprintf("SELECT %s FROM '%s' WHERE %s", col_sql, parquet_norm, where_sql)
-  } else {
-    sprintf("SELECT %s FROM '%s'", col_sql, parquet_norm)
-  }
-
-  result <- .with_duckdb(function(conn) {
-    tryCatch({
-      DBI::dbGetQuery(conn, sql)
-    }, error = function(e) {
-      if (grepl("magic bytes|No magic bytes", e$message, ignore.case = TRUE)) {
-        if (source == "remote" && exists(cache_key, envir = .opta_remote_env)) {
-          cached <- get(cache_key, envir = .opta_remote_env)
-          if (file.exists(cached)) unlink(cached)
-          rm(list = cache_key, envir = .opta_remote_env)
-        }
-        cli::cli_abort(c(
-          "Parquet file is corrupt.",
-          "i" = "The corrupt file has been removed. Please re-run your command."
-        ))
-      }
-      cli::cli_abort("DuckDB query failed: {e$message}")
-    })
-  })
 
   cli::cli_alert_success(
     "Loaded {format(nrow(result), big.mark=',')} skill estimates ({ncol(result)} columns)"
@@ -1285,49 +1238,14 @@ load_opta_match_stats <- function(season = NULL, columns = NULL,
                                    repo = "peteowen1/pannadata",
                                    tag = "opta-latest") {
   source <- match.arg(source)
-  file_name <- "opta_match_stats.parquet"
-
-  parquet_path <- download_opta_release_file(
-    file_name, source = source, repo = repo, tag = tag
-  )
-
-  # Build SQL query
-  col_sql <- .col_sql(columns)
-
-  parquet_norm <- normalizePath(parquet_path, winslash = "/", mustWork = TRUE)
-
   # Season filter: match_stats uses season_end_year (if present) or derive from match_date
-  where_sql <- build_where_clause(
-    list(season_end_year = season),
-    prefix = FALSE
+  result <- .load_opta_release_parquet(
+    "opta_match_stats.parquet",
+    where_sql_fn = function(parquet_norm) {
+      build_where_clause(list(season_end_year = season), prefix = FALSE)
+    },
+    columns = columns, source = source, repo = repo, tag = tag
   )
-
-  sql <- if (nchar(where_sql) > 0) {
-    sprintf("SELECT %s FROM '%s' WHERE %s", col_sql, parquet_norm, where_sql)
-  } else {
-    sprintf("SELECT %s FROM '%s'", col_sql, parquet_norm)
-  }
-
-  cache_key <- paste0(file_name, "_", repo, "_", tag)
-
-  result <- .with_duckdb(function(conn) {
-    tryCatch({
-      DBI::dbGetQuery(conn, sql)
-    }, error = function(e) {
-      if (grepl("magic bytes|No magic bytes", e$message, ignore.case = TRUE)) {
-        if (source == "remote" && exists(cache_key, envir = .opta_remote_env)) {
-          cached <- get(cache_key, envir = .opta_remote_env)
-          if (file.exists(cached)) unlink(cached)
-          rm(list = cache_key, envir = .opta_remote_env)
-        }
-        cli::cli_abort(c(
-          "Parquet file is corrupt.",
-          "i" = "The corrupt file has been removed. Please re-run your command."
-        ))
-      }
-      cli::cli_abort("DuckDB query failed: {e$message}")
-    })
-  })
 
   cli::cli_alert_success(
     "Loaded {format(nrow(result), big.mark=',')} match stats ({ncol(result)} columns)"
@@ -1369,55 +1287,69 @@ load_opta_psr_weekly <- function(date = NULL, columns = NULL,
                                   repo = "peteowen1/pannadata",
                                   tag = "opta-latest") {
   source <- match.arg(source)
-  file_name <- "opta_psr_weekly.parquet"
-
-  parquet_path <- download_opta_release_file(
-    file_name, source = source, repo = repo, tag = tag
-  )
-
-  col_sql <- .col_sql(columns)
-
-  parquet_norm <- normalizePath(parquet_path, winslash = "/", mustWork = TRUE)
-
-  # Build date filter: latest snapshot_date <= requested date
-  where_sql <- if (!is.null(date)) {
-    d <- as.Date(date)
-    # Find the max snapshot_date that is <= d, then return all rows for that date
-    sprintf("snapshot_date = (SELECT MAX(snapshot_date) FROM '%s' WHERE snapshot_date <= DATE '%s')",
-            parquet_norm, format(d, "%Y-%m-%d"))
-  } else {
-    # Default: latest snapshot date
-    sprintf("snapshot_date = (SELECT MAX(snapshot_date) FROM '%s')", parquet_norm)
-  }
-
-  sql <- sprintf("SELECT %s FROM '%s' WHERE %s", col_sql, parquet_norm, where_sql)
-
-  cache_key <- paste0(file_name, "_", repo, "_", tag)
-
-  result <- .with_duckdb(function(conn) {
-    tryCatch({
-      DBI::dbGetQuery(conn, sql)
-    }, error = function(e) {
-      if (grepl("magic bytes|No magic bytes", e$message, ignore.case = TRUE)) {
-        if (source == "remote" && exists(cache_key, envir = .opta_remote_env)) {
-          cached <- get(cache_key, envir = .opta_remote_env)
-          if (file.exists(cached)) unlink(cached)
-          rm(list = cache_key, envir = .opta_remote_env)
-        }
-        cli::cli_abort(c(
-          "Parquet file is corrupt.",
-          "i" = "The corrupt file has been removed. Please re-run your command."
-        ))
+  result <- .load_opta_release_parquet(
+    "opta_psr_weekly.parquet",
+    # Build date filter: latest snapshot_date <= requested date
+    where_sql_fn = function(parquet_norm) {
+      if (!is.null(date)) {
+        d <- as.Date(date)
+        # Find the max snapshot_date that is <= d, then return all rows for that date
+        sprintf("snapshot_date = (SELECT MAX(snapshot_date) FROM '%s' WHERE snapshot_date <= DATE '%s')",
+                parquet_norm, format(d, "%Y-%m-%d"))
+      } else {
+        # Default: latest snapshot date
+        sprintf("snapshot_date = (SELECT MAX(snapshot_date) FROM '%s')", parquet_norm)
       }
-      cli::cli_abort("DuckDB query failed: {e$message}")
-    })
-  })
+    },
+    columns = columns, source = source, repo = repo, tag = tag
+  )
 
   snap_date <- if (nrow(result) > 0) as.character(result$snapshot_date[1]) else "none"
   cli::cli_alert_success(
     "Loaded {format(nrow(result), big.mark=',')} PSR ratings (snapshot: {snap_date})"
   )
   result
+}
+
+
+#' Query one parquet file from the opta-latest release
+#'
+#' Shared body of \code{load_opta_skills()}, \code{load_opta_match_stats()}
+#' and \code{load_opta_psr_weekly()}: fetch the file, select \code{columns}
+#' with the WHERE clause \code{where_sql_fn(parquet_norm)} builds (\code{""}
+#' for none), and run it. A corrupt remote file is dropped from the session
+#' cache before the abort, so a re-run re-downloads it.
+#'
+#' @param file_name Release asset name.
+#' @param where_sql_fn Function of the normalised parquet path returning a
+#'   WHERE clause without the keyword, or \code{""}.
+#' @param columns,source,repo,tag As in the public loaders.
+#' @return Data frame of query results.
+#' @keywords internal
+#' @noRd
+.load_opta_release_parquet <- function(file_name, where_sql_fn, columns,
+                                       source, repo, tag) {
+  cache_key <- paste0(file_name, "_", repo, "_", tag)
+  parquet_path <- download_opta_release_file(
+    file_name, source = source, repo = repo, tag = tag
+  )
+
+  col_sql <- .col_sql(columns)
+  parquet_norm <- normalizePath(parquet_path, winslash = "/", mustWork = TRUE)
+  where_sql <- where_sql_fn(parquet_norm)
+
+  sql <- if (nchar(where_sql) > 0) {
+    sprintf("SELECT %s FROM '%s' WHERE %s", col_sql, parquet_norm, where_sql)
+  } else {
+    sprintf("SELECT %s FROM '%s'", col_sql, parquet_norm)
+  }
+
+  .with_duckdb(function(conn) {
+    .opta_duckdb_query(conn, sql, c(
+      "Parquet file is corrupt.",
+      "i" = "The corrupt file has been removed. Please re-run your command."
+    ), cache_key = if (source == "remote") cache_key)
+  })
 }
 
 # A file path as a quoted DuckDB string literal. Per-season files are named after

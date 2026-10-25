@@ -68,6 +68,44 @@ validate_sql_columns <- function(columns) {
 }
 
 
+#' Run a DuckDB query, turning a corrupt-parquet read into a clear abort
+#'
+#' The one copy of the corrupt-file handler every Opta parquet loader uses.
+#' A "magic bytes" error means the parquet is truncated or not a parquet: if
+#' \code{cache_key} names an entry in \code{.opta_remote_env}, that cached file
+#' is deleted so the next call re-downloads it, then the call aborts with
+#' \code{corrupt_msg}. Any other DuckDB error aborts as an unclassed
+#' "DuckDB query failed" -- a real load failure, never "data not here yet".
+#'
+#' @param conn DuckDB connection.
+#' @param sql Query to run.
+#' @param corrupt_msg cli message vector for the corrupt-file abort,
+#'   interpolated in the caller's environment.
+#' @param cache_key Optional \code{.opta_remote_env} key of the cached file to
+#'   remove on corruption. \code{NULL} removes nothing.
+#' @param error_class Optional condition class for the corrupt-file abort.
+#' @param .envir Environment \code{corrupt_msg} is interpolated in.
+#' @return The query result.
+#' @keywords internal
+#' @noRd
+.opta_duckdb_query <- function(conn, sql, corrupt_msg, cache_key = NULL,
+                               error_class = NULL, .envir = parent.frame()) {
+  tryCatch({
+    DBI::dbGetQuery(conn, sql)
+  }, error = function(e) {
+    if (grepl("magic bytes|No magic bytes", e$message, ignore.case = TRUE)) {
+      if (!is.null(cache_key) && exists(cache_key, envir = .opta_remote_env)) {
+        cached <- get(cache_key, envir = .opta_remote_env)
+        if (file.exists(cached)) unlink(cached)
+        rm(list = cache_key, envir = .opta_remote_env)
+      }
+      cli::cli_abort(corrupt_msg, class = error_class, .envir = .envir)
+    }
+    cli::cli_abort("DuckDB query failed: {e$message}")
+  })
+}
+
+
 #' Validate a parquet file by checking magic bytes
 #'
 #' Parquet files must start and end with the 4-byte magic number "PAR1".
