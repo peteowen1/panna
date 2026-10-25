@@ -26,5 +26,4 @@ Statistic per 90 minutes
 
 Other utilities:
 [`safe_divide()`](https://peteowen1.github.io/panna/reference/safe_divide.md),
-[`validate_dataframe()`](https://peteowen1.github.io/panna/reference/validate_dataframe.md),
-[`validate_seasons()`](https://peteowen1.github.io/panna/reference/validate_seasons.md)
+[`validate_dataframe()`](https://peteowen1.github.io/panna/reference/validate_dataframe.md)

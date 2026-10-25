@@ -82,8 +82,7 @@ FBref data.
 
 ### 01_raw_data.rds
 
-Raw data from pannadata repository. All columns are snake_case after
-[`clean_column_names()`](https://peteowen1.github.io/panna/reference/clean_column_names.md).
+Raw data from pannadata repository. All columns are snake_case.
 
 ### results
 

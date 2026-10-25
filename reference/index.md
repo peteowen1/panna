@@ -560,8 +560,6 @@ GitHub Releases upload/download
   : Incrementally download release assets that are missing or stale
 - [`pb_download_predictions()`](https://peteowen1.github.io/panna/reference/pb_download_predictions.md)
   : Download match predictions from GitHub Releases
-- [`pb_list_sources()`](https://peteowen1.github.io/panna/reference/pb_list_sources.md)
-  : List releases by source type
 
 ## Cache Management
 
@@ -584,8 +582,6 @@ Helper functions
   : Safe division handling division by zero
 - [`validate_dataframe()`](https://peteowen1.github.io/panna/reference/validate_dataframe.md)
   : Validate data frame input
-- [`validate_seasons()`](https://peteowen1.github.io/panna/reference/validate_seasons.md)
-  : Validate season input
 
 ## Competition Metadata
 

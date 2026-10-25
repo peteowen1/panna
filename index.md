@@ -20,9 +20,11 @@ for the full map):
   per-game PSV, rolled up into `piero_value` (per match).
 
 **Piero**, the headline blog rating, is a z-scored blend of `panna`
-(0.5) / EPR (0.3) / PSR (0.2). RAPM (ridge regression on lineup
-“splints”) and SPM (an XGBoost box-score prior) are the estimators
-underneath xRAPM/panna; see
+(0.4) / PSR (0.3) / SPMR (0.2) / EPR (0.1) (weights re-derived
+2026-09-15; see
+`pannaverse/docs/reviews/PIERO-WEIGHTS-WITH-SPMR-2026-09-15.md`). RAPM
+(ridge regression on lineup “splints”) and SPM (an XGBoost box-score
+prior) are the estimators underneath xRAPM/panna; see
 [`vignette("pipeline-walkthrough")`](https://peteowen1.github.io/panna/articles/pipeline-walkthrough.md)
 (“Pipeline Anatomy”) for how each number is actually computed.
 

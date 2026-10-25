@@ -35,8 +35,7 @@ Invisibly returns the path to the downloaded file.
 
 Other data distribution:
 [`load_predictions()`](https://peteowen1.github.io/panna/reference/load_predictions.md),
-[`pb_download_opta()`](https://peteowen1.github.io/panna/reference/pb_download_opta.md),
-[`pb_list_sources()`](https://peteowen1.github.io/panna/reference/pb_list_sources.md)
+[`pb_download_opta()`](https://peteowen1.github.io/panna/reference/pb_download_opta.md)
 
 ## Examples
 

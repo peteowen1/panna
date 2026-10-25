@@ -13,7 +13,7 @@ fit_expanding_pooled_rapm(
   splint_season_map,
   cutoff_year,
   min_year = NULL,
-  lambda_formula = function(n) 16.67 * n^(-0.58),
+  lambda_formula = rapm_lambda_from_n,
   nfolds = 5,
   seed = NULL,
   halflife_days = NULL

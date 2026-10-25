@@ -235,17 +235,17 @@ published/blog columns flip this so that positive always means
 <h2 id="the-piero-composite">The Piero composite<a class="anchor" aria-label="anchor" href="#the-piero-composite"></a>
 </h2>
 <p>Piero is the number shown as the main player rating on the blog. It
-is a z-scored blend of the three complementary rating estimators,
-rescaled back into panna’s own units:</p>
-<pre><code><span><span class="va">piero</span> <span class="op">=</span> <span class="fu">z</span><span class="op">(</span><span class="fl">0.5</span> <span class="op">*</span> <span class="fu">z</span><span class="op">(</span><span class="va">panna</span><span class="op">)</span> <span class="op">+</span> <span class="fl">0.3</span> <span class="op">*</span> <span class="fu">z</span><span class="op">(</span><span class="va">epr</span><span class="op">)</span> <span class="op">+</span> <span class="fl">0.2</span> <span class="op">*</span> <span class="fu">z</span><span class="op">(</span><span class="va">psr</span><span class="op">)</span><span class="op">)</span> <span class="op">*</span> <span class="fu"><a href="https://rdrr.io/r/stats/sd.html" class="external-link">sd</a></span><span class="op">(</span><span class="va">panna</span><span class="op">)</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/base/mean.html" class="external-link">mean</a></span><span class="op">(</span><span class="va">panna</span><span class="op">)</span></span></code></pre>
-<p>The weights (panna 0.5 / EPR 0.3 / PSR 0.2) live in
-<code>PIERO_WEIGHTS</code> inside
+is a z-scored blend of four complementary rating estimators, rescaled
+back into panna’s own units:</p>
+<pre><code><span><span class="va">piero</span> <span class="op">=</span> <span class="fu">z</span><span class="op">(</span><span class="fl">0.4</span> <span class="op">*</span> <span class="fu">z</span><span class="op">(</span><span class="va">panna</span><span class="op">)</span> <span class="op">+</span> <span class="fl">0.3</span> <span class="op">*</span> <span class="fu">z</span><span class="op">(</span><span class="va">psr</span><span class="op">)</span> <span class="op">+</span> <span class="fl">0.2</span> <span class="op">*</span> <span class="fu">z</span><span class="op">(</span><span class="va">spmr</span><span class="op">)</span> <span class="op">+</span> <span class="fl">0.1</span> <span class="op">*</span> <span class="fu">z</span><span class="op">(</span><span class="va">epr</span><span class="op">)</span><span class="op">)</span> <span class="op">*</span> <span class="fu"><a href="https://rdrr.io/r/stats/sd.html" class="external-link">sd</a></span><span class="op">(</span><span class="va">panna</span><span class="op">)</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/base/mean.html" class="external-link">mean</a></span><span class="op">(</span><span class="va">panna</span><span class="op">)</span></span></code></pre>
+<p>The weights (panna 0.4 / PSR 0.3 / SPMR 0.2 / EPR 0.1, re-derived
+2026-09-15) live in <code>PIERO_WEIGHTS</code> inside
 <code>pannadata/scripts/build_blog_data.R</code> – Piero itself is
 <strong>not</strong> a function exported from this package. panna
-supplies the three ingredient ratings (<code>panna</code>, EPR, PSR);
-the blend and publish step happen downstream in <code>pannadata</code>.
-The per-match twin follows the same idea but blends the
-<em>production</em> metrics instead:
+supplies the four ingredient ratings (<code>panna</code>, PSR, SPMR,
+EPR); the blend and publish step happen downstream in
+<code>pannadata</code>. The per-match twin follows the same idea but
+blends the <em>production</em> metrics instead:
 <code>piero_value = 0.5 * epv_total_adj + 0.5 * psv</code>, controlled
 by this package’s own <code>PANNA_EPR_WEIGHT</code> /
 <code>PANNA_PSR_WEIGHT</code> constants (0.5/0.5) inside

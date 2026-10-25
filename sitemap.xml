@@ -190,7 +190,6 @@
 <url><loc>https://peteowen1.github.io/panna/reference/classify_chain_outcomes.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/classify_role.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/classify_role_group.html</loc></url>
-<url><loc>https://peteowen1.github.io/panna/reference/clean_column_names.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/clean_player_name.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/clear_remote_opta_cache.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/compare_players.html</loc></url>
@@ -216,7 +215,6 @@
 <url><loc>https://peteowen1.github.io/panna/reference/create_epv_features_simple.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/create_epv_labels.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/create_location_features.html</loc></url>
-<url><loc>https://peteowen1.github.io/panna/reference/create_match_id.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/create_match_splints_fast.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/create_next_goal_labels.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/create_next_xg_labels.html</loc></url>
@@ -355,9 +353,7 @@
 <url><loc>https://peteowen1.github.io/panna/reference/extract_rapm_coefficients.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/extract_rapm_ratings.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/extract_season_end_year.html</loc></url>
-<url><loc>https://peteowen1.github.io/panna/reference/extract_season_end_year_from_match_id.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/extract_season_from_date.html</loc></url>
-<url><loc>https://peteowen1.github.io/panna/reference/extract_season_from_match_id.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/extract_shots_from_spadl.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/extract_spm_coefficients.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/extract_sub_events.html</loc></url>
@@ -399,8 +395,6 @@
 <url><loc>https://peteowen1.github.io/panna/reference/get_or_build_spadl.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/get_pitch_zone.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/get_player_positions.html</loc></url>
-<url><loc>https://peteowen1.github.io/panna/reference/get_source_archive_name.html</loc></url>
-<url><loc>https://peteowen1.github.io/panna/reference/get_source_tag.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/get_splint_players.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/get_spm_feature_importance.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/get_stat_tiers.html</loc></url>
@@ -476,7 +470,6 @@
 <url><loc>https://peteowen1.github.io/panna/reference/pb_download_epv_models.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/pb_download_opta.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/pb_download_predictions.html</loc></url>
-<url><loc>https://peteowen1.github.io/panna/reference/pb_list_sources.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/per_90.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/play_knockout_round.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/player_opta_chains.html</loc></url>
@@ -550,7 +543,6 @@
 <url><loc>https://peteowen1.github.io/panna/reference/soccer_stat_rating_definitions.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/softprob_matrix.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/split_od_contributions.html</loc></url>
-<url><loc>https://peteowen1.github.io/panna/reference/split_pass_credit.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/stat_rating_names.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/suggest_opta_seasons.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/summarize_match_chains.html</loc></url>
@@ -562,7 +554,6 @@
 <url><loc>https://peteowen1.github.io/panna/reference/validate_epv_model.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/validate_min_minutes.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/validate_parquet_file.html</loc></url>
-<url><loc>https://peteowen1.github.io/panna/reference/validate_seasons.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/validate_spm_prediction.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/validate_sql_columns.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/validate_xg_model.html</loc></url>

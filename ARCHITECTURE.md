@@ -15,13 +15,13 @@ For code conventions see
 
 ### Action-Level Models (per touch/event)
 
-| Metric    | What it measures                                                         | Model               | Key functions                                                                                                                                                                | File                            |
-|-----------|--------------------------------------------------------------------------|---------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------|
-| **xG**    | Shot scoring probability                                                 | XGBoost             | [`fit_xg_model()`](https://peteowen1.github.io/panna/reference/fit_xg_model.md), [`predict_xg()`](https://peteowen1.github.io/panna/reference/predict_xg.md)                 | `xg_model.R`                    |
-| **xPass** | Pass completion probability                                              | XGBoost             | [`fit_xpass_model()`](https://peteowen1.github.io/panna/reference/fit_xpass_model.md), [`predict_xpass()`](https://peteowen1.github.io/panna/reference/predict_xpass.md)     | `xpass_model.R`                 |
-| **EPV**   | Expected possession value: P(team scores next) - P(opponent scores next) | Multinomial XGBoost | [`fit_epv_model()`](https://peteowen1.github.io/panna/reference/fit_epv_model.md), [`assign_epv_credit()`](https://peteowen1.github.io/panna/reference/assign_epv_credit.md) | `epv_model.R`, `epv_features.R` |
-| **WP**    | In-match win probability: P(home win) + 0.5 \* P(draw)                   | XGBoost (3-outcome) | `fit_wp_model()`, [`create_wp_features()`](https://peteowen1.github.io/panna/reference/create_wp_features.md)                                                                | `wp_model.R`                    |
-| **WPA**   | Win probability added per action                                         | Delta WP            | [`assign_wpa_credit()`](https://peteowen1.github.io/panna/reference/assign_wpa_credit.md)                                                                                    | `wp_credit.R`                   |
+| Metric    | What it measures                                                                                           | Model               | Key functions                                                                                                                                                                                                                                                   | File                            |
+|-----------|------------------------------------------------------------------------------------------------------------|---------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------|
+| **xG**    | Shot scoring probability                                                                                   | XGBoost             | [`fit_xg_model()`](https://peteowen1.github.io/panna/reference/fit_xg_model.md), [`predict_xg()`](https://peteowen1.github.io/panna/reference/predict_xg.md)                                                                                                    | `xg_model.R`                    |
+| **xPass** | Pass completion probability                                                                                | XGBoost             | [`fit_xpass_model()`](https://peteowen1.github.io/panna/reference/fit_xpass_model.md), [`predict_xpass()`](https://peteowen1.github.io/panna/reference/predict_xpass.md)                                                                                        | `xpass_model.R`                 |
+| **EPV**   | Expected possession value: P(team scores next) - P(opponent scores next)                                   | Multinomial XGBoost | [`fit_epv_model()`](https://peteowen1.github.io/panna/reference/fit_epv_model.md), [`assign_epv_credit()`](https://peteowen1.github.io/panna/reference/assign_epv_credit.md)                                                                                    | `epv_model.R`, `epv_features.R` |
+| **WP**    | In-match win probability, possession-team POV (since 2026-05-19): P(possession team wins) + 0.5 \* P(draw) | XGBoost (3-outcome) | [`train_wp_model()`](https://peteowen1.github.io/panna/reference/train_wp_model.md), [`create_wp_features()`](https://peteowen1.github.io/panna/reference/create_wp_features.md), [`add_wp_vars()`](https://peteowen1.github.io/panna/reference/add_wp_vars.md) | `wp_model.R`                    |
+| **WPA**   | Win probability added per action                                                                           | Delta WP            | [`assign_wpa_credit()`](https://peteowen1.github.io/panna/reference/assign_wpa_credit.md)                                                                                                                                                                       | `wp_credit.R`                   |
 
 ### Per-Game Player Metrics
 
@@ -35,30 +35,30 @@ For code conventions see
 
 ### Season-Level Player Ratings
 
-| Rating                | What it measures                     | How computed                                                                         | Key functions                                                                                                                                                                                    | File                        |
-|-----------------------|--------------------------------------|--------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------|
-| **RAPM**              | Regularized adjusted plus-minus      | Ridge regression on splint-level xG differential                                     | [`fit_rapm()`](https://peteowen1.github.io/panna/reference/fit_rapm.md), [`extract_rapm_ratings()`](https://peteowen1.github.io/panna/reference/extract_rapm_ratings.md)                         | `rapm_model.R`              |
-| **SPM**               | Statistical plus-minus               | Elastic net predicting RAPM from box score stats                                     | [`fit_spm_opta()`](https://peteowen1.github.io/panna/reference/fit_spm_opta.md), [`fit_spm_model()`](https://peteowen1.github.io/panna/reference/fit_spm_model.md)                               | `spm_model.R`, `spm_opta.R` |
-| **xRAPM**             | RAPM shrunk toward SPM prior         | Ridge with offset: `y_adj = y - X*spm; gamma = ridge(X, y_adj); xrapm = spm + gamma` | [`fit_rapm_with_prior()`](https://peteowen1.github.io/panna/reference/fit_rapm_with_prior.md), [`extract_xrapm_ratings()`](https://peteowen1.github.io/panna/reference/extract_xrapm_ratings.md) | `rapm_model.R`              |
-| **Panna Rating**      | Final combined rating                | = xRAPM (in production pipeline)                                                     | `calculate_panna_rating()`                                                                                                                                                                       | `panna_rating.R`            |
-| **O-Panna / D-Panna** | Offensive / defensive decomposition  | Separate O/D design matrix with O/D priors                                           | [`calculate_od_panna()`](https://peteowen1.github.io/panna/reference/calculate_od_panna.md)                                                                                                      | `offensive_defensive.R`     |
-| **EPR**               | Expected points rating from EPV      | Bayesian decay-weighted per-game EPV                                                 | [`calculate_epr()`](https://peteowen1.github.io/panna/reference/calculate_epr.md)                                                                                                                | `player_ratings_epv.R`      |
-| **PSR**               | Player skill rating                  | glmnet on decay-weighted skills predicting xG differential                           | [`calculate_psr()`](https://peteowen1.github.io/panna/reference/calculate_psr.md), [`calculate_psr_components()`](https://peteowen1.github.io/panna/reference/calculate_psr_components.md)       | `psr.R`                     |
-| **OSR / DSR**         | Offensive / defensive skill rating   | O/D decomposition of PSR                                                             | [`calculate_psr_components()`](https://peteowen1.github.io/panna/reference/calculate_psr_components.md)                                                                                          | `psr.R`                     |
-| **Estimated Skills**  | Bayesian decay-weighted career stats | Per-stat exponential decay + position prior shrinkage                                | [`estimate_player_skills()`](https://peteowen1.github.io/panna/reference/estimate_player_skills.md)                                                                                              | `estimated_skills.R`        |
+| Rating                | What it measures                                    | How computed                                                                                                                                                                                                                                                                                                                 | Key functions                                                                                                                                                                                    | File                        |
+|-----------------------|-----------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------|
+| **RAPM**              | Regularized adjusted plus-minus                     | Ridge regression on splint-level xG differential                                                                                                                                                                                                                                                                             | [`fit_rapm()`](https://peteowen1.github.io/panna/reference/fit_rapm.md), [`extract_rapm_ratings()`](https://peteowen1.github.io/panna/reference/extract_rapm_ratings.md)                         | `rapm_model.R`              |
+| **SPM**               | Statistical plus-minus                              | Elastic net predicting RAPM from box score stats                                                                                                                                                                                                                                                                             | [`fit_spm_opta()`](https://peteowen1.github.io/panna/reference/fit_spm_opta.md), [`fit_spm_model()`](https://peteowen1.github.io/panna/reference/fit_spm_model.md)                               | `spm_model.R`, `spm_opta.R` |
+| **xRAPM**             | RAPM shrunk toward SPM prior                        | Ridge with offset: `y_adj = y - X*spm; gamma = ridge(X, y_adj); xrapm = spm + gamma`                                                                                                                                                                                                                                         | [`fit_rapm_with_prior()`](https://peteowen1.github.io/panna/reference/fit_rapm_with_prior.md), [`extract_xrapm_ratings()`](https://peteowen1.github.io/panna/reference/extract_xrapm_ratings.md) | `rapm_model.R`              |
+| **Panna Rating**      | Decayed career trait (the only thing named `panna`) | Career xRAPM, halflife 365d, skill-SPM prior; `data-raw/estimated-skills/09_career_panna.R` -\> `career_panna.parquet`. The rename is not complete: `10_export_blog_data.R` (and `02_player_ratings_to_team.R` when `career_panna_asof.parquet` is missing) still emit season xRAPM under the name `panna` (see `CLAUDE.md`) | [`fit_career_rapm()`](https://peteowen1.github.io/panna/reference/fit_career_rapm.md)                                                                                                            | `career_rapm.R`             |
+| **O-Panna / D-Panna** | Offensive / defensive decomposition                 | Separate O/D design matrix with O/D priors                                                                                                                                                                                                                                                                                   | [`calculate_od_panna()`](https://peteowen1.github.io/panna/reference/calculate_od_panna.md)                                                                                                      | `offensive_defensive.R`     |
+| **EPR**               | Expected points rating from EPV                     | Weighted ridge on per-game EPV with player + league-season fixed effects and `opp_def_rating` (the legacy Bayesian [`calculate_epr()`](https://peteowen1.github.io/panna/reference/calculate_epr.md) is not used in production)                                                                                              | [`calculate_epr_regression()`](https://peteowen1.github.io/panna/reference/calculate_epr_regression.md)                                                                                          | `player_ratings_epv.R`      |
+| **PSR**               | Player skill rating                                 | glmnet on decay-weighted skills predicting xG differential                                                                                                                                                                                                                                                                   | [`calculate_psr()`](https://peteowen1.github.io/panna/reference/calculate_psr.md), [`calculate_psr_components()`](https://peteowen1.github.io/panna/reference/calculate_psr_components.md)       | `psr.R`                     |
+| **OSR / DSR**         | Offensive / defensive skill rating                  | O/D decomposition of PSR                                                                                                                                                                                                                                                                                                     | [`calculate_psr_components()`](https://peteowen1.github.io/panna/reference/calculate_psr_components.md)                                                                                          | `psr.R`                     |
+| **Estimated Skills**  | Bayesian decay-weighted career stats                | Per-stat exponential decay + position prior shrinkage                                                                                                                                                                                                                                                                        | [`estimate_player_skills()`](https://peteowen1.github.io/panna/reference/estimate_player_skills.md)                                                                                              | `estimated_skills.R`        |
 
 ### Supporting Infrastructure
 
-| Component              | Purpose                                                                    | Key functions                                                                                                       | File                   |
-|------------------------|----------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------|------------------------|
-| **SPADL conversion**   | Opta events to standardised action format                                  | [`convert_opta_to_spadl()`](https://peteowen1.github.io/panna/reference/convert_opta_to_spadl.md)                   | `spadl_conversion.R`   |
-| **Possession chains**  | Group SPADL actions into continuous possession blocks                      | [`create_possession_chains()`](https://peteowen1.github.io/panna/reference/create_possession_chains.md)             | `possession_chains.R`  |
-| **Splints**            | Constant-lineup match segments (between subs/goals)                        | [`create_all_splints()`](https://peteowen1.github.io/panna/reference/create_all_splints.md)                         | `splint_creation.R`    |
-| **RAPM design matrix** | Sparse matrix with `{player_id}_off` / `{player_id}_def` columns           | [`create_rapm_design_matrix()`](https://peteowen1.github.io/panna/reference/create_rapm_design_matrix.md)           | `rapm_matrix.R`        |
-| **Skill config**       | Structured definitions for 80+ stats (type, category, position-adjustment) | [`soccer_stat_rating_definitions()`](https://peteowen1.github.io/panna/reference/soccer_stat_rating_definitions.md) | `skill_config.R`       |
-| **Skill optimisation** | L-BFGS-B for decay rates, Brent for prior strength                         | `optimize_decay_params()`                                                                                           | `skill_optimization.R` |
-| **Player attribution** | Zero-ablation SHAP-like player impact on predictions                       | [`calculate_player_attribution()`](https://peteowen1.github.io/panna/reference/calculate_player_attribution.md)     | `player_attribution.R` |
-| **Match prediction**   | Elo + XGBoost using team-aggregated ratings                                | `predict_matches()`                                                                                                 | `match_prediction.R`   |
+| Component              | Purpose                                                                    | Key functions                                                                                                                                                                                | File                   |
+|------------------------|----------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------|
+| **SPADL conversion**   | Opta events to standardised action format                                  | [`convert_opta_to_spadl()`](https://peteowen1.github.io/panna/reference/convert_opta_to_spadl.md)                                                                                            | `spadl_conversion.R`   |
+| **Possession chains**  | Group SPADL actions into continuous possession blocks                      | [`create_possession_chains()`](https://peteowen1.github.io/panna/reference/create_possession_chains.md)                                                                                      | `possession_chains.R`  |
+| **Splints**            | Constant-lineup match segments (between subs/goals)                        | [`create_all_splints()`](https://peteowen1.github.io/panna/reference/create_all_splints.md)                                                                                                  | `splint_creation.R`    |
+| **RAPM design matrix** | Sparse matrix with `{player_id}_off` / `{player_id}_def` columns           | [`create_rapm_design_matrix()`](https://peteowen1.github.io/panna/reference/create_rapm_design_matrix.md)                                                                                    | `rapm_matrix.R`        |
+| **Skill config**       | Structured definitions for 80+ stats (type, category, position-adjustment) | [`soccer_stat_rating_definitions()`](https://peteowen1.github.io/panna/reference/soccer_stat_rating_definitions.md)                                                                          | `skill_config.R`       |
+| **Skill optimisation** | L-BFGS-B for decay rates, Brent for prior strength                         | [`optimize_all_priors()`](https://peteowen1.github.io/panna/reference/optimize_all_priors.md), [`optimize_stat_prior()`](https://peteowen1.github.io/panna/reference/optimize_stat_prior.md) | `skill_optimization.R` |
+| **Player attribution** | Zero-ablation SHAP-like player impact on predictions                       | [`calculate_player_attribution()`](https://peteowen1.github.io/panna/reference/calculate_player_attribution.md)                                                                              | `player_attribution.R` |
+| **Match prediction**   | Elo + XGBoost using team-aggregated ratings                                | [`predict_match()`](https://peteowen1.github.io/panna/reference/predict_match.md)                                                                                                            | `match_prediction.R`   |
 
 ## How the Metrics Connect
 
@@ -92,7 +92,7 @@ For code conventions see
         |                    xRAPM = RAPM shrunk toward SPM prior
         |                       |
         |                       v
-        |                  PANNA RATING (= xRAPM)
+        |                  xrapm_career (pooled season xRAPM; not `panna`)
         |
         v
     Decay-Weighted Skills ──> Skill SPM ──> Skill xRAPM ──> Skill Panna
@@ -133,10 +133,21 @@ Both share the same RAPM design matrix (splints + xG target from step
 
 ### Rating Sign Convention
 
+Positive = good, everywhere (Pete, 2026-09-03; landed 2026-09-11, panna
+PR \#235).
+
 - **Offense**: positive = good (more xG created)
-- **Defense**: negative = good (more xG suppressed)
-- **Overall**: offense - defense (so good defense contributes positively
-  to overall)
+- **Defense**: positive = good (more xG suppressed). The published
+  `defense` column is the negated raw defensive coefficient
+  (`defense = -def_coefs`, in
+  [`extract_rapm_ratings()`](https://peteowen1.github.io/panna/reference/extract_rapm_ratings.md)
+  /
+  [`extract_xrapm_ratings()`](https://peteowen1.github.io/panna/reference/extract_xrapm_ratings.md))
+- **Overall**: offense + published defense (equivalently offense - raw
+  `def_coefs`, which is how `rapm` is computed internally)
+
+Migration plan:
+`pannaverse/docs/plans/SIGN-CONVENTION-POSITIVE-IS-GOOD.md`.
 
 ## Production Pipelines
 
@@ -153,7 +164,8 @@ Both share the same RAPM design matrix (splints + xG target from step
                               fractional step, runs whenever step 5 does
       06_xrapm.R              xRAPM (RAPM shrunk toward SPM) + multi-target variant
       07_seasonal_ratings.R   Per-season decay-weighted rating snapshots
-      08_panna_ratings.R      Final combined ratings (panna = xRAPM)
+      08_panna_ratings.R      xrapm_career (pooled xRAPM; `panna` is reserved for the
+                              decayed career trait from estimated-skills/09_career_panna.R)
       09_export_ratings.R     Export to parquet for GitHub Releases
 
 ### Estimated Skills Pipeline
@@ -183,16 +195,46 @@ Both share the same RAPM design matrix (splints + xG target from step
       07_predict_fixtures.R         Generate predictions for upcoming fixtures
       08_evaluate_model.R           Backtesting and validation metrics
       09_upload_predictions.R       Upload predictions to GitHub Releases
+      01b_refresh_wc2026_squads.R   Rebuild WC2026 announced squads from Wikipedia
+      04b_export_match_features.R   Export the per-fixture features the models consume
+      07b_snapshot_predictions.R    Archive a dated snapshot of predictions.parquet
       10_export_blog_data.R         Export blog parquets (ratings, predictions, standings)
       10b_export_game_logs.R        Per-match game logs (optional)
+      10b_backfill_game_logs.R      Local backfill of per-season game logs (not in CI)
       10c_export_equity.R           Per-action EPV equity metrics (optional)
+      10c_backfill_action_equity.R  Local backfill of per-season action equity (not in CI)
+      10d_export_shootout_wpa.R     Per-player penalty-shootout WPA for the blog
+      11_simulate_wc2026.R          Simulate the 2026 World Cup
+      12_export_wc2026_blog.R       Export WC2026 data for the blog
+      12b_snapshot_wc_minutes.R     Dated snapshot of WC2026 expected minutes
+      12c_snapshot_wc_strength.R    Dated snapshot of WC2026 team strength
+      12d_export_domestic_team_strength.R  Tiento team rating for every tracked club
+      12e_export_cup_pairwise.R     Pairwise knockout lookup for UCL/UEL/UECL
+      12f_snapshot_wc_predictions.R Dated snapshots of WC2026 predictions + knockout probs
+      13_publish_release_data.R     Single gated publish of predictions-latest + blog-latest
+
+The predictions workflow (`.github/workflows/predictions-pipeline.yml`)
+turns on the steps it runs in its `run_steps` override; the backfill
+scripts are local-only.
 
 ### EPV/WPA Pipeline
 
     data-raw/epv/
       01_train_epv_models.R       Train xG, xPass, EPV models
+      01b_train_duel_model.R      Train the five xDuel contest models
       02_calculate_player_epv.R   Per-player EPV aggregation
+      03_calculate_player_xmetrics.R  Player-level xG, xA, xPass metrics
       03_epv_shap_analysis.R      SHAP analysis of EPV model
+      04_export_xmetrics.R        Consolidate + upload opta_xmetrics.parquet
+      04b_export_xmetrics_bymatch.R  Consolidate + upload opta_xmetrics_bymatch.parquet
+      05_train_wp_model.R         Train the win probability model
+      05b_export_wp_model_json.R  Export WP model to JSON for the live worker
+      05c_export_epv_model_json.R Export EPV model to JSON for the live worker
+      06_calculate_wpa.R          Score actions with the WP model, per-game WPA
+      06_export_xg_model_json.R   Export xG model to JSON for the live worker
+      06b_export_xgot_model_json.R  Export xGOT model to JSON for the live worker
+      06c_export_duel_models_json.R Export the xDuel models to JSON
+      06d_export_xpass_model_json.R Export xPass model to JSON for the live worker
 
 ## Test Coverage
 

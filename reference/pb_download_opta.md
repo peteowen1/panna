@@ -74,8 +74,7 @@ Invisibly, a data.frame with one row per asset: `file_name`, `action`
 
 Other data distribution:
 [`load_predictions()`](https://peteowen1.github.io/panna/reference/load_predictions.md),
-[`pb_download_predictions()`](https://peteowen1.github.io/panna/reference/pb_download_predictions.md),
-[`pb_list_sources()`](https://peteowen1.github.io/panna/reference/pb_list_sources.md)
+[`pb_download_predictions()`](https://peteowen1.github.io/panna/reference/pb_download_predictions.md)
 
 ## Examples
 

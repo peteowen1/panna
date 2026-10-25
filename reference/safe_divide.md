@@ -31,8 +31,7 @@ are preserved.
 
 Other utilities:
 [`per_90()`](https://peteowen1.github.io/panna/reference/per_90.md),
-[`validate_dataframe()`](https://peteowen1.github.io/panna/reference/validate_dataframe.md),
-[`validate_seasons()`](https://peteowen1.github.io/panna/reference/validate_seasons.md)
+[`validate_dataframe()`](https://peteowen1.github.io/panna/reference/validate_dataframe.md)
 
 ## Examples
 

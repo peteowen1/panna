@@ -59,7 +59,7 @@ Uses exponential time-decay weighting on observations.</p>
 <span>  alpha <span class="op">=</span> <span class="fl">0</span>,</span>
 <span>  lambda <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  prior_strength <span class="op">=</span> <span class="fl">5</span>,</span>
-<span>  tier_interaction <span class="op">=</span> <span class="cn">TRUE</span>,</span>
+<span>  tier_interaction <span class="op">=</span> <span class="cn">FALSE</span>,</span>
 <span>  league_offsets <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  verbose <span class="op">=</span> <span class="cn">FALSE</span></span>
 <span><span class="op">)</span></span></code></pre></div>
@@ -102,13 +102,14 @@ by <code>prior_strength</code> for each player. Set to 0 to disable.</p></dd>
 
 
 <dt id="arg-tier-interaction">tier_interaction<a class="anchor" aria-label="anchor" href="#arg-tier-interaction"></a></dt>
-<dd><p>If TRUE (default), fit player * league-tier
+<dd><p>If TRUE, fit player * league-tier
 interaction – i.e. each player gets up to two beta coefficients, one for
 tier-1 (top-5 + UCL + WC/EURO) and one for tier-2 (everything else).
 This fixes cross-league standouts (Tavernier at Rangers, Veerman at
 PSV) whose single-beta was a compromise between their elite domestic
-per-90 and their modest UCL/UEL per-90. Set to FALSE for the legacy
-"one beta per player" behaviour. <strong>Ignored when
+per-90 and their modest UCL/UEL per-90. Default FALSE ("one beta per
+player"), which is what the published EPR uses: every production caller
+passes FALSE. <strong>Ignored when
 <code>league_offsets</code> is supplied</strong>, since offsets supersede the
 coarse two-tier split with continuous per-league calibration.</p></dd>
 

@@ -81,7 +81,7 @@
 <li>
 <strong>Production</strong> – what actually happened: per-action EPV and WPA, per-game PSV, rolled up into <code>piero_value</code> (per match).</li>
 </ul>
-<p><strong>Piero</strong>, the headline blog rating, is a z-scored blend of <code>panna</code> (0.5) / EPR (0.3) / PSR (0.2). RAPM (ridge regression on lineup “splints”) and SPM (an XGBoost box-score prior) are the estimators underneath xRAPM/panna; see <code><a href="articles/pipeline-walkthrough.html">vignette("pipeline-walkthrough")</a></code> (“Pipeline Anatomy”) for how each number is actually computed.</p>
+<p><strong>Piero</strong>, the headline blog rating, is a z-scored blend of <code>panna</code> (0.4) / PSR (0.3) / SPMR (0.2) / EPR (0.1) (weights re-derived 2026-09-15; see <code>pannaverse/docs/reviews/PIERO-WEIGHTS-WITH-SPMR-2026-09-15.md</code>). RAPM (ridge regression on lineup “splints”) and SPM (an XGBoost box-score prior) are the estimators underneath xRAPM/panna; see <code><a href="articles/pipeline-walkthrough.html">vignette("pipeline-walkthrough")</a></code> (“Pipeline Anatomy”) for how each number is actually computed.</p>
 </div>
 <div class="section level2">
 <h2 id="installation">Installation<a class="anchor" aria-label="anchor" href="#installation"></a>
