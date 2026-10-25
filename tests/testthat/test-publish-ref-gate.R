@@ -114,3 +114,50 @@ test_that("step 13 publishes nothing when PANNA_PUBLISH_DISABLED is set, and pub
   expect_length(run_step("true"), 0L)
   expect_equal(run_step("false"), c("predictions-latest", "blog-latest"))
 })
+
+test_that("step 02 refuses a publishing run without career_panna_asof.parquet, warns otherwise", {
+  script <- testthat::test_path("..", "..", "data-raw", "match-predictions-opta",
+                                "02_player_ratings_to_team.R")
+  skip_if_not(file.exists(script), "data-raw not available (R CMD check)")
+  skip_if_not_installed("arrow")
+  src <- readLines(script, warn = FALSE)
+  i0 <- grep("^asof_path <- ", src)
+  i1 <- grep("^# Validate required columns", src)
+  expect_length(i0, 1L); expect_length(i1, 1L)
+  block <- parse(text = src[i0:(i1 - 1L)])
+
+  utils_env <- new.env(parent = globalenv())
+  sys.source(file.path(testthat::test_path("..", ".."), "data-raw", "pipeline_utils.R"),
+             envir = utils_env)
+
+  run_block <- function(data_dir, run_steps) {
+    env <- new.env(parent = environment())
+    env$is_publish_run <- utils_env$is_publish_run
+    env$opta_data_dir <- function() data_dir
+    env$run_steps <- run_steps
+    env$played <- data.frame(season_end_year = 2025L, match_date = as.Date("2024-08-17"))
+    env$ratings <- data.frame(player_id = c("a", "b"), season_end_year = 2025L,
+                              panna = c(9, 9), offense = c(9, 9), defense = c(9, 9))
+    for (e in block) eval(e, env)
+    env$ratings
+  }
+
+  empty_dir <- withr::local_tempdir()
+  full_dir <- withr::local_tempdir()
+  arrow::write_parquet(
+    data.frame(player_id = "a", ref_date = as.Date("2024-08-01"), panna = 1,
+               panna_offense = 0.5, panna_defense = 0.5,
+               sign_convention = CAREER_PANNA_SIGN_CONVENTION),
+    file.path(full_dir, "career_panna_asof.parquet"))
+  publish <- list(step_13_publish_release_data = TRUE)
+  local_run <- list(step_13_publish_release_data = FALSE, step_09_upload_predictions = FALSE)
+
+  withr::with_envvar(c(PANNA_PUBLISH_DISABLED = "false"), {
+    expect_error(run_block(empty_dir, publish), "Refusing to publish")
+    expect_warning(run_block(empty_dir, local_run), "career_panna_asof.parquet not found")
+    expect_silent(suppressMessages(r <- run_block(full_dir, publish)))
+    expect_equal(r$panna, c(1, NA))   # real file: overridden, unmatched player is NA
+  })
+  withr::with_envvar(c(PANNA_PUBLISH_DISABLED = "true"),
+                     expect_warning(run_block(empty_dir, publish), "not found"))
+})

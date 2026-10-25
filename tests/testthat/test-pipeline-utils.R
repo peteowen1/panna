@@ -437,3 +437,19 @@ test_that("current_domestic_season defaults to the clock", {
   expect_equal(current_domestic_season(), current_domestic_season(Sys.Date()))
   expect_match(current_domestic_season(), "^[0-9]{4}-[0-9]{4}$")
 })
+
+# ===========================================================================
+# is_publish_run
+# ===========================================================================
+
+test_that("is_publish_run is TRUE only when a publishing step is on and the ref gate is open", {
+  pub <- list(step_13_publish_release_data = TRUE)
+  withr::with_envvar(c(PANNA_PUBLISH_DISABLED = "false"), {
+    expect_true(is_publish_run(pub))
+    expect_true(is_publish_run(list(step_09_upload_predictions = TRUE)))
+    expect_false(is_publish_run(list(step_13_publish_release_data = FALSE,
+                                     step_09_upload_predictions = FALSE)))
+    expect_false(is_publish_run(NULL))
+  })
+  withr::with_envvar(c(PANNA_PUBLISH_DISABLED = "true"), expect_false(is_publish_run(pub)))
+})
