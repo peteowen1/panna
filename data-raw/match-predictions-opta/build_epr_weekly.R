@@ -131,9 +131,18 @@ gl[, match_date := as.Date(sub("Z$","", match_date))]
 ## after panna 0.3.62. Flipping before a full rebuild would silently drop every
 ## season that predates it, so the branch below ABORTS instead of quietly
 ## training on a fraction of the history.
-if (!exists("EPR_SOURCE", inherits = FALSE)) EPR_SOURCE <- "epv"
+##
+## Override with a global EPR_SOURCE, else the env var of the same name. A global
+## wins: in an interactive session a previous run of this script leaves
+## EPR_SOURCE behind, so set or rm() it before rerunning. Read from globalenv()
+## for the reason given for EPR_MIN_SEASON_END_YEAR above. Whatever is chosen is
+## stamped on the output, and section 4b rebuilds in full when it changes.
+EPR_SOURCE <- if (exists("EPR_SOURCE", envir = globalenv(), inherits = FALSE)) {
+  get("EPR_SOURCE", envir = globalenv())
+} else Sys.getenv("EPR_SOURCE", "epv")
 stopifnot(EPR_SOURCE %in% c("epv", "net_goals"))
-t_log(sprintf("EPR source: %s", EPR_SOURCE))
+t_log(sprintf("EPR source: %s (seasons ending >= %s)", EPR_SOURCE,
+              if (is.null(.min_sy)) "all" else .min_sy))
 
 if (EPR_SOURCE == "net_goals") {
   need <- c("net_goals", "ng_offensive", "ng_defensive")
@@ -354,6 +363,25 @@ if (force_full_epr) {
                            error = function(e) { t_log(sprintf(
                              "could not read existing parquet (%s) — full rebuild",
                              conditionMessage(e))); NULL })
+  ## Reuse is only sound when the old snapshots were built from the same ledger
+  ## and window. A file from before the stamp existed counts as "epv" on every
+  ## season. Without this check a switch of source would keep ~99% of its
+  ## snapshots from the old build and recompute a 28-day tail -- a mixed file
+  ## that reads as the new source.
+  .config_changed <- FALSE
+  .old_src <- if (!is.null(existing_epr) && "epr_source" %in% names(existing_epr))
+    unique(existing_epr$epr_source) else "epv"
+  .old_min <- if (!is.null(existing_epr) && "epr_min_season_end_year" %in% names(existing_epr))
+    unique(existing_epr$epr_min_season_end_year) else NA_integer_
+  .new_min <- if (is.null(.min_sy)) NA_integer_ else as.integer(.min_sy)
+  if (!is.null(existing_epr) &&
+      !(identical(.old_src, EPR_SOURCE) && identical(as.integer(.old_min), .new_min))) {
+    t_log(sprintf("existing parquet was built from %s (seasons >= %s), this run is %s (>= %s) -- full rebuild",
+                  paste(.old_src, collapse = "/"), paste(.old_min, collapse = "/"),
+                  EPR_SOURCE, .new_min))
+    existing_epr <- NULL
+    .config_changed <- TRUE
+  }
   if (!is.null(existing_epr) && "snapshot_date" %in% names(existing_epr) &&
       nrow(existing_epr) > 0) {
     existing_epr[, snapshot_date := as.Date(snapshot_date)]
@@ -363,7 +391,7 @@ if (force_full_epr) {
     t_log(sprintf("Incremental: reuse %s rows (<%s), recompute %d snapshots (>=%s)",
                   format(nrow(keep_existing), big.mark = ","), cutoff,
                   length(snapshots), cutoff))
-  } else {
+  } else if (!isTRUE(.config_changed)) {
     t_log("existing parquet unusable (no snapshot_date / empty) — full rebuild")
   }
 } else {
@@ -436,6 +464,9 @@ if (!is.null(keep_existing) && nrow(keep_existing) > 0) {
   epr_weekly <- new_epr
 }
 setorder(epr_weekly, snapshot_date, player_id)
+## Stamp what built the file, so the next incremental run can tell (section 4b).
+epr_weekly[, epr_source := EPR_SOURCE]
+epr_weekly[, epr_min_season_end_year := if (is.null(.min_sy)) NA_integer_ else as.integer(.min_sy)]
 t_log(sprintf("Done fitting %d snapshots in %.1f min",
               length(snapshots),
               as.numeric(Sys.time()-t0, units="mins")))

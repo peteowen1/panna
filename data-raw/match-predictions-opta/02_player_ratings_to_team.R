@@ -195,7 +195,8 @@ message(sprintf("  Ratings: %d player-seasons", nrow(ratings)))
 # career-Panna snapshot taken just BEFORE S's first match, so no match in S is in
 # that snapshot's training data. Activates only when career_panna_asof.parquet is
 # present (built by skills step 09b); otherwise the (leaky) season xRAPM is kept
-# with a loud warning. See ASOF_CAREER_PANNA_PLAN.md / panna#74.
+# with a loud warning in a local run, and the step STOPS in a run that publishes
+# (is_publish_run()). See ASOF_CAREER_PANNA_PLAN.md / panna#74.
 asof_path <- file.path(opta_data_dir(), "career_panna_asof.parquet")
 if (file.exists(asof_path) && requireNamespace("arrow", quietly = TRUE)) {
   asof <- data.table::as.data.table(arrow::read_parquet(asof_path))
@@ -227,11 +228,18 @@ if (file.exists(asof_path) && requireNamespace("arrow", quietly = TRUE)) {
                          "%d/%d player-seasons across %d snapshots (leak-free)"),
                   n_match, nrow(ratings), length(snap_dates)))
 } else {
-  warning("career_panna_asof.parquet not found at ", asof_path,
-          " — falling back to SEASON xRAPM for the model's panna feature ",
-          "(in-season leakage + train/serve estimator mismatch). Build skills ",
-          "step 09b and add the file to the predictions-pipeline download.",
-          call. = FALSE, immediate. = TRUE)
+  asof_msg <- paste0(
+    "career_panna_asof.parquet not found at ", asof_path,
+    " (or arrow unavailable) — falling back to SEASON xRAPM for the model's panna ",
+    "feature (in-season leakage + train/serve estimator mismatch). Build skills ",
+    "step 09b and add the file to the predictions-pipeline download.")
+  # A run that publishes must not ship leaky features: refuse. Local exploratory
+  # runs (no publishing step on, or PANNA_PUBLISH_DISABLED) keep the warning.
+  if (is_publish_run(if (exists("run_steps")) run_steps else NULL)) {
+    stop(asof_msg, " Refusing to publish a run with leaky panna features.",
+         call. = FALSE)
+  }
+  warning(asof_msg, call. = FALSE, immediate. = TRUE)
 }
 
 # Validate required columns
