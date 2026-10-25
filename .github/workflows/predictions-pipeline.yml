@@ -204,6 +204,12 @@ jobs:
           # naming the actual missing file.
           fetch_cache 06_seasonal_ratings.rds "$CACHE_SKILLS" required || exit 1
           fetch_cache 07_seasonal_ratings.rds "$CACHE_OPTA" optional || exit 1
+          # psr_league_offsets.parquet is REQUIRED: step 10b adds it to game-log
+          # PSV (cross-league calibration). Never downloading it meant
+          # scheduled runs published offset-free current-season
+          # PSV (run 39117685137: "PSV league offsets not found"), while
+          # game-logs-rebuild and psr-weekly-snapshot applied it.
+          fetch_cache psr_league_offsets.parquet "$CACHE_SKILLS" required || exit 1
           # 01_match_stats.rds is NOT downloaded: the predictions-cache copy is
           # refreshed only by hand and sat at 2026-07-05 (R092). The next step
           # rebuilds it, same as psr-weekly-snapshot.yml (R001).
@@ -215,6 +221,7 @@ jobs:
           echo "Cache files:"
           ls -lh "$CACHE_OPTA"/*.rds 2>/dev/null || echo "  No RAPM caches"
           ls -lh "$CACHE_SKILLS"/*.rds 2>/dev/null || echo "  No skill caches"
+          ls -lh "$CACHE_SKILLS"/*.parquet 2>/dev/null || echo "  No skill parquet caches"
 
           # Backstop: redundant while 06 is required above, kept so that
           # relaxing that requirement cannot silently leave the pipeline with
