@@ -254,6 +254,14 @@ test_that("step 12 blanks in-sample rows and labels every row's record tier", {
                                         "pred_home_goals", "pred_away_goals")]))))
   expect_true(is.na(out$predicted[1]))
   expect_equal(out$prob_home[2], 0.30)
+
+  # The history file is built from the same blanked rows; check it separately.
+  hist <- arrow::read_parquet(file.path(cache_dir, "wc_history_predictions.parquet"))
+  hist <- as.data.frame(hist)[order(hist$match_date), ]
+  expect_identical(hist$record, c("none", "forecast"))
+  expect_true(all(is.na(unlist(hist[1, c("prob_home", "prob_draw", "prob_away",
+                                         "pred_home_goals", "pred_away_goals")]))))
+  expect_true(is.na(hist$predicted[1]))
 })
 
 test_that("step 12 stops with a plain message when 07_predictions has no split column", {
