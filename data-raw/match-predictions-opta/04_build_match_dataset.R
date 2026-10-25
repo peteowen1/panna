@@ -169,6 +169,11 @@ imp_train_sey <- if (imp_n_sey >= 3L) {
   imp_sey_vals
 }
 imp_train_idx <- imp_played & dataset$season_end_year %in% imp_train_sey
+if (imp_n_sey >= 3L) {
+  # Same date cut as section 8's split, so the fill means use exactly the train rows.
+  imp_val_cut <- as.Date(paste0(imp_sey_vals[imp_n_sey - 1L] - 1L, "-07-01"))
+  imp_train_idx <- imp_played & as.Date(substr(as.character(dataset$match_date), 1, 10)) < imp_val_cut
+}
 message(sprintf("  Imputation stats computed from %d train rows (split-leakage-free)",
                 sum(imp_train_idx)))
 
@@ -279,6 +284,7 @@ if (n_sey >= 3) {
   val_cut <- as.Date(paste0(val_sey - 1, "-07-01"))
   test_cut <- as.Date(paste0(test_sey - 1, "-07-01"))
   played_date <- as.Date(substr(as.character(played$match_date), 1, 10))
+  if (anyNA(played_date)) stop(sum(is.na(played_date)), " played matches have no parseable match_date; cannot split them by date")
   played$split <- ifelse(played_date < val_cut, "train",
                   ifelse(played_date < test_cut, "val", "test"))
   moved <- table(label = ifelse(played$season_end_year == test_sey, "test",
