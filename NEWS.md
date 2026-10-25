@@ -1,3 +1,14 @@
+# panna 0.3.104
+
+- AFCON 2023 now builds on a GitHub Actions runner (#376). The catalog lists it under two labels, "2023 Cote
+  d'Ivoire" and "2023 Côte d'Ivoire", but the released tables store only the accent-free one. Locally a
+  per-season file with the accented name hid this; a runner downloads only the consolidated files, so the
+  accented label matched nothing and step 10b skipped AFCON as "insufficient data". `load_opta_table()` now
+  retries an empty season with its accents removed (an accented label the data does store is still tried first),
+  and `list_opta_seasons()` lists the tournament once, under the accent-free label.
+  `leagues_missing_from_rebuild()` (data-raw/pipeline_utils.R) is the published-vs-rebuilt league comparison for
+  the game-logs rebuild's refuse step.
+
 # panna 0.3.103
 
 - Step 10b's role8 EPV fallback to start_label now also writes a GitHub Actions `::warning::`, so a weekly run
