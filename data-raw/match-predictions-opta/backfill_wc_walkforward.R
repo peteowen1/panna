@@ -17,6 +17,11 @@
 # so the three run in about 30-40 min. Each tournament's rows are written as
 # soon as its fit finishes, so a killed run keeps what it had.
 #
+# Run it from the predictions workflow (dispatch with wc_backfill = true): that
+# uses a fresh 04_match_dataset.rds, whose played rows carry as-at EPR/PSR/SPM
+# (panna#308). A match dataset older than #308 gives end-of-season ratings
+# that include the tournament, which is what the first, local copy did.
+#
 # Usage (from panna/, via powershell Rscript because of arrow):
 #   Rscript data-raw/match-predictions-opta/backfill_wc_walkforward.R <04_match_dataset.rds> <work_dir>
 # Output: <work_dir>/wc_backfill_predictions.parquet (all finished tournaments),
@@ -76,5 +81,10 @@ for (yr in TOURNAMENT_YEARS) {
               mean(-log(pmax(p_true, 1e-6))), out_path))
   unlink(list.files(cut_dir, pattern = "^0[456]_.*[.]rds$", full.names = TRUE))
 }
-cat(sprintf("\nAll done: %d tournaments, %d rows in %s\n", length(done),
-            sum(vapply(done, nrow, integer(1))), out_path))
+all_rows <- rbindlist(done, fill = TRUE)
+if (length(done) != length(TOURNAMENT_YEARS) || anyNA(all_rows$prob_H) ||
+    !all(all_rows$record == "backfill")) {
+  stop("backfill incomplete: ", length(done), " of ", length(TOURNAMENT_YEARS),
+       " tournaments, ", sum(is.na(all_rows$prob_H)), " rows with no prob_H")
+}
+cat(sprintf("\nAll done: %d tournaments, %d rows in %s\n", length(done), nrow(all_rows), out_path))
