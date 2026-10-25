@@ -316,3 +316,16 @@ test_that("fit_rapm handles use_weights parameter", {
   # Not all coefficients should be identical
   expect_false(all(coef_weighted == coef_unweighted))
 })
+
+test_that("rapm_lambda_from_n is the panna#87 sample-size formula and the as-of default", {
+  n <- c(1e4, 2.5e5, 1e6)
+  expect_equal(rapm_lambda_from_n(n), 16.67 * n^(-0.58))
+  # The as-of pooled RAPM must default to the same single copy, so a refit of
+  # the formula cannot leave one RAPM stage on a stale penalty.
+  expect_identical(eval(formals(fit_expanding_pooled_rapm)$lambda_formula),
+                   rapm_lambda_from_n)
+})
+
+test_that(".n_obs_valid counts only finite, non-NA responses", {
+  expect_equal(.n_obs_valid(list(y = c(1, NA, Inf, -2, NaN, 0))), 3L)
+})

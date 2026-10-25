@@ -2,6 +2,30 @@
 #
 # Fits Regularized Adjusted Plus-Minus models using ridge regression.
 
+#' Ridge lambda for a RAPM fit from its sample size
+#'
+#' The panna#87 closed-form formula \code{16.67 * n^-0.58} (constants
+#' \code{RAPM_LAMBDA_COEF} / \code{RAPM_LAMBDA_EXPONENT} in constants.R). The
+#' one copy every RAPM stage uses, either as the fixed lambda or as the
+#' centre of a cross-validation grid.
+#'
+#' @param n Number of valid observations (see \code{.n_obs_valid()}).
+#' @return Numeric lambda.
+#' @keywords internal
+#' @noRd
+rapm_lambda_from_n <- function(n) RAPM_LAMBDA_COEF * n^RAPM_LAMBDA_EXPONENT
+
+#' Count the valid (non-NA, finite) responses in RAPM data
+#'
+#' Matches the count \code{fit_rapm()} / \code{fit_rapm_with_prior()} use
+#' internally, so it is the right \code{n} for \code{rapm_lambda_from_n()}.
+#'
+#' @param rd RAPM data list with a \code{y} element.
+#' @return Integer count.
+#' @keywords internal
+#' @noRd
+.n_obs_valid <- function(rd) sum(!is.na(rd$y) & is.finite(rd$y))
+
 #' Fit glmnet at a single pre-specified lambda (skips cross-validation)
 #'
 #' Used by the as-of-date career-Panna build, where the optimal lambda is

@@ -80,44 +80,6 @@
 
 # Source-specific upload/download ----
 
-#' Get release tag for data source
-#'
-#' Maps source type to GitHub release tag name.
-#'
-#' @param source_type One of "fbref", "understat", "opta", or "all"
-#'
-#' @return Character release tag name
-#' @keywords internal
-get_source_tag <- function(source_type) {
-  switch(source_type,
-    fbref = "fbref-latest",
-    understat = "understat-latest",
-    opta = "opta-latest",
-    all = "latest",
-    cli::cli_abort("Unknown source_type: {.val {source_type}}")
-  )
-}
-
-
-#' Get archive filename for data source
-#'
-#' Maps source type to tar.gz archive filename.
-#'
-#' @param source_type One of "fbref", "understat", "opta", or "all"
-#'
-#' @return Character archive filename (tar.gz)
-#' @keywords internal
-get_source_archive_name <- function(source_type) {
-  switch(source_type,
-    fbref = "fbref-parquet.tar.gz",
-    understat = "understat-parquet.tar.gz",
-    opta = "opta-parquet.tar.gz",
-    all = "pannadata-parquet.tar.gz",
-    cli::cli_abort("Unknown source_type: {.val {source_type}}")
-  )
-}
-
-
 
 #' Incrementally download release assets that are missing or stale
 #'
@@ -264,77 +226,6 @@ pb_download_opta <- function(dest = NULL,
     }
   }
   invisible(res)
-}
-
-
-#' List releases by source type
-#'
-#' Shows available releases for different data sources.
-#'
-#' @param repo GitHub repository in "owner/repo" format
-#'
-#' @return Data frame with release information by source
-#' @family data distribution
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' pb_list_sources()
-#' }
-pb_list_sources <- function(repo = "peteowen1/pannadata") {
-  if (!requireNamespace("piggyback", quietly = TRUE)) {
-    cli::cli_abort("Package 'piggyback' is required. Install with: install.packages('piggyback')")
-  }
-
-  sources <- c("fbref", "understat", "opta", "all")
-  # Predictions uses a dedicated download path (pb_download_predictions),
-  # not the generic tar.gz pipeline, so handle it separately here.
-  pred_sources <- list(predictions = list(tag = "predictions-latest", file = "predictions.parquet"))
-  results <- list()
-
-  for (src in c(sources, names(pred_sources))) {
-    if (src %in% names(pred_sources)) {
-      tag <- pred_sources[[src]]$tag
-      archive_name <- pred_sources[[src]]$file
-    } else {
-      tag <- get_source_tag(src)
-      archive_name <- get_source_archive_name(src)
-    }
-
-    info <- tryCatch({
-      files <- piggyback::pb_list(repo = repo, tag = tag)
-      if (archive_name %in% files$file_name) {
-        row <- files[files$file_name == archive_name, ]
-        data.frame(
-          source = src,
-          tag = tag,
-          file = archive_name,
-          size_mb = round(row$size / (1024 * 1024), 1),
-          uploaded = row$timestamp
-        )
-      } else {
-        data.frame(
-          source = src,
-          tag = tag,
-          file = NA_character_,
-          size_mb = NA_real_,
-          uploaded = NA_character_
-        )
-      }
-    }, error = function(e) {
-      data.frame(
-        source = src,
-        tag = tag,
-        file = NA_character_,
-        size_mb = NA_real_,
-        uploaded = NA_character_
-      )
-    })
-
-    results[[src]] <- info
-  }
-
-  do.call(rbind, results)
 }
 
 
