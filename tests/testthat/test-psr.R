@@ -496,6 +496,32 @@ test_that("load_psr_coefficients accepts all valid target values", {
 })
 
 
+test_that(".load_psr_coef_optional returns NULL only when the file is missing", {
+  # A missing OSR/DSR file is the one case that should fall back to margin-only.
+  local_mocked_bindings(load_psr_coefficients = function(...) {
+    cli::cli_abort("PSR coefficient file not found: x.csv",
+                   class = "panna_psr_coef_missing")
+  })
+  expect_null(panna:::.load_psr_coef_optional("offense", target = "xg"))
+})
+
+test_that(".load_psr_coef_optional propagates errors from a corrupt file", {
+  # Previously any error (e.g. read.csv failing on a corrupt file) was swallowed
+  # and reported as "files not found", silently dropping OSR/DSR.
+  local_mocked_bindings(load_psr_coefficients = function(...) {
+    stop("more columns than column names")
+  })
+  expect_error(panna:::.load_psr_coef_optional("defense", target = "xg"),
+               "more columns than column names")
+})
+
+test_that(".load_psr_coef_optional returns bundled coefficients when present", {
+  res <- panna:::.load_psr_coef_optional("offense", target = "xg")
+  expect_s3_class(res, "data.frame")
+  expect_gt(nrow(res), 0)
+})
+
+
 # =============================================================================
 # .estimate_prematch_skills_batch()
 # =============================================================================

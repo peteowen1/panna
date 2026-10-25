@@ -2186,10 +2186,8 @@ compute_player_psv <- function(player_match_stats, min_adjust = TRUE,
 
   .score <- function(sub, tgt, model) {
     margin <- load_psr_coefficients("margin", target = tgt, model = model)
-    osr <- tryCatch(load_psr_coefficients("offense", target = tgt, model = model),
-                    error = function(e) NULL)
-    dsr <- tryCatch(load_psr_coefficients("defense", target = tgt, model = model),
-                    error = function(e) NULL)
+    osr <- .load_psr_coef_optional("offense", target = tgt, model = model)
+    dsr <- .load_psr_coef_optional("defense", target = tgt, model = model)
     rel <- NULL
     if (!is.null(reliability) && NROW(reliability) > 0) {
       reliability_dt <- data.table::as.data.table(reliability)
@@ -2501,10 +2499,28 @@ load_psr_coefficients <- function(type = c("margin", "offense", "defense"),
     cli::cli_abort(c(
       "PSR coefficient file not found: {.file {filename}}",
       "i" = "Run {.file data-raw/estimated-skills/07_train_psr_model.R} to generate coefficients."
-    ))
+    ), class = "panna_psr_coef_missing")
   }
 
   utils::read.csv(path, stringsAsFactors = FALSE)
+}
+
+
+#' Load optional OSR/DSR coefficients, returning NULL only when the file is absent
+#'
+#' The offense/defense split is optional: when its coefficient file has not
+#' been generated, callers fall back to margin-only scoring. Only the
+#' "file not found" condition is treated as absent. Any other error (for
+#' example a corrupt file that \code{read.csv} cannot parse) propagates, so a
+#' broken file cannot silently drop the components from published ratings.
+#'
+#' @param ... Passed to \code{load_psr_coefficients()}.
+#' @return A data.frame, or NULL if the coefficient file does not exist.
+#' @keywords internal
+#' @noRd
+.load_psr_coef_optional <- function(...) {
+  tryCatch(load_psr_coefficients(...),
+           panna_psr_coef_missing = function(e) NULL)
 }
 
 
@@ -2609,10 +2625,8 @@ compute_player_psr <- function(skills, center = TRUE,
     # blend-missing fallback. The old inline `if (target == "goals") "gd_"`
     # silently resolved blend to the xG files, so target = "blend" would have
     # mixed a blend margin with xG components.
-    osr_coef <- tryCatch(load_psr_coefficients("offense", target = target),
-                         error = function(e) NULL)
-    dsr_coef <- tryCatch(load_psr_coefficients("defense", target = target),
-                         error = function(e) NULL)
+    osr_coef <- .load_psr_coef_optional("offense", target = target)
+    dsr_coef <- .load_psr_coef_optional("defense", target = target)
 
     if (!is.null(osr_coef) && !is.null(dsr_coef)) {
       results$outfield <- calculate_psr_components(
