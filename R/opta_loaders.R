@@ -555,7 +555,29 @@ suggest_opta_seasons <- function(league, table_type = "match_events",
 }
 
 
+#' Fold a season label to plain ASCII
+#'
+#' The catalog lists AFCON 2023 as both "2023 Cote d'Ivoire" and
+#' "2023 C\u00f4te d'Ivoire", but the released tables store only the accent-free
+#' spelling (issue #376). Unmarked bytes (a label read in a C locale) are
+#' treated as UTF-8 before folding.
+#'
+#' @param season Season label (length-1 character), or NULL.
+#' @return The label with accents removed; NULL/NA come back unchanged.
+#' @keywords internal
+#' @noRd
+.fold_season_label <- function(season) {
+  if (is.null(season) || length(season) != 1L || is.na(season)) return(season)
+  if (Encoding(season) == "unknown" && validUTF8(season)) Encoding(season) <- "UTF-8"
+  stringi::stri_trans_general(season, "Latin-ASCII")
+}
+
+
 #' Internal function to load Opta table data
+#'
+#' A season that comes back empty is retried once with its accents removed
+#' (see `.fold_season_label()`); an accented label the data does store is
+#' still tried first.
 #'
 #' @param table_type Table type: "player_stats", "shots", "shot_events",
 #'   "events", "match_events", "lineups", or "fixtures".
@@ -568,6 +590,41 @@ suggest_opta_seasons <- function(league, table_type = "match_events",
 #' @keywords internal
 load_opta_table <- function(table_type, league, season, columns,
                              source = "local") {
+  folded <- .fold_season_label(season)
+  if (is.null(season) || identical(folded, season)) {
+    return(.load_opta_table_once(table_type, league, season, columns, source))
+  }
+
+  # The remote branch warns on an empty season; hold that back for the first
+  # attempt, since the folded retry may well succeed.
+  res <- withCallingHandlers(
+    tryCatch(.load_opta_table_once(table_type, league, season, columns, source),
+             vb_error_absent = function(e) e),
+    panna_warning_empty_season = function(w) invokeRestart("muffleWarning")
+  )
+  if (!inherits(res, "error") && nrow(res) > 0L) return(res)
+
+  retry <- withCallingHandlers(
+    tryCatch(.load_opta_table_once(table_type, league, folded, columns, source),
+             vb_error_absent = function(e) NULL),
+    panna_warning_empty_season = function(w) invokeRestart("muffleWarning")
+  )
+  if (!is.null(retry) && nrow(retry) > 0L) {
+    cli::cli_alert_info(
+      "No {table_type} rows for season {.val {season}}; using accent-free {.val {folded}}."
+    )
+    return(retry)
+  }
+  # Neither spelling has rows: report the original label's outcome.
+  if (inherits(res, "error")) stop(res)
+  .load_opta_table_once(table_type, league, season, columns, source)
+}
+
+
+#' @keywords internal
+#' @noRd
+.load_opta_table_once <- function(table_type, league, season, columns,
+                                   source = "local") {
   opta_league <- to_opta_league(league)
 
   # Handle remote source
