@@ -954,3 +954,29 @@ is_publish_run <- function(run_steps = NULL) {
   isTRUE(run_steps$step_09_upload_predictions) ||
     isTRUE(run_steps$step_13_publish_release_data)
 }
+
+
+#' Leagues a published season has that a rebuilt part lacks
+#'
+#' The game-logs rebuild's refuse step only failed on leagues that ERROR; a
+#' league 10b SKIPS ("insufficient data") passed silently even when the
+#' published season had it (AFCON 2023 on GHA, issue #376). This is the
+#' comparison it needs: published leagues minus built leagues. Leagues already
+#' reported by the failure marker are left out so one league is not flagged
+#' twice.
+#'
+#' Each part builds only its share of the leagues, so `expected` limits the
+#' check to the leagues this part was given.
+#'
+#' @param published Leagues in the published season's game logs.
+#' @param built Leagues in the rebuilt part.
+#' @param expected Leagues this part was assigned. NULL checks every published
+#'   league.
+#' @param reported Leagues already reported as failed (the failure marker).
+#' @return Character vector of missing leagues (possibly empty).
+leagues_missing_from_rebuild <- function(published, built, expected = NULL,
+                                         reported = character()) {
+  missing <- setdiff(unique(as.character(published)), unique(as.character(built)))
+  if (!is.null(expected)) missing <- intersect(missing, as.character(expected))
+  setdiff(missing, as.character(reported))
+}

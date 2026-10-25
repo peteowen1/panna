@@ -453,3 +453,34 @@ test_that("is_publish_run is TRUE only when a publishing step is on and the ref 
   })
   withr::with_envvar(c(PANNA_PUBLISH_DISABLED = "true"), expect_false(is_publish_run(pub)))
 })
+
+# ===========================================================================
+# leagues_missing_from_rebuild (issue #376)
+# ===========================================================================
+
+test_that("leagues_missing_from_rebuild flags a published league the part skipped", {
+  expect_equal(
+    leagues_missing_from_rebuild(c("EPL", "AFCON", "La_Liga"), c("EPL", "La_Liga")),
+    "AFCON"
+  )
+})
+
+test_that("leagues_missing_from_rebuild is empty when every published league was built", {
+  expect_length(leagues_missing_from_rebuild(c("EPL", "AFCON"), c("AFCON", "EPL", "MLS")), 0L)
+  expect_length(leagues_missing_from_rebuild(character(), "EPL"), 0L)
+})
+
+test_that("leagues_missing_from_rebuild ignores leagues outside this part's share", {
+  expect_equal(
+    leagues_missing_from_rebuild(c("EPL", "AFCON", "MLS"), "EPL",
+                                 expected = c("EPL", "AFCON")),
+    "AFCON"
+  )
+})
+
+test_that("leagues_missing_from_rebuild does not repeat leagues the failure marker reported", {
+  expect_equal(
+    leagues_missing_from_rebuild(c("EPL", "AFCON", "MLS"), "EPL", reported = "MLS"),
+    "AFCON"
+  )
+})
