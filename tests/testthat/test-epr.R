@@ -184,3 +184,12 @@ test_that("apply_epr_league_offsets leaves unknown leagues unchanged (offset 0)"
   expect_equal(out$epr, 0.05)
   expect_equal(out$epr_league_offset, 0)
 })
+
+test_that("calculate_epr_regression defaults match the published EPR (no tier interaction)", {
+  # Every production caller (build_epr_weekly.R, the net-goals gates) passes
+  # tier_interaction = FALSE. A TRUE default silently gave direct callers a
+  # different model from the published EPR.
+  defaults <- formals(calculate_epr_regression)
+  expect_false(eval(defaults$tier_interaction))
+  expect_null(eval(defaults$league_offsets))
+})

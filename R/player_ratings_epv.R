@@ -271,13 +271,14 @@ calculate_epr_batch <- function(player_game_epv, ref_dates, ...) {
 #' @return A data.table with one row per player: \code{player_id},
 #'   \code{player_name}, \code{epr}, \code{epr_offensive}, \code{epr_defensive},
 #'   \code{n_games}, \code{wt_games}.
-#' @param tier_interaction If TRUE (default), fit player * league-tier
+#' @param tier_interaction If TRUE, fit player * league-tier
 #'   interaction -- i.e. each player gets up to two beta coefficients, one for
 #'   tier-1 (top-5 + UCL + WC/EURO) and one for tier-2 (everything else).
 #'   This fixes cross-league standouts (Tavernier at Rangers, Veerman at
 #'   PSV) whose single-beta was a compromise between their elite domestic
-#'   per-90 and their modest UCL/UEL per-90. Set to FALSE for the legacy
-#'   "one beta per player" behaviour. \strong{Ignored when
+#'   per-90 and their modest UCL/UEL per-90. Default FALSE ("one beta per
+#'   player"), which is what the published EPR uses: every production caller
+#'   passes FALSE. \strong{Ignored when
 #'   \code{league_offsets} is supplied}, since offsets supersede the
 #'   coarse two-tier split with continuous per-league calibration.
 #' @param league_offsets Optional data.table of per-league EPV calibration
@@ -296,7 +297,7 @@ calculate_epr_regression <- function(player_game_epv,
                                        alpha = 0,
                                        lambda = NULL,
                                        prior_strength = 5,
-                                       tier_interaction = TRUE,
+                                       tier_interaction = FALSE,
                                        league_offsets = NULL,
                                        verbose = FALSE) {
   if (!requireNamespace("glmnet", quietly = TRUE)) {

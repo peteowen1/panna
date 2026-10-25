@@ -102,10 +102,7 @@ get_stat_tiers <- function() {
   dt <- dt[player_id %in% players]
 
   # Player modal position lookup (named vector for fast access)
-  pos_dt <- dt[!is.na(pos_group), {
-    tt <- table(pos_group)
-    list(pos_group = names(tt)[which.max(tt)])
-  }, by = player_id]
+  pos_dt <- .modal_pos_group(dt)
   player_pos_map <- stats::setNames(pos_dt$pos_group, as.character(pos_dt$player_id))
 
   # Split into per-player lists with precomputed date/minutes arrays
@@ -245,22 +242,12 @@ optimize_stat_prior <- function(match_stats = NULL, stat_name,
       vals[is.na(vals)] <- 0
       mins_90 <- ps$.mins_90
 
+      # A "+" spec with no part present gives zeros; a missing single
+      # column falls back to minutes/90.
       denom <- mins_90
       if (is_efficiency && !is.null(denom_col)) {
-        if (grepl("\\+", denom_col)) {
-          parts <- strsplit(denom_col, "\\+")[[1]]
-          denom <- rep(0, length(vals))
-          for (p in parts) {
-            if (p %in% names(ps)) {
-              d <- as.numeric(ps[[p]])
-              d[is.na(d)] <- 0
-              denom <- denom + d
-            }
-          }
-        } else if (denom_col %in% names(ps)) {
-          denom <- as.numeric(ps[[denom_col]])
-          denom[is.na(denom)] <- 0
-        }
+        denom <- .compute_denominator(ps, denom_col, n = length(vals)) %||%
+          (if (grepl("+", denom_col, fixed = TRUE)) rep(0, length(vals)) else mins_90)
       }
 
       # Position multiplier
@@ -305,10 +292,7 @@ optimize_stat_prior <- function(match_stats = NULL, stat_name,
       if (stat_name %in% names(mults)) mults[[stat_name]] else NULL
     }
 
-    player_pos_lkp <- dt[!is.na(pos_group), {
-      tt <- table(pos_group)
-      list(pos_group = names(tt)[which.max(tt)])
-    }, by = player_id]
+    player_pos_lkp <- .modal_pos_group(dt)
 
     player_avgs <- dt[, {
       v <- as.numeric(get(stat_name))
@@ -343,22 +327,12 @@ optimize_stat_prior <- function(match_stats = NULL, stat_name,
       mins_90 <- mins / 90
       d_rel <- dates - dates[1]
 
+      # A "+" spec with no part present gives zeros; a missing single
+      # column falls back to minutes/90.
       denom <- mins_90
       if (is_efficiency && !is.null(denom_col)) {
-        if (grepl("\\+", denom_col)) {
-          parts <- strsplit(denom_col, "\\+")[[1]]
-          denom <- rep(0, length(vals))
-          for (p in parts) {
-            if (p %in% names(pdf)) {
-              d <- as.numeric(pdf[[p]])
-              d[is.na(d)] <- 0
-              denom <- denom + d
-            }
-          }
-        } else if (denom_col %in% names(pdf)) {
-          denom <- as.numeric(pdf[[denom_col]])
-          denom[is.na(denom)] <- 0
-        }
+        denom <- .compute_denominator(pdf, denom_col, n = length(vals)) %||%
+          (if (grepl("+", denom_col, fixed = TRUE)) rep(0, length(vals)) else mins_90)
       }
 
       pos_row <- player_pos_lkp[player_id == pid]

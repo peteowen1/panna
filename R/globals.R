@@ -9,7 +9,7 @@ NULL
 
 utils::globalVariables(c(
   "epv_aerial_att",
-  # All column names are snake_case (via janitor::clean_names)
+  # All column names are snake_case
 
   # Match data columns
   "match_id",

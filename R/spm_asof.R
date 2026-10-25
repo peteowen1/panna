@@ -150,7 +150,7 @@
 #' @keywords internal
 fit_expanding_pooled_rapm <- function(rapm_data, splint_season_map, cutoff_year,
                                       min_year = NULL,
-                                      lambda_formula = function(n) 16.67 * n^(-0.58),
+                                      lambda_formula = rapm_lambda_from_n,
                                       nfolds = 5, seed = NULL, halflife_days = NULL) {
   rapm_sub <- .subset_rapm_data_expanding(rapm_data, splint_season_map, cutoff_year,
                                           min_year = min_year)

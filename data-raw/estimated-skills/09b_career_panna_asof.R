@@ -52,7 +52,7 @@ resume      <- if (exists("asof_resume", inherits = FALSE)) asof_resume else TRU
 
 # Sample-size lambda formula (validated on pruned data; see _validate_lambda_pruned.R).
 lambda_formula <- if (exists("asof_lambda_formula", inherits = FALSE)) asof_lambda_formula else
-  function(n) 16.67 * n^(-0.58)
+  rapm_lambda_from_n
 
 prune_days <- as.integer(prune_years) * 365L
 out_path   <- if (exists("asof_out_path", inherits = FALSE)) asof_out_path else

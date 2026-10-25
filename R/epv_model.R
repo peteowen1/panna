@@ -1226,25 +1226,6 @@ assign_epv_credit <- function(spadl_with_epv, xpass_model = NULL) {
 }
 
 
-#' Split Pass Credit (Legacy Helper)
-#'
-#' Splits pass EPV between passer and receiver based on difficulty.
-#'
-#' @param pass_value Vector of pass EPV values
-#' @param xpass Vector of pass completion probabilities
-#'
-#' @return List with passer_credit and receiver_credit vectors
-#' @keywords internal
-split_pass_credit <- function(pass_value, xpass) {
-  # Passer gets credit proportional to difficulty (1 - xpass)
-  # Receiver gets credit proportional to pass probability (xpass)
-  list(
-    passer_credit = pass_value * (1 - xpass),
-    receiver_credit = pass_value * xpass
-  )
-}
-
-
 # =============================================================================
 # PLAYER AGGREGATION
 # =============================================================================

@@ -305,10 +305,7 @@
 
   # Resolve positions once
   dt <- .resolve_positions(dt)
-  player_pos <- dt[!is.na(pos_group), {
-    tt <- table(pos_group)
-    list(pos_group = names(tt)[which.max(tt)])
-  }, by = player_id]
+  player_pos <- .modal_pos_group(dt)
   player_names <- dt[, .(player_name = player_name[1]), by = player_id]
 
   # Auto-detect stat columns via the ONE shared detector (catches _p90 AND
@@ -330,21 +327,7 @@
   # Position multipliers & grand means -- compute once
   pos_multipliers <- .resolve_position_multipliers(decay_params, dt, stat_cols)
 
-  grand_means <- numeric(length(stat_cols))
-  names(grand_means) <- stat_cols
-  prior_centers_cached <- decay_params$prior_centers
-  wts_all <- data.table::fifelse(is.na(dt$total_minutes), 0,
-                                  as.numeric(dt$total_minutes))
-  total_wt <- sum(wts_all)
-  for (sc in stat_cols) {
-    if (!is.null(prior_centers_cached) && sc %in% names(prior_centers_cached)) {
-      grand_means[sc] <- prior_centers_cached[sc]
-    } else if (sc %in% names(dt)) {
-      vals <- as.numeric(dt[[sc]])
-      vals[is.na(vals)] <- 0
-      if (total_wt > 0) grand_means[sc] <- sum(vals * wts_all) / total_wt
-    }
-  }
+  grand_means <- .stat_grand_means(dt, stat_cols, decay_params$prior_centers)
 
   # Pre-compute minutes/90
   dt[, .mins_90 := data.table::fifelse(is.na(total_minutes), 0,
@@ -405,10 +388,7 @@
     ps <- stat_prior_strengths[sc]
     gm <- grand_means[sc]
     pm_lookup <- if (sc %in% names(pos_multipliers)) pos_multipliers[[sc]] else NULL
-    a0 <- rep(gm, n_players)
-    if (!is.null(pm_lookup)) {
-      for (pg in names(pm_lookup)) a0[player_pg == pg] <- gm * pm_lookup[pg]
-    }
+    a0 <- .position_prior_center(gm, pm_lookup, player_pg)
     rate_alpha0[, ci] <- pmax(a0 * ps, 1e-4)
   }
 
@@ -417,10 +397,7 @@
   for (sc in eff_stats) {
     gm <- grand_means[sc]
     pm_lookup <- if (sc %in% names(pos_multipliers)) pos_multipliers[[sc]] else NULL
-    m0 <- rep(gm, n_players)
-    if (!is.null(pm_lookup)) {
-      for (pg in names(pm_lookup)) m0[player_pg == pg] <- gm * pm_lookup[pg]
-    }
+    m0 <- .position_prior_center(gm, pm_lookup, player_pg)
     eff_mu0[[sc]] <- pmax(pmin(m0, 1 - 1e-6), 1e-6)
   }
 

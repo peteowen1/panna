@@ -934,9 +934,8 @@ NG_STOP_ACTIONS <- c("keeper_save")
 
   # --- E. Retained pass with a named receiver and a difficulty score. -------
   # Torp D6: the disposer takes `p` of the surprise and the receiver `1 - p`,
-  # with `p` the chance of losing it. With `p = 1 - xpass` that is the split the
-  # package's own split_pass_credit() already uses -- the harder the pass, the
-  # more of it belongs to the passer.
+  # with `p` the chance of losing it, so `p = 1 - xpass` -- the harder the pass,
+  # the more of it belongs to the passer.
   f <- !d$is_turnover & !d$is_shot & !d$is_stop & d$has_receiver &
     d$action_type == "pass" & !is.na(d$xpass)
   keep_f <- v * (1 - sh$off_pool)

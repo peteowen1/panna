@@ -1,24 +1,5 @@
 # Tests for piggyback.R
-# Covers: .pb_download_file, get_source_tag, get_source_archive_name,
-#         pb_list_sources, pb_download_predictions
-
-# ===========================================================================
-# get_source_tag / get_source_archive_name
-# ===========================================================================
-
-test_that("get_source_tag returns correct tags", {
-  expect_equal(get_source_tag("opta"), "opta-latest")
-  expect_equal(get_source_tag("fbref"), "fbref-latest")
-  expect_equal(get_source_tag("understat"), "understat-latest")
-  expect_equal(get_source_tag("all"), "latest")
-})
-
-test_that("get_source_archive_name returns correct filenames", {
-  expect_true(grepl("\\.tar\\.gz$", get_source_archive_name("opta")))
-  expect_true(grepl("\\.tar\\.gz$", get_source_archive_name("fbref")))
-  expect_true(grepl("\\.tar\\.gz$", get_source_archive_name("all")))
-})
-
+# Covers: .pb_download_file, pb_download_predictions
 
 # ===========================================================================
 # .pb_download_file
@@ -87,15 +68,6 @@ test_that(".pb_download_file rejects a truncated download when the release lists
     class = "vb_error_integrity"
   )
   expect_false(file.exists(file.path(tempdir(), "test.rds")))
-})
-
-
-# ===========================================================================
-# pb_list_sources
-# ===========================================================================
-
-test_that("pb_list_sources function exists", {
-  expect_true(is.function(pb_list_sources))
 })
 
 

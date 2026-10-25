@@ -2,6 +2,30 @@
 #
 # Fits Regularized Adjusted Plus-Minus models using ridge regression.
 
+#' Ridge lambda for a RAPM fit from its sample size
+#'
+#' The panna#87 closed-form formula \code{16.67 * n^-0.58} (constants
+#' \code{RAPM_LAMBDA_COEF} / \code{RAPM_LAMBDA_EXPONENT} in constants.R). The
+#' one copy every RAPM stage uses, either as the fixed lambda or as the
+#' centre of a cross-validation grid.
+#'
+#' @param n Number of valid observations (see \code{.n_obs_valid()}).
+#' @return Numeric lambda.
+#' @keywords internal
+#' @noRd
+rapm_lambda_from_n <- function(n) RAPM_LAMBDA_COEF * n^RAPM_LAMBDA_EXPONENT
+
+#' Count the valid (non-NA, finite) responses in RAPM data
+#'
+#' Matches the count \code{fit_rapm()} / \code{fit_rapm_with_prior()} use
+#' internally, so it is the right \code{n} for \code{rapm_lambda_from_n()}.
+#'
+#' @param rd RAPM data list with a \code{y} element.
+#' @return Integer count.
+#' @keywords internal
+#' @noRd
+.n_obs_valid <- function(rd) sum(!is.na(rd$y) & is.finite(rd$y))
+
 #' Fit glmnet at a single pre-specified lambda (skips cross-validation)
 #'
 #' Used by the as-of-date career-Panna build, where the optimal lambda is
@@ -116,100 +140,27 @@ fit_rapm <- function(rapm_data, alpha = 0, nfolds = 10,
                          penalize_covariates = FALSE,
                          parallel = TRUE, n_cores = NULL,
                          fixed_lambda = NULL, lambda_seq = NULL) {
-  # Validate input structure
-  if (!is.list(rapm_data)) {
-    cli::cli_abort(c(
-      "{.arg rapm_data} must be a list.",
-      "x" = "Got {.cls {class(rapm_data)}} instead.",
-      "i" = "Use {.fn create_rapm_design_matrix} to generate valid rapm_data."
-    ))
-  }
-
-  has_X <- "X" %in% names(rapm_data) || "X_full" %in% names(rapm_data)
-  if (!has_X) {
-    cli::cli_abort(c(
-      "{.arg rapm_data} must contain 'X' or 'X_full' matrix.",
-      "i" = "Use {.fn create_rapm_design_matrix} to generate valid rapm_data."
-    ))
-  }
-
-  if (!"y" %in% names(rapm_data)) {
-    cli::cli_abort(c(
-      "{.arg rapm_data} must contain 'y' vector.",
-      "i" = "Use {.fn create_rapm_design_matrix} to generate valid rapm_data."
-    ))
-  }
-
-  # Support both X_full (production) and X (tests)
-  X <- if (!is.null(rapm_data$X_full)) rapm_data$X_full else rapm_data$X
-  y <- rapm_data$y
-  weights <- if (use_weights) rapm_data$weights else NULL
-
-  # Remove NA responses
-  valid_idx <- !is.na(y) & is.finite(y)
-  X <- X[valid_idx, , drop = FALSE]
-  y <- y[valid_idx]
-  if (!is.null(weights)) weights <- weights[valid_idx]
-
-  if (length(y) == 0) {
-    cli::cli_abort(c(
-      "No valid observations after removing NA values.",
-      "i" = "Check that {.arg rapm_data$y} contains non-NA values."
-    ))
-  }
+  xy <- .rapm_prepare_xy(rapm_data, use_weights)
+  X <- xy$X
+  y <- xy$y
+  weights <- xy$weights
 
   progress_msg(sprintf("Fitting RAPM: %d observations, %d columns",
                        length(y), ncol(X)))
 
-  # Set up parallel processing (only relevant for the cv.glmnet fold loop;
-  # the fixed-lambda path fits a single model, so skip the backend setup).
-  if (parallel && is.null(fixed_lambda)) {
-    .check_suggests("parallel", "Parallel RAPM fitting requires parallel.")
-    .check_suggests("doParallel", "Parallel RAPM fitting requires doParallel.")
-    if (is.null(n_cores)) {
-      n_cores <- max(1, floor(parallel::detectCores() / 2))
-    }
-    # Respect R CMD check limits (typically 2 cores max)
-    check_limit <- Sys.getenv("_R_CHECK_LIMIT_CORES_", "")
-    if (nzchar(check_limit) && check_limit == "TRUE") {
-      n_cores <- min(n_cores, 2L)
-    }
-    progress_msg(sprintf("Using %d cores for parallel CV", n_cores))
-    doParallel::registerDoParallel(cores = n_cores)
+  if (.rapm_register_parallel(parallel, fixed_lambda, n_cores)) {
     on.exit(doParallel::stopImplicitCluster(), add = TRUE)
   }
 
-  # Penalty factor: don't penalize covariates if requested. Covariates are the
-  # last columns (cbind(X_players, X_covariates) in prepare_rapm_data);
-  # .resolve_covariate_names() now ASSERTS that rather than assuming it.
+  # .resolve_covariate_names() ASSERTS covariates are the last columns, which
+  # the positional penalty factor relies on.
   covariate_names <- .resolve_covariate_names(rapm_data, X)
-  if (!penalize_covariates && length(covariate_names) > 0) {
-    n_cols <- ncol(X)
-    n_cov <- length(covariate_names)
-    penalty_factor <- c(rep(1, n_cols - n_cov), rep(0, n_cov))
-  } else {
-    penalty_factor <- rep(1, ncol(X))
-  }
+  penalty_factor <- .rapm_penalty_factor(ncol(X), covariate_names,
+                                         penalize_covariates)
 
   # Fit ridge regression: cross-validated, or at a single supplied lambda.
-  if (is.null(fixed_lambda)) {
-    cv_fit <- glmnet::cv.glmnet(
-      x = X,
-      y = y,
-      weights = weights,
-      alpha = alpha,
-      standardize = standardize,
-      nfolds = nfolds,
-      lambda = lambda_seq,
-      type.measure = "mse",
-      penalty.factor = penalty_factor,
-      trace.it = if (interactive()) 1 else 0,
-      parallel = parallel
-    )
-  } else {
-    cv_fit <- .glmnet_fixed_lambda(X, y, weights, alpha, standardize,
-                                   penalty_factor, fixed_lambda)
-  }
+  cv_fit <- .rapm_glmnet(X, y, weights, alpha, standardize, nfolds, lambda_seq,
+                         penalty_factor, parallel, fixed_lambda)
 
   # Add metadata
   target_type <- if (!is.null(rapm_data$target_type)) rapm_data$target_type else "xg"
@@ -285,20 +236,7 @@ fit_rapm <- function(rapm_data, alpha = 0, nfolds = 10,
 #' @family rapm
 #' @export
 extract_rapm_ratings <- function(model, lambda = "min") {
-  # Get lambda value
-  lambda_val <- if (lambda == "min") {
-    model$lambda.min
-  } else if (lambda == "1se") {
-    model$lambda.1se
-  } else {
-    as.numeric(lambda)
-  }
-
-  # Extract all coefficients
-  coef_mat <- stats::coef(model, s = lambda_val)
-  all_coefs <- as.vector(coef_mat)[-1]  # Remove intercept
-  col_names <- rownames(coef_mat)[-1]
-  names(all_coefs) <- col_names
+  all_coefs <- .rapm_coefs(model, lambda)
 
   # Separate player coefficients from covariates
   player_ids <- model$panna_metadata$player_ids
@@ -307,18 +245,13 @@ extract_rapm_ratings <- function(model, lambda = "min") {
   mode <- model$panna_metadata$mode
   if (is.null(mode)) mode <- "od"
 
-  if (mode == "net") {
-    net_cols <- paste0(player_ids, "_net")
-    if (!all(net_cols %in% names(all_coefs))) {
-      missing_cols <- net_cols[!net_cols %in% names(all_coefs)]
-      cli::cli_abort(c(
-        "extract_rapm_ratings: model coefficients don't match the declared {.val net} mode.",
-        "x" = "Missing {length(missing_cols)} {.field _net} column{?s} (e.g. {.val {head(missing_cols, 3)}}).",
-        "i" = "Was this model actually fit with a {.code mode = \"net\"} design matrix?"
-      ))
-    }
+  .rapm_check_cols(
+    all_coefs, player_ids, mode, "extract_rapm_ratings",
+    net_hint = "Was this model actually fit with a {.code mode = \"net\"} design matrix?"
+  )
 
-    net_coefs <- all_coefs[net_cols]
+  if (mode == "net") {
+    net_coefs <- all_coefs[paste0(player_ids, "_net")]
     ratings <- data.frame(
       player_id = player_ids,
       rapm = as.numeric(net_coefs),
@@ -328,15 +261,6 @@ extract_rapm_ratings <- function(model, lambda = "min") {
   } else {
     off_cols <- paste0(player_ids, "_off")
     def_cols <- paste0(player_ids, "_def")
-    if (!all(off_cols %in% names(all_coefs)) || !all(def_cols %in% names(all_coefs))) {
-      missing_cols <- c(off_cols, def_cols)[!c(off_cols, def_cols) %in% names(all_coefs)]
-      cli::cli_abort(c(
-        "extract_rapm_ratings: model coefficients don't match the declared {.val od} mode.",
-        "x" = "Missing {length(missing_cols)} {.field _off}/{.field _def} column{?s} (e.g. {.val {head(missing_cols, 3)}}).",
-        "i" = "Was this model actually fit with {.code mode = \"net\"}? Net-mode models have only {.field _net} columns."
-      ))
-    }
-
     off_coefs <- all_coefs[off_cols]
     def_coefs <- all_coefs[def_cols]
 
@@ -558,22 +482,12 @@ fit_rapm_with_prior <- function(rapm_data, offense_prior, defense_prior,
     ))
   }
 
-  # Validate input structure (matching fit_rapm())
-  if (!is.list(rapm_data)) {
-    cli::cli_abort(c(
-      "{.arg rapm_data} must be a list.",
-      "x" = "Got {.cls {class(rapm_data)}} instead.",
-      "i" = "Use {.fn create_rapm_design_matrix} to generate valid rapm_data."
-    ))
-  }
-
-  has_X <- "X" %in% names(rapm_data) || "X_full" %in% names(rapm_data)
-  if (!has_X || !"y" %in% names(rapm_data)) {
-    cli::cli_abort(c(
-      "{.arg rapm_data} must contain 'X' (or 'X_full') and 'y'.",
-      "i" = "Use {.fn create_rapm_design_matrix} to generate valid rapm_data."
-    ))
-  }
+  # Validate input structure, pick X_full or X, drop NA responses (shared
+  # with fit_rapm()).
+  xy <- .rapm_prepare_xy(rapm_data, use_weights)
+  X <- xy$X
+  y <- xy$y
+  weights <- xy$weights
 
   # F5 (FABLE-PRIOR-FIX-PLAN.md review): a caller-supplied `mode` that
   # disagrees with the mode the design matrix was actually built with
@@ -591,17 +505,6 @@ fit_rapm_with_prior <- function(rapm_data, offense_prior, defense_prior,
       "i" = "Pass {.code mode = \"{rapm_data$mode}\"} to match the design matrix, or rebuild {.arg rapm_data} with {.code mode = \"{mode}\"}."
     ))
   }
-
-  # Support both X_full (production) and X (tests)
-  X <- if (!is.null(rapm_data$X_full)) rapm_data$X_full else rapm_data$X
-  y <- rapm_data$y
-  weights <- if (use_weights) rapm_data$weights else NULL
-
-  # Remove NA responses
-  valid_idx <- !is.na(y) & is.finite(y)
-  X <- X[valid_idx, , drop = FALSE]
-  y <- y[valid_idx]
-  if (!is.null(weights)) weights <- weights[valid_idx]
 
   # Get column names
   col_names <- colnames(X)
@@ -663,54 +566,19 @@ fit_rapm_with_prior <- function(rapm_data, offense_prior, defense_prior,
   progress_msg(sprintf("Fitting xRAPM: %d observations, %d columns",
                        length(y_adjusted), ncol(X)))
 
-  # Set up parallel processing, matching fit_rapm() -- this is the production
-  # xRAPM path and previously ran the CV fold loop serially. Only relevant
-  # for cv.glmnet; the fixed-lambda path fits a single model.
-  if (parallel && is.null(fixed_lambda)) {
-    .check_suggests("parallel", "Parallel RAPM fitting requires parallel.")
-    .check_suggests("doParallel", "Parallel RAPM fitting requires doParallel.")
-    if (is.null(n_cores)) {
-      n_cores <- max(1, floor(parallel::detectCores() / 2))
-    }
-    # Respect R CMD check limits (typically 2 cores max)
-    check_limit <- Sys.getenv("_R_CHECK_LIMIT_CORES_", "")
-    if (nzchar(check_limit) && check_limit == "TRUE") {
-      n_cores <- min(n_cores, 2L)
-    }
-    progress_msg(sprintf("Using %d cores for parallel CV", n_cores))
-    doParallel::registerDoParallel(cores = n_cores)
+  # Parallel CV backend, shared with fit_rapm() -- this is the production
+  # xRAPM path and previously ran the CV fold loop serially.
+  if (.rapm_register_parallel(parallel, fixed_lambda, n_cores)) {
     on.exit(doParallel::stopImplicitCluster(), add = TRUE)
   }
 
-  # Penalty factor: don't penalize covariates if requested
-  # Covariates are always the last columns (cbind(X_players, X_covariates) in prepare_rapm_data)
-  if (!penalize_covariates && length(covariate_names) > 0) {
-    penalty_factor <- c(rep(1, n_cols - length(covariate_names)),
-                        rep(0, length(covariate_names)))
-  } else {
-    penalty_factor <- rep(1, n_cols)
-  }
+  penalty_factor <- .rapm_penalty_factor(n_cols, covariate_names,
+                                         penalize_covariates)
 
   # Fit ridge on adjusted response: cross-validated, or at a single supplied lambda.
-  if (is.null(fixed_lambda)) {
-    cv_fit <- glmnet::cv.glmnet(
-      x = X,
-      y = y_adjusted,
-      weights = weights,
-      alpha = alpha,
-      standardize = FALSE,
-      nfolds = nfolds,
-      lambda = lambda_seq,
-      type.measure = "mse",
-      penalty.factor = penalty_factor,
-      trace.it = if (interactive()) 1 else 0,
-      parallel = parallel
-    )
-  } else {
-    cv_fit <- .glmnet_fixed_lambda(X, y_adjusted, weights, alpha,
-                                   standardize = FALSE, penalty_factor,
-                                   fixed_lambda)
-  }
+  cv_fit <- .rapm_glmnet(X, y_adjusted, weights, alpha, standardize = FALSE,
+                         nfolds, lambda_seq, penalty_factor, parallel,
+                         fixed_lambda)
 
   # Store metadata including prior information
   cv_fit$panna_metadata <- list(
@@ -767,20 +635,9 @@ fit_rapm_with_prior <- function(rapm_data, offense_prior, defense_prior,
 #' @family panna ratings
 #' @export
 extract_xrapm_ratings <- function(model, lambda = "min") {
-  # Get lambda value
-  lambda_val <- if (lambda == "min") {
-    model$lambda.min
-  } else if (lambda == "1se") {
-    model$lambda.1se
-  } else {
-    as.numeric(lambda)
-  }
-
   # Extract gamma (deviation from prior)
-  coef_mat <- stats::coef(model, s = lambda_val)
-  gamma <- as.vector(coef_mat)[-1]
-  col_names <- rownames(coef_mat)[-1]
-  names(gamma) <- col_names
+  gamma <- .rapm_coefs(model, lambda)
+  col_names <- names(gamma)
 
   # Get prior vector
   prior_vec <- model$panna_metadata$prior_vec
@@ -794,18 +651,13 @@ extract_xrapm_ratings <- function(model, lambda = "min") {
     mode <- if (identical(model$panna_metadata$type, "xrapm_net")) "net" else "od"
   }
 
-  if (mode == "net") {
-    net_cols <- paste0(player_ids, "_net")
-    if (!all(net_cols %in% names(beta_final))) {
-      missing_cols <- net_cols[!net_cols %in% names(beta_final)]
-      cli::cli_abort(c(
-        "extract_xrapm_ratings: model coefficients don't match the declared {.val net} mode.",
-        "x" = "Missing {length(missing_cols)} {.field _net} column{?s} (e.g. {.val {head(missing_cols, 3)}}).",
-        "i" = "Was this model actually fit with {.code mode = \"net\"} via {.fn fit_rapm_with_prior}?"
-      ))
-    }
+  .rapm_check_cols(
+    beta_final, player_ids, mode, "extract_xrapm_ratings",
+    net_hint = "Was this model actually fit with {.code mode = \"net\"} via {.fn fit_rapm_with_prior}?"
+  )
 
-    net_coefs <- beta_final[net_cols]
+  if (mode == "net") {
+    net_coefs <- beta_final[paste0(player_ids, "_net")]
 
     # Net mode has no offense/defense split (D2) -- the single _net
     # coefficient per player IS the rating. offense/defense (and their
@@ -823,15 +675,6 @@ extract_xrapm_ratings <- function(model, lambda = "min") {
   } else {
     off_cols <- paste0(player_ids, "_off")
     def_cols <- paste0(player_ids, "_def")
-    if (!all(off_cols %in% names(beta_final)) || !all(def_cols %in% names(beta_final))) {
-      missing_cols <- c(off_cols, def_cols)[!c(off_cols, def_cols) %in% names(beta_final)]
-      cli::cli_abort(c(
-        "extract_xrapm_ratings: model coefficients don't match the declared {.val od} mode.",
-        "x" = "Missing {length(missing_cols)} {.field _off}/{.field _def} column{?s} (e.g. {.val {head(missing_cols, 3)}}).",
-        "i" = "Was this model actually fit with {.code mode = \"net\"}? Net-mode models have only {.field _net} columns."
-      ))
-    }
-
     off_coefs <- beta_final[off_cols]
     def_coefs <- beta_final[def_cols]
     off_gamma <- gamma[off_cols]
@@ -1076,4 +919,180 @@ aggregate_rapm_by_team <- function(ratings, player_data) {
   ), by = team]
   setorder(result, -mean_rapm)
   as.data.frame(result)
+}
+
+
+# ============================================================================
+# Shared RAPM / xRAPM fitting and extraction steps
+# ============================================================================
+
+#' Validate rapm_data and return the fitting X, y and weights
+#'
+#' Shared by \code{fit_rapm()} and \code{fit_rapm_with_prior()}: checks the
+#' list shape, takes \code{X_full} (production) or \code{X} (tests), and drops
+#' rows whose response is NA or non-finite.
+#' @return list(X, y, weights); weights is NULL when \code{use_weights} is FALSE.
+#' @keywords internal
+#' @noRd
+.rapm_prepare_xy <- function(rapm_data, use_weights) {
+  if (!is.list(rapm_data)) {
+    cli::cli_abort(c(
+      "{.arg rapm_data} must be a list.",
+      "x" = "Got {.cls {class(rapm_data)}} instead.",
+      "i" = "Use {.fn create_rapm_design_matrix} to generate valid rapm_data."
+    ))
+  }
+
+  has_X <- "X" %in% names(rapm_data) || "X_full" %in% names(rapm_data)
+  if (!has_X) {
+    cli::cli_abort(c(
+      "{.arg rapm_data} must contain 'X' or 'X_full' matrix.",
+      "i" = "Use {.fn create_rapm_design_matrix} to generate valid rapm_data."
+    ))
+  }
+
+  if (!"y" %in% names(rapm_data)) {
+    cli::cli_abort(c(
+      "{.arg rapm_data} must contain 'y' vector.",
+      "i" = "Use {.fn create_rapm_design_matrix} to generate valid rapm_data."
+    ))
+  }
+
+  # Support both X_full (production) and X (tests)
+  X <- if (!is.null(rapm_data$X_full)) rapm_data$X_full else rapm_data$X
+  y <- rapm_data$y
+  weights <- if (use_weights) rapm_data$weights else NULL
+
+  # Remove NA responses
+  valid_idx <- !is.na(y) & is.finite(y)
+  X <- X[valid_idx, , drop = FALSE]
+  y <- y[valid_idx]
+  if (!is.null(weights)) weights <- weights[valid_idx]
+
+  if (length(y) == 0) {
+    cli::cli_abort(c(
+      "No valid observations after removing NA values.",
+      "i" = "Check that {.arg rapm_data$y} contains non-NA values."
+    ))
+  }
+
+  list(X = X, y = y, weights = weights)
+}
+
+
+#' Register the parallel backend for the cv.glmnet fold loop
+#'
+#' Does nothing (returns FALSE) unless \code{parallel} is TRUE and no
+#' \code{fixed_lambda} is given -- the fixed-lambda path fits one model. When
+#' it returns TRUE the caller must
+#' \code{on.exit(doParallel::stopImplicitCluster(), add = TRUE)}.
+#' @keywords internal
+#' @noRd
+.rapm_register_parallel <- function(parallel, fixed_lambda, n_cores) {
+  if (!(parallel && is.null(fixed_lambda))) return(FALSE)
+  .check_suggests("parallel", "Parallel RAPM fitting requires parallel.")
+  .check_suggests("doParallel", "Parallel RAPM fitting requires doParallel.")
+  if (is.null(n_cores)) {
+    n_cores <- max(1, floor(parallel::detectCores() / 2))
+  }
+  # Respect R CMD check limits (typically 2 cores max)
+  check_limit <- Sys.getenv("_R_CHECK_LIMIT_CORES_", "")
+  if (nzchar(check_limit) && check_limit == "TRUE") {
+    n_cores <- min(n_cores, 2L)
+  }
+  progress_msg(sprintf("Using %d cores for parallel CV", n_cores))
+  doParallel::registerDoParallel(cores = n_cores)
+  TRUE
+}
+
+
+#' glmnet penalty factor: covariates (the last columns) unpenalized unless asked
+#' @keywords internal
+#' @noRd
+.rapm_penalty_factor <- function(n_cols, covariate_names, penalize_covariates) {
+  n_cov <- length(covariate_names)
+  if (!penalize_covariates && n_cov > 0) {
+    c(rep(1, n_cols - n_cov), rep(0, n_cov))
+  } else {
+    rep(1, n_cols)
+  }
+}
+
+
+#' Ridge fit: cross-validated, or at a single supplied lambda
+#' @keywords internal
+#' @noRd
+.rapm_glmnet <- function(X, y, weights, alpha, standardize, nfolds, lambda_seq,
+                         penalty_factor, parallel, fixed_lambda) {
+  if (is.null(fixed_lambda)) {
+    glmnet::cv.glmnet(
+      x = X,
+      y = y,
+      weights = weights,
+      alpha = alpha,
+      standardize = standardize,
+      nfolds = nfolds,
+      lambda = lambda_seq,
+      type.measure = "mse",
+      penalty.factor = penalty_factor,
+      trace.it = if (interactive()) 1 else 0,
+      parallel = parallel
+    )
+  } else {
+    .glmnet_fixed_lambda(X, y, weights, alpha, standardize,
+                         penalty_factor, fixed_lambda)
+  }
+}
+
+
+#' Named coefficient vector (intercept dropped) at "min", "1se" or a numeric lambda
+#' @keywords internal
+#' @noRd
+.rapm_coefs <- function(model, lambda) {
+  lambda_val <- if (lambda == "min") {
+    model$lambda.min
+  } else if (lambda == "1se") {
+    model$lambda.1se
+  } else {
+    as.numeric(lambda)
+  }
+
+  coef_mat <- stats::coef(model, s = lambda_val)
+  coefs <- as.vector(coef_mat)[-1]  # Remove intercept
+  names(coefs) <- rownames(coef_mat)[-1]
+  coefs
+}
+
+
+#' Abort unless the coefficients hold every player column the mode declares
+#'
+#' Net mode needs \verb{_net} columns, od mode \verb{_off} and \verb{_def}.
+#' Indexing absent names would otherwise return silent all-NA ratings.
+#' @param fn_name Function named in the abort message.
+#' @param net_hint The "i" line of the net-mode abort.
+#' @keywords internal
+#' @noRd
+.rapm_check_cols <- function(coefs, player_ids, mode, fn_name, net_hint) {
+  if (mode == "net") {
+    net_cols <- paste0(player_ids, "_net")
+    if (!all(net_cols %in% names(coefs))) {
+      missing_cols <- net_cols[!net_cols %in% names(coefs)]
+      cli::cli_abort(c(
+        "{fn_name}: model coefficients don't match the declared {.val net} mode.",
+        "x" = "Missing {length(missing_cols)} {.field _net} column{?s} (e.g. {.val {head(missing_cols, 3)}}).",
+        "i" = net_hint
+      ))
+    }
+  } else {
+    od_cols <- c(paste0(player_ids, "_off"), paste0(player_ids, "_def"))
+    if (!all(od_cols %in% names(coefs))) {
+      missing_cols <- od_cols[!od_cols %in% names(coefs)]
+      cli::cli_abort(c(
+        "{fn_name}: model coefficients don't match the declared {.val od} mode.",
+        "x" = "Missing {length(missing_cols)} {.field _off}/{.field _def} column{?s} (e.g. {.val {head(missing_cols, 3)}}).",
+        "i" = "Was this model actually fit with {.code mode = \"net\"}? Net-mode models have only {.field _net} columns."
+      ))
+    }
+  }
+  invisible(TRUE)
 }

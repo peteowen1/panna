@@ -20,7 +20,6 @@ Calculate minutes per 90
 \seealso{
 Other utilities: 
 \code{\link{safe_divide}()},
-\code{\link{validate_dataframe}()},
-\code{\link{validate_seasons}()}
+\code{\link{validate_dataframe}()}
 }
 \concept{utilities}

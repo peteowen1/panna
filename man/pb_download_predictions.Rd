@@ -32,7 +32,6 @@ pb_download_predictions()
 \seealso{
 Other data distribution: 
 \code{\link{load_predictions}()},
-\code{\link{pb_download_opta}()},
-\code{\link{pb_list_sources}()}
+\code{\link{pb_download_opta}()}
 }
 \concept{data distribution}

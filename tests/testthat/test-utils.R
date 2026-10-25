@@ -19,29 +19,6 @@ test_that("safe_divide preserves input NAs", {
   expect_equal(safe_divide(c(10, NA, 5), c(2, 3, 0), default = NA_real_), c(5, NA, NA))
 })
 
-test_that("validate_seasons accepts valid seasons", {
-  expect_true(validate_seasons("2023-2024"))
-  expect_true(validate_seasons(c("2022-2023", "2023-2024")))
-})
-
-test_that("validate_seasons rejects invalid seasons", {
-  expect_error(validate_seasons("2016-2017"), "2017-2018")
-  expect_error(validate_seasons("2023"), "YYYY-YYYY")
-  expect_error(validate_seasons("2023-2025"), "start year \\+ 1")
-})
-
-test_that("validate_seasons respects min_year and source_name", {
-  expect_true(validate_seasons("2013-2014", min_year = 2013, source_name = "Opta"))
-  expect_error(validate_seasons("2012-2013", min_year = 2013, source_name = "Opta"), "Opta")
-})
-
-test_that("create_match_id creates unique identifiers", {
-  id <- create_match_id("2023-2024", "2024-01-01", "Arsenal", "Liverpool")
-  expect_type(id, "character")
-  expect_true(grepl("2023-2024", id))
-  expect_true(grepl("Arsenal", id))
-})
-
 test_that("per_90 calculates correctly", {
   expect_equal(per_90(10, 90), 10)
   expect_equal(per_90(10, 45), 20)

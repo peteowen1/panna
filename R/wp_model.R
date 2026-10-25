@@ -1,9 +1,13 @@
 # Win Probability Model for Soccer
 # =================================
-# Predicts P(home_win), P(draw), P(away_win) from in-match game state.
+# Predicts P(win), P(draw), P(loss) for the team in possession from in-match
+# game state (possession-team POV since the 2026-05-19 retrain, not home POV).
 # Draw is valued at 0.5, so WPA measures contribution toward match points.
 #
-# WP = P(home_win) + 0.5 * P(draw)   (from home team's perspective)
+# WP = P(possession_team wins) + 0.5 * P(draw)
+#
+# Never difference `wp` across neighbouring rows as if it were a fixed-POV
+# probability: possession changes flip the POV. add_wp_vars() handles this.
 #
 # This follows the torpverse pattern (R/add_variables.R) adapted for soccer's
 # 3-outcome structure and low-scoring nature.

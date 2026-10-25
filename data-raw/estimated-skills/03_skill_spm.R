@@ -461,7 +461,7 @@ if (build_skill_spm_asof) {
   asof_resume <- if (exists("asof_resume")) asof_resume else TRUE
   asof_nfolds <- if (exists("asof_nfolds")) asof_nfolds else 5
   asof_lambda_formula <- if (exists("asof_lambda_formula")) asof_lambda_formula else
-    function(n) 16.67 * n^(-0.58)
+    rapm_lambda_from_n
   # Decay on each cutoff year's pooled RAPM target, as 04c_rapm_decayed.R does for
   # the live prior (panna#257). On by default at 365 days since 2026-10-19 (Pete):
   # the predictions backtest in pannaverse docs/plans/DECAY-PORT-ASOF-PRIOR.md
