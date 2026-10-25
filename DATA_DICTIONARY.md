@@ -277,19 +277,19 @@ Time segments for RAPM analysis.
 
 ### rapm_data
 
-| Component       | Type          | Description                                                                    |
-|-----------------|---------------|--------------------------------------------------------------------------------|
-| X_players       | sparse matrix | Player indicators (playerX_off, playerX_def, replacement_off, replacement_def) |
-| X_full          | sparse matrix | X_players + covariates                                                         |
-| row_data        | data.frame    | See below                                                                      |
-| y               | numeric       | Target: xgf90                                                                  |
-| weights         | numeric       | Splint duration / 90                                                           |
-| player_mapping  | data.frame    | player_id, player_name, total_minutes                                          |
-| player_ids      | character     | Player IDs (including “replacement”)                                           |
-| n_players       | integer       | Number of regular players                                                      |
-| covariate_names | character     | Names of covariate columns                                                     |
-| leagues         | character     | Unique leagues (if multi-league)                                               |
-| seasons         | numeric       | Unique seasons (if multi-league)                                               |
+| Component | Type | Description |
+|----|----|----|
+| X_players | sparse matrix | Player indicators (playerX_off, playerX_def, replacement_off, replacement_def) |
+| X_full | sparse matrix | X_players + covariates |
+| row_data | data.frame | See below |
+| y | numeric | Target: xgf90 |
+| weights | numeric | Splint duration / 90 |
+| player_mapping | data.frame | player_id, player_name, total_minutes |
+| player_ids | character | Player IDs (including “replacement”) |
+| n_players | integer | Number of regular players |
+| covariate_names | character | Names of covariate columns |
+| leagues | character | Unique leagues (if multi-league) |
+| seasons | numeric | Unique seasons (if multi-league) |
 
 ### row_data (within rapm_data)
 
@@ -457,21 +457,21 @@ Primary data source (15 leagues, 263 columns per player). Use
 
 Match events with timing for splint boundaries.
 
-| Column             | Type      | Description                                              |
-|--------------------|-----------|----------------------------------------------------------|
-| match_id           | character | Opta match ID                                            |
-| event_type         | character | goal, substitution, red_card, yellow_card, second_yellow |
-| minute             | numeric   | Event minute                                             |
-| second             | numeric   | Event second                                             |
-| team_id            | character | Team involved                                            |
-| player_id          | character | Player involved                                          |
-| player_name        | character | Player name                                              |
-| player_on_id       | character | Sub coming on (for substitutions)                        |
-| player_on_name     | character | Name of sub coming on                                    |
-| player_off_id      | character | Player leaving (for substitutions)                       |
-| player_off_name    | character | Name of player leaving                                   |
-| assist_player_id   | character | Assister (for goals)                                     |
-| assist_player_name | character | Assister name                                            |
+| Column | Type | Description |
+|----|----|----|
+| match_id | character | Opta match ID |
+| event_type | character | goal, substitution, red_card, yellow_card, second_yellow |
+| minute | numeric | Event minute |
+| second | numeric | Event second |
+| team_id | character | Team involved |
+| player_id | character | Player involved |
+| player_name | character | Player name |
+| player_on_id | character | Sub coming on (for substitutions) |
+| player_on_name | character | Name of sub coming on |
+| player_off_id | character | Player leaving (for substitutions) |
+| player_off_name | character | Name of player leaving |
+| assist_player_id | character | Assister (for goals) |
+| assist_player_name | character | Assister name |
 
 ### Opta Shot Events (`load_opta_shot_events()`)
 
@@ -610,12 +610,12 @@ Two-path system: EPV (action-level) + PSV (results-priced box-score) +
 
 ### Single-Match SPM Value (`calculate_spm_value()`)
 
-| Column            | Type    | Description                                                    |
-|-------------------|---------|----------------------------------------------------------------|
-| spm_value_off     | numeric | Offensive context-priced SPM value for match line              |
-| spm_value_def     | numeric | Defensive context-priced SPM value for match line              |
-| spm_value         | numeric | Net context-priced SPM value (`spm_value_off + spm_value_def`) |
-| value_context_gap | numeric | Diagnostic gap quantity (`psv - spm_value`)                    |
+| Column | Type | Description |
+|----|----|----|
+| spm_value_off | numeric | Offensive context-priced SPM value for match line |
+| spm_value_def | numeric | Defensive context-priced SPM value for match line |
+| spm_value | numeric | Net context-priced SPM value (`spm_value_off + spm_value_def`) |
+| value_context_gap | numeric | Diagnostic gap quantity (`psv - spm_value`) |
 
 ### Per-Game EPV (`aggregate_player_game_epv()`)
 

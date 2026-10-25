@@ -55,9 +55,9 @@ opta_stats <- load_opta_stats("EPL", "2024-2025")
 
 The package uses Opta as its sole data provider:
 
-| Source | Coverage           | xG Model        | Unique Features                                    |
-|--------|--------------------|-----------------|----------------------------------------------------|
-| Opta   | 15 leagues (2013+) | SPADL + XGBoost | 263 columns, progressive carries, event-level data |
+| Source | Coverage | xG Model | Unique Features |
+|----|----|----|----|
+| Opta | 15 leagues (2013+) | SPADL + XGBoost | 263 columns, progressive carries, event-level data |
 
 ### League Codes
 

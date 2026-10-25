@@ -20,34 +20,34 @@ stated. Anything not yet verified this way is listed in its own
 previously had wrong). Reproduced here for convenience — if the two ever
 disagree, trust the R file, not this copy.
 
-| type_id | Event                     | type_id | Event             | type_id                | Event                        |
-|---------|---------------------------|---------|-------------------|------------------------|------------------------------|
-| 1       | Pass                      | 28      | End Delay         | 55                     | Offside Provoked             |
-| 2       | Offside Pass              | 30      | End               | 56                     | Shield Ball Opp              |
-| 3       | Take On                   | 32      | Start             | 57                     | Foul Throw-in                |
-| 4       | Foul                      | 34      | Team Set Up       | 58                     | Penalty Faced                |
-| 5       | Ball Out                  | 35      | Position Change   | 59                     | Keeper Sweeper               |
-| 6       | Corner Awarded            | 36      | Jersey Change     | 60                     | Chance Missed                |
-| 7       | Tackle                    | 37      | Collection End    | 61                     | Ball Touch                   |
-| 8       | Interception              | 38      | Temp Goal         | 63                     | Temp Save                    |
-| 9       | Turnover                  | 39      | Temp Attempt      | 64                     | Resume                       |
-| 10      | Save                      | 40      | Formation Change  | 65                     | Contentious Referee Decision |
-| 11      | Claim                     | 41      | Punch             | 66                     | Possession Data              |
-| 12      | Clearance                 | 42      | Good Skill        | 67                     | 50/50                        |
-| 13      | Miss                      | 43      | Deleted Event     | 68                     | Referee Drop Ball            |
-| 14      | Post                      | 44      | Aerial            | 69                     | Failed To Block              |
-| 15      | Attempt Saved             | 45      | Challenge         | 70                     | Injury Time Announcement     |
-| 16      | Goal                      | 47      | Rescinded Card    | 71                     | Coach Setup                  |
-| 17      | Card                      | 49      | Ball Recovery     | 72                     | Caught Offside               |
-| 18      | Player Off                | 50      | Dispossessed      | 73                     | Other Ball Contact           |
-| 19      | Player On                 | 51      | Error             | 74                     | Blocked Pass                 |
-| 20      | Player Retired            | 52      | Keeper Pick-up    | 75, 76, 79, 80, 81, 84 | Unknown (see note)           |
-| 21      | Player Returns            | 53      | Cross Not Claimed | 83                     | Att One on One               |
-| 22      | Player Becomes Goalkeeper | 54      | Smother           |                        |                              |
-| 23      | Goalkeeper Becomes Player |         |                   |                        |                              |
-| 24      | Condition Change          |         |                   |                        |                              |
-| 25      | Official Change           |         |                   |                        |                              |
-| 27      | Start Delay               |         |                   |                        |                              |
+| type_id | Event | type_id | Event | type_id | Event |
+|----|----|----|----|----|----|
+| 1 | Pass | 28 | End Delay | 55 | Offside Provoked |
+| 2 | Offside Pass | 30 | End | 56 | Shield Ball Opp |
+| 3 | Take On | 32 | Start | 57 | Foul Throw-in |
+| 4 | Foul | 34 | Team Set Up | 58 | Penalty Faced |
+| 5 | Ball Out | 35 | Position Change | 59 | Keeper Sweeper |
+| 6 | Corner Awarded | 36 | Jersey Change | 60 | Chance Missed |
+| 7 | Tackle | 37 | Collection End | 61 | Ball Touch |
+| 8 | Interception | 38 | Temp Goal | 63 | Temp Save |
+| 9 | Turnover | 39 | Temp Attempt | 64 | Resume |
+| 10 | Save | 40 | Formation Change | 65 | Contentious Referee Decision |
+| 11 | Claim | 41 | Punch | 66 | Possession Data |
+| 12 | Clearance | 42 | Good Skill | 67 | 50/50 |
+| 13 | Miss | 43 | Deleted Event | 68 | Referee Drop Ball |
+| 14 | Post | 44 | Aerial | 69 | Failed To Block |
+| 15 | Attempt Saved | 45 | Challenge | 70 | Injury Time Announcement |
+| 16 | Goal | 47 | Rescinded Card | 71 | Coach Setup |
+| 17 | Card | 49 | Ball Recovery | 72 | Caught Offside |
+| 18 | Player Off | 50 | Dispossessed | 73 | Other Ball Contact |
+| 19 | Player On | 51 | Error | 74 | Blocked Pass |
+| 20 | Player Retired | 52 | Keeper Pick-up | 75, 76, 79, 80, 81, 84 | Unknown (see note) |
+| 21 | Player Returns | 53 | Cross Not Claimed | 83 | Att One on One |
+| 22 | Player Becomes Goalkeeper | 54 | Smother |  |  |
+| 23 | Goalkeeper Becomes Player |  |  |  |  |
+| 24 | Condition Change |  |  |  |  |
+| 25 | Official Change |  |  |  |  |
+| 27 | Start Delay |  |  |  |  |
 
 **Notably corrected from the prior version of this doc** (these were
 flat-out wrong): 50 is **Dispossessed**, not “Blocked Pass” (that’s 74).
@@ -71,21 +71,21 @@ null).
 
 ### Confirmed — cited to production code
 
-| qualifier_id      | Meaning                                                                                                                     | Source                                                                                                                                                        |
-|-------------------|-----------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| 2                 | Cross                                                                                                                       | `spadl_conversion.R`’s `parse_opta_qualifiers`; also the basis of `inthegame-blog`’s `is_cross` flag (worker/src/index.js, 2026-07-16)                        |
-| 4                 | Through Ball                                                                                                                | `parse_opta_qualifiers`                                                                                                                                       |
-| 9                 | Penalty                                                                                                                     | `parse_opta_qualifiers`                                                                                                                                       |
-| 28                | Own Goal                                                                                                                    | `parse_opta_qualifiers`; own-goal EPV delta = `-1 - prev_epv`                                                                                                 |
-| 82                | Blocked shot                                                                                                                | `spadl_conversion.R:111` comment — type-15 “Attempt Saved” includes defender-blocked shots, flagged by this qualifier; on-target = (type 15 ∧ ¬q82) ∨ type 16 |
-| 214               | Big Chance                                                                                                                  | `parse_opta_qualifiers`                                                                                                                                       |
-| 15                | Head (body part)                                                                                                            | `parse_opta_qualifiers`; independently re-confirmed 2026-07-16 (below)                                                                                        |
-| 140 / 141         | End X / End Y                                                                                                               | Used throughout `spadl_conversion.R` and `inthegame-blog`’s worker for pass/shot end coordinates                                                              |
-| 23                | Fast break (situation)                                                                                                      | `worker/src/index.js`’s shot-situation qualifier handling                                                                                                     |
-| 22 / 24 / 25 / 26 | Shot situation family (penalty / setpiece / corner / freekick — exact assignment per `worker/src/index.js`)                 | same                                                                                                                                                          |
-| 31                | Yellow card (base flag — present on every card: plain yellow, second yellow, straight red alike; not a discriminator alone) | Empirical 2026-07-16: 100% across 398 checked card events                                                                                                     |
-| 32                | Second yellow (this dismissal was two yellows, not a straight red)                                                          | Empirical 2026-07-16: 100% of 41 `secondYellow`-positive players, 0% of 265 plain-yellow                                                                      |
-| 33                | Red card — straight reds only                                                                                               | Empirical 2026-07-16: only 55.4% of 92 `redCard`-positive players (the rest are second-yellow reds, flagged by q32 instead — see below)                       |
+| qualifier_id | Meaning | Source |
+|----|----|----|
+| 2 | Cross | `spadl_conversion.R`’s `parse_opta_qualifiers`; also the basis of `inthegame-blog`’s `is_cross` flag (worker/src/index.js, 2026-07-16) |
+| 4 | Through Ball | `parse_opta_qualifiers` |
+| 9 | Penalty | `parse_opta_qualifiers` |
+| 28 | Own Goal | `parse_opta_qualifiers`; own-goal EPV delta = `-1 - prev_epv` |
+| 82 | Blocked shot | `spadl_conversion.R:111` comment — type-15 “Attempt Saved” includes defender-blocked shots, flagged by this qualifier; on-target = (type 15 ∧ ¬q82) ∨ type 16 |
+| 214 | Big Chance | `parse_opta_qualifiers` |
+| 15 | Head (body part) | `parse_opta_qualifiers`; independently re-confirmed 2026-07-16 (below) |
+| 140 / 141 | End X / End Y | Used throughout `spadl_conversion.R` and `inthegame-blog`’s worker for pass/shot end coordinates |
+| 23 | Fast break (situation) | `worker/src/index.js`’s shot-situation qualifier handling |
+| 22 / 24 / 25 / 26 | Shot situation family (penalty / setpiece / corner / freekick — exact assignment per `worker/src/index.js`) | same |
+| 31 | Yellow card (base flag — present on every card: plain yellow, second yellow, straight red alike; not a discriminator alone) | Empirical 2026-07-16: 100% across 398 checked card events |
+| 32 | Second yellow (this dismissal was two yellows, not a straight red) | Empirical 2026-07-16: 100% of 41 `secondYellow`-positive players, 0% of 265 plain-yellow |
+| 33 | Red card — straight reds only | Empirical 2026-07-16: only 55.4% of 92 `redCard`-positive players (the rest are second-yellow reds, flagged by q32 instead — see below) |
 
 ### Confirmed — empirically, 2026-07-16
 
@@ -97,12 +97,12 @@ checked which qualifier IDs appear on the relevant event type for
 positive players but not for a matched negative sample. Full population,
 not a subsample, unless noted.
 
-| qualifier_id | Meaning                                    | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-|--------------|--------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **14**       | **Last man** (last-ditch defensive action) | On type-7 (Tackle) events: 100% of 60 sampled `lastManTackle`-positive players, 0% of 74 negative — perfect split. On type-12 (Clearance) events: 72% of `clearanceOffLine`-positive players (n=124), 0% of 2814 plain-block negatives — the same qualifier flags both stats depending on event type, and clearance-off-line events independently average x≈4.9 (i.e. right on the own goal line, consistent with “last-ditch”). This ID was in **neither** the old version of this doc nor anything checked into `inthegame-blog` — new. **Qualifiers are event-type-scoped — this has nothing to do with cards.** `wp_model.R`/`splint_creation.R`’s `detect_red_in_qj` separately checks q14 on type_id 17 (Card) events assuming it also flags red cards; empirically it never appears on any card event (0% across 398 checked). That’s an unrelated, apparently-dead/wrong check — filed as **panna#141**, not fixed here. |
-| **94**       | **Outfielder block**                       | Restricted to type 10/74/69/12 events: 100% of 2281 `outfielderBlock`-positive players carry it, 0.08% (≈6/7638) of negatives — essentially a clean discriminator.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| **168**      | **Flick on**                               | On type 1/44 events: 100% of 60 sampled `totalFlickOn`-positive players, 0% of 104 negative.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| **75**       | **Won corners** (moderate confidence)      | On type-6 (Corner Awarded) events: 57% of 3383 `wonCorners`-positive players vs 4.6% of 2805 negatives — a real ~12x lift, but not a clean 100/0 split like the three above. Likely correct qualifier but attribution (who exactly gets the row) may need refinement before treating this as fully nailed down; don’t ship a derivation off this without a tighter re-check.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| qualifier_id | Meaning | Evidence |
+|----|----|----|
+| **14** | **Last man** (last-ditch defensive action) | On type-7 (Tackle) events: 100% of 60 sampled `lastManTackle`-positive players, 0% of 74 negative — perfect split. On type-12 (Clearance) events: 72% of `clearanceOffLine`-positive players (n=124), 0% of 2814 plain-block negatives — the same qualifier flags both stats depending on event type, and clearance-off-line events independently average x≈4.9 (i.e. right on the own goal line, consistent with “last-ditch”). This ID was in **neither** the old version of this doc nor anything checked into `inthegame-blog` — new. **Qualifiers are event-type-scoped — this has nothing to do with cards.** `wp_model.R`/`splint_creation.R`’s `detect_red_in_qj` separately checks q14 on type_id 17 (Card) events assuming it also flags red cards; empirically it never appears on any card event (0% across 398 checked). That’s an unrelated, apparently-dead/wrong check — filed as **panna#141**, not fixed here. |
+| **94** | **Outfielder block** | Restricted to type 10/74/69/12 events: 100% of 2281 `outfielderBlock`-positive players carry it, 0.08% (≈6/7638) of negatives — essentially a clean discriminator. |
+| **168** | **Flick on** | On type 1/44 events: 100% of 60 sampled `totalFlickOn`-positive players, 0% of 104 negative. |
+| **75** | **Won corners** (moderate confidence) | On type-6 (Corner Awarded) events: 57% of 3383 `wonCorners`-positive players vs 4.6% of 2805 negatives — a real ~12x lift, but not a clean 100/0 split like the three above. Likely correct qualifier but attribution (who exactly gets the row) may need refinement before treating this as fully nailed down; don’t ship a derivation off this without a tighter re-check. |
 
 ### Confirmed — empirically, 2026-07-23 (panna#176)
 

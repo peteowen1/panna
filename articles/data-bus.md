@@ -62,14 +62,14 @@ Most releases live on `peteowen1/pannadata`; pre-trained models live on
 the separate `peteowen1/pannamodels` repo instead. The ones you’ll touch
 most:
 
-| Release tag              | Contents                                                                  | Written by                                         | Read by                                                                                                                                                                                        |
-|--------------------------|---------------------------------------------------------------------------|----------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `opta-latest`            | Consolidated Opta parquets + per-league events + xMetrics                 | Daily Opta scrape; `epv-pipeline.yml` for xMetrics | [`pb_download_opta()`](https://peteowen1.github.io/panna/reference/pb_download_opta.md), all `load_opta_*()` loaders                                                                           |
-| `epv` (on `pannamodels`) | `xg_model.rds`, `epv_model.rds`, `wp_model.rds`, `duel_model.rds`, etc.   | Manual, one-time per retrain                       | [`pb_download_epv_models()`](https://peteowen1.github.io/panna/reference/pb_download_epv_models.md), `load_*_model()` family                                                                   |
-| `predictions-cache`      | RAPM + Skills `.rds` caches                                               | `upload_prediction_caches.R`                       | Predictions pipeline (GHA)                                                                                                                                                                     |
-| `predictions-latest`     | `predictions.parquet`/`.csv`                                              | Predictions pipeline step 13                       | [`pb_download_predictions()`](https://peteowen1.github.io/panna/reference/pb_download_predictions.md), [`load_predictions()`](https://peteowen1.github.io/panna/reference/load_predictions.md) |
-| `blog-latest`            | `panna_ratings.parquet`, `game_logs_*.parquet`, `action_equity_*.parquet` | Predictions pipeline step 13                       | `build-blog-data.yml` -\> Cloudflare R2 -\> the blog                                                                                                                                           |
-| `ratings-data`           | `career_panna.parquet`, `career_panna_asof.parquet`                       | Skills pipeline steps 09/09b                       | Predictions pipeline (panna feature)                                                                                                                                                           |
+| Release tag | Contents | Written by | Read by |
+|----|----|----|----|
+| `opta-latest` | Consolidated Opta parquets + per-league events + xMetrics | Daily Opta scrape; `epv-pipeline.yml` for xMetrics | [`pb_download_opta()`](https://peteowen1.github.io/panna/reference/pb_download_opta.md), all `load_opta_*()` loaders |
+| `epv` (on `pannamodels`) | `xg_model.rds`, `epv_model.rds`, `wp_model.rds`, `duel_model.rds`, etc. | Manual, one-time per retrain | [`pb_download_epv_models()`](https://peteowen1.github.io/panna/reference/pb_download_epv_models.md), `load_*_model()` family |
+| `predictions-cache` | RAPM + Skills `.rds` caches | `upload_prediction_caches.R` | Predictions pipeline (GHA) |
+| `predictions-latest` | `predictions.parquet`/`.csv` | Predictions pipeline step 13 | [`pb_download_predictions()`](https://peteowen1.github.io/panna/reference/pb_download_predictions.md), [`load_predictions()`](https://peteowen1.github.io/panna/reference/load_predictions.md) |
+| `blog-latest` | `panna_ratings.parquet`, `game_logs_*.parquet`, `action_equity_*.parquet` | Predictions pipeline step 13 | `build-blog-data.yml` -\> Cloudflare R2 -\> the blog |
+| `ratings-data` | `career_panna.parquet`, `career_panna_asof.parquet` | Skills pipeline steps 09/09b | Predictions pipeline (panna feature) |
 
 ### The asset-updatedAt gotcha
 

@@ -26,14 +26,14 @@ use `devtools::load_all("panna")` from pannaverse root.
 
 Run order matters — later pipelines depend on earlier ones.
 
-| Pipeline             | Directory                 | Entry Point                             | Depends On                                                                                                            |
-|----------------------|---------------------------|-----------------------------------------|-----------------------------------------------------------------------------------------------------------------------|
-| **EPV/xMetrics**     | `epv/`                    | `03_calculate_player_xmetrics.R`        | Pre-trained models via [`pannamodels::load_panna_model()`](https://rdrr.io/pkg/pannamodels/man/load_panna_model.html) |
-| **Opta RAPM/SPM** ⭐ | `player-ratings-opta/`    | `run_pipeline_opta.R`                   | xMetrics output                                                                                                       |
-| **Skills**           | `estimated-skills/`       | `run_skills_pipeline.R`                 | Opta RAPM output (cache-opta/)                                                                                        |
-| **Predictions**      | `match-predictions-opta/` | `run_predictions_opta.R`                | Opta RAPM + Skills output                                                                                             |
-| **Blog Export**      | `match-predictions-opta/` | Steps 10b + 10c (opt-in)                | EPV/WPA/PSV models + match events                                                                                     |
-| **WC 2026 Sim**      | `match-predictions-opta/` | Step 11 (opt-in) `11_simulate_wc2026.R` | 07_predictions + hand-curated `wc2026_groups.rds`. Outputs BT ratings, champion probs, group expectations             |
+| Pipeline | Directory | Entry Point | Depends On |
+|----|----|----|----|
+| **EPV/xMetrics** | `epv/` | `03_calculate_player_xmetrics.R` | Pre-trained models via [`pannamodels::load_panna_model()`](https://rdrr.io/pkg/pannamodels/man/load_panna_model.html) |
+| **Opta RAPM/SPM** ⭐ | `player-ratings-opta/` | `run_pipeline_opta.R` | xMetrics output |
+| **Skills** | `estimated-skills/` | `run_skills_pipeline.R` | Opta RAPM output (cache-opta/) |
+| **Predictions** | `match-predictions-opta/` | `run_predictions_opta.R` | Opta RAPM + Skills output |
+| **Blog Export** | `match-predictions-opta/` | Steps 10b + 10c (opt-in) | EPV/WPA/PSV models + match events |
+| **WC 2026 Sim** | `match-predictions-opta/` | Step 11 (opt-in) `11_simulate_wc2026.R` | 07_predictions + hand-curated `wc2026_groups.rds`. Outputs BT ratings, champion probs, group expectations |
 
 **Pipeline scripts are numbered** (01, 02, …) and run sequentially
 within each pipeline. The `run_*.R` entry points source them in order.
@@ -43,13 +43,13 @@ Shared pipeline infrastructure lives in `data-raw/pipeline_utils.R`
 
 ### Cache Directories (all gitignored)
 
-| Directory                          | Contents                            | Shared With                                     |
-|------------------------------------|-------------------------------------|-------------------------------------------------|
-| `data-raw/cache/`                  | SPADL conversions, EPV intermediate | EPV pipeline                                    |
-| `data-raw/cache-opta/`             | Opta RAPM steps 01-09 output        | Skills pipeline reads `07_seasonal_ratings.rds` |
-| `data-raw/cache-skills/`           | Skills pipeline steps 01-08         | Predictions reads `06_seasonal_ratings.rds`     |
-| `data-raw/cache-predictions-opta/` | Prediction model intermediates      | Blog data export                                |
-| `data-raw/debug/`                  | Temporary debug scripts             | `debug/keep/` for saved scripts                 |
+| Directory | Contents | Shared With |
+|----|----|----|
+| `data-raw/cache/` | SPADL conversions, EPV intermediate | EPV pipeline |
+| `data-raw/cache-opta/` | Opta RAPM steps 01-09 output | Skills pipeline reads `07_seasonal_ratings.rds` |
+| `data-raw/cache-skills/` | Skills pipeline steps 01-08 | Predictions reads `06_seasonal_ratings.rds` |
+| `data-raw/cache-predictions-opta/` | Prediction model intermediates | Blog data export |
+| `data-raw/debug/` | Temporary debug scripts | `debug/keep/` for saved scripts |
 
 ### Value Metrics Architecture
 
@@ -164,13 +164,15 @@ held-out MSE) -
   `xrapm_career`/`xrapm_skill`, 2026-09-04);
   `02_player_ratings_to_team.R` overwrites its interim `panna` column
   with the leak-free career-Panna override ONLY when
-  `career_panna_asof.parquet` is present; if the file is missing it
-  issues a [`warning()`](https://rdrr.io/r/base/warning.html) (deferred
-  by R to the end of the run) and the season xRAPM stays under the name
-  `panna` — so that site is still open whenever the file is absent.
-  **`10_export_blog_data.R` still publishes the season xRAPM to the blog
-  under the name `panna`** — the one remaining site (verified
-  2026-09-27). Full audit + history:
+  `career_panna_asof.parquet` is present; if the file is missing a
+  publishing run (`is_publish_run()`: step 09 or 13 on and
+  `PANNA_PUBLISH_DISABLED` unset) now
+  [`stop()`](https://rdrr.io/r/base/stop.html)s, and a local run issues
+  a [`warning()`](https://rdrr.io/r/base/warning.html) and keeps the
+  season xRAPM under the name `panna` — so that site is only open for
+  unpublished local runs. **`10_export_blog_data.R` still publishes the
+  season xRAPM to the blog under the name `panna`** — the one remaining
+  site (verified 2026-09-27). Full audit + history:
   `pannaverse/docs/plans/PANNA-RENAME-EXECUTION.md`.
 - **CONVENTION: positive = good, everywhere** (Pete, 2026-09-03; landed
   2026-09-11, panna PR \#235). RAPM/xRAPM `defense` and
@@ -244,15 +246,15 @@ held-out MSE) -
 
 ## GitHub Actions
 
-| Workflow                   | Trigger                                                                                                                         | Purpose                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-|----------------------------|---------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `R-CMD-check.yaml`         | Push to `dev`, PRs to `main`                                                                                                    | Package checks                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `opta-pipeline.yml`        | Daily `opta-scrape-complete` dispatch / manual dispatch                                                                         | Opta RAPM/SPM on GHA, auto-uploads caches; a dispatch is a full rebuild that publishes ratings (~2h05m). Fits the 16GB runner since 2026-10-10 (panna#87, \#286): step 7 fits each season in its own callr child, and steps 5/7 read `02_opta_stats_narrow.rds` (only the columns they use, written by step 2; keep lists in `R/spm_opta.R`). Peaks on run 38021761037: steps 1-2 ~13.8GB, step 5 13.0GB, step 7 8.8GB of 16GB. Test without publishing: `-f upload_caches=false -f upload_ratings=false` (each run keeps `07_seasonal_ratings.rds` as a 7-day artifact) |
-| `pkgdown.yaml`             | Push                                                                                                                            | Documentation site                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `predictions-pipeline.yml` | Wed 8 AM UTC / manual / `opta-scrape-complete` dispatch                                                                         | Weekly match predictions. Runs a skills step-01 pre-pass, then all numbered steps 01-13 including the lettered sub-steps (01b, 04b, 07b, 10b-10d, 11 WC2026 sim, 12 and 12b-12f); step 13 publishes the release data. The workflow’s `run_steps` block is the source of truth. Triggers `predictions-complete` repository_dispatch on `pannadata` to refresh blog data. Note: WC2026 sim defaults to FALSE in `run_predictions_opta.R` but the workflow enables it in its `run_steps` override.                                                                          |
-| `psr-weekly-snapshot.yml`  | Weekly snapshot / manual                                                                                                        | PSR weekly snapshot generation                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `epr-weekly-snapshot.yml`  | Weekly snapshot / manual                                                                                                        | EPR weekly snapshot generation, builds `opta_epr_weekly.parquet` (incremental since 2026-06-23), mirrors `psr-weekly-snapshot.yml`                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `epv-pipeline.yml`         | Daily `opta-scrape-complete` dispatch + Sunday 18:00 cron (both xmetrics_only, published models) / manual dispatch for retrains | EPV model training pipeline. Daily dispatch added 2026-07-18 (panna#150) so `opta_xmetrics_bymatch.parquet` follows every scrape — game-logs xGOT/GSAA no longer go NULL between Sundays. Own concurrency group (NOT panna-release-writer — pending-slot cancellation risk vs predictions’ same-event run)                                                                                                                                                                                                                                                               |
+| Workflow | Trigger | Purpose |
+|----|----|----|
+| `R-CMD-check.yaml` | Push to `dev`, PRs to `main` | Package checks |
+| `opta-pipeline.yml` | Daily `opta-scrape-complete` dispatch / manual dispatch | Opta RAPM/SPM on GHA, auto-uploads caches; a dispatch is a full rebuild that publishes ratings (~2h05m). Fits the 16GB runner since 2026-10-10 (panna#87, \#286): step 7 fits each season in its own callr child, and steps 5/7 read `02_opta_stats_narrow.rds` (only the columns they use, written by step 2; keep lists in `R/spm_opta.R`). Peaks on run 38021761037: steps 1-2 ~13.8GB, step 5 13.0GB, step 7 8.8GB of 16GB. Test without publishing: `-f upload_caches=false -f upload_ratings=false` (each run keeps `07_seasonal_ratings.rds` as a 7-day artifact) |
+| `pkgdown.yaml` | Push | Documentation site |
+| `predictions-pipeline.yml` | Wed 8 AM UTC / manual / `opta-scrape-complete` dispatch | Weekly match predictions. Runs a skills step-01 pre-pass, then all numbered steps 01-13 including the lettered sub-steps (01b, 04b, 07b, 10b-10d, 11 WC2026 sim, 12 and 12b-12f); step 13 publishes the release data. The workflow’s `run_steps` block is the source of truth. Triggers `predictions-complete` repository_dispatch on `pannadata` to refresh blog data. Note: WC2026 sim defaults to FALSE in `run_predictions_opta.R` but the workflow enables it in its `run_steps` override. |
+| `psr-weekly-snapshot.yml` | Weekly snapshot / manual | PSR weekly snapshot generation |
+| `epr-weekly-snapshot.yml` | Weekly snapshot / manual | EPR weekly snapshot generation, builds `opta_epr_weekly.parquet` (incremental since 2026-06-23), mirrors `psr-weekly-snapshot.yml` |
+| `epv-pipeline.yml` | Daily `opta-scrape-complete` dispatch + Sunday 18:00 cron (both xmetrics_only, published models) / manual dispatch for retrains | EPV model training pipeline. Daily dispatch added 2026-07-18 (panna#150) so `opta_xmetrics_bymatch.parquet` follows every scrape — game-logs xGOT/GSAA no longer go NULL between Sundays. Own concurrency group (NOT panna-release-writer — pending-slot cancellation risk vs predictions’ same-event run) |
 
 ## Documentation convention
 
