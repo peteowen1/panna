@@ -453,3 +453,59 @@ test_that("is_publish_run is TRUE only when a publishing step is on and the ref 
   })
   withr::with_envvar(c(PANNA_PUBLISH_DISABLED = "true"), expect_false(is_publish_run(pub)))
 })
+
+# ===========================================================================
+# leagues_missing_from_rebuild (issue #376)
+# ===========================================================================
+
+test_that("leagues_missing_from_rebuild flags a published league the part skipped", {
+  expect_equal(
+    leagues_missing_from_rebuild(c("EPL", "AFCON", "La_Liga"), c("EPL", "La_Liga")),
+    "AFCON"
+  )
+})
+
+test_that("leagues_missing_from_rebuild is empty when every published league was built", {
+  expect_length(leagues_missing_from_rebuild(c("EPL", "AFCON"), c("AFCON", "EPL", "MLS")), 0L)
+  expect_length(leagues_missing_from_rebuild(character(), "EPL"), 0L)
+})
+
+test_that("leagues_missing_from_rebuild ignores leagues outside this part's share", {
+  expect_equal(
+    leagues_missing_from_rebuild(c("EPL", "AFCON", "MLS"), "EPL",
+                                 expected = c("EPL", "AFCON")),
+    "AFCON"
+  )
+})
+
+test_that("leagues_missing_from_rebuild does not repeat leagues the failure marker reported", {
+  expect_equal(
+    leagues_missing_from_rebuild(c("EPL", "AFCON", "MLS"), "EPL", reported = "MLS"),
+    "AFCON"
+  )
+})
+
+test_that("leagues_missing_from_rebuild drops allow-listed leagues", {
+  expect_equal(
+    leagues_missing_from_rebuild(c("EPL", "AFCON", "SCO"), "EPL", allowed = "SCO"),
+    "AFCON"
+  )
+})
+
+test_that("league_allowlist_for_season keeps bare and matching-season entries only", {
+  entries <- c("SCO", "2015-2016:SCO2", "2022-2023:ENG2", "", " ")
+  expect_setequal(league_allowlist_for_season(entries, "2015-2016"), c("SCO", "SCO2"))
+  expect_equal(league_allowlist_for_season(entries, "2022-2023"), c("SCO", "ENG2"))
+  expect_length(league_allowlist_for_season(NULL, "2022-2023"), 0L)
+  expect_length(league_allowlist_for_season("", "2022-2023"), 0L)
+})
+
+test_that("blog_leagues_for_part splits alternately and covers every league once", {
+  lg <- c("A", "B", "C", "D", "E")
+  expect_equal(blog_leagues_for_part(lg, 1L, 2L), c("A", "C", "E"))
+  expect_equal(blog_leagues_for_part(lg, 2L, 2L), c("B", "D"))
+  expect_equal(blog_leagues_for_part(lg, 1L, 1L), lg)
+  expect_setequal(c(blog_leagues_for_part(lg, 1L, 3L), blog_leagues_for_part(lg, 2L, 3L),
+                    blog_leagues_for_part(lg, 3L, 3L)), lg)
+  expect_error(blog_leagues_for_part(lg, 3L, 2L))
+})

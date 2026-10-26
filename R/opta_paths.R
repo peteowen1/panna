@@ -330,7 +330,7 @@ list_opta_seasons <- function(league, source = c("catalog", "remote", "local")) 
     }
 
     if (length(seasons) > 0) {
-      return(sort(seasons, decreasing = TRUE))
+      return(sort(.drop_accent_duplicate_seasons(seasons), decreasing = TRUE))
     }
 
     # Fall through to catalog if NO local source -- per-season or consolidated --
@@ -345,7 +345,7 @@ list_opta_seasons <- function(league, source = c("catalog", "remote", "local")) 
   })
   if (!is.null(catalog) && opta_league %in% names(catalog$competitions)) {
     seasons <- catalog$competitions[[opta_league]]$seasons
-    return(sort(unlist(seasons), decreasing = TRUE))
+    return(sort(.drop_accent_duplicate_seasons(unlist(seasons)), decreasing = TRUE))
   }
 
   cli::cli_abort(c(
@@ -353,6 +353,25 @@ list_opta_seasons <- function(league, source = c("catalog", "remote", "local")) 
     "i" = "If the catalog failed to load, check your internet connection.",
     "i" = "Use {.fn list_opta_leagues} to see available competitions."
   ), class = "vb_error_absent")
+}
+
+
+#' Drop season labels that only differ from another label by accents
+#'
+#' The catalog carries AFCON 2023 under both "2023 Cote d'Ivoire" and
+#' "2023 C\u00f4te d'Ivoire", while the released tables store only the first.
+#' Listing both loaded the tournament twice and made `resolve_league_season()`
+#' pick by sort order (issue #376). The accent-free label is kept; an accented
+#' label with no accent-free twin is left alone.
+#'
+#' @param seasons Character vector of season labels.
+#' @return `seasons` without the accented duplicates.
+#' @keywords internal
+#' @noRd
+.drop_accent_duplicate_seasons <- function(seasons) {
+  if (length(seasons) < 2L) return(seasons)
+  folded <- vapply(seasons, .fold_season_label, character(1), USE.NAMES = FALSE)
+  seasons[!(folded != seasons & folded %in% seasons)]
 }
 
 
