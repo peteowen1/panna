@@ -122,6 +122,39 @@ test_that("keeper rebound stays in one chain but real turnover splits (pannadata
 })
 
 
+test_that("a match opening on a keeper rebound does not error (FRA 2011-12, issue #373)", {
+  # Leading keeper_save/keeper_punch rows have no prior attacker to inherit, so
+  # the LOCF index is 0. x[0] used to drop those rows and fifelse() aborted with
+  # "Length of 'no' is N-1 but must be 1 or length of 'test' (N)".
+  opening <- data.frame(
+    match_id = c(rep("m1", 5), rep("m2", 3)),
+    action_id = c(1:5, 1:3),
+    period_id = rep(1L, 8),
+    time_seconds = c(1, 2, 3, 5, 7, 1, 3, 5),
+    team_id = c("B", "B", "A", "A", "A", "A", "A", "B"),
+    player_id = c("gk", "gk", "p1", "p2", "p1", "p1", "p2", "p3"),
+    player_name = c("GK", "GK", "P1", "P2", "P1", "P1", "P2", "P3"),
+    action_type = c("keeper_save", "keeper_punch", "pass", "pass", "pass",
+                    "pass", "pass", "pass"),
+    result = rep("success", 8),
+    start_x = rep(50, 8), start_y = rep(50, 8),
+    end_x = rep(55, 8), end_y = rep(50, 8),
+    bodypart = rep("foot_right", 8),
+    xg = rep(0, 8),
+    stringsAsFactors = FALSE
+  )
+  res <- expect_no_error(create_possession_chains(opening))
+  expect_equal(nrow(res), nrow(opening))
+
+  # Match 1: the two leading keeper rows are each a chain start (no prior
+  # attacker); the A passes that follow (after the leading keeper row) continue
+  # one chain. Match 2 is unaffected and splits on the real team change.
+  m1 <- res[res$match_id == "m1", ]
+  expect_equal(m1$chain_id[3:5], rep(m1$chain_id[3], 3))
+  expect_equal(max(res$chain_id[res$match_id == "m2"]), 2)
+})
+
+
 test_that("classify_chain_outcomes identifies goals and shots", {
   spadl <- create_test_spadl()
   chains <- create_possession_chains(spadl)
