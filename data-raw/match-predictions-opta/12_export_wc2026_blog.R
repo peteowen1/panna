@@ -133,6 +133,16 @@ hist_pred <- preds[league == WC2026_LEAGUE & home_team != "" & away_team != ""]
 bf_path <- file.path(cache_dir, "wc_backfill_predictions.parquet")
 if (file.exists(bf_path)) {
   bf <- as.data.table(read_parquet(bf_path))
+  # Only a file whose rows say "backtest" is used. The first copy (2026-10-25,
+  # record "backfill") was built from pre-#308 end-of-season ratings, and the
+  # blog shows "backtest" rows as clean odds, so a leaky file must never be
+  # relabelled here: its rows stay blank until a clean rebuild replaces it.
+  n_bf <- nrow(bf)
+  bf <- bf[!is.na(record) & record == "backtest"]
+  if (nrow(bf) < n_bf) {
+    message(sprintf("  wc_history: ignored %d backfill rows whose record is not \"backtest\" (pre-#308 copy)",
+                    n_bf - nrow(bf)))
+  }
   bf <- bf[match_id %in% hist_pred[split == "train", match_id]]
   m <- match(bf$match_id, hist_pred$match_id)
   for (cl in c(num_cols, "predicted_result")) set(hist_pred, m, cl, bf[[cl]])

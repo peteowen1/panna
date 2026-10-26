@@ -312,3 +312,34 @@ test_that("step 12 fills in-sample past World Cups from the walk-forward backfil
   expect_equal(q$prob_home, c(0.5, NA))
   expect_identical(q$predicted, c("H", NA))
 })
+
+test_that("step 12 ignores a backfill file whose rows are not labelled backtest", {
+  skip_if_not_installed("arrow")
+  local_no_reload()
+
+  script <- testthat::test_path("..", "..", "data-raw", "match-predictions-opta",
+                                "12_export_wc2026_blog.R")
+  skip_if_not(file.exists(script), "12_export_wc2026_blog.R not found")
+
+  cache_dir <- withr::local_tempdir()
+  preds <- .wc12_preds_fixture()
+  preds$match_id <- c("m26a", "m26b")
+  past <- preds
+  past$season <- "2022 Qatar"
+  past$match_date <- as.Date("2022-11-21") + 0:1
+  past$match_id <- c("m22a", "m22b")
+  past$split <- "train"
+  saveRDS(rbind(preds, past), file.path(cache_dir, "07_predictions.rds"))
+  # The pre-#308 copy was labelled "backfill": it must not be published.
+  arrow::write_parquet(data.frame(match_id = "m22a", prob_H = 0.5, prob_D = 0.3, prob_A = 0.2,
+                                  pred_home_goals = 1.4, pred_away_goals = 0.9,
+                                  predicted_result = "H", record = "backfill"),
+                       file.path(cache_dir, "wc_backfill_predictions.parquet"))
+
+  expect_no_error(source(script, local = TRUE))
+
+  hist <- as.data.frame(arrow::read_parquet(file.path(cache_dir, "wc_history_predictions.parquet")))
+  q <- hist[hist$season == "2022 Qatar", ]
+  expect_identical(q$record, c("none", "none"))
+  expect_true(all(is.na(q$prob_home)))
+})
