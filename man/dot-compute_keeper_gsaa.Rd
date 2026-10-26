@@ -34,7 +34,10 @@ on-pitch span (kick-off, or \code{sub_on_minute}, to \code{sub_off_minute}; a re
 with no off-minute ends the span at \code{start + minutes_played} when another
 keeper played). A keeper who came off the bench has \code{position = "Substitute"}
 in the lineup, so he is recognised by keeper-only events (Opta types 11, 41,
-52, 53, 54, 59) or by being a keeper in the rest of the lineups. Without
+52, 53, 54, 59), by being a keeper in the rest of the lineups, or by being
+the single substitute who came on at the minute a keeper went off; a keeper
+who goes off with no identifiable replacement triggers a warning naming the
+match, and the later shots stay with the starter. Without
 \code{time_seconds} on the shots, or where no identified keeper's span covers a
 shot, the shot falls back to the team-match's keeper with most minutes (the
 old one-keeper-per-match rule).

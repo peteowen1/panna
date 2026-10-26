@@ -1438,7 +1438,10 @@ aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0,
 #' with no off-minute ends the span at `start + minutes_played` when another
 #' keeper played). A keeper who came off the bench has `position = "Substitute"`
 #' in the lineup, so he is recognised by keeper-only events (Opta types 11, 41,
-#' 52, 53, 54, 59) or by being a keeper in the rest of the lineups. Without
+#' 52, 53, 54, 59), by being a keeper in the rest of the lineups, or by being
+#' the single substitute who came on at the minute a keeper went off; a keeper
+#' who goes off with no identifiable replacement triggers a warning naming the
+#' match, and the later shots stay with the starter. Without
 #' `time_seconds` on the shots, or where no identified keeper's span covers a
 #' shot, the shot falls back to the team-match's keeper with most minutes (the
 #' old one-keeper-per-match rule).
@@ -1517,6 +1520,39 @@ aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0,
     }
     lk[, is_keeper := is_keeper | (no_pos & (
       player_id %in% gk_career | paste(match_id, player_id) %in% kact))]
+  }
+  # Substitution data, for a bench keeper with no keeper actions and no keeper
+  # rows elsewhere: when a keeper goes off at minute M, the one substitute who
+  # came on at M is his replacement (same rule epv_net_goals.R uses for the
+  # keeper of a goal). Two or more substitutes at M cannot be told apart, so
+  # nobody is named and the match is reported below, never guessed.
+  unresolved <- data.table::data.table(match_id = character(), team_id = character())
+  for (pass in 1:3) {
+    gone <- unique(lk[is_keeper %in% TRUE & !is.na(off) & off > 0,
+                      .(match_id, team_id, m = off)])
+    if (nrow(gone) == 0) break
+    cover <- lk[is_keeper %in% TRUE & !is.na(on) & on > 0, .(match_id, team_id, m = on)]
+    gone <- gone[!cover, on = c("match_id", "team_id", "m")]
+    if (nrow(gone) == 0) break
+    cand <- merge(
+      lk[!(is_keeper %in% TRUE) & !is.na(on) & on > 0,
+         .(match_id, team_id, player_id, m = on)],
+      gone, by = c("match_id", "team_id", "m"))
+    one <- cand[, if (.N == 1L) .SD, by = .(match_id, team_id, m)]
+    unresolved <- unique(gone[, .(match_id, team_id)])
+    if (nrow(one) == 0) break
+    lk[one, is_keeper := TRUE, on = c("match_id", "team_id", "player_id")]
+    unresolved <- unique(gone[!one, on = c("match_id", "team_id", "m")][, .(match_id, team_id)])
+  }
+  # A keeper who went off with no identifiable replacement: the shots after the
+  # change fall back to the starter (the pre-fix behaviour), so say so.
+  if (nrow(unresolved) > 0L) {
+    ids <- unique(as.character(unresolved$match_id))
+    cli::cli_warn(c(
+      "{length(ids)} match{?es} had a keeper substituted off with no identifiable replacement keeper: {.val {utils::head(ids, 10)}}{if (length(ids) > 10) ' ...'}",
+      "i" = "Shots after the change are credited to the starting keeper, as before.",
+      "i" = "The replacement was not listed as a keeper, made no keeper-only action, and is not the single substitute who came on at that minute."
+    ))
   }
   lk <- lk[is_keeper %in% TRUE]
   if (nrow(lk) == 0) return(NULL)

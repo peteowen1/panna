@@ -4,11 +4,15 @@
   was taken, not the whole match to the keeper with most minutes. A keeper's span runs from kick-off (or
   `sub_on_minute`) to `sub_off_minute`; a half-time change leaves first-half stoppage shots with the outgoing
   keeper. A keeper who came off the bench (lineup `position = "Substitute"`) is found from keeper-only events
-  (types 11/41/52/53/54/59) or from being a keeper in his other lineup rows, so he is no longer dropped, and
-  `gsaa_minutes` is each keeper's own minutes. A keeper who played but faced no shot reads 0, not missing.
-  Without `time_seconds`, or where no keeper's span covers a shot, the old most-minutes keeper still gets it.
-  Barcelona v Racing (2026-09-16) goes from Joan García -0.59 on 1.41 faced / 2 conceded and Szczęsny 0/0, to
-  García 0.305 faced / 1 conceded and Szczęsny 1.122 / 1 (issue #351).
+  (types 11/41/52/53/54/59), from being a keeper in his other lineup rows, or from being the single substitute
+  who came on at the minute the starting keeper went off; if none of these identifies him the match id is
+  warned about and the shots after the change stay with the starter. `gsaa_minutes` is each keeper's own
+  minutes. A keeper who played but faced no shot reads 0, not missing. Without `time_seconds`, or where no
+  keeper's span covers a shot, the old most-minutes keeper still gets it.
+  Not reproduced on real data. The issue (#351) reports Barcelona v Racing (2026-09-16, `7h4zres5o8hqsaici9wxjwx04`)
+  as García -0.59 on 1.41 faced / 2 conceded and Szczęsny 0/0, and expects about 0.31 faced / 1 conceded and
+  1.12 faced / 1 conceded. Those are the issue's numbers; a unit test with the same shot times and xGOT values
+  covers the shape (issue #351).
 
 - Step 10b's role8 EPV fallback to start_label now also writes a GitHub Actions `::warning::`, so a weekly run
   that falls back for a league is visible rather than green and silent.
