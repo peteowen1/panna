@@ -68,3 +68,29 @@ test_that("calibration_table on perfectly calibrated data gives pred_mean ~ actu
   expect_gt(nrow(filled), 0L)
   expect_lt(max(abs(filled$pred_mean - filled$actual_mean)), 0.03)
 })
+
+test_that("calibration_table counts NA probabilities in a separate NA-bin row", {
+  probs <- matrix(c(0.7, 0.2, 0.1,
+                    NA,  0.5, 0.3,
+                    NA,  0.1, 0.8,
+                    0.2, 0.3, 0.5), ncol = 3, byrow = TRUE)
+  y <- c(0L, 1L, 2L, 0L)
+  cal <- calibration_table(y, probs, n_bins = 5L)
+
+  home <- cal[cal$outcome == "Home", ]
+  expect_equal(nrow(home), 6L)
+  expect_equal(home$n[is.na(home$bin)], 2L)
+  expect_equal(sum(home$n), length(y))
+  # Outcomes without NAs keep exactly n_bins rows
+  expect_equal(nrow(cal[cal$outcome == "Draw", ]), 5L)
+  expect_equal(sum(cal$n[cal$outcome == "Away"]), length(y))
+})
+
+test_that("calibration_table stops on probabilities outside [0, 1]", {
+  probs <- matrix(c(0.7, 0.2, 0.1,
+                    1.2, 0.5, 0.3), ncol = 3, byrow = TRUE)
+  expect_error(calibration_table(c(0L, 1L), probs, n_bins = 5L), "Home.*\\[0, 1\\]")
+  probs2 <- matrix(c(0.7, 0.2, 0.1,
+                     0.2, -0.1, 0.3), ncol = 3, byrow = TRUE)
+  expect_error(calibration_table(c(0L, 1L), probs2, n_bins = 5L), "Draw.*\\[0, 1\\]")
+})

@@ -18,7 +18,10 @@ A data.table with one row per outcome (Home, Draw, Away) and bin,
 so \code{3 * n_bins} rows. Columns: \code{bin} (interval label), \code{bin_lower},
 \code{bin_upper}, \code{pred_mean}, \code{actual_mean}, \code{n}, \code{outcome}. A bin no
 prediction falls into has \code{n = 0} and \code{NA} for \code{pred_mean} and
-\code{actual_mean}.
+\code{actual_mean}. If any predicted probability for an outcome is \code{NA}, that
+outcome gets one extra row with \code{bin = NA} and \code{n} set to the number of
+such rows, so the bin counts always add up to the number of predictions.
+Probabilities outside \verb{[0, 1]} are an error.
 }
 \description{
 Groups predictions into bins and compares predicted vs actual probabilities.

@@ -1443,7 +1443,10 @@ compute_multiclass_logloss <- function(y_true, prob_matrix, eps = 1e-15) {
 #'   so `3 * n_bins` rows. Columns: `bin` (interval label), `bin_lower`,
 #'   `bin_upper`, `pred_mean`, `actual_mean`, `n`, `outcome`. A bin no
 #'   prediction falls into has `n = 0` and `NA` for `pred_mean` and
-#'   `actual_mean`.
+#'   `actual_mean`. If any predicted probability for an outcome is `NA`, that
+#'   outcome gets one extra row with `bin = NA` and `n` set to the number of
+#'   such rows, so the bin counts always add up to the number of predictions.
+#'   Probabilities outside `[0, 1]` are an error.
 #' @family match prediction
 #' @export
 calibration_table <- function(y_true, prob_matrix, n_bins = 10L) {
@@ -1453,6 +1456,13 @@ calibration_table <- function(y_true, prob_matrix, n_bins = 10L) {
   for (k in seq_len(3)) {
     probs <- prob_matrix[, k]
     actual <- as.integer(y_true == (k - 1L))
+
+    # cut() would turn out-of-range values into NA bins and they would vanish
+    # from the table, so refuse them; NA probabilities get their own row below
+    if (any(probs < 0 | probs > 1, na.rm = TRUE)) {
+      stop(sprintf("calibration_table(): %s probabilities must lie in [0, 1]",
+                   outcome_labels[k]), call. = FALSE)
+    }
 
     breaks <- seq(0, 1, length.out = n_bins + 1L)
     bins <- cut(probs, breaks = breaks, include.lowest = TRUE)
@@ -1472,6 +1482,15 @@ calibration_table <- function(y_true, prob_matrix, n_bins = 10L) {
       }, numeric(1)),
       n = vapply(seq_len(n_bins), function(b) sum(bin_idx == b, na.rm = TRUE), integer(1))
     )
+
+    n_na <- sum(is.na(probs))
+    if (n_na > 0L) {
+      cal <- data.table::rbindlist(list(cal, data.table::data.table(
+        bin = factor(NA_character_, levels = levels(cal$bin)),
+        bin_lower = NA_real_, bin_upper = NA_real_,
+        pred_mean = NA_real_, actual_mean = NA_real_, n = n_na
+      )))
+    }
 
     cal$outcome <- outcome_labels[k]
     results[[k]] <- cal
