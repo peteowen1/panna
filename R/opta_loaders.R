@@ -590,34 +590,65 @@ suggest_opta_seasons <- function(league, table_type = "match_events",
 #' @keywords internal
 load_opta_table <- function(table_type, league, season, columns,
                              source = "local") {
-  folded <- .fold_season_label(season)
-  if (is.null(season) || identical(folded, season)) {
+  if (is.null(season) || length(season) != 1L || is.na(season)) {
     return(.load_opta_table_once(table_type, league, season, columns, source))
   }
 
-  # The remote branch warns on an empty season; hold that back for the first
-  # attempt, since the folded retry may well succeed.
-  res <- withCallingHandlers(
-    tryCatch(.load_opta_table_once(table_type, league, season, columns, source),
-             vb_error_absent = function(e) e),
-    panna_warning_empty_season = function(w) invokeRestart("muffleWarning")
-  )
-  if (!inherits(res, "error") && nrow(res) > 0L) return(res)
-
-  retry <- withCallingHandlers(
-    tryCatch(.load_opta_table_once(table_type, league, folded, columns, source),
-             vb_error_absent = function(e) NULL),
-    panna_warning_empty_season = function(w) invokeRestart("muffleWarning")
-  )
-  if (!is.null(retry) && nrow(retry) > 0L) {
-    cli::cli_alert_info(
-      "No {table_type} rows for season {.val {season}}; using accent-free {.val {folded}}."
+  # The remote branch warns on an empty season; hold that back while there are
+  # other spellings left to try, since a retry may well succeed.
+  try_season <- function(s) {
+    withCallingHandlers(
+      tryCatch(.load_opta_table_once(table_type, league, s, columns, source),
+               vb_error_absent = function(e) e),
+      panna_warning_empty_season = function(w) invokeRestart("muffleWarning")
     )
-    return(retry)
   }
-  # Neither spelling has rows: report the original label's outcome.
+  has_rows <- function(res) !inherits(res, "error") && nrow(res) > 0L
+
+  # Exact label first, then its accent-free spelling; only if both come back
+  # empty, the accented spellings the catalog lists (the data may store either
+  # direction, issue #376).
+  res <- try_season(season)
+  if (has_rows(res)) return(res)
+
+  tried <- season
+  alternates <- function() {
+    c(.fold_season_label(season), .catalog_accent_variants(league, season))
+  }
+  for (alt in setdiff(unique(alternates()), tried)) {
+    retry <- try_season(alt)
+    if (has_rows(retry)) {
+      cli::cli_alert_info(
+        "No {table_type} rows for season {.val {season}}; using {.val {alt}}."
+      )
+      return(retry)
+    }
+  }
+  # No spelling has rows: report the original label's outcome.
   if (inherits(res, "error")) stop(res)
   .load_opta_table_once(table_type, league, season, columns, source)
+}
+
+
+#' Catalog spellings of a season that differ from it only by accents
+#'
+#' The reverse of `.fold_season_label()`: when a table stores the accented
+#' label and the caller asked for the ASCII one. Best effort; a missing
+#' catalog (offline) gives no variants.
+#'
+#' @param league League code
+#' @param season Season label (length-1 character)
+#' @return Character vector of other labels with the same accent-free spelling.
+#' @keywords internal
+#' @noRd
+.catalog_accent_variants <- function(league, season) {
+  catalog <- tryCatch(suppressMessages(suppressWarnings(download_opta_catalog())),
+                      error = function(e) NULL)
+  seasons <- tryCatch(unlist(catalog$competitions[[to_opta_league(league)]]$seasons),
+                      error = function(e) NULL)
+  if (length(seasons) == 0L) return(character())
+  folded <- vapply(seasons, .fold_season_label, character(1), USE.NAMES = FALSE)
+  setdiff(seasons[folded == .fold_season_label(season)], season)
 }
 
 

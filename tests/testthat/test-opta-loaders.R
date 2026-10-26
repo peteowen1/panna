@@ -619,7 +619,9 @@ test_that("load_opta_table (local) still aborts when neither spelling has rows",
                stringsAsFactors = FALSE),
     file.path(tmp_dir, "opta_player_stats.parquet")
   )
-  local_mocked_bindings(opta_data_dir = function(...) tmp_dir, .package = "panna")
+  local_mocked_bindings(opta_data_dir = function(...) tmp_dir,
+                        .catalog_accent_variants = function(...) character(),
+                        .package = "panna")
 
   expect_error(
     suppressMessages(load_opta_table("player_stats", "AFCON", "2019 Egypt", NULL, "local")),
@@ -653,12 +655,80 @@ test_that("load_opta_table (remote) retries an accented season with its accents 
 test_that("load_opta_table (remote) still warns once when neither spelling has rows", {
   local_mocked_bindings(
     query_remote_opta_parquet = function(...) data.frame(season = character(0)),
+    .catalog_accent_variants = function(...) character(),
     .package = "panna"
   )
   expect_warning(
     suppressMessages(load_opta_table("player_stats", "AFCON", afcon_accented, NULL, "remote")),
     class = "panna_warning_empty_season"
   )
+})
+
+# The other direction: the table stores the ACCENTED label and the caller asks
+# for the accent-free one (what list_opta_seasons() now returns).
+test_that("load_opta_table (local) finds an accented label from the accent-free request", {
+  tmp_dir <- withr::local_tempdir()
+  arrow::write_parquet(
+    data.frame(competition = "AFCON", season = afcon_accented, match_id = c("m1", "m2"),
+               stringsAsFactors = FALSE),
+    file.path(tmp_dir, "opta_lineups.parquet")
+  )
+  local_mocked_bindings(opta_data_dir = function(...) tmp_dir,
+                        .catalog_accent_variants = function(league, season) afcon_accented,
+                        .package = "panna")
+
+  res <- suppressMessages(load_opta_table("lineups", "AFCON", afcon_ascii, NULL, "local"))
+  expect_equal(nrow(res), 2L)
+  expect_true(all(res$season == afcon_accented))
+})
+
+test_that("load_opta_lineups reaches an accented-label table from the accent-free request", {
+  tmp_dir <- withr::local_tempdir()
+  arrow::write_parquet(
+    data.frame(competition = "AFCON", season = afcon_accented, match_id = "m1",
+               stringsAsFactors = FALSE),
+    file.path(tmp_dir, "opta_lineups.parquet")
+  )
+  local_mocked_bindings(opta_data_dir = function(...) tmp_dir,
+                        .catalog_accent_variants = function(...) afcon_accented,
+                        .package = "panna")
+
+  res <- suppressMessages(load_opta_lineups("AFCON", season = afcon_ascii, source = "local"))
+  expect_equal(nrow(res), 1L)
+})
+
+test_that("load_opta_table (remote) finds an accented label from the accent-free request, quietly", {
+  asked <- character()
+  local_mocked_bindings(
+    query_remote_opta_parquet = function(table_type, opta_league, season = NULL, columns = NULL, ...) {
+      asked <<- c(asked, season)
+      data.frame(season = if (identical(season, afcon_accented)) afcon_accented else character(0),
+                 stringsAsFactors = FALSE)
+    },
+    .catalog_accent_variants = function(...) afcon_accented,
+    .package = "panna"
+  )
+  res <- expect_no_warning(
+    suppressMessages(load_opta_table("lineups", "AFCON", afcon_ascii, NULL, "remote"))
+  )
+  expect_equal(nrow(res), 1L)
+  expect_equal(asked, c(afcon_ascii, afcon_accented))
+})
+
+test_that(".catalog_accent_variants lists the other spelling from the catalog", {
+  local_mocked_bindings(
+    download_opta_catalog = function(...) list(competitions = list(
+      AFCON = list(seasons = list("2025 Morocco", afcon_accented, afcon_ascii)))),
+    .package = "panna"
+  )
+  expect_equal(.catalog_accent_variants("AFCON", afcon_ascii), afcon_accented)
+  expect_equal(.catalog_accent_variants("AFCON", afcon_accented), afcon_ascii)
+  expect_equal(.catalog_accent_variants("AFCON", "2025 Morocco"), character())
+})
+
+test_that(".catalog_accent_variants is empty when the catalog is unavailable", {
+  local_mocked_bindings(download_opta_catalog = function(...) stop("offline"), .package = "panna")
+  expect_equal(.catalog_accent_variants("AFCON", afcon_ascii), character())
 })
 
 test_that("list_opta_seasons lists a tournament once, under the accent-free label", {
