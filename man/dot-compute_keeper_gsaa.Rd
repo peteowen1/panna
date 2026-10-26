@@ -7,9 +7,12 @@
 .compute_keeper_gsaa(spadl, lineups, by_match = FALSE)
 }
 \arguments{
-\item{spadl}{SPADL actions with xg (and optionally xgot), result, team_id.}
+\item{spadl}{SPADL actions with xg (and optionally xgot), result, team_id.
+\code{time_seconds} (match clock) and \code{period_id} place each shot in a keeper's
+span; \code{player_id} plus \code{action_type}/\code{opta_type_id} find substitute keepers.}
 
-\item{lineups}{Lineups with position, team_id, match_id, minutes_played.}
+\item{lineups}{Lineups with position, team_id, match_id, minutes_played, and
+\code{sub_on_minute} / \code{sub_off_minute} for the spans.}
 
 \item{by_match}{Logical. One row per keeper-match if TRUE, else per keeper.}
 }
@@ -20,8 +23,23 @@ NULL if not computable.
 }
 \description{
 Goals Saved Above Average = expected goals faced - goals conceded, attributed
-to the conceding team's primary keeper. "Expected goals faced" uses post-shot
-xGOT when available (what the keeper actually had to stop), else pre-shot xG.
-Positive = saved more than expected. Replaces the scale-free save_percentage.
+to the keeper who was in goal when each shot was taken. "Expected goals
+faced" uses post-shot xGOT when available (what the keeper actually had to
+stop), else pre-shot xG. Positive = saved more than expected. Replaces the
+scale-free save_percentage.
+}
+\details{
+Each conceded shot goes to the keeper on the pitch at its time, from his
+on-pitch span (kick-off, or \code{sub_on_minute}, to \code{sub_off_minute}; a red card
+with no off-minute ends the span at \code{start + minutes_played} when another
+keeper played). A keeper who came off the bench has \code{position = "Substitute"}
+in the lineup, so he is recognised by keeper-only events (Opta types 11, 41,
+52, 53, 54, 59), by being a keeper in the rest of the lineups, or by being
+the single substitute who came on at the minute a keeper went off; a keeper
+who goes off with no identifiable replacement triggers a warning naming the
+match, and the later shots stay with the starter. Without
+\code{time_seconds} on the shots, or where no identified keeper's span covers a
+shot, the shot falls back to the team-match's keeper with most minutes (the
+old one-keeper-per-match rule).
 }
 \keyword{internal}

@@ -562,6 +562,162 @@ test_that("keeper GSAA is NA, not -goals_conceded, where on-target shots lack go
   expect_true(is.na(s2[player_id == "kA"]$gsaa_per90))
 })
 
+test_that("keeper GSAA credits each shot to the keeper on the pitch, substitute keepers included (issue #351)", {
+  # Barcelona v Racing shape: kA starts and goes off at 45 (half-time), kA2
+  # comes on at 45 listed as "Substitute". t1 faces three shots from t2:
+  # 29' goal (xgot .305, period 1), 64' goal (.983), 88' saved (.139).
+  spadl <- data.frame(
+    match_id = "m1", action_id = 1:4, period_id = c(1L, 1L, 2L, 2L),
+    action_type = c("shot", "shot", "shot", "keeper_save"),
+    team_id = c("t2", "t2", "t2", "t1"),
+    player_id = c("s2", "s2", "s2", "kA2"),
+    xg = c(0.2, 0.3, 0.5, NA), xgot = c(0.305, 0.983, 0.139, NA),
+    result = c("success", "success", "fail", "success"),
+    is_own_goal = FALSE, opta_type_id = c(16L, 16L, 15L, 10L),
+    time_seconds = c(29 * 60, 64 * 60, 88 * 60, 88 * 60),
+    stringsAsFactors = FALSE
+  )
+  # the 64' goal must be period 2, the 29' goal period 1
+  spadl$period_id <- c(1L, 2L, 2L, 2L)
+  spadl$action_type[2:3] <- "shot"
+  lineups <- data.frame(
+    match_id = "m1",
+    player_id = c("kA", "kA2", "kB", "s2"),
+    team_id = c("t1", "t1", "t2", "t2"),
+    position = c("Goalkeeper", "Substitute", "Goalkeeper", "Striker"),
+    minutes_played = c(45, 45, 90, 90),
+    sub_on_minute = c(0, 45, 0, 0), sub_off_minute = c(45, 0, 0, 0),
+    stringsAsFactors = FALSE
+  )
+  # kA2 is a keeper in his other matches, which is how a bench keeper is known
+  lineups <- rbind(lineups, data.frame(
+    match_id = "m0", player_id = "kA2", team_id = "t1", position = "Goalkeeper",
+    minutes_played = 90, sub_on_minute = 0, sub_off_minute = 0))
+  g <- data.table::as.data.table(
+    panna:::.compute_keeper_gsaa(spadl[1:3, ], lineups, by_match = TRUE))
+  data.table::setkey(g, player_id)
+  expect_equal(g["kA"]$xgot_faced, 0.305)
+  expect_equal(g["kA"]$goals_conceded, 1)
+  expect_equal(g["kA"]$gsaa, 0.305 - 1)
+  expect_equal(g["kA"]$gsaa_minutes, 45)
+  expect_equal(g["kA2"]$xgot_faced, 0.983 + 0.139)
+  expect_equal(g["kA2"]$goals_conceded, 1)
+  expect_equal(g["kA2"]$gsaa_minutes, 45)
+  # the two keepers' shares add back to the team-match
+  expect_equal(sum(g[c("kA", "kA2")]$goals_conceded), 2)
+
+  # Without that history the sub keeper is found from keeper-only events (a
+  # keeper_save row is NOT enough -- type 10 is shared with outfield blocks --
+  # a claim is).
+  lineups <- lineups[lineups$match_id == "m1", ]
+  sp2 <- rbind(spadl[1:3, ], data.frame(
+    match_id = "m1", action_id = 9L, period_id = 2L, action_type = "keeper_claim",
+    team_id = "t1", player_id = "kA2", xg = NA, xgot = NA, result = "success",
+    is_own_goal = FALSE, opta_type_id = 11L, time_seconds = 70 * 60))
+  expect_true("kA2" %in% panna:::.compute_keeper_gsaa(sp2, lineups, by_match = TRUE)$player_id)
+})
+
+test_that("keeper GSAA finds a substitute keeper with no keeper actions from the substitution data, and warns when it cannot (issue #351)", {
+  # kA2 is listed Substitute, never made a keeper action, and has no other
+  # lineup rows. He is the only substitute on at 45, when kA went off.
+  spadl <- data.frame(
+    match_id = "m1", action_id = 1:3, period_id = c(1L, 2L, 2L),
+    action_type = "shot", team_id = "t2", player_id = "s2",
+    xg = c(0.2, 0.3, 0.5), xgot = c(0.305, 0.983, 0.139),
+    result = c("success", "success", "fail"), is_own_goal = FALSE,
+    time_seconds = c(29, 64, 88) * 60, stringsAsFactors = FALSE
+  )
+  lineups <- data.frame(
+    match_id = "m1",
+    player_id = c("kA", "kA2", "o1", "kB", "s2"),
+    team_id = c("t1", "t1", "t1", "t2", "t2"),
+    position = c("Goalkeeper", "Substitute", "Substitute", "Goalkeeper", "Striker"),
+    minutes_played = c(45, 45, 20, 90, 90),
+    sub_on_minute = c(0, 45, 70, 0, 0), sub_off_minute = c(45, 0, 0, 0, 0),
+    stringsAsFactors = FALSE
+  )
+  g <- data.table::as.data.table(expect_no_warning(
+    panna:::.compute_keeper_gsaa(spadl, lineups, by_match = TRUE)))
+  data.table::setkey(g, player_id)
+  expect_setequal(g$player_id, c("kA", "kA2"))
+  expect_equal(g["kA"]$xgot_faced, 0.305)
+  expect_equal(g["kA"]$goals_conceded, 1)
+  expect_equal(g["kA2"]$xgot_faced, 0.983 + 0.139)
+  expect_equal(g["kA2"]$goals_conceded, 1)
+
+  # Two substitutes on at 45 and neither shows keeper evidence: he cannot be
+  # told from the outfielder, so warn with the match id rather than guess.
+  amb <- rbind(lineups, data.frame(
+    match_id = "m1", player_id = "o2", team_id = "t1", position = "Substitute",
+    minutes_played = 45, sub_on_minute = 45, sub_off_minute = 0))
+  expect_warning(
+    g2 <- panna:::.compute_keeper_gsaa(spadl, amb, by_match = TRUE),
+    "m1")
+  expect_equal(g2$goals_conceded[g2$player_id == "kA"], 2)
+  expect_false("kA2" %in% g2$player_id)
+
+  # Keeper-only evidence settles the same ambiguity without a warning
+  claim <- data.frame(
+    match_id = "m1", action_id = 9L, period_id = 2L, action_type = "keeper_claim",
+    team_id = "t1", player_id = "kA2", xg = NA, xgot = NA, result = "success",
+    is_own_goal = FALSE, time_seconds = 70 * 60)
+  g3 <- expect_no_warning(
+    panna:::.compute_keeper_gsaa(rbind(spadl, claim), amb, by_match = TRUE))
+  expect_true("kA2" %in% g3$player_id)
+  expect_false("o2" %in% g3$player_id)
+})
+
+test_that("keeper GSAA half-time change: stoppage shots stay with the outgoing keeper, minute-45 period-2 shots go to the incoming one (issue #351)", {
+  spadl <- data.frame(
+    match_id = "m1", action_id = 1:3, period_id = c(1L, 2L, 2L),
+    action_type = "shot", team_id = "t2", player_id = "s2",
+    xg = 0.1, xgot = c(0.1, 0.2, 0.4), result = "fail", is_own_goal = FALSE,
+    time_seconds = c(47 * 60, 45 * 60 + 20, 46 * 60), stringsAsFactors = FALSE
+  )
+  lineups <- data.frame(
+    match_id = "m1", player_id = c("kA", "kA2", "kB"), team_id = c("t1", "t1", "t2"),
+    position = c("GK", "GK", "GK"), minutes_played = c(45, 45, 90),
+    sub_on_minute = c(0, 45, 0), sub_off_minute = c(45, 0, 0),
+    stringsAsFactors = FALSE
+  )
+  g <- data.table::as.data.table(
+    panna:::.compute_keeper_gsaa(spadl, lineups, by_match = TRUE))
+  data.table::setkey(g, player_id)
+  expect_equal(g["kA"]$xgot_faced, 0.1)
+  expect_equal(g["kA2"]$xgot_faced, 0.2 + 0.4)
+
+  # Season totals keep each keeper's own minutes
+  s <- data.table::as.data.table(panna:::.compute_keeper_gsaa(spadl, lineups))
+  expect_equal(s[player_id == "kA2"]$gsaa_minutes, 45)
+})
+
+test_that("keeper GSAA: a keeper who faced no shot in his span reads 0, and no time column keeps one keeper per match (issue #351)", {
+  spadl <- data.frame(
+    match_id = "m1", action_type = "shot", team_id = "t2", xg = 0.3, xgot = 0.5,
+    result = "fail", is_own_goal = FALSE, time_seconds = 20 * 60,
+    period_id = 1L, stringsAsFactors = FALSE
+  )
+  lineups <- data.frame(
+    match_id = "m1", player_id = c("kA", "kA2", "kB"), team_id = c("t1", "t1", "t2"),
+    position = "GK", minutes_played = c(60, 30, 90),
+    sub_on_minute = c(0, 60, 0), sub_off_minute = c(60, 0, 0),
+    stringsAsFactors = FALSE
+  )
+  g <- data.table::as.data.table(
+    panna:::.compute_keeper_gsaa(spadl, lineups, by_match = TRUE))
+  data.table::setkey(g, player_id)
+  expect_equal(g["kA"]$gsaa, 0.5)
+  expect_equal(g["kA2"]$gsaa, 0)
+  expect_equal(g["kA2"]$goals_conceded, 0)
+  expect_equal(g["kA2"]$gsaa_minutes, 30)
+
+  # No time on the shots: everything goes to the keeper with most minutes
+  g0 <- data.table::as.data.table(panna:::.compute_keeper_gsaa(
+    spadl[, setdiff(names(spadl), c("time_seconds", "period_id"))], lineups,
+    by_match = TRUE))
+  expect_equal(g0[player_id == "kA"]$gsaa, 0.5)
+})
+
 test_that("shooter xGOT decomposition is NA where a team-match has on-target shots without coords (R053)", {
   mk <- function(mid, xg, xgot, ot) data.frame(
     match_id = mid, team_id = "t1", player_id = "p1", player_name = "P1",
