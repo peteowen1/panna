@@ -963,7 +963,7 @@ is_publish_run <- function(run_steps = NULL) {
 #' published season had it (AFCON 2023 on GHA, issue #376). This is the
 #' comparison it needs: published leagues minus built leagues. Leagues already
 #' reported by the failure marker are left out so one league is not flagged
-#' twice.
+#' twice. `check_rebuild_leagues.R` calls this from the workflow.
 #'
 #' Each part builds only its share of the leagues, so `expected` limits the
 #' check to the leagues this part was given.
@@ -973,10 +973,43 @@ is_publish_run <- function(run_steps = NULL) {
 #' @param expected Leagues this part was assigned. NULL checks every published
 #'   league.
 #' @param reported Leagues already reported as failed (the failure marker).
+#' @param allowed Leagues that may be absent for a legitimate reason (e.g. an
+#'   old league-season with no remote events), see `league_allowlist_for_season()`.
 #' @return Character vector of missing leagues (possibly empty).
 leagues_missing_from_rebuild <- function(published, built, expected = NULL,
-                                         reported = character()) {
+                                         reported = character(),
+                                         allowed = character()) {
   missing <- setdiff(unique(as.character(published)), unique(as.character(built)))
   if (!is.null(expected)) missing <- intersect(missing, as.character(expected))
-  setdiff(missing, as.character(reported))
+  setdiff(missing, c(as.character(reported), as.character(allowed)))
+}
+
+
+#' Leagues allowed to be absent from one season's rebuild
+#'
+#' @param entries Allow-list entries: "SEASON:LEAGUE" (that season only) or a
+#'   bare "LEAGUE" (every season). NULL/empty/blank entries are ignored.
+#' @param season Season being checked, e.g. "2022-2023".
+#' @return Character vector of league codes.
+league_allowlist_for_season <- function(entries, season) {
+  entries <- trimws(as.character(entries))
+  entries <- entries[nzchar(entries)]
+  has_season <- grepl(":", entries, fixed = TRUE)
+  lg <- sub("^.*:", "", entries)
+  unique(lg[!has_season | sub(":.*$", "", entries) == season])
+}
+
+
+#' The blog leagues one part of a split season rebuild is responsible for
+#'
+#' Alternate leagues go to alternate parts, so the big domestic leagues split
+#' between the halves. Shared by the game-logs rebuild's build and check steps.
+#'
+#' @param all_leagues Vector of blog leagues (`resolve_blog_leagues()$blog_leagues`).
+#' @param part Part number, 1-based.
+#' @param nparts Number of parts per season.
+#' @return The part's leagues.
+blog_leagues_for_part <- function(all_leagues, part, nparts) {
+  stopifnot(!is.na(part), !is.na(nparts), part >= 1L, part <= nparts)
+  all_leagues[seq_along(all_leagues) %% nparts == part %% nparts]
 }

@@ -4,10 +4,12 @@
   d'Ivoire" and "2023 Côte d'Ivoire", but the released tables store only the accent-free one. Locally a
   per-season file with the accented name hid this; a runner downloads only the consolidated files, so the
   accented label matched nothing and step 10b skipped AFCON as "insufficient data". `load_opta_table()` now
-  retries an empty season with its accents removed (an accented label the data does store is still tried first),
-  and `list_opta_seasons()` lists the tournament once, under the accent-free label.
-  `leagues_missing_from_rebuild()` (data-raw/pipeline_utils.R) is the published-vs-rebuilt league comparison for
-  the game-logs rebuild's refuse step.
+  retries an empty season with its accents removed, and (if that is empty too) with the accented spellings the
+  catalog lists, so a table stored under either spelling is found (an exact label the data does store is still
+  tried first). `list_opta_seasons()` lists the tournament once, under the accent-free label.
+  `data-raw/match-predictions-opta/check_rebuild_leagues.R` (built on `leagues_missing_from_rebuild()` in
+  data-raw/pipeline_utils.R) compares a game-logs rebuild part's leagues with the published season's, with an
+  allow-list for leagues that may legitimately be absent; the workflow's refuse step is to call it.
 
 # panna 0.3.103
 
