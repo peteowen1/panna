@@ -53,7 +53,7 @@ env:
   # panna#87 OOM mitigation (option A): skip cv.glmnet in steps 04/06 and fit at
   # the closed-form lambda = 16.67 * n_obs^-0.58. CV does 11 dense refits per call
   # (10 folds + final); the back-to-back RAPM/xRAPM fits are what OOM the 16GB
-  # runner. We keep the free ubuntu-latest runner (runs-on unchanged) and rely on
+  # runner. We keep the free hosted runner (ubuntu-24.04, pinned below) and rely on
   # this flag instead. Any non-empty value enables it.
   OPTA_FIXED_LAMBDA: '1'
   # panna#87: step 07's R heap stays flat at ~5.4GB across all 14 seasons, but
@@ -70,7 +70,12 @@ env:
 
 jobs:
   opta-pipeline:
-    runs-on: ubuntu-latest
+    # Pinned 2026-10-27: every run on ubuntu-26.04 (the ubuntu-latest label moved from
+    # ~2026-10-25) is OOM-killed in step 01, memory climbing per league and never coming
+    # back (runs 40183758045, 40320203514, 40417316496, 40432904022, 40432908025, the last
+    # two at pre-#389/#390 commits); the last green run, 40083634071, was on 24.04. Likely
+    # the glibc MALLOC_* tuning above behaving differently on 26.04 (unconfirmed).
+    runs-on: ubuntu-24.04
     # Bumped from 60 to 120 because step 01 now builds SPADL on-the-fly from
     # raw events (~35 min for ~51K matches × 15 leagues). Previous 60-min
     # cap killed step 03 with steps 04-09 still to run. Empirical breakdown:
