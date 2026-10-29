@@ -169,6 +169,11 @@ imp_train_sey <- if (imp_n_sey >= 3L) {
   imp_sey_vals
 }
 imp_train_idx <- imp_played & dataset$season_end_year %in% imp_train_sey
+if (imp_n_sey >= 3L) {
+  # Same date cut as section 8's split, so the fill means use exactly the train rows.
+  imp_val_cut <- as.Date(paste0(imp_sey_vals[imp_n_sey - 1L] - 1L, "-07-01"))
+  imp_train_idx <- imp_played & as.Date(substr(as.character(dataset$match_date), 1, 10)) < imp_val_cut
+}
 message(sprintf("  Imputation stats computed from %d train rows (split-leakage-free)",
                 sum(imp_train_idx)))
 
@@ -271,9 +276,23 @@ if (n_sey >= 3) {
   val_sey <- sey_values[n_sey - 1]
   train_sey <- sey_values[seq_len(n_sey - 2)]
 
-  played$split <- "train"
-  played$split[played$season_end_year == val_sey] <- "val"
-  played$split[played$season_end_year == test_sey] <- "test"
+  # Split on the match DATE, cut at each held-out season's 1 July. Splitting on
+  # the season label let the train set run to 2026-03-31 (friendlies and cups
+  # labelled by an earlier year), so 4,562 of 7,096 out-of-fit rows were
+  # predicted by a model fitted on later matches (HONEST-PREDICTIONS-PLAN.md
+  # section 2). Now every train match is dated before every val/test match.
+  val_cut <- as.Date(paste0(val_sey - 1, "-07-01"))
+  test_cut <- as.Date(paste0(test_sey - 1, "-07-01"))
+  played_date <- as.Date(substr(as.character(played$match_date), 1, 10))
+  if (anyNA(played_date)) stop(sum(is.na(played_date)), " played matches have no parseable match_date; cannot split them by date")
+  played$split <- ifelse(played_date < val_cut, "train",
+                  ifelse(played_date < test_cut, "val", "test"))
+  moved <- table(label = ifelse(played$season_end_year == test_sey, "test",
+                         ifelse(played$season_end_year == val_sey, "val", "train")),
+                 by_date = played$split)
+  message(sprintf("  Date split: train < %s <= val < %s <= test. Rows by season label (rows) vs date split (cols):",
+                  format(val_cut), format(test_cut)))
+  print(moved)
 
 } else if (n_sey == 2) {
   # 2 seasons: use first for train, second split temporally into val/test
@@ -390,9 +409,9 @@ message("Match dataset complete!")
 message("========================================")
 message(sprintf("Total rows: %d", nrow(match_dataset)))
 message(sprintf("Total features: %d", ncol(match_dataset)))
-message(sprintf("Train: %d (SEY <= %d)", sum(match_dataset$split == "train"), max(train_sey)))
-message(sprintf("Val:   %d (SEY = %d)", sum(match_dataset$split == "val"), val_sey))
-message(sprintf("Test:  %d (SEY = %d)", sum(match_dataset$split == "test"), test_sey))
+message(sprintf("Train: %d (dated before the SEY %d season)", sum(match_dataset$split == "train"), val_sey))
+message(sprintf("Val:   %d (SEY %d season by date)", sum(match_dataset$split == "val"), val_sey))
+message(sprintf("Test:  %d (SEY %d season by date)", sum(match_dataset$split == "test"), test_sey))
 message(sprintf("Fixture: %d", sum(match_dataset$split == "fixture")))
 
 # Result distribution
