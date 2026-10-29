@@ -245,6 +245,17 @@ if (nrow(fixtures) == 0) {
     stringsAsFactors = FALSE
   )
 
+  # After-extra-time score + shootout winner (issue #411). home_goals/away_goals
+  # stay the 90-minute score: the model is evaluated on it. The aet columns
+  # carry what the blog needs for knockout ties settled in extra time.
+  predictions <- add_extra_time_scores(
+    predictions,
+    fixtures = readRDS(file.path(cache_dir, "01_fixture_results.rds")))
+  n_aet <- sum(predictions$home_goals_aet != predictions$home_goals |
+                 predictions$away_goals_aet != predictions$away_goals, na.rm = TRUE)
+  message(sprintf("  Extra time changed the score on %d matches; %d went to a shootout",
+                  n_aet, sum(!is.na(predictions$shootout_winner))))
+
   predictions <- predictions[order(predictions$match_date, predictions$league), ]
 
   # Which honest-record tier each row is (Pete, 2026-10-25: publish only real
