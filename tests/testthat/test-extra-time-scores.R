@@ -55,6 +55,19 @@ test_that("a match with no events at all is NA, not a copy of the 90-minute scor
   expect_true(is.na(row("noevents")$away_goals_aet))
 })
 
+test_that("a match with a missing team id is NA, not a copy of the 90-minute score", {
+  sc <- .scores
+  sc$home_team_id[sc$match_id == "final"] <- NA
+  sc$home_team_id[sc$match_id == "pens"] <- NA
+  sc$away_team_id[sc$match_id == "reg"] <- NA
+  out <- derive_extra_time_scores(.events, sc)
+  r <- function(id) out[out$match_id == id, ]
+  expect_true(is.na(r("final")$home_goals_aet) && is.na(r("final")$away_goals_aet))
+  expect_true(is.na(r("reg")$home_goals_aet) && is.na(r("reg")$away_goals_aet))
+  expect_true(is.na(r("pens")$shootout_winner))
+  expect_equal(c(r("og_et")$home_goals_aet, r("og_et")$away_goals_aet), c(1, 2))
+})
+
 test_that("a pre-filtered events table needs events_match_ids to keep 0-0 matches", {
   goals_only <- .events[.events$type_id == 16 | .events$period_id >= 3, ]
   without <- derive_extra_time_scores(goals_only, .scores)

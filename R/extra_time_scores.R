@@ -22,7 +22,8 @@
 #' @return A data frame with one row per `scores` row: `match_id`,
 #'   `home_goals_aet`, `away_goals_aet` (equal to the 90-minute score when the
 #'   match has events but none in period 3 or 4; `NA` when the match has no
-#'   events at all, since extra time cannot then be ruled out) and
+#'   events at all, since extra time cannot then be ruled out, or when either
+#'   team id is missing, since no goal can then be credited to a side) and
 #'   `shootout_winner` (`"home"`, `"away"`, or `NA` when there was no shootout).
 #' @keywords internal
 #' @noRd
@@ -60,13 +61,17 @@ derive_extra_time_scores <- function(events, scores,
   et <- count_side(is_goal & events$period_id %in% 3:4)
   out$home_goals_aet <- hg + et$home
   out$away_goals_aet <- ag + et$away
-  out$home_goals_aet[!has_events] <- NA_real_
-  out$away_goals_aet[!has_events] <- NA_real_
+  # Without both team ids no goal can be credited to a side, so the counts
+  # above read 0 (or one-sided): NA, not a copy of the 90-minute score.
+  no_ids <- is.na(scores$home_team_id) | is.na(scores$away_team_id)
+  out$home_goals_aet[!has_events | no_ids] <- NA_real_
+  out$away_goals_aet[!has_events | no_ids] <- NA_real_
 
   # Shootout goals are credited to the taker's team (no own goals in a shootout).
   so <- count_side(is_goal & events$period_id == 5L)
   out$shootout_winner <- ifelse(so$home > so$away, "home",
                          ifelse(so$away > so$home, "away", NA_character_))
+  out$shootout_winner[no_ids] <- NA_character_
   out
 }
 
