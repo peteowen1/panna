@@ -67,7 +67,14 @@
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
-    <p>Data frame with bin midpoints, predicted and actual probabilities</p>
+    <p>A data.table with one row per outcome (Home, Draw, Away) and bin,
+so <code>3 * n_bins</code> rows. Columns: <code>bin</code> (interval label), <code>bin_lower</code>,
+<code>bin_upper</code>, <code>pred_mean</code>, <code>actual_mean</code>, <code>n</code>, <code>outcome</code>. A bin no
+prediction falls into has <code>n = 0</code> and <code>NA</code> for <code>pred_mean</code> and
+<code>actual_mean</code>. If any predicted probability for an outcome is <code>NA</code>, that
+outcome gets one extra row with <code>bin = NA</code> and <code>n</code> set to the number of
+such rows, so the bin counts always add up to the number of predictions.
+Probabilities outside <code>[0, 1]</code> are an error.</p>
     </div>
     <div class="section level2">
     <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a></h2>

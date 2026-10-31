@@ -25,7 +25,14 @@ calibration_table(y_true, prob_matrix, n_bins = 10L)
 
 ## Value
 
-Data frame with bin midpoints, predicted and actual probabilities
+A data.table with one row per outcome (Home, Draw, Away) and bin, so
+`3 * n_bins` rows. Columns: `bin` (interval label), `bin_lower`,
+`bin_upper`, `pred_mean`, `actual_mean`, `n`, `outcome`. A bin no
+prediction falls into has `n = 0` and `NA` for `pred_mean` and
+`actual_mean`. If any predicted probability for an outcome is `NA`, that
+outcome gets one extra row with `bin = NA` and `n` set to the number of
+such rows, so the bin counts always add up to the number of predictions.
+Probabilities outside `[0, 1]` are an error.
 
 ## See also
 

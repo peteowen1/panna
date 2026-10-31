@@ -214,8 +214,10 @@ Migration plan:
       13_publish_release_data.R     Single gated publish of predictions-latest + blog-latest
 
 The predictions workflow (`.github/workflows/predictions-pipeline.yml`)
-turns on the steps it runs in its `run_steps` override; the backfill
-scripts are local-only.
+turns on the steps it runs in its `run_steps` override. The per-season
+game-log and action-equity backfills (10b, 10c) are local-only; the WC
+walk-forward backfill (`backfill_wc_walkforward.R`) can also run in CI
+through the opt-in `wc_backfill` input.
 
 ### EPV/WPA Pipeline
 

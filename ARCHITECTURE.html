@@ -367,7 +367,7 @@ build_player_game_ratings() merges EPV + WPA + PSV ──&gt; piero_value (per g
   12e_export_cup_pairwise.R     Pairwise knockout lookup for UCL/UEL/UECL
   12f_snapshot_wc_predictions.R Dated snapshots of WC2026 predictions + knockout probs
   13_publish_release_data.R     Single gated publish of predictions-latest + blog-latest</code></pre>
-<p>The predictions workflow (<code>.github/workflows/predictions-pipeline.yml</code>) turns on the steps it runs in its <code>run_steps</code> override; the backfill scripts are local-only.</p>
+<p>The predictions workflow (<code>.github/workflows/predictions-pipeline.yml</code>) turns on the steps it runs in its <code>run_steps</code> override. The per-season game-log and action-equity backfills (10b, 10c) are local-only; the WC walk-forward backfill (<code>backfill_wc_walkforward.R</code>) can also run in CI through the opt-in <code>wc_backfill</code> input.</p>
 </div>
 <div class="section level3">
 <h3 id="epvwpa-pipeline">EPV/WPA Pipeline<a class="anchor" aria-label="anchor" href="#epvwpa-pipeline"></a></h3>
