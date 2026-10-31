@@ -1,5 +1,14 @@
 # panna 0.3.104
 
+- `predictions.parquet` (and the blog's `match_predictions.parquet`) now carry `home_goals_aet`,
+  `away_goals_aet` and `shootout_winner` (`home`/`away`/null) (#411). `home_goals`/`away_goals` stay the
+  90-minute score, which the model is evaluated on; the aet columns add extra-time goals from the events
+  (own goals credited to the opponent) and equal the 90-minute score when there was no extra time. They are
+  only derived for leagues that can have extra time (everything outside `PANNA_DOMESTIC_LEAGUES`); a match
+  with no events at all gets `NA` rather than a guessed copy. On World Cup matches since 2014 this changes
+  the score of 13 of 296 matches (2014 final 1-0, 2018 Croatia-England 2-1, 2022 final 3-3 with a home
+  shootout win). `derive_extra_time_scores()` / `add_extra_time_scores()` in `R/extra_time_scores.R`, called
+  from step 07.
 - AFCON 2023 now builds on a GitHub Actions runner (#376). The catalog lists it under two labels, "2023 Cote
   d'Ivoire" and "2023 Côte d'Ivoire", but the released tables store only the accent-free one. Locally a
   per-season file with the accented name hid this; a runner downloads only the consolidated files, so the
