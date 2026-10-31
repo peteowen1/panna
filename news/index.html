@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.104</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.105</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,6 +39,10 @@
       <small>Source: <a href="https://github.com/peteowen1/panna/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.105" id="panna-03105">panna 0.3.105<a class="anchor" aria-label="anchor" href="#panna-03105"></a></h2>
+<ul><li>Release uploads through <code><a href="../reference/vb_publish.html">vb_publish()</a></code> no longer delete the published asset before its replacement lands (versebus 1.2.0, synced from torp; <a href="https://github.com/peteowen1/panna/issues/414" class="external-link">#414</a>). Each data file and <code>bus_manifest.json</code> goes up under a temporary <code>vbnew-</code> name, is confirmed on GitHub at the local size, and only then replaces the old copy, so a failed upload leaves the previous file for readers. <code><a href="../reference/vb_publish.html">vb_publish()</a></code> also stops at once when no GitHub token is visible, and a refused upload fails straight away.</li>
+</ul></div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.104" id="panna-03104">panna 0.3.104<a class="anchor" aria-label="anchor" href="#panna-03104"></a></h2>
 <ul><li>

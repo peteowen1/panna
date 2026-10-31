@@ -1,5 +1,19 @@
 # Changelog
 
+## panna 0.3.105
+
+- Release uploads through
+  [`vb_publish()`](https://peteowen1.github.io/panna/reference/vb_publish.md)
+  no longer delete the published asset before its replacement lands
+  (versebus 1.2.0, synced from torp;
+  [\#414](https://github.com/peteowen1/panna/issues/414)). Each data
+  file and `bus_manifest.json` goes up under a temporary `vbnew-` name,
+  is confirmed on GitHub at the local size, and only then replaces the
+  old copy, so a failed upload leaves the previous file for readers.
+  [`vb_publish()`](https://peteowen1.github.io/panna/reference/vb_publish.md)
+  also stops at once when no GitHub token is visible, and a refused
+  upload fails straight away.
+
 ## panna 0.3.104
 
 - `predictions.parquet` (and the blog’s `match_predictions.parquet`) now
