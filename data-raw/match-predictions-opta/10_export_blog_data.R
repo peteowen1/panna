@@ -274,7 +274,9 @@ if (length(missing_required) > 0) {
 # Optional columns — include if available.
 optional_cols <- c("season", "pred_home_goals", "pred_away_goals", "predicted_result",
                    # honest-record columns from step 07 (HONEST-PREDICTIONS-PLAN.md)
-                   "split", "record", "home_goals", "away_goals", "generated_utc")
+                   "split", "record", "home_goals", "away_goals", "generated_utc",
+                   # after-extra-time score + shootout winner (issue #411)
+                   "home_goals_aet", "away_goals_aet", "shootout_winner")
 missing_optional <- setdiff(optional_cols, names(predictions))
 if (length(missing_optional) > 0) {
   message(sprintf("  Note: Optional columns missing (excluded): %s",

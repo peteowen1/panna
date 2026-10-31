@@ -1,4 +1,40 @@
+# panna 0.3.104
+
+- `predictions.parquet` (and the blog's `match_predictions.parquet`) now carry `home_goals_aet`,
+  `away_goals_aet` and `shootout_winner` (`home`/`away`/null) (#411). `home_goals`/`away_goals` stay the
+  90-minute score, which the model is evaluated on; the aet columns add extra-time goals from the events
+  (own goals credited to the opponent) and equal the 90-minute score when there was no extra time. They are
+  only derived for leagues that can have extra time (everything outside `PANNA_DOMESTIC_LEAGUES`); a match
+  with no events at all gets `NA` rather than a guessed copy. On World Cup matches since 2014 this changes
+  the score of 13 of 296 matches (2014 final 1-0, 2018 Croatia-England 2-1, 2022 final 3-3 with a home
+  shootout win). `derive_extra_time_scores()` / `add_extra_time_scores()` in `R/extra_time_scores.R`, called
+  from step 07.
+- AFCON 2023 now builds on a GitHub Actions runner (#376). The catalog lists it under two labels, "2023 Cote
+  d'Ivoire" and "2023 Côte d'Ivoire", but the released tables store only the accent-free one. Locally a
+  per-season file with the accented name hid this; a runner downloads only the consolidated files, so the
+  accented label matched nothing and step 10b skipped AFCON as "insufficient data". `load_opta_table()` now
+  retries an empty season with its accents removed, and (if that is empty too) with the accented spellings the
+  catalog lists, so a table stored under either spelling is found (an exact label the data does store is still
+  tried first). `list_opta_seasons()` lists the tournament once, under the accent-free label.
+  `data-raw/match-predictions-opta/check_rebuild_leagues.R` (built on `leagues_missing_from_rebuild()` in
+  data-raw/pipeline_utils.R) compares a game-logs rebuild part's leagues with the published season's, with an
+  allow-list for leagues that may legitimately be absent; the workflow's refuse step is to call it.
+
 # panna 0.3.103
+
+- Keeper GSAA / `xgot_faced` / `goals_conceded` now credit each conceded shot to the keeper on the pitch when it
+  was taken, not the whole match to the keeper with most minutes. A keeper's span runs from kick-off (or
+  `sub_on_minute`) to `sub_off_minute`; a half-time change leaves first-half stoppage shots with the outgoing
+  keeper. A keeper who came off the bench (lineup `position = "Substitute"`) is found from keeper-only events
+  (types 11/41/52/53/54/59), from being a keeper in his other lineup rows, or from being the single substitute
+  who came on at the minute the starting keeper went off; if none of these identifies him the match id is
+  warned about and the shots after the change stay with the starter. `gsaa_minutes` is each keeper's own
+  minutes. A keeper who played but faced no shot reads 0, not missing. Without `time_seconds`, or where no
+  keeper's span covers a shot, the old most-minutes keeper still gets it.
+  Not reproduced on real data. The issue (#351) reports Barcelona v Racing (2026-09-16, `7h4zres5o8hqsaici9wxjwx04`)
+  as García -0.59 on 1.41 faced / 2 conceded and Szczęsny 0/0, and expects about 0.31 faced / 1 conceded and
+  1.12 faced / 1 conceded. Those are the issue's numbers; a unit test with the same shot times and xGOT values
+  covers the shape (issue #351).
 
 - Step 10b's role8 EPV fallback to start_label now also writes a GitHub Actions `::warning::`, so a weekly run
   that falls back for a league is visible rather than green and silent.

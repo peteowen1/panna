@@ -1393,6 +1393,9 @@ aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0,
                      !is.na(minutes_played) & minutes_played > 0, player_id])
     } else character(0)
 
+    # A substitute keeper reads "Substitute" in the lineup, so the position
+    # test above misses him; every keeper .compute_keeper_gsaa() credited counts.
+    gk_ids <- union(gk_ids, gsaa$player_id)
     is_gk_row <- result$player_id %in% gk_ids
     outfield_idx <- which(!is_gk_row)
     for (col in gk_cols) {
@@ -1425,12 +1428,29 @@ aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0,
 #' Compute keeper shot-stopping (GSAA) from SPADL + lineups
 #'
 #' Goals Saved Above Average = expected goals faced - goals conceded, attributed
-#' to the conceding team's primary keeper. "Expected goals faced" uses post-shot
-#' xGOT when available (what the keeper actually had to stop), else pre-shot xG.
-#' Positive = saved more than expected. Replaces the scale-free save_percentage.
+#' to the keeper who was in goal when each shot was taken. "Expected goals
+#' faced" uses post-shot xGOT when available (what the keeper actually had to
+#' stop), else pre-shot xG. Positive = saved more than expected. Replaces the
+#' scale-free save_percentage.
+#'
+#' Each conceded shot goes to the keeper on the pitch at its time, from his
+#' on-pitch span (kick-off, or `sub_on_minute`, to `sub_off_minute`; a red card
+#' with no off-minute ends the span at `start + minutes_played` when another
+#' keeper played). A keeper who came off the bench has `position = "Substitute"`
+#' in the lineup, so he is recognised by keeper-only events (Opta types 11, 41,
+#' 52, 53, 54, 59), by being a keeper in the rest of the lineups, or by being
+#' the single substitute who came on at the minute a keeper went off; a keeper
+#' who goes off with no identifiable replacement triggers a warning naming the
+#' match, and the later shots stay with the starter. Without
+#' `time_seconds` on the shots, or where no identified keeper's span covers a
+#' shot, the shot falls back to the team-match's keeper with most minutes (the
+#' old one-keeper-per-match rule).
 #'
 #' @param spadl SPADL actions with xg (and optionally xgot), result, team_id.
-#' @param lineups Lineups with position, team_id, match_id, minutes_played.
+#'   `time_seconds` (match clock) and `period_id` place each shot in a keeper's
+#'   span; `player_id` plus `action_type`/`opta_type_id` find substitute keepers.
+#' @param lineups Lineups with position, team_id, match_id, minutes_played, and
+#'   `sub_on_minute` / `sub_off_minute` for the spans.
 #' @param by_match Logical. One row per keeper-match if TRUE, else per keeper.
 #' @return data.table keyed by `player_id` + `team_id` (and `match_id` when
 #'   `by_match = TRUE`) with gsaa, gsaa_per90, xgot_faced, goals_conceded; or
@@ -1440,19 +1460,22 @@ aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0,
   dt <- data.table::as.data.table(spadl)
   lu <- data.table::as.data.table(lineups)
   if (!all(c("match_id", "team_id", "action_type", "result") %in% names(dt))) return(NULL)
-  if (!"position" %in% names(lu) || !"minutes_played" %in% names(lu)) return(NULL)
+  if (!all(c("position", "minutes_played", "player_id") %in% names(lu))) return(NULL)
 
   shots <- dt[action_type == "shot"]
   if (nrow(shots) == 0) return(NULL)
   has_xgot <- "xgot" %in% names(shots)
   has_og <- "is_own_goal" %in% names(shots)
+  has_time <- "time_seconds" %in% names(shots)
 
   match_teams <- unique(lu[!is.na(team_id), .(match_id, team_id)])
   st <- shots[, .(
     match_id, shooter_team = team_id, xg = xg,
     xgot = if (has_xgot) xgot else NA_real_,
     is_goal = result == "success",
-    is_own_goal = if (has_og) is_own_goal %in% TRUE else FALSE
+    is_own_goal = if (has_og) is_own_goal %in% TRUE else FALSE,
+    t_min = if (has_time) suppressWarnings(as.numeric(time_seconds)) / 60 else NA_real_,
+    period = if ("period_id" %in% names(shots)) suppressWarnings(as.integer(period_id)) else NA_integer_
   )]
   # Own goals are logged with team_id = the own-scorer's team, which is
   # already the CONCEDING side (unlike a normal shot, where team_id is the
@@ -1466,42 +1489,135 @@ aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0,
   )]
   if (nrow(conc) == 0) return(NULL)
 
+  # Keepers per (match_id, team_id), each with an on-pitch span in match minutes.
+  num <- function(v) suppressWarnings(as.numeric(v))
+  gk_pat <- "GK|Goalkeeper"
+  lk <- lu[!is.na(team_id) & !is.na(minutes_played) & num(minutes_played) > 0]
+  lk <- unique(lk, by = c("match_id", "team_id", "player_id"))
+  if (nrow(lk) == 0) return(NULL)
+  lk[, `:=`(
+    mins = num(minutes_played),
+    on = if ("sub_on_minute" %in% names(lk)) num(sub_on_minute) else NA_real_,
+    off = if ("sub_off_minute" %in% names(lk)) num(sub_off_minute) else NA_real_
+  )]
+  lk[, is_keeper := grepl(gk_pat, position, ignore.case = TRUE)]
+  # A keeper who came off the bench reads "Substitute" in the lineup, so his
+  # own position cannot say. Two evidence sources: he is a keeper in the other
+  # lineup rows, or he made a keeper-only action (types 11/41/52/53/54/59) in
+  # this match. Only rows with no real position are re-examined.
+  no_pos <- is.na(lk$position) | lk$position %in% c("Substitute", "")
+  if (any(no_pos)) {
+    real <- lu[!is.na(position) & !position %in% c("Substitute", "")]
+    gk_career <- real[, .(share = mean(grepl(gk_pat, position, ignore.case = TRUE))),
+                      by = player_id][share > 0.5, player_id]
+    kact <- NULL
+    if ("player_id" %in% names(dt)) {
+      is_kact <- dt$action_type %in% c("keeper_claim", "keeper_punch", "keeper_pick_up")
+      if ("opta_type_id" %in% names(dt)) {
+        is_kact <- is_kact | dt$opta_type_id %in% c(11L, 41L, 52L, 53L, 54L, 59L)
+      }
+      kact <- unique(paste(dt$match_id[is_kact], dt$player_id[is_kact]))
+    }
+    lk[, is_keeper := is_keeper | (no_pos & (
+      player_id %in% gk_career | paste(match_id, player_id) %in% kact))]
+  }
+  # Substitution data, for a bench keeper with no keeper actions and no keeper
+  # rows elsewhere: when a keeper goes off at minute M, the one substitute who
+  # came on at M is his replacement (same rule epv_net_goals.R uses for the
+  # keeper of a goal). Two or more substitutes at M cannot be told apart, so
+  # nobody is named and the match is reported below, never guessed.
+  unresolved <- data.table::data.table(match_id = character(), team_id = character())
+  for (pass in 1:3) {
+    gone <- unique(lk[is_keeper %in% TRUE & !is.na(off) & off > 0,
+                      .(match_id, team_id, m = off)])
+    if (nrow(gone) == 0) break
+    cover <- lk[is_keeper %in% TRUE & !is.na(on) & on > 0, .(match_id, team_id, m = on)]
+    gone <- gone[!cover, on = c("match_id", "team_id", "m")]
+    if (nrow(gone) == 0) break
+    cand <- merge(
+      lk[!(is_keeper %in% TRUE) & !is.na(on) & on > 0,
+         .(match_id, team_id, player_id, m = on)],
+      gone, by = c("match_id", "team_id", "m"))
+    one <- cand[, if (.N == 1L) .SD, by = .(match_id, team_id, m)]
+    unresolved <- unique(gone[, .(match_id, team_id)])
+    if (nrow(one) == 0) break
+    lk[one, is_keeper := TRUE, on = c("match_id", "team_id", "player_id")]
+    unresolved <- unique(gone[!one, on = c("match_id", "team_id", "m")][, .(match_id, team_id)])
+  }
+  # A keeper who went off with no identifiable replacement: the shots after the
+  # change fall back to the starter (the pre-fix behaviour), so say so.
+  if (nrow(unresolved) > 0L) {
+    ids <- unique(as.character(unresolved$match_id))
+    cli::cli_warn(c(
+      "{length(ids)} match{?es} had a keeper substituted off with no identifiable replacement keeper: {.val {utils::head(ids, 10)}}{if (length(ids) > 10) ' ...'}",
+      "i" = "Shots after the change are credited to the starting keeper, as before.",
+      "i" = "The replacement was not listed as a keeper, made no keeper-only action, and is not the single substitute who came on at that minute."
+    ))
+  }
+  lk <- lk[is_keeper %in% TRUE]
+  if (nrow(lk) == 0) return(NULL)
+  lk[, start := data.table::fifelse(!is.na(on) & on > 0, on, 0)]
+  lk[, n_gk := .N, by = .(match_id, team_id)]
+  # A red card leaves off == 0 ("not substituted"), so it ends the span at
+  # start + minutes -- but only when another keeper played, else nobody takes
+  # the shots after it and the span runs on.
+  lk[, end := data.table::fcase(
+    !is.na(off) & off > 0, off,
+    n_gk > 1L & start + mins < 85, start + mins,
+    default = Inf)]
+  data.table::setorder(lk, match_id, team_id, -mins)
+
+  # Credit each shot to the keeper on the pitch when it was taken.
+  conc[, .rid := .I]
+  conc[, player_id := NA_character_]
+  if (has_time && any(!is.na(conc$t_min))) {
+    cand <- merge(conc[!is.na(t_min), .(.rid, match_id, team_id, t_min, period)],
+                  lk[, .(match_id, team_id, kid = as.character(player_id), mins, start, end)],
+                  by = c("match_id", "team_id"), allow.cartesian = TRUE)
+    cand <- cand[(start <= 0 | .gk_after_minute(start, t_min, period)) &
+                   (is.infinite(end) | !.gk_after_minute(end, t_min, period))]
+    data.table::setorder(cand, .rid, -mins)
+    cand <- cand[, .(kid = kid[1L]), by = .rid]
+    conc[cand, player_id := i.kid, on = ".rid"]
+  }
+  primary <- lk[, .(pid = as.character(player_id[1L])), by = .(match_id, team_id)]
+  conc[primary, player_id := data.table::fcoalesce(player_id, i.pid),
+       on = c("match_id", "team_id")]
+
   # An unscored shot (xgot NA, own goals aside -- those are NA by design) is an
   # on-target shot with no goalmouth coords, or one that never matched the
   # shot-event table. Its goal still counts in goals_conceded but its expected
-  # value is unknown, so exp_faced for that team-match is incomplete.
+  # value is unknown, so exp_faced for that keeper-match is incomplete.
   # Off-target shots carry xgot = 0 and used to make n_xgot > 0 even when every
   # on-target shot was unscored, giving gsaa = -goals_conceded (review R013).
   # Such matches get NA gsaa (never imputed, never a fake zero).
   conc[, unscored := if (has_xgot) is.na(xgot) & !is_own_goal else FALSE]
-  conceded <- conc[, .(
+  conceded <- conc[!is.na(player_id), .(
     xg_faced = sum(xg, na.rm = TRUE),
     xgot_faced = sum(xgot, na.rm = TRUE),
     goals_conceded = sum(is_goal, na.rm = TRUE),
     n_xgot = sum(!is.na(xgot)),
     n_unscored = sum(unscored)
-  ), by = .(match_id, team_id)]
+  ), by = .(match_id, team_id, player_id)]
+
+  # One row per keeper in every team-match that faced a shot, so a keeper who
+  # played but faced nothing reads 0 expected / 0 conceded, not missing.
+  base <- lk[unique(conc[, .(match_id, team_id)]), on = c("match_id", "team_id"), nomatch = NULL][
+    , .(match_id, team_id, player_id = as.character(player_id), gk_minutes = mins)]
+  km <- conceded[base, on = c("match_id", "team_id", "player_id")]
+  for (col in c("xg_faced", "xgot_faced", "goals_conceded", "n_xgot", "n_unscored")) {
+    data.table::set(km, which(is.na(km[[col]])), col, 0)
+  }
   # expected goals faced: post-shot xGOT if any defined, else pre-shot xG;
   # NA where any non-own-goal shot's xGOT is unknown.
-  conceded[, exp_faced := data.table::fifelse(n_xgot > 0L, xgot_faced, xg_faced)]
-  conceded[n_unscored > 0L, exp_faced := NA_real_]
-  conceded[, gsaa := exp_faced - goals_conceded]
-  n_na <- sum(is.na(conceded$gsaa))
+  km[, exp_faced := data.table::fifelse(n_xgot > 0L, xgot_faced, xg_faced)]
+  km[n_unscored > 0L, exp_faced := NA_real_]
+  km[, gsaa := exp_faced - goals_conceded]
+  n_na <- sum(is.na(km$gsaa))
   if (n_na > 0L) {
     cli::cli_alert_warning(
-      "{n_na}/{nrow(conceded)} team-match{?es} have shots with unknown xGOT (no goalmouth coords): GSAA left NA, excluded from keeper totals")
+      "{n_na}/{nrow(km)} keeper-match{?es} have shots with unknown xGOT (no goalmouth coords): GSAA left NA, excluded from keeper totals")
   }
-
-  # primary keeper per (match_id, team_id): GK with most minutes
-  gks <- lu[grepl("GK|Goalkeeper", position, ignore.case = TRUE) &
-            !is.na(minutes_played) & minutes_played > 0]
-  if (nrow(gks) == 0) return(NULL)
-  data.table::setorder(gks, match_id, team_id, -minutes_played)
-  primary <- gks[, .(player_id = player_id[1], gk_minutes = minutes_played[1]),
-                 by = .(match_id, team_id)]
-
-  km <- primary[conceded, on = c("match_id", "team_id")]
-  km <- km[!is.na(player_id)]
   if (nrow(km) == 0) return(NULL)
 
   if (by_match) {
@@ -1521,6 +1637,22 @@ aggregate_player_xmetrics <- function(spadl, lineups, min_minutes = 0,
                    pmax(sum(gk_minutes[!is.na(gsaa)]), 1) * 90, 3)),
        by = .(player_id, team_id)]
   }
+}
+
+
+# Is a shot at match minute `t` (period `p`) strictly after a keeper change at
+# minute `m`? A change at minute m leaves shots at minute m with the outgoing
+# keeper, except at a period break: Opta stamps a half-time change 45 and the
+# second half starts at minute 45 too, so a period-2 shot at 45 belongs to the
+# incoming keeper (likewise 90 / 105 into extra time). Stoppage-time shots carry
+# minutes past their period's end (47' in period 1), so they are capped at it --
+# else every half-time change would hand first-half stoppage shots to the
+# incoming keeper. Shootout shots (period 5) come after every change.
+.gk_after_minute <- function(m, t, p) {
+  p <- data.table::fifelse(is.na(p), 1L, p)
+  pc <- pmin(p, 4L)
+  te <- data.table::fifelse(p >= 5L, Inf, pmin(t, c(45, 90, 105, 120)[pc]))
+  te > m | (te == m & p >= 2L & p <= 4L & m == c(0, 45, 90, 105)[pc])
 }
 
 

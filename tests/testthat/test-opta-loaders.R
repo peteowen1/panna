@@ -559,3 +559,201 @@ test_that("load_opta_fixtures errors rather than ignoring status when match_stat
   expect_error(load_opta_fixtures("AUS", "2026-2027", status = "Played"),
                "no match_status column")
 })
+
+# -- accented season labels (issue #376) --
+# The catalog lists AFCON 2023 as "2023 Cote d'Ivoire" AND "2023 C<o-circumflex>te
+# d'Ivoire", but the released tables store only the accent-free spelling. Labels
+# are built from \u escapes so the file stays ASCII in any locale.
+
+afcon_accented <- "2023 Côte d'Ivoire"
+afcon_ascii <- "2023 Cote d'Ivoire"
+
+test_that(".fold_season_label removes accents and leaves other labels alone", {
+  expect_equal(.fold_season_label(afcon_accented), afcon_ascii)
+  expect_equal(.fold_season_label(afcon_ascii), afcon_ascii)
+  expect_equal(.fold_season_label("2024-2025"), "2024-2025")
+  expect_null(.fold_season_label(NULL))
+  expect_true(is.na(.fold_season_label(NA_character_)))
+})
+
+test_that(".fold_season_label folds UTF-8 bytes that carry no encoding mark", {
+  # what an accented label looks like when read in a C locale
+  unmarked <- rawToChar(as.raw(c(
+    0x32, 0x30, 0x32, 0x33, 0x20, 0x43, 0xc3, 0xb4, 0x74, 0x65, 0x20,
+    0x64, 0x27, 0x49, 0x76, 0x6f, 0x69, 0x72, 0x65
+  )))
+  expect_equal(.fold_season_label(unmarked), afcon_ascii)
+})
+
+test_that("load_opta_table (local) retries an accented season with its accents removed", {
+  tmp_dir <- withr::local_tempdir()
+  arrow::write_parquet(
+    data.frame(competition = "AFCON", season = afcon_ascii, match_id = c("m1", "m2"),
+               stringsAsFactors = FALSE),
+    file.path(tmp_dir, "opta_player_stats.parquet")
+  )
+  local_mocked_bindings(opta_data_dir = function(...) tmp_dir, .package = "panna")
+
+  res <- suppressMessages(load_opta_table("player_stats", "AFCON", afcon_accented, NULL, "local"))
+  expect_equal(nrow(res), 2L)
+  expect_true(all(res$season == afcon_ascii))
+})
+
+test_that("load_opta_table (local) uses an accented label the data does store, first", {
+  tmp_dir <- withr::local_tempdir()
+  arrow::write_parquet(
+    data.frame(competition = "AFCON", season = c(afcon_accented, afcon_ascii, afcon_ascii),
+               match_id = c("acc", "asc1", "asc2"), stringsAsFactors = FALSE),
+    file.path(tmp_dir, "opta_player_stats.parquet")
+  )
+  local_mocked_bindings(opta_data_dir = function(...) tmp_dir, .package = "panna")
+
+  res <- suppressMessages(load_opta_table("player_stats", "AFCON", afcon_accented, NULL, "local"))
+  expect_equal(res$match_id, "acc")
+})
+
+test_that("load_opta_table (local) still aborts when neither spelling has rows", {
+  tmp_dir <- withr::local_tempdir()
+  arrow::write_parquet(
+    data.frame(competition = "AFCON", season = afcon_ascii, match_id = "m1",
+               stringsAsFactors = FALSE),
+    file.path(tmp_dir, "opta_player_stats.parquet")
+  )
+  local_mocked_bindings(opta_data_dir = function(...) tmp_dir,
+                        .catalog_accent_variants = function(...) character(),
+                        .package = "panna")
+
+  expect_error(
+    suppressMessages(load_opta_table("player_stats", "AFCON", "2019 Egypt", NULL, "local")),
+    class = "vb_error_absent"
+  )
+  expect_error(
+    suppressMessages(load_opta_table("player_stats", "AFCON", "2019 Égypte", NULL, "local")),
+    class = "vb_error_absent"
+  )
+})
+
+test_that("load_opta_table (remote) retries an accented season with its accents removed, quietly", {
+  asked <- character()
+  local_mocked_bindings(
+    query_remote_opta_parquet = function(table_type, opta_league, season = NULL, columns = NULL, ...) {
+      asked <<- c(asked, season)
+      data.frame(season = if (identical(season, afcon_ascii)) afcon_ascii else character(0),
+                 stringsAsFactors = FALSE)
+    },
+    .package = "panna"
+  )
+
+  # no panna_warning_empty_season may escape: the retry succeeded
+  res <- expect_no_warning(
+    suppressMessages(load_opta_table("player_stats", "AFCON", afcon_accented, NULL, "remote"))
+  )
+  expect_equal(nrow(res), 1L)
+  expect_equal(asked, c(afcon_accented, afcon_ascii))
+})
+
+test_that("load_opta_table (remote) still warns once when neither spelling has rows", {
+  local_mocked_bindings(
+    query_remote_opta_parquet = function(...) data.frame(season = character(0)),
+    .catalog_accent_variants = function(...) character(),
+    .package = "panna"
+  )
+  expect_warning(
+    suppressMessages(load_opta_table("player_stats", "AFCON", afcon_accented, NULL, "remote")),
+    class = "panna_warning_empty_season"
+  )
+})
+
+# The other direction: the table stores the ACCENTED label and the caller asks
+# for the accent-free one (what list_opta_seasons() now returns).
+test_that("load_opta_table (local) finds an accented label from the accent-free request", {
+  tmp_dir <- withr::local_tempdir()
+  arrow::write_parquet(
+    data.frame(competition = "AFCON", season = afcon_accented, match_id = c("m1", "m2"),
+               stringsAsFactors = FALSE),
+    file.path(tmp_dir, "opta_lineups.parquet")
+  )
+  local_mocked_bindings(opta_data_dir = function(...) tmp_dir,
+                        .catalog_accent_variants = function(league, season) afcon_accented,
+                        .package = "panna")
+
+  res <- suppressMessages(load_opta_table("lineups", "AFCON", afcon_ascii, NULL, "local"))
+  expect_equal(nrow(res), 2L)
+  expect_true(all(res$season == afcon_accented))
+})
+
+test_that("load_opta_lineups reaches an accented-label table from the accent-free request", {
+  tmp_dir <- withr::local_tempdir()
+  arrow::write_parquet(
+    data.frame(competition = "AFCON", season = afcon_accented, match_id = "m1",
+               stringsAsFactors = FALSE),
+    file.path(tmp_dir, "opta_lineups.parquet")
+  )
+  local_mocked_bindings(opta_data_dir = function(...) tmp_dir,
+                        .catalog_accent_variants = function(...) afcon_accented,
+                        .package = "panna")
+
+  res <- suppressMessages(load_opta_lineups("AFCON", season = afcon_ascii, source = "local"))
+  expect_equal(nrow(res), 1L)
+})
+
+test_that("load_opta_table (remote) finds an accented label from the accent-free request, quietly", {
+  asked <- character()
+  local_mocked_bindings(
+    query_remote_opta_parquet = function(table_type, opta_league, season = NULL, columns = NULL, ...) {
+      asked <<- c(asked, season)
+      data.frame(season = if (identical(season, afcon_accented)) afcon_accented else character(0),
+                 stringsAsFactors = FALSE)
+    },
+    .catalog_accent_variants = function(...) afcon_accented,
+    .package = "panna"
+  )
+  res <- expect_no_warning(
+    suppressMessages(load_opta_table("lineups", "AFCON", afcon_ascii, NULL, "remote"))
+  )
+  expect_equal(nrow(res), 1L)
+  expect_equal(asked, c(afcon_ascii, afcon_accented))
+})
+
+test_that(".catalog_accent_variants lists the other spelling from the catalog", {
+  local_mocked_bindings(
+    download_opta_catalog = function(...) list(competitions = list(
+      AFCON = list(seasons = list("2025 Morocco", afcon_accented, afcon_ascii)))),
+    .package = "panna"
+  )
+  expect_equal(.catalog_accent_variants("AFCON", afcon_ascii), afcon_accented)
+  expect_equal(.catalog_accent_variants("AFCON", afcon_accented), afcon_ascii)
+  expect_equal(.catalog_accent_variants("AFCON", "2025 Morocco"), character())
+})
+
+test_that(".catalog_accent_variants is empty when the catalog is unavailable", {
+  local_mocked_bindings(download_opta_catalog = function(...) stop("offline"), .package = "panna")
+  expect_equal(.catalog_accent_variants("AFCON", afcon_ascii), character())
+})
+
+test_that("list_opta_seasons lists a tournament once, under the accent-free label", {
+  expect_equal(
+    .drop_accent_duplicate_seasons(c("2025", afcon_accented, "2021", afcon_ascii)),
+    c("2025", "2021", afcon_ascii)
+  )
+  # an accented label with no accent-free twin is kept
+  expect_equal(.drop_accent_duplicate_seasons(c("2025", afcon_accented)),
+               c("2025", afcon_accented))
+
+  catalog <- list(competitions = list(AFCON = list(
+    seasons = list("2025 Morocco", afcon_accented, afcon_ascii, "2021 Cameroon")
+  )))
+  local_mocked_bindings(download_opta_catalog = function(...) catalog, .package = "panna")
+  seasons <- list_opta_seasons("AFCON")
+  expect_equal(sum(grepl("^2023", seasons)), 1L)
+  expect_true(afcon_ascii %in% seasons)
+})
+
+test_that("resolve_league_season picks the accent-free AFCON label whatever the catalog order", {
+  for (ord in list(c(afcon_accented, afcon_ascii), c(afcon_ascii, afcon_accented))) {
+    catalog <- list(competitions = list(AFCON = list(seasons = as.list(ord))))
+    local_mocked_bindings(download_opta_catalog = function(...) catalog, .package = "panna")
+    expect_equal(resolve_league_season("AFCON", "2022-2023", tournament_leagues = "AFCON"),
+                 afcon_ascii)
+  }
+})

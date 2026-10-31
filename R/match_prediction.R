@@ -1439,7 +1439,14 @@ compute_multiclass_logloss <- function(y_true, prob_matrix, eps = 1e-15) {
 #' @param prob_matrix Matrix with 3 columns of predicted probabilities
 #' @param n_bins Number of calibration bins (default 10)
 #'
-#' @return Data frame with bin midpoints, predicted and actual probabilities
+#' @return A data.table with one row per outcome (Home, Draw, Away) and bin,
+#'   so `3 * n_bins` rows. Columns: `bin` (interval label), `bin_lower`,
+#'   `bin_upper`, `pred_mean`, `actual_mean`, `n`, `outcome`. A bin no
+#'   prediction falls into has `n = 0` and `NA` for `pred_mean` and
+#'   `actual_mean`. If any predicted probability for an outcome is `NA`, that
+#'   outcome gets one extra row with `bin = NA` and `n` set to the number of
+#'   such rows, so the bin counts always add up to the number of predictions.
+#'   Probabilities outside `[0, 1]` are an error.
 #' @family match prediction
 #' @export
 calibration_table <- function(y_true, prob_matrix, n_bins = 10L) {
@@ -1450,15 +1457,40 @@ calibration_table <- function(y_true, prob_matrix, n_bins = 10L) {
     probs <- prob_matrix[, k]
     actual <- as.integer(y_true == (k - 1L))
 
+    # cut() would turn out-of-range values into NA bins and they would vanish
+    # from the table, so refuse them; NA probabilities get their own row below
+    if (any(probs < 0 | probs > 1, na.rm = TRUE)) {
+      stop(sprintf("calibration_table(): %s probabilities must lie in [0, 1]",
+                   outcome_labels[k]), call. = FALSE)
+    }
+
     breaks <- seq(0, 1, length.out = n_bins + 1L)
     bins <- cut(probs, breaks = breaks, include.lowest = TRUE)
 
-    dt <- data.table::data.table(prob = probs, actual = actual, bin = bins)
-    cal <- dt[, .(
-      pred_mean = mean(prob),
-      actual_mean = mean(actual),
-      n = .N
-    ), by = bin]
+    # Index by bin position rather than grouping on the factor, so bins no
+    # prediction falls into are kept (n = 0, NA means) instead of dropped
+    bin_idx <- as.integer(bins)
+    cal <- data.table::data.table(
+      bin = factor(levels(bins), levels = levels(bins)),
+      bin_lower = breaks[-length(breaks)],
+      bin_upper = breaks[-1L],
+      pred_mean = vapply(seq_len(n_bins), function(b) {
+        if (any(bin_idx == b, na.rm = TRUE)) mean(probs[which(bin_idx == b)]) else NA_real_
+      }, numeric(1)),
+      actual_mean = vapply(seq_len(n_bins), function(b) {
+        if (any(bin_idx == b, na.rm = TRUE)) mean(actual[which(bin_idx == b)]) else NA_real_
+      }, numeric(1)),
+      n = vapply(seq_len(n_bins), function(b) sum(bin_idx == b, na.rm = TRUE), integer(1))
+    )
+
+    n_na <- sum(is.na(probs))
+    if (n_na > 0L) {
+      cal <- data.table::rbindlist(list(cal, data.table::data.table(
+        bin = factor(NA_character_, levels = levels(cal$bin)),
+        bin_lower = NA_real_, bin_upper = NA_real_,
+        pred_mean = NA_real_, actual_mean = NA_real_, n = n_na
+      )))
+    }
 
     cal$outcome <- outcome_labels[k]
     results[[k]] <- cal

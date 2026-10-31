@@ -118,14 +118,27 @@ message(sprintf("  Narrowed match_stats to %d columns for the skill loops",
 
 # Instead of computing per-match-date (very expensive), compute per season end
 # and use those for all matches in that season
-sey_values <- sort(unique(played$season_end_year))
+# Each match takes skills as of its season START (1 July of season_end_year - 1)
+# so no future information enters the training set. A match dated BEFORE that
+# 1 July -- qualifiers and calendar-year cups labelled by their final year, e.g.
+# a 2024-03 WC qualifier in season_end_year 2025 -- would then be scored by
+# skills that include the match itself (1,698 played rows, HONEST-PREDICTIONS-
+# PLAN.md section 2), so it takes the latest 1 July on or before its date.
+# estimate_player_skills() keeps matches strictly before target_date.
+played_date <- as.Date(substr(as.character(played$match_date), 1, 10))
+season_start <- as.Date(paste0(played$season_end_year - 1, "-07-01"))
+before_july <- format(played_date, "%m-%d") < "07-01"
+last_july <- as.Date(paste0(as.integer(format(played_date, "%Y")) - before_july, "-07-01"))
+played_target <- pmin(season_start, last_july)
+message(sprintf("  %d played matches dated before their season's 1 July take an earlier skill date",
+                sum(played_target < season_start)))
+
+target_values <- sort(unique(played_target))
 all_skill_features <- list()
 n_failed <- 0L
 
-for (sey in sey_values) {
-  # Use season START (previous July) to avoid data leakage: skills estimated
-  # before the season began, so no future information enters the training set
-  target_date <- as.Date(paste0(sey - 1, "-07-01"))
+for (td_i in seq_along(target_values)) {
+  target_date <- target_values[td_i]
 
   tryCatch({
     skills <- estimate_player_skills(
@@ -136,37 +149,36 @@ for (sey in sey_values) {
 
     if (is.null(skills) || nrow(skills) == 0) next
 
-    # Get lineups for this season's matches
-    matches_sey <- played[played$season_end_year == sey, ]
-    match_ids <- unique(matches_sey$match_id)
-    lu_sey <- lineups[lineups$match_id %in% match_ids, ]
+    # Get lineups for the matches that take this skill date
+    match_ids <- unique(played$match_id[played_target == target_date])
+    lu_td <- lineups[lineups$match_id %in% match_ids, ]
 
-    if (nrow(lu_sey) == 0) next
+    if (nrow(lu_td) == 0) next
 
     # Aggregate skills to team level
-    tr <- aggregate_lineup_skills(lu_sey, skills)
+    tr <- aggregate_lineup_skills(lu_td, skills)
     if (!is.null(tr) && nrow(tr) > 0) {
-      all_skill_features[[as.character(sey)]] <- tr
-      # Report per-season NA rate on a representative column so we can see
+      all_skill_features[[format(target_date)]] <- tr
+      # Report per-date NA rate on a representative column so we can see
       # at a glance when skill coverage was thin (early seasons have less
       # because the underlying match_stats cache starts mid-2014).
       rep_col <- intersect("home_sk_att_goals", names(tr))
       na_rate <- if (length(rep_col) > 0L) {
         sprintf("%.0f%% NA", 100 * mean(is.na(tr[[rep_col]])))
       } else "n/a"
-      message(sprintf("    SEY %d: %d matches with skill features (%s on home_sk_att_goals)",
-                      sey, nrow(tr), na_rate))
+      message(sprintf("    skills as of %s: %d matches with skill features (%s on home_sk_att_goals)",
+                      format(target_date), nrow(tr), na_rate))
     }
   }, error = function(e) {
     n_failed <<- n_failed + 1L
-    message(sprintf("    SEY %d ERROR: %s", sey, e$message))
+    message(sprintf("    skills as of %s ERROR: %s", format(target_date), e$message))
   })
   gc(verbose = FALSE)
 }
 
 if (n_failed > 0) {
-  warning(sprintf("%d/%d season-end-years failed skill estimation.",
-                  n_failed, length(sey_values)), call. = FALSE)
+  warning(sprintf("%d/%d skill dates failed skill estimation.",
+                  n_failed, length(target_values)), call. = FALSE)
 }
 
 # 7. Handle Fixtures ----
