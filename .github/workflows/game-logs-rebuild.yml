@@ -268,20 +268,27 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
           SEASON: ${{ matrix.season }}
+          PART: ${{ matrix.part }}
+          NPARTS_PER_SEASON: ${{ needs.plan.outputs.nparts }}
+          # leagues allowed to be absent from the rebuild: space-separated
+          # SEASON:LEAGUE (or a bare LEAGUE). Empty until a real run shows one.
+          LEAGUE_ALLOWLIST: ''
           EPV_POSITION_GROUPING: ${{ inputs.epv_position_grouping || (contains(github.ref, 'control') && 'start_label' || 'role8') }}
         run: |
           bad=0
           marker=data-raw/cache-predictions-opta/.partial_publish_failures
+          # The published copy is needed by the marker check and by the league
+          # check below, so download it every time.
+          mkdir -p /tmp/pub
+          gh release download blog-latest --repo peteowen1/pannadata --pattern "game_logs_${SEASON}.parquet" --dir /tmp/pub \
+            || echo "  no published copy of $SEASON"
+          pub=$(Rscript -e 'f <- commandArgs(TRUE)[1]; if (file.exists(f)) cat(unique(arrow::read_parquet(f, col_select = "league")$league))' "/tmp/pub/game_logs_${SEASON}.parquet" || true)
+          echo "  published $SEASON leagues: $pub"
           if [ -s "$marker" ]; then
             # A league that fails here AND is absent from the published season
             # has never built (e.g. FRA 2011-12's possession-chains error), so
             # leaving it out costs the comparison nothing. Any other failed
             # league fails the job.
-            mkdir -p /tmp/pub
-            gh release download blog-latest --repo peteowen1/pannadata --pattern "game_logs_${SEASON}.parquet" --dir /tmp/pub \
-              || echo "  no published copy of $SEASON"
-            pub=$(Rscript -e 'f <- commandArgs(TRUE)[1]; if (file.exists(f)) cat(unique(arrow::read_parquet(f, col_select = "league")$league))' "/tmp/pub/game_logs_${SEASON}.parquet" || true)
-            echo "  published $SEASON leagues: $pub"
             while read -r line; do
               lg=$(echo "$line" | awk '{print $2}')
               if echo " $pub " | grep -q " $lg "; then
@@ -291,6 +298,11 @@ jobs:
               fi
             done < "$marker"
           fi
+          # A league 10b SKIPS ("insufficient data") writes no marker line, so
+          # the loop above cannot see it. Compare what this part built with the
+          # published season (issue #376).
+          PUBLISHED_LOGS="/tmp/pub/game_logs_${SEASON}.parquet" FAILURE_MARKER="$marker" \
+            Rscript data-raw/match-predictions-opta/check_rebuild_leagues.R || bad=1
           if grep -nE "EPV adjustments skipped|SEASON .* ABORTED|join FAILED|INCOMPLETE|role8 EPV centring FAILED" /tmp/10b.log; then
             echo "::error title=Season $SEASON incomplete::10b logged a skipped or failed stage (lines above)"; bad=1
           fi
