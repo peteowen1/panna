@@ -228,6 +228,19 @@ message("\n=== Incremental Update Check ===")
 recompute_buffer_days <- 28L   # Recompute the last 4 weeks (covers late results)
 force_full_rebuild <- nzchar(Sys.getenv("PSR_FORCE_FULL_REBUILD"))
 
+# RAW MODE (panna#216, 2026-11-01): PSR_RAW_UNCALIBRATED=1 writes the weekly
+# snapshots WITHOUT the position calibration, to a separate file, for refitting
+# that calibration on the as-at ratings (Pete's call: calibrate the number the
+# site shows). Three switches, all forced: a full rebuild (reused release rows are
+# calibrated, so mixing them in would corrupt the fit), no calibration, and no
+# upload -- set again just before the upload check, so no caller can turn it back on.
+psr_raw_mode <- nzchar(Sys.getenv("PSR_RAW_UNCALIBRATED"))
+if (psr_raw_mode) {
+  force_full_rebuild <- TRUE
+  message("  PSR_RAW_UNCALIBRATED set - full rebuild, NO position calibration, ",
+          "local file only (never uploaded)")
+}
+
 # Model fingerprint (review R016): everything that turns skills into a PSR
 # value. Reused rows must have been scored by the SAME model, or the published
 # history is mixed-vintage (old weeks on old coefficients, new weeks on new).
@@ -827,7 +840,8 @@ for (i in seq_along(snapshot_dates)) {
   # current one, whose factor cannot be estimated until the following season's
   # matches exist. apply_psr_calibration() no-ops that axis when the column is
   # absent.
-  psr <- apply_psr_calibration(data.table::as.data.table(psr))
+  psr <- data.table::as.data.table(psr)
+  if (!psr_raw_mode) psr <- apply_psr_calibration(psr)
 
   psr[, snapshot_date := d]
   psr_slim <- psr[, .(snapshot_date, player_id, player_name,
@@ -910,7 +924,8 @@ new_psr <- data.table::as.data.table(
   arrow::open_dataset(chunk_files, format = "parquet") |>
     dplyr::collect()
 )
-new_psr[, model_fingerprint := psr_model_fingerprint]
+# Raw rows carry |RAW so an uncalibrated file can never pass for a calibrated one.
+new_psr[, model_fingerprint := if (psr_raw_mode) paste0(psr_model_fingerprint, "|RAW") else psr_model_fingerprint]
 message(sprintf("  Newly computed: %s rows across %d dates",
                 format(nrow(new_psr), big.mark = ","),
                 data.table::uniqueN(new_psr$snapshot_date)))
@@ -977,7 +992,8 @@ cat(sprintf("  Total rows:    %s\n", format(nrow(weekly_psr), big.mark = ",")))
 cat(sprintf("  Unique players: %s\n", format(data.table::uniqueN(weekly_psr$player_id), big.mark = ",")))
 cat(sprintf("  Unique dates:   %d\n", data.table::uniqueN(weekly_psr$snapshot_date)))
 
-out_path <- file.path(opta_dir, "opta_psr_weekly.parquet")
+out_path <- file.path(opta_dir, if (psr_raw_mode) "opta_psr_weekly_RAW_uncalibrated.parquet"
+                                else "opta_psr_weekly.parquet")
 arrow::write_parquet(as.data.frame(weekly_psr), out_path)
 mb <- round(file.info(out_path)$size / 1024^2, 1)
 cat(sprintf("  Written: %s (%s MB)\n", out_path, mb))
@@ -1011,6 +1027,7 @@ if (tolower(Sys.getenv("PANNA_PUBLISH_DISABLED", "")) %in% c("true", "1")) {
   upload_psr <- FALSE
 }
 
+if (psr_raw_mode) upload_psr <- FALSE   # never publish an uncalibrated file
 if (!isTRUE(upload_psr)) {
   cat(sprintf("\n  upload_psr = FALSE — wrote %s locally, NOT publishing.\n", out_path))
 } else {
@@ -1026,5 +1043,6 @@ if (!isTRUE(upload_psr)) {
 }
 
 cat("\n=== COMPLETE ===\n")
-cat(sprintf("  opta_psr_weekly.parquet uploaded (%s MB, %d dates)\n",
+cat(sprintf("  %s %s (%s MB, %d dates)\n", basename(out_path),
+            if (isTRUE(upload_psr)) "uploaded" else "written locally, not uploaded",
             mb, data.table::uniqueN(weekly_psr$snapshot_date)))
