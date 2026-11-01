@@ -56,8 +56,11 @@
 
 devtools::load_all("."); suppressPackageStartupMessages({library(data.table); library(arrow)})
 
-PSR_WEEKLY <- "../pannadata/data/opta/opta_psr_weekly.parquet"
-OUT_CSV    <- "data-raw/cache-skills/99b_position_calibration_8bucket.csv"
+## PSR_WEEKLY / OUT_CSV can be overridden: panna#216 refits on the UNcalibrated
+## weekly file 08b writes with PSR_RAW_UNCALIBRATED=1, and must not overwrite the
+## calibrated-input result.
+PSR_WEEKLY <- Sys.getenv("PSR_WEEKLY_FILE", "../pannadata/data/opta/opta_psr_weekly.parquet")
+OUT_CSV    <- Sys.getenv("PSR_99B_OUT", "data-raw/cache-skills/99b_position_calibration_8bucket.csv")
 
 ## ---- the 8-bucket taxonomy (Pete's spec, 2026-09-14) --------------------
 ## A layer ABOVE GK/DEF/MID/FWD, built by collapsing classify_role()'s 16 roles.
