@@ -1,5 +1,19 @@
 # Changelog
 
+## panna 0.3.106
+
+- `data-raw/estimated-skills/08b_export_psr_weekly.R` gains
+  `PSR_RAW_UNCALIBRATED=1`: a full rebuild of the weekly PSR snapshots
+  without the position calibration, written to
+  `opta_psr_weekly_RAW_uncalibrated.parquet` and never uploaded, so the
+  calibration can be refitted on the as-at ratings the site shows
+  ([\#216](https://github.com/peteowen1/panna/issues/216),
+  [\#417](https://github.com/peteowen1/panna/issues/417)). `99b` takes
+  `PSR_WEEKLY_FILE` / `PSR_99B_OUT` to fit on it. Default behaviour is
+  unchanged.
+- Help pages for the versebus 1.2.0 helpers
+  ([\#416](https://github.com/peteowen1/panna/issues/416)).
+
 ## panna 0.3.105
 
 - Release uploads through

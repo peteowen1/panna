@@ -82,6 +82,8 @@
 <url><loc>https://peteowen1.github.io/panna/reference/SPM_BLEND_WEIGHT_GLMNET.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/TEAM_STRENGTH_SIGN_CONVENTION.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/TOUCHES_PER_SEQUENCE.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/VB_ASSET_CONFIRMED_ABSENT.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/VB_TRUE_SIZE_TIMEOUT_SECS.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/WC2026_GROUP_STAGE_END.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/WC2026_HOST_TEAM_IDS.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/WC2026_LEAGUE.html</loc></url>
@@ -263,6 +265,7 @@
 <url><loc>https://peteowen1.github.io/panna/reference/dot-disambiguate_collided_team_names.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-ensure_player_id.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-epr_league_tier.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/dot-error_is_absent.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-estimate_prematch_skills_batch.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-find_next_event.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-find_next_event_with_value.html</loc></url>
@@ -332,6 +335,8 @@
 <url><loc>https://peteowen1.github.io/panna/reference/dot-spm_xmetrics_per90_cols.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-srd.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-subset_rapm_data_expanding.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/dot-url_confirmed_absent.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/dot-vb_asset_true_size.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-vb_retry.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-wc2026_fixtures_remaining.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-wc2026_group_label.html</loc></url>

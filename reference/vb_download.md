@@ -31,7 +31,11 @@ vb_download(
 
 - require_manifest:
 
-  TRUE in CI/strict mode (VERSEBUS_STRICT=1)
+  TRUE in CI/strict mode (VERSEBUS_STRICT=1). torp has a
+  `.strict_mode()` helper owning this parse rule, but this file is
+  vendored into torpmodels and guarded function-by-function by
+  `test-versebus-sync.R`, so the check stays inline here until the
+  sibling copy gains the helper too.
 
 - max_age:
 

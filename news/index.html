@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.105</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.106</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,6 +39,12 @@
       <small>Source: <a href="https://github.com/peteowen1/panna/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.106" id="panna-03106">panna 0.3.106<a class="anchor" aria-label="anchor" href="#panna-03106"></a></h2>
+<ul><li>
+<code>data-raw/estimated-skills/08b_export_psr_weekly.R</code> gains <code>PSR_RAW_UNCALIBRATED=1</code>: a full rebuild of the weekly PSR snapshots without the position calibration, written to <code>opta_psr_weekly_RAW_uncalibrated.parquet</code> and never uploaded, so the calibration can be refitted on the as-at ratings the site shows (<a href="https://github.com/peteowen1/panna/issues/216" class="external-link">#216</a>, <a href="https://github.com/peteowen1/panna/issues/417" class="external-link">#417</a>). <code>99b</code> takes <code>PSR_WEEKLY_FILE</code> / <code>PSR_99B_OUT</code> to fit on it. Default behaviour is unchanged.</li>
+<li>Help pages for the versebus 1.2.0 helpers (<a href="https://github.com/peteowen1/panna/issues/416" class="external-link">#416</a>).</li>
+</ul></div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.105" id="panna-03105">panna 0.3.105<a class="anchor" aria-label="anchor" href="#panna-03105"></a></h2>
 <ul><li>Release uploads through <code><a href="../reference/vb_publish.html">vb_publish()</a></code> no longer delete the published asset before its replacement lands (versebus 1.2.0, synced from torp; <a href="https://github.com/peteowen1/panna/issues/414" class="external-link">#414</a>). Each data file and <code>bus_manifest.json</code> goes up under a temporary <code>vbnew-</code> name, is confirmed on GitHub at the local size, and only then replaces the old copy, so a failed upload leaves the previous file for readers. <code><a href="../reference/vb_publish.html">vb_publish()</a></code> also stops at once when no GitHub token is visible, and a refused upload fails straight away.</li>

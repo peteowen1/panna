@@ -17,7 +17,7 @@ propagates and the caller must opt in to &quot;serve stale + warn&quot; explicit
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.105</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.106</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -82,7 +82,10 @@ propagates and the caller must opt in to "serve stale + warn" explicitly.</p>
 
 
 <dt id="arg-require-manifest">require_manifest<a class="anchor" aria-label="anchor" href="#arg-require-manifest"></a></dt>
-<dd><p>TRUE in CI/strict mode (VERSEBUS_STRICT=1)</p></dd>
+<dd><p>TRUE in CI/strict mode (VERSEBUS_STRICT=1). torp has
+a <code>.strict_mode()</code> helper owning this parse rule, but this file is vendored
+into torpmodels and guarded function-by-function by <code>test-versebus-sync.R</code>,
+so the check stays inline here until the sibling copy gains the helper too.</p></dd>
 
 
 <dt id="arg-max-age">max_age<a class="anchor" aria-label="anchor" href="#arg-max-age"></a></dt>
