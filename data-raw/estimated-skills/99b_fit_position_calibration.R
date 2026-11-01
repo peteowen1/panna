@@ -61,6 +61,10 @@ devtools::load_all("."); suppressPackageStartupMessages({library(data.table); li
 ## calibrated-input result.
 PSR_WEEKLY <- Sys.getenv("PSR_WEEKLY_FILE", "../pannadata/data/opta/opta_psr_weekly.parquet")
 OUT_CSV    <- Sys.getenv("PSR_99B_OUT", "data-raw/cache-skills/99b_position_calibration_8bucket.csv")
+## A mistyped override must not fall back to the calibrated default: that would fit
+## on calibrated values, the exact case the override exists to avoid.
+if (nzchar(Sys.getenv("PSR_WEEKLY_FILE")) && !file.exists(PSR_WEEKLY))
+  stop("PSR_WEEKLY_FILE is set but does not exist: ", PSR_WEEKLY)
 
 ## ---- the 8-bucket taxonomy (Pete's spec, 2026-09-14) --------------------
 ## A layer ABOVE GK/DEF/MID/FWD, built by collapsing classify_role()'s 16 roles.

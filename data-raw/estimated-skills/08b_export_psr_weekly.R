@@ -924,7 +924,8 @@ new_psr <- data.table::as.data.table(
   arrow::open_dataset(chunk_files, format = "parquet") |>
     dplyr::collect()
 )
-new_psr[, model_fingerprint := psr_model_fingerprint]
+# Raw rows carry |RAW so an uncalibrated file can never pass for a calibrated one.
+new_psr[, model_fingerprint := if (psr_raw_mode) paste0(psr_model_fingerprint, "|RAW") else psr_model_fingerprint]
 message(sprintf("  Newly computed: %s rows across %d dates",
                 format(nrow(new_psr), big.mark = ","),
                 data.table::uniqueN(new_psr$snapshot_date)))
@@ -1042,5 +1043,6 @@ if (!isTRUE(upload_psr)) {
 }
 
 cat("\n=== COMPLETE ===\n")
-cat(sprintf("  opta_psr_weekly.parquet uploaded (%s MB, %d dates)\n",
+cat(sprintf("  %s %s (%s MB, %d dates)\n", basename(out_path),
+            if (isTRUE(upload_psr)) "uploaded" else "written locally, not uploaded",
             mb, data.table::uniqueN(weekly_psr$snapshot_date)))
