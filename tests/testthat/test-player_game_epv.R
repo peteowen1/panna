@@ -169,3 +169,30 @@ test_that("aggregate_player_game_epv gives NA per-90 without lineup minutes (R11
   expect_equal(result$epv_total_p90[result$player_id == "p1"], 0.6)
   expect_true(is.na(result$epv_total_p90[result$player_id == "p2"]))  # was 0.3 * 90 = 27
 })
+
+test_that("epv_shot_stopping is the keeper_save subset of epv_keeping and moves no headline number (#210)", {
+  spadl <- data.frame(
+    player_id = rep("gk", 5),
+    player_name = rep("Keeper", 5),
+    team_id = rep("t1", 5),
+    match_id = rep("m1", 5),
+    action_type = c("keeper_save", "keeper_save", "keeper_claim", "pass", "tackle"),
+    player_credit = c(0.20, 0.10, 0.04, 0.03, -0.01),
+    stringsAsFactors = FALSE
+  )
+  r <- aggregate_player_game_epv(spadl)
+
+  expect_equal(r$epv_shot_stopping, 0.30)
+  # epv_keeping stays the goalkeeping total (handling + saves)
+  expect_equal(r$epv_keeping, 0.34)
+  expect_equal(r$epv_keeping - r$epv_shot_stopping, 0.04)  # handling
+  expect_equal(r$epv_passing, 0.03)
+  expect_equal(r$epv_defending, -0.01)
+  # Subset, not an extra bucket: the roll-up still reconciles and is unchanged
+  expect_equal(r$epv_defensive, -0.01 + 0.34)
+  expect_equal(r$epv_offensive + r$epv_defensive, r$epv_total)
+
+  # Players with no saves get 0, not NA
+  r2 <- aggregate_player_game_epv(spadl[4:5, ])
+  expect_equal(r2$epv_shot_stopping, 0)
+})
