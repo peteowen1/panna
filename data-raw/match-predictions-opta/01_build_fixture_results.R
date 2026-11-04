@@ -532,30 +532,84 @@ if (n_before_backfill > 0L && requireNamespace("arrow", quietly = TRUE)) {
                   100 * n_recovered / n_before_backfill, n_after_backfill))
 }
 
-# Match-level team xG from panna's own xG model (per-shot xG summed by team;
-# built by debug/keep/build_match_team_xg.R -> opta_match_xg.parquet). Opta's
-# feed carries no usable match xG, so without this the xG-rolling features in
-# step 03 collapse to a constant.
+# Match-level team xG from panna's own xG model (per-shot xG summed by team).
+# Opta's feed carries no usable match xG, so without this the xG-rolling
+# features in step 03 collapse to a constant.
+#
+# Source, in order:
+#   1. opta_shot_events.parquet -- refreshed by every daily scrape, its `xg` is
+#      the live shot model's score. Summed per (match_id, team_id), own goals
+#      excluded. A team with no shot row in a match that HAS shot rows gets 0
+#      (it took no shots), not NA.
+#   2. opta_match_xg.parquet -- the old hand-built file
+#      (debug/keep/build_match_team_xg.R). Fallback only: it was last uploaded
+#      2026-05-29 and holds no match after 2026-05-17, so as the primary source
+#      every 2026-27 match fed step 03 NA xG (found 2026-11-04; on all 106,538
+#      overlapping team-matches the shot-events sum correlates 0.971 with it,
+#      mean 1.27 vs 1.31).
 results$home_xg <- NA_real_
 results$away_xg <- NA_real_
+shots_path <- file.path(opta_data_dir(), "opta_shot_events.parquet")
 mxg_path <- file.path(opta_data_dir(), "opta_match_xg.parquet")
-if (!file.exists(mxg_path)) {
-  # Loud warning rather than hard-fail: this file isn't yet published to
-  # opta-latest (see TODO 2026-05-29). When it is, this warning will
-  # disappear and xG-rolling features will populate properly. Until then
-  # the step continues with NA xG, but operator gets a clear signal.
+mxg <- NULL
+if (file.exists(shots_path) && requireNamespace("arrow", quietly = TRUE)) {
+  sh <- data.table::as.data.table(arrow::read_parquet(
+    shots_path, col_select = c("match_id", "event_id", "team_id", "xg", "situation", "is_own_goal")))
+  n_og <- sum(sh$is_own_goal %in% TRUE)
+  sh <- sh[!(is_own_goal %in% TRUE) & !is.na(team_id)]
+  # Penalty SHOOTOUT kicks are stored as ordinary Penalty shots (0.77 xG each;
+  # one 2026 UEL tie summed to 31 xG) and the table has no period column, and
+  # their `minute` overlaps extra time. Opta's event_id is chronological, so a
+  # shootout is the match's TRAILING run of Penalty shots. Drop a trailing run
+  # of 3+: measured 2026-11-04, 916 matches have one (905 of them 6+, 882
+  # alternate teams); runs of 1-2 (2,521 matches) are late in-game penalties.
+  data.table::setorder(sh, match_id, event_id)
+  sh[, .so := rev(cumprod(rev(situation %in% "Penalty"))), by = match_id]
+  sh[, .so_n := sum(.so), by = match_id]
+  n_so <- sh[.so == 1 & .so_n >= 3, .N]
+  n_so_m <- sh[.so == 1 & .so_n >= 3, data.table::uniqueN(match_id)]
+  sh <- sh[!(.so == 1 & .so_n >= 3)]
+  mxg <- sh[, .(xg = sum(xg, na.rm = TRUE)), by = .(match_id, team_id)]
+  message(sprintf("  Match xG source: opta_shot_events.parquet (%s shots; dropped %s own goals and %s shootout kicks in %s matches; %s team-matches)",
+                  format(nrow(sh), big.mark = ","), format(n_og, big.mark = ","),
+                  format(n_so, big.mark = ","), format(n_so_m, big.mark = ","),
+                  format(nrow(mxg), big.mark = ",")))
+  shot_match_ids <- unique(sh$match_id)
+  rm(sh)
+} else if (file.exists(mxg_path) && requireNamespace("arrow", quietly = TRUE)) {
+  warning("opta_shot_events.parquet missing; falling back to the stale hand-built ",
+          "opta_match_xg.parquet (no matches after 2026-05-17).", call. = FALSE, immediate. = TRUE)
+  mxg <- data.table::as.data.table(arrow::read_parquet(mxg_path))
+  shot_match_ids <- character(0)
+} else {
   warning(sprintf(
-    "opta_match_xg.parquet missing at %s — xG-rolling features in step 03 will be all-NA. ",
-    mxg_path),
-    "Upload the file to opta-latest + add to predictions-pipeline.yml ",
-    "download list to fix.", call. = FALSE, immediate. = TRUE)
+    "No match xG source (neither %s nor %s) — xG-rolling features in step 03 will be all-NA.",
+    shots_path, mxg_path), call. = FALSE, immediate. = TRUE)
 }
-if (file.exists(mxg_path) && requireNamespace("arrow", quietly = TRUE)) {
-  mxg <- as.data.frame(arrow::read_parquet(mxg_path))
+if (!is.null(mxg)) {
   xg_lookup <- stats::setNames(mxg$xg, paste(mxg$match_id, mxg$team_id))
   results$home_xg <- unname(xg_lookup[paste(results$match_id, results$home_team_id)])
   results$away_xg <- unname(xg_lookup[paste(results$match_id, results$away_team_id)])
+  # A side with no shot row in a match whose shots WERE scraped took no shots: 0 xG.
+  in_shots <- results$match_id %in% shot_match_ids
+  n_zero <- sum(in_shots & (is.na(results$home_xg) | is.na(results$away_xg)))
+  results$home_xg[in_shots & is.na(results$home_xg)] <- 0
+  results$away_xg[in_shots & is.na(results$away_xg)] <- 0
+  if (n_zero > 0) message(sprintf("  Match xG: %d match(es) with one side shotless set to 0", n_zero))
   n_xg <- sum(!is.na(results$home_xg) & !is.na(results$away_xg))
+  # Freshness: the 2026-05 file went stale for 5 months while the join rate
+  # (computed over ALL history) still read 80%. Compare the newest result that
+  # has xG with the newest result overall.
+  rd <- suppressWarnings(as.Date(substr(results$match_date, 1, 10)))
+  has <- !is.na(results$home_xg) & !is.na(results$away_xg)
+  if (any(has) && any(!is.na(rd))) {
+    lag_days <- as.integer(max(rd, na.rm = TRUE) - max(rd[has], na.rm = TRUE))
+    message(sprintf("  Match xG newest covered result: %s (newest result %s, lag %d days)",
+                    format(max(rd[has], na.rm = TRUE)), format(max(rd, na.rm = TRUE)), lag_days))
+    if (lag_days > 21) warning(sprintf(
+      "Match xG stops %d days before the newest result: the xG source is stale, so recent rolling xG features are NA.",
+      lag_days), call. = FALSE, immediate. = TRUE)
+  }
   message(sprintf("  Match xG (panna model) joined: %d/%d matches (%.0f%%)",
                   n_xg, nrow(results), 100 * n_xg / nrow(results)))
   # Sanity gate: if the join rate is implausibly low (signalling a key-mismatch
