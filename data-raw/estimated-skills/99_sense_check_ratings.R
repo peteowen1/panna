@@ -8,10 +8,10 @@
 ## defects this repo has shipped were never visible in aggregate metrics:
 ##   - the opponent control sat inert in 8 competitions for 3.5 months while
 ##     coverage read "healthy" (panna#224) -- only WITHIN-league variance saw it;
-##   - a GK position factor was argued over for days on PSR as a whole when the
-##     over-spread lives entirely in OSR (panna#227);
-##   - DSR's overall calibration slope reads 1.025, apparently perfect, while its
-##     goalkeeper cell is -2.08 and the positions cancel (panna#227).
+##   - a GK position factor was argued over for days on PSR as a whole. (panna#227
+##     first blamed OSR for the keeper over-spread and reported a -2.08 DSR keeper
+##     cell; both claims were RETRACTED -- they came from the season view of the
+##     ratings, not the as-at one. The as-at run showed no inversion; see #227.)
 ## Every one is caught by splitting a number by position or league and looking at
 ## a named player. That is all this file does.
 ##
@@ -35,7 +35,7 @@
 ##                         difference. Target slope 1.00 for goal-denominated
 ##                         metrics; for others read the SHAPE (position ordering,
 ##                         GK sign) not the level.
-##   D. GK sign check   -- a negative keeper cell is the #209/#210/#226/#227
+##   D. GK sign check   -- a negative keeper cell is the #209/#210/#226
 ##                         inversion family and must abort belief in the metric.
 
 devtools::load_all("."); suppressPackageStartupMessages({library(data.table); library(arrow)})
@@ -212,7 +212,7 @@ inv <- out[GK < 0 | DEF < 0 | MID < 0 | FWD < 0]
 if (nrow(inv) > 0) {
   cat("\n!!! INVERTED POSITION CELLS -- do not calibrate these until fixed !!!\n")
   cat("(RATING_CALIBRATION.md: a factor on a negative slope encodes the defect\n")
-  cat(" as a legitimate-looking coefficient. See #209 / #210 / #226 / #227.)\n")
+  cat(" as a legitimate-looking coefficient. See #209 / #210 / #226.)\n")
   print(inv[, .(metric, GK, DEF, MID, FWD)])
 } else {
   cat("\nNo inverted position cells.\n")
