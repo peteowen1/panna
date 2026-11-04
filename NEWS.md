@@ -1,3 +1,12 @@
+# panna 0.3.107
+
+- `aggregate_player_game_epv()` gains `epv_shot_stopping`, the `keeper_save` share of `epv_keeping`, so a
+  keeper's shot-stopping EPV can be read apart from handling (`epv_keeping - epv_shot_stopping`) and
+  distribution (`epv_passing`). It is a subset of `epv_keeping`, not a new bucket: `epv_keeping`,
+  `epv_defending`, `epv_offensive`/`epv_defensive` and every headline EPV are unchanged. It is carried
+  through `build_player_game_ratings()` and the 10b game-log export. Part 1 of #210 only; the
+  GSAA-shaped save credit (part 2) changes published numbers and is not done here.
+
 # panna 0.3.106
 
 - `data-raw/estimated-skills/08b_export_psr_weekly.R` gains `PSR_RAW_UNCALIBRATED=1`: a full rebuild of the weekly

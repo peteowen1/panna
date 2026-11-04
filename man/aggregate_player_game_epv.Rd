@@ -38,6 +38,9 @@ defensive). offensive + defensive == epv_total always.}
 \item{epv_dribbling}{Ground take-on attempts}
 \item{epv_aerial}{Aerial duel credit (winner + / loser via duel_blame)}
 \item{epv_keeping}{Goalkeeping: saves, pick-ups, claims, punches}
+\item{epv_shot_stopping}{The \code{keeper_save} share of \code{epv_keeping}
+(a subset, not an extra bucket: not added again to \code{epv_defensive}).
+Handling = \code{epv_keeping - epv_shot_stopping}.}
 \item{epv_defending}{Outfield defending: tackles, interceptions,
 clearances, ball recoveries, fouls won, dispossessed events}
 \item{epv_duel_blame}{Negative credit for losing duels (aerials, take-on

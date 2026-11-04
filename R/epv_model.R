@@ -1462,6 +1462,9 @@ calculate_action_type_epv <- function(spadl_with_epv) {
 #'     \item{epv_dribbling}{Ground take-on attempts}
 #'     \item{epv_aerial}{Aerial duel credit (winner + / loser via duel_blame)}
 #'     \item{epv_keeping}{Goalkeeping: saves, pick-ups, claims, punches}
+#'     \item{epv_shot_stopping}{The \code{keeper_save} share of \code{epv_keeping}
+#'       (a subset, not an extra bucket: not added again to \code{epv_defensive}).
+#'       Handling = \code{epv_keeping - epv_shot_stopping}.}
 #'     \item{epv_defending}{Outfield defending: tackles, interceptions,
 #'       clearances, ball recoveries, fouls won, dispossessed events}
 #'     \item{epv_duel_blame}{Negative credit for losing duels (aerials, take-on
@@ -1591,6 +1594,20 @@ aggregate_player_game_epv <- function(spadl_with_epv, lineups = NULL,
                          all.x = TRUE)
     player_epv[is.na(get(col_name)), (col_name) := 0]
   }
+
+  # Shot-stopping as its own component (panna#210, part 1). `epv_keeping` stays
+  # the goalkeeping TOTAL (handling + saves) so its meaning, the roll-up below and
+  # every published number are unchanged. `epv_shot_stopping` is the keeper_save
+  # share of it, the same "of which" shape as `epv_aerial_att` inside `epv_aerial`:
+  # it is NOT added to the roll-up again, and handling = epv_keeping -
+  # epv_shot_stopping. That makes "does this keeper add EPV by stopping shots,
+  # by handling, or by distributing (epv_passing)?" answerable.
+  shot_stop <- dt[action_type == "keeper_save", .(
+    epv_shot_stopping = sum(get(credit_col), na.rm = TRUE)
+  ), by = .(player_id, match_id)]
+  player_epv <- merge(player_epv, shot_stop, by = c("player_id", "match_id"),
+                       all.x = TRUE)
+  player_epv[is.na(epv_shot_stopping), epv_shot_stopping := 0]
 
   # Offensive vs defensive roll-up. The split is presentational only —
   # offensive + defensive == epv_total regardless of bucketing — so re-bucketing

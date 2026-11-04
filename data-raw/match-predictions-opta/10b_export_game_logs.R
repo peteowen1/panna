@@ -1460,6 +1460,9 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
       "epv_offensive_adj", "epv_defensive_adj", "opp_adj",
       "epv_passing", "epv_shooting", "epv_dribbling", "epv_aerial",
       "epv_keeping", "epv_defending",
+      # epv_shot_stopping is the keeper_save SUBSET of epv_keeping (panna#210);
+      # it is not part of the epv_defensive reconstruction above.
+      "epv_shot_stopping",
       # epv_duel_blame and epv_aerial_att complete the defensive roll-up:
       #   epv_defensive = epv_defending + epv_keeping
       #                   + (epv_aerial - epv_aerial_att) + epv_duel_blame
