@@ -1,0 +1,860 @@
+name: Skills Seasonal Build
+
+# Builds the skills chain the predictions run depends on, on a runner instead of by hand
+# (pannaverse NEXT-STEPS, Pete 2026-11-05 option 2): skills step 01 -> 04c decayed RAPM target
+# -> step 02 skill features -> step 03 skill-SPM -> step 06 seasonal ratings + PSR league offsets.
+# Until this existed, predictions-cache's 06_seasonal_ratings.rds, 02_skill_features.rds,
+# 03_skill_spm.rds and psr_league_offsets.parquet were uploaded only by hand and sat at
+# 2026-07-05 / 2026-09-03 while predictions-pipeline.yml downloads 06 as REQUIRED.
+#
+# Every stage is its OWN JOB (fresh 16 GB runner; a runner that dies of memory takes its whole
+# log with it, so one job per stage names the stage) and runs under /usr/bin/time -v; outputs pass
+# between jobs as 7-day artifacts. Measured 2026-11-05 (run 41978777220), peak RSS of 16 GB:
+# 01 14.8, 04c 6.1, 02 10.5, 03 14.5, 06 14.8. Stages 01, 03 and 06 have ~1.2 GB headroom.
+#
+# The publish job always runs the coverage gate (the new tables must cover what the published
+# copies cover). It UPLOADS only on main, and only on the weekly schedule or a dispatch with
+# publish=true. Uploads go through .vb_safe_upload (temp name, verify, swap), never --clobber.
+
+on:
+  schedule:
+    - cron: '0 4 * * 1'   # Mondays 3pm Sydney (AEDT); seasonal ratings move slowly
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Upload to predictions-cache (main only)'
+        type: boolean
+        default: false
+
+concurrency:
+  group: skills-seasonal-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
+  R_KEEP_PKG_SOURCE: yes
+
+jobs:
+  s01:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.5.0'
+          use-public-rspm: true
+
+      - name: Setup R dependencies
+        uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          cache-version: 2
+          extra-packages: |
+            any::devtools
+            any::piggyback
+            any::arrow
+            any::dplyr
+            any::tidyr
+            any::data.table
+            any::cli
+          needs: |
+            devtools
+
+      - name: Download Opta data (opta-latest)
+        run: |
+          cat > /tmp/fetch_opta.R << 'EOF'
+          devtools::load_all()
+          opta_dir <- file.path(Sys.getenv("RUNNER_TEMP"), "pannadata", "opta")
+          dir.create(opta_dir, recursive = TRUE, showWarnings = FALSE)
+          repo <- "peteowen1/pannadata"; tag <- "opta-latest"
+          manifest <- tryCatch(vb_read_manifest(repo, tag, required = FALSE), error = function(e) NULL)
+          need <- c("opta_match_stats.parquet", "opta-catalog.json", "opta_player_stats.parquet",
+                    "opta_fixtures.parquet")
+          for (f in need) vb_download(repo, tag, f, file.path(opta_dir, f), manifest = manifest)
+          for (f in c("opta_skills.parquet", "opta_xmetrics.parquet", "opta_xmetrics_bymatch.parquet")) {
+            tryCatch(vb_download(repo, tag, f, file.path(opta_dir, f), manifest = manifest),
+                     vb_error = function(e) cli::cli_alert_warning("optional {f}: {conditionMessage(e)}"))
+          }
+          EOF
+          Rscript /tmp/fetch_opta.R
+          ls -lh "${{ runner.temp }}/pannadata/opta"
+
+      - name: Download caches (predictions-cache, blog-latest)
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+        run: |
+          set -e
+          mkdir -p data-raw/cache-opta data-raw/cache-skills data-raw/cache-predictions-opta
+          get() {   # $1 release, $2 pattern, $3 dir, $4 required|optional
+            for a in 1 2 3; do
+              if gh release download "$1" --repo peteowen1/pannadata --pattern "$2" --dir "$3" --clobber; then return 0; fi
+              sleep 20
+            done
+            if [ "$4" = required ]; then echo "FATAL: $2 from $1"; return 1; fi
+            echo "::warning::optional $2 from $1 not downloaded"
+          }
+          # Opta RAPM caches: refreshed daily by opta-pipeline.yml
+          for f in 03_splints.rds 04_rapm.rds 05_spm.rds 07_seasonal_ratings.rds; do
+            get predictions-cache "$f" data-raw/cache-opta required
+          done
+          # tuned decay params (step 02b is not re-run) and the as-of prior (step 03 resumes it)
+          get predictions-cache 02b_decay_params.rds data-raw/cache-skills required
+          get predictions-cache 03_skill_spm_asof.rds data-raw/cache-skills optional
+          # step 06's league offsets read the per-season game logs (step 10b's output)
+          get blog-latest "game_logs_*.parquet" data-raw/cache-predictions-opta required
+          ls -lh data-raw/cache-opta data-raw/cache-skills
+          echo "game logs: $(ls data-raw/cache-predictions-opta/game_logs_*.parquet | wc -l) files"
+
+      - name: Stage 01 (peak memory and time measured)
+        env:
+          PANNADATA_DIR: ${{ runner.temp }}/pannadata
+          XMETRICS_SOURCE: remote
+        run: |
+          cat > /tmp/stage.R << 'EOF'
+          args <- commandArgs(TRUE); stage <- args[1]
+          pannadata_path <- Sys.getenv("PANNADATA_DIR")
+          devtools::load_all()
+          pannadata_dir(pannadata_path)
+          opta_data_dir(file.path(pannadata_path, "opta"))
+          if (stage == "04c") {
+            source("data-raw/pipeline_utils.R")
+            source("data-raw/player-ratings-opta/04c_rapm_decayed.R")
+          } else {
+            run_steps <- list(
+              step_01_compute_match_stats    = stage == "01",
+              step_02_estimate_skills        = stage == "02",
+              step_02b_optimize_params       = FALSE,
+              step_03_skill_spm              = stage == "03",
+              step_04_skill_xrapm            = FALSE,
+              step_05_skill_panna_ratings    = FALSE,
+              step_06_seasonal_skill_ratings = stage == "06",
+              step_07_train_psr_model        = FALSE,
+              step_08_export_skills          = FALSE,
+              step_08b_export_psr_weekly     = FALSE,
+              step_09_career_panna           = FALSE
+            )
+            source("data-raw/estimated-skills/run_skills_pipeline.R")
+          }
+          EOF
+          free -g
+          /usr/bin/time -v -o /tmp/time.txt Rscript /tmp/stage.R 01 2>&1 | tee /tmp/stage.log
+          code=${PIPESTATUS[0]}
+          rss=$(awk -F: '/Maximum resident set size/ {printf "%.1f", $2/1048576}' /tmp/time.txt)
+          wall=$(awk -F': ' '/Elapsed \(wall clock\)/ {print $2}' /tmp/time.txt)
+          echo "| 01 | $wall | $rss | $code |" >> "$GITHUB_STEP_SUMMARY"
+          echo "stage 01: wall $wall, peak RSS ${rss} GB, exit $code"
+          exit "$code"
+      - name: Pass outputs on
+        uses: actions/upload-artifact@v7
+        with:
+          name: stage-out-01
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            data-raw/cache-skills/01_match_stats.rds
+  s04c:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.5.0'
+          use-public-rspm: true
+
+      - name: Setup R dependencies
+        uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          cache-version: 2
+          extra-packages: |
+            any::devtools
+            any::piggyback
+            any::arrow
+            any::dplyr
+            any::tidyr
+            any::data.table
+            any::cli
+          needs: |
+            devtools
+
+      - name: Download Opta data (opta-latest)
+        run: |
+          cat > /tmp/fetch_opta.R << 'EOF'
+          devtools::load_all()
+          opta_dir <- file.path(Sys.getenv("RUNNER_TEMP"), "pannadata", "opta")
+          dir.create(opta_dir, recursive = TRUE, showWarnings = FALSE)
+          repo <- "peteowen1/pannadata"; tag <- "opta-latest"
+          manifest <- tryCatch(vb_read_manifest(repo, tag, required = FALSE), error = function(e) NULL)
+          need <- c("opta_match_stats.parquet", "opta-catalog.json", "opta_player_stats.parquet",
+                    "opta_fixtures.parquet")
+          for (f in need) vb_download(repo, tag, f, file.path(opta_dir, f), manifest = manifest)
+          for (f in c("opta_skills.parquet", "opta_xmetrics.parquet", "opta_xmetrics_bymatch.parquet")) {
+            tryCatch(vb_download(repo, tag, f, file.path(opta_dir, f), manifest = manifest),
+                     vb_error = function(e) cli::cli_alert_warning("optional {f}: {conditionMessage(e)}"))
+          }
+          EOF
+          Rscript /tmp/fetch_opta.R
+          ls -lh "${{ runner.temp }}/pannadata/opta"
+
+      - name: Download caches (predictions-cache, blog-latest)
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+        run: |
+          set -e
+          mkdir -p data-raw/cache-opta data-raw/cache-skills data-raw/cache-predictions-opta
+          get() {   # $1 release, $2 pattern, $3 dir, $4 required|optional
+            for a in 1 2 3; do
+              if gh release download "$1" --repo peteowen1/pannadata --pattern "$2" --dir "$3" --clobber; then return 0; fi
+              sleep 20
+            done
+            if [ "$4" = required ]; then echo "FATAL: $2 from $1"; return 1; fi
+            echo "::warning::optional $2 from $1 not downloaded"
+          }
+          # Opta RAPM caches: refreshed daily by opta-pipeline.yml
+          for f in 03_splints.rds 04_rapm.rds 05_spm.rds 07_seasonal_ratings.rds; do
+            get predictions-cache "$f" data-raw/cache-opta required
+          done
+          # tuned decay params (step 02b is not re-run) and the as-of prior (step 03 resumes it)
+          get predictions-cache 02b_decay_params.rds data-raw/cache-skills required
+          get predictions-cache 03_skill_spm_asof.rds data-raw/cache-skills optional
+          # step 06's league offsets read the per-season game logs (step 10b's output)
+          get blog-latest "game_logs_*.parquet" data-raw/cache-predictions-opta required
+          ls -lh data-raw/cache-opta data-raw/cache-skills
+          echo "game logs: $(ls data-raw/cache-predictions-opta/game_logs_*.parquet | wc -l) files"
+
+      - name: Stage 04c (peak memory and time measured)
+        env:
+          PANNADATA_DIR: ${{ runner.temp }}/pannadata
+          XMETRICS_SOURCE: remote
+        run: |
+          cat > /tmp/stage.R << 'EOF'
+          args <- commandArgs(TRUE); stage <- args[1]
+          pannadata_path <- Sys.getenv("PANNADATA_DIR")
+          devtools::load_all()
+          pannadata_dir(pannadata_path)
+          opta_data_dir(file.path(pannadata_path, "opta"))
+          if (stage == "04c") {
+            source("data-raw/pipeline_utils.R")
+            source("data-raw/player-ratings-opta/04c_rapm_decayed.R")
+          } else {
+            run_steps <- list(
+              step_01_compute_match_stats    = stage == "01",
+              step_02_estimate_skills        = stage == "02",
+              step_02b_optimize_params       = FALSE,
+              step_03_skill_spm              = stage == "03",
+              step_04_skill_xrapm            = FALSE,
+              step_05_skill_panna_ratings    = FALSE,
+              step_06_seasonal_skill_ratings = stage == "06",
+              step_07_train_psr_model        = FALSE,
+              step_08_export_skills          = FALSE,
+              step_08b_export_psr_weekly     = FALSE,
+              step_09_career_panna           = FALSE
+            )
+            source("data-raw/estimated-skills/run_skills_pipeline.R")
+          }
+          EOF
+          free -g
+          /usr/bin/time -v -o /tmp/time.txt Rscript /tmp/stage.R 04c 2>&1 | tee /tmp/stage.log
+          code=${PIPESTATUS[0]}
+          rss=$(awk -F: '/Maximum resident set size/ {printf "%.1f", $2/1048576}' /tmp/time.txt)
+          wall=$(awk -F': ' '/Elapsed \(wall clock\)/ {print $2}' /tmp/time.txt)
+          echo "| 04c | $wall | $rss | $code |" >> "$GITHUB_STEP_SUMMARY"
+          echo "stage 04c: wall $wall, peak RSS ${rss} GB, exit $code"
+          exit "$code"
+      - name: Pass outputs on
+        uses: actions/upload-artifact@v7
+        with:
+          name: stage-out-04c
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            data-raw/cache-opta/04c_rapm_decayed.rds
+  s02:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    needs: [s01]
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.5.0'
+          use-public-rspm: true
+
+      - name: Setup R dependencies
+        uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          cache-version: 2
+          extra-packages: |
+            any::devtools
+            any::piggyback
+            any::arrow
+            any::dplyr
+            any::tidyr
+            any::data.table
+            any::cli
+          needs: |
+            devtools
+
+      - name: Download Opta data (opta-latest)
+        run: |
+          cat > /tmp/fetch_opta.R << 'EOF'
+          devtools::load_all()
+          opta_dir <- file.path(Sys.getenv("RUNNER_TEMP"), "pannadata", "opta")
+          dir.create(opta_dir, recursive = TRUE, showWarnings = FALSE)
+          repo <- "peteowen1/pannadata"; tag <- "opta-latest"
+          manifest <- tryCatch(vb_read_manifest(repo, tag, required = FALSE), error = function(e) NULL)
+          need <- c("opta_match_stats.parquet", "opta-catalog.json", "opta_player_stats.parquet",
+                    "opta_fixtures.parquet")
+          for (f in need) vb_download(repo, tag, f, file.path(opta_dir, f), manifest = manifest)
+          for (f in c("opta_skills.parquet", "opta_xmetrics.parquet", "opta_xmetrics_bymatch.parquet")) {
+            tryCatch(vb_download(repo, tag, f, file.path(opta_dir, f), manifest = manifest),
+                     vb_error = function(e) cli::cli_alert_warning("optional {f}: {conditionMessage(e)}"))
+          }
+          EOF
+          Rscript /tmp/fetch_opta.R
+          ls -lh "${{ runner.temp }}/pannadata/opta"
+
+      - name: Download caches (predictions-cache, blog-latest)
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+        run: |
+          set -e
+          mkdir -p data-raw/cache-opta data-raw/cache-skills data-raw/cache-predictions-opta
+          get() {   # $1 release, $2 pattern, $3 dir, $4 required|optional
+            for a in 1 2 3; do
+              if gh release download "$1" --repo peteowen1/pannadata --pattern "$2" --dir "$3" --clobber; then return 0; fi
+              sleep 20
+            done
+            if [ "$4" = required ]; then echo "FATAL: $2 from $1"; return 1; fi
+            echo "::warning::optional $2 from $1 not downloaded"
+          }
+          # Opta RAPM caches: refreshed daily by opta-pipeline.yml
+          for f in 03_splints.rds 04_rapm.rds 05_spm.rds 07_seasonal_ratings.rds; do
+            get predictions-cache "$f" data-raw/cache-opta required
+          done
+          # tuned decay params (step 02b is not re-run) and the as-of prior (step 03 resumes it)
+          get predictions-cache 02b_decay_params.rds data-raw/cache-skills required
+          get predictions-cache 03_skill_spm_asof.rds data-raw/cache-skills optional
+          # step 06's league offsets read the per-season game logs (step 10b's output)
+          get blog-latest "game_logs_*.parquet" data-raw/cache-predictions-opta required
+          ls -lh data-raw/cache-opta data-raw/cache-skills
+          echo "game logs: $(ls data-raw/cache-predictions-opta/game_logs_*.parquet | wc -l) files"
+
+      - name: Bring in earlier stages' outputs
+        uses: actions/download-artifact@v7
+        with:
+          pattern: stage-out-*
+          merge-multiple: true
+          path: /tmp/handover
+      # upload-artifact stores files relative to their common folder, so they arrive flat;
+      # put each back where the scripts read it.
+      - name: Put handed-over files back in place
+        run: |
+          ls -l /tmp/handover
+          for f in /tmp/handover/*; do
+            case "$(basename "$f")" in
+              04c_rapm_decayed.rds) mv -f "$f" data-raw/cache-opta/ ;;
+              *) mv -f "$f" data-raw/cache-skills/ ;;
+            esac
+          done
+          ls -l data-raw/cache-skills data-raw/cache-opta
+      - name: Stage 02 (peak memory and time measured)
+        env:
+          PANNADATA_DIR: ${{ runner.temp }}/pannadata
+          XMETRICS_SOURCE: remote
+        run: |
+          cat > /tmp/stage.R << 'EOF'
+          args <- commandArgs(TRUE); stage <- args[1]
+          pannadata_path <- Sys.getenv("PANNADATA_DIR")
+          devtools::load_all()
+          pannadata_dir(pannadata_path)
+          opta_data_dir(file.path(pannadata_path, "opta"))
+          if (stage == "04c") {
+            source("data-raw/pipeline_utils.R")
+            source("data-raw/player-ratings-opta/04c_rapm_decayed.R")
+          } else {
+            run_steps <- list(
+              step_01_compute_match_stats    = stage == "01",
+              step_02_estimate_skills        = stage == "02",
+              step_02b_optimize_params       = FALSE,
+              step_03_skill_spm              = stage == "03",
+              step_04_skill_xrapm            = FALSE,
+              step_05_skill_panna_ratings    = FALSE,
+              step_06_seasonal_skill_ratings = stage == "06",
+              step_07_train_psr_model        = FALSE,
+              step_08_export_skills          = FALSE,
+              step_08b_export_psr_weekly     = FALSE,
+              step_09_career_panna           = FALSE
+            )
+            source("data-raw/estimated-skills/run_skills_pipeline.R")
+          }
+          EOF
+          free -g
+          /usr/bin/time -v -o /tmp/time.txt Rscript /tmp/stage.R 02 2>&1 | tee /tmp/stage.log
+          code=${PIPESTATUS[0]}
+          rss=$(awk -F: '/Maximum resident set size/ {printf "%.1f", $2/1048576}' /tmp/time.txt)
+          wall=$(awk -F': ' '/Elapsed \(wall clock\)/ {print $2}' /tmp/time.txt)
+          echo "| 02 | $wall | $rss | $code |" >> "$GITHUB_STEP_SUMMARY"
+          echo "stage 02: wall $wall, peak RSS ${rss} GB, exit $code"
+          exit "$code"
+      - name: Pass outputs on
+        uses: actions/upload-artifact@v7
+        with:
+          name: stage-out-02
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            data-raw/cache-skills/02_skill_features.rds
+  s03:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    needs: [s01, s04c, s02]
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.5.0'
+          use-public-rspm: true
+
+      - name: Setup R dependencies
+        uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          cache-version: 2
+          extra-packages: |
+            any::devtools
+            any::piggyback
+            any::arrow
+            any::dplyr
+            any::tidyr
+            any::data.table
+            any::cli
+          needs: |
+            devtools
+
+      - name: Download Opta data (opta-latest)
+        run: |
+          cat > /tmp/fetch_opta.R << 'EOF'
+          devtools::load_all()
+          opta_dir <- file.path(Sys.getenv("RUNNER_TEMP"), "pannadata", "opta")
+          dir.create(opta_dir, recursive = TRUE, showWarnings = FALSE)
+          repo <- "peteowen1/pannadata"; tag <- "opta-latest"
+          manifest <- tryCatch(vb_read_manifest(repo, tag, required = FALSE), error = function(e) NULL)
+          need <- c("opta_match_stats.parquet", "opta-catalog.json", "opta_player_stats.parquet",
+                    "opta_fixtures.parquet")
+          for (f in need) vb_download(repo, tag, f, file.path(opta_dir, f), manifest = manifest)
+          for (f in c("opta_skills.parquet", "opta_xmetrics.parquet", "opta_xmetrics_bymatch.parquet")) {
+            tryCatch(vb_download(repo, tag, f, file.path(opta_dir, f), manifest = manifest),
+                     vb_error = function(e) cli::cli_alert_warning("optional {f}: {conditionMessage(e)}"))
+          }
+          EOF
+          Rscript /tmp/fetch_opta.R
+          ls -lh "${{ runner.temp }}/pannadata/opta"
+
+      - name: Download caches (predictions-cache, blog-latest)
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+        run: |
+          set -e
+          mkdir -p data-raw/cache-opta data-raw/cache-skills data-raw/cache-predictions-opta
+          get() {   # $1 release, $2 pattern, $3 dir, $4 required|optional
+            for a in 1 2 3; do
+              if gh release download "$1" --repo peteowen1/pannadata --pattern "$2" --dir "$3" --clobber; then return 0; fi
+              sleep 20
+            done
+            if [ "$4" = required ]; then echo "FATAL: $2 from $1"; return 1; fi
+            echo "::warning::optional $2 from $1 not downloaded"
+          }
+          # Opta RAPM caches: refreshed daily by opta-pipeline.yml
+          for f in 03_splints.rds 04_rapm.rds 05_spm.rds 07_seasonal_ratings.rds; do
+            get predictions-cache "$f" data-raw/cache-opta required
+          done
+          # tuned decay params (step 02b is not re-run) and the as-of prior (step 03 resumes it)
+          get predictions-cache 02b_decay_params.rds data-raw/cache-skills required
+          get predictions-cache 03_skill_spm_asof.rds data-raw/cache-skills optional
+          # step 06's league offsets read the per-season game logs (step 10b's output)
+          get blog-latest "game_logs_*.parquet" data-raw/cache-predictions-opta required
+          ls -lh data-raw/cache-opta data-raw/cache-skills
+          echo "game logs: $(ls data-raw/cache-predictions-opta/game_logs_*.parquet | wc -l) files"
+
+      - name: Bring in earlier stages' outputs
+        uses: actions/download-artifact@v7
+        with:
+          pattern: stage-out-*
+          merge-multiple: true
+          path: /tmp/handover
+      # upload-artifact stores files relative to their common folder, so they arrive flat;
+      # put each back where the scripts read it.
+      - name: Put handed-over files back in place
+        run: |
+          ls -l /tmp/handover
+          for f in /tmp/handover/*; do
+            case "$(basename "$f")" in
+              04c_rapm_decayed.rds) mv -f "$f" data-raw/cache-opta/ ;;
+              *) mv -f "$f" data-raw/cache-skills/ ;;
+            esac
+          done
+          ls -l data-raw/cache-skills data-raw/cache-opta
+      - name: Stage 03 (peak memory and time measured)
+        env:
+          PANNADATA_DIR: ${{ runner.temp }}/pannadata
+          XMETRICS_SOURCE: remote
+        run: |
+          cat > /tmp/stage.R << 'EOF'
+          args <- commandArgs(TRUE); stage <- args[1]
+          pannadata_path <- Sys.getenv("PANNADATA_DIR")
+          devtools::load_all()
+          pannadata_dir(pannadata_path)
+          opta_data_dir(file.path(pannadata_path, "opta"))
+          if (stage == "04c") {
+            source("data-raw/pipeline_utils.R")
+            source("data-raw/player-ratings-opta/04c_rapm_decayed.R")
+          } else {
+            run_steps <- list(
+              step_01_compute_match_stats    = stage == "01",
+              step_02_estimate_skills        = stage == "02",
+              step_02b_optimize_params       = FALSE,
+              step_03_skill_spm              = stage == "03",
+              step_04_skill_xrapm            = FALSE,
+              step_05_skill_panna_ratings    = FALSE,
+              step_06_seasonal_skill_ratings = stage == "06",
+              step_07_train_psr_model        = FALSE,
+              step_08_export_skills          = FALSE,
+              step_08b_export_psr_weekly     = FALSE,
+              step_09_career_panna           = FALSE
+            )
+            source("data-raw/estimated-skills/run_skills_pipeline.R")
+          }
+          EOF
+          free -g
+          /usr/bin/time -v -o /tmp/time.txt Rscript /tmp/stage.R 03 2>&1 | tee /tmp/stage.log
+          code=${PIPESTATUS[0]}
+          rss=$(awk -F: '/Maximum resident set size/ {printf "%.1f", $2/1048576}' /tmp/time.txt)
+          wall=$(awk -F': ' '/Elapsed \(wall clock\)/ {print $2}' /tmp/time.txt)
+          echo "| 03 | $wall | $rss | $code |" >> "$GITHUB_STEP_SUMMARY"
+          echo "stage 03: wall $wall, peak RSS ${rss} GB, exit $code"
+          exit "$code"
+      - name: Pass outputs on
+        uses: actions/upload-artifact@v7
+        with:
+          name: stage-out-03
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            data-raw/cache-skills/03_skill_spm.rds
+            data-raw/cache-skills/03_skill_spm_asof.rds
+  s06:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    needs: [s01, s04c, s02, s03]
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.5.0'
+          use-public-rspm: true
+
+      - name: Setup R dependencies
+        uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          cache-version: 2
+          extra-packages: |
+            any::devtools
+            any::piggyback
+            any::arrow
+            any::dplyr
+            any::tidyr
+            any::data.table
+            any::cli
+          needs: |
+            devtools
+
+      - name: Download Opta data (opta-latest)
+        run: |
+          cat > /tmp/fetch_opta.R << 'EOF'
+          devtools::load_all()
+          opta_dir <- file.path(Sys.getenv("RUNNER_TEMP"), "pannadata", "opta")
+          dir.create(opta_dir, recursive = TRUE, showWarnings = FALSE)
+          repo <- "peteowen1/pannadata"; tag <- "opta-latest"
+          manifest <- tryCatch(vb_read_manifest(repo, tag, required = FALSE), error = function(e) NULL)
+          need <- c("opta_match_stats.parquet", "opta-catalog.json", "opta_player_stats.parquet",
+                    "opta_fixtures.parquet")
+          for (f in need) vb_download(repo, tag, f, file.path(opta_dir, f), manifest = manifest)
+          for (f in c("opta_skills.parquet", "opta_xmetrics.parquet", "opta_xmetrics_bymatch.parquet")) {
+            tryCatch(vb_download(repo, tag, f, file.path(opta_dir, f), manifest = manifest),
+                     vb_error = function(e) cli::cli_alert_warning("optional {f}: {conditionMessage(e)}"))
+          }
+          EOF
+          Rscript /tmp/fetch_opta.R
+          ls -lh "${{ runner.temp }}/pannadata/opta"
+
+      - name: Download caches (predictions-cache, blog-latest)
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+        run: |
+          set -e
+          mkdir -p data-raw/cache-opta data-raw/cache-skills data-raw/cache-predictions-opta
+          get() {   # $1 release, $2 pattern, $3 dir, $4 required|optional
+            for a in 1 2 3; do
+              if gh release download "$1" --repo peteowen1/pannadata --pattern "$2" --dir "$3" --clobber; then return 0; fi
+              sleep 20
+            done
+            if [ "$4" = required ]; then echo "FATAL: $2 from $1"; return 1; fi
+            echo "::warning::optional $2 from $1 not downloaded"
+          }
+          # Opta RAPM caches: refreshed daily by opta-pipeline.yml
+          for f in 03_splints.rds 04_rapm.rds 05_spm.rds 07_seasonal_ratings.rds; do
+            get predictions-cache "$f" data-raw/cache-opta required
+          done
+          # tuned decay params (step 02b is not re-run) and the as-of prior (step 03 resumes it)
+          get predictions-cache 02b_decay_params.rds data-raw/cache-skills required
+          get predictions-cache 03_skill_spm_asof.rds data-raw/cache-skills optional
+          # step 06's league offsets read the per-season game logs (step 10b's output)
+          get blog-latest "game_logs_*.parquet" data-raw/cache-predictions-opta required
+          ls -lh data-raw/cache-opta data-raw/cache-skills
+          echo "game logs: $(ls data-raw/cache-predictions-opta/game_logs_*.parquet | wc -l) files"
+
+      - name: Bring in earlier stages' outputs
+        uses: actions/download-artifact@v7
+        with:
+          pattern: stage-out-*
+          merge-multiple: true
+          path: /tmp/handover
+      # upload-artifact stores files relative to their common folder, so they arrive flat;
+      # put each back where the scripts read it.
+      - name: Put handed-over files back in place
+        run: |
+          ls -l /tmp/handover
+          for f in /tmp/handover/*; do
+            case "$(basename "$f")" in
+              04c_rapm_decayed.rds) mv -f "$f" data-raw/cache-opta/ ;;
+              *) mv -f "$f" data-raw/cache-skills/ ;;
+            esac
+          done
+          ls -l data-raw/cache-skills data-raw/cache-opta
+      - name: Stage 06 (peak memory and time measured)
+        env:
+          PANNADATA_DIR: ${{ runner.temp }}/pannadata
+          XMETRICS_SOURCE: remote
+        run: |
+          cat > /tmp/stage.R << 'EOF'
+          args <- commandArgs(TRUE); stage <- args[1]
+          pannadata_path <- Sys.getenv("PANNADATA_DIR")
+          devtools::load_all()
+          pannadata_dir(pannadata_path)
+          opta_data_dir(file.path(pannadata_path, "opta"))
+          if (stage == "04c") {
+            source("data-raw/pipeline_utils.R")
+            source("data-raw/player-ratings-opta/04c_rapm_decayed.R")
+          } else {
+            run_steps <- list(
+              step_01_compute_match_stats    = stage == "01",
+              step_02_estimate_skills        = stage == "02",
+              step_02b_optimize_params       = FALSE,
+              step_03_skill_spm              = stage == "03",
+              step_04_skill_xrapm            = FALSE,
+              step_05_skill_panna_ratings    = FALSE,
+              step_06_seasonal_skill_ratings = stage == "06",
+              step_07_train_psr_model        = FALSE,
+              step_08_export_skills          = FALSE,
+              step_08b_export_psr_weekly     = FALSE,
+              step_09_career_panna           = FALSE
+            )
+            source("data-raw/estimated-skills/run_skills_pipeline.R")
+          }
+          EOF
+          free -g
+          /usr/bin/time -v -o /tmp/time.txt Rscript /tmp/stage.R 06 2>&1 | tee /tmp/stage.log
+          code=${PIPESTATUS[0]}
+          rss=$(awk -F: '/Maximum resident set size/ {printf "%.1f", $2/1048576}' /tmp/time.txt)
+          wall=$(awk -F': ' '/Elapsed \(wall clock\)/ {print $2}' /tmp/time.txt)
+          echo "| 06 | $wall | $rss | $code |" >> "$GITHUB_STEP_SUMMARY"
+          echo "stage 06: wall $wall, peak RSS ${rss} GB, exit $code"
+          exit "$code"
+      - name: Pass outputs on
+        uses: actions/upload-artifact@v7
+        with:
+          name: stage-out-06
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            data-raw/cache-skills/06_seasonal_ratings.rds
+            data-raw/cache-skills/psr_league_offsets.parquet
+            data-raw/cache-skills/psr_league_offsets.csv
+
+  publish:
+    # Always runs the coverage gate, so a test run proves it on real outputs; uploads only
+    # on main, and only on the schedule or a dispatch with publish=true.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    needs: [s03, s06]
+    # Only this job takes the shared release lock (the whole chain would hold it for hours).
+    # career-panna-asof and opta-pipeline write predictions-cache under the 'opta-pipeline'
+    # group instead, and a job can join one group only, so the step below also refuses to
+    # upload if any input this chain read was republished while it ran.
+    concurrency:
+      group: ${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && 'panna-release-writer' || format('panna-release-writer-dry-{0}', github.ref) }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    env:
+      DO_UPLOAD: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || github.event.inputs.publish == 'true') }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.5.0'
+          use-public-rspm: true
+
+      - name: Setup R dependencies
+        uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          cache-version: 2
+          extra-packages: |
+            any::devtools
+            any::piggyback
+            any::arrow
+            any::data.table
+            any::cli
+          needs: |
+            devtools
+
+      - name: Bring in the new tables
+        uses: actions/download-artifact@v7
+        with:
+          pattern: stage-out-0[36]
+          merge-multiple: true
+          path: data-raw/cache-skills
+
+      - name: Download the published copies
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+        run: |
+          set -e
+          mkdir -p /tmp/old
+          for f in 06_seasonal_ratings.rds psr_league_offsets.parquet 03_skill_spm.rds 03_skill_spm_asof.rds; do
+            gh release download predictions-cache --repo peteowen1/pannadata --pattern "$f" --dir /tmp/old --clobber
+          done
+          ls -l data-raw/cache-skills /tmp/old
+
+      - name: Refuse if an input was republished during this run
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+        run: |
+          # attempt 1: a rerun of only this job must not narrow the window
+          started=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/1" --jq .run_started_at)
+          echo "chain started $started"
+          names='03_skill_spm_asof.rds 03_skill_spm.rds 06_seasonal_ratings.rds psr_league_offsets.parquet 03_splints.rds 04_rapm.rds 07_seasonal_ratings.rds'
+          gh release view predictions-cache -R peteowen1/pannadata --json assets             --jq '.assets[] | "\(.name) \(.updatedAt)"' > /tmp/assets.txt
+          newer=""
+          for n in $names; do
+            u=$(awk -v n="$n" '$1==n {print $2}' /tmp/assets.txt)
+            if [ -z "$u" ]; then echo "::warning::$n not on predictions-cache"; continue; fi
+            echo "$n published $u"
+            if [[ "$u" > "$started" ]]; then newer="$newer $n"; fi
+          done
+          if [ -n "$newer" ]; then
+            msg="republished while this chain ran:$newer; rerun the chain on the new copies"
+            if [ "$DO_UPLOAD" = "true" ]; then echo "::error::$msg"; exit 1; fi
+            echo "::warning::$msg (no upload this run, so not failing)"
+          fi
+
+      # Coverage, not presence (memory republish-coverage-diff): per table and season, the new
+      # copy must keep >= 95% of the published rows, and no column may lose half its non-NA
+      # share. Values are expected to move (a new vintage); coverage is not.
+      - name: Coverage gate against the published copies
+        run: |
+          cat > /tmp/gate.R << 'RS'
+          suppressPackageStartupMessages(library(data.table))
+          bad <- character(0); compared <- 0L
+          # by_season: 06 tables have one row per player-season. 03's tables have ONE row per player,
+          # tagged with his latest season, so players move to the new season each year; for those,
+          # check that the published players are still present instead.
+          tab_check <- function(label, a, b, by_season = TRUE) {
+            a <- as.data.table(a); b <- as.data.table(b)
+            if (nrow(a) < 0.95 * nrow(b)) bad <<- c(bad, sprintf("%s: %d rows, published %d", label, nrow(a), nrow(b)))
+            if (!by_season && "player_id" %in% names(a) && "player_id" %in% names(b)) {
+              kept <- mean(unique(b$player_id) %in% a$player_id)
+              if (kept < 0.99) bad <<- c(bad, sprintf("%s: only %.1f%% of published players present", label, 100 * kept))
+            }
+            if (by_season && "season_end_year" %in% names(a) && "season_end_year" %in% names(b)) {
+              m <- merge(b[, .(N_old = .N), by = season_end_year], a[, .(N_new = .N), by = season_end_year],
+                         by = "season_end_year", all.x = TRUE)
+              m[is.na(N_new), N_new := 0L]
+              s <- m[N_new < 0.95 * N_old]
+              if (nrow(s)) bad <<- c(bad, sprintf("%s: seasons %s", label,
+                paste(sprintf("%d %d->%d", s$season_end_year, s$N_old, s$N_new), collapse = ", ")))
+            }
+            for (cn in intersect(names(a), names(b))) {
+              po <- mean(!is.na(b[[cn]])); pn <- mean(!is.na(a[[cn]]))
+              if (po > 0.5 && pn < 0.5 * po) bad <<- c(bad, sprintf("%s$%s: non-NA %.0f%% -> %.0f%%", label, cn, 100 * po, 100 * pn))
+            }
+            compared <<- compared + 1L
+            cat(sprintf("%-28s %8d rows (published %8d)\n", label, nrow(a), nrow(b)))
+          }
+          new6 <- readRDS("data-raw/cache-skills/06_seasonal_ratings.rds"); old6 <- readRDS("/tmp/old/06_seasonal_ratings.rds")
+          for (k in intersect(names(new6), names(old6))) if (is.data.frame(new6[[k]])) tab_check(paste0("06$", k), new6[[k]], old6[[k]])
+          new3 <- readRDS("data-raw/cache-skills/03_skill_spm.rds"); old3 <- readRDS("/tmp/old/03_skill_spm.rds")
+          for (k in intersect(names(new3), names(old3))) if (is.data.frame(new3[[k]]) && nrow(new3[[k]]) > 100) tab_check(paste0("03$", k), new3[[k]], old3[[k]], by_season = FALSE)
+          na <- names(readRDS("data-raw/cache-skills/03_skill_spm_asof.rds")); oa <- names(readRDS("/tmp/old/03_skill_spm_asof.rds"))
+          if (length(setdiff(oa, na))) bad <- c(bad, sprintf("03_asof lost seasons: %s", paste(setdiff(oa, na), collapse = ",")))
+          cat(sprintf("03_asof seasons: %s\n", paste(na, collapse = ",")))
+          tab_check("psr_league_offsets", arrow::read_parquet("data-raw/cache-skills/psr_league_offsets.parquet"),
+                    arrow::read_parquet("/tmp/old/psr_league_offsets.parquet"))
+          # Non-vacuity: a gate that compared nothing must not pass (memory guards-that-pass-vacuously).
+          if (compared < 6L) bad <- c(bad, sprintf("only %d tables compared; expected at least 6", compared))
+          if (length(bad)) { cat("COVERAGE GATE FAILED:\n", paste(" -", bad, collapse = "\n"), "\n"); quit(status = 1) }
+          cat(sprintf("coverage gate passed (%d tables)\n", compared))
+          RS
+          Rscript /tmp/gate.R | tee -a "$GITHUB_STEP_SUMMARY"
+          exit "${PIPESTATUS[0]}"
+
+      - name: Publish to predictions-cache (safe upload)
+        if: env.DO_UPLOAD == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
+        run: |
+          cat > /tmp/publish.R << 'RS'
+          devtools::load_all()
+          files <- c("data-raw/cache-skills/06_seasonal_ratings.rds",
+                     "data-raw/cache-skills/psr_league_offsets.parquet",
+                     "data-raw/cache-skills/03_skill_spm.rds",
+                     "data-raw/cache-skills/03_skill_spm_asof.rds")
+          stopifnot(all(file.exists(files)))
+          # temp name, verify, then swap: the live asset is never deleted first
+          for (f in files) .vb_safe_upload(f, repo = "peteowen1/pannadata", tag = "predictions-cache")
+          cat("published:", basename(files), "\n")
+          RS
+          Rscript /tmp/publish.R
+
+      - name: Say when nothing was uploaded
+        if: env.DO_UPLOAD != 'true'
+        run: echo "Not uploaded (ref ${GITHUB_REF}, event ${GITHUB_EVENT_NAME}); gate result above is the test." | tee -a "$GITHUB_STEP_SUMMARY"

@@ -891,7 +891,7 @@ test_that("shipped calibration table is well formed and in a sane range", {
   cal <- load_psr_calibration()
   expect_true(nrow(cal) > 0)
   expect_true(all(c("axis", "level", "factor") %in% names(cal)))
-  expect_setequal(unique(cal$axis), c("position", "season", "pos10"))  # pos10: panna#216
+  expect_setequal(unique(cal$axis), c("position", "season"))  # pos10 parked (panna#216)
   # a calibration, not a rewrite: nothing should flip a sign or explode
   expect_true(all(cal$factor > 0))
   expect_true(all(cal$factor > 0.3 & cal$factor < 2))
@@ -2325,14 +2325,15 @@ test_that("without role_mix the 4-bucket position path is unchanged", {
   expect_equal(apply_psr_calibration(dt, cal)$psr, 0.5)
 })
 
-test_that("the shipped calibration table carries all 10 pos10 factors", {
+test_that("the shipped calibration table is the 4-bucket one while pos10 is parked", {
+  # panna#216, 2026-11-05: pos10 put 11 keepers in the weekly top 30 (3 before) and was
+  # rolled back. Its factors: this file at commit 53632ac0, and pannaverse/docs/plans/PSR-POSITION-CALIBRATION-216.md. Adding
+  # pos10 rows back here changes the 08b fingerprint and forces a full weekly rebuild.
   cal <- load_psr_calibration()
-  r8 <- cal[cal$axis == "pos10", ]
-  expect_setequal(r8$level, PSR_POS10_LEVELS)
-  expect_true(all(is.finite(r8$factor) & r8$factor > 0))
-  expect_true(all(r8$factor > 0.5 & r8$factor < 2))
-  # left and right are pooled (never differed); FB and WB are not
-  expect_false(isTRUE(all.equal(r8$factor[r8$level == "FB"], r8$factor[r8$level == "WB"])))
+  expect_equal(nrow(cal[cal$axis == "pos10", ]), 0L)
+  pos <- cal[cal$axis == "position", ]
+  expect_setequal(pos$level, c("GK", "DEF", "MID", "FWD"))
+  expect_true(all(is.finite(pos$factor) & pos$factor > 0))
 })
 
 test_that(".role16_to_pos10 pools left/right and keeps FB/WB and WM/W apart", {
