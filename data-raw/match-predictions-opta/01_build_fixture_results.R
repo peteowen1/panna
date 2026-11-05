@@ -532,61 +532,30 @@ if (n_before_backfill > 0L && requireNamespace("arrow", quietly = TRUE)) {
                   100 * n_recovered / n_before_backfill, n_after_backfill))
 }
 
-# Match-level team xG from panna's own xG model (per-player xG summed by team).
-# Opta's feed carries no usable match xG, so without this the xG-rolling
-# features in step 03 collapse to a constant.
-#
-# Source, in order:
-#   1. opta_xmetrics_bymatch.parquet -- panna's live shot model, per player-match,
-#      written by epv-pipeline.yml after every daily scrape. Its `xg` already
-#      leaves out penalty-shootout kicks and own goals.
-#   2. opta_match_xg.parquet -- the old hand-built file
-#      (debug/keep/build_match_team_xg.R). Fallback only: it was last uploaded
-#      2026-05-29 and holds no match after 2026-05-17, so as the primary source
-#      every 2026-27 match fed step 03 NA xG (found 2026-11-04). On the 96,591
-#      team-matches both cover, correlation 0.958, mean 1.375 vs 1.319 (the old
-#      file was scored by an older model version).
-# NOT opta_shot_events.parquet: its `xg` is Opta's, not ours (R/opta_loaders.R,
-# load_opta_shot_events docs).
+# Match-level team xG from panna's own xG model (per-shot xG summed by team;
+# built by debug/keep/build_match_team_xg.R -> opta_match_xg.parquet). Opta's
+# feed carries no usable match xG, so without this the xG-rolling features in
+# step 03 collapse to a constant.
 results$home_xg <- NA_real_
 results$away_xg <- NA_real_
-xmb_path <- file.path(opta_data_dir(), "opta_xmetrics_bymatch.parquet")
 mxg_path <- file.path(opta_data_dir(), "opta_match_xg.parquet")
-mxg <- NULL
-if (file.exists(xmb_path) && requireNamespace("arrow", quietly = TRUE)) {
-  xmb <- data.table::as.data.table(arrow::read_parquet(
-    xmb_path, col_select = c("match_id", "team_id", "xg")))
-  mxg <- xmb[!is.na(team_id), .(xg = sum(xg, na.rm = TRUE)), by = .(match_id, team_id)]
-  message(sprintf("  Match xG source: opta_xmetrics_bymatch.parquet (%s player-matches, %s team-matches)",
-                  format(nrow(xmb), big.mark = ","), format(nrow(mxg), big.mark = ",")))
-  rm(xmb)
-} else if (file.exists(mxg_path) && requireNamespace("arrow", quietly = TRUE)) {
-  warning("opta_xmetrics_bymatch.parquet missing; falling back to the stale hand-built ",
-          "opta_match_xg.parquet (no matches after 2026-05-17).", call. = FALSE, immediate. = TRUE)
-  mxg <- data.table::as.data.table(arrow::read_parquet(mxg_path))
-} else {
+if (!file.exists(mxg_path)) {
+  # Loud warning rather than hard-fail: this file isn't yet published to
+  # opta-latest (see TODO 2026-05-29). When it is, this warning will
+  # disappear and xG-rolling features will populate properly. Until then
+  # the step continues with NA xG, but operator gets a clear signal.
   warning(sprintf(
-    "No match xG source (neither %s nor %s) — xG-rolling features in step 03 will be all-NA.",
-    xmb_path, mxg_path), call. = FALSE, immediate. = TRUE)
+    "opta_match_xg.parquet missing at %s — xG-rolling features in step 03 will be all-NA. ",
+    mxg_path),
+    "Upload the file to opta-latest + add to predictions-pipeline.yml ",
+    "download list to fix.", call. = FALSE, immediate. = TRUE)
 }
-if (!is.null(mxg)) {
+if (file.exists(mxg_path) && requireNamespace("arrow", quietly = TRUE)) {
+  mxg <- as.data.frame(arrow::read_parquet(mxg_path))
   xg_lookup <- stats::setNames(mxg$xg, paste(mxg$match_id, mxg$team_id))
   results$home_xg <- unname(xg_lookup[paste(results$match_id, results$home_team_id)])
   results$away_xg <- unname(xg_lookup[paste(results$match_id, results$away_team_id)])
   n_xg <- sum(!is.na(results$home_xg) & !is.na(results$away_xg))
-  # Freshness: the 2026-05 file went stale for 5 months while the join rate
-  # (computed over ALL history) still read 80%. Compare the newest result that
-  # has xG with the newest result overall.
-  rd <- suppressWarnings(as.Date(substr(results$match_date, 1, 10)))
-  has <- !is.na(results$home_xg) & !is.na(results$away_xg)
-  if (any(has) && any(!is.na(rd))) {
-    lag_days <- as.integer(max(rd, na.rm = TRUE) - max(rd[has], na.rm = TRUE))
-    message(sprintf("  Match xG newest covered result: %s (newest result %s, lag %d days)",
-                    format(max(rd[has], na.rm = TRUE)), format(max(rd, na.rm = TRUE)), lag_days))
-    if (lag_days > 21) warning(sprintf(
-      "Match xG stops %d days before the newest result: the xG source is stale, so recent rolling xG features are NA.",
-      lag_days), call. = FALSE, immediate. = TRUE)
-  }
   message(sprintf("  Match xG (panna model) joined: %d/%d matches (%.0f%%)",
                   n_xg, nrow(results), 100 * n_xg / nrow(results)))
   # Sanity gate: if the join rate is implausibly low (signalling a key-mismatch
