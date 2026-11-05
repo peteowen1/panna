@@ -68,7 +68,8 @@ jobs:
           dir.create(opta_dir, recursive = TRUE, showWarnings = FALSE)
           repo <- "peteowen1/pannadata"; tag <- "opta-latest"
           manifest <- tryCatch(vb_read_manifest(repo, tag, required = FALSE), error = function(e) NULL)
-          need <- c("opta_match_stats.parquet", "opta-catalog.json", "opta_player_stats.parquet")
+          need <- c("opta_match_stats.parquet", "opta-catalog.json", "opta_player_stats.parquet",
+                    "opta_fixtures.parquet")
           for (f in need) vb_download(repo, tag, f, file.path(opta_dir, f), manifest = manifest)
           for (f in c("opta_skills.parquet", "opta_xmetrics.parquet", "opta_xmetrics_bymatch.parquet")) {
             tryCatch(vb_download(repo, tag, f, file.path(opta_dir, f), manifest = manifest),
