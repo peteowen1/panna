@@ -39,7 +39,7 @@ jobs:
   psr-snapshot:
     runs-on: ubuntu-latest
     # 240, not 135: a FULL rebuild (calibration/model fingerprint change or force_full_rebuild)
-    # took 128-131 min on 2026-10-14 and 2026-11-05 with no resume (pos10, #216, parked
+    # took 128-131 min on 2026-10-14 and ~105 min on 2026-11-05 (pos10, #216, since parked
     # 2026-11-05). Incremental weekly runs take ~30 min.
     timeout-minutes: 240
 
