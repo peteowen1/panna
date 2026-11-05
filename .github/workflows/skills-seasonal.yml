@@ -7,14 +7,24 @@ name: Skills Seasonal Build
 # 03_skill_spm.rds and psr_league_offsets.parquet were uploaded only by hand and sat at
 # 2026-07-05 / 2026-09-03 while predictions-pipeline.yml downloads 06 as REQUIRED.
 #
-# VERSION 1 BUILDS AND MEASURES ONLY: every stage is its OWN JOB (fresh 16 GB runner; a runner
-# that dies of memory takes its whole log with it, so one job per stage names the stage) and runs
-# under /usr/bin/time -v; outputs pass between jobs as 7-day artifacts.
-# NOTHING IS UPLOADED. The upload step and a schedule come once a run shows the chain fits
-# the 16 GB runner.
+# Every stage is its OWN JOB (fresh 16 GB runner; a runner that dies of memory takes its whole
+# log with it, so one job per stage names the stage) and runs under /usr/bin/time -v; outputs pass
+# between jobs as 7-day artifacts. Measured 2026-11-05 (run 41978777220), peak RSS of 16 GB:
+# 01 14.8, 04c 6.1, 02 10.5, 03 14.5, 06 14.8. Stages 01, 03 and 06 have ~1.2 GB headroom.
+#
+# The publish job always runs the coverage gate (the new tables must cover what the published
+# copies cover). It UPLOADS only on main, and only on the weekly schedule or a dispatch with
+# publish=true. Uploads go through .vb_safe_upload (temp name, verify, swap), never --clobber.
 
 on:
+  schedule:
+    - cron: '0 4 * * 1'   # Mondays 3pm Sydney (AEDT); seasonal ratings move slowly
   workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Upload to predictions-cache (main only)'
+        type: boolean
+        default: false
   # TEMPORARY, test branch only: a new workflow cannot be dispatched until it is on main,
   # so the measuring run is triggered by a push to this branch. Removed before the PR.
   push:
@@ -27,7 +37,6 @@ concurrency:
 env:
   GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
   R_KEEP_PKG_SOURCE: yes
-  PANNA_PUBLISH_DISABLED: 'true'   # v1: never publishes, on any ref
 
 jobs:
   s01:
@@ -700,3 +709,127 @@ jobs:
             data-raw/cache-skills/06_seasonal_ratings.rds
             data-raw/cache-skills/psr_league_offsets.parquet
             data-raw/cache-skills/psr_league_offsets.csv
+
+  publish:
+    # Always runs the coverage gate, so a test run proves it on real outputs; uploads only
+    # on main, and only on the schedule or a dispatch with publish=true.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    needs: [s03, s06]
+    permissions:
+      contents: read
+    env:
+      DO_UPLOAD: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || github.event.inputs.publish == 'true') }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.5.0'
+          use-public-rspm: true
+
+      - name: Setup R dependencies
+        uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          cache-version: 2
+          extra-packages: |
+            any::devtools
+            any::piggyback
+            any::arrow
+            any::data.table
+            any::cli
+          needs: |
+            devtools
+
+      - name: Bring in the new tables
+        uses: actions/download-artifact@v7
+        with:
+          pattern: stage-out-0[36]
+          merge-multiple: true
+          path: data-raw/cache-skills
+
+      - name: Download the published copies
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+        run: |
+          set -e
+          mkdir -p /tmp/old
+          for f in 06_seasonal_ratings.rds psr_league_offsets.parquet 03_skill_spm.rds 03_skill_spm_asof.rds; do
+            gh release download predictions-cache --repo peteowen1/pannadata --pattern "$f" --dir /tmp/old --clobber
+          done
+          ls -l data-raw/cache-skills /tmp/old
+
+      # Coverage, not presence (memory republish-coverage-diff): per table and season, the new
+      # copy must keep >= 95% of the published rows, and no column may lose half its non-NA
+      # share. Values are expected to move (a new vintage); coverage is not.
+      - name: Coverage gate against the published copies
+        run: |
+          cat > /tmp/gate.R << 'RS'
+          suppressPackageStartupMessages(library(data.table))
+          bad <- character(0); compared <- 0L
+          # by_season: 06 tables have one row per player-season. 03's tables have ONE row per player,
+          # tagged with his latest season, so players move to the new season each year; for those,
+          # check that the published players are still present instead.
+          tab_check <- function(label, a, b, by_season = TRUE) {
+            a <- as.data.table(a); b <- as.data.table(b)
+            if (nrow(a) < 0.95 * nrow(b)) bad <<- c(bad, sprintf("%s: %d rows, published %d", label, nrow(a), nrow(b)))
+            if (!by_season && "player_id" %in% names(a) && "player_id" %in% names(b)) {
+              kept <- mean(unique(b$player_id) %in% a$player_id)
+              if (kept < 0.99) bad <<- c(bad, sprintf("%s: only %.1f%% of published players present", label, 100 * kept))
+            }
+            if (by_season && "season_end_year" %in% names(a) && "season_end_year" %in% names(b)) {
+              m <- merge(b[, .(N_old = .N), by = season_end_year], a[, .(N_new = .N), by = season_end_year],
+                         by = "season_end_year", all.x = TRUE)
+              m[is.na(N_new), N_new := 0L]
+              s <- m[N_new < 0.95 * N_old]
+              if (nrow(s)) bad <<- c(bad, sprintf("%s: seasons %s", label,
+                paste(sprintf("%d %d->%d", s$season_end_year, s$N_old, s$N_new), collapse = ", ")))
+            }
+            for (cn in intersect(names(a), names(b))) {
+              po <- mean(!is.na(b[[cn]])); pn <- mean(!is.na(a[[cn]]))
+              if (po > 0.5 && pn < 0.5 * po) bad <<- c(bad, sprintf("%s$%s: non-NA %.0f%% -> %.0f%%", label, cn, 100 * po, 100 * pn))
+            }
+            compared <<- compared + 1L
+            cat(sprintf("%-28s %8d rows (published %8d)\n", label, nrow(a), nrow(b)))
+          }
+          new6 <- readRDS("data-raw/cache-skills/06_seasonal_ratings.rds"); old6 <- readRDS("/tmp/old/06_seasonal_ratings.rds")
+          for (k in intersect(names(new6), names(old6))) if (is.data.frame(new6[[k]])) tab_check(paste0("06$", k), new6[[k]], old6[[k]])
+          new3 <- readRDS("data-raw/cache-skills/03_skill_spm.rds"); old3 <- readRDS("/tmp/old/03_skill_spm.rds")
+          for (k in intersect(names(new3), names(old3))) if (is.data.frame(new3[[k]]) && nrow(new3[[k]]) > 100) tab_check(paste0("03$", k), new3[[k]], old3[[k]], by_season = FALSE)
+          na <- names(readRDS("data-raw/cache-skills/03_skill_spm_asof.rds")); oa <- names(readRDS("/tmp/old/03_skill_spm_asof.rds"))
+          if (length(setdiff(oa, na))) bad <- c(bad, sprintf("03_asof lost seasons: %s", paste(setdiff(oa, na), collapse = ",")))
+          cat(sprintf("03_asof seasons: %s\n", paste(na, collapse = ",")))
+          tab_check("psr_league_offsets", arrow::read_parquet("data-raw/cache-skills/psr_league_offsets.parquet"),
+                    arrow::read_parquet("/tmp/old/psr_league_offsets.parquet"))
+          # Non-vacuity: a gate that compared nothing must not pass (memory guards-that-pass-vacuously).
+          if (compared < 6L) bad <- c(bad, sprintf("only %d tables compared; expected at least 6", compared))
+          if (length(bad)) { cat("COVERAGE GATE FAILED:\n", paste(" -", bad, collapse = "\n"), "\n"); quit(status = 1) }
+          cat(sprintf("coverage gate passed (%d tables)\n", compared))
+          RS
+          Rscript /tmp/gate.R | tee -a "$GITHUB_STEP_SUMMARY"
+          exit "${PIPESTATUS[0]}"
+
+      - name: Publish to predictions-cache (safe upload)
+        if: env.DO_UPLOAD == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
+        run: |
+          cat > /tmp/publish.R << 'RS'
+          devtools::load_all()
+          files <- c("data-raw/cache-skills/06_seasonal_ratings.rds",
+                     "data-raw/cache-skills/psr_league_offsets.parquet",
+                     "data-raw/cache-skills/03_skill_spm.rds",
+                     "data-raw/cache-skills/03_skill_spm_asof.rds")
+          stopifnot(all(file.exists(files)))
+          # temp name, verify, then swap: the live asset is never deleted first
+          for (f in files) .vb_safe_upload(f, repo = "peteowen1/pannadata", tag = "predictions-cache")
+          cat("published:", basename(files), "\n")
+          RS
+          Rscript /tmp/publish.R
+
+      - name: Say when nothing was uploaded
+        if: env.DO_UPLOAD != 'true'
+        run: echo "Not uploaded (ref ${GITHUB_REF}, event ${GITHUB_EVENT_NAME}); gate result above is the test." | tee -a "$GITHUB_STEP_SUMMARY"
