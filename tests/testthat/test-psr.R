@@ -2339,3 +2339,9 @@ test_that(".role16_to_pos10 pools left/right and keeps FB/WB and WM/W apart", {
   expect_equal(.role16_to_pos10(c("LB", "RB", "LWB", "RWB", "LM", "RM", "LW", "RW", "CF", "LF", "RF", "UNK")),
                c("FB", "FB", "WB", "WB", "WM", "WM", "W", "W", "ST", "ST", "ST", "OTHER"))
 })
+
+test_that("role_mix fallback without primary_position gives every unmatched row factor 1", {
+  dt <- data.table::data.table(player_id = c("a", "b", "c"), psr = 1, osr = 0.5, dsr = 0.5)
+  mix <- data.table::data.table(player_id = "x", pos10 = "CB", share = 1)
+  expect_equal(apply_psr_calibration(dt, .cal216(), role_mix = mix)$psr, c(1, 1, 1))
+})

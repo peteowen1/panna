@@ -1658,7 +1658,7 @@ PSR_ROLE8_LEVELS <- c("GK", "CB", "FB", "DM", "CM", "AM", "W", "ST")
   f <- pf$.pf[match(key_dt, key_pf)]
   n_fb <- sum(is.na(f))
   if (n_fb) {
-    gk <- if ("primary_position" %in% names(dt)) dt$primary_position %in% "GK" else FALSE
+    gk <- if ("primary_position" %in% names(dt)) dt$primary_position %in% "GK" else rep(FALSE, nrow(dt))
     f[is.na(f)] <- ifelse(gk[is.na(f)], ok$factor[ok$level == "GK"], 1)
   }
   for (col in intersect(c("psr_raw", "psr", "osr", "dsr"), names(dt))) {
