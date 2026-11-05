@@ -2327,7 +2327,7 @@ test_that("without role_mix the 4-bucket position path is unchanged", {
 
 test_that("the shipped calibration table is the 4-bucket one while pos10 is parked", {
   # panna#216, 2026-11-05: pos10 put 11 keepers in the weekly top 30 (3 before) and was
-  # rolled back. Its factors live in docs/plans/PSR-POSITION-CALIBRATION-216.md. Adding
+  # rolled back. Its factors: this file at commit 53632ac0, and pannaverse/docs/plans/PSR-POSITION-CALIBRATION-216.md. Adding
   # pos10 rows back here changes the 08b fingerprint and forces a full weekly rebuild.
   cal <- load_psr_calibration()
   expect_equal(nrow(cal[cal$axis == "pos10", ]), 0L)
