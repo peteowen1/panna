@@ -1,0 +1,63 @@
+      # DRAFT (not yet in the workflow): add after the measuring run proves the chain fits.
+      # Publish gate: only on main/dev, only when every stage passed, and only when the new
+      # tables cover at least what the published copies cover (memory republish-coverage-diff:
+      # rows/cols/sha all passed on a publish that blanked a column). Safe upload, not
+      # `gh release upload --clobber`, which deletes before it uploads.
+      - name: Coverage gate against the published copies
+        if: success() && env.PANNA_PUBLISH_DISABLED != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+        run: |
+          mkdir -p /tmp/old
+          for f in 06_seasonal_ratings.rds 02_skill_features.rds 03_skill_spm.rds psr_league_offsets.parquet; do
+            gh release download predictions-cache --repo peteowen1/pannadata --pattern "$f" --dir /tmp/old --clobber
+          done
+          cat > /tmp/gate.R << 'EOF'
+          suppressPackageStartupMessages(library(data.table))
+          new6 <- readRDS("data-raw/cache-skills/06_seasonal_ratings.rds")
+          old6 <- readRDS("/tmp/old/06_seasonal_ratings.rds")
+          bad <- character(0)
+          for (k in intersect(names(new6), names(old6))) {
+            a <- new6[[k]]; b <- old6[[k]]
+            if (!is.data.frame(a) || !is.data.frame(b) || !"season_end_year" %in% names(a)) next
+            a <- as.data.table(a); b <- as.data.table(b)
+            na <- a[, .N, by = season_end_year]; nb <- b[, .N, by = season_end_year]
+            m <- merge(nb, na, by = "season_end_year", all.x = TRUE, suffixes = c("_old", "_new"))
+            m[is.na(N_new), N_new := 0L]
+            shrink <- m[N_new < 0.95 * N_old]
+            if (nrow(shrink)) bad <- c(bad, sprintf("%s: %s", k, paste(sprintf("%d %d->%d", shrink$season_end_year, shrink$N_old, shrink$N_new), collapse = ", ")))
+            for (cn in intersect(names(a), names(b))) {
+              if (mean(!is.na(b[[cn]])) > 0.5 && mean(!is.na(a[[cn]])) < 0.5 * mean(!is.na(b[[cn]])))
+                bad <- c(bad, sprintf("%s$%s: non-NA %.0f%% -> %.0f%%", k, cn, 100 * mean(!is.na(b[[cn]])), 100 * mean(!is.na(a[[cn]]))))
+            }
+            cat(sprintf("%s: %d rows (published %d), seasons %d-%d\n", k, nrow(a), nrow(b),
+                        min(a$season_end_year), max(a$season_end_year)))
+          }
+          off_new <- arrow::read_parquet("data-raw/cache-skills/psr_league_offsets.parquet")
+          off_old <- arrow::read_parquet("/tmp/old/psr_league_offsets.parquet")
+          cat(sprintf("league offsets: %d rows (published %d)\n", nrow(off_new), nrow(off_old)))
+          if (nrow(off_new) < nrow(off_old)) bad <- c(bad, "psr_league_offsets lost rows")
+          if (length(bad)) { cat("COVERAGE GATE FAILED:\n", paste(" -", bad, collapse = "\n"), "\n"); quit(status = 1) }
+          cat("coverage gate passed\n")
+          EOF
+          Rscript /tmp/gate.R | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish to predictions-cache (safe upload)
+        if: success() && env.PANNA_PUBLISH_DISABLED != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
+        run: |
+          cat > /tmp/publish.R << 'EOF'
+          devtools::load_all()
+          files <- c("data-raw/cache-skills/02_skill_features.rds",
+                     "data-raw/cache-skills/03_skill_spm.rds",
+                     "data-raw/cache-skills/03_skill_spm_asof.rds",
+                     "data-raw/cache-skills/06_seasonal_ratings.rds",
+                     "data-raw/cache-skills/psr_league_offsets.parquet",
+                     "data-raw/cache-skills/01_match_stats.rds")
+          stopifnot(all(file.exists(files)))
+          # temp-name upload, verify, then swap: never delete the live asset first
+          for (f in files) .vb_safe_upload(f, repo = "peteowen1/pannadata", tag = "predictions-cache")
+          EOF
+          Rscript /tmp/publish.R
