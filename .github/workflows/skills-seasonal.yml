@@ -764,14 +764,12 @@ jobs:
           done
           ls -l data-raw/cache-skills /tmp/old
 
-      # Coverage, not presence (memory republish-coverage-diff): per table and season, the new
-      # copy must keep >= 95% of the published rows, and no column may lose half its non-NA
-      # share. Values are expected to move (a new vintage); coverage is not.
       - name: Refuse if an input was republished during this run
         env:
           GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
         run: |
-          started=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" --jq .run_started_at)
+          # attempt 1: a rerun of only this job must not narrow the window
+          started=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/1" --jq .run_started_at)
           echo "chain started $started"
           names='03_skill_spm_asof.rds 03_skill_spm.rds 06_seasonal_ratings.rds psr_league_offsets.parquet 03_splints.rds 04_rapm.rds 07_seasonal_ratings.rds'
           gh release view predictions-cache -R peteowen1/pannadata --json assets             --jq '.assets[] | "\(.name) \(.updatedAt)"' > /tmp/assets.txt
@@ -788,6 +786,9 @@ jobs:
             echo "::warning::$msg (no upload this run, so not failing)"
           fi
 
+      # Coverage, not presence (memory republish-coverage-diff): per table and season, the new
+      # copy must keep >= 95% of the published rows, and no column may lose half its non-NA
+      # share. Values are expected to move (a new vintage); coverage is not.
       - name: Coverage gate against the published copies
         run: |
           cat > /tmp/gate.R << 'RS'
