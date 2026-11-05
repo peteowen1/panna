@@ -65,6 +65,15 @@ OUT_CSV    <- Sys.getenv("PSR_99B_OUT", "data-raw/cache-skills/99b_position_cali
 ## on calibrated values, the exact case the override exists to avoid.
 if (nzchar(Sys.getenv("PSR_WEEKLY_FILE")) && !file.exists(PSR_WEEKLY))
   stop("PSR_WEEKLY_FILE is set but does not exist: ", PSR_WEEKLY)
+## PSR_99B_MIX=1 (panna#216, Pete 2026-11-05): split each player's minutes across
+## buckets by his share of that season's minutes in each role8, instead of putting
+## all of them in his modal bucket. The factor he is then calibrated with is the
+## same minutes mix of the bucket factors, so fit and application share one
+## definition. Default (unset) keeps the modal fit unchanged.
+## PSR_99B_MIX=match: each match's minutes go to the role8 actually played in THAT
+## match (rows with no resolvable role fall back to the player-season mix).
+MIX_MODE <- Sys.getenv("PSR_99B_MIX")
+MIX <- MIX_MODE %in% c("1", "match")
 
 ## ---- the 8-bucket taxonomy (Pete's spec, 2026-09-14) --------------------
 ## A layer ABOVE GK/DEF/MID/FWD, built by collapsing classify_role()'s 16 roles.
@@ -130,6 +139,22 @@ pos_ref8 <- merge(smod, cmod, by = "player_id", all.x = TRUE)
 pos_ref8[, role8 := fcoalesce(r_s, r_c)]
 pos_ref8 <- pos_ref8[!is.na(role8), .(player_id, season_end_year, role8)]
 
+## Minutes shares per (player, season, role8), with the career mix as the fallback
+## for a season whose every row is UNK (same fallback as the modal bucket).
+if (MIX) {
+shr_s <- st[, .(role8, share = m / sum(m)), by = .(player_id, season_end_year)]
+shr_c <- ct[, .(role8, share = m / sum(m)), by = player_id]
+.ps   <- unique(ms[, .(player_id, season_end_year)])
+.miss <- .ps[!shr_s, on = .(player_id, season_end_year)]
+pos_mix8 <- rbind(shr_s, merge(.miss, shr_c, by = "player_id", allow.cartesian = TRUE))
+stopifnot(all(abs(pos_mix8[, sum(share), by = .(player_id, season_end_year)]$V1 - 1) < 1e-9))
+if (MIX) cat(sprintf("MIX mode: %s player-seasons, mean %.2f buckets each, modal share median %.2f
+",
+                     format(uniqueN(pos_mix8[, .(player_id, season_end_year)]), big.mark = ","),
+                     nrow(pos_mix8) / uniqueN(pos_mix8[, .(player_id, season_end_year)]),
+                     median(pos_mix8[, max(share), by = .(player_id, season_end_year)]$V1)))
+}
+
 ## Coverage, before any headline number (99_'s rule, and stats-discipline §7).
 res_join <- merge(ms[, .(player_id, season_end_year, .mins)], pos_ref8,
                   by = c("player_id","season_end_year"), all.x = TRUE)
@@ -176,8 +201,30 @@ full <- x[, .(n = .N, ok = sum(has)), by = .(match_id, team_id)][ok == n,
 x <- merge(x, full, by = c("match_id","team_id"))
 x[, mins90 := as.numeric(total_minutes)/90]
 
+if (MIX) {
+  ## Same team-matches and starters as the modal fit (the `full` filter above);
+  ## only how each player's minutes are spread over the buckets changes.
+  if (MIX_MODE == "match") {
+    rr <- unique(ms[!is.na(role8), .(player_id, match_id, r_m = role8)], by = c("player_id", "match_id"))
+    xr <- merge(x[, !"role8"], rr, by = c("player_id", "match_id"), all.x = TRUE)
+    cat(sprintf("per-match role: %.1f%% of fit minutes resolved from the match row
+",
+                100 * sum(xr$mins90[!is.na(xr$r_m)]) / sum(xr$mins90)))
+    xm <- rbind(xr[!is.na(r_m)][, `:=`(role8 = r_m, share = 1)][, r_m := NULL],
+                merge(xr[is.na(r_m)][, r_m := NULL], pos_mix8,
+                      by = c("player_id", "season_end_year"), allow.cartesian = TRUE),
+                fill = TRUE)
+  } else {
+  xm <- merge(x[, !"role8"], pos_mix8, by = c("player_id", "season_end_year"),
+              allow.cartesian = TRUE)
+  }
+  stopifnot(abs(sum(xm$mins90 * xm$share) - sum(x$mins90)) / sum(x$mins90) < 1e-6)
+  tm <- dcast(xm[, .(s = sum(val * mins90 * share)), by = .(match_id, team_id, role8)],
+              match_id + team_id ~ role8, value.var = "s", fill = 0)
+} else {
 tm <- dcast(x[, .(s = sum(val*mins90)), by = .(match_id, team_id, role8)],
             match_id + team_id ~ role8, value.var = "s", fill = 0)
+}
 pg <- intersect(BUCKETS, setdiff(names(tm), c("match_id","team_id")))
 tm <- merge(tm, mo, by = c("match_id","team_id"))
 n2 <- tm[, .N, by = match_id][N == 2, match_id]; t2 <- tm[match_id %in% n2]

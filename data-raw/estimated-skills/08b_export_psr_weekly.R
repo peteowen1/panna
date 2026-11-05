@@ -748,6 +748,7 @@ message(sprintf("  Streaming per-iteration chunks as flat files: %s*.parquet",
 
 n_success <- 0L
 .role8_other_rate <- numeric(0)   # per-date share falling through to "OTHER"
+.role8_cal_fallback <- numeric(0) # per-date share calibrated with no role8 mix (panna#216)
 start_time <- Sys.time()
 
 for (i in seq_along(snapshot_dates)) {
@@ -841,7 +842,17 @@ for (i in seq_along(snapshot_dates)) {
   # matches exist. apply_psr_calibration() no-ops that axis when the column is
   # absent.
   psr <- data.table::as.data.table(psr)
-  if (!psr_raw_mode) psr <- apply_psr_calibration(psr)
+  # panna#216 (Pete, 2026-11-05): the position factor is each player's as-at
+  # MINUTES MIX of the 10 position factors (pos10) (same 365-day window as the
+  # normalization bucket above), not a factor keyed on `primary_position`, which
+  # files 91% of winger minutes under MID.
+  if (!psr_raw_mode) {
+    .r8mix_d <- .pos10_mix_asof(.role8_src, as_of = d)
+    psr <- apply_psr_calibration(psr, role_mix = .r8mix_d)
+    .role8_cal_fallback <- c(.role8_cal_fallback,
+                             attr(psr, "psr_pos10_fallback") / max(nrow(psr), 1))
+    rm(.r8mix_d)
+  }
 
   psr[, snapshot_date := d]
   psr_slim <- psr[, .(snapshot_date, player_id, player_name,
@@ -863,6 +874,22 @@ for (i in seq_along(snapshot_dates)) {
 }
 
 total_secs <- as.numeric(difftime(Sys.time(), start_time, units = "secs"))
+if (length(.role8_cal_fallback)) {
+  # A player with no prior role8 minutes gets factor 1 (GK factor for a keeper).
+  # A high rate means the mix lookup broke, not that the pool changed.
+  cat(sprintf("pos10 calibration with no minutes mix: mean %.1f%% of rows per date (max %.1f%%)
+",
+              100 * mean(.role8_cal_fallback), 100 * max(.role8_cal_fallback)))
+  # Players with no prior starting minutes (substitute-only, ~15% of a snapshot
+  # on 2026-09-14) are the same players the normalization sends to "OTHER", so
+  # the two rates should track each other. A gap means the mix lookup broke.
+  if (length(.role8_other_rate) &&
+      mean(.role8_cal_fallback) > mean(.role8_other_rate) + 0.02) {
+    stop(sprintf("pos10 calibration fell back to factor 1 for %.1f%% of players per snapshot, vs %.1f%% sent to OTHER; ",
+                 100 * mean(.role8_cal_fallback), 100 * mean(.role8_other_rate)),
+         "the as-at minutes mix lookup is broken (panna#216).")
+  }
+}
 if (length(.role8_other_rate)) {
   # Report the rate explicitly: "OTHER" is a REAL role in the means artifact, so
   # a collapse to it reads as a matched role and the in-function guard in

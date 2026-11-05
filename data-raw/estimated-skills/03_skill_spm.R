@@ -515,7 +515,7 @@ if (build_skill_spm_asof) {
     splint_season_map <- splints03$splints[, c("splint_id", "season_end_year", "match_id")]
     rm(splints03); gc(verbose = FALSE)
     if (!is.null(asof_target_halflife_days)) {
-      .fx_path <- file.path("..", "pannadata", "data", "opta", "opta_fixtures.parquet")
+      .fx_path <- file.path(opta_data_dir(), "opta_fixtures.parquet")   # honours PANNADATA_DIR on GHA
       if (!file.exists(.fx_path)) stop("Target decay needs match dates: missing ", .fx_path, call. = FALSE)
       .fx <- data.table::as.data.table(arrow::read_parquet(.fx_path, col_select = c("match_id", "match_date")))
       .fx <- unique(.fx[!is.na(match_date), .(match_id, match_date = as.Date(match_date))], by = "match_id")
