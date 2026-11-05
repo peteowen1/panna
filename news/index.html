@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.108</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.109</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,6 +39,10 @@
       <small>Source: <a href="https://github.com/peteowen1/panna/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.109" id="panna-03109">panna 0.3.109<a class="anchor" aria-label="anchor" href="#panna-03109"></a></h2>
+<ul><li>Parked the 10-position PSR calibration from 0.3.108 (panna#216). On the first full weekly rebuild it put 11 keepers in the top 30 (3 before, same date, 10+ weighted 90s), because the keeper factor rose to 0.741 while centre-backs fell to 0.792 and full-backs to 0.661, on top of keepers already carrying a larger attacking rating than outfield players. Steps 06 and 08b and <code>inst/extdata/psr_calibration.csv</code> are back to their 0.3.107 versions; the restored live <code>opta_psr_weekly.parquet</code> was built with that table, so the weekly run stays incremental. The pos10 functions in <code>R/psr.R</code> stay, unused, for the keeper fix that comes next.</li>
+</ul></div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.108" id="panna-03108">panna 0.3.108<a class="anchor" aria-label="anchor" href="#panna-03108"></a></h2>
 <ul><li>PSR position calibration now uses 10 positions (GK, CB, FB, WB, DM, CM, AM, WM, W, ST; left and right pooled) instead of GK/DEF/MID/FWD, applied to each player by his trailing 365-day minutes mix (<code>apply_psr_calibration(role_mix = , role_mix_by = )</code>, new <code>pos10</code> rows in <code>psr_calibration.csv</code>). Players with no starting minutes in the window get factor 1 (keepers the GK factor). Held-out W/D/L log loss matches the 4-bucket calibration (1.0248 vs 1.0250); the gain is fairness between full-backs and wing-backs, and wide midfielders and wingers (<a href="https://github.com/peteowen1/panna/issues/216" class="external-link">#216</a>).</li>
