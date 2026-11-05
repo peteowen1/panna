@@ -96,8 +96,15 @@ cat(sprintf("Match stats: %s player-match rows x %d cols\n",
 # step 2's enriched output), so without this join the coefficients would omit
 # xg_per90 / npg_minus_npxg / placement_added / gsaa entirely. Uses the same
 # shared helper as step 2 → identical feature set for training and skill ratings.
+# Same source switch as step 2 (02_estimate_skills.R:72). Without it step 7
+# always read the local xmetrics_bymatch/ tree: the 2026-09-13 GK retrain
+# (#249) trained on that tree's 2026-09-03 vintage, before xGOT v3.2, while
+# scoring on GHA reads the published v3.2 copy (panna#429).
+xm_source <- if (identical(Sys.getenv("XMETRICS_SOURCE"), "remote")) "remote" else "local"
+cat(sprintf("xMetrics source: %s\n", xm_source))
 if (!exists("use_xmetrics_features") || isTRUE(use_xmetrics_features)) {
-  match_stats <- enrich_match_stats_with_xmetrics(match_stats, fail_if_missing_frac = 0.6)
+  match_stats <- enrich_match_stats_with_xmetrics(match_stats, fail_if_missing_frac = 0.6,
+                                                  source = xm_source)
   cat(sprintf("After xMetrics join: %d cols\n", ncol(match_stats)))
 }
 
@@ -1161,7 +1168,8 @@ gk_skill_keep_cols <- character(0)
   # never sees gsaa_per90 (keeper shot-stopping), so it can't reach the GK
   # coefficients. Uses the shared helper for an identical feature set.
   if (!exists("use_xmetrics_features") || isTRUE(use_xmetrics_features)) {
-    ms_dt_gk <- enrich_match_stats_with_xmetrics(ms_dt_gk, fail_if_missing_frac = 0.6)
+    ms_dt_gk <- enrich_match_stats_with_xmetrics(ms_dt_gk, fail_if_missing_frac = 0.6,
+                                                 source = xm_source)
   }
   ms_dt_gk[, match_date := as.Date(match_date)]
   # Season from the label, as section 3 does for the outfield model (panna#224);
