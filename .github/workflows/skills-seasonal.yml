@@ -42,16 +42,16 @@ jobs:
       contents: read
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup R
-        uses: r-lib/actions/setup-r@v2
+        uses: r-lib/actions/setup-r@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2.14.0
         with:
           r-version: '4.5.0'
           use-public-rspm: true
 
       - name: Setup R dependencies
-        uses: r-lib/actions/setup-r-dependencies@v2
+        uses: r-lib/actions/setup-r-dependencies@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2.14.0
         with:
           cache-version: 2
           extra-packages: |
@@ -150,7 +150,7 @@ jobs:
           echo "stage 01: wall $wall, peak RSS ${rss} GB, exit $code"
           exit "$code"
       - name: Pass outputs on
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: stage-out-01
           retention-days: 7
@@ -164,16 +164,16 @@ jobs:
       contents: read
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup R
-        uses: r-lib/actions/setup-r@v2
+        uses: r-lib/actions/setup-r@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2.14.0
         with:
           r-version: '4.5.0'
           use-public-rspm: true
 
       - name: Setup R dependencies
-        uses: r-lib/actions/setup-r-dependencies@v2
+        uses: r-lib/actions/setup-r-dependencies@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2.14.0
         with:
           cache-version: 2
           extra-packages: |
@@ -272,7 +272,7 @@ jobs:
           echo "stage 04c: wall $wall, peak RSS ${rss} GB, exit $code"
           exit "$code"
       - name: Pass outputs on
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: stage-out-04c
           retention-days: 7
@@ -287,16 +287,16 @@ jobs:
       contents: read
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup R
-        uses: r-lib/actions/setup-r@v2
+        uses: r-lib/actions/setup-r@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2.14.0
         with:
           r-version: '4.5.0'
           use-public-rspm: true
 
       - name: Setup R dependencies
-        uses: r-lib/actions/setup-r-dependencies@v2
+        uses: r-lib/actions/setup-r-dependencies@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2.14.0
         with:
           cache-version: 2
           extra-packages: |
@@ -356,7 +356,7 @@ jobs:
           echo "game logs: $(ls data-raw/cache-predictions-opta/game_logs_*.parquet | wc -l) files"
 
       - name: Bring in earlier stages' outputs
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           pattern: stage-out-*
           merge-multiple: true
@@ -413,7 +413,7 @@ jobs:
           echo "stage 02: wall $wall, peak RSS ${rss} GB, exit $code"
           exit "$code"
       - name: Pass outputs on
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: stage-out-02
           retention-days: 7
@@ -428,16 +428,16 @@ jobs:
       contents: read
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup R
-        uses: r-lib/actions/setup-r@v2
+        uses: r-lib/actions/setup-r@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2.14.0
         with:
           r-version: '4.5.0'
           use-public-rspm: true
 
       - name: Setup R dependencies
-        uses: r-lib/actions/setup-r-dependencies@v2
+        uses: r-lib/actions/setup-r-dependencies@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2.14.0
         with:
           cache-version: 2
           extra-packages: |
@@ -497,7 +497,7 @@ jobs:
           echo "game logs: $(ls data-raw/cache-predictions-opta/game_logs_*.parquet | wc -l) files"
 
       - name: Bring in earlier stages' outputs
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           pattern: stage-out-*
           merge-multiple: true
@@ -554,7 +554,7 @@ jobs:
           echo "stage 03: wall $wall, peak RSS ${rss} GB, exit $code"
           exit "$code"
       - name: Pass outputs on
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: stage-out-03
           retention-days: 7
@@ -570,16 +570,16 @@ jobs:
       contents: read
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup R
-        uses: r-lib/actions/setup-r@v2
+        uses: r-lib/actions/setup-r@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2.14.0
         with:
           r-version: '4.5.0'
           use-public-rspm: true
 
       - name: Setup R dependencies
-        uses: r-lib/actions/setup-r-dependencies@v2
+        uses: r-lib/actions/setup-r-dependencies@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2.14.0
         with:
           cache-version: 2
           extra-packages: |
@@ -639,7 +639,7 @@ jobs:
           echo "game logs: $(ls data-raw/cache-predictions-opta/game_logs_*.parquet | wc -l) files"
 
       - name: Bring in earlier stages' outputs
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           pattern: stage-out-*
           merge-multiple: true
@@ -696,7 +696,7 @@ jobs:
           echo "stage 06: wall $wall, peak RSS ${rss} GB, exit $code"
           exit "$code"
       - name: Pass outputs on
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: stage-out-06
           retention-days: 7
@@ -725,16 +725,16 @@ jobs:
       DO_UPLOAD: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || github.event.inputs.publish == 'true') }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup R
-        uses: r-lib/actions/setup-r@v2
+        uses: r-lib/actions/setup-r@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2.14.0
         with:
           r-version: '4.5.0'
           use-public-rspm: true
 
       - name: Setup R dependencies
-        uses: r-lib/actions/setup-r-dependencies@v2
+        uses: r-lib/actions/setup-r-dependencies@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2.14.0
         with:
           cache-version: 2
           extra-packages: |
@@ -747,7 +747,7 @@ jobs:
             devtools
 
       - name: Bring in the new tables
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           pattern: stage-out-0[36]
           merge-multiple: true
