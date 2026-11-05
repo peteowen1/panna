@@ -141,6 +141,7 @@ pos_ref8 <- pos_ref8[!is.na(role8), .(player_id, season_end_year, role8)]
 
 ## Minutes shares per (player, season, role8), with the career mix as the fallback
 ## for a season whose every row is UNK (same fallback as the modal bucket).
+if (MIX) {
 shr_s <- st[, .(role8, share = m / sum(m)), by = .(player_id, season_end_year)]
 shr_c <- ct[, .(role8, share = m / sum(m)), by = player_id]
 .ps   <- unique(ms[, .(player_id, season_end_year)])
@@ -152,6 +153,7 @@ if (MIX) cat(sprintf("MIX mode: %s player-seasons, mean %.2f buckets each, modal
                      format(uniqueN(pos_mix8[, .(player_id, season_end_year)]), big.mark = ","),
                      nrow(pos_mix8) / uniqueN(pos_mix8[, .(player_id, season_end_year)]),
                      median(pos_mix8[, max(share), by = .(player_id, season_end_year)]$V1)))
+}
 
 ## Coverage, before any headline number (99_'s rule, and stats-discipline §7).
 res_join <- merge(ms[, .(player_id, season_end_year, .mins)], pos_ref8,
