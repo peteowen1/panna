@@ -70,7 +70,10 @@ if (nzchar(Sys.getenv("PSR_WEEKLY_FILE")) && !file.exists(PSR_WEEKLY))
 ## all of them in his modal bucket. The factor he is then calibrated with is the
 ## same minutes mix of the bucket factors, so fit and application share one
 ## definition. Default (unset) keeps the modal fit unchanged.
-MIX <- identical(Sys.getenv("PSR_99B_MIX"), "1")
+## PSR_99B_MIX=match: each match's minutes go to the role8 actually played in THAT
+## match (rows with no resolvable role fall back to the player-season mix).
+MIX_MODE <- Sys.getenv("PSR_99B_MIX")
+MIX <- MIX_MODE %in% c("1", "match")
 
 ## ---- the 8-bucket taxonomy (Pete's spec, 2026-09-14) --------------------
 ## A layer ABOVE GK/DEF/MID/FWD, built by collapsing classify_role()'s 16 roles.
@@ -199,8 +202,20 @@ x[, mins90 := as.numeric(total_minutes)/90]
 if (MIX) {
   ## Same team-matches and starters as the modal fit (the `full` filter above);
   ## only how each player's minutes are spread over the buckets changes.
+  if (MIX_MODE == "match") {
+    rr <- unique(ms[!is.na(role8), .(player_id, match_id, r_m = role8)], by = c("player_id", "match_id"))
+    xr <- merge(x[, !"role8"], rr, by = c("player_id", "match_id"), all.x = TRUE)
+    cat(sprintf("per-match role: %.1f%% of fit minutes resolved from the match row
+",
+                100 * sum(xr$mins90[!is.na(xr$r_m)]) / sum(xr$mins90)))
+    xm <- rbind(xr[!is.na(r_m)][, `:=`(role8 = r_m, share = 1)][, r_m := NULL],
+                merge(xr[is.na(r_m)][, r_m := NULL], pos_mix8,
+                      by = c("player_id", "season_end_year"), allow.cartesian = TRUE),
+                fill = TRUE)
+  } else {
   xm <- merge(x[, !"role8"], pos_mix8, by = c("player_id", "season_end_year"),
               allow.cartesian = TRUE)
+  }
   stopifnot(abs(sum(xm$mins90 * xm$share) - sum(x$mins90)) / sum(x$mins90) < 1e-6)
   tm <- dcast(xm[, .(s = sum(val * mins90 * share)), by = .(match_id, team_id, role8)],
               match_id + team_id ~ role8, value.var = "s", fill = 0)
