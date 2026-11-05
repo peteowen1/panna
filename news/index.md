@@ -1,5 +1,23 @@
 # Changelog
 
+## panna 0.3.108
+
+- PSR position calibration now uses 10 positions (GK, CB, FB, WB, DM,
+  CM, AM, WM, W, ST; left and right pooled) instead of GK/DEF/MID/FWD,
+  applied to each player by his trailing 365-day minutes mix
+  (`apply_psr_calibration(role_mix = , role_mix_by = )`, new `pos10`
+  rows in `psr_calibration.csv`). Players with no starting minutes in
+  the window get factor 1 (keepers the GK factor). Held-out W/D/L log
+  loss matches the 4-bucket calibration (1.0248 vs 1.0250); the gain is
+  fairness between full-backs and wing-backs, and wide midfielders and
+  wingers ([\#216](https://github.com/peteowen1/panna/issues/216)).
+- The calibration file is in 08b’s model fingerprint, so the next weekly
+  PSR run rebuilds every snapshot; `psr-weekly-snapshot.yml`’s timeout
+  rises to 240 minutes to fit it.
+- `04c_rapm_decayed.R` and `03_skill_spm.R` read Opta data through
+  [`opta_data_dir()`](https://peteowen1.github.io/panna/reference/opta_data_dir.md),
+  so they run on a GitHub runner.
+
 ## panna 0.3.107
 
 - [`aggregate_player_game_epv()`](https://peteowen1.github.io/panna/reference/aggregate_player_game_epv.md)

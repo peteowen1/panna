@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.107</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.108</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,6 +39,13 @@
       <small>Source: <a href="https://github.com/peteowen1/panna/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.108" id="panna-03108">panna 0.3.108<a class="anchor" aria-label="anchor" href="#panna-03108"></a></h2>
+<ul><li>PSR position calibration now uses 10 positions (GK, CB, FB, WB, DM, CM, AM, WM, W, ST; left and right pooled) instead of GK/DEF/MID/FWD, applied to each player by his trailing 365-day minutes mix (<code>apply_psr_calibration(role_mix = , role_mix_by = )</code>, new <code>pos10</code> rows in <code>psr_calibration.csv</code>). Players with no starting minutes in the window get factor 1 (keepers the GK factor). Held-out W/D/L log loss matches the 4-bucket calibration (1.0248 vs 1.0250); the gain is fairness between full-backs and wing-backs, and wide midfielders and wingers (<a href="https://github.com/peteowen1/panna/issues/216" class="external-link">#216</a>).</li>
+<li>The calibration file is in 08b’s model fingerprint, so the next weekly PSR run rebuilds every snapshot; <code>psr-weekly-snapshot.yml</code>’s timeout rises to 240 minutes to fit it.</li>
+<li>
+<code>04c_rapm_decayed.R</code> and <code>03_skill_spm.R</code> read Opta data through <code><a href="../reference/opta_data_dir.html">opta_data_dir()</a></code>, so they run on a GitHub runner.</li>
+</ul></div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.107" id="panna-03107">panna 0.3.107<a class="anchor" aria-label="anchor" href="#panna-03107"></a></h2>
 <ul><li>

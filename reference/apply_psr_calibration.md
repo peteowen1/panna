@@ -7,7 +7,12 @@ striker in 2025.
 ## Usage
 
 ``` r
-apply_psr_calibration(psr_dt, calibration = load_psr_calibration())
+apply_psr_calibration(
+  psr_dt,
+  calibration = load_psr_calibration(),
+  role_mix = NULL,
+  role_mix_by = "player_id"
+)
 ```
 
 ## Arguments
@@ -19,6 +24,18 @@ apply_psr_calibration(psr_dt, calibration = load_psr_calibration())
 - calibration:
 
   Calibration table; defaults to the shipped one. Pass `NULL` to skip.
+
+- role_mix:
+
+  Optional table of each player's role8 minutes shares (`player_id`,
+  `pos10`, `share`, plus `season_end_year` for a seasonal table). When
+  given, the position axis uses the 10 `pos10` factors weighted by each
+  player's mix (panna#216) instead of the 4-bucket `position` factors
+  keyed on `primary_position`.
+
+- role_mix_by:
+
+  Columns joining `psr_dt` to `role_mix`.
 
 ## Value
 
