@@ -355,7 +355,19 @@ jobs:
         with:
           pattern: stage-out-*
           merge-multiple: true
-          path: .
+          path: /tmp/handover
+      # upload-artifact stores files relative to their common folder, so they arrive flat;
+      # put each back where the scripts read it.
+      - name: Put handed-over files back in place
+        run: |
+          ls -l /tmp/handover
+          for f in /tmp/handover/*; do
+            case "$(basename "$f")" in
+              04c_rapm_decayed.rds) mv -f "$f" data-raw/cache-opta/ ;;
+              *) mv -f "$f" data-raw/cache-skills/ ;;
+            esac
+          done
+          ls -l data-raw/cache-skills data-raw/cache-opta
       - name: Stage 02 (peak memory and time measured)
         env:
           PANNADATA_DIR: ${{ runner.temp }}/pannadata
@@ -484,7 +496,19 @@ jobs:
         with:
           pattern: stage-out-*
           merge-multiple: true
-          path: .
+          path: /tmp/handover
+      # upload-artifact stores files relative to their common folder, so they arrive flat;
+      # put each back where the scripts read it.
+      - name: Put handed-over files back in place
+        run: |
+          ls -l /tmp/handover
+          for f in /tmp/handover/*; do
+            case "$(basename "$f")" in
+              04c_rapm_decayed.rds) mv -f "$f" data-raw/cache-opta/ ;;
+              *) mv -f "$f" data-raw/cache-skills/ ;;
+            esac
+          done
+          ls -l data-raw/cache-skills data-raw/cache-opta
       - name: Stage 03 (peak memory and time measured)
         env:
           PANNADATA_DIR: ${{ runner.temp }}/pannadata
@@ -614,7 +638,19 @@ jobs:
         with:
           pattern: stage-out-*
           merge-multiple: true
-          path: .
+          path: /tmp/handover
+      # upload-artifact stores files relative to their common folder, so they arrive flat;
+      # put each back where the scripts read it.
+      - name: Put handed-over files back in place
+        run: |
+          ls -l /tmp/handover
+          for f in /tmp/handover/*; do
+            case "$(basename "$f")" in
+              04c_rapm_decayed.rds) mv -f "$f" data-raw/cache-opta/ ;;
+              *) mv -f "$f" data-raw/cache-skills/ ;;
+            esac
+          done
+          ls -l data-raw/cache-skills data-raw/cache-opta
       - name: Stage 06 (peak memory and time measured)
         env:
           PANNADATA_DIR: ${{ runner.temp }}/pannadata
