@@ -84,6 +84,12 @@ A data.table with one row per player per match:
 
   Goalkeeping: saves, pick-ups, claims, punches
 
+- epv_shot_stopping:
+
+  The `keeper_save` share of `epv_keeping` (a subset, not an extra
+  bucket: not added again to `epv_defensive`). Handling =
+  `epv_keeping - epv_shot_stopping`.
+
 - epv_defending:
 
   Outfield defending: tackles, interceptions, clearances, ball

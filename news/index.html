@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.106</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.107</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,6 +39,11 @@
       <small>Source: <a href="https://github.com/peteowen1/panna/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.107" id="panna-03107">panna 0.3.107<a class="anchor" aria-label="anchor" href="#panna-03107"></a></h2>
+<ul><li>
+<code><a href="../reference/aggregate_player_game_epv.html">aggregate_player_game_epv()</a></code> gains <code>epv_shot_stopping</code>, the <code>keeper_save</code> share of <code>epv_keeping</code>, so a keeper’s shot-stopping EPV can be read apart from handling (<code>epv_keeping - epv_shot_stopping</code>) and distribution (<code>epv_passing</code>). It is a subset of <code>epv_keeping</code>, not a new bucket: <code>epv_keeping</code>, <code>epv_defending</code>, <code>epv_offensive</code>/<code>epv_defensive</code> and every headline EPV are unchanged. It is carried through <code><a href="../reference/build_player_game_ratings.html">build_player_game_ratings()</a></code> and the 10b game-log export. Part 1 of <a href="https://github.com/peteowen1/panna/issues/210" class="external-link">#210</a> only; the GSAA-shaped save credit (part 2) changes published numbers and is not done here.</li>
+</ul></div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.106" id="panna-03106">panna 0.3.106<a class="anchor" aria-label="anchor" href="#panna-03106"></a></h2>
 <ul><li>
