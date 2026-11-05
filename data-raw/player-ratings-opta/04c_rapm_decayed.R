@@ -34,7 +34,9 @@ library(arrow)
 library(data.table)
 
 cache_dir <- file.path("data-raw", "cache-opta")
-opta_dir  <- file.path("..", "pannadata", "data", "opta")
+# opta_data_dir() honours PANNADATA_DIR (GHA downloads to the runner's temp dir) and
+# falls back to ../pannadata/data/opta locally; the hard-coded path broke on GHA.
+opta_dir  <- opta_data_dir()
 
 # Plain exists(), never inherits = FALSE: driver globals reach this script
 # through source(..., local = TRUE), which inherits=FALSE would miss (see
