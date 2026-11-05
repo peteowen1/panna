@@ -1,3 +1,14 @@
+# panna 0.3.109
+
+- Parked the 10-position PSR calibration from 0.3.108 (panna#216). On the first full weekly
+  rebuild it put 11 keepers in the top 30 (3 before, same date, 10+ weighted 90s), because
+  the keeper factor rose to 0.741 while centre-backs fell to 0.792 and full-backs to 0.661,
+  on top of keepers already carrying a larger attacking rating than outfield players. Steps
+  06 and 08b and `inst/extdata/psr_calibration.csv` are back to their 0.3.107 versions; the
+  restored live `opta_psr_weekly.parquet` was built with that table, so the weekly run stays
+  incremental. The pos10 functions in `R/psr.R` stay, unused, for the keeper fix that comes
+  next.
+
 # panna 0.3.108
 
 - PSR position calibration now uses 10 positions (GK, CB, FB, WB, DM, CM, AM, WM, W, ST; left and right
