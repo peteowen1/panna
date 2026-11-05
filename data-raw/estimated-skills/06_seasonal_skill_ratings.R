@@ -60,6 +60,9 @@ skill_features[, .role8_full := local({
   if (!"season_end_year" %in% names(msr)) {
     msr[, season_end_year := as.integer(extract_season_end_year(season))]
   }
+  # Each player-season's role8 minutes mix, for the position CALIBRATION
+  # (panna#216): built here so 01_match_stats is read once.
+  .role8_mix_season <<- .pos10_mix_by_season(msr)
   r8 <- .role16_to_role8(classify_role(msr$position, msr$position_side))
   mins <- as.numeric(msr$total_minutes); mins[is.na(mins)] <- 0
   tab <- data.table::data.table(player_id = msr$player_id,
@@ -787,8 +790,11 @@ if (!is.null(seasonal_psr) && nrow(seasonal_psr) > 0) {
     # factor to 1, which is indistinguishable from "correctly uncalibrated" --
     # and calibrating only SOME positions is worse than calibrating none, because
     # it changes the relative ordering between them.
-    .want <- c("GK", "DEF", "MID", "FWD")
-    .pos_cal <- .psr_cal[.psr_cal$axis == "position", ]
+    # panna#216 (Pete, 2026-11-05): position factor = each player-season's pos10
+    # minutes mix of the 10 position factors. Rows passed: pos10 only, so the season
+    # axis stays off (see above) and the 4-bucket rows are not used.
+    .want <- PSR_POS10_LEVELS
+    .pos_cal <- .psr_cal[.psr_cal$axis == "pos10", ]
     .have <- .pos_cal[is.finite(.pos_cal$factor) & .pos_cal$factor > 0, ]$level
     if (!all(.want %in% .have)) {
       warning("PSR calibration table is missing a usable factor for: ",
@@ -799,9 +805,20 @@ if (!is.null(seasonal_psr) && nrow(seasonal_psr) > 0) {
     }
 
     .gk_before <- .psr_keeper_top20_share(seasonal_psr)
-    seasonal_psr <- as.data.frame(
-      apply_psr_calibration(seasonal_psr, .pos_cal)
-    )
+    .cal_dt <- apply_psr_calibration(seasonal_psr, .pos_cal, role_mix = .role8_mix_season,
+                                     role_mix_by = c("player_id", "season_end_year"))
+    .n_fb <- attr(.cal_dt, "psr_pos10_fallback")
+    cat(sprintf("  pos10 calibration: %d of %d player-seasons had no minutes mix (factor 1, GK factor for keepers)
+",
+                .n_fb, nrow(.cal_dt)))
+    # Substitute-only player-seasons have no starting position and legitimately
+    # fall back (~15% of a weekly snapshot); far above that means the join broke.
+    if (.n_fb > 0.30 * nrow(.cal_dt)) {
+      stop("pos10 calibration found no minutes mix for over 30% of player-seasons; ",
+           "the (player_id, season_end_year) join to 01_match_stats is broken (panna#216).")
+    }
+    seasonal_psr <- as.data.frame(.cal_dt)
+    rm(.cal_dt, .n_fb)
     .gk_after <- .psr_keeper_top20_share(seasonal_psr)
 
     if (is.null(.gk_after) || nrow(.gk_after) == 0L) {

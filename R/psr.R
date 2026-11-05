@@ -1480,8 +1480,11 @@ PSR_ROLE8_LEVELS <- c("GK", "CB", "FB", "DM", "CM", "AM", "W", "ST")
     player_id     = as.character(d$player_id),
     match_date    = as.Date(d$match_date),
     total_minutes = as.numeric(d$total_minutes),
-    role8         = .role16_to_role8(classify_role(d$position, d$position_side))
+    role16        = classify_role(d$position, d$position_side)
   )
+  out[, role8 := .role16_to_role8(role16)]
+  out[, pos10 := .role16_to_pos10(role16)]   # calibration positions (panna#216)
+  out[, role16 := NULL]
   out[is.na(total_minutes), total_minutes := 0]
   # Drop rows that can never contribute, ONCE, then sort by date so
   # .role8_asof() can binary-search its window instead of scanning the whole
@@ -1556,6 +1559,130 @@ PSR_ROLE8_LEVELS <- c("GK", "CB", "FB", "DM", "CM", "AM", "W", "ST")
   if (is.null(recent)) return(if (is.null(older)) base[0, .(player_id, role8)] else older)
   missing <- older[!player_id %in% recent$player_id]
   data.table::rbindlist(list(recent, missing), use.names = TRUE)
+}
+
+#' As-at pos10 MIX: each player's share of recent prior minutes in each calibration position
+#'
+#' The position calibration (panna#216, Pete 2026-11-05) gives a player the
+#' minutes mix of the 10 position factors rather than one bucket's factor, so a
+#' player who splits W and ST gets a factor in between. Same windows as
+#' \code{.role8_asof()}: the trailing \code{window_days} before \code{as_of},
+#' falling back to all prior matches for a player with none in the window.
+#'
+#' @inheritParams .role8_asof
+#' @return data.table(player_id, pos10, share); shares sum to 1 per player.
+#' @keywords internal
+#' @noRd
+.pos10_mix_asof <- function(match_stats, as_of, window_days = 365L) {
+  if (!isTRUE(attr(match_stats, "role8_sorted"))) {
+    match_stats <- .role8_prepare(match_stats)
+  }
+  d <- match_stats
+  as_of <- as.Date(as_of)
+  empty <- data.table::data.table(player_id = character(0), pos10 = character(0),
+                                  share = numeric(0))
+  hi <- findInterval(as.numeric(as_of) - 1e-9, as.numeric(d$match_date))
+  if (hi < 1L) return(empty)
+  base <- data.table::data.table(player_id = d$player_id[seq_len(hi)],
+                                 pos10 = d$pos10[seq_len(hi)],
+                                 md = d$match_date[seq_len(hi)],
+                                 mins = d$total_minutes[seq_len(hi)])
+  shares <- function(tab) {
+    if (nrow(tab) == 0) return(NULL)
+    agg <- tab[, .(m = sum(mins)), by = .(player_id, pos10)]
+    agg[, share := m / sum(m), by = player_id]
+    agg[, .(player_id, pos10, share)]
+  }
+  recent <- shares(base[md >= as_of - window_days])
+  older <- shares(base)
+  if (is.null(recent)) return(if (is.null(older)) empty else older)
+  data.table::rbindlist(list(recent, older[!player_id %in% recent$player_id]),
+                        use.names = TRUE)
+}
+
+#' Pos10 mix per player-season (seasonal PSR table, panna#216)
+#'
+#' @param match_stats Match stats with player_id, season (or season_end_year),
+#'   position, position_side and total_minutes. Not column-narrowed.
+#' @return data.table(player_id, season_end_year, pos10, share).
+#' @keywords internal
+#' @noRd
+.pos10_mix_by_season <- function(match_stats) {
+  d <- match_stats
+  if (!"position_side" %in% names(d)) {
+    cli::cli_abort("`match_stats` has no `position_side` column; resolve roles before narrowing.")
+  }
+  sey <- if ("season_end_year" %in% names(d)) as.integer(d$season_end_year) else
+    as.integer(extract_season_end_year(d$season))
+  mins <- as.numeric(d$total_minutes); mins[is.na(mins)] <- 0
+  tab <- data.table::data.table(player_id = as.character(d$player_id), season_end_year = sey,
+                                pos10 = .role16_to_pos10(classify_role(d$position, d$position_side)),
+                                mins = mins)[pos10 != "OTHER" & !is.na(season_end_year) & mins > 0]
+  tab <- tab[, .(m = sum(mins)), by = .(player_id, season_end_year, pos10)]
+  tab[, share := m / sum(m), by = .(player_id, season_end_year)]
+  tab[, .(player_id, season_end_year, pos10, share)]
+}
+
+#' Calibrate PSR by each player's pos10 minutes mix (panna#216)
+#'
+#' factor(player) = sum over buckets of share x the position's \code{pos10}
+#' factor. A player with no mix row gets the GK factor if his
+#' \code{primary_position} is GK and 1 otherwise (1 is the minutes-weighted
+#' mean factor). The number of such rows is returned as attribute
+#' \code{psr_pos10_fallback} so callers can log it.
+#'
+#' @param dt PSR table with \code{player_id} (and the \code{by} columns).
+#' @param calibration Calibration table with \code{axis == "pos10"} rows.
+#' @param role_mix data.table(by..., pos10, share).
+#' @param by Join columns between \code{dt} and \code{role_mix}.
+#' @keywords internal
+#' @noRd
+.calibrate_psr_pos10 <- function(dt, calibration, role_mix, by = "player_id") {
+  dt <- data.table::as.data.table(dt)
+  tab <- calibration[calibration$axis == "pos10", ]
+  ok <- tab[is.finite(tab$factor) & tab$factor > 0, ]
+  miss <- setdiff(PSR_POS10_LEVELS, ok$level)
+  if (length(miss)) {
+    cli::cli_abort(c("The calibration table has no usable {.val pos10} factor for: {.val {miss}}.",
+                     "i" = "Calibrating only some buckets changes the ordering between them."))
+  }
+  if (!all(by %in% names(dt)) || !all(c(by, "pos10", "share") %in% names(role_mix))) {
+    cli::cli_abort("`dt` and `role_mix` must both carry {.field {by}}; `role_mix` also pos10 and share.")
+  }
+  if (nrow(dt) == 0) return(dt)
+  m <- data.table::as.data.table(role_mix)[, c(by, "pos10", "share"), with = FALSE]
+  m[, f := ok$factor[match(pos10, ok$level)]]
+  pf <- m[, .(.pf = sum(share * f) / sum(share)), by = by]
+  key_dt <- do.call(paste, c(lapply(by, function(b) as.character(dt[[b]])), sep = "\r"))
+  key_pf <- do.call(paste, c(lapply(by, function(b) as.character(pf[[b]])), sep = "\r"))
+  f <- pf$.pf[match(key_dt, key_pf)]
+  n_fb <- sum(is.na(f))
+  if (n_fb) {
+    gk <- if ("primary_position" %in% names(dt)) dt$primary_position %in% "GK" else FALSE
+    f[is.na(f)] <- ifelse(gk[is.na(f)], ok$factor[ok$level == "GK"], 1)
+  }
+  for (col in intersect(c("psr_raw", "psr", "osr", "dsr"), names(dt))) {
+    data.table::set(dt, j = col, value = dt[[col]] * f)
+  }
+  data.table::setattr(dt, "psr_pos10_fallback", n_fb)
+  dt[]
+}
+
+# The 10 CALIBRATION positions (panna#216, Pete 2026-11-05). Not the same as the
+# 8 normalization buckets above: tested on 16 roles, left vs right never differed
+# (|t| < 1) but full-back vs wing-back (t -4.1/-2.5) and wide midfielder vs
+# winger (t -2.8/-2.7) did, and 10 positions fit as well as 16 (F p = 0.80) and
+# better than 8 (p = 1.5e-19). See docs/plans/PSR-POSITION-CALIBRATION-216.md.
+PSR_POS10_LEVELS <- c("GK", "CB", "FB", "WB", "DM", "CM", "AM", "WM", "W", "ST")
+
+.role16_to_pos10 <- function(r) {
+  data.table::fcase(
+    r == "GK", "GK", r == "CB", "CB",
+    r %in% c("LB", "RB"), "FB", r %in% c("LWB", "RWB"), "WB",
+    r == "DM", "DM", r == "CM", "CM", r == "CAM", "AM",
+    r %in% c("LM", "RM"), "WM", r %in% c("LW", "RW"), "W",
+    r %in% c("CF", "LF", "RF"), "ST",
+    default = "OTHER")
 }
 
 # Collapse the 16-role classify_role() output to the 8 normalization buckets.
@@ -2922,10 +3049,17 @@ load_psr_calibration <- function() {
 #'   \code{season_end_year}.
 #' @param calibration Calibration table; defaults to the shipped one. Pass
 #'   \code{NULL} to skip.
+#' @param role_mix Optional table of each player's role8 minutes shares
+#'   (\code{player_id}, \code{pos10}, \code{share}, plus \code{season_end_year}
+#'   for a seasonal table). When given, the position axis uses the 10
+#'   \code{pos10} factors weighted by each player's mix (panna#216) instead of
+#'   the 4-bucket \code{position} factors keyed on \code{primary_position}.
+#' @param role_mix_by Columns joining \code{psr_dt} to \code{role_mix}.
 #' @return \code{psr_dt} with rating columns calibrated on both axes.
 #' @family psr
 #' @export
-apply_psr_calibration <- function(psr_dt, calibration = load_psr_calibration()) {
+apply_psr_calibration <- function(psr_dt, calibration = load_psr_calibration(),
+                                  role_mix = NULL, role_mix_by = "player_id") {
   dt <- data.table::as.data.table(psr_dt)
   if (is.null(calibration) || NROW(calibration) == 0 || nrow(dt) == 0) return(dt)
   # Guard the one way this can be silently wrong: calibrating a table whose
@@ -2949,7 +3083,11 @@ apply_psr_calibration <- function(psr_dt, calibration = load_psr_calibration()) 
       "i" = "Use {.emph either} {.arg gk_goal_scale} (superseded) {.emph or} {.fn apply_psr_calibration}, not both."
     ))
   }
-  dt <- .calibrate_psr_positions(dt, calibration)
+  if (!is.null(role_mix)) {
+    dt <- .calibrate_psr_pos10(dt, calibration, role_mix, by = role_mix_by)
+  } else {
+    dt <- .calibrate_psr_positions(dt, calibration)
+  }
   if ("season_end_year" %in% names(dt)) {
     dt <- apply_psr_season_calibration(dt, calibration)
   }

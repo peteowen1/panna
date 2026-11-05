@@ -4,7 +4,12 @@
 \alias{apply_psr_calibration}
 \title{Apply the PSR calibration (position and season)}
 \usage{
-apply_psr_calibration(psr_dt, calibration = load_psr_calibration())
+apply_psr_calibration(
+  psr_dt,
+  calibration = load_psr_calibration(),
+  role_mix = NULL,
+  role_mix_by = "player_id"
+)
 }
 \arguments{
 \item{psr_dt}{PSR table with \code{primary_position}, optionally
@@ -12,6 +17,14 @@ apply_psr_calibration(psr_dt, calibration = load_psr_calibration())
 
 \item{calibration}{Calibration table; defaults to the shipped one. Pass
 \code{NULL} to skip.}
+
+\item{role_mix}{Optional table of each player's role8 minutes shares
+(\code{player_id}, \code{pos10}, \code{share}, plus \code{season_end_year}
+for a seasonal table). When given, the position axis uses the 10
+\code{pos10} factors weighted by each player's mix (panna#216) instead of
+the 4-bucket \code{position} factors keyed on \code{primary_position}.}
+
+\item{role_mix_by}{Columns joining \code{psr_dt} to \code{role_mix}.}
 }
 \value{
 \code{psr_dt} with rating columns calibrated on both axes.

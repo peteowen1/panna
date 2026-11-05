@@ -891,7 +891,7 @@ test_that("shipped calibration table is well formed and in a sane range", {
   cal <- load_psr_calibration()
   expect_true(nrow(cal) > 0)
   expect_true(all(c("axis", "level", "factor") %in% names(cal)))
-  expect_setequal(unique(cal$axis), c("position", "season"))
+  expect_setequal(unique(cal$axis), c("position", "season", "pos10"))  # pos10: panna#216
   # a calibration, not a rewrite: nothing should flip a sign or explode
   expect_true(all(cal$factor > 0))
   expect_true(all(cal$factor > 0.3 & cal$factor < 2))
@@ -2256,4 +2256,86 @@ test_that("shipped PSR coefficient files have no unexpected duplicate features",
       info = paste("duplicate-sd features in", basename(f))
     )
   }
+})
+
+# =============================================================================
+# panna#216: position calibration by each player's pos10 minutes mix
+# =============================================================================
+
+.cal216 <- function() data.table::data.table(
+  axis = "pos10", level = PSR_POS10_LEVELS,
+  factor = c(GK = 0.8, CB = 0.75, FB = 0.7, WB = 1.6, DM = 1.15, CM = 1.05, AM = 1.1,
+             WM = 1.05, W = 1.2, ST = 1.5)[PSR_POS10_LEVELS])
+
+test_that(".pos10_mix_asof gives minute shares, strictly prior, with the history fallback", {
+  ms <- data.table::data.table(
+    player_id = "p1",
+    match_date = as.Date(c("2020-01-01", "2020-02-01", "2020-03-01", "2020-04-01")),
+    position = "Defender", position_side = c("Left", "Left", "Left", "Centre"),
+    total_minutes = 90)
+  m <- .pos10_mix_asof(ms, "2020-05-01")
+  expect_equal(m[order(pos10)]$pos10, c("CB", "FB"))
+  expect_equal(m[order(pos10)]$share, c(0.25, 0.75))
+  # the 2020-04-01 CB match is not before 2020-04-01: no look-ahead
+  expect_equal(.pos10_mix_asof(ms, "2020-04-01")$share, 1)
+  expect_equal(nrow(.pos10_mix_asof(ms, "2019-01-01")), 0L)
+  # nothing in the trailing year: falls back to all prior minutes, not empty
+  expect_equal(sum(.pos10_mix_asof(ms, "2022-01-01")$share), 1)
+})
+
+test_that("apply_psr_calibration with role_mix uses each player's minutes mix", {
+  dt <- data.table::data.table(player_id = c("a", "b", "k", "new"),
+                               primary_position = c("FWD", "DEF", "GK", "MID"),
+                               psr = 1, osr = 0.6, dsr = 0.4)
+  mix <- data.table::data.table(player_id = c("a", "a", "b", "k"),
+                                pos10 = c("W", "ST", "CB", "GK"),
+                                share = c(0.75, 0.25, 1, 1))
+  out <- apply_psr_calibration(dt, .cal216(), role_mix = mix)
+  expect_equal(out$psr, c(0.75 * 1.2 + 0.25 * 1.5, 0.75, 0.8, 1))
+  expect_equal(out$osr + out$dsr, out$psr)
+  expect_equal(attr(out, "psr_pos10_fallback"), 1L)  # "new": no mix, factor 1
+})
+
+test_that("role_mix fallback gives a keeper with no mix the GK factor, not 1", {
+  dt <- data.table::data.table(player_id = "k2", primary_position = "GK", psr = 1, osr = 0.5, dsr = 0.5)
+  mix <- data.table::data.table(player_id = "x", pos10 = "CB", share = 1)
+  expect_equal(apply_psr_calibration(dt, .cal216(), role_mix = mix)$psr, 0.8)
+})
+
+test_that("role_mix joins on player-season for the seasonal table", {
+  dt <- data.table::data.table(player_id = c("p", "p"), season_end_year = c(2024L, 2025L),
+                               primary_position = "DEF", psr = 1, osr = 0.5, dsr = 0.5)
+  mix <- data.table::data.table(player_id = "p", season_end_year = c(2024L, 2025L),
+                                pos10 = c("FB", "CB"), share = 1)
+  out <- apply_psr_calibration(dt, .cal216(), role_mix = mix,
+                               role_mix_by = c("player_id", "season_end_year"))
+  expect_equal(out$psr, c(0.7, 0.75))
+})
+
+test_that("role_mix refuses a calibration table missing a pos10 factor", {
+  cal <- .cal216()[level != "FB"]
+  dt <- data.table::data.table(player_id = "a", psr = 1, osr = 0.5, dsr = 0.5)
+  mix <- data.table::data.table(player_id = "a", pos10 = "CB", share = 1)
+  expect_error(apply_psr_calibration(dt, cal, role_mix = mix), "pos10")
+})
+
+test_that("without role_mix the 4-bucket position path is unchanged", {
+  cal <- rbind(.cal216(), data.table::data.table(axis = "position", level = "GK", factor = 0.5))
+  dt <- data.table::data.table(player_id = "k", primary_position = "GK", psr = 1, osr = 0.5, dsr = 0.5)
+  expect_equal(apply_psr_calibration(dt, cal)$psr, 0.5)
+})
+
+test_that("the shipped calibration table carries all 10 pos10 factors", {
+  cal <- load_psr_calibration()
+  r8 <- cal[cal$axis == "pos10", ]
+  expect_setequal(r8$level, PSR_POS10_LEVELS)
+  expect_true(all(is.finite(r8$factor) & r8$factor > 0))
+  expect_true(all(r8$factor > 0.5 & r8$factor < 2))
+  # left and right are pooled (never differed); FB and WB are not
+  expect_false(isTRUE(all.equal(r8$factor[r8$level == "FB"], r8$factor[r8$level == "WB"])))
+})
+
+test_that(".role16_to_pos10 pools left/right and keeps FB/WB and WM/W apart", {
+  expect_equal(.role16_to_pos10(c("LB", "RB", "LWB", "RWB", "LM", "RM", "LW", "RW", "CF", "LF", "RF", "UNK")),
+               c("FB", "FB", "WB", "WB", "WM", "WM", "W", "W", "ST", "ST", "ST", "OTHER"))
 })
