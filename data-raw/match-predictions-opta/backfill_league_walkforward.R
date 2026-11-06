@@ -27,7 +27,14 @@
 #     <04_match_dataset.rds> <01_fixture_results.rds> <work_dir> <league> <season_end_year> [max_cutoffs]
 # max_cutoffs (optional) runs only the first N cutoffs, for a timing smoke test;
 # the completeness check at the end then fails on purpose.
-# Output: <work_dir>/walkforward_<league>_<season_end_year>.parquet
+# Env WF_HORIZON: "month" (default) predicts each refit's own month only, one
+# row per match. "season" predicts every match dated on or after the cutoff in
+# the same season, one row per (cutoff_date, match): what a forecaster who
+# looks several weeks ahead had at each refit (fplverse projects 6 gameweeks
+# ahead; asked 2026-11-07). The val rows never enter the fit, so a match's
+# own-month row is the same under both horizons.
+# Output: <work_dir>/walkforward_<league>_<season_end_year>.parquet, or
+#         <work_dir>/walkforward_all_refits_<league>_<season_end_year>.parquet for "season"
 
 suppressPackageStartupMessages(library(data.table))
 
@@ -40,6 +47,8 @@ fx_path <- args[2]
 work_dir <- args[3]
 league_code <- args[4]
 season_year <- as.integer(args[5])
+horizon <- Sys.getenv("WF_HORIZON", "month")
+if (!horizon %in% c("month", "season")) stop("WF_HORIZON must be 'month' or 'season', got '", horizon, "'")
 dir.create(work_dir, showWarnings = FALSE, recursive = TRUE)
 step_dir <- file.path("data-raw", "match-predictions-opta")
 stopifnot(file.exists(md_path), file.exists(fx_path), !is.na(season_year))
@@ -57,16 +66,17 @@ if (!any(target_all)) stop("no played ", league_code, " rows with season_end_yea
 month_start <- function(d) as.Date(format(d, "%Y-%m-01"))
 cutoffs <- sort(unique(month_start(md_date[target_all])))
 n_run <- if (length(args) >= 6) min(as.integer(args[6]), length(cutoffs)) else length(cutoffs)
-cat(sprintf("%s %d: %d matches, %d monthly cutoffs (%s to %s)\n", league_code, season_year,
-            sum(target_all), length(cutoffs), format(min(cutoffs)), format(max(cutoffs))))
+cat(sprintf("%s %d: %d matches, %d monthly cutoffs (%s to %s), horizon %s\n", league_code, season_year,
+            sum(target_all), length(cutoffs), format(min(cutoffs)), format(max(cutoffs)), horizon))
 
-out_path <- file.path(work_dir, sprintf("walkforward_%s_%d.parquet", league_code, season_year))
+out_path <- file.path(work_dir, sprintf("walkforward_%s%s_%d.parquet",
+                                        if (horizon == "season") "all_refits_" else "", league_code, season_year))
 done <- list()
 for (i in seq_len(n_run)) {
   t0 <- Sys.time()
   cut_date <- cutoffs[i]
   next_cut <- seq(cut_date, by = "month", length.out = 2)[2]
-  target <- target_all & md_date >= cut_date & md_date < next_cut
+  target <- target_all & md_date >= cut_date & (horizon == "season" | md_date < next_cut)
   train_rows <- is_played & md_date < cut_date
   cat(sprintf("\n=== cutoff %s: %d matches to %s; training on %d matches %s to %s ===\n",
               format(cut_date), sum(target), format(next_cut - 1), sum(train_rows),
@@ -106,11 +116,16 @@ for (i in seq_len(n_run)) {
 
 all_rows <- rbindlist(done, fill = TRUE)
 bad <- anyNA(all_rows$pred_home_goals) || anyNA(all_rows$pred_away_goals) || anyNA(all_rows$prob_H)
-if (length(done) != length(cutoffs) || nrow(all_rows) != sum(target_all) || bad ||
-    anyDuplicated(all_rows$match_id) > 0) {
-  stop(sprintf("backfill incomplete: %d of %d cutoffs, %d of %d matches, NA predictions: %s, duplicate match_ids: %d",
-               length(done), length(cutoffs), nrow(all_rows), sum(target_all), bad,
-               sum(duplicated(all_rows$match_id))))
+rows_expected <- if (horizon == "season") {
+  sum(vapply(cutoffs, function(c) sum(target_all & md_date >= c), numeric(1)))
+} else sum(target_all)
+n_dup <- sum(duplicated(all_rows[, .(match_id, cutoff_date)]))
+n_matches <- uniqueN(all_rows$match_id)
+if (length(done) != length(cutoffs) || nrow(all_rows) != rows_expected || n_matches != sum(target_all) ||
+    bad || n_dup > 0) {
+  stop(sprintf("backfill incomplete: %d of %d cutoffs, %d of %d rows, %d of %d matches, NA predictions: %s, duplicate (match, cutoff) rows: %d",
+               length(done), length(cutoffs), nrow(all_rows), rows_expected, n_matches, sum(target_all),
+               bad, n_dup))
 }
-cat(sprintf("\nAll done: %s %d, %d matches over %d cutoffs, all predicted, in %s\n",
-            league_code, season_year, nrow(all_rows), length(cutoffs), out_path))
+cat(sprintf("\nAll done: %s %d, %d rows (%d matches) over %d cutoffs, horizon %s, all predicted, in %s\n",
+            league_code, season_year, nrow(all_rows), n_matches, length(cutoffs), horizon, out_path))
