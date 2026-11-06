@@ -70,6 +70,12 @@ if (length(missing_stats) > 0) {
 }
 cat(sprintf("Enriched with xMetrics (%s): %d cols; %d stats to optimise\n",
             xm_source, ncol(ms_x), length(want_stats)))
+# The enrich fills unmatched rows with 0, so a present column can still be
+# mostly empty. Print how much of each xMetrics stat is non-zero.
+for (s in tiers$xmetrics) {
+  cat(sprintf("  %-38s non-zero on %5.1f%% of %d player-matches\n", s,
+              100 * mean(ms_x[[s]] != 0, na.rm = TRUE), nrow(ms_x)))
+}
 
 
 # 4. Run Optimization ----
@@ -97,6 +103,9 @@ optim_duration <- difftime(Sys.time(), start_time, units = "mins")
 cat(sprintf("\nOptimization time: %.1f minutes\n", as.numeric(optim_duration)))
 
 # Coverage: every requested stat must come back with a finite prior and lambda.
+# (If every fit failed, stat_priors is empty and the checks below would see
+# zero-length vectors and pass, so test that first.)
+if (length(decay_params$stat_priors) == 0) stop("optimize_all_priors() returned no priors at all")
 got_prior <- unname(decay_params$stat_priors[want_stats])
 got_lambda <- vapply(want_stats, function(s) {
   v <- decay_params[[s]]
@@ -110,13 +119,20 @@ if (length(no_fit) > 0) {
 # Bounds: the ranges optimize_stat_prior() searches by default (prior 0.1 to
 # 1000 for rate stats, 0.1 to 500 for efficiency; lambda 0 to 0.02).
 upper <- ifelse(want_stats %in% tiers$efficiency, 500, 1000)
+# A lambda still at its start value never moved: on rare stats the decay is
+# not identifiable (2026-11-07 run at sample_n 500: six stats, finishing and
+# placement among them, came back at exactly 0.003).
+lambda_start <- vapply(want_stats, .resolve_lambda, numeric(1), decay_params = get_default_decay_params(),
+                       eff_map = .classify_skill_stats(), USE.NAMES = FALSE)
 at_bound <- got_prior <= 0.1 * 1.01 | got_prior >= upper * 0.99 |
-  got_lambda <= 1e-6 | got_lambda >= 0.02 * 0.99
+  got_lambda <= 1e-6 | got_lambda >= 0.02 * 0.99 |
+  abs(got_lambda - lambda_start) <= 1e-4 * lambda_start
 cat(sprintf("Fitted %d stats: %d with a prior or lambda on a search bound\n",
             length(want_stats), sum(at_bound)))
 if (any(at_bound)) {
   print(data.table(stat = want_stats[at_bound], prior = got_prior[at_bound],
-                   prior_upper = upper[at_bound], lambda = got_lambda[at_bound]))
+                   prior_upper = upper[at_bound], lambda = got_lambda[at_bound],
+                   lambda_start = lambda_start[at_bound]))
   if (!isTRUE(allow_bound_priors)) {
     stop("Priors or lambdas on a search bound were not fitted; set allow_bound_priors <- TRUE to save anyway")
   }
