@@ -127,7 +127,7 @@ lambda_start <- vapply(want_stats, .resolve_lambda, numeric(1), decay_params = g
 at_bound <- got_prior <= 0.1 * 1.01 | got_prior >= upper * 0.99 |
   got_lambda <= 1e-6 | got_lambda >= 0.02 * 0.99 |
   abs(got_lambda - lambda_start) <= 1e-4 * lambda_start
-cat(sprintf("Fitted %d stats: %d with a prior or lambda on a search bound\n",
+cat(sprintf("Fitted %d stats: %d with a prior or lambda on a search bound or still at its start value\n",
             length(want_stats), sum(at_bound)))
 if (any(at_bound)) {
   print(data.table(stat = want_stats[at_bound], prior = got_prior[at_bound],
