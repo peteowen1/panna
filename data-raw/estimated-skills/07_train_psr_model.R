@@ -112,9 +112,13 @@ if (!exists("use_xmetrics_features") || isTRUE(use_xmetrics_features)) {
 decay_params_path <- file.path(cache_dir, "02b_decay_params.rds")
 if (file.exists(decay_params_path)) {
   decay_params <- readRDS(decay_params_path)
-  cat("Using optimized decay parameters\n")
+  # Hash now, not at save time: a pull from predictions-cache mid-run would
+  # otherwise record a file the coefficients were not trained on (panna#432).
+  decay_params_md5 <- unname(tools::md5sum(decay_params_path))
+  cat(sprintf("Using optimized decay parameters (%s, md5 %s)\n", decay_params_path, decay_params_md5))
 } else {
   decay_params <- get_default_decay_params()
+  decay_params_md5 <- NA_character_
   cat("Using default decay parameters\n")
 }
 
@@ -1567,12 +1571,13 @@ psr_model_data <- list(
     min_w90 = MIN_W90_FOR_SKILLS,
     # Provenance of the skill shrinkage the coefficients were trained against
     # (panna#432): the local and published 02b files have disagreed, and the
-    # trained-with copy was not recoverable afterwards. Compare against the
-    # file GHA scores with: n_stat_priors, n_lambdas and the md5 of the file.
-    decay_params_file = if (file.exists(decay_params_path)) decay_params_path else NA_character_,
-    decay_params_md5 = if (file.exists(decay_params_path)) unname(tools::md5sum(decay_params_path)) else NA_character_,
-    decay_stat_priors = decay_params$stat_priors,
-    n_decay_stat_priors = length(decay_params$stat_priors),
+    # trained-with copy was not recoverable afterwards. To compare with the
+    # file GHA scores with, check decay_params_md5 (hashed when the file was
+    # read; NA = defaults, no file), or diff decay_params_used, which holds the
+    # whole object: per-stat lambdas, stat_priors and position_multipliers
+    # (about 6 KB on disk).
+    decay_params_md5 = decay_params_md5,
+    decay_params_used = decay_params,
     created = Sys.time()
   )
 )
