@@ -1565,6 +1565,14 @@ psr_model_data <- list(
     alpha_grid = ALPHA_GRID,
     decay_days = MATCH_WEIGHT_DECAY_DAYS,
     min_w90 = MIN_W90_FOR_SKILLS,
+    # Provenance of the skill shrinkage the coefficients were trained against
+    # (panna#432): the local and published 02b files have disagreed, and the
+    # trained-with copy was not recoverable afterwards. Compare against the
+    # file GHA scores with: n_stat_priors, n_lambdas and the md5 of the file.
+    decay_params_file = if (file.exists(decay_params_path)) decay_params_path else NA_character_,
+    decay_params_md5 = if (file.exists(decay_params_path)) unname(tools::md5sum(decay_params_path)) else NA_character_,
+    decay_stat_priors = decay_params$stat_priors,
+    n_decay_stat_priors = length(decay_params$stat_priors),
     created = Sys.time()
   )
 )
