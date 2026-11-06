@@ -147,7 +147,7 @@ get_stat_tiers <- function() {
 #' @param is_efficiency If TRUE, uses Beta-Binomial with attempt-weighting.
 #' @param denom_col Denominator column for efficiency stats.
 #' @param prior_bounds Numeric vector of length 2: search range for prior
-#'   strength. Default c(0.1, 100) for rate stats, c(0.1, 500) for efficiency.
+#'   strength. Default c(0.1, 1000) for rate stats, c(0.1, 500) for efficiency.
 #' @param lambda_bounds Numeric vector of length 2: search range for decay lambda.
 #'   Default c(0, 0.02). Only used when \code{optimize_lambda = TRUE}.
 #' @param quantile_bounds Numeric vector of length 2: search range for prior
@@ -185,7 +185,7 @@ optimize_stat_prior <- function(match_stats = NULL, stat_name,
                                  seed = 42,
                                  precomputed = NULL) {
   if (is.null(prior_bounds)) {
-    prior_bounds <- if (is_efficiency) c(0.1, 500) else c(0.1, 100)
+    prior_bounds <- if (is_efficiency) c(0.1, 500) else c(0.1, 1000)
   }
   if (is.null(lambda_bounds)) {
     lambda_bounds <- c(0, 0.02)
@@ -492,14 +492,43 @@ optimize_stat_prior <- function(match_stats = NULL, stat_name,
                                            na.rm = TRUE, names = FALSE)
     }
   } else {
-    # Multi-dimensional: L-BFGS-B
+    # Multi-dimensional: L-BFGS-B.
+    # The prior strength is searched on a LOG scale from the best point of a
+    # coarse log grid. On the raw scale, started at mean(prior_bounds), the
+    # loss is so flat for over-performance stats (npg_minus_npxg_per90,
+    # placement_added_per90: every prior from 50 to 1000 within 0.05% of the
+    # best) that L-BFGS-B stopped at the start value; production carried
+    # 50.05 for both until 2026-11-06.
+    fn <- objective
+    if (optimize_prior) {
+      grid <- exp(seq(log(prior_bounds[1]), log(prior_bounds[2]), length.out = 12))
+      grid_loss <- vapply(grid, function(k) {
+        p <- par_init; p[1] <- k; objective(p)
+      }, numeric(1))
+      par_init[1] <- log(grid[which.min(grid_loss)])
+      par_lower[1] <- log(prior_bounds[1])
+      par_upper[1] <- log(prior_bounds[2])
+      fn <- function(p) { p[1] <- exp(p[1]); objective(p) }
+    }
+    # parscale: optim's finite-difference step (ndeps = 1e-3) is applied to
+    # par / parscale. Unscaled, a lambda near 0.002 got a step half its own
+    # size, the gradient was garbage and the search ended where it began
+    # (code 52 on npxg_per90). Scale lambda by its own size.
+    pscale <- rep(1, length(par_init))
+    if (optimize_lambda) {
+      li <- as.integer(optimize_prior) + 1L
+      pscale[li] <- max(abs(lambda), 1e-4)
+    }
+    if (optimize_quantile) pscale[length(pscale)] <- 0.1
     result <- stats::optim(
-      par = par_init, fn = objective, method = "L-BFGS-B",
-      lower = par_lower, upper = par_upper
+      par = par_init, fn = fn, method = "L-BFGS-B",
+      lower = par_lower, upper = par_upper,
+      control = list(parscale = pscale)
     )
     if (result$convergence != 0) {
       cli::cli_warn("L-BFGS-B failed to converge for stat {.val {stat_name}} (code {result$convergence}).")
     }
+    if (optimize_prior) result$par[1] <- exp(result$par[1])
     idx <- 0
     out <- list(stat = stat_name, loss = result$value)
 
