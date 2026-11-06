@@ -70,7 +70,11 @@ get_stat_tiers <- function() {
     ),
     xmetrics = c(
       "xg_per90", "npxg_per90", "xa_per90_xmetrics",
-      "xpass_overperformance_per90_xmetrics"
+      "xpass_overperformance_per90_xmetrics",
+      # Finishing, placement and keeper shot-stopping (panna#432): published
+      # skills read priors for these, but no 02b run fitted them by default.
+      # (The zonal ibox/obox split left PSR on 2026-07-20, skill_config.R.)
+      "npg_minus_npxg_per90", "placement_added_per90", "gsaa_per90"
     )
   )
 }
@@ -569,6 +573,8 @@ optimize_stat_prior <- function(match_stats = NULL, stat_name,
 #' @param optimize_quantile If TRUE, jointly optimizes per-stat prior center
 #'   quantile.
 #' @param sample_n Max players to sample per stat (default 500).
+#' @param seed Seed for the player sample. Fits under two seeds differ only by
+#'   which players were sampled, so comparing them measures sampling noise.
 #' @param n_cores Number of cores for parallel optimization. Default 1
 #'   (sequential).
 #' @param verbose Print progress.
@@ -582,6 +588,7 @@ optimize_all_priors <- function(match_stats, decay_params = NULL,
                                  optimize_lambda = TRUE,
                                  optimize_quantile = FALSE,
                                  sample_n = 500,
+                                 seed = 42,
                                  n_cores = 1,
                                  verbose = TRUE) {
   if (is.null(decay_params)) decay_params <- get_default_decay_params()
@@ -608,7 +615,7 @@ optimize_all_priors <- function(match_stats, decay_params = NULL,
   # Precompute shared per-player data (sort, positions, sample, split)
   # This avoids repeating expensive work 68x (once per stat)
   if (verbose) progress_msg("Precomputing player splits...")
-  precomputed <- .precompute_player_data(match_stats, sample_n = sample_n, seed = 42)
+  precomputed <- .precompute_player_data(match_stats, sample_n = sample_n, seed = seed)
   if (verbose) progress_msg(sprintf("  %d players, %d with >5 matches",
                                      length(precomputed$player_splits),
                                      sum(vapply(precomputed$player_splits,
