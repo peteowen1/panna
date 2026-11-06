@@ -1,3 +1,14 @@
+# panna 0.3.110
+
+- Skills step 02b's joint search for each stat's prior strength and decay rate now actually
+  searches. It used to start the prior at the middle of its bounds on the raw scale, with
+  optim's default step applied to a decay rate near 0.002, and on flat stats it stopped where
+  it began: production carried prior 50.05 for `npg_minus_npxg_per90` and
+  `placement_added_per90`. `optimize_stat_prior()` now starts from the best point of a log
+  grid, searches log(prior), scales the decay step by its own size, and allows rate-stat
+  priors up to 1000. No published file changes with this release; whether to publish refit
+  values is panna#432.
+
 # panna 0.3.109
 
 - Parked the 10-position PSR calibration from 0.3.108 (panna#216). On the first full weekly
