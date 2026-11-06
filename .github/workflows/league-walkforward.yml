@@ -1,0 +1,213 @@
+name: League walk-forward backfill
+
+# Honest pre-match predictions for past league seasons, refit at the start of
+# every month (data-raw/match-predictions-opta/backfill_league_walkforward.R).
+# Built for fplverse's ENG 2021-22 to 2024-25 backtest (Pete, 2026-11-06).
+#
+# Input: the `match-dataset` artifact of a Predictions Pipeline run, which holds
+# that run's 04_match_dataset.rds (as-at EPR/PSR/SPM since panna#308) and
+# 01_fixture_results.rds. Each season refits in its own job (~10 cutoffs x
+# ~10 min); a combine job checks every match is predicted and, when publish is
+# on and the ref is main or dev, uploads one parquet plus a coverage CSV to
+# pannadata predictions-latest with .vb_safe_upload (temp name, verify, swap).
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: 'Predictions Pipeline run id whose match-dataset artifact to use'
+        required: true
+        type: string
+      league:
+        description: 'League code in the match dataset'
+        default: 'ENG'
+        type: string
+      seasons:
+        description: 'Season end years, space-separated (2022 = 2021-22)'
+        default: '2022 2023 2024 2025'
+        type: string
+      publish:
+        description: 'Upload the result to pannadata predictions-latest (main/dev only)'
+        default: false
+        type: boolean
+
+concurrency:
+  group: league-walkforward-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
+  R_KEEP_PKG_SOURCE: yes
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      seasons: ${{ steps.m.outputs.seasons }}
+    steps:
+      - id: m
+        env:
+          SEASONS: ${{ inputs.seasons }}
+        run: |
+          json=$(printf '%s\n' $SEASONS | grep -E '^[0-9]{4}$' | jq -R . | jq -cs .)
+          [ "$json" != "[]" ] || { echo "::error::no valid season end years in '$SEASONS'"; exit 1; }
+          echo "seasons=$json" >> "$GITHUB_OUTPUT"
+
+  backfill:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        season: ${{ fromJson(needs.plan.outputs.seasons) }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup R
+        uses: r-lib/actions/setup-r@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2.14.0
+        with:
+          r-version: '4.5.0'
+          use-public-rspm: true
+
+      - name: Setup R dependencies
+        uses: r-lib/actions/setup-r-dependencies@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2.14.0
+        with:
+          cache-version: 2
+          extra-packages: |
+            any::devtools
+            any::arrow
+            any::dplyr
+            any::tidyr
+            any::glmnet
+            any::xgboost
+            any::Matrix
+            any::data.table
+            any::cli
+          needs: |
+            devtools
+
+      - name: Download the match dataset
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: match-dataset
+          run-id: ${{ inputs.source_run_id }}
+          github-token: ${{ secrets.WORKFLOW_PAT }}
+          path: md
+
+      - name: Refit monthly and predict
+        run: |
+          ls -la md
+          Rscript data-raw/match-predictions-opta/backfill_league_walkforward.R \
+            md/04_match_dataset.rds md/01_fixture_results.rds wf-out \
+            "${{ inputs.league }}" "${{ matrix.season }}"
+
+      - name: Keep the season's predictions
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: walkforward-${{ inputs.league }}-${{ matrix.season }}
+          path: wf-out/walkforward_*.parquet
+          if-no-files-found: warn
+          retention-days: 14
+
+  combine:
+    needs: backfill
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup R
+        uses: r-lib/actions/setup-r@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2.14.0
+        with:
+          r-version: '4.5.0'
+          use-public-rspm: true
+
+      - name: Setup R dependencies
+        uses: r-lib/actions/setup-r-dependencies@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2.14.0
+        with:
+          cache-version: 2
+          extra-packages: |
+            any::devtools
+            any::arrow
+            any::data.table
+            any::cli
+          needs: |
+            devtools
+
+      - name: Download season results
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          pattern: walkforward-*
+          merge-multiple: true
+          path: wf-in
+
+      - name: Download the match dataset
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: match-dataset
+          run-id: ${{ inputs.source_run_id }}
+          github-token: ${{ secrets.WORKFLOW_PAT }}
+          path: md
+
+      - name: Combine, check coverage, publish
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          LEAGUE: ${{ inputs.league }}
+          SEASONS: ${{ inputs.seasons }}
+          SOURCE_RUN: ${{ inputs.source_run_id }}
+          PUBLISH: ${{ inputs.publish && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && 'true' || 'false' }}
+        run: |
+          cat > /tmp/combine.R <<'EOF'
+          suppressMessages(devtools::load_all(".", quiet = TRUE))
+          library(data.table)
+          league <- Sys.getenv("LEAGUE")
+          seasons <- as.integer(strsplit(trimws(Sys.getenv("SEASONS")), "\\s+")[[1]])
+          md <- readRDS("md/04_match_dataset.rds")
+          files <- list.files("wf-in", pattern = "^walkforward_.*[.]parquet$", full.names = TRUE)
+          p <- rbindlist(lapply(files, function(f) as.data.table(arrow::read_parquet(f))), fill = TRUE)
+          cov <- rbindlist(lapply(seasons, function(s) {
+            want <- md$match_id[md$split != "fixture" & md$league == league & md$season_end_year == s]
+            got <- p[season_end_year == s]
+            data.table(league = league, season_end_year = s, matches_in_dataset = length(want),
+                       predicted = sum(want %in% got$match_id),
+                       non_na = sum(!is.na(got$pred_home_goals) & !is.na(got$pred_away_goals) & !is.na(got$prob_H)),
+                       cutoffs = uniqueN(got$cutoff_date),
+                       first_cutoff = if (nrow(got)) min(got$cutoff_date) else NA_character_,
+                       last_cutoff = if (nrow(got)) max(got$cutoff_date) else NA_character_)
+          }))
+          cov[, complete := predicted == matches_in_dataset & non_na == matches_in_dataset]
+          print(cov)
+          cov[, source_run_id := Sys.getenv("SOURCE_RUN")]
+          # Season range in the name: a rerun of one season must not swap out
+          # the file that holds all of them.
+          tag <- sprintf("%s_%d_%d", league, min(seasons), max(seasons))
+          if (length(seasons) != max(seasons) - min(seasons) + 1L) tag <- paste(league, paste(sort(seasons), collapse = "_"), sep = "_")
+          out <- sprintf("predictions_walkforward_%s.parquet", tag)
+          cov_out <- sprintf("predictions_walkforward_%s_coverage.csv", tag)
+          setorder(p, match_date, match_id)
+          arrow::write_parquet(p, out)
+          fwrite(cov, cov_out)
+          for (i in seq_len(nrow(cov))) cat(sprintf("::notice::%s %d: %d of %d matches predicted, %d non-NA, %d cutoffs\n",
+            league, cov$season_end_year[i], cov$predicted[i], cov$matches_in_dataset[i], cov$non_na[i], cov$cutoffs[i]))
+          if (!all(cov$complete) || anyDuplicated(p$match_id) > 0) stop("coverage incomplete or duplicate match_ids; nothing published")
+          if (identical(Sys.getenv("PUBLISH"), "true")) {
+            for (f in c(out, cov_out)) .vb_safe_upload(f, "peteowen1/pannadata", "predictions-latest")
+            cat("Published", out, "and", cov_out, "to pannadata predictions-latest\n")
+          } else cat("publish off: nothing uploaded (see the artifact)\n")
+          EOF
+          Rscript /tmp/combine.R
+
+      - name: Keep the combined file
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: walkforward-combined
+          path: |
+            predictions_walkforward_*.parquet
+            predictions_walkforward_*_coverage.csv
+          if-no-files-found: warn
+          retention-days: 30
