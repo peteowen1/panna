@@ -134,7 +134,7 @@ if (any(at_bound)) {
                    prior_upper = upper[at_bound], lambda = got_lambda[at_bound],
                    lambda_start = lambda_start[at_bound]))
   if (!isTRUE(allow_bound_priors)) {
-    stop("Priors or lambdas on a search bound were not fitted; set allow_bound_priors <- TRUE to save anyway")
+    stop("Priors or lambdas on a search bound or still at their start value were not fitted; set allow_bound_priors <- TRUE to save anyway")
   }
 }
 decay_params$fit_info <- list(sample_n = sample_n, seed = optim_seed, leagues = optim_leagues,
