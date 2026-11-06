@@ -47,6 +47,8 @@ stopifnot(file.exists(md_path), file.exists(fx_path), !is.na(season_year))
 md <- readRDS(md_path)
 md_date <- as.Date(substr(as.character(md$match_date), 1, 10))
 is_played <- md$split != "fixture"
+# An undated played row would slip into every cutoff's cut as an all-NA row.
+if (anyNA(md_date[is_played])) stop(sum(is.na(md_date[is_played])), " played rows have no match date")
 cat(sprintf("match dataset: %d rows, %d played, dates %s to %s\n", nrow(md), sum(is_played),
             format(min(md_date)), format(max(md_date))))
 
