@@ -1,5 +1,15 @@
 # Changelog
 
+## panna 0.3.112
+
+- `league-walkforward.yml` gains a `horizon` input. `season` makes each
+  monthly refit predict every later match in its season, one row per
+  (refit `cutoff_date`, match), published as
+  `predictions_walkforward_all_refits_<league>_<first>_<last>.parquet`.
+  That is what a forecaster looking several weeks ahead had at each
+  refit (fplverse’s 6-gameweek projections). The default `month` is
+  unchanged.
+
 ## panna 0.3.111
 
 - New one-off backfill of honest pre-match predictions for past league

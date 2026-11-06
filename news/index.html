@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.111</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.112</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,6 +39,11 @@
       <small>Source: <a href="https://github.com/peteowen1/panna/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.112" id="panna-03112">panna 0.3.112<a class="anchor" aria-label="anchor" href="#panna-03112"></a></h2>
+<ul><li>
+<code>league-walkforward.yml</code> gains a <code>horizon</code> input. <code>season</code> makes each monthly refit predict every later match in its season, one row per (refit <code>cutoff_date</code>, match), published as <code>predictions_walkforward_all_refits_&lt;league&gt;_&lt;first&gt;_&lt;last&gt;.parquet</code>. That is what a forecaster looking several weeks ahead had at each refit (fplverse’s 6-gameweek projections). The default <code>month</code> is unchanged.</li>
+</ul></div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.111" id="panna-03111">panna 0.3.111<a class="anchor" aria-label="anchor" href="#panna-03111"></a></h2>
 <ul><li>New one-off backfill of honest pre-match predictions for past league seasons: <code>data-raw/match-predictions-opta/backfill_league_walkforward.R</code> refits steps 05-06 at the start of every month on matches played before it and predicts that month with step 07 (<code>record = "backtest"</code>). <code>league-walkforward.yml</code> runs one job per season from a Predictions Pipeline run’s new <code>match-dataset</code> artifact, checks every match is predicted, and can publish <code>predictions_walkforward_&lt;league&gt;_&lt;first&gt;_&lt;last&gt;.parquet</code> plus a coverage CSV to pannadata <code>predictions-latest</code>. Built for fplverse’s ENG 2021-22 to 2024-25 backtest.</li>
