@@ -141,3 +141,25 @@ test_that("optimized prior beats extreme prior values", {
   # Optimized should be at least as good as extreme
   expect_true(optimized$loss <= extreme$loss + 1e-4)
 })
+
+test_that("joint prior + lambda search moves off its start value (2026-11-06 regression)", {
+  # A pure-noise stat: every player has the same true rate, so the best
+  # prior is as strong as allowed. The old raw-scale L-BFGS-B search stopped
+  # at mean(prior_bounds) = 50.05 on stats this flat.
+  ms <- make_optimization_match_stats(n_players = 60, n_matches = 30)
+  set.seed(9)
+  ms$noise_p90 <- rnorm(nrow(ms), 0, 0.5)
+  result <- optimize_stat_prior(
+    match_stats = ms, stat_name = "noise_p90", optimize_lambda = TRUE,
+    min_history = 3, sample_n = 60
+  )
+  expect_false(isTRUE(all.equal(result$optimal_prior, mean(c(0.1, 1000)))))
+  expect_gt(result$optimal_prior, 100)
+
+  # A stat with real player differences gets a weaker prior than pure noise.
+  real <- optimize_stat_prior(
+    match_stats = ms, stat_name = "goals_p90", optimize_lambda = TRUE,
+    min_history = 3, sample_n = 60
+  )
+  expect_lt(real$optimal_prior, result$optimal_prior)
+})
