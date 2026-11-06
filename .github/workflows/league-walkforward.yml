@@ -182,8 +182,12 @@ jobs:
           cov[, complete := predicted == matches_in_dataset & non_na == matches_in_dataset]
           print(cov)
           cov[, source_run_id := Sys.getenv("SOURCE_RUN")]
-          out <- sprintf("predictions_walkforward_%s.parquet", league)
-          cov_out <- sprintf("predictions_walkforward_%s_coverage.csv", league)
+          # Season range in the name: a rerun of one season must not swap out
+          # the file that holds all of them.
+          tag <- sprintf("%s_%d_%d", league, min(seasons), max(seasons))
+          if (length(seasons) != max(seasons) - min(seasons) + 1L) tag <- paste(league, paste(sort(seasons), collapse = "_"), sep = "_")
+          out <- sprintf("predictions_walkforward_%s.parquet", tag)
+          cov_out <- sprintf("predictions_walkforward_%s_coverage.csv", tag)
           setorder(p, match_date, match_id)
           arrow::write_parquet(p, out)
           fwrite(cov, cov_out)
