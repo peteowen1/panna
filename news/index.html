@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.109</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.110</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,6 +39,10 @@
       <small>Source: <a href="https://github.com/peteowen1/panna/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.110" id="panna-03110">panna 0.3.110<a class="anchor" aria-label="anchor" href="#panna-03110"></a></h2>
+<ul><li>Skills step 02b’s joint search for each stat’s prior strength and decay rate now actually searches. It used to start the prior at the middle of its bounds on the raw scale, with optim’s default step applied to a decay rate near 0.002, and on flat stats it stopped where it began: production carried prior 50.05 for <code>npg_minus_npxg_per90</code> and <code>placement_added_per90</code>. <code><a href="../reference/optimize_stat_prior.html">optimize_stat_prior()</a></code> now starts from the best point of a log grid, searches log(prior), scales the decay step by its own size, and allows rate-stat priors up to 1000. No published file changes with this release; whether to publish refit values is panna#432.</li>
+</ul></div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.109" id="panna-03109">panna 0.3.109<a class="anchor" aria-label="anchor" href="#panna-03109"></a></h2>
 <ul><li>Parked the 10-position PSR calibration from 0.3.108 (panna#216). On the first full weekly rebuild it put 11 keepers in the top 30 (3 before, same date, 10+ weighted 90s), because the keeper factor rose to 0.741 while centre-backs fell to 0.792 and full-backs to 0.661, on top of keepers already carrying a larger attacking rating than outfield players. Steps 06 and 08b and <code>inst/extdata/psr_calibration.csv</code> are back to their 0.3.107 versions; the restored live <code>opta_psr_weekly.parquet</code> was built with that table, so the weekly run stays incremental. The pos10 functions in <code>R/psr.R</code> stay, unused, for the keeper fix that comes next.</li>
