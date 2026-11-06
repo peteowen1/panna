@@ -79,10 +79,18 @@ fit_outcome_segment <- function(seg_name, train_df, val_df, goals_seg) {
                   nrow(train_df), n_orig, n_orig, nrow(val_df)))
 
   # Val goal predictions from the full segment goals models (out-of-sample).
+  # A segment can have no val rows (see 05: a walk-forward league month leaves
+  # the international segment empty); xgb.DMatrix() fails on a 0-row matrix,
+  # so val is scored only when present and the metrics are otherwise NA.
+  has_val <- nrow(val_df) > 0
   X_va <- as.matrix(val_df[, feature_cols, drop = FALSE]); X_va[is.na(X_va)] <- 0
-  dva_full <- xgboost::xgb.DMatrix(X_va)
-  val_df$pred_home_goals  <- stats::predict(goals_seg$home$model, dva_full)
-  val_df$pred_away_goals  <- stats::predict(goals_seg$away$model, dva_full)
+  if (has_val) {
+    dva_full <- xgboost::xgb.DMatrix(X_va)
+    val_df$pred_home_goals  <- stats::predict(goals_seg$home$model, dva_full)
+    val_df$pred_away_goals  <- stats::predict(goals_seg$away$model, dva_full)
+  } else {
+    val_df$pred_home_goals <- val_df$pred_away_goals <- numeric(0)
+  }
   val_df$pred_goal_diff   <- val_df$pred_home_goals - val_df$pred_away_goals
   val_df$pred_total_goals <- val_df$pred_home_goals + val_df$pred_away_goals
 
@@ -99,10 +107,13 @@ fit_outcome_segment <- function(seg_name, train_df, val_df, goals_seg) {
                                    early_stopping = 30L, verbose = 0L,
                                    group_ids = train_df$match_id)
 
-  vp_raw <- stats::predict(outcome_model$model, xgboost::xgb.DMatrix(X_val))
-  vp <- if (is.matrix(vp_raw)) vp_raw else matrix(vp_raw, ncol = 3, byrow = TRUE)
-  ll  <- compute_multiclass_logloss(val_df$outcome_label, vp)
-  acc <- mean(apply(vp, 1, which.max) - 1L == val_df$outcome_label)
+  ll <- acc <- NA_real_
+  if (has_val) {
+    vp_raw <- stats::predict(outcome_model$model, xgboost::xgb.DMatrix(X_val))
+    vp <- if (is.matrix(vp_raw)) vp_raw else matrix(vp_raw, ncol = 3, byrow = TRUE)
+    ll  <- compute_multiclass_logloss(val_df$outcome_label, vp)
+    acc <- mean(apply(vp, 1, which.max) - 1L == val_df$outcome_label)
+  }
   message(sprintf("  Outcome model: %d rounds | val logloss=%.4f, accuracy=%.1f%%",
                   outcome_model$best_nrounds, ll, 100 * acc))
 

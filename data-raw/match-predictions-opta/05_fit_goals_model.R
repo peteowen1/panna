@@ -75,12 +75,18 @@ fit_goals_segment <- function(seg_name, train_df, val_df) {
                               early_stopping = 30L, verbose = 0L,
                               group_ids = train_df$match_id)
 
-  home_pred <- stats::predict(home_model$model, xgboost::xgb.DMatrix(X_val))
-  away_pred <- stats::predict(away_model$model, xgboost::xgb.DMatrix(X_val))
-  home_rmse <- sqrt(mean((val_df$home_goals - home_pred)^2))
-  away_rmse <- sqrt(mean((val_df$away_goals - away_pred)^2))
-  base_home_rmse <- sqrt(mean((val_df$home_goals - mean(train_df$home_goals))^2))
-  base_away_rmse <- sqrt(mean((val_df$away_goals - mean(train_df$away_goals))^2))
+  # Val is only scored here. A segment can have no val rows (a walk-forward
+  # month of league matches leaves the international segment empty, and
+  # xgb.DMatrix() fails on a 0-row matrix), so its metrics are then NA.
+  home_rmse <- away_rmse <- base_home_rmse <- base_away_rmse <- NA_real_
+  if (nrow(X_val) > 0) {
+    home_pred <- stats::predict(home_model$model, xgboost::xgb.DMatrix(X_val))
+    away_pred <- stats::predict(away_model$model, xgboost::xgb.DMatrix(X_val))
+    home_rmse <- sqrt(mean((val_df$home_goals - home_pred)^2))
+    away_rmse <- sqrt(mean((val_df$away_goals - away_pred)^2))
+    base_home_rmse <- sqrt(mean((val_df$home_goals - mean(train_df$home_goals))^2))
+    base_away_rmse <- sqrt(mean((val_df$away_goals - mean(train_df$away_goals))^2))
+  }
   message(sprintf("  Val RMSE — home %.3f (base %.3f), away %.3f (base %.3f)",
                   home_rmse, base_home_rmse, away_rmse, base_away_rmse))
 

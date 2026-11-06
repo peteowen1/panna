@@ -62,6 +62,11 @@ for (yr in TOURNAMENT_YEARS) {
   cut_dir <- file.path(work_dir, paste0("wc", yr))
   dir.create(cut_dir, showWarnings = FALSE)
   saveRDS(cut, file.path(cut_dir, "04_match_dataset.rds"))
+  # Step 07 also reads 01_fixture_results.rds (extra-time scores, #411); it sits
+  # next to the match dataset in the pipeline's cache dir.
+  fx <- file.path(dirname(md_path), "01_fixture_results.rds")
+  if (!file.exists(fx)) stop("01_fixture_results.rds not found next to ", md_path)
+  file.copy(fx, file.path(cut_dir, "01_fixture_results.rds"), overwrite = TRUE)
   rm(cut); invisible(gc())
 
   cache_dir <- cut_dir

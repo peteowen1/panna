@@ -524,3 +524,17 @@ jobs:
           path: wc-backfill-work/wc_backfill_predictions.parquet
           if-no-files-found: warn
           retention-days: 14
+
+      # The match dataset (as-at EPR/PSR/SPM since panna#308) exists only on the
+      # runner. league-walkforward.yml reads it from here (input source_run_id)
+      # to refit past seasons month by month. ~50 MB, kept 7 days.
+      - name: Keep the match dataset for walk-forward backfills
+        if: success()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: match-dataset
+          path: |
+            data-raw/cache-predictions-opta/04_match_dataset.rds
+            data-raw/cache-predictions-opta/01_fixture_results.rds
+          if-no-files-found: error
+          retention-days: 7
